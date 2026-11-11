@@ -2,7 +2,7 @@
  * The runner's adapter for the ixcc row (untrusted measurement code).
  * The row's code is `ixcc compile`'s object for the fixture's frozen
  * closure (fixtures/ixon-v4/bench-k1/<fixture>.ixe), which exports, as
- * fixtures/x86/runtime_driver.c describes,
+ * IxCC/X86/Driver.lean models them,
  *
  *     cx_result cx_init(void *region, uint64_t size, uint64_t stack_budget);
  *     cx_result cx_entry(void *region, uint64_t a1, ..., uint64_t a5);
@@ -18,7 +18,7 @@
  *
  * The stack budget is the main thread's stack limit less 1 MiB (at most
  * 1 GiB), which leaves the wrapper frame and the frameless leaf's slack
- * above the limit, as runtime_driver.c's contract asks; a deeper recursion
+ * above the limit, as the driver contract (X86.Driver.Ok) asks; a deeper recursion
  * ends in status 2, not a fault. row_heap reports how far the bump pointer
  * moved since cx_init (Phase 1's immortal allocation).
  */
@@ -72,7 +72,7 @@ void row_init(void) {
     exit(2);
   }
   /* The stack budget at region + 16 (ctx - 48), where every export wrapper,
-   * cx_init's included, reads it, as runtime_driver.c stores it. */
+   * cx_init's included, reads it (X86.Driver.initBytes). */
   uint64_t budget = stack_budget();
   memcpy(region + BUDGET_OFFSET, &budget, 8);
   cx_result r = cx_init(region, REGION_SIZE, budget);

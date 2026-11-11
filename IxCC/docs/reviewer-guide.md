@@ -129,7 +129,7 @@ The changes on `jcb/ixck-ixcc-merge` span eight functional areas:
 
 ## 4. Verification Commands
 
-These are the commands of IxCC's 16 required checks, as [`nix/checks.nix`](../nix/checks.nix) runs them; `nix build .#checks.x86_64-linux.ixcc-<name>` from ix's root runs one hermetically (see [ci.md](ci.md)). From `IxCC/`, in ix's development shell (`nix develop`). `CC` is a C compiler (`--cc "$CC"` links the objects with the C drivers and runs them natively; x86-64 Linux only, and without it the suites run every Lean level and skip the native runs), and `LLVM_MC` an `llvm-mc` binary (see `x86-hardware` below). `rc-native` and `x86-hardware` are x86-64 Linux only. `ixcc compile CLOSURE.ixe --equations EQ.json --exe FILE` writes a standalone executable of the first root (`FILE N1 … Nk` prints its result); `tests-exe` and `tests-corpus --exe` test it.
+These are the commands of IxCC's 16 required checks, as [`nix/checks.nix`](../nix/checks.nix) runs them; `nix build .#checks.x86_64-linux.ixcc-<name>` from ix's root runs one hermetically (see [ci.md](ci.md)). From `IxCC/`, in ix's development shell (`nix develop`). `--native` runs the suites' objects natively, as test executables IxCC writes (x86-64 Linux only; without it the suites run every Lean level and skip the native runs); `CC` is a C compiler, which only `x86-elf-object` (the C test harnesses and the system linker's acceptance of compiled objects) and `x86-hardware` use, and `LLVM_MC` an `llvm-mc` binary (see `x86-hardware` below). `rc-native` and `x86-hardware` are x86-64 Linux only. `ixcc compile CLOSURE.ixe --equations EQ.json --exe FILE` writes a standalone executable of the first root (`FILE N1 … Nk` prints its result); `tests-exe` and `tests-corpus --exe` test it.
 
 ```bash
 # build, proofs: the library, every executable, and the complete proof and fence collection
@@ -169,9 +169,10 @@ $bin/check-aiur --root .
 $bin/check-x86-encoder --objdump "$(command -v objdump)"
 $bin/check-x86-bytes
 $bin/check-x86-streams
-# (--cc and --harness: x86-64 Linux only, for the native link and run)
+# (--cc, --harness and --ixcc: x86-64 Linux only: the fixtures linked with the C harnesses
+# and run, and objects ixcc compiles in the check linked, not run, by the system linker)
 $bin/check-x86-object --fixture $bin/x86-object-fixture --readelf "$(command -v readelf)" \
-  --objdump "$(command -v objdump)" --cc "$CC" --harness fixtures/x86/native_harness.c
+  --objdump "$(command -v objdump)" --cc "$CC" --harness fixtures/x86/native_harness.c --ixcc $bin/ixcc
 
 # trusted-extern-ledger (the integrity pins, required-check inventory, hygiene scan and
 # other inventories of the trust ledger), and the auditor's own rejection paths
@@ -197,21 +198,21 @@ $bin/tests-pipeline-rc native rc-logs/levels-native
 $bin/tests-pipeline-rc negative rc-logs/negative
 
 # suites (the check runs these concurrently; each must exit 0)
-$bin/tests-pipeline --cc "$CC"
+$bin/tests-pipeline --native
 $bin/corpus check
 $bin/certified-census --self-test
-$bin/tests-corpus --cc "$CC" --exe        # (--exe: x86-64 Linux only, runs the corpus as executables)
+$bin/tests-corpus --native --exe        # (--exe: x86-64 Linux only, runs the corpus as executables)
 $bin/tests-exe --run --strace "$(command -v strace)"   # (--run and --strace: x86-64 Linux only)
-$bin/check-backend --cc "$CC"
+$bin/check-backend --native
 $bin/check-regalloc
 $bin/tests-src
-$bin/tests-rt --cc "$CC"
+$bin/tests-rt --native
 $bin/check-xv-select
 $bin/tests-lam
 $bin/tests-fir
 $bin/check-lir
 $bin/tests-anf
-$bin/tests-own --cc "$CC"
+$bin/tests-own --native
 $bin/tests-own-plain
 $bin/tests-shrink
 $bin/tests-relevance

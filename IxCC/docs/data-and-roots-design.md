@@ -347,14 +347,15 @@ that clause; results read back through the existing tree readback plus the
 
 **Trusted base.** The driver model (`x86-phase1-runtime-driver-model` in the
 [ledger](trusted-extern-ledger.md)) grows to the new calling convention;
-`fixtures/x86/runtime_driver.c` must agree with it.
+the standalone executable's shell and the native suites' test shell and host
+(`IxCCTests/Exe/TestShell.lean`, `IxCCTests/Rt/Native.lean`) must agree with it.
 
 **Dependencies.** DR1, DR3.
 
 **Size [estimate].** 3–6k lines.
 
 **Exit.** A root `ByteArray → ByteArray` (a parser into a tree and back)
-compiles, certifies and round-trips through the C driver; the five-argument
+compiles, certifies and round-trips natively, as a test executable; the five-argument
 limit no longer binds, because one argument can carry a structure.
 
 ## DR7. What the compile claim binds
@@ -425,7 +426,8 @@ compiled.
 **Options.**
 - (a) **State-machine roots.** The program exports
   `step : State → Request → State × Response`, a pure function. A small
-  host (a C driver today, the IxOS tender on bare metal) performs the
+  host (the native suites' test shell and its Lean host today, a standalone
+  executable's request shell later, the IxOS tender on bare metal) performs the
   effects and calls `step` repeatedly, passing the returned state back in.
   Correctness per call is the existing pure theorem; across calls it is a
   session theorem over returned and re-passed heap values.
@@ -446,7 +448,7 @@ They need a heap argument (DR6) and an induction over the session. (b): the
 traced simulation through every level, an oracle-indexed source semantics,
 and an event-preserving x86 call into the host.
 
-**Trusted base.** (a): the host is outside the theorem, as the C driver is
+**Trusted base.** (a): the host is outside the theorem, as the test shell is
 now; for IxOS the tender is a new ledger row. (b): the event interface
 becomes a specification assumption.
 
@@ -455,7 +457,7 @@ becomes a specification assumption.
 **Size [estimate].** (a) 3–6k lines; (b) not estimated.
 
 **Exit.** (a): a corpus state machine (a counter map over `ByteArray`
-requests) runs a session of at least 1,000 calls in the C driver with its
+requests) runs a session of at least 1,000 calls in a test executable with its
 values checked against Lean's interpreter, and the session theorem is
 fenced.
 

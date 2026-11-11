@@ -55,13 +55,15 @@ the checked source, which the front end builds from the certificate, is
 semantically faithful to the ingested program is not proved, and neither is
 that it means the Lean definition.
 
-**Running a compiled program.** The test suites run objects inside a C test
-driver (`fixtures/x86/runtime_driver.c`), linked by the system linker.
-`ixcc compile --exe` writes a standalone static Linux executable instead, with
-no C compiler, C library, linker or driver: IxCC lays out the file and its
-start-up shell itself, for roots of `Nat` parameters with a `Nat` or
-field-less result. The shell is trusted code until it is proved, and effects
-are planned in stages
+**Running a compiled program.** `ixcc compile --exe` writes a standalone static
+Linux executable, with no C compiler, C library, linker or driver: IxCC lays
+out the file and its start-up shell itself, for roots of `Nat` parameters with
+a `Nat` or field-less result. The test suites run objects the same way, as
+executables IxCC writes with a test shell that serves a host in Lean, so no gate
+runs a compiled program through C; C remains in the tree only as test harnesses
+for the system linker's acceptance of relocatable objects and for the
+processor differential. The production shell is trusted code until it is proved,
+and effects are planned in stages
 ([standalone executables](docs/standalone-executables-design.md)).
 
 The [roadmap](docs/roadmap.md) states the fragment exactly, plans the way to

@@ -64,7 +64,7 @@ def read (bundle logs : FilePath) : IO Unit := do
     let some (sig, ty) := Recheck.rootTy prior.src candidate.base c |
       throw (IO.userError "missing full result type")
     let exe ← IxCCTests.Rt.Native.link
-      { work := logs, driver := "fixtures/x86/runtime_driver.c" }
+      { work := logs }
       s!"certificate-{root}" artifact.object symbol
     let cases := [(0, 7), (4, 3), (32, 11)]
     let rows ← IxCCTests.Rt.Native.run exe
@@ -87,7 +87,8 @@ def read (bundle logs : FilePath) : IO Unit := do
       cmd := "sha256sum", args := #[exe.toString, (logs / s!"certificate-{root}.o").toString] }
     unless hashes.exitCode == 0 do throw (IO.userError "native artifact hash failed")
     IO.FS.writeFile (logs / s!"{root}.artifacts.sha256") hashes.stdout
-    IO.println s!"PASS fresh-process {root}: exact complete map, nine refusals, scoped gate, three full C+Lean native values"
+    IO.println s!"PASS fresh-process {root}: exact complete map, nine refusals, scoped gate, three full native values by two decoders"
+  IO.println s!"PASS codec read{← IxCCTests.Rt.Native.agreement}"
   IO.FS.writeFile (logs / "result.txt") "Three fresh source/certificate rechecks,27 actual-source corruptions plus13 synthetic decoder controls refused,9 full native values. This codec gate uses the existing backend producer; the separate complete replay gate validates serialized RC backend decisions.\n"
 
 end IxCCTests.Recheck.Rc.CodecIO

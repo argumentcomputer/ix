@@ -1,18 +1,19 @@
 import IxCC.X86.ObjectCall
 
 /-!
-# The runtime driver's calls, as a model
+# A caller's calls of a compiled object, as a model
 
-What `fixtures/x86/runtime_driver.c` sets up for the object's calls,
-as data and a contract (`Driver.Ok`) on it, so that the object's execution
+What a caller sets up for a compiled object's calls (the standalone
+executable's shell, `X86/Exe/Layout.lean`; the native suites' test
+executables), as data and a contract (`Driver.Ok`) on it, so that the object's execution
 from an input is a definite function (`X86.Linked`, the object's `Lang`):
 
 - the object's text is loaded at `base`;
-- one region of `size` bytes from `region` (the driver's `mmap`); `cx_init`
+- one region of `size` bytes from `region` (the caller's); `cx_init`
   gets `rdi = region`, `rsi = size`, `rdx = budget`; a root gets
   `rdi = region` and its arguments in `rsi`…`r9`;
 - every call runs with `rsp = sp`, the caller's return address `ret` in the
-  word at `sp` (the driver's `call` pushes it), on the stack below it; the
+  word at `sp` (the caller's `call` pushes it), on the stack below it; the
   other registers hold any values (`other`; the wrappers save and restore
   what they use);
 - the process's mapping: the region and the call stack (the `budget + 56`

@@ -386,7 +386,8 @@
     "IxCCTests.Rt.Mutants",
     "IxCCTests.Rt.Levels",
     "IxCCTests.Rt.Kernel",
-    "IxCCTests.Rt.KernelEval"]},
+    "IxCCTests.Rt.KernelEval",
+    "IxCCTests.Rt.DecoderChecks"]},
   "IxCCTests.Rt.Rc.Run":
   {"path": "IxCCTests/Rt/Rc/Run.lean",
    "imports":
@@ -400,9 +401,13 @@
     "IxCC.Recheck.Produce",
     "IxCCTests.Rt.Native",
     "Lean.Data.Json.FromToJson"]},
+  "IxCCTests.Rt.Rc.NativeControls":
+  {"path": "IxCCTests/Rt/Rc/NativeControls.lean",
+   "imports": ["IxCCTests.Exe.Session"]},
   "IxCCTests.Rt.Rc.Native":
   {"path": "IxCCTests/Rt/Rc/Native.lean",
-   "imports": ["IxCCTests.Rt.Rc.Emit", "Lean"]},
+   "imports":
+   ["IxCCTests.Rt.Rc.Emit", "IxCCTests.Rt.Rc.NativeControls", "Lean"]},
   "IxCCTests.Rt.Rc.Main":
   {"path": "IxCCTests/Rt/Rc/Main.lean", "imports": ["IxCCTests.Rt.Rc.Run"]},
   "IxCCTests.Rt.Rc.Emit":
@@ -420,7 +425,9 @@
   {"path": "IxCCTests/Rt/Rc/Controls.lean",
    "imports": ["IxCC.Rt.Rc.Procs", "IxCC.Lir.Semantics"]},
   "IxCCTests.Rt.Native":
-  {"path": "IxCCTests/Rt/Native.lean", "imports": ["IxCCTests.Rt.Support"]},
+  {"path": "IxCCTests/Rt/Native.lean",
+   "imports":
+   ["IxCCTests.Rt.Support", "IxCCTests.Rt.Decoder", "IxCCTests.Exe.Session"]},
   "IxCCTests.Rt.Mutants":
   {"path": "IxCCTests/Rt/Mutants.lean", "imports": ["IxCCTests.Rt.Cases"]},
   "IxCCTests.Rt.Main":
@@ -459,6 +466,11 @@
     "IxCCTests.Fir.Differential",
     "IxCCTests.Fir.Gen",
     "IxCCTests.Src.Bench"]},
+  "IxCCTests.Rt.DecoderChecks":
+  {"path": "IxCCTests/Rt/DecoderChecks.lean",
+   "imports":
+   ["IxCCTests.Rt.Decoder", "IxCCTests.Rt.Native", "IxCCTests.Src.Support"]},
+  "IxCCTests.Rt.Decoder": {"path": "IxCCTests/Rt/Decoder.lean", "imports": []},
   "IxCCTests.Rt.Cases":
   {"path": "IxCCTests/Rt/Cases.lean", "imports": ["IxCCTests.Rt.Support"]},
   "IxCCTests.Ring0":
@@ -3246,11 +3258,17 @@
     "IxCCTests.Fences.BackHalf",
     "IxCCTests.Fences.Exe",
     "IxCCTests.Fences.KernelFront"]},
+  "IxCCTests.Exe.TestShell":
+  {"path": "IxCCTests/Exe/TestShell.lean",
+   "imports": ["IxCC.X86.Exe.Validate"]},
   "IxCCTests.Exe.Support":
   {"path": "IxCCTests/Exe/Support.lean", "imports": ["IxCC.Exe"]},
+  "IxCCTests.Exe.Session":
+  {"path": "IxCCTests/Exe/Session.lean",
+   "imports": ["IxCCTests.Exe.TestShell"]},
   "IxCCTests.Exe.Run":
   {"path": "IxCCTests/Exe/Run.lean",
-   "imports": ["IxCCTests.Corpus.Run", "IxCC.Cli"]},
+   "imports": ["IxCCTests.Corpus.Run", "IxCCTests.Exe.Session", "IxCC.Cli"]},
   "IxCCTests.Exe.Main":
   {"path": "IxCCTests/Exe/Main.lean", "imports": ["IxCCTests.Exe.Run"]},
   "IxCCTests.Corpus.ToolMain":
@@ -3408,7 +3426,7 @@
    "imports": ["IxCC.Backend", "IxCCTests.Lir.Kernels", "Lean.Data.Json"]},
   "IxCCTests.Backend.Native":
   {"path": "IxCCTests/Backend/Native.lean",
-   "imports": ["IxCCTests.Backend.Support"]},
+   "imports": ["IxCCTests.Backend.Support", "IxCCTests.Exe.Session"]},
   "IxCCTests.Backend.Main":
   {"path": "IxCCTests/Backend/Main.lean", "imports": ["IxCCTests.Backend.Run"]},
   "IxCCTests.Backend.Machine":

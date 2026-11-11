@@ -142,7 +142,7 @@ asks `lake env` for `LEAN_PATH`, so `--ix-path` names a directory with a
 ## The suite: `lake exe tests-corpus`
 
 ```sh
-lake exe tests-corpus [MANIFEST…] [--cc CC] [--work DIR] [--only FIXTURE]… [--root ROOT]…
+lake exe tests-corpus [MANIFEST…] [--native] [--work DIR] [--only FIXTURE]… [--root ROOT]…
                       [--no-machines] [--progress] [--survey [--dump] | --observe]
 ```
 
@@ -151,15 +151,15 @@ compiler either declines it with exactly the manifest's `stage: code`, or
 compiles it, and then every case runs at every level `tests-pipeline` checks
 (SrcEval, Lam, Anf after every middle-end step, Fir, Own, Cfg, Lir, Xv, Xl,
 and, for `machine` cases, the typed x86 machine and ByteEval) and, with
-`--cc`, natively under `fixtures/x86/runtime_driver.c`, with the expectations
+`--native`, natively as test executables IxCC writes, with the expectations
 above. A failure names the root, the case, the level and both observations.
 `--survey` only compiles each root and prints `compiled` or its `stage: code`
 against the manifest's (for reviewing a new family); `--dump` adds the Anf,
 Lir and Xv of a root declined at allocation or later. `--observe` prints, as
 tab-separated rows and without assertions, every case of every compiled root
-at Cfg, Lir, Xv, Xl and (with `--cc`) natively, beside the manifest's `fail`
+at Cfg, Lir, Xv, Xl and (with `--native`) natively, beside the manifest's `fail`
 and `spurious` marks (for reviewing a new family's expectations and for
-tabulating a boundary family). A native run is one driver process per
+tabulating a boundary family). A native run is one test executable per
 distinct region and stack of a root's cases.
 
 ## Adding a fixture
@@ -172,10 +172,10 @@ distinct region and stack of a root's cases.
    closure's census and the interpreter's values.
 4. `lake exe tests-corpus MANIFEST --survey`; record every decline as the
    root's expected `decline` (a decline is a completeness finding: list it).
-   For a boundary or resource fixture, `--observe --cc cc` shows each case's
+   For a boundary or resource fixture, `--observe --native` shows each case's
    outcome at every word level and natively: mark each status 3 the source
    explains as `fail` (or `allow`), and one it does not as `spurious` too.
-5. `lake exe tests-corpus MANIFEST --cc cc`; a level disagreement or a wrong
+5. `lake exe tests-corpus MANIFEST --native`; a level disagreement or a wrong
    value is a compiler bug: keep the minimised program as a fixture.
 6. Pin the new files in the trust ledger and regenerate
    `nix/lean-modules.json` if a Lake target changed.

@@ -16,7 +16,7 @@ the shell makes no system call for memory.
 **What the shell is meant to establish** (the instance of `X86.Driver` that
 `Layout.driver` builds): the object's text at `fileBase + textOffset`; the
 region at `regionStart` of `region` bytes; the stack budget `stack − 4096`
-(as `fixtures/x86/runtime_driver.c` passes it), stored by the shell at
+(as the native suites' test executables pass it), stored by the shell at
 `region + 16` before `cx_init`; each call entered with `rsp = stackTop − 8`
 (the shell sets `rsp` to `stackTop`, 16-aligned, and `call` pushes the
 return address); the region's bytes before `cx_init` are the loader's zeros
@@ -35,8 +35,7 @@ and the root from one `Driver`, so with one return address `ret`, one flags
 value and one register file `other` for both calls. A real caller does not
 behave that way: the shell calls `cx_init` and the root from two call sites
 (so two return addresses, `driver` at each), and enters them with different
-caller-saved registers; `runtime_driver.c` also enters them with different
-`rax` (its trampoline calls through `rax`). The object's theorems hold for
+caller-saved registers. The object's theorems hold for
 every return address and register file, so this costs nothing semantically,
 but the model states one where a caller supplies two. The model is left as it
 is; a proof that the shell realises the contract will have to take one
@@ -52,7 +51,8 @@ def fileBase : Nat := 0x400000
 def dataBase : Nat := 0x10000000
 
 /-- The part of the stack the budget leaves for the export wrapper's frame and
-the largest frameless leaf's slack, as the C driver leaves it. -/
+the largest frameless leaf's slack, as the native suites' test executables
+leave it. -/
 def stackReserve : Nat := 4096
 
 /-- The largest stack plus region the writer accepts (1 TiB), which keeps every
@@ -74,8 +74,8 @@ def budget (L : Layout) : Nat := L.stack - stackReserve
 def dataSize (L : Layout) : Nat := L.stack + L.region
 
 /-- The sizes the writer accepts: a stack that is a multiple of 16 and at least
-8 KiB (as the C driver requires), a region of at least `cx_init`'s 4 KiB, and
-together at most `maxDataBytes`. -/
+8 KiB (as the native suites' test executables require), a region of at least
+`cx_init`'s 4 KiB, and together at most `maxDataBytes`. -/
 def check (L : Layout) : Bool :=
   L.stack % 16 == 0 && decide (8192 ≤ L.stack) && decide (4096 ≤ L.region) &&
     decide (L.stack + L.region ≤ maxDataBytes)

@@ -144,7 +144,7 @@ soundness](resource-soundness-design.md)).
 
 *As a standalone executable* (the executable is implemented, the statement
 planned). IxCC writes the executable itself (`ixcc compile --exe`), with its
-own start-up shell, still trusted, in place of the C driver; the same
+own start-up shell, still trusted, and with no C driver; the same
 statement is to be read off the process: "the linked object returns `w` on `ns`"
 becomes "the executable run on the decimal forms of `ns` exits after writing
 `w`", and later the program's own output bytes and exit code, or its trace of

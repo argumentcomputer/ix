@@ -13,11 +13,10 @@ certificate's serialisation, and the declines.
   its certificate and signatures; `check-cert` accepts the certificate, and
   `compile --cert` with it writes the identical object (the recheck needs
   nothing from `produce`). `k1.ixe` is compiled with its five roots into
-  one object exporting `cx_K1_fib` … `cx_K1_gcd`. With `--cc`, every
-  object is linked with `fixtures/x86/runtime_driver.c` for each root and
-  run at the manifest's test and bench sizes against `expected.txt` and
-  `bench_expected`, reading the result back through the driver's decoder
-  with the signature the compiler printed.
+  one object exporting `cx_K1_fib` … `cx_K1_gcd`. With `--native`, every
+  object runs as a test executable for each root at the manifest's test and
+  bench sizes against `expected.txt` and `bench_expected`, its result read
+  back at the type and signature the compiler printed.
 * **The same object**: `produce` then `run` makes byte for byte the object
   the stage suites' pipeline makes today (`Src.load`, `Lam.erase`,
   `Anf.Pipeline.produce`, `Cfg.ofAnf`, `Rt.lower`, `Select.run`,

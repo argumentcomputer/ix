@@ -22,10 +22,11 @@ For each root the compiler (`Recheck.ingress`, `produce`, `run`) either
   (immortal) and Cfg, then Lir, Xv and Xl from `cx_init`'s memory, the typed
   x86 machine and ByteEval on the object's `.text` (only on the cases the
   manifest marks `machine`, since they step one instruction at a time),
-  natively (with `--cc`) under `fixtures/x86/runtime_driver.c`, and (with
-  `--exe`) as a standalone executable (`ixcc compile --exe`), which must also
-  agree with SrcEval, with ByteEval where the case fixes the layout both use,
-  and with the C driver when it ran; a root outside the executables' fragment
+  natively (with `--native`) as a test executable IxCC writes
+  (`IxCCTests.Rt.Native`), and (with `--exe`) as a standalone executable
+  (`ixcc compile --exe`), which must also agree with SrcEval, with ByteEval
+  where the case fixes the layout both use, and with the test executable when
+  it ran; a root outside the executables' fragment
   must be refused with `exe.params` or `exe.result`.
 
 The expected observations come from Lean 4.34's interpreter (recorded in the
@@ -75,7 +76,8 @@ def failure (outcome : String) : Option String :=
 def overflow (outcome : String) : Bool := failure outcome == some "natOverflow"
 
 structure Options where
-  cc : Option String := none
+  /-- Run natively, as test executables IxCC writes. -/
+  runNative : Bool := false
   work : Option FilePath := none
   manifests : List FilePath := []
   only : List String := []
@@ -134,7 +136,7 @@ def caseBudget (cs : Case) : Lir.Word :=
   | some s => UInt64.ofNat (s - 4096)
   | none => IxCCTests.Rt.defaultBudget
 
-/-- The driver's region and stack for a case. -/
+/-- The native runs' region and stack for a case. -/
 def nativeRegion (cs : Case) : Nat := cs.region.getD (1 <<< 24)
 def nativeStack (cs : Case) : Nat := cs.stack.getD (1 <<< 28)
 
@@ -144,8 +146,8 @@ executables' fragment or a layout outside the driver contract (a region under
 4 KiB). Each run must give what the manifest requires of native code, and
 agree with IxCC's own evaluators where they ran on the case: SrcEval's value
 when the executable returned one, and ByteEval's outcome and value when the
-case fixes the region and the stack both use. With the C driver, it must give
-the C driver's outcome and observation too. -/
+case fixes the region and the stack both use. With `--native`, it must give
+the test executable's outcome and observation too. -/
 def runExe (a : Assert) (work : FilePath) (label : String) (r : Root) (c : Levels.Compiled)
     (src : Array (Option String)) (bytes : Array (Option (String × String)))
     (driver : Array (Option (String × String))) (t : IO.Ref Tally) : IO (Array String) := do
@@ -192,7 +194,7 @@ def runExe (a : Assert) (work : FilePath) (label : String) (r : Root) (c : Level
             else if cs.region.isSome && cs.stack.isSome then
               expect a (failure outcome == failure bo) s!"{l}: {outcome}, ByteEval {bo}"
           if let some (some (co, cobs)) := driver[i]? then
-            expect a (outcome == co && obs == cobs) s!"{l}: {outcome} {obs}, the C driver {co} {cobs}"
+            expect a (outcome == co && obs == cobs) s!"{l}: {outcome} {obs}, the test executable {co} {cobs}"
     t.modify fun t => { t with exe := t.exe + n }
     return #[s!"  as an executable: {n} cases agree ({ms} ms{if skipped > 0 then s!", {skipped} skipped: a layout outside the driver contract" else ""})"]
 
@@ -240,12 +242,13 @@ def runRoot (a : Assert) (o : Options) (native : Option Rt.Native.Tools) (work :
     t.modify fun t => { t with cases := t.cases + 1 }
   let mut out := #[s!"{label}: {r.cases.length} cases, {levels.length} levels (ms: \
     {", ".intercalate (times.toList.filter (·.2 > 0) |>.map fun (l, ms) => s!"{l} {ms}")})"]
-  -- the C driver's outcome and observation per case, for the executable
+  -- the test executable's outcome and observation per case, for the standalone executable
   let mut driverOut : Array (Option (String × String)) := Array.replicate r.cases.length none
   if let some nt := native then
     let exe ← link nt s!"corpus_{label.replace "/" "_"}" c.art.object root.symbol
-    -- one driver run per region and stack; a non-`Nat` result's object area
-    -- is dumped, so Lean's `Rt.readback` reads it back as the C decoder did
+    -- one run per region and stack; a non-`Nat` result's object area is
+    -- dumped, so `Rt.readback` of the dump is compared with the independent
+    -- decoder's observation
     let groups := r.cases.foldl (init := ([] : List (Nat × Nat))) fun gs cs =>
       let g := (nativeRegion cs, nativeStack cs)
       if gs.contains g then gs else gs ++ [g]
@@ -265,16 +268,16 @@ def runRoot (a : Assert) (o : Options) (native : Option Rt.Native.Tools) (work :
         if ← judge a l "native" want cs.allow outcome (ln.obs.getD "-") then
           t.modify fun t => { t with allowed := t.allowed + 1 }
         driverOut := driverOut.set! ci (some (outcome, ln.obs.getD "-"))
-        -- Lean's readback of the native word (and object area) is the C decoder's
+        -- `Rt.readback` of the native word (and object area) is the independent decoder's
         if ln.status == 0 && !ln.init then
           if let some (sig, ty) := root.ty then
             let mem : X86.Memory := match ln.dump with
               | some d => d.memory region
               | none => { bytes := fun _ => 0, readable := fun _ => false, writable := fun _ => false }
             let lean := (Rt.readback sig (region / 8) mem ty ln.value).map Rt.renderObs
-            expect a (lean == ln.obs) s!"{l}: Rt.readback gives {lean}, the C decoder {ln.obs}"
+            expect a (lean == ln.obs) s!"{l}: Rt.readback gives {lean}, the independent decoder {ln.obs}"
     t.modify fun t => { t with native := t.native + n }
-    out := out.push s!"  natively: {n} cases agree ({ms} ms{if groups.length > 1 then s!", {groups.length} driver runs" else ""})"
+    out := out.push s!"  natively: {n} cases agree ({ms} ms{if groups.length > 1 then s!", {groups.length} runs" else ""})"
   if o.exe then
     out := out ++ (← runExe a work label r c srcObs bytesOut driverOut t)
   return out
@@ -313,7 +316,7 @@ def root (a : Assert) (o : Options) (native : Option Rt.Native.Tools) (work : Fi
     runRoot a o native work label r c t
 
 def suite (a : Assert) (o : Options) (work : FilePath) : IO Unit := do
-  let native : Option Rt.Native.Tools := o.cc.map fun cc => { cc, work }
+  let native : Option Rt.Native.Tools := if o.runNative then some { work } else none
   let t ← IO.mkRef ({} : Tally)
   IO.println "tests-corpus"
   let manifests := if o.manifests.isEmpty then families else o.manifests
@@ -400,11 +403,11 @@ def survey (o : Options) : IO Unit := do
             | .error m => IO.println s!"  (no dump: {m})"
 
 /-- Observe mode: every case of every compiled root at Cfg, Lir, Xv, Xl and
-(with `--cc`) natively, as tab-separated rows, with the manifest's
+(with `--native`) natively, as tab-separated rows, with the manifest's
 expectation and no assertion (for reviewing a new family's `fail`, `allow`
 and `spurious` marks, and for tabulating a boundary family). -/
 def observe (o : Options) (work : FilePath) : IO Unit := do
-  let native : Option Rt.Native.Tools := o.cc.map fun cc => { cc, work }
+  let native : Option Rt.Native.Tools := if o.runNative then some { work } else none
   let manifests := if o.manifests.isEmpty then families else o.manifests
   IO.println "root\targs\tvalue\tfail\tspurious\tcfg\tlir\txv\txl\tnative"
   for path in manifests do
@@ -441,7 +444,7 @@ def observe (o : Options) (work : FilePath) : IO Unit := do
 
 def parseOptions : List String → Except String Options
   | [] => pure {}
-  | "--cc" :: cc :: rest => do return { (← parseOptions rest) with cc := some cc }
+  | "--native" :: rest => do return { (← parseOptions rest) with runNative := true }
   | "--work" :: d :: rest => do return { (← parseOptions rest) with work := some d }
   | "--only" :: n :: rest => do let o ← parseOptions rest; return { o with only := n :: o.only }
   | "--root" :: n :: rest => do let o ← parseOptions rest; return { o with roots := n :: o.roots }
@@ -458,7 +461,7 @@ def parseOptions : List String → Except String Options
 /-- The large stack the big-step evaluators need (as `tests-src`). -/
 def stackKb : Nat := IxCCTests.Src.Bench.deepStackKb
 
-/-- Usage: `tests-corpus [MANIFEST…] [--cc CC] [--work DIR] [--only FIXTURE]…
+/-- Usage: `tests-corpus [MANIFEST…] [--native] [--work DIR] [--only FIXTURE]…
 [--root ROOT]… [--no-machines] [--progress] [--exe] [--survey [--dump] | --observe]`. Without a manifest, every
 registered family (`Corpus.families`). -/
 def suiteMain (args : List String) : IO UInt32 := do
@@ -485,7 +488,7 @@ def suiteMain (args : List String) : IO UInt32 := do
     match o.work with
     | some work => IO.FS.createDirAll work; suite a o work
     | none => IO.FS.withTempDir fun work => suite a o work
-    IO.println s!"tests-corpus: {← a.get} assertions passed{if o.cc.isSome then ", native runs agree" else ""}"
+    IO.println s!"tests-corpus: {← a.get} assertions passed{if o.runNative then ", native runs agree" else ""}{← IxCCTests.Rt.Native.agreement}"
     return 0
   catch e =>
     IO.eprintln s!"tests-corpus: FAILED after {← a.get} assertions: {e}"

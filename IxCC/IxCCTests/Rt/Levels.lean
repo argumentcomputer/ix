@@ -7,13 +7,13 @@ import IxCC.Tools.Check
 /-! `Rt.lower`'s output at every level down to native:
 
 * the **bench-k1 entries**: small inputs at Cfg, Lir, Xv, Xl, typed x86 and
-  the byte machine; with `--cc`, natively at those inputs, at the test
+  the byte machine; with `--native`, natively at those inputs, at the test
   sizes (against `expected.txt`) and at the bench sizes (against the
   manifest's `bench_expected`), and an argument past 2^63 (status 3 from the
   wrapper);
 * the **hand-written values** (pairs, options, lists, trees) at every level,
-  and natively with the object area dumped: the C decoder's observation, the
-  Lean `Rt.readback` of the dump and Cfg's observation agree;
+  and natively with the object area dumped: the independent decoder's
+  observation, `Rt.readback` of the dump and Cfg's observation agree;
 * a **sample of generated programs** at every level and natively;
 * natively: a list too long for a 4 KiB region (status 1, heap), and a
   recursion 10⁶ calls deep on a 1 MiB stack (status 2, the budget) and on a
@@ -58,7 +58,7 @@ structure Stats where
 
 /-- Native runs of one root: each line's status and value must be the
 expected exit (for an immediate) or read back as the expected observation
-(both through the C decoder and through `Rt.readback` of the dump). -/
+(both through the independent decoder and through `Rt.readback` of the dump). -/
 def nativeCheck (a : Assert) (t : Native.Tools) (c : Compiled) (name : String) (root : Nat)
     (inputs : List (List Nat × Exit × Option Sem.Obs)) (o : Native.Options) : IO (List Native.Line) := do
   let some symbol := c.lir.roots.lookup root | throw (IO.userError s!"{name}: f{root} is not a root")
@@ -69,7 +69,7 @@ def nativeCheck (a : Assert) (t : Native.Tools) (c : Compiled) (name : String) (
     expect a (l.status == e.status) s!"{name} {xs}: native status {l.status}, expected {e.status}"
     match obs, o.ty with
     | some want, some (sig, ty) =>
-      expect a (l.obs == some (Rt.renderObs want)) s!"{name} {xs}: the C decoder gives {l.obs}, expected {Rt.renderObs want}"
+      expect a (l.obs == some (Rt.renderObs want)) s!"{name} {xs}: the independent decoder gives {l.obs}, expected {Rt.renderObs want}"
       if o.dump then
         expect a (l.readback o.region sig ty == some want)
           s!"{name} {xs}: Rt.readback of the dump gives {repr (l.readback o.region sig ty)}"
@@ -133,7 +133,7 @@ def values (a : Assert) (tools : Option Native.Tools) : IO (Array String) := do
     let lines ← nativeCheck a t c "values_heap" 2
       [([100], ⟨0, 0⟩, none), ([200], ⟨1, 0⟩, none)] { region := 4096 }
     n := n + lines.length
-    out := out.push s!"values natively: {n} runs agree; the C decoder and Rt.readback of each dump match Cfg's \
+    out := out.push s!"values natively: {n} runs agree; the independent decoder and Rt.readback of each dump match Cfg's \
       observation; a 200-cell list in 4 KiB fails with heap"
   return out
 
@@ -178,6 +178,6 @@ def generated (a : Assert) (tools : Option Native.Tools) (count every : Nat) : I
         { ty := some (Differential.genSig, Differential.genTy ty), dump := true }
       native := native + lines.length
   return #[s!"{programs} generated programs: {r.runs} model runs agree (typed steps {r.typedSteps}, \
-    byte steps {r.byteSteps}); {native} native runs agree (C decoder and dump readback included)"]
+    byte steps {r.byteSteps}); {native} native runs agree (the independent decoder and dump readback included)"]
 
 end IxCCTests.Rt.Levels

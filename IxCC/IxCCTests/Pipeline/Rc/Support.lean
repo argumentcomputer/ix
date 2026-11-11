@@ -74,43 +74,22 @@ def observation {α : Type} (label : String) (read : α → Option Sem.Obs)
   | .trap => throw (IO.userError (label ++ ": trap"))
   | .resource r => throw (IO.userError s!"{label}: resource {repr r}")
 
-/-- Same independent native parser/decoder as the existing test support,
-with an explicit child-process cap and retained inputs/output/exit evidence. -/
+/-- Native rows from the test executable `link` wrote at `exe` (two decoders,
+`IxCCTests.Rt.Native.run`), under a 30-second limit, with the inputs, rows
+and timing retained. -/
 def runNative (logs : System.FilePath) (label : String) (exe : System.FilePath)
     (options : IxCCTests.Rt.Native.Options) (inputs : List (List Nat)) :
     IO (List IxCCTests.Rt.Native.Line) := do
   IO.FS.createDirAll logs
-  let args := #["--kill-after=5", "30", exe.toString,
-      "--region", toString options.region, "--stack", toString options.stack] ++
-    (match options.ty with
-      | some (sig, ty) => #["--type", ty.encode, "--sig", sig.encode]
-      | none => #[]) ++
-    (if options.dump then #["--dump"] else #[]) ++
-    (if options.time then #["--time"] else #[])
-  let start ← IO.monoMsNow
-  let child ← IO.Process.spawn {
-    cmd := "timeout"
-    args
-    stdin := .piped
-    stdout := .piped
-    stderr := .piped }
   let inputText := String.join (inputs.map fun xs => String.intercalate " " (xs.map toString) ++ "\n")
-  let (stdin, child) ← child.takeStdin
-  stdin.putStr inputText
-  stdin.flush
-  let stdout ← child.stdout.readToEnd
-  let stderr ← child.stderr.readToEnd
-  let code ← child.wait
   IO.FS.writeFile (logs / (label ++ ".stdin")) inputText
-  IO.FS.writeFile (logs / (label ++ ".stdout")) stdout
-  IO.FS.writeFile (logs / (label ++ ".stderr")) stderr
+  let start ← IO.monoMsNow
+  let rows ← IxCCTests.Rt.Native.run exe options inputs (seconds := some 30)
+  IO.FS.writeFile (logs / (label ++ ".stdout")) (String.join (rows.map (·.render ++ "\n")))
   IO.FS.writeFile (logs / (label ++ ".json")) ((Lean.Json.mkObj [
-    ("command", Lean.toJson ("timeout" : String)), ("args", Lean.toJson args),
-    ("timeout_seconds", Lean.toJson (30 : Nat)), ("exit", Lean.toJson code.toNat),
+    ("executable", Lean.toJson exe.toString), ("region", Lean.toJson options.region),
+    ("stack", Lean.toJson options.stack), ("timeout_seconds", Lean.toJson (30 : Nat)),
     ("elapsed_ms", Lean.toJson ((← IO.monoMsNow) - start))]).pretty ++ "\n")
-  check (label ++ ": native timeout/signal/nonzero exit") (code == 0)
-  let some rows := IxCCTests.Rt.Native.parse stdout options.ty.isSome options.time
-    | throw (IO.userError (label ++ ": malformed native output"))
   check (label ++ ": native output row count") (rows.length == inputs.length)
   return rows
 

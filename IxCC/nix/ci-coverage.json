@@ -1592,7 +1592,7 @@
   "IxCCTests.Sem.Toy.Stack",
   "IxCCTests.Sem.Toy.Tick"],
  "baseline":
- "2026-11-14: the kernel front end beside the erased checker (tests-kernel-front; the acceptance, Stage A and classifier fences), on the compile claim's role table and one hash",
+ "X1: the native gates on test executables IxCC writes, with no C driver; the executable check for any frame",
  "axiom_sha256":
- "c6daaa178ec9943c02dfbbcef224ed1a0bf1828fd97cc928775cb5dad05976d9",
- "axiom_count": 5808}
+ "dc04e5f177823c42f7b9757adfe992c88b4739d929c1d02ce958bc7897442367",
+ "axiom_count": 5809}

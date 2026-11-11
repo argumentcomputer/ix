@@ -24,6 +24,18 @@ The file, in order (offsets from the start of the file, which is mapped at
 | shell | next multiple of 16 | `shell`, encoded |
 
 There are no section headers. The gaps are zero bytes.
+
+**Frames.** The layout is written for any *frame*: the platform code an
+executable embeds (its read-only data and its shell program), the exports
+that code calls (one call site each, in order) and the zero-filled
+read-and-write segments the loader maps for it (one program header each,
+after the file's). The production executable is the frame `Input.frame`:
+the shell of `Code.lean`, calling `cx_init` and then the root, over one
+segment at `dataBase` holding the stack and the region. A test harness may
+embed another frame (more exports, more segments); the writer and its check
+(`checkFor`) treat every frame alike, and the production names (`plan`,
+`assemble`, `checkWith`, `check`, `writeChecked`) are the production frame's
+instances.
 -/
 
 namespace IxCC.X86.Exe
@@ -42,6 +54,29 @@ structure Input where
   layout : Layout := {}
   deriving Inhabited
 
+/-- The platform code an executable embeds, the exports it calls, and the
+zero-filled memory the loader maps for it. -/
+structure Frame where
+  /-- The read-only data, placed at an absolute address. -/
+  data : Nat → ByteArray
+  /-- The shell, given the absolute address of its read-only data. -/
+  code : Nat → Shell.Program
+  /-- The exports the shell calls: one call site each, in the order of the
+  call sites in the encoded shell. -/
+  exports : List String
+  /-- The zero-filled read-and-write segments, each as (address, size). -/
+  segments : List (Nat × Nat)
+
+/-- The production frame: the shell of `Code.lean` for `input`, calling
+`cx_init` and then the root, over one zero-filled segment at `dataBase`
+holding the stack and then the region. -/
+def Input.frame (input : Input) : Frame where
+  data := dataBytes input.arity
+  code := fun data =>
+    shell { arity := input.arity, result := input.result, root := input.root, layout := input.layout, data }
+  exports := [initSymbol, input.root]
+  segments := [(dataBase, input.layout.dataSize)]
+
 /-- Where each part of the file is. -/
 structure Placement where
   noteOffset : Nat
@@ -58,7 +93,15 @@ def Placement.fileSize (p : Placement) : Nat := p.shellOffset + p.shellSize
 
 def alignUp (value alignment : Nat) : Nat := (value + alignment - 1) / alignment * alignment
 
-/-- The ELF header and four program headers. -/
+/-- The number of program headers of a frame with `segments` zero-filled
+segments: the file, the segments, the note and `PT_GNU_STACK`. -/
+def programCount (segments : Nat) : Nat := 3 + segments
+
+/-- The ELF header and the program headers of a frame with `segments`
+zero-filled segments. -/
+def headersSizeFor (segments : Nat) : Nat := 64 + programCount segments * 56
+
+/-- The ELF header and four program headers (the production frame's). -/
 def headersSize : Nat := 64 + 4 * 56
 
 /-- A shell call into the object. -/
@@ -70,19 +113,27 @@ structure Call where
   ret : Nat
   deriving BEq, Repr, Inhabited
 
-/-- The program headers, as (type, flags, offset, address, file size, memory
-size, alignment). -/
-def programHeaders (L : Layout) (p : Placement) : List (Nat × Nat × Nat × Nat × Nat × Nat × Nat) :=
-  [(1, 5, 0, fileBase, p.fileSize, p.fileSize, 0x1000),
-   (1, 6, 0, dataBase, 0, L.dataSize, 0x1000),
-   (4, 4, p.noteOffset, fileBase + p.noteOffset, p.noteSize, p.noteSize, 4),
-   (0x6474e551, 6, 0, 0, 0, 0, 16)]
+/-- The program headers of a frame with zero-filled `segments`, as (type,
+flags, offset, address, file size, memory size, alignment). -/
+def programHeadersFor (segments : List (Nat × Nat)) (p : Placement) :
+    List (Nat × Nat × Nat × Nat × Nat × Nat × Nat) :=
+  [(1, 5, 0, fileBase, p.fileSize, p.fileSize, 0x1000)] ++
+    segments.map (fun (address, size) => (1, 6, 0, address, 0, size, 0x1000)) ++
+    [(4, 4, p.noteOffset, fileBase + p.noteOffset, p.noteSize, p.noteSize, 4),
+     (0x6474e551, 6, 0, 0, 0, 0, 16)]
 
-/-- The ELF header's bytes. -/
-def headerBytes (p : Placement) : List UInt8 :=
+/-- The production frame's program headers. -/
+def programHeaders (L : Layout) (p : Placement) : List (Nat × Nat × Nat × Nat × Nat × Nat × Nat) :=
+  programHeadersFor [(dataBase, L.dataSize)] p
+
+/-- The ELF header's bytes, for `count` program headers. -/
+def headerBytesFor (count : Nat) (p : Placement) : List UInt8 :=
   [0x7f, 0x45, 0x4c, 0x46, 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0] ++
     le16 2 ++ le16 62 ++ le32 1 ++ le64 (fileBase + p.shellOffset) ++ le64 64 ++ le64 0 ++
-    le32 0 ++ le16 64 ++ le16 56 ++ le16 4 ++ le16 64 ++ le16 0 ++ le16 0
+    le32 0 ++ le16 64 ++ le16 56 ++ le16 count ++ le16 64 ++ le16 0 ++ le16 0
+
+/-- The production frame's ELF header. -/
+def headerBytes (p : Placement) : List UInt8 := headerBytesFor 4 p
 
 def programHeaderBytes (h : Nat × Nat × Nat × Nat × Nat × Nat × Nat) : List UInt8 :=
   let (kind, flags, offset, address, fileSize, memorySize, alignment) := h
@@ -100,6 +151,7 @@ inductive Error where
   | tooLarge (size : Nat)
   | contract
   | invalidExecutable
+  | segments
   deriving BEq, Repr, Inhabited
 
 def Error.render : Error → String
@@ -114,22 +166,30 @@ def Error.render : Error → String
   | .tooLarge n => s!"the file ({n} bytes) does not fit below the stack and region"
   | .contract => "the layout does not keep the driver contract"
   | .invalidExecutable => "the written executable does not pass its check"
+  | .segments => "the zero-filled segments must be page-aligned, nonempty, in increasing order \
+      without overlap, and below 2^47"
 
-/-- What the object gives the executable: its text, its note, and the offsets
-of `cx_init` and the root in its text. -/
+/-- What the object gives the executable: its text, its note, and the offset
+in its text of each export the shell calls. -/
 structure ObjectParts where
   text : ByteArray
   note : ByteArray
-  initOffset : Nat
-  rootOffset : Nat
+  offsets : List (String × Nat)
 
-def objectParts (object : ByteArray) (root : String) : Except Error ObjectParts := do
+/-- The object's parts for a frame calling `exports`. -/
+def objectPartsFor (object : ByteArray) (exports : List String) : Except Error ObjectParts := do
   let some view := ELFRead.parse object | throw .unreadableObject
   unless view.relocations.isEmpty do throw .relocations
   let some noteSection := view.sections[3]? | throw .unreadableObject
-  let some initOffset := ELF.symbol? object initSymbol | throw (.missingExport initSymbol)
-  let some rootOffset := ELF.symbol? object root | throw (.missingExport root)
-  return { text := view.text, note := noteSection.data, initOffset, rootOffset }
+  let offsets ← exports.mapM fun symbol =>
+    match ELF.symbol? object symbol with
+    | some offset => pure (symbol, offset)
+    | none => throw (.missingExport symbol)
+  return { text := view.text, note := noteSection.data, offsets }
+
+/-- The object's parts for the production frame: `cx_init` and the root. -/
+def objectParts (object : ByteArray) (root : String) : Except Error ObjectParts :=
+  objectPartsFor object [initSymbol, root]
 
 /-- The planned file: its placement, the shell's patched bytes and its calls. -/
 structure Plan where
@@ -140,32 +200,37 @@ structure Plan where
   syscalls : List Nat
   deriving Inhabited
 
-/-- Lay out the executable for `input` (everything but the byte assembly). -/
-def plan (input : Input) (parts : ObjectParts) : Except Error Plan := do
-  unless input.arity ≤ 5 do throw (.arity input.arity)
-  if input.result == .enum 0 then throw .enumeration
-  unless input.layout.check do throw .layout
-  let noteOffset := headersSize
+/-- The file, `size` bytes mapped at `fileBase`, and the segment
+`(address, n)` do not overlap. -/
+def apart (size : Nat) (segment : Nat × Nat) : Bool :=
+  decide (fileBase + size ≤ segment.1) || decide (segment.1 + segment.2 ≤ fileBase)
+
+/-- The segments are page-aligned and nonempty, in increasing order without
+overlap, and end below `2^47`. -/
+def segmentsOk : List (Nat × Nat) → Bool
+  | [] => true
+  | [(a, n)] => a % 0x1000 == 0 && decide (0 < n) && decide (a + n ≤ 2 ^ 47)
+  | (a, n) :: (b, m) :: rest =>
+    a % 0x1000 == 0 && decide (0 < n) && decide (a + n ≤ b) && segmentsOk ((b, m) :: rest)
+
+/-- Lay out the executable of frame `f` (everything but the byte assembly). -/
+def planFor (f : Frame) (parts : ObjectParts) : Except Error Plan := do
+  unless segmentsOk f.segments do throw .segments
+  let noteOffset := headersSizeFor f.segments.length
   let textOffset := alignUp (noteOffset + parts.note.size) 64
   let dataOffset := alignUp (textOffset + parts.text.size) 8
-  let data := dataBytes input.arity (fileBase + dataOffset)
+  let data := f.data (fileBase + dataOffset)
   let shellOffset := alignUp (dataOffset + data.size) 16
-  let spec : Spec :=
-    { arity := input.arity, result := input.result, root := input.root, layout := input.layout
-      data := fileBase + dataOffset }
-  let program := shell spec
+  let program := f.code (fileBase + dataOffset)
   let encoded ← (Shell.encode program).mapError Error.shell
   let placement : Placement :=
     { noteOffset, noteSize := parts.note.size, textOffset, textSize := parts.text.size, dataOffset
       dataSize := data.size, shellOffset, shellSize := encoded.text.size }
-  unless fileBase + placement.fileSize ≤ dataBase do throw (.tooLarge placement.fileSize)
+  unless f.segments.all (apart placement.fileSize) do throw (.tooLarge placement.fileSize)
   let mut text := encoded.text
   let mut calls := []
   for (field, symbol) in encoded.exportCalls do
-    let target := if symbol == initSymbol then parts.initOffset
-      else if symbol == input.root then parts.rootOffset
-      else 0
-    unless symbol == initSymbol || symbol == input.root do throw (.missingExport symbol)
+    let some target := parts.offsets.lookup symbol | throw (.missingExport symbol)
     let displacement := Int.ofNat (textOffset + target) - Int.ofNat (shellOffset + field + 4)
     unless Encode.fitsSigned32 displacement do throw .contract
     text ← (Encode.patchSigned32 text field displacement).mapError fun _ => .contract
@@ -173,17 +238,29 @@ def plan (input : Input) (parts : ObjectParts) : Except Error Plan := do
   let syscalls := (Shell.syscallOffsets program encoded).map (shellOffset + ·)
   return { placement, shell := text, calls, syscalls }
 
+/-- Lay out the production executable for `input`. -/
+def plan (input : Input) (parts : ObjectParts) : Except Error Plan := do
+  unless input.arity ≤ 5 do throw (.arity input.arity)
+  if input.result == .enum 0 then throw .enumeration
+  unless input.layout.check do throw .layout
+  planFor input.frame parts
+
 /-- `bytes` padded with zeros to `size`. -/
 def padTo (bytes : List UInt8) (size : Nat) : List UInt8 := bytes ++ List.replicate (size - bytes.length) 0
 
-/-- The file's bytes. -/
-def assemble (input : Input) (parts : ObjectParts) (pl : Plan) : ByteArray :=
+/-- The file's bytes, for frame `f`. -/
+def assembleFor (f : Frame) (parts : ObjectParts) (pl : Plan) : ByteArray :=
   let p := pl.placement
-  let headers := headerBytes p ++ (programHeaders input.layout p).flatMap programHeaderBytes
+  let headers := headerBytesFor (programCount f.segments.length) p ++
+    (programHeadersFor f.segments p).flatMap programHeaderBytes
   let withNote := padTo headers p.noteOffset ++ parts.note.toList
   let withText := padTo withNote p.textOffset ++ parts.text.toList
-  let withData := padTo withText p.dataOffset ++ (dataBytes input.arity (fileBase + p.dataOffset)).toList
+  let withData := padTo withText p.dataOffset ++ (f.data (fileBase + p.dataOffset)).toList
   ⟨(padTo withData p.shellOffset ++ pl.shell.toList).toArray⟩
+
+/-- The production executable's bytes. -/
+def assemble (input : Input) (parts : ObjectParts) (pl : Plan) : ByteArray :=
+  assembleFor input.frame parts pl
 
 /-- An executable before its check: the bytes and the plan they follow. -/
 structure Output where

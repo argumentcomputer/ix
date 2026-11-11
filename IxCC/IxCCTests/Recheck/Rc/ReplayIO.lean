@@ -104,9 +104,11 @@ def read (bundle logs : FilePath) : IO Unit := do
           fd.blocks.all fun b => b.body.all IxCCTests.Rt.Rc.ReuseSupport.class3Allocation).getD false) do
       throw (IO.userError "independent free-address oracle needs two-field actual allocations")
     let reuseExe ← IxCCTests.Rt.Rc.ReuseSupport.link logs root entry.symbol artifact.backend.object
-    reuseReports := reuseReports.push (← IxCCTests.Rt.Rc.ReuseSupport.runDriver logs reuseExe root sig ty)
-    IO.println s!"PASS fresh complete RC recheck {root}: exact ELF bytes, five stage-specific refusals, {cases.length} full C+Lean values"
+    reuseReports := reuseReports.push
+      (← IxCCTests.Rt.Rc.ReuseSupport.runDriver logs reuseExe root sig ty)
+    IO.println s!"PASS fresh complete RC recheck {root}: exact ELF bytes, five stage-specific refusals, {cases.length} full values by two decoders"
   IO.FS.writeFile (logs / "reuse-results.json") ((toJson reuseReports).pretty ++ "\n")
-  IO.FS.writeFile (logs / "result.txt") "Three fresh complete RC certificate rechecks with public raw-word cx_drop; exact producer ELF bytes;15 stage-specific malformed-decision refusals;16 full native C+Lean observations and dynamic result counts;168 same-arena calls/output drops with full values and exact reclamation.\n"
+  IO.println s!"PASS replay read{← IxCCTests.Rt.Native.agreement}"
+  IO.FS.writeFile (logs / "result.txt") "Three fresh complete RC certificate rechecks with public raw-word cx_drop; exact producer ELF bytes;15 stage-specific malformed-decision refusals;16 full native observations by two decoders and dynamic result counts;168 same-arena calls/output drops with full values and exact reclamation.\n"
 
 end IxCCTests.Recheck.Rc.ReplayIO

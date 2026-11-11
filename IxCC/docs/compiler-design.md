@@ -228,8 +228,9 @@ Phase 1 programs are scalar and pure. The theorem uses only the three
 standard axioms. Reading it as a fact about the native executable rests
 on three specification assumptions in the
 [trust ledger](trusted-extern-ledger.md):
-- `X86.Driver`/`X86.Linked` model `runtime_driver.c` and the linker's
-  symbol lookup (`x86-phase1-runtime-driver-model`);
+- `X86.Driver`/`X86.Linked` model how a caller loads the object and calls
+  its exports: the standalone executable's shell, and the test executables the
+  native suites run (`x86-phase1-runtime-driver-model`);
 - the byte machine is the processor (`x86-v0-local-semantics`), and the
   system loader maps the object as `ELFRead` parses it
   (`x86-v0-elf-writer`);
@@ -277,8 +278,9 @@ required proof/runtime checks, not imports of the compiler algorithms.
 available IR evaluators and the emitted bytes, comparing complete values to
 independent source-level list/pair formulas. Test-side counters observe the
 production RC Cfg stepper and distinguish executed allocation/retain/release
-events from final heap totals. Native controls compare the C decoder and Lean
-memory readback, reject independently corrupted emitted objects before linking,
+events from final heap totals. Native controls compare two decoders of the
+native memory (an independent decoder and `Rt.readback`), reject independently
+corrupted emitted objects before they run,
 and separate root heap exhaustion from initializer refusal using successful
 neighbors. These bounded regression gates add no correctness premise or native
 cost theorem; their portable and native modes have separate required checks.
@@ -846,19 +848,20 @@ native regression separately exercises 168 calls/drops on three objects with
 one initialization per bounded arena, independent complete-value decoders
 and exact reclaimed-address checks.
 
-**The driver, and its replacement.** The test suites run a compiled object
-inside the C driver `fixtures/x86/runtime_driver.c`, linked by the system
-linker; `X86.Driver` and `X86.Linked` model what it sets up, and the ledger
-assumption `x86-phase1-runtime-driver-model` says it realises that model. The
-owner decided (2026-11-14) that standalone executables are a target with no C
-driver. Implemented so far: `ixcc compile --exe` writes the executable itself,
-with the object's text byte for byte and a start-up shell written as typed x86
-in Lean that sets up the driver's calls from a fixed static layout (below,
+**The callers, and no C driver.** `X86.Driver` and `X86.Linked` model how a
+caller loads a compiled object and calls `cx_init` and a root, and the ledger
+assumption `x86-phase1-runtime-driver-model` says the callers realise that
+model. The owner decided (2026-11-14) that standalone executables are a target
+with no C driver. Implemented: `ixcc compile --exe` writes the executable
+itself, with the object's text byte for byte and a start-up shell written as
+typed x86 in Lean that sets up the calls from a fixed static layout (below,
 [Standalone executables](#standalone-executables)); the system-call
-instruction appears only in the shell, never in compiled program text.
-Planned: the shell proved, the test suites moved off the C driver, and the
-platform procedures through which programs perform effects
-([standalone executables](standalone-executables-design.md)).
+instruction appears only in the shell, never in compiled program text. The
+test suites run objects the same way (X1): as executables IxCC writes with a
+test shell that serves a host in Lean, which does what the C runtime driver
+did until then, so no gate runs a compiled program through C. Planned: the
+shell proved and the platform procedures through which programs perform
+effects ([standalone executables](standalone-executables-design.md)).
 
 ## Backend
 
@@ -915,7 +918,8 @@ static Linux x86-64 executable that runs the first root on decimal arguments
 and prints its result, with no C compiler, C library, linker or C driver
 ([`IxCC/Exe.lean`](../IxCC/Exe.lean), [`IxCC/X86/Exe/`](../IxCC/X86/Exe); the
 [standalone executables design](standalone-executables-design.md) plans the
-rest).- **The file** (`X86/Exe/Write.lean`): an `ET_EXEC` image of the ELF header,
+rest).
+- **The file** (`X86/Exe/Write.lean`): an `ET_EXEC` image of the ELF header,
   four program headers (the file read and execute at `0x400000`; a zero-filled
   read-write segment at `0x10000000` holding the program stack and then the
   region; the object's provenance note; no executable stack), the note, the
@@ -942,6 +946,15 @@ rest).- **The file** (`X86/Exe/Write.lean`): an `ET_EXEC` image of the ELF heade
   parameters returning a `Nat` (printed `n`) or a constructor without fields
   (printed `#k`, as `Rt.renderObs` prints it), on any policy. Other roots are
   refused (`exe.params`, `exe.result`).
+- **The test executables** (X1): the writer and its check take any *frame*
+  (the embedded shell and data, the exports it calls, the zero-filled
+  segments); the production executable is one frame. The native suites write
+  each object with another, the test shell (`IxCCTests/Exe/TestShell.lean`,
+  test code): confined to `read` from standard input, `write` and `exit`, it
+  serves binary requests (call an export with sentinels in the callee-saved
+  registers, read or write the region), and a host in Lean does what the C
+  runtime driver did, decoding each result with `Rt.readback` and with an
+  independent decoder. No gate runs a compiled program through C.
 
 ## Bootstrap and trust
 
@@ -976,7 +989,7 @@ exit criterion. The [roadmap](roadmap.md#plan) orders them.
 | Shape typing, stage L | Planned, off the critical path | [Certification](certification-design.md) |
 | Resource bounds for the verifier against dishonest input | Planned | [Hardening](hardening-design.md) |
 | Scale and usability | Planned (Phase 5) | [below](#scale-and-usability) |
-| Standalone executables with no C driver | In progress: the first milestone (roots of `Nat` parameters, a ledgered shell) implemented, [above](#standalone-executables) | [Standalone executables](standalone-executables-design.md) |
+| Standalone executables with no C driver | In progress: the first milestone (roots of `Nat` parameters, a ledgered shell) and the native gates on IxCC-written test executables (X1) implemented, [above](#standalone-executables) | [Standalone executables](standalone-executables-design.md) |
 
 ## Scale and usability
 

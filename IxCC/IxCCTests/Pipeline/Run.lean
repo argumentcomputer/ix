@@ -17,10 +17,10 @@ import IxCCTests.Pipeline.Defun
   pipeline, on the decline corpus's `composeClosure` and the K1 fallback route
   (`Defun`).
 
-With `--cc CC`, objects are linked with `fixtures/x86/runtime_driver.c` and
-run natively.
+With `--native`, objects run natively, as test executables IxCC writes
+(`IxCCTests.Rt.Native`).
 
-Usage: `tests-pipeline [--cc CC] [--work DIR] [--bin IXCC]
+Usage: `tests-pipeline [--native] [--work DIR] [--bin IXCC]
 [--mutants N] [--twin N] [--seed S] [--full] [--only PART]...`
 (`--mutants`: mutants per class per entry, default 6; `--twin`: generated
 inputs per root, default 60; `--bin`: spawn this `ixcc` binary for
@@ -43,7 +43,8 @@ def part (a : Assert) (label : String) (action : IO (Array String)) : IO Unit :=
   (← IO.getStdout).flush
 
 structure Options where
-  cc : Option String := none
+  /-- Run natively, as test executables IxCC writes. -/
+  runNative : Bool := false
   work : Option FilePath := none
   bin : Option FilePath := none
   mutants : Nat := 6
@@ -57,7 +58,7 @@ structure Options where
 
 def parseOptions : List String → Except String Options
   | [] => pure {}
-  | "--cc" :: cc :: rest => do return { (← parseOptions rest) with cc := some cc }
+  | "--native" :: rest => do return { (← parseOptions rest) with runNative := true }
   | "--work" :: d :: rest => do return { (← parseOptions rest) with work := some d }
   | "--bin" :: b :: rest => do return { (← parseOptions rest) with bin := some b }
   | "--mutants" :: n :: rest => do
@@ -95,7 +96,7 @@ def reduced (full : Bool) (name level : String) : Option (List Nat) :=
   else none
 
 def suite (a : Assert) (o : Options) (work : FilePath) : IO Unit := do
-  let native : Option IxCCTests.Rt.Native.Tools := o.cc.map fun cc => { cc, work }
+  let native : Option IxCCTests.Rt.Native.Tools := if o.runNative then some { work } else none
   let tools : Compiler.Tools := { native, bin := o.bin, work }
   let want := fun (p : String) => o.only.isEmpty || o.only.contains p
   let natively := if native.isSome then ", natively" else ""
@@ -133,7 +134,7 @@ def main (args : List String) : IO UInt32 := do
     match o.work with
     | some work => IO.FS.createDirAll work; suite a o work
     | none => IO.FS.withTempDir fun work => suite a o work
-    IO.println s!"tests-pipeline: {← a.get} assertions passed{if o.cc.isSome then ", native runs agree" else ""}"
+    IO.println s!"tests-pipeline: {← a.get} assertions passed{if o.runNative then ", native runs agree" else ""}{← IxCCTests.Rt.Native.agreement}"
     return 0
   catch e =>
     IO.eprintln s!"tests-pipeline: FAILED after {← a.get} assertions: {e}"

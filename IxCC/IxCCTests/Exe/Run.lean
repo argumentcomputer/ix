@@ -1,9 +1,10 @@
 import IxCCTests.Corpus.Run
+import IxCCTests.Exe.Session
 import IxCC.Cli
 
 /-! The standalone executable suite (`tests-exe`): what `ixcc compile --exe`
 writes, apart from the corpus's cases (which `tests-corpus --exe` runs as
-executables against SrcEval, ByteEval and the C driver).
+executables against SrcEval, ByteEval and the native suites' test executables).
 
 * **The layout**: `Layout.check` accepts the layouts inside the driver
   contract and refuses the others; every executable written below carries
@@ -280,6 +281,141 @@ def nativePart (a : Assert) (o : Options) (work : FilePath) : IO (Array String) 
   out := out.push "ixcc compile --exe: fib, immortal and plain RC, runs"
   return out
 
+/-! ## The test shell
+
+The native suites run objects in test executables (`IxCCTests.Exe.TestShell`):
+the executable writer with the test shell's frame, and the shell's protocol. -/
+
+open IxCCTests.Exe in
+/-- Run `exe` with `input` on standard input: its exit status. -/
+def runWithInput (exe : FilePath) (input : ByteArray) : IO UInt32 := do
+  let child ← IO.Process.spawn { cmd := exe.toString, stdin := .piped, stdout := .null, stderr := .null }
+  let (stdin, child) ← child.takeStdin
+  stdin.write input
+  stdin.flush
+  child.wait
+
+open IxCCTests.Exe in
+def testShellPart (a : Assert) (o : Options) (work : FilePath) : IO (Array String) := do
+  let mut out := #[]
+  let (_, _, fib) ← compileNamed benchK1 "fib" "entry"
+  let some root := fib.roots.head? | throw (IO.userError "fib: no root")
+  let exports := [X86.Exe.initSymbol, root.symbol]
+  -- the production frame is the production shell over one segment
+  let base : X86.Exe.Input := { object := fib.object, root := root.symbol, arity := 1, result := .nat }
+  expectEq a base.frame.exports [X86.Exe.initSymbol, root.symbol] "the production frame's exports"
+  expect a (base.frame.segments == [(X86.Exe.dataBase, base.layout.dataSize)]) "the production frame's segment"
+  -- the writer and its check on the test shell's frames: one segment, and a
+  -- fixed region in a segment of its own
+  let after : TestShell.Mem := { stack := 65536, region := 65536 }
+  let fixed : TestShell.Mem := { stack := 1 <<< 20, region := 65536, fixed := some 0x10000 }
+  for (label, m) in [("region after the stack", after), ("fixed region", fixed)] do
+    let f := TestShell.frame m exports
+    match X86.Exe.writeFor f fib.object with
+    | .error e => expect a false s!"test shell, {label}: {e.render}"
+    | .ok c =>
+      expect a (X86.Exe.checkFrame f fib.object c.bytes) s!"test shell, {label}: the check refuses the written file"
+      expect a (c.plan.calls.map (·.symbol) == exports) s!"test shell, {label}: calls"
+      expectEq a c.plan.syscalls.length 5 s!"test shell, {label}: system-call sites"
+      let mut refused := 0
+      for off in List.range (X86.Exe.headersSizeFor m.segments.length) do
+        let some byte := c.bytes[off]? | continue
+        expect a (!X86.Exe.checkFrame f fib.object (c.bytes.set! off (byte ^^^ 0x10)))
+          s!"test shell, {label}: header byte {off} changed, accepted"
+        refused := refused + 1
+      for len in (List.range (c.bytes.size / 64)).map (· * 64) do
+        expect a (!X86.Exe.checkFrame f fib.object (c.bytes.extract 0 len)) s!"test shell, {label}: truncated to {len}, accepted"
+        refused := refused + 1
+      out := out.push s!"{label}: {c.bytes.size} bytes, {m.segments.length + 3} program headers; {refused} mutations refused"
+  -- the writer refuses overlapping or unaligned segments and missing exports
+  let bad := TestShell.frame after exports
+  for (label, segments) in [("overlapping the file", [(0x3ff000, 0x2000)]), ("unaligned", [(0x10000800, 0x1000)]),
+      ("out of order", [(0x20000000, 0x1000), (0x10000000, 0x1000)]), ("empty", [(0x10000000, 0)])] do
+    match X86.Exe.writeFor { bad with segments } fib.object with
+    | .ok _ => expect a false s!"test shell: segments {label} accepted"
+    | .error _ => expect a true ""
+  match X86.Exe.writeFor (TestShell.frame after [X86.Exe.initSymbol, "cx_nothing"]) fib.object with
+  | .ok _ => expect a false "test shell: a missing export accepted"
+  | .error e => expectEq a (repr e |>.pretty) (repr (X86.Exe.Error.missingExport "cx_nothing") |>.pretty) "a missing export"
+  expect a (!({ stack := 4096, region := 65536 } : TestShell.Mem).ok) "test shell: a 4 KiB stack accepted"
+  expect a (!({ stack := 65536, region := 16 } : TestShell.Mem).ok) "test shell: a 16-byte region accepted"
+  out := out.push "refused: four bad segment lists, a missing export, a small stack and a small region"
+  if !o.run then return out
+  -- natively: a session as `Rt.Native` runs fib, twice on one region
+  let exe := work / "fib.shell"
+  match TestShell.writeExe after exports fib.object with
+  | .error e => throw (IO.userError e)
+  | .ok bytes => IxCCTests.Exe.writeExe exe bytes
+  let b := after.base
+  Session.withSession exe fun s => do
+    for (n, v) in [(10, 55), (25, 75025)] do
+      Session.writeWord s (b + 16) after.budget
+      let (st, _, ok) ← Session.call s 0 [b, after.region, after.budget]
+      expect a (st == 0 && ok) s!"test shell: cx_init status {st}, registers restored {ok}"
+      let (st, w, ok) ← Session.call s 1 [b, n]
+      expect a (st == 0 && w.toNat == 2 * v + 1 && ok) s!"test shell: fib {n} gives {st} {w} {ok}"
+    -- the region reads back: the budget word, and a write lands
+    expectEq a (← Session.readWord s (b + 16)).toNat after.budget "test shell: the budget word"
+    Session.writeWord s (b + after.region - 8) 0x0123456789abcdef
+    expectEq a (← Session.readWord s (b + after.region - 8)).toNat 0x0123456789abcdef "test shell: a written word"
+    -- an argument of 2^63 is natOverflow (status 3) in the wrapper
+    let (st, _, ok) ← Session.call s 1 [b, 2 ^ 63]
+    expect a (st == 3 && ok) s!"test shell: fib 2^63 gives status {st}"
+  out := out.push "a session: cx_init and fib twice on one region, a word read and written, natOverflow"
+  -- each malformed request ends the run with its own status
+  let w := Session.words
+  for (label, input, code) in [("an empty session", ByteArray.empty, 0), ("the end request", w [0, 0, 0, 0, 0, 0, 0, 0], 0),
+      ("an unknown request", w [9, 0, 0, 0, 0, 0, 0, 0], TestShell.exitRequest),
+      ("an export index out of range", w [1, 2, b, 0, 0, 0, 0, 0], TestShell.exitExport),
+      ("a read below the region", w [2, b - 8, 16, 0, 0, 0, 0, 0], TestShell.exitRange),
+      ("a read past the region", w [2, b + after.region - 8, 16, 0, 0, 0, 0, 0], TestShell.exitRange),
+      ("a write into the file", w [3, X86.Exe.fileBase, 8, 0, 0, 0, 0, 0], TestShell.exitRange),
+      ("a truncated request", (w [2, b, 8, 0]), TestShell.exitInput),
+      ("a write cut short", w [3, b + 64, 16, 0, 0, 0, 0, 0] ++ w [1], TestShell.exitInput)] do
+    expectEq a (← runWithInput exe input).toNat code s!"test shell: {label}: exit status"
+  out := out.push "malformed requests: nine sessions end with their statuses"
+  -- confinement, read from /proc while the shell waits for a request
+  let mine := filters (← IO.FS.readFile "/proc/self/status")
+  let child ← IO.Process.spawn { cmd := exe.toString, stdin := .piped, stdout := .null, stderr := .null }
+  let (stdin, child) ← child.takeStdin
+  let status := s!"/proc/{child.pid}/status"
+  let mut seen := false
+  for _ in List.range 2000 do
+    match ← (IO.FS.readFile status).toBaseIO with
+    | .ok text =>
+      if filters text == mine.map (· + 1) && field text "Seccomp" == some "2" &&
+          field text "NoNewPrivs" == some "1" then
+        seen := true
+        break
+    | .error _ => break
+    IO.sleep 1
+  stdin.write (w [0, 0, 0, 0, 0, 0, 0, 0])
+  stdin.flush
+  expect a seen "test shell: no added seccomp filter seen in /proc"
+  expectEq a (← child.wait) 0 "test shell: exit after the end request"
+  out := out.push "confinement: one seccomp filter more than the suite's, NoNewPrivs, while waiting for a request"
+  -- its system calls, under strace: read from 0, write to 1, nothing else
+  if let some st := o.strace then
+    let log := work / "strace-shell.log"
+    let args := #["-qq", "-o", log.toString, exe.toString]
+    let child ← IO.Process.spawn { cmd := st, args, stdin := .piped, stdout := .null, stderr := .null }
+    let (stdin, child) ← child.takeStdin
+    stdin.write (w [2, b + 16, 8, 0, 0, 0, 0, 0] ++ w [0, 0, 0, 0, 0, 0, 0, 0])
+    stdin.flush
+    let _ ← child.wait
+    let calls := ((← IO.FS.readFile log).splitOn "\n").filter fun l => !l.isEmpty && !l.startsWith "+++"
+    let names := calls.map fun l => (l.takeWhile (· != '(')).toString.trimAscii.toString
+    expect a (names.take 3 == ["execve", "prctl", "seccomp"] && names.getLast? == some "exit" &&
+        (names.drop 3).dropLast.all (fun n => n == "read" || n == "write"))
+      s!"test shell: its system calls under strace: {names}"
+    expect a (calls.all fun l => !(l.startsWith "read(") || l.startsWith "read(0,")
+      "test shell: a read from a descriptor other than 0"
+    expect a (calls.all fun l => !(l.startsWith "write(") || l.startsWith "write(1,")
+      "test shell: a write to a descriptor other than 1"
+    out := out.push s!"system calls under strace: {", ".intercalate (names.eraseDups)}; reads from 0, writes to 1"
+  return out
+
+
 def parseOptions : List String → Except String Options
   | [] => pure {}
   | "--run" :: rest => do return { (← parseOptions rest) with run := true }
@@ -305,6 +441,7 @@ def main (args : List String) : IO UInt32 := do
       part "writer and check" (writerPart a work)
       if o.run then part "native" (nativePart a o work)
       else IO.println "  native: skipped (no --run)"
+      part "test shell" (testShellPart a o work)
     IO.println s!"tests-exe: {← a.get} assertions passed"
     return 0
   catch e =>

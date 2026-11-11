@@ -15,8 +15,8 @@ test input, at
   x86 machine (`X86.step` from the root's exported wrapper) and **ByteEval**
   on the object's own `.text`, each from `cx_init` on its machine, read
   back by `Rt.readback` at the root's type;
-* natively (with `--cc`), the object linked with the runtime driver, read
-  back by the driver's C decoder.
+* natively (with `--native`), the object as a test executable IxCC writes, its
+  result read back by the independent decoder and by `Rt.readback`.
 
 Every level must give `ok` and the observation `expected.txt` names. The
 big-step evaluators (SrcEval, Lam, Anf, Fir, Own) nest native frames per

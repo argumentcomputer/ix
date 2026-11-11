@@ -24,7 +24,7 @@ An Xl result `ok [v]` must come back as `rax:rdx = 0:v`, `resource r` as
 registers and `rsp` restored and, after a return, the heap and context
 words equal to Xl's. The typed machine halts at its final `ret` (depth 0);
 the byte machine executes it and must land on the sentinel return address.
-Native execution (`Native`) links the object with the C driver. -/
+Native execution (`Native`) runs the object as a test executable IxCC writes. -/
 
 namespace IxCCTests.Backend
 

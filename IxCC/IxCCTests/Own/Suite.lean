@@ -24,7 +24,7 @@ annotated source are in `verdicts.json`. Parts:
 * **`equiv`**: every admitted root of every fixture at every level the pipeline
   checks (SrcEval, Lam, Anf after each step, Fir, Own, Cfg, Lir, Xv, Xl, the
   typed x86 machine and ByteEval on `machine` cases) and natively with
-  `--cc`, against Lean 4.34's interpreter on the annotated source and on its
+  `--native`, against Lean 4.34's interpreter on the annotated source and on its
   twin (`tests-corpus`'s `root`); the twins' recorded cases and values are
   equal; and when both roots compile, the twins' code: equal Fir, equal Cfg
   and an equal object, as `twinCode` records. Expected declines are checked
@@ -35,7 +35,7 @@ annotated source are in `verdicts.json`. Parts:
 * **`counters`**: the Cfg stepper (`Own.Counters`) on every compiled root and case
   with a word: its result is `Cfg.run`'s; annotated and plain twins count
   the same; no cell where none is expected; OS-16's `2n` cells, and with
-  `--cc` its `48n` bump bytes natively; every reference-counting counter 0
+  `--native` its `48n` bump bytes natively; every reference-counting counter 0
   (Phase 1 has no such forms).
 * **`cx1`**: `0` binders in the relevance annotator (`honourErased`): OS-03 compiles;
   the same program built by writing `ignoreFirst`'s parameter erased into
@@ -53,7 +53,8 @@ def manifest : FilePath := "fixtures/ownership/corpus.json"
 def parts : List String := ["strip", "fixtures", "resource-records", "annotated-recursion", "equiv", "erasure", "counters", "cx1"]
 
 structure Options where
-  cc : Option String := none
+  /-- Run natively, as test executables IxCC writes. -/
+  runNative : Bool := false
   work : Option FilePath := none
   only : List String := []
 
@@ -146,7 +147,7 @@ def fixtures (a : Assert) : IO (Array String) := do
   return #[s!"verdicts: {n} annotated sources, {acc} accepted by ix (frozen in {manifest}), {rej} rejected"]
 
 def equiv (a : Assert) (o : Options) (work : FilePath) (m : Family) : IO (Array String) := do
-  let native : Option Rt.Native.Tools := o.cc.map fun cc => { cc, work }
+  let native : Option Rt.Native.Tools := if o.runNative then some { work } else none
   let t ← IO.mkRef ({} : IxCCTests.Corpus.Tally)
   let co : IxCCTests.Corpus.Options := {}
   let mut out := #[]
@@ -262,9 +263,9 @@ def counters (a : Assert) (o : Options) (work : FilePath) (m : Family) : IO (Arr
     expectEq a k.cells (os16Cells n) s!"OS16-plain/entry [{n}]: cells ({k.render})"
     expectEq a k.peakLive (os16Cells n) s!"OS16-plain/entry [{n}]: peak live cells"
     os16 := os16.push s!"n = {n}: {k.cells} cells"
-  if let some cc := o.cc then
+  if o.runNative then
     let some root := art.roots.head? | throw (IO.userError "OS16: no root")
-    let exe ← link { cc, work } "own_os16" art.object root.symbol
+    let exe ← link { work } "own_os16" art.object root.symbol
     let lines ← Rt.Native.run exe { dump := true, ty := root.ty } (os16Sizes.map ([·]))
     for (n, ln) in os16Sizes.zip lines do
       let some d := ln.dump | throw (IO.userError s!"OS16 [{n}]: no dump")
@@ -278,7 +279,7 @@ def counters (a : Assert) (o : Options) (work : FilePath) (m : Family) : IO (Arr
         if r.decline.isSome then continue
         let (_, art) ← compileRoot m f r.name
         let some root := art.roots.head? | throw (IO.userError s!"{f.name}: no root")
-        let exe ← link { cc, work } s!"own_{f.name}_{r.name}" art.object root.symbol
+        let exe ← link { work } s!"own_{f.name}_{r.name}" art.object root.symbol
         let cases := (r.cases.filter fun c => c.args.all (· < IxCCTests.Corpus.limit)).map (·.args)
         let lines ← Rt.Native.run exe { dump := true, ty := root.ty } cases
         for (args, ln) in cases.zip lines do
@@ -412,12 +413,12 @@ def suite (a : Assert) (o : Options) (work : FilePath) : IO Unit := do
   run "cx1" (cx1 a m)
 
 def usage : String :=
-  "usage: tests-own [--cc CC] [--work DIR] [--only PART]…   (parts: " ++ ", ".intercalate parts ++ ")\n" ++
+  "usage: tests-own [--native] [--work DIR] [--only PART]…   (parts: " ++ ", ".intercalate parts ++ ")\n" ++
   "       tests-own verdicts --ix IX [--ix-path DIR]… [--work DIR]   (manual: rebuild verdicts.json)"
 
 def parseOptions : List String → Except String Options
   | [] => pure {}
-  | "--cc" :: cc :: rest => do return { (← parseOptions rest) with cc := some cc }
+  | "--native" :: rest => do return { (← parseOptions rest) with runNative := true }
   | "--work" :: d :: rest => do return { (← parseOptions rest) with work := some d }
   | "--only" :: p :: rest => do
     unless parts.contains p do throw s!"unknown part {p}"
@@ -454,7 +455,7 @@ def main (args : List String) : IO UInt32 := do
     match o.work with
     | some work => IO.FS.createDirAll work; suite a o work
     | none => IO.FS.withTempDir fun work => suite a o work
-    IO.println s!"tests-own: {← a.get} assertions passed{if o.cc.isSome then ", native runs agree" else ""}"
+    IO.println s!"tests-own: {← a.get} assertions passed{if o.runNative then ", native runs agree" else ""}{← IxCCTests.Rt.Native.agreement}"
     return 0
   catch e =>
     IO.eprintln s!"tests-own: FAILED after {← a.get} assertions: {e}"

@@ -6,8 +6,8 @@
  *     {status, value} lir_<kernel>(void *region, a1, ...)    in rax:rdx
  *
  * which takes natural numbers (below 2^63) and returns the tagged result.
- * The context is set up once as fixtures/x86/backend_driver.c does
- * (cx_init's job): ctx = region + 64, with stackBudget, bump, limit and
+ * The context is set up once as cx_init would set it up (the back end's
+ * native harness, IxCCTests/Backend/Native.lean, does the same): ctx = region + 64, with stackBudget, bump, limit and
  * regionBase below it; the wrapper itself writes entrySp and stackLimit on
  * every call. The wrapper's cost is part of every call (the entry profile).
  */

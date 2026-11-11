@@ -66,10 +66,10 @@ coverage inventory and the coverage-change record. During development:
   `lake exe tests-aiur`, the x86 checks `check-x86-encoder`,
   `check-x86-bytes`, `check-x86-streams` and `check-x86-object`, and the
   pipeline suites `tests-src`, `tests-relevance`, `tests-lam`, `tests-anf`,
-  `tests-fir`, `tests-rt --cc cc`, `tests-pipeline --cc cc`,
+  `tests-fir`, `tests-rt --native`, `tests-pipeline --native`,
   `tests-recheck`, `tests-recheck-readback`, `check-lir`, `check-xv-select`, `check-regalloc`,
-  `check-backend --cc cc`, `corpus check`, `tests-corpus --cc cc`,
-  `tests-own --cc cc`, `tests-own-plain`, `tests-shrink` and
+  `check-backend --native`, `corpus check`, `tests-corpus --native`,
+  `tests-own --native`, `tests-own-plain`, `tests-shrink` and
   `check-steps` (the required checks that run each are in the CI guide).
 - After a reviewed change to emitted code, regenerate the step-count
   baseline with `lake exe check-steps --write` and review its diff; it is
@@ -142,7 +142,7 @@ Run the portable Lir and driver-model controls:
 .lake/build/bin/tests-pipeline-rc counters plans/rc-validation/run-1/counters
 ```
 
-On x86-64 Linux, from `IxCC/` with `cc`, `timeout` and `sha256sum`
+On x86-64 Linux, from `IxCC/` with `timeout` and `sha256sum`
 available, run the native and fresh-process gates with a new log directory:
 
 ```sh
@@ -156,8 +156,9 @@ available, run the native and fresh-process gates with a new log directory:
 complete RC replay writer/reader. It preserves the serialized certificates,
 producer/replayed ELF bytes, refusal diagnostics, complete native observations
 and memory dumps. The replayed objects also execute 168 calls/output drops in
-three bounded arenas initialized once each. The independent C and Lean
-oracles check full values and exact reclamation, including shared tails and
+three bounded arenas initialized once each, in test executables IxCC writes.
+Independent oracles (in Lean, over the test executables' memory) check full
+values with two decoders and exact reclamation, including shared tails and
 repeated elements. The runtime gates separately cover short heaps, count
 and stack boundaries, a 64-cell release and 50 same-arena reuse cycles.
 The Cfg pure aggregate retains 29 exact bounds, marker, map and scope examples.
@@ -171,13 +172,14 @@ It records attempts, allocations, increment multiplicities, decrements,
 cascading frees and peak/final live cells separately, stopping before the
 caller drops the owned result. These are bounded abstract-stage measurements;
 the existing native call/drop gate checks physical recycling separately.
-The native mode compares both C decoding and Lean dump readback. The negative
+The native mode compares the independent decoder's observation and
+`Rt.readback` of the dump with the independent formulas. The negative
 mode uses a fresh positive bundle, rejects object-only corruption both before
 and after rehashing, and distinguishes real-root heap exhaustion from
 initializer refusal, with successful full-value neighbors on the same code.
 Do not rerun `fresh` over an existing bundle or replace it with an in-process
 round trip. The fixture manifest under `fixtures/rc/real-source` pins the
-input bytes and independent C harnesses; its current historical producer
+input bytes; its current historical producer
 identity does not establish final producer/refreeze acceptance.
 
 The Nix registrations are `rc-runtime` on every configured system (including

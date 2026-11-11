@@ -20,8 +20,8 @@ ixcc check-cert CLOSURE.ixe --equations EQ.json [--root NAME]... --cert FILE
 
 `compile` runs ingress, `produce` and `Recheck.run` and writes the ELF
 object: `cx_<root>` for each root (the sidecar's names; every sidecar root
-when no `--root` is given) and `cx_init`, for `fixtures/x86/runtime_driver.c`
-(`cc -no-pie -DENTRY=cx_<root> runtime_driver.c OUT.o`). With `--cert`, the
+when no `--root` is given) and `cx_init` (`IxCC.X86.Driver` models how they are
+called; `--exe` writes an executable that calls them). With `--cert`, the
 given certificate replaces `produce`'s (so the recheck needs nothing from the
 producer); `--emit-cert` writes the certificate used. `check-cert` runs
 `Recheck.run` on a certificate and reports acceptance or the rejection. A
@@ -31,8 +31,8 @@ certificate's format fixes its RC policy, so `--rc` with `--cert` (and so with
 `--exe FILE` also writes a standalone static Linux x86-64 executable that runs
 the first root (`Exe.build`): `FILE N1 … Nk` prints the root's result on
 standard output, with no C compiler, linker or C driver involved. `-o` may then
-be omitted. `--stack` and `--region` set its program stack and region (the C
-driver's defaults, 8 MiB and 64 MiB, otherwise). A root outside the fragment
+be omitted. `--stack` and `--region` set its program stack and region (8 MiB
+and 64 MiB otherwise). A root outside the fragment
 executables run is refused (`exe.params`, `exe.result`; `IxCC/Exe.lean`).
 
 `--rc off` (the default) compiles a zero-RC-format certificate on the immortal

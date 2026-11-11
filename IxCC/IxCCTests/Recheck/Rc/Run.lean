@@ -75,7 +75,7 @@ def verifyContractsAndPolicy : IO Unit := do
 def run (args : List String) : IO Unit := do
   Fixtures.verify
   match args with
-  | [] | ["--cc", _] =>
+  | [] | ["--native"] =>
     verifyContractsAndPolicy
     IO.FS.withTempDir fun logs => FreshIO.run logs
   | ["fresh", logs] =>
@@ -90,7 +90,7 @@ def run (args : List String) : IO Unit := do
     | "replay", "write" => ReplayIO.write bundle
     | "replay", "read" => ReplayIO.read bundle logs
     | _, _ => throw (IO.userError "expected codec/replay write/read BUNDLE LOGDIR")
-  | _ => throw (IO.userError "expected [--cc CC], fresh LOGDIR, or codec/replay write/read BUNDLE LOGDIR")
+  | _ => throw (IO.userError "expected [--native], fresh LOGDIR, or codec/replay write/read BUNDLE LOGDIR")
   Fixtures.verify
 
 end IxCCTests.Recheck.Rc

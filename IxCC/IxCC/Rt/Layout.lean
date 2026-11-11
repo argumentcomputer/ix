@@ -4,8 +4,8 @@ import IxCC.Lir.Syntax
 
 The machine representation of values, objects and the context block,
 as constants
-and word encodings shared by `Rt.lower`, `cx_init`, `Rt.readback` and the
-runtime driver (`fixtures/x86/runtime_driver.c`).
+and word encodings shared by `Rt.lower`, `cx_init`, `Rt.readback`, the
+standalone executable's shell and the native test harnesses.
 
 **Words**. The low bit marks an immediate:
 

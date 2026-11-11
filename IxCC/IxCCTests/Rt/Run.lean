@@ -4,6 +4,7 @@ import IxCCTests.Rt.Mutants
 import IxCCTests.Rt.Levels
 import IxCCTests.Rt.Kernel
 import IxCCTests.Rt.KernelEval
+import IxCCTests.Rt.DecoderChecks
 
 /-! The `tests-rt` suite: the primitive
 sequences at their boundaries; hand-written programs, declines and
@@ -11,11 +12,11 @@ sequences at their boundaries; hand-written programs, declines and
 first-order constant, the bench entries at test sizes and generated
 programs, Cfg against Lir; then the backend levels (Xv, Xl, typed x86, the
 byte machine) on the bench entries, the hand-written values and a sample of
-generated programs, and, with `--cc CC`, natively under
-`fixtures/x86/runtime_driver.c`. Building the suite runs `Rt.lower` in the
+generated programs, and, with `--native`, natively, as test executables IxCC
+writes (`IxCCTests.Rt.Native`). Building the suite runs `Rt.lower` in the
 kernel (`IxCCTests.Rt.KernelEval`).
 
-Usage: `tests-rt [--cc CC] [--work DIR] [--generated N] [--sample K]`
+Usage: `tests-rt [--native] [--work DIR] [--generated N] [--sample K]`
 (`--generated`: the number of generated programs, default 1000; `--sample`:
 every K-th of them through the backend, default 25). `tests-rt --prims`
 lists the primitives each fixture's Cfg program uses. -/
@@ -32,7 +33,8 @@ def part (a : Assert) (label : String) (action : IO (Array String)) : IO Unit :=
   (← IO.getStdout).flush
 
 structure Options where
-  cc : Option String := none
+  /-- Run natively, as test executables IxCC writes. -/
+  runNative : Bool := false
   work : Option System.FilePath := none
   generated : Nat := 1000
   sample : Nat := 25
@@ -42,7 +44,7 @@ structure Options where
 
 def parseOptions : List String → Except String Options
   | [] => pure {}
-  | "--cc" :: cc :: rest => do return { (← parseOptions rest) with cc := some cc }
+  | "--native" :: rest => do return { (← parseOptions rest) with runNative := true }
   | "--work" :: d :: rest => do return { (← parseOptions rest) with work := some d }
   | "--generated" :: n :: rest => do
     let some n := n.toNat? | throw s!"bad --generated {n}"
@@ -99,6 +101,7 @@ def suite (a : Assert) (o : Options) (tools : Option Native.Tools) : IO Unit := 
     part a "bench-k1 entries at their test sizes, at Lir" (Differential.entries a)
     part a "generated first-order programs" (Differential.generated a o.generated)
     part a "kernel summaries (the values KernelEval checks), computed natively" (kernelSummaries a)
+  part a "the independent decoder of native results" (DecoderChecks.run a)
   let where_ := if tools.isSome then " and natively" else ""
   part a s!"bench-k1 entries at Xv, Xl, typed x86, the byte machine{where_}" (Levels.benches a tools)
   part a s!"hand-written values at every level{where_}" (Levels.values a tools)
@@ -114,11 +117,11 @@ def main (args : List String) : IO UInt32 := do
   let a ← IO.mkRef 0
   try
     let go (tools : Option Native.Tools) : IO Unit := suite a o tools
-    match o.cc, o.work with
-    | none, _ => go none
-    | some cc, some work => IO.FS.createDirAll work; go (some { cc, work })
-    | some cc, none => IO.FS.withTempDir fun work => go (some { cc, work })
-    IO.println s!"tests-rt: {← a.get} assertions passed{if o.cc.isSome then ", native runs agree" else ""}"
+    match o.runNative, o.work with
+    | false, _ => go none
+    | true, some work => IO.FS.createDirAll work; go (some { work })
+    | true, none => IO.FS.withTempDir fun work => go (some { work })
+    IO.println s!"tests-rt: {← a.get} assertions passed{if o.runNative then ", native runs agree" else ""}{← IxCCTests.Rt.Native.agreement}"
     return 0
   catch e =>
     IO.eprintln s!"tests-rt: FAILED after {← a.get} assertions: {e}"

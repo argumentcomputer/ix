@@ -67,8 +67,9 @@ structure Root where
   ty : Option (Rt.Sig × Rt.FoTy)
   deriving Inhabited
 
-/-- The driver's arguments for reading a root's results back
-(`--type T --sig S`, `fixtures/x86/runtime_driver.c`). -/
+/-- The text forms of a root's result type and signature (`Rt.FoTy.encode`,
+`Rt.Sig.encode`; `ixcc compile --signatures` prints them as `type` and `sig`),
+for reading its results back outside the compiler. -/
 def Root.driverType (r : Root) : Option (String × String) :=
   r.ty.map fun (sig, ty) => (ty.encode, sig.encode)
 

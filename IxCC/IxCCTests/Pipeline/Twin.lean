@@ -21,8 +21,8 @@ generated inputs and must agree with the same definition compiled by Lean
 
 The inputs are drawn per root (small values, values near `2⁶³` where the
 root's cost does not grow with them, and the boundary cases), run at Lir
-(from `cx_init`'s memory; arguments below `2⁶³`) and, with `--cc`, natively
-under the runtime driver, where the status must also be Lir's. -/
+(from `cx_init`'s memory; arguments below `2⁶³`) and, with `--native`,
+natively as a test executable, where the status must also be Lir's. -/
 
 namespace IxCCTests.Pipeline.Twin
 

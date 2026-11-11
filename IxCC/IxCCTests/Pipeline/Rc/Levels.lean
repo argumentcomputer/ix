@@ -383,11 +383,12 @@ def native (logs : System.FilePath) : IO Unit := do
     check "native row count" (rows.length == cases.length)
     for ((n, seed), row) in cases.zip rows do
       let want := expected name n seed
-      check s!"{name} {n} {seed}: independent C/Lean full native observation"
+      check s!"{name} {n} {seed}: full native observation by two decoders"
         (row.status == 0 && row.ok && !row.init && row.obs == some (Rt.renderObs want) &&
           row.readback regionSize sig ty == some want)
       report := report ++ [s!"{name}\t{n}\t{seed}\tnative\t{Rt.renderObs want}"]
-      IO.println s!"PASS native {name} {n} {seed}: complete C+Lean value"
+      IO.println s!"PASS native {name} {n} {seed}: complete value by two decoders"
   IO.FS.writeFile (logs / "native-levels.tsv") (String.intercalate "\n" report ++ "\n")
+  IO.println s!"PASS native levels{← IxCCTests.Rt.Native.agreement}"
 
 end IxCCTests.Pipeline.Rc.Levels

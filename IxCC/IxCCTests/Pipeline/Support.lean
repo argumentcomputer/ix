@@ -7,7 +7,7 @@ import IxCCTests.Src.Bench
 
 /-! Shared support for the end-to-end suite (`tests-pipeline`): the fixtures, the compiler on them
 (`Recheck.ingress`, `produce`, `run`), an artifact as the backend harness's `Compiled`, and native
-linking with the runtime driver compiled once per entry symbol. -/
+runs as test executables IxCC writes (`IxCCTests.Rt.Native`). -/
 
 namespace IxCCTests.Pipeline
 
@@ -60,26 +60,11 @@ def readWord (r : Root) (m : X86.Memory) (w : Lir.Word) : Option Sem.Obs := do
 
 /-! ## Native runs -/
 
-/-- Link `object` with the runtime driver built for `entry` (compiled once
-into the work directory), with the same flags as `IxCCTests.Rt.Native.link`. -/
-def link (t : Rt.Native.Tools) (name : String) (object : ByteArray) (entry : String) : IO FilePath := do
-  let driver := t.work / s!"driver_{entry}.o"
-  unless ← driver.pathExists do
-    let out ← IO.Process.output {
-      cmd := t.cc
-      args := #["-std=c11", "-O1", "-Wall", "-Wextra", "-Werror", "-c", s!"-DENTRY={entry}",
-        t.driver.toString, "-o", driver.toString] }
-    unless out.exitCode == 0 do throw (IO.userError s!"compiling the driver for {entry}:\n{out.stderr}")
-  let obj := t.work / s!"{name}.o"
-  IO.FS.writeBinFile obj object
-  let exe := t.work / name
-  let out ← IO.Process.output {
-    cmd := t.cc
-    args := #["-no-pie", "-Wl,--fatal-warnings", driver.toString, obj.toString, "-o", exe.toString] }
-  unless out.exitCode == 0 do throw (IO.userError s!"linking {name} failed:\n{out.stdout}{out.stderr}")
-  pure exe
+/-- Write `object` and its test executable calling `entry` (`IxCCTests.Rt.Native.link`). -/
+def link (t : Rt.Native.Tools) (name : String) (object : ByteArray) (entry : String) : IO FilePath :=
+  Rt.Native.link t name object entry
 
-/-- The status and value a driver line reports, as an exit. -/
+/-- The status and value a native line reports, as an exit. -/
 def exitOf (l : Rt.Native.Line) : IxCCTests.Backend.Exit := ⟨l.status, l.value⟩
 
 end IxCCTests.Pipeline

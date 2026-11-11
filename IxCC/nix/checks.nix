@@ -8,15 +8,21 @@
   blake3-lean,
   mkCheck,
 }: let
-  nativeArgs =
+  # The one check with a C compiler: `x86-elf-object` links the object
+  # writer's fixtures with the C test harnesses in fixtures/x86 and runs them,
+  # and links (without running) objects `ixcc compile` writes in the check, so
+  # that the system linker accepts IxCC's relocatable objects. No gate runs a
+  # compiled program through C. (`x86-hardware` builds its processor harness
+  # with the C compiler too.)
+  objectArgs =
     pkgs.lib.optionalString (system == "x86_64-linux")
-    "--cc ${pkgs.stdenv.cc}/bin/cc --harness ${auditSrc}/fixtures/x86/native_harness.c";
-  nativeInputs = pkgs.lib.optionals (system == "x86_64-linux") [pkgs.stdenv.cc];
-  # The pipeline suites link their objects with fixtures/x86/runtime_driver.c
-  # (or backend_driver.c) and run them natively with `--cc`; elsewhere they
-  # run every Lean level and say that the native runs are skipped.
+    "--cc ${pkgs.stdenv.cc}/bin/cc --harness ${auditSrc}/fixtures/x86/native_harness.c --ixcc ./.lake/build/bin/ixcc";
+  objectInputs = pkgs.lib.optionals (system == "x86_64-linux") [pkgs.stdenv.cc];
+  # The pipeline suites run their objects natively with `--native`, as test
+  # executables IxCC writes (no C compiler, C library or linker); elsewhere
+  # they run every Lean level and say that the native runs are skipped.
   native = system == "x86_64-linux";
-  ccArg = pkgs.lib.optionalString native "--cc ${pkgs.stdenv.cc}/bin/cc";
+  nativeArg = pkgs.lib.optionalString native "--native";
   # Standalone executables (`ixcc compile --exe`) run natively on x86-64 Linux
   # only: `tests-exe` runs them (and lists their system calls with strace), and
   # `tests-corpus` runs every root of their fragment on its cases.
@@ -76,11 +82,11 @@ in
       ./.lake/build/bin/check-x86-streams
     '';
 
-    x86-elf-object = mkCheck "x86-elf-object" ([pkgs.binutils] ++ nativeInputs) ''
+    x86-elf-object = mkCheck "x86-elf-object" ([pkgs.binutils] ++ objectInputs) ''
       ./.lake/build/bin/check-x86-object \
         --fixture ./.lake/build/bin/x86-object-fixture \
         --readelf ${pkgs.binutils}/bin/readelf \
-        --objdump ${pkgs.binutils}/bin/objdump ${nativeArgs}
+        --objdump ${pkgs.binutils}/bin/objdump ${objectArgs}
     '';
 
     # The ledger audits IxCC in its workspace: «ix-ck» at its recorded path
@@ -126,7 +132,7 @@ in
     # each suite's measured time and memory). Each suite's complete output is
     # printed under its name with its status and wall time; the check fails
     # if any suite fails, naming each one.
-    suites = mkCheck "suites" (nativeInputs ++ exeInputs) ''
+    suites = mkCheck "suites" exeInputs ''
       ${pkgs.lib.optionalString (!native)
         ''echo "suites: native runs skipped (tests-rt, tests-pipeline, check-backend, tests-corpus, tests-own, tests-exe): ${system} is not x86_64-linux"''}
       mkdir -p suite-logs
@@ -147,21 +153,21 @@ in
       }
       # sum-loop's big-step levels run in child processes with a 4 GiB Lean
       # stack (LEAN_STACK_SIZE_KB): about 4.4 GB peak.
-      launch tests-pipeline $bin/tests-pipeline ${ccArg}
+      launch tests-pipeline $bin/tests-pipeline ${nativeArg}
       launch corpus-check $bin/corpus check
       launch certified-census-protocol $bin/certified-census --self-test
-      launch tests-corpus $bin/tests-corpus ${ccArg} ${exeArg}
+      launch tests-corpus $bin/tests-corpus ${nativeArg} ${exeArg}
       launch tests-exe $bin/tests-exe ${exeArgs}
-      launch check-backend $bin/check-backend ${ccArg}
+      launch check-backend $bin/check-backend ${nativeArg}
       launch check-regalloc $bin/check-regalloc
       launch tests-src $bin/tests-src
-      launch tests-rt $bin/tests-rt ${ccArg}
+      launch tests-rt $bin/tests-rt ${nativeArg}
       launch check-xv-select $bin/check-xv-select
       launch tests-lam $bin/tests-lam
       launch tests-fir $bin/tests-fir
       launch check-lir $bin/check-lir
       launch tests-anf $bin/tests-anf
-      launch tests-own $bin/tests-own ${ccArg}
+      launch tests-own $bin/tests-own ${nativeArg}
       launch tests-own-plain $bin/tests-own-plain
       launch tests-shrink $bin/tests-shrink
       launch tests-relevance $bin/tests-relevance
@@ -195,9 +201,10 @@ in
   }
   // pkgs.lib.optionalAttrs (system == "x86_64-linux") {
     # Actual generated runtime procedures and fresh serialized certificate
-    # replay with complete native values and same-arena reclamation. Keep
-    # independent C oracles, child budgets and diagnostics in the required gate.
-    rc-native = mkCheck "rc-native" [pkgs.stdenv.cc pkgs.findutils] ''
+    # replay with complete native values and same-arena reclamation, in test
+    # executables IxCC writes (no C compiler). Keep the independent oracles, child
+    # budgets and diagnostics in the required gate.
+    rc-native = mkCheck "rc-native" [pkgs.findutils] ''
       mkdir -p rc-logs
       show_rc_logs() {
         find rc-logs -type f \

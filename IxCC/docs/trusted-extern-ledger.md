@@ -114,8 +114,8 @@ against:
 - every file under `IxCC/` (the production library, the repository checkers
   in `IxCC/Tools` and the vendored Aiur reference), `IxCCTests/` (tests,
   fences, executable scripts such as `Scripts/X86ObjectFixture.lean` and
-  `Scripts/Census.lean`), `fixtures/` (closures, catalogs, goldens, C drivers
-  and harnesses such as `fixtures/x86/exports_harness.c` and
+  `Scripts/Census.lean`), `fixtures/` (closures, catalogs, goldens, and the C test
+  harnesses such as `fixtures/x86/exports_harness.c` and
   `unwind_harness.c`), `nix/` and `tools/`;
 - the benchmark runner's C entry points (`benchmarks/runner/entry/*.c`) and
   `benchmarks/toolchains.json`, and the specifications the Aiur checks and the
@@ -215,7 +215,8 @@ those 82 files is a dependency review, edited by hand, not a routine update.
 All repository check scripts are Lean executables. The trust auditor uses
 the pinned Lake TOML parser and GNU `sha256sum`; the independent encoder
 and object checks invoke GNU binutils
-and, on x86-64 Linux, the existing native C harness. These remain seed/build
+and, on x86-64 Linux, the C test harnesses of `fixtures/x86` and the system
+linker (`x86-elf-object`, `x86-hardware` only). These remain seed/build
 tools and introduce no project native interface or proof axiom. The
 support modules, executable scripts, native harness, and source matrices
 have reviewed integrity pins.
@@ -564,35 +565,44 @@ proof of faithfulness: operand values the generator does not reach and
 flags the model leaves undefined are not compared. The Sail agreement (step S2 of the
 [reference-model route](x86-reference-model.md)) remains the proof route.
 
-The backend gate `check-backend` links each object it emits with
-[`backend_driver.c`](../fixtures/x86/backend_driver.c), an untrusted C
-driver standing in for the runtime driver: it maps a private
-region (at the Lean test region's address for generated programs), sets up
-the context block as `cx_init` would, calls the exported wrapper with
-sentinels in the callee-saved registers, and prints `rax:rdx` and whether
-the sentinels and `rsp` survived. It is integrity-pinned test code; no
-production path depends on it.
+**Native runs in the gates: test executables, no C (X1).** The native suites
+run a compiled object as a test executable IxCC writes of it with the same
+writer as `ixcc compile --exe` (`X86.Exe.writeFor`, checked by `checkFor`), with
+the test shell [`IxCCTests/Exe/TestShell.lean`](../IxCCTests/Exe/TestShell.lean)
+as its frame. The test shell is untrusted, integrity-pinned test code, like the
+C drivers it replaced: after `prctl` and a seccomp filter that allows only
+`read` from standard input, `write` to standard output or error and `exit`, it
+serves binary requests from a host in Lean: call an export by a direct
+`call rel32` with the six argument registers, sentinels in the callee-saved
+registers and `rsp` at a fixed top, answering `rax:rdx` and whether the
+sentinels and `rsp` survived; read or write bytes of the region (bounds
+checked). The host ([`IxCCTests/Rt/Native.lean`](../IxCCTests/Rt/Native.lean))
+does what the C runtime driver did: for each input it stores
+`stack_budget` (the stack size less 4 KiB) at `region + 16`, calls
+`cx_init(region, size, stack_budget)` and then the root, and reads the context
+and the object area back; the region is private (the zero-filled segment),
+untouched between `cx_init` and the root's return, and apart from the stack,
+below which nothing is mapped, so a stack that ran past its budget and its
+reserve would fault. Each result is decoded by `Rt.readback` and by an
+independent decoder ([`IxCCTests/Rt/Decoder.lean`](../IxCCTests/Rt/Decoder.lean),
+the C driver's decoder transcribed to Lean, separate code with a separate
+derivation in the same language), and the two must agree. The back end's
+harness ([`IxCCTests/Backend/Native.lean`](../IxCCTests/Backend/Native.lean))
+sets up the context block as `cx_init` would and places generated programs'
+regions at the Lean test region's address, in a zero-filled segment of its own.
+No production path depends on any of it.
 
-The runtime driver is
-[`runtime_driver.c`](../fixtures/x86/runtime_driver.c), untrusted
-and integrity-pinned. It links with an object compiled from `Rt.lower`'s
-output, which exports `cx_init` and a SysV wrapper per root, maps a
-private region (`--region`, default 64 MiB) and a separate stack for the
-program (`--stack`, default 8 MiB, above a guard page), and for each input
-stores `stack_budget` at `region + 16`, where every export wrapper reads it,
-and calls `cx_init(region, size, stack_budget)` and the root, both on that
-stack with sentinels in the callee-saved registers, printing `rax:rdx` and
-whether the sentinels and `rsp` survived. Its contract: the region is
-private, writable, untouched between `cx_init` and the root's return, and
-disjoint from `.rodata` and the stack; `stack_budget` is the stack size less
-4 KiB, which leaves room above the guard page for the wrapper frame and the
-64-byte slack of the largest frameless leaf (so a deep recursion ends in
-status 2, not a fault). In test mode it decodes the result with a C mirror
-of `Rt.readback` and dumps the object area, and `tests-rt` checks the C
-decoder against `Rt.readback` of the dump. `native_harness.c` stays only as
-`check-x86-object`'s harness for the legacy `callRuntime` fixture (which
-still needs its `ixcc_rt_allocate` stub) until `Instr.callRuntime`
-retires.
+C remains in the tree only as test harnesses: `native_harness.c`,
+`exports_harness.c` and `unwind_harness.c`, with which `check-x86-object` links
+the object writer's fixtures and runs them (`native_harness.c` still supplies
+the legacy `callRuntime` fixture's `ixcc_rt_allocate` stub until
+`Instr.callRuntime` retires), and `hw_diff_harness.c`, with which
+`check-x86-hardware` tests the processor against the instruction table. No gate
+runs a compiled program through C. Because the native gates no longer link
+the compiler's objects, `check-x86-object --ixcc` links objects `ixcc compile`
+writes in the check (the five K1 programs, `k1.ixe`'s five roots, the
+real-source RC fixture) with the system linker, without running them, and
+requires every export where the object puts it.
 
 `Recheck.Readback` adds bounded structural signature discovery for ground
 first-order constructor results. Successful discovery certifies closed
@@ -632,16 +642,19 @@ every successful arbitrary `DriverSession`: source-stuck behavior remains
 qualified, and general backend session iteration needs the whole-call budget
 word frame as well.
 
-The independent C harnesses
-[`rc-runtime-driver.c`](../fixtures/x86/rc-runtime-driver.c) and
-[`rc-reuse-driver.c`](../fixtures/x86/rc-reuse-driver.c) reuse the unchanged
-runtime driver's trampoline and complete decoder. They are test evidence,
-not allocator externs. The primitive harness writes synthetic fixture fields
-to test exact procedure behavior; the reuse harness initializes once and
-makes no allocator metadata writes afterward. The compiled gates preserve
-4,393 primitive C assertions, 40 codec refusals, 15 complete-replay refusals,
-25 standalone full-value checks and 168 same-arena calls/drops with 114,820
-independent C assertions, full Lean readback and exact reclaimed-address sets.
+The RC procedures' native controls
+([`IxCCTests/Rt/Rc/NativeControls.lean`](../IxCCTests/Rt/Rc/NativeControls.lean))
+and the same-arena reuse session
+([`IxCCTests/Rt/Rc/ReuseSupport.lean`](../IxCCTests/Rt/Rc/ReuseSupport.lean))
+run in test executables IxCC writes; until X1 they were C harnesses linked with
+the object, and they are those harnesses transcribed to Lean, check for check.
+They are test evidence, not allocator externs. The primitive controls write
+synthetic fixture fields to test exact procedure behavior; the reuse session
+initializes once and makes no allocator metadata writes afterward. The compiled
+gates preserve 4,393 primitive assertions, 40 codec refusals, 15
+complete-replay refusals, 25 standalone full-value checks and 168 same-arena
+calls/drops with 114,820 independent assertions, full values by two decoders
+and exact reclaimed-address sets.
 The separately required `tests-cfg-rc` retains four complete abstract-Cfg
 value/heap cases, bounded timeout checks and 12 bridge ownership/count controls;
 its pure proof aggregate retains all 29 original marker/map/scope/bounds examples.
@@ -649,14 +662,23 @@ its pure proof aggregate retains all 29 original marker/map/scope/bounds example
 pipeline stages with independent list/pair formulas. Its allocation/inc/dec/free
 counter is a test-side observer of production `Cfg.Rc.step`, differential-tested
 against `Cfg.Rc.run`; it is neither a new trusted evaluator nor a native cost
-theorem. The native modes retain independent C and Lean observations, reject
-object-only text corruption before link even when its bundle is rehashed, and
+theorem. The native modes retain two decoders' observations, reject
+object-only text corruption before it runs even when its bundle is rehashed, and
 exercise real-source root heap exhaustion separately from initializer refusal,
 with successful same-code neighbors. Counts stop before caller output-drop;
 physical reclamation remains covered by the existing native recycling gate.
 These tests add no driver assumption, extern or trusted allocator.
 The real-source fixture records its historical producer; final Phase 1.5 gate, producer
 review and refreeze are still separate from these accepted local results.
+
+**The comparison with test executables (X1).** Before the C drivers were
+deleted, every line they printed in a required gate was also produced by a test
+executable IxCC wrote of the same object, and the two had to agree: `init`,
+status, value (an address as the same offset into each region), the
+callee-saved registers and `rsp`, the observation and the object area. They
+agreed on every line (2,955 across the native suites), and the Lean RC controls
+and reuse sessions reproduced the C harnesses' 4,393 and 114,820 checks count
+for count.
 
 **The driver model (specification assumption
 `x86-phase1-runtime-driver-model`).** `Recheck.sound` and the bounded
@@ -666,29 +688,46 @@ object's execution from a `X86.Driver`
 ([`Driver.lean`](../IxCC/X86/Driver.lean)) that calls `cx_init` and
 then the root's export, each at the address `ELF.symbol?` finds for its
 symbol in the parsed object, and observes the root's result by
-`Rt.readback`. Reading it as a statement about the native executable
-assumes that `runtime_driver.c` and the system linker set up those calls
-as the model does:
-- the text at `base`; one region of `size` bytes at `region`, its bytes
-  before the first call arbitrary except the stack budget at
-  `region + 16` (`ctx − 48`), which the driver stores before `cx_init`;
-- the call stack (`budget + 56` bytes below `sp`, and the return slot)
-  apart from the region;
-- each call entered at its symbol's address with `rsp = sp`, the same
-  return address outside the text, `rdi = region` and the arguments in
-  `rsi`…`r9`, any other registers and flags, the root's call starting from
-  the bytes `cx_init` left;
-- the observation: status 0 and the value read back at the root's type
-  over the region from `region + 16` with fuel `size / 8` (the C decoder
-  reads only that part), other statuses the wrapper's resource failures;
-  arguments of 2⁶⁴ or more cannot be passed.
+`Rt.readback`. Reading it as a statement about a native run assumes that the
+caller and the loader set up those calls as the model does. Since X1 every
+caller is an executable IxCC writes: the standalone executable's shell
+(`x86-linux-exe-shell`, below) and, in the gates, the test shell. The writer
+places the object's text byte for byte and resolves each of the shell's calls
+to its export's offset by `ELF.symbol?`, and the executable check reads each
+call's target back from the file (`check_sound`, `checkFor_sound`), so no
+system linker resolves symbols. What the gates now assume:
+- the Linux loader maps the executable as its checked program headers say:
+  the file read and execute at `0x400000` (the text at `base`), the
+  zero-filled segments read and write and zero, nothing executable on the
+  stack;
+- one region of `size` bytes at `region`, its bytes before the first call
+  zero except the stack budget at `region + 16` (`ctx − 48`), which the host
+  stores through the test shell before `cx_init`; the call stack (`budget + 56`
+  bytes below `sp`, and the return slot) apart from the region;
+- the test shell enters each call at its export's address with `rsp` at its
+  fixed top less the return slot, its return address after the text,
+  `rdi = region` and the arguments in `rsi`…`r9`, sentinels in the callee-saved
+  registers, other registers and flags as it leaves them, and does not touch
+  the region between `cx_init` and the root's return (it touches it only to
+  serve the host's reads and writes between calls), as `TestShell.lean`
+  describes;
+- `read`, `write`, `exit`, `prctl` and `seccomp` behave as Linux documents them;
+- the observation: status 0 and the value read back at the root's type over
+  the region from `region + 16` (the host reads the region back through the
+  shell and decodes it with `Rt.readback` and the independent decoder, which
+  must agree), other statuses the wrapper's resource failures; arguments of
+  2⁶⁴ or more cannot be passed.
 
-The model maps only the region and the call stack. A real process maps
-more, so the assumption includes that a run the model shows non-faulting
-touches only modelled memory. `Driver.Ok`, the numeric contract, is a
-hypothesis of the theorem, satisfiable for every accepted artifact
-(`Recheck.driver_exists`), not part of this assumption. The reading also
-rests on `x86-v0-local-semantics` and `x86-v0-elf-writer`.
+Until X1 the caller was a C runtime driver linked by the system linker, and the
+assumption covered that driver, the C compiler, the C library and the linker's
+symbol resolution; X1 deleted the driver. The model maps only the region and
+the call stack. A real process maps more (its file, the shell's 256 bytes, the
+initial stack, the vDSO), so the assumption includes that a run the model shows
+non-faulting touches only modelled memory. `Driver.Ok`, the numeric contract,
+is a hypothesis of the theorem, satisfiable for every accepted artifact
+(`Recheck.driver_exists`), not part of this assumption. The reading also rests
+on `x86-v0-local-semantics`; the loader's mapping of the written executable is
+part of this entry and of `x86-linux-exe-shell`.
 
 The same specification entry records the distinct `X86.DriverSession`
 protocol: initialize once; call a numeric root at exact arity; observe the
@@ -705,9 +744,9 @@ driver, one adapter per row, and tagged C twins of `ackermann`, `tak`,
 `collatz`, `prime-count`, `even-odd` and `sfib`)
 is untrusted measurement code, integrity-pinned so that a change to how a
 row is built or timed is reviewed with the ledger. Its ixcc adapter
-stores the stack budget at `region + 16` as the runtime driver does, calls
+stores the stack budget at `region + 16` as `X86.Driver.initBytes` has it, calls
 `cx_init` once and then the root's SysV wrapper directly, under the
-runtime driver's contract (a private region untouched by C, a stack budget
+driver contract (a private region untouched by C, a stack budget
 that leaves at least 1 MiB below the thread's stack limit); it checks the
 status and the Nat tag of every result. No check, proof or production
 artifact depends on these files, and the runner is outside the root flake.
@@ -717,7 +756,7 @@ artifact depends on these files, and the runner is outside the root flake.
 executable with no C compiler, C library, linker or assembler
 ([`IxCC/Exe.lean`](../IxCC/Exe.lean), [`X86/Exe/`](../IxCC/X86/Exe)): the
 object's text byte for byte, read-only data (a seccomp filter and the
-messages), and a *shell* that sets up the calls `runtime_driver.c` sets up.
+messages), and a *shell* that sets up the calls the model `X86.Driver` describes.
 The shell is trusted code, about 950 bytes: platform code written as typed
 x86 and encoded by the compiler's own encoder, with the system call (`0F 05`)
 as a constructor of its own instruction type (`X86/Exe/Shell.lean`), never a
@@ -739,8 +778,9 @@ and `X86.Exe.check_sound`, the written file's structure read back by an
 independent reader, including each call's target decoded from the file. Each
 call is meant to see the driver `Layout.driver` builds; the model's one
 return address and register file for both calls differ from the shell's two
-call sites, which the object theorems tolerate. The C driver's entry above
-stays until the executables replace it in the gates.
+call sites, which the object theorems tolerate. The driver model's entry
+(`x86-phase1-runtime-driver-model`) covers the native gates' test executables,
+which replaced the C driver in X1.
 
 The [indexed stream checker](stream-checking.md) preserves this boundary:
 bounded decoding and cached canonical positions are proved exactly equal
@@ -752,7 +792,7 @@ Four additional public fences retain the ordinary logical axiom basis.
 | --- | --- | --- |
 | Local ISA semantics | Agreement of the local byte machine with actual x86-64, including canonical addresses, unified code fetch, memory permissions, flags, faults, and the caller ABI. Compiler-contract traps must be proved unreachable; they are not hardware exceptions. | E1 and E2 prove local-to-local agreement. The [S0 readiness decision](x86-reference-model.md) pins the Sail snapshot; reference execution comparison, the Lean adapter, and S2 agreement remain pending. |
 | Encoder stream/layout | Discharged for successful certified production emission. Raw `Encode.encode`/`Program.encode` clients must validate their output or prove the same facts. | `Stream.check_sound` checks every boundary, canonical position, target and relocation. Complete-stream proofs cover call-free execution and internal calls under concrete `SafeTrace` conditions, including residual return-slot bytes. `ELFLink` proves checked PC32 application and runtime CALL transfer. External procedure bodies still require their semantic/ABI contracts. |
-| Runtime driver model | `X86.Driver`/`X86.Linked` model initialization and the root call for accepted scalar and bounded RC objects. The same entry describes `DriverSession`'s separate owned raw-word drop protocol; it does not upgrade the one-call theorem to arbitrary-session adequacy. | Existing pipeline gates plus `tests-rt-rc`, `tests-rc-certificate` and `tests-driver-session` check complete values, ABI, reclamation and same-region reuse. Process start/linker correspondence, source adequacy and general whole-call session framing remain explicit. |
+| Runtime driver model | `X86.Driver`/`X86.Linked` model initialization and the root call for accepted scalar and bounded RC objects. The same entry describes `DriverSession`'s separate owned raw-word drop protocol; it does not upgrade the one-call theorem to arbitrary-session adequacy. | Existing pipeline gates plus `tests-rt-rc`, `tests-rc-certificate` and `tests-driver-session` check complete values, ABI, reclamation and same-region reuse. The callers are executables IxCC writes (the production and the test shell); the loader's mapping, the shells' code, source adequacy and general whole-call session framing remain explicit. |
 | Standalone executable shell | `x86-linux-exe-shell`: the shell of `ixcc compile --exe` and the kernel's loading of the static executable, as `X86/Exe/Code.lean` describes them | `Layout.driver_canonicalOk` (the layout keeps the driver contract), `X86.Exe.check_sound` (the file's structure); `tests-corpus --exe` and `tests-exe`. The shell's behaviour from the loader's post-state is not proved |
 | ELF serialization and system loading | Independent interpretation is discharged for successful `ELF.writeChecked` output. Raw `ELF.write` clients lack that certificate. Actual system linker/loader behavior remains assumed. | `ELFRead` independently parses actual fields; `ELF.check_sound` certifies text, bounded/aligned/nonoverlapping sections, export placement, symbols, relocations, non-executable stack and exact provenance. `ObjectEval` begins from the parsed export and text. A real loader must implement the proved PC32 rule, map immutable executable text, resolve named procedures and enter with the stated ABI. |
 

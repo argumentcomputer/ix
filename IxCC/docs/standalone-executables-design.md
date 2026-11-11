@@ -1,7 +1,9 @@
 # Standalone executables without a C driver
 
 Written 2026-11-14. **Status:** X0 implemented (`ixcc compile --exe`, see
-[X0 as implemented](#x0-as-implemented)); X0-P to X6 planned. Milestones X0 to
+[X0 as implemented](#x0-as-implemented)); X1 implemented (the native suites run
+their objects as test executables IxCC writes, with no C, see [X1 as
+implemented](#x1-as-implemented)); X0-P and X2 to X6 planned. Milestones X0 to
 X6 are in the [roadmap](roadmap.md#standalone-executables). Only the lines that
 say *implemented* or *measured* describe code or runs that exist.
 
@@ -11,32 +13,32 @@ The owner decided (2026-11-14): "standalone executables should be a target on
 the roadmap, and I think we cannot have a C driver. That feels like a
 cop-out. We should be able to self-host that logic."
 
-Today a compiled program runs only inside `runtime_driver.c`
-([`fixtures/x86/runtime_driver.c`](../fixtures/x86/runtime_driver.c), 364
-lines, about 40 of them inline assembly), linked by the system linker. It:
-- parses `--region`, `--stack`, `--type`/`--sig`, `--dump` and `--time`;
-- maps the region and a stack with a guard page (`mmap`, `mprotect`);
-- for each input line, parses up to five words with `strtoull` (the wrappers,
-  not the driver, tag them), stores the stack budget at `region + 16`, calls
-  `cx_init` and then the root through an assembly trampoline that switches to
-  the mapped stack and checks callee-saved registers with sentinels;
-- prints `status value ok` and, with `--type`, a C mirror of `Rt.readback`.
+Until X1 a compiled program ran only inside a C runtime driver (364 lines,
+about 40 of them inline assembly), linked by the system linker; X1 removed it
+([below](#the-c-drivers-removed)). It:
+- parsed `--region`, `--stack`, `--type`/`--sig`, `--dump` and `--time`;
+- mapped the region and a stack with a guard page (`mmap`, `mprotect`);
+- for each input line, parsed up to five words with `strtoull` (the wrappers,
+  not the driver, tag them), stored the stack budget at `region + 16`, called
+  `cx_init` and then the root through an assembly trampoline that switched to
+  the mapped stack and checked callee-saved registers with sentinels;
+- printed `status value ok` and, with `--type`, a C mirror of `Rt.readback`.
 
-It re-initialises the region for every line and never calls `cx_drop` (the
-session protocol with `cx_drop` is `rc-reuse-driver.c`'s, modelled by
-[`X86/DriverSession.lean`](../IxCC/X86/DriverSession.lean)). Its parsing is
-looser than the model it stands for: `strtoull` accepts `0x10`, `12x` and
-`-1`, and a missing argument becomes 0, whereas `X86.Linked` applies a root to
+It re-initialised the region for every line and never called `cx_drop` (the
+session protocol with `cx_drop` was a second C harness's, modelled by
+[`X86/DriverSession.lean`](../IxCC/X86/DriverSession.lean)). Its parsing was
+looser than the model it stood for: `strtoull` accepts `0x10`, `12x` and
+`-1`, and a missing argument became 0, whereas `X86.Linked` applies a root to
 exactly its parameter count.
 
-What it puts in the trusted base: the C compiler that builds it, the C
-library and dynamic loader it runs on, the system linker that places the
-object and resolves its symbols, and the driver itself, all summarised as the
+What it put in the trusted base: the C compiler that built it, the C
+library and dynamic loader it ran on, the system linker that placed the
+object and resolved its symbols, and the driver itself, all summarised as the
 ledger assumption `x86-phase1-runtime-driver-model`
-([trust ledger](trusted-extern-ledger.md)): that the driver and linker realise
-the model `X86.Driver`/`X86.Linked`, including that a run the model shows
-non-faulting touches only modelled memory. None of that is about the
-program; all of it sits between the proved object and a user.
+([trust ledger](trusted-extern-ledger.md)): that the driver and linker
+realised the model `X86.Driver`/`X86.Linked`, including that a run the model
+shows non-faulting touches only modelled memory. None of that is about the
+program; all of it sat between the proved object and a user.
 
 ## The core tension
 
@@ -285,16 +287,21 @@ hashes.
 
 ## Trust
 
-| Component | Today | After X0 (shell ledgered) | After X0-P (shell proved) | Later (requests, platform calls) |
+| Component | Before X0 | After X0 (shell ledgered) | After X0-P (shell proved) | Later (requests, platform calls) |
 | --- | --- | --- | --- | --- |
 | C compiler | trusted: builds the driver and links | gone | gone | gone |
 | C library and dynamic loader | trusted: the driver runs on them | gone | gone | gone |
 | System linker | trusted: places the object, resolves symbols | gone: IxCC writes the file | gone | gone |
-| `runtime_driver.c` | modelled by `x86-phase1-runtime-driver-model` | replaced by a typed-x86 shell, ledgered | proved: the driver contract is a lemma from the loader's post-state | a generic request interpreter; then only the entry and the platform procedures |
+| The C runtime driver | modelled by `x86-phase1-runtime-driver-model` | replaced by a typed-x86 shell, ledgered | proved: the driver contract is a lemma from the loader's post-state | a generic request interpreter; then only the entry and the platform procedures |
 | Readback in C | what a user sees | gone: the shell renders the `Nat` | proved | gone: the program writes its own bytes |
 | System calls after start | many kinds (the C driver's dynamic loading and set-up) | `prctl` and `seccomp` (the confinement), then `write` and `exit`, enforced by a seccomp filter (implemented) | same | the signature's calls, enforced by a filter |
-| ISA model | as today | plus the system call, outside the program table | same | plus calls to platform procedures |
+| ISA model | as before | plus the system call, outside the program table | same | plus calls to platform procedures |
 | Loading | a dynamic executable with an interpreter | a static executable, two loadable segments, no relocations | same | same |
+
+The test gates followed in X1: the native suites run their objects as test
+executables IxCC writes (the same writer, with a test shell; [X1 as
+implemented](#x1-as-implemented)), so the C compiler, the C library, the
+system linker and the C driver are off their execution path too.
 
 ## Prior art
 
@@ -359,7 +366,7 @@ Sizes are estimates, with their basis.
 | --- | --- | --- | --- | --- |
 | X0 | `ixcc compile --exe` for roots of `Nat` parameters and a `Nat` result: the executable writer and its independent checker; the shell as typed x86 with the system call outside the program table; static layout with `CanonicalOk` proved; a ledger entry for the loader's post-state, the system calls and the shell. **Implemented** ([below](#x0-as-implemented)), also for `Bool` and other results without fields, rendered `#k`; the per-call return address and registers in `X86.Driver` moved to X0-P | — | every corpus root of the fragment (K1's and the `phase1-*` families') on every case agrees with the manifest, SrcEval, ByteEval and the C driver; a seccomp filter on; only `prctl`, `seccomp`, `write` and `exit`; the checker rejects mutated headers and truncations | 2–3.5k lines, 3–6 weeks (today's object path is about 2.2k lines across `ELF*.lean`; the shell is about 150 instructions of Lean data). Measured: 1.1k lines of production code and 0.4k of tests |
 | X0-P | The shell proved: the shell lemma, parsing and rendering, the system call's model, permission monotonicity, a return address and register file per call in `X86.Driver`; the `Nat` executable theorem fenced | X0 | the theorem fenced on the standard axioms; the driver-model assumption retired for executables | 3–6k lines, 2–4 months (the `cx_init` proof is 0.5k lines and the stream-trace infrastructure exists) |
-| X1 | XB-1 and IxOS-0, redefined: IxCC-written test executables speak today's line protocol (and the session protocol with `cx_drop` for the RC gates); readback on the host side in Lean | X0 | the native suites (`tests-rt`, `tests-pipeline`, `tests-corpus`, `tests-own`, the back end's runtime cases, the RC native modes) pass with `runtime_driver.c` off the execution path and no C compiler in their inputs | 1–2k lines, 2–4 weeks after X0 |
+| X1 | XB-1 and IxOS-0, redefined: IxCC-written test executables speak today's line protocol (and the session protocol with `cx_drop` for the RC gates); readback on the host side in Lean. **Implemented** ([below](#x1-as-implemented)): the test shell serves binary requests, and the host in Lean speaks the line and session protocols over them; the C drivers are deleted | X0 | the native suites (`tests-rt`, `tests-pipeline`, `tests-corpus`, `tests-own`, the back end's runtime cases, the RC native modes) pass with the C runtime driver off the execution path and no C compiler in their inputs | 1–2k lines, 2–4 weeks after X0 |
 | X2 | Numeric state machines: the generic request shell, parsing and rendering in a small Lean library compiled with the program, the session theorem on `Nat` states | X0 (X0-P for the proof) | `fib` as an executable whose parsing and rendering are Lean; a 1,000-call session against Lean's interpreter; the session theorem fenced | 2–4k lines (DR9 (a) is 3–6k with heap states) |
 | X3 | Batch byte executables: arguments and input bytes in, output bytes and an exit code out; an exported byte-array allocation entry; the model of `read` | Phase 3 (DR2, DR3, DR6) | programs in the manner of `wc` and `sha256sum` byte-identical to Lean-compiled executables over a corpus of inputs | 2–4k lines beyond the DR items |
 | X4 | Interactive executables: state-machine roots with heap states; platform interface version 1 (read, write, exit, clock); a seccomp filter of exactly the interface | DR1, DR6, DR9 (a) | an echo or counter-map program; a 1,000-call session; the state-machine theorem fenced | DR9 (a)'s 3–6k plus 1–2k |
@@ -409,30 +416,122 @@ root ([`IxCC/Exe.lean`](../IxCC/Exe.lean),
   constructors have none (`Bool` among them); immortal, zero-RC or plain-RC
   policy. Refused: `exe.params` (a parameter that is not a `Nat`, such as the
   resource corpus's trap roots), `exe.result` (constructor trees),
-  `exe.layout`. What the C driver handles and an executable does not:
+  `exe.layout`. What the native suites' test executables handle and a
+  production executable does not:
   constructor-tree results, parameters that are not `Nat`, fewer arguments
   than parameters, several roots and several input lines in one process,
   regions under 4 KiB, timing and a dump of the object area.
 - **Tests** (*measured*, x86-64 Linux): `tests-corpus --exe` runs 135 roots
   on 1,402 cases as executables, each agreeing with the manifest, SrcEval,
-  ByteEval where the case fixes the layout both use, and the C driver; one
+  ByteEval where the case fixes the layout both use, and the native run (under
+  the C driver at X0, as a test executable since X1); one
   case is skipped (a 4,095-byte region) and the three trap roots are refused.
   `tests-exe` (4,532 assertions) covers the layout, the shell for every arity
   and result kind, the writer and its check under about 4,300 mutations, the
   refusals, malformed and oversized arguments, a trap, the confinement read
   from `/proc` and, under `strace`, the system calls.
 
-## The C driver until it is deleted
+## X1 as implemented
 
-It stays as it is, pinned in the ledger, until X1. During X1 one gate runs both
-and compares them line by line for one cycle. Then `runtime_driver.c`, its pin
-and the C link paths of the native suites and of the Nix checks are removed.
-`rc-runtime-driver.c` and `rc-reuse-driver.c`, which reuse its trampoline and
-decoder, move to the test shell with it. The other C files in
-[`fixtures/x86`](../fixtures/x86) are test harnesses (`backend_driver.c`,
-`exports_harness.c`, `native_harness.c`, `unwind_harness.c`), ported as
-convenient; `hw_diff_harness.c` tests the processor against the instruction
-table, not compiled programs, and can stay.
+**Implemented.** The native suites run every compiled object as a *test
+executable* IxCC writes, with no C compiler, C library or linker on the
+execution path, and the C drivers are deleted. Built in two steps: first every
+native suite ran each case both ways and required the two to agree line by line
+(no disagreement on any of 2,955 lines, the RC controls' 4,393 checks or the
+reuse sessions' 114,820); then the C drivers went.
+
+- **The writer takes any frame** ([`X86/Exe/Write.lean`](../IxCC/X86/Exe/Write.lean),
+  [`X86/Exe/Validate.lean`](../IxCC/X86/Exe/Validate.lean)). A frame is the
+  platform code an executable embeds (its read-only data and its shell
+  program), the exports that code calls (one call site each, in order) and
+  the zero-filled segments the loader maps for it (one program header each).
+  `writeFor` writes and checks a file of any frame: `checkFor` reads it back
+  as the production check does, with the header counting the frame's program
+  headers, and `checkFor_sound` (fenced on the standard axioms) gives the
+  production check's facts plus the data bytes. The production executable is
+  the frame `Input.frame`; `plan`, `checkWith`, `check`, `check_sound`,
+  `Fields`, `Certified` and `writeChecked` keep their statements, and
+  `Layout.driver_canonicalOk` is untouched. The writer also refuses segments
+  that are unaligned, empty, out of order, overlapping the file or past
+  `2^47`, which the production frame never is.
+- **The test shell** ([`IxCCTests/Exe/TestShell.lean`](../IxCCTests/Exe/TestShell.lean)):
+  test code, outside the production API, written as a `Shell.Program` like
+  the production shell and encoded by the same encoder. After `prctl` and a
+  seccomp filter that allows only `read` from descriptor 0, `write` to 1 or
+  2, and `exit`, it serves requests of eight 64-bit words from standard
+  input: *call* export `k` with six argument registers (sentinels in `rbx`,
+  `rbp`, `r12` to `r15`, `rsp` at a fixed top; it answers `rax`, `rdx` and
+  whether the sentinels and `rsp` came back); *read* bytes of the region;
+  *write* bytes into the region; *end*. A range outside the region, an
+  unknown request, an export index out of range or input that ends inside a
+  request ends the run with its own status. Its memory: the program stack and
+  the shell's own 256 bytes in one zero-filled segment at `0x10000000`, the
+  region after them, page-aligned, or in a segment of its own at a fixed
+  address (the back end's generated programs compute with the Lean test
+  region's address, `0x10000`). Nothing is mapped below the stack.
+- **Binary requests, not the line protocol.** The milestone was planned with
+  the test executables speaking the C driver's line protocol. What was built
+  instead: the shell parses and renders nothing, and the line protocol, the
+  `cx_drop` session and the back end's context set-up are host code in Lean
+  ([`IxCCTests/Exe/Session.lean`](../IxCCTests/Exe/Session.lean),
+  [`IxCCTests/Rt/Native.lean`](../IxCCTests/Rt/Native.lean)). The reason: the
+  machine code the native gates trust shrinks to a request loop, a bounds
+  check and the calls, and the parsing that was looser than the model
+  (`strtoull`) and the decoding become Lean, tested like the rest of the suites.
+  Per input line the host stores the budget at `region + 16`, calls `cx_init`
+  (an `init` line if it fails) and the root with the line's words (at most
+  five, zero beyond, saturated at `2^64 - 1` as `strtoull` saturated them), and
+  reads the context and the object area back. The time of a root call is
+  measured around its request, so it includes the pipe's round trip.
+- **Two decoders.** Every result decoded natively is decoded by `Rt.readback`
+  and by an independent decoder
+  ([`IxCCTests/Rt/Decoder.lean`](../IxCCTests/Rt/Decoder.lean)), the C driver's
+  decoder transcribed to Lean from its own logic (its own parser of the type
+  and signature texts, its own word reads and bounds, its own rendering), and
+  the two must agree; the observation the suites check is the independent
+  decoder's, and `Rt.readback` of the dump is checked beside it, as the C
+  decoder and `Rt.readback` were. Its independence is separate code with a
+  separate derivation in the same language, not a second language.
+- **The other harnesses.** The RC procedures' controls
+  ([`IxCCTests/Rt/Rc/NativeControls.lean`](../IxCCTests/Rt/Rc/NativeControls.lean)):
+  the C program's checks transcribed one for one, 4,393, with its output lines.
+  The session with `cx_drop` (`IxCCTests/Rt/Rc/ReuseSupport.lean`): one
+  initialization, then per call the complete value (two decoders), the
+  result's unique count, `cx_drop`, the stable bump pointer and the exact free
+  chain; the same 114,820 checks. The back end's harness
+  (`IxCCTests/Backend/Native.lean`): the context block set up as its
+  `init_context` did, the pattern of the Lean test region, the fixed region.
+- **The suites' flag** is `--native` (it was `--cc CC`).
+- **The system linker still checks the compiler's objects.** `ixcc compile`
+  still writes relocatable objects, and no native gate links them any more, so
+  `check-x86-object --ixcc` (the `x86-elf-object` check) compiles the five K1
+  programs, `k1.ixe`'s five roots in one object and the real-source RC fixture
+  on the plain-RC route in the check and links each with the system linker
+  into a static executable with no C library, entered at `cx_init` and never
+  run: every global function of the object is required to be defined, and
+  `readelf` finds each in the linked file at the linked text's address plus its
+  object offset. *Measured:* about 2 s for the seven objects, compiling them
+  included, on the build box.
+- **Measured** (x86-64 Linux): every native suite passes on test executables alone,
+  with the native lines it ran in the comparison: `tests-rt` 180, `tests-pipeline` 450,
+  `tests-corpus` 1,596 (1,412 before a further corpus family was registered), `tests-own`
+  412, `check-backend` 119, `tests-pipeline-rc` 9 (`native`) and 12 (`negative`),
+  `tests-rc-certificate fresh` 9 (codec) and 16 (replay) plus the reuse sessions' 168 calls
+  and drops; every result with a type decoded alike by both decoders; the RC controls'
+  4,393 checks and the reuse sessions' 114,820.
+
+## The C drivers, removed
+
+X1 deleted the C runtime driver, the RC controls' and the reuse session's C
+harnesses (which reused its trampoline and decoder) and the back end's C
+driver, with their ledger pins, the C link paths of the native suites and the
+C compiler of the `suites` and `rc-native` checks. C remains in the tree only as
+test harnesses: `native_harness.c`, `exports_harness.c` and `unwind_harness.c`
+in [`fixtures/x86`](../fixtures/x86), with which `x86-elf-object` checks that
+the system linker accepts the object writer's relocatable objects (one with a
+runtime relocation the harness defines) and runs them, and
+`hw_diff_harness.c`, with which `x86-hardware` tests the processor against the
+instruction table. No gate runs a compiled program through C.
 
 ## Decided questions
 

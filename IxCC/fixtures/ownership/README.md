@@ -89,7 +89,7 @@ no checked field rule")`, OS-15b `Unsupported(…)` → `Nonduplicable`.
 ## Running
 
 ```sh
-lake exe tests-own [--cc cc] [--only strip|fixtures|equiv|erasure|counters|cx1]
+lake exe tests-own [--native] [--only strip|fixtures|equiv|erasure|counters|cx1]
 ```
 
 The family is not among `tests-corpus`'s registered families: `tests-own`

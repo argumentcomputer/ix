@@ -1,7 +1,9 @@
 import IxCC.Tools.X86Check
 
 /-! Inspect and natively run independently generated ELF files. All byte and
-address expectations are frozen here rather than obtained from compiler code. -/
+address expectations are frozen here rather than obtained from compiler code.
+With `--ixcc`, objects the compiler writes in this run are also linked, never
+run, by the system linker (`linkCompiled`). -/
 
 open System IxCC.Tools.Check IxCC.Tools.X86Check
 
@@ -78,8 +80,91 @@ private def inspect (readelf objdump : String) (fixture : Fixture) (path : FileP
     need (elf.contains "There are no relocations in this file.")
       s!"unexpected relocation for {fixture.name}\n{elf}"
 
+/-! ## Objects the compiler writes, accepted by the system linker
+
+`ixcc compile` writes relocatable objects, and the native gates run them as
+executables IxCC writes itself, with no linker. So the system linker meets the
+compiler's own output here: each object of a representative set is compiled
+in this run by the `ixcc` binary and linked by the system linker into a static
+executable with no C library or start files, entered at `cx_init`, which is
+never run. The linker must accept it, with every global function of the
+object required to be defined (`--require-defined`), and `readelf` must find
+each of them in the linked file at the linked text's address plus its offset in
+the object, and one non-executable `GNU_STACK`. -/
+
+private structure Compiled where
+  name : String
+  args : List String
+  /-- Exports the object must have, beside whatever else it defines. -/
+  exports : List String
+
+private def benchK1 (name : String) : Compiled :=
+  { name, args := [s!"fixtures/ixon-v4/bench-k1/{name}.ixe", "--equations",
+      s!"fixtures/ixon-v4/bench-k1/{name}.equations.json"], exports := ["cx_init", "cx_entry"] }
+
+/-- The five K1 programs as compiled one by one, `k1.ixe`'s five roots in one
+object, and the real-source RC fixture on the plain-RC route (with
+`cx_drop`). -/
+private def compiledSet : List Compiled :=
+  ["fib", "sum-loop", "ackermann", "tak", "gcd"].map benchK1 ++
+  [{ name := "k1", args := ["fixtures/ixon-v4/k1/k1.ixe", "--equations", "fixtures/ixon-v4/k1/equations.json",
+        "--root", "K1.fib", "--root", "K1.sumLoop", "--root", "K1.ack", "--root", "K1.tak", "--root", "K1.gcd"],
+      exports := ["cx_init", "cx_K1_fib", "cx_K1_sumLoop", "cx_K1_ack", "cx_K1_tak", "cx_K1_gcd"] },
+   { name := "rc-real-source", args := ["fixtures/rc/real-source/anonymous.ixe", "--equations",
+        "fixtures/rc/real-source/consumer.equations.json", "--rc", "on"],
+      exports := ["cx_init", "cx_drop"] }]
+
+private def hexValue (text : String) : Option Nat :=
+  text.foldl (fun acc c => do pure (16 * (← acc) + (← hexDigit c))) (some 0)
+
+/-- `readelf -W -s`: the global function symbols, as name and value. -/
+private def globalFunctions (readelf : String) (path : FilePath) : IO (List (String × Nat)) := do
+  let out ← run readelf #["-W", "-s", path.toString]
+  ((out.splitOn "\n").map words).filterMapM fun
+    | [_, value, _, "FUNC", "GLOBAL", _, _, name] => do
+      return some (name, ← present (hexValue value) s!"{path}: symbol value {value}")
+    | _ => pure none
+
+/-- `readelf -W -S`: the address of the section `.text`. -/
+private def textAddress (readelf : String) (path : FilePath) : IO Nat := do
+  let out ← run readelf #["-W", "-S", path.toString]
+  for line in out.splitOn "\n" do
+    match (words line).dropWhile (· != ".text") with
+    | ".text" :: _ :: address :: _ =>
+      return ← present (hexValue address) s!"{path}: .text address {address}"
+    | _ => pure ()
+  throw (IO.userError s!"{path}: no .text section\n{out}")
+
+private def linkCompiled (cc readelf ixcc : String) (directory : FilePath) : IO String := do
+  let start ← IO.monoMsNow
+  let mut exports := 0
+  for c in compiledSet do
+    let object := directory / s!"compiled-{c.name}.o"
+    let executable := directory / s!"compiled-{c.name}"
+    let _ ← run ixcc (#["compile"] ++ c.args.toArray ++ #["--no-typecheck", "-o", object.toString])
+    let symbols ← globalFunctions readelf object
+    for e in c.exports do
+      need (symbols.any (·.1 == e)) s!"{c.name}: the object does not define {e}\n{symbols}"
+    let _ ← run cc (#["-nostdlib", "-static", "-no-pie", "-Wl,--fatal-warnings", "-Wl,-e,cx_init"] ++
+      (symbols.map fun (name, _) => s!"-Wl,--require-defined={name}").toArray ++
+      #[object.toString, "-o", executable.toString])
+    let header ← run readelf #["-W", "-h", executable.toString]
+    requireAll header ["Type:                              EXEC (Executable file)"] s!"{executable}: readelf -h"
+    let text ← textAddress readelf executable
+    let linked ← globalFunctions readelf executable
+    for (name, offset) in symbols do
+      need (linked.contains (name, text + offset))
+        s!"{c.name}: {name} is not at the linked text plus its object offset {offset}\n{linked}"
+    let segments ← run readelf #["-W", "-l", executable.toString]
+    let stacks := (segments.splitOn "\n").filter (·.contains "GNU_STACK")
+    need (stacks.length == 1 && !stacks.any (·.contains "RWE"))
+      s!"{executable}: expected one non-executable GNU_STACK\n{segments}"
+    exports := exports + symbols.length
+  return s!"{compiledSet.length} objects ixcc compiled in this run linked by the system linker \
+    ({exports} exports, each where the object puts it; {(← IO.monoMsNow) - start} ms)"
+
 def main (args : List String) : IO UInt32 := cli "x86 ELF object check failed" do
-  let args ← checked (parseArgs ["--fixture", "--readelf", "--objdump", "--cc", "--harness"] args)
+  let args ← checked (parseArgs ["--fixture", "--readelf", "--objdump", "--cc", "--harness", "--ixcc"] args)
   let some exe := optional args "--fixture" | throw (IO.userError "--fixture is required")
   let readelf := option args "--readelf" "readelf"
   let objdump := option args "--objdump" "objdump"
@@ -102,5 +187,9 @@ def main (args : List String) : IO UInt32 := cli "x86 ELF object check failed" d
         let harness := if fixture.kind == "unwind" then (harness.parent.getD ".") / "unwind_harness.c"
           else if fixture.kind == "exports" then (harness.parent.getD ".") / "exports_harness.c" else harness
         linkAndRun cc readelf harness path (directory / s!"{fixture.name}-native") localValue
-  let suffix := if native.isSome then ", native link/run result match" else ""
-  IO.println s!"x86 ELF object check ok: {fixtures.length} deterministic objects, provenance goldens, local semantics, readelf, objdump{suffix}"
+    let suffix := if native.isSome then ", native link/run result match" else ""
+    IO.println s!"x86 ELF object check ok: {fixtures.length} deterministic objects, provenance goldens, local semantics, readelf, objdump{suffix}"
+    match native, optional args "--ixcc" with
+    | some (cc, _), some ixcc => IO.println s!"x86 ELF object check ok: {← linkCompiled cc readelf ixcc directory}"
+    | none, some _ => throw (IO.userError "--ixcc needs --cc")
+    | _, none => pure ()

@@ -38,7 +38,7 @@ code: nothing here proves that it does what this note says
    for an unknown status).
 5. It renders the result: a `Nat` (the word `2n + 1`) in decimal, a
    field-less constructor (the word `2k + 1`, `k` below the constructor count)
-   as `#k`, as `Rt.renderObs` and the C driver's decoder print them, followed
+   as `#k`, as `Rt.renderObs` prints them, followed
    by a newline; a word of neither shape ends with status 71. It writes the
    line to standard output (status 74 if a write fails) and exits with 0.
 

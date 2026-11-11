@@ -102,9 +102,9 @@ lean_exe «tests-fir» where
 Lir on k1.ixe, bench-k1 and generated programs against Cfg (related values,
 typed readback, traps, the clock relation, heap and natOverflow), the
 primitive sequences at their boundaries, `cx_init`, hand-written cases and
-planted mutations; with `--cc`, `Backend.compile` to native objects run at
-every level and under `fixtures/x86/runtime_driver.c`; and the lowering
-re-run by the kernel. -/
+planted mutations; with `--native`, `Backend.compile` to native objects run at
+every level and as test executables IxCC writes; and the lowering re-run by
+the kernel. -/
 lean_exe «tests-rt» where
   root := `IxCCTests.Rt.Main
 
@@ -131,8 +131,8 @@ lean_exe «tests-driver-session» where
   root := `IxCCTests.X86.DriverSession.Main
 
 /- The compiler end to end: the `ixcc` command line on
-the bench-k1 closures and k1.ixe (with `--cc`, linked with the runtime driver
-and run at test and bench sizes), `produce` + `Recheck.run` against the stage
+the bench-k1 closures and k1.ixe (with `--native`, run as test executables at
+test and bench sizes), `produce` + `Recheck.run` against the stage
 suites' pipeline, the certificate's JSON round trip, declines, and
 certificate mutations (rejected, or code that agrees on every tested input). -/
 lean_exe «tests-pipeline» where
@@ -159,7 +159,7 @@ lean_exe «certified-census» where
 
 /- The corpus suite: every root of every registered corpus family
 compiled, declined with its expected code, or run at every level (SrcEval
-… Cfg, Lir, Xv, Xl, typed x86, ByteEval), natively (with `--cc`) and as
+… Cfg, Lir, Xv, Xl, typed x86, ByteEval), natively (with `--native`) and as
 standalone executables (with `--exe`) on its frozen cases against Lean's
 interpreter. -/
 lean_exe «tests-corpus» where
@@ -247,7 +247,7 @@ lean_exe «check-regalloc» where
 
 /- Stacking, layout and emission: hand-written Xl, the Lir kernels and
 generated Lir to ELF objects, run on the typed machine, the byte machine
-and (with `--cc`) natively under `fixtures/x86/backend_driver.c`. -/
+and (with `--native`) natively, as test executables IxCC writes. -/
 lean_exe «check-backend» where
   root := `IxCCTests.Backend.Main
 

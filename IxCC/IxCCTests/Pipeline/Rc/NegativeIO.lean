@@ -138,6 +138,7 @@ def run (logs : FilePath)
   IO.FS.createDirAll logs
   let bundle ← corruption logs reader
   tinyRegions bundle logs
+  IO.println s!"PASS tiny regions{← IxCCTests.Rt.Native.agreement}"
   Fixtures.verify
   IO.FS.writeFile (logs / "complete.txt")
     "PASS: fresh positive source/certificate/ELF neighbor; object-only text corruption refused at stale-hash and rehashed-byte-identity boundaries; three actual-source root heap exhaustions distinct from initializer refusal; six complete-tree successful neighbors.\n"

@@ -20,8 +20,9 @@ The header's `rc` and `cls` are not observed: immortal cells and
 the plain-RC route's counted cells read back the same way.
 
 `Rt.observe` maps a `cx_result` (status and value) to an outcome, and the
-text forms below (`FoTy.encode`, `Sig.encode`, `renderObs`) are the runtime
-driver's contract (`fixtures/x86/runtime_driver.c` decodes with them). -/
+text forms below (`FoTy.encode`, `Sig.encode`, `renderObs`) are how a result
+type, a signature and an observation are written outside the compiler
+(`ixcc compile --signatures`, the native suites). -/
 
 namespace IxCC.Rt
 

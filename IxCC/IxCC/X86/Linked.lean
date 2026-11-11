@@ -6,10 +6,10 @@ import IxCC.Sem.Transform
 /-!
 # The object's execution as a language
 
-`X86.Linked` is an ELF object with its roots, run as `runtime_driver.c`
-runs it (`X86.Driver`): on input `(r, ns)`,
+`X86.Linked` is an ELF object with its roots, run as the caller `X86.Driver`
+describes runs it: on input `(r, ns)`,
 
-1. a `Nat` argument the driver cannot pass (2^64 or more) fails with
+1. a `Nat` argument the caller cannot pass (2^64 or more) fails with
    `natOverflow` (the wrapper's status 3 covers the rest above 2^63);
 2. `cx_init` is called by its symbol (`ObjectEval.call`) on the region,
    its size and the stack budget, from the driver's first memory;

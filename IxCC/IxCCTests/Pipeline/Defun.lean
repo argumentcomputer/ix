@@ -15,8 +15,8 @@ schedule, `Anf.defun`, then `Fir.lower`, the immortal Own and Cfg, the root
 checks (each root's compiled arity is its declared parameter count,
 `Recheck.checkRootArities`, and the entry wrapper's parameter limit), the
 switch check, `Rt.lower`, selection, the producer's allocation, stacking
-and layout, and `Backend.finish`; the object is linked with the runtime
-driver and run (with `--cc`). On `Decline.composeClosure`, two schedules:
+and layout, and `Backend.finish`; the object runs natively as a test
+executable (with `--native`). On `Decline.composeClosure`, two schedules:
 the Phase 1 middle end (`Anf.Pipeline.produce`), and P1 and P2 alone, so that
 P8 meets every closure specialisation would otherwise remove (the closures
 design's "P4 disabled"); the expected values are the Lean interpreter's

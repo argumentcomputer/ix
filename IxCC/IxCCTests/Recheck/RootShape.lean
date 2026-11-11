@@ -23,8 +23,8 @@ type); erasure now registers them (`Lam.Erase.resultCtors`).
 
 Each root compiled alone also returns its constructor from the x86 model of
 its linked object, and a claim naming it is accepted by `verifyBytes`
-(`aloneCase`); `tests-corpus` runs the same objects natively under the
-runtime driver (`nativeAlone`).
+(`aloneCase`); `tests-corpus` runs the same objects natively as test
+executables (`nativeAlone`).
 
 The hostile case for the shape view (`illTyped`): an erased-typing program
 whose root `main : E := F.c₁` returns a constructor of another enumeration.
@@ -200,9 +200,9 @@ def aloneCases (a : Assert) : IO (Array String) := do
         s!"{label}: verifyBytes refused the claim"
   return lines
 
-/-- `nativeAlone` for `tests-corpus`: each root of `aloneCases`, linked with the
-runtime driver, returns constructor `j` natively; the C decoder prints `#j`
-and `Rt.readback` of the native word gives the same. -/
+/-- `nativeAlone` for `tests-corpus`: each root of `aloneCases`, as a test
+executable, returns constructor `j` natively; the independent decoder prints
+`#j` and `Rt.readback` of the native word gives the same. -/
 def nativeAlone (a : Assert) (nt : IxCCTests.Rt.Native.Tools) : IO (Array String) := do
   let mut lines := #[]
   for n in [2, 3] do
@@ -216,9 +216,9 @@ def nativeAlone (a : Assert) (nt : IxCCTests.Rt.Native.Tools) : IO (Array String
       match ← IxCCTests.Rt.Native.run exe opts [[]] with
       | [ln] =>
         expect a (ln.ok && ln.status == 0) s!"{label}: status {ln.status}, registers restored {ln.ok}"
-        expect a (ln.obs == some s!"#{j}") s!"{label}: the C decoder prints {ln.obs}"
+        expect a (ln.obs == some s!"#{j}") s!"{label}: the independent decoder prints {ln.obs}"
         expect a (ln.readback opts.region sig ty == some (.ctor j []))
-          s!"{label}: Rt.readback of the native word differs from the C decoder"
+          s!"{label}: Rt.readback of the native word differs from the independent decoder"
         lines := lines.push s!"{label}: natively #{j}, as Rt.readback reads it"
       | _ => expect a false s!"{label}: not one result line"
   return lines

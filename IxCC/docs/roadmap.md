@@ -331,8 +331,8 @@ Ixon v4 → Src (relevance-annotated kernel terms + unfolding table)
 - **The Aiur routes (AR).** AR-1, the evaluator circuit, is the IxVM
   workstream's; AR-2, per-program compilation to formal Aiur, is research and
   unscheduled ([end-to-end](end-to-end.md#aiur-form-ii-per-program-compilation-later)).
-- **The x86 back half (XB).** Retire the C driver from the execution path
-  (XB-1, the same work as IxOS-0) and replace the instruction-set assumption
+- **The x86 back half (XB).** The C driver is off the execution path
+  (XB-1, the same work as IxOS-0; done with X1) and replace the instruction-set assumption
   by agreement with the Sail model (XB-2, the [reference-model
   route](x86-reference-model.md)).
 - **The native route's breadth (Phases 2–5).** Heap completion and closures,
@@ -379,8 +379,7 @@ experienced engineer per line of work. *Owner* is the default, subject to the
 | SP-N | Native discharge of the premises, for x86 consumers without IxVM proofs: IxCK run natively, the image's faithfulness discharged against IxCK's reading (DO-6), and the erased checker replaced by IxCK in the producer and on the native verifier path (decided 2026-11-14; in progress, as a kernel-based front end in new modules beside the existing one, designed in the [kernel front end](kernel-front-end-design.md); the switch is planned). Working defaults, awaiting the owner's confirmation ([decisions](kernel-front-end-design.md#decisions)): IxCC's reading checked natively against IxCK's (DO-6 (c)), the kernel's tiered entry, the artifact's own prelude, unbound environments refused; the switch held until the kernel's typing core has a work budget, because on a hostile `let` chain the kernel front end's acceptance takes 52.2 s at 30 `let`s against the erased checker's 0.19 s | SP-B; SP-0 for the statement; for the switch, the role-bound refreeze (RL-1 phase 2) and a work budget in the kernel's typing core | the x86 statement with both premises discharged in one native run; the erased checker deleted | 2–6k lines (built: about 1.5k; the switch deletes about 13.5k) | IxCC | — |
 | AR-1 | The evaluator circuit, its refinement of SrcEval, the lowering claim, aggregation | EV-1, EV-2 (unproved deployment); SP-0, SP-1 (proofs) | the IxVM workstream's | that workstream's estimates: the circuit 5–10k lines of formal Aiur, its refinement 10–25k, the lowering check 3–8k | IxVM workstream | — |
 | AR-2 | Fir → formal Aiur with a backward simulation, one object enumeration per program, small `Nat` below 2^56 | RL-2 (formal Aiur in this repository), a key-derivation story or a standalone customer; CD2 optional | K1 through per-program circuits | 8–15k lines for the `Nat` and tree fragment (a spike outside this tree; the IxVM side estimates 10–25k) | unassigned | — |
-| XB-1 | = IxOS-0: a host loader in place of `runtime_driver.c` | — | the K1 and RC suites pass with the C driver removed from the execution path | not estimated | IxCC | — |
-| XB-1 (redefined 2026-11-14) | Not a host loader with a trampoline: IxCC-written executables replace `runtime_driver.c` out of process, with no C (X0 then X1 of [standalone executables](#standalone-executables)); the row above keeps its wording until DO-34 is settled | X0 | as X1 | as X0 and X1 | IxCC | — |
+| XB-1 | = IxOS-0, as redefined on 2026-11-14 (DO-34): IxCC-written executables replace the C runtime driver in the native gates, out of process, with no C and no in-process trampoline (X0 then X1 of [standalone executables](#standalone-executables)); first planned as a host loader calling an object's entries through a trampoline. Done with X1 | X0 | as X1 | as X0 and X1 | IxCC | — |
 | XB-2 | Agreement with the Sail x86 model (S0, S1, S2) | — | as in the [reference-model route](x86-reference-model.md) | research | IxCC | — |
 | HD-0 | A budget on a closure's typing; a required fuzzing check | — | the check required; typing bounded per closure | under 1k lines and the gate; weeks | IxCC | — |
 | HD-1 | Typing off the verifier path: the erased checker replaced by the certified kernel (decided 2026-11-14, done within SP-N) | SP-N | the verifier path and the producer call no erased-checker function | — | IxCC | — |
@@ -579,10 +578,11 @@ nothing to optimise; the annotations mean something there only through RE-2.
 ### Standalone executables
 
 Decided by the owner (2026-11-14): standalone executables are a target, with
-no C driver; the start-up logic is self-hosted. Today a compiled object runs
-only inside `runtime_driver.c` (364 lines of C, linked by the system linker,
+no C driver; the start-up logic is self-hosted. Until X1 a compiled object ran
+only inside a C runtime driver (364 lines of C, linked by the system linker,
 on the C library), modelled by the ledger assumption
-`x86-phase1-runtime-driver-model`. The certified program stays pure; IxCC
+`x86-phase1-runtime-driver-model`; X0 and X1 replaced it with executables IxCC
+writes. The certified program stays pure; IxCC
 writes a static executable containing the object's text byte for byte, a small
 shell written as typed x86 in Lean and encoded by IxCC's own encoder, and a
 zero-filled segment for the stack and the region; the shell establishes the
@@ -598,7 +598,7 @@ Linux process or under the IxOS tender
 | --- | --- | --- | --- | --- | --- |
 | X0 | `ixcc compile --exe` for `Nat` roots (and results without fields): executable writer and checker, typed-x86 shell with the system call outside the program table, static layout with the driver contract proved; the shell ledgered (`x86-linux-exe-shell`). The per-call registers in the driver model move to X0-P | — | every corpus root of the fragment as an executable agrees with the manifest, SrcEval, ByteEval and the C driver, under a seccomp filter, with only `prctl`, `seccomp`, `write` and `exit` | 2–3.5k lines; 3–6 weeks (measured: 1.5k lines with tests) | Implemented ([as implemented](standalone-executables-design.md#x0-as-implemented)) |
 | X0-P | The shell proved; a return address and register file per call in `X86.Driver`; the `Nat` executable theorem; the driver-model assumption retired for executables | X0 | the theorem fenced | 3–6k lines; 2–4 months | Planned |
-| X1 | The redefined XB-1 and IxOS-0: IxCC-written test executables replace `runtime_driver.c` in every native gate, out of process, with no trampoline and no C | X0 | the native suites pass with the C driver off the execution path and no C compiler in their inputs | 1–2k lines; 2–4 weeks after X0 | Planned |
+| X1 | The redefined XB-1 and IxOS-0: IxCC-written test executables replace the C runtime driver in every native gate, out of process, with no trampoline and no C | X0 | the native suites pass with the C driver off the execution path and no C compiler in their inputs | 1–2k lines; 2–4 weeks after X0 | Implemented ([as implemented](standalone-executables-design.md#x1-as-implemented)): the C drivers are deleted; no gate runs a compiled program through C |
 | X2 | Numeric state machines: a generic request shell, parsing and rendering in Lean, the session theorem on `Nat` states | X0 (X0-P for the proof) | a 1,000-call session against Lean's interpreter; the theorem fenced | 2–4k lines | Planned |
 | X3 | Batch byte executables: arguments and input bytes in, output bytes and an exit code out | Phase 3 (DR2, DR3, DR6) | byte-identical to Lean-compiled executables over a corpus | 2–4k lines beyond the DR items | Planned |
 | X4 | Interactive executables: state-machine roots with heap states; platform interface version 1; a seccomp filter of exactly it | DR1, DR6, DR9 (a) | a 1,000-call session; the state-machine theorem fenced | 4–8k lines | Planned |
@@ -609,9 +609,9 @@ Linux process or under the IxOS tender
 the interpretation question (DC-2) and P8 for X5. *Composes with the spine:*
 the executable's statement replaces "the linked object returns `w`" by "the
 executable exits after writing `w`", and the driver model by the loader's
-post-state and the platform's system-call model. *Until X1:* the C driver
-stays, ledger-pinned; one gate runs both for a cycle, then the C driver, its
-pin and the C link paths go.
+post-state and the platform's system-call model. *X1, done:* every native suite
+ran both the C driver and the test executables, line by line, with no
+disagreement; then the C drivers, their pins and the C link paths went.
 
 ### Repository and landing
 
@@ -662,8 +662,7 @@ IxOS-3 compiles the verifier as SP-0 leaves it; IxOS-4 depends on SP-1 (or CD2).
 
 | Step | Content | Prerequisites | Exit | State |
 | --- | --- | --- | --- | --- |
-| IxOS-0 | A host loader that maps an object and calls its entries through a minimal ledgered trampoline, with readback in Lean, in place of linking `runtime_driver.c` (also XB-1) | none | The K1 and RC suites pass through it with the C driver removed from the execution path | Planned |
-| IxOS-0 (redefined 2026-11-14) | The platform interface and its Linux implementation as the reference host, with no in-process trampoline and no C: X0 and X1 of [standalone executables](#standalone-executables), extended by X4; the tender's implementation of the interface moves to IxOS-2 (X6). The row above keeps its wording until DO-34 is settled | none | as X1 | Planned |
+| IxOS-0 | The platform interface and its Linux implementation as the reference host, with no in-process trampoline and no C: X0 and X1 of [standalone executables](#standalone-executables), extended by X4; the tender's implementation of the interface moves to IxOS-2 (X6). Redefined on 2026-11-14 (DO-34, also XB-1) from a host loader that mapped an object and called its entries through a ledgered trampoline in place of linking the C runtime driver | none | as X1 | In progress (X0 and X1 implemented; X4 planned) |
 | IxOS-1 | Fuel metering in prologues and at back edges with a new resource status; Ring-0 frame preservation on every outcome, not only on return | none | Fenced theorems; the session gate with fuel exhaustion | Planned |
 | IxOS-2 | A minimal monitor: SIP table, region allocation, request dispatch to the tender, admission by claim digest and external evidence | Phase 2 (P8, DR1), DR2, DR3, DR6, DR9 | The monitor's `step` certified; a host-harness session of SIP calls | Planned |
 | IxOS-3 | Admission inside the monitor: `CompileClaim.verifyBytes` compiled by IxCC | Phases 2–5 (bignums for 256-bit address comparisons, strings for certificate parsing, scale for the checker's closure); after SP-0, the verifier it compiles takes kernel acceptance as a premise | An IxCC-compiled `check-cert` agrees with the Lean-compiled one on every committed certificate and the hostile-input regressions | Planned |
@@ -933,7 +932,7 @@ The owner also decided, on the same day:
 | DO-31 (decided 2026-11-14: the default) | The system-call instruction only in platform code, as a platform-only row the program checker refuses | as stated; allow it in program text | As stated | Program text stays admissible under the IxOS tender's Ring-0 check | Low |
 | DO-32 (decided 2026-11-14: the default) | Executables confine themselves with seccomp (strict while the interface is `write`/`read`/`exit`, then a filter of exactly the interface) | on by default; off by default | On by default | The kernel interface after start becomes as small as the theorem's model | Low |
 | DO-33 (decided 2026-11-14: the default) | What an executable claim binds | the object's claim plus the executable's hash, platform, shell version, entry convention and layout; less | As stated; a verifier rebuilds the executable deterministically | Every input to the executable's bytes is bound | Medium: the claim codec is shared with ix |
-| DO-34 (decided 2026-11-14: the default) | Redefine XB-1 and IxOS-0 as IxCC-written executables replacing `runtime_driver.c`, out of process, dropping the in-process trampoline | redefine; keep the host loader | Redefine | The trampoline is C or assembly in the Lean process, which the owner's decision excludes | Low |
+| DO-34 (decided 2026-11-14: the default) | Redefine XB-1 and IxOS-0 as IxCC-written executables replacing the C runtime driver, out of process, dropping the in-process trampoline | redefine; keep the host loader | Redefine | The trampoline is C or assembly in the Lean process, which the owner's decision excludes | Low |
 | DO-35 (decided 2026-11-14: the default) | Numeric state machines (X2) on today's fragment before Phase 3 | before; after | Before, if Phase 3 is more than about six months away | They need no heap across calls, so the session theorem is available early | Low |
 | DO-36 (decided 2026-11-14: the default) | Lean `IO` through platform calls with recorded interpretations, or by transforming `main` into a state machine | platform calls; a continuation-passing transformation | Platform calls; revisit if IxOS programs must never call out | Keeps ordinary Lean `main` unchanged; the transformation would need closures and a whole-program rewrite | Medium |
 

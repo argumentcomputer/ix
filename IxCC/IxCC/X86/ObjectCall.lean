@@ -7,8 +7,8 @@ import IxCC.X86.ObjectRun
 symbol looked up as a linker does: the first global function symbol named
 `name` defined in `.text` (`ELF.symbol?`), rather than the entry symbol
 (`ELF.entry?`). It runs any export of the object, `main`'s wrapper, `cx_init`
-or another root's, the way `runtime_driver.c` calls `cx_init` and
-`-DENTRY=cx_<root>`. Everything else is `exec`'s: the text from the bytes,
+or another root's, the way an executable's shell calls `cx_init` and a root's
+`cx_<root>`. Everything else is `exec`'s: the text from the bytes,
 the caller's return address in the word at `rsp`, at most `k` byte steps
 stopping at the return address (`runTo`), and the status and value in
 `rax:rdx` (`finish`).

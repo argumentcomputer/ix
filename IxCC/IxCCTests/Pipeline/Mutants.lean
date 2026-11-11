@@ -21,7 +21,7 @@ random mutations in each class below and given to `Recheck.run`:
 Each mutant is **rejected** (its stage and code are tallied), or accepted
 with the **same object**, or accepted with a **different object**, which is
 then run on the entry's model inputs on the typed x86 machine and the byte
-machine (both, from `cx_init`; and natively at the test size with `--cc`)
+machine (both, from `cx_init`; and natively at the test size with `--native`)
 and must return the original's result. A resource failure (`heap`,
 `stack`, `natOverflow`) is an allowed extra outcome and is counted; so is
 any result on an input where SrcEval, under the mutant's own table and

@@ -33,11 +33,11 @@ Stacking, layout and emission, end to end:
    natively, in a region at the Lean region's address.
 
 Each object runs on the typed machine and the byte machine
-(`Support.runOne`) and, with `--cc`, natively under
-`fixtures/x86/backend_driver.c`; every level must return the same
+(`Support.runOne`) and, with `--native`, natively as a test executable IxCC
+writes (`Backend.Native`); every level must return the same
 `rax:rdx` with the callee-saved registers and `rsp` restored.
 
-Usage: `check-backend [--cc CC] [--driver PATH] [--work DIR] [--programs N]
+Usage: `check-backend [--native] [--work DIR] [--programs N]
 [--seeds S1,…] [--native-every K] [--max-blocks B]`. -/
 
 namespace IxCCTests.Backend
@@ -70,8 +70,7 @@ structure Case where
   root : Option Lir.FunId := none
 
 structure Options where
-  cc : Option String := none
-  driver : System.FilePath := "fixtures/x86/backend_driver.c"
+  runNative : Bool := false
   work : Option System.FilePath := none
   programs : Nat := 125
   seeds : List UInt64 := [0x5eed0001, 0x5eed0002, 0x5eed0003, 0x5eed0004]
@@ -382,8 +381,7 @@ def parseNat (flag n : String) : Except String Nat :=
 
 def parseOptions : List String → Except String Options
   | [] => pure {}
-  | "--cc" :: cc :: rest => do return { (← parseOptions rest) with cc := some cc }
-  | "--driver" :: d :: rest => do return { (← parseOptions rest) with driver := d }
+  | "--native" :: rest => do return { (← parseOptions rest) with runNative := true }
   | "--work" :: d :: rest => do return { (← parseOptions rest) with work := some d }
   | "--programs" :: n :: rest => do return { (← parseOptions rest) with programs := ← parseNat "--programs" n }
   | "--native-every" :: n :: rest => do
@@ -423,16 +421,17 @@ def run (args : List String) : IO Bool := do
       let go (tools : Option Native.Tools) : IO Bool := do
         match ← (suite o tools).run with
         | .ok () =>
-            IO.println s!"check-backend: ok ({(← IO.monoMsNow) - start} ms){if tools.isSome then ", native runs agree" else ""}"
+            let lines ← Native.lines
+            IO.println s!"check-backend: ok ({(← IO.monoMsNow) - start} ms){if tools.isSome then s!", native runs agree ({lines} native lines run as test executables)" else ""}"
             return true
         | .error e =>
             IO.eprintln s!"check-backend: {e}"
             return false
-      match o.cc, o.work with
-      | none, _ => go none
-      | some cc, some work =>
+      match o.runNative, o.work with
+      | false, _ => go none
+      | true, some work =>
           IO.FS.createDirAll work
-          go (some { cc, driver := o.driver, work })
-      | some cc, none => IO.FS.withTempDir fun work => go (some { cc, driver := o.driver, work })
+          go (some { work })
+      | true, none => IO.FS.withTempDir fun work => go (some { work })
 
 end IxCCTests.Backend

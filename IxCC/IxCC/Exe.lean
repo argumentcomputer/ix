@@ -24,10 +24,10 @@ inductive whose constructors all have none, `Bool` among them
 * `exe.layout`: a stack or region outside the driver contract;
 * `exe.write`: the writer or its check refused (it should not).
 
-The C driver (`fixtures/x86/runtime_driver.c`) also runs roots outside this
-fragment: constructor-tree results (its C decoder renders them), roots whose
-parameters are not `Nat` (it passes any word), fewer arguments than
-parameters (it passes zero), several roots of one object, one input line
+The native suites' test executables (`IxCCTests.Exe.TestShell`) also run
+roots outside this fragment: constructor-tree results (the host reads them
+back), roots whose parameters are not `Nat` (it passes any word), fewer
+arguments than parameters (it passes zero), several roots of one object, one input line
 after another in one process (with a fresh `cx_init` for each), regions
 under 4 KiB (`cx_init` refuses them), timing and a dump of the object area.
 -/

@@ -1,7 +1,8 @@
 import IxCC.Exe
 
 /-! Standalone executables: the layout's driver contract and the written
-file's structural check use only the standard logical axioms. -/
+file's structural check (for the production frame and for any frame) use only
+the standard logical axioms. -/
 
 /-- info: 'IxCC.X86.Exe.Layout.driver_canonicalOk' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.X86.Exe.Layout.driver_canonicalOk
@@ -17,3 +18,6 @@ file's structural check use only the standard logical axioms. -/
 
 /-- info: 'IxCC.X86.Exe.Certified.valid'' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.X86.Exe.Certified.valid'
+
+/-- info: 'IxCC.X86.Exe.checkFor_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.X86.Exe.checkFor_sound
