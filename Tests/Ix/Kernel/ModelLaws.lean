@@ -659,7 +659,7 @@ theorem no_model_of_natRec_false_installs {ds : List (Declaration .anon)} {env :
     M.cval_params _ _ hfR _ _ (fun p hp => by
       simp only [ConstantInfo.toConstantVal, List.mem_singleton] at hp
       subst hp
-      first | rfl | simp [Level.substFn, Level.eval, φ1])
+      rfl)
   have hP0 : M.cval cvP'.name φ1 = empty := by
     rw [hPv, hL0, hRv', hRR, heq', hH0]
   obtain ⟨TB, hTB, hBmem⟩ := M.mem _ (mem_of_find hfB) φ1 (fun _ => empty)
