@@ -278,21 +278,21 @@ theorem enumCtors_some {D : CId} {cs : List CId} (h : enumCtors p D = some cs) :
 
 theorem foVal_of_check {t : FoTy} {x : Value} {e : KExpr} (h : foValB p κ t x e = true) :
     FoVal p κ t x e := by
-  match t, x, h with
-  | .nat, .lit n, h =>
-    simp only [foValB, decide_eq_true_eq] at h
+  unfold foValB at h
+  split at h
+  · rename_i n
+    simp only [decide_eq_true_eq] at h
     subst h; exact .nat n
-  | .enum D, .con c [] [] [], h =>
-    simp only [foValB, Bool.and_eq_true, decide_eq_true_eq] at h
+  · rename_i D c
+    simp only [Bool.and_eq_true, decide_eq_true_eq] at h
     obtain ⟨rfl, h⟩ := h
-    cases hcs : enumCtors p D with
-    | none => rw [hcs] at h; cases h
-    | some cs =>
-      rw [hcs] at h
-      have hc : c ∈ cs := of_decide_eq_true h
+    split at h
+    · rename_i cs hcs
       obtain ⟨safe, ty, hd⟩ := enumCtors_some hcs
-      obtain ⟨i, hi⟩ := List.mem_iff_getElem?.mp hc
+      obtain ⟨i, hi⟩ := List.mem_iff_getElem?.mp (of_decide_eq_true h)
       exact .enum hd hi
+    · cases h
+  · cases h
 
 theorem foArgs_length : ∀ {ts : List FoTy} {xs : List Value} {es : List KExpr},
     FoArgs p κ ts xs es → es.length = ts.length
