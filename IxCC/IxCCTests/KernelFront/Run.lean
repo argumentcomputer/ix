@@ -1,4 +1,5 @@
 import IxCCTests.KernelFront.Diff
+import IxCCTests.KernelFront.Bound
 import IxCCTests.Src.Support
 
 /-! # `tests-kernel-front`: the kernel front end on the committed role-bound closures
@@ -20,6 +21,9 @@ Then, on every closure of the registered role-bound family
 (`fixtures/corpus/phase1-bound`): the kernel accepts it, and the two front ends
 give the same program and, root by root, the same annotation, certificate
 and object, or refuse the root alike.
+
+Then the role-bound test builder (`IxCCTests.Support.Bound`), with the hostile
+family's enumeration case ported to it (`Bound`).
 
 Differential runs over other role-bound closures, written into scratch by the
 tree's `ix`, are `tests-kernel-front diff …` (`Main`). -/
@@ -143,6 +147,8 @@ def run : IO Bool := do
         s!"{label}: {rep.newAccept}; the front ends differ: {rep.program} {rep.findings}"
       IO.println s!"{label}: accepted, {rep.records} records, {rep.roots.size} roots alike; \
         kernel {rep.newAcceptMs} ms against erased typing {rep.oldTypingMs} ms"
+    -- the role-bound test builder, and the hostile enumeration case ported to it
+    for line in ← Bound.run a do IO.println line
     IO.println s!"tests-kernel-front: {← a.get} assertions passed"
     return true
   catch error =>
