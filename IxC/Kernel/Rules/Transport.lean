@@ -346,7 +346,9 @@ theorem defEq_tr {ρ δ : Nat → Nat} {ok : Nat → Prop} {env env' : Env md}
   | _, _, _, .natSucc h, hd => .natSucc (defEq_tr hT h hd)
   | _, _, _, .natOffset (ba := ba) (bb := bb) (k := k) hs ht ha hb h, hd =>
     .natOffset (ba := ba.renFV ρ) (bb := bb.renFV ρ) (k := k) (hT.ext.natLitSupported_mono hs)
-      (hT.ext.opt_mono (p := natAddTyOk) ht rfl) (by rw [natOffsetOf_renFV, ha]; rfl)
+      (fun h' => hT.ext.opt_mono (p := natAddTyOk)
+        (ht (by simp only [natOffsetAdd_renFV] at h'; exact h')) rfl)
+      (by rw [natOffsetOf_renFV, ha]; rfl)
       (by rw [natOffsetOf_renFV, hb]; rfl) (defEq_tr hT h hd)
   | _, _, _, .forallE hty hbody hpw hc, hd => by
     have h2 := defEq_tr hT hbody (hT.ok_succ hd)

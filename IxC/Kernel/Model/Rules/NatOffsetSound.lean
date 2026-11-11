@@ -451,9 +451,9 @@ theorem Red.natAddZero_sound (hin : RulesInputs V m φ) {d : Nat} {us : List Lev
 /-- **An offset's meaning**: a framed, read, graded term with the offset
 `(base, k)` is `succᵏ ⟦base⟧`; the base is framed, read and graded, and its leaves
 are the term's. -/
-theorem natOffsetOf_sem (hin : RulesInputs V m φ) (hs : natLitSupported env = true)
-    (ht : natAddTyOk (env.find? natAddName) = true) :
+theorem natOffsetOf_sem (hin : RulesInputs V m φ) (hs : natLitSupported env = true) :
     ∀ (e : Expr md) {b : Expr md} {k : Nat}, natOffsetOf e = some (b, k) →
+      (natOffsetAdd e = true → natAddTyOk (env.find? natAddName) = true) →
       ∀ {d : Nat} {Δa : List AnnotTerm} {ea : AnnotTerm}, Frame d e → CtxOk m φ d Δa e →
         denoteMeta m.acval env φ d e = some ea → Graded V Δa ea →
         Frame d b ∧ LeavesSub b e ∧ ∃ ba, denoteMeta m.acval env φ d b = some ba ∧
@@ -461,9 +461,8 @@ theorem natOffsetOf_sem (hin : RulesInputs V m φ) (hs : natLitSupported env = t
             interp V ρ ea =
               succPow (interp V ρ (m.acval natSuccName φ)) (interp V ρ ba) k := by
   obtain ⟨hKinv, -, -⟩ := natSucc_leaf hin hs
-  obtain ⟨⟨cv, v, hint, hfA, -⟩, -⟩ := natAdd_head hin hs ht
   refine natOffsetOf_rec (fun e ih => ?_)
-  intro b k h d Δa ea hf hC hea hg
+  intro b k h hadd d Δa ea hf hC hea hg
   rcases natOffsetOf_some h with ⟨rfl, rfl⟩ | ⟨us, x, rfl, hx⟩ | ⟨us, x, n, rfl, hx⟩
   · -- a literal: `succᵏ 0`
     obtain rfl : ea = natLitR m φ k :=
@@ -480,14 +479,19 @@ theorem natOffsetOf_sem (hin : RulesInputs V m φ) (hs : natLitSupported env = t
     have hCx : CtxOk m φ d Δa x := hC.app_arg
     have hsubx : LeavesSub x (.app (.const natSuccName us) x) :=
       fun l hl => by simp [Expr.fvarLeaves, hl]
+    have haddx : natOffsetAdd x = true → natAddTyOk (env.find? natAddName) = true :=
+      fun h' => hadd (by rw [natOffsetAdd_succ, ite_eq_left rfl]; exact h')
     rcases natOffsetStep_eq hx with ⟨k', hx', rfl⟩ | ⟨-, rfl, rfl⟩
     · obtain ⟨hfb, hsubb, ba, hba, hgb, heq⟩ :=
-        ih x (Or.inl ⟨us, rfl⟩) hx' hfx hCx hxa hgx
+        ih x (Or.inl ⟨us, rfl⟩) hx' haddx hfx hCx hxa hgx
       refine ⟨hfb, fun l hl => hsubx l (hsubb l hl), ba, hba, hgb, fun ρ hρ => ?_⟩
       rw [interp_app, heq ρ hρ, succPow_succ]
     · refine ⟨hfx, hsubx, xa, hxa, hgx, fun ρ _ => ?_⟩
       rw [interp_app, succPow_one]
-  · -- `Nat.add x (lit n)`
+  · -- `Nat.add x (lit n)`: the split reads the stored `Nat.add`
+    have ht : natAddTyOk (env.find? natAddName) = true :=
+      hadd (by rw [natOffsetAdd_add, ite_eq_left rfl])
+    obtain ⟨⟨cv, v, hint, hfA, -⟩, -⟩ := natAdd_head hin hs ht
     obtain ⟨-, xa, la, hxa, hla, rfl, hxN⟩ := natAdd_app_inv hin hs ht hea hg
     obtain rfl : la = natLitR m φ n :=
       Option.some.inj (hla.symm.trans (denoteMeta_natLitR hs d n))
@@ -503,7 +507,7 @@ theorem natOffsetOf_sem (hin : RulesInputs V m φ) (hs : natLitSupported env = t
       fun ρ hρ => natAdd_succPow hin hs hfA ρ (hxN ρ hρ) n
     rcases natOffsetStep_eq hx with ⟨k', hx', rfl⟩ | ⟨-, rfl, rfl⟩
     · obtain ⟨hfb, hsubb, ba, hba, hgb, heq⟩ :=
-        ih x (Or.inr ⟨us, n, rfl⟩) hx' hfx hCx hxa hgx
+        ih x (Or.inr ⟨us, n, rfl⟩) hx' (fun _ => ht) hfx hCx hxa hgx
       refine ⟨hfb, fun l hl => hsubx l (hsubb l hl), ba, hba, hgb, fun ρ hρ => ?_⟩
       rw [hadd ρ hρ, heq ρ hρ, succPow_add]
     · exact ⟨hfx, hsubx, xa, hxa, hgx, hadd⟩
@@ -512,12 +516,15 @@ theorem natOffsetOf_sem (hin : RulesInputs V m φ) (hs : natLitSupported env = t
 bases are equal. -/
 theorem DefEq.natOffset_sound (hin : RulesInputs V m φ) {d : Nat} {a b ba bb : Expr md}
     {k : Nat} (hs : natLitSupported env = true)
-    (ht : natAddTyOk (env.find? natAddName) = true)
+    (ht : natOffsetAdd a = true ∨ natOffsetAdd b = true →
+      natAddTyOk (env.find? natAddName) = true)
     (ha : natOffsetOf a = some (ba, k)) (hb : natOffsetOf b = some (bb, k))
     (h : DefEqSem m φ d ba bb) : DefEqSem m φ d a b := by
   intro hfa hfb Δa aa ba' hCa hCb haa hba hga hgb ρ hρ
-  obtain ⟨hfA, hsubA, xa, hxa, hgA, heqA⟩ := natOffsetOf_sem hin hs ht a ha hfa hCa haa hga
-  obtain ⟨hfB, hsubB, xb, hxb, hgB, heqB⟩ := natOffsetOf_sem hin hs ht b hb hfb hCb hba hgb
+  obtain ⟨hfA, hsubA, xa, hxa, hgA, heqA⟩ :=
+    natOffsetOf_sem hin hs a ha (fun h' => ht (Or.inl h')) hfa hCa haa hga
+  obtain ⟨hfB, hsubB, xb, hxb, hgB, heqB⟩ :=
+    natOffsetOf_sem hin hs b hb (fun h' => ht (Or.inr h')) hfb hCb hba hgb
   rw [heqA ρ hρ, heqB ρ hρ,
     h hfA hfB (hCa.of_subset hsubA) (hCb.of_subset hsubB) hxa hxb hgA hgB ρ hρ]
 

@@ -69,6 +69,16 @@ theorem natOffsetOf_add (c : Key md) (us : List Level) (x : Expr md) (m : Nat) :
     natOffsetOf (.app (.app (.const c us) x) (.lit (.natVal m))) =
       if c = natAddName then some (natOffsetStep x (natOffsetOf x) m) else none := rfl
 
+/-- `natOffsetAdd` at a constant applied once. -/
+theorem natOffsetAdd_succ (c : Key md) (us : List Level) (x : Expr md) :
+    natOffsetAdd (.app (.const c us) x) = if c = natSuccName then natOffsetAdd x else false :=
+  rfl
+
+/-- `natOffsetAdd` at a constant applied to a term and a literal. -/
+theorem natOffsetAdd_add (c : Key md) (us : List Level) (x : Expr md) (m : Nat) :
+    natOffsetAdd (.app (.app (.const c us) x) (.lit (.natVal m))) =
+      if c = natAddName then true else false := rfl
+
 /-- `natOffsetStep`, inverted. -/
 theorem natOffsetStep_eq {x b : Expr md} {o : Option (Expr md × Nat)} {n k : Nat}
     (h : natOffsetStep x o n = (b, k)) :
@@ -202,6 +212,30 @@ theorem natOffsetOf_renFV (ρ : Nat → Nat) : ∀ e : Expr md,
             · rw [ite_eq_right hc, ite_eq_right hc]
               rfl
           | strVal _ => rfl
+        | _ => rfl
+      | _ => rfl
+    | _ => rfl
+  | _ => rfl
+
+/-- **`natOffsetAdd` is blind to renaming free variables.** -/
+theorem natOffsetAdd_renFV (ρ : Nat → Nat) : ∀ e : Expr md,
+    natOffsetAdd (e.renFV ρ) = natOffsetAdd e := by
+  refine natOffsetOf_rec (fun e ih => ?_)
+  cases e with
+  | app f x =>
+    cases f with
+    | const c us =>
+      show natOffsetAdd (.app (.const c us) (x.renFV ρ)) = _
+      rw [natOffsetAdd_succ, natOffsetAdd_succ]
+      by_cases hc : c = natSuccName
+      · subst hc
+        rw [ite_eq_left rfl, ite_eq_left rfl, ih x (Or.inl ⟨us, rfl⟩)]
+      · rw [ite_eq_right hc, ite_eq_right hc]
+    | app g y =>
+      cases g with
+      | const c us =>
+        cases x with
+        | lit l => cases l <;> rfl
         | _ => rfl
       | _ => rfl
     | _ => rfl

@@ -129,7 +129,7 @@ def natBinOpNames : List (Key md) :=
 IxVM reads a `Nat` term as an offset `base + k` through literals, `Nat.succ` and
 `Nat.add _ (lit m)`, and keeps `Nat.add b (lit k)` stuck rather than unfolding
 `Nat.add`. The rules `Red.natAddSucc`, `Red.natAddZero` and `DefEq.natOffset`
-describe those moves; the three definitions below are what they read. -/
+describe those moves; the definitions below are what they read. -/
 
 /-- **The stored `Nat.add`, as the offset rules read it**: a level-monomorphic
 definition of type `Nat → Nat → Nat` whose outer binder's datum is `never` (its
@@ -168,6 +168,13 @@ def natOffsetOf : Expr md → Option (Expr md × Nat)
   | .app (.app (.const c _) x) (.lit (.natVal m)) =>
     if c = natAddName then some (natOffsetStep x (natOffsetOf x) m) else none
   | _ => none
+
+/-- **Whether `natOffsetOf`'s split passes through a `Nat.add` application**: along
+`Nat.succ` steps to a `Nat.add _ (lit m)` step. Only such a split reads `Nat.add`. -/
+def natOffsetAdd : Expr md → Bool
+  | .app (.const c _) x => if c = natSuccName then natOffsetAdd x else false
+  | .app (.app (.const c _) _) (.lit (.natVal _)) => if c = natAddName then true else false
+  | _ => false
 
 mutual
 
@@ -508,9 +515,12 @@ inductive DefEq (env : Env md) : Nat → Expr md → Expr md → Prop where
       DefEq env d (.lit (.natVal (k + 1))) (.app (.const natSuccName []) x)
   /-- **Equal offsets** (`natOffsetOf`): both sides split as `base + k` at the
   same `k`, and the bases are definitionally equal. IxVM's offset test in
-  conversion. A base is a subterm of its side, or the closed literal `0`. -/
+  conversion. A base is a subterm of its side, or the closed literal `0`. The
+  stored `Nat.add` is read only when a split passes through it (`natOffsetAdd`). -/
   | natOffset {d : Nat} {a b ba bb : Expr md} {k : Nat} :
-      natLitSupported env = true → natAddTyOk (env.find? natAddName) = true →
+      natLitSupported env = true →
+      (natOffsetAdd a = true ∨ natOffsetAdd b = true →
+        natAddTyOk (env.find? natAddName) = true) →
       natOffsetOf a = some (ba, k) → natOffsetOf b = some (bb, k) →
       DefEq env d ba bb → DefEq env d a b
   /-- ∀-congruence (`Core.lean:1627-1643`): domains, then bodies opened

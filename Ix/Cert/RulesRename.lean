@@ -163,6 +163,43 @@ theorem natOffsetOf_mapKeys : ∀ e : Expr md,
     | _ => rfl
   | _ => rfl
 
+/-- `natOffsetAdd` is blind to the renaming. -/
+theorem natOffsetAdd_mapKeys : ∀ e : Expr md, natOffsetAdd (e.mapKeys f) = natOffsetAdd e := by
+  refine natOffsetOf_rec (fun e ih => ?_)
+  cases e with
+  | app g x =>
+    cases g with
+    | const c us =>
+      show natOffsetAdd (.app (.const (c.map f) us) (x.mapKeys f)) = _
+      rw [natOffsetAdd_succ, natOffsetAdd_succ]
+      by_cases hc : c = natSuccName
+      · subst hc
+        rw [ite_eq_left (show (natSuccName : Key md).map f = natSuccName from rfl),
+          ite_eq_left rfl, ih x (Or.inl ⟨us, rfl⟩)]
+      · have hc' : ¬ c.map f = natSuccName := fun h => hc (Key.map_eq_role_iff.mp h)
+        rw [ite_eq_right hc', ite_eq_right hc]
+    | app g' y =>
+      cases g' with
+      | const c us =>
+        cases x with
+        | lit l =>
+          cases l with
+          | natVal m =>
+            show natOffsetAdd (.app (.app (.const (c.map f) us) (y.mapKeys f))
+              (.lit (.natVal m))) = _
+            rw [natOffsetAdd_add, natOffsetAdd_add]
+            by_cases hc : c = natAddName
+            · subst hc
+              rw [ite_eq_left (show (natAddName : Key md).map f = natAddName from rfl),
+                ite_eq_left rfl]
+            · have hc' : ¬ c.map f = natAddName := fun h => hc (Key.map_eq_role_iff.mp h)
+              rw [ite_eq_right hc', ite_eq_right hc]
+          | strVal _ => rfl
+        | _ => rfl
+      | _ => rfl
+    | _ => rfl
+  | _ => rfl
+
 /-- An offset's base of a good term is good: a subterm, or the literal `0`. -/
 theorem natOffsetOf_good : ∀ (e : Expr md) {b : Expr md} {k : Nat},
     natOffsetOf e = some (b, k) → e.Good P → b.Good P := by
@@ -618,7 +655,10 @@ theorem defEq_rename (hR : Renaming P f env env') :
   | _, _, _, .natSucc h, _, hb => .natSucc (defEq_rename hR h trivial hb.2)
   | _, _, _, .natOffset (ba := ba) (bb := bb) (k := k) hs ht ha hb' h, hga, hgb =>
     .natOffset (ba := ba.mapKeys f) (bb := bb.mapKeys f) (k := k)
-      (by rw [natLitSupported_ren hR.rel]; exact hs) (by rw [natAddTyOk_ren hR]; exact ht)
+      (by rw [natLitSupported_ren hR.rel]; exact hs)
+      (fun h' => by
+        rw [natAddTyOk_ren hR]
+        exact ht (by simp only [natOffsetAdd_mapKeys] at h'; exact h'))
       (by rw [natOffsetOf_mapKeys, ha]; rfl) (by rw [natOffsetOf_mapKeys, hb']; rfl)
       (defEq_rename hR h (natOffsetOf_good _ ha hga) (natOffsetOf_good _ hb' hgb))
   | _, _, _, .forallE hty hbody hpw hc, ha, hb => by
