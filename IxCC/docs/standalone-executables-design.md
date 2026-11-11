@@ -465,10 +465,13 @@ reuse sessions' 114,820); then the C drivers went.
   *write* bytes into the region; *end*. A range outside the region, an
   unknown request, an export index out of range or input that ends inside a
   request ends the run with its own status. Its memory: the program stack and
-  the shell's own 256 bytes in one zero-filled segment at `0x10000000`, the
-  region after them, page-aligned, or in a segment of its own at a fixed
+  the shell's own 256 bytes in one zero-filled segment at `0x10000000`, and
+  the region in a segment of its own, one unmapped page above it or at a fixed
   address (the back end's generated programs compute with the Lean test
-  region's address, `0x10000`). Nothing is mapped below the stack.
+  region's address, `0x10000`). Nothing is mapped below the stack, right
+  below the region or past the region's last page, so a stray write there
+  faults (`tests-exe` shows it for a store just below and just past the
+  region).
 - **Binary requests, not the line protocol.** The milestone was planned with
   the test executables speaking the C driver's line protocol. What was built
   instead: the shell parses and renders nothing, and the line protocol, the
@@ -504,14 +507,18 @@ reuse sessions' 114,820); then the C drivers went.
 - **The suites' flag** is `--native` (it was `--cc CC`).
 - **The system linker still checks the compiler's objects.** `ixcc compile`
   still writes relocatable objects, and no native gate links them any more, so
-  `check-x86-object --ixcc` (the `x86-elf-object` check) compiles the five K1
-  programs, `k1.ixe`'s five roots in one object and the real-source RC fixture
-  on the plain-RC route in the check and links each with the system linker
+  `check-x86-object --ixcc` (the `x86-elf-object` check) compiles eleven objects
+  in the check: the five K1 programs, `k1.ixe`'s five roots in one object, the
+  real-source RC fixture on the plain-RC route, `gcd` on the zero-RC route
+  (`--rc auto`), and in one object each the ABI family's eighteen roots of
+  arities 0 to 5, the scalar family's twenty-three and the boundary family's,
+  all read without their erased typing; it links each with the system linker
   into a static executable with no C library, entered at `cx_init` and never
   run: every global function of the object is required to be defined, and
   `readelf` finds each in the linked file at the linked text's address plus its
-  object offset. *Measured:* about 2 s for the seven objects, compiling them
-  included, on the build box.
+  object offset (126 exports). *Measured:* the whole check takes about 4 s on
+  the build box with these eleven objects (2.8 s with the first seven, 0.6 s
+  without any).
 - **Measured** (x86-64 Linux): every native suite passes on test executables alone,
   with the native lines it ran in the comparison: `tests-rt` 180, `tests-pipeline` 450,
   `tests-corpus` 1,596 (1,412 before a further corpus family was registered), `tests-own`
@@ -554,4 +561,27 @@ default:
 Settled by X0: the executable writer, its reader and its validator are
 siblings of the object's, sharing only the object reader's field reader
 (`ELFRead`) and its symbol lookup. Still open: how much of the stream-trace
-infrastructure applies to a shell that is not compiler output.
+infrastructure applies to a shell that is not compiler output ([open
+questions](#open-questions)).
+
+## Open questions
+
+- How much of the stream-trace infrastructure applies to a shell that is not
+  compiler output (above).
+- **A guard between the production executable's stack and region.**
+  `ixcc compile --exe` puts the program stack and the region in one
+  zero-filled segment (`X86/Exe/Layout.lean`), so a write just below the
+  region lands in the top of the stack, where the shell's call leaves its
+  return address, rather than faulting. The native suites' test executables
+  have the region in a segment of its own, an unmapped page above the stack
+  segment, and `tests-exe` shows a store just outside it crashing the process.
+  Should the production layout do the same? The cost in the proofs: the frame
+  gains a second zero-filled segment, so the four program headers that
+  `check_sound` states (`Fields`, `expectedPrograms`) become five, and
+  `Layout.driver_canonicalOk`'s arithmetic moves the region by the gap (its
+  clauses, the region apart from the stack among them, already hold without
+  one). The proved pipeline does not rely on a guard: `Recheck.sound` covers
+  runs the model shows non-faulting, in which the object touches only the
+  region and its call stack, so a guard changes only what a program outside
+  the theorem (a wrong model, or an object the checker did not accept) does
+  when it writes there: fault, instead of corrupting the stack.

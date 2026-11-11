@@ -43,11 +43,15 @@ request loop, a bounds check and the calls.
 **Memory.** The program stack and the shell's own 256 bytes (the request and
 answer buffers and the shell's stack) share one zero-filled segment at
 `dataBase`: the program's stack below `callTop`, the shell's bytes above it.
-The region follows the stack in the same segment, page-aligned, or lies in
-its own zero-filled segment at a fixed address (`Mem.fixed`, for the back
-end's generated programs, whose results depend on the region's address).
-Below the program stack nothing is mapped, so a stack that ran past its
-bottom faults, as one past a guard page does.
+The region is a zero-filled segment of its own: one unmapped page above the
+stack segment, or at a fixed address (`Mem.fixed`, for the back end's
+generated programs, whose results depend on the region's address), with
+nothing mapped right below it or past its last page. So a program that
+writes just outside its region faults, and so does a stack that ran past its
+bottom (nothing is mapped below the stack segment either). (The C runtime
+driver the native gates used before X1 mapped its stack directly below its
+region, and what lay above the region varied with the process's other
+mappings.)
 -/
 
 namespace IxCCTests.Exe.TestShell
@@ -61,8 +65,8 @@ bytes), the answer (24 bytes) and its stack. -/
 def reserve : Nat := 256
 
 /-- A test executable's memory: a program stack of at least `stack` bytes
-(the stack budget is `stack - 4096`), and a region of
-`region` bytes after the stack or at `fixed`. -/
+(the stack budget is `stack - 4096`), and a region of `region` bytes, a page
+after the stack segment or at `fixed`. -/
 structure Mem where
   stack : Nat
   region : Nat
@@ -82,8 +86,11 @@ def request (m : Mem) : Nat := m.scratch
 def answer (m : Mem) : Nat := m.scratch + 64
 def shellTop (m : Mem) : Nat := m.scratch + reserve
 
+/-- The unmapped page between the stack segment and the region. -/
+def gap : Nat := 0x1000
+
 /-- The region's first byte. -/
-def base (m : Mem) : Nat := m.fixed.getD (dataBase + m.stackArea)
+def base (m : Mem) : Nat := m.fixed.getD (dataBase + m.stackArea + gap)
 
 /-- The stack budget stored at `region + 16`. -/
 def budget (m : Mem) : Nat := m.stack - 4096
@@ -91,14 +98,14 @@ def budget (m : Mem) : Nat := m.stack - 4096
 def segments (m : Mem) : List (Nat × Nat) :=
   match m.fixed with
   | some at_ => [(at_, alignUp m.region 0x1000), (dataBase, m.stackArea)]
-  | none => [(dataBase, m.stackArea + m.region)]
+  | none => [(dataBase, m.stackArea), (m.base, m.region)]
 
 /-- What the writer needs of the memory: a stack the budget can be taken
 from, a region that holds the budget word, stack and region within the
 executable writer's bound (`maxDataBytes`), and a fixed region below the file. -/
 def ok (m : Mem) : Bool :=
   m.stack % 16 == 0 && decide (8192 ≤ m.stack) && decide (24 ≤ m.region) &&
-    decide (m.stackArea + m.region ≤ maxDataBytes) &&
+    decide (m.stackArea + gap + m.region ≤ maxDataBytes) &&
     (m.fixed.all fun a => decide (a + alignUp m.region 0x1000 ≤ fileBase))
 
 end Mem

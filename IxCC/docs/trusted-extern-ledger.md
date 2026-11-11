@@ -580,10 +580,11 @@ checked). The host ([`IxCCTests/Rt/Native.lean`](../IxCCTests/Rt/Native.lean))
 does what the C runtime driver did: for each input it stores
 `stack_budget` (the stack size less 4 KiB) at `region + 16`, calls
 `cx_init(region, size, stack_budget)` and then the root, and reads the context
-and the object area back; the region is private (the zero-filled segment),
-untouched between `cx_init` and the root's return, and apart from the stack,
-below which nothing is mapped, so a stack that ran past its budget and its
-reserve would fault. Each result is decoded by `Rt.readback` and by an
+and the object area back. The region is private, a zero-filled segment of its
+own one unmapped page above the stack segment, and untouched between `cx_init`
+and the root's return; nothing is mapped right below it, past its last page or
+below the stack, so a write just outside the region and a stack that ran past
+its budget and its reserve both fault. Each result is decoded by `Rt.readback` and by an
 independent decoder ([`IxCCTests/Rt/Decoder.lean`](../IxCCTests/Rt/Decoder.lean),
 the C driver's decoder transcribed to Lean, separate code with a separate
 derivation in the same language), and the two must agree. The back end's
@@ -600,9 +601,11 @@ the legacy `callRuntime` fixture's `ixcc_rt_allocate` stub until
 `check-x86-hardware` tests the processor against the instruction table. No gate
 runs a compiled program through C. Because the native gates no longer link
 the compiler's objects, `check-x86-object --ixcc` links objects `ixcc compile`
-writes in the check (the five K1 programs, `k1.ixe`'s five roots, the
-real-source RC fixture) with the system linker, without running them, and
-requires every export where the object puts it.
+writes in the check (eleven objects: the five K1 programs, `k1.ixe`'s five
+roots, the real-source RC fixture on the plain-RC route, `gcd` on the zero-RC
+route, and the ABI, scalar and boundary corpus families' roots, one object per
+family) with the system linker, without running them, and requires every export
+where the object puts it.
 
 `Recheck.Readback` adds bounded structural signature discovery for ground
 first-order constructor results. Successful discovery certifies closed

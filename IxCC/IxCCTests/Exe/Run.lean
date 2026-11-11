@@ -295,6 +295,20 @@ def runWithInput (exe : FilePath) (input : ByteArray) : IO UInt32 := do
   stdin.flush
   child.wait
 
+/-- A hand-made object whose entry `ixcc_main` stores `rdi` at `rdi + rsi` and
+returns status 0: a program that writes wherever it is told. -/
+def storeObject : Except String ByteArray := do
+  let program : IxCC.X86.Program :=
+    { entry := 0, blocks := #[{ instructions := #[
+          IxCC.X86.Instr.store .w64 { base := some .rdi, index := some .rsi, scale := .one, displacement := 0 } .rdi,
+          IxCC.X86.Instr.mov .w64 .rax (.imm 0)], terminator := .ret }] }
+  let checked ← program.check.mapError fun _ => "the store program does not check"
+  let encoded ← (IxCC.X86.Encode.encode checked).mapError fun _ => "the store program does not encode"
+  let input : IxCC.X86.ELF.Input :=
+    { encoded, entryBlock := 0, provenance := .ixir1Policy (IxCC.Ixon.Address.replicate 0x42) 1 1 }
+  let object ← (IxCC.X86.ELF.writeChecked input).mapError fun _ => "no object"
+  return object.bytes
+
 open IxCCTests.Exe in
 def testShellPart (a : Assert) (o : Options) (work : FilePath) : IO (Array String) := do
   let mut out := #[]
@@ -309,7 +323,7 @@ def testShellPart (a : Assert) (o : Options) (work : FilePath) : IO (Array Strin
   -- fixed region in a segment of its own
   let after : TestShell.Mem := { stack := 65536, region := 65536 }
   let fixed : TestShell.Mem := { stack := 1 <<< 20, region := 65536, fixed := some 0x10000 }
-  for (label, m) in [("region after the stack", after), ("fixed region", fixed)] do
+  for (label, m) in [("region a page above the stack", after), ("fixed region", fixed)] do
     let f := TestShell.frame m exports
     match X86.Exe.writeFor f fib.object with
     | .error e => expect a false s!"test shell, {label}: {e.render}"
@@ -374,6 +388,23 @@ def testShellPart (a : Assert) (o : Options) (work : FilePath) : IO (Array Strin
       ("a write cut short", w [3, b + 64, 16, 0, 0, 0, 0, 0] ++ w [1], TestShell.exitInput)] do
     expectEq a (← runWithInput exe input).toNat code s!"test shell: {label}: exit status"
   out := out.push "malformed requests: nine sessions end with their statuses"
+  -- the region is a segment of its own, with nothing mapped right below it or
+  -- past its last page: a program that writes just outside it crashes the
+  -- executable (SIGSEGV, 128 + 11), where inside it the call returns
+  match storeObject with
+  | .error e => expect a false s!"test shell: {e}"
+  | .ok object =>
+    let m : TestShell.Mem := { stack := 65536, region := 8192 }
+    let store := work / "store.shell"
+    match TestShell.writeExe m ["ixcc_main"] object with
+    | .error e => expect a false s!"test shell: the store executable: {e}"
+    | .ok bytes =>
+      IxCCTests.Exe.writeExe store bytes
+      for (label, offset, code) in [("its first word", 0, 0), ("its last word", m.region - 8, 0),
+          ("the word below it", 2 ^ 64 - 8, 139), ("the word past it", m.region, 139)] do
+        let session := w [1, 0, m.base, offset, 0, 0, 0, 0] ++ w [0, 0, 0, 0, 0, 0, 0, 0]
+        expectEq a (← runWithInput store session).toNat code s!"test shell: a store to {label}: exit status"
+    out := out.push "a store to the region's first and last words returns; to the word below it or past it, a crash"
   -- confinement, read from /proc while the shell waits for a request
   let mine := filters (← IO.FS.readFile "/proc/self/status")
   let child ← IO.Process.spawn { cmd := exe.toString, stdin := .piped, stdout := .null, stderr := .null }

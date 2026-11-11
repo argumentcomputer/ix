@@ -42,8 +42,8 @@ selects it; plain RC when it selects that and the plain-RC certificate is
 produced and replayed; otherwise the immortal policy. It prints
 `rc policy: …` naming the policy it compiled under.
 
-`--signatures FILE` writes, per root, its symbol, parameter count and the
-driver's `--type`/`--sig` arguments (JSON; `null` when bounded ground
+`--signatures FILE` writes, per root, its symbol, parameter count and the text
+forms of its result type and signature (`type`, `sig`; JSON; `null` when bounded ground
 first-order signature discovery does not support the result type).
 `--dump-ir LEVEL` prints a level (`lam`, `anf`, `fir`,
 `cfg`, `lir`, `xv`, `xl`, or `all`) to standard output; `--stats` prints

@@ -97,14 +97,35 @@ private structure Compiled where
   args : List String
   /-- Exports the object must have, beside whatever else it defines. -/
   exports : List String
+  /-- A line `ixcc compile` must print (the policy `--rc auto` chose). -/
+  prints : Option String := none
 
 private def benchK1 (name : String) : Compiled :=
   { name, args := [s!"fixtures/ixon-v4/bench-k1/{name}.ixe", "--equations",
       s!"fixtures/ixon-v4/bench-k1/{name}.equations.json"], exports := ["cx_init", "cx_entry"] }
 
+/-- Roots compiled into one object from a corpus closure, and their exports. -/
+private def corpusRoots (name family closure : String) (roots : List String) : Compiled :=
+  { name, args := [s!"fixtures/corpus/{family}/{closure}.ixe", "--equations",
+      s!"fixtures/corpus/{family}/{closure}.equations.json"] ++ roots.flatMap (["--root", ·]),
+    exports := "cx_init" :: roots.map fun r => "cx_" ++ r.replace "." "_" }
+
+/-- The ABI family's roots of arity 0 to 5 (those of arity 6 are declined). -/
+private def abiRoots : List String :=
+  ["nat", "bool", "tri"].flatMap fun k => (List.range 6).map fun n => s!"Abi.{k}{n}"
+
+private def scalarRoots : List String :=
+  ["tailfib", "nfib", "isEven", "isOdd", "f91", "factorial", "impFor", "pyth", "sfib", "collatz",
+   "collatzBest", "isPrime", "primeCount", "sigma", "isPerfect", "perfectCount", "chooseMul",
+   "lcmUpTo", "choosePascal", "isqrt", "powMod", "digitSum", "gcdSub"].map ("Scalar." ++ ·)
+
 /-- The five K1 programs as compiled one by one, `k1.ixe`'s five roots in one
-object, and the real-source RC fixture on the plain-RC route (with
-`cx_drop`). -/
+object, the real-source RC fixture on the plain-RC route (with `cx_drop`), `gcd`
+on the zero-RC route (`--rc auto` selects it), and from the corpus the ABI
+family's eighteen roots (arities 0 to 5, `Nat`, `Bool` and enumeration
+results), the scalar family's twenty-three and the boundary family's, each
+family in one object. Every closure here is under 1.2 MB and is read without
+its erased typing (`--no-typecheck`). -/
 private def compiledSet : List Compiled :=
   ["fib", "sum-loop", "ackermann", "tak", "gcd"].map benchK1 ++
   [{ name := "k1", args := ["fixtures/ixon-v4/k1/k1.ixe", "--equations", "fixtures/ixon-v4/k1/equations.json",
@@ -112,7 +133,14 @@ private def compiledSet : List Compiled :=
       exports := ["cx_init", "cx_K1_fib", "cx_K1_sumLoop", "cx_K1_ack", "cx_K1_tak", "cx_K1_gcd"] },
    { name := "rc-real-source", args := ["fixtures/rc/real-source/anonymous.ixe", "--equations",
         "fixtures/rc/real-source/consumer.equations.json", "--rc", "on"],
-      exports := ["cx_init", "cx_drop"] }]
+      exports := ["cx_init", "cx_drop"] },
+   { name := "gcd-zero-rc", args := (benchK1 "gcd").args ++ ["--rc", "auto"],
+     exports := ["cx_init", "cx_entry"], prints := some "rc policy: zero-rc" },
+   corpusRoots "phase1-abi" "phase1-abi" "abi" abiRoots,
+   corpusRoots "phase1-scalar" "phase1-scalar" "scalar" scalarRoots,
+   { name := "phase1-boundary", args := ["fixtures/corpus/phase1-boundary/boundary.ixe", "--equations",
+        "fixtures/corpus/phase1-boundary/boundary.equations.json"],
+      exports := ["cx_init", "cx_Boundary_add", "cx_Boundary_shl"] }]
 
 private def hexValue (text : String) : Option Nat :=
   text.foldl (fun acc c => do pure (16 * (← acc) + (← hexDigit c))) (some 0)
@@ -141,7 +169,9 @@ private def linkCompiled (cc readelf ixcc : String) (directory : FilePath) : IO 
   for c in compiledSet do
     let object := directory / s!"compiled-{c.name}.o"
     let executable := directory / s!"compiled-{c.name}"
-    let _ ← run ixcc (#["compile"] ++ c.args.toArray ++ #["--no-typecheck", "-o", object.toString])
+    let printed ← run ixcc (#["compile"] ++ c.args.toArray ++ #["--no-typecheck", "-o", object.toString])
+    if let some line := c.prints then
+      need (printed.contains line) s!"{c.name}: ixcc compile did not print {line}\n{printed}"
     let symbols ← globalFunctions readelf object
     for e in c.exports do
       need (symbols.any (·.1 == e)) s!"{c.name}: the object does not define {e}\n{symbols}"
