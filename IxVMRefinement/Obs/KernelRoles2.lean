@@ -715,7 +715,7 @@ theorem «KernelRoles::role_map_lookup_or_default».lookup (t_V : Generic.Ty) :
              params := IxVM.KernelRoles.role_map_lookup_or_default.params.map fun (p, pt) => (p, (pt.subst [("V", t_V)]).toCore),
              body := IxVM.KernelRoles.role_map_lookup_or_default.body } :=
   Program.sourceFunction?_of_mem_one (f := IxVM.KernelRoles.role_map_lookup_or_default) IxVM.functionNames_nodup
-    (List.getElem_mem (l := IxVM.functions) (n := 196) (by decide +kernel)) rfl t_V
+    (List.getElem_mem (l := IxVM.functions) (n := 199) (by decide +kernel)) rfl t_V
 
 /-- The evaluation paths of `KernelRoles::role_map_lookup_or_default`: one constructor per combination of selected arms. -/
 inductive «KernelRoles::role_map_lookup_or_default».Path (t_V : Generic.Ty) (x_key x_tree x_default : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)

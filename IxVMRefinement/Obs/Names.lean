@@ -274,11 +274,6 @@ abbrev «WordLists::length_u64<Ixon::MutConst>» : String := "${\"name\":\"WordL
 
 theorem «WordLists::length_u64<Ixon::MutConst>».symbol : (Instance.mk "WordLists::length_u64" [(.named "Ixon::MutConst" [])]).symbol = «WordLists::length_u64<Ixon::MutConst>» := by decide +kernel
 
-/-- The instance `Lists::length<Field>`. -/
-abbrev «Lists::length<Field>» : String := "${\"name\":\"Lists::length\",\"types\":[\"field\"]}"
-
-theorem «Lists::length<Field>».symbol : (Instance.mk "Lists::length" [.field]).symbol = «Lists::length<Field>» := by decide +kernel
-
 /-- The instance `Lists::lookup<&Ixon::Univ>`. -/
 abbrev «Lists::lookup<&Ixon::Univ>» : String := "${\"name\":\"Lists::lookup\",\"types\":[{\"ptr\":{\"target\":{\"named\":{\"args\":[],\"name\":\"Ixon::Univ\"}}}}]}"
 
@@ -293,6 +288,11 @@ theorem «Lists::lookup<&[Field; 32]>».symbol : (Instance.mk "Lists::lookup" [(
 abbrev «Lists::drop<&Ixon::Expr>» : String := "${\"name\":\"Lists::drop\",\"types\":[{\"ptr\":{\"target\":{\"named\":{\"args\":[],\"name\":\"Ixon::Expr\"}}}}]}"
 
 theorem «Lists::drop<&Ixon::Expr>».symbol : (Instance.mk "Lists::drop" [(.ptr (.named "Ixon::Expr" []))]).symbol = «Lists::drop<&Ixon::Expr>» := by decide +kernel
+
+/-- The instance `Lists::length<Ixon::RecursorRule>`. -/
+abbrev «Lists::length<Ixon::RecursorRule>» : String := "${\"name\":\"Lists::length\",\"types\":[{\"named\":{\"args\":[],\"name\":\"Ixon::RecursorRule\"}}]}"
+
+theorem «Lists::length<Ixon::RecursorRule>».symbol : (Instance.mk "Lists::length" [(.named "Ixon::RecursorRule" [])]).symbol = «Lists::length<Ixon::RecursorRule>» := by decide +kernel
 
 /-- The instance `Lists::Node<KernelTypes::KRecRule>`. -/
 abbrev «Lists::Node<KernelTypes::KRecRule>» : String := "${\"name\":\"Lists::Node\",\"types\":[{\"named\":{\"args\":[],\"name\":\"KernelTypes::KRecRule\"}}]}"
@@ -333,6 +333,11 @@ theorem «Lists::lookup_or_default<Field>».symbol : (Instance.mk "Lists::lookup
 abbrev «Lists::lookup_or_default<&[Field; 32]>» : String := "${\"name\":\"Lists::lookup_or_default\",\"types\":[{\"ptr\":{\"target\":{\"array\":{\"element\":\"field\",\"length\":32}}}}]}"
 
 theorem «Lists::lookup_or_default<&[Field; 32]>».symbol : (Instance.mk "Lists::lookup_or_default" [(.ptr (.array .field 32))]).symbol = «Lists::lookup_or_default<&[Field; 32]>» := by decide +kernel
+
+/-- The instance `Lists::length<Field>`. -/
+abbrev «Lists::length<Field>» : String := "${\"name\":\"Lists::length\",\"types\":[\"field\"]}"
+
+theorem «Lists::length<Field>».symbol : (Instance.mk "Lists::length" [.field]).symbol = «Lists::length<Field>» := by decide +kernel
 
 /-- The instance `Lists::reverse<&KernelTypes::KExprNode>`. -/
 abbrev «Lists::reverse<&KernelTypes::KExprNode>» : String := "${\"name\":\"Lists::reverse\",\"types\":[{\"ptr\":{\"target\":{\"named\":{\"args\":[],\"name\":\"KernelTypes::KExprNode\"}}}}]}"
@@ -518,10 +523,6 @@ theorem n5459665738436230359 : instanceName [] "Lists::length" (some [(.ptr (.na
 
 theorem n9644275015669645019 : constructorName [] (.named "Lists::Node" [(.ptr (.named "KernelTypes::KExprNode" []))]) = Names.«Lists::Node<&KernelTypes::KExprNode>» := by decide +kernel
 
-theorem n8510078739894799097 : instanceName [] "Lists::Node" (some [(.array .field 8)]) = Names.«Lists::Node<[Field; 8]>» := by decide +kernel
-
-theorem c3167744620027602021 : W.constant "UInt8::BYTE_1" (Generic.Ty.subst [] .field) = .ok (.literal (1 : F)) := eq_of_isLiteral (by decide +kernel)
-
 theorem n11871363439673646749 : constructorName [] (.named "Ixon::Expr" []) = "Ixon::Expr" := by decide +kernel
 
 theorem n3632407994155229761 : instanceName [] "Lists::concat" (some [.field]) = Names.«Lists::concat<Field>» := by decide +kernel
@@ -561,6 +562,8 @@ theorem n12191984310833518187 : constructorName [] (.named "Ixon::InductiveProj"
 theorem n773527417678363081 : constructorName [] (.named "Ixon::ConstructorProj" []) = "Ixon::ConstructorProj" := by decide +kernel
 
 theorem n9041985357097787717 : constructorName [] (.named "Ixon::RecursorProj" []) = "Ixon::RecursorProj" := by decide +kernel
+
+theorem c3167744620027602021 : W.constant "UInt8::BYTE_1" (Generic.Ty.subst [] .field) = .ok (.literal (1 : F)) := eq_of_isLiteral (by decide +kernel)
 
 theorem n17025598268237686609 : instanceName [] "Lists::Node" (some [(.ptr (.array .field 32))]) = Names.«Lists::Node<&[Field; 32]>» := by decide +kernel
 
@@ -670,6 +673,8 @@ theorem c9858639577359652784 : W.constant "UInt8::BYTE_6" (Generic.Ty.subst [] .
 
 theorem c16146895348398941544 : W.constant "UInt8::BYTE_7" (Generic.Ty.subst [] .field) = .ok (.literal (7 : F)) := eq_of_isLiteral (by decide +kernel)
 
+theorem n8510078739894799097 : instanceName [] "Lists::Node" (some [(.array .field 8)]) = Names.«Lists::Node<[Field; 8]>» := by decide +kernel
+
 theorem n14714430324747779335 : instanceName [] "Lists::Node" (some [(.ptr (.named "Ixon::Expr" []))]) = Names.«Lists::Node<&Ixon::Expr>» := by decide +kernel
 
 theorem n1245658151410455720 : instanceName [] "Lists::Node" (some [(.ptr (.named "Ixon::Univ" []))]) = Names.«Lists::Node<&Ixon::Univ>» := by decide +kernel
@@ -679,8 +684,6 @@ theorem n8717405738417570338 : instanceName [] "Lists::Node" (some [(.named "Ixo
 theorem n11095265153569616067 : instanceName [] "Lists::Node" (some [(.named "Ixon::Constructor" [])]) = Names.«Lists::Node<Ixon::Constructor>» := by decide +kernel
 
 theorem n10100695283714281537 : instanceName [] "Lists::Node" (some [(.named "Ixon::MutConst" [])]) = Names.«Lists::Node<Ixon::MutConst>» := by decide +kernel
-
-theorem n7176593224600121632 : instanceName [] "Lists::length" (some [.field]) = Names.«Lists::length<Field>» := by decide +kernel
 
 theorem c2292429251841039057 : W.constant "UInt8::BYTE_192" (Generic.Ty.subst [] .field) = .ok (.literal (192 : F)) := eq_of_isLiteral (by decide +kernel)
 
@@ -693,6 +696,8 @@ theorem n13032184727759391638 : instanceName [] "Lists::lookup" (some [(.ptr (.n
 theorem n16119986092388975791 : instanceName [] "Lists::lookup" (some [(.ptr (.array .field 32))]) = Names.«Lists::lookup<&[Field; 32]>» := by decide +kernel
 
 theorem n10967839274657083673 : instanceName [] "Lists::drop" (some [(.ptr (.named "Ixon::Expr" []))]) = Names.«Lists::drop<&Ixon::Expr>» := by decide +kernel
+
+theorem n10505339359628681855 : instanceName [] "Lists::length" (some [(.named "Ixon::RecursorRule" [])]) = Names.«Lists::length<Ixon::RecursorRule>» := by decide +kernel
 
 theorem n5758466586006354762 : instanceName [] "Lists::Node" (some [(.named "KernelTypes::KRecRule" [])]) = Names.«Lists::Node<KernelTypes::KRecRule>» := by decide +kernel
 
@@ -761,6 +766,8 @@ theorem n14888783904625504901 : instanceName [] "Lists::length" (some [(.tuple [
 theorem n8000355698200817902 : instanceName [] "Lists::lookup_or_default" (some [.field]) = Names.«Lists::lookup_or_default<Field>» := by decide +kernel
 
 theorem n2275445698610172113 : instanceName [] "Lists::lookup_or_default" (some [(.ptr (.array .field 32))]) = Names.«Lists::lookup_or_default<&[Field; 32]>» := by decide +kernel
+
+theorem n7176593224600121632 : instanceName [] "Lists::length" (some [.field]) = Names.«Lists::length<Field>» := by decide +kernel
 
 theorem n3593869098302610371 : instanceName [] "Lists::reverse" (some [(.ptr (.named "KernelTypes::KExprNode" []))]) = Names.«Lists::reverse<&KernelTypes::KExprNode>» := by decide +kernel
 
