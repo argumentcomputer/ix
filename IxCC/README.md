@@ -55,6 +55,12 @@ the checked source, which the front end builds from the certificate, is
 semantically faithful to the ingested program is not proved, and neither is
 that it means the Lean definition.
 
+**Running a compiled program.** Today an object runs only inside a C test
+driver (`fixtures/x86/runtime_driver.c`), linked by the system linker.
+Standalone executables with no C in the trusted base, written by IxCC with a
+self-hosted start-up shell, are a planned target
+([standalone executables](docs/standalone-executables-design.md)).
+
 The [roadmap](docs/roadmap.md) states the fragment exactly, plans the way to
 end-to-end certification for both back ends, and keeps the decision register.
 Main includes:

@@ -44,6 +44,12 @@ theorems are relative to the source evaluator on the source IxCC's front end
 built, with an escape when that source goes wrong; the spine is the critical
 path from there to the goal.
 
+Compiled programs are also to run as **standalone executables with no C in
+the trusted base**: IxCC writes the executable itself, and the start-up and
+system-call logic is self-hosted, a small proved machine-level layer generated
+from Lean with as much as possible of it Lean source compiled by IxCC
+([standalone executables](standalone-executables-design.md)).
+
 ## Current state (2026-11-10)
 
 Tree: this branch at its tip. Phase 1's scalar compiler and the bounded
@@ -340,6 +346,12 @@ Ixon v4 → Src (relevance-annotated kernel terms + unfolding table)
   ownership checker verifying the annotations it acts on (RE-1, Phase 2), an
   instrumented source evaluator and a first-fragment theorem (RE-2), widening
   (RE-3) ([below](#resource-soundness)).
+- **Standalone executables (X).** Executables written by IxCC with no C
+  driver, C library or linker: a typed-x86 shell and the executable writer
+  (X0), proved (X0-P), the native gates moved off the C driver (X1, the
+  redefined XB-1), then effects in stages over one platform interface (X2 to
+  X5), and the IxOS tender as a second platform (X6)
+  ([below](#standalone-executables)).
 
 ### Milestones
 
@@ -361,6 +373,7 @@ experienced engineer per line of work. *Owner* is the default, subject to the
 | AR-1 | The evaluator circuit, its refinement of SrcEval, the lowering claim, aggregation | EV-1, EV-2 (unproved deployment); SP-0, SP-1 (proofs) | the IxVM workstream's | that workstream's estimates: the circuit 5–10k lines of formal Aiur, its refinement 10–25k, the lowering check 3–8k | IxVM workstream | — |
 | AR-2 | Fir → formal Aiur with a backward simulation, one object enumeration per program, small `Nat` below 2^56 | RL-2 (formal Aiur in this repository), a key-derivation story or a standalone customer; CD2 optional | K1 through per-program circuits | 8–15k lines for the `Nat` and tree fragment (a spike outside this tree; the IxVM side estimates 10–25k) | unassigned | — |
 | XB-1 | = IxOS-0: a host loader in place of `runtime_driver.c` | — | the K1 and RC suites pass with the C driver removed from the execution path | not estimated | IxCC | — |
+| XB-1 (redefined 2026-11-14) | Not a host loader with a trampoline: IxCC-written executables replace `runtime_driver.c` out of process, with no C (X0 then X1 of [standalone executables](#standalone-executables)); the row above keeps its wording until DO-34 is settled | X0 | as X1 | as X0 and X1 | IxCC | — |
 | XB-2 | Agreement with the Sail x86 model (S0, S1, S2) | — | as in the [reference-model route](x86-reference-model.md) | research | IxCC | — |
 | HD-0 | A budget on a closure's typing; a required fuzzing check | — | the check required; typing bounded per closure | under 1k lines and the gate; weeks | IxCC | — |
 | HD-1 | Typing off the verifier path | SP-0, DC-3 | as decided under DC-3 | — | IxCC | — |
@@ -556,6 +569,43 @@ native route:* in-place update, elided reference counting and stack allocation
 only where RE-1 verified. *For the evaluator route:* write-once memory has
 nothing to optimise; the annotations mean something there only through RE-2.
 
+### Standalone executables
+
+Decided by the owner (2026-11-14): standalone executables are a target, with
+no C driver; the start-up logic is self-hosted. Today a compiled object runs
+only inside `runtime_driver.c` (364 lines of C, linked by the system linker,
+on the C library), modelled by the ledger assumption
+`x86-phase1-runtime-driver-model`. The certified program stays pure; IxCC
+writes a static executable containing the object's text byte for byte, a small
+shell written as typed x86 in Lean and encoded by IxCC's own encoder, and a
+zero-filled segment for the stack and the region; the shell establishes the
+driver contract from the fixed layout. Effects come in stages over one
+platform interface (arguments, write, read, exit, clock), first as requests a
+state-machine root returns as data, later as calls to platform procedures
+treated as traced events; the system-call instruction lives only in platform
+code, never in compiled program text, so the same program text can run as a
+Linux process or under the IxOS tender
+([standalone executables design](standalone-executables-design.md)).
+
+| Id | Content | Depends on | Exit test | Size [estimate] | State |
+| --- | --- | --- | --- | --- | --- |
+| X0 | `ixcc compile --exe` for `Nat` roots: executable writer and checker, typed-x86 shell, platform-only system-call row, static layout, per-call registers in the driver model; the shell ledgered | — | every K1 and `phase1-scalar` root as an executable matches its expected output and the C driver, under strict seccomp, with only `write` and `exit` after start; byte-identical executables on two machines | 2–3.5k lines; 3–6 weeks | Planned |
+| X0-P | The shell proved; the `Nat` executable theorem; the driver-model assumption retired for executables | X0 | the theorem fenced | 3–6k lines; 2–4 months | Planned |
+| X1 | The redefined XB-1 and IxOS-0: IxCC-written test executables replace `runtime_driver.c` in every native gate, out of process, with no trampoline and no C | X0 | the native suites pass with the C driver off the execution path and no C compiler in their inputs | 1–2k lines; 2–4 weeks after X0 | Planned |
+| X2 | Numeric state machines: a generic request shell, parsing and rendering in Lean, the session theorem on `Nat` states | X0 (X0-P for the proof) | a 1,000-call session against Lean's interpreter; the theorem fenced | 2–4k lines | Planned |
+| X3 | Batch byte executables: arguments and input bytes in, output bytes and an exit code out | Phase 3 (DR2, DR3, DR6) | byte-identical to Lean-compiled executables over a corpus | 2–4k lines beyond the DR items | Planned |
+| X4 | Interactive executables: state-machine roots with heap states; platform interface version 1; a seccomp filter of exactly it | DR1, DR6, DR9 (a) | a 1,000-call session; the state-machine theorem fenced | 4–8k lines | Planned |
+| X5 | Lean `main : IO` over a recorded subset: traced events, platform calls, interpretations of `IO`, start-up logic in Lean | X4, DR2–DR5, P8, DC-2 | the benchmark fixtures' `main` functions compile unchanged and print what Lean's executables print | 10–25k lines (weak basis) | Research |
+| X6 | The platform interface implemented by the IxOS tender: one program text, two platforms | X4, IxOS-1 | the same outputs on both | with IxOS-2 | Planned |
+
+*Depends on:* nothing for X0 and X1; Phase 3 for X3; DR1, DR6 and DR9 for X4;
+the interpretation question (DC-2) and P8 for X5. *Composes with the spine:*
+the executable's statement replaces "the linked object returns `w`" by "the
+executable exits after writing `w`", and the driver model by the loader's
+post-state and the platform's system-call model. *Until X1:* the C driver
+stays, ledger-pinned; one gate runs both for a cycle, then the C driver, its
+pin and the C link paths go.
+
 ### Repository and landing
 
 - **RL-1, fixtures from this tree.** Every committed fixture is to be
@@ -606,6 +656,7 @@ IxOS-3 compiles the verifier as SP-0 leaves it; IxOS-4 depends on SP-1 (or CD2).
 | Step | Content | Prerequisites | Exit | State |
 | --- | --- | --- | --- | --- |
 | IxOS-0 | A host loader that maps an object and calls its entries through a minimal ledgered trampoline, with readback in Lean, in place of linking `runtime_driver.c` (also XB-1) | none | The K1 and RC suites pass through it with the C driver removed from the execution path | Planned |
+| IxOS-0 (redefined 2026-11-14) | The platform interface and its Linux implementation as the reference host, with no in-process trampoline and no C: X0 and X1 of [standalone executables](#standalone-executables), extended by X4; the tender's implementation of the interface moves to IxOS-2 (X6). The row above keeps its wording until DO-34 is settled | none | as X1 | Planned |
 | IxOS-1 | Fuel metering in prologues and at back edges with a new resource status; Ring-0 frame preservation on every outcome, not only on return | none | Fenced theorems; the session gate with fuel exhaustion | Planned |
 | IxOS-2 | A minimal monitor: SIP table, region allocation, request dispatch to the tender, admission by claim digest and external evidence | Phase 2 (P8, DR1), DR2, DR3, DR6, DR9 | The monitor's `step` certified; a host-harness session of SIP calls | Planned |
 | IxOS-3 | Admission inside the monitor: `CompileClaim.verifyBytes` compiled by IxCC | Phases 2–5 (bignums for 256-bit address comparisons, strings for certificate parsing, scale for the checker's closure); after SP-0, the verifier it compiles takes kernel acceptance as a premise | An IxCC-compiled `check-cert` agrees with the Lean-compiled one on every committed certificate and the hostile-input regressions | Planned |
@@ -796,6 +847,32 @@ The owner also decided, on the same day:
   no ownership level below it, this theorem is what gives annotations a
   meaning ([resource soundness](resource-soundness-design.md#layer-2-a-source-level-resource-theorem)).
 
+### Further decisions of 2026-11-14
+
+- **Standalone executables**: a target, with no C driver; "we should be able
+  to self-host that logic" ([standalone
+  executables](standalone-executables-design.md); the track is
+  [above](#standalone-executables)).
+- **Exact root arity**: a root is called with exactly its declared number of
+  parameters, and the compiler generates the entry at that arity, as Lean's
+  own compiler does for exported functions. This supersedes "no longer than"
+  of 2026-11-13 and settles DO-23.
+- **The certified kernel as IxCC's type checker**: IxCC's erased type checker
+  is to be replaced by the certified kernel in both the producer and the
+  native verifier path, with an enumerated ledger exception, as the
+  native-discharge milestone (SP-N). This settles DC-4; its design is a
+  separate kernel front-end document.
+- **The standalone-executables design**: accepted as proposed, which settles
+  DO-28 to DO-36 as their defaults. "Self-host" means a pure certified program
+  plus a small machine-level layer that IxCC generates and later proves, never
+  C; a static layout; requests returned as data first and platform calls
+  later, over one platform interface; the system-call instruction only in
+  platform code; seccomp self-confinement on; an executable claim binds the
+  executable's hash, the platform and the shell version; XB-1 and IxOS-0 are
+  redefined as executables replacing the C driver; numeric state machines
+  before Phase 3; Lean `IO` through platform calls. The first executable
+  milestone (X0) is in progress.
+
 ### Decisions to confirm
 
 | Id | Question | Options | Default | Why | Cost to change later |
@@ -803,7 +880,7 @@ The owner also decided, on the same day:
 | DC-1 | The order of the certification routes (decision 3) | (a) stage L first, as decided; (b) the kernel-model route leads (SP-A, SP-1), stage L becomes a side product; (c) both at equal priority | (b) | Stage L relates the object to a host Lean function and does not ground anything in IxCK or apply to a term inside an environment; the IxVM workstream's critical path is adequacy | Low: stage L has not started; reverting later costs the spike's months |
 | DC-2 | How decision 2 reads against the grounded statement | (a) interpretations allowed in compile claims as statements relative to the interpretation, kept separate in table and image from evaluation through a stored value (`opaqueByValue`), and both excluded from the grounded statement; the evaluator route refuses both for discharging axioms; (b) add an opaque value law to IxCK and state grounded results over models restricted to it; (c) no interpretations: targets avoid opaques | (a) | IxCK's model keeps no value equation for opaques, so neither kind holds in every strong model; an evaluation axiom must hold in every model, so a relative statement cannot discharge one. This also strains the IxVM workstream's plan to accept stored-value evaluation in its evaluator | Low now (nothing implemented); meanwhile code that reaches an allowlisted opaque (today `Lean.opaqueId`) cannot be discharged; (b) later restricts every grounded statement that uses it |
 | DC-3 | IxCC's guarantees conditional on kernel acceptance supplied externally (an IxVM typing proof or a native IxCK run) and on faithfulness supplied by the party holding the kernel's reading, rather than on IxCC's own type checking; and then the per-claim typing flag and the erased type checker | (a) as stated, the flag removed from claims' meaning and the checker kept only in untrusted production (the relevance annotator, early diagnostics), off the verifier path; (b) as stated, the checker kept on the verifier path as an optional filter; (c) prove the erased checker sound instead | (a) | A soundness proof for 12,700 lines of checker costs about what IxCK's own verification cost, and acceptance is already proved for IxCK; typing dominates verification time (51.7 s of 51.8 s on the committed scalar closure) and is unbounded per closure | Medium: the byte-level Stage A re-derivation uses the checker's expressions and conversion, so retiring it means porting or dropping that check |
-| DC-4 | Does IxCC obtain type information (for the relevance annotator, `checkCanonical` and the byte-level re-derivation) by calling the certified kernel instead of its own erased checker? Under assessment | (a) call IxCK and delete the erased checker; (b) keep the erased checker in untrusted production only (DC-3's default) | (a) if the assessment finds IxCK's inference answers those queries at acceptable cost | One type checker instead of two, and the proved one; (a) deletes the erased checker rather than merely moving it off the verifier path | Medium: IxCC's dependency on IxCK grows beyond its codec, and IxCK's typing cost (its blow-up on chains of `let`) enters the producer |
+| DC-4 (decided 2026-11-14: (a)) | Does IxCC obtain type information (for the relevance annotator, `checkCanonical` and the byte-level re-derivation) by calling the certified kernel instead of its own erased checker? Under assessment | (a) call IxCK and delete the erased checker; (b) keep the erased checker in untrusted production only (DC-3's default) | (a) if the assessment finds IxCK's inference answers those queries at acceptable cost | One type checker instead of two, and the proved one; (a) deletes the erased checker rather than merely moving it off the verifier path | Medium: IxCC's dependency on IxCK grows beyond its codec, and IxCK's typing cost (its blow-up on chains of `let`) enters the producer |
 
 ### Open decisions
 
@@ -831,11 +908,20 @@ The owner also decided, on the same day:
 | DO-20 | The regenerated closures are larger (this repository's root selection adds recursors, whole logical units and checker support) | accept; add a plain-dependency closure to `ix` for IxCC | Accept | A second closure semantics in `ix` would be maintained for fixtures only; the larger closures pass ingestion and the suites unchanged | Low; kernel-evaluated recheck tests may slow |
 | DO-21 | Does the image the evaluator reads keep subterms shared? | a flat tree; a DAG with each distinct subterm once | The shared form for the evaluator, with the tree form as the specification of content | A flat image is about 6 times the closure for a small program and about 21 times for the one-megabyte closures, measured outside this tree, and a circuit hashes all it reads | Medium: a second canonical-order argument in the codec proofs |
 | DO-22 | Universe profiles in the image: one term per constant and profile, as the IxVM workstream asked, or Src's one level-polymorphic term with level-exact conditions | per profile; per constant | Per constant, the reader deciding the level conditions at concrete levels | Smaller; it is what SrcEval reads; the decision is one scan of a short list | Low before the format is frozen |
-| DO-23 | Are roots η-expanded to their declared type's arity? Under exploration | η-expand; keep roots as written, with the compiled arity pinned to the declared parameter count (2026-11-13) | Keep the pin until the exploration reports | The arity decision of 2026-11-13 already fixes what the theorems quantify over | Low |
+| DO-23 (decided 2026-11-14: the entry is generated at the declared arity) | Are roots η-expanded to their declared type's arity? Under exploration | η-expand; keep roots as written, with the compiled arity pinned to the declared parameter count (2026-11-13) | Keep the pin until the exploration reports | The arity decision of 2026-11-13 already fixes what the theorems quantify over | Low |
 | DO-24 | Result contracts in a type's identity, so that a source-level resource statement survives the kernel's conversion (a decision for the kernel's owners, in IxCK and the IxVM kernel) | compare result contracts in conversion; forbid non-default result contracts wherever conversion can see them | Compare them in conversion, as input contracts already are | It closes the class of hole the resource checker's confirmed hole belongs to, as Idris 2 did for multiplicities; RE-1 does not need it | Medium for the kernels: a result contract on λ nodes, or λs checked against their expected ∀ |
 | DO-25 | When IxCC's ownership checker cannot verify a written contract on an internal function | refuse the program; compile as if the contract were absent | Refuse, with a diagnostic naming the contract (D16: contracts honoured exactly) | Dropping is sound for memory in a closed-world compile but silently discards what the source asked for | Low |
 | DO-26 | Which arguments an erased parameter erases (ix's checker erases wherever the head's type exposes an erased binder; IxCC only at constant and β-redex heads) | IxCC decides relevance from the head's type at every application; ix's checker grades erased only where IxCC erases | IxCC widens, with its relevance checker's rule extended | Erasing more evaluates less, and the kernel already forces a λ reaching an erased variable to have an erased binder | Low |
 | DO-27 | When the source-level resource theorem (RE-2) is scheduled | after EV-1, in parallel with RE-1; on demand, when a claim on the evaluator route first states a resource property | On demand, with RE-1 first | The native route's memory safety needs RE-1 only; on the evaluator route annotations optimise nothing | Low |
+| DO-28 (decided 2026-11-14: the default) | Does "self-host that logic" mean a pure certified program plus a small proved machine-level layer that IxCC generates from Lean, never C, with the system-call residue never compiled from Lean source? | yes; require the residue in Lean source too | Yes | The system-call instruction in compiled text would break Ring-0 admission; the residue is a few instructions per call, proved | Low |
+| DO-29 (decided 2026-11-14: the default) | Stack and region: a static zero-filled segment sized when the executable is written, or mapped at start-up | static; mapped | Static | No system call, strict confinement possible, the driver contract decidable on constants | Low: the mapped variant is three more calls and their model |
+| DO-30 (decided 2026-11-14: the default) | Effects: requests returned as data first, platform calls as traced events later, over one platform interface | as stated; platform calls only; requests only | As stated | Requests need nothing new in the pipeline; Lean `IO` needs platform calls | Low |
+| DO-31 (decided 2026-11-14: the default) | The system-call instruction only in platform code, as a platform-only row the program checker refuses | as stated; allow it in program text | As stated | Program text stays admissible under the IxOS tender's Ring-0 check | Low |
+| DO-32 (decided 2026-11-14: the default) | Executables confine themselves with seccomp (strict while the interface is `write`/`read`/`exit`, then a filter of exactly the interface) | on by default; off by default | On by default | The kernel interface after start becomes as small as the theorem's model | Low |
+| DO-33 (decided 2026-11-14: the default) | What an executable claim binds | the object's claim plus the executable's hash, platform, shell version, entry convention and layout; less | As stated; a verifier rebuilds the executable deterministically | Every input to the executable's bytes is bound | Medium: the claim codec is shared with ix |
+| DO-34 (decided 2026-11-14: the default) | Redefine XB-1 and IxOS-0 as IxCC-written executables replacing `runtime_driver.c`, out of process, dropping the in-process trampoline | redefine; keep the host loader | Redefine | The trampoline is C or assembly in the Lean process, which the owner's decision excludes | Low |
+| DO-35 (decided 2026-11-14: the default) | Numeric state machines (X2) on today's fragment before Phase 3 | before; after | Before, if Phase 3 is more than about six months away | They need no heap across calls, so the session theorem is available early | Low |
+| DO-36 (decided 2026-11-14: the default) | Lean `IO` through platform calls with recorded interpretations, or by transforming `main` into a state machine | platform calls; a continuation-passing transformation | Platform calls; revisit if IxOS programs must never call out | Keeps ordinary Lean `main` unchanged; the transformation would need closures and a whole-program rewrite | Medium |
 
 ## Coordination
 

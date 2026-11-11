@@ -45,6 +45,9 @@ unless a line says so.
 - [Resource soundness](resource-soundness-design.md): what usage, ownership
   and locality annotations guarantee, the ownership checker that verifies them
   and the instrumented-evaluator theorem.
+- [Standalone executables](standalone-executables-design.md): executables
+  written by IxCC with no C driver, C library or linker; the start-up shell, the
+  platform interface and effects in stages.
 
 ## Source boundary
 

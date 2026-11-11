@@ -458,3 +458,15 @@ becomes a specification assumption.
 requests) runs a session of at least 1,000 calls in the C driver with its
 values checked against Lean's interpreter, and the session theorem is
 fenced.
+
+**Standalone executables (2026-11-14).** The owner decided that compiled
+programs run as standalone executables with no C driver
+([standalone executables](standalone-executables-design.md)). That design
+puts both options over one platform interface (arguments, write, read, exit,
+clock): option (a) is its first stage, with the "small host" now an
+IxCC-written shell on Linux and the IxOS tender on bare metal, never a C
+driver; option (b) is its later stage, in which the program calls platform
+procedures (machine-level code generated from Lean, the only place the
+system-call instruction appears) and each call is a traced event, which is
+what ordinary Lean `IO` needs. A numeric form of (a), on `Nat` states with no
+heap carried across calls, can come before DR6.

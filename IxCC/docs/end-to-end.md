@@ -142,6 +142,17 @@ on a contract only where its own ownership checker verified it, and the
 source-level resource theorem is planned separately ([resource
 soundness](resource-soundness-design.md)).
 
+*As a standalone executable* (planned). When IxCC writes the executable
+itself, with its own start-up shell in place of the C driver, the same
+statement is read off the process: "the linked object returns `w` on `ns`"
+becomes "the executable run on the decimal forms of `ns` exits after writing
+`w`", and later the program's own output bytes and exit code, or its trace of
+platform events. The driver model leaves the trusted base; the loader's
+post-state for a static executable and the platform's system-call model enter
+it, and a claim about an executable binds the executable's hash, the platform,
+the shell and the layout as well as the object's claim ([standalone
+executables](standalone-executables-design.md)).
+
 ### Aiur, form (i): the fixed evaluator circuit (first)
 
 **Planned; the circuit is the IxVM workstream's.** One formal-Aiur program,

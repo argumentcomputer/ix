@@ -155,6 +155,7 @@ is defined.
 | S0, S1, S2 (x86) | Steps of the Sail reference-model route | [x86 reference model](x86-reference-model.md) |
 | S1–S12, N1–N14, `B*-*`, `R*-*` | Findings of the 2026-11 reviews | Each document that cites one says what the finding is |
 | RE-0 … RE-3; DC-4, DO-23 … DO-27 | Resource-soundness milestones; decision-register entries added on 2026-11-14 | [resource soundness](resource-soundness-design.md), [roadmap](roadmap.md#decisions) |
+| X0 … X6, X0-P; DO-28 … DO-36 | Standalone-executable milestones; decision-register entries on executables | [standalone executables](standalone-executables-design.md), [roadmap](roadmap.md#decisions) |
 
 ## Correctness statement
 
@@ -844,6 +845,18 @@ session iteration also needs the whole-call budget-word frame. The required
 native regression separately exercises 168 calls/drops on three objects with
 one initialization per bounded arena, independent complete-value decoders
 and exact reclaimed-address checks.
+
+**The driver, and its replacement (planned).** Today a compiled object runs
+only inside the C driver `fixtures/x86/runtime_driver.c`, linked by the
+system linker; `X86.Driver` and `X86.Linked` model what it sets up, and the
+ledger assumption `x86-phase1-runtime-driver-model` says it realises that
+model. The owner decided (2026-11-14) that standalone executables are a
+target with no C driver: IxCC is to write the executable itself, with the
+object's text byte for byte, a start-up shell written as typed x86 in Lean
+that establishes the driver contract from a fixed static layout, and later the
+platform procedures through which programs perform effects; the system-call
+instruction appears only there, never in compiled program text
+([standalone executables](standalone-executables-design.md)).
 
 ## Backend
 
