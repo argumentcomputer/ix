@@ -382,7 +382,7 @@ theorem checkIotaThmNS_sim (hμ : mode.verifiedChecks = true) {env' : Env md} (h
   unfold checkIotaThmN
   dsimp only [sharedOpsC]
   match hshape : nestedRuleShape env' env cvName lps tyA mI rP cnP j with
-  | none => exact SimC.pure hs rfl
+  | none => exact SimC.throw
   | some (lvls, pins) =>
   dsimp only
   have hpinsF : ∀ p ∈ pins, p.hasFvar = false :=

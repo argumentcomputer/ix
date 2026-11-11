@@ -753,7 +753,7 @@ theorem checkIotaThmN_inv {env' env₀ : Env md} {f : Key md → Key md}
     rw [htt] at h
     simp only [Bool.false_eq_true, if_false, if_true, ite_true, pure,
       Except.pure, Bind.bind, Except.bind, Except.ok.injEq] at h
-    exact Or.inr ⟨lvls, pins, h.symm, rfl,
+    exact ⟨lvls, pins, h.symm, rfl,
           auxKey (auxKey cvA.name .model) (.iota j), cvt, ci, fvs,
           tbody, ℓA, αS, lhsS, rhsS, cdoms, cres, rdoms, rrest, fvsP,
           restP, cdomsP, crestP, xFvsP, crest2, ldoms, lrest,
@@ -787,7 +787,7 @@ theorem checkIotaThmN_inv {env' env₀ : Env md} {f : Key md → Key md}
   rw [hheadEq] at hdα
   intro h
   simp only [if_true, Except.ok.injEq] at h
-  exact Or.inr ⟨lvls, pins, h.symm, rfl,
+  exact ⟨lvls, pins, h.symm, rfl,
         auxKey (auxKey cvA.name .model) (.iota j), cvt, ci, fvs,
         tbody, ℓA, αS, lhsS, rhsS, cdoms, cres, rdoms, rrest, fvsP,
         restP, cdomsP, crestP, xFvsP, crest2, ldoms, lrest,
