@@ -24,14 +24,12 @@ inductive ArrowTree where
 inductive KField where
   | mk : (h : 0 = 0) → @Eq.rec Nat 0 (fun _ _ => Type) Nat 0 h → KField
 
-#guard_msgs (drop all) in
 /-- A recursive field whose type reduces to the block by K-like reduction at the
 earlier field `h`. -/
 inductive KTree where
   | leaf : KTree
   | node : (h : 0 = 0) → @Eq.rec Nat 0 (fun _ _ => Type) KTree 0 h → KTree
 
-#guard_msgs (drop all) in
 /-- An index telescope that reduces by K-like reduction at the parameter `h`. -/
 inductive KIndex (h : 0 = 0) : @Eq.rec Nat 0 (fun _ _ => Type 1) (Nat → Type) 0 h where
   | mk : KIndex h 0

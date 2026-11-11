@@ -24,10 +24,10 @@ def run (leanEnv : Lean.Environment) : IO UInt32 := do
   let all := names.map defs
   let missing := all.filter (!leanEnv.constants.contains ·)
   unless missing.isEmpty do
-    IO.println s!"[ixvm-field-reduction] not in the environment (Lean refused them): {missing}"
-  let present := all.filter leanEnv.constants.contains
-  let env ← loadSharedIxonEnv present.toArray leanEnv
+    IO.eprintln s!"[ixvm-field-reduction] not in the environment: {missing}"
+    return 1
+  let env ← loadSharedIxonEnv all.toArray leanEnv
   runCases "ixvm-field-reduction"
-    (present.map fun n => Tests.Ix.IxVM.kernelCheckCase env n true).toArray
+    (all.map fun n => Tests.Ix.IxVM.kernelCheckCase env n true).toArray
 
 end Tests.Ix.IxVM.FieldReduction
