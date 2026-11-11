@@ -1615,6 +1615,12 @@
   "IxCCGrounding.CaseCheck",
   "IxCCGrounding.CaseFire",
   "IxCCGrounding.Check",
+  "IxCCGrounding.Direct.Check",
+  "IxCCGrounding.Direct.Eq",
+  "IxCCGrounding.Direct.Rules",
+  "IxCCGrounding.Direct.Sites",
+  "IxCCGrounding.Direct.Sound",
+  "IxCCGrounding.Direct.Subst",
   "IxCCGrounding.Eqn",
   "IxCCGrounding.Fence",
   "IxCCGrounding.Fundamental",
@@ -1634,10 +1640,10 @@
   "IxCCGrounding.Syntax",
   "IxCCGrounding.Tele"],
  "grounding_axiom_sha256":
- "4deb87c352422ca62e49b2950ad179a0bf9020eaa9c924a53dacf2a2468d02f3",
- "grounding_axiom_count": 56,
+ "8505a077a210e2929dc6588d6499a9dd7ac3caea57c4c44647db98dc7fc7bd07",
+ "grounding_axiom_count": 86,
  "baseline":
- "KS: the switch to the kernel front end, step 3, on the grounding correction 62929be01",
+ "the grounding library: G2a, the direct route, with the kernel as its oracle in tests-grounding",
  "axiom_sha256":
  "8b49d25f5bf75c1eb79dfba0d78a9a70e134207d63c5178534eb661381035056",
  "axiom_count": 5964}

@@ -101,17 +101,18 @@ library](certification-design.md#the-grounding-library-sp-1-in-progress)): the
 soundness statement above for roots on first-order arguments (literals and
 enumeration constructors) with a `Nat` or enumeration result, over every model
 with the laws taken as hypotheses, for any program and kernel reading that pass
-checks run on the bytes, under the typing hypothesis `SitesOk` (premise (ii)'s
-typing part, in the one form it is consumed: at application sites SrcEval
-evaluates), with `fib` and `decide (fib 10 = 55)` as instances; F5's meaning at
-each `case` constant is proved from the checked shape, not assumed; and the typing
-hypothesis is needed only at the sites a checked direct route (types read off
-stored types, a small conversion on the laws) refuses, none on the two
-instances, so `fibRoot` and `decideRoot` have no typing hypothesis. One checked
-hypothesis, `ResultTag`, still rejects some roots (a `Bool` root returning
-`false` on the committed closures). `SitesOk`'s discharge, widening and
-progress are the next steps; the certification design lists every hypothesis
-with who discharges it.
+checks run on the bytes, with `fib` and `decide (fib 10 = 55)` as instances;
+F5's meaning at each `case` constant is proved from the checked shape, not
+assumed. Premise (ii)'s typing part, in the one form it is consumed (at the
+application sites SrcEval evaluates), is assumed only at the sites a checked
+direct route (types read off stored types, a small conversion on the laws)
+refuses (`SitesOkRes`). It refuses none on the two instances, so `fibRoot` and
+`decideRoot` have no typing hypothesis; on the measured corpus it refuses no
+site of any closure the check accepts. One checked hypothesis, `ResultTag`,
+still rejects some roots (a `Bool` root returning `false` on the committed
+closures). What remains: a model of the laws (below), widening the fragment
+and the direct route's conversion, `ResultTag`, and progress; the
+certification design lists every hypothesis with who discharges it.
 The laws are not yet shown to have a model: two of them, as first landed
 (constructor canonicity and the projection of a constructor), were false in a
 proof-irrelevant set model, so for the two subjects (whose environments hold
