@@ -78,7 +78,7 @@ reason the block is declined. The rungs read each former at its telescope
 (`readFormers`). -/
 def generate (ctx : Ctx md) (b : BlockRec md) : Except String (List (Declaration md)) := do
   let b' ← readFormers ctx b
-  let ds ← if b.types.any (·.numNested > 0) then genNested ctx b' else genMutual ctx b'
+  let ds ← (if b.types.any (·.numNested > 0) then genNested ctx b' else genMutual ctx b')
   pure (restoreModelTypes b ds)
 
 theorem except_bind_eq_ok {ε α β : Type} {x : Except ε α} {g : α → Except ε β} {y : β}
