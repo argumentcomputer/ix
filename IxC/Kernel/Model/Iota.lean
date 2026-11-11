@@ -13,6 +13,7 @@ public import IxC.Kernel.Model.WellDenotedTransport
 public import IxC.Kernel.Model.Inductives.FixRecRead
 public import IxC.Kernel.Model.Rules.RedSoundKit
 public import IxC.Kernel.Model.NatLitLaw
+import IxC.Kernel.Model.Rules.InferSoundKit
 import IxC.Kernel.Verify.InferLeaves
 import IxC.Kernel.Verify.StrLitExpr
 import IxC.Kernel.Verify.InferLemmas
