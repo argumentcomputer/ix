@@ -41,7 +41,10 @@ jobs:
     runs-on: runs-on=${{ github.run_id }}-ixcc-${{ github.run_attempt }}/cpu=32/family=r7i+r8i+r7a+r8a/image=ubuntu26-full-x64/volume=150gb/extras=s3-cache
     # IxCC/AGENTS.md aims for 30 minutes including cold compilation; all 16
     # checks took 13.4 minutes on a 64-core machine with the toolchain and the
-    # codec already in the store. Twice the target leaves room for a cold
+    # codec already in the store. The seventeenth, ixcc-grounding, builds the
+    # grounding library beside the shared program build (46 s on the build
+    # box, reusing the production library) and runs its suite in under a
+    # second. Twice the target leaves room for a cold
     # 32-core runner and stops a hung check well before the 360-minute default.
     timeout-minutes: 60
     steps:
