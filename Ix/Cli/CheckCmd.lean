@@ -53,7 +53,7 @@ def checkCmd : Cli.Cmd := `[Cli|
     "shards"    : String;   "With --ixes (no --shard): restrict the batch to these leaves — `K`, `a-b`, or a comma list of those."
     "skip-proven";          "With --ixes: a leaf whose claim has a proof in the shard-proof index (`~/.ix/cache/formal-shard-proofs`) that decodes, bundles exactly that claim and verifies is settled by it: not executed, and never cut. `ix shard refine` uses this so a refinement never orphans a proof."
     "report"    : String;   "Write the ix-formal-run/1 report to this path."
-    "batch-time" : String;  "With --ixes (no --shard): write the wall-clock seconds of executing the selected shards, after the env load and before the report, to this path as a JSON number."
+    "batch-time" : String;  "With --ixes (no --shard): write the wall-clock seconds of executing the selected shards, after the env load and before the report, and the constants they own, to this path as JSON (`seconds`, `constants`)."
     "plan-only";            "Print selected manifest leaves and RAM reservations without execution."
     "assume-binding";       "Check assuming the environment's role binding meets the specifications."
 

@@ -603,7 +603,9 @@ private def runManifest (p : Cli.Parsed) (ixvm : Option Selected) (options : Hos
   let elapsedMs := (← IO.monoMsNow) - start
   if let some flag := p.flag? "batch-time" then
     let seconds := ((← IO.monoNanosNow) - batchStart).toFloat / 1e9
-    IO.FS.writeFile (flag.as! String) (toJson seconds).compress
+    let constants := results.foldl (fun n (_, parts) => parts.foldl (· + ·.constants) n) 0
+    IO.FS.writeFile (flag.as! String)
+      (Json.mkObj [("seconds", toJson seconds), ("constants", toJson constants)]).compress
   let failures := results.foldl (fun n (_, parts) => n + parts.countP (·.result.code != 0)) 0
   let (refinements, measured) := Ix.Shard.Check.refinementsOfRuns view.shards.size
     (results.map fun (k, parts) => (k, parts.map fun r => (r.blocks, r.result.peak)))

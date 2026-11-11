@@ -40,8 +40,8 @@ def metricKind (metric : String) : String :=
   then "bytes"
   -- Every wall-clock measure is named `<what>-time`.
   else if metric.endsWith "-time" then "seconds"
-  else if ["fft-cost", "cycles", "steps", "max-shard-cycles",
-           "throughput"].contains metric then "count"
+  else if ["fft-cost", "cycles", "steps", "max-shard-cycles"].contains metric
+    || metric.endsWith "throughput" then "count"
   else if ["constants", "shards"].contains metric || metric.endsWith "-shards" then "int"
   else "auto"
 
@@ -54,7 +54,7 @@ def metricKind (metric : String) : String :=
     magnitudes (matching `unitsFor`'s "constants / second" on bencher). -/
 def metricLabel (metric : String) : String :=
   if metric == "file-size" then "env-size"
-  else if metric == "throughput" then "throughput (const/s)"
+  else if metric.endsWith "throughput" then s!"{metric} (const/s)"
   else if metric == "shards" then "env-shards"
   else metric.replace "peak-rss" "peak-ram"
 
@@ -119,7 +119,7 @@ def human (v : Option Float) (metric : String) : String :=
     lower-is-better (times, RAM, cycles, sizes). `throughput` means
     constants checked per second on EVERY backend. -/
 def higherIsBetter (metric : String) : Bool :=
-  metric == "throughput"
+  metric.endsWith "throughput"
 
 /-! ## Row access -/
 
@@ -224,19 +224,16 @@ def Cell.rows (c : Cell) : Array (String × Bool) := Id.run do
   let envRow := if names.contains c.env then #[(c.env, true)] else #[]
   return envRow ++ constants.map ((·, false))
 
-/-- The headline columns of one row kind's table (at most four) and the
-    secondary metrics its details block shows: the kind's measures that
-    some of `rows` has a value for, in registry order. -/
-def columnsOf (metrics : List String) (rows : Array (Cell × String)) :
-    List String × List String :=
-  let present := metrics.filter fun m => rows.any fun (c, name) =>
+/-- The columns of one row kind's table: the kind's measures that some of
+    `rows` has a value for, in registry order. -/
+def columnsOf (metrics : List String) (rows : Array (Cell × String)) : List String :=
+  metrics.filter fun m => rows.any fun (c, name) =>
     (rowNum c.base name m).isSome || (rowNum c.pr name m).isSome
-  (present.take 4, present.drop 4)
 
 /-- One backend's tables over its cells, one per row kind: the env rows,
-    then the constant rows, then one table per proving stage the constant rows ran. Each
-    metric is a `base`, `PR` and `Δ%` column; past four, a kind's metrics
-    sit in one collapsed block. -/
+    then the constant rows, then one table per proving stage the constant
+    rows ran. Each metric a table's rows carry is a `base`, `PR` and `Δ%`
+    column. -/
 def renderBackend (spec : Ix.Cli.BenchCmd.BackendSpec) (cells : Array Cell)
     (threshold : Float) (baseLabel : String) : IO String := do
   let order := Ix.Cli.BenchCmd.envSpecs.map (·.name)
@@ -244,13 +241,15 @@ def renderBackend (spec : Ix.Cli.BenchCmd.BackendSpec) (cells : Array Cell)
   let envRows := (cells.filter fun c => (c.rows.find? (·.2)).isSome).map fun c => (c, c.env)
   let constantRows := cells.flatMap fun c =>
     (c.rows.filter (!·.2)).map fun (name, _) => (c, name)
-  -- A stage table names its stage once, on its time column (`prove-time`);
-  -- its other measures drop the prefix (`peak-ram`, not `prove-peak-ram`).
+  -- A stage table names its stage on its time and throughput columns
+  -- (`prove-time`, `prove-throughput`); its other measures drop the prefix
+  -- (`peak-ram`, not `prove-peak-ram`).
   let table := fun (rows : Array (Cell × String)) (head : String) (label : String → String)
       (metrics : List String) (stage : String) => Id.run do
     let shown := fun (m : String) =>
       let rest := (m.drop (stage.length + 1)).toString
-      metricLabel (if stage.isEmpty || !m.startsWith (stage ++ "-") || rest == "time"
+      metricLabel (if stage.isEmpty || !m.startsWith (stage ++ "-")
+          || rest == "time" || rest == "throughput"
         then m else rest)
     let header := #[head] ++ (metrics.toArray.map fun m =>
       #[s!"{shown m} ({baseLabel})", s!"{shown m} (PR)", "Δ%"]).flatten
@@ -261,15 +260,8 @@ def renderBackend (spec : Ix.Cli.BenchCmd.BackendSpec) (cells : Array Cell)
       let cols := (metrics.toArray.map fun m => (metricCells c.base c.pr name m threshold).1).flatten
       lines := lines.push ("| " ++ " | ".intercalate (label name :: cols.toList) ++ " |")
     return lines
-  -- A kind's headline table and, past four metrics, its collapsed block.
   let kind := fun (rows : Array (Cell × String)) (head : String) (label : String → String)
-      (metrics : List String) => Id.run do
-    let (headline, secondary) := columnsOf metrics rows
-    let mut out := table rows head label headline ""
-    if !secondary.isEmpty then
-      out := out ++ #["", "<details><summary>more metrics</summary>", ""]
-        ++ table rows head label secondary "" ++ #["", "</details>"]
-    return out
+      (metrics : List String) => table rows head label (columnsOf metrics rows) ""
   let mut rows := 0
   let mut regressed := 0
   let mut improved := 0
@@ -314,7 +306,7 @@ def renderBackend (spec : Ix.Cli.BenchCmd.BackendSpec) (cells : Array Cell)
       metrics.any fun m => (rowNum c.base name m).isSome || (rowNum c.pr name m).isSome
     if !ran.isEmpty then
       out := out ++ #["", s!"#### `{spec.name}` · {stage}", ""]
-        ++ table ran "constant" (s!"`{·}`") metrics stage
+        ++ table ran "constant" (s!"`{·}`") (columnsOf metrics ran) stage
   return "\n".intercalate out.toList
 
 def runCompareCmd (p : Cli.Parsed) : IO UInt32 := do
