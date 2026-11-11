@@ -61,7 +61,7 @@ structure ResultShape (r : BlockResult) : Prop where
   built : Built r.block
   rows : ∀ p ∈ r.projections, p.2.1 = r.block ∨ ProjectsTo r.blockAddr p.2.1
   /-- The block's binder data are canonical and complete. -/
-  section : SectionOK r.block
+  blockSection : SectionOK r.block
   /-- So are every row's. -/
   rowsSection : ∀ p ∈ r.projections, SectionOK p.2.1
 
@@ -385,7 +385,7 @@ theorem runBlock_shape {cenv : CompileEnv} {all : Ix.Set Ix.Name} {lo : Ix.Name}
       obtain ⟨q, hq, e⟩ := Array.mem_map.mp hm
       exact ⟨q, hq, (Prod.mk.inj e).2⟩
     refine ⟨by rw [hbytes, hblock]; exact shape.bytes, by rw [haddr, hbytes]; exact shape.addr,
-      by rw [hblock]; exact shape.built, fun p hp => ?_, by rw [hblock]; exact shape.section,
+      by rw [hblock]; exact shape.built, fun p hp => ?_, by rw [hblock]; exact shape.blockSection,
       fun p hp => ?_⟩
     · obtain ⟨q, hq, he⟩ := back p hp
       rw [hblock, haddr, ← he]

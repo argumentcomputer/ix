@@ -1640,6 +1640,27 @@ theorem withBinderSection_ok {annotator? : Option BinderAnnotator} {names : Arra
     exact ⟨binders, sectionFor_ok hs, rfl⟩
   · cases h
 
+/-- A record the compiler cannot give an admissible section fails with a binder-data error. -/
+theorem withBinderSection_error {annotator? : Option BinderAnnotator} {names : Array Name}
+    {c : Ixon.Constant} {err : CompileError} (h : withBinderSection annotator? names c = .error err) :
+    ∃ reason, err = .binderData reason := by
+  unfold withBinderSection at h
+  split at h
+  · cases h
+  · rename_i e hs
+    cases h
+    unfold sectionFor at hs
+    by_cases ha : sectionAdmissible c (annotatorSection annotator? names c) = true
+    · rw [if_pos ha] at hs
+      cases hs
+    · rw [if_neg ha] at hs
+      by_cases hu : sectionAdmissible c (undecidedSection c) = true
+      · rw [if_pos hu] at hs
+        cases hs
+      · rw [if_neg hu] at hs
+        cases hs
+        exact ⟨_, rfl⟩
+
 /-- An admissible section is in the wire domain. -/
 theorem sectionAdmissible_wire {c : Ixon.Constant} {binders : Array Ixon.BinderBlock}
     (h : sectionAdmissible c binders = true) :
