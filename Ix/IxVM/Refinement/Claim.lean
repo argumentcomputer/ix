@@ -320,6 +320,24 @@ def BindingIn (V : View) (spec b : Address) : Prop :=
       (∀ r ∈ Ix.Kernel.Role.all, (t.addressOf? r).isSome = true) ∧
       AcceptsIn V (Scope.strict bnd) (BindingSeeds t) BindingSpecs
 
+/-- **The string-literal support roles** (`Ix.Kernel.Reader.strLitSupportNames`): the `Nat`
+literal support, `String`, `String.ofList`, `List` with its constructors, `Char` and
+`Char.ofNat`. -/
+def strLitSupportRoles : List Ix.Kernel.Role :=
+  [.nat, .natZero, .natSucc, .string, .stringOfList, .list, .listNil, .listCons, .char, .charOfNat]
+
+/-- **A table that binds `String` binds all of its literal support.** IxVM types a string
+literal at the bound `String`, validating `String`'s group only, while the kernel
+supports a string literal only with every support role stored, at its specified type
+(`Ix.Kernel.strLitSupported`). `RoleTable.check` does not ask for this: `String` has no
+dependencies, so a table could bind `String` to an empty type and leave `String.ofList`
+unbound. The other literal and operation roles need no such rule: a `Nat` literal's
+support is `Nat`'s block, which `RoleTable.check` binds together, and each `Nat`
+operation's certificate ground (`Ix.Kernel.natOpDeps`) is among its dependencies
+(`Ix.Kernel.Role.deps`), which it binds. -/
+def LiteralSupportBound (t : Ix.Kernel.RoleTable) : Prop :=
+  (t.addressOf? .string).isSome = true → ∀ r ∈ strLitSupportRoles, (t.addressOf? r).isSome = true
+
 /-- **A role table the kernel admits, its bound constants checked**: the role
 table `b` is admitted (`Ix.Kernel.Admission.admitBinding`: its hash, its canonical
 decoding, `RoleTable.check`), and the strict fold accepts, under it and behind the
@@ -327,9 +345,10 @@ committed prelude (`preludeFor`, inside `AcceptsIn`), the closure of the constan
 binds and of its evidence theorems in the view's records (`BindingSeeds`), with the
 role specifications the fold does not check on its own (`BindingSpecs`). This is
 `BindingIn` without its claim's two extra conditions (the specification digest, and
-every role bound). -/
+every role bound), with one more: a table that binds `String` binds all of its literal
+support (`LiteralSupportBound`; `BindingIn`'s "every role bound" implies it). -/
 def TableAdmitted (V : View) (b : Binding) : Prop :=
-  ∃ t, Ix.Kernel.Admission.admitBinding Address.admissionHash b = .ok t ∧
+  ∃ t, Ix.Kernel.Admission.admitBinding Address.admissionHash b = .ok t ∧ LiteralSupportBound t ∧
     AcceptsIn V (Scope.strict b) (BindingSeeds t) BindingSpecs
 
 /-- **Every leaf of a claim's axioms tree is a user axiom record**, used or

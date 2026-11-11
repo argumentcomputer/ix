@@ -4,6 +4,7 @@ public import IxC.Kernel.Core
 public import IxC.Kernel.Verify.Level
 public import IxC.Kernel.SetModel.Ops
 public import IxC.Kernel.SetTheory.Derive.Sigma
+public import IxC.Kernel.Basis.Names
 
 @[expose] public section
 
@@ -316,14 +317,137 @@ def IotaLaw (cval : Key md → (LevelParam → Nat) → V) (env : Env md) : Prop
     (rl : RecRule md),
     env.find? r = some (.recInfo cv mI rP rules) → rl ∈ rules → IotaRule cval env r cv mI rP rl
 
+/-- **Unit-like η at a family the kernel flags unit-like** (`IndCaps.unitlike`; Lean's
+`is_def_eq_unit_like`): at levels `us` and parameters `ts` that fit the family's type (as
+many as the flag's parameter count), any two members of the family's instance are equal.
+Every stored family with the flag, the pinned `PUnit` among them. The kernel sets the flag
+on a natively installed block exactly at Lean's criterion: one constructor, no index, no
+field (`nativeCapsAt_unitlike_iff`). -/
+def UnitLikeLaw (cval : Key md → (LevelParam → Nat) → V) (env : Env md) : Prop :=
+  ∀ (T : Key md) (cvT : ConstantVal md) (caps : IndCaps md),
+    env.find? T = some (.indInfo cvT caps) → caps.unitlike = true →
+    ∀ (us : List Level) (φ : LevelParam → Nat) (ρ σ : BVarIdx → V) (ts : List V) (R : Expr md)
+      (F x y : V),
+      us.length = cvT.levelParams.length → ts.length = caps.unitParams →
+      Denotes cval env φ ρ (.const T us) F →
+      Fits cval env φ ρ (cvT.type.instantiateLevelParams cvT.levelParams us) ts σ R →
+      x ∈ˢ ts.foldl app F → y ∈ˢ ts.foldl app F → x = y
+
+/-- **The projection table of a stored structure, and its two laws** (Lean's reduction
+of a projection of a constructor, and structure η). At a stored inductive `T` with a
+projection table — the table `Denotes` reads `.proj T i e` through (`proj_table`: field `j`
+of a value is component `j + entry.off` of its pair chain) — at field `i`:
+
+* **the table is `T`'s**: `T` has the table's universe parameters and its type is
+  `∀ (params), Sort structSort`, at the table's parameter count and structure sort; the
+  table's constructor `C` is stored as a constructor at the table's parameter and field
+  counts and at `T`'s universe parameters, and its type is
+  `∀ (params) (fields), T.{lps} params`: a constructor of `T` at `T`'s own parameters,
+  with no index. These are facts about stored types, which a stored structure's
+  declaration fixes;
+* **the projection of a constructor**: at universe arguments `us` and arguments `ys`
+  (parameters, then fields) that fit `C`'s type, field `i` of `C ys` is the field
+  `ys[nP + i]`, under the table's `Prop` guard: wherever the structure sort is `0`
+  at `us`, so is the projection's guard level (Lean's `infer_proj`: a projection out of a
+  proposition is a proof). Where the guard fails the structure is a proposition at
+  `us`, so `C ys` is the proof point and its projections are too (`mem` of `T` and of
+  `C`, through the two types above);
+* **structure η**: at parameters `ts` that fit `T`'s type, every member `x` of
+  `T.{us} ts` is `C` applied to `ts` and to `x`'s own fields.
+
+Together they fix what the table's offset reads: the two laws read the same
+components. -/
+def ProjLaw (cval : Key md → (LevelParam → Nat) → V) (env : Env md) : Prop :=
+  ∀ (T : Key md) (i : Nat) (entry : ProjEntry md) (cvT : ConstantVal md) (capsT : IndCaps md),
+    env.findProj? T i = some entry → env.find? T = some (.indInfo cvT capsT) →
+    cvT.levelParams = entry.levelParams ∧
+    (∃ bs, cvT.type.stripPis entry.numParams = some (bs, .sort entry.structSort)) ∧
+    ∃ cvC : ConstantVal md,
+      env.find? entry.ctor = some (.ctorInfo cvC entry.numParams entry.numFields) ∧
+      cvC.levelParams = entry.levelParams ∧
+      (∃ bs, cvC.type.stripPis (entry.numParams + entry.numFields) = some (bs,
+        Expr.mkAppN (.const T (entry.levelParams.map .param))
+          ((List.range entry.numParams).map fun k =>
+            .bvar (entry.numFields + entry.numParams - 1 - k)))) ∧
+      ∀ (us : List Level) (φ : LevelParam → Nat) (ρ : BVarIdx → V) (F K : V),
+        us.length = entry.levelParams.length →
+        Denotes cval env φ ρ (.const T us) F → Denotes cval env φ ρ (.const entry.ctor us) K →
+        ((Level.eval (Level.substFn φ entry.levelParams us) entry.structSort = 0 →
+            Level.eval (Level.substFn φ entry.levelParams us) entry.fieldSort = 0) →
+          ∀ (σ : BVarIdx → V) (R : Expr md) (ys : List V),
+            ys.length = entry.numParams + entry.numFields →
+            Fits cval env φ ρ (cvC.type.instantiateLevelParams cvC.levelParams us) ys σ R →
+            field (i + entry.off) (ys.foldl app K) = ys.getD (entry.numParams + i) empty) ∧
+        ∀ (σ : BVarIdx → V) (R : Expr md) (ts : List V) (x : V),
+          ts.length = entry.numParams →
+          Fits cval env φ ρ (cvT.type.instantiateLevelParams cvT.levelParams us) ts σ R →
+          x ∈ˢ ts.foldl app F →
+          x = (ts ++ (List.range entry.numFields).map fun j => field (j + entry.off) x).foldl
+            app K
+
+/-- **The binary `Nat` operations with a `Nat` value that the kernel computes on
+literals**, at their role keys, each with Lean's function: so `a / 0 = 0`, `a % 0 = a`,
+and `a ^ b` at every exponent. -/
+def natArithOps : List (Key md × (Nat → Nat → Nat)) :=
+  [(natAddName, Nat.add), (natSubName, Nat.sub), (natMulName, Nat.mul), (natPowName, Nat.pow),
+   (natDivName, Nat.div), (natModName, Nat.mod), (natGcdName, Nat.gcd),
+   (natLandName, Nat.land), (natLorName, Nat.lor), (natXorName, Nat.xor),
+   (natShiftLeftName, Nat.shiftLeft), (natShiftRightName, Nat.shiftRight)]
+
+/-- **The two `Nat` comparisons the kernel computes on literals**, at their role keys,
+each with Lean's function (its value is `Bool.true` or `Bool.false`). -/
+def natCmpOps : List (Key md × (Nat → Nat → Bool)) :=
+  [(natBeqName, Nat.beq), (natBleName, Nat.ble)]
+
+/-- **The `Nat` operations on literals compute as Lean's do**: at every role a stored
+definition binds — `Nat.pred`, the twelve arithmetic operations (`natArithOps`) and the two
+comparisons (`natCmpOps`) — the operation applied to literals denotes what the literal of
+Lean's value (or the `Bool` constructor of it) denotes, at every pair of literals. This is
+what lets the kernel reduce such an application to a literal without unfolding the
+operation. -/
+def NatLitLaw (cval : Key md → (LevelParam → Nat) → V) (env : Env md) : Prop :=
+  (∀ (cv : ConstantVal md) (v : Expr md) (hint : ReducibilityHint),
+    env.find? natPredName = some (.defnInfo cv v hint) →
+    ∀ (φ : LevelParam → Nat) (ρ : BVarIdx → V) (a : Nat) (X : V),
+      Denotes cval env φ ρ (.app (.const natPredName []) (.lit (.natVal a))) X →
+      Denotes cval env φ ρ (.lit (.natVal (a - 1))) X) ∧
+  (∀ (c : Key md) (f : Nat → Nat → Nat), (c, f) ∈ natArithOps →
+    ∀ (cv : ConstantVal md) (v : Expr md) (hint : ReducibilityHint),
+    env.find? c = some (.defnInfo cv v hint) →
+    ∀ (φ : LevelParam → Nat) (ρ : BVarIdx → V) (a b : Nat) (X : V),
+      Denotes cval env φ ρ (.app (.app (.const c []) (.lit (.natVal a))) (.lit (.natVal b))) X →
+      Denotes cval env φ ρ (.lit (.natVal (f a b))) X) ∧
+  ∀ (c : Key md) (f : Nat → Nat → Bool), (c, f) ∈ natCmpOps →
+    ∀ (cv : ConstantVal md) (v : Expr md) (hint : ReducibilityHint),
+    env.find? c = some (.defnInfo cv v hint) →
+    ∀ (φ : LevelParam → Nat) (ρ : BVarIdx → V) (a b : Nat) (X : V),
+      Denotes cval env φ ρ (.app (.app (.const c []) (.lit (.natVal a))) (.lit (.natVal b))) X →
+      Denotes cval env φ ρ (.const (if f a b then boolTrueName else boolFalseName) []) X
+
+/-- **`Nat.add`'s recurrences at every natural**: the kernel rewrites `Nat.add b k` at a
+non-literal `b` (an offset's successor step, adding zero, offsets in conversion), so at the
+role a stored definition binds, `x + 0 = x` and `x + succ y = succ (x + y)` for every
+member `x`, `y` of what `Nat` denotes. -/
+def NatAddLaw (cval : Key md → (LevelParam → Nat) → V) (env : Env md) : Prop :=
+  ∀ (cv : ConstantVal md) (v : Expr md) (hint : ReducibilityHint),
+    env.find? natAddName = some (.defnInfo cv v hint) →
+    ∀ (φ : LevelParam → Nat) (ρ : BVarIdx → V) (N Z S A : V),
+      Denotes cval env φ ρ (.const natName []) N →
+      Denotes cval env φ ρ (.const natZeroName []) Z →
+      Denotes cval env φ ρ (.const natSuccName []) S →
+      Denotes cval env φ ρ (.const natAddName []) A →
+      ∀ x y, x ∈ˢ N → y ∈ˢ N →
+        app (app A x) Z = x ∧ app (app A x) (app S y) = app S (app (app A x) y)
+
 /-- **A model of the environment `env` in the set theory `V`**: one
 assignment `cval` of a set to every constant at every level
 assignment — fixed once, for the whole environment — under which every
 stored constant is a member of what its type denotes, the built-in
 `False` is the empty set, the built-in `Eq` is set equality, every
 stored definition is what its value denotes, every stored recursor rule
-computes as Lean's does, and a constant's value reads only its own level
-parameters.
+computes as Lean's does, the kernel's η laws hold at stored structures and
+unit-like families, the `Nat` operations compute on literals, and a
+constant's value reads only its own level parameters.
 
 The interpretation of the constants *is* the model: there is nothing
 else to choose (`Sort`, `∀`, `λ`, application and projection are read
@@ -356,6 +480,16 @@ where they are laws of stored constants:
   right-hand side at the prefix and the constructor's fields.  The
   quotient's computation rules are among them: `Quot.lift` and
   `Quot.ind` are stored as recursors.
+* **unit-like η** (`unit_like`): at a family the kernel flags unit-like,
+  any two members of an instance are equal (`UnitLikeLaw`).
+* **projections and structure η** (`proj_law`): a stored structure's
+  projection table is the structure's own, a projection of its
+  constructor is the field, and every member of an instance is the
+  constructor at its own fields (`ProjLaw`).
+* **`Nat` literals** (`lit_ops`): `Nat.pred` and the fourteen binary
+  operations the kernel computes on literals do so as Lean's functions
+  (`NatLitLaw`), and `Nat.add` satisfies its recurrences at every natural
+  (`nat_add`, `NatAddLaw`).
 
 The kernel's other generic definitional equalities do not depend on
 `cval`: they hold in every model because of how `Denotes` reads terms.
@@ -372,12 +506,7 @@ The kernel's other generic definitional equalities do not depend on
   replaces each by its reduct), and `Denotes` reads none.
 * **literals**: a `Nat` or `String` literal denotes its constructor
   form, by `Denotes`' own rules, so the literal `n + 1` and
-  `Nat.succ n` denote the same set.
-
-Not yet fields of this structure, because the checker does not yet establish
-them for every stored constant: structure η and unit-like η, the projection
-of a constructor, and the kernel's acceleration of `Nat` operations on
-literals. -/
+  `Nat.succ n` denote the same set. -/
 structure Model (V : Type w) [SetTheory V] (env : Env md) where
   /-- the set a constant denotes, per level assignment -/
   cval : Key md → (LevelParam → Nat) → V
@@ -409,6 +538,15 @@ structure Model (V : Type w) [SetTheory V] (env : Env md) where
       Denotes cval env φ ρ value (cval cv.name φ)
   /-- **ι**: every stored recursor rule computes as Lean's does (`IotaRule`) -/
   iota_rule : IotaLaw cval env
+  /-- **unit-like η** at every family the kernel flags unit-like (`UnitLikeLaw`) -/
+  unit_like : UnitLikeLaw cval env
+  /-- **projections and structure η** at every stored structure's projection table, which
+  is the structure's own (`ProjLaw`) -/
+  proj_law : ProjLaw cval env
+  /-- **the `Nat` operations on literals** compute as Lean's do (`NatLitLaw`) -/
+  lit_ops : NatLitLaw cval env
+  /-- **`Nat.add`'s recurrences** at every natural (`NatAddLaw`) -/
+  nat_add : NatAddLaw cval env
   /-- a stored constant's value depends on the level assignment only through its own
   level parameters (so a use of it reads its levels, and nothing else) -/
   cval_params : ∀ (n : Key md) (ci : ConstantInfo md), env.find? n = some ci →

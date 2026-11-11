@@ -447,9 +447,7 @@ theorem Red.proj_sound (hin : RulesInputs V m φ) {d : Nat} {sn : Key md} {i : N
     rw [← hlpsC]
     exact hmemC0 σ
   -- the ∀-chain, off the head data's arity pin
-  obtain ⟨cvC'', hfC'', -, hstrip⟩ := (m.proj_ok.towerHead hent).2.2.2.2
-  obtain ⟨rfl, -, -⟩ :=
-    ConstantInfo.ctorInfo.inj (Option.some.inj (hfC.symm.trans hfC''))
+  have hstrip := (m.proj_ok.towerHead hent).ctor_stripPis_isSome hfC
   have hpc : PiChain e.getAppArgs.length TCa := by
     rw [hlen]
     exact piChain_of_stripPis (entry.numParams + entry.numFields)

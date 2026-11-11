@@ -18,8 +18,9 @@ projection tables too (`claimedEnv_findProj?`). What L7 discharges: distinct
 names (from `InstallStep`), and that every claimed constant's type and every
 claimed definition's value mention only kept keys (`RefsIn (KeptKey env)`; reader
 output references input and role keys, a projection table's type is a closed
-sort). The model's laws are then the claimed constants' own: none of them reads
-a model-family constant.
+sort), and that a kept structure's projection table names a kept constructor (the
+kernel builds a table from one block: the structure's own constructor). The model's
+laws are then the claimed constants' own: none of them reads a model-family constant.
 -/
 
 namespace IxVM.Consistency
@@ -175,14 +176,17 @@ theorem Installs.claimed {ds : List (Declaration .anon)} {env : Env .anon} (h : 
 /-- **The claimed sub-environment's model** (for L7): a model of the installed
 environment, with distinct names, whose claimed constants' types, claimed
 definitions' values and claimed recursor rules' right-hand sides mention only kept
-keys, restricts to `claimedEnv env`. -/
+keys, and whose kept structures' projection tables name kept constructors, restricts to
+`claimedEnv env`. -/
 def claimedModel {V : Type u} [SetTheory V] {env : Env .anon} (M : Model V env)
     (hnd : (env.consts.map (·.name)).Nodup)
     (htype : ∀ c ∈ (claimedEnv env).consts, c.toConstantVal.type.RefsIn (KeptKey env))
     (hvalue : ∀ cv value hint, ConstantInfo.defnInfo cv value hint ∈ (claimedEnv env).consts →
       value.RefsIn (KeptKey env))
     (hrhs : ∀ cv mI rP rules, ConstantInfo.recInfo cv mI rP rules ∈ (claimedEnv env).consts →
-      ∀ rl ∈ rules, rl.rhs.RefsIn (KeptKey env)) :
+      ∀ rl ∈ rules, rl.rhs.RefsIn (KeptKey env))
+    (hctor : ∀ T i entry, (claimedEnv env).findProj? T i = some entry → KeptKey env T →
+      KeptKey env entry.ctor) :
     Model V (claimedEnv env) :=
   M.restrict (K := KeptKey env) (fun _ hK => claimedEnv_find? hK) (claimedEnv_findProj? hnd)
     ⟨keptKey_of_not_aux (fun _ _ h => nomatch h), keptKey_of_not_aux (fun _ _ h => nomatch h),
@@ -191,6 +195,8 @@ def claimedModel {V : Type u} [SetTheory V] {env : Env .anon} (M : Model V env)
       keptKey_of_not_aux (fun _ _ h => nomatch h)⟩
     (fun _ hc => (List.mem_filter.mp hc).1) (fun _ hc => keptKey_of_claimed hnd hc) htype hvalue
     hrhs (keptKey_of_not_aux (fun _ _ h => nomatch h)) (keptKey_of_not_aux (fun _ _ h => nomatch h))
+    ⟨keptKey_of_not_aux (fun _ _ h => nomatch h), keptKey_of_not_aux (fun _ _ h => nomatch h)⟩
+    hctor
 
 /-- The model conjunct's form. -/
 theorem nonempty_claimedModel {env : Env .anon}
@@ -200,8 +206,10 @@ theorem nonempty_claimedModel {env : Env .anon}
     (hvalue : ∀ cv value hint, ConstantInfo.defnInfo cv value hint ∈ (claimedEnv env).consts →
       value.RefsIn (KeptKey env))
     (hrhs : ∀ cv mI rP rules, ConstantInfo.recInfo cv mI rP rules ∈ (claimedEnv env).consts →
-      ∀ rl ∈ rules, rl.rhs.RefsIn (KeptKey env)) :
+      ∀ rl ∈ rules, rl.rhs.RefsIn (KeptKey env))
+    (hctor : ∀ T i entry, (claimedEnv env).findProj? T i = some entry → KeptKey env T →
+      KeptKey env entry.ctor) :
     ∀ (V : Type u) [SetTheory V], Nonempty (Model V (claimedEnv env)) :=
-  fun V _ => let ⟨M⟩ := hM V; ⟨claimedModel M hnd htype hvalue hrhs⟩
+  fun V _ => let ⟨M⟩ := hM V; ⟨claimedModel M hnd htype hvalue hrhs hctor⟩
 
 end IxVM.Consistency

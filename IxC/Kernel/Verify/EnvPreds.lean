@@ -308,19 +308,38 @@ constructor are unreserved names (the recogniser's own guards, so a
 tower entry never sits at a pinned basis family);
 the index is in range; the former is stored as an inductive and the
 constructor as a constructor at the entry's own arities and level
-parameters.  (Task #175 S1: the entry carries a *body*, not a type;
-the bodies' scoping is `EnvWF`'s table clause.) -/
+parameters; the former's type is `∀ (params), Sort structSort` and the
+constructor's is `∀ (params) (fields), T.{lps} params` (the structure at
+its own level parameters and parameters, no index), so the table's
+structure sort and constructor are the stored structure's.  (Task #175
+S1: the entry carries a *body*, not a type; the bodies' scoping is
+`EnvWF`'s table clause.) -/
 @[expose] def TowerHead (env : Env md) (entry : ProjEntry md) : Prop :=
   reservedBasisNames.contains entry.structName = false ∧
   reservedBasisNames.contains entry.ctor = false ∧
   entry.idx < entry.numFields ∧
   (∃ (cvT : ConstantVal md) (caps : IndCaps md),
     env.find? entry.structName = some (.indInfo cvT caps) ∧
-    cvT.levelParams = entry.levelParams) ∧
+    cvT.levelParams = entry.levelParams ∧
+    ∃ bs, cvT.type.stripPis entry.numParams = some (bs, .sort entry.structSort)) ∧
   (∃ cvC : ConstantVal md,
     env.find? entry.ctor = some (.ctorInfo cvC entry.numParams entry.numFields) ∧
     cvC.levelParams = entry.levelParams ∧
-    (cvC.type.stripPis (entry.numParams + entry.numFields)).isSome = true)
+    ∃ bs, cvC.type.stripPis (entry.numParams + entry.numFields) = some (bs,
+      Expr.mkAppN (.const entry.structName (entry.levelParams.map .param))
+        ((List.range entry.numParams).map fun k =>
+          .bvar (entry.numFields + entry.numParams - 1 - k))))
+
+/-- A table entry's constructor type is a `∀`-telescope at the entry's
+arities. -/
+theorem TowerHead.ctor_stripPis_isSome {env : Env md} {entry : ProjEntry md}
+    {cvC : ConstantVal md} (h : TowerHead env entry)
+    (hC : env.find? entry.ctor = some (.ctorInfo cvC entry.numParams entry.numFields)) :
+    (cvC.type.stripPis (entry.numParams + entry.numFields)).isSome = true := by
+  obtain ⟨-, -, -, -, ⟨cvC', hC', -, bs, hs⟩⟩ := h
+  rw [hC] at hC'
+  obtain ⟨rfl, -, -⟩ := ConstantInfo.ctorInfo.inj (Option.some.inj hC')
+  rw [hs]; rfl
 
 /-- The head data survives any extension that keeps the two lookups. -/
 theorem TowerHead.mono {env env' : Env md} {entry : ProjEntry md}
@@ -328,9 +347,9 @@ theorem TowerHead.mono {env env' : Env md} {entry : ProjEntry md}
       (∀ cv mI rP rules, ci ≠ .recInfo cv mI rP rules) →
       env.find? n = some ci → env'.find? n = some ci)
     (h : TowerHead env entry) : TowerHead env' entry := by
-  obtain ⟨h2, h4, h5, ⟨cvT, caps, hT, hlT⟩, ⟨cvC, hC, hlC, hstrip⟩⟩ := h
+  obtain ⟨h2, h4, h5, ⟨cvT, caps, hT, hlT, hsT⟩, ⟨cvC, hC, hlC, hstrip⟩⟩ := h
   exact ⟨h2, h4, h5,
-    ⟨cvT, caps, hkeep _ _ (fun _ _ _ _ hh => ConstantInfo.noConfusion rfl (heq_of_eq hh)) hT, hlT⟩,
+    ⟨cvT, caps, hkeep _ _ (fun _ _ _ _ hh => ConstantInfo.noConfusion rfl (heq_of_eq hh)) hT, hlT, hsT⟩,
     ⟨cvC, hkeep _ _ (fun _ _ _ _ hh => ConstantInfo.noConfusion rfl (heq_of_eq hh)) hC, hlC, hstrip⟩⟩
 
 /-- **The projection-table discipline**: every stored table carries,
@@ -403,6 +422,75 @@ theorem BasisBlocks.empty : (BasisBlocks (md := md)) Env.empty := by
   else if n = quotIndName then quotIndA
   else if n = quotSoundName then quotSoundA
   else .axiomInfo ⟨n, [], .sort .zero⟩
+
+/-- The unit-like flag of a stored inductive (`false` at any other constant). -/
+@[expose] def ConstantInfo.unitlikeCap : ConstantInfo md → Bool
+  | .indInfo _ caps => caps.unitlike
+  | _ => false
+
+/-- **Among the pinned declarations only `PUnit` is unit-like.** -/
+theorem pinnedInfo_unitlike {n : Key md} {cv : ConstantVal md} {caps : IndCaps md}
+    (h : pinnedInfo n = .indInfo cv caps) (hu : caps.unitlike = true) : n = punitName := by
+  have hf : (pinnedInfo n).unitlikeCap = true := by rw [h]; exact hu
+  by_cases hp : n = punitName
+  · exact hp
+  exfalso
+  delta pinnedInfo at hf
+  by_cases h1 : n = eqName
+  · rw [if_pos h1] at hf; exact absurd hf (by cases md <;> decide)
+  rw [if_neg h1] at hf
+  by_cases h2 : n = eqReflName
+  · rw [if_pos h2] at hf; exact absurd hf (by cases md <;> decide)
+  rw [if_neg h2] at hf
+  by_cases h3 : n = eqRecName
+  · rw [if_pos h3] at hf; exact absurd hf (by cases md <;> decide)
+  rw [if_neg h3] at hf
+  by_cases h4 : n = natName
+  · rw [if_pos h4] at hf; exact absurd hf (by cases md <;> decide)
+  rw [if_neg h4] at hf
+  by_cases h5 : n = natZeroName
+  · rw [if_pos h5] at hf; exact absurd hf (by cases md <;> decide)
+  rw [if_neg h5] at hf
+  by_cases h6 : n = natSuccName
+  · rw [if_pos h6] at hf; exact absurd hf (by cases md <;> decide)
+  rw [if_neg h6] at hf
+  by_cases h7 : n = natRecName
+  · rw [if_pos h7] at hf; exact absurd hf (by cases md <;> decide)
+  rw [if_neg h7, if_neg hp] at hf
+  by_cases h12 : n = punitUnitName
+  · rw [if_pos h12] at hf; exact absurd hf (by cases md <;> decide)
+  rw [if_neg h12] at hf
+  by_cases h13 : n = punitRecName
+  · rw [if_pos h13] at hf; exact absurd hf (by cases md <;> decide)
+  rw [if_neg h13] at hf
+  by_cases h14 : n = emptyName
+  · rw [if_pos h14] at hf; exact absurd hf (by cases md <;> decide)
+  rw [if_neg h14] at hf
+  by_cases h15 : n = emptyRecName
+  · rw [if_pos h15] at hf; exact absurd hf (by cases md <;> decide)
+  rw [if_neg h15] at hf
+  by_cases h15a : n = falseName
+  · rw [if_pos h15a] at hf; exact absurd hf (by cases md <;> decide)
+  rw [if_neg h15a] at hf
+  by_cases h15b : n = falseRecName
+  · rw [if_pos h15b] at hf; exact absurd hf (by cases md <;> decide)
+  rw [if_neg h15b] at hf
+  by_cases h16 : n = quotName
+  · rw [if_pos h16] at hf; exact absurd hf (by cases md <;> decide)
+  rw [if_neg h16] at hf
+  by_cases h17 : n = quotMkName
+  · rw [if_pos h17] at hf; exact absurd hf (by cases md <;> decide)
+  rw [if_neg h17] at hf
+  by_cases h18 : n = quotLiftName
+  · rw [if_pos h18] at hf; exact absurd hf (by cases md <;> decide)
+  rw [if_neg h18] at hf
+  by_cases h19 : n = quotIndName
+  · rw [if_pos h19] at hf; exact absurd hf (by cases md <;> decide)
+  rw [if_neg h19] at hf
+  by_cases h20 : n = quotSoundName
+  · rw [if_pos h20] at hf; exact absurd hf (by cases md <;> decide)
+  rw [if_neg h20] at hf
+  exact absurd hf (by simp [ConstantInfo.unitlikeCap])
 
 /-- Which names carry constructor-shaped pinned declarations. -/
 theorem pinnedInfo_ctorInfo_cases {n : Key md} {cv : ConstantVal md} {nP nF : Nat}

@@ -11,6 +11,9 @@ public import IxC.Kernel.Model.IndOpenRev
 public import IxC.Kernel.Model.IndPinGrade
 public import IxC.Kernel.Model.WellDenotedTransport
 public import IxC.Kernel.Model.Inductives.FixRecRead
+public import IxC.Kernel.Model.Rules.RedSoundKit
+public import IxC.Kernel.Model.NatLitLaw
+import IxC.Kernel.Model.Rules.InferSoundKit
 import IxC.Kernel.Verify.InferLeaves
 import IxC.Kernel.Verify.StrLitExpr
 import IxC.Kernel.Verify.InferLemmas
@@ -841,6 +844,201 @@ theorem iotaLaw_of_envModelM {μ : Ix.Kernel.CheckMode} {env : Env md} (m : EnvM
   obtain ⟨⟨-, -, -, -, hfire⟩, -, -⟩ := m.base2.rec_ctors r cv mI rP rules hf rl hrl
   exact iotaRule_of_fires m hf hrl hfire
 
+/-- **The kernel's unit-like flag is Lean's criterion** at a natively installed block
+(Lean's `is_def_eq_unit_like`: a structure-like family, one constructor and no index, whose
+constructor has no field). -/
+theorem _root_.Ix.Kernel.nativeCapsAt_unitlike_iff (p : Ix.Kernel.InductiveShape md)
+    (r : Bool) :
+    (Ix.Kernel.nativeCapsAt p r).unitlike = true ↔
+      ∃ c, p.ctors = [c] ∧ p.nIdx = 0 ∧ c.2 = 0 := by
+  unfold Ix.Kernel.nativeCapsAt
+  split
+  · next c hc => simp [hc]
+  · next hne =>
+    constructor
+    · intro h; simp at h
+    · rintro ⟨c, hc, -⟩; exact absurd hc (hne c)
+
+/-- **Unit-like η from the invariant**: at a family the install flags unit-like, the unit
+law (`CapsOk`'s unit half), read at the bound-variable readings of the parameters through
+the fit (`fits_teleFitPA`, `Rules.teleFit_of_teleFitPA`); at the pinned `PUnit`, the only
+pinned family with the flag (`pinnedInfo_unitlike`), its leaf, the unit set. -/
+theorem unitLikeLaw_of_envModelM {μ : Ix.Kernel.CheckMode} {env : Env md} (m : EnvModelM V μ env) :
+    Ix.Kernel.UnitLikeLaw (cvalOf (V := V) m.base2.acval) env := by
+  intro T cvT caps hf hu us φ ρ σ ts R F x y hus hts hF hfit hx hy
+  have hcl := m.base2.cval_closedL
+  have hFv : F = cvalOf m.base2.acval T (Level.substFn φ cvT.levelParams us) := by
+    cases hF with
+    | const hfr _ => rw [hf] at hfr; cases hfr; rfl
+  by_cases hres' : Ix.Kernel.reservedBasisNames.contains T = true
+  · -- the pinned `PUnit`, with no parameters: its leaf is the unit set
+    have hpin := (m.base2.basis_pinned T _ hf hres').1
+    obtain rfl := Ix.Kernel.pinnedInfo_unitlike hpin.symm hu
+    rw [show Ix.Kernel.pinnedInfo Ix.Kernel.punitName = Ix.Kernel.punitA from rfl] at hpin
+    obtain ⟨hcv, hcaps⟩ := ConstantInfo.indInfo.inj hpin
+    have hlps : cvT.levelParams = [Ix.Kernel.uN] := (congrArg ConstantVal.levelParams hcv).trans rfl
+    have hup : caps.unitParams = 0 := (congrArg Ix.Kernel.IndCaps.unitParams hcaps).trans rfl
+    rw [hlps] at hFv
+    obtain rfl : ts = [] := List.eq_nil_of_length_eq_zero (hts.trans hup)
+    have hpinT : m.base2.cvalE Ix.Kernel.punitName (Level.substFn φ [Ix.Kernel.uN] us)
+        = Term.punitT (Level.substFn φ [Ix.Kernel.uN] us Ix.Kernel.uN) :=
+      (m.base2.basis_pinned Ix.Kernel.punitName _ hf (by (cases md <;> decide))).2 _ _ rfl
+    have hleaf : m.base2.acval Ix.Kernel.punitName (Level.substFn φ [Ix.Kernel.uN] us)
+        = .const .punit [Level.substFn φ [Ix.Kernel.uN] us Ix.Kernel.uN] :=
+      erase_eq_const (by rw [m.base2.acval_erase, hpinT]; rfl)
+    have hunit : ∀ z, z ∈ˢ ([] : List V).foldl app F → z = pt := by
+      intro z hz
+      have hz' : z ∈ˢ F := hz
+      rw [hFv, cvalOf, hleaf, interp_const] at hz'
+      exact mem_unitSet hz'
+    rw [hunit x hx, hunit y hy]
+  have hres : Ix.Kernel.reservedBasisNames.contains T = false := by simpa using hres'
+  have hwf := m.base2.wf _ (Ix.Kernel.Semantics.Env.find?_mem hf)
+  have hTf : (cvT.type.instantiateLevelParams cvT.levelParams us).hasFvar = false := by
+    rw [Expr.hasFvar_instantiateLevelParams]; exact hwf.1
+  have hTb : (cvT.type.instantiateLevelParams cvT.levelParams us).looseBVarsBounded 0 = true := by
+    rw [Expr.looseBVarsBounded_instantiateLevelParams]; exact hwf.2.2.2.1
+  obtain ⟨TVa, hTVa, hTVaok, hlaw⟩ := m.caps_ok.2 T cvT caps hf hu hres φ us hus
+  -- the parameters as bound-variable readings
+  let ρ' : Nat → V := fun i => ts.getD i SetTheory.empty
+  let ws : List AnnotTerm := (List.range ts.length).map AnnotTerm.bvar
+  have hws_len : ws.length = ts.length := by simp [ws]
+  have hws_val : ∀ n, n < ts.length →
+      interp V ρ' (ws.getD n default) = ts.getD n SetTheory.empty := by
+    intro n hn
+    rw [show ws.getD n default = AnnotTerm.bvar n by
+      simp [ws, List.getD, List.getElem?_range hn], interp_bvar]
+  have hwsMap : ws.map (interp V ρ') = ts := by
+    have h := map_range_eq_of_getD (ρ' := ρ') (c := 0) ts
+      (fun j _ => by rw [Nat.zero_add])
+    rw [← h]
+    simp [ws, Function.comp_def]
+  obtain ⟨_, _, _, hstrip, -, -, htele, -, -, -, -⟩ :=
+    fits_teleFitPA (V := V) hcl hTf hTb hTVa hTVaok hfit hws_len hws_val
+  have hpc : Rules.PiChain ws.length TVa := by
+    rw [hws_len]
+    exact Rules.piChain_of_stripPis ts.length (by rw [hstrip]; rfl) hTVa
+  have hfitT := Rules.teleFit_of_teleFitPA hpc htele
+  rw [hwsMap] at hfitT
+  have hmem : ∀ z, z ∈ˢ ts.foldl app F → z ∈ˢ ts.foldl app
+      (interp V ρ' (m.base2.acval T (Level.substFn φ cvT.levelParams us))) := by
+    intro z hz
+    rw [interp_cvalOf hcl, ← hFv]
+    exact hz
+  exact hlaw ρ' ts _ x y hts hfitT (hmem x hx) (hmem y hy)
+
+/-- **The projection tables' laws from the invariant.** The table's pins are its head data
+(`TowerHead`, which `ProjOkT` keeps for every stored table). The projection of a
+constructor is the tower entry's ι clause (`TowerEntryLaw`, clause (B)) at the
+bound-variable readings of the arguments, whose application the fit grades
+(`Rules.wellDenotedV_mkAppN_of_fit`); structure η is its η clause (`TowerEtaLaw`), read
+as `unitLikeLaw_of_envModelM` reads the unit law. -/
+theorem projLaw_of_envModelM {μ : Ix.Kernel.CheckMode} {env : Env md} (m : EnvModelM V μ env) :
+    Ix.Kernel.ProjLaw (cvalOf (V := V) m.base2.acval) env := by
+  intro T i entry cvT capsT hfP hfT
+  have hcl := m.base2.cval_closedL
+  obtain ⟨hsn, -, hi, -, -, cvC, hfC, hlpsC, -, -⟩ := m.tower_ok (fun _ => 0) T i entry hfP
+  obtain ⟨-, -, -, ⟨cvT', capsT', hfT', hlpsT, bsT, hsortT⟩, ⟨cvC', hfC', -, bsC, hresC⟩⟩ :=
+    m.base2.proj_ok.towerHead hfP
+  rw [hsn, hfT] at hfT'
+  obtain ⟨rfl, rfl⟩ := ConstantInfo.indInfo.inj (Option.some.inj hfT')
+  rw [hfC] at hfC'
+  obtain ⟨rfl, -, -⟩ := ConstantInfo.ctorInfo.inj (Option.some.inj hfC')
+  rw [hsn] at hresC
+  refine ⟨hlpsT, ⟨bsT, hsortT⟩, cvC, hfC, hlpsC, ⟨bsC, hresC⟩, ?_⟩
+  intro us φ ρ F K hus hF hK
+  obtain ⟨-, -, -, -, -, cvC₀, hfC₀, -, hlaw, heta⟩ := m.tower_ok φ T i entry hfP
+  rw [hfC] at hfC₀
+  obtain ⟨rfl, -, -⟩ := ConstantInfo.ctorInfo.inj (Option.some.inj hfC₀)
+  -- the two leaves
+  have hFv : F = cvalOf m.base2.acval T (Level.substFn φ cvT.levelParams us) := by
+    cases hF with
+    | const hfr _ => rw [hfT] at hfr; cases hfr; rfl
+  have hKv : K = cvalOf m.base2.acval entry.ctor (Level.substFn φ cvC.levelParams us) := by
+    cases hK with
+    | const hfr _ => rw [hfC] at hfr; cases hfr; rfl
+  rw [hlpsT] at hFv
+  rw [hlpsC] at hKv
+  refine ⟨fun hg σ R ys hys hfit => ?_, fun σ R ts x hts hfit hx => ?_⟩
+  · -- the projection of a constructor: clause (B) at the bound-variable readings
+    obtain ⟨-, ⟨TCa, hTCa, hB⟩⟩ := hlaw us hus
+    have hwf := m.base2.wf _ (Ix.Kernel.Semantics.Env.find?_mem hfC)
+    have hTf : (cvC.type.instantiateLevelParams cvC.levelParams us).hasFvar = false := by
+      rw [Expr.hasFvar_instantiateLevelParams]; exact hwf.1
+    have hTb : (cvC.type.instantiateLevelParams cvC.levelParams us).looseBVarsBounded 0
+        = true := by
+      rw [Expr.looseBVarsBounded_instantiateLevelParams]; exact hwf.2.2.2.1
+    obtain ⟨TCa', hTCa', hokTC, hmemC⟩ := m.constType (φ := φ) 0 entry.ctor _ us hfC rfl
+      (by show us.length = cvC.levelParams.length; rw [hlpsC]; exact hus)
+    obtain rfl : TCa = TCa' := Option.some.inj (hTCa.symm.trans hTCa')
+    let ρ' : Nat → V := fun j => ys.getD j SetTheory.empty
+    let ws : List AnnotTerm := (List.range ys.length).map AnnotTerm.bvar
+    have hws_len : ws.length = ys.length := by simp [ws]
+    have hws_val : ∀ n, n < ys.length →
+        interp V ρ' (ws.getD n default) = ys.getD n SetTheory.empty := by
+      intro n hn
+      rw [show ws.getD n default = AnnotTerm.bvar n by
+        simp [ws, List.getD, List.getElem?_range hn], interp_bvar]
+    have hwsMap : ws.map (interp V ρ') = ys := by
+      have h := map_range_eq_of_getD (ρ' := ρ') (c := 0) ys
+        (fun j _ => by rw [Nat.zero_add])
+      rw [← h]
+      simp [ws, Function.comp_def]
+    obtain ⟨_, _, _, hstrip, -, -, htele, -, -, -, -⟩ :=
+      fits_teleFitPA (V := V) hcl hTf hTb hTCa hokTC hfit hws_len hws_val
+    have hpc : Rules.PiChain ws.length TCa := by
+      rw [hws_len]
+      exact Rules.piChain_of_stripPis ys.length (by rw [hstrip]; rfl) hTCa
+    have hfitT := Rules.teleFit_of_teleFitPA hpc htele
+    have hokC : WellDenotedV V ρ'
+        (m.base2.acval entry.ctor (Level.substFn φ cvC.levelParams us)) :=
+      ⟨m.base2.acval_wellDenoted _ _ ρ', m.acval_validV _ _ ρ'⟩
+    have hokApp := Rules.wellDenotedV_mkAppN_of_fit ws (hokTC ρ') hokC
+      (fun w hw => by
+        obtain ⟨j, -, rfl⟩ := List.mem_map.mp hw
+        exact ⟨by rw [WellDenoted_bvar]; trivial, by rw [AnnotValid_bvar]; trivial⟩)
+      (hmemC ρ') hfitT
+    rw [hlpsC] at hokApp
+    have hres := hB hg ρ' ws _ (by rw [hws_len, hys]) hokApp.1 hfitT
+    rw [projAV_interp, interp_mkAppN_map, hwsMap, interp_cvalOf hcl] at hres
+    rw [hKv, field_eq_projS, hres, hws_val _ (by rw [hys]; omega)]
+  · -- structure η: clause (C) at the bound-variable readings
+    obtain ⟨TVa, hTVa, hTVaok, hη⟩ := heta cvT capsT hfT us hus
+    have hwf := m.base2.wf _ (Ix.Kernel.Semantics.Env.find?_mem hfT)
+    have hTf : (cvT.type.instantiateLevelParams cvT.levelParams us).hasFvar = false := by
+      rw [Expr.hasFvar_instantiateLevelParams]; exact hwf.1
+    have hTb : (cvT.type.instantiateLevelParams cvT.levelParams us).looseBVarsBounded 0
+        = true := by
+      rw [Expr.looseBVarsBounded_instantiateLevelParams]; exact hwf.2.2.2.1
+    let ρ' : Nat → V := fun j => ts.getD j SetTheory.empty
+    let ws : List AnnotTerm := (List.range ts.length).map AnnotTerm.bvar
+    have hws_len : ws.length = ts.length := by simp [ws]
+    have hws_val : ∀ n, n < ts.length →
+        interp V ρ' (ws.getD n default) = ts.getD n SetTheory.empty := by
+      intro n hn
+      rw [show ws.getD n default = AnnotTerm.bvar n by
+        simp [ws, List.getD, List.getElem?_range hn], interp_bvar]
+    have hwsMap : ws.map (interp V ρ') = ts := by
+      have h := map_range_eq_of_getD (ρ' := ρ') (c := 0) ts
+        (fun j _ => by rw [Nat.zero_add])
+      rw [← h]
+      simp [ws, Function.comp_def]
+    obtain ⟨_, _, _, hstrip, -, -, htele, -, -, -, -⟩ :=
+      fits_teleFitPA (V := V) hcl hTf hTb hTVa hTVaok hfit hws_len hws_val
+    have hpc : Rules.PiChain ws.length TVa := by
+      rw [hws_len]
+      exact Rules.piChain_of_stripPis ts.length (by rw [hstrip]; rfl) hTVa
+    have hfitT := Rules.teleFit_of_teleFitPA hpc htele
+    rw [hwsMap] at hfitT
+    have hmem : x ∈ˢ ts.foldl app
+        (interp V ρ' (m.base2.acval T (Level.substFn φ entry.levelParams us))) := by
+      rw [interp_cvalOf hcl, ← hFv]
+      exact hx
+    have h := hη ρ' ts _ x hts hfitT hmem
+    rw [interp_cvalOf hcl, ← hKv] at h
+    simp only [field_eq_projS]
+    exact h
+
 /-! ### The model -/
 
 /-- **The model, read off the invariant**: `Model V env` from
@@ -902,6 +1100,10 @@ noncomputable def Model.ofEnvModelM {μ : Ix.Kernel.CheckMode} {env : Env md}
     rw [Expr.closeN_of_hasFvar _ 0 0 hv.1, interp_cvalOf m.base2.cval_closedL] at hb
     exact hb
   iota_rule := iotaLaw_of_envModelM m
+  unit_like := unitLikeLaw_of_envModelM m
+  proj_law := projLaw_of_envModelM m
+  lit_ops := natLitLaw_of_envModelM m
+  nat_add := natAddLaw_of_envModelM m
   cval_params := fun n ci h φ₁ φ₂ agree => by
     unfold cvalOf
     rw [m.base2.acval_params n ci h φ₁ φ₂ agree]

@@ -6,7 +6,8 @@ import IxC.Kernel.Verify.Cached.Reference
 
 `IxVM.consistent` covers a claim under the default role table or under a role table
 the kernel admits (`IxVM.Refinement.TableAdmitted`): the table's section admits
-(`admitBinding`), and the strict fold accepts, behind the committed prelude, the
+(`admitBinding`), binds all of `String`'s literal support if it binds `String`, and the
+strict fold accepts, behind the committed prelude, the
 closure of the constants the table binds (but for the compiler-trust roles) and of
 the theorems its evidence names, with the role specifications the fold does not
 check on its own (`BindingSpecs`). `check b E` decides that over the records of
@@ -607,6 +608,28 @@ theorem declsOk_sound {b : Binding} {envA : Env .anon} {ev : Evidences .anon}
 /-- The coverage limits of the reading (input bounds only). -/
 def admissionLimits : Limits := ⟨1 <<< 22, 1 <<< 22, 1 <<< 34, 1 <<< 28, 1 <<< 26⟩
 
+/-- The map `hintsOf` reads (each definition block member's projection record). -/
+def hintsProjAt (ixe : Ixon.Env) : Std.HashMap (ConstRef Address) Address :=
+  ixe.consts.fold (init := {}) fun m a lc =>
+    match lc.get? with
+    | some c =>
+      match c.info with
+      | .dPrj p => m.insert (.member p.block p.idx.toNat) a
+      | _ => m
+    | none => m
+
+/-- `hintsOf`'s lookup at a map passed in. `hintsOf ixe` is compiled at its full arity, so
+its partial application rebuilds the map, decoding every record of `ixe`, at every lookup;
+the check builds the map once (`hintsProjAt`) and reads through it. -/
+def hintsAt (projAt : Std.HashMap (ConstRef Address) Address) (ixe : Ixon.Env)
+    (r : ConstRef Address) : Option ReducibilityHint :=
+  hintOf <$> ixe.anonHints.get? ((projAt.get? r).getD r.block)
+
+theorem hintsAt_hintsProjAt (ixe : Ixon.Env) : hintsAt (hintsProjAt ixe) ixe = hintsOf ixe := by
+  funext r
+  unfold hintsAt hintsProjAt hintsOf
+  rfl
+
 /-- The three stages of `preparedOk`, abstracted over the computations: the
 prelude, the reading, the fold, then `fin` on the fold's environment. -/
 def preparedOkWith {P Ev Ds En ε₁ ε₂ ε₃ : Type} (pref : Except ε₁ P)
@@ -645,11 +668,13 @@ theorem preparedOkWith_sound {P Ev Ds En ε₁ ε₂ ε₃ : Type} {pref : Excep
 
 /-- **The reading and the fold accept the records of `order`** under the admitted
 table `t` (of the binding `b`), behind its committed prelude, and the installed
-environment meets `declsOk`. -/
+environment meets `declsOk`. The artifact's hints are read through a map built once
+(`hintsAt`, equal to `hintsOf`). -/
 def preparedOk (b : Binding) (E : Ixon.Env) (t : RoleTable) (order : List Address) : Bool :=
+  let projAt := hintsProjAt E
   preparedOkWith (Reader.preludeFor t : Except String (Reader.Prelude .anon))
     (fun pre => Admission.prepareWith Address.admissionHash b pre admissionLimits
-      (recordsOf E order) (blobsOf E order) (hintsOf E))
+      (recordsOf E order) (blobsOf E order) (hintsAt projAt E))
     (fun ev ds => Cached.checkDecls .verified ev (ds.map IxVM.Refinement.thmToOpaqueDefn))
     (fun envA ev ds => declsOk envA ev ds.toList)
 
@@ -668,24 +693,40 @@ theorem preparedOk_sound (W : Type w) [SetTheory W] {b : Binding} {E : Ixon.Env}
   have href := Cached.checkDecls_refines_ref W rfl hck
   rw [Array.toList_map] at href
   obtain ⟨hthm, hax, hspecs⟩ := declsOk_sound (b := b) hfin
-  exact ⟨pre, ev, ds, envA, hpre, hprep, Cached.acceptsRefUnder_strict.mpr href,
+  refine ⟨pre, ev, ds, envA, hpre, ?_, Cached.acceptsRefUnder_strict.mpr href,
     hthm, hax, hspecs⟩
+  rw [← hintsAt_hintsProjAt]
+  exact hprep
 
 /-! ## The check -/
+
+/-- `LiteralSupportBound`, decided. -/
+def literalSupportOk (t : RoleTable) : Bool :=
+  !(t.addressOf? .string).isSome ||
+    IxVM.Refinement.strLitSupportRoles.all fun r => (t.addressOf? r).isSome
+
+theorem literalSupportBound_of {t : RoleTable} (h : literalSupportOk t = true) :
+    IxVM.Refinement.LiteralSupportBound t := by
+  intro hs r hr
+  unfold literalSupportOk at h
+  rw [hs, Bool.not_true, Bool.false_or, List.all_eq_true] at h
+  exact h r hr
 
 /-- An `Ixon.Env` draws from itself. -/
 theorem draws_refl (E : Ixon.Env) : IxVM.Refinement.Draws E E :=
   ⟨fun _ lc h => Or.inl ⟨lc, h, rfl⟩, fun _ _ h => h⟩
 
 /-- **The admission of `b`, as the table `t`, over the records of `E`, with the
-candidate search list `wit` and order `order`**: the seeds are stored, the order
+candidate search list `wit` and order `order`**: a table binding `String` binds its literal
+support (`literalSupportOk`), the seeds are stored, the order
 checks (`orderedCheck`, `closedCheck`, `reachCheck`), and the reading and the
 fold accept it (`preparedOk`). `idx` is `E`'s recursor index (`artifactRecIndex`),
 passed so that it is computed once. -/
 def checkAt (b : Binding) (E : Ixon.Env) (t : RoleTable) (idx : Reader.RecIndex)
     (wit : List (Address × Option Address)) (order : List Address) : Bool :=
   let seeds := seedList t
-  seeds.all E.consts.contains && orderedCheck E order && closedCheck t E idx seeds order &&
+  literalSupportOk t && seeds.all E.consts.contains && orderedCheck E order &&
+    closedCheck t E idx seeds order &&
     reachCheck t E idx seeds wit order && preparedOk b E t order
 
 theorem checkAt_sound (W : Type w) [SetTheory W] {b : Binding} {E : Ixon.Env} {t : RoleTable}
@@ -696,10 +737,11 @@ theorem checkAt_sound (W : Type w) [SetTheory W] {b : Binding} {E : Ixon.Env} {t
   subst hV hidx
   unfold checkAt at h
   simp only [Bool.and_eq_true] at h
-  obtain ⟨⟨⟨⟨hseeds, hord⟩, hcl⟩, hreach⟩, hprep⟩ := h
+  obtain ⟨⟨⟨⟨⟨hlit, hseeds⟩, hord⟩, hcl⟩, hreach⟩, hprep⟩ := h
   have hS : ∀ a, a ∈ seedList t ↔ IxVM.Refinement.BindingSeeds t a := fun _ => mem_seedList
   obtain ⟨pre, ev, ds, envA, hpre, hprepared, hacc, hthm, hax, hspecs⟩ := preparedOk_sound W hprep
-  refine ⟨t, ht, V.env, admissionLimits, order, envA, draws_refl V.env, ?_, t, pre, ev, ds, ht,
+  refine ⟨t, ht, literalSupportBound_of hlit, V.env, admissionLimits, order, envA,
+    draws_refl V.env, ?_, t, pre, ev, ds, ht,
     closureOrderAt_of_checks hS hord hcl hreach, rfl, hpre, hprepared, hacc, hthm, hax, hspecs⟩
   intro a ha
   exact List.all_eq_true.mp hseeds a (mem_seedList.mpr ha)
