@@ -149,9 +149,13 @@ from 5962, by the entry's change (38 in: the check, the state's keys and the der
 -- counts are unchanged.
 -- The canonical rule's level link and the declines of rules that would not fire add
 -- 17 compiled functions (`IxC/Kernel/Audit/Roots.lean`).
+-- Formers declared at a definition in the in-model generator (`readFormer`, `formerTele`,
+-- `deltaHead`, `restoreModelTypes`) and the reader's definition values (`State.defValues`,
+-- `valuesOff`) add 19 compiled functions. Externs, implemented_by, unsafe, csimp and all
+-- ruling counts are unchanged.
 /-- info: runtime closure of [Ixon.Projection.address,
  Ixon.Projection.reconstruct,
- Ixon.Projection.checkBytes]: 6971 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 28 -/
+ Ixon.Projection.checkBytes]: 6990 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 28 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.Projection.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
 
