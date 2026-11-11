@@ -27,36 +27,6 @@ private def scalar (n : Nat) : Execution.DataValue F := .field n
 private def array (ns : Array Nat) : Execution.DataValue F := .array .field (ns.toList.map scalar)
 private def tuple (vs : List (Execution.DataValue F)) : Execution.DataValue F := .tuple vs
 
-/-- The binder-data hints (D2: `ixvm.pw`, `ixvm.pw.param`, `ixvm.pw.share`) of one record's
-stream values, as `crates/ixvm/src/pw.rs` serves them from IO channel 8:
-`nblocks (ekind eidx variant nnodes node*)*`, `node = 0 | 1 v | 2+k p1 … pk`. -/
-def pwHints (address : Array Nat) (vs : Array Nat) : Array (Execution.HintEntry F) := Id.run do
-  let mut out : Array (Execution.HintEntry F) := #[]
-  let mut i := 1
-  for _ in [:vs.getD 0 0] do
-    let ekind := vs.getD i 0
-    let eidx := vs.getD (i + 1) 0
-    let variant := vs.getD (i + 2) 0
-    let n := vs.getD (i + 3) 0
-    i := i + 4
-    for ord in [:n] do
-      let key (extra : List (Execution.DataValue F)) : Execution.DataValue F :=
-        tuple ([array address, scalar ekind, scalar eidx, scalar variant, scalar ord] ++ extra)
-      let tag := vs.getD i 0
-      if tag == 0 then
-        out := out.push ⟨.field, key [], scalar 0, "ixvm.pw"⟩
-        i := i + 1
-      else if tag == 1 then
-        out := out.push ⟨.field, key [], scalar (vs.getD (i + 1) 0), "ixvm.pw.share"⟩
-        i := i + 2
-      else
-        let k := tag - 2
-        out := out.push ⟨.field, key [], scalar (k + 1), "ixvm.pw"⟩
-        for j in [:k] do
-          out := out.push ⟨.field, key [scalar j], scalar (vs.getD (i + 1 + j) 0), "ixvm.pw.param"⟩
-        i := i + 1 + k
-  return out
-
 /-- The old IOBuffer becomes an explicit, typed dataset: address → (offset,
 length), and (channel, offset) → byte. The Rust host prepares dense byte rows
 as immutable vectors; the same entries remain usable by Lean's data provider.
@@ -73,8 +43,6 @@ def fixtureHints (fixture : Fixture) : Array (Execution.HintEntry F) := Id.run d
       offset := offset + entry.bytes.size
       if channel == 2 then
         hints := hints.push ⟨.field, tuple [scalar 3, array entry.address], scalar entry.hint, "ixvm.io.tag"⟩
-  for (address, vs) in fixture.binderData do
-    hints := hints ++ pwHints address vs
   -- Sample data for bytes_le. The IxVM host binds
   -- bytes_le to a closure, with no finite precomputed range (see crates/ixvm/src).
   let decompositions : List Nat := List.range 4097 ++ [4294967294,4294967295]

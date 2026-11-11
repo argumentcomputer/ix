@@ -58,13 +58,6 @@ def runStats (suite : String) (cases : Array (Unit → Except String Case)) (job
       IO.eprintln s!"[{suite}] a case could not be built: {e}"
       failed := failed + 1
     | .ok c =>
-      -- the binder data (D2), and with `$IX_PW_CHECK` their host-side check
-      let c ← IO.ofExcept c.withPwHints
-      if let some mode ← IO.getEnv "IX_PW_CHECK" then
-        if let some e ← pwCheckCase suite c then
-          IO.eprintln s!"[{suite}] {e}"
-          failed := failed + 1
-        if mode == "only" then continue
       let path := dir / s!"{suite}-{i}.ixt"
       i := i + 1
       IO.FS.writeBinFile path (Ix.AiurInvocation.casesHeader ++ c.encode ++ Ix.AiurInvocation.casesTrailer)
