@@ -319,13 +319,12 @@ bytes the IxVM proof is about and state what it guarantees about them.
   ingress.
 - **The same hash.** Every address in the statement is the same mathematical
   function as in IxVM's claims: pure BLAKE3 (`Address.blake3Pure`) on the whole
-  verifier path, including block-member projection addresses, which ingress
-  computes today with the native extern
-  ([`Src/Ingress.lean`](../IxCC/Src/Ingress.lean)). The byte-level theorems'
-  one non-standard axiom is removed: by reading, it comes from a
-  `native_decide` proof inside the Blake3 package's `finalizeWithLength`
-  whose proposition is a bound on the output length, provable from
-  `System.Platform.numBits_eq`.
+  verifier path, including block-member projection addresses (implemented:
+  every address IxCC computes is pure BLAKE3, [byte
+  contract](byte-contract.md), and no IxCC module imports the Blake3
+  package's Rust backend). The byte-level theorems' former non-standard
+  axiom, a `native_decide` proof inside the Blake3 package's hasher, is gone
+  with it.
 - **The same identities.** Pinned identities come from the role table, as
   IxVM's do (implemented: from the table the kernel admitted,
   `KernelFront.pinsOfTable`, through the mapping in

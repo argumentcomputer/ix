@@ -261,12 +261,18 @@ audited source inventory, and the proof aggregate `IxCCTests.Proofs`
 imports every fence. The [CI guide](ci.md) records the current check surface
 and its coverage changes.
 
-## Active native interface: BLAKE3 Rust
+## Recorded native interface: BLAKE3 Rust (no longer imported)
+
+No IxCC module imports `Blake3.Rust` since the erased type checker, its one
+user, was deleted (the switch to the kernel front end, step 4), so no IxCC
+executable links the Rust hasher. The entry below is still recorded in the
+JSON ledger, and is to be removed with an audit that IxCC's binaries do not
+link the foreign hasher.
 
 | Field | Ledger value |
 | --- | --- |
 | Owner | IxCC maintainers |
-| Project entry points | none: `IxCC/Ixon/Hash.lean` imports `Blake3.Rust`, and nothing calls it since its one user, the erased type checker's node and context hashing, was deleted |
+| Project entry points | none: no IxCC module imports `Blake3.Rust` |
 | Assumed semantics | Standard BLAKE3 XOF over exactly the input bytes; a 32-byte request is the standard 256-bit digest |
 | Logical/proof status | Assumption: no Lean refinement theorem connects returned bytes to a pure BLAKE3 specification. Canonical-address identity is conditional on an explicit pairwise `Address.Blake3NoCollision` premise; no global hash-injectivity axiom is asserted. Theorems whose premise is a successful addressed check (Ixon v3 ingress, typing and claim binding) expose the exact native hash dependency, pinned in the `IxCCTests/Fences/IxonV3*.lean` fences. |
 | Evidence | Official empty-input vector, output length, determinism and input-sensitivity checks, and the frozen Ixon v3 constant, environment and claim fixtures with independently recorded addresses |
@@ -295,7 +301,7 @@ The lock now resolves two `shlex` releases, which the ledger records as a
 version list. The package precompiles its Lean libraries, so importing
 elaborators load the same native objects as shared libraries. It also adds a
 pure Lean `Blake3.Pure` module with no extern declarations, which IxCC
-does not import. The native symbol set and the Rust entry points are unchanged
+now imports for every address it computes. The native symbol set and the Rust entry points are unchanged
 apart from the reported version string. The Lean 4.34.1 update moves
 Blake3.lean from `c32002ee` to `3f8b8056`, the revision ix's certified line
 pins. It changes only the package's `lean-toolchain`, its `lean4-nix` lock and
@@ -306,22 +312,21 @@ The audit enumerates extern declarations across the entire pinned package
 source tree — every `.lean` file, in `@[extern ...] opaque`/`def` and
 post-hoc `attribute [extern ...]` form — not just the imported entry module.
 The tree ships twelve C-ABI symbols across two backend modules. IxCC
-imports only `Blake3.Rust`, and calls none of its six exports since the
-erased checker's deletion; they remain listed because downstream code can
-reach the imported public API. The sibling `Blake3.C` module binds the
-vendored C implementation behind six `c_blake3_*` symbols; it is not imported
+imports neither backend module (`Blake3.Pure` only); the six `rs_blake3_*`
+exports remain listed while the entry is recorded. The sibling `Blake3.C`
+module binds the vendored C implementation behind six `c_blake3_*` symbols; it is not imported
 (the checker verifies this against actual imports), so none of them are
 linkable from this project today, but enabling them is one lakefile line
 away, so they are listed and any drift fails the check:
 
 | Lean declaration | Foreign symbol | Current reachability |
 | --- | --- | --- |
-| `Blake3.Rust.internalVersion` | `rs_blake3_version` | imported, uncalled |
-| `Blake3.Rust.hasherInit` | `rs_blake3_init` | imported, uncalled |
-| `Blake3.Rust.hasherInitKeyed` | `rs_blake3_init_keyed` | imported, uncalled |
-| `Blake3.Rust.hasherInitDeriveKey` | `rs_blake3_init_derive_key` | imported, uncalled |
-| `Blake3.Rust.hasherUpdate` | `rs_blake3_hasher_update` | imported, uncalled |
-| `Blake3.Rust.hasherFinalize` | `rs_blake3_hasher_finalize` | imported, uncalled |
+| `Blake3.Rust.internalVersion` | `rs_blake3_version` | present, unimported |
+| `Blake3.Rust.hasherInit` | `rs_blake3_init` | present, unimported |
+| `Blake3.Rust.hasherInitKeyed` | `rs_blake3_init_keyed` | present, unimported |
+| `Blake3.Rust.hasherInitDeriveKey` | `rs_blake3_init_derive_key` | present, unimported |
+| `Blake3.Rust.hasherUpdate` | `rs_blake3_hasher_update` | present, unimported |
+| `Blake3.Rust.hasherFinalize` | `rs_blake3_hasher_finalize` | present, unimported |
 | `Blake3.C.internalVersion` | `c_blake3_version` | present, unimported |
 | `Blake3.C.hasherInit` | `c_blake3_init` | present, unimported |
 | `Blake3.C.hasherInitKeyed` | `c_blake3_init_keyed` | present, unimported |

@@ -74,7 +74,7 @@ literal, a budget.
 
 IxCC's erased type checker, with the native hasher it used for its internal
 keys, was deleted by the switch to the kernel front end (step 4); no IxCC
-module calls the Blake3 package's Rust interface. The
+module imports the Blake3 package's Rust interface. The
 resource API hashes profiles and addressed objects in
 `Ixon/V3/Resource/Addressed.lean` with the same pure function. Importing such a module is different from
 calling that API: neither should be reported as a resource gate in `compile`.

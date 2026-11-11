@@ -1,4 +1,3 @@
-import Blake3.Rust
 import IxCC.Ixon.PureHash
 
 /-!
@@ -13,10 +12,10 @@ path comes from foreign code and no theorem depends on the `native_decide`
 length proof inside the Blake3 package's `HasherOps.hash`
 (`IxCC/docs/byte-contract.md`, "The hash").
 
-The Rust backend (Blake3.lean's `Blake3.Rust`, the trust ledger's native
-interface) is still imported but has no user: its one user, the erased type
-checker's incremental hasher, was deleted with the checker by the switch to
-the certified kernel, and the import goes next.
+No IxCC module imports the Blake3 package's Rust backend (`Blake3.Rust`):
+its one user, the erased type checker's incremental hasher, was deleted with
+the checker by the switch to the certified kernel, so no IxCC executable
+links the Rust hasher (`IxCC/docs/trusted-extern-ledger.md`).
 
 The semantic `Constant.address?` boundary lives in `Ixon.Sharing`, after the
 layer-2 recompression check. IxIR declaration preimages and address APIs live

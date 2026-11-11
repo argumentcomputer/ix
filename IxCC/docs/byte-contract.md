@@ -72,8 +72,9 @@ leaves and nodes, the binding section, the projection keys of block members.
 Every address IxCC computes uses the pure Lean implementation
 (`Blake3.Pure.hash`; `Address.blake3` is `Address.blake3Pure`), so no address on
 the verifier path comes from foreign code and every byte-level theorem rests on
-the three standard axioms. (The Rust hasher's one user in IxCC, the erased
-checker's internal hash-consing, was deleted with the checker.) The kernel's admission takes the
+the three standard axioms. (No IxCC module imports the Rust hasher: its one
+user in IxCC, the erased checker's internal hash-consing, was deleted with the
+checker.) The kernel's admission takes the
 hash as a parameter (`IxCK/Kernel/Admission.lean`), and every theorem holds at
 every hash; ix instantiates it with `Address.admissionHash`, which is pure
 BLAKE3 by definition and is executed by the Rust implementation on a recorded
