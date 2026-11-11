@@ -17,8 +17,9 @@
   # also holds the codec's proofs and audits, which import the kernel: linking
   # IxCC's shared library would build all of it. So the sources of the
   # closure IxCC imports (the files the trust ledger hashes: `IxCK.Ixon.Canonical`
-  # and its imports, under `IxCK/Address` and `IxCK/Ixon`, and the role
-  # vocabulary `IxCK.Kernel.Key` with `IxCK.Kernel.Name`, unchanged) are
+  # and its imports, under `IxCK/Address` and `IxCK/Ixon`, the role vocabulary
+  # `IxCK.Kernel.Key`, and the kernel's tiered admission entry, prelude and
+  # executed typing core with their imports under `IxCK/Kernel`, unchanged) are
   # packaged under the same package name and toolchain with a library holding
   # exactly those modules, built once here with its shared and static facets.
   # A module the closure imports but the ledger does not record fails this

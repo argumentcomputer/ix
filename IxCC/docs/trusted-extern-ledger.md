@@ -210,7 +210,7 @@ Then edit by hand what the audit still names (a seed version, a new action
 repository, a symbol, a closure hash of the IxCK codec, a csimp theorem), set
 `last_reviewed`, and commit the ledger with the change. `--record` leaves the
 IxCK closure's hashes (`lean_dependencies[].closure`) alone: a change to
-those 13 files is a dependency review, edited by hand, not a routine update.
+those 82 files is a dependency review, edited by hand, not a routine update.
 
 All repository check scripts are Lean executables. The trust auditor uses
 the pinned Lake TOML parser and GNU `sha256sum`; the independent encoder
@@ -393,39 +393,62 @@ closure hashes, not a revision, fix the audited source; a git-pinned
 dependency is refused. The checker requires
 every import of the project's sources that names neither a project module nor
 a toolchain module to be such a recorded module; checks each closure file's
-hash; rejects a closure file that declares a native symbol, uses
-`implemented_by`, `axiom`, `sorry` or `native_decide`, or imports a module
-outside the closure or the toolchain, and requires its `@[csimp]` theorems to be
-exactly the entry's `csimp_theorems`.
+hash; rejects a closure file that declares a native symbol or an axiom (a
+constructor named `axiom` is not one), uses `sorry` or `native_decide`, or
+imports a module outside the closure or the toolchain; and requires its `@[csimp]` theorems to be exactly the entry's
+`csimp_theorems` and its `implemented_by` substitutions exactly the entry's
+`implemented_by_sites` (absent: none), each recorded with the ruling that admits
+it.
 
-The one entry, `ix-ck-ixon-v4-codec`, is ix's `IxCK/` package (`«ix-ck»`),
-beside IxCC in the workspace, of which IxCC imports `IxCK.Ixon.Canonical`,
-`IxCK.Ixon.Codec` and `IxCK.Kernel.Key` (a 13-module closure importing only
-`Init` and `Std.Data.HashMap`; its public roots use `propext` and
-`Quot.sound`). The codec is the ingress decoder and encoder; `IxCK.Kernel.Key`
-gives the kernel's role vocabulary (`Ix.Kernel.Role`, `Role.all`), against
+The one entry, `ix-ck-kernel`, is ix's `IxCK/` package (`«ix-ck»`), beside
+IxCC in the workspace, of which IxCC imports `IxCK.Ixon.Canonical`,
+`IxCK.Ixon.Codec`, `IxCK.Kernel.Key`, `IxCK.Kernel.Admission.Tier`,
+`IxCK.Kernel.Cached.CoreC` and `IxCK.Kernel.Ixon.Prelude` (an 82-module closure
+of about 49,000 lines, 13,737 of them the committed role data, importing
+`Init`, `Std` and, at elaboration time in `IxCK/Kernel/BasisGen.lean`, `Lean`;
+not the kernel's proof tree). The codec is the ingress decoder and encoder;
+the tiered admission entry and the executed typing core are the front end
+over the kernel ([kernel front end](kernel-front-end-design.md)), which takes
+an environment's acceptance and the relevance annotation's types from them;
+`IxCK.Kernel.Key` gives the kernel's role vocabulary (`Ix.Kernel.Role`, `Role.all`), against
 which IxCC decodes the binding section of a role-bound environment and maps
 roles to its pinned identities ([byte contract](byte-contract.md)), so a role
-is read as the kernel of the same build reads it. Its four `@[csimp]`
-theorems are the entry's `csimp_theorems`: `Name.beq_eq_beqPtr` and
-`Key.beq_eq_beqPtr` replace structural equality of kernel names and keys by a
-pointer-guarded equality proved equal to it (IxCC compares roles, not names or
-keys); `putTagN_eq_fast` and `getTagN_eq_fast` in `IxCK/Ixon/Codec.lean`: compiled code
-writes and reads TagN integers with copies of `putTagN` and `getTagN`
-specialized to the flag widths 0, 2 and 4 (`putTagNFast`, `getTagNFast`).
-Each is a proved equality, so the functions the theorems are about are
-unchanged; only the compiled code path differs.
+is read as the kernel of the same build reads it. Its 32 `@[csimp]`
+theorems are the entry's `csimp_theorems`, among them `Name.beq_eq_beqPtr`,
+`Key.beq_eq_beqPtr` and `Level.beq_eq_beqPtr` (pointer-guarded equality),
+`putTagN_eq_fast` and `getTagN_eq_fast` (the TagN codec specialised to its flag
+widths), and the kernel's memoised term walks (`instantiate1_eq_instantiate1Fast`
+and its siblings). Each is a proved equality, so the functions the theorems are
+about are unchanged; only the compiled code path differs.
+
+Its `implemented_by_sites` are the four substitutions the closure declares,
+each admitted by the kernel's own runtime audit (`Ix.Kernel.Audit.runtimeRulings`,
+`IxCK/Kernel/Audit/Roots.lean`), whose list the entry reuses rather than
+reinventing: `Ix.Kernel.withExclusive`, implemented by `withExclusiveUnsafe`
+(`IxCK/Kernel/Exclusive.lean`; the audit's one admitted runtime
+implementation, whose type carries the obligation `k true = k false`, so the
+reference-count read it performs cannot change a value), and the three
+elaboration-time evaluators of `IxCK/Kernel/BasisGen.lean` (`evalInfo`,
+`evalVal`, `evalEnv`, each implemented by its `unsafe` twin; the audit's
+elaboration module, `meta` code compiled code cannot call). The kernel's
+`@[computed_field]` hash overrides are not `implemented_by` in source and are
+admitted by the same audit; the closure declares no `partial` definition and
+no extern. The kernel takes its content hash as a parameter, so no assumed
+substitution enters: IxCC instantiates it with its pure BLAKE3.
 The resource-selection checker also uses its pure framing operations on the
 recheck path, with pure BLAKE3 for the effective profile's identity. The
 rechecker receives the raw profile bytes and pair records and validates them
 against its Src declarations; it does not trust an ix acceptance Boolean.
 A codec defect can make ingress reject a closure or read a different program
-than ix compiled, which `Recheck.run` then checks as given. No whole-kernel
-semantic theorem follows from this codec dependency.
+than ix compiled, which `Recheck.run` then checks as given; the front end over
+the kernel checks IxCC's reading against the kernel's. The kernel's soundness
+theorems are proved in its own package on Lean's standard axioms; IxCC imports
+the executable kernel, not those proofs.
 Nix packages exactly the closure this entry records (`nix/sources.nix`) under
-the same package name with a codec-only library (`nix/build.nix`), so the
-kernel is never built; the `trusted-extern-ledger` check reads the same files
-at `../IxCK` in its copy of the workspace.
+the same package name with a library of exactly those modules
+(`nix/build.nix`), so the kernel's proof tree is never built; the
+`trusted-extern-ledger` check reads the same files at `../IxCK` in its copy of
+the workspace.
 
 ## Aiur logical-trace boundary
 

@@ -2,6 +2,7 @@ import Lean.Elab.Command
 import Lean.Util.FoldConsts
 import IxKernelBridge.NatBridge
 import IxKernelBridge.Examples
+import IxKernelBridge.KernelFront
 
 /-!
 # Checked dependency and axiom audit of `IxKernelBridge` (`IxKernelBridge.Audit`)
@@ -11,10 +12,10 @@ import IxKernelBridge.Examples
    fails unless each depends on exactly the three standard Lean axioms (`propext`,
    `Classical.choice`, `Quot.sound`).
 2. Guards `#print axioms` on every Layer 1, Layer 2 and Layer 3 theorem and on every theorem
-   of `IxKernelBridge.Examples`. `checkDecls_verifyBytes_immortal_denotes_nat` rests on the
-   same three as `IxCC.CompileClaim.verifyBytes_immortal_sound`, every address IxCC computes
-   being pure BLAKE3; `ble_premise_false` and `pow_premise_false` use only `propext` and
-   `Quot.sound`.
+   of `IxKernelBridge.Examples` and `IxKernelBridge.KernelFront`.
+   `checkDecls_verifyBytes_immortal_denotes_nat` rests on the same three as
+   `IxCC.CompileClaim.verifyBytes_immortal_sound`, every address IxCC computes being pure
+   BLAKE3; `ble_premise_false` and `pow_premise_false` use only `propext` and `Quot.sound`.
 
 `lake run check-kernel-bridge` (the root lakefile) builds this module and compares the set
 of fenced theorems with its recorded inventory, so a fence cannot disappear unnoticed.
@@ -72,6 +73,11 @@ def standardRoots : List Name :=
   , ``IxKernelBridge.Examples.add_bridge
   , ``IxKernelBridge.Examples.addLit_bridge
   , ``IxKernelBridge.Examples.addLit_concrete
+  , ``IxKernelBridge.KernelFront.infer_derives
+  , ``IxKernelBridge.KernelFront.whnf_derives
+  , ``IxKernelBridge.KernelFront.annotate_runs
+  , ``IxKernelBridge.KernelFront.classifyTerm_derivations
+  , ``IxKernelBridge.KernelFront.classifyTerm_sound
   ]
 
 run_cmd do
@@ -171,5 +177,22 @@ run_cmd do
 
 /-- info: 'IxKernelBridge.Examples.addLit_concrete' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxKernelBridge.Examples.addLit_concrete
+
+/-! ## `IxKernelBridge.KernelFront` -/
+
+/-- info: 'IxKernelBridge.KernelFront.infer_derives' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxKernelBridge.KernelFront.infer_derives
+
+/-- info: 'IxKernelBridge.KernelFront.whnf_derives' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxKernelBridge.KernelFront.whnf_derives
+
+/-- info: 'IxKernelBridge.KernelFront.annotate_runs' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxKernelBridge.KernelFront.annotate_runs
+
+/-- info: 'IxKernelBridge.KernelFront.classifyTerm_derivations' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxKernelBridge.KernelFront.classifyTerm_derivations
+
+/-- info: 'IxKernelBridge.KernelFront.classifyTerm_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxKernelBridge.KernelFront.classifyTerm_sound
 
 end IxKernelBridge.Audit

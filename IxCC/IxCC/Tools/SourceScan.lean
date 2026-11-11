@@ -148,6 +148,17 @@ def hygiene (tokens : Array Token) : Except String Unit := do
           (tokens[index + 3]?.map (·.text)) == some "true" then
         throw s!"line {token.line}: native := true is not allowed in checked sources"
 
+/-- `hygiene` for a pure Lean dependency's closure file: the same, except that the
+name `axiom` right after `|` or `.` is a constructor named `axiom` (declared, or
+referred to with a leading dot), as a dependency's data types may have one; an
+`axiom` declaration, with or without modifiers and attributes, never follows
+either, so it is still refused. -/
+def hygieneDependency (tokens : Array Token) : Except String Unit :=
+  let keep := (List.range tokens.size).filter fun index =>
+    !(tokens[index]!.kind == .name && tokens[index]!.text == "axiom" &&
+      index > 0 && ["|", "."].contains tokens[index - 1]!.text)
+  hygiene (keep.toArray.map (tokens[·]!))
+
 private def modifier (name : String) : Bool :=
   ["public", "protected", "private", "unsafe", "partial", "noncomputable", "meta"].contains name
 
@@ -192,6 +203,55 @@ def externs (tokens : Array Token) : Except String (List (String × String)) := 
           throw s!"line {token.line}: unsupported attribute-command target"
         if count == 0 then throw s!"line {token.line}: missing attribute-command names"
   return declarations.reverse
+
+/-- Every `implemented_by` substitution a source declares, as
+`(declaration, implementation)`: compiled code runs `implementation` where it
+would run `declaration`. Both the `@[… implemented_by impl …]` attribute on a
+`def` or `opaque` and the `attribute [implemented_by impl] decl` command are
+read; any other spelling of `implemented_by` outside comments and literals is
+refused, so no substitution escapes the inventory. -/
+def implementedBys (tokens : Array Token) : Except String (List (String × String)) := do
+  let mut result : List (String × String) := []
+  let mut seen := 0
+  for index in [:tokens.size] do
+    let token := tokens[index]!
+    if token.kind == .literal then continue
+    unless (token.text == "@" || token.text == "attribute") &&
+        (tokens[index + 1]?.map (·.text)) == some "[" do continue
+    let mut finish := index + 2
+    while finish < tokens.size && tokens[finish]!.text != "]" do finish := finish + 1
+    if finish == tokens.size then throw s!"line {token.line}: unterminated attribute"
+    let attributes := tokens.extract (index + 2) finish
+    let positions := (List.range attributes.size).filter fun pos =>
+      attributes[pos]!.kind == .name && attributes[pos]!.text == "implemented_by"
+    if positions.isEmpty then continue
+    if positions.length != 1 then throw s!"line {token.line}: ambiguous implemented_by attributes"
+    let some target := attributes[positions.head! + 1]?
+      | throw s!"line {token.line}: implemented_by names no implementation"
+    if target.kind != .name then throw s!"line {token.line}: unsupported implemented_by target"
+    if token.text == "@" then
+      let mut after := finish + 1
+      while after < tokens.size && modifier tokens[after]!.text do after := after + 1
+      unless ["def", "opaque"].contains ((tokens[after]?.map (·.text)).getD "") do
+        throw s!"line {token.line}: implemented_by not on a def or an opaque"
+      let some name := tokens[after + 1]? | throw s!"line {token.line}: missing declaration"
+      if name.kind != .name then throw s!"line {token.line}: unsupported declaration name"
+      result := (name.text, target.text) :: result
+      seen := seen + 1
+    else
+      let mut after := finish + 1
+      let mut count := 0
+      while after < tokens.size && tokens[after]!.line == tokens[finish]!.line &&
+          tokens[after]!.kind == .name do
+        result := (tokens[after]!.text, target.text) :: result
+        count := count + 1
+        after := after + 1
+      if count == 0 then throw s!"line {token.line}: missing attribute-command names"
+      seen := seen + 1
+  let spelled := tokens.toList.countP fun t => t.kind == .name && t.text == "implemented_by"
+  unless spelled == seen do
+    throw s!"{spelled - seen} implemented_by outside an attribute the inventory reads"
+  return result.reverse
 
 /-- A `@[csimp]` theorem as its source states it: compiled code calls
 `replacement` wherever it would call `replaces`. -/

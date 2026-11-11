@@ -21,6 +21,7 @@ import IxCCTests.Own.Plain.Suite
 import IxCCTests.Pipeline.ShrinkSuite
 import IxCCTests.Recheck.Run
 import IxCCTests.Recheck.KernelSlow
+import IxCCTests.KernelFront.Run
 import IxCCTests.Ring0
 
 /-! Test and proof collection. The complete proof/fence target is registered
@@ -35,4 +36,5 @@ for `IxCCTests.Rt`, `tests-pipeline` for `IxCCTests.Pipeline`, `corpus` and `tes
 `IxCCTests.Corpus` (whose kernel sample, `IxCCTests.Corpus.KernelSample`,
 is a manual target), `tests-exe` for `IxCCTests.Exe`, `tests-own` for `IxCCTests.Own`, `tests-shrink` for the
 generators' shrinking and first-divergence ladders,
-`tests-recheck` for `IxCCTests.Recheck`). -/
+`tests-recheck` for `IxCCTests.Recheck`, `tests-kernel-front` for
+`IxCCTests.KernelFront`). -/

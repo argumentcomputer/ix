@@ -109,7 +109,10 @@ decision](roadmap.md#open-decisions).
   verifier that runs IxCK's admission on hostile bytes inherits this. The fix
   (charge the core's walks to a budget, or reduce `let` on demand, or make the
   telescope operations sharing-preserving) belongs to the IxVM workstream. It
-  matters to IxCC only if IxCC's verifier runs IxCK itself rather than taking
-  acceptance as a hypothesis discharged elsewhere.
+  matters to IxCC because IxCC's verifier is to run IxCK itself: the front end
+  over the kernel ([kernel front end](kernel-front-end-design.md#resource-bounds))
+  runs the kernel's entry and typing core on the claimant's bytes, and the core
+  exposes no work counter for IxCC to bound; a step budget in the core is that
+  front end's dependency.
 - **The proof system's verifier** on the Aiur routes, which has its own
   parameter checks (the IxVM workstream's).

@@ -728,7 +728,12 @@ def kernelBridgeFences : List String := [
   "IxKernelBridge.Examples.succ_bridge",
   "IxKernelBridge.Examples.add_bridge",
   "IxKernelBridge.Examples.addLit_bridge",
-  "IxKernelBridge.Examples.addLit_concrete"]
+  "IxKernelBridge.Examples.addLit_concrete",
+  "IxKernelBridge.KernelFront.infer_derives",
+  "IxKernelBridge.KernelFront.whnf_derives",
+  "IxKernelBridge.KernelFront.annotate_runs",
+  "IxKernelBridge.KernelFront.classifyTerm_derivations",
+  "IxKernelBridge.KernelFront.classifyTerm_sound"]
 
 /-- Build the kernel-bridge model (`Models/KernelBridge`, a workspace of its
 own that requires `IxCK` and `IxCC` by path: a conditional simulation lemma

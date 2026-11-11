@@ -221,6 +221,9 @@ soundness theorems state both (`verifyBytes_immortal_sound`,
 - **Two readings.** IxCC's decoder and the kernel's reader each read the
   bytes; they share the record decoder and, for the binding, the role
   vocabulary, not the framing or the reading into declarations. The plan
-  replaces a proof that they agree by the faithfulness premise; a single
-  reading is the native-discharge milestone (SP-N in the
-  [roadmap](roadmap.md)).
+  replaces a proof that they agree by the faithfulness premise. The front end
+  over the kernel ([kernel front end](kernel-front-end-design.md), the
+  native-discharge milestone SP-N in the [roadmap](roadmap.md)) checks IxCC's
+  reading against the kernel's at every key, declaration header, evaluated term
+  and read type, and asks the kernel about its own reading; it is implemented
+  beside the default front end.

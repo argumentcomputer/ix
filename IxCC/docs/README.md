@@ -42,6 +42,10 @@ unless a line says so.
   contract and the Src image, what the Aiur evaluator route needs first.
 - [Hardening](hardening-design.md): resource bounds for the verifier against
   dishonest input.
+- [The front end over the certified kernel](kernel-front-end-design.md): acceptance
+  and the relevance annotation from IxCK instead of IxCC's erased type checker
+  (the native discharge of the premises); implemented beside the old front end,
+  the switch planned.
 - [Resource soundness](resource-soundness-design.md): what usage, ownership
   and locality annotations guarantee, the ownership checker that verifies them
   and the instrumented-evaluator theorem.

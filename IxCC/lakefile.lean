@@ -17,15 +17,18 @@ require Blake3 from git
   "https://github.com/argumentcomputer/Blake3.lean" @
   "3f8b805614a0bae1c033469ff893a8f0ee85f601"
 
-/- Ix's certified-kernel package (`IxCK/`, no dependencies, no Rust).
-Only its pure Ixon v4 codec (`IxCK.Ixon.Canonical` and its import closure, 11
-modules) and the kernel's role vocabulary (`IxCK.Kernel.Key` and
-`IxCK.Kernel.Name`) are imported: the codec by the ingress wire layer
-(`IxCC.Ixon.V4.Convert`, `IxCC.Ixon.V3.Wire`) and the resource profile reader
-(`IxCC.Src.Resource.Profile`), the roles by the reader of a role-bound
-environment's binding (`IxCC.Ixon.V3.Binding`). It is the package beside this one in the ix
-workspace; the trust ledger records the SHA-256 of every file of that
-closure, so a change to it is reviewed here. -/
+/- Ix's certified-kernel package (`IxCK/`, no dependencies, no Rust). Its
+pure Ixon v4 codec (`IxCK.Ixon.Canonical`) is imported by the ingress wire
+layer (`IxCC.Ixon.V4.Convert`, `IxCC.Ixon.V3.Wire`) and the resource profile
+reader (`IxCC.Src.Resource.Profile`); its role vocabulary (`IxCK.Kernel.Key`)
+by the reader of a role-bound environment's binding (`IxCC.Ixon.V3.Binding`);
+and its tiered admission entry, prelude and executed typing core
+(`IxCK.Kernel.Admission.Tier`, `IxCK.Kernel.Ixon.Prelude`,
+`IxCK.Kernel.Cached.CoreC`) by the front end over the kernel
+(`IxCC.Src.KernelFront`, `docs/kernel-front-end-design.md`). It is the
+package beside this one in the ix workspace; the trust ledger records the
+SHA-256 of every file of the imported closure (82 files, not the kernel's
+proof tree), so a change to it is reviewed here. -/
 require «ix-ck» from "../IxCK"
 
 @[default_target]
@@ -205,6 +208,13 @@ lean_exe «tests-recheck» where
 independent signature validation and malformed candidate rejection. -/
 lean_exe «tests-recheck-readback» where
   root := `IxCCTests.Recheck.ReadbackMain
+
+/- The front end over the certified kernel (`IxCC.Src.KernelFront`) against
+the front end over IxCC's erased type checker: acceptance, the program, the
+annotation, the certificate and the object, on the committed role-bound
+closures, and the refusals; `diff` and `single` take any role-bound closure. -/
+lean_exe «tests-kernel-front» where
+  root := `IxCCTests.KernelFront.Main
 
 lean_exe «tests-ixon-v3» where
   root := `IxCCTests.IxonV3.Main

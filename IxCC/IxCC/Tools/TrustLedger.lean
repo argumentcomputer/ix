@@ -131,6 +131,19 @@ def csimpRecords (value : Json) : IO (List (String × String × String × String
     return (← strField entry "file", ← strField entry "theorem", ← strField entry "replaces",
       ← strField entry "replacement")
 
+/-- A dependency entry's `implemented_by_sites` (absent: none) as `(file,
+declaration, implementation)`: the substitutions its closure declares, each
+admitted by name, with the ruling of the dependency's own audit that admits it
+(`ruling`, required and non-empty). Any other `implemented_by` in the closure
+fails the audit. -/
+def implementedByRecords (entry : Json) : IO (List (String × String × String)) := do
+  match entry.getObjVal? "implemented_by_sites" with
+  | .error _ => pure []
+  | .ok value =>
+    (← array value).toList.mapM fun site => do
+      need (!(← strField site "ruling").isEmpty) "an implemented_by site names no ruling"
+      return (← strField site "file", ← strField site "declaration", ← strField site "implementation")
+
 def validateShape (ledger : Json) : IO (Array Json × Array Json × Array Json) := do
   need ((← nat (← field ledger "schema_version")) == 2) "unsupported ledger schema_version"
   let interfaces ← arrField ledger "native_interfaces"
@@ -549,10 +562,13 @@ private def declaresPackage (lakefile : FilePath) (name : String) : IO Bool := d
 /-- Every import of the project's sources that names neither a project module
 nor a toolchain module is a recorded module of a pure Lean dependency; every
 file of each dependency's recorded import closure has its recorded hash, no
-native declaration, no `implemented_by`, no `axiom`/`sorry`/`native_decide`,
-and imports only closure or toolchain modules. Each dependency's workspace
-directory holds that package's `lakefile.lean` (a `--dependency-root`
-override replaces the directory). Returns the number of closure files checked. -/
+native declaration, no `implemented_by` other than the entry's
+`implemented_by_sites`, no `axiom` declaration (`hygieneDependency`), no
+`sorry`/`native_decide`, and imports only
+closure or toolchain modules; its `@[csimp]` theorems are exactly the
+entry's. Each dependency's workspace directory holds that package's
+`lakefile.lean` (a `--dependency-root` override replaces the directory).
+Returns the number of closure files checked. -/
 def validateLeanDependencies (root : FilePath) (ledger : Json) (lake : Array Token)
     (sources : List (FilePath × Array Token)) (overrides : List (String × String)) : IO Nat := do
   let manifest ← readJson (root / "lake-manifest.json")
@@ -582,15 +598,17 @@ def validateLeanDependencies (root : FilePath) (ledger : Json) (lake : Array Tok
     let closureModules := closure.map fun (relative, _) =>
       ((FilePath.mk relative).withExtension "").toString.replace "/" "."
     let mut replacements : List (String × String × String × String) := []
+    let mut substitutions : List (String × String × String) := []
     for (relative, expected) in closure do
       let path := sourceRoot / relative
       need ((← sha256 path) == expected) s!"{package}: {relative} changed"
       let tokens ← scanFile path
-      checked ((hygiene tokens).mapError (fun error => s!"{package}: {relative}: {error}"))
+      checked ((hygieneDependency tokens).mapError (fun error => s!"{package}: {relative}: {error}"))
       let natives ← checked ((externs tokens).mapError (fun error => s!"{package}: {relative}: {error}"))
       need natives.isEmpty s!"{package}: {relative} declares native symbols"
-      need (!tokens.any fun token => token.kind == .name && token.text == "implemented_by")
-        s!"{package}: {relative} uses implemented_by"
+      for (declaration, implementation) in ← checked ((implementedBys tokens).mapError
+          (fun error => s!"{package}: {relative}: {error}")) do
+        substitutions := (relative, declaration, implementation) :: substitutions
       for mod in imports tokens do
         need (closureModules.contains mod || toolchainRoots.contains ((mod.splitOn ".").headD ""))
           s!"{package}: {relative} imports {mod} outside the recorded closure"
@@ -598,6 +616,7 @@ def validateLeanDependencies (root : FilePath) (ledger : Json) (lake : Array Tok
         replacements := (relative, c.name, c.replaces, c.replacement) :: replacements
       checkedFiles := checkedFiles + 1
     sameSet replacements (← csimpRecords (← field entry "csimp_theorems")) s!"{package} csimp inventory"
+    sameSet substitutions (← implementedByRecords entry) s!"{package} implemented_by inventory"
     let imported ← jsonStrings (← field entry "imported_modules")
     need (imported.all closureModules.contains) s!"{package}: an imported module is outside its closure"
     declared := declared ++ imported

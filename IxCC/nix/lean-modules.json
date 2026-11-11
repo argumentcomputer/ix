@@ -21,6 +21,8 @@
   {"roots": ["IxCCTests.Own.Plain.Main"], "kind": "lean_exe"},
   "tests-own": {"roots": ["IxCCTests.Own.Main"], "kind": "lean_exe"},
   "tests-lam": {"roots": ["IxCCTests.Lam.Main"], "kind": "lean_exe"},
+  "tests-kernel-front":
+  {"roots": ["IxCCTests.KernelFront.Main"], "kind": "lean_exe"},
   "tests-ixon-v3": {"roots": ["IxCCTests.IxonV3.Main"], "kind": "lean_exe"},
   "tests-fir": {"roots": ["IxCCTests.Fir.Main"], "kind": "lean_exe"},
   "tests-exe": {"roots": ["IxCCTests.Exe.Main"], "kind": "lean_exe"},
@@ -931,6 +933,18 @@
     "IxCCTests.Src.SortPoly",
     "IxCCTests.Fixtures.K1",
     "IxCCTests.Fixtures.SortPoly"]},
+  "IxCCTests.KernelFront.Run":
+  {"path": "IxCCTests/KernelFront/Run.lean",
+   "imports": ["IxCCTests.KernelFront.Diff", "IxCCTests.Src.Support"]},
+  "IxCCTests.KernelFront.Main":
+  {"path": "IxCCTests/KernelFront/Main.lean",
+   "imports": ["IxCCTests.KernelFront.Run"]},
+  "IxCCTests.KernelFront.Diff":
+  {"path": "IxCCTests/KernelFront/Diff.lean",
+   "imports":
+   ["IxCC.Src.KernelFront.Front",
+    "IxCC.Ixon.V3.Tc.Driver",
+    "IxCC.Recheck.Json"]},
   "IxCCTests.IxonV3.TypingFixtures":
   {"path": "IxCCTests/IxonV3/TypingFixtures.lean",
    "imports": ["IxCC.Ixon.V3.Validate"]},
@@ -3042,6 +3056,9 @@
     "IxCC.X86.Layout.Proof.Rows",
     "IxCC.X86.Layout.Proof.Linearize",
     "IxCC.X86.Layout.Proof.Transport"]},
+  "IxCCTests.Fences.KernelFront":
+  {"path": "IxCCTests/Fences/KernelFront.lean",
+   "imports": ["IxCC.Src.KernelFront.Proof", "IxCC.Src.KernelFront.Front"]},
   "IxCCTests.Fences.IxonV3Typing":
   {"path": "IxCCTests/Fences/IxonV3Typing.lean",
    "imports": ["IxCC.Ixon.V3.Validate"]},
@@ -3227,7 +3244,8 @@
     "IxCCTests.Fences.StackingProof",
     "IxCCTests.Fences.BackendEnds",
     "IxCCTests.Fences.BackHalf",
-    "IxCCTests.Fences.Exe"]},
+    "IxCCTests.Fences.Exe",
+    "IxCCTests.Fences.KernelFront"]},
   "IxCCTests.Exe.Support":
   {"path": "IxCCTests/Exe/Support.lean", "imports": ["IxCC.Exe"]},
   "IxCCTests.Exe.Run":
@@ -3597,6 +3615,7 @@
     "IxCCTests.Pipeline.ShrinkSuite",
     "IxCCTests.Recheck.Run",
     "IxCCTests.Recheck.KernelSlow",
+    "IxCCTests.KernelFront.Run",
     "IxCCTests.Ring0"]},
   "IxCC.Xv.XlSemantics":
   {"path": "IxCC/Xv/XlSemantics.lean",
@@ -4384,6 +4403,34 @@
   {"path": "IxCC/Src/Level.lean", "imports": ["IxCC.Ixon.Univ"]},
   "IxCC.Src.Lazify":
   {"path": "IxCC/Src/Lazify.lean", "imports": ["IxCC.Src.Runtime"]},
+  "IxCC.Src.KernelFront.Reading":
+  {"path": "IxCC/Src/KernelFront/Reading.lean",
+   "imports":
+   ["IxCC.Src.KernelFront.Accept",
+    "IxCC.Src.Syntax",
+    "IxCC.Src.Pinned",
+    "IxCC.Ixon.V4.Convert"]},
+  "IxCC.Src.KernelFront.Proof":
+  {"path": "IxCC/Src/KernelFront/Proof.lean",
+   "imports": ["IxCC.Src.KernelFront.Annotate"]},
+  "IxCC.Src.KernelFront.Order":
+  {"path": "IxCC/Src/KernelFront/Order.lean",
+   "imports": ["IxCK.Kernel.Ixon.Prelude"]},
+  "IxCC.Src.KernelFront.Front":
+  {"path": "IxCC/Src/KernelFront/Front.lean",
+   "imports": ["IxCC.Src.KernelFront.Annotate", "IxCC.Recheck.Produce"]},
+  "IxCC.Src.KernelFront.Annotate":
+  {"path": "IxCC/Src/KernelFront/Annotate.lean",
+   "imports":
+   ["IxCC.Src.KernelFront.Reading",
+    "IxCC.Src.Relevance.Syntax",
+    "IxCK.Kernel.Cached.CoreC"]},
+  "IxCC.Src.KernelFront.Accept":
+  {"path": "IxCC/Src/KernelFront/Accept.lean",
+   "imports":
+   ["IxCC.Ixon.V3.Env",
+    "IxCC.Src.KernelFront.Order",
+    "IxCK.Kernel.Admission.Tier"]},
   "IxCC.Src.Ingress":
   {"path": "IxCC/Src/Ingress.lean",
    "imports":
@@ -8459,4 +8506,6 @@
     "IxCC.Aiur",
     "IxCC.CompileClaim",
     "IxCC.Ring0",
-    "IxCC.Exe"]}}}
+    "IxCC.Exe",
+    "IxCC.Src.KernelFront.Front",
+    "IxCC.Src.KernelFront.Proof"]}}}

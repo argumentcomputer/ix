@@ -104,6 +104,16 @@ private def lexerTests : IO Unit := do
     "def f (native : Nat) := 1 + native\ndef g := { native := 0, kernel := true }\n" ++
     "def h := let native := 1; native\ndef r (p : P) := p.reduceBool\n" ++
     "-- by decide +native\n/- Lean.ofReduceBool -/\ndef s := \"native := true\"\n"))))
+  -- a dependency's constructor named `axiom` is not an axiom declaration;
+  -- every declaration form still is
+  checked (hygieneDependency (← checked (scan
+    "inductive Spec where\n  | axiom (n : Nat)\n  | other\ndef k : Spec := .axiom 0\ndef m : Spec → Nat\n  | .axiom n => n\n  | _ => 0\n")))
+  for source in ["axiom bad : False\n", "private axiom bad : False\n", "@[simp] axiom bad : False\n",
+      "noncomputable axiom bad : False\n"] do
+    rejects s!"dependency {source}" "axiom is not allowed" do
+      checked (hygieneDependency (← checked (scan source)))
+  rejects "a project constructor named axiom" "axiom is not allowed" do
+    checked (hygiene (← checked (scan "inductive Spec where\n  | axiom (n : Nat)\n")))
   let externInput := "/- @[extern \"ignored\"] opaque absent : Nat -/\n" ++
     "@[extern 1 \"ffi_first\"] private unsafe opaque first : Nat\n" ++
     "attribute [extern \"ffi_second\"] second Qualified.third\n"
@@ -130,6 +140,18 @@ private def lexerTests : IO Unit := do
     let _ ← checked (csimps (← checked (scan "attribute [csimp] elsewhere_eq\n")))
   rejects "csimp on a definition" "csimp attribute not on a theorem" do
     let _ ← checked (csimps (← checked (scan "@[csimp] def notATheorem : Nat := 0")))
+  -- the implemented_by inventory: attributes on a def or an opaque and the
+  -- attribute command; comments and literals ignored; any other spelling refused
+  let implInput := "/- @[implemented_by hiddenImpl] def hidden : Nat := 0 -/\n" ++
+    "def text := \"@[implemented_by quotedImpl]\"\n" ++
+    "@[inline, implemented_by fImpl] private def f : Nat := 0\n" ++
+    "@[implemented_by gImpl] opaque g : Nat\nattribute [implemented_by hImpl] h\n"
+  need ((← checked (implementedBys (← checked (scan implInput)))) ==
+      [("f", "fImpl"), ("g", "gImpl"), ("h", "hImpl")]) "implemented_by inventory changed"
+  rejects "implemented_by on a theorem" "not on a def or an opaque" do
+    let _ ← checked (implementedBys (← checked (scan "@[implemented_by tImpl] theorem t : True := trivial")))
+  rejects "implemented_by outside an attribute" "outside an attribute" do
+    let _ ← checked (implementedBys (← checked (scan "def x := implemented_by")))
   rejects "unterminated comment" "unterminated block comment" do
     let _ ← checked (scan "/- nested /- closed -/")
   let cInput := "/* LEAN_EXPORT int ignored(void); */\n" ++
@@ -412,6 +434,31 @@ private def regressionTests (source blakeSource : FilePath) : IO Unit := IO.FS.w
     withFile (root / "docs/trusted-externs.json") (← rehashed #[]).compress do
       rejects "unlisted dependency csimp" "csimp inventory drifted" check
     withFile (root / "docs/trusted-externs.json") (← rehashed #[csimpRecord ixClosure.head!]).compress do
+      check
+  -- the dependency's implemented_by sites are exact: dropping a listed site is
+  -- refused; a site added to the closure, with its hash re-recorded, is refused
+  -- until the ledger lists it
+  let droppedSites ← (← arrField originalLedger "lean_dependencies").mapM fun entry => do
+    let listed ← arrField entry "implemented_by_sites"
+    need (!listed.isEmpty) "test fixture lost the dependency implemented_by inventory"
+    replaceField entry "implemented_by_sites" (Json.arr listed.pop)
+  withFile (root / "docs/trusted-externs.json")
+      (← replaceField originalLedger "lean_dependencies" (Json.arr droppedSites)).compress do
+    rejects "dropped dependency implemented_by" "implemented_by inventory drifted" check
+  let siteRecord (file : String) : Json := Json.mkObj [("file", toJson file),
+    ("declaration", toJson "rogue"), ("implementation", toJson "rogueImpl"),
+    ("ruling", toJson "test")]
+  withFile codec ((← IO.FS.readFile codec) ++ "\n@[implemented_by rogueImpl] def rogue : Nat := 0\n") do
+    let rehashedSites (records : Array Json) : IO Json := do
+      let entries ← (← arrField originalLedger "lean_dependencies").mapM fun entry => do
+        let closure ← replaceField (← field entry "closure") ixClosure.head! (toJson (← sha256 codec))
+        let listed ← arrField entry "implemented_by_sites"
+        replaceField (← replaceField entry "closure" closure) "implemented_by_sites"
+          (Json.arr (listed ++ records))
+      replaceField originalLedger "lean_dependencies" (Json.arr entries)
+    withFile (root / "docs/trusted-externs.json") (← rehashedSites #[]).compress do
+      rejects "unlisted dependency implemented_by" "implemented_by inventory drifted" check
+    withFile (root / "docs/trusted-externs.json") (← rehashedSites #[siteRecord ixClosure.head!]).compress do
       check
   buildGraphTests root
   let regression := root / "IxCC/AuditRegression.lean"

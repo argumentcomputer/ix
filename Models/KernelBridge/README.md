@@ -60,6 +60,17 @@ to a literal `out` and is readable in a model (`denoteMeta … = some ea`) and g
 `IxCC.CompileClaim.verifyBytes_immortal_sound`. Every Layer 3 theorem keeps the premises of
 Layers 1 and 2.
 
+**The kernel front end's classes** (`IxKernelBridge.KernelFront`, apart from the simulation
+lemma). IxCC's front end over the certified kernel (`IxCC.Src.KernelFront`,
+[design](../../IxCC/docs/kernel-front-end-design.md)) classifies a position as a proof from
+the executed kernel core's runs. `infer_derives`, `whnf_derives` and `annotate_runs` package
+the kernel's simulation of its specification by the cached core (`Ix.Kernel.Cached.ssimC`) and
+its bridge to the relational judgements, for open, well-scoped terms from any invariant memo
+state; `classifyTerm_derivations` turns a `proof` class into `Infer` and `Red` derivations of
+the position's type and its sort, and `classifyTerm_sound` into their readings in every model
+meeting `RulesInputs` (`infer_sound`, `red_sound`). They live here because this package is the
+one that builds both IxCC and the kernel's proof tree.
+
 ## What is not proved
 
 **The kernel side is not tied to the compiled claim.** In the Layer 3 theorems:

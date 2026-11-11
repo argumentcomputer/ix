@@ -1,7 +1,7 @@
-{"runtime_suites": ["IxonV3", "Aiur"],
+{"runtime_suites": ["IxonV3", "Aiur", "KernelFront"],
  "runtime_failure_sha256":
- "3abb7704ed0a42b1258eba38549fd4f94604d49d127bb54ab5b3b15b3def6259",
- "runtime_failure_count": 1,
+ "a9c731d17040923655506f218633b05b903f3853608ee0bcaebcdab068645c24",
+ "runtime_failure_count": 2,
  "proof_modules":
  ["IxCC.Aiur",
   "IxCC.Aiur.AIR.Expr",
@@ -883,6 +883,12 @@
   "IxCC.Src.Admit",
   "IxCC.Src.Hints",
   "IxCC.Src.Ingress",
+  "IxCC.Src.KernelFront.Accept",
+  "IxCC.Src.KernelFront.Annotate",
+  "IxCC.Src.KernelFront.Front",
+  "IxCC.Src.KernelFront.Order",
+  "IxCC.Src.KernelFront.Proof",
+  "IxCC.Src.KernelFront.Reading",
   "IxCC.Src.Lazify",
   "IxCC.Src.Level",
   "IxCC.Src.NatMap",
@@ -1170,6 +1176,7 @@
   "IxCCTests.Fences.IxonV3",
   "IxCCTests.Fences.IxonV3Catalog",
   "IxCCTests.Fences.IxonV3Typing",
+  "IxCCTests.Fences.KernelFront",
   "IxCCTests.Fences.LayoutProof",
   "IxCCTests.Fences.Lir",
   "IxCCTests.Fences.LirProof",
@@ -1585,7 +1592,7 @@
   "IxCCTests.Sem.Toy.Stack",
   "IxCCTests.Sem.Toy.Tick"],
  "baseline":
- "2026-11-14: the byte-level fences on the standard axioms (one hash), the compile claim's role table, the role-bound family; merged the closures pass's proofs, the resource checker's fix and standalone executables",
+ "2026-11-14: the kernel front end beside the erased checker (tests-kernel-front; the acceptance, Stage A and classifier fences), on the compile claim's role table and one hash",
  "axiom_sha256":
- "0981e678cad9236d0a33b4186c3bbfd1f93a143fd4108d93ec4b4e1dcd81c34d",
- "axiom_count": 5800}
+ "c6daaa178ec9943c02dfbbcef224ed1a0bf1828fd97cc928775cb5dad05976d9",
+ "axiom_count": 5808}

@@ -296,12 +296,18 @@ other roots than index 0. Each new SrcEval rule is a new version of the
 acceptance by running IxCK natively on the claim's bytes (its typing core's
 blow-up on chains of `let` then matters to that verifier,
 [hardening design](hardening-design.md#external-dependencies)), and
-faithfulness by IxCC's verifier-side ingress rebuilt on IxCK's reader, so that
-there is one reading by construction (the default of an [open
-decision](roadmap.md#open-decisions); a native check of the clauses against
-IxCK's reading is the alternative). *Size [estimate]:* 2–6k lines
+faithfulness either by IxCC's verifier-side ingress rebuilt on IxCK's reader,
+so that there is one reading by construction (the earlier default of an
+[open decision](roadmap.md#open-decisions)), or by a native check of the
+clauses against IxCK's reading (the working default now, awaiting the
+owner's confirmation). *Size [estimate]:* 2–6k lines
 (an ingress correspondence for the first fragment, 3–6k, is the upper bound if ingress is
-rebuilt).
+rebuilt). Designed, and built beside the default front end, as the [kernel
+front end](kernel-front-end-design.md): IxCK's tiered entry accepts, IxCC's
+reading is checked against IxCK's, and the relevance annotation comes from
+IxCK's inference; the erased type checker is deleted at its switch, which is
+held until IxCK's typing core has a work budget (also a working default
+awaiting confirmation).
 
 ## The first grounded fragment
 
