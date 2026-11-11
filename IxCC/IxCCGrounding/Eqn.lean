@@ -27,7 +27,7 @@ open IxCC.Src (CId)
 
 universe w
 
-variable {V : Type w} [Ix.Kernel.SetTheory V] {env : KEnv}
+variable {V : Type w}
 
 /-! ## Environments with several bound sets -/
 
@@ -47,14 +47,19 @@ theorem pushAll_snoc (xs : List V) (x : V) (ρ : BVarIdx → V) :
   | succ i =>
     simp only [pushAll, push, List.reverse_append, List.reverse_cons, List.reverse_nil,
       List.nil_append, List.singleton_append, List.getD_cons_succ, List.length_append,
-      List.length_singleton, Nat.add_sub_add_right]
+      List.length_singleton]
+    show xs.reverse.getD i (ρ (i + 1 - (xs.length + 1))) = xs.reverse.getD i (ρ (i - xs.length))
+    rw [Nat.add_sub_add_right]
 
 theorem pushAll_rev (xs : List V) (ρ : BVarIdx → V) (j : Nat) (hj : j < xs.length) :
     pushAll xs ρ (xs.length - 1 - j) = xs[j] := by
   simp only [pushAll]
-  rw [List.getD_eq_getElem _ _ (by simp; omega), List.getElem_reverse]
+  rw [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem (by simp; omega), Option.getD_some,
+    List.getElem_reverse]
   congr 1
   omega
+
+variable [Ix.Kernel.SetTheory V] {env : KEnv}
 
 /-- `n` consecutive variables from `k`, applied to a head, denote the head applied to the sets
 the environment holds there. -/
