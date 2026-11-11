@@ -1,4 +1,5 @@
 import IxCC.Ixon.V3.Validate
+import IxCC.Ixon.V3.Keys
 
 /-! The in-memory environment builder of the tests: synthesized records
 (`record`, `store`, `block`, which adds a mutual block's projection records),
