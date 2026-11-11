@@ -457,35 +457,50 @@ standard axioms.
 
 ### The grounding library (SP-1 in progress)
 
-**In progress since 2026-11-11; its first landing (G1a) is the fundamental
-lemma from a check.** The library `IxCCGrounding` (`IxCC/IxCCGrounding/`, a
-Lake library of IxCC's package beside the production library, built and run by
-the required check `ixcc-grounding`) is the real development the adequacy spike
-(SP-A) recommended. It is the one library that imports the kernel's model
-(`IxCK.Kernel.Denotes`, the statement half, in
+**In progress since 2026-11-11; landed so far: the fundamental lemma from a
+check (G1a), the generic `case` lemma and the root theorem, with `fib` and
+`decide (fib 10 = 55)` as its instances (G1b).** The library `IxCCGrounding`
+(`IxCC/IxCCGrounding/`, a Lake library of IxCC's package beside the production
+library, built and run by the required check `ixcc-grounding`) is the real
+development the adequacy spike (SP-A) recommended. It is the one library that
+imports the kernel's model (`IxCK.Kernel.Denotes`, the statement half, in
 `IxCCGrounding.Laws`); `check-build-graph` refuses an import of it, or of the
 model, from the production library or from any program of the shared build.
 
-**What is proved (G1a), fenced on `propext`, `Classical.choice` and
-`Quot.sound` (`IxCCGrounding/Fence.lean`):**
+**What is proved, fenced on `propext`, `Classical.choice` and `Quot.sound` or
+fewer (`IxCCGrounding/Fence.lean`, 53 exact assertions):**
 
+- *Soundness at a root* (`rootSound`, in `IxCCGrounding.Root`). For every
+  program, kernel reading `env`, key map, level parameters, certificate
+  annotation and finite set `Sl` of constants with the checked facts
+  (`GroundFacts`, `CaseFacts`, `RootFacts`); every set theory and every model of
+  `env` with the laws; assuming `SitesOk`: if SrcEval runs the root on
+  first-order arguments to a value whose readback names a kernel term at the
+  result type (`FoObs`, its tag checked by `ResultTag`), then, at every level
+  assignment, the root applied to the arguments' terms denotes what that term
+  denotes. Its instances: `fibRoot` (a root `Nat → Nat`: `fib n` denotes the
+  literal SrcEval reads back) and `decideRoot` (a root `Bool` read back as
+  constructor `1` denotes the kernel's `Bool.true`).
 - *The fundamental lemma from the check* (`allP_of_check`, and its clause for
-  constants, `const_of_check`). For every program `p`, kernel reading `env`,
-  key map, level parameters, certificate annotation and finite set `Sl` of
-  constants on which the check `groundCheck` is true; every set theory and every
-  model of `env` with the laws; assuming `SitesOk` and F5's meaning at each
-  `case` constant of `Sl`: each of SrcEval's eight mutual functions returns
-  values related to what their kernel counterparts denote, at every clock. In
-  particular a constant of `Sl` that SrcEval unfolds at an `Ok` instance
-  returns a value related to the constant's denotation.
-- *The equation lemma* (`eqn_den`): in every model, at every assignment, a
-  function whose equation theorem is stored with the checked shape denotes its
-  equation body, any telescope of arguments, any result type. It uses `mem`
-  and `eq_equality` only: no law, no typing.
-- *The run terms run* (`runs_of_sites`, `fundHyps_of`): the per-constant typing
-  facts the spike assumed are derived from the laws, the check and `SitesOk`.
-- *The check is sound* (`groundFacts_of_check`, `okClosed_of_check`): its
-  success establishes every fact `GroundFacts` names.
+  constants, `const_of_check`): under the check and `SitesOk`, each of SrcEval's
+  eight mutual functions returns values related to what their kernel
+  counterparts denote, at every clock. F5's meaning at each `case` constant is no
+  longer a hypothesis (`caseFires_of_check`).
+- *The generic `case` lemma.* Model side (`caseIota`): at a `case` constant whose
+  stored `casesOn`, recursor, rules and constructors have the checked shape,
+  `casesOn` applied to arguments that fit its type, the last at a graph-regime
+  site, with the major the image of constructor `j` at the `case`'s parameters and
+  levels applied to as many fields as the constructor has, is minor `j` applied
+  to the fields, along a graph-regime chain. By δ on `casesOn`, ι on the
+  recursor, β through the rule's right-hand side and through the wrapper
+  `casesOn` hands the recursor. SrcEval side (`caseFires_of_shape`): F5's
+  meaning, from `caseIota`, the relation and canonicity.
+- *The equation lemma* (`eqn_den`): a function whose equation theorem is stored
+  with the checked shape denotes its equation body. It uses `mem` and
+  `eq_equality` only.
+- *The run terms run* (`runs_of_sites`, `fundHyps_of`), and *the checks are
+  sound* (`groundFacts_of_check`, `caseFacts_of_check`, `rootFacts_of_check`,
+  `foArgs_of_check`, `resultTag_of_check`, `boolListed_of_check`).
 
 **Its hypotheses, each with who discharges it.** This is how far the landed
 theorem is from the grounded statement of the [spine](end-to-end.md#the-shared-spine).
@@ -497,10 +512,66 @@ theorem is from the grounded statement of the [spine](end-to-end.md#the-shared-s
 | `Laws.cval_params` | a constant depends on the level assignment only through its own parameters | the IxVM side: `Model.cval_params` | as δ |
 | `Laws.proj_ctor` | the projection of a constructor, in value form (`ProjCtor`) | the IxVM side | scheduled there as a public law (their third note, item 6) |
 | `Laws.nat_accel` | the fifteen `Nat` operations on all literals, `Bool` results included (`NatAccel`) | the IxVM side | scheduled there (item 6; DO-39) |
-| `Laws.ctor_canon` | constructor canonicity across parameters and levels (`CtorCanon`): a constructor image built at other parameters and levels that lies in the family at these is the image at these | the IxVM side, if accepted; otherwise IxCC by a relation that carries types (2–4k lines, the owner's decision) | asked 2026-11-11, unanswered; consumed only by the generic `case` lemma (G1b) |
-| `groundCheck … = true` | every decidable fact (`GroundFacts`): the faithfulness clauses, the fragment (no `csimp`, recursor, quotient or opaque-by-value constant in `Sl`), the `Nat` and `Eq` bases, each `eqn` entry's shape, the node-for-node correspondence and closedness of every term SrcEval runs, and `Ok`'s closure | IxCC: the check, run on the closure's bytes | done: true on the `fib` and `decide (fib 10 = 55)` closures (`tests-grounding`, in `ixcc-grounding`), with negative controls that each falsify exactly one conjunct |
+| `Laws.ctor_canon` | constructor canonicity across parameters and levels (`CtorCanon`): a constructor image built at other parameters and levels that lies in the family at these is the image at these | the IxVM side, if accepted; otherwise IxCC by a relation that carries types (2–4k lines, the owner's decision) | asked 2026-11-11, unanswered; consumed by the generic `case` lemma for a constructor-valued major |
+| `groundCheck … = true` | every decidable fact of the closure: `GroundFacts` (the faithfulness clauses, the fragment, the `Nat` and `Eq` bases, each `eqn` entry's shape, the correspondence and closedness of every term SrcEval runs, `Ok`'s closure) and `CaseFacts` (each `case` entry's shape, conjuncts `caseShape` and `caseProg`) | IxCC: the check, run on the closure's bytes | done: true on the `fib` and `decide (fib 10 = 55)` closures (`tests-grounding`, in `ixcc-grounding`), with negative controls that each falsify exactly one conjunct |
+| `RootFacts` | the root is in `Sl`, `Ok` at no levels, stored without level parameters at the first-order type `args → res`, its enumerations stored | IxCC: `rootCheck`, run on the closure | done on both closures |
+| `FoArgs` | the arguments are literals, or an enumeration's listed constructor | IxCC: `foArgsB` | done on both closures, with a control |
+| `ResultTag` | the observed tag names one constructor: every member of `Sl` reading back with that tag whose kernel entry is a field-less constructor has the named constructor's key | IxCC: `resultTagB`, run after the run on the observed result | done on both closures; rejects programs, see below |
+| `BoolListed` (`decideRoot` only) | the pinned `Bool`'s listed constructor `1` is the pinned `Bool.true` | IxCC: `boolListedB` | done on `decide`, with a control |
 | `SitesOk` | typing, in the one form it is consumed: at every `Ok` instance of every constant of `Sl` SrcEval unfolds, every application site it may evaluate is in the graph regime with its argument in the domain | IxCC | not discharged. G2: a site check from `mem` and stored types, its residue measured. G3: the residue, from the kernel's derivations (an accepted definition's derivation and the rules' soundness over the public model, both kernel side: the latter decided there 2026-11-11 and being estimated) and the walk-level annotation statement (KF-1, IxCC) |
-| `CaseFires` at each `case` constant of `Sl` | F5's meaning: `casesOn` on a constructor is the selected minor on its fields | IxCC: the generic `case` lemma from the checked shape `CaseFacts` and `ctor_canon` | G1b |
+
+**Why each checked fact is there**, each the counterexample without it:
+
+- *The constructor's field count in `caseIota`* (`Fs.length = cs.nF`, supplied by
+  the relation): at `And.casesOn` with a motive into `Type`, the major proof point
+  is also `And.intro` applied to its two parameters alone, so with no fields the
+  lemma would conclude that `casesOn` returns the minor itself, while ι gives the
+  minor applied to two proof points.
+- *`CaseWF`, part of `caseShape`*: the shape's induction-hypothesis binders and
+  recursive fields are free data, so without `recFields`/`ihs` (each hypothesis is
+  the motive at a recursive field, whose domain is the inductive at the `case`'s
+  parameters) the wrapper's β at a hypothesis has no justification; without
+  `codom` a minor premise's codomain could mention an earlier minor, which
+  `casesOn`'s wrapper reads as `casesOn`'s minor and the recursor's premise as a
+  wrapper; without `regime` a field binder of a minor could be read in the
+  proposition regime while the saturating site is not, and the minor would not
+  apply to its fields along a graph-regime chain; without `ctorRaw` (the
+  constructor's stored type closed, its level parameters covering it, as many as
+  `indLevels`, its codomain the inductive at its own parameters) a constructor
+  value built at another assignment and environment could not be moved to the
+  `case`'s, where canonicity applies.
+- *`FoArgs`, an enumeration argument the listed constructor*: an argument
+  constructor outside `Sl` has an unconstrained key. With a second constant
+  declared as `Bool`'s constructor `0` and keyed to `Bool.true`, SrcEval runs
+  `not` on it to `true` (it selects by the declaration), the kernel to `false`.
+- *`ResultTag` over the kernel's reading*: readback names a constructor by its
+  declared index and gives tag `0` to a constant not declared as a constructor;
+  with the pin `Bool.true` naming such a constant, `Nat.beq 1 1` reads back as
+  tag `0`, `false`, where the kernel denotes `true`. A parameterised field-less
+  constructor at the same index (`Option.none`) is likewise a different set.
+- *`BoolListed`*: nothing else ties the pinned `Bool`'s constructor `1` to the
+  kernel's `Bool.true`.
+
+**The class of inductives the `case` shape covers.** `caseShape` is designed to
+hold for a `case` constant over an ordinary recursor of an inductive with
+parameters, no indices, and recursive fields that are the inductive itself at
+the `case`'s parameters (`Nat`, `List`, binary trees, enumerations and
+structures); measured, it holds for every `case` constant of the two committed
+closures (`Nat.casesOn` among them). It fails, by
+design, for indexed families (`Eq`, `Vector`: the shape has no indices), for
+nested occurrences (a field `List T` inside `T`) and for recursive fields behind
+a function type (a field `Nat → T`, whose induction hypothesis is not the motive
+at the field). Such a program fails the check; nothing unsound is admitted.
+Widening is G4.
+
+**What `ResultTag` rejects on the committed closures.** Both closures' `Sl`
+hold `PUnit.unit` (index `0`, no parameters, no fields) beside `Bool.false`, so
+`ResultTag` fails at tag `0`: on these closures every `Bool` root that returns
+`false` is rejected (for instance `decide (fib 10 = 56)`), and every root whose
+result type is an enumeration other than `Bool` and that returns its
+constructor `0`. Roots returning `true` (tag `1`) and every `Nat` root pass.
+Removing it needs a fact the relation does not give: that the value a root of
+result type `D` returns is a constructor of `D`.
 
 `Ok` is the certificate's own datum: the annotation's class of each constant
 (`ConstRel.result`, the zero condition of the sort of its stored type, as the
@@ -511,15 +582,10 @@ gives.
 
 **Still between the landed theorem and the grounded statement:**
 
-- the root theorem (soundness at a root on first-order arguments, with the
-  observation's readback) and `fib` and `decide (fib 10 = 55)` as its
-  instances, G1b; it will add one checked hypothesis, `ResultTag` (the observed
-  constructor tag names one constructor among those of `Sl` SrcEval can return),
-  because the relation does not record which inductive a returned constructor
-  belongs to;
 - `SitesOk` (G2, G3) and the three laws not yet scheduled as fields here;
-- the fragment: `let`, recursors fired directly, `Quot`, `csimp` and strings are
-  excluded by the check (G4);
+- `ResultTag`'s rejections above;
+- the fragment: `let`, recursors fired directly, `Quot`, `csimp`, strings, and
+  `case` constants outside the class above are excluded by the check (G4);
 - progress (G5), which also consumes premise (i);
 - the statement is over any program and kernel reading that pass the check; that
   the reading is the kernel's reading of the closure of the seeds (premise (i)'s
