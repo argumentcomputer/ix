@@ -1,6 +1,7 @@
 module
 
 public import Ix.Compile.BinderData
+public import Ix.CompileM
 
 public section
 
