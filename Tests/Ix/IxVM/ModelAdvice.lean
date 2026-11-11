@@ -64,9 +64,9 @@ def nestedVerdicts : List (Lean.Name × Bool) := [
   (`Tests.Ix.Kernel.EntryCaseDefs.ra3Iota, true),
   (`ra3IotaFalse, false),
   (`ra3CtorFalse, false),
-  (`Tests.Ix.Kernel.EntryCaseDefs.bd1Iota, true),
+  (`bd1Iota, true),
   (`bd1IotaFalse, false),
-  (`Tests.Ix.Kernel.EntryCaseDefs.bd2Iota, true),
+  (`bd2Iota, true),
   (`bd2CtorFalse, false),
   (`Tests.Ix.Kernel.EntryCaseDefs.eaIota, true),
   (`eaIotaFalse, false)]

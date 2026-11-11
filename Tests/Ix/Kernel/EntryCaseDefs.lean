@@ -178,13 +178,13 @@ open Lean in
 run_cmd Elab.Command.liftCoreM do
   let ns := `Tests.Ix.Kernel.EntryCaseDefs
   let idT (t : Expr) := mkApp (mkConst (ns ++ `Id')) t
-  let list (t : Expr) := mkApp (mkConst ``List [levelZero]) t
+  let list (t : Expr) := mkApp (mkConst ``List [Level.zero]) t
   let bd1 := mkConst (ns ++ `BD1)
-  addDecl (.inductDecl [] 0 [⟨ns ++ `BD1, mkSort levelOne,
+  addDecl (.inductDecl [] 0 [⟨ns ++ `BD1, mkSort Level.one,
     [⟨ns ++ `BD1.leaf, bd1⟩,
      ⟨ns ++ `BD1.mk, mkForall `a .default (idT bd1) (mkForall `b .default (list bd1) bd1)⟩]⟩] false)
   let bd2 := mkConst (ns ++ `BD2)
-  addDecl (.inductDecl [] 0 [⟨ns ++ `BD2, mkSort levelOne,
+  addDecl (.inductDecl [] 0 [⟨ns ++ `BD2, mkSort Level.one,
     [⟨ns ++ `BD2.leaf, bd2⟩, ⟨ns ++ `BD2.mk, mkForall `a .default (list (idT bd2)) bd2⟩]⟩] false)
 
 /-- Values by the blocks' recursors, and ι reductions through the
@@ -193,13 +193,16 @@ noncomputable def bd1Val (t : BD1) : Nat :=
   BD1.rec (motive_1 := fun _ => Nat) (motive_2 := fun _ => Nat) 1 (fun _ _ iha ihb => iha + ihb + 1) 0
     (fun _ _ ih1 ih2 => ih1 + ih2) t
 
-theorem bd1Iota : bd1Val (BD1.mk BD1.leaf [BD1.leaf]) = 3 := rfl
+-- (installed unchecked, and checked by Ix: Lean's elaborator does not find the
+-- auxiliary recursors a kernel-declared nested block's rules name)
+bad_thm bd1Iota : bd1Val (BD1.mk BD1.leaf [BD1.leaf]) = 3 :=
+  unchecked (Eq.refl (bd1Val (BD1.mk BD1.leaf [BD1.leaf])))
 
 noncomputable def bd2Val (t : BD2) : Nat :=
   BD2.rec (motive_1 := fun _ => Nat) (motive_2 := fun _ => Nat) 1 (fun _ ih => ih + 1) 0
     (fun _ _ ih1 ih2 => ih1 + ih2) t
 
-theorem bd2Iota : bd2Val (BD2.mk [BD2.leaf]) = 2 := rfl
+bad_thm bd2Iota : bd2Val (BD2.mk [BD2.leaf]) = 2 := unchecked (Eq.refl (bd2Val (BD2.mk [BD2.leaf])))
 
 /-- A nested block whose field mentions a member only where whnf erases it:
 `KE Nat (EA α)`, with `KE a _ := a`, at the under-applied `EA α : Nat → Type`. -/

@@ -216,7 +216,7 @@ def cases : List Case := [
   -- nested blocks with a recursive occurrence behind a definition (`Id' T`, in a
   -- constructor of the block and in a container's), with ι reductions through
   -- the fields' hypotheses
-  { label := "nested-behind-definition", seeds := [seed "BD1", seed "BD2", seed "bd1Iota", seed "bd2Iota"],
+  { label := "nested-behind-definition", seeds := [seed "BD1", seed "BD2", `bd1Iota, `bd2Iota],
     expected := .accept },
   -- a nested block whose field mentions a member only where whnf erases it
   -- (`KE Nat (EA α)`, the member under-applied), with an ι reduction through it
