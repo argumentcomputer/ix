@@ -1184,8 +1184,12 @@ def check_recs := aiur_fn⟦
         Lists::Node::Cons(r, rest) => {
           let Lists::Node::Cons(rm, mrest) = (*(models));
           match (*(Ingress::get_ci(r))) {
-            KernelTypes::KConstantInfo::Rec(nl, ty, rnp, ni, nmot, nmin, rules, kf, _, _, _) => {
+            KernelTypes::KConstantInfo::Rec(nl, ty, rnp, ni, nmot, nmin, rules, kf, r_uns, _, _) => {
               assert_eq!(kf, 0, "modeled recursor declares K");
+              -- the family's recursors are safe: the reader declines an unsafe one, so
+              -- no model stores it. (`check_const` reaches `check_family` only for a
+              -- safe recursor, but a family member read here is checked directly.)
+              assert_eq!(r_uns, 0, "modeled recursor family has an unsafe member");
               assert_eq!(rnp, np, "modeled recursor parameter count differs from its block's");
               -- the level link (K1-5(e)) on the modeled route: a recursor's universe
               -- count is its block's, or its block's plus one for the elimination
