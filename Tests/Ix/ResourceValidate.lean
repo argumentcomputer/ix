@@ -174,11 +174,12 @@ def runBound : IO Unit := do
     ((Ix.RoleBinding.Artifact.check withUnsafe typingLimits).mapError toString) false
   IO.println "Bound resource typing: actual table/prelude/evidence and literal identities; missing and forged inputs refused"
 
-/-- The theorem exemption (`866e7fa82`): resource admission does not analyze a
-safe theorem's proof, which no backend runs; the theorem's statement still
-counts for relevance and as an interface. The exemption leans on the typing
-half, which refuses a theorem whose statement is not a proposition. The proof
-below uses its linear hypothesis twice, `(fun q r => q) p p`. -/
+/-- A safe theorem's proof, which no backend runs, has no usage, ownership or
+locality obligations: resource admission only types it against its statement
+with contracts (`checkTheorem`). The statement counts for relevance and as an
+interface. This leans on the typing half, which refuses a theorem whose
+statement is not a proposition. The proof below uses its linear hypothesis
+twice, `(fun q r => q) p p`. -/
 def runTheorem : IO Unit := do
   let linear : Ixon.BinderContract := ⟨.linear, .shared⟩
   -- `∀ (P : sort) (p : linear P), P`; universes `0 = Prop`, `1 = Type`
@@ -189,7 +190,7 @@ def runTheorem : IO Unit := do
     info := .defn ⟨kind, .safe, 0, statement sort, proof sort⟩
     sharing := #[], refs := #[], univs := #[.zero, .succ .zero] }).1
   let propTheorem := declared .thm (.sort 0)
-  check "theorem: its proof is not resource-checked" (Addressed.checkResources propTheorem {}) true
+  check "theorem: its proof has no usage obligations" (Addressed.checkResources propTheorem {}) true
   check "theorem: a proposition passes combined validation" (validate propTheorem {}) true
   declines "theorem: the same body as a definition is resource-checked"
     (Addressed.checkResources (declared .defn (.sort 0)) {}) "usage"
@@ -197,7 +198,7 @@ def runTheorem : IO Unit := do
   check "theorem: a non-proposition passes the resource half" (Addressed.checkResources typeTheorem {}) true
   check "theorem: a non-proposition fails combined validation" (validate typeTheorem {}) false
   expectTyping "theorem: a non-proposition" typeTheorem false
-  IO.println "Combined resources: theorem proofs exempt from resources, statements still typed"
+  IO.println "Combined resources: theorem proofs free of usage obligations, statements still typed"
 
 def run : IO Unit := do
   let (base, unit) := unitEnv

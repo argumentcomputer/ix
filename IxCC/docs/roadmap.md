@@ -555,7 +555,7 @@ soundness is a theorem of its own about an instrumented source evaluator
 
 | Id | Content | Depends on | Exit test | Size [estimate] | State |
 | --- | --- | --- | --- | --- | --- |
-| RE-0 | Close the confirmed hole: result contracts re-labelled through a theorem the checker does not analyse and a cast | — | the relabelling programs refused, as regression tests | small | In progress (with the resource checker's owners) |
+| RE-0 | Close the confirmed hole: result contracts re-labelled through a theorem the checker did not analyse and a cast | — | the relabelling programs refused, as regression tests | small | Done: the checker types theorem proofs and erased terms with contracts ([resource soundness](resource-soundness-design.md)) |
 | RE-1 | IxCC's ownership checker verifies written unique and borrow contracts at both ends (a unique parameter at every call, a unique result at every return, a borrow where it is used); in-place update only on verified uniqueness | Phase 2's ownership checker (DR1) | the relabelling programs get no in-place update even with the hole re-opened; annotated K2/K3 twins verified | 2–4k lines beyond the checker itself | Planned (Phase 2) |
 | RE-2 | An instrumented source evaluator (reference counts, regions, a use counter per binding) that refines SrcEval; a resource checker on the Src program actually evaluated; the property of each annotation, on a first-order fragment | EV-1 | the refinement and the properties fenced; verdicts compared with ix's checker on the ownership suite | 8–20k lines | Planned |
 | RE-3 | Widening: closures as cells, eliminators, recursion through equations, locality with tail calls | RE-2; P8 | per item | per item | Planned |

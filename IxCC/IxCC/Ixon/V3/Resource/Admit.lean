@@ -2,10 +2,12 @@ import IxCC.Ixon.V3.Resource.Check
 
 /-! Adapted from ix `0a31c8dbc63755924c645bf1afedc563e395e88a`
 (`Ix/Resource/Admit.lean`), with the local expression type and namespaces.
-As in ix's copy since `866e7fa82`, a safe theorem's proof is neither scanned
-for relevance nor resource-checked: only its statement counts. That relies on
-the typing half refusing a theorem whose statement is not a proposition. This
-resource check retains the upstream erased-typing prerequisite. -/
+As in ix's copy, a safe theorem's proof is not scanned for relevance and has
+no usage, ownership or locality obligations (it is never run), but a marked
+theorem's proof is checked against its statement with contracts (`checkTheorem`):
+the statement is trusted wherever the theorem is used, and the erased typing
+compares no contracts. This resource check retains the upstream erased-typing
+prerequisite. -/
 
 namespace IxCC.Ixon.V3.Resource
 
@@ -178,8 +180,9 @@ def admitProgram (program : Program) (policy : Policy := {}) (limits : Limits :=
         | .assumption =>
           if policy.assumptions.contains i then .ok ()
           else .error (.unsupported "external resource interface is absent from the bound profile")
+        | .theorem => checkTheorem program i limits
         | .constructor => runCheck limits (checkConstructorType program limits.depth d.type false false)
-        | .typeConstructor | .theorem => .ok ()
+        | .typeConstructor => .ok ()
       checked.mapError (⟨some i, ·⟩)
 
 end IxCC.Ixon.V3.Resource

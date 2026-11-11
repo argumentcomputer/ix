@@ -56,6 +56,7 @@ import Tests.Ix.InitStd
 import Tests.RoleTableWire
 import Tests.Ix.ResourceHints
 import Tests.Ix.ResourceBudget
+import Tests.Ix.ResourceTransport
 import Tests.Ix.Kernel.RecordCheck
 import Tests.Ix.Kernel.CheckLeanTargets
 import Tests.Ix.Kernel.CheckLeanCli
@@ -158,6 +159,8 @@ def registry : List Entry := [
   .suite "resource-hints" .primary Tests.ResourceHints.suite,
   -- the resource half's step budget bounds its work on sharing and let chains
   .runner "resource-budget" .primary Tests.ResourceBudget.run,
+  -- no transport along an unchecked equality changes a contract
+  .runner "resource-transport" .primary Tests.ResourceTransport.run,
   -- Source mode's evidence from the committed bundle (`Ix.RoleEvidence.bundleEvidence`), on
   -- the well-founded operations' Init closure without the certificate theorems
   .suite "kernel-bundle-evidence" .primary Tests.Ix.Kernel.BundleEvidence.suite,
@@ -416,6 +419,7 @@ def required : List (String × String) := [
   ("kernel-bundle-evidence", "primary"),
   ("resource-hints", "primary"),
   ("resource-budget", "primary"),
+  ("resource-transport", "primary"),
   ("compiler-reports", "primary"),
   ("ground-unit", "primary"),
   ("prim-addrs", "primary"),

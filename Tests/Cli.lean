@@ -139,6 +139,56 @@ private def Tests.Cli.testCompileContracts : IO Unit := do
   finally
     IO.FS.removeDirAll dir
 
+/-- The kernel's conversion does not compare result contracts, so it accepts
+    `rfl` between two arrow types that differ only in one. A `cast` along
+    such an equality, from a theorem or from an erased proof argument, must
+    not change the contract: `ix compile` refuses both in resource admission.
+    A transport between equal types and equation theorems of an annotated
+    function are accepted, including one whose proof needs recursor
+    reduction (`Nat.add n 0` to `n`), which resource admission does not
+    perform: it leaves a proof of an equation between `Nat` values
+    uninspected. -/
+private def Tests.Cli.testCompileContractTransport : IO Unit := do
+  let ix ← IO.FS.realPath ".lake/build/bin/ix"
+  let dir ← IO.FS.createTempDir
+  let source := dir / "Transport.lean"
+  let output := dir / "transport.ixe"
+  try
+    IO.FS.writeFile source <| "\n".intercalate
+      [ "import Ix.Compile.SourceContract.Elab"
+      , "def localId (~ x : Nat) : ~ Nat := x"
+      , "def T1 : Type := (~ x : Nat) → ~ Nat"
+      , "def T2 : Type := (~ x : Nat) → Nat"
+      , "theorem launder : ((~ x : Nat) → ~ Nat) = ((~ x : Nat) → Nat) := rfl"
+      , "def esc (~ x : Nat) : Nat := cast launder localId x"
+      , "theorem viaZero : ∀ (A B : Type) (0 h : A = B), A = B := fun _ _ h => h"
+      , "def escZero (~ x : Nat) : Nat :="
+      , "  (cast (viaZero T1 T2 (Eq.trans (rfl : T1 = T1) (rfl : T1 = T2))) localId : T2) x"
+      , "theorem same : T1 = T1 := rfl"
+      , "def keepLocal (~ x : Nat) : ~ Nat := (cast same localId : T1) x"
+      , "theorem localId_eq (x : Nat) : localId x = x := rfl"
+      , "theorem localId_add_zero (n : Nat) : localId (Nat.add n 0) = n := rfl"
+      , "" ]
+    let compile := fun (names : String) => IO.Process.output {
+      cmd := ix.toString
+      args := #["compile", source.toString, "--no-build", "--consts", names,
+        "--out", output.toString] }
+    for name in ["esc", "escZero"] do
+      let result ← compile name
+      if result.exitCode == 0 || (← output.pathExists) then
+        throw <| IO.userError s!"CLI emitted an artifact for {name}, which changes a result contract"
+      unless ((result.stderr ++ result.stdout).splitOn "resource admission").length > 1 do
+        throw <| IO.userError s!"{name} was not refused by resource admission:\n\
+          {result.stderr}\n{result.stdout}"
+    let accepted ← compile "keepLocal,localId_eq,localId_add_zero"
+    unless accepted.exitCode == 0 && (← output.pathExists) do
+      throw <| IO.userError s!"CLI refused a transport between equal types or an equation \
+        theorem:\n{accepted.stderr}\n{accepted.stdout}"
+    IO.println "CLI: transports that change a result contract refused; a transport between \
+      equal types and equation theorems accepted"
+  finally
+    IO.FS.removeDirAll dir
+
 /-- `ix compile --local`: the file's own constants with their selected
     closure. The output's named section holds the file's definition and its
     inductive's recursor (the selected closure carries recursors) but not an
@@ -318,6 +368,7 @@ public def Tests.Cli.suite : IO UInt32 := do
   Tests.Cli.run "lake" (#["exe", "ix", "--help"]) none
   Tests.Cli.testCompileNoBuild
   Tests.Cli.testCompileContracts
+  Tests.Cli.testCompileContractTransport
   Tests.Cli.testCompileLocal
   Tests.Cli.testCompileReportAbort
   Tests.Cli.testPublishedEnvelopeVersion

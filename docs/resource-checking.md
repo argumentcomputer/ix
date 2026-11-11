@@ -102,11 +102,12 @@ until after a loan has been removed.
 ## Explicit bounds of the initial checker
 
 The checker requires visible arrow interfaces after bounded beta, let, sharing,
-projection and definition reduction. Definition reduction unfolds only safe
-definitions: theorems, and unsafe and partial definitions (which the adapter
-treats as assumptions), stay opaque, as they are to the kernel. Higher-order
-types must agree in every contract. It does not guess a resource interface
-when normalization is unsupported. Abstract unique function values are not
+projection and definition reduction. It has no recursor (iota) or literal
+reduction. Definition reduction unfolds safe definitions, `opaque` ones
+included, although the kernel does not unfold those; theorems, and unsafe and
+partial definitions (which the adapter treats as assumptions), stay opaque.
+Higher-order types must agree in every contract. It does not guess a resource
+interface when normalization is unsupported. Abstract unique function values are not
 assumed safe to borrow as reusable callbacks. A representation needs a checked
 or explicitly admitted rule before the checker grants that permission.
 
@@ -123,11 +124,32 @@ all parameters and fields reduces to the field. Other projection
 transformations are rejected before artifact emission. The checker does not
 split availability between fields of the same owner.
 
-A safe theorem's proof is not analyzed: it is erased computation that no
-backend runs. Its statement still counts for relevance, and callers use it as
-an interface. This rests on the typing half, which refuses a theorem whose
-statement is not a proposition; `Addressed.checkResources` alone, which is not
-a certificate, accepts such a declaration.
+A safe theorem's proof has no usage, ownership or locality obligations: it is
+erased computation that no backend runs. This rests on the typing half, which
+refuses a theorem whose statement is not a proposition;
+`Addressed.checkResources` alone, which is not a certificate, accepts such a
+declaration. Only the statement counts for relevance, and callers use it as an
+interface; a theorem whose statement reaches no contract is not checked.
+
+The proof is still checked with contracts when its theorem is marked. The
+kernel's conversion compares the input contracts of binders but not the result
+contracts of `∀`s, so it accepts `rfl : ((~ x : A) → ~ B) = ((~ x : A) → B)`,
+and a transport along such an equality (`cast`, `Eq.mpr`, `▸`) would turn a
+local result into an unrestricted one, a shared result into a unique one, or a
+one-shot closure into a reusable one. A marked theorem's proof is therefore
+typed against its statement with every contract compared (`conform`), and so is
+every term in an erased (`0`) position of a checked definition. Types are not
+inspected there; they are compared wherever they are used.
+
+One kind of proof is not inspected: a proof of `∀ Δ, a = b` where `=` is the
+kernel's `Eq`, resolved by its pinned address, and `a` and `b` have a literal
+type (Nat or String). Contracts do not change how a term computes, so such an
+equation holds with contracts exactly when it holds without; and the checker
+never selects a type by computing with a value, so a transport along it
+changes no contract the checker reads. These proofs, the equation theorems of
+recursive definitions among them, often need recursor reduction. A marked
+theorem with any other statement whose proof needs recursor or literal
+reduction is refused.
 
 Special alternative-path analysis requires a profile-bound selection primitive
 with the specified evaluation behavior. Such a primitive must be fully applied
@@ -216,10 +238,18 @@ Lean proofs connect the executed checks to these facts:
 
 These are executable-check and transition invariants. They do not replace the
 ordinary typechecking prerequisite or claim a proof of a machine backend's
-allocation behavior.
+allocation behavior. No theorem states that an accepted program respects its
+contracts: the resource check as a whole, including how it compares contracts
+and what it relies on from the kernel's contract-blind conversion, is
+uncertified and covered by tests only.
 
 [Resource fixtures](../Tests/Fixtures/ixon-v4/resource.tsv) exercise
 accepted and rejected terms. The suites also cover
 all 64 input/result combinations, imported-interface aliases, mutual groups,
 profile omissions, constructor captures, and bounded rejection of cyclic
 sharing. Tests explicitly distinguish wire validity from resource admission.
+`Tests/Ix/ResourceTransport.lean` (the `resource-transport` test) admits
+programs that transport along an equality between types differing in a
+contract, through a theorem, a definition of the types, an erased proof
+argument or a structure field, and checks that each is refused while
+legitimate transports and equation theorems stay accepted.

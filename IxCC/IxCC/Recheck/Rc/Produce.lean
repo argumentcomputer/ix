@@ -7,9 +7,10 @@ namespace IxCC.Own.Plain
 
 open IxCC.Ixon
 
-/-- Parameter ownership/locality mode derived from kernel-certified frontend
-binder contracts (`~` borrowed -> `.borrow`, `!`/`1` unique/linear -> `.unique`,
-otherwise `.shared`). -/
+/-- Parameter ownership/locality mode derived from the frontend's binder
+contracts (`~` borrowed -> `.borrow`, `!`/`1` unique/linear -> `.unique`,
+otherwise `.shared`). Resource admission checks those contracts; it is not
+certified, and the erased typing does not compare them. -/
 inductive ParamMode where
   | shared
   | borrow
@@ -178,9 +179,9 @@ def enrichFirContracts (src : Src.Program) (P : Fir.Program) : Fir.Program :=
       let result := if f.result != .shared then f.result else progKeyResult src P f.key
       { f with contracts, result } }
 
-/-- Contract-aware canonical `Own.Plain.Program`: enriches `P` with the certified
-`Src` / `Src.Resource` contracts from `src` while producing the canonical
-ownership bodies. -/
+/-- Contract-aware canonical `Own.Plain.Program`: enriches `P` with the
+`Src` / `Src.Resource` contracts from `src` (checked by resource admission, not
+certified) while producing the canonical ownership bodies. -/
 def Program.canonicalForSrc (src : Src.Program) (P : Fir.Program) : Program :=
   let enriched := enrichFirContracts src P
   { source := enriched

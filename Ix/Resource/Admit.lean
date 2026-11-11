@@ -184,7 +184,7 @@ def admitProgram (program : Program) (policy : Policy := {}) (limits : Limits :=
       let d := program.declarations[i]!
       let checked : Except Error Unit := match d.kind with
         | .definition => checkDefinition program i limits
-        | .theorem => .ok ()
+        | .theorem => checkTheorem program i limits
         | .assumption =>
           if policy.assumptions.contains i then .ok ()
           else .error (.unsupported "external resource interface is absent from the bound profile")

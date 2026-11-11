@@ -104,9 +104,11 @@ def run (root : System.FilePath) : IO Nat := do
     lambda (.ref 0 #[]) (.var 0)⟩, #[], #[prop], #[]⟩
   expect "valid theorem" (Tc.checkEnv (store propEnv validTheorem).1) true
   assertions := assertions + 5
-  -- The theorem exemption: resource admission does not analyze a safe theorem's
-  -- proof (erased computation); typing still refuses a non-proposition
-  -- "theorem". `∀ (P : sort) (p : linear P), P`, proved by `(fun q r => q) p p`.
+  -- A safe theorem's proof (erased computation) has no usage, ownership or
+  -- locality obligations: resource admission only types it against its
+  -- statement with contracts (`checkTheorem`). Typing still refuses a
+  -- non-proposition "theorem". `∀ (P : sort) (p : linear P), P`, proved by
+  -- `(fun q r => q) p p`.
   let linear : BinderContract := ⟨.linear, .shared⟩
   let theoremOf (kind : DefKind) (sort : E) : Environment := (store {}
     ⟨.defn ⟨kind, .safe, 0, arrow sort (.all linear .shared (.var 0) (.var 1)),
@@ -115,7 +117,7 @@ def run (root : System.FilePath) : IO Nat := do
       #[], #[], #[.zero, .succ .zero]⟩).1
   let profile : Resource.Profile := {}
   let propTheorem := theoremOf .thm (.sort 0)
-  expect "theorem proof is not resource-checked" (admitResources (bytes propTheorem) profile.bytes) true
+  expect "theorem proof has no usage obligations" (admitResources (bytes propTheorem) profile.bytes) true
   expect "theorem over a proposition passes combined admission"
     (validate (bytes propTheorem) profile.bytes) true
   expect "the same proof as a definition is resource-checked"

@@ -713,7 +713,10 @@ equal input contracts as well as equal `pw` data, so the entry declines
 `f : ∀[erased] (x : Nat), Nat := fun[many] x => x`. It never compares result
 contracts: a `lam` has none, so the type inferred for one carries the
 default, and `fun[linear] x => x` checks against
-`∀[linear] (x : Nat), unique Nat`. The model reads only `pw`, so an
+`∀[linear] (x : Nat), unique Nat`. For the same reason `rfl` proves two arrow
+types equal when they differ only in a result contract; resource admission,
+not the kernel, refuses a transport along such an equality
+([resource checking](resource-checking.md)). The model reads only `pw`, so an
 accepted environment says nothing about how a variable is used
 (`Tests/Ix/Kernel/Contracts.lean`). The kernel imports these data types
 from Ixon, and nothing else

@@ -11,10 +11,15 @@ an optimistic no-capture summary: calls use the declared interface and retain
 all permitted argument/closure origins. An external interface or special
 primitive is an explicit profile assumption, not auxiliary source metadata.
 
-Erased typing is a separate prerequisite. This module also compares the full
-resource structure of types, so erased definitional equality cannot launder a
-different higher-order contract. Unsupported reductions exhaust a fixed bound
-or report an error instead of silently discarding modes.
+Erased typing is a separate prerequisite, and it does not settle contracts:
+the kernel's conversion compares the input contracts of binders but not the
+result contracts of `∀`s, so it accepts a proof that two types differing in a
+result contract are equal, and a transport along that proof would change the
+contract. This module therefore compares the full resource structure of types
+wherever it uses one, and checks with contracts (`conform`) the terms it relies
+on without running them: theorem proofs (`checkTheorem`) and terms in erased
+positions. Unsupported reductions exhaust a fixed bound or report an error
+instead of silently discarding modes.
 
 The bound covers the work, not only reductions. Every function here that walks
 an expression (`shift`, `substitute`, `splitApp`, `whnf`, `exprEq`,
@@ -87,6 +92,11 @@ structure Program where
   projections : Array ProjectionInfo := #[]
   natType : Option Ixon.Expr := none
   stringType : Option Ixon.Expr := none
+  /-- The kernel's equality type `Eq`, when the closure contains it. The
+  address adapter resolves it by its pinned primitive address. `conform` does
+  not inspect a proof of an equation between values of a literal type
+  (`dataEquation`). -/
+  equality : Option UInt64 := none
   /-- Types whose shared views have a checked, duplicable representation.
   Abstract type parameters are deliberately absent from this list. -/
   shareableTypes : Array UInt64 := #[]
@@ -438,6 +448,102 @@ def typeOf : Nat → Context → Ixon.Expr → CheckM Ixon.Expr
       modify fun s => { s with bindings := before.bindings }
       substitute ctx.program fuel type initializer 0
 
+/-- Whether `type` is `∀ Δ, @Eq C a b` for the kernel's `Eq`
+(`Program.equality`) and a literal type `C` (`Program.natType`,
+`Program.stringType`). Such a statement relates two values of a type whose
+values are data. Contracts do not change how a term computes, so two such
+values are equal with contracts exactly when they are equal without, and a
+proof the kernel accepts proves it. A transport along it replaces one such
+value by the other inside a type; this checker never selects a type by
+computing with a value (it has no recursor or literal reduction), so no
+contract it reads changes. -/
+def dataEquation (program : Program) : Nat → Ixon.Expr → CheckM Bool
+  | 0, _ => throw .budget
+  | fuel + 1, type => do
+    tick
+    let some equality := program.equality | return false
+    match ← whnf program fuel type with
+    | .all _ _ _ body => dataEquation program fuel body
+    | statement =>
+      let (head, args) ← splitApp program fuel statement []
+      let .ref index _ := head | return false
+      let [carrier, _, _] := args | return false
+      if index != equality then return false
+      let carrier ← whnf program fuel carrier
+      let literal (expected : Option Ixon.Expr) : CheckM Bool := match expected with
+        | some literalType => exprEq carrier literalType
+        | none => pure false
+      return (← literal program.natType) || (← literal program.stringType)
+
+/-- Contract-aware typing of a term the analysis does not run: a theorem's
+proof, and a term in an erased (`0`) position. `typeOf` computes a type from
+declared interfaces without looking at arguments, and the kernel's conversion
+ignores result contracts, so a proof the kernel accepts can state an equality
+between types that differ in a contract (`rfl : ((~ x : A) → ~ B) = ((~ x : A)
+→ B)`). A transport (`cast`, `Eq.mpr`, `▸`, `Eq.rec`) along such a proof would
+change a contract. `conform` checks the term the way `analyze` would, without
+usage, ownership or locality obligations: every argument, initializer and λ is
+compared with the type it is used at by `compatible`, contracts included.
+
+Two kinds of term are not inspected. A term whose type is a sort is a type; it
+is compared wherever it is used as one. A proof of an equation between values
+of a literal type (`dataEquation`) proves its statement with or without
+contracts; such proofs, like the equation theorems of recursive definitions,
+often need recursor reduction, which `compatible` lacks. Returns the term's
+type. -/
+def conform : Nat → Context → Ixon.Expr → Option Ixon.Expr → CheckM Ixon.Expr
+  | 0, _, _, _ => throw .budget
+  | fuel + 1, ctx, e, expected => do
+    tick
+    if let some type := expected then
+      match ← whnf ctx.program fuel type with
+      | .sort _ => return type
+      | reduced => if ← dataEquation ctx.program fuel reduced then return type
+    let inferred ← match e with
+      | .var index => do
+        let n := index.toNat
+        if n >= ctx.vars.size then throw (.unbound n)
+        let b ← binding ctx.vars[ctx.vars.size - 1 - n]!
+        shift ctx.program fuel b.value.type (n + 1) 0
+      | .ref index _ => do pure (← declaration ctx.program index).type
+      | .share index => do conform fuel ctx (← expansion ctx.program index) none
+      | .recur .. => throw (.unsupported "unresolved recursive reference")
+      | .sort _ | .all .. => pure (.sort 0)
+      | .nat _ => literalType ctx.program.natType
+      | .str _ => literalType ctx.program.stringType
+      | .prj typeRef index value => do
+        let field ← fieldRule ctx.program typeRef index
+        let ownerType ← conform fuel ctx value none
+        fieldType ctx.program fuel field value ownerType
+      | .app fn arg => do
+        let (_, _, domain, codomain) ← arrow ctx.program fuel (← conform fuel ctx fn none)
+        let _ ← conform fuel ctx arg (some domain)
+        substitute ctx.program fuel codomain arg 0
+      | .lam input domain body => do
+        -- A λ carries no result contract; it takes its expected arrow's.
+        let (result, codomain) ← match expected with
+          | some type => do
+            let (declared, result, declaredDomain, codomain) ← arrow ctx.program fuel type
+            if input != declared then throw .binderMismatch
+            requireType ctx.program fuel domain declaredDomain
+            pure (result, some codomain)
+          | none => pure (.shared, none)
+        let before ← get
+        let id ← pushBinding input { type := domain }
+        let bodyType ← conform fuel { ctx with vars := ctx.vars.push id } body codomain
+        modify fun s => { s with bindings := before.bindings }
+        pure (.all input result domain bodyType)
+      | .letE contract type initializer body => do
+        let _ ← conform fuel ctx initializer (some type)
+        let before ← get
+        let id ← pushBinding contract.binder { type }
+        let bodyType ← conform fuel { ctx with vars := ctx.vars.push id } body none
+        modify fun s => { s with bindings := before.bindings }
+        substitute ctx.program fuel bodyType initializer 0
+    if let some type := expected then
+      requireType ctx.program fuel inferred type
+    return inferred
+
 def finishValue (ctx : Context) (fuel : Nat) (destination : ScopeId)
     (expected : Option (Ixon.Expr × ValueContract)) (value : Value) : CheckM Value := do
   match expected with
@@ -466,12 +572,11 @@ def analyze : Nat → Context → Ixon.Expr → Option (Ixon.Expr × ValueContra
   | 0, _, _, _, _, _ => throw .budget
   | fuel + 1, ctx, e, expected, destination, grade => do
     tick
-    -- Zero computation is checked by the prerequisite erased typechecker.
-    -- It has no ownership events, captures, or runtime origins.
+    -- Zero computation has no ownership events, captures, or runtime origins,
+    -- but its type is checked with contracts (`conform`): an erased proof can
+    -- still state a type equality that a later transport relies on.
     if grade == .erased then
-      let type ← typeOf fuel ctx e
-      if let some (expectedType, _) := expected then
-        requireType ctx.program fuel type expectedType
+      let type ← conform fuel ctx e (expected.map (·.1))
       return { type, owned := .unique }
     if let some (type, _) := expected then
       if let .sort _ ← whnf ctx.program fuel type then
@@ -680,6 +785,24 @@ def checkDefinitionCounted (program : Program) (index : Nat) (limits : Limits :=
 
 def checkDefinition (program : Program) (index : Nat) (limits : Limits := {}) : Except Error Unit :=
   (checkDefinitionCounted program index limits).1
+
+/-- Check a theorem's proof against its statement with `conform`. A proof is
+never run, so it has no usage, ownership or locality obligations; but the
+statement is trusted wherever the theorem is used, and a transport along it
+would carry any contract difference the proof glossed over. The proof of an
+equation between values of a literal type (`dataEquation`), such as the
+equation theorem of a recursive definition returning a `Nat`, is not
+inspected. -/
+def checkTheorem (program : Program) (index : Nat) (limits : Limits := {}) : Except Error Unit :=
+  let action : CheckM Unit := do
+    let some declaration := program.declarations[index]? | throw (.badReference index)
+    let some body := declaration.body | throw (.unsupported "theorem has no proof")
+    let scope ← newScope 0
+    let _ ← conform limits.depth { program, scope } body (some declaration.type)
+    pure ()
+  match action.run { remaining := limits.steps } with
+  | .ok _ _ => .ok ()
+  | .error error _ => .error error
 
 end Ix.Resource
 

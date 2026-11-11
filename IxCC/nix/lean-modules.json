@@ -945,12 +945,16 @@
     "IxCCTests.IxonV3.Primitives",
     "IxCCTests.IxonV3.Catalog.Run",
     "IxCCTests.IxonV3.K1",
+    "IxCCTests.IxonV3.ResourceTransport",
     "IxCCTests.IxonV3.ResourceBudget",
     "IxCCTests.IxonV3.Binding",
     "IxCC.Tools.Check"]},
   "IxCCTests.IxonV3.ResourceBudget":
   {"path": "IxCCTests/IxonV3/ResourceBudget.lean",
    "imports": ["IxCCTests.IxonV3.TypingFixtures"]},
+  "IxCCTests.IxonV3.ResourceTransport":
+  {"path": "IxCCTests/IxonV3/ResourceTransport.lean",
+   "imports": ["IxCCTests.IxonV3.Fixtures"]},
   "IxCCTests.IxonV3.Primitives":
   {"path": "IxCCTests/IxonV3/Primitives.lean",
    "imports": ["IxCCTests.IxonV3.TypingFixtures"]},
@@ -5937,7 +5941,10 @@
    "imports": ["IxCC.Ixon.V3.Resource.Check"]},
   "IxCC.Ixon.V3.Resource.Addressed":
   {"path": "IxCC/Ixon/V3/Resource/Addressed.lean",
-   "imports": ["IxCC.Ixon.V3.Resource.Admit", "IxCC.Ixon.V3.Env"]},
+   "imports":
+   ["IxCC.Ixon.V3.Resource.Admit",
+    "IxCC.Ixon.V3.Env",
+    "IxCC.Ixon.V3.Tc.Primitive"]},
   "IxCC.Ixon.V3.Expr":
   {"path": "IxCC/Ixon/V3/Expr.lean",
    "imports": ["IxCC.Ixon.Univ", "IxCC.Ixon.V3.Contracts"]},

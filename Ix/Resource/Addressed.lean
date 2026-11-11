@@ -1,6 +1,7 @@
 module
 
 public import Ix.Resource.Admit
+public import Ix.PrimAddrs
 
 /-!
 # Addressed resource interfaces
@@ -368,11 +369,14 @@ def prepare (env : Ixon.Env) (profile : Profile := {}) : Except String Addressed
     unless kinds[i.toNat]? == some .typeConstructor do
       throw "resource adapter: literal type must be a checked nominal type"
     pure (Ixon.Expr.ref i #[])
+  -- The kernel's `Eq`, by its pinned address (`dataEquation`).
+  let equality := (indices[Ix.PrimAddrs.canonical.eq]?).filter fun i =>
+    kinds[i.toNat]? == some .typeConstructor
   program := { program with
     sharingBounds := computeSharingBounds program.sharing
     natType := ← profile.natType.mapM literalType
     stringType := ← profile.stringType.mapM literalType
-    shareableTypes := shareable, choices }
+    equality, shareableTypes := shareable, choices }
   for (typeAddr, ctorAddr, params, count) in fieldSpecs do
     let typeId ← index indices typeAddr
     let ctorId ← index indices ctorAddr

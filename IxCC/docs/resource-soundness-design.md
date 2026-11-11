@@ -2,7 +2,7 @@
 
 Written 2026-11-14. **Status: planned.** Nothing here is proved; the
 milestones RE-0 to RE-3 are in the [roadmap](roadmap.md#resource-soundness),
-and RE-0 is in progress. Only the lines that say *implemented* describe code
+and RE-0 is done. Only the lines that say *implemented* describe code
 that exists.
 
 Ixon binders carry usage, ownership and locality *contracts* written in Lean
@@ -76,19 +76,25 @@ and the separate validation API).
   proved without any contract premise. So today a wrong annotation can change
   the memory policy among proved ones, never the result.
 
-**A confirmed hole.** A theorem whose statement equates two arrow types that
+**A closed hole.** A theorem whose statement equates two arrow types that
 differ only in a result contract is accepted by the kernel (by `rfl`, since
-conversion ignores result contracts) and not analysed by the resource
-checker, which does not analyse theorems and trusts their statements. A cast
-across it then re-labels any function's result contract: a local result
-escapes as unrestricted, a shared value is returned as unique, and a one-shot
-closure over a unique owner becomes reusable. The same attack on an input
-contract fails in the kernel. Nothing runs differently today, because IxCC
-gives these contracts no effect; if the compiler trusted them, the second and
-third would update shared data in place and the first would return a dead
-stack value. It is being closed in the checker (RE-0). It is the same kind of
-hole that Idris 2 closed by making multiplicities part of a function type's
-identity.
+conversion ignores result contracts). The resource checker did not analyse
+theorems and trusted their statements, so a cast across such a theorem
+re-labelled any function's result contract: a local result escaped as
+unrestricted, a shared value was returned as unique, and a one-shot closure
+over a unique owner became reusable. The same attack on an input contract
+fails in the kernel. Nothing ran differently, because IxCC gives these
+contracts no effect; had the compiler trusted them, the second and third would
+have updated shared data in place and the first would have returned a dead
+stack value. *Implemented* (RE-0): the checker types a marked theorem's proof,
+and every term in an erased position, against its type with every contract
+compared, so these programs are refused
+([resource checking](../../docs/resource-checking.md)). It leaves one kind of
+proof uninspected: a proof of an equation between values of a literal type,
+which holds with contracts exactly when it holds without. It is the same kind
+of hole that Idris 2 closed by making multiplicities part of a function type's
+identity; the kernels have not done that
+([below](#contracts-must-be-part-of-a-types-identity)).
 
 **Where the source check and IxCC disagree.**
 - *Which arguments `0` erases.* The checker erases an argument whenever the
@@ -156,9 +162,9 @@ verifies (D16: honoured exactly, never weakened):
 
 A contract the checker cannot verify is refused with a diagnostic that names
 it (whether an internal contract may instead be dropped, compiling as if
-unannotated, is an [open question](#open-questions)). With this layer, the
-confirmed hole and the erasure and transport disagreements above can only cause
-refusals, never unsound code.
+unannotated, is an [open question](#open-questions)). With this layer, a
+hole like the closed one and the erasure and transport disagreements above can
+only cause refusals, never unsound code.
 
 ### Layer 2: a source-level resource theorem
 
@@ -227,8 +233,9 @@ widens in this order:
 A source-level statement survives conversion only if every type equality the
 checker relies on preserves contracts: either the checker checks the equality
 itself, or it comes from a conversion that compares *all* contracts. IxCK
-compares input contracts but not result contracts, which is what the
-confirmed hole exploits. Making result contracts part of type identity needs a
+compares input contracts but not result contracts, which is what the closed
+hole exploited; the resource checker now checks the equalities it relies on
+itself, the first of the two ways. Making result contracts part of type identity needs a
 result contract on λ nodes, or checking λs against their expected ∀ instead
 of inferring a default result; the alternative is to forbid non-default result
 contracts wherever conversion can see them. This is a decision for the
@@ -296,7 +303,7 @@ Sizes are estimates, with their basis.
 
 | Id | Content | Depends on | Exit test | Size [estimate] | State |
 | --- | --- | --- | --- | --- | --- |
-| RE-0 | Close the result-contract relabelling hole in the resource checker | — | the three relabelling programs (local escape, shared returned as unique, a one-shot closure duplicated) are refused, as regression tests | small (checker side) | In progress, owned with the resource checker |
+| RE-0 | Close the result-contract relabelling hole in the resource checker | — | the three relabelling programs (local escape, shared returned as unique, a one-shot closure duplicated) are refused, as regression tests | small (checker side) | Done: refused, with regression tests in ix (`Tests/Ix/ResourceTransport.lean`, `Tests/Cli.lean`) and IxCC (`IxCCTests/IxonV3/ResourceTransport.lean`) |
 | RE-1 | Layer 1: the ownership checker verifies written unique and borrow contracts at both ends; in-place update only on verified uniqueness; erased re-checked as today | Phase 2's ownership checker (DR1) | the relabelling programs, compiled with the hole re-opened, get no in-place update; K2 and K3 annotated twins verified; a unique contract the checker cannot verify is refused with its name | 2–4k lines beyond the Own checker itself (by comparison with the plain-RC contract check, `checkContractPlainMap`) | Planned (Phase 2) |
 | RE-2 | Layer 2, first fragment: SrcEvalᴿ, its refinement of SrcEval, a resource checker on Src, the five properties | EV-1 (the frozen evaluator contract that SrcEvalᴿ instruments) | the refinement and the five properties fenced; the checker accepts the first-order programs of the ownership suite that ix's checker accepts, and its verdicts are compared with ix's on the rest | 8–20k lines: SrcEvalᴿ 1–2k (SrcEval is 0.4k), the checker 2–4k (the relevance checker is 0.9k), the proofs 5–14k (erasure's simulation over the same evaluator is 10.1k) | Planned |
 | RE-3 | Widening: closures as cells, eliminators, recursion through equations, locality with tail calls | RE-2; P8 for closures | per item | per item | Planned |
