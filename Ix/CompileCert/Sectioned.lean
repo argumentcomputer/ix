@@ -72,12 +72,13 @@ theorem built_strip {limits : Ix.Sharing.Exact.Limits} {info : Ixon.ConstantInfo
 canonical and complete. -/
 theorem empty_of_rootless {c : Ixon.Constant} (roots : c.info.binderRoots = #[])
     (empty : c.binders = #[]) : c.bindersCanonical = true ∧ c.bindersComplete = true := by
+  have rootless : c.info.binderRoots.isEmpty = true := by rw [roots]; rfl
   constructor
   · unfold Ixon.Constant.bindersCanonical
-    rw [roots, empty]
+    rw [if_pos rootless, empty]
     rfl
   · unfold Ixon.Constant.bindersComplete
-    rw [roots, empty]
+    rw [if_pos rootless, empty]
     rfl
 
 end Ix.CompileCert.Sectioned

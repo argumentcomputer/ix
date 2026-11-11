@@ -296,8 +296,8 @@ def checkBinderNodes (lvls : Nat) (undecidedOnly : Bool) (full : Array Bool) (sh
 root with a numbered node (variant 0) and per sharing entry and variant a share
 node names, each matching its expression, variants numbered in order of first
 occurrence and pairwise distinct. -/
-def Constant.bindersComplete (c : Constant) : Bool := Id.run do
-  if c.info.binderRoots.isEmpty then return c.binders.isEmpty
+/-- `bindersComplete` for a record with a root. -/
+def Constant.bindersCompleteRooted (c : Constant) : Bool := Id.run do
   unless blocksAscending c.binders.toList do return false
   let lvls := c.info.maxLvls
   let full := binderfulEntries c.sharing
@@ -324,14 +324,19 @@ def Constant.bindersComplete (c : Constant) : Bool := Id.run do
           return false
   return true
 
+/-- The section of `c` is complete; for a record with no root, the empty one. -/
+def Constant.bindersComplete (c : Constant) : Bool :=
+  if c.info.binderRoots.isEmpty then c.binders.isEmpty else c.bindersCompleteRooted
+
 /-- The binder data of `c` are in canonical form (local): blocks strictly
 sorted, a root block at variant 0, no empty block, canonical nodes, and the empty
 section for a record with no root. -/
 def Constant.bindersCanonical (c : Constant) : Bool :=
-  blocksAscending c.binders.toList &&
-    c.binders.all (fun block =>
-      (block.shared || block.variant == 0) && !block.nodes.isEmpty &&
-        block.nodes.all (BinderNode.canonical c.info.maxLvls)) &&
-    (!c.info.binderRoots.isEmpty || c.binders.isEmpty)
+  if c.info.binderRoots.isEmpty then c.binders.isEmpty
+  else
+    blocksAscending c.binders.toList &&
+      c.binders.all fun block =>
+        (block.shared || block.variant == 0) && !block.nodes.isEmpty &&
+          block.nodes.all (BinderNode.canonical c.info.maxLvls)
 
 end Ixon
