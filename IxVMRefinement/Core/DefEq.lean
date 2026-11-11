@@ -33,7 +33,7 @@ theorem RepK.bvar_of_load {h : Heap F} {t : IxVMKExpr F} {p x : SourceValue F}
     rw [loadValue_enum_cell cell] at hl
     injection hl with hv; injection hv with _ _ hargs; injection hargs with hx _
     exact ⟨_, rfl, hx.symm⟩
-  | sort cell _ | const cell _ _ | app cell _ _ | lam cell _ _ | forallE cell _ _
+  | sort cell _ | const cell _ _ | app cell _ _ | lam cell _ _ _ | forallE cell _ _ _
   | letE cell _ _ _ | litNat cell _ | litStr cell _ | proj cell _ _ =>
     rw [loadValue_enum_cell cell] at hl
     injection hl with hv; injection hv with _ hc _
