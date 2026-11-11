@@ -22,8 +22,9 @@ One lemma per rule, from the motives of its premises (`Open/Motive.lean`), over 
 * `Infer`: sorts, variables, constants, applications certified or skipped at a `never`
   binder, `∀`-formation.
 
-δ and constants need the environment's syntactic well-formedness (`EnvWF`: a stored type or
-value is closed), which the kernel establishes for every environment it builds.
+δ and constants need the stored terms closed (`StoredClosed`: no free variable and no loose
+bound variable in a stored type, value or rule), which the kernel checks of every
+declaration it stores (`EnvWF.storedClosed`).
 -/
 
 namespace Ix.Kernel.Open
@@ -106,6 +107,55 @@ theorem unfoldDefinition_inv {e e' : Expr md} (h : unfoldDefinition env e = some
 theorem find?_name {n : Key md} {ci : ConstantInfo md} (hf : env.find? n = some ci) :
     ci.name = n := by
   simpa using List.find?_some (p := fun c : ConstantInfo md => c.name == n) hf
+
+/-! ## Closed stored terms -/
+
+/-- **The stored terms are closed**: every stored type, definition value and recursor rule's
+right-hand side has no free variable and no loose bound variable. The kernel checks this of
+every declaration it stores (`EnvWF.storedClosed`), and a restriction of the environment
+keeps it. -/
+def StoredClosed (env : Env md) : Prop :=
+  ∀ c ∈ env.consts,
+    (c.toConstantVal.type.hasFvar = false ∧ c.toConstantVal.type.looseBVarsBounded 0 = true) ∧
+    (∀ cv value hint, c = .defnInfo cv value hint →
+      value.hasFvar = false ∧ value.looseBVarsBounded 0 = true) ∧
+    ∀ cv mI rP rules, c = .recInfo cv mI rP rules → ∀ r ∈ rules,
+      r.rhs.hasFvar = false ∧ r.rhs.looseBVarsBounded 0 = true
+
+theorem EnvWF.storedClosed {env : Env md} (h : EnvWF env) : StoredClosed env := by
+  intro c hc
+  obtain ⟨h1, -, -, h4, h5, h6, -⟩ := h c hc
+  refine ⟨⟨h1, h4⟩, fun cv value hint he => ?_, fun cv mI rP rules he r hr => ?_⟩
+  · obtain ⟨a, -, -, b⟩ := h5 cv value hint he
+    exact ⟨a, b⟩
+  · obtain ⟨a, -, -, b, -⟩ := h6 cv mI rP rules he r hr
+    exact ⟨a, b⟩
+
+/-- **A δ-unfolding is a closed value applied to the spine.** -/
+theorem unfold_closed (hsc : StoredClosed env) {e e' : Expr md}
+    (h : unfoldDefinition env e = some e') :
+    ∃ f : Expr md, f.hasFvar = false ∧ f.looseBVarsBounded 0 = true ∧
+      e' = Expr.mkAppN f e.getAppArgs := by
+  obtain ⟨n, us, cv, value, hint, -, hf, -, rfl⟩ := unfoldDefinition_inv h
+  obtain ⟨hvf, hvb⟩ := (hsc _ (List.mem_of_find?_eq_some hf)).2.1 cv value hint rfl
+  exact ⟨_, by rw [Expr.hasFvar_instantiateLevelParams]; exact hvf,
+    by rw [Expr.looseBVarsBounded_instantiateLevelParams]; exact hvb, rfl⟩
+
+/-- The frame and leaves of a δ-unfolding. -/
+theorem unfold_frame (hsc : StoredClosed env) {d : Nat} {e e' : Expr md}
+    (h : unfoldDefinition env e = some e') (hfr : Frame d e) :
+    Frame d e' ∧ LeavesSub e' e := by
+  obtain ⟨f, hff, hfb, rfl⟩ := unfold_closed hsc h
+  have hsub : LeavesSub (Expr.mkAppN f e.getAppArgs) e := by
+    intro l hl
+    rcases fvarLeaves_mkAppN hl with hl' | ⟨x, hx, hlx⟩
+    · rw [Expr.fvarLeaves_eq_nil_of_not_hasFvar hff] at hl'
+      exact nomatch hl'
+    · exact fvarLeaves_getAppArgs hx l hlx
+  exact ⟨⟨Expr.WScoped.mkAppN (Expr.WScoped.of_not_hasFvar hff)
+      (fun x hx => hfr.1.getAppArgs x hx),
+    looseBVarsBounded_mkAppN hfb (fun x hx => looseBVarsBounded_getAppArgs hfr.2.1 x hx),
+    fun l hl => hfr.2.2 l (hsub l hl)⟩, hsub⟩
 
 /-! ## `Red` -/
 
@@ -238,16 +288,15 @@ theorem Red.beta_sound {d : Nat} {ty body a ta : Expr md} {mb : BinderMeta}
 
 /-- **δ**: a stored definition's value, at the use's levels, denotes what the constant does
 (`Model.defn_value`), and is graded (`Model.graded`). -/
-theorem Red.delta_sound (hwf : EnvWF env) {d : Nat} {e e' : Expr md}
+theorem Red.delta_sound (hsc : StoredClosed env) {d : Nat} {e e' : Expr md}
     (h : unfoldDefinition env e = some e') : RedS M φ d e e' := by
   intro hfr
-  refine ⟨⟨unfoldDefinition_WScoped hwf h hfr.1, unfoldDefinition_looseBVars hwf h hfr.2.1,
-      fun l hl => hfr.2.2 l (unfoldDefinition_fvarLeaves hwf h l hl)⟩,
-    fun l hl => unfoldDefinition_fvarLeaves hwf h l hl, fun σ _ v hv hg => ?_⟩
+  obtain ⟨hfr', hsub⟩ := unfold_frame hsc h hfr
+  refine ⟨hfr', hsub, fun σ _ v hv hg => ?_⟩
   obtain ⟨n, us, cv, value, hint, hfn, hf, hlen, rfl⟩ := unfoldDefinition_inv h
   have hmem := List.mem_of_find?_eq_some hf
   have hname : cv.name = n := find?_name hf
-  have hwfv := (hwf _ hmem).2.2.2.2.1 cv value hint rfl
+  have hwfv := (hsc _ hmem).2.1 cv value hint rfl
   have hcp : CvalParams M.cval env := M.cval_params
   have hval : Denotes M.cval env (Level.substFn φ cv.levelParams us) ρ₀ value
       (M.cval n (Level.substFn φ cv.levelParams us)) := by
@@ -507,7 +556,7 @@ theorem Infer.fvar_sound {g : Grade} {d idx : Nat} {ty : Expr md} :
 
 /-- **A constant's type**: the stored type at the use's levels holds the constant
 (`Model.mem`), and is graded (`Model.graded`). -/
-theorem const_typed (hwf : EnvWF env) {n : Key md} {us : List Level} {ci : ConstantInfo md}
+theorem const_typed (hsc : StoredClosed env) {n : Key md} {us : List Level} {ci : ConstantInfo md}
     (hf : env.find? n = some ci) (hus : us.length = ci.toConstantVal.levelParams.length)
     (σ : Nat → V) :
     ∃ T, Den M φ σ (.const n us) (M.cval n (Level.substFn φ ci.toConstantVal.levelParams us)) ∧
@@ -516,7 +565,7 @@ theorem const_typed (hwf : EnvWF env) {n : Key md} {us : List Level} {ci : Const
       M.cval n (Level.substFn φ ci.toConstantVal.levelParams us) ∈ˢ T := by
   have hmem := List.mem_of_find?_eq_some hf
   have hname : ci.name = n := find?_name hf
-  have hwfc := hwf _ hmem
+  have hwfc := (hsc _ hmem).1
   have hcp : CvalParams M.cval env := M.cval_params
   obtain ⟨T, hT, hm⟩ := M.mem ci hmem (Level.substFn φ ci.toConstantVal.levelParams us) ρ₀
   refine ⟨T, .const hf hus,
@@ -526,21 +575,21 @@ theorem const_typed (hwf : EnvWF env) {n : Key md} {us : List Level} {ci : Const
   rw [← hname]
   exact hm
 
-theorem const_type_frame (hwf : EnvWF env) {d : Nat} {n : Key md} {us : List Level}
+theorem const_type_frame (hsc : StoredClosed env) {d : Nat} {n : Key md} {us : List Level}
     {ci : ConstantInfo md} (hf : env.find? n = some ci) :
     Frame d (ci.toConstantVal.type.instantiateLevelParams ci.toConstantVal.levelParams us) ∧
       LeavesSub (ci.toConstantVal.type.instantiateLevelParams ci.toConstantVal.levelParams us)
         (.const n us) := by
-  have hwfc := hwf _ (List.mem_of_find?_eq_some hf)
+  have hwfc := (hsc _ (List.mem_of_find?_eq_some hf)).1
   have hnf : (ci.toConstantVal.type.instantiateLevelParams ci.toConstantVal.levelParams
       us).hasFvar = false := by
     rw [Expr.hasFvar_instantiateLevelParams]; exact hwfc.1
   have hlb : (ci.toConstantVal.type.instantiateLevelParams ci.toConstantVal.levelParams
       us).looseBVarsBounded 0 = true := by
-    rw [Expr.looseBVarsBounded_instantiateLevelParams]; exact hwfc.2.2.2.1
+    rw [Expr.looseBVarsBounded_instantiateLevelParams]; exact hwfc.2
   exact ⟨Frame.of_closed hnf hlb, LeavesSub.of_closed hnf⟩
 
-theorem Infer.const_sound (hwf : EnvWF env) {g : Grade} {d : Nat} {n : Key md}
+theorem Infer.const_sound (hsc : StoredClosed env) {g : Grade} {d : Nat} {n : Key md}
     {us : List Level} {ci : ConstantInfo md} (hf : env.find? n = some ci)
     (hus : us.length = ci.toConstantVal.levelParams.length) :
     InferS M φ g d (.const n us)
@@ -548,15 +597,15 @@ theorem Infer.const_sound (hwf : EnvWF env) {g : Grade} {d : Nat} {n : Key md}
   cases g with
   | full =>
     intro _
-    obtain ⟨hft, hsub⟩ := const_type_frame (d := d) (us := us) hwf hf
+    obtain ⟨hft, hsub⟩ := const_type_frame (d := d) (us := us) hsc hf
     refine ⟨hft, hsub, fun σ _ => ?_⟩
-    obtain ⟨T, hc, hT, hg, hm⟩ := const_typed (M := M) (φ := φ) hwf hf hus σ
+    obtain ⟨T, hc, hT, hg, hm⟩ := const_typed (M := M) (φ := φ) hsc hf hus σ
     exact ⟨_, T, hc, True.intro, hT, hg, hm⟩
   | io =>
     intro _
-    obtain ⟨hft, hsub⟩ := const_type_frame (d := d) (us := us) hwf hf
+    obtain ⟨hft, hsub⟩ := const_type_frame (d := d) (us := us) hsc hf
     refine ⟨hft, hsub, fun σ _ _ hv _ => ?_⟩
-    obtain ⟨T, hc, hT, hg, hm⟩ := const_typed (M := M) (φ := φ) hwf hf hus σ
+    obtain ⟨T, hc, hT, hg, hm⟩ := const_typed (M := M) (φ := φ) hsc hf hus σ
     obtain rfl := DenotesO.functional hv hc
     exact ⟨T, hT, hg, hm⟩
 
