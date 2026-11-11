@@ -52,9 +52,9 @@ equality, every definition what its value denotes, every recursor rule
 computing as Lean's does, structure and unit-like η at the families that have
 them, every projection reading the structure's own table, and the kernel's `Nat`
 operations computing on literals as Lean's functions, with `Nat.add`'s recurrences at
-every natural. Because the environment
-stores each declaration's own value and rules, a claimed definition means what the
-reader's value means, not just some inhabitant of its type: a definition
+every natural, and every stored type and value applying functions on their domains.
+Because the environment stores each declaration's own value and rules, a claimed definition
+means what the reader's value means, not just some inhabitant of its type: a definition
 `P := False` is false in every model, and no claimed constant can prove it. The
 structure's docstring lists which of Lean's definitional equalities it carries
 as laws and which hold in every model by the reading.
