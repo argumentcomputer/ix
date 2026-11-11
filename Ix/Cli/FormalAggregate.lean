@@ -1,6 +1,7 @@
 module
 public import Ix.Cli.FormalAiur
 public import Ix.Cli.Compression
+public import Ix.Cli.ClaimPolicy
 public import Ix.Aggr.Verification
 
 /-! Application scheduling for the separate formal recursive verifier. The
@@ -615,6 +616,7 @@ def verify (p : Cli.Parsed) : IO UInt32 := do
     let some addr := Address.fromString hex | throw (IO.userError "invalid aggregate address")
     let wrapper ← Compression.readProof addr
     unless expected.all (· == wrapper.claim) do throw (IO.userError "aggregate does not match the requested environment/manifest")
+    ClaimPolicy.admit p wrapper.claim
     if Compression.isCompressed wrapper.proof then
       let .checkEnv .. := wrapper.claim
         | throw (IO.userError s!"aggregate proof {addr} does not bundle a CheckEnv claim")
