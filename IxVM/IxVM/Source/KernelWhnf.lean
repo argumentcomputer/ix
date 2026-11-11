@@ -69,7 +69,7 @@ def red_beta := aiur_fn⟦
     }
 ⟧
 
-  -- Fix A at β. `peel_beta` consumes arguments while the λs' data are never
+  -- Certified β. `peel_beta` consumes arguments while the λs' data are never
   -- (Red.betaGate). Where it stops at a λ whose datum may be zero with arguments left,
   -- `peel_beta_cert` goes on: each such λ needs its certificate (Red.beta: the argument's
   -- io-grade type is definitionally equal to the domain, instantiated by the arguments
