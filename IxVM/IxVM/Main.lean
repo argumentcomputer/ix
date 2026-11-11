@@ -27,10 +27,6 @@ private def scalar (n : Nat) : Execution.DataValue F := .field n
 private def array (ns : Array Nat) : Execution.DataValue F := .array .field (ns.toList.map scalar)
 private def tuple (vs : List (Execution.DataValue F)) : Execution.DataValue F := .tuple vs
 
-/-- The old IOBuffer becomes an explicit, typed dataset: address → (offset,
-length), and (channel, offset) → byte. The Rust host prepares dense byte rows
-as immutable vectors; the same entries remain usable by Lean's data provider.
-Aiur ROM allocation happens inside the program. -/
 /-- The binder-data hints (D2: `ixvm.pw`, `ixvm.pw.param`, `ixvm.pw.share`) of one record's
 stream values, as `crates/ixvm/src/pw.rs` serves them from IO channel 8:
 `nblocks (ekind eidx variant nnodes node*)*`, `node = 0 | 1 v | 2+k p1 … pk`. -/
@@ -61,6 +57,10 @@ def pwHints (address : Array Nat) (vs : Array Nat) : Array (Execution.HintEntry 
         i := i + 1 + k
   return out
 
+/-- The old IOBuffer becomes an explicit, typed dataset: address → (offset,
+length), and (channel, offset) → byte. The Rust host prepares dense byte rows
+as immutable vectors; the same entries remain usable by Lean's data provider.
+Aiur ROM allocation happens inside the program. -/
 def fixtureHints (fixture : Fixture) : Array (Execution.HintEntry F) := Id.run do
   let mut hints : Array (Execution.HintEntry F) := #[]
   for (channel, entries) in [(2,fixture.constants.push fixture.invalidProof), (4,fixture.blobs), (6,fixture.roles)] do
