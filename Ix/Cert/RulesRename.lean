@@ -89,17 +89,17 @@ theorem natAddLit_mapKeys (b : Expr md) (k : Nat) :
     (natAddLit b k).mapKeys f = natAddLit (b.mapKeys f) k := by
   unfold natAddLit
   by_cases hk : k = 0
-  · rw [if_pos hk, if_pos hk]
-  · rw [if_neg hk, if_neg hk]
+  · rw [ite_eq_left hk, ite_eq_left hk]
+  · rw [ite_eq_right hk, ite_eq_right hk]
     rfl
 
 theorem natAddLit_good {b : Expr md} (hadd : (natAddName : Key md).Good P) (hb : b.Good P)
     (k : Nat) : (natAddLit b k).Good P := by
   unfold natAddLit
   by_cases hk : k = 0
-  · rw [if_pos hk]
+  · rw [ite_eq_left hk]
     exact hb
-  · rw [if_neg hk]
+  · rw [ite_eq_right hk]
     exact ⟨⟨hadd, hb⟩, trivial⟩
 
 theorem natAddTyOk_map (o : Option (ConstantInfo md)) :
@@ -129,13 +129,13 @@ theorem natOffsetOf_mapKeys : ∀ e : Expr md,
       rw [natOffsetOf_succ, natOffsetOf_succ]
       by_cases hc : c = natSuccName
       · subst hc
-        rw [if_pos (show (natSuccName : Key md).map f = natSuccName from rfl), if_pos rfl,
-          ih x (Or.inl ⟨us, rfl⟩)]
+        rw [ite_eq_left (show (natSuccName : Key md).map f = natSuccName from rfl),
+          ite_eq_left rfl, ih x (Or.inl ⟨us, rfl⟩)]
         cases natOffsetOf x with
         | none => rfl
         | some p => obtain ⟨b, k⟩ := p; rfl
       · have hc' : ¬ c.map f = natSuccName := fun h => hc (Key.map_eq_role_iff.mp h)
-        rw [if_neg hc', if_neg hc]
+        rw [ite_eq_right hc', ite_eq_right hc]
         rfl
     | app g' y =>
       cases g' with
@@ -149,13 +149,13 @@ theorem natOffsetOf_mapKeys : ∀ e : Expr md,
             rw [natOffsetOf_add, natOffsetOf_add]
             by_cases hc : c = natAddName
             · subst hc
-              rw [if_pos (show (natAddName : Key md).map f = natAddName from rfl), if_pos rfl,
-                ih y (Or.inr ⟨us, m, rfl⟩)]
+              rw [ite_eq_left (show (natAddName : Key md).map f = natAddName from rfl),
+                ite_eq_left rfl, ih y (Or.inr ⟨us, m, rfl⟩)]
               cases natOffsetOf y with
               | none => rfl
               | some p => obtain ⟨b, k⟩ := p; rfl
             · have hc' : ¬ c.map f = natAddName := fun h => hc (Key.map_eq_role_iff.mp h)
-              rw [if_neg hc', if_neg hc]
+              rw [ite_eq_right hc', ite_eq_right hc]
               rfl
           | strVal _ => rfl
         | _ => rfl

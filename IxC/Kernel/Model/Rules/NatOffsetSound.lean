@@ -118,7 +118,7 @@ theorem leavesSub_natAddLit (b : Expr md) (k : Nat) : LeavesSub (natAddLit b k) 
 /-! ## Successor powers -/
 
 /-- `sᵏ x`: the `k`-fold application of a successor value. -/
-def succPow (s x : V) : Nat → V
+@[expose] noncomputable def succPow (s x : V) : Nat → V
   | 0 => x
   | k + 1 => SetTheory.app s (succPow s x k)
 
@@ -143,7 +143,7 @@ theorem interp_natLitAV (ρ : Nat → V) (za sa : AnnotTerm) :
 /-! ## Literals -/
 
 /-- The numeral spine at the plain assignment's `Nat` leaves. -/
-def natLitR (m : EnvModel V env) (φ : LevelParam → Nat) (n : Nat) : AnnotTerm :=
+@[expose] def natLitR (m : EnvModel V env) (φ : LevelParam → Nat) (n : Nat) : AnnotTerm :=
   natLitAV (m.acval natZeroName φ) (m.acval natSuccName φ) n
 
 /-- A literal reads to the spine. -/

@@ -48,12 +48,12 @@ theorem natAddTyOk_inv {o : Option (ConstantInfo md)} (h : natAddTyOk o = true) 
 
 theorem natAddLit_zero (b : Expr md) : natAddLit b 0 = b := by
   unfold natAddLit
-  exact if_pos rfl
+  exact ite_eq_left rfl
 
 theorem natAddLit_succ (b : Expr md) (k : Nat) :
     natAddLit b (k + 1) = .app (.app (.const natAddName []) b) (.lit (.natVal (k + 1))) := by
   unfold natAddLit
-  exact if_neg (Nat.succ_ne_zero k)
+  exact ite_eq_right (Nat.succ_ne_zero k)
 
 /-- `natOffsetOf` at a literal. -/
 theorem natOffsetOf_lit (n : Nat) :
@@ -107,9 +107,9 @@ theorem natOffsetOf_some {e b : Expr md} {k : Nat} (h : natOffsetOf e = some (b,
       rw [natOffsetOf_succ] at h
       by_cases hc : c = natSuccName
       · subst hc
-        rw [if_pos rfl] at h
+        rw [ite_eq_left rfl] at h
         exact Or.inr (Or.inl ⟨us, x, rfl, Option.some.inj h⟩)
-      · rw [if_neg hc] at h
+      · rw [ite_eq_right hc] at h
         exact nomatch h
     | app g y =>
       cases g with
@@ -121,9 +121,9 @@ theorem natOffsetOf_some {e b : Expr md} {k : Nat} (h : natOffsetOf e = some (b,
             rw [natOffsetOf_add] at h
             by_cases hc : c = natAddName
             · subst hc
-              rw [if_pos rfl] at h
+              rw [ite_eq_left rfl] at h
               exact Or.inr (Or.inr ⟨us, y, n, rfl, Option.some.inj h⟩)
-            · rw [if_neg hc] at h
+            · rw [ite_eq_right hc] at h
               exact nomatch h
           | strVal _ => exact nomatch h
         | _ => exact nomatch h
@@ -161,8 +161,8 @@ theorem natAddLit_renFV (ρ : Nat → Nat) (b : Expr md) (k : Nat) :
     (natAddLit b k).renFV ρ = natAddLit (b.renFV ρ) k := by
   unfold natAddLit
   by_cases hk : k = 0
-  · rw [if_pos hk, if_pos hk]
-  · rw [if_neg hk, if_neg hk]
+  · rw [ite_eq_left hk, ite_eq_left hk]
+  · rw [ite_eq_right hk, ite_eq_right hk]
     rfl
 
 /-- **`natOffsetOf` commutes with renaming free variables.** -/
@@ -178,11 +178,11 @@ theorem natOffsetOf_renFV (ρ : Nat → Nat) : ∀ e : Expr md,
       rw [natOffsetOf_succ, natOffsetOf_succ]
       by_cases hc : c = natSuccName
       · subst hc
-        rw [if_pos rfl, if_pos rfl, ih x (Or.inl ⟨us, rfl⟩)]
+        rw [ite_eq_left rfl, ite_eq_left rfl, ih x (Or.inl ⟨us, rfl⟩)]
         cases natOffsetOf x with
         | none => rfl
         | some p => obtain ⟨b, k⟩ := p; rfl
-      · rw [if_neg hc, if_neg hc]
+      · rw [ite_eq_right hc, ite_eq_right hc]
         rfl
     | app g y =>
       cases g with
@@ -195,11 +195,11 @@ theorem natOffsetOf_renFV (ρ : Nat → Nat) : ∀ e : Expr md,
             rw [natOffsetOf_add, natOffsetOf_add]
             by_cases hc : c = natAddName
             · subst hc
-              rw [if_pos rfl, if_pos rfl, ih y (Or.inr ⟨us, m, rfl⟩)]
+              rw [ite_eq_left rfl, ite_eq_left rfl, ih y (Or.inr ⟨us, m, rfl⟩)]
               cases natOffsetOf y with
               | none => rfl
               | some p => obtain ⟨b, k⟩ := p; rfl
-            · rw [if_neg hc, if_neg hc]
+            · rw [ite_eq_right hc, ite_eq_right hc]
               rfl
           | strVal _ => rfl
         | _ => rfl
