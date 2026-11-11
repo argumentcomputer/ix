@@ -2229,20 +2229,20 @@ theorem inferBodyIOC_sim (hμ : mode.verifiedChecks = true) (hgb : mode.betaGate
       · simp only [hv, ↓reduceIte]
         by_cases hc : (Level.zeronessOf v == m.pw) = true
         · simp only [hc, ↓reduceIte]
-          refine SimC.bind_left (pureEq_eff hs₆ (Level.imax u v))
+          refine SimC.bind_left (pureEq_eff hs₆ (Level.mkIMax u v))
             (fun s₇ iu hs₇ hQiu => ?_)
           subst hQiu
           exact SimC.of_eff
-            (pureC_eff hs₇ (x := Expr.sort (Level.imax u v))) _
+            (pureC_eff hs₇ (x := Expr.sort (Level.mkIMax u v))) _
             (fun r hQ => ⟨hQ, by simp [Expr.WScoped]⟩)
         · simp only [hc, Bool.false_eq_true, ↓reduceIte]
           exact SimC.throw_bind
       · simp only [hv, Bool.false_eq_true, ↓reduceIte]
-        refine SimC.bind_left (pureEq_eff hs₆ (Level.imax u v))
+        refine SimC.bind_left (pureEq_eff hs₆ (Level.mkIMax u v))
           (fun s₇ iu hs₇ hQiu => ?_)
         subst hQiu
         exact SimC.of_eff
-          (pureC_eff hs₇ (x := Expr.sort (Level.imax u v))) _
+          (pureC_eff hs₇ (x := Expr.sort (Level.mkIMax u v))) _
           (fun r hQ => ⟨hQ, by simp [Expr.WScoped]⟩)
     | bvar k' => exact SimC.throw
     | const nm' us' => exact SimC.throw

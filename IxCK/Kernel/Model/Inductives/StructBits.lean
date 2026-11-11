@@ -171,7 +171,7 @@ theorem piBits_of_infer {env : Env md} (hver : mode.verifiedChecks = true) :
           · rw [show d + (n + 1) = d + 1 + n from by omega]; exact hrun
           · rw [show d + (n + 1) = d + 1 + n from by omega]; exact hensb'
           · intro φ
-            rw [ensureSortCore_sort_eq hens, eval_imax_eq_zero_iff]
+            rw [ensureSortCore_sort_eq hens, Level.eval_mkIMax, eval_imax_eq_zero_iff]
             exact hv φ
           · intro φ
             refine ⟨?_, hbits φ⟩

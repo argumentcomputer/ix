@@ -36,10 +36,11 @@ namespace Ix.Kernel
 
 
 /-- Universe levels, mirroring `Lean.Level` without metavariables —
-including the cached hash, which `Lean.Level` also keeps in a
-`@[computed_field]` (`data`, `Lean/Level.lean`) and the C++ kernel in
-the level's packed data word (`level::hash()`).  As for `Name`, the
-field is a function of the value and no statement sees it. -/
+including the cached hash and has-parameter bit, which `Lean.Level`
+also keeps in a `@[computed_field]` (`data`, `Lean/Level.lean`) and the
+C++ kernel in the level's packed data word (`level::hash()`,
+`has_param`).  As for `Name`, the fields are functions of the value and
+no statement sees them. -/
 inductive Level where
   | zero
   | succ (u : Level)
@@ -54,6 +55,15 @@ with
     | .max u v => mixHash 5 (mixHash u.hashData v.hashData)
     | .imax u v => mixHash 7 (mixHash u.hashData v.hashData)
     | .param n => mixHash 11 (hash n)
+  /-- The cached has-parameter bit (`levelHasParam` below, read in `O(1)`
+  through `levelHasParam_eq_csimp`), which the C++ kernel keeps in the
+  same data word as the hash. -/
+  @[computed_field] hasParamData : Level → Bool
+    | .zero => false
+    | .succ u => u.hasParamData
+    | .max u v => u.hasParamData || v.hasParamData
+    | .imax u v => u.hasParamData || v.hasParamData
+    | .param _ => true
 deriving DecidableEq, Repr, Inhabited
 
 /-- Hashing a level is an `O(1)` field read (the memo maps keyed by
@@ -336,14 +346,32 @@ inductive Literal where
   deriving DecidableEq, Repr, Inhabited, Hashable
 
 /-- Does the level mention a parameter (the official kernel's
-`level.has_param`)?  There is no interned level table here, so this is
-an `O(|u|)` walk — paid once per `.sort`/`.const` node construction,
-never per memo touch. -/
+`level.has_param`)?  The specification of the `hasLP` bit of a
+`.sort`/`.const` node.  Compiled code reads the level's cached bit
+instead (`levelHasParam_eq_csimp`): as a walk it would visit a level
+shared as a DAG once per path, and the ∀ rule's `imax` fold can build
+levels whose tree is exponentially larger than their DAG. -/
 def levelHasParam : Level → Bool
   | .zero => false
   | .param _ => true
   | .succ u => levelHasParam u
   | .max u v | .imax u v => levelHasParam u || levelHasParam v
+
+/-- The walk is the cached bit. -/
+theorem levelHasParam_eq_hasParamData : ∀ u : Level, levelHasParam u = u.hasParamData
+  | .zero => rfl
+  | .param _ => rfl
+  | .succ u => by rw [levelHasParam, levelHasParam_eq_hasParamData u]; rfl
+  | .max u v => by
+    rw [levelHasParam, levelHasParam_eq_hasParamData u, levelHasParam_eq_hasParamData v]; rfl
+  | .imax u v => by
+    rw [levelHasParam, levelHasParam_eq_hasParamData u, levelHasParam_eq_hasParamData v]; rfl
+
+/-- `levelHasParam` runs as the `O(1)` field read: `@[csimp]` on a
+kernel-checked equality, placed before `levelsHaveParam` and
+`Expr.data` so that their compiled code is rewritten. -/
+@[csimp] theorem levelHasParam_eq_csimp : @levelHasParam = @Level.hasParamData :=
+  funext levelHasParam_eq_hasParamData
 
 /-- `levelHasParam` over a `const` node's level arguments. -/
 def levelsHaveParam : List Level → Bool

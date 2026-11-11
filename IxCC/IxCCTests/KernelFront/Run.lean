@@ -16,6 +16,10 @@ end's Stage A accepts its own certificate. Then the refusals:
 * a program that is not the kernel's reading: a constant's value changed, a
   constructor's field count changed, a constant keyed by another address.
 
+Then the tuple closure with one more record, a constant whose ∀ chain shares
+one type at each of 200 steps (`sharedLevelConstants`), is accepted with every
+record: the kernel keeps the chain's universe level small.
+
 Then, on every closure of the registered role-bound family
 (`fixtures/corpus/phase1-bound`): the kernel accepts it, and the two front ends
 give the same program and, root by root, the same annotation, certificate
@@ -47,6 +51,27 @@ def isRefusal (r : Except KernelFront.Refusal α) (stage : KernelFront.Stage) : 
   match r with
   | .error e => e.stage == stage
   | .ok _ => false
+
+/-- Two constants whose ∀ chains share one type at every step, at length `k`:
+`dag` is `def L : Type := T k` with `T 1 = Prop → Prop`, `T (j+1) = T j → T j`
+and each `T j` a sharing entry; `let` is
+`def L : (let a0 : Type := Prop; let a(j+1) : Type := aj → aj; …; Type) := Prop`.
+Until the kernel built the ∀ rule's level with `mk_imax`'s folds, its level was
+shared as a DAG whose tree doubled per step, and each took time doubling in
+`k`. -/
+def sharedLevelConstants (k : Nat) : List (String × _root_.Ixon.Constant) :=
+  let arrow := _root_.Ixon.Expr.leanAll (.var 0) (.var 1)
+  let letType := Id.run do
+    let mut body : _root_.Ixon.Expr := .sort 1
+    for _ in [0:k] do
+      body := _root_.Ixon.Expr.leanLet false (.sort 1) arrow body
+    return _root_.Ixon.Expr.leanLet false (.sort 1) (.sort 0) body
+  let table : Array _root_.Ixon.Expr := (Array.range k).map fun j =>
+    if j == 0 then _root_.Ixon.Expr.leanAll (.sort 0) (.sort 0)
+    else _root_.Ixon.Expr.leanAll (.share (j - 1).toUInt64) (.share (j - 1).toUInt64)
+  let univs : Array _root_.Ixon.Univ := #[.zero, .succ .zero]
+  [("dag", ⟨.defn ⟨.defn, .safe, 0, .sort 1, .share (k - 1).toUInt64⟩, table, #[], univs⟩),
+   ("let", ⟨.defn ⟨.defn, .safe, 0, letType, .sort 0⟩, #[], #[], univs⟩)]
 
 /-- Flip the class of one argument tag (the first relevant one). -/
 def flipOne : List (TermKey × List Relevance.Tag) → List (TermKey × List Relevance.Tag)
@@ -133,6 +158,24 @@ def run : IO Bool := do
       IO.println s!"{label}: accepted, {acc.records.length} records, {acc.decls.size} declarations; \
         ingress {rep.newIngressMs} ms (kernel {rep.newAcceptMs} ms) against {rep.oldIngressMs} ms \
         (erased typing {rep.oldTypingMs} ms); annotation, certificate and object the same"
+    -- a role-bound closure carrying a constant whose ∀ chain shares one type: the
+    -- kernel's entry checks every record, and the chain's levels stay small
+    let (tb, _) ← read "fixtures/ixon-v4/bound/tuple"
+    let tenv ← IO.ofExcept (Ixon.V3.decodeAnonymousEnv tb)
+    for (name, c) in sharedLevelConstants 200 do
+      let bytes := _root_.Ixon.serConstant c
+      let env := { tenv with consts := tenv.consts.insert (Ixon.Address.blake3Pure bytes) bytes }
+      let t0 ← IO.monoMsNow
+      let r ← IO.lazyPure fun _ => KernelFront.accept env
+      let t1 ← IO.monoMsNow
+      match r with
+      | .ok acc =>
+        expect a (acc.records.length == tenv.consts.size + 1)
+          s!"tuple with the {name} chain: the kernel's entry did not receive every record"
+        IO.println s!"tuple with the {name} chain at length 200 ({bytes.size} bytes): accepted, \
+          {acc.records.length} records, {t1 - t0} ms"
+      | .error e =>
+        throw (IO.userError s!"tuple with the {name} chain at length 200: refused: {e}")
     -- the registered role-bound family: acceptance and the differential, every root
     for name in boundFamily do
       let label := s!"phase1-bound/{name}"

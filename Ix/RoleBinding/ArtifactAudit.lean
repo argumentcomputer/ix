@@ -46,19 +46,24 @@ replace only their entry/preparation wrappers. No runtime ruling changes. -/
 -- These entries use the supplied binding, so they gain no committed-fixture
 -- helpers. All direct and reached implementation, extern, unsafe, csimp,
 -- replacement and opaque entries were compared exactly and are unchanged.
-/-- info: runtime closure of [Ix.RoleBinding.Artifact.check]: 6777 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
+-- The level's cached has-parameter bit (`Level.hasParamData`, read through the proved
+-- `levelHasParam_eq_csimp`; see `IxCK/Kernel/Audit/Roots.lean`) adds one ruled computed field
+-- with its `unsafe` override and one ruled csimp to each closure here.
+-- The ∀ rule's level built with `mk_imax`'s folds (`Level.mkIMax` and its helpers) adds 7
+-- compiled functions to each closure here (`IxCK/Kernel/Audit/Roots.lean`).
+/-- info: runtime closure of [Ix.RoleBinding.Artifact.check]: 6784 compiled functions; inherited externs 115, implemented_by 0, unsafe 27, csimp 8; ruled assumed 4, computed_field 22, csimp 29 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.check] #[`Init, `Std] rulings
 
-/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkTiered]: 6911 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
+/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkTiered]: 6918 compiled functions; inherited externs 115, implemented_by 0, unsafe 27, csimp 8; ruled assumed 4, computed_field 22, csimp 29 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.checkTiered] #[`Init, `Std] rulings
 
-/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkAt]: 6777 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
+/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkAt]: 6784 compiled functions; inherited externs 115, implemented_by 0, unsafe 27, csimp 8; ruled assumed 4, computed_field 22, csimp 29 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.checkAt] #[`Init, `Std] rulings
 
-/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkTieredAt]: 6911 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
+/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkTieredAt]: 6918 compiled functions; inherited externs 115, implemented_by 0, unsafe 27, csimp 8; ruled assumed 4, computed_field 22, csimp 29 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.checkTieredAt] #[`Init, `Std] rulings
 
@@ -73,7 +78,7 @@ ruling are those of `check` and `checkTiered`. Their kernel entries (`Admission.
 `checkBytesTieredUsingUnder`) are frozen apart in
 `IxCK/Kernel/Audit/Roots.lean` (`userAxiomOperations`). -/
 /-- info: runtime closure of [Ix.RoleBinding.Artifact.checkConditional,
- Ix.RoleBinding.Artifact.checkTieredConditional]: 6972 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
+ Ix.RoleBinding.Artifact.checkTieredConditional]: 6979 compiled functions; inherited externs 115, implemented_by 0, unsafe 27, csimp 8; ruled assumed 4, computed_field 22, csimp 29 -/
 #guard_msgs (whitespace := lax) in
 run_cmd do
   Ix.Kernel.Audit.checkRuntimeWith

@@ -50,6 +50,7 @@ import Tests.Ix.Kernel.FidelityAccess
 import Tests.Ix.Kernel.PreludeFidelity
 import Tests.Ix.Kernel.SourceIngress
 import Tests.Ix.Kernel.TierInd
+import Tests.Ix.Kernel.LevelSharing
 import Tests.Ix.Kernel.BundleEvidence
 import Tests.Ix.Cert.Statement
 import Tests.Ix.InitStd
@@ -155,6 +156,8 @@ def registry : List Entry := [
   .suite "kernel-source-ingress" .primary Tests.Ix.Kernel.SourceIngress.suite,
   -- the typing tier's inductive install and its answer view
   .suite "kernel-tier-ind" .primary Tests.Ix.Kernel.TierInd.suite,
+  -- the ∀ rule's levels stay small on shared types, and a level's has-parameter bit is cached
+  .runner "kernel-level-sharing" .primary Tests.LevelSharing.run,
   -- the resource validator's typing half on the compiled fixtures
   .suite "resource-hints" .primary Tests.ResourceHints.suite,
   -- the resource half's step budget bounds its work on sharing and let chains
@@ -419,6 +422,7 @@ def required : List (String × String) := [
   ("kernel-bundle-evidence", "primary"),
   ("resource-hints", "primary"),
   ("resource-budget", "primary"),
+  ("kernel-level-sharing", "primary"),
   ("resource-transport", "primary"),
   ("compiler-reports", "primary"),
   ("ground-unit", "primary"),

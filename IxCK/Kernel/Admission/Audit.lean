@@ -137,11 +137,16 @@ externs, `implemented_by`, `unsafe`, csimp and their rulings are unchanged. -/
 -- The indexed inductive shape guard adds 14 compiled functions net and the
 -- proved indShapeOk_eq_indShapeOkFast replacement (27 -> 28 ruled csimps).
 -- This independent byte-entry census leaves every other field unchanged.
+-- The level's cached has-parameter bit (`Level.hasParamData`, `levelHasParam_eq_csimp`)
+-- adds one ruled computed field with its `unsafe` override and one ruled csimp
+-- (`IxCK/Kernel/Audit/Roots.lean`); the compiled-function count is unchanged.
+-- The ∀ rule's level built with `mk_imax`'s folds (`Level.mkIMax` and its helpers) adds 7
+-- compiled functions (`IxCK/Kernel/Audit/Roots.lean`); every other field is unchanged.
 /-- info: runtime closure of [Ix.Kernel.Admission.preflight,
  Ix.Kernel.Admission.uniqueKeys,
  Ix.Kernel.Admission.authenticate,
  Ix.Kernel.Admission.decodeRecords,
- Ix.Kernel.Admission.checkBytes]: 6850 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 28 -/
+ Ix.Kernel.Admission.checkBytes]: 6857 compiled functions; inherited externs 113, implemented_by 0, unsafe 27, csimp 7; ruled computed_field 22, csimp 29 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Admission.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
 
