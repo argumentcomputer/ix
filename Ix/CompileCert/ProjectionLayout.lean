@@ -106,7 +106,7 @@ theorem finish_mutual_ok (context : CompileEnv × BlockEnv) (classes : List MutC
     {output : BlockResult}
     (ran : rawRun (finishMutualCompilation classes members metadata) context before = (.ok output, after)) :
     after = before ∧ Ix.Sharing.Verify.ConstantInfoHeaderWF (.muts members) ∧
-      buildCompiledMutualBlock context.1.sharingLimits classes members metadata before = .ok output := by
+      buildCompiledMutualBlock context.1.sharingLimits context.1.env.binderAnnotator? classes members metadata before = .ok output := by
   unfold finishMutualCompilation at ran
   obtain ⟨done, middle, guarded, rest⟩ := bind_ok ran
   have same := EmissionDispatch.mutual_state members context before
@@ -122,7 +122,7 @@ theorem finish_mutual_ok (context : CompileEnv × BlockEnv) (classes : List MutC
   rw [readEq] at readRan
   cases readRan
   try dsimp only at rest
-  cases built : buildCompiledMutualBlock context.1.sharingLimits classes members metadata middle with
+  cases built : buildCompiledMutualBlock context.1.sharingLimits context.1.env.binderAnnotator? classes members metadata middle with
   | error error => rw [built] at rest; cases rest
   | ok result =>
     rw [built, rawRun_pure] at rest
@@ -367,20 +367,33 @@ theorem standalone_shape (members : Array Ixon.MutConst) (info : Ixon.ConstantIn
 
 theorem build_mutual_shape (limits : Ix.Sharing.Exact.Limits) (classes : List MutConst)
     (members : Array Ixon.MutConst) (metadata : Array (Ix.Name × Ixon.ConstantMeta)) (state : BlockState)
-    (output : BlockResult) (ran : buildCompiledMutualBlock limits classes members metadata state = .ok output) :
+    (output : BlockResult) {annotator? : Option Ix.BinderAnnotator}
+    (ran : buildCompiledMutualBlock limits annotator? classes members metadata state = .ok output) :
     blockShape output.block.info = some (members.toList.map memberShape) := by
   unfold buildCompiledMutualBlock at ran
   cases chosen : standaloneMutConstInfo? members with
   | some info =>
     simp only [chosen] at ran
-    obtain ⟨block, built, returned⟩ := Ix.Sharing.Verify.except_bind_eq_ok ran
+    obtain ⟨raw, built, rest⟩ := Ix.Sharing.Verify.except_bind_eq_ok ran
+    obtain ⟨block, sectioned, returned⟩ := Ix.Sharing.Verify.except_bind_eq_ok rest
+    have both : (buildConstantWithSharing limits info state.refs state.univs >>=
+        withBinderSection annotator? (classes.map MutConst.name).toArray) = .ok block := by
+      rw [built]
+      exact sectioned
     cases Except.ok.inj returned
-    exact (sharing_shape limits info state.refs state.univs block built).trans (standalone_shape members info chosen)
+    exact (sharing_shape limits info state.refs state.univs _ (EmissionBlocks.sectioned_of_bind both).1).trans
+      (standalone_shape members info chosen)
   | none =>
     simp only [chosen] at ran
-    obtain ⟨block, built, returned⟩ := Ix.Sharing.Verify.except_bind_eq_ok ran
+    obtain ⟨raw, built, rest⟩ := Ix.Sharing.Verify.except_bind_eq_ok ran
+    obtain ⟨block, sectioned, returned⟩ := Ix.Sharing.Verify.except_bind_eq_ok rest
+    have both : (buildConstantWithSharing limits (.muts members) state.refs state.univs >>=
+        withBinderSection annotator? (classes.map MutConst.name).toArray) = .ok block := by
+      rw [built]
+      exact sectioned
     cases Except.ok.inj returned
-    exact sharing_shape limits (.muts members) state.refs state.univs block built
+    exact sharing_shape limits (.muts members) state.refs state.univs { block with binders := #[] }
+      (EmissionBlocks.sectioned_of_bind both).1
 
 theorem finish_mutual_shape (classes : List MutConst) (members : Array Ixon.MutConst)
     (metadata : Array (Ix.Name × Ixon.ConstantMeta)) :
@@ -449,8 +462,7 @@ theorem finish_inductive_shape (source : InductiveVal) (ind : Ixon.Inductive) (m
         output.projections = buildInductiveProjections source metadata constructors output.blockAddr) := by
   intro context before output after ran
   obtain ⟨_, built, wrapped⟩ := EmissionBlocks.familyFinish_ok source ind metadata constructors ran
-  obtain ⟨target, info, indices⟩ := shared_inductive_shape context.1.sharingLimits ind before.refs before.univs
-    output.block built
+  obtain ⟨target, info, indices⟩ := shared_inductive_shape context.1.sharingLimits ind before.refs before.univs _ built
   refine ⟨target, info, indices, ?_⟩
   rw [wrapped]
   rfl

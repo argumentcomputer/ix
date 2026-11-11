@@ -101,7 +101,7 @@ theorem applyAuxBlockOutcome_constants (Q : Std.HashMap Address ByteArray → Pr
 
 /-- **A block's merge keeps the store encoded**: its block record is the wire-valid block's
 encoding, and each projection is the block or a wire-valid projection of it, each with
-canonical binder data (`BlockLayout.ResultShape.section`). -/
+canonical binder data (`BlockLayout.ResultShape.blockSection`). -/
 theorem merge_encoded {cenv : CompileEnv} {all : Ix.Set Ix.Name} {lo : Ix.Name} {r : BlockResult}
     {c : BlockState} (hr : runBlock cenv all lo = .ok (r, c)) (acc : DriverAcc)
     (h : Encoded acc.cenv.constants) : Encoded (mergeCompiledBlock acc lo r c).cenv.constants := by
@@ -109,7 +109,7 @@ theorem merge_encoded {cenv : CompileEnv} {all : Ix.Set Ix.Name} {lo : Ix.Name} 
   have wire := BlockWire.blocksWire _ _ _ _ _ hr
   have fits := BlockRecords.runBlock_bounded hr
   refine mergeCompiledBlock_constants Encoded
-    (encoded_insert h _ wire fits.1 shape.section.1 shape.section.2 shape.bytes.symm) ?_
+    (encoded_insert h _ wire fits.1 shape.blockSection.1 shape.blockSection.2 shape.bytes.symm) ?_
   intro p hp s hs
   have pwire : p.2.1.wireWF := by
     rcases shape.rows p hp with same | ⟨pw, -, -⟩

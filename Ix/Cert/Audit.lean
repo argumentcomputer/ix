@@ -893,7 +893,7 @@ constructor:
 -- environment and failures it returns are the same.
 /-- info: def Ix.Cert.compileUnchecked : Ix.Environment → Except String (Ixon.Env × Ix.Cert.Failures × Ix.CompileM.CompileEnv) :=
 fun env =>
-  have env := { consts := env.consts };
+  have env := env.materialized;
   have split := Ix.Cert.groundSplit env;
   have blocks := Ix.CondenseM.run split.fst;
   do
@@ -3622,10 +3622,12 @@ fun codeConsts leanByIx =>
 
 /-- info: @Ix.Cert.Hybrid.compileEnvFold_lookups : ∀ {e₁ e₂ : Ix.Environment},
   (∀ (n : Ix.Name), e₁.get? n = e₂.get? n) →
-    Ix.Cert.Hybrid.groupOrder e₁ = Ix.Cert.Hybrid.groupOrder e₂ →
-      ∀ (blocks : Ix.CondensedBlocks) (dbg dbg' : Bool) (sharingLimits : Ix.Sharing.Exact.Limits) (width width' : Nat),
-        Ix.CompileM.compileEnvFold e₁ blocks dbg sharingLimits width =
-          Ix.Cert.Hybrid.restore e₁ <$> Ix.CompileM.compileEnvFold e₂ blocks dbg' sharingLimits width' -/
+    e₁.binderAnnotator? = e₂.binderAnnotator? →
+      Ix.Cert.Hybrid.groupOrder e₁ = Ix.Cert.Hybrid.groupOrder e₂ →
+        ∀ (blocks : Ix.CondensedBlocks) (dbg dbg' : Bool) (sharingLimits : Ix.Sharing.Exact.Limits)
+          (width width' : Nat),
+          Ix.CompileM.compileEnvFold e₁ blocks dbg sharingLimits width =
+            Ix.Cert.Hybrid.restore e₁ <$> Ix.CompileM.compileEnvFold e₂ blocks dbg' sharingLimits width' -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.Hybrid.compileEnvFold_lookups
 
@@ -3640,10 +3642,11 @@ fun codeConsts leanByIx =>
       (∀ (n : Ix.Name) (v : Ix.InductiveVal),
           (n, Ix.ConstantInfo.inductInfo v) ∈ codeConsts.toList ↔
             (n, Ix.ConstantInfo.inductInfo v) ∈ full.consts.toList) →
-        ∀ (blocks : Ix.CondensedBlocks) (dbg : Bool) (sharingLimits : Ix.Sharing.Exact.Limits) (width : Nat),
-          Ix.CompileM.compileEnvFold (Ix.Cert.Hybrid.hybridEnv codeConsts leanByIx) blocks dbg sharingLimits width =
-            Ix.Cert.Hybrid.restore (Ix.Cert.Hybrid.hybridEnv codeConsts leanByIx) <$>
-              Ix.CompileM.compileEnvFold full blocks false sharingLimits -/
+        full.binderAnnotator? = none →
+          ∀ (blocks : Ix.CondensedBlocks) (dbg : Bool) (sharingLimits : Ix.Sharing.Exact.Limits) (width : Nat),
+            Ix.CompileM.compileEnvFold (Ix.Cert.Hybrid.hybridEnv codeConsts leanByIx) blocks dbg sharingLimits width =
+              Ix.Cert.Hybrid.restore (Ix.Cert.Hybrid.hybridEnv codeConsts leanByIx) <$>
+                Ix.CompileM.compileEnvFold full blocks false sharingLimits -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.Hybrid.pipeline_fold
 
@@ -3699,7 +3702,9 @@ fun ixe order =>
     a ∈ order →
       ∀ (lc : Ixon.LazyConstant),
         ixe.consts.get? a = some lc →
-          ∃ c, lc.get? = some c ∧ c.wireWF ∧ Ixon.serConstant c = lc.rawBytes ∧ c.bindersCanonical = true -/
+          ∃ c,
+            lc.get? = some c ∧
+              c.wireWF ∧ Ixon.serConstant c = lc.rawBytes ∧ c.bindersCanonical = true ∧ c.bindersComplete = true -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.Stream.StoredCanonical
 
@@ -6306,7 +6311,7 @@ fun env ixe failures sub =>
 fun env blocks cenv cenv₀ sched =>
   ∃ st,
     cenv₀.nameToAddr = ∅ ∧
-      (Ix.CompileM.FoldState.init cenv₀ blocks sched).acc.cenv.env = { consts := ∅, fallback? := some env.get? } ∧
+      (Ix.CompileM.FoldState.init cenv₀ blocks sched).acc.cenv.env = env.lookupView ∧
         Ix.Cert.Schedule.foldWavesSeq blocks sched (Std.HashMap.size blocks.blocks + 1)
               (Ix.CompileM.FoldState.init cenv₀ blocks sched) =
             Except.ok st ∧
@@ -6431,7 +6436,7 @@ fun blocks sched st₀ acc =>
   (sched : Ix.CompileM.FoldSchedule),
   Ix.Cert.compileReport env = Except.ok (ixe, failures) →
     Ix.Cert.compileUnchecked env = Except.ok (ixe, failures, cenv) →
-      Ix.Cert.Resolution.FoldRun { consts := env.consts } (Ix.Cert.compileBlocks env) cenv cenv₀ sched →
+      Ix.Cert.Resolution.FoldRun env.materialized (Ix.Cert.compileBlocks env) cenv cenv₀ sched →
         ∀ (snap : Ix.CompileM.DriverAcc),
           Ix.Cert.Resolution.OnRun (Ix.Cert.compileBlocks env) sched
               (Ix.CompileM.FoldState.init cenv₀ (Ix.Cert.compileBlocks env) sched) snap →

@@ -5,7 +5,7 @@ public import Ix.Resource.Validate
 public import Ix.RoleBinding.Compile
 public import Ix.Cli.Common
 public import Ix.Compile.BinderData
-public import Ix.Compile.BinderAnnotate
+public import Ix.Compile.KernelAnnotate
 public section
 
 /-!
@@ -132,6 +132,11 @@ structure CertifiedOut where
   /-- The safe records the annotator gave an undecided binder (their member names). -/
   undecided : Array String := #[]
 
+/-- Whether the default role table binds the records the compiler writes. It binds the
+records of the compile without binder data; regenerating it from records with their
+binder data makes it current again. Until then the default-role check is not made. -/
+def defaultRoleTableCurrent : Bool := false
+
 /-- **The certified compile of a prepared list**: its canonical environment
 (`canonInput`), then `Ix.Cert.compileReport`, then the accounting and, for an
 input with semantic contracts, the resource checks. `log` receives each
@@ -147,25 +152,38 @@ generated from the export, and `checkFinalized` checks every published role
 name against that table (`Ix.Cert.PublishedRolesBound` at the artifact's own
 binding).
 
-The canonical environment carries the binder-data annotator `annotator?` and its
-report (`BinderAnnotate.annotator`): the compile writes every record's binder
-data from it (`Ix.CompileM.withBinderSection`), and the certified result is the
-compile of that environment. Without one, every record with a binder carries
-the undecided section. While the default role table binds the records compiled
-without binder data, its check is not made on an annotated compile. -/
+With `binderData`, IxC installs the canonical environment in Source mode
+(`Ix.Compile.KernelAnnotate.installInput`) and the canonical environment carries
+the annotator over it (`Ix.Compile.KernelAnnotate.annotator`): the compile writes
+every record's binder data from it (`Ix.CompileM.withBinderSection`), and the
+certified result is the compile of that environment. Without it, every record
+with a binder carries the undecided section. The default role table's check is made only while that
+table is current (`defaultRoleTableCurrent`). -/
 def compileCertifiedPrepared (prepared : List (Lean.Name × Lean.ConstantInfo))
     (annotated : Bool) (workers : Nat := 32) (log : String → IO Unit := fun _ => pure ())
-    (defaultRoles : Bool := true)
-    (annotator? : Option (Ix.BinderAnnotator × IO.Ref (Array String)) := none) :
+    (defaultRoles : Bool := true) (binderData : Bool := false) :
     IO (Except String CertifiedOut) := do
   let t0 ← IO.monoMsNow
-  let env ← IO.lazyPure fun _ =>
-    { canonInput prepared.toArray workers with binderAnnotator? := annotator?.map (·.1) }
+  let env ← IO.lazyPure fun _ => canonInput prepared.toArray workers
   let inputs := env.consts.size
   unless inputs == prepared.length do
     return .error s!"source accounting: {prepared.length} prepared constants collapsed to {inputs} input entries"
   let t1 ← IO.monoMsNow
   log s!"canon ({inputs} constants): {t1 - t0}ms"
+  let mut env := env
+  if binderData then
+    match ← Ix.Compile.KernelAnnotate.installInput env workers with
+    | .error e =>
+      log s!"binder data: IxC's environment is not installed ({e}): every record with a binder \
+        carries the undecided section"
+    | .ok installed =>
+      log s!"binder data: installed {installed.installed} declarations, {installed.failures.size} \
+        refused; phases (ms) {installed.times}; {(← IO.monoMsNow) - t1}ms, rss \
+        {← Ix.Cli.residentSetSize}"
+      for (name, why) in installed.failures.extract 0 20 do
+        log s!"binder data: the kernel refused {name}: {(why.replace "\n" " ").take 200}"
+      env := { env with binderAnnotator? := some (Ix.Compile.KernelAnnotate.annotator installed) }
+  let t1 ← IO.monoMsNow
   let (report, _) ← Ix.Compile.ReadyCompile.reportIO { workers, lookahead := 8192 } env
   let t2 ← IO.monoMsNow
   log s!"compileReport: {t2 - t1}ms"
@@ -178,7 +196,7 @@ def compileCertifiedPrepared (prepared : List (Lean.Name × Lean.ConstantInfo))
   let existing ← match Ix.RoleBinding.sourceAddresses ixe with
     | .ok m => pure m
     | .error e => return .error e
-  if defaultRoles && annotator?.isNone then
+  if defaultRoles && defaultRoleTableCurrent then
     if let some (n, r, addr) := unboundPublishedRole ixe (some existing) then
       return .error s!"role check failed: the published role {n.pretty} ({repr r}) is at {addr}, \
         not its bound address in the default role table"
@@ -187,15 +205,15 @@ def compileCertifiedPrepared (prepared : List (Lean.Name × Lean.ConstantInfo))
       return .error "resource compilation requires the complete requested closure"
     if let .error e := Ix.Resource.validate ixe (Ix.Resource.standardProfile ixe) then
       return .error e
-  let undecided ← match annotator? with
-    | some (_, report) => report.get
-    | none => pure #[]
+  let undecided := if binderData then
+      (Ix.Compile.KernelAnnotate.undecidedSafe ixe workers).map toString
+    else #[]
   return .ok { prepared, annotated, inputs, env := ixe, failures, existing? := some existing,
                undecided }
 
 /-- **The certified compile** of the constants `constants` of `source`:
 `prepareCertified`, then `compileCertifiedPrepared` (with `defaultRoles`), with
-the binder data read off `source` (`BinderAnnotate.annotator`), unless
+the binder data from IxC's pass over the input (`Ix.Compile.KernelAnnotate`), unless
 `binderData` is off: then every record with a binder carries the undecided
 section. -/
 def compileCertified (source : Lean.Environment) (constants : List (Lean.Name × Lean.ConstantInfo))
@@ -208,8 +226,7 @@ def compileCertified (source : Lean.Environment) (constants : List (Lean.Name ×
     | .error e => return .error e
   log s!"source contracts ({if annotated then "semantic contracts" else "none"}): \
 {(← IO.monoMsNow) - t0}ms"
-  let annotator? ← if binderData then some <$> BinderAnnotate.annotator #[source] else pure none
-  compileCertifiedPrepared prepared annotated workers log defaultRoles annotator?
+  compileCertifiedPrepared prepared annotated workers log defaultRoles binderData
 
 /-- An input with semantic contracts is emitted only if its finalized artifact
 validates too: `compileCertifiedPrepared` validates the compiled artifact, this
@@ -242,15 +259,14 @@ namespace Ix.RoleBinding.Compile
 /-- The certified compiler as `finalize`'s backend: the role support and the
 certificates are compiled with `Ix.Cert.compileReport`, and must compile
 completely. `defaultRoles` as in `Ix.CompileM.compileCertifiedPrepared`; the binder
-data are read off the backend's source environment, unless `binderData` is off. -/
+data come from IxC's pass over the backend's prepared input, unless `binderData` is off. -/
 def certifiedBackend (workers : Nat) (defaultRoles : Bool := true) (binderData : Bool := true) :
-    Backend := fun source input => do
+    Backend := fun _source input => do
   let prepared ← IO.ofExcept input.prepare
   let annotated ← IO.ofExcept (Ix.CompileM.checkPreparedSource prepared)
-  let annotator? ← if binderData then some <$> BinderAnnotate.annotator #[source] else pure none
   let out ← IO.ofExcept
     (← Ix.CompileM.compileCertifiedPrepared prepared annotated workers (defaultRoles := defaultRoles)
-      (annotator? := annotator?))
+      (binderData := binderData))
   unless out.failures.isEmpty do
     throw (IO.userError "artifact support: incomplete certified compilation")
   return out.env
@@ -260,8 +276,8 @@ end Ix.RoleBinding.Compile
 namespace Ix.CompileM
 
 /-- How `ix compile` gives records their binder data: while building each record,
-from Lean's elaboration of the sources (`inline`, the default:
-`Ix.CompileM.withBinderSection` with `BinderAnnotate.annotator`); with every
+from IxC's pass over the input (`inline`, the default:
+`Ix.CompileM.withBinderSection` with `Ix.Compile.KernelAnnotate.annotator`); with every
 binder undecided (`off`, for measurement); or as `off`, then by IxC's pass over
 the finalized artifact, which is then re-addressed (`post`, for comparison:
 `Ix.Compile.BinderData.apply`). -/

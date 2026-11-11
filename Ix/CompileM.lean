@@ -1590,7 +1590,7 @@ with a binder that entry's one variant. -/
 @[expose] def annotatorSection (annotator? : Option BinderAnnotator) (names : Array Name)
     (c : Ixon.Constant) : Array Ixon.BinderBlock :=
   match annotator? with
-  | some annotate => annotate names c
+  | some annotate => annotate.run annotate.extra names c
   | none => #[]
 
 /-- The section the compiler gives a block record `c`: the annotator's when it
@@ -1616,17 +1616,15 @@ theorem sectionFor_ok {annotator? : Option BinderAnnotator} {names : Array Name}
     {c : Ixon.Constant} {binders : Array Ixon.BinderBlock}
     (h : sectionFor annotator? names c = .ok binders) : sectionAdmissible c binders = true := by
   unfold sectionFor at h
-  by_cases ha : sectionAdmissible c (annotatorSection annotator? names c) = true
-  · rw [if_pos ha] at h
+  split at h
+  · rename_i ha
     cases h
     exact ha
-  · rw [if_neg ha] at h
-    by_cases hu : sectionAdmissible c (undecidedSection c) = true
-    · rw [if_pos hu] at h
+  · split at h
+    · rename_i hu
       cases h
       exact hu
-    · rw [if_neg hu] at h
-      cases h
+    · cases h
 
 /-- **The compiler's section is admissible**: a record built with a section
 is `c` with an admissible one. -/
@@ -1639,6 +1637,23 @@ theorem withBinderSection_ok {annotator? : Option BinderAnnotator} {names : Arra
     cases h
     exact ⟨binders, sectionFor_ok hs, rfl⟩
   · cases h
+
+/-- A record the compiler cannot give an admissible section fails with a binder-data error. -/
+theorem withBinderSection_error {annotator? : Option BinderAnnotator} {names : Array Name}
+    {c : Ixon.Constant} {err : CompileError} (h : withBinderSection annotator? names c = .error err) :
+    ∃ reason, err = .binderData reason := by
+  unfold withBinderSection at h
+  split at h
+  · cases h
+  · rename_i e hs
+    cases h
+    unfold sectionFor at hs
+    split at hs
+    · cases hs
+    · split at hs
+      · cases hs
+      · cases hs
+        exact ⟨_, rfl⟩
 
 /-- An admissible section is in the wire domain. -/
 theorem sectionAdmissible_wire {c : Ixon.Constant} {binders : Array Ixon.BinderBlock}

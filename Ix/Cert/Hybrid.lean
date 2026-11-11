@@ -154,9 +154,10 @@ def restore (env : Ix.Environment) :
   fun (ixe, bytes, cenv) => (ixe, bytes, { cenv with env })
 
 /-- **Hybrid = materialized, generically**: two environments with the same
-lookups, whose inductive groups agree in order, compile alike under every
+lookups and binder annotator, whose inductive groups agree in order, compile alike under every
 schedule; the result's `CompileEnv` holds the environment it was given. -/
 theorem compileEnvFold_lookups {e₁ e₂ : Ix.Environment} (lookups : ∀ n, e₁.get? n = e₂.get? n)
+    (annotators : e₁.binderAnnotator? = e₂.binderAnnotator?)
     (groups : groupOrder e₁ = groupOrder e₂)
     (blocks : Ix.CondensedBlocks) (dbg dbg' : Bool) (sharingLimits : Ix.Sharing.Exact.Limits)
     (width width' : Nat) :
@@ -165,7 +166,8 @@ theorem compileEnvFold_lookups {e₁ e₂ : Ix.Environment} (lookups : ∀ n, e�
   have get : Ix.Environment.get? e₁ = Ix.Environment.get? e₂ := funext lookups
   rw [Schedule.compileEnvFold_eq_seq, Schedule.compileEnvFold_eq_seq]
   unfold Schedule.compileEnvFoldSeq
-  rw [validateInductiveFlags_eq lookups groups, validateMutualSafety_eq lookups groups, get]
+  simp only [Ix.Environment.lookupView]
+  rw [validateInductiveFlags_eq lookups groups, validateMutualSafety_eq lookups groups, get, annotators]
   generalize missingBlockRefs? blocks = missing
   generalize validateInductiveFlags e₂ = flags
   generalize validateMutualSafety e₂ blocks = safety
@@ -246,11 +248,12 @@ theorem pipeline_fold (full : Ix.Environment) (codeConsts : Std.HashMap Ix.Name 
     (code : ∀ n ci, codeConsts.get? n = some ci → full.get? n = some ci)
     (inductives : ∀ n v, (n, Ix.ConstantInfo.inductInfo v) ∈ codeConsts.toList ↔
       (n, Ix.ConstantInfo.inductInfo v) ∈ full.consts.toList)
+    (unannotated : full.binderAnnotator? = none)
     (blocks : Ix.CondensedBlocks) (dbg : Bool) (sharingLimits : Ix.Sharing.Exact.Limits) (width : Nat) :
     compileEnvFold (hybridEnv codeConsts leanByIx) blocks dbg sharingLimits width =
       restore (hybridEnv codeConsts leanByIx) <$>
         compileEnvFold full blocks false sharingLimits foldWaveTasks :=
-  compileEnvFold_lookups (hybrid_lookups full codeConsts leanByIx canon code)
+  compileEnvFold_lookups (hybrid_lookups full codeConsts leanByIx canon code) unannotated.symm
     (groupOrder_eq (hybrid_lookups full codeConsts leanByIx canon code) (hybrid_heads inductives))
     blocks dbg false sharingLimits width foldWaveTasks
 

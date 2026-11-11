@@ -2,7 +2,6 @@ module
 public import Ix.Claim
 public import Ix.CompileM
 public import Ix.CanonM
-public import Ix.IxVM.RecordSections
 
 /-!
   Ix.Commit: Commitment pipeline for ZK voting and claim construction.
@@ -61,20 +60,6 @@ def commitConst (payload : Address) : IO (Comm × Address) := do
 -- Single-definition compilation
 -- ============================================================================
 
-/-- The binder-data section of an ad hoc record (an anonymous definition no Lean
-    environment holds, for which the compiler's inline annotator finds no source and
-    writes the undecided section): IxC's pass over the record, typed against the
-    records compiled so far (`IxVM.RecordSections.withSection`). Remove when the
-    compiler annotates such a definition from its own source. -/
-def adHocSection (constants blobs : Std.HashMap Address ByteArray) (c : Ixon.Constant) :
-    Except String Ixon.Constant := do
-  unless c.binders.isEmpty || c.binders.any (·.nodes.any (· == .undecided)) do return c
-  let mut env : Ixon.Env := { blobs }
-  for (a, bytes) in constants do
-    if let .ok c' := (Ixon.de bytes : Except String Ixon.Constant) then
-      env := env.storeConst a c'
-  IxVM.RecordSections.withSection env c (taint := true)
-
 /-- Canonicalize and compile a single definition, returning its content address.
     Uses CanonM to canonicalize the Lean expressions, then CompileM to compile.
     By default the definition is compiled under `Lean.Name.anonymous`; pass a
@@ -99,7 +84,11 @@ def compileDef (compileEnv : CompileM.CompileEnv)
   let (ixConst, _) := (CanonM.canonConst leanConst).run canonState
 
   -- 3. Add to canonical environment
-  let env' := { compileEnv.env with consts := compileEnv.env.consts.insert ixName ixConst }
+  -- The annotator reads the binder data off this definition, which the
+  -- installed input lacks.
+  let env' := { compileEnv.env with
+    consts := compileEnv.env.consts.insert ixName ixConst
+    binderAnnotator? := compileEnv.env.binderAnnotator?.map (·.withSource ixName ixConst) }
   let compileEnv' := { compileEnv with env := env' }
 
   -- 4. Compile via CompileM (pure, runs in Except)
@@ -108,10 +97,8 @@ def compileDef (compileEnv : CompileM.CompileEnv)
   match CompileM.CompileM.run compileEnv' blockEnv {} (CompileM.compileConstantInfo ixConst) with
   | .error e => .error s!"compileDef: {e}"
   | .ok (result, blockState) =>
-    -- 5. Serialize and hash to get content address (with the record's binder data)
-    let blobs := blockState.blockBlobs.fold (fun m k v => m.insert k v) compileEnv'.blobs
-    let block ← adHocSection compileEnv'.constants blobs result.block
-    let blockBytes := runPut (putConstant block)
+    -- 5. Serialize and hash to get content address
+    let blockBytes := runPut (putConstant result.block)
     let addr := Address.blake3 blockBytes
 
     -- 6. Update CompileEnv with new constant

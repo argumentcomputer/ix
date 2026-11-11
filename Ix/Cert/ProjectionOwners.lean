@@ -35,13 +35,14 @@ theorem built_muts {limits : Ix.Sharing.Exact.Limits} {ms : Array Ixon.MutConst}
 /-- **A mutual build's rows are its block, or its block is a block record.** -/
 theorem buildMutual_rows {limits : Ix.Sharing.Exact.Limits} {classes : List MutConst}
     {payloads : Array Ixon.MutConst} {metas : Array (Ix.Name × Ixon.ConstantMeta)} {cache : BlockState}
-    {out : BlockResult} (ran : buildCompiledMutualBlock limits classes payloads metas cache = .ok out) :
+    {out : BlockResult} {annotator? : Option Ix.BinderAnnotator}
+    (ran : buildCompiledMutualBlock limits annotator? classes payloads metas cache = .ok out) :
     (∀ p ∈ out.projections, p.2.1 = out.block) ∨ ∃ ms, out.block.info = .muts ms := by
   unfold buildCompiledMutualBlock at ran
   cases hs : standaloneMutConstInfo? payloads with
   | some info =>
     rw [hs] at ran
-    obtain ⟨block, -, returned⟩ := Ix.Sharing.Verify.except_bind_eq_ok ran
+    obtain ⟨block, -, -, returned⟩ := Ix.CompileCert.Sectioned.bind_sectioned ran
     cases Except.ok.inj returned
     refine .inl fun p hp => ?_
     have logical : (p.1, p.2.1) ∈ MutualProjections.logicalRows
@@ -52,9 +53,10 @@ theorem buildMutual_rows {limits : Ix.Sharing.Exact.Limits} {classes : List MutC
     exact (Prod.mk.inj e).2.symm
   | none =>
     rw [hs] at ran
-    obtain ⟨block, hb, returned⟩ := Ix.Sharing.Verify.except_bind_eq_ok ran
+    obtain ⟨block, hb, -, returned⟩ := Ix.CompileCert.Sectioned.bind_sectioned ran
     cases Except.ok.inj returned
-    exact .inr (built_muts hb)
+    have muts := built_muts hb
+    exact .inr muts
 
 /-- `buildMutual_rows` for the mutual block compile. -/
 theorem compileMutualBlock_rows (classes : List MutConst) :

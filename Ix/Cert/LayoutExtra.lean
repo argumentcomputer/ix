@@ -603,13 +603,16 @@ def RowsMuts (r : BlockResult) : Prop :=
 theorem finishConstant_rows (info : Ixon.ConstantInfo) (blockMeta : Ixon.ConstantMeta) :
     Returns RowsMuts (finishConstantInfoWithSharing info blockMeta) := by
   intro ctx s x s' ran
-  unfold finishConstantInfoWithSharing finishConstantWithSharing at ran
-  obtain ⟨cache, mid, -, ran⟩ := bind_ok ran
-  obtain ⟨block, mid', hb, ran⟩ := bind_ok ran
-  rw [rawRun_pure] at ran
-  cases ran
-  intro p hp
-  simp [BlockResult.mk'] at hp
+  rw [Ix.CompileCert.EmissionBlocks.finish_run] at ran
+  cases built : (Ix.CompileM.buildConstantWithSharing ctx.1.sharingLimits info s.refs s.univs >>=
+      Ix.CompileM.withBinderSection ctx.1.env.binderAnnotator? #[ctx.2.current]) with
+  | error e => rw [built] at ran; cases ran
+  | ok block =>
+    rw [built] at ran
+    simp only [Except.map, Prod.mk.injEq, Except.ok.injEq] at ran
+    obtain ⟨rfl, -⟩ := ran
+    intro p hp
+    simp [BlockResult.mk'] at hp
 
 theorem finishInductive_rows (i : Ix.InductiveVal) (ind : Ixon.Inductive) (indMeta : Ixon.ConstantMeta)
     (pairs : Array (Ix.Name × Ixon.ConstantMeta)) :
@@ -639,13 +642,14 @@ theorem finishInductive_rows (i : Ix.InductiveVal) (ind : Ixon.Inductive) (indMe
 
 theorem buildMutual_rows {limits : Ix.Sharing.Exact.Limits} {classes : List MutConst}
     {payloads : Array Ixon.MutConst} {metas : Array (Ix.Name × Ixon.ConstantMeta)} {cache : BlockState}
-    {out : BlockResult} (ran : buildCompiledMutualBlock limits classes payloads metas cache = .ok out) :
+    {out : BlockResult} {annotator? : Option Ix.BinderAnnotator}
+    (ran : buildCompiledMutualBlock limits annotator? classes payloads metas cache = .ok out) :
     RowsMuts out := by
   unfold buildCompiledMutualBlock at ran
   cases hs : standaloneMutConstInfo? payloads with
   | some info =>
     rw [hs] at ran
-    obtain ⟨block, hb, returned⟩ := Ix.Sharing.Verify.except_bind_eq_ok ran
+    obtain ⟨block, hb, -, returned⟩ := Ix.CompileCert.Sectioned.bind_sectioned ran
     cases Except.ok.inj returned
     intro p hp hne
     exfalso
@@ -658,7 +662,7 @@ theorem buildMutual_rows {limits : Ix.Sharing.Exact.Limits} {classes : List MutC
     exact (Prod.mk.inj e).2.symm
   | none =>
     rw [hs] at ran
-    obtain ⟨block, hb, returned⟩ := Ix.Sharing.Verify.except_bind_eq_ok ran
+    obtain ⟨block, hb, -, returned⟩ := Ix.CompileCert.Sectioned.bind_sectioned ran
     cases Except.ok.inj returned
     intro p hp _
     obtain ⟨targets, h, -⟩ := ProjectionLayout.sharing_mutual_shape _ _ _ _ _ hb
@@ -932,12 +936,17 @@ theorem finishConstant_erase (info : Ixon.ConstantInfo) (blockMeta : Ixon.Consta
     Yields (finishConstantInfoWithSharing info blockMeta)
       (fun r => SharingRoots.erase r.block.info = SharingRoots.erase info ∧ r.projections = #[]) := by
   intro ctx s x s' ran
-  unfold finishConstantInfoWithSharing finishConstantWithSharing at ran
-  obtain ⟨cache, mid, -, ran⟩ := bind_ok ran
-  obtain ⟨block, mid', hb, ran⟩ := bind_ok ran
-  rw [rawRun_pure] at ran
-  cases ran
-  exact ⟨(SharingRoots.build_roots (md := .anon) _ _ _ _ _ (BlockLayout.buildBlockConstant_ok hb)).1, rfl⟩
+  rw [Ix.CompileCert.EmissionBlocks.finish_run] at ran
+  cases built : (Ix.CompileM.buildConstantWithSharing ctx.1.sharingLimits info s.refs s.univs >>=
+      Ix.CompileM.withBinderSection ctx.1.env.binderAnnotator? #[ctx.2.current]) with
+  | error e => rw [built] at ran; cases ran
+  | ok block =>
+    rw [built] at ran
+    simp only [Except.map, Prod.mk.injEq, Except.ok.injEq] at ran
+    obtain ⟨rfl, -⟩ := ran
+    have erased := (SharingRoots.build_roots (md := .anon) _ _ _ _ _
+      (Ix.CompileCert.EmissionBlocks.sectioned_of_bind built).1).1
+    exact ⟨erased, rfl⟩
 
 theorem erase_defn_kind {info : Ixon.ConstantInfo} {d₀ : Ixon.Definition}
     (h : SharingRoots.erase info = SharingRoots.erase (.defn d₀)) {d : Ixon.Definition} (hd : info = .defn d) :
@@ -1115,12 +1124,13 @@ theorem buildMutual_defn {limits : Ix.Sharing.Exact.Limits} {classes : List MutC
     {payloads : Array Ixon.MutConst} {metas : Array (Ix.Name × Ixon.ConstantMeta)} {cache : BlockState}
     {out : BlockResult}
     (kinds : payloads.toList.map payloadKind = classes.map srcKind)
-    (ran : buildCompiledMutualBlock limits classes payloads metas cache = .ok out) : MutDefnOut classes out := by
+    {annotator? : Option Ix.BinderAnnotator}
+    (ran : buildCompiledMutualBlock limits annotator? classes payloads metas cache = .ok out) : MutDefnOut classes out := by
   unfold buildCompiledMutualBlock at ran
   cases hs : standaloneMutConstInfo? payloads with
   | some info =>
     rw [hs] at ran
-    obtain ⟨block, hb, returned⟩ := Ix.Sharing.Verify.except_bind_eq_ok ran
+    obtain ⟨block, hb, -, returned⟩ := Ix.CompileCert.Sectioned.bind_sectioned ran
     cases Except.ok.inj returned
     intro d hd hk
     have erased := (SharingRoots.build_roots (md := .anon) _ _ _ _ _ hb).1
@@ -1163,7 +1173,7 @@ theorem buildMutual_defn {limits : Ix.Sharing.Exact.Limits} {classes : List MutC
       · simp at kinds
   | none =>
     rw [hs] at ran
-    obtain ⟨block, hb, returned⟩ := Ix.Sharing.Verify.except_bind_eq_ok ran
+    obtain ⟨block, hb, -, returned⟩ := Ix.CompileCert.Sectioned.bind_sectioned ran
     cases Except.ok.inj returned
     intro d hd _
     obtain ⟨targets, h, -⟩ := ProjectionLayout.sharing_mutual_shape _ _ _ _ _ hb

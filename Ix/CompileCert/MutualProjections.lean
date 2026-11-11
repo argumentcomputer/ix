@@ -219,18 +219,19 @@ def ProjectionWire (output : BlockResult) : Prop := ∀ row ∈ output.projectio
 
 theorem build_projection_wire (limits : Ix.Sharing.Exact.Limits) (classes : List MutConst)
     (members : Array Ixon.MutConst) (metadata : Array (Ix.Name × Ixon.ConstantMeta)) (state : BlockState)
-    (output : BlockResult) (ran : buildCompiledMutualBlock limits classes members metadata state = .ok output)
+    (output : BlockResult) {annotator? : Option Ix.BinderAnnotator}
+    (ran : buildCompiledMutualBlock limits annotator? classes members metadata state = .ok output)
     (main : output.block.wireWF) : ProjectionWire output := by
   unfold buildCompiledMutualBlock at ran
   cases chosen : standaloneMutConstInfo? members with
   | some info =>
     simp only [chosen] at ran
-    obtain ⟨block, _, returned⟩ := Ix.Sharing.Verify.except_bind_eq_ok ran
+    obtain ⟨block, _, -, returned⟩ := Ix.CompileCert.Sectioned.bind_sectioned ran
     cases Except.ok.inj returned
     exact standalone_rows_wire classes block main metadata
   | none =>
     simp only [chosen] at ran
-    obtain ⟨block, _, returned⟩ := Ix.Sharing.Verify.except_bind_eq_ok ran
+    obtain ⟨block, _, -, returned⟩ := Ix.CompileCert.Sectioned.bind_sectioned ran
     cases Except.ok.inj returned
     exact build_rows_wire classes (Address.admissionHash (Ixon.ser block))
       (Ixon.Authenticated.admissionHash_width _) metadata

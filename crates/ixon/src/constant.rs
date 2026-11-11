@@ -381,6 +381,30 @@ impl Constant {
     out
   }
 
+  /// Whether the record's constants are unsafe or partial
+  /// (`Ixon.ConstantInfo.uncheckedSafety`): their every binder carries the
+  /// undecided node.
+  pub fn unchecked_safety(&self) -> bool {
+    fn defn(d: &Definition) -> bool {
+      d.safety != DefinitionSafety::Safe
+    }
+    match &self.info {
+      ConstantInfo::Defn(d) => defn(d),
+      ConstantInfo::Recr(r) => r.is_unsafe,
+      ConstantInfo::Axio(a) => a.is_unsafe,
+      ConstantInfo::Quot(_) => false,
+      ConstantInfo::CPrj(_)
+      | ConstantInfo::RPrj(_)
+      | ConstantInfo::IPrj(_)
+      | ConstantInfo::DPrj(_) => false,
+      ConstantInfo::Muts(ms) => ms.iter().any(|m| match m {
+        MutConst::Defn(d) => defn(d),
+        MutConst::Indc(i) => i.is_unsafe,
+        MutConst::Recr(r) => r.is_unsafe,
+      }),
+    }
+  }
+
   /// The binder data are in canonical form (`Ixon.Constant.bindersCanonical`),
   /// the local form every reader checks: blocks strictly sorted by key, a root
   /// block at variant 0, no empty block, every `IfAllZero` parameter list
@@ -434,7 +458,13 @@ impl Constant {
       let key = (false, r as u64, 0);
       let Some(nodes) = blocks.get(&key) else { return false };
       walk.visited.insert(key);
-      let cx = BinderCheck { lvls, full: &full, sharing: &self.sharing, blocks: &blocks };
+      let cx = BinderCheck {
+        lvls,
+        undecided_only: self.unchecked_safety(),
+        full: &full,
+        sharing: &self.sharing,
+        blocks: &blocks,
+      };
       if !cx.check(budget, &shape, nodes, &mut walk) {
         return false;
       }
@@ -512,6 +542,7 @@ struct BinderWalk {
 
 struct BinderCheck<'a> {
   lvls: u64,
+  undecided_only: bool,
   full: &'a [bool],
   sharing: &'a [Arc<Expr>],
   blocks: &'a FxHashMap<(bool, u64, u64), &'a [BinderNode]>,
@@ -532,6 +563,11 @@ impl BinderCheck<'_> {
     for (kind, node) in shape.iter().zip(nodes) {
       match (kind, node) {
         (None, BinderNode::Share(_)) => return false,
+        (None, n) if self.undecided_only => {
+          if *n != BinderNode::Undecided {
+            return false;
+          }
+        },
         (None, BinderNode::IfAllZero(ps)) => {
           if ps.is_empty()
             || !ps.windows(2).all(|w| w[0] < w[1])

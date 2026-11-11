@@ -61,7 +61,7 @@ structure ResultShape (r : BlockResult) : Prop where
   built : Built r.block
   rows : ∀ p ∈ r.projections, p.2.1 = r.block ∨ ProjectsTo r.blockAddr p.2.1
   /-- The block's binder data are canonical and complete. -/
-  section : SectionOK r.block
+  blockSection : SectionOK r.block
   /-- So are every row's. -/
   rowsSection : ∀ p ∈ r.projections, SectionOK p.2.1
 
@@ -163,6 +163,8 @@ theorem inductiveProjections_binders (i : Ix.InductiveVal) (indMeta : Ixon.Const
   · simp only [List.mem_toArray, List.mem_singleton] at hp
     subst hp
     rfl
+  · obtain ⟨k, hk, rfl⟩ := Array.mem_mapIdx.mp hp
+    rfl
 
 theorem inductiveProjections_roots (i : Ix.InductiveVal) (indMeta : Ixon.ConstantMeta)
     (pairs : Array (Ix.Name × Ixon.ConstantMeta)) (addr : Address) :
@@ -172,8 +174,6 @@ theorem inductiveProjections_roots (i : Ix.InductiveVal) (indMeta : Ixon.Constan
   rcases Array.mem_append.mp hp with hp | hp
   · simp only [List.mem_toArray, List.mem_singleton] at hp
     subst hp
-    rfl
-  · obtain ⟨k, hk, rfl⟩ := Array.mem_mapIdx.mp hp
     rfl
   · obtain ⟨k, hk, rfl⟩ := Array.mem_mapIdx.mp hp
     rfl
@@ -266,7 +266,8 @@ theorem standalone_notPrj (payloads : Array Ixon.MutConst) {info : Ixon.Constant
 
 theorem buildMutual_shape {limits : Ix.Sharing.Exact.Limits} {classes : List MutConst}
     {payloads : Array Ixon.MutConst} {metas : Array (Ix.Name × Ixon.ConstantMeta)} {cache : BlockState}
-    {out : BlockResult} (ran : buildCompiledMutualBlock limits classes payloads metas cache = .ok out) :
+    {out : BlockResult} {annotator? : Option Ix.BinderAnnotator}
+    (ran : buildCompiledMutualBlock limits annotator? classes payloads metas cache = .ok out) :
     ResultShape out := by
   unfold buildCompiledMutualBlock at ran
   cases hs : standaloneMutConstInfo? payloads with
@@ -384,7 +385,7 @@ theorem runBlock_shape {cenv : CompileEnv} {all : Ix.Set Ix.Name} {lo : Ix.Name}
       obtain ⟨q, hq, e⟩ := Array.mem_map.mp hm
       exact ⟨q, hq, (Prod.mk.inj e).2⟩
     refine ⟨by rw [hbytes, hblock]; exact shape.bytes, by rw [haddr, hbytes]; exact shape.addr,
-      by rw [hblock]; exact shape.built, fun p hp => ?_, by rw [hblock]; exact shape.section,
+      by rw [hblock]; exact shape.built, fun p hp => ?_, by rw [hblock]; exact shape.blockSection,
       fun p hp => ?_⟩
     · obtain ⟨q, hq, he⟩ := back p hp
       rw [hblock, haddr, ← he]
