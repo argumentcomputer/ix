@@ -190,30 +190,29 @@ def setNode (sec : Array Ixon.BinderBlock) (b i : Nat) (n : Ixon.BinderNode) : A
 def circuitCases : Except String (Array Tests.Ix.IxVM.Builder) := do
   let ctx ← _root_.Ix.ClaimContext.ofDefaultTable
   let s := idPolySection
-  let case := idPolyCase ctx
   return #[
-    case "the compiler's data" s (accept := true),
-    case "type's outer binder never" (setNode s 0 0 .never),
-    case "value's inner binder always zero" (setNode s 1 1 .zero),
-    case "the value's block missing" (s.extract 0 1)
+    idPolyCase ctx "the compiler's data" s (accept := true),
+    idPolyCase ctx "type's outer binder never" (setNode s 0 0 .never),
+    idPolyCase ctx "value's inner binder always zero" (setNode s 1 1 .zero),
+    idPolyCase ctx "the value's block missing" (s.extract 0 1)
       (rejectsWith := some "binder data: no block for an expression with a binder"),
-    case "the undecided sentinel at the type's inner binder" (setNode s 0 1 .undecided)
+    idPolyCase ctx "the undecided sentinel at the type's inner binder" (setNode s 0 1 .undecided)
       (rejectsWith := some "binder data: an undecided binder"),
-    case "a share node at the value's outer binder" (setNode s 1 0 (.share 0))
+    idPolyCase ctx "a share node at the value's outer binder" (setNode s 1 0 (.share 0))
       (rejectsWith := some "binder data: a share node at a binder"),
-    case "a node left over in the type's block"
+    idPolyCase ctx "a node left over in the type's block"
       (s.modify 0 fun b => { b with nodes := b.nodes.push .never }),
-    case "the blocks out of order" #[s[1]!, s[0]!]
+    idPolyCase ctx "the blocks out of order" #[s[1]!, s[0]!]
       (rejectsWith := some "binder data: blocks are not strictly ascending"),
-    case "a root block at variant 1" (s.modify 1 fun b => { b with variant := 1 })
+    idPolyCase ctx "a root block at variant 1" (s.modify 1 fun b => { b with variant := 1 })
       (rejectsWith := some "binder data: a root block at a variant other than 0"),
-    case "an empty block" (s.push ⟨true, 0, 0, #[]⟩)
+    idPolyCase ctx "an empty block" (s.push ⟨true, 0, 0, #[]⟩)
       (rejectsWith := some "binder data: an empty block"),
-    case "an empty parameter list" (setNode s 0 0 (.ifAllZero #[]))
+    idPolyCase ctx "an empty parameter list" (setNode s 0 0 (.ifAllZero #[]))
       (rejectsWith := some "binder data: an empty parameter list"),
-    case "a parameter at the level count" (setNode s 0 0 (.ifAllZero #[1]))
+    idPolyCase ctx "a parameter at the level count" (setNode s 0 0 (.ifAllZero #[1]))
       (rejectsWith := some "binder data: a parameter is not below the level count"),
-    case "a repeated parameter" (setNode s 0 0 (.ifAllZero #[0, 0]))
+    idPolyCase ctx "a repeated parameter" (setNode s 0 0 (.ifAllZero #[0, 0]))
       (rejectsWith := some "binder data: parameters are not strictly ascending")]
 
 def circuit : IO UInt32 :=
