@@ -163,6 +163,8 @@ theorem inductiveProjections_binders (i : Ix.InductiveVal) (indMeta : Ixon.Const
   · simp only [List.mem_toArray, List.mem_singleton] at hp
     subst hp
     rfl
+  · obtain ⟨k, hk, rfl⟩ := Array.mem_mapIdx.mp hp
+    rfl
 
 theorem inductiveProjections_roots (i : Ix.InductiveVal) (indMeta : Ixon.ConstantMeta)
     (pairs : Array (Ix.Name × Ixon.ConstantMeta)) (addr : Address) :
@@ -172,8 +174,6 @@ theorem inductiveProjections_roots (i : Ix.InductiveVal) (indMeta : Ixon.Constan
   rcases Array.mem_append.mp hp with hp | hp
   · simp only [List.mem_toArray, List.mem_singleton] at hp
     subst hp
-    rfl
-  · obtain ⟨k, hk, rfl⟩ := Array.mem_mapIdx.mp hp
     rfl
   · obtain ⟨k, hk, rfl⟩ := Array.mem_mapIdx.mp hp
     rfl
