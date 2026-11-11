@@ -1,5 +1,5 @@
 import IxCCGrounding.Hyps
-import IxCCGrounding.Cases
+import IxCCGrounding.Heads
 
 /-!
 # The fundamental lemma (`IxCCGrounding.Fundamental`), step (f)

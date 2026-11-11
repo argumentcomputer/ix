@@ -233,8 +233,6 @@ def EqnShape (env : KEnv) (κ : CId → KKey) (c thm : CId) (d : EqnData) : Prop
         (bvarsFrom 0 d.Ds.length), d.rhs]) ∧
     ciF.toConstantVal.type = piTele (d.Ds.zipWith (fun b m => (b.1, m)) d.ms) d.R
 
-/-- **The generic `eqn` lemma**: in every model, at every assignment, a function with a stored
-
 /-! ## What SrcEval runs, and the application sites it may evaluate -/
 
 /-- What `c` runs as, paired with its kernel term: its stored value, or its `eqn` body
