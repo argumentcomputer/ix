@@ -127,8 +127,15 @@ always remove.
   saturated call one charge deeper, by `SimUpTo.laterR`) and the call
   simulation (`call_sim`); environments are related pointwise and of at least
   the static depth, and a local function's closure relates to its cell over
-  its whole related target environment. The simulation theorem on the
-  program (`run_refines`, `Anf.Defun.correct`) is not written yet. No P9 code
+  its whole related target environment. **P8 is correct**
+  (`Anf.Defun.Proof.correct`, in
+  [`Anf/Proof/Defun/Correct.lean`](../IxCC/Anf/Proof/Defun/Correct.lean)):
+  for an input whose globals lie below its size, the output is first order,
+  well scoped when the input is, and refines the input on every input of
+  exactly the root's arity (`run_refines`); as a step, a program with ids
+  exactly `0 … size - 1` gives one again (`step_correct`, `run_wf`), and
+  followed by `Fir.lower` the Fir program refines P8's input on those inputs
+  (`defun_lower_refines`). No P9 code
   exists.
 - *Implemented: P8's own input checks.* The pipeline does not establish
   `Anf.WellScoped`, so the pass refuses (`defun.input`) what its correctness
@@ -307,12 +314,16 @@ checker is needed; a wrong fact costs speed only.
 
 ## Proof obligation
 
-- **Theorem (planned): `Anf.Defun.correct`.** For a well-scoped Anf program
-  `p` with `Anf.defun p = .ok q`: `q` is well scoped, `Anf.FirstOrder q`, and
-  `q` simulates `p` in the shape of the existing Anf passes (the pass
-  relation of [`Anf/Proof/Pass`](../IxCC/Anf/Proof/Pass/Basic.lean), with the
-  value relation below), relative to Anf's semantics
-  ([`Anf/Semantics.lean`](../IxCC/Anf/Semantics.lean)).
+- **Theorem (proved): `Anf.Defun.correct`.** For an Anf program `p` whose
+  globals lie below its size with `Anf.defun p = .ok q`: `Anf.FirstOrder q`,
+  `q` is well scoped when `p` is, and `q` refines `p` on every input of
+  exactly the root's arity (`Anf.Defun.Proof.RefinesOn (ExactArity p)`, see
+  the decision below), relative to Anf's semantics
+  ([`Anf/Semantics.lean`](../IxCC/Anf/Semantics.lean)). The simulation is
+  P8's own (its environments are related pointwise with a depth bound, and a
+  closure relates to a cell), not an instance of the pass relation of
+  [`Anf/Proof/Pass`](../IxCC/Anf/Proof/Pass/Basic.lean), whose value
+  relation relates closures only to closures.
 - **Value relation, structural.** Literals and □ relate to themselves,
   constructors pointwise, and a closure `clos ρ n b got` relates to
   `con (clo ℓ j) ws` when ℓ is a global of `q` whose body is P8's image of

@@ -3085,7 +3085,8 @@
     "IxCC.Anf.Proof.Defun.Rename",
     "IxCC.Anf.Proof.Defun.Translate",
     "IxCC.Anf.Proof.Defun.WellScoped",
-    "IxCC.Anf.Proof.Defun.Fund"]},
+    "IxCC.Anf.Proof.Defun.Fund",
+    "IxCC.Anf.Proof.Defun.Correct"]},
   "IxCCTests.Fences.Compile":
   {"path": "IxCCTests/Fences/Compile.lean",
    "imports":
@@ -7591,6 +7592,14 @@
   "IxCC.Anf.Proof.Defun.Dispatch":
   {"path": "IxCC/Anf/Proof/Defun/Dispatch.lean",
    "imports": ["IxCC.Anf.Defun", "IxCC.Anf.Proof.Unfold"]},
+  "IxCC.Anf.Proof.Defun.Correct":
+  {"path": "IxCC/Anf/Proof/Defun/Correct.lean",
+   "imports":
+   ["IxCC.Anf.Proof.Defun.Fund",
+    "IxCC.Anf.Proof.Defun.WellScoped",
+    "IxCC.Anf.Proof.Pass.Basic",
+    "IxCC.Fir.Proof.Lang",
+    "IxCC.Fir.Proof.FirstOrder"]},
   "IxCC.Anf.Proof.Defun.Assemble":
   {"path": "IxCC/Anf/Proof/Defun/Assemble.lean",
    "imports": ["IxCC.Anf.Proof.Defun.Keys", "IxCC.Anf.Proof.Defun.Dispatch"]},
@@ -8174,6 +8183,7 @@
     "IxCC.Anf.Proof.Defun.Translate",
     "IxCC.Anf.Proof.Defun.WellScoped",
     "IxCC.Anf.Proof.Defun.Fund",
+    "IxCC.Anf.Proof.Defun.Correct",
     "IxCC.Own.Kind",
     "IxCC.Fir.Syntax",
     "IxCC.Fir.Semantics",

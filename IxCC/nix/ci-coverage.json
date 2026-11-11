@@ -109,6 +109,7 @@
   "IxCC.Anf.Proof.Convert.Step",
   "IxCC.Anf.Proof.Convert.Term",
   "IxCC.Anf.Proof.Defun.Assemble",
+  "IxCC.Anf.Proof.Defun.Correct",
   "IxCC.Anf.Proof.Defun.Dispatch",
   "IxCC.Anf.Proof.Defun.FirstOrder",
   "IxCC.Anf.Proof.Defun.Fund",
@@ -1583,7 +1584,7 @@
   "IxCCTests.Sem.Toy.Pipeline",
   "IxCCTests.Sem.Toy.Stack",
   "IxCCTests.Sem.Toy.Tick"],
- "baseline": "P8: the fundamental lemma of the translation; its fences",
+ "baseline": "P8 is correct; its fences",
  "axiom_sha256":
- "0b18df8a6486968f6667541bd68df2614c0e3d329b1ab6049c10ae30cd4da49b",
- "axiom_count": 5785}
+ "b769b1e005e42359a8bb959ca2d025dc5aff1768bf4ebabd08d8678d7e807f8f",
+ "axiom_count": 5800}

@@ -10,6 +10,7 @@ import IxCC.Anf.Proof.Defun.Rename
 import IxCC.Anf.Proof.Defun.Translate
 import IxCC.Anf.Proof.Defun.WellScoped
 import IxCC.Anf.Proof.Defun.Fund
+import IxCC.Anf.Proof.Defun.Correct
 
 /-! Required axiom fences for P8 (closed-world defunctionalisation, not yet in
 the pipeline): its output is first order (`Anf.Defun.Proof.run_firstOrder`),
@@ -23,7 +24,8 @@ and the dispatcher lemmas hold of P8's own output, the walk is the
 translation, the output is well scoped when the input is, and renaming is
 exact on code without local functions; the fundamental lemma of the
 translation holds at every clock bound, with the dispatcher and call
-simulations (the last two sections). The headline
+simulations; and P8 is correct (`Anf.Defun.correct`, its step form and its
+composition with `Fir.lower`) (the last three sections). The headline
 theorems come first, then every other public theorem of these modules. -/
 
 /-- info: 'IxCC.Anf.Defun.Proof.run_firstOrder' depends on axioms: [propext, Classical.choice, Quot.sound] -/
@@ -791,3 +793,51 @@ other public theorem of the module. -/
 
 /-- info: 'IxCC.Anf.Defun.Proof.fund_alts' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Anf.Defun.Proof.fund_alts
+
+/-! P8 is correct (`Anf.Defun.Proof.Correct`): the headline theorems, then every other public theorem of
+the module. -/
+
+/-- info: 'IxCC.Anf.Defun.Proof.correct' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.correct
+
+/-- info: 'IxCC.Anf.Defun.Proof.run_refines' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.run_refines
+
+/-- info: 'IxCC.Anf.Defun.Proof.step_correct' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.step_correct
+
+/-- info: 'IxCC.Anf.Defun.Proof.defun_lower_refines' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.defun_lower_refines
+
+/-- info: 'IxCC.Anf.Defun.Proof.defun_lower_ne_closures' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.defun_lower_ne_closures
+
+/-- info: 'IxCC.Anf.Defun.Proof.run_wf' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.run_wf
+
+/-- info: 'IxCC.Anf.Defun.Proof.lits_dv' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.lits_dv
+
+/-- info: 'IxCC.Anf.Defun.Proof.globVal_fn' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.globVal_fn
+
+/-- info: 'IxCC.Anf.Defun.Proof.globVal_caf' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.globVal_caf
+
+/-- info: 'IxCC.Anf.Defun.Proof.applyN_exact' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.applyN_exact
+
+/-- info: 'IxCC.Anf.Defun.Proof.root_sim' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.root_sim
+
+/-- info: 'IxCC.Anf.Defun.Proof.defun_run' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.defun_run
+
+/-- info: 'IxCC.Anf.Defun.Proof.mem_numbered_lt' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.mem_numbered_lt
+
+/-- info: 'IxCC.Anf.Defun.Proof.exactArity_run' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.exactArity_run
+
+/-- info: 'IxCC.Anf.Defun.Proof.exactArity_of_run' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.exactArity_of_run
