@@ -741,17 +741,17 @@ def retryFallbackMechanism (a : Assert) : IO String := do
 `c₁`, `c₂` (so that the `bᵢ` are distinct constants); and
 `main : E := k (pi (b₀ c₀)) (k (pi (b₁ c₀)) (… (pi (b₁₆ c₀))))`. The trees are
 `share` DAGs. -/
-def retryLaterEnv : Env × Addr := Id.run do
-  let b := base 3
+def retryLaterEnv (env0 : Env) : Env × Addr := Id.run do
+  let b := base env0 3
   let mut e := b.env
   -- `tys`: E, T₁ … T₉, W; `mks`: their constructors from T₁'s
   let mut tys : Array Addr := #[b.enumI]
   let mut mks : Array Addr := #[]
   for _ in [0:10] do
-    let (e', blk) := block e (pairBlock tys.back!)
+    let (e', t) := addPair e tys.back!
     e := e'
-    tys := tys.push (V3.indcProjAddr blk 0)
-    mks := mks.push (V3.ctorProjAddr blk 0 0)
+    tys := tys.push t.ind
+    mks := mks.push t.ctors[0]!
   let (e', k) := store e
     ⟨defn (arrow enumC (arrow enumC enumC)) (lambda enumC (lambda enumC (.var 1))), #[], #[b.enumI], #[]⟩
   e := e'
@@ -803,10 +803,10 @@ step: `produceOnce` with the retry refuses the program there. `produce` (and so
 `compileInput`, and `compileInputRetry` around it) falls back to the run without
 the retry, which compiles. -/
 def retryLater (a : Assert) : IO String := do
-  let (env, main) := retryLaterEnv
+  let (env, main) := retryLaterEnv (← loadBase)
   let bs := bytes env
   let json := sidecar [("main", main)]
-  let inp ← ofErr "retryLater: ingress" (Recheck.ingress bs json [] true)
+  let inp ← ofErr "retryLater: ingress" (Recheck.ingress bs json [])
   let cfg := Recheck.Config.forInput {} inp
   let ps ← ofErr "retryLater: front" (Recheck.produceSource cfg inp)
   let (lam, _) ← match Lam.erase ps.src ps.checked with
@@ -863,10 +863,10 @@ phase and nothing is inlined; with it the round is taken without `g` and `f`
 shrinks to its parameter (behind ticks), so the program ends smaller. Both runs
 compile (each certificate replayed by `Recheck.run`). -/
 def retryRound (a : Assert) : IO String := do
-  let (env, f, g, main) := ampEnv 3 8
+  let (env, f, g, main) := ampEnv (← loadBase) 3 8
   let bs := bytes env
   let json := sidecar [("main", main)]
-  let inp ← ofErr "retry: ingress" (Recheck.ingress bs json [] true)
+  let inp ← ofErr "retry: ingress" (Recheck.ingress bs json [])
   let P := inp.program
   let (c1, a1) ← ofErr "retry: compile with the retry" (Recheck.compileInput {} inp)
   let (c0, a0) ← ofErr "retry: compile without the retry"
