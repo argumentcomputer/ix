@@ -459,8 +459,10 @@ def forgedCases : List ForgedCase := [
     target := seed "NB4.rec", forge := swapRules },
   { label := "modeled-nested-parameter-index-forged-motives", seeds := [seed "NB4"],
     target := seed "NB4.rec", forge := fun r => { r with motives := r.motives + 1 } },
-  { label := "modeled-nested-parameter-index-forged-k", seeds := [seed "NB4"],
-    target := seed "NB4.rec", forge := fun r => { r with k := !r.k } } ]
+  { label := "modeled-nested-parameter-index-forged-fields", seeds := [seed "NB4"],
+    target := seed "NB4.rec", forge := fun r => match r.rules[1]? with
+      | some b => { r with rules := r.rules.set! 1 { b with fields := b.fields + 1 } }
+      | none => r } ]
 
 def runForged (leanEnv : Lean.Environment) (test : ForgedCase) : IO Bool := do
   let started ← IO.monoMsNow
