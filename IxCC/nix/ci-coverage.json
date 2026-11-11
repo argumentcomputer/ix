@@ -1634,10 +1634,10 @@
   "IxCCGrounding.Syntax",
   "IxCCGrounding.Tele"],
  "grounding_axiom_sha256":
- "3c804206278c9040bd5b306b2a5761385ff311cdca0715edcfc7c1a1b569a10a",
- "grounding_axiom_count": 53,
+ "4deb87c352422ca62e49b2950ad179a0bf9020eaa9c924a53dacf2a2468d02f3",
+ "grounding_axiom_count": 56,
  "baseline":
- "KS: the switch to the kernel front end, step 3, on the tip 318df30a1",
+ "KS: the switch to the kernel front end, step 3, on the grounding correction 62929be01",
  "axiom_sha256":
  "8b49d25f5bf75c1eb79dfba0d78a9a70e134207d63c5178534eb661381035056",
  "axiom_count": 5964}
