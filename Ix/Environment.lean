@@ -667,6 +667,10 @@ def ConstantInfo.getCnst : ConstantInfo → ConstantVal
 
 /-! ## Environment -/
 
+/-- A binder-data annotator: a block record's binder-data section, from the
+block's member names (in the record's member order) and its record. -/
+abbrev BinderAnnotator := Array Name → Ixon.Constant → Array Ixon.BinderBlock
+
 /-- A content-addressed Lean environment: a map from `Ix.Name` to `ConstantInfo`.
 
     `fallback?` supports STREAMING consumers (the pure-Lean compile
@@ -677,10 +681,6 @@ def ConstantInfo.getCnst : ConstantInfo → ConstantVal
     before. Lookups that should see the fallback go through
     `Environment.get?`; direct `consts` iteration/containment remains
     the explicit-map view. -/
-/-- A binder-data annotator: a block record's binder-data section, from the
-block's member names (in the record's member order) and its record. -/
-abbrev BinderAnnotator := Array Name → Ixon.Constant → Array Ixon.BinderBlock
-
 structure Environment where
   consts : HashMap Name ConstantInfo
   fallback? : Option (Name → Option ConstantInfo) := none
