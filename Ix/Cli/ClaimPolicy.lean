@@ -93,7 +93,8 @@ def admit (p : Cli.Parsed) (claim : Ix.Claim) (bindingDischarged : Bool := false
   let mut unestablished : Option String := none
   if let some ctx := Ix.Claim.context? claim then
     unless pol.customBinding do
-      match ← TableAdmission.standing ctx (TableAdmission.withSupplied p envs) with
+      match ← TableAdmission.standing ctx (TableAdmission.withSupplied p envs)
+          (← TableAdmission.checkerRef.get) with
       | .default => pure ()
       | .admitted recorded =>
         tableAdmitted := true

@@ -10,13 +10,24 @@
   establish that premise for a table other than the default one; `ix verify` and
   `ix compress` do, before they accept a claim under it
   (`Ix.Cli.ClaimPolicy.admit`), by running the kernel's executable admission
-  (`checker?`) over records the user supplies:
+  (`Ix.Cert.TableAdmission.check`, whose `true` establishes `TableAdmitted` for
+  a view holding the records) over records the user supplies:
 
   * the `.ixe` named by `--ixe`, when its role binding is the claim's table;
   * the `.ixe` named by `--binding-env`: an environment whose role binding is
     the claim's table, holding the records the table binds, the theorems its
     evidence names and their closures (an `ix compile` output carries them);
   * for a catalog, each member's own piece (`<label>.ixe`).
+
+  The environment must hold every record the closure reads, the recursor
+  records of its inductive blocks included: the admission reads only the
+  supplied records (and the committed prelude), and draws in nothing.
+
+  The check lives outside the module system (`Ix.Cert.TableAdmission` imports
+  the refinement's statement), so the command line receives it at startup
+  (`install`, called by the `ix` executable's `Main` through
+  `Ix.Cli.TableAdmissionKernel`); a program that installs none admits no table
+  other than the default one.
 
   A table the kernel admits is recorded under
   `~/.ix/cache/table-admission/<spec digest>/<table address>`, so the kernel
@@ -42,11 +53,20 @@ public section
 
 namespace Ix.Cli.TableAdmission
 
-/-- The kernel's executable admission of a role table over the records of an
-environment; a `true` answer establishes the statement's premise
-(`TableAdmitted`) for that table. `none` while this build has none: every
-table other than the default one is then refused. -/
-def checker? : Option (Ix.Kernel.Admission.Binding → Ixon.Env → Bool) := none
+/-- **The kernel's executable admission of a role table** over the records of an
+environment: `check`, whose `true` establishes the statement's premise
+(`TableAdmitted`) for that table, and `explain`, the first stage that refuses
+(read only when `check` refused; it reruns the stages). -/
+structure Checker where
+  check : Ix.Kernel.Admission.Binding → Ixon.Env → Bool
+  explain : Ix.Kernel.Admission.Binding → Ixon.Env → String
+
+/-- The checker this program runs, installed at startup (`install`); `none` until
+then, when every table other than the default one is refused. -/
+initialize checkerRef : IO.Ref (Option Checker) ← IO.mkRef none
+
+/-- Install the checker this program runs. -/
+def install (c : Checker) : IO Unit := checkerRef.set (some c)
 
 /-- The admission run whose answers the cache holds. Change it whenever the
 checker's answers may change, so that older entries are no longer read. -/
@@ -111,10 +131,9 @@ inductive Standing where
 that may carry it (the first whose role binding is the claim's table is used);
 they are read only when the table is neither the default one nor recorded. The
 kernel runs at most once per table and specification set. `checker` is the
-admission run (`checker?`, a parameter for tests) and `root?` the cache's root
+admission run (`checkerRef`'s, or a test's) and `root?` the cache's root
 (`cacheRoot`). -/
-def standing (ctx : Ix.ClaimContext) (envs : IO (List Ixon.Env))
-    (checker : Option (Ix.Kernel.Admission.Binding → Ixon.Env → Bool) := checker?)
+def standing (ctx : Ix.ClaimContext) (envs : IO (List Ixon.Env)) (checker : Option Checker)
     (root? : Option System.FilePath := none) : IO Standing := do
   if ctx.literalClass then
     return .unestablished "a literal class names no role table the kernel could admit"
@@ -130,11 +149,14 @@ def standing (ctx : Ix.ClaimContext) (envs : IO (List Ixon.Env))
       env.roleBinding.bind fun rb => if rb.address == ctx.binding then some (env, rb) else none
     | return .unestablished s!"no supplied environment carries the role table; pass \
         --{envFlag} FILE.ixe (an environment whose role binding is the table, with the records it \
-        binds and its evidence theorems) or the claim's own --ixe"
-  let some check := checker
-    | return .unestablished "this build cannot run the kernel's admission of a role table"
-  unless check ⟨rb.address, rb.bytes⟩ env do
-    return .unestablished "the kernel does not admit the role table over the supplied records"
+        binds, its evidence theorems and their closures, recursor records included) or the \
+        claim's own --ixe"
+  let some c := checker
+    | return .unestablished "this program cannot run the kernel's admission of a role table"
+  let b : Ix.Kernel.Admission.Binding := ⟨rb.address, rb.bytes⟩
+  unless c.check b env do
+    return .unestablished s!"the kernel does not admit the role table over the supplied \
+      records: {c.explain b env}"
   record root spec ctx.binding
   return .admitted false
 

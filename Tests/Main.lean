@@ -93,6 +93,7 @@ import Tests.Ix.EnvBody
 import Tests.Ix.MetaEnv
 import Tests.Ix.Catalog
 import Tests.Ix.ClaimPolicy
+import Tests.Ix.TableAdmissionCli
 import Tests.Ix.CatalogDedup
 import Tests.Ix.ImportIxe
 import Tests.Ix.TruthMinesRecords
@@ -302,6 +303,8 @@ def registry : List Entry := [
   .suite "cert-evidence-agreement" .primary Tests.Ix.Cert.Statement.evidenceSuite,
   .runner "aggregate-binding-reuse" (.manual "one binding proof file discharges two aggregates, end to end through the `ix` binary; minutes of recursion and about 190 GB, needs `lake build ix`; `binding-proof-cli` runs it without the aggregates") Tests.Aggr.BindingReuse.run,
   .runner "aggregate-toolchains" (.manual "libraries from four Lean toolchains proven with one IxVM key and joined into one catalog root, end to end through the `ix` binary; tens of minutes of proving, needs `lake build ix` and `zstd`; IX_TOOLCHAINS_MAX_RAM sets the aggregate RAM budget in GiB (default 140)") Tests.Aggr.Toolchains.run,
+  .runner "table-admission-cli" (.manual "ix verify on a claim under a generated artifact's role table, refused and admitted by the kernel's admission, through the `ix` binary; needs `lake build ix`") Tests.Ix.TableAdmissionCli.cli,
+  .runner "table-admission-fixtures" (.manual "the kernel's admission of the role table of every .ixe under IX_TABLE_FIXTURES, over the artifact's own records, timed") Tests.Ix.TableAdmissionCli.fixtures,
   -- Selected closures (Tests.Ix.Compile.{SelectedClosure,ClosureWhole,CheckerSupport,PackUnits}):
   -- closure against whole, checker-support ground, and `ix pack` carrying the reference closure.
   .runner "compiler-selected-closure-e2e" (.ci .compilerClosures) Tests.Ix.Compile.SelectedClosure.run,

@@ -75,6 +75,12 @@ private def shape : Standing → String
   | .admitted recorded => s!"admitted {recorded}"
   | .unestablished _ => "unestablished"
 
+/-- Whether a standing that is not established says `text`. -/
+private def says (s : Standing) (text : String) : Bool :=
+  match s with
+  | .unestablished why => (why.splitOn text).length > 1
+  | _ => false
+
 /-- `standing`'s cases over a temporary cache root. -/
 def standingTests : IO TestSeq := do
   let spec ← IO.ofExcept Ix.SpecDigest.specDigest
@@ -85,21 +91,23 @@ def standingTests : IO TestSeq := do
   let unread : IO (List Ixon.Env) := throw (IO.userError "an environment was read")
   let reads ← IO.mkRef 0
   let counted (envs : List Ixon.Env) : IO (List Ixon.Env) := reads.modify (· + 1) *> pure envs
-  let checker (answer : Bool) : Option (Ix.Kernel.Admission.Binding → Ixon.Env → Bool) :=
-    some fun b _ => (b.address == table) && answer
+  let checker (answer : Bool) : Option Checker :=
+    some { check := fun b _ => (b.address == table) && answer
+           explain := fun _ _ => "the test checker refuses" }
   let dir ← IO.FS.createTempDir
   try
-    let s0 ← standing { here with binding := defaultTable } unread (root? := dir)
-    let s1 ← standing { here with literalClass := true } unread (root? := dir)
-    let s2 ← standing { here with spec := addr "another specification set" } unread (root? := dir)
-    let s3 ← standing here (counted []) (root? := dir)
-    let s4 ← standing here (counted [carrying (addr "another table")]) (root? := dir)
-    let s5 ← standing here (counted [carrying table]) (checker := none) (root? := dir)
-    let s6 ← standing here (counted [carrying table]) (checker := checker false) (root? := dir)
+    let s0 ← standing { here with binding := defaultTable } unread none (root? := dir)
+    let s1 ← standing { here with literalClass := true } unread none (root? := dir)
+    let s2 ← standing { here with spec := addr "another specification set" } unread none
+      (root? := dir)
+    let s3 ← standing here (counted []) (checker true) (root? := dir)
+    let s4 ← standing here (counted [carrying (addr "another table")]) (checker true) (root? := dir)
+    let s5 ← standing here (counted [carrying table]) none (root? := dir)
+    let s6 ← standing here (counted [carrying table]) (checker false) (root? := dir)
     let recordedEarly ← cached dir spec table
-    let s7 ← standing here (counted [carrying table]) (checker := checker true) (root? := dir)
+    let s7 ← standing here (counted [carrying table]) (checker true) (root? := dir)
     let recorded ← cached dir spec table
-    let s8 ← standing here unread (checker := checker false) (root? := dir)
+    let s8 ← standing here unread (checker false) (root? := dir)
     let otherSpec ← cached dir (addr "another specification set") table
     -- an entry written by another checker version is a miss
     IO.FS.writeFile (dir / toString spec / toString table) "table-admission/0\n"
@@ -112,6 +120,7 @@ def standingTests : IO TestSeq := do
       ++ test "a build with no admission run admits no table" (shape s5 == "unestablished")
       ++ test "a table the kernel refuses is not admitted, nor recorded"
           (shape s6 == "unestablished" && !recordedEarly)
+      ++ test "  and the refusal gives the refusing stage" (says s6 "the test checker refuses")
       ++ test "a table the kernel admits is admitted and recorded"
           (shape s7 == "admitted false" && recorded)
       ++ test "  and the record answers the next claim without an environment or a run"
