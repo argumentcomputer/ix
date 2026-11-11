@@ -229,13 +229,17 @@ def LoadedBy (calls : List (Call IxVM.F)) (E : Ixon.Env) : Prop :=
 /-- **The kernel's reading of the closure of `seeds` in `E`** under the role
 table `b` (the trusted component, as `AcceptsIn` uses it): the table
 admitted, the compiled closure in an order with no record before one it
-references, the table's prelude, and `prepareWith`'s evidence and declarations. -/
+references, the table's prelude, and `prepareWith`'s evidence and declarations.
+The closure also starts from the theorems the table's evidence names that `E`
+holds, so that an operation's evidence reads from the records the run loaded (a
+table's evidence theorems need not be among the claim's references). -/
 def ReadIn (b : Binding) (E : Ixon.Env) (seeds : Address → Prop)
     (ev : Ix.Kernel.Evidences .anon) (ds : Array (Ix.Kernel.Declaration .anon)) : Prop :=
   ∃ (t : Ix.Kernel.RoleTable) (order : List Address) (pre : Ix.Kernel.Reader.Prelude .anon)
     (limits : Ix.Kernel.Admission.Limits),
     Ix.Kernel.Admission.admitBinding Address.admissionHash b = .ok t ∧
-    Ix.Cert.ClosureOrderAt t E seeds order ∧
+    Ix.Cert.ClosureOrderAt t E
+      (fun a => seeds a ∨ ∃ e ∈ t.evidence.toList, Ix.Kernel.Evidence.proof a ∈ e.2.toList) order ∧
     Ix.Kernel.Reader.preludeFor t = .ok pre ∧
     Ix.Kernel.Admission.prepareWith Address.admissionHash b pre limits (Ix.Cert.recordsOf E order)
       (Ix.Cert.blobsOf E order) (Ix.Cert.hintsOf E) = .ok (ev, ds)
