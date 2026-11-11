@@ -148,12 +148,17 @@ def run : IO UInt32 := do
 
 /-! ## Through the circuit
 
-`ixvm-pw-circuit` runs a check claim of `def idPoly.{u} : (α : Sort u) → α → α
-:= fun α a => a` through the program with its honest data (accepted), with a
-wrong datum at the type's outer binder and at the value's inner binder (each
-rejected where the circuit validates it), and with the value's block dropped
-(a host error naming the missing key). It runs once the program reads the
-binder data (its source names `ixvm.pw`); before that it reports a skip. -/
+`ixvm-pw-circuit` runs check claims of `def idPoly.{u} : (α : Sort u) → α → α :=
+fun α a => a` through the program, the record carrying its binder-data section:
+* the honest section (every binder `ifAllZero [u]`): accepted;
+* a wrong datum at the type's outer binder, and at the value's inner binder:
+  rejected where the circuit validates them;
+* the value's block missing, the undecided sentinel at a binder, a block with a
+  node left over, a share node at a binder: rejected at the conversion;
+* sections that are not in canonical form (blocks out of order, a root block at
+  variant 1, an empty block, an empty, unsorted or out-of-range parameter list):
+  rejected when the record is read.
+Each tampered record is its own record, at the address of its bytes. -/
 
 def idPolyType : Ixon.Expr := all (.sort 0) arrowEntry
 def idPolyValue : Ixon.Expr := lam (.sort 0) (lam (.var 0) (.var 0))
@@ -164,49 +169,55 @@ def idPoly : Ixon.Constant where
   refs := #[]
   univs := #[.var 0]
 
-/-- Every record's blocks, from a witness's channel-8 streams. -/
-def blocksOf (io : Aiur.IOBuffer) : Except String (Array (Address × Array Block)) := do
-  let mut out := #[]
-  for ((ch, key), info) in io.map do
-    unless ch.n == channel && key.size == 32 do continue
-    let a : Address := ⟨⟨key.map (·.val.toUInt8)⟩⟩
-    out := out.push (a, ← decode ((io.data.getD ch #[]).extract info.idx (info.idx + info.len)))
-  return out
+/-- The honest section: both roots, both binders `ifAllZero [u]`. -/
+def idPolySection : Array Ixon.BinderBlock :=
+  let u : Ixon.BinderNode := .ifAllZero #[0]
+  #[⟨false, 0, 0, #[u, u]⟩, ⟨false, 1, 0, #[u, u]⟩]
 
-/-- `c` with the blocks of the record at `a` changed by `f`. -/
-def tamper (c : Tests.Ix.IxVM.Case) (a : Address) (f : Array Block → Array Block) :
-    Except String Tests.Ix.IxVM.Case := do
-  let io := c.witness.inputIOBuffer
-  let tables := (← blocksOf io).map fun (b, bs) => if b == a then (b, f bs) else (b, bs)
-  let io := (seed (stripHints io) tables).1
-  return { c with witness := { c.witness with inputIOBuffer := io } }
+/-- The check case of `idPoly` with `binders`. -/
+def idPolyCase (ctx : _root_.Ix.ClaimContext) (label : String) (binders : Array Ixon.BinderBlock)
+    (accept : Bool := false) (rejectsWith : Option String := none) : Tests.Ix.IxVM.Builder := fun _ => do
+  let c := { idPoly with binders }
+  let addr := Address.blake3 (Ixon.ser c)
+  let env := ({} : Ixon.Env).storeConst addr c
+  let env := { env with anonHints := env.anonHints.insert addr (.regular 0) }
+  Tests.Ix.IxVM.Case.ofClaim s!"binder data: idPoly, {label}" env (.check ctx addr none) {} accept rejectsWith
 
-/-- `nodes` with the node at `i` replaced, in the block `(ekind, eidx)`. -/
-def setNodeAt (ekind eidx i : Nat) (n : Node) (bs : Array Block) : Array Block :=
-  bs.map fun b => if b.ekind == ekind && b.eidx == eidx then { b with nodes := b.nodes.set! i n } else b
+/-- `sec` with node `i` of block `b` replaced by `n`. -/
+def setNode (sec : Array Ixon.BinderBlock) (b i : Nat) (n : Ixon.BinderNode) : Array Ixon.BinderBlock :=
+  sec.modify b fun blk => { blk with nodes := blk.nodes.set! i n }
 
 def circuitCases : Except String (Array Tests.Ix.IxVM.Builder) := do
   let ctx ← _root_.Ix.ClaimContext.ofDefaultTable
-  let addr := Address.blake3 (Ixon.ser idPoly)
-  let env := ({} : Ixon.Env).storeConst addr idPoly
-  let env := { env with anonHints := env.anonHints.insert addr (.regular 0) }
-  let honest ← Tests.Ix.IxVM.Case.ofClaim "pw: idPoly with the kernel's data" env (.check ctx addr none)
-  let wrongType ← tamper honest addr (setNodeAt 0 0 0 never)
-  let wrongValue ← tamper honest addr (setNodeAt 0 1 1 always)
-  let dropped ← tamper honest addr (·.filter fun b => !(b.ekind == 0 && b.eidx == 1))
+  let s := idPolySection
+  let case := idPolyCase ctx
   return #[
-    fun _ => pure honest,
-    fun _ => pure { wrongType with label := "pw: idPoly, type's outer binder never", accept := false },
-    fun _ => pure { wrongValue with label := "pw: idPoly, value's inner binder always zero", accept := false },
-    fun _ => pure { dropped with label := "pw: idPoly, the value's data missing", accept := false,
-                                 rejectsWith := some "missing hint data: ixvm.pw at record" }]
+    case "the compiler's data" s (accept := true),
+    case "type's outer binder never" (setNode s 0 0 .never),
+    case "value's inner binder always zero" (setNode s 1 1 .zero),
+    case "the value's block missing" (s.extract 0 1)
+      (rejectsWith := some "binder data: no block for an expression with a binder"),
+    case "the undecided sentinel at the type's inner binder" (setNode s 0 1 .undecided)
+      (rejectsWith := some "binder data: an undecided binder"),
+    case "a share node at the value's outer binder" (setNode s 1 0 (.share 0))
+      (rejectsWith := some "binder data: a share node at a binder"),
+    case "a node left over in the type's block"
+      (s.modify 0 fun b => { b with nodes := b.nodes.push .never }),
+    case "the blocks out of order" #[s[1]!, s[0]!]
+      (rejectsWith := some "binder data: blocks are not strictly ascending"),
+    case "a root block at variant 1" (s.modify 1 fun b => { b with variant := 1 })
+      (rejectsWith := some "binder data: a root block at a variant other than 0"),
+    case "an empty block" (s.push ⟨true, 0, 0, #[]⟩)
+      (rejectsWith := some "binder data: an empty block"),
+    case "an empty parameter list" (setNode s 0 0 (.ifAllZero #[]))
+      (rejectsWith := some "binder data: an empty parameter list"),
+    case "a parameter at the level count" (setNode s 0 0 (.ifAllZero #[1]))
+      (rejectsWith := some "binder data: a parameter is not below the level count"),
+    case "a repeated parameter" (setNode s 0 0 (.ifAllZero #[0, 0]))
+      (rejectsWith := some "binder data: parameters are not strictly ascending")]
 
-def circuit : IO UInt32 := do
-  let sources ← Tests.Ix.IxVM.programSources
-  unless sources.any (fun (_, text) => (text.splitOn "\"ixvm.pw\"").length > 1) do
-    IO.println "[ixvm-pw-circuit] skipped: the program does not read the binder data yet"
-    return 0
-  Tests.Ix.IxVM.runCases "ixvm-pw-circuit" (← IO.ofExcept circuitCases)
+def circuit : IO UInt32 :=
+  do Tests.Ix.IxVM.runCases "ixvm-pw-circuit" (← IO.ofExcept circuitCases)
 
 /-! ## Diagnosis
 
