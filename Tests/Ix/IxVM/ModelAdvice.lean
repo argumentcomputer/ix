@@ -18,7 +18,9 @@ model is witness data. Two properties are tested here:
 * **A different valid model is accepted** (second part): the modeller's records
   with every `iota_j` proof rewritten (`let _ : Nat := 0; p`), so that every
   theorem record, and with it the advice set, has another address. The circuit
-  must accept the same claims with it.
+  must accept the same claims with it. Likewise a model whose proofs use the
+  quotient (`Quot`, `Quot.mk`, `Quot.lift`, `Quot.ind`, `Quot.sound`, the roles
+  function extensionality comes from), which advice may reference.
 * **No advice under user axioms** (third part): a claim whose axioms tree is
   not empty gets no model advice ("model advice: a claim with user axioms").
   The environments above declare Lean's compiler-trust axioms, which the
@@ -131,6 +133,57 @@ def tweakProofs : Ix.Kernel.Declaration .anon → Ix.Kernel.Declaration .anon
   | .thmDecl cv v => .thmDecl cv (.letE (.const (.role .nat) []) (.lit (.natVal 0)) v default)
   | d => d
 
+namespace QuotModel
+
+def roleC (r : Ix.Kernel.Role) (us : List Ix.Kernel.Level) : Ix.Kernel.Expr .anon := .const (.role r) us
+def one : Ix.Kernel.Level := .succ .zero
+def natE : Ix.Kernel.Expr .anon := roleC .nat []
+def zeroE : Ix.Kernel.Expr .anon := .lit (.natVal 0)
+/-- `@Eq.{1} Nat`, the relation. -/
+def eqNat : Ix.Kernel.Expr .anon := .app (roleC .eq [one]) natE
+/-- `@Quot.{1} Nat (@Eq Nat)`. -/
+def quotE : Ix.Kernel.Expr .anon := Ix.Kernel.Expr.mkAppN (roleC .quot [one]) [natE, eqNat]
+/-- `@Quot.mk.{1} Nat (@Eq Nat) x`. -/
+def mkQ (x : Ix.Kernel.Expr .anon) : Ix.Kernel.Expr .anon :=
+  Ix.Kernel.Expr.mkAppN (roleC .quotMk [one]) [natE, eqNat, x]
+/-- `@Eq.{1} (Quot (@Eq Nat)) a b`. -/
+def eqQ (a b : Ix.Kernel.Expr .anon) : Ix.Kernel.Expr .anon :=
+  Ix.Kernel.Expr.mkAppN (roleC .eq [one]) [quotE, a, b]
+
+/-- `v` under three `let`s whose values use the whole quotient package at `Nat`
+and `Eq`: `Quot.sound (Eq.refl 0) : Quot.mk _ 0 = Quot.mk _ 0`,
+`Quot.lift id (λ a b h, h) (Quot.mk _ 0) : Nat` and
+`Quot.ind (β := λ q, q = q) (λ a, Eq.refl _) (Quot.mk _ 0) : Quot.mk _ 0 = Quot.mk _ 0`.
+Every term is closed, so `v` needs no lifting. -/
+def lets (v : Ix.Kernel.Expr .anon) : Ix.Kernel.Expr .anon :=
+  let sound := Ix.Kernel.Expr.mkAppN (roleC .quotSound [one])
+    [natE, eqNat, zeroE, zeroE, Ix.Kernel.Expr.mkAppN (roleC .eqRefl [one]) [natE, zeroE]]
+  let respects : Ix.Kernel.Expr .anon :=
+    .lam natE (.lam natE (.lam (Ix.Kernel.Expr.mkAppN (roleC .eq [one]) [natE, .bvar 1, .bvar 0])
+      (.bvar 0) default) default) default
+  let lift := Ix.Kernel.Expr.mkAppN (roleC .quotLift [one, one])
+    [natE, eqNat, natE, .lam natE (.bvar 0) default, respects, mkQ zeroE]
+  let ind := Ix.Kernel.Expr.mkAppN (roleC .quotInd [one])
+    [natE, eqNat, .lam quotE (eqQ (.bvar 0) (.bvar 0)) default,
+     .lam natE (Ix.Kernel.Expr.mkAppN (roleC .eqRefl [one]) [quotE, mkQ (.bvar 0)]) default, mkQ zeroE]
+  .letE (eqQ (mkQ zeroE) (mkQ zeroE)) sound
+    (.letE natE lift (.letE (eqQ (mkQ zeroE) (mkQ zeroE)) ind v default) default) default
+
+/-- The quotient roles. -/
+def roles : List Ix.Kernel.Role := [.quot, .quotMk, .quotLift, .quotInd, .quotSound]
+
+end QuotModel
+
+/-- Every theorem's value under `QuotModel.lets`: a different proof of the same
+statement whose record names the five quotient roles, which advice may reference
+(function extensionality is a theorem from them). -/
+def quotProofs : Ix.Kernel.Declaration .anon → Ix.Kernel.Declaration .anon
+  | .thmDecl cv v => .thmDecl cv (QuotModel.lets v)
+  | d => d
+
+/-- The claims run with the quotient-using model: a mutual and a nested block. -/
+def quotNames : List String := ["IxVMInd.Even.rec", "IxVMInd.Tree.rec"]
+
 def run (lenv : Lean.Environment) : IO UInt32 := do
   let names := modeledNames.map nameOfString
   let missing := names.filter (!lenv.constants.contains ·)
@@ -149,6 +202,25 @@ def run (lenv : Lean.Environment) : IO UInt32 := do
   let (tweaked, _) ← IO.ofExcept (IxVM.Model.generateReport { withoutModels env with modelsAttached := false } tweakProofs)
   let differ := tweaked.models.toList.any fun (b, p) => (env.models[b]?.map (·.data)) != some p.data
   unless differ do IO.eprintln "[ixvm-model-advice] the tweaked models have the same payloads"
+  -- a model whose proofs name the quotient roles: every block gets a payload, and
+  -- the quotient roles are among the outside references, as basis references
+  let (quotEnv, repQ) ← IO.ofExcept
+    (IxVM.Model.generateReport { withoutModels env with modelsAttached := false } quotProofs)
+  let quotAddrs : List Address := match Ix.Kernel.Reader.defaultTable with
+    | .ok t => t.bound.toList.filterMap fun (r, a) => if QuotModel.roles.contains r then some a else none
+    | .error _ => []
+  let mut quotOk := quotAddrs.length == QuotModel.roles.length
+  let mut quotBlocks := 0
+  for (b, r) in repQ.blocks do
+    match r with
+    | .error e =>
+      IO.eprintln s!"[ixvm-model-advice] block {b} has no quotient-using model: {e}"
+      quotOk := false
+    | .ok (_, outside) =>
+      if quotAddrs.all (fun q => outside.any (· == (q, 0))) then quotBlocks := quotBlocks + 1
+  IO.println s!"[ixvm-model-advice] {quotBlocks} of {repQ.blocks.size} quotient-using models name \
+    the five quotient roles as basis references"
+  unless quotBlocks > 0 do quotOk := false
   let mkCase (e : Ixon.Env) (tag : String) (n : Lean.Name) : Builder := fun _ => do
     let some target := e.getAddr? (Ix.Name.fromLeanName n)
       | throw s!"{n} is not in the Ixon environment"
@@ -168,7 +240,9 @@ def run (lenv : Lean.Environment) : IO UInt32 := do
       (({} : Std.HashMap _ _).insert axioms.root axioms) (accept := false)
       (rejectsWith := some "model advice: a claim with user axioms")
   let cases := (names.map (mkCase env "modeller's model")) ++
-    (names.map (mkCase tweaked "a different valid model")) ++ [underAxiom]
+    (names.map (mkCase tweaked "a different valid model")) ++
+    (quotNames.map fun n => mkCase quotEnv "a model whose proofs use the quotient" (nameOfString n)) ++
+    [underAxiom]
   -- the verdicts on `NB4`'s claims, from the entry's host cases (loaded at run time)
   let fenv ← getCompileEnv #[`Tests.Ix.Kernel.EntryCaseDefs]
   let fixEnv ← loadSharedIxonEnv (nestedVerdicts.map (·.1)).toArray fenv
@@ -179,7 +253,7 @@ def run (lenv : Lean.Environment) : IO UInt32 := do
     Case.ofClaim s!"{if accept then "accept" else "refuse"} {n}" fixEnv (.check ctx target none) {} accept
   let cases := cases ++ nestedVerdicts.map fun (n, accept) => verdictCase n accept
   let rc ← runCases "ixvm-model-advice" cases.toArray
-  return if digestOk && differ && rc == 0 then 0 else 1
+  return if digestOk && differ && quotOk && rc == 0 then 0 else 1
 
 /-- The environment of an `.ixe` file under the default role table, without models. -/
 def loadIxe (path : String) : IO Ixon.Env := do

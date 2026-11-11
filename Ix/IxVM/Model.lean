@@ -247,8 +247,11 @@ def encDecl (nm : Names) : Declaration .anon → Except String Encoded
 
 /-- The basis roles a payload may name (`KernelModeled::basis_role_allowed`):
 `Nat` and its constructors and recursor, `Eq`, `Eq.refl`, `Eq.rec`, `PUnit`,
-`PUnit.unit`, `PUnit.rec`, `String`, `Char`. -/
-def basisRoleAllowed (r : Nat) : Bool := [0, 1, 2, 3, 8, 9, 10, 11, 12, 13, 37, 39].contains r
+`PUnit.unit`, `PUnit.rec`, the quotient (`Quot`, `Quot.mk`, `Quot.lift`,
+`Quot.ind`, `Quot.sound`, from which function extensionality is a theorem),
+`String`, `Char`. -/
+def basisRoleAllowed (r : Nat) : Bool :=
+  [0, 1, 2, 3, 8, 9, 10, 11, 12, 13, 32, 33, 34, 35, 36, 37, 39].contains r
 
 /-- The `refs` indices a record uses as constants (`KernelClaim::const_idxs_of`). -/
 partial def usedIdxsExpr : Ixon.Expr → Std.HashSet Nat

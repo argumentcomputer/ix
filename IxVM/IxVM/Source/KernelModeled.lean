@@ -511,7 +511,10 @@ def get_addrs := aiur_fn⟦
   -- ## Outside references of the advice
 
   -- The basis roles advice may reference: `Nat` and its constructors and recursor, `Eq`,
-  -- `Eq.refl`, `Eq.rec`, `PUnit`, `PUnit.unit`, `PUnit.rec`, `String`, `Char`. No axiom.
+  -- `Eq.refl`, `Eq.rec`, `PUnit`, `PUnit.unit`, `PUnit.rec`, the quotient (`Quot`,
+  -- `Quot.mk`, `Quot.lift`, `Quot.ind`, `Quot.sound`: function extensionality, along
+  -- which the model of a block with a nested occurrence under a binder transports, is a
+  -- theorem from them), `String`, `Char`. No other axiom.
 
 def basis_role_allowed := aiur_fn⟦
   fn basis_role_allowed(r: Field) -> Field {
@@ -526,6 +529,11 @@ def basis_role_allowed := aiur_fn⟦
         11 => {  1 } ,
         12 => {  1 } ,
         13 => {  1 } ,
+        32 => {  1 } ,
+        33 => {  1 } ,
+        34 => {  1 } ,
+        35 => {  1 } ,
+        36 => {  1 } ,
         37 => {  1 } ,
         39 => {  1 } ,
         _ => {  0 } ,
