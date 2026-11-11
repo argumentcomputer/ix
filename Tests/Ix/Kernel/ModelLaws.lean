@@ -352,8 +352,8 @@ theorem mot_facts {ρ : BVarIdx → V} {N Z0 Mv : V} {a : BinderMeta}
     (hN : ∀ ρ X, Denotes cval env φ ρ (.const natName []) X → X = N) (hZ0 : Z0 ∈ˢ N)
     (hMv : Denotes cval env φ ρ (.lam (.const natName []) (.sort .zero) a) Mv) :
     (∀ x, x ∈ˢ N → app Mv x = univ 0) ∧
-      φ BasisDSL.uN = 1 → ∀ (ρ' : BVarIdx → V) (d : BinderMeta) (X : V),
-        Denotes cval env φ ρ' (motT d) X → Mv ∈ˢ X := by
+      (φ BasisDSL.uN = 1 → ∀ (ρ' : BVarIdx → V) (d : BinderMeta) (X : V),
+        Denotes cval env φ ρ' (motT d) X → Mv ∈ˢ X) := by
   obtain ⟨A, F, rfl, hA, hF, hP⟩ := den_lam_inv hMv
   obtain rfl := hN _ _ hA
   have hF0 : ∀ x, x ∈ˢ A → F x = univ 0 := fun x hx => den_sort_inv (hF x hx)
@@ -492,6 +492,10 @@ theorem mem_of_find {env : Env .anon} {n : Key .anon} {ci : ConstantInfo .anon}
     (h : env.find? n = some ci) : ci ∈ env.consts :=
   _root_.Ix.Kernel.Semantics.Env.find?_mem h
 
+theorem instSelf1 (e : Expr .anon) :
+    e.instantiateLevelParams [BasisDSL.uN] [.param BasisDSL.uN] = e :=
+  Expr.instantiateLevelParams_self [BasisDSL.uN] e
+
 /-- The level assignment the example reads at: every universe parameter is `1`. -/
 def φ1 : LevelParam → Nat := fun _ => 1
 
@@ -577,9 +581,10 @@ theorem no_model_of_natRec_false_installs {ds : List (Declaration .anon)} {env :
   obtain ⟨TS, hTS, hSmem⟩ := M.mem _ (mem_of_find hfS) φ1 (fun _ => empty)
   obtain ⟨AS, BS, rfl, hAS, hBS, hPS⟩ := den_pi_inv hTS
   obtain rfl := hconst hAS
-  have hSN : ∀ n, n ∈ˢ M.cval natName φ1 → app (M.cval natSuccName φ1) n ∈ˢ M.cval natName φ1 :=
-    fun n hn => by rw [← hconst (hBS n hn)]; exact app_mem_piR hSmem hn
-      (fun hr x hx => by rw [← univ_zero]; exact hPS hr x hx)
+  have hSN : ∀ n, n ∈ˢ M.cval natName φ1 → app (M.cval natSuccName φ1) n ∈ˢ M.cval natName φ1 := by
+    intro n hn
+    rw [← hconst (hBS n hn)]
+    exact app_mem_piR hSmem hn (fun hr x hx => by rw [← univ_zero]; exact hPS hr x hx)
   obtain ⟨TT, hTT, hTmem⟩ := M.mem _ (mem_of_find hfT) φ1 (fun _ => empty)
   rw [ann_sort hannT] at hTT
   have hTv : M.cval kT φ1 ∈ˢ (univ 0 : V) := by
@@ -614,8 +619,7 @@ theorem no_model_of_natRec_false_installs {ds : List (Declaration .anon)} {env :
         [.param BasisDSL.uN])
       [Mv, Fv, Sv] (push Sv (push Fv (push Mv (fun _ => empty))))
       (.forallE (.const natName []) (.app (.bvar 3) (.bvar 0)) mR₄') := by
-    rw [show [Level.param BasisDSL.uN] = [BasisDSL.uN].map Level.param from rfl,
-      Expr.instantiateLevelParams_self]
+    rw [instSelf1]
     exact .cons hX₁ hMvX₁ (.cons hX₂ hFvX₂ (.cons hX₃ hSvX₃ .nil))
   -- ι for `Nat.zero`
   obtain ⟨H, hH, heq⟩ := M.iota_rule natRecName _ 3 3 _ rl₀ hfR (by simp)
@@ -628,9 +632,12 @@ theorem no_model_of_natRec_false_installs {ds : List (Declaration .anon)} {env :
       (Level.substFn φ1 [BasisDSL.uN] [.param BasisDSL.uN])) Mv) Fv) Sv) (M.cval natZeroName φ1)
       = app (app (app H Mv) Fv) Sv := heq
   -- the right-hand side `fun motive zero succ => zero` returns the zero case
-  rw [hrhs₀', show [Level.param BasisDSL.uN] = [BasisDSL.uN].map Level.param from rfl,
-    Expr.instantiateLevelParams_self] at hH
-  obtain ⟨A₇, F₇, rfl, hA₇, hF₇, hP₇⟩ := den_lam_inv hH
+  have hH' : Denotes M.cval (claimedEnv env) φ1 (fun _ => empty)
+      ((zeroRhs e' t₁' t₂' l₁' l₂' l₃').instantiateLevelParams [BasisDSL.uN]
+        [.param BasisDSL.uN]) H := by
+    rw [← hrhs₀']; exact hH
+  rw [instSelf1] at hH'
+  obtain ⟨A₇, F₇, rfl, hA₇, hF₇, hP₇⟩ := den_lam_inv hH'
   have hMv₇ : Mv ∈ˢ A₇ := hmot rfl _ _ _ hA₇
   obtain ⟨A₈, F₈, hF₇e, hA₈, hF₈, hP₈⟩ := den_lam_inv (hF₇ Mv hMv₇)
   have hFv₈ : Fv ∈ˢ A₈ := by rw [hFv0]; exact zero_mem (fun _ _ h => hconst h) hZ0 happ hA₈
@@ -652,7 +659,7 @@ theorem no_model_of_natRec_false_installs {ds : List (Declaration .anon)} {env :
     M.cval_params _ _ hfR _ _ (fun p hp => by
       simp only [ConstantInfo.toConstantVal, List.mem_singleton] at hp
       subst hp
-      rfl)
+      first | rfl | simp [Level.substFn, Level.eval, φ1])
   have hP0 : M.cval cvP'.name φ1 = empty := by
     rw [hPv, hL0, hRv', hRR, heq', hH0]
   obtain ⟨TB, hTB, hBmem⟩ := M.mem _ (mem_of_find hfB) φ1 (fun _ => empty)
