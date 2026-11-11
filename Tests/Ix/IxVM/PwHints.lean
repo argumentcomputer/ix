@@ -502,7 +502,7 @@ def units : IO Unit := do
     (fun (env : Ixon.Env) (c, _) => env.storeConst (Address.blake3 (Ixon.ser c)) c) {}
   let env ← IO.ofExcept (_root_.IxVM.ClaimHarness.withRoleTable base
     (← IO.ofExcept _root_.Ix.Kernel.Reader.defaultTableBytes))
-  let (env', report) ← IO.ofExcept (apply env)
+  let (env', report) ← IO.ofExcept (_root_.Ix.Compile.BinderData.apply env)
   IO.println s!"[ixvm-binder-data] {report.summary}"
   ensure report.undecided.isEmpty "an undecided binder"
   ensure (env'.consts.size == env.consts.size) "the record count changed"
@@ -523,10 +523,10 @@ def units : IO Unit := do
   for (_, a) in t.bound do
     ensure (env'.consts.contains a) s!"the binding names {a}, not a record"
   -- a second run changes nothing; a run is deterministic
-  let (env'', _) ← IO.ofExcept (apply env')
+  let (env'', _) ← IO.ofExcept (_root_.Ix.Compile.BinderData.apply env')
   ensure ((← IO.ofExcept (bytesOf env'')) == (← IO.ofExcept (bytesOf env')))
     "a second run changed the environment"
-  let (again, _) ← IO.ofExcept (apply env)
+  let (again, _) ← IO.ofExcept (_root_.Ix.Compile.BinderData.apply env)
   ensure ((← IO.ofExcept (bytesOf again)) == (← IO.ofExcept (bytesOf env')))
     "two runs differ"
 
@@ -564,7 +564,7 @@ def corpus : IO UInt32 := do
   IO.println s!"BDCORPUS stored: {stored.size} records with a section, {nodes} nodes, \
     {undecided} undecided, {nonCanonical} not canonical, {projections} projections with data"
   let t0 ← IO.monoMsNow
-  let (sections, report) ← IO.ofExcept (annotate env records)
+  let (sections, report) ← IO.ofExcept (_root_.Ix.Compile.BinderData.annotate env records)
   IO.println s!"BDCORPUS recomputed in {(← IO.monoMsNow) - t0}ms: {report.summary}, \
     hwm_kb={← rssKb}"
   let mut differ := 0
