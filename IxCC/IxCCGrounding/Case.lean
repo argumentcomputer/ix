@@ -667,7 +667,7 @@ theorem caseIota (M : Model V env) (hL : Laws M) {kc kr : KKey} {sh : CaseShape}
       rw [lift_mkAppN, getAppArgs_mkAppN, lift_bvarsFrom _ _ _ _ (Nat.zero_le _)]
       simp only [Expr.liftLooseBVars, Expr.getAppArgs, List.nil_append]
       rw [List.take_of_length_le (show (bvarsFrom (1 + sh.nM) sh.nP).length ≤ sh.nP by
-        rw [bvarsFrom_length]), ← hps, take_left_ctx]
+        simp [bvarsFrom_length]), ← hps, take_left_ctx]
       have := den_bvarsFrom (cval := M.cval) (env := env) (φ := φ) ρ ([mo] ++ Ws) ps []
       rwa [List.nil_append, ← List.append_assoc, show ([mo] ++ Ws).length = 1 + sh.nM by
         simp; omega] at this)
@@ -675,7 +675,7 @@ theorem caseIota (M : Model V env) (hL : Laws M) {kc kr : KKey} {sh : CaseShape}
       rw [hRC, getAppArgs_mkAppN]
       simp only [Expr.getAppArgs, List.nil_append]
       rw [List.drop_eq_nil_of_le (show (bvarsFrom cs.nF sh.nP).length ≤ sh.nP by
-        rw [bvarsFrom_length]), List.drop_eq_nil_of_le (show (ps ++ [mo] ++ Ws).length ≤
+        simp [bvarsFrom_length]), List.drop_eq_nil_of_le (show (ps ++ [mo] ++ Ws).length ≤
           sh.nP + 1 + sh.nM by simp; omega)]
       exact .nil)
   rw [hlr, inst_self, hrlr] at hH
@@ -686,11 +686,15 @@ theorem caseIota (M : Model V env) (hL : Laws M) {kc kr : KKey} {sh : CaseShape}
           Expr.mkAppN (.const kr (sh.lps.map Level.param)) (bvarsFrom (cs.nF + sh.nM + 1) sh.nP ++
             [.bvar (cs.nF + sh.nM)] ++ bvarsFrom cs.nF sh.nM ++ [.bvar (cs.nF - 1 - r)]))))) H := by
     rw [← lamTele_append, ← e1]; exact hH
-  have hQM' := hQM
-  rw [hrt, ← piTele_append, List.append_assoc] at hQM'
-  rw [piTele_append] at hQM'
-  obtain ⟨Y1, hY1, eY1⟩ := lamTele_app _ _ _ hH2 (by rw [← piTele_append]; exact hQM')
-    (by simp; omega)
+  have hQM' : Fits M.cval env φ ρ (piTele ((bP ++ [bMo]) ++ (sh.ctors.map fun c => (c.recMinor, c.minorMeta)))
+      (piTele [((Expr.mkAppN (.const sh.ind sh.indLevels) (bvarsFrom 1 sh.nP)).liftLooseBVars sh.nM 0,
+        sh.majorMeta)] (.app (.bvar (sh.nM + 1)) (.bvar 0)))) (ps ++ [mo] ++ Ws)
+      (pushAll (ps ++ [mo] ++ Ws) ρ)
+      (piTele [((Expr.mkAppN (.const sh.ind sh.indLevels) (bvarsFrom 1 sh.nP)).liftLooseBVars sh.nM 0,
+        sh.majorMeta)] (.app (.bvar (sh.nM + 1)) (.bvar 0))) := by
+    rw [piTele_append, ← piTele_append (sh.ctors.map fun c => (c.recMinor, c.minorMeta)), ← hrt]
+    exact hQM
+  obtain ⟨Y1, hY1, eY1⟩ := lamTele_app _ _ _ hH2 hQM' (by simp; omega)
   have hcR : TeleCorr M.cval env φ (pushAll (ps ++ [mo] ++ Ws) ρ) (pushAll ps ρ)
       (liftTele (sh.nM - j) j cs.fields) fbs := by
     have := fieldsCorr (M := M) (φ := φ) (ps := ps) (ρ := ρ) (fbs := fbs) (cs := cs) (j := j)
@@ -729,14 +733,14 @@ theorem caseIota (M : Model V env) (hL : Laws M) {kc kr : KKey} {sh : CaseShape}
       have := den_bvarsFrom (cval := M.cval) (env := env) (φ := φ) ρ
         ([mo] ++ Ws.take j ++ Fs.take rf) ps []
       rw [List.nil_append, show ([mo] ++ Ws.take j ++ Fs.take rf).length = rf + j + 1 by simp; omega,
-        hps, pushAll_append, show ps ++ ([mo] ++ Ws.take j ++ Fs.take rf) =
+        hps, show ps ++ ([mo] ++ Ws.take j ++ Fs.take rf) =
           ps ++ [mo] ++ Ws.take j ++ Fs.take rf by simp, pushAll_append (ps ++ [mo] ++ Ws.take j)] at this
       exact denotesList_functional hPs1 this
     have e4 : Ps2 = ps := by
       have := den_bvarsFrom (cval := M.cval) (env := env) (φ := φ) ρ [mo] ps []
       rw [List.nil_append, hps] at this
       exact denotesList_functional hPs2 this
-    subst e3 e4
+    subst Ps1 Ps2
     obtain rfl := Denotes_functional (den_const_env hIND) hIND'
     have hfX : Fs[rf] ∈ˢ ps.foldl app IND := hm'
     have hsn := fits_snoc hQM rfl hXmajR hfX
@@ -773,10 +777,11 @@ theorem caseIota (M : Model V env) (hL : Laws M) {kc kr : KKey} {sh : CaseShape}
     · have := den_bvarsFrom (cval := M.cval) (env := env) (φ := φ) ρ Fs Ws (ps ++ [mo])
       rwa [hFl, hWl] at this
     · refine .cons ?_ .nil
-      have h := Denotes.bvar (cval := M.cval) (env := env) (φ := φ)
-        (ρ := pushAll (ps ++ [mo] ++ Ws ++ Fs) ρ) (i := cs.nF - 1 - rf)
-      rwa [pushAll_append (ps ++ [mo] ++ Ws), pushAll_lt (E' := ρ) (show cs.nF - 1 - rf < Fs.length by
-        omega)] at h
+      have hv : pushAll (ps ++ [mo] ++ Ws ++ Fs) ρ (cs.nF - 1 - rf) = pushAll Fs ρ (cs.nF - 1 - rf) := by
+        rw [pushAll_append (ps ++ [mo] ++ Ws)]
+        exact pushAll_lt (show cs.nF - 1 - rf < Fs.length by omega)
+      rw [← hv]
+      exact .bvar
   have hbodyR : Denotes M.cval env φ (pushAll Fs (pushAll (ps ++ [mo] ++ Ws) ρ))
       (Expr.mkAppN (.bvar (cs.nF + sh.nM - 1 - j)) (bvarsFrom 0 cs.nF ++ cs.recFields.map fun r =>
         Expr.mkAppN (.const kr (sh.lps.map Level.param)) (bvarsFrom (cs.nF + sh.nM + 1) sh.nP ++
@@ -784,18 +789,18 @@ theorem caseIota (M : Model V env) (hL : Laws M) {kc kr : KKey} {sh : CaseShape}
       ((Fs ++ IHs).foldl app (Ws[j]'(by omega))) := by
     rw [hE]
     refine (den_mkAppN _).mpr ⟨_, Fs ++ IHs, ?_, ?_, rfl⟩
-    · have h := Denotes.bvar (cval := M.cval) (env := env) (φ := φ)
-        (ρ := pushAll (ps ++ [mo] ++ Ws ++ Fs) ρ) (i := (sh.nM - 1 - j) + Fs.length)
-      rw [pushAll_append (ps ++ [mo] ++ Ws), pushAll_offset] at h
-      have hlt : ps.length + 1 + j < (ps ++ [mo] ++ Ws).length := by simp; omega
+    ·       have hlt : ps.length + 1 + j < (ps ++ [mo] ++ Ws).length := by simp; omega
       have h2 := pushAll_rev (ps ++ [mo] ++ Ws) ρ (ps.length + 1 + j) hlt
       rw [show (ps ++ [mo] ++ Ws).length - 1 - (ps.length + 1 + j) = sh.nM - 1 - j by simp; omega]
         at h2
       have h4 : (ps ++ [mo] ++ Ws)[ps.length + 1 + j] = Ws[j]'(by omega) := by
         rw [List.getElem_append_right (show (ps ++ [mo]).length ≤ ps.length + 1 + j by simp)]
         simp
-      rw [h2, h4] at h
-      rwa [show sh.nM - 1 - j + Fs.length = cs.nF + sh.nM - 1 - j by omega] at h
+      have hv : pushAll (ps ++ [mo] ++ Ws ++ Fs) ρ (cs.nF + sh.nM - 1 - j) = Ws[j]'(by omega) := by
+        rw [pushAll_append (ps ++ [mo] ++ Ws),
+          show cs.nF + sh.nM - 1 - j = (sh.nM - 1 - j) + Fs.length by omega, pushAll_offset, h2, h4]
+      rw [← hv]
+      exact .bvar
     · refine denotesList_append ?_ ?_
       · have := den_bvarsFrom (cval := M.cval) (env := env) (φ := φ) ρ [] Fs (ps ++ [mo] ++ Ws)
         rwa [List.append_nil, List.length_nil, hFl] at this
@@ -854,7 +859,7 @@ theorem caseIota (M : Model V env) (hL : Laws M) {kc kr : KKey} {sh : CaseShape}
   -- the last binder is read in the graph regime
   have hlastReg : regime φ mLast.pw ≠ 0 := by
     have hne : (ps ++ mo :: t :: mins) ≠ [] := by simp
-    have hsplit := (List.dropLast_append_getLast hne).symm
+    have hsplit := (List.dropLast_concat_getLast hne).symm
     obtain ⟨v, A, B, hv, hX, _⟩ := hlast _ _ hsplit
     have hpre' := fits_prefix (bs := sh.binders) (xs := (ps ++ mo :: t :: mins).dropLast)
       (ys := [(ps ++ mo :: t :: mins).getLast hne]) (by rw [← hsplit]; exact hfit0) (by simp; omega)
