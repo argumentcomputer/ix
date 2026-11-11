@@ -706,7 +706,7 @@ theorem caseIota (M : Model V env) (hL : Laws M) {kc kr : KKey} {sh : CaseShape}
     rw [liftTele_length]; omega)] at hFR
   obtain ⟨Y2, hY2, eY2⟩ := lamTele_app _ _ _ hY1 hFR (by rw [liftTele_length]; omega)
   -- the induction hypotheses
-  have hfv : ∀ rf, rf < cs.nF → pushAll Fs ρ (cs.nF - 1 - rf) = Fs[rf]'(by omega) := by
+  have hfv : ∀ rf (hrf : rf < cs.nF), pushAll Fs ρ (cs.nF - 1 - rf) = Fs[rf]'(by omega) := by
     intro rf hrf; rw [← hFl]; exact pushAll_rev Fs ρ rf (by omega)
   have hpre : (Ws.take j).length = j := by simp; omega
   have hcE : TeleCorr M.cval env φ (pushAll (ps ++ [mo] ++ Ws.take j) ρ) (pushAll ps ρ)
@@ -746,12 +746,14 @@ theorem caseIota (M : Model V env) (hL : Laws M) {kc kr : KKey} {sh : CaseShape}
     have hsn := fits_snoc hQM rfl hXmajR hfX
     obtain ⟨TR, hTR, hrm⟩ := mem_key M hfr φ ρ
     obtain ⟨RR, hRR, hmRR⟩ := fits_app_mem hsn hTR hrm
-    rw [den_app_bvars] at hRR
+    have hRR' : Denotes M.cval env φ (push Fs[rf] (pushAll (ps ++ [mo] ++ Ws) ρ))
+        (.app (.bvar (sh.nM + 1)) (.bvar 0)) RR := hRR
+    rw [den_app_bvars] at hRR'
     have hmo : push Fs[rf] (pushAll (ps ++ [mo] ++ Ws) ρ) (sh.nM + 1) = mo := by
       show pushAll (ps ++ [mo] ++ Ws) ρ sh.nM = mo
       rw [← hWl, show ps ++ [mo] ++ Ws = ps ++ mo :: Ws by simp, pushAll_at]
-    rw [hmo] at hRR
-    rw [hR0e, ← hRR]
+    rw [hmo] at hRR'
+    rw [hR0e, ← hRR']
     exact hmRR
   -- the recursor's rule body: the wrapper at the fields and the induction hypotheses
   obtain ⟨IHs, hIHs⟩ : ∃ IHs : List V, IHs = cs.recFields.map fun rf =>
@@ -789,7 +791,7 @@ theorem caseIota (M : Model V env) (hL : Laws M) {kc kr : KKey} {sh : CaseShape}
       ((Fs ++ IHs).foldl app (Ws[j]'(by omega))) := by
     rw [hE]
     refine (den_mkAppN _).mpr ⟨_, Fs ++ IHs, ?_, ?_, rfl⟩
-    ·       have hlt : ps.length + 1 + j < (ps ++ [mo] ++ Ws).length := by simp; omega
+    · have hlt : ps.length + 1 + j < (ps ++ [mo] ++ Ws).length := by simp; omega
       have h2 := pushAll_rev (ps ++ [mo] ++ Ws) ρ (ps.length + 1 + j) hlt
       rw [show (ps ++ [mo] ++ Ws).length - 1 - (ps.length + 1 + j) = sh.nM - 1 - j by simp; omega]
         at h2
