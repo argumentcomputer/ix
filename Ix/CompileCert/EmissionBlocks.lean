@@ -280,7 +280,7 @@ theorem definitionBlock_correct (context : CompileEnv × BlockEnv)
     aligned external source typeScope valueScope good compiled
   obtain ⟨erased, read⟩ := SharingRoots.build_read cx param self after context.1.sharingLimits (.defn payload.1)
     _ built roots
-  refine ⟨clean, growth, ⟨_, wrapped⟩, ?_, read⟩
+  refine ⟨clean, growth, ⟨_, wrapped⟩, ?_, SharingRoots.RootsRead.same_tables read rfl rfl rfl⟩
   rw [erased, shape]
   exact definition_erase _ _ _
 
@@ -354,7 +354,7 @@ theorem axiomBlock_correct (context : CompileEnv × BlockEnv)
     aligned external source scope good compiled
   obtain ⟨erased, read⟩ := SharingRoots.build_read cx param self after context.1.sharingLimits (.axio payload.1)
     _ built roots
-  refine ⟨clean, growth, ⟨_, wrapped⟩, ?_, read⟩
+  refine ⟨clean, growth, ⟨_, wrapped⟩, ?_, SharingRoots.RootsRead.same_tables read rfl rfl rfl⟩
   rw [erased, shape]
   exact axiom_erase _ _
 
@@ -423,7 +423,7 @@ theorem quotientBlock_correct (context : CompileEnv × BlockEnv)
     aligned external source scope good compiled
   obtain ⟨erased, read⟩ := SharingRoots.build_read cx param self after context.1.sharingLimits (.quot payload.1)
     _ built roots
-  refine ⟨clean, growth, ⟨_, wrapped⟩, ?_, read⟩
+  refine ⟨clean, growth, ⟨_, wrapped⟩, ?_, SharingRoots.RootsRead.same_tables read rfl rfl rfl⟩
   rw [erased, shape]
   exact quotient_erase _ _
 
@@ -506,7 +506,7 @@ theorem recursorBlock_correct (context : CompileEnv × BlockEnv)
     context aligned external source scope ruleScope good compiled
   obtain ⟨erased, read⟩ := SharingRoots.build_read cx param self after context.1.sharingLimits (.recr payload.1)
     _ built roots
-  refine ⟨clean, growth, ⟨_, wrapped⟩, ?_, read⟩
+  refine ⟨clean, growth, ⟨_, wrapped⟩, ?_, SharingRoots.RootsRead.same_tables read rfl rfl rfl⟩
   rw [erased, shape]
   exact recursor_erase _ _ _ fields
 
@@ -664,7 +664,8 @@ theorem familyBlock_correct (context : CompileEnv × BlockEnv)
   rw [← rootsList] at roots
   obtain ⟨erased, read⟩ := SharingRoots.build_read cx param self after context.1.sharingLimits
     (.muts #[.indc ind]) _ built roots
-  refine ⟨clean, growth, ⟨indMeta, pairs, wrapped⟩, ?_, read⟩
+  refine ⟨clean, growth, ⟨indMeta, pairs, wrapped⟩, ?_,
+    SharingRoots.RootsRead.same_tables read rfl rfl rfl⟩
   rw [erased, shape]
   exact inductive_erase _ _ _ ctorShapes
 

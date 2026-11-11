@@ -509,6 +509,41 @@ theorem RootsRead.transfer {before after : MemberReader md} {related : Ix.Expr �
       obtain ⟨target, rel, read⟩ := head
       exact .cons ⟨target, rel, same.1.trans read⟩ (ih same.2)
 
+/-- **A member reader reads through the record's tables alone**: the readers
+of two records with the same sharing, reference and universe tables read
+every expression the same, errors included. The records may differ in their
+binder-data section, which the reader does not read. -/
+theorem memberReader_read_same_tables (context : Ctx md) (before after : Ixon.Constant)
+    (param : Nat → LevelParam) (self : Nat → Option (ReadM (CName md)))
+    (sharing : before.sharing = after.sharing) (refs : before.refs = after.refs)
+    (univs : before.univs = after.univs) :
+    (MemberReader.mk' context before param self).read = (MemberReader.mk' context after param self).read := by
+  have conv : convExpr (expressionContext context before param self) =
+      convExpr (expressionContext context after param self) := by
+    funext table source
+    exact convExpr_same_tables context before after param self refs univs table source
+  have table : buildTable (expressionContext context before param self) before.sharing.toList #[] =
+      buildTable (expressionContext context after param self) after.sharing.toList #[] := by
+    unfold buildTable
+    rw [conv, sharing]
+  rw [memberReader_eq, memberReader_eq]
+  funext root
+  show convExpr _ _ root = convExpr _ _ root
+  rw [conv, table]
+
+/-- A root-by-root relation read by one record's member reader holds for the
+reader of a record with the same tables (`memberReader_read_same_tables`): the
+compiler's built record, and the same record with its binder-data section. -/
+theorem RootsRead.same_tables {context : Ctx md} {param : Nat → LevelParam}
+    {self : Nat → Option (ReadM (CName md))} {before after : Ixon.Constant}
+    {related : Ix.Expr → CExpr md → Prop} {sources : List Ix.Expr} {roots : List Ixon.Expr}
+    (holds : RootsRead (MemberReader.mk' context before param self) related sources roots)
+    (sharing : before.sharing = after.sharing) (refs : before.refs = after.refs)
+    (univs : before.univs = after.univs) :
+    RootsRead (MemberReader.mk' context after param self) related sources roots :=
+  RootsRead.transfer
+    (by rw [memberReader_read_same_tables context before after param self sharing refs univs]) holds
+
 /-- A root-by-root relation survives every extension of the in-flight
 reader. -/
 theorem RootsRead.grow {context : Ctx md} {param : Nat → LevelParam} {self : Nat → Option (ReadM (CName md))}
