@@ -468,32 +468,38 @@ def check_positivity_aug := aiur_fn⟦
         0 => {  () } ,
         _ => {
           let dom_w = KernelWhnf::whnf(rc, dom, types);
-          match (*(dom_w)) {
-            KernelTypes::KExprNode::Forall(idom, ibody) => {
-              assert_eq!(expr_mentions_block(idom, block_addrs), 0,
-                "strict positivity: block occurs left of an arrow");
-              let t2 = (&(Lists::Node::Cons(idom, types)));
-              check_positivity_aug(rc, ibody, block_addrs, t2, check_params) } ,
+          -- Lean tests positivity after whnf: a field whose occurrences whnf
+          -- erases (`Tagged T`, `Tagged _ := Nat`) is an ordinary field
+          match expr_mentions_block(dom_w, block_addrs) {
+            0 => {  () } ,
             _ => {
-              match KernelTypes::collect_spine(dom_w) {
-                (head, args) => {
-                  match (*(head)) {
-                    KernelTypes::KExprNode::Const(caddr, us) => {
-                      match caddr_is_peer(caddr, block_addrs) {
-                        1 => {
-                          match check_params {
+              match (*(dom_w)) {
+                KernelTypes::KExprNode::Forall(idom, ibody) => {
+                  assert_eq!(expr_mentions_block(idom, block_addrs), 0,
+                    "strict positivity: block occurs left of an arrow");
+                  let t2 = (&(Lists::Node::Cons(idom, types)));
+                  check_positivity_aug(rc, ibody, block_addrs, t2, check_params) } ,
+                _ => {
+                  match KernelTypes::collect_spine(dom_w) {
+                    (head, args) => {
+                      match (*(head)) {
+                        KernelTypes::KExprNode::Const(caddr, us) => {
+                          match caddr_is_peer(caddr, block_addrs) {
                             1 => {
-                              check_valid_ind_app(caddr, us, args,
-                                block_addrs, Lists::length(types)) } ,
-                            _ => {  () } ,
+                              match check_params {
+                                1 => {
+                                  check_valid_ind_app(caddr, us, args,
+                                    block_addrs, Lists::length(types)) } ,
+                                _ => {  () } ,
+                              } } ,
+                            _ => {
+                              -- D7: a nested occurrence is the modeled route's
+                              -- (`KernelModeled::block_is_modeled`); one that only
+                              -- whnf exposes is refused here, as Lean refuses it.
+                              assert_eq!(0, 1,
+                                "strict positivity: nested occurrence on the native route");
+                              () } ,
                           } } ,
-                        _ => {
-                          -- D7: a nested occurrence is the modeled route's
-                          -- (`KernelModeled::block_is_modeled`); one that only
-                          -- whnf exposes is refused here, as Lean refuses it.
-                          assert_eq!(0, 1,
-                            "strict positivity: nested occurrence on the native route");
-                          () } ,
                       } } ,
                   } } ,
               } } ,

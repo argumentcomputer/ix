@@ -228,6 +228,14 @@ public inductive NestReflOpt where
   | leaf : NestReflOpt
   | mk : Option (Nat → NestReflOpt) → NestReflOpt
 
+-- A field that mentions the block only where whnf erases it (`Tagged T`,
+-- `Tagged _ := Nat`): Lean tests positivity after whnf, so it is ordinary.
+@[expose] public def Tagged (_ : Type) : Type := Nat
+
+public inductive Phantom where
+  | leaf : Phantom
+  | mk : Tagged Phantom → Phantom
+
 public def thmMajorWant (n : Nat) (_pf : n = 1) : Nat := n
 
 @[expose] public def thmMajorUse : Nat :=
