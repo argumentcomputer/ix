@@ -342,10 +342,10 @@ def verifyMixedScalarRealSource : IO Unit := do
   let (src, checked) ← match Src.Recheck.annotation { annotated with table } ann with
     | .ok r => pure r
     | .error _ => throw (IO.userError "OS16 mixed: the base annotation was refused on the annotated program")
-  let (lam, _) ← IO.ofExcept ((Lam.erase src checked).mapError fun e => (Recheck.Err.ofErase e).message)
-  let trace ← IO.ofExcept (Anf.Pipeline.produce cfg.budgets lam)
-  let (anf, _) ← IO.ofExcept ((Recheck.produceClosures src trace).mapError (·.message))
-  let fir ← IO.ofExcept ((Fir.lower anf).mapError fun e => (Recheck.Err.ofFir e).message)
+  let (lam, _) ← IO.ofExcept ((IxCC.Lam.erase src checked).mapError fun e => (Recheck.Err.ofErase e).message)
+  let trace ← IO.ofExcept (IxCC.Anf.Pipeline.produce cfg.budgets lam)
+  let (anf, _) ← IO.ofExcept ((Recheck.produceClosures src trace).mapError fun (e : Recheck.Err) => e.message)
+  let fir ← IO.ofExcept ((IxCC.Fir.lower anf).mapError fun e => (Recheck.Err.ofFir e).message)
   let pol := Own.Plain.selectRcPolicyForSrc src fir
   check s!"OS16 mixed scalar/heap contracts expected .zeroRc, got {repr pol}" (pol == .zeroRc)
 
