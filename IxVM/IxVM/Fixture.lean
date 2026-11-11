@@ -33,7 +33,7 @@ structure Fixture where
   constants : Array Serialized
   blobs : Array Serialized
   roles : Array Serialized := #[]
-  /-- The binder data (D2) of the records, as IxVM reads them from IO channel 8:
+  /-- The binder data of the records, as IxVM reads them from IO channel 8:
   per record its address and its stream values (`Ix/IxVM/PwHints.lean`). Version 2
   only. -/
   binderData : Array (Array Nat × Array Nat) := #[]

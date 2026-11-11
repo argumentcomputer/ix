@@ -5,7 +5,7 @@ public import Ix.IxVM.Model
 public import Tests.Ix.IxVM.Harness
 public import Tests.Ix.IxVMFixtures
 
-/-! # Model advice for the modeled route (lane dc, decision D7)
+/-! # Model advice for the modeled route
 
 IxVM checks a mutual or nested inductive block against a model the prover
 supplies (`IxVM/IxVM/Source/KernelModeled.lean`, `Ix/IxVM/Model.lean`). The

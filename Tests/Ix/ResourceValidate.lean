@@ -102,10 +102,13 @@ def runTier : IO Unit := do
   -- assumption axioms (uncertified: header, then the fold's steps)
   let axiomOf (typ : Expr) (refs : Array Address) : Constant :=
     { info := .axio ⟨false, 0, typ⟩, sharing := #[], refs, univs := #[] }
-  let (axEnv, ax) := store base (axiomOf (.ref 0 #[]) #[unit])
+  -- `ax : U → U`, an axiom no role binds. `U` has `True`'s shape, so an axiom `: U` would be
+  -- Lean's `Lean.trustCompiler : True` record for record, at the address the default table
+  -- binds to that inert role: declined by the certified entry, not typed as an assumption.
+  let (axEnv, ax) := store base (axiomOf (.leanAll (.ref 0 #[]) (.ref 0 #[])) #[unit])
   cases := cases.push ("assumption axiom", axEnv, true)
   let useAx : Constant := {
-    info := .defn ⟨.defn, .safe, 0, .ref 0 #[], .ref 1 #[]⟩
+    info := .defn ⟨.defn, .safe, 0, .leanAll (.ref 0 #[]) (.ref 0 #[]), .ref 1 #[]⟩
     sharing := #[], refs := #[unit, ax], univs := #[] }
   cases := cases.push ("definition over an assumption axiom", (store axEnv useAx).1, true)
   cases := cases.push ("assumption axiom whose header is not a type",

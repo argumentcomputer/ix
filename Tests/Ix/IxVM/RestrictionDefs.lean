@@ -2,20 +2,19 @@ import Lean
 
 /-! # Positive controls for the rule-shaped core's restrictions (fixtures)
 
-Lane cx restricted IxVM's moves to instances of the certified kernel's rules
+IxVM's moves are restricted to instances of the certified kernel's rules
 (`IxC/Kernel/Rules/Rel.lean`). Nothing in the `ci:ixvm` tier reached the restricted
 cases, so each restriction gets a small case it now refuses, next to a control it
 must still accept. These are ordinary, kernel-checked Lean declarations.
 
-* D4: structure-η ι (`Red.rescueEta`) needs the structure's sort to be never zero
+* Structure-η ι (`Red.rescueEta`) needs the structure's sort to be never zero
   (`capsNeverZero`). Lean's kernel also fires it at a `Sort u` structure; IxVM, like
   IxC, no longer does. `etaIotaSortU` holds in Lean only by that move;
   `etaIotaType` is the same statement at a `Type` structure.
 
-The other two restrictions (D5: `.proj` on an indexed family; D6: structure η at a
-recursive one-constructor type) are refused by Lean's kernel as well, so their
-controls are records Lean cannot produce; they are kept with the must-reject
-fixtures, off this branch. -/
+The other two restrictions (`.proj` on an indexed family; structure η at a
+recursive one-constructor type) are refused by Lean's kernel as well: their cases
+are records Lean cannot produce, so they have no control here. -/
 
 namespace Tests.Ix.IxVM.RestrictionDefs
 

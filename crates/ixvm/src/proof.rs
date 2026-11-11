@@ -104,7 +104,7 @@ fn main() -> Result<(), Box<dyn Error>> {
       .map(|plan| Backend::for_batch_verification(plan, Parameters::default()))
       .transpose()?;
     let mut statistics = serde_json::Map::new();
-    // Measurement aid (lane s4, not a gate): with IXVM_FUNCTION_STATS set,
+    // Measurement aid (not a gate): with IXVM_FUNCTION_STATS set,
     // `--stats-out S` also writes `S.functions.json`, the memo rows and cache
     // hits of every function an accepted case called. A circuit's rows are the
     // sum of its member functions' rows. Circuit statistics are unchanged.

@@ -193,7 +193,7 @@ def level (ps : List LevelParam) : Level → Except String RVal
     if ps.contains i then pure (rStore "KernelTypes::KLevelNode::Param" [.raw (toString (ps.idxOf i))])
     else throw s!"level parameter {i} is not among {ps}"
 
-/-- A binder's datum (D2) as the circuit's level, whose zero-ness it is: `never ↦
+/-- A binder's datum as the circuit's level, whose zero-ness it is: `never ↦
 succ zero`, `ifAllZero [] ↦ zero`, `ifAllZero [p₁, …, pₖ] ↦ max p₁ (max … pₖ)`. -/
 def pwLevel (ps : List LevelParam) (pw : PropWhen) : Except String RVal :=
   match pw.toList? with
@@ -272,7 +272,7 @@ def Source.groupNeeds (src : Source) (g : List Role) : List Role :=
 /-- `Nat`, through the binding, at its index `nat`. -/
 def natT (nat : Nat) : RVal := rStore "KernelTypes::KExprNode::Const" [rBoundAddr nat, rNil]
 
-/-! ## Binder data (D2)
+/-! ## Binder data
 
 The circuit's binders carry their datum (`KExprNode::Lam(ty, body, ℓ)`, the
 zero-ness of `ℓ`). The specification bytes keep the pins' raw binder data
