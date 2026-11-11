@@ -121,7 +121,8 @@ def caseWFB (env : KEnv) (sh : CaseShape) : Bool :=
   (match sh.binders.getLast? with
     | some (_, m) => allCtors sh fun _ cs => cs.fields.all fun b => decide (b.2.pw = m.pw)
     | none => false) &&
-  allCtors sh (fun _ cs => ctorRawB env sh cs)
+  allCtors sh (fun _ cs => ctorRawB env sh cs) &&
+  neverPropB env sh.ind
 
 /-- `CaseStored`. -/
 def caseStoredB (env : KEnv) (kc kr : KKey) (sh : CaseShape) : Bool :=
@@ -245,9 +246,9 @@ theorem caseWF_of_check {env : KEnv} {sh : CaseShape} (h : caseWFB env sh = true
     CaseWF env sh := by
   unfold caseWFB at h
   simp only [Bool.and_eq_true] at h
-  obtain ⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h5⟩ := h
+  obtain ⟨⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h5⟩, h6⟩ := h
   refine ⟨fun j cs hj rf hrf => ?_, fun j cs hj r rf hr => ?_, fun j cs hj => allCtors_spec h3 j cs hj,
-    ?_, fun j cs hj => ctorRaw_of_check (allCtors_spec h5 j cs hj)⟩
+    ?_, fun j cs hj => ctorRaw_of_check (allCtors_spec h5 j cs hj), neverProp_of_check h6⟩
   · have := List.all_eq_true.mp (allCtors_spec h1 j cs hj) rf hrf
     simp only [Bool.and_eq_true, decide_eq_true_eq] at this
     exact this

@@ -162,3 +162,12 @@ the three standard axioms. Building the library checks it (`#guard_msgs`). -/
 
 /-- info: 'IxCC.Grounding.decideRoot' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Grounding.decideRoot
+
+/-- info: 'IxCC.Grounding.neverProp_of_check' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.neverProp_of_check
+
+/-- info: 'IxCC.Grounding.eval_ne_zero_of_never' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.eval_ne_zero_of_never
+
+/-- info: 'IxCC.Grounding.projSort_of' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.projSort_of

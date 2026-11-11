@@ -607,7 +607,7 @@ theorem eval_step (H : FundHyps M p κ lpsOf S Ok) {k : Nat}
             have hctors := single_ctor hct
             subst hctors
             cases hrel with
-            | @con _ _ _ _ φc cvC np' nf Ps Fs ρc σc Rc _ _ hfc hPl hFl _ hfs hfit =>
+            | @con _ _ _ _ φc cvC np' nf Ps Fs ρc σc Rc hSc _ hfc hPl hFl _ hfs hfit =>
               have hfi : fs[i]? = some v := ofOption_eq_ok.mp hpf
               obtain ⟨Y, hY, hrelY⟩ := relVs_get hfs hfi
               have hi : i < nf := by
@@ -617,7 +617,9 @@ theorem eval_step (H : FundHyps M p κ lpsOf S Ok) {k : Nat}
               obtain ⟨entry, hent, hctor⟩ :=
                 H.faith.proj s hSs sf lvls np ni ty c hds cvC np' nf hfc i hi
               refine ⟨Y, ?_, hrelY⟩
-              exact proj_con M H.laws hent (by rw [hctor]; exact hfc) hPl hFl hfit hY
+              exact proj_con M H.laws hent (by rw [hctor]; exact hfc)
+                (H.faith.projSort s hSs sf lvls np ni ty c hds hSc cvC np' nf hfc (by omega))
+                hPl hFl hfit hY
                 (by rw [hctor]; exact hP)
           · exact absurd hpf (by simp)
         | _ => exact absurd hpf (by simp)

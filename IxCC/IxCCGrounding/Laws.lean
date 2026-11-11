@@ -30,13 +30,40 @@ IxVM side where a law exists there:
 | `defn_value` | `Model.defn_value`, a field, proved | the IxVM side, when it lands on `main` |
 | `iota_rule` | `Model.iota_rule : IotaLaw cval env`, a field, proved | the same |
 | `cval_params` | `Model.cval_params`, a field | the same |
-| `proj_ctor` | scheduled ("the projection of a constructor"); the value form is ours | the IxVM side, scheduled |
+| `proj_ctor` | scheduled ("the projection of a constructor"); the value form is ours, **restricted** to structures that are not propositions | the IxVM side, scheduled |
 | `nat_accel` | scheduled, over all literals, the fifteen roles | the IxVM side, scheduled |
-| `ctor_canon` | none; asked on 2026-11-11 (parameters and levels) | the IxVM side if accepted; otherwise IxCC, by a typed relation |
+| `ctor_canon` | none, and not scheduled by anyone; **restricted** to families that are not propositions | to be decided: the IxVM side, or IxCC from their recursor membership law |
 
 `DenotesList`, `Fits`, `IotaRule` and `IotaLaw` are copied verbatim from theirs
 (`IxC/Kernel/Denotes.lean` at `659ca9130`; the ι law's right-hand side denotes in its
 conclusion).
+
+## What was wrong, and what is assumed now
+
+As first landed, `ctor_canon` was stated for every constructor and `proj_ctor` for every
+structure. Both are false in a proof-irrelevant set model, where a proposition's constructor
+image is the proof point `pt`:
+
+* `ctor_canon`: `Exists.intro (fun _ => True) 1 pt` is `pt`, fits at its own parameters and lies
+  in the inhabited `Exists (fun w => w = 0)`, so the law concluded that `pt` proves `1 = 0`. In
+  the kernel's own set model (`IxCK/Kernel/SetTheory/Derive/Quot.lean`: `quotClass 0 _ _ _ = pt`,
+  `quotSet 1 A R` the classes) `Quot.mk` built at level `0` is `pt`, which is the class of
+  `ptTag` in `quotSet 1 {ptTag} R`, so the law concluded `pt ∈ {ptTag}`, which is false.
+* `proj_ctor`: at a `Prop` structure with a data field (`Nonempty`, whose projection table the
+  kernel installs) the image is `pt`, every component of `pt` is `pt` (`sfst_pt`, `ssnd_pt`),
+  so the law concluded that every value of the field's type is `pt`.
+
+Both grounding subjects' environments hold `Quot.mk`, so in the kernel's set model `Laws` had no
+instance for them, and `fibRoot` and `decideRoot` as first landed said nothing there. The laws
+are now assumed only at families that are not propositions (`finalSort`, the stored sort, with a
+nonzero value at the assignments involved); the check supplies that at each use from a decided
+fact (`NeverProp`: the family's stored sort is never zero).
+
+**Not yet shown**: that `Laws`, in this restricted form, has a model for any environment. Three
+fields are proved on the side that owes them (`defn_value`, `iota_rule`, `cval_params`), two are
+scheduled there (`proj_ctor`, `nat_accel`), and the restricted `ctor_canon` is not scheduled by
+anyone. Until that side's theorem lands, every theorem of this library is conditional on a
+hypothesis whose consistency rests on the arguments written beside each law below.
 -/
 
 namespace IxCC.Grounding
@@ -93,13 +120,19 @@ def IotaLaw (cval : Key md → (LevelParam → Nat) → V) (env : Env md) : Prop
     (rl : RecRule md),
     env.find? r = some (.recInfo cv mI rP rules) → rl ∈ rules → IotaRule cval env r cv mI rP rl
 
-/-- **δ** (theirs: the field `Model.defn_value`, stated as here). -/
+/-- **δ** (theirs: the field `Model.defn_value`, stated as here).
+
+*In a proof-irrelevant set model*: a definition's set is its value's (the model interprets each
+stored definition by its value); at a proof the value and the constant are both `pt`. -/
 def DefnValue {env : Env md} (M : Model V env) : Prop :=
   ∀ (cv : ConstantVal md) (value : Expr md) (hint : ReducibilityHint),
     ConstantInfo.defnInfo cv value hint ∈ env.consts →
     ∀ (φ : LevelParam → Nat) (ρ : BVarIdx → V), Denotes M.cval env φ ρ value (M.cval cv.name φ)
 
-/-- **Level-parameter irrelevance** (theirs: the field `Model.cval_params`, stated as here). -/
+/-- **Level-parameter irrelevance** (theirs: the field `Model.cval_params`, stated as here).
+
+*In a proof-irrelevant set model*: a constant's set is computed from the values of its own level
+parameters only. -/
 def CvalParams {env : Env md} (M : Model V env) : Prop :=
   ∀ (n : Key md) (ci : ConstantInfo md), env.find? n = some ci →
     ∀ φ₁ φ₂ : LevelParam → Nat, (∀ p ∈ ci.toConstantVal.levelParams, φ₁ p = φ₂ p) →
@@ -108,38 +141,62 @@ def CvalParams {env : Env md} (M : Model V env) : Prop :=
 /-- **The `Nat` operations on literals** (ours for now; the IxVM side has scheduled a public law
 over all literals, with no `pow` cap, covering the fifteen roles): a stored operation applied to
 literals denotes the literal of its value, by SrcEval's own table `PrimOp.eval2`. `Bool`
-results are the role constructors. -/
+results are the role constructors.
+
+*In a proof-irrelevant set model*: `Nat` and `Bool` are not propositions, the stored operations
+are the role-pinned definitions, which compute these values on numerals, and `eval2` agrees with
+Lean's `Nat` operations (division and remainder by zero, the shifts). -/
 def NatAccel {env : Env md} (M : Model V env) : Prop :=
   ∀ (op : IxCC.Src.PrimOp) (a b : Nat) (φ : LevelParam → Nat) (ρ : BVarIdx → V) (X : V),
     (op.arity = 1 → b = 0) →
     Denotes M.cval env φ ρ (primApp op a b) X →
     Denotes M.cval env φ ρ (primResultE (op.eval2 a b)) X
 
-/-- **The projection of a constructor, value form** (ours for now; the IxVM side has scheduled
-the projection of a constructor as a public law, their third note item 6, and has this form
-from us): at a structure `T` whose projection table has an entry for field `i`, the entry's
-constructor applied to sets that fit its type holds the `i`-th field at the entry's position. -/
+/-- **The projection of a constructor, value form, at a structure that is not a proposition**
+(ours for now; the IxVM side has scheduled the projection of a constructor as a public law, and
+has this form from us): at a structure `T` stored as an inductive whose sort `s` is not zero at
+the constructor's assignment `φ`, and whose projection table has an entry for field `i`, the
+entry's constructor applied to sets that fit its type holds the `i`-th field at the entry's
+position.
+
+*In a proof-irrelevant set model*: where the structure's sort is not zero its constructor is read
+in the graph regime and its image is the tuple of its arguments after `off` tag positions, so
+component `i + off` is field `i`. At a proposition the image is `pt`, every component of `pt` is
+`pt` (`sfst_pt`, `ssnd_pt`), and a data field (`Nonempty`'s) cannot be read back: the law as first
+landed, without the sort premise, was false there. -/
 def ProjCtor {env : Env md} (M : Model V env) : Prop :=
   ∀ (T : Key md) (i : Nat) (entry : ProjEntry md) (cvC : ConstantVal md) (nP nF : Nat)
+    (cvT : ConstantVal md) (caps : IndCaps md) (s : Level)
     (φ : LevelParam → Nat) (ρ σ : BVarIdx → V) (R : Expr md) (Ps Fs : List V) (Y : V),
     env.findProj? T i = some entry → env.find? entry.ctor = some (.ctorInfo cvC nP nF) →
+    env.find? T = some (.indInfo cvT caps) → finalSort cvT.type = some s → Level.eval φ s ≠ 0 →
     Ps.length = nP → Fs.length = nF →
     Fits M.cval env φ ρ cvC.type (Ps ++ Fs) σ R → Fs[i]? = some Y →
     field (i + entry.off) ((Ps ++ Fs).foldl app (M.cval entry.ctor φ)) = Y
 
-/-- **Constructor canonicity across parameters and levels** (ours; asked of the IxVM side on
-2026-11-11 for parameters, the levels part to be sent with this statement). A constructor
-image built at levels `ls'` and parameters `Ps'` that lies in the family `D` at levels `ls` and
-parameters `Ps` is the image at `ls` and `Ps`, and its fields fit there. It holds in every
-model in which a family's denotation is exactly its constructors' images at its own levels and
-parameters, whether or not an image records them. It is what F5 needs at a parameterised
-family (`Decidable`), where the major's parameters come from a different term than the
-`case`'s. -/
+/-- **Constructor canonicity across parameters and levels, at families that are not
+propositions** (ours; not scheduled by anyone). A constructor image built at levels `ls'` and
+parameters `Ps'` that lies in the family `D` at levels `ls` and parameters `Ps` is the image at
+`ls` and `Ps`, and its fields fit there, when `D` is stored as an inductive whose sort `s` is not
+zero at either level instantiation. It is what F5 needs at a parameterised family (`Decidable`),
+where the major's parameters come from a different term than the `case`'s.
+
+*In a proof-irrelevant set model*: where the family's sort is not zero its constructors are read
+in the graph regime and a constructor image is the tagged tuple of its fields; such a tuple lies
+in the family at other parameters only if each field lies in its type there, and at parameters
+off the family's domain its graph gives the empty set. At a proposition every image is `pt`,
+which lies in every inhabited instance: as first landed, without the sort premises, the law was
+false there (`Exists.intro`; `Quot.mk` built at level `0` and read at level `1` in the kernel's set
+model). -/
 def CtorCanon {env : Env md} (M : Model V env) : Prop :=
   ∀ (c : Key md) (cvC : ConstantVal md) (nP nF : Nat),
     env.find? c = some (.ctorInfo cvC nP nF) →
-    ∀ (D : Key md) (ls ls' : List Level) (φ : LevelParam → Nat) (ρ τ σ' : BVarIdx → V)
+    ∀ (D : Key md) (cvD : ConstantVal md) (caps : IndCaps md) (s : Level)
+      (ls ls' : List Level) (φ : LevelParam → Nat) (ρ τ σ' : BVarIdx → V)
       (dom R' : Expr md) (Ps Ps' Fs : List V) (K K' X : V),
+      env.find? D = some (.indInfo cvD caps) → finalSort cvD.type = some s →
+      Level.eval (Level.substFn φ cvD.levelParams ls) s ≠ 0 →
+      Level.eval (Level.substFn φ cvD.levelParams ls') s ≠ 0 →
       Ps.length = nP → Ps'.length = nP → Fs.length = nF →
       Denotes M.cval env φ ρ (.const c ls) K → Denotes M.cval env φ ρ (.const c ls') K' →
       Fits M.cval env φ ρ (cvC.type.instantiateLevelParams cvC.levelParams ls') (Ps' ++ Fs) σ' R' →
@@ -159,11 +216,12 @@ structure Laws {env : Env md} (M : Model V env) : Prop where
   iota_rule : IotaLaw M.cval env
   /-- level-parameter irrelevance. IxVM side: `Model.cval_params`, a field. -/
   cval_params : CvalParams M
-  /-- the projection of a constructor, value form. IxVM side: scheduled. -/
+  /-- the projection of a constructor, value form, at structures that are not propositions.
+  IxVM side: scheduled. -/
   proj_ctor : ProjCtor M
   /-- the fifteen `Nat` operations on all literals. IxVM side: scheduled. -/
   nat_accel : NatAccel M
-  /-- constructor canonicity. IxVM side: asked, unanswered; else IxCC's typed relation. -/
+  /-- constructor canonicity at families that are not propositions. Not scheduled by anyone. -/
   ctor_canon : CtorCanon M
 
 end Laws

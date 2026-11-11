@@ -265,8 +265,15 @@ theorem caseFires_of_shape (hL : Laws M) {p : Program} {c r : CId} {sh : CaseSha
           have hK : Denotes M.cval env φ ρ (.const cs.key sh.indLevels)
               (M.cval cs.key (Level.substFn φ cv.levelParams sh.indLevels)) :=
             Denotes.const hfCk (by rw [← hlenC]; rfl)
-          obtain ⟨heqK, σ3, R3, hFC⟩ := hL.ctor_canon (κ c') cv sh.nP cs.nF hfcv sh.ind
-            sh.indLevels ls'' φ ρ τ σ2 _ _ (As.take sh.nP) Ps Fs _ _ X (by simp; omega) hPl hFl
+          -- canonicity (`ctor_canon`) at the `case`'s inductive, which is never a proposition
+          -- (`CaseWF.indSort`): in a proof-irrelevant set model its constructors are read in the
+          -- graph regime, an image is the tagged tuple of its fields, and such a tuple lies in the
+          -- family at other parameters only if its fields lie in their types there (at a
+          -- proposition every image is `pt`, and the law is not assumed)
+          obtain ⟨cvD, capsD, sD, hfD, hsD, hnvD⟩ := hst.wf.indSort
+          obtain ⟨heqK, σ3, R3, hFC⟩ := hL.ctor_canon (κ c') cv sh.nP cs.nF hfcv sh.ind cvD capsD sD
+            sh.indLevels ls'' φ ρ τ σ2 _ _ (As.take sh.nP) Ps Fs _ _ X hfD hsD
+            (eval_ne_zero_of_never hnvD _) (eval_ne_zero_of_never hnvD _) (by simp; omega) hPl hFl
             (by rw [← hkey]; exact hK) hK' hfit3 hR'head (by rw [getAppFn_mkAppN]; rfl) hdom
             (by
               rw [getAppArgs_mkAppN]

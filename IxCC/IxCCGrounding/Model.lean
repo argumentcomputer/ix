@@ -38,6 +38,34 @@ theorem regime_ifAllZero0 (φ : LevelParam → Nat) :
 theorem regime_never (φ : LevelParam → Nat) : regime φ PropWhen.never = 1 := by
   simp [regime]
 
+/-- A level's zero-ness datum holds exactly where the level evaluates to zero. -/
+theorem holds_zeronessOf (φ : LevelParam → Nat) : ∀ l : Level,
+    (Level.zeronessOf l).holds φ = (Level.eval φ l == 0)
+  | .zero => by simp [Level.zeronessOf, Level.eval]
+  | .succ l => by simp [Level.zeronessOf, Level.eval]
+  | .param n => by simp [Level.zeronessOf, Level.eval]
+  | .max a b => by
+    simp only [Level.zeronessOf, PropWhen.holds_inter, holds_zeronessOf φ a, holds_zeronessOf φ b,
+      Level.eval]
+    rw [Bool.eq_iff_iff]
+    simp only [Bool.and_eq_true, beq_iff_eq]
+    omega
+  | .imax a b => by
+    simp only [Level.zeronessOf, holds_zeronessOf φ b, Level.eval]
+    rw [Bool.eq_iff_iff]
+    simp only [beq_iff_eq]
+    split <;> omega
+
+/-- A sort whose zero-ness datum is `never` is not zero at any assignment (what `NeverProp` gives
+the restricted laws). -/
+theorem eval_ne_zero_of_never {s : Level} (h : Level.zeronessOf s = PropWhen.never)
+    (ψ : LevelParam → Nat) : Level.eval ψ s ≠ 0 := by
+  have := holds_zeronessOf ψ s
+  rw [h, PropWhen.holds_never] at this
+  intro h0
+  rw [h0] at this
+  simp at this
+
 section Den
 
 variable {cval : Key md → (LevelParam → Nat) → V} {env : Env md} {φ : LevelParam → Nat}

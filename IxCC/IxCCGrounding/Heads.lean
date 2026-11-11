@@ -39,17 +39,24 @@ theorem last_regime {cval : KKey → (LevelParam → Nat) → V} {φ : LevelPara
 
 /-- **E6, the projection of a constructor value**: what the projection node denotes is the
 field, by `proj_ctor`, when the structure's table entry names the constructor and the
-constructor's parameters and fields fit its stored type. -/
+constructor's parameters and fields fit its stored type, at a structure that is never a
+proposition (`NeverProp`, checked by the `proj` conjunct). -/
 theorem proj_con (M : Model V env) (hL : Laws M) {Ts : KKey} {i : Nat}
     {entry : ProjEntry .anon} (hent : env.findProj? Ts i = some entry)
     {cvC : ConstantVal .anon} {np nf : Nat} (hc : env.find? entry.ctor = some (.ctorInfo cvC np nf))
+    (hTs : NeverProp env Ts)
     {φ : LevelParam → Nat} {ρ σ : BVarIdx → V} {R : KExpr} {Ps Fs : List V}
     (hP : Ps.length = np) (hFl : Fs.length = nf) (hfit : Fits M.cval env φ ρ cvC.type (Ps ++ Fs) σ R)
     {Y : V} (hY : Fs[i]? = some Y) {φ0 : LevelParam → Nat} {ρ0 : BVarIdx → V} {e : KExpr}
     (he : Denotes M.cval env φ0 ρ0 e ((Ps ++ Fs).foldl app (M.cval entry.ctor φ))) :
     Denotes M.cval env φ0 ρ0 (.proj Ts i e) Y := by
+  obtain ⟨cvT, caps, s, hfT, hs, hnv⟩ := hTs
   have h := Denotes.proj_table hent he
-  rwa [hL.proj_ctor Ts i entry cvC np nf φ ρ σ R Ps Fs Y hent hc hP hFl hfit hY] at h
+  -- `proj_ctor` in a proof-irrelevant set model: the structure's sort is not zero at `φ`, so its
+  -- constructor is read in the graph regime and its image is the field tuple (after `off` tag
+  -- positions); at a proposition the image would be `pt`, whose components are all `pt`.
+  rwa [hL.proj_ctor Ts i entry cvC np nf cvT caps s φ ρ σ R Ps Fs Y hent hc hfT hs
+    (eval_ne_zero_of_never hnv φ) hP hFl hfit hY] at h
 
 /-- **F6, a binary `Nat` primitive with a `Nat` result**, on literal arguments: the operation's
 denotation applied to the literals' is the result literal's, by `nat_accel`. -/

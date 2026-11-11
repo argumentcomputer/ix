@@ -61,6 +61,41 @@ def primApp (op : IxCC.Src.PrimOp) (a b : Nat) : Expr md :=
   if op.arity = 1 then .app (.const (primKey op) []) (litE a)
   else .app (.app (.const (primKey op) []) (litE a)) (litE b)
 
+/-- The sort a stored type ends in: `Sort s` after its leading `∀`s (an inductive family's
+universe). -/
+def finalSort : Expr md → Option Level
+  | .forallE _ b _ => finalSort b
+  | .sort s => some s
+  | _ => none
+
+/-- **`D` is stored as an inductive family that is never a proposition**: its type ends in a sort
+whose zero-ness datum never holds, so the family is not a proposition at any assignment of its
+level parameters. Decided on the bytes; what the restricted laws `ctor_canon` and `proj_ctor`
+are asked at. -/
+def NeverProp (env : Env md) (D : Key md) : Prop :=
+  ∃ (cvD : ConstantVal md) (caps : IndCaps md) (s : Level),
+    env.find? D = some (.indInfo cvD caps) ∧ finalSort cvD.type = some s ∧
+      Level.zeronessOf s = PropWhen.never
+
+/-- `NeverProp`, decided. -/
+def neverPropB (env : Env md) (D : Key md) : Bool :=
+  match env.find? D with
+  | some (.indInfo cvD _) =>
+    match finalSort cvD.type with
+    | some s => decide (Level.zeronessOf s = PropWhen.never)
+    | none => false
+  | _ => false
+
+theorem neverProp_of_check {env : Env md} {D : Key md} (h : neverPropB env D = true) :
+    NeverProp env D := by
+  unfold neverPropB at h
+  split at h
+  · rename_i cvD caps hf
+    split at h
+    · rename_i s hs
+      exact ⟨cvD, caps, s, hf, hs, of_decide_eq_true h⟩
+    · cases h
+  · cases h
 
 end Prims
 
@@ -414,7 +449,12 @@ the check):
 * `ctorRaw`: each constructor's stored type is closed, its level parameters cover it, it has as
   many level parameters as `indLevels`, and its codomain is headed by the inductive at the
   constructor's own parameters (what moves a constructor value from the assignment and
-  environment it was built at to the `case`'s, through canonicity). -/
+  environment it was built at to the `case`'s, through canonicity);
+* `indSort`: the inductive is stored as a family that is never a proposition (`NeverProp`), the
+  class at which canonicity (`Laws.ctor_canon`) is assumed. A `case` over a family in `Prop`
+  (`And.casesOn` into `Type`) is outside the fragment: there SrcEval's major is an erased proof,
+  on which F5 selects no rule, and a constructor value of it would need canonicity where it is
+  false (a proposition's constructor image is the proof point). -/
 structure CaseWF (env : KEnv) (sh : CaseShape) : Prop where
   recFields : ∀ (j : Nat) (cs : CtorShape), sh.ctors[j]? = some cs → ∀ rf ∈ cs.recFields,
     rf < cs.nF ∧ (cs.fields[rf]?).map (·.1) = some (sh.recFieldDom j rf)
@@ -428,6 +468,7 @@ structure CaseWF (env : KEnv) (sh : CaseShape) : Prop where
     cvC.levelParams.length = sh.indLevels.length ∧ bvarsLt 0 cvC.type = true ∧
     cvC.type.allLevelParamsDefined cvC.levelParams = true ∧
     (piBody (sh.nP + cs.nF) cvC.type).getAppFn = .const sh.ind (cvC.levelParams.map .param)
+  indSort : NeverProp env sh.ind
 
 /-- **The checked shape of a `case` constant `kc` over its recursor `kr`**, against the kernel's
 reading. Decided by the check. -/
@@ -500,6 +541,12 @@ structure Faith (p : Program) (env : KEnv) (κ : CId → KKey) (lpsOf : CId → 
   proj : ∀ s, S s → ∀ sf lvls np ni ty c, p.decl? s = some (.induct sf lvls np ni ty [c]) →
     ∀ cvC np' nf, env.find? (κ c) = some (.ctorInfo cvC np' nf) → ∀ i, i < nf →
       ∃ entry, env.findProj? (κ s) i = some entry ∧ entry.ctor = κ c
+  /-- a structure of `S` whose constructor is in `S` and has fields is never a proposition (the
+  class at which `Laws.proj_ctor` is assumed: a proposition's constructor image is the proof
+  point, from which no data field can be read back) -/
+  projSort : ∀ s, S s → ∀ sf lvls np ni ty c, p.decl? s = some (.induct sf lvls np ni ty [c]) →
+    S c → ∀ cvC np' nf, env.find? (κ c) = some (.ctorInfo cvC np' nf) → 0 < nf →
+      NeverProp env (κ s)
   natZero : ∀ c, p.known.natZero = some c → κ c = natZeroName
   natSucc : ∀ c, p.known.natSucc = some c → κ c = natSuccName
   bool : ∀ (b : Bool) c, (if b then p.known.boolTrue else p.known.boolFalse) = some c →

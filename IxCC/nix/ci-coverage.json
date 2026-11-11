@@ -1636,10 +1636,10 @@
   "IxCCGrounding.Syntax",
   "IxCCGrounding.Tele"],
  "grounding_axiom_sha256":
- "3c804206278c9040bd5b306b2a5761385ff311cdca0715edcfc7c1a1b569a10a",
- "grounding_axiom_count": 53,
+ "4deb87c352422ca62e49b2950ad179a0bf9020eaa9c924a53dacf2a2468d02f3",
+ "grounding_axiom_count": 56,
  "baseline":
- "X0-P, second part: the process's specification modules, the shell check run by the machine writer, the call lemma and the two calls of an iteration, and their fences",
+ "the grounding library: the laws ctor_canon and proj_ctor restricted to families that are not propositions, with their checks and fences",
  "axiom_sha256":
  "b7328b7dd7f2ef1dac04816270ce42e3ac2cc353875105432c8cd224239de080",
  "axiom_count": 5965}
