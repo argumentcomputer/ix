@@ -495,7 +495,7 @@ def check_positivity_aug := aiur_fn⟦
                                 _ => {  () } ,
                               } } ,
                             _ => {
-                              -- D7: a nested occurrence is the modeled route's
+                              -- A nested occurrence is the modeled route's
                               -- (`KernelModeled::block_is_modeled`); one that only
                               -- whnf exposes is refused here, as Lean refuses it.
                               assert_eq!(0, 1,
@@ -2761,7 +2761,7 @@ def check_block_member_kinds := aiur_fn⟦
     }
 ⟧
 
-  -- One safety per block (D20): Lean's `inductDecl` and mutual definitions carry one
+  -- One safety per block: Lean's `inductDecl` and mutual definitions carry one
   -- flag for the whole block, so a safe seed reaches no unsafe or partial co-member
   -- through its block. Counts the block's constants (members and constructors) and
   -- those outside the logic (`Ingress::defn_is_unsafe_ci` on definitions, the flag

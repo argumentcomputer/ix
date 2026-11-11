@@ -38,7 +38,7 @@ def peel_beta := aiur_fn⟦
     }
 ⟧
 
-  -- Rule-shaped core (lane cx). Each kernel rule IxVM uses has one step function,
+  -- Rule-shaped core. Each kernel rule IxVM uses has one step function,
   -- called by all three head normalizers (`whnf`, `whnf_struct_core`, `whnf_nd`):
   --   `red_beta`   Red.beta / Red.betaGate, one step per consumed argument;
   --   `red_proj`   Red.proj, the scrutinee already reduced by the caller (Red.projArg);
@@ -117,7 +117,7 @@ def peel_beta_cert := aiur_fn⟦
 ⟧
 
   -- Red.proj. Fires only when the constructor belongs to the projected structure, the
-  -- structure has one constructor and no indices (D5), the field exists, the
+  -- structure has one constructor and no indices, the field exists, the
   -- constructor application has exactly `nparams + nfields` arguments and the right
   -- number of levels, and the structure's sort at those levels is never zero. At a
   -- never-zero structure the rule's `FireSem` guard is vacuous and every slot of the
@@ -299,7 +299,7 @@ def try_quot_iota := aiur_fn⟦
   -- rule for `Quot.mk`): `Quot.lift α r β f h q post ↦ f a post` and
   -- `Quot.ind α r β m q post ↦ m a post` when `q` head-normalizes to
   -- `Quot.mk α' r' a`. Premises: the level counts, the rule's level comparand
-  -- (`Quot.mk`'s level against the eliminator's first), and Fix A's licensed
+  -- (`Quot.mk`'s level against the eliminator's first), and the licensed
   -- certificates of both spines: the eliminator's at a possibly-zero motive
   -- (`Quot.lift`'s `β : Sort v`; `Quot.ind`'s motive is `Prop`, so always), and
   -- `Quot.mk`'s at a possibly-zero `α : Sort u`.
@@ -781,9 +781,9 @@ def iota_cmp := aiur_fn⟦
     }
 ⟧
 
-  -- Fix A at ι (RULES-GAP PM-C): Red.iota's two licensed `Certs` walks. The binder
+  -- Certified ι: Red.iota's two licensed `Certs` walks. The binder
   -- datum of every slot of a stored type former's telescope is the zero-ness of the
-  -- sort it ends in (D2's entry point for stored declaration types): for the
+  -- sort it ends in (the binder data of stored declaration types): for the
   -- recursor, its motive's sort; for the constructor, its inductive's sort. At a
   -- never-zero datum every slot skips; otherwise every argument is certified.
 
@@ -942,7 +942,7 @@ def try_struct_eta_iota := aiur_fn⟦
 
   -- Red.rescueEta: the major's type head-normalizes to the structure `parent` at
   -- exactly its parameters; the structure's sort at the type's levels is never zero
-  -- (`capsNeverZero`, D4: no structure-η ι at `Sort u` structures); `fab` is the
+  -- (`capsNeverZero`: no structure-η ι at `Sort u` structures); `fab` is the
   -- constructor applied to the type's parameters and the major's projections. The
   -- rule's final `DefEq fab major` is DefEq.structEta, whose comparisons are
   -- reflexive here (`fab`'s parameters are the type's, its fields the major's
@@ -1067,7 +1067,7 @@ def struct_is_rec := aiur_fn⟦
     }
 ⟧
 
-  -- D6 (Lean's `is_rec`, a block-level flag): whether any constructor of any inductive
+  -- Lean's `is_rec` (a block-level flag): whether any constructor of any inductive
   -- member of the block mentions a member of the block.
 
 def struct_scan_members := aiur_fn⟦
