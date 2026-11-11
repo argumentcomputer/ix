@@ -895,7 +895,6 @@
   "IxCC.Src.Ingress",
   "IxCC.Src.KernelFront.Accept",
   "IxCC.Src.KernelFront.Annotate",
-  "IxCC.Src.KernelFront.Front",
   "IxCC.Src.KernelFront.Order",
   "IxCC.Src.KernelFront.Proof",
   "IxCC.Src.KernelFront.Reading",
@@ -911,7 +910,6 @@
   "IxCC.Src.Proof.Unfold",
   "IxCC.Src.Readback",
   "IxCC.Src.Recheck",
-  "IxCC.Src.Relevance.Annotate",
   "IxCC.Src.Relevance.Check",
   "IxCC.Src.Relevance.Proof.Sound",
   "IxCC.Src.Relevance.Proof.Terms",
@@ -1625,8 +1623,7 @@
  "grounding_axiom_sha256":
  "3f5b1886f6127883f3a07b7f9027df2eee5383c4aa51741ac9c3ecac5abec1b2",
  "grounding_axiom_count": 26,
- "baseline":
- "MQ: the walk's move accounting, tail calls past seven arguments as calls, the function-parameter refusal and their fences",
+ "baseline": "KS: the switch to the kernel front end, step 3",
  "axiom_sha256":
- "e573f6569456818724bdf77b97316cf9037d8f8c49acb32b3804aa0ce5afa9f2",
- "axiom_count": 5926}
+ "e19ec68668b37b632dd5a97b5ea8d93be60aebabe5537d5b2596cbec9e9b13b7",
+ "axiom_count": 5925}
