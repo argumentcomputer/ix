@@ -105,8 +105,10 @@ def CvalParams {env : Env md} (M : Model V env) : Prop :=
     ∀ φ₁ φ₂ : LevelParam → Nat, (∀ p ∈ ci.toConstantVal.levelParams, φ₁ p = φ₂ p) →
       M.cval n φ₁ = M.cval n φ₂
 
-a stored operation applied to literals denotes the literal of its value, by SrcEval's own
-table `PrimOp.eval2`. `Bool` results are the role constructors. -/
+/-- **The `Nat` operations on literals** (ours for now; the IxVM side has scheduled a public law
+over all literals, with no `pow` cap, covering the fifteen roles): a stored operation applied to
+literals denotes the literal of its value, by SrcEval's own table `PrimOp.eval2`. `Bool`
+results are the role constructors. -/
 def NatAccel {env : Env md} (M : Model V env) : Prop :=
   ∀ (op : IxCC.Src.PrimOp) (a b : Nat) (φ : LevelParam → Nat) (ρ : BVarIdx → V) (X : V),
     (op.arity = 1 → b = 0) →
