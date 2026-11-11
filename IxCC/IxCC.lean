@@ -524,7 +524,8 @@ front half's refinement from the checked source to the loaded Lir program,
 run by the runtime driver, `X86.Linked`, refines the loaded Lir program), and
 the correctness statement at stage S for every object `Recheck.run` makes (`Recheck.sound`); `Cli`:
 the `ixcc` command line; `Exe`: standalone executables of a root, with `X86.Exe`'s shell, layout,
-executable writer and check), and the Aiur target. The compiler pipeline is being rebuilt; see
+executable writer and check, and of numeric state machines, with `Exe.Machine`'s interface and
+`X86.Exe.Machine`'s generic shell), and the Aiur target. The compiler pipeline is being rebuilt; see
 `docs/roadmap.md`. The complete regression and proof collection is built explicitly through
 `IxCCTests.Proofs`. The checked plain-RC companion API is
 `Recheck.RcReplay`: complete ownership certificate serialization/replay,

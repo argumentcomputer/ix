@@ -13,7 +13,7 @@ import IxCC.Exe
 ixcc compile CLOSURE.ixe --equations EQ.json [--root NAME]... -o OUT.o
     [--rc off|on|auto] [--cert FILE] [--emit-cert FILE] [--signatures FILE]
     [--dump-ir LEVEL]... [--stats] [--no-typecheck]
-    [--exe FILE [--stack BYTES] [--region BYTES]]
+    [--exe FILE [--machine] [--stack BYTES] [--region BYTES]]
 ixcc check-cert CLOSURE.ixe --equations EQ.json [--root NAME]... --cert FILE
     [-o OUT.o] [--signatures FILE] [--stats] [--no-typecheck]
 ```
@@ -34,6 +34,10 @@ standard output, with no C compiler, linker or C driver involved. `-o` may then
 be omitted. `--stack` and `--region` set its program stack and region (8 MiB
 and 64 MiB otherwise). A root outside the fragment
 executables run is refused (`exe.params`, `exe.result`; `IxCC/Exe.lean`).
+With `--machine` the first root is a numeric state machine
+(`Exe.buildMachine`): a step `Nat → Nat → Nat` run by a generic shell that
+parses and renders nothing; `FILE ARG…` runs the session the program's own
+Lean code parses and renders (`exe.machine` refuses another shape).
 
 `--rc off` (the default) compiles a zero-RC-format certificate on the immortal
 backend, `--rc on` under plain RC (which may refuse the program). `--rc auto`
@@ -95,6 +99,8 @@ structure Options where
   /-- The executable's stack and region (`--stack`, `--region`, in bytes). -/
   layout : X86.Exe.Layout := {}
   layoutGiven : Bool := false
+  /-- `--machine`: the executable runs a numeric state machine (`Exe.buildMachine`). -/
+  machine : Bool := false
   deriving Inhabited
 
 def usage : String :=
@@ -102,7 +108,7 @@ def usage : String :=
     "usage:",
     "  ixcc compile CLOSURE.ixe --equations EQ.json [--root NAME]... -o OUT.o",
     "      [--rc off|on|auto] [--cert FILE] [--emit-cert FILE] [--signatures FILE] [--dump-ir LEVEL]... [--stats] [--no-typecheck]",
-    "      [--exe FILE [--stack BYTES] [--region BYTES]]",
+    "      [--exe FILE [--machine] [--stack BYTES] [--region BYTES]]",
     "  ixcc check-cert CLOSURE.ixe --equations EQ.json [--root NAME]... --cert FILE",
     "      [-o OUT.o] [--signatures FILE] [--stats] [--no-typecheck]",
     "dump levels: lam anf fir cfg lir xv xl all"]
@@ -128,6 +134,7 @@ def parseRest (o : Options) : List String → Except String Options
   | "--stats" :: rest => parseRest { o with stats := true } rest
   | "--no-typecheck" :: rest => parseRest { o with typecheck := false } rest
   | "--exe" :: f :: rest => parseRest { o with exe := some f } rest
+  | "--machine" :: rest => parseRest { o with machine := true } rest
   | "--stack" :: n :: rest =>
     match n.toNat? with
     | some b => parseRest { o with layout := { o.layout with stack := b }, layoutGiven := true } rest
@@ -149,6 +156,7 @@ def parse : List String → Except String Options
       if o.equations.isNone then throw "no --equations sidecar given"
       if cmd == "compile" && o.out.isNone && o.exe.isNone then throw "no -o or --exe output given"
       if o.layoutGiven && o.exe.isNone then throw "--stack and --region apply to --exe"
+      if o.machine && o.exe.isNone then throw "--machine applies to --exe"
       -- a certificate fixes the RC policy (its format), so `--rc` with one is a usage error
       if o.cert.isSome && o.rcExplicit then throw "cannot combine --rc with --cert"
       if cmd == "check-cert" && o.cert.isNone then throw "check-cert needs --cert"
@@ -322,17 +330,23 @@ def execute (o : Options) : ExceptT Err IO Unit := do
       IO.FS.writeBinFile tmp a.object
       IO.FS.rename tmp f
   if let some f := o.exe then
-    let ⟨_, exe⟩ ← lift fun _ => Exe.build a o.layout
+    -- the bytes and the placement of the executable `--exe` or `--machine` writes
+    let (bytes, p) ← if o.machine then do
+        let L : X86.Exe.Machine.Layout := { stack := o.layout.stack, region := o.layout.region }
+        let ⟨_, exe⟩ ← lift fun _ => Exe.buildMachine a L
+        pure (exe.checked.bytes, exe.checked.plan.placement)
+      else do
+        let ⟨_, exe⟩ ← lift fun _ => Exe.build a o.layout
+        pure (exe.bytes, exe.plan.placement)
     write f do
       let tmp : FilePath := s!"{f}.tmp.{← IO.monoNanosNow}"
-      IO.FS.writeBinFile tmp exe.bytes
+      IO.FS.writeBinFile tmp bytes
       IO.setAccessRights tmp { user := { read := true, write := true, execution := true }
                                group := { read := true, execution := true }
                                other := { read := true, execution := true } }
       IO.FS.rename tmp f
     if o.stats then
-      let p := exe.plan.placement
-      IO.println s!"executable: {exe.bytes.size} bytes (object text {p.textSize}, shell {p.shellSize}), \
+      IO.println s!"executable: {bytes.size} bytes (object text {p.textSize}, shell {p.shellSize}), \
         stack {o.layout.stack} bytes, region {o.layout.region} bytes"
   if let some f := o.emitCert then write f (IO.FS.writeFile f (cliCert.toText ++ "\n"))
   if let some f := o.signatures then write f (IO.FS.writeFile f ((signaturesJson a).pretty ++ "\n"))

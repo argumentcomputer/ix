@@ -1,0 +1,792 @@
+{
+  "format": "ixcc/corpus/1",
+  "family": "phase1-machines",
+  "description": "Numeric state machines (standalone executables, X2): the IxccExe library (IxCC/lib/IxccExe.lean, verbatim at the head of the source) with fib as an executable whose parsing and rendering are Lean, first order and through a closure, the identity, a request outside the interface, and the session machine echo. Each root is a step Nat -> Nat -> Nat whose result packs the next state and a request.",
+  "tier": "required",
+  "phase": 1,
+  "directory": "fixtures/corpus/phase1-machines",
+  "source_root": "fixtures/corpus/phase1-machines/src",
+  "lean": {
+    "version": "4.34.1",
+    "interpret": {
+      "args": [
+        "lean",
+        "-Dlinter.all=false",
+        "--run",
+        "{src}",
+        "{args}"
+      ],
+      "stdin": [
+        "lean",
+        "-Dlinter.all=false",
+        "--run",
+        "{src}",
+        "<",
+        "{ROOT ARGS lines}"
+      ]
+    }
+  },
+  "producer": {
+    "ix_revision": "21572449dea48204fbf4dafa2287549df7b07a16",
+    "ix_binary_sha256": "f15dbc39a360754e2959e9f3c39413e417bfa147c474aaffe6cfbe70a971162e",
+    "ix_version": "4.34.1|0.0.1",
+    "ix_build": "The ix of this repository: built with Lake (lake build ix) at the repository root, at the recorded revision, in the build box checkout, Lean 4.34.1, 2026-11-11; not a Nix build. Unbound closures (--unbound).",
+    "anonymous": [
+      "ix",
+      "compile",
+      "--no-build",
+      "--consts",
+      "{consts}",
+      "--equations",
+      "--anon",
+      "--unbound",
+      "--out",
+      "{ixe}",
+      "--equations-out",
+      "{equations}",
+      "{src}"
+    ],
+    "named": [
+      "ix",
+      "compile",
+      "--no-build",
+      "--consts",
+      "{consts}",
+      "--equations",
+      "--unbound",
+      "--out",
+      "{named}",
+      "--equations-out",
+      "{named-equations}",
+      "{src}"
+    ],
+    "address": [
+      "ix",
+      "addr-of",
+      "--ixe",
+      "{named}",
+      "{name}"
+    ]
+  },
+  "fixtures": [
+    {
+      "name": "machines",
+      "source": {
+        "path": "Machines.lean",
+        "sha256": "325c8954892fecab1d83f9639c94ff523a138d33be90001b720e437ef18df235",
+        "license": "Apache-2.0 OR MIT",
+        "variant": "original",
+        "origins": []
+      },
+      "consts": [
+        "Machines.fibMain",
+        "Machines.fibMainHO",
+        "Machines.idMain",
+        "Machines.badRequest",
+        "Machines.echo"
+      ],
+      "protocol": "stdin",
+      "closure": {
+        "path": "machines.ixe",
+        "sha256": "aec1625a91feb6d58bce998d788734cd5264c8712afff5f6b1e481c331b509b5",
+        "bytes": 288454
+      },
+      "equations": {
+        "path": "machines.equations.json",
+        "sha256": "d62e0a66f4fd65b24851620dbe21d09dae9eadc3154dcd26894043b3ff0c5663",
+        "equations": 13,
+        "failures": 0
+      },
+      "named_env_sha256": "491024a5797ffdde762f6507a0ae02272c14e109cbd050ba4ad0da102aa4bccc",
+      "census": {
+        "path": "machines.census.json",
+        "sha256": "c42eb0314a2e0cc83f4ab900510f0da569f086be27d8ceaaed86c1f8b21eb29f"
+      },
+      "roots": [
+        {
+          "name": "Machines.fibMain",
+          "address": "c8975ec18f4dc34d92d97e1343bb415d50dd2deff9fc395a545db589f52774a3",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "note": "IxccExe.Main1 with fib, first order: the states cover every phase and transition",
+          "cases": [
+            {
+              "args": [
+                0,
+                1
+              ],
+              "value": "2048",
+              "machine": true,
+              "note": "the start, one argument: ask for its first byte"
+            },
+            {
+              "args": [
+                0,
+                0
+              ],
+              "value": "39754",
+              "note": "the start, no argument: the count message"
+            },
+            {
+              "args": [
+                0,
+                2
+              ],
+              "value": "39754",
+              "note": "the start, two arguments: the count message"
+            },
+            {
+              "args": [
+                1,
+                50
+              ],
+              "value": "43008",
+              "machine": true,
+              "note": "a digit"
+            },
+            {
+              "args": [
+                1,
+                120
+              ],
+              "value": "47946",
+              "note": "not a digit: the numeral message"
+            },
+            {
+              "args": [
+                1,
+                256
+              ],
+              "value": "47946",
+              "note": "an empty argument: the numeral message"
+            },
+            {
+              "args": [
+                1,
+                257
+              ],
+              "value": "47946",
+              "note": "no argument after all: the numeral message"
+            },
+            {
+              "args": [
+                21,
+                53
+              ],
+              "value": "419840",
+              "note": "a second digit"
+            },
+            {
+              "args": [
+                85,
+                256
+              ],
+              "value": "127401",
+              "machine": true,
+              "note": "the argument 10 complete: the program runs"
+            },
+            {
+              "args": [
+                85,
+                48
+              ],
+              "value": "1648640",
+              "note": "a digit after 10"
+            },
+            {
+              "args": [
+                60102,
+                0
+              ],
+              "value": "8401321",
+              "machine": true,
+              "note": "rendering 15025 after its first digit"
+            },
+            {
+              "args": [
+                60102,
+                1
+              ],
+              "value": "595",
+              "note": "a refused write: status 74"
+            },
+            {
+              "args": [
+                6,
+                0
+              ],
+              "value": "4177",
+              "note": "the newline"
+            },
+            {
+              "args": [
+                2,
+                0
+              ],
+              "value": "3",
+              "note": "exit 0"
+            },
+            {
+              "args": [
+                2,
+                1
+              ],
+              "value": "595",
+              "note": "a refused write: status 74"
+            },
+            {
+              "args": [
+                19,
+                0
+              ],
+              "value": "72642",
+              "machine": true,
+              "note": "the count message, its second byte"
+            },
+            {
+              "args": [
+                19,
+                1
+              ],
+              "value": "595",
+              "note": "a refused write in a message: status 74"
+            },
+            {
+              "args": [
+                403,
+                0
+              ],
+              "value": "858466",
+              "note": "the count message, byte 25"
+            },
+            {
+              "args": [
+                835,
+                0
+              ],
+              "value": "19",
+              "note": "the count message, at its end: status 2"
+            },
+            {
+              "args": [
+                2251799813685253,
+                256
+              ],
+              "value": "56138",
+              "note": "an argument saturated at 2^48: the range message"
+            },
+            {
+              "args": [
+                2251799813685253,
+                57
+              ],
+              "value": "4611686018427398144",
+              "note": "a digit after saturation stays saturated"
+            }
+          ]
+        },
+        {
+          "name": "Machines.fibMainHO",
+          "address": "7fa898ce9a4ace740b57a1d60b8def693b7a133f8c43f58c762bda0505ab01c5",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "note": "IxccExe.Main1.run fib: fib passed as a closure",
+          "cases": [
+            {
+              "args": [
+                0,
+                1
+              ],
+              "value": "2048",
+              "machine": true,
+              "note": "the start, one argument: ask for its first byte"
+            },
+            {
+              "args": [
+                0,
+                0
+              ],
+              "value": "39754",
+              "note": "the start, no argument: the count message"
+            },
+            {
+              "args": [
+                0,
+                2
+              ],
+              "value": "39754",
+              "note": "the start, two arguments: the count message"
+            },
+            {
+              "args": [
+                1,
+                50
+              ],
+              "value": "43008",
+              "machine": true,
+              "note": "a digit"
+            },
+            {
+              "args": [
+                1,
+                120
+              ],
+              "value": "47946",
+              "note": "not a digit: the numeral message"
+            },
+            {
+              "args": [
+                1,
+                256
+              ],
+              "value": "47946",
+              "note": "an empty argument: the numeral message"
+            },
+            {
+              "args": [
+                1,
+                257
+              ],
+              "value": "47946",
+              "note": "no argument after all: the numeral message"
+            },
+            {
+              "args": [
+                21,
+                53
+              ],
+              "value": "419840",
+              "note": "a second digit"
+            },
+            {
+              "args": [
+                85,
+                256
+              ],
+              "value": "127401",
+              "machine": true,
+              "note": "the argument 10 complete: the program runs"
+            },
+            {
+              "args": [
+                85,
+                48
+              ],
+              "value": "1648640",
+              "note": "a digit after 10"
+            },
+            {
+              "args": [
+                60102,
+                0
+              ],
+              "value": "8401321",
+              "machine": true,
+              "note": "rendering 15025 after its first digit"
+            },
+            {
+              "args": [
+                60102,
+                1
+              ],
+              "value": "595",
+              "note": "a refused write: status 74"
+            },
+            {
+              "args": [
+                6,
+                0
+              ],
+              "value": "4177",
+              "note": "the newline"
+            },
+            {
+              "args": [
+                2,
+                0
+              ],
+              "value": "3",
+              "note": "exit 0"
+            },
+            {
+              "args": [
+                2,
+                1
+              ],
+              "value": "595",
+              "note": "a refused write: status 74"
+            },
+            {
+              "args": [
+                19,
+                0
+              ],
+              "value": "72642",
+              "machine": true,
+              "note": "the count message, its second byte"
+            },
+            {
+              "args": [
+                19,
+                1
+              ],
+              "value": "595",
+              "note": "a refused write in a message: status 74"
+            },
+            {
+              "args": [
+                403,
+                0
+              ],
+              "value": "858466",
+              "note": "the count message, byte 25"
+            },
+            {
+              "args": [
+                835,
+                0
+              ],
+              "value": "19",
+              "note": "the count message, at its end: status 2"
+            },
+            {
+              "args": [
+                2251799813685253,
+                256
+              ],
+              "value": "56138",
+              "note": "an argument saturated at 2^48: the range message"
+            },
+            {
+              "args": [
+                2251799813685253,
+                57
+              ],
+              "value": "4611686018427398144",
+              "note": "a digit after saturation stays saturated"
+            }
+          ]
+        },
+        {
+          "name": "Machines.idMain",
+          "address": "1030114168172d24a090574a87bf13a2bca5c7a297875f4d4658da4f5b9524eb",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "note": "IxccExe.Main1 with the identity",
+          "cases": [
+            {
+              "args": [
+                0,
+                1
+              ],
+              "value": "2048",
+              "machine": true,
+              "note": "the start, one argument: ask for its first byte"
+            },
+            {
+              "args": [
+                0,
+                0
+              ],
+              "value": "39754",
+              "note": "the start, no argument: the count message"
+            },
+            {
+              "args": [
+                0,
+                2
+              ],
+              "value": "39754",
+              "note": "the start, two arguments: the count message"
+            },
+            {
+              "args": [
+                1,
+                50
+              ],
+              "value": "43008",
+              "machine": true,
+              "note": "a digit"
+            },
+            {
+              "args": [
+                1,
+                120
+              ],
+              "value": "47946",
+              "note": "not a digit: the numeral message"
+            },
+            {
+              "args": [
+                1,
+                256
+              ],
+              "value": "47946",
+              "note": "an empty argument: the numeral message"
+            },
+            {
+              "args": [
+                1,
+                257
+              ],
+              "value": "47946",
+              "note": "no argument after all: the numeral message"
+            },
+            {
+              "args": [
+                21,
+                53
+              ],
+              "value": "419840",
+              "note": "a second digit"
+            },
+            {
+              "args": [
+                85,
+                256
+              ],
+              "value": "86409",
+              "machine": true,
+              "note": "the argument 10 complete: the program runs"
+            },
+            {
+              "args": [
+                85,
+                48
+              ],
+              "value": "1648640",
+              "note": "a digit after 10"
+            },
+            {
+              "args": [
+                60102,
+                0
+              ],
+              "value": "8401321",
+              "machine": true,
+              "note": "rendering 15025 after its first digit"
+            },
+            {
+              "args": [
+                60102,
+                1
+              ],
+              "value": "595",
+              "note": "a refused write: status 74"
+            },
+            {
+              "args": [
+                6,
+                0
+              ],
+              "value": "4177",
+              "note": "the newline"
+            },
+            {
+              "args": [
+                2,
+                0
+              ],
+              "value": "3",
+              "note": "exit 0"
+            },
+            {
+              "args": [
+                2,
+                1
+              ],
+              "value": "595",
+              "note": "a refused write: status 74"
+            },
+            {
+              "args": [
+                19,
+                0
+              ],
+              "value": "72642",
+              "machine": true,
+              "note": "the count message, its second byte"
+            },
+            {
+              "args": [
+                19,
+                1
+              ],
+              "value": "595",
+              "note": "a refused write in a message: status 74"
+            },
+            {
+              "args": [
+                403,
+                0
+              ],
+              "value": "858466",
+              "note": "the count message, byte 25"
+            },
+            {
+              "args": [
+                835,
+                0
+              ],
+              "value": "19",
+              "note": "the count message, at its end: status 2"
+            },
+            {
+              "args": [
+                2251799813685253,
+                256
+              ],
+              "value": "56138",
+              "note": "an argument saturated at 2^48: the range message"
+            },
+            {
+              "args": [
+                2251799813685253,
+                57
+              ],
+              "value": "4611686018427398144",
+              "note": "a digit after saturation stays saturated"
+            }
+          ]
+        },
+        {
+          "name": "Machines.badRequest",
+          "address": "de428a4fd49c972c17842ef2540a6e7433ee3f009e5e51dec47f74be054180b1",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "note": "always the request field 5, a kind outside version 0",
+          "cases": [
+            {
+              "args": [
+                0,
+                1
+              ],
+              "value": "5",
+              "machine": true
+            },
+            {
+              "args": [
+                5,
+                0
+              ],
+              "value": "5"
+            }
+          ]
+        },
+        {
+          "name": "Machines.echo",
+          "address": "901859e8be236e2351be24f1df5188cb57c89d493f7f0035a8aa6cd41c151b8b",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "note": "the session machine: every phase",
+          "cases": [
+            {
+              "args": [
+                0,
+                3
+              ],
+              "value": "44083200",
+              "machine": true,
+              "note": "the start: ask for a byte"
+            },
+            {
+              "args": [
+                21525,
+                97
+              ],
+              "value": "1455477537",
+              "machine": true,
+              "note": "a byte: echoed, changed by the hash"
+            },
+            {
+              "args": [
+                21525,
+                256
+              ],
+              "value": "1456779346",
+              "note": "the end of an argument: a newline on standard error"
+            },
+            {
+              "args": [
+                21525,
+                257
+              ],
+              "value": "2896214441",
+              "machine": true,
+              "note": "the end: the hash 5381, first digit"
+            },
+            {
+              "args": [
+                21526,
+                0
+              ],
+              "value": "44083200",
+              "note": "after an echo: the next byte"
+            },
+            {
+              "args": [
+                21526,
+                1
+              ],
+              "value": "595",
+              "note": "a refused echo: status 74"
+            },
+            {
+              "args": [
+                1031,
+                0
+              ],
+              "value": "14417",
+              "note": "the newline after the hash"
+            },
+            {
+              "args": [
+                31,
+                0
+              ],
+              "value": "59",
+              "note": "exit with the hash modulo 256 (7)"
+            },
+            {
+              "args": [
+                1263655,
+                0
+              ],
+              "value": "281098641",
+              "machine": true,
+              "note": "rendering 234 after its first digit"
+            },
+            {
+              "args": [
+                1263655,
+                1
+              ],
+              "value": "595",
+              "note": "a refused write: status 74"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

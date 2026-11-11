@@ -443,6 +443,7 @@
   "IxCC.CompileClaim.Proof",
   "IxCC.Compiler.Proof",
   "IxCC.Exe",
+  "IxCC.Exe.Machine",
   "IxCC.Fir.Lower",
   "IxCC.Fir.Proof.Corr",
   "IxCC.Fir.Proof.Correct",
@@ -975,6 +976,7 @@
   "IxCC.X86.ExactNat",
   "IxCC.X86.Exe.Code",
   "IxCC.X86.Exe.Layout",
+  "IxCC.X86.Exe.Machine",
   "IxCC.X86.Exe.Read",
   "IxCC.X86.Exe.Shell",
   "IxCC.X86.Exe.Validate",
@@ -1601,7 +1603,7 @@
   "IxCCTests.Sem.Toy.Stack",
   "IxCCTests.Sem.Toy.Tick"],
  "baseline":
- "KS: the switch's step 2 (what is not typing moved out of the erased checker)",
+ "X2 stage 1: numeric state machines, the generic request shell, the IxccExe library and the phase1-machines family",
  "axiom_sha256":
- "c00704914b675a09977c5dc84beaa5afebefd95254f3ec90ebc0d2e9958e7d86",
- "axiom_count": 5875}
+ "8030aeffbd460db205dfcaab0ca0d8f0abe0e790065d1001d1fdc4590effbb50",
+ "axiom_count": 5881}

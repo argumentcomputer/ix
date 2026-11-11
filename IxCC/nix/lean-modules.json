@@ -3284,7 +3284,9 @@
   {"path": "IxCCTests/Exe/Run.lean",
    "imports": ["IxCCTests.Corpus.Run", "IxCCTests.Exe.Session", "IxCC.Cli"]},
   "IxCCTests.Exe.Main":
-  {"path": "IxCCTests/Exe/Main.lean", "imports": ["IxCCTests.Exe.Run"]},
+  {"path": "IxCCTests/Exe/Main.lean", "imports": ["IxCCTests.Exe.Machine"]},
+  "IxCCTests.Exe.Machine":
+  {"path": "IxCCTests/Exe/Machine.lean", "imports": ["IxCCTests.Exe.Run"]},
   "IxCCTests.Corpus.ToolMain":
   {"path": "IxCCTests/Corpus/ToolMain.lean",
    "imports": ["IxCCTests.Corpus.Build", "IxCCTests.Corpus.KernelGen"]},
@@ -4173,6 +4175,9 @@
   {"path": "IxCC/X86/Exe/Shell.lean", "imports": ["IxCC.X86.Encode"]},
   "IxCC.X86.Exe.Read":
   {"path": "IxCC/X86/Exe/Read.lean", "imports": ["IxCC.X86.ELFRead"]},
+  "IxCC.X86.Exe.Machine":
+  {"path": "IxCC/X86/Exe/Machine.lean",
+   "imports": ["IxCC.X86.Exe.Validate", "IxCC.Exe.Machine"]},
   "IxCC.X86.Exe.Layout":
   {"path": "IxCC/X86/Exe/Layout.lean", "imports": ["IxCC.X86.Driver"]},
   "IxCC.X86.Exe.Code":
@@ -6204,9 +6209,12 @@
   "IxCC.Fir.Lower":
   {"path": "IxCC/Fir/Lower.lean",
    "imports": ["IxCC.Fir.Syntax", "IxCC.Anf.WellFormed", "IxCC.Anf.Census"]},
+  "IxCC.Exe.Machine":
+  {"path": "IxCC/Exe/Machine.lean", "imports": ["IxCC.Sem.Result"]},
   "IxCC.Exe":
   {"path": "IxCC/Exe.lean",
-   "imports": ["IxCC.X86.Exe.Validate", "IxCC.CompileClaim"]},
+   "imports":
+   ["IxCC.X86.Exe.Validate", "IxCC.X86.Exe.Machine", "IxCC.CompileClaim"]},
   "IxCC.Compiler.Proof":
   {"path": "IxCC/Compiler/Proof.lean",
    "imports":

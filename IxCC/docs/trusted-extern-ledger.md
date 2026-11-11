@@ -127,7 +127,15 @@ against:
 Not pinned: the rest of `docs/` (including this ledger, `trusted-externs.json`),
 `README.md`, `AGENTS.md`, `.gitignore`, and the rest of `benchmarks/` (the
 optional measurement package, its fixtures and records). These describe or
-measure; no required check reads them.
+measure; no required check reads them. Also not pinned: `lib/`, the Lean
+source that programs are compiled *with* (`lib/IxccExe.lean`, the numeric
+state machines' parsing and rendering). It is not IxCC and not trusted: IxCC
+compiles it like the rest of a program, so the compiler's theorem covers it.
+What the gates compile is its copy at the head of
+`fixtures/corpus/phase1-machines/src/Machines.lean`, which the rule pins, and
+`tests-exe` requires the two to be equal byte for byte. No Lake target, Nix
+source set or module manifest takes `lib/` as an IxCC module (nothing imports
+it).
 
 `integrity.repository_files` pins files of the enclosing repository by path
 relative to its root. Every configured workflow file must be listed, so
@@ -783,7 +791,40 @@ call is meant to see the driver `Layout.driver` builds; the model's one
 return address and register file for both calls differ from the shell's two
 call sites, which the object theorems tolerate. The driver model's entry
 (`x86-phase1-runtime-driver-model`) covers the native gates' test executables,
-which replaced the C driver in X1.
+which replaced the C driver in X1. This shell is retired on its own: the
+shell proof (X0-P) takes the generic machine shell below first, and this one
+stays ledgered until byte executables (X3) can replace its parsing and
+rendering.
+
+**The numeric state machines' generic shell (specification assumption
+`x86-linux-machine-shell`).** `ixcc compile --exe FILE --machine` writes the
+executable of a numeric state machine: a root `step : Nat → Nat → Nat` of a
+state and an event whose result packs the next state and a request
+([`IxCC/Exe/Machine.lean`](../IxCC/Exe/Machine.lean)), run by a generic shell
+([`X86/Exe/Machine.lean`](../IxCC/X86/Exe/Machine.lean); 1,059 bytes, the same
+for every machine). It parses and renders nothing: a program does that in
+Lean compiled with it (`lib/IxccExe.lean`), so the decimal parsing and
+rendering of `--exe`'s shell are not trusted code here. The entry is separate
+from `x86-linux-exe-shell` so that each can be retired on its own; the shell
+proof takes this one first. It assumes what the module note says the shell
+does: confine the process with `--exe`'s filter; keep the state, the event,
+an argument cursor and an output byte in its own 256 bytes above the call
+stack's top; per call, store the budget at `region + 16`, call `cx_init`
+and the step by direct calls on the static stack, check `rsp`, map a status
+to 65 to 68 or 70; require an odd word (71); split it into the state and the
+request field and perform the request (one argument byte, or 256 or 257; one
+byte written to 1 or 2 and the answer 0 or 1; the program's exit status; 72
+for anything else); and write a fixed message for each of its own failures.
+It also assumes the kernel loads the file as its five program headers say
+(the region in a segment of its own, one unmapped page above the stack
+segment) and enters it with the System V initial stack, and, as for every
+executable, that a run the model shows non-faulting touches only modelled
+memory (here: not the shell's own bytes). What is proved:
+`X86.Exe.Machine.Layout.driver_canonicalOk`, every clause of
+`Driver.CanonicalOk` at each call site for every initial bytes (a call starts
+from whatever the previous one left), carried by `X86.Exe.Machine.writeChecked`;
+and `X86.Exe.checkFor_sound`, the file's structure read back independently.
+That the shell realises the session model is not proved.
 
 The [indexed stream checker](stream-checking.md) preserves this boundary:
 bounded decoding and cached canonical positions are proved exactly equal
@@ -796,7 +837,8 @@ Four additional public fences retain the ordinary logical axiom basis.
 | Local ISA semantics | Agreement of the local byte machine with actual x86-64, including canonical addresses, unified code fetch, memory permissions, flags, faults, and the caller ABI. Compiler-contract traps must be proved unreachable; they are not hardware exceptions. | E1 and E2 prove local-to-local agreement. The [S0 readiness decision](x86-reference-model.md) pins the Sail snapshot; reference execution comparison, the Lean adapter, and S2 agreement remain pending. |
 | Encoder stream/layout | Discharged for successful certified production emission. Raw `Encode.encode`/`Program.encode` clients must validate their output or prove the same facts. | `Stream.check_sound` checks every boundary, canonical position, target and relocation. Complete-stream proofs cover call-free execution and internal calls under concrete `SafeTrace` conditions, including residual return-slot bytes. `ELFLink` proves checked PC32 application and runtime CALL transfer. External procedure bodies still require their semantic/ABI contracts. |
 | Runtime driver model | `X86.Driver`/`X86.Linked` model initialization and the root call for accepted scalar and bounded RC objects. The same entry describes `DriverSession`'s separate owned raw-word drop protocol; it does not upgrade the one-call theorem to arbitrary-session adequacy. | Existing pipeline gates plus `tests-rt-rc`, `tests-rc-certificate` and `tests-driver-session` check complete values, ABI, reclamation and same-region reuse. The callers are executables IxCC writes (the production and the test shell); the loader's mapping, the shells' code, source adequacy and general whole-call session framing remain explicit. |
-| Standalone executable shell | `x86-linux-exe-shell`: the shell of `ixcc compile --exe` and the kernel's loading of the static executable, as `X86/Exe/Code.lean` describes them | `Layout.driver_canonicalOk` (the layout keeps the driver contract), `X86.Exe.check_sound` (the file's structure); `tests-corpus --exe` and `tests-exe`. The shell's behaviour from the loader's post-state is not proved |
+| Standalone executable shell | `x86-linux-exe-shell`: the shell of `ixcc compile --exe` and the kernel's loading of the static executable, as `X86/Exe/Code.lean` describes them | `Layout.driver_canonicalOk` (the layout keeps the driver contract), `X86.Exe.check_sound` (the file's structure); `tests-corpus --exe` and `tests-exe`. The shell's behaviour from the loader's post-state is not proved; it stays ledgered until byte executables (X3) can replace it |
+| Numeric state machines' shell | `x86-linux-machine-shell`: the generic request shell of `ixcc compile --exe --machine` and the kernel's loading of its executable, as `X86/Exe/Machine.lean` describes them | `X86.Exe.Machine.Layout.driver_canonicalOk` (the contract at every call, from any bytes), `X86.Exe.checkFor_sound`; `tests-exe` (the `phase1-machines` roots, `fib` against `--exe`, `echo` against Lean's interpreter) and `tests-corpus`. The shell's realisation of the session model is not proved; the shell proof takes it first |
 | ELF serialization and system loading | Independent interpretation is discharged for successful `ELF.writeChecked` output. Raw `ELF.write` clients lack that certificate. Actual system linker/loader behavior remains assumed. | `ELFRead` independently parses actual fields; `ELF.check_sound` certifies text, bounded/aligned/nonoverlapping sections, export placement, symbols, relocations, non-executable stack and exact provenance. `ObjectEval` begins from the parsed export and text. A real loader must implement the proved PC32 rule, map immutable executable text, resolve named procedures and enter with the stated ABI. |
 
 The reviewed format references are the [generic ABI ELF specification](https://gabi.xinuos.com/elf.pdf)

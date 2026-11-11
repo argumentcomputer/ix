@@ -956,6 +956,16 @@ rest).
   registers, read or write the region), and a host in Lean does what the C
   runtime driver did, decoding each result with `Rt.readback` and with an
   independent decoder. No gate runs a compiled program through C.
+- **Numeric state machines** (X2, `--exe FILE --machine`): the first root is a
+  step `Nat → Nat → Nat` of a state and an event whose result packs the next
+  state and a request (`IxCC/Exe/Machine.lean`: the argument block's next
+  byte, one byte written to standard output or error, or an exit); a generic
+  shell (`X86/Exe/Machine.lean`, the same for every machine) calls `cx_init`
+  and the step once per request, performs the request and passes its answer
+  back as the next event. It parses and renders nothing: a program does that
+  in Lean compiled with it (`lib/IxccExe.lean`). The region is a segment of its
+  own; the session theorem is planned
+  ([design](standalone-executables-design.md#x2-as-implemented)).
 
 ## Bootstrap and trust
 

@@ -1,4 +1,5 @@
 import IxCC.X86.Exe.Validate
+import IxCC.X86.Exe.Machine
 import IxCC.CompileClaim
 
 /-!
@@ -30,6 +31,13 @@ back), roots whose parameters are not `Nat` (it passes any word), fewer
 arguments than parameters (it passes zero), several roots of one object, one input line
 after another in one process (with a fresh `cx_init` for each), regions
 under 4 KiB (`cx_init` refuses them), timing and a dump of the object area.
+
+**Numeric state machines** (`buildMachine`, `--exe FILE --machine`): the
+first root is a step `Nat → Nat → Nat` of a state and an event whose result
+packs the next state and a request (`IxCC/Exe/Machine.lean`), run by the
+generic shell of `IxCC/X86/Exe/Machine.lean`, which parses and renders
+nothing. Refused: `exe.machine` (a first root of another shape),
+`exe.layout`, `exe.write`.
 -/
 
 namespace IxCC.Exe
@@ -67,6 +75,32 @@ def build (a : Artifact) (layout : X86.Exe.Layout := {}) :
   let i ← input a layout
   match X86.Exe.writeChecked i with
   | .ok c => pure ⟨i, c⟩
+  | .error e => throw (err "exe.write" e.render)
+
+
+/-! ## Numeric state machines (`--machine`) -/
+
+/-- The root a machine executable runs: the first, of exactly two `Nat`
+parameters (a state and an event; declared and at Cfg) and a `Nat` result
+(the next state and a request, `IxCC/Exe/Machine.lean`); else
+`exe.machine`. -/
+def machine (a : Artifact) : Except Err Root := do
+  let some root := a.roots.head? | throw (err "exe.root" "the program has no root")
+  unless root.params == 2 && CompileClaim.rootParamsAllNat a.src root do
+    throw (err "exe.machine" s!"root {root.name} is not a numeric state machine: its step takes two Nat \
+      parameters, a state and an event")
+  match root.ty with
+  | some (_, .nat) => pure root
+  | _ => throw (err "exe.machine" s!"root {root.name} is not a numeric state machine: its step returns a Nat, \
+      the next state and a request")
+
+/-- Build and check the machine executable of `a`'s first root with layout `L`. -/
+def buildMachine (a : Artifact) (L : X86.Exe.Machine.Layout := {}) :
+    Except Err ((root : Root) × X86.Exe.Machine.Certified L root.symbol a.object) := do
+  let root ← machine a
+  unless L.check do throw (err "exe.layout" X86.Exe.Error.layout.render)
+  match X86.Exe.Machine.writeChecked L root.symbol a.object with
+  | .ok c => pure ⟨root, c⟩
   | .error e => throw (err "exe.write" e.render)
 
 end IxCC.Exe

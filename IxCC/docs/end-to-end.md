@@ -213,7 +213,12 @@ platform events. The driver model leaves the trusted base; the loader's
 post-state for a static executable and the platform's system-call model enter
 it, and a claim about an executable binds the executable's hash, the platform,
 the shell and the layout as well as the object's claim ([standalone
-executables](standalone-executables-design.md)).
+executables](standalone-executables-design.md)). For a numeric state machine
+(`ixcc compile --exe --machine`, implemented) the statement is a session
+theorem: every trace of platform events the process performs, with the
+environment's answers, is one obtained by iterating the source step on those
+answers unless the step goes wrong on the way (planned over the linked-object
+model, from the per-call statement; [X2](standalone-executables-design.md#x2-as-implemented)).
 
 ### Aiur, form (i): the fixed evaluator circuit (first)
 

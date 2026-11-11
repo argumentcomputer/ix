@@ -453,8 +453,13 @@ def parseOptions : List String → Except String Options
   | "--strace" :: s :: rest => do return { (← parseOptions rest) with strace := some s }
   | arg :: _ => throw s!"unknown argument {arg}"
 
-/-- Usage: `tests-exe [--run [--strace PATH]]`. -/
-def main (args : List String) : IO UInt32 := do
+/-- A further part of the suite (`IxCCTests.Exe.Machine`): its lines, from the
+assertion counter, the options and a work directory. -/
+abbrev Part := Assert → Options → FilePath → IO (Array String)
+
+/-- Usage: `tests-exe [--run [--strace PATH]]`; `extra` are further parts,
+run after the others. -/
+def mainWith (extra : List (String × Part)) (args : List String) : IO UInt32 := do
   let o ← match parseOptions args with
     | .ok o => pure o
     | .error e => IO.eprintln s!"tests-exe: {e}"; return 2
@@ -473,10 +478,13 @@ def main (args : List String) : IO UInt32 := do
       if o.run then part "native" (nativePart a o work)
       else IO.println "  native: skipped (no --run)"
       part "test shell" (testShellPart a o work)
+      for (name, body) in extra do part name (body a o work)
     IO.println s!"tests-exe: {← a.get} assertions passed"
     return 0
   catch e =>
     IO.eprintln s!"tests-exe: FAILED after {← a.get} assertions: {e}"
     return 1
+
+def main (args : List String) : IO UInt32 := mainWith [] args
 
 end IxCCTests.Exe.Suite

@@ -21,3 +21,24 @@ the standard logical axioms. -/
 
 /-- info: 'IxCC.X86.Exe.checkFor_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.X86.Exe.checkFor_sound
+
+/-! Numeric state machines: the generic shell's driver contract and segments,
+and the request interface. -/
+
+/-- info: 'IxCC.X86.Exe.Machine.Layout.driver_canonicalOk' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.X86.Exe.Machine.Layout.driver_canonicalOk
+
+/-- info: 'IxCC.X86.Exe.Machine.Layout.segmentsOk_of_check' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.X86.Exe.Machine.Layout.segmentsOk_of_check
+
+/-- info: 'IxCC.X86.Exe.Machine.Layout.default_check' does not depend on any axioms -/
+#guard_msgs in #print axioms IxCC.X86.Exe.Machine.Layout.default_check
+
+/-- info: 'IxCC.Exe.Machine.Request.decode_encode' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Exe.Machine.Request.decode_encode
+
+/-- info: 'IxCC.Exe.Machine.Request.encode_lt' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Exe.Machine.Request.encode_lt
+
+/-- info: 'IxCC.Exe.Machine.Request.decode_valid' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Exe.Machine.Request.decode_valid
