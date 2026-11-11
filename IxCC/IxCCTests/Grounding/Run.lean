@@ -3,6 +3,7 @@ import IxCC.Src.Readback
 import IxCCGrounding.Check
 import IxCCGrounding.RootCheck
 import IxCCGrounding.Direct.Check
+import IxCCTests.Grounding.Oracle
 import IxCCTests.Src.Support
 
 /-! # `tests-grounding`: the grounding check on committed closures
@@ -40,7 +41,16 @@ refuses no application site of either subject; two controls on `fib` each make i
 `groundCheck` true: (a) the stored type of a constant passed as an argument made `Nat`; (h) a head
 constant's first binder datum (`never`) made "always a proposition".
 
-and, for the root's checks, on `decide`: the observation `false` (tag `0`) fails `resultTagB`
+The kernel as an oracle (`IxCCTests.Grounding.Oracle`), on both subjects: at every site-profile
+instance the direct route accepts, the kernel's own typing core (the front end's, over the
+closure) types the site in the graph regime (the function part's inferred type reduces to a `∀`
+whose domain is definitionally equal to the argument's inferred type, its binder datum not a
+proposition at that profile); every accepted site whose kernel binder datum is a proposition at
+some other profile is refused by the walk at that profile; the walk's refused positions are
+`runRefused`'s. The counts (sites, site-profile instances, site-profile pairs where the kernel's
+datum holds) are asserted per subject.
+
+And, for the root's checks, on `decide`: the observation `false` (tag `0`) fails `resultTagB`
 (`PUnit.unit` is a field-less constructor at index `0` in `Sl` beside `Bool.false`, so the check
 rejects it, as documented); an enumeration argument that is not its type's listed constructor
 fails `foArgsB`; the pinned `Bool` re-pinned at `Nat` fails `boolListedB` and nothing in
@@ -63,13 +73,17 @@ structure Subject where
   /-- the root's first-order argument types; its result type is `Nat`, or the pinned `Bool` -/
   argTys : List FoTy
   boolResult : Bool
+  /-- the kernel oracle's counts: site positions the direct route walks, their site-profile
+  instances, and pairs of an accepted site and a profile at which the kernel's binder datum is a
+  proposition -/
+  oracle : Nat × Nat × Nat
 
 def subjects : List Subject :=
   [{ label := "fib", stem := "fixtures/ixon-v4/bench-k1/fib", root := "entry", args := [.lit 10],
-     expected := .nat 55, argTys := [.nat], boolResult := false },
+     expected := .nat 55, argTys := [.nat], boolResult := false, oracle := (60, 68, 11) },
    { label := "decide", stem := "fixtures/corpus/grounding/decide",
      root := "Grounding.decideFib10", args := [], expected := .ctor 1 [], argTys := [],
-     boolResult := true }]
+     boolResult := true, oracle := (93, 101, 17) }]
 
 /-- What the check runs on. -/
 structure Input where
@@ -84,8 +98,8 @@ structure Input where
   keyless : List CId
 
 /-- The kernel's acceptance, the program SrcEval runs, its annotation, the key map, the level
-parameters and the root's closure. -/
-def load (s : Subject) : IO Input := do
+parameters and the root's closure; and the kernel's typing core over the closure (the oracle's). -/
+def load (s : Subject) : IO (Input × Oracle.Core) := do
   let bytes ← IO.FS.readBinFile s!"{s.stem}.ixe"
   let json ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile s!"{s.stem}.equations.json"))
   let k ← match KernelFront.ingress bytes json [s.root] with
@@ -119,7 +133,7 @@ def load (s : Subject) : IO Input := do
           sl := sl ++ [d]
           todo := todo ++ [d]
   let keyless := sl.filter fun c => (k.rd.key? c).isNone
-  return { src, env, κ, lpsOf, ann, Sl := sl, rootId, keyless }
+  return ({ src, env, κ, lpsOf, ann, Sl := sl, rootId, keyless }, KernelFront.coreOf k.fe)
 
 /-- The conjuncts of the check that are false. -/
 def failing (i : Input) : List String :=
@@ -272,7 +286,7 @@ def run : IO Bool := do
     let mut fib? : Option Input := none
     let mut dec? : Option (Input × CId) := none
     for s in subjects do
-      let i ← load s
+      let (i, core) ← load s
       expect a i.keyless.isEmpty s!"{s.label}: constants of Sl without a kernel key: {i.keyless}"
       let bad := failing i
       expect a bad.isEmpty s!"{s.label}: the check's conjuncts {bad} are false"
@@ -302,6 +316,19 @@ def run : IO Bool := do
         s!"{s.label}: sitesDirect is false: {(refusedSites i).length} sites refused"
       IO.println s!"{s.label}: sitesDirect true: none of {(allRunSites i).length} application sites \
         of the run terms refused"
+      -- the kernel as an oracle at every site the direct route accepts
+      let t := Oracle.tally core i.src i.env i.κ i.lpsOf i.ann i.Sl
+      expect a (t.selfCheckBad == 0 && t.declined == 0 && t.accepted == t.sites)
+        s!"{s.label}: the walk's verdicts differ from runRefused, or refuse: {repr t}"
+      expect a (t.agree == t.acceptedInstances && t.disagree == 0 && t.errors == 0)
+        s!"{s.label}: the kernel does not type an accepted site in the graph regime: {repr t}"
+      expect a (t.refusedThere == t.datumHolds)
+        s!"{s.label}: a site is accepted at a profile where the kernel's datum holds: {repr t}"
+      expect a ((t.sites, t.instances, t.datumHolds) == s.oracle)
+        s!"{s.label}: oracle counts {(t.sites, t.instances, t.datumHolds)}, expected {s.oracle}"
+      IO.println s!"{s.label}: the kernel types all {t.acceptedInstances} site-profile instances the \
+        direct route accepts ({t.accepted} sites) in the graph regime; at the {t.datumHolds} \
+        site-profile pairs where its datum is a proposition, the walk refuses"
       if s.label == "fib" then fib? := some i
     let some i := fib? | throw (IO.userError "no fib subject")
     -- negative controls

@@ -470,13 +470,14 @@ imports the kernel's model (`IxCK.Kernel.Denotes`, the statement half, in
 model, from the production library or from any program of the shared build.
 
 **What is proved, fenced on `propext`, `Classical.choice` and `Quot.sound` or
-fewer (`IxCCGrounding/Fence.lean`, 56 exact assertions):**
+fewer (`IxCCGrounding/Fence.lean`, 86 exact assertions):**
 
 - *Soundness at a root* (`rootSound`, in `IxCCGrounding.Root`). For every
   program, kernel reading `env`, key map, level parameters, certificate
   annotation and finite set `Sl` of constants with the checked facts
   (`GroundFacts`, `CaseFacts`, `RootFacts`); every set theory and every model of
-  `env` with the laws; assuming `SitesOk`: if SrcEval runs the root on
+  `env` with the laws; assuming typing at the application sites the direct
+  route (below) refuses (`SitesOkRes`): if SrcEval runs the root on
   first-order arguments to a value whose readback names a kernel term at the
   result type (`FoObs`, its tag checked by `ResultTag`), then, at every level
   assignment, the root applied to the arguments' terms denotes what that term
@@ -484,7 +485,7 @@ fewer (`IxCCGrounding/Fence.lean`, 56 exact assertions):**
   literal SrcEval reads back) and `decideRoot` (a root `Bool` read back as
   constructor `1` denotes the kernel's `Bool.true`).
 - *The fundamental lemma from the check* (`allP_of_check`, and its clause for
-  constants, `const_of_check`): under the check and `SitesOk`, each of SrcEval's
+  constants, `const_of_check`): under the check and `SitesOkRes`, each of SrcEval's
   eight mutual functions returns values related to what their kernel
   counterparts denote, at every clock. F5's meaning at each `case` constant is no
   longer a hypothesis (`caseFires_of_check`).
@@ -510,19 +511,30 @@ fewer (`IxCCGrounding/Fence.lean`, 56 exact assertions):**
   and comparing them by a small conversion: equality up to what the denotation
   does not read (levels by `Level.simplify` and max-plus forms, binder data at
   the profiles, a literal against its constructor form), β with the argument
-  checked, δ, and the projection of a constructor at a structure that is never
+  checked, δ, and the projection of a constructor at a structure stored as never
   a proposition. Its soundness (`direct_sound`, `spine_sound`,
-  `termRefused_sound`) uses the laws `defn_value`, `cval_params` (through
-  `den_inst`) and `proj_ctor` (scheduled on the side that owes the laws), and
-  rules of `Denotes`; not `iota_rule`, `nat_accel` or `ctor_canon`.
+  `termRefused_sound`, `directFacts_of_check`) uses three laws and rules of
+  `Denotes`: `defn_value` (δ), `cval_params` (through `den_inst`, wherever a
+  stored type or value is read at the levels of a use) and `proj_ctor` in its
+  restricted form (the projection step asks that the structure be never a
+  proposition); not `iota_rule`, `nat_accel` or `ctor_canon`. Of the three,
+  `proj_ctor` is only scheduled by the side that owes it, not proved there (the
+  table below).
 - *Typing only where the direct route refuses* (`SitesOkRes`, implied by
   `SitesOk`): `allP_of_check`, `const_of_check` and `rootSound` take it, their
   landed forms over `SitesOk` kept as corollaries (`…_of_sitesOk`); where the
   check refuses no site (`DirectFacts`, from `sitesDirectB` by
   `directFacts_of_check`) it holds outright (`sitesOkRes_of_direct`). **`fibRoot`
-  and `decideRoot` take `DirectFacts` and have no typing hypothesis**: on both
-  subjects `sitesDirectB` is true (`tests-grounding`), and the kernel's own
-  inference and definitional equality agree at every site it accepts.
+  and `decideRoot` take `DirectFacts` and have no typing hypothesis**: besides
+  the laws, the run and the root's denotation they speak about, their
+  hypotheses are facts the checks decide on the bytes (`GroundFacts`,
+  `CaseFacts`, `RootFacts`, `DirectFacts`, and for `decideRoot` `BoolListed`
+  and `ResultTag`). On both subjects `sitesDirectB` is true
+  (`tests-grounding`). The suite also asks the kernel's own typing core, at
+  every site-profile instance the check accepts (68 on `fib`, 101 on
+  `decide`), whether the site is typed in the graph regime: it agrees at every
+  one; and at each of the 11 and 17 pairs of an accepted site and a profile at
+  which the kernel's binder datum is a proposition, the check refuses the site.
 
 **Its hypotheses, each with who discharges it.** This is how far the landed
 theorem is from the grounded statement of the [spine](end-to-end.md#the-shared-spine).
@@ -540,8 +552,8 @@ theorem is from the grounded statement of the [spine](end-to-end.md#the-shared-s
 | `FoArgs` | the arguments are literals, or an enumeration's listed constructor | IxCC: `foArgsB` | done on both closures, with a control |
 | `ResultTag` | the observed tag names one constructor: every member of `Sl` reading back with that tag whose kernel entry is a field-less constructor has the named constructor's key | IxCC: `resultTagB`, run after the run on the observed result | done on both closures; rejects programs, see below |
 | `BoolListed` (`decideRoot` only) | the pinned `Bool`'s listed constructor `1` is the pinned `Bool.true` | IxCC: `boolListedB` | done on `decide`, with a control |
-| `sitesDirectB … = true` (`DirectFacts`; `fibRoot`, `decideRoot`) | the direct route refuses no application site SrcEval may evaluate in a run term of `Sl` | IxCC: the check, run on the closure's bytes beside `groundCheck` | done: true on both closures (`tests-grounding`), with two controls that make it false and leave `groundCheck` true |
-| `SitesOkRes` (`allP_of_check`, `const_of_check`, `rootSound`) | typing, in the one form it is consumed (an application site in the graph regime with its argument in the domain), at the sites the direct route refuses only | IxCC | empty on both subjects. On the corpus the direct route refuses, beyond the two subjects, sites of a recursor fired in a type (`Bool.rec` into `Prop`) and of `Nat` arithmetic on literals in a proof's type (G2b: ι and `nat_accel` in the conversion); no measured site needs a typing derivation |
+| `sitesDirectB … = true` (`DirectFacts`; `fibRoot`, `decideRoot`) | the direct route refuses no application site SrcEval may evaluate in a run term of `Sl` | IxCC: the check, run on the closure's bytes beside `groundCheck` | done: true on both closures (`tests-grounding`), with two controls that make it false and leave `groundCheck` true, and the kernel as an oracle at every site it accepts |
+| `SitesOkRes` (`allP_of_check`, `const_of_check`, `rootSound`) | typing, in the one form it is consumed (an application site in the graph regime with its argument in the domain), at the sites the direct route refuses only | IxCC | empty on both subjects. On the corpus (below) the direct route refuses sites of a recursor fired in a type (`Bool.rec` into `Prop`), of `Nat` arithmetic on literals in a proof's type, at a level its comparison misses (`imax u u` against `u`) and inside a list literal nested deeper than its fuel (G2b: ι and `nat_accel` in the conversion, the level and the fuel); no measured site needs a typing derivation |
 
 **Two laws as first landed were false, and the instance theorems said nothing.**
 As first landed, `ctor_canon` was stated for every constructor and `proj_ctor`
@@ -647,16 +659,31 @@ constructor `0` denote the same set.
 **The direct route's bounds and cost.** The check runs each run term once
 against the set of profiles of its constant's level parameters at which it is
 evaluated, so it refuses every site of a constant with more than 8 level
-parameters (the most in the checked sets of the measured corpus is 4); it walks
-each maximal application spine once, so a spine's width costs no fuel (a nesting
-depth, 64). It compares levels by syntactic equality, or, for levels of at most
-32 nodes, by syntactic equality after `Level.simplify` or by their max-plus forms
-(a constant and parameter offsets, each at most the other), never by the
-kernel's `Level.isEquiv`, which is exponential on a known family; the max-plus
-comparison is there because syntactic equality after `Level.simplify` alone
-refused 24 of the 208 sites of `sum-loop` (`imax (u+1) (u+1)` against `u+1`, and
-`max` in the other order). There is no memo of repeated δ-unfolding, so beyond
-these bounds the check's cost on a hostile closure is not otherwise bounded.
+parameters (256 profiles). Measured on the corpus (below), the most level
+parameters of a constant in a checked set `Sl` is 4 (the `for`-loop closures,
+`scalar`, `resource`) and of any constant of a closure's reading 7, so the bound
+refuses nothing there. It walks each maximal application spine once, so a
+spine's width costs no fuel; the fuel (64) bounds the nesting depth of a check,
+each nested argument costing three levels (check, infer, step), and a list
+literal of `src-diag/diag` nested deeper than that is refused (with fuel 96 it
+is accepted). It compares levels by syntactic equality, or, for levels of at
+most 32 nodes, by syntactic equality after `Level.simplify` or by their
+max-plus forms (a constant and parameter offsets, each at most the other),
+never by the kernel's `Level.isEquiv`, which is exponential on a known family;
+the max-plus comparison is there because syntactic equality after
+`Level.simplify` alone refused 24 of the 208 sites of `sum-loop`
+(`imax (u+1) (u+1)` against `u+1`, and `max` in the other order). It misses
+`imax u u` against `u` (equal at every assignment; `Level.simplify` leaves it,
+and an `imax` has no max-plus form), which refuses a motive's sort in four
+closures of the corpus. The largest level in any closure's reading is 18 nodes,
+so the 32-node bound refuses nothing measured. On a hostile family (chains of
+`imax`, and of `max`, over 16 parameters, 31 nodes, each compared with a copy
+with two parameters swapped) the comparison answers in 149 µs and 255 µs; over
+24 parameters (47 nodes) it declines in 9 µs (interpreted, not compiled). There
+is no memo of repeated δ-unfolding, so beyond these bounds the check's cost on
+a hostile closure is not otherwise bounded. On the corpus `sitesDirectB` takes
+up to 10.9 s interpreted (`scalar`, 953 sites); compiled, on the two subjects,
+it is part of the suite's time.
 
 `Ok` is the certificate's own datum: the annotation's class of each constant
 (`ConstRel.result`, the zero condition of the sort of its stored type, as the
