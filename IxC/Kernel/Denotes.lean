@@ -439,6 +439,32 @@ def NatAddLaw (cval : Key md → (LevelParam → Nat) → V) (env : Env md) : Pr
       ∀ x y, x ∈ˢ N → y ∈ˢ N →
         app (app A x) Z = x ∧ app (app A x) (app S y) = app S (app (app A x) y)
 
+/-- **A graded reading** (`D` a denotation relation, such as `Denotes cval env φ`): every
+application in the term applies a function that denotes a member of a dependent product to an
+argument that denotes a member of the product's domain (Lean's typing of the application, read
+in the sets), through every binder at every member of its domain. `Denotes` reads an
+application at any argument, and β computes only on the domain (`SetModel.app_lamR`), so a
+reduction that fires β with no certificate is sound on graded readings only. -/
+def GradedBy (D : (BVarIdx → V) → Expr md → V → Prop) : (BVarIdx → V) → Expr md → Prop
+  | ρ, .app f a => GradedBy D ρ f ∧ GradedBy D ρ a ∧
+      ∃ (r : Nat) (A F X : V) (B : V → V), D ρ f F ∧ D ρ a X ∧ F ∈ˢ piR r A B ∧ X ∈ˢ A ∧
+        (r = 0 → ∀ x, x ∈ˢ A → B x ∈ˢ univ 0)
+  | ρ, .lam ty b _ =>
+    GradedBy D ρ ty ∧ ∀ A, D ρ ty A → ∀ x, x ∈ˢ A → GradedBy D (push x ρ) b
+  | ρ, .forallE ty b _ =>
+    GradedBy D ρ ty ∧ ∀ A, D ρ ty A → ∀ x, x ∈ˢ A → GradedBy D (push x ρ) b
+  | ρ, .proj _ _ e => GradedBy D ρ e
+  | _, _ => True
+
+/-- **Stored terms are graded**: every stored constant's type, and every stored definition's
+value, has a graded reading (`GradedBy`) at every level assignment and variable environment.
+The kernel stores only terms it has typed; this is what that typing says in the sets. -/
+def GradedLaw (cval : Key md → (LevelParam → Nat) → V) (env : Env md) : Prop :=
+  ∀ c ∈ env.consts, ∀ (φ : LevelParam → Nat) (ρ : BVarIdx → V),
+    GradedBy (Denotes cval env φ) ρ c.toConstantVal.type ∧
+    ∀ (cv : ConstantVal md) (value : Expr md) (hint : ReducibilityHint),
+      c = .defnInfo cv value hint → GradedBy (Denotes cval env φ) ρ value
+
 /-- **A model of the environment `env` in the set theory `V`**: one
 assignment `cval` of a set to every constant at every level
 assignment — fixed once, for the whole environment — under which every
@@ -446,7 +472,8 @@ stored constant is a member of what its type denotes, the built-in
 `False` is the empty set, the built-in `Eq` is set equality, every
 stored definition is what its value denotes, every stored recursor rule
 computes as Lean's does, the kernel's η laws hold at stored structures and
-unit-like families, the `Nat` operations compute on literals, and a
+unit-like families, the `Nat` operations compute on literals, every
+stored type and value applies functions on their domains, and a
 constant's value reads only its own level parameters.
 
 The interpretation of the constants *is* the model: there is nothing
@@ -490,6 +517,10 @@ where they are laws of stored constants:
   operations the kernel computes on literals do so as Lean's functions
   (`NatLitLaw`), and `Nat.add` satisfies its recurrences at every natural
   (`nat_add`, `NatAddLaw`).
+* **graded stored terms** (`graded`): every stored type and definition value applies each
+  function to an argument in its domain (`GradedLaw`), as the kernel's typing of the term
+  says. `Denotes` reads an application anywhere, so without this law a stored value could
+  denote an off-domain application that β, fired without a certificate, would change.
 
 The kernel's other generic definitional equalities do not depend on
 `cval`: they hold in every model because of how `Denotes` reads terms.
@@ -547,6 +578,9 @@ structure Model (V : Type w) [SetTheory V] (env : Env md) where
   lit_ops : NatLitLaw cval env
   /-- **`Nat.add`'s recurrences** at every natural (`NatAddLaw`) -/
   nat_add : NatAddLaw cval env
+  /-- **stored terms are graded**: every stored type and definition value applies functions
+  on their domains only (`GradedLaw`) -/
+  graded : GradedLaw cval env
   /-- a stored constant's value depends on the level assignment only through its own
   level parameters (so a use of it reads its levels, and nothing else) -/
   cval_params : ∀ (n : Key md) (ci : ConstantInfo md), env.find? n = some ci →
