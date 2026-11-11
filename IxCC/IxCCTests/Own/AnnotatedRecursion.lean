@@ -163,10 +163,11 @@ def runFixture (dir : FilePath) (variant : String) (phaseOne := false) : IO Unit
   let bytes ← IO.FS.readBinFile (dir / s!"{variant}.ixe")
   let raw ← IO.ofExcept (Json.parse (← IO.FS.readFile (dir / s!"{variant}.anon.json")))
   -- ingress refuses the unbound envelope; the legacy reading takes it
-  match Recheck.ingress bytes equations ["entry"] with
-  | .ok _ => throw (IO.userError s!"{variant}: ingress accepted an unbound envelope")
-  | .error e => need (e.code == "kernel" && (e.message.splitOn "unbound").length > 1)
-      s!"{variant}: ingress refused the unbound envelope, but not as unbound: {e.render}"
+  let refusal : String := match IxCC.Recheck.ingress bytes equations ["entry"] with
+    | .ok _ => "accepted"
+    | .error e => if e.code == "kernel" then e.message else s!"{e.code}: {e.message}"
+  need ((refusal.splitOn "unbound").length > 1)
+    s!"{variant}: ingress did not refuse the unbound envelope as unbound: {refusal}"
   let input ← IO.ofExcept (legacyIngress bytes equations "entry")
   need (toString input.env.root == (← IO.ofExcept (← field raw "root").getStr?)) "fresh anonymous Merkle root/sidecar disagreement"
   let p := input.program

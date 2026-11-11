@@ -428,7 +428,7 @@ def closuresStep (a : Assert) : IO (Array String) := do
   let r ← runAnf q 100 (root q) [6, 7]
   expect a (anfOutcome r == "ok lit 42") s!"closures step, point-free root through its entry: {anfOutcome r}"
   -- one declared count per root
-  match IxCC.Anf.Pipeline.closures [] over with
+  match IxCC.Anf.Pipeline.closures [] overApplied with
   | .error e => expect a (e.startsWith "anf.entry") s!"closures step, no declared count: {e}"
   | .ok _ => expect a false "closures step: a program with no declared count for its root was accepted"
   return #["the closures step: a plain program unchanged; an over-applied root (8) and a point-free \
