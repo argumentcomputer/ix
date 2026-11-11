@@ -193,8 +193,9 @@ noncomputable def bd1Val (t : BD1) : Nat :=
   BD1.rec (motive_1 := fun _ => Nat) (motive_2 := fun _ => Nat) 1 (fun _ _ iha ihb => iha + ihb + 1) 0
     (fun _ _ ih1 ih2 => ih1 + ih2) t
 
--- (installed unchecked, and checked by Ix: Lean's elaborator does not find the
--- auxiliary recursors a kernel-declared nested block's rules name)
+-- Honest-case claims Lean's elaborator cannot check (it does not find the auxiliary
+-- recursors a kernel-declared nested block's rules name), so installed unchecked and
+-- checked by Ix; the false-claim and forged-record cases carry the defensive side.
 bad_thm bd1Iota : bd1Val (BD1.mk BD1.leaf [BD1.leaf]) = 3 :=
   unchecked (Eq.refl (bd1Val (BD1.mk BD1.leaf [BD1.leaf])))
 
