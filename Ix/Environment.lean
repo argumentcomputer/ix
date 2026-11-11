@@ -670,14 +670,14 @@ def ConstantInfo.getCnst : ConstantInfo → ConstantVal
 
 /-- A binder-data annotator: a block record's binder-data section, from the
 block's member names (in the record's member order) and its record, with the
-source constants its environments lack (`extra`: a definition compiled outside
-them, which the compile adds here itself). -/
+source constants its input lacks (`extra`: a definition compiled outside it,
+which the compile adds here itself). -/
 structure BinderAnnotator where
-  run : Array (Lean.Name × Lean.ConstantInfo) → Array Name → Ixon.Constant → Array Ixon.BinderBlock
-  extra : Array (Lean.Name × Lean.ConstantInfo) := #[]
+  run : Array (Name × ConstantInfo) → Array Name → Ixon.Constant → Array Ixon.BinderBlock
+  extra : Array (Name × ConstantInfo) := #[]
 
 /-- `a` with the source constant `ci` of `n` added. -/
-def BinderAnnotator.withSource (a : BinderAnnotator) (n : Lean.Name) (ci : Lean.ConstantInfo) :
+def BinderAnnotator.withSource (a : BinderAnnotator) (n : Name) (ci : ConstantInfo) :
     BinderAnnotator :=
   { a with extra := a.extra.push (n, ci) }
 
