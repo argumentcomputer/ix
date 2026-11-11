@@ -143,7 +143,7 @@ theorem termCorr_of_check {κ : CId → KKey} {lps : List Nat} :
   | proj s i e ih =>
     intro e' h
     cases e' <;> simp only [termCorrB, Bool.and_eq_true, decide_eq_true_eq, beq_iff_eq,
-      Bool.false_eq_true, reduceCtorEq] at h
+      Bool.false_eq_true] at h
     obtain ⟨⟨rfl, rfl⟩, h⟩ := h
     exact .proj (ih _ h)
   | natLit n =>
@@ -245,7 +245,8 @@ theorem eqnShape_body {env : KEnv} {κ : CId → KKey} {c thm : CId} {d d' : Eqn
   obtain ⟨hD, hf1, hrhs⟩ := piTele_inj_app _ _ _ _ _ _ (htT.symm.trans htT')
   have hzl : (d.Ds.zipWith (fun b m => (b.1, m)) d.ms).length =
       (d'.Ds.zipWith (fun b m => (b.1, m)) d'.ms).length := by
-    simp only [List.length_zipWith]; rw [hD] at hl; omega
+    have e1 : d.Ds.length = d'.Ds.length := by rw [hD]
+    simp only [List.length_zipWith]; omega
   obtain ⟨hz, _⟩ := piTele_inj _ _ _ _ hzl (htF.symm.trans htF')
   simp only [EqnData.body, hz, hrhs]
 
