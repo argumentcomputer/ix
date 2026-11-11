@@ -4,8 +4,7 @@
   "source_root": "fixtures/ownership/src",
   "manifest": "fixtures/ownership/corpus.json",
   "producer": {
-    "ix_revision": "be45a159f1bb3629d109f742b950786ae8fc11f4",
-    "ix_binary_sha256": "396dffb7f41aa191f388828275460735bff23cb02b0a0a390ff2dbd7b044f9a4",
+    "ix": "the ix of this repository: lake build ix at the repository root, in its dev shell (not a Nix build)",
     "command": [
       "ix",
       "compile",
@@ -116,8 +115,8 @@
       "producer": {
         "verdict": "reject",
         "stage": "resource",
-        "code": "Unsupported(\"projection has no checked field rule\")",
-        "constant": "d73587dc77c6"
+        "code": "Unsupported(\"external resource interface is absent from the bound profile\")",
+        "constant": "39e06a21cf1a"
       },
       "note": "accepted without --equations; the eq_def's brecOn projections have no field rule"
     },
@@ -197,8 +196,8 @@
       "producer": {
         "verdict": "reject",
         "stage": "resource",
-        "code": "Unsupported(\"projection has no checked field rule\")",
-        "constant": "6a961b4961fa"
+        "code": "Usage(1, Erased, Many)",
+        "constant": "46aa4f7ac46f"
       }
     },
     {
@@ -395,8 +394,8 @@
       "producer": {
         "verdict": "reject",
         "stage": "resource",
-        "code": "Unsupported(\"projection has no checked field rule\")",
-        "constant": "c409c15276b3"
+        "code": "Nonduplicable",
+        "constant": "912a0a741143"
       },
       "note": "the annotated twin of OS-16"
     },
@@ -416,8 +415,8 @@
       "producer": {
         "verdict": "reject",
         "stage": "resource",
-        "code": "Nonduplicable",
-        "constant": "8628dba7ae07"
+        "code": "Unsupported(\"external resource interface is absent from the bound profile\")",
+        "constant": "3f8cc53b1e43"
       }
     },
     {
@@ -734,8 +733,8 @@
       "producer": {
         "verdict": "reject",
         "stage": "resource",
-        "code": "Unsupported(\"projection has no checked field rule\")",
-        "constant": "a47e889f32d7"
+        "code": "Unsupported(\"external resource interface is absent from the bound profile\")",
+        "constant": "177473b099d3"
       }
     },
     {
@@ -772,8 +771,8 @@
       "producer": {
         "verdict": "reject",
         "stage": "resource",
-        "code": "Unsupported(\"projection has no checked field rule\")",
-        "constant": "8202a0708a37"
+        "code": "Nonduplicable",
+        "constant": "27a443fc4bbd"
       }
     },
     {

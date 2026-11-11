@@ -27,10 +27,8 @@
     }
   },
   "producer": {
-    "ix_revision": "46f5a995fb8ce742c34cabecb319bc0e8a258785",
-    "ix_binary_sha256": "9c2010ae94c309217a3dbee4dbcb727559eab3fa930332a005422b1cb8d4dedd",
+    "ix": "the ix of this repository: lake build ix at the repository root, in its dev shell (not a Nix build)",
     "ix_version": "4.34.1|0.0.1",
-    "ix_build": "The ix of this repository: built with Lake (lake build ix) at the recorded revision of jcb/ixcc-p8-defun (its root package is jcb/ixck-ixcc-merge's at dfdc1e1e3) in the build box's checkout, Lean 4.34.1, 2026-11-10; not a Nix build. Unbound closures (--unbound).",
     "anonymous": [
       "ix",
       "compile",
@@ -39,7 +37,6 @@
       "{consts}",
       "--equations",
       "--anon",
-      "--unbound",
       "--out",
       "{ixe}",
       "--equations-out",
@@ -53,7 +50,6 @@
       "--consts",
       "{consts}",
       "--equations",
-      "--unbound",
       "--out",
       "{named}",
       "--equations-out",
@@ -108,8 +104,8 @@
       "protocol": "stdin",
       "closure": {
         "path": "arity.ixe",
-        "sha256": "3649fe26255455170bf2d5bee53eb3d0707f31f46d2f11029a198873e2c9edf4",
-        "bytes": 1474343
+        "sha256": "09079c8d9699b577f2bcbca4fe38b35606c4ddb40fdeeb1e3ab964eb5dd7507e",
+        "bytes": 2496557
       },
       "equations": {
         "path": "arity.equations.json",
@@ -117,10 +113,10 @@
         "equations": 43,
         "failures": 0
       },
-      "named_env_sha256": "93db36b3d4a2ce5f1f9b040bda7caed8dfc6525fd343377c49c0733646ddbd4e",
+      "named_env_sha256": "d13c1c3505666a6f8848a28018caf509b7af810cef148df5f93de487573756eb",
       "census": {
         "path": "arity.census.json",
-        "sha256": "3623c8b4487a6af18fbaa0de0b304fbf6e4f9a2876fa475db49f46cb90a4a62f"
+        "sha256": "18e6f57b93af6273c19422d79c51c2d6e7a45deef8777f4eedaf5e407532e64b"
       },
       "roots": [
         {

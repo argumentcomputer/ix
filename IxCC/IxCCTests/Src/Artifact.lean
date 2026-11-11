@@ -1,4 +1,5 @@
 import IxCCTests.Src.Support
+import IxCCTests.Lam.KernelK1.Front
 
 /-! # K1 artifacts as kernel terms
 
@@ -184,6 +185,32 @@ def resourceField (addrName : Ixon.Address → String) : Option Resource.Context
     s!"\n    resource := some \{ address := {addrName ctx.address}, bytes := ⟨({raw} : List UInt8).toArray⟩, \
       pairs := {listOf pair ctx.pairs} }"
 
+/-- The constants the kernel tests (`IxCCTests/Lam/KernelK1`) name, found by their
+meaning in the program, with the number of globals erasure gives (evaluated
+natively here, by `decide +kernel` there). A `--check` run recomputes them, so a
+refreeze renumbers the tests by regenerating the artifacts. -/
+def ids (p : Program) (ann : Ann) : List (String × String × Nat) := Id.run do
+  let resolve := p.table.resolve.toList
+  let first := fun (f : CId × Resolve → Option Nat) => resolve.findSome? f
+  let mut out : List (String × String × Nat) := []
+  if let some (_, c) := p.roots.head? then out := out ++ [("entry", "the root", c)]
+  if let .ok (_, st) := IxCCTests.Lam.KernelK1.frontEnd p ann then
+    out := out ++ [("globals", "the globals erasure gives the program", st.globals)]
+  if let some c := first fun (c, r) => if r == .prim .add then some c else none then
+    out := out ++ [("natAdd", "`Nat.add`, a `prim .add` entry", c)]
+  if let some (c, t) := resolve.findSome? fun (c, r) => match r with | .eqn t _ => some (c, t) | _ => none then
+    out := out ++ [("eqn", "the first constant with an `eqn` entry", c), ("eqnTheorem", "its theorem", t)]
+  if let some r := p.known.natRec then
+    out := out ++ [("natRec", "`Nat.rec`", r)]
+    if let some c := first fun (c, x) => if x == .case r then some c else none then
+      out := out ++ [("natCasesOn", "`Nat.casesOn`, a `case` entry over `Nat.rec`", c)]
+  if let some (c, _) := p.table.recKind.toList.find? fun (_, k) => match k with | .subsingleton .. => true | _ => false then
+    out := out ++ [("subsingletonRec", "the first subsingleton recursor", c)]
+  if let some (c, n) := p.table.lazy.toList.head? then
+    out := out ++ [("lazy", s!"the first `lazy` constant (arity {n})", c)]
+  if let some z := p.known.natZero then out := out ++ [("natZero", "`Nat.zero`", z)]
+  return out
+
 /-- One bench-k1 artifact's module text. -/
 def render (name modName : String) (p : Program) (ann : Ann) : String := Id.run do
   let addrs := addresses p
@@ -239,6 +266,12 @@ noncomputable def ann : Ann :=
     ctors := {natMap (fun (r : CtorRel) => s!"\{ fields := {listOf fieldClass r.fields} }") ann.ctors}
     nodes := {listOf (fun ((k, ts) : TermKey × List Tag) =>
       s!"({termKey k},\n      {listOf tag ts})") ann.nodes} }
+
+/-! Constants by meaning, for the kernel tests (`IxCCTests/Lam/KernelK1`). -/
+
+namespace Ids
+
+{String.join ((ids p ann).map fun (n, doc, v) => s!"/-- {doc}. -/\ndef {n} : Nat := {v}\n\n")}end Ids
 
 end IxCCTests.Src.Artifacts.{modName}
 "

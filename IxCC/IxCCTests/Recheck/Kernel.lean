@@ -11,6 +11,6 @@ On the bench-k1 artifacts (`IxCCTests.Recheck.Artifacts`),
 * the whole `Recheck.run` (the object's bytes) on fib, about 17 s.
 
 `tests-recheck` builds this module, so the programs derivation of
-`nix flake check` evaluates it. The rest (typed programs of ackermann and
-sum-loop, whole runs of tak, gcd, ackermann and sum-loop) is the manual
-`IxCCTests.Recheck.KernelSlow`. -/
+`nix flake check` evaluates it. The rest (typed programs of even-odd and
+sfib, whole runs of tak, gcd, even-odd and sfib) is the manual
+`IxCCTests.Recheck.KernelSlow`, which no library imports. -/

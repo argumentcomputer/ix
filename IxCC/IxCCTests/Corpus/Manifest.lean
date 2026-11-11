@@ -32,7 +32,6 @@ def families : List System.FilePath :=
    "fixtures/corpus/phase1-resource/corpus.json",
    "fixtures/corpus/phase1-decline/corpus.json",
    "fixtures/corpus/phase1-abi/corpus.json",
-   "fixtures/corpus/phase1-bound/corpus.json",
    "fixtures/corpus/phase2-closures/corpus.json",
    "fixtures/corpus/phase1-machines/corpus.json",
    "fixtures/corpus/grounding/corpus.json"]
@@ -176,20 +175,21 @@ structure Fixture where
   roots : List Root
   deriving Inhabited, BEq
 
+/-- The producer every family names: this repository's `ix`. -/
+def producerIx : String :=
+  "the ix of this repository: lake build ix at the repository root, in its dev shell (not a Nix build)"
+
+/-- What a manifest records of the ix that wrote its files. The producer is
+always this repository's `ix` (`producerIx`), so nothing here is a pin and no
+binary is named (the Lake build is not reproducible, and the closures do not
+depend on the binary's bytes): `ix --version`, derived by `corpus rebuild`.
+Whether this repository's `ix` still writes these bytes is what the
+regeneration check answers (`tools/regenerate.sh`, `docs/corpus.md`). -/
 structure Producer where
-  ixRevision : String
-  ixBinarySha256 : String
   ixVersion : String
-  ixBuild : String := ""
   /-- The written resource profile the family is compiled under (`--profile`;
   reviewed path from the repository root, derived SHA-256); absent: none. -/
   profile : Option FileRec := none
-  /-- Whether the compiles pass `--unbound` (reviewed; read from the
-  manifest's commands): the selected closure without the role support,
-  certificates and role binding that ix's finalization adds, in the
-  version-4 envelope that ingress reads. Without it, the ix of this
-  repository writes a role-bound version-5 envelope. -/
-  unbound : Bool := false
   deriving Inhabited, BEq
 
 structure Family where
@@ -229,20 +229,14 @@ def withProfile (command : List String) : List String :=
 /-- The re-verification of an annotated closure's checked pairs. -/
 def checkEquationsCommand : List String := ["ix", "check-equations", "{equations}", "{ixe}"]
 
-/-- A compile command that writes the unbound closure: `--unbound` before
-`--out`. -/
-def withUnbound (command : List String) : List String :=
-  command.flatMap fun a => if a == "--out" then ["--unbound", a] else [a]
-
-/-- A family's commands: with `--profile` when it pins a profile, and
-`--unbound` when its producer writes unbound closures. -/
+/-- A family's commands (with `--profile` when it pins a profile). They write
+the role-bound envelope, `ix compile`'s only output: the selected closure, the
+role support, the certificates and the role binding. -/
 def Producer.anonymous (p : Producer) : List String :=
-  let c := if p.profile.isSome then withProfile anonCommand else anonCommand
-  if p.unbound then withUnbound c else c
+  if p.profile.isSome then withProfile anonCommand else anonCommand
 
 def Producer.named (p : Producer) : List String :=
-  let c := if p.profile.isSome then withProfile namedCommand else namedCommand
-  if p.unbound then withUnbound c else c
+  if p.profile.isSome then withProfile namedCommand else namedCommand
 
 def interpretCommand (protocol : String) : List String :=
   if protocol == "args" then ["lean", "-Dlinter.all=false", "--run", "{src}", "{args}"]
@@ -334,15 +328,13 @@ def Family.ofJson (j : Json) : IO Family := do
   let profile ← match p.getObjVal? "profile" with
     | .ok r => some <$> FileRec.ofJson r
     | .error _ => pure none
-  -- the canonical form (`corpus check`) then requires both commands to carry it
-  let unbound := ((p.getObjValAs? (Array String) "anonymous").toOption.getD #[]).contains "--unbound"
+  -- the commands are not read: the canonical form (`corpus check`) requires
+  -- them to be `Producer.anonymous`/`named`'s
   return { family := ← strField j "family", description := (optStr j "description").getD ""
            tier := ← strField j "tier", phase := ← nat (← field j "phase")
            directory := ← strField j "directory", sourceRoot := ← strField j "source_root"
            leanVersion := ← strField (← field j "lean") "version"
-           producer := { ixRevision := ← strField p "ix_revision", ixBinarySha256 := ← strField p "ix_binary_sha256"
-                         ixVersion := ← strField p "ix_version", ixBuild := (optStr p "ix_build").getD ""
-                         profile, unbound }
+           producer := { ixVersion := ← strField p "ix_version", profile }
            fixtures := ← (← arrField j "fixtures").toList.mapM Fixture.ofJson }
 
 def Family.read (path : System.FilePath) : IO Family := do
@@ -402,10 +394,8 @@ def Family.toOJson (m : Family) : OJson :=
     ("directory", some (.str m.directory)), ("source_root", some (.str m.sourceRoot)),
     ("lean", some (.obj #[("version", .str m.leanVersion),
       ("interpret", .obj #[("args", .strs (interpretCommand "args")), ("stdin", .strs (interpretCommand "stdin"))])])),
-    ("producer", some (.fields [("ix_revision", some (.str m.producer.ixRevision)),
-      ("ix_binary_sha256", some (.str m.producer.ixBinarySha256)),
+    ("producer", some (.fields [("ix", some (.str producerIx)),
       ("ix_version", some (.str m.producer.ixVersion)),
-      ("ix_build", if m.producer.ixBuild.isEmpty then none else some (.str m.producer.ixBuild)),
       ("profile", m.producer.profile.map (·.toOJson)),
       ("anonymous", some (.strs m.producer.anonymous)), ("named", some (.strs m.producer.named)),
       ("address", some (.strs addrCommand)),

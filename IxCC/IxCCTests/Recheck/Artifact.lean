@@ -15,7 +15,7 @@ program (`Recheck.runTyped`) and the object's bytes (`Recheck.run`), which
 the kernel modules (`IxCCTests.Recheck.Kernel`) state as equalities.
 
 **Sharing.** Ingress's terms are DAGs; printed as trees, sum-loop's
-program has 1.68 M nodes. The printer hash-conses every term of the program
+program had 1.68 M nodes when it was among the artifacts. The printer hash-conses every term of the program
 (bottom-up: a node's key is its constructor, payload and its children's
 numbers) and hoists into its own definition `t<i>` every node that is used
 more than once (and is not tiny), and every node whose inline text grows
@@ -328,7 +328,7 @@ end IxCCTests.Recheck.Artifacts.{a.modName}
 
 /-- The artifacts: fixture name and module name. -/
 def artifacts : List (String × String) :=
-  [("fib", "Fib"), ("tak", "Tak"), ("gcd", "Gcd"), ("ackermann", "Ackermann"), ("sum-loop", "SumLoop")]
+  [("fib", "Fib"), ("tak", "Tak"), ("gcd", "Gcd"), ("even-odd", "EvenOdd"), ("sfib", "Sfib")]
 
 def path (modName : String) : System.FilePath :=
   "IxCCTests/Recheck/Artifacts" / s!"{modName}.lean"

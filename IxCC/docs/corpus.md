@@ -14,7 +14,6 @@ ix.
 | `phase1-resource` | [`fixtures/corpus/phase1-resource/corpus.json`](../fixtures/corpus/phase1-resource/corpus.json) | [`fixtures/corpus/phase1-resource/src`](../fixtures/corpus/phase1-resource/README.md) | heap, stack and trap failures (statuses 1, 2, 4) under per-case regions and stacks |
 | `phase1-decline` | [`fixtures/corpus/phase1-decline/corpus.json`](../fixtures/corpus/phase1-decline/corpus.json) | [`fixtures/corpus/phase1-decline/src`](../fixtures/corpus/phase1-decline/README.md) | programs outside the Phase 1 fragment, each with its exact `stage: code`, and colliding export symbols |
 | `phase1-abi` | [`fixtures/corpus/phase1-abi/corpus.json`](../fixtures/corpus/phase1-abi/corpus.json) | [`fixtures/corpus/phase1-abi/src`](../fixtures/corpus/phase1-abi/README.md) | the ABI and readback matrix, arities 0–6 by `Nat`, `Bool` and an enumeration |
-| `phase1-bound` | [`fixtures/corpus/phase1-bound/corpus.json`](../fixtures/corpus/phase1-bound/corpus.json) | [`fixtures/corpus/phase1-scalar/src`](../fixtures/corpus/phase1-bound/README.md) | five `phase1-scalar` programs in the role-bound envelope `ix compile` writes by default (closure, role support, certificates and role binding), with the unbound twins' cases and declines |
 | `phase2-closures` | [`fixtures/corpus/phase2-closures/corpus.json`](../fixtures/corpus/phase2-closures/corpus.json) | [`fixtures/corpus/phase2-closures/src`](../fixtures/corpus/phase2-closures/README.md) | higher-order workloads compiled through the closures step (P8): a closure that grows each iteration, dictionary-passing polymorphic recursion, a `StateT`-over-`Except` loop (with the library's `StateT.bind`, whose tail call of eight arguments is a call and a return, a frame per iteration, with a case that ends with the stack-exhaustion status; with the stack's own `Monad` instance, proper tail calls), application through stored closures, a fuel-indexed record of closures |
 | `phase1-machines` | [`fixtures/corpus/phase1-machines/corpus.json`](../fixtures/corpus/phase1-machines/corpus.json) | [`fixtures/corpus/phase1-machines/src`](../fixtures/corpus/phase1-machines/README.md) | numeric state machines (standalone executables, X2): the `IxccExe` library (`lib/IxccExe.lean`, verbatim at the head of the source) with `fib` whose parsing and rendering are Lean, first order and through a closure, the identity, a request outside the interface, and the session machine `echo` |
 | `grounding` | [`fixtures/corpus/grounding/corpus.json`](../fixtures/corpus/grounding/corpus.json) | [`fixtures/corpus/grounding/src`](../fixtures/corpus/grounding/README.md) | the grounding suite's subjects no other family holds: `decide (fib 10 = 55)`, role-bound |
@@ -35,7 +34,7 @@ A manifest describes one family. Paths are relative to `IxCC/`
 | `directory` | reviewed | where the frozen files are |
 | `source_root` | reviewed | where the Lean sources are; ix and Lean run here |
 | `lean.version`, `lean.interpret` | reviewed, fixed | the Lean release, and the interpreter commands of both protocols |
-| `producer` | reviewed | `ix_revision`, `ix_binary_sha256`, `ix_version`, `ix_build`, and the `anonymous`, `named` and `address` command templates |
+| `producer` | derived | `ix` (always this repository's `ix`, in words), `ix_version` (`ix --version`), and the `anonymous`, `named` and `address` command templates |
 | `fixtures[]` | | one closure each |
 
 Per fixture:
@@ -78,8 +77,8 @@ Per case:
 | `allow` | reviewed | resource failures allowed at the word levels and natively: `natOverflow` when an intermediate value reaches `2⁶³`, `heap` when the run's immortal allocations outgrow the region, `stack` |
 | `fail` | reviewed | the failure the word levels and native code must give: `natOverflow`, `heap`, `stack` or `trap` (statuses 3, 1, 2, 4) |
 | `spurious` | reviewed | the `fail` or `allow`ed failure is a completeness gap: nothing the source program computes reaches the limit |
-| `region` | reviewed | the region's bytes: the word levels' region (default 64 KiB) and the driver's `--region` (default 16 MiB) |
-| `stack` | reviewed | the stack's bytes: the driver's `--stack` (default 256 MiB), and `stack − 4096` as the typed x86 machine's and ByteEval's stack budget, as the driver passes `cx_init` (default 896 KiB) |
+| `region` | reviewed | the region's bytes: the word levels' region (default 64 KiB) and the native test executable's (default 16 MiB) |
+| `stack` | reviewed | the stack's bytes: the native test executable's stack (default 256 MiB), and `stack − 4096` as the stack budget of the typed x86 machine, ByteEval and the executable, as the host passes it to `cx_init` (default 896 KiB) |
 | `note` | reviewed | why the case is there, and where its expectation comes from |
 | `lean_fails` | reviewed | Lean's runtime fails on the case (its `Nat.pow` and `Nat.shiftLeft` refuse exponents of `2³²` or more), so neither the interpreter nor the source levels, which run on the same runtime, run it; the `constant` is its value |
 | `generated` | derived | drawn from the root's generator |
@@ -101,13 +100,13 @@ The expected behaviour of a compiled root on a case follows from these:
   stack);
 - a region `cx_init` refuses (below 4 KiB) fails with `heap` before the root
   runs, at the word levels (`cx_init` at Lir), on the machines and natively
-  (the driver's `init` line);
+  (the test executable's `cx_init`);
 - with an argument of at least `2⁶³`, the entry wrapper returns status 3
   before the root runs.
 
-Natively, Lean's `Rt.readback` of the returned word (and, for a result other
-than `nat`, of the object area the driver dumps) must equal the driver's C
-decoder.
+Natively, `Rt.readback` of the returned word (and, for a result other than
+`nat`, of the object area the test executable returns) must equal the tests'
+independent decoder (`IxCCTests.Rt.Decoder`).
 
 ## The builder: `lake exe corpus`
 
@@ -121,26 +120,36 @@ lake exe corpus rebuild MANIFEST --ix IX --ix-path DIR … [--lean LEAN] [--work
 
 `check` verifies each source's hash and scans it for forbidden constructs
 (`partial`, `unsafe`, `implemented_by`, `extrinsicFix`, `Task`); verifies the
-closure's, sidecar's and census's hashes and sizes, the sidecar's roots,
-addresses and counts, and reproduces the census byte for byte from the
-closure; ingests every root; regenerates the generated arguments from their
-seeds; checks every case's arity, value and constant; and checks that the
-manifest is in the canonical form a rebuild writes. With `--interpret` it
-also re-runs Lean's interpreter on every case.
+closure's, sidecar's and census's hashes and sizes, that every closure is the
+role-bound envelope (`0xE5`), the sidecar's roots, addresses and counts, and
+reproduces the census byte for byte from the closure; ingests every root;
+regenerates the generated arguments from their seeds; checks every case's
+arity, value and constant; and checks that the manifest is in the canonical
+form a rebuild writes. With `--interpret` it also re-runs Lean's interpreter
+on every case.
 
-`rebuild` refuses an ix binary whose SHA-256 is not the manifest's. Then, per
-fixture, it runs the commands `build.sh` ran for the K1 pack: the anonymous
-closure and the named twin (`ix compile --no-build --consts ROOTS --equations
-[--anon]`, with `--unbound` when the manifest's commands carry it, as a
-refreeze with the ix of this repository writes them; see
-[Refreezing](#refreezing)), checks that their equation lists agree, resolves every root,
-definition and equation name with `ix addr-of` against the twin, and writes
-the sidecar and census. It draws the generated cases, runs every case through
+`rebuild` runs, per fixture, the anonymous closure and the named twin
+(`ix compile --no-build --consts ROOTS --equations [--anon]`: the role-bound
+envelope, `ix compile`'s output), checks that their equation lists agree,
+resolves every root, definition and equation name with `ix addr-of` against
+the twin, and writes the sidecar and census. A closure that does not decode is
+refused unless the manifest expects every root of the fixture declined at
+`ingress: decode` (`phase1-boundary`'s `fields50` and `tags126`, at the
+decoder's depth budget). It draws the generated cases, runs every case through
 `lean -Dlinter.all=false --run`, checks the constants, and rewrites the
-derived fields. Files that do not change are not rewritten; the log says which
-did. The pinned ix (`be45a159`, SHA-256 `396dffb7…`; see [Refreezing](#refreezing))
-asks `lake env` for `LEAN_PATH`, so `--ix-path` names a directory with a
-`lake` stand-in that answers it. It replaces an earlier shell build script.
+derived fields, the producer record among them. Files that do not change are
+not rewritten; the log says which did. ix asks `lake env` for `LEAN_PATH`, so
+`--ix-path` names a directory with a `lake` stand-in that answers it.
+
+The producer is always the ix of this repository (`lake build ix` at the
+repository root). A manifest records it in words (`producer.ix`) and its
+`ix --version`; no binary is named (the Lake build is not reproducible, and the
+closures do not depend on the binary's bytes: two binaries of the same sources
+write the same closures). `check` protects what it always did: the committed
+bytes agree with the hashes the manifest records, the manifest is what a
+rebuild writes, and every closure is role-bound. Whether this repository's ix
+still writes the committed bytes is the regeneration check's question
+(`tools/regenerate.sh --check`, [Refreezing](#refreezing)).
 
 ## The suite: `lake exe tests-corpus`
 
@@ -240,131 +249,102 @@ limit as the compiler checks.
 
 ## Refreezing
 
-Every frozen closure is a function of the producer (ix binary, its Lean
-libraries, the toolchain). When the producer changes its output (a new Ixon
-format, canonical order, repacked cliques), every family is refrozen at once
-with the tools below, and nothing is written by hand: the closures,
-sidecars, censuses, values, verdicts, pins and provenance all come from a
-command. The last refreeze (2026-10-03, Ixon v3 → v4) changed every closure
-and almost every address, and no source, root, case, value, equation list or
-failure list. Check that for every manifest: with the fields a refreeze may
-change removed, the old and new manifests are equal (a difference is a
-stop-and-review):
+Every committed closure is a function of the producer (this repository's
+`ix`, its Lean libraries, the toolchain) and of the sources. When `ix`'s
+output changes (the Ixon format, the closure it selects, the role table, the
+canonical sharing), every family is regenerated at once, and nothing is
+written by hand: closures, sidecars, censuses, values, manifests, tables and
+generated modules all come from one command. A regeneration with an unchanged
+producer changes nothing.
 
 ```sh
-norm='del(.producer.ix_revision, .producer.ix_binary_sha256, .producer.ix_version,
-  .producer.ix_build, .lean.version) | .fixtures |= map(del(.source.sha256, .closure.sha256,
-  .closure.bytes, .equations.sha256, .named_env_sha256, .census.sha256)
-  | .roots |= map(del(.address)))'
-diff <(git show HEAD:$m | jq -S "$norm") <(jq -S "$norm" $m)
+# in ix's dev shell, anywhere in the repository
+IxCC/tools/regenerate.sh            # regenerate in place (a refreeze); then review the diff
+IxCC/tools/regenerate.sh --check    # regenerate into a scratch export of HEAD and compare
 ```
 
-What a refreeze needs:
-- `IX`: the producer binary. The frozen files were produced by ix `be45a159`
-  (`f829b760` plus the `--equations` export, built with Lake in ix's dev
-  shell at that revision; SHA-256 `396dffb7…` from the 2026-11-07 rebuild, as
-  the build is not reproducible), which is not in this repository's history:
-  it is reachable only from ix's `jcb/compilatrix-donor-history-2026-10-11`
-  and `jcb/compilatrix-resource-wip-2026-10-11` branches. The ix of this
-  repository (`lake build ix` at the repository root) can be the producer
-  instead: it has the same export (`ix compile --equations`), and
-  `ix compile --unbound` writes the closure in the version-4 envelope the
-  committed fixtures use; without the flag it writes a role-bound version-5
-  envelope with the role support and certificates, which ingress also reads
-  ([byte contract](byte-contract.md)), and from which IxCC takes its pinned
-  identities.
-  `refreeze-ixon producer` writes `--unbound` into every manifest's commands.
-  Its `--consts` closure is ix's selected closure (recursors, whole logical
-  units and checker support included), so refreezing with it changes every
-  closure, census and most equation lists, but no source, root, case or
-  value;
-- `FAKE`: a directory holding a `lake` stand-in that answers
-  `lake env printenv LEAN_PATH` with the producer workspace's built Lean
-  libraries at the same revision (ix elaborates the sources against them; the
-  ownership sources import `Ix.Compile.SourceContract.Elab`), and refuses
-  everything else. For the ix of this repository that is the value
-  `lake env printenv LEAN_PATH` prints at the repository root;
-- `IXREPO`, `IXPIN`: a read-only ix checkout and the revision whose
-  `Tests/Fixtures/ixon-v4/` and primitive table apply (`f829b760`, the wire
-  revision, whose table is `Ix/Tc/Primitive.lean`; the codec pin `2dd96055`
-  no longer has `Ix/Tc`). This repository keeps the table in
-  `Ix/PrimAddrs.lean`, which has no `stringLegacyBack` field, so
-  `refreeze-ixon tc-primitives` refuses it until IxCC's table
-  (`V3.PrimAddrs`, `IxCC/Ixon/V3/PrimAddrs.lean`) drops that field;
-- the pinned toolchain's `lean` on `PATH` (`nix develop`).
+It builds `ix` at the repository root and the IxCC tools, writes a `lake`
+stand-in for `ix` (which asks `lake env printenv LEAN_PATH` where it
+compiles; the stand-in answers with the root workspace's libraries), and
+runs, in this order:
 
-The commands, in order, from `IxCC/`, with `lake build` of the
-tools first:
+1. the tables, first, because the census and ingress read them: ix's fixture
+   package (`refreeze-ixon package`: the root package's
+   `Tests/Fixtures/ixon-v4/`), the primitive table (`V3.PrimAddrs`,
+   `IxCC/Ixon/V3/PrimAddrs.lean`; `refreeze-ixon tc-primitives`, from
+   `Ix/PrimAddrs.lean`), the Src tables
+   (`pin-src-tables`), then `Src.Pinned` and the fixed pins (`pin-src-tables
+   --repin`); in place, the tools are rebuilt against them;
+2. every family, in parallel: every `corpus.json` under `fixtures/` (the
+   registered families of `IxCCTests.Corpus.families` and the unregistered
+   `k1`, `ownership` and `phase2-arity`; a new family needs no change),
+   `corpus rebuild` each; then ix's verdicts on the annotated ownership
+   sources (`tests-own verdicts`), the RC real-source input (`refreeze-ixon
+   rc-real-source`), and the roots-only fixtures (`pin-src-tables
+   --diagnostics fixtures/ixon-v4/src-diag`, `--sortpoly
+   fixtures/ixon-v4/src-sortpoly`);
+3. the generated modules: `gen-src-artifacts` (with the K1 kernel tests'
+   constants named by meaning, `Ids`), `gen-recheck-artifacts`, `corpus
+   kernel-artifacts`, `tests-fir --render-artifacts`.
+
+With `--check` it does this in a scratch export of `HEAD`, lists every file
+that differs, and scans the committed tree for commits and absolute paths in
+the fixtures, manifests, READMEs and generated modules (`tools/citations.sh
+--fixtures`); it exits 0 only when nothing differs and nothing is cited. If
+the tables differ it stops there (the tools built from the checkout would be
+stale): regenerate in place. On a 64-core machine it takes about 30 minutes
+and 10 GB at its peak, nearly all of it the families (the erased typing of
+the census of each 2.5 MB closure, about 200 s).
+
+Not regenerated, and why: `fixtures/ixon-v4/typing` and `catalog` (the
+erased checker's unbound typing bundles and the catalogs over them; this
+repository's `ix` writes only role-bound environments; frozen until the
+switch to the certified kernel retires those tests or the catalog reader
+takes role-bound members), the dated `fixtures/ownership/historical` records,
+the vendored Aiur snapshot and its reference exports (not written by `ix`),
+and `fixtures/ixon-v4/bench-k1/steps.json` (a measurement of the compiled
+code, checked by `check-steps`, rewritten by `check-steps --write`).
+
+**One family** (a new or changed family; others are left as they are):
 
 ```sh
-REV=<the producer's 40-digit revision>
-BUILD="Built with Lake (lake build ix) from the recorded revision, …; not a Nix build."
-# 1. pin the producer and the interpreter's Lean in every manifest and in the verdicts
-lake exe refreeze-ixon producer --ix $IX --revision $REV --build "$BUILD"
-# 2. every corpus family: closures, sidecars, censuses, values (manifests rewritten)
-for m in fixtures/ixon-v4/bench-k1/corpus.json fixtures/ixon-v4/k1/corpus.json \
-         fixtures/corpus/*/corpus.json; do
-  lake exe corpus rebuild $m --ix $IX --ix-path $FAKE
-done
-# the built tool itself: `lake exe` replaces LEAN_PATH for the interpreter runs
 LEAN_PATH=$($FAKE/lake env printenv LEAN_PATH) \
-  .lake/build/bin/corpus rebuild fixtures/ownership/corpus.json --ix $IX --ix-path $FAKE
-# 3. ix's verdicts on the annotated ownership sources
-lake exe tests-own verdicts --ix $IX --ix-path $FAKE
-# 3b. the RC real-source input (fixtures/rc/real-source): the commands its
-#     provenance.json records, then its manifest.sha256
-# 4. the Src tables and the roots-only fixtures
-#    (the real lake by its path: with FAKE first on PATH, `lake` is the stand-in)
-LAKE=$(command -v lake)
-PATH=$FAKE:$PATH $LAKE exe pin-src-tables --ix $IX --revision $REV
-PATH=$FAKE:$PATH $LAKE exe pin-src-tables --ix $IX --revision $REV --diagnostics fixtures/ixon-v4/src-diag
-PATH=$FAKE:$PATH $LAKE exe pin-src-tables --ix $IX --revision $REV --sortpoly fixtures/ixon-v4/src-sortpoly
-# 5. ix's fixture package (vectors, handoff, primitives.tsv) and the erased
-#    checker's primitive table, unchanged from ix
-lake exe refreeze-ixon package --ix-repo $IXREPO --ix-revision $IXPIN
-lake exe refreeze-ixon tc-primitives --ix-repo $IXREPO --ix-revision $IXPIN
-# 6. Src.Pinned from the old and new primitives.tsv/src-tables.tsv
-git show HEAD:fixtures/ixon-v4/primitives.tsv > old-primitives.tsv
-git show HEAD:fixtures/ixon-v4/src-tables.tsv > old-src-tables.tsv
-lake exe pin-src-tables --repin IxCC/Src/Pinned.lean \
-  --old-primitives old-primitives.tsv --old-tables old-src-tables.tsv
-lake exe pin-src-tables --repin IxCC/Src/Syntax.lean \
-  --old-primitives old-primitives.tsv --old-tables old-src-tables.tsv
-# 7. the typing bundles, then the catalogs over them (the ix of this repository
-#    assembles only role-bound catalog members, so `catalog` refuses it)
-PATH=$FAKE:$PATH $LAKE exe refreeze-ixon typing --ix $IX --revision $REV
-lake exe refreeze-ixon catalog --ix $IX --revision $REV
-# 8. the generated kernel artifacts (rebuild the generators first: Pinned changed)
-lake build gen-src-artifacts gen-recheck-artifacts corpus tests-fir
-lake exe gen-src-artifacts
-lake exe gen-recheck-artifacts
-lake exe corpus kernel-artifacts
-lake exe tests-fir --render-artifacts > IxCCTests/Fir/Artifacts.lean
-# 9. checks that must not change
-lake exe check-steps          # the step baseline: a change is a stop-and-review
-lake exe corpus check
-lake exe corpus check fixtures/ixon-v4/k1/corpus.json fixtures/ownership/corpus.json
+  IxCC/.lake/build/bin/corpus rebuild MANIFEST --ix $IX --ix-path $FAKE   # from IxCC/
+lake exe corpus check MANIFEST
 ```
 
-`corpus rebuild` refuses a closure that does not decode, so it cannot refreeze
-phase1-boundary's `fields255` and `tags126`, whose expected decline is that
-decode failure; that family keeps its closures and producer pin until a
-refreeze admits them deliberately.
+then its dependants only: `tests-own verdicts` after `ownership`;
+`gen-src-artifacts` and `gen-recheck-artifacts` after `bench-k1`; `corpus
+kernel-artifacts` after `bench-k1` or `phase1-scalar`; the K1 equation counts
+(below) after `k1` or `bench-k1`; then the ledger pins.
 
-Then:
-- the tests that name constants by number (`IxCCTests/Lam/KernelK1/*.lean`,
-  which state facts about the Src artifacts by `decide +kernel`) are renumbered
-  by their meaning (the entry root, the `prim`/`eqn`/`case` entries, the
-  subsingleton recursor, the `lazy` constant, `Nat.zero`), each evaluated
-  natively before the kernel build;
-- the fixed identities in tests (the catalog roots in
-  `IxCCTests/IxonV3/Catalog/Files.lean`) come from the catalog
-  provenance;
-- the trust ledger's integrity pins are re-recorded
-  (`check-trusted-externs --record`; every new or changed fixture is
-  covered by its rule), `nix/lean-modules.json` with
-  `lake exe check-build-graph --write` if a module changed, and the fixture
-  READMEs' producer lines follow the manifests;
-- the suites run in full (`docs/ci.md`); their assertion counts can move
-  where a test samples by constant number (`tests-relevance`'s annotation
-  mutants are drawn over the renumbered constants).
+**The manual steps, all reviews:**
+
+1. **The manifests.** With the fields a regeneration may change removed, the
+   old and new manifests are equal; a difference (a source, root, case, value,
+   decline, failure list) is a stop-and-review:
+
+   ```sh
+   norm='del(.producer, .lean.version) | .fixtures |= map(del(.source.sha256, .closure.sha256,
+     .closure.bytes, .equations.sha256, .equations.equations, .named_env_sha256, .census.sha256)
+     | .roots |= map(del(.address)))'
+   diff <(git show HEAD:IxCC/$m | jq -S "$norm") <(jq -S "$norm" $m)
+   ```
+2. **The censuses.** A root whose ingress verdict changed, or a constant now
+   refused at typing, is a finding.
+3. **The verdicts** (`fixtures/ownership/verdicts.json`): a changed verdict
+   or code is reviewed and recorded in the family's README.
+4. **The reviewed counts in tests**, which a regeneration moves:
+   `IxCCTests/IxonV3/K1.lean` (each K1 pack's equation count) and
+   `IxCCTests/Src/Table.lean` (the K1 and bench-k1 tables' `eqn`, `case`,
+   `prim` and `lazy` counts; `tests-src` prints the observed values first).
+5. **The step baseline**: `check-steps`; if the emitted code changed, `lake
+   exe check-steps --write` and review the diff as a performance change.
+6. **The ledger**: `nix/lean-modules.json` (`check-build-graph --write`) and
+   the integrity pins ("Routine updates" in
+   [trusted-extern-ledger.md](trusted-extern-ledger.md)), reviewed by class.
+
+The tests that name constants of the generated artifacts do so by meaning
+(`Ids` in each Src artifact; the recheck tests find the root, `Nat`,
+`Nat.succ`, `Eq` and an `eqn` subject in the program), so no renumbering is
+manual.

@@ -48,18 +48,20 @@ def run (a : Assert) : IO Unit := do
   let (p, _) := rootCalling w w.ident
   expect a (codes (admit p (cfg := { maxConsts := 1 })) == ["budget"]) "admit: budget"
 
-/-- The ix-compiled diagnostics fixture (`fixtures/ixon-v4/src-diag/`): each
-root, loaded alone, gets its expected outcome through the whole pipeline. -/
+/-- The ix-compiled diagnostics fixtures (`fixtures/ixon-v4/src-diag/`: the root
+that uses `sorry` in `sorry.ixe`, the other five in `diag.ixe`): each root,
+loaded alone, gets its expected outcome through the whole pipeline. -/
 def ixFixture (a : Assert) : IO (Array String) := do
   let dir := fixtures / "src-diag"
-  let bytes ← IO.FS.readBinFile (dir / "diag.ixe")
-  let json ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile (dir / "diag.equations.json")))
-  let hints ← IO.ofExcept (Hints.ofK1Json json)
-  let env ← IO.ofExcept (IxCC.Ixon.V3.decodeAnonymousEnv bytes)
   let mut out := #[]
-  for (name, expected) in [("SrcDiag.rootPartial", "opaque"), ("SrcDiag.rootMixHash", "opaque"),
-      ("SrcDiag.rootFloat", ""), ("SrcDiag.rootClassical", "relevant-axiom"),
-      ("SrcDiag.rootSorry", "relevant-axiom"), ("SrcDiag.rootOpaqueId", "")] do
+  for (stem, name, expected) in [("diag", "SrcDiag.rootPartial", "opaque"),
+      ("diag", "SrcDiag.rootMixHash", "opaque"), ("diag", "SrcDiag.rootFloat", ""),
+      ("diag", "SrcDiag.rootClassical", "relevant-axiom"), ("sorry", "SrcDiag.rootSorry", "relevant-axiom"),
+      ("diag", "SrcDiag.rootOpaqueId", "")] do
+    let bytes ← IO.FS.readBinFile (dir / s!"{stem}.ixe")
+    let json ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile (dir / s!"{stem}.equations.json")))
+    let hints ← IO.ofExcept (Hints.ofK1Json json)
+    let env ← IO.ofExcept (IxCC.Ixon.V3.decodeAnonymousEnv bytes)
     let roots := hints.roots.filter (·.2 == some name)
     expect a (roots.size == 1) s!"diag: root {name} recorded"
     match loadEnv { typecheck := false } env { hints with roots } with

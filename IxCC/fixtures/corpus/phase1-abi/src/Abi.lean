@@ -1,9 +1,9 @@
 /-!
 The Phase 1 ABI and readback matrix (phase 1 plan, MT.4; research §9.4.5):
 roots of arity 0–6 returning `Nat`, `Bool` and an enumeration, each called
-natively through the runtime driver (arguments in the SysV registers after
-the region, the callee-saved registers and `rsp` checked) and read back by
-the driver's C decoder and by `Rt.readback`.
+natively in a test executable IxCC writes (arguments in the SysV registers
+after the region, the callee-saved registers and `rsp` checked) and read back
+by `Rt.readback` and by the tests' independent decoder.
 
 A root of arity `k` mixes its arguments position by position
 (`a₀ ^^^ (a₁ >>> 1) ^^^ … ^^^ (aₖ₋₁ >>> (k − 1))`), so an argument passed in

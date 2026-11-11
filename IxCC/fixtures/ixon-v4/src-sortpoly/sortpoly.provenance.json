@@ -1,14 +1,13 @@
 {"source_sha256":
- "ea36ca9f74f87f0b0a038d1f476ecc9374b832f4394a213ef6f17534e5cccb6e",
+ "1d9122ee802dba2b9dba7d912dc2afb4ff712bb558631e7f370eedad2c639725",
  "producer_version": "4.34.1|0.0.1",
- "producer_revision": "be45a159f1bb3629d109f742b950786ae8fc11f4",
- "producer_binary_sha256":
- "396dffb7f41aa191f388828275460735bff23cb02b0a0a390ff2dbd7b044f9a4",
+ "producer":
+ "the ix of this repository: lake build ix at the repository root, in its dev shell (not a Nix build)",
  "named_env_sha256":
- "1fca43cfbecb2f2a9166ca936d8e3f5f0345c7690306ec520dab50d1a5813ac2",
+ "33a52db2973236772ff3624bb28a551ecd19166881798c0cf7f262d01ed56e09",
  "files":
  {"sortpoly.ixe":
-  "a376405e9ff90830c3271b0dfc8a024f2e62d3d11832a87507bef80f70d9593b",
+  "5fca642f157698eff913be85f75db00d2b1442a57d8a47073c612e7665817e9c",
   "sortpoly.equations.json":
   "8e3f72dc2424a12c7aeddacd46f45d9114e10d2df2672f87de21938d96261a1d"},
  "commands":

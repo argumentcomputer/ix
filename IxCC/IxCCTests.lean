@@ -20,7 +20,6 @@ import IxCCTests.Own.Suite
 import IxCCTests.Own.Plain.Suite
 import IxCCTests.Pipeline.ShrinkSuite
 import IxCCTests.Recheck.Run
-import IxCCTests.Recheck.KernelSlow
 import IxCCTests.KernelFront.Run
 import IxCCTests.Ring0
 

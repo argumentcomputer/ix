@@ -39,10 +39,28 @@
       "equation_address": "235ab44718c8ecf20b3ceab949dfcfad022807cf7f1604d72ae42048c26e47e4"
     },
     {
+      "definition": "Nat.div.go",
+      "definition_address": "8bddd43d36af159f8f1c7edf477d9f0a06a26bfbecf5a198c0e9ec4ac370f6e6",
+      "equation": "Nat.div.go.eq_def",
+      "equation_address": "bac3ccdefe551ee2cfbcd41d660bf053f7746acbcfa484a072d2ff4e68e28986"
+    },
+    {
       "definition": "Nat.modCore.go",
       "definition_address": "23036bf2103e4d2edd76b759cdceb07c059b7b78c6c8a6600b070590dc54a000",
       "equation": "Nat.modCore.go.eq_def",
       "equation_address": "4f4c23821fab10c2d3020c5805163a8efbd1d317be0dddffc7884ccc1ecb0d18"
+    },
+    {
+      "definition": "Nat.mul",
+      "definition_address": "373b7d74f6b40da11b7ed79603a45ec7011a8831b720b57d2efe92e82a3d57f0",
+      "equation": "Nat.mul.eq_def",
+      "equation_address": "2e64fe39a944df9f9d795cb840efa37ed024fa30f971e1f58c9cf321020f94c1"
+    },
+    {
+      "definition": "Nat.pow",
+      "definition_address": "5baaf05c969d2cf377312111be51bb64c600c13fa164ee722e92243b0f771bab",
+      "equation": "Nat.pow.eq_def",
+      "equation_address": "25ea7f65c5fc9991fafe55cfca743b5a38e57db0febca11d81c7eaf895a63b3b"
     },
     {
       "definition": "Nat.sub",

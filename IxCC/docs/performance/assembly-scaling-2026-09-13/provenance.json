@@ -1,5 +1,5 @@
 {
-  "base_commit": "c41d4813d71250c6b95b3e5002a31f76946d6e9d",
+  "base_commit": "a commit of the pre-merge history, not kept by the squash (the record's date names it)",
   "baseline": {
     "ixcc_rebuilt_from_extracted_source": true,
     "executable": {

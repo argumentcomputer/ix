@@ -27,10 +27,8 @@
     }
   },
   "producer": {
-    "ix_revision": "21572449dea48204fbf4dafa2287549df7b07a16",
-    "ix_binary_sha256": "62c266c03b7afec2d68bc0d7779682843f9f35e948bedb3c1c46d17f531adb34",
+    "ix": "the ix of this repository: lake build ix at the repository root, in its dev shell (not a Nix build)",
     "ix_version": "4.34.1|0.0.1",
-    "ix_build": "The ix of this repository: built with Lake (lake build ix) in the build box's checkout of jcb/ixcc-closures-wiring, whose root package is jcb/ixck-ixcc-merge's at the recorded revision; Lean 4.34.1, 2026-11-11; not a Nix build. Unbound closures (--unbound).",
     "anonymous": [
       "ix",
       "compile",
@@ -39,7 +37,6 @@
       "{consts}",
       "--equations",
       "--anon",
-      "--unbound",
       "--out",
       "{ixe}",
       "--equations-out",
@@ -53,7 +50,6 @@
       "--consts",
       "{consts}",
       "--equations",
-      "--unbound",
       "--out",
       "{named}",
       "--equations-out",
@@ -89,8 +85,8 @@
       "protocol": "stdin",
       "closure": {
         "path": "closures.ixe",
-        "sha256": "14129e49c7cf513f9c448870f2658c56d8a1969ce31fa9bf3023800a0d950974",
-        "bytes": 253964
+        "sha256": "f6569a6aa1ea3b603504a71b7d4974f42e9a70e29e27f5c6b282766b6e290b12",
+        "bytes": 281614
       },
       "equations": {
         "path": "closures.equations.json",
@@ -98,10 +94,10 @@
         "equations": 14,
         "failures": 0
       },
-      "named_env_sha256": "e26e0b04ac16f72e554e51b47402b1aa8a490cb2072851b08a26c53ba460e49c",
+      "named_env_sha256": "07a51879dde3582aa8e374921429dc7a2fd406b45dfdaddeabd46668385fb5b0",
       "census": {
         "path": "closures.census.json",
-        "sha256": "070950f29d4b30d719bca541cd49421af2ce77064d94e18ccbcf37019e123609"
+        "sha256": "fff5aa204e668e399a9d4aa922c6bcf3540613e3bb57977a3fc729ffb055f450"
       },
       "roots": [
         {

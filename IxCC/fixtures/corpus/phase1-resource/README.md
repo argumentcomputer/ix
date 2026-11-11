@@ -1,11 +1,11 @@
 # The Phase 1 resource corpus
 
 The `phase1-resource` family of the [fixture corpora](../../../docs/corpus.md)
-(phase 1 plan, MT.3; research §9.4.2): runs that fail by the driver's own
-limits, deterministically, with the statuses of 04 §6 — 1 heap
-(`--region`), 2 stack (`--stack`), 4 trap — at every level that models the
-failure and natively. Each case's `region` and `stack` set the word levels'
-region, the machines' stack budget and the driver's flags.
+(phase 1 plan, MT.3; research §9.4.2): runs that fail at the limits a
+run is given, deterministically, with the statuses of 04 §6 — 1 heap (the region),
+2 stack (the stack), 4 trap — at every level that models the failure and
+natively. Each case's `region` and `stack` set the word levels' region, the
+machines' stack budget and the native test executable's layout.
 
 | Root | Cases | Expectation |
 | --- | --- | --- |

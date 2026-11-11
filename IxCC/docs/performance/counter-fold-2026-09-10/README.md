@@ -58,7 +58,7 @@ The baseline cons body increments the reservation counter and decrements
 the live counter, then reverses both changes in the adjacent reuse operation.
 Each counter change is a load, arithmetic instruction and store. Removing
 these four cancelling changes saves twelve instructions per consumed cell.
-The matched C kernel (`benchmarks/native/arena_kernel.c` at archive commit `7599a434`) does not
+The matched C kernel (`benchmarks/native/arena_kernel.c` on the archive branch of the pre-merge Compilatr.ix repository) does not
 perform these intermediate counter changes. That comparison identifies a
 specific experiment; it does not establish the cost of this rewrite.
 
@@ -83,7 +83,7 @@ instruction prefix; resource correspondence observes the combined reserve/reuse
 operation at its completion. The folded body exposes no intermediate
 reservation-accounting boundary. The existing exclusive-arena, exact Word,
 return-slot, source sharing/oracle and ISA/linker assumptions remain explicit
-in the runtime specification (`docs/source-native-runtime.md` at archive commit `7599a434`).
+in the runtime specification (`docs/source-native-runtime.md` on the archive branch of the pre-merge Compilatr.ix repository).
 
 The default selector remains the original baseline. `Native.select compilation
 true` or the fixture's `--counter-fold` option selects the folded body. Each
@@ -114,7 +114,7 @@ and runtime improvement with no claimed source-space saving.
 
 ## Measurement and checking contract
 
-The paired protocol (`benchmarks/counter-fold.md` at archive commit `7599a434`) freezes 38 timing
+The paired protocol (`benchmarks/counter-fold.md` on the archive branch of the pre-merge Compilatr.ix repository) freezes 38 timing
 rows, two profiles, common operation counts, 30 paired blocks, three sessions,
 three samples per variant/block/row, and 10,000 hierarchical paired bootstrap
 draws. All 6,840 accepted samples are retained. The short-list and large-Word
@@ -177,7 +177,7 @@ gates.
 ## Retention and replay
 
 The full bundle is retained locally at
-`benchmarks/runs/b2c2282c4023e9652c7e3b661492502153e2b61368fbc639edd9eb7f3cf37c12.tar.gz` (archive commit `7599a434`),
+`benchmarks/runs/b2c2282c4023e9652c7e3b661492502153e2b61368fbc639edd9eb7f3cf37c12.tar.gz` (on the archive branch of the pre-merge Compilatr.ix repository),
 SHA-256 **`b2c2282c4023e9652c7e3b661492502153e2b61368fbc639edd9eb7f3cf37c12`**,
 **327,761,672 bytes**. Copy that complete archive when moving the evidence to
 another storage service. The raw archive is excluded from Git; the report,

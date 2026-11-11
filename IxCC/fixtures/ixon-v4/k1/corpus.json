@@ -27,10 +27,8 @@
     }
   },
   "producer": {
-    "ix_revision": "be45a159f1bb3629d109f742b950786ae8fc11f4",
-    "ix_binary_sha256": "396dffb7f41aa191f388828275460735bff23cb02b0a0a390ff2dbd7b044f9a4",
+    "ix": "the ix of this repository: lake build ix at the repository root, in its dev shell (not a Nix build)",
     "ix_version": "4.34.1|0.0.1",
-    "ix_build": "Built with Lake (lake build ix) at the recorded revision (f829b76044a44a61023d0983516137147bbb12a7 plus the --equations export) inside ix's nix dev shell at that revision, Lean 4.34.1; not a Nix build. Rebuilt on 2026-11-07; the build is not reproducible, so its SHA-256 differs from the 2026-10 build (fc4e07ab...).",
     "anonymous": [
       "ix",
       "compile",
@@ -86,19 +84,19 @@
       "protocol": "stdin",
       "closure": {
         "path": "k1.ixe",
-        "sha256": "03859c54afc7432f95cd333fe6fa075ee29acaa2518502a23a0f9380dc0f0c0f",
-        "bytes": 1078652
+        "sha256": "c089fddcfb6ceb5207ebf27431b3b7e43d9a3246605cc15025a89e59901d623b",
+        "bytes": 2534271
       },
       "equations": {
         "path": "equations.json",
-        "sha256": "73c99bfc698c7f8c0a8ff1871162b9ac81a1b40e935a72f257dfd30e5eb63e47",
-        "equations": 40,
+        "sha256": "d88626e0cb5aa2eb5ba689f6c724d0da847d2f22e0aa697cae83bc78b6d5a6eb",
+        "equations": 46,
         "failures": 0
       },
-      "named_env_sha256": "7cb85533f5176fb6b6c085b04129dd5273d0deb390f52f0fb676f37af7f5774d",
+      "named_env_sha256": "198b7d8d6c3e3e7be64a603f94b426adee89d873fcdf676d20ebbb71f49fa01d",
       "census": {
         "path": "census.json",
-        "sha256": "f9e15e4893912b2b0ba5f722d6d6cb2ce6563919c72d6883952ab1893897f88e"
+        "sha256": "96143256e091e2880d5356fd2760184f3440fb38865c6ff17f237049740b0373"
       },
       "roots": [
         {
@@ -114,7 +112,7 @@
         },
         {
           "name": "K1.sumLoop",
-          "address": "a3143304e862b054b087ad25072718d7d36e63dee6f2811e5260a588dc9bc1a1",
+          "address": "0a3a0402460e57cda66f055bceb69ce8a51fb0359a60406c5d900f23359d5555",
           "params": 1,
           "result": "nat",
           "oracles": [
@@ -125,7 +123,7 @@
         },
         {
           "name": "K1.ack",
-          "address": "6d14626c288f7e23f42b571bb0ac0fd0366499dfde38f5d80937e60e5ddeaac4",
+          "address": "739d8762afda939eb3293b0ee8fc06e3b4960ec13ead3b4f5e1e12b8bb0cda7f",
           "params": 2,
           "result": "nat",
           "oracles": [

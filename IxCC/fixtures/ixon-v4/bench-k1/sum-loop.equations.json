@@ -4,15 +4,27 @@
   "roots": [
     {
       "name": "entry",
-      "address": "b0d8a68956c0956eafadae2947747dcc59003780c4166a4235d5cdabb3ae8e99"
+      "address": "a53d8d87a951ce2714f657b922de5cc18bb6e88f082b403254d066eff9b635b6"
     }
   ],
   "equations": [
+    {
+      "definition": "Char.utf8Size",
+      "definition_address": "8713fb91441f3f93ea786dc4cfb7064cd78ea940f47c4f89ee9dba9e6164d146",
+      "equation": "Char.utf8Size.eq_def",
+      "equation_address": "5c3e123c286d77716eb35928f06a1429b7f69f2a0c14d6eefe28d42a88cc3457"
+    },
     {
       "definition": "Int.natAbs",
       "definition_address": "01e7c724508897e01e5d0b8f72e2cfa2607cea5ff0d352d008d0e7512aab2f46",
       "equation": "Int.natAbs.eq_def",
       "equation_address": "5b5b673756a8b9e09d0ffc1e3e38f89ad8cf7929261a0b575559736ec8fb549e"
+    },
+    {
+      "definition": "Lean.Name.sizeOf",
+      "definition_address": "77f9e7b3b038ef0f07a92dd7981eaa97cb4b749b75fe2ccc9ac197c3f22e1dda",
+      "equation": "Lean.Name.sizeOf.eq_def",
+      "equation_address": "b0ac7f3bc6816102a4fc8f40e88f327f8c247f6f56564c2e00fbdffb4ef03f7c"
     },
     {
       "definition": "Lean.Omega.IntList.set",
@@ -31,6 +43,12 @@
       "definition_address": "4f3e4cfe1582fc6b21ea1f49ab447a9a0be3c428946f7e8dd2244538bd6979f3",
       "equation": "List.concat.eq_def",
       "equation_address": "2cc0cb500125abd5a2cccbcdbecfe7c0152ea99c937cddcc0f54fdec20166712"
+    },
+    {
+      "definition": "List.filter",
+      "definition_address": "b170640616cfda402ab8a358dbde5b5d2fc3236df995a3fb1f0449fe82117b6d",
+      "equation": "List.filter.eq_def",
+      "equation_address": "497c066c12632ce44d6ee23c7cb8d028b167f82de625067ca045ed6b1581c2a6"
     },
     {
       "definition": "List.find?",
@@ -67,6 +85,18 @@
       "definition_address": "31a0e1673e76861afd6772861d611d0808a0427404b893f14c0e14c8ed0fef99",
       "equation": "List.get?Internal.eq_def",
       "equation_address": "f5f977072b61d2adc098bdd6dd3d1bd27068d9eb2291eb6c258f70cd726a0c3c"
+    },
+    {
+      "definition": "List.getLast",
+      "definition_address": "85365d27bf31f53d61f94bf121db8925aa4be2ba9304fe7c0ada615ebc79f3dc",
+      "equation": "List.getLast.eq_def",
+      "equation_address": "7f6b69439b1f014f76938c91e5266653ed7c627381e95345e20db19884449838"
+    },
+    {
+      "definition": "List.hasDecEq",
+      "definition_address": "d527515f3a00689f9a9e9b21c26b8f7c364c4192b525b9a2d38973b0684d46f2",
+      "equation": "List.hasDecEq.eq_def",
+      "equation_address": "75a99829c51cccc66e7badee33fcd87499132f425803f08b4332b240b96efce8"
     },
     {
       "definition": "List.length",
@@ -177,6 +207,12 @@
       "equation_address": "25ea7f65c5fc9991fafe55cfca743b5a38e57db0febca11d81c7eaf895a63b3b"
     },
     {
+      "definition": "Nat.shiftLeft",
+      "definition_address": "05bb657e8b9d5dc224e7ef3d53e54153ce3ac26da8d1f1b1d61069a3726566cd",
+      "equation": "Nat.shiftLeft.eq_def",
+      "equation_address": "dce69be8519f213784eb176a14d2c28730641a8832378fe5b123dc782d4b5b7a"
+    },
+    {
       "definition": "Nat.shiftRight",
       "definition_address": "25019ff485fcf5709597cd1e07fcc3ce796776ef3f715a6d187eb5831c63b4be",
       "equation": "Nat.shiftRight.eq_def",
@@ -202,15 +238,15 @@
     },
     {
       "definition": "_private.Init.Data.Range.Basic.0.Std.Legacy.Range.forIn'.loop",
-      "definition_address": "e33db75e7609a2736de6af0e0c482464d2af070b34d7b28433a9174651ab7869",
+      "definition_address": "80ed02c1e7c6b716c507dd1865fb70d10dbc4f51178924afbe79021b375439db",
       "equation": "_private.Init.Data.Range.Basic.0.Std.Legacy.Range.forIn'.loop.eq_def",
-      "equation_address": "bf8329828a2949d93bee2cb7227b012ce24f45d6829088ccfaa84afa7b37e2f8"
+      "equation_address": "b3785807e1c5f03eb453f8ba893b1ad17e5c51f95c34acfdb093b8b6a6059f84"
     },
     {
       "definition": "_private.Init.Data.Range.Basic.0.Std.Legacy.Range.forIn'.loop._unary",
-      "definition_address": "64b5c675b26bec79ec4c9dfb50bf348d68d19df21a0b58f6cec4df41960667cf",
+      "definition_address": "fcc444fe8c6ed26dfc2b9e0c04663330fbfd5643bdfa8bf4d68c6c7d8dd554aa",
       "equation": "_private.Init.Data.Range.Basic.0.Std.Legacy.Range.forIn'.loop._unary.eq_def",
-      "equation_address": "496fa48065454f48414ffd292d3bfd1c4b5e571cd39eaf6374f50a7b5e99c256"
+      "equation_address": "f54da813e75d02a7ea1aeeaa2e8b8ae10d559ea9fe39cbe05eae13f8842bd65b"
     }
   ],
   "failures": []

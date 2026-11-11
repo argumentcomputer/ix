@@ -44,6 +44,8 @@ def nodeK : Key.CtorKey := .src 701
 /-- Beyond the header's limits. -/
 def wideK : Key.CtorKey := .src 800
 def manyK : Key.CtorKey := .src 801
+/-- At the header's field limit (`Rt.Layout.maxFields`, 254). -/
+def maxK : Key.CtorKey := .src 802
 
 def ctors : List Lam.CtorInfo :=
   [{ key := natZ, tag := 0, arity := 0 }, { key := natS, tag := 1, arity := 1 },
@@ -53,7 +55,8 @@ def ctors : List Lam.CtorInfo :=
    { key := nilK, tag := 0, arity := 0 }, { key := consK, tag := 1, arity := 2 },
    { key := aK, tag := 0, arity := 0 }, { key := bK, tag := 1, arity := 0 }, { key := cK, tag := 2, arity := 0 },
    { key := leafK, tag := 0, arity := 0 }, { key := nodeK, tag := 1, arity := 3 },
-   { key := wideK, tag := 0x7F00, arity := 1 }, { key := manyK, tag := 0, arity := 255 }]
+   { key := wideK, tag := 0x7F00, arity := 1 }, { key := manyK, tag := 0, arity := 255 },
+   { key := maxK, tag := 0, arity := 254 }]
 
 def known : Lam.Known := { natZero := natZ, natSucc := natS, boolFalse := bF, boolTrue := bT }
 
@@ -215,9 +218,15 @@ def values' : FProgram := prog
   (List.range 10)
 
 /-- Readback types: `Nat × Nat` (0), `Option Nat` (1), `List Nat` (2), a
-tree (3), the enumeration (4), `Bool` (5). -/
+tree (3), the enumeration (4), `Bool` (5), a structure of 254 `Nat` fields (6). -/
 def sig : Rt.Sig :=
-  { inds := [[[.nat, .nat]], [[], [.nat]], [[], [.nat, .ind 2]], [[], [.ind 3, .nat, .ind 3]], [[], [], []], [[], []]] }
+  { inds := [[[.nat, .nat]], [[], [.nat]], [[], [.nat, .ind 2]], [[], [.ind 3, .nat, .ind 3]], [[], [], []], [[], []],
+      [List.replicate 254 .nat]] }
+
+/-- A cell of 254 fields, the most a header counts: allocated and returned (the
+widest cell, which Lean sources no longer reach: `phase1-boundary`). -/
+def widestCell : FProgram :=
+  prog [([0], .bind 1 (.ctor (info maxK) (List.replicate 254 (v 0))) (.ret (v 1)))]
 
 def cases : List (Nat × List Nat × Rt.FoTy × Option Obs) :=
   let list := fun (k : Nat) => (List.range k).foldl (fun acc i => Obs.ctor 1 [.nat (k - i), acc]) (Obs.ctor 0 [])
@@ -329,6 +338,20 @@ def handWritten (a : Assert) : IO (Array String) := do
   for cap in (List.range (need / 8 + 1)).map (8 * ·) do
     t ← compare a { run C l (withLimit m cap) 2 [5] (some (.ind 2)) s!"list 5 in {cap} bytes" with capacity := cap } 100000 t
   out := out.push s!"values and control: {t.render}"
+  -- the widest cell: 254 fields lowered (beside the 255-field refusal among the
+  -- declines), allocated and read back at every level
+  let Cw := cfgOf widestCell
+  match Cfg.check Cw with
+  | .ok () => expect a true ""
+  | .error err => expect a false s!"widest cell: Cfg not WellFormed: {err}"
+  let (lw, mw) ← lirOf Cw
+  checkLir a lw "widest cell"
+  let mut w : Tally := {}
+  for x in [0, 7, natMax] do
+    w ← compare a (run Cw lw mw 0 [x] (some (.ind 6)) "254 fields") 100000 w
+    let got ← lirObs lw mw 0 [x] (.ind 6)
+    expect a (got == some (.ctor 0 (List.replicate 254 (.nat x)))) s!"254 fields {x}: Lir reads back {repr got}"
+  out := out.push s!"the widest cell (254 fields): {w.render}"
   -- a critical edge and a literal past the last word
   for (label, C, runs) in [("critical", critical, [(0, [2, 3]), (0, [3, 2]), (1, [0]), (1, [4])]),
                            ("big literal on one edge", bigEdge, [(0, [0]), (0, [3])])] do

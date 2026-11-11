@@ -1,5 +1,6 @@
 import Lean
 import IxCC.Tools.Check
+import IxCCTests.Corpus.Manifest
 
 /-! Generator for `fixtures/ixon-v4/src-tables.tsv`.
 
@@ -72,12 +73,15 @@ structure RootsFixture where
   stem : String
   roots : List Name
 
-/-- The admission-diagnostics fixture `fixtures/ixon-v4/src-diag/`. -/
-def diagFixture : RootsFixture where
-  source := "Diag.lean"
-  stem := "diag"
-  roots := [`SrcDiag.rootPartial, `SrcDiag.rootMixHash, `SrcDiag.rootFloat,
-    `SrcDiag.rootClassical, `SrcDiag.rootSorry, `SrcDiag.rootOpaqueId]
+/-- The admission-diagnostics fixtures `fixtures/ixon-v4/src-diag/`, from one
+source: the root that uses `sorry` alone (`sorry.ixe`; the certified kernel
+declines a whole artifact that holds a `sorryAx` use), and the other five
+together (`diag.ixe`). -/
+def diagFixtures : List RootsFixture :=
+  [{ source := "Diag.lean", stem := "diag"
+     roots := [`SrcDiag.rootPartial, `SrcDiag.rootMixHash, `SrcDiag.rootFloat,
+       `SrcDiag.rootClassical, `SrcDiag.rootOpaqueId] },
+   { source := "Diag.lean", stem := "sorry", roots := [`SrcDiag.rootSorry] }]
 
 /-- The sort-polymorphism fixture `fixtures/ixon-v4/src-sortpoly/` (level-exact
 relevance, D18). -/
@@ -91,17 +95,17 @@ def sortPolyFixture : RootsFixture where
 
 /-- Compile a roots-only fixture (anonymous and named), resolve its roots and
 write the closure, its `ixcc/k1-equations/1` sidecar (roots only) and
-a provenance record. -/
+a provenance record (`STEM.provenance.json`). -/
 def rootsFixture (fx : RootsFixture) (ix : String) (work dir : System.FilePath)
-    (revision : String) : IO Unit := do
+    : IO Unit := do
   IO.FS.createDirAll work
   let source := (fx.sourceRoot.getD dir) / fx.source
   let closure := dir / s!"{fx.stem}.ixe"
   let named := work / s!"{fx.stem}.named.ixe"
   let consts := String.intercalate "," (fx.roots.map toString)
-  let _ ← run ix #["compile", "--no-build", "--unbound", "--consts", consts, "--anon", "--out", closure.toString,
+  let _ ← run ix #["compile", "--no-build", "--consts", consts, "--anon", "--out", closure.toString,
     source.toString]
-  let _ ← run ix #["compile", "--no-build", "--unbound", "--consts", consts, "--out", named.toString,
+  let _ ← run ix #["compile", "--no-build", "--consts", consts, "--out", named.toString,
     source.toString]
   let mut roots : Array Json := #[]
   for name in fx.roots do
@@ -113,13 +117,12 @@ def rootsFixture (fx : RootsFixture) (ix : String) (work dir : System.FilePath)
   IO.FS.writeFile sidecar ((Json.mkObj [("format", "ixcc/k1-equations/1"),
     ("source", fx.source), ("roots", Json.arr roots), ("equations", Json.arr #[]),
     ("failures", Json.arr #[])]).pretty ++ "\n")
-  IO.FS.writeFile (dir / "provenance.json") ((Json.mkObj [
+  IO.FS.writeFile (dir / s!"{fx.stem}.provenance.json") ((Json.mkObj [
     ("producer_version", String.intercalate " " (words (← run ix #["--version"]))),
-    ("producer_revision", revision),
-    ("producer_binary_sha256", ← sha256 ix),
+    ("producer", IxCCTests.Corpus.producerIx),
     ("commands", toJson [
-      s!"ix compile --no-build --unbound --consts <roots> --anon --out {fx.stem}.ixe {fx.source}",
-      s!"ix compile --no-build --unbound --consts <roots> --out {fx.stem}.named.ixe {fx.source}",
+      s!"ix compile --no-build --consts <roots> --anon --out {fx.stem}.ixe {fx.source}",
+      s!"ix compile --no-build --consts <roots> --out {fx.stem}.named.ixe {fx.source}",
       s!"ix addr-of --ixe {fx.stem}.named.ixe NAME, for every root"]),
     ("source_sha256", ← sha256 source),
     ("named_env_sha256", ← sha256 named),
@@ -133,8 +136,9 @@ def rootsFixture (fx : RootsFixture) (ix : String) (work dir : System.FilePath)
 After a refreeze, `--repin FILE --old-primitives OLD --old-tables OLD` rewrites
 every pinned address in FILE (as a hex string or a `0x` numeral) from the old
 `primitives.tsv`/`src-tables.tsv` rows to the current ones, matched by name.
-An old address that two rows map to different new addresses, or a pinned
-address no old row names, is an error; `tests-src` then compares the tables
+An old address that two rows map to different new addresses, or an address
+FILE pins whose row the new tables drop, is an error (a dropped row FILE does
+not pin is reported); `tests-src` then compares the tables
 with the TSVs. -/
 
 /-- `name ↦ address` rows of a `primitives.tsv` (name, address) or
@@ -153,13 +157,18 @@ def repin (file oldPrims oldTables : System.FilePath) (newPrims newTables : Syst
   let old := (← tsvAddresses oldPrims) ++ (← tsvAddresses oldTables)
   let new := (← tsvAddresses newPrims) ++ (← tsvAddresses newTables)
   let mut map : List (String × String) := []
+  let mut text ← IO.FS.readFile file
   for (name, before) in old do
     let some after := (new.find? (·.1 == name)).map (·.2)
-      | throw (IO.userError s!"{name}: in the old tables, not in the new ones")
+      | do
+          -- a row the new tables drop is an error only where FILE pins its address
+          need ((text.splitOn before).length == 1)
+            s!"{name}: in the old tables, not in the new ones, and {file} pins {before}"
+          IO.println s!"{name}: in the old tables only, not pinned in {file}"
+          continue
     match map.find? (·.1 == before) with
     | some (_, other) => need (other == after) s!"{before}: maps to {other} and {after}"
     | none => map := (before, after) :: map
-  let mut text ← IO.FS.readFile file
   let mut replaced := 0
   -- two passes through placeholders, so a new address that equals another
   -- row's old address is never rewritten twice
@@ -178,18 +187,18 @@ def repin (file oldPrims oldTables : System.FilePath) (newPrims newTables : Syst
   IO.println s!"repinned {replaced} occurrences of {map.length} addresses in {file}"
 
 def main (args : List String) : IO Unit := do
-  let options ← checked (parseArgs ["--ix", "--work", "--out", "--provenance", "--names", "--revision",
+  let options ← checked (parseArgs ["--ix", "--work", "--out", "--provenance", "--names",
     "--diagnostics", "--sortpoly", "--repin", "--old-primitives", "--old-tables"] args)
   if let some file := optional options "--repin" then
     let some oldPrims := optional options "--old-primitives" | throw (IO.userError "missing --old-primitives")
     let some oldTables := optional options "--old-tables" | throw (IO.userError "missing --old-tables")
     repin file oldPrims oldTables "fixtures/ixon-v4/primitives.tsv" "fixtures/ixon-v4/src-tables.tsv"
     return
-  for (flag, fx) in [("--diagnostics", diagFixture), ("--sortpoly", sortPolyFixture)] do
+  for (flag, fxs) in [("--diagnostics", diagFixtures), ("--sortpoly", [sortPolyFixture])] do
     if let some dir := optional options flag then
       let some ix := optional options "--ix" | throw (IO.userError "missing --ix")
-      rootsFixture fx ix (option options "--work" "plans/src-tables") dir
-        (option options "--revision" "unrecorded")
+      for fx in fxs do
+        rootsFixture fx ix (option options "--work" "plans/src-tables") dir
       return
   let some ix := optional options "--ix" | throw (IO.userError "missing --ix")
   let work : System.FilePath := option options "--work" "plans/src-tables"
@@ -219,7 +228,7 @@ def main (args : List String) : IO Unit := do
   let named := work / "src-tables.named.ixe"
   let names := String.intercalate ","
     ((rows.toList.map fun (_, n, _) => n.toString) ++ censusNames.map toString)
-  let _ ← run ix #["compile", "--no-build", "--unbound", "--consts", names, "--out", named.toString,
+  let _ ← run ix #["compile", "--no-build", "--consts", names, "--out", named.toString,
     source.toString]
   let mut lines : Array String := #[
     "# Src pinned tables (design note 01 §4.2), generated by IxCCTests/Scripts/PinSrcTables.lean.",
@@ -245,15 +254,13 @@ def main (args : List String) : IO Unit := do
     nameLines := nameLines.push s!"{name}\t{address}"
   IO.FS.writeFile namesOut (String.intercalate "\n" nameLines.toList ++ "\n")
   let version := String.intercalate " " (words (← run ix #["--version"]))
-  let binary ← sha256 ix
   IO.FS.writeFile provenance ((Json.mkObj [
     ("format", "ixcc/src-tables/1"),
     ("producer_version", version),
-    ("producer_revision", option options "--revision" "unrecorded"),
-    ("producer_binary_sha256", binary),
+    ("producer", IxCCTests.Corpus.producerIx),
     ("lean", Lean.versionString),
     ("macro_inline_count", toJson macroInline.size),
-    ("commands", toJson [s!"ix compile --no-build --unbound --consts <names> --out src-tables.named.ixe SrcTables.lean",
+    ("commands", toJson [s!"ix compile --no-build --consts <names> --out src-tables.named.ixe SrcTables.lean",
       "ix addr-of --ixe src-tables.named.ixe NAME, for every row"]),
     ("tsv_sha256", ← sha256 out),
     ("names_tsv_sha256", ← sha256 namesOut),

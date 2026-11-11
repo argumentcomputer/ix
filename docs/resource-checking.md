@@ -182,7 +182,7 @@ bounds costs time linear in the sharing tables, and relevance scanning hashes
 input subterms, so its cost is bounded by the input size times the depth
 limit.
 `Tests/Ix/ResourceBudget.lean` (the `resource-budget` test) checks constants
-that the checker at `866e7fa82` walked for hours without charging a step: a
+that the checker of 2026-11-09 walked for hours without charging a step: a
 let chain whose reduced type has `2^k` nodes now runs out of its steps from
 `k = 16`, as at the merge base.
 

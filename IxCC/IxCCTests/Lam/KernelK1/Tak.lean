@@ -9,7 +9,7 @@ open IxCCTests.Src.Artifacts.Tak
 
 set_option maxRecDepth 1000000
 
-/-- `tak`'s entry (constant 73) erases to 18 globals rooted at `const 73`. -/
-example : facts program ann 18 73 = true := by decide +kernel
+/-- `tak`'s entry (`Ids.entry`) erases to `Ids.globals` globals rooted at `const Ids.entry`. -/
+example : facts program ann Ids.globals Ids.entry = true := by decide +kernel
 
 end IxCCTests.Lam.KernelK1.Tak

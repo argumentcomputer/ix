@@ -14,44 +14,44 @@ open IxCCTests.Src.Artifacts.Fib
 
 set_option maxRecDepth 1000000
 
-/-- `fib`'s entry (constant 22) erases to 11 globals rooted at `const 22`. -/
-example : facts program ann 11 22 = true := by decide +kernel
+/-- `fib`'s entry (`Ids.entry`) erases to `Ids.globals` globals rooted at `const Ids.entry`. -/
+example : facts program ann Ids.globals Ids.entry = true := by decide +kernel
 
 /-- The program with one table column changed. -/
 noncomputable def withTable (f : Table → Table) : Program :=
   { program with table := f program.table }
 
--- The table's revalidation. Constant 16 is `Nat.add` (a `prim` entry), 29
--- has an `eqn` entry (theorem 21), 32 is `Nat.casesOn` (a `case` entry over
--- `Nat.rec`, 39), 45 is a subsingleton recursor, and 10 is a `lazy` constant
--- of arity 4.
+-- The table's revalidation, on the constants `Ids` names by their meaning
+-- (`gen-src-artifacts` finds them): `Nat.add` (a `prim` entry), a constant with
+-- an `eqn` entry and its theorem, `Nat.casesOn` (a `case` entry over `Nat.rec`),
+-- a subsingleton recursor and a `lazy` constant.
 
 /-- `Nat.add` claimed to be `Nat.sub`. -/
-example : stage (withTable fun t => { t with resolve := t.resolve.insert 16 (.prim .sub) })
+example : stage (withTable fun t => { t with resolve := t.resolve.insert Ids.natAdd (.prim .sub) })
     ann = .table := by decide +kernel
 
 /-- An `eqn` body that is not the theorem's right-hand side. -/
-example : stage (withTable fun t => { t with resolve := t.resolve.insert 29 (.eqn 21 (.natLit 0)) })
+example : stage (withTable fun t => { t with resolve := t.resolve.insert Ids.eqn (.eqn Ids.eqnTheorem (.natLit 0)) })
     ann = .table := by decide +kernel
 
 /-- A `case` entry naming another recursor. -/
-example : stage (withTable fun t => { t with resolve := t.resolve.insert 32 (.case 45) })
+example : stage (withTable fun t => { t with resolve := t.resolve.insert Ids.natCasesOn (.case Ids.subsingletonRec) })
     ann = .table := by decide +kernel
 
 /-- `Nat.rec` claimed empty. -/
-example : stage (withTable fun t => { t with recKind := t.recKind.insert 39 .empty })
+example : stage (withTable fun t => { t with recKind := t.recKind.insert Ids.natRec .empty })
     ann = .table := by decide +kernel
 
 /-- A `lazy` arity beyond the definition's λs. -/
-example : stage (withTable fun t => { t with lazy := t.lazy.insert 10 100 })
+example : stage (withTable fun t => { t with lazy := t.lazy.insert Ids.lazy 100 })
     ann = .table := by decide +kernel
 
 /-- An opaque-by-value entry off the allowlist. -/
-example : stage (withTable fun t => { t with opaqueByValue := t.opaqueByValue.insert 22 })
+example : stage (withTable fun t => { t with opaqueByValue := t.opaqueByValue.insert Ids.entry })
     ann = .table := by decide +kernel
 
 /-- `known.nat` naming `Nat.zero`. -/
-example : stage { program with known := { program.known with nat := some 7 } }
+example : stage { program with known := { program.known with nat := some Ids.natZero } }
     ann = .table := by decide +kernel
 
 -- The annotation's installation and check.
@@ -61,7 +61,7 @@ example : stage program { ann with nodes := ann.nodes.map fun (k, ts) => (k, ts 
     = .install := by decide +kernel
 
 /-- `Nat.add` annotated as a proof (C5 at its relevant uses). -/
-example : stage program { ann with consts := ann.consts.insert 16 { result := Rel.prf, params := [] } }
+example : stage program { ann with consts := ann.consts.insert Ids.natAdd { result := Rel.prf, params := [] } }
     = .relevance := by decide +kernel
 
 /-- The unmutated input is accepted (the stage this file's mutations leave). -/

@@ -3,8 +3,9 @@
 Written 2026-11-10. **Status:** IxCC reads both envelopes below, takes its
 pinned identities from the role table of a role-bound one, computes every
 address with pure BLAKE3, and its compile claim names the role table beside
-the root (all implemented). The committed fixtures are still mostly unbound
-([below](#what-is-not-yet-so)).
+the root (all implemented). Every committed fixture is role-bound, written by
+this repository's `ix` ([corpus](corpus.md)); only the erased checker's typing
+bundles and the catalogs over them are frozen unbound data.
 
 A statement of the [end-to-end plan](end-to-end.md) has two premises about
 content addresses: that the kernel's reading of the closure of the *seeds* (the
@@ -40,8 +41,8 @@ An `.ixe` environment, as `ix compile` writes it (`Ixon.Env.putEnv`,
 
 The role-bound envelope is the unbound one with the binding inserted after
 the assumptions; nothing else differs. `ix compile` writes it by default;
-`ix compile --unbound` writes the unbound one, which only IxCC's committed
-fixtures use (a bridge, [below](#what-is-not-yet-so)).
+`ix compile --unbound` writes the unbound one, which no committed fixture
+uses any more (a bridge, to be removed).
 
 ### What identifies it
 
@@ -251,11 +252,11 @@ soundness theorems state both (`verifyBytes_immortal_sound`,
   artifact under its own table and prelude; premise (i) is about the closure
   of the seeds under the IxVM claim's table and the committed prelude
   ([kernel front end](kernel-front-end-design.md#acceptance)).
-- **Most fixtures are unbound.** IxCC's committed closures are `0xE4`
-  envelopes, regenerated with `ix compile --unbound`, apart from the two
-  role-bound closures and the registered role-bound family
-  ([corpus](corpus.md)). That flag is a bridge, to be removed when the
-  fixtures are refrozen in the role-bound form.
+- **The unbound bridge.** `ix compile --unbound` stays until it is removed
+  (it has no IxCC user since the role-bound refreeze; the typing bundles and
+  catalogs are frozen data, not regenerated). IxCC still reads the unbound
+  envelope, with the fixed pins; its tests write it from a role-bound closure
+  (`IxCCTests/Support/Envelope.lean`).
 - **Two readings.** IxCC's decoder and the kernel's reader each read the
   bytes; they share the record decoder and, for the binding, the role
   vocabulary, not the framing or the reading into declarations. The plan

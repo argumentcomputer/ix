@@ -184,6 +184,8 @@
   "IxCCTests.Support.LamGen":
   {"path": "IxCCTests/Support/LamGen.lean",
    "imports": ["IxCCTests.Support.Rng", "IxCC.Lam.Syntax"]},
+  "IxCCTests.Support.Envelope":
+  {"path": "IxCCTests/Support/Envelope.lean", "imports": ["IxCC.Ixon.V3.Env"]},
   "IxCCTests.Src.Table":
   {"path": "IxCCTests/Src/Table.lean", "imports": ["IxCCTests.Src.Support"]},
   "IxCCTests.Src.Support":
@@ -284,7 +286,8 @@
   {"path": "IxCCTests/Src/ArtifactMain.lean",
    "imports": ["IxCCTests.Src.Artifact"]},
   "IxCCTests.Src.Artifact":
-  {"path": "IxCCTests/Src/Artifact.lean", "imports": ["IxCCTests.Src.Support"]},
+  {"path": "IxCCTests/Src/Artifact.lean",
+   "imports": ["IxCCTests.Src.Support", "IxCCTests.Lam.KernelK1.Front"]},
   "IxCCTests.Sem.Toy.Tick":
   {"path": "IxCCTests/Sem/Toy/Tick.lean", "imports": ["IxCCTests.Sem.Toy.Big"]},
   "IxCCTests.Sem.Toy.Stack":
@@ -321,10 +324,10 @@
    "imports": ["IxCC.X86.ELFValidate", "IxCC.X86.EvalExamples"]},
   "IxCCTests.Scripts.RefreezeIxon":
   {"path": "IxCCTests/Scripts/RefreezeIxon.lean",
-   "imports": ["IxCC.Tools.Check", "IxCCTests.IxonV3.Catalog.Fixtures"]},
+   "imports": ["IxCC.Tools.Check", "IxCCTests.Corpus.Build"]},
   "IxCCTests.Scripts.PinSrcTables":
   {"path": "IxCCTests/Scripts/PinSrcTables.lean",
-   "imports": ["Lean", "IxCC.Tools.Check"]},
+   "imports": ["Lean", "IxCC.Tools.Check", "IxCCTests.Corpus.Manifest"]},
   "IxCCTests.Scripts.CheckX86Streams":
   {"path": "IxCCTests/Scripts/CheckX86Streams.lean",
    "imports": ["IxCC.Tools.Check", "IxCC.X86.StreamExamples"]},
@@ -568,29 +571,28 @@
   "IxCCTests.Recheck.KernelSlow":
   {"path": "IxCCTests/Recheck/KernelSlow.lean",
    "imports":
-   ["IxCCTests.Recheck.Kernel.Ackermann",
-    "IxCCTests.Recheck.Kernel.SumLoop",
+   ["IxCCTests.Recheck.Kernel.EvenOdd",
+    "IxCCTests.Recheck.Kernel.Sfib",
     "IxCCTests.Recheck.KernelRun.Tak",
     "IxCCTests.Recheck.KernelRun.Gcd",
-    "IxCCTests.Recheck.KernelRun.Ackermann",
-    "IxCCTests.Recheck.KernelRun.SumLoop"]},
+    "IxCCTests.Recheck.KernelRun.EvenOdd",
+    "IxCCTests.Recheck.KernelRun.Sfib"]},
   "IxCCTests.Recheck.KernelRun.Tak":
   {"path": "IxCCTests/Recheck/KernelRun/Tak.lean",
    "imports":
    ["IxCCTests.Recheck.Artifacts.Tak", "IxCCTests.Recheck.Kernel.Support"]},
-  "IxCCTests.Recheck.KernelRun.SumLoop":
-  {"path": "IxCCTests/Recheck/KernelRun/SumLoop.lean",
+  "IxCCTests.Recheck.KernelRun.Sfib":
+  {"path": "IxCCTests/Recheck/KernelRun/Sfib.lean",
    "imports":
-   ["IxCCTests.Recheck.Artifacts.SumLoop", "IxCCTests.Recheck.Kernel.Support"]},
+   ["IxCCTests.Recheck.Artifacts.Sfib", "IxCCTests.Recheck.Kernel.Support"]},
   "IxCCTests.Recheck.KernelRun.Gcd":
   {"path": "IxCCTests/Recheck/KernelRun/Gcd.lean",
    "imports":
    ["IxCCTests.Recheck.Artifacts.Gcd", "IxCCTests.Recheck.Kernel.Support"]},
-  "IxCCTests.Recheck.KernelRun.Ackermann":
-  {"path": "IxCCTests/Recheck/KernelRun/Ackermann.lean",
+  "IxCCTests.Recheck.KernelRun.EvenOdd":
+  {"path": "IxCCTests/Recheck/KernelRun/EvenOdd.lean",
    "imports":
-   ["IxCCTests.Recheck.Artifacts.Ackermann",
-    "IxCCTests.Recheck.Kernel.Support"]},
+   ["IxCCTests.Recheck.Artifacts.EvenOdd", "IxCCTests.Recheck.Kernel.Support"]},
   "IxCCTests.Recheck.Kernel.Tak":
   {"path": "IxCCTests/Recheck/Kernel/Tak.lean",
    "imports":
@@ -598,10 +600,10 @@
   "IxCCTests.Recheck.Kernel.Support":
   {"path": "IxCCTests/Recheck/Kernel/Support.lean",
    "imports": ["IxCC.Recheck.Run"]},
-  "IxCCTests.Recheck.Kernel.SumLoop":
-  {"path": "IxCCTests/Recheck/Kernel/SumLoop.lean",
+  "IxCCTests.Recheck.Kernel.Sfib":
+  {"path": "IxCCTests/Recheck/Kernel/Sfib.lean",
    "imports":
-   ["IxCCTests.Recheck.Artifacts.SumLoop", "IxCCTests.Recheck.Kernel.Support"]},
+   ["IxCCTests.Recheck.Artifacts.Sfib", "IxCCTests.Recheck.Kernel.Support"]},
   "IxCCTests.Recheck.Kernel.Gcd":
   {"path": "IxCCTests/Recheck/Kernel/Gcd.lean",
    "imports":
@@ -610,11 +612,10 @@
   {"path": "IxCCTests/Recheck/Kernel/Fib.lean",
    "imports":
    ["IxCCTests.Recheck.Artifacts.Fib", "IxCCTests.Recheck.Kernel.Support"]},
-  "IxCCTests.Recheck.Kernel.Ackermann":
-  {"path": "IxCCTests/Recheck/Kernel/Ackermann.lean",
+  "IxCCTests.Recheck.Kernel.EvenOdd":
+  {"path": "IxCCTests/Recheck/Kernel/EvenOdd.lean",
    "imports":
-   ["IxCCTests.Recheck.Artifacts.Ackermann",
-    "IxCCTests.Recheck.Kernel.Support"]},
+   ["IxCCTests.Recheck.Artifacts.EvenOdd", "IxCCTests.Recheck.Kernel.Support"]},
   "IxCCTests.Recheck.Kernel":
   {"path": "IxCCTests/Recheck/Kernel.lean",
    "imports":
@@ -636,15 +637,18 @@
    "imports": ["IxCCTests.Recheck.Hostile"]},
   "IxCCTests.Recheck.Bound":
   {"path": "IxCCTests/Recheck/Bound.lean",
-   "imports": ["IxCCTests.Recheck.RootShape", "IxCC.CompileClaim"]},
+   "imports":
+   ["IxCCTests.Recheck.RootShape",
+    "IxCC.CompileClaim",
+    "IxCCTests.Support.Envelope"]},
   "IxCCTests.Recheck.Audit":
   {"path": "IxCCTests/Recheck/Audit.lean",
    "imports": ["IxCC.Recheck.Run", "IxCC.Anf.Semantics", "Lean"]},
   "IxCCTests.Recheck.Artifacts.Tak":
   {"path": "IxCCTests/Recheck/Artifacts/Tak.lean",
    "imports": ["IxCC.Recheck.Run"]},
-  "IxCCTests.Recheck.Artifacts.SumLoop":
-  {"path": "IxCCTests/Recheck/Artifacts/SumLoop.lean",
+  "IxCCTests.Recheck.Artifacts.Sfib":
+  {"path": "IxCCTests/Recheck/Artifacts/Sfib.lean",
    "imports": ["IxCC.Recheck.Run"]},
   "IxCCTests.Recheck.Artifacts.Gcd":
   {"path": "IxCCTests/Recheck/Artifacts/Gcd.lean",
@@ -652,8 +656,8 @@
   "IxCCTests.Recheck.Artifacts.Fib":
   {"path": "IxCCTests/Recheck/Artifacts/Fib.lean",
    "imports": ["IxCC.Recheck.Run"]},
-  "IxCCTests.Recheck.Artifacts.Ackermann":
-  {"path": "IxCCTests/Recheck/Artifacts/Ackermann.lean",
+  "IxCCTests.Recheck.Artifacts.EvenOdd":
+  {"path": "IxCCTests/Recheck/Artifacts/EvenOdd.lean",
    "imports": ["IxCC.Recheck.Run"]},
   "IxCCTests.Recheck.ArtifactMain":
   {"path": "IxCCTests/Recheck/ArtifactMain.lean",
@@ -952,7 +956,10 @@
     "IxCCTests.Fixtures.SortPoly"]},
   "IxCCTests.KernelFront.Run":
   {"path": "IxCCTests/KernelFront/Run.lean",
-   "imports": ["IxCCTests.KernelFront.Diff", "IxCCTests.Src.Support"]},
+   "imports":
+   ["IxCCTests.KernelFront.Diff",
+    "IxCCTests.Src.Support",
+    "IxCCTests.Support.Envelope"]},
   "IxCCTests.KernelFront.Main":
   {"path": "IxCCTests/KernelFront/Main.lean",
    "imports": ["IxCCTests.KernelFront.Run"]},
@@ -1029,7 +1036,8 @@
     "IxCC.Src.Ingress",
     "IxCC.Src.Hints",
     "IxCC.Src.Table.Check",
-    "IxCCTests.IxonV3.Catalog.Fixtures"]},
+    "IxCCTests.IxonV3.Catalog.Fixtures",
+    "IxCCTests.Support.Envelope"]},
   "IxCCTests.Grounding.Run":
   {"path": "IxCCTests/Grounding/Run.lean",
    "imports":
@@ -3667,7 +3675,6 @@
     "IxCCTests.Own.Plain.Suite",
     "IxCCTests.Pipeline.ShrinkSuite",
     "IxCCTests.Recheck.Run",
-    "IxCCTests.Recheck.KernelSlow",
     "IxCCTests.KernelFront.Run",
     "IxCCTests.Ring0"]},
   "IxCCGrounding.Syntax":

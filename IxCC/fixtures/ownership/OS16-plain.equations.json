@@ -15,6 +15,12 @@
       "equation_address": "5961e2bb6235e36fd740af4140b193ff2fc9390b4368b85e33430437701c50e4"
     },
     {
+      "definition": "Nat.ble",
+      "definition_address": "9e445b9d5f8252772347872e909b5db4e7eca7086cedf4fec6de840f6b7b5f92",
+      "equation": "Nat.ble.eq_def",
+      "equation_address": "235ab44718c8ecf20b3ceab949dfcfad022807cf7f1604d72ae42048c26e47e4"
+    },
+    {
       "definition": "build",
       "definition_address": "33348d1a6bb3727b345e8382255de2053f6e8ff9b2414236c6cb3a0069fcd91f",
       "equation": "build.eq_def",

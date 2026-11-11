@@ -43,40 +43,32 @@ specialisation and inlining (`Recheck.compileInput`, and a compile claim that
 `verifyProgram` and `verifyBytes` accept), natively equal to the interpreter
 both ways.
 
-**How it was produced** (2026-11-11, adding `Closures.stateLoopSE`; the other
-roots' addresses, cases and values are those of the 2026-11-10 freeze). With
-the ix of this repository (`lake build ix` at the repository root, in the
-build box's checkout of `jcb/ixcc-closures-wiring`, whose root package is
-`jcb/ixck-ixcc-merge`'s at `21572449d`; the revision and the binary's SHA-256
-are in `corpus.json`) and Lean 4.34.1 on `PATH`, from `IxCC/`:
+**How it was produced.** By [`tools/regenerate.sh`](../../../tools/regenerate.sh)
+with the rest of the committed fixtures ([corpus guide](../../../docs/corpus.md),
+"Refreezing"): the ix of this repository (`lake build ix` at the repository
+root, in its dev shell; its version is in `corpus.json`) and Lean 4.34.1 on
+`PATH`. For this family alone, from `IxCC/`:
 
 ```sh
-IX=../.lake/build/bin/ix
-# pin the producer in this manifest (`refreeze-ixon producer` does not list this family)
-jq --indent 2 --arg rev "$(git rev-parse 21572449d)" --arg sha "$(sha256sum $IX | cut -c1-64)" \
-  --arg ver "$($IX --version | tr -d '\n')" --arg build "<the ix_build text in corpus.json>" \
-  '.producer.ix_revision = $rev | .producer.ix_binary_sha256 = $sha
-   | .producer.ix_version = $ver | .producer.ix_build = $build' \
-  fixtures/corpus/phase2-closures/corpus.json > corpus.pinned.json
-mv corpus.pinned.json fixtures/corpus/phase2-closures/corpus.json
-lake exe corpus rebuild fixtures/corpus/phase2-closures/corpus.json --ix $IX
+lake exe corpus rebuild fixtures/corpus/phase2-closures/corpus.json --ix ../.lake/build/bin/ix --ix-path DIR
 ```
 
-The rebuild runs, in `src/`, the commands the manifest records:
+(`DIR` holds the `lake` stand-in `regenerate.sh` writes.) The rebuild runs, in
+`src/`, the commands the manifest records:
 
 ```sh
 ix compile --no-build \
   --consts Closures.composeClosure,Closures.polyRec,Closures.stateLoop,Closures.stateLoopSE,Closures.storedApply,Closures.knot \
-  --equations --anon --unbound --out closures.ixe --equations-out closures.anon.equations.json Closures.lean
+  --equations --anon --out closures.ixe --equations-out closures.anon.equations.json Closures.lean
 ix compile --no-build \
   --consts Closures.composeClosure,Closures.polyRec,Closures.stateLoop,Closures.stateLoopSE,Closures.storedApply,Closures.knot \
-  --equations --unbound --out closures.named.ixe --equations-out closures.named.equations.json Closures.lean
+  --equations --out closures.named.ixe --equations-out closures.named.equations.json Closures.lean
 ix addr-of --ixe closures.named.ixe NAME     # each root, definition and equation name
 lean -Dlinter.all=false --run Closures.lean < CASES   # one line `ROOT ARGS…` per case
 ```
 
-`--unbound` writes the closure in the version-4 envelope that ingress reads
-([corpus guide](../../../docs/corpus.md), "Refreezing"); the family is not yet
-in the role-bound form. The rebuild writes `closures.ixe`,
-`closures.equations.json` (the `ixcc/k1-equations/1` sidecar with every name
-resolved to its address), `closures.census.json` and the cases' values.
+`ix compile` writes the role-bound envelope (the closure, its role support and
+certificates, and the binding of the roles it holds), which ingress reads. The
+rebuild writes `closures.ixe`, `closures.equations.json` (the
+`ixcc/k1-equations/1` sidecar with every name resolved to its address),
+`closures.census.json` and the cases' values.

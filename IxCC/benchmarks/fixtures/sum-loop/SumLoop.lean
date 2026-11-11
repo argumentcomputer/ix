@@ -1,5 +1,5 @@
 /-! K1 `sum-loop`. The definition is verbatim from `IxCCTests/Fixtures/K1.lean`
-(IxCC `2e4740d`); `entry` and `main` are the benchmark wrapper. -/
+(in this repository); `entry` and `main` are the benchmark wrapper. -/
 
 namespace K1
 

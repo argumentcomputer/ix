@@ -103,7 +103,7 @@ full report.
 
 ## Measurement and validation
 
-The versioned protocol (`benchmarks/compiler-scaling.md` at archive commit `7599a434`) fixes inputs,
+The versioned protocol (`benchmarks/compiler-scaling.md` on the archive branch of the pre-merge Compilatr.ix repository) fixes inputs,
 policies, cache states, nine block orders and endpoints before collection.
 Each stage sample times one actual public compiler/checker invocation with
 `IO.monoNanosNow`. Empty clock pairs are recorded without subtraction; tiny
@@ -172,7 +172,7 @@ policy.
 ## Retention and replay
 
 The complete bundle is retained locally as
-the addressed archive (`benchmarks/runs/847d192c5cb9793ca05ebdb43e1867b002da823acbc2feaf64b87029326cc9ea.tar.gz` at archive commit `7599a434`),
+the addressed archive (`benchmarks/runs/847d192c5cb9793ca05ebdb43e1867b002da823acbc2feaf64b87029326cc9ea.tar.gz` on the archive branch of the pre-merge Compilatr.ix repository),
 **314,849,251 bytes**, SHA-256
 **`847d192c5cb9793ca05ebdb43e1867b002da823acbc2feaf64b87029326cc9ea`**. It contains **36,455 files**;
 `reference/SHA256SUMS` covers 36,454, and the archive digest also

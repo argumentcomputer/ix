@@ -89,30 +89,47 @@ def negativeSecurityTests (a : Assert) : IO (Array String) := do
   let P := x.program
   let C := x.cert
   let cfg := x.cfg
+  -- The constants the mutations target, by their meaning in the program (a
+  -- regeneration renumbers constants; a literal number could move a mutation
+  -- onto a constant it does not affect), and each mutation must be refused at
+  -- its own stage.
+  let some (_, entry) := P.roots.head? | throw (IO.userError "fib: no root")
+  let some natSucc := P.known.natSucc | throw (IO.userError "fib: no Nat.succ")
+  let some nat := P.known.nat | throw (IO.userError "fib: no Nat")
+  let some eqId := P.known.eq | throw (IO.userError "fib: no Eq")
+  -- (ingress leaves the program's table empty; the certificate's table holds
+  -- the definitions whose equations `produce` checked)
+  let some eqnSubject := C.table.resolve.findSome? fun (c, e) =>
+      match e with | .eqn _ => some c | _ => none
+    | throw (IO.userError "fib: no definition with an equation in the certificate's table")
+  let refusedAt (r : Except IxCC.Recheck.Err _) (stage : IxCC.Recheck.Stage) (code : Option String := none) :=
+    match r with
+    | .error e => e.stage == stage && code.all (· == e.code)
+    | .ok _ => false
 
   -- 1. Truncated parameter relevance record (`params := []`) must be rejected.
   let cTrunc : IxCC.Recheck.Cert :=
     { C with relevance :=
         { C.relevance with consts :=
             IxCC.Src.NatMap.ofList (C.relevance.consts.toList.map fun (cid, cr) =>
-              if cid == 22 then (cid, { cr with params := [] }) else (cid, cr)) } }
-  expect a (IxCC.Recheck.front cfg P cTrunc).isOk.not "S1/A4-1: truncated ConstRel.params accepted"
+              if cid == entry then (cid, { cr with params := [] }) else (cid, cr)) } }
+  expect a (refusedAt (IxCC.Recheck.front cfg P cTrunc) .relevance) "S1/A4-1: truncated ConstRel.params not refused by the relevance check"
 
   -- 2. Relevant parameter forged as `.type` must be rejected.
   let cForgedParam : IxCC.Recheck.Cert :=
     { C with relevance :=
         { C.relevance with consts :=
             IxCC.Src.NatMap.ofList (C.relevance.consts.toList.map fun (cid, cr) =>
-              if cid == 22 then (cid, { cr with params := [.type] }) else (cid, cr)) } }
-  expect a (IxCC.Recheck.front cfg P cForgedParam).isOk.not "S1/A1-1: forged .type parameter accepted"
+              if cid == entry then (cid, { cr with params := [.type] }) else (cid, cr)) } }
+  expect a (refusedAt (IxCC.Recheck.front cfg P cForgedParam) .relevance) "S1/A1-1: forged .type parameter not refused by the relevance check"
 
   -- 3. Kept constructor field forged as `.type` must be rejected.
   let cForgedCtor : IxCC.Recheck.Cert :=
     { C with relevance :=
         { C.relevance with ctors :=
             IxCC.Src.NatMap.ofList (C.relevance.ctors.toList.map fun (cid, kr) =>
-              if cid == 8 then (cid, { fields := [.type] }) else (cid, kr)) } }
-  expect a (IxCC.Recheck.front cfg P cForgedCtor).isOk.not "S1/A2-2: forged .type constructor field accepted"
+              if cid == natSucc then (cid, { fields := [.type] }) else (cid, kr)) } }
+  expect a (refusedAt (IxCC.Recheck.front cfg P cForgedCtor) .relevance) "S1/A2-2: forged .type constructor field of Nat.succ not refused by the relevance check"
 
   -- 4. Hostile scientific notation in JSON certificate must be rejected immediately.
   let badSci := "{\"format\":\"ixcc/cert/1\",\"n\":1e100000000000}"
@@ -128,27 +145,26 @@ def negativeSecurityTests (a : Assert) : IO (Array String) := do
   -- 6. Excessive Shrink rounds or smallJoin parameter must be rejected.
   let cBadShrink : IxCC.Recheck.Cert :=
     { C with mid := { C.mid with steps := [.shrink [1000]] } }
-  expect a (IxCC.Recheck.front cfg P cBadShrink).isOk.not "A4-3: excessive shrink rounds accepted"
+  expect a (refusedAt (IxCC.Recheck.front cfg P cBadShrink) .anf "anf.replay") "A4-3: excessive shrink rounds not refused by the middle-end bounds"
   let cBadJoin : IxCC.Recheck.Cert :=
     { C with mid := { C.mid with shrink := { caseOfCase := 512, smallJoin := 500 } } }
-  expect a (IxCC.Recheck.front cfg P cBadJoin).isOk.not "A4-3: excessive smallJoin accepted"
+  expect a (refusedAt (IxCC.Recheck.front cfg P cBadJoin) .anf "anf.replay") "A4-3: excessive smallJoin not refused by the middle-end bounds"
 
   -- 7. Self-inlining or excessive middle-end steps must be rejected.
   let cSelfInline : IxCC.Recheck.Cert :=
     { C with mid := { C.mid with steps := [.inline [(0, [0])]] } }
-  expect a (IxCC.Recheck.front cfg P cSelfInline).isOk.not "A4-4: self-inlining accepted"
+  expect a (refusedAt (IxCC.Recheck.front cfg P cSelfInline) .anf) "A4-4: self-inlining not refused by the middle end"
   let cTooManySteps : IxCC.Recheck.Cert :=
     { C with mid := { C.mid with steps := List.replicate 65 .prune } }
-  expect a (IxCC.Recheck.front cfg P cTooManySteps).isOk.not "A4-4: >64 mid steps accepted"
+  expect a (refusedAt (IxCC.Recheck.front cfg P cTooManySteps) .anf "anf.replay") "A4-4: >64 mid steps not refused by the middle-end bounds"
 
   -- 8. Equation theorem depending on an untrusted user axiom must be rejected.
   let untrustedAxId := P.size
   let untrustedThmId := P.size + 1
-  let eqId := P.known.eq.getD 26
   let axEntry : IxCC.Src.ConstEntry :=
     { ref := .member default 999, addr := default
-      decl := .axio true 0 (.app (.app (.app (.const eqId [.succ .zero]) (.const 31 []) .strict .rel)
-        (.const 23 []) .strict .rel) (.const 23 []) .strict .rel) }
+      decl := .axio true 0 (.app (.app (.app (.const eqId [.succ .zero]) (.const nat []) .strict .rel)
+        (.const eqnSubject []) .strict .rel) (.const eqnSubject []) .strict .rel) }
   let thmEntry : IxCC.Src.ConstEntry :=
     { ref := .member default 998, addr := default
       decl := .defn .thm .safe 0 axEntry.decl.type (.const untrustedAxId []) }
@@ -156,8 +172,10 @@ def negativeSecurityTests (a : Assert) : IO (Array String) := do
     { P with
       consts := (P.consts.insert untrustedAxId axEntry).insert untrustedThmId thmEntry
       size := P.size + 2 }
-  expect a (IxCC.Src.Table.checkEqn PWithAx 23 untrustedThmId).isOk.not
-    "S5/A2-3: checkEqn accepted theorem depending on untrusted axiom"
+  expect a (match IxCC.Src.Table.checkEqn PWithAx eqnSubject untrustedThmId with
+      | .error msg => msg == "theorem depends on a non-standard axiom or exceeds closure budget"
+      | .ok _ => false)
+    "S5/A2-3: checkEqn did not refuse a theorem depending on an untrusted axiom for that reason"
 
   -- 9. Exponentially shared Term DAG must be rejected by Term.nodesLe in O(budget).
   let rec mkDeepDag : Nat → IxCC.Src.Term → IxCC.Src.Term

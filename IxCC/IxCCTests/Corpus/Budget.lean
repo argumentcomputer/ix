@@ -242,6 +242,7 @@ def extraFixtures : IO (List (FilePath × FilePath)) := do
     ("fixtures/ixon-v4/k1/k1.ixe", "fixtures/ixon-v4/k1/equations.json"),
     ("fixtures/ixon-v4/src-sortpoly/sortpoly.ixe", "fixtures/ixon-v4/src-sortpoly/sortpoly.equations.json"),
     ("fixtures/ixon-v4/src-diag/diag.ixe", "fixtures/ixon-v4/src-diag/diag.equations.json"),
+    ("fixtures/ixon-v4/src-diag/sorry.ixe", "fixtures/ixon-v4/src-diag/sorry.equations.json"),
     ("fixtures/rc/real-source/anonymous.ixe", "fixtures/rc/real-source/consumer.equations.json")]
   for dir in ["fixtures/ownership", "fixtures/ownership/historical/annotated-recursion-cb68"] do
     let entries ← (dir : FilePath).readDir

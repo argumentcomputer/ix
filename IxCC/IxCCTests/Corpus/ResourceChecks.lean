@@ -67,7 +67,7 @@ private def fixtureJson : Json := Json.mkObj [
   ("census", Json.mkObj [("path", .str "sample.census.json")]), ("roots", .arr #[])]
 
 private def producerJson : Json := Json.mkObj [
-  ("ix_revision", .str "revision"), ("ix_binary_sha256", .str "digest"), ("ix_version", .str "version")]
+  ("ix", .str "ix"), ("ix_version", .str "version")]
 
 private def familyJson : Json := Json.mkObj [
   ("format", .str "ixcc/corpus/1"), ("family", .str "sample"), ("tier", .str "test"),
@@ -158,6 +158,11 @@ private def resourceFailure : String :=
   "UnsupportedExpr { desc: \"resource admission Some(Address { hash: Hash(\\\"" ++ definitionAddress ++
   "\\\") }): TypeMismatch\" })\n"
 
+/-- The same refusals as ix's Lean admission prints them. -/
+private def leanFailure (error : String) : String :=
+  "uncaught exception: compile refused: resource admission (some " ++ definitionAddress ++
+  "): Ix.Resource.Error." ++ error ++ "\n"
+
 private def verdictResults (a : Assert) (work : FilePath) : IO Unit := do
   let sourceFailure := "uncaught exception: source contract: Ix.Compile.SourceContractError.duplicateAnnotation `f (Ix.Compile.SourceRoot.type) 42\n"
   let recursiveFailure := "uncaught exception: resource profile: `f` is an annotated recursive definition; it is admitted only when checked through its unfolding equation (ix compile --equations --profile FILE) or assumed by the profile (assume f), never through its kernel encoding\n"
@@ -169,7 +174,14 @@ private def verdictResults (a : Assert) (work : FilePath) : IO Unit := do
   expect a (!(Own.Verdicts.completedRejection 1 (positionedFailure ++ "segmentation fault\n")).isOk)
     "resource-records: output after a positioned rejection cannot authorize it"
   for (text, stage, code) in [(resourceFailure, "resource", "TypeMismatch"),
+      (leanFailure "typeMismatch", "resource", "TypeMismatch"),
+      (leanFailure "usage 1 (Ixon.Uses.erased) (Ixon.Uses.many)", "resource", "Usage(1, Erased, Many)"),
+      (leanFailure "unrestrictedEscape 2", "resource", "UnrestrictedEscape(2)"),
+      (leanFailure "unsupported \"projection has no checked field rule\"", "resource",
+        "Unsupported(\"projection has no checked field rule\")"),
       (sourceFailure, "elaboration", "duplicateAnnotation"),
+      (sourceFailure.replace "exception: source" "exception: compile refused: source", "elaboration",
+        "duplicateAnnotation"),
       (positionedFailure, "elaboration", "misplacedAnnotation"),
       (recursiveFailure, "profile", "annotated-recursion"), (nativeFailure, "profile", "native")] do
     let parsed := Own.Verdicts.completedRejection 1 text
@@ -181,6 +193,8 @@ private def verdictResults (a : Assert) (work : FilePath) : IO Unit := do
   for text in ["", "error: broken executable\n", resourceFailure.trimAscii.toString,
       resourceFailure ++ "segmentation fault\n", resourceFailure.replace "TypeMismatch" "Budget",
       resourceFailure.replace "TypeMismatch" "FutureUnknownFailure",
+      leanFailure "budget", leanFailure "futureUnknownFailure",
+      (leanFailure "typeMismatch").replace "(some " "(none ",
       sourceFailure.replace "duplicateAnnotation" "futureUnknownFailure",
       "uncaught exception: source contract: Ix.Compile.SourceContractError.duplicateAnnotation\n",
       "uncaught exception: resource profile: `f` is an annotated recursive definition\n",
@@ -210,29 +224,21 @@ private def verdictInputs (a : Assert) (work : FilePath) : IO Unit := do
   let dir ← freshWorkDir (work / "verdict-input")
   let profile := dir / "sample.profile"
   IO.FS.writeFile profile "reviewed profile\n"
-  let ix ← executable "true"
-  let digest ← IxCC.Tools.Check.sha256 ix
   let profileDigest ← IxCC.Tools.Check.sha256 profile
   let m ← Family.ofJson familyJson
   let producer := { m.producer with
-    ixRevision := "revision"
-    ixBinarySha256 := digest
     profile := some { path := profile.toString, sha256 := profileDigest } }
   let m := { m with producer }
   let f : Own.Verdicts.File := {
     description := "test"
     sourceRoot := m.sourceRoot
     manifest := "unused"
-    ixRevision := "revision"
-    ixBinarySha256 := digest
     entries := [] }
-  Own.Verdicts.checkRebuildInputs f m ix
+  Own.Verdicts.checkRebuildInputs f m
   expect a true "resource-records: matching rebuild inputs"
-  rejects a "mismatched revision" (Own.Verdicts.checkRebuildInputs { f with ixRevision := "other" } m ix)
-  rejects a "mismatched binary pin" (Own.Verdicts.checkRebuildInputs { f with ixBinarySha256 := "other" } m ix)
-  rejects a "mismatched source root" (Own.Verdicts.checkRebuildInputs { f with sourceRoot := "other" } m ix)
+  rejects a "mismatched source root" (Own.Verdicts.checkRebuildInputs { f with sourceRoot := "other" } m)
   IO.FS.writeFile profile "unreviewed profile\n"
-  rejects a "changed pinned profile" (Own.Verdicts.checkRebuildInputs f m ix)
+  rejects a "changed pinned profile" (Own.Verdicts.checkRebuildInputs f m)
 
 private def contextRecords (a : Assert) : IO Unit := do
   let closure ← IO.FS.readBinFile "fixtures/ownership/OS01-plain.ixe"

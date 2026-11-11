@@ -1,7 +1,8 @@
 import IxCC.Ixon.V3.Tc.Env
 import IxCC.Ixon.V3.PrimAddrs
 
-/-! Adapted from ix `0a31c8dbc63755924c645bf1afedc563e395e88a`, `Ix/Tc/Primitive.lean`.
+/-! Adapted from `Ix/Tc/Primitive.lean` of an earlier ix (a revision outside this
+  repository's history).
 The anonymous checker uses the local v3 byte decoder and existing BLAKE3 interface.
 The eagerReduce address is a reserved synthetic marker: the real declaration
 shares its content address with id and must not trigger special reduction.
@@ -146,7 +147,6 @@ structure Primitives (m : Mode) where
   punitSizeOf1 : KId m
   sizeOfSizeOf : KId m
   stringBack : KId m
-  stringLegacyBack : KId m
   stringUtf8ByteSize : KId m
   stringAppend : KId m
   stringDecEq : KId m
@@ -255,7 +255,6 @@ def ofResolve (a : PrimAddrs) (resolve : Address → Option (KId m)) :
     punitSizeOf1 := r a.punitSizeOf1,
     sizeOfSizeOf := r a.sizeOfSizeOf,
     stringBack := r a.stringBack,
-    stringLegacyBack := r a.stringLegacyBack,
     stringUtf8ByteSize := r a.stringUtf8ByteSize,
     stringAppend := r a.stringAppend,
     stringDecEq := r a.stringDecEq

@@ -60,14 +60,12 @@ later).
 
 ## The producer, and rebuilding
 
-The closures and the verdicts come from the pinned ix of
-[`docs/corpus.md`](../../docs/corpus.md) (revision `be45a159`: the certified
-line `f829b760` plus the local `--equations` export, Ixon v4, binary SHA-256
-`396dffb7…` from the 2026-11-07 rebuild), with the manifest's anonymous command (`ix compile --no-build
---consts ROOTS --equations --anon`). ix elaborates an annotated source
-against the Lean libraries `lake env printenv LEAN_PATH` names, through a
-`lake` stand-in (`FAKE`) that answers with the producer workspace's libraries
-at the same revision.
+The closures and the verdicts come from the ix of this repository (role-bound;
+[`docs/corpus.md`](../../docs/corpus.md), "Refreezing"), with the manifest's
+anonymous command (`ix compile --no-build --consts ROOTS --equations --anon`).
+ix elaborates an annotated source against the Lean libraries `lake env
+printenv LEAN_PATH` names, through a `lake` stand-in (`FAKE`) that answers with
+the root workspace's libraries.
 
 ```sh
 # closures, sidecars, censuses and the interpreter's values; Lean
@@ -84,6 +82,22 @@ reported failure (all still rejected; admission reports the first failing
 constant in address order, and the addresses moved): N-02 `Nonduplicable` →
 `UnrestrictedEscape(2)`, OS-15 `Nonduplicable` → `Unsupported("projection has
 no checked field rule")`, OS-15b `Unsupported(…)` → `Nonduplicable`.
+
+The role-bound refreeze (2026-11-11, by the ix of this repository) changed
+every closure and no case or value, and six verdicts' codes: ix's resource
+admission changed since the records were made (it is now ix's Lean
+admission), and the same codes come out with or without the role binding.
+Every verdict is still a rejection at the same stage:
+
+| Entry | Before (code, constant) | After |
+| --- | --- | --- |
+| OS-04 | `Unsupported("projection has no checked field rule")`, `d73587dc77c6` | `Unsupported("external resource interface is absent from the bound profile")`, `39e06a21cf1a` |
+| OS-07 | `Unsupported("projection has no checked field rule")`, `6a961b4961fa` | `Usage(1, Erased, Many)`, `46aa4f7ac46f` |
+| OS-15 | `Unsupported("projection has no checked field rule")`, `c409c15276b3` | `Nonduplicable`, `912a0a741143` |
+| OS-15b | `Nonduplicable`, `8628dba7ae07` | `Unsupported("external resource interface is absent from the bound profile")`, `3f8cc53b1e43` |
+| OS-35 | `Unsupported("projection has no checked field rule")`, `a47e889f32d7` | `Unsupported("external resource interface is absent from the bound profile")`, `177473b099d3` |
+| OS-37 | `Unsupported("projection has no checked field rule")`, `8202a0708a37` | `Nonduplicable`, `27a443fc4bbd` |
+
 `corpus check` of this family needs no ix; `corpus check --interpret` needs the `LEAN_PATH` above.
 
 ## Running

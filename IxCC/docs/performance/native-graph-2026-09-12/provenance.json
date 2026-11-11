@@ -5,7 +5,7 @@
     "retention": "machine-local, ignored by version control; not uploaded",
     "sha256": "671c60a683ea13c5e31b57e41f4424aaffaf30fd8240492cb2fcbf0689686b96"
   },
-  "base_commit": "e333e02a722826245d93966d8734dccd0d14c496",
+  "base_commit": "a commit of the pre-merge history, not kept by the squash (the record's date names it)",
   "code_files": 632,
   "format": "ixcc/native-graph-reference/1",
   "frozen_utc": "2026-09-13T01:04:45.705805+00:00",

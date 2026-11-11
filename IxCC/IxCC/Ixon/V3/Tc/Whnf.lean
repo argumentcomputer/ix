@@ -1,6 +1,7 @@
 import IxCC.Ixon.V3.Tc.Monad
 
-/-! Adapted from ix `0a31c8dbc63755924c645bf1afedc563e395e88a`, `Ix/Tc/Whnf.lean`.
+/-! Adapted from `Ix/Tc/Whnf.lean` of an earlier ix (a revision outside this
+  repository's history).
 The anonymous checker uses the local v3 byte decoder and existing BLAKE3 interface.
 See docs/ixon-v4.md for the adaptation and validation boundary. -/
 
@@ -635,7 +636,7 @@ def tryReduceStringLiteral (p : Primitives m) (id : KId m)
   let codepoint := (s.toList.getLast?.map (·.toNat)).getD 65
   charOfNatExpr codepoint
 
-/-- String literal primitives: `String.back` / legacy back /
+/-- String literal primitives: `String.back` /
     `utf8ByteSize` / `toByteArray ""`. -/
 def tryReduceString (e : KExpr m) : RecM m (Option (KExpr m)) := do
   let (head, args) := e.collectSpine
@@ -644,7 +645,6 @@ def tryReduceString (e : KExpr m) : RecM m (Option (KExpr m)) := do
   let .const id _ _ := head | return none
   let p ← prims
   let isBack := id.addr == p.stringBack.addr
-    || id.addr == p.stringLegacyBack.addr
   let isUtf8ByteSize := id.addr == p.stringUtf8ByteSize.addr
   let isToByteArray := id.addr == p.stringToByteArray.addr
   if !isBack && !isUtf8ByteSize && !isToByteArray then

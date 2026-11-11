@@ -12,12 +12,12 @@ interfaces. Lean proves the indexed audits equal the original predicates for
 arbitrary inputs, including malformed results. The builder preserves the
 existing dependency/member order and exact-preimage collision checks; the
 suite compares its complete output with the retained list builder.
-Implementation and proof scope (`docs/modular-source.md#indexed-assembly-checks` at archive commit `7599a434`).
+Implementation and proof scope (`docs/modular-source.md#indexed-assembly-checks` on the archive branch of the pre-merge Compilatr.ix repository).
 
 ## Identical before/after workload
 
 The baseline executable was freshly rebuilt from commit
-`c41d4813d71250c6b95b3e5002a31f76946d6e9d`. All 782 extracted repository files
+the base commit of that date (pre-merge history, not kept by the squash). All 782 extracted repository files
 were checked against that archive after the build. The pinned Blake3 package
 cache was shared. The indexed executable uses the frozen working source
 recorded in [provenance.json](provenance.json).
@@ -89,7 +89,7 @@ checks for measurement. Do not sum all sixteen phases. Indexed addressing
 runs before reference addressing; explicit indexed/reference audits follow,
 then ordinary assembly. The fixed order and shared immutable inputs can
 affect caches. There is no per-stage warm-up or randomization. The
-protocol (`benchmarks/assembly-scaling.md` at archive commit `7599a434`) specifies all clock scopes.
+protocol (`benchmarks/assembly-scaling.md` on the archive branch of the pre-merge Compilatr.ix repository) specifies all clock scopes.
 
 ## Correctness and process observations
 
@@ -164,6 +164,6 @@ taskset -c 0 env LEAN_NUM_THREADS=1 MALLOC_ARENA_MAX=1 LC_ALL=C \
   "$assembly_bundle/profile-1" "$assembly_output"
 ```
 
-The benchmark protocol (`benchmarks/assembly-scaling.md` at archive commit `7599a434`) provides
+The benchmark protocol (`benchmarks/assembly-scaling.md` on the archive branch of the pre-merge Compilatr.ix repository) provides
 fresh build/producer/checker commands. Source and seed hashes and the exact
 collection plan are retained in [provenance.json](provenance.json).

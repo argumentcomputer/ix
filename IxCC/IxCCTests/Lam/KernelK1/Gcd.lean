@@ -9,7 +9,7 @@ open IxCCTests.Src.Artifacts.Gcd
 
 set_option maxRecDepth 1000000
 
-/-- `gcd`'s entry (constant 127) erases to 13 globals rooted at `const 127`. -/
-example : facts program ann 13 127 = true := by decide +kernel
+/-- `gcd`'s entry (`Ids.entry`) erases to `Ids.globals` globals rooted at `const Ids.entry`. -/
+example : facts program ann Ids.globals Ids.entry = true := by decide +kernel
 
 end IxCCTests.Lam.KernelK1.Gcd

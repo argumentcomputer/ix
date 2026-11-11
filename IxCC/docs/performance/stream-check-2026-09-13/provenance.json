@@ -5,7 +5,7 @@
     "retention": "machine-local, ignored by version control; not uploaded",
     "sha256": "24360822bbae89e64c3fa4d0c8db285335cdc8532dc100ad90d894ab76c0aa93"
   },
-  "base_commit": "4df05d8cda00b1ab271a19e3e222fd237ee22869",
+  "base_commit": "a commit of the pre-merge history, not kept by the squash (the record's date names it)",
   "code_files": 636,
   "format": "ixcc/stream-check-reference/1",
   "frozen_utc": "2026-09-13T10:38:08.052019+00:00",

@@ -19,15 +19,17 @@ Licence: Apache-2.0 OR MIT (an original program).
 
 ## Regenerating
 
-With this repository's `ix` built (`lake build ix` at the repository root), the manifest's
-`producer` fields set to that `ix`, and a directory `FAKE` holding a `lake` stand-in that answers
-`lake env printenv LEAN_PATH` with `lean --print-libdir` (the source imports only `Init`), from
-`IxCC/`:
+[`tools/regenerate.sh`](../../../tools/regenerate.sh) regenerates it with the rest of the
+committed fixtures ([Refreezing](../../../docs/corpus.md#refreezing)): it takes every
+`corpus.json` under `fixtures/`, so this family is never skipped. For this family alone: with
+this repository's `ix` built (`lake build ix` at the repository root, in its dev shell; the
+manifest records its version) and a directory `FAKE` holding the `lake` stand-in `regenerate.sh`
+writes (any stand-in that answers `lake env printenv LEAN_PATH` will do: the source imports only
+`Init`), from `IxCC/`:
 
 ```sh
 lake exe corpus rebuild fixtures/corpus/grounding/corpus.json \
   --ix ../.lake/build/bin/ix --ix-path FAKE --work WORK
 ```
 
-The family is registered (`IxCCTests.Corpus.families`), so a refreeze that regenerates every
-registered family regenerates it too.
+The rebuild writes the manifest in its canonical form, the producer record included.

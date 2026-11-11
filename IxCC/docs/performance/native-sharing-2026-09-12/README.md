@@ -8,7 +8,7 @@ the same encoder and checker receiving a smaller program.
 The physical heap source and snapshot object APIs now default to shared
 emission. The original tree emitter remains selectable. Both use the existing
 execution, argument-transfer, ownership, workspace, and ELF proof contracts.
-Implementation and API (`docs/native-sharing.md` at archive commit `7599a434`).
+Implementation and API (`docs/native-sharing.md` on the archive branch of the pre-merge Compilatr.ix repository).
 
 ## Fixed comparison
 
@@ -99,7 +99,7 @@ Cases ran in increasing join count, tree then shared. Each named stage has one
 randomization, confidence interval, or per-stage process isolation. Timings
 exclude fixture construction, default-API replay, semantic/mutation checks,
 report hashing, JSON, and file writes. Do not add medians to infer an end-to-end
-latency. Commands and protocol (`benchmarks/native-sharing.md` at archive commit `7599a434`).
+latency. Commands and protocol (`benchmarks/native-sharing.md` on the archive branch of the pre-merge Compilatr.ix repository).
 
 Validation passed on the final implementation:
 
@@ -128,7 +128,7 @@ or axiom is introduced. [Validation record](validation.json).
 
 ## Provenance and retained replay
 
-The frozen source is base commit `8d46aa231fb7e3ae4350a5cd499c16b762cb675d` plus the
+The frozen source is the base commit of that date (pre-merge history, not kept by the squash) plus the
 uncommitted implementation captured in `source.tar.gz`. All 747 source files
 and 619 recorded code identities remained unchanged through measurement. This
 performance documentation was added afterwards. Runtime tools, versions,

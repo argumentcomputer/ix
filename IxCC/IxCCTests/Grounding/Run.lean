@@ -9,7 +9,7 @@ The grounding library's theorems (`IxCCGrounding`) take one Boolean check
 (`IxCC.Grounding.groundCheck`) as their hypothesis on the program, the kernel's reading and the
 certificate's annotation. This suite runs it on the committed closures of the grounding subjects:
 
-* `fib` (`fixtures/ixon-v4/bound/fib`, root `entry` at `10`);
+* `fib` (`fixtures/ixon-v4/bench-k1/fib`, role-bound, root `entry` at `10`);
 * `decide (fib 10 = 55)` (`fixtures/corpus/grounding/decide`, root `Grounding.decideFib10`).
 
 For each: the kernel accepts the closure (`KernelFront.ingress`, the tiered entry), the front end
@@ -44,7 +44,7 @@ structure Subject where
   expected : Obs
 
 def subjects : List Subject :=
-  [{ label := "fib", stem := "fixtures/ixon-v4/bound/fib", root := "entry", args := [.lit 10],
+  [{ label := "fib", stem := "fixtures/ixon-v4/bench-k1/fib", root := "entry", args := [.lit 10],
      expected := .nat 55 },
    { label := "decide", stem := "fixtures/corpus/grounding/decide",
      root := "Grounding.decideFib10", args := [], expected := .ctor 1 [] }]

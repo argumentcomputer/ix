@@ -4,10 +4,10 @@ import IxCCTests.Corpus.Build
 
 `fixtures/ownership/verdicts.json`, format `ixcc/own-verdicts/1`: one
 record per annotated source of the ownership suite (and per negative probe),
-with ix's verdict under the pinned producer and the corpus fixture that
-freezes the closure when ix accepts it. Required CI never runs ix: it checks
-the file against the sources and the corpus manifest (`check`). The manual
-`rebuild` re-runs the pinned ix with the corpus manifest's anonymous command
+with ix's verdict and the corpus fixture that freezes the closure when ix
+accepts it. Required CI never runs ix: it checks the file against the sources
+and the corpus manifest (`check`). The manual `rebuild` re-runs this
+repository's ix with the corpus manifest's anonymous command
 (`ix compile --no-build --consts ROOTS --equations --profile PROFILE --anon`,
 under the family's pinned profile) and rewrites the derived fields, among
 them the plain-data crossing diagnostics ix prints (`crossed`).
@@ -66,8 +66,6 @@ structure File where
   description : String
   sourceRoot : String
   manifest : String
-  ixRevision : String
-  ixBinarySha256 : String
   entries : List Entry
   deriving BEq, Inhabited
 
@@ -98,7 +96,6 @@ def File.read (p : FilePath := path) : IO File := do
   let prod ← field j "producer"
   return { description := ← strField j "description", sourceRoot := ← strField j "source_root"
            manifest := ← strField j "manifest"
-           ixRevision := ← strField prod "ix_revision", ixBinarySha256 := ← strField prod "ix_binary_sha256"
            entries := ← (← arrField j "verdicts").toList.mapM Entry.ofJson }
 
 def Producer.toOJson (p : Producer) : OJson :=
@@ -119,8 +116,7 @@ def Entry.toOJson (e : Entry) : OJson :=
 def File.toOJson (f : File) (command : List String) : OJson :=
   .fields [("format", some (.str format)), ("description", some (.str f.description)),
     ("source_root", some (.str f.sourceRoot)), ("manifest", some (.str f.manifest)),
-    ("producer", some (.obj #[("ix_revision", .str f.ixRevision),
-      ("ix_binary_sha256", .str f.ixBinarySha256), ("command", .strs command)])),
+    ("producer", some (.obj #[("ix", .str IxCCTests.Corpus.producerIx), ("command", .strs command)])),
     ("verdicts", some (.arr (f.entries.map Entry.toOJson).toArray))]
 
 /-! ## ix's log -/
@@ -131,10 +127,39 @@ def between (s start stop : String) : Option String :=
   | _ :: rest :: _ => some ((rest.splitOn stop).headD "")
   | _ => none
 
+/-- A resource error as ix's Lean admission prints it (`Repr` of
+`Ix.Resource.Error`, after `Ix.Resource.Error.`), in the spelling of the
+frozen verdicts (the retired Rust admission's): the constructor capitalized,
+its arguments in parentheses, a `Uses` by its capitalized name, a string
+argument quoted. `typeMismatch` is `TypeMismatch`, `usage 1 (Ixon.Uses.erased)
+(Ixon.Uses.many)` is `Usage(1, Erased, Many)`, `unsupported "x"` is
+`Unsupported("x")`. -/
+def leanResourceCode (s : String) : String :=
+  let capital := fun (w : String) => match w.toList with
+    | c :: cs => String.ofList (c.toUpper :: cs)
+    | [] => w
+  let s := s.trimAscii.toString
+  let ctor := String.ofList (s.toList.takeWhile Char.isAlphanum)
+  let rest := (s.drop ctor.length).trimAscii.toString
+  if rest.isEmpty then capital ctor
+  else if rest.startsWith "\"" then s!"{capital ctor}({rest})"
+  else
+    let args := (rest.splitOn " ").filter (!·.isEmpty) |>.map fun a =>
+      let a := (a.replace "(" "").replace ")" ""
+      if a.all Char.isDigit then a else capital ((a.splitOn ".").getLastD a)
+    s!"{capital ctor}({", ".intercalate args})"
+
 /-- The verdict of a failed `ix compile` from its log (as the verdict
-script of the ix usage-ownership fixtures reads it). -/
+script of the ix usage-ownership fixtures reads it). Resource refusals come in
+two spellings: the retired Rust admission's (`… Hash("ADDRESS") …}): CODE" })`)
+and ix's Lean admission's (`compile refused: resource admission (some ADDRESS):
+Ix.Resource.Error.CODE`). -/
 def parseLog (log : String) : Producer :=
-  if (log.splitOn "resource admission").length > 1 then
+  if (log.splitOn "resource admission (some ").length > 1 then
+    let constant := ((between log "resource admission (some " ")").getD "").take 12 |>.toString
+    let code := leanResourceCode ((between log "): Ix.Resource.Error." "\n").getD "")
+    { verdict := "reject", stage := "resource", code, constant }
+  else if (log.splitOn "resource admission").length > 1 then
     let constant := ((between log "Hash(\\\"" "\\\"").getD "").take 12 |>.toString
     let code := ((between log "}): " "\" })").getD "").replace "\\\"" "\""
     { verdict := "reject", stage := "resource", code, constant }
@@ -178,12 +203,19 @@ def completedRejection (status : UInt32) (log : String) : Except String Producer
   unless status == 1 do throw s!"unexpected ix exit status {status}"
   unless log.endsWith "\n" do throw "unterminated ix rejection output"
   let some line := finalRejection log | throw "missing completed ix rejection"
+  -- ix's Lean pipeline prefixes every refusal with `compile refused: `
+  let line := if line.startsWith "uncaught exception: compile refused: " then
+      "uncaught exception: " ++ (line.drop "uncaught exception: compile refused: ".length).toString
+    else line
   let p := parseLog line
   unless !p.code.isEmpty do throw "empty ix rejection code"
   match p.stage with
   | "resource" =>
-    unless containsText line "rs_compile_env: Rust compilation failed: UnsupportedExpr { desc: \"resource admission " &&
-        line.endsWith "\" })" do throw "incomplete resource rejection"
+    unless (containsText line "rs_compile_env: Rust compilation failed: UnsupportedExpr { desc: \"resource admission " &&
+          line.endsWith "\" })") ||
+        (line.startsWith "uncaught exception: resource admission (some " &&
+          containsText line "): Ix.Resource.Error.") do
+      throw "incomplete resource rejection"
     let constructor := String.ofList (p.code.toList.takeWhile Char.isAlphanum)
     unless ["Unbound", "BadReference", "UnresolvedSharing", "Unsupported", "TypeMismatch",
         "BinderMismatch", "Usage", "Moved", "SharedToUnique", "ActiveLoan", "Escape",
@@ -228,11 +260,8 @@ def compileResult (status : UInt32) (log : String) (closure sidecar : FilePath) 
   return { verdict := "ok" }
 
 /-- Check all reviewed producer inputs before invoking ix. -/
-def checkRebuildInputs (f : File) (m : Family) (ix : FilePath) : IO Unit := do
-  need (f.ixRevision == m.producer.ixRevision && f.ixBinarySha256 == m.producer.ixBinarySha256)
-    "verdict and family producer pins differ"
+def checkRebuildInputs (f : File) (m : Family) : IO Unit := do
   need (f.sourceRoot == m.sourceRoot) "verdict and family source roots differ"
-  need ((← sha256 ix) == f.ixBinarySha256) s!"{ix}: not the pinned ix {f.ixBinarySha256}"
   if let some profile := m.producer.profile then
     need ((← sha256 profile.path) == profile.sha256) s!"profile {profile.path} differs from the pinned digest"
 
@@ -252,8 +281,6 @@ def check (p : FilePath := path) : IO (Nat × Nat × Nat) := do
   let m ← Family.read f.manifest
   need ((← IO.FS.readFile p) == (f.toOJson m.producer.anonymous).render)
     s!"{p}: not in canonical form (rebuild rewrites it)"
-  need (f.ixRevision == m.producer.ixRevision && f.ixBinarySha256 == m.producer.ixBinarySha256)
-    s!"{p}: the producer pins differ from {f.manifest}'s"
   let root : FilePath := f.sourceRoot
   need (root.toString == m.sourceRoot) s!"{p}: source root {root}, the manifest's is {m.sourceRoot}"
   let ids := f.entries.map (·.id)
@@ -294,14 +321,14 @@ def check (p : FilePath := path) : IO (Nat × Nat × Nat) := do
       need (f.entries.any (·.fixture == some fx.name)) s!"{p}: corpus fixture {fx.name} has no verdict"
   return (f.entries.length, accepted, rejected)
 
-/-! ## Rebuild (manual; needs the pinned ix) -/
+/-! ## Rebuild (manual; needs this repository's ix) -/
 
 def rebuild (t : Tools) (p : FilePath := path) : IO Unit := do
   let f ← File.read p
   let some ix := t.ix | throw (IO.userError "rebuild needs --ix PATH")
   let ix ← IO.FS.realPath ix
   let m ← Family.read f.manifest
-  checkRebuildInputs f m ix
+  checkRebuildInputs f m
   let root : FilePath := f.sourceRoot
   let profile ← match m.producer.profile with
     | some p => do pure [("{profile}", (← IO.FS.realPath p.path).toString)]

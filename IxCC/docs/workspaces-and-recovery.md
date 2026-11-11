@@ -16,8 +16,8 @@ Phase 1.5 and the first heap-slice objective remain incomplete.
 
 | Reference | Checkpoint | Contents |
 | --- | --- | --- |
-| ix, resource WIP checkpoint | `83f1c0c48790010499b2311a33bc25ccaaec802c` | Older resource checker and fixtures, preserved as WIP. |
-| ix, donor-history checkpoint | `a55a06d2dd69a14e2463d57e170a4e843c24ff23` | Optimization histories and the source-only untested A6d kernel draft. The tree equals `83f1c0c4`; additional parents preserve history without integrating it. |
+| ix, resource WIP checkpoint | branch `jcb/compilatrix-resource-wip-2026-10-11` (outside this repository's history) | Older resource checker and fixtures, preserved as WIP. |
+| ix, donor-history checkpoint | branch `jcb/compilatrix-donor-history-2026-10-11` (outside this repository's history) | Optimization histories and the source-only untested A6d kernel draft. Its tree equals the resource checkpoint's; additional parents preserve history without integrating it. |
 
 These are immutable recovery checkpoints, both ix commits. Later source changes
 need their own commits and validation. Preserve the existing Ixby archive and useful toolchain

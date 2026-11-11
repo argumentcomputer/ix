@@ -1,7 +1,7 @@
 import IxCC.Ixon.V3.Resource.Admit
 
 /-! The explicit fixture program paired with the unchanged ix resource.tsv
-corpus at 0a31c8db. Its external interfaces are test assumptions only. -/
+corpus of an earlier ix. Its external interfaces are test assumptions only. -/
 
 namespace IxCCTests.IxonV3.Fixtures
 

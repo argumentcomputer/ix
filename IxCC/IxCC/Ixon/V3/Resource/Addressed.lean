@@ -5,11 +5,11 @@ import IxCC.Ixon.V3.PrimAddrs
 /-!
 # Addressed resource interfaces
 
-Adapted from ix `0a31c8dbc63755924c645bf1afedc563e395e88a`, with the Ixon v4
-profile framing (TagN counts and limits, `ixon-v4/resource-v1`) of ix
-`f829b76044a44a61023d0983516137147bbb12a7`: imports/namespaces use the local
+Adapted from an earlier ix (a revision outside this repository's history), with the Ixon v4
+profile framing (TagN counts and limits, `ixon-v4/resource-v1`) of ix's Ixon v4:
+imports/namespaces use the local
 AST, fixed-width addresses, strict bounded constant decoder, and raw-byte
-environment (there is no decoded cache). As in ix's copy since `866e7fa82`,
+environment (there is no decoded cache). As in ix's copy (`Ix/Resource`),
 safe theorems get their own declaration kind, field rules cover
 single-constructor structures with parameters and dependent fields, every such
 structure gets projection-reduction metadata, and each sharing entry gets a
@@ -28,7 +28,7 @@ open IxCC.Ixon IxCC.Ixon.V3
 
 /-- The resource validator's identifier: the wire format it reads
 (`wireFormatId`, `"ixon-v4"`), so a format version moves profile addresses to
-a new domain (ix's `Ix.Resource.validatorId` at `producerRevision`). -/
+a new domain (ix's `Ix.Resource.validatorId`). -/
 def validatorId : String := wireFormatId ++ "/resource-v1"
 
 structure Profile where

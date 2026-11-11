@@ -1,6 +1,6 @@
 import IxCC.Ixon.V3.Expr
 
-/-! Adapted from ix `0a31c8dbc63755924c645bf1afedc563e395e88a`
+/-! Adapted from an earlier ix (a revision outside this repository's history)
 (`Ix/Resource/Basic.lean`), with the local expression type and namespaces, the
 lemmas moved to `StateProofs.lean`, and `tickN`, which charges bookkeeping that
 touches several bindings at once (as ix's copy does). This resource check

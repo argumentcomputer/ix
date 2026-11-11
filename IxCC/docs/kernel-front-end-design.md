@@ -657,9 +657,9 @@ of the kernel front end on its own certificate. On every closure both front
 ends accept, the programs are equal, and every root's annotation, certificate
 and object are identical, or both front ends refuse the root with the same
 reason (a root declined downstream still has its annotation compared). No
-difference was found. The committed role-bound closures (`tuple`, `fib`, and
-since its registration the `phase1-bound` family, whose five closures are the
-`phase1-scalar` rows below) are the suite's own and agree the same way.
+difference was found. Since the role-bound refreeze every committed closure is role-bound:
+`tests-kernel-front` asks the kernel to accept each (all but the three below)
+and runs this differential on those under 512 KiB.
 
 Times: acceptance alone, in its own process (the erased checker's
 `Tc.checkEnv`; the kernel's tiered entry with its preparation); each whole
@@ -710,12 +710,12 @@ unsafe constants). The box ran other work meanwhile, and several of these
 runs concurrently (the four large `bench-k1` closures together); the large
 closures' times vary by up to about 15 % between runs.
 
-Five fixtures have no bound form yet: the generator fails before it writes a
-closure, so neither front end ran. `phase1-decline/loops` and `erase`: the
-interpreter oracle prints no line. `phase1-boundary/fields254`, `fields255`
-and `tags126`: a record over IxCC's own decoder budget
-(`Constant.withinBudget`), which the committed unbound closures of the same
-sources stay under.
+At the time of this measurement five fixtures had no bound form; the
+refreeze settled them (`phase1-decline`'s oracle driver; `phase1-boundary`
+restated at 49/50 fields). Three committed closures are not accepted, for
+their own reasons, which `tests-kernel-front` asserts: `phase1-boundary`'s
+`fields50` and `tags126` (a record over IxCC's decoder budget, refused before
+the kernel) and `src-diag` (the kernel declines its `sorry`).
 
 The kernel's logical entry alone (`checkBytesWith`) declines each closure
 tried (`tuple`, `fib`, `abi`, `scalar`, `OS02-plain`) at its first `partial`

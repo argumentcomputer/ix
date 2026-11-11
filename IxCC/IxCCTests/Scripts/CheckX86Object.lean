@@ -124,8 +124,8 @@ object, the real-source RC fixture on the plain-RC route (with `cx_drop`), `gcd`
 on the zero-RC route (`--rc auto` selects it), and from the corpus the ABI
 family's eighteen roots (arities 0 to 5, `Nat`, `Bool` and enumeration
 results), the scalar family's twenty-three and the boundary family's, each
-family in one object. Every closure here is under 1.2 MB and is read without
-its erased typing (`--no-typecheck`). -/
+family in one object. Every closure here is under 2.7 MB (role-bound) and is
+read without its erased typing (`--no-typecheck`). -/
 private def compiledSet : List Compiled :=
   ["fib", "sum-loop", "ackermann", "tak", "gcd"].map benchK1 ++
   [{ name := "k1", args := ["fixtures/ixon-v4/k1/k1.ixe", "--equations", "fixtures/ixon-v4/k1/equations.json",

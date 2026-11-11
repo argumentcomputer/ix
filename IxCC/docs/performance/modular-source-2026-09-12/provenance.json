@@ -152,7 +152,7 @@
     }
   },
   "format": "ixcc/modular-source-provenance/1",
-  "measured_base_revision": "c6ef19a4481aec6b81083210c6833e2758a35cc9",
+  "measured_base_revision": "a commit of the pre-merge history, not kept by the squash (the record's date names it)",
   "plan": {
     "case_order": [
       "baseline",

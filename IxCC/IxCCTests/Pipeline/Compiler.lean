@@ -456,24 +456,25 @@ def compileClaims (a : Assert) : IO String := do
       CompileClaim.ofClaimBytes (vecClaim.toClaimBytes.set! 1 0x04) == none)
     "CompileClaim: the role-binding (E8 03) and literal-class (E8 04) tags are not compile claims"
   let gcdClaimBytes := gcdClaim.toClaimBytes
-  expect a (gcdClaimBytes.size == 103 && gcdClaim.roleTable == none &&
+  -- every committed closure is role-bound: the claim names its role table (135 bytes)
+  expect a (gcdClaimBytes.size == 135 && gcdClaim.roleTable.isSome &&
       gcdClaimBytes.get! 0 == 0xE8 && gcdClaimBytes.get! 1 == 0x05 &&
       gcdClaimBytes.get! 2 == 0x04 && gcdClaimBytes.get! 3 == 0x07 &&
-      gcdClaimBytes.get! 36 == 0 && gcdClaimBytes.get! 69 == 1 && gcdClaimBytes.get! 70 == 2 &&
+      gcdClaimBytes.get! 36 == 1 && gcdClaimBytes.get! 101 == 1 && gcdClaimBytes.get! 102 == 2 &&
       CompileClaim.ofClaimBytes gcdClaimBytes == some gcdClaim &&
       CompileClaim.ofPayloadBytes gcdClaim.toPayloadBytes == some gcdClaim &&
       gcdClaim.commit == Ixon.Address.blake3Pure gcdClaimBytes)
-    "gcd CompileClaim: wire envelope layout (#[0xE8, 0x05, 0x04, 0x07, ...], no role table), roundtrip, and deterministic BLAKE3 commit"
+    "gcd CompileClaim: wire envelope layout (#[0xE8, 0x05, 0x04, 0x07, ...], the role table), roundtrip, and deterministic BLAKE3 commit"
   let rcClaimBytes := rcClaim.toClaimBytes
-  expect a (rcClaimBytes.size == 103 &&
+  expect a (rcClaimBytes.size == 135 && rcClaim.roleTable.isSome &&
       rcClaimBytes.get! 0 == 0xE8 && rcClaimBytes.get! 1 == 0x05 &&
       rcClaimBytes.get! 2 == 0x04 && rcClaimBytes.get! 3 == 0x07 &&
-      rcClaimBytes.get! 36 == 0 && rcClaimBytes.get! 69 == 2 && rcClaimBytes.get! 70 == 2 &&
+      rcClaimBytes.get! 36 == 1 && rcClaimBytes.get! 101 == 2 && rcClaimBytes.get! 102 == 2 &&
       CompileClaim.ofClaimBytes rcClaimBytes == some rcClaim &&
       CompileClaim.ofPayloadBytes rcClaim.toPayloadBytes == some rcClaim &&
       rcClaim.commit == Ixon.Address.blake3Pure rcClaimBytes &&
       rcClaim.commit != gcdClaim.commit)
-    "reverseList CompileClaim: wire envelope layout (#[0xE8, 0x05, 0x04, 0x07, ...], no role table), roundtrip, and deterministic BLAKE3 commit"
+    "reverseList CompileClaim: wire envelope layout (#[0xE8, 0x05, 0x04, 0x07, ...], the role table), roundtrip, and deterministic BLAKE3 commit"
   let (madeGcdClaim, madeGcdCert, madeGcdElf) ← IO.ofExcept (CompileClaim.makeClaim gcdCfg gcdBytes gcdJson)
   expect a (madeGcdClaim == gcdClaim && madeGcdCert == gcdCert && madeGcdElf == gcdElf &&
       (CompileClaim.checkClaim gcdCfg gcdBytes gcdJson madeGcdClaim madeGcdCert).isOk &&

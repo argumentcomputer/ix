@@ -33,6 +33,18 @@
       "equation_address": "235ab44718c8ecf20b3ceab949dfcfad022807cf7f1604d72ae42048c26e47e4"
     },
     {
+      "definition": "Nat.mul",
+      "definition_address": "373b7d74f6b40da11b7ed79603a45ec7011a8831b720b57d2efe92e82a3d57f0",
+      "equation": "Nat.mul.eq_def",
+      "equation_address": "2e64fe39a944df9f9d795cb840efa37ed024fa30f971e1f58c9cf321020f94c1"
+    },
+    {
+      "definition": "Nat.pow",
+      "definition_address": "5baaf05c969d2cf377312111be51bb64c600c13fa164ee722e92243b0f771bab",
+      "equation": "Nat.pow.eq_def",
+      "equation_address": "25ea7f65c5fc9991fafe55cfca743b5a38e57db0febca11d81c7eaf895a63b3b"
+    },
+    {
       "definition": "Nat.sub",
       "definition_address": "03b3a041285b0fe202d90b227d405c4cec252df18ba7616acd6dae2792e672bb",
       "equation": "Nat.sub.eq_def",
