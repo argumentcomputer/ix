@@ -462,7 +462,7 @@ theorem natOffsetOf_sem (hin : RulesInputs V m φ) (hs : natLitSupported env = t
               succPow (interp V ρ (m.acval natSuccName φ)) (interp V ρ ba) k := by
   obtain ⟨hKinv, -, -⟩ := natSucc_leaf hin hs
   refine natOffsetOf_rec (fun e ih => ?_)
-  intro b k h hadd d Δa ea hf hC hea hg
+  intro b k h hguard d Δa ea hf hC hea hg
   rcases natOffsetOf_some h with ⟨rfl, rfl⟩ | ⟨us, x, rfl, hx⟩ | ⟨us, x, n, rfl, hx⟩
   · -- a literal: `succᵏ 0`
     obtain rfl : ea = natLitR m φ k :=
@@ -480,7 +480,7 @@ theorem natOffsetOf_sem (hin : RulesInputs V m φ) (hs : natLitSupported env = t
     have hsubx : LeavesSub x (.app (.const natSuccName us) x) :=
       fun l hl => by simp [Expr.fvarLeaves, hl]
     have haddx : natOffsetAdd x = true → natAddTyOk (env.find? natAddName) = true :=
-      fun h' => hadd (by rw [natOffsetAdd_succ, ite_eq_left rfl]; exact h')
+      fun h' => hguard (by rw [natOffsetAdd_succ, ite_eq_left rfl]; exact h')
     rcases natOffsetStep_eq hx with ⟨k', hx', rfl⟩ | ⟨-, rfl, rfl⟩
     · obtain ⟨hfb, hsubb, ba, hba, hgb, heq⟩ :=
         ih x (Or.inl ⟨us, rfl⟩) hx' haddx hfx hCx hxa hgx
@@ -490,7 +490,7 @@ theorem natOffsetOf_sem (hin : RulesInputs V m φ) (hs : natLitSupported env = t
       rw [interp_app, succPow_one]
   · -- `Nat.add x (lit n)`: the split reads the stored `Nat.add`
     have ht : natAddTyOk (env.find? natAddName) = true :=
-      hadd (by rw [natOffsetAdd_add, ite_eq_left rfl])
+      hguard (by rw [natOffsetAdd_add, ite_eq_left rfl])
     obtain ⟨⟨cv, v, hint, hfA, -⟩, -⟩ := natAdd_head hin hs ht
     obtain ⟨-, xa, la, hxa, hla, rfl, hxN⟩ := natAdd_app_inv hin hs ht hea hg
     obtain rfl : la = natLitR m φ n :=
