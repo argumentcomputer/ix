@@ -4,6 +4,7 @@ public import IxC.Kernel.Core
 public import IxC.Kernel.Verify.Level
 public import IxC.Kernel.SetModel.Ops
 public import IxC.Kernel.SetTheory.Derive.Sigma
+public import IxC.Kernel.Basis.Names
 
 @[expose] public section
 
@@ -316,6 +317,22 @@ def IotaLaw (cval : Key md → (LevelParam → Nat) → V) (env : Env md) : Prop
     (rl : RecRule md),
     env.find? r = some (.recInfo cv mI rP rules) → rl ∈ rules → IotaRule cval env r cv mI rP rl
 
+/-- **Unit-like η at a family the kernel flags unit-like** (`IndCaps.unitlike`; Lean's
+`is_def_eq_unit_like`): at levels `us` and parameters `ts` that fit the family's type (as
+many as the flag's parameter count), any two members of the family's instance are equal.
+The pinned basis families (`reservedBasisNames`) are left out: their laws are the basis
+install's. -/
+def UnitLikeLaw (cval : Key md → (LevelParam → Nat) → V) (env : Env md) : Prop :=
+  ∀ (T : Key md) (cvT : ConstantVal md) (caps : IndCaps md),
+    env.find? T = some (.indInfo cvT caps) → caps.unitlike = true →
+    reservedBasisNames.contains T = false →
+    ∀ (us : List Level) (φ : LevelParam → Nat) (ρ σ : BVarIdx → V) (ts : List V) (R : Expr md)
+      (F x y : V),
+      us.length = cvT.levelParams.length → ts.length = caps.unitParams →
+      Denotes cval env φ ρ (.const T us) F →
+      Fits cval env φ ρ (cvT.type.instantiateLevelParams cvT.levelParams us) ts σ R →
+      x ∈ˢ ts.foldl app F → y ∈ˢ ts.foldl app F → x = y
+
 /-- **A model of the environment `env` in the set theory `V`**: one
 assignment `cval` of a set to every constant at every level
 assignment — fixed once, for the whole environment — under which every
@@ -409,6 +426,8 @@ structure Model (V : Type w) [SetTheory V] (env : Env md) where
       Denotes cval env φ ρ value (cval cv.name φ)
   /-- **ι**: every stored recursor rule computes as Lean's does (`IotaRule`) -/
   iota_rule : IotaLaw cval env
+  /-- **unit-like η** at every family the kernel flags unit-like (`UnitLikeLaw`) -/
+  unit_like : UnitLikeLaw cval env
   /-- a stored constant's value depends on the level assignment only through its own
   level parameters (so a use of it reads its levels, and nothing else) -/
   cval_params : ∀ (n : Key md) (ci : ConstantInfo md), env.find? n = some ci →

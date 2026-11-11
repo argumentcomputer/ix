@@ -11,6 +11,7 @@ public import IxC.Kernel.Model.IndOpenRev
 public import IxC.Kernel.Model.IndPinGrade
 public import IxC.Kernel.Model.WellDenotedTransport
 public import IxC.Kernel.Model.Inductives.FixRecRead
+public import IxC.Kernel.Model.Rules.RedSoundKit
 import IxC.Kernel.Verify.InferLeaves
 import IxC.Kernel.Verify.StrLitExpr
 import IxC.Kernel.Verify.InferLemmas
@@ -841,6 +842,50 @@ theorem iotaLaw_of_envModelM {μ : Ix.Kernel.CheckMode} {env : Env md} (m : EnvM
   obtain ⟨⟨-, -, -, -, hfire⟩, -, -⟩ := m.base2.rec_ctors r cv mI rP rules hf rl hrl
   exact iotaRule_of_fires m hf hrl hfire
 
+/-- **Unit-like η from the invariant**: the unit law of a family the install flags
+unit-like (`CapsOk`'s unit half), read at the bound-variable readings of the parameters
+through the fit (`fits_teleFitPA`, `Rules.teleFit_of_teleFitPA`). -/
+theorem unitLikeLaw_of_envModelM {μ : Ix.Kernel.CheckMode} {env : Env md} (m : EnvModelM V μ env) :
+    Ix.Kernel.UnitLikeLaw (cvalOf (V := V) m.base2.acval) env := by
+  intro T cvT caps hf hu hres us φ ρ σ ts R F x y hus hts hF hfit hx hy
+  have hcl := m.base2.cval_closedL
+  have hFv : F = cvalOf m.base2.acval T (Level.substFn φ cvT.levelParams us) := by
+    cases hF with
+    | const hfr _ => rw [hf] at hfr; cases hfr; rfl
+  have hwf := m.base2.wf _ (Ix.Kernel.Semantics.Env.find?_mem hf)
+  have hTf : (cvT.type.instantiateLevelParams cvT.levelParams us).hasFvar = false := by
+    rw [Expr.hasFvar_instantiateLevelParams]; exact hwf.1
+  have hTb : (cvT.type.instantiateLevelParams cvT.levelParams us).looseBVarsBounded 0 = true := by
+    rw [Expr.looseBVarsBounded_instantiateLevelParams]; exact hwf.2.2.2.1
+  obtain ⟨TVa, hTVa, hTVaok, hlaw⟩ := m.caps_ok.2 T cvT caps hf hu hres φ us hus
+  -- the parameters as bound-variable readings
+  let ρ' : Nat → V := fun i => ts.getD i SetTheory.empty
+  let ws : List AnnotTerm := (List.range ts.length).map AnnotTerm.bvar
+  have hws_len : ws.length = ts.length := by simp [ws]
+  have hws_val : ∀ n, n < ts.length →
+      interp V ρ' (ws.getD n default) = ts.getD n SetTheory.empty := by
+    intro n hn
+    rw [show ws.getD n default = AnnotTerm.bvar n by
+      simp [ws, List.getD, List.getElem?_range hn], interp_bvar]
+  have hwsMap : ws.map (interp V ρ') = ts := by
+    have h := map_range_eq_of_getD (ρ' := ρ') (c := 0) ts
+      (fun j _ => by rw [Nat.zero_add])
+    rw [← h]
+    simp [ws, Function.comp_def]
+  obtain ⟨-, -, -, hstrip, -, -, htele, -, -, -, -⟩ :=
+    fits_teleFitPA (V := V) hcl hTf hTb hTVa hTVaok hfit hws_len hws_val
+  have hpc : PiChain ws.length TVa := by
+    rw [hws_len]
+    exact Rules.piChain_of_stripPis ts.length (by rw [hstrip]; rfl) hTVa
+  have hfitT := Rules.teleFit_of_teleFitPA hpc htele
+  rw [hwsMap] at hfitT
+  have hmem : ∀ z, z ∈ˢ ts.foldl app F → z ∈ˢ ts.foldl app
+      (interp V ρ' (m.base2.acval T (Level.substFn φ cvT.levelParams us))) := by
+    intro z hz
+    rw [interp_cvalOf hcl, ← hFv]
+    exact hz
+  exact hlaw ρ' ts _ x y hts hfitT (hmem x hx) (hmem y hy)
+
 /-! ### The model -/
 
 /-- **The model, read off the invariant**: `Model V env` from
@@ -902,6 +947,7 @@ noncomputable def Model.ofEnvModelM {μ : Ix.Kernel.CheckMode} {env : Env md}
     rw [Expr.closeN_of_hasFvar _ 0 0 hv.1, interp_cvalOf m.base2.cval_closedL] at hb
     exact hb
   iota_rule := iotaLaw_of_envModelM m
+  unit_like := unitLikeLaw_of_envModelM m
   cval_params := fun n ci h φ₁ φ₂ agree => by
     unfold cvalOf
     rw [m.base2.acval_params n ci h φ₁ φ₂ agree]
