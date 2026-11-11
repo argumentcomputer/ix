@@ -3,9 +3,10 @@
 Written 2026-11-14. **Status:** X0 implemented (`ixcc compile --exe`, see
 [X0 as implemented](#x0-as-implemented)); X1 implemented (the native suites run
 their objects as test executables IxCC writes, with no C, see [X1 as
-implemented](#x1-as-implemented)); X2 in progress (stage 1 implemented: `ixcc compile
+implemented](#x1-as-implemented)); X2 implemented (`ixcc compile
 --exe --machine` writes numeric state machines whose parsing and rendering are
-Lean, see [X2 as implemented](#x2-as-implemented)); X0-P and X3 to X6 planned. Milestones X0 to
+Lean, and the session theorem is proved over the linked-object model, see [X2 as
+implemented](#x2-as-implemented)); X0-P and X3 to X6 planned. Milestones X0 to
 X6 are in the [roadmap](roadmap.md#standalone-executables). Only the lines that
 say *implemented* or *measured* describe code or runs that exist.
 
@@ -263,7 +264,9 @@ and for the test harness, on the host side in Lean.
   performs, with the environment's answers, is one obtained by iterating the
   source `step` on those answers, unless `step` goes wrong on the way, and no
   event outside the signature occurs. Per call this is today's theorem; across
-  calls it is the session induction DR9 plans.
+  calls it is the session induction DR9 plans, proved for numeric states over
+  the linked-object model ([X2](#the-session-theorem)); with heap states it is
+  planned (X4).
 - **Lean `IO`, relative to an interpretation.** For every trace and exit code
   of the process, in every strong model in which the interpreted `IO` opaques
   take their recorded values, `main` applied to the arguments denotes a world
@@ -369,7 +372,7 @@ Sizes are estimates, with their basis.
 | X0 | `ixcc compile --exe` for roots of `Nat` parameters and a `Nat` result: the executable writer and its independent checker; the shell as typed x86 with the system call outside the program table; static layout with `CanonicalOk` proved; a ledger entry for the loader's post-state, the system calls and the shell. **Implemented** ([below](#x0-as-implemented)), also for `Bool` and other results without fields, rendered `#k`; the per-call return address and registers in `X86.Driver` moved to X0-P | — | every corpus root of the fragment (K1's and the `phase1-*` families') on every case agrees with the manifest, SrcEval, ByteEval and the C driver; a seccomp filter on; only `prctl`, `seccomp`, `write` and `exit`; the checker rejects mutated headers and truncations | 2–3.5k lines, 3–6 weeks (today's object path is about 2.2k lines across `ELF*.lean`; the shell is about 150 instructions of Lean data). Measured: 1.1k lines of production code and 0.4k of tests |
 | X0-P | The shell proved: the shell lemma, parsing and rendering, the system call's model, permission monotonicity, a return address and register file per call in `X86.Driver`; the `Nat` executable theorem fenced. **Decided:** it takes X2's generic machine shell first (`x86-linux-machine-shell`: no parsing or rendering to prove, and the session theorem already proved over the linked model); `--exe`'s parsing shell (`x86-linux-exe-shell`) stays ledgered until byte executables (X3) can replace it | X0 | the theorem fenced on the standard axioms; the driver-model assumption retired for executables | 3–6k lines, 2–4 months (the `cx_init` proof is 0.5k lines and the stream-trace infrastructure exists) |
 | X1 | XB-1 and IxOS-0, redefined: IxCC-written test executables speak today's line protocol (and the session protocol with `cx_drop` for the RC gates); readback on the host side in Lean. **Implemented** ([below](#x1-as-implemented)): the test shell serves binary requests, and the host in Lean speaks the line and session protocols over them; the C drivers are deleted | X0 | the native suites (`tests-rt`, `tests-pipeline`, `tests-corpus`, `tests-own`, the back end's runtime cases, the RC native modes) pass with the C runtime driver off the execution path and no C compiler in their inputs | 1–2k lines, 2–4 weeks after X0 |
-| X2 | Numeric state machines: the generic request shell, parsing and rendering in a small Lean library compiled with the program, the session theorem on `Nat` states. **Stage 1 implemented** ([below](#x2-as-implemented)): the generic shell and `ixcc compile --exe --machine`, the library, `fib` end to end; the session theorem and the 1,000-call session are stage 2 | X0 (X0-P for the proof) | `fib` as an executable whose parsing and rendering are Lean; a 1,000-call session against Lean's interpreter; the session theorem fenced | 2–4k lines (DR9 (a) is 3–6k with heap states) |
+| X2 | Numeric state machines: the generic request shell, parsing and rendering in a small Lean library compiled with the program, the session theorem on `Nat` states. **Implemented** ([below](#x2-as-implemented)): the generic shell and `ixcc compile --exe --machine`, the library, `fib` end to end, the session theorem fenced over the linked-object model, sessions of more than 1,400 calls agreeing with Lean's interpreter and with the model on the byte evaluator | X0 (X0-P for the proof) | `fib` as an executable whose parsing and rendering are Lean; a 1,000-call session against Lean's interpreter; the session theorem fenced | 2–4k lines (DR9 (a) is 3–6k with heap states) |
 | X3 | Batch byte executables: arguments and input bytes in, output bytes and an exit code out; an exported byte-array allocation entry; the model of `read` | Phase 3 (DR2, DR3, DR6) | programs in the manner of `wc` and `sha256sum` byte-identical to Lean-compiled executables over a corpus of inputs | 2–4k lines beyond the DR items |
 | X4 | Interactive executables: state-machine roots with heap states; platform interface version 1 (read, write, exit, clock); a seccomp filter of exactly the interface | DR1, DR6, DR9 (a) | an echo or counter-map program; a 1,000-call session; the state-machine theorem fenced | DR9 (a)'s 3–6k plus 1–2k |
 | X5 | Lean `main : IO` over a recorded subset: traced events through the pipeline, platform calls as direct calls to platform procedures, the interpretation table for `IO`, the start-up logic in Lean | X4, DR2–DR5, P8, the reading of interpreted opaques (DC-2) | the benchmark fixtures' `main` functions compile unchanged and print what Lean's executables print | 10–25k lines, a weak basis (8–20k for traced events through about ten levels, plus the table) |
@@ -531,13 +534,14 @@ reuse sessions' 114,820); then the C drivers went.
 
 ## X2 as implemented
 
-**Stage 1 implemented**: requests returned as data, for programs whose states,
+**Implemented**: requests returned as data, for programs whose states,
 events and requests are numbers. `ixcc compile CLOSURE.ixe --equations EQ.json
 --exe FILE --machine [--stack BYTES] [--region BYTES]` writes the executable of
 a *numeric state machine*, run by a generic shell that parses and renders
-nothing; a program's parsing and rendering are Lean, compiled with it.
-**Planned** (stage 2): the session theorem in the tree and fenced, and a
-session of at least 1,000 calls against Lean's interpreter.
+nothing; a program's parsing and rendering are Lean, compiled with it. The
+session theorem is proved over the linked-object model and fenced
+([below](#the-session-theorem)); what it does not cover, the shell's
+realisation of that model, is ledgered.
 
 ### The interface, version 0, in numbers
 
@@ -682,6 +686,37 @@ encoded (`--exe`'s: 956 to 977 bytes). Executables of the
   74); three `echo` sessions equal to the transcripts Lean's interpreter
   prints; the confinement read from `/proc`; the system calls under `strace`;
   and `ixcc compile --exe --machine` in-process.
+- **Sessions of more than 1,000 calls** (`tests-exe`; the part's assertions
+  are 4,511 with them): two `echo` sessions, over argument blocks of at least
+  600 bytes drawn by a fixed generator from printable ASCII and multibyte
+  UTF-8, of 1,535 and 1,432 calls. Each agrees three ways: the transcript
+  Lean's interpreter prints (standard output, standard error, status and
+  number of calls, recorded with the command that prints it); the executable;
+  and the session model itself (`Exe.Machine.runFor`, whose trace
+  `runFor_performs` shows the model allows) with the linked object's calls on
+  the byte evaluator, under the driver the executable's step call is meant to
+  see. Lean's interpreter shares no code with IxCC, its compiler or the shell,
+  and the platform model it runs under is written in the family's source in
+  plain Lean. The model run costs about 100 s of the suite's time.
+
+### The library under the middle end (*measured*)
+
+The library's shape works around today's middle end. In its walk, the
+β-reduction of a once-used local function is charged its whole body against a
+copy budget, so a chain of `if`s costs quadratically, and a round that would
+pass the budget leaves the function unreduced. A change to that accounting is
+under way. Before it, under `--rc auto`, with the closures step's survey
+(`tests-corpus --survey`):
+
+| root | closure keys, dispatchers | policy | text bytes |
+| --- | --- | --- | ---: |
+| `fibMain`, the library as shipped | none (the closures step leaves the program unchanged) | zero RC | 5,852 |
+| `fibMainHO`, the shipped library through a closure | 423, 2 | plain RC | 165,137 |
+| the first library's message step (`if` and `==` chains, three tables) | 105, 2 | plain RC | 48,377 |
+| the first library's `fibMain` | 237, 2 | plain RC | 132,155 |
+| the first library's `fibMainHO` | 353, 2 | plain RC | 181,529 |
+
+*After* the change: planned, on the same roots, when it lands.
 
 ### What is assumed and not proved for an X2 executable
 
@@ -708,16 +743,68 @@ separately from `--exe`'s shell so that each can be retired on its own:
   proof needs a return address and register file per call site, as recorded
   for X0.
 
-### The session theorem (planned, stage 2)
+### The session theorem
 
-Over the linked-object model, by induction over the session from the per-call
-theorems (`Recheck.sound` for immortal and zero-RC objects, `RcReplay.sound`
-for plain RC), quantifying a driver per call: every finite trace of platform
-events a machine's session performs, with the environment's answers, is one
-obtained by iterating the source step on those answers; or it is such a prefix
-followed by a resource failure; or the source step goes wrong at a call its own
-session reaches. It holds for a machine root whose declared parameter count is
-two, which makes every call one the per-call theorems cover.
+**Proved and fenced** ([`IxCC/Exe/Machine.lean`](../IxCC/Exe/Machine.lean),
+[`IxCC/Exe/Machine/Sound.lean`](../IxCC/Exe/Machine/Sound.lean); on the standard
+axioms), over the linked-object model, by induction over the session from the
+per-call theorems (`Recheck.sound` for immortal and zero-RC objects,
+`RcReplay.sound` for plain RC):
+
+```lean
+theorem machine_session_sound (h : Recheck.run cfg P c = .ok a) {r : Recheck.Root}
+    (hm : Exe.machine a = .ok r) (args : List (List Nat)) {t : List Event}
+    (ho : Performs (objCall a) (Config.initial args) t) :
+    Performs (srcCall a) (Config.initial args) t ∨
+    (∃ t₀ c' f b, t = t₀ ++ [.fail (statusOf f) b] ∧ Reaches (srcCall a) (Config.initial args) t₀ c') ∨
+    ∃ t₀ c', Reaches (srcCall a) (Config.initial args) t₀ c' ∧ a.front.GoesWrong (0, [c'.state, c'.event])
+```
+
+In words:
+- **A trace** is the list of platform events a session performs, one per call
+  of the step: `arg a` (an argument byte, or 256 or 257, the answer to an
+  `arg` request), `write fd b ok` (one byte written to standard output or
+  error and whether the platform wrote it), `exit c` (the program's exit), and
+  `fail s r` (the shell's report of a failure with status `s`, and whether its
+  message was written). The environment's answers are part of it: the bytes of
+  the argument block (`args`, delivered from the first call's configuration,
+  state 0 and the argument count) and the outcome of every write. A finite
+  trace is either the session still running after it, or one whose last event
+  ended it.
+- **The object's session** (`objCall a`): each call is the linked object run
+  on the state and the event, under *any* driver that keeps the contract and
+  so from *any* bytes (each call starts from whatever the previous one left),
+  at any clock.
+- **The source step's iteration on the same answers** (`srcCall a`): the same
+  session with each call replaced by SrcEval of the step on the same state and
+  event, its value viewed at the root's readback type, split into the next
+  state and a request, and the request answered as the trace records. It is
+  deterministic (`srcCallOf_functional`): one outcome per call.
+- **The three outcomes.** Every finite trace the object's session performs is
+  (1) one the source step's iteration performs, event for event; or (2) a
+  prefix the source's iteration performs, followed by a resource failure (heap,
+  stack or `natOverflow`: the object may add one, the source cannot); or (3) a
+  trace along which the source step goes wrong (is stuck, traps, or returns a
+  value its readback type does not read) at a call the source's own iteration
+  reaches. No event outside the interface can occur: the model has none.
+- **What it leaves out.** (a) *Progress*: it does not say that the object's
+  session carries on as long as the source's does (a call that runs out of
+  clock or diverges simply performs no further event); the per-call
+  divergence clause would give it. (b) *The shell*: it is a statement about
+  the model, not the process; that the executable's shell makes the calls and
+  performs the requests as the model says is the ledgered assumption above.
+
+**So an X2 executable's guarantee today** is: for a step `Exe.machine`
+accepts in an object `Recheck.run` (or `RcReplay.run`) made, if the shell and
+the platform behave as ledgered, every run's output, errors and status are
+those of the source step iterated on the run's arguments and the platform's
+answers, up to a final resource failure, unless the step goes wrong on the
+way. `session_sound` and `Rc.session_sound` state the same from any
+configuration, for a root whose declared parameter count is two
+(`MachineRoot`, which makes every call one the per-call theorems cover;
+`machine_root` derives it from `Exe.machine`). The model as a function,
+`runFor`, gives only traces the model allows (`runFor_performs`), which is how
+the tests above run the model.
 
 ## The C drivers, removed
 

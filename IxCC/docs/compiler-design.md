@@ -964,7 +964,7 @@ rest).
   and the step once per request, performs the request and passes its answer
   back as the next event. It parses and renders nothing: a program does that
   in Lean compiled with it (`lib/IxccExe.lean`). The region is a segment of its
-  own; the session theorem is planned
+  own; the session theorem is proved over the linked-object model
   ([design](standalone-executables-design.md#x2-as-implemented)).
 
 ## Bootstrap and trust

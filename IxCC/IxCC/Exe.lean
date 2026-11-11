@@ -80,13 +80,20 @@ def build (a : Artifact) (layout : X86.Exe.Layout := {}) :
 
 /-! ## Numeric state machines (`--machine`) -/
 
+/-- The first source root's declared parameter count is two: every call of a
+machine's step is then one the per-call theorems cover (`Front.Covered`). -/
+def declaredTwo (src : Src.Program) : Bool :=
+  match src.roots[0]? with
+  | some (_, c) => Recheck.declaredParams src c == some 2
+  | none => false
+
 /-- The root a machine executable runs: the first, of exactly two `Nat`
 parameters (a state and an event; declared and at Cfg) and a `Nat` result
 (the next state and a request, `IxCC/Exe/Machine.lean`); else
 `exe.machine`. -/
 def machine (a : Artifact) : Except Err Root := do
   let some root := a.roots.head? | throw (err "exe.root" "the program has no root")
-  unless root.params == 2 && CompileClaim.rootParamsAllNat a.src root do
+  unless root.params == 2 && CompileClaim.rootParamsAllNat a.src root && declaredTwo a.src do
     throw (err "exe.machine" s!"root {root.name} is not a numeric state machine: its step takes two Nat \
       parameters, a state and an event")
   match root.ty with

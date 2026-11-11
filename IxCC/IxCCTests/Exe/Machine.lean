@@ -1,4 +1,5 @@
 import IxCCTests.Exe.Run
+import IxCCTests.Exe.MachineSessions
 
 /-! The numeric state machines' part of `tests-exe`: what `ixcc compile --exe
 FILE --machine` writes (`IxCC/X86/Exe/Machine.lean`), for the roots of the
@@ -206,6 +207,39 @@ def part (a : Assert) (o : IxCCTests.Exe.Suite.Options) (work : FilePath) : IO (
     expect a (code.toNat == status && stdout == hexBytes o' && stderr == hexBytes e')
       s!"echo {args}: exit {code}, {stdout.size} and {stderr.size} bytes"
   out := out.push s!"echo: {echoSessions.length} sessions equal the transcripts of Lean's interpreter"
+  -- the long sessions, three ways: Lean's transcript, the executable, and the
+  -- session model (`Exe.Machine.runFor`, whose trace `runFor_performs` says the
+  -- model allows) with the linked object's calls on the byte evaluator, under
+  -- the driver the executable's step call is meant to see
+  let (_, _, echoArt) ← compileNamed machines "machines" "Machines.echo"
+  expectEq a MachineSessions.transcripts.length MachineSessions.sessions.length
+    "the long sessions' transcripts (run tests-exe --session-lines through the oracle)"
+  match IxCC.Exe.buildMachine echoArt with
+  | .error e => expect a false s!"Machines.echo: {e.render}"
+  | .ok ⟨_, c⟩ =>
+    let some stepCall := c.checked.plan.calls[1]? | throw (IO.userError "Machines.echo: no step call")
+    let D := ({} : Layout).driverWith c.checked.plan.placement.textOffset stepCall.ret fun _ => 0
+    let call := fun s e => IxCC.Sem.Lang.run (echoArt.linked D) (0, [s, e]) 1000000
+    let mut longest := 0
+    for (args, (o', e', status, calls)) in MachineSessions.sessions.zip MachineSessions.transcripts do
+      let bytes := args.map fun s => s.toUTF8.toList.map (·.toNat)
+      let t := IxCC.Exe.Machine.runFor call true 100000 (.initial bytes)
+      let outB : ByteArray := ⟨(t.filterMap fun | .write 1 b true => some (UInt8.ofNat b) | _ => none).toArray⟩
+      let errB : ByteArray := ⟨(t.filterMap fun | .write 2 b true => some (UInt8.ofNat b) | _ => none).toArray⟩
+      let ended := match t.getLast? with
+        | some (.exit code) => some code
+        | _ => none
+      let size := (bytes.map List.length).sum
+      expect a (outB == hexBytes o' && errB == hexBytes e' && ended == some status && t.length == calls)
+        s!"echo, {size} argument bytes: the model on the byte evaluator makes {t.length} calls and ends \
+          {repr ended}; Lean's interpreter {calls} and {status}"
+      expect a (1000 ≤ calls && 600 ≤ size) s!"echo: a session of {calls} calls over {size} bytes"
+      let (code, stdout, stderr) ← runBytes echo args
+      expect a (code.toNat == status && stdout == hexBytes o' && stderr == hexBytes e')
+        s!"echo, {size} argument bytes: the executable exits {code} with {stdout.size} and {stderr.size} bytes"
+      longest := max longest calls
+    out := out.push s!"echo: {MachineSessions.sessions.length} long sessions (up to {longest} calls) agree three \
+      ways: Lean's transcript, the executable, and the session model on the byte evaluator"
   -- confinement, read from /proc while a long run is under way
   let mine := filters (← IO.FS.readFile "/proc/self/status")
   let child ← IO.Process.spawn { cmd := fibM.toString, args := #["38"], stdout := .null, stderr := .null }

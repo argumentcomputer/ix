@@ -22,7 +22,8 @@ and renders in Lean, byte for byte (`tests-exe` checks it), then:
 The cases are states and events chosen to cover every phase and transition;
 each runs at every level and natively (`tests-corpus`), and `tests-exe` runs
 the roots as machine executables, `fib` beside `--exe`'s `fib`, and `echo`'s
-sessions against the transcripts Lean's interpreter prints. The oracle driver
+sessions against the transcripts Lean's interpreter prints (two of them over more
+than 1,400 calls, also against the session model on the byte evaluator). The oracle driver
 (`main`) answers a line `ROOT S E` with the step's value, and a line
 `session ROOT ARG…` with the transcript of a session under a model of the
 platform written in the source in plain Lean (standard output and error in

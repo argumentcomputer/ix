@@ -3092,7 +3092,8 @@
   "IxCCTests.Fences.Fir":
   {"path": "IxCCTests/Fences/Fir.lean", "imports": ["IxCC.Fir.Semantics"]},
   "IxCCTests.Fences.Exe":
-  {"path": "IxCCTests/Fences/Exe.lean", "imports": ["IxCC.Exe"]},
+  {"path": "IxCCTests/Fences/Exe.lean",
+   "imports": ["IxCC.Exe", "IxCC.Exe.Machine.Sound"]},
   "IxCCTests.Fences.Erase":
   {"path": "IxCCTests/Fences/Erase.lean",
    "imports":
@@ -3285,8 +3286,11 @@
    "imports": ["IxCCTests.Corpus.Run", "IxCCTests.Exe.Session", "IxCC.Cli"]},
   "IxCCTests.Exe.Main":
   {"path": "IxCCTests/Exe/Main.lean", "imports": ["IxCCTests.Exe.Machine"]},
+  "IxCCTests.Exe.MachineSessions":
+  {"path": "IxCCTests/Exe/MachineSessions.lean", "imports": []},
   "IxCCTests.Exe.Machine":
-  {"path": "IxCCTests/Exe/Machine.lean", "imports": ["IxCCTests.Exe.Run"]},
+  {"path": "IxCCTests/Exe/Machine.lean",
+   "imports": ["IxCCTests.Exe.Run", "IxCCTests.Exe.MachineSessions"]},
   "IxCCTests.Corpus.ToolMain":
   {"path": "IxCCTests/Corpus/ToolMain.lean",
    "imports": ["IxCCTests.Corpus.Build", "IxCCTests.Corpus.KernelGen"]},
@@ -6209,8 +6213,16 @@
   "IxCC.Fir.Lower":
   {"path": "IxCC/Fir/Lower.lean",
    "imports": ["IxCC.Fir.Syntax", "IxCC.Anf.WellFormed", "IxCC.Anf.Census"]},
+  "IxCC.Exe.Machine.Sound":
+  {"path": "IxCC/Exe/Machine/Sound.lean",
+   "imports":
+   ["IxCC.Exe",
+    "IxCC.Exe.Machine",
+    "IxCC.Recheck.Proof.Soundness",
+    "IxCC.Recheck.Rc.Proof.ObjectSound"]},
   "IxCC.Exe.Machine":
-  {"path": "IxCC/Exe/Machine.lean", "imports": ["IxCC.Sem.Result"]},
+  {"path": "IxCC/Exe/Machine.lean",
+   "imports": ["IxCC.Sem.Result", "IxCC.Sem.Simulation"]},
   "IxCC.Exe":
   {"path": "IxCC/Exe.lean",
    "imports":

@@ -444,6 +444,7 @@
   "IxCC.Compiler.Proof",
   "IxCC.Exe",
   "IxCC.Exe.Machine",
+  "IxCC.Exe.Machine.Sound",
   "IxCC.Fir.Lower",
   "IxCC.Fir.Proof.Corr",
   "IxCC.Fir.Proof.Correct",
@@ -1603,7 +1604,7 @@
   "IxCCTests.Sem.Toy.Stack",
   "IxCCTests.Sem.Toy.Tick"],
  "baseline":
- "X2 stage 1: numeric state machines, the generic request shell, the IxccExe library and the phase1-machines family",
+ "X2: numeric state machines, the session theorem over the linked-object model and its fences",
  "axiom_sha256":
- "8030aeffbd460db205dfcaab0ca0d8f0abe0e790065d1001d1fdc4590effbb50",
- "axiom_count": 5881}
+ "8c06fafb5380cdf9edbc1a10fe59ce6ac7832b07b67aafe5379d0b7b0079bdfa",
+ "axiom_count": 5892}

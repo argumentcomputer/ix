@@ -471,4 +471,6 @@ driver; option (b) is its later stage, in which the program calls platform
 procedures (machine-level code generated from Lean, the only place the
 system-call instruction appears) and each call is a traced event, which is
 what ordinary Lean `IO` needs. A numeric form of (a), on `Nat` states with no
-heap carried across calls, can come before DR6.
+heap carried across calls, can come before DR6: implemented as X2
+([standalone executables](standalone-executables-design.md#x2-as-implemented)),
+with the session theorem over the linked-object model.

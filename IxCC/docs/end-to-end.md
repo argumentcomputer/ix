@@ -217,8 +217,9 @@ executables](standalone-executables-design.md)). For a numeric state machine
 (`ixcc compile --exe --machine`, implemented) the statement is a session
 theorem: every trace of platform events the process performs, with the
 environment's answers, is one obtained by iterating the source step on those
-answers unless the step goes wrong on the way (planned over the linked-object
-model, from the per-call statement; [X2](standalone-executables-design.md#x2-as-implemented)).
+answers unless the step goes wrong on the way (proved over the linked-object
+model, from the per-call statement; that the shell realises the model is
+assumed; [X2](standalone-executables-design.md#the-session-theorem)).
 
 ### Aiur, form (i): the fixed evaluator circuit (first)
 
