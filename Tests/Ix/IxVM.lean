@@ -145,7 +145,10 @@ cannot export), with claims that assume their binding. -/
 def entryCheckEntries : List (String × Nat) := [
   ("Tests.Ix.Kernel.EntryCaseDefs.BD1.rec", 670_603_358),
   ("Tests.Ix.Kernel.EntryCaseDefs.BD2.rec", 683_251_342),
-  ("Tests.Ix.Kernel.EntryCaseDefs.EA.rec", 1_059_422_895)]
+  ("Tests.Ix.Kernel.EntryCaseDefs.EA.rec", 1_059_422_895),
+  ("Tests.Ix.Kernel.EntryCaseDefs.GA.rec", 0),
+  ("Tests.Ix.Kernel.EntryCaseDefs.GB.rec", 0),
+  ("Tests.Ix.Kernel.EntryCaseDefs.GE.rec", 0)]
 
 /-- A `Check` claim on `name` over `ixonEnv`. -/
 def kernelCheckCase (ixonEnv : Ixon.Env) (name : Lean.Name) (assumeBinding : Bool) :

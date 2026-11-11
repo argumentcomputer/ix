@@ -956,6 +956,7 @@ theorem compiled_inductive_unit_reads {P : KeyScope .source} (hP : P.Pre) (hf : 
     (good : ∀ rb, conv.quotient ρ = .inductive rb → rb.Good P) {stS : State .source}
     (typesGood : ∀ k : Key .source, k.Good P → ∀ p, stS.constTypes[k]? = some p → p.2.Good P)
     (blocksGood : ∀ k : Key .source, k.Good P → ∀ b, stS.indBlocks[k]? = some b → b.Good P)
+    (valuesGood : ∀ k : Key .source, k.Good P → ∀ p, stS.defValues[k]? = some p → p.2.Good P)
     {rS : Read .source} (lowered : Ix.LeanIngress.lower stS (conv.quotient ρ) = .ok rS) :
     ∀ stA : State .anon, StreamRename.StateRen f P stS stA →
       ∃ rA, readRecord cx stA owner out₁.block = .ok rA ∧ StreamUnits.ReadRen f rS rA := by
@@ -991,7 +992,7 @@ theorem compiled_inductive_unit_reads {P : KeyScope .source} (hP : P.Pre) (hf : 
       rw [h] at hlenT
       simp at hlenT
       omega)
-    hinfo hindexed (by rw [order, hlenT]) hlenT hcsize ?typeFacts ?recFacts good typesGood blocksGood lowered
+    hinfo hindexed (by rw [order, hlenT]) hlenT hcsize ?typeFacts ?recFacts good typesGood blocksGood valuesGood lowered
   case typeFacts =>
     intro i hi hi' hc
     have hiI : i < (indsOf types ctors).length := hlenI ▸ hi

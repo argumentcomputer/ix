@@ -653,10 +653,16 @@ structure State (md : Mode) where
   modeller generated (counts, for the drivers' receipts) -/
   projRewrites : Nat := 0
   generated : Nat := 0
+  /-- the definitions' level parameters and values, by name: the modeller reads
+  a former declared at a definition at its unfolding (`InModel.readFormer`) -/
+  defValues : Std.HashMap (CName md) (List LevelParam × CExpr md) := {}
   deriving Inhabited
 
-/-- Record a declaration's constants (`ExportC.noteDecl`). -/
+/-- Record a declaration's constants (`ExportC.noteDecl`), and a definition's value. -/
 def State.note (st : State md) (d : CDecl md) : State md :=
+  let st := match d with
+    | .defnDecl cv v _ => { st with defValues := st.defValues.insert cv.name (cv.levelParams, v) }
+    | _ => st
   let cvs : List (CName md × List LevelParam × CExpr md × Option Nat) := match d with
     | .axiomDecl cv => [(cv.name, cv.levelParams, cv.type, none)]
     | .defnDecl cv _ h =>
@@ -996,7 +1002,8 @@ def lowerInductiveDecls (st : State md) (rb : BlockRead md) : ReadM (Read md) :=
     -- decoder (`installIndD` registers the block before generating)
     let ctx : Ix.Kernel.Frontend.InModel.Ctx md :=
       ⟨fun n => st.constTypes[n]?, fun n => st.heights.getD n 0,
-       fun n => if memberNames.contains n then some b else st.indBlocks[n]?⟩
+       fun n => if memberNames.contains n then some b else st.indBlocks[n]?,
+       Ix.Kernel.Frontend.InModel.valuesOff fun n => st.defValues[n]?⟩
     match Ix.Kernel.Frontend.InModel.generate ctx b with
     | .error why => declined s!"in-process model of {(types[0]?.map (toString ·.1.name)).getD "[anonymous]"}: {why}"
     | .ok gen => pure { decls := gen.toArray.push decl, generated := gen.length, owners, blocks }

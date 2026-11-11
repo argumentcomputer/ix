@@ -1597,6 +1597,168 @@ theorem genNested_mapKeys (hP : P.Pre) (hf : InjOn f P) {ctx : Ctx md} {ctx' : C
         · rg
         · refine RG.eq_of (P := P) ?_; rg
 
+/-! ## Formers declared at a definition -/
+
+/-- `deltaHead` commutes with the renaming at agreeing value tables, and unfolds a
+good term to a good one. -/
+theorem deltaHead_mapKeys {vals : ConstTable md} {vals' : ConstTable md'} (hv : TblOn P f vals vals') :
+    ∀ (e : Expr md), e.Good P →
+      deltaHead vals' (e.mapKeys f) = (deltaHead vals e).map (Expr.mapKeys f) ∧
+      ∀ r, deltaHead vals e = some r → r.Good P
+  | .const c us, he => by
+    refine ⟨?_, ?_⟩
+    · simp only [Expr.mapKeys, deltaHead, hv.agree c he]
+      cases vals c with
+      | none => rfl
+      | some p =>
+        obtain ⟨lps, v⟩ := p
+        simp only [Option.map_some, Option.bind_some]
+        split <;> simp [Expr.mapKeys_instantiateLevelParams]
+    · intro r hr
+      simp only [deltaHead] at hr
+      cases hc : vals c with
+      | none => rw [hc] at hr; exact nomatch hr
+      | some p =>
+        obtain ⟨lps, v⟩ := p
+        rw [hc] at hr
+        simp only [Option.bind_some] at hr
+        split at hr
+        · cases hr; exact Expr.Good.instantiateLevelParams (hv.good c he _ hc) _ _
+        · exact nomatch hr
+  | .app g a, he => by
+    obtain ⟨hg, ha⟩ := he
+    obtain ⟨ih1, ih2⟩ := deltaHead_mapKeys hv g hg
+    refine ⟨?_, ?_⟩
+    · simp only [Expr.mapKeys, deltaHead, ih1]
+      cases deltaHead vals g <;> rfl
+    · intro r hr
+      simp only [deltaHead] at hr
+      cases hd : deltaHead vals g with
+      | none => rw [hd] at hr; exact nomatch hr
+      | some g' => rw [hd] at hr; cases hr; exact ⟨ih2 g' hd, ha⟩
+  | .bvar _, _ => ⟨rfl, fun _ h => nomatch h⟩
+  | .fvar _ _, _ => ⟨rfl, fun _ h => nomatch h⟩
+  | .sort _, _ => ⟨rfl, fun _ h => nomatch h⟩
+  | .lam _ _ _, _ => ⟨rfl, fun _ h => nomatch h⟩
+  | .forallE _ _ _, _ => ⟨rfl, fun _ h => nomatch h⟩
+  | .letE _ _ _ _, _ => ⟨rfl, fun _ h => nomatch h⟩
+  | .lit _, _ => ⟨rfl, fun _ h => nomatch h⟩
+  | .proj _ _ _, _ => ⟨rfl, fun _ h => nomatch h⟩
+
+/-- `formerTeleF` commutes with the renaming at agreeing value tables, and reads a
+good type to a good one. -/
+theorem formerTeleF_mapKeys {vals : ConstTable md} {vals' : ConstTable md'} (hv : TblOn P f vals vals') :
+    ∀ (fuel n : Nat) (e : Expr md), e.Good P →
+      formerTeleF vals' fuel n (e.mapKeys f) = (formerTeleF vals fuel n e).map (Expr.mapKeys f) ∧
+      ∀ r, formerTeleF vals fuel n e = some r → r.Good P := by
+  intro fuel
+  induction fuel with
+  | zero => intro n e _; exact ⟨rfl, fun _ h => nomatch h⟩
+  | succ fuel ih =>
+    intro n e he
+    -- the unfolding step
+    have hstep : ∀ e : Expr md, e.Good P →
+        ((deltaHead vals' (e.mapKeys f)).bind (betaHeadF fuel)).bind (formerTeleF vals' fuel n) =
+          (((deltaHead vals e).bind (betaHeadF fuel)).bind (formerTeleF vals fuel n)).map (Expr.mapKeys f) ∧
+        ∀ r, ((deltaHead vals e).bind (betaHeadF fuel)).bind (formerTeleF vals fuel n) = some r → r.Good P := by
+      intro e he
+      obtain ⟨hd1, hd2⟩ := deltaHead_mapKeys hv e he
+      rw [hd1]
+      cases hd : deltaHead vals e with
+      | none => exact ⟨rfl, fun _ h => nomatch h⟩
+      | some e1 =>
+        have he1 := hd2 e1 hd
+        simp only [Option.map_some, Option.bind_some, betaHeadF_mapKeys]
+        cases hb : betaHeadF fuel e1 with
+        | none => exact ⟨rfl, fun _ h => nomatch h⟩
+        | some e2 =>
+          simp only [Option.map_some, Option.bind_some]
+          exact ih n e2 (betaHeadF_good fuel he1 hb)
+    cases e with
+    | forallE d b m =>
+      obtain ⟨hd, hb⟩ := he
+      cases n with
+      | zero => exact ⟨rfl, fun _ h => nomatch h⟩
+      | succ n =>
+        obtain ⟨ih1, ih2⟩ := ih n b hb
+        refine ⟨?_, ?_⟩
+        · show (formerTeleF vals' fuel n (b.mapKeys f)).map (fun b' => Expr.forallE (d.mapKeys f) b' m) =
+            ((formerTeleF vals fuel n b).map (fun b' => Expr.forallE d b' m)).map (Expr.mapKeys f)
+          rw [ih1]
+          cases formerTeleF vals fuel n b <;> rfl
+        · intro r hr
+          change (formerTeleF vals fuel n b).map (fun b' => Expr.forallE d b' m) = some r at hr
+          cases hf : formerTeleF vals fuel n b with
+          | none => rw [hf] at hr; exact nomatch hr
+          | some b' => rw [hf] at hr; cases hr; exact ⟨hd, ih2 b' hf⟩
+    | sort u =>
+      cases n with
+      | zero =>
+        refine ⟨rfl, fun r hr => ?_⟩
+        have h := Option.some.inj hr
+        subst h
+        trivial
+      | succ n => exact ⟨rfl, fun _ h => nomatch h⟩
+    | bvar i => exact hstep _ he
+    | fvar i t => exact hstep _ he
+    | const c us => exact hstep _ he
+    | app g a => exact hstep _ he
+    | lam d b m => exact hstep _ he
+    | letE t v b l => exact hstep _ he
+    | lit l => exact hstep _ he
+    | proj s i x => exact hstep _ he
+
+/-- `readFormer` commutes with the renaming at an agreeing context, and reads a good
+member to a good one. -/
+theorem readFormer_mapKeys {ctx : Ctx md} {ctx' : Ctx md'} (hctx : CtxAgree f P ctx ctx')
+    {t : IndTypeRec md} (ht : t.Good P) :
+    ExRel (fun t1 t1' => t1' = t1.mapKeys f ∧ t1.Good P) (readFormer ctx t) (readFormer ctx' (t.mapKeys f)) := by
+  obtain ⟨h1, h2⟩ := formerTeleF_mapKeys hctx.values inferFuel (t.nP + t.nIdx) t.cv.type ht.1.2
+  have e : formerTele ctx'.values ((t.mapKeys f).nP + (t.mapKeys f).nIdx) (t.mapKeys f).cv.type =
+      (formerTele ctx.values (t.nP + t.nIdx) t.cv.type).map (Expr.mapKeys f) := h1
+  unfold readFormer
+  rw [e]
+  cases hft : formerTele ctx.values (t.nP + t.nIdx) t.cv.type with
+  | none => exact ExRel.error'
+  | some ty => exact ExRel.ok' ⟨rfl, ⟨ht.1.1, h2 ty hft⟩, ht.2⟩
+
+/-- `readFormers` commutes with the renaming at an agreeing context, and reads a good
+block to a good one. -/
+theorem readFormers_mapKeys {ctx : Ctx md} {ctx' : Ctx md'} (hctx : CtxAgree f P ctx ctx')
+    {b : BlockRec md} (hb : b.Good P) :
+    ExRel (fun b1 b1' => b1' = b1.mapKeys f ∧ b1.Good P) (readFormers ctx b) (readFormers ctx' (b.mapKeys f)) := by
+  obtain ⟨types, ctors, recs⟩ := b
+  obtain ⟨hty, hct, hrc⟩ := hb
+  unfold readFormers
+  refine ExRel.bind (S := ListRel fun t1 t1' => t1' = t1.mapKeys f ∧ t1.Good P)
+    (ExRel.mapM (ListRel.of_map (g := IndTypeRec.mapKeys f) hty) fun t t' htt => ?_) fun ts ts' hts => ?_
+  · obtain ⟨rfl, htg⟩ := htt
+    exact readFormer_mapKeys hctx htg
+  · obtain ⟨rfl, htsg⟩ := forall₂_map_eq hts
+    exact ExRel.pure' ⟨rfl, htsg, hct, hrc⟩
+
+theorem restoreAt_mapKeys (b : BlockRec md) (i : Nat) (d : Declaration md) :
+    restoreAt (b.mapKeys f) i (d.mapKeys f) = (restoreAt b i d).mapKeys f := by
+  cases d with
+  | defnDecl cv v h =>
+    simp only [Declaration.mapKeys, restoreAt, BlockRec.mapKeys_types, List.getElem?_map]
+    cases b.types[i - 2]? with
+    | none => rfl
+    | some t =>
+      simp only [Option.map_some]
+      by_cases hi : 2 ≤ i
+      · simp only [hi, if_true]; rfl
+      · simp only [hi, if_false]; rfl
+  | _ => rfl
+
+theorem restoreFrom_mapKeys (b : BlockRec md) :
+    ∀ (i : Nat) (ds : List (Declaration md)),
+      restoreFrom (b.mapKeys f) i (ds.map (Declaration.mapKeys f)) =
+        (restoreFrom b i ds).map (Declaration.mapKeys f)
+  | _, [] => rfl
+  | i, d :: ds => by
+    simp only [List.map_cons, restoreFrom, restoreAt_mapKeys, restoreFrom_mapKeys b (i + 1) ds]
+
 /-! ## The generator -/
 
 /-- **The generated records commute with the renaming** (parametricity, both rungs):
@@ -1612,9 +1774,14 @@ theorem generate_mapKeys (hP : P.Pre) (hf : InjOn f P) {ctx : Ctx md} {ctx' : Ct
     ExRel (fun ds ds' => ds' = ds.map (Declaration.mapKeys f))
       (generate ctx b) (generate ctx' (b.mapKeys f)) := by
   unfold generate
-  refine ExRel.ite ?_ (fun _ => genNested_mapKeys hP hf hctx hb) (fun _ => genMutual_mapKeys hP hf hctx hb)
-  simp only [BlockRec.mapKeys_types, List.any_map, Function.comp_def, IndTypeRec.mapKeys_numNested]
-  exact Iff.rfl
+  refine ExRel.bind (S := fun b1 b1' => b1' = b1.mapKeys f ∧ b1.Good P) (readFormers_mapKeys hctx hb) ?_
+  rintro b1 _ ⟨rfl, hb1⟩
+  refine ExRel.bind (S := fun ds ds' => ds' = ds.map (Declaration.mapKeys f)) ?_ ?_
+  · refine ExRel.ite ?_ (fun _ => genNested_mapKeys hP hf hctx hb1) (fun _ => genMutual_mapKeys hP hf hctx hb1)
+    simp only [BlockRec.mapKeys_types, List.any_map, Function.comp_def, IndTypeRec.mapKeys_numNested]
+    exact Iff.rfl
+  · rintro ds _ rfl
+    exact ExRel.pure' (restoreFrom_mapKeys b 0 ds)
 
 /-- `generate_mapKeys` as the runs' results: the renamed block's records are the
 renamed records, or both runs fail. -/

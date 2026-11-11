@@ -737,6 +737,7 @@ theorem inductive_unit_reads {P : KeyScope .source} (hP : P.Pre) (hf : InjOn f P
     {stS : State .source}
     (typesGood : ∀ k : Key .source, k.Good P → ∀ p, stS.constTypes[k]? = some p → p.2.Good P)
     (blocksGood : ∀ k : Key .source, k.Good P → ∀ b, stS.indBlocks[k]? = some b → b.Good P)
+    (valuesGood : ∀ k : Key .source, k.Good P → ∀ p, stS.defValues[k]? = some p → p.2.Good P)
     {rS : Read .source} (lowered : Ix.LeanIngress.lower stS (conv.quotient ρ) = .ok rS) :
     ∀ stA : State .anon, StreamRename.StateRen f P stS stA →
       ∃ rA, readRecord cx stA owner c = .ok rA ∧ StreamUnits.ReadRen f rS rA := by
@@ -757,7 +758,8 @@ theorem inductive_unit_reads {P : KeyScope .source} (hP : P.Pre) (hf : InjOn f P
   have hQ := quotient_src ρ f types ctors recs first
   have agree : CtxAgree.StateAgree f P stS stA :=
     ⟨hst.types, typesGood, fun k hk => by simp only [Std.HashMap.getD_eq_getD_getElem?, hst.heights k hk],
-     hst.blocks, blocksGood⟩
+     hst.blocks, blocksGood,
+     fun k hk _ => hst.values k hk, fun k hk _ p hp => valuesGood k hk p hp⟩
   have hnest : numNestedOf (Ix.LeanIngress.BlockRead.canon
       (Ix.LeanIngress.BlockRead.substKeys ρ (srcBlock types ctors recs first))) =
         numNestedOf (srcBlock types ctors recs first) := by
