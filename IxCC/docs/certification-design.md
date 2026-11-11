@@ -4,10 +4,15 @@ Written 2026-11-09; reworked 2026-11-10 around the goal of
 [end-to-end certification](end-to-end.md) for the x86 and Aiur back ends,
 grounded in Ixon and the certified kernel IxCK, and on 2026-11-10 again
 around the owner's architecture, in which kernel acceptance and the image's
-faithfulness are premises discharged by other proofs. **Status:** the spine
+faithfulness are premises discharged by other proofs; and on 2026-11-11
+around what the certified IxVM work's typing claims actually conclude: the
+first premise is now the existence of a model, with laws, of the closure of
+the target and the table's theorems, not acceptance of an artifact
+([the restatement](#the-restatement-of-2026-11-11)). **Status:** the spine
 below (SP-0 to SP-2, SP-A, SP-N) is **planned**; its adequacy core is
-research-grade and starts with the typing-transport question and a spike
-(SP-A). CD1 is partly done and its remaining clauses become the faithfulness
+research-grade. SP-A's typing-transport question is answered: the model gives
+no typing for subterms, so typing derivations become part of the second
+premise. CD1 is partly done and its remaining clauses become the faithfulness
 premise; CD2 is planned, off the critical path for grounding; CD3 is
 planned, demoted to a separate product; CD4 *is* the spine's adequacy work.
 The [roadmap](roadmap.md#plan) schedules the items; the
@@ -37,7 +42,7 @@ The chain from the bytes to the object's result, link by link:
 | IxCC's reading | `.ixe` bytes to IxCC's environment (`V3.decodeAnonymousEnv`), pure BLAKE3 authentication, canonicity evidence | Proved that it ran; IxCC's own framing of both envelopes, the role binding authenticated and decoded, pins from its role table ([byte contract](byte-contract.md)) | SP-0: pure BLAKE3 for every address; off the trusted path once faithfulness is a premise |
 | IxCK's reading | the same bytes to IxCK's records and declarations | Proved by IxCK (`checkBytesWith_reading`, [`IxCK/Kernel/Admission/Theorems.lean`](../../IxCK/Kernel/Admission/Theorems.lean)); needs a role binding | the reading the premises are about |
 | The two readings agree | IxCC and IxCK decode the same constants under the same keys | **Absent.** They share the constant decoder and the role vocabulary (`Ix.Kernel.Role`), not the framing or the reading into declarations | Not needed: premise (ii), or one reading by construction (SP-N) |
-| Kernel acceptance ⇒ strong model | `checkDecls_sound`, `checkBytes_strongModel` | Proved by IxCK. **Not a premise of any IxCC theorem** | Premise (i), discharged by an IxVM proof or a native run |
+| Kernel acceptance ⇒ strong model | `checkDecls_sound`, `checkBytes_strongModel` | Proved by IxCK. **Not a premise of any IxCC theorem** | Premise (i), restated: a model with the laws of the closure of the target and the table's theorems, discharged by an IxVM `checkEnv` claim on those seeds or by a native run on that closure |
 | The target names a kernel constant | `c.target` and IxCK's key agree | **Absent.** IxCC keys block members by projection addresses computed with the native BLAKE3 extern ([`Src/Ingress.lean`](../IxCC/Src/Ingress.lean)) | SP-0 (pure hashing, the claim binds the target) and premise (ii) |
 | IxCC's erased type checker | `Tc.checkEnv` ([`Ixon/V3/Tc/Driver.lean`](../IxCC/Ixon/V3/Tc/Driver.lean)), run when the `typecheck` flag is set | **No soundness theorem**; every guarantee holds with typing on or off | Off the guarantee path (DC-3) |
 | Ingress | environment to Src program (`Src.Ingress.ofEnv`) | Proved that it ran; no correspondence to IxCK's terms | Premise (ii) |
@@ -95,14 +100,15 @@ constructor of the result type).
 | Form | Statement | Verdict |
 | --- | --- | --- |
 | Reduction | the object returns `w` ⇒ `kc ns` reduces or converts to `enc w` | **Not achievable** for the fragment that matters: IxCK never unfolds theorems, so well-founded recursion has no reduction to a value, and structural recursion would need SrcEval's equation rewriting simulated by `brecOn` reductions. This was the bridge's approach |
-| Denotation with escape | ⇒ in every strong model `⟦kc ns⟧ = ⟦enc w⟧`, or the source goes wrong | Adds the kernel but keeps the certificate's escape; not useful to an evaluation-axiom consumer |
-| **Grounded** | as above without the escape, for programs passing a checked fragment condition, quantified over every model satisfying `RulesInputs` and the accepted environment's typing facts (so that IxVM's own model qualifies), under the two premises below (acceptance, faithfulness) | **The target** |
-| Evaluation axiom | the grounded form for a closed, level-free `Bool` term `e`, plus a binding of `e` to a compiled root | What IxVM needs to discharge `ax : e = true` |
+| Denotation with escape | ⇒ in every model with the laws `⟦kc ns⟧ = ⟦enc w⟧`, or the source goes wrong | Adds the kernel but keeps the certificate's escape; not useful to an evaluation-axiom consumer |
+| **Grounded** | as above without the escape, for programs passing a checked fragment condition, quantified over every model (the public `Model`) with the laws of [the law table](#the-law-table) of the kernel's reading of the closure of the seeds, under the two premises below (existence; faithfulness and typing). Split into *soundness* (a returned value reads back as the denotation) and *progress* (no stuck, no trap) | **The target** |
+| Evaluation axiom | soundness for a closed, level-free `Bool` term `e`, plus a binding of `e` to a compiled root | What IxVM needs to discharge `ax : e = true` |
 
-A form over every *weak* model is false in general (δ and ι do not hold there);
-the nearest achievable is strong models. A form for roots using
-`opaqueByValue` or recorded interpretations is false over all strong models;
-the nearest is models restricted to the interpretation.
+A form over every model of the public structure *without* laws is false in
+general (δ and ι do not hold there); the nearest achievable is models with
+the laws. A form for roots using `opaqueByValue` or recorded interpretations
+is false over all models with the laws (no law gives an opaque a value); the
+nearest is models restricted to the interpretation.
 
 ## The architecture: premises discharged by proofs
 
@@ -118,26 +124,153 @@ other proofs and composed by aggregation of claims about the same addresses:
 > name. The plan is written on this basis, to be confirmed as DC-3 in the
 > [roadmap](roadmap.md#decisions-to-confirm).)
 
-IxCC's top-level statements take two hypotheses about an environment whose
-bytes have root address `H`, read under role table `ρ`:
-1. **Acceptance.** IxCK accepts that environment.
-2. **Faithfulness.** The checked source program, as an image with digest `D`,
-   satisfies the faithfulness clauses with respect to IxCK's reading of those
-   bytes: it is the installed and lazified program read from them; its `eqn`
-   and `csimp` entries name accepted theorems with the right statements; its
+IxCC's top-level statements are about the *seeds* `S` of a checked source
+program `P` (an image with digest `D`) for target `c`: `c` and every theorem
+`P`'s unfolding table names. Let `E` be the kernel's reading of the closure
+of `S` under a role table (the kernel's reader, its prelude, and the records
+reachable from `S`). The statements take two hypotheses:
+1. **Existence.** `E` has a model with the laws of [the law
+   table](#the-law-table) in every set theory.
+2. **Faithfulness and typing.** `P` satisfies the faithfulness clauses with
+   respect to `E`: it is the installed and lazified program read from the
+   same records, each Src term corresponding node for node to the kernel
+   reader's term (`let`s kept) whose annotation `E` stores; its `eqn` and
+   `csimp` entries name theorems of `E` with the right statements; its
    relevance annotation is the one the kernel's typing judgement gives (every
    position tagged irrelevant is a type or a proof at its profile, and every
-   proof position is tagged irrelevant); its pinned identities are `ρ`'s
-   ([CD1](#cd1-the-front-end-theorem) lists the clauses).
+   proof position is tagged irrelevant); its pinned identities are the
+   table's ([CD1](#cd1-the-front-end-theorem) lists the clauses). And every
+   value, rule right-hand side and equation SrcEval runs has a typing
+   derivation in `E` in the kernel's rules (`Infer`, `DefEq`, `Red`,
+   [`IxCK/Kernel/Rules/Rel.lean`](../../IxCK/Kernel/Rules/Rel.lean)).
 
-A consumer discharges acceptance with an IxVM typing proof for `H`, and
-faithfulness with the kernel circuit's lowering claim for `(H, D)`, which has
-the kernel's reading and the types and checks the image clause by clause; or
-natively, by running IxCK and a native check (SP-N below). Composition is by
-aggregation of claims about the same addresses, the mechanism IxVM already
-has for conditional claims. IxCC embeds no proof verifier. That IxVM refines
-IxCK, so that an IxVM proof of acceptance is IxCK's acceptance, is the IxVM
-workstream's result and an external dependency of this plan.
+IxCC's obligations are then two theorems, kept apart because their
+consumers differ: **soundness** (if SrcEval returns `v` for `c` on literal
+inputs, `c` applied to them denotes what `v` reads back as, in every model of
+`E` with the laws), which needs premise (ii) only; and **progress** (on
+fragment-checked programs SrcEval is never stuck and never traps), which also
+needs premise (i). The evaluator route's discharge of `ax : e = true` uses
+soundness; the x86 claim uses both; removing `GoesWrong` is progress.
+
+A consumer discharges existence with an IxVM `checkEnv` claim whose leaves are
+`S`, and faithfulness and typing with the kernel circuit's lowering claim for
+`(S, D)`, which has the kernel's reading and the types and checks the image
+clause by clause; or natively (SP-N below). Composition is by aggregation of
+claims about the same addresses, the mechanism IxVM already has for
+conditional claims. IxCC embeds no proof verifier. That an accepted IxVM claim
+gives a model is the IxVM workstream's consistency theorem, an external
+dependency of this plan.
+
+### The restatement of 2026-11-11
+
+Until 2026-11-11 the first premise read "IxCK accepts the environment with
+root `H` under role table `ρ`", discharged by an IxVM typing proof paired with
+the compile claim on `(H, ρ)`. What the certified IxVM work (pull request #678
+and its follow-up branches; none of it in this repository) states shows that
+shape is wrong on four counts:
+
+- **The conclusion is a model, not an acceptance.** For an accepted `check` or
+  `checkEnv` claim in its default context (the kernel's default role table,
+  validated; no user axioms; no assumed leaves), the statement is: the run
+  exhibits a BLAKE3 collision, or the *claimed environment* has a model in
+  every set theory. Neither of the kernel's entries is mentioned. Other role
+  tables, user axioms and evaluation claims are outside it.
+- **The subject is the closure of the claim's seeds, not an artifact.** The
+  claimed environment is the kernel's reading, under the default table and
+  behind the committed prelude, of the closure of the seeds in the records the
+  run loaded (references, the certified operations' ground and literal
+  edges, recursors), without the auxiliary constants of the kernel's
+  inductive models. A seed that is `unsafe` or `partial` is refused, so a
+  `checkEnv` claim over the whole of an `ix compile` artifact, which always
+  holds `partial` definitions, is refused; its leaves must be safe constants.
+  Records are named by their addresses, so the claimed reading is a function
+  of the seeds and the table, whatever file the records came from (up to the
+  order of the closure and unauthenticated reducibility hints, which do not
+  change meaning).
+- **The table theorems must be seeds.** An equation or `csimp` theorem is not
+  in its function's closure. A model of the target's closure alone need not
+  make it true, and two claims give two unrelated models, so the claim must
+  be one `checkEnv` claim whose leaves include the target and every table
+  theorem.
+- **The role table differs.** The statement covers the default table, which
+  binds every role; `ix compile` writes a table per artifact binding exactly
+  the roles whose constants the artifact holds. By reading, for an artifact
+  this repository's `ix` compiles at the committed toolchain, each such table
+  binds a role to the address the same compiler gives the role's constant,
+  which is the address the default table binds, so it is a restriction of the
+  default table; that is not proved, and is checkable per artifact by
+  decoding both tables. The bridge is a lemma beside the kernel's reader: the
+  reading of a closure is the same under the default table and under a
+  restriction of it, when the closure holds no constant of a role the
+  restriction leaves unbound (which `ix compile`'s role selection ensures).
+  Planned; not stated on either side.
+
+What the IxVM statement still lacks for IxCC, as read on 2026-11-11:
+
+- **It is a reduction, not yet a theorem.** The consistency theorem takes
+  eight per-layer obligations (from the circuit's soundness to the assembly)
+  as hypotheses; none is discharged in the trees read.
+- **It does not fix values.** The claimed environment is related to the
+  reader's declarations by name, level parameters and (annotated) type only;
+  a definition may be stored as some other kind, or with some other value. A
+  model's δ law is then about whatever value is stored, and the statement does
+  not exclude `def P : Prop := False; theorem bad : P` being read with `P` an
+  axiom. IxCC needs every stored definition to be the record's definition (its
+  annotated value), and every recursor's rules the record's.
+- **It exposes no typing.** The conclusion is the model alone; the derivations
+  the proof builds per declaration (its judgement package over the kernel's
+  rules) are not in it, and a model gives no typing for subterms. Typing is
+  therefore part of premise (ii) here.
+
+### The law table
+
+What each SrcEval rule, and each kind of unfolding-table entry, needs of a
+model, which law supplies it, and the law's state in the certified IxVM work
+on 2026-11-11 (this repository's public `Model` has `mem`, `false_empty` and
+`eq_equality` only; its internal `EnvModelM` carries all of the laws for an
+accepted environment). *Typing* means the step also needs an argument's
+denotation to lie in its domain, which only premise (ii)'s derivations give.
+**Blocks** marks what the first grounded fragment cannot do without.
+
+| Rule or entry | Fact about the model | Law | State there | Typing | First fragment |
+| --- | --- | --- | --- | --- | --- |
+| E1 `var`, by-name slots | a variable denotes its slot's value; a suspended term its denotation in its own environment | none: how `Denotes` reads variables and binders | in every model | no | yes |
+| E2 `sort`, `pi` → `irr` | none (a type is never applied: applying `irr` is stuck) | none | — | no | yes |
+| E3 literals | a `Nat` literal denotes its constructor form | none: `Denotes` reads literals so | in every model | no | yes |
+| E4 `lam` → closure | a λ denotes its graph on the domain (the proof point in regime 0) | none: β and function η hold by the reading | in every model | — | yes |
+| E5 `let` | the reader's term, `let`s kept, denotes what its stored annotation (the `let`s substituted) denotes | none: a substitution lemma for `Denotes` and "the annotation pass preserves denotation" | stated on neither side | no | **blocks** (Lean elaborates `let` and `have`) |
+| E6 `proj` | the `i`-th projection of a constructor application is its `i`-th field | the projection of a constructor | to build | yes | **blocks** (instance methods, structures with proof fields) |
+| E7 `app`, strict, by name, `irr` | application is graph application; by-name and strict agree (no effects) | none | in every model | yes (β needs the argument in the domain) | yes |
+| E8 δ, a definition | a stored definition denotes its value, at the levels its use induces | δ (`defn_value`) | a field, proved, on a follow-up branch (not on the pull request's head) | no | **blocks** until the claim fixes values |
+| E8, level instantiation | a constant depends on the level assignment only through its own parameters | level-parameter irrelevance | a theorem of the internal-backed model, not public | no | **blocks** (every level assignment) |
+| E8, `prim` entry; F6 | the operation on literals denotes the literal of its value, for all literals (no `pow` cap) | the `Nat` accelerations | to build | no | **blocks**, unless derived from δ, ι and the role specifications (2–4k lines on IxCC's side) |
+| E8, `eqn f thm` | `⟦f xs⟧ = ⟦rhs xs⟧` for arguments in the binders' domains | none: derived from `mem` of the stored theorem and of `Eq`, and `eq_equality` (an inhabited `@Eq A a b` forces `a`, `b` into the domains, since a graph read off its domain is empty, and then equal) | `mem`, `eq_equality` fields everywhere; the derivation is IxCC's lemma | yes (the arguments) | yes, with the theorem a seed |
+| E8, `csimp f g thm` | `⟦@f⟧ = ⟦@g⟧` | as `eqn` | as `eqn` | no | yes, with the theorem a seed |
+| E8, `case` entry; F5 | `T.casesOn` on a constructor is the selected minor on its fields | δ (`casesOn`'s value) and ι | δ and ι fields, proved | yes | yes |
+| E8, `opaqueByValue` | an opaque denotes its stored value | none, by design | — | — | excluded |
+| E8, theorem, axiom, other opaque, `unsafe`, `partial` | none: stuck | — | — | — | excluded by the fragment check (progress) |
+| A1 β on a closure | graph application on the domain; SrcEval's `propWhen` gate agrees with the binder's regime | none | in every model | yes | yes |
+| A2 partial applications; A3 stuck | none | — | — | — | yes |
+| F1 constructors; `Nat.zero`, `Nat.succ` to literals | a constructor is its constant; `Nat.succ (lit n)` and `lit (n+1)` denote alike | none: the literal reading | in every model | no | yes |
+| F2 ordinary ι, `Nat` literal majors | every stored rule computes as Lean's | ι (`iota_rule`) | a field, proved, on the same follow-up branch since 2026-11-11 | yes | yes |
+| F3 subsingleton ι without the major | the major denotes the proof point, which is the constructor application, with indices equal | ι, proof irrelevance and the `Eq` derivation above | as ι | yes | yes (`Decidable` does not need it; `Eq.rec` casts do) |
+| F4 empty recursors trap | no member of an empty type | `false_empty`-like emptiness of the inductive's denotation, from ι and `mem` | — | yes | progress only |
+| F7 `Quot.mk`; F8 `Quot.lift` | `Quot.lift f h (Quot.mk a) = f a` | ι (the quotient's rules are stored as recursor rules) | as ι | yes | later fragment |
+| E9 strings | — | — | — | — | later fragment |
+| `lazy` entries | none: they change evaluation modes only (`Lazify.run_modeEq`) | — | — | — | yes |
+| `inline` hints | none: no semantic effect | — | — | — | yes |
+| `recKind` (ordinary, subsingleton, empty) | the kind is right at the profile | a faithfulness clause, decided with typing | — | yes | yes |
+| relevance (`irr` at concrete levels) | an `irr` position is a type or a proof there, and conversely | a faithfulness clause; level irrelevance | — | yes | yes |
+| (all rules) typing | every derivation of the kernel's rules is sound in every model with the laws | `infer_sound` and `defeq_sound` restated over the public model (they need δ, ι, the projections, structure and unit-like η and the `Nat` rows) | stated over the internal invariant only | — | **blocks** |
+
+The blocking rows for the first fragment are therefore: values fixed by the
+IxVM claim (or the native route), typing in premise (ii) with the rules'
+soundness over the public model, `let` (ζ), the projection of a constructor,
+the `Nat` operations, and public level irrelevance. Quotients, strings and the
+data primitives block only later fragments. SP-0 states the laws in Lean as
+an explicit structure of hypotheses about a model, named as on the IxVM side
+where a law exists there, so that the statements elaborate here before any of
+that work lands.
 
 **What this removes from IxCC's obligations.**
 - A soundness theorem for IxCC's erased type checker. It stops being part of
@@ -162,9 +295,10 @@ workstream's result and an external dependency of this plan.
   types decides. `checkCanonical` and the byte-level re-derivation of the
   annotation stay as IxCC's own early refusals, untrusted.
 
-**What it does not remove.** The adequacy of SrcEval for the kernel's
-models, with progress. Acceptance says the program is well typed, not that
-SrcEval computes its denotation; it is the premise that proof consumes.
+**What it does not remove.** Soundness and progress of SrcEval for the
+kernel's models. Existence says the environment has a model, and typing says
+its terms are well typed; neither says that SrcEval computes the denotation.
+They are what those proofs consume.
 
 ## The spine's work
 
@@ -196,30 +330,43 @@ bytes the IxVM proof is about and state what it guarantees about them.
   IxVM's do (implemented for role-bound closures, `Src.Pinned.ofRoles`); IxCC's
   fixed pins ([`Src/Pinned.lean`](../IxCC/Src/Pinned.lean)) stay for unbound
   closures.
-- **The claim binds what composition needs.** The environment root `H`, the
-  target, the role table and the image digest `D` (today the claim binds the
-  root, the role table, the target, the policy, the arity and the object
-  hash; the image digest waits for the image). The verifier
-  checks that `D` is the digest of the checked source program it compiled.
-- **The conditional statement.** The faithfulness predicate defined in Lean,
-  with a structural map from IxCK's terms to `Src.Term` as its specification
-  (nested inductives excluded); the [x86](end-to-end.md#x86-the-proved-pipeline)
+- **The claim binds what composition needs.** The target and the image digest
+  `D`, which together determine the seeds `S` (the target and the theorems
+  `D`'s table names); the environment root `H` and the role table `ρ` stay as
+  what IxCC read (today the claim binds the root, the role table, the target,
+  the policy, the arity and the object hash; the image digest waits for the
+  image). The verifier checks that `D` is the digest of the checked source
+  program it compiled. A consumer pairs the claim with an IxVM `checkEnv`
+  claim whose leaves are `S`, in the default context, and with the check that
+  `ρ` is a restriction of that claim's table.
+- **The conditional statement.** The laws as an explicit structure of
+  hypotheses about a model (named as on the IxVM side where a law exists
+  there); the faithfulness and typing predicate defined in Lean, with a
+  structural map from IxCK's reader terms (`let`s kept) to `Src.Term` as its
+  specification (nested inductives excluded); soundness and progress as
+  separate propositions; the [x86](end-to-end.md#x86-the-proved-pipeline)
   and [evaluator](end-to-end.md#aiur-form-i-the-fixed-evaluator-circuit-first)
-  statements, composed from today's object theorem, the two premises and an
-  adequacy lemma taken as an explicit hypothesis, which SP-1 discharges.
-- **The small lemmas**, in every strong model of the accepted environment:
-  - `eqn f thm` and `csimp f g thm`: once each entry's theorem is identified
-    by address in the accepted environment, from "accepted theorems are true
-    in the model" (stored constants inhabit their types, and the `Eq` law), so
-    `⟦f xs⟧ = ⟦rhs⟧` and `⟦@f⟧ = ⟦@g⟧`; stated once, for IxCC and for an
-    evaluation-axiom discharge path alike;
-  - `case T`: from the stored value of `T.casesOn` and the recursor rules;
+  statements, composed from today's object theorem, the two premises and
+  soundness and progress taken as explicit hypotheses, which SP-1 discharges.
+- **The small lemmas**, in every model with the laws:
+  - `eqn f thm` and `csimp f g thm`: from `mem` (the stored theorem, and
+    `Eq`) and `eq_equality`, which are fields of the public model already: an
+    inhabited `@Eq A a b` forces `a` and `b` into their domains (a graph read
+    off its domain is empty) and then equal; so `⟦f xs⟧ = ⟦rhs⟧` for
+    arguments in the binders' domains and `⟦@f⟧ = ⟦@g⟧`; stated once, for
+    IxCC and for an evaluation-axiom discharge path alike;
+  - `case T`: δ on `T.casesOn` and ι on its recursor;
   - the fifteen `Nat` primitives (fourteen binary operations and `pred`,
-    [`Src/Prim.lean`](../IxCC/Src/Prim.lean)) against the kernel's literal
-    laws and operation table (`natOpResult`,
-    [`IxCK/Kernel/CoreDefs.lean`](../../IxCK/Kernel/CoreDefs.lean)), with no
-    evaluation caps;
-  - recursor kinds: proof irrelevance and emptiness;
+    [`Src/Prim.lean`](../IxCC/Src/Prim.lean)): from the `Nat` accelerations
+    law if the kernel side adds it, stated on all literals (the kernel's
+    reduction table `natOpResult`,
+    [`IxCK/Kernel/CoreDefs.lean`](../../IxCK/Kernel/CoreDefs.lean), declines
+    `pow` above an exponent of `2^24`, a limit of reduction, not of meaning);
+    otherwise derived by induction from δ, ι and the role specifications'
+    equations, which the role table's admission checks;
+  - recursor kinds: proof irrelevance, ι and emptiness;
+  - `let`: a substitution lemma for `Denotes` and "the annotation pass
+    preserves denotation", relating the reader's term to the stored one;
   - readback: an observation's tag is the constructor index, so it names a
     model value; `opaqueByValue` and recorded interpretations are excluded.
 
@@ -234,52 +381,79 @@ format.
 
 ### SP-A. Typing transport, then an adequacy spike
 
-**Planned (research).** First establish what IxCK's acceptance gives about
-the *subterms* SrcEval evaluates. The model invariant states that each
-constant's type is well denoted and its value denotes the constant
-(`type_reads`, `type_wellDenotedV`, `defn_reads` in `EnvModelM`); the adequacy
-relation needs, for every value SrcEval evaluates (definition values, rule
-right-hand sides, `eqn` right-hand sides at concrete levels), a reading whose
-binder domains are inhabited by related arguments. Whether that follows from
-acceptance as IxCK states it, needs a new IxCK lemma (every accepted value has
-typing derivations for its subterms), or needs a stronger premise than
-acceptance, is undetermined. It decides whether premise 1 is strong enough as
-stated, so it comes first.
+**Planned (research).** *The typing-transport question, answered
+2026-11-11.* A model, with all its laws, says nothing about the subterms of
+a stored value: `Denotes` reads an application as graph application whatever
+the argument, and a graph applied off its domain is empty. β at a local λ, a
+closure passed as an argument, an equation used at its arguments and ι at a
+major all need the argument's denotation in the domain, which only typing
+gives. Existence (premise (i)) does not carry it: the IxVM statement concludes
+the model alone, and the derivations its proof builds per declaration are not
+in its conclusion. So typing is part of premise (ii): every value, rule
+right-hand side and equation SrcEval runs has a derivation in the kernel's
+rules, and the fundamental lemma reaches subterms by inverting it. Two kernel
+facts are then needed, both planned on the kernel side and neither in this
+repository: the derivations' soundness (`infer_sound`, `defeq_sound`) stated
+over the public model with its laws (today over the internal carrier and
+`RulesInputs`, which a public model does not supply); and, on the IxVM route,
+the derivations themselves exposed with the claim (its records over the
+rules) or proved by the lowering claim. On the native route they come from the
+kernel's own runs (the run-to-derivation lemmas the bridge package proves).
 
-Then the spike: the adequacy relation on `fib` from `bench-k1`, then on
+The spike: soundness on `fib` from `bench-k1`, then on
 `decide (fib 10 = 55)`, so that the `Decidable` case is tested early, end to
-end. Denotational, not by reduction; over
-IxCK's strong models; the environment from IxCK's reading of the fixture
-bytes; partial correctness *with* progress; a hand-built correspondence for
-the few constants involved. *Exit:* the answer on typing transport, and the
-spike's theorem fenced or a stop report naming what failed (dependent types,
-level-exact relevance, by-name positions, subsingleton elimination without
-the major). *Size:* 1–3 months [estimate]. Runs in parallel with SP-0 and the
-evaluator interface.
+end. Denotational, not by reduction; over every model with the laws; the
+environment from IxCK's reading of the fixture bytes; partial correctness
+*with* progress; a hand-built correspondence for the few constants involved;
+the typing derivations from the kernel's runs. *Exit:* the spike's theorem
+fenced or a stop report naming what failed (dependent types, level-exact
+relevance, by-name positions, subsingleton elimination without the major).
+*Size:* 1–3 months [estimate]. Runs in parallel with SP-0 and the evaluator
+interface.
 
 ### SP-1. Adequacy and progress on the first fragment
 
 **Planned (research core).** CD4's relation and progress, discharging SP-0's
-adequacy hypothesis:
-- a step-indexed relation between SrcEval values and model denotations:
-  literals to literals, constructors to constructor applications, closures and
-  partial applications to functions on related arguments, `irr` to any member
-  of the slot's type; environments slot by slot;
-- typing transport as SP-A settles it;
+hypotheses:
+- a relation between SrcEval values and model elements, indexed by the
+  kernel types the derivations give: literals to literals, constructors to
+  constructor applications, closures and partial applications to functions on
+  related arguments of the domain, `irr` to the denotation of its kept term
+  (a proof denotes the proof point); environments slot by slot; step-indexed
+  by SrcEval's clock;
 - the fundamental lemma by induction on SrcEval's clocked definition, each
-  rule discharged by SP-0's lemmas and the model's laws;
+  rule discharged by SP-0's lemmas and the laws, with domain membership at
+  each β, ι and equation from the derivations of premise (ii);
 - progress: related terms never get stuck or trap. Traps are unreachable (the
-  major of an empty eliminator would denote a member of ∅). Stuckness needs
-  the fragment condition, checked on `a.src`: no relevant axiom, theorem or
-  non-allowlisted opaque; no string major; and the faithfulness premise's
-  relevance clause in both directions;
+  major of an empty eliminator would denote a member of ∅, and premise (i)
+  gives a model). Stuckness needs the fragment condition, checked on `a.src`:
+  no relevant axiom, theorem or non-allowlisted opaque; no string major; and
+  the faithfulness premise's relevance clause in both directions;
 - the grounded statements for `verifyBytes` (immortal and zero-RC) and for
   the evaluator route, conditional only on the two premises.
 
-*Size:* 16–36k lines [estimate: the relation 12–25k, typing transport 0–8k
-depending on SP-A, progress 4–10k]. *Calendar:* 6–12 months after SP-A.
-*Exit:* both [first-fragment tests](#the-first-grounded-fragment), fenced
-with the standard axioms.
+**Why a semantic relation, not a simulation by reduction.** The other way is
+to simulate SrcEval by the kernel's reduction relation (`Red`) and conclude
+by `red_sound`. The certified IxVM work's rules now have the moves that route
+lacked here (an equation's proof rewriting its left side, a theorem
+unfolding, reduction under an argument), so recursion through equations is no
+longer out of reach. What remains against it: every certified β and every
+equation rewrite carries a typing derivation of the *runtime* term (the
+argument, the instance of the equation), which is a substitution instance
+built during evaluation, so the simulation needs subject reduction for the
+kernel's rules, which Lean's type theory lacks syntactically under
+definitional proof irrelevance; and SrcEval never builds the proofs it skips,
+while `Red` on `Decidable.isTrue h` needs `h`'s typing. The semantic relation
+needs typing only for the stored terms (by inversion of their derivations),
+relates skipped positions to their denotations without building them, and
+uses the laws directly. *Size [estimate]:* the semantic relation 14–30k lines
+in all (the relation and fundamental lemma 10–20k, by comparison with
+erasure's simulation over the same evaluator, 10.1k, and the bridge's
+`Nat`-only simulation, 1.9k; the uses of derivations at opened subterms 2–5k;
+progress 2–5k); the simulation by `Red` 12–20k plus subject reduction, which
+is research of unknown size. *Calendar:* 6–12 months after SP-A. *Exit:* both
+[first-fragment tests](#the-first-grounded-fragment), fenced with the
+standard axioms.
 
 ### SP-2. Widening
 
@@ -293,21 +467,49 @@ other roots than index 0. Each new SrcEval rule is a new version of the
 ### SP-N. Native discharge of the premises
 
 **Planned, optional.** For a consumer of x86 claims without an IxVM proof:
-acceptance by running IxCK natively on the claim's bytes (its typing core's
-blow-up on chains of `let` then matters to that verifier,
+existence by running IxCK natively (its typing core's blow-up on chains of
+`let` then matters to that verifier,
 [hardening design](hardening-design.md#external-dependencies)), and
-faithfulness either by IxCC's verifier-side ingress rebuilt on IxCK's reader,
-so that there is one reading by construction (the earlier default of an
-[open decision](roadmap.md#open-decisions)), or by a native check of the
-clauses against IxCK's reading (the working default now, awaiting the
-owner's confirmation). *Size [estimate]:* 2–6k lines
-(an ingress correspondence for the first fragment, 3–6k, is the upper bound if ingress is
-rebuilt). Designed, and built beside the default front end, as the [kernel
-front end](kernel-front-end-design.md): IxCK's tiered entry accepts, IxCC's
-reading is checked against IxCK's, and the relevance annotation comes from
-IxCK's inference; the erased type checker is deleted at its switch, which is
-held until IxCK's typing core has a work budget (also a working default
-awaiting confirmation).
+faithfulness and typing either by IxCC's verifier-side ingress rebuilt on
+IxCK's reader, so that there is one reading by construction (the earlier
+default of an [open decision](roadmap.md#open-decisions)), or by a native
+check of the clauses against IxCK's reading (the working default now,
+awaiting the owner's confirmation), with the typing derivations read off the
+kernel's runs. Designed, and built beside the default front end, as the
+[kernel front end](kernel-front-end-design.md): IxCK's tiered entry accepts
+the whole artifact, IxCC's reading is checked against IxCK's, and the
+relevance annotation comes from IxCK's inference; the erased type checker is
+deleted at its switch, which is held until IxCK's typing core has a work
+budget (also a working default awaiting confirmation).
+
+**Which entry discharges existence natively.** The tiered entry's acceptance
+of the artifact gives a model of the artifact's whole logical environment,
+under the artifact's table and behind the artifact's own prelude: more than
+premise (i) needs, and a different reading from the IxVM claim's (the default
+table, the committed prelude, the closure of `S`). Two ways to close the gap:
+- *Restriction:* the closure of `S` is closed under references, so a model of
+  the whole restricts to one of the closure (a restriction of models exists
+  in the certified IxVM work, not here); then the two lemmas that the reading
+  is the same under the default table and under the artifact's, and behind the
+  committed prelude and the artifact's (when its prelude records are the
+  committed ones), and a strengthening lemma for the derivations (a
+  derivation in the larger environment that mentions only the closure's
+  constants is one in the closure). About 2–4k lines, three lemmas over the
+  reader and the rules.
+- *The logical entry on the closure* (default): compute the closure of `S` in
+  the artifact's records under the same table as the IxVM claim (reference,
+  certified-operation ground and recursor edges), order it, and run the
+  kernel's logical entry with the committed prelude on exactly those records.
+  It has no `partial` record (the tier's fence: no logical record names a
+  tier constant, so a safe target's closure holds none). One more kernel run,
+  over a subset of what the tiered entry already checks (at most about 1.7 s
+  on the largest closures measured), and the closure walk (about 0.3–0.6k
+  lines, ported, since IxCC may not import the root package's walk). Then
+  both routes discharge one statement, and the derivations come from the same
+  run.
+
+*Size [estimate]:* 2–6k lines (an ingress correspondence for the first
+fragment, 3–6k, is the upper bound if ingress is rebuilt).
 
 ## The first grounded fragment
 
@@ -326,12 +528,24 @@ first-order data needs:
 - closures as arguments (SrcEval has closures natively; on x86 they must be
   removed by inlining or, after Phase 2, by P8);
 - excluded: `Quot`, strings, arrays, `opaqueByValue`, recorded
-  interpretations, nested inductives, closures stored in data.
+  interpretations, nested inductives, closures stored in data;
+- the environment: the kernel's reading of the closure of the target and the
+  table's theorems, under the default role table (or a restriction of it,
+  with the bridging lemma).
 
 `Decidable` is in the first fragment because every `native_decide` axiom has
 the shape `Decidable.decide inst = true`, and ι on `Decidable.isTrue h` needs a
-typing certificate for the proof `h` in a reduction-based account; a logical
-relation in which irrelevant positions relate to anything does not.
+typing certificate for the proof `h` in a reduction-based account; a
+semantic relation, in which a skipped proof relates to its denotation (the
+proof point) without being built, does not.
+
+What the first fragment needs from outside IxCC, by [the law
+table](#the-law-table): the IxVM claim fixing values and its eight
+obligations proved (IxVM route); the laws δ and ι (done there), the
+projection of a constructor, the `Nat` operations on literals (or IxCC
+derives them) and public level irrelevance; the rules' soundness over the
+public model; "the annotation pass preserves denotation". None of it is in
+this repository.
 
 **Exit tests** (default, to confirm, [roadmap](roadmap.md#open-decisions)):
 1. *Evaluator form:* `decide (fib 20 = 6765)`, with the environment derived
@@ -343,7 +557,16 @@ relation in which irrelevant positions relate to anything does not.
 
 - The reduction form, for well-founded recursion: IxCK does not unfold
   theorems. The nearest is the grounded denotational form.
-- Any statement over all weak models. The nearest is strong models.
+- Any statement over every model of the public structure without laws. The
+  nearest is models with the laws.
+- The first premise as "IxCK accepts the environment with root `H` under the
+  artifact's table `ρ`", discharged by an IxVM claim paired on `(H, ρ)`: the
+  IxVM claim concludes neither acceptance nor anything about `H`, refuses a
+  `checkEnv` over an artifact holding `partial` records, and covers the
+  default table only. The nearest is the restated premise (existence for the
+  closure of the seeds), with the table restriction lemma.
+- Soundness from existence alone, without typing: a model gives no typing
+  for subterms. The nearest is typing as part of premise (ii).
 - Roots using `opaqueByValue` or recorded interpretations, without
   restricting models. The nearest is a statement relative to the
   interpretation.
@@ -362,7 +585,7 @@ The 2026-11-09 plan had four items. Their places now:
 | CD1 | Five syntactic checker lemmas, first | Becomes the faithfulness premise, discharged by whoever holds the kernel's reading (SP-0 defines it). Clause 1 is in effect in `verifyBytes_*_sound` and clause 4 is proved; clause 2's semantic content is SP-0's table lemmas; clause 3 is checked against the kernel's typing judgement, in both directions; clause 5 comes from the role table |
 | CD2 | Shape typing, before CD3 and CD4 | Off the critical path for grounding (SP-1's progress replaces it there). Kept for Ring-0 and IxOS confinement without semantics, and as the typing a per-program Aiur lowering needs |
 | CD3 | Stage L, first | Demoted: a separate product for the bignum library and the IxOS monitor's `step`; does not ground anything in IxCK |
-| CD4 | Stage K, a research spike | The spine's adequacy core: SP-A, then SP-1, over strong models, with kernel acceptance as a premise and progress in the target |
+| CD4 | Stage K, a research spike | The spine's adequacy core: SP-A, then SP-1, over models with the laws, with existence, faithfulness and typing as premises, soundness and progress in the target |
 
 ## CD1. The front-end theorem
 
@@ -390,9 +613,13 @@ known to be accepted; clause 3 needs typing and is stated against the kernel's
 typing judgement ("the position's type infers to `Sort 0` at the profile, or
 the position is itself a type"), so the kernel circuit can decide it with its
 own inference ([evaluator interface](evaluator-interface.md#faithfulness)).
-IxCC's obligation is to define the clauses precisely (SP-0) and to prove that
-they imply what the adequacy theorem consumes (SP-1), not to prove its own
-checkers sound.
+Since 2026-11-11 premise (ii) adds a sixth clause, **typing**: each value, rule
+right-hand side and equation the evaluator runs has a derivation in the
+kernel's rules in the environment of premise (i). The kernel circuit holds
+those derivations as it checks the closure; the native route reads them off
+the kernel's runs. IxCC's obligation is to define the clauses precisely (SP-0)
+and to prove that they imply what soundness and progress consume (SP-1), not
+to prove its own checkers sound.
 
 ## CD2. Source safety: a checked shape typing
 
@@ -499,31 +726,41 @@ library's closure.
 
 ## CD4. Stage K: semantic adequacy
 
-**Status: research**, leading. CD4 is SP-A followed by SP-1 above, with three
-corrections to the 2026-11-09 statement:
-- **Strong models.** The statement quantifies over models meeting
-  `RulesInputs` and the accepted environment's typing facts, which IxCK's
-  `EnvModelM` supplies; the weak `Model` of `model_exists` validates no
-  definitional unfolding and cannot carry δ through a body.
-- **Kernel acceptance as a premise.** The environment is the one IxCK reads
-  from the claim's bytes under the bound role binding and accepts, a premise
-  discharged by an IxVM proof or a native IxCK run; IxCC's erased type checker
-  supplies nothing.
-- **Progress in the target.** "Adequacy is not progress" is true of an untyped
-  relation, not of the typed one this route needs: on the fragment, related
-  terms neither get stuck nor trap, so the grounded statement has no escape.
+**Status: research**, leading. CD4 is SP-A followed by SP-1 above, with these
+corrections to the 2026-11-09 statement (the third and fourth of 2026-11-11):
+- **Models with laws.** The statement quantifies over every model of the
+  public structure with the laws of [the law table](#the-law-table); the
+  public model of `model_exists` on this branch validates no definitional
+  unfolding and cannot carry δ through a body.
+- **Existence, faithfulness and typing as premises.** The environment is the
+  kernel's reading of the closure of the seeds; that it has a model is
+  premise (i), discharged by an IxVM claim or a native IxCK run; typing is in
+  premise (ii); IxCC's erased type checker supplies nothing.
+- **Soundness and progress apart.** "Adequacy is not progress" is true of an
+  untyped relation, not of the typed one this route needs: on the fragment,
+  related terms neither get stuck nor trap, so the grounded statement has no
+  escape; but only progress needs premise (i), and only the x86 claim needs
+  progress.
+- **Not over the internal invariant.** Stating it over `EnvModelM` or
+  `RulesInputs` would tie it to the kernel's proof internals and exclude the
+  model an IxVM claim gives, which is a public `Model`.
 
-**What IxCK already supplies.** Checked, not assumed, for this plan:
-`EnvModelM`'s fields cover δ for definitions, stored constants inhabiting their
-types (theorems included), ι, projections and η, literals and all fifteen
-`Nat` operations, and the `Eq` law
+**What IxCK supplies here, and what the certified IxVM work adds.** Checked,
+not assumed: `EnvModelM`'s fields cover δ for definitions, stored constants
+inhabiting their types (theorems included), ι, projections and η, literals,
+the structural `Nat` recurrences and the well-founded operations' guarded
+clauses, and the `Eq` law
 ([`IxCK/Kernel/Model/Annot/EnvModelM.lean`](../../IxCK/Kernel/Model/Annot/EnvModelM.lean));
 `RulesInputs` is built from it (`RulesInputs.ofSem`,
 [`IxCK/Kernel/Model/Capstone.lean`](../../IxCK/Kernel/Model/Capstone.lean)).
-Missing: closed-form meanings of each `Nat` operation on literals (derivable,
-SP-0); an opaque value law (none, by design); possibly typing derivations for
-subterms of accepted values (SP-A decides); and, if IxCK ever runs on the claim path,
-a typing core that is not exponential on chains of `let` (an IxVM-side fix,
+The public `Model` here has `mem`, `false_empty` and `eq_equality`; the
+certified IxVM work makes δ and ι public fields (proved there) and plans the
+rest. Missing for the first fragment, as the law table marks: the projection
+of a constructor and the `Nat` operations on literals as public laws (or
+IxCC's derivations), public level irrelevance, the rules' soundness over the
+public model, "the annotation pass preserves denotation", an opaque value law
+(none, by design); and, if IxCK runs on the claim path, a typing core that is
+not exponential on chains of `let` (a kernel-side fix,
 [hardening design](hardening-design.md#external-dependencies)).
 
 **The hard points.** Dependent types (SrcEval drops type arguments the model

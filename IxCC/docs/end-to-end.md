@@ -1,8 +1,9 @@
 # End-to-end certification: one spine, two back ends
 
-Written 2026-11-10. **Status:** below the source evaluator the x86 route is
-implemented and proved; the shared spine above it is **planned**; the Aiur
-routes are **planned**, the first of them on the IxVM side. This page says
+Written 2026-11-10; the premises restated 2026-11-11 (below). **Status:**
+below the source evaluator the x86 route is implemented and proved; the
+shared spine above it is **planned**; the Aiur routes are **planned**, the
+first of them on the IxVM side. This page says
 what "certified end to end" is to mean for each back end, what the routes
 share and what each trusts. The [roadmap](roadmap.md#plan) schedules the
 work; the [certification design](certification-design.md) plans the spine's
@@ -39,24 +40,35 @@ Every route shares four objects and the theorems that connect them.
    envelope `ix compile` writes, authenticating its role table and taking its
    pinned identities from it, and the unbound one of the committed fixtures
    ([byte contract](byte-contract.md)).
-2. **The kernel's acceptance and its model.** An environment IxCK accepts
-   has a *strong* model (`checkDecls_sound`,
-   [`IxCK/Kernel/Verify/Cached/MainC.lean`](../../IxCK/Kernel/Verify/Cached/MainC.lean);
-   from bytes, `checkBytes_strongModel`,
-   [`IxCK/Kernel/Admission/Reference.lean`](../../IxCK/Kernel/Admission/Reference.lean)):
-   its invariant `EnvModelM`
-   ([`IxCK/Kernel/Model/Annot/EnvModelM.lean`](../../IxCK/Kernel/Model/Annot/EnvModelM.lean))
-   says that definitions denote their stored values, stored constants
-   (theorems included) inhabit their types, recursor rules, projections and η
-   hold, and literals and every `Nat` operation mean what they say. Packaged
-   as `RulesInputs`
-   ([`IxCK/Kernel/Model/Rules/Inputs.lean`](../../IxCK/Kernel/Model/Rules/Inputs.lean)),
-   these facts make IxCK's reduction, conversion and inference sound
-   (`red_sound`, `defeq_sound`, `infer_sound`,
-   [`IxCK/Kernel/Model/Rules/Sound.lean`](../../IxCK/Kernel/Model/Rules/Sound.lean)).
-   The weak public `Model` of `model_exists` states types only and validates
-   no definitional unfolding ([`IxCK/Kernel/Denotes.lean`](../../IxCK/Kernel/Denotes.lean)),
-   so the spine is stated over strong models.
+2. **The kernel's model of the target's closure, with laws.** The
+   environment the statements are about is the kernel's reading (IxCK's
+   reader, under a role table) of the closure of the *seeds*: the target and
+   every theorem the unfolding table names (its `eqn` and `csimp` entries),
+   with what they reference. Those theorems are not in the target's own
+   closure (an equation theorem refers to its function, not the other way),
+   so they must be seeds. A *model* of an environment
+   ([`IxCK/Kernel/Denotes.lean`](../../IxCK/Kernel/Denotes.lean), `Model`)
+   interprets every constant as a set; on this branch it asks that each
+   stored constant be a member of what its type denotes (`mem`), that `False`
+   denote the empty set and that `Eq` denote equality (`eq_equality`), and
+   nothing about values. The certified IxVM work (pull request #678 and its
+   follow-up branches; not in this repository) is adding *laws* to that
+   public structure: δ (a stored definition denotes what its value denotes)
+   and ι (every stored recursor rule computes as Lean's, `Quot.lift`
+   included) are fields there and proved; structure and unit-like η, the
+   projection of a constructor and the `Nat` operations on literals are to
+   be built. IxCC states its results over every model with the laws its
+   evaluator needs ([the law table](certification-design.md#the-law-table)),
+   not over the kernel's internal invariant `EnvModelM`
+   ([`IxCK/Kernel/Model/Annot/EnvModelM.lean`](../../IxCK/Kernel/Model/Annot/EnvModelM.lean)),
+   which carries all of them today for an accepted environment
+   (`checkBytes_strongModel`,
+   [`IxCK/Kernel/Admission/Reference.lean`](../../IxCK/Kernel/Admission/Reference.lean))
+   and makes IxCK's reduction, conversion and inference sound (`red_sound`,
+   `defeq_sound`, `infer_sound`,
+   [`IxCK/Kernel/Model/Rules/Sound.lean`](../../IxCK/Kernel/Model/Rules/Sound.lean),
+   through `RulesInputs`). A statement over the public structure is the
+   smaller trusted surface and does not move when the invariant does.
 3. **The checked source program.** The relevance-annotated Src program with
    its unfolding table that IxCC's front end builds from the bytes and the
    certificate (`a.src` in `Recheck.sound`). Serialized, it is the *image* the
@@ -69,34 +81,77 @@ Every route shares four objects and the theorems that connect them.
 The spine's theorem, for the first grounded fragment
 ([certification design](certification-design.md#the-first-grounded-fragment)):
 
-> **Grounded evaluation (planned).** Let `H` be the root address of an
-> environment and `ρ` a role table, and let `P` be a checked source program
-> (an image with digest `D`) for target `c`. Assume two premises:
-> (i) **acceptance**, IxCK accepts the environment with root `H` under `ρ`;
-> (ii) **faithfulness**, `P` satisfies the faithfulness clauses with respect
-> to IxCK's reading of those bytes. If `P` passes the fragment check and
-> SrcEval on `P` returns `v` for `c` applied to inputs `xs`, then for every set theory, every strong model of the accepted
-> environment and every level assignment, the kernel constant that `c` names,
-> applied to the encodings of `xs`, denotes what the readback of `v` denotes.
-> On fragment-checked programs SrcEval never gets stuck and never traps.
+> **Grounded evaluation (planned).** Let `P` be a checked source program
+> (an image with digest `D`) for target `c`, let the seeds `S` be `c` and the
+> theorems `P`'s unfolding table names, and let `E` be the kernel's reading of
+> the closure of `S` under a role table. Assume (ii) **faithfulness and
+> typing**: `P` corresponds to `E` clause by clause, and every value, rule and
+> equation SrcEval runs has a typing derivation in `E` in the kernel's rules.
+> *Soundness:* if SrcEval on `P` returns `v` for `c` applied to the literals
+> `xs`, and `v` reads back as the observation `w`, then in every set theory,
+> every model of `E` with the laws and every level assignment, the constant
+> `c` names, applied to `xs`, denotes what `w` names. *Progress:* if moreover
+> (i) **existence**, `E` has a model with the laws, and `P` passes the
+> fragment check, then SrcEval on `P` never gets stuck and never traps on `c`.
 
-The last sentence is a progress result. It removes the `GoesWrong` escape of
-today's theorems, which a dishonest certificate can choose
-([certification design](certification-design.md#what-is-proved-today)).
-Nothing in the spine depends on the back end.
+Soundness does not consume premise (i): it quantifies over every model, and
+is true, but empty, if there is none. Premise (i) is what makes it say
+something, and progress uses it (a trap would need a member of the empty set
+`False` denotes). Progress removes the `GoesWrong` escape of today's
+theorems, which a dishonest certificate can choose
+([certification design](certification-design.md#what-is-proved-today)). The
+evaluator route needs soundness alone (its run returned a value); the x86
+claim needs both. Nothing in the spine depends on the back end. Until
+2026-11-11 premise (i) read "IxCK accepts the environment with root `H` under
+role table `ρ`", paired with a typing claim on `(H, ρ)`; the restatement and
+its reasons are in the [certification
+design](certification-design.md#the-architecture-premises-discharged-by-proofs).
 
-**The premises are discharged by proofs, not by IxCC.** A consumer discharges
-acceptance with an IxVM typing proof for `H`, and faithfulness with the IxVM
-kernel circuit's *lowering claim* for `(H, D)`, which has the kernel's reading
-and the types and checks the image clause by clause; or natively, by running
-IxCK and a native check. The claims compose by aggregation over the same
-addresses, as IxVM's conditional claims already do; IxCC embeds no proof
-verifier. So IxCC needs no soundness theorem for its own erased type checker
-and no proof that its decoder agrees with IxCK's reader; it must read the same
-bytes with the same hash and the same role table, bind `H`, `ρ`, the target and
-`D` in its claims, define the faithfulness clauses precisely, and prove
-adequacy. That IxVM refines IxCK is the IxVM workstream's result, an external
-dependency ([certification design](certification-design.md#the-architecture-premises-discharged-by-proofs)).
+**The premises are discharged by proofs, not by IxCC.** IxCC embeds no proof
+verifier; claims about the same seeds compose by aggregation.
+
+- **Premise (i) by an IxVM claim.** The certified IxVM work states, for an
+  accepted `check` or `checkEnv` claim in its default context (the kernel's
+  default role table, validated; no user axioms; no assumed leaves), that
+  either the run exhibits a BLAKE3 collision or the *claimed environment* has
+  a model in every set theory. The claimed environment is the kernel's
+  reading, under the default role table and behind the committed prelude, of
+  the closure of the claim's seeds in the records the run loaded, without the
+  auxiliary constants of the kernel's inductive models. IxVM refuses a seed
+  that is `unsafe` or `partial` (its follow-up branch also refuses an inert
+  axiom such as `sorryAx`), so the paired claim is a `checkEnv` claim whose
+  leaves are `S`, never one over a whole `ix compile` artifact, which always
+  holds `partial` definitions. It discharges (i) once three things hold, none
+  of them in this repository yet: that statement is today a reduction to
+  eight per-layer obligations taken as hypotheses, and becomes a theorem when
+  they are proved; it constrains the claimed constants by name, level
+  parameters and type only, and must also fix their kind and stored value
+  (else δ in a model is about some other value); and it covers the default
+  role table only, while `ix compile` writes one table per artifact, so a
+  lemma that the kernel reads a closure alike under the default table and
+  under a restriction of it, when the closure holds no constant of a role the
+  restriction leaves unbound, is needed beside the kernel's reader.
+- **Premise (i) natively** (planned): the kernel's logical entry run on the
+  closure of `S` alone, under the same table and prelude as the IxVM claim,
+  so that both routes discharge one statement. The tiered whole-artifact
+  acceptance the [kernel front end](kernel-front-end-design.md) runs today is
+  more than (i) (every logical record of the artifact) and different from it
+  (the artifact's table and prelude).
+- **Premise (ii)** by the IxVM kernel circuit's *lowering claim* for `(S, D)`,
+  which has the kernel's reading and the types and checks the image clause by
+  clause; or natively, by the kernel front end's check of IxCC's reading
+  against the kernel's and the kernel's derivations at each classified
+  position. The typing part is stated in the kernel's rules (`Infer`,
+  `DefEq`, `Red`) and needs their soundness in every model with the laws,
+  which the kernel states today over its internal invariant only (a
+  restatement over the public model is a dependency, planned on the kernel
+  side).
+
+So IxCC needs no soundness theorem for its own erased type checker and no
+proof that its decoder agrees with IxCK's reader; it must read the same bytes
+with the same hash, bind the target and `D` in its claims (so that `S` is
+determined), define the faithfulness and typing clauses precisely, and prove
+soundness and progress.
 
 ## Below the spine
 
@@ -111,15 +166,20 @@ from claim bytes to the modelled object, relative to SrcEval on `a.src`.
 
 > **x86, grounded (planned).** Let a compile claim verify
 > (`CompileClaim.verifyBytes`), naming environment root `H`, role table `ρ`,
-> target `c`, image digest `D`, policy and object hash, and assume premises
-> (i) and (ii) for `(H, ρ, D)`. If the linked object returns `w` on inputs
-> `ns`, then in every strong model of the accepted environment, the constant
-> `c` names applied to the literals `ns` denotes the value `w` reads back as.
+> target `c`, image digest `D` (a planned field), policy and object hash; let
+> `S` be `c` and the theorems `D`'s table names, and `E` the kernel's reading
+> of the closure of `S`. Assume premises (i) and (ii) for `(S, D)`. If the
+> linked object returns `w` on inputs `ns`, then in every model of `E` with
+> the laws, the constant `c` names applied to the literals `ns` denotes the
+> value `w` reads back as.
 
 It composes today's object theorem (the object refines SrcEval on the checked
-source program, whose digest the verifier checks is `D`) with the spine: the
-two premises, valid table entries, adequacy with progress, and readback in
-the model.
+source program, whose digest the verifier checks is `D`) with the spine:
+progress removes the `GoesWrong` disjunct, soundness gives the denotation, and
+readback names a model value. `H` and `ρ` stay in the claim as what IxCC
+read: the records in which the closure of `S` was found, and the table its
+pins came from (which must be a restriction of the table premise (i) is
+stated under).
 
 *Trusted:* the x86 instruction-set model (the byte machine is the processor,
 `x86-v0-local-semantics`; the [reference-model route](x86-reference-model.md)
@@ -130,9 +190,10 @@ recorded in the [trust ledger](trusted-extern-ledger.md); BLAKE3 collision
 resistance wherever identity is stated; Lean's logic with its three standard
 axioms. IxCK's soundness is a theorem in this repository, not an assumption.
 When the premises are discharged by IxVM proofs, the proof system's
-soundness and IxVM's refinement of IxCK (the IxVM workstream's result) join
-the base; when they are discharged by running IxCK and a faithfulness check
-natively, only that check's code joins it, and it is proved.
+soundness and IxVM's consistency theorem (the IxVM workstream's result, whose
+statement trusts the kernel's reader of Ixon records) join the base; when
+they are discharged by running IxCK and a faithfulness check natively, only
+that check's code joins it, and it is proved.
 The certificate is not trusted: once every table entry is valid in the model
 and progress holds, any accepted certificate yields the same denotation.
 
@@ -166,13 +227,13 @@ proof that SrcEval on the image returns `Bool.true` for `e`.
 
 > **Aiur evaluator, grounded (planned).** If the aggregated proof verifies,
 > then either the proof system was broken (a forged proof or a hash
-> collision), or: premises (i) and (ii) hold for the claim's `(H, ρ, D)`
-> (discharged by the IxVM typing claim and the lowering claim in the
-> aggregate), SrcEval on the image returns `v` for `e` (E's run, with E's
-> refinement of SrcEval proved on the IxVM side), and so in every strong model
-> of the accepted environment `e` denotes the readback of `v`. For an
-> evaluation axiom, `⟦e⟧ = ⟦Bool.true⟧`, so the axiom holds in every such
-> model.
+> collision), or: premises (i) and (ii) hold for the image's seeds `S` and
+> digest `D` (discharged by an IxVM `checkEnv` claim whose leaves are `S` and
+> by the lowering claim, in the aggregate), SrcEval on the image returns `v`
+> for `e` (E's run, with E's refinement of SrcEval proved on the IxVM side),
+> and so, by soundness, in every model with the laws of the closure of `S`,
+> `e` denotes the readback of `v`. For an evaluation axiom,
+> `⟦e⟧ = ⟦Bool.true⟧`, so the axiom holds in every such model.
 
 *IxCC's obligations:* SrcEval as a normative, versioned contract; the image
 format with a decoder, a round-trip theorem and a deterministic producer; the
@@ -244,11 +305,12 @@ retires it when the certified-IxVM work lands.
 
 | | x86 | Aiur evaluator (i) | Aiur per program (ii) |
 | --- | --- | --- | --- |
-| Hypothesis | the claim verifies; premises (i) acceptance and (ii) faithfulness for the claim's `(H, ρ, D)`, discharged by IxVM proofs or natively; the object returns `w` | the aggregated proof verifies (it carries premises (i) and (ii)) | the program's circuit accepts, with (i) and (ii) |
-| Conclusion | `w` reads back as what the target denotes on the inputs, in every strong model | `e` denotes the readback of E's result in every strong model | as (i), for the compiled root |
+| Hypothesis | the claim verifies; premises (i) existence and (ii) faithfulness and typing for the seeds `S` (the target and the table's theorems) and the image digest `D`, discharged by IxVM proofs or natively; the object returns `w` | the aggregated proof verifies (it carries premises (i) and (ii)) | the program's circuit accepts, with (i) and (ii) |
+| Conclusion | `w` reads back as what the target denotes on the inputs, in every model with the laws of the closure of `S` | `e` denotes the readback of E's result in every such model | as (i), for the compiled root |
+| What IxCC proves above SrcEval | soundness and progress | soundness | soundness and progress |
 | Above SrcEval | the spine | the spine | the spine |
 | Below SrcEval | proved pipeline, E1, E2/ELF (implemented) | E refines SrcEval (IxVM side) | Fir → formal Aiur, backward (new) |
-| Trusted | ISA model, loader, driver model; when (i) and (ii) come from IxVM proofs, also the proof system and IxVM's refinement of IxCK | proof system; formal Aiur compiler base; key derivation for E; aggregation; IxVM's refinement of IxCK (external, proved on the IxVM side) | as (i), plus per-program key derivation |
+| Trusted | ISA model, loader, driver model; when (i) and (ii) come from IxVM proofs, also the proof system and IxVM's consistency theorem | proof system; formal Aiur compiler base; key derivation for E; aggregation; IxVM's consistency theorem (external, on the IxVM side) | as (i), plus per-program key derivation |
 | State | below SrcEval implemented; spine planned | planned | research |
 
 None of the routes gives termination or completeness: the object may time out
@@ -262,7 +324,10 @@ Roots that use opaque constants are outside every grounded statement: IxCK's
 model keeps no value law for opaques ("Theorems and opaques keep no such
 equation", [`IxCK/Kernel/Ixon/Values.lean`](../../IxCK/Kernel/Ixon/Values.lean)),
 so neither SrcEval's evaluation of an allowlisted opaque through its stored
-value nor a recorded interpretation holds in every strong model. Statements
+value nor a recorded interpretation holds in every model with the laws; the
+certified IxVM work's public model keeps none either (an opaque constant is
+stored with no value). Images used to discharge a grounded claim carry no
+stored-value opaques (settled with the restatement of 2026-11-11). Statements
 relative to a recorded interpretation remain available to compile claims
 ([DR5](data-and-roots-design.md#dr5-library-structures-and-opaque-constants));
 the reading of that decision is to be confirmed

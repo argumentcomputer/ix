@@ -6,9 +6,12 @@ information and its acceptance of an environment from the certified kernel
 new front end is **implemented beside the old one** (`IxCC.Src.KernelFront`,
 [`Src/KernelFront`](../IxCC/Src/KernelFront)), with a differential suite
 (`tests-kernel-front`); the switch that makes it the only front end is
-**planned** ([The switch](#the-switch)). This is the native discharge of the
-premises in the [roadmap](roadmap.md#milestones) (SP-N), together with the
-part of HD-1 that takes typing off IxCC's own code.
+**planned** ([The switch](#the-switch)). This is most of the native
+discharge of the premises in the [roadmap](roadmap.md#milestones) (SP-N): the
+faithfulness check and the source of the typing derivations; the first
+premise as restated on 2026-11-11 needs one more kernel run, on the closure
+of the seeds ([below](#acceptance)). It is also the part of HD-1 that takes
+typing off IxCC's own code.
 
 ## Current state
 
@@ -174,6 +177,35 @@ and order; the front end's acceptance differs from it only in the hash
 function's implementation (IxCC's pure BLAKE3, ix's Rust BLAKE3 on a recorded
 assumption that the two agree).
 
+**What acceptance has to deliver, and what this entry delivers.** Since the
+restatement of 2026-11-11 ([certification
+design](certification-design.md#the-restatement-of-2026-11-11)), the first
+premise of the end-to-end statements is that the kernel's reading of the
+closure of the *seeds* (the target and the theorems the unfolding table
+names), under the role table the certified IxVM work's claims are stated
+under (the kernel's default table) and behind the committed prelude, has a
+model with the laws; and the second premise includes typing derivations for
+what the evaluator runs. The tiered entry's acceptance of the artifact gives
+a model of the artifact's *whole* logical environment, under the artifact's
+own table and behind the artifact's own prelude: more than the premise (every
+logical record, not the closure) and different from it (another table and
+prelude). It is the right early check for the producer, and its reading is
+the one the annotator asks about; it is not, as it stands, a native discharge
+of premise (i). That needs either three restriction lemmas (models of the
+whole to the closure, the reading under the artifact's table to the default
+one, the derivations to the closure) or a second run of the kernel's logical
+entry on the closure alone under the claim's table and prelude (the default
+in the [certification design](certification-design.md#sp-n-native-discharge-of-the-premises)).
+For the second, `Accept.lean` gains an entry that computes the closure of the
+seeds in the accepted records (references, the certified operations' ground
+and literal edges, recursors; a port of the kernel side's closure walk, since
+IxCC may not import the root package), orders it with `Order`, and runs the
+logical entry with the default binding and the committed prelude on exactly
+those records; it keeps that run's declarations for the typing clause, and
+checks that the artifact's table is a restriction of the default one and that
+the closure holds no constant of a role the artifact's table leaves unbound.
+Planned; nothing of it is built.
+
 ### The program and its correspondence
 
 `KernelFront.ingress` ([`Front.lean`](../IxCC/Src/KernelFront/Front.lean))
@@ -272,9 +304,11 @@ of the other two, for the kernel front end's input `kin`:
   IxCC's hash, the artifact's prelude and the artifact's table;
 - Stage A: `KernelFront.annotateChecked kin {kin.inp.program with table} = .ok cert.relevance`.
 
-The acceptance conjunct is then premise (i) of the [end-to-end
-plan](end-to-end.md), discharged natively: the kernel accepts the environment
-with root `H` under the table `ρ` the envelope carries.
+The acceptance conjunct says that the kernel accepts the environment with root
+`H` under the table `ρ` the envelope carries. That was premise (i) of the
+[end-to-end plan](end-to-end.md) as first stated; under the restated premise
+it is more than, and different from, what is needed (above, "What acceptance
+has to deliver"), and the native discharge adds the closure run.
 
 ### The annotation, against the kernel's judgements
 
@@ -371,6 +405,21 @@ asks a change of behaviour:
    its fuel bounds recursion depth, not work. A step counter threaded through
    the core, with acceptance stated within the budget, is what lets IxCC bound
    its verifier ([Resource bounds](#resource-bounds)).
+5. **The rules' soundness over the public model** (added 2026-11-11).
+   `infer_sound`, `defeq_sound` and `red_sound` are stated over the internal
+   carrier with `RulesInputs`; soundness of the evaluator over every public
+   `Model` with the laws needs them over that structure. The certified IxVM
+   work plans to derive the internal invariant's public clauses from the
+   public model's fields, which is the same step.
+6. **A table restriction lemma** (added 2026-11-11). The reader's output on a
+   record list is the same under a role table and under a restriction of it,
+   when no record is the constant of a role the restriction leaves unbound.
+   It lets a claim stated under the default table cover an artifact `ix
+   compile` wrote with its own table.
+
+Lemmas 2 and 3 are now part of the typing clause of the second premise: on
+the native route they are how the kernel's runs become derivations at the
+positions the evaluator runs.
 
 ## The typing flag
 
@@ -386,7 +435,9 @@ environment with root `H` under the envelope's table and IxCC's object
 refines SrcEval on the checked source program read from it", with no hidden
 parameter. The claim already names the role table's address (`roleTable`,
 validator 7; [byte contract](byte-contract.md)), so the table in that meaning
-is the claim's.
+is the claim's. That is what the verifier checks; the grounded meaning the
+end-to-end statements give it is about the closure of the seeds under the
+paired IxVM claim's table ([end-to-end](end-to-end.md#the-shared-spine)).
 
 ## Dependency and the trust ledger
 
@@ -621,6 +672,7 @@ front end's acceptance time. A hostile closure is measured under
 | KF-1 | The walk-level annotation statement; the kernel-side lemmas 1–3 composed into direction 1 | fenced, standard axioms |
 | KF-2 | The switch (steps 2–5) | all required checks on the refrozen corpus; the deletion list gone |
 | KF-3 | A work budget threaded through the kernel's core (kernel-side) and passed by the front end | a hostile `let`-chain closure declines within the budget |
+| KF-4 | The closure run (planned, 2026-11-11): the closure of the seeds, the logical entry on it under the default table and committed prelude, the table-restriction check, the run's declarations kept for the typing clause | on every role-bound K1 closure the closure run accepts, and its declarations are a sub-list of the tiered run's up to keys |
 
 ## Decisions
 
@@ -654,3 +706,10 @@ awaits the owner's confirmation; none is decided.
    | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
    | erased checker | 0.14 s | 0.14 s | 0.14 s | 0.14 s | 0.14 s | 0.14 s | 0.19 s |
    | kernel front end | 0.03 s | 0.08 s | 0.22 s | 0.80 s | 3.1 s | 14.7 s | 52.2 s |
+6. **The native discharge of premise (i)** (added 2026-11-11). Either keep
+   the tiered whole-artifact acceptance and prove the three restriction lemmas,
+   or add a run of the logical entry on the closure of the seeds under the
+   default table and committed prelude. Working default: the closure run; it
+   costs one more kernel run over a subset of the records and a ported closure
+   walk, and makes the native and the IxVM routes discharge one statement.
+   The tiered acceptance stays as the producer's check either way.

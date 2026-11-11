@@ -20,26 +20,30 @@ end to end for both back ends, grounded in Ixon and IxCK, and hardened against
 dishonest input:
 - **x86-64**, with performance competitive with Lean → Clang: if the compiled
   object returns `w` on first-order inputs, then `w` reads back as what the
-  claimed constant applied to the inputs denotes, in every strong model of the
-  environment IxCK accepts from the claim's bytes. Every other outcome is an
+  claimed constant applied to the inputs denotes, in every model with the
+  kernel's laws of IxCK's reading of the closure of that constant and the
+  theorems its compilation used. Every other outcome is an
   explicit resource failure (heap, stack, or `Nat` overflow until bignums
   land) or a run that has not finished.
 - **Aiur**, first through a fixed evaluator circuit that runs IxCC's source
   evaluator over a serialized image of the checked source program (built and
   proved on the IxVM side), and later by per-program compilation: if the proof
   verifies, the evaluated term denotes the readback of the evaluator's result
-  in every strong model. This discharges the evaluation axioms that
+  in every such model. This discharges the evaluation axioms that
   `native_decide` and `bv_decide` emit.
 
 Both rest on one *spine* above the source evaluator: the Ixon bytes and a
-named constant, IxCK's acceptance and its model, the checked source program,
-and the source evaluator's meaning in that model
+named constant, IxCK's model (with its laws) of the closure of that constant
+and the theorems the unfolding table names, the checked source program, and
+the source evaluator's meaning in that model
 ([end-to-end certification](end-to-end.md#the-shared-spine)). Two links of the
-spine are premises about content addresses rather than IxCC theorems: that
-IxCK accepts the environment, and that the checked source program is faithful
-to IxCK's reading of it. IxVM proofs (or a native kernel run) discharge them,
-and claims about the same addresses compose by aggregation; IxCC proves the
-rest, chiefly the source evaluator's adequacy for the kernel's models. Today's
+spine are premises about content addresses rather than IxCC theorems: that the
+closure has a model with the laws (restated on 2026-11-11 from "IxCK accepts
+the environment"), and that the checked source program is faithful to IxCK's
+reading of it, with typing derivations for what it runs. IxVM proofs (or a
+native kernel run) discharge them, and claims about the same seeds compose by
+aggregation; IxCC proves the rest: the source evaluator's soundness and
+progress for the kernel's models. Today's
 theorems are relative to the source evaluator on the source IxCC's front end
 built, with an escape when that source goes wrong; the spine is the critical
 path from there to the goal.
@@ -286,13 +290,15 @@ Revised 2026-11-10. The goal is the one in [Mission](#mission). The plan has
 one critical path, the spine, and several tracks beside it.
 
 ```text
-                          Ixon bytes + named constant
-                                      │  (i) IxCK accepts it: IxVM proof or native run   ── premise
-                                      │  IxCC reads the same bytes, same hash, same roles ── SP-B
-                          checked source program (= the image, digest D)    ── EV-2
-                                      │  (ii) faithful to IxCK's reading: lowering claim ── premise
-                                      │  valid table entries, primitives, readback      ── SP-0
-                                      │  SrcEval adequacy + progress                    ── SP-A, SP-1
+                  Ixon bytes + named constant + the table's theorems (the seeds)
+                                      │  (i) their closure has a model with the laws:
+                                      │      IxVM checkEnv claim on the seeds, or native run ── premise
+                                      │  IxCC reads the same bytes, same hash, same roles     ── SP-B
+                          checked source program (= the image, digest D)          ── EV-2
+                                      │  (ii) faithful to IxCK's reading, and typed:
+                                      │      lowering claim, or native check                 ── premise
+                                      │  valid table entries, primitives, readback            ── SP-0
+                                      │  SrcEval soundness + progress                         ── SP-A, SP-1
             ┌─────────────────────────┴─────────────────────────┐
    x86: proved pipeline, E1, E2/ELF                Aiur (i): evaluator circuit E over the image
    (implemented; driver and ISA models             (IxVM side; IxCC owes EV-1, EV-2, the clauses)
@@ -372,11 +378,12 @@ experienced engineer per line of work. *Owner* is the default, subject to the
 | EV-0 | SrcEval step counts (a counting twin of SrcEval; the clock is a depth bound): implemented ([source steps](source-steps.md): `src-steps`, pinned rows in `tests-src`, the tables of every committed family); the IxVM experiment's families wait for their closures | — | K1 tables and the IxVM experiment's families, reproducible | about 0.4k lines; days | IxCC | the common unit for its first measurement |
 | EV-1 | The evaluator contract, version 1: version, rule anchors, changelog, pin check; closed-term entry points | — | entries agree with `Src.run` on K1; an unversioned change fails the pin check | 0.3–0.6k lines and documents; weeks | IxCC | a frozen SrcEval to prove the circuit against, and a differential oracle |
 | EV-2 | The image, version 1, with shared subterms: format, deterministic producer, round trip, interfaces (role table, readback to Ixon, budgets) | EV-1 | theorems fenced; round trip over every committed closure in a gate; byte-identical images on two machines; digests committed | codec 0.5k, proofs 1–2k, interfaces 0.5–1.5k; 1–3 months (IxCC's Aiur wire format, 1.3k with proofs) | IxCC | a stable program identity and the circuit's input format |
-| SP-0 | The conditional statement: the claim also binds the image digest; the faithfulness clauses and the conditional x86 and evaluator statements, with adequacy as an explicit hypothesis; the table, primitive and readback lemmas in every strong model | SP-B | the conditional statements fenced; role-bound K1 fixtures verify under the new claim format | 6–13k lines; 2–4 months (IxCK's reader 1.3k and IxCC's ingress 0.3k for the reading; the lemma estimates of the certification design) | IxCC | IxCC reads the same bytes as its claims, under the same hash and role table; the `eqn`/`csimp` and primitive lemmas for its own discharge path |
-| SP-A | First the typing-transport question (what IxCK's acceptance gives about the subterms SrcEval evaluates), then an adequacy spike on K1's `fib`, then `decide (fib 10 = 55)` | — | the answer, and the spike theorem fenced or a stop report | 1–3 months | shared | whether premise (i) is strong enough as stated, and whether SP-1 is engineering |
-| SP-1 | Adequacy and progress on the first fragment, discharging SP-0's hypothesis | SP-0, SP-A | both [exit tests](certification-design.md#the-first-grounded-fragment) | 16–36k lines; 6–12 months after SP-A (erasure's simulation, 10.1k) | shared, IxCC leading | the model fact that discharges an evaluation axiom, given the circuit's refinement and the two premises |
+| SP-0 | The conditional statement: the claim also binds the image digest, so that the target and `D` fix the seeds; the laws as an explicit structure of hypotheses about a model (named as on the IxVM side); the faithfulness and typing clauses; soundness and progress as separate propositions; the conditional x86 and evaluator statements with both as explicit hypotheses; the table (`eqn`, `csimp` from `mem` and `eq_equality`; `case` from δ and ι), primitive, `let` and readback lemmas in every model with the laws | SP-B | the conditional statements fenced; role-bound K1 fixtures verify under the new claim format | 6–13k lines; 2–4 months (IxCK's reader 1.3k and IxCC's ingress 0.3k for the reading; the lemma estimates of the certification design; 2–4k more if the `Nat` operations' meaning must be derived on IxCC's side) | IxCC | IxCC reads the same bytes as its claims, under the same hash and role table; the `eqn`/`csimp` and primitive lemmas for its own discharge path |
+| SP-A | The typing-transport question is answered (2026-11-11: a model gives no typing for subterms, so typing derivations join premise (ii)); the spike: soundness on K1's `fib`, then `decide (fib 10 = 55)`, with the derivations from the kernel's runs | — | the spike theorem fenced or a stop report | 1–3 months | shared | whether SP-1 is engineering |
+| SP-1 | Soundness and progress on the first fragment, by a semantic relation indexed by the kernel's types, discharging SP-0's hypotheses ([certification design](certification-design.md#sp-1-adequacy-and-progress-on-the-first-fragment) compares it with a simulation by kernel reduction) | SP-0, SP-A; the external dependencies of XK | both [exit tests](certification-design.md#the-first-grounded-fragment) | 14–30k lines; 6–12 months after SP-A (erasure's simulation, 10.1k) | shared, IxCC leading | the model fact that discharges an evaluation axiom, given the circuit's refinement and the two premises |
+| XK | **External dependencies of the spine** (none in this repository; listed for tracking): the IxVM consistency theorem's eight obligations proved; its claimed environment fixing kinds and values; its derivations exposed or the lowering claim proving typing; the rules' soundness over the public model; the projection of a constructor and the `Nat` operations on literals as public laws; public level irrelevance; "the annotation pass preserves denotation"; the table restriction lemma | the certified-IxVM work | each stated on the kernel or IxVM side | theirs | kernel and IxVM workstreams | — |
 | SP-2 | Widening: `Quot`, nested inductives, strings, data primitives, plain-RC results, other roots | SP-1, the phases | per item | per item | IxCC | wider images |
-| SP-N | Native discharge of the premises, for x86 consumers without IxVM proofs: IxCK run natively, the image's faithfulness discharged against IxCK's reading (DO-6), and the erased checker replaced by IxCK in the producer and on the native verifier path (decided 2026-11-14; in progress, as a kernel-based front end in new modules beside the existing one, designed in the [kernel front end](kernel-front-end-design.md); the switch is planned). Working defaults, awaiting the owner's confirmation ([decisions](kernel-front-end-design.md#decisions)): IxCC's reading checked natively against IxCK's (DO-6 (c)), the kernel's tiered entry, the artifact's own prelude, unbound environments refused; the switch held until the kernel's typing core has a work budget, because on a hostile `let` chain the kernel front end's acceptance takes 52.2 s at 30 `let`s against the erased checker's 0.19 s | SP-B; SP-0 for the statement; for the switch, the role-bound refreeze (RL-1 phase 2) and a work budget in the kernel's typing core | the x86 statement with both premises discharged in one native run; the erased checker deleted | 2–6k lines (built: about 1.5k; the switch deletes about 13.5k) | IxCC | — |
+| SP-N | Native discharge of the premises, for x86 consumers without IxVM proofs: IxCK run natively (since 2026-11-11, existence by the logical entry on the closure of the seeds under the IxVM claim's table, DO-37, the kernel front end's KF-4), the image's faithfulness and typing discharged against IxCK's reading (DO-6), and the erased checker replaced by IxCK in the producer and on the native verifier path (decided 2026-11-14; in progress, as a kernel-based front end in new modules beside the existing one, designed in the [kernel front end](kernel-front-end-design.md); the switch is planned). Working defaults, awaiting the owner's confirmation ([decisions](kernel-front-end-design.md#decisions)): IxCC's reading checked natively against IxCK's (DO-6 (c)), the kernel's tiered entry, the artifact's own prelude, unbound environments refused; the switch held until the kernel's typing core has a work budget, because on a hostile `let` chain the kernel front end's acceptance takes 52.2 s at 30 `let`s against the erased checker's 0.19 s | SP-B; SP-0 for the statement; for the switch, the role-bound refreeze (RL-1 phase 2) and a work budget in the kernel's typing core | the x86 statement with both premises discharged in one native run; the erased checker deleted | 2–6k lines (built: about 1.5k; the switch deletes about 13.5k) | IxCC | — |
 | AR-1 | The evaluator circuit, its refinement of SrcEval, the lowering claim, aggregation | EV-1, EV-2 (unproved deployment); SP-0, SP-1 (proofs) | the IxVM workstream's | that workstream's estimates: the circuit 5–10k lines of formal Aiur, its refinement 10–25k, the lowering check 3–8k | IxVM workstream | — |
 | AR-2 | Fir → formal Aiur with a backward simulation, one object enumeration per program, small `Nat` below 2^56 | RL-2 (formal Aiur in this repository), a key-derivation story or a standalone customer; CD2 optional | K1 through per-program circuits | 8–15k lines for the `Nat` and tree fragment (a spike outside this tree; the IxVM side estimates 10–25k) | unassigned | — |
 | XB-1 | = IxOS-0, as redefined on 2026-11-14 (DO-34): IxCC-written executables replace the C runtime driver in the native gates, out of process, with no C and no in-process trampoline (X0 then X1 of [standalone executables](#standalone-executables)); first planned as a host loader calling an object's entries through a trampoline. Done with X1 | X0 | as X1 | as X0 and X1 | IxCC | — |
@@ -760,7 +767,7 @@ owner settles the last two groups.
 | Decision | Summary |
 | --- | --- |
 | Source | Ixon (v4 since 2026-10-03) is the only input. Written contracts are lower bounds. The compiler honours them exactly, and may infer stronger guarantees (unique, local, borrowed, erased, one-shot) only when a proved checker certifies them; inferred facts never change Ixon bytes or addresses. |
-| Semantic anchor | Stated against the source evaluator today; the goal is IxCK's strong models, with kernel acceptance and the image's faithfulness as premises discharged by proofs, and an accepted equation theorem holding in the model so that the replacements it justifies are sound ([certification design](certification-design.md)). |
+| Semantic anchor | Stated against the source evaluator today; the goal is every model with the kernel's laws of IxCK's reading of the closure of the target and the table's theorems, with that model's existence and the image's faithfulness and typing as premises discharged by proofs, and an accepted equation theorem holding in the model so that the replacements it justifies are sound ([certification design](certification-design.md)). |
 | Recursion and replacements | Compiled through kernel-checked equation theorems (`f.eq_def`, `@[csimp]`) collected in an unfolding table, not by recovering structure from `brecOn` or `WellFounded.fix`. `partial` and `unsafe` definitions are rejected; `implemented_by` compiles the reference body. |
 | Erasure | An untrusted relevance annotation. `Recheck.front` decides it with the structural checker (`Relevance.check`, proved in `Relevance.Proof.check_sound`) and with `Relevance.checkCanonical`, which re-derives each position's class from the declaration types and refuses an irrelevant tag it cannot justify. The byte-level verifiers (`CompileClaim.verifyBytes`, `Ring0Sip.verifyBytes`, `ixcc check-cert`) also re-run `Relevance.annotate` on `(inp.env, cert.table)` and require the certificate's annotation to equal its output (`Recheck.checkCanonicalRelevance`); the program-level verifiers and `Recheck.run` do not. Neither `annotate` nor `checkCanonical` has a theorem; under the premise architecture the relevance clause is checked against the kernel's typing judgement by whoever holds the types, and these checks stay as IxCC's early refusals. |
 | Middle end | Clocked big-step semantics for functional IRs, with a fuel-indexed logical relation and heuristic-parametric passes. Forward simulations below. |
@@ -886,12 +893,40 @@ The owner also decided, on the same day:
   before Phase 3; Lean `IO` through platform calls. The first executable
   milestone (X0) is implemented.
 
+### The restatement of 2026-11-11
+
+What the certified IxVM work's typing claims conclude (a model of the claimed
+environment, not acceptance by a kernel entry; the closure of the claim's
+seeds, not an artifact; the default role table only) made the first premise
+the wrong shape. The plan above is restated on these lines
+([certification design](certification-design.md#the-restatement-of-2026-11-11)).
+
+**Settled by it** (follows from the facts, not a choice):
+- the first premise is the existence of a model, with the laws, of the
+  kernel's reading of the closure of the seeds; the seeds are the target and
+  every theorem the unfolding table names;
+- the pairing with an IxVM claim is by those seeds and the table, through one
+  `checkEnv` claim in the default context, not by `(H, ρ)`; a `checkEnv` over
+  a whole `ix compile` artifact is refused (it holds `partial` records), so it
+  is never the pairing;
+- IxCC's statements are over every public `Model` with the laws, not over the
+  kernel's internal invariant;
+- typing derivations of what the evaluator runs are part of the second premise
+  (a model gives no typing for subterms);
+- soundness and progress are separate obligations: the evaluator route needs
+  soundness, the x86 claim both;
+- images used to discharge a grounded claim carry no stored-value opaques
+  (agreed with the IxVM side: the public model keeps no value for an opaque),
+  which settles DC-2's stored-value part.
+
+**Opened by it**: DO-37 to DO-41 below.
+
 ### Decisions to confirm
 
 | Id | Question | Options | Default | Why | Cost to change later |
 | --- | --- | --- | --- | --- | --- |
 | DC-1 | The order of the certification routes (decision 3) | (a) stage L first, as decided; (b) the kernel-model route leads (SP-A, SP-1), stage L becomes a side product; (c) both at equal priority | (b) | Stage L relates the object to a host Lean function and does not ground anything in IxCK or apply to a term inside an environment; the IxVM workstream's critical path is adequacy | Low: stage L has not started; reverting later costs the spike's months |
-| DC-2 | How decision 2 reads against the grounded statement | (a) interpretations allowed in compile claims as statements relative to the interpretation, kept separate in table and image from evaluation through a stored value (`opaqueByValue`), and both excluded from the grounded statement; the evaluator route refuses both for discharging axioms; (b) add an opaque value law to IxCK and state grounded results over models restricted to it; (c) no interpretations: targets avoid opaques | (a) | IxCK's model keeps no value equation for opaques, so neither kind holds in every strong model; an evaluation axiom must hold in every model, so a relative statement cannot discharge one. This also strains the IxVM workstream's plan to accept stored-value evaluation in its evaluator | Low now (nothing implemented); meanwhile code that reaches an allowlisted opaque (today `Lean.opaqueId`) cannot be discharged; (b) later restricts every grounded statement that uses it |
+| DC-2 | How decision 2 reads against the grounded statement | (a) interpretations allowed in compile claims as statements relative to the interpretation, kept separate in table and image from evaluation through a stored value (`opaqueByValue`), and both excluded from the grounded statement; the evaluator route refuses both for discharging axioms; (b) add an opaque value law to IxCK and state grounded results over models restricted to it; (c) no interpretations: targets avoid opaques | (a); its stored-value part settled 2026-11-11 (no stored-value opaques in a grounded image, agreed with the IxVM side) | IxCK's model keeps no value equation for opaques, so neither kind holds in every model with the laws; an evaluation axiom must hold in every model, so a relative statement cannot discharge one | Low now (nothing implemented); meanwhile code that reaches an allowlisted opaque (today `Lean.opaqueId`) cannot be discharged; (b) later restricts every grounded statement that uses it |
 | DC-3 | IxCC's guarantees conditional on kernel acceptance supplied externally (an IxVM typing proof or a native IxCK run) and on faithfulness supplied by the party holding the kernel's reading, rather than on IxCC's own type checking; and then the per-claim typing flag and the erased type checker | (a) as stated, the flag removed from claims' meaning and the checker kept only in untrusted production (the relevance annotator, early diagnostics), off the verifier path; (b) as stated, the checker kept on the verifier path as an optional filter; (c) prove the erased checker sound instead | (a) for the guarantees; for the checker, **decided** 2026-11-14 under DC-4: replaced by the certified kernel, not kept in untrusted production | A soundness proof for 12,700 lines of checker costs about what IxCK's own verification cost, and acceptance is already proved for IxCK; typing dominates verification time (51.7 s of 51.8 s on the committed scalar closure) and is unbounded per closure | Medium: the byte-level Stage A re-derivation uses the checker's expressions and conversion, so retiring it means porting or dropping that check |
 | DC-4 (decided 2026-11-14: (a)) | Does IxCC obtain type information (for the relevance annotator, `checkCanonical` and the byte-level re-derivation) by calling the certified kernel instead of its own erased checker? | (a) call IxCK and delete the erased checker; (b) keep the erased checker in untrusted production only (DC-3's default) | **Decided** (2026-11-14): (a), in the producer and on the native verifier path, with an enumerated ledger exception for the kernel's `implemented_by` sites; in progress within SP-N; until the switch the erased checker stays as untrusted production code | One type checker instead of two, and the proved one; (a) deletes the erased checker rather than merely moving it off the verifier path | Medium: IxCC's dependency on IxCK grows beyond its codec, and IxCK's typing cost (its blow-up on chains of `let`) enters the producer |
 
@@ -904,14 +939,14 @@ The owner also decided, on the same day:
 | DO-3 | Can the relevance clause be stated against the kernel's typing judgement, for an external checker to discharge? | yes; no (consumers re-derive the annotation with IxCC's annotator, which must then be specified) | Yes, in both directions ([CD1](certification-design.md#cd1-the-front-end-theorem)) | The party with the types can decide it; IxCC's own classifier has no theorem | Low |
 | DO-4 | Are SrcEval's `irr` decisions at concrete levels stable enough to freeze? | freeze version 1 now; wait for Phase 3 | Freeze version 1 for the Phase 1 fragment now; the mechanism is stable, the rule set is not: strings (E9), DR2's words and bounded-construction rule, DR3's arrays, DR5's interpretations and the stored-value opaque question (DC-2) come as later versions with a changelog | Nothing pending changes version 1's rules | Low: a version bump |
 | DO-5 | Data primitives' meaning lemmas at the SrcEval level, independent of the x86 heap invariant? | yes; per implementation | Yes, in a module below the runtime (DR3 and DR4 already plan conservativity lemmas against reference bodies, relative to SrcEval) | One specification for the x86 heap and a write-once memory | Low |
-| DO-6 | How is the image's faithfulness discharged, per route? | (a) the kernel circuit's lowering claim; (b) IxCC's ingress rebuilt on IxCK's reader, so one reading by construction; (c) a native check of the clauses against IxCK's reading | (a) on the evaluator route; on x86, (a) where the consumer aggregates with IxVM proofs, and on the native path (SP-N, in progress since the decision of 2026-11-14 to take type information from the kernel, DC-4) (c), the working default of the [kernel front end](kernel-front-end-design.md#decisions), awaiting the owner's confirmation; (b) was the earlier default | (a) reuses what IxVM builds anyway. (b) and (c) both import IxCK's reader, widening IxCC's dependency on IxCK beyond its codec; given that, (b) leaves one reading on the verifier path where (c) keeps two and compares them; IxCC's own decoder stays in the untrusted producer | Medium: (b) rewrites the verifier's ingress over IxCK's regrouped blocks |
+| DO-6 | How is the image's faithfulness discharged, per route? | (a) the kernel circuit's lowering claim; (b) IxCC's ingress rebuilt on IxCK's reader, so one reading by construction; (c) a native check of the clauses against IxCK's reading | (a) on the evaluator route; on x86, (a) where the consumer aggregates with IxVM proofs, and on the native path (SP-N, in progress since the decision of 2026-11-14 to take type information from the kernel, DC-4) (c), the working default of the [kernel front end](kernel-front-end-design.md#decisions), awaiting the owner's confirmation; (b) was the earlier default. Since 2026-11-11, on every route the image is compared with the kernel reader's term (`let`s kept), and the premise includes typing derivations (DO-40) | (a) reuses what IxVM builds anyway. (b) and (c) both import IxCK's reader, widening IxCC's dependency on IxCK beyond its codec; given that, (b) leaves one reading on the verifier path where (c) keeps two and compares them; IxCC's own decoder stays in the untrusted producer | Medium: (b) rewrites the verifier's ingress over IxCK's regrouped blocks |
 | DO-7 | Priority, given limited capacity and the certified-IxVM work first | — | RL-2 when that work lands; then SP-B; EV-0 to EV-2; SP-0 and SP-A; SP-1; Phase 2 continuing at reduced pace (P8 milestone 1, heap completion); HD-0; RL-1 phase 2 when its decisions are taken; Phases 3–5, CD2 and CD3 when a consumer needs them | The spine and the IxVM interface are the goal's critical path; Phase 2 serves the native route's breadth | Low: an ordering |
 | DO-8 | Is per-program Aiur lowering on the plan before a key-derivation story exists? | schedule it; keep it designed and unscheduled | Unscheduled | A per-program key's provenance cannot be checked in a circuit today, so its claims would add per-program trust | Low |
 | DO-9 | The first grounded fragment's exit test | evaluator form; x86 form; both | Both: `decide (fib 20 = 6765)` through SrcEval on its image, and the K1 `fib` compile claim, then every K1 root | One test per route over the same spine | Low |
 | DO-10 | Does the metered verifier (HD-2) precede or follow the spine? | before SP-0; after SP-0 | HD-0 now; HD-1 with SP-N; HD-2 and HD-3 after SP-0 | SP-0 changes the verifier's front; the dominant unbounded cost (typing) leaves the verifier with it | Low |
-| DO-11 | How the compile claim binds what composition needs | new claim fields (root, role table, image digest); a companion claim | New fields in the compile claim (the role table: implemented in SP-B, validator 7; the image digest with SP-0); the certificate stays unbound, documented as affecting meaning until SP-0's table lemmas and SP-1's progress hold | Composition by aggregation needs the addresses in one claim | Medium: the claim codec is shared with ix |
+| DO-11 | How the compile claim binds what composition needs | new claim fields (root, role table, image digest); a companion claim | New fields in the compile claim (the role table: implemented in SP-B, validator 7; the image digest with SP-0); the certificate stays unbound, documented as affecting meaning until SP-0's table lemmas and SP-1's progress hold. Since 2026-11-11 the pairing is by the seeds (the target and the theorems `D` names) and the table, so `D` is what makes the claim pair; `env` (`H`) and `roleTable` (`ρ`) stay, meaning what IxCC read, and no field changes before `D` joins (DO-41) | Composition by aggregation needs the addresses in one claim | Medium: the claim codec is shared with ix |
 | DO-12 | What happens to `Models/KernelBridge`? | keep as a record; delete now; keep until SP-1 | Keep with its gate until SP-1, reuse its literal-denotation layer where useful, then remove | Its approach cannot reach recursion and is not the route | Low |
-| DO-13 | May evaluation axioms be discharged by reductions Lean's kernel lacks (δ by accepted equation theorems)? | yes; no | Yes: SP-0's lemma makes it sound in every strong model | SrcEval recurses through equation theorems; without this the evaluator route covers no well-founded recursion | Low for IxCC; it is the IxVM workstream's rule |
+| DO-13 | May evaluation axioms be discharged by reductions Lean's kernel lacks (δ by accepted equation theorems)? | yes; no | Yes: SP-0's lemma (from `mem` and `eq_equality`, with the theorem a seed) makes it sound in every model with the laws; the IxVM workstream's rules now have such a rule (an equation's proof rewrites its left side) | SrcEval recurses through equation theorems; without this the evaluator route covers no well-founded recursion | Low for IxCC; it is the IxVM workstream's rule |
 | DO-14 | The legacy Aiur model (`IxCC/Aiur`, about 5.8k lines; the vendored snapshot, about 3.5k) | retire; re-pin; keep | Retire when the certified-IxVM work lands (RL-3) | The formal Aiur package supersedes or contradicts every part of it; neither route uses its bytecode | Low: a deletion; the one idea worth keeping (memory functionality from the memory polynomials) goes to formal Aiur's owners as a note |
 | DO-15 | IxCC's primitive table lacks this repository's `String.back` and has a `String.Legacy.back` that Lean 4.34.1 lacks | adopt this repository's table; keep IxCC's and retire the regeneration step | Adopt (follows from fixtures from this tree); moot once the certified kernel replaces the erased checker (DC-4, decided 2026-11-14) | One table, regenerable | Low |
 | DO-16 | The catalog fixtures cannot be regenerated: this repository's assembler takes only role-bound members | keep frozen with the pin described; an IxCC-side assembler; regenerate after SP-B | Keep frozen, described, until IxCC's catalog reader takes role-bound members (SP-B reads role-bound environments but refuses a role-bound catalog piece); then regenerate with ix's assembler | No new assembler to maintain | Low |
@@ -935,22 +970,32 @@ The owner also decided, on the same day:
 | DO-34 (decided 2026-11-14: the default) | Redefine XB-1 and IxOS-0 as IxCC-written executables replacing the C runtime driver, out of process, dropping the in-process trampoline | redefine; keep the host loader | Redefine | The trampoline is C or assembly in the Lean process, which the owner's decision excludes | Low |
 | DO-35 (decided 2026-11-14: the default) | Numeric state machines (X2) on today's fragment before Phase 3 | before; after | Before, if Phase 3 is more than about six months away | They need no heap across calls, so the session theorem is available early | Low |
 | DO-36 (decided 2026-11-14: the default) | Lean `IO` through platform calls with recorded interpretations, or by transforming `main` into a state machine | platform calls; a continuation-passing transformation | Platform calls; revisit if IxOS programs must never call out | Keeps ordinary Lean `main` unchanged; the transformation would need closures and a whole-program rewrite | Medium |
+| DO-37 (2026-11-11) | How premise (i) is discharged natively | (a) the logical entry run on the closure of the seeds, under the IxVM claim's table and the committed prelude (KF-4); (b) the tiered whole-artifact acceptance, with three restriction lemmas (models, table and prelude, derivations) | (a) | One statement for both routes, no restriction lemmas; one more kernel run over a subset of the records already checked, and a ported closure walk (0.3–0.6k lines) | Low: (b) is lemmas, not behaviour; (a)'s code is small |
+| DO-38 (2026-11-11) | How a compile claim's artifact table meets the IxVM claim's default table | (a) a restriction check plus a reading lemma beside the kernel's reader; (b) `ix compile` writes the default table into every artifact; (c) the IxVM side widens its theorem to every admitted table | (a), asking the kernel side for the lemma; (c) noted as the IxVM side's option | (a) changes no artifact; (b) makes every artifact carry every role's support and certificate closure (larger files, and the kernel must admit roles whose constants are absent); (c) is a change to their statement's scope | Low: the check is a pure function of two tables |
+| DO-39 (2026-11-11) | The `Nat` operations' meaning on literals | (a) a public law on the kernel side; (b) IxCC derives it from δ, ι and the role specifications, by induction | (a), with (b) as the fallback if the law is not scheduled before SP-1 | The kernel's internal invariant already carries the recurrences; a law is a small step there and serves IxVM's own discharge path; (b) costs IxCC 2–4k lines | Low |
+| DO-40 (2026-11-11) | Where the typing derivations of premise (ii) come from on the IxVM route | (a) the IxVM claim exposes its records over the kernel's rules for the claimed environment; (b) the lowering claim proves typing for the image's positions | (b), with (a) asked as well | The lowering claim already checks the relevance clause with the circuit's own inference, which is typing; (a) changes the consistency statement | Medium: it fixes what the lowering claim states |
+| DO-41 (2026-11-11) | Do the compile claim's fields change? | (a) no change now; the image digest joins with SP-0 and with the target determines the seeds; (b) add the seeds' tree root or the kernel table's address now | (a) | `env` and `roleTable` keep a true meaning (what IxCC read); the seeds are a function of the target and `D`; a field added before the image exists would be unfilled | Medium: the claim codec is shared with ix |
 
 ## Coordination
 
 - **The IxVM workstream.** It owns the evaluator circuit, its refinement of
   SrcEval, the kernel circuit's lowering claim and the aggregation; IxCC owns
   the evaluator contract, the image and its interfaces (DO-2), the
-  faithfulness clauses and adequacy (DO-1 for the spike). IxVM's refinement of
-  IxCK, which discharging premise (i) by an IxVM proof relies on, and the fix
-  to IxCK's typing core on chains of `let`, are that workstream's.
+  faithfulness and typing clauses, and soundness and progress (DO-1 for the
+  spike). IxVM's consistency theorem (an accepted claim's closure has a model;
+  today a reduction to eight per-layer obligations), which discharging premise
+  (i) by an IxVM proof relies on, and the fix to IxCK's typing core on chains
+  of `let`, are that workstream's, as are the external dependencies listed as
+  XK.
 - **ix / certify-compile.** Reconcile equation export, compiler hints and
   source-contract transport with the new compiler passes and their closure,
   changed-block and definition-group coverage requirements. Reproduce the
   consumer's former recursor and proof-closure blockers on an identified
   candidate before marking them resolved.
-- **Certified checker and model.** IxCK's strong models are the target of the
-  grounded statement. Codec compatibility and the adopted Lean 4.34.1
+- **Certified checker and model.** IxCK's public `Model`, with the laws the
+  certified IxVM work is adding to it, is the target of the grounded
+  statement; IxCC asks the kernel side for the laws and lemmas listed as XK.
+  Codec compatibility and the adopted Lean 4.34.1
   toolchain already have their own pins; IxCC now imports IxCK's tiered
   admission entry and executed typing core (the [kernel front
   end](kernel-front-end-design.md)), recorded in the trust ledger with the

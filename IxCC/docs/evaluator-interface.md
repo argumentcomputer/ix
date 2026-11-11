@@ -188,28 +188,49 @@ proofs (1.3k lines, [`Aiur/Wire.lean`](../IxCC/Aiur/Wire.lean) and
 
 ## Faithfulness
 
-Faithfulness is the second premise of the grounded statements
+Faithfulness and typing are the second premise of the grounded statements
 ([certification design](certification-design.md#the-architecture-premises-discharged-by-proofs)):
 the image with digest `D` is the checked source program of the environment
-with root `H`, as IxCK reads it under role table `ρ`. IxCC does not prove it
-about its own decoder; whoever holds the kernel's reading checks it, which is
-the IxVM kernel circuit's lowering claim for `(H, D)` on the evaluator route,
-and on the x86 route either that claim or, natively, IxCC's verifier-side
-ingress rebuilt on IxCK's reader (an [open decision](roadmap.md#open-decisions)).
-IxCC's part is to define the clauses precisely, with a structural map from
-IxCK's terms to `Src.Term` as their specification (SP-0), and to prove that
-they imply what the adequacy theorem consumes (SP-1).
+`E`, the kernel's reading of the closure of the image's seeds (its target and
+the theorems its table names) under the role table of premise (i), and every
+term the evaluator runs is typed in `E`. IxCC does not prove it about its own
+decoder; whoever holds the kernel's reading checks it, which is the IxVM
+kernel circuit's lowering claim for the seeds and `D` on the evaluator route,
+and on the x86 route either that claim or, natively, a check against IxCK's
+reading (an [open decision](roadmap.md#open-decisions)). IxCC's part is to
+define the clauses precisely, with a structural map from IxCK's reader terms
+to `Src.Term` as their specification (SP-0), and to prove that they imply
+what soundness and progress consume (SP-1).
 
 The clauses form a checklist over `(closure, image)`
 ([CD1](certification-design.md#cd1-the-front-end-theorem)): the image is the
 installed and lazified program (syntactic); every `eqn` and `csimp` entry names
-a theorem with the right statement and a standard-axiom closure (syntactic,
-once the kernel has accepted the theorem); the pinned identities name the role
-binding's constants (syntactic); and every position tagged irrelevant at a
+a theorem of `E` with the right statement and a standard-axiom closure
+(syntactic, once the theorem is a seed); the pinned identities name the role
+binding's constants (syntactic); every position tagged irrelevant at a
 profile has a type that infers to `Sort 0` at that profile or is itself a type,
 and conversely every proof position is tagged irrelevant (stated against the
 kernel's typing judgement, so the kernel circuit can decide it with its own
-inference).
+inference); and every value, rule right-hand side and equation the evaluator
+runs has a derivation in the kernel's rules (the circuit holds them as it
+checks the closure). The typing clause is new with the restatement of
+2026-11-11: a model of `E`, which is all premise (i) gives, says nothing about
+subterms, and soundness needs each argument's denotation in its domain.
+
+**Which term the image is compared with.** The kernel's reader keeps a
+record's `let`s; the kernel's annotation pass substitutes them, so the stored,
+`let`-free value can be exponentially larger than the record (the hostile
+chains of the [kernel front end](kernel-front-end-design.md#resource-bounds)).
+The image is compared with the reader's term, `let`s kept, node for node, as
+the kernel front end's correspondence already does. The image then stays the
+size of the records, and SrcEval keeps its sharing (E5 binds a `let`). The
+cost moves into one lemma: the reader's term denotes what its stored
+annotation denotes (a substitution lemma for `Denotes`, and "the annotation
+pass preserves denotation", planned on the kernel side), and the typing
+derivations, which are about the substituted term, are used at the position
+the evaluator's environment determines. Comparing with the stored term
+instead would make the image, and the circuit's reading of it, as large as the
+substitution.
 
 ## What the evaluator route does not need from IxCC
 

@@ -6,15 +6,19 @@ address with pure BLAKE3, and its compile claim names the role table beside
 the root (all implemented). The committed fixtures are still mostly unbound
 ([below](#what-is-not-yet-so)).
 
-A statement of the [end-to-end plan](end-to-end.md) has two premises about a
-content address: that the certified kernel accepts the environment with root
-`H` under role table `ρ`, and that IxCC's checked source program is faithful
-to the kernel's reading of those bytes. A consumer that proves claims about
-role-bound environments discharges them, or a native kernel run does. Neither
-means anything unless IxCC compiles the artifact those proofs are about. This
-page says exactly which bytes that is and how they are identified, so that a
-compile claim can be compared term for term with a kernel claim about the same
-artifact.
+A statement of the [end-to-end plan](end-to-end.md) has two premises about
+content addresses: that the kernel's reading of the closure of the *seeds* (the
+target and the theorems the unfolding table names) has a model with the
+kernel's laws, and that IxCC's checked source program is faithful to that
+reading, with typing derivations for what it runs. A consumer that proves
+claims about the same seeds discharges them, or a native kernel run does.
+Neither means anything unless IxCC compiles from the records those proofs are
+about. This page says exactly which bytes IxCC reads and how they are
+identified, so that a compile claim can be compared term for term with a
+kernel claim about the same constants. (Until 2026-11-11 the first premise was
+stated as acceptance of the artifact with root `H` under its table `ρ`; the
+[certification design](certification-design.md#the-restatement-of-2026-11-11)
+says why that was the wrong shape.)
 
 ## The artifact
 
@@ -185,16 +189,36 @@ its reduction of literals.
 
 ## A compile claim and a kernel claim, term for term
 
-| Term | Compile claim (`CompileClaim`, `Ix.Claim.compile`) | Kernel typing claim (`checkEnv`) | Host admission statement |
+The kernel typing claims of the certified IxVM work (pull request #678; not in
+this repository) are `check` (one seed, a constant's address) and `checkEnv`
+(the seeds are the leaves of a tree whose root the claim names, hashed as the
+root `H` above is: leaves `BLAKE3(00 ‖ a)`, nodes `BLAKE3(01 ‖ l ‖ r)`). Their
+consistency statement covers a claim in the default context: the binding the
+kernel's default role table (every role bound), validated, no user axioms, no
+assumed leaves. It concludes that the kernel's reading of the closure of the
+seeds, under that table, has a model; it says nothing about an artifact or its
+root, and it refuses a seed that is `unsafe` or `partial`.
+
+| Term | Compile claim (`CompileClaim`, `Ix.Claim.compile`) | IxVM typing claim (`checkEnv`, default context) | Host admission statement |
 | --- | --- | --- | --- |
-| records | `env` = `H` | `root` = `H` | `contentRoot` = `H` |
-| role table | `roleTable` = `ρ`; absent for an unbound artifact | `ctx.binding` = `ρ` | `bindingHash` = `ρ` |
+| records | `env` = `H`, the artifact IxCC read | none: records are found by address | `contentRoot` = `H` |
+| seeds | `target`, and the theorems the image `D` names (planned field) | `root`: the root of a tree whose leaves are the seeds | `main` |
+| role table | `roleTable` = `ρ`, the artifact's; absent for an unbound artifact | `ctx.binding` = the default table's address | `bindingHash` = `ρ` |
 | specifications | not named | `ctx.spec`, the specification digest | `hostSpecDigest` |
-| axioms beyond the standard three | not named: the producer's admission refuses relevant axioms, and the table admits only the standard three in the closure of an `eqn` or `csimp` theorem | `ctx.axioms` | the policy |
-| the constant | `target`: its record's or projection's address | (all of them) | `main` |
+| axioms beyond the standard three | not named: the producer's admission refuses relevant axioms, and the table admits only the standard three in the closure of an `eqn` or `csimp` theorem | `ctx.axioms` = none | the policy |
 | hash | BLAKE3 | BLAKE3 | BLAKE3 |
 
-A consumer pairs a compile claim with a kernel claim by `(H, ρ)`.
+A consumer pairs a compile claim with an IxVM claim by the seeds and the
+table, not by `(H, ρ)`: the IxVM claim's leaves include the target and every
+theorem the image's table names (one claim: two claims give two unrelated
+models), and the compile claim's `ρ` is a restriction of the default table
+(each role `ρ` binds, bound to the same address and evidence there), with the
+closure of the seeds holding no constant of a role `ρ` leaves unbound, which
+`ix compile`'s role selection ensures. The second condition is decidable from
+the two tables' bytes and the records; the lemma that it makes the two
+readings the same is planned beside the kernel's reader. A `checkEnv` claim
+whose root is `H` itself is refused by IxVM, since every `ix compile`
+artifact holds `partial` records.
 
 The compile claim is the header `E8 05 04 07` (validator 7), then `env`
 (32 bytes), the role table (`00` for none, or `01` and its 32-byte address),
@@ -211,8 +235,20 @@ soundness theorems state both (`verifyBytes_immortal_sound`,
 
 ## What is not yet so
 
-- **The image is not named.** An image digest is to join the claim when the
-  image exists ([roadmap](roadmap.md), DO-11).
+- **The image is not named, so the seeds are not determined.** An image digest
+  is to join the claim when the image exists ([roadmap](roadmap.md), DO-11);
+  with it, the claim's target and `D` fix the seeds a paired IxVM claim must
+  cover. Until then the table's theorems are fixed only by the certificate,
+  which the claim does not bind.
+- **The table restriction is neither checked nor proved.** By reading, an
+  artifact's table binds each of its roles where the default table does
+  (both come from compiling the same toolchain's library); no check compares
+  them and no lemma says the readings then agree.
+- **The premise's environment is not the one IxCC's kernel front end
+  accepts.** That front end runs the kernel's tiered entry on the whole
+  artifact under its own table and prelude; premise (i) is about the closure
+  of the seeds under the IxVM claim's table and the committed prelude
+  ([kernel front end](kernel-front-end-design.md#acceptance)).
 - **Most fixtures are unbound.** IxCC's committed closures are `0xE4`
   envelopes, regenerated with `ix compile --unbound`, apart from the two
   role-bound closures and the registered role-bound family
