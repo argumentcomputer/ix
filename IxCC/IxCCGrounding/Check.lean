@@ -1,4 +1,5 @@
 import IxCCGrounding.Ok
+import IxCCGrounding.CaseCheck
 
 /-!
 # The check (`IxCCGrounding.Check`)
@@ -30,6 +31,8 @@ mutation targeting one makes exactly that one false.
 | `eqnCorr`, `eqnClosed` | each `eqn` body corresponds to the equation body, which is closed |
 | `valueCorr`, `valueClosed` | each δ value corresponds to the stored value, which is closed |
 | `okClosed` | `Ok`'s closure (`okClosedB`) |
+| `caseShape` | each `case` entry's stored `casesOn`, recursor and constructors have the checked shape (`CaseStored`, read by `caseShape?`) |
+| `caseProg` | each `case` entry's recursor and constructors in the program agree with the shape (`CaseProg`) |
 -/
 
 namespace IxCC.Grounding
@@ -401,6 +404,24 @@ def valueClosedB (c : CId) : Bool :=
   | none, some (.defn .defn .safe _ _ _), some (.defnInfo _ val _) => bvarsLt 0 val
   | _, _, _ => true
 
+/-- A `case` entry's stored shape. -/
+def caseShapeB (c : CId) : Bool :=
+  match p.table.resolveOf c with
+  | some (.case r) =>
+    match caseShape? env (κ c) (κ r) with
+    | some sh => caseStoredB env (κ c) (κ r) sh
+    | none => false
+  | _ => true
+
+/-- A `case` entry's program side (true when no shape is read: `caseShape` reports that). -/
+def caseProgOkB (c : CId) : Bool :=
+  match p.table.resolveOf c with
+  | some (.case r) =>
+    match caseShape? env (κ c) (κ r) with
+    | some sh => caseProgB p κ Sl r sh
+    | none => true
+  | _ => true
+
 end Checks
 
 /-- **The conjuncts of the check**, by name. -/
@@ -426,7 +447,9 @@ def checkParts (p : Program) (env : KEnv) (κ : CId → KKey) (lpsOf : CId → L
    ("eqnClosed", Sl.all (eqnClosedB p env κ)),
    ("valueCorr", Sl.all (valueCorrB p env κ lpsOf)),
    ("valueClosed", Sl.all (valueClosedB p env κ)),
-   ("okClosed", okClosedB p ann Sl)]
+   ("okClosed", okClosedB p ann Sl),
+   ("caseShape", Sl.all (caseShapeB p env κ)),
+   ("caseProg", Sl.all (caseProgOkB p env κ Sl))]
 
 /-- **The check.** -/
 def groundCheck (p : Program) (env : KEnv) (κ : CId → KKey) (lpsOf : CId → List Nat)
@@ -636,6 +659,19 @@ theorem groundFacts_of_check {ann : IxCC.Src.Relevance.Ann}
       obtain ⟨d, _, hsh', _, hcl⟩ := heqn c _ _ hc hr
       rw [eqnShape_body hsh hsh']
       exact hcl
+
+/-- **The check is sound for the `case` entries**: it establishes `CaseFacts`. -/
+theorem caseFacts_of_check {ann : IxCC.Src.Relevance.Ann}
+    (h : groundCheck p env κ lpsOf ann Sl = true) : CaseFacts p env κ (· ∈ Sl) := by
+  intro c r hc hr
+  have h1 := List.all_eq_true.mp (part_of (name := "caseShape") (b := Sl.all (caseShapeB p env κ)) h (by simp [checkParts])) c hc
+  have h2 := List.all_eq_true.mp (part_of (name := "caseProg") (b := Sl.all (caseProgOkB p env κ Sl)) h (by simp [checkParts])) c hc
+  simp only [caseShapeB, caseProgOkB, hr] at h1 h2
+  split at h1
+  · rename_i sh hsh
+    rw [hsh] at h2
+    exact ⟨sh, caseStored_of_check h1, caseProg_of_check h2⟩
+  · exact absurd h1 (by simp)
 
 end Lemmas
 

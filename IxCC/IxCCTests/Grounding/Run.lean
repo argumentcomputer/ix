@@ -1,6 +1,7 @@
 import IxCC.Src.KernelFront.Front
 import IxCC.Src.Readback
 import IxCCGrounding.Check
+import IxCCGrounding.RootCheck
 import IxCCTests.Src.Support
 
 /-! # `tests-grounding`: the grounding check on committed closures
@@ -16,7 +17,9 @@ For each: the kernel accepts the closure (`KernelFront.ingress`, the tiered entr
 builds the program SrcEval runs and the kernel annotator its annotation, and the key map, the
 level parameters and the set `Sl` (the root's closure under the terms SrcEval runs, with the
 pinned `Bool` constructors) are computed as the theorems take them. Every conjunct of the check is
-asserted true by name; SrcEval runs the root and reads back the expected observation.
+asserted true by name; SrcEval runs the root and reads back the expected observation; the
+root's checks (`rootParts`, `foArgsB`, `resultTagB` at the observed result, and for the `Bool`
+root `boolListedB`) are asserted true.
 
 Then the negative controls, on `fib`: each mutation makes exactly the conjunct it targets false
 (the list of false conjuncts is asserted equal to that one name):
@@ -26,7 +29,14 @@ Then the negative controls, on `fib`: each mutation makes exactly the conjunct i
 | the root's stored value replaced by a literal | `valueCorr` |
 | the equation theorem's right-hand side replaced by a literal | `eqnCorr` |
 | the annotation's class of a constant the root unfolds made a type | `okClosed` |
-| `Nat.succ`'s stored binder datum changed | `natBasis` |
+| `Nat.succ`'s stored binder datum made "always a proposition" | `natBasis` |
+| the first `case` entry's `casesOn` value hands its recursor the last two minors swapped | `caseShape` |
+
+and, for the root's checks, on `decide`: the observation `false` (tag `0`) fails `resultTagB`
+(`PUnit.unit` is a field-less constructor at index `0` in `Sl` beside `Bool.false`, so the check
+rejects it, as documented); an enumeration argument that is not its type's listed constructor
+fails `foArgsB`; the pinned `Bool` re-pinned at `Nat` fails `boolListedB` and nothing in
+`groundCheck`.
 -/
 
 namespace IxCCTests.Grounding
@@ -42,12 +52,16 @@ structure Subject where
   root : String
   args : List Value
   expected : Obs
+  /-- the root's first-order argument types; its result type is `Nat`, or the pinned `Bool` -/
+  argTys : List FoTy
+  boolResult : Bool
 
 def subjects : List Subject :=
   [{ label := "fib", stem := "fixtures/ixon-v4/bench-k1/fib", root := "entry", args := [.lit 10],
-     expected := .nat 55 },
+     expected := .nat 55, argTys := [.nat], boolResult := false },
    { label := "decide", stem := "fixtures/corpus/grounding/decide",
-     root := "Grounding.decideFib10", args := [], expected := .ctor 1 [] }]
+     root := "Grounding.decideFib10", args := [], expected := .ctor 1 [], argTys := [],
+     boolResult := true }]
 
 /-- What the check runs on. -/
 structure Input where
@@ -140,13 +154,48 @@ def mutateClass (i : Input) : Option (Input × CId) := do
 /-- `Nat.succ`'s stored binder datum made "a proposition where parameter `0` is zero". -/
 def mutateSucc (i : Input) : Input :=
   { i with env := mapConst i.env Ix.Kernel.natSuccName fun
-      | .ctorInfo cv np nf => .ctorInfo { cv with type := .forallE natK natK bmZ } np nf
+      | .ctorInfo cv np nf =>
+        .ctorInfo { cv with type := .forallE natK natK { pw := .ifAllZero [] } } np nf
       | ci => ci }
+
+/-- The last two minors a `casesOn` value hands its recursor, swapped (under its λs). -/
+def swapLastMinors : KExpr → KExpr
+  | .lam d b m => .lam d (swapLastMinors b) m
+  | e =>
+    let args := e.getAppArgs
+    let n := args.length
+    match args[n - 3]?, args[n - 2]? with
+    | some a, some b => Ix.Kernel.Expr.mkAppN e.getAppFn ((args.set (n - 3) b).set (n - 2) a)
+    | _, _ => e
+
+/-- The first `case` entry of `Sl` whose `casesOn` value has its last two minors swapped, and the
+entry's name. -/
+def mutateCase (i : Input) : Option (Input × CId) := do
+  let c ← i.Sl.find? fun c =>
+    match i.src.table.resolveOf c with
+    | some (.case _) => true
+    | _ => false
+  let env := mapConst i.env (i.κ c) fun
+    | .defnInfo cv val h => .defnInfo cv (swapLastMinors val) h
+    | ci => ci
+  return ({ i with env }, c)
+
+/-- The root's result type: `Nat`, or the pinned `Bool`. -/
+def resTy (s : Subject) (i : Input) : Option FoTy :=
+  if s.boolResult then i.src.known.bool.map .enum else some .nat
+
+/-- The arguments' kernel terms. -/
+def argTerms (i : Input) : List Value → List KExpr
+  | [] => []
+  | .lit n :: xs => litE n :: argTerms i xs
+  | .con c _ _ _ :: xs => .const (i.κ c) [] :: argTerms i xs
+  | _ :: xs => litE 0 :: argTerms i xs
 
 def run : IO Bool := do
   let a : Assert ← IO.mkRef 0
   try
     let mut fib? : Option Input := none
+    let mut dec? : Option (Input × CId) := none
     for s in subjects do
       let i ← load s
       expect a i.keyless.isEmpty s!"{s.label}: constants of Sl without a kernel key: {i.keyless}"
@@ -158,8 +207,21 @@ def run : IO Bool := do
         | .ok v => readbackAll i.src v
         | _ => none
       expect a (out == some s.expected) s!"{s.label}: SrcEval read back {repr out}"
-      IO.println s!"{s.label}: {i.Sl.length} constants, every conjunct of the check true; \
-        SrcEval reads back {repr out}"
+      -- the root's checks
+      let some res := resTy s i | throw (IO.userError s!"{s.label}: no pinned Bool")
+      let rbad := (rootParts i.src i.env i.κ i.Sl i.ann i.rootId s.argTys res).filterMap
+        fun (n, b) => if b then none else some n
+      expect a rbad.isEmpty s!"{s.label}: the root's conjuncts {rbad} are false"
+      expect a (foArgsB i.src i.κ s.argTys s.args (argTerms i s.args))
+        s!"{s.label}: the arguments are not first-order"
+      expect a (resultTagB i.src i.env i.κ i.Sl res s.expected)
+        s!"{s.label}: the observed tag does not name one constructor"
+      if s.boolResult then
+        let some boolD := i.src.known.bool | throw (IO.userError "decide: no pinned Bool")
+        expect a (boolListedB i.src boolD) "decide: Bool's listed constructor 1 is not Bool.true"
+        dec? := some (i, boolD)
+      IO.println s!"{s.label}: {i.Sl.length} constants, every conjunct of the check and of the \
+        root's checks true; SrcEval reads back {repr out}"
       if s.label == "fib" then fib? := some i
     let some i := fib? | throw (IO.userError "no fib subject")
     -- negative controls
@@ -173,8 +235,28 @@ def run : IO Bool := do
     expect a (o == ["okClosed"]) s!"reclassified c{d}: false conjuncts {o}, expected [okClosed]"
     let n := failing (mutateSucc i)
     expect a (n == ["natBasis"]) s!"mutated Nat.succ: false conjuncts {n}, expected [natBasis]"
-    IO.println "negative controls: each mutation falsifies exactly its conjunct \
-      (valueCorr, eqnCorr, okClosed, natBasis)"
+    let some (icase, cc) := mutateCase i | throw (IO.userError "fib: no case entry to mutate")
+    let cs := failing icase
+    expect a (cs == ["caseShape"]) s!"swapped minors of c{cc}: false conjuncts {cs}, expected [caseShape]"
+    IO.println s!"negative controls: each mutation falsifies exactly its conjunct \
+      (valueCorr, eqnCorr, okClosed, natBasis, caseShape at c{cc})"
+    -- the root's checks, on `decide`
+    let some (di, boolD) := dec? | throw (IO.userError "no decide subject")
+    expect a (!resultTagB di.src di.env di.κ di.Sl (.enum boolD) (.ctor 0 []))
+      "decide: the observation `false` passes resultTag (expected the documented rejection)"
+    let some natZ := di.src.known.natZero | throw (IO.userError "decide: no pinned Nat.zero")
+    let some tru := di.src.known.boolTrue | throw (IO.userError "decide: no pinned Bool.true")
+    expect a (foArgsB di.src di.κ [.enum boolD] [.con tru [] [] []] [.const (di.κ tru) []])
+      "decide: Bool.true is not a first-order Bool argument"
+    expect a (!foArgsB di.src di.κ [.enum boolD] [.con natZ [] [] []] [.const (di.κ natZ) []])
+      "decide: Nat.zero passes as a Bool argument"
+    let some natD := di.src.known.nat | throw (IO.userError "decide: no pinned Nat")
+    let dm := { di with src := { di.src with known := { di.src.known with bool := some natD } } }
+    expect a (!boolListedB dm.src natD) "decide: Bool re-pinned at Nat passes boolListed"
+    expect a (failing dm).isEmpty s!"decide: Bool re-pinned at Nat falsifies {failing dm}"
+    IO.println "root controls on decide: resultTag rejects `false` (PUnit.unit at index 0); \
+      foArgs rejects Nat.zero as a Bool argument; boolListed rejects Bool re-pinned at Nat, \
+      groundCheck unaffected"
     IO.println s!"tests-grounding: {← a.get} assertions passed"
     return true
   catch error =>

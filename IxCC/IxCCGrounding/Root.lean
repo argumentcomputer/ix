@@ -1,0 +1,266 @@
+import IxCCGrounding.Ground
+import IxCCGrounding.RootCheck
+
+/-!
+# Soundness at a root (`IxCCGrounding.Root`)
+
+**`rootSound`**: in every set theory, every model of the kernel's reading with the laws, and every
+level assignment: if the checked facts hold on `Sl` (`GroundFacts`, `CaseFacts`, `RootFacts`),
+every application site SrcEval may evaluate is typed (`SitesOk`), and SrcEval runs the root on
+first-order arguments to a value whose readback names a kernel term at the result type (the tag
+checked by `ResultTag`), then the root applied to the arguments' terms denotes what that term
+denotes.
+
+`run` is δ on the root and β per argument: the fundamental lemma relates the root's value to the
+root's denotation; the root's stored first-order type puts the arguments' sets in its domains at
+graph-regime binders (`mem`); a literal's set is its constructor form's, an enumeration
+argument's the listed constructor's image. The result reads back as a literal (its set is the
+literal's) or as a field-less constructor whose key, by `ResultTag`, is the named constructor's.
+
+`fibRoot` (a root `Nat → Nat`) and `decideRoot` (a root `Bool`, read back as `true`) are its
+instances, the grounding statements of `fib 10 = 55` and of `decide (fib 10 = 55) = true`.
+-/
+
+namespace IxCC.Grounding
+
+open Ix.Kernel
+open Ix.Kernel.SetTheory
+open Ix.Kernel.SetModel
+open IxCC.Src (Value Slot Term CId Program Levels)
+open IxCC.Sem (Result)
+
+universe w
+
+/-! ## Readback -/
+
+theorem readback_nat {p : Program} {v : Value} {w : Nat}
+    (h : IxCC.Src.readbackAll p v = some (.nat w)) : v = .lit w := by
+  cases v with
+  | lit n =>
+    simp only [IxCC.Src.readbackAll, IxCC.Src.readback, Option.some.injEq,
+      IxCC.Sem.Obs.nat.injEq] at h
+    rw [h]
+  | con c ls ps fs =>
+    simp only [IxCC.Src.readbackAll, IxCC.Src.readback] at h
+    cases hf : IxCC.Src.readbackFields p (fun _ _ _ => true) c ls 0 fs with
+    | none => rw [hf] at h; simp at h
+    | some os => rw [hf] at h; simp at h
+  | _ => simp [IxCC.Src.readbackAll, IxCC.Src.readback] at h
+
+theorem readbackFields_nil {p : Program} {c : CId} {ls : Levels} :
+    ∀ {i : Nat} {fs : List Value},
+      IxCC.Src.readbackFields p (fun _ _ _ => true) c ls i fs = some [] → fs = []
+  | _, [], _ => rfl
+  | i, v :: vs, h => by
+    simp only [IxCC.Src.readbackFields] at h
+    cases hr : IxCC.Src.readbackFields p (fun _ _ _ => true) c ls (i + 1) vs <;>
+      cases hv : IxCC.Src.readback p (fun _ _ _ => true) v <;> simp [hr, hv] at h
+
+theorem readback_ctor {p : Program} {v : Value} {i : Nat}
+    (h : IxCC.Src.readbackAll p v = some (.ctor i [])) :
+    ∃ c ls ps, v = .con c ls ps [] ∧ readTag p c = i := by
+  cases v with
+  | con c ls ps fs =>
+    simp only [IxCC.Src.readbackAll, IxCC.Src.readback] at h
+    cases hf : IxCC.Src.readbackFields p (fun _ _ _ => true) c ls 0 fs with
+    | none => rw [hf] at h; simp at h
+    | some os =>
+      rw [hf] at h
+      simp at h
+      obtain ⟨htag, rfl⟩ := h
+      obtain rfl := readbackFields_nil hf
+      refine ⟨c, ls, ps, rfl, ?_⟩
+      rw [← htag]
+      unfold readTag
+      cases p.decl? c with
+      | none => rfl
+      | some d => cases d <;> rfl
+  | lit n => simp [IxCC.Src.readbackAll, IxCC.Src.readback] at h
+  | _ => simp [IxCC.Src.readbackAll, IxCC.Src.readback] at h
+
+variable {V : Type w} [Ix.Kernel.SetTheory V] {env : KEnv} {M : Model V env}
+
+/-! ## The arguments -/
+
+section Args
+
+variable {p : Program} {κ : CId → KKey} {lpsOf : CId → List Nat} {ann : IxCC.Src.Relevance.Ann}
+  {Sl : List CId}
+
+/-- An enumeration's listed constructor relates to its image, which lies in the enumeration. -/
+theorem enum_arg (hF : Faith p env κ lpsOf (· ∈ Sl)) {D c : CId} {i : Nat}
+    (hE : EnumStored p env κ (· ∈ Sl) D) {safe : Bool} {cs : List CId} {ty : Term}
+    (hd : p.decl? D = some (.induct safe 0 0 0 ty cs)) (hc : cs[i]? = some c)
+    (φ : LevelParam → Nat) :
+    RelV M κ lpsOf (· ∈ Sl) (Ok p ann) (.con c [] [] []) (M.cval (κ c) φ) ∧
+      (∀ ρ X, Denotes M.cval env φ ρ (.const (κ c) []) X ↔ X = M.cval (κ c) φ) ∧
+      (∀ ρ X, Denotes M.cval env φ ρ (.const (κ D) []) X → M.cval (κ c) φ ∈ˢ X) := by
+  obtain ⟨safe', ty', cs', hd', ⟨ciD, hfD, hlD⟩, hcs, _⟩ := hE
+  rw [hd] at hd'
+  injection hd' with hd''
+  injection hd'' with _ _ _ _ _ hcs
+  subst hcs
+  obtain ⟨hS, -, cv, hfc, hlc, htc⟩ := hcs i c hc
+  obtain ⟨ci, hci, hlps⟩ := hF.stored c hS
+  rw [hfc] at hci
+  cases hci
+  have hlv : LvAt φ (lpsOf c) [] := by
+    rw [← hlps]; simp only [ConstantInfo.toConstantVal, hlc]; intro i q h; simp at h
+  refine ⟨?_, fun ρ X => den_const0 hfc hlc, fun ρ X hX => ?_⟩
+  · have := RelV.con (M := M) (κ := κ) (lpsOf := lpsOf) (S := (· ∈ Sl)) (Ok := Ok p ann)
+      (c := c) (ls := []) (ps := []) (fs := []) (φ := φ) (Ps := []) (Fs := []) (ρ := fun _ => empty)
+      hS hlv hfc rfl rfl .nil .nil .nil
+    simpa using this
+  · obtain ⟨T, hT, hm⟩ := mem_key M hfc φ ρ
+    simp only [ConstantInfo.toConstantVal, htc] at hT
+    rwa [Denotes_functional hT hX] at hm
+
+end Args
+
+/-- **The fundamental lemma from the checked facts** (the form the root theorem uses). -/
+theorem allP_of_facts (hL : Laws M) {p : Program} {κ : CId → KKey} {lpsOf : CId → List Nat}
+    {ann : IxCC.Src.Relevance.Ann} {Sl : List CId}
+    (hG : GroundFacts p env κ lpsOf ann (· ∈ Sl)) (hC : CaseFacts p env κ (· ∈ Sl))
+    (hT : SitesOk M p κ lpsOf ann (· ∈ Sl)) : ∀ k, AllP M p κ lpsOf (· ∈ Sl) (Ok p ann) k :=
+  allP (fundHyps_of hL hG hT fun c r hc hr => by
+    obtain ⟨sh, hst, hpr⟩ := hC c r hc hr
+    exact caseFires_of_shape hL hG.faith hG.natBasis hc hr hst hpr)
+
+/-- **Soundness at a root.** -/
+theorem rootSound (hL : Laws M) {p : Program} {κ : CId → KKey} {lpsOf : CId → List Nat}
+    {ann : IxCC.Src.Relevance.Ann} {Sl : List CId} {root : CId} {args : List FoTy} {res : FoTy}
+    (hG : GroundFacts p env κ lpsOf ann (· ∈ Sl)) (hC : CaseFacts p env κ (· ∈ Sl))
+    (hR : RootFacts p env κ ann (· ∈ Sl) root args res) (hT : SitesOk M p κ lpsOf ann (· ∈ Sl))
+    {k : Nat} {xs : List Value} {es : List KExpr} {v : Value} {o : IxCC.Sem.Obs} {eo : KExpr}
+    (hA : FoArgs p κ args xs es) (hrun : IxCC.Src.run p k root xs = .ok v)
+    (hrb : IxCC.Src.readbackAll p v = some o) (hRT : ResultTag p env κ (· ∈ Sl) res o)
+    (hO : FoObs p κ res o eo) (φ : LevelParam → Nat) (ρ : BVarIdx → V) (X : V)
+    (hX : Denotes M.cval env φ ρ (Expr.mkAppN (.const (κ root) []) es) X) :
+    Denotes M.cval env φ ρ eo X := by
+  have hN := hG.natBasis
+  have hF0 := natFacts M hN φ
+  have hAll := allP_of_facts hL hG hC hT k
+  obtain ⟨ci, hfr, hlr, htr⟩ := hR.stored
+  -- δ on the root
+  rw [IxCC.Src.run_eq] at hrun
+  obtain ⟨f, hf, happ⟩ := Result.bind_eq_ok_iff.mp hrun
+  obtain ⟨ci2, hf2, hlps⟩ := hG.faith.stored root hR.mem
+  rw [hfr] at hf2
+  cases hf2
+  have hlv : LvAt φ (lpsOf root) [] := by rw [← hlps, hlr]; intro i q h; simp at h
+  have hrelf := hAll.evalConst [] root f φ hf hR.mem hR.ok hlv
+  -- the arguments
+  obtain ⟨F, Es, hFd, hEs, rfl⟩ := (den_mkAppN es).mp hX
+  obtain rfl : F = M.cval (κ root) φ := (den_const0 hfr hlr).mp hFd
+  have hargs : ∀ {ts : List FoTy} {xs : List Value} {es : List KExpr} {Es : List V},
+      (∀ D, FoTy.enum D ∈ ts → FoTy.enum D ∈ args) → FoArgs p κ ts xs es →
+      DenotesList M.cval env φ ρ es Es →
+      RelSlots M κ lpsOf (· ∈ Sl) (Ok p ann) (xs.map .val) Es ∧
+        ∀ (E : BVarIdx → V), Fits M.cval env φ E
+          (piTele (ts.map fun t => (t.kexpr κ, { pw := PropWhen.never })) (res.kexpr κ)) Es
+          (pushAll Es E) (res.kexpr κ) := by
+    intro ts xs es Es hsub hA hEs
+    induction hA generalizing Es with
+    | nil => cases hEs; exact ⟨.nil, fun E => by rw [pushAll_nil]; exact .nil⟩
+    | @cons t ts x xs e es hv _ ih =>
+      cases hEs with
+      | @cons _ _ Y Ys hY hYs =>
+      obtain ⟨ih1, ih2⟩ := ih (fun D h => hsub D (List.mem_cons_of_mem _ h)) hYs
+      have hYrel : RelV M κ lpsOf (· ∈ Sl) (Ok p ann) x Y ∧
+          ∀ ρ' Z, Denotes M.cval env φ ρ' (t.kexpr κ) Z → Y ∈ˢ Z := by
+        cases hv with
+        | nat n =>
+          rw [(lit_den M hF0 ρ n Y).mp hY]
+          exact ⟨relV_lit_intro hN φ n, fun ρ' Z hZ => by
+            rw [(hF0.natD ρ' Z).mp hZ]; exact lit_mem M hF0 n⟩
+        | @enum D c i safe cs ty hd hc =>
+          have hE := hR.enums D (Or.inl (hsub D (List.mem_cons_self ..)))
+          obtain ⟨hrel, hden, hmem⟩ := enum_arg (M := M) (ann := ann) hG.faith hE hd hc φ
+          rw [(hden ρ Y).mp hY]
+          exact ⟨hrel, fun ρ' Z hZ => hmem ρ' Z hZ⟩
+      refine ⟨.cons (.val hYrel.1) ih1, fun E => ?_⟩
+      obtain ⟨Z, hZ⟩ : ∃ Z, Denotes M.cval env φ E (t.kexpr κ) Z := by
+        cases t with
+        | nat => exact ⟨_, (hF0.natD E _).mpr rfl⟩
+        | enum D =>
+          obtain ⟨_, _, _, _, ⟨ciD, hfD, hlD⟩, _⟩ := hR.enums D (Or.inl (hsub D (List.mem_cons_self ..)))
+          exact ⟨_, (den_const0 hfD hlD).mpr rfl⟩
+      have h2 := ih2 (push Y E)
+      rw [← pushAll_cons] at h2
+      exact .cons hZ (hYrel.2 E Z hZ) (by simpa using h2)
+  obtain ⟨hrelEs, hfitEs⟩ := hargs (fun D h => h) hA hEs
+  -- the chain of applications, at graph-regime sites
+  obtain ⟨TT, hTT, hmem⟩ := mem_key M hfr φ ρ
+  rw [htr] at hTT
+  have hchain : AppChain (M.cval (κ root) φ) Es :=
+    appChain_of_fits _ _ hTT hmem (hfitEs ρ) (by
+      have := denotesList_length hEs
+      have hl := foArgs_length hA
+      simp; omega) (fun b hb => by
+        simp only [List.mem_map] at hb
+        obtain ⟨_, _, rfl⟩ := hb
+        simp [regime])
+  have hrelv := hAll.applyAll f (xs.map .val) v _ Es happ hrelf hrelEs hchain
+  -- the readback
+  cases hO with
+  | nat w =>
+    obtain rfl := readback_nat hrb
+    rw [relV_lit_eq hL hN φ hrelv]
+    exact (lit_den M hF0 ρ w _).mpr rfl
+  | @enum D c i safe cs ty hd hc =>
+    obtain ⟨c'', ls, ps, rfl, htag⟩ := readback_ctor hrb
+    have hE := hR.enums D (Or.inr rfl)
+    obtain ⟨_, hden, _⟩ := enum_arg (M := M) (ann := ann) hG.faith hE hd hc φ
+    obtain ⟨_, _, _, hd', _, hcs, _⟩ := hE
+    rw [hd] at hd'
+    injection hd' with hd''
+    injection hd'' with _ _ _ _ _ hcs
+    subst hcs
+    obtain ⟨_, _, cvc, hfc, hlc, _⟩ := hcs i c hc
+    generalize hXv : Es.foldl app (M.cval (κ root) φ) = Xv at hrelv ⊢
+    cases hrelv with
+    | @con _ _ _ _ ψ cvC np nf Ps Fs ρc σc Rc hSc _ hfc' hPl hFl _ hfs _ =>
+    obtain rfl := List.eq_nil_of_length_eq_zero (relVs_length hfs)
+    have hnf : nf = 0 := by simpa using hFl.symm
+    subst hnf
+    have hkey : κ c'' = κ c := hRT safe ty cs c hd hc c'' hSc htag ⟨cvC, np, hfc'⟩
+    rw [hkey, hfc] at hfc'
+    simp only [Option.some.injEq, ConstantInfo.ctorInfo.injEq] at hfc'
+    obtain ⟨rfl, rfl, -⟩ := hfc'
+    obtain rfl := List.eq_nil_of_length_eq_zero hPl
+    rw [List.nil_append, List.foldl_nil, hkey,
+      hL.cval_params _ _ hfc ψ φ (by simp [ConstantInfo.toConstantVal, hlc])]
+    exact (hden ρ _).mpr rfl
+
+/-- **`fib`, as an instance**: a root `Nat → Nat`. -/
+theorem fibRoot (hL : Laws M) {p : Program} {κ : CId → KKey} {lpsOf : CId → List Nat}
+    {ann : IxCC.Src.Relevance.Ann} {Sl : List CId} {root : CId}
+    (hG : GroundFacts p env κ lpsOf ann (· ∈ Sl)) (hC : CaseFacts p env κ (· ∈ Sl))
+    (hR : RootFacts p env κ ann (· ∈ Sl) root [.nat] .nat) (hT : SitesOk M p κ lpsOf ann (· ∈ Sl))
+    {k n : Nat} {v : Value} {w : Nat} (hrun : IxCC.Src.run p k root [.lit n] = .ok v)
+    (hrb : IxCC.Src.readbackAll p v = some (.nat w)) (φ : LevelParam → Nat) (ρ : BVarIdx → V)
+    (X : V) (hX : Denotes M.cval env φ ρ (.app (.const (κ root) []) (litE n)) X) :
+    Denotes M.cval env φ ρ (litE w) X :=
+  rootSound hL hG hC hR hT (.cons (.nat n) .nil) hrun hrb trivial (.nat w) φ ρ X hX
+
+/-- **`decide (fib 10 = 55)`, as an instance**: a root `Bool` read back as constructor `1`, which
+denotes the kernel's `Bool.true`. -/
+theorem decideRoot (hL : Laws M) {p : Program} {κ : CId → KKey} {lpsOf : CId → List Nat}
+    {ann : IxCC.Src.Relevance.Ann} {Sl : List CId} {root boolD : CId}
+    (_hb : p.known.bool = some boolD) (hBL : BoolListed p boolD)
+    (hG : GroundFacts p env κ lpsOf ann (· ∈ Sl)) (hC : CaseFacts p env κ (· ∈ Sl))
+    (hR : RootFacts p env κ ann (· ∈ Sl) root [] (.enum boolD))
+    (hT : SitesOk M p κ lpsOf ann (· ∈ Sl))
+    (hRT : ResultTag p env κ (· ∈ Sl) (.enum boolD) (.ctor 1 []))
+    {k : Nat} {v : Value} (hrun : IxCC.Src.run p k root [] = .ok v)
+    (hrb : IxCC.Src.readbackAll p v = some (.ctor 1 [])) (φ : LevelParam → Nat)
+    (ρ : BVarIdx → V) (X : V) (hX : Denotes M.cval env φ ρ (.const (κ root) []) X) :
+    Denotes M.cval env φ ρ (.const boolTrueName []) X := by
+  obtain ⟨safe, ty, cs, hd, h1, hsome⟩ := hBL
+  obtain ⟨t, ht⟩ := Option.isSome_iff_exists.mp hsome
+  rw [ht] at h1
+  obtain ⟨_, hkt, _⟩ := hG.faith.bool true t (by simpa using ht)
+  have h := rootSound hL hG hC hR hT .nil hrun hrb hRT (.enum hd h1) φ ρ X hX
+  simpa [hkt] using h
+
+end IxCC.Grounding
