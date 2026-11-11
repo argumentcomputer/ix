@@ -450,7 +450,7 @@ theorem projInstall (hμ : μ.verifiedChecks = true) {F : Nat}
         hCblock hFields
     -- the block-level premises, re-established (v1's argument)
     obtain ⟨cvj, mcv, mval, mhint, pty, rhsA, hctor, hfm, hmlps,
-      hpnone, hTf, -, -, -, -, -, -, -, -, hilt, -, -, henv⟩ := hR
+      hpnone, hTf, -, -, -, -, -, -, -, -, hilt, -, -, -, henv⟩ := hR
     have hfresh : env'.find? (projFnName T i) = none :=
       Option.isNone_iff_eq_none.mp hpnone
     have hTne : T ≠ projFnName T i := by

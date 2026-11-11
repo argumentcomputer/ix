@@ -316,7 +316,7 @@ theorem fits_teleFitPA {acval : Key md → (LevelParam → Nat) → AnnotTerm}
       interp V ρ' (ws.getD n default)
         ∈ˢ interp V (chain V ρ' (ws.take n)) (Γ.getD (vs.length - 1 - n) default) := by
     intro n
-    induction n using Nat.strong_induction_on with
+    induction n using Nat.strongRecOn with
     | _ n ih =>
       intro hn
       obtain ⟨b, X, hb, hbB, hbF, hX, hx⟩ := hsteps n hn
@@ -382,6 +382,7 @@ theorem hasFvar_getAppArgs_false : ∀ {e : Expr md}, e.hasFvar = false →
   | _ => intro _ x hx; simp [Expr.getAppArgs] at hx
 
 
+omit [SetTheory V] in
 theorem _root_.Ix.Kernel.pushVals_append (ρ : Ix.Kernel.BVarIdx → V) :
     ∀ (xs ys : List V), pushVals ρ (xs ++ ys) = pushVals (pushVals ρ xs) ys
   | [], _ => rfl
@@ -415,7 +416,7 @@ theorem _root_.Ix.Kernel.Denotes.lift {cval : Key md → (LevelParam → Nat) �
       rw [← hhi i hic]
       exact .bvar
     · simp only [Expr.liftLooseBVars, if_neg hic]
-      rw [← hlo i (by omega)]
+      rw [← hlo i (Nat.not_le.mp hic)]
       exact .bvar
   | sort => intros; exact .sort
   | const hf hlen => intros; exact .const hf hlen
@@ -572,8 +573,7 @@ theorem iotaRule_of_fires {μ : Ix.Kernel.CheckMode} {env : Env md} (m : EnvMode
   have hmajv : interp V ρ' majA = ys.foldl app K := by
     show interp V ρ' (AnnotTerm.mkAppN _ ysA) = _
     rw [interp_mkAppN, interp_cvalOf hcl, ← hKv]
-    conv => rhs; rw [← hysMap]
-    rw [List.foldl_map]
+    conv => rhs; rw [← hysMap, List.foldl_map]
   -- the two fits, at the readings
   have hfitR' := hfitR.snoc rfl hX hmaj
   have hvalR : ∀ n, n < (xs ++ [ys.foldl app K]).length →
@@ -586,7 +586,7 @@ theorem iotaRule_of_fires {μ : Ix.Kernel.CheckMode} {env : Env md} (m : EnvMode
         List.getElem?_append_left (by omega : n < xs.length)]
       have := hxsA_val n hlt
       simpa only [List.getD] using this
-    · obtain rfl : n = mI := by omega
+    · rw [show n = mI by omega]
       simp only [List.getD, List.getElem?_append_right (by omega : xsA.length ≤ mI),
         List.getElem?_append_right (by omega : xs.length ≤ mI), hxsA_len, hxs, Nat.sub_self]
       simpa using hmajv
@@ -766,7 +766,7 @@ theorem iotaRule_of_fires {μ : Ix.Kernel.CheckMode} {env : Env md} (m : EnvMode
         ⟨_, List.getElem?_eq_getElem hargLen⟩
       have hamem : a ∈ RC.getAppArgs := List.mem_of_getElem? ha
       have hab : a.looseBVarsBounded ys.length = true :=
-        Expr.looseBVarsBounded_getAppArgs hRCb a hamem
+        Ix.Kernel.looseBVarsBounded_getAppArgs hRCb a hamem
       have haf : a.hasFvar = false := hasFvar_getAppArgs_false hRCf a hamem
       have hread := hsp.getD (Expr.bvar 0) (rl.ctorParams + i) (by simpa using hargLen)
       simp only [List.getD, List.getElem?_map, ha, Option.map_some, Option.getD_some] at hread

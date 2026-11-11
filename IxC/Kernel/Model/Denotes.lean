@@ -61,7 +61,7 @@ universe w
 variable {V : Type w} [SetTheory V]
 
 /-- The set-valued leaf of an annotated valuation. -/
-noncomputable def cvalOf (acval : Key md → (LevelParam → Nat) → AnnotTerm)
+@[expose] noncomputable def cvalOf (acval : Key md → (LevelParam → Nat) → AnnotTerm)
     (n : Key md) (ψ : LevelParam → Nat) : V :=
   interp V (fun _ => SetTheory.empty) (acval n ψ)
 
