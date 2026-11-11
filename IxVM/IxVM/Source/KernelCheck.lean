@@ -1449,18 +1449,26 @@ def peel_motive_params_subst := aiur_fn⟦
     }
 ⟧
 
+  -- The first `n` binder domains of the telescope `ty`, head-normalizing where it is
+  -- not syntactically a `∀`. `types` holds the types of the binders `ty` is under
+  -- (the recursor's parameters, then the domains peeled so far), so that the
+  -- head normalization runs in their context.
+
 def collect_index_doms := aiur_fn⟦
-  fn collect_index_doms(rc: KernelRoles::RoleCtx, ty: KernelTypes::KExpr, n: Field) -> Lists::List<KernelTypes::KExpr> {
+  fn collect_index_doms(rc: KernelRoles::RoleCtx, ty: KernelTypes::KExpr, n: Field,
+                        types: Lists::List<KernelTypes::KExpr>) -> Lists::List<KernelTypes::KExpr> {
       match n {
         0 => {  (&(Lists::Node::Nil)) } ,
         _ => {
           match (*(ty)) {
             KernelTypes::KExprNode::Forall(dom, body, _) => {
-              (&(Lists::Node::Cons(dom, collect_index_doms(rc, body, n - 1)))) } ,
+              (&(Lists::Node::Cons(dom,
+                collect_index_doms(rc, body, n - 1, (&(Lists::Node::Cons(dom, types))))))) } ,
             _ => {
-              match (*(KernelWhnf::whnf(rc, ty, (&(Lists::Node::Nil))))) {
+              match (*(KernelWhnf::whnf(rc, ty, types))) {
                 KernelTypes::KExprNode::Forall(dom, body, _) => {
-                  (&(Lists::Node::Cons(dom, collect_index_doms(rc, body, n - 1)))) } ,
+                  (&(Lists::Node::Cons(dom,
+                    collect_index_doms(rc, body, n - 1, (&(Lists::Node::Cons(dom, types))))))) } ,
                 _ => {  (&(Lists::Node::Nil)) } ,
               } } ,
           } } ,
@@ -1527,26 +1535,54 @@ def wrap_foralls := aiur_fn⟦
     }
 ⟧
 
+  -- The first `n` binder domains of the telescope `ty` and what follows them,
+  -- head-normalizing where it is not syntactically a `∀`, in the context `types`
+  -- extended by the domains peeled so far.
+
 def collect_n_doms_whnf := aiur_fn⟦
-  fn collect_n_doms_whnf(rc: KernelRoles::RoleCtx, ty: KernelTypes::KExpr, n: Field) -> (Lists::List<KernelTypes::KExpr>, KernelTypes::KExpr) {
+  fn collect_n_doms_whnf(rc: KernelRoles::RoleCtx, ty: KernelTypes::KExpr, n: Field,
+                         types: Lists::List<KernelTypes::KExpr>) -> (Lists::List<KernelTypes::KExpr>, KernelTypes::KExpr) {
       match n {
         0 => {  ((&(Lists::Node::Nil)), ty) } ,
         _ => {
 
           match (*(ty)) {
             KernelTypes::KExprNode::Forall(dom, body, _) => {
-              match collect_n_doms_whnf(rc, body, n - 1) {
+              match collect_n_doms_whnf(rc, body, n - 1, (&(Lists::Node::Cons(dom, types)))) {
                 (rest, after) => {  ((&(Lists::Node::Cons(dom, rest))), after) } ,
               } } ,
             _ => {
-              match (*(KernelWhnf::whnf(rc, ty, (&(Lists::Node::Nil))))) {
+              match (*(KernelWhnf::whnf(rc, ty, types))) {
                 KernelTypes::KExprNode::Forall(dom, body, _) => {
-                  match collect_n_doms_whnf(rc, body, n - 1) {
+                  match collect_n_doms_whnf(rc, body, n - 1, (&(Lists::Node::Cons(dom, types)))) {
                     (rest, after) => {  ((&(Lists::Node::Cons(dom, rest))), after) } ,
                   } } ,
 
                 _ => {  ((&(Lists::Node::Nil)), ty) } ,
               } } ,
+          } } ,
+      }
+    }
+⟧
+
+  -- The context of a recursor's parameters, innermost first (a `types` list): the
+  -- parameter domains of its block's first type at the recursor's levels, as
+  -- `build_rec_type_from` peels them. Field and index types written in terms of the
+  -- parameters are head-normalized in this context.
+
+def rec_param_ctx := aiur_fn⟦
+  fn rec_param_ctx(rc: KernelRoles::RoleCtx,
+                   flat: Lists::List<(Bytes::AddressRef, Field, Lists::List<KernelTypes::KExpr>, Lists::List<KernelTypes::KLevel>)>,
+                   n_params: Field) -> Lists::List<KernelTypes::KExpr> {
+      match flat_member_at(flat, 0) {
+        (prim_addr, _pia, _pisp, prim_us) => {
+          match (*(Ingress::get_ci(prim_addr))) {
+            KernelTypes::KConstantInfo::Induct(_, prim_ty, _, _, _, _, _, _) => {
+              match collect_n_doms_whnf(rc, KernelLevels::expr_inst_levels(prim_ty, prim_us), n_params,
+                      (&(Lists::Node::Nil))) {
+                (doms, _) => {  Lists::reverse(doms) } ,
+              } } ,
+            _ => {  (&(Lists::Node::Nil)) } ,
           } } ,
       }
     }
@@ -1594,11 +1630,12 @@ def build_motive_type_flat := aiur_fn⟦
                                     elim_level: KernelTypes::KLevel,
                                     n_rec_params: Field,
                                     is_aux: Field,
-                                    spec_params: Lists::List<KernelTypes::KExpr>) -> KernelTypes::KExpr {
+                                    spec_params: Lists::List<KernelTypes::KExpr>,
+                                    ptypes: Lists::List<KernelTypes::KExpr>) -> KernelTypes::KExpr {
       let ind_ty_inst = KernelLevels::expr_inst_levels(ind_ty, occurrence_us);
       let after_params = peel_motive_params_subst(ind_ty_inst, n_own_params,
         n_rec_params, is_aux, spec_params, 0);
-      let index_doms = collect_index_doms(rc, after_params, n_indices);
+      let index_doms = collect_index_doms(rc, after_params, n_indices, ptypes);
       let head = (&(KernelTypes::KExprNode::Const(member_addr, occurrence_us)));
       let with_args = build_major_args_for_member(head, n_rec_params,
         n_indices, is_aux, spec_params);
@@ -1614,7 +1651,8 @@ def build_all_motives := aiur_fn⟦
   fn build_all_motives(rc: KernelRoles::RoleCtx, flat: Lists::List<(Bytes::AddressRef, Field, Lists::List<KernelTypes::KExpr>, Lists::List<KernelTypes::KLevel>)>,
                               elim_level: KernelTypes::KLevel, n_rec_params: Field)
                               -> Lists::List<KernelTypes::KExpr> {
-      build_all_motives_walk(rc, flat, elim_level, n_rec_params, 0)
+      build_all_motives_walk(rc, flat, elim_level, n_rec_params, 0,
+        rec_param_ctx(rc, flat, n_rec_params))
     }
 ⟧
 
@@ -1687,7 +1725,8 @@ def build_rec_type_from := aiur_fn⟦
       let motive_base = n_params;
 
       let p_us = build_param_lvls_range(univ_offset, prim_nlvls, 0);
-      match collect_n_doms_whnf(rc, KernelLevels::expr_inst_levels(prim_ty, p_us), n_params) {
+      match collect_n_doms_whnf(rc, KernelLevels::expr_inst_levels(prim_ty, p_us), n_params,
+              (&(Lists::Node::Nil))) {
         (param_doms, after_params) => {
           let motive_doms = build_all_motives(rc, flat, elim_level, n_params);
           let minor_doms = build_all_minors(rc, flat, flat_own_params, n_params,
@@ -1702,7 +1741,7 @@ def build_rec_type_from := aiur_fn⟦
           let self_after_params = peel_motive_params_subst(self_ty_inst,
             self_own_params, n_params, self_is_aux, self_spec_params, 0);
           let index_doms_raw = collect_index_doms(rc, self_after_params,
-            n_indices);
+            n_indices, Lists::reverse(param_doms));
           let index_doms = list_lift_indices(index_doms_raw,
             n_motives + n_minors, 0);
           let head = (&(KernelTypes::KExprNode::Const(self_addr, self_occ_us)));
@@ -1941,10 +1980,15 @@ def compare_rules := aiur_fn⟦
     }
 ⟧
 
+  -- The rule's inductive hypotheses, one per recursive field. `norm_doms` are the
+  -- fields' types with every step of their telescopes head-normalized
+  -- (`walk_fields_classify`), so the field's arguments `xs` and the indices of its
+  -- type are read off syntactically.
+
 def apply_ihs_full := aiur_fn⟦
-  fn apply_ihs_full(rc: KernelRoles::RoleCtx, head: KernelTypes::KExpr, rec_indices: Lists::List<Field>,
+  fn apply_ihs_full(head: KernelTypes::KExpr, rec_indices: Lists::List<Field>,
                             rec_member_idxs: Lists::List<Field>,
-                            field_doms: Lists::List<KernelTypes::KExpr>,
+                            norm_doms: Lists::List<KernelTypes::KExpr>,
                             peer_recs: Lists::List<Bytes::AddressRef>,
                             flat_own_params: Lists::List<Field>,
                             n_params: Field, n_motives: Field, n_minors: Field,
@@ -1959,7 +2003,7 @@ def apply_ihs_full := aiur_fn⟦
           let target_n_params = Lists::lookup_or_default(flat_own_params,
             mem_idx, 0);
           let body_depth = ((n_params + n_motives) + n_minors) + n_fields;
-          let dom = Lists::lookup(field_doms, field_idx);
+          let dom = Lists::lookup(norm_doms, field_idx);
           let dom_s1 = KernelSubst::expr_lift(dom, n_fields - field_idx, 0);
           let dom_lifted = KernelSubst::expr_lift(dom_s1, n_motives + n_minors, n_fields);
           match peel_leading_foralls(dom_lifted) {
@@ -1974,7 +2018,7 @@ def apply_ihs_full := aiur_fn⟦
               let with_minors = build_minor_apps(with_motives, n_minors,
                 ((inner_depth - 1) - n_params) - n_motives, 0);
 
-              match KernelTypes::collect_spine(KernelWhnf::whnf(rc, inner_body, (&(Lists::Node::Nil)))) {
+              match KernelTypes::collect_spine(inner_body) {
                 (_dh, dargs) => {
                   let idx_args = Lists::drop(dargs, target_n_params);
                   let with_idx = apply_spine_expr(with_minors, idx_args);
@@ -1984,8 +2028,8 @@ def apply_ihs_full := aiur_fn⟦
                   let ih_inner = (&(KernelTypes::KExprNode::App(with_idx, field_app)));
                   let ih = wrap_lams(ih_inner, forall_doms, elim);
                   let new_head = (&(KernelTypes::KExprNode::App(head, ih)));
-                  apply_ihs_full(rc, new_head, rest, rec_member_idxs,
-                    field_doms, peer_recs, flat_own_params, n_params,
+                  apply_ihs_full(new_head, rest, rec_member_idxs,
+                    norm_doms, peer_recs, flat_own_params, n_params,
                     n_motives, n_minors, n_fields, rec_lvls_list, k + 1, elim) } ,
               } } ,
           } } ,
@@ -2008,19 +2052,20 @@ def build_rule_rhs := aiur_fn⟦
       let n_fields = count_foralls_body(after_params_raw, 0);
       let body_depth = ((n_params + n_motives) + n_minors) + n_fields;
 
+      let ptypes = rec_param_ctx(rc, flat, n_params);
       let after_params = peel_ctor_params_subst(rc, ctor_ty_inst, n_own_params,
-        n_own_params, 0, is_aux, spec_params, 0);
+        n_own_params, 0, is_aux, spec_params, 0, ptypes);
 
       match walk_fields_classify(rc, after_params, flat, (&(Lists::Node::Nil)),
-              (&(Lists::Node::Nil)), (&(Lists::Node::Nil)), 0, 0) {
-        (field_doms, rec_indices, rec_member_idxs, _ret_ty) => {
+              (&(Lists::Node::Nil)), (&(Lists::Node::Nil)), (&(Lists::Node::Nil)), 0, 0, ptypes) {
+        (_field_doms, rec_indices, rec_member_idxs, _ret_ty, norm_doms) => {
           let minor_var = (body_depth - 1) - ((n_params + n_motives) +
                                                 ctor_minor_index);
           let base = (&(KernelTypes::KExprNode::BVar(minor_var)));
           let with_fields = build_apply_field_bvars(base, n_fields,
             n_fields, 0);
-          apply_ihs_full(rc, with_fields, rec_indices, rec_member_idxs,
-            field_doms, peer_recs, flat_own_params, n_params, n_motives,
+          apply_ihs_full(with_fields, rec_indices, rec_member_idxs,
+            norm_doms, peer_recs, flat_own_params, n_params, n_motives,
             n_minors, n_fields, rec_lvls_list, 0, elim) } ,
       }
     }
@@ -2251,10 +2296,14 @@ def count_foralls_body := aiur_fn⟦
     }
 ⟧
 
+  -- A constructor's type with its first `n` parameters instantiated by the recursor's
+  -- (`ctor_subst_param_for`), head-normalizing where it is not syntactically a `∀` in
+  -- the context `types` of the binders the instantiation refers to.
+
 def peel_ctor_params_subst := aiur_fn⟦
   fn peel_ctor_params_subst(rc: KernelRoles::RoleCtx, ty: KernelTypes::KExpr, n: Field, depth: Field, spec_lift: Field,
                                     is_aux: Field, spec_params: Lists::List<KernelTypes::KExpr>,
-                                    j: Field) -> KernelTypes::KExpr {
+                                    j: Field, types: Lists::List<KernelTypes::KExpr>) -> KernelTypes::KExpr {
       match n {
         0 => {  ty } ,
         _ => {
@@ -2265,15 +2314,15 @@ def peel_ctor_params_subst := aiur_fn⟦
                 spec_params);
               let body_substed = KernelSubst::expr_inst1(body, p, 0);
               peel_ctor_params_subst(rc, body_substed, n - 1, depth,
-                spec_lift, is_aux, spec_params, j + 1) } ,
+                spec_lift, is_aux, spec_params, j + 1, types) } ,
             _ => {
-              match (*(KernelWhnf::whnf(rc, ty, (&(Lists::Node::Nil))))) {
+              match (*(KernelWhnf::whnf(rc, ty, types))) {
                 KernelTypes::KExprNode::Forall(_, body, _) => {
                   let p = ctor_subst_param_for(j, depth, spec_lift, is_aux,
                     spec_params);
                   let body_substed = KernelSubst::expr_inst1(body, p, 0);
                   peel_ctor_params_subst(rc, body_substed, n - 1, depth,
-                    spec_lift, is_aux, spec_params, j + 1) } ,
+                    spec_lift, is_aux, spec_params, j + 1, types) } ,
               } } ,
           } } ,
       }
@@ -2293,12 +2342,18 @@ def build_minor_at_depth := aiur_fn⟦
       let ctor_ty_inst = KernelLevels::expr_inst_levels(ctor_ty, occurrence_us);
       let minor_saved = n_rec_params + n_motives + prev_minors;
       let below_params = n_motives + prev_minors;
+      -- The fields are read in the parameters' frame, whose context is known (the
+      -- recursor's parameters), then lifted over the motives and earlier minors.
+      let ptypes = rec_param_ctx(rc, flat, n_rec_params);
       let after_params = peel_ctor_params_subst(rc, ctor_ty_inst, n_own_params,
-        minor_saved, below_params, is_aux, spec_params, 0);
+        n_rec_params, 0, is_aux, spec_params, 0, ptypes);
       match walk_fields_classify(rc, after_params, flat, (&(Lists::Node::Nil)),
-              (&(Lists::Node::Nil)), (&(Lists::Node::Nil)), 0, below_params) {
-        (field_doms, rec_indices, rec_member_idxs, ret_ty) => {
-          let n_fields = Lists::length(field_doms);
+              (&(Lists::Node::Nil)), (&(Lists::Node::Nil)), (&(Lists::Node::Nil)), 0, 0, ptypes) {
+        (pf_doms, rec_indices, rec_member_idxs, pf_ret, pf_norm) => {
+          let n_fields = Lists::length(pf_doms);
+          let field_doms = list_lift_indices(pf_doms, below_params, 0);
+          let norm_doms = list_lift_indices(pf_norm, below_params, 0);
+          let ret_ty = KernelSubst::expr_lift(pf_ret, below_params, n_fields);
           let n_ihs = Lists::length(rec_indices);
           let n_binders = n_fields + n_ihs;
           let depth_now = minor_saved + n_binders;
@@ -2316,8 +2371,8 @@ def build_minor_at_depth := aiur_fn⟦
               let ctor_app = build_apply_field_bvars(with_params,
                 n_fields, n_binders, 0);
               let conclusion = (&(KernelTypes::KExprNode::App(with_indices, ctor_app)));
-              let ih_doms = build_ih_doms(rc, rec_indices, rec_member_idxs,
-                field_doms, flat_own_params, motive_base, n_fields,
+              let ih_doms = build_ih_doms(rec_indices, rec_member_idxs,
+                norm_doms, flat_own_params, motive_base, n_fields,
                 minor_saved, 0, elim);
               let with_ihs = wrap_foralls(conclusion, ih_doms, elim);
               wrap_foralls(with_ihs, field_doms, elim) } ,
@@ -2325,6 +2380,10 @@ def build_minor_at_depth := aiur_fn⟦
       }
     }
 ⟧
+
+  -- The binders of a telescope, read syntactically. The inductive-hypothesis builders
+  -- apply it to field types whose telescopes are head-normalized at every step
+  -- (`whnf_tele`), so a `∀` that only head normalization exposes is peeled too.
 
 def peel_leading_foralls := aiur_fn⟦
   fn peel_leading_foralls(ty: KernelTypes::KExpr) -> (Lists::List<KernelTypes::KExpr>, KernelTypes::KExpr) {
@@ -2357,9 +2416,12 @@ def build_apply_xs := aiur_fn⟦
     }
 ⟧
 
+  -- The minor's inductive-hypothesis binders, one per recursive field, from the
+  -- fields' head-normalized telescopes `norm_doms` (`walk_fields_classify`).
+
 def build_ih_doms := aiur_fn⟦
-  fn build_ih_doms(rc: KernelRoles::RoleCtx, rec_indices: Lists::List<Field>, rec_member_idxs: Lists::List<Field>,
-                          field_doms: Lists::List<KernelTypes::KExpr>,
+  fn build_ih_doms(rec_indices: Lists::List<Field>, rec_member_idxs: Lists::List<Field>,
+                          norm_doms: Lists::List<KernelTypes::KExpr>,
                           flat_own_params: Lists::List<Field>,
                           motive_base: Field, n_fields: Field, minor_saved: Field,
                           k: Field, elim: KernelTypes::KLevel) -> Lists::List<KernelTypes::KExpr> {
@@ -2370,7 +2432,7 @@ def build_ih_doms := aiur_fn⟦
           let target_n_params = Lists::lookup_or_default(flat_own_params,
             mem_idx, 0);
           let depth = minor_saved + n_fields + k;
-          let dom = Lists::lookup(field_doms, field_idx);
+          let dom = Lists::lookup(norm_doms, field_idx);
           let dom_lifted = KernelSubst::expr_lift(dom, (n_fields - field_idx) + k, 0);
           match peel_leading_foralls(dom_lifted) {
             (forall_doms, inner_body) => {
@@ -2379,7 +2441,7 @@ def build_ih_doms := aiur_fn⟦
               let motive_bvar = (inner_depth - 1) - (motive_base + mem_idx);
               let field_bvar = (inner_depth - 1) - (minor_saved + field_idx);
 
-              match KernelTypes::collect_spine(KernelWhnf::whnf(rc, inner_body, (&(Lists::Node::Nil)))) {
+              match KernelTypes::collect_spine(inner_body) {
                 (_h, dom_args) => {
                   let idx_args = Lists::drop(dom_args, target_n_params);
                   let motive_ref = (&(KernelTypes::KExprNode::BVar(motive_bvar)));
@@ -2389,7 +2451,7 @@ def build_ih_doms := aiur_fn⟦
                   let ih_body = (&(KernelTypes::KExprNode::App(with_indices, field_app)));
                   let ih_dom = wrap_foralls(ih_body, forall_doms, elim);
                   (&(Lists::Node::Cons(ih_dom,
-                    build_ih_doms(rc, rest, rec_member_idxs, field_doms,
+                    build_ih_doms(rest, rec_member_idxs, norm_doms,
                       flat_own_params, motive_base, n_fields, minor_saved,
                       k + 1, elim)))) } ,
               } } ,
@@ -2449,23 +2511,34 @@ def build_ctor_app_params := aiur_fn⟦
     }
 ⟧
 
-def is_rec_field := aiur_fn⟦
-  fn is_rec_field(rc: KernelRoles::RoleCtx, dom: KernelTypes::KExpr,
-                         flat: Lists::List<(Bytes::AddressRef, Field, Lists::List<KernelTypes::KExpr>, Lists::List<KernelTypes::KLevel>)>,
-                         spec_lift_by: Field) -> (Field, Field) {
-      is_rec_field_peel(rc, dom, flat, spec_lift_by)
+  -- A field type with its telescope head-normalized at every step, as Lean's kernel
+  -- reads a recursive argument (`is_rec_argument`: `whnf`, then the body of each `∀`
+  -- in the context extended by its domain). `types` is the context of `ty`.
+
+def whnf_tele := aiur_fn⟦
+  fn whnf_tele(rc: KernelRoles::RoleCtx, ty: KernelTypes::KExpr,
+               types: Lists::List<KernelTypes::KExpr>) -> KernelTypes::KExpr {
+      let w = KernelWhnf::whnf(rc, ty, types);
+      match (*(w)) {
+        KernelTypes::KExprNode::Forall(dom, body, bl) => {
+          (&(KernelTypes::KExprNode::Forall(dom,
+            whnf_tele(rc, body, (&(Lists::Node::Cons(dom, types)))), bl))) } ,
+        _ => {  w } ,
+      }
     }
 ⟧
 
+  -- Whether a head-normalized field telescope (`whnf_tele`) ends in a member of the
+  -- flat block, and which.
+
 def is_rec_field_peel := aiur_fn⟦
-  fn is_rec_field_peel(rc: KernelRoles::RoleCtx, ty: KernelTypes::KExpr, flat: Lists::List<(Bytes::AddressRef, Field, Lists::List<KernelTypes::KExpr>, Lists::List<KernelTypes::KLevel>)>,
+  fn is_rec_field_peel(ty: KernelTypes::KExpr, flat: Lists::List<(Bytes::AddressRef, Field, Lists::List<KernelTypes::KExpr>, Lists::List<KernelTypes::KLevel>)>,
                               spec_lift_by: Field) -> (Field, Field) {
-      let w = KernelWhnf::whnf(rc, ty, (&(Lists::Node::Nil)));
-      match (*(w)) {
+      match (*(ty)) {
         KernelTypes::KExprNode::Forall(_, body, _) => {
-          is_rec_field_peel(rc, body, flat, spec_lift_by) } ,
+          is_rec_field_peel(body, flat, spec_lift_by) } ,
         _ => {
-          match KernelTypes::collect_spine(w) {
+          match KernelTypes::collect_spine(ty) {
             (head, args) => {
               match (*(head)) {
                 KernelTypes::KExprNode::Const(caddr, _) => {
@@ -2522,30 +2595,40 @@ def spec_params_dom_prefix_match := aiur_fn⟦
     }
 ⟧
 
+  -- A constructor's fields after its parameters: their types, the recursive ones
+  -- (field index and flat member), the return type, and each field's type
+  -- head-normalized at every step of its telescope (`whnf_tele`), in the context
+  -- `types` of the binders the field is under (the recursor's parameters, then the
+  -- earlier fields).
+
 def walk_fields_classify := aiur_fn⟦
   fn walk_fields_classify(rc: KernelRoles::RoleCtx, ty: KernelTypes::KExpr,
                                   flat: Lists::List<(Bytes::AddressRef, Field, Lists::List<KernelTypes::KExpr>, Lists::List<KernelTypes::KLevel>)>,
                                   doms_acc: Lists::List<KernelTypes::KExpr>, rec_acc: Lists::List<Field>,
-                                  rec_mem_acc: Lists::List<Field>,
-                                  fidx: Field, spec_lift_by: Field)
-                                  -> (Lists::List<KernelTypes::KExpr>, Lists::List<Field>, Lists::List<Field>, KernelTypes::KExpr) {
+                                  rec_mem_acc: Lists::List<Field>, norm_acc: Lists::List<KernelTypes::KExpr>,
+                                  fidx: Field, spec_lift_by: Field,
+                                  types: Lists::List<KernelTypes::KExpr>)
+                                  -> (Lists::List<KernelTypes::KExpr>, Lists::List<Field>, Lists::List<Field>, KernelTypes::KExpr,
+                                      Lists::List<KernelTypes::KExpr>) {
       match (*(ty)) {
         KernelTypes::KExprNode::Forall(dom, body, _) => {
-
-          let r = is_rec_field(rc, dom, flat, spec_lift_by + fidx);
+          let nd = whnf_tele(rc, dom, types);
+          let r = is_rec_field_peel(nd, flat, spec_lift_by + fidx);
           let new_doms = (&(Lists::Node::Cons(dom, doms_acc)));
+          let new_norm = (&(Lists::Node::Cons(nd, norm_acc)));
+          let types2 = (&(Lists::Node::Cons(dom, types)));
           match r {
             (1, mem_idx) => {
               let new_rec = (&(Lists::Node::Cons(fidx, rec_acc)));
               let new_mem = (&(Lists::Node::Cons(mem_idx, rec_mem_acc)));
               walk_fields_classify(rc, body, flat, new_doms, new_rec,
-                new_mem, fidx + 1, spec_lift_by) } ,
+                new_mem, new_norm, fidx + 1, spec_lift_by, types2) } ,
             _ => {
               walk_fields_classify(rc, body, flat, new_doms, rec_acc,
-                rec_mem_acc, fidx + 1, spec_lift_by) } ,
+                rec_mem_acc, new_norm, fidx + 1, spec_lift_by, types2) } ,
           } } ,
         _ => {  (Lists::reverse(doms_acc), Lists::reverse(rec_acc),
-                Lists::reverse(rec_mem_acc), ty) } ,
+                Lists::reverse(rec_mem_acc), ty, Lists::reverse(norm_acc)) } ,
       }
     }
 ⟧
@@ -2553,7 +2636,7 @@ def walk_fields_classify := aiur_fn⟦
 def build_all_motives_walk := aiur_fn⟦
   fn build_all_motives_walk(rc: KernelRoles::RoleCtx, flat: Lists::List<(Bytes::AddressRef, Field, Lists::List<KernelTypes::KExpr>, Lists::List<KernelTypes::KLevel>)>,
                                     elim_level: KernelTypes::KLevel, n_rec_params: Field,
-                                    j: Field) -> Lists::List<KernelTypes::KExpr> {
+                                    j: Field, ptypes: Lists::List<KernelTypes::KExpr>) -> Lists::List<KernelTypes::KExpr> {
       match (*(flat)) {
         Lists::Node::Nil => {  (&(Lists::Node::Nil)) } ,
         Lists::Node::Cons(m, rest) => {
@@ -2565,13 +2648,13 @@ def build_all_motives_walk := aiur_fn⟦
                                        _, _, _, _) => {
                   let mt = build_motive_type_flat(rc, member_addr, m_ind_ty,
                     m_own_params, m_n_indices, occ_us, elim_level,
-                    n_rec_params, is_aux, spec_params);
+                    n_rec_params, is_aux, spec_params, ptypes);
                   let mt_lifted = KernelSubst::expr_lift(mt, j, 0);
                   (&(Lists::Node::Cons(mt_lifted,
                     build_all_motives_walk(rc, rest, elim_level, n_rec_params,
-                      j + 1)))) } ,
+                      j + 1, ptypes)))) } ,
                 _ => {
-                  build_all_motives_walk(rc, rest, elim_level, n_rec_params, j) } ,
+                  build_all_motives_walk(rc, rest, elim_level, n_rec_params, j, ptypes) } ,
               } } ,
           } } ,
       }

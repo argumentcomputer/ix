@@ -53,6 +53,7 @@ import Tests.Ix.IxVM.Differential
 import Tests.Ix.IxVM.Mutator
 import Tests.Ix.IxVM.PwHints
 import Tests.Ix.IxVM.ModelAdvice
+import Tests.Ix.IxVM.FieldReduction
 import Tests.Ix.Kernel.ReaderCoverage
 import Tests.Ix.IOIngress
 import Tests.Ix.Kernel.ReaderRoundtrip
@@ -243,6 +244,9 @@ def registry : List Entry := [
   -- default execution skips the deferred range checks and can accept what the
   -- circuit cannot prove.
   .env "ixvm-circuit-verdict" (.ci .ixvm) Tests.Ix.IxVM.CircuitVerdict.run,
+  -- Recursors of inductive types whose field or index types reduce in the context
+  -- of earlier binders.
+  .env "ixvm-field-reduction" (.ci .ixvm) Tests.Ix.IxVM.FieldReduction.run,
   -- Typing claims refuse seeds outside Lean's logic (unsafe or partial); the claim
   -- builders leave them out.
   .runner "ixvm-claim-safety" (.ci .ixvm) Tests.Ix.IxVM.ClaimSafety.run,
@@ -365,6 +369,7 @@ def required : List (String × String) := [
   ("ixvm-io-ingress", "ci:ixvm"),
   ("ixvm-model-advice", "ci:ixvm"),
   ("ixvm-circuit-verdict", "ci:ixvm"),
+  ("ixvm-field-reduction", "ci:ixvm"),
   ("ixvm-pw-hints", "ci:ixvm"),
   ("ixvm-claim-safety", "ci:ixvm"),
   ("binding-proof-cli", "ci:compiler-closures"),
