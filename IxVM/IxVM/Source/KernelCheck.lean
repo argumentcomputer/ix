@@ -2882,8 +2882,10 @@ def check_const := aiur_fn⟦
               check_block_peer_param_agreement(rc, ci, addr) } ,
             _ => {
               -- the modeled route: the declared shape, then the family against
-              -- its model (`KernelModeled::check_family`)
-              let KernelTypes::KExprNode::Srt(_) = (*(peel_n_foralls(ty, n_params + n_indices)));
+              -- its model (`KernelModeled::check_family`). The shape is read as Lean's
+              -- kernel reads a former, after whnf before each binder, so a former
+              -- declared at a definition (`T : MyType`, `MyType := Type`) has one.
+              get_result_sort_level(rc, ty, n_params + n_indices, (&(Lists::Node::Nil)));
               check_modeled_ctors(rc, n_params, n_indices, num_ctors, nlvls,
                                   ind_block, ind_idx, ind_is_unsafe, 0);
               match ind_is_unsafe {
