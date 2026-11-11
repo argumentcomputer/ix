@@ -112,24 +112,30 @@ theorem skipEnv_push (x : V) (ρ : BVarIdx → V) (k c : Nat) :
   cases i with
   | zero => simp [skipEnv, push]
   | succ i =>
+    show (if i + 1 < c + 1 then push x ρ (i + 1) else push x ρ (i + 1 + k)) = skipEnv ρ k c i
     simp only [skipEnv]
     by_cases h : i < c
-    · simp [h, push]
-    · rw [if_neg (by omega), if_neg h, show i + 1 + k = (i + k) + 1 by omega]; rfl
+    · have h' : i + 1 < c + 1 := by omega
+      simp only [h, h', ↓reduceIte]; rfl
+    · have h' : ¬ i + 1 < c + 1 := by omega
+      simp only [h, h', ↓reduceIte]
+      rw [show i + 1 + k = (i + k) + 1 by omega]; rfl
 
 theorem pushAll_cons (x : V) (xs : List V) (ρ : BVarIdx → V) :
     pushAll (x :: xs) ρ = pushAll xs (push x ρ) := by
   funext i
   simp only [pushAll, List.reverse_cons, List.length_cons, List.getD_eq_getElem?_getD]
   by_cases h : i < xs.length
-  · rw [List.getElem?_append_left (by simpa using h), List.getElem?_eq_getElem (by simpa using h)]
+  · have h1 : i < xs.reverse.length := by simpa using h
+    rw [List.getElem?_append_left h1, List.getElem?_eq_getElem h1]
     rfl
-  · rw [List.getElem?_append_right (by simp; omega), List.getElem?_eq_none (l := xs.reverse)
-      (by simp; omega)]
+  · have h1 : xs.reverse.length ≤ i := by simp; omega
+    rw [List.getElem?_append_right h1, List.getElem?_eq_none h1]
     simp only [List.length_reverse, Option.getD_none]
     by_cases h' : i = xs.length
     · subst h'; simp [push]
-    · rw [List.getElem?_eq_none (by simp; omega)]
+    · have h2 : [x].length ≤ i - xs.length := by simp; omega
+      rw [List.getElem?_eq_none h2]
       simp only [Option.getD_none]
       rw [show i - xs.length = (i - (xs.length + 1)) + 1 by omega]; rfl
 
@@ -166,18 +172,22 @@ theorem skipEnv_pushAll_gen (k : Nat) : ∀ (c : List V) (E : BVarIdx → V) (d 
 indices above the innermost `c.length` skipped is the environment `a, c`. -/
 theorem skipEnv_pushAll (a b c : List V) (ρ : BVarIdx → V) :
     skipEnv (pushAll (a ++ b ++ c) ρ) b.length c.length = pushAll (a ++ c) ρ := by
-  rw [pushAll_append, ← Nat.add_zero c.length, skipEnv_pushAll_gen, pushAll_append, skipEnv_zero]
-  congr 1
-  funext i
-  rw [pushAll_append, pushAll_offset]
+  have h1 : pushAll (a ++ b ++ c) ρ = pushAll c (pushAll (a ++ b) ρ) := pushAll_append (a ++ b) c ρ
+  have h2 : pushAll (a ++ c) ρ = pushAll c (pushAll a ρ) := pushAll_append a c ρ
+  have h3 : skipEnv (pushAll (a ++ b) ρ) b.length 0 = pushAll a ρ := by
+    rw [skipEnv_zero]; funext i; rw [pushAll_append, pushAll_offset]
+  rw [h1, h2, ← h3, ← skipEnv_pushAll_gen]
+  rfl
 
 theorem skipEnv_skipEnv (E : BVarIdx → V) {a b c c' : Nat} (h1 : c ≤ c') (h2 : c' ≤ c + a) :
     skipEnv (skipEnv E b c') a c = skipEnv E (a + b) c := by
   funext i
   simp only [skipEnv]
   by_cases hi : i < c
-  · rw [if_pos hi, if_pos (by omega), if_pos hi]
-  · rw [if_neg hi, if_neg (by omega), if_neg hi, show i + a + b = i + (a + b) by omega]
+  · have h3 : i < c' := by omega
+    simp only [hi, h3, ↓reduceIte]
+  · have h3 : ¬ i + a < c' := by omega
+    simp only [hi, h3, ↓reduceIte, Nat.add_assoc]
 
 end Envs
 
@@ -261,9 +271,11 @@ theorem den_lift (k : Nat) (e : KExpr) : ∀ (c : Nat) (ρ : BVarIdx → V) (X :
   | bvar i =>
     intro c ρ X
     simp only [Expr.liftLooseBVars]
-    split
-    · rw [den_bvar, den_bvar]; simp only [skipEnv]; rw [if_neg (by omega)]
-    · rw [den_bvar, den_bvar]; simp only [skipEnv]; rw [if_pos (by omega)]
+    by_cases h : i ≥ c
+    · have h' : ¬ i < c := by omega
+      simp only [h, h', ↓reduceIte, den_bvar, skipEnv]
+    · have h' : i < c := by omega
+      simp only [h, h', ↓reduceIte, den_bvar, skipEnv]
   | fvar _ _ _ =>
     intro c ρ X
     simp only [Expr.liftLooseBVars]
@@ -327,11 +339,14 @@ theorem holds_zeronessOf (φ : LevelParam → Nat) : ∀ l : Level,
   | .max a b => by
     simp only [Level.zeronessOf, PropWhen.holds_inter, holds_zeronessOf φ a, holds_zeronessOf φ b,
       Level.eval]
-    by_cases ha : Level.eval φ a = 0 <;> by_cases hb : Level.eval φ b = 0 <;>
-      simp [ha, hb, Nat.max_eq_zero_iff]
+    rw [Bool.eq_iff_iff]
+    simp only [Bool.and_eq_true, beq_iff_eq]
+    omega
   | .imax a b => by
     simp only [Level.zeronessOf, holds_zeronessOf φ b, Level.eval]
-    by_cases hb : Level.eval φ b = 0 <;> simp [hb, Nat.max_eq_zero_iff]
+    rw [Bool.eq_iff_iff]
+    simp only [beq_iff_eq]
+    split <;> omega
 
 /-- **The zero-ness datum under a level substitution** reads the induced assignment. -/
 theorem holds_substPW (φ : LevelParam → Nat) (ks : List LevelParam) (vs : List Level)
