@@ -360,8 +360,8 @@ def fixture : IO UInt32 := do
     io := io.extend 3 (key s) #[.ofNat s.hint]
   for s in f.blobs do io := io.extend 4 (key s) (vals s)
   for s in f.roles do io := io.extend 6 (key s) (vals s)
-  let (io, stats) ← IO.ofExcept (annotate io)
-  let blocks := (← IO.ofExcept (blocksOf io)).qsort fun x y => x.1.cmpBytes y.1 == .lt
+  let (annotated, stats) ← IO.ofExcept (annotate io)
+  let blocks := (← IO.ofExcept (blocksOf annotated)).qsort fun x y => x.1.cmpBytes y.1 == .lt
   let binderData := blocks.map fun (a, bs) => (a.hash.data.map (·.toNat), (encode bs).map (·.n))
   IO.FS.writeBinFile outPath (← IO.ofExcept ({ f with binderData }).encode)
   IO.println s!"[ixvm-pw-fixture] {outPath}: {stats.render}"
