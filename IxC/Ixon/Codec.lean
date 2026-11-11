@@ -12,17 +12,19 @@ public import IxC.Ixon.Types
 
 public section
 
-/-! Pure production Ixon v4 codecs. Anonymous encodings and decoder
-behavior are shared with the host; metadata, environments, hashing,
-and lazy transport remain in `Ix.Ixon`. -/
+/-! Pure production Ixon v5 codecs: v4's TagN integers, and every record's
+binder-data section. Anonymous encodings and decoder behavior are shared with
+the host; metadata, environments, hashing, and lazy transport remain in
+`Ix.Ixon`. -/
 
 namespace Ixon
 
 open Ix (DefKind DefinitionSafety QuotKind)
 
-/-- Stable identifier for the Ixon wire format, version 4 (`Env.VERSION`).
-Mirrors Rust `WIRE_FORMAT_ID`. -/
-def wireFormatId : String := "ixon-v4"
+/-- Stable identifier for the Ixon wire format: version 5 (v4's TagN
+integers, plus each record's binder-data section). Mirrors Rust
+`WIRE_FORMAT_ID`. -/
+def wireFormatId : String := "ixon-v5"
 
 /-! ## Serialization Monad and Typeclass -/
 
@@ -1160,6 +1162,73 @@ instance : Serialize ConstantInfo where
   put := putConstantInfo
   get := getConstantInfo
 
+/-- Read a counted array by consuming each entry before appending it. -/
+def getArray (getm : GetM α) (count : Nat) : GetM (Array α) := do
+  let mut values := #[]
+  for _ in [0:count] do
+    values := values.push (← getm)
+  return values
+
+/-! ## The binder-data section
+
+```
+section := nblocks:TagN0 block[nblocks]
+block   := ekind:u8 eidx:TagN0 variant:TagN0 nnodes:TagN0 node[nnodes]
+node    := 0x00 | 0x01 | 0x02 k:TagN0 p[k]:TagN0 | 0x03 v:TagN0 | 0x04
+```
+
+The codec maps each node tag to one constructor; the canonical-form
+conditions (blocks strictly sorted, `ifAllZero` parameters nonempty, strictly
+ascending and below the level count) are `Ixon.Constant.bindersCanonical`, which
+the certified reader checks. -/
+
+def putBinderNode : BinderNode → PutM Unit
+  | .never => putU8 0
+  | .zero => putU8 1
+  | .ifAllZero params => do
+    putU8 2
+    putTagN 0 0 params.size.toUInt64
+    for p in params do putTagN 0 0 p
+  | .share variant => do
+    putU8 3
+    putTagN 0 0 variant
+  | .undecided => putU8 4
+
+def getBinderNode : GetM BinderNode := do
+  match ← getU8 with
+  | 0 => return .never
+  | 1 => return .zero
+  | 2 => do
+    let count := (← getTagN 0).value
+    let params ← getTagN0Values count.toNat
+    return .ifAllZero params.toArray
+  | 3 => return .share (← getTagN 0).value
+  | 4 => return .undecided
+  | t => throw s!"getBinderNode: invalid tag {t}"
+
+def putBinderBlock (b : BinderBlock) : PutM Unit := do
+  putU8 (if b.shared then 1 else 0)
+  putTagN 0 0 b.index
+  putTagN 0 0 b.variant
+  putTagN 0 0 b.nodes.size.toUInt64
+  for n in b.nodes do putBinderNode n
+
+def getBinderBlock : GetM BinderBlock := do
+  let shared ← Serialize.get
+  let index := (← getTagN 0).value
+  let variant := (← getTagN 0).value
+  let count := (← getTagN 0).value.toNat
+  let nodes ← getArray getBinderNode count
+  return ⟨shared, index, variant, nodes⟩
+
+def putBinders (blocks : Array BinderBlock) : PutM Unit := do
+  putTagN 0 0 blocks.size.toUInt64
+  for b in blocks do putBinderBlock b
+
+def getBinders : GetM (Array BinderBlock) := do
+  let count := (← getTagN 0).value.toNat
+  getArray getBinderBlock count
+
 def putConstant (c : Constant) : PutM Unit := do
   putConstantInfo c.info
   putTagN 0 0 c.sharing.size.toUInt64
@@ -1168,13 +1237,7 @@ def putConstant (c : Constant) : PutM Unit := do
   for a in c.refs do Serialize.put a
   putTagN 0 0 c.univs.size.toUInt64
   for u in c.univs do putUniv u
-
-/-- Read a counted array by consuming each entry before appending it. -/
-def getArray (getm : GetM α) (count : Nat) : GetM (Array α) := do
-  let mut values := #[]
-  for _ in [0:count] do
-    values := values.push (← getm)
-  return values
+  putBinders c.binders
 
 /-- Shared constant grammar with an explicit universe-table reader. This
 keeps the record prefix identical for production and bounded decoding. -/
@@ -1186,7 +1249,8 @@ def getConstantWithUnivs (readUnivs : Nat → GetM (Array Univ)) : GetM Constant
   let refs ← getArray Serialize.get numRefs
   let numUnivs := (← getTagN 0).value.toNat
   let univs ← readUnivs numUnivs
-  return ⟨info, sharing, refs, univs⟩
+  let binders ← getBinders
+  return ⟨info, sharing, refs, univs, binders⟩
 
 def getConstant : GetM Constant := getConstantWithUnivs (getArray getUniv)
 

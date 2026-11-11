@@ -124,6 +124,22 @@ def ConstantInfo.wireWF : ConstantInfo → Prop
   | .muts members =>
     members.size < UInt64.size ∧ ∀ member ∈ members, member.wireWF
 
+/-- A binder-data node's parameter count is representable. -/
+def BinderNode.wireWF : BinderNode → Prop
+  | .ifAllZero params => params.size < UInt64.size
+  | _ => True
+
+/-- A binder-data block's node count and nodes are representable. -/
+def BinderBlock.wireWF (block : BinderBlock) : Prop :=
+  block.nodes.size < UInt64.size ∧ ∀ node ∈ block.nodes, node.wireWF
+
+/-- Every count of a binder-data section is representable. -/
+def bindersWireWF (blocks : Array BinderBlock) : Prop :=
+  blocks.size < UInt64.size ∧ ∀ block ∈ blocks, block.wireWF
+
+theorem bindersWireWF_empty : bindersWireWF #[] :=
+  ⟨by change 0 < UInt64.size; decide, by simp⟩
+
 /-- Complete production-codec domain for a constant: every serialized count is
 representable, every expression and universe payload has a lossless telescope
 count, and every address payload contains the 32 bytes consumed by the reader. -/
@@ -135,6 +151,7 @@ def Constant.wireWF (constant : Constant) : Prop :=
   (∀ ref ∈ constant.refs, ref.hash.size = 32) ∧
   constant.univs.size < UInt64.size ∧
   (∀ univ ∈ constant.univs,
-    Univ.wireWF univ)
+    Univ.wireWF univ) ∧
+  bindersWireWF constant.binders
 
 end Ixon
