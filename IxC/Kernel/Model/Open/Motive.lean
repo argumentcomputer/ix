@@ -38,7 +38,7 @@ universe w
 variable {V : Type w} [SetTheory V] {env : Env md}
 
 /-- The variable environment a term with no loose bound variable is read at. -/
-def ρ₀ : BVarIdx → V := fun _ => empty
+noncomputable def ρ₀ : BVarIdx → V := fun _ => empty
 
 /-- `e` denotes `v` at the free-variable assignment `σ`. -/
 abbrev Den (M : Model V env) (φ : LevelParam → Nat) (σ : Nat → V) (e : Expr md) (v : V) :
@@ -238,13 +238,13 @@ theorem setAt_self {σ : Nat → V} {d : Nat} {x : V} : setAt σ d x d = x := by
   simp [setAt]
 
 /-- A reading of a term scoped below `d` does not see free variable `d`. -/
-theorem Den.setAt {M : Model V env} {φ : LevelParam → Nat} {σ : Nat → V} {d : Nat} {x : V}
+theorem Den.setAbove {M : Model V env} {φ : LevelParam → Nat} {σ : Nat → V} {d : Nat} {x : V}
     {e : Expr md} (hw : Expr.WScoped d e) {v : V} :
     Den M φ (setAt σ d x) e v ↔ Den M φ σ e v :=
   ⟨fun h => h.congr_fvars fun l hl => setAt_ne (Nat.ne_of_lt (leaves_scoped hw l hl).1),
    fun h => h.congr_fvars fun l hl => (setAt_ne (Nat.ne_of_lt (leaves_scoped hw l hl).1)).symm⟩
 
-theorem Gr.setAt {M : Model V env} {φ : LevelParam → Nat} {σ : Nat → V} {d : Nat} {x : V}
+theorem Gr.setAbove {M : Model V env} {φ : LevelParam → Nat} {σ : Nat → V} {d : Nat} {x : V}
     {e : Expr md} (hw : Expr.WScoped d e) :
     Gr M φ (setAt σ d x) e ↔ Gr M φ σ e :=
   ⟨fun h => GradedBy.congr_fvarsO
@@ -253,14 +253,14 @@ theorem Gr.setAt {M : Model V env} {φ : LevelParam → Nat} {σ : Nat → V} {d
       (fun l hl => (setAt_ne (Nat.ne_of_lt (leaves_scoped hw l hl).1)).symm) h⟩
 
 /-- **A context survives setting a variable above the term's scope.** -/
-theorem Ctx.setAt {M : Model V env} {φ : LevelParam → Nat} {σ : Nat → V} {d : Nat} {x : V}
+theorem Ctx.setAbove {M : Model V env} {φ : LevelParam → Nat} {σ : Nat → V} {d : Nat} {x : V}
     {e : Expr md} (hw : Expr.WScoped d e) (h : Ctx M φ σ e) : Ctx M φ (setAt σ d x) e := by
   intro l hl
   obtain ⟨hlt, hwl⟩ := leaves_scoped hw l hl
   have hwl' : Expr.WScoped d l.2 := Expr.WScoped.mono (Nat.le_of_lt hlt) hwl
   obtain ⟨⟨T, hT, hm⟩, hg⟩ := h l hl
-  exact ⟨⟨T, (Den.setAt hwl').2 hT, by rw [setAt_ne (Nat.ne_of_lt hlt)]; exact hm⟩,
-    (Gr.setAt hwl').2 hg⟩
+  exact ⟨⟨T, (Den.setAbove hwl').2 hT, by rw [setAt_ne (Nat.ne_of_lt hlt)]; exact hm⟩,
+    (Gr.setAbove hwl').2 hg⟩
 
 /-- **The context of an opened binder body**: setting the fresh variable `d` to a member
 `x` of the domain's denotation satisfies the opened body's free variables. -/
@@ -271,14 +271,14 @@ theorem Ctx.open {M : Model V env} {φ : LevelParam → Nat} {σ : Nat → V} {d
     Ctx M φ (setAt σ d x) (body.instantiate1 (.fvar d ty)) := by
   intro l hl
   rcases Expr.fvarLeaves_instantiate1 body 0 hl with hl | hl
-  · exact Ctx.setAt hwb hCb l hl
+  · exact Ctx.setAbove hwb hCb l hl
   · simp only [Expr.fvarLeaves, List.mem_cons] at hl
     rcases hl with rfl | hl
-    · refine ⟨⟨A, (Den.setAt hwty).2 hA, ?_⟩, (Gr.setAt hwty).2 hgty⟩
+    · refine ⟨⟨A, (Den.setAbove hwty).2 hA, ?_⟩, (Gr.setAbove hwty).2 hgty⟩
       show setAt σ d x d ∈ˢ A
       rw [setAt_self]
       exact hx
-    · exact Ctx.setAt hwty hCty l hl
+    · exact Ctx.setAbove hwty hCty l hl
 
 /-! ## Readings -/
 
