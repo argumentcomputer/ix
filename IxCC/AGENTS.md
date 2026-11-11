@@ -25,7 +25,7 @@ tree still contains monolithic test and proof modules that need migration.
 - IxCC is the `IxCC/` package of ix (`«ix-cc»`). Run Lake from `IxCC/` in
   ix's development shell (`nix develop` finds ix's flake from here). IxCC
   depends on `../IxCK` (its Ixon codec, the role vocabulary `IxCK.Kernel.Key`
-  with which it reads role-bound environments, and the kernel's tiered
+  with which it maps the kernel's roles to its pinned identities, and the kernel's tiered
   admission entry and executed typing core, which the front end over the
   kernel uses; not the kernel's proof tree) and Blake3; its grounding
   library (`IxCCGrounding`, beside the production library) also imports the

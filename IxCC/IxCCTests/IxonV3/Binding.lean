@@ -7,10 +7,11 @@ import IxCCTests.Support.Envelope
 
 /-! # Role-bound environments
 
-`tests-ixon-v3` runs `Binding.run`: the binding section's decoder against
-sections written in the kernel's grammar (`IxCK/Kernel/Ixon/RoleTable.lean`)
-and their refusals; the role-bound envelope (`0xE5`) against the unbound one
-of the same closure, and its refusals; the pins a role table gives
+`tests-ixon-v3` runs `Binding.run`: sections written in the kernel's grammar
+(`IxCK/Kernel/Ixon/RoleTable.lean`) against the kernel's decoder, which IxCC
+reads the binding with, and its refusals; the role-bound envelope (`0xE5`)
+against the unbound one of the same closure, and the refusals of IxCC's
+decoder and of the kernel's acceptance; the pins a role table gives
 (`KernelFront.pinsOfTable`), an identity whose role the table does not bind
 being absent; the refusal of a projection record that names no block member;
 and, on two committed closures (every committed closure is role-bound, as
@@ -49,26 +50,30 @@ def sectionBytes (version : Nat) (bound : List (Nat × IxCC.Ixon.Address))
 def unboundFib (root : System.FilePath) : IO ByteArray := unboundTwin (root / "bench-k1/fib.ixe")
 
 /-- The kernel's role indices this suite writes (positions in `Role.all`). -/
+def roleIdx (r : Ix.Kernel.Role) : Nat := r.idx
 def natIdx : Nat := roleIdx .nat
 def boolIdx : Nat := roleIdx .bool
 
-/-- The section decoder: the grammar, and every refusal the kernel's decoder
-makes. -/
+/-- The suite's section writer (`sectionBytes`) against the kernel's decoder
+(`Ix.Kernel.RoleTable.ofBytes`), which IxCC reads the binding with: the
+grammar, the decoder's refusals, and the table check's refusal of an address
+bound to two roles (`Ix.Kernel.RoleTable.check`). -/
 def sections : IO Nat := do
   let a1 := IxCC.Ixon.Address.replicate 1
   let a2 := IxCC.Ixon.Address.replicate 2
   let a3 := IxCC.Ixon.Address.replicate 3
+  let k := KernelFront.kaddr
   require (natIdx == 0 && boolIdx == 4 && roleIdx .natAdd == 42 && roleIdx .stringBack == 102 &&
     Ix.Kernel.Role.all.length == 103) "the kernel's role indices moved"
   let good := sectionBytes 3 [(natIdx, a1), (boolIdx, a2)] [(roleIdx .natAdd, [none, some a3])]
-  let some t := RoleTable.decode good.data.toList | throw (IO.userError "role binding: section refused")
-  require (t.version == 3 && t.bound.map (·.1) == [.nat, .bool] && t.bound.map (·.2) == [a1, a2])
+  let some t := Ix.Kernel.RoleTable.ofBytes good | throw (IO.userError "role binding: section refused")
+  require (t.version == 3 && t.bound.map (·.1) == #[.nat, .bool] && t.bound.map (·.2) == #[k a1, k a2])
     "bound roles misread"
-  require (t.evidence.map (·.1) == [.natAdd] &&
-    t.evidence.map (·.2) == [[RoleEvidence.defeq, .proof a3]]) "evidence misread"
-  require (t.addressOf? .bool == some a2 && t.addressOf? .eq == none) "addressOf?"
+  require (t.evidence.map (·.1) == #[.natAdd] &&
+    t.evidence.map (·.2) == #[#[Ix.Kernel.Evidence.defeq, .proof (k a3)]]) "evidence misread"
+  require (t.addressOf? .bool == some (k a2) && t.addressOf? .eq == none) "addressOf?"
   let refused := fun (label : String) (bytes : ByteArray) =>
-    require (RoleTable.decode bytes.data.toList).isNone s!"accepted {label}"
+    require (Ix.Kernel.RoleTable.ofBytes bytes).isNone s!"accepted {label}"
   refused "descending roles" (sectionBytes 3 [(boolIdx, a1), (natIdx, a2)] [])
   refused "a repeated role" (sectionBytes 3 [(natIdx, a1), (natIdx, a2)] [])
   refused "descending evidence" (sectionBytes 3 [] [(roleIdx .natMul, []), (roleIdx .natAdd, [])])
@@ -78,12 +83,14 @@ def sections : IO Nat := do
   refused "an unknown evidence kind" (sectionBytes 3 [] [(roleIdx .natAdd, [none])] |>.set! 7 2)
   for length in [:good.size] do refused s!"a prefix of {length} bytes" (good.extract 0 length)
   let twice := sectionBytes 3 [(natIdx, a1), (boolIdx, a1)] []
-  require ((errorOf (Binding.ofSection (IxCC.Ixon.Address.blake3Pure twice) twice)).endsWith
-    "is bound to two roles") "an address bound to two roles"
+  let some tt := Ix.Kernel.RoleTable.ofBytes twice | throw (IO.userError "role binding: section refused")
+  require ((errorOf tt.check).endsWith "is bound to two roles") "an address bound to two roles"
   return 14 + good.size
 
 /-- The role-bound envelope of a committed closure: the same anonymous
-sections and the binding; its refusals. -/
+sections and the binding; IxCC's decoder's refusals (the hash, the size, the
+header), and the kernel's acceptance's refusals of a section that is not a
+canonical role table or binds an address twice. -/
 def envelopes (root : System.FilePath) : IO Nat := do
   let committed ← IO.FS.readBinFile (root / "bench-k1/fib.ixe")
   let cenv ← IO.ofExcept (decodeAnonymousEnv committed)
@@ -99,7 +106,7 @@ def envelopes (root : System.FilePath) : IO Nat := do
   require (bound[0]! == 0xE5 && raw[0]! == 0xE4) "envelope header bytes"
   let benv ← IO.ofExcept (decodeAnonymousEnv bound)
   let some b := benv.binding | throw (IO.userError "role binding: binding not kept")
-  require (b.address == address && b.bytes == sec && b.table.bound.length == 1) "binding not kept"
+  require (b.address == address && b.bytes == sec) "binding not kept"
   require (benv.root == env.root && benv.consts.size == env.consts.size &&
     env.consts.toList.all (fun (a, bs) => benv.consts[a]? == some bs) &&
     benv.blobs.size == env.blobs.size && benv.hints == env.hints && benv.main == env.main &&
@@ -110,15 +117,25 @@ def envelopes (root : System.FilePath) : IO Nat := do
   refusal "a binding whose bytes do not hash to its address"
     "role binding: the section's bytes do not hash to its address"
     (envelope env (some (IxCC.Ixon.Address.replicate 7, sec)))
-  let long := sec.push 0
-  refusal "a noncanonical section" "role binding: not a canonical binding section"
-    (envelope env (some (IxCC.Ixon.Address.blake3Pure long, long)))
-  let twice := sectionBytes 3 [(natIdx, IxCC.Ixon.Address.replicate 1), (boolIdx, IxCC.Ixon.Address.replicate 1)] []
-  refusal "an address bound twice" "role binding: address"
-    (envelope env (some (IxCC.Ixon.Address.blake3Pure twice, twice)))
+  -- the committed closure's own table, made noncanonical or binding one address
+  -- twice: IxCC's decoder keeps it, the kernel's acceptance refuses the binding
+  let some ct := Ix.Kernel.RoleTable.ofBytes cb.bytes
+    | throw (IO.userError "role binding: the kernel does not decode bench-k1/fib's binding")
+  let kernelRefusal := fun (label expected : String) (section : ByteArray) => do
+    let tampered ← IO.ofExcept (decodeAnonymousEnv
+      (envelope cenv (some (IxCC.Ixon.Address.blake3Pure section, section))))
+    match KernelFront.accept tampered with
+    | .ok _ => throw (IO.userError s!"role binding: {label}: the kernel accepted it")
+    | .error r =>
+      require (r.stage == .binding && (expected.isEmpty || (r.message.splitOn expected).length > 1))
+        s!"{label}: {r.render}"
+  kernelRefusal "a noncanonical section" "" (cb.bytes.push 0)
+  let some (_, first) := ct.bound[0]? | throw (IO.userError "role binding: an empty committed table")
+  let twice : Ix.Kernel.RoleTable := { ct with bound := ct.bound.modify 1 fun (r, _) => (r, first) }
+  kernelRefusal "an address bound twice" "bound to two roles" twice.toBytes
   let header := (envelope env none).extract 0 (1 + 32 + 1 + 1)
   let oversized := header.set! 0 0xE5 ++ (IxCC.Ixon.Address.replicate 1).hash ++
-    _root_.Ixon.runPut (_root_.Ixon.putTagN 0 0 (RoleTable.maxBytes + 1).toUInt64)
+    _root_.Ixon.runPut (_root_.Ixon.putTagN 0 0 (Binding.maxBytes + 1).toUInt64)
   refusal "an oversized section" "role binding: the section exceeds the format's size" oversized
   require (decodeAnonymousEnv (raw.set! 0 0xE5)).toOption.isNone
     "a role-bound header without a binding"
@@ -128,6 +145,7 @@ def envelopes (root : System.FilePath) : IO Nat := do
     require (decodeAnonymousEnv (raw.set! 0 header.toUInt8)).toOption.isNone
       s!"envelope header {header}"
   return 15
+
 
 /-- The pins of a role table, as ingress takes them from the table the kernel
 admitted (`KernelFront.pinsOfTable`): each identity with a role at the address

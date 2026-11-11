@@ -314,8 +314,10 @@ def Reading.typeCheck (rd : Reading) (p : Program) (c : CId) : Except String Uni
 (`Src.Pinned.addrNat`). -/
 def addrNatK (a : KAddr) : Nat := a.hash.data.toList.foldl (fun n b => n * 256 + b.toNat) 0
 
-/-- The pins the kernel's admitted role table gives (`Src.Pinned.ofRoles`'s
-mapping, over the kernel's own decoding of the binding section). -/
+/-- The pins the kernel's admitted role table gives: the mapping of
+`Src.Pinned` (`knownRoles`, `primRoles`, `stdAxiomRoles`) over the kernel's own
+decoding of the binding section; the D12 allowlist, which no role names, at
+its fixed address. -/
 def pinsOfTable (t : Ix.Kernel.RoleTable) : Pins :=
   let pin := fun (r : Ix.Kernel.Role) => (t.addressOf? r).map addrNatK
   { nat := pin .nat, natZero := pin .natZero, natSucc := pin .natSucc, natRec := pin .natRec

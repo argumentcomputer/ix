@@ -21,7 +21,8 @@ require Blake3 from git
 pure Ixon v4 codec (`IxCK.Ixon.Canonical`) is imported by the ingress wire
 layer (`IxCC.Ixon.V4.Convert`, `IxCC.Ixon.V3.Wire`) and the resource profile
 reader (`IxCC.Src.Resource.Profile`); its role vocabulary (`IxCK.Kernel.Key`)
-by the reader of a role-bound environment's binding (`IxCC.Ixon.V3.Binding`);
+by the mapping of the kernel's roles to IxCC's pinned identities
+(`IxCC.Src.Pinned`);
 and its tiered admission entry, prelude and executed typing core
 (`IxCK.Kernel.Admission.Tier`, `IxCK.Kernel.Ixon.Prelude`,
 `IxCK.Kernel.Cached.CoreC`) by the front end over the kernel

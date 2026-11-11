@@ -230,7 +230,7 @@ Ingress (`Recheck.ingress`, [`Recheck/Produce.lean`](../IxCC/Recheck/Produce.lea
 it was `KernelFront.ingress` beside the old front end until step 3 folded it in)
 builds the program exactly as before (`Src.Ingress.readConsts` for the chosen
 roots), takes the pins from the kernel's admitted table (`pinsOfTable`, the
-same role mapping as `Src.Pinned.ofRoles`), and reads the program against the
+role mapping of `Src.Pinned`), and reads the program against the
 kernel's reading (`Reading.build`,
 [`Reading.lean`](../IxCC/Src/KernelFront/Reading.lean)):
 

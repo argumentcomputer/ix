@@ -1,5 +1,4 @@
 import IxCC.Ixon.V3.Wire
-import IxCC.Ixon.V3.Binding
 import IxCC.Ixon.Merkle
 import IxCC.Ixon.PureHash
 
@@ -18,7 +17,10 @@ whose module is outside ix's pure codec package):
 * the **role-bound** envelope: value 5 (`0xE5`), the same sections with the
   role binding inserted after the assumptions: a 32-byte address, a TagN(0)
   length and that many bytes, the binding section, which must hash to the
-  address and decode as a role table (`V3.Binding`).
+  address (`V3.Binding`). The section is the certified kernel's to decode and
+  admit (`Ix.Kernel.RoleTable.ofBytes`, `admitBinding`): every compile path
+  passes it to the kernel's acceptance (`KernelFront.accept`), which refuses
+  a section that is not a canonical, well-formed role table.
 
 Every count, length, hint delta and hint is a TagN(0) integer read by ix's
 codec, and constants are decoded by `decodeConstant` (ix's canonical decoder).
@@ -41,6 +43,21 @@ def boundEnvVersion : UInt64 := 5
 `Ixon.Env.OBJECT_FORMAT`, the checked-object grammar version, which both
 envelopes share). -/
 def objectFormat : UInt8 := envVersion.toUInt8
+
+/-- A role binding as the envelope carries it: the binding section's address
+and bytes. IxCC authenticates the bytes against the address; decoding and
+admitting the table is the certified kernel's (`KernelFront.accept`). -/
+structure Binding where
+  /-- The binding hash: the pure BLAKE3 hash of `bytes`. -/
+  address : Address
+  /-- The binding section. -/
+  bytes : ByteArray
+  deriving Inhabited
+
+/-- The most bytes a binding section can have: 255 bound roles and 255
+evidence entries of 255 proofs each (the format of
+`IxCK/Kernel/Ixon/RoleTable.lean`). -/
+def Binding.maxBytes : Nat := 4 + 255 * 33 + 1 + 255 * (2 + 255 * 33)
 
 structure Env where
   consts : Std.HashMap Address ByteArray := {}
@@ -121,18 +138,16 @@ def getObjectTable (constants : Bool) : EnvM (Array (Address × ByteArray)) := d
 
 /-- The role binding of the role-bound envelope (ix's `getBindingHeader`): the
 binding section's address, its length (at most the format's largest section,
-`RoleTable.maxBytes`) and its bytes, which must hash to the address with pure
-BLAKE3 and decode as a role table (`Binding.ofSection`). -/
+`Binding.maxBytes`) and its bytes, which must hash to the address with pure
+BLAKE3. -/
 def getBinding : EnvM Binding := do
   let address ← getAddress
   let size ← getNat
-  if size > RoleTable.maxBytes then throw "role binding: the section exceeds the format's size"
+  if size > Binding.maxBytes then throw "role binding: the section exceeds the format's size"
   let bytes ← _root_.Ixon.getBytes size
   unless Address.blake3Pure bytes == address do
     throw "role binding: the section's bytes do not hash to its address"
-  match Binding.ofSection address bytes with
-  | .ok binding => return binding
-  | .error error => throw error
+  return { address, bytes }
 
 def getAnonymousEnv : EnvM Env := do
   let tag ← _root_.Ixon.getTagN 4

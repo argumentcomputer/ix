@@ -144,20 +144,19 @@ The binding section's grammar is the kernel's (`IxCK/Kernel/Ixon/RoleTable.lean`
 its address, indices strictly increasing), then the evidence entries (a
 role's index, a count and that many pieces of evidence, each `00` or `01` and
 a theorem's address). A role's index is its position in the kernel's
-`Ix.Kernel.Role.all` (`IxCK/Kernel/Key.lean`). IxCC reads it with its own
-decoder of the same grammar (`IxCC/IxCC/Ixon/V3/Binding.lean`), against the
-kernel's role vocabulary imported from that module, so a change to the
-vocabulary changes IxCC's reading in the same build. It refuses:
-
-- a section whose bytes do not hash to its address;
-- a section that is not exactly one canonical binding section (the kernel's
-  `RoleTable.ofBytes` refuses the same inputs);
-- a table that binds one address to two roles.
-
-It does not check the table against the specifications (the version, closure
-under blocks and dependencies, the evidence): that is the kernel's admission
-(`admitBinding`), which premise (i) covers. The specification version is read
-and reported, never compared with a value IxCC holds.
+`Ix.Kernel.Role.all` (`IxCK/Kernel/Key.lean`). IxCC's envelope reader keeps
+the section's address and bytes (`V3.Binding`, `IxCC/IxCC/Ixon/V3/Env.lean`) and
+refuses a section whose bytes do not hash to its address or that is longer
+than the format allows. It does not decode the section: the certified
+kernel decodes and admits it in its acceptance (`RoleTable.ofBytes`,
+`admitBinding`, through `KernelFront.accept` on every compile path), which
+refuses a section that is not exactly one canonical binding section, a table
+that binds one address to two roles, and a table that fails the
+specifications (the version, closure under blocks and dependencies, the
+evidence). IxCC reads the table the kernel admitted (`Accepted.table`); the
+specification version is reported (`ixcc compile --stats`), never compared
+with a value IxCC holds. (Until the switch to the kernel front end IxCC had a
+decoder of its own of the same grammar.)
 
 ### Pinned identities
 
@@ -262,11 +261,11 @@ soundness theorems state both (`verifyBytes_immortal_sound`,
   unbound), and every compile path refuses it at ingress; its tests write it
   from a role-bound closure (`IxCCTests/Support/Envelope.lean`).
 - **Two readings.** IxCC's decoder and the kernel's reader each read the
-  bytes; they share the record decoder and, for the binding, the role
-  vocabulary, not the framing or the reading into declarations. The plan
-  replaces a proof that they agree by the faithfulness premise. The front end
-  over the kernel ([kernel front end](kernel-front-end-design.md), the
-  native-discharge milestone SP-N in the [roadmap](roadmap.md)) checks IxCC's
-  reading against the kernel's at every key, declaration header, evaluated term
-  and read type, and asks the kernel about its own reading; it is implemented
-  beside the default front end.
+  bytes; they share the record decoder, and IxCC takes the role table from the
+  kernel's decoding, but not the framing or the reading into declarations. The
+  plan replaces a proof that they agree by the faithfulness premise. The front
+  end over the kernel ([kernel front end](kernel-front-end-design.md), the
+  native-discharge milestone SP-N in the [roadmap](roadmap.md)), IxCC's only
+  front end, checks IxCC's reading against the kernel's at every key,
+  declaration header, evaluated term and read type, and asks the kernel about
+  its own reading.

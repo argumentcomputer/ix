@@ -1,5 +1,6 @@
 import IxCC.Src.Syntax
 import IxCC.Ixon.V3.Env
+import IxCK.Kernel.Key
 import IxCC.Ixon.V3.Support
 
 /-! # Pinned identities
@@ -10,8 +11,7 @@ axioms and the D12 allowlist) are found by address, through a program's pins
 (`Src.Pins`, held in `Known.pins`). Ingress takes them from the role table of
 the environment it reads, as the certified kernel admitted it
 (`KernelFront.pinsOfTable`), through the mapping from the kernel's roles below
-(`knownRoles`, `primRoles`, `stdAxiomRoles`; `ofRoles` is the same mapping over
-IxCC's own decoding of the binding section): an identity whose role the table
+(`knownRoles`, `primRoles`, `stdAxiomRoles`): an identity whose role the table
 does not bind has no pin and is absent, as an identity whose constant is
 missing from the closure is. The one identity the kernel has no role for, the
 D12 allowlist (`Lean.opaqueId`), keeps its fixed address
@@ -160,36 +160,25 @@ def addrOfNat (n : Nat) : Ixon.Address :=
 
 The stated mapping from the certified kernel's roles (`Ix.Kernel.Role`) to the
 identities IxCC pins. Each identity with a role takes the address the table
-binds to it; one the table does not bind has no pin. -/
+binds to it; one the table does not bind has no pin. `KernelFront.pinsOfTable`
+applies it to the table the kernel admitted. -/
 
 /-- The `Known` identities and their roles. -/
-def knownRoles : List (String × V3.Role) :=
+def knownRoles : List (String × Ix.Kernel.Role) :=
   [ ("Nat", .nat), ("Nat.zero", .natZero), ("Nat.succ", .natSucc), ("Nat.rec", .natRec),
     ("Bool", .bool), ("Bool.true", .boolTrue), ("Bool.false", .boolFalse), ("Eq", .eq),
     ("Decidable.isFalse", .decidableIsFalse), ("Decidable.isTrue", .decidableIsTrue) ]
 
 /-- The primitive operations and their roles. -/
-def primRoles : List (PrimOp × V3.Role) :=
+def primRoles : List (PrimOp × Ix.Kernel.Role) :=
   [ (.add, .natAdd), (.sub, .natSub), (.mul, .natMul), (.div, .natDiv), (.mod, .natMod),
     (.pow, .natPow), (.gcd, .natGcd), (.beq, .natBeq), (.ble, .natBle), (.land, .natLand),
     (.lor, .natLor), (.xor, .natXor), (.shiftLeft, .natShiftLeft),
     (.shiftRight, .natShiftRight), (.pred, .natPred) ]
 
 /-- The standard axioms and their roles. -/
-def stdAxiomRoles : List (String × V3.Role) :=
+def stdAxiomRoles : List (String × Ix.Kernel.Role) :=
   [ ("propext", .propext), ("Quot.sound", .quotSound), ("Classical.choice", .choice) ]
-
-/-- The pins a role table gives: each identity with a role at the address the
-table binds to that role (none if it binds none); the D12 allowlist, which no
-role names, at its fixed address. -/
-def ofRoles (t : V3.RoleTable) : Pins :=
-  let pin := fun (r : V3.Role) => (t.addressOf? r).map addrNat
-  { nat := pin .nat, natZero := pin .natZero, natSucc := pin .natSucc, natRec := pin .natRec
-    bool := pin .bool, boolTrue := pin .boolTrue, boolFalse := pin .boolFalse, eq := pin .eq
-    decIsFalse := pin .decidableIsFalse, decIsTrue := pin .decidableIsTrue
-    prims := primRoles.filterMap fun (op, r) => (pin r).map (op, ·)
-    stdAxioms := stdAxiomRoles.filterMap fun (_, r) => pin r
-    opaqueByValue := Pins.fixed.opaqueByValue }
 
 /-- The primitive pinned at `a`, if any. -/
 def primAt? (pins : Pins) (a : Ixon.Address) : Option PrimOp :=

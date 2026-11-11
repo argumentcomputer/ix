@@ -222,12 +222,15 @@ def statsLines (a : Artifact) (outcomes : Option (List Xv.Alloc.Outcome)) : List
   a.roots.map fun r => s!"root {r.name}: {r.symbol}, parameters {r.params}, driver {driverArgs r}"
 
 /-- What the closure is, by its identity: the envelope, the constant root and,
-for a role-bound envelope, the binding hash (the role table's address). -/
-def envelopeLine (env : Ixon.V3.Env) : String :=
+for a role-bound envelope, the binding hash (the role table's address) and the
+table the kernel admitted. -/
+def envelopeLine (inp : Recheck.Input) : String :=
+  let env := inp.env
+  let t := inp.kernel.acc.table
   match env.binding with
   | some b =>
     s!"environment: role-bound (0xE5), root {env.root}, role table {b.address} \
-      ({b.table.bound.length} roles bound, specification version {b.table.version})"
+      ({t.bound.size} roles bound, specification version {t.version})"
   | none => s!"environment: unbound (0xE4), root {env.root}"
 
 /-! ## Commands -/
@@ -383,7 +386,7 @@ def execute (o : Options) : ExceptT Err IO Unit := do
     let cert := cliCert.base
     let certBytes := cliCert.toText.utf8ByteSize
     let producer := if o.cert.isSome then "certificate read" else "produce"
-    IO.println (envelopeLine inp.env)
+    IO.println (envelopeLine inp)
     IO.println s!"kernel: accepted {inp.kernel.acc.records.length} records, \
       {inp.kernel.acc.decls.size} logical declarations and {inp.kernel.acc.tier.length} tier constants, \
       within ingress"
