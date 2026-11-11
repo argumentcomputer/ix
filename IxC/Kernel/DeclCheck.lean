@@ -659,7 +659,7 @@ def checkIotaRuleF (ops : (CheckerOps md) m) (fe' feSelf : FEnv md)
     unless (rhsA.stripLams (rP + cnF)).isSome do
       throw (.notImplemented msg!"rule shape mismatch for {cvName}")
     let _rhsTy ← ops.inferType feSelf.env 0 rhsA
-    let fire ← if Expr.recRulePlain tyA mI rP cnP then do
+    let fire ← if Expr.recRulePlain tyA mI rP cnP cvj.levelParams then do
         checkIotaThmF mode ops fe' feSelf f cvName lps tyA mI rP j r
           cvj cnP cnF rhsA
         pure RecRuleFire.plain

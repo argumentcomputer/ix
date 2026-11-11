@@ -820,7 +820,7 @@ side was annotated). -/
     RecRule.nfields r = cnF ∧
     RecRule.ctorParams r = cnP ∧
     (RecRule.fire r = .plain ↔
-      Expr.recRulePlain cvA.type mI rP cnP = true) ∧
+      Expr.recRulePlain cvA.type mI rP cnP cvj.levelParams = true) ∧
     (∀ lvls pins, RecRule.fire r = .nested lvls pins →
       rP ≤ mI ∧
       (∀ l ∈ lvls, l.allParamsDefined cvA.levelParams = true) ∧
@@ -847,7 +847,7 @@ side was annotated). -/
     (RecRule.rhs r).stripLams (rP + cnF) =
       some (rbinders, rbody) ∧
     inferTypeCore mode env₀ F 0 (RecRule.rhs r) = .ok rhsTy ∧
-    (Expr.recRulePlain cvA.type mI rP cnP = true →
+    (Expr.recRulePlain cvA.type mI rP cnP cvj.levelParams = true →
       PlainChecked mode F env env₀ f cvA mI rP cnP cnF j r cvj)
 
 /-- Invert one `checkIotaRule` run. -/
@@ -929,7 +929,7 @@ theorem checkIotaRule_inv {env' env₀ : Env md} {f : Key md → Key md}
   | ok rhsTy =>
   rw [hity] at h
   try dsimp only at h
-  by_cases hplain : Expr.recRulePlain cvA.type mI rP cnP = true
+  by_cases hplain : Expr.recRulePlain cvA.type mI rP cnP cvj.levelParams = true
   case pos =>
     rw [if_pos hplain] at h
     revert h

@@ -1458,7 +1458,7 @@ theorem checkIotaRule_wfimp {env' envSelf : Env md} (henv' : EnvWF env')
   show (inferTypeCore mode envSelf F 0 rhsA >>= _) = _
   rw [hity']
   simp only [Bind.bind, Except.bind]
-  by_cases h8 : Expr.recRulePlain tyA mI rP cnP = true
+  by_cases h8 : Expr.recRulePlain tyA mI rP cnP cvj.levelParams = true
   case neg =>
     rw [if_neg h8] at h ⊢
     obtain ⟨fire, hthmN, h⟩ := atF_bind_ok h

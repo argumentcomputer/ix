@@ -297,12 +297,13 @@ theorem projFnRule_ren {env : Env md} {env' : Env md'} (hE : EnvRelG P f L env e
   unfold projFnRule
   have hrl : RecRule.Good P
       ({ ctor := ctorName, nfields := nF, ctorParams := nP,
-         fire := (if Expr.recRulePlain pty nP nP nP then .plain else .inert),
+         fire := (if Expr.recRulePlain pty nP nP nP (ctorLevelParamsOf env.find? ctorName)
+           then .plain else .inert),
          rhs := rhsA, paramsBlind := false } : RecRule md) := by
     refine ⟨hc, ?_, hr⟩
     split <;> trivial
   have h := recRuleBits_ren hE (recName := projFnName T i) hrl
-  rw [← h, Expr.recRulePlain_mapKeys]
+  rw [← h, Expr.recRulePlain_mapKeys, ctorLevelParamsOf_ren hE hc]
   simp only [RecRule.mapKeys]
   split <;> rfl
 

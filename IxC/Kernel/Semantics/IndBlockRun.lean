@@ -655,7 +655,7 @@ theorem iotaRulesFactsRun {J : Judgements md}
         · exact absurd heq (hnr _ _ _ _)
       refine ⟨by rw [hr'rhs]; exact hrhsAw, by rw [hr'rhs]; exact hrlp,
         by rw [hr'rhs]; exact hrres, by rw [hr'rhs]; exact hrhsAb, ?_,
-        ⟨cvjK, cnPK, cnFK, hfcS⟩, ?_, ?_, ?_⟩
+        ?_, ?_, ?_, ?_⟩
       · -- the nested shape facts, from `nestedRuleShape`
         intro lvls pins hfireN
         rw [hr'fire] at hfireN
@@ -670,6 +670,27 @@ theorem iotaRulesFactsRun {J : Judgements md}
           hfn, hargs, -⟩ := nestedRuleShape_inv hshape
         exact ⟨hrPmI, hlvls, hpins, pre, dom, body, bm, D, hstrip,
           hfn, hargs⟩
+      · -- the constructor's record: its counts, and the shape of the mode
+        have hr'cp : RecRule.ctorParams r' = cnPK := by rw [hr'eq]; rfl
+        have hr'nf : RecRule.nfields r' = cnFK := by rw [hr'eq]; exact hnfK
+        refine ⟨cvjK, by rw [hr'cp, hr'nf]; exact hfcS, fun hp => ?_, fun lvls pins hfireN => ?_⟩
+        · rw [hr'cp]
+          rw [hr'fire] at hp
+          rcases hbranch with ⟨hplain, -, -⟩ | ⟨-, hrest⟩
+          · exact hplain
+          rcases hrest with ⟨hfireI, -⟩ | ⟨lvls₀, pins₀, hfireN₀, -⟩
+          · rw [hfireI] at hp; exact nomatch hp
+          · rw [hfireN₀] at hp; exact nomatch hp
+        · rw [hr'cp]
+          rw [hr'fire] at hfireN
+          rcases hbranch with ⟨-, hfireP, -⟩ | ⟨-, hrest⟩
+          · rw [hfireP] at hfireN; exact nomatch hfireN
+          rcases hrest with ⟨hfireI, -⟩ | ⟨lvls₀, pins₀, hfireN₀, hthmN⟩
+          · rw [hfireI] at hfireN; exact nomatch hfireN
+          rw [hfireN₀] at hfireN
+          obtain ⟨rfl, rfl⟩ := RecRuleFire.nested.inj hfireN
+          obtain ⟨-, -, -, _, _, _, _, _, -, -, -, hlen⟩ := nestedRuleShape_inv hthmN.1
+          exact hlen
       · -- a fired rule: the parameter bound and the rhs's reading
         intro hfire
         refine ⟨?_, fun φ => ?_⟩

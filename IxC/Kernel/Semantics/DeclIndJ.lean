@@ -318,10 +318,10 @@ def IotaRuleRunJ (J : Judgements md) (env' envSelf : Env md)
       r' = recRuleBits env'.find? cvName
         { r with rhs := rhsA, ctorParams := cnP, fire := fire,
                  paramsBlind := false } ∧
-      ((Expr.recRulePlain tyA mI rP cnP = true ∧ fire = .plain ∧
+      ((Expr.recRulePlain tyA mI rP cnP cvj.levelParams = true ∧ fire = .plain ∧
           IotaThmRunJ J env' envSelf f cvName lps tyA mI rP j r
             cvj cnP cnF rhsA) ∨
-       (Expr.recRulePlain tyA mI rP cnP = false ∧
+       (Expr.recRulePlain tyA mI rP cnP cvj.levelParams = false ∧
           ((fire = .inert ∧
             nestedRuleShape env' envSelf cvName lps tyA mI rP cnP j
               = none) ∨

@@ -1188,10 +1188,11 @@ theorem extendEqRec (mp : EnvModelM V μ env)
         exact nomatch hp)
       (fun _ h => nomatch h)
       (fun _ _ _ _ heq r hr => by
-        injection heq with _ _ _ h4
+        injection heq with h1 h2 h3 h4
+        subst h1 h2 h3
         rw [← h4] at hr
         rcases List.mem_cons.mp hr with rfl | hr'
-        · exact ⟨⟨_, _, _, hR⟩, fun _ => recRuleKOf_of hR rfl hE rfl,
+        · exact ⟨Ix.Kernel.RuleCtorOk.of_plain hR rfl (by first | rfl | (cases md <;> decide)), fun _ => recRuleKOf_of hR rfl hE rfl,
             fun hb => Bool.noConfusion hb⟩
         · exact nomatch hr'))
     (fun ψ k => AnnotTerm.liftN_eq_self _

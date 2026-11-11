@@ -727,7 +727,7 @@ theorem checkProjFnS_run (hμ : mode.verifiedChecks = true) {env : Env md} (henv
   rcases List.mem_singleton.mp hr with rfl
   refine ⟨hrfv, halp, Expr.constsResolve_mono hrres, hrbv, ?_⟩
   intro lvls pins hf
-  cases hcond : Expr.recRulePlain pty' nP nP nP <;>
+  cases hcond : Expr.recRulePlain pty' nP nP nP (ctorLevelParamsOf env.find? ctorName) <;>
     simp [projFnRule, recRuleBits, hcond] at hf
 
 /-- One projection-function install step. -/

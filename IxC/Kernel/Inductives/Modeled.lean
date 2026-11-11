@@ -348,7 +348,7 @@ def checkIotaRule (ops : (CheckerOps md) m) (env' envSelf : Env md)
     -- the firing mode is computed once, here, and stored on the rule;
     -- `iotaRec` reads the flag instead of re-walking the recursor type
     -- on every fire
-    let fire ← if Expr.recRulePlain tyA mI rP cnP then do
+    let fire ← if Expr.recRulePlain tyA mI rP cnP cvj.levelParams then do
         checkIotaThm mode ops env' envSelf f cvName lps tyA mI rP j r
           cvj cnP cnF rhsA
         pure RecRuleFire.plain

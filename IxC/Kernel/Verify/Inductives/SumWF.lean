@@ -104,7 +104,8 @@ theorem sumRules_mem {find? : Key md → Option (ConstantInfo md)} {recName : Ke
     simp only [sumRules, List.mem_cons] at h
     rcases h with rfl | h
     · refine ⟨List.mem_cons_self, fun lvls pins => ?_⟩
-      show (if Expr.recRulePlain recTy mI rP nP then RecRuleFire.plain else .inert) ≠ _
+      show (if Expr.recRulePlain recTy mI rP nP c.1.levelParams then RecRuleFire.plain
+        else .inert) ≠ _
       split <;> simp
     · obtain ⟨hm, hf⟩ := sumRules_mem h
       exact ⟨List.mem_cons_of_mem _ hm, hf⟩

@@ -206,8 +206,7 @@ def RuleFacts (envSelf : Env md) (cvalSelf : TConstVal md)
         pins.map (Expr.liftLooseBVars (mI - rP) 0) ++
           (List.range (mI - rP)).map
             (fun i => Expr.bvar (mI - rP - 1 - i))) ∧
-  (∃ cvj cnP cnF,
-    envSelf.find? (RecRule.ctor rl) = some (.ctorInfo cvj cnP cnF)) ∧
+  RuleCtorOk envSelf.find? cv mI rP rl ∧
   (RecRule.fire rl ≠ .inert →
     rP ≤ mI ∧
     ∀ φ : LevelParam → Nat,
@@ -217,8 +216,8 @@ def RuleFacts (envSelf : Env md) (cvalSelf : TConstVal md)
   (rl.eta = true → recRuleEtaOf envSelf.find? cv.name rl.ctor = true)
 
 /-- A plain fire's shape test carries the parameter bound. -/
-theorem recRulePlain_params_le {recTy : Expr md} {mI rP cnP : Nat}
-    (h : Expr.recRulePlain recTy mI rP cnP = true) : rP ≤ mI := by
+theorem recRulePlain_params_le {recTy : Expr md} {mI rP cnP : Nat} {cjLps : List LevelParam}
+    (h : Expr.recRulePlain recTy mI rP cnP cjLps = true) : rP ≤ mI := by
   unfold Expr.recRulePlain at h
   simp only [Bool.and_eq_true, decide_eq_true_eq] at h
   omega

@@ -239,8 +239,7 @@ theorem projFn_head {μ : CheckMode} {F : Nat} {env' env₁ : Env md}
     EnvWF env₁ ∧
       ∀ (cvR : ConstantVal md) (mI rP : Nat) (rules : List (RecRule md)),
         (env₁.consts.headD default) = .recInfo cvR mI rP rules →
-        ∀ r ∈ rules, ∃ cvj cnP cnF,
-          env'.find? (RecRule.ctor r) = some (.ctorInfo cvj cnP cnF) := by
+        ∀ r ∈ rules, RuleCtorOk env'.find? cvR mI rP r := by
   obtain ⟨cvj, mcv, mval, mhint, pty, rhsA, hctor, hfm, hmlps, hpnone,
     hTf, heqf, hptyB, hround, hptyres, hptyb, hptyf, hptylp, hstrip1,
     hilt, hstripP, hbig, henv⟩ := hR
@@ -257,7 +256,7 @@ theorem projFn_head {μ : CheckMode} {F : Nat} {env' env₁ : Env md}
     rcases List.mem_cons.mp hr with rfl | h
     · refine ⟨hrhsw, hrlp, hrres, hrhsb, ?_⟩
       intro lvls pins
-      by_cases hc : Expr.recRulePlain pty nP nP nP = true
+      by_cases hc : Expr.recRulePlain pty nP nP nP (ctorLevelParamsOf env'.find? ctorName) = true
       · simp only [projFnRule, recRuleBits, hc, if_true]
         exact fun hh => nomatch hh
       · simp only [projFnRule, recRuleBits, eq_false_of_ne_true hc]
@@ -278,10 +277,12 @@ theorem projFn_head {μ : CheckMode} {F : Nat} {env' env₁ : Env md}
     intro lvls pins hfr
     exact absurd hfr (w5 lvls pins)
   · intro cvR mI rP rules heq r hr
-    injection heq with _ _ _ h4
+    injection heq with h1 h2 h3 h4
+    subst h1 h2 h3
     rw [← h4] at hr
     rcases List.mem_cons.mp hr with rfl | h
-    · exact ⟨cvj, nP, nF, hctor⟩
+    · exact RuleCtorOk.of_ifPlain hctor rfl
+        (fun hb => by rw [ctorLevelParamsOf_ctor hctor] at hb; exact hb)
     · exact nomatch h
 
 /-! ## Two shared projection-phase constants (task #161 S7)

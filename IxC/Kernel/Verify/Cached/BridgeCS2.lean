@@ -630,7 +630,7 @@ theorem checkIotaRuleS_sim (hμ : mode.verifiedChecks = true) {env' : Env md} (h
   refine SimC.bind (opE_infer_sim hμ henv hs₁ hwrhsA)
     (fun s₂ rhsTy rhsTy' hs₂ hP₂ => ?_)
   have hctorF : cvj.type.hasFvar = false := (henv' _ (find?_mem hf)).1
-  by_cases h8 : Expr.recRulePlain tyA mI rP cnP = true
+  by_cases h8 : Expr.recRulePlain tyA mI rP cnP cvj.levelParams = true
   case neg =>
     simp only [if_neg h8]
     refine SimC.bind (checkIotaThmNS_sim hμ henv' henv htyA hctorF

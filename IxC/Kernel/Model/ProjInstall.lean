@@ -314,7 +314,7 @@ theorem projFn (hμ : μ.verifiedChecks = true) {F : Nat} {env' env₁ : Env md}
       · exact nomatch h
     have hplainFire : RecRule.fire
         (projFnRule env'.find? T ctorName pty nP nF i rhsA) = .plain := by
-      by_cases hc : Expr.recRulePlain pty nP nP nP = true
+      by_cases hc : Expr.recRulePlain pty nP nP nP (ctorLevelParamsOf env'.find? ctorName) = true
       · simp [projFnRule, recRuleBits, hc]
       · exact absurd (show RecRule.fire _ = RecRuleFire.inert from by
           simp only [projFnRule, recRuleBits, eq_false_of_ne_true hc]; rfl)

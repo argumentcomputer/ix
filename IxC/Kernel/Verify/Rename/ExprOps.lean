@@ -373,8 +373,9 @@ theorem map_mapKeys_beq_bvars {α : Type} (g : α → Nat) :
     congr 1
     rw [Bool.eq_iff_iff, beq_iff_eq, beq_iff_eq, mapKeys_eq_bvar_iff]
 
-@[simp] theorem recRulePlain_mapKeys (recTy : Expr md) (mI rP cnP : Nat) :
-    recRulePlain (recTy.mapKeys f) mI rP cnP = recRulePlain recTy mI rP cnP := by
+@[simp] theorem recRulePlain_mapKeys (recTy : Expr md) (mI rP cnP : Nat)
+    (cjLps : List LevelParam) :
+    recRulePlain (recTy.mapKeys f) mI rP cnP cjLps = recRulePlain recTy mI rP cnP cjLps := by
   unfold recRulePlain
   rw [stripPis_mapKeys]
   cases stripPis mI recTy with
@@ -384,7 +385,8 @@ theorem map_mapKeys_beq_bvars {α : Type} (g : α → Nat) :
     cases body with
     | forallE dom b m =>
       simp only [Option.map_some, mapTele, mapKeys, getAppArgs_mapKeys, ← List.map_take,
-        map_mapKeys_beq_bvars]
+        map_mapKeys_beq_bvars, ← mapKeys_getAppFn]
+      all_goals (cases dom.getAppFn <;> rfl)
     | _ => rfl
 
 /-! ## Good results -/

@@ -52,9 +52,66 @@ uses it to resolve the constants a rule right-hand side mentions. -/
     env.find? punitName = some punitA ∧
     env.find? punitUnitName = some punitUnitA)
 
+/-- **A recursor rule's constructor, against the store** (`find?`): the
+constructor is stored with the rule's own parameter and field counts; a
+canonical (`.plain`) rule has the shape its install tested
+(`Expr.recRulePlain`: the recursor's major premise is the family at the
+constructor's own level parameters, applied first to the recursor's
+leading variables); a certified nested rule stores one instantiation
+per constructor parameter.  These are what Lean's reading of the rule
+needs beyond the rule's firing law: that the constructor the law fires
+at is the one the major premise's type names, at its levels and
+parameters. -/
+@[expose] def RuleCtorOk (find? : Key md → Option (ConstantInfo md)) (cv : ConstantVal md)
+    (mI rP : Nat) (r : RecRule md) : Prop :=
+  ∃ cvj, find? (RecRule.ctor r) = some (.ctorInfo cvj r.ctorParams r.nfields) ∧
+    (RecRule.fire r = .plain →
+      Expr.recRulePlain cv.type mI rP r.ctorParams cvj.levelParams = true) ∧
+    (∀ lvls pins, RecRule.fire r = .nested lvls pins → pins.length = r.ctorParams)
+
+/-- The rule's constructor is stored. -/
+theorem RuleCtorOk.stored {find? : Key md → Option (ConstantInfo md)} {cv : ConstantVal md}
+    {mI rP : Nat} {r : RecRule md} (h : RuleCtorOk find? cv mI rP r) :
+    ∃ cvj cnP cnF, find? (RecRule.ctor r) = some (.ctorInfo cvj cnP cnF) :=
+  let ⟨cvj, hf, _⟩ := h; ⟨cvj, _, _, hf⟩
+
+/-- The record survives any extension that keeps the stored constructors. -/
+theorem RuleCtorOk.mono {f g : Key md → Option (ConstantInfo md)} {cv : ConstantVal md}
+    {mI rP : Nat} {r : RecRule md}
+    (hkeep : ∀ (m : Key md) (ci : ConstantInfo md),
+      (∀ cv mI rP rules, ci ≠ .recInfo cv mI rP rules) → f m = some ci → g m = some ci)
+    (h : RuleCtorOk f cv mI rP r) : RuleCtorOk g cv mI rP r :=
+  let ⟨cvj, hf, hp, hn⟩ := h
+  ⟨cvj, hkeep _ _ (fun _ _ _ _ hh => ConstantInfo.noConfusion rfl (heq_of_eq hh)) hf, hp, hn⟩
+
+/-- The record at a canonical rule. -/
+theorem RuleCtorOk.of_plain {find? : Key md → Option (ConstantInfo md)} {cv : ConstantVal md}
+    {mI rP : Nat} {r : RecRule md} {cvj : ConstantVal md}
+    (hf : find? (RecRule.ctor r) = some (.ctorInfo cvj r.ctorParams r.nfields))
+    (hfire : RecRule.fire r = .plain)
+    (hpl : Expr.recRulePlain cv.type mI rP r.ctorParams cvj.levelParams = true) :
+    RuleCtorOk find? cv mI rP r :=
+  ⟨cvj, hf, fun _ => hpl, fun _ _ h => by rw [hfire] at h; exact nomatch h⟩
+
+/-- The record at a rule whose firing mode is the canonical test's verdict
+(canonical or inert). -/
+theorem RuleCtorOk.of_ifPlain {find? : Key md → Option (ConstantInfo md)} {cv : ConstantVal md}
+    {mI rP : Nat} {r : RecRule md} {cvj : ConstantVal md} {b : Bool}
+    (hf : find? (RecRule.ctor r) = some (.ctorInfo cvj r.ctorParams r.nfields))
+    (hfire : RecRule.fire r = if b then .plain else .inert)
+    (hb : b = true → Expr.recRulePlain cv.type mI rP r.ctorParams cvj.levelParams = true) :
+    RuleCtorOk find? cv mI rP r := by
+  refine ⟨cvj, hf, fun hp => ?_, fun _ _ h => ?_⟩
+  · cases b
+    · rw [hfire] at hp; simp at hp
+    · exact hb rfl
+  · rw [hfire] at h
+    cases b <;> simp at h
+
 /-- **A stored recursor's rules against the store**: every rule's
 constructor is itself stored (blocks carry their constructors, and the
-recursor is installed after them), and each of the two rescue bits, if
+recursor is installed after them) as the rule records it
+(`RuleCtorOk`), and each of the two rescue bits, if
 set, is the *lookup's own* verdict — the K bit is `recRuleKOf` and the
 η-rescue bit is `recRuleEtaOf` at the recursor's stored name.  The
 bits are decided once, at the block's install (`recRuleBits`); this is
@@ -65,8 +122,7 @@ constructor's level parameters — at every recursor application. -/
   ∀ n cv mI rP rules,
     env.find? n = some (.recInfo cv mI rP rules) →
     ∀ r ∈ rules,
-      (∃ cvj cnP cnF,
-        env.find? (RecRule.ctor r) = some (.ctorInfo cvj cnP cnF)) ∧
+      RuleCtorOk env.find? cv mI rP r ∧
       (r.k = true → recRuleKOf env.find? r.ctor = true) ∧
       (r.eta = true → recRuleEtaOf env.find? n r.ctor = true)
 

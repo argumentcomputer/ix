@@ -285,12 +285,12 @@ theorem iotaRuleRun_of {env' envSelf : Env md}
     hann0, hrlp, hrres, (by rw [hstripEq]; rfl),
     ⟨rhsTy, hity⟩, fire0, rfl, ?_⟩
   by_cases hplain :
-      Expr.recRulePlain cvA.type mI rP cnP0 = true
+      Expr.recRulePlain cvA.type mI rP cnP0 cvj.levelParams = true
   · exact Or.inl ⟨hplain, hplainIff.mpr hplain,
       iotaThmRun_of (hplainKit hplain)⟩
-  · have hplainF : Expr.recRulePlain cvA.type mI rP cnP0 = false := by
+  · have hplainF : Expr.recRulePlain cvA.type mI rP cnP0 cvj.levelParams = false := by
       revert hplain
-      cases Expr.recRulePlain cvA.type mI rP cnP0 <;> simp
+      cases Expr.recRulePlain cvA.type mI rP cnP0 cvj.levelParams <;> simp
     refine Or.inr ⟨hplainF, ?_⟩
     cases hf : fire0 with
     | plain =>
