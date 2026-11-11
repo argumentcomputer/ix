@@ -123,7 +123,7 @@ theorem skipEnv_push (x : V) (ρ : BVarIdx → V) (k c : Nat) :
 
 theorem pushAll_cons (x : V) (xs : List V) (ρ : BVarIdx → V) :
     pushAll (x :: xs) ρ = pushAll xs (push x ρ) := by
-  funext i
+  refine funext fun (i : Nat) => ?_
   simp only [pushAll, List.reverse_cons, List.length_cons, List.getD_eq_getElem?_getD]
   by_cases h : i < xs.length
   · have h1 : i < xs.reverse.length := by simpa using h
@@ -181,7 +181,7 @@ theorem skipEnv_pushAll (a b c : List V) (ρ : BVarIdx → V) :
 
 theorem skipEnv_skipEnv (E : BVarIdx → V) {a b c c' : Nat} (h1 : c ≤ c') (h2 : c' ≤ c + a) :
     skipEnv (skipEnv E b c') a c = skipEnv E (a + b) c := by
-  funext i
+  refine funext fun (i : Nat) => ?_
   simp only [skipEnv]
   by_cases hi : i < c
   · have h3 : i < c' := by omega
