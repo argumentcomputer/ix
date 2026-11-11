@@ -121,9 +121,9 @@ def envelopes (root : System.FilePath) : IO Nat := do
   -- twice: IxCC's decoder keeps it, the kernel's acceptance refuses the binding
   let some ct := Ix.Kernel.RoleTable.ofBytes cb.bytes
     | throw (IO.userError "role binding: the kernel does not decode bench-k1/fib's binding")
-  let kernelRefusal := fun (label expected : String) (section : ByteArray) => do
+  let kernelRefusal := fun (label expected : String) (secBytes : ByteArray) => do
     let tampered ← IO.ofExcept (decodeAnonymousEnv
-      (envelope cenv (some (IxCC.Ixon.Address.blake3Pure section, section))))
+      (envelope cenv (some (IxCC.Ixon.Address.blake3Pure secBytes, secBytes))))
     match KernelFront.accept tampered with
     | .ok _ => throw (IO.userError s!"role binding: {label}: the kernel accepted it")
     | .error r =>
