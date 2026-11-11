@@ -316,8 +316,10 @@ def IotaLaw (cval : Key md → (LevelParam → Nat) → V) (env : Env md) : Prop
 assignment `cval` of a set to every constant at every level
 assignment — fixed once, for the whole environment — under which every
 stored constant is a member of what its type denotes, the built-in
-`False` is the empty set, the built-in `Eq` is set equality, and every
-stored definition is what its value denotes.
+`False` is the empty set, the built-in `Eq` is set equality, every
+stored definition is what its value denotes, every stored recursor rule
+computes as Lean's does, and a constant's value reads only its own level
+parameters.
 
 The interpretation of the constants *is* the model: there is nothing
 else to choose (`Sort`, `∀`, `λ`, application and projection are read
@@ -403,6 +405,11 @@ structure Model (V : Type w) [SetTheory V] (env : Env md) where
       Denotes cval env φ ρ value (cval cv.name φ)
   /-- **ι**: every stored recursor rule computes as Lean's does (`IotaRule`) -/
   iota_rule : IotaLaw cval env
+  /-- a stored constant's value depends on the level assignment only through its own
+  level parameters (so a use of it reads its levels, and nothing else) -/
+  cval_params : ∀ (n : Key md) (ci : ConstantInfo md), env.find? n = some ci →
+    ∀ φ₁ φ₂ : LevelParam → Nat, (∀ p ∈ ci.toConstantVal.levelParams, φ₁ p = φ₂ p) →
+      cval n φ₁ = cval n φ₂
 
 /-! ## Semantic consistency -/
 

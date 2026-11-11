@@ -58,7 +58,7 @@ theorem projInstallRun_ext {μ : CheckMode} {F : Nat}
     refine ExtEta.trans ?_ (ih htail)
     rcases hstep with hfn | ⟨-, rfl⟩
     · obtain ⟨cvj, mcv, mval, mhint, pty, rhsA, -, -, -, hfresh, -, -,
-        -, -, -, -, -, -, -, -, -, -, rfl⟩ := hfn
+        -, -, -, -, -, -, -, -, -, -, -, rfl⟩ := hfn
       exact ExtEta.cons (Option.isNone_iff_eq_none.mp hfresh)
         (fun _ _ hh => ConstantInfo.noConfusion rfl (heq_of_eq hh))
     · exact ExtEta.refl _

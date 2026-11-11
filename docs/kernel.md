@@ -285,8 +285,9 @@ Authentic Address.blake3Pure records blobs`).
 `cval c φ` to every constant at every level assignment such that every
 stored constant is a member of what its type denotes (`mem`), what the
 built-in `False` denotes is empty (`false_empty`), what the built-in `Eq`
-denotes is set equality (`eq_equality`), and every stored definition denotes
-what its value denotes (`defn_value`, δ). Membership alone would let a
+denotes is set equality (`eq_equality`), every stored definition denotes
+what its value denotes (`defn_value`, δ), and every stored recursor rule
+computes as Lean's does (`iota_rule`, ι). Membership alone would let a
 constant denote any inhabitant of its type (`def P : Prop := False` with a
 theorem of type `P` would have a model in which `P` is true); the δ law rules
 that out (`Tests/Ix/Kernel/ModelLaws.lean`). β, function η, proof

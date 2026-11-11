@@ -897,5 +897,8 @@ noncomputable def Model.ofEnvModelM {μ : Ix.Kernel.CheckMode} {env : Env md}
     rw [Expr.closeN_of_hasFvar _ 0 0 hv.1, interp_cvalOf m.base2.cval_closedL] at hb
     exact hb
   iota_rule := iotaLaw_of_envModelM m
+  cval_params := fun n ci h φ₁ φ₂ agree => by
+    unfold cvalOf
+    rw [m.base2.acval_params n ci h φ₁ φ₂ agree]
 
 end Ix.Kernel.Model

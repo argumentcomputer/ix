@@ -194,6 +194,12 @@ def Model.restrict {env env' : Env md} (M : Model V env) {K : Key md → Prop}
   defn_value := fun cv value hint hc φ ρ =>
     Denotes.mono_env hfind hproj hlit (M.defn_value cv value hint (hsub _ hc) φ ρ)
       (hvalue cv value hint hc)
+  cval_params := fun n ci h φ₁ φ₂ agree => by
+    have hK : K n := by
+      have hn := hname _ (List.mem_of_find?_eq_some h)
+      rwa [show ci.name = n from
+        by simpa using List.find?_some (p := fun c : ConstantInfo md => c.name == n) h] at hn
+    exact M.cval_params n ci (by rw [← hfind n hK]; exact h) φ₁ φ₂ agree
   iota_rule := by
     intro r cv mI rP rules rl hf hrl cvC nP nF hC us φ ρ σ σC xs ys dom body RC m D ls R K' H X
       hus hxs hys hR hfitR hdomFn hX hK hfitC hmaj hpar hidx hH
@@ -204,11 +210,11 @@ def Model.restrict {env env' : Env md} (M : Model V env) {K : Key md → Prop}
     have hKr : K r := by
       have h := hname _ hmR
       rwa [show (ConstantInfo.recInfo cv mI rP rules).name = r from
-        beq_iff_eq.mp (List.find?_some hf)] at h
+        by simpa using List.find?_some (p := fun c : ConstantInfo md => c.name == r) hf] at h
     have hKc : K rl.ctor := by
       have h := hname _ hmC
       rwa [show (ConstantInfo.ctorInfo cvC nP nF).name = rl.ctor from
-        beq_iff_eq.mp (List.find?_some hC)] at h
+        by simpa using List.find?_some (p := fun c : ConstantInfo md => c.name == rl.ctor) hC] at h
     obtain ⟨hfitR', hresR⟩ := Fits.mono_env hfind' hproj' hlit hfitR
       (Expr.RefsIn.instantiateLevelParams _ _ (htype _ hmR))
     have hdomK : dom.RefsIn K := hresR.1
