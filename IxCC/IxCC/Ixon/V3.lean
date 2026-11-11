@@ -1,6 +1,5 @@
 import IxCC.Ixon.V3.Validate
-import IxCC.Ixon.V3.Catalog
 
 /-! The pinned Ixon v3 source boundary: independent usage, ownership and
-locality contracts, canonical addressed bytes, and combined resource/erased
-typing admission. Source-to-target refinement remains a separate obligation. -/
+locality contracts, canonical addressed bytes, and resource admission.
+Source-to-target refinement remains a separate obligation. -/

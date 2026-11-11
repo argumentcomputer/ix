@@ -5,8 +5,8 @@ import IxCC.Ixon.PureHash
 # Content hashing
 
 `Address.blake3` is the content hash of every address IxCC computes: object
-and blob authentication, Merkle roots, projection keys, catalog file hashes,
-resource commitments. It is pure BLAKE3 (`Address.blake3Pure`, a total Lean
+and blob authentication, Merkle roots, projection keys, resource
+commitments. It is pure BLAKE3 (`Address.blake3Pure`, a total Lean
 implementation, `IxCC.Ixon.PureHash`), the function the statements and the
 certified kernel's admission hash are about, so no address on the verifier
 path comes from foreign code and no theorem depends on the `native_decide`

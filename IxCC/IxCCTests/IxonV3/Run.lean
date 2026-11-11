@@ -2,7 +2,6 @@ import IxCCTests.IxonV3.Fixtures
 import IxCCTests.IxonV3.Handoff
 import IxCCTests.IxonV3.Typing
 import IxCCTests.IxonV3.Primitives
-import IxCCTests.IxonV3.Catalog.Run
 import IxCCTests.IxonV3.K1
 import IxCCTests.IxonV3.ResourceTransport
 import IxCCTests.IxonV3.ResourceBudget
@@ -79,7 +78,6 @@ def run : IO Bool := do
     assertions := assertions + (← handoff root)
     assertions := assertions + (← Typing.run root)
     assertions := assertions + (← Primitives.run root)
-    assertions := assertions + (← CatalogTests.run root)
     assertions := assertions + (← K1.run root)
     assertions := assertions + (← ResourceBudget.run)
     assertions := assertions + (← ResourceTransport.run)

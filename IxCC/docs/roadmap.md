@@ -124,7 +124,7 @@ before for those programs ([closures design](closures-design.md#proof-obligation
 | --- | --- |
 | Scalar & top-level compiler | Src-to-ELF recheck path (`Recheck.sound`), top-level `Compiler.compile` (`--rc auto\|on\|off`, `Compiler.compile_sound`), `CompileClaim` (`verifyProgram_*_sound`, `verifyBytes_*_sound`, `*_rootShape`), `Ring0` (`verifyRing0Sip_sound`), certificate/artifact checks and native pipeline suites |
 | Bounded plain RC | `Recheck.RcReplay` API (`RcReplay.run`, `RcReplay.sound`, `recycled_session`); exact ownership/certificate replay (`checkPlainMap` / `checkContractPlainMap`), ordinary Lir recycling runtime, SrcEval-relative object theorem, complete per-stage/native values, executed RC event counts and heap-failure/corruption controls; final producer integration remains open |
-| [Ixon v4 ingress](ixon-v4.md) | ix's v4 codec with canonicity evidence and pure-BLAKE3 authentication, catalog-v2 admission, erased typing, resource admission, claim binding; both envelopes, the role-bound one with its role table authenticated and its pinned identities read from it ([byte contract](byte-contract.md)) |
+| [Ixon v4 ingress](ixon-v4.md) | ix's v4 codec with canonicity evidence and pure-BLAKE3 authentication, resource admission, claim binding; both envelopes, the role-bound one with its role table authenticated and its pinned identities read from it ([byte contract](byte-contract.md)) |
 | [x86 target model](x86-encoded-instructions.md) | Typed x86 AST and machine, E1 per-form encoder/decoder and execution laws, E2 [streams and ELF objects](x86-stream-objects.md), [stream checking](stream-checking.md), the [reference-model record](x86-reference-model.md) |
 | [Legacy Aiur model](aiur-backend.md) | A verifier-side model of an earlier Aiur bytecode: vocabulary, wire format, semantics, static checks, counter analysis, memory and rank AIRs. Neither Aiur route uses it ([repository and landing](#repository-and-landing)) |
 | Standalone executables | `ixcc compile --exe`: a static Linux x86-64 executable of a root with `Nat` parameters and a `Nat` or field-less result, written by IxCC with no C, linker or driver; the shell is ledgered, the layout's driver contract proved ([design](standalone-executables-design.md#x0-as-implemented)) |
@@ -259,8 +259,8 @@ hosted-CI or cold-store timing is claimed.
   IxCC reads the role-bound envelopes this repository's `ix compile` writes,
   with pinned identities from their role tables ([byte
   contract](byte-contract.md)); every committed fixture is role-bound, written
-  by this repository's `ix` (the typing bundles and catalogs excepted: frozen
-  unbound data, [corpus](corpus.md)).
+  by this repository's `ix` (the typing bundles excepted: frozen unbound
+  data, [corpus](corpus.md)).
 - **Known defect: an unreached over-budget record refuses the closure.**
   The decoder refuses a whole closure if any record exceeds its expression
   depth budget (256, a `share` node a leaf), and `ix compile` selects a
@@ -676,7 +676,7 @@ disagreement; then the C drivers, their pins and the C link paths went.
   whole logical units and checker support (DO-20); equation counts grew; no
   source, root, case, value or decline changed, except the boundary family's
   field limit, restated at 49/50 fields (the known defect above). The typing
-  bundles and the catalogs are frozen unbound data (DO-16). The unbound flag
+  bundles are frozen unbound data; IxCC's catalog support is retired (DO-16). The unbound flag
   has no user left and goes next.
 - **RL-2, the certified-IxVM work.** It has priority and lands first; this
   branch adapts to whatever it does: a second merge of `main`, the rename
@@ -1016,7 +1016,7 @@ day.
 | DO-13 | May evaluation axioms be discharged by reductions Lean's kernel lacks (δ by accepted equation theorems)? | yes; no | Yes: SP-0's lemma (from `mem` and `eq_equality`, with the theorem a seed) makes it sound in every model with the laws; the IxVM workstream's rules now have such a rule (an equation's proof rewrites its left side) | SrcEval recurses through equation theorems; without this the evaluator route covers no well-founded recursion | Low for IxCC; it is the IxVM workstream's rule |
 | DO-14 | The legacy Aiur model (`IxCC/Aiur`, about 5.8k lines; the vendored snapshot, about 3.5k) | retire; re-pin; keep | Retire when the certified-IxVM work lands (RL-3) | The formal Aiur package supersedes or contradicts every part of it; neither route uses its bytecode | Low: a deletion; the one idea worth keeping (memory functionality from the memory polynomials) goes to formal Aiur's owners as a note |
 | DO-15 | IxCC's primitive table lacks this repository's `String.back` and has a `String.Legacy.back` that Lean 4.34.1 lacks | adopt this repository's table; keep IxCC's and retire the regeneration step | Adopt (follows from fixtures from this tree); moot once the certified kernel replaces the erased checker (DC-4, decided 2026-11-14) | One table, regenerable | Low |
-| DO-16 | The catalog fixtures cannot be regenerated: this repository's assembler takes only role-bound members | keep frozen with the pin described; an IxCC-side assembler; regenerate after SP-B | Keep frozen, described, until IxCC's catalog reader takes role-bound members (SP-B reads role-bound environments but refuses a role-bound catalog piece); then regenerate with ix's assembler | No new assembler to maintain | Low |
+| DO-16 | The catalog fixtures cannot be regenerated: this repository's assembler takes only role-bound members | keep frozen with the pin described; an IxCC-side assembler; regenerate after SP-B | **Retired** (2026-11-11, the kernel front end's step 4): IxCC's catalog support (the reader, the validator-1 admission, its four fences, the catalog step of `ixcc-ixon-v3`, the two frozen catalogs and their tests) is deleted. Validator 1 certified erased typing, which the deleted checker gave; ix retired validator 1 (its readers refuse it), and nothing outside IxCC's own tool, tests and frozen catalogs read it. Reading catalogs again means building against ix's current validator | No new assembler to maintain | Low |
 | DO-17 | Does the fixture regeneration gate block CI? | blocking; a report | A report until this branch lands, blocking afterwards with the refreeze procedure documented (the certified-IxVM work lands first, so it is never blocked) | A blocking gate makes every `ix` change that alters these bytes refreeze IxCC in the same pull request | Low |
 | DO-18 | Dated records whose producing commits are not in this repository (the historical annotated-recursion ownership records) | keep, described; retire | **Retired** (2026-11-11, the kernel front end's step 4): the records were unbound, which the kernel front end refuses, and this repository's `ix` refuses their source (OS-04) at its resource admission and writes no resource profile or checked pair, so no role-bound successor exists; what they tested is in the [CI coverage record](ci.md) | They were evidence for a retained refusal boundary; their reading (the erased checker, the earlier annotator and ingress) is deleted | Low |
 | DO-19 | The unbound-envelope flag, or IxCC reading role-bound environments | — | **Closed** by the decision "byte compatibility first" (2026-11-13): IxCC reads role-bound envelopes (SP-B, implemented); `ix compile --unbound` stays only as the committed fixtures' bridge until they are refrozen in the role-bound form (SP-B), then goes | — | — |

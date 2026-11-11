@@ -42,16 +42,12 @@ in
     build = ixccLib;
     proofs = programs;
 
-    # The catalog reader rejects symlinked files, so the fixture commands read
-    # the store copy of the source tree rather than the symlinked work tree.
+    # The fixture command reads the store copy of the source tree.
     ixon-v3 = mkCheck "ixon-v3" [] ''
       ./.lake/build/bin/tests-ixon-v3
       ./.lake/build/bin/check-ixon-v3 ${auditSrc}/fixtures/ixon-v4/handoff/accepted.ixe \
         ${auditSrc}/fixtures/ixon-v4/handoff/profile.bin \
         ${auditSrc}/fixtures/ixon-v4/handoff/accepted.claim
-      ./.lake/build/bin/check-ixon-v3-catalog ${auditSrc}/fixtures/ixon-v4/catalog/fat.ixc
-      ./.lake/build/bin/check-ixon-v3-catalog ${auditSrc}/fixtures/ixon-v4/catalog/chunked.ixc \
-        ${auditSrc}/fixtures/ixon-v4/catalog/chunked.ixc/members.json
     '';
 
     # The admission census must reproduce its reviewed baseline exactly, so

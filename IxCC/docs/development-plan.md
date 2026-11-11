@@ -62,7 +62,7 @@ coverage inventory and the coverage-change record. During development:
 - Build every program and the proof collection:
   `nix develop -c lake build IxCCTests.Proofs <executables>`.
 - Run the focused suites for the area: `lake exe tests-ixon-v3`,
-  `lake exe check-ixon-v3 …`, `lake exe check-ixon-v3-catalog …`,
+  `lake exe check-ixon-v3 …`,
   `lake exe tests-aiur`, the x86 checks `check-x86-encoder`,
   `check-x86-bytes`, `check-x86-streams` and `check-x86-object`, and the
   pipeline suites `tests-src`, `tests-relevance`, `tests-lam`, `tests-anf`,

@@ -62,8 +62,7 @@ unless a line says so.
   binding and the pins it gives, the records, the hash), term for term with a
   kernel claim about the same artifact.
 - [Ixon v4](ixon-v4.md): the ix pins (the v4 codec and the producer), contract encoding, strict
-  decoding, catalog-v2 admission, erased typing, resource admission and
-  claims.
+  decoding, resource admission and claims.
 
 ## x86 target
 

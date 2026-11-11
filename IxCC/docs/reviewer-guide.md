@@ -135,7 +135,7 @@ These are the commands of IxCC's 16 required checks, as [`nix/checks.nix`](../ni
 # build, proofs: the library, every executable, and the complete proof and fence collection
 # (IxCCTests imports IxCCTests.Proofs, so building it checks every exact axiom fence)
 lake build IxCC IxCCTests ixcc \
-  tests-ixon-v3 check-ixon-v3 check-ixon-v3-catalog census tests-aiur check-aiur \
+  tests-ixon-v3 check-ixon-v3 census tests-aiur check-aiur \
   check-x86-encoder check-x86-bytes check-x86-streams check-x86-object x86-object-fixture \
   check-trusted-externs check-tools-tests check-build-graph check-steps check-x86-hardware \
   tests-rt-rc tests-cfg-rc tests-driver-session tests-pipeline-rc tests-rc-certificate \
@@ -149,8 +149,6 @@ bin=.lake/build/bin
 $bin/tests-ixon-v3
 $bin/check-ixon-v3 fixtures/ixon-v4/handoff/accepted.ixe fixtures/ixon-v4/handoff/profile.bin \
   fixtures/ixon-v4/handoff/accepted.claim
-$bin/check-ixon-v3-catalog fixtures/ixon-v4/catalog/fat.ixc
-$bin/check-ixon-v3-catalog fixtures/ixon-v4/catalog/chunked.ixc fixtures/ixon-v4/catalog/chunked.ixc/members.json
 
 # census: each report must equal its reviewed baseline
 $bin/census fixtures/ixon-v4/k1/k1.ixe --names fixtures/ixon-v4/k1/equations.json --out census.json

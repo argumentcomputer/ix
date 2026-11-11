@@ -12,8 +12,8 @@
 # commits and paths outside the repository; it exits 0 only if nothing differs and nothing is
 # cited ("current and self-contained").
 #
-# Not covered (frozen by decision or not written by ix): fixtures/ixon-v4/typing and catalog (the
-# erased checker's unbound typing bundles and the catalogs over them), the vendored Aiur snapshot and its reference exports,
+# Not covered (frozen by decision or not written by ix): fixtures/ixon-v4/typing (the erased
+# checker's unbound typing bundles), the vendored Aiur snapshot and its reference exports,
 # fixtures/ixon-v4/bench-k1/steps.json (a measurement of the compiled code: check-steps), docs/.
 # The families are every `corpus.json` under fixtures/ (the registered ones, `corpus families`,
 # and the unregistered k1, ownership and phase2-arity), so a new family needs no change here.

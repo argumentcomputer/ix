@@ -293,8 +293,8 @@ Every use of the checker (`IxCC/IxCC/Ixon/V3/Tc/`) outside its own modules,
 as the tree stood after step 2 (2026-11-11), and what it becomes. Step 3 made
 every row's last column true but the deletions and the typing conjuncts of
 the resource-validation API and the catalog admission, which step 4 removes
-(until then those two and the erased checker's own tests are the checker's
-only callers, with `tests-kernel-front`'s comparison):
+(the catalog admission went with IxCC's catalog support; until the checker's
+deletion the resource-validation API and its own tests are its only callers):
 
 | Use (where) | What rests on it | Becomes at the switch |
 | --- | --- | --- |
@@ -303,7 +303,7 @@ only callers, with `tests-kernel-front`'s comparison):
 | `V3.Tc.checkEnv` in `Src.prepare` (`Src/Load.lean`), when `LoadConfig.typecheck`; `RelOracle` takes a `V3.Env` | the loader of the Src, Lam and pipeline suites and of `src-steps` | `KernelFront.ingress` and its annotator; `LoadConfig.typecheck` goes, and the oracle takes the accepted input |
 | `V3.TypedInput`, `V3.validateTyped` (`Ixon/V3/Typed.lean`) | nothing: since step 2 only the umbrella `IxCC.lean` imports it | deleted |
 | `ValidatedInput.typingChecked` in `V3.validate` (`Ixon/V3/Validate.lean`), and `ValidatedInput.typing_checked` | the resource-validation API (`check-ixon-v3`, `tests-ixon-v3`), which keeps typing as its prerequisite | the typing conjunct goes (resource admission and the literal pins stay); the kernel's acceptance where the input is role-bound. Its handoff fixtures are unbound |
-| `Admitted.typingChecked` in `Catalog.admitWith` (`Ixon/V3/Catalog/Admit.lean`), and `Admitted.typing_checked` | catalog validator 1 (`check-ixon-v3-catalog`) | decoder-level admission without typing: the catalogs are unbound pieces IxCC assembles |
+| `Admitted.typingChecked` in `Catalog.admitWith` (`Ixon/V3/Catalog/Admit.lean`), and `Admitted.typing_checked` | catalog validator 1 (`check-ixon-v3-catalog`) | IxCC's catalog support retired in step 4 (validator 1 certified erased typing; ix retired it): the reader, the admission, its four fences, `ixcc-ixon-v3`'s catalog step, the two frozen catalogs and their tests |
 | `Tc.initialState`, `getConstVerified`, `checkTarget`, `TcM.checkConst` in `Tools.Census.entries` (`Tools/Census.lean`) | the per-constant typing verdicts of the required `census` check, compared with reviewed baselines | the kernel's acceptance of the whole role-bound closure, its refusal naming the record; the baselines regenerated with the refreeze |
 | `typecheck = true → V3.Tc.checkEnv inp.env = .ok ()` and `Src.Relevance.annotate … = .ok …` in statements: `Recheck.ingress_parts` (`Compiler/Proof.lean`), `verifyBytes_{immortal,zeroRc,plainRc}_sound` (`CompileClaim/Proof.lean`), `verifyBytesRing0Sip_sound` (`Ring0/Proof.lean`), and the bridge's `checkDecls_verifyBytes_immortal_denotes_nat` (`Models/KernelBridge/IxKernelBridge/NatBridge.lean`); the `typecheck` parameter alone in `compile_parts` and its siblings (`Recheck/Proof/Compile.lean`), `compileWithContracts_*` and `compileAuto_*_sound` (`Compiler/Proof.lean`), `checkClaim_iff` (`CompileClaim.lean`) | the byte-level guarantees | restated with the acceptance and the kernel Stage A conjuncts ([statements](#the-byte-level-theorems-after-the-switch)) |
 | `--no-typecheck` (`Cli.lean`) | skips typing at ingress | removed ([the typing flag](#the-typing-flag)) |
@@ -799,8 +799,9 @@ rather than choosing between two.
 4. **Unbound environments.** Refused by the front end: with the switch
    decided this follows, since the kernel admits only role-bound
    environments. Since step 3 an unbound closure is refused at ingress. What
-   stays unbound: the catalog pieces and the
-   resource handoff fixtures, read without typing (the table of uses above).
+   stays unbound: the resource handoff fixtures, read without typing (the
+   table of uses above); the catalog pieces went with IxCC's catalog support
+   in step 4.
 5. **The exposure on `let` chains** ([resource bounds](#resource-bounds)).
    The switch (step 3; the producer and the verifier go together) either
    lands with the exposure documented or waits for the kernel's fix

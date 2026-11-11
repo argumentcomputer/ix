@@ -235,13 +235,9 @@ lean_exe «tests-grounding» where
 
 lean_exe «tests-ixon-v3» where
   root := `IxCCTests.IxonV3.Main
-  needs := #[.mk (.packageTarget .anonymous `«check-ixon-v3-catalog»)]
 
 lean_exe «check-ixon-v3» where
   root := `IxCCTests.Scripts.CheckIxonV3
-
-lean_exe «check-ixon-v3-catalog» where
-  root := `IxCCTests.Scripts.CheckIxonV3Catalog
 
 lean_exe «tests-aiur» where
   root := `IxCCTests.Aiur.Main
@@ -316,7 +312,7 @@ lean_exe «pin-src-tables» where
   supportInterpreter := true
 
 /- Manual refreeze steps beside `corpus rebuild` and `pin-src-tables`: the
-producer pins, ix's fixture package, the erased checker's primitive table,
-the typing bundles and the catalogs (runs ix; `docs/corpus.md`). -/
+producer pins, ix's fixture package, the primitive table and the RC
+real-source input (runs ix; `docs/corpus.md`). -/
 lean_exe «refreeze-ixon» where
   root := `IxCCTests.Scripts.RefreezeIxon

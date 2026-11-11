@@ -61,7 +61,7 @@ builds they share:
 
 | Check | Runs |
 | --- | --- |
-| `ixon-v3` | `tests-ixon-v3`; `check-ixon-v3` on the handoff fixture; `check-ixon-v3-catalog` on the fat and chunked catalogs |
+| `ixon-v3` | `tests-ixon-v3`; `check-ixon-v3` on the handoff fixture |
 | `aiur` | `tests-aiur`; `check-aiur` |
 | `x86-encoder-decoder` | `check-x86-encoder` against GNU objdump |
 | `x86-byte-execution` | `check-x86-bytes` |

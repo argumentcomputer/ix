@@ -117,7 +117,7 @@ against:
 - every file under `IxCC/` (the production library, the repository checkers
   in `IxCC/Tools` and the vendored Aiur reference), `IxCCTests/` (tests,
   fences, executable scripts such as `Scripts/X86ObjectFixture.lean` and
-  `Scripts/Census.lean`), `fixtures/` (closures, catalogs, goldens, and the C test
+  `Scripts/Census.lean`), `fixtures/` (closures, goldens, and the C test
   harnesses such as `fixtures/x86/exports_harness.c` and
   `unwind_harness.c`), `nix/` and `tools/`;
 - the benchmark runner's C entry points (`benchmarks/runner/entry/*.c`) and
@@ -268,8 +268,8 @@ and its coverage changes.
 | Owner | IxCC maintainers |
 | Project entry points | `Blake3.Rust.hash` in `IxCC/Ixon/Hash.lean`; `Blake3.Rust.Hasher` in the v3 typechecker's node/context hashing |
 | Assumed semantics | Standard BLAKE3 XOF over exactly the input bytes; a 32-byte request is the standard 256-bit digest |
-| Logical/proof status | Assumption: no Lean refinement theorem connects returned bytes to a pure BLAKE3 specification. Canonical-address identity is conditional on an explicit pairwise `Address.Blake3NoCollision` premise; no global hash-injectivity axiom is asserted. Theorems whose premise is a successful addressed check (Ixon v3 ingress, catalog admission, typing and claim binding) expose the exact native hash dependency, pinned in the `IxCCTests/Fences/IxonV3*.lean` fences. |
-| Evidence | Official empty-input vector, output length, determinism and input-sensitivity checks, and the frozen Ixon v3 constant, environment, catalog and claim fixtures with independently recorded addresses |
+| Logical/proof status | Assumption: no Lean refinement theorem connects returned bytes to a pure BLAKE3 specification. Canonical-address identity is conditional on an explicit pairwise `Address.Blake3NoCollision` premise; no global hash-injectivity axiom is asserted. Theorems whose premise is a successful addressed check (Ixon v3 ingress, typing and claim binding) expose the exact native hash dependency, pinned in the `IxCCTests/Fences/IxonV3*.lean` fences. |
+| Evidence | Official empty-input vector, output length, determinism and input-sensitivity checks, and the frozen Ixon v3 constant, environment and claim fixtures with independently recorded addresses |
 | Primary pin | Blake3.lean `3f8b805614a0bae1c033469ff893a8f0ee85f601` |
 | Rust implementation | `blake3` 1.8.7; `lean-ffi` `163a661847d8171a685570ed12b4c03bfa092778` |
 | Retirement | Pure Lean BLAKE3 plus a refinement theorem and official corpus compatibility, compiled by our backend |
@@ -366,17 +366,6 @@ avoid reflection axioms. Eight exact fences retain the existing BLAKE3 axiom
 basis. Four frozen primitive closures, canonical recursors and adversarial
 cases run in the required suite. A whole-checker semantic soundness theorem,
 backend simulation and IxVM resource proofs remain outside this boundary.
-
-Catalog-v2 admission additionally binds manifest version 2, object format 4
-and erased-lean-v1 (validator 1) to original manifest/piece bytes. It verifies
-roots, file hashes, counts, aggregate bounds, closed union assumptions and
-actual union typing. Chunked membership requires complete sorted address
-witnesses checked against each committed member root and count; first-owner
-assignment and full union coverage are checked explicitly. Producer labels,
-pins and preimage hashes are metadata, not proof. Four further exact fences
-preserve the same axiom basis. The 445 catalog assertions include producer
-fat and independently Rust-verified chunk fixtures, corruptions, exact bounds
-and filesystem/CLI tests. Validator 1 does not select a resource profile.
 
 The valid-neighbor resource and `csimp` controls of the source suite add no
 native interface, symbol, dependency, build seed, specification assumption or

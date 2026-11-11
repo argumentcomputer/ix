@@ -5,7 +5,7 @@ pinned identities from the role table of a role-bound one, computes every
 address with pure BLAKE3, and its compile claim names the role table beside
 the root (all implemented). Every committed fixture is role-bound, written by
 this repository's `ix` ([corpus](corpus.md)); only the erased checker's typing
-bundles and the catalogs over them are frozen unbound data.
+bundles are frozen unbound data.
 
 A statement of the [end-to-end plan](end-to-end.md) has two premises about
 content addresses: that the kernel's reading of the closure of the *seeds* (the
@@ -254,8 +254,8 @@ soundness theorems state both (`verifyBytes_immortal_sound`,
   of the seeds under the IxVM claim's table and the committed prelude
   ([kernel front end](kernel-front-end-design.md#acceptance)).
 - **The unbound bridge.** `ix compile --unbound` stays until it is removed
-  (it has no IxCC user since the role-bound refreeze; the typing bundles and
-  catalogs are frozen data, not regenerated). IxCC still reads the unbound
+  (it has no IxCC user since the role-bound refreeze; the typing bundles are
+  frozen data, not regenerated). IxCC still reads the unbound
   envelope, with the fixed pins; its tests write it from a role-bound closure
   (`IxCCTests/Support/Envelope.lean`).
 - **Two readings.** IxCC's decoder and the kernel's reader each read the

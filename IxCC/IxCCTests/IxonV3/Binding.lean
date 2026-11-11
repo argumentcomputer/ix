@@ -2,7 +2,6 @@ import IxCC.Ixon.V3.Env
 import IxCC.Src.Ingress
 import IxCC.Src.Hints
 import IxCC.Src.Table.Check
-import IxCCTests.IxonV3.Catalog.Fixtures
 import IxCCTests.Support.Envelope
 
 /-! # Role-bound environments
@@ -12,8 +11,7 @@ sections written in the kernel's grammar (`IxCK/Kernel/Ixon/RoleTable.lean`)
 and their refusals; the role-bound envelope (`0xE5`) against the unbound one
 of the same closure, and its refusals; the pins a role table gives, an
 identity whose role the table does not bind being absent; the refusal of a
-projection record that names no block member; a catalog's refusal of a
-role-bound piece; and, on two committed closures (every committed closure is
+projection record that names no block member; and, on two committed closures (every committed closure is
 role-bound, as `ix compile` writes it; the unbound envelope is the same
 closure without its binding), the binding, its pins against the fixed table and
 the program ingress reads (`IxCC/docs/byte-contract.md`). -/
@@ -194,23 +192,6 @@ def projections (root : System.FilePath) : IO Nat := do
     "a closure with projection records"
   return 2
 
-/-- A catalog's pieces are unbound. -/
-def catalog (root : System.FilePath) : IO Nat := do
-  let raw ← unboundFib root
-  let env ← IO.ofExcept (decodeAnonymousEnv raw)
-  let sec := sectionBytes 3 [(natIdx, IxCC.Ixon.Address.replicate 1)] []
-  let raws := #[envelope env (some (IxCC.Ixon.Address.blake3Pure sec, sec))]
-  let m ← IO.ofExcept (CatalogFixtures.fat raws)
-  match Catalog.load (CatalogFixtures.manifestBytes m) raws with
-  | .ok _ => throw (IO.userError "role binding: a catalog accepted a role-bound piece")
-  | .error e =>
-    require ((reprStr e).contains "must be an unbound environment") s!"catalog refusal: {reprStr e}"
-  let plain := #[raw]
-  let mPlain ← IO.ofExcept (CatalogFixtures.fat plain)
-  require (Catalog.load (CatalogFixtures.manifestBytes mPlain) plain).toOption.isSome
-    "a catalog refused an unbound piece"
-  return 2
-
 /-- The pinned identities of a role-bound closure, by name: the role table's pin
 and the fixed table's. -/
 def pinPairs (t : RoleTable) : List (String × Option Nat × Option Nat) :=
@@ -263,6 +244,6 @@ def boundFixtures (root : System.FilePath) : IO Nat := do
 
 def run (root : System.FilePath) : IO Nat := do
   return (← sections) + (← envelopes root) + (← pins root) + (← projections root) +
-    (← catalog root) + (← boundFixtures root)
+    (← boundFixtures root)
 
 end IxCCTests.IxonV3.Binding
