@@ -276,15 +276,23 @@ hosted-CI or cold-store timing is claimed.
 - **Roots.** Level-monomorphic, at most five `Nat` parameters; results that
   are `Nat` or enumerations (immortal and zero-RC policies) or first-order
   constructor trees (plain RC). A compile claim covers root index 0.
-- **Internal calls.** A global takes at most seven parameters, the internal
-  calling convention's argument registers: register allocation declines a
-  program with a global of more (`alloc: alloc.fallback`), whatever its root
-  takes. Erasure keeps every binder slot, erased type and instance
-  parameters included, so monad-transformer code reaches the limit: a
-  `StateT`-over-`Except` loop has a global of eight
-  (`fixtures/corpus/phase2-closures`, `Closures.stateLoop`). Passing the
-  extra parameters on the stack, or dropping the erased ones (P5), would
-  lift it.
+- **Internal tail calls.** The internal calling convention passes seven
+  arguments in registers and the rest on the stack, but a tail call passes at
+  most seven (the allocation validator's `convention` check: a tail call
+  reuses the caller's frame, which has no outgoing stack cells for it), so
+  register allocation declines a program with a tail call of more
+  (`alloc: alloc.fallback`), whatever its root takes; a non-tail call of more
+  is fine. Erasure keeps every binder slot, erased type and instance
+  parameters included, so monad-transformer code has functions of eight
+  parameters (`StateT.bind`, `StateT.map`), and the closures step's
+  dispatchers call a closure's function in tail position: a
+  `StateT`-over-`Except` loop through the library's `StateT.bind` is declined
+  (`fixtures/corpus/phase2-closures`, `Closures.stateLoop`; the same loop with
+  the stack's `Monad` instance written for it, `Closures.stateLoopSE`,
+  compiles). Of the registered roots it is the only one this limit refuses
+  (2026-11-11). Lowering such a tail call as a call and a return (a frame per
+  call, no stack cells in a reused frame), passing tail-call arguments on the
+  stack, or dropping the erased parameters (P5) would lift it.
 - **Proved.** For an accepted certificate, the object refines SrcEval on the
   checked source `a.src`, with the `GoesWrong` escape, under the x86, loader
   and driver assumptions of the [trust ledger](trusted-extern-ledger.md); at

@@ -351,7 +351,8 @@ def suite (a : Assert) (o : Options) (work : FilePath) : IO Unit := do
       for l in lines do IO.println s!"    {l}"
 
 /-- The middle end's and the backend's input for a root `produce` declines:
-Anf after the middle end, Lir and Xv (as `ixcc --dump-ir` prints them),
+Anf after the middle end and the closures step, Lir and Xv (as `ixcc
+--dump-ir` prints them),
 recomputed by `produce`'s own steps up to selection. For diagnosing a decline
 at allocation or later. -/
 def dumpIR (inp : Input) : Except String String := do
@@ -367,16 +368,39 @@ def dumpIR (inp : Input) : Except String String := do
     | .ok r => pure r
     | .error e => throw e.render
   let trace ← IxCC.Anf.Pipeline.produce cfg.budgets lam
-  let anf := ((trace.stages.getLast?).map (·.2)).getD default
+  let pre := ((trace.stages.getLast?).map (·.2)).getD default
+  -- the closures step, as the producer runs it after the middle end
+  let anf ← (closuresOf src pre).mapError (·.render)
   let fir ← (IxCC.Fir.lower anf).mapError fun e => (Err.ofFir e).render
   let C := IxCC.Cfg.lower (IxCC.Own.immortal fir)
   let lowered ← (IxCC.Rt.lower { names := cfg.names } C).mapError fun e => (Err.ofRt e).render
   let (xv, _) ← (IxCC.Xv.Select.run lowered.program).mapError fun e => (Err.ofSelect e).render
   return s!"== anf\n{anf.render}\n== lir\n{lowered.program.text}\n== xv\n{xv.text}"
 
+/-- What the closures step made of a compiled root's program: unchanged, or
+its closure keys `K` (P8's constructor rows), its dispatchers `M`, and the
+back end's work on their switches (`Anf.Defun.dispatchWork`) against the
+budget past which P8 refuses (`Anf.maxBackWork`), with the most keys that
+budget admits at this `M` and table. -/
+def closuresLine (cert : Cert) (art : Artifact) : String :=
+  match Anf.Pipeline.run cert.mid art.lam with
+  | .error _ => "closures step: the middle end does not replay"
+  | .ok pre =>
+    if pre.beq art.anf then "closures step: the program unchanged"
+    else
+      let K := art.anf.ctors.length - pre.ctors.length
+      let M := (art.anf.globalList.filter fun (_, g) => g.key matches .dispatch _).length
+      let entries := (art.anf.globalList.filter fun (_, g) => g.key matches .entry ..).length
+      let w := Anf.Defun.dispatchWork pre M K
+      let kmax := (List.range 4096).foldl (fun k _ =>
+        if M > 0 && Anf.Defun.dispatchWork pre M (k + 1) ≤ Anf.maxBackWork then k + 1 else k) K
+      s!"closures step: {entries} entries, {K} closure keys, {M} dispatchers, dispatch work {w} \
+        ({w * 100 / Anf.maxBackWork}% of {Anf.maxBackWork}; at most {kmax} keys at {M} dispatchers)"
+
 /-- Survey mode: compile every root and print `compiled` or its
-`stage: code`, with what the manifest expects (no assertions; for
-reviewing a new family before recording its declines). -/
+`stage: code`, with what the manifest expects, and for a compiled root what
+the closures step made of it (`closuresLine`) (no assertions; for reviewing a
+new family before recording its declines). -/
 def survey (o : Options) : IO Unit := do
   let manifests := if o.manifests.isEmpty then families else o.manifests
   for path in manifests do
@@ -394,6 +418,7 @@ def survey (o : Options) : IO Unit := do
           | some d => s!"{d.stage}: {d.code}"
           | none => "compiled"
         IO.println s!"{m.family}/{f.name}/{r.name}\t{got}\t(manifest: {want}{if got == want then "" else ", DIFFERS"})\t{ms} ms"
+        if let .ok (cert, art) := result then IO.println s!"  {closuresLine cert art}"
         if let .error e := result then
           IO.println s!"  {(e.render.take 300).toString}"
           if o.dump && [Stage.alloc, .stacking, .layout, .x86, .elf].contains e.stage then

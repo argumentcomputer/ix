@@ -58,7 +58,12 @@ to a literal `out` and is readable in a model (`denoteMeta … = some ea`) and g
 `checkDecls_recheck_x86_denotes_nat` also conjoins `IxCC.Recheck.sound_nat`, and
 `checkDecls_verifyBytes_immortal_denotes_nat` conjoins
 `IxCC.CompileClaim.verifyBytes_immortal_sound`. Every Layer 3 theorem keeps the premises of
-Layers 1 and 2.
+Layers 1 and 2. The two that compose `IxCC.Recheck.sound_nat` also take the input's coverage
+(`a.front.Covered cert i`: an input of exactly the root's declared parameter count, or any
+input when IxCC's closures step left the certificate's program unchanged) as a premise, and
+`checkDecls_verifyBytes_immortal_denotes_nat` concludes the claim's covered conjunct (every
+argument list of the claim's arity is a covered input of root 0), so the premise holds of every
+claimed input `(0, ns)` by the theorem itself.
 
 **The kernel front end's classes** (`IxKernelBridge.KernelFront`, apart from the simulation
 lemma). IxCC's front end over the certified kernel (`IxCC.Src.KernelFront`,

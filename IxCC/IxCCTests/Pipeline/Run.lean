@@ -120,7 +120,7 @@ def suite (a : Assert) (o : Options) (work : FilePath) : IO Unit := do
       (Twin.run a native o.twin o.seed)
   if want "defun" then
     part a s!"the closures step under chosen middle-end schedules{natively}"
-      (Defun.run a native)
+      (Defun.run a tools)
 
 def main (args : List String) : IO UInt32 := do
   if let "--level" :: name :: level :: xs := args then

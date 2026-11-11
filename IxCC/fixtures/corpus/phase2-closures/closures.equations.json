@@ -15,6 +15,10 @@
       "address": "1cb6d3d0318185b9b1e4b76e8c23925b0e5c5c070d1e7dc28c2fa2059b413a3c"
     },
     {
+      "name": "Closures.stateLoopSE",
+      "address": "6d60da8dc2da63d1337ab820bf9bd2b612e9376e69342213c3d0776ff251168f"
+    },
+    {
       "name": "Closures.storedApply",
       "address": "203d548448ffb51a616fbeeb3316aefffcaee5c5297d5f946a4fe3596b2be65f"
     },
@@ -47,6 +51,12 @@
       "definition_address": "73c321eeaca03eee3765a1f023a1faf75f4c2b6429e698e7e4b4f1baa700d5f5",
       "equation": "Closures.steps.eq_def",
       "equation_address": "24904871e9cd490ccee2cddebd6fa5140564b91165b5c187d6b058a6b80d8459"
+    },
+    {
+      "definition": "Closures.stepsSE",
+      "definition_address": "a4c7609de5f479262cfcf8b618889a5f6c6dd75a621cd47243befa9c74fd3534",
+      "equation": "Closures.stepsSE.eq_def",
+      "equation_address": "69cfe8e6051e17a861a2c67d6e649357b64d0506ff0f5ace34c26ba64e99a84e"
     },
     {
       "definition": "Closures.useOps",

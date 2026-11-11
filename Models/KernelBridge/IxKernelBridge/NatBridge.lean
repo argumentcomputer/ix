@@ -1855,7 +1855,9 @@ theorem checkDecls_recheck_x86_denotes_nat {μ : CheckMode} {ev : Evidences md}
 `IxCC.CompileClaim.verifyBytes_immortal_sound` (under `.immortal` policy), `checkDecls_sound`, and,
 for every user-supplied `constSpec` satisfying `hconst` and every related closed root `eRoot`,
 the conclusions of `checkDecls_recheck_x86_denotes_nat` for the artifact `a` the verifier
-rechecked. This is not adequacy for the claim: `ds`/`env` occur only in `hchk` and `hbasis`
+rechecked. With the claim's covered conjunct (every argument list of the claim's arity is an
+input of root 0 the recheck theorems cover), a consumer discharges the `a.front.Covered cert i`
+premise for the claimed inputs `(0, ns)` from this theorem itself. This is not adequacy for the claim: `ds`/`env` occur only in `hchk` and `hbasis`
 and `envBytes` only in `hver`, so `env` is not the claim's environment; `eRoot` is not the
 kernel constant of `claim.target`; and the root index `i` is not tied to `claim.target`.
 Like `verifyBytes_immortal_sound`, it rests on the three standard axioms only (every address
@@ -1882,6 +1884,7 @@ theorem checkDecls_verifyBytes_immortal_denotes_nat {μ : CheckMode} {ev : Evide
       a.roots.head? = some root ∧
       root.ty = some (sig, ty) ∧
       IxCC.Ixon.Address.blake3Pure a.object = claim.elfHash ∧
+      (∀ ns : List Nat, ns.length = claim.abiArity → a.front.Covered cert (0, ns)) ∧
       ∀ {constSpec : IxCC.Src.Levels → IxCC.Src.CId → Expr md → Prop},
         (∀ ls c e, constSpec ls c e → RelConstStep a.src env constSpec ls c e) →
         ∀ {i : Nat × List Nat} {k_src : Nat} {rootAddr : IxCC.Ixon.Address} {rootCId : IxCC.Src.CId}
@@ -1908,10 +1911,10 @@ theorem checkDecls_verifyBytes_immortal_denotes_nat {μ : CheckMode} {ev : Evide
   have hmodel : Nonempty (EnvModelM V μ env) :=
     Ix.Kernel.Cached.checkDecls_sound (V := V) hμ hchk
   obtain ⟨inp, cert, a, rootId, root, sig, ty, hwf, _, hdec, htc, _, _, henv, hrole, hhead, _,
-    hrec, _, _, hahead, _, hty, _, _, hhash, _⟩ :=
+    hrec, _, _, hahead, _, hty, _, _, hhash, hcovs, _⟩ :=
     IxCC.CompileClaim.verifyBytes_immortal_sound hpol hver
   refine ⟨hmodel, inp, cert, a, rootId, root, sig, ty, hwf, hdec, htc rfl, henv, hrole, hhead, hrec,
-    hahead, hty, hhash, ?_⟩
+    hahead, hty, hhash, hcovs, ?_⟩
   intro constSpec hconst i k_src rootAddr rootCId eRoot out hrootAt hcov htyAt hrootRel hbRoot hnfRoot hrun
   obtain ⟨_, hred, hx86, hden⟩ :=
     checkDecls_recheck_x86_denotes_nat (V := V) hμ hchk hbasis hrec hconst hrootAt hcov htyAt hrootRel hbRoot hnfRoot hrun

@@ -1,7 +1,7 @@
 {
   "format": "ixcc/corpus/1",
   "family": "phase2-closures",
-  "description": "Higher-order workloads for P8 (docs/closures-design.md, Exit criteria): a closure that grows each iteration, dictionary-passing polymorphic recursion, a StateT-over-Except loop, partial and over-application through a stored closure, and a fuel-indexed record of closures. Compiled through the closures step (the roots' entries and P8); the StateT-over-Except loop is declined by register allocation.",
+  "description": "Higher-order workloads for P8 (docs/closures-design.md, Exit criteria): a closure that grows each iteration, dictionary-passing polymorphic recursion, a StateT-over-Except loop (with the library's bind, declined by register allocation, and with a bind written for the stack, within seven parameters), partial and over-application through a stored closure, and a fuel-indexed record of closures. Compiled through the closures step (the roots' entries and P8).",
   "tier": "required",
   "phase": 2,
   "directory": "fixtures/corpus/phase2-closures",
@@ -27,10 +27,10 @@
     }
   },
   "producer": {
-    "ix_revision": "46f5a995fb8ce742c34cabecb319bc0e8a258785",
-    "ix_binary_sha256": "9c2010ae94c309217a3dbee4dbcb727559eab3fa930332a005422b1cb8d4dedd",
+    "ix_revision": "21572449dea48204fbf4dafa2287549df7b07a16",
+    "ix_binary_sha256": "62c266c03b7afec2d68bc0d7779682843f9f35e948bedb3c1c46d17f531adb34",
     "ix_version": "4.34.1|0.0.1",
-    "ix_build": "The ix of this repository: built with Lake (lake build ix) at the recorded revision of jcb/ixcc-p8-defun (its root package is jcb/ixck-ixcc-merge's at dfdc1e1e3) in the build box's checkout, Lean 4.34.1, 2026-11-10; not a Nix build. Unbound closures (--unbound).",
+    "ix_build": "The ix of this repository: built with Lake (lake build ix) in the build box's checkout of jcb/ixcc-closures-wiring, whose root package is jcb/ixck-ixcc-merge's at the recorded revision; Lean 4.34.1, 2026-11-11; not a Nix build. Unbound closures (--unbound).",
     "anonymous": [
       "ix",
       "compile",
@@ -73,7 +73,7 @@
       "name": "closures",
       "source": {
         "path": "Closures.lean",
-        "sha256": "ca6e543dbfa0658a32ef2fcc36f0e07d5957eb56889a3da057339ad0f2a04887",
+        "sha256": "87d541d2bcb09d37568951c88abda481d9de0a4c29a5a0c1aba7b16909ae161d",
         "license": "Apache-2.0 OR MIT",
         "variant": "original",
         "origins": []
@@ -82,25 +82,26 @@
         "Closures.composeClosure",
         "Closures.polyRec",
         "Closures.stateLoop",
+        "Closures.stateLoopSE",
         "Closures.storedApply",
         "Closures.knot"
       ],
       "protocol": "stdin",
       "closure": {
         "path": "closures.ixe",
-        "sha256": "eec49844d9b98b8ab7062b1ed3d94b1fee12e334f5ed37f82ebb7f560976195b",
-        "bytes": 245931
+        "sha256": "14129e49c7cf513f9c448870f2658c56d8a1969ce31fa9bf3023800a0d950974",
+        "bytes": 253964
       },
       "equations": {
         "path": "closures.equations.json",
-        "sha256": "800f028d626afd1f8a571ba62f69d7a2a8767bb2e79af1b45c05ac8a8dc0860e",
-        "equations": 13,
+        "sha256": "c1b01984108ed794e762c9c9fb155ae2f6b07f14a662927f4d11e81f23f80be1",
+        "equations": 14,
         "failures": 0
       },
-      "named_env_sha256": "b8f01a5a66585dbe0be7252d2a35918581b01d1896f5a860ee4006a73d2f7699",
+      "named_env_sha256": "e26e0b04ac16f72e554e51b47402b1aa8a490cb2072851b08a26c53ba460e49c",
       "census": {
         "path": "closures.census.json",
-        "sha256": "aba707d870b8e74d2bb5a86ffeda0b52a74ab8f7d092e776c0bdee87d1496868"
+        "sha256": "070950f29d4b30d719bca541cd49421af2ce77064d94e18ccbcf37019e123609"
       },
       "roots": [
         {
@@ -202,7 +203,54 @@
             "stage": "alloc",
             "code": "alloc.fallback"
           },
-          "note": "Declined by register allocation after the closures step: the program has a source global of eight parameters, past the internal calling convention's seven argument registers. That limit is on parameter counts and independent of closures.",
+          "note": "Declined by register allocation after the closures step: StateT.bind takes eight parameters, a dispatcher calls it in tail position, and an internal tail call passes at most seven arguments (a non-tail call passes the rest on the stack). Closures.stateLoopSE is the same loop within that limit.",
+          "cases": [
+            {
+              "args": [
+                0,
+                10
+              ],
+              "value": "1"
+            },
+            {
+              "args": [
+                3,
+                10
+              ],
+              "value": "7"
+            },
+            {
+              "args": [
+                5,
+                7
+              ],
+              "value": "1007"
+            },
+            {
+              "args": [
+                10,
+                100
+              ],
+              "value": "21"
+            },
+            {
+              "args": [
+                20,
+                15
+              ],
+              "value": "1015"
+            }
+          ]
+        },
+        {
+          "name": "Closures.stateLoopSE",
+          "address": "6d60da8dc2da63d1337ab820bf9bd2b612e9376e69342213c3d0776ff251168f",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
           "cases": [
             {
               "args": [

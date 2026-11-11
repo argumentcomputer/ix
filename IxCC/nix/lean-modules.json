@@ -786,7 +786,8 @@
     "IxCC.Recheck.RootArity",
     "IxCC.CompileClaim",
     "IxCCTests.Pipeline.Twin",
-    "IxCCTests.Corpus.Manifest"]},
+    "IxCCTests.Corpus.Manifest",
+    "IxCCTests.Pipeline.Compiler"]},
   "IxCCTests.Pipeline.Compiler":
   {"path": "IxCCTests/Pipeline/Compiler.lean",
    "imports":

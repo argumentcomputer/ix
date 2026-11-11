@@ -43,7 +43,7 @@ reuse and clobber-aware `LinearScan`), and `unboxMatch` / `subtypeMatch`
 Elsewhere: `relevance: relevance-C2` (`phase1-scalar`'s
 `typeFormerPolymorphism`); `ingress: decode` for 255 fields and 126
 constructors (`phase1-boundary`); `rt: rt.params` for arity 6 (`phase1-abi`);
-`alloc: alloc.fallback` for a source global of eight parameters
+`alloc: alloc.fallback` for a tail call of eight arguments
 (`phase2-closures`' `stateLoop`).
 
 **Not a decline:** `twinB` compiled together with `twinA` (the same body, so

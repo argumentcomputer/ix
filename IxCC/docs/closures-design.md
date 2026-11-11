@@ -163,16 +163,36 @@ always remove.
   equations and the same workloads with and without inlining and
   specialisation (`tests-pipeline --only defun`, which runs the compiler's
   stages under a chosen middle-end schedule with the closures step after
-  it). The `StateT`-over-`Except` loop is declined by allocation
-  (`alloc.fallback`: a source global of eight parameters, past the internal
-  convention's seven argument registers), not by P8; that limit is on
-  parameter counts and independent of closures. The roots of
+  it), and every workload certified both ways: `Recheck.compileInput` and a
+  compile claim that `verifyProgram` and `verifyBytes` accept, under the
+  production schedule and with specialisation and inlining disabled (where
+  the step changes every workload), natively equal to Lean's values both
+  ways. The `StateT`-over-`Except` loop with the library's `StateT.bind`
+  (`Closures.stateLoop`) is declined by allocation (`alloc.fallback`: a
+  dispatcher tail-calls `StateT.bind`, of eight parameters, and a tail call
+  passes at most seven arguments; [roadmap](roadmap.md), "Internal tail
+  calls"). The same loop in the same stack with the stack's `Monad` instance
+  written for it (`Closures.stateLoopSE`, no function over seven parameters)
+  compiles and is
+  certified. The roots of
   [`phase2-arity`](../fixtures/corpus/phase2-arity/corpus.json) (not
   registered), whose stored values have fewer or more leading λs than their
   declared types show, compile through their entries and agree with Lean.
-  `Decline.applyArg` (a function parameter applied) compiles to a call of a
-  dispatcher with no alternative, since the program builds no closure; it
-  traps when reached, where the source is stuck too (it applies a number).
+- *Roots with a function parameter.* Closures do not cross a program
+  boundary, so no caller of an object can pass a closure, and a root whose
+  declared parameters include a function type has no meaningful caller.
+  `Decline.applyArg (f : Nat → Nat) (n : Nat)`, the one registered root of
+  this kind, compiles: the program builds no closure, so the dispatcher its
+  call of `f` goes through has no alternative, and it traps when reached
+  (status 4 natively), where the source is stuck too (on every input the
+  caller can pass, it applies a number). At each surface: `ixcc compile`
+  writes the object, and nothing refuses the root before run time; `ixcc
+  compile --exe` refuses it (`exe.params`: an executable passes decimal
+  natural numbers); and every compile claim refuses it
+  (`CompileClaim.produce`, `cert: roots`, under each RC mode, and
+  `verifyProgram` and `verifyBytes` reject a claim naming it, since
+  `CompileClaim.rootParamsAllNat` is false), so nothing certified is said of
+  it. `tests-pipeline --only defun` asserts each.
 - *Implemented: P8's own input checks.* The pipeline does not establish
   `Anf.WellScoped`, so the pass refuses (`defun.input`) what its correctness
   relies on and a well-scoped program never has: a global already keyed `lam`
@@ -528,10 +548,91 @@ it left the decline corpus. Criterion 4 is met, for every program the closures
 step accepts, well scoped or not (`Anf.Pipeline.Proof.closures_lower_ne_closures`,
 `Recheck.anfOf_lower_ne_closures`); the step's own refusals are
 `defun.captures`, `defun.tags`, `defun.budget`, `defun.input` and
-`anf.entry`. Criterion 2: the workloads compile with and without
-specialisation (`tests-pipeline --only defun`) except the `StateT`-over-`Except`
-loop, which allocation declines; a variant within seven parameters is
-planned. Criterion 3 waits for the K2/K3 closures.
+`anf.entry`. Criterion 2 is met: every workload, the `StateT`-over-`Except` loop
+in the form `Closures.stateLoopSE`, compiles and is certified under the
+production schedule and with specialisation and inlining disabled (where the
+closures step changes it), with Lean's values natively both ways
+(`tests-pipeline --only defun`); the loop through the library's `StateT.bind`,
+`Closures.stateLoop`, stays declined by allocation (the tail-call limit,
+[Measured limits](#measured-limits-2026-11-11)). Criterion 3 is not met. Frozen
+with this tree's `ix` in a probe (not committed), the K2/K3 programs of
+`benchmarks/fixtures` meet the production compiler as follows: `nqueens`,
+`reverse`, `foldl`, `list-qsort`, `binarytrees` and `rbmap_fbip` are first
+order after the middle end and compile unchanged by the step; `queue` keeps
+closures and compiles through the step (43 closure keys, 3 dispatchers);
+`rbmap` and `const_fold` keep closures and are declined by allocation at a
+dispatcher's tail call of eight arguments (`rbmap`: a dispatcher of arity 7
+tail-calls another; `const_fold`: a dispatcher tail-calls a lifted function of
+seven captures and one parameter); `rbmap_checkpoint` is declined at admission
+(string literals, an opaque constant) before the middle end. So what stands
+between criterion 3 and the K2/K3 programs today is the tail-call limit, then
+heap work for the measured rows (the [roadmap](roadmap.md)).
+
+## Measured limits (2026-11-11)
+
+Measured with the closures step on the compile path, on the workloads, the
+K2/K3 programs frozen in a probe, and the standalone-executables milestone's
+probe library (a numeric state machine of `if` chains, no user closure). The
+numbers are P8's: closure keys `K` (one per closure source and stage of
+partial application, the sum of the sources' arities), dispatchers `M` (one
+per arity of an unknown application), and the dispatchers' back-end work
+`dispatchWork = M·K²·(T + K + 1)` (`T` the constructor table), past
+`Anf.maxBackWork = 2^28` of which P8 refuses (`defun.budget`).
+`tests-corpus --survey` prints them for every compiled root.
+
+| Program | Anf nodes before P8 | `K` | `M` | share of the budget |
+| --- | --- | --- | --- | --- |
+| `phase2-closures` workloads (production schedule) | 52–257 | 2–8 | 1–2 | 0 % |
+| the same but `stateLoop(SE)`, P1 and P2 only | 110–349 | 13–27 | 2–3 | 0 % |
+| `Closures.stateLoop` (production) | 1,987 | 209 | 5 | 18 % |
+| K2 `queue` | 349 | 43 | 3 | 0 % |
+| K3 `rbmap` | 1,458 | 150 | 7 | 9 % |
+| K3 `rbmap`, P1 and P2 only | 1,651 | 236 | 11 | 55 % (refused: the program's back-end work) |
+| K3 `const_fold` | 1,157 | 248 | 4 | 23 % |
+| X2 `fibMain` (first-order source) | 6,811 | 237 | 2 | 10 % |
+| X2 `fibMainHO` | 8,896 | 353 | 2 | 33 % |
+
+Three limits, in the order ordinary code meets them:
+
+1. **The walk's copy budget** (`Walk.maxCopy`, 8,192 copied nodes per walk of
+   a global) leaves closures in first-order code. A shrink round that would
+   copy more fails, and `Shrink.produce` keeps the global as it was before
+   that round (`fixpointWithin`), so every redex the round would have reduced
+   stays: the β-reductions of the `Unit` thunks that the by-name branches of
+   `ite` and `cond` pass, and the known call of an applied `==` method. A
+   β-reduction charges the whole body it walks, and an `if` chain nests its
+   else-thunks, so the charges grow with the square of the chain while the
+   walk visits each node once. On `if x == k` chains, 4 tests reduce fully;
+   from 8 tests the root's round fails (on case-of-case copies: with
+   case-of-case off the round copies 28 nodes); a 30-line function's round
+   fails with case-of-case and join inlining off (on the thunks' β charges),
+   and its 90 thunks become closure keys. Separately, an inline round that one
+   caller's walk exceeds is refused for the whole program and ends the
+   phase's rounds (`Anf.Pipeline.produce`); retrying it without that caller
+   inlines more and leaves more thunks (a probe: 228 keys became 472). No
+   registered root meets either stop today.
+2. **The tail-call limit** refuses programs: an internal tail call passes at
+   most seven arguments ([roadmap](roadmap.md), "Internal tail calls"), and a
+   dispatcher tail-calls each closure's function with its captures and
+   arguments, so a closure of more than seven captures and parameters, a
+   dispatcher of arity seven reached by a tail call, or a function of more
+   than seven parameters reached as a closure is declined by allocation:
+   `Closures.stateLoop`, K3 `rbmap` and `const_fold`.
+3. **The dispatch budget** refuses about 510 keys behind one dispatcher, 372
+   behind five, 255 behind eight. No program the production schedule compiles
+   is near it but `fibMainHO` (33 %); `rbmap` without inlining and
+   specialisation is refused by the back-end budget of the whole program.
+   Closure-heavy code runs at 0.1–0.2 keys per Anf node before P8, so a
+   program two to ten times `rbmap`'s size reaches the budget; IxCK's checker
+   (a 12.6 MB closure, 42 times `rbmap`'s) would need thousands to tens of
+   thousands of keys, past the budget and towards the tag space
+   (`maxClosureKeys`, 32,512) [estimate]. The quadratic term is the back end's
+   switch check: `Rt.testsDistinct` compares every pair of a switch's
+   alternatives, each looked up in the constructor table. Checking distinct
+   tests on the sorted tests, with the table indexed, makes it `K·log K`, with
+   no change to P8, its proofs, the certificate or any object; the
+   dispatcher's node budget (`maxGlobalNodes`) and the tag space are then the
+   limits, the first lifted by splitting a dispatcher by key ranges.
 
 ## No code-pointer fallback
 
