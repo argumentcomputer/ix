@@ -299,7 +299,7 @@ theorem decideRoot (hL : Laws M) {p : Program} {κ : CId → KKey} {lpsOf : CId 
 /-- The landed form of `decideRoot`, under `SitesOk`. -/
 theorem decideRoot_of_sitesOk (hL : Laws M) {p : Program} {κ : CId → KKey}
     {lpsOf : CId → List Nat} {ann : IxCC.Src.Relevance.Ann} {Sl : List CId} {root boolD : CId}
-    (hb : p.known.bool = some boolD) (hBL : BoolListed p boolD)
+    (_hb : p.known.bool = some boolD) (hBL : BoolListed p boolD)
     (hG : GroundFacts p env κ lpsOf ann (· ∈ Sl)) (hC : CaseFacts p env κ (· ∈ Sl))
     (hR : RootFacts p env κ ann (· ∈ Sl) root [] (.enum boolD))
     (hT : SitesOk M p κ lpsOf ann (· ∈ Sl))
