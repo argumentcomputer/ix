@@ -253,7 +253,7 @@ def registry : List Entry := [
   -- builders leave them out.
   .runner "ixvm-claim-safety" (.ci .ixvm) Tests.Ix.IxVM.ClaimSafety.run,
   .runner "ixvm-claim-safety-corpus" (.manual "walk closure of what stays owned on a compiled corpus; IX_SAFETY_IXE, IX_SAFETY_IXES") Tests.Ix.IxVM.ClaimSafety.corpus,
-  -- The binder data (D2) a witness carries for the conversion: hand-made records
+  -- The binder data a witness carries for the conversion: hand-made records
   -- with known data, the host-side check (coverage, the kernel's values), tampering.
   .runner "ixvm-pw-hints" (.ci .ixvm) Tests.Ix.IxVM.PwHints.run,
   -- A wrong datum is rejected and a missing one a host error, through the program

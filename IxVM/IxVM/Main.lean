@@ -27,7 +27,7 @@ private def scalar (n : Nat) : Execution.DataValue F := .field n
 private def array (ns : Array Nat) : Execution.DataValue F := .array .field (ns.toList.map scalar)
 private def tuple (vs : List (Execution.DataValue F)) : Execution.DataValue F := .tuple vs
 
-/-- The binder-data hints (D2: `ixvm.pw`, `ixvm.pw.param`, `ixvm.pw.share`) of one record's
+/-- The binder-data hints (`ixvm.pw`, `ixvm.pw.param`, `ixvm.pw.share`) of one record's
 stream values, as `crates/ixvm/src/pw.rs` serves them from IO channel 8:
 `nblocks (ekind eidx variant nnodes node*)*`, `node = 0 | 1 v | 2+k p1 … pk`. -/
 def pwHints (address : Array Nat) (vs : Array Nat) : Array (Execution.HintEntry F) := Id.run do

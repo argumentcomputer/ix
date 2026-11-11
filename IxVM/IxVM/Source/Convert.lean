@@ -95,7 +95,7 @@ def convert_univ_idxs := aiur_fn⟦
   -- `Lists::drop` on the one table, whose calls all lookups share. (The earlier form converted
   -- entry `n` under `Lists::take(sharing, n)`, a new list per entry: quadratic, review K3-1.)
   --
-  -- Binder data (D2). Every `Lam` and `All` node carries its binder datum, read from the hint
+  -- Binder data. Every `Lam` and `All` node carries its binder datum, read from the hint
   -- channel `ixvm.pw` (untrusted: the kernel's rules validate it at `Infer.lam` and
   -- `Infer.forallE`). A datum is keyed by `(rec, ekind, eidx, variant, ordinal)`: the record
   -- whose tables the expression is converted with, the entry (`(0, r)` the `r`-th root,

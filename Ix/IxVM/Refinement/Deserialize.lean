@@ -3,7 +3,7 @@ import Ix.IxVM.Refinement.TagNWide
 
 /-! # The Deserialize slice: `UInt64` and `IxonDeserialize` primitives
 
-Track B, Phase 3 (`plans/ixvm-certification-gap.md`). On top of the generated
+On top of the generated
 mirrors in `Ix.IxVM.Refinement.Mirrors.Deserialize`, this module establishes:
 
 * `fromField_mapCall_inv` and `u64BytesMeasure_dec`: the decreasing measure on

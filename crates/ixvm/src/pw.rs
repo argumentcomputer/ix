@@ -1,4 +1,4 @@
-//! The binder data of IxVM's conversion (decision D2), served from IO
+//! The binder data of IxVM's conversion, served from IO
 //! channel 8. Nothing here is trusted: the circuit validates every datum
 //! where the kernel's rules do, so a wrong one can only fail a claim.
 //!

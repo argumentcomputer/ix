@@ -2,7 +2,7 @@ import Tests.Ix.IxVM
 import Tests.Ix.IxVM.S4Bench
 import Ix.RoleBinding.Artifact
 
-/-! # The trusted reader on the closures IxVM accepts (decision D10)
+/-! # The trusted reader on the closures IxVM accepts
 
 `IxVM.consistent` (`Ix.IxVM.Consistency.Statement`) concludes that the records
 an accepting run loaded are read by the kernel's reader
@@ -29,10 +29,10 @@ axioms and unsafe inductive blocks (`Ix.Kernel.Reader.safetyDeclineOf`,
 `readInductive`): they are outside Lean's logic, and an unsafe constant may have
 any type, `False` included. IxVM type-checks them (`KernelCheck::is_unsafe_ci`
 and `assert_safety` keep safe constants from referencing them). They are set
-aside here and counted; the logical rest must read in full. Init+Std and Lean
-as wholes were read by `ix check-lean` in lane s4's job `s4-006` (every
-mutual and nested block accepted, only the tier and `Lean.trustCompiler`'s
-axiom policy set aside). -/
+aside here and counted; the logical rest must read in full. Checked as wholes
+with `ix check-lean`, Init+Std and Lean read in full (every mutual and nested
+block accepted, only the tier and `Lean.trustCompiler`'s axiom policy set
+aside). -/
 
 namespace Tests.Ix.Kernel.ReaderCoverage
 
