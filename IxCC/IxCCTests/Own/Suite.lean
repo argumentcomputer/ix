@@ -153,7 +153,7 @@ def equiv (a : Assert) (o : Options) (work : FilePath) (m : Family) : IO (Array 
   for f in m.fixtures do
     for r in f.roots do
       let before ← a.get
-      let (lines, ms) ← timed (IxCCTests.Corpus.root a co native m f r t)
+      let (lines, ms) ← timed (IxCCTests.Corpus.root a co native work m f r t)
       out := out.push s!"  {f.name}/{r.name}: {(← a.get) - before} assertions, {ms} ms"
       out := out ++ lines.map ("    " ++ ·)
   let tl ← t.get

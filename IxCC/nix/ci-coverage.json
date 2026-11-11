@@ -436,6 +436,7 @@
   "IxCC.CompileClaim",
   "IxCC.CompileClaim.Proof",
   "IxCC.Compiler.Proof",
+  "IxCC.Exe",
   "IxCC.Fir.Lower",
   "IxCC.Fir.Proof.Corr",
   "IxCC.Fir.Proof.Correct",
@@ -956,6 +957,12 @@
   "IxCC.X86.Eval",
   "IxCC.X86.EvalExamples",
   "IxCC.X86.ExactNat",
+  "IxCC.X86.Exe.Code",
+  "IxCC.X86.Exe.Layout",
+  "IxCC.X86.Exe.Read",
+  "IxCC.X86.Exe.Shell",
+  "IxCC.X86.Exe.Validate",
+  "IxCC.X86.Exe.Write",
   "IxCC.X86.Execution",
   "IxCC.X86.FrameCalls",
   "IxCC.X86.FrameExecution",
@@ -1154,6 +1161,7 @@
   "IxCCTests.Fences.Compile",
   "IxCCTests.Fences.Defun",
   "IxCCTests.Fences.Erase",
+  "IxCCTests.Fences.Exe",
   "IxCCTests.Fences.Fir",
   "IxCCTests.Fences.FirProof",
   "IxCCTests.Fences.Front",
@@ -1575,7 +1583,7 @@
   "IxCCTests.Sem.Toy.Stack",
   "IxCCTests.Sem.Toy.Tick"],
  "baseline":
- "P8: the walk is the translation, the output is well scoped, renaming is exact; their fences",
+ "Standalone executables: the layout's driver contract and the executable check; their fences",
  "axiom_sha256":
- "aa2a6519ee499c3181a845ff707a92052dd34532a5d666a2c5444f2d9e503c1e",
- "axiom_count": 5748}
+ "3a5c4437f853359021c361fc67ab1c41e196f41155f6af16cfa0911791dfcf3a",
+ "axiom_count": 5753}

@@ -171,53 +171,6 @@ def Op.isDirectControlOrData (o : Op) : Bool :=
   | .ret => o.form == .ZO
   | _ => !o.control
 
-namespace Driver
-
-/-- Executable decision procedure for `Driver.Ok textSize`. -/
-def checkOk (D : Driver) (textSize : Nat) : Bool :=
-  decide (D.region.toNat % 8 = 0) &&
-  decide (4096 ≤ D.size.toNat) &&
-  decide (D.region.toNat + D.size.toNat < 2 ^ 63) &&
-  decide (D.sp.toNat % 16 = 8) &&
-  decide (D.sp.toNat + 8 ≤ 2 ^ 64) &&
-  decide (64 ≤ D.budget.toNat) &&
-  decide (2 ^ 20 + 64 + D.budget.toNat + 56 ≤ D.sp.toNat) &&
-  decide (D.sp.toNat + 8 ≤ D.region.toNat ∨
-    D.region.toNat + D.size.toNat + 56 + D.budget.toNat ≤ D.sp.toNat) &&
-  decide (textSize ≤ (D.ret - D.base).toNat)
-
-/-- Executable decision procedure for `Driver.CanonicalOk textSize`. -/
-def checkCanonical (D : Driver) (textSize : Nat) : Bool :=
-  D.checkOk textSize &&
-  decide ((D.base.toNat + textSize ≤ D.region.toNat ∨ D.region.toNat + D.size.toNat ≤ D.base.toNat) ∧
-          (D.base.toNat + textSize ≤ D.sp.toNat - 56 - D.budget.toNat ∨ D.sp.toNat + 8 ≤ D.base.toNat)) &&
-  decide (D.region.toNat + D.size.toNat + 56 + D.budget.toNat < 2 ^ 47 ∧
-          D.sp.toNat + 8 ≤ 2 ^ 47 ∧
-          D.base.toNat + textSize < 2 ^ 47) &&
-  decide (D.ret.toNat < 2 ^ 47)
-
-theorem checkOk_iff (D : Driver) (textSize : Nat) :
-    D.checkOk textSize = true ↔ D.Ok textSize := by
-  unfold checkOk
-  simp only [Bool.and_eq_true, decide_eq_true_eq]
-  constructor
-  · rintro ⟨⟨⟨⟨⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h5⟩, h6⟩, h7⟩, h8⟩, h9⟩
-    exact ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9⟩
-  · rintro ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9⟩
-    exact ⟨⟨⟨⟨⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h5⟩, h6⟩, h7⟩, h8⟩, h9⟩
-
-theorem checkCanonical_iff (D : Driver) (textSize : Nat) :
-    D.checkCanonical textSize = true ↔ D.CanonicalOk textSize := by
-  unfold checkCanonical
-  simp only [Bool.and_eq_true, decide_eq_true_eq, checkOk_iff]
-  constructor
-  · rintro ⟨⟨⟨hok, hta⟩, hb47⟩, hret47⟩
-    exact ⟨hok, hta, hb47, hret47⟩
-  · rintro ⟨hok, hta, hb47, hret47⟩
-    exact ⟨⟨⟨hok, hta⟩, hb47⟩, hret47⟩
-
-end Driver
-
 end IxCC.X86
 
 namespace IxCC.Ring0

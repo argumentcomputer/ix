@@ -686,6 +686,36 @@ that leaves at least 1 MiB below the thread's stack limit); it checks the
 status and the Nat tag of every result. No check, proof or production
 artifact depends on these files, and the runner is outside the root flake.
 
+**The standalone executable's shell (specification assumption
+`x86-linux-exe-shell`).** `ixcc compile --exe` writes a static Linux x86-64
+executable with no C compiler, C library, linker or assembler
+([`IxCC/Exe.lean`](../IxCC/Exe.lean), [`X86/Exe/`](../IxCC/X86/Exe)): the
+object's text byte for byte, read-only data (a seccomp filter and the
+messages), and a *shell* that sets up the calls `runtime_driver.c` sets up.
+The shell is trusted code, about 950 bytes: platform code written as typed
+x86 and encoded by the compiler's own encoder, with the system call (`0F 05`)
+as a constructor of its own instruction type (`X86/Exe/Shell.lean`), never a
+row of the program instruction table, so compiled program text still cannot
+contain it. The entry assumes what [`X86/Exe/Code.lean`](../IxCC/X86/Exe/Code.lean)
+says the shell does: confine the process (no new privileges, then a seccomp
+filter allowing only `write` to file descriptors 1 and 2 and `exit`), parse
+exactly the root's parameter count of decimal numerals from the initial stack,
+store the stack budget at `region + 16`, call `cx_init` and the root on the
+static stack by direct calls, and print the value (`n` for a `Nat`, `#k` for a
+constructor without fields) or a message and a fixed status per failure. It
+also assumes the kernel loads the file as its program headers say (the file
+read and execute at `0x400000`, a zero-filled read-write segment at
+`0x10000000` holding the stack and then the region) and enters it with the
+System V initial stack. What is proved: `Layout.driver_canonicalOk`, every
+clause of `Driver.CanonicalOk` for each accepted layout and each of the
+shell's return addresses, which `X86.Exe.writeChecked` carries for both calls;
+and `X86.Exe.check_sound`, the written file's structure read back by an
+independent reader, including each call's target decoded from the file. Each
+call is meant to see the driver `Layout.driver` builds; the model's one
+return address and register file for both calls differ from the shell's two
+call sites, which the object theorems tolerate. The C driver's entry above
+stays until the executables replace it in the gates.
+
 The [indexed stream checker](stream-checking.md) preserves this boundary:
 bounded decoding and cached canonical positions are proved exactly equal
 to the original decoder and stream checker on all inputs. Production
@@ -697,6 +727,7 @@ Four additional public fences retain the ordinary logical axiom basis.
 | Local ISA semantics | Agreement of the local byte machine with actual x86-64, including canonical addresses, unified code fetch, memory permissions, flags, faults, and the caller ABI. Compiler-contract traps must be proved unreachable; they are not hardware exceptions. | E1 and E2 prove local-to-local agreement. The [S0 readiness decision](x86-reference-model.md) pins the Sail snapshot; reference execution comparison, the Lean adapter, and S2 agreement remain pending. |
 | Encoder stream/layout | Discharged for successful certified production emission. Raw `Encode.encode`/`Program.encode` clients must validate their output or prove the same facts. | `Stream.check_sound` checks every boundary, canonical position, target and relocation. Complete-stream proofs cover call-free execution and internal calls under concrete `SafeTrace` conditions, including residual return-slot bytes. `ELFLink` proves checked PC32 application and runtime CALL transfer. External procedure bodies still require their semantic/ABI contracts. |
 | Runtime driver model | `X86.Driver`/`X86.Linked` model initialization and the root call for accepted scalar and bounded RC objects. The same entry describes `DriverSession`'s separate owned raw-word drop protocol; it does not upgrade the one-call theorem to arbitrary-session adequacy. | Existing pipeline gates plus `tests-rt-rc`, `tests-rc-certificate` and `tests-driver-session` check complete values, ABI, reclamation and same-region reuse. Process start/linker correspondence, source adequacy and general whole-call session framing remain explicit. |
+| Standalone executable shell | `x86-linux-exe-shell`: the shell of `ixcc compile --exe` and the kernel's loading of the static executable, as `X86/Exe/Code.lean` describes them | `Layout.driver_canonicalOk` (the layout keeps the driver contract), `X86.Exe.check_sound` (the file's structure); `tests-corpus --exe` and `tests-exe`. The shell's behaviour from the loader's post-state is not proved |
 | ELF serialization and system loading | Independent interpretation is discharged for successful `ELF.writeChecked` output. Raw `ELF.write` clients lack that certificate. Actual system linker/loader behavior remains assumed. | `ELFRead` independently parses actual fields; `ELF.check_sound` certifies text, bounded/aligned/nonoverlapping sections, export placement, symbols, relocations, non-executable stack and exact provenance. `ObjectEval` begins from the parsed export and text. A real loader must implement the proved PC32 rule, map immutable executable text, resolve named procedures and enter with the stated ABI. |
 
 The reviewed format references are the [generic ABI ELF specification](https://gabi.xinuos.com/elf.pdf)

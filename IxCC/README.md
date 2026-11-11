@@ -55,10 +55,13 @@ the checked source, which the front end builds from the certificate, is
 semantically faithful to the ingested program is not proved, and neither is
 that it means the Lean definition.
 
-**Running a compiled program.** Today an object runs only inside a C test
+**Running a compiled program.** The test suites run objects inside a C test
 driver (`fixtures/x86/runtime_driver.c`), linked by the system linker.
-Standalone executables with no C in the trusted base, written by IxCC with a
-self-hosted start-up shell, are a planned target
+`ixcc compile --exe` writes a standalone static Linux executable instead, with
+no C compiler, C library, linker or driver: IxCC lays out the file and its
+start-up shell itself, for roots of `Nat` parameters with a `Nat` or
+field-less result. The shell is trusted code until it is proved, and effects
+are planned in stages
 ([standalone executables](docs/standalone-executables-design.md)).
 
 The [roadmap](docs/roadmap.md) states the fragment exactly, plans the way to

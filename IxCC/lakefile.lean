@@ -156,10 +156,17 @@ lean_exe «certified-census» where
 
 /- The corpus suite: every root of every registered corpus family
 compiled, declined with its expected code, or run at every level (SrcEval
-… Cfg, Lir, Xv, Xl, typed x86, ByteEval) and natively (with `--cc`) on its
-frozen cases against Lean's interpreter. -/
+… Cfg, Lir, Xv, Xl, typed x86, ByteEval), natively (with `--cc`) and as
+standalone executables (with `--exe`) on its frozen cases against Lean's
+interpreter. -/
 lean_exe «tests-corpus» where
   root := `IxCCTests.Corpus.Main
+
+/- Standalone executables (`ixcc compile --exe`): the layout, the shell, the
+writer and its structural check, and with `--run` the executables themselves
+(their arguments, failures, confinement and, with `--strace`, system calls). -/
+lean_exe «tests-exe» where
+  root := `IxCCTests.Exe.Main
 
 /- The ownership and usage-annotation suite, Phase 1 part: the annotated
 programs ix accepts against their plain twins and Lean's interpreter at every

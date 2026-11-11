@@ -15,6 +15,7 @@ import IxCCTests.Pipeline.Run
 import IxCCTests.Corpus.Run
 import IxCCTests.Corpus.Build
 import IxCCTests.Corpus.KernelGen
+import IxCCTests.Exe.Run
 import IxCCTests.Own.Suite
 import IxCCTests.Own.Plain.Suite
 import IxCCTests.Pipeline.ShrinkSuite
@@ -32,6 +33,6 @@ for its relevance suite, `tests-lam` for `IxCCTests.Lam`, `tests-anf`
 for `IxCCTests.Anf`, `tests-fir` for `IxCCTests.Fir`, `tests-rt`
 for `IxCCTests.Rt`, `tests-pipeline` for `IxCCTests.Pipeline`, `corpus` and `tests-corpus` for
 `IxCCTests.Corpus` (whose kernel sample, `IxCCTests.Corpus.KernelSample`,
-is a manual target), `tests-own` for `IxCCTests.Own`, `tests-shrink` for the
+is a manual target), `tests-exe` for `IxCCTests.Exe`, `tests-own` for `IxCCTests.Own`, `tests-shrink` for the
 generators' shrinking and first-divergence ladders,
 `tests-recheck` for `IxCCTests.Recheck`). -/

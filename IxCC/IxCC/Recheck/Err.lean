@@ -54,6 +54,8 @@ inductive Stage where
   /-- The typed program's checks, encoding and the stream check (E1/E2). -/
   | x86
   | elf
+  /-- The standalone executable: the roots it runs and its writer. -/
+  | exe
   /-- The certificate's serialisation. -/
   | cert
   /-- The command line and its files. -/
@@ -64,7 +66,7 @@ def Stage.name : Stage → String
   | .ingress => "ingress" | .table => "table" | .relevance => "relevance" | .admit => "admit"
   | .erase => "erase" | .anf => "anf" | .fir => "fir" | .rt => "rt" | .select => "select"
   | .alloc => "alloc" | .stacking => "stacking" | .layout => "layout" | .x86 => "x86"
-  | .elf => "elf" | .cert => "cert" | .cli => "cli"
+  | .elf => "elf" | .exe => "exe" | .cert => "cert" | .cli => "cli"
 
 /-- A decline or rejection: its stage, code and message. -/
 structure Err where

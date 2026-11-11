@@ -129,7 +129,7 @@ The changes on `jcb/ixck-ixcc-merge` span eight functional areas:
 
 ## 4. Verification Commands
 
-These are the commands of IxCC's 16 required checks, as [`nix/checks.nix`](../nix/checks.nix) runs them; `nix build .#checks.x86_64-linux.ixcc-<name>` from ix's root runs one hermetically (see [ci.md](ci.md)). From `IxCC/`, in ix's development shell (`nix develop`). `CC` is a C compiler (`--cc "$CC"` links the objects with the C drivers and runs them natively; x86-64 Linux only, and without it the suites run every Lean level and skip the native runs), and `LLVM_MC` an `llvm-mc` binary (see `x86-hardware` below). `rc-native` and `x86-hardware` are x86-64 Linux only.
+These are the commands of IxCC's 16 required checks, as [`nix/checks.nix`](../nix/checks.nix) runs them; `nix build .#checks.x86_64-linux.ixcc-<name>` from ix's root runs one hermetically (see [ci.md](ci.md)). From `IxCC/`, in ix's development shell (`nix develop`). `CC` is a C compiler (`--cc "$CC"` links the objects with the C drivers and runs them natively; x86-64 Linux only, and without it the suites run every Lean level and skip the native runs), and `LLVM_MC` an `llvm-mc` binary (see `x86-hardware` below). `rc-native` and `x86-hardware` are x86-64 Linux only. `ixcc compile CLOSURE.ixe --equations EQ.json --exe FILE` writes a standalone executable of the first root (`FILE N1 … Nk` prints its result); `tests-exe` and `tests-corpus --exe` test it.
 
 ```bash
 # build, proofs: the library, every executable, and the complete proof and fence collection
@@ -139,7 +139,7 @@ lake build IxCC IxCCTests ixcc \
   check-x86-encoder check-x86-bytes check-x86-streams check-x86-object x86-object-fixture \
   check-trusted-externs check-tools-tests check-build-graph check-steps check-x86-hardware \
   tests-rt-rc tests-cfg-rc tests-driver-session tests-pipeline-rc tests-rc-certificate \
-  tests-pipeline corpus certified-census tests-corpus check-backend check-regalloc tests-src src-steps \
+  tests-pipeline corpus certified-census tests-corpus tests-exe check-backend check-regalloc tests-src src-steps \
   tests-rt check-xv-select tests-lam tests-fir check-lir tests-anf tests-own tests-own-plain \
   tests-shrink tests-relevance tests-recheck tests-recheck-readback \
   gen-src-artifacts gen-recheck-artifacts
@@ -200,7 +200,8 @@ $bin/tests-pipeline-rc negative rc-logs/negative
 $bin/tests-pipeline --cc "$CC"
 $bin/corpus check
 $bin/certified-census --self-test
-$bin/tests-corpus --cc "$CC"
+$bin/tests-corpus --cc "$CC" --exe        # (--exe: x86-64 Linux only, runs the corpus as executables)
+$bin/tests-exe --run --strace "$(command -v strace)"   # (--run and --strace: x86-64 Linux only)
 $bin/check-backend --cc "$CC"
 $bin/check-regalloc
 $bin/tests-src

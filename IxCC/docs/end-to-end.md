@@ -142,9 +142,10 @@ on a contract only where its own ownership checker verified it, and the
 source-level resource theorem is planned separately ([resource
 soundness](resource-soundness-design.md)).
 
-*As a standalone executable* (planned). When IxCC writes the executable
-itself, with its own start-up shell in place of the C driver, the same
-statement is read off the process: "the linked object returns `w` on `ns`"
+*As a standalone executable* (the executable is implemented, the statement
+planned). IxCC writes the executable itself (`ixcc compile --exe`), with its
+own start-up shell, still trusted, in place of the C driver; the same
+statement is to be read off the process: "the linked object returns `w` on `ns`"
 becomes "the executable run on the decimal forms of `ns` exits after writing
 `w`", and later the program's own output bytes and exit code, or its trace of
 platform events. The driver model leaves the trusted base; the loader's

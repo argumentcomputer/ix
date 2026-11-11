@@ -42,3 +42,4 @@ import IxCCTests.Fences.BackendProof
 import IxCCTests.Fences.StackingProof
 import IxCCTests.Fences.BackendEnds
 import IxCCTests.Fences.BackHalf
+import IxCCTests.Fences.Exe

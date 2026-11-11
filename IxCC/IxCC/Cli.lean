@@ -5,6 +5,7 @@ import IxCC.Fir.Print
 import IxCC.Cfg.Print
 import IxCC.Lir.Print
 import IxCC.Xv.Print
+import IxCC.Exe
 
 /-! # The `ixcc` command line
 
@@ -12,6 +13,7 @@ import IxCC.Xv.Print
 ixcc compile CLOSURE.ixe --equations EQ.json [--root NAME]... -o OUT.o
     [--rc off|on|auto] [--cert FILE] [--emit-cert FILE] [--signatures FILE]
     [--dump-ir LEVEL]... [--stats] [--no-typecheck]
+    [--exe FILE [--stack BYTES] [--region BYTES]]
 ixcc check-cert CLOSURE.ixe --equations EQ.json [--root NAME]... --cert FILE
     [-o OUT.o] [--signatures FILE] [--stats] [--no-typecheck]
 ```
@@ -25,6 +27,13 @@ producer); `--emit-cert` writes the certificate used. `check-cert` runs
 `Recheck.run` on a certificate and reports acceptance or the rejection. A
 certificate's format fixes its RC policy, so `--rc` with `--cert` (and so with
 `check-cert`) is a usage error.
+
+`--exe FILE` also writes a standalone static Linux x86-64 executable that runs
+the first root (`Exe.build`): `FILE N1 … Nk` prints the root's result on
+standard output, with no C compiler, linker or C driver involved. `-o` may then
+be omitted. `--stack` and `--region` set its program stack and region (the C
+driver's defaults, 8 MiB and 64 MiB, otherwise). A root outside the fragment
+executables run is refused (`exe.params`, `exe.result`; `IxCC/Exe.lean`).
 
 `--rc off` (the default) compiles a zero-RC-format certificate on the immortal
 backend, `--rc on` under plain RC (which may refuse the program). `--rc auto`
@@ -81,6 +90,11 @@ structure Options where
   typecheck : Bool := true
   rc : RcMode := .off
   rcExplicit : Bool := false
+  /-- `--exe FILE`: also write a standalone executable of the first root. -/
+  exe : Option FilePath := none
+  /-- The executable's stack and region (`--stack`, `--region`, in bytes). -/
+  layout : X86.Exe.Layout := {}
+  layoutGiven : Bool := false
   deriving Inhabited
 
 def usage : String :=
@@ -88,6 +102,7 @@ def usage : String :=
     "usage:",
     "  ixcc compile CLOSURE.ixe --equations EQ.json [--root NAME]... -o OUT.o",
     "      [--rc off|on|auto] [--cert FILE] [--emit-cert FILE] [--signatures FILE] [--dump-ir LEVEL]... [--stats] [--no-typecheck]",
+    "      [--exe FILE [--stack BYTES] [--region BYTES]]",
     "  ixcc check-cert CLOSURE.ixe --equations EQ.json [--root NAME]... --cert FILE",
     "      [-o OUT.o] [--signatures FILE] [--stats] [--no-typecheck]",
     "dump levels: lam anf fir cfg lir xv xl all"]
@@ -112,6 +127,15 @@ def parseRest (o : Options) : List String → Except String Options
     else throw s!"unknown IR level {l}"
   | "--stats" :: rest => parseRest { o with stats := true } rest
   | "--no-typecheck" :: rest => parseRest { o with typecheck := false } rest
+  | "--exe" :: f :: rest => parseRest { o with exe := some f } rest
+  | "--stack" :: n :: rest =>
+    match n.toNat? with
+    | some b => parseRest { o with layout := { o.layout with stack := b }, layoutGiven := true } rest
+    | none => throw s!"--stack takes a number of bytes, not {n}"
+  | "--region" :: n :: rest =>
+    match n.toNat? with
+    | some b => parseRest { o with layout := { o.layout with region := b }, layoutGiven := true } rest
+    | none => throw s!"--region takes a number of bytes, not {n}"
   | arg :: rest =>
     if arg.startsWith "-" then throw s!"unknown option {arg}"
     else if o.closure.isSome then throw s!"unexpected argument {arg}"
@@ -123,7 +147,8 @@ def parse : List String → Except String Options
       let o ← parseRest { command := cmd } rest
       if o.closure.isNone then throw "no closure given"
       if o.equations.isNone then throw "no --equations sidecar given"
-      if cmd == "compile" && o.out.isNone then throw "no -o output given"
+      if cmd == "compile" && o.out.isNone && o.exe.isNone then throw "no -o or --exe output given"
+      if o.layoutGiven && o.exe.isNone then throw "--stack and --region apply to --exe"
       -- a certificate fixes the RC policy (its format), so `--rc` with one is a usage error
       if o.cert.isSome && o.rcExplicit then throw "cannot combine --rc with --cert"
       if cmd == "check-cert" && o.cert.isNone then throw "check-cert needs --cert"
@@ -296,6 +321,19 @@ def execute (o : Options) : ExceptT Err IO Unit := do
       let tmp : FilePath := s!"{f}.tmp.{← IO.monoNanosNow}"
       IO.FS.writeBinFile tmp a.object
       IO.FS.rename tmp f
+  if let some f := o.exe then
+    let ⟨_, exe⟩ ← lift fun _ => Exe.build a o.layout
+    write f do
+      let tmp : FilePath := s!"{f}.tmp.{← IO.monoNanosNow}"
+      IO.FS.writeBinFile tmp exe.bytes
+      IO.setAccessRights tmp { user := { read := true, write := true, execution := true }
+                               group := { read := true, execution := true }
+                               other := { read := true, execution := true } }
+      IO.FS.rename tmp f
+    if o.stats then
+      let p := exe.plan.placement
+      IO.println s!"executable: {exe.bytes.size} bytes (object text {p.textSize}, shell {p.shellSize}), \
+        stack {o.layout.stack} bytes, region {o.layout.region} bytes"
   if let some f := o.emitCert then write f (IO.FS.writeFile f (cliCert.toText ++ "\n"))
   if let some f := o.signatures then write f (IO.FS.writeFile f ((signaturesJson a).pretty ++ "\n"))
   for l in o.dumps do

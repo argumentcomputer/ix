@@ -17,6 +17,12 @@
   # run every Lean level and say that the native runs are skipped.
   native = system == "x86_64-linux";
   ccArg = pkgs.lib.optionalString native "--cc ${pkgs.stdenv.cc}/bin/cc";
+  # Standalone executables (`ixcc compile --exe`) run natively on x86-64 Linux
+  # only: `tests-exe` runs them (and lists their system calls with strace), and
+  # `tests-corpus` runs every root of their fragment on its cases.
+  exeArgs = pkgs.lib.optionalString native "--run --strace ${pkgs.strace}/bin/strace";
+  exeArg = pkgs.lib.optionalString native "--exe";
+  exeInputs = pkgs.lib.optionals native [pkgs.strace];
 in
   # IxCC's required checks; ix's flake exposes each as `ixcc-<name>`. The
   # trust ledger's `required_checks` lists exactly these attribute names, and
@@ -120,9 +126,9 @@ in
     # each suite's measured time and memory). Each suite's complete output is
     # printed under its name with its status and wall time; the check fails
     # if any suite fails, naming each one.
-    suites = mkCheck "suites" nativeInputs ''
+    suites = mkCheck "suites" (nativeInputs ++ exeInputs) ''
       ${pkgs.lib.optionalString (!native)
-        ''echo "suites: native runs skipped (tests-rt, tests-pipeline, check-backend, tests-corpus, tests-own): ${system} is not x86_64-linux"''}
+        ''echo "suites: native runs skipped (tests-rt, tests-pipeline, check-backend, tests-corpus, tests-own, tests-exe): ${system} is not x86_64-linux"''}
       mkdir -p suite-logs
       bin=./.lake/build/bin
       parallel=''${NIX_BUILD_CORES:-1}
@@ -144,7 +150,8 @@ in
       launch tests-pipeline $bin/tests-pipeline ${ccArg}
       launch corpus-check $bin/corpus check
       launch certified-census-protocol $bin/certified-census --self-test
-      launch tests-corpus $bin/tests-corpus ${ccArg}
+      launch tests-corpus $bin/tests-corpus ${ccArg} ${exeArg}
+      launch tests-exe $bin/tests-exe ${exeArgs}
       launch check-backend $bin/check-backend ${ccArg}
       launch check-regalloc $bin/check-regalloc
       launch tests-src $bin/tests-src

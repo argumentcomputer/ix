@@ -121,6 +121,7 @@ root's declared parameter count, and the compiled arity pinned to it).
 | [Ixon v4 ingress](ixon-v4.md) | ix's v4 codec with canonicity evidence and pure-BLAKE3 authentication, catalog-v2 admission, erased typing, resource admission, claim binding; both envelopes, the role-bound one with its role table authenticated and its pinned identities read from it ([byte contract](byte-contract.md)) |
 | [x86 target model](x86-encoded-instructions.md) | Typed x86 AST and machine, E1 per-form encoder/decoder and execution laws, E2 [streams and ELF objects](x86-stream-objects.md), [stream checking](stream-checking.md), the [reference-model record](x86-reference-model.md) |
 | [Legacy Aiur model](aiur-backend.md) | A verifier-side model of an earlier Aiur bytecode: vocabulary, wire format, semantics, static checks, counter analysis, memory and rank AIRs. Neither Aiur route uses it ([repository and landing](#repository-and-landing)) |
+| Standalone executables | `ixcc compile --exe`: a static Linux x86-64 executable of a root with `Nat` parameters and a `Nat` or field-less result, written by IxCC with no C, linker or driver; the shell is ledgered, the layout's driver contract proved ([design](standalone-executables-design.md#x0-as-implemented)) |
 | Tools | Trust ledger, build-graph manifest, check helpers |
 
 ### Earlier state, as recorded on 2026-11-09
@@ -589,8 +590,8 @@ Linux process or under the IxOS tender
 
 | Id | Content | Depends on | Exit test | Size [estimate] | State |
 | --- | --- | --- | --- | --- | --- |
-| X0 | `ixcc compile --exe` for `Nat` roots: executable writer and checker, typed-x86 shell, platform-only system-call row, static layout, per-call registers in the driver model; the shell ledgered | — | every K1 and `phase1-scalar` root as an executable matches its expected output and the C driver, under strict seccomp, with only `write` and `exit` after start; byte-identical executables on two machines | 2–3.5k lines; 3–6 weeks | Planned |
-| X0-P | The shell proved; the `Nat` executable theorem; the driver-model assumption retired for executables | X0 | the theorem fenced | 3–6k lines; 2–4 months | Planned |
+| X0 | `ixcc compile --exe` for `Nat` roots (and results without fields): executable writer and checker, typed-x86 shell with the system call outside the program table, static layout with the driver contract proved; the shell ledgered (`x86-linux-exe-shell`). The per-call registers in the driver model move to X0-P | — | every corpus root of the fragment as an executable agrees with the manifest, SrcEval, ByteEval and the C driver, under a seccomp filter, with only `prctl`, `seccomp`, `write` and `exit` | 2–3.5k lines; 3–6 weeks (measured: 1.5k lines with tests) | Implemented ([as implemented](standalone-executables-design.md#x0-as-implemented)) |
+| X0-P | The shell proved; a return address and register file per call in `X86.Driver`; the `Nat` executable theorem; the driver-model assumption retired for executables | X0 | the theorem fenced | 3–6k lines; 2–4 months | Planned |
 | X1 | The redefined XB-1 and IxOS-0: IxCC-written test executables replace `runtime_driver.c` in every native gate, out of process, with no trampoline and no C | X0 | the native suites pass with the C driver off the execution path and no C compiler in their inputs | 1–2k lines; 2–4 weeks after X0 | Planned |
 | X2 | Numeric state machines: a generic request shell, parsing and rendering in Lean, the session theorem on `Nat` states | X0 (X0-P for the proof) | a 1,000-call session against Lean's interpreter; the theorem fenced | 2–4k lines | Planned |
 | X3 | Batch byte executables: arguments and input bytes in, output bytes and an exit code out | Phase 3 (DR2, DR3, DR6) | byte-identical to Lean-compiled executables over a corpus | 2–4k lines beyond the DR items | Planned |
@@ -871,7 +872,7 @@ The owner also decided, on the same day:
   executable's hash, the platform and the shell version; XB-1 and IxOS-0 are
   redefined as executables replacing the C driver; numeric state machines
   before Phase 3; Lean `IO` through platform calls. The first executable
-  milestone (X0) is in progress.
+  milestone (X0) is implemented.
 
 ### Decisions to confirm
 

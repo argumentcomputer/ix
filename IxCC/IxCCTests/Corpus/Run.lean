@@ -5,6 +5,7 @@ import IxCCTests.Recheck.RootShape
 import IxCC.Anf.Print
 import IxCC.Lir.Print
 import IxCC.Xv.Print
+import IxCCTests.Exe.Support
 
 /-! The corpus suite: every root of every registered corpus family,
 against its frozen cases (`ixcc/corpus/1`).
@@ -20,8 +21,12 @@ For each root the compiler (`Recheck.ingress`, `produce`, `run`) either
   program, Lam, Anf after P1 and after each certificate step, Fir, Own
   (immortal) and Cfg, then Lir, Xv and Xl from `cx_init`'s memory, the typed
   x86 machine and ByteEval on the object's `.text` (only on the cases the
-  manifest marks `machine`, since they step one instruction at a time), and
-  natively (with `--cc`) under `fixtures/x86/runtime_driver.c`.
+  manifest marks `machine`, since they step one instruction at a time),
+  natively (with `--cc`) under `fixtures/x86/runtime_driver.c`, and (with
+  `--exe`) as a standalone executable (`ixcc compile --exe`), which must also
+  agree with SrcEval, with ByteEval where the case fixes the layout both use,
+  and with the C driver when it ran; a root outside the executables' fragment
+  must be refused with `exe.params` or `exe.result`.
 
 The expected observations come from Lean 4.34's interpreter (recorded in the
 manifest by `corpus rebuild`) and, where given, an independent constant:
@@ -80,6 +85,8 @@ structure Options where
   survey : Bool := false
   dump : Bool := false
   observe : Bool := false
+  /-- Also run every root of the executables' fragment as a standalone executable. -/
+  exe : Bool := false
 
 structure Tally where
   compiled : Nat := 0
@@ -87,6 +94,8 @@ structure Tally where
   cases : Nat := 0
   runs : Nat := 0
   native : Nat := 0
+  exe : Nat := 0
+  exeRefused : Nat := 0
   allowed : Nat := 0
 
 /-- Judge one word-level, machine or native outcome against the case: the
@@ -129,8 +138,67 @@ def caseBudget (cs : Case) : Lir.Word :=
 def nativeRegion (cs : Case) : Nat := cs.region.getD (1 <<< 24)
 def nativeStack (cs : Case) : Nat := cs.stack.getD (1 <<< 28)
 
-/-- Every case of one compiled root at every level, and natively. -/
-def runRoot (a : Assert) (o : Options) (native : Option Rt.Native.Tools) (label : String) (r : Root)
+/-- One root's cases as a standalone executable (`ixcc compile --exe`): one
+executable per case region and stack, refused for a root outside the
+executables' fragment or a layout outside the driver contract (a region under
+4 KiB). Each run must give what the manifest requires of native code, and
+agree with IxCC's own evaluators where they ran on the case: SrcEval's value
+when the executable returned one, and ByteEval's outcome and value when the
+case fixes the region and the stack both use. With the C driver, it must give
+the C driver's outcome and observation too. -/
+def runExe (a : Assert) (work : FilePath) (label : String) (r : Root) (c : Levels.Compiled)
+    (src : Array (Option String)) (bytes : Array (Option (String × String)))
+    (driver : Array (Option (String × String))) (t : IO.Ref Tally) : IO (Array String) := do
+  match IxCC.Exe.fragment c.art with
+  | .error e =>
+    expect a (["exe.params", "exe.result"].contains e.code) s!"{label}: executable refused with {e.render}"
+    t.modify fun t => { t with exeRefused := t.exeRefused + 1 }
+    return #[s!"  as an executable: refused ({e.code})"]
+  | .ok _ =>
+    let groups := r.cases.foldl (init := ([] : List (Nat × Nat))) fun gs cs =>
+      let g := (nativeRegion cs, nativeStack cs)
+      if gs.contains g then gs else gs ++ [g]
+    let mut n := 0
+    let mut skipped := 0
+    let mut ms := 0
+    for (region, stack) in groups do
+      let layout : IxCC.X86.Exe.Layout := { stack, region }
+      let css := r.cases.zipIdx.filter fun (cs, _) => (nativeRegion cs, nativeStack cs) == (region, stack)
+      if !layout.check then
+        skipped := skipped + css.length
+        continue
+      let exe := work / s!"exe_{label.replace "/" "_"}_{region}_{stack}"
+      match ← IxCCTests.Exe.build exe c.art layout with
+      | .error e => expect a false s!"{label}: no executable for --region {region} --stack {stack}: {e.render}"
+      | .ok () =>
+        for (cs, i) in css do
+          let some want := cs.expect r | continue
+          let (run, ms') ← timed (IxCCTests.Exe.run exe (cs.args.map toString))
+          ms := ms + ms'
+          n := n + 1
+          let outcome := run.outcome
+          let obs := run.obs
+          let l := s!"{label} {cs.args} as an executable (--region {region} --stack {stack})"
+          expect a (outcome == "ok" || outcome.startsWith "status")
+            s!"{l}: exit {run.code}, stderr {run.stderr}"
+          if ← judge a l "native" want cs.allow outcome obs then
+            t.modify fun t => { t with allowed := t.allowed + 1 }
+          if outcome == "ok" then
+            if let some (some s) := src[i]? then
+              expect a (obs == s) s!"{l}: prints {obs}, SrcEval reads back {s}"
+          if let some (some (bo, bobs)) := bytes[i]? then
+            if outcome == "ok" && bo == "ok" then
+              expect a (obs == bobs) s!"{l}: prints {obs}, ByteEval reads back {bobs}"
+            else if cs.region.isSome && cs.stack.isSome then
+              expect a (failure outcome == failure bo) s!"{l}: {outcome}, ByteEval {bo}"
+          if let some (some (co, cobs)) := driver[i]? then
+            expect a (outcome == co && obs == cobs) s!"{l}: {outcome} {obs}, the C driver {co} {cobs}"
+    t.modify fun t => { t with exe := t.exe + n }
+    return #[s!"  as an executable: {n} cases agree ({ms} ms{if skipped > 0 then s!", {skipped} skipped: a layout outside the driver contract" else ""})"]
+
+/-- Every case of one compiled root at every level, natively and as an
+executable. -/
+def runRoot (a : Assert) (o : Options) (native : Option Rt.Native.Tools) (work : FilePath) (label : String) (r : Root)
     (c : Levels.Compiled) (t : IO.Ref Tally) : IO (Array String) := do
   let levels := Levels.levelNames c
   let some root := c.art.roots.head? | throw (IO.userError s!"{label}: no root")
@@ -139,10 +207,15 @@ def runRoot (a : Assert) (o : Options) (native : Option Rt.Native.Tools) (label 
       s!"{label}: readback type {repr root.ty}, expected {repr (r.ctors.map enumTy)}"
   expectEq a root.params r.params s!"{label}: parameters"
   let mut times : Array (String × Nat) := levels.toArray.map (·, 0)
+  -- SrcEval's observation and ByteEval's outcome per case, for the executable
+  let mut srcObs : Array (Option String) := #[]
+  let mut bytesOut : Array (Option (String × String)) := #[]
   for cs in r.cases do
     let some want := cs.expect r | throw (IO.userError s!"{label} {cs.args}: no expectation")
     let src := cs.sourceObs r
     let noWord := cs.args.any (· ≥ limit)
+    let mut caseSrc := none
+    let mut caseBytes := none
     for (level, i) in levels.zipIdx do
       -- the source levels run on Lean's runtime `Nat`, which fails where its interpreter does
       let run := if sourceLevel level then !noWord && src.isSome && !cs.leanFails
@@ -152,6 +225,8 @@ def runRoot (a : Assert) (o : Options) (native : Option Rt.Native.Tools) (label 
       let ((outcome, obs), ms) ← timed (Levels.runLevel c level cs.args (caseRegion cs) (caseBudget cs))
       let obs := (obs.map Rt.renderObs).getD "-"
       let l := s!"{label} {cs.args} at {level}"
+      if level == "src" && outcome == "ok" then caseSrc := some obs
+      if level == "bytes" then caseBytes := some (outcome, obs)
       if sourceLevel level then
         expect a (outcome == "ok") s!"{l}: {outcome}, expected ok {src.getD ""}"
         expect a (some obs == src) s!"{l}: reads back {obs}, expected {src.getD ""}"
@@ -160,9 +235,13 @@ def runRoot (a : Assert) (o : Options) (native : Option Rt.Native.Tools) (label 
       times := times.modify i fun (n, ms') => (n, ms' + ms)
       t.modify fun t => { t with runs := t.runs + 1 }
       if o.progress then IO.eprintln s!"      {l}: {outcome} {obs} ({ms} ms)"
+    srcObs := srcObs.push caseSrc
+    bytesOut := bytesOut.push caseBytes
     t.modify fun t => { t with cases := t.cases + 1 }
   let mut out := #[s!"{label}: {r.cases.length} cases, {levels.length} levels (ms: \
     {", ".intercalate (times.toList.filter (·.2 > 0) |>.map fun (l, ms) => s!"{l} {ms}")})"]
+  -- the C driver's outcome and observation per case, for the executable
+  let mut driverOut : Array (Option (String × String)) := Array.replicate r.cases.length none
   if let some nt := native then
     let exe ← link nt s!"corpus_{label.replace "/" "_"}" c.art.object root.symbol
     -- one driver run per region and stack; a non-`Nat` result's object area
@@ -173,18 +252,19 @@ def runRoot (a : Assert) (o : Options) (native : Option Rt.Native.Tools) (label 
     let mut ms := 0
     let mut n := 0
     for (region, stack) in groups do
-      let css := r.cases.filter fun cs => (nativeRegion cs, nativeStack cs) == (region, stack)
+      let css := r.cases.zipIdx.filter fun (cs, _) => (nativeRegion cs, nativeStack cs) == (region, stack)
       let dump := r.result != "nat"
-      let (lines, ms') ← timed (Rt.Native.run exe { region, stack, ty := root.ty, dump } (css.map (·.args)))
+      let (lines, ms') ← timed (Rt.Native.run exe { region, stack, ty := root.ty, dump } (css.map (·.1.args)))
       ms := ms + ms'
       n := n + lines.length
-      for (cs, ln) in css.zip lines do
+      for ((cs, ci), ln) in css.zip lines do
         let some want := cs.expect r | continue
         let l := s!"{label} {cs.args} natively{if (region, stack) == (1 <<< 24, 1 <<< 28) then "" else s!" (--region {region} --stack {stack})"}"
         expect a ln.ok s!"{l}: registers not restored"
         let outcome := if ln.status == 0 then "ok" else s!"status {ln.status}"
         if ← judge a l "native" want cs.allow outcome (ln.obs.getD "-") then
           t.modify fun t => { t with allowed := t.allowed + 1 }
+        driverOut := driverOut.set! ci (some (outcome, ln.obs.getD "-"))
         -- Lean's readback of the native word (and object area) is the C decoder's
         if ln.status == 0 && !ln.init then
           if let some (sig, ty) := root.ty then
@@ -195,6 +275,8 @@ def runRoot (a : Assert) (o : Options) (native : Option Rt.Native.Tools) (label 
             expect a (lean == ln.obs) s!"{l}: Rt.readback gives {lean}, the C decoder {ln.obs}"
     t.modify fun t => { t with native := t.native + n }
     out := out.push s!"  natively: {n} cases agree ({ms} ms{if groups.length > 1 then s!", {groups.length} driver runs" else ""})"
+  if o.exe then
+    out := out ++ (← runExe a work label r c srcObs bytesOut driverOut t)
   return out
 
 /-- Ingress (without typing: the census covers it) and compile one root,
@@ -209,7 +291,7 @@ def compileRoot (m : Family) (f : Fixture) (r : Root) : IO (Except Err (Cert × 
     compileInput {} inp
 
 /-- One root: declined as the manifest expects, or compiled and run. -/
-def root (a : Assert) (o : Options) (native : Option Rt.Native.Tools) (m : Family) (f : Fixture) (r : Root)
+def root (a : Assert) (o : Options) (native : Option Rt.Native.Tools) (work : FilePath) (m : Family) (f : Fixture) (r : Root)
     (t : IO.Ref Tally) : IO (Array String) := do
   let label := s!"{f.name}/{r.name}"
   let result ← compileRoot m f r
@@ -228,7 +310,7 @@ def root (a : Assert) (o : Options) (native : Option Rt.Native.Tools) (m : Famil
   | .ok (cert, art), none =>
     let c ← Levels.assemble label cert art
     t.modify fun t => { t with compiled := t.compiled + 1 }
-    runRoot a o native label r c t
+    runRoot a o native work label r c t
 
 def suite (a : Assert) (o : Options) (work : FilePath) : IO Unit := do
   let native : Option Rt.Native.Tools := o.cc.map fun cc => { cc, work }
@@ -242,13 +324,14 @@ def suite (a : Assert) (o : Options) (work : FilePath) : IO Unit := do
       for r in f.roots do
         if !o.roots.isEmpty && !o.roots.contains r.name then continue
         let before ← a.get
-        let (lines, ms) ← timed (root a o native m f r t)
+        let (lines, ms) ← timed (root a o native work m f r t)
         IO.println s!"  {m.family}/{f.name}/{r.name}: {(← a.get) - before} assertions, {ms} ms"
         for l in lines do IO.println s!"    {l}"
         (← IO.getStdout).flush
   let t ← t.get
   IO.println s!"  {t.compiled} roots compiled, {t.declined} declined as expected; {t.cases} cases, \
-    {t.runs} level runs{if native.isSome then s!", {t.native} native runs" else ""}; \
+    {t.runs} level runs{if native.isSome then s!", {t.native} native runs" else ""}\
+    {if o.exe then s!", {t.exe} executable runs ({t.exeRefused} roots outside the executables' fragment)" else ""}; \
     {t.allowed} allowed resource failures"
   -- the middle end's budgets against every committed program (a full run only)
   if o.manifests.isEmpty && o.only.isEmpty && o.roots.isEmpty then
@@ -367,6 +450,7 @@ def parseOptions : List String → Except String Options
   | "--survey" :: rest => do return { (← parseOptions rest) with survey := true }
   | "--dump" :: rest => do return { (← parseOptions rest) with dump := true }
   | "--observe" :: rest => do return { (← parseOptions rest) with observe := true }
+  | "--exe" :: rest => do return { (← parseOptions rest) with exe := true }
   | arg :: rest =>
     if arg.startsWith "--" then throw s!"unknown argument {arg}"
     else do let o ← parseOptions rest; return { o with manifests := arg :: o.manifests }
@@ -375,7 +459,7 @@ def parseOptions : List String → Except String Options
 def stackKb : Nat := IxCCTests.Src.Bench.deepStackKb
 
 /-- Usage: `tests-corpus [MANIFEST…] [--cc CC] [--work DIR] [--only FIXTURE]…
-[--root ROOT]… [--no-machines] [--progress] [--survey [--dump] | --observe]`. Without a manifest, every
+[--root ROOT]… [--no-machines] [--progress] [--exe] [--survey [--dump] | --observe]`. Without a manifest, every
 registered family (`Corpus.families`). -/
 def suiteMain (args : List String) : IO UInt32 := do
   -- re-run once with a large stack for the big-step evaluators

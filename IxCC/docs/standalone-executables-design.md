@@ -1,8 +1,9 @@
 # Standalone executables without a C driver
 
-Written 2026-11-14. **Status: planned.** Milestones X0 to X6 are in the
-[roadmap](roadmap.md#standalone-executables). Only the lines that say
-*implemented* or *measured* describe code or runs that exist.
+Written 2026-11-14. **Status:** X0 implemented (`ixcc compile --exe`, see
+[X0 as implemented](#x0-as-implemented)); X0-P to X6 planned. Milestones X0 to
+X6 are in the [roadmap](roadmap.md#standalone-executables). Only the lines that
+say *implemented* or *measured* describe code or runs that exist.
 
 ## Motivation
 
@@ -119,8 +120,10 @@ contract decidable on constants. The alternative is mapping them at start-up
 ### The shell
 
 At start-up the shell:
-1. optionally confines the process (strict seccomp: only `read`, `write`,
-   `exit` and `sigreturn` remain allowed);
+1. confines the process: no new privileges, then a seccomp filter that
+   allows only `write` to standard output and error and `exit` (implemented as
+   a filter, not strict mode: strict mode cannot be entered under an existing
+   filter, such as a build sandbox's, and it would also allow `read`);
 2. reads `argc` and `argv` from the initial stack, checks the arity and parses
    each argument as a decimal numeral (2^64 or more is `natOverflow`, as
    `X86.Linked.call` says);
@@ -129,7 +132,8 @@ At start-up the shell:
 4. calls the root by a direct call with the parsed arguments;
 5. renders the result in decimal and writes it to standard output, then exits
    0; or writes a fixed message for a resource failure to standard error and
-   exits with a fixed code per failure; a usage error exits 2.
+   exits with a fixed code per failure (`64 + status`); a wrong argument count
+   exits 2 and an argument that is not a decimal numeral 3.
 
 **The driver contract becomes a theorem.** `X86.Driver`
 ([`X86/Driver.lean`](../IxCC/X86/Driver.lean)) records the base, region,
@@ -153,9 +157,13 @@ sites, so those become per call. The object theorems hold for every register
 file and return address, so the change should be mechanical.
 
 **Where the shell's code comes from.**
-- *First*: typed x86 written in Lean (an `X86.Program` value), encoded by
-  IxCC's own encoder with its certificate, checked by its stream checker and
-  proved on the byte machine with the existing stream-trace infrastructure. A
+- *First*: typed x86 written in Lean, encoded by IxCC's own encoder and,
+  later, proved on the byte machine. As implemented it is not an `X86.Program`
+  (which cannot hold a system call) but a program of the shell's own
+  instruction type, whose operations are the typed instructions plus the
+  system call and direct calls of the object's exports; each typed
+  instruction is checked with the table's validity test and encoded by the
+  compiler's encoder, but the stream checker does not run on it. A
   feasibility experiment outside this tree laid out such an executable by hand
   for K1's `fib`: 2,080 bytes (a 143-instruction shell, the object's text
   unchanged); after `execve` it made only `write` and `exit`, ran under strict
@@ -210,9 +218,11 @@ option (b) of DR9.
 **The system-call instruction lives only in platform code.** The Ring-0
 admission check ([`Ring0.lean`](../IxCC/Ring0.lean)) refuses every program
 whose instruction table contains a privileged or system opcode, `0F 05`
-included. The row for it therefore lives in a separate platform table (or
-carries a platform-only flag the program checker refuses), so the program's
-text stays admissible under the IxOS tender. The no-indirect-calls decision
+included. As implemented, the system call is not a row of any table: it is a
+constructor of the shell's own instruction type with its own two-byte
+encoding ([`X86/Exe/Shell.lean`](../IxCC/X86/Exe/Shell.lean)), so the
+program table, its laws and its hardware-differential gate are unchanged and
+the program's text stays admissible under the IxOS tender. The no-indirect-calls decision
 (D20) holds: the shell reaches `cx_init` and the root by direct calls fixed
 when the executable is written; the program never calls the shell while
 effects are requests; when effects become platform calls, the program reaches
@@ -230,14 +240,15 @@ and for the test harness, on the host side in Lean.
 
 ### The theorems, by stage
 
-- **`Nat` executables.** Assume the byte machine with the system-call row is
-  the processor; the loader's post-state for the executable; and the
-  behaviour of `write` and `exit`. Then a run on `k` arguments either has `k`
-  equal to the root's arity and every argument a decimal numeral, writes the
-  decimal of `v` and exits 0 where the linked object returns `v`; or writes a
-  failure message and exits with the failure's code, where the object reports
-  that resource failure; or exits 2. It makes no other system call and does
-  not fault unless the source goes wrong. With today's object theorem, `v` is
+- **`Nat` executables.** Assume the byte machine with the system call is the
+  processor; the loader's post-state for the executable; and the behaviour of
+  `prctl`, `seccomp`, `write` and `exit`. Then a run on `k` arguments either
+  has `k` equal to the root's arity and every argument a decimal numeral,
+  writes the decimal of `v` and exits 0 where the linked object returns `v`;
+  or writes a failure message and exits with the failure's code, where the
+  object reports that resource failure; or exits 2 or 3 (a wrong count, a
+  non-numeral), or 75 if the confinement is refused. It makes no system call
+  but those four and does not fault unless the source goes wrong. With today's object theorem, `v` is
   the view of SrcEval's result; with the [spine](end-to-end.md), it is what the
   constant applied to the arguments denotes in every strong model.
 - **Batch byte programs.** Under the model of `read` as well: if the process
@@ -281,8 +292,8 @@ hashes.
 | System linker | trusted: places the object, resolves symbols | gone: IxCC writes the file | gone | gone |
 | `runtime_driver.c` | modelled by `x86-phase1-runtime-driver-model` | replaced by a typed-x86 shell, ledgered | proved: the driver contract is a lemma from the loader's post-state | a generic request interpreter; then only the entry and the platform procedures |
 | Readback in C | what a user sees | gone: the shell renders the `Nat` | proved | gone: the program writes its own bytes |
-| System calls after start | many kinds (the C driver's dynamic loading and set-up) | `write`, `exit`, enforced by strict seccomp | same | the signature's calls, enforced by a filter |
-| ISA model | as today | plus the system-call row | same | plus calls to platform procedures |
+| System calls after start | many kinds (the C driver's dynamic loading and set-up) | `prctl` and `seccomp` (the confinement), then `write` and `exit`, enforced by a seccomp filter (implemented) | same | the signature's calls, enforced by a filter |
+| ISA model | as today | plus the system call, outside the program table | same | plus calls to platform procedures |
 | Loading | a dynamic executable with an interpreter | a static executable, two loadable segments, no relocations | same | same |
 
 ## Prior art
@@ -346,14 +357,70 @@ Sizes are estimates, with their basis.
 
 | Id | Content | Depends on | Exit test | Size [estimate] |
 | --- | --- | --- | --- | --- |
-| X0 | `ixcc compile --exe` for roots of `Nat` parameters and a `Nat` result: the executable writer and its independent checker; the shell as typed x86 with a platform-only system-call row; static layout with `CanonicalOk` by evaluation; per-call return address and registers in `X86.Driver`; a ledger entry for the loader's post-state, `write`, `exit` and the shell | — | every K1 fixture and `phase1-scalar` root as an executable matches its expected output, Lean's interpreter and the C driver; strict seccomp on; only `write` and `exit` after start; byte-identical executables on two machines; the checker rejects mutated headers and truncations | 2–3.5k lines, 3–6 weeks (today's object path is about 2.2k lines across `ELF*.lean`; the shell is about 150 instructions of Lean data) |
-| X0-P | The shell proved: the shell lemma, parsing and rendering, the system-call row's model, permission monotonicity; the `Nat` executable theorem fenced | X0 | the theorem fenced on the standard axioms; the driver-model assumption retired for executables | 3–6k lines, 2–4 months (the `cx_init` proof is 0.5k lines and the stream-trace infrastructure exists) |
+| X0 | `ixcc compile --exe` for roots of `Nat` parameters and a `Nat` result: the executable writer and its independent checker; the shell as typed x86 with the system call outside the program table; static layout with `CanonicalOk` proved; a ledger entry for the loader's post-state, the system calls and the shell. **Implemented** ([below](#x0-as-implemented)), also for `Bool` and other results without fields, rendered `#k`; the per-call return address and registers in `X86.Driver` moved to X0-P | — | every corpus root of the fragment (K1's and the `phase1-*` families') on every case agrees with the manifest, SrcEval, ByteEval and the C driver; a seccomp filter on; only `prctl`, `seccomp`, `write` and `exit`; the checker rejects mutated headers and truncations | 2–3.5k lines, 3–6 weeks (today's object path is about 2.2k lines across `ELF*.lean`; the shell is about 150 instructions of Lean data). Measured: 1.1k lines of production code and 0.4k of tests |
+| X0-P | The shell proved: the shell lemma, parsing and rendering, the system call's model, permission monotonicity, a return address and register file per call in `X86.Driver`; the `Nat` executable theorem fenced | X0 | the theorem fenced on the standard axioms; the driver-model assumption retired for executables | 3–6k lines, 2–4 months (the `cx_init` proof is 0.5k lines and the stream-trace infrastructure exists) |
 | X1 | XB-1 and IxOS-0, redefined: IxCC-written test executables speak today's line protocol (and the session protocol with `cx_drop` for the RC gates); readback on the host side in Lean | X0 | the native suites (`tests-rt`, `tests-pipeline`, `tests-corpus`, `tests-own`, the back end's runtime cases, the RC native modes) pass with `runtime_driver.c` off the execution path and no C compiler in their inputs | 1–2k lines, 2–4 weeks after X0 |
 | X2 | Numeric state machines: the generic request shell, parsing and rendering in a small Lean library compiled with the program, the session theorem on `Nat` states | X0 (X0-P for the proof) | `fib` as an executable whose parsing and rendering are Lean; a 1,000-call session against Lean's interpreter; the session theorem fenced | 2–4k lines (DR9 (a) is 3–6k with heap states) |
 | X3 | Batch byte executables: arguments and input bytes in, output bytes and an exit code out; an exported byte-array allocation entry; the model of `read` | Phase 3 (DR2, DR3, DR6) | programs in the manner of `wc` and `sha256sum` byte-identical to Lean-compiled executables over a corpus of inputs | 2–4k lines beyond the DR items |
 | X4 | Interactive executables: state-machine roots with heap states; platform interface version 1 (read, write, exit, clock); a seccomp filter of exactly the interface | DR1, DR6, DR9 (a) | an echo or counter-map program; a 1,000-call session; the state-machine theorem fenced | DR9 (a)'s 3–6k plus 1–2k |
 | X5 | Lean `main : IO` over a recorded subset: traced events through the pipeline, platform calls as direct calls to platform procedures, the interpretation table for `IO`, the start-up logic in Lean | X4, DR2–DR5, P8, the reading of interpreted opaques (DC-2) | the benchmark fixtures' `main` functions compile unchanged and print what Lean's executables print | 10–25k lines, a weak basis (8–20k for traced events through about ten levels, plus the table) |
 | X6 | The platform interface implemented by the IxOS tender (part of IxOS-2): the same program text as a Linux process and as a SIP | X4, IxOS-1 | one program, two platforms, the same outputs | with IxOS-2 |
+
+## X0 as implemented
+
+**Implemented.** `ixcc compile CLOSURE.ixe --equations EQ.json --exe FILE
+[--stack BYTES] [--region BYTES]` writes a static executable of the first
+root ([`IxCC/Exe.lean`](../IxCC/Exe.lean),
+[`IxCC/X86/Exe/`](../IxCC/X86/Exe)); `FILE N1 … Nk` prints the result.
+- **The file** (`X86/Exe/Write.lean`): an `ET_EXEC` image with no section
+  headers: the ELF header, four program headers (the file read and execute at
+  `0x400000`; the stack and then the region, zero-filled, read and write at
+  `0x10000000`; the object's provenance note; `PT_GNU_STACK`), the note, the
+  object's text byte for byte at the next 64-byte boundary, the read-only data
+  (the seccomp filter and the messages) and the shell last. An object with a
+  relocation is refused. `fib`'s executable is 3,004 bytes: text 1,168, data
+  482, shell 956.
+- **The check** (`X86/Exe/Validate.lean`, `X86/Exe/Read.lean`): read back
+  independently; header, segments, size, zero gaps and every part as planned;
+  each of the shell's two calls, decoded from the file, lands on its export's
+  offset in the object's symbol table. `check_sound` states these facts;
+  `writeChecked` refuses a file the check refuses.
+- **The shell** (`X86/Exe/Shell.lean`, `X86/Exe/Code.lean`): 38 blocks of
+  code and 9 message blocks, 956 to 977 bytes encoded. It makes `prctl`,
+  `seccomp`, `write` (once unless the kernel writes part of the line) and
+  `exit`, in that order. Exit statuses: 0 with the value on standard output
+  (`n` for a `Nat`, `#k` for a constructor without fields); 2 for a wrong
+  argument count, 3 for an argument that is not one or more ASCII digits;
+  65 to 68 for the wrapper's heap, stack, `natOverflow` and trap (67 also for
+  a numeral of `2^64` or more); 70 for a broken calling convention or an
+  unknown status; 71 for a result word of neither shape; 74 for a failed
+  write; 75 if the confinement is refused. Every failure writes a message to
+  standard error.
+- **The contract** (`X86/Exe/Layout.lean`): `Layout.driver` is the instance
+  of `X86.Driver` each call is meant to see, and `Layout.driver_canonicalOk`
+  proves `Driver.CanonicalOk` for every accepted layout (a stack that is a
+  multiple of 16 and at least 8 KiB, a region of at least 4 KiB, together at
+  most `2^40` bytes) and every return address after the object's text and
+  below the zero-filled segment. That the shell realises this driver is not
+  proved. The model's one return address and register file for both calls is
+  recorded in that module and left unchanged.
+- **The fragment** (`Exe.fragment`): at most five parameters, all `Nat`; a
+  `Nat` result or a constructor without fields of an inductive whose
+  constructors have none (`Bool` among them); immortal, zero-RC or plain-RC
+  policy. Refused: `exe.params` (a parameter that is not a `Nat`, such as the
+  resource corpus's trap roots), `exe.result` (constructor trees),
+  `exe.layout`. What the C driver handles and an executable does not:
+  constructor-tree results, parameters that are not `Nat`, fewer arguments
+  than parameters, several roots and several input lines in one process,
+  regions under 4 KiB, timing and a dump of the object area.
+- **Tests** (*measured*, x86-64 Linux): `tests-corpus --exe` runs 135 roots
+  on 1,402 cases as executables, each agreeing with the manifest, SrcEval,
+  ByteEval where the case fixes the layout both use, and the C driver; one
+  case is skipped (a 4,095-byte region) and the three trap roots are refused.
+  `tests-exe` (4,532 assertions) covers the layout, the shell for every arity
+  and result kind, the writer and its check under about 4,300 mutations, the
+  refusals, malformed and oversized arguments, a trap, the confinement read
+  from `/proc` and, under `strace`, the system calls.
 
 ## The C driver until it is deleted
 
@@ -385,7 +452,7 @@ default:
 9. Lean `IO` through platform calls rather than a transformation of `main`
    into a state machine.
 
-Also open, for the design: whether the executable writer, its reader and its
-validator share code with today's object writer or stay siblings; and how
-much of the stream-trace infrastructure applies to a shell that is not
-compiler output.
+Settled by X0: the executable writer, its reader and its validator are
+siblings of the object's, sharing only the object reader's field reader
+(`ELFRead`) and its symbol lookup. Still open: how much of the stream-trace
+infrastructure applies to a shell that is not compiler output.

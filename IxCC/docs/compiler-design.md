@@ -846,16 +846,18 @@ native regression separately exercises 168 calls/drops on three objects with
 one initialization per bounded arena, independent complete-value decoders
 and exact reclaimed-address checks.
 
-**The driver, and its replacement (planned).** Today a compiled object runs
-only inside the C driver `fixtures/x86/runtime_driver.c`, linked by the
-system linker; `X86.Driver` and `X86.Linked` model what it sets up, and the
-ledger assumption `x86-phase1-runtime-driver-model` says it realises that
-model. The owner decided (2026-11-14) that standalone executables are a
-target with no C driver: IxCC is to write the executable itself, with the
-object's text byte for byte, a start-up shell written as typed x86 in Lean
-that establishes the driver contract from a fixed static layout, and later the
-platform procedures through which programs perform effects; the system-call
-instruction appears only there, never in compiled program text
+**The driver, and its replacement.** The test suites run a compiled object
+inside the C driver `fixtures/x86/runtime_driver.c`, linked by the system
+linker; `X86.Driver` and `X86.Linked` model what it sets up, and the ledger
+assumption `x86-phase1-runtime-driver-model` says it realises that model. The
+owner decided (2026-11-14) that standalone executables are a target with no C
+driver. Implemented so far: `ixcc compile --exe` writes the executable itself,
+with the object's text byte for byte and a start-up shell written as typed x86
+in Lean that sets up the driver's calls from a fixed static layout (below,
+[Standalone executables](#standalone-executables)); the system-call
+instruction appears only in the shell, never in compiled program text.
+Planned: the shell proved, the test suites moved off the C driver, and the
+platform procedures through which programs perform effects
 ([standalone executables](standalone-executables-design.md)).
 
 ## Backend
@@ -906,6 +908,41 @@ E2 validates complete streams and ELF objects.
 - Later: agreement with the pinned Sail x86 model
   ([reference-model record](x86-reference-model.md)).
 
+## Standalone executables
+
+`ixcc compile ... --exe FILE [--stack BYTES] [--region BYTES]` also writes a
+static Linux x86-64 executable that runs the first root on decimal arguments
+and prints its result, with no C compiler, C library, linker or C driver
+([`IxCC/Exe.lean`](../IxCC/Exe.lean), [`IxCC/X86/Exe/`](../IxCC/X86/Exe); the
+[standalone executables design](standalone-executables-design.md) plans the
+rest).- **The file** (`X86/Exe/Write.lean`): an `ET_EXEC` image of the ELF header,
+  four program headers (the file read and execute at `0x400000`; a zero-filled
+  read-write segment at `0x10000000` holding the program stack and then the
+  region; the object's provenance note; no executable stack), the note, the
+  object's text byte for byte, read-only data and the shell. The object must
+  have no relocations. `X86.Exe.check` (`X86/Exe/Validate.lean`) reads it back
+  with an independent reader (`X86/Exe/Read.lean`) and refuses it unless every
+  part, gap and header is as planned and both of the shell's calls land on
+  their exports.
+- **The shell** (`X86/Exe/Shell.lean`, `X86/Exe/Code.lean`): platform code
+  written as typed x86 and encoded by the compiler's encoder. Its instruction
+  type adds the system call and calls of the object's exports to the typed
+  instructions, outside the program instruction table, which keeps no
+  system-call row. It confines the process with a seccomp filter, parses
+  exactly the root's parameter count of decimal numerals (status 2 for a wrong
+  count, 3 for a non-numeral, 67 for a numeral of `2^64` or more), calls
+  `cx_init` and the root by direct calls, and prints the value or a message
+  with status `64 + s` for the wrapper's status `s`. It is trusted code
+  (ledger entry `x86-linux-exe-shell`).
+- **The contract** (`X86/Exe/Layout.lean`): `Layout.driver_canonicalOk` proves
+  that every layout the writer accepts gives the shell's calls a driver
+  keeping `Driver.CanonicalOk`; that the shell's code realises that driver is
+  not proved.
+- **The fragment** (`Exe.fragment`): roots with at most five `Nat`
+  parameters returning a `Nat` (printed `n`) or a constructor without fields
+  (printed `#k`, as `Rt.renderObs` prints it), on any policy. Other roots are
+  refused (`exe.params`, `exe.result`).
+
 ## Bootstrap and trust
 
 Upstream Lean is the Gen-0 seed for the compiler and its checkers. Its
@@ -939,6 +976,7 @@ exit criterion. The [roadmap](roadmap.md#plan) orders them.
 | Shape typing, stage L | Planned, off the critical path | [Certification](certification-design.md) |
 | Resource bounds for the verifier against dishonest input | Planned | [Hardening](hardening-design.md) |
 | Scale and usability | Planned (Phase 5) | [below](#scale-and-usability) |
+| Standalone executables with no C driver | In progress: the first milestone (roots of `Nat` parameters, a ledgered shell) implemented, [above](#standalone-executables) | [Standalone executables](standalone-executables-design.md) |
 
 ## Scale and usability
 
