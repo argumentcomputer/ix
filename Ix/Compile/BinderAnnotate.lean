@@ -345,14 +345,15 @@ private unsafe def annotateUnsafe (envs : Array Environment) (report : IO.Ref (A
 (`Ix.Environment.binderAnnotator?`). It reads only its arguments: Lean's
 elaboration of the sources is deterministic. -/
 @[implemented_by annotateUnsafe]
-opaque annotatePure (envs : Array Environment) (report : IO.Ref (Array String)) :
-    Ix.BinderAnnotator
+opaque annotatePure (envs : Array Environment) (report : IO.Ref (Array String))
+    (names : Array Ix.Name) (c : Ixon.Constant) : Array Ixon.BinderBlock
 
 /-- **The annotator of a compile over `envs`** (its source environments, each
 marked persistent: the compile's workers share them), with the report of the
 safe records it leaves undecided. -/
 def annotator (envs : Array Environment) : IO (Ix.BinderAnnotator × IO.Ref (Array String)) := do
-  let envs ← envs.mapM fun env => unsafe Runtime.markPersistent env
+  let envs ← envs.mapM fun (env : Environment) =>
+    (unsafe Runtime.markPersistent env : BaseIO Environment)
   let report ← IO.mkRef #[]
   return (annotatePure envs report, report)
 
