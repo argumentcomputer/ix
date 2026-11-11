@@ -8,8 +8,9 @@ with Ix's compiler and submits, as canonical record bytes, to the certified
 entry `Ix.Kernel.Admission.checkBytes`. Lean's kernel checked every
 declaration here except the ones installed unchecked
 (`TutorialMeta.bad_thm`, `bad_decl`), the inputs of the wrong type:
-`levelWrong`, `falseThm` (its value is `True.intro`), `nb4IotaFalse` and
-`nb4CtorFalse`.
+`levelWrong`, `falseThm` (its value is `True.intro`) and the false ι and
+constructor equations at the nested blocks (`nb4IotaFalse`, `ra1IotaFalse`,
+`bd2CtorFalse`, ...). `BD1` and `BD2` are declared through Lean's kernel.
 -/
 
 open Tests.Ix.Kernel.TutorialMeta
@@ -167,6 +168,39 @@ noncomputable def ra3Val (t : RA3) : Nat :=
 
 theorem ra3Iota : ra3Val (RA3.mk (some fun _ => RA3.leaf)) = 7 := rfl
 
+/-- Nested blocks with a recursive occurrence behind a definition (`Id' T`,
+which Lean's kernel reads after whnf): in a constructor of the block (`BD1`)
+and in a container's (`BD2`, through `List (Id' BD2)`). Declared through
+Lean's kernel: the elaborator's `SizeOf` generation fails on them. -/
+def Id' (α : Type) : Type := α
+
+open Lean in
+run_cmd Elab.Command.liftCoreM do
+  let ns := `Tests.Ix.Kernel.EntryCaseDefs
+  let idT (t : Expr) := mkApp (mkConst (ns ++ `Id')) t
+  let list (t : Expr) := mkApp (mkConst ``List [levelZero]) t
+  let bd1 := mkConst (ns ++ `BD1)
+  addDecl (.inductDecl [] 0 [⟨ns ++ `BD1, mkSort levelOne,
+    [⟨ns ++ `BD1.leaf, bd1⟩,
+     ⟨ns ++ `BD1.mk, mkForall `a .default (idT bd1) (mkForall `b .default (list bd1) bd1)⟩]⟩] false)
+  let bd2 := mkConst (ns ++ `BD2)
+  addDecl (.inductDecl [] 0 [⟨ns ++ `BD2, mkSort levelOne,
+    [⟨ns ++ `BD2.leaf, bd2⟩, ⟨ns ++ `BD2.mk, mkForall `a .default (list (idT bd2)) bd2⟩]⟩] false)
+
+/-- Values by the blocks' recursors, and ι reductions through the
+hypotheses of the fields behind `Id'`. -/
+noncomputable def bd1Val (t : BD1) : Nat :=
+  BD1.rec (motive_1 := fun _ => Nat) (motive_2 := fun _ => Nat) 1 (fun _ _ iha ihb => iha + ihb + 1) 0
+    (fun _ _ ih1 ih2 => ih1 + ih2) t
+
+theorem bd1Iota : bd1Val (BD1.mk BD1.leaf [BD1.leaf]) = 3 := rfl
+
+noncomputable def bd2Val (t : BD2) : Nat :=
+  BD2.rec (motive_1 := fun _ => Nat) (motive_2 := fun _ => Nat) 1 (fun _ ih => ih + 1) 0
+    (fun _ _ ih1 ih2 => ih1 + ih2) t
+
+theorem bd2Iota : bd2Val (BD2.mk [BD2.leaf]) = 2 := rfl
+
 /-- The face of a `partial` definition: an opaque constant whose value is an
 inhabitant of its type. The recursive body is the `partial` companion
 `loop._unsafe_rec`. -/
@@ -271,5 +305,12 @@ bad_thm ra3IotaFalse : ra3Val (RA3.mk (some fun _ => RA3.leaf)) = 6 :=
   unchecked (Eq.refl (ra3Val (RA3.mk (some fun _ => RA3.leaf))))
 
 bad_thm ra3CtorFalse : RA3.mk none = RA3.leaf := unchecked (Eq.refl (RA3.mk none))
+
+-- A false ι equation through `BD1`'s field behind `Id'`, and a false
+-- constructor equation at `BD2`, installed in Lean unchecked.
+bad_thm bd1IotaFalse : bd1Val (BD1.mk BD1.leaf [BD1.leaf]) = 4 :=
+  unchecked (Eq.refl (bd1Val (BD1.mk BD1.leaf [BD1.leaf])))
+
+bad_thm bd2CtorFalse : BD2.mk [] = BD2.leaf := unchecked (Eq.refl (BD2.mk []))
 
 end Tests.Ix.Kernel.EntryCaseDefs

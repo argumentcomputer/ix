@@ -213,6 +213,11 @@ def cases : List Case := [
   -- reductions through the reflexive hypotheses
   { label := "nested-reflexive", seeds := [seed "RA1", seed "RA3", seed "ra1Iota", seed "ra3Iota"],
     expected := .accept },
+  -- nested blocks with a recursive occurrence behind a definition (`Id' T`, in a
+  -- constructor of the block and in a container's), with ι reductions through
+  -- the fields' hypotheses
+  { label := "nested-behind-definition", seeds := [seed "BD1", seed "BD2", seed "bd1Iota", seed "bd2Iota"],
+    expected := .accept },
   { label := "partial-definition-face", seeds := [seed "loop"], expected := .accept },
   -- an equation over a `Subtype` whose levels Ix's compiler stores in
   -- canonical form, equal at every valuation (only the Géran fallback of the
@@ -324,6 +329,16 @@ def cases : List Case := [
       | _, _ => false },
   { label := "nested-reflexive-container-false-constructor", seeds := [`ra3CtorFalse],
     expected := .fail .declined "checker" fun input e => match e, keyOf input `ra3CtorFalse with
+      | .kernel (.invalid m) _, some key => Ix.Kernel.Msg.render toString m == s!"type mismatch in theorem {key}"
+      | _, _ => false },
+  -- a false ι equation through `BD1`'s field behind `Id'`, and a false
+  -- constructor equation at `BD2`
+  { label := "nested-behind-definition-false-iota", seeds := [`bd1IotaFalse],
+    expected := .fail .declined "checker" fun input e => match e, keyOf input `bd1IotaFalse with
+      | .kernel (.invalid m) _, some key => Ix.Kernel.Msg.render toString m == s!"type mismatch in theorem {key}"
+      | _, _ => false },
+  { label := "nested-behind-definition-false-constructor", seeds := [`bd2CtorFalse],
+    expected := .fail .declined "checker" fun input e => match e, keyOf input `bd2CtorFalse with
       | .kernel (.invalid m) _, some key => Ix.Kernel.Msg.render toString m == s!"type mismatch in theorem {key}"
       | _, _ => false } ]
 
@@ -443,7 +458,8 @@ def tierCases : List TierCase := [
 
 Hand-built records Lean cannot produce, at the nested blocks the in-process
 modeller models (`NB4`, whose index domain mentions a parameter; `RA1` and
-`RA3`, with a reflexive field into a member): the blocks'
+`RA3`, with a reflexive field into a member; `BD1` and `BD2`, with a member behind a
+definition): the blocks'
 recursor records altered over the decoded records, each under its key, and
 checked by the logical entry (`Admission.checkConstants`). Each must be
 refused, by the reader or the checker (a K flag on a nested block by the reader).
@@ -500,7 +516,12 @@ def forgedCases : List ForgedCase := [
       | some b => { r with rules := r.rules.set! 1 { b with fields := b.fields + 1 } }
       | none => r },
   { label := "modeled-nested-reflexive-container-forged-rule", seeds := [seed "RA3"],
-    target := seed "RA3.rec", forge := swapRules } ]
+    target := seed "RA3.rec", forge := swapRules },
+  -- a recursive occurrence behind a definition (`BD1`, `BD2`)
+  { label := "modeled-nested-behind-definition-forged-rule", seeds := [seed "BD1"],
+    target := seed "BD1.rec", forge := swapRules },
+  { label := "modeled-nested-behind-definition-container-forged-rule", seeds := [seed "BD2"],
+    target := seed "BD2.rec", forge := swapRules } ]
 
 def runForged (leanEnv : Lean.Environment) (test : ForgedCase) : IO Bool := do
   let started ← IO.monoMsNow

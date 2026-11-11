@@ -372,6 +372,52 @@ theorem fieldKind_mapKeys (hf : InjOn f P) {fam : Family md} (hfam : fam.Good P)
   rw [any_mapBinders_mentions hf hns hs.1, matchCarrier_mapKeys hf hfam _ hs.2, Option.map_map]
   rfl
 
+/-- **A field's normal form, renamed** (`fieldNorm`). -/
+theorem fieldNorm_mapKeys (hf : InjOn f P) {fam : Family md} (hfam : fam.Good P) {ns : List (Key md)}
+    (hns : ∀ n ∈ ns, n.Good P) (M J nF i : Nat) {minor d : Expr md} (hmin : minor.Good P)
+    (hd : d.Good P) :
+    fieldNorm (fam.mapKeys f) (ns.map (Key.map f)) M J nF i (minor.mapKeys f) (d.mapKeys f) =
+      (fieldNorm fam ns M J nF i minor d).mapKeys f := by
+  unfold fieldNorm
+  rw [fieldKind_mapKeys hf hfam hns i hd, mentionsAny_mapKeys hf hns hd, minorIH?_mapKeys hf M J nF i hmin]
+  by_cases hc : ((fieldKind fam ns i d).isNone && mentionsAny ns d) = true
+  · rw [if_pos hc, if_pos hc]
+    cases minorIH? M J nF i minor with
+    | none => rfl
+    | some p =>
+      obtain ⟨t, idx⟩ := p
+      simp only [Option.map_some, Family.mapKeys_mems, List.length_map,
+        getD_map_default Mem.mapKeys_default]
+      by_cases ht : t < fam.mems.length
+      · have hmem : (fam.mems.getD t default).Good P := by
+          simp only [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem ht, Option.getD_some]
+          exact hfam.2.2.1 _ (List.getElem_mem ht)
+        rw [if_pos ht, if_pos ht]
+        exact carrierAt_mapKeys hf hfam hmem i idx false
+      · rw [if_neg ht, if_neg ht]
+  · rw [if_neg hc, if_neg hc]
+
+/-- A field's normal form is good. -/
+theorem fieldNorm_good {fam : Family md} (hfam : fam.Good P) {ns : List (Key md)} (M J nF i : Nat)
+    {minor d : Expr md} (hmin : minor.Good P) (hd : d.Good P) :
+    (fieldNorm fam ns M J nF i minor d).Good P := by
+  unfold fieldNorm
+  by_cases hc : ((fieldKind fam ns i d).isNone && mentionsAny ns d) = true
+  · rw [if_pos hc]
+    cases hm : minorIH? M J nF i minor with
+    | none => exact hd
+    | some p =>
+      obtain ⟨t, idx⟩ := p
+      dsimp only
+      by_cases ht : t < fam.mems.length
+      · have hmem : (fam.mems.getD t default).Good P := by
+          simp only [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem ht, Option.getD_some]
+          exact hfam.2.2.1 _ (List.getElem_mem ht)
+        rw [if_pos ht]
+        exact carrierAt_good hmem (minorIH?_good M J nF i hmin hm) false
+      · rw [if_neg ht]; exact hd
+  · rw [if_neg hc]; exact hd
+
 theorem optKey_map_beq (hf : InjOn f P) {o : Option (Key md)} (ho : ∀ k, o = some k → k.Good P)
     {k : Key md} (hk : k.Good P) : (o.map (Key.map f) == some (k.map f)) = (o == some k) := by
   cases o with
@@ -570,8 +616,12 @@ theorem readCtors_mapKeys (hf : InjOn f P) {fam : Family md} (hfam : fam.Good P)
       simp only [List.getD_eq_getElem?_getD, List.getElem?_map]
       cases bs[i]? <;> rfl
     rw [hgd, ← Expr.mapKeys_lowerBVars, betaHeadE_mapKeys]
-    exact ExRel.of_map rfl fun a ha =>
-      betaHeadE_good (Expr.Good.lowerBVars (Expr.BindersGood.getD_fst hsp.1 i) _ _) ha
+    refine ExRel.bind (S := fun a b => b = a.mapKeys f ∧ a.Good P) (ExRel.of_map rfl fun a ha =>
+      betaHeadE_good (Expr.Good.lowerBVars (Expr.BindersGood.getD_fst hsp.1 i) _ _) ha) fun a a' ha => ?_
+    obtain ⟨rfl, haG⟩ := ha
+    refine ExRel.pure' ⟨?_, fieldNorm_good hfam M J nF i (Expr.GoodList.getD_default hmin J) haG⟩
+    rw [← Family.mapKeys_mems, memberNames_map]
+    exact fieldNorm_mapKeys hf hfam hmN M J nF i (Expr.GoodList.getD_default hmin J) haG
   obtain ⟨rfl, hdG⟩ := forall₂_map_eq hd
   have hdG' : Expr.GoodList P doms := hdG
   have hk : ∀ i, fieldKind (fam.mapKeys f) ((fam.mapKeys f).mems.filterMap

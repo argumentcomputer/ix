@@ -138,6 +138,13 @@ def validatingCheckEntries : List (String × Nat) := [
   ("IxVMPrim.nat_div_lit", 2_416_563_653),
   ("IxVMPrim.nat_land_lit", 8_450_979_543)]
 
+/-- Constants of `Tests.Ix.Kernel.EntryCaseDefs`, loaded at run time (some of
+its blocks are declared through Lean's kernel, which the fixtures module
+cannot export), with claims that assume their binding. -/
+def entryCheckEntries : List (String × Nat) := [
+  ("Tests.Ix.Kernel.EntryCaseDefs.BD1.rec", 0),
+  ("Tests.Ix.Kernel.EntryCaseDefs.BD2.rec", 0)]
+
 /-- A `Check` claim on `name` over `ixonEnv`. -/
 def kernelCheckCase (ixonEnv : Ixon.Env) (name : Lean.Name) (assumeBinding : Bool) :
     Builder := fun _ => do
@@ -224,7 +231,12 @@ def kernelChecks (env : Lean.Environment) : IO UInt32 := do
     let c ← Case.ofClaim "binding claim for the default table" ixonEnv (.binding ctx.spec ctx.binding)
     return { c with expectedFftCost := some 440_827_497_654 }
   let shard ← shardCase env
-  runCases "ixvm-kernel-checks" (assumed ++ validating ++ [binding, shard]).toArray
+  let fenv ← getCompileEnv #[`Tests.Ix.Kernel.EntryCaseDefs]
+  let fixEnv ← loadSharedIxonEnv (entryCheckEntries.map (nameOfString ∘ Prod.fst)).toArray fenv
+  let entry := entryCheckEntries.map fun (n, cost) => fun u => do
+    let c ← kernelCheckCase fixEnv (nameOfString n) true u
+    return { c with expectedFftCost := some cost }
+  runCases "ixvm-kernel-checks" (assumed ++ validating ++ entry ++ [binding, shard]).toArray
 
 end Tests.Ix.IxVM
 

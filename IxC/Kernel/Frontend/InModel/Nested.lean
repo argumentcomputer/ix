@@ -64,6 +64,14 @@ its iota hypotheses `λ a⃗, R_m._model … e⃗(a⃗) (f a⃗)`, as the auxili
 family's own recursor has them (`Kit.recTy`).  A real member's carrier
 is its model, so such a field is never packed or transported.
 
+Members behind definitions.  Lean's kernel tests positivity after whnf,
+so a field `Id' T` (with `Id' α := α`), in a real constructor or a
+mimic's (`List (Id' T)`), is recursive: Lean's recursor gives it a
+hypothesis, which names the member and the index arguments.  Such a field
+is read at that normal form (`fieldNorm`), and everything generated over
+the fields takes it; the public models keep the declared types, which
+are definitionally equal.
+
 Index arguments that mention the parameters.  A member whose index
 domain mentions a parameter — `inductive NB (α : Type) (a₀ : α) : α →
 Type` nesting through `List`, or `NB4 (α : Type) : List α → Type` —
@@ -112,7 +120,8 @@ structure ACtor (md : Mode) where
   clv : List Level
   /-- field count -/
   nF : Nat
-  /-- the field binders, each at its own frame over the parameter frame -/
+  /-- the field binders, each at its own frame over the parameter frame, as
+  Lean's kernel reads them (`fieldNorm`) -/
   doms : List (Expr md)
   /-- per field: the member it recurses to, or `none` -/
   kinds : List (Option Nat)
@@ -328,6 +337,23 @@ def fieldKind (fam : Family md) (memberNames : List (Key md)) (i : Nat) (d : Exp
   if (stripAllPis d).1.any (fun b => mentionsAny memberNames b.1) then none
   else (matchCarrier fam (i + fieldTele d) (stripAllPis d).2).map (·.1)
 
+/-- **A field's domain as Lean's kernel reads it**: the declared domain `d`
+(at field `i`'s frame) — or, where `d` mentions the block but is no carrier
+syntactically (`fieldKind`) and Lean's recursor gives the field a finitary
+hypothesis on motive `t` at index arguments `e⃗` (`minorIH?`, on the field's
+minor premise `minor`: a member behind a definition, `Id' T`, which Lean's
+kernel reads after whnf), the carrier `C_t e⃗`, its normal form.  The
+auxiliary constructor is built over it (as `Mutual.lean`'s `MCtor.nty`);
+the public models keep the declared types, definitionally equal. -/
+def fieldNorm (fam : Family md) (memberNames : List (Key md)) (M J nF i : Nat) (minor d : Expr md) :
+    Expr md :=
+  if (fieldKind fam memberNames i d).isNone && mentionsAny memberNames d then
+    match minorIH? M J nF i minor with
+    | some (t, idx) =>
+      if t < fam.mems.length then carrierAt fam (fam.mems.getD t default) i idx false else d
+    | none => d
+  else d
+
 /-- Read the members off the motives of the first recursor's type
 (after the parameters): motive `m`'s domain `∀ ı⃗ (t : C), Sort ℓ`. -/
 def readMems (lps : List LevelParam) (nP : Nat) (types : List (IndTypeRec md))
@@ -397,10 +423,12 @@ def readCtors (fam : Family md) (M : Nat) (minors : List (Expr md))
     -- and earlier minors sit between the parameters and the fields)
     -- (head-β-reduced: a container at a dependent pin `I α (fun _ => T α)`
     -- leaves `(fun _ => T α) k` in the kernel's minor)
-    let doms : List (Expr md) ← (List.range nF).mapM fun i =>
-      let (d, _) := bs.getD i default
-      betaHeadE (d.lowerBVars (M + J) i)
+    -- (and each at Lean's reading: a member behind a definition at its
+    -- normal form, `fieldNorm`)
     let memberNames := fam.mems.filterMap fun m => if m.real?.isSome then some m.I else none
+    let doms : List (Expr md) ← (List.range nF).mapM fun i => do
+      let d ← betaHeadE ((bs.getD i default).1.lowerBVars (M + J) i)
+      pure (fieldNorm fam memberNames M J nF i dom d)
     -- the kinds, by the carrier match at each field's frame, past the field's
     -- own telescope (`fieldKind`), and the telescopes' lengths
     let kinds : List (Option Nat) := (List.range nF).map fun i =>
