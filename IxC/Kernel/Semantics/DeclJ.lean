@@ -7,7 +7,7 @@ public import IxC.Kernel.Semantics.DeclEta
 @[expose] public section
 
 /-!
-# The declaration records over a judgement package (lane l5)
+# The declaration records over a judgement package
 
 `DeclRun` (`Semantics/DeclRun.lean`) records what the kernel's fold checked
 for a declaration: guards on stored data, and runs of the checker's own
@@ -33,7 +33,7 @@ serves both. The one place the records differ by design is a theorem's stored
 value (`Judgements.thmValue`): the kernel installs a theorem by its statement
 and keeps the record's raw value (`Cached/Installed.lean`, phase A), while the
 restated record stores the annotated value, so that the value can be read in
-the model (decision D11, `thm_val`).
+the model.
 
 The divisibility certificates (`checkDivModCerts`, `Checker.lean:156`) become
 the relation `DivModCertsJ`, one row per certificate: the guard, the applied

@@ -8,6 +8,7 @@ import IxC.Kernel.Model.Rules.InferSound
 import IxC.Kernel.Model.Rules.CertsSound
 import IxC.Kernel.Model.Rules.ThmSound
 import IxC.Kernel.Model.Rules.EqSound
+import IxC.Kernel.Model.Rules.NatOffsetSound
 import IxC.Kernel.Rules.Derived
 
 public section
@@ -49,6 +50,7 @@ theorem red_sound (hin : RulesInputs V m φ) :
     Red.trans_sound (red_sound hin h₁) (red_sound hin h₂)
   | _, _, _, .appFn h => Red.appFn_sound (red_sound hin h)
   | _, _, _, .projArg h => Red.projArg_sound (red_sound hin h)
+  | _, _, _, .appArg h => Red.appArg_sound (red_sound hin h)
   | _, _, _, .betaGate hnev => Red.betaGate_sound hnev
   | _, _, _, .beta hta hd =>
     Red.beta_sound (infer_sound hin hta) (defeq_sound hin hd)
@@ -66,6 +68,9 @@ theorem red_sound (hin : RulesInputs V m φ) :
     Red.natSucc_sound hin hsup (red_sound hin hw) hn
   | _, _, _, .natOp hc hst hwa hn₁ hwb hn₂ hr =>
     Red.natOp_sound hin hc hst (red_sound hin hwa) hn₁ (red_sound hin hwb) hn₂ hr
+  | _, _, _, .natAddSucc hs ht => Red.natAddSucc_sound hin hs ht
+  | _, _, _, .natAddZero hs ht hw hn =>
+    Red.natAddZero_sound hin hs ht (red_sound hin hw) hn
   | _, _, _, .proj hent hhead hi hlen hus hfire hctor hcerts =>
     Red.proj_sound hin hent hhead hi hlen hus hfire hctor (certs_sound hin hcerts)
   | _, _, _, .iota hhead hrec hlen hus hmajor hmhead hctor hrule hmlen hfire hlv
@@ -103,6 +108,8 @@ theorem defeq_sound (hin : RulesInputs V m φ) :
   | _, _, _, .const h => DefEq.const_sound h
   | _, _, _, .natZero => DefEq.natZero_sound
   | _, _, _, .natSucc h => DefEq.natSucc_sound (defeq_sound hin h)
+  | _, _, _, .natOffset hs ht ha hb h =>
+    DefEq.natOffset_sound hin hs ht ha hb (defeq_sound hin h)
   | _, _, _, .forallE hty hbody hpw _ =>
     DefEq.forallE_sound (defeq_sound hin hty) (defeq_sound hin hbody) hpw
   | _, _, _, .lam hty hbody hpw _ =>

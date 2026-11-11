@@ -6,11 +6,13 @@ import IxC.Kernel.Model.Denotes
 import IxC.Kernel.Verify.EnvGuards
 import IxC.Kernel.Rules.Rel
 
-/-! # `IxVM.consistent`: the first milestone, reduced to one obligation per layer
+/-! # `IxVM.consistent`: the IxVM circuit accepts only claims with a model
 
-Plan `ixvm-no-false-plan.md` 8.1 (the theorem), 8.2 (the layers), 8.7 S1.
+The consistency of what the deployed IxVM circuit accepts, reduced to one
+obligation per layer of the verifier. Claims outside `InScope` (assumed leaves,
+another role table or user axioms, `eval`) are not covered.
 
-## The statement (`Milestone`)
+## The statement (`CircuitConsistent`)
 
 Suppose the verifier's checks hold for the deployed IxVM circuit on at most
 `2^39` rows (`CircuitSound`, reused from `Ix.IxVM.Refinement.Statement`), for a
@@ -23,12 +25,12 @@ trace (`View.HashedCollision`, reused), or there is an environment `env` that
   byte string the run hashed, under its BLAKE3 address; `Draws` lets the reading
   add recursor records the run did not load, as `AcceptsIn` does), through the
   kernel's own reading of Ixon records (`ReadIn`: `admitBinding`,
-  `ClosureOrderAt`, `preludeFor`, `prepareWith`, the trusted component of plan
-  8.1), installed declaration by declaration (`Installs`, `InstallStep`);
+  `ClosureOrderAt`, `preludeFor`, `prepareWith`: the statement trusts the kernel's
+  reader), installed declaration by declaration (`Installs`, `InstallStep`);
 * contains each claimed constant at its key, with an annotation of the type the
   reader gives it (`SeedStored`, `Annotates`). Every seed is in Lean's logic:
   IxVM refuses a claim whose seed record, or its block, is unsafe or `partial`
-  (decision D20, `KernelClaim::assert_claimable`; `OutsideLogicAt`), and L6
+  (`KernelClaim::assert_claimable`; `OutsideLogicAt`), and L6
   carries the refusal (`ClaimPhase`);
 * has a claimed sub-environment (`claimedEnv`: without the model families'
   auxiliary constants) with a model in every set theory:
@@ -39,8 +41,8 @@ Corollary (`ConsistentRead.seeds_not_false`): no claimed constant has type
 
 ## The reduction (`IxVM.consistent`)
 
-`IxVM.consistent` proves `Milestone` from eight named obligations, `L0` to `L7`,
-one per layer of plan 8.2:
+`IxVM.consistent` proves `CircuitConsistent` from eight named obligations, `L0` to
+`L7`, one per layer of the verifier:
 
 | Layer | Obligation | Content |
 |---|---|---|
@@ -54,14 +56,17 @@ one per layer of plan 8.2:
 | L7 assembly | `L7` | given L1, L5, L6: the source-level statement |
 
 Layers communicate through `Seams`, the representation relations the layer
-proofs share. Choosing them (the representation of IxVM heap terms as kernel
-terms, plan 8.4) is S3's design task; every obligation is stated relative to
-them, so each layer's job is fixed once they are. Whatever seams are chosen, the
-composition proves the concrete `Milestone`, which does not mention them.
+proofs share. Choosing them (above all the representation of IxVM heap terms as
+kernel terms) is the layer proofs' main design task; every obligation is stated
+relative to them, so each layer's job is fixed once they are. Whatever seams are
+chosen, the composition proves the concrete `CircuitConsistent`, which does not
+mention them.
 
 `circuitSound_of_sourceSound` concludes `CircuitSound` from a source statement
 over *every* derivation, so it cannot hand the source level a bound on the
-derivation the trace gives (`T3.md` T3-2, `Z1.md`). `circuitSound_of_bounded` is
+derivation the trace gives. The source proofs need one: IxVM compares list lengths
+as field elements, which a derivation with more than `2^32` calls could wrap.
+`circuitSound_of_bounded` is
 its bounded form, from `L0`; `sourceSoundBounded_of_sourceSound` shows the
 unbounded statement is the special case. -/
 
@@ -96,7 +101,7 @@ def MemoCallsAtMost {G : Type} [DecidableEq G] (s : Aiur.Generic.Source G) (rom 
     ∀ c ∈ calls, inlineCall s c.name = false →
       ∃ k ∈ keys, k.1 = c.name ∧ List.Forall₂ (Aiur.Represents rom c.heap) c.args k.2
 
-/-- **Obligation L0** (Aiur, Track A): the depth-grouped Goldilocks observed
+/-- **Obligation L0** (Aiur): the depth-grouped Goldilocks observed
 headline (`Aiur.Optimized.Physical.Prepared.depth_grouped_activated_native_heap_sound_goldilocks_observed`,
 frozen in `Aiur.Audit`), with one more conjunct: the derivation it gives has at
 most `2^39` distinct memoized calls (`MemoCallsAtMost`). Every other hypothesis
@@ -169,8 +174,8 @@ def DefaultContext (ctx : ClaimContext) : Prop :=
   (∃ b, Ix.Kernel.Admission.defaultBinding = .ok b ∧ ctx.binding = b.address) ∧
     ctx.bindingAssumed = false ∧ ctx.axioms = none
 
-/-- **The first milestone's claims** (plan 8.1): `check` and `checkEnv` in the
-default context, with no assumed leaves. -/
+/-- **The claims covered**: `check` and `checkEnv` in the default context, with no
+assumed leaves. -/
 def InScope : Claim → Prop
   | .check ctx _ asm => DefaultContext ctx ∧ asm = none
   | .checkEnv ctx _ asm => DefaultContext ctx ∧ asm = none
@@ -196,7 +201,7 @@ def LoadedBy (calls : List (Call IxVM.F)) (E : Ixon.Env) : Prop :=
   (∀ a bytes, E.blobs.get? a = some bytes → Hashed calls bytes ∧ Address.blake3Pure bytes = a)
 
 /-- **The kernel's reading of the closure of `seeds` in `E`** under the role
-table `b` (the trusted component of plan 8.1, as `AcceptsIn` uses it): the table
+table `b` (the trusted component, as `AcceptsIn` uses it): the table
 admitted, the compiled closure in an order with no record before one it
 references, the table's prelude, and `prepareWith`'s evidence and declarations. -/
 def ReadIn (b : Binding) (E : Ixon.Env) (seeds : Address → Prop)
@@ -308,7 +313,8 @@ or `partial` definition, an unsafe opaque, an unsafe axiom, recursor or
 inductive, nor a block holding one (`Ix.Kernel.Reader.safetyDeclineOf`,
 `readInductive`, `readRecord`). The reader declines the others, and must:
 Lean's kernel accepts an unsafe constant of any type, `False` included. IxVM
-refuses a claim whose seed is not in Lean's logic (`OutsideLogicAt`, D20). -/
+refuses a claim whose seed is not in Lean's logic (`OutsideLogicAt`,
+`KernelClaim::assert_claimable`). -/
 def InLogic (c : Ixon.Constant) : Prop :=
   match c.info with
   | .defn d => Ix.Kernel.Reader.safetyDecline d = none
@@ -319,8 +325,8 @@ def InLogic (c : Ixon.Constant) : Prop :=
 
 /-- **`a` holds a record outside Lean's logic** in `E`: the record, or the block
 it projects from, is not `InLogic`. IxVM refuses a `check` or `checkEnv` claim
-with such a seed (decision D20, `KernelClaim::assert_claimable`: its `record_unsafe`
-is exactly `¬ InLogic`), which L6's `ClaimPhase` states; it keeps safe constants
+with such a seed (`KernelClaim::assert_claimable`: its `record_unsafe` is exactly
+`¬ InLogic`), which L6's `ClaimPhase` states; it keeps safe constants
 from referencing unsafe ones (`KernelCheck::is_unsafe_ci`, `assert_safety`). -/
 def OutsideLogicAt (E : Ixon.Env) (a : Address) : Prop :=
   ∃ c, Ix.Cert.recordAt E a = some c ∧
@@ -349,8 +355,8 @@ loaded, under the default role table, from the claim's seeds, storing every
 claimed constant with its type, whose claimed sub-environment (`claimedEnv`:
 without the model families' auxiliary constants, which the run checks as advice)
 has a model in every set theory. A block seed is covered by its members, which
-are stored. Every seed is in Lean's logic: IxVM refuses the others (D20, carried
-by L6). -/
+are stored. Every seed is in Lean's logic: IxVM refuses the others
+(`KernelClaim::assert_claimable`, carried by L6). -/
 def ConsistentRead (calls : List (Call IxVM.F)) (seeds : List Address) : Prop :=
   ∃ (b : Binding) (E₀ E : Ixon.Env) (ev : Ix.Kernel.Evidences .anon)
     (ds : Array (Ix.Kernel.Declaration .anon)) (env : Ix.Kernel.Env .anon),
@@ -359,7 +365,7 @@ def ConsistentRead (calls : List (Call IxVM.F)) (seeds : List Address) : Prop :=
     (∀ a ∈ seeds, IsBlockAt E₀ a ∨ SeedStored b ds env a) ∧
     ∀ (V : Type u) [Ix.Kernel.SetTheory V], Nonempty (Ix.Kernel.Model V (claimedEnv env))
 
-/-- **What a verify_claim derivation establishes** (plan 8.1): for every claim
+/-- **What a verify_claim derivation establishes**: for every claim
 byte string whose digest packs to `d` and decodes to an in-scope claim, and every
 reader's view of its seeds, the run hashed a collision, or `ConsistentRead`. -/
 def ConsistencySpec (calls : List (Call IxVM.F)) (d : Digest) : Prop :=
@@ -368,9 +374,9 @@ def ConsistencySpec (calls : List (Call IxVM.F)) (d : Digest) : Prop :=
       ∀ (V : View) (seeds : List Address), ClaimSeeds c V seeds →
         V.HashedCollision [bytes] calls ∨ ConsistentRead.{u} calls seeds
 
-/-- **The first milestone** (plan 8.1), at the circuit: `CircuitSound` of
-`ConsistencySpec`. -/
-def Milestone : Prop := CircuitSound ConsistencySpec.{u}
+/-- **The deployed IxVM circuit accepts only claims whose claimed environment has a
+model**: `CircuitSound` of `ConsistencySpec`. -/
+def CircuitConsistent : Prop := CircuitSound ConsistencySpec.{u}
 
 /-! ## The corollary: no claimed constant has type `False` -/
 
@@ -444,9 +450,9 @@ theorem model_of_envModelOk {V : Type u} [Ix.Kernel.SetTheory V] {env : Ix.Kerne
 
 /-! ## The seams between the layers -/
 
-/-- **The representation relations the layer proofs share** (plan 8.4: "getting
-this relation right is the main design task of the first slice"; S3). Each
-obligation below is stated relative to them. -/
+/-- **The representation relations the layer proofs share.** Choosing them is the
+layer proofs' main design task. Each obligation below is stated relative to
+them. -/
 structure Seams where
   /-- (L1, L6) The IxVM value `v` (a `Bytes::AddressRef`) holds the address `a`. -/
   addr : Aiur.Heap IxVM.F → Aiur.SourceValue IxVM.F → Address → Prop
@@ -457,8 +463,8 @@ structure Seams where
   /-- (L3, L4) In the kernel environment `env` read from the Ixon records `E`, at
   opening depth `depth` and under `binders` local binders, the IxVM value `v` (a
   `KernelTypes::KExpr`) represents the kernel term `t` (whose loose bound
-  variables are the local binders). Lane S2 (PM-A, PM-L): it pairs each binder with
-  a validated `pw` datum, and holds up to semantically equal levels. -/
+  variables are the local binders). It pairs each binder with its validated `pw`
+  datum, and relates levels up to semantic equality. -/
   term : Ixon.Env → Ix.Kernel.Env .anon → (depth binders : Nat) →
     Aiur.Heap IxVM.F → Aiur.SourceValue IxVM.F → Ix.Kernel.Expr .anon → Prop
   /-- (L4) The role context `rc` (`KernelRoles::RoleCtx`) and the context list
@@ -474,10 +480,10 @@ structure Seams where
   the instance L7 uses must also say that every walked record is in Lean's logic:
   the seeds by the claim's refusal (`ClaimPhase`), the others by `assert_safety`
   (a safe constant references none outside) and by a uniform-safety check on
-  every walked block (lane dc; without it a safe seed can reach an unsafe member
-  of a mixed block). -/
+  every walked block (without it a safe seed can reach an unsafe member of a
+  block whose members differ in safety). -/
   Walked : List (Call IxVM.F) → Ix.Kernel.RoleTable → Ixon.Env → List Address → Prop
-  /-- (L7 → L5; S4 fixes it with the rebuilt declaration checker) The
+  /-- (L7 → L5) The
   derivation contains IxVM's accepting checks of every constant the declaration
   `d` installs, against records whose reading installed `env`. -/
   Checked : List (Call IxVM.F) → Ix.Kernel.Env .anon → Ix.Kernel.Declaration .anon → Prop
@@ -502,10 +508,11 @@ def L1 : Prop := Records S
 
 /-- **L2's content: the level comparisons are sound for `Level.eval`, with no
 depth hypothesis, and the zero test is exact** (`KernelLevels`): on bounded
-derivations (the bound replaces `levelDepth < 2^32`, `T3.md` T3-2, `Z1.md`),
+derivations (the bound replaces a hypothesis `levelDepth < 2^32`: lengths are
+compared as field elements),
 `level_leq = 1` gives `≤` and `level_equal = 1` gives `=` at every assignment,
 and `level_equal(l, Zero) = 0` refutes that `l` is zero at every assignment (the
-exact site of `k_infer_proj`, `T3.md` T3-5). Levels are represented by the
+zero test `k_infer_proj` relies on). Levels are represented by the
 level slice's `RepKLevel`. -/
 def Levels : Prop :=
   (∀ (a b : Aiur.SourceValue IxVM.F) (heap after : Aiur.Heap IxVM.F) (cs : List (Call IxVM.F))
@@ -531,8 +538,8 @@ def L2 : Prop := Levels
 (`KernelSubst`): instantiating a body's bound variable with a term represents the
 kernel's `instantiate1`, and lifting a term over one binder represents the same
 kernel term one depth deeper (the kernel's opened variables are absolute). The
-level instantiation `expr_inst_levels` is related up to the equivalence S3
-chooses (`T3.md` T3-3) and is not stated here. -/
+level instantiation `expr_inst_levels` is related up to the level equivalence the
+term seam uses, and is not stated here. -/
 def Terms : Prop :=
   (∀ (E : Ixon.Env) (env : Ix.Kernel.Env .anon) (n : Nat) (e arg r : Aiur.SourceValue IxVM.F)
       (heap after : Aiur.Heap IxVM.F) (cs : List (Call IxVM.F)) (tb ta : Ix.Kernel.Expr .anon),
@@ -547,7 +554,7 @@ def Terms : Prop :=
 /-- **Obligation L3** (term operations), given L2. -/
 def L3 : Prop := Levels → Terms S
 
-/-- **L4's content: the core is sound against the rules tier** (plan 8.4):
+/-- **L4's content: the core is sound against the rules tier**:
 on represented inputs, every bounded derivation of `whnf(e) = e'` gives
 `Rules.Red env d e e'`, of `is_def_eq(a, b) = 1` gives `Rules.DefEq env d a b`
 (nothing is claimed for `0`), and of `infer(e) = t` gives
@@ -555,17 +562,14 @@ on represented inputs, every bounded derivation of `whnf(e) = e'` gives
 records `env` was read from (`Ingress::get_ci` reloads records inside the
 core).
 
-`Rules.*` is the rules tier with lane S2's additions (`plans/ixvmc/s2/RULES-GAP.md`
-section 3: `Red.deltaThm`, `Red.appArg`, the `Nat` and offset rules,
-`DefEq.proofIrrelTy`, `structEtaTy`, `unitLikeTy`, `Red.roleEqn`, ...), whose
-soundness reads three new `RulesInputs` fields: `thm_val` (`ThmVal`, from L5's
-invariant), `nat_ops` (already an `EnvModelM` field) and `role_eqns` (from
-`eqnsCheck` on the validated role definitions, L5 with L6's role check). The
-statement is over the program as it ships: under S2's PM-C option (A), the
-assumed one, IxVM computes the rules' certificates at maybe-`Prop` binders, and
-`Core` is proved of that program. Under option (B), see the S1 report: `Core`
-would take a typing derivation of each subject as a further premise and the
-kernel would owe subject reduction for the rules. -/
+`Rules.*` is the kernel's rules tier. Where IxVM's core makes a move the kernel's
+own checker does not, the tier has a rule for it with its own soundness proof:
+`Red.deltaThm` (a theorem unfolds to its value, with the value's typing as
+premises) and `Red.eqProof` (an equation's proof rewrites its left side, sound by
+the `eq_law` input); further moves are added the same way. The statement is over
+the program as it ships: IxVM checks a typing certificate for the argument at
+binders whose datum may be `Prop`, as `Red.beta` requires, and `Core` is proved of
+that program. -/
 def Core : Prop :=
   ∀ (E : Ixon.Env) (env : Ix.Kernel.Env .anon) (d : Nat) (rc types : Aiur.SourceValue IxVM.F)
     (heap after : Aiur.Heap IxVM.F) (cs : List (Call IxVM.F)),
@@ -588,15 +592,13 @@ def Core : Prop :=
 /-- **Obligation L4** (core), given L1 to L3. -/
 def L4 : Prop := Records S → Levels → Terms S → Core S
 
-/-- **Lane S2's `thm_val`** (`RULES-GAP.md` section 3), the new `RulesInputs`
-field `Red.deltaThm` reads: every stored theorem's value reads, is graded, and
-interprets as its constant's leaf, at every assignment. The environment model
-keeps no such equation today (the kernel never unfolds a theorem,
-`Model/Annot/Laws.lean:775-787`). L5 maintains it at each theorem's install
-(the value's inference gives its reading and membership in a type that is
-`Prop` at every valuation). Note: the kernel's install stores a theorem's raw
-record value (`Semantics.DeclThmRun`), whose reading this needs to be the
-annotated one. -/
+/-- **Stored theorem values read as their constants**: every stored theorem's value
+reads, is graded, and interprets as its constant's leaf, at every assignment.
+`Red.deltaThm` does not need it (it carries the value's typing and is sound by
+proof irrelevance); an install that stores the annotated value can keep it
+(`Ix.Kernel.Model.ThmValOk`). The environment model keeps no such equation (the
+kernel never unfolds a theorem), and the kernel's install stores a theorem's raw
+record value (`Semantics.DeclThmRun`). -/
 def ThmVal {V : Type u} [Ix.Kernel.SetTheory V] {env : Ix.Kernel.Env .anon}
     (m : Ix.Kernel.Model.EnvModel V env) : Prop :=
   ∀ (ψ : Ix.Kernel.LevelParam → Nat) (cv : Ix.Kernel.ConstantVal .anon)
@@ -616,10 +618,9 @@ into some `env₂` by shape, and in every set theory the invariant at `env` give
 it at `env₂`.
 
 L5 chooses the invariant. It must carry what the soundness of L4's rules reads
-at each prefix (`Rules.RulesInputs`, from `EnvModelM` by `RulesInputs.ofSem`),
-including S2's three new fields: `ThmVal`, `role_eqns` and `nat_ops`; so the
-expected invariant is `EnvModelOk` with an `EnvModelM` that also satisfies
-`ThmVal` and `role_eqns`. -/
+at each prefix (`Rules.RulesInputs`, which `RulesInputs.ofSem` builds from
+`EnvModelM`). The fold over derivations (`Ix.Kernel.Model.foldRules`) keeps
+`EnvModelT`, `EnvModelM` with stored theorem values read. -/
 def Decls : Prop :=
   ∃ Inv : (V : Type u) → [Ix.Kernel.SetTheory V] → Ix.Kernel.Env .anon → Prop,
     (∀ (V : Type u) [Ix.Kernel.SetTheory V], Inv V Ix.Kernel.Env.empty) ∧
@@ -638,9 +639,9 @@ and walked the closure of its seeds** (`KernelClaim`, `KernelRoles`,
 `KernelRoleSpec`): for a bounded `verify_claim` derivation, every claim byte
 string with the public digest that decodes to an in-scope claim, and every
 reader's view of its seeds, the run hashed a collision, or the default role table
-admits, no seed's loaded record or block is unsafe or `partial` (the refusal of
-decision D20, `KernelClaim::assert_claimable`, which runs after the context loads
-and before any walk; both records are loaded, so they are in `LoadedBy calls E₀`),
+admits, no seed's loaded record or block is unsafe or `partial` (the refusal
+`KernelClaim::assert_claimable`, which runs after the context loads and before
+any walk; both records are loaded, so they are in `LoadedBy calls E₀`),
 and the run walked the closure of the seeds in records it loaded (`Seams.Walked`). -/
 def ClaimPhase : Prop :=
   ∀ (d : Digest) (value : Aiur.SourceValue IxVM.F) (heap : Aiur.Heap IxVM.F)
@@ -672,10 +673,11 @@ def L7 : Prop := Records S → Decls.{u} S → ClaimPhase S → SourceSoundBound
 end IxVM.Consistency
 
 open IxVM.Consistency in
-/-- **`IxVM.consistent`**: the first milestone (plan 8.1, `Milestone`) from one
-obligation per layer (plan 8.2), whatever the seams between them. -/
+/-- **`IxVM.consistent`**: the deployed IxVM circuit accepts only claims whose
+claimed environment has a model (`CircuitConsistent`), from one obligation per
+layer, whatever the seams between them. -/
 theorem IxVM.consistent (S : Seams) (h0 : L0) (h1 : L1 S) (h2 : L2) (h3 : L3 S) (h4 : L4 S)
-    (h5 : L5.{u} S) (h6 : L6 S) (h7 : L7.{u} S) : Milestone.{u} :=
+    (h5 : L5.{u} S) (h6 : L6 S) (h7 : L7.{u} S) : CircuitConsistent.{u} :=
   have terms : Terms S := h3 h2
   have core : Core S := h4 h1 h2 terms
   have decls : Decls.{u} S := h5 h1 h2 terms core

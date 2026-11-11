@@ -65,7 +65,7 @@ open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal
 universe w
 
 variable {V : Type w} [SetTheory V]
-variable {μ : CheckMode} {env : Env md} {F : Nat}
+variable {μ : CheckMode} {env : Env md} {J : Judgements md}
 variable {acval : Key md → (LevelParam → Nat) → AnnotTerm} {φ : LevelParam → Nat}
 
 /-! ## The capability statements' type slot, opened
@@ -159,7 +159,7 @@ theorem blockTypeReadEq (mp : EnvModelM V μ env) {blockNames : List (Key md)}
 /-- The member cons's instance: `MemberValR` supplies both data. -/
 theorem memberTypeReadEq (mp : EnvModelM V μ env) {blockNames : List (Key md)}
     {cv cvA : ConstantVal md}
-    (hmv : MemberValRun μ F env blockNames cv cvA)
+    (hmv : MemberValRunJ J env blockNames cv cvA)
     (hIB : BlockInstalledTT blockNames env mp.base2.cvalE)
     (hIA : BlockAcvalInstalled blockNames env mp.base2.acval)
     {cvm : ConstantVal md} {mval : Expr md} {hint : ReducibilityHint}
@@ -232,7 +232,7 @@ set_option maxHeartbeats 1600000 in
 /-- **The member cons's unit-like key, P tier** — `unitLawKeyS`'s
 transpose, and the campaign's first `UnitLaw` producer. -/
 theorem memberUnitLaw : (MemberUnitLaw (md := md)) V := by
-  intro μ F blockNames env mp cv cvA c₀ hmv hIB hIA hc₀cv hc₀name
+  intro μ J blockNames env mp cv cvA c₀ hmv hIB hIA hc₀cv hc₀name
     cvT caps hceq hcapu hnres hp m₂ hac φ'
   have hcvT : cvT = cvA := by
     have h := hc₀cv; rw [hceq] at h; exact h

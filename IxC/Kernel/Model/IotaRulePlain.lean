@@ -2,6 +2,7 @@ module
 
 import IxC.Kernel.Semantics.IndBlockRun
 public import IxC.Kernel.Model.IndBottomProj
+public import IxC.Kernel.Model.JudgeSound
 import IxC.Kernel.Model.Annot.Bit
 -- task #161 S10: `acceptedReads_of` — the rule rhs's reading comes
 -- from the recorded RUN, not from `IotaRuleR`'s derivation row.
@@ -32,7 +33,7 @@ environment invariant**, and this file is where that is shown:
   places: the *reading exists* by `denoteP_isSome_of_denote`
   (`Annot/BitReads.lean`) applied to the kit's own v1 derivation row;
   the *inferred type reads* by `InferReads` on the kit's recorded run
-  (`∃ t', inferTypeCore μ envSelf F 0 rhsA = .ok t'`, the fourth
+  (`∃ t', J.infer envSelf 0 rhsA t'`, the fourth
   widening); and the *grading and membership* by `InferClaim` on the
   same run at the empty context (`Sat_nil`).  No row is owed and
   nothing is routed.
@@ -58,11 +59,9 @@ variable {V : Type w} [SetTheory V]
 set_option maxHeartbeats 12800000 in
 /-- **One checked `.plain` rule's fired law, at the reading**
 (`iotaRuleS`'s canonical branch). -/
-theorem iotaRulePlain {μ : CheckMode} {F : Nat} {env₂ envSelf : Env md}
+theorem iotaRulePlain {μ : CheckMode} {J : Judgements md} {env₂ envSelf : Env md}
     (mp : EnvModelM V μ envSelf)
-    (hdeq : ∀ ψ : LevelParam → Nat, DefEqClaim μ mp.base2 ψ F)
-    (hinf : ∀ ψ : LevelParam → Nat, InferClaim μ mp.base2 ψ F)
-    (hreadsP : ∀ ψ : LevelParam → Nat, InferReads mp.base2 μ ψ F)
+    (hJ : JudgeSound J mp.base2)
     {blockNames : List (Key md)} {f : Key md → Key md}
     (hf : f = fun n =>
       if blockNames.contains n then auxKey n .model else n)
@@ -79,10 +78,14 @@ theorem iotaRulePlain {μ : CheckMode} {F : Nat} {env₂ envSelf : Env md}
     (hbnA : blockNames.contains cvA.name = true)
     (hself : envSelf.find? cvA.name = some (.recInfo cvA mI rP []))
     (heqfind : env₂.find? eqName = some eqA)
-    (hkit : IotaRuleRun μ F env₂ envSelf f cvA.name
+    (hkit : IotaRuleRunJ J env₂ envSelf f cvA.name
       cvA.levelParams cvA.type mI rP j r r')
     (hfireP : RecRule.fire r' = .plain) (φ : LevelParam → Nat) :
     RecRuleLaw mp.base2 φ cvA.name cvA mI rP r' := by
+  have hdeq := hJ.defeq
+  have hinf := hJ.infer
+  have hreadsP := hJ.reads
+  have hframe := hJ.frame
   obtain ⟨cvjK, cnPK, cnFK, rhsA, hfcK, hnfK, hrb, hrf, hann, hrlp,
     -- `-` at position 13: `IotaRuleR`'s rule-rhs **derivation** row,
     -- no longer consumed (task #161 S10)
@@ -135,7 +138,7 @@ theorem iotaRulePlain {μ : CheckMode} {F : Nat} {env₂ envSelf : Env md}
       ⟨cv, mI', rP', rules, rules', heq, -⟩
     · exact h
     · exact nomatch heq
-  obtain ⟨hrhsAw, hrhsAb⟩ := annotate_syntax hann hrf hrb
+  obtain ⟨hrhsAw, hrhsAb⟩ := hJ.annot_syntax hann hrf hrb
   have hRmlps : (ConstantInfo.defnInfo cvm mval
       hm).toConstantVal.levelParams = cvA.levelParams := hlpsm
   -- the recursor type's grading, at the provisioned entry
@@ -163,7 +166,7 @@ theorem iotaRulePlain {μ : CheckMode} {F : Nat} {env₂ envSelf : Env md}
     -- ("whatever `inferTypeCore` accepts, `denoteMeta` reads") produces
     -- it from `hrun`, the record's own recorded run.
     obtain ⟨Ra, hRa⟩ :=
-      acceptedReads_of mp.base2 ψ hrun hrhsWs hrhsAb hrhsLb
+      hJ.accepted ψ hrun hrhsWs hrhsAb hrhsLb
     have hctx : CtxOk mp.base2 ψ 0 [] rhsA :=
       ⟨rfl, fun l hl => absurd hl (fun h => hrhsLeafNil l h)⟩
     obtain ⟨ta, hta⟩ := hreadsP ψ hrun hrhsWs hrhsAb hrhsLb
@@ -185,7 +188,7 @@ theorem iotaRulePlain {μ : CheckMode} {F : Nat} {env₂ envSelf : Env md}
   -- ===== the canonical branch =====
   obtain ⟨hpl, hfireP0, hthmR⟩ :
       Expr.recRulePlain cvA.type mI rP cnPK = true ∧ fire = .plain ∧
-        IotaThmRun μ F env₂ envSelf f cvA.name
+        IotaThmRunJ J env₂ envSelf f cvA.name
           cvA.levelParams cvA.type mI rP j r cvjK cnPK cnFK rhsA := by
     rcases hbranch with h | ⟨hnpl, hrest⟩
     · exact h
@@ -263,7 +266,7 @@ theorem iotaRulePlain {μ : CheckMode} {F : Nat} {env₂ envSelf : Env md}
     hruns
   -- fire the plain bottom
   obtain ⟨Ra, hRaden, hokRa, hRalaw⟩ := indBottomPlain (V := V) mp
-    hdeq hinf hreadsP hroT heqfS htyw htyb htyOk hfRnE hRmlps hfcS
+    hdeq hinf hreadsP hframe hroT heqfS htyw htyb htyOk hfRnE hRmlps hfcS
     hfCmE hCmlps hCw hCb hClp
     (recRulePlain_le_mIT hpl) (recRulePlain_leT hpl) hrhsAw hrhsAb
     hrhsKey hSw hSb hthm hopen hheadEq hargs3

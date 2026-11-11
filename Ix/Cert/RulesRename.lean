@@ -1,4 +1,5 @@
 import IxC.Kernel.Rules.Rel
+import IxC.Kernel.Rules.NatOffset
 import IxC.Kernel.Verify.Rename.Core7
 import IxC.Kernel.Verify.Rename.Native3
 import IxC.Kernel.Verify.Leaves
@@ -81,6 +82,137 @@ theorem natBinOpNames_mem_map {k : Key md} (h : k ∈ (natBinOpNames (md := md))
     k.map f ∈ (natBinOpNames (md := md')) := by
   rw [← List.contains_iff_mem, natBinOpNames_contains_map, List.contains_iff_mem]
   exact h
+
+/-! ## The `Nat` offset helpers, renamed -/
+
+theorem natAddLit_mapKeys (b : Expr md) (k : Nat) :
+    (natAddLit b k).mapKeys f = natAddLit (b.mapKeys f) k := by
+  unfold natAddLit
+  by_cases hk : k = 0
+  · rw [ite_eq_left hk, ite_eq_left hk]
+  · rw [ite_eq_right hk, ite_eq_right hk]
+    rfl
+
+theorem natAddLit_good {b : Expr md} (hadd : (natAddName : Key md).Good P) (hb : b.Good P)
+    (k : Nat) : (natAddLit b k).Good P := by
+  unfold natAddLit
+  by_cases hk : k = 0
+  · rw [ite_eq_left hk]
+    exact hb
+  · rw [ite_eq_right hk]
+    exact ⟨⟨hadd, hb⟩, trivial⟩
+
+theorem natAddTyOk_map (o : Option (ConstantInfo md)) :
+    natAddTyOk (o.map (ConstantInfo.mapKeys f)) = natAddTyOk o := by
+  rcases o with _ | ⟨_ | ⟨⟨n, lps, t⟩, v, h⟩ | _ | _ | _ | _ | _⟩ <;> try rfl
+  simp only [Option.map_some, ConstantInfo.mapKeys, natAddTyOk, ConstantVal.mapKeys]
+  rcases t with _ | _ | _ | _ | _ | _ |
+    ⟨d₁, _ | _ | _ | _ | _ | _ | ⟨d₂, c, mb₂⟩ | _ | _ | _, mb₁⟩ | _ | _ | _ <;>
+    simp
+
+theorem natAddTyOk_ren (hR : Renaming P f env env') :
+    natAddTyOk (env'.find? natAddName) = natAddTyOk (env.find? natAddName) := by
+  have h : env'.find? natAddName = (env.find? natAddName).map (ConstantInfo.mapKeys f) :=
+    hR.rel.find natAddName (hR.roles .natAdd)
+  rw [h, natAddTyOk_map]
+
+/-- `natOffsetOf` commutes with the renaming. -/
+theorem natOffsetOf_mapKeys : ∀ e : Expr md,
+    natOffsetOf (e.mapKeys f) = (natOffsetOf e).map (fun p => (p.1.mapKeys f, p.2)) := by
+  refine natOffsetOf_rec (fun e ih => ?_)
+  cases e with
+  | lit l => cases l <;> rfl
+  | app g x =>
+    cases g with
+    | const c us =>
+      show natOffsetOf (.app (.const (c.map f) us) (x.mapKeys f)) = _
+      rw [natOffsetOf_succ, natOffsetOf_succ]
+      by_cases hc : c = natSuccName
+      · subst hc
+        rw [ite_eq_left (show (natSuccName : Key md).map f = natSuccName from rfl),
+          ite_eq_left rfl, ih x (Or.inl ⟨us, rfl⟩)]
+        cases natOffsetOf x with
+        | none => rfl
+        | some p => obtain ⟨b, k⟩ := p; rfl
+      · have hc' : ¬ c.map f = natSuccName := fun h => hc (Key.map_eq_role_iff.mp h)
+        rw [ite_eq_right hc', ite_eq_right hc]
+        rfl
+    | app g' y =>
+      cases g' with
+      | const c us =>
+        cases x with
+        | lit l =>
+          cases l with
+          | natVal m =>
+            show natOffsetOf (.app (.app (.const (c.map f) us) (y.mapKeys f))
+              (.lit (.natVal m))) = _
+            rw [natOffsetOf_add, natOffsetOf_add]
+            by_cases hc : c = natAddName
+            · subst hc
+              rw [ite_eq_left (show (natAddName : Key md).map f = natAddName from rfl),
+                ite_eq_left rfl, ih y (Or.inr ⟨us, m, rfl⟩)]
+              cases natOffsetOf y with
+              | none => rfl
+              | some p => obtain ⟨b, k⟩ := p; rfl
+            · have hc' : ¬ c.map f = natAddName := fun h => hc (Key.map_eq_role_iff.mp h)
+              rw [ite_eq_right hc', ite_eq_right hc]
+              rfl
+          | strVal _ => rfl
+        | _ => rfl
+      | _ => rfl
+    | _ => rfl
+  | _ => rfl
+
+/-- `natOffsetAdd` is blind to the renaming. -/
+theorem natOffsetAdd_mapKeys : ∀ e : Expr md, natOffsetAdd (e.mapKeys f) = natOffsetAdd e := by
+  refine natOffsetOf_rec (fun e ih => ?_)
+  cases e with
+  | app g x =>
+    cases g with
+    | const c us =>
+      show natOffsetAdd (.app (.const (c.map f) us) (x.mapKeys f)) = _
+      rw [natOffsetAdd_succ, natOffsetAdd_succ]
+      by_cases hc : c = natSuccName
+      · subst hc
+        rw [ite_eq_left (show (natSuccName : Key md).map f = natSuccName from rfl),
+          ite_eq_left rfl, ih x (Or.inl ⟨us, rfl⟩)]
+      · have hc' : ¬ c.map f = natSuccName := fun h => hc (Key.map_eq_role_iff.mp h)
+        rw [ite_eq_right hc', ite_eq_right hc]
+    | app g' y =>
+      cases g' with
+      | const c us =>
+        cases x with
+        | lit l =>
+          cases l with
+          | natVal m =>
+            show natOffsetAdd (.app (.app (.const (c.map f) us) (y.mapKeys f))
+              (.lit (.natVal m))) = _
+            rw [natOffsetAdd_add, natOffsetAdd_add]
+            by_cases hc : c = natAddName
+            · subst hc
+              rw [ite_eq_left (show (natAddName : Key md).map f = natAddName from rfl),
+                ite_eq_left rfl]
+            · have hc' : ¬ c.map f = natAddName := fun h => hc (Key.map_eq_role_iff.mp h)
+              rw [ite_eq_right hc', ite_eq_right hc]
+          | strVal _ => rfl
+        | _ => rfl
+      | _ => rfl
+    | _ => rfl
+  | _ => rfl
+
+/-- An offset's base of a good term is good: a subterm, or the literal `0`. -/
+theorem natOffsetOf_good : ∀ (e : Expr md) {b : Expr md} {k : Nat},
+    natOffsetOf e = some (b, k) → e.Good P → b.Good P := by
+  refine natOffsetOf_rec (fun e ih => ?_)
+  intro b k h he
+  rcases natOffsetOf_some h with ⟨rfl, rfl⟩ | ⟨us, x, rfl, hx⟩ | ⟨us, x, n, rfl, hx⟩
+  · trivial
+  · rcases natOffsetStep_eq hx with ⟨k', hx', rfl⟩ | ⟨-, rfl, rfl⟩
+    · exact ih x (Or.inl ⟨us, rfl⟩) hx' he.2
+    · exact he.2
+  · rcases natOffsetStep_eq hx with ⟨k', hx', rfl⟩ | ⟨-, rfl, rfl⟩
+    · exact ih x (Or.inr ⟨us, n, rfl⟩) hx' he.1.2
+    · exact he.1.2
 
 /-- The parameter comparands of a fired rule are good. -/
 theorem comparands_good {rl : RecRule md} (hrl : rl.Good P) (lps : List LevelParam)
@@ -242,6 +374,9 @@ theorem red_rename (hR : Renaming P f env env') :
   | _, _, _, .projArg h, he => by
     obtain ⟨g, r⟩ := red_rename hR h he.2
     exact ⟨⟨he.1, g⟩, .projArg r⟩
+  | _, _, _, .appArg h, he => by
+    obtain ⟨g, r⟩ := red_rename hR h he.2
+    exact ⟨⟨he.1, g⟩, .appArg r⟩
   | _, _, _, .betaGate hnev, he => by
     refine ⟨Expr.Good.instantiate1 he.1.2 he.2 0, ?_⟩
     rw [Expr.mapKeys_instantiate1]
@@ -323,6 +458,17 @@ theorem red_rename (hR : Renaming P f env env') :
     exact .natOp (natBinOpNames_mem_map hc) (by rw [natOpStored_ren hR.rel hcg]; exact hst) rwa
       (by rw [rawNatLit?_mapKeys]; exact hn₁) rwb (by rw [rawNatLit?_mapKeys]; exact hn₂)
       (by rw [natOpResult_map, hr]; rfl)
+  | _, _, _, .natAddSucc (us := us) (b := b) (k := k) hs ht, he => by
+    refine ⟨⟨hR.roles .natSucc, natAddLit_good (hR.roles .natAdd) he.1.2 k⟩, ?_⟩
+    show Red env' _ (.app (.app (.const natAddName us) (b.mapKeys f)) (.lit (.natVal (k + 1))))
+      (.app (.const natSuccName []) ((natAddLit b k).mapKeys f))
+    rw [natAddLit_mapKeys]
+    exact .natAddSucc (by rw [natLitSupported_ren hR.rel]; exact hs)
+      (by rw [natAddTyOk_ren hR]; exact ht)
+  | _, _, _, .natAddZero hs ht hw hn, he => by
+    obtain ⟨-, rw'⟩ := red_rename hR hw he.2
+    exact ⟨he.1.2, .natAddZero (by rw [natLitSupported_ren hR.rel]; exact hs)
+      (by rw [natAddTyOk_ren hR]; exact ht) rw' (by rw [rawNatLit?_mapKeys]; exact hn)⟩
   | _, _, _, .proj (sn := sn) (e := u) (entry := entry) (cvC := cvC) hent hhead hi hlen hus hfire
       hctor hcerts, he => by
     obtain ⟨hsn, hu⟩ := he
@@ -507,6 +653,14 @@ theorem defEq_rename (hR : Renaming P f env env') :
   | _, _, _, .const h, _, _ => .const h
   | _, _, _, .natZero, _, _ => .natZero
   | _, _, _, .natSucc h, _, hb => .natSucc (defEq_rename hR h trivial hb.2)
+  | _, _, _, .natOffset (ba := ba) (bb := bb) (k := k) hs ht ha hb' h, hga, hgb =>
+    .natOffset (ba := ba.mapKeys f) (bb := bb.mapKeys f) (k := k)
+      (by rw [natLitSupported_ren hR.rel]; exact hs)
+      (fun h' => by
+        rw [natAddTyOk_ren hR]
+        exact ht (by simp only [natOffsetAdd_mapKeys] at h'; exact h'))
+      (by rw [natOffsetOf_mapKeys, ha]; rfl) (by rw [natOffsetOf_mapKeys, hb']; rfl)
+      (defEq_rename hR h (natOffsetOf_good _ ha hga) (natOffsetOf_good _ hb' hgb))
   | _, _, _, .forallE hty hbody hpw hc, ha, hb => by
     have h1 := defEq_rename hR hty ha.1 hb.1
     have h2 := defEq_rename hR hbody (good_inst_fvar ha.2 hb.1)

@@ -9,13 +9,14 @@ public import IxC.Kernel.Model.Fold
 public section
 
 /-!
-# The declaration fold over a judgement package (lane l5)
+# The declaration fold over a judgement package
 
 `declStep_preserves` and `foldPM` (`Model/Fold.lean`) at the kernel's runs,
 restated over a judgement package `J` (`Semantics/DeclJ.lean`) for the records
-an IxVM refinement produces (obligation L5). The invariant is `EnvModelT`: the
+an IxVM refinement produces (the declarations obligation of `IxVM.consistent`).
+The invariant is `EnvModelT`: the
 kernel's `EnvModelM` with stored theorem values read to their leaves
-(`ThmValOk`, `Model/ThmVal.lean`, the `thm_val` input of S2's rule N1), and the
+(`ThmValOk`, `Model/ThmVal.lean`), and the
 η-family closure.
 
 What the fold needs of `J`, at every prefix model with theorem values read:
@@ -24,10 +25,10 @@ What the fold needs of `J`, at every prefix model with theorem values read:
   harvests read;
 * `AxiomBitsJ J env` (`Model/AxiomBits.lean`): the pinned axioms' binder bits;
 * `J.thmValue v v' = v'`: a theorem is stored with its annotated value
-  (decision D11). The kernel's own package (`runJ`) stores the raw value, which
+  (so that the value can be read in the model). The kernel's own package (`runJ`) stores the raw value, which
   is why the kernel's fold (`foldPM`) does not carry `ThmValOk`;
 * the inductive kind's step (`hind`), which the restated inductive tier
-  supplies (lane l5c).
+  supplies.
 -/
 
 namespace Ix.Kernel.Model

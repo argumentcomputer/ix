@@ -5,7 +5,7 @@ public import IxC.Kernel.Denotes
 @[expose] public section
 
 /-!
-# Restricting a model to a sub-environment (lane l5)
+# Restricting a model to a sub-environment
 
 `Denotes` reads an environment at two places only: a constant's entry
 (`find?`, for its level parameters) and a structure's projection table

@@ -6,10 +6,10 @@ public import IxC.Kernel.Verify.EnvWF
 public section
 
 /-!
-# A well-formed environment stores closed terms (lane l5)
+# A well-formed environment stores closed terms
 
 `StoreClosed` (`Rules/TransportKit.lean`) is what the renaming half of the rules'
-transport (`Rules/Transport.lean`, W2) asks of the environment: the stored types,
+transport (`Rules/Transport.lean`, top weakening) asks of the environment: the stored types,
 definition values, recursor right-hand sides and nested pins, and projection-table
 bodies have no free variables. `EnvWF` records exactly these, so every
 environment the kernel's install invariant covers satisfies it.

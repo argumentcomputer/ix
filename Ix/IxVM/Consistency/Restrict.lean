@@ -3,7 +3,7 @@ import IxC.Kernel.Model.Restrict
 import IxC.Kernel.Semantics.EnvFacts
 
 /-!
-# The claimed sub-environment's model (lane l5, for obligation L7)
+# The claimed sub-environment's model (for obligation L7)
 
 `ConsistentRead`'s model conjunct is over `claimedEnv env`: the installed
 environment without the model families' constants. The fold gives a model of the
