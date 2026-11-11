@@ -169,15 +169,14 @@ theorem «Blake3::iv».obs {h h' : Heap F} {r : SourceValue F}
 inductive «Blake3::hash».Path (x_input : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
     (calls : List (Call F)) : Prop where
   | run
-      (v1 : SourceValue F) (m2 : Heap F) (cs12 : List (Call F)) (cs18 : List (Call F)) (v21 : SourceValue F) (m23 : Heap F) (cs31 : List (Call F)) (m49 : Heap F) (m74 : Heap F) (m86 : Heap F) (m97 : Heap F)
+      (v1 : SourceValue F) (m2 : Heap F) (cs12 : List (Call F)) (cs18 : List (Call F)) (v21 : SourceValue F) (m23 : Heap F) (cs31 : List (Call F)) (m53 : Heap F) (m65 : Heap F) (m76 : Heap F)
       (ev14 : ObsFn W "Blake3::iv" [] h v1 m2 cs12)
-      (hm57 : m49 = (m2 ++ [(.construct Names.«Lists::Node<Field>» "Nil" [])]))
-      (hm82 : m74 = (m49 ++ [(.tuple (List.replicate 8 (.field 0)))]))
-      (hm94 : m86 = (m74 ++ [v1]))
-      (hm105 : m97 = (m86 ++ [(.construct "Blake3::LayerNode" "Nil" [])]))
-      (ev33 : ObsFn W "Blake3::compress_chunks" [x_input, (.ptr (.enum Names.«Lists::Node<Field>») (m2).length), (.field 0), (.field 0), (.ptr (.tuple (List.map Value.type (List.replicate 8 ((.field 0) : SourceValue F)))) (m49).length), (.ptr (Value.type (v1 : SourceValue F)) (m74).length), (.ptr (.enum "Blake3::LayerNode") (m86).length)] m97 v21 m23 cs31)
+      (hm61 : m53 = (m2 ++ [(.tuple (List.replicate 8 (.field 0)))]))
+      (hm73 : m65 = (m53 ++ [v1]))
+      (hm84 : m76 = (m65 ++ [(.construct "Blake3::LayerNode" "Nil" [])]))
+      (ev33 : ObsFn W "Blake3::hash_blocks" [x_input, (.field 0), (.ptr (.tuple (List.map Value.type (List.replicate 8 ((.field 0) : SourceValue F)))) (m2).length), (.ptr (Value.type (v1 : SourceValue F)) (m53).length), (.ptr (.enum "Blake3::LayerNode") (m65).length)] m76 v21 m23 cs31)
       (ev20 : ObsFn W "Blake3::compress_layer" [v21] m23 r h' cs18)
-      (hc109 : calls = ((⟨"Blake3::iv", [], h⟩ : Call F) :: (cs12 ++ ((⟨"Blake3::compress_chunks", [x_input, (.ptr (.enum Names.«Lists::Node<Field>») (m2).length), (.field 0), (.field 0), (.ptr (.tuple (List.map Value.type (List.replicate 8 ((.field 0) : SourceValue F)))) (m49).length), (.ptr (Value.type (v1 : SourceValue F)) (m74).length), (.ptr (.enum "Blake3::LayerNode") (m86).length)], m97⟩ : Call F) :: (cs31 ++ ((⟨"Blake3::compress_layer", [v21], m23⟩ : Call F) :: cs18))))))
+      (hc88 : calls = ((⟨"Blake3::iv", [], h⟩ : Call F) :: (cs12 ++ ((⟨"Blake3::hash_blocks", [x_input, (.field 0), (.ptr (.tuple (List.map Value.type (List.replicate 8 ((.field 0) : SourceValue F)))) (m2).length), (.ptr (Value.type (v1 : SourceValue F)) (m53).length), (.ptr (.enum "Blake3::LayerNode") (m65).length)], m76⟩ : Call F) :: (cs31 ++ ((⟨"Blake3::compress_layer", [v21], m23⟩ : Call F) :: cs18))))))
 
 /-- **Every observed derivation of `Blake3::hash` takes one of its paths.** -/
 theorem «Blake3::hash».obs {x_input : SourceValue F} {h h' : Heap F} {r : SourceValue F}
@@ -196,39 +195,31 @@ theorem «Blake3::hash».obs {x_input : SourceValue F} {h h' : Heap F} {r : Sour
   obtain ⟨v21, vs22, m23, c24, c25, rfl, d26, a27, rfl⟩ := a19.cons_inv
   obtain ⟨vs28, m29, c30, cs31, a32, ev33, rfl⟩ := d26.call_inv
   rw [instanceName_plain_some] at ev33
-  obtain ⟨v34, vs41, m42, c43, c44, rfl, d45, a46, rfl⟩ := a32.cons_inv
-  obtain ⟨l47, rfl, rfl⟩ := d45.var_inv
-  simp at l47
-  subst l47
-  obtain ⟨v35, vs48, m49, c50, c51, rfl, d52, a53, rfl⟩ := a46.cons_inv
-  obtain ⟨v54, m55, d56, rfl, hm57⟩ := d52.store_inv
-  obtain ⟨vs58, a59, hres60⟩ := d56.construct_inv
-  rw [Names.n12516105052029042359] at hres60
-  subst hres60
-  obtain ⟨rfl, rfl, rfl⟩ := a59.nil_inv
-  obtain ⟨v36, vs61, m62, c63, c64, rfl, d65, a66, rfl⟩ := a53.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d65.literal_inv
-  obtain ⟨v37, vs67, m68, c69, c70, rfl, d71, a72, rfl⟩ := a66.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d71.literal_inv
-  obtain ⟨v38, vs73, m74, c75, c76, rfl, d77, a78, rfl⟩ := a72.cons_inv
-  obtain ⟨v79, m80, d81, rfl, hm82⟩ := d77.store_inv
-  obtain ⟨v83, d84, rfl⟩ := d81.repeat_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d84.global_literal_inv Names.c9173999864893739538
-  obtain ⟨v39, vs85, m86, c87, c88, rfl, d89, a90, rfl⟩ := a78.cons_inv
-  obtain ⟨v91, m92, d93, rfl, hm94⟩ := d89.store_inv
-  obtain ⟨l95, rfl, rfl⟩ := d93.var_inv
-  simp at l95
-  subst l95
-  obtain ⟨v40, vs96, m97, c98, c99, rfl, d100, a101, rfl⟩ := a90.cons_inv
-  obtain ⟨v102, m103, d104, rfl, hm105⟩ := d100.store_inv
-  obtain ⟨vs106, a107, hres108⟩ := d104.construct_inv
-  rw [instanceName_plain_some] at hres108
-  subst hres108
-  obtain ⟨rfl, rfl, rfl⟩ := a107.nil_inv
-  obtain ⟨rfl, rfl, rfl⟩ := a101.nil_inv
+  obtain ⟨v34, vs39, m40, c41, c42, rfl, d43, a44, rfl⟩ := a32.cons_inv
+  obtain ⟨l45, rfl, rfl⟩ := d43.var_inv
+  simp at l45
+  subst l45
+  obtain ⟨v35, vs46, m47, c48, c49, rfl, d50, a51, rfl⟩ := a44.cons_inv
+  obtain ⟨rfl, rfl, rfl⟩ := d50.literal_inv
+  obtain ⟨v36, vs52, m53, c54, c55, rfl, d56, a57, rfl⟩ := a51.cons_inv
+  obtain ⟨v58, m59, d60, rfl, hm61⟩ := d56.store_inv
+  obtain ⟨v62, d63, rfl⟩ := d60.repeat_inv
+  obtain ⟨rfl, rfl, rfl⟩ := d63.global_literal_inv Names.c9173999864893739538
+  obtain ⟨v37, vs64, m65, c66, c67, rfl, d68, a69, rfl⟩ := a57.cons_inv
+  obtain ⟨v70, m71, d72, rfl, hm73⟩ := d68.store_inv
+  obtain ⟨l74, rfl, rfl⟩ := d72.var_inv
+  simp at l74
+  subst l74
+  obtain ⟨v38, vs75, m76, c77, c78, rfl, d79, a80, rfl⟩ := a69.cons_inv
+  obtain ⟨v81, m82, d83, rfl, hm84⟩ := d79.store_inv
+  obtain ⟨vs85, a86, hres87⟩ := d83.construct_inv
+  rw [instanceName_plain_some] at hres87
+  subst hres87
+  obtain ⟨rfl, rfl, rfl⟩ := a86.nil_inv
+  obtain ⟨rfl, rfl, rfl⟩ := a80.nil_inv
   obtain ⟨rfl, rfl, rfl⟩ := a27.nil_inv
-  try simp only [Value.type, List.map_cons, List.map_nil] at ev14 hm57 hm82 hm94 hm105 ev33 ev20 ⊢
-  exact «Blake3::hash».Path.run _ _ _ _ _ _ _ _ _ _ _ ev14 hm57 hm82 hm94 hm105 ev33 ev20 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+  try simp only [Value.type, List.map_cons, List.map_nil] at ev14 hm61 hm73 hm84 ev33 ev20 ⊢
+  exact «Blake3::hash».Path.run _ _ _ _ _ _ _ _ _ _ ev14 hm61 hm73 hm84 ev33 ev20 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
 
 /-- The evaluation paths of `Blake3::verify_bytes_against`: one constructor per combination of selected arms. -/
 inductive «Blake3::verify_bytes_against».Path (x_bytes x_expected : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
@@ -859,6 +850,447 @@ theorem «Blake3::compress_layer».obs {x_layer : SourceValue F} {h h' : Heap F}
           simp only [Names.n17782073653715708372] at hne184
           exact (selectArm_nil_inv sel137).elim
     · exact (matchPattern_wildcard_none nm51).elim
+
+/-- The `let`-bound match of `Blake3::hash_blocks` at `[2, 1, 1, 1, 0]`: one constructor per combination of selected arms. -/
+inductive «Blake3::hash_blocks».Seg1 (e0_ROOT e1_CHUNK_END e2_CHUNK_START e3_block e4_rest e5_input e6_block_no e7_chunk_count e8_cv e9_layer : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
+    (calls : List (Call F)) : Prop where
+  | Nil
+      (ld158 : loadValue h e4_rest = .ok (.construct Names.«Lists::Node<Field>» "Nil" []))
+      (he166 : r = (.field 1))
+      (he167 : h' = h)
+      (hc168 : calls = [])
+  | other
+      (v147 : SourceValue F)
+      (ld158 : loadValue h e4_rest = .ok v147)
+      (hne169 : ∀ vs : List (SourceValue F), vs.length = 0 → (v147 : SourceValue F) ≠ .construct Names.«Lists::Node<Field>» "Nil" vs)
+      (he173 : r = (.field 0))
+      (he174 : h' = h)
+      (hc175 : calls = [])
+
+/-- **Every observed derivation of the `let`-bound match of `Blake3::hash_blocks` at `[2, 1, 1, 1, 0]` takes one of its paths.** -/
+theorem «Blake3::hash_blocks».seg1 {e0_ROOT e1_CHUNK_END e2_CHUNK_START e3_block e4_rest e5_input e6_block_no e7_chunk_count e8_cv e9_layer : SourceValue F} {h h' : Heap F} {r : SourceValue F}
+    {calls : List (Call F)}
+    (d0 : ObsExpr W [] [("ROOT", e0_ROOT), ("CHUNK_END", e1_CHUNK_END), ("CHUNK_START", e2_CHUNK_START), ("block", e3_block), ("rest", e4_rest), ("input", e5_input), ("block_no", e6_block_no), ("chunk_count", e7_chunk_count), ("cv", e8_cv), ("layer", e9_layer)] (Expr.sub IxVM.Blake3.hash_blocks.body [2, 1, 1, 1, 0]) h r h' calls) :
+    «Blake3::hash_blocks».Seg1 e0_ROOT e1_CHUNK_END e2_CHUNK_START e3_block e4_rest e5_input e6_block_no e7_chunk_count e8_cv e9_layer h r h' calls := by
+  simp only [Expr.sub, Expr.childAt, Expr.children, IxVM.Blake3.hash_blocks, List.map_cons, List.map_nil] at d0
+  obtain ⟨v147, m148, bs149, body150, c151, c152, d153, sel154, d155, rfl⟩ := d0.matchValue_inv
+  obtain ⟨p156, d157, ld158⟩ := d153.load_inv
+  obtain ⟨l159, rfl, rfl⟩ := d157.var_inv
+  simp at l159
+  subst l159
+  rcases selectArm_cons_inv sel154 with ⟨mt160, rfl⟩ | ⟨nm161, sel162⟩
+  · obtain ⟨vs163, hv164, -, ml165⟩ := matchPattern_construct_inv mt160
+    rw [Names.n9551417537882310672] at hv164
+    subst hv164
+    obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml165
+    obtain ⟨rfl, rfl, rfl⟩ := d155.literal_inv
+    exact «Blake3::hash_blocks».Seg1.Nil ld158 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+  · have hne169 := matchPattern_construct_none (by trivial) nm161
+    simp only [Names.n9551417537882310672] at hne169
+    rcases selectArm_cons_inv sel162 with ⟨mt170, rfl⟩ | ⟨nm171, sel172⟩
+    · obtain rfl := matchPattern_wildcard_inv mt170
+      obtain ⟨rfl, rfl, rfl⟩ := d155.literal_inv
+      exact «Blake3::hash_blocks».Seg1.other _ ld158 hne169 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+    · exact (matchPattern_wildcard_none nm171).elim
+
+/-- The evaluation paths of `Blake3::hash_blocks`: one constructor per combination of selected arms. -/
+inductive «Blake3::hash_blocks».Path (x_input x_block_no x_chunk_count x_cv x_layer : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
+    (calls : List (Call F)) : Prop where
+  | Short
+      (m2 : Heap F) (cs13 : List (Call F)) (cs33 : List (Call F)) (v39 : SourceValue F) (m51 : Heap F)
+      (ev15 : ObsFn W "Blake3::take_block" [x_input] h (.construct "Blake3::BlockRead" "Short" []) m2 cs13)
+      (hm59 : m51 = (m2 ++ [(.construct Names.«Lists::Node<Field>» "Nil" [])]))
+      (op82 : evalBinOp .mul ((.field 64) : SourceValue F) (x_block_no : SourceValue F) = .ok v39)
+      (ev35 : ObsFn W "Blake3::compress_chunks" [x_input, (.ptr (.enum Names.«Lists::Node<Field>») (m2).length), (.field 0), v39, x_chunk_count, x_cv, x_layer] m51 r h' cs33)
+      (hc105 : calls = ((⟨"Blake3::take_block", [x_input], h⟩ : Call F) :: (cs13 ++ ((⟨"Blake3::compress_chunks", [x_input, (.ptr (.enum Names.«Lists::Node<Field>») (m2).length), (.field 0), v39, x_chunk_count, x_cv, x_layer], m51⟩ : Call F) :: cs33))))
+  | Full_n1_other
+      (m2 : Heap F) (cs13 : List (Call F)) (x_block : SourceValue F) (x_rest : SourceValue F) (m177 : Heap F) (cs179 : List (Call F)) (v185 : SourceValue F) (m186 : Heap F) (cs196 : List (Call F)) (v199 : SourceValue F) (v215 : SourceValue F) (m216 : Heap F) (cs226 : List (Call F)) (v237 : SourceValue F) (x245 : SourceValue F) (y246 : SourceValue F) (v273 : SourceValue F) (m274 : Heap F) (y282 : SourceValue F) (cs293 : List (Call F)) (v296 : SourceValue F) (v307 : SourceValue F) (x315 : SourceValue F) (y316 : SourceValue F) (x323 : SourceValue F) (y324 : SourceValue F) (v361 : SourceValue F) (m362 : Heap F) (cs372 : List (Call F)) (v375 : SourceValue F) (v377 : SourceValue F)
+      (ev15 : ObsFn W "Blake3::take_block" [x_input] h (.construct "Blake3::BlockRead" "Full" [x_block, x_rest]) m2 cs13)
+      (sg184 : «Blake3::hash_blocks».Seg1 (.field 8) (.field 2) (.field 1) x_block x_rest x_input x_block_no x_chunk_count x_cv x_layer m2 (.field 1) m177 cs179)
+      (op213 : evalBinOp .sub (x_block_no : SourceValue F) ((.field 15) : SourceValue F) = .ok v199)
+      (ev198 : ObsFn W "Fields::is_zero" [v199] m177 v185 m186 cs196)
+      (ev228 : ObsFn W "Fields::is_zero" [x_block_no] m186 v215 m216 cs226)
+      (op260 : evalBinOp .add ((.field 1) : SourceValue F) (v185 : SourceValue F) = .ok x245)
+      (op270 : evalBinOp .mul ((.field 1) : SourceValue F) (v185 : SourceValue F) = .ok y246)
+      (op252 : evalBinOp .sub (x245 : SourceValue F) (y246 : SourceValue F) = .ok v237)
+      (ld305 : loadValue m216 x_chunk_count = .ok v296)
+      (ev295 : ObsFn W "UInt64::is_zero" [v296] m216 y282 m274 cs293)
+      (op288 : evalBinOp .mul ((.field 1) : SourceValue F) (y282 : SourceValue F) = .ok v273)
+      (op338 : evalBinOp .mul ((.field 1) : SourceValue F) (v215 : SourceValue F) = .ok x323)
+      (op348 : evalBinOp .mul ((.field 2) : SourceValue F) (v237 : SourceValue F) = .ok y324)
+      (op330 : evalBinOp .add (x323 : SourceValue F) (y324 : SourceValue F) = .ok x315)
+      (op358 : evalBinOp .mul ((.field 8) : SourceValue F) (v273 : SourceValue F) = .ok y316)
+      (op322 : evalBinOp .add (x315 : SourceValue F) (y316 : SourceValue F) = .ok v307)
+      (ld388 : loadValue m274 x_cv = .ok v375)
+      (ld405 : loadValue m274 x_chunk_count = .ok v377)
+      (ev374 : ObsFn W "Blake3::compress_init" [v375, x_block, v377, (.field 64), v307] m274 v361 m362 cs372)
+      (he464 : r = (.ptr (.enum "Blake3::LayerNode") (m362).length))
+      (hm463 : h' = (m362 ++ [(.construct "Blake3::LayerNode" "Push" [x_layer, v361])]))
+      (hc484 : calls = ((⟨"Blake3::take_block", [x_input], h⟩ : Call F) :: (cs13 ++ (cs179 ++ ((⟨"Fields::is_zero", [v199], m177⟩ : Call F) :: (cs196 ++ ((⟨"Fields::is_zero", [x_block_no], m186⟩ : Call F) :: (cs226 ++ ((⟨"UInt64::is_zero", [v296], m216⟩ : Call F) :: (cs293 ++ ((⟨"Blake3::compress_init", [v375, x_block, v377, (.field 64), v307], m274⟩ : Call F) :: cs372)))))))))))
+  | Full_other_n1
+      (m2 : Heap F) (cs13 : List (Call F)) (x_block : SourceValue F) (x_rest : SourceValue F) (v176 : SourceValue F) (m177 : Heap F) (cs179 : List (Call F)) (m186 : Heap F) (cs196 : List (Call F)) (v199 : SourceValue F) (v215 : SourceValue F) (m216 : Heap F) (cs226 : List (Call F)) (v237 : SourceValue F) (x245 : SourceValue F) (y246 : SourceValue F) (v273 : SourceValue F) (m274 : Heap F) (y282 : SourceValue F) (cs293 : List (Call F)) (v296 : SourceValue F) (v307 : SourceValue F) (x315 : SourceValue F) (y316 : SourceValue F) (x323 : SourceValue F) (y324 : SourceValue F) (v361 : SourceValue F) (m362 : Heap F) (cs372 : List (Call F)) (v375 : SourceValue F) (v377 : SourceValue F) (v498 : SourceValue F) (m499 : Heap F) (cs509 : List (Call F)) (cs515 : List (Call F)) (m537 : Heap F) (v542 : SourceValue F) (m543 : Heap F) (cs549 : List (Call F)) (v552 : SourceValue F) (m564 : Heap F) (m575 : Heap F)
+      (ev15 : ObsFn W "Blake3::take_block" [x_input] h (.construct "Blake3::BlockRead" "Full" [x_block, x_rest]) m2 cs13)
+      (sg184 : «Blake3::hash_blocks».Seg1 (.field 8) (.field 2) (.field 1) x_block x_rest x_input x_block_no x_chunk_count x_cv x_layer m2 v176 m177 cs179)
+      (op213 : evalBinOp .sub (x_block_no : SourceValue F) ((.field 15) : SourceValue F) = .ok v199)
+      (ev198 : ObsFn W "Fields::is_zero" [v199] m177 (.field 1) m186 cs196)
+      (ev228 : ObsFn W "Fields::is_zero" [x_block_no] m186 v215 m216 cs226)
+      (op260 : evalBinOp .add (v176 : SourceValue F) ((.field 1) : SourceValue F) = .ok x245)
+      (op270 : evalBinOp .mul (v176 : SourceValue F) ((.field 1) : SourceValue F) = .ok y246)
+      (op252 : evalBinOp .sub (x245 : SourceValue F) (y246 : SourceValue F) = .ok v237)
+      (ld305 : loadValue m216 x_chunk_count = .ok v296)
+      (ev295 : ObsFn W "UInt64::is_zero" [v296] m216 y282 m274 cs293)
+      (op288 : evalBinOp .mul (v176 : SourceValue F) (y282 : SourceValue F) = .ok v273)
+      (op338 : evalBinOp .mul ((.field 1) : SourceValue F) (v215 : SourceValue F) = .ok x323)
+      (op348 : evalBinOp .mul ((.field 2) : SourceValue F) (v237 : SourceValue F) = .ok y324)
+      (op330 : evalBinOp .add (x323 : SourceValue F) (y324 : SourceValue F) = .ok x315)
+      (op358 : evalBinOp .mul ((.field 8) : SourceValue F) (v273 : SourceValue F) = .ok y316)
+      (op322 : evalBinOp .add (x315 : SourceValue F) (y316 : SourceValue F) = .ok v307)
+      (ld388 : loadValue m274 x_cv = .ok v375)
+      (ld405 : loadValue m274 x_chunk_count = .ok v377)
+      (ev374 : ObsFn W "Blake3::compress_init" [v375, x_block, v377, (.field 64), v307] m274 v361 m362 cs372)
+      (ev511 : ObsFn W "Blake3::iv" [] m362 v498 m499 cs509)
+      (hm545 : m537 = (m543 ++ [v542]))
+      (ld561 : loadValue m499 x_chunk_count = .ok v552)
+      (ev551 : ObsFn W "UInt64::wrapping_succ" [v552] m499 v542 m543 cs549)
+      (hm572 : m564 = (m537 ++ [v498]))
+      (hm583 : m575 = (m564 ++ [(.construct "Blake3::LayerNode" "Push" [x_layer, v361])]))
+      (ev517 : ObsFn W "Blake3::hash_blocks" [x_rest, (.field 0), (.ptr (Value.type (v542 : SourceValue F)) (m543).length), (.ptr (Value.type (v498 : SourceValue F)) (m537).length), (.ptr (.enum "Blake3::LayerNode") (m564).length)] m575 r h' cs515)
+      (hc603 : calls = ((⟨"Blake3::take_block", [x_input], h⟩ : Call F) :: (cs13 ++ (cs179 ++ ((⟨"Fields::is_zero", [v199], m177⟩ : Call F) :: (cs196 ++ ((⟨"Fields::is_zero", [x_block_no], m186⟩ : Call F) :: (cs226 ++ ((⟨"UInt64::is_zero", [v296], m216⟩ : Call F) :: (cs293 ++ ((⟨"Blake3::compress_init", [v375, x_block, v377, (.field 64), v307], m274⟩ : Call F) :: (cs372 ++ ((⟨"Blake3::iv", [], m362⟩ : Call F) :: (cs509 ++ ((⟨"UInt64::wrapping_succ", [v552], m499⟩ : Call F) :: (cs549 ++ ((⟨"Blake3::hash_blocks", [x_rest, (.field 0), (.ptr (Value.type (v542 : SourceValue F)) (m543).length), (.ptr (Value.type (v498 : SourceValue F)) (m537).length), (.ptr (.enum "Blake3::LayerNode") (m564).length)], m575⟩ : Call F) :: cs515)))))))))))))))))
+  | Full_other_other
+      (m2 : Heap F) (cs13 : List (Call F)) (x_block : SourceValue F) (x_rest : SourceValue F) (v176 : SourceValue F) (m177 : Heap F) (cs179 : List (Call F)) (v185 : SourceValue F) (m186 : Heap F) (cs196 : List (Call F)) (v199 : SourceValue F) (v215 : SourceValue F) (m216 : Heap F) (cs226 : List (Call F)) (v237 : SourceValue F) (x245 : SourceValue F) (y246 : SourceValue F) (v273 : SourceValue F) (m274 : Heap F) (y282 : SourceValue F) (cs293 : List (Call F)) (v296 : SourceValue F) (v307 : SourceValue F) (x315 : SourceValue F) (y316 : SourceValue F) (x323 : SourceValue F) (y324 : SourceValue F) (v361 : SourceValue F) (m362 : Heap F) (cs372 : List (Call F)) (v375 : SourceValue F) (v377 : SourceValue F) (cs619 : List (Call F)) (v623 : SourceValue F) (m657 : Heap F)
+      (ev15 : ObsFn W "Blake3::take_block" [x_input] h (.construct "Blake3::BlockRead" "Full" [x_block, x_rest]) m2 cs13)
+      (sg184 : «Blake3::hash_blocks».Seg1 (.field 8) (.field 2) (.field 1) x_block x_rest x_input x_block_no x_chunk_count x_cv x_layer m2 v176 m177 cs179)
+      (op213 : evalBinOp .sub (x_block_no : SourceValue F) ((.field 15) : SourceValue F) = .ok v199)
+      (ev198 : ObsFn W "Fields::is_zero" [v199] m177 v185 m186 cs196)
+      (ev228 : ObsFn W "Fields::is_zero" [x_block_no] m186 v215 m216 cs226)
+      (op260 : evalBinOp .add (v176 : SourceValue F) (v185 : SourceValue F) = .ok x245)
+      (op270 : evalBinOp .mul (v176 : SourceValue F) (v185 : SourceValue F) = .ok y246)
+      (op252 : evalBinOp .sub (x245 : SourceValue F) (y246 : SourceValue F) = .ok v237)
+      (ld305 : loadValue m216 x_chunk_count = .ok v296)
+      (ev295 : ObsFn W "UInt64::is_zero" [v296] m216 y282 m274 cs293)
+      (op288 : evalBinOp .mul (v176 : SourceValue F) (y282 : SourceValue F) = .ok v273)
+      (op338 : evalBinOp .mul ((.field 1) : SourceValue F) (v215 : SourceValue F) = .ok x323)
+      (op348 : evalBinOp .mul ((.field 2) : SourceValue F) (v237 : SourceValue F) = .ok y324)
+      (op330 : evalBinOp .add (x323 : SourceValue F) (y324 : SourceValue F) = .ok x315)
+      (op358 : evalBinOp .mul ((.field 8) : SourceValue F) (v273 : SourceValue F) = .ok y316)
+      (op322 : evalBinOp .add (x315 : SourceValue F) (y316 : SourceValue F) = .ok v307)
+      (ld388 : loadValue m274 x_cv = .ok v375)
+      (ld405 : loadValue m274 x_chunk_count = .ok v377)
+      (ev374 : ObsFn W "Blake3::compress_init" [v375, x_block, v377, (.field 64), v307] m274 v361 m362 cs372)
+      (op647 : evalBinOp .add (x_block_no : SourceValue F) ((.field 1) : SourceValue F) = .ok v623)
+      (hm665 : m657 = (m362 ++ [v361]))
+      (ev621 : ObsFn W "Blake3::hash_blocks" [x_rest, v623, x_chunk_count, (.ptr (Value.type (v361 : SourceValue F)) (m362).length), x_layer] m657 r h' cs619)
+      (hc674 : calls = ((⟨"Blake3::take_block", [x_input], h⟩ : Call F) :: (cs13 ++ (cs179 ++ ((⟨"Fields::is_zero", [v199], m177⟩ : Call F) :: (cs196 ++ ((⟨"Fields::is_zero", [x_block_no], m186⟩ : Call F) :: (cs226 ++ ((⟨"UInt64::is_zero", [v296], m216⟩ : Call F) :: (cs293 ++ ((⟨"Blake3::compress_init", [v375, x_block, v377, (.field 64), v307], m274⟩ : Call F) :: (cs372 ++ ((⟨"Blake3::hash_blocks", [x_rest, v623, x_chunk_count, (.ptr (Value.type (v361 : SourceValue F)) (m362).length), x_layer], m657⟩ : Call F) :: cs619)))))))))))))
+
+/-- **Every observed derivation of `Blake3::hash_blocks` takes one of its paths.** -/
+theorem «Blake3::hash_blocks».obs {x_input x_block_no x_chunk_count x_cv x_layer : SourceValue F} {h h' : Heap F} {r : SourceValue F}
+    {calls : List (Call F)} (ev : ObsFn W "Blake3::hash_blocks" [x_input, x_block_no, x_chunk_count, x_cv, x_layer] h r h' calls) :
+    «Blake3::hash_blocks».Path x_input x_block_no x_chunk_count x_cv x_layer h r h' calls := by
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.Blake3.hash_blocks.lookup
+    (by simp [IxVM.Blake3.hash_blocks, ControlLower.hasControl]) ev
+  simp only [IxVM.Blake3.hash_blocks] at d0
+  obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
+  obtain ⟨vs10, m11, c12, cs13, a14, ev15, rfl⟩ := d7.call_inv
+  rw [instanceName_plain_some] at ev15
+  obtain ⟨v16, vs17, m18, c19, c20, rfl, d21, a22, rfl⟩ := a14.cons_inv
+  obtain ⟨l23, rfl, rfl⟩ := d21.var_inv
+  simp at l23
+  subst l23
+  obtain ⟨rfl, rfl, rfl⟩ := a22.nil_inv
+  rcases selectArm_cons_inv sel8 with ⟨mt24, rfl⟩ | ⟨nm25, sel26⟩
+  · obtain ⟨vs27, hv28, -, ml29⟩ := matchPattern_construct_inv mt24
+    rw [Names.n2864496815413202991] at hv28
+    subst hv28
+    obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml29
+    obtain ⟨vs30, m31, c32, cs33, a34, ev35, rfl⟩ := d9.call_inv
+    rw [instanceName_plain_some] at ev35
+    obtain ⟨v36, vs43, m44, c45, c46, rfl, d47, a48, rfl⟩ := a34.cons_inv
+    obtain ⟨l49, rfl, rfl⟩ := d47.var_inv
+    simp at l49
+    subst l49
+    obtain ⟨v37, vs50, m51, c52, c53, rfl, d54, a55, rfl⟩ := a48.cons_inv
+    obtain ⟨v56, m57, d58, rfl, hm59⟩ := d54.store_inv
+    obtain ⟨vs60, a61, hres62⟩ := d58.construct_inv
+    rw [Names.n12516105052029042359] at hres62
+    subst hres62
+    obtain ⟨rfl, rfl, rfl⟩ := a61.nil_inv
+    obtain ⟨v38, vs63, m64, c65, c66, rfl, d67, a68, rfl⟩ := a55.cons_inv
+    obtain ⟨rfl, rfl, rfl⟩ := d67.literal_inv
+    obtain ⟨v39, vs69, m70, c71, c72, rfl, d73, a74, rfl⟩ := a68.cons_inv
+    obtain ⟨x75, y76, m77, c78, c79, d80, d81, op82, rfl⟩ := d73.binary_inv
+    obtain ⟨rfl, rfl, rfl⟩ := d80.literal_inv
+    obtain ⟨l83, rfl, rfl⟩ := d81.var_inv
+    simp at l83
+    subst l83
+    obtain ⟨v40, vs84, m85, c86, c87, rfl, d88, a89, rfl⟩ := a74.cons_inv
+    obtain ⟨l90, rfl, rfl⟩ := d88.var_inv
+    simp at l90
+    subst l90
+    obtain ⟨v41, vs91, m92, c93, c94, rfl, d95, a96, rfl⟩ := a89.cons_inv
+    obtain ⟨l97, rfl, rfl⟩ := d95.var_inv
+    simp at l97
+    subst l97
+    obtain ⟨v42, vs98, m99, c100, c101, rfl, d102, a103, rfl⟩ := a96.cons_inv
+    obtain ⟨l104, rfl, rfl⟩ := d102.var_inv
+    simp at l104
+    subst l104
+    obtain ⟨rfl, rfl, rfl⟩ := a103.nil_inv
+    try simp only [Value.type, List.map_cons, List.map_nil] at ev15 hm59 op82 ev35 ⊢
+    exact «Blake3::hash_blocks».Path.Short _ _ _ _ _ ev15 hm59 op82 ev35 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+  · have hne106 := matchPattern_construct_none (by trivial) nm25
+    simp only [Names.n2864496815413202991] at hne106
+    rcases selectArm_cons_inv sel26 with ⟨mt107, rfl⟩ | ⟨nm108, sel109⟩
+    · obtain ⟨vs110, hv111, -, ml112⟩ := matchPattern_construct_inv mt107
+      rw [Names.n2864496815413202991] at hv111
+      subst hv111
+      obtain ⟨x_block, vs113, b114, b115, rfl, mt116, ml117, rfl⟩ := matchListWith_cons_inv ml112
+      obtain rfl := matchPattern_bind_inv mt116
+      obtain ⟨x_rest, vs118, b119, b120, rfl, mt121, ml122, rfl⟩ := matchListWith_cons_inv ml117
+      obtain rfl := matchPattern_bind_inv mt121
+      obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml122
+      obtain ⟨v123, m124, bs125, c126, c127, d128, mt129, d130, rfl⟩ := d9.letValue_inv
+      obtain ⟨rfl, rfl, rfl⟩ := d128.literal_inv
+      obtain rfl := matchPattern_bind_inv mt129
+      obtain ⟨v131, m132, bs133, c134, c135, d136, mt137, d138, rfl⟩ := d130.letValue_inv
+      obtain ⟨rfl, rfl, rfl⟩ := d136.literal_inv
+      obtain rfl := matchPattern_bind_inv mt137
+      obtain ⟨v139, m140, bs141, c142, c143, d144, mt145, d146, rfl⟩ := d138.letValue_inv
+      obtain ⟨rfl, rfl, rfl⟩ := d144.literal_inv
+      obtain rfl := matchPattern_bind_inv mt145
+      obtain ⟨v176, m177, bs178, cs179, c180, d181, mt182, d183, rfl⟩ := d146.letValue_inv
+      have sg184 := «Blake3::hash_blocks».seg1 d181
+      clear d181
+      obtain rfl := matchPattern_bind_inv mt182
+      obtain ⟨v185, m186, bs187, c188, c189, d190, mt191, d192, rfl⟩ := d183.letValue_inv
+      obtain ⟨vs193, m194, c195, cs196, a197, ev198, rfl⟩ := d190.call_inv
+      rw [instanceName_plain_some] at ev198
+      obtain ⟨v199, vs200, m201, c202, c203, rfl, d204, a205, rfl⟩ := a197.cons_inv
+      obtain ⟨x206, y207, m208, c209, c210, d211, d212, op213, rfl⟩ := d204.binary_inv
+      obtain ⟨l214, rfl, rfl⟩ := d211.var_inv
+      simp at l214
+      subst l214
+      obtain ⟨rfl, rfl, rfl⟩ := d212.literal_inv
+      obtain ⟨rfl, rfl, rfl⟩ := a205.nil_inv
+      obtain rfl := matchPattern_bind_inv mt191
+      obtain ⟨v215, m216, bs217, c218, c219, d220, mt221, d222, rfl⟩ := d192.letValue_inv
+      obtain ⟨vs223, m224, c225, cs226, a227, ev228, rfl⟩ := d220.call_inv
+      rw [instanceName_plain_some] at ev228
+      obtain ⟨v229, vs230, m231, c232, c233, rfl, d234, a235, rfl⟩ := a227.cons_inv
+      obtain ⟨l236, rfl, rfl⟩ := d234.var_inv
+      simp at l236
+      subst l236
+      obtain ⟨rfl, rfl, rfl⟩ := a235.nil_inv
+      obtain rfl := matchPattern_bind_inv mt221
+      obtain ⟨v237, m238, bs239, c240, c241, d242, mt243, d244, rfl⟩ := d222.letValue_inv
+      obtain ⟨x245, y246, m247, c248, c249, d250, d251, op252, rfl⟩ := d242.binary_inv
+      obtain ⟨x253, y254, m255, c256, c257, d258, d259, op260, rfl⟩ := d250.binary_inv
+      obtain ⟨l261, rfl, rfl⟩ := d258.var_inv
+      simp at l261
+      subst l261
+      obtain ⟨l262, rfl, rfl⟩ := d259.var_inv
+      simp at l262
+      subst l262
+      obtain ⟨x263, y264, m265, c266, c267, d268, d269, op270, rfl⟩ := d251.binary_inv
+      obtain ⟨l271, rfl, rfl⟩ := d268.var_inv
+      simp at l271
+      subst l271
+      obtain ⟨l272, rfl, rfl⟩ := d269.var_inv
+      simp at l272
+      subst l272
+      obtain rfl := matchPattern_bind_inv mt243
+      obtain ⟨v273, m274, bs275, c276, c277, d278, mt279, d280, rfl⟩ := d244.letValue_inv
+      obtain ⟨x281, y282, m283, c284, c285, d286, d287, op288, rfl⟩ := d278.binary_inv
+      obtain ⟨l289, rfl, rfl⟩ := d286.var_inv
+      simp at l289
+      subst l289
+      obtain ⟨vs290, m291, c292, cs293, a294, ev295, rfl⟩ := d287.call_inv
+      rw [instanceName_plain_some] at ev295
+      obtain ⟨v296, vs297, m298, c299, c300, rfl, d301, a302, rfl⟩ := a294.cons_inv
+      obtain ⟨p303, d304, ld305⟩ := d301.load_inv
+      obtain ⟨l306, rfl, rfl⟩ := d304.var_inv
+      simp at l306
+      subst l306
+      obtain ⟨rfl, rfl, rfl⟩ := a302.nil_inv
+      obtain rfl := matchPattern_bind_inv mt279
+      obtain ⟨v307, m308, bs309, c310, c311, d312, mt313, d314, rfl⟩ := d280.letValue_inv
+      obtain ⟨x315, y316, m317, c318, c319, d320, d321, op322, rfl⟩ := d312.binary_inv
+      obtain ⟨x323, y324, m325, c326, c327, d328, d329, op330, rfl⟩ := d320.binary_inv
+      obtain ⟨x331, y332, m333, c334, c335, d336, d337, op338, rfl⟩ := d328.binary_inv
+      obtain ⟨l339, rfl, rfl⟩ := d336.var_inv
+      simp at l339
+      subst l339
+      obtain ⟨l340, rfl, rfl⟩ := d337.var_inv
+      simp at l340
+      subst l340
+      obtain ⟨x341, y342, m343, c344, c345, d346, d347, op348, rfl⟩ := d329.binary_inv
+      obtain ⟨l349, rfl, rfl⟩ := d346.var_inv
+      simp at l349
+      subst l349
+      obtain ⟨l350, rfl, rfl⟩ := d347.var_inv
+      simp at l350
+      subst l350
+      obtain ⟨x351, y352, m353, c354, c355, d356, d357, op358, rfl⟩ := d321.binary_inv
+      obtain ⟨l359, rfl, rfl⟩ := d356.var_inv
+      simp at l359
+      subst l359
+      obtain ⟨l360, rfl, rfl⟩ := d357.var_inv
+      simp at l360
+      subst l360
+      obtain rfl := matchPattern_bind_inv mt313
+      obtain ⟨v361, m362, bs363, c364, c365, d366, mt367, d368, rfl⟩ := d314.letValue_inv
+      obtain ⟨vs369, m370, c371, cs372, a373, ev374, rfl⟩ := d366.call_inv
+      rw [instanceName_plain_some] at ev374
+      obtain ⟨v375, vs380, m381, c382, c383, rfl, d384, a385, rfl⟩ := a373.cons_inv
+      obtain ⟨p386, d387, ld388⟩ := d384.load_inv
+      obtain ⟨l389, rfl, rfl⟩ := d387.var_inv
+      simp at l389
+      subst l389
+      obtain ⟨v376, vs390, m391, c392, c393, rfl, d394, a395, rfl⟩ := a385.cons_inv
+      obtain ⟨l396, rfl, rfl⟩ := d394.var_inv
+      simp at l396
+      subst l396
+      obtain ⟨v377, vs397, m398, c399, c400, rfl, d401, a402, rfl⟩ := a395.cons_inv
+      obtain ⟨p403, d404, ld405⟩ := d401.load_inv
+      obtain ⟨l406, rfl, rfl⟩ := d404.var_inv
+      simp at l406
+      subst l406
+      obtain ⟨v378, vs407, m408, c409, c410, rfl, d411, a412, rfl⟩ := a402.cons_inv
+      obtain ⟨rfl, rfl, rfl⟩ := d411.literal_inv
+      obtain ⟨v379, vs413, m414, c415, c416, rfl, d417, a418, rfl⟩ := a412.cons_inv
+      obtain ⟨l419, rfl, rfl⟩ := d417.var_inv
+      simp at l419
+      subst l419
+      obtain ⟨rfl, rfl, rfl⟩ := a418.nil_inv
+      obtain rfl := matchPattern_bind_inv mt367
+      obtain ⟨v420, m421, bs422, body423, c424, c425, d426, sel427, d428, rfl⟩ := d368.matchValue_inv
+      obtain ⟨vs429, a430, rfl⟩ := d426.tuple_inv
+      obtain ⟨v431, vs433, m434, c435, c436, rfl, d437, a438, rfl⟩ := a430.cons_inv
+      obtain ⟨l439, rfl, rfl⟩ := d437.var_inv
+      simp at l439
+      subst l439
+      obtain ⟨v432, vs440, m441, c442, c443, rfl, d444, a445, rfl⟩ := a438.cons_inv
+      obtain ⟨l446, rfl, rfl⟩ := d444.var_inv
+      simp at l446
+      subst l446
+      obtain ⟨rfl, rfl, rfl⟩ := a445.nil_inv
+      rcases selectArm_cons_inv sel427 with ⟨mt447, rfl⟩ | ⟨nm448, sel449⟩
+      · have ml450 := matchPattern_tuple_tuple_inv mt447
+        obtain ⟨b451, b452, mt453, ml454, rfl⟩ := matchListWith_cons_cons_inv ml450
+        obtain ⟨hv455, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 1) mt453
+        subst hv455
+        obtain ⟨b456, b457, mt458, ml459, rfl⟩ := matchListWith_cons_cons_inv ml454
+        obtain rfl := matchPattern_wildcard_inv mt458
+        obtain ⟨-, rfl⟩ := matchListWith_nil_inv ml459
+        obtain ⟨v460, m461, d462, rfl, hm463⟩ := d428.store_inv
+        obtain ⟨vs465, a466, hres467⟩ := d462.construct_inv
+        rw [instanceName_plain_some] at hres467
+        subst hres467
+        obtain ⟨v468, vs470, m471, c472, c473, rfl, d474, a475, rfl⟩ := a466.cons_inv
+        obtain ⟨l476, rfl, rfl⟩ := d474.var_inv
+        simp at l476
+        subst l476
+        obtain ⟨v469, vs477, m478, c479, c480, rfl, d481, a482, rfl⟩ := a475.cons_inv
+        obtain ⟨l483, rfl, rfl⟩ := d481.var_inv
+        simp at l483
+        subst l483
+        obtain ⟨rfl, rfl, rfl⟩ := a482.nil_inv
+        try simp only [Value.type, List.map_cons, List.map_nil] at ev15 hne106 sg184 op213 ev198 ev228 op260 op270 op252 ld305 ev295 op288 op338 op348 op330 op358 op322 ld388 ld405 ev374 hm463 ⊢
+        exact «Blake3::hash_blocks».Path.Full_n1_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev15 sg184 op213 ev198 ev228 op260 op270 op252 ld305 ev295 op288 op338 op348 op330 op358 op322 ld388 ld405 ev374 rfl hm463 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+      · clear nm448
+        rcases selectArm_cons_inv sel449 with ⟨mt485, rfl⟩ | ⟨nm486, sel487⟩
+        · have ml488 := matchPattern_tuple_tuple_inv mt485
+          obtain ⟨b489, b490, mt491, ml492, rfl⟩ := matchListWith_cons_cons_inv ml488
+          obtain rfl := matchPattern_wildcard_inv mt491
+          obtain ⟨b493, b494, mt495, ml496, rfl⟩ := matchListWith_cons_cons_inv ml492
+          obtain ⟨hv497, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 1) mt495
+          subst hv497
+          obtain ⟨-, rfl⟩ := matchListWith_nil_inv ml496
+          obtain ⟨v498, m499, bs500, c501, c502, d503, mt504, d505, rfl⟩ := d428.letValue_inv
+          obtain ⟨vs506, m507, c508, cs509, a510, ev511, rfl⟩ := d503.call_inv
+          rw [instanceName_plain_some] at ev511
+          obtain ⟨rfl, rfl, rfl⟩ := a510.nil_inv
+          obtain rfl := matchPattern_bind_inv mt504
+          obtain ⟨vs512, m513, c514, cs515, a516, ev517, rfl⟩ := d505.call_inv
+          rw [instanceName_plain_some] at ev517
+          obtain ⟨v518, vs523, m524, c525, c526, rfl, d527, a528, rfl⟩ := a516.cons_inv
+          obtain ⟨l529, rfl, rfl⟩ := d527.var_inv
+          simp at l529
+          subst l529
+          obtain ⟨v519, vs530, m531, c532, c533, rfl, d534, a535, rfl⟩ := a528.cons_inv
+          obtain ⟨rfl, rfl, rfl⟩ := d534.literal_inv
+          obtain ⟨v520, vs536, m537, c538, c539, rfl, d540, a541, rfl⟩ := a535.cons_inv
+          obtain ⟨v542, m543, d544, rfl, hm545⟩ := d540.store_inv
+          obtain ⟨vs546, m547, c548, cs549, a550, ev551, rfl⟩ := d544.call_inv
+          rw [instanceName_plain_some] at ev551
+          obtain ⟨v552, vs553, m554, c555, c556, rfl, d557, a558, rfl⟩ := a550.cons_inv
+          obtain ⟨p559, d560, ld561⟩ := d557.load_inv
+          obtain ⟨l562, rfl, rfl⟩ := d560.var_inv
+          simp at l562
+          subst l562
+          obtain ⟨rfl, rfl, rfl⟩ := a558.nil_inv
+          obtain ⟨v521, vs563, m564, c565, c566, rfl, d567, a568, rfl⟩ := a541.cons_inv
+          obtain ⟨v569, m570, d571, rfl, hm572⟩ := d567.store_inv
+          obtain ⟨l573, rfl, rfl⟩ := d571.var_inv
+          simp at l573
+          subst l573
+          obtain ⟨v522, vs574, m575, c576, c577, rfl, d578, a579, rfl⟩ := a568.cons_inv
+          obtain ⟨v580, m581, d582, rfl, hm583⟩ := d578.store_inv
+          obtain ⟨vs584, a585, hres586⟩ := d582.construct_inv
+          rw [instanceName_plain_some] at hres586
+          subst hres586
+          obtain ⟨v587, vs589, m590, c591, c592, rfl, d593, a594, rfl⟩ := a585.cons_inv
+          obtain ⟨l595, rfl, rfl⟩ := d593.var_inv
+          simp at l595
+          subst l595
+          obtain ⟨v588, vs596, m597, c598, c599, rfl, d600, a601, rfl⟩ := a594.cons_inv
+          obtain ⟨l602, rfl, rfl⟩ := d600.var_inv
+          simp at l602
+          subst l602
+          obtain ⟨rfl, rfl, rfl⟩ := a601.nil_inv
+          obtain ⟨rfl, rfl, rfl⟩ := a579.nil_inv
+          try simp only [Value.type, List.map_cons, List.map_nil] at ev15 hne106 sg184 op213 ev198 ev228 op260 op270 op252 ld305 ev295 op288 op338 op348 op330 op358 op322 ld388 ld405 ev374 ev511 hm545 ld561 ev551 hm572 hm583 ev517 ⊢
+          exact «Blake3::hash_blocks».Path.Full_other_n1 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev15 sg184 op213 ev198 ev228 op260 op270 op252 ld305 ev295 op288 op338 op348 op330 op358 op322 ld388 ld405 ev374 ev511 hm545 ld561 ev551 hm572 hm583 ev517 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+        · clear nm486
+          rcases selectArm_cons_inv sel487 with ⟨mt604, rfl⟩ | ⟨nm605, sel606⟩
+          · have ml607 := matchPattern_tuple_tuple_inv mt604
+            obtain ⟨b608, b609, mt610, ml611, rfl⟩ := matchListWith_cons_cons_inv ml607
+            obtain rfl := matchPattern_wildcard_inv mt610
+            obtain ⟨b612, b613, mt614, ml615, rfl⟩ := matchListWith_cons_cons_inv ml611
+            obtain rfl := matchPattern_wildcard_inv mt614
+            obtain ⟨-, rfl⟩ := matchListWith_nil_inv ml615
+            obtain ⟨vs616, m617, c618, cs619, a620, ev621, rfl⟩ := d428.call_inv
+            rw [instanceName_plain_some] at ev621
+            obtain ⟨v622, vs627, m628, c629, c630, rfl, d631, a632, rfl⟩ := a620.cons_inv
+            obtain ⟨l633, rfl, rfl⟩ := d631.var_inv
+            simp at l633
+            subst l633
+            obtain ⟨v623, vs634, m635, c636, c637, rfl, d638, a639, rfl⟩ := a632.cons_inv
+            obtain ⟨x640, y641, m642, c643, c644, d645, d646, op647, rfl⟩ := d638.binary_inv
+            obtain ⟨l648, rfl, rfl⟩ := d645.var_inv
+            simp at l648
+            subst l648
+            obtain ⟨rfl, rfl, rfl⟩ := d646.literal_inv
+            obtain ⟨v624, vs649, m650, c651, c652, rfl, d653, a654, rfl⟩ := a639.cons_inv
+            obtain ⟨l655, rfl, rfl⟩ := d653.var_inv
+            simp at l655
+            subst l655
+            obtain ⟨v625, vs656, m657, c658, c659, rfl, d660, a661, rfl⟩ := a654.cons_inv
+            obtain ⟨v662, m663, d664, rfl, hm665⟩ := d660.store_inv
+            obtain ⟨l666, rfl, rfl⟩ := d664.var_inv
+            simp at l666
+            subst l666
+            obtain ⟨v626, vs667, m668, c669, c670, rfl, d671, a672, rfl⟩ := a661.cons_inv
+            obtain ⟨l673, rfl, rfl⟩ := d671.var_inv
+            simp at l673
+            subst l673
+            obtain ⟨rfl, rfl, rfl⟩ := a672.nil_inv
+            try simp only [Value.type, List.map_cons, List.map_nil] at ev15 hne106 sg184 op213 ev198 ev228 op260 op270 op252 ld305 ev295 op288 op338 op348 op330 op358 op322 ld388 ld405 ev374 op647 hm665 ev621 ⊢
+            exact «Blake3::hash_blocks».Path.Full_other_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev15 sg184 op213 ev198 ev228 op260 op270 op252 ld305 ev295 op288 op338 op348 op330 op358 op322 ld388 ld405 ev374 op647 hm665 ev621 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+          · have hne675 := matchPattern_tuple_none (by trivial) nm605
+            exact (selectArm_nil_inv sel606).elim
+    · have hne676 := matchPattern_construct_none (by trivial) nm108
+      simp only [Names.n2864496815413202991] at hne676
+      exact (selectArm_nil_inv sel109).elim
 
 /-- The evaluation paths of `Blake3::compress_chunks`: one constructor per combination of selected arms. -/
 inductive «Blake3::compress_chunks».Path (x_input x_byte_acc x_block_index x_chunk_index x_chunk_count x_block_digest x_layer : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
@@ -2370,313 +2802,5 @@ theorem «Blake3::compress».obs {x_stage x_state : SourceValue F} {h h' : Heap 
       obtain ⟨rfl, rfl, rfl⟩ := a906.nil_inv
       exact «Blake3::compress».Path.other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hne372 ev389 pr426 up408 pr456 up438 pr486 up468 pr516 up498 pr546 up528 pr576 up558 pr606 up588 pr636 up618 pr666 up648 pr696 up678 pr726 up708 pr756 up738 pr786 up768 pr816 up798 pr846 up828 pr876 up858 op899 ev883 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
     · exact (matchPattern_wildcard_none nm374).elim
-
-/-- The evaluation paths of `Blake3::digest_bytes`: one constructor per combination of selected arms. -/
-inductive «Blake3::digest_bytes».Path (x_digest : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
-    (calls : List (Call F)) : Prop where
-  | run
-      (v1 : SourceValue F) (m2 : Heap F) (cs12 : List (Call F)) (v15 : SourceValue F) (v26 : SourceValue F) (m27 : Heap F) (cs37 : List (Call F)) (v40 : SourceValue F) (v51 : SourceValue F) (m52 : Heap F) (cs62 : List (Call F)) (v65 : SourceValue F) (v76 : SourceValue F) (m77 : Heap F) (cs87 : List (Call F)) (v90 : SourceValue F) (v101 : SourceValue F) (m102 : Heap F) (cs112 : List (Call F)) (v115 : SourceValue F) (v126 : SourceValue F) (m127 : Heap F) (cs137 : List (Call F)) (v140 : SourceValue F) (v151 : SourceValue F) (m152 : Heap F) (cs162 : List (Call F)) (v165 : SourceValue F) (v176 : SourceValue F) (m177 : Heap F) (cs187 : List (Call F)) (v190 : SourceValue F) (v203 : SourceValue F) (v204 : SourceValue F) (v205 : SourceValue F) (v206 : SourceValue F) (v207 : SourceValue F) (v208 : SourceValue F) (v209 : SourceValue F) (v210 : SourceValue F) (v211 : SourceValue F) (v212 : SourceValue F) (v213 : SourceValue F) (v214 : SourceValue F) (v215 : SourceValue F) (v216 : SourceValue F) (v217 : SourceValue F) (v218 : SourceValue F) (v219 : SourceValue F) (v220 : SourceValue F) (v221 : SourceValue F) (v222 : SourceValue F) (v223 : SourceValue F) (v224 : SourceValue F) (v225 : SourceValue F) (v226 : SourceValue F) (v227 : SourceValue F) (v228 : SourceValue F) (v229 : SourceValue F) (v230 : SourceValue F) (v231 : SourceValue F) (v232 : SourceValue F) (v233 : SourceValue F) (v234 : SourceValue F)
-      (pr24 : projectValue (x_digest : SourceValue F) 0 = .ok v15)
-      (ev14 : ObsFn W "UInt32::to_bytes" [v15] h v1 m2 cs12)
-      (pr49 : projectValue (x_digest : SourceValue F) 1 = .ok v40)
-      (ev39 : ObsFn W "UInt32::to_bytes" [v40] m2 v26 m27 cs37)
-      (pr74 : projectValue (x_digest : SourceValue F) 2 = .ok v65)
-      (ev64 : ObsFn W "UInt32::to_bytes" [v65] m27 v51 m52 cs62)
-      (pr99 : projectValue (x_digest : SourceValue F) 3 = .ok v90)
-      (ev89 : ObsFn W "UInt32::to_bytes" [v90] m52 v76 m77 cs87)
-      (pr124 : projectValue (x_digest : SourceValue F) 4 = .ok v115)
-      (ev114 : ObsFn W "UInt32::to_bytes" [v115] m77 v101 m102 cs112)
-      (pr149 : projectValue (x_digest : SourceValue F) 5 = .ok v140)
-      (ev139 : ObsFn W "UInt32::to_bytes" [v140] m102 v126 m127 cs137)
-      (pr174 : projectValue (x_digest : SourceValue F) 6 = .ok v165)
-      (ev164 : ObsFn W "UInt32::to_bytes" [v165] m127 v151 m152 cs162)
-      (pr199 : projectValue (x_digest : SourceValue F) 7 = .ok v190)
-      (ev189 : ObsFn W "UInt32::to_bytes" [v190] m152 v176 m177 cs187)
-      (he235 : r = (.tuple [v203, v204, v205, v206, v207, v208, v209, v210, v211, v212, v213, v214, v215, v216, v217, v218, v219, v220, v221, v222, v223, v224, v225, v226, v227, v228, v229, v230, v231, v232, v233, v234]))
-      (pr244 : projectValue (v1 : SourceValue F) 0 = .ok v203)
-      (pr254 : projectValue (v1 : SourceValue F) 1 = .ok v204)
-      (pr264 : projectValue (v1 : SourceValue F) 2 = .ok v205)
-      (pr274 : projectValue (v1 : SourceValue F) 3 = .ok v206)
-      (pr284 : projectValue (v26 : SourceValue F) 0 = .ok v207)
-      (pr294 : projectValue (v26 : SourceValue F) 1 = .ok v208)
-      (pr304 : projectValue (v26 : SourceValue F) 2 = .ok v209)
-      (pr314 : projectValue (v26 : SourceValue F) 3 = .ok v210)
-      (pr324 : projectValue (v51 : SourceValue F) 0 = .ok v211)
-      (pr334 : projectValue (v51 : SourceValue F) 1 = .ok v212)
-      (pr344 : projectValue (v51 : SourceValue F) 2 = .ok v213)
-      (pr354 : projectValue (v51 : SourceValue F) 3 = .ok v214)
-      (pr364 : projectValue (v76 : SourceValue F) 0 = .ok v215)
-      (pr374 : projectValue (v76 : SourceValue F) 1 = .ok v216)
-      (pr384 : projectValue (v76 : SourceValue F) 2 = .ok v217)
-      (pr394 : projectValue (v76 : SourceValue F) 3 = .ok v218)
-      (pr404 : projectValue (v101 : SourceValue F) 0 = .ok v219)
-      (pr414 : projectValue (v101 : SourceValue F) 1 = .ok v220)
-      (pr424 : projectValue (v101 : SourceValue F) 2 = .ok v221)
-      (pr434 : projectValue (v101 : SourceValue F) 3 = .ok v222)
-      (pr444 : projectValue (v126 : SourceValue F) 0 = .ok v223)
-      (pr454 : projectValue (v126 : SourceValue F) 1 = .ok v224)
-      (pr464 : projectValue (v126 : SourceValue F) 2 = .ok v225)
-      (pr474 : projectValue (v126 : SourceValue F) 3 = .ok v226)
-      (pr484 : projectValue (v151 : SourceValue F) 0 = .ok v227)
-      (pr494 : projectValue (v151 : SourceValue F) 1 = .ok v228)
-      (pr504 : projectValue (v151 : SourceValue F) 2 = .ok v229)
-      (pr514 : projectValue (v151 : SourceValue F) 3 = .ok v230)
-      (pr524 : projectValue (v176 : SourceValue F) 0 = .ok v231)
-      (pr534 : projectValue (v176 : SourceValue F) 1 = .ok v232)
-      (pr544 : projectValue (v176 : SourceValue F) 2 = .ok v233)
-      (pr554 : projectValue (v176 : SourceValue F) 3 = .ok v234)
-      (he556 : h' = m177)
-      (hc557 : calls = ((⟨"UInt32::to_bytes", [v15], h⟩ : Call F) :: (cs12 ++ ((⟨"UInt32::to_bytes", [v40], m2⟩ : Call F) :: (cs37 ++ ((⟨"UInt32::to_bytes", [v65], m27⟩ : Call F) :: (cs62 ++ ((⟨"UInt32::to_bytes", [v90], m52⟩ : Call F) :: (cs87 ++ ((⟨"UInt32::to_bytes", [v115], m77⟩ : Call F) :: (cs112 ++ ((⟨"UInt32::to_bytes", [v140], m102⟩ : Call F) :: (cs137 ++ ((⟨"UInt32::to_bytes", [v165], m127⟩ : Call F) :: (cs162 ++ ((⟨"UInt32::to_bytes", [v190], m152⟩ : Call F) :: cs187))))))))))))))))
-
-/-- **Every observed derivation of `Blake3::digest_bytes` takes one of its paths.** -/
-theorem «Blake3::digest_bytes».obs {x_digest : SourceValue F} {h h' : Heap F} {r : SourceValue F}
-    {calls : List (Call F)} (ev : ObsFn W "Blake3::digest_bytes" [x_digest] h r h' calls) :
-    «Blake3::digest_bytes».Path x_digest h r h' calls := by
-  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.Blake3.digest_bytes.lookup
-    (by simp [IxVM.Blake3.digest_bytes, ControlLower.hasControl]) ev
-  simp only [IxVM.Blake3.digest_bytes] at d0
-  obtain ⟨v1, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
-  obtain ⟨vs9, m10, c11, cs12, a13, ev14, rfl⟩ := d6.call_inv
-  rw [instanceName_plain_some] at ev14
-  obtain ⟨v15, vs16, m17, c18, c19, rfl, d20, a21, rfl⟩ := a13.cons_inv
-  obtain ⟨p22, d23, pr24⟩ := d20.index_inv
-  obtain ⟨l25, rfl, rfl⟩ := d23.var_inv
-  simp at l25
-  subst l25
-  obtain ⟨rfl, rfl, rfl⟩ := a21.nil_inv
-  obtain rfl := matchPattern_bind_inv mt7
-  obtain ⟨v26, m27, bs28, c29, c30, d31, mt32, d33, rfl⟩ := d8.letValue_inv
-  obtain ⟨vs34, m35, c36, cs37, a38, ev39, rfl⟩ := d31.call_inv
-  rw [instanceName_plain_some] at ev39
-  obtain ⟨v40, vs41, m42, c43, c44, rfl, d45, a46, rfl⟩ := a38.cons_inv
-  obtain ⟨p47, d48, pr49⟩ := d45.index_inv
-  obtain ⟨l50, rfl, rfl⟩ := d48.var_inv
-  simp at l50
-  subst l50
-  obtain ⟨rfl, rfl, rfl⟩ := a46.nil_inv
-  obtain rfl := matchPattern_bind_inv mt32
-  obtain ⟨v51, m52, bs53, c54, c55, d56, mt57, d58, rfl⟩ := d33.letValue_inv
-  obtain ⟨vs59, m60, c61, cs62, a63, ev64, rfl⟩ := d56.call_inv
-  rw [instanceName_plain_some] at ev64
-  obtain ⟨v65, vs66, m67, c68, c69, rfl, d70, a71, rfl⟩ := a63.cons_inv
-  obtain ⟨p72, d73, pr74⟩ := d70.index_inv
-  obtain ⟨l75, rfl, rfl⟩ := d73.var_inv
-  simp at l75
-  subst l75
-  obtain ⟨rfl, rfl, rfl⟩ := a71.nil_inv
-  obtain rfl := matchPattern_bind_inv mt57
-  obtain ⟨v76, m77, bs78, c79, c80, d81, mt82, d83, rfl⟩ := d58.letValue_inv
-  obtain ⟨vs84, m85, c86, cs87, a88, ev89, rfl⟩ := d81.call_inv
-  rw [instanceName_plain_some] at ev89
-  obtain ⟨v90, vs91, m92, c93, c94, rfl, d95, a96, rfl⟩ := a88.cons_inv
-  obtain ⟨p97, d98, pr99⟩ := d95.index_inv
-  obtain ⟨l100, rfl, rfl⟩ := d98.var_inv
-  simp at l100
-  subst l100
-  obtain ⟨rfl, rfl, rfl⟩ := a96.nil_inv
-  obtain rfl := matchPattern_bind_inv mt82
-  obtain ⟨v101, m102, bs103, c104, c105, d106, mt107, d108, rfl⟩ := d83.letValue_inv
-  obtain ⟨vs109, m110, c111, cs112, a113, ev114, rfl⟩ := d106.call_inv
-  rw [instanceName_plain_some] at ev114
-  obtain ⟨v115, vs116, m117, c118, c119, rfl, d120, a121, rfl⟩ := a113.cons_inv
-  obtain ⟨p122, d123, pr124⟩ := d120.index_inv
-  obtain ⟨l125, rfl, rfl⟩ := d123.var_inv
-  simp at l125
-  subst l125
-  obtain ⟨rfl, rfl, rfl⟩ := a121.nil_inv
-  obtain rfl := matchPattern_bind_inv mt107
-  obtain ⟨v126, m127, bs128, c129, c130, d131, mt132, d133, rfl⟩ := d108.letValue_inv
-  obtain ⟨vs134, m135, c136, cs137, a138, ev139, rfl⟩ := d131.call_inv
-  rw [instanceName_plain_some] at ev139
-  obtain ⟨v140, vs141, m142, c143, c144, rfl, d145, a146, rfl⟩ := a138.cons_inv
-  obtain ⟨p147, d148, pr149⟩ := d145.index_inv
-  obtain ⟨l150, rfl, rfl⟩ := d148.var_inv
-  simp at l150
-  subst l150
-  obtain ⟨rfl, rfl, rfl⟩ := a146.nil_inv
-  obtain rfl := matchPattern_bind_inv mt132
-  obtain ⟨v151, m152, bs153, c154, c155, d156, mt157, d158, rfl⟩ := d133.letValue_inv
-  obtain ⟨vs159, m160, c161, cs162, a163, ev164, rfl⟩ := d156.call_inv
-  rw [instanceName_plain_some] at ev164
-  obtain ⟨v165, vs166, m167, c168, c169, rfl, d170, a171, rfl⟩ := a163.cons_inv
-  obtain ⟨p172, d173, pr174⟩ := d170.index_inv
-  obtain ⟨l175, rfl, rfl⟩ := d173.var_inv
-  simp at l175
-  subst l175
-  obtain ⟨rfl, rfl, rfl⟩ := a171.nil_inv
-  obtain rfl := matchPattern_bind_inv mt157
-  obtain ⟨v176, m177, bs178, c179, c180, d181, mt182, d183, rfl⟩ := d158.letValue_inv
-  obtain ⟨vs184, m185, c186, cs187, a188, ev189, rfl⟩ := d181.call_inv
-  rw [instanceName_plain_some] at ev189
-  obtain ⟨v190, vs191, m192, c193, c194, rfl, d195, a196, rfl⟩ := a188.cons_inv
-  obtain ⟨p197, d198, pr199⟩ := d195.index_inv
-  obtain ⟨l200, rfl, rfl⟩ := d198.var_inv
-  simp at l200
-  subst l200
-  obtain ⟨rfl, rfl, rfl⟩ := a196.nil_inv
-  obtain rfl := matchPattern_bind_inv mt182
-  obtain ⟨vs201, a202, rfl⟩ := d183.array_inv
-  obtain ⟨v203, vs236, m237, c238, c239, rfl, d240, a241, rfl⟩ := a202.cons_inv
-  obtain ⟨p242, d243, pr244⟩ := d240.index_inv
-  obtain ⟨l245, rfl, rfl⟩ := d243.var_inv
-  simp at l245
-  subst l245
-  obtain ⟨v204, vs246, m247, c248, c249, rfl, d250, a251, rfl⟩ := a241.cons_inv
-  obtain ⟨p252, d253, pr254⟩ := d250.index_inv
-  obtain ⟨l255, rfl, rfl⟩ := d253.var_inv
-  simp at l255
-  subst l255
-  obtain ⟨v205, vs256, m257, c258, c259, rfl, d260, a261, rfl⟩ := a251.cons_inv
-  obtain ⟨p262, d263, pr264⟩ := d260.index_inv
-  obtain ⟨l265, rfl, rfl⟩ := d263.var_inv
-  simp at l265
-  subst l265
-  obtain ⟨v206, vs266, m267, c268, c269, rfl, d270, a271, rfl⟩ := a261.cons_inv
-  obtain ⟨p272, d273, pr274⟩ := d270.index_inv
-  obtain ⟨l275, rfl, rfl⟩ := d273.var_inv
-  simp at l275
-  subst l275
-  obtain ⟨v207, vs276, m277, c278, c279, rfl, d280, a281, rfl⟩ := a271.cons_inv
-  obtain ⟨p282, d283, pr284⟩ := d280.index_inv
-  obtain ⟨l285, rfl, rfl⟩ := d283.var_inv
-  simp at l285
-  subst l285
-  obtain ⟨v208, vs286, m287, c288, c289, rfl, d290, a291, rfl⟩ := a281.cons_inv
-  obtain ⟨p292, d293, pr294⟩ := d290.index_inv
-  obtain ⟨l295, rfl, rfl⟩ := d293.var_inv
-  simp at l295
-  subst l295
-  obtain ⟨v209, vs296, m297, c298, c299, rfl, d300, a301, rfl⟩ := a291.cons_inv
-  obtain ⟨p302, d303, pr304⟩ := d300.index_inv
-  obtain ⟨l305, rfl, rfl⟩ := d303.var_inv
-  simp at l305
-  subst l305
-  obtain ⟨v210, vs306, m307, c308, c309, rfl, d310, a311, rfl⟩ := a301.cons_inv
-  obtain ⟨p312, d313, pr314⟩ := d310.index_inv
-  obtain ⟨l315, rfl, rfl⟩ := d313.var_inv
-  simp at l315
-  subst l315
-  obtain ⟨v211, vs316, m317, c318, c319, rfl, d320, a321, rfl⟩ := a311.cons_inv
-  obtain ⟨p322, d323, pr324⟩ := d320.index_inv
-  obtain ⟨l325, rfl, rfl⟩ := d323.var_inv
-  simp at l325
-  subst l325
-  obtain ⟨v212, vs326, m327, c328, c329, rfl, d330, a331, rfl⟩ := a321.cons_inv
-  obtain ⟨p332, d333, pr334⟩ := d330.index_inv
-  obtain ⟨l335, rfl, rfl⟩ := d333.var_inv
-  simp at l335
-  subst l335
-  obtain ⟨v213, vs336, m337, c338, c339, rfl, d340, a341, rfl⟩ := a331.cons_inv
-  obtain ⟨p342, d343, pr344⟩ := d340.index_inv
-  obtain ⟨l345, rfl, rfl⟩ := d343.var_inv
-  simp at l345
-  subst l345
-  obtain ⟨v214, vs346, m347, c348, c349, rfl, d350, a351, rfl⟩ := a341.cons_inv
-  obtain ⟨p352, d353, pr354⟩ := d350.index_inv
-  obtain ⟨l355, rfl, rfl⟩ := d353.var_inv
-  simp at l355
-  subst l355
-  obtain ⟨v215, vs356, m357, c358, c359, rfl, d360, a361, rfl⟩ := a351.cons_inv
-  obtain ⟨p362, d363, pr364⟩ := d360.index_inv
-  obtain ⟨l365, rfl, rfl⟩ := d363.var_inv
-  simp at l365
-  subst l365
-  obtain ⟨v216, vs366, m367, c368, c369, rfl, d370, a371, rfl⟩ := a361.cons_inv
-  obtain ⟨p372, d373, pr374⟩ := d370.index_inv
-  obtain ⟨l375, rfl, rfl⟩ := d373.var_inv
-  simp at l375
-  subst l375
-  obtain ⟨v217, vs376, m377, c378, c379, rfl, d380, a381, rfl⟩ := a371.cons_inv
-  obtain ⟨p382, d383, pr384⟩ := d380.index_inv
-  obtain ⟨l385, rfl, rfl⟩ := d383.var_inv
-  simp at l385
-  subst l385
-  obtain ⟨v218, vs386, m387, c388, c389, rfl, d390, a391, rfl⟩ := a381.cons_inv
-  obtain ⟨p392, d393, pr394⟩ := d390.index_inv
-  obtain ⟨l395, rfl, rfl⟩ := d393.var_inv
-  simp at l395
-  subst l395
-  obtain ⟨v219, vs396, m397, c398, c399, rfl, d400, a401, rfl⟩ := a391.cons_inv
-  obtain ⟨p402, d403, pr404⟩ := d400.index_inv
-  obtain ⟨l405, rfl, rfl⟩ := d403.var_inv
-  simp at l405
-  subst l405
-  obtain ⟨v220, vs406, m407, c408, c409, rfl, d410, a411, rfl⟩ := a401.cons_inv
-  obtain ⟨p412, d413, pr414⟩ := d410.index_inv
-  obtain ⟨l415, rfl, rfl⟩ := d413.var_inv
-  simp at l415
-  subst l415
-  obtain ⟨v221, vs416, m417, c418, c419, rfl, d420, a421, rfl⟩ := a411.cons_inv
-  obtain ⟨p422, d423, pr424⟩ := d420.index_inv
-  obtain ⟨l425, rfl, rfl⟩ := d423.var_inv
-  simp at l425
-  subst l425
-  obtain ⟨v222, vs426, m427, c428, c429, rfl, d430, a431, rfl⟩ := a421.cons_inv
-  obtain ⟨p432, d433, pr434⟩ := d430.index_inv
-  obtain ⟨l435, rfl, rfl⟩ := d433.var_inv
-  simp at l435
-  subst l435
-  obtain ⟨v223, vs436, m437, c438, c439, rfl, d440, a441, rfl⟩ := a431.cons_inv
-  obtain ⟨p442, d443, pr444⟩ := d440.index_inv
-  obtain ⟨l445, rfl, rfl⟩ := d443.var_inv
-  simp at l445
-  subst l445
-  obtain ⟨v224, vs446, m447, c448, c449, rfl, d450, a451, rfl⟩ := a441.cons_inv
-  obtain ⟨p452, d453, pr454⟩ := d450.index_inv
-  obtain ⟨l455, rfl, rfl⟩ := d453.var_inv
-  simp at l455
-  subst l455
-  obtain ⟨v225, vs456, m457, c458, c459, rfl, d460, a461, rfl⟩ := a451.cons_inv
-  obtain ⟨p462, d463, pr464⟩ := d460.index_inv
-  obtain ⟨l465, rfl, rfl⟩ := d463.var_inv
-  simp at l465
-  subst l465
-  obtain ⟨v226, vs466, m467, c468, c469, rfl, d470, a471, rfl⟩ := a461.cons_inv
-  obtain ⟨p472, d473, pr474⟩ := d470.index_inv
-  obtain ⟨l475, rfl, rfl⟩ := d473.var_inv
-  simp at l475
-  subst l475
-  obtain ⟨v227, vs476, m477, c478, c479, rfl, d480, a481, rfl⟩ := a471.cons_inv
-  obtain ⟨p482, d483, pr484⟩ := d480.index_inv
-  obtain ⟨l485, rfl, rfl⟩ := d483.var_inv
-  simp at l485
-  subst l485
-  obtain ⟨v228, vs486, m487, c488, c489, rfl, d490, a491, rfl⟩ := a481.cons_inv
-  obtain ⟨p492, d493, pr494⟩ := d490.index_inv
-  obtain ⟨l495, rfl, rfl⟩ := d493.var_inv
-  simp at l495
-  subst l495
-  obtain ⟨v229, vs496, m497, c498, c499, rfl, d500, a501, rfl⟩ := a491.cons_inv
-  obtain ⟨p502, d503, pr504⟩ := d500.index_inv
-  obtain ⟨l505, rfl, rfl⟩ := d503.var_inv
-  simp at l505
-  subst l505
-  obtain ⟨v230, vs506, m507, c508, c509, rfl, d510, a511, rfl⟩ := a501.cons_inv
-  obtain ⟨p512, d513, pr514⟩ := d510.index_inv
-  obtain ⟨l515, rfl, rfl⟩ := d513.var_inv
-  simp at l515
-  subst l515
-  obtain ⟨v231, vs516, m517, c518, c519, rfl, d520, a521, rfl⟩ := a511.cons_inv
-  obtain ⟨p522, d523, pr524⟩ := d520.index_inv
-  obtain ⟨l525, rfl, rfl⟩ := d523.var_inv
-  simp at l525
-  subst l525
-  obtain ⟨v232, vs526, m527, c528, c529, rfl, d530, a531, rfl⟩ := a521.cons_inv
-  obtain ⟨p532, d533, pr534⟩ := d530.index_inv
-  obtain ⟨l535, rfl, rfl⟩ := d533.var_inv
-  simp at l535
-  subst l535
-  obtain ⟨v233, vs536, m537, c538, c539, rfl, d540, a541, rfl⟩ := a531.cons_inv
-  obtain ⟨p542, d543, pr544⟩ := d540.index_inv
-  obtain ⟨l545, rfl, rfl⟩ := d543.var_inv
-  simp at l545
-  subst l545
-  obtain ⟨v234, vs546, m547, c548, c549, rfl, d550, a551, rfl⟩ := a541.cons_inv
-  obtain ⟨p552, d553, pr554⟩ := d550.index_inv
-  obtain ⟨l555, rfl, rfl⟩ := d553.var_inv
-  simp at l555
-  subst l555
-  obtain ⟨rfl, rfl, rfl⟩ := a551.nil_inv
-  exact «Blake3::digest_bytes».Path.run _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ pr24 ev14 pr49 ev39 pr74 ev64 pr99 ev89 pr124 ev114 pr149 ev139 pr174 ev164 pr199 ev189 rfl pr244 pr254 pr264 pr274 pr284 pr294 pr304 pr314 pr324 pr334 pr344 pr354 pr364 pr374 pr384 pr394 pr404 pr414 pr424 pr434 pr444 pr454 pr464 pr474 pr484 pr494 pr504 pr514 pr524 pr534 pr544 pr554 rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
 
 end IxVM.Refinement.Obs

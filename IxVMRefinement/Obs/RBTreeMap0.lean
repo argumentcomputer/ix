@@ -24,7 +24,7 @@ theorem «RBTreeMap::rbtree_map_balance».lookup (t_V : Generic.Ty) :
              params := IxVM.RBTreeMap.rbtree_map_balance.params.map fun (p, pt) => (p, (pt.subst [("V", t_V)]).toCore),
              body := IxVM.RBTreeMap.rbtree_map_balance.body } :=
   Program.sourceFunction?_of_mem_one (f := IxVM.RBTreeMap.rbtree_map_balance) IxVM.functionNames_nodup
-    (List.getElem_mem (l := IxVM.functions) (n := 93) (by decide +kernel)) rfl t_V
+    (List.getElem_mem (l := IxVM.functions) (n := 95) (by decide +kernel)) rfl t_V
 
 /-- The evaluation paths of `RBTreeMap::rbtree_map_balance`: one constructor per combination of selected arms. -/
 inductive «RBTreeMap::rbtree_map_balance».Path (t_V : Generic.Ty) (x_color x_key x_value x_left x_right : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
@@ -116,7 +116,7 @@ theorem «RBTreeMap::rbtree_map_balance_fix».lookup (t_V : Generic.Ty) :
              params := IxVM.RBTreeMap.rbtree_map_balance_fix.params.map fun (p, pt) => (p, (pt.subst [("V", t_V)]).toCore),
              body := IxVM.RBTreeMap.rbtree_map_balance_fix.body } :=
   Program.sourceFunction?_of_mem_one (f := IxVM.RBTreeMap.rbtree_map_balance_fix) IxVM.functionNames_nodup
-    (List.getElem_mem (l := IxVM.functions) (n := 94) (by decide +kernel)) rfl t_V
+    (List.getElem_mem (l := IxVM.functions) (n := 96) (by decide +kernel)) rfl t_V
 
 /-- The evaluation paths of `RBTreeMap::rbtree_map_balance_fix`: one constructor per combination of selected arms. -/
 inductive «RBTreeMap::rbtree_map_balance_fix».Path (t_V : Generic.Ty) (x_key x_value x_left x_right : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
@@ -628,7 +628,7 @@ theorem «RBTreeMap::rbtree_map_ins».lookup (t_V : Generic.Ty) :
              params := IxVM.RBTreeMap.rbtree_map_ins.params.map fun (p, pt) => (p, (pt.subst [("V", t_V)]).toCore),
              body := IxVM.RBTreeMap.rbtree_map_ins.body } :=
   Program.sourceFunction?_of_mem_one (f := IxVM.RBTreeMap.rbtree_map_ins) IxVM.functionNames_nodup
-    (List.getElem_mem (l := IxVM.functions) (n := 95) (by decide +kernel)) rfl t_V
+    (List.getElem_mem (l := IxVM.functions) (n := 97) (by decide +kernel)) rfl t_V
 
 /-- The evaluation paths of `RBTreeMap::rbtree_map_ins`: one constructor per combination of selected arms. -/
 inductive «RBTreeMap::rbtree_map_ins».Path (t_V : Generic.Ty) (x_key x_value x_tree : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
@@ -909,7 +909,7 @@ theorem «RBTreeMap::rbtree_map_insert».lookup (t_V : Generic.Ty) :
              params := IxVM.RBTreeMap.rbtree_map_insert.params.map fun (p, pt) => (p, (pt.subst [("V", t_V)]).toCore),
              body := IxVM.RBTreeMap.rbtree_map_insert.body } :=
   Program.sourceFunction?_of_mem_one (f := IxVM.RBTreeMap.rbtree_map_insert) IxVM.functionNames_nodup
-    (List.getElem_mem (l := IxVM.functions) (n := 96) (by decide +kernel)) rfl t_V
+    (List.getElem_mem (l := IxVM.functions) (n := 98) (by decide +kernel)) rfl t_V
 
 /-- The evaluation paths of `RBTreeMap::rbtree_map_insert`: one constructor per combination of selected arms. -/
 inductive «RBTreeMap::rbtree_map_insert».Path (t_V : Generic.Ty) (x_key x_value x_tree : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
@@ -998,7 +998,7 @@ theorem «RBTreeMap::rbtree_map_lookup_or_default».lookup (t_V : Generic.Ty) :
              params := IxVM.RBTreeMap.rbtree_map_lookup_or_default.params.map fun (p, pt) => (p, (pt.subst [("V", t_V)]).toCore),
              body := IxVM.RBTreeMap.rbtree_map_lookup_or_default.body } :=
   Program.sourceFunction?_of_mem_one (f := IxVM.RBTreeMap.rbtree_map_lookup_or_default) IxVM.functionNames_nodup
-    (List.getElem_mem (l := IxVM.functions) (n := 97) (by decide +kernel)) rfl t_V
+    (List.getElem_mem (l := IxVM.functions) (n := 99) (by decide +kernel)) rfl t_V
 
 /-- The evaluation paths of `RBTreeMap::rbtree_map_lookup_or_default`: one constructor per combination of selected arms. -/
 inductive «RBTreeMap::rbtree_map_lookup_or_default».Path (t_V : Generic.Ty) (x_key x_tree x_default : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)

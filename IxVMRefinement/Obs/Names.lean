@@ -430,11 +430,13 @@ theorem c6143978625380527024 : W.constant "UInt8::BYTE_224" (Generic.Ty.subst []
 
 theorem c7622204403842064372 : W.constant "UInt8::BYTE_91" (Generic.Ty.subst [] .field) = .ok (.literal (91 : F)) := eq_of_isLiteral (by decide +kernel)
 
-theorem n12516105052029042359 : instanceName [] "Lists::Node" (some [.field]) = Names.«Lists::Node<Field>» := by decide +kernel
-
 theorem n7475478065646392832 : constructorName [] (.named "Blake3::LayerNode" []) = "Blake3::LayerNode" := by decide +kernel
 
 theorem n17782073653715708372 : constructorName [] (.named "Blake3::MaybeDigest" []) = "Blake3::MaybeDigest" := by decide +kernel
+
+theorem n2864496815413202991 : constructorName [] (.named "Blake3::BlockRead" []) = "Blake3::BlockRead" := by decide +kernel
+
+theorem n12516105052029042359 : instanceName [] "Lists::Node" (some [.field]) = Names.«Lists::Node<Field>» := by decide +kernel
 
 theorem n9551417537882310672 : constructorName [] (.named "Lists::Node" [.field]) = Names.«Lists::Node<Field>» := by decide +kernel
 
