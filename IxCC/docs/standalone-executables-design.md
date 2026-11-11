@@ -540,6 +540,16 @@ runtime relocation the harness defines) and runs them, and
 `hw_diff_harness.c`, with which `x86-hardware` tests the processor against the
 instruction table. No gate runs a compiled program through C.
 
+**These four are to go as well** (the owner's decision of 2026-11-11; planned,
+not urgent, milestone X1b in the [roadmap](roadmap.md#standalone-executables)):
+no C source in the tree and no C compiler in any check's inputs. What each
+needs: the linker-acceptance checks keep the system linker and replace the C
+objects they link against by objects IxCC writes (the object writer already
+writes the relocation the harness defines); the unwinding check needs its
+caller written the same way; the processor differential needs a harness
+executable that runs instruction bytes and reports the machine state, which
+the executable writer can produce as a frame.
+
 ## Decided questions
 
 These were put to the owner as DO-28 to DO-36 in the
