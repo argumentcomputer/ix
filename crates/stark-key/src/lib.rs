@@ -606,6 +606,24 @@ mod tests {
     }
   }
 
+  /// A preprocessed index must be the circuit's rank among the circuits that
+  /// have one: the in-circuit verifier reads by slot, multi-stark by rank.
+  #[test]
+  fn rejects_non_canonical_preprocessed_indices() {
+    let (cp, fp) = floor_parameters();
+    let mut system = test_system(cp, fp);
+    let k = system
+      .preprocessed_indices
+      .iter()
+      .position(Option::is_some)
+      .expect("a circuit with a preprocessed matrix");
+    system.preprocessed_indices[k] = Some(1);
+    let err = from_bytes(&to_bytes(&system, cp, fp))
+      .err()
+      .expect("accepted a preprocessed index other than its rank");
+    assert!(err.contains("rank"), "{err}");
+  }
+
   #[test]
   fn rejects_trailing_bytes() {
     let mut bytes = encoded();
