@@ -70,6 +70,7 @@
 //! environment has none of its own, and every block in scope with a
 //! payload ships it on channel 7. This is `IxVM.ClaimHarness.addEntries`.
 
+use std::borrow::Cow;
 use std::fmt;
 
 use ix_common::address::Address;
@@ -83,7 +84,7 @@ use crate::lazy::BytesSource;
 use crate::model_advice::ModelAdvice;
 use crate::proof::{Claim, ClaimContext, spec_digest};
 use crate::role_table::RoleTable;
-use crate::shard_claim::shard_check_env_claim;
+use crate::shard_claim::{outside_logic_at, shard_check_env_claim};
 
 pub const CLAIM_CHANNEL: u8 = 0;
 pub const TREE_CHANNEL: u8 = 1;
@@ -287,7 +288,7 @@ pub fn claim_context(
 
 struct Statement<'a> {
   claim: Claim,
-  roots: &'a [Address],
+  roots: Cow<'a, [Address]>,
   trees: Vec<AssumptionTree>,
 }
 
@@ -311,7 +312,7 @@ impl<'a> Statement<'a> {
         const_addr: target.clone(),
         assumptions: None,
       },
-      roots: std::slice::from_ref(target),
+      roots: Cow::Borrowed(std::slice::from_ref(target)),
       trees: Vec::new(),
     }
   }
@@ -323,20 +324,25 @@ impl<'a> Statement<'a> {
       env.role_binding.as_ref().ok_or(WitnessError::Unbound)?.address.clone();
     Ok(Self {
       claim: Claim::Binding { spec: spec_digest(), binding },
-      roots: &[],
+      roots: Cow::Borrowed(&[]),
       trees: Vec::new(),
     })
   }
 
+  /// The claim leaves out the owned constants outside Lean's logic
+  /// ([`outside_logic_at`]), so its subject tree and the witness roots must
+  /// too: IxVM refuses them as seeds, and no claimable constant needs them.
   fn shard(
     ctx: &ClaimContext,
     env: &Env,
     owned: &'a [Address],
   ) -> Result<Self, WitnessError> {
-    let (claim, frontier) =
-      shard_check_env_claim(ctx, env, owned).ok_or(WitnessError::EmptyOwned)?;
+    let claimable: Vec<Address> =
+      owned.iter().filter(|a| !outside_logic_at(env, a)).cloned().collect();
+    let (claim, frontier) = shard_check_env_claim(ctx, env, &claimable)
+      .ok_or(WitnessError::EmptyOwned)?;
     let subject =
-      AssumptionTree::canonical(owned).ok_or(WitnessError::EmptyOwned)?;
+      AssumptionTree::canonical(&claimable).ok_or(WitnessError::EmptyOwned)?;
     let assumptions = AssumptionTree::canonical(&frontier);
     let consistent = matches!(
       &claim,
@@ -349,7 +355,7 @@ impl<'a> Statement<'a> {
     }
     let mut trees = vec![subject];
     trees.extend(assumptions);
-    Ok(Self { claim, roots: owned, trees })
+    Ok(Self { claim, roots: Cow::Owned(claimable), trees })
   }
 
   fn into_witness(self, env: &Env) -> Result<ClaimWitness, WitnessError> {
@@ -727,6 +733,37 @@ mod tests {
       binding.bytes.iter().map(|b| u64::from(*b)).collect::<Vec<_>>()
     );
     assert_eq!(layout(&w), layout(&witness(&env, shard(&owned)).unwrap()));
+  }
+
+  /// Decision D20: a shard owning a constant outside Lean's logic proves the
+  /// same claim as the shard without it, and ships the same witness.
+  #[test]
+  fn shard_witness_leaves_out_constants_outside_logic() {
+    let (env, a, _, _, _) = chain();
+    let unsafe_axiom = Address::hash(b"unsafe-axiom");
+    env.store_const(
+      unsafe_axiom.clone(),
+      Constant::with_tables(
+        ConstantInfo::Axio(Axiom {
+          is_unsafe: true,
+          lvls: 0,
+          typ: Arc::new(Expr::Sort(0)),
+        }),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+      ),
+    );
+    let with_outside = [a.clone(), unsafe_axiom];
+    let safe_only = [a];
+    let expected = witness(&env, shard(&safe_only)).unwrap();
+    let w = witness(&env, shard(&with_outside)).unwrap();
+    assert_eq!(w.claim, expected.claim);
+    assert_eq!(layout(&w), layout(&expected));
+    assert_eq!(
+      prepare(&env, shard(&with_outside), &expected.claim).unwrap().digest,
+      w.digest
+    );
   }
 
   #[test]
