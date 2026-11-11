@@ -25,3 +25,9 @@ import IxCC.Recheck.Rc.Proof.ObjectSound
 
 /-- info: 'IxCC.Recheck.RcReplay.sound_bytes' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Recheck.RcReplay.sound_bytes
+
+/-- info: 'IxCC.Recheck.RcReplay.object_refines_at' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Recheck.RcReplay.object_refines_at
+
+/-- info: 'IxCC.Recheck.RcReplay.sound_at' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Recheck.RcReplay.sound_at

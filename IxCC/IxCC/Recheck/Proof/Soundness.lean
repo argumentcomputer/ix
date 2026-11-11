@@ -67,6 +67,24 @@ theorem sound (h : run cfg P c = .ok a) (D : X86.Driver) (hD : D.Ok a.backend.en
   ⟨fun _ _ hw => Front.sound_of href hi hw, fun hs k => Front.safe_of href hi hs k,
     fun hs => Front.diverges_of href hi hs⟩
 
+/-- **`Recheck.sound` from two call sites**: the same three clauses for the
+object run with `cx_init` under `D` and the roots from a site `s` at which
+the contract is kept too (`X86.LinkedAt`, a caller with two call sites such
+as the standalone executable's shell). `sound` is the case `s = D.site`. -/
+theorem sound_at (h : run cfg P c = .ok a) (D : X86.Driver) (hD : D.Ok a.backend.encoded.text.size)
+    (s : X86.Driver.Site) (hs : (D.withSite s).Ok a.backend.encoded.text.size)
+    (i : Nat × List Nat) (hi : a.front.Covered c i) :
+    (∀ k w, Lang.run (a.linkedAt D s) i k = .ok w →
+      (∃ k' v, Lang.run (⟨a.src, a.checked⟩ : CheckedProgram) i k' = .ok v ∧
+        a.front.view i.1 (Lang.obs v) = some w) ∨ a.front.GoesWrong i) ∧
+    (¬ a.front.GoesWrong i → ∀ k, ¬ (Lang.run (a.linkedAt D s) i k).GoesWrong) ∧
+    ((∀ k, Lang.run (⟨a.src, a.checked⟩ : CheckedProgram) i k = .timeout) →
+      (∀ k, Lang.run (a.linkedAt D s) i k = .timeout) ∨
+        ∃ k failure, Lang.run (a.linkedAt D s) i k = .resource failure) :=
+  have href := object_refines_at h D hD s hs
+  ⟨fun _ _ hw => Front.sound_of href hi hw, fun hg k => Front.safe_of href hi hg k,
+    fun hg => Front.diverges_of href hi hg⟩
+
 /-- **What `Recheck.sound` gave before the closures step, for every program
 the step leaves unchanged**: when the certificate's middle end gives the
 final Anf program (every program that compiled before the step was added,
