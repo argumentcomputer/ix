@@ -48,14 +48,15 @@ trace (`View.HashedCollision`, reused), or there is an environment `env` that
 
 A model (`Ix.Kernel.Model`, `IxC/Kernel/Denotes.lean`) interprets every claimed
 constant as a set: a member of what its type denotes, with `False` empty, `Eq`
-equality, every definition what its value denotes, and every recursor rule
-computing as Lean's does. Because the environment stores each declaration's own
-value and rules, a claimed definition means what the reader's value means, not
-just some inhabitant of its type: a definition `P := False` is false in every
-model, and no claimed constant can prove it. The
+equality, every definition what its value denotes, every recursor rule
+computing as Lean's does, structure and unit-like η at the families that have
+them, every projection reading the structure's own table, and the kernel's `Nat`
+operations computing on literals as Lean's functions. Because the environment
+stores each declaration's own value and rules, a claimed definition means what the
+reader's value means, not just some inhabitant of its type: a definition
+`P := False` is false in every model, and no claimed constant can prove it. The
 structure's docstring lists which of Lean's definitional equalities it carries
-as laws, which hold in every model by the reading, and which it does not carry
-yet.
+as laws and which hold in every model by the reading.
 
 Corollary (`ConsistentRead.seeds_not_false`): no claimed constant has type
 `False`.
@@ -326,7 +327,9 @@ hint, a theorem's annotated value, a constructor's parameter and field counts,
 a recursor's argument counts (the major premise's position and the rule
 prefix's length) and its rules, one for one (`RuleStored`). An inductive type's
 capability record (its η, unit-like and K verdicts) is the kernel's, not the
-declaration's, and no law of `Ix.Kernel.Model` reads it. -/
+declaration's. The one law of `Ix.Kernel.Model` that reads it, unit-like η
+(`UnitLikeLaw`), applies where the flag is set, so the flag can add to a model's
+laws and remove none. -/
 def StoredAs (ci ci₀ : Ix.Kernel.ConstantInfo .anon) : Prop :=
   ValStored ci.toConstantVal ci₀.toConstantVal ∧
     match ci, ci₀ with
