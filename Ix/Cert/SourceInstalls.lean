@@ -490,6 +490,7 @@ theorem checkNativeTail_installs (env : Env md) (q : NativePass md (Env md)) :
   refine ExPost.of_forall fun _ => ExPost.of_forall fun _ =>
     ⟨fun _ => ⟨fun _ => ?_, trivial⟩, trivial⟩
   refine ExPost.mono (fun r hr => ?_) (checkNativeRec_post _ _ _ _)
+  intro _
   refine ExPost.mono (fun e he => ?_) (checkNativeTable_post (Q := fun _ => True) _ _ _ _ trivial)
   obtain ⟨keepC, instC⟩ := consSumCtors_installs q.p.nP q.ctorsA q.env₁
   have keepE := (Keeps.push _ _).trans (Grows.keeps he)
