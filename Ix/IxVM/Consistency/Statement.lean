@@ -36,10 +36,12 @@ trace (`View.HashedCollision`, reused), or there is an environment `env` that
   annotation of its type, and with the declaration's own value, counts and
   recursor rules (`StoredAs`, `Annotates`);
 * contains each claimed constant at its key, stored as declared (`SeedStored`).
-  Every seed is in Lean's logic:
+  Every seed is in Lean's logic and none is an inert axiom:
   IxVM refuses a claim whose seed record, or its block, is unsafe or `partial`
-  (`KernelClaim::assert_claimable`; `OutsideLogicAt`), and L6
-  carries the refusal (`ClaimPhase`);
+  (`OutsideLogicAt`), or whose seed the role table binds to an inert role
+  (`InertAt`: `sorryAx` and Lean's compiler-trust axioms, which install nothing),
+  both in `KernelClaim::assert_claimable`, and L6 carries the refusals
+  (`ClaimPhase`);
 * has a claimed sub-environment (`claimedEnv`: without the model families'
   auxiliary constants) with a model in every set theory:
   `∀ V, Nonempty (Ix.Kernel.Model V (claimedEnv env))`.
@@ -406,6 +408,14 @@ def OutsideLogicAt (E : Ixon.Env) (a : Address) : Prop :=
   ∃ c, Ix.Cert.recordAt E a = some c ∧
     (¬ InLogic c ∨ ∃ cb, Ix.Cert.recordAt E (Ix.Cert.ownerOf a c) = some cb ∧ ¬ InLogic cb)
 
+/-- **`a` is an inert axiom of the role table `t`**: `t` binds an inert role
+(`Ix.Kernel.Role.inert`: `sorryAx` and Lean's compiler-trust axioms) to it. Such a
+declaration installs nothing (`installs`, as the kernel's fold), so no claim can
+certify it: IxVM refuses it as a seed (`KernelClaim::assert_claimable`'s
+`role_is_inert`), which L6 states (`ClaimPhase`). -/
+def InertAt (t : Ix.Kernel.RoleTable) (a : Address) : Prop :=
+  ∃ r : Ix.Kernel.Role, r.inert = true ∧ t.addressOf? r = some a
+
 /-- **A constant of a model family**: an auxiliary key (`Key.aux`) that is not a
 projection table. Model families (the in-process modeller's `_model`
 declarations, their ι and projection theorems) are the checker's means; a
@@ -430,7 +440,8 @@ declaration as declared (`Installs`) and storing every claimed constant, whose
 claimed sub-environment (`claimedEnv`: without the model families' auxiliary
 constants, which the run checks as advice) has a model in every set theory. A
 block seed is covered by its members, which are stored. Every seed is in Lean's
-logic: IxVM refuses the others (`KernelClaim::assert_claimable`, carried by L6). -/
+logic and none is an inert axiom (`InertAt`; such an axiom installs nothing): IxVM refuses the
+others (`KernelClaim::assert_claimable`, carried by L6). -/
 def ConsistentRead (calls : List (Call IxVM.F)) (b : Binding) (seeds : List Address) : Prop :=
   ∃ (E₀ E : Ixon.Env) (ev : Ix.Kernel.Evidences .anon)
     (ds : Array (Ix.Kernel.Declaration .anon)) (env : Ix.Kernel.Env .anon),
@@ -725,16 +736,16 @@ def Decls : Prop :=
 def L5 : Prop := Records S → Levels → Terms S → Core S → Decls.{u} S
 
 /-- **L6's content: an in-scope claim's run read its role table, refused seeds
-outside Lean's logic and walked the closure of its seeds** (`KernelClaim`,
-`KernelRoles`, `KernelRoleSpec`): for a bounded `verify_claim` derivation, every
-claim byte string with the public digest that decodes to an in-scope claim, every
-reader's view of its seeds and every role table the reader reads it under
-(`ReaderTable`), the run hashed a collision, or the table admits (`t`), no seed's
-loaded record or block is unsafe or `partial` (the refusal
-`KernelClaim::assert_claimable`, which runs after the context loads and before
-any walk; both records are loaded, so they are in `LoadedBy calls E₀`), and the
-run walked the closure of the seeds in records it loaded, under `t`
-(`Seams.Walked`). -/
+outside Lean's logic and inert seeds, and walked the closure of its seeds**
+(`KernelClaim`, `KernelRoles`, `KernelRoleSpec`): for a bounded `verify_claim`
+derivation, every claim byte string with the public digest that decodes to an
+in-scope claim, every reader's view of its seeds and every role table the reader
+reads it under (`ReaderTable`), the run hashed a collision, or the table admits
+(`t`), no seed's loaded record or block is unsafe or `partial` and no seed is an
+inert axiom of `t` (`InertAt`; the refusals of `KernelClaim::assert_claimable`,
+which runs after the context loads and before any walk; both records are loaded,
+so they are in `LoadedBy calls E₀`), and the run walked the closure of the seeds
+in records it loaded, under `t` (`Seams.Walked`). -/
 def ClaimPhase : Prop :=
   ∀ (d : Digest) (value : Aiur.SourceValue IxVM.F) (heap : Aiur.Heap IxVM.F)
     (calls : List (Call IxVM.F)),
@@ -746,7 +757,8 @@ def ClaimPhase : Prop :=
         V.HashedCollision (bytes :: b.bytes :: committedImages) calls ∨
         ∃ (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env),
           Ix.Kernel.Admission.admitBinding Address.admissionHash b = .ok t ∧
-          LoadedBy calls E₀ ∧ (∀ a ∈ seeds, ¬ OutsideLogicAt E₀ a) ∧ S.Walked calls t E₀ seeds
+          LoadedBy calls E₀ ∧ (∀ a ∈ seeds, ¬ OutsideLogicAt E₀ a ∧ ¬ InertAt t a) ∧
+          S.Walked calls t E₀ seeds
 
 /-- **Obligation L6** (claims and roles), given L1. -/
 def L6 : Prop := Records S → ClaimPhase S
