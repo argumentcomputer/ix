@@ -223,7 +223,7 @@ inductive Red (env : Env md) : Nat → Expr md → Expr md → Prop where
   at the head.  A theorem never unfolds (`unfoldDefinition`). -/
   | delta {d : Nat} {e e' : Expr md} :
       unfoldDefinition env e = some e' → Red env d e e'
-  /-- **A theorem unfolds** (S2's N1, lane l5; IxVM unfolds theorems in lazy δ and
+  /-- **A theorem unfolds** (IxVM unfolds theorems in lazy δ and
   at ι majors, the checker does not): a stored theorem constant becomes its
   stored value at the use's levels. The rule carries what its soundness reads:
   the value is closed and has the theorem's type at this environment, and that
@@ -239,8 +239,8 @@ inductive Red (env : Env md) : Nat → Expr md → Expr md → Prop where
       Infer env .full d (cv.type.instantiateLevelParams cv.levelParams us) s →
       Red env d s (.sort u) → (∀ φ : LevelParam → Nat, Level.eval φ u = 0) →
       Red env d (.const n us) (value.instantiateLevelParams cv.levelParams us)
-  /-- **An equation's proof rewrites its left side** (S2's N13 as equality
-  reflection, lane l5): a constant application `a` reduces to `b` given a proof
+  /-- **An equation's proof rewrites its left side** (equality reflection): a
+  constant application `a` reduces to `b` given a proof
   `p` of `@Eq.{u} T a b` at this environment (its leaves among `a`'s), the
   typings of `a` and `b` at `T`, and `T`'s sort at `u`. Sound because `Eq`
   denotes equality (`eq_law`). IxVM's native results reduce through the role

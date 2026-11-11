@@ -8,9 +8,9 @@ import Tests.Ix.IxVM.Harness
 import Tests.Ix.IxVMFixtures
 import Tests.Ix.Kernel.SourceIngressStep
 
-/-! # Lane s4 measurements (manual tier, not a gate)
+/-! # IxVM inductive-declaration measurements (manual tier, not a gate)
 
-Spike S4 of the IxVM consistency plan (`plans/ixvm-no-false-plan.md` 8.5-8.7):
+Measurements behind the choice of how IxVM checks inductive declarations: the
 costs of checking inductive declarations in the deployed IxVM program, a
 sizeable `Std` shard for the performance baseline, and a census of the
 environment's mutual and nested inductive blocks with the certified kernel's
@@ -332,15 +332,16 @@ def census (env : Lean.Environment) : IO UInt32 := do
       IO.eprintln s!"[ixvm-s4-census] {t}: {e}"
   return if failed == 0 then 0 else 1
 
-/-! ## Candidate (a), prototyped: IxVM checks the modeller's records
+/-! ## Prototype: IxVM checks the modeller's records
 
 The records the in-process modeller generates for a block (Source mode, keys
 are Lean names) are converted to Lean declarations, added through Lean's
 kernel (`Environment.addDeclCore`, which also generates the tag's and the
 auxiliary family's recursors), compiled to Ixon by the certified compiler,
 and checked by the deployed IxVM program as one shard that owns them all,
-with everything else assumed. That is the "certification tax" candidate (a)
-pays per block; the modeled install's own pins (`Inductives/Modeled.lean`)
+with everything else assumed. That is the cost IxVM pays per block when it checks
+the modeller's records instead of checking the block natively; the modeled
+install's own pins (`Inductives/Modeled.lean`)
 are not part of it. -/
 
 /-- A Source-mode level parameter's Lean name. -/

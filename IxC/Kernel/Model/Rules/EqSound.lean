@@ -7,7 +7,7 @@ import IxC.Kernel.Model.CtxOkKit
 public section
 
 /-!
-# Equality reflection is sound (S2's N13, lane l5)
+# Equality reflection is sound
 
 `Red.eqProof` rewrites a constant application `a` to `b` given a proof of
 `@Eq.{u} T a b`. In the model `Eq` denotes equality (`eq_law`): the proof's

@@ -14,7 +14,7 @@ reference normalizer (`Ix.Kernel.nfRef`, frozen by its equations); the
 structurally recursive tree functions are frozen by their equations.
 `#check` freezes the proved theorems, and `#guard_kernel_axioms` and
 `#guard_module_axioms` freeze the axioms of the statements, the theorems and
-the modules (decision D5: `propext`, `Classical.choice`, `Quot.sound`). A
+the modules (the standard three: `propext`, `Classical.choice`, `Quot.sound`). A
 change to any of them fails the build, so the statement cannot drift
 silently. The module is outside any namespace, so every name prints in full.
 

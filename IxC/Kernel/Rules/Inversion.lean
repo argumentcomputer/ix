@@ -5,7 +5,7 @@ public import IxC.Kernel.Rules.Rel
 @[expose] public section
 
 /-!
-# Inversions of the rules tier (lane l5)
+# Inversions of the rules tier
 
 What a derivation says about its subject's shape:
 

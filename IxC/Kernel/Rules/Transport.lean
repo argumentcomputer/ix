@@ -7,7 +7,7 @@ public import IxC.Kernel.Rules.NatOffset
 @[expose] public section
 
 /-!
-# Transport of derivations: weakening and renaming (lane l5)
+# Transport of derivations: weakening and renaming
 
 The six relations of the rules tier move along a **transport**: an extension of
 the environment (`EnvExt env env'`) together with a renaming of free variables
@@ -21,7 +21,7 @@ Two instances:
 * **environment weakening** (`Transport.weaken`): `ρ` and `δ` the identity.
   Typing a theorem's value where it is unfolded (`Red.deltaThm`'s premises) reads
   the theorem's own check in a later environment.
-* **top weakening, W2** (`Transport.lift`): the variables from `p` on move up by
+* **top weakening** (`Transport.lift`): the variables from `p` on move up by
   `g` (`ρ i = i` below `p`, `i + g` from `p`), at depths from `p`. IxVM's context
   lowering checks a subterm opened at depth `p = d - g` and uses the result at
   depth `d`. With `p = 0` it lifts a closed derivation to any depth. The stored
@@ -508,7 +508,7 @@ theorem weaken {env env' : Env md} (h : EnvExt env env') :
   ext := h
   store := .inl fun _ => rfl
 
-/-- **Top weakening (W2)**: the variables from `p` on move up by `g`, at the depths
+/-- **Top weakening**: the variables from `p` on move up by `g`, at the depths
 from `p`, along an extension of an environment whose stored terms are closed. -/
 theorem lift {env env' : Env md} (hx : EnvExt env env') (hs : StoreClosed env) (p g : Nat) :
     Transport (fun i => if i < p then i else i + g) (fun d => d + g) (fun d => p ≤ d) env env'
@@ -580,7 +580,7 @@ theorem renFV_lift_of_wscoped {p g : Nat} :
     simp only [renFV, ih hD h]
   | bvar | sort | const | lit => intro _ _ _; rfl
 
-/-- **W2 for inference**: a derivation at depth `p` (IxVM's lowered context),
+/-- **Top weakening for inference**: a derivation at depth `p` (IxVM's lowered context),
 weakened along an extension, holds at depth `p + g` with the variables opened
 from `p` on moved up by `g`. A subject scoped below `p` is unchanged
 (`renFV_lift_of_wscoped`). -/
@@ -590,14 +590,14 @@ theorem Infer.lift {env env' : Env md} (hx : EnvExt env env') (hs : StoreClosed 
       (t.renFV (fun i => if i < p then i else i + g)) :=
   infer_tr (Transport.lift hx hs p g) hi (Nat.le_refl p)
 
-/-- **W2 for conversion.** -/
+/-- **Top weakening for conversion.** -/
 theorem DefEq.lift {env env' : Env md} (hx : EnvExt env env') (hs : StoreClosed env)
     {p g : Nat} {a b : Expr md} (hi : DefEq env p a b) :
     DefEq env' (p + g) (a.renFV (fun i => if i < p then i else i + g))
       (b.renFV (fun i => if i < p then i else i + g)) :=
   defEq_tr (Transport.lift hx hs p g) hi (Nat.le_refl p)
 
-/-- **W2 for reduction.** -/
+/-- **Top weakening for reduction.** -/
 theorem Red.lift {env env' : Env md} (hx : EnvExt env env') (hs : StoreClosed env)
     {p g : Nat} {e e' : Expr md} (hi : Red env p e e') :
     Red env' (p + g) (e.renFV (fun i => if i < p then i else i + g))

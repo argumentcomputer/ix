@@ -5,14 +5,15 @@ public import IxC.Kernel.Model.Install
 public section
 
 /-!
-# Theorem values in the fold invariant (lane l5, `thm_val`)
+# Theorem values in the fold invariant
 
-S2's rule N1 (`Red.deltaThm`) unfolds a theorem to its stored value; its
-soundness needs the model to equate the value's reading with the theorem's leaf
-(`thm_val`, `plans/ixvmc/s2/RULES-GAP.md` section 3). `EnvModelM` keeps no such
+A rule that unfolds a theorem to its stored value could be justified by a model
+that equates the value's reading with the theorem's leaf. (`Red.deltaThm` does
+not need it: it carries the value's typing and is sound by proof irrelevance.)
+`EnvModelM` keeps no such
 equation: the kernel stores a theorem's raw value (`DeclThmRun`), which need not
 read. The restated records store the annotated one (`DeclThmRunJ` at a package
-with `thmValue v v' = v'`, decision D11), and the restated fold carries
+with `thmValue v v' = v'`), and the restated fold carries
 
 * `ThmValOk mp`: every stored theorem's value resolves in the environment and
   reads, at every assignment, to the theorem's own leaf;
