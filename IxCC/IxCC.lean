@@ -218,6 +218,8 @@ import IxCC.Anf.Defun
 import IxCC.Anf.Proof.Defun.FirstOrder
 import IxCC.Anf.Proof.Defun.Rel
 import IxCC.Anf.Proof.Defun.Scope
+import IxCC.Anf.Proof.Defun.Dispatch
+import IxCC.Anf.Proof.Defun.Keys
 import IxCC.Own.Kind
 import IxCC.Fir.Syntax
 import IxCC.Fir.Semantics
@@ -477,6 +479,7 @@ import IxCC.Backend.Proof.Driver
 import IxCC.Rt.Backend
 import IxCC.Src.Table.Cert
 import IxCC.Recheck
+import IxCC.Recheck.RootArity
 import IxCC.Recheck.Proof.Front
 import IxCC.Recheck.Proof.Sound
 import IxCC.Recheck.Linked

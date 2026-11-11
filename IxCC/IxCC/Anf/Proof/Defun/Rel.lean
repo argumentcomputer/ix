@@ -26,15 +26,16 @@ not written yet; `docs/closures-design.md`, "Proof obligation", says what it pro
   expression reads (λ-lifting captures only those, so the relation cannot be
   pointwise as `Anf.Rel.Pw` is), and join closures with translated bodies;
 * `FundAt`: the fundamental lemma's statement at a clock bound;
-* `WithinArity`, `RefinesOn`: the inputs P8 refines on. A root applied to
+* `ExactArity`, `RefinesOn`: the inputs P8 refines on. A root applied to
   more arguments than it takes applies its result to the rest; when the
   result is a closure the source continues and the target, which holds a
-  closure cell, is stuck (`IxCCTests.Anf.Defun`, the over-applied root), so
-  P8 refines its input only within each root's arity. The step is stated on
-  the Anf root's arity; the end-to-end theorems take the premise on the
-  source root's declared parameter count, with the compiled arity pinned to
-  it (`docs/closures-design.md`, "Proof obligation", the decision of
-  2026-11-13).
+  closure cell, is stuck (`IxCCTests.Anf.Defun`, the over-applied root). A
+  root is called with exactly its declared number of parameters
+  (`docs/closures-design.md`, "Proof obligation", the decisions of
+  2026-11-13 and 2026-11-14), so the step is stated for inputs of exactly
+  the Anf root's arity, which the end-to-end theorems get from the source
+  root's declared count. The input premise is the predicate `RefinesOn`
+  takes and nothing else; `refinesOn_mono` restricts it.
 
 Proved here: on first-order values (no closure inside) `DV` is the identity
 (`dv_refl`, `dv_eq`), and related values observe the same (`dv_obs`). -/
@@ -165,13 +166,20 @@ def FundAt (X : Setting) (n : Nat) : Prop :=
     EnvOn X (· ∈ e.free 0) ρ ρ' → JRel X J J' →
     SimUpTo (DV X) n (fun k => eval X.P k ρ J e) (fun k => eval X.Q k ρ' J' e')
 
-/-- Inputs that apply a root to at most as many arguments as it takes. -/
-def WithinArity (P : Program) (i : Nat × List Nat) : Prop :=
-  ∀ r gd, P.roots[i.1]? = some r → P.global? r = some gd → i.2.length ≤ gd.ps.length
+/-- Inputs that apply a root to exactly as many arguments as it takes. -/
+def ExactArity (P : Program) (i : Nat × List Nat) : Prop :=
+  ∀ r gd, P.roots[i.1]? = some r → P.global? r = some gd → i.2.length = gd.ps.length
 
-/-- Refinement on the inputs of `D` (`Sem.Refines` on every input). -/
+/-- Refinement on the inputs of `D` (`Sem.Refines` on every input). The
+inputs are its only premise: nothing below the root-level statement names
+them. -/
 def RefinesOn {I S T : Type} [Sem.Lang I S] [Sem.Lang I T] (D : I → Prop) (s : S) (t : T) : Prop :=
   ∀ i, D i → Sem.Behaviour.Refines Sem.Lang.ObsEq (Sem.Lang.behaviour s i) (Sem.Lang.behaviour t i)
+
+/-- Refinement on fewer inputs. -/
+theorem refinesOn_mono {I S T : Type} [Sem.Lang I S] [Sem.Lang I T] {D E : I → Prop} {s : S} {t : T}
+    (hED : ∀ i, E i → D i) (h : RefinesOn D s t) : RefinesOn E s t :=
+  fun i hi => h i (hED i hi)
 
 /-! ## First-order values -/
 

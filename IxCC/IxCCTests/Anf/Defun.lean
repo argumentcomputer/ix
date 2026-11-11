@@ -417,6 +417,8 @@ structure GStats where
   lifted : Nat := 0
   dispatchers : Nat := 0
   keys : Nat := 0
+  /-- The largest `Defun.dispatchWork` of an output (the dispatchers' switch work). -/
+  maxWork : Nat := 0
   tally : Tally := {}
 
 /-- Closures left in a program: `fn`s, `app`s and function-valued `glob`s. -/
@@ -439,7 +441,8 @@ def generatedOne (a : Assert) (seed : Nat) (s : GStats) : IO GStats := do
       let lifted := q.globalList.filter (fun (_, g) => g.key matches .lam ..) |>.length
       let disps := q.globalList.filter (fun (_, g) => g.key matches .dispatch _) |>.length
       s := { s with lifted := s.lifted + lifted, dispatchers := s.dispatchers + disps
-                    keys := s.keys + (q.ctors.length - P.ctors.length) }
+                    keys := s.keys + (q.ctors.length - P.ctors.length)
+                    maxWork := max s.maxWork (IxCC.Anf.Defun.dispatchWork P disps (q.ctors.length - P.ctors.length)) }
       checkOutput a P q s!"seed {seed} {stage}"
       s := { s with tally := ← compareRoots a P q gvalues gclocks s!"seed {seed} {stage}" s.tally }
     | .error e => expect a false s!"seed {seed} {stage}: defun refuses: {e}"
@@ -450,7 +453,8 @@ def generated (a : Assert) (count : Nat) : IO (Array String) := do
   for seed in [0:count] do
     s ← generatedOne a seed s
   return #[s!"{s.programs} programs ({s.rejected} rejected by WellFormed/ModesOk), 3 stages each, \
-    {s.withClosures} with closures; {s.lifted} lifted λs, {s.dispatchers} dispatchers, {s.keys} closure keys",
+    {s.withClosures} with closures; {s.lifted} lifted λs, {s.dispatchers} dispatchers, {s.keys} closure keys; \
+    the largest dispatcher switch work {s.maxWork} (cap {IxCC.Anf.maxBackWork})",
     s!"  {s.tally.render}"]
 
 /-- The section of `tests-anf`. -/

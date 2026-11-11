@@ -108,7 +108,9 @@
   "IxCC.Anf.Proof.Convert.SpineVar",
   "IxCC.Anf.Proof.Convert.Step",
   "IxCC.Anf.Proof.Convert.Term",
+  "IxCC.Anf.Proof.Defun.Dispatch",
   "IxCC.Anf.Proof.Defun.FirstOrder",
+  "IxCC.Anf.Proof.Defun.Keys",
   "IxCC.Anf.Proof.Defun.Rel",
   "IxCC.Anf.Proof.Defun.Scope",
   "IxCC.Anf.Proof.Lang",
@@ -671,6 +673,7 @@
   "IxCC.Recheck.Rc.Types",
   "IxCC.Recheck.Rc.View",
   "IxCC.Recheck.Readback",
+  "IxCC.Recheck.RootArity",
   "IxCC.Recheck.Run",
   "IxCC.Ring0",
   "IxCC.Ring0.Proof",
@@ -1568,7 +1571,7 @@
   "IxCCTests.Sem.Toy.Stack",
   "IxCCTests.Sem.Toy.Tick"],
  "baseline":
- "2026-11-10: role-bound ingress, pins from the role table (ofEnv_pins, known_pins fences), on P8",
+ "P8: the key check is sound; its fences",
  "axiom_sha256":
- "3d893d0051f9b5e36ab631eb4053db7c401c8eac81ba2f4b6c630f2d5f4a6fec",
- "axiom_count": 5606}
+ "1c7b3d56985655eaa1b45465c45aefd31ba998f5f30debaddd575d579c822a5a",
+ "axiom_count": 5636}

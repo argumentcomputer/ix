@@ -117,6 +117,12 @@ def sources (P : Program) (acc : Acc) : List Source :=
   escapeSources P acc ++ (liftedAt P acc).map fun (i, l) =>
     { key := l.key, id := i, caps := l.ncaps, arity := l.ps.length }
 
+/-- The back end's work on the dispatchers' switches (`Anf.backWork`'s `case`
+term): `M` switches of `K` alternatives, each costing its square times the
+grown table's length. With `maxBackWork = 2^28` and a table of about `K`
+rows this admits `K` up to about 510 at `M = 1` and about 255 at `M = 8`. -/
+def dispatchWork (P : Program) (M K : Nat) : Nat := M * (K * K) * (P.ctors.length + K + 1)
+
 /-- The checks on the sources: distinct keys for the globals whose closures
 the program builds (lifted keys then differ by their index, and from every
 input key, which is never `lam`), the declines, and the dispatchers' size. -/
@@ -130,6 +136,11 @@ def checkSources (P : Program) (acc : Acc) (parents : List GlobalId) : Except Er
     throw (.captures s.id (s.caps + s.arity - 1))
   let nkeys := srcs.foldl (fun n s => n + s.arity) 0
   if nkeys > maxClosureKeys then throw (.tags nkeys)
+  -- each dispatcher is one `case` of `nkeys` alternatives: the back end's
+  -- switch check and table searches cost its square times the table's length
+  -- (`Anf.backWork`), so `dispatchWork` is capped before anything is built
+  if dispatchWork P acc.maxApp nkeys > maxBackWork then
+    throw (.budget s!"{acc.maxApp} dispatchers of {nkeys} alternatives exceed the back end's work budget")
   checkDispatchers srcs ((List.range acc.maxApp).map (· + 1)) 0
 
 /-- The output: the rewritten globals at their ids, the dispatchers, the

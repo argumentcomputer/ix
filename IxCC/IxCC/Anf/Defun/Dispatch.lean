@@ -51,6 +51,11 @@ def rows : List Source → Nat → List Lam.CtorInfo
     ((List.range s.arity).map fun j => { key := .clo s.key j, tag := tag + j, arity := s.caps + j }) ++
       rows ss (tag + s.arity)
 
+/-- An atom under one more binder. -/
+def shiftVar : Atom → Atom
+  | .var i => .var (i + 1)
+  | a => a
+
 /-- The body of the alternative for `clo s.key j` in the dispatcher of arity
 `m`, in a program of `size` globals: the cell's `F = s.caps + j` fields are
 bound innermost (field `i` at `F - 1 - i`), the dispatcher's parameters
@@ -63,11 +68,8 @@ def altBody (size : Nat) (s : Source) (j m : Nat) : Exp :=
   if m = r then .bind freshLet (.call s.id (fs ++ as)) (.ret (.var 0))
   else if m < r then .bind freshLet (.con (.clo s.key (j + m)) (fs ++ as)) (.ret (.var 0))
   else
-    let shift := fun (a : Atom) => match a with
-      | .var i => Atom.var (i + 1)
-      | a => a
     .bind freshLet (.call s.id (fs ++ as.take r))
-      (.bind freshLet (.call (dispId size (m - r)) (.var 0 :: (as.drop r).map shift)) (.ret (.var 0)))
+      (.bind freshLet (.call (dispId size (m - r)) (.var 0 :: (as.drop r).map shiftVar)) (.ret (.var 0)))
 
 /-- The alternatives of the dispatcher of arity `m`, one per closure key. -/
 def dispAlts (size : Nat) (m : Nat) : List Source → List Alt

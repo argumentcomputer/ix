@@ -41,10 +41,10 @@ theorem foldl_insert_mem {α : Type} : ∀ (xs : List (Nat × α)) (m : Src.NatM
     · rw [Src.NatMap.get?_insert] at h'
       by_cases hk : k = k₀
       · subst hk
-        rw [if_pos rfl] at h'
+        rw [ite_eq_left rfl] at h'
         cases h'
         exact .inl List.mem_cons_self
-      · rw [if_neg hk] at h'
+      · rw [ite_eq_right hk] at h'
         exact .inr h'
 
 /-- Every entry of a map built from a list comes from the list. -/
@@ -196,7 +196,7 @@ theorem bind_fo {isFn : GlobalId → Bool} {C : Ctx} (hC : Keeps isFn C.prog) :
   | _, acc, .glob g, b', acc', ha, h => by
     simp only [Defun.bind] at h
     by_cases hlt : g < C.prog.size
-    · rw [if_pos hlt] at h
+    · rw [ite_eq_left hlt] at h
       cases hg : C.prog.global? g with
       | some hd =>
         simp only [hg] at h
@@ -216,7 +216,7 @@ theorem bind_fo {isFn : GlobalId → Bool} {C : Ctx} (hC : Keeps isFn C.prog) :
         obtain ⟨hq1, hq2⟩ := Prod.mk.inj (pure_ok h)
         rw [← hq1, ← hq2]
         exact ⟨by simp only [Bind.firstOrder, (hC g hlt).2 hg, Bool.not_false], ha⟩
-    · rw [if_neg hlt] at h
+    · rw [ite_eq_right hlt] at h
       exact (throw_ok h).elim
   | _, acc, .app f as, b', acc', ha, h => by
     simp only [Defun.bind] at h
@@ -509,5 +509,37 @@ theorem defun_firstOrder {P q : Program} (h : Anf.defun P = .ok q) : Anf.FirstOr
     rw [hr] at h
     cases h
     exact run_firstOrder hr
+
+/-! ## Roots and arities
+
+P8 keeps the roots and the parameters of every global it rewrites, so the
+arity a root has after P8 is the one it had before
+(`docs/closures-design.md`, "Proof obligation"). -/
+
+theorem run_roots {P q : Program} (h : run P = .ok q) : q.roots = P.roots := by
+  obtain ⟨gs, acc, parents, -, rfl⟩ := run_ok h
+  rfl
+
+/-- A global below the input's size takes in the output the parameters it
+took in the input. -/
+theorem run_arity {P q : Program} (h : run P = .ok q) {g : GlobalId} (hg : g < P.size) {n : Nat}
+    (hq : q.arity? g = some n) : P.arity? g = some n := by
+  obtain ⟨gs, acc, parents, hgo, rfl⟩ := run_ok h
+  have hgs := globalsGo_ps P.globalList {} [] [] (by simp) (fun g gd hx => by
+    obtain ⟨hlt, hgd⟩ := mem_globalList.1 hx
+    exact ⟨hgd, hlt⟩) hgo
+  unfold Program.arity? at hq ⊢
+  cases hq' : (assemble P gs acc).global? g with
+  | none => rw [hq'] at hq; cases hq
+  | some gd' =>
+    rw [hq'] at hq
+    have hn : gd'.arity = n := Option.some.inj hq
+    rcases assemble_mem hq' with hm | ⟨hle, -⟩ | ⟨hle, -⟩
+    · obtain ⟨gd, hgd, -, hps⟩ := hgs _ _ hm
+      rw [hgd, ← hn]
+      show some gd.arity = some gd'.arity
+      simp only [GDef.arity, hps]
+    · exact absurd hle (Nat.not_le.2 hg)
+    · exact absurd hle (Nat.not_le.2 hg)
 
 end IxCC.Anf.Defun.Proof

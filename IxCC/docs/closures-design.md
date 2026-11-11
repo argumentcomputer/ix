@@ -4,8 +4,8 @@ Written 2026-11-09. **Status: in progress (Phase 2).** Started on 2026-11-10
 at the owner's request, for the native route's generality. The pass is
 implemented and tested outside the production pipeline: nothing on the
 recheck path calls it, and its correctness theorem is not proved (see
-[Current state](#current-state); the decision of 2026-11-13 on over-applied
-roots is under [Proof obligation](#proof-obligation)). Only the lines marked
+[Current state](#current-state); the decisions of 2026-11-13 and 2026-11-14 on
+root arity are under [Proof obligation](#proof-obligation)). Only the lines marked
 *implemented* describe code that exists; everything else is design.
 
 **Place in the plan.** P8 is below SrcEval, so it adds nothing to the
@@ -75,7 +75,18 @@ always remove.
   no first-order program for closures (`Fir.Proof.lower_firstOrder`), and a
   lifted body is well scoped over its captures and parameters
   (`Anf.Defun.Proof.lifted_ws`); the value relation is defined
-  ([`Anf/Proof/Defun/Rel.lean`](../IxCC/Anf/Proof/Defun/Rel.lean)). Tested
+  ([`Anf/Proof/Defun/Rel.lean`](../IxCC/Anf/Proof/Defun/Rel.lean)); the
+  dispatchers compute `applyN`, with their charges, on a cell whose key no
+  earlier source has (`dispatch_exact`, `dispatch_under`, `dispatch_over` in
+  [`Anf/Proof/Defun/Dispatch.lean`](../IxCC/Anf/Proof/Defun/Dispatch.lean));
+  P8 keeps the roots and every input global's parameters
+  (`Anf.Defun.Proof.run_roots`, `run_arity`); its key check is sound: passing
+  it, the keys of the globals whose closures the program builds are pairwise
+  distinct (`checkSources_ownerKeys`). The dispatchers' switch work
+  (`Defun.dispatchWork`: dispatchers times the square of the closure keys
+  times the constructor table's length) is refused past `Anf.maxBackWork`
+  before anything is built (`defun.budget`); a dispatcher cannot be split,
+  since a switch has no default arm. Tested
   against the Anf evaluator (`tests-anf`) and end to end, natively, on
   `Decline.composeClosure`, the K1 programs without equations and the
   workloads of [Exit criteria](#exit-criteria) item 2
@@ -84,8 +95,11 @@ always remove.
   (`tests-pipeline --only defun`). The `StateT`-over-`Except` loop is refused
   by allocation (`alloc.fallback`: a source global of eight parameters, past
   the internal convention's seven argument registers), not by P8; that limit
-  is on parameter counts and independent of closures. The simulation proof
-  is not written. No P9 code exists.
+  is on parameter counts and independent of closures. The roots of
+  [`phase2-arity`](../fixtures/corpus/phase2-arity/corpus.json) (not
+  registered) are the root-arity guard's regression cases (see [Proof
+  obligation](#proof-obligation)). The fundamental lemma and the simulation
+  theorem are not written. No P9 code exists.
 - *Implemented: P8's own input checks.* The pipeline does not establish
   `Anf.WellScoped`, so the pass refuses (`defun.input`) what its correctness
   relies on and a well-scoped program never has: a global already keyed `lam`
@@ -286,50 +300,86 @@ checker is needed; a wrong fact costs speed only.
   equality, so `Recheck.sound`, `Recheck.RcReplay.sound` and the compile-claim
   theorems stay relative to SrcEval, with the `GoesWrong` disjunct, for the
   inputs the next item describes.
-- **Decided 2026-11-13: over-applied roots, option (a).** The refinement
-  holds only for inputs that give a root at most as many arguments as it
-  takes. Anf, Lam and SrcEval apply a root's result to further
-  arguments; stage S has no typing theorem, so that result can be a closure,
-  which the source applies and P8's output, holding a closure cell, cannot
-  (its `applyN` of a cell is stuck; the test
+- **Decided 2026-11-13 and 2026-11-14: a root is called with exactly its
+  declared number of parameters.** P8's refinement fails for an input that
+  gives a root more arguments than it takes: Anf, Lam and SrcEval apply a
+  root's result to further arguments; stage S has no typing theorem, so that
+  result can be a closure, which the source applies and P8's output, holding
+  a closure cell, cannot (its `applyN` of a cell is stuck; the test
   `IxCCTests.Anf.Defun.overAppliedRoot`). Every level below Anf already makes
-  such inputs stuck (`Sem.entryRun`). Of the two options (a: a premise on the
-  input; b: every level from SrcEval down applies a root as `Sem.entryRun`
-  does), the owner chose (a), with two conditions that are part of the
-  decision:
-  1. *The premise is about the source.* P8's refinement, and the end-to-end
-     theorems that compose it (`Recheck.sound`, `Recheck.RcReplay.sound`,
-     `Recheck.compiled_sound`), hold for inputs no longer than the source
-     root's declared parameter count: the number of leading binders of the
+  such inputs stuck (`Sem.entryRun`). On 2026-11-13 the owner chose a
+  premise on the input (rather than making every level from SrcEval down
+  apply a root as `Sem.entryRun` does); on 2026-11-14 the owner fixed the
+  premise to exactly the declared count, since partial and over-application
+  are not coherent for what a binary does. Lean's compiler does the same for
+  an exported function: `@[export]` gives it the arity of its declared type,
+  whatever the shape of its body. The decision has four parts:
+  1. *The statement.* P8's refinement, and the end-to-end theorems that
+     compose it (`Recheck.sound`, `Recheck.RcReplay.sound`,
+     `Recheck.compiled_sound`), hold for inputs of exactly the source root's
+     declared parameter count. Shorter and longer inputs are outside the
+     statement; the driver session refuses them. The premise is one
+     predicate on inputs and nothing else: `ExactArity` at Anf
+     (`Anf.Defun.Proof.RefinesOn`, in
+     [`Anf/Proof/Defun/Rel.lean`](../IxCC/Anf/Proof/Defun/Rel.lean)) and
+     `Recheck.ExactDeclared` at the source. The claim-level theorems
+     (`verifyProgram_*_sound`, `verifyBytes_*_sound`, `verifyRing0Sip_sound`,
+     `verifyBytesRing0Sip_sound`) are to be restated for inputs of exactly
+     the claim's `abiArity` arguments, what the driver session executes,
+     where the premise is discharged by `rootParamsAllNat` and `root.params
+     = abiArity`, so nothing at the claim level becomes conditional.
+  2. *The declared count* is, for now, the number of leading arrows of the
      root's declared type as written (`Src.Term.pis`, which unfolds no
-     definition), the quantity `CompileClaim.rootParamsAllNat` compares. The
-     certificate cannot influence it. It is not `Recheck.Root.params`, which
-     is read off the compiled function (`cfgParams`), whose shape the
-     certificate's middle-end steps choose.
-  2. *The compiled arity is pinned.* Wherever the premise is used, the
-     verifier establishes that each compiled root takes exactly its source
-     root's declared parameter count: at the claim level `rootParamsAllNat`
-     does today (with `root.params = abiArity`); for `Recheck.run`, a new
-     refusing check with its lemma (or a proof that no certificate changes a
-     root's compiled arity, stated rather than assumed).
+     definition), the quantity `CompileClaim.rootParamsAllNat` compares. No
+     certificate can influence it. A result type that is a definition of a
+     function type hides arrows: Lean's compiler unfolds such definitions
+     when it computes an arity, IxCC does not, and refuses such a root today
+     because it has no readback type. The planned ABI descriptor is where the
+     count should eventually be stated explicitly.
+  3. *The mechanism (planned, with P8's wiring into the pipeline).* The compiler generates
+     each root's entry at the declared arity: a global with that many
+     parameters that applies the root to them by the ordinary application
+     mechanism (a known call when the root's arity is the declared count,
+     otherwise the call followed by application of the result, through the
+     dispatchers), which inlining removes when the arities agree. The root's
+     own arity, the leading λs of whichever body the certificate's table
+     gives it, then no longer matters to the ABI. A root that still wants
+     arguments after the declared count has no first-order result: it has no
+     readback type, and the claim's readback-type check refuses it.
+  4. *The interim guard.* `Recheck.checkRootArities`
+     ([`Recheck/RootArity.lean`](../IxCC/Recheck/RootArity.lean), code
+     `rt.arity`, with `rootAritiesOk_spec` and `exactDeclared_cfg`) refuses
+     a program whose compiled root takes other than its declared count. It is
+     a definition with its lemmas; `Recheck.run` does not call it. P8's test
+     path (`tests-pipeline --only defun`) calls it, with the roots of
+     `fixtures/corpus/phase2-arity` as regression cases: with P8 and no such
+     guard, a point-free root compiles at its own arity and a field-less
+     closure cell reads back natively as a number or a Boolean on a
+     well-typed input. With the generated entry, the entry's arity is the
+     declared count by construction, and the guard is redundant once a lemma
+     shows that the steps after the entry keep its parameters (P8 does,
+     `Anf.Defun.Proof.run_arity`; the other middle-end steps keep every
+     global's parameters in every measurement, not yet by a lemma).
 
-  The claim-level theorems (`verifyProgram_*_sound`, `verifyBytes_*_sound`,
-  `verifyRing0Sip_sound`, `verifyBytesRing0Sip_sound`) are to be restated for
-  inputs of exactly the claim's `abiArity` arguments, what the driver session
-  executes, where the premise is discharged by `rootParamsAllNat` and
-  `root.params = abiArity`, so nothing at the claim level becomes conditional.
-
-  *Reachability today.* A well-typed over-application arises only when a
-  root's definition has fewer leading binders than its declared type has
-  arrows (a point-free or partially applied definition), or when the
-  declared type hides arrows behind a definition. The front end does not
-  η-expand roots: erasure gives a root its constant's erased δ body, or a
-  special head's wrapper (`Lam.Erase.rootId`), whose leading binders set
-  the compiled arity. Such a root whose result is a function is declined
-  today at `fir: fir.closures` (its value is a closure); with P8 it would
-  compile. At the claim level it is refused, since `rootParamsAllNat`
-  requires the declared telescope's length to equal the compiled parameter
-  count; `Recheck.run` has no such check yet, which is condition 2.
+  *Arity today.* No stage η-expands a root, and no stage after P1 changes a
+  global's parameters: a root's compiled arity is the number of leading λs of
+  the body the unfolding table gives it (its kernel value, an equation's
+  body, or a `csimp` target, a constant: arity 0), which erasure
+  (`Lam.Erase.rootId`) and P1 keep. The table is certificate data, so a
+  certificate can change a root's compiled arity: `main4 : Nat → Nat → Nat
+  := g` has arity 0 from its kernel value and 2 with an η-long equation in
+  the table; a well-founded definition's kernel value has no λ and its
+  equation one. Most roots with fewer λs than their declared count return a
+  closure and are declined today at `fir: fir.closures`. Two shapes compile
+  today with a compiled arity other than the declared count: a root that
+  builds no closure (a `partial_fixpoint` definition `spin (n : Nat) : Nat →
+  Nat := spin (n + 1)`, 1 against 2), and a root whose declared result type
+  is a definition of a function type (`main7 (a : Nat) : NatFn := fun b =>
+  …`, 2 against 1). Neither is claimable: at the claim level every such root
+  is refused, since `rootParamsAllNat` requires the declared telescope's
+  length to equal the compiled parameter count. With the generated entry,
+  `spin` compiles at 2; `main7` returns a closure, has no readback type and
+  is not claimable.
 - **P9** is proved for every fact; the shrink rule is one rewrite lemma
   proved by unfolding the dispatcher.
 

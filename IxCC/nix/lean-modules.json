@@ -768,6 +768,7 @@
    ["IxCCTests.Pipeline.Support",
     "IxCCTests.Anf.Support",
     "IxCC.Anf.Defun",
+    "IxCC.Recheck.RootArity",
     "IxCCTests.Pipeline.Twin",
     "IxCCTests.Corpus.Manifest"]},
   "IxCCTests.Pipeline.Compiler":
@@ -3069,7 +3070,10 @@
    ["IxCC.Anf.Proof.Defun.FirstOrder",
     "IxCC.Anf.Proof.Defun.Rel",
     "IxCC.Fir.Proof.FirstOrder",
-    "IxCC.Anf.Proof.Defun.Scope"]},
+    "IxCC.Anf.Proof.Defun.Scope",
+    "IxCC.Anf.Proof.Defun.Dispatch",
+    "IxCC.Recheck.RootArity",
+    "IxCC.Anf.Proof.Defun.Keys"]},
   "IxCCTests.Fences.Compile":
   {"path": "IxCCTests/Fences/Compile.lean",
    "imports":
@@ -5119,6 +5123,8 @@
     "IxCC.Rt.Backend",
     "IxCC.Rt.Readback",
     "IxCC.Recheck.Readback"]},
+  "IxCC.Recheck.RootArity":
+  {"path": "IxCC/Recheck/RootArity.lean", "imports": ["IxCC.Recheck.Run"]},
   "IxCC.Recheck.Readback":
   {"path": "IxCC/Recheck/Readback.lean",
    "imports": ["IxCC.Cfg.Syntax", "IxCC.Rt.Readback"]},
@@ -7512,10 +7518,16 @@
   "IxCC.Anf.Proof.Defun.Rel":
   {"path": "IxCC/Anf/Proof/Defun/Rel.lean",
    "imports": ["IxCC.Anf.Defun", "IxCC.Anf.Census", "IxCC.Anf.Proof.Lang"]},
+  "IxCC.Anf.Proof.Defun.Keys":
+  {"path": "IxCC/Anf/Proof/Defun/Keys.lean",
+   "imports": ["IxCC.Anf.Defun", "IxCC.Src.Proof.NatMap"]},
   "IxCC.Anf.Proof.Defun.FirstOrder":
   {"path": "IxCC/Anf/Proof/Defun/FirstOrder.lean",
    "imports":
    ["IxCC.Anf.Defun", "IxCC.Src.Proof.NatMap", "IxCC.Anf.WellFormed"]},
+  "IxCC.Anf.Proof.Defun.Dispatch":
+  {"path": "IxCC/Anf/Proof/Defun/Dispatch.lean",
+   "imports": ["IxCC.Anf.Defun", "IxCC.Anf.Proof.Unfold"]},
   "IxCC.Anf.Proof.Convert.Term":
   {"path": "IxCC/Anf/Proof/Convert/Term.lean",
    "imports": ["IxCC.Anf.Proof.Convert.Spine"]},
@@ -8089,6 +8101,8 @@
     "IxCC.Anf.Proof.Defun.FirstOrder",
     "IxCC.Anf.Proof.Defun.Rel",
     "IxCC.Anf.Proof.Defun.Scope",
+    "IxCC.Anf.Proof.Defun.Dispatch",
+    "IxCC.Anf.Proof.Defun.Keys",
     "IxCC.Own.Kind",
     "IxCC.Fir.Syntax",
     "IxCC.Fir.Semantics",
@@ -8348,6 +8362,7 @@
     "IxCC.Rt.Backend",
     "IxCC.Src.Table.Cert",
     "IxCC.Recheck",
+    "IxCC.Recheck.RootArity",
     "IxCC.Recheck.Proof.Front",
     "IxCC.Recheck.Proof.Sound",
     "IxCC.Recheck.Linked",

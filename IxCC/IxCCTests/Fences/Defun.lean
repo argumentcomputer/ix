@@ -2,14 +2,19 @@ import IxCC.Anf.Proof.Defun.FirstOrder
 import IxCC.Anf.Proof.Defun.Rel
 import IxCC.Fir.Proof.FirstOrder
 import IxCC.Anf.Proof.Defun.Scope
+import IxCC.Anf.Proof.Defun.Dispatch
+import IxCC.Recheck.RootArity
+import IxCC.Anf.Proof.Defun.Keys
 
 /-! Required axiom fences for P8 (closed-world defunctionalisation, not yet in
 the pipeline): its output is first order (`Anf.Defun.Proof.run_firstOrder`),
 `Fir.lower` declines no first-order program for closures
 (`Fir.Proof.lower_firstOrder`), and the value relation is the identity on
-first-order values and keeps observations (`Anf.Defun.Proof.Rel`). The
-headline theorems come first, then every other public theorem of these
-modules. -/
+first-order values and keeps observations (`Anf.Defun.Proof.Rel`), the
+dispatchers compute `applyN` (`Anf.Defun.Proof.Dispatch`), P8 keeps the roots
+and their arities, and the root-arity guard pins a compiled root to its
+declared count (`Recheck.RootArity`). The headline theorems come first, then
+every other public theorem of these modules. -/
 
 /-- info: 'IxCC.Anf.Defun.Proof.run_firstOrder' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Anf.Defun.Proof.run_firstOrder
@@ -242,3 +247,97 @@ modules. -/
 
 /-- info: 'IxCC.Anf.Defun.Proof.capMap_lt' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Anf.Defun.Proof.capMap_lt
+
+/-! The dispatchers (`Anf.Defun.Proof.Dispatch`), the roots and their arities (`Anf.Defun.Proof.FirstOrder`, `Recheck.RootArity`) and `RefinesOn` (`Anf.Defun.Proof.Rel`). -/
+
+/-- info: 'IxCC.Recheck.checkRootArities_ok' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Recheck.checkRootArities_ok
+
+/-- info: 'IxCC.Recheck.rootAritiesOk_spec' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Recheck.rootAritiesOk_spec
+
+/-- info: 'IxCC.Recheck.rootAritiesOk_length' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Recheck.rootAritiesOk_length
+
+/-- info: 'IxCC.Recheck.exactDeclared_cfg' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Recheck.exactDeclared_cfg
+
+/-- info: 'IxCC.Anf.Defun.Proof.refinesOn_mono' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.refinesOn_mono
+
+/-- info: 'IxCC.Anf.Defun.Proof.run_roots' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.run_roots
+
+/-- info: 'IxCC.Anf.Defun.Proof.run_arity' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.run_arity
+
+/-- info: 'IxCC.Anf.Defun.Proof.evalAtoms_append' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.evalAtoms_append
+
+/-- info: 'IxCC.Anf.Defun.Proof.downFrom_succ' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.downFrom_succ
+
+/-- info: 'IxCC.Anf.Defun.Proof.evalAtoms_downFrom' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.evalAtoms_downFrom
+
+/-- info: 'IxCC.Anf.Defun.Proof.evalAtoms_downFrom_nil' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.evalAtoms_downFrom_nil
+
+/-- info: 'IxCC.Anf.Defun.Proof.downFrom_take' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.downFrom_take
+
+/-- info: 'IxCC.Anf.Defun.Proof.downFrom_drop' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.downFrom_drop
+
+/-- info: 'IxCC.Anf.Defun.Proof.downFrom_map_shift' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.downFrom_map_shift
+
+/-- info: 'IxCC.Anf.Defun.Proof.eval_bind_ret' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.eval_bind_ret
+
+/-- info: 'IxCC.Anf.Defun.Proof.evalAlts_skip' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.evalAlts_skip
+
+/-- info: 'IxCC.Anf.Defun.Proof.evalAlts_keyAlts' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.evalAlts_keyAlts
+
+/-- info: 'IxCC.Anf.Defun.Proof.evalAlts_dispAlts' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.evalAlts_dispAlts
+
+/-- info: 'IxCC.Anf.Defun.Proof.eval_dispatcher' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.eval_dispatcher
+
+/-- info: 'IxCC.Anf.Defun.Proof.evalAtoms_alt' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.evalAtoms_alt
+
+/-- info: 'IxCC.Anf.Defun.Proof.eval_altBody_exact' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.eval_altBody_exact
+
+/-- info: 'IxCC.Anf.Defun.Proof.eval_altBody_under' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.eval_altBody_under
+
+/-- info: 'IxCC.Anf.Defun.Proof.eval_altBody_over' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.eval_altBody_over
+
+/-- info: 'IxCC.Anf.Defun.Proof.call_dispatcher' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.call_dispatcher
+
+/-- info: 'IxCC.Anf.Defun.Proof.dispatch_exact' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.dispatch_exact
+
+/-- info: 'IxCC.Anf.Defun.Proof.dispatch_under' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.dispatch_under
+
+/-- info: 'IxCC.Anf.Defun.Proof.dispatch_over' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.dispatch_over
+
+/-! P8's key check is sound (`Anf.Defun.Proof.Keys`). -/
+
+/-- info: 'IxCC.Anf.Defun.Proof.firstEqualKeys_none_go' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.firstEqualKeys_none_go
+
+/-- info: 'IxCC.Anf.Defun.Proof.firstEqualKeys_none' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.firstEqualKeys_none
+
+/-- info: 'IxCC.Anf.Defun.Proof.checkSources_ownerKeys' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.checkSources_ownerKeys

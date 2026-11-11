@@ -1,6 +1,7 @@
 import IxCCTests.Pipeline.Support
 import IxCCTests.Anf.Support
 import IxCC.Anf.Defun
+import IxCC.Recheck.RootArity
 import IxCCTests.Pipeline.Twin
 import IxCCTests.Corpus.Manifest
 
@@ -11,7 +12,9 @@ end (`fir.closures`); `Recheck.run` does not run P8 yet. This part runs the
 compiler's own stages with `Anf.defun` between the middle end and Fir: the
 producer's front end (table, relevance, admission, erasure), a middle-end
 schedule, `Anf.defun`, then `Fir.lower`, the immortal Own and Cfg, the root
-and switch checks, `Rt.lower`, selection, the producer's allocation, stacking
+checks (each root's compiled arity is its declared parameter count,
+`Recheck.checkRootArities`, and the entry wrapper's parameter limit), the
+switch check, `Rt.lower`, selection, the producer's allocation, stacking
 and layout, and `Backend.finish`; the object is linked with the runtime
 driver and run (with `--cc`). On `Decline.composeClosure`, two schedules:
 the Phase 1 middle end (`Anf.Pipeline.produce`), and P1 and P2 alone, so that
@@ -31,7 +34,16 @@ through a stored closure, a fuel-indexed record of closures) and a copy of
 with the ix of this repository, not yet a registered family): each under both
 schedules, against the manifest's interpreter values; `Closures.stateLoop` must
 be refused by register allocation (`alloc.fallback`): a source global of eight
-parameters exceeds its limit on parameter counts, which is independent of closures. -/
+parameters exceeds its limit on parameter counts, which is independent of closures.
+
+The roots of `fixtures/corpus/phase2-arity` (also unregistered) have stored
+values with fewer or more leading λs than their declared types show. With P8
+and no root-arity check, the point-free ones would compile at their stored
+arity, and a field-less closure cell would read back natively as a number or
+a Boolean on a well-typed input: `checkRootArities` must refuse each of them
+(`rt.arity`, with both counts), as it must a `csimp` table entry that gives a
+root arity 0; the roots whose counts agree, and a point-free root given an
+η-long equation, compile and agree with Lean. -/
 
 namespace IxCCTests.Pipeline.Defun
 
@@ -78,6 +90,7 @@ def compile (cfg : Config) (inp : Input) (mid : Lam.Program → Except String An
   let after ← (IxCC.Anf.defun before).mapError fun m => { stage := .anf, code := "anf.defun", message := m }
   let fir ← (IxCC.Fir.lower after).mapError Err.ofFir
   let C := IxCC.Cfg.lower (IxCC.Own.immortal fir)
+  checkRootArities cfg src C
   checkParams cfg C (C.exports.zipIdx.map fun (f, i) => (i, f))
   (IxCC.Rt.checkSwitches C).mapError Err.ofSwitch
   let lowered ← (IxCC.Rt.lower { names := cfg.names } C).mapError Err.ofRt
@@ -210,6 +223,91 @@ def workloads (a : Assert) (native : Option IxCCTests.Rt.Native.Tools) : IO (Arr
       | .ok _, none => out := out.push (← one a native label inp mid cases 10 (closures := false))
   return out
 
+def arityDir : FilePath := "fixtures/corpus/phase2-arity"
+
+/-- The roots of `fixtures/corpus/phase2-arity` whose compiled arity is not
+their declared parameter count: the root, its compiled arity (the leading λs
+of the body the table gives it) and its declared count. `Arity.main7`'s
+result type is a definition of a function type, so its declared count is
+below its arity; `Arity.spin` builds no closure (it compiles today without
+P8). -/
+def arityRefused : List (String × Nat × Nat) :=
+  [("Arity.main3", 1, 2), ("Arity.main4", 0, 2), ("Arity.addTo", 1, 2), ("Arity.halve", 1, 2),
+   ("Arity.main7", 2, 1), ("Arity.main8p", 1, 3), ("Arity.main9", 0, 2), ("Arity.main9r", 0, 2),
+   ("Arity.main10", 0, 1), ("Arity.main11", 1, 2), ("Arity.main12", 1, 2), ("Arity.mainB3", 1, 2),
+   ("Arity.mainB4", 0, 2), ("Arity.spin", 1, 2)]
+
+/-- The start of `checkRootArities`' diagnostic for a root. -/
+def arityText (name : String) (m n : Nat) : String :=
+  s!"root {name} takes {m} parameters, its declared type shows {n};"
+
+/-- A refusal by the root-arity check with both counts. -/
+def expectArity (a : Assert) (label name : String) (m n : Nat) (res : Except Err Made) : IO Unit :=
+  match res with
+  | .error e => expect a (e.code == "rt.arity" && e.message.startsWith (arityText name m n))
+      s!"{label}: refused with {e.render}, expected rt.arity: {arityText name m n}"
+  | .ok _ => expect a false s!"{label}: compiled, expected rt.arity ({m} parameters against {n})"
+
+/-- An input whose table proposals include `ps` (what a certificate's table
+may choose). -/
+def withProposals (inp : Input) (ps : List Src.Proposal) : Input :=
+  { inp with hints := { inp.hints with proposals := inp.hints.proposals ++ ps.toArray } }
+
+/-- A sidecar root's address by name. -/
+def sidecarAddr (h : Src.Hints) (n : String) : IO Ixon.Address :=
+  match h.roots.find? (·.2 == some n) with
+  | some (addr, _) => pure addr
+  | none => throw (IO.userError s!"phase2-arity: no sidecar root {n}")
+
+/-- The roots of `fixtures/corpus/phase2-arity` under the Phase 1 schedule:
+those of `arityRefused` refused by the root-arity check, `Arity.main7b`
+(declared and compiled count 1, its result a closure) compiled with no
+readback type, the others compiled and agreeing with Lean; then two table
+entries: an η-long equation for `Arity.main4` (it compiles at its declared
+count) and a `csimp` entry for `Arity.slowDouble` (arity 0 against 1,
+refused). -/
+def arity (a : Assert) (native : Option IxCCTests.Rt.Native.Tools) : IO (Array String) := do
+  let fam ← IxCCTests.Corpus.Family.read (arityDir / "corpus.json")
+  let some fx := fam.fixtures.head? | do expect a false "phase2-arity: no fixture"; return #[]
+  let ixe := arityDir / fx.closure.path
+  let eqs := arityDir / fx.equations.path
+  let mut out := #[]
+  let mut refused : List String := []
+  for r in fx.roots do
+    let inp ← ingressFile ixe eqs [r.name]
+    let label := s!"{r.name.replace "." "_"}-phase1"
+    let res ← IO.lazyPure fun _ => compile {} inp midDefault
+    match arityRefused.find? (·.1 == r.name) with
+    | some (_, m, n) =>
+      expectArity a label r.name m n res
+      refused := refused ++ [s!"{r.name} ({m}/{n})"]
+    | none =>
+      match res with
+      | .error e => expect a false s!"{label}: refused: {e.render}"
+      | .ok made =>
+        if r.name == "Arity.main7b" then
+          expect a (made.roots.head?.any fun root => root.params == 1 && root.ty.isNone)
+            s!"{label}: expected one parameter and no readback type"
+          out := out.push s!"{label}: compiled at its declared count 1, with no readback type"
+        else
+          let cases := r.cases.map fun c => (c.args, c.value.toNat!)
+          out := out.push (← one a native label inp midDefault cases 10 (closures := false))
+  out := out.push s!"phase2-arity: refused by the root-arity check (compiled/declared): {", ".intercalate refused}"
+  let h ← IO.ofExcept (Src.Hints.ofK1Json (← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile eqs))))
+  let main4 ← ingressFile ixe eqs ["Arity.main4"]
+  let eta : Src.Proposal := { kind := .eqn, subject := ← sidecarAddr h "Arity.main4"
+                              theorem? := some (← sidecarAddr h "Arity.main4_eta"), name? := some "Arity.main4" }
+  out := out.push (← one a native "main4_eta-phase1" (withProposals main4 [eta]) midDefault
+    [([3, 4], 34), ([12, 5], 125)] 10 (closures := false))
+  let sd ← ingressFile ixe eqs ["Arity.slowDouble"]
+  let cs : Src.Proposal := { kind := .csimp, subject := ← sidecarAddr h "Arity.slowDouble"
+                             target? := some (← sidecarAddr h "Arity.fastDouble")
+                             theorem? := some (← sidecarAddr h "Arity.slowDouble_eq"), name? := some "Arity.slowDouble" }
+  expectArity a "slowDouble_csimp-phase1" "Arity.slowDouble" 0 1
+    (← IO.lazyPure fun _ => compile {} (withProposals sd [cs]) midDefault)
+  out := out.push "slowDouble_csimp-phase1: refused by the root-arity check (0/1), as expected"
+  return out
+
 def run (a : Assert) (native : Option IxCCTests.Rt.Native.Tools) : IO (Array String) := do
   let mut out := #[]
   let compose ← ingressFile declineIxe declineEqs ["Decline.composeClosure"]
@@ -223,6 +321,7 @@ def run (a : Assert) (native : Option IxCCTests.Rt.Native.Tools) : IO (Array Str
     let cases := inputs.map fun xs => (xs, (Twin.twin root xs).getD 0)
     out := out.push (← one a native s!"fallback-{root.replace "." "_"}" inp midDefault cases 10)
   out := out ++ (← workloads a native)
+  out := out ++ (← arity a native)
   return out
 
 end IxCCTests.Pipeline.Defun
