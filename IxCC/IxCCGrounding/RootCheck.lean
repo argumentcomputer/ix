@@ -167,7 +167,7 @@ def foValB : FoTy → Value → KExpr → Bool
   | .enum D, .con c [] [] [], e =>
     decide (e = .const (κ c) []) &&
       match p.decl? D with
-      | some (.induct _ 0 0 0 _ cs) => decide (c ∈ cs)
+      | some (.induct _ lv np ni _ cs) => lv == 0 && np == 0 && ni == 0 && decide (c ∈ cs)
       | _ => false
   | _, _, _ => false
 
@@ -270,12 +270,16 @@ theorem foVal_of_check {t : FoTy} {x : Value} {e : KExpr} (h : foValB p κ t x e
   | .enum D, .con c [] [] [], h =>
     simp only [foValB, Bool.and_eq_true, decide_eq_true_eq] at h
     obtain ⟨rfl, h⟩ := h
-    split at h
-    · rename_i safe ty cs hd
-      simp only [decide_eq_true_eq] at h
-      obtain ⟨i, hi⟩ := List.mem_iff_getElem?.mp h
-      exact .enum hd hi
-    · cases h
+    cases hd : p.decl? D with
+    | none => simp [hd] at h
+    | some d =>
+      cases d with
+      | induct safe lv np ni ty cs =>
+        simp only [hd, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at h
+        obtain ⟨⟨⟨rfl, rfl⟩, rfl⟩, hc⟩ := h
+        obtain ⟨i, hi⟩ := List.mem_iff_getElem?.mp hc
+        exact .enum hd hi
+      | _ => simp [hd] at h
 
 theorem foArgs_length : ∀ {ts : List FoTy} {xs : List Value} {es : List KExpr},
     FoArgs p κ ts xs es → es.length = ts.length
