@@ -1616,17 +1616,15 @@ theorem sectionFor_ok {annotator? : Option BinderAnnotator} {names : Array Name}
     {c : Ixon.Constant} {binders : Array Ixon.BinderBlock}
     (h : sectionFor annotator? names c = .ok binders) : sectionAdmissible c binders = true := by
   unfold sectionFor at h
-  by_cases ha : sectionAdmissible c (annotatorSection annotator? names c) = true
-  · rw [if_pos ha] at h
+  split at h
+  · rename_i ha
     cases h
     exact ha
-  · rw [if_neg ha] at h
-    by_cases hu : sectionAdmissible c (undecidedSection c) = true
-    · rw [if_pos hu] at h
+  · split at h
+    · rename_i hu
       cases h
       exact hu
-    · rw [if_neg hu] at h
-      cases h
+    · cases h
 
 /-- **The compiler's section is admissible**: a record built with a section
 is `c` with an admissible one. -/
@@ -1650,15 +1648,11 @@ theorem withBinderSection_error {annotator? : Option BinderAnnotator} {names : A
   · rename_i e hs
     cases h
     unfold sectionFor at hs
-    by_cases ha : sectionAdmissible c (annotatorSection annotator? names c) = true
-    · rw [if_pos ha] at hs
-      cases hs
-    · rw [if_neg ha] at hs
-      by_cases hu : sectionAdmissible c (undecidedSection c) = true
-      · rw [if_pos hu] at hs
-        cases hs
-      · rw [if_neg hu] at hs
-        cases hs
+    split at hs
+    · cases hs
+    · split at hs
+      · cases hs
+      · cases hs
         exact ⟨_, rfl⟩
 
 /-- An admissible section is in the wire domain. -/

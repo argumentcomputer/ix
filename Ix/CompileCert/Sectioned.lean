@@ -75,10 +75,10 @@ theorem empty_of_rootless {c : Ixon.Constant} (roots : c.info.binderRoots = #[])
   have rootless : c.info.binderRoots.isEmpty = true := by rw [roots]; rfl
   constructor
   · unfold Ixon.Constant.bindersCanonical
-    rw [if_pos rootless, empty]
-    rfl
+    rw [rootless, empty]
+    all_goals rfl
   · unfold Ixon.Constant.bindersComplete
-    rw [if_pos rootless, empty]
-    rfl
+    rw [rootless, empty]
+    all_goals rfl
 
 end Ix.CompileCert.Sectioned
