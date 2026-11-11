@@ -43,9 +43,11 @@ open Ix.Kernel (Role RoleTable)
 def ofBinding (binding : Address) (bindingAssumed : Bool := false) : Except String ClaimContext := do
   return { spec := ← Ix.SpecDigest.specDigest, binding, axioms := none, bindingAssumed }
 
-/-- Safe axioms in `env` not bound by its role binding (`propext`,
-    `Classical.choice` and `sorryAx` are role-bound; `Quot.sound` is a `.quot`
-    record). Mirrors `ClaimContext::user_axioms` in `crates/ixon/src/proof.rs`. -/
+/-- Safe axioms in `env` not bound by its role binding. The default table binds
+    `propext` and `Classical.choice` and the inert `sorryAx`, `Lean.trustCompiler`,
+    `Lean.ofReduceBool` and `Lean.ofReduceNat`, so a claim over Lean's `Init` lists
+    none of them; `Quot.sound` is a `.quot` record. Mirrors
+    `ClaimContext::user_axioms` in `crates/ixon/src/proof.rs`. -/
 def userAxioms (env : Ixon.Env) : Array Address := Id.run do
   let some binding := env.roleBinding | return #[]
   let some table := RoleTable.ofBytes binding.bytes | return #[]

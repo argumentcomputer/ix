@@ -21,7 +21,7 @@ open IxVM (F)
 inductive «KernelRoleSpec::spec_version».Path (h : Heap F) (r : SourceValue F) (h' : Heap F)
     (calls : List (Call F)) : Prop where
   | run
-      (he1 : r = (.field 4))
+      (he1 : r = (.field 5))
       (he2 : h' = h)
       (hc3 : calls = [])
 
@@ -40,7 +40,7 @@ inductive «KernelRoleSpec::spec_digest».Path (h : Heap F) (r : SourceValue F) 
     (calls : List (Call F)) : Prop where
   | run
       (he5 : r = (.ptr (.tuple [.field, .field, .field, .field, .field, .field, .field, .field, .field, .field, .field, .field, .field, .field, .field, .field, .field, .field, .field, .field, .field, .field, .field, .field, .field, .field, .field, .field, .field, .field, .field, .field]) (h).length))
-      (hm4 : h' = (h ++ [(.tuple [(.field 126), (.field 107), (.field 197), (.field 140), (.field 245), (.field 36), (.field 88), (.field 219), (.field 153), (.field 237), (.field 197), (.field 22), (.field 183), (.field 31), (.field 177), (.field 138), (.field 91), (.field 116), (.field 223), (.field 216), (.field 235), (.field 1), (.field 202), (.field 108), (.field 242), (.field 75), (.field 130), (.field 187), (.field 170), (.field 98), (.field 58), (.field 130)])]))
+      (hm4 : h' = (h ++ [(.tuple [(.field 230), (.field 247), (.field 23), (.field 96), (.field 43), (.field 92), (.field 61), (.field 41), (.field 56), (.field 3), (.field 188), (.field 198), (.field 22), (.field 93), (.field 221), (.field 203), (.field 242), (.field 198), (.field 22), (.field 59), (.field 73), (.field 188), (.field 78), (.field 87), (.field 4), (.field 80), (.field 92), (.field 242), (.field 134), (.field 133), (.field 111), (.field 169)])]))
       (hc232 : calls = [])
 
 /-- **Every observed derivation of `KernelRoleSpec::spec_digest` takes one of its paths.** -/
@@ -53,69 +53,69 @@ theorem «KernelRoleSpec::spec_digest».obs {h h' : Heap F} {r : SourceValue F}
   obtain ⟨v1, m2, d3, rfl, hm4⟩ := d0.store_inv
   obtain ⟨vs6, a7, rfl⟩ := d3.array_inv
   obtain ⟨v8, vs40, m41, c42, c43, rfl, d44, a45, rfl⟩ := a7.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d44.global_literal_inv Names.c12431479008142518037
+  obtain ⟨rfl, rfl, rfl⟩ := d44.global_literal_inv Names.c739026933675015821
   obtain ⟨v9, vs46, m47, c48, c49, rfl, d50, a51, rfl⟩ := a45.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d50.global_literal_inv Names.c2972478563898343647
+  obtain ⟨rfl, rfl, rfl⟩ := d50.global_literal_inv Names.c6716291203844710281
   obtain ⟨v10, vs52, m53, c54, c55, rfl, d56, a57, rfl⟩ := a51.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d56.global_literal_inv Names.c8473220030909417633
+  obtain ⟨rfl, rfl, rfl⟩ := d56.global_literal_inv Names.c7682798965404240078
   obtain ⟨v11, vs58, m59, c60, c61, rfl, d62, a63, rfl⟩ := a57.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d62.global_literal_inv Names.c14308732269399290837
+  obtain ⟨rfl, rfl, rfl⟩ := d62.global_literal_inv Names.c18205039545701360928
   obtain ⟨v12, vs64, m65, c66, c67, rfl, d68, a69, rfl⟩ := a63.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d68.global_literal_inv Names.c15475934101966716593
+  obtain ⟨rfl, rfl, rfl⟩ := d68.global_literal_inv Names.c13248666743415252615
   obtain ⟨v13, vs70, m71, c72, c73, rfl, d74, a75, rfl⟩ := a69.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d74.global_literal_inv Names.c15316874658082287075
+  obtain ⟨rfl, rfl, rfl⟩ := d74.global_literal_inv Names.c3509834561647222785
   obtain ⟨v14, vs76, m77, c78, c79, rfl, d80, a81, rfl⟩ := a75.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d80.global_literal_inv Names.c10621487201023178060
+  obtain ⟨rfl, rfl, rfl⟩ := d80.global_literal_inv Names.c3618103532004666073
   obtain ⟨v15, vs82, m83, c84, c85, rfl, d86, a87, rfl⟩ := a81.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d86.global_literal_inv Names.c12078453186527600422
+  obtain ⟨rfl, rfl, rfl⟩ := d86.global_literal_inv Names.c9535146383147336666
   obtain ⟨v16, vs88, m89, c90, c91, rfl, d92, a93, rfl⟩ := a87.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d92.global_literal_inv Names.c907872797159080482
+  obtain ⟨rfl, rfl, rfl⟩ := d92.global_literal_inv Names.c14786973495542715110
   obtain ⟨v17, vs94, m95, c96, c97, rfl, d98, a99, rfl⟩ := a93.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d98.global_literal_inv Names.c9390766616873225889
+  obtain ⟨rfl, rfl, rfl⟩ := d98.global_literal_inv Names.c4658543753026666081
   obtain ⟨v18, vs100, m101, c102, c103, rfl, d104, a105, rfl⟩ := a99.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d104.global_literal_inv Names.c8473220030909417633
+  obtain ⟨rfl, rfl, rfl⟩ := d104.global_literal_inv Names.c14374038552694129880
   obtain ⟨v19, vs106, m107, c108, c109, rfl, d110, a111, rfl⟩ := a105.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d110.global_literal_inv Names.c3398454881945391472
+  obtain ⟨rfl, rfl, rfl⟩ := d110.global_literal_inv Names.c13228446064584596722
   obtain ⟨v20, vs112, m113, c114, c115, rfl, d116, a117, rfl⟩ := a111.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d116.global_literal_inv Names.c16005606417746861297
+  obtain ⟨rfl, rfl, rfl⟩ := d116.global_literal_inv Names.c3398454881945391472
   obtain ⟨v21, vs118, m119, c120, c121, rfl, d122, a123, rfl⟩ := a117.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d122.global_literal_inv Names.c8574265568953773051
+  obtain ⟨rfl, rfl, rfl⟩ := d122.global_literal_inv Names.c6647665375200536885
   obtain ⟨v22, vs124, m125, c126, c127, rfl, d128, a129, rfl⟩ := a123.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d128.global_literal_inv Names.c10006766132832736802
+  obtain ⟨rfl, rfl, rfl⟩ := d128.global_literal_inv Names.c6337310229500770809
   obtain ⟨v23, vs130, m131, c132, c133, rfl, d134, a135, rfl⟩ := a129.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d134.global_literal_inv Names.c9355855287278031025
+  obtain ⟨rfl, rfl, rfl⟩ := d134.global_literal_inv Names.c13184396214381920079
   obtain ⟨v24, vs136, m137, c138, c139, rfl, d140, a141, rfl⟩ := a135.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d140.global_literal_inv Names.c7622204403842064372
+  obtain ⟨rfl, rfl, rfl⟩ := d140.global_literal_inv Names.c3811768741262977426
   obtain ⟨v25, vs142, m143, c144, c145, rfl, d146, a147, rfl⟩ := a141.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d146.global_literal_inv Names.c1376625633660784660
+  obtain ⟨rfl, rfl, rfl⟩ := d146.global_literal_inv Names.c13228446064584596722
   obtain ⟨v26, vs148, m149, c150, c151, rfl, d152, a153, rfl⟩ := a147.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d152.global_literal_inv Names.c2737361722335721789
+  obtain ⟨rfl, rfl, rfl⟩ := d152.global_literal_inv Names.c3398454881945391472
   obtain ⟨v27, vs154, m155, c156, c157, rfl, d158, a159, rfl⟩ := a153.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d158.global_literal_inv Names.c7790843951552845064
+  obtain ⟨rfl, rfl, rfl⟩ := d158.global_literal_inv Names.c2055296870433284577
   obtain ⟨v28, vs160, m161, c162, c163, rfl, d164, a165, rfl⟩ := a159.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d164.global_literal_inv Names.c13295614243464629966
+  obtain ⟨rfl, rfl, rfl⟩ := d164.global_literal_inv Names.c12071472314521248527
   obtain ⟨v29, vs166, m167, c168, c169, rfl, d170, a171, rfl⟩ := a165.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d170.global_literal_inv Names.c3167744620027602021
+  obtain ⟨rfl, rfl, rfl⟩ := d170.global_literal_inv Names.c14374038552694129880
   obtain ⟨v30, vs172, m173, c174, c175, rfl, d176, a177, rfl⟩ := a171.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d176.global_literal_inv Names.c5203595819173520885
+  obtain ⟨rfl, rfl, rfl⟩ := d176.global_literal_inv Names.c18269290992861227148
   obtain ⟨v31, vs178, m179, c180, c181, rfl, d182, a183, rfl⟩ := a177.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d182.global_literal_inv Names.c7824431214770816588
+  obtain ⟨rfl, rfl, rfl⟩ := d182.global_literal_inv Names.c18415082502931761857
   obtain ⟨v32, vs184, m185, c186, c187, rfl, d188, a189, rfl⟩ := a183.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d188.global_literal_inv Names.c3811768741262977426
+  obtain ⟨rfl, rfl, rfl⟩ := d188.global_literal_inv Names.c11500736482030662876
   obtain ⟨v33, vs190, m191, c192, c193, rfl, d194, a195, rfl⟩ := a189.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d194.global_literal_inv Names.c16113614968983643409
+  obtain ⟨rfl, rfl, rfl⟩ := d194.global_literal_inv Names.c18025248328120289788
   obtain ⟨v34, vs196, m197, c198, c199, rfl, d200, a201, rfl⟩ := a195.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d200.global_literal_inv Names.c16182748909402436911
+  obtain ⟨rfl, rfl, rfl⟩ := d200.global_literal_inv Names.c3509834561647222785
   obtain ⟨v35, vs202, m203, c204, c205, rfl, d206, a207, rfl⟩ := a201.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d206.global_literal_inv Names.c1957414861934845478
+  obtain ⟨rfl, rfl, rfl⟩ := d206.global_literal_inv Names.c3811768741262977426
   obtain ⟨v36, vs208, m209, c210, c211, rfl, d212, a213, rfl⟩ := a207.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d212.global_literal_inv Names.c8530062502854149805
+  obtain ⟨rfl, rfl, rfl⟩ := d212.global_literal_inv Names.c1321278976489293432
   obtain ⟨v37, vs214, m215, c216, c217, rfl, d218, a219, rfl⟩ := a213.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d218.global_literal_inv Names.c9105205870158891191
+  obtain ⟨rfl, rfl, rfl⟩ := d218.global_literal_inv Names.c6423468919425334626
   obtain ⟨v38, vs220, m221, c222, c223, rfl, d224, a225, rfl⟩ := a219.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d224.global_literal_inv Names.c14404688178232268464
+  obtain ⟨rfl, rfl, rfl⟩ := d224.global_literal_inv Names.c2984228841125415820
   obtain ⟨v39, vs226, m227, c228, c229, rfl, d230, a231, rfl⟩ := a225.cons_inv
-  obtain ⟨rfl, rfl, rfl⟩ := d230.global_literal_inv Names.c16182748909402436911
+  obtain ⟨rfl, rfl, rfl⟩ := d230.global_literal_inv Names.c15071463306633705845
   obtain ⟨rfl, rfl, rfl⟩ := a231.nil_inv
   try simp only [Value.type, List.map_cons, List.map_nil] at hm4 ⊢
   exact «KernelRoleSpec::spec_digest».Path.run rfl hm4 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
@@ -124,7 +124,7 @@ theorem «KernelRoleSpec::spec_digest».obs {h h' : Heap F} {r : SourceValue F}
 inductive «KernelRoleSpec::role_count».Path (h : Heap F) (r : SourceValue F) (h' : Heap F)
     (calls : List (Call F)) : Prop where
   | run
-      (he1 : r = (.field 103))
+      (he1 : r = (.field 108))
       (he2 : h' = h)
       (hc3 : calls = [])
 
@@ -142,7 +142,7 @@ theorem «KernelRoleSpec::role_count».obs {h h' : Heap F} {r : SourceValue F}
 inductive «KernelRoleSpec::group_count».Path (h : Heap F) (r : SourceValue F) (h' : Heap F)
     (calls : List (Call F)) : Prop where
   | run
-      (he1 : r = (.field 72))
+      (he1 : r = (.field 77))
       (he2 : h' = h)
       (hc3 : calls = [])
 
@@ -160,7 +160,7 @@ theorem «KernelRoleSpec::group_count».obs {h h' : Heap F} {r : SourceValue F}
 inductive «KernelRoleSpec::first_well_founded_group».Path (h : Heap F) (r : SourceValue F) (h' : Heap F)
     (calls : List (Call F)) : Prop where
   | run
-      (he1 : r = (.field 33))
+      (he1 : r = (.field 38))
       (he2 : h' = h)
       (hc3 : calls = [])
 
@@ -178,7 +178,7 @@ theorem «KernelRoleSpec::first_well_founded_group».obs {h h' : Heap F} {r : So
 inductive «KernelRoleSpec::first_equation_group».Path (h : Heap F) (r : SourceValue F) (h' : Heap F)
     (calls : List (Call F)) : Prop where
   | run
-      (he1 : r = (.field 41))
+      (he1 : r = (.field 46))
       (he2 : h' = h)
       (hc3 : calls = [])
 
@@ -587,24 +587,6 @@ theorem «KernelRoleSpec::role_choice».obs {h h' : Heap F} {r : SourceValue F}
   simp only [IxVM.KernelRoleSpec.role_choice] at d0
   obtain ⟨rfl, rfl, rfl⟩ := d0.literal_inv
   exact «KernelRoleSpec::role_choice».Path.run rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
-
-/-- The evaluation paths of `KernelRoleSpec::role_sorry_ax`: one constructor per combination of selected arms. -/
-inductive «KernelRoleSpec::role_sorry_ax».Path (h : Heap F) (r : SourceValue F) (h' : Heap F)
-    (calls : List (Call F)) : Prop where
-  | run
-      (he1 : r = (.field 58))
-      (he2 : h' = h)
-      (hc3 : calls = [])
-
-/-- **Every observed derivation of `KernelRoleSpec::role_sorry_ax` takes one of its paths.** -/
-theorem «KernelRoleSpec::role_sorry_ax».obs {h h' : Heap F} {r : SourceValue F}
-    {calls : List (Call F)} (ev : ObsFn W "KernelRoleSpec::role_sorry_ax" [] h r h' calls) :
-    «KernelRoleSpec::role_sorry_ax».Path h r h' calls := by
-  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelRoleSpec.role_sorry_ax.lookup
-    (by simp [IxVM.KernelRoleSpec.role_sorry_ax, ControlLower.hasControl]) ev
-  simp only [IxVM.KernelRoleSpec.role_sorry_ax] at d0
-  obtain ⟨rfl, rfl, rfl⟩ := d0.literal_inv
-  exact «KernelRoleSpec::role_sorry_ax».Path.run rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
 
 /-- The evaluation paths of `KernelRoleSpec::role_decidable_is_true`: one constructor per combination of selected arms. -/
 inductive «KernelRoleSpec::role_decidable_is_true».Path (h : Heap F) (r : SourceValue F) (h' : Heap F)

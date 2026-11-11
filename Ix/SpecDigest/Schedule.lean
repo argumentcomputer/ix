@@ -36,6 +36,7 @@ def groupOrder : List Role :=
   [.nat, .eq, .punit, .empty, .false, .quot, .char, .string, .list, .charOfNat,
    .stringOfList, .bool, .natPred, .natAdd, .natSub, .natMul, .natPow, .natBeq,
    .natBle, .true, .and, .iff, .nonempty, .propext, .choice, .sorryAx,
+   .trustCompiler, .reduceBool, .reduceNat, .ofReduceBool, .ofReduceNat,
    .notProp, .decidable, .natLe, .int, .intLe, .bitVec, .byteArray,
    .natDiv, .natMod, .natGcd, .natLand, .natLor, .natXor, .natShiftLeft, .natShiftRight,
    .decidableDecide, .ofDecideEqTrue, .ofDecideEqFalse, .natDecEq, .natDecLe, .natDecLt,

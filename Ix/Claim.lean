@@ -803,7 +803,9 @@ constant of any type, `False` included, and a `partial` block (Lean's
 policy (`Ix.Kernel.Reader.safetyDeclineOf`, `readInductive`, `readRecord`).
 The claim builders leave such constants out of seed and owned lists. A safe
 constant never references one (`KernelCheck::assert_safety`), so an owned set
-stays closed under the claim walk when they are left out. -/
+stays closed under the claim walk when they are left out. They also leave out
+the inert axioms and every constant that uses one (`IxVM.ClaimHarness.inertUsers`),
+which IxVM refuses as seeds or on their walks. -/
 
 namespace Ixon
 

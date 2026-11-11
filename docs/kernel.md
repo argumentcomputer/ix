@@ -385,20 +385,25 @@ and no checker outside its closure ("Trust surface") is consulted. The certified
 uses Lean's three standard axioms: `propext`, `Classical.choice` and
 `Quot.sound`. The compiler-trust axioms `Lean.trustCompiler`,
 `Lean.ofReduceBool` and `Lean.ofReduceNat` are non-standard axioms here and
-decline. There are no native-evaluation roles for these declarations or for
-`Lean.reduceBool` and `Lean.reduceNat`; opaque definitions follow the ordinary
+decline. They are roles, inert ones, so that a role binding names them and a
+claim over Lean's `Init` lists no user axiom for them, and `Lean.reduceBool` and
+`Lean.reduceNat` are type-only anchors because those axioms' types mention
+them; no rule reduces either, and opaque definitions follow the ordinary
 checking rules. Native evaluation is outside this certified theory.
 `sorryAx` is tolerated as a declaration of its own type and installs
 nothing; any use of it declines (`IxC/Kernel/Core.lean`). The well-founded `Nat`
 operations are admitted through the role table's evidence, which the
 checker checks itself ("Roles and the role table" below).
 
-**User axioms (uncertified).** Every other safe axiom, the three compiler-trust
-axioms among them, declines at the certified entry and in every host driver
-by default. A real Lean library therefore does not check whole: strict checking
-of Init+Std declines `Lean.trustCompiler` and blocks the four native-evaluation
-constants that depend on it, the other two axioms among them
-(`Tests/Fixtures/initstd-reference.txt`). The host drivers can opt in with
+**User axioms (uncertified).** Every other safe axiom declines at the
+certified entry and in every host driver by default. A real Lean library
+therefore does not check whole: strict checking of Init+Std declines
+`Lean.trustCompiler` and blocks the four native-evaluation constants that
+depend on it, the other two axioms among them
+(`Tests/Fixtures/initstd-reference.txt`). A binding that binds the
+compiler-trust axioms as their roles keys them by role, so no axiom policy
+admits them: they are user axioms only under a binding that leaves them
+unbound. The host drivers can opt in with
 `--allow-user-axioms` (`ix check-lean`, `kernel-check-ixe`): the declaration
 checks then install a safe axiom whose key is an input constant's
 (`Key.isCustomAxiomEligible`) as an axiom, and a whole `check-lean` run runs,
@@ -618,8 +623,9 @@ its recursors in motive order, and the stream's index-count check pairs the
 recursor of motive `m` with the block's type `m` (`RecCounts.motive`).
 
 **Roles and their specifications** (`IxC/Kernel/Roles.lean`).
-`Ix.Kernel.Role` has 103 roles for basis blocks, literal support, verified
-operations, the standard axioms and the inert `sorryAx` role. This includes
+`Ix.Kernel.Role` has 108 roles for basis blocks, literal support, verified
+operations, the standard axioms, the inert axioms (`sorryAx` and Lean's
+compiler-trust axioms) and the two opaques the latter's types mention. This includes
 the fifteen Nat operations and the typed anchors/equations for decision
 procedures, Int, BitVec and String operations. `Role.all`, `Role.spec`,
 `Role.block` and `Role.deps` define the exact catalog. A specification and
@@ -636,8 +642,8 @@ groups roles bound together, `Role.deps` records required groups, and
 `Role.usedImplicitly` identifies roles the checker introduces into terms.
 
 The specifications carry no toolchain address. Standard axioms' supporting
-families, including Iff and Nonempty, are validated as whole blocks. The
-inert `sorryAx` role has an exact type and supplies no usable proof. The
+families, including Iff and Nonempty, are validated as whole blocks. Each
+inert axiom role has an exact type and supplies no usable proof. The
 specification version, encoding and digest are pinned in
 `IxC/Kernel/Roles.lean`, `Ix/SpecDigest.lean` and
 `IxC/Kernel/Audit/Roles.lean`; those sources define the current values.
@@ -804,17 +810,23 @@ the `Int`, `BitVec`, `String` and decision rules on definitions validated
 against their `eqns` specifications, each result an instance of the head's
 equations.
 The axiom policy is IxC's: a safe axiom is declared only when the binding
-binds it as `propext`, `Classical.choice` or `Quot.sound`, or as `sorryAx`,
-which no constant may use (`axiom_standing`, the one place a standard axiom
-is recognized), and an unsafe axiom is typed only. Nothing reduces natively:
-`Lean.reduceBool` and `Lean.reduceNat` are opaques that never reduce, and a
-claim that uses them depends on `Lean.trustCompiler`, which is declined.
+binds it as `propext`, `Classical.choice` or `Quot.sound`, or as an inert
+axiom (`sorryAx`, `Lean.trustCompiler`, `Lean.ofReduceBool`,
+`Lean.ofReduceNat`), which no constant may use (`axiom_standing`, the one
+place a standard or inert axiom is recognized), and an unsafe axiom is typed
+only. No claim names an inert axiom as a seed: it installs nothing and may
+have no model (`sorryAx`'s type has none), so it is tolerated only as a
+declaration no accepted constant uses. Nothing reduces natively:
+`Lean.reduceBool` and `Lean.reduceNat` are opaques that never reduce, and they
+use `Lean.trustCompiler`, so a claim that uses them is refused.
 As IxC's logical tier checks only safe declarations, a `check` or `checkEnv`
 claim certifies only constants in Lean's logic: IxVM refuses a seed (the
 target, an owned leaf) whose record, or the block it projects from, is unsafe
-or `partial` (`KernelClaim::assert_claimable`), and no safe constant
-references one (`assert_safety`). The claim builders leave such constants out
-of their seed and owned lists (the claim formats in [Ixon](Ixon.md)).
+or `partial`, or is an inert axiom (`KernelClaim::assert_claimable`), and no
+safe constant references an unsafe one (`assert_safety`). The claim builders
+leave such constants out of their seed and owned lists, and with them every
+constant that uses an inert axiom (`IxVM.ClaimHarness.inertUsers`); see the
+claim formats in [Ixon](Ixon.md).
 A `check` or `checkEnv` claim may instead assume its binding (validator
 `4`, `ClaimContext.bindingAssumed`): it reads roles through the same table
 but validates no group, and a walk leaves a bound basis member or operation
