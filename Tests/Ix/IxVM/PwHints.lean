@@ -313,6 +313,23 @@ def measure (label : String) (env : Ixon.Env) (io : Aiur.IOBuffer) : IO Stats :=
   IO.println s!"PWCORPUS {label}: ms={ms} {stats.render} hwm_kb={← rssKb}"
   return stats
 
+/-- The refusals and fallbacks of one witness, with the names `env` gives (`IX_PW_SHARD`). -/
+def diagnose (env : Ixon.Env) (io : Aiur.IOBuffer) : IO Unit := do
+  let mut names : Std.HashMap Address String := {}
+  for (n, named) in env.named do names := names.insert named.addr (toString n)
+  let nameOf (a : Address) : String := (names[a]?).getD (toString a)
+  let k ← IO.ofExcept (KernelEnv.ofView (View.ofBuffer io env))
+  let cut (s : String) : String := String.ofList (s.toList.take 160)
+  for (why, n) in (histogram (k.failures.map (cut ·.2))).extract 0 12 do
+    IO.println s!"PWDIAG refused {n}: {why}"
+  for (a, why) in k.failures.extract 0 25 do
+    IO.println s!"PWDIAG refused {nameOf a}: {cut why}"
+  let core := Ix.Kernel.Cached.coreKnotI .verified k.fe Ix.Kernel.checkFuel
+  for a in k.owners do
+    let some c := k.setup.store[a]? | continue
+    let (_, fb, _) := annotateRecord k core a c
+    if fb > 0 then IO.println s!"PWDIAG fallbacks {fb}: {nameOf a}"
+
 def corpus : IO UInt32 := do
   let some ixe ← IO.getEnv "IX_PW_IXE" | do IO.eprintln "IX_PW_IXE is not set"; return 1
   let env ← IO.ofExcept (Ixon.deEnvAnon (← IO.FS.readBinFile ixe))
@@ -326,11 +343,14 @@ def corpus : IO UInt32 := do
     let mut total : Stats := {}
     let t0 ← IO.monoMsNow
     for (blocks, k) in shards.zipIdx do
+      if let some s ← IO.getEnv "IX_PW_SHARD" then
+        if s != toString k then continue
       let owned := _root_.Ix.Shard.ownedConstsForBlocks env blocks
       let (_, closure, _) ← IO.ofExcept (_root_.IxVM.ClaimHarness.shardCheckEnvClaim env owned true)
       let io := _root_.IxVM.ClaimHarness.addEntries env closure.contains
         (_root_.IxVM.ClaimHarness.seedBinding env default)
       total := total.add (← measure s!"shard {k} ({owned.size} owned, {closure.size} in closure)" env io)
+      if (← IO.getEnv "IX_PW_SHARD") == some (toString k) then diagnose env io
     IO.println s!"PWCORPUS shards total: ms={(← IO.monoMsNow) - t0} {total.render} hwm_kb={← rssKb}"
   | none => pure ()
   if (← IO.getEnv "IX_PW_WHOLE") != some "0" then
