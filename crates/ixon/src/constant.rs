@@ -381,10 +381,27 @@ impl Constant {
     out
   }
 
-  /// The binder data are in canonical form (`Ixon.Constant.bindersCanonical`):
-  /// the empty section, or the complete one (`binders_complete`).
+  /// The binder data are in canonical form (`Ixon.Constant.bindersCanonical`),
+  /// the local form every reader checks: blocks strictly sorted by key, a root
+  /// block at variant 0, no empty block, every `IfAllZero` parameter list
+  /// nonempty, strictly ascending and below `max_lvls`, and the empty section
+  /// for a record with no root (a projection).
   pub fn binders_canonical(&self) -> bool {
-    self.binders.is_empty() || self.binders_complete()
+    let lvls = self.max_lvls();
+    self.binders.windows(2).all(|w| w[0].key() < w[1].key())
+      && self.binders.iter().all(|b| {
+        (b.shared || b.variant == 0)
+          && !b.nodes.is_empty()
+          && b.nodes.iter().all(|n| match n {
+            BinderNode::IfAllZero(ps) => {
+              !ps.is_empty()
+                && ps.windows(2).all(|w| w[0] < w[1])
+                && ps.iter().all(|p| *p < lvls)
+            },
+            _ => true,
+          })
+      })
+      && (!self.binder_roots().is_empty() || self.binders.is_empty())
   }
 
   /// The section is complete (`Ixon.Constant.bindersComplete`): blocks
@@ -396,6 +413,9 @@ impl Constant {
   /// order, each in pre-order, a share node visiting its variant there) and
   /// pairwise distinct.
   pub fn binders_complete(&self) -> bool {
+    if self.binder_roots().is_empty() {
+      return self.binders.is_empty();
+    }
     if !self.binders.windows(2).all(|w| w[0].key() < w[1].key()) {
       return false;
     }
@@ -913,6 +933,13 @@ pub mod tests {
       with(&|b| b[0].nodes[0] = BinderNode::IfAllZero(vec![1, 1])), // repeated
       with(&|b| b[0].nodes[0] = BinderNode::IfAllZero(vec![3])), // not below lvls
       with(&|b| b.push(block(true, 0, 2, vec![]))), // an empty block
+    ];
+    for c in &cases {
+      assert!(constant_roundtrip(c));
+      assert!(!c.binders_canonical(), "{:?}", c.binders);
+    }
+    // Canonical (local) and round-tripping; only the complete form rejects them.
+    let incomplete = [
       with(&|b| b.push(block(true, 0, 2, vec![BinderNode::Never]))), // a dead variant
       with(&|b| {
         b.remove(1);
@@ -929,11 +956,14 @@ pub mod tests {
       with(&|b| b[0].nodes[1] = BinderNode::Never), // a binder node at a share
       with(&|b| b[2].nodes = vec![BinderNode::Zero, BinderNode::Zero]), // a node too many
       with(&|b| b.push(block(true, 1, 0, vec![BinderNode::Never]))), // no such entry
+      with(&|b| b.clear()),                    // a record with binders and no section
     ];
-    for c in &cases {
+    for c in &incomplete {
       assert!(constant_roundtrip(c));
-      assert!(!c.binders_canonical(), "{:?}", c.binders);
+      assert!(c.binders_canonical(), "{:?}", c.binders);
+      assert!(!c.binders_complete(), "{:?}", c.binders);
     }
+    assert!(base.binders_complete());
     // A projection carries no binder data: any section is noncanonical.
     for node in [BinderNode::IfAllZero(vec![0]), BinderNode::Never] {
       let prj = Constant::new(ConstantInfo::DPrj(DefinitionProj {

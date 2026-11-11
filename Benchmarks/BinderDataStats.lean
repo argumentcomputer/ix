@@ -56,6 +56,7 @@ def stats (path : String) : IO UInt32 := do
   let mut undecidedNodes := 0
   let mut undecidedRecords := 0
   let mut noncanonical := 0
+  let mut incomplete := 0
   let mut compRecord := 0
   let mut compAdded := 0
   let mut addedSizes : Array Nat := #[]
@@ -68,13 +69,14 @@ def stats (path : String) : IO UInt32 := do
     compRecord := compRecord + full
     compAdded := compAdded + (full - without)
     unless c.bindersCanonical do noncanonical := noncanonical + 1
+    unless c.bindersComplete do incomplete := incomplete + 1
     unless c.binders.isEmpty do
       withData := withData + 1
       sizes := sizes.push sec
       addedSizes := addedSizes.push (full - without)
       blocks := blocks + c.binders.size
       extraVariants := extraVariants + (c.binders.filter (·.variant > 0)).size
-      let u := c.binders.foldl (fun n b => n + (b.nodes.filter (· == .undecided)).size) 0
+      let u := c.binders.foldl (fun n b => n + (b.nodes.filter (· == .undecided)).size) (0 : Nat)
       nodes := c.binders.foldl (fun n b => n + b.nodes.size) nodes
       undecidedNodes := undecidedNodes + u
       if u > 0 then undecidedRecords := undecidedRecords + 1
@@ -84,7 +86,7 @@ def stats (path : String) : IO UInt32 := do
 section_bytes={totalSection} section_bytes_over_empty={totalSection - recs.size} \
 median={pct sorted 50} p90={pct sorted 90} p99={pct sorted 99} max={sorted.back?.getD 0} \
 blocks={blocks} extra_variants={extraVariants} nodes={nodes} undecided_nodes={undecidedNodes} \
-undecided_records={undecidedRecords} noncanonical={noncanonical} \
+undecided_records={undecidedRecords} noncanonical={noncanonical} incomplete={incomplete} \
 blake3_record={compRecord} blake3_added={compAdded} added_median={pct added 50} \
 added_p90={pct added 90} added_max={added.back?.getD 0} ({(← IO.monoMsNow) - t0}ms)"
   return 0

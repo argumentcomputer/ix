@@ -129,6 +129,8 @@ structure CertifiedOut where
   failures : Ix.Cert.Failures
   /-- Pre-validated source-address map from `Ix.RoleBinding.sourceAddresses env`. -/
   existing? : Option (Std.HashMap Ix.Kernel.Name Address) := none
+  /-- The safe records the annotator gave an undecided binder (their member names). -/
+  undecided : Array String := #[]
 
 /-- **The certified compile of a prepared list**: its canonical environment
 (`canonInput`), then `Ix.Cert.compileReport`, then the accounting and, for an
@@ -143,13 +145,22 @@ toolchain's `Init`, so they sit at other addresses (4.35.0's `Decidable` has
 one constructor, so its `Int.decLt` does). `finalize` binds them in a table
 generated from the export, and `checkFinalized` checks every published role
 name against that table (`Ix.Cert.PublishedRolesBound` at the artifact's own
-binding). -/
+binding).
+
+The canonical environment carries the binder-data annotator `annotator?` and its
+report (`BinderAnnotate.annotator`): the compile writes every record's binder
+data from it (`Ix.CompileM.withBinderSection`), and the certified result is the
+compile of that environment. Without one, every record with a binder carries
+the undecided section. While the default role table binds the records compiled
+without binder data, its check is not made on an annotated compile. -/
 def compileCertifiedPrepared (prepared : List (Lean.Name × Lean.ConstantInfo))
     (annotated : Bool) (workers : Nat := 32) (log : String → IO Unit := fun _ => pure ())
-    (defaultRoles : Bool := true) :
+    (defaultRoles : Bool := true)
+    (annotator? : Option (Ix.BinderAnnotator × IO.Ref (Array String)) := none) :
     IO (Except String CertifiedOut) := do
   let t0 ← IO.monoMsNow
-  let env ← IO.lazyPure fun _ => canonInput prepared.toArray workers
+  let env ← IO.lazyPure fun _ =>
+    { canonInput prepared.toArray workers with binderAnnotator? := annotator?.map (·.1) }
   let inputs := env.consts.size
   unless inputs == prepared.length do
     return .error s!"source accounting: {prepared.length} prepared constants collapsed to {inputs} input entries"
@@ -167,7 +178,7 @@ def compileCertifiedPrepared (prepared : List (Lean.Name × Lean.ConstantInfo))
   let existing ← match Ix.RoleBinding.sourceAddresses ixe with
     | .ok m => pure m
     | .error e => return .error e
-  if defaultRoles then
+  if defaultRoles && annotator?.isNone then
     if let some (n, r, addr) := unboundPublishedRole ixe (some existing) then
       return .error s!"role check failed: the published role {n.pretty} ({repr r}) is at {addr}, \
         not its bound address in the default role table"
@@ -176,13 +187,20 @@ def compileCertifiedPrepared (prepared : List (Lean.Name × Lean.ConstantInfo))
       return .error "resource compilation requires the complete requested closure"
     if let .error e := Ix.Resource.validate ixe (Ix.Resource.standardProfile ixe) then
       return .error e
-  return .ok { prepared, annotated, inputs, env := ixe, failures, existing? := some existing }
+  let undecided ← match annotator? with
+    | some (_, report) => report.get
+    | none => pure #[]
+  return .ok { prepared, annotated, inputs, env := ixe, failures, existing? := some existing,
+               undecided }
 
 /-- **The certified compile** of the constants `constants` of `source`:
-`prepareCertified`, then `compileCertifiedPrepared` (with `defaultRoles`). -/
+`prepareCertified`, then `compileCertifiedPrepared` (with `defaultRoles`), with
+the binder data read off `source` (`BinderAnnotate.annotator`), unless
+`binderData` is off: then every record with a binder carries the undecided
+section. -/
 def compileCertified (source : Lean.Environment) (constants : List (Lean.Name × Lean.ConstantInfo))
     (workers : Nat := 32) (log : String → IO Unit := fun _ => pure ())
-    (defaultRoles : Bool := true) :
+    (defaultRoles : Bool := true) (binderData : Bool := true) :
     IO (Except String CertifiedOut) := do
   let t0 ← IO.monoMsNow
   let (prepared, annotated) ← match prepareCertified source constants with
@@ -190,7 +208,8 @@ def compileCertified (source : Lean.Environment) (constants : List (Lean.Name ×
     | .error e => return .error e
   log s!"source contracts ({if annotated then "semantic contracts" else "none"}): \
 {(← IO.monoMsNow) - t0}ms"
-  compileCertifiedPrepared prepared annotated workers log defaultRoles
+  let annotator? ← if binderData then some <$> BinderAnnotate.annotator #[source] else pure none
+  compileCertifiedPrepared prepared annotated workers log defaultRoles annotator?
 
 /-- An input with semantic contracts is emitted only if its finalized artifact
 validates too: `compileCertifiedPrepared` validates the compiled artifact, this
@@ -222,12 +241,16 @@ namespace Ix.RoleBinding.Compile
 
 /-- The certified compiler as `finalize`'s backend: the role support and the
 certificates are compiled with `Ix.Cert.compileReport`, and must compile
-completely. `defaultRoles` as in `Ix.CompileM.compileCertifiedPrepared`. -/
-def certifiedBackend (workers : Nat) (defaultRoles : Bool := true) : Backend := fun _ input => do
+completely. `defaultRoles` as in `Ix.CompileM.compileCertifiedPrepared`; the binder
+data are read off the backend's source environment, unless `binderData` is off. -/
+def certifiedBackend (workers : Nat) (defaultRoles : Bool := true) (binderData : Bool := true) :
+    Backend := fun source input => do
   let prepared ← IO.ofExcept input.prepare
   let annotated ← IO.ofExcept (Ix.CompileM.checkPreparedSource prepared)
+  let annotator? ← if binderData then some <$> BinderAnnotate.annotator #[source] else pure none
   let out ← IO.ofExcept
-    (← Ix.CompileM.compileCertifiedPrepared prepared annotated workers (defaultRoles := defaultRoles))
+    (← Ix.CompileM.compileCertifiedPrepared prepared annotated workers (defaultRoles := defaultRoles)
+      (annotator? := annotator?))
   unless out.failures.isEmpty do
     throw (IO.userError "artifact support: incomplete certified compilation")
   return out.env
@@ -236,10 +259,12 @@ end Ix.RoleBinding.Compile
 
 namespace Ix.CompileM
 
-/-- How `ix compile` gives records their binder data: not at all (`off`), while
-building each record (`inline`, `Ix.CompileM.withBinderSection` with the
-installed annotator), or by IxC's pass over the finalized artifact, which is then
-re-addressed (`post`, `Ix.Compile.BinderData.apply`). -/
+/-- How `ix compile` gives records their binder data: while building each record,
+from Lean's elaboration of the sources (`inline`, the default:
+`Ix.CompileM.withBinderSection` with `BinderAnnotate.annotator`); with every
+binder undecided (`off`, for measurement); or as `off`, then by IxC's pass over
+the finalized artifact, which is then re-addressed (`post`, for comparison:
+`Ix.Compile.BinderData.apply`). -/
 inductive BinderDataMode where
   | off | inline | post
   deriving BEq, Repr, Inhabited
@@ -288,21 +313,17 @@ def compileAndFinalize (source : Lean.Environment)
     (log : String → IO Unit := fun _ => pure ())
     (certSource : IO Lean.Environment := Ix.RoleBinding.Compile.nativeCertSource)
     (strip : Ixon.Env → Ixon.Env := id) (defaultRoles : Bool := true)
-    (prefetch : Bool := false) (binderData : BinderDataMode := .off)
+    (prefetch : Bool := false) (binderData : BinderDataMode := .inline)
     (strictBinderData : Bool := false)
     (onBinders : Ix.Compile.BinderData.Report → Ixon.Env → IO Unit := fun _ _ => pure ()) :
     IO (Except String (CertifiedOut × Finalization)) := do
-  -- Inline binder data: the annotator reads the sources of this compile and of the
-  -- certificate compile. The records' addresses are not the default role table's.
-  let defaultRoles := defaultRoles && binderData != .inline
-  if binderData == .inline then
-    BinderAnnotate.install #[source, ← certSource]
-  let backend := Ix.RoleBinding.Compile.certifiedBackend workers defaultRoles
+  let inline := binderData == .inline
+  let backend := Ix.RoleBinding.Compile.certifiedBackend workers defaultRoles inline
   let certificates? ← if prefetch then
       some <$> Ix.RoleBinding.Compile.prefetchCertificates backend certSource
     else pure none
   let run : IO (Except String (CertifiedOut × Finalization)) := do
-    let out ← match ← compileCertified source constants workers log defaultRoles with
+    let out ← match ← compileCertified source constants workers log defaultRoles inline with
       | .ok out => pure out
       | .error e => return .error e
     log s!"rss after the compile: {← Ix.Cli.residentSetSize}"
@@ -325,7 +346,7 @@ def compileAndFinalize (source : Lean.Environment)
               (--strict-binder-data)")
           pure artifact
         | .inline =>
-          let undecided ← BinderAnnotate.undecidedSafe.get
+          let undecided := out.undecided
           log s!"binder data: {undecided.size} safe record(s) with an undecided binder"
           for names in undecided.extract 0 20 do
             log s!"binder data: undecided binder in safe {names}"

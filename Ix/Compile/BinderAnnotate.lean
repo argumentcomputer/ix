@@ -36,7 +36,7 @@ as the canonical form requires (`Ixon.Constant.bindersComplete`).
 **Unsafe and partial constants** carry the undecided node (`0x04`) at every
 binder: their types need not check. So does every binder of a record whose
 source the annotator cannot find or align, and every binder of a run whose
-datum Lean's inference cannot compute; each is counted (`undecidedSafe`), and
+datum Lean's inference cannot compute; each is reported (`annotator`), and
 `--strict-binder-data` fails the compile on a safe one.
 
 The annotator is not trusted. The compiler keeps its section only in canonical
@@ -69,51 +69,6 @@ def looseBound (shared : Array Nat) : Ixon.Expr → Nat
 /-- Each sharing entry's loose bound. -/
 def bounds (sharing : Array Ixon.Expr) : Array Nat :=
   sharing.foldl (fun out e => out.push (looseBound out e)) #[]
-
-/-- `e`'s numbered nodes, every binder undecided and every share its entry's
-one variant. -/
-def undecidedNodes (full : Array Bool) : Ixon.Expr → Array Ixon.BinderNode → Array Ixon.BinderNode
-  | .lam _ t b, out => undecidedNodes full b (undecidedNodes full t (out.push .undecided))
-  | .all _ _ t b, out => undecidedNodes full b (undecidedNodes full t (out.push .undecided))
-  | .app f a, out => undecidedNodes full a (undecidedNodes full f out)
-  | .letE _ t v b, out => undecidedNodes full b (undecidedNodes full v (undecidedNodes full t out))
-  | .prj _ _ v, out => undecidedNodes full v out
-  | .share n, out => if full[n.toNat]?.getD false then out.push (.share 0) else out
-  | _, out => out
-
-/-- The entries with a binder that `e`'s share nodes reach, through entries. -/
-partial def reachEntries (sharing : Array Ixon.Expr) (full : Array Bool) :
-    Ixon.Expr → Std.HashSet Nat → Std.HashSet Nat
-  | .lam _ t b, seen | .all _ _ t b, seen =>
-    reachEntries sharing full b (reachEntries sharing full t seen)
-  | .app f a, seen => reachEntries sharing full a (reachEntries sharing full f seen)
-  | .letE _ t v b, seen =>
-    reachEntries sharing full b (reachEntries sharing full v (reachEntries sharing full t seen))
-  | .prj _ _ v, seen => reachEntries sharing full v seen
-  | .share n, seen =>
-    if !(full[n.toNat]?.getD false) || seen.contains n.toNat then seen
-    else match sharing[n.toNat]? with
-      | some entry => reachEntries sharing full entry (seen.insert n.toNat)
-      | none => seen
-  | _, seen => seen
-
-/-- The section with every binder undecided: the canonical structure, one
-variant per entry. -/
-def undecidedSection (c : Ixon.Constant) : Array Ixon.BinderBlock := Id.run do
-  let full := Ixon.binderfulEntries c.sharing
-  let rs := roots c
-  let mut out : Array Ixon.BinderBlock := #[]
-  let mut seen : Std.HashSet Nat := {}
-  for h : r in [:rs.size] do
-    let ns := undecidedNodes full rs[r] #[]
-    unless ns.isEmpty do
-      out := out.push { shared := false, index := r.toUInt64, variant := 0, nodes := ns }
-    seen := reachEntries c.sharing full rs[r] seen
-  for h : n in [:c.sharing.size] do
-    if seen.contains n then
-      out := out.push { shared := true, index := n.toUInt64, variant := 0,
-                        nodes := undecidedNodes full c.sharing[n] #[] }
-  return out
 
 /-! ## The datum -/
 
@@ -353,22 +308,20 @@ def sources (envs : Array Environment) (names : Array Ix.Name) (c : Ixon.Constan
   guard (out.size == (roots c).size)
   return (env, out, decided)
 
-/-! ## Installing the annotator -/
+/-! ## The annotator of a compile -/
 
-/-- Safe constants given an undecided node (their member names), for the
-compile's report and `--strict-binder-data`. -/
-initialize undecidedSafe : IO.Ref (Array String) ← IO.mkRef #[]
-
-/-- **The section of a block record**, from its members' sources in `envs`. -/
-def annotate (envs : Array Environment) (names : Array Ix.Name) (c : Ixon.Constant) :
-    IO (Array Ixon.BinderBlock) := do
+/-- **The section of a block record**, from its members' sources in `envs`.
+`report` collects the safe records given an undecided binder (their member
+names), for the compile's report and `--strict-binder-data`. -/
+def annotate (envs : Array Environment) (report : IO.Ref (Array String)) (names : Array Ix.Name)
+    (c : Ixon.Constant) : IO (Array Ixon.BinderBlock) := do
   if (roots c).isEmpty then return #[]
-  let report : IO Unit :=
-    undecidedSafe.modify (·.push (", ".intercalate (names.map (·.pretty)).toList))
+  let undecided : IO Unit :=
+    report.modify (·.push (", ".intercalate (names.map (·.pretty)).toList))
   let some (env, srcs, decided) := sources envs names c | do
-    report
-    return undecidedSection c
-  unless decided do return undecidedSection c
+    undecided
+    return Ix.CompileM.undecidedSection c
+  unless decided do return Ix.CompileM.undecidedSection c
   let ctx : Core.Context := { fileName := "<binder data>", fileMap := default,
                               maxHeartbeats := 0, maxRecDepth := 100000 }
   let init : St := { variants := Array.replicate c.sharing.size #[] }
@@ -376,17 +329,33 @@ def annotate (envs : Array Environment) (names : Array Ix.Name) (c : Ixon.Consta
     withTransparency .all ((sectionM c srcs).run init)
   try
     let ((blocks, st), _) ← (act.run' {} {}).toIO ctx { env }
-    if st.undecided > 0 then report
+    if st.undecided > 0 then undecided
     return blocks
   catch _ =>
-    report
-    return undecidedSection c
+    undecided
+    return Ix.CompileM.undecidedSection c
 
-/-- Install the annotator over `envs` (the source environments of every
-compile this process runs), each marked persistent: workers share them. -/
-def install (envs : Array Environment) : IO Unit := do
-  let envs ← envs.mapM fun env => unsafe Runtime.markPersistent env
-  Ix.CompileM.binderAnnotatorRef.set (some (annotate envs))
+private unsafe def annotateUnsafe (envs : Array Environment) (report : IO.Ref (Array String))
+    (names : Array Ix.Name) (c : Ixon.Constant) : Array Ixon.BinderBlock :=
+  match unsafeIO (annotate envs report names c) with
+  | .ok binders => binders
+  | .error _ => #[]
+
+/-- `annotate` as the pure function the compile's input carries
+(`Ix.Environment.binderAnnotator?`). It reads only its arguments: Lean's
+elaboration of the sources is deterministic. -/
+@[implemented_by annotateUnsafe]
+opaque annotatePure (envs : Array Environment) (report : IO.Ref (Array String))
+    (names : Array Ix.Name) (c : Ixon.Constant) : Array Ixon.BinderBlock
+
+/-- **The annotator of a compile over `envs`** (its source environments, each
+marked persistent: the compile's workers share them), with the report of the
+safe records it leaves undecided. -/
+def annotator (envs : Array Environment) : IO (Ix.BinderAnnotator × IO.Ref (Array String)) := do
+  let envs ← envs.mapM fun (env : Environment) =>
+    (unsafe Runtime.markPersistent env : BaseIO Environment)
+  let report ← IO.mkRef #[]
+  return (annotatePure envs report, report)
 
 end BinderAnnotate
 

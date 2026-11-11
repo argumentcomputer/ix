@@ -320,7 +320,7 @@ inductive Path (refs : Ix.Map Ix.Name (Ix.Set Ix.Name)) : Ix.Name → Ix.Name �
 one of its constants.** -/
 theorem closure_path {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Environment}
     (hcl : IsClosure env roots sub) {x y : Ix.Name}
-    (hp : Path (groundSplit { consts := env.consts }).1 x y) (hx : (sub.consts.get? x).isSome = true) :
+    (hp : Path (groundSplit env.materialized).1 x y) (hx : (sub.consts.get? x).isSome = true) :
     (sub.consts.get? y).isSome = true := by
   induction hp with
   | refl e =>
@@ -333,7 +333,7 @@ theorem closure_path {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Env
       by_contra hr
       rw [(hcl x).2 hr] at hx
       cases hx
-    have hd : DependsOn { consts := env.consts } x z := groundSplit_dependsOn hrs hz
+    have hd : DependsOn env.materialized x z := groundSplit_dependsOn hrs hz
     have hzr : Reaches env roots z := Reaches.step hxr hd
     obtain ⟨rs', hrs'⟩ := Option.isSome_iff_exists.mp hzk
     obtain ⟨rs₀, h₀, -⟩ := groundSplit_get hrs'

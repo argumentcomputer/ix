@@ -184,7 +184,7 @@ the driver itself fails (a refused input, or a condensation it cannot
 schedule). -/
 @[expose] def compileUnchecked (env : Ix.Environment) :
     Except String (Ixon.Env × Failures × Ix.CompileM.CompileEnv) := do
-  let env : Ix.Environment := { consts := env.consts }
+  let env : Ix.Environment := env.materialized
   let split := groundSplit env
   let blocks := Ix.CondenseM.run split.1
   let (ixe, _, cenv) ← Ix.CompileM.compileEnvFold env blocks
@@ -198,7 +198,7 @@ grounded reference graph of the input's map). `compileUnchecked` compiles
 exactly these blocks (its `blocks`, by `rfl`; it computes the ground split
 once, for its failures too). -/
 @[expose] def compileBlocks (env : Ix.Environment) : Ix.CondensedBlocks :=
-  Ix.CondenseM.run (groundSplit { consts := env.consts }).1
+  Ix.CondenseM.run (groundSplit env.materialized).1
 
 /-- The compile reports `n` as failed: the ground filter removed it, or its
 block failed to compile. -/
@@ -2530,7 +2530,7 @@ that split's condensation (`compileBlocks env`). -/
     (split : Ix.Map Ix.Name (Ix.Set Ix.Name) × Ix.Map Ix.Name Ix.GroundError)
     (blocks : Ix.CondensedBlocks) :
     Except String (Ixon.Env × Failures × Ix.CompileM.CompileEnv) := do
-  let env : Ix.Environment := { consts := env.consts }
+  let env : Ix.Environment := env.materialized
   let (ixe, _, cenv) ← Ix.CompileM.compileEnvFold env blocks
   let ungrounded := split.2.fold (init := {}) fun m n e =>
     m.insert n (e.refusal split.2.contains)
@@ -2541,7 +2541,7 @@ its checks read the compile's condensation (`compileBlocks env`, the default
 of `checkReport`), which the compile has computed already. -/
 @[expose] def compileReportShared (env : Ix.Environment) :
     Except String (Ixon.Env × Failures) := do
-  let split := groundSplit { consts := env.consts }
+  let split := groundSplit env.materialized
   let blocks := Ix.CondenseM.run split.1
   let (ixe, failures, cenv) ← compileUncheckedWith env split blocks
   checkReport env cenv (ixe, failures) blocks

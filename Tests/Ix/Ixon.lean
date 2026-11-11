@@ -741,7 +741,7 @@ def canonicalRead (c : Constant) : Bool :=
   let bytes := serConstant c
   (Canonical.deConstant bytes.size loadMaxUnivNodes bytes).toOption == some c
 
-/-- Each form still round-trips; only the canonical form rejects it. -/
+/-- Each form still round-trips; the canonical (local) form rejects it. -/
 def noncanonicalSections : List (String × Array BinderBlock) :=
   let b := binderFixture.binders
   [("blocks out of order", #[b[1]!, b[0]!, b[2]!, b[3]!]),
@@ -751,8 +751,13 @@ def noncanonicalSections : List (String × Array BinderBlock) :=
    ("descending parameters", b.set! 0 { b[0]! with nodes := #[.ifAllZero #[2, 0], .share 0] }),
    ("a repeated parameter", b.set! 0 { b[0]! with nodes := #[.ifAllZero #[1, 1], .share 0] }),
    ("a parameter past the level count", b.set! 0 { b[0]! with nodes := #[.ifAllZero #[3], .share 0] }),
-   ("an empty block", b.push ⟨true, 0, 2, #[]⟩),
-   ("a variant no share node names", b.push ⟨true, 0, 2, #[.never]⟩),
+   ("an empty block", b.push ⟨true, 0, 2, #[]⟩)]
+
+/-- Each form is canonical (local) and round-trips; only the complete form
+rejects it. -/
+def incompleteSections : List (String × Array BinderBlock) :=
+  let b := binderFixture.binders
+  [("a variant no share node names", b.push ⟨true, 0, 2, #[.never]⟩),
    ("a missing root block", #[b[0]!, b[2]!, b[3]!]),
    ("a missing variant", #[b[0]!, b[1]!, b[2]!]),
    ("variants out of first-occurrence order",
@@ -762,7 +767,8 @@ def noncanonicalSections : List (String × Array BinderBlock) :=
    ("a share node at a binder", b.set! 2 { b[2]! with nodes := #[.share 0] }),
    ("a binder node at a share", b.set! 0 { b[0]! with nodes := #[.ifAllZero #[0, 2], .never] }),
    ("a node too many", b.set! 2 { b[2]! with nodes := #[.zero, .zero] }),
-   ("a block for an entry that is not shared", b.push ⟨true, 1, 0, #[.never]⟩)]
+   ("a block for an entry that is not shared", b.push ⟨true, 1, 0, #[.never]⟩),
+   ("no section for a record with binders", #[])]
 
 /-- A projection record carries no binder data. -/
 def projectionWithSection (node : BinderNode) : Constant :=
@@ -781,13 +787,21 @@ def binderSectionUnits : TestSeq :=
   ++ test "record with a section round-trips" (constantSerde binderFixture)
   ++ test "record without a section round-trips" (constantSerde { binderFixture with binders := #[] })
   ++ test "the fixture's section is canonical" binderFixture.bindersCanonical
+  ++ test "the fixture's section is complete" binderFixture.bindersComplete
   ++ test "the canonical decoder accepts it" (canonicalRead binderFixture)
-  ++ test "the canonical decoder accepts the empty section"
-      (canonicalRead { binderFixture with binders := #[] })
+  ++ test "a record without binders and no section is canonical and complete"
+      (let c := { binderFixture with
+        info := .defn (Definition.mk .defn .safe 0 (.sort 0) (.sort 0)), sharing := #[], binders := #[] }
+       canonicalRead c && c.bindersComplete)
   ++ noncanonicalSections.foldl (init := .done) (fun acc (label, blocks) =>
       let c := { binderFixture with binders := blocks }
       acc ++ test s!"{label}: round-trips" (constantSerde c)
         ++ test s!"{label}: not canonical" (!c.bindersCanonical && !canonicalRead c))
+  ++ incompleteSections.foldl (init := .done) (fun acc (label, blocks) =>
+      let c := { binderFixture with binders := blocks }
+      acc ++ test s!"{label}: round-trips" (constantSerde c)
+        ++ test s!"{label}: canonical but not complete"
+          (c.bindersCanonical && canonicalRead c && !c.bindersComplete))
   ++ test "a projection with a parameter is not canonical"
       (!canonicalRead (projectionWithSection (.ifAllZero #[0])))
   ++ test "a projection with any section is not canonical"

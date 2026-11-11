@@ -6,13 +6,13 @@ import Ix.Cert.Statement
 /-! # The hybrid environment compiles as the materialized one
 
 `Ix.Cert.compile` runs the driver `Ix.CompileM.compileEnvFold` over the
-materialized environment (`{ consts := env.consts }`); the hybrid model
+materialized environment (`env.materialized`); the hybrid model
 runs it over a hybrid one: the code
 kinds materialized, theorem and opaque bodies canonicalized again on demand
 through `fallback?` (`hybridEnv`). The driver and its validations read the
 environment through `Ix.Environment.get?` only, apart from the order of the
 inductive groups they check: the fold and the inductive-flag check run over
-the lookup view `{ consts := {}, fallback? := some env.get? }`, and the
+the lookup view `env.lookupView`, and the
 mixed-safety check reads members through `get?` (the compiler's
 restatements, behaviour-identical). So:
 

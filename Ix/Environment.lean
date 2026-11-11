@@ -4,6 +4,7 @@ public import Blake3.Rust
 public import Std.Data.HashMap
 public import Std.Data.TreeMap
 public import Ix.Address
+public import IxC.Ixon.Types
 
 /-!
   Canonical Lean types with embedded content-addressed hashes.
@@ -666,6 +667,10 @@ def ConstantInfo.getCnst : ConstantInfo → ConstantVal
 
 /-! ## Environment -/
 
+/-- A binder-data annotator: a block record's binder-data section, from the
+block's member names (in the record's member order) and its record. -/
+abbrev BinderAnnotator := Array Name → Ixon.Constant → Array Ixon.BinderBlock
+
 /-- A content-addressed Lean environment: a map from `Ix.Name` to `ConstantInfo`.
 
     `fallback?` supports STREAMING consumers (the pure-Lean compile
@@ -679,6 +684,10 @@ def ConstantInfo.getCnst : ConstantInfo → ConstantVal
 structure Environment where
   consts : HashMap Name ConstantInfo
   fallback? : Option (Name → Option ConstantInfo) := none
+  /-- The compiler's binder-data annotator for this environment's constants
+  (`Ix.CompileM.sectionFor`), part of the compile's input. Without one, every
+  record with a binder carries the undecided section. -/
+  binderAnnotator? : Option BinderAnnotator := none
 
 /-- Constant lookup: the materialized map first, then the lazy fallback. -/
 def Environment.get? (env : Environment) (n : Name) : Option ConstantInfo :=
@@ -688,6 +697,15 @@ def Environment.get? (env : Environment) (n : Name) : Option ConstantInfo :=
     match env.fallback? with
     | some f => f n
     | none => none
+
+/-- The environment's map and annotator, without its lazy fallback. -/
+abbrev Environment.materialized (env : Environment) : Environment :=
+  { consts := env.consts, binderAnnotator? := env.binderAnnotator? }
+
+/-- The environment's lookup view: an empty map, the environment's lookup, and its
+annotator. -/
+abbrev Environment.lookupView (env : Environment) : Environment :=
+  { consts := {}, fallback? := some env.get?, binderAnnotator? := env.binderAnnotator? }
 
 /-! ## Context Types for Compilation -/
 
