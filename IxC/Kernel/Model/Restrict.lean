@@ -139,6 +139,51 @@ theorem Fits.mono_env {cval : Key md → (LevelParam → Nat) → V} {env env' :
     obtain ⟨h1, h2⟩ := ih hK.2
     exact ⟨.cons (Denotes.mono_env hfind hproj hlit hA hK.1) hx h1, h2⟩
 
+/-- **A graded reading transports** as `Denotes.mono_env` does: the grading reads
+denotations at its applications (forward) and at its binders' domains (backward), and
+the two environments agree on both sides. -/
+theorem GradedBy.mono_env {cval : Key md → (LevelParam → Nat) → V} {env env' : Env md}
+    {φ : LevelParam → Nat} {K : Key md → Prop}
+    (hfind : ∀ n, K n → env'.find? n = env.find? n)
+    (hproj : ∀ T i, env'.findProj? T i = env.findProj? T i)
+    (hlit : LitKeys K) :
+    ∀ {e : Expr md} {ρ : BVarIdx → V},
+      GradedBy (Denotes cval env φ) ρ e → e.RefsIn K → GradedBy (Denotes cval env' φ) ρ e := by
+  have hfind' : ∀ n, K n → env.find? n = env'.find? n := fun n h => (hfind n h).symm
+  have hproj' : ∀ T i, env.findProj? T i = env'.findProj? T i := fun T i => (hproj T i).symm
+  intro e
+  induction e with
+  | app f a ihf iha =>
+    intro ρ h hK
+    simp only [GradedBy] at h ⊢
+    simp only [Expr.RefsIn] at hK
+    obtain ⟨hf, ha, r, A, F, X, B, hF, hX, hmem, hx, h0⟩ := h
+    exact ⟨ihf hf hK.1, iha ha hK.2, r, A, F, X, B, Denotes.mono_env hfind hproj hlit hF hK.1,
+      Denotes.mono_env hfind hproj hlit hX hK.2, hmem, hx, h0⟩
+  | lam ty b m ihty ihb =>
+    intro ρ h hK
+    simp only [GradedBy] at h ⊢
+    simp only [Expr.RefsIn] at hK
+    exact ⟨ihty h.1 hK.1, fun A hA x hx =>
+      ihb (h.2 A (Denotes.mono_env hfind' hproj' hlit hA hK.1) x hx) hK.2⟩
+  | forallE ty b m ihty ihb =>
+    intro ρ h hK
+    simp only [GradedBy] at h ⊢
+    simp only [Expr.RefsIn] at hK
+    exact ⟨ihty h.1 hK.1, fun A hA x hx =>
+      ihb (h.2 A (Denotes.mono_env hfind' hproj' hlit hA hK.1) x hx) hK.2⟩
+  | proj s i e ih =>
+    intro ρ h hK
+    simp only [GradedBy] at h ⊢
+    simp only [Expr.RefsIn] at hK
+    exact ih h hK
+  | bvar _ => intro _ _ _; exact True.intro
+  | fvar _ _ _ => intro _ _ _; exact True.intro
+  | sort _ => intro _ _ _; exact True.intro
+  | const _ _ => intro _ _ _; exact True.intro
+  | letE _ _ _ _ _ _ _ => intro _ _ _; exact True.intro
+  | lit _ => intro _ _ _; exact True.intro
+
 /-- A constant's denotation in the sub-environment is its denotation in the
 environment, at a key where they agree. -/
 theorem Denotes.const_back {cval : Key md → (LevelParam → Nat) → V} {env env' : Env md}
@@ -326,5 +371,12 @@ def Model.restrict {env env' : Env md} (M : Model V env) {K : Key md → Prop}
       (Denotes.mono_env hfind' hproj' hlit hZ (hKc hZ))
       (Denotes.mono_env hfind' hproj' hlit hS (hKc hS))
       (Denotes.mono_env hfind' hproj' hlit hA (hKc hA))
+  graded := by
+    intro c hc φ ρ
+    obtain ⟨hty, hval⟩ := M.graded c (hsub c hc) φ ρ
+    refine ⟨GradedBy.mono_env hfind hproj hlit hty (htype c hc), ?_⟩
+    intro cv value hint hceq
+    subst hceq
+    exact GradedBy.mono_env hfind hproj hlit (hval cv value hint rfl) (hvalue cv value hint hc)
 
 end Ix.Kernel

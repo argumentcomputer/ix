@@ -34,7 +34,7 @@ exactly (`mem_targets`: `targets` holds the targets of `RecordEdge`,
 The declarations are checked by the executed fold (`Cached.checkDecls`, which
 `checkDecls_refines_ref` refines to the pure fold), and, by the pure checker at
 the standard fuel, what the fold does not establish itself: every theorem's
-statement is a proposition (`TheoremsInProp`) and every role specified by
+statement is a proposition (`TheoremsInProp`) and every bound role specified by
 equations passes `eqnsCheck`.
 
 Nothing here is part of the trusted statement, which mentions only
@@ -567,19 +567,25 @@ def isOk {ε α : Type} : Except ε α → Bool
   | .ok _ => true
   | .error _ => false
 
-/-- Every role specified by equations passes `eqnsCheck` at `pureFuel` in the
-installed environment, under the evidence `ev`. -/
-def eqnsOk (envA : Env .anon) (ev : Evidences .anon) : Bool :=
-  Role.all.all fun r => decide ((r.spec (md := .anon)).kind ≠ .eqns) ||
+/-- Every role is in `Role.all`. -/
+theorem mem_roleAll (r : Role) : r ∈ Role.all :=
+  List.mem_of_getElem? (l := Role.all) (i := r.idx) (Role.ofIdx?_idx r)
+
+/-- Every role the table `t` binds that is specified by equations passes
+`eqnsCheck` at `pureFuel` in the installed environment, under the evidence `ev`. -/
+def eqnsOk (t : RoleTable) (envA : Env .anon) (ev : Evidences .anon) : Bool :=
+  Role.all.all fun r => (t.addressOf? r).isNone || decide ((r.spec (md := .anon)).kind ≠ .eqns) ||
     isOk (eqnsCheck (fueledOps .verified pureFuel) envA r ev)
 
-theorem eqns_of {envA : Env .anon} {ev : Evidences .anon} (h : eqnsOk envA ev = true) :
-    ∀ r ∈ Role.all, (r.spec (md := .anon)).kind = .eqns →
+theorem eqns_of {t : RoleTable} {envA : Env .anon} {ev : Evidences .anon}
+    (h : eqnsOk t envA ev = true) :
+    ∀ r, t.addressOf? r ≠ none → (r.spec (md := .anon)).kind = .eqns →
       ∃ F, eqnsCheck (fueledOps .verified F) envA r ev = .ok () := by
-  intro r hr hk
-  have hor := List.all_eq_true.mp h r hr
-  simp only [Bool.or_eq_true, decide_eq_true_eq] at hor
-  rcases hor with hne | hok
+  intro r hb hk
+  have hor := List.all_eq_true.mp h r (mem_roleAll r)
+  simp only [Bool.or_eq_true, decide_eq_true_eq, Option.isNone_iff_eq_none] at hor
+  rcases hor with (hn | hne) | hok
+  · exact absurd hn hb
   · exact absurd hk hne
   · revert hok
     cases hc : eqnsCheck (fueledOps .verified pureFuel) envA r ev with
@@ -588,13 +594,14 @@ theorem eqns_of {envA : Env .anon} {ev : Evidences .anon} (h : eqnsOk envA ev = 
 
 /-- **What the fold does not check on its own**, decided: theorems' statements are
 propositions, no user axiom is declared, and the role specifications hold. -/
-def declsOk (envA : Env .anon) (ev : Evidences .anon) (ds : List (Declaration .anon)) : Bool :=
-  ds.all (thmInProp envA) && (userAxiomsOfDecls ds).isEmpty && anchorsOk ds && eqnsOk envA ev
+def declsOk (t : RoleTable) (envA : Env .anon) (ev : Evidences .anon)
+    (ds : List (Declaration .anon)) : Bool :=
+  ds.all (thmInProp envA) && (userAxiomsOfDecls ds).isEmpty && anchorsOk ds && eqnsOk t envA ev
 
-theorem declsOk_sound {b : Binding} {envA : Env .anon} {ev : Evidences .anon}
-    {ds : List (Declaration .anon)} (h : declsOk envA ev ds = true) :
+theorem declsOk_sound {t : RoleTable} {b : Binding} {envA : Env .anon} {ev : Evidences .anon}
+    {ds : List (Declaration .anon)} (h : declsOk t envA ev ds = true) :
     IxVM.Refinement.TheoremsInProp envA ds ∧ IxVM.Refinement.UserAxiomsWithin (fun _ => False) ds ∧
-      IxVM.Refinement.BindingSpecs b envA ds := by
+      IxVM.Refinement.BindingSpecs t b envA ds := by
   unfold declsOk at h
   simp only [Bool.and_eq_true] at h
   obtain ⟨⟨⟨hthm, hax⟩, hanc⟩, heqns⟩ := h
@@ -676,7 +683,7 @@ def preparedOk (b : Binding) (E : Ixon.Env) (t : RoleTable) (order : List Addres
     (fun pre => Admission.prepareWith Address.admissionHash b pre admissionLimits
       (recordsOf E order) (blobsOf E order) (hintsAt projAt E))
     (fun ev ds => Cached.checkDecls .verified ev (ds.map IxVM.Refinement.thmToOpaqueDefn))
-    (fun envA ev ds => declsOk envA ev ds.toList)
+    (fun envA ev ds => declsOk t envA ev ds.toList)
 
 theorem preparedOk_sound (W : Type w) [SetTheory W] {b : Binding} {E : Ixon.Env}
     {t : RoleTable} {order : List Address} (h : preparedOk b E t order = true) :
@@ -688,7 +695,7 @@ theorem preparedOk_sound (W : Type w) [SetTheory W] {b : Binding} {E : Ixon.Env}
         (ds.toList.map IxVM.Refinement.thmToOpaqueDefn) envA ∧
       IxVM.Refinement.TheoremsInProp envA ds.toList ∧
       IxVM.Refinement.UserAxiomsWithin (fun _ => False) ds.toList ∧
-      IxVM.Refinement.BindingSpecs b envA ds.toList := by
+      IxVM.Refinement.BindingSpecs t b envA ds.toList := by
   obtain ⟨pre, ev, ds, envA, hpre, hprep, hck, hfin⟩ := preparedOkWith_sound h
   have href := Cached.checkDecls_refines_ref W rfl hck
   rw [Array.toList_map] at href

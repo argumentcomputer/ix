@@ -1104,6 +1104,25 @@ noncomputable def Model.ofEnvModelM {μ : Ix.Kernel.CheckMode} {env : Env md}
   proj_law := projLaw_of_envModelM m
   lit_ops := natLitLaw_of_envModelM m
   nat_add := natAddLaw_of_envModelM m
+  graded := by
+    intro c hc φ ρ
+    refine ⟨?_, ?_⟩
+    · obtain ⟨ta, hta⟩ := m.type_reads c hc φ
+      have hwf := m.base2.wf c hc
+      have hnf : c.toConstantVal.type.hasFvar = false := hwf.1
+      have hlb : c.toConstantVal.type.looseBVarsBounded 0 = true := hwf.2.2.2.1
+      have hg := GradedBy_of_denoteMeta (V := V) m.base2.cval_closedL 0
+        c.toConstantVal.type hta (Ix.Kernel.fvarsBelow_zero_of_hasFvar_false hnf) hlb ρ
+        (m.type_wellDenotedV c hc φ ta hta ρ)
+      rwa [Expr.closeN_of_hasFvar _ 0 0 hnf] at hg
+    · intro cv value hint hceq
+      subst hceq
+      have hr := m.defn_reads φ cv value ⟨hint, hc⟩
+      have hv := (m.base2.wf _ hc).2.2.2.2.1 cv value hint rfl
+      have hg := GradedBy_of_denoteMeta (V := V) m.base2.cval_closedL 0 value hr
+        (Ix.Kernel.fvarsBelow_zero_of_hasFvar_false hv.1) hv.2.2.2 ρ
+        ⟨m.base2.acval_wellDenoted _ φ ρ, m.acval_validV _ φ ρ⟩
+      rwa [Expr.closeN_of_hasFvar _ 0 0 hv.1] at hg
   cval_params := fun n ci h φ₁ φ₂ agree => by
     unfold cvalOf
     rw [m.base2.acval_params n ci h φ₁ φ₂ agree]
