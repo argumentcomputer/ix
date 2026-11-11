@@ -2974,7 +2974,7 @@
       "IxCCTests/Own/Counters.lean": "c58b983b8bb85c14d47a90fd04ec32590857e452880c252d29da6d998c9724e0",
       "IxCCTests/Own/Main.lean": "7e9237c017c918d3f16ef000c814cb24fb1b30996d8076aeab598472121cf46d",
       "IxCCTests/Own/Strip.lean": "5915ac83b6e02a52528275c5847e6709a5796345ac5dcf04b1c009eed3a83587",
-      "IxCCTests/Own/Suite.lean": "330eccf76a86f1e38624f12119d84388eb67c1578fdfd6392bbee81c4c515928",
+      "IxCCTests/Own/Suite.lean": "8794687c7c337ad934f45acd9df952ce2ae9908a48ed576424b6a08da3df53b0",
       "IxCCTests/Own/Verdicts.lean": "10fa1147c50894f04a95bdf9906b97a8dc52cafe669b3b41480ba527768f2036",
       "IxCCTests/Pipeline/Compiler.lean": "ca3eef52caf2b18b3161bb424f03c429b682423be0ddf03681eae38a9f3c6aae",
       "IxCCTests/Pipeline/Levels.lean": "38ef67d096aa4c4404b4ffbbfce62a308465a5aacd58bba93490f731f41e2e6b",
