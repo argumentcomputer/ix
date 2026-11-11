@@ -2,15 +2,16 @@
 
 Written 2026-11-11. **Status:** decided by the owner: IxCC takes its type
 information and its acceptance of an environment from the certified kernel
-(the `IxCK/` package), and its own erased type checker is to be deleted. The
+(the `IxCK/` package), and its own erased type checker is deleted. The
 front end over the kernel (`IxCC.Src.KernelFront`,
 [`Src/KernelFront`](../IxCC/Src/KernelFront), and `Recheck.ingress`) **is the
 only front end** since the switch's step 3 ([The switch](#the-switch)): every
 compile path's ingress is the kernel's acceptance and every annotation the
-kernel annotator's. Step 4 deletes the earlier front end: the earlier
-annotator is gone, with `tests-kernel-front`'s comparison, which found the two
-annotators equal on every committed closure, and so are IxCC's catalog
-support and the erased checker. The kernel's fix of its
+kernel annotator's. Step 4 deleted the earlier front end: the earlier
+annotator, with `tests-kernel-front`'s comparison, which found the two
+annotators equal on every committed closure, IxCC's catalog support, the
+erased checker, the unbound environment's reading, IxCC's binding decoder and
+the Rust hasher's import. The kernel's fix of its
 blow-up on chains of `let`, made in parallel in the kernel package on this
 branch, has landed ([resource bounds](#resource-bounds),
 [decisions](#decisions)). This is most of the native
@@ -290,11 +291,8 @@ byte-level path; the kernel is already there for acceptance.
 ### What each use of the erased checker becomes
 
 Every use of the checker (`IxCC/IxCC/Ixon/V3/Tc/`) outside its own modules,
-as the tree stood after step 2 (2026-11-11), and what it becomes. Step 3 made
-every row's last column true but the deletions and the typing conjuncts of
-the resource-validation API and the catalog admission, which step 4 removes
-(the catalog admission went with IxCC's catalog support; until the checker's
-deletion the resource-validation API and its own tests are its only callers):
+as the tree stood after step 2 (2026-11-11), and what it becomes. Steps 3 and
+4 made every row's last column true; the checker is deleted:
 
 | Use (where) | What rests on it | Becomes at the switch |
 | --- | --- | --- |
@@ -647,32 +645,44 @@ landed; what stays exposed is under [resource bounds](#resource-bounds).
    `Recheck/Proof/Parts.lean`, is about `Recheck.front`, which runs no typing,
    and does not change); the duplicated producer of `KernelFront.Front` folds
    back into `Recheck.Produce`.
-4. **Delete** (a separate commit, no behaviour change): `IxCC/IxCC/Ixon/V3/Tc/`
-   (24 files, 12,339 lines since step 2), `IxCC/IxCC/Src/Relevance/Annotate.lean` (336),
-   `IxCC/IxCC/Ixon/V3/Typed.lean` (34), the typing parts of
-   `IxCC/IxCC/Ixon/V3/Validate.lean` (106 lines in all) and
-   `IxCC/IxCC/Ixon/V3/Catalog/Admit.lean` (49), the typing tests
-   (`IxCCTests/IxonV3/{Typing,Primitives,K1}.lean`, less the primitive table's
-   parity and the `Nat` literal bytes, which move to the suite's other parts),
-   and IxCC's own binding decoder (`IxCC/IxCC/Ixon/V3/Binding.lean`, 171), whose
-   reading the kernel's `admitBinding` replaces; about 13,300 lines. Not
-   deleted: `IxCCTests/IxonV3/TypingFixtures.lean`, which is the in-memory
-   environment builder of `tests-recheck`, the catalog tests and
-   `ResourceBudget` (renamed, less anything typing-only); and the typing
-   bundles `fixtures/ixon-v4/typing/`, which also seeded the catalog fixtures,
-   are the refreeze's to keep or drop.
+4. **Delete** (no behaviour change: every registered root compiles to the same
+   object and certificate). **Done** (2026-11-11), in groups that each build:
+   the earlier annotator (`IxCC/IxCC/Src/Relevance/Annotate.lean`) and
+   `tests-kernel-front`'s comparison with it and with the erased checker (the
+   module is now `IxCCTests/KernelFront/Report.lean`); IxCC's catalog support
+   (the reader, the validator-1 admission, its four fences, the catalog step of
+   `ixcc-ixon-v3`, the two frozen catalogs and their tests: validator 1
+   certified erased typing, and ix retired it); the erased checker
+   (`IxCC/IxCC/Ixon/V3/Tc/`, 24 files, 12,357 lines), `Ixon/V3/Typed.lean`,
+   the typing conjunct of the resource-validation API (`V3.validate` types
+   nothing; on every compile path the kernel's acceptance comes first), the
+   checker's typing tests and its four typing bundles (the primitive table's
+   parity, the `Nat` literal bytes and the API's resource cases kept in
+   `IxCCTests/IxonV3/Validation.lean`; the K1 packs checked by the kernel's
+   acceptance); the unbound environment's reading (`Src.Ingress.ofEnv`, its
+   fence, `Pinned.pinsOf`); IxCC's own binding decoder
+   (`IxCC/IxCC/Ixon/V3/Binding.lean`: the envelope keeps the section's address
+   and bytes, the kernel decodes and admits the table, and the pins read the
+   table it admitted); and the `Blake3.Rust` import (no IxCC executable links
+   the Rust hasher). The in-memory environment builder of the tests stays,
+   renamed `IxCCTests/IxonV3/Builder.lean`. Removed in all: about 15,400 lines
+   of Lean and 16,500 lines in all, including the dated historical ownership
+   records the kernel front end refuses (unbound) and `ix` can no longer write.
 5. **The ledger last**: the closure and the exception are already recorded;
-   the integrity pins re-recorded by the documented procedure; the
-   `tests-ixon-v3` typing part and the `tests-relevance` annotator part move to
-   `tests-kernel-front`, whose runs over the refrozen corpus become the
-   required differential's successor (a corpus-wide `KernelFront` pass in
-   `corpus check`).
+   the native-interface entry goes, with an audit that IxCC's binaries do not
+   link the foreign hasher; the integrity pins re-recorded by the documented
+   procedure. The runs of `tests-kernel-front`, `corpus check` and
+   `tests-corpus` over the refrozen corpus (every one through the kernel's
+   acceptance and annotator) are the required differential's successor.
 
-Suites affected: `tests-ixon-v3` (typing fixtures), `tests-relevance` and
-`tests-lam` (annotation mutation draws from the annotator), `tests-recheck`
-(Stage A, the hostile and deep families), `tests-pipeline`, `tests-corpus`,
-`corpus check` and `census` (every family re-ingested through the kernel),
-`ixcc-proofs` (restated fences).
+Suites affected: `tests-ixon-v3` (typing fixtures, the catalogs, the binding
+decoder), `tests-relevance` and `tests-lam` (annotation mutation draws from
+the annotator), `tests-recheck` (Stage A, the hostile and deep families),
+`tests-pipeline`, `tests-corpus`, `corpus check` and `census` (every family
+re-ingested through the kernel), `tests-own` (the historical
+annotated-recursion part retired), `tests-kernel-front` (its comparison),
+`ixcc-proofs` (restated fences in step 3; six fences gone with their theorems
+in step 4).
 
 ## Measurements
 
