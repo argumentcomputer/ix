@@ -259,9 +259,9 @@ namespace Ix.RoleBinding.Compile
 /-- The certified compiler as `finalize`'s backend: the role support and the
 certificates are compiled with `Ix.Cert.compileReport`, and must compile
 completely. `defaultRoles` as in `Ix.CompileM.compileCertifiedPrepared`; the binder
-data are read off the backend's source environment, unless `binderData` is off. -/
+data come from IxC's pass over the backend's prepared input, unless `binderData` is off. -/
 def certifiedBackend (workers : Nat) (defaultRoles : Bool := true) (binderData : Bool := true) :
-    Backend := fun source input => do
+    Backend := fun _source input => do
   let prepared ← IO.ofExcept input.prepare
   let annotated ← IO.ofExcept (Ix.CompileM.checkPreparedSource prepared)
   let out ← IO.ofExcept

@@ -603,13 +603,16 @@ def RowsMuts (r : BlockResult) : Prop :=
 theorem finishConstant_rows (info : Ixon.ConstantInfo) (blockMeta : Ixon.ConstantMeta) :
     Returns RowsMuts (finishConstantInfoWithSharing info blockMeta) := by
   intro ctx s x s' ran
-  unfold finishConstantInfoWithSharing finishConstantWithSharing at ran
-  obtain ⟨cache, mid, -, ran⟩ := bind_ok ran
-  obtain ⟨block, mid', hb, ran⟩ := bind_ok ran
-  rw [rawRun_pure] at ran
-  cases ran
-  intro p hp
-  simp [BlockResult.mk'] at hp
+  rw [Ix.CompileCert.EmissionBlocks.finish_run] at ran
+  cases built : (Ix.CompileM.buildConstantWithSharing ctx.1.sharingLimits info s.refs s.univs >>=
+      Ix.CompileM.withBinderSection ctx.1.env.binderAnnotator? #[ctx.2.current]) with
+  | error e => rw [built] at ran; cases ran
+  | ok block =>
+    rw [built] at ran
+    simp only [Except.map, Prod.mk.injEq, Except.ok.injEq] at ran
+    obtain ⟨rfl, -⟩ := ran
+    intro p hp
+    simp [BlockResult.mk'] at hp
 
 theorem finishInductive_rows (i : Ix.InductiveVal) (ind : Ixon.Inductive) (indMeta : Ixon.ConstantMeta)
     (pairs : Array (Ix.Name × Ixon.ConstantMeta)) :
@@ -933,12 +936,17 @@ theorem finishConstant_erase (info : Ixon.ConstantInfo) (blockMeta : Ixon.Consta
     Yields (finishConstantInfoWithSharing info blockMeta)
       (fun r => SharingRoots.erase r.block.info = SharingRoots.erase info ∧ r.projections = #[]) := by
   intro ctx s x s' ran
-  unfold finishConstantInfoWithSharing finishConstantWithSharing at ran
-  obtain ⟨cache, mid, -, ran⟩ := bind_ok ran
-  obtain ⟨block, mid', hb, ran⟩ := bind_ok ran
-  rw [rawRun_pure] at ran
-  cases ran
-  exact ⟨(SharingRoots.build_roots (md := .anon) _ _ _ _ _ (BlockLayout.buildBlockConstant_ok hb)).1, rfl⟩
+  rw [Ix.CompileCert.EmissionBlocks.finish_run] at ran
+  cases built : (Ix.CompileM.buildConstantWithSharing ctx.1.sharingLimits info s.refs s.univs >>=
+      Ix.CompileM.withBinderSection ctx.1.env.binderAnnotator? #[ctx.2.current]) with
+  | error e => rw [built] at ran; cases ran
+  | ok block =>
+    rw [built] at ran
+    simp only [Except.map, Prod.mk.injEq, Except.ok.injEq] at ran
+    obtain ⟨rfl, -⟩ := ran
+    have erased := (SharingRoots.build_roots (md := .anon) _ _ _ _ _
+      (Ix.CompileCert.EmissionBlocks.sectioned_of_bind built).1).1
+    exact ⟨erased, rfl⟩
 
 theorem erase_defn_kind {info : Ixon.ConstantInfo} {d₀ : Ixon.Definition}
     (h : SharingRoots.erase info = SharingRoots.erase (.defn d₀)) {d : Ixon.Definition} (hd : info = .defn d) :
