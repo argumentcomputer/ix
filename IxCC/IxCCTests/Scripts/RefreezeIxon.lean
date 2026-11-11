@@ -18,10 +18,6 @@ their provenance; required CI never runs it.
   refused, naming the fields.
 * `rc-real-source --ix IX [--ix-path DIR]`: regenerate the RC real-source
   input `fixtures/rc/real-source` (`rcRealSource`).
-
-The typing bundles (`typing/`) are frozen: the ix of this repository writes
-only role-bound environments, so they are not regenerated (their README says
-how they were made).
 -/
 
 namespace RefreezeIxon

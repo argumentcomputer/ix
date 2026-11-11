@@ -258,9 +258,8 @@ hosted-CI or cold-store timing is claimed.
   relevant axioms; erasure declines string literals in relevant positions.
   IxCC reads the role-bound envelopes this repository's `ix compile` writes,
   with pinned identities from their role tables ([byte
-  contract](byte-contract.md)); every committed fixture is role-bound, written
-  by this repository's `ix` (the typing bundles excepted: frozen unbound
-  data, [corpus](corpus.md)).
+  contract](byte-contract.md)); every committed closure a compile path reads is
+  role-bound, written by this repository's `ix` ([corpus](corpus.md)).
 - **Known defect: an unreached over-budget record refuses the closure.**
   The decoder refuses a whole closure if any record exceeds its expression
   depth budget (256, a `share` node a leaf), and `ix compile` selects a
@@ -320,7 +319,8 @@ hosted-CI or cold-store timing is claimed.
   dishonest certificate can choose them.
 - **Not proved.** That `a.src` is the ingested program's meaning (S6), that
   SrcEval agrees with the certified kernel's model (S8), that IxCC reads the
-  bytes as IxCK does, or anything about the erased type checker. See the
+  bytes as IxCK does. (IxCC's erased type checker, of which nothing was
+  proved, is deleted.) See the
   [certification design](certification-design.md).
 
 ## Plan
@@ -364,7 +364,7 @@ Ixon v4 → Src (relevance-annotated kernel terms + unfolding table)
   fragment (SP-1), widening (SP-2), and the native discharge of the premises
   (SP-N), whose kernel-based front end replaced the erased checker as the
   only front end at the switch's step 3 (the owner's decision of
-  2026-11-11; the checker's code is deleted in step 4), with the kernel's blow-up on chains of `let` fixed
+  2026-11-11; the checker's code is deleted, step 4), with the kernel's blow-up on chains of `let` fixed
   in the kernel package on this branch in parallel (landed). Kernel acceptance and the image's faithfulness are premises
   that IxVM proofs (or a native kernel run) discharge, not IxCC theorems.
   Designed in the [certification
@@ -676,8 +676,8 @@ disagreement; then the C drivers, their pins and the C link paths went.
   whole logical units and checker support (DO-20); equation counts grew; no
   source, root, case, value or decline changed, except the boundary family's
   field limit, restated at 49/50 fields (the known defect above). The typing
-  bundles are frozen unbound data; IxCC's catalog support is retired (DO-16). The unbound flag
-  has no user left and goes next.
+  bundles went with the erased checker, and IxCC's catalog support is retired
+  (DO-16). The unbound flag has no user left and goes next.
 - **RL-2, the certified-IxVM work.** It has priority and lands first; this
   branch adapts to whatever it does: a second merge of `main`, the rename
   pass, re-recorded digests, inventories and ledger, and the move to its formal
@@ -921,7 +921,7 @@ The owner also decided, on the same day:
   separate kernel front-end document. Since the switch's step 3 (2026-11-11)
   it is the only front end: every compile path's ingress is the kernel's
   acceptance, the per-claim typing flag is gone, and the erased checker is
-  off every path until its deletion (step 4).
+  deleted (step 4).
 - **The standalone-executables design**: accepted as proposed, which settles
   DO-28 to DO-36 as their defaults. "Self-host" means a pure certified program
   plus a small machine-level layer that IxCC generates and later proves, never

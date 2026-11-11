@@ -9,8 +9,8 @@ only front end** since the switch's step 3 ([The switch](#the-switch)): every
 compile path's ingress is the kernel's acceptance and every annotation the
 kernel annotator's. Step 4 deletes the earlier front end: the earlier
 annotator is gone, with `tests-kernel-front`'s comparison, which found the two
-annotators equal on every committed closure; the erased checker's code is
-still in the tree, off every path. The kernel's fix of its
+annotators equal on every committed closure, and so are IxCC's catalog
+support and the erased checker. The kernel's fix of its
 blow-up on chains of `let`, made in parallel in the kernel package on this
 branch, has landed ([resource bounds](#resource-bounds),
 [decisions](#decisions)). This is most of the native

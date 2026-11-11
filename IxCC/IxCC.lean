@@ -1,5 +1,4 @@
 import IxCC.Ixon.V3
-import IxCC.Ixon.V3.Typed
 import IxCC.Sem.Result
 import IxCC.Sem.Clock
 import IxCC.Sem.Clocked

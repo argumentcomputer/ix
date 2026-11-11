@@ -8,8 +8,7 @@ import IxCC.Ixon.Address
 (Blake3.lean, the pinned revision; standard axioms only), compiled natively
 like the rest of our code. Every address IxCC computes is this
 hash (`Address.blake3`, `IxCC.Ixon.Hash`, is defined as it), so no address on the
-verifier path comes from foreign code (the erased checker's internal keys are
-not addresses; `IxCC.Ixon.Hash`).
+verifier path comes from foreign code.
 -/
 
 namespace IxCC.Ixon

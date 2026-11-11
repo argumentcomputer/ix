@@ -1,4 +1,4 @@
-import IxCCTests.IxonV3.TypingFixtures
+import IxCCTests.IxonV3.Builder
 
 /-! The resource checker's step budget bounds its work: the regression for
 an exponential validator, with the same generated constants as ix's
@@ -19,7 +19,7 @@ reading only.
 
 namespace IxCCTests.IxonV3.ResourceBudget
 
-open IxCC.Ixon IxCC.Ixon.V3 TypingFixtures
+open IxCC.Ixon IxCC.Ixon.V3 Builder
 
 def linear : BinderContract := ⟨.linear, .shared⟩
 def many : BinderContract := {}

@@ -298,12 +298,10 @@ stale): regenerate in place. On a 64-core machine it takes about 12 minutes
 in place (2026-11-11, after the switch to the kernel front end), nearly all of
 it the families.
 
-Not regenerated, and why: `fixtures/ixon-v4/typing` (the erased checker's
-unbound typing bundles; this repository's `ix` writes only role-bound
-environments; frozen until the switch to the certified kernel retires those
-tests), the vendored Aiur snapshot and its reference exports (not written by
-`ix`), and `fixtures/ixon-v4/bench-k1/steps.json` (a measurement of the
-compiled code, checked by `check-steps`, rewritten by `check-steps --write`).
+Not regenerated, and why: the vendored Aiur snapshot and its reference
+exports (not written by `ix`), and `fixtures/ixon-v4/bench-k1/steps.json` (a
+measurement of the compiled code, checked by `check-steps`, rewritten by
+`check-steps --write`).
 
 **One family** (a new or changed family; others are left as they are):
 

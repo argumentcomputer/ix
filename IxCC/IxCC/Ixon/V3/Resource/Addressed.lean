@@ -18,8 +18,9 @@ loose-index bound (`computeSharingBounds`).
 This boundary reads canonical bytes and ignores presentation metadata. It
 resolves each constant's local tables to one program, derives nominal kinds
 and supported projection fields, and binds every external rule to an explicit
-profile address. Resource admission still requires a separate erased typing
-check of these same bytes; `prepare` is deliberately not a certificate.
+profile address. Resource admission presupposes a separate typing of these
+same bytes (the certified kernel's acceptance, on every compile path);
+`prepare` is deliberately not a certificate.
 -/
 
 namespace IxCC.Ixon.V3.Resource

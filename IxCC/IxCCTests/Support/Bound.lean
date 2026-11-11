@@ -1,4 +1,4 @@
-import IxCCTests.IxonV3.TypingFixtures
+import IxCCTests.IxonV3.Builder
 import IxCCTests.Support.Envelope
 
 /-! # Role-bound test environments
@@ -6,7 +6,7 @@ import IxCCTests.Support.Envelope
 The certified kernel admits only role-bound environments, its reader declines
 an inductive block stored without its recursor, and it declines every axiom
 but the standard ones. The test environments the in-memory builder
-(`IxCCTests.IxonV3.TypingFixtures`: `store`, `block`, `bytes`) makes are none of
+(`IxCCTests.IxonV3.Builder`: `store`, `block`, `bytes`) makes are none of
 these: unbound, their inductives without recursors, some built on an axiom.
 This module makes role-bound ones the kernel front end accepts:
 
@@ -33,7 +33,7 @@ recursor (the reader keeps one recursor per motive). -/
 namespace IxCCTests.Support.Bound
 
 open IxCC.Ixon IxCC.Ixon.V3
-open IxCCTests.IxonV3.TypingFixtures (record store block arrow lambda)
+open IxCCTests.IxonV3.Builder (record store block arrow lambda)
 
 abbrev E := IxCC.Ixon.V3.Expr
 abbrev Addr := IxCC.Ixon.Address

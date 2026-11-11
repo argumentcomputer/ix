@@ -49,11 +49,11 @@ def fixtures : List (String × String × String) :=
   [("tuple", "fixtures/corpus/phase1-scalar/tuple", "entry"),
    ("fib", "fixtures/ixon-v4/bench-k1/fib", "entry")]
 
-/-- Every committed role-bound closure under `fixtures/`: not the typing bundles
-or the handoff vectors (unbound, frozen). -/
+/-- Every committed role-bound closure under `fixtures/`: not the resource
+handoff vectors (unbound, ix's fixture package). -/
 def committedClosures : IO (Array System.FilePath) := do
   let all ← System.FilePath.walkDir "fixtures"
-  let skip := ["/typing/", "/handoff/"]
+  let skip := ["/handoff/"]
   let ixe := all.filter fun p => p.extension == some "ixe" && !skip.any fun s => (p.toString.splitOn s).length > 1
   return ixe.qsort (·.toString < ·.toString)
 

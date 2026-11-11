@@ -22,17 +22,19 @@ Three ix sources matter, for three different things:
   it by the SHA-256 of each of those files ([trust
   ledger](trusted-extern-ledger.md), `lean_dependencies`); they were last
   reviewed as of the integrity pins recorded there.
-- **The data model, the resource rules and the erased checker** were adapted
-  from an earlier ix (Ixon v3, a revision outside this repository's history;
-  v3 introduced the contract-carrying model and v4 changed only the wire),
-  with the erased checker's primitive table, which follows this repository's
-  `Ix/PrimAddrs.lean` (`refreeze-ixon tc-primitives`).
+- **The data model and the resource rules** were adapted from an earlier ix
+  (Ixon v3, a revision outside this repository's history; v3 introduced the
+  contract-carrying model and v4 changed only the wire), with the primitive
+  table (`V3.PrimAddrs`), which follows this repository's `Ix/PrimAddrs.lean`
+  (`refreeze-ixon tc-primitives`). The erased type checker adapted with them
+  was deleted by the switch to the certified kernel
+  ([kernel front end](kernel-front-end-design.md)).
 
 The producer of the committed fixtures is the ix of this repository (`lake
 build ix`): `ix compile --equations` writes the role-bound closures and their
 unfolding equations ([corpus](corpus.md), "Refreezing";
 `tools/regenerate.sh --check` says whether they are current). The erased
-checker's typing bundles are frozen unbound data. IxCC's catalog support
+checker's typing bundles went with the checker. IxCC's catalog support
 (catalog-v2 admission under validator 1, which certified the erased checker's
 typing) is retired: ix retired validator 1, and reading catalogs again means
 building against its current validator.
@@ -79,7 +81,7 @@ header, `0xE3`, is rejected). Raw constant bytes carry no
 self-identifying version, so consumers must select this API from an
 authenticated versioned boundary. The v4 primitive inventory is ix's
 [`primitives.tsv`](../fixtures/ixon-v4/primitives.tsv) (copied unchanged); 66
-of the erased checker's primitive addresses moved from v3.
+of the primitive addresses moved from v3.
 
 [`Ixon.V4.Convert`](../IxCC/Ixon/V4/Convert.lean) is the total
 structural correspondence between ix's `Ixon.*` data and ours (the only
@@ -120,19 +122,19 @@ selects 100,000 steps; using the higher cap requires explicit profile bytes and
 their new address. Optimization toward 100,000 steps remains a follow-up target.
 Budget restrictions do not change committed bytes.
 
-Typing additionally caps declaration counts and variable/field indices at
-4,096, expression conversion at 100,000 steps and 1,024 pending frames, and
-recursive checker dispatch at 1,024. It resets a 100,000 recursive-fuel budget
-for each checked source key. These consumer limits can reject a well-typed
-producer environment; they do not establish a wall-time or host-memory bound.
+Typing is the certified kernel's, on every compile path (its own budgets are
+in the [kernel front end](kernel-front-end-design.md#resource-bounds)); these
+consumer limits can reject a well-typed producer environment and do not
+establish a wall-time or host-memory bound.
 
 ## Admission and claims
 
-[`validate`](../IxCC/Ixon/V3/Validate.lean) runs resource admission,
-fixes Nat/String literal types to the canonical primitive identities, and
-runs erased typing over the same decoded environment. Its `ValidatedInput`
-retains the original environment/profile byte indices and equations for all
-three checks. The literal-pin theorem proves that an optional selected type
+[`validate`](../IxCC/Ixon/V3/Validate.lean) runs resource admission and
+fixes Nat/String literal types to the canonical primitive identities. It types
+nothing: on every compile path the certified kernel's acceptance of the whole
+role-bound environment runs first, and this API also reads unbound
+environments (the handoff vectors). Its `ValidatedInput` retains the original
+environment/profile byte indices and equations for both checks. The literal-pin theorem proves that an optional selected type
 is either absent or the canonical address.
 
 [`admitResources`](../IxCC/Ixon/V3/Source.lean) returns a `ResourceInput`
@@ -147,8 +149,7 @@ behavior, literal pins and checker limits under `ixon-v4/resource-v1`
 value 9, the bytes `E8 01`) binds object format 4, validator 2, the complete
 constant-set root and that profile's address. `checkClaimBinding` verifies
 only those identities on a resource-only input. `ValidatedInput.checkClaim`
-checks the binding after combined validation. The command runs that combined
-boundary:
+checks the binding after validation. The command runs that boundary:
 
 ```sh
 lake exe check-ixon-v3 fixtures/ixon-v4/handoff/accepted.ixe \
@@ -156,18 +157,8 @@ lake exe check-ixon-v3 fixtures/ixon-v4/handoff/accepted.ixe \
   fixtures/ixon-v4/handoff/accepted.claim
 ```
 
-The anonymous checker adapts upstream `Ix/Tc`: universes, inference,
-definitional equality, safety, inductive positivity and generated-recursor
-comparison. Its projection addresses hash v4 projection constants. It decodes
-raw constants afresh, always verifies their hashes, rejects cyclic sharing,
-and checks every source key. Empty mutual blocks and orphan projections fail.
-There is no caller-supplied checker verdict or materialized cache that can
-replace the bytes.
-
-Successful admission certifies execution of these algorithms, conditional
-on the existing native BLAKE3 boundary (the checker's internal hashing and
-the resource commitments still use it) and the pinned checker's correctness.
-A whole-checker semantic soundness theorem is not provided by the adapter.
+Successful validation certifies execution of these algorithms. A semantic
+soundness theorem for the resource checker is not provided by the adapter.
 IxVM Resource proofs remain unsupported.
 
 The compiler's front end ([compiler design](compiler-design.md)) starts from
@@ -183,7 +174,7 @@ The [K1 pack](../fixtures/ixon-v4/k1/README.md) adds a 1,596-constant closure
 of ordinary Lean programs (`fib`, a `for` loop, Ackermann, `tak`, `gcd`) with
 the unfolding theorems of every recursive definition it reaches. The suite
 checks strict ingress, the recorded root, definition and equation addresses,
-and erased typing of the whole closure.
+and the certified kernel's acceptance of the whole closure.
 
 The portable fixture package (expressions, addressed constants and profile,
 claims, the 66 resource cases, the handoff, the text grammar and the primitive
@@ -199,14 +190,11 @@ wrong claim bindings, a v3 header and exhausted ingress budgets are regression
 cases. The package also retains upstream text/primitive fixtures as
 provenance; this adapter implements no text parser.
 
-The typing suite also rejects ordinary ill-typed declarations that resource
-analysis skips, and confirms that erased typing alone accepts the local-escape
-fixture. It covers scope/universe errors, sharing cycles, unsafe references,
-positivity, constructor headers, canonical recursors and tampered rules.
-Four [primitive bundles](../fixtures/ixon-v4/typing/README.md) retain producer
-bytes for Nat, Nat.add, String and Quot.lift. They passed upstream Rust
-checking; required tests run combined admission, valid literals,
-`20 + 22 = 42`, and rejection of false arithmetic and redirected literal pins.
+The validation part checks that the API types nothing (an ill-typed component
+the resource analysis skips passes it; the kernel refuses it at ingress), the
+primitive table against `primitives.tsv`, and the `Nat` literal bytes. The
+erased checker's typing cases and its four primitive bundles went with the
+checker; the kernel's refusals are tested in `tests-kernel-front`.
 
 Contract bit roundtrips, quantity laws and the executed state invariants have
 exact kernel axiom fences in `IxCCTests.Fences.IxonV3`. In particular,
@@ -217,9 +205,8 @@ resource checker or an allocation backend. Production imports exclude the
 larger state proofs and all fixtures/fences. Required CI runs the focused
 suite and includes the proof/fence, module-graph and trust inventories.
 
-Eight additional typing/pin/input fences preserve the existing logical and
-native BLAKE3 axiom basis. Hash finalization uses an explicit kernel proof of
-its 32-byte length bound, avoiding the dependency's default native reflection.
+Seven additional pin/input fences preserve the standard axiom basis (every
+address is pure BLAKE3).
 
 The adapted source files identify their upstream origin. Resource algorithms
 come from `Ix/Resource/{Basic,Check,Admit,Addressed}.lean`; local changes are

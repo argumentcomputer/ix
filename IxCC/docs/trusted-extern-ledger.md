@@ -64,7 +64,7 @@ The checker deliberately fails closed on changes to:
   `ofReduceBool`, `ofReduceNat`, `trustCompiler` (bare or under `Lean.`) and
   `Lean.reduceBool`/`Lean.reduceNat`. A conservative lexer excludes comments
   and literals and retains line locations. The bare names `reduceBool` and
-  `reduceNat` are accepted, because the erased checker's primitive table uses
+  `reduceNat` are accepted, because the primitive table (`V3.PrimAddrs`) uses
   them as field names, and so is a variable or field named `native` in any
   other position. The one native axiom the fences permit, Blake3's
   `native_decide`, is inside the Blake3 package, which this scan does not
@@ -266,7 +266,7 @@ and its coverage changes.
 | Field | Ledger value |
 | --- | --- |
 | Owner | IxCC maintainers |
-| Project entry points | `Blake3.Rust.hash` in `IxCC/Ixon/Hash.lean`; `Blake3.Rust.Hasher` in the v3 typechecker's node/context hashing |
+| Project entry points | none: `IxCC/Ixon/Hash.lean` imports `Blake3.Rust`, and nothing calls it since its one user, the erased type checker's node and context hashing, was deleted |
 | Assumed semantics | Standard BLAKE3 XOF over exactly the input bytes; a 32-byte request is the standard 256-bit digest |
 | Logical/proof status | Assumption: no Lean refinement theorem connects returned bytes to a pure BLAKE3 specification. Canonical-address identity is conditional on an explicit pairwise `Address.Blake3NoCollision` premise; no global hash-injectivity axiom is asserted. Theorems whose premise is a successful addressed check (Ixon v3 ingress, typing and claim binding) expose the exact native hash dependency, pinned in the `IxCCTests/Fences/IxonV3*.lean` fences. |
 | Evidence | Official empty-input vector, output length, determinism and input-sensitivity checks, and the frozen Ixon v3 constant, environment and claim fixtures with independently recorded addresses |
@@ -280,9 +280,9 @@ BLAKE3 (`Address.blake3Pure`), so the actual compiler composition results in
 standard axioms; the 46 fences that used to list
 `Blake3.HasherOps.hash._native.native_decide.ax_1` (a `native_decide` proof of
 `32 < 2 ^ System.Platform.numBits` inside `HasherOps.hash`) now list only those.
-The backend's one remaining user is the erased checker's incremental hasher
-(`Blake3.Rust.Hasher`) for its internal hash-consing keys, with explicit length
-proofs. `Recheck.run` and `Recheck.sound` retain
+The backend's one user, the erased checker's incremental hasher
+(`Blake3.Rust.Hasher`) for its internal hash-consing keys, was deleted with
+the checker. `Recheck.run` and `Recheck.sound` retain
 their original exact fences. The compiler bridge is SrcEval-relative and does
 not discharge the source-model or resource-profile compatibility obligations.
 
@@ -302,19 +302,12 @@ pins. It changes only the package's `lean-toolchain`, its `lean4-nix` lock and
 its CI workflows; the Lean sources, Rust sources and Cargo lock are
 unchanged.
 
-The v3 checker uses incremental `Hasher.init`, `update` and
-`finalizeWithLength` for tagged node and context preimages. These call the
-same three active native symbols as the existing hash entry point. The
-32-byte output bound is discharged by a kernel proof; no additional native
-reflection axiom is introduced. Keyed and derive-key operations remain unused.
-
 The audit enumerates extern declarations across the entire pinned package
 source tree — every `.lean` file, in `@[extern ...] opaque`/`def` and
 post-hoc `attribute [extern ...]` form — not just the imported entry module.
 The tree ships twelve C-ABI symbols across two backend modules. IxCC
-imports only `Blake3.Rust`; the active hash path calls `rs_blake3_init`,
-`rs_blake3_hasher_update`, and `rs_blake3_hasher_finalize`, and the version,
-keyed-init, and derive-key exports remain listed because downstream code can
+imports only `Blake3.Rust`, and calls none of its six exports since the
+erased checker's deletion; they remain listed because downstream code can
 reach the imported public API. The sibling `Blake3.C` module binds the
 vendored C implementation behind six `c_blake3_*` symbols; it is not imported
 (the checker verifies this against actual imports), so none of them are
@@ -324,11 +317,11 @@ away, so they are listed and any drift fails the check:
 | Lean declaration | Foreign symbol | Current reachability |
 | --- | --- | --- |
 | `Blake3.Rust.internalVersion` | `rs_blake3_version` | imported, uncalled |
-| `Blake3.Rust.hasherInit` | `rs_blake3_init` | active hash path |
+| `Blake3.Rust.hasherInit` | `rs_blake3_init` | imported, uncalled |
 | `Blake3.Rust.hasherInitKeyed` | `rs_blake3_init_keyed` | imported, uncalled |
 | `Blake3.Rust.hasherInitDeriveKey` | `rs_blake3_init_derive_key` | imported, uncalled |
-| `Blake3.Rust.hasherUpdate` | `rs_blake3_hasher_update` | active hash path |
-| `Blake3.Rust.hasherFinalize` | `rs_blake3_hasher_finalize` | active hash path |
+| `Blake3.Rust.hasherUpdate` | `rs_blake3_hasher_update` | imported, uncalled |
+| `Blake3.Rust.hasherFinalize` | `rs_blake3_hasher_finalize` | imported, uncalled |
 | `Blake3.C.internalVersion` | `c_blake3_version` | present, unimported |
 | `Blake3.C.hasherInit` | `c_blake3_init` | present, unimported |
 | `Blake3.C.hasherInitKeyed` | `c_blake3_init_keyed` | present, unimported |
@@ -349,23 +342,21 @@ is absent from the runtime closure.
 ## Ix frontend / Ixon v4 source boundary
 
 The [source adapter](ixon-v4.md) reads Ixon v4 through ix's pure codec (the
-pure Lean dependency below) and keeps the data model, resource algorithms and
-erased checker adapted from an earlier ix (Ixon v3, a revision outside this
-repository's history), with the checker's primitive table following this
-repository's `Ix/PrimAddrs.lean` and the resource profile and claim framing
-following ix's Ixon v4. It
+pure Lean dependency below) and keeps the data model and resource algorithms
+adapted from an earlier ix (Ixon v3, a revision outside this repository's
+history), with the primitive table following this repository's
+`Ix/PrimAddrs.lean` and the resource profile and claim framing following ix's
+Ixon v4. It
 preserves independent usage, ownership, relative locality, arrow results, and
 borrow lets. Canonical bytes, source roots, profile identities and native
 resource claim framing are checked against ix's frozen v4 fixture package.
 Ingress authenticates every object and the constant root with pure BLAKE3
-(`Blake3.Pure`); the erased checker's internal hashing and the resource
-commitments keep the Rust BLAKE3 interface above. The combined validator
-executes the pinned anonymous erased typechecker on the same raw bytes, fixes
-literal primitives, and checks every source key. Explicit hash-length proofs
-avoid reflection axioms. Eight exact fences retain the existing BLAKE3 axiom
-basis. Four frozen primitive closures, canonical recursors and adversarial
-cases run in the required suite. A whole-checker semantic soundness theorem,
-backend simulation and IxVM resource proofs remain outside this boundary.
+(`Blake3.Pure`), as do the resource commitments. The resource-validation API
+(`V3.validate`) runs resource admission and fixes literal primitives on the
+same raw bytes; it types nothing (the erased checker it once ran is deleted;
+on every compile path the certified kernel's acceptance comes first). Seven
+exact fences retain the standard axiom basis. Backend simulation and IxVM
+resource proofs remain outside this boundary.
 
 The valid-neighbor resource and `csimp` controls of the source suite add no
 native interface, symbol, dependency, build seed, specification assumption or

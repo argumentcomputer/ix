@@ -1,10 +1,17 @@
 import IxCC.Ixon.V3.Source
 import IxCC.Ixon.V3.PrimAddrs
-import IxCC.Ixon.V3.Tc.Driver
 
-/-! Combined native admission: both resource and erased typing checks consume
-the same decoded, hash-checked v3 bytes. The record certifies execution of
-these algorithms; it is not a whole-checker semantic soundness theorem. -/
+/-! The resource-validation API: resource admission and the literal pins over
+the decoded, hash-checked v3 bytes. The record certifies execution of these
+algorithms; it is not a whole-checker semantic soundness theorem.
+
+Typing is not part of it. On every compile path the certified kernel's
+acceptance of the whole role-bound environment runs before resource admission
+(`Recheck.ingress`, `docs/kernel-front-end-design.md`); this API also reads
+unbound environments (the resource handoff vectors), which no kernel admits,
+and types none. The kernel compares binders' input contracts but not result
+contracts, so the resource checker's own contract comparison
+(`Resource.Addressed.checkResources`) still closes that gap. -/
 
 namespace IxCC.Ixon.V3
 
@@ -51,29 +58,21 @@ def standardProfile (env : Env) : Resource.Profile :=
 structure ValidatedInput (bytes profileBytes : ByteArray) where
   resource : ResourceInput bytes profileBytes
   literalProfileChecked : checkLiteralProfile resource.profile = .ok ()
-  typingChecked : Tc.checkEnv resource.env = .ok ()
 
-/-- Combined validation over exactly the bytes retained by resource ingress.
-No materialized environment or caller-supplied typing verdict is accepted. -/
+/-- Resource validation over exactly the bytes retained by resource ingress.
+No materialized environment is accepted. -/
 def validate (bytes profileBytes : ByteArray) :
     Except String (ValidatedInput bytes profileBytes) := do
   let resource ← admitResources bytes profileBytes
   match literalProfileChecked : checkLiteralProfile resource.profile with
   | .error error => throw error
-  | .ok () =>
-    match typingChecked : Tc.checkEnv resource.env with
-    | .error error => throw error
-    | .ok () => return { resource, literalProfileChecked, typingChecked }
+  | .ok () => return { resource, literalProfileChecked }
 
 /-- Check the native Resource claim against a successfully validated source.
 IxVM resource proof variants remain unsupported. -/
 def ValidatedInput.checkClaim {bytes profileBytes : ByteArray}
     (input : ValidatedInput bytes profileBytes) (claimBytes : ByteArray) : Except String Unit :=
   input.resource.checkClaimBinding claimBytes
-
-theorem ValidatedInput.typing_checked {bytes profileBytes : ByteArray}
-    (input : ValidatedInput bytes profileBytes) : Tc.checkEnv input.resource.env = .ok () :=
-  input.typingChecked
 
 theorem ValidatedInput.literal_profile_checked {bytes profileBytes : ByteArray}
     (input : ValidatedInput bytes profileBytes) : checkLiteralProfile input.resource.profile = .ok () :=

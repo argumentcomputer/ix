@@ -14,12 +14,9 @@ length proof inside the Blake3 package's `HasherOps.hash`
 (`IxCC/docs/byte-contract.md`, "The hash").
 
 The Rust backend (Blake3.lean's `Blake3.Rust`, the trust ledger's native
-interface) stays imported for one user: the erased type checker's incremental
-hasher (`Blake3.Rust.Hasher`, `IxCC.Ixon.V3.Tc`), which builds the checker's
-internal hash-consing and cache keys. Those keys are not addresses of anything
-a claim or a statement names: a collision among them can change only the
-checker's verdict, which no theorem uses, and their length proofs are
-explicit (`V3.Tc.finishHash`).
+interface) is still imported but has no user: its one user, the erased type
+checker's incremental hasher, was deleted with the checker by the switch to
+the certified kernel, and the import goes next.
 
 The semantic `Constant.address?` boundary lives in `Ixon.Sharing`, after the
 layer-2 recompression check. IxIR declaration preimages and address APIs live

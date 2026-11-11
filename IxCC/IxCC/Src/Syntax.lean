@@ -5,7 +5,7 @@ import IxCC.Src.Resource.Syntax
 
 /-! # Src syntax
 
-The first IR of the rebuilt pipeline: the resolved, table-free reading of a Tc-typed Ixon closure,
+The first IR of the rebuilt pipeline: the resolved, table-free reading of an Ixon closure the certified kernel accepted,
 with the relevance annotation written into its binders, arguments and
 lets, and the evaluation modes that `Src.Lazify` sets.
 

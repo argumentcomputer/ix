@@ -3,9 +3,9 @@
 Written 2026-11-10. **Status:** IxCC reads both envelopes below, takes its
 pinned identities from the role table of a role-bound one, computes every
 address with pure BLAKE3, and its compile claim names the role table beside
-the root (all implemented). Every committed fixture is role-bound, written by
-this repository's `ix` ([corpus](corpus.md)); only the erased checker's typing
-bundles are frozen unbound data.
+the root (all implemented). Every committed closure is role-bound, written by
+this repository's `ix` ([corpus](corpus.md)), but ix's resource handoff
+vectors, unbound, which the resource-validation API reads.
 
 A statement of the [end-to-end plan](end-to-end.md) has two premises about
 content addresses: that the kernel's reading of the closure of the *seeds* (the
@@ -72,8 +72,8 @@ leaves and nodes, the binding section, the projection keys of block members.
 Every address IxCC computes uses the pure Lean implementation
 (`Blake3.Pure.hash`; `Address.blake3` is `Address.blake3Pure`), so no address on
 the verifier path comes from foreign code and every byte-level theorem rests on
-the three standard axioms. (The erased checker keeps the Rust hasher for its
-internal hash-consing keys, which are not addresses anything names.) The kernel's admission takes the
+the three standard axioms. (The Rust hasher's one user in IxCC, the erased
+checker's internal hash-consing, was deleted with the checker.) The kernel's admission takes the
 hash as a parameter (`IxCK/Kernel/Admission.lean`), and every theorem holds at
 every hash; ix instantiates it with `Address.admissionHash`, which is pure
 BLAKE3 by definition and is executed by the Rust implementation on a recorded
@@ -254,8 +254,7 @@ soundness theorems state both (`verifyBytes_immortal_sound`,
   of the seeds under the IxVM claim's table and the committed prelude
   ([kernel front end](kernel-front-end-design.md#acceptance)).
 - **The unbound bridge.** `ix compile --unbound` stays until it is removed
-  (it has no IxCC user since the role-bound refreeze; the typing bundles are
-  frozen data, not regenerated). IxCC still reads the unbound
+  (it has no IxCC user since the role-bound refreeze). IxCC still reads the unbound
   envelope, with the fixed pins; its tests write it from a role-bound closure
   (`IxCCTests/Support/Envelope.lean`).
 - **Two readings.** IxCC's decoder and the kernel's reader each read the
