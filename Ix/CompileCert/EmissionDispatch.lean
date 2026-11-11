@@ -307,14 +307,26 @@ theorem build_mutual_codec (limits : Ix.Sharing.Exact.Limits) (classes : List Mu
   cases chosen : standaloneMutConstInfo? members with
   | some info =>
     simp only [chosen] at ran
-    obtain ⟨block, built, returned⟩ := Ix.Sharing.Verify.except_bind_eq_ok ran
+    obtain ⟨raw, built, rest⟩ := Ix.Sharing.Verify.except_bind_eq_ok ran
+    obtain ⟨block, sectioned, returned⟩ := Ix.Sharing.Verify.except_bind_eq_ok rest
+    have both : (buildConstantWithSharing limits info state.refs state.univs >>=
+        withBinderSection annotator? (classes.map MutConst.name).toArray) = .ok block := by
+      rw [built]
+      exact sectioned
     cases Except.ok.inj returned
-    exact EmissionBlocks.block_codec (standalone_header members info bounds chosen) tables built _ _
+    exact EmissionBlocks.block_codec (standalone_header members info bounds chosen) tables
+      (EmissionBlocks.sectioned_of_bind both).1 (EmissionBlocks.sectioned_of_bind both).2 _ _
   | none =>
     simp only [chosen] at ran
-    obtain ⟨block, built, returned⟩ := Ix.Sharing.Verify.except_bind_eq_ok ran
+    obtain ⟨raw, built, rest⟩ := Ix.Sharing.Verify.except_bind_eq_ok ran
+    obtain ⟨block, sectioned, returned⟩ := Ix.Sharing.Verify.except_bind_eq_ok rest
+    have both : (buildConstantWithSharing limits (.muts members) state.refs state.univs >>=
+        withBinderSection annotator? (classes.map MutConst.name).toArray) = .ok block := by
+      rw [built]
+      exact sectioned
     cases Except.ok.inj returned
-    exact EmissionBlocks.block_codec bounds tables built _ _
+    exact EmissionBlocks.block_codec bounds tables
+      (EmissionBlocks.sectioned_of_bind both).1 (EmissionBlocks.sectioned_of_bind both).2 _ _
 
 /-- The mutual finisher changes no state and returns a block that decodes
 exactly, given wire-valid tables: its own guard supplies the member
