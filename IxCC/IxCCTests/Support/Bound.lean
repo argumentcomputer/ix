@@ -55,6 +55,11 @@ Refused (`none`) for an environment without a binding. -/
 def bytes (env : Env) : Option ByteArray :=
   env.binding.map fun b => IxCCTests.Support.Envelope.envelope env (some (b.address, b.bytes))
 
+/-- `bytes` for an environment built on the base, which is role-bound (an
+environment without a binding gives no bytes, which ingress refuses as
+undecodable). -/
+def write (env : Env) : ByteArray := (bytes env).getD .empty
+
 /-- A constructor field: the inductive itself, or a closed type stored at an
 address. -/
 inductive Field where

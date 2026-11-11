@@ -1,5 +1,6 @@
 import IxCC.Ixon.V3.Env
 import IxCC.Src.KernelFront.Accept
+import IxCC.Ixon.V3.Support
 import IxCC.Tools.Check
 
 /-! Admission census over an Ixon v4 closure (`ixcc/census/2`).

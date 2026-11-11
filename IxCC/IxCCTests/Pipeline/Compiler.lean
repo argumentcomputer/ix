@@ -3,6 +3,7 @@ import IxCCTests.Rt.Differential
 import IxCCTests.Rt.Cases
 import IxCCTests.Lam.Differential
 import IxCC.CompileClaim
+import IxCCTests.Recheck.Hostile
 
 /-! The compiler: the `ixcc` command line on the fixtures,
 `produce` + `Recheck.run` against the stage suites' pipelines, the
@@ -207,9 +208,11 @@ private def setLamContracts : List Ixon.V3.BinderContract → Src.Term → Src.T
 
 /-- Attach frontend binder contracts (`1` linear on `build`, `!` unique on `revAcc`,
 `~` local borrow on `sumL`) and a matching `Src.Resource.Context` to the `OS16-plain`
-heap closure (`build` + `revAcc` + `sumL`), then verify that it passes `Recheck.produce`,
-`Recheck.run`, `Recheck.runWithContracts`, `Recheck.compileInputWithContracts`, and
-`RcReplay.produceAuto` on the `.zeroRc` path. -/
+heap closure (`build` + `revAcc` + `sumL`) in memory: every producer entry point
+refuses it (the kernel annotator's correspondence: its contracts are not the
+bytes'); with the certificate of the base program's annotation, `Recheck.run`,
+`Recheck.runWithContracts` and `CompileClaim.verifyProgram` accept it on the
+`.zeroRc` path. -/
 def contractZeroRc (a : Assert) : IO String := do
   let ixe : FilePath := "fixtures/ownership/OS16-plain.ixe"
   let eqs : FilePath := "fixtures/ownership/OS16-plain.equations.json"
@@ -267,14 +270,33 @@ def contractZeroRc (a : Assert) : IO String := do
   let annotatedProg : Src.Program := { p0 with consts, resource := some ctx }
   let annotatedInp : Input := { baseInp with program := annotatedProg }
   let cfg := Config.forInput { names := ["entry"], provenance := some Rt.Machine.testProvenance } annotatedInp
-  let cert ← ofErr "OS16-contract produce" fun _ => produce cfg annotatedInp
+  -- The producer refuses a program that is not its bytes' reading: the kernel
+  -- annotator's correspondence compares binder contracts with the kernel's
+  -- (every producer entry point: `produce`, `compileInputWithContracts`,
+  -- `RcReplay.produceAuto`, `CompileClaim.produce`).
+  let refusedByCorr := fun (r : Except Err Unit) => match r with
+    | .error e => e.stage == .relevance && e.code == "relevance-oracle" && (e.message.splitOn "contract").length > 1
+    | .ok _ => false
+  expect a (refusedByCorr ((produce cfg annotatedInp).map fun _ => ()))
+    "OS16-contract: produce annotated a program whose contracts are not the bytes'"
+  expect a (refusedByCorr ((compileInputWithContracts cfg annotatedInp).map fun _ => ()))
+    "OS16-contract: compileInputWithContracts accepted a program whose contracts are not the bytes'"
+  expect a (refusedByCorr ((RcReplay.produceAuto cfg annotatedInp).map fun _ => ()))
+    "OS16-contract: produceAuto accepted a program whose contracts are not the bytes'"
+  expect a ((CompileClaim.produce cfg annotatedInp).toOption.isNone)
+    "OS16-contract: CompileClaim.produce accepted a program whose contracts are not the bytes'"
+  -- The recheck path on that program (which runs no annotator), with the
+  -- certificate the producer made for it before the switch: the base
+  -- program's annotation (contracts other than erased ones change no class).
+  let (table, _, _) := Src.Table.build cfg.table annotatedProg annotatedInp.hints.proposals
+  let ann ← IO.ofExcept (baseInp.kernel.annotateChecked { p0 with table })
+  let cert ← ofErr "OS16-contract certificate" fun _ =>
+    IxCCTests.Recheck.Hostile.mkCert cfg annotatedProg (Src.Table.TableCert.ofTable table) ann
   let art ← ofErr "OS16-contract run" fun _ => run cfg annotatedProg cert
   let artWithContracts ← ofErr "OS16-contract runWithContracts" fun _ =>
     runWithContracts cfg annotatedProg cert
-  let (cert2, art2) ← ofErr "OS16-contract compileInputWithContracts" fun _ =>
-    compileInputWithContracts { names := ["entry"], provenance := some Rt.Machine.testProvenance } annotatedInp
-  expect a (artWithContracts.object == art.object && art2.object == art.object && cert2.toText == cert.toText)
-    "OS16-contract: runWithContracts and compileInputWithContracts agree with produce + run"
+  expect a (artWithContracts.object == art.object)
+    "OS16-contract: runWithContracts agrees with run"
   let hasHeapOps := (List.range art.fir.size).any fun f =>
     (art.fir.fun? f).any fun fd => Own.Plain.codeAllocsOrProjs art.fir.known fd.body
   expect a hasHeapOps "OS16-contract: lowered Fir must allocate or project heap cells"
@@ -285,18 +307,11 @@ def contractZeroRc (a : Assert) : IO String := do
     "OS16-contract: unannotated Own.Plain.Program.check must reject non-.many contracts"
   expect a (Own.Plain.Program.checkWithContracts art.fir (Own.Plain.Program.canonical art.fir).bodies)
     "OS16-contract: Own.Plain.Program.checkWithContracts must accept annotated heap program"
-  let autoRes ← ofErr "OS16-contract produceAuto" fun _ =>
-    RcReplay.produceAuto { names := ["entry"], provenance := some Rt.Machine.testProvenance } annotatedInp
-  match autoRes with
-  | .zeroRc autoCert autoArt _ =>
-    expect a (autoCert.toText == cert.toText && autoArt.object == art.object)
-      "OS16-contract: produceAuto zeroRc certificate and object must match produce + run"
-  | .plainRc .. | .immortal .. =>
-    expect a false "OS16-contract: produceAuto did not select zeroRc"
-  let (osClaim, osCertText, osElf) ← ofErr "OS16-contract CompileClaim.produce" fun _ =>
-    CompileClaim.produce cfg annotatedInp
-  expect a (osClaim.policy == .zeroRc && osClaim.abiArity == 1 && osElf == art.object && osCertText == cert.toText)
-    "OS16-contract: CompileClaim.produce metadata and ELF match"
+  let some (rootAddr, _) := annotatedProg.roots.head? | throw (IO.userError "OS16-contract: no root")
+  let osClaim : CompileClaim :=
+    { env := baseInp.env.root, roleTable := baseInp.env.bindingAddress, target := rootAddr
+      policy := .zeroRc, abiArity := 1, elfHash := Ixon.Address.blake3Pure art.object }
+  let osCertText := cert.toText
   expect a (CompileClaim.verifyProgram cfg annotatedProg osClaim osCertText)
     "OS16-contract: CompileClaim.verifyProgram must accept valid zeroRc claim"
   let badAddr := Ixon.Address.blake3Pure (ByteArray.mk #[0xde, 0xad, 0xbe, 0xef])
@@ -306,7 +321,9 @@ def contractZeroRc (a : Assert) : IO String := do
     "OS16-contract: CompileClaim.verifyProgram must reject tampered target"
   expect a (!CompileClaim.verifyProgram cfg annotatedProg { osClaim with abiArity := osClaim.abiArity + 1 } osCertText)
     "OS16-contract: CompileClaim.verifyProgram must reject tampered abiArity"
-  pure s!"OS16-contract: heap closure with 1/!/~ contracts passes produce + run + runWithContracts + CompileClaim.verifyProgram on zeroRc ({art.object.size} bytes)"
+  pure s!"OS16-contract: the producer refuses the heap closure with 1/!/~ contracts set in memory \
+    (relevance-oracle: not the bytes' reading); with the base annotation's certificate, run, \
+    runWithContracts and CompileClaim.verifyProgram accept it on zeroRc ({art.object.size} bytes)"
 
 /-- Exercise `CompileClaim.produce`, `CompileClaim.verifyProgram`, and
 `CompileClaim.verifyBytes` on both `.zeroRc` (`gcd`) and `.plainRc`
@@ -563,7 +580,7 @@ def declines (a : Assert) (t : Tools) : IO (Array String) := do
   | .ok _ => expect a false "six parameters without the check: the backend accepted it"
   out := out.push "  (without the check, stacking rejects the six-parameter wrapper: stacking.export)"
   -- names, certificates
-  out := out.push (← expectErr a "unknown root" (ingress bytes json ["K1.nope"] false) .cli "cli.root")
+  out := out.push (← expectErr a "unknown root" (ingress bytes json ["K1.nope"]) .cli "cli.root")
   out := out.push (← expectErr a "malformed certificate" (Cert.ofText "{\"format\": \"ixcc/cert/1\"}")
     .cert "cert.parse")
   out := out.push (← expectErr a "a certificate of another format" (Cert.ofText "{\"format\": \"x\"}")

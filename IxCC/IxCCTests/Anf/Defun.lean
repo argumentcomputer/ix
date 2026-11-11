@@ -414,9 +414,9 @@ def closuresStep (a : Assert) : IO (Array String) := do
   let q ← IO.ofExcept (IxCC.Anf.Pipeline.closures [2] plain)
   expect a (q.beq plain) "closures step: a plain program changed"
   -- over-applied: the root takes one argument and returns a closure, declared 2
-  let over := prog [gd 0 1 (b (fn 1 (b (add (x 1) (x 0)) (.ret (x 0)))) (.ret (x 0)))] [0]
-  let q ← IO.ofExcept (IxCC.Anf.Pipeline.closures [2] over)
-  checkOutput a over q "closures step, over-applied root"
+  let overApplied := prog [gd 0 1 (b (fn 1 (b (add (x 1) (x 0)) (.ret (x 0)))) (.ret (x 0)))] [0]
+  let q ← IO.ofExcept (IxCC.Anf.Pipeline.closures [2] overApplied)
+  checkOutput a overApplied q "closures step, over-applied root"
   expect a ((q.global? (root q)).any fun g => g.ps.length == 2 && g.key matches .entry _ 2)
     "closures step: the over-applied root has no entry of two parameters"
   let r ← runAnf q 100 (root q) [3, 5]
