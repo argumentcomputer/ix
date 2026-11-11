@@ -319,6 +319,11 @@ abbrev «Lists::snoc<(&[Field; 32], Field, &Lists::Node<&KernelTypes::KExprNode>
 
 theorem «Lists::snoc<(&[Field; 32], Field, &Lists::Node<&KernelTypes::KExprNode>, &Lists::Node<&KernelTypes::KLevelNode>)>».symbol : (Instance.mk "Lists::snoc" [(.tuple [(.ptr (.array .field 32)), .field, (.ptr (.named "Lists::Node" [(.ptr (.named "KernelTypes::KExprNode" []))])), (.ptr (.named "Lists::Node" [(.ptr (.named "KernelTypes::KLevelNode" []))]))])]).symbol = «Lists::snoc<(&[Field; 32], Field, &Lists::Node<&KernelTypes::KExprNode>, &Lists::Node<&KernelTypes::KLevelNode>)>» := by decide +kernel
 
+/-- The instance `Lists::reverse<&KernelTypes::KExprNode>`. -/
+abbrev «Lists::reverse<&KernelTypes::KExprNode>» : String := "${\"name\":\"Lists::reverse\",\"types\":[{\"ptr\":{\"target\":{\"named\":{\"args\":[],\"name\":\"KernelTypes::KExprNode\"}}}}]}"
+
+theorem «Lists::reverse<&KernelTypes::KExprNode>».symbol : (Instance.mk "Lists::reverse" [(.ptr (.named "KernelTypes::KExprNode" []))]).symbol = «Lists::reverse<&KernelTypes::KExprNode>» := by decide +kernel
+
 /-- The instance `Lists::length<(&[Field; 32], Field, &Lists::Node<&KernelTypes::KExprNode>, &Lists::Node<&KernelTypes::KLevelNode>)>`. -/
 abbrev «Lists::length<(&[Field; 32], Field, &Lists::Node<&KernelTypes::KExprNode>, &Lists::Node<&KernelTypes::KLevelNode>)>» : String := "${\"name\":\"Lists::length\",\"types\":[{\"tuple\":{\"items\":[{\"ptr\":{\"target\":{\"array\":{\"element\":\"field\",\"length\":32}}}},\"field\",{\"ptr\":{\"target\":{\"named\":{\"args\":[{\"ptr\":{\"target\":{\"named\":{\"args\":[],\"name\":\"KernelTypes::KExprNode\"}}}}],\"name\":\"Lists::Node\"}}}},{\"ptr\":{\"target\":{\"named\":{\"args\":[{\"ptr\":{\"target\":{\"named\":{\"args\":[],\"name\":\"KernelTypes::KLevelNode\"}}}}],\"name\":\"Lists::Node\"}}}}]}}]}"
 
@@ -338,11 +343,6 @@ theorem «Lists::lookup_or_default<&[Field; 32]>».symbol : (Instance.mk "Lists:
 abbrev «Lists::length<Field>» : String := "${\"name\":\"Lists::length\",\"types\":[\"field\"]}"
 
 theorem «Lists::length<Field>».symbol : (Instance.mk "Lists::length" [.field]).symbol = «Lists::length<Field>» := by decide +kernel
-
-/-- The instance `Lists::reverse<&KernelTypes::KExprNode>`. -/
-abbrev «Lists::reverse<&KernelTypes::KExprNode>» : String := "${\"name\":\"Lists::reverse\",\"types\":[{\"ptr\":{\"target\":{\"named\":{\"args\":[],\"name\":\"KernelTypes::KExprNode\"}}}}]}"
-
-theorem «Lists::reverse<&KernelTypes::KExprNode>».symbol : (Instance.mk "Lists::reverse" [(.ptr (.named "KernelTypes::KExprNode" []))]).symbol = «Lists::reverse<&KernelTypes::KExprNode>» := by decide +kernel
 
 /-- The instance `Lists::reverse<Field>`. -/
 abbrev «Lists::reverse<Field>» : String := "${\"name\":\"Lists::reverse\",\"types\":[\"field\"]}"
@@ -763,6 +763,8 @@ theorem n4088021409581841604 : constructorName [] (.named "Lists::Node" [(.tuple
 
 theorem n1407742221006188802 : instanceName [] "Lists::snoc" (some [(.tuple [(.ptr (.array .field 32)), .field, (.ptr (.named "Lists::Node" [(.ptr (.named "KernelTypes::KExprNode" []))])), (.ptr (.named "Lists::Node" [(.ptr (.named "KernelTypes::KLevelNode" []))]))])]) = Names.«Lists::snoc<(&[Field; 32], Field, &Lists::Node<&KernelTypes::KExprNode>, &Lists::Node<&KernelTypes::KLevelNode>)>» := by decide +kernel
 
+theorem n3593869098302610371 : instanceName [] "Lists::reverse" (some [(.ptr (.named "KernelTypes::KExprNode" []))]) = Names.«Lists::reverse<&KernelTypes::KExprNode>» := by decide +kernel
+
 theorem n14888783904625504901 : instanceName [] "Lists::length" (some [(.tuple [(.ptr (.array .field 32)), .field, (.ptr (.named "Lists::Node" [(.ptr (.named "KernelTypes::KExprNode" []))])), (.ptr (.named "Lists::Node" [(.ptr (.named "KernelTypes::KLevelNode" []))]))])]) = Names.«Lists::length<(&[Field; 32], Field, &Lists::Node<&KernelTypes::KExprNode>, &Lists::Node<&KernelTypes::KLevelNode>)>» := by decide +kernel
 
 theorem n8000355698200817902 : instanceName [] "Lists::lookup_or_default" (some [.field]) = Names.«Lists::lookup_or_default<Field>» := by decide +kernel
@@ -770,8 +772,6 @@ theorem n8000355698200817902 : instanceName [] "Lists::lookup_or_default" (some 
 theorem n2275445698610172113 : instanceName [] "Lists::lookup_or_default" (some [(.ptr (.array .field 32))]) = Names.«Lists::lookup_or_default<&[Field; 32]>» := by decide +kernel
 
 theorem n7176593224600121632 : instanceName [] "Lists::length" (some [.field]) = Names.«Lists::length<Field>» := by decide +kernel
-
-theorem n3593869098302610371 : instanceName [] "Lists::reverse" (some [(.ptr (.named "KernelTypes::KExprNode" []))]) = Names.«Lists::reverse<&KernelTypes::KExprNode>» := by decide +kernel
 
 theorem n12681146880461418622 : instanceName [] "Lists::reverse" (some [.field]) = Names.«Lists::reverse<Field>» := by decide +kernel
 

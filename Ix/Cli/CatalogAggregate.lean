@@ -19,6 +19,7 @@ public import Ix.Aggr.Verification
 public import Ix.Catalog
 public import Ix.Cli.CatalogCmd
 public import Ix.Cli.FormalAggregate
+public import Ix.Cli.ClaimPolicy
 public import Ix.IxVM.ClaimHarness
 public import Ix.Store
 
@@ -227,6 +228,8 @@ def verifyCatalog (p : Cli.Parsed) (ixc : String) : IO UInt32 := do
     | .ok r => pure r
     | .error e => IO.eprintln s!"error: {e}"; return 1
   printStatements members plan
+  for (m, _, _) in members do
+    ClaimPolicy.admit p m.claim
   let ctx ← FormalAggregate.context p
   let constants := members.foldl (fun n m => n + m.2.2) 0
   let mut rc : UInt32 := 0

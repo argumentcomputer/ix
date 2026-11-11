@@ -11,6 +11,7 @@ public import Ix.Cli.Compression
 public import Ix.Cli.FormalAiur
 public import Ix.Cli.FormalAggregate
 public import Ix.Cli.CatalogAggregate
+public import Ix.Cli.ClaimPolicy
 
 public section
 
@@ -33,6 +34,7 @@ private def verifyDevelopmentInputs (p : Cli.Parsed) : IO UInt32 := do
     let bundle ← IO.FS.readBinFile path
     for input in inputs do
       let (addr, wrapper) ← Compression.readProofInput input
+      ClaimPolicy.admit p wrapper.claim
       let claim := Ix.Claim.ser wrapper.claim
       let setup ← Compression.verifyDevelopment wrapper.proof claim bundle pin true
       unless setup == "development" do
@@ -76,6 +78,9 @@ def verifyCmd : Cli.Cmd := `[Cli|
     "distributed";    "Bind one default-backend distributed proof to the whole environment. Requires --ixe and --ixes; the manifest must cover the environment exactly."
     "structural-above" : Nat; "For --aggregate + --ixes, reproduce structural joins above N subject leaves (default 4096; must match proving)."
     "record";         "With --ixe + --ixes and proof(s): after a proof binds to its shard and verifies, record it in the shard-proof index (`~/.ix/cache/formal-shard-proofs/<claim-digest>` → address) so `ix prove --skip-proven` and `ix shard refine` reuse it."
+    "allow-axioms"; "Accept a claim that depends on axioms beyond the standard three."
+    "allow-assumed-binding"; "Accept a claim that assumes its role binding meets the specifications, with no binding proof."
+    "allow-assumptions"; "Accept a claim conditional on typing assumptions (assumed leaves) that no verified proof discharges."
 
   ARGS:
     ...proofs : String; "32-byte hex addresses of persisted Ixon.Proof wrappers. With --verifier-bundle, proof-wrapper file paths are also accepted. Omit for --ixe + --ixes partition auditing."

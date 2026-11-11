@@ -3,6 +3,7 @@ public import Cli
 public import Ix.Cli.Compression
 public import Ix.Cli.CompressionCmd
 public import Ix.Cli.FormalAggregate
+public import Ix.Cli.ClaimPolicy
 
 public section
 namespace Ix.Cli.CompressCmd
@@ -94,6 +95,7 @@ def runCompressCmd (p : Cli.Parsed) : IO UInt32 := do
     let setup ← preflight p opts
     let input := p.positionalArg! "proof" |>.as! String
     let (addr, wrapper) ← Compression.readProofInput input
+    ClaimPolicy.admit p wrapper.claim
     let result ← compressProof p addr wrapper opts setup
     IO.println (toString result)
     return 0
@@ -120,6 +122,9 @@ def compressCmd : Cli.Cmd := `[Cli|
     "dev-final-srs"; "Generate and cache local development Groth16 or PLONK keys for the selected inner verifier. With --dev-kzg-srs, no Ignition parameters are required."
     "plonk"; "Add a final PLONK proof using the compiled curve and selected setup."
     "groth16"; "Add a final BN254 Groth16 proof using prepared, independently admitted circuit keys."
+    "allow-axioms"; "Compress a claim that depends on axioms beyond the standard three."
+    "allow-assumed-binding"; "Compress a claim that assumes its role binding meets the specifications."
+    "allow-assumptions"; "Compress a claim conditional on typing assumptions (assumed leaves)."
   ARGS:
     proof : String; "Aggregate Ixon.Proof file (including its claim), or its 64-character content address in the ix store. A hexadecimal filename needs a ./ prefix."
 
