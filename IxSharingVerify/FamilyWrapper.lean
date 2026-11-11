@@ -20,7 +20,7 @@ theorem normalizeFamily_parts {cfg : Config} {layout : ShareLayout} {limits : Li
     ∃ expanded info, expand limits input.sharing (constantInfoRoots input.info) true = .ok expanded ∧
       familyExpanded cfg layout limits expanded = .ok result ∧
       withRoots input.info result.result.roots = .ok info ∧
-      output = { input with info, sharing := result.result.sharing } := by
+      output = { input with info, sharing := result.result.sharing, binders := #[] } := by
   unfold normalizeFamily at run
   obtain ⟨expanded, expandedRun, run⟩ := bind_eq_ok run
   obtain ⟨result', normalized, run⟩ := bind_eq_ok run

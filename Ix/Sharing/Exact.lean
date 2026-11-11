@@ -143,7 +143,7 @@ def expandConstantSharing (c : Constant) (limits : Limits := {}) :
   let ex ← expand limits c.sharing (constantInfoRoots c.info) true
   let exprs := ex.dag.toExprs
   let info ← withRoots c.info (ex.roots.map (exprs[·]!))
-  return { c with info, sharing := #[] }
+  return { c with info, sharing := #[], binders := #[] }
 
 /-- The exact-minimum sharing of a Constant (test oracle, `optimizeSharing`):
 expand its table, optimize, and reassemble the same ConstantInfo, refs and
@@ -152,7 +152,7 @@ def normalizeConstantSharing (c : Constant) (limits : Limits := {}) :
     Except SharingError Constant := do
   let r ← optimizeSharingTable c.sharing (constantInfoRoots c.info) limits
   let info ← withRoots c.info r.roots
-  return { c with info, sharing := r.sharing }
+  return { c with info, sharing := r.sharing, binders := #[] }
 
 /-- Outcome of `checkExactMinimum`. -/
 inductive ExactMinimumCheck where
@@ -250,7 +250,7 @@ def normalizeConstantSharingUniform (w : Nat) (c : Constant) (limits : Limits :=
     Except SharingError Constant := do
   let r ← optimizeSharingUniformTable w c.sharing (constantInfoRoots c.info) limits
   let info ← withRoots c.info r.result.roots
-  return { c with info, sharing := r.result.sharing }
+  return { c with info, sharing := r.result.sharing, binders := #[] }
 
 /-- Reference for the uniform model: the width-state search with every Share
 priced `w` (exponential in the candidates; for tests). With `minInDegree2`
@@ -286,7 +286,7 @@ def normalizeConstantSharingTiered (layout : ShareLayout) (c : Constant)
     (limits : Limits := {}) : Except SharingError Constant := do
   let r ← canonicalSharingTieredTable layout c.sharing (constantInfoRoots c.info) limits
   let info ← withRoots c.info r.result.roots
-  return { c with info, sharing := r.result.sharing }
+  return { c with info, sharing := r.result.sharing, binders := #[] }
 
 end Reference
 
@@ -312,7 +312,7 @@ def normalizeConstantSharingTiered (layout : ShareLayout) (c : Constant)
     (limits : Limits := {}) : Except SharingError Constant := do
   let r ← canonicalSharingTieredTable layout c.sharing (constantInfoRoots c.info) limits
   let info ← withRoots c.info r.result.roots
-  return { c with info, sharing := r.result.sharing }
+  return { c with info, sharing := r.result.sharing, binders := #[] }
 
 end Ix.Sharing.Exact
 

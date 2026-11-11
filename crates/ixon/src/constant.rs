@@ -6,32 +6,7 @@
 //! The sharing vector is stored at the Constant level, shared across
 //! all expressions in the constant (including mutual block members).
 
-#![allow(clippy::needless_
-  pub fn gen_binder_node(g: &mut Gen) -> BinderNode {
-    match u8::arbitrary(g) % 5 {
-      0 => BinderNode::Never,
-      1 => BinderNode::Zero,
-      2 => BinderNode::IfAllZero(
-        (0..gen_range(g, 0..4)).map(|_| u64::arbitrary(g)).collect(),
-      ),
-      3 => BinderNode::Share(u64::arbitrary(g)),
-      _ => BinderNode::Undecided,
-    }
-  }
-
-  /// Arbitrary sections: neither sorted nor canonical, which the codec
-  /// round-trips all the same.
-  pub fn gen_binders(g: &mut Gen) -> Vec<BinderBlock> {
-    (0..gen_range(g, 0..3))
-      .map(|_| BinderBlock {
-        shared: bool::arbitrary(g),
-        index: u64::arbitrary(g),
-        variant: u64::arbitrary(g),
-        nodes: (0..gen_range(g, 0..5)).map(|_| gen_binder_node(g)).collect(),
-      })
-      .collect()
-  }
-pass_by_value)]
+#![allow(clippy::needless_pass_by_value)]
 
 use std::sync::Arc;
 
@@ -571,6 +546,31 @@ pub mod tests {
         (0..gen_range(g, 1..4)).map(|_| gen_mut_const(g)).collect(),
       ),
     }
+  }
+
+  pub fn gen_binder_node(g: &mut Gen) -> BinderNode {
+    match u8::arbitrary(g) % 5 {
+      0 => BinderNode::Never,
+      1 => BinderNode::Zero,
+      2 => BinderNode::IfAllZero(
+        (0..gen_range(g, 0..4)).map(|_| u64::arbitrary(g)).collect(),
+      ),
+      3 => BinderNode::Share(u64::arbitrary(g)),
+      _ => BinderNode::Undecided,
+    }
+  }
+
+  /// Arbitrary sections: neither sorted nor canonical, which the codec
+  /// round-trips all the same.
+  pub fn gen_binders(g: &mut Gen) -> Vec<BinderBlock> {
+    (0..gen_range(g, 0..3))
+      .map(|_| BinderBlock {
+        shared: bool::arbitrary(g),
+        index: u64::arbitrary(g),
+        variant: u64::arbitrary(g),
+        nodes: (0..gen_range(g, 0..5)).map(|_| gen_binder_node(g)).collect(),
+      })
+      .collect()
   }
 
   pub fn gen_constant(g: &mut Gen) -> Constant {
