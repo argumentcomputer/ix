@@ -45,6 +45,8 @@ export IX_AIUR_ARTIFACT IX_AGGR_ARTIFACT
 lake env .lake/build/bin/formal-aiur-tests "$formal_tmp/claims.ixt"
 target/release/ixvm-proof test "$IX_AIUR_ARTIFACT" "$formal_tmp/claims.ixt"
 .lake/build/bin/ix check --ixe "$formal_tmp/claims.ixt.ixe" Nat.add_comm
+.lake/build/bin/ix check --ixe "$formal_tmp/claims.ixt.modeled.ixe" \
+  IxVMInd.Even IxVMInd.Odd IxVMInd.Tree IxVMInd.DedupM
 .lake/build/bin/ix prove Nat.add_comm > "$formal_tmp/prove.log"
 cat "$formal_tmp/prove.log"
 formal_proof=$(tail -n 1 "$formal_tmp/prove.log")

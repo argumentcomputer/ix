@@ -19,6 +19,7 @@
 //! | 3  | reducibility hint, numeric tag  | definition address          |
 //! | 4  | blob bytes                      | blob address                |
 //! | 6  | role binding bytes              | binding address             |
+//! | 7  | model payload ([`ModelAdvice`]) | inductive block address     |
 //!
 //! Constant and blob addresses share a hash codomain, so one address can
 //! be seeded on both channel 2 and channel 4. The kernel decides which
@@ -34,10 +35,10 @@
 //! Arena offsets are assigned per channel in stream order and are visible
 //! in execution records, so the order is part of the recipe:
 //!
-//! 1. channels ascend: 0, 1, 2, 3, 4, 6;
+//! 1. channels ascend: 0, 1, 2, 3, 4, 6, 7;
 //! 2. channel 1 follows the claim's fields: the subject tree of a
 //!    `CheckEnv` claim, then its assumption tree when present;
-//! 3. channels 2, 3 and 4 ascend by address bytes.
+//! 3. channels 2, 3, 4 and 7 ascend by address bytes.
 //!
 //! The order depends only on the environment and the request, never on
 //! hash-set iteration, so building twice yields identical streams.
@@ -59,6 +60,15 @@
 //! including the projection wrappers the kernel synthesizes for every
 //! `Muts` block it reaches, together with every primitive the kernel may
 //! fabricate references to while reducing, and the binding's roots.
+//!
+//! # Models
+//!
+//! A mutual or nested inductive block is checked against model advice
+//! ([`ModelAdvice`], carried by [`Env::models`]). The scope follows each
+//! block's advice dependencies and the generated records' edges, the
+//! records, hints and blobs ship on channels 2, 3 and 4 where the
+//! environment has none of its own, and every block in scope with a
+//! payload ships it on channel 7. This is `IxVM.ClaimHarness.addEntries`.
 
 use std::fmt;
 
@@ -70,6 +80,7 @@ use rustc_hash::FxHashSet;
 use crate::assumption_tree::AssumptionTree;
 use crate::env::Env;
 use crate::lazy::BytesSource;
+use crate::model_advice::ModelAdvice;
 use crate::proof::{Claim, ClaimContext, spec_digest};
 use crate::role_table::RoleTable;
 use crate::shard_claim::shard_check_env_claim;
@@ -80,6 +91,7 @@ pub const CONSTANT_CHANNEL: u8 = 2;
 pub const HINT_CHANNEL: u8 = 3;
 pub const BLOB_CHANNEL: u8 = 4;
 pub const ROLE_CHANNEL: u8 = 6;
+pub const MODEL_CHANNEL: u8 = 7;
 
 /// The key a stream is stored under.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -370,12 +382,14 @@ impl<'a> Statement<'a> {
       }
       roots.extend(ClaimContext::user_axioms(env));
     }
-    streams.extend(scope_streams(env, &witness_scope(env, &roots)));
+    let scope = witness_scope(env, &roots);
+    streams.extend(scope_streams(env, &scope));
     streams.push(AdviceStream {
       channel: ROLE_CHANNEL,
       key: StreamKey::Address(binding.address.clone()),
       payload: Payload::Bytes(BytesSource::Heap(binding.bytes.clone())),
     });
+    streams.extend(model_streams(&env.models, &scope));
     Ok(ClaimWitness { claim: self.claim, claim_bytes, digest, streams })
   }
 }
@@ -446,7 +460,37 @@ pub fn witness_scope(env: &Env, roots: &[Address]) -> FxHashSet<Address> {
     primitive_addresses().into_iter().filter(|a| env.consts.contains_key(a)),
   );
   all_roots.extend(binding_roots(env));
-  env.bfs_closure(&all_roots)
+  if env.models.is_empty() {
+    return env.bfs_closure(&all_roots);
+  }
+  model_closure(env, &all_roots)
+}
+
+/// [`Env::bfs_closure`] that also follows each modeled block's advice
+/// dependencies and the edges of the generated records, as
+/// `IxVM.ClaimHarness.closureFromRoots` does.
+fn model_closure(env: &Env, roots: &[Address]) -> FxHashSet<Address> {
+  let models = &env.models;
+  let mut closure: FxHashSet<Address> = FxHashSet::default();
+  let mut queue: Vec<Address> = roots.to_vec();
+  while let Some(addr) = queue.pop() {
+    if !closure.insert(addr.clone()) {
+      continue;
+    }
+    if let Some(deps) = models.deps.get(&addr) {
+      queue.extend(deps.iter().cloned());
+    }
+    let constant = env
+      .consts
+      .get(&addr)
+      .and_then(|r| r.value().get().ok())
+      .or_else(|| models.records.get(&addr).and_then(|r| r.get().ok()));
+    let Some(c) = constant else { continue };
+    let mut edges = Vec::new();
+    Env::closure_edges(&addr, &c, &mut edges);
+    queue.extend(edges.into_iter().filter(|e| !closure.contains(e)));
+  }
+  closure
 }
 
 /// Channel 2, 3 and 4 streams for every address of `scope` the
@@ -463,25 +507,58 @@ pub fn scope_streams(
     key: StreamKey::Address(addr.clone()),
     payload,
   };
+  let models = &env.models;
   let mut streams = Vec::new();
   for addr in &addrs {
-    if let Some(constant) = env.consts.get(*addr) {
-      let bytes = constant.bytes_source().clone();
-      streams.push(stream(CONSTANT_CHANNEL, addr, Payload::Bytes(bytes)));
-    }
+    let bytes = match env.consts.get(*addr) {
+      Some(constant) => constant.bytes_source().clone(),
+      None => match models.records.get(*addr) {
+        Some(record) => record.bytes_source().clone(),
+        None => continue,
+      },
+    };
+    streams.push(stream(CONSTANT_CHANNEL, addr, Payload::Bytes(bytes)));
   }
   for addr in &addrs {
-    if let Some(hint) = env.anon_hints.get(*addr) {
-      streams.push(stream(HINT_CHANNEL, addr, Payload::Tag(hint_tag(&hint))));
-    }
+    let tag = match env.anon_hints.get(*addr) {
+      Some(hint) => hint_tag(&hint),
+      None => match models.hints.get(*addr) {
+        Some(&tag) => tag,
+        None => continue,
+      },
+    };
+    streams.push(stream(HINT_CHANNEL, addr, Payload::Tag(tag)));
   }
   for addr in &addrs {
-    if let Some(blob) = env.blobs.get(*addr) {
-      let bytes = BytesSource::from(blob.value().clone());
-      streams.push(stream(BLOB_CHANNEL, addr, Payload::Bytes(bytes)));
-    }
+    let bytes = match env.blobs.get(*addr) {
+      Some(blob) => BytesSource::from(blob.value().clone()),
+      None => match models.blobs.get(*addr) {
+        Some(blob) => BytesSource::from(blob.clone()),
+        None => continue,
+      },
+    };
+    streams.push(stream(BLOB_CHANNEL, addr, Payload::Bytes(bytes)));
   }
   streams
+}
+
+/// Channel 7 streams: the payload of every inductive block in `scope`
+/// that has one, in address order.
+pub fn model_streams(
+  models: &ModelAdvice,
+  scope: &FxHashSet<Address>,
+) -> Vec<AdviceStream> {
+  let mut blocks: Vec<&Address> =
+    scope.iter().filter(|a| models.payloads.contains_key(*a)).collect();
+  blocks.sort_unstable();
+  blocks
+    .into_iter()
+    .map(|addr| AdviceStream {
+      channel: MODEL_CHANNEL,
+      key: StreamKey::Address(addr.clone()),
+      payload: Payload::Bytes(BytesSource::from(models.payloads[addr].clone())),
+    })
+    .collect()
 }
 
 #[cfg(test)]
@@ -491,6 +568,7 @@ mod tests {
     Axiom, Constant, ConstantInfo, DefKind, Definition, MutConst,
   };
   use crate::expr::Expr;
+  use crate::lazy::LazyConstant;
   use ix_common::env::DefinitionSafety;
   use std::sync::Arc;
 
@@ -559,6 +637,43 @@ mod tests {
         | u64::from(bytes[6]) << 16
         | u64::from(bytes[7]) << 24
     );
+  }
+
+  #[test]
+  fn model_advice_ships_on_its_channels() {
+    let (mut env, a, _, c, _) = chain();
+    let model = Address::hash(b"model");
+    let elsewhere = Address::hash(b"elsewhere");
+    let mut models = ModelAdvice::default();
+    models
+      .records
+      .insert(model.clone(), LazyConstant::from_constant(axiom_using(vec![])));
+    models.hints.insert(model.clone(), 5);
+    models.hints.insert(c.clone(), 9);
+    models.payloads.insert(c.clone(), b"payload".to_vec());
+    models.payloads.insert(elsewhere.clone(), b"unused".to_vec());
+    models.deps.insert(c.clone(), vec![model.clone()]);
+    env.models = Arc::new(models);
+    let owned = [a];
+    let w = witness(&env, shard(&owned)).unwrap();
+    let channels: Vec<u8> = w.streams.iter().map(|s| s.channel).collect();
+    assert!(channels.is_sorted());
+    let find = |channel, addr: &Address| {
+      w.streams.iter().find(|s| {
+        s.channel == channel && s.key == StreamKey::Address(addr.clone())
+      })
+    };
+    // The block's dependency is in scope with its record and hint.
+    assert!(find(CONSTANT_CHANNEL, &model).is_some());
+    assert_eq!(find(HINT_CHANNEL, &model).unwrap().payload.values(), [5]);
+    // The environment's own hint wins over the advice's.
+    assert_eq!(find(HINT_CHANNEL, &c).unwrap().payload.values(), [301]);
+    // Only blocks in scope ship their payload, after the role binding.
+    let last = w.streams.last().unwrap();
+    assert_eq!(last.channel, MODEL_CHANNEL);
+    assert_eq!(last.key, StreamKey::Address(c.clone()));
+    assert_eq!(last.payload.values(), b"payload".map(u64::from));
+    assert!(find(MODEL_CHANNEL, &elsewhere).is_none());
   }
 
   #[test]

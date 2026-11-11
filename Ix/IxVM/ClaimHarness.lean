@@ -316,6 +316,38 @@ private def hintToG : Lean.ReducibilityHints → Aiur.G
   | .abbrev => .ofNat 0xFFFFFFFF
   | .regular n => .ofNat (min (1 + n.toNat) 0xFFFFFFFE)
 
+/-- The model advice of `env` (`IxVM.Model.attach`) in the encoding the
+    Rust prover decodes (`ixon::model_advice`): "IXVMMDL\x00", version 1,
+    then the records, hints, blobs, payloads and dependencies, each a
+    little-endian `u64` count followed by its entries in address order. A
+    record is its `Ixon.ser` bytes, a hint its `hintToG` tag. -/
+def modelAdviceBytes (env : Ixon.Env) : ByteArray := Id.run do
+  let u64 (b : ByteArray) (n : Nat) : ByteArray :=
+    (List.range 8).foldl (fun b i => b.push (n >>> (8 * i)).toUInt8) b
+  let bytes (b : ByteArray) (x : ByteArray) : ByteArray := u64 b x.size ++ x
+  let sorted {α} (xs : Array (Address × α)) : Array (Address × α) :=
+    xs.qsort fun a b => a.1.hash.data.toList < b.1.hash.data.toList
+  let mut out := "IXVMMDL".toUTF8.push 0
+  out := u64 out 1
+  let records := sorted env.modelRecords.toArray
+  out := u64 out records.size
+  for (a, c) in records do out := bytes (out ++ a.hash) (Ixon.ser c)
+  let hints := sorted env.modelHints.toArray
+  out := u64 out hints.size
+  for (a, h) in hints do out := u64 (out ++ a.hash) (hintToG h).val.toNat
+  let blobs := sorted env.modelBlobs.toArray
+  out := u64 out blobs.size
+  for (a, x) in blobs do out := bytes (out ++ a.hash) x
+  let payloads := sorted env.models.toArray
+  out := u64 out payloads.size
+  for (a, x) in payloads do out := bytes (out ++ a.hash) x
+  let deps := sorted env.modelDeps.toArray
+  out := u64 out deps.size
+  for (a, ds) in deps do
+    out := u64 (out ++ a.hash) ds.size
+    for d in ds do out := out ++ d.hash
+  return out
+
 /-- Insert all per-address entries for `addr`s satisfying `keep` into
     `ioBuffer`. -/
 def addEntries (ixonEnv : Ixon.Env) (keep : Address → Bool)
