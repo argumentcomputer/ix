@@ -750,16 +750,17 @@ theorem «KernelCheck::build_flat_own_params».obs {x_flat : SourceValue F} {h h
 inductive «KernelCheck::projection_addr_ctor».Path (x_ind_idx x_cidx x_block_addr : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
     (calls : List (Call F)) : Prop where
   | run
-      (v1 : SourceValue F) (m2 : Heap F) (cs12 : List (Call F)) (v23 : SourceValue F) (m24 : Heap F) (cs34 : List (Call F)) (m113 : Heap F) (m126 : Heap F) (m139 : Heap F) (v151 : SourceValue F) (m152 : Heap F) (cs162 : List (Call F)) (m175 : Heap F) (cs190 : List (Call F))
+      (v1 : SourceValue F) (m2 : Heap F) (cs12 : List (Call F)) (v23 : SourceValue F) (m24 : Heap F) (cs34 : List (Call F)) (m114 : Heap F) (m127 : Heap F) (m140 : Heap F) (m153 : Heap F) (v165 : SourceValue F) (m166 : Heap F) (cs176 : List (Call F)) (m189 : Heap F) (cs204 : List (Call F))
       (ev14 : ObsFn W "UInt64::from_field" [x_ind_idx] h v1 m2 cs12)
       (ev36 : ObsFn W "UInt64::from_field" [x_cidx] m2 v23 m24 cs34)
-      (hm121 : m113 = (m24 ++ [(.construct Names.«Lists::Node<&Ixon::Expr>» "Nil" [])]))
-      (hm134 : m126 = (m113 ++ [(.construct Names.«Lists::Node<&[Field; 32]>» "Nil" [])]))
-      (hm147 : m139 = (m126 ++ [(.construct Names.«Lists::Node<&Ixon::Univ>» "Nil" [])]))
-      (hm183 : m175 = (m139 ++ [(.construct Names.«Lists::Node<Field>» "Nil" [])]))
-      (ev164 : ObsFn W "IxonSerialize::put_constant" [(.construct "Ixon::Constant" "Mk" [(.construct "Ixon::ConstantInfo" "CPrj" [(.construct "Ixon::ConstructorProj" "Mk" [v1, v23, x_block_addr])]), (.ptr (.enum Names.«Lists::Node<&Ixon::Expr>») (m24).length), (.ptr (.enum Names.«Lists::Node<&[Field; 32]>») (m113).length), (.ptr (.enum Names.«Lists::Node<&Ixon::Univ>») (m126).length)]), (.ptr (.enum Names.«Lists::Node<Field>») (m139).length)] m175 v151 m152 cs162)
-      (ev192 : ObsFn W "Blake3::bytes_to_addr" [v151] m152 r h' cs190)
-      (hc201 : calls = ((⟨"UInt64::from_field", [x_ind_idx], h⟩ : Call F) :: (cs12 ++ ((⟨"UInt64::from_field", [x_cidx], m2⟩ : Call F) :: (cs34 ++ ((⟨"IxonSerialize::put_constant", [(.construct "Ixon::Constant" "Mk" [(.construct "Ixon::ConstantInfo" "CPrj" [(.construct "Ixon::ConstructorProj" "Mk" [v1, v23, x_block_addr])]), (.ptr (.enum Names.«Lists::Node<&Ixon::Expr>») (m24).length), (.ptr (.enum Names.«Lists::Node<&[Field; 32]>») (m113).length), (.ptr (.enum Names.«Lists::Node<&Ixon::Univ>») (m126).length)]), (.ptr (.enum Names.«Lists::Node<Field>») (m139).length)], m175⟩ : Call F) :: (cs162 ++ ((⟨"Blake3::bytes_to_addr", [v151], m152⟩ : Call F) :: cs190))))))))
+      (hm122 : m114 = (m24 ++ [(.construct Names.«Lists::Node<&Ixon::Expr>» "Nil" [])]))
+      (hm135 : m127 = (m114 ++ [(.construct Names.«Lists::Node<&[Field; 32]>» "Nil" [])]))
+      (hm148 : m140 = (m127 ++ [(.construct Names.«Lists::Node<&Ixon::Univ>» "Nil" [])]))
+      (hm161 : m153 = (m140 ++ [(.construct Names.«Lists::Node<Ixon::BinderBlock>» "Nil" [])]))
+      (hm197 : m189 = (m153 ++ [(.construct Names.«Lists::Node<Field>» "Nil" [])]))
+      (ev178 : ObsFn W "IxonSerialize::put_constant" [(.construct "Ixon::Constant" "Mk" [(.construct "Ixon::ConstantInfo" "CPrj" [(.construct "Ixon::ConstructorProj" "Mk" [v1, v23, x_block_addr])]), (.ptr (.enum Names.«Lists::Node<&Ixon::Expr>») (m24).length), (.ptr (.enum Names.«Lists::Node<&[Field; 32]>») (m114).length), (.ptr (.enum Names.«Lists::Node<&Ixon::Univ>») (m127).length), (.ptr (.enum Names.«Lists::Node<Ixon::BinderBlock>») (m140).length)]), (.ptr (.enum Names.«Lists::Node<Field>») (m153).length)] m189 v165 m166 cs176)
+      (ev206 : ObsFn W "Blake3::bytes_to_addr" [v165] m166 r h' cs204)
+      (hc215 : calls = ((⟨"UInt64::from_field", [x_ind_idx], h⟩ : Call F) :: (cs12 ++ ((⟨"UInt64::from_field", [x_cidx], m2⟩ : Call F) :: (cs34 ++ ((⟨"IxonSerialize::put_constant", [(.construct "Ixon::Constant" "Mk" [(.construct "Ixon::ConstantInfo" "CPrj" [(.construct "Ixon::ConstructorProj" "Mk" [v1, v23, x_block_addr])]), (.ptr (.enum Names.«Lists::Node<&Ixon::Expr>») (m24).length), (.ptr (.enum Names.«Lists::Node<&[Field; 32]>») (m114).length), (.ptr (.enum Names.«Lists::Node<&Ixon::Univ>») (m127).length), (.ptr (.enum Names.«Lists::Node<Ixon::BinderBlock>») (m140).length)]), (.ptr (.enum Names.«Lists::Node<Field>») (m153).length)], m189⟩ : Call F) :: (cs176 ++ ((⟨"Blake3::bytes_to_addr", [v165], m166⟩ : Call F) :: cs204))))))))
 
 /-- **Every observed derivation of `KernelCheck::projection_addr_ctor` takes one of its paths.** -/
 theorem «KernelCheck::projection_addr_ctor».obs {x_ind_idx x_cidx x_block_addr : SourceValue F} {h h' : Heap F} {r : SourceValue F}
@@ -813,54 +814,60 @@ theorem «KernelCheck::projection_addr_ctor».obs {x_ind_idx x_cidx x_block_addr
   obtain ⟨vs98, a99, hres100⟩ := d95.construct_inv
   rw [instanceName_plain_some] at hres100
   subst hres100
-  obtain ⟨v101, vs105, m106, c107, c108, rfl, d109, a110, rfl⟩ := a99.cons_inv
-  obtain ⟨l111, rfl, rfl⟩ := d109.var_inv
-  simp at l111
-  subst l111
-  obtain ⟨v102, vs112, m113, c114, c115, rfl, d116, a117, rfl⟩ := a110.cons_inv
-  obtain ⟨v118, m119, d120, rfl, hm121⟩ := d116.store_inv
-  obtain ⟨vs122, a123, hres124⟩ := d120.construct_inv
-  rw [Names.n14714430324747779335] at hres124
-  subst hres124
-  obtain ⟨rfl, rfl, rfl⟩ := a123.nil_inv
-  obtain ⟨v103, vs125, m126, c127, c128, rfl, d129, a130, rfl⟩ := a117.cons_inv
-  obtain ⟨v131, m132, d133, rfl, hm134⟩ := d129.store_inv
-  obtain ⟨vs135, a136, hres137⟩ := d133.construct_inv
-  rw [Names.n17025598268237686609] at hres137
-  subst hres137
-  obtain ⟨rfl, rfl, rfl⟩ := a136.nil_inv
-  obtain ⟨v104, vs138, m139, c140, c141, rfl, d142, a143, rfl⟩ := a130.cons_inv
-  obtain ⟨v144, m145, d146, rfl, hm147⟩ := d142.store_inv
-  obtain ⟨vs148, a149, hres150⟩ := d146.construct_inv
-  rw [Names.n1245658151410455720] at hres150
-  subst hres150
-  obtain ⟨rfl, rfl, rfl⟩ := a149.nil_inv
-  obtain ⟨rfl, rfl, rfl⟩ := a143.nil_inv
+  obtain ⟨v101, vs106, m107, c108, c109, rfl, d110, a111, rfl⟩ := a99.cons_inv
+  obtain ⟨l112, rfl, rfl⟩ := d110.var_inv
+  simp at l112
+  subst l112
+  obtain ⟨v102, vs113, m114, c115, c116, rfl, d117, a118, rfl⟩ := a111.cons_inv
+  obtain ⟨v119, m120, d121, rfl, hm122⟩ := d117.store_inv
+  obtain ⟨vs123, a124, hres125⟩ := d121.construct_inv
+  rw [Names.n14714430324747779335] at hres125
+  subst hres125
+  obtain ⟨rfl, rfl, rfl⟩ := a124.nil_inv
+  obtain ⟨v103, vs126, m127, c128, c129, rfl, d130, a131, rfl⟩ := a118.cons_inv
+  obtain ⟨v132, m133, d134, rfl, hm135⟩ := d130.store_inv
+  obtain ⟨vs136, a137, hres138⟩ := d134.construct_inv
+  rw [Names.n17025598268237686609] at hres138
+  subst hres138
+  obtain ⟨rfl, rfl, rfl⟩ := a137.nil_inv
+  obtain ⟨v104, vs139, m140, c141, c142, rfl, d143, a144, rfl⟩ := a131.cons_inv
+  obtain ⟨v145, m146, d147, rfl, hm148⟩ := d143.store_inv
+  obtain ⟨vs149, a150, hres151⟩ := d147.construct_inv
+  rw [Names.n1245658151410455720] at hres151
+  subst hres151
+  obtain ⟨rfl, rfl, rfl⟩ := a150.nil_inv
+  obtain ⟨v105, vs152, m153, c154, c155, rfl, d156, a157, rfl⟩ := a144.cons_inv
+  obtain ⟨v158, m159, d160, rfl, hm161⟩ := d156.store_inv
+  obtain ⟨vs162, a163, hres164⟩ := d160.construct_inv
+  rw [Names.n9574717375266508469] at hres164
+  subst hres164
+  obtain ⟨rfl, rfl, rfl⟩ := a163.nil_inv
+  obtain ⟨rfl, rfl, rfl⟩ := a157.nil_inv
   obtain rfl := matchPattern_bind_inv mt96
-  obtain ⟨v151, m152, bs153, c154, c155, d156, mt157, d158, rfl⟩ := d97.letValue_inv
-  obtain ⟨vs159, m160, c161, cs162, a163, ev164, rfl⟩ := d156.call_inv
-  rw [instanceName_plain_some] at ev164
-  obtain ⟨v165, vs167, m168, c169, c170, rfl, d171, a172, rfl⟩ := a163.cons_inv
-  obtain ⟨l173, rfl, rfl⟩ := d171.var_inv
-  simp at l173
-  subst l173
-  obtain ⟨v166, vs174, m175, c176, c177, rfl, d178, a179, rfl⟩ := a172.cons_inv
-  obtain ⟨v180, m181, d182, rfl, hm183⟩ := d178.store_inv
-  obtain ⟨vs184, a185, hres186⟩ := d182.construct_inv
-  rw [Names.n12516105052029042359] at hres186
-  subst hres186
-  obtain ⟨rfl, rfl, rfl⟩ := a185.nil_inv
-  obtain ⟨rfl, rfl, rfl⟩ := a179.nil_inv
-  obtain rfl := matchPattern_bind_inv mt157
-  obtain ⟨vs187, m188, c189, cs190, a191, ev192, rfl⟩ := d158.call_inv
-  rw [instanceName_plain_some] at ev192
-  obtain ⟨v193, vs194, m195, c196, c197, rfl, d198, a199, rfl⟩ := a191.cons_inv
-  obtain ⟨l200, rfl, rfl⟩ := d198.var_inv
-  simp at l200
-  subst l200
+  obtain ⟨v165, m166, bs167, c168, c169, d170, mt171, d172, rfl⟩ := d97.letValue_inv
+  obtain ⟨vs173, m174, c175, cs176, a177, ev178, rfl⟩ := d170.call_inv
+  rw [instanceName_plain_some] at ev178
+  obtain ⟨v179, vs181, m182, c183, c184, rfl, d185, a186, rfl⟩ := a177.cons_inv
+  obtain ⟨l187, rfl, rfl⟩ := d185.var_inv
+  simp at l187
+  subst l187
+  obtain ⟨v180, vs188, m189, c190, c191, rfl, d192, a193, rfl⟩ := a186.cons_inv
+  obtain ⟨v194, m195, d196, rfl, hm197⟩ := d192.store_inv
+  obtain ⟨vs198, a199, hres200⟩ := d196.construct_inv
+  rw [Names.n12516105052029042359] at hres200
+  subst hres200
   obtain ⟨rfl, rfl, rfl⟩ := a199.nil_inv
-  try simp only [Value.type, List.map_cons, List.map_nil] at ev14 ev36 hm121 hm134 hm147 hm183 ev164 ev192 ⊢
-  exact «KernelCheck::projection_addr_ctor».Path.run _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev14 ev36 hm121 hm134 hm147 hm183 ev164 ev192 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+  obtain ⟨rfl, rfl, rfl⟩ := a193.nil_inv
+  obtain rfl := matchPattern_bind_inv mt171
+  obtain ⟨vs201, m202, c203, cs204, a205, ev206, rfl⟩ := d172.call_inv
+  rw [instanceName_plain_some] at ev206
+  obtain ⟨v207, vs208, m209, c210, c211, rfl, d212, a213, rfl⟩ := a205.cons_inv
+  obtain ⟨l214, rfl, rfl⟩ := d212.var_inv
+  simp at l214
+  subst l214
+  obtain ⟨rfl, rfl, rfl⟩ := a213.nil_inv
+  try simp only [Value.type, List.map_cons, List.map_nil] at ev14 ev36 hm122 hm135 hm148 hm161 hm197 ev178 ev206 ⊢
+  exact «KernelCheck::projection_addr_ctor».Path.run _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev14 ev36 hm122 hm135 hm148 hm161 hm197 ev178 ev206 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
 
 /-- The evaluation paths of `KernelCheck::build_minor_doms`: one constructor per combination of selected arms. -/
 inductive «KernelCheck::build_minor_doms».Path (x_rc x_member_addr x_is_aux x_spec_params x_occurrence_us x_flat x_flat_own_params x_n_rec_params x_n_motives x_motive_base x_self_mem_idx x_block_addr x_ind_idx x_num_ctors x_prev_minors x_cidx x_elim : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)

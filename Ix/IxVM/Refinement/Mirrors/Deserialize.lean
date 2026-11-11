@@ -321,34 +321,43 @@ abbrev «UInt32::less_than_fields».Complete : Prop :=
     EvalFn W "UInt32::less_than_fields" [x_a, x_b] h r h' → ∃ k0, ∀ k ≥ k0, «UInt32::less_than_fields» k h x_a x_b = some (r, h')
 
 /-- The mirror of `IxonDeserialize::assert_prj_empty_tables`. -/
-def «IxonDeserialize::assert_prj_empty_tables» : Nat → Heap F → SourceValue F → SourceValue F → SourceValue F → SourceValue F → Option (SourceValue F × Heap F)
-  | 0, _, _, _, _, _ => none
-  | k + 1, h, x_info, x_sharing, x_refs, x_univs =>
+def «IxonDeserialize::assert_prj_empty_tables» : Nat → Heap F → SourceValue F → SourceValue F → SourceValue F → SourceValue F → SourceValue F → Option (SourceValue F × Heap F)
+  | 0, _, _, _, _, _, _ => none
+  | k + 1, h, x_info, x_sharing, x_refs, x_univs, x_binders =>
     matchConstruct (constructorName [] (.named "Ixon::ConstantInfo" [])) "DPrj" 1 x_info
       (fun
         | [_] =>
           (do
-            let (v27, h28) ← match loadValue h x_sharing with
+            let (v36, h37) ← match loadValue h x_sharing with
               | .ok z => some (z, h)
               | .error _ => none
-            match v27 with
-              | .construct e35 "Nil" [] =>
-                if e35 = constructorName [] (.named "Lists::Node" [(.ptr (.named "Ixon::Expr" []))]) then
+            match v36 with
+              | .construct e47 "Nil" [] =>
+                if e47 = constructorName [] (.named "Lists::Node" [(.ptr (.named "Ixon::Expr" []))]) then
                   (do
-                    let (v29, h30) ← match loadValue h28 x_refs with
-                      | .ok z => some (z, h28)
+                    let (v38, h39) ← match loadValue h37 x_refs with
+                      | .ok z => some (z, h37)
                       | .error _ => none
-                    match v29 with
-                      | .construct e34 "Nil" [] =>
-                        if e34 = constructorName [] (.named "Lists::Node" [(.ptr (.array .field 32))]) then
+                    match v38 with
+                      | .construct e46 "Nil" [] =>
+                        if e46 = constructorName [] (.named "Lists::Node" [(.ptr (.array .field 32))]) then
                           (do
-                            let (v31, h32) ← match loadValue h30 x_univs with
-                              | .ok z => some (z, h30)
+                            let (v40, h41) ← match loadValue h39 x_univs with
+                              | .ok z => some (z, h39)
                               | .error _ => none
-                            match v31 with
-                              | .construct e33 "Nil" [] =>
-                                if e33 = constructorName [] (.named "Lists::Node" [(.ptr (.named "Ixon::Univ" []))]) then
-                                  some ((.tuple [] : SourceValue F), h32)
+                            match v40 with
+                              | .construct e45 "Nil" [] =>
+                                if e45 = constructorName [] (.named "Lists::Node" [(.ptr (.named "Ixon::Univ" []))]) then
+                                  (do
+                                    let (v42, h43) ← match loadValue h41 x_binders with
+                                      | .ok z => some (z, h41)
+                                      | .error _ => none
+                                    match v42 with
+                                      | .construct e44 "Nil" [] =>
+                                        if e44 = constructorName [] (.named "Lists::Node" [(.named "Ixon::BinderBlock" [])]) then
+                                          some ((.tuple [] : SourceValue F), h43)
+                                        else none
+                                      | _ => none)
                                 else none
                               | _ => none)
                         else none
@@ -360,27 +369,36 @@ def «IxonDeserialize::assert_prj_empty_tables» : Nat → Heap F → SourceValu
         (fun
           | [_] =>
             (do
-              let (v18, h19) ← match loadValue h x_sharing with
+              let (v24, h25) ← match loadValue h x_sharing with
                 | .ok z => some (z, h)
                 | .error _ => none
-              match v18 with
-                | .construct e26 "Nil" [] =>
-                  if e26 = constructorName [] (.named "Lists::Node" [(.ptr (.named "Ixon::Expr" []))]) then
+              match v24 with
+                | .construct e35 "Nil" [] =>
+                  if e35 = constructorName [] (.named "Lists::Node" [(.ptr (.named "Ixon::Expr" []))]) then
                     (do
-                      let (v20, h21) ← match loadValue h19 x_refs with
-                        | .ok z => some (z, h19)
+                      let (v26, h27) ← match loadValue h25 x_refs with
+                        | .ok z => some (z, h25)
                         | .error _ => none
-                      match v20 with
-                        | .construct e25 "Nil" [] =>
-                          if e25 = constructorName [] (.named "Lists::Node" [(.ptr (.array .field 32))]) then
+                      match v26 with
+                        | .construct e34 "Nil" [] =>
+                          if e34 = constructorName [] (.named "Lists::Node" [(.ptr (.array .field 32))]) then
                             (do
-                              let (v22, h23) ← match loadValue h21 x_univs with
-                                | .ok z => some (z, h21)
+                              let (v28, h29) ← match loadValue h27 x_univs with
+                                | .ok z => some (z, h27)
                                 | .error _ => none
-                              match v22 with
-                                | .construct e24 "Nil" [] =>
-                                  if e24 = constructorName [] (.named "Lists::Node" [(.ptr (.named "Ixon::Univ" []))]) then
-                                    some ((.tuple [] : SourceValue F), h23)
+                              match v28 with
+                                | .construct e33 "Nil" [] =>
+                                  if e33 = constructorName [] (.named "Lists::Node" [(.ptr (.named "Ixon::Univ" []))]) then
+                                    (do
+                                      let (v30, h31) ← match loadValue h29 x_binders with
+                                        | .ok z => some (z, h29)
+                                        | .error _ => none
+                                      match v30 with
+                                        | .construct e32 "Nil" [] =>
+                                          if e32 = constructorName [] (.named "Lists::Node" [(.named "Ixon::BinderBlock" [])]) then
+                                            some ((.tuple [] : SourceValue F), h31)
+                                          else none
+                                        | _ => none)
                                   else none
                                 | _ => none)
                           else none
@@ -392,27 +410,36 @@ def «IxonDeserialize::assert_prj_empty_tables» : Nat → Heap F → SourceValu
           (fun
             | [_] =>
               (do
-                let (v9, h10) ← match loadValue h x_sharing with
+                let (v12, h13) ← match loadValue h x_sharing with
                   | .ok z => some (z, h)
                   | .error _ => none
-                match v9 with
-                  | .construct e17 "Nil" [] =>
-                    if e17 = constructorName [] (.named "Lists::Node" [(.ptr (.named "Ixon::Expr" []))]) then
+                match v12 with
+                  | .construct e23 "Nil" [] =>
+                    if e23 = constructorName [] (.named "Lists::Node" [(.ptr (.named "Ixon::Expr" []))]) then
                       (do
-                        let (v11, h12) ← match loadValue h10 x_refs with
-                          | .ok z => some (z, h10)
+                        let (v14, h15) ← match loadValue h13 x_refs with
+                          | .ok z => some (z, h13)
                           | .error _ => none
-                        match v11 with
-                          | .construct e16 "Nil" [] =>
-                            if e16 = constructorName [] (.named "Lists::Node" [(.ptr (.array .field 32))]) then
+                        match v14 with
+                          | .construct e22 "Nil" [] =>
+                            if e22 = constructorName [] (.named "Lists::Node" [(.ptr (.array .field 32))]) then
                               (do
-                                let (v13, h14) ← match loadValue h12 x_univs with
-                                  | .ok z => some (z, h12)
+                                let (v16, h17) ← match loadValue h15 x_univs with
+                                  | .ok z => some (z, h15)
                                   | .error _ => none
-                                match v13 with
-                                  | .construct e15 "Nil" [] =>
-                                    if e15 = constructorName [] (.named "Lists::Node" [(.ptr (.named "Ixon::Univ" []))]) then
-                                      some ((.tuple [] : SourceValue F), h14)
+                                match v16 with
+                                  | .construct e21 "Nil" [] =>
+                                    if e21 = constructorName [] (.named "Lists::Node" [(.ptr (.named "Ixon::Univ" []))]) then
+                                      (do
+                                        let (v18, h19) ← match loadValue h17 x_binders with
+                                          | .ok z => some (z, h17)
+                                          | .error _ => none
+                                        match v18 with
+                                          | .construct e20 "Nil" [] =>
+                                            if e20 = constructorName [] (.named "Lists::Node" [(.named "Ixon::BinderBlock" [])]) then
+                                              some ((.tuple [] : SourceValue F), h19)
+                                            else none
+                                          | _ => none)
                                     else none
                                   | _ => none)
                             else none
@@ -428,23 +455,32 @@ def «IxonDeserialize::assert_prj_empty_tables» : Nat → Heap F → SourceValu
                     | .ok z => some (z, h)
                     | .error _ => none
                   match v0 with
-                    | .construct e8 "Nil" [] =>
-                      if e8 = constructorName [] (.named "Lists::Node" [(.ptr (.named "Ixon::Expr" []))]) then
+                    | .construct e11 "Nil" [] =>
+                      if e11 = constructorName [] (.named "Lists::Node" [(.ptr (.named "Ixon::Expr" []))]) then
                         (do
                           let (v2, h3) ← match loadValue h1 x_refs with
                             | .ok z => some (z, h1)
                             | .error _ => none
                           match v2 with
-                            | .construct e7 "Nil" [] =>
-                              if e7 = constructorName [] (.named "Lists::Node" [(.ptr (.array .field 32))]) then
+                            | .construct e10 "Nil" [] =>
+                              if e10 = constructorName [] (.named "Lists::Node" [(.ptr (.array .field 32))]) then
                                 (do
                                   let (v4, h5) ← match loadValue h3 x_univs with
                                     | .ok z => some (z, h3)
                                     | .error _ => none
                                   match v4 with
-                                    | .construct e6 "Nil" [] =>
-                                      if e6 = constructorName [] (.named "Lists::Node" [(.ptr (.named "Ixon::Univ" []))]) then
-                                        some ((.tuple [] : SourceValue F), h5)
+                                    | .construct e9 "Nil" [] =>
+                                      if e9 = constructorName [] (.named "Lists::Node" [(.ptr (.named "Ixon::Univ" []))]) then
+                                        (do
+                                          let (v6, h7) ← match loadValue h5 x_binders with
+                                            | .ok z => some (z, h5)
+                                            | .error _ => none
+                                          match v6 with
+                                            | .construct e8 "Nil" [] =>
+                                              if e8 = constructorName [] (.named "Lists::Node" [(.named "Ixon::BinderBlock" [])]) then
+                                                some ((.tuple [] : SourceValue F), h7)
+                                              else none
+                                            | _ => none)
                                       else none
                                     | _ => none)
                               else none
@@ -456,11 +492,11 @@ def «IxonDeserialize::assert_prj_empty_tables» : Nat → Heap F → SourceValu
 
 /-- Every derivation of `IxonDeserialize::assert_prj_empty_tables` is a run of its mirror. -/
 abbrev «IxonDeserialize::assert_prj_empty_tables».Complete : Prop :=
-  ∀ {x_info x_sharing x_refs x_univs : SourceValue F} {h h' : Heap F} {r : SourceValue F},
-    EvalFn W "IxonDeserialize::assert_prj_empty_tables" [x_info, x_sharing, x_refs, x_univs] h r h' → ∃ k0, ∀ k ≥ k0, «IxonDeserialize::assert_prj_empty_tables» k h x_info x_sharing x_refs x_univs = some (r, h')
+  ∀ {x_info x_sharing x_refs x_univs x_binders : SourceValue F} {h h' : Heap F} {r : SourceValue F},
+    EvalFn W "IxonDeserialize::assert_prj_empty_tables" [x_info, x_sharing, x_refs, x_univs, x_binders] h r h' → ∃ k0, ∀ k ≥ k0, «IxonDeserialize::assert_prj_empty_tables» k h x_info x_sharing x_refs x_univs x_binders = some (r, h')
 
 theorem «IxonDeserialize::assert_prj_empty_tables».of_eval : «IxonDeserialize::assert_prj_empty_tables».Complete := by
-  intro x_info x_sharing x_refs x_univs h h' r ev
+  intro x_info x_sharing x_refs x_univs x_binders h h' r ev
   have body := ev.function_inv IxVM.IxonDeserialize.assert_prj_empty_tables.lookup
     (by simp [IxVM.IxonDeserialize.assert_prj_empty_tables, ControlLower.hasControl])
   simp only [IxVM.IxonDeserialize.assert_prj_empty_tables] at body
@@ -503,28 +539,28 @@ theorem «IxonDeserialize::assert_prj_empty_tables».of_eval : «IxonDeserialize
     try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp54
     simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml56
     subst ml56
-    obtain ⟨vs57, args58, rfl⟩ := d48.tuple_inv
-    obtain ⟨rfl, rfl⟩ := args58.nil_inv
+    obtain ⟨v57, m58, bs59, d60, mt61, d62⟩ := d48.letValue_inv
+    obtain ⟨p63, d64, ld65⟩ := d60.load_inv
+    obtain ⟨l66, rfl⟩ := d64.var_inv
+    simp at l66
+    subst l66
+    obtain ⟨ys67, hp68, hl69, ml70⟩ := matchPattern_construct_inv mt61
+    rcases ys67 with _ | ⟨_, _⟩ <;> simp at hl69
+    try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp68
+    simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml70
+    subst ml70
+    obtain ⟨vs71, args72, rfl⟩ := d62.tuple_inv
+    obtain ⟨rfl, rfl⟩ := args72.nil_inv
     refine ⟨1, fun k hk => ?_⟩
     obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-    simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::assert_prj_empty_tables», hp9, ld23, hp26, ld37, hp40, ld51, hp54]
+    simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::assert_prj_empty_tables», hp9, ld23, hp26, ld37, hp40, ld51, hp54, ld65, hp68]
   · dsimp only [List.length] at hc12
-    rcases selectArm_construct_inv (by trivial) sel13 with ⟨ys59, hp60, hl61, ml62, rfl⟩ | ⟨hc63, sel64⟩
-    · rcases ys59 with _ | ⟨y65, _ | ⟨_, _⟩⟩ <;> simp at hl61
-      simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml62
-      subst ml62
-      try rw [hp60] at d6
-      obtain ⟨v66, m67, bs68, d69, mt70, d71⟩ := d6.letValue_inv
-      obtain ⟨p72, d73, ld74⟩ := d69.load_inv
-      obtain ⟨l75, rfl⟩ := d73.var_inv
-      simp at l75
-      subst l75
-      obtain ⟨ys76, hp77, hl78, ml79⟩ := matchPattern_construct_inv mt70
-      rcases ys76 with _ | ⟨_, _⟩ <;> simp at hl78
-      try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp77
-      simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml79
-      subst ml79
-      obtain ⟨v80, m81, bs82, d83, mt84, d85⟩ := d71.letValue_inv
+    rcases selectArm_construct_inv (by trivial) sel13 with ⟨ys73, hp74, hl75, ml76, rfl⟩ | ⟨hc77, sel78⟩
+    · rcases ys73 with _ | ⟨y79, _ | ⟨_, _⟩⟩ <;> simp at hl75
+      simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml76
+      subst ml76
+      try rw [hp74] at d6
+      obtain ⟨v80, m81, bs82, d83, mt84, d85⟩ := d6.letValue_inv
       obtain ⟨p86, d87, ld88⟩ := d83.load_inv
       obtain ⟨l89, rfl⟩ := d87.var_inv
       simp at l89
@@ -544,38 +580,38 @@ theorem «IxonDeserialize::assert_prj_empty_tables».of_eval : «IxonDeserialize
       try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp105
       simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml107
       subst ml107
-      obtain ⟨vs108, args109, rfl⟩ := d99.tuple_inv
-      obtain ⟨rfl, rfl⟩ := args109.nil_inv
+      obtain ⟨v108, m109, bs110, d111, mt112, d113⟩ := d99.letValue_inv
+      obtain ⟨p114, d115, ld116⟩ := d111.load_inv
+      obtain ⟨l117, rfl⟩ := d115.var_inv
+      simp at l117
+      subst l117
+      obtain ⟨ys118, hp119, hl120, ml121⟩ := matchPattern_construct_inv mt112
+      rcases ys118 with _ | ⟨_, _⟩ <;> simp at hl120
+      try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp119
+      simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml121
+      subst ml121
+      obtain ⟨v122, m123, bs124, d125, mt126, d127⟩ := d113.letValue_inv
+      obtain ⟨p128, d129, ld130⟩ := d125.load_inv
+      obtain ⟨l131, rfl⟩ := d129.var_inv
+      simp at l131
+      subst l131
+      obtain ⟨ys132, hp133, hl134, ml135⟩ := matchPattern_construct_inv mt126
+      rcases ys132 with _ | ⟨_, _⟩ <;> simp at hl134
+      try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp133
+      simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml135
+      subst ml135
+      obtain ⟨vs136, args137, rfl⟩ := d127.tuple_inv
+      obtain ⟨rfl, rfl⟩ := args137.nil_inv
       refine ⟨1, fun k hk => ?_⟩
       obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-      simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::assert_prj_empty_tables», hc12, hp60, ld74, hp77, ld88, hp91, ld102, hp105]
-    · dsimp only [List.length] at hc63
-      rcases selectArm_construct_inv (by trivial) sel64 with ⟨ys110, hp111, hl112, ml113, rfl⟩ | ⟨hc114, sel115⟩
-      · rcases ys110 with _ | ⟨y116, _ | ⟨_, _⟩⟩ <;> simp at hl112
-        simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml113
-        subst ml113
-        try rw [hp111] at d6
-        obtain ⟨v117, m118, bs119, d120, mt121, d122⟩ := d6.letValue_inv
-        obtain ⟨p123, d124, ld125⟩ := d120.load_inv
-        obtain ⟨l126, rfl⟩ := d124.var_inv
-        simp at l126
-        subst l126
-        obtain ⟨ys127, hp128, hl129, ml130⟩ := matchPattern_construct_inv mt121
-        rcases ys127 with _ | ⟨_, _⟩ <;> simp at hl129
-        try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp128
-        simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml130
-        subst ml130
-        obtain ⟨v131, m132, bs133, d134, mt135, d136⟩ := d122.letValue_inv
-        obtain ⟨p137, d138, ld139⟩ := d134.load_inv
-        obtain ⟨l140, rfl⟩ := d138.var_inv
-        simp at l140
-        subst l140
-        obtain ⟨ys141, hp142, hl143, ml144⟩ := matchPattern_construct_inv mt135
-        rcases ys141 with _ | ⟨_, _⟩ <;> simp at hl143
-        try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp142
-        simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml144
-        subst ml144
-        obtain ⟨v145, m146, bs147, d148, mt149, d150⟩ := d136.letValue_inv
+      simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::assert_prj_empty_tables», hc12, hp74, ld88, hp91, ld102, hp105, ld116, hp119, ld130, hp133]
+    · dsimp only [List.length] at hc77
+      rcases selectArm_construct_inv (by trivial) sel78 with ⟨ys138, hp139, hl140, ml141, rfl⟩ | ⟨hc142, sel143⟩
+      · rcases ys138 with _ | ⟨y144, _ | ⟨_, _⟩⟩ <;> simp at hl140
+        simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml141
+        subst ml141
+        try rw [hp139] at d6
+        obtain ⟨v145, m146, bs147, d148, mt149, d150⟩ := d6.letValue_inv
         obtain ⟨p151, d152, ld153⟩ := d148.load_inv
         obtain ⟨l154, rfl⟩ := d152.var_inv
         simp at l154
@@ -585,59 +621,849 @@ theorem «IxonDeserialize::assert_prj_empty_tables».of_eval : «IxonDeserialize
         try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp156
         simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml158
         subst ml158
-        obtain ⟨vs159, args160, rfl⟩ := d150.tuple_inv
-        obtain ⟨rfl, rfl⟩ := args160.nil_inv
+        obtain ⟨v159, m160, bs161, d162, mt163, d164⟩ := d150.letValue_inv
+        obtain ⟨p165, d166, ld167⟩ := d162.load_inv
+        obtain ⟨l168, rfl⟩ := d166.var_inv
+        simp at l168
+        subst l168
+        obtain ⟨ys169, hp170, hl171, ml172⟩ := matchPattern_construct_inv mt163
+        rcases ys169 with _ | ⟨_, _⟩ <;> simp at hl171
+        try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp170
+        simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml172
+        subst ml172
+        obtain ⟨v173, m174, bs175, d176, mt177, d178⟩ := d164.letValue_inv
+        obtain ⟨p179, d180, ld181⟩ := d176.load_inv
+        obtain ⟨l182, rfl⟩ := d180.var_inv
+        simp at l182
+        subst l182
+        obtain ⟨ys183, hp184, hl185, ml186⟩ := matchPattern_construct_inv mt177
+        rcases ys183 with _ | ⟨_, _⟩ <;> simp at hl185
+        try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp184
+        simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml186
+        subst ml186
+        obtain ⟨v187, m188, bs189, d190, mt191, d192⟩ := d178.letValue_inv
+        obtain ⟨p193, d194, ld195⟩ := d190.load_inv
+        obtain ⟨l196, rfl⟩ := d194.var_inv
+        simp at l196
+        subst l196
+        obtain ⟨ys197, hp198, hl199, ml200⟩ := matchPattern_construct_inv mt191
+        rcases ys197 with _ | ⟨_, _⟩ <;> simp at hl199
+        try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp198
+        simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml200
+        subst ml200
+        obtain ⟨vs201, args202, rfl⟩ := d192.tuple_inv
+        obtain ⟨rfl, rfl⟩ := args202.nil_inv
         refine ⟨1, fun k hk => ?_⟩
         obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-        simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::assert_prj_empty_tables», hc12, hc63, hp111, ld125, hp128, ld139, hp142, ld153, hp156]
-      · dsimp only [List.length] at hc114
-        rcases selectArm_construct_inv (by trivial) sel115 with ⟨ys161, hp162, hl163, ml164, rfl⟩ | ⟨hc165, sel166⟩
-        · rcases ys161 with _ | ⟨y167, _ | ⟨_, _⟩⟩ <;> simp at hl163
-          simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml164
-          subst ml164
-          try rw [hp162] at d6
-          obtain ⟨v168, m169, bs170, d171, mt172, d173⟩ := d6.letValue_inv
-          obtain ⟨p174, d175, ld176⟩ := d171.load_inv
-          obtain ⟨l177, rfl⟩ := d175.var_inv
-          simp at l177
-          subst l177
-          obtain ⟨ys178, hp179, hl180, ml181⟩ := matchPattern_construct_inv mt172
-          rcases ys178 with _ | ⟨_, _⟩ <;> simp at hl180
-          try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp179
-          simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml181
-          subst ml181
-          obtain ⟨v182, m183, bs184, d185, mt186, d187⟩ := d173.letValue_inv
-          obtain ⟨p188, d189, ld190⟩ := d185.load_inv
-          obtain ⟨l191, rfl⟩ := d189.var_inv
-          simp at l191
-          subst l191
-          obtain ⟨ys192, hp193, hl194, ml195⟩ := matchPattern_construct_inv mt186
-          rcases ys192 with _ | ⟨_, _⟩ <;> simp at hl194
-          try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp193
-          simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml195
-          subst ml195
-          obtain ⟨v196, m197, bs198, d199, mt200, d201⟩ := d187.letValue_inv
-          obtain ⟨p202, d203, ld204⟩ := d199.load_inv
-          obtain ⟨l205, rfl⟩ := d203.var_inv
-          simp at l205
-          subst l205
-          obtain ⟨ys206, hp207, hl208, ml209⟩ := matchPattern_construct_inv mt200
-          rcases ys206 with _ | ⟨_, _⟩ <;> simp at hl208
-          try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp207
-          simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml209
-          subst ml209
-          obtain ⟨vs210, args211, rfl⟩ := d201.tuple_inv
-          obtain ⟨rfl, rfl⟩ := args211.nil_inv
+        simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::assert_prj_empty_tables», hc12, hc77, hp139, ld153, hp156, ld167, hp170, ld181, hp184, ld195, hp198]
+      · dsimp only [List.length] at hc142
+        rcases selectArm_construct_inv (by trivial) sel143 with ⟨ys203, hp204, hl205, ml206, rfl⟩ | ⟨hc207, sel208⟩
+        · rcases ys203 with _ | ⟨y209, _ | ⟨_, _⟩⟩ <;> simp at hl205
+          simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml206
+          subst ml206
+          try rw [hp204] at d6
+          obtain ⟨v210, m211, bs212, d213, mt214, d215⟩ := d6.letValue_inv
+          obtain ⟨p216, d217, ld218⟩ := d213.load_inv
+          obtain ⟨l219, rfl⟩ := d217.var_inv
+          simp at l219
+          subst l219
+          obtain ⟨ys220, hp221, hl222, ml223⟩ := matchPattern_construct_inv mt214
+          rcases ys220 with _ | ⟨_, _⟩ <;> simp at hl222
+          try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp221
+          simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml223
+          subst ml223
+          obtain ⟨v224, m225, bs226, d227, mt228, d229⟩ := d215.letValue_inv
+          obtain ⟨p230, d231, ld232⟩ := d227.load_inv
+          obtain ⟨l233, rfl⟩ := d231.var_inv
+          simp at l233
+          subst l233
+          obtain ⟨ys234, hp235, hl236, ml237⟩ := matchPattern_construct_inv mt228
+          rcases ys234 with _ | ⟨_, _⟩ <;> simp at hl236
+          try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp235
+          simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml237
+          subst ml237
+          obtain ⟨v238, m239, bs240, d241, mt242, d243⟩ := d229.letValue_inv
+          obtain ⟨p244, d245, ld246⟩ := d241.load_inv
+          obtain ⟨l247, rfl⟩ := d245.var_inv
+          simp at l247
+          subst l247
+          obtain ⟨ys248, hp249, hl250, ml251⟩ := matchPattern_construct_inv mt242
+          rcases ys248 with _ | ⟨_, _⟩ <;> simp at hl250
+          try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp249
+          simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml251
+          subst ml251
+          obtain ⟨v252, m253, bs254, d255, mt256, d257⟩ := d243.letValue_inv
+          obtain ⟨p258, d259, ld260⟩ := d255.load_inv
+          obtain ⟨l261, rfl⟩ := d259.var_inv
+          simp at l261
+          subst l261
+          obtain ⟨ys262, hp263, hl264, ml265⟩ := matchPattern_construct_inv mt256
+          rcases ys262 with _ | ⟨_, _⟩ <;> simp at hl264
+          try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp263
+          simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml265
+          subst ml265
+          obtain ⟨vs266, args267, rfl⟩ := d257.tuple_inv
+          obtain ⟨rfl, rfl⟩ := args267.nil_inv
           refine ⟨1, fun k hk => ?_⟩
           obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-          simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::assert_prj_empty_tables», hc12, hc63, hc114, hp162, ld176, hp179, ld190, hp193, ld204, hp207]
-        · dsimp only [List.length] at hc165
-          obtain ⟨rfl, rfl⟩ := selectArm_wildcard_inv sel166
-          obtain ⟨vs212, args213, rfl⟩ := d6.tuple_inv
-          obtain ⟨rfl, rfl⟩ := args213.nil_inv
+          simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::assert_prj_empty_tables», hc12, hc77, hc142, hp204, ld218, hp221, ld232, hp235, ld246, hp249, ld260, hp263]
+        · dsimp only [List.length] at hc207
+          obtain ⟨rfl, rfl⟩ := selectArm_wildcard_inv sel208
+          obtain ⟨vs268, args269, rfl⟩ := d6.tuple_inv
+          obtain ⟨rfl, rfl⟩ := args269.nil_inv
           refine ⟨1, fun k hk => ?_⟩
           obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-          simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::assert_prj_empty_tables», hc12, hc63, hc114, hc165]
+          simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::assert_prj_empty_tables», hc12, hc77, hc142, hc207]
+
+/-- The mirror of `UInt64::to_field`. -/
+def «UInt64::to_field» : Nat → Heap F → SourceValue F → Option (SourceValue F × Heap F)
+  | 0, _, _ => none
+  | k + 1, h, x_x =>
+    match x_x with
+      | .tuple [x_b0, x_b1, x_b2, x_b3, x_b4, x_b5, x_b6, x_b7] =>
+        (do
+          let (v0, h1) ← (do
+            let (v2, h3) ← «UInt8::to_field» k h x_b7
+            match Builtin.apply (.assertEq { message := (some "u64 -> field: value exceeds 2^56 (top byte must be zero)"), runtimeCheck := true }) [v2, (.field 0)] with
+              | .ok z => some (z, h3)
+              | .error _ => none)
+          (do
+            let (v4, h5) ← (do
+              let (v6, h7) ← (do
+                let (v8, h9) ← (do
+                  let (v10, h11) ← (do
+                    let (v12, h13) ← (do
+                      let (v14, h15) ← «UInt8::to_field» k h1 x_b0
+                      let (v16, h17) ← (do
+                        let (v18, h19) ← «UInt8::to_field» k h15 x_b1
+                        match evalBinOp .mul (.field 256) v18 with
+                          | .ok z => some (z, h19)
+                          | .error _ => none)
+                      match evalBinOp .add v14 v16 with
+                        | .ok z => some (z, h17)
+                        | .error _ => none)
+                    let (v20, h21) ← (do
+                      let (v22, h23) ← «UInt8::to_field» k h13 x_b2
+                      match evalBinOp .mul (.field 65536) v22 with
+                        | .ok z => some (z, h23)
+                        | .error _ => none)
+                    match evalBinOp .add v12 v20 with
+                      | .ok z => some (z, h21)
+                      | .error _ => none)
+                  let (v24, h25) ← (do
+                    let (v26, h27) ← «UInt8::to_field» k h11 x_b3
+                    match evalBinOp .mul (.field 16777216) v26 with
+                      | .ok z => some (z, h27)
+                      | .error _ => none)
+                  match evalBinOp .add v10 v24 with
+                    | .ok z => some (z, h25)
+                    | .error _ => none)
+                let (v28, h29) ← (do
+                  let (v30, h31) ← «UInt8::to_field» k h9 x_b4
+                  match evalBinOp .mul (.field 4294967296) v30 with
+                    | .ok z => some (z, h31)
+                    | .error _ => none)
+                match evalBinOp .add v8 v28 with
+                  | .ok z => some (z, h29)
+                  | .error _ => none)
+              let (v32, h33) ← (do
+                let (v34, h35) ← «UInt8::to_field» k h7 x_b5
+                match evalBinOp .mul (.field 1099511627776) v34 with
+                  | .ok z => some (z, h35)
+                  | .error _ => none)
+              match evalBinOp .add v6 v32 with
+                | .ok z => some (z, h33)
+                | .error _ => none)
+            let (v36, h37) ← (do
+              let (v38, h39) ← «UInt8::to_field» k h5 x_b6
+              match evalBinOp .mul (.field 281474976710656) v38 with
+                | .ok z => some (z, h39)
+                | .error _ => none)
+            match evalBinOp .add v4 v36 with
+              | .ok z => some (z, h37)
+              | .error _ => none))
+      | _ => none
+
+/-- Every derivation of `UInt64::to_field` is a run of its mirror. -/
+abbrev «UInt64::to_field».Complete : Prop :=
+  ∀ {x_x : SourceValue F} {h h' : Heap F} {r : SourceValue F},
+    EvalFn W "UInt64::to_field" [x_x] h r h' → ∃ k0, ∀ k ≥ k0, «UInt64::to_field» k h x_x = some (r, h')
+
+theorem «UInt64::to_field».of_eval : «UInt64::to_field».Complete := by
+  intro x_x h h' r ev
+  have body := ev.function_inv IxVM.UInt64.to_field.lookup
+    (by simp [IxVM.UInt64.to_field, ControlLower.hasControl])
+  simp only [IxVM.UInt64.to_field] at body
+  obtain ⟨v0, m1, bs2, d3, mt4, d5⟩ := body.letValue_inv
+  obtain ⟨l6, rfl⟩ := d3.var_inv
+  simp at l6
+  subst l6
+  obtain ⟨ys7, hp8, hl9, ml10⟩ := matchPattern_array_inv mt4
+  rcases ys7 with _ | ⟨y11, _ | ⟨y12, _ | ⟨y13, _ | ⟨y14, _ | ⟨y15, _ | ⟨y16, _ | ⟨y17, _ | ⟨y18, _ | ⟨_, _⟩⟩⟩⟩⟩⟩⟩⟩⟩ <;> simp at hl9
+  try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp8
+  simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml10
+  subst ml10
+  try rw [hp8] at d5
+  obtain ⟨v19, m20, bs21, d22, mt23, d24⟩ := d5.letValue_inv
+  obtain ⟨vs25, args26, ap27⟩ := d22.builtin_inv
+  obtain ⟨v28, vs29, m30, rfl, d31, args32⟩ := args26.cons_inv
+  obtain ⟨vs33, m34, args35, callee36⟩ := d31.call_inv
+  obtain ⟨v37, vs38, m39, rfl, d40, args41⟩ := args35.cons_inv
+  obtain ⟨l42, rfl⟩ := d40.var_inv
+  simp at l42
+  subst l42
+  obtain ⟨rfl, rfl⟩ := args41.nil_inv
+  rw [instanceName_plain_some] at callee36
+  obtain ⟨k43, hk44⟩ := «UInt8::to_field».of_eval callee36
+  obtain ⟨v45, vs46, m47, rfl, d48, args49⟩ := args32.cons_inv
+  obtain ⟨rfl, rfl⟩ := d48.literal_inv
+  obtain ⟨rfl, rfl⟩ := args49.nil_inv
+  rw [matchPattern_wildcard] at mt23
+  simp only [Except.ok.injEq, Option.some.injEq] at mt23
+  subst mt23
+  obtain ⟨x50, y51, m52, d53, d54, op55⟩ := d24.binary_inv
+  obtain ⟨x56, y57, m58, d59, d60, op61⟩ := d53.binary_inv
+  obtain ⟨x62, y63, m64, d65, d66, op67⟩ := d59.binary_inv
+  obtain ⟨x68, y69, m70, d71, d72, op73⟩ := d65.binary_inv
+  obtain ⟨x74, y75, m76, d77, d78, op79⟩ := d71.binary_inv
+  obtain ⟨x80, y81, m82, d83, d84, op85⟩ := d77.binary_inv
+  obtain ⟨vs86, m87, args88, callee89⟩ := d83.call_inv
+  obtain ⟨v90, vs91, m92, rfl, d93, args94⟩ := args88.cons_inv
+  obtain ⟨l95, rfl⟩ := d93.var_inv
+  simp at l95
+  subst l95
+  obtain ⟨rfl, rfl⟩ := args94.nil_inv
+  rw [instanceName_plain_some] at callee89
+  obtain ⟨k96, hk97⟩ := «UInt8::to_field».of_eval callee89
+  obtain ⟨x98, y99, m100, d101, d102, op103⟩ := d84.binary_inv
+  obtain ⟨rfl, rfl⟩ := d101.literal_inv
+  obtain ⟨vs104, m105, args106, callee107⟩ := d102.call_inv
+  obtain ⟨v108, vs109, m110, rfl, d111, args112⟩ := args106.cons_inv
+  obtain ⟨l113, rfl⟩ := d111.var_inv
+  simp at l113
+  subst l113
+  obtain ⟨rfl, rfl⟩ := args112.nil_inv
+  rw [instanceName_plain_some] at callee107
+  obtain ⟨k114, hk115⟩ := «UInt8::to_field».of_eval callee107
+  obtain ⟨x116, y117, m118, d119, d120, op121⟩ := d78.binary_inv
+  obtain ⟨rfl, rfl⟩ := d119.literal_inv
+  obtain ⟨vs122, m123, args124, callee125⟩ := d120.call_inv
+  obtain ⟨v126, vs127, m128, rfl, d129, args130⟩ := args124.cons_inv
+  obtain ⟨l131, rfl⟩ := d129.var_inv
+  simp at l131
+  subst l131
+  obtain ⟨rfl, rfl⟩ := args130.nil_inv
+  rw [instanceName_plain_some] at callee125
+  obtain ⟨k132, hk133⟩ := «UInt8::to_field».of_eval callee125
+  obtain ⟨x134, y135, m136, d137, d138, op139⟩ := d72.binary_inv
+  obtain ⟨rfl, rfl⟩ := d137.literal_inv
+  obtain ⟨vs140, m141, args142, callee143⟩ := d138.call_inv
+  obtain ⟨v144, vs145, m146, rfl, d147, args148⟩ := args142.cons_inv
+  obtain ⟨l149, rfl⟩ := d147.var_inv
+  simp at l149
+  subst l149
+  obtain ⟨rfl, rfl⟩ := args148.nil_inv
+  rw [instanceName_plain_some] at callee143
+  obtain ⟨k150, hk151⟩ := «UInt8::to_field».of_eval callee143
+  obtain ⟨x152, y153, m154, d155, d156, op157⟩ := d66.binary_inv
+  obtain ⟨rfl, rfl⟩ := d155.literal_inv
+  obtain ⟨vs158, m159, args160, callee161⟩ := d156.call_inv
+  obtain ⟨v162, vs163, m164, rfl, d165, args166⟩ := args160.cons_inv
+  obtain ⟨l167, rfl⟩ := d165.var_inv
+  simp at l167
+  subst l167
+  obtain ⟨rfl, rfl⟩ := args166.nil_inv
+  rw [instanceName_plain_some] at callee161
+  obtain ⟨k168, hk169⟩ := «UInt8::to_field».of_eval callee161
+  obtain ⟨x170, y171, m172, d173, d174, op175⟩ := d60.binary_inv
+  obtain ⟨rfl, rfl⟩ := d173.literal_inv
+  obtain ⟨vs176, m177, args178, callee179⟩ := d174.call_inv
+  obtain ⟨v180, vs181, m182, rfl, d183, args184⟩ := args178.cons_inv
+  obtain ⟨l185, rfl⟩ := d183.var_inv
+  simp at l185
+  subst l185
+  obtain ⟨rfl, rfl⟩ := args184.nil_inv
+  rw [instanceName_plain_some] at callee179
+  obtain ⟨k186, hk187⟩ := «UInt8::to_field».of_eval callee179
+  obtain ⟨x188, y189, m190, d191, d192, op193⟩ := d54.binary_inv
+  obtain ⟨rfl, rfl⟩ := d191.literal_inv
+  obtain ⟨vs194, m195, args196, callee197⟩ := d192.call_inv
+  obtain ⟨v198, vs199, m200, rfl, d201, args202⟩ := args196.cons_inv
+  obtain ⟨l203, rfl⟩ := d201.var_inv
+  simp at l203
+  subst l203
+  obtain ⟨rfl, rfl⟩ := args202.nil_inv
+  rw [instanceName_plain_some] at callee197
+  obtain ⟨k204, hk205⟩ := «UInt8::to_field».of_eval callee197
+  refine ⟨k43 + k96 + k114 + k132 + k150 + k168 + k186 + k204 + 1, fun k hk => ?_⟩
+  obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
+  simp (config := { decide := true, maxSteps := 10000000 }) [«UInt64::to_field», hp8, ap27, hk44 k' (by omega), hk97 k' (by omega), op85, op103, hk115 k' (by omega), op79, op121, hk133 k' (by omega), op73, op139, hk151 k' (by omega), op67, op157, hk169 k' (by omega), op61, op175, hk187 k' (by omega), op55, op193, hk205 k' (by omega)]
+
+/-- The mirror of `IxonDeserialize::mut_const_lvls`. -/
+def «IxonDeserialize::mut_const_lvls» : Nat → Heap F → SourceValue F → Option (SourceValue F × Heap F)
+  | 0, _, _ => none
+  | k + 1, h, x_m =>
+    matchConstruct (constructorName [] (.named "Ixon::MutConst" [])) "Defn" 1 x_m
+      (fun
+        | [x_d] =>
+          match x_d with
+            | .construct e2 "Mk" [_, _, x_lvls, _, _] =>
+              if e2 = constructorName [] (.named "Ixon::Definition" []) then
+                «UInt64::to_field» k h x_lvls
+              else none
+            | _ => none
+        | _ => none)
+      (matchConstruct (constructorName [] (.named "Ixon::MutConst" [])) "Indc" 1 x_m
+        (fun
+          | [x_i] =>
+            match x_i with
+              | .construct e1 "Mk" [_, x_lvls, _, _, _, _] =>
+                if e1 = constructorName [] (.named "Ixon::Inductive" []) then
+                  «UInt64::to_field» k h x_lvls
+                else none
+              | _ => none
+          | _ => none)
+        (matchConstruct (constructorName [] (.named "Ixon::MutConst" [])) "Recr" 1 x_m
+          (fun
+            | [x_r] =>
+              match x_r with
+                | .construct e0 "Mk" [_, _, x_lvls, _, _, _, _, _, _] =>
+                  if e0 = constructorName [] (.named "Ixon::Recursor" []) then
+                    «UInt64::to_field» k h x_lvls
+                  else none
+                | _ => none
+            | _ => none)
+          (none)))
+
+/-- Every derivation of `IxonDeserialize::mut_const_lvls` is a run of its mirror. -/
+abbrev «IxonDeserialize::mut_const_lvls».Complete : Prop :=
+  ∀ {x_m : SourceValue F} {h h' : Heap F} {r : SourceValue F},
+    EvalFn W "IxonDeserialize::mut_const_lvls" [x_m] h r h' → ∃ k0, ∀ k ≥ k0, «IxonDeserialize::mut_const_lvls» k h x_m = some (r, h')
+
+theorem «IxonDeserialize::mut_const_lvls».of_eval : «IxonDeserialize::mut_const_lvls».Complete := by
+  intro x_m h h' r ev
+  have body := ev.function_inv IxVM.IxonDeserialize.mut_const_lvls.lookup
+    (by simp [IxVM.IxonDeserialize.mut_const_lvls, ControlLower.hasControl])
+  simp only [IxVM.IxonDeserialize.mut_const_lvls] at body
+  obtain ⟨v0, m1, bs2, body3, d4, sel5, d6⟩ := body.matchValue_inv
+  obtain ⟨l7, rfl⟩ := d4.var_inv
+  simp at l7
+  subst l7
+  rcases selectArm_construct_inv (by trivial) sel5 with ⟨ys8, hp9, hl10, ml11, rfl⟩ | ⟨hc12, sel13⟩
+  · rcases ys8 with _ | ⟨y14, _ | ⟨_, _⟩⟩ <;> simp at hl10
+    simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml11
+    subst ml11
+    try rw [hp9] at d6
+    obtain ⟨v15, m16, bs17, d18, mt19, d20⟩ := d6.letValue_inv
+    obtain ⟨l21, rfl⟩ := d18.var_inv
+    simp at l21
+    subst l21
+    obtain ⟨ys22, hp23, hl24, ml25⟩ := matchPattern_construct_inv mt19
+    rcases ys22 with _ | ⟨y26, _ | ⟨y27, _ | ⟨y28, _ | ⟨y29, _ | ⟨y30, _ | ⟨_, _⟩⟩⟩⟩⟩⟩ <;> simp at hl24
+    try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp23
+    simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml25
+    subst ml25
+    try rw [hp23] at d20
+    obtain ⟨vs31, m32, args33, callee34⟩ := d20.call_inv
+    obtain ⟨v35, vs36, m37, rfl, d38, args39⟩ := args33.cons_inv
+    obtain ⟨l40, rfl⟩ := d38.var_inv
+    simp at l40
+    subst l40
+    obtain ⟨rfl, rfl⟩ := args39.nil_inv
+    rw [instanceName_plain_some] at callee34
+    obtain ⟨k41, hk42⟩ := «UInt64::to_field».of_eval callee34
+    refine ⟨k41 + 1, fun k hk => ?_⟩
+    obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
+    simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::mut_const_lvls», hp9, hp23, hk42 k' (by omega)]
+  · dsimp only [List.length] at hc12
+    rcases selectArm_construct_inv (by trivial) sel13 with ⟨ys43, hp44, hl45, ml46, rfl⟩ | ⟨hc47, sel48⟩
+    · rcases ys43 with _ | ⟨y49, _ | ⟨_, _⟩⟩ <;> simp at hl45
+      simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml46
+      subst ml46
+      try rw [hp44] at d6
+      obtain ⟨v50, m51, bs52, d53, mt54, d55⟩ := d6.letValue_inv
+      obtain ⟨l56, rfl⟩ := d53.var_inv
+      simp at l56
+      subst l56
+      obtain ⟨ys57, hp58, hl59, ml60⟩ := matchPattern_construct_inv mt54
+      rcases ys57 with _ | ⟨y61, _ | ⟨y62, _ | ⟨y63, _ | ⟨y64, _ | ⟨y65, _ | ⟨y66, _ | ⟨_, _⟩⟩⟩⟩⟩⟩⟩ <;> simp at hl59
+      try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp58
+      simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml60
+      subst ml60
+      try rw [hp58] at d55
+      obtain ⟨vs67, m68, args69, callee70⟩ := d55.call_inv
+      obtain ⟨v71, vs72, m73, rfl, d74, args75⟩ := args69.cons_inv
+      obtain ⟨l76, rfl⟩ := d74.var_inv
+      simp at l76
+      subst l76
+      obtain ⟨rfl, rfl⟩ := args75.nil_inv
+      rw [instanceName_plain_some] at callee70
+      obtain ⟨k77, hk78⟩ := «UInt64::to_field».of_eval callee70
+      refine ⟨k77 + 1, fun k hk => ?_⟩
+      obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
+      simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::mut_const_lvls», hc12, hp44, hp58, hk78 k' (by omega)]
+    · dsimp only [List.length] at hc47
+      rcases selectArm_construct_inv (by trivial) sel48 with ⟨ys79, hp80, hl81, ml82, rfl⟩ | ⟨hc83, sel84⟩
+      · rcases ys79 with _ | ⟨y85, _ | ⟨_, _⟩⟩ <;> simp at hl81
+        simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml82
+        subst ml82
+        try rw [hp80] at d6
+        obtain ⟨v86, m87, bs88, d89, mt90, d91⟩ := d6.letValue_inv
+        obtain ⟨l92, rfl⟩ := d89.var_inv
+        simp at l92
+        subst l92
+        obtain ⟨ys93, hp94, hl95, ml96⟩ := matchPattern_construct_inv mt90
+        rcases ys93 with _ | ⟨y97, _ | ⟨y98, _ | ⟨y99, _ | ⟨y100, _ | ⟨y101, _ | ⟨y102, _ | ⟨y103, _ | ⟨y104, _ | ⟨y105, _ | ⟨_, _⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩ <;> simp at hl95
+        try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp94
+        simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml96
+        subst ml96
+        try rw [hp94] at d91
+        obtain ⟨vs106, m107, args108, callee109⟩ := d91.call_inv
+        obtain ⟨v110, vs111, m112, rfl, d113, args114⟩ := args108.cons_inv
+        obtain ⟨l115, rfl⟩ := d113.var_inv
+        simp at l115
+        subst l115
+        obtain ⟨rfl, rfl⟩ := args114.nil_inv
+        rw [instanceName_plain_some] at callee109
+        obtain ⟨k116, hk117⟩ := «UInt64::to_field».of_eval callee109
+        refine ⟨k116 + 1, fun k hk => ?_⟩
+        obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
+        simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::mut_const_lvls», hc12, hc47, hp80, hp94, hk117 k' (by omega)]
+      · dsimp only [List.length] at hc83
+        simp [SourceSemantics.selectArm] at sel84
+
+/-- The mirror of `IxonDeserialize::muts_max_lvls`. -/
+def «IxonDeserialize::muts_max_lvls» : Nat → Heap F → SourceValue F → SourceValue F → Option (SourceValue F × Heap F)
+  | 0, _, _, _ => none
+  | k + 1, h, x_members, x_acc =>
+    (do
+      let (v0, h1) ← match loadValue h x_members with
+        | .ok z => some (z, h)
+        | .error _ => none
+      matchConstruct (constructorName [] (.named "Lists::Node" [(.named "Ixon::MutConst" [])])) "Nil" 0 v0
+        (fun _ =>
+          some (x_acc, h1))
+        (matchConstruct (constructorName [] (.named "Lists::Node" [(.named "Ixon::MutConst" [])])) "Cons" 2 v0
+          (fun
+            | [x_m, x_rest] =>
+              (do
+                let (v2, h3) ← «IxonDeserialize::mut_const_lvls» k h1 x_m
+                let x_lvls := v2
+                (do
+                  let (v4, h5) ← «UInt32::less_than_fields» k h3 x_acc x_lvls
+                  if v4 = .field 1 then
+                    «IxonDeserialize::muts_max_lvls» k h5 x_rest x_lvls
+                  else
+                    if v4 = .field 0 then
+                      «IxonDeserialize::muts_max_lvls» k h5 x_rest x_acc
+                    else
+                      none))
+            | _ => none)
+          (none)))
+
+/-- Every derivation of `IxonDeserialize::muts_max_lvls` is a run of its mirror. -/
+abbrev «IxonDeserialize::muts_max_lvls».Complete : Prop :=
+  ∀ {x_members x_acc : SourceValue F} {h h' : Heap F} {r : SourceValue F},
+    EvalFn W "IxonDeserialize::muts_max_lvls" [x_members, x_acc] h r h' → ∃ k0, ∀ k ≥ k0, «IxonDeserialize::muts_max_lvls» k h x_members x_acc = some (r, h')
+
+/-- The mirror of `IxonDeserialize::max_lvls`. -/
+def «IxonDeserialize::max_lvls» : Nat → Heap F → SourceValue F → Option (SourceValue F × Heap F)
+  | 0, _, _ => none
+  | k + 1, h, x_info =>
+    matchConstruct (constructorName [] (.named "Ixon::ConstantInfo" [])) "Defn" 1 x_info
+      (fun
+        | [x_d] =>
+          match x_d with
+            | .construct e3 "Mk" [_, _, x_lvls, _, _] =>
+              if e3 = constructorName [] (.named "Ixon::Definition" []) then
+                «UInt64::to_field» k h x_lvls
+              else none
+            | _ => none
+        | _ => none)
+      (matchConstruct (constructorName [] (.named "Ixon::ConstantInfo" [])) "Recr" 1 x_info
+        (fun
+          | [x_r] =>
+            match x_r with
+              | .construct e2 "Mk" [_, _, x_lvls, _, _, _, _, _, _] =>
+                if e2 = constructorName [] (.named "Ixon::Recursor" []) then
+                  «UInt64::to_field» k h x_lvls
+                else none
+              | _ => none
+          | _ => none)
+        (matchConstruct (constructorName [] (.named "Ixon::ConstantInfo" [])) "Axio" 1 x_info
+          (fun
+            | [x_a] =>
+              match x_a with
+                | .construct e1 "Mk" [_, x_lvls, _] =>
+                  if e1 = constructorName [] (.named "Ixon::Axiom" []) then
+                    «UInt64::to_field» k h x_lvls
+                  else none
+                | _ => none
+            | _ => none)
+          (matchConstruct (constructorName [] (.named "Ixon::ConstantInfo" [])) "Quot" 1 x_info
+            (fun
+              | [x_q] =>
+                match x_q with
+                  | .construct e0 "Mk" [_, x_lvls, _] =>
+                    if e0 = constructorName [] (.named "Ixon::Quotient" []) then
+                      «UInt64::to_field» k h x_lvls
+                    else none
+                  | _ => none
+              | _ => none)
+            (matchConstruct (constructorName [] (.named "Ixon::ConstantInfo" [])) "Muts" 1 x_info
+              (fun
+                | [x_members] =>
+                  «IxonDeserialize::muts_max_lvls» k h x_members (.field 0)
+                | _ => none)
+              (some ((.field 0), h))))))
+
+/-- Every derivation of `IxonDeserialize::max_lvls` is a run of its mirror. -/
+abbrev «IxonDeserialize::max_lvls».Complete : Prop :=
+  ∀ {x_info : SourceValue F} {h h' : Heap F} {r : SourceValue F},
+    EvalFn W "IxonDeserialize::max_lvls" [x_info] h r h' → ∃ k0, ∀ k ≥ k0, «IxonDeserialize::max_lvls» k h x_info = some (r, h')
+
+theorem «IxonDeserialize::max_lvls».of_eval (ih1 : «UInt32::less_than_fields».Complete) (ih2 : «IxonDeserialize::muts_max_lvls».Complete) : «IxonDeserialize::max_lvls».Complete := by
+  intro x_info h h' r ev
+  have body := ev.function_inv IxVM.IxonDeserialize.max_lvls.lookup
+    (by simp [IxVM.IxonDeserialize.max_lvls, ControlLower.hasControl])
+  simp only [IxVM.IxonDeserialize.max_lvls] at body
+  obtain ⟨v0, m1, bs2, body3, d4, sel5, d6⟩ := body.matchValue_inv
+  obtain ⟨l7, rfl⟩ := d4.var_inv
+  simp at l7
+  subst l7
+  rcases selectArm_construct_inv (by trivial) sel5 with ⟨ys8, hp9, hl10, ml11, rfl⟩ | ⟨hc12, sel13⟩
+  · rcases ys8 with _ | ⟨y14, _ | ⟨_, _⟩⟩ <;> simp at hl10
+    simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml11
+    subst ml11
+    try rw [hp9] at d6
+    obtain ⟨v15, m16, bs17, d18, mt19, d20⟩ := d6.letValue_inv
+    obtain ⟨l21, rfl⟩ := d18.var_inv
+    simp at l21
+    subst l21
+    obtain ⟨ys22, hp23, hl24, ml25⟩ := matchPattern_construct_inv mt19
+    rcases ys22 with _ | ⟨y26, _ | ⟨y27, _ | ⟨y28, _ | ⟨y29, _ | ⟨y30, _ | ⟨_, _⟩⟩⟩⟩⟩⟩ <;> simp at hl24
+    try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp23
+    simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml25
+    subst ml25
+    try rw [hp23] at d20
+    obtain ⟨vs31, m32, args33, callee34⟩ := d20.call_inv
+    obtain ⟨v35, vs36, m37, rfl, d38, args39⟩ := args33.cons_inv
+    obtain ⟨l40, rfl⟩ := d38.var_inv
+    simp at l40
+    subst l40
+    obtain ⟨rfl, rfl⟩ := args39.nil_inv
+    rw [instanceName_plain_some] at callee34
+    obtain ⟨k41, hk42⟩ := «UInt64::to_field».of_eval callee34
+    refine ⟨k41 + 1, fun k hk => ?_⟩
+    obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
+    simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::max_lvls», hp9, hp23, hk42 k' (by omega)]
+  · dsimp only [List.length] at hc12
+    rcases selectArm_construct_inv (by trivial) sel13 with ⟨ys43, hp44, hl45, ml46, rfl⟩ | ⟨hc47, sel48⟩
+    · rcases ys43 with _ | ⟨y49, _ | ⟨_, _⟩⟩ <;> simp at hl45
+      simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml46
+      subst ml46
+      try rw [hp44] at d6
+      obtain ⟨v50, m51, bs52, d53, mt54, d55⟩ := d6.letValue_inv
+      obtain ⟨l56, rfl⟩ := d53.var_inv
+      simp at l56
+      subst l56
+      obtain ⟨ys57, hp58, hl59, ml60⟩ := matchPattern_construct_inv mt54
+      rcases ys57 with _ | ⟨y61, _ | ⟨y62, _ | ⟨y63, _ | ⟨y64, _ | ⟨y65, _ | ⟨y66, _ | ⟨y67, _ | ⟨y68, _ | ⟨y69, _ | ⟨_, _⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩ <;> simp at hl59
+      try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp58
+      simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml60
+      subst ml60
+      try rw [hp58] at d55
+      obtain ⟨vs70, m71, args72, callee73⟩ := d55.call_inv
+      obtain ⟨v74, vs75, m76, rfl, d77, args78⟩ := args72.cons_inv
+      obtain ⟨l79, rfl⟩ := d77.var_inv
+      simp at l79
+      subst l79
+      obtain ⟨rfl, rfl⟩ := args78.nil_inv
+      rw [instanceName_plain_some] at callee73
+      obtain ⟨k80, hk81⟩ := «UInt64::to_field».of_eval callee73
+      refine ⟨k80 + 1, fun k hk => ?_⟩
+      obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
+      simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::max_lvls», hc12, hp44, hp58, hk81 k' (by omega)]
+    · dsimp only [List.length] at hc47
+      rcases selectArm_construct_inv (by trivial) sel48 with ⟨ys82, hp83, hl84, ml85, rfl⟩ | ⟨hc86, sel87⟩
+      · rcases ys82 with _ | ⟨y88, _ | ⟨_, _⟩⟩ <;> simp at hl84
+        simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml85
+        subst ml85
+        try rw [hp83] at d6
+        obtain ⟨v89, m90, bs91, d92, mt93, d94⟩ := d6.letValue_inv
+        obtain ⟨l95, rfl⟩ := d92.var_inv
+        simp at l95
+        subst l95
+        obtain ⟨ys96, hp97, hl98, ml99⟩ := matchPattern_construct_inv mt93
+        rcases ys96 with _ | ⟨y100, _ | ⟨y101, _ | ⟨y102, _ | ⟨_, _⟩⟩⟩⟩ <;> simp at hl98
+        try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp97
+        simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml99
+        subst ml99
+        try rw [hp97] at d94
+        obtain ⟨vs103, m104, args105, callee106⟩ := d94.call_inv
+        obtain ⟨v107, vs108, m109, rfl, d110, args111⟩ := args105.cons_inv
+        obtain ⟨l112, rfl⟩ := d110.var_inv
+        simp at l112
+        subst l112
+        obtain ⟨rfl, rfl⟩ := args111.nil_inv
+        rw [instanceName_plain_some] at callee106
+        obtain ⟨k113, hk114⟩ := «UInt64::to_field».of_eval callee106
+        refine ⟨k113 + 1, fun k hk => ?_⟩
+        obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
+        simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::max_lvls», hc12, hc47, hp83, hp97, hk114 k' (by omega)]
+      · dsimp only [List.length] at hc86
+        rcases selectArm_construct_inv (by trivial) sel87 with ⟨ys115, hp116, hl117, ml118, rfl⟩ | ⟨hc119, sel120⟩
+        · rcases ys115 with _ | ⟨y121, _ | ⟨_, _⟩⟩ <;> simp at hl117
+          simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml118
+          subst ml118
+          try rw [hp116] at d6
+          obtain ⟨v122, m123, bs124, d125, mt126, d127⟩ := d6.letValue_inv
+          obtain ⟨l128, rfl⟩ := d125.var_inv
+          simp at l128
+          subst l128
+          obtain ⟨ys129, hp130, hl131, ml132⟩ := matchPattern_construct_inv mt126
+          rcases ys129 with _ | ⟨y133, _ | ⟨y134, _ | ⟨y135, _ | ⟨_, _⟩⟩⟩⟩ <;> simp at hl131
+          try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp130
+          simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml132
+          subst ml132
+          try rw [hp130] at d127
+          obtain ⟨vs136, m137, args138, callee139⟩ := d127.call_inv
+          obtain ⟨v140, vs141, m142, rfl, d143, args144⟩ := args138.cons_inv
+          obtain ⟨l145, rfl⟩ := d143.var_inv
+          simp at l145
+          subst l145
+          obtain ⟨rfl, rfl⟩ := args144.nil_inv
+          rw [instanceName_plain_some] at callee139
+          obtain ⟨k146, hk147⟩ := «UInt64::to_field».of_eval callee139
+          refine ⟨k146 + 1, fun k hk => ?_⟩
+          obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
+          simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::max_lvls», hc12, hc47, hc86, hp116, hp130, hk147 k' (by omega)]
+        · dsimp only [List.length] at hc119
+          rcases selectArm_construct_inv (by trivial) sel120 with ⟨ys148, hp149, hl150, ml151, rfl⟩ | ⟨hc152, sel153⟩
+          · rcases ys148 with _ | ⟨y154, _ | ⟨_, _⟩⟩ <;> simp at hl150
+            simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml151
+            subst ml151
+            try rw [hp149] at d6
+            obtain ⟨vs155, m156, args157, callee158⟩ := d6.call_inv
+            obtain ⟨v159, vs160, m161, rfl, d162, args163⟩ := args157.cons_inv
+            obtain ⟨l164, rfl⟩ := d162.var_inv
+            simp at l164
+            subst l164
+            obtain ⟨v165, vs166, m167, rfl, d168, args169⟩ := args163.cons_inv
+            obtain ⟨rfl, rfl⟩ := d168.literal_inv
+            obtain ⟨rfl, rfl⟩ := args169.nil_inv
+            rw [instanceName_plain_some] at callee158
+            obtain ⟨k170, hk171⟩ := ih2 callee158
+            refine ⟨k170 + 1, fun k hk => ?_⟩
+            obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
+            simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::max_lvls», hc12, hc47, hc86, hc119, hp149, hk171 k' (by omega)]
+          · dsimp only [List.length] at hc152
+            obtain ⟨rfl, rfl⟩ := selectArm_wildcard_inv sel153
+            obtain ⟨rfl, rfl⟩ := d6.literal_inv
+            refine ⟨1, fun k hk => ?_⟩
+            obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
+            simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::max_lvls», hc12, hc47, hc86, hc119, hc152]
+
+/-- The mirror of `IxonDeserialize::binder_block_lt`. -/
+def «IxonDeserialize::binder_block_lt» : Nat → Heap F → SourceValue F → SourceValue F → Option (SourceValue F × Heap F)
+  | 0, _, _, _ => none
+  | k + 1, h, x_a, x_b =>
+    match x_a with
+      | .construct e13 "Mk" [x_ea, x_ia, x_va, _] =>
+        if e13 = constructorName [] (.named "Ixon::BinderBlock" []) then
+          match x_b with
+            | .construct e12 "Mk" [x_eb, x_ib, x_vb, _] =>
+              if e12 = constructorName [] (.named "Ixon::BinderBlock" []) then
+                (do
+                  let (v0, h1) ← match evalBinOp .sub x_ea x_eb with
+                    | .ok z => some (z, h)
+                    | .error _ => none
+                  if v0 = .field 0 then
+                    (do
+                      let (v2, h3) ← «UInt64::to_field» k h1 x_ia
+                      let x_i := v2
+                      (do
+                        let (v4, h5) ← «UInt64::to_field» k h3 x_ib
+                        let x_j := v4
+                        (do
+                          let (v6, h7) ← match evalBinOp .sub x_i x_j with
+                            | .ok z => some (z, h5)
+                            | .error _ => none
+                          if v6 = .field 0 then
+                            (do
+                              let (v8, h9) ← «UInt64::to_field» k h7 x_va
+                              let (v10, h11) ← «UInt64::to_field» k h9 x_vb
+                              «UInt32::less_than_fields» k h11 v8 v10)
+                          else
+                            «UInt32::less_than_fields» k h7 x_i x_j)))
+                  else
+                    some (x_eb, h1))
+              else none
+            | _ => none
+        else none
+      | _ => none
+
+/-- Every derivation of `IxonDeserialize::binder_block_lt` is a run of its mirror. -/
+abbrev «IxonDeserialize::binder_block_lt».Complete : Prop :=
+  ∀ {x_a x_b : SourceValue F} {h h' : Heap F} {r : SourceValue F},
+    EvalFn W "IxonDeserialize::binder_block_lt" [x_a, x_b] h r h' → ∃ k0, ∀ k ≥ k0, «IxonDeserialize::binder_block_lt» k h x_a x_b = some (r, h')
+
+theorem «IxonDeserialize::binder_block_lt».of_eval (ih1 : «UInt32::less_than_fields».Complete) : «IxonDeserialize::binder_block_lt».Complete := by
+  intro x_a x_b h h' r ev
+  have body := ev.function_inv IxVM.IxonDeserialize.binder_block_lt.lookup
+    (by simp [IxVM.IxonDeserialize.binder_block_lt, ControlLower.hasControl])
+  simp only [IxVM.IxonDeserialize.binder_block_lt] at body
+  obtain ⟨v0, m1, bs2, d3, mt4, d5⟩ := body.letValue_inv
+  obtain ⟨l6, rfl⟩ := d3.var_inv
+  simp at l6
+  subst l6
+  obtain ⟨ys7, hp8, hl9, ml10⟩ := matchPattern_construct_inv mt4
+  rcases ys7 with _ | ⟨y11, _ | ⟨y12, _ | ⟨y13, _ | ⟨y14, _ | ⟨_, _⟩⟩⟩⟩⟩ <;> simp at hl9
+  try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp8
+  simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml10
+  subst ml10
+  try rw [hp8] at d5
+  obtain ⟨v15, m16, bs17, d18, mt19, d20⟩ := d5.letValue_inv
+  obtain ⟨l21, rfl⟩ := d18.var_inv
+  simp at l21
+  subst l21
+  obtain ⟨ys22, hp23, hl24, ml25⟩ := matchPattern_construct_inv mt19
+  rcases ys22 with _ | ⟨y26, _ | ⟨y27, _ | ⟨y28, _ | ⟨y29, _ | ⟨_, _⟩⟩⟩⟩⟩ <;> simp at hl24
+  try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp23
+  simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml25
+  subst ml25
+  try rw [hp23] at d20
+  obtain ⟨v30, m31, bs32, body33, d34, sel35, d36⟩ := d20.matchValue_inv
+  obtain ⟨x37, y38, m39, d40, d41, op42⟩ := d34.binary_inv
+  obtain ⟨l43, rfl⟩ := d40.var_inv
+  simp at l43
+  subst l43
+  obtain ⟨l44, rfl⟩ := d41.var_inv
+  simp at l44
+  subst l44
+  rcases selectArm_literal_inv sel35 with ⟨hc45, rfl, rfl⟩ | ⟨hc45, sel46⟩
+  · obtain ⟨v47, m48, bs49, d50, mt51, d52⟩ := d36.letValue_inv
+    obtain ⟨vs53, m54, args55, callee56⟩ := d50.call_inv
+    obtain ⟨v57, vs58, m59, rfl, d60, args61⟩ := args55.cons_inv
+    obtain ⟨l62, rfl⟩ := d60.var_inv
+    simp at l62
+    subst l62
+    obtain ⟨rfl, rfl⟩ := args61.nil_inv
+    rw [instanceName_plain_some] at callee56
+    obtain ⟨k63, hk64⟩ := «UInt64::to_field».of_eval callee56
+    rw [matchPattern_bind] at mt51
+    simp only [Except.ok.injEq, Option.some.injEq] at mt51
+    subst mt51
+    obtain ⟨v65, m66, bs67, d68, mt69, d70⟩ := d52.letValue_inv
+    obtain ⟨vs71, m72, args73, callee74⟩ := d68.call_inv
+    obtain ⟨v75, vs76, m77, rfl, d78, args79⟩ := args73.cons_inv
+    obtain ⟨l80, rfl⟩ := d78.var_inv
+    simp at l80
+    subst l80
+    obtain ⟨rfl, rfl⟩ := args79.nil_inv
+    rw [instanceName_plain_some] at callee74
+    obtain ⟨k81, hk82⟩ := «UInt64::to_field».of_eval callee74
+    rw [matchPattern_bind] at mt69
+    simp only [Except.ok.injEq, Option.some.injEq] at mt69
+    subst mt69
+    obtain ⟨v83, m84, bs85, body86, d87, sel88, d89⟩ := d70.matchValue_inv
+    obtain ⟨x90, y91, m92, d93, d94, op95⟩ := d87.binary_inv
+    obtain ⟨l96, rfl⟩ := d93.var_inv
+    simp at l96
+    subst l96
+    obtain ⟨l97, rfl⟩ := d94.var_inv
+    simp at l97
+    subst l97
+    rcases selectArm_literal_inv sel88 with ⟨hc98, rfl, rfl⟩ | ⟨hc98, sel99⟩
+    · obtain ⟨vs100, m101, args102, callee103⟩ := d89.call_inv
+      obtain ⟨v104, vs105, m106, rfl, d107, args108⟩ := args102.cons_inv
+      obtain ⟨vs109, m110, args111, callee112⟩ := d107.call_inv
+      obtain ⟨v113, vs114, m115, rfl, d116, args117⟩ := args111.cons_inv
+      obtain ⟨l118, rfl⟩ := d116.var_inv
+      simp at l118
+      subst l118
+      obtain ⟨rfl, rfl⟩ := args117.nil_inv
+      rw [instanceName_plain_some] at callee112
+      obtain ⟨k119, hk120⟩ := «UInt64::to_field».of_eval callee112
+      obtain ⟨v121, vs122, m123, rfl, d124, args125⟩ := args108.cons_inv
+      obtain ⟨vs126, m127, args128, callee129⟩ := d124.call_inv
+      obtain ⟨v130, vs131, m132, rfl, d133, args134⟩ := args128.cons_inv
+      obtain ⟨l135, rfl⟩ := d133.var_inv
+      simp at l135
+      subst l135
+      obtain ⟨rfl, rfl⟩ := args134.nil_inv
+      rw [instanceName_plain_some] at callee129
+      obtain ⟨k136, hk137⟩ := «UInt64::to_field».of_eval callee129
+      obtain ⟨rfl, rfl⟩ := args125.nil_inv
+      rw [instanceName_plain_some] at callee103
+      obtain ⟨k138, hk139⟩ := ih1 callee103
+      refine ⟨k63 + k81 + k119 + k136 + k138 + 1, fun k hk => ?_⟩
+      obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
+      simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::binder_block_lt», hp8, hp23, op42, hc45, hk64 k' (by omega), hk82 k' (by omega), op95, hc98, hk120 k' (by omega), hk137 k' (by omega), hk139 k' (by omega)]
+    · obtain ⟨rfl, rfl⟩ := selectArm_wildcard_inv sel99
+      obtain ⟨vs140, m141, args142, callee143⟩ := d89.call_inv
+      obtain ⟨v144, vs145, m146, rfl, d147, args148⟩ := args142.cons_inv
+      obtain ⟨l149, rfl⟩ := d147.var_inv
+      simp at l149
+      subst l149
+      obtain ⟨v150, vs151, m152, rfl, d153, args154⟩ := args148.cons_inv
+      obtain ⟨l155, rfl⟩ := d153.var_inv
+      simp at l155
+      subst l155
+      obtain ⟨rfl, rfl⟩ := args154.nil_inv
+      rw [instanceName_plain_some] at callee143
+      obtain ⟨k156, hk157⟩ := ih1 callee143
+      refine ⟨k63 + k81 + k156 + 1, fun k hk => ?_⟩
+      obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
+      simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::binder_block_lt», hp8, hp23, op42, hc45, hk64 k' (by omega), hk82 k' (by omega), op95, hc98, hk157 k' (by omega)]
+  · obtain ⟨rfl, rfl⟩ := selectArm_wildcard_inv sel46
+    obtain ⟨l158, rfl⟩ := d36.var_inv
+    simp at l158
+    subst l158
+    refine ⟨1, fun k hk => ?_⟩
+    obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
+    simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::binder_block_lt», hp8, hp23, op42, hc45]
+
+/-- The mirror of `IxonDeserialize::assert_blocks_ascending`. -/
+def «IxonDeserialize::assert_blocks_ascending» : Nat → Heap F → SourceValue F → Option (SourceValue F × Heap F)
+  | 0, _, _ => none
+  | k + 1, h, x_blocks =>
+    (do
+      let (v0, h1) ← match loadValue h x_blocks with
+        | .ok z => some (z, h)
+        | .error _ => none
+      matchConstruct (constructorName [] (.named "Lists::Node" [(.named "Ixon::BinderBlock" [])])) "Nil" 0 v0
+        (fun _ =>
+          some ((.tuple [] : SourceValue F), h1))
+        (matchConstruct (constructorName [] (.named "Lists::Node" [(.named "Ixon::BinderBlock" [])])) "Cons" 2 v0
+          (fun
+            | [x_a, x_rest] =>
+              (do
+                let (v2, h3) ← match loadValue h1 x_rest with
+                  | .ok z => some (z, h1)
+                  | .error _ => none
+                matchConstruct (constructorName [] (.named "Lists::Node" [(.named "Ixon::BinderBlock" [])])) "Nil" 0 v2
+                  (fun _ =>
+                    some ((.tuple [] : SourceValue F), h3))
+                  (matchConstruct (constructorName [] (.named "Lists::Node" [(.named "Ixon::BinderBlock" [])])) "Cons" 2 v2
+                    (fun
+                      | [x_b, _] =>
+                        (do
+                          let (v4, h5) ← (do
+                            let (v6, h7) ← «IxonDeserialize::binder_block_lt» k h3 x_a x_b
+                            match Builtin.apply (.assertEq { message := (some "binder data: blocks are not strictly ascending"), runtimeCheck := true }) [v6, (.field 1)] with
+                              | .ok z => some (z, h7)
+                              | .error _ => none)
+                          «IxonDeserialize::assert_blocks_ascending» k h5 x_rest)
+                      | _ => none)
+                    (none)))
+            | _ => none)
+          (none)))
+
+/-- Every derivation of `IxonDeserialize::assert_blocks_ascending` is a run of its mirror. -/
+abbrev «IxonDeserialize::assert_blocks_ascending».Complete : Prop :=
+  ∀ {x_blocks : SourceValue F} {h h' : Heap F} {r : SourceValue F},
+    EvalFn W "IxonDeserialize::assert_blocks_ascending" [x_blocks] h r h' → ∃ k0, ∀ k ≥ k0, «IxonDeserialize::assert_blocks_ascending» k h x_blocks = some (r, h')
 
 /-- The mirror of `UInt64::saturating_pred`. -/
 def «UInt64::saturating_pred» : Nat → Heap F → SourceValue F → Option (SourceValue F × Heap F)
@@ -1218,6 +2044,58 @@ theorem «UInt64::saturating_pred».of_eval : «UInt64::saturating_pred».Comple
     obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
     simp (config := { decide := true, maxSteps := 10000000 }) [«UInt64::saturating_pred», hp8, hk37 k' (by omega), hc38, hk773 k' (by omega), op761, hm774]
 
+/-- The mirror of `IxonDeserialize::assert_params_canonical`. -/
+def «IxonDeserialize::assert_params_canonical» : Nat → Heap F → SourceValue F → SourceValue F → Option (SourceValue F × Heap F)
+  | 0, _, _, _ => none
+  | k + 1, h, x_params, x_lvls =>
+    (do
+      let (v0, h1) ← match loadValue h x_params with
+        | .ok z => some (z, h)
+        | .error _ => none
+      matchConstruct (constructorName [] (.named "Lists::Node" [(.array .field 8)])) "Nil" 0 v0
+        (fun _ =>
+          some ((.tuple [] : SourceValue F), h1))
+        (matchConstruct (constructorName [] (.named "Lists::Node" [(.array .field 8)])) "Cons" 2 v0
+          (fun
+            | [x_p, x_rest] =>
+              (do
+                let (v2, h3) ← «UInt64::to_field» k h1 x_p
+                let x_pf := v2
+                (do
+                  let (v4, h5) ← (do
+                    let (v6, h7) ← «UInt32::less_than_fields» k h3 x_pf x_lvls
+                    match Builtin.apply (.assertEq { message := (some "binder data: a parameter is not below the level count"), runtimeCheck := true }) [v6, (.field 1)] with
+                      | .ok z => some (z, h7)
+                      | .error _ => none)
+                  (do
+                    let (v8, h9) ← match loadValue h5 x_rest with
+                      | .ok z => some (z, h5)
+                      | .error _ => none
+                    matchConstruct (constructorName [] (.named "Lists::Node" [(.array .field 8)])) "Nil" 0 v8
+                      (fun _ =>
+                        some ((.tuple [] : SourceValue F), h9))
+                      (matchConstruct (constructorName [] (.named "Lists::Node" [(.array .field 8)])) "Cons" 2 v8
+                        (fun
+                          | [x_q, _] =>
+                            (do
+                              let (v10, h11) ← (do
+                                let (v12, h13) ← (do
+                                  let (v14, h15) ← «UInt64::to_field» k h9 x_q
+                                  «UInt32::less_than_fields» k h15 x_pf v14)
+                                match Builtin.apply (.assertEq { message := (some "binder data: parameters are not strictly ascending"), runtimeCheck := true }) [v12, (.field 1)] with
+                                  | .ok z => some (z, h13)
+                                  | .error _ => none)
+                              «IxonDeserialize::assert_params_canonical» k h11 x_rest x_lvls)
+                          | _ => none)
+                        (none)))))
+            | _ => none)
+          (none)))
+
+/-- Every derivation of `IxonDeserialize::assert_params_canonical` is a run of its mirror. -/
+abbrev «IxonDeserialize::assert_params_canonical».Complete : Prop :=
+  ∀ {x_params x_lvls : SourceValue F} {h h' : Heap F} {r : SourceValue F},
+    EvalFn W "IxonDeserialize::assert_params_canonical" [x_params, x_lvls] h r h' → ∃ k0, ∀ k ≥ k0, «IxonDeserialize::assert_params_canonical» k h x_params x_lvls = some (r, h')
+
 /-- The mirror of `UInt64::is_zero`. -/
 def «UInt64::is_zero» : Nat → Heap F → SourceValue F → Option (SourceValue F × Heap F)
   | 0, _, _ => none
@@ -1251,6 +2129,804 @@ theorem «UInt64::is_zero».of_eval : «UInt64::is_zero».Complete := by
     refine ⟨1, fun k hk => ?_⟩
     obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
     simp (config := { decide := true, maxSteps := 10000000 }) [«UInt64::is_zero», hc8]
+
+/-- The mirror of `IxonDeserialize::get_u64_list`. -/
+def «IxonDeserialize::get_u64_list» : Nat → Heap F → SourceValue F → SourceValue F → Option (SourceValue F × Heap F)
+  | 0, _, _, _ => none
+  | k + 1, h, x_stream, x_count =>
+    (do
+      let (v0, h1) ← «UInt64::is_zero» k h x_count
+      let x_is_zero := v0
+      if x_is_zero = .field 1 then
+        (do
+          let (v12, h13) ← (do
+            let (v14, h15) ← some ((.construct (instanceName [] "Lists::Node" (some [(.array .field 8)])) "Nil" [] : SourceValue F), h1)
+            some ((.ptr v14.type h15.length : SourceValue F), h15 ++ [v14]))
+          some ((.tuple [v12, x_stream] : SourceValue F), h13))
+      else
+        if x_is_zero = .field 0 then
+          (do
+            let (v2, h3) ← «IxonDeserialize::get_tagn0» k h1 x_stream
+            match v2 with
+              | .tuple [x_val, x_s] =>
+                (do
+                  let (v4, h5) ← (do
+                    let (v6, h7) ← «UInt64::saturating_pred» k h3 x_count
+                    «IxonDeserialize::get_u64_list» k h7 x_s v6)
+                  match v4 with
+                    | .tuple [x_rest, x_s2] =>
+                      (do
+                        let (v8, h9) ← (do
+                          let (v10, h11) ← some ((.construct (instanceName [] "Lists::Node" (some [(.array .field 8)])) "Cons" [x_val, x_rest] : SourceValue F), h5)
+                          some ((.ptr v10.type h11.length : SourceValue F), h11 ++ [v10]))
+                        some ((.tuple [v8, x_s2] : SourceValue F), h9))
+                    | _ => none)
+              | _ => none)
+        else
+          none)
+
+/-- Every derivation of `IxonDeserialize::get_u64_list` is a run of its mirror. -/
+abbrev «IxonDeserialize::get_u64_list».Complete : Prop :=
+  ∀ {x_stream x_count : SourceValue F} {h h' : Heap F} {r : SourceValue F},
+    EvalFn W "IxonDeserialize::get_u64_list" [x_stream, x_count] h r h' → ∃ k0, ∀ k ≥ k0, «IxonDeserialize::get_u64_list» k h x_stream x_count = some (r, h')
+
+/-- The mirror of `IxonDeserialize::read_byte`. -/
+def «IxonDeserialize::read_byte» : Nat → Heap F → SourceValue F → Option (SourceValue F × Heap F)
+  | 0, _, _ => none
+  | k + 1, h, x_stream =>
+    (do
+      let (v0, h1) ← match loadValue h x_stream with
+        | .ok z => some (z, h)
+        | .error _ => none
+      match v0 with
+        | .construct e2 "Cons" [x_byte, x_rest] =>
+          if e2 = constructorName [] (.named "Lists::Node" [.field]) then
+            some ((.tuple [x_byte, x_rest] : SourceValue F), h1)
+          else none
+        | _ => none)
+
+/-- Every derivation of `IxonDeserialize::read_byte` is a run of its mirror. -/
+abbrev «IxonDeserialize::read_byte».Complete : Prop :=
+  ∀ {x_stream : SourceValue F} {h h' : Heap F} {r : SourceValue F},
+    EvalFn W "IxonDeserialize::read_byte" [x_stream] h r h' → ∃ k0, ∀ k ≥ k0, «IxonDeserialize::read_byte» k h x_stream = some (r, h')
+
+theorem «IxonDeserialize::read_byte».of_eval : «IxonDeserialize::read_byte».Complete := by
+  intro x_stream h h' r ev
+  have body := ev.function_inv IxVM.IxonDeserialize.read_byte.lookup
+    (by simp [IxVM.IxonDeserialize.read_byte, ControlLower.hasControl])
+  simp only [IxVM.IxonDeserialize.read_byte] at body
+  obtain ⟨v0, m1, bs2, d3, mt4, d5⟩ := body.letValue_inv
+  obtain ⟨p6, d7, ld8⟩ := d3.load_inv
+  obtain ⟨l9, rfl⟩ := d7.var_inv
+  simp at l9
+  subst l9
+  obtain ⟨ys10, hp11, hl12, ml13⟩ := matchPattern_construct_inv mt4
+  rcases ys10 with _ | ⟨y14, _ | ⟨y15, _ | ⟨_, _⟩⟩⟩ <;> simp at hl12
+  try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp11
+  simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml13
+  subst ml13
+  obtain ⟨vs16, args17, rfl⟩ := d5.tuple_inv
+  obtain ⟨v18, vs19, m20, rfl, d21, args22⟩ := args17.cons_inv
+  obtain ⟨l23, rfl⟩ := d21.var_inv
+  simp at l23
+  subst l23
+  obtain ⟨v24, vs25, m26, rfl, d27, args28⟩ := args22.cons_inv
+  obtain ⟨l29, rfl⟩ := d27.var_inv
+  simp at l29
+  subst l29
+  obtain ⟨rfl, rfl⟩ := args28.nil_inv
+  refine ⟨1, fun k hk => ?_⟩
+  obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
+  simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::read_byte», ld8, hp11]
+
+/-- The mirror of `IxonDeserialize::get_binder_node`. -/
+def «IxonDeserialize::get_binder_node» : Nat → Heap F → SourceValue F → SourceValue F → Option (SourceValue F × Heap F)
+  | 0, _, _, _ => none
+  | k + 1, h, x_stream, x_lvls =>
+    (do
+      let (v0, h1) ← «IxonDeserialize::read_byte» k h x_stream
+      match v0 with
+        | .tuple [x_tag, x_s] =>
+          (do
+            let (v2, h3) ← «UInt8::to_field» k h1 x_tag
+            if v2 = .field 0 then
+              (do
+                let (v24, h25) ← some ((.construct (instanceName [] "Ixon::BinderNode" (some [])) "Never" [] : SourceValue F), h3)
+                some ((.tuple [v24, x_s] : SourceValue F), h25))
+            else
+              if v2 = .field 1 then
+                (do
+                  let (v22, h23) ← some ((.construct (instanceName [] "Ixon::BinderNode" (some [])) "Zero" [] : SourceValue F), h3)
+                  some ((.tuple [v22, x_s] : SourceValue F), h23))
+              else
+                if v2 = .field 2 then
+                  (do
+                    let (v10, h11) ← «IxonDeserialize::get_tagn0» k h3 x_s
+                    match v10 with
+                      | .tuple [x_count, x_s2] =>
+                        (do
+                          let (v12, h13) ← (do
+                            let (v14, h15) ← «UInt64::is_zero» k h11 x_count
+                            match Builtin.apply (.assertEq { message := (some "binder data: an empty parameter list"), runtimeCheck := true }) [v14, (.field 0)] with
+                              | .ok z => some (z, h15)
+                              | .error _ => none)
+                          (do
+                            let (v16, h17) ← «IxonDeserialize::get_u64_list» k h13 x_s2 x_count
+                            match v16 with
+                              | .tuple [x_params, x_s3] =>
+                                (do
+                                  let (v18, h19) ← «IxonDeserialize::assert_params_canonical» k h17 x_params x_lvls
+                                  (do
+                                    let (v20, h21) ← some ((.construct (instanceName [] "Ixon::BinderNode" (some [])) "IfAllZero" [x_params] : SourceValue F), h19)
+                                    some ((.tuple [v20, x_s3] : SourceValue F), h21)))
+                              | _ => none))
+                      | _ => none)
+                else
+                  if v2 = .field 3 then
+                    (do
+                      let (v6, h7) ← «IxonDeserialize::get_tagn0» k h3 x_s
+                      match v6 with
+                        | .tuple [x_variant, x_s2] =>
+                          (do
+                            let (v8, h9) ← some ((.construct (instanceName [] "Ixon::BinderNode" (some [])) "Share" [x_variant] : SourceValue F), h7)
+                            some ((.tuple [v8, x_s2] : SourceValue F), h9))
+                        | _ => none)
+                  else
+                    if v2 = .field 4 then
+                      (do
+                        let (v4, h5) ← some ((.construct (instanceName [] "Ixon::BinderNode" (some [])) "Undecided" [] : SourceValue F), h3)
+                        some ((.tuple [v4, x_s] : SourceValue F), h5))
+                    else
+                      none)
+        | _ => none)
+
+/-- Every derivation of `IxonDeserialize::get_binder_node` is a run of its mirror. -/
+abbrev «IxonDeserialize::get_binder_node».Complete : Prop :=
+  ∀ {x_stream x_lvls : SourceValue F} {h h' : Heap F} {r : SourceValue F},
+    EvalFn W "IxonDeserialize::get_binder_node" [x_stream, x_lvls] h r h' → ∃ k0, ∀ k ≥ k0, «IxonDeserialize::get_binder_node» k h x_stream x_lvls = some (r, h')
+
+theorem «IxonDeserialize::get_binder_node».of_eval (ih0 : «IxonDeserialize::get_u64_le».Complete) (ih1 : «UInt32::less_than_fields».Complete) (ih4 : «IxonDeserialize::assert_params_canonical».Complete) (ih5 : «IxonDeserialize::get_u64_list».Complete) : «IxonDeserialize::get_binder_node».Complete := by
+  intro x_stream x_lvls h h' r ev
+  have body := ev.function_inv IxVM.IxonDeserialize.get_binder_node.lookup
+    (by simp [IxVM.IxonDeserialize.get_binder_node, ControlLower.hasControl])
+  simp only [IxVM.IxonDeserialize.get_binder_node] at body
+  obtain ⟨v0, m1, bs2, d3, mt4, d5⟩ := body.letValue_inv
+  obtain ⟨vs6, m7, args8, callee9⟩ := d3.call_inv
+  obtain ⟨v10, vs11, m12, rfl, d13, args14⟩ := args8.cons_inv
+  obtain ⟨l15, rfl⟩ := d13.var_inv
+  simp at l15
+  subst l15
+  obtain ⟨rfl, rfl⟩ := args14.nil_inv
+  rw [instanceName_plain_some] at callee9
+  obtain ⟨k16, hk17⟩ := «IxonDeserialize::read_byte».of_eval callee9
+  obtain ⟨ys18, hp19, hl20, ml21⟩ := matchPattern_tuple_inv mt4
+  rcases ys18 with _ | ⟨y22, _ | ⟨y23, _ | ⟨_, _⟩⟩⟩ <;> simp at hl20
+  try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp19
+  simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml21
+  subst ml21
+  obtain ⟨v24, m25, bs26, body27, d28, sel29, d30⟩ := d5.matchValue_inv
+  obtain ⟨vs31, m32, args33, callee34⟩ := d28.call_inv
+  obtain ⟨v35, vs36, m37, rfl, d38, args39⟩ := args33.cons_inv
+  obtain ⟨l40, rfl⟩ := d38.var_inv
+  simp at l40
+  subst l40
+  obtain ⟨rfl, rfl⟩ := args39.nil_inv
+  rw [instanceName_plain_some] at callee34
+  obtain ⟨k41, hk42⟩ := «UInt8::to_field».of_eval callee34
+  rcases selectArm_literal_inv sel29 with ⟨hc43, rfl, rfl⟩ | ⟨hc43, sel44⟩
+  · obtain ⟨vs45, args46, rfl⟩ := d30.tuple_inv
+    obtain ⟨v47, vs48, m49, rfl, d50, args51⟩ := args46.cons_inv
+    obtain ⟨vs52, args53, rfl⟩ := d50.construct_inv
+    obtain ⟨rfl, rfl⟩ := args53.nil_inv
+    obtain ⟨v54, vs55, m56, rfl, d57, args58⟩ := args51.cons_inv
+    obtain ⟨l59, rfl⟩ := d57.var_inv
+    simp at l59
+    subst l59
+    obtain ⟨rfl, rfl⟩ := args58.nil_inv
+    refine ⟨k16 + k41 + 1, fun k hk => ?_⟩
+    obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
+    simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::get_binder_node», hk17 k' (by omega), hp19, hk42 k' (by omega), hc43]
+  · rcases selectArm_literal_inv sel44 with ⟨hc60, rfl, rfl⟩ | ⟨hc60, sel61⟩
+    · obtain ⟨vs62, args63, rfl⟩ := d30.tuple_inv
+      obtain ⟨v64, vs65, m66, rfl, d67, args68⟩ := args63.cons_inv
+      obtain ⟨vs69, args70, rfl⟩ := d67.construct_inv
+      obtain ⟨rfl, rfl⟩ := args70.nil_inv
+      obtain ⟨v71, vs72, m73, rfl, d74, args75⟩ := args68.cons_inv
+      obtain ⟨l76, rfl⟩ := d74.var_inv
+      simp at l76
+      subst l76
+      obtain ⟨rfl, rfl⟩ := args75.nil_inv
+      refine ⟨k16 + k41 + 1, fun k hk => ?_⟩
+      obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
+      simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::get_binder_node», hk17 k' (by omega), hp19, hk42 k' (by omega), hc43, hc60]
+    · rcases selectArm_literal_inv sel61 with ⟨hc77, rfl, rfl⟩ | ⟨hc77, sel78⟩
+      · obtain ⟨v79, m80, bs81, d82, mt83, d84⟩ := d30.letValue_inv
+        obtain ⟨vs85, m86, args87, callee88⟩ := d82.call_inv
+        obtain ⟨v89, vs90, m91, rfl, d92, args93⟩ := args87.cons_inv
+        obtain ⟨l94, rfl⟩ := d92.var_inv
+        simp at l94
+        subst l94
+        obtain ⟨rfl, rfl⟩ := args93.nil_inv
+        rw [instanceName_plain_some] at callee88
+        obtain ⟨k95, hk96⟩ := «IxonDeserialize::get_tagn0».of_eval ih0 callee88
+        obtain ⟨ys97, hp98, hl99, ml100⟩ := matchPattern_tuple_inv mt83
+        rcases ys97 with _ | ⟨y101, _ | ⟨y102, _ | ⟨_, _⟩⟩⟩ <;> simp at hl99
+        try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp98
+        simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml100
+        subst ml100
+        obtain ⟨v103, m104, bs105, d106, mt107, d108⟩ := d84.letValue_inv
+        obtain ⟨vs109, args110, ap111⟩ := d106.builtin_inv
+        obtain ⟨v112, vs113, m114, rfl, d115, args116⟩ := args110.cons_inv
+        obtain ⟨vs117, m118, args119, callee120⟩ := d115.call_inv
+        obtain ⟨v121, vs122, m123, rfl, d124, args125⟩ := args119.cons_inv
+        obtain ⟨l126, rfl⟩ := d124.var_inv
+        simp at l126
+        subst l126
+        obtain ⟨rfl, rfl⟩ := args125.nil_inv
+        rw [instanceName_plain_some] at callee120
+        obtain ⟨k127, hk128⟩ := «UInt64::is_zero».of_eval callee120
+        obtain ⟨v129, vs130, m131, rfl, d132, args133⟩ := args116.cons_inv
+        obtain ⟨rfl, rfl⟩ := d132.literal_inv
+        obtain ⟨rfl, rfl⟩ := args133.nil_inv
+        rw [matchPattern_wildcard] at mt107
+        simp only [Except.ok.injEq, Option.some.injEq] at mt107
+        subst mt107
+        obtain ⟨v134, m135, bs136, d137, mt138, d139⟩ := d108.letValue_inv
+        obtain ⟨vs140, m141, args142, callee143⟩ := d137.call_inv
+        obtain ⟨v144, vs145, m146, rfl, d147, args148⟩ := args142.cons_inv
+        obtain ⟨l149, rfl⟩ := d147.var_inv
+        simp at l149
+        subst l149
+        obtain ⟨v150, vs151, m152, rfl, d153, args154⟩ := args148.cons_inv
+        obtain ⟨l155, rfl⟩ := d153.var_inv
+        simp at l155
+        subst l155
+        obtain ⟨rfl, rfl⟩ := args154.nil_inv
+        rw [instanceName_plain_some] at callee143
+        obtain ⟨k156, hk157⟩ := ih5 callee143
+        obtain ⟨ys158, hp159, hl160, ml161⟩ := matchPattern_tuple_inv mt138
+        rcases ys158 with _ | ⟨y162, _ | ⟨y163, _ | ⟨_, _⟩⟩⟩ <;> simp at hl160
+        try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp159
+        simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml161
+        subst ml161
+        obtain ⟨v164, m165, bs166, d167, mt168, d169⟩ := d139.letValue_inv
+        obtain ⟨vs170, m171, args172, callee173⟩ := d167.call_inv
+        obtain ⟨v174, vs175, m176, rfl, d177, args178⟩ := args172.cons_inv
+        obtain ⟨l179, rfl⟩ := d177.var_inv
+        simp at l179
+        subst l179
+        obtain ⟨v180, vs181, m182, rfl, d183, args184⟩ := args178.cons_inv
+        obtain ⟨l185, rfl⟩ := d183.var_inv
+        simp at l185
+        subst l185
+        obtain ⟨rfl, rfl⟩ := args184.nil_inv
+        rw [instanceName_plain_some] at callee173
+        obtain ⟨k186, hk187⟩ := ih4 callee173
+        rw [matchPattern_wildcard] at mt168
+        simp only [Except.ok.injEq, Option.some.injEq] at mt168
+        subst mt168
+        obtain ⟨vs188, args189, rfl⟩ := d169.tuple_inv
+        obtain ⟨v190, vs191, m192, rfl, d193, args194⟩ := args189.cons_inv
+        obtain ⟨vs195, args196, rfl⟩ := d193.construct_inv
+        obtain ⟨v197, vs198, m199, rfl, d200, args201⟩ := args196.cons_inv
+        obtain ⟨l202, rfl⟩ := d200.var_inv
+        simp at l202
+        subst l202
+        obtain ⟨rfl, rfl⟩ := args201.nil_inv
+        obtain ⟨v203, vs204, m205, rfl, d206, args207⟩ := args194.cons_inv
+        obtain ⟨l208, rfl⟩ := d206.var_inv
+        simp at l208
+        subst l208
+        obtain ⟨rfl, rfl⟩ := args207.nil_inv
+        refine ⟨k16 + k41 + k95 + k127 + k156 + k186 + 1, fun k hk => ?_⟩
+        obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
+        simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::get_binder_node», hk17 k' (by omega), hp19, hk42 k' (by omega), hc43, hc60, hc77, hk96 k' (by omega), hp98, ap111, hk128 k' (by omega), hk157 k' (by omega), hp159, hk187 k' (by omega)]
+      · rcases selectArm_literal_inv sel78 with ⟨hc209, rfl, rfl⟩ | ⟨hc209, sel210⟩
+        · obtain ⟨v211, m212, bs213, d214, mt215, d216⟩ := d30.letValue_inv
+          obtain ⟨vs217, m218, args219, callee220⟩ := d214.call_inv
+          obtain ⟨v221, vs222, m223, rfl, d224, args225⟩ := args219.cons_inv
+          obtain ⟨l226, rfl⟩ := d224.var_inv
+          simp at l226
+          subst l226
+          obtain ⟨rfl, rfl⟩ := args225.nil_inv
+          rw [instanceName_plain_some] at callee220
+          obtain ⟨k227, hk228⟩ := «IxonDeserialize::get_tagn0».of_eval ih0 callee220
+          obtain ⟨ys229, hp230, hl231, ml232⟩ := matchPattern_tuple_inv mt215
+          rcases ys229 with _ | ⟨y233, _ | ⟨y234, _ | ⟨_, _⟩⟩⟩ <;> simp at hl231
+          try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp230
+          simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml232
+          subst ml232
+          obtain ⟨vs235, args236, rfl⟩ := d216.tuple_inv
+          obtain ⟨v237, vs238, m239, rfl, d240, args241⟩ := args236.cons_inv
+          obtain ⟨vs242, args243, rfl⟩ := d240.construct_inv
+          obtain ⟨v244, vs245, m246, rfl, d247, args248⟩ := args243.cons_inv
+          obtain ⟨l249, rfl⟩ := d247.var_inv
+          simp at l249
+          subst l249
+          obtain ⟨rfl, rfl⟩ := args248.nil_inv
+          obtain ⟨v250, vs251, m252, rfl, d253, args254⟩ := args241.cons_inv
+          obtain ⟨l255, rfl⟩ := d253.var_inv
+          simp at l255
+          subst l255
+          obtain ⟨rfl, rfl⟩ := args254.nil_inv
+          refine ⟨k16 + k41 + k227 + 1, fun k hk => ?_⟩
+          obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
+          simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::get_binder_node», hk17 k' (by omega), hp19, hk42 k' (by omega), hc43, hc60, hc77, hc209, hk228 k' (by omega), hp230]
+        · rcases selectArm_literal_inv sel210 with ⟨hc256, rfl, rfl⟩ | ⟨hc256, sel257⟩
+          · obtain ⟨vs258, args259, rfl⟩ := d30.tuple_inv
+            obtain ⟨v260, vs261, m262, rfl, d263, args264⟩ := args259.cons_inv
+            obtain ⟨vs265, args266, rfl⟩ := d263.construct_inv
+            obtain ⟨rfl, rfl⟩ := args266.nil_inv
+            obtain ⟨v267, vs268, m269, rfl, d270, args271⟩ := args264.cons_inv
+            obtain ⟨l272, rfl⟩ := d270.var_inv
+            simp at l272
+            subst l272
+            obtain ⟨rfl, rfl⟩ := args271.nil_inv
+            refine ⟨k16 + k41 + 1, fun k hk => ?_⟩
+            obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
+            simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::get_binder_node», hk17 k' (by omega), hp19, hk42 k' (by omega), hc43, hc60, hc77, hc209, hc256]
+          · simp [SourceSemantics.selectArm] at sel257
+
+/-- The mirror of `IxonDeserialize::get_binder_node_list`. -/
+def «IxonDeserialize::get_binder_node_list» : Nat → Heap F → SourceValue F → SourceValue F → SourceValue F → Option (SourceValue F × Heap F)
+  | 0, _, _, _, _ => none
+  | k + 1, h, x_stream, x_count, x_lvls =>
+    (do
+      let (v0, h1) ← «UInt64::is_zero» k h x_count
+      let x_is_zero := v0
+      if x_is_zero = .field 1 then
+        (do
+          let (v12, h13) ← (do
+            let (v14, h15) ← some ((.construct (instanceName [] "Lists::Node" (some [(.named "Ixon::BinderNode" [])])) "Nil" [] : SourceValue F), h1)
+            some ((.ptr v14.type h15.length : SourceValue F), h15 ++ [v14]))
+          some ((.tuple [v12, x_stream] : SourceValue F), h13))
+      else
+        if x_is_zero = .field 0 then
+          (do
+            let (v2, h3) ← «IxonDeserialize::get_binder_node» k h1 x_stream x_lvls
+            match v2 with
+              | .tuple [x_node, x_s] =>
+                (do
+                  let (v4, h5) ← (do
+                    let (v6, h7) ← «UInt64::saturating_pred» k h3 x_count
+                    «IxonDeserialize::get_binder_node_list» k h7 x_s v6 x_lvls)
+                  match v4 with
+                    | .tuple [x_rest, x_s2] =>
+                      (do
+                        let (v8, h9) ← (do
+                          let (v10, h11) ← some ((.construct (instanceName [] "Lists::Node" (some [(.named "Ixon::BinderNode" [])])) "Cons" [x_node, x_rest] : SourceValue F), h5)
+                          some ((.ptr v10.type h11.length : SourceValue F), h11 ++ [v10]))
+                        some ((.tuple [v8, x_s2] : SourceValue F), h9))
+                    | _ => none)
+              | _ => none)
+        else
+          none)
+
+/-- Every derivation of `IxonDeserialize::get_binder_node_list` is a run of its mirror. -/
+abbrev «IxonDeserialize::get_binder_node_list».Complete : Prop :=
+  ∀ {x_stream x_count x_lvls : SourceValue F} {h h' : Heap F} {r : SourceValue F},
+    EvalFn W "IxonDeserialize::get_binder_node_list" [x_stream, x_count, x_lvls] h r h' → ∃ k0, ∀ k ≥ k0, «IxonDeserialize::get_binder_node_list» k h x_stream x_count x_lvls = some (r, h')
+
+/-- The mirror of `IxonDeserialize::assert_wire_bool`. -/
+def «IxonDeserialize::assert_wire_bool» : Nat → Heap F → SourceValue F → Option (SourceValue F × Heap F)
+  | 0, _, _ => none
+  | k + 1, h, x_b =>
+    (do
+      let (v0, h1) ← (do
+        let (v2, h3) ← «UInt8::less_than» k h x_b (.field 2)
+        match Builtin.apply (.assertEq { message := (some "Bool byte is not 0 or 1"), runtimeCheck := true }) [v2, (.field 1)] with
+          | .ok z => some (z, h3)
+          | .error _ => none)
+      some ((.tuple [] : SourceValue F), h1))
+
+/-- Every derivation of `IxonDeserialize::assert_wire_bool` is a run of its mirror. -/
+abbrev «IxonDeserialize::assert_wire_bool».Complete : Prop :=
+  ∀ {x_b : SourceValue F} {h h' : Heap F} {r : SourceValue F},
+    EvalFn W "IxonDeserialize::assert_wire_bool" [x_b] h r h' → ∃ k0, ∀ k ≥ k0, «IxonDeserialize::assert_wire_bool» k h x_b = some (r, h')
+
+theorem «IxonDeserialize::assert_wire_bool».of_eval : «IxonDeserialize::assert_wire_bool».Complete := by
+  intro x_b h h' r ev
+  have body := ev.function_inv IxVM.IxonDeserialize.assert_wire_bool.lookup
+    (by simp [IxVM.IxonDeserialize.assert_wire_bool, ControlLower.hasControl])
+  simp only [IxVM.IxonDeserialize.assert_wire_bool] at body
+  obtain ⟨v0, m1, bs2, d3, mt4, d5⟩ := body.letValue_inv
+  obtain ⟨vs6, args7, ap8⟩ := d3.builtin_inv
+  obtain ⟨v9, vs10, m11, rfl, d12, args13⟩ := args7.cons_inv
+  obtain ⟨vs14, m15, args16, callee17⟩ := d12.call_inv
+  obtain ⟨v18, vs19, m20, rfl, d21, args22⟩ := args16.cons_inv
+  obtain ⟨l23, rfl⟩ := d21.var_inv
+  simp at l23
+  subst l23
+  obtain ⟨v24, vs25, m26, rfl, d27, args28⟩ := args22.cons_inv
+  obtain ⟨rfl, rfl⟩ := d27.global_literal_inv (x := (2 : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl⟩ := args28.nil_inv
+  rw [instanceName_plain_some] at callee17
+  obtain ⟨k29, hk30⟩ := «UInt8::less_than».of_eval callee17
+  obtain ⟨v31, vs32, m33, rfl, d34, args35⟩ := args13.cons_inv
+  obtain ⟨rfl, rfl⟩ := d34.literal_inv
+  obtain ⟨rfl, rfl⟩ := args35.nil_inv
+  rw [matchPattern_wildcard] at mt4
+  simp only [Except.ok.injEq, Option.some.injEq] at mt4
+  subst mt4
+  obtain ⟨vs36, args37, rfl⟩ := d5.tuple_inv
+  obtain ⟨rfl, rfl⟩ := args37.nil_inv
+  refine ⟨k29 + 1, fun k hk => ?_⟩
+  obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
+  simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::assert_wire_bool», ap8, hk30 k' (by omega)]
+
+/-- The mirror of `IxonDeserialize::get_binder_block`. -/
+def «IxonDeserialize::get_binder_block» : Nat → Heap F → SourceValue F → SourceValue F → Option (SourceValue F × Heap F)
+  | 0, _, _, _ => none
+  | k + 1, h, x_stream, x_lvls =>
+    (do
+      let (v0, h1) ← «IxonDeserialize::read_byte» k h x_stream
+      match v0 with
+        | .tuple [x_ekind, x_s] =>
+          (do
+            let (v2, h3) ← «IxonDeserialize::assert_wire_bool» k h1 x_ekind
+            (do
+              let (v4, h5) ← «UInt8::to_field» k h3 x_ekind
+              let x_shared := v4
+              (do
+                let (v6, h7) ← «IxonDeserialize::get_tagn0» k h5 x_s
+                match v6 with
+                  | .tuple [x_eidx, x_s2] =>
+                    (do
+                      let (v8, h9) ← «IxonDeserialize::get_tagn0» k h7 x_s2
+                      match v8 with
+                        | .tuple [x_variant, x_s3] =>
+                          (do
+                            let (v10, h11) ← (do
+                              let (v12, h13) ← (do
+                                let (v14, h15) ← match evalBinOp .sub (.field 1) x_shared with
+                                  | .ok z => some (z, h9)
+                                  | .error _ => none
+                                let (v16, h17) ← (do
+                                  let (v18, h19) ← «UInt64::is_zero» k h15 x_variant
+                                  match evalBinOp .sub (.field 1) v18 with
+                                    | .ok z => some (z, h19)
+                                    | .error _ => none)
+                                match evalBinOp .mul v14 v16 with
+                                  | .ok z => some (z, h17)
+                                  | .error _ => none)
+                              match Builtin.apply (.assertEq { message := (some "binder data: a root block at a variant other than 0"), runtimeCheck := true }) [v12, (.field 0)] with
+                                | .ok z => some (z, h13)
+                                | .error _ => none)
+                            (do
+                              let (v20, h21) ← «IxonDeserialize::get_tagn0» k h11 x_s3
+                              match v20 with
+                                | .tuple [x_count, x_s4] =>
+                                  (do
+                                    let (v22, h23) ← (do
+                                      let (v24, h25) ← «UInt64::is_zero» k h21 x_count
+                                      match Builtin.apply (.assertEq { message := (some "binder data: an empty block"), runtimeCheck := true }) [v24, (.field 0)] with
+                                        | .ok z => some (z, h25)
+                                        | .error _ => none)
+                                    (do
+                                      let (v26, h27) ← «IxonDeserialize::get_binder_node_list» k h23 x_s4 x_count x_lvls
+                                      match v26 with
+                                        | .tuple [x_nodes, x_s5] =>
+                                          (do
+                                            let (v28, h29) ← some ((.construct (instanceName [] "Ixon::BinderBlock" (some [])) "Mk" [x_shared, x_eidx, x_variant, x_nodes] : SourceValue F), h27)
+                                            some ((.tuple [v28, x_s5] : SourceValue F), h29))
+                                        | _ => none))
+                                | _ => none))
+                        | _ => none)
+                  | _ => none)))
+        | _ => none)
+
+/-- Every derivation of `IxonDeserialize::get_binder_block` is a run of its mirror. -/
+abbrev «IxonDeserialize::get_binder_block».Complete : Prop :=
+  ∀ {x_stream x_lvls : SourceValue F} {h h' : Heap F} {r : SourceValue F},
+    EvalFn W "IxonDeserialize::get_binder_block" [x_stream, x_lvls] h r h' → ∃ k0, ∀ k ≥ k0, «IxonDeserialize::get_binder_block» k h x_stream x_lvls = some (r, h')
+
+theorem «IxonDeserialize::get_binder_block».of_eval (ih0 : «IxonDeserialize::get_u64_le».Complete) (ih1 : «UInt32::less_than_fields».Complete) (ih4 : «IxonDeserialize::assert_params_canonical».Complete) (ih5 : «IxonDeserialize::get_u64_list».Complete) (ih6 : «IxonDeserialize::get_binder_node_list».Complete) : «IxonDeserialize::get_binder_block».Complete := by
+  intro x_stream x_lvls h h' r ev
+  have body := ev.function_inv IxVM.IxonDeserialize.get_binder_block.lookup
+    (by simp [IxVM.IxonDeserialize.get_binder_block, ControlLower.hasControl])
+  simp only [IxVM.IxonDeserialize.get_binder_block] at body
+  obtain ⟨v0, m1, bs2, d3, mt4, d5⟩ := body.letValue_inv
+  obtain ⟨vs6, m7, args8, callee9⟩ := d3.call_inv
+  obtain ⟨v10, vs11, m12, rfl, d13, args14⟩ := args8.cons_inv
+  obtain ⟨l15, rfl⟩ := d13.var_inv
+  simp at l15
+  subst l15
+  obtain ⟨rfl, rfl⟩ := args14.nil_inv
+  rw [instanceName_plain_some] at callee9
+  obtain ⟨k16, hk17⟩ := «IxonDeserialize::read_byte».of_eval callee9
+  obtain ⟨ys18, hp19, hl20, ml21⟩ := matchPattern_tuple_inv mt4
+  rcases ys18 with _ | ⟨y22, _ | ⟨y23, _ | ⟨_, _⟩⟩⟩ <;> simp at hl20
+  try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp19
+  simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml21
+  subst ml21
+  obtain ⟨v24, m25, bs26, d27, mt28, d29⟩ := d5.letValue_inv
+  obtain ⟨vs30, m31, args32, callee33⟩ := d27.call_inv
+  obtain ⟨v34, vs35, m36, rfl, d37, args38⟩ := args32.cons_inv
+  obtain ⟨l39, rfl⟩ := d37.var_inv
+  simp at l39
+  subst l39
+  obtain ⟨rfl, rfl⟩ := args38.nil_inv
+  rw [instanceName_plain_some] at callee33
+  obtain ⟨k40, hk41⟩ := «IxonDeserialize::assert_wire_bool».of_eval callee33
+  rw [matchPattern_wildcard] at mt28
+  simp only [Except.ok.injEq, Option.some.injEq] at mt28
+  subst mt28
+  obtain ⟨v42, m43, bs44, d45, mt46, d47⟩ := d29.letValue_inv
+  obtain ⟨vs48, m49, args50, callee51⟩ := d45.call_inv
+  obtain ⟨v52, vs53, m54, rfl, d55, args56⟩ := args50.cons_inv
+  obtain ⟨l57, rfl⟩ := d55.var_inv
+  simp at l57
+  subst l57
+  obtain ⟨rfl, rfl⟩ := args56.nil_inv
+  rw [instanceName_plain_some] at callee51
+  obtain ⟨k58, hk59⟩ := «UInt8::to_field».of_eval callee51
+  rw [matchPattern_bind] at mt46
+  simp only [Except.ok.injEq, Option.some.injEq] at mt46
+  subst mt46
+  obtain ⟨v60, m61, bs62, d63, mt64, d65⟩ := d47.letValue_inv
+  obtain ⟨vs66, m67, args68, callee69⟩ := d63.call_inv
+  obtain ⟨v70, vs71, m72, rfl, d73, args74⟩ := args68.cons_inv
+  obtain ⟨l75, rfl⟩ := d73.var_inv
+  simp at l75
+  subst l75
+  obtain ⟨rfl, rfl⟩ := args74.nil_inv
+  rw [instanceName_plain_some] at callee69
+  obtain ⟨k76, hk77⟩ := «IxonDeserialize::get_tagn0».of_eval ih0 callee69
+  obtain ⟨ys78, hp79, hl80, ml81⟩ := matchPattern_tuple_inv mt64
+  rcases ys78 with _ | ⟨y82, _ | ⟨y83, _ | ⟨_, _⟩⟩⟩ <;> simp at hl80
+  try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp79
+  simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml81
+  subst ml81
+  obtain ⟨v84, m85, bs86, d87, mt88, d89⟩ := d65.letValue_inv
+  obtain ⟨vs90, m91, args92, callee93⟩ := d87.call_inv
+  obtain ⟨v94, vs95, m96, rfl, d97, args98⟩ := args92.cons_inv
+  obtain ⟨l99, rfl⟩ := d97.var_inv
+  simp at l99
+  subst l99
+  obtain ⟨rfl, rfl⟩ := args98.nil_inv
+  rw [instanceName_plain_some] at callee93
+  obtain ⟨k100, hk101⟩ := «IxonDeserialize::get_tagn0».of_eval ih0 callee93
+  obtain ⟨ys102, hp103, hl104, ml105⟩ := matchPattern_tuple_inv mt88
+  rcases ys102 with _ | ⟨y106, _ | ⟨y107, _ | ⟨_, _⟩⟩⟩ <;> simp at hl104
+  try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp103
+  simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml105
+  subst ml105
+  obtain ⟨v108, m109, bs110, d111, mt112, d113⟩ := d89.letValue_inv
+  obtain ⟨vs114, args115, ap116⟩ := d111.builtin_inv
+  obtain ⟨v117, vs118, m119, rfl, d120, args121⟩ := args115.cons_inv
+  obtain ⟨x122, y123, m124, d125, d126, op127⟩ := d120.binary_inv
+  obtain ⟨x128, y129, m130, d131, d132, op133⟩ := d125.binary_inv
+  obtain ⟨rfl, rfl⟩ := d131.literal_inv
+  obtain ⟨l134, rfl⟩ := d132.var_inv
+  simp at l134
+  subst l134
+  obtain ⟨x135, y136, m137, d138, d139, op140⟩ := d126.binary_inv
+  obtain ⟨rfl, rfl⟩ := d138.literal_inv
+  obtain ⟨vs141, m142, args143, callee144⟩ := d139.call_inv
+  obtain ⟨v145, vs146, m147, rfl, d148, args149⟩ := args143.cons_inv
+  obtain ⟨l150, rfl⟩ := d148.var_inv
+  simp at l150
+  subst l150
+  obtain ⟨rfl, rfl⟩ := args149.nil_inv
+  rw [instanceName_plain_some] at callee144
+  obtain ⟨k151, hk152⟩ := «UInt64::is_zero».of_eval callee144
+  obtain ⟨v153, vs154, m155, rfl, d156, args157⟩ := args121.cons_inv
+  obtain ⟨rfl, rfl⟩ := d156.literal_inv
+  obtain ⟨rfl, rfl⟩ := args157.nil_inv
+  rw [matchPattern_wildcard] at mt112
+  simp only [Except.ok.injEq, Option.some.injEq] at mt112
+  subst mt112
+  obtain ⟨v158, m159, bs160, d161, mt162, d163⟩ := d113.letValue_inv
+  obtain ⟨vs164, m165, args166, callee167⟩ := d161.call_inv
+  obtain ⟨v168, vs169, m170, rfl, d171, args172⟩ := args166.cons_inv
+  obtain ⟨l173, rfl⟩ := d171.var_inv
+  simp at l173
+  subst l173
+  obtain ⟨rfl, rfl⟩ := args172.nil_inv
+  rw [instanceName_plain_some] at callee167
+  obtain ⟨k174, hk175⟩ := «IxonDeserialize::get_tagn0».of_eval ih0 callee167
+  obtain ⟨ys176, hp177, hl178, ml179⟩ := matchPattern_tuple_inv mt162
+  rcases ys176 with _ | ⟨y180, _ | ⟨y181, _ | ⟨_, _⟩⟩⟩ <;> simp at hl178
+  try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp177
+  simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml179
+  subst ml179
+  obtain ⟨v182, m183, bs184, d185, mt186, d187⟩ := d163.letValue_inv
+  obtain ⟨vs188, args189, ap190⟩ := d185.builtin_inv
+  obtain ⟨v191, vs192, m193, rfl, d194, args195⟩ := args189.cons_inv
+  obtain ⟨vs196, m197, args198, callee199⟩ := d194.call_inv
+  obtain ⟨v200, vs201, m202, rfl, d203, args204⟩ := args198.cons_inv
+  obtain ⟨l205, rfl⟩ := d203.var_inv
+  simp at l205
+  subst l205
+  obtain ⟨rfl, rfl⟩ := args204.nil_inv
+  rw [instanceName_plain_some] at callee199
+  obtain ⟨k206, hk207⟩ := «UInt64::is_zero».of_eval callee199
+  obtain ⟨v208, vs209, m210, rfl, d211, args212⟩ := args195.cons_inv
+  obtain ⟨rfl, rfl⟩ := d211.literal_inv
+  obtain ⟨rfl, rfl⟩ := args212.nil_inv
+  rw [matchPattern_wildcard] at mt186
+  simp only [Except.ok.injEq, Option.some.injEq] at mt186
+  subst mt186
+  obtain ⟨v213, m214, bs215, d216, mt217, d218⟩ := d187.letValue_inv
+  obtain ⟨vs219, m220, args221, callee222⟩ := d216.call_inv
+  obtain ⟨v223, vs224, m225, rfl, d226, args227⟩ := args221.cons_inv
+  obtain ⟨l228, rfl⟩ := d226.var_inv
+  simp at l228
+  subst l228
+  obtain ⟨v229, vs230, m231, rfl, d232, args233⟩ := args227.cons_inv
+  obtain ⟨l234, rfl⟩ := d232.var_inv
+  simp at l234
+  subst l234
+  obtain ⟨v235, vs236, m237, rfl, d238, args239⟩ := args233.cons_inv
+  obtain ⟨l240, rfl⟩ := d238.var_inv
+  simp at l240
+  subst l240
+  obtain ⟨rfl, rfl⟩ := args239.nil_inv
+  rw [instanceName_plain_some] at callee222
+  obtain ⟨k241, hk242⟩ := ih6 callee222
+  obtain ⟨ys243, hp244, hl245, ml246⟩ := matchPattern_tuple_inv mt217
+  rcases ys243 with _ | ⟨y247, _ | ⟨y248, _ | ⟨_, _⟩⟩⟩ <;> simp at hl245
+  try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp244
+  simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml246
+  subst ml246
+  obtain ⟨vs249, args250, rfl⟩ := d218.tuple_inv
+  obtain ⟨v251, vs252, m253, rfl, d254, args255⟩ := args250.cons_inv
+  obtain ⟨vs256, args257, rfl⟩ := d254.construct_inv
+  obtain ⟨v258, vs259, m260, rfl, d261, args262⟩ := args257.cons_inv
+  obtain ⟨l263, rfl⟩ := d261.var_inv
+  simp at l263
+  subst l263
+  obtain ⟨v264, vs265, m266, rfl, d267, args268⟩ := args262.cons_inv
+  obtain ⟨l269, rfl⟩ := d267.var_inv
+  simp at l269
+  subst l269
+  obtain ⟨v270, vs271, m272, rfl, d273, args274⟩ := args268.cons_inv
+  obtain ⟨l275, rfl⟩ := d273.var_inv
+  simp at l275
+  subst l275
+  obtain ⟨v276, vs277, m278, rfl, d279, args280⟩ := args274.cons_inv
+  obtain ⟨l281, rfl⟩ := d279.var_inv
+  simp at l281
+  subst l281
+  obtain ⟨rfl, rfl⟩ := args280.nil_inv
+  obtain ⟨v282, vs283, m284, rfl, d285, args286⟩ := args255.cons_inv
+  obtain ⟨l287, rfl⟩ := d285.var_inv
+  simp at l287
+  subst l287
+  obtain ⟨rfl, rfl⟩ := args286.nil_inv
+  refine ⟨k16 + k40 + k58 + k76 + k100 + k151 + k174 + k206 + k241 + 1, fun k hk => ?_⟩
+  obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
+  simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::get_binder_block», hk17 k' (by omega), hp19, hk41 k' (by omega), hk59 k' (by omega), hk77 k' (by omega), hp79, hk101 k' (by omega), hp103, ap116, op133, op127, op140, hk152 k' (by omega), hk175 k' (by omega), hp177, ap190, hk207 k' (by omega), hk242 k' (by omega), hp244]
+
+/-- The mirror of `IxonDeserialize::get_binder_block_list`. -/
+def «IxonDeserialize::get_binder_block_list» : Nat → Heap F → SourceValue F → SourceValue F → SourceValue F → Option (SourceValue F × Heap F)
+  | 0, _, _, _, _ => none
+  | k + 1, h, x_stream, x_count, x_lvls =>
+    (do
+      let (v0, h1) ← «UInt64::is_zero» k h x_count
+      let x_is_zero := v0
+      if x_is_zero = .field 1 then
+        (do
+          let (v12, h13) ← (do
+            let (v14, h15) ← some ((.construct (instanceName [] "Lists::Node" (some [(.named "Ixon::BinderBlock" [])])) "Nil" [] : SourceValue F), h1)
+            some ((.ptr v14.type h15.length : SourceValue F), h15 ++ [v14]))
+          some ((.tuple [v12, x_stream] : SourceValue F), h13))
+      else
+        if x_is_zero = .field 0 then
+          (do
+            let (v2, h3) ← «IxonDeserialize::get_binder_block» k h1 x_stream x_lvls
+            match v2 with
+              | .tuple [x_block, x_s] =>
+                (do
+                  let (v4, h5) ← (do
+                    let (v6, h7) ← «UInt64::saturating_pred» k h3 x_count
+                    «IxonDeserialize::get_binder_block_list» k h7 x_s v6 x_lvls)
+                  match v4 with
+                    | .tuple [x_rest, x_s2] =>
+                      (do
+                        let (v8, h9) ← (do
+                          let (v10, h11) ← some ((.construct (instanceName [] "Lists::Node" (some [(.named "Ixon::BinderBlock" [])])) "Cons" [x_block, x_rest] : SourceValue F), h5)
+                          some ((.ptr v10.type h11.length : SourceValue F), h11 ++ [v10]))
+                        some ((.tuple [v8, x_s2] : SourceValue F), h9))
+                    | _ => none)
+              | _ => none)
+        else
+          none)
+
+/-- Every derivation of `IxonDeserialize::get_binder_block_list` is a run of its mirror. -/
+abbrev «IxonDeserialize::get_binder_block_list».Complete : Prop :=
+  ∀ {x_stream x_count x_lvls : SourceValue F} {h h' : Heap F} {r : SourceValue F},
+    EvalFn W "IxonDeserialize::get_binder_block_list" [x_stream, x_count, x_lvls] h r h' → ∃ k0, ∀ k ≥ k0, «IxonDeserialize::get_binder_block_list» k h x_stream x_count x_lvls = some (r, h')
+
+/-- The mirror of `IxonDeserialize::get_binders`. -/
+def «IxonDeserialize::get_binders» : Nat → Heap F → SourceValue F → SourceValue F → Option (SourceValue F × Heap F)
+  | 0, _, _, _ => none
+  | k + 1, h, x_stream, x_lvls =>
+    (do
+      let (v0, h1) ← «IxonDeserialize::get_tagn0» k h x_stream
+      match v0 with
+        | .tuple [x_len, x_s] =>
+          (do
+            let (v2, h3) ← «IxonDeserialize::get_binder_block_list» k h1 x_s x_len x_lvls
+            match v2 with
+              | .tuple [x_blocks, x_s2] =>
+                (do
+                  let (v4, h5) ← «IxonDeserialize::assert_blocks_ascending» k h3 x_blocks
+                  some ((.tuple [x_blocks, x_s2] : SourceValue F), h5))
+              | _ => none)
+        | _ => none)
+
+/-- Every derivation of `IxonDeserialize::get_binders` is a run of its mirror. -/
+abbrev «IxonDeserialize::get_binders».Complete : Prop :=
+  ∀ {x_stream x_lvls : SourceValue F} {h h' : Heap F} {r : SourceValue F},
+    EvalFn W "IxonDeserialize::get_binders" [x_stream, x_lvls] h r h' → ∃ k0, ∀ k ≥ k0, «IxonDeserialize::get_binders» k h x_stream x_lvls = some (r, h')
+
+theorem «IxonDeserialize::get_binders».of_eval (ih0 : «IxonDeserialize::get_u64_le».Complete) (ih1 : «UInt32::less_than_fields».Complete) (ih3 : «IxonDeserialize::assert_blocks_ascending».Complete) (ih4 : «IxonDeserialize::assert_params_canonical».Complete) (ih5 : «IxonDeserialize::get_u64_list».Complete) (ih6 : «IxonDeserialize::get_binder_node_list».Complete) (ih7 : «IxonDeserialize::get_binder_block_list».Complete) : «IxonDeserialize::get_binders».Complete := by
+  intro x_stream x_lvls h h' r ev
+  have body := ev.function_inv IxVM.IxonDeserialize.get_binders.lookup
+    (by simp [IxVM.IxonDeserialize.get_binders, ControlLower.hasControl])
+  simp only [IxVM.IxonDeserialize.get_binders] at body
+  obtain ⟨v0, m1, bs2, d3, mt4, d5⟩ := body.letValue_inv
+  obtain ⟨vs6, m7, args8, callee9⟩ := d3.call_inv
+  obtain ⟨v10, vs11, m12, rfl, d13, args14⟩ := args8.cons_inv
+  obtain ⟨l15, rfl⟩ := d13.var_inv
+  simp at l15
+  subst l15
+  obtain ⟨rfl, rfl⟩ := args14.nil_inv
+  rw [instanceName_plain_some] at callee9
+  obtain ⟨k16, hk17⟩ := «IxonDeserialize::get_tagn0».of_eval ih0 callee9
+  obtain ⟨ys18, hp19, hl20, ml21⟩ := matchPattern_tuple_inv mt4
+  rcases ys18 with _ | ⟨y22, _ | ⟨y23, _ | ⟨_, _⟩⟩⟩ <;> simp at hl20
+  try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp19
+  simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml21
+  subst ml21
+  obtain ⟨v24, m25, bs26, d27, mt28, d29⟩ := d5.letValue_inv
+  obtain ⟨vs30, m31, args32, callee33⟩ := d27.call_inv
+  obtain ⟨v34, vs35, m36, rfl, d37, args38⟩ := args32.cons_inv
+  obtain ⟨l39, rfl⟩ := d37.var_inv
+  simp at l39
+  subst l39
+  obtain ⟨v40, vs41, m42, rfl, d43, args44⟩ := args38.cons_inv
+  obtain ⟨l45, rfl⟩ := d43.var_inv
+  simp at l45
+  subst l45
+  obtain ⟨v46, vs47, m48, rfl, d49, args50⟩ := args44.cons_inv
+  obtain ⟨l51, rfl⟩ := d49.var_inv
+  simp at l51
+  subst l51
+  obtain ⟨rfl, rfl⟩ := args50.nil_inv
+  rw [instanceName_plain_some] at callee33
+  obtain ⟨k52, hk53⟩ := ih7 callee33
+  obtain ⟨ys54, hp55, hl56, ml57⟩ := matchPattern_tuple_inv mt28
+  rcases ys54 with _ | ⟨y58, _ | ⟨y59, _ | ⟨_, _⟩⟩⟩ <;> simp at hl56
+  try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp55
+  simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml57
+  subst ml57
+  obtain ⟨v60, m61, bs62, d63, mt64, d65⟩ := d29.letValue_inv
+  obtain ⟨vs66, m67, args68, callee69⟩ := d63.call_inv
+  obtain ⟨v70, vs71, m72, rfl, d73, args74⟩ := args68.cons_inv
+  obtain ⟨l75, rfl⟩ := d73.var_inv
+  simp at l75
+  subst l75
+  obtain ⟨rfl, rfl⟩ := args74.nil_inv
+  rw [instanceName_plain_some] at callee69
+  obtain ⟨k76, hk77⟩ := ih3 callee69
+  rw [matchPattern_wildcard] at mt64
+  simp only [Except.ok.injEq, Option.some.injEq] at mt64
+  subst mt64
+  obtain ⟨vs78, args79, rfl⟩ := d65.tuple_inv
+  obtain ⟨v80, vs81, m82, rfl, d83, args84⟩ := args79.cons_inv
+  obtain ⟨l85, rfl⟩ := d83.var_inv
+  simp at l85
+  subst l85
+  obtain ⟨v86, vs87, m88, rfl, d89, args90⟩ := args84.cons_inv
+  obtain ⟨l91, rfl⟩ := d89.var_inv
+  simp at l91
+  subst l91
+  obtain ⟨rfl, rfl⟩ := args90.nil_inv
+  refine ⟨k16 + k52 + k76 + 1, fun k hk => ?_⟩
+  obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
+  simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::get_binders», hk17 k' (by omega), hp19, hk53 k' (by omega), hp55, hk77 k' (by omega)]
 
 /-- The mirror of `IxonDeserialize::build_succ_chain`. -/
 def «IxonDeserialize::build_succ_chain» : Nat → Heap F → SourceValue F → SourceValue F → Option (SourceValue F × Heap F)
@@ -1418,7 +3094,7 @@ abbrev «IxonDeserialize::get_univs».Complete : Prop :=
   ∀ {x_stream : SourceValue F} {h h' : Heap F} {r : SourceValue F},
     EvalFn W "IxonDeserialize::get_univs" [x_stream] h r h' → ∃ k0, ∀ k ≥ k0, «IxonDeserialize::get_univs» k h x_stream = some (r, h')
 
-theorem «IxonDeserialize::get_univs».of_eval (ih0 : «IxonDeserialize::get_u64_le».Complete) (ih2 : «IxonDeserialize::build_succ_chain».Complete) (ih3 : «IxonDeserialize::get_univ».Complete) (ih4 : «IxonDeserialize::get_univ_list».Complete) : «IxonDeserialize::get_univs».Complete := by
+theorem «IxonDeserialize::get_univs».of_eval (ih0 : «IxonDeserialize::get_u64_le».Complete) (ih8 : «IxonDeserialize::build_succ_chain».Complete) (ih9 : «IxonDeserialize::get_univ».Complete) (ih10 : «IxonDeserialize::get_univ_list».Complete) : «IxonDeserialize::get_univs».Complete := by
   intro x_stream h h' r ev
   have body := ev.function_inv IxVM.IxonDeserialize.get_univs.lookup
     (by simp [IxVM.IxonDeserialize.get_univs, ControlLower.hasControl])
@@ -1448,7 +3124,7 @@ theorem «IxonDeserialize::get_univs».of_eval (ih0 : «IxonDeserialize::get_u64
   subst l39
   obtain ⟨rfl, rfl⟩ := args38.nil_inv
   rw [instanceName_plain_some] at callee27
-  obtain ⟨k40, hk41⟩ := ih4 callee27
+  obtain ⟨k40, hk41⟩ := ih10 callee27
   refine ⟨k16 + k40 + 1, fun k hk => ?_⟩
   obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
   simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::get_univs», hk17 k' (by omega), hp19, hk41 k' (by omega)]
@@ -1989,7 +3665,7 @@ abbrev «IxonDeserialize::get_refs».Complete : Prop :=
   ∀ {x_stream : SourceValue F} {h h' : Heap F} {r : SourceValue F},
     EvalFn W "IxonDeserialize::get_refs" [x_stream] h r h' → ∃ k0, ∀ k ≥ k0, «IxonDeserialize::get_refs» k h x_stream = some (r, h')
 
-theorem «IxonDeserialize::get_refs».of_eval (ih0 : «IxonDeserialize::get_u64_le».Complete) (ih5 : «IxonDeserialize::get_address_list».Complete) : «IxonDeserialize::get_refs».Complete := by
+theorem «IxonDeserialize::get_refs».of_eval (ih0 : «IxonDeserialize::get_u64_le».Complete) (ih11 : «IxonDeserialize::get_address_list».Complete) : «IxonDeserialize::get_refs».Complete := by
   intro x_stream h h' r ev
   have body := ev.function_inv IxVM.IxonDeserialize.get_refs.lookup
     (by simp [IxVM.IxonDeserialize.get_refs, ControlLower.hasControl])
@@ -2019,7 +3695,7 @@ theorem «IxonDeserialize::get_refs».of_eval (ih0 : «IxonDeserialize::get_u64_
   subst l39
   obtain ⟨rfl, rfl⟩ := args38.nil_inv
   rw [instanceName_plain_some] at callee27
-  obtain ⟨k40, hk41⟩ := ih5 callee27
+  obtain ⟨k40, hk41⟩ := ih11 callee27
   refine ⟨k16 + k40 + 1, fun k hk => ?_⟩
   obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
   simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::get_refs», hk17 k' (by omega), hp19, hk41 k' (by omega)]
@@ -2331,55 +4007,6 @@ theorem «IxonDeserialize::binder_contract_from_bits».of_eval : «IxonDeseriali
           simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::binder_contract_from_bits», op18, op25, hc27, hc62, hc97, hc132, hk166 k' (by omega)]
         · simp [SourceSemantics.selectArm] at sel133
 
-/-- The mirror of `IxonDeserialize::read_byte`. -/
-def «IxonDeserialize::read_byte» : Nat → Heap F → SourceValue F → Option (SourceValue F × Heap F)
-  | 0, _, _ => none
-  | k + 1, h, x_stream =>
-    (do
-      let (v0, h1) ← match loadValue h x_stream with
-        | .ok z => some (z, h)
-        | .error _ => none
-      match v0 with
-        | .construct e2 "Cons" [x_byte, x_rest] =>
-          if e2 = constructorName [] (.named "Lists::Node" [.field]) then
-            some ((.tuple [x_byte, x_rest] : SourceValue F), h1)
-          else none
-        | _ => none)
-
-/-- Every derivation of `IxonDeserialize::read_byte` is a run of its mirror. -/
-abbrev «IxonDeserialize::read_byte».Complete : Prop :=
-  ∀ {x_stream : SourceValue F} {h h' : Heap F} {r : SourceValue F},
-    EvalFn W "IxonDeserialize::read_byte" [x_stream] h r h' → ∃ k0, ∀ k ≥ k0, «IxonDeserialize::read_byte» k h x_stream = some (r, h')
-
-theorem «IxonDeserialize::read_byte».of_eval : «IxonDeserialize::read_byte».Complete := by
-  intro x_stream h h' r ev
-  have body := ev.function_inv IxVM.IxonDeserialize.read_byte.lookup
-    (by simp [IxVM.IxonDeserialize.read_byte, ControlLower.hasControl])
-  simp only [IxVM.IxonDeserialize.read_byte] at body
-  obtain ⟨v0, m1, bs2, d3, mt4, d5⟩ := body.letValue_inv
-  obtain ⟨p6, d7, ld8⟩ := d3.load_inv
-  obtain ⟨l9, rfl⟩ := d7.var_inv
-  simp at l9
-  subst l9
-  obtain ⟨ys10, hp11, hl12, ml13⟩ := matchPattern_construct_inv mt4
-  rcases ys10 with _ | ⟨y14, _ | ⟨y15, _ | ⟨_, _⟩⟩⟩ <;> simp at hl12
-  try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp11
-  simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml13
-  subst ml13
-  obtain ⟨vs16, args17, rfl⟩ := d5.tuple_inv
-  obtain ⟨v18, vs19, m20, rfl, d21, args22⟩ := args17.cons_inv
-  obtain ⟨l23, rfl⟩ := d21.var_inv
-  simp at l23
-  subst l23
-  obtain ⟨v24, vs25, m26, rfl, d27, args28⟩ := args22.cons_inv
-  obtain ⟨l29, rfl⟩ := d27.var_inv
-  simp at l29
-  subst l29
-  obtain ⟨rfl, rfl⟩ := args28.nil_inv
-  refine ⟨1, fun k hk => ?_⟩
-  obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-  simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::read_byte», ld8, hp11]
-
 /-- The mirror of `IxonDeserialize::get_lam_mode`. -/
 def «IxonDeserialize::get_lam_mode» : Nat → Heap F → SourceValue F → Option (SourceValue F × Heap F)
   | 0, _, _ => none
@@ -2636,46 +4263,6 @@ theorem «IxonDeserialize::get_all_mode».of_eval : «IxonDeserialize::get_all_m
   refine ⟨k16 + k40 + k123 + k146 + 1, fun k hk => ?_⟩
   obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
   simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::get_all_mode», hk17 k' (by omega), hp19, hk41 k' (by omega), hp43, ap62, op73, hk124 k' (by omega), hk147 k' (by omega)]
-
-/-- The mirror of `IxonDeserialize::get_u64_list`. -/
-def «IxonDeserialize::get_u64_list» : Nat → Heap F → SourceValue F → SourceValue F → Option (SourceValue F × Heap F)
-  | 0, _, _, _ => none
-  | k + 1, h, x_stream, x_count =>
-    (do
-      let (v0, h1) ← «UInt64::is_zero» k h x_count
-      let x_is_zero := v0
-      if x_is_zero = .field 1 then
-        (do
-          let (v12, h13) ← (do
-            let (v14, h15) ← some ((.construct (instanceName [] "Lists::Node" (some [(.array .field 8)])) "Nil" [] : SourceValue F), h1)
-            some ((.ptr v14.type h15.length : SourceValue F), h15 ++ [v14]))
-          some ((.tuple [v12, x_stream] : SourceValue F), h13))
-      else
-        if x_is_zero = .field 0 then
-          (do
-            let (v2, h3) ← «IxonDeserialize::get_tagn0» k h1 x_stream
-            match v2 with
-              | .tuple [x_val, x_s] =>
-                (do
-                  let (v4, h5) ← (do
-                    let (v6, h7) ← «UInt64::saturating_pred» k h3 x_count
-                    «IxonDeserialize::get_u64_list» k h7 x_s v6)
-                  match v4 with
-                    | .tuple [x_rest, x_s2] =>
-                      (do
-                        let (v8, h9) ← (do
-                          let (v10, h11) ← some ((.construct (instanceName [] "Lists::Node" (some [(.array .field 8)])) "Cons" [x_val, x_rest] : SourceValue F), h5)
-                          some ((.ptr v10.type h11.length : SourceValue F), h11 ++ [v10]))
-                        some ((.tuple [v8, x_s2] : SourceValue F), h9))
-                    | _ => none)
-              | _ => none)
-        else
-          none)
-
-/-- Every derivation of `IxonDeserialize::get_u64_list` is a run of its mirror. -/
-abbrev «IxonDeserialize::get_u64_list».Complete : Prop :=
-  ∀ {x_stream x_count : SourceValue F} {h h' : Heap F} {r : SourceValue F},
-    EvalFn W "IxonDeserialize::get_u64_list" [x_stream, x_count] h r h' → ∃ k0, ∀ k ≥ k0, «IxonDeserialize::get_u64_list» k h x_stream x_count = some (r, h')
 
 mutual
 
@@ -3148,7 +4735,7 @@ abbrev «IxonDeserialize::get_sharing».Complete : Prop :=
   ∀ {x_stream : SourceValue F} {h h' : Heap F} {r : SourceValue F},
     EvalFn W "IxonDeserialize::get_sharing" [x_stream] h r h' → ∃ k0, ∀ k ≥ k0, «IxonDeserialize::get_sharing» k h x_stream = some (r, h')
 
-theorem «IxonDeserialize::get_sharing».of_eval (ih0 : «IxonDeserialize::get_u64_le».Complete) (ih6 : «IxonDeserialize::get_expr_let».Complete) (ih7 : «IxonDeserialize::get_all_telescope».Complete) (ih8 : «IxonDeserialize::get_lam_telescope».Complete) (ih9 : «IxonDeserialize::get_app_telescope».Complete) (ih10 : «IxonDeserialize::get_u64_list».Complete) (ih11 : «IxonDeserialize::get_expr».Complete) (ih12 : «IxonDeserialize::get_expr_list».Complete) : «IxonDeserialize::get_sharing».Complete := by
+theorem «IxonDeserialize::get_sharing».of_eval (ih0 : «IxonDeserialize::get_u64_le».Complete) (ih5 : «IxonDeserialize::get_u64_list».Complete) (ih12 : «IxonDeserialize::get_expr_let».Complete) (ih13 : «IxonDeserialize::get_all_telescope».Complete) (ih14 : «IxonDeserialize::get_lam_telescope».Complete) (ih15 : «IxonDeserialize::get_app_telescope».Complete) (ih16 : «IxonDeserialize::get_expr».Complete) (ih17 : «IxonDeserialize::get_expr_list».Complete) : «IxonDeserialize::get_sharing».Complete := by
   intro x_stream h h' r ev
   have body := ev.function_inv IxVM.IxonDeserialize.get_sharing.lookup
     (by simp [IxVM.IxonDeserialize.get_sharing, ControlLower.hasControl])
@@ -3178,7 +4765,7 @@ theorem «IxonDeserialize::get_sharing».of_eval (ih0 : «IxonDeserialize::get_u
   subst l39
   obtain ⟨rfl, rfl⟩ := args38.nil_inv
   rw [instanceName_plain_some] at callee27
-  obtain ⟨k40, hk41⟩ := ih12 callee27
+  obtain ⟨k40, hk41⟩ := ih17 callee27
   refine ⟨k16 + k40 + 1, fun k hk => ?_⟩
   obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
   simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::get_sharing», hk17 k' (by omega), hp19, hk41 k' (by omega)]
@@ -3610,7 +5197,7 @@ abbrev «IxonDeserialize::get_quotient».Complete : Prop :=
   ∀ {x_stream : SourceValue F} {h h' : Heap F} {r : SourceValue F},
     EvalFn W "IxonDeserialize::get_quotient" [x_stream] h r h' → ∃ k0, ∀ k ≥ k0, «IxonDeserialize::get_quotient» k h x_stream = some (r, h')
 
-theorem «IxonDeserialize::get_quotient».of_eval (ih0 : «IxonDeserialize::get_u64_le».Complete) (ih6 : «IxonDeserialize::get_expr_let».Complete) (ih7 : «IxonDeserialize::get_all_telescope».Complete) (ih8 : «IxonDeserialize::get_lam_telescope».Complete) (ih9 : «IxonDeserialize::get_app_telescope».Complete) (ih10 : «IxonDeserialize::get_u64_list».Complete) (ih11 : «IxonDeserialize::get_expr».Complete) : «IxonDeserialize::get_quotient».Complete := by
+theorem «IxonDeserialize::get_quotient».of_eval (ih0 : «IxonDeserialize::get_u64_le».Complete) (ih5 : «IxonDeserialize::get_u64_list».Complete) (ih12 : «IxonDeserialize::get_expr_let».Complete) (ih13 : «IxonDeserialize::get_all_telescope».Complete) (ih14 : «IxonDeserialize::get_lam_telescope».Complete) (ih15 : «IxonDeserialize::get_app_telescope».Complete) (ih16 : «IxonDeserialize::get_expr».Complete) : «IxonDeserialize::get_quotient».Complete := by
   intro x_stream h h' r ev
   have body := ev.function_inv IxVM.IxonDeserialize.get_quotient.lookup
     (by simp [IxVM.IxonDeserialize.get_quotient, ControlLower.hasControl])
@@ -3663,7 +5250,7 @@ theorem «IxonDeserialize::get_quotient».of_eval (ih0 : «IxonDeserialize::get_
   subst l81
   obtain ⟨rfl, rfl⟩ := args80.nil_inv
   rw [instanceName_plain_some] at callee75
-  obtain ⟨k82, hk83⟩ := ih11 callee75
+  obtain ⟨k82, hk83⟩ := ih16 callee75
   obtain ⟨ys84, hp85, hl86, ml87⟩ := matchPattern_tuple_inv mt70
   rcases ys84 with _ | ⟨y88, _ | ⟨y89, _ | ⟨_, _⟩⟩⟩ <;> simp at hl86
   try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp85
@@ -3693,53 +5280,6 @@ theorem «IxonDeserialize::get_quotient».of_eval (ih0 : «IxonDeserialize::get_
   refine ⟨k16 + k40 + k58 + k82 + 1, fun k hk => ?_⟩
   obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
   simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::get_quotient», hk17 k' (by omega), hp19, hk41 k' (by omega), hk59 k' (by omega), hp61, hk83 k' (by omega), hp85]
-
-/-- The mirror of `IxonDeserialize::assert_wire_bool`. -/
-def «IxonDeserialize::assert_wire_bool» : Nat → Heap F → SourceValue F → Option (SourceValue F × Heap F)
-  | 0, _, _ => none
-  | k + 1, h, x_b =>
-    (do
-      let (v0, h1) ← (do
-        let (v2, h3) ← «UInt8::less_than» k h x_b (.field 2)
-        match Builtin.apply (.assertEq { message := (some "Bool byte is not 0 or 1"), runtimeCheck := true }) [v2, (.field 1)] with
-          | .ok z => some (z, h3)
-          | .error _ => none)
-      some ((.tuple [] : SourceValue F), h1))
-
-/-- Every derivation of `IxonDeserialize::assert_wire_bool` is a run of its mirror. -/
-abbrev «IxonDeserialize::assert_wire_bool».Complete : Prop :=
-  ∀ {x_b : SourceValue F} {h h' : Heap F} {r : SourceValue F},
-    EvalFn W "IxonDeserialize::assert_wire_bool" [x_b] h r h' → ∃ k0, ∀ k ≥ k0, «IxonDeserialize::assert_wire_bool» k h x_b = some (r, h')
-
-theorem «IxonDeserialize::assert_wire_bool».of_eval : «IxonDeserialize::assert_wire_bool».Complete := by
-  intro x_b h h' r ev
-  have body := ev.function_inv IxVM.IxonDeserialize.assert_wire_bool.lookup
-    (by simp [IxVM.IxonDeserialize.assert_wire_bool, ControlLower.hasControl])
-  simp only [IxVM.IxonDeserialize.assert_wire_bool] at body
-  obtain ⟨v0, m1, bs2, d3, mt4, d5⟩ := body.letValue_inv
-  obtain ⟨vs6, args7, ap8⟩ := d3.builtin_inv
-  obtain ⟨v9, vs10, m11, rfl, d12, args13⟩ := args7.cons_inv
-  obtain ⟨vs14, m15, args16, callee17⟩ := d12.call_inv
-  obtain ⟨v18, vs19, m20, rfl, d21, args22⟩ := args16.cons_inv
-  obtain ⟨l23, rfl⟩ := d21.var_inv
-  simp at l23
-  subst l23
-  obtain ⟨v24, vs25, m26, rfl, d27, args28⟩ := args22.cons_inv
-  obtain ⟨rfl, rfl⟩ := d27.global_literal_inv (x := (2 : F)) (eq_of_isLiteral (by decide +kernel))
-  obtain ⟨rfl, rfl⟩ := args28.nil_inv
-  rw [instanceName_plain_some] at callee17
-  obtain ⟨k29, hk30⟩ := «UInt8::less_than».of_eval callee17
-  obtain ⟨v31, vs32, m33, rfl, d34, args35⟩ := args13.cons_inv
-  obtain ⟨rfl, rfl⟩ := d34.literal_inv
-  obtain ⟨rfl, rfl⟩ := args35.nil_inv
-  rw [matchPattern_wildcard] at mt4
-  simp only [Except.ok.injEq, Option.some.injEq] at mt4
-  subst mt4
-  obtain ⟨vs36, args37, rfl⟩ := d5.tuple_inv
-  obtain ⟨rfl, rfl⟩ := args37.nil_inv
-  refine ⟨k29 + 1, fun k hk => ?_⟩
-  obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-  simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::assert_wire_bool», ap8, hk30 k' (by omega)]
 
 /-- The mirror of `IxonDeserialize::get_axiom`. -/
 def «IxonDeserialize::get_axiom» : Nat → Heap F → SourceValue F → Option (SourceValue F × Heap F)
@@ -3773,7 +5313,7 @@ abbrev «IxonDeserialize::get_axiom».Complete : Prop :=
   ∀ {x_stream : SourceValue F} {h h' : Heap F} {r : SourceValue F},
     EvalFn W "IxonDeserialize::get_axiom" [x_stream] h r h' → ∃ k0, ∀ k ≥ k0, «IxonDeserialize::get_axiom» k h x_stream = some (r, h')
 
-theorem «IxonDeserialize::get_axiom».of_eval (ih0 : «IxonDeserialize::get_u64_le».Complete) (ih6 : «IxonDeserialize::get_expr_let».Complete) (ih7 : «IxonDeserialize::get_all_telescope».Complete) (ih8 : «IxonDeserialize::get_lam_telescope».Complete) (ih9 : «IxonDeserialize::get_app_telescope».Complete) (ih10 : «IxonDeserialize::get_u64_list».Complete) (ih11 : «IxonDeserialize::get_expr».Complete) : «IxonDeserialize::get_axiom».Complete := by
+theorem «IxonDeserialize::get_axiom».of_eval (ih0 : «IxonDeserialize::get_u64_le».Complete) (ih5 : «IxonDeserialize::get_u64_list».Complete) (ih12 : «IxonDeserialize::get_expr_let».Complete) (ih13 : «IxonDeserialize::get_all_telescope».Complete) (ih14 : «IxonDeserialize::get_lam_telescope».Complete) (ih15 : «IxonDeserialize::get_app_telescope».Complete) (ih16 : «IxonDeserialize::get_expr».Complete) : «IxonDeserialize::get_axiom».Complete := by
   intro x_stream h h' r ev
   have body := ev.function_inv IxVM.IxonDeserialize.get_axiom.lookup
     (by simp [IxVM.IxonDeserialize.get_axiom, ControlLower.hasControl])
@@ -3826,7 +5366,7 @@ theorem «IxonDeserialize::get_axiom».of_eval (ih0 : «IxonDeserialize::get_u64
   subst l81
   obtain ⟨rfl, rfl⟩ := args80.nil_inv
   rw [instanceName_plain_some] at callee75
-  obtain ⟨k82, hk83⟩ := ih11 callee75
+  obtain ⟨k82, hk83⟩ := ih16 callee75
   obtain ⟨ys84, hp85, hl86, ml87⟩ := matchPattern_tuple_inv mt70
   rcases ys84 with _ | ⟨y88, _ | ⟨y89, _ | ⟨_, _⟩⟩⟩ <;> simp at hl86
   try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp85
@@ -3885,7 +5425,7 @@ abbrev «IxonDeserialize::get_recursor_rule».Complete : Prop :=
   ∀ {x_stream : SourceValue F} {h h' : Heap F} {r : SourceValue F},
     EvalFn W "IxonDeserialize::get_recursor_rule" [x_stream] h r h' → ∃ k0, ∀ k ≥ k0, «IxonDeserialize::get_recursor_rule» k h x_stream = some (r, h')
 
-theorem «IxonDeserialize::get_recursor_rule».of_eval (ih0 : «IxonDeserialize::get_u64_le».Complete) (ih6 : «IxonDeserialize::get_expr_let».Complete) (ih7 : «IxonDeserialize::get_all_telescope».Complete) (ih8 : «IxonDeserialize::get_lam_telescope».Complete) (ih9 : «IxonDeserialize::get_app_telescope».Complete) (ih10 : «IxonDeserialize::get_u64_list».Complete) (ih11 : «IxonDeserialize::get_expr».Complete) : «IxonDeserialize::get_recursor_rule».Complete := by
+theorem «IxonDeserialize::get_recursor_rule».of_eval (ih0 : «IxonDeserialize::get_u64_le».Complete) (ih5 : «IxonDeserialize::get_u64_list».Complete) (ih12 : «IxonDeserialize::get_expr_let».Complete) (ih13 : «IxonDeserialize::get_all_telescope».Complete) (ih14 : «IxonDeserialize::get_lam_telescope».Complete) (ih15 : «IxonDeserialize::get_app_telescope».Complete) (ih16 : «IxonDeserialize::get_expr».Complete) : «IxonDeserialize::get_recursor_rule».Complete := by
   intro x_stream h h' r ev
   have body := ev.function_inv IxVM.IxonDeserialize.get_recursor_rule.lookup
     (by simp [IxVM.IxonDeserialize.get_recursor_rule, ControlLower.hasControl])
@@ -3912,7 +5452,7 @@ theorem «IxonDeserialize::get_recursor_rule».of_eval (ih0 : «IxonDeserialize:
   subst l39
   obtain ⟨rfl, rfl⟩ := args38.nil_inv
   rw [instanceName_plain_some] at callee33
-  obtain ⟨k40, hk41⟩ := ih11 callee33
+  obtain ⟨k40, hk41⟩ := ih16 callee33
   obtain ⟨ys42, hp43, hl44, ml45⟩ := matchPattern_tuple_inv mt28
   rcases ys42 with _ | ⟨y46, _ | ⟨y47, _ | ⟨_, _⟩⟩⟩ <;> simp at hl44
   try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp43
@@ -4056,7 +5596,7 @@ abbrev «IxonDeserialize::get_recursor».Complete : Prop :=
   ∀ {x_stream : SourceValue F} {h h' : Heap F} {r : SourceValue F},
     EvalFn W "IxonDeserialize::get_recursor" [x_stream] h r h' → ∃ k0, ∀ k ≥ k0, «IxonDeserialize::get_recursor» k h x_stream = some (r, h')
 
-theorem «IxonDeserialize::get_recursor».of_eval (ih0 : «IxonDeserialize::get_u64_le».Complete) (ih6 : «IxonDeserialize::get_expr_let».Complete) (ih7 : «IxonDeserialize::get_all_telescope».Complete) (ih8 : «IxonDeserialize::get_lam_telescope».Complete) (ih9 : «IxonDeserialize::get_app_telescope».Complete) (ih10 : «IxonDeserialize::get_u64_list».Complete) (ih11 : «IxonDeserialize::get_expr».Complete) (ih13 : «IxonDeserialize::get_recursor_rule_list».Complete) : «IxonDeserialize::get_recursor».Complete := by
+theorem «IxonDeserialize::get_recursor».of_eval (ih0 : «IxonDeserialize::get_u64_le».Complete) (ih5 : «IxonDeserialize::get_u64_list».Complete) (ih12 : «IxonDeserialize::get_expr_let».Complete) (ih13 : «IxonDeserialize::get_all_telescope».Complete) (ih14 : «IxonDeserialize::get_lam_telescope».Complete) (ih15 : «IxonDeserialize::get_app_telescope».Complete) (ih16 : «IxonDeserialize::get_expr».Complete) (ih18 : «IxonDeserialize::get_recursor_rule_list».Complete) : «IxonDeserialize::get_recursor».Complete := by
   intro x_stream h h' r ev
   have body := ev.function_inv IxVM.IxonDeserialize.get_recursor.lookup
     (by simp [IxVM.IxonDeserialize.get_recursor, ControlLower.hasControl])
@@ -4200,7 +5740,7 @@ theorem «IxonDeserialize::get_recursor».of_eval (ih0 : «IxonDeserialize::get_
   subst l233
   obtain ⟨rfl, rfl⟩ := args232.nil_inv
   rw [instanceName_plain_some] at callee227
-  obtain ⟨k234, hk235⟩ := ih11 callee227
+  obtain ⟨k234, hk235⟩ := ih16 callee227
   obtain ⟨ys236, hp237, hl238, ml239⟩ := matchPattern_tuple_inv mt222
   rcases ys236 with _ | ⟨y240, _ | ⟨y241, _ | ⟨_, _⟩⟩⟩ <;> simp at hl238
   try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp237
@@ -4232,7 +5772,7 @@ theorem «IxonDeserialize::get_recursor».of_eval (ih0 : «IxonDeserialize::get_
   subst l287
   obtain ⟨rfl, rfl⟩ := args286.nil_inv
   rw [instanceName_plain_some] at callee275
-  obtain ⟨k288, hk289⟩ := ih13 callee275
+  obtain ⟨k288, hk289⟩ := ih18 callee275
   obtain ⟨ys290, hp291, hl292, ml293⟩ := matchPattern_tuple_inv mt270
   rcases ys290 with _ | ⟨y294, _ | ⟨y295, _ | ⟨_, _⟩⟩⟩ <;> simp at hl292
   try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp291
@@ -4516,7 +6056,7 @@ abbrev «IxonDeserialize::get_definition».Complete : Prop :=
   ∀ {x_stream : SourceValue F} {h h' : Heap F} {r : SourceValue F},
     EvalFn W "IxonDeserialize::get_definition" [x_stream] h r h' → ∃ k0, ∀ k ≥ k0, «IxonDeserialize::get_definition» k h x_stream = some (r, h')
 
-theorem «IxonDeserialize::get_definition».of_eval (ih0 : «IxonDeserialize::get_u64_le».Complete) (ih6 : «IxonDeserialize::get_expr_let».Complete) (ih7 : «IxonDeserialize::get_all_telescope».Complete) (ih8 : «IxonDeserialize::get_lam_telescope».Complete) (ih9 : «IxonDeserialize::get_app_telescope».Complete) (ih10 : «IxonDeserialize::get_u64_list».Complete) (ih11 : «IxonDeserialize::get_expr».Complete) : «IxonDeserialize::get_definition».Complete := by
+theorem «IxonDeserialize::get_definition».of_eval (ih0 : «IxonDeserialize::get_u64_le».Complete) (ih5 : «IxonDeserialize::get_u64_list».Complete) (ih12 : «IxonDeserialize::get_expr_let».Complete) (ih13 : «IxonDeserialize::get_all_telescope».Complete) (ih14 : «IxonDeserialize::get_lam_telescope».Complete) (ih15 : «IxonDeserialize::get_app_telescope».Complete) (ih16 : «IxonDeserialize::get_expr».Complete) : «IxonDeserialize::get_definition».Complete := by
   intro x_stream h h' r ev
   have body := ev.function_inv IxVM.IxonDeserialize.get_definition.lookup
     (by simp [IxVM.IxonDeserialize.get_definition, ControlLower.hasControl])
@@ -4571,7 +6111,7 @@ theorem «IxonDeserialize::get_definition».of_eval (ih0 : «IxonDeserialize::ge
   subst l87
   obtain ⟨rfl, rfl⟩ := args86.nil_inv
   rw [instanceName_plain_some] at callee81
-  obtain ⟨k88, hk89⟩ := ih11 callee81
+  obtain ⟨k88, hk89⟩ := ih16 callee81
   obtain ⟨ys90, hp91, hl92, ml93⟩ := matchPattern_tuple_inv mt76
   rcases ys90 with _ | ⟨y94, _ | ⟨y95, _ | ⟨_, _⟩⟩⟩ <;> simp at hl92
   try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp91
@@ -4585,7 +6125,7 @@ theorem «IxonDeserialize::get_definition».of_eval (ih0 : «IxonDeserialize::ge
   subst l111
   obtain ⟨rfl, rfl⟩ := args110.nil_inv
   rw [instanceName_plain_some] at callee105
-  obtain ⟨k112, hk113⟩ := ih11 callee105
+  obtain ⟨k112, hk113⟩ := ih16 callee105
   obtain ⟨ys114, hp115, hl116, ml117⟩ := matchPattern_tuple_inv mt100
   rcases ys114 with _ | ⟨y118, _ | ⟨y119, _ | ⟨_, _⟩⟩⟩ <;> simp at hl116
   try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp115
@@ -4715,7 +6255,7 @@ abbrev «IxonDeserialize::get_constant_info_by_variant».Complete : Prop :=
   ∀ {x_variant x_stream : SourceValue F} {h h' : Heap F} {r : SourceValue F},
     EvalFn W "IxonDeserialize::get_constant_info_by_variant" [x_variant, x_stream] h r h' → ∃ k0, ∀ k ≥ k0, «IxonDeserialize::get_constant_info_by_variant» k h x_variant x_stream = some (r, h')
 
-theorem «IxonDeserialize::get_constant_info_by_variant».of_eval (ih0 : «IxonDeserialize::get_u64_le».Complete) (ih6 : «IxonDeserialize::get_expr_let».Complete) (ih7 : «IxonDeserialize::get_all_telescope».Complete) (ih8 : «IxonDeserialize::get_lam_telescope».Complete) (ih9 : «IxonDeserialize::get_app_telescope».Complete) (ih10 : «IxonDeserialize::get_u64_list».Complete) (ih11 : «IxonDeserialize::get_expr».Complete) (ih13 : «IxonDeserialize::get_recursor_rule_list».Complete) : «IxonDeserialize::get_constant_info_by_variant».Complete := by
+theorem «IxonDeserialize::get_constant_info_by_variant».of_eval (ih0 : «IxonDeserialize::get_u64_le».Complete) (ih5 : «IxonDeserialize::get_u64_list».Complete) (ih12 : «IxonDeserialize::get_expr_let».Complete) (ih13 : «IxonDeserialize::get_all_telescope».Complete) (ih14 : «IxonDeserialize::get_lam_telescope».Complete) (ih15 : «IxonDeserialize::get_app_telescope».Complete) (ih16 : «IxonDeserialize::get_expr».Complete) (ih18 : «IxonDeserialize::get_recursor_rule_list».Complete) : «IxonDeserialize::get_constant_info_by_variant».Complete := by
   intro x_variant x_stream h h' r ev
   have body := ev.function_inv IxVM.IxonDeserialize.get_constant_info_by_variant.lookup
     (by simp [IxVM.IxonDeserialize.get_constant_info_by_variant, ControlLower.hasControl])
@@ -4733,7 +6273,7 @@ theorem «IxonDeserialize::get_constant_info_by_variant».of_eval (ih0 : «IxonD
     subst l25
     obtain ⟨rfl, rfl⟩ := args24.nil_inv
     rw [instanceName_plain_some] at callee19
-    obtain ⟨k26, hk27⟩ := «IxonDeserialize::get_definition».of_eval ih0 ih6 ih7 ih8 ih9 ih10 ih11 callee19
+    obtain ⟨k26, hk27⟩ := «IxonDeserialize::get_definition».of_eval ih0 ih5 ih12 ih13 ih14 ih15 ih16 callee19
     obtain ⟨ys28, hp29, hl30, ml31⟩ := matchPattern_tuple_inv mt14
     rcases ys28 with _ | ⟨y32, _ | ⟨y33, _ | ⟨_, _⟩⟩⟩ <;> simp at hl30
     try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp29
@@ -4764,7 +6304,7 @@ theorem «IxonDeserialize::get_constant_info_by_variant».of_eval (ih0 : «IxonD
       subst l72
       obtain ⟨rfl, rfl⟩ := args71.nil_inv
       rw [instanceName_plain_some] at callee66
-      obtain ⟨k73, hk74⟩ := «IxonDeserialize::get_recursor».of_eval ih0 ih6 ih7 ih8 ih9 ih10 ih11 ih13 callee66
+      obtain ⟨k73, hk74⟩ := «IxonDeserialize::get_recursor».of_eval ih0 ih5 ih12 ih13 ih14 ih15 ih16 ih18 callee66
       obtain ⟨ys75, hp76, hl77, ml78⟩ := matchPattern_tuple_inv mt61
       rcases ys75 with _ | ⟨y79, _ | ⟨y80, _ | ⟨_, _⟩⟩⟩ <;> simp at hl77
       try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp76
@@ -4795,7 +6335,7 @@ theorem «IxonDeserialize::get_constant_info_by_variant».of_eval (ih0 : «IxonD
         subst l119
         obtain ⟨rfl, rfl⟩ := args118.nil_inv
         rw [instanceName_plain_some] at callee113
-        obtain ⟨k120, hk121⟩ := «IxonDeserialize::get_axiom».of_eval ih0 ih6 ih7 ih8 ih9 ih10 ih11 callee113
+        obtain ⟨k120, hk121⟩ := «IxonDeserialize::get_axiom».of_eval ih0 ih5 ih12 ih13 ih14 ih15 ih16 callee113
         obtain ⟨ys122, hp123, hl124, ml125⟩ := matchPattern_tuple_inv mt108
         rcases ys122 with _ | ⟨y126, _ | ⟨y127, _ | ⟨_, _⟩⟩⟩ <;> simp at hl124
         try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp123
@@ -4826,7 +6366,7 @@ theorem «IxonDeserialize::get_constant_info_by_variant».of_eval (ih0 : «IxonD
           subst l166
           obtain ⟨rfl, rfl⟩ := args165.nil_inv
           rw [instanceName_plain_some] at callee160
-          obtain ⟨k167, hk168⟩ := «IxonDeserialize::get_quotient».of_eval ih0 ih6 ih7 ih8 ih9 ih10 ih11 callee160
+          obtain ⟨k167, hk168⟩ := «IxonDeserialize::get_quotient».of_eval ih0 ih5 ih12 ih13 ih14 ih15 ih16 callee160
           obtain ⟨ys169, hp170, hl171, ml172⟩ := matchPattern_tuple_inv mt155
           rcases ys169 with _ | ⟨y173, _ | ⟨y174, _ | ⟨_, _⟩⟩⟩ <;> simp at hl171
           try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp170
@@ -5021,7 +6561,7 @@ abbrev «IxonDeserialize::get_constructor».Complete : Prop :=
   ∀ {x_stream : SourceValue F} {h h' : Heap F} {r : SourceValue F},
     EvalFn W "IxonDeserialize::get_constructor" [x_stream] h r h' → ∃ k0, ∀ k ≥ k0, «IxonDeserialize::get_constructor» k h x_stream = some (r, h')
 
-theorem «IxonDeserialize::get_constructor».of_eval (ih0 : «IxonDeserialize::get_u64_le».Complete) (ih6 : «IxonDeserialize::get_expr_let».Complete) (ih7 : «IxonDeserialize::get_all_telescope».Complete) (ih8 : «IxonDeserialize::get_lam_telescope».Complete) (ih9 : «IxonDeserialize::get_app_telescope».Complete) (ih10 : «IxonDeserialize::get_u64_list».Complete) (ih11 : «IxonDeserialize::get_expr».Complete) : «IxonDeserialize::get_constructor».Complete := by
+theorem «IxonDeserialize::get_constructor».of_eval (ih0 : «IxonDeserialize::get_u64_le».Complete) (ih5 : «IxonDeserialize::get_u64_list».Complete) (ih12 : «IxonDeserialize::get_expr_let».Complete) (ih13 : «IxonDeserialize::get_all_telescope».Complete) (ih14 : «IxonDeserialize::get_lam_telescope».Complete) (ih15 : «IxonDeserialize::get_app_telescope».Complete) (ih16 : «IxonDeserialize::get_expr».Complete) : «IxonDeserialize::get_constructor».Complete := by
   intro x_stream h h' r ev
   have body := ev.function_inv IxVM.IxonDeserialize.get_constructor.lookup
     (by simp [IxVM.IxonDeserialize.get_constructor, ControlLower.hasControl])
@@ -5116,7 +6656,7 @@ theorem «IxonDeserialize::get_constructor».of_eval (ih0 : «IxonDeserialize::g
   subst l153
   obtain ⟨rfl, rfl⟩ := args152.nil_inv
   rw [instanceName_plain_some] at callee147
-  obtain ⟨k154, hk155⟩ := ih11 callee147
+  obtain ⟨k154, hk155⟩ := ih16 callee147
   obtain ⟨ys156, hp157, hl158, ml159⟩ := matchPattern_tuple_inv mt142
   rcases ys156 with _ | ⟨y160, _ | ⟨y161, _ | ⟨_, _⟩⟩⟩ <;> simp at hl158
   try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp157
@@ -5262,7 +6802,7 @@ abbrev «IxonDeserialize::get_inductive».Complete : Prop :=
   ∀ {x_stream : SourceValue F} {h h' : Heap F} {r : SourceValue F},
     EvalFn W "IxonDeserialize::get_inductive" [x_stream] h r h' → ∃ k0, ∀ k ≥ k0, «IxonDeserialize::get_inductive» k h x_stream = some (r, h')
 
-theorem «IxonDeserialize::get_inductive».of_eval (ih0 : «IxonDeserialize::get_u64_le».Complete) (ih6 : «IxonDeserialize::get_expr_let».Complete) (ih7 : «IxonDeserialize::get_all_telescope».Complete) (ih8 : «IxonDeserialize::get_lam_telescope».Complete) (ih9 : «IxonDeserialize::get_app_telescope».Complete) (ih10 : «IxonDeserialize::get_u64_list».Complete) (ih11 : «IxonDeserialize::get_expr».Complete) (ih14 : «IxonDeserialize::get_constructor_list».Complete) : «IxonDeserialize::get_inductive».Complete := by
+theorem «IxonDeserialize::get_inductive».of_eval (ih0 : «IxonDeserialize::get_u64_le».Complete) (ih5 : «IxonDeserialize::get_u64_list».Complete) (ih12 : «IxonDeserialize::get_expr_let».Complete) (ih13 : «IxonDeserialize::get_all_telescope».Complete) (ih14 : «IxonDeserialize::get_lam_telescope».Complete) (ih15 : «IxonDeserialize::get_app_telescope».Complete) (ih16 : «IxonDeserialize::get_expr».Complete) (ih19 : «IxonDeserialize::get_constructor_list».Complete) : «IxonDeserialize::get_inductive».Complete := by
   intro x_stream h h' r ev
   have body := ev.function_inv IxVM.IxonDeserialize.get_inductive.lookup
     (by simp [IxVM.IxonDeserialize.get_inductive, ControlLower.hasControl])
@@ -5363,7 +6903,7 @@ theorem «IxonDeserialize::get_inductive».of_eval (ih0 : «IxonDeserialize::get
   subst l157
   obtain ⟨rfl, rfl⟩ := args156.nil_inv
   rw [instanceName_plain_some] at callee151
-  obtain ⟨k158, hk159⟩ := ih11 callee151
+  obtain ⟨k158, hk159⟩ := ih16 callee151
   obtain ⟨ys160, hp161, hl162, ml163⟩ := matchPattern_tuple_inv mt146
   rcases ys160 with _ | ⟨y164, _ | ⟨y165, _ | ⟨_, _⟩⟩⟩ <;> simp at hl162
   try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp161
@@ -5395,7 +6935,7 @@ theorem «IxonDeserialize::get_inductive».of_eval (ih0 : «IxonDeserialize::get
   subst l211
   obtain ⟨rfl, rfl⟩ := args210.nil_inv
   rw [instanceName_plain_some] at callee199
-  obtain ⟨k212, hk213⟩ := ih14 callee199
+  obtain ⟨k212, hk213⟩ := ih19 callee199
   obtain ⟨ys214, hp215, hl216, ml217⟩ := matchPattern_tuple_inv mt194
   rcases ys214 with _ | ⟨y218, _ | ⟨y219, _ | ⟨_, _⟩⟩⟩ <;> simp at hl216
   try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp215
@@ -5486,7 +7026,7 @@ abbrev «IxonDeserialize::get_mut_const».Complete : Prop :=
   ∀ {x_stream : SourceValue F} {h h' : Heap F} {r : SourceValue F},
     EvalFn W "IxonDeserialize::get_mut_const" [x_stream] h r h' → ∃ k0, ∀ k ≥ k0, «IxonDeserialize::get_mut_const» k h x_stream = some (r, h')
 
-theorem «IxonDeserialize::get_mut_const».of_eval (ih0 : «IxonDeserialize::get_u64_le».Complete) (ih6 : «IxonDeserialize::get_expr_let».Complete) (ih7 : «IxonDeserialize::get_all_telescope».Complete) (ih8 : «IxonDeserialize::get_lam_telescope».Complete) (ih9 : «IxonDeserialize::get_app_telescope».Complete) (ih10 : «IxonDeserialize::get_u64_list».Complete) (ih11 : «IxonDeserialize::get_expr».Complete) (ih13 : «IxonDeserialize::get_recursor_rule_list».Complete) (ih14 : «IxonDeserialize::get_constructor_list».Complete) : «IxonDeserialize::get_mut_const».Complete := by
+theorem «IxonDeserialize::get_mut_const».of_eval (ih0 : «IxonDeserialize::get_u64_le».Complete) (ih5 : «IxonDeserialize::get_u64_list».Complete) (ih12 : «IxonDeserialize::get_expr_let».Complete) (ih13 : «IxonDeserialize::get_all_telescope».Complete) (ih14 : «IxonDeserialize::get_lam_telescope».Complete) (ih15 : «IxonDeserialize::get_app_telescope».Complete) (ih16 : «IxonDeserialize::get_expr».Complete) (ih18 : «IxonDeserialize::get_recursor_rule_list».Complete) (ih19 : «IxonDeserialize::get_constructor_list».Complete) : «IxonDeserialize::get_mut_const».Complete := by
   intro x_stream h h' r ev
   have body := ev.function_inv IxVM.IxonDeserialize.get_mut_const.lookup
     (by simp [IxVM.IxonDeserialize.get_mut_const, ControlLower.hasControl])
@@ -5523,7 +7063,7 @@ theorem «IxonDeserialize::get_mut_const».of_eval (ih0 : «IxonDeserialize::get
     subst l60
     obtain ⟨rfl, rfl⟩ := args59.nil_inv
     rw [instanceName_plain_some] at callee54
-    obtain ⟨k61, hk62⟩ := «IxonDeserialize::get_definition».of_eval ih0 ih6 ih7 ih8 ih9 ih10 ih11 callee54
+    obtain ⟨k61, hk62⟩ := «IxonDeserialize::get_definition».of_eval ih0 ih5 ih12 ih13 ih14 ih15 ih16 callee54
     obtain ⟨ys63, hp64, hl65, ml66⟩ := matchPattern_tuple_inv mt49
     rcases ys63 with _ | ⟨y67, _ | ⟨y68, _ | ⟨_, _⟩⟩⟩ <;> simp at hl65
     try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp64
@@ -5554,7 +7094,7 @@ theorem «IxonDeserialize::get_mut_const».of_eval (ih0 : «IxonDeserialize::get
       subst l107
       obtain ⟨rfl, rfl⟩ := args106.nil_inv
       rw [instanceName_plain_some] at callee101
-      obtain ⟨k108, hk109⟩ := «IxonDeserialize::get_inductive».of_eval ih0 ih6 ih7 ih8 ih9 ih10 ih11 ih14 callee101
+      obtain ⟨k108, hk109⟩ := «IxonDeserialize::get_inductive».of_eval ih0 ih5 ih12 ih13 ih14 ih15 ih16 ih19 callee101
       obtain ⟨ys110, hp111, hl112, ml113⟩ := matchPattern_tuple_inv mt96
       rcases ys110 with _ | ⟨y114, _ | ⟨y115, _ | ⟨_, _⟩⟩⟩ <;> simp at hl112
       try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp111
@@ -5585,7 +7125,7 @@ theorem «IxonDeserialize::get_mut_const».of_eval (ih0 : «IxonDeserialize::get
         subst l154
         obtain ⟨rfl, rfl⟩ := args153.nil_inv
         rw [instanceName_plain_some] at callee148
-        obtain ⟨k155, hk156⟩ := «IxonDeserialize::get_recursor».of_eval ih0 ih6 ih7 ih8 ih9 ih10 ih11 ih13 callee148
+        obtain ⟨k155, hk156⟩ := «IxonDeserialize::get_recursor».of_eval ih0 ih5 ih12 ih13 ih14 ih15 ih16 ih18 callee148
         obtain ⟨ys157, hp158, hl159, ml160⟩ := matchPattern_tuple_inv mt143
         rcases ys157 with _ | ⟨y161, _ | ⟨y162, _ | ⟨_, _⟩⟩⟩ <;> simp at hl159
         try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp158
@@ -5718,7 +7258,7 @@ abbrev «IxonDeserialize::get_constant_info».Complete : Prop :=
   ∀ {x_flag x_size x_stream : SourceValue F} {h h' : Heap F} {r : SourceValue F},
     EvalFn W "IxonDeserialize::get_constant_info" [x_flag, x_size, x_stream] h r h' → ∃ k0, ∀ k ≥ k0, «IxonDeserialize::get_constant_info» k h x_flag x_size x_stream = some (r, h')
 
-theorem «IxonDeserialize::get_constant_info».of_eval (ih0 : «IxonDeserialize::get_u64_le».Complete) (ih6 : «IxonDeserialize::get_expr_let».Complete) (ih7 : «IxonDeserialize::get_all_telescope».Complete) (ih8 : «IxonDeserialize::get_lam_telescope».Complete) (ih9 : «IxonDeserialize::get_app_telescope».Complete) (ih10 : «IxonDeserialize::get_u64_list».Complete) (ih11 : «IxonDeserialize::get_expr».Complete) (ih13 : «IxonDeserialize::get_recursor_rule_list».Complete) (ih14 : «IxonDeserialize::get_constructor_list».Complete) (ih15 : «IxonDeserialize::get_mut_const_list».Complete) : «IxonDeserialize::get_constant_info».Complete := by
+theorem «IxonDeserialize::get_constant_info».of_eval (ih0 : «IxonDeserialize::get_u64_le».Complete) (ih5 : «IxonDeserialize::get_u64_list».Complete) (ih12 : «IxonDeserialize::get_expr_let».Complete) (ih13 : «IxonDeserialize::get_all_telescope».Complete) (ih14 : «IxonDeserialize::get_lam_telescope».Complete) (ih15 : «IxonDeserialize::get_app_telescope».Complete) (ih16 : «IxonDeserialize::get_expr».Complete) (ih18 : «IxonDeserialize::get_recursor_rule_list».Complete) (ih19 : «IxonDeserialize::get_constructor_list».Complete) (ih20 : «IxonDeserialize::get_mut_const_list».Complete) : «IxonDeserialize::get_constant_info».Complete := by
   intro x_flag x_size x_stream h h' r ev
   have body := ev.function_inv IxVM.IxonDeserialize.get_constant_info.lookup
     (by simp [IxVM.IxonDeserialize.get_constant_info, ControlLower.hasControl])
@@ -5740,7 +7280,7 @@ theorem «IxonDeserialize::get_constant_info».of_eval (ih0 : «IxonDeserialize:
     subst l31
     obtain ⟨rfl, rfl⟩ := args30.nil_inv
     rw [instanceName_plain_some] at callee19
-    obtain ⟨k32, hk33⟩ := ih15 callee19
+    obtain ⟨k32, hk33⟩ := ih20 callee19
     obtain ⟨ys34, hp35, hl36, ml37⟩ := matchPattern_tuple_inv mt14
     rcases ys34 with _ | ⟨y38, _ | ⟨y39, _ | ⟨_, _⟩⟩⟩ <;> simp at hl36
     try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp35
@@ -5861,7 +7401,7 @@ theorem «IxonDeserialize::get_constant_info».of_eval (ih0 : «IxonDeserialize:
       subst l250
       obtain ⟨rfl, rfl⟩ := args249.nil_inv
       rw [instanceName_plain_some] at callee224
-      obtain ⟨k251, hk252⟩ := «IxonDeserialize::get_constant_info_by_variant».of_eval ih0 ih6 ih7 ih8 ih9 ih10 ih11 ih13 callee224
+      obtain ⟨k251, hk252⟩ := «IxonDeserialize::get_constant_info_by_variant».of_eval ih0 ih5 ih12 ih13 ih14 ih15 ih16 ih18 callee224
       refine ⟨k142 + k154 + k166 + k178 + k190 + k202 + k214 + k243 + k251 + 1, fun k hk => ?_⟩
       obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
       simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::get_constant_info», hc8, hc61, hp71, ap90, hk143 k' (by omega), op131, hk155 k' (by omega), op125, hk167 k' (by omega), op119, hk179 k' (by omega), op113, hk191 k' (by omega), op107, hk203 k' (by omega), op101, hk215 k' (by omega), pr241, hk244 k' (by omega), hk252 k' (by omega)]
@@ -5894,10 +7434,17 @@ def «IxonDeserialize::get_constant» : Nat → Heap F → SourceValue F → Opt
                                   match v8 with
                                     | .tuple [x_univs, x_s5] =>
                                       (do
-                                        let (v10, h11) ← «IxonDeserialize::assert_prj_empty_tables» k h9 x_info x_sharing x_refs x_univs
-                                        (do
-                                          let (v12, h13) ← some ((.construct (instanceName [] "Ixon::Constant" (some [])) "Mk" [x_info, x_sharing, x_refs, x_univs] : SourceValue F), h11)
-                                          some ((.tuple [v12, x_s5] : SourceValue F), h13)))
+                                        let (v10, h11) ← (do
+                                          let (v12, h13) ← «IxonDeserialize::max_lvls» k h9 x_info
+                                          «IxonDeserialize::get_binders» k h13 x_s5 v12)
+                                        match v10 with
+                                          | .tuple [x_binders, x_s6] =>
+                                            (do
+                                              let (v14, h15) ← «IxonDeserialize::assert_prj_empty_tables» k h11 x_info x_sharing x_refs x_univs x_binders
+                                              (do
+                                                let (v16, h17) ← some ((.construct (instanceName [] "Ixon::Constant" (some [])) "Mk" [x_info, x_sharing, x_refs, x_univs, x_binders] : SourceValue F), h15)
+                                                some ((.tuple [v16, x_s6] : SourceValue F), h17)))
+                                          | _ => none)
                                     | _ => none)
                               | _ => none)
                         | _ => none)
@@ -5910,7 +7457,7 @@ abbrev «IxonDeserialize::get_constant».Complete : Prop :=
   ∀ {x_stream : SourceValue F} {h h' : Heap F} {r : SourceValue F},
     EvalFn W "IxonDeserialize::get_constant" [x_stream] h r h' → ∃ k0, ∀ k ≥ k0, «IxonDeserialize::get_constant» k h x_stream = some (r, h')
 
-theorem «IxonDeserialize::get_constant».of_eval (ih0 : «IxonDeserialize::get_u64_le».Complete) (ih2 : «IxonDeserialize::build_succ_chain».Complete) (ih3 : «IxonDeserialize::get_univ».Complete) (ih4 : «IxonDeserialize::get_univ_list».Complete) (ih5 : «IxonDeserialize::get_address_list».Complete) (ih6 : «IxonDeserialize::get_expr_let».Complete) (ih7 : «IxonDeserialize::get_all_telescope».Complete) (ih8 : «IxonDeserialize::get_lam_telescope».Complete) (ih9 : «IxonDeserialize::get_app_telescope».Complete) (ih10 : «IxonDeserialize::get_u64_list».Complete) (ih11 : «IxonDeserialize::get_expr».Complete) (ih12 : «IxonDeserialize::get_expr_list».Complete) (ih13 : «IxonDeserialize::get_recursor_rule_list».Complete) (ih14 : «IxonDeserialize::get_constructor_list».Complete) (ih15 : «IxonDeserialize::get_mut_const_list».Complete) : «IxonDeserialize::get_constant».Complete := by
+theorem «IxonDeserialize::get_constant».of_eval (ih0 : «IxonDeserialize::get_u64_le».Complete) (ih1 : «UInt32::less_than_fields».Complete) (ih2 : «IxonDeserialize::muts_max_lvls».Complete) (ih3 : «IxonDeserialize::assert_blocks_ascending».Complete) (ih4 : «IxonDeserialize::assert_params_canonical».Complete) (ih5 : «IxonDeserialize::get_u64_list».Complete) (ih6 : «IxonDeserialize::get_binder_node_list».Complete) (ih7 : «IxonDeserialize::get_binder_block_list».Complete) (ih8 : «IxonDeserialize::build_succ_chain».Complete) (ih9 : «IxonDeserialize::get_univ».Complete) (ih10 : «IxonDeserialize::get_univ_list».Complete) (ih11 : «IxonDeserialize::get_address_list».Complete) (ih12 : «IxonDeserialize::get_expr_let».Complete) (ih13 : «IxonDeserialize::get_all_telescope».Complete) (ih14 : «IxonDeserialize::get_lam_telescope».Complete) (ih15 : «IxonDeserialize::get_app_telescope».Complete) (ih16 : «IxonDeserialize::get_expr».Complete) (ih17 : «IxonDeserialize::get_expr_list».Complete) (ih18 : «IxonDeserialize::get_recursor_rule_list».Complete) (ih19 : «IxonDeserialize::get_constructor_list».Complete) (ih20 : «IxonDeserialize::get_mut_const_list».Complete) : «IxonDeserialize::get_constant».Complete := by
   intro x_stream h h' r ev
   have body := ev.function_inv IxVM.IxonDeserialize.get_constant.lookup
     (by simp [IxVM.IxonDeserialize.get_constant, ControlLower.hasControl])
@@ -5955,7 +7502,7 @@ theorem «IxonDeserialize::get_constant».of_eval (ih0 : «IxonDeserialize::get_
   subst l64
   obtain ⟨rfl, rfl⟩ := args63.nil_inv
   rw [instanceName_plain_some] at callee46
-  obtain ⟨k65, hk66⟩ := «IxonDeserialize::get_constant_info».of_eval ih0 ih6 ih7 ih8 ih9 ih10 ih11 ih13 ih14 ih15 callee46
+  obtain ⟨k65, hk66⟩ := «IxonDeserialize::get_constant_info».of_eval ih0 ih5 ih12 ih13 ih14 ih15 ih16 ih18 ih19 ih20 callee46
   obtain ⟨ys67, hp68, hl69, ml70⟩ := matchPattern_tuple_inv mt41
   rcases ys67 with _ | ⟨y71, _ | ⟨y72, _ | ⟨_, _⟩⟩⟩ <;> simp at hl69
   try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp68
@@ -5969,7 +7516,7 @@ theorem «IxonDeserialize::get_constant».of_eval (ih0 : «IxonDeserialize::get_
   subst l88
   obtain ⟨rfl, rfl⟩ := args87.nil_inv
   rw [instanceName_plain_some] at callee82
-  obtain ⟨k89, hk90⟩ := «IxonDeserialize::get_sharing».of_eval ih0 ih6 ih7 ih8 ih9 ih10 ih11 ih12 callee82
+  obtain ⟨k89, hk90⟩ := «IxonDeserialize::get_sharing».of_eval ih0 ih5 ih12 ih13 ih14 ih15 ih16 ih17 callee82
   obtain ⟨ys91, hp92, hl93, ml94⟩ := matchPattern_tuple_inv mt77
   rcases ys91 with _ | ⟨y95, _ | ⟨y96, _ | ⟨_, _⟩⟩⟩ <;> simp at hl93
   try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp92
@@ -5983,7 +7530,7 @@ theorem «IxonDeserialize::get_constant».of_eval (ih0 : «IxonDeserialize::get_
   subst l112
   obtain ⟨rfl, rfl⟩ := args111.nil_inv
   rw [instanceName_plain_some] at callee106
-  obtain ⟨k113, hk114⟩ := «IxonDeserialize::get_refs».of_eval ih0 ih5 callee106
+  obtain ⟨k113, hk114⟩ := «IxonDeserialize::get_refs».of_eval ih0 ih11 callee106
   obtain ⟨ys115, hp116, hl117, ml118⟩ := matchPattern_tuple_inv mt101
   rcases ys115 with _ | ⟨y119, _ | ⟨y120, _ | ⟨_, _⟩⟩⟩ <;> simp at hl117
   try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp116
@@ -5997,7 +7544,7 @@ theorem «IxonDeserialize::get_constant».of_eval (ih0 : «IxonDeserialize::get_
   subst l136
   obtain ⟨rfl, rfl⟩ := args135.nil_inv
   rw [instanceName_plain_some] at callee130
-  obtain ⟨k137, hk138⟩ := «IxonDeserialize::get_univs».of_eval ih0 ih2 ih3 ih4 callee130
+  obtain ⟨k137, hk138⟩ := «IxonDeserialize::get_univs».of_eval ih0 ih8 ih9 ih10 callee130
   obtain ⟨ys139, hp140, hl141, ml142⟩ := matchPattern_tuple_inv mt125
   rcases ys139 with _ | ⟨y143, _ | ⟨y144, _ | ⟨_, _⟩⟩⟩ <;> simp at hl141
   try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp140
@@ -6010,30 +7557,24 @@ theorem «IxonDeserialize::get_constant».of_eval (ih0 : «IxonDeserialize::get_
   simp at l160
   subst l160
   obtain ⟨v161, vs162, m163, rfl, d164, args165⟩ := args159.cons_inv
-  obtain ⟨l166, rfl⟩ := d164.var_inv
-  simp at l166
-  subst l166
-  obtain ⟨v167, vs168, m169, rfl, d170, args171⟩ := args165.cons_inv
-  obtain ⟨l172, rfl⟩ := d170.var_inv
-  simp at l172
-  subst l172
-  obtain ⟨v173, vs174, m175, rfl, d176, args177⟩ := args171.cons_inv
-  obtain ⟨l178, rfl⟩ := d176.var_inv
-  simp at l178
-  subst l178
-  obtain ⟨rfl, rfl⟩ := args177.nil_inv
+  obtain ⟨vs166, m167, args168, callee169⟩ := d164.call_inv
+  obtain ⟨v170, vs171, m172, rfl, d173, args174⟩ := args168.cons_inv
+  obtain ⟨l175, rfl⟩ := d173.var_inv
+  simp at l175
+  subst l175
+  obtain ⟨rfl, rfl⟩ := args174.nil_inv
+  rw [instanceName_plain_some] at callee169
+  obtain ⟨k176, hk177⟩ := «IxonDeserialize::max_lvls».of_eval ih1 ih2 callee169
+  obtain ⟨rfl, rfl⟩ := args165.nil_inv
   rw [instanceName_plain_some] at callee154
-  obtain ⟨k179, hk180⟩ := «IxonDeserialize::assert_prj_empty_tables».of_eval callee154
-  rw [matchPattern_wildcard] at mt149
-  simp only [Except.ok.injEq, Option.some.injEq] at mt149
-  subst mt149
-  obtain ⟨vs181, args182, rfl⟩ := d150.tuple_inv
-  obtain ⟨v183, vs184, m185, rfl, d186, args187⟩ := args182.cons_inv
-  obtain ⟨vs188, args189, rfl⟩ := d186.construct_inv
-  obtain ⟨v190, vs191, m192, rfl, d193, args194⟩ := args189.cons_inv
-  obtain ⟨l195, rfl⟩ := d193.var_inv
-  simp at l195
-  subst l195
+  obtain ⟨k178, hk179⟩ := «IxonDeserialize::get_binders».of_eval ih0 ih1 ih3 ih4 ih5 ih6 ih7 callee154
+  obtain ⟨ys180, hp181, hl182, ml183⟩ := matchPattern_tuple_inv mt149
+  rcases ys180 with _ | ⟨y184, _ | ⟨y185, _ | ⟨_, _⟩⟩⟩ <;> simp at hl182
+  try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp181
+  simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml183
+  subst ml183
+  obtain ⟨v186, m187, bs188, d189, mt190, d191⟩ := d150.letValue_inv
+  obtain ⟨vs192, m193, args194, callee195⟩ := d189.call_inv
   obtain ⟨v196, vs197, m198, rfl, d199, args200⟩ := args194.cons_inv
   obtain ⟨l201, rfl⟩ := d199.var_inv
   simp at l201
@@ -6046,15 +7587,52 @@ theorem «IxonDeserialize::get_constant».of_eval (ih0 : «IxonDeserialize::get_
   obtain ⟨l213, rfl⟩ := d211.var_inv
   simp at l213
   subst l213
-  obtain ⟨rfl, rfl⟩ := args212.nil_inv
-  obtain ⟨v214, vs215, m216, rfl, d217, args218⟩ := args187.cons_inv
+  obtain ⟨v214, vs215, m216, rfl, d217, args218⟩ := args212.cons_inv
   obtain ⟨l219, rfl⟩ := d217.var_inv
   simp at l219
   subst l219
-  obtain ⟨rfl, rfl⟩ := args218.nil_inv
-  refine ⟨k16 + k65 + k89 + k113 + k137 + k179 + 1, fun k hk => ?_⟩
+  obtain ⟨v220, vs221, m222, rfl, d223, args224⟩ := args218.cons_inv
+  obtain ⟨l225, rfl⟩ := d223.var_inv
+  simp at l225
+  subst l225
+  obtain ⟨rfl, rfl⟩ := args224.nil_inv
+  rw [instanceName_plain_some] at callee195
+  obtain ⟨k226, hk227⟩ := «IxonDeserialize::assert_prj_empty_tables».of_eval callee195
+  rw [matchPattern_wildcard] at mt190
+  simp only [Except.ok.injEq, Option.some.injEq] at mt190
+  subst mt190
+  obtain ⟨vs228, args229, rfl⟩ := d191.tuple_inv
+  obtain ⟨v230, vs231, m232, rfl, d233, args234⟩ := args229.cons_inv
+  obtain ⟨vs235, args236, rfl⟩ := d233.construct_inv
+  obtain ⟨v237, vs238, m239, rfl, d240, args241⟩ := args236.cons_inv
+  obtain ⟨l242, rfl⟩ := d240.var_inv
+  simp at l242
+  subst l242
+  obtain ⟨v243, vs244, m245, rfl, d246, args247⟩ := args241.cons_inv
+  obtain ⟨l248, rfl⟩ := d246.var_inv
+  simp at l248
+  subst l248
+  obtain ⟨v249, vs250, m251, rfl, d252, args253⟩ := args247.cons_inv
+  obtain ⟨l254, rfl⟩ := d252.var_inv
+  simp at l254
+  subst l254
+  obtain ⟨v255, vs256, m257, rfl, d258, args259⟩ := args253.cons_inv
+  obtain ⟨l260, rfl⟩ := d258.var_inv
+  simp at l260
+  subst l260
+  obtain ⟨v261, vs262, m263, rfl, d264, args265⟩ := args259.cons_inv
+  obtain ⟨l266, rfl⟩ := d264.var_inv
+  simp at l266
+  subst l266
+  obtain ⟨rfl, rfl⟩ := args265.nil_inv
+  obtain ⟨v267, vs268, m269, rfl, d270, args271⟩ := args234.cons_inv
+  obtain ⟨l272, rfl⟩ := d270.var_inv
+  simp at l272
+  subst l272
+  obtain ⟨rfl, rfl⟩ := args271.nil_inv
+  refine ⟨k16 + k65 + k89 + k113 + k137 + k176 + k178 + k226 + 1, fun k hk => ?_⟩
   obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-  simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::get_constant», hk17 k' (by omega), hp19, hp32, hk66 k' (by omega), hp68, hk90 k' (by omega), hp92, hk114 k' (by omega), hp116, hk138 k' (by omega), hp140, hk180 k' (by omega)]
+  simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::get_constant», hk17 k' (by omega), hp19, hp32, hk66 k' (by omega), hp68, hk90 k' (by omega), hp92, hk114 k' (by omega), hp116, hk138 k' (by omega), hp140, hk177 k' (by omega), hk179 k' (by omega), hp181, hk227 k' (by omega)]
 
 /-- The mirror of `UInt8::xor`. -/
 def «UInt8::xor» : Nat → Heap F → SourceValue F → SourceValue F → Option (SourceValue F × Heap F)
@@ -7380,190 +8958,6 @@ theorem «UInt64::sub_with_borrow».of_eval : «UInt64::sub_with_borrow».Comple
   obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
   simp (config := { decide := true, maxSteps := 10000000 }) [«UInt64::sub_with_borrow», pr38, hk41 k' (by omega), op26, op20, pr53, hk56 k' (by omega), hk58 k' (by omega), hp60, pr109, hk112 k' (by omega), op97, op91, pr124, hk127 k' (by omega), op85, hk139 k' (by omega), hk141 k' (by omega), hp143, pr192, hk195 k' (by omega), op180, op174, pr207, hk210 k' (by omega), op168, hk222 k' (by omega), hk224 k' (by omega), hp226, pr275, hk278 k' (by omega), op263, op257, pr290, hk293 k' (by omega), op251, hk305 k' (by omega), hk307 k' (by omega), hp309, pr358, hk361 k' (by omega), op346, op340, pr373, hk376 k' (by omega), op334, hk388 k' (by omega), hk390 k' (by omega), hp392, pr441, hk444 k' (by omega), op429, op423, pr456, hk459 k' (by omega), op417, hk471 k' (by omega), hk473 k' (by omega), hp475, pr524, hk527 k' (by omega), op512, op506, pr539, hk542 k' (by omega), op500, hk554 k' (by omega), hk556 k' (by omega), hp558, pr607, hk610 k' (by omega), op595, op589, pr622, hk625 k' (by omega), op583, hk637 k' (by omega), hk639 k' (by omega), hp641, op713, hk725 k' (by omega)]
 
-/-- The mirror of `UInt64::to_field`. -/
-def «UInt64::to_field» : Nat → Heap F → SourceValue F → Option (SourceValue F × Heap F)
-  | 0, _, _ => none
-  | k + 1, h, x_x =>
-    match x_x with
-      | .tuple [x_b0, x_b1, x_b2, x_b3, x_b4, x_b5, x_b6, x_b7] =>
-        (do
-          let (v0, h1) ← (do
-            let (v2, h3) ← «UInt8::to_field» k h x_b7
-            match Builtin.apply (.assertEq { message := (some "u64 -> field: value exceeds 2^56 (top byte must be zero)"), runtimeCheck := true }) [v2, (.field 0)] with
-              | .ok z => some (z, h3)
-              | .error _ => none)
-          (do
-            let (v4, h5) ← (do
-              let (v6, h7) ← (do
-                let (v8, h9) ← (do
-                  let (v10, h11) ← (do
-                    let (v12, h13) ← (do
-                      let (v14, h15) ← «UInt8::to_field» k h1 x_b0
-                      let (v16, h17) ← (do
-                        let (v18, h19) ← «UInt8::to_field» k h15 x_b1
-                        match evalBinOp .mul (.field 256) v18 with
-                          | .ok z => some (z, h19)
-                          | .error _ => none)
-                      match evalBinOp .add v14 v16 with
-                        | .ok z => some (z, h17)
-                        | .error _ => none)
-                    let (v20, h21) ← (do
-                      let (v22, h23) ← «UInt8::to_field» k h13 x_b2
-                      match evalBinOp .mul (.field 65536) v22 with
-                        | .ok z => some (z, h23)
-                        | .error _ => none)
-                    match evalBinOp .add v12 v20 with
-                      | .ok z => some (z, h21)
-                      | .error _ => none)
-                  let (v24, h25) ← (do
-                    let (v26, h27) ← «UInt8::to_field» k h11 x_b3
-                    match evalBinOp .mul (.field 16777216) v26 with
-                      | .ok z => some (z, h27)
-                      | .error _ => none)
-                  match evalBinOp .add v10 v24 with
-                    | .ok z => some (z, h25)
-                    | .error _ => none)
-                let (v28, h29) ← (do
-                  let (v30, h31) ← «UInt8::to_field» k h9 x_b4
-                  match evalBinOp .mul (.field 4294967296) v30 with
-                    | .ok z => some (z, h31)
-                    | .error _ => none)
-                match evalBinOp .add v8 v28 with
-                  | .ok z => some (z, h29)
-                  | .error _ => none)
-              let (v32, h33) ← (do
-                let (v34, h35) ← «UInt8::to_field» k h7 x_b5
-                match evalBinOp .mul (.field 1099511627776) v34 with
-                  | .ok z => some (z, h35)
-                  | .error _ => none)
-              match evalBinOp .add v6 v32 with
-                | .ok z => some (z, h33)
-                | .error _ => none)
-            let (v36, h37) ← (do
-              let (v38, h39) ← «UInt8::to_field» k h5 x_b6
-              match evalBinOp .mul (.field 281474976710656) v38 with
-                | .ok z => some (z, h39)
-                | .error _ => none)
-            match evalBinOp .add v4 v36 with
-              | .ok z => some (z, h37)
-              | .error _ => none))
-      | _ => none
-
-/-- Every derivation of `UInt64::to_field` is a run of its mirror. -/
-abbrev «UInt64::to_field».Complete : Prop :=
-  ∀ {x_x : SourceValue F} {h h' : Heap F} {r : SourceValue F},
-    EvalFn W "UInt64::to_field" [x_x] h r h' → ∃ k0, ∀ k ≥ k0, «UInt64::to_field» k h x_x = some (r, h')
-
-theorem «UInt64::to_field».of_eval : «UInt64::to_field».Complete := by
-  intro x_x h h' r ev
-  have body := ev.function_inv IxVM.UInt64.to_field.lookup
-    (by simp [IxVM.UInt64.to_field, ControlLower.hasControl])
-  simp only [IxVM.UInt64.to_field] at body
-  obtain ⟨v0, m1, bs2, d3, mt4, d5⟩ := body.letValue_inv
-  obtain ⟨l6, rfl⟩ := d3.var_inv
-  simp at l6
-  subst l6
-  obtain ⟨ys7, hp8, hl9, ml10⟩ := matchPattern_array_inv mt4
-  rcases ys7 with _ | ⟨y11, _ | ⟨y12, _ | ⟨y13, _ | ⟨y14, _ | ⟨y15, _ | ⟨y16, _ | ⟨y17, _ | ⟨y18, _ | ⟨_, _⟩⟩⟩⟩⟩⟩⟩⟩⟩ <;> simp at hl9
-  try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp8
-  simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml10
-  subst ml10
-  try rw [hp8] at d5
-  obtain ⟨v19, m20, bs21, d22, mt23, d24⟩ := d5.letValue_inv
-  obtain ⟨vs25, args26, ap27⟩ := d22.builtin_inv
-  obtain ⟨v28, vs29, m30, rfl, d31, args32⟩ := args26.cons_inv
-  obtain ⟨vs33, m34, args35, callee36⟩ := d31.call_inv
-  obtain ⟨v37, vs38, m39, rfl, d40, args41⟩ := args35.cons_inv
-  obtain ⟨l42, rfl⟩ := d40.var_inv
-  simp at l42
-  subst l42
-  obtain ⟨rfl, rfl⟩ := args41.nil_inv
-  rw [instanceName_plain_some] at callee36
-  obtain ⟨k43, hk44⟩ := «UInt8::to_field».of_eval callee36
-  obtain ⟨v45, vs46, m47, rfl, d48, args49⟩ := args32.cons_inv
-  obtain ⟨rfl, rfl⟩ := d48.literal_inv
-  obtain ⟨rfl, rfl⟩ := args49.nil_inv
-  rw [matchPattern_wildcard] at mt23
-  simp only [Except.ok.injEq, Option.some.injEq] at mt23
-  subst mt23
-  obtain ⟨x50, y51, m52, d53, d54, op55⟩ := d24.binary_inv
-  obtain ⟨x56, y57, m58, d59, d60, op61⟩ := d53.binary_inv
-  obtain ⟨x62, y63, m64, d65, d66, op67⟩ := d59.binary_inv
-  obtain ⟨x68, y69, m70, d71, d72, op73⟩ := d65.binary_inv
-  obtain ⟨x74, y75, m76, d77, d78, op79⟩ := d71.binary_inv
-  obtain ⟨x80, y81, m82, d83, d84, op85⟩ := d77.binary_inv
-  obtain ⟨vs86, m87, args88, callee89⟩ := d83.call_inv
-  obtain ⟨v90, vs91, m92, rfl, d93, args94⟩ := args88.cons_inv
-  obtain ⟨l95, rfl⟩ := d93.var_inv
-  simp at l95
-  subst l95
-  obtain ⟨rfl, rfl⟩ := args94.nil_inv
-  rw [instanceName_plain_some] at callee89
-  obtain ⟨k96, hk97⟩ := «UInt8::to_field».of_eval callee89
-  obtain ⟨x98, y99, m100, d101, d102, op103⟩ := d84.binary_inv
-  obtain ⟨rfl, rfl⟩ := d101.literal_inv
-  obtain ⟨vs104, m105, args106, callee107⟩ := d102.call_inv
-  obtain ⟨v108, vs109, m110, rfl, d111, args112⟩ := args106.cons_inv
-  obtain ⟨l113, rfl⟩ := d111.var_inv
-  simp at l113
-  subst l113
-  obtain ⟨rfl, rfl⟩ := args112.nil_inv
-  rw [instanceName_plain_some] at callee107
-  obtain ⟨k114, hk115⟩ := «UInt8::to_field».of_eval callee107
-  obtain ⟨x116, y117, m118, d119, d120, op121⟩ := d78.binary_inv
-  obtain ⟨rfl, rfl⟩ := d119.literal_inv
-  obtain ⟨vs122, m123, args124, callee125⟩ := d120.call_inv
-  obtain ⟨v126, vs127, m128, rfl, d129, args130⟩ := args124.cons_inv
-  obtain ⟨l131, rfl⟩ := d129.var_inv
-  simp at l131
-  subst l131
-  obtain ⟨rfl, rfl⟩ := args130.nil_inv
-  rw [instanceName_plain_some] at callee125
-  obtain ⟨k132, hk133⟩ := «UInt8::to_field».of_eval callee125
-  obtain ⟨x134, y135, m136, d137, d138, op139⟩ := d72.binary_inv
-  obtain ⟨rfl, rfl⟩ := d137.literal_inv
-  obtain ⟨vs140, m141, args142, callee143⟩ := d138.call_inv
-  obtain ⟨v144, vs145, m146, rfl, d147, args148⟩ := args142.cons_inv
-  obtain ⟨l149, rfl⟩ := d147.var_inv
-  simp at l149
-  subst l149
-  obtain ⟨rfl, rfl⟩ := args148.nil_inv
-  rw [instanceName_plain_some] at callee143
-  obtain ⟨k150, hk151⟩ := «UInt8::to_field».of_eval callee143
-  obtain ⟨x152, y153, m154, d155, d156, op157⟩ := d66.binary_inv
-  obtain ⟨rfl, rfl⟩ := d155.literal_inv
-  obtain ⟨vs158, m159, args160, callee161⟩ := d156.call_inv
-  obtain ⟨v162, vs163, m164, rfl, d165, args166⟩ := args160.cons_inv
-  obtain ⟨l167, rfl⟩ := d165.var_inv
-  simp at l167
-  subst l167
-  obtain ⟨rfl, rfl⟩ := args166.nil_inv
-  rw [instanceName_plain_some] at callee161
-  obtain ⟨k168, hk169⟩ := «UInt8::to_field».of_eval callee161
-  obtain ⟨x170, y171, m172, d173, d174, op175⟩ := d60.binary_inv
-  obtain ⟨rfl, rfl⟩ := d173.literal_inv
-  obtain ⟨vs176, m177, args178, callee179⟩ := d174.call_inv
-  obtain ⟨v180, vs181, m182, rfl, d183, args184⟩ := args178.cons_inv
-  obtain ⟨l185, rfl⟩ := d183.var_inv
-  simp at l185
-  subst l185
-  obtain ⟨rfl, rfl⟩ := args184.nil_inv
-  rw [instanceName_plain_some] at callee179
-  obtain ⟨k186, hk187⟩ := «UInt8::to_field».of_eval callee179
-  obtain ⟨x188, y189, m190, d191, d192, op193⟩ := d54.binary_inv
-  obtain ⟨rfl, rfl⟩ := d191.literal_inv
-  obtain ⟨vs194, m195, args196, callee197⟩ := d192.call_inv
-  obtain ⟨v198, vs199, m200, rfl, d201, args202⟩ := args196.cons_inv
-  obtain ⟨l203, rfl⟩ := d201.var_inv
-  simp at l203
-  subst l203
-  obtain ⟨rfl, rfl⟩ := args202.nil_inv
-  rw [instanceName_plain_some] at callee197
-  obtain ⟨k204, hk205⟩ := «UInt8::to_field».of_eval callee197
-  refine ⟨k43 + k96 + k114 + k132 + k150 + k168 + k186 + k204 + 1, fun k hk => ?_⟩
-  obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-  simp (config := { decide := true, maxSteps := 10000000 }) [«UInt64::to_field», hp8, ap27, hk44 k' (by omega), hk97 k' (by omega), op85, op103, hk115 k' (by omega), op79, op121, hk133 k' (by omega), op73, op139, hk151 k' (by omega), op67, op157, hk169 k' (by omega), op61, op175, hk187 k' (by omega), op55, op193, hk205 k' (by omega)]
-
 /-- The mirror of `UInt64::wrapping_succ`. -/
 def «UInt64::wrapping_succ» : Nat → Heap F → SourceValue F → Option (SourceValue F × Heap F)
   | 0, _, _ => none
@@ -8632,8 +10026,23 @@ theorem «UInt64::from_bytes».of_eval : «UInt64::from_bytes».Complete := by
 * UInt32::from_fields: mirror and lemma
 * UInt32::less_than_fields: mirror only (recursive)
 * IxonDeserialize::assert_prj_empty_tables: mirror and lemma
+* UInt64::to_field: mirror and lemma
+* IxonDeserialize::mut_const_lvls: mirror and lemma
+* IxonDeserialize::muts_max_lvls: mirror only (recursive)
+* IxonDeserialize::max_lvls: mirror and lemma
+* IxonDeserialize::binder_block_lt: mirror and lemma
+* IxonDeserialize::assert_blocks_ascending: mirror only (recursive)
 * UInt64::saturating_pred: mirror and lemma
+* IxonDeserialize::assert_params_canonical: mirror only (recursive)
 * UInt64::is_zero: mirror and lemma
+* IxonDeserialize::get_u64_list: mirror only (recursive)
+* IxonDeserialize::read_byte: mirror and lemma
+* IxonDeserialize::get_binder_node: mirror and lemma
+* IxonDeserialize::get_binder_node_list: mirror only (recursive)
+* IxonDeserialize::assert_wire_bool: mirror and lemma
+* IxonDeserialize::get_binder_block: mirror and lemma
+* IxonDeserialize::get_binder_block_list: mirror only (recursive)
+* IxonDeserialize::get_binders: mirror and lemma
 * IxonDeserialize::build_succ_chain: mirror only (recursive)
 * IxonDeserialize::get_univ: mirror only (recursive)
 * IxonDeserialize::get_univ_list: mirror only (recursive)
@@ -8643,10 +10052,8 @@ theorem «UInt64::from_bytes».of_eval : «UInt64::from_bytes».Complete := by
 * IxonDeserialize::get_refs: mirror and lemma
 * IxonDeserialize::value_contract_from_bits: mirror and lemma
 * IxonDeserialize::binder_contract_from_bits: mirror and lemma
-* IxonDeserialize::read_byte: mirror and lemma
 * IxonDeserialize::get_lam_mode: mirror and lemma
 * IxonDeserialize::get_all_mode: mirror and lemma
-* IxonDeserialize::get_u64_list: mirror only (recursive)
 * IxonDeserialize::get_expr_let: mirror only (mutual recursive)
 * IxonDeserialize::get_all_telescope: mirror only (mutual recursive)
 * IxonDeserialize::get_lam_telescope: mirror only (mutual recursive)
@@ -8660,7 +10067,6 @@ theorem «UInt64::from_bytes».of_eval : «UInt64::from_bytes».Complete := by
 * IxonDeserialize::get_constructor_proj: mirror and lemma
 * IxonDeserialize::get_quot_kind: mirror and lemma
 * IxonDeserialize::get_quotient: mirror and lemma
-* IxonDeserialize::assert_wire_bool: mirror and lemma
 * IxonDeserialize::get_axiom: mirror and lemma
 * IxonDeserialize::get_recursor_rule: mirror and lemma
 * IxonDeserialize::get_recursor_rule_list: mirror only (recursive)
@@ -8684,7 +10090,6 @@ theorem «UInt64::from_bytes».of_eval : «UInt64::from_bytes».Complete := by
 * UInt8::and: mirror and lemma
 * UInt64::and: mirror and lemma
 * UInt64::sub_with_borrow: mirror and lemma
-* UInt64::to_field: mirror and lemma
 * UInt64::wrapping_succ: mirror and lemma
 * UInt64::eq: mirror and lemma
 * UInt64::from_fields: mirror and lemma

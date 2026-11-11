@@ -269,6 +269,26 @@ abbrev «WordLists::length_u64<&Ixon::Univ>» : String := "${\"name\":\"WordList
 
 theorem «WordLists::length_u64<&Ixon::Univ>».symbol : (Instance.mk "WordLists::length_u64" [(.ptr (.named "Ixon::Univ" []))]).symbol = «WordLists::length_u64<&Ixon::Univ>» := by decide +kernel
 
+/-- The instance `Lists::Node<Ixon::BinderNode>`. -/
+abbrev «Lists::Node<Ixon::BinderNode>» : String := "${\"name\":\"Lists::Node\",\"types\":[{\"named\":{\"args\":[],\"name\":\"Ixon::BinderNode\"}}]}"
+
+theorem «Lists::Node<Ixon::BinderNode>».symbol : (Instance.mk "Lists::Node" [(.named "Ixon::BinderNode" [])]).symbol = «Lists::Node<Ixon::BinderNode>» := by decide +kernel
+
+/-- The instance `WordLists::length_u64<Ixon::BinderNode>`. -/
+abbrev «WordLists::length_u64<Ixon::BinderNode>» : String := "${\"name\":\"WordLists::length_u64\",\"types\":[{\"named\":{\"args\":[],\"name\":\"Ixon::BinderNode\"}}]}"
+
+theorem «WordLists::length_u64<Ixon::BinderNode>».symbol : (Instance.mk "WordLists::length_u64" [(.named "Ixon::BinderNode" [])]).symbol = «WordLists::length_u64<Ixon::BinderNode>» := by decide +kernel
+
+/-- The instance `Lists::Node<Ixon::BinderBlock>`. -/
+abbrev «Lists::Node<Ixon::BinderBlock>» : String := "${\"name\":\"Lists::Node\",\"types\":[{\"named\":{\"args\":[],\"name\":\"Ixon::BinderBlock\"}}]}"
+
+theorem «Lists::Node<Ixon::BinderBlock>».symbol : (Instance.mk "Lists::Node" [(.named "Ixon::BinderBlock" [])]).symbol = «Lists::Node<Ixon::BinderBlock>» := by decide +kernel
+
+/-- The instance `WordLists::length_u64<Ixon::BinderBlock>`. -/
+abbrev «WordLists::length_u64<Ixon::BinderBlock>» : String := "${\"name\":\"WordLists::length_u64\",\"types\":[{\"named\":{\"args\":[],\"name\":\"Ixon::BinderBlock\"}}]}"
+
+theorem «WordLists::length_u64<Ixon::BinderBlock>».symbol : (Instance.mk "WordLists::length_u64" [(.named "Ixon::BinderBlock" [])]).symbol = «WordLists::length_u64<Ixon::BinderBlock>» := by decide +kernel
+
 /-- The instance `WordLists::length_u64<Ixon::MutConst>`. -/
 abbrev «WordLists::length_u64<Ixon::MutConst>» : String := "${\"name\":\"WordLists::length_u64\",\"types\":[{\"named\":{\"args\":[],\"name\":\"Ixon::MutConst\"}}]}"
 
@@ -288,6 +308,11 @@ theorem «Lists::lookup<&[Field; 32]>».symbol : (Instance.mk "Lists::lookup" [(
 abbrev «Lists::drop<&Ixon::Expr>» : String := "${\"name\":\"Lists::drop\",\"types\":[{\"ptr\":{\"target\":{\"named\":{\"args\":[],\"name\":\"Ixon::Expr\"}}}}]}"
 
 theorem «Lists::drop<&Ixon::Expr>».symbol : (Instance.mk "Lists::drop" [(.ptr (.named "Ixon::Expr" []))]).symbol = «Lists::drop<&Ixon::Expr>» := by decide +kernel
+
+/-- The instance `Lists::Node<(Field, Field, Field, &Convert::BinderTreeNode)>`. -/
+abbrev «Lists::Node<(Field, Field, Field, &Convert::BinderTreeNode)>» : String := "${\"name\":\"Lists::Node\",\"types\":[{\"tuple\":{\"items\":[\"field\",\"field\",\"field\",{\"ptr\":{\"target\":{\"named\":{\"args\":[],\"name\":\"Convert::BinderTreeNode\"}}}}]}}]}"
+
+theorem «Lists::Node<(Field, Field, Field, &Convert::BinderTreeNode)>».symbol : (Instance.mk "Lists::Node" [(.tuple [.field, .field, .field, (.ptr (.named "Convert::BinderTreeNode" []))])]).symbol = «Lists::Node<(Field, Field, Field, &Convert::BinderTreeNode)>» := by decide +kernel
 
 /-- The instance `Lists::length<Ixon::RecursorRule>`. -/
 abbrev «Lists::length<Ixon::RecursorRule>» : String := "${\"name\":\"Lists::length\",\"types\":[{\"named\":{\"args\":[],\"name\":\"Ixon::RecursorRule\"}}]}"
@@ -667,9 +692,21 @@ theorem n10846325673954383951 : instanceName [] "WordLists::length_u64" (some [(
 
 theorem n14911588889091628089 : instanceName [] "WordLists::length_u64" (some [(.ptr (.named "Ixon::Univ" []))]) = Names.«WordLists::length_u64<&Ixon::Univ>» := by decide +kernel
 
-theorem n3472392075165680861 : instanceName [] "WordLists::length_u64" (some [(.named "Ixon::MutConst" [])]) = Names.«WordLists::length_u64<Ixon::MutConst>» := by decide +kernel
+theorem n7516136566660357059 : constructorName [] (.named "Ixon::BinderNode" []) = "Ixon::BinderNode" := by decide +kernel
 
 theorem c11500736482030662876 : W.constant "UInt8::BYTE_4" (Generic.Ty.subst [] .field) = .ok (.literal (4 : F)) := eq_of_isLiteral (by decide +kernel)
+
+theorem n5527369450665788998 : constructorName [] (.named "Lists::Node" [(.named "Ixon::BinderNode" [])]) = Names.«Lists::Node<Ixon::BinderNode>» := by decide +kernel
+
+theorem n7340272268790896387 : constructorName [] (.named "Ixon::BinderBlock" []) = "Ixon::BinderBlock" := by decide +kernel
+
+theorem n8525735934792768777 : instanceName [] "WordLists::length_u64" (some [(.named "Ixon::BinderNode" [])]) = Names.«WordLists::length_u64<Ixon::BinderNode>» := by decide +kernel
+
+theorem n7039976160276323251 : constructorName [] (.named "Lists::Node" [(.named "Ixon::BinderBlock" [])]) = Names.«Lists::Node<Ixon::BinderBlock>» := by decide +kernel
+
+theorem n10260442118937760086 : instanceName [] "WordLists::length_u64" (some [(.named "Ixon::BinderBlock" [])]) = Names.«WordLists::length_u64<Ixon::BinderBlock>» := by decide +kernel
+
+theorem n3472392075165680861 : instanceName [] "WordLists::length_u64" (some [(.named "Ixon::MutConst" [])]) = Names.«WordLists::length_u64<Ixon::MutConst>» := by decide +kernel
 
 theorem c9858639577359652784 : W.constant "UInt8::BYTE_6" (Generic.Ty.subst [] .field) = .ok (.literal (6 : F)) := eq_of_isLiteral (by decide +kernel)
 
@@ -687,6 +724,10 @@ theorem n11095265153569616067 : instanceName [] "Lists::Node" (some [(.named "Ix
 
 theorem n10100695283714281537 : instanceName [] "Lists::Node" (some [(.named "Ixon::MutConst" [])]) = Names.«Lists::Node<Ixon::MutConst>» := by decide +kernel
 
+theorem n7949732895280454463 : instanceName [] "Lists::Node" (some [(.named "Ixon::BinderNode" [])]) = Names.«Lists::Node<Ixon::BinderNode>» := by decide +kernel
+
+theorem n9574717375266508469 : instanceName [] "Lists::Node" (some [(.named "Ixon::BinderBlock" [])]) = Names.«Lists::Node<Ixon::BinderBlock>» := by decide +kernel
+
 theorem c2292429251841039057 : W.constant "UInt8::BYTE_192" (Generic.Ty.subst [] .field) = .ok (.literal (192 : F)) := eq_of_isLiteral (by decide +kernel)
 
 theorem c4600092661932343023 : W.constant "UInt8::BYTE_194" (Generic.Ty.subst [] .field) = .ok (.literal (194 : F)) := eq_of_isLiteral (by decide +kernel)
@@ -698,6 +739,12 @@ theorem n13032184727759391638 : instanceName [] "Lists::lookup" (some [(.ptr (.n
 theorem n16119986092388975791 : instanceName [] "Lists::lookup" (some [(.ptr (.array .field 32))]) = Names.«Lists::lookup<&[Field; 32]>» := by decide +kernel
 
 theorem n10967839274657083673 : instanceName [] "Lists::drop" (some [(.ptr (.named "Ixon::Expr" []))]) = Names.«Lists::drop<&Ixon::Expr>» := by decide +kernel
+
+theorem n6461353956056792268 : instanceName [] "Lists::Node" (some [(.tuple [.field, .field, .field, (.ptr (.named "Convert::BinderTreeNode" []))])]) = Names.«Lists::Node<(Field, Field, Field, &Convert::BinderTreeNode)>» := by decide +kernel
+
+theorem n6306371613124587415 : constructorName [] (.named "Lists::Node" [(.tuple [.field, .field, .field, (.ptr (.named "Convert::BinderTreeNode" []))])]) = Names.«Lists::Node<(Field, Field, Field, &Convert::BinderTreeNode)>» := by decide +kernel
+
+theorem n5789200644662782200 : constructorName [] (.named "Convert::BinderTreeNode" []) = "Convert::BinderTreeNode" := by decide +kernel
 
 theorem n10505339359628681855 : instanceName [] "Lists::length" (some [(.named "Ixon::RecursorRule" [])]) = Names.«Lists::length<Ixon::RecursorRule>» := by decide +kernel
 
