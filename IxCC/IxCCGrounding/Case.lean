@@ -285,10 +285,12 @@ theorem wrapper_body (hj : j < mins.length) {Fs' hs : List V} :
       (Expr.mkAppN (.bvar (mins.length - 1 - j + (Fs'.length + hs.length)))
         (bvarsFrom hs.length Fs'.length)) (Fs'.foldl app mins[j]) := by
   refine (den_mkAppN _).mpr ⟨mins[j], Fs', ?_, ?_, rfl⟩
-  · have h := Denotes.bvar (cval := M.cval) (env := env) (φ := φ)
+  · rw [show mins.length - 1 - j + (Fs'.length + hs.length) =
+      (mins.length - 1 - j) + (Fs' ++ hs).length by simp]
+    have h := Denotes.bvar (cval := M.cval) (env := env) (φ := φ)
       (ρ := pushAll (Fs' ++ hs) (pushAll (ps ++ mo :: t :: mins) ρ))
-      (i := mins.length - 1 - j + (Fs'.length + hs.length))
-    rw [← List.length_append, pushAll_offset] at h
+      (i := (mins.length - 1 - j) + (Fs' ++ hs).length)
+    rw [pushAll_offset] at h
     have hlt : ps.length + 2 + j < (ps ++ mo :: t :: mins).length := by simp; omega
     have h2 := pushAll_rev (ps ++ mo :: t :: mins) ρ (ps.length + 2 + j) hlt
     have h3 : (ps ++ mo :: t :: mins).length - 1 - (ps.length + 2 + j) = mins.length - 1 - j := by
@@ -298,7 +300,8 @@ theorem wrapper_body (hj : j < mins.length) {Fs' hs : List V} :
       rw [List.getElem?_eq_getElem hlt, List.getElem?_eq_getElem hj] at this
       exact Option.some.inj this
     rw [h3, h4] at h2
-    rwa [h2] at h
+    rw [h2] at h
+    exact h
   · rw [← pushAll_append, ← List.append_assoc]
     exact den_bvarsFrom ρ hs Fs' _
 
@@ -358,7 +361,7 @@ theorem wrapper_mem (hf : (liftTele (j + 1) 0 fbs).map (·.1) = cs.fields.map (�
       rw [List.length_append, hfl, ← hF', ← hs']
       exact hb
     · rw [piTele_append] at hfx
-      have hfx1 := fits_prefix (bs := cs.fields) hfx (by rw [hfl, hF'])
+      have hfx1 := fits_prefix (bs := cs.fields) hfx (by omega)
       have hc1 : TeleCorr M.cval env φ (pushAll (ps ++ mo :: t :: mins.take j) ρ)
           (pushAll (ps ++ [mo] ++ Ws.take j) ρ) (liftTele 1 j cs.fields) cs.fields := by
         have := fieldsCorr2 (M := M) (φ := φ) (ps := ps) (ρ := ρ) (k1 := 1) (k2 := 0)
@@ -367,7 +370,7 @@ theorem wrapper_mem (hf : (liftTele (j + 1) 0 fbs).map (·.1) = cs.fields.map (�
         rwa [liftTele_zero, ← List.append_assoc] at this
       have hfx2 := fits_transport (liftTele 1 j cs.fields) cs.fields
         (cs.codom.liftLooseBVars 1 (j + cs.fields.length)) _ (liftTele_length _ _ _) hc1 hfx1
-        (by rw [hfl, hF'])
+        (by omega)
       rw [List.drop_eq_nil_of_le (show (liftTele 1 j cs.fields).length ≤ Fs'.length by
         rw [liftTele_length, hfl, hF'])] at hfx2
       have hMn' : Denotes M.cval env φ (pushAll (ps ++ mo :: t :: mins.take j) ρ)
@@ -386,10 +389,12 @@ theorem wrapper_mem (hf : (liftTele (j + 1) 0 fbs).map (·.1) = cs.fields.map (�
         refine den_agree (by rw [← List.append_assoc] at hRR2; exact hRR2) fun i hi => ?_
         have hlen' : (mins.take j).length = (Ws.take j).length := by rw [htj, hpre]
         apply pushAll_agree hlen'
-        by_contra hcon
-        rw [not_or] at hcon
-        have hnl := not_looseIn_of_avoids hcod (i := i) (by omega) (by omega)
-        rw [hnl] at hi; cases hi
+        rcases Nat.lt_or_ge i Fs'.length with h1 | h1
+        · exact Or.inl h1
+        · rcases Nat.lt_or_ge i (Fs'.length + (mins.take j).length) with h2 | h2
+          · have hnl := not_looseIn_of_avoids hcod (i := i) (by omega) (by omega)
+            rw [hnl] at hi; cases hi
+          · exact Or.inr h2
       have hCC' : Denotes M.cval env φ (pushAll ((ps ++ [mo] ++ Ws.take j ++ Fs') ++ []) ρ)
           cs.codom CC :=
         (den_lift_block (a := ps ++ [mo] ++ Ws.take j ++ Fs') (b := hs) (c := [])).mp (by
@@ -419,5 +424,470 @@ theorem denotesList_get {cval : KKey → (LevelParam → Nat) → V} {ρ : BVarI
   | _ :: _, _, i + 1, _, hl, h => by
     cases hl with
     | cons _ hl' => simp only [List.getElem?_cons_succ] at h ⊢; exact denotesList_get hl' h
+
+
+theorem wrapper_eq (sh : CaseShape) (j : Nat) (cs : CtorShape) (hfl : cs.fields.length = cs.nF) :
+    sh.wrapper j cs = lamTele (liftTele (sh.nM + 1 - j) j (cs.fields ++ cs.ihs))
+      (Expr.mkAppN (.bvar (sh.nM - 1 - j + (cs.fields ++ cs.ihs).length))
+        (bvarsFrom cs.ihs.length cs.nF)) := by
+  simp only [CaseShape.wrapper, liftTele_length, List.length_append, hfl, Nat.add_sub_cancel_left]
+
+theorem take_left_ctx {α : Type _} (ps l : List α) : (ps ++ l).take ps.length = ps := by
+  rw [List.take_append, List.take_of_length_le (Nat.le_refl _), Nat.sub_self, List.take_zero,
+    List.append_nil]
+
+/-- `Fits` through `casesOn`'s telescope, cut at the motive, the major and the minors. -/
+theorem fits_ctx {cval : KKey → (LevelParam → Nat) → V} {bP bMin : List (KExpr × BinderMeta)}
+    {bMo bMaj : KExpr × BinderMeta} {C : KExpr} {ps mins : List V} {mo t : V}
+    {ρ σ : BVarIdx → V} {R : KExpr} (hl : bP.length = ps.length)
+    (h : Fits cval env φ ρ (piTele (bP ++ bMo :: bMaj :: bMin) C) (ps ++ mo :: t :: mins) σ R) :
+    (∀ C', Fits cval env φ ρ (piTele bP C') ps (pushAll ps ρ) C') ∧
+    (∃ X, Denotes cval env φ (pushAll ps ρ) bMo.1 X ∧ mo ∈ˢ X) ∧
+    (∃ X, Denotes cval env φ (pushAll (ps ++ [mo]) ρ) bMaj.1 X ∧ t ∈ˢ X) ∧
+    Fits cval env φ (pushAll (ps ++ [mo, t]) ρ) (piTele bMin C) mins σ R := by
+  rw [piTele_append] at h
+  obtain ⟨σ1, R1, h1, h2⟩ := fits_append h
+  obtain ⟨e1, e2, h3⟩ := fits_piTele bP _ h1 (by omega)
+  have hd : bP.drop ps.length = [] := List.drop_eq_nil_of_le (show bP.length ≤ ps.length by omega)
+  rw [hd] at e2
+  subst e1 e2
+  refine ⟨fun C' => by simpa [hd] using h3 C', ?_⟩
+  have h2' : Fits cval env φ (pushAll ps ρ)
+      (.forallE bMo.1 (.forallE bMaj.1 (piTele bMin C) bMaj.2) bMo.2) (mo :: t :: mins) σ R := h2
+  cases h2' with
+  | cons hA hx h4 =>
+    cases h4 with
+    | cons hB hy h5 =>
+      refine ⟨⟨_, hA, hx⟩, ⟨_, by rwa [pushAll_snoc], hy⟩, ?_⟩
+      rwa [show ps ++ [mo, t] = (ps ++ [mo]) ++ [t] by simp, pushAll_snoc, pushAll_snoc]
+
+/-- The constructor's field telescope, read after the parameters `ps`, fits the fields `Fs`. -/
+theorem ctor_fields_fit {cval : KKey → (LevelParam → Nat) → V} {pbs fbs : List (KExpr × BinderMeta)}
+    {D : KExpr} {ps Fs : List V} {ρ σ : BVarIdx → V} {R : KExpr} (hpl : pbs.length = ps.length)
+    (hfl : fbs.length = Fs.length)
+    (h : Fits cval env φ ρ (piTele pbs (piTele fbs D)) (ps ++ Fs) σ R) :
+    Fits cval env φ (pushAll ps ρ) (piTele fbs D) Fs (pushAll Fs (pushAll ps ρ)) D ∧ R = D := by
+  obtain ⟨σ1, R1, h1, h2⟩ := fits_append h
+  obtain ⟨e1, e2, _⟩ := fits_piTele pbs _ h1 (by omega)
+  rw [List.drop_eq_nil_of_le (show pbs.length ≤ ps.length by omega)] at e2
+  subst e1 e2
+  obtain ⟨e3, e4, _⟩ := fits_piTele fbs D h2 (by omega)
+  rw [List.drop_eq_nil_of_le (show fbs.length ≤ Fs.length by omega)] at e4
+  subst e3 e4
+  exact ⟨h2, rfl⟩
+
+/-- **The generic `case` lemma, model side.** At a checked shape, `casesOn` applied to arguments
+that fit its type, the last at a graph-regime site, with the major the image of constructor `j`
+at the `case`'s own parameters and levels applied to as many fields as the constructor has, is
+minor `j` applied to the fields, along a graph-regime chain. -/
+theorem caseIota (M : Model V env) (hL : Laws M) {kc kr : KKey} {sh : CaseShape}
+    (hS : CaseStored env kc kr sh) (cvc : ConstantVal .anon) (val : KExpr)
+    (hint : ReducibilityHint) (hfc : env.find? kc = some (.defnInfo cvc val hint))
+    (φ : LevelParam → Nat) (ρ σ : BVarIdx → V) (R : KExpr) (As : List V)
+    (hfit : Fits M.cval env φ ρ cvc.type As σ R) (hlen : As.length = sh.nP + 2 + sh.nM)
+    (hlast : LastSiteOk (M.cval kc φ) As)
+    (j : Nat) (cs : CtorShape) (cvC : ConstantVal .anon) (K : V) (Fs : List V)
+    (σC : BVarIdx → V) (RC : KExpr) (hj : sh.ctors[j]? = some cs)
+    (hcC : env.find? cs.key = some (.ctorInfo cvC sh.nP cs.nF))
+    (hK : Denotes M.cval env φ ρ (.const cs.key sh.indLevels) K)
+    (hFC : Fits M.cval env φ ρ (cvC.type.instantiateLevelParams cvC.levelParams sh.indLevels)
+      (As.take sh.nP ++ Fs) σC RC)
+    (hFl : Fs.length = cs.nF)
+    (hmaj : As[sh.nP + 1]? = some ((As.take sh.nP ++ Fs).foldl app K)) :
+    ∃ Mn, As[sh.nP + 2 + j]? = some Mn ∧ As.foldl app (M.cval kc φ) = Fs.foldl app Mn ∧
+      AppChain Mn Fs := by
+  obtain ⟨⟨hblen, _⟩, ⟨cvc', hint', hfc', _, hty⟩, hminors, ⟨mmaj, hbmaj⟩,
+    ⟨cvr, rules, hfr, hlr, htr, hrl, hrules⟩, hctors, hwf⟩ := hS
+  have hfc2 := hfc.symm.trans hfc'
+  simp only [Option.some.injEq, ConstantInfo.defnInfo.injEq] at hfc2
+  obtain ⟨rfl, rfl, rfl⟩ := hfc2
+  -- `casesOn`'s arguments and binders
+  obtain ⟨ps, mo, t, mins, rfl, hps, hmins⟩ := split_ctx As sh.nP sh.nM hlen
+  obtain ⟨bP, bMo, bMaj, bMin, hbs, hbP, hbMin⟩ := split_ctx sh.binders sh.nP sh.nM hblen
+  have hjM : j < sh.ctors.length := (List.getElem?_eq_some_iff.mp hj).1
+  have hnM : sh.nM = sh.ctors.length := rfl
+  have hjm : j < mins.length := by omega
+  rw [← hps, take_left_ctx] at hFC hmaj
+  rw [get_ctx1] at hmaj
+  have ht : t = (ps ++ Fs).foldl app K := (Option.some.inj hmaj).symm
+  refine ⟨mins[j], by rw [← hps, get_ctx2, List.getElem?_eq_getElem hjm], ?_⟩
+  have hbm : bMaj = (Expr.mkAppN (.const sh.ind sh.indLevels) (bvarsFrom 1 sh.nP), mmaj) := by
+    have := get_ctx1 bP bMin bMo bMaj
+    rw [hbP, ← hbs, hbmaj] at this
+    exact (Option.some.inj this).symm
+  have hbmin : ∀ j' cs', sh.ctors[j']? = some cs' →
+      bMin[j']?.map (·.1) = some (CaseShape.casesMinor j' cs') := fun j' cs' h => by
+    have := (hminors j' cs' h).1
+    rwa [hbs, ← hbP, get_ctx2] at this
+  obtain ⟨Alast, mLast, hgl, hreg⟩ := hwf.regime
+  -- `casesOn`'s type, and its arguments' domains
+  rw [hty] at hfit
+  have hfit0 := hfit
+  rw [hbs] at hfit
+  obtain ⟨hfitP, ⟨XMo, hMoD, hmo⟩, ⟨Xmaj, hMajD, htm⟩, hrest⟩ := fits_ctx (by omega) hfit
+  have hminD : ∀ j' (hj' : j' < mins.length), ∃ XM, Denotes M.cval env φ
+      (pushAll (ps ++ mo :: t :: mins.take j') ρ) (bMin[j']'(by omega)).1 XM ∧ mins[j'] ∈ˢ XM := by
+    intro j' hj'
+    obtain ⟨X, hX, hm⟩ := fits_get bMin (.app (.bvar (sh.nM + 1)) (.bvar sh.nM)) hrest j' hj' (by omega)
+    refine ⟨X, ?_, hm⟩
+    rwa [← pushAll_append, show ps ++ [mo, t] ++ mins.take j' = ps ++ mo :: t :: mins.take j' by
+      simp] at hX
+  -- δ on `casesOn`, β through its λs
+  have hval := hL.defn_value cvc (lamTele sh.binders (sh.body kr)) hint (find_mem hfc) φ ρ
+  rw [show cvc.name = kc from find_name hfc] at hval
+  obtain ⟨Y, hY, hYe⟩ := lamTele_app sh.binders (sh.body kr) (.app (.bvar (sh.nM + 1)) (.bvar sh.nM)) hval hfit0 (by simp; omega)
+  rw [hYe]
+  -- `casesOn`'s body: the recursor at the parameters, the motive, the wrappers and the major
+  simp only [CaseShape.body] at hY
+  obtain ⟨R0, Ys, hR0, hYs, rfl⟩ := (den_mkAppN _).mp hY
+  obtain ⟨Y123, Y4, rfl, h123, h4⟩ := denotesList_append_inv hYs
+  obtain ⟨Y12, Ws, rfl, h12, hWs⟩ := denotesList_append_inv h123
+  obtain ⟨Y1, Y2, rfl, h1, h2⟩ := denotesList_append_inv h12
+  have eY1 : Y1 = ps := by
+    have := den_bvarsFrom (cval := M.cval) (env := env) (φ := φ) ρ (mo :: t :: mins) ps []
+    rw [List.nil_append, show (mo :: t :: mins).length = sh.nM + 2 by simp; omega, hps] at this
+    exact denotesList_functional h1 this
+  have eY2 : Y2 = [mo] := by
+    have := DenotesList.cons (cval := M.cval) (env := env) (φ := φ) (den_bvar_at (a := ps)
+      (y := mo) (c := t :: mins) (ρ := ρ)) .nil
+    rw [show (t :: mins).length = sh.nM + 1 by simp; omega] at this
+    exact denotesList_functional h2 this
+  have eY4 : Y4 = [t] := by
+    have := DenotesList.cons (cval := M.cval) (env := env) (φ := φ) (den_bvar_at (a := ps ++ [mo])
+      (y := t) (c := mins) (ρ := ρ)) .nil
+    rw [hmins, show ps ++ [mo] ++ t :: mins = ps ++ mo :: t :: mins by simp] at this
+    exact denotesList_functional h4 this
+  subst eY1 eY2 eY4
+  obtain ⟨hwl, hwg⟩ := filterMap_range sh.ctors (fun j cs => sh.wrapper j cs) sh.nM (Nat.le_refl _)
+  have hWl : Ws.length = sh.nM := by rw [denotesList_length hWs, hwl]
+  have hWd : ∀ j' cs' (hj' : j' < Ws.length), sh.ctors[j']? = some cs' →
+      Denotes M.cval env φ (pushAll (ps ++ mo :: t :: mins) ρ) (sh.wrapper j' cs') Ws[j'] := by
+    intro j' cs' hj' hc'
+    have hget : ((List.range sh.nM).filterMap fun j => (sh.ctors[j]?).map (sh.wrapper j))[j']? =
+        some (sh.wrapper j' cs') := by
+      rw [hwg j' (by omega), hc']; rfl
+    obtain ⟨v, hv, hd⟩ := denotesList_get hWs hget
+    rw [List.getElem?_eq_getElem hj'] at hv
+    rwa [Option.some.inj hv]
+  -- the recursor
+  have hR0ρ : Denotes M.cval env φ ρ (.const kr (sh.lps.map Level.param)) R0 := den_const_env hR0
+  have hR0e : R0 = M.cval kr φ := by
+    cases hR0 with
+    | const hf' _ =>
+      rw [hfr] at hf'; cases hf'
+      simp only [ConstantInfo.toConstantVal, hlr, Level.substFn_param_self]
+  subst hbm
+  have e1 : sh.binders.take (sh.nP + 1) = bP ++ [bMo] := by rw [hbs, ← hbP, take_ctx1]
+  have e2 : sh.binders[sh.nP + 1]? = some (Expr.mkAppN (.const sh.ind sh.indLevels)
+      (bvarsFrom 1 sh.nP), mmaj) := hbmaj
+  have hrt : cvr.type = piTele (bP ++ [bMo]) (piTele ((sh.ctors.map fun c => (c.recMinor, c.minorMeta))
+      ++ [((Expr.mkAppN (.const sh.ind sh.indLevels) (bvarsFrom 1 sh.nP)).liftLooseBVars sh.nM 0,
+        sh.majorMeta)]) (.app (.bvar (sh.nM + 1)) (.bvar 0))) := by
+    rw [htr, ← piTele_append]
+    simp only [CaseShape.recType, e1, e2, Option.toList_some, List.map_cons, List.map_nil,
+      List.append_assoc]
+  have hQ : ∀ j', j' ≤ sh.nM → Fits M.cval env φ ρ cvr.type (ps ++ [mo] ++ Ws.take j')
+      (pushAll (ps ++ [mo] ++ Ws.take j') ρ)
+      (piTele ((sh.ctors.map fun c => (c.recMinor, c.minorMeta)).drop j' ++
+        [((Expr.mkAppN (.const sh.ind sh.indLevels) (bvarsFrom 1 sh.nP)).liftLooseBVars sh.nM 0,
+          sh.majorMeta)]) (.app (.bvar (sh.nM + 1)) (.bvar 0))) := by
+    intro j' hj'
+    induction j' with
+    | zero =>
+      rw [hrt, List.take_zero, List.append_nil, List.drop_zero, piTele_append, pushAll_snoc]
+      exact fits_trans (hfitP _) (.cons hMoD hmo .nil)
+    | succ j' ih =>
+      have ih' := ih (by omega)
+      have hj'c : j' < sh.ctors.length := by omega
+      obtain ⟨cs', hc'⟩ : ∃ cs', sh.ctors[j']? = some cs' := ⟨_, List.getElem?_eq_getElem hj'c⟩
+      have hcs' : sh.ctors[j'] = cs' := Option.some.inj ((List.getElem?_eq_getElem hj'c).symm.trans hc')
+      have hdrop : (sh.ctors.map fun c => (c.recMinor, c.minorMeta)).drop j' =
+          (cs'.recMinor, cs'.minorMeta) :: (sh.ctors.map fun c => (c.recMinor, c.minorMeta)).drop (j' + 1) := by
+        rw [List.drop_eq_getElem_cons (by simp; omega)]
+        simp [hcs']
+      rw [hdrop] at ih'
+      obtain ⟨TR, hTR, hrm⟩ := mem_key M hfr φ ρ
+      obtain ⟨RR, hRR, _⟩ := fits_app_mem ih' hTR hrm
+      obtain ⟨PP, _, hPP, _, _, _⟩ := den_pi.mp hRR
+      obtain ⟨_, hih', hfl'⟩ := hminors j' cs' hc'
+      obtain ⟨_, _, fbs', _, _, _, hf'⟩ := hctors j' cs' hc'
+      have hWj' := hWd j' cs' (by omega) hc'
+      rw [wrapper_eq _ _ _ hfl', ← hmins] at hWj'
+      obtain ⟨XM, hXM, hmXM⟩ := hminD j' (by omega)
+      have hbj : (bMin[j']'(by omega)).1 = CaseShape.casesMinor j' cs' := by
+        have := hbmin j' cs' hc'
+        rw [List.getElem?_eq_getElem (by omega)] at this
+        exact Option.some.inj this
+      rw [hbj] at hXM
+      have hmem := wrapper_mem (M := M) (φ := φ) (ps := ps) (mo := mo) (t := t) (ρ := ρ)
+        (Ws := Ws) hf' hfl' hih' (hwf.ihs j' cs' hc')
+        (fun rf h => (hwf.recFields j' cs' hc' rf h).1) (hwf.codom j' cs' hc') (by omega)
+        (by omega) hWj' hPP hXM hmXM
+      have hsn := fits_snoc ih' rfl hPP hmem
+      rw [← pushAll_snoc] at hsn
+      rw [List.take_succ, List.getElem?_eq_getElem (show j' < Ws.length by omega),
+        Option.toList_some, ← List.append_assoc]
+      exact hsn
+  have hQM := hQ sh.nM (Nat.le_refl _)
+  rw [List.take_of_length_le (show Ws.length ≤ sh.nM by omega),
+    List.drop_eq_nil_of_le (show (sh.ctors.map fun c => (c.recMinor, c.minorMeta)).length ≤ sh.nM by
+      simp [hnM]), List.nil_append] at hQM
+  -- the major's domain, read in the recursor's type
+  have hXmajR : Denotes M.cval env φ (pushAll (ps ++ [mo] ++ Ws) ρ)
+      ((Expr.mkAppN (.const sh.ind sh.indLevels) (bvarsFrom 1 sh.nP)).liftLooseBVars sh.nM 0) Xmaj := by
+    have := (den_lift_block (cval := M.cval) (env := env) (φ := φ) (a := ps ++ [mo]) (b := Ws)
+      (c := []) (ρ := ρ)).mpr (by rwa [List.append_nil])
+    rwa [List.append_nil, hWl] at this
+  -- the constructor's type at the `case`'s levels
+  obtain ⟨cvC', pbs, fbs, hcC', hinst, hpbs, hf⟩ := hctors j cs hj
+  rw [hcC] at hcC'
+  cases hcC'
+  obtain ⟨_, hih, hfl⟩ := hminors j cs hj
+  have hpbl : pbs.length = ps.length := by
+    have := congrArg List.length hpbs; simp at this; omega
+  have hfbl : fbs.length = Fs.length := by
+    have := congrArg List.length hf; simp [liftTele_length] at this; omega
+  have hFC0 := hFC
+  rw [hinst] at hFC
+  obtain ⟨hFCf, hRC⟩ := ctor_fields_fit hpbl hfbl hFC
+  -- ι
+  obtain ⟨rl, hrl'⟩ : ∃ rl, rules[j]? = some rl :=
+    ⟨_, List.getElem?_eq_getElem (by omega : j < rules.length)⟩
+  obtain ⟨hrlc, hrlr⟩ := hrules j cs rl hj hrl'
+  obtain ⟨H, hH, heq⟩ := hL.iota_rule kr cvr _ _ rules rl hfr (List.mem_of_getElem? hrl') cvC
+    sh.nP cs.nF (by rw [hrlc]; exact hcC) (sh.lps.map Level.param) φ ρ (pushAll (ps ++ [mo] ++ Ws) ρ)
+    σC (ps ++ [mo] ++ Ws) (ps ++ Fs)
+    ((Expr.mkAppN (.const sh.ind sh.indLevels) (bvarsFrom 1 sh.nP)).liftLooseBVars sh.nM 0)
+    (.app (.bvar (sh.nM + 1)) (.bvar 0)) RC sh.majorMeta sh.ind sh.indLevels R0 K Xmaj
+    (by simp [hlr]) (by simp; omega) (by simp; omega) hR0ρ
+    (by rw [hlr, inst_self]; exact hQM)
+    (by simp only [lift_mkAppN, getAppFn_mkAppN, Expr.liftLooseBVars, Expr.getAppFn])
+    hXmajR (by rw [hrlc]; exact hK) hFC0 (by rw [← ht]; exact htm)
+    (by
+      rw [lift_mkAppN, getAppArgs_mkAppN, lift_bvarsFrom _ _ _ _ (Nat.zero_le _)]
+      simp only [Expr.liftLooseBVars, Expr.getAppArgs, List.nil_append]
+      rw [List.take_of_length_le (show (bvarsFrom (1 + sh.nM) sh.nP).length ≤ sh.nP by
+        rw [bvarsFrom_length]), ← hps, take_left_ctx]
+      have := den_bvarsFrom (cval := M.cval) (env := env) (φ := φ) ρ ([mo] ++ Ws) ps []
+      rwa [List.nil_append, ← List.append_assoc, show ([mo] ++ Ws).length = 1 + sh.nM by
+        simp; omega] at this)
+    (by
+      rw [hRC, getAppArgs_mkAppN]
+      simp only [Expr.getAppArgs, List.nil_append]
+      rw [List.drop_eq_nil_of_le (show (bvarsFrom cs.nF sh.nP).length ≤ sh.nP by
+        rw [bvarsFrom_length]), List.drop_eq_nil_of_le (show (ps ++ [mo] ++ Ws).length ≤
+          sh.nP + 1 + sh.nM by simp; omega)]
+      exact .nil)
+  rw [hlr, inst_self, hrlr] at hH
+  -- β through the rule: the wrapper at the fields and the induction hypotheses
+  have hH2 : Denotes M.cval env φ ρ (lamTele ((bP ++ [bMo]) ++ (sh.ctors.map fun c => (c.recMinor, c.minorMeta)))
+      (lamTele (liftTele (sh.nM - j) j cs.fields)
+        (Expr.mkAppN (.bvar (cs.nF + sh.nM - 1 - j)) (bvarsFrom 0 cs.nF ++ cs.recFields.map fun r =>
+          Expr.mkAppN (.const kr (sh.lps.map Level.param)) (bvarsFrom (cs.nF + sh.nM + 1) sh.nP ++
+            [.bvar (cs.nF + sh.nM)] ++ bvarsFrom cs.nF sh.nM ++ [.bvar (cs.nF - 1 - r)]))))) H := by
+    rw [← lamTele_append, ← e1]; exact hH
+  have hQM' := hQM
+  rw [hrt, ← piTele_append, List.append_assoc] at hQM'
+  rw [piTele_append] at hQM'
+  obtain ⟨Y1, hY1, eY1⟩ := lamTele_app _ _ _ hH2 (by rw [← piTele_append]; exact hQM')
+    (by simp; omega)
+  have hcR : TeleCorr M.cval env φ (pushAll (ps ++ [mo] ++ Ws) ρ) (pushAll ps ρ)
+      (liftTele (sh.nM - j) j cs.fields) fbs := by
+    have := fieldsCorr (M := M) (φ := φ) (ps := ps) (ρ := ρ) (fbs := fbs) (cs := cs) (j := j)
+      (k' := sh.nM - j) (junk := [mo] ++ Ws) hf (by simp; omega)
+    rwa [← List.append_assoc] at this
+  have hFR := fits_transport (liftTele (sh.nM - j) j cs.fields) fbs
+    (cs.codom.liftLooseBVars 0 0) _ (by rw [liftTele_length, hfbl, hFl, hfl]) hcR hFCf (by omega)
+  rw [List.drop_eq_nil_of_le (show (liftTele (sh.nM - j) j cs.fields).length ≤ Fs.length by
+    rw [liftTele_length]; omega)] at hFR
+  obtain ⟨Y2, hY2, eY2⟩ := lamTele_app _ _ _ hY1 hFR (by rw [liftTele_length]; omega)
+  -- the induction hypotheses
+  have hfv : ∀ rf, rf < cs.nF → pushAll Fs ρ (cs.nF - 1 - rf) = Fs[rf]'(by omega) := by
+    intro rf hrf; rw [← hFl]; exact pushAll_rev Fs ρ rf (by omega)
+  have hpre : (Ws.take j).length = j := by simp; omega
+  have hcE : TeleCorr M.cval env φ (pushAll (ps ++ [mo] ++ Ws.take j) ρ) (pushAll ps ρ)
+      cs.fields fbs := by
+    have := fieldsCorr (M := M) (φ := φ) (ps := ps) (ρ := ρ) (fbs := fbs) (cs := cs) (j := j)
+      (k' := 0) (junk := [mo] ++ Ws.take j) hf (by simp; omega)
+    rwa [liftTele_zero, ← List.append_assoc] at this
+  have hF1 := fits_transport cs.fields fbs (piTele cs.ihs (cs.codom.liftLooseBVars cs.ihs.length 0))
+    _ (by omega) hcE hFCf (by omega)
+  rw [List.drop_eq_nil_of_le (show cs.fields.length ≤ Fs.length by omega)] at hF1
+  have hIHmem : ∀ rf ∈ cs.recFields, (ps ++ [mo] ++ Ws ++ [pushAll Fs ρ (cs.nF - 1 - rf)]).foldl app R0
+      ∈ˢ app mo (pushAll Fs ρ (cs.nF - 1 - rf)) := by
+    intro rf hrfm
+    obtain ⟨hrf, hrd⟩ := hwf.recFields j cs hj rf hrfm
+    rw [hfv rf hrf]
+    -- the recursive field lies in the major's domain
+    obtain ⟨X', hX', hm'⟩ := fits_get cs.fields _ hF1 rf (by omega) (by omega)
+    rw [List.getElem?_eq_getElem (show rf < cs.fields.length by omega)] at hrd
+    simp only [Option.map_some, Option.some.injEq] at hrd
+    rw [hrd, CaseShape.recFieldDom] at hX'
+    obtain ⟨IND, Ps1, hIND, hPs1, rfl⟩ := (den_mkAppN _).mp hX'
+    obtain ⟨IND', Ps2, hIND', hPs2, rfl⟩ := (den_mkAppN _).mp hMajD
+    have e3 : Ps1 = ps := by
+      have := den_bvarsFrom (cval := M.cval) (env := env) (φ := φ) ρ
+        ([mo] ++ Ws.take j ++ Fs.take rf) ps []
+      rw [List.nil_append, show ([mo] ++ Ws.take j ++ Fs.take rf).length = rf + j + 1 by simp; omega,
+        hps, pushAll_append, show ps ++ ([mo] ++ Ws.take j ++ Fs.take rf) =
+          ps ++ [mo] ++ Ws.take j ++ Fs.take rf by simp, pushAll_append (ps ++ [mo] ++ Ws.take j)] at this
+      exact denotesList_functional hPs1 this
+    have e4 : Ps2 = ps := by
+      have := den_bvarsFrom (cval := M.cval) (env := env) (φ := φ) ρ [mo] ps []
+      rw [List.nil_append, hps] at this
+      exact denotesList_functional hPs2 this
+    subst e3 e4
+    obtain rfl := Denotes_functional (den_const_env hIND) hIND'
+    have hfX : Fs[rf] ∈ˢ ps.foldl app IND := hm'
+    have hsn := fits_snoc hQM rfl hXmajR hfX
+    obtain ⟨TR, hTR, hrm⟩ := mem_key M hfr φ ρ
+    obtain ⟨RR, hRR, hmRR⟩ := fits_app_mem hsn hTR hrm
+    rw [den_app_bvars] at hRR
+    have hmo : push Fs[rf] (pushAll (ps ++ [mo] ++ Ws) ρ) (sh.nM + 1) = mo := by
+      show pushAll (ps ++ [mo] ++ Ws) ρ sh.nM = mo
+      rw [← hWl, show ps ++ [mo] ++ Ws = ps ++ mo :: Ws by simp, pushAll_at]
+    rw [hmo] at hRR
+    rw [hR0e, ← hRR]
+    exact hmRR
+  -- the recursor's rule body: the wrapper at the fields and the induction hypotheses
+  obtain ⟨IHs, hIHs⟩ : ∃ IHs : List V, IHs = cs.recFields.map fun rf =>
+      (ps ++ [mo] ++ Ws ++ [pushAll Fs ρ (cs.nF - 1 - rf)]).foldl app R0 := ⟨_, rfl⟩
+  have hIHl : IHs.length = cs.ihs.length := by rw [hIHs, List.length_map, hih]
+  have hE : pushAll Fs (pushAll (ps ++ [mo] ++ Ws) ρ) = pushAll (ps ++ [mo] ++ Ws ++ Fs) ρ :=
+    (pushAll_append _ _ _).symm
+  have hIHterm : ∀ rf, rf < cs.nF → Denotes M.cval env φ (pushAll (ps ++ [mo] ++ Ws ++ Fs) ρ)
+      (Expr.mkAppN (.const kr (sh.lps.map Level.param)) (bvarsFrom (cs.nF + sh.nM + 1) sh.nP ++
+        [.bvar (cs.nF + sh.nM)] ++ bvarsFrom cs.nF sh.nM ++ [.bvar (cs.nF - 1 - rf)]))
+      ((ps ++ [mo] ++ Ws ++ [pushAll Fs ρ (cs.nF - 1 - rf)]).foldl app R0) := by
+    intro rf hrf
+    refine (den_mkAppN _).mpr ⟨R0, _, den_const_env hR0, ?_, rfl⟩
+    refine denotesList_append (denotesList_append (denotesList_append ?_ ?_) ?_) ?_
+    · have := den_bvarsFrom (cval := M.cval) (env := env) (φ := φ) ρ ([mo] ++ Ws ++ Fs) ps []
+      rwa [List.nil_append, show ([mo] ++ Ws ++ Fs).length = cs.nF + sh.nM + 1 by simp; omega,
+        hps, show ps ++ ([mo] ++ Ws ++ Fs) = ps ++ [mo] ++ Ws ++ Fs by simp] at this
+    · have := den_bvar_at (cval := M.cval) (env := env) (φ := φ) (a := ps) (y := mo) (c := Ws ++ Fs)
+        (ρ := ρ)
+      rw [show (Ws ++ Fs).length = cs.nF + sh.nM by simp; omega,
+        show ps ++ mo :: (Ws ++ Fs) = ps ++ [mo] ++ Ws ++ Fs by simp] at this
+      exact .cons this .nil
+    · have := den_bvarsFrom (cval := M.cval) (env := env) (φ := φ) ρ Fs Ws (ps ++ [mo])
+      rwa [hFl, hWl] at this
+    · refine .cons ?_ .nil
+      have h := Denotes.bvar (cval := M.cval) (env := env) (φ := φ)
+        (ρ := pushAll (ps ++ [mo] ++ Ws ++ Fs) ρ) (i := cs.nF - 1 - rf)
+      rwa [pushAll_append (ps ++ [mo] ++ Ws), pushAll_lt (E' := ρ) (show cs.nF - 1 - rf < Fs.length by
+        omega)] at h
+  have hbodyR : Denotes M.cval env φ (pushAll Fs (pushAll (ps ++ [mo] ++ Ws) ρ))
+      (Expr.mkAppN (.bvar (cs.nF + sh.nM - 1 - j)) (bvarsFrom 0 cs.nF ++ cs.recFields.map fun r =>
+        Expr.mkAppN (.const kr (sh.lps.map Level.param)) (bvarsFrom (cs.nF + sh.nM + 1) sh.nP ++
+          [.bvar (cs.nF + sh.nM)] ++ bvarsFrom cs.nF sh.nM ++ [.bvar (cs.nF - 1 - r)])))
+      ((Fs ++ IHs).foldl app (Ws[j]'(by omega))) := by
+    rw [hE]
+    refine (den_mkAppN _).mpr ⟨_, Fs ++ IHs, ?_, ?_, rfl⟩
+    · have h := Denotes.bvar (cval := M.cval) (env := env) (φ := φ)
+        (ρ := pushAll (ps ++ [mo] ++ Ws ++ Fs) ρ) (i := (sh.nM - 1 - j) + Fs.length)
+      rw [pushAll_append (ps ++ [mo] ++ Ws), pushAll_offset] at h
+      have hlt : ps.length + 1 + j < (ps ++ [mo] ++ Ws).length := by simp; omega
+      have h2 := pushAll_rev (ps ++ [mo] ++ Ws) ρ (ps.length + 1 + j) hlt
+      rw [show (ps ++ [mo] ++ Ws).length - 1 - (ps.length + 1 + j) = sh.nM - 1 - j by simp; omega]
+        at h2
+      have h4 : (ps ++ [mo] ++ Ws)[ps.length + 1 + j] = Ws[j]'(by omega) := by
+        rw [List.getElem_append_right (show (ps ++ [mo]).length ≤ ps.length + 1 + j by simp)]
+        simp
+      rw [h2, h4] at h
+      rwa [show sh.nM - 1 - j + Fs.length = cs.nF + sh.nM - 1 - j by omega] at h
+    · refine denotesList_append ?_ ?_
+      · have := den_bvarsFrom (cval := M.cval) (env := env) (φ := φ) ρ [] Fs (ps ++ [mo] ++ Ws)
+        rwa [List.append_nil, List.length_nil, hFl] at this
+      · rw [hIHs]
+        have hall : ∀ l : List Nat, (∀ rf ∈ l, rf < cs.nF) →
+            DenotesList M.cval env φ (pushAll (ps ++ [mo] ++ Ws ++ Fs) ρ)
+              (l.map fun r => Expr.mkAppN (.const kr (sh.lps.map Level.param))
+                (bvarsFrom (cs.nF + sh.nM + 1) sh.nP ++ [.bvar (cs.nF + sh.nM)] ++
+                  bvarsFrom cs.nF sh.nM ++ [.bvar (cs.nF - 1 - r)]))
+              (l.map fun rf => (ps ++ [mo] ++ Ws ++ [pushAll Fs ρ (cs.nF - 1 - rf)]).foldl app R0) := by
+          intro l hl
+          induction l with
+          | nil => exact .nil
+          | cons rf l ih =>
+            exact .cons (hIHterm rf (hl rf (by simp))) (ih fun r h => hl r (by simp [h]))
+        exact hall cs.recFields fun rf h => (hwf.recFields j cs hj rf h).1
+  have eY2' : Y2 = (Fs ++ IHs).foldl app (Ws[j]'(by omega)) := Denotes_functional hY2 hbodyR
+  -- β through the wrapper
+  have hF2 : Fits M.cval env φ (pushAll Fs (pushAll (ps ++ [mo] ++ Ws.take j) ρ))
+      (piTele cs.ihs (cs.codom.liftLooseBVars cs.ihs.length 0)) IHs
+      (pushAll IHs (pushAll Fs (pushAll (ps ++ [mo] ++ Ws.take j) ρ)))
+      (cs.codom.liftLooseBVars cs.ihs.length 0) := by
+    refine fits_of_forall cs.ihs _ hIHl fun r h1 h2 => ?_
+    obtain ⟨rf, hrf'⟩ : ∃ rf, cs.recFields[r]? = some rf :=
+      ⟨_, List.getElem?_eq_getElem (show r < cs.recFields.length by omega)⟩
+    have hrfm : rf ∈ cs.recFields := List.mem_of_getElem? hrf'
+    have hrfl := (hwf.recFields j cs hj rf hrfm).1
+    have hd := hwf.ihs j cs hj r rf hrf'
+    rw [List.getElem?_eq_getElem h2] at hd
+    simp only [Option.map_some, Option.some.injEq] at hd
+    refine ⟨app mo (pushAll Fs ρ (cs.nF - 1 - rf)), ?_, ?_⟩
+    · rw [hd, ← pushAll_append]
+      refine (ihDom_den hpre (by simp; omega) hrfl).mpr ?_
+      rw [pushAll_append, show r + cs.nF - 1 - rf = (cs.nF - 1 - rf) + (IHs.take r).length by
+        simp; omega, pushAll_offset]
+    · have hr : cs.recFields[r]'(by omega) = rf :=
+        Option.some.inj ((List.getElem?_eq_getElem (by omega)).symm.trans hrf')
+      simp only [hIHs, List.getElem_map, hr]
+      exact hIHmem rf hrfm
+  have hF12 := fits_trans hF1 hF2
+  rw [← piTele_append] at hF12
+  have hcW := wrapper_corr (M := M) (φ := φ) (ps := ps) (mo := mo) (t := t) (ρ := ρ) hf hfl hih
+    (hwf.ihs j cs hj) (fun rf h => (hwf.recFields j cs hj rf h).1) hjm hpre
+  have hFW := fits_transport _ _ (cs.codom.liftLooseBVars 0 0) _ (liftTele_length _ _ _) hcW hF12
+    (by simp; omega)
+  rw [List.drop_eq_nil_of_le (show (liftTele (mins.length + 1 - j) j (cs.fields ++ cs.ihs)).length ≤
+    (Fs ++ IHs).length by rw [liftTele_length]; simp; omega)] at hFW
+  have hWj := hWd j cs (by omega) hj
+  rw [wrapper_eq _ _ _ hfl, ← hmins] at hWj
+  obtain ⟨Y3, hY3, eY3⟩ := lamTele_app _ _ _ hWj hFW (by rw [liftTele_length]; simp; omega)
+  have hwb := wrapper_body (M := M) (φ := φ) (ps := ps) (mo := mo) (t := t) (ρ := ρ) hjm
+    (Fs' := Fs) (hs := IHs)
+  rw [show (cs.fields ++ cs.ihs).length = Fs.length + IHs.length by simp; omega,
+    show cs.ihs.length = IHs.length by omega, show cs.nF = Fs.length by omega] at hY3
+  have eY3' := Denotes_functional hY3 hwb
+  -- the last binder is read in the graph regime
+  have hlastReg : regime φ mLast.pw ≠ 0 := by
+    have hne : (ps ++ mo :: t :: mins) ≠ [] := by simp
+    have hsplit := (List.dropLast_append_getLast hne).symm
+    obtain ⟨v, A, B, hv, hX, _⟩ := hlast _ _ hsplit
+    have hpre' := fits_prefix (bs := sh.binders) (xs := (ps ++ mo :: t :: mins).dropLast)
+      (ys := [(ps ++ mo :: t :: mins).getLast hne]) (by rw [← hsplit]; exact hfit0) (by simp; omega)
+    rw [show ((ps ++ mo :: t :: mins).dropLast).length = sh.binders.length - 1 by simp; omega,
+      drop_pred_of_getLast? hgl] at hpre'
+    obtain ⟨TT, hTT, hHm⟩ := mem_key M hfc φ ρ
+    have hTT' : Denotes M.cval env φ ρ (piTele sh.binders (.app (.bvar (sh.nM + 1)) (.bvar sh.nM))) TT := by
+      rw [← hty]; exact hTT
+    exact last_regime hpre' hTT' hHm hv hX
+  -- the chain: minor `j` applies to the fields in the graph regime
+  obtain ⟨XM, hXM, hmXM⟩ := hminD j hjm
+  have hbj : (bMin[j]'(by omega)).1 = CaseShape.casesMinor j cs := by
+    have := hbmin j cs hj
+    rw [List.getElem?_eq_getElem (by omega)] at this
+    exact Option.some.inj this
+  rw [hbj, CaseShape.casesMinor, lift_piTele] at hXM
+  have hcC1 : TeleCorr M.cval env φ (pushAll (ps ++ mo :: t :: mins.take j) ρ) (pushAll ps ρ)
+      (liftTele 1 j cs.fields) fbs :=
+    fieldsCorr (M := M) (φ := φ) (ps := ps) (ρ := ρ) (fbs := fbs) (cs := cs) (j := j) (k' := 1)
+      (junk := mo :: t :: mins.take j) hf (by simp; omega)
+  have hFE := fits_transport (liftTele 1 j cs.fields) fbs
+    (cs.codom.liftLooseBVars 1 (j + cs.fields.length)) _ (by rw [liftTele_length]; omega) hcC1 hFCf
+    (by omega)
+  have hreg' : ∀ b ∈ liftTele 1 j cs.fields, regime φ b.2.pw ≠ 0 := by
+    intro b hb
+    have hb2 : b.2 ∈ (liftTele 1 j cs.fields).map (·.2) := List.mem_map_of_mem hb
+    rw [liftTele_metas] at hb2
+    obtain ⟨b', hb', e⟩ := List.mem_map.mp hb2
+    rw [← e, hreg j cs hj b' hb']
+    exact hlastReg
+  refine ⟨?_, appChain_of_fits _ _ hXM hmXM hFE (by rw [liftTele_length]; omega) hreg'⟩
+  rw [ht, heq, List.take_of_length_le (show (ps ++ [mo] ++ Ws).length ≤ sh.nP + 1 + sh.nM by
+    simp; omega), show (ps ++ Fs).drop sh.nP = Fs by rw [← hps]; simp, List.foldl_append, eY1, eY2,
+    eY2', eY3, eY3']
 
 end IxCC.Grounding
