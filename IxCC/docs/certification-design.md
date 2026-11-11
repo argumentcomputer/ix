@@ -468,7 +468,7 @@ imports the kernel's model (`IxCK.Kernel.Denotes`, the statement half, in
 model, from the production library or from any program of the shared build.
 
 **What is proved, fenced on `propext`, `Classical.choice` and `Quot.sound` or
-fewer (`IxCCGrounding/Fence.lean`, 53 exact assertions):**
+fewer (`IxCCGrounding/Fence.lean`, 56 exact assertions):**
 
 - *Soundness at a root* (`rootSound`, in `IxCCGrounding.Root`). For every
   program, kernel reading `env`, key map, level parameters, certificate
@@ -510,9 +510,9 @@ theorem is from the grounded statement of the [spine](end-to-end.md#the-shared-s
 | `Laws.defn_value` | δ: a stored definition denotes what its value denotes | the IxVM side: the field `Model.defn_value` (`jcb/ixvmc-std-model`, proved) | done there; becomes a field here when their `Denotes.lean` lands on `main` |
 | `Laws.iota_rule` | ι: every stored recursor rule computes, its right-hand side denoting (their `IotaLaw`, copied verbatim) | the IxVM side: `Model.iota_rule`, proved | as δ |
 | `Laws.cval_params` | a constant depends on the level assignment only through its own parameters | the IxVM side: `Model.cval_params` | as δ |
-| `Laws.proj_ctor` | the projection of a constructor, in value form (`ProjCtor`) | the IxVM side | scheduled there as a public law (their third note, item 6) |
+| `Laws.proj_ctor` | the projection of a constructor, in value form (`ProjCtor`), **at a structure that is not a proposition** (its stored sort nonzero at the constructor's assignment). In a proof-irrelevant set model the image is then the field tuple, read at position `i + off` | the IxVM side | scheduled there as a public law (their third note, item 6); the restricted form sent to them 2026-11-11. Supplied at each use by `Faith.projSort` (the `proj` conjunct) |
 | `Laws.nat_accel` | the fifteen `Nat` operations on all literals, `Bool` results included (`NatAccel`) | the IxVM side | scheduled there (item 6; DO-39) |
-| `Laws.ctor_canon` | constructor canonicity across parameters and levels (`CtorCanon`): a constructor image built at other parameters and levels that lies in the family at these is the image at these | the IxVM side, if accepted; otherwise IxCC by a relation that carries types (2–4k lines, the owner's decision) | asked 2026-11-11, unanswered; consumed by the generic `case` lemma for a constructor-valued major |
+| `Laws.ctor_canon` | constructor canonicity across parameters and levels (`CtorCanon`), **at a family that is not a proposition at either level instantiation**: a constructor image built at other parameters and levels that lies in the family at these is the image at these, its fields fitting there. In a proof-irrelevant set model the image is then a tagged field tuple, which lies in the family at other parameters only if its fields lie in their types there | not scheduled by anyone: the IxVM side (who estimate it at 1–2k lines from the recursor's membership law and ι) or IxCC from that law; asked 2026-11-11 | consumed by the generic `case` lemma for a constructor-valued major; supplied there by `CaseWF.indSort` (the `caseShape` conjunct) |
 | `groundCheck … = true` | every decidable fact of the closure: `GroundFacts` (the faithfulness clauses, the fragment, the `Nat` and `Eq` bases, each `eqn` entry's shape, the correspondence and closedness of every term SrcEval runs, `Ok`'s closure) and `CaseFacts` (each `case` entry's shape, conjuncts `caseShape` and `caseProg`) | IxCC: the check, run on the closure's bytes | done: true on the `fib` and `decide (fib 10 = 55)` closures (`tests-grounding`, in `ixcc-grounding`), with negative controls that each falsify exactly one conjunct |
 | `RootFacts` | the root is in `Sl`, `Ok` at no levels, stored without level parameters at the first-order type `args → res`, its enumerations stored | IxCC: `rootCheck`, run on the closure | done on both closures |
 | `FoArgs` | the arguments are literals, or an enumeration's listed constructor | IxCC: `foArgsB` | done on both closures, with a control |
@@ -520,7 +520,40 @@ theorem is from the grounded statement of the [spine](end-to-end.md#the-shared-s
 | `BoolListed` (`decideRoot` only) | the pinned `Bool`'s listed constructor `1` is the pinned `Bool.true` | IxCC: `boolListedB` | done on `decide`, with a control |
 | `SitesOk` | typing, in the one form it is consumed: at every `Ok` instance of every constant of `Sl` SrcEval unfolds, every application site it may evaluate is in the graph regime with its argument in the domain | IxCC | not discharged. G2: a site check from `mem` and stored types, its residue measured. G3: the residue, from the kernel's derivations (an accepted definition's derivation and the rules' soundness over the public model, both kernel side: the latter decided there 2026-11-11 and being estimated) and the walk-level annotation statement (KF-1, IxCC) |
 
+**Two laws as first landed were false, and the instance theorems said nothing.**
+As first landed, `ctor_canon` was stated for every constructor and `proj_ctor`
+for every structure. Both are false in a proof-irrelevant set model, where every
+proof is the one point `pt`. `ctor_canon`: `Exists.intro (fun _ => True) 1 pt`
+is `pt`, fits at its own parameters and lies in the inhabited
+`Exists (fun w => w = 0)`, so the law concluded that `pt` proves `1 = 0`; and in
+the kernel's own set model (`IxCK/Kernel/SetTheory/Derive/Quot.lean`) `Quot.mk`
+built at level `0` is `pt`, which is also a class of `quotSet 1 {ptTag} R`, so
+the law concluded `pt ∈ {ptTag}`. `proj_ctor`: at a `Prop` structure with a data
+field, such as `Nonempty` (the kernel installs its projection table), the image
+is `pt`, every component of `pt` is `pt`, and the law concluded that every value
+of the field's type is `pt`. Both grounding subjects' environments hold
+`Quot.mk`, so in the kernel's set model `Laws` had no instance for them: `fibRoot`
+and `decideRoot` as first landed said nothing there, not only the general
+theorems. What is assumed now are the restricted forms in the table above: the
+family or structure is not a proposition at the assignments involved, which the
+check supplies from a decided fact (`NeverProp`: its stored sort's zero-ness datum
+is `never`).
+
+**Not yet shown: that `Laws` has a model.** Nobody has yet shown that `Laws`, in
+its restricted form, has a model for any environment. Three fields are proved on
+the side that owes them (`defn_value`, `iota_rule`, `cval_params`), two are
+scheduled there (`proj_ctor`, `nat_accel`), and the restricted `ctor_canon` is not
+scheduled by anyone. Until that side's theorem lands, every theorem of this
+library is conditional on a hypothesis whose consistency rests on the arguments
+written beside each law in `IxCCGrounding/Laws.lean` (and beside each use).
+
 **Why each checked fact is there**, each the counterexample without it:
+
+- *`CaseWF.indSort` (in `caseShape`) and `Faith.projSort` (in `proj`)*: the
+  `case`'s inductive, and a projected structure whose constructor is in `Sl` and
+  has fields, are stored with a sort that is never zero. Without them the
+  generic `case` lemma and the projection case would need `ctor_canon` and
+  `proj_ctor` at propositions, where both are false (above).
 
 - *The constructor's field count in `caseIota`* (`Fs.length = cs.nF`, supplied by
   the relation): at `And.casesOn` with a motive into `Type`, the major proof point
@@ -563,6 +596,14 @@ nested occurrences (a field `List T` inside `T`) and for recursive fields behind
 a function type (a field `Nat → T`, whose induction hypothesis is not the motive
 at the field). Such a program fails the check; nothing unsound is admitted.
 Widening is G4.
+Since the laws' restriction (2026-11-11) it also fails, and the projection case
+too (`proj`), for a family whose stored sort can be zero at some assignment:
+`PUnit`, a `Prop` structure (`And.casesOn` into `Type`), anything
+universe-polymorphic down to `Prop`. Measured on the 20 corpus closures that load
+(the nine `bench-k1` ones, `grounding/decide`, five of `phase1-scalar` and five of
+`phase1-boundary`): no `case` entry and no structure of a closure's `Sl` is newly
+refused; over whole program tables 3 to 7 `case` entries per closure that passed
+`caseShape` before now fail it.
 
 **What `ResultTag` rejects on the committed closures.** Both closures' `Sl`
 hold `PUnit.unit` (index `0`, no parameters, no fields) beside `Bool.false`, so

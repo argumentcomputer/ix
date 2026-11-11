@@ -331,23 +331,6 @@ end Den
 
 /-! ## Level instantiation -/
 
-theorem holds_zeronessOf (φ : LevelParam → Nat) : ∀ l : Level,
-    (Level.zeronessOf l).holds φ = (Level.eval φ l == 0)
-  | .zero => by simp [Level.zeronessOf, Level.eval]
-  | .succ l => by simp [Level.zeronessOf, Level.eval]
-  | .param n => by simp [Level.zeronessOf, Level.eval]
-  | .max a b => by
-    simp only [Level.zeronessOf, PropWhen.holds_inter, holds_zeronessOf φ a, holds_zeronessOf φ b,
-      Level.eval]
-    rw [Bool.eq_iff_iff]
-    simp only [Bool.and_eq_true, beq_iff_eq]
-    omega
-  | .imax a b => by
-    simp only [Level.zeronessOf, holds_zeronessOf φ b, Level.eval]
-    rw [Bool.eq_iff_iff]
-    simp only [beq_iff_eq]
-    split <;> omega
-
 /-- **The zero-ness datum under a level substitution** reads the induced assignment. -/
 theorem holds_substPW (φ : LevelParam → Nat) (ks : List LevelParam) (vs : List Level)
     (pw : PropWhen) : (Level.substPW ks vs pw).holds φ = pw.holds (Level.substFn φ ks vs) := by

@@ -23,7 +23,7 @@ mutation targeting one makes exactly that one false.
 | `caseRec` | a `case` entry's recursor is ordinary, the key's telescope long enough |
 | `defn` | a δ-unfolded definition is stored as a definition; its value names only `Sl` |
 | `eqnNames` | an `eqn` body names only `Sl` |
-| `proj` | a projected structure has a projection table naming its constructor |
+| `proj` | a projected structure has a projection table naming its constructor; one whose constructor is in `Sl` and has fields is never a proposition (`NeverProp`) |
 | `pins` | the `Nat` and `Bool` pins are the kernel's roles; the `Bool` constructors in `Sl` |
 | `natBasis` | `Nat`, `Nat.zero` and `Nat.succ` stored as the literal reading needs |
 | `eqBasis` | `Eq` stored with its type |
@@ -31,7 +31,7 @@ mutation targeting one makes exactly that one false.
 | `eqnCorr`, `eqnClosed` | each `eqn` body corresponds to the equation body, which is closed |
 | `valueCorr`, `valueClosed` | each δ value corresponds to the stored value, which is closed |
 | `okClosed` | `Ok`'s closure (`okClosedB`) |
-| `caseShape` | each `case` entry's stored `casesOn`, recursor and constructors have the checked shape (`CaseStored`, read by `caseShape?`) |
+| `caseShape` | each `case` entry's stored `casesOn`, recursor and constructors have the checked shape (`CaseStored`, read by `caseShape?`), its inductive never a proposition |
 | `caseProg` | each `case` entry's recursor and constructors in the program agree with the shape (`CaseProg`) |
 -/
 
@@ -324,15 +324,19 @@ def eqnNamesB (c : CId) : Bool :=
   | some (.eqn _ body) => namesInB Sl body
   | _ => true
 
+/-- A one-constructor inductive of `Sl`: its projection table names its constructor at every
+field; and when the constructor is in `Sl` and has fields, the inductive is never a proposition
+(`NeverProp`, where `Laws.proj_ctor` is assumed). -/
 def projB (c : CId) : Bool :=
   match p.decl? c with
   | some (.induct _ _ _ _ _ [c₁]) =>
     match env.find? (κ c₁) with
     | some (.ctorInfo _ _ nf) =>
-      (List.range nf).all fun i =>
+      ((List.range nf).all fun i =>
         match env.findProj? (κ c) i with
         | some e => decide (e.ctor = κ c₁)
-        | none => false
+        | none => false) &&
+      (nf == 0 || !decide (c₁ ∈ Sl) || neverPropB env (κ c))
     | _ => true
   | _ => true
 
@@ -438,7 +442,7 @@ def checkParts (p : Program) (env : KEnv) (κ : CId → KKey) (lpsOf : CId → L
    ("caseRec", Sl.all (caseRecB p env κ)),
    ("defn", Sl.all (defnB p env κ Sl)),
    ("eqnNames", Sl.all (eqnNamesB p Sl)),
-   ("proj", Sl.all (projB p env κ)),
+   ("proj", Sl.all (projB p env κ Sl)),
    ("pins", pinsB p env κ Sl),
    ("natBasis", natBasisB env),
    ("eqBasis", eqBasisB env),
@@ -549,16 +553,28 @@ theorem eqnNames_of {c : CId} (h : eqnNamesB p Sl c = true) :
   simp only [eqnNamesB, hr] at h
   exact constsIn_of_check h
 
-theorem proj_of {s : CId} (h : projB p env κ s = true) :
+theorem proj_of {s : CId} (h : projB p env κ Sl s = true) :
     ∀ sf lvls np ni ty c, p.decl? s = some (.induct sf lvls np ni ty [c]) →
       ∀ cvC np' nf, env.find? (κ c) = some (.ctorInfo cvC np' nf) → ∀ i, i < nf →
         ∃ entry, env.findProj? (κ s) i = some entry ∧ entry.ctor = κ c := by
   intro sf lvls np ni ty c hd cvC np' nf hf i hi
-  simp only [projB, hd, hf] at h
-  have hall := List.all_eq_true.mp h i (List.mem_range.mpr hi)
+  simp only [projB, hd, hf, Bool.and_eq_true] at h
+  have hall := List.all_eq_true.mp h.1 i (List.mem_range.mpr hi)
   split at hall
   · rename_i e he; exact ⟨e, he, of_decide_eq_true hall⟩
   · exact absurd hall (by simp)
+
+theorem projSort_of {s : CId} (h : projB p env κ Sl s = true) :
+    ∀ sf lvls np ni ty c, p.decl? s = some (.induct sf lvls np ni ty [c]) → c ∈ Sl →
+      ∀ cvC np' nf, env.find? (κ c) = some (.ctorInfo cvC np' nf) → 0 < nf →
+        NeverProp env (κ s) := by
+  intro sf lvls np ni ty c hd hc cvC np' nf hf hnf
+  simp only [projB, hd, hf, Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq, Bool.not_eq_true',
+    decide_eq_false_iff_not] at h
+  rcases h.2 with (h0 | hn) | hp
+  · omega
+  · exact absurd hc hn
+  · exact neverProp_of_check hp
 
 theorem boolPin_of {b : Bool} (h : boolPinB p env κ Sl b = true) :
     ∀ c, (if b then p.known.boolTrue else p.known.boolFalse) = some c →
@@ -619,7 +635,8 @@ theorem groundFacts_of_check {ann : IxCC.Src.Relevance.Ann}
       fun c r hc hr => caseRec_of (all "caseRec" (by simp [checkParts]) c hc) r hr,
       fun c hc => defn_of (all "defn" (by simp [checkParts]) c hc),
       fun c thm body hc hr => eqnNames_of (all "eqnNames" (by simp [checkParts]) c hc) thm body hr,
-      fun s hc => proj_of (all "proj" (by simp [checkParts]) s hc),
+      fun s hc => proj_of (all (f := projB p env κ Sl) "proj" (by simp [checkParts]) s hc),
+      fun s hc => projSort_of (all (f := projB p env κ Sl) "proj" (by simp [checkParts]) s hc),
       fun c hc => by simp only [hc, decide_eq_true_eq] at hz; exact hz,
       fun c hc => by simp only [hc, decide_eq_true_eq] at hs; exact hs, ?_⟩
     intro b c hbc

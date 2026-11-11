@@ -4,7 +4,7 @@ Written 2026-11-10; the premises restated 2026-11-11 (below). **Status:**
 below the source evaluator the x86 route is implemented and proved; the
 shared spine above it is **in progress**: soundness at a root is proved for
 first-order roots (`fib`, `decide (fib 10 = 55)`) over every model with the
-laws, under checks on the bytes and one typing hypothesis ([the grounding library](certification-design.md#the-grounding-library-sp-1-in-progress));
+laws (hypotheses not yet shown to have a model), under checks on the bytes and one typing hypothesis ([the grounding library](certification-design.md#the-grounding-library-sp-1-in-progress));
 the Aiur routes are **planned**, the first of them on the IxVM side. This page says
 what "certified end to end" is to mean for each back end, what the routes
 share and what each trusts. The [roadmap](roadmap.md#plan) schedules the
@@ -109,6 +109,12 @@ hypothesis, `ResultTag`, still rejects some roots (a `Bool` root returning
 `false` on the committed closures). `SitesOk`'s discharge, widening and
 progress are the next steps; the certification design lists every hypothesis
 with who discharges it.
+The laws are not yet shown to have a model: two of them, as first landed
+(constructor canonicity and the projection of a constructor), were false in a
+proof-irrelevant set model, so for the two subjects (whose environments hold
+`Quot.mk`) the instance theorems said nothing in the kernel's own set model;
+both laws are now assumed only at families that are not propositions, checked
+on the bytes ([the grounding library](certification-design.md#the-grounding-library-sp-1-in-progress)).
 
 Soundness does not consume premise (i): it quantifies over every model, and
 is true, but empty, if there is none. Premise (i) is what makes it say

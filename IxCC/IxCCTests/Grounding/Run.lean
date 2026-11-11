@@ -31,6 +31,8 @@ Then the negative controls, on `fib`: each mutation makes exactly the conjunct i
 | the annotation's class of a constant the root unfolds made a type | `okClosed` |
 | `Nat.succ`'s stored binder datum made "always a proposition" | `natBasis` |
 | the first `case` entry's `casesOn` value hands its recursor the last two minors swapped | `caseShape` |
+| `Nat`'s stored sort made `Prop` (its `case` entry is then over a family of propositions) | `caseShape` |
+| a structure of `Sl` with fields, its constructor in `Sl`, made a family of propositions | `proj` |
 
 and, for the root's checks, on `decide`: the observation `false` (tag `0`) fails `resultTagB`
 (`PUnit.unit` is a field-less constructor at index `0` in `Sl` beside `Bool.false`, so the check
@@ -180,6 +182,29 @@ def mutateCase (i : Input) : Option (Input × CId) := do
     | ci => ci
   return ({ i with env }, c)
 
+/-- A stored type whose final sort is made `Prop`. -/
+def toProp : KExpr → KExpr
+  | .forallE d b m => .forallE d (toProp b) m
+  | .sort _ => .sort .zero
+  | e => e
+
+/-- The stored inductive at `k` made a family of propositions (its type's final sort `Prop`). -/
+def mutateIndSort (i : Input) (k : KKey) : Input :=
+  { i with env := mapConst i.env k fun
+      | .indInfo cv caps => .indInfo { cv with type := toProp cv.type } caps
+      | ci => ci }
+
+/-- A one-constructor inductive of `Sl` whose constructor is in `Sl` and has fields (what the
+`proj` conjunct asks to be never a proposition). -/
+def projectedStruct (i : Input) : Option CId :=
+  i.Sl.find? fun s =>
+    match i.src.decl? s with
+    | some (.induct _ _ _ _ _ [c]) =>
+      i.Sl.contains c && match i.env.find? (i.κ c) with
+        | some (.ctorInfo _ _ nf) => nf > 0
+        | _ => false
+    | _ => false
+
 /-- The root's result type: `Nat`, or the pinned `Bool`. -/
 def resTy (s : Subject) (i : Input) : Option FoTy :=
   if s.boolResult then i.src.known.bool.map .enum else some .nat
@@ -238,8 +263,20 @@ def run : IO Bool := do
     let some (icase, cc) := mutateCase i | throw (IO.userError "fib: no case entry to mutate")
     let cs := failing icase
     expect a (cs == ["caseShape"]) s!"swapped minors of c{cc}: false conjuncts {cs}, expected [caseShape]"
+    -- the restricted laws: a `case` over a family that can be a proposition is refused by
+    -- `caseShape`, a projection out of such a structure by `proj`
+    let ns := failing (mutateIndSort i Ix.Kernel.natName)
+    expect a (ns == ["caseShape"])
+      s!"Nat made a family of propositions: false conjuncts {ns}, expected [caseShape]"
+    let pcands : List Input := i :: (dec?.map (·.1)).toList
+    let some (pj, ps) := pcands.findSome? (fun j => (projectedStruct j).map fun s => (j, s))
+      | throw (IO.userError "no structure with fields and its constructor in Sl in either subject")
+    let pp := failing (mutateIndSort pj (pj.κ ps))
+    expect a (pp == ["proj"])
+      s!"structure c{ps} made a family of propositions: false conjuncts {pp}, expected [proj]"
     IO.println s!"negative controls: each mutation falsifies exactly its conjunct \
-      (valueCorr, eqnCorr, okClosed, natBasis, caseShape at c{cc})"
+      (valueCorr, eqnCorr, okClosed, natBasis, caseShape at c{cc}; Nat made Prop: caseShape; \
+      structure c{ps} made Prop: proj)"
     -- the root's checks, on `decide`
     let some (di, boolD) := dec? | throw (IO.userError "no decide subject")
     expect a (!resultTagB di.src di.env di.κ di.Sl (.enum boolD) (.ctor 0 []))
