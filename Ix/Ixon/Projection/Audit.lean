@@ -147,9 +147,11 @@ from 5962, by the entry's change (38 in: the check, the state's keys and the der
 -- (`fieldKind`, `fieldNorm`, `substMembers`, `ihBinder`) and the reader's K check on a nested
 -- block add 21 compiled functions. Externs, implemented_by, unsafe, csimp and all ruling
 -- counts are unchanged.
+-- The canonical rule's level link and the declines of rules that would not fire add
+-- 17 compiled functions (`IxC/Kernel/Audit/Roots.lean`).
 /-- info: runtime closure of [Ixon.Projection.address,
  Ixon.Projection.reconstruct,
- Ixon.Projection.checkBytes]: 6954 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 28 -/
+ Ixon.Projection.checkBytes]: 6971 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 28 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.Projection.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
 

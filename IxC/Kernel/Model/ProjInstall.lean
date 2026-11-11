@@ -84,7 +84,7 @@ theorem projFn (hμ : μ.verifiedChecks = true) {F : Nat} {env' env₁ : Env md}
   have hRid := hR
   obtain ⟨cvj, mcv, mval, mhint, pty, rhsA, hctor, hfm, hmlps, hpnone,
     hTf, heqf, hptyB, hround, hptyres, hptyb, hptyf, hptylp, hstrip1,
-    hilt, hstripP, hbig, henv⟩ := hR
+    hilt, hstripP, hplP, hbig, henv⟩ := hR
   obtain ⟨cbinders, cbody, hCstrip, hcbodyArity, hcbodyHead, hrhsw,
     -- `-` at position 11: `ProjFnR`'s rule-rhs **derivation** row, no
     -- longer consumed (task #161 S10 — the reading comes from the run
@@ -314,7 +314,7 @@ theorem projFn (hμ : μ.verifiedChecks = true) {F : Nat} {env' env₁ : Env md}
       · exact nomatch h
     have hplainFire : RecRule.fire
         (projFnRule env'.find? T ctorName pty nP nF i rhsA) = .plain := by
-      by_cases hc : Expr.recRulePlain pty nP nP nP = true
+      by_cases hc : Expr.recRulePlain pty nP nP nP (ctorLevelParamsOf env'.find? ctorName) = true
       · simp [projFnRule, recRuleBits, hc]
       · exact absurd (show RecRule.fire _ = RecRuleFire.inert from by
           simp only [projFnRule, recRuleBits, eq_false_of_ne_true hc]; rfl)
@@ -450,7 +450,7 @@ theorem projInstall (hμ : μ.verifiedChecks = true) {F : Nat}
         hCblock hFields
     -- the block-level premises, re-established (v1's argument)
     obtain ⟨cvj, mcv, mval, mhint, pty, rhsA, hctor, hfm, hmlps,
-      hpnone, hTf, -, -, -, -, -, -, -, -, hilt, -, -, henv⟩ := hR
+      hpnone, hTf, -, -, -, -, -, -, -, -, hilt, -, -, -, henv⟩ := hR
     have hfresh : env'.find? (projFnName T i) = none :=
       Option.isNone_iff_eq_none.mp hpnone
     have hTne : T ≠ projFnName T i := by

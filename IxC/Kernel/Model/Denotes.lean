@@ -28,7 +28,8 @@ this module builds one from the graded invariant `EnvModelM`
   relation reads) at the interpreted leaves.  The regime premises of
   the two binder rules are exactly the invariant's sort facts:
   `AnnotValid`'s `pi` clause and `WellDenoted`'s `lam` clause.
-* **the model** `Model.ofEnvModelM`: `mem` from `type_reads` and
+* **the model** `Model.ofEnvModelM` (built in `Model/Iota.lean`, after
+  ι is derived there): `mem` from `type_reads` and
   `mem_type` at depth `0` (a stored type has no `fvar`, so it is its
   own closure); `false_empty` from the pinned `False` leaf
   (`EnvModel.cvalE_pinned`: the leaf is `.const .empty [0]`, whose
@@ -38,7 +39,12 @@ this module builds one from the graded invariant `EnvModelM`
   *pinned* `Eq` being stored, and the `Denotes` hypothesis supplies
   only that *something* is stored at `eqName`; the two are joined by
   `basis_pinnedL`'s declaration clause, which since task #283 holds of
-  a stored reserved name whatever its kind.
+  a stored reserved name whatever its kind.  `defn_value` from the
+  invariant's `defn_reads`: a stored definition's value reads to the
+  constant's own leaf, and a stored value is closed, so the bridge at
+  depth `0` gives the value the leaf's interpretation as denotation.
+  `iota_rule` from the invariant's `rec_rules`, through the readings
+  of the arguments as bound variables (`iotaLaw_of_envModelM`).
 -/
 
 namespace Ix.Kernel.Model
@@ -55,7 +61,7 @@ universe w
 variable {V : Type w} [SetTheory V]
 
 /-- The set-valued leaf of an annotated valuation. -/
-noncomputable def cvalOf (acval : Key md → (LevelParam → Nat) → AnnotTerm)
+@[expose] noncomputable def cvalOf (acval : Key md → (LevelParam → Nat) → AnnotTerm)
     (n : Key md) (ψ : LevelParam → Nat) : V :=
   interp V (fun _ => SetTheory.empty) (acval n ψ)
 
@@ -372,57 +378,5 @@ theorem Denotes_of_denoteMeta {acval : Key md → (LevelParam → Nat) → Annot
       cases l with
       | natVal k => exact absurd rfl (hnat k)
       | strVal s => exact absurd rfl (hstr s)
-
-/-! ### The model -/
-
-/-- **The model, read off the invariant**: `Model V env` from
-`EnvModelM V μ env`. -/
-noncomputable def Model.ofEnvModelM {μ : Ix.Kernel.CheckMode} {env : Env md}
-    (m : EnvModelM V μ env) : Ix.Kernel.Model V env where
-  cval := cvalOf m.base2.acval
-  mem := by
-    intro c hc φ ρ
-    obtain ⟨ta, hta⟩ := m.type_reads c hc φ
-    have hwf := m.base2.wf c hc
-    have hnf : c.toConstantVal.type.hasFvar = false := hwf.1
-    have hlb : c.toConstantVal.type.looseBVarsBounded 0 = true := hwf.2.2.2.1
-    have hbr := Denotes_of_denoteMeta (V := V) m.base2.cval_closedL 0
-      c.toConstantVal.type hta (fvarsBelow_zero_of_not_hasFvar hnf) hlb ρ
-      (m.type_wellDenotedV c hc φ ta hta ρ)
-    rw [Expr.closeN_of_hasFvar _ 0 0 hnf] at hbr
-    refine ⟨interp V ρ ta, hbr, ?_⟩
-    rw [← interp_cvalOf m.base2.cval_closedL]
-    exact m.mem_type c hc φ ta hta ρ
-  false_empty := by
-    intro φ ρ F h
-    suffices hs : ∀ (ψ : LevelParam → Nat) (ci : ConstantInfo md),
-        env.find? falseName = some ci →
-        cvalOf (V := V) m.base2.acval falseName ψ = SetTheory.empty by
-      cases h with
-      | const hf hlen => exact hs _ _ hf
-    intro ψ ci hf
-    have hpd : Ix.Kernel.Verify.pinnedStructT (md := md) falseName ψ
-        = some (Term.const .empty [0]) := by
-      cases md <;> simp +decide [Ix.Kernel.Verify.pinnedStructT]
-    have he : (m.base2.acval falseName ψ).erase = Term.const .empty [0] :=
-      m.base2.cvalE_pinned (n := falseName) (by (cases md <;> decide)) (by rw [hf]; rfl) ψ hpd
-    rw [cvalOf, erase_eq_const he, interp_const]
-    rfl
-  eq_equality := by
-    intro u φ ρ E A a b h hA ha hb
-    cases h with
-    | const hf hlen =>
-      have hpin := (m.base2.basis_pinned _ _ hf (by (cases md <;> decide))).1
-      rw [show Ix.Kernel.pinnedInfo Ix.Kernel.eqName = Ix.Kernel.eqA from rfl]
-        at hpin
-      subst hpin
-      rw [show (Ix.Kernel.eqA : ConstantInfo md).toConstantVal.levelParams
-        = [Ix.Kernel.uN] from rfl]
-      have hψ : Level.substFn φ [Ix.Kernel.uN] [u] Ix.Kernel.uN = Level.eval φ u := by
-        simp [Level.substFn]
-      have hlaw := (m.eq_law hf (Level.substFn φ [Ix.Kernel.uN] [u])).1 ρ A a b
-        (by rw [hψ]; exact hA) ha hb
-      rw [interp_cvalOf m.base2.cval_closedL] at hlaw
-      exact hlaw
 
 end Ix.Kernel.Model

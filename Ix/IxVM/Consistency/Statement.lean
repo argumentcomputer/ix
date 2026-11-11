@@ -3,6 +3,7 @@ import Ix.IxVM.Refinement.KernelLevels
 import IxC.Kernel.MainTheorem
 import IxC.Kernel.Model.Fold
 import IxC.Kernel.Model.Denotes
+import IxC.Kernel.Model.Iota
 import IxC.Kernel.Verify.EnvGuards
 import IxC.Kernel.Rules.Rel
 
@@ -26,15 +27,29 @@ trace (`View.HashedCollision`, reused), or there is an environment `env` that
   add recursor records the run did not load, as `AcceptsIn` does), through the
   kernel's own reading of Ixon records (`ReadIn`: `admitBinding`,
   `ClosureOrderAt`, `preludeFor`, `prepareWith`: the statement trusts the kernel's
-  reader), installed declaration by declaration (`Installs`, `InstallStep`);
-* contains each claimed constant at its key, with an annotation of the type the
-  reader gives it (`SeedStored`, `Annotates`). Every seed is in Lean's logic:
+  reader), installed declaration by declaration (`Installs`, `InstallStep`),
+  each constant stored as the reader declares it: of the declared kind, with an
+  annotation of its type, and with the declaration's own value, counts and
+  recursor rules (`StoredAs`, `Annotates`);
+* contains each claimed constant at its key, stored as declared (`SeedStored`).
+  Every seed is in Lean's logic:
   IxVM refuses a claim whose seed record, or its block, is unsafe or `partial`
   (`KernelClaim::assert_claimable`; `OutsideLogicAt`), and L6
   carries the refusal (`ClaimPhase`);
 * has a claimed sub-environment (`claimedEnv`: without the model families'
   auxiliary constants) with a model in every set theory:
   `∀ V, Nonempty (Ix.Kernel.Model V (claimedEnv env))`.
+
+A model (`Ix.Kernel.Model`, `IxC/Kernel/Denotes.lean`) interprets every claimed
+constant as a set: a member of what its type denotes, with `False` empty, `Eq`
+equality, every definition what its value denotes, and every recursor rule
+computing as Lean's does. Because the environment stores each declaration's own
+value and rules, a claimed definition means what the reader's value means, not
+just some inhabitant of its type: a definition `P := False` is false in every
+model, and no claimed constant can prove it. The
+structure's docstring lists which of Lean's definitional equalities it carries
+as laws, which hold in every model by the reading, and which it does not carry
+yet.
 
 Corollary (`ConsistentRead.seeds_not_false`): no claimed constant has type
 `False`.
@@ -214,26 +229,6 @@ def ReadIn (b : Binding) (E : Ixon.Env) (seeds : Address → Prop)
     Ix.Kernel.Admission.prepareWith Address.admissionHash b pre limits (Ix.Cert.recordsOf E order)
       (Ix.Cert.blobsOf E order) (Ix.Cert.hintsOf E) = .ok (ev, ds)
 
-/-- **The constants a declaration installs**, as the reader gives them (key,
-level parameters, type), by `Ix.Kernel.Semantics.DeclRun`'s dispatch: a block
-the fold recognises as pinned installs its pin, the quotient package's `type`
-record installs the pinned quotient block and its other records install nothing
-of their own, nor does the `Quot.sound` record (a slot of that block). -/
-def installs : Ix.Kernel.Declaration .anon → List (Ix.Kernel.ConstantVal .anon)
-  | .axiomDecl cv => if cv.name = Ix.Kernel.quotSoundName then [] else [cv]
-  | .defnDecl cv _ _ => [cv]
-  | .thmDecl cv _ => [cv]
-  | .opaqueDecl cv _ => [cv]
-  | .basisDecl kind => kind.declsA.map (·.toConstantVal)
-  | .indDecl block _ =>
-    match Ix.Kernel.basisPinHit block with
-    | some kind => kind.declsA.map (·.toConstantVal)
-    | none => block.map (·.toConstantVal)
-  | .quotDecl k _ =>
-    match k with
-    | .type => Ix.Kernel.BasisKind.quotK.declsA.map (·.toConstantVal)
-    | _ => []
-
 /-- **`t'` is an annotation of `t`**: the same term up to binder metadata (the
 checker's annotation pass writes each binder's `pw` datum), with every `let`
 replaced by its reduct (the pass ζ-reduces). A wrong annotation denotes nothing
@@ -263,19 +258,75 @@ theorem Annotates.const_inv {t' : Ix.Kernel.Expr .anon} {n : Ix.Kernel.Key .anon
   cases h with
   | const => rfl
 
+/-- **The constants a declaration installs**, as the reader declares them, by
+`Ix.Kernel.Semantics.DeclRun`'s dispatch: a definition, a theorem and an axiom
+install themselves; an opaque installs an axiom of its type (the kernel never
+unfolds an opaque, so it keeps no value); a block the fold recognises as pinned
+installs its pin, and any other block its members; the quotient package's `type`
+record installs the pinned quotient block, and its other records install nothing
+of their own, nor does the `Quot.sound` record (a slot of that block). -/
+def installs : Ix.Kernel.Declaration .anon → List (Ix.Kernel.ConstantInfo .anon)
+  | .axiomDecl cv => if cv.name = Ix.Kernel.quotSoundName then [] else [.axiomInfo cv]
+  | .defnDecl cv value hint => [.defnInfo cv value hint]
+  | .thmDecl cv value => [.thmInfo cv value]
+  | .opaqueDecl cv _ => [.axiomInfo cv]
+  | .basisDecl kind => kind.declsA
+  | .indDecl block _ =>
+    match Ix.Kernel.basisPinHit block with
+    | some kind => kind.declsA
+    | none => block
+  | .quotDecl k _ =>
+    match k with
+    | .type => Ix.Kernel.BasisKind.quotK.declsA
+    | _ => []
+
+/-- **`cv` stores `cv₀`**: the same name and level parameters, and an annotation
+of its type. -/
+def ValStored (cv cv₀ : Ix.Kernel.ConstantVal .anon) : Prop :=
+  cv.name = cv₀.name ∧ cv.levelParams = cv₀.levelParams ∧ Annotates cv.type cv₀.type
+
+/-- **A recursor rule stored as declared**: the same constructor and field count,
+and an annotation of its right-hand side. The rule's other fields are what the
+kernel computes at install (the constructor's parameter count, how the rule
+fires, its K, η and parameter bits); no law of `Ix.Kernel.Model` reads them. -/
+def RuleStored (rl rl₀ : Ix.Kernel.RecRule .anon) : Prop :=
+  rl.ctor = rl₀.ctor ∧ rl.nfields = rl₀.nfields ∧ Annotates rl.rhs rl₀.rhs
+
+/-- **`ci` is the declared constant `ci₀`, stored**: of the same kind, with its
+name, level parameters and annotated type (`ValStored`), and with the
+declaration's own data: a definition's annotated value and its reducibility
+hint, a theorem's annotated value, a constructor's parameter and field counts,
+a recursor's argument counts (the major premise's position and the rule
+prefix's length) and its rules, one for one (`RuleStored`). An inductive type's
+capability record (its η, unit-like and K verdicts) is the kernel's, not the
+declaration's, and no law of `Ix.Kernel.Model` reads it. -/
+def StoredAs (ci ci₀ : Ix.Kernel.ConstantInfo .anon) : Prop :=
+  ValStored ci.toConstantVal ci₀.toConstantVal ∧
+    match ci, ci₀ with
+    | .axiomInfo _, .axiomInfo _ => True
+    | .defnInfo _ v h, .defnInfo _ v₀ h₀ => Annotates v v₀ ∧ h = h₀
+    | .thmInfo _ v, .thmInfo _ v₀ => Annotates v v₀
+    | .indInfo _ _, .indInfo _ _ => True
+    | .ctorInfo _ nP nF, .ctorInfo _ nP₀ nF₀ => nP = nP₀ ∧ nF = nF₀
+    | .recInfo _ mI rP rules, .recInfo _ mI₀ rP₀ rules₀ =>
+      mI = mI₀ ∧ rP = rP₀ ∧ List.Forall₂ RuleStored rules rules₀
+    | _, _ => False
+
+/-- A stored constant has the declared constant's name. -/
+theorem StoredAs.name_eq {ci ci₀ : Ix.Kernel.ConstantInfo .anon} (h : StoredAs ci ci₀) :
+    ci.name = ci₀.name :=
+  h.1.1
+
 /-- **One declaration's install, by shape**: the environment grows at the front
 by fresh constants with distinct keys: every constant the declaration installs,
-at its key and level parameters, with an annotation of its type, and constants
-the kernel derives (projection tables and functions, model artifacts) at
-derived keys (`Key.aux`). -/
+stored as declared (`StoredAs`), and constants the kernel derives (projection
+tables and functions, model artifacts) at derived keys (`Key.aux`). -/
 def InstallStep (env : Ix.Kernel.Env .anon) (d : Ix.Kernel.Declaration .anon)
     (env₂ : Ix.Kernel.Env .anon) : Prop :=
   ∃ new : List (Ix.Kernel.ConstantInfo .anon), env₂ = ⟨new ++ env.consts⟩ ∧
     (new.map (·.name)).Nodup ∧ (∀ ci ∈ new, env.find? ci.name = none) ∧
-    (∀ cv ∈ installs d, ∃ ci ∈ new, ci.name = cv.name ∧
-      ci.toConstantVal.levelParams = cv.levelParams ∧
-      Annotates ci.toConstantVal.type cv.type) ∧
-    (∀ ci ∈ new, (∃ cv ∈ installs d, cv.name = ci.name) ∨ ∃ k t, ci.name = .aux k t)
+    (∀ ci₀ ∈ installs d, ∃ ci ∈ new, StoredAs ci ci₀) ∧
+    (∀ ci ∈ new, (∃ ci₀ ∈ installs d, ci₀.name = ci.name) ∨ ∃ k t, ci.name = .aux k t)
 
 /-- **The environment the declarations install**, in order, from the empty one. -/
 inductive Installs : List (Ix.Kernel.Declaration .anon) → Ix.Kernel.Env .anon → Prop
@@ -290,16 +341,14 @@ claim covers the block's members, which `Installs` stores. -/
 def IsBlockAt (E : Ixon.Env) (a : Address) : Prop :=
   ∃ c ms, Ix.Cert.recordAt E a = some c ∧ c.info = .muts ms
 
-/-- **A claimed constant, stored with its type**: at the key the role table
-gives the address (`AddressKey`), a declaration of `ds` installs a constant of
-type `cv.type` (the reader's), and `env` stores that key with those level
-parameters and an annotation of that type. -/
+/-- **A claimed constant, stored as declared**: at the key the role table gives
+the address (`AddressKey`), a declaration of `ds` installs a constant `ci₀` (the
+reader's), and `env` stores that key as `ci₀` (`StoredAs`). -/
 def SeedStored (b : Binding) (ds : Array (Ix.Kernel.Declaration .anon)) (env : Ix.Kernel.Env .anon)
     (a : Address) : Prop :=
-  ∃ (k : Ix.Kernel.Key .anon) (cv : Ix.Kernel.ConstantVal .anon) (ci : Ix.Kernel.ConstantInfo .anon),
-    AddressKey b a k ∧ cv.name = k ∧ (∃ d ∈ ds.toList, cv ∈ installs d) ∧
-    env.find? k = some ci ∧ ci.toConstantVal.levelParams = cv.levelParams ∧
-    Annotates ci.toConstantVal.type cv.type
+  ∃ (k : Ix.Kernel.Key .anon) (ci₀ ci : Ix.Kernel.ConstantInfo .anon),
+    AddressKey b a k ∧ ci₀.name = k ∧ (∃ d ∈ ds.toList, ci₀ ∈ installs d) ∧
+    env.find? k = some ci ∧ StoredAs ci ci₀
 
 /-- A block member in Lean's logic, by the reader's safety policy
 (`Ix.Kernel.Reader.safetyDecline`, `readInductive`). -/
@@ -351,10 +400,10 @@ def claimedEnv (env : Ix.Kernel.Env .anon) : Ix.Kernel.Env .anon :=
   ⟨env.consts.filter fun ci => !isModelAux ci⟩
 
 /-- **The consistency conclusion**: an environment read from the records the run
-loaded, under the default role table, from the claim's seeds, storing every
-claimed constant with its type, whose claimed sub-environment (`claimedEnv`:
-without the model families' auxiliary constants, which the run checks as advice)
-has a model in every set theory. A block seed is covered by its members, which
+loaded, under the default role table, from the claim's seeds, installing every
+declaration as declared (`Installs`) and storing every claimed constant, whose
+claimed sub-environment (`claimedEnv`: without the model families' auxiliary
+constants, which the run checks as advice) has a model in every set theory. A block seed is covered by its members, which
 are stored. Every seed is in Lean's logic: IxVM refuses the others
 (`KernelClaim::assert_claimable`, carried by L6). -/
 def ConsistentRead (calls : List (Call IxVM.F)) (seeds : List Address) : Prop :=
@@ -388,16 +437,15 @@ theorem ConsistentRead.seeds_not_false (V : Type u) [Ix.Kernel.SetTheory V]
     ∃ (b : Binding) (E : Ixon.Env) (ds : Array (Ix.Kernel.Declaration .anon))
       (env : Ix.Kernel.Env .anon), Ix.Kernel.Consistent (claimedEnv env) ∧
       ∀ a ∈ seeds, IsBlockAt E a ∨
-        ∃ (k : Ix.Kernel.Key .anon) (cv : Ix.Kernel.ConstantVal .anon)
-          (ci : Ix.Kernel.ConstantInfo .anon),
-          AddressKey b a k ∧ cv.name = k ∧ (∃ d ∈ ds.toList, cv ∈ installs d) ∧
+        ∃ (k : Ix.Kernel.Key .anon) (ci₀ ci : Ix.Kernel.ConstantInfo .anon),
+          AddressKey b a k ∧ ci₀.name = k ∧ (∃ d ∈ ds.toList, ci₀ ∈ installs d) ∧
           env.find? k = some ci ∧
-          cv.type ≠ .const Ix.Kernel.falseName [] ∧
+          ci₀.toConstantVal.type ≠ .const Ix.Kernel.falseName [] ∧
           ci.toConstantVal.type ≠ .const Ix.Kernel.falseName [] := by
   obtain ⟨b, E, -, -, ds, env, -, -, -, -, -, hseeds, hmodel⟩ := h
   have hcons : Ix.Kernel.Consistent (claimedEnv env) := Ix.Kernel.consistent_of_model V (hmodel V)
   refine ⟨b, E, ds, env, hcons, fun a ha => ?_⟩
-  rcases hseeds a ha with hblock | ⟨k, cv, ci, hkey, hname, hdecl, hfind, -, hann⟩
+  rcases hseeds a ha with hblock | ⟨k, ci₀, ci, hkey, hname, hdecl, hfind, hst⟩
   · exact Or.inl hblock
   · have hmem0 : ci ∈ env.consts := List.mem_of_find?_eq_some hfind
     have hname' : ci.name = k := by
@@ -411,7 +459,8 @@ theorem ConsistentRead.seeds_not_false (V : Type u) [Ix.Kernel.SetTheory V]
       List.mem_filter.mpr ⟨hmem0, by simp [hnaux]⟩
     have hci : ci.toConstantVal.type ≠ .const Ix.Kernel.falseName [] :=
       fun hf => hcons ci hmem hf
-    refine Or.inr ⟨k, cv, ci, hkey, hname, hdecl, hfind, fun hf => ?_, hci⟩
+    refine Or.inr ⟨k, ci₀, ci, hkey, hname, hdecl, hfind, fun hf => ?_, hci⟩
+    have hann := hst.1.2.2
     rw [hf] at hann
     exact hci hann.const_inv
 
@@ -425,11 +474,10 @@ theorem ConsistencySpec.no_false (V : Type u) [Ix.Kernel.SetTheory V]
       ∃ (b : Binding) (E : Ixon.Env) (ds : Array (Ix.Kernel.Declaration .anon))
         (env : Ix.Kernel.Env .anon), Ix.Kernel.Consistent (claimedEnv env) ∧
         ∀ a ∈ seeds, IsBlockAt E a ∨
-          ∃ (k : Ix.Kernel.Key .anon) (cv : Ix.Kernel.ConstantVal .anon)
-            (ci : Ix.Kernel.ConstantInfo .anon),
-            AddressKey b a k ∧ cv.name = k ∧ (∃ d ∈ ds.toList, cv ∈ installs d) ∧
+          ∃ (k : Ix.Kernel.Key .anon) (ci₀ ci : Ix.Kernel.ConstantInfo .anon),
+            AddressKey b a k ∧ ci₀.name = k ∧ (∃ d ∈ ds.toList, ci₀ ∈ installs d) ∧
             env.find? k = some ci ∧
-            cv.type ≠ .const Ix.Kernel.falseName [] ∧
+            ci₀.toConstantVal.type ≠ .const Ix.Kernel.falseName [] ∧
             ci.toConstantVal.type ≠ .const Ix.Kernel.falseName [] :=
   (h bytes c hde hd hc W seeds hs).elim Or.inl
     fun hr => Or.inr (ConsistentRead.seeds_not_false V hr)
@@ -614,8 +662,10 @@ gives the model** (against `Ix.Kernel.Model.declStep_preserves`): there is an
 invariant, holding at the empty environment and giving the kernel's fold
 invariant `EnvModelOk` (hence a model, `model_of_envModelOk`), such that if a
 bounded derivation checked the declaration `d` against `env`, then `d` installs
-into some `env₂` by shape, and in every set theory the invariant at `env` gives
-it at `env₂`.
+into some `env₂` (`InstallStep`: every constant `d` declares, stored as declared),
+and in every set theory the invariant at `env` gives it at `env₂`. So the
+environment L5 stores is the reader's: a definition with its own annotated value,
+a recursor with its own rules, an opaque as an axiom.
 
 L5 chooses the invariant. It must carry what the soundness of L4's rules reads
 at each prefix (`Rules.RulesInputs`, which `RulesInputs.ofSem` builds from
@@ -664,10 +714,10 @@ source-level statement. Its job: read the walked closure with the kernel's
 reader (`ReadIn`), order the checked declarations by the reading, produce
 `Seams.Checked` for each at its prefix, fold `Decls`'s invariant from the empty environment to a
 model (through `EnvModelOk` and `model_of_envModelOk`), restrict it to the claimed
-sub-environment (`claimedEnv`: `Denotes` agrees between `env` and `claimedEnv env` on
-terms that mention no model-family key, the lookups and projection tables being the
-same), and place the seeds
-(`SeedStored`). -/
+sub-environment (`claimedEnv`, `claimedModel`: `Denotes` agrees between `env` and
+`claimedEnv env` on terms that mention no model-family key, the lookups and projection
+tables being the same; the claimed types and definitions' values mention none), and
+place the seeds (`SeedStored`). -/
 def L7 : Prop := Records S → Decls.{u} S → ClaimPhase S → SourceSoundBounded ConsistencySpec.{u}
 
 end IxVM.Consistency

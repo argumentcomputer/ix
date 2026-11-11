@@ -1131,6 +1131,9 @@ theorem checkNativeTailS_skels (mode : CheckMode) {fe : FEnv md}
     simpa [ciSkel, sumSkels, hnR, sumRules_map_ctor _ _ _ _ _ _ hlen',
       hctors] using hpush
   -- the projection table at a structure-like block (task #210 Part A)
+  split
+  case isFalse => exact Yields.ofThrowBind
+  case isTrue _ =>
   refine Yields.mono (checkNativeTableF_skels hpush' q.p q.ctorsA q.sortss hlenC hlenS) ?_
   intro fe' h'
   unfold nativeSkels

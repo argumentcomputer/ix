@@ -187,15 +187,14 @@ theorem iotaRulePlain {μ : CheckMode} {J : Judgements md} {env₂ envSelf : Env
     exact ⟨e1.symm, e2.symm, e3.symm⟩
   -- ===== the canonical branch =====
   obtain ⟨hpl, hfireP0, hthmR⟩ :
-      Expr.recRulePlain cvA.type mI rP cnPK = true ∧ fire = .plain ∧
+      Expr.recRulePlain cvA.type mI rP cnPK cvjK.levelParams = true ∧ fire = .plain ∧
         IotaThmRunJ J env₂ envSelf f cvA.name
           cvA.levelParams cvA.type mI rP j r cvjK cnPK cnFK rhsA := by
     rcases hbranch with h | ⟨hnpl, hrest⟩
     · exact h
     · exfalso
-      rcases hrest with ⟨hfireI, -⟩ | ⟨lvls, pins, hfireN, -⟩
-      · rw [hr'fire, hfireI] at hfireP; exact nomatch hfireP
-      · rw [hr'fire, hfireN] at hfireP; exact nomatch hfireP
+      obtain ⟨lvls, pins, hfireN, -⟩ := hrest
+      rw [hr'fire, hfireN] at hfireP; exact nomatch hfireP
   refine ⟨recRulePlain_le_mIT hpl, ?_⟩
   intro us huslen
   -- unpack the canonical `iota_j` kit

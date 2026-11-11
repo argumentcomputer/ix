@@ -245,16 +245,13 @@ def IotaRuleRun (μ : CheckMode) (F : Nat) (env' envSelf : Env md)
       r' = recRuleBits env'.find? cvName
         { r with rhs := rhsA, ctorParams := cnP, fire := fire,
                  paramsBlind := false } ∧
-      ((Expr.recRulePlain tyA mI rP cnP = true ∧ fire = .plain ∧
+      ((Expr.recRulePlain tyA mI rP cnP cvj.levelParams = true ∧ fire = .plain ∧
           IotaThmRun μ F env' envSelf f cvName lps tyA mI rP j r
             cvj cnP cnF rhsA) ∨
-       (Expr.recRulePlain tyA mI rP cnP = false ∧
-          ((fire = .inert ∧
-            nestedRuleShape env' envSelf cvName lps tyA mI rP cnP j
-              = none) ∨
-           (∃ lvls pins, fire = .nested lvls pins ∧
-             IotaThmNRun μ F env' envSelf f cvName lps tyA mI rP j r
-               cvj cnP cnF rhsA lvls pins))))
+       (Expr.recRulePlain tyA mI rP cnP cvj.levelParams = false ∧
+          ∃ lvls pins, fire = .nested lvls pins ∧
+            IotaThmNRun μ F env' envSelf f cvName lps tyA mI rP j r
+              cvj cnP cnF rhsA lvls pins))
 
 /-- `IotaRulesR`'s run/guard half. -/
 def IotaRulesRun (μ : CheckMode) (F : Nat) (env' envSelf : Env md)
@@ -320,6 +317,7 @@ def ProjFnRun (μ : CheckMode) (F : Nat) (env' : Env md)
     (pty.stripPis (nP + 1)).isSome = true ∧
     i < nF ∧
     (pty.stripPis nP).isSome = true ∧
+    Expr.recRulePlain pty nP nP nP cvj.levelParams = true ∧
     (∃ cbinders cbody,
       cvj.type.stripPis (nP + nF) = some (cbinders, cbody) ∧
       cbody.getAppArgs.length = nP ∧

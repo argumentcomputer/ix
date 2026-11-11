@@ -235,11 +235,95 @@ theorem Denotes_functional {V : Type w} [SetTheory V]
     cases hw with
     | strLit h' => exact ih h'
 
+/-! ## Telescopes, and the computation rules of recursors
+
+The ι law below needs two notions beyond `Denotes`: a list of terms denoting a list of
+sets, and a list of sets fitting a telescope. -/
+
+/-- `DenotesList cval env φ ρ es vs`: the terms `es` denote the sets `vs`, one by one. -/
+inductive DenotesList (cval : Key md → (LevelParam → Nat) → V) (env : Env md)
+    (φ : LevelParam → Nat) (ρ : BVarIdx → V) : List (Expr md) → List V → Prop
+  | nil : DenotesList cval env φ ρ [] []
+  | cons {e : Expr md} {es : List (Expr md)} {v : V} {vs : List V} :
+      Denotes cval env φ ρ e v → DenotesList cval env φ ρ es vs →
+      DenotesList cval env φ ρ (e :: es) (v :: vs)
+
+/-- **Sets fitting a telescope**: `Fits cval env φ ρ T xs ρ' R` says the sets `xs` are, in
+order, members of the domains of `T`'s leading `∀`s, each domain read with the earlier
+sets bound (`push`, as `Denotes` reads a binder's body); `R` is what remains of `T`, and
+`ρ'` the variable environment with all of `xs` bound. Arguments fit a function's type
+exactly when each is a member of its type. -/
+inductive Fits (cval : Key md → (LevelParam → Nat) → V) (env : Env md) (φ : LevelParam → Nat) :
+    (BVarIdx → V) → Expr md → List V → (BVarIdx → V) → Expr md → Prop
+  | nil {ρ : BVarIdx → V} {T : Expr md} : Fits cval env φ ρ T [] ρ T
+  | cons {ρ ρ' : BVarIdx → V} {A B R : Expr md} {m : BinderMeta} {X x : V} {xs : List V} :
+      Denotes cval env φ ρ A X → x ∈ˢ X → Fits cval env φ (push x ρ) B xs ρ' R →
+      Fits cval env φ ρ (.forallE A B m) (x :: xs) ρ' R
+
+/-- **ι, the computation rule of one stored recursor rule.** At a stored recursor `r`
+(`recInfo cv mI rP rules`) and a rule `rl` of it, whose constructor `C` is stored with `nP`
+parameters and `nF` fields:
+the recursor applied to its arguments `xs` (parameters, motives, minor premises,
+indices) and to a constructor application `C ys` equals the rule's right-hand side
+applied to the prefix `xs.take rP` (parameters, motives, minor premises) and to the
+constructor's fields `ys.drop nP`, whenever the arguments are members of their types
+and the constructor's parameters and indices are the ones the major premise's type
+gives. Precisely, at every level assignment `φ` and every level arguments `us` of the
+recursor:
+
+* `xs` fit the recursor's type, which then reads `∀ t : D.{ls} as, _` at `σ`: the major
+  premise's type is the family `D` at levels `ls` and arguments `as`;
+* the constructor is used at those levels `ls`, so the recursor's and the constructor's
+  levels line up as Lean's do (a family's recursor carries the family's level parameters,
+  and one more for the motive when it eliminates into every universe; an auxiliary
+  recursor of a nested family uses the nested occurrence's levels); `ys` fit its type,
+  which then reads `RC` at `σC`, and `C ys` is a member of the major premise's type;
+* the constructor's parameters `ys.take nP` are what the major premise's parameter
+  arguments `as.take nP` denote, and the constructor result's index arguments
+  `RC.getAppArgs.drop nP` denote the recursor's indices `xs.drop rP`.
+
+The last two premises are exactly what Lean's typing of the redex supplies: the major
+premise `C ys` must have the type the recursor's telescope gives it, `D.{ls} as`, while
+the constructor's type gives it the type `RC`, the same family at the constructor's
+parameters and its own indices; the two agree only if the parameters and the indices
+do.
+
+The right-hand side is part of the conclusion: at such a redex it denotes. Without that,
+a stored right-hand side that denotes nothing (a wrong binder annotation) would make the
+rule say nothing. -/
+def IotaRule (cval : Key md → (LevelParam → Nat) → V) (env : Env md) (r : Key md)
+    (cv : ConstantVal md) (mI rP : Nat) (rl : RecRule md) : Prop :=
+  ∀ (cvC : ConstantVal md) (nP nF : Nat),
+    env.find? rl.ctor = some (.ctorInfo cvC nP nF) →
+    ∀ (us : List Level) (φ : LevelParam → Nat) (ρ σ σC : BVarIdx → V) (xs ys : List V)
+      (dom body RC : Expr md) (m : BinderMeta) (D : Key md) (ls : List Level) (R K X : V),
+      us.length = cv.levelParams.length → xs.length = mI → ys.length = nP + nF →
+      Denotes cval env φ ρ (.const r us) R →
+      Fits cval env φ ρ (cv.type.instantiateLevelParams cv.levelParams us) xs σ
+        (.forallE dom body m) →
+      dom.getAppFn = .const D ls → Denotes cval env φ σ dom X →
+      Denotes cval env φ ρ (.const rl.ctor ls) K →
+      Fits cval env φ ρ (cvC.type.instantiateLevelParams cvC.levelParams ls) ys σC RC →
+      ys.foldl app K ∈ˢ X →
+      DenotesList cval env φ σ (dom.getAppArgs.take nP) (ys.take nP) →
+      DenotesList cval env φ σC (RC.getAppArgs.drop nP) (xs.drop rP) →
+      ∃ H, Denotes cval env φ ρ (rl.rhs.instantiateLevelParams cv.levelParams us) H ∧
+        (xs ++ [ys.foldl app K]).foldl app R = (xs.take rP ++ ys.drop nP).foldl app H
+
+/-- **ι at every stored recursor rule** (`IotaRule`). -/
+def IotaLaw (cval : Key md → (LevelParam → Nat) → V) (env : Env md) : Prop :=
+  ∀ (r : Key md) (cv : ConstantVal md) (mI rP : Nat) (rules : List (RecRule md))
+    (rl : RecRule md),
+    env.find? r = some (.recInfo cv mI rP rules) → rl ∈ rules → IotaRule cval env r cv mI rP rl
+
 /-- **A model of the environment `env` in the set theory `V`**: one
 assignment `cval` of a set to every constant at every level
 assignment — fixed once, for the whole environment — under which every
 stored constant is a member of what its type denotes, the built-in
-`False` is the empty set, and the built-in `Eq` is set equality.
+`False` is the empty set, the built-in `Eq` is set equality, every
+stored definition is what its value denotes, every stored recursor rule
+computes as Lean's does, and a constant's value reads only its own level
+parameters.
 
 The interpretation of the constants *is* the model: there is nothing
 else to choose (`Sort`, `∀`, `λ`, application and projection are read
@@ -250,20 +334,50 @@ value, and `cval t φ ∈ˢ ⟦P⟧` says that truth value is `{pt}` — and
 would be a member of `∅`.
 
 `False` and `Eq` are both built in (the checker installs them from its
-own pins and rejects a stream that declares them otherwise), so the
-last two fields are facts about the checker's own constants, not
-hypotheses about the input; each is stated of whatever the stored
-constant denotes, so it says nothing when nothing is stored.
+own pins and rejects a stream that declares them otherwise), so
+`false_empty` and `eq_equality` are facts about the checker's own
+constants, not hypotheses about the input; each is stated of whatever
+the stored constant denotes, so it says nothing when nothing is stored.
 
-The model says nothing about *definitional* equalities — a
-definition's unfolding, an inductive type's iota rules, η — because it
-does not have to, and `eq_equality` is what discharges that debt: any
-such equality a reader cares about can be stated as a theorem `h : a = b`
-and proved by `rfl`; the checker accepts it; `mem` puts `cval h φ` in
-what `Eq A a b` denotes, which by `eq_equality` is `eqv ⟦a⟧ ⟦b⟧`; and
-`eqv x y` is inhabited only when `x = y` (`SetTheory.mem_eqv`).  So the
-two sides of every accepted equation denote the same set.  Types are
-the whole statement; values are the checker's business. -/
+**The constants mean what Lean means.**  Membership alone lets a
+constant denote any inhabitant of its type: with `mem` and nothing
+else, `def P : Prop := False` and `theorem t : P` have a model in which
+`P` is true.  So the model also keeps Lean's definitional equalities
+where they are laws of stored constants:
+
+* **δ** (`defn_value`): a stored definition denotes what its value
+  denotes.  Theorems need no such law: a theorem's statement is a
+  proposition, whose only possible member is `pt`, so a theorem denotes
+  what any proof of its statement denotes (which is why the checker may
+  unfold one).  An opaque constant is stored with no value.
+* **ι** (`iota_rule`): every stored recursor rule computes as Lean's
+  does (`IotaRule`): the recursor at arguments that fit its type and at
+  a constructor application of its major premise's family is the rule's
+  right-hand side at the prefix and the constructor's fields.  The
+  quotient's computation rules are among them: `Quot.lift` and
+  `Quot.ind` are stored as recursors.
+
+The kernel's other generic definitional equalities do not depend on
+`cval`: they hold in every model because of how `Denotes` reads terms.
+
+* **β**: a `λ` denotes the graph of its body over its domain, and a
+  graph applied to a point of its domain is the body's value there; in
+  regime `0` both are the proof point (`SetModel.app_lamR`).
+* **function η**: a member of a `∀` set is the graph of its own
+  applications over the domain, or `pt` in regime `0`
+  (`SetModel.lamR_eta`).
+* **proof irrelevance**: a proposition denotes a subset of `{pt}`, so
+  its members are all equal (`SetModel.subsingleton_of_mem_univZero`).
+* **ζ**: a stored term has no `let` (the checker's annotation pass
+  replaces each by its reduct), and `Denotes` reads none.
+* **literals**: a `Nat` or `String` literal denotes its constructor
+  form, by `Denotes`' own rules, so the literal `n + 1` and
+  `Nat.succ n` denote the same set.
+
+Not yet fields of this structure, because the checker does not yet establish
+them for every stored constant: structure η and unit-like η, the projection
+of a constructor, and the kernel's acceleration of `Nat` operations on
+literals. -/
 structure Model (V : Type w) [SetTheory V] (env : Env md) where
   /-- the set a constant denotes, per level assignment -/
   cval : Key md → (LevelParam → Nat) → V
@@ -285,6 +399,21 @@ structure Model (V : Type w) [SetTheory V] (env : Env md) where
     Denotes cval env φ ρ (.const eqName [u]) E →
     A ∈ˢ univ (Level.eval φ u) → a ∈ˢ A → b ∈ˢ A →
     app (app (app E A) a) b = eqv a b
+  /-- **δ**: every stored definition denotes what its value denotes, at
+  every level assignment (and every variable environment — the value is
+  closed).  A use `c.{us}` denotes `cval c` at the assignment `us`
+  induces, which is where the value is read too -/
+  defn_value : ∀ (cv : ConstantVal md) (value : Expr md) (hint : ReducibilityHint),
+    ConstantInfo.defnInfo cv value hint ∈ env.consts →
+    ∀ (φ : LevelParam → Nat) (ρ : BVarIdx → V),
+      Denotes cval env φ ρ value (cval cv.name φ)
+  /-- **ι**: every stored recursor rule computes as Lean's does (`IotaRule`) -/
+  iota_rule : IotaLaw cval env
+  /-- a stored constant's value depends on the level assignment only through its own
+  level parameters (so a use of it reads its levels, and nothing else) -/
+  cval_params : ∀ (n : Key md) (ci : ConstantInfo md), env.find? n = some ci →
+    ∀ φ₁ φ₂ : LevelParam → Nat, (∀ p ∈ ci.toConstantVal.levelParams, φ₁ p = φ₂ p) →
+      cval n φ₁ = cval n φ₂
 
 /-! ## Semantic consistency -/
 

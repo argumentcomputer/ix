@@ -340,12 +340,13 @@ def annotateInfo (env : Ix.Kernel.Env .anon) (ci : Ix.Kernel.ConstantInfo .anon)
   | .projInfo tbl => return .projInfo tbl
   | .recInfo _ mI rP rules =>
     let rules := rules.map fun r =>
-      let cnP := match env.find? r.ctor with
-        | some (.ctorInfo _ nP _) => nP
-        | _ => 0
+      let (cnP, cjLps) := match env.find? r.ctor with
+        | some (.ctorInfo cvj nP _) => (nP, cvj.levelParams)
+        | _ => (0, ([] : List LevelParam))
       Ix.Kernel.recRuleBits env.find? cv'.name
         { r with ctorParams := cnP,
-                 fire := if Ix.Kernel.Expr.recRulePlain ty' mI rP cnP then .plain else .inert,
+                 fire := if Ix.Kernel.Expr.recRulePlain ty' mI rP cnP cjLps then .plain
+                   else .inert,
                  paramsBlind := true }
     let envSelf : Ix.Kernel.Env .anon := ⟨.recInfo cv' mI rP rules :: env.consts⟩
     let mut out : List (Ix.Kernel.RecRule .anon) := []

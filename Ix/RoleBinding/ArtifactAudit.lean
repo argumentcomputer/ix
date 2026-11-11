@@ -57,7 +57,7 @@ replace only their entry/preparation wrappers. No runtime ruling changes. -/
 -- (`fieldKind`, `fieldNorm`, `substMembers`, `ihBinder`) and the reader's K check on a nested
 -- block add 21 compiled functions. Externs, implemented_by, unsafe, csimp and all ruling
 -- counts are unchanged.
-/-- info: runtime closure of [Ix.RoleBinding.Artifact.check]: 6856 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
+/-- info: runtime closure of [Ix.RoleBinding.Artifact.check]: 6873 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.check] #[`Init, `Std] rulings
 
@@ -65,7 +65,7 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.check] #[`I
 -- (`fieldKind`, `fieldNorm`, `substMembers`, `ihBinder`) and the reader's K check on a nested
 -- block add 21 compiled functions. Externs, implemented_by, unsafe, csimp and all ruling
 -- counts are unchanged.
-/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkTiered]: 6990 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
+/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkTiered]: 7007 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.checkTiered] #[`Init, `Std] rulings
 
@@ -73,7 +73,7 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.checkTiered
 -- (`fieldKind`, `fieldNorm`, `substMembers`, `ihBinder`) and the reader's K check on a nested
 -- block add 21 compiled functions. Externs, implemented_by, unsafe, csimp and all ruling
 -- counts are unchanged.
-/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkAt]: 6856 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
+/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkAt]: 6873 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.checkAt] #[`Init, `Std] rulings
 
@@ -81,7 +81,7 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.checkAt] #[
 -- (`fieldKind`, `fieldNorm`, `substMembers`, `ihBinder`) and the reader's K check on a nested
 -- block add 21 compiled functions. Externs, implemented_by, unsafe, csimp and all ruling
 -- counts are unchanged.
-/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkTieredAt]: 6990 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
+/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkTieredAt]: 7007 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.checkTieredAt] #[`Init, `Std] rulings
 
@@ -103,7 +103,7 @@ ruling are those of `check` and `checkTiered`. Their kernel entries (`Admission.
 -- block add 21 compiled functions. Externs, implemented_by, unsafe, csimp and all ruling
 -- counts are unchanged.
 /-- info: runtime closure of [Ix.RoleBinding.Artifact.checkConditional,
- Ix.RoleBinding.Artifact.checkTieredConditional]: 7051 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
+ Ix.RoleBinding.Artifact.checkTieredConditional]: 7068 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
 #guard_msgs (whitespace := lax) in
 run_cmd do
   Ix.Kernel.Audit.checkRuntimeWith

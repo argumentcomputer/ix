@@ -430,7 +430,7 @@ theorem projFnInv {μ : CheckMode} {F : Nat} {env' env₁ : Env md}
           (fun ψ => cval (projModelName T i) ψ)) := by
   obtain ⟨cvj, mcv, mval, mhint, pty, rhsA, hctor, hfm, hmlps, hpnone,
     hTf, heqf, hptyB, hround, hptyres, hptyb, hptyf, hptylp, hstrip1,
-    hilt, hstripP, hbig, henv⟩ := hR
+    hilt, hstripP, hplP, hbig, henv⟩ := hR
   subst henv
   have hfresh : env'.find? (projFnName T i) = none :=
     Option.isNone_iff_eq_none.mp hpnone

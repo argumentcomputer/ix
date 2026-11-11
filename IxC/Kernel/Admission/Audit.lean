@@ -148,11 +148,13 @@ externs, `implemented_by`, `unsafe`, csimp and their rulings are unchanged. -/
 -- (`fieldKind`, `fieldNorm`, `substMembers`, `ihBinder`) and the reader's K check on a nested
 -- block add 21 compiled functions. Externs, implemented_by, unsafe, csimp and all ruling
 -- counts are unchanged.
+-- The canonical rule's level link and the declines of rules that would not fire add
+-- 17 compiled functions (`IxC/Kernel/Audit/Roots.lean`).
 /-- info: runtime closure of [Ix.Kernel.Admission.preflight,
  Ix.Kernel.Admission.uniqueKeys,
  Ix.Kernel.Admission.authenticate,
  Ix.Kernel.Admission.decodeRecords,
- Ix.Kernel.Admission.checkBytes]: 6929 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 28 -/
+ Ix.Kernel.Admission.checkBytes]: 6946 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 28 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Admission.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
 

@@ -65,7 +65,7 @@ theorem declNative (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env 
     (hE : Ix.Kernel.EtaFamiliesClosed env) (hdp : Ix.Kernel.nativeParts? nPd block = some p₀)
     (h : Ix.Kernel.Semantics.DeclNativeRun μ F env p₀ env₂) : Nonempty (EnvModelM V μ env₂) := by
   obtain ⟨hnd₀, isRec, env₁, cvTa, p₁, p, ctorsA, sortss, kinds, cvRa, rhss, tfvs, trest, isorts,
-    hInd, rfl, hCtors, hK, hcaps, hwl, hopT2, hsorts, hFOk, -, hRec, hTbl⟩ := h
+    hInd, rfl, hCtors, hK, hcaps, hwl, hopT2, hsorts, hFOk, -, hRec, hplAll, hTbl⟩ := h
   obtain ⟨hshape, -⟩ := Ix.Kernel.nativeParts?_inv hdp
   obtain ⟨-, hClps₀, hresT₀, -⟩ := Ix.Kernel.nativeShape?_inv hshape
   -- the former: its run completed the record with the sort it read
@@ -74,7 +74,7 @@ theorem declNative (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env 
   -- invariants transport to it by the completion's projections
   obtain ⟨cvT, s, hTname₀₀, hTlps₀₀, hccvT, rfl, rfl, bsT, hstripT₀⟩ :=
     Ix.Kernel.checkSumInd_shape hInd
-  try dsimp only at hCtors hK hRec hTbl hFOk hsorts hopT2 hwl hcaps
+  try dsimp only at hCtors hK hRec hplAll hTbl hFOk hsorts hopT2 hwl hcaps
   -- the record the former carries is the classified one (task #268)
   rw [← hcaps] at hCtors hsorts hRec hTbl
   -- the kinds: classified on the stored constructors, one list per
@@ -103,7 +103,7 @@ theorem declNative (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env 
   have hpProp : ((p₀.complete (p₀.toInductiveShape.withSort s)).withKinds kinds).isProp
       = (Level.isEquiv ((p₀.complete (p₀.toInductiveShape.withSort s)).withKinds kinds).resSort
           .zero == some true) := by simp [Ix.Kernel.NativeParts.withKinds]
-  generalize hp : (p₀.complete (p₀.toInductiveShape.withSort s)).withKinds kinds = p at hCtors hRec hTbl hFOk hsorts hopT2 hwl hpT hpC hpK hpP hpI hpR hpE hpL hpS hpProp
+  generalize hp : (p₀.complete (p₀.toInductiveShape.withSort s)).withKinds kinds = p at hCtors hRec hplAll hTbl hFOk hsorts hopT2 hwl hpT hpC hpK hpP hpI hpR hpE hpL hpS hpProp
   have hProp : p.isProp = (Level.isEquiv p.resSort .zero == some true) := hpProp
   have hnd : (p.ctors.map (·.1.name)).Nodup := by rw [hpC]; exact hnd₀
   have hlenK : p.kinds.length = p.ctors.length := by rw [hpK, hpC]; exact hlenK₀
@@ -1042,7 +1042,8 @@ theorem declNative (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env 
       rw [hFssD ψ j cA hjA] at hsp
       have hf := (hframes j cA hjA).2 ψ ρp (((hframes j cA hjA).1 ψ ρp).mp hρp)
       exact ((hf.2.2 bs hsp).1 E hE).2
-  obtain ⟨sAV, mp₃, hac₃⟩ := stageFixRec (fssZ := Fss₀) hE_C hμ mpC hmI hrP rfl rfl hRec hstripT hfT_C
+  obtain ⟨sAV, mp₃, hac₃⟩ := stageFixRec (fssZ := Fss₀) hE_C hμ mpC hmI hrP rfl rfl hRec hplAll
+    hstripT hfT_C
     (fun m₂ _ hFD' hleaf' hagC => hcapsLaws m₂ hfreshFam hFD'
       (fun ψ => by rw [hleaf' ψ]; exact hleafT_C ψ)
       (fun cA hA ψ => by

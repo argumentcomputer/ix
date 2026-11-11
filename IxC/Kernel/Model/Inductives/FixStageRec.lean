@@ -584,6 +584,7 @@ theorem stageFixRec {p : NativeParts md} (hE : Ix.Kernel.EtaFamiliesClosedExcept
     (hmI : mI = p.nP + 1 + ctorsA.length + p.nIdx) (hrP : rP = p.nP + 1 + ctorsA.length)
     (hmIp : p.majorIdx = mI) (hrPp : p.rulePrefix = rP)
     (hRec : Ix.Kernel.checkNativeRec (Ix.Kernel.fueledOps μ F) env p cvTa ctorsA = .ok (cvRa, rhss))
+    (hplAll : ctorsA.all (fun c => Expr.recRulePlain cvRa.type mI rP p.nP c.1.levelParams) = true)
     {bsT : List (Expr md × BinderMeta)}
     (hstripT : cvTa.type.stripPis (p.nP + p.nIdx) = some (bsT, .sort p.resSort))
     {caps : IndCaps md}
@@ -1097,11 +1098,13 @@ theorem stageFixRec {p : NativeParts md} (hE : Ix.Kernel.EtaFamiliesClosedExcept
     (ConsHead.ofFresh hwf (fun ψ => hAcl ψ) hnresC
       (fun _ h => nomatch h)
       (fun cvR' mI' rP' rules heq r hr => by
-        injection heq with _ _ _ hrules
-        subst hrules
+        injection heq with h1 h2 h3 hrules
+        subst h1 h2 h3 hrules
         obtain ⟨j, cA, rhs, hj, -, rfl⟩ := Ix.Kernel.sumRules_getElem? hr
         obtain ⟨hf, -, -⟩ := hcf j cA hj
-        exact ⟨⟨cA.1, p.nP, cA.2, hf⟩, fun hb => hb, fun hb => hb⟩))
+        have hpl := List.all_eq_true.mp hplAll cA (List.mem_of_getElem? hj)
+        exact ⟨Ix.Kernel.RuleCtorOk.of_plain hf (by simp [Ix.Kernel.recRuleBits, hpl]) hpl,
+          fun hb => hb, fun hb => hb⟩))
     (fun ψ k => AnnotTerm.liftN_eq_self _ (Term.bvarsBelow.mono (Nat.zero_le k) (hAcl ψ)) 1)
     hAparams (fun ψ ρ => (hleafF ψ ρ).1.1) (fun ψ ρ => (hleafF ψ ρ).1.2) (fun ψ => ⟨_, hreadR ψ⟩)
     ?_ ?_ ?_ ?_
@@ -1142,10 +1145,10 @@ theorem stageFixRec {p : NativeParts md} (hE : Ix.Kernel.EtaFamiliesClosedExcept
     refine recRules_cons_rec mp (c₀ := c₀) (A := A) hfresh rfl m₂ hac φ' ?_
     intro rl hrl hfire
     obtain ⟨j, cA, rhs, hj, hrhs, rfl⟩ := Ix.Kernel.sumRules_getElem? hrl
-    by_cases hplain : Expr.recRulePlain cvRa.type mI rP p.nP = true
+    by_cases hplain : Expr.recRulePlain cvRa.type mI rP p.nP cA.1.levelParams = true
     · have hrule : (Ix.Kernel.recRuleBits env.find? cvRa.name
             { ctor := cA.1.name, nfields := cA.2, ctorParams := p.nP,
-              fire := if Expr.recRulePlain cvRa.type mI rP p.nP then .plain
+              fire := if Expr.recRulePlain cvRa.type mI rP p.nP cA.1.levelParams then .plain
                 else .inert,
               rhs := rhs, paramsBlind := true } : RecRule md)
           = ⟨cA.1.name, cA.2, p.nP, .plain, rhs,

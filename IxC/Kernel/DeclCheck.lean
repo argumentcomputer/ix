@@ -559,7 +559,8 @@ def checkIotaThmNF (ops : (CheckerOps md) m) (fe' feSelf : FEnv md)
     (mI rP j : Nat) (r : RecRule md) (cvj : ConstantVal md)
     (cnP cnF : Nat) (rhsA : Expr md) : m (RecRuleFire md) := do
     match nestedRuleShapeF fe' feSelf cvName lps tyA mI rP cnP j with
-    | none => pure .inert
+    | none => throw (.notImplemented
+        msg!"nested auxiliary rule outside the certified shape for {cvName}")
     | some (lvls, pins) => do
     let cvt ← unwrapOr
         (fe'.findCV? (auxKey (auxKey cvName .model) (.iota j)))
@@ -659,7 +660,7 @@ def checkIotaRuleF (ops : (CheckerOps md) m) (fe' feSelf : FEnv md)
     unless (rhsA.stripLams (rP + cnF)).isSome do
       throw (.notImplemented msg!"rule shape mismatch for {cvName}")
     let _rhsTy ← ops.inferType feSelf.env 0 rhsA
-    let fire ← if Expr.recRulePlain tyA mI rP cnP then do
+    let fire ← if Expr.recRulePlain tyA mI rP cnP cvj.levelParams then do
         checkIotaThmF mode ops fe' feSelf f cvName lps tyA mI rP j r
           cvj cnP cnF rhsA
         pure RecRuleFire.plain

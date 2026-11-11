@@ -4,6 +4,7 @@ import IxC.Kernel.Verify.Cached.MainC
 public import IxC.Kernel.Denotes
 public import IxC.Kernel.Cached.Policy
 import IxC.Kernel.Model.Denotes
+import IxC.Kernel.Model.Iota
 public section
 
 /-!

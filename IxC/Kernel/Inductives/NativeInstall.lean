@@ -605,6 +605,11 @@ def checkNativeTail (ops : (CheckerOps md) m) (env : Env md) (q : (NativePass md
     throw (.invalid "direct rec: recursor rules are not the generated ones")
   let env₂ := consSumCtors p.nP q.ctorsA q.env₁
   let (cvRa, rhss) ← checkNativeRec ops env₂ p q.cvTa q.ctorsA
+  -- every stored rule fires: the recursor's major premise is the family at its
+  -- constructors' levels, applied first to the parameters
+  unless q.ctorsA.all (fun c => Expr.recRulePlain cvRa.type p.majorIdx p.rulePrefix p.nP
+      c.1.levelParams) do
+    throw (.notImplemented "direct rec: the recursor's major premise is not canonical")
   checkNativeTable p q.ctorsA q.sortss ⟨.recInfo cvRa p.majorIdx p.rulePrefix
     (sumRules env₂.find? cvRa.name p.nP p.majorIdx p.rulePrefix cvRa.type
       q.ctorsA rhss) :: env₂.consts⟩

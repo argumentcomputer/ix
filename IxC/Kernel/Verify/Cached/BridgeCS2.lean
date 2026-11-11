@@ -382,7 +382,7 @@ theorem checkIotaThmNS_sim (hμ : mode.verifiedChecks = true) {env' : Env md} (h
   unfold checkIotaThmN
   dsimp only [sharedOpsC]
   match hshape : nestedRuleShape env' env cvName lps tyA mI rP cnP j with
-  | none => exact SimC.pure hs rfl
+  | none => exact SimC.throw
   | some (lvls, pins) =>
   dsimp only
   have hpinsF : ∀ p ∈ pins, p.hasFvar = false :=
@@ -630,7 +630,7 @@ theorem checkIotaRuleS_sim (hμ : mode.verifiedChecks = true) {env' : Env md} (h
   refine SimC.bind (opE_infer_sim hμ henv hs₁ hwrhsA)
     (fun s₂ rhsTy rhsTy' hs₂ hP₂ => ?_)
   have hctorF : cvj.type.hasFvar = false := (henv' _ (find?_mem hf)).1
-  by_cases h8 : Expr.recRulePlain tyA mI rP cnP = true
+  by_cases h8 : Expr.recRulePlain tyA mI rP cnP cvj.levelParams = true
   case neg =>
     simp only [if_neg h8]
     refine SimC.bind (checkIotaThmNS_sim hμ henv' henv htyA hctorF
@@ -873,12 +873,15 @@ theorem checkProjTyS_sim {env' : Env md} {T ctorName : Key md}
   exact SimC.pure hs rfl
 
 /-- `checkProjShape` (operation-free) as a `SimC`. -/
-theorem checkProjShapeS_sim {pty cty : Expr md} {nP nF : Nat}
+theorem checkProjShapeS_sim {pty cty : Expr md} {nP nF : Nat} {cjLps : List LevelParam}
     (hs : CSOK mode env s₀) :
     SimC mode env s₀ RelVC
-      (checkProjShape pty cty nP nF : (CheckCM md) _)
-      (checkProjShape pty cty nP nF : FueledM md _) := by
+      (checkProjShape pty cty nP nF cjLps : (CheckCM md) _)
+      (checkProjShape pty cty nP nF cjLps : FueledM md _) := by
   unfold checkProjShape
+  by_cases h0 : Expr.recRulePlain pty nP nP nP cjLps = true
+  case neg => simp only [if_neg h0]; exact SimC.throw_bind
+  simp only [if_pos h0]
   match h1 : pty.stripPis nP with
   | none => exact SimC.throw
   | some (abinders, arest) => ?_

@@ -175,15 +175,12 @@ theorem iotaRuleNested {μ : CheckMode} {J : Judgements md} {env₂ envSelf : En
     · exfalso
       rw [hr'fire, hfireP0] at hfireN
       exact nomatch hfireN
-    · rcases hrest with ⟨hfireI, -⟩ | ⟨lvls0, pins0, hfireN0, hthm0⟩
-      · exfalso
-        rw [hr'fire, hfireI] at hfireN
-        exact nomatch hfireN
-      · obtain ⟨rfl, rfl⟩ : lvls0 = lvls ∧ pins0 = pins := by
-          rw [hr'fire, hfireN0] at hfireN
-          injection hfireN with a b
-          exact ⟨a, b⟩
-        exact hthm0
+    · obtain ⟨lvls0, pins0, hfireN0, hthm0⟩ := hrest
+      obtain ⟨rfl, rfl⟩ : lvls0 = lvls ∧ pins0 = pins := by
+        rw [hr'fire, hfireN0] at hfireN
+        injection hfireN with a b
+        exact ⟨a, b⟩
+      exact hthm0
   obtain ⟨hrPmI, -, hpinsWf0, -⟩ := nestedRuleShape_inv hshape
   obtain ⟨-, -, -, pre, domD, bodyD, bmD, D,
     -, -, -, hpinsLen⟩ := nestedRuleShape_inv hshape
