@@ -303,7 +303,7 @@ theorem caseProg_of_check {p : Program} {κ : CId → KKey} {Sl : List CId} {r :
     obtain ⟨⟨⟨⟨⟨rfl, rfl⟩, rfl⟩, rfl⟩, hS⟩, hN⟩ := h
     refine ⟨⟨sf, kk, lvls, ind, rules, ty, hd, fun c hc sf' lv' cidx np nf ty' hdc => ?_, fun hn => ?_⟩⟩
     · have := List.all_eq_true.mp hS c hc
-      simp only [hdc, beq_self_eq_true, ↓reduceIte, Bool.and_eq_true, beq_iff_eq] at this
+      simp only [hdc, ↓reduceIte, Bool.and_eq_true, beq_iff_eq] at this
       obtain ⟨hnp, hcs⟩ := this
       refine ⟨hnp, ?_⟩
       split at hcs
@@ -311,7 +311,7 @@ theorem caseProg_of_check {p : Program} {κ : CId → KKey} {Sl : List CId} {r :
         simp only [Bool.and_eq_true, decide_eq_true_eq, beq_iff_eq] at hcs
         exact ⟨cs, hcs', hcs.1, hcs.2⟩
       · cases hcs
-    · simp only [hn, beq_self_eq_true, ↓reduceIte, Bool.and_eq_true, beq_iff_eq,
+    · simp only [hn, ↓reduceIte, Bool.and_eq_true, beq_iff_eq,
         decide_eq_true_eq] at hN
       exact hN
   · cases h
