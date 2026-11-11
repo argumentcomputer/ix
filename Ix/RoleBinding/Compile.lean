@@ -678,7 +678,7 @@ def blockProjectionAddrs (b : Address) (lc : Ixon.LazyConstant) : Array Address 
   if !Ix.Cert.blockHeader lc.rawBytes then #[]
   else
     match lc.get? with
-    | some ⟨.muts components, _, _, _⟩ => Id.run do
+    | some ⟨.muts components, _, _, _, _⟩ => Id.run do
       let mut out : Array Address := #[]
       for idx in [:components.size] do
         match components[idx]! with
