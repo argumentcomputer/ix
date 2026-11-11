@@ -1,6 +1,7 @@
 import Ix.IxVM.Refinement.Statement
 import Ix.IxVM.Refinement.TagNWide
 import Ix.IxVM.Refinement.Deserialize
+import Ix.IxVM.Refinement.DeserializeBinders
 import IxC.Kernel.Audit.Axioms
 
 /-! # The IxVM ↔ IxC refinement statement, frozen
@@ -1478,6 +1479,12 @@ info: @Ix.Kernel.nfGo_of_whnf_sort : ∀ {md : Ix.Kernel.Mode} {mode : Ix.Kernel
 #guard_kernel_axioms IxVM.Refinement.Deserialize.getLamMode_refines [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms IxVM.Refinement.Deserialize.getAllMode_refines [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms IxVM.Refinement.Deserialize.buildSuccChain_refines [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms IxVM.Refinement.Deserialize.getBinderNode_refines_at [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms IxVM.Refinement.Deserialize.getBinderNodeList_refines_at [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms IxVM.Refinement.Deserialize.getBinderBlock_refines_at [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms IxVM.Refinement.Deserialize.getBinderBlockList_refines_at [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms IxVM.Refinement.Deserialize.getBinders_refines_at [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms IxVM.Refinement.Deserialize.getBinders_refines [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms IxVM.Refinement.Mirrors.«IxonDeserialize::get_all_mode».of_eval [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms IxVM.Refinement.Mirrors.«IxonDeserialize::get_lam_mode».of_eval [propext, Classical.choice, Quot.sound]
 
@@ -1486,4 +1493,4 @@ info: @Ix.Kernel.nfGo_of_whnf_sort : ∀ {md : Ix.Kernel.Mode} {mode : Ix.Kernel
   IxVM.Source IxVM.Static IxVM.Program IxVM.Tables IxVM.Lookup
   Aiur.Generic.LookupFacts Ix.IxVM.Refinement.Exec Ix.IxVM.Refinement.Mirror Ix.IxVM.Refinement.Mirrors.TagN
   Ix.IxVM.Refinement.Mirrors.Deserialize Ix.IxVM.Refinement.TagN Ix.IxVM.Refinement.TagNWide
-  Ix.IxVM.Refinement.Deserialize
+  Ix.IxVM.Refinement.Deserialize Ix.IxVM.Refinement.DeserializeBinders
