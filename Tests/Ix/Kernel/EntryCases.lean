@@ -221,9 +221,9 @@ def cases : List Case := [
   -- a nested block whose field mentions a member only where whnf erases it
   -- (`KE Nat (EA α)`, the member under-applied), with an ι reduction through it
   { label := "nested-erased", seeds := [seed "EA", seed "eaIota"], expected := .accept },
-  -- formers declared at definitions (the sort; a nested block's parameter telescope; a mutual
-  -- block's sorts), read after whnf, with ι reductions through their recursors
-  { label := "former-at-definition", seeds := [seed "GA", seed "GB", seed "GE", `gaIota, `gbIota, `geIota],
+  -- formers declared at a definition (a nested block's sort; a mutual block's sorts), read
+  -- after whnf, with ι reductions through their recursors
+  { label := "former-at-definition", seeds := [seed "GA", seed "GE", `gaIota, `geIota],
     expected := .accept },
   { label := "partial-definition-face", seeds := [seed "loop"], expected := .accept },
   -- an equation over a `Subtype` whose levels Ix's compiler stores in

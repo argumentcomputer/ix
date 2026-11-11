@@ -220,13 +220,12 @@ noncomputable def eaVal (t : EA Nat 1) : Nat :=
 
 theorem eaIota : eaVal (EA.mk (5 : Nat) [EA.base]) = 6 := rfl
 
-/-- Blocks whose formers are declared at definitions, which Lean's kernel reads
-after whnf: the sort (`GA : GType`, `GType := Type`, nested through `List`), the
-parameter telescope (`GB : GArrow`, `GArrow := Type → Type`, nested), and the
-sorts of a mutual block (`GE`, `GO : GType`). Declared through Lean's kernel. -/
+/-- Blocks whose formers are declared at a definition, which Lean's kernel reads
+after whnf: a nested block's sort (`GA : GType`, `GType := Type`, nested through
+`List`) and a mutual block's sorts (`GE`, `GO : GType`). Declared through Lean's
+kernel. (Lean counts a block's parameters on the declared type, so a parameter
+telescope behind a definition is not a Lean shape.) -/
 def GType : Type 1 := Type
-
-def GArrow : Type 1 := Type → Type
 
 open Lean in
 run_cmd Elab.Command.liftCoreM do
@@ -235,11 +234,6 @@ run_cmd Elab.Command.liftCoreM do
   let ga := mkConst (ns ++ `GA)
   addDecl (.inductDecl [] 0 [⟨ns ++ `GA, mkConst (ns ++ `GType),
     [⟨ns ++ `GA.leaf, ga⟩, ⟨ns ++ `GA.mk, mkForall `a .default (list ga) ga⟩]⟩] false)
-  let gb (α : Expr) := mkApp (mkConst (ns ++ `GB)) α
-  addDecl (.inductDecl [] 1 [⟨ns ++ `GB, mkConst (ns ++ `GArrow),
-    [⟨ns ++ `GB.leaf, mkForall `α .default (mkSort Level.one) (gb (mkBVar 0))⟩,
-     ⟨ns ++ `GB.mk, mkForall `α .default (mkSort Level.one)
-        (mkForall `a .default (list (gb (mkBVar 0))) (gb (mkBVar 1)))⟩]⟩] false)
   let ge := mkConst (ns ++ `GE)
   let go := mkConst (ns ++ `GO)
   addDecl (.inductDecl [] 0 [
@@ -252,10 +246,6 @@ noncomputable def gaVal (t : GA) : Nat :=
   GA.rec (motive_1 := fun _ => Nat) (motive_2 := fun _ => Nat) 1 (fun _ ih => ih + 1) 0
     (fun _ _ ih1 ih2 => ih1 + ih2) t
 
-noncomputable def gbVal (t : GB Nat) : Nat :=
-  GB.rec (motive_1 := fun _ => Nat) (motive_2 := fun _ => Nat) 1 (fun _ ih => ih + 1) 0
-    (fun _ _ ih1 ih2 => ih1 + ih2) t
-
 noncomputable def geVal (t : GE) : Nat :=
   GE.rec (motive_1 := fun _ => Nat) (motive_2 := fun _ => Nat) 0 (fun _ ih => ih + 1) (fun _ ih => ih + 1) t
 
@@ -263,9 +253,6 @@ noncomputable def geVal (t : GE) : Nat :=
 -- unfold a kernel-declared block's formers or find its auxiliary recursors), and
 -- checked by Ix.
 bad_thm gaIota : gaVal (GA.mk [GA.leaf]) = 2 := unchecked (Eq.refl (gaVal (GA.mk [GA.leaf])))
-
-bad_thm gbIota : gbVal (GB.mk Nat [GB.leaf Nat]) = 2 :=
-  unchecked (Eq.refl (gbVal (GB.mk Nat [GB.leaf Nat])))
 
 bad_thm geIota : geVal (GE.succ (GO.succ GE.zero)) = 2 :=
   unchecked (Eq.refl (geVal (GE.succ (GO.succ GE.zero))))
