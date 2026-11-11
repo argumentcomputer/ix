@@ -94,11 +94,11 @@ private def ixvmSafetyCases : Array ExploitCase :=
         "the wire safety byte must not bypass the safe declaration peer-slot restriction"
         (block #[{ definition kind everyProp (.recur 0 #[]) with safety }])
 
-def tests (compiled : Aiur.CompiledToplevel) : IO TestSeq := do
+def run : IO UInt32 := do
   let control := asCase "control-closed-identity"
     "a genuine closed proof must still be accepted"
     (storeAt {} ⟨.defn (definition .thm identityType identityValue), #[], #[], #[.zero]⟩) true
   let ixvmCases := cases.filter (fun c => !c.expectAccept) ++ ixvmSafetyCases ++ #[control]
-  return (← runCases compiled ixvmCases) ++ (← runCases compiled ixvmCases true)
+  Tests.Ix.IxVM.runCases "ixvm-definition-dependencies" (ixvmCases.map fun c _ => c.toCase)
 
 end Tests.Ix.IxVM.DefinitionDependencies

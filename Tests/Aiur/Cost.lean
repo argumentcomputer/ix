@@ -1,7 +1,7 @@
 module
 
 public import LSpec
-public import Ix.Aiur
+public import Ix.Aiur.Statistics
 
 /-!
 Unit tests for the pure FFT cost model in `Ix/Aiur/Statistics.lean`.
@@ -20,7 +20,7 @@ open LSpec Aiur
 namespace AiurTests.Cost
 
 /-- A small function-like circuit: main width 4, one lookup
-(stage 2 width `D = 2`), quotient degree 2 (today's uniform value). -/
+(stage 2 width `D = 2`), quotient degree 2. -/
 def fnShape : CircuitShape :=
   { mainWidth := 4, stage2Width := 2, quotientDegree := 2,
     preprocessedWidth := 0, preprocessedHeight := 0 }

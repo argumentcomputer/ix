@@ -10,7 +10,9 @@ use super::{
   stage::{FriVerifier, Prepared},
 };
 use crate::fri::*;
-use aiur::{synthesis::AiurProof, vk_codec::AiurVerifyingKey};
+use aiur::trace::stark::{
+  BatchProof as AiurProof, VerifyingKey as AiurVerifyingKey,
+};
 use multi_stark::batch::BatchProof;
 use multi_stark::plonkish::CircuitBuilder;
 use multi_stark::types::GoldilocksBlake3Config;
@@ -21,7 +23,7 @@ use p3_symmetric::CryptographicHasher;
 use std::{fs, path::Path, time::Instant};
 
 /// Layout file a normalized root carries beside its proof.
-pub(super) const FIXED_ROOT_LAYOUT: &str = "fixed-root.json";
+pub(super) const FIXED_ROOT_LAYOUT: &str = "fixed-root.ixl";
 /// Largest trace of the FRI stage's lowered verifier circuit.
 const MAX_TRACE_HEIGHT: usize = 1 << 24;
 
@@ -66,7 +68,7 @@ pub(super) fn run(dir: &Path, out: &Path, prove: bool) -> Result<()> {
   drop(input_span);
   let start = Instant::now();
   tracing::info_span!("compression/verify_input")
-    .in_scope(|| native_key.verify(&claims[0], &proof))
+    .in_scope(|| native_key.verify(&claims, &proof))
     .map_err(|e| format!("Aiur policy: {e:?}"))?;
   eprintln!(
     "Native Ix root batch verified in {:?}: {} bytes, {} circuits, {} shards",
@@ -98,8 +100,8 @@ pub(super) fn run(dir: &Path, out: &Path, prove: bool) -> Result<()> {
   let layout_path = dir.join(FIXED_ROOT_LAYOUT);
   let start = Instant::now();
   let prepared = if layout_path.exists() {
-    let fixed = FixedRoot::from_json(&fs::read_to_string(&layout_path)?)?;
-    fs::write(out.join(FIXED_ROOT_LAYOUT), fixed.to_json())?;
+    let fixed = FixedRoot::from_bytes(&fs::read(&layout_path)?)?;
+    fs::write(out.join(FIXED_ROOT_LAYOUT), fixed.to_bytes())?;
     fs::write(out.join("plan-id.bin"), fixed.identity(&native_key))?;
     fixed.prepare(&native_key, &proof, &claims[0], VerifierLimits::default())?
   } else {
@@ -191,7 +193,9 @@ pub fn prepare_root(
   expected: &[Val],
   limits: VerifierLimits,
 ) -> Result<Prepared<Val>> {
-  key.verify(expected, proof).map_err(|e| format!("aggregate root: {e:?}"))?;
+  key
+    .verify(&[expected.to_vec()], proof)
+    .map_err(|e| format!("aggregate root: {e:?}"))?;
   let verifier = VerifierKey::from_system(key.system());
   RootPlan::new(&verifier, proof, limits)?.prepare(
     proof,

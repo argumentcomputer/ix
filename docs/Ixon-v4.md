@@ -27,15 +27,18 @@ typing and explicitly rejects resource-proof requests. The
 [v3 verification record](ixon-v3-verification.md) lists the gates executed
 for the contract model.
 
-The IxVM circuit has its own codec (`Ix/IxVM/IxonDeserialize.lean`,
-`Ix/IxVM/IxonSerialize.lean`, generated into
-`crates/ixvm-codegen/src/aiur_ixvm.rs`). It reads and writes TagN with the
-host codec's accept and reject rules. The suite `ixvm-tagn` checks it
-against `Ixon.putTagN`/`getTagN` on every rung boundary, the rejection
-vectors, every one-byte string, and every header with a sample of second
-bytes. Its claim readers require object format `4`, and its kernel
-recognizes primitives by their v4 canonical addresses. The circuit reads
-neither `.ixe` headers nor `ConstantMeta`.
+The IxVM program has its own codec (`IxVM/IxVM/Source/IxonDeserialize.lean`,
+`IxVM/IxVM/Source/IxonSerialize.lean`). It reads and writes TagN with the
+host codec's accept and reject rules. The suite `ixvm-tagn`
+(`Tests/Ix/IxVM/TagN.lean`) checks it against `Ixon.putTagN`/`getTagN` through
+the production claim entry point, with the TagN-coded fields of a constant
+(its level count, its type's root expression and its last universe): on every
+rung boundary with the lowest and highest flag, the expected encodings, the
+rejection vectors, every invalid code, truncations and a trailing byte, every
+one-byte string, and every header with a sample of second bytes. Its claim
+readers require object format `4`, and its kernel recognizes primitives through
+the claim's role binding. The program reads neither `.ixe` headers nor
+`ConstantMeta`.
 
 ## 1. Independent contracts
 

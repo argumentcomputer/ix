@@ -60,8 +60,8 @@ theorem denoteMeta_falseA_type
 theorem extendFalse (mp : EnvModelM V μ env)
     (hfresh : env.find? falseName = none)
     (hwf : EnvWF ⟨falseA :: env.consts⟩) :
-    Nonempty (EnvModelM V μ ⟨falseA :: env.consts⟩) := by
-  refine nonempty_of_exists (declStep_preserves_of_basis_cons mp
+    ConsLeaf mp falseA := by
+  refine consLeaf_of (declStep_preserves_of_basis_cons mp
     (A := fun _ => AnnotTerm.const .empty [0]) hfresh
     (fun _ _ _ h => nomatch h)
     (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide))
@@ -156,11 +156,11 @@ theorem extendFalseRec (mp : EnvModelM V μ env)
     (hE : env.find? falseName = some falseA)
     (hfresh : env.find? falseRecA.name = none)
     (hwf : EnvWF ⟨falseRecA :: env.consts⟩) :
-    Nonempty (EnvModelM V μ ⟨falseRecA :: env.consts⟩) := by
+    ConsLeaf mp falseRecA := by
   have hty := fun ψ =>
     denoteMeta_falseRecA_type (m := mp.base2)
       (A := fun ψ => AnnotTerm.const .emptyRec [0, ψ uN]) ψ hE
-  refine nonempty_of_exists (declStep_preserves_of_basis_cons mp
+  refine consLeaf_of (declStep_preserves_of_basis_cons mp
     (A := fun ψ => AnnotTerm.const .emptyRec [0, ψ uN]) hfresh
     (fun _ _ _ h => nomatch h)
     (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide))
@@ -203,7 +203,7 @@ it.  `BasisInstallRun` is a right-nested `∧` chain, so the walk is an
 `falseK` branch. -/
 theorem declBasisPB_falseK {env₂ : Env md} (mp : EnvModelM V μ env)
     (h : Ix.Kernel.Semantics.BasisInstallRun env Ix.Kernel.BasisKind.falseK.declsA env₂) :
-    Nonempty (EnvModelM V μ env₂) := by
+    ∃ mp₂ : EnvModelM V μ env₂, ModelExt mp mp₂ := by
   rw [show Ix.Kernel.BasisKind.falseK.declsA = [falseA, falseRecA] from rfl]
     at h
   obtain ⟨h1, h2, hnil⟩ := h
@@ -218,7 +218,7 @@ theorem declBasisPB_falseK {env₂ : Env md} (mp : EnvModelM V μ env)
         | (refine Ix.Kernel.IndCapsWF.of_caps ?_ ?_ <;> intro h <;>
             first | exact absurd h (by decide) | rfl)
         | exact fun _ _ heq => ConstantInfo.noConfusion rfl (heq_of_eq heq))⟩
-  obtain ⟨mp1⟩ := extendFalse mp hf1 hwf1
+  obtain ⟨_, mp1, hac1⟩ := extendFalse mp hf1 hwf1
   have hE : (⟨falseA :: env.consts⟩ : Env md).find? falseName
       = some falseA := by
     rw [Ix.Kernel.Env.find?_cons]; exact if_pos rfl
@@ -252,6 +252,7 @@ theorem declBasisPB_falseK {env₂ : Env md} (mp : EnvModelM V μ env)
       exact hE
     rw [hf]
     simp
-  exact extendFalseRec mp1 hE hf2 hwf2
+  obtain ⟨_, mp2, hac2⟩ := extendFalseRec mp1 hE hf2 hwf2
+  exact ⟨mp2, (((ModelExt.refl (mp₁ := mp)).plain hac1 hf1).plain hac2 hf2)⟩
 
 end Ix.Kernel.Model

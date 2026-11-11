@@ -103,4 +103,28 @@ theorem inferIO_bridge_zero : InferIOBridge env 0 := by
   rw [inferTypeCoreIO_zero] at h
   simp [throw, throwThe, MonadExceptOf.throw] at h
 
+/-- The checker's fixed-fuel zero test, read as the semantic premise the
+`proofIrrel` and `Infer.proj` rules take (`Rules/Rel.lean`, "Level premises
+are semantic"). -/
+theorem isEquiv_zero_sound {l : Level} (h : Level.isEquiv l .zero = some true) :
+    ∀ φ, Level.eval φ l = 0 := fun φ => by
+  have := Level.isEquiv_sound h φ
+  simpa [Level.eval] using this
+
+/-- The checker's tower guard, read as the rules tier's `FireSem`. -/
+theorem fireOk_sem {entry : ProjEntry md} {us : List Level}
+    (h : entry.fireOk us = true) : FireSem entry us := by
+  intro hs
+  unfold ProjEntry.fireOk at h
+  rw [hs] at h
+  exact isEquiv_zero_sound (by simpa using h)
+
+/-- The checker's `And` rescue slots, read as the rules tier's
+`AndRescueSlotsSem`. -/
+theorem andRescueSlots_sem {env : Env md} {ctor : Key md} {nP : Nat} {ust : List Level}
+    (h : andRescueSlots env ctor nP ust = true) : AndRescueSlotsSem env ctor nP ust := by
+  intro j hj
+  obtain ⟨e, he, hc, hn, hf, hfire⟩ := andRescueSlots_inv h j hj
+  exact ⟨e, he, hc, hn, hf, fireOk_sem hfire⟩
+
 end Ix.Kernel.Rules

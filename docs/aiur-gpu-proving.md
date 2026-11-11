@@ -1,5 +1,16 @@
 # Proving on GPUs: multi-GPU scheduling, generated traces, and how to benchmark them
 
+> **Historical.** This guide describes the legacy Aiur backend as it was on
+> main at `3d725c8c0`, before the formal Aiur migration retired it: its
+> multi-GPU scheduler (`ix prove --gpus`), the CUDA trace writers generated
+> from its bytecode (`IX_CUDA_TRACE_CODEGEN`, `cuda-trace-codegen`), and its
+> benchmark harness. Those commands, features and file paths no longer exist.
+> For the formal backend's GPU lanes, device trace population and validation,
+> see [Formal Aiur orchestration](formal-aiur-orchestration.md),
+> [Formal Aiur in Ix](formal-aiur-migration.md#cuda-and-native-builds) and
+> [GPU validation](formal-aiur-gpu-validation.md). The scheduling design and
+> measurement method below are kept for reference.
+
 Everything in this document builds on prover-level trace sharding
 ([aiur-trace-sharding.md](aiur-trace-sharding.md)): one execution of a
 claim is proven as a batch of trace shards that each fit a device, and the

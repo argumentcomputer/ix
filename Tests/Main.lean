@@ -1,17 +1,6 @@
-import Tests.Aiur
-import Tests.Aiur.IOBuffer
-import Tests.Aiur.RustSyntax
 import Tests.Ix.Ixon
 import Tests.Ix.IxonRejectParity
 import Tests.Ix.IxonSyntax
-import Tests.Ix.IxVM
-import Tests.Ix.IxVM.Eval
-import Tests.Ix.IxVM.Exploits
-import Tests.Ix.IxVM.DefinitionDependencies
-import Tests.Ix.IxVM.BindingAnchors
-import Tests.Ix.IxVM.BindingFrontier
-import Tests.Ix.IxVM.TagN
-import Tests.Ix.IOIngress
 import Tests.Ix.Claim
 import Tests.Ix.Merkle
 import Tests.Ix.AssumptionTree
@@ -33,7 +22,6 @@ import Tests.Ix.Compile.SelectedClosure
 import Tests.Ix.Compile.ClosureWhole
 import Tests.Ix.Compile.CheckerSupport
 import Tests.Ix.Compile.PackUnits
-import Tests.Ix.IxVM.SubstBoundaries
 import Tests.Ix.Decompile
 import Tests.Ix.Kernel.BuildPrimitives
 import Tests.Ix.Kernel.CheckCompPoly
@@ -41,9 +29,31 @@ import Tests.Ix.Kernel.CheckPrimeGaps
 import Tests.Ix.Kernel.CheckTauCeti
 import Tests.Ix.Kernel.CheckTauCetiReduction
 import Tests.Ix.Kernel.Tutorial
-import Tests.Ix.Kernel.Arena
 import Tests.Ix.Kernel.FastPaths
 import Tests.Ix.Kernel.PrimAddrs
+import Tests.Ix.SpecDigestRendering
+import Tests.Ix.InstanceSymbols
+import Tests.Ix.VMSource
+import Tests.Ix.Kernel.Arena
+import Tests.Ix.IxVM
+import Tests.Ix.AiurStatistics
+import Tests.Ix.IxVM.Eval
+import Tests.Ix.IxVM.Exploits
+import Tests.Ix.IxVM.DefinitionDependencies
+import Tests.Ix.IxVM.BindingAnchors
+import Tests.Ix.IxVM.BindingFrontier
+import Tests.Ix.IxVM.S4Bench
+import Tests.Ix.IxVM.TagN
+import Tests.Ix.IxVM.Codec
+import Tests.Ix.IxVM.UserAxioms
+import Tests.Ix.IxVM.DecisionRoles
+import Tests.Ix.IxVM.CircuitVerdict
+import Tests.Ix.IxVM.ClaimSafety
+import Tests.Ix.IxVM.Differential
+import Tests.Ix.IxVM.Mutator
+import Tests.Ix.IxVM.ModelAdvice
+import Tests.Ix.Kernel.ReaderCoverage
+import Tests.Ix.IOIngress
 import Tests.Ix.Kernel.ReaderRoundtrip
 import Tests.Ix.Kernel.FidelityAccess
 import Tests.Ix.Kernel.PreludeFidelity
@@ -72,13 +82,9 @@ import Tests.Ix.Kernel.Pins
 import Tests.Ix.Kernel.AccelSemantics
 import Tests.FFI
 import Tests.Keccak
-import Tests.MultiStark
-import Tests.Aggr
-import Tests.AggrProof
 import Tests.AggrBindingReuse
 import Tests.AggrToolchains
 import Tests.AggrSemantics
-import Tests.AggrActivation
 import Tests.Cli
 import Tests.CompressionCli
 import Tests.Ix.Ixes
@@ -92,7 +98,6 @@ import Tests.Ix.TruthMines
 import Tests.Registry
 import Ix.Common
 import Ix.Meta
-import Ix.IxVM
 
 /-!
   Main test runner and registry for `IxTests`.
@@ -123,21 +128,20 @@ def registry : List Entry := [
   .suiteIO "exact-sharing" .primary (concurrently (Tests.SharingExact.suite ++ Tests.SharingUniform.suite ++ Tests.SharingTiered.suite)),
   .suite "sharing-components" .primary Tests.SharingComponents.suite,
   .suite "source-contract" .primary (Tests.Ix.SourceContract.suite ++ Tests.Ix.SourceContract.Driver.suite),
+  .suite "aiur-statistics" .primary Tests.Ix.AiurStatistics.suite,
   .suite "bench-measures" .primary Tests.Ix.BenchMeasures.suite,
   -- the compile's named refusal of ungrounded input (the IO pipeline and the pure compile)
   .suite "ground-unit" .primary Tests.Ix.Compile.GroundRefusal.suite,
   -- the strict readers of the checkers' reports (Tests.Ix.Compile.KernelReport)
   .suite "compiler-reports" .primary Tests.Ix.Compile.KernelReportTests.suite,
   .suite "compiler-lean-reports" .primary Tests.Ix.Compile.LeanReportTests.suite,
-  .runner "ixvm-subst-boundaries" .primary Tests.Ix.IxVM.SubstBoundaries.runSuite,
   -- selected closures (`collectSelectedDeps`): whole logical units, a
   -- matcher's unit, mutual siblings, checker support from `Role.deps`
   .suite "compiler-selected-closure" .primary Tests.Ix.Compile.SelectedClosure.suite,
-  .suite "aiur-cross" .primary [AiurTests.Cross.tests],
-  .runner "aiur-io-buffer" .primary AiurTests.IOBuffer.runSuite,
-  .suite "aiur-cost" .primary [AiurTests.Cost.tests],
-  .suite "aiur-trace-plan" .primary [AiurTests.TracePlan.tests],
+  -- the formal IxVM program holds no address literal but its specification digest
   .suite "prim-addrs" .primary Tests.Ix.Kernel.PrimAddrs.suite,
+  -- every IO byte the IxVM and multi-stark programs read is range-checked
+  .suite "io-ingress" .primary Tests.IOIngress.suite,
   -- the role table's wire vectors (Tests/Fixtures/ixon-v4/role-table.tsv), which
   -- Rust's codec is tested against, are IxC's codec's
   .runner "role-table-wire" .primary Tests.RoleTableWire.run,
@@ -166,62 +170,11 @@ def registry : List Entry := [
   .suite "decompile-unit" .primary Tests.Decompile.unitSuite,
   -- getFileEnv body-inclusion regression guard (IO: loads a fixture file)
   .suiteIO "getfileenv-body" .primary (do return [← Tests.Ix.EnvBody.suite]),
-  -- primary runners: quick suites kept as deferred `IO` actions (not
-  -- `TestSeq` values) so their setup (Aiur system builds, STARK proofs) does
-  -- not run at module initialization for unrelated invocations. All are
-  -- seconds-scale: ixvm-tagn about 16 s, aiur-prove
-  -- about 11 s and the rest 2-4 s each.
-  .runner "aiur-rust-syntax" .primary AiurTests.RustSyntax.run,
   -- Reductions no kernel may make beyond Lean's (class methods reduced
   -- without their instance, `numBits ≡ 64`, the `Fin.val` commute): every
   -- probe's closure through IxC.
   .runner "kernel-fast-paths" .primary Tests.Ix.Kernel.FastPaths.run,
-  -- The circuit TagN codec against the host codec (about 16 s).
-  .runner "ixvm-tagn" .primary Tests.Ix.IxVM.TagN.runSuite,
-  -- every IO byte stream of the IxVM, ix_aggr and multi-stark verifier
-  -- circuits goes through the range-checked reader
-  .suiteIO "io-ingress" .primary Tests.IOIngress.suite,
-  .runner "aiur-prove" .primary (do
-    IO.println "aiur-prove"
-    match AiurTestEnv.build (pure toplevel) with
-    | .error e => IO.eprintln s!"Aiur setup failed: {e}"; return 1
-    | .ok env => do
-      let r1 ← LSpec.lspecEachIO aiurTestCases fun tc => pure (env.runTestCase tc)
-      -- The same toplevel with `testGroups` applied: the members share one
-      -- circuit, and the whole suite of grouped cases proves through it.
-      match AiurTestEnv.build (pure toplevel) testGroups with
-      | .error e => IO.eprintln s!"Aiur grouped setup failed: {e}"; return 1
-      | .ok genv => do
-        let r2 ← LSpec.lspecEachIO groupedTestCases fun tc => pure (genv.runTestCase tc)
-        let r3 ← LSpec.lspecIO
-          (.ofList [("aiur-grouping", [groupingStructureChecks genv.compiled]),
-            ("aiur-inline-order", [assertOrderChecks env.compiled])]) []
-        return if r1 == 0 && r2 == 0 && r3 == 0 then 0 else 1),
-  .runner "aiur-hashes" .primary (do
-    IO.println "aiur-hashes"
-    let .ok blake3Env := AiurTestEnv.build (do
-        let t ← Aiur.Library.core.merge Aiur.Library.byteStream
-        let t ← t.merge Aiur.Library.blake3
-        t.merge blake3BoundaryProgram)
-      | IO.eprintln "Blake3 setup failed"; return 1
-    let r1 ← LSpec.lspecEachIO blake3TestCases fun tc => pure (blake3Env.runTestCase tc)
-    let .ok sha256Env := AiurTestEnv.build (do
-        let t ← Aiur.Library.core.merge Aiur.Library.byteStream; t.merge IxVM.sha256)
-      | IO.eprintln "SHA256 setup failed"; return 1
-    let r2 ← LSpec.lspecEachIO sha256TestCases fun tc => pure (sha256Env.runTestCase tc)
-    return if r1 == 0 && r2 == 0 then 0 else 1),
-  .runner "rbtree-map" .primary (do
-    IO.println "rbtree-map"
-    match AiurTestEnv.build (pure IxVM.rbTreeMap) with
-    | .error e => IO.eprintln s!"RBTreeMap setup failed: {e}"; return 1
-    | .ok env => LSpec.lspecEachIO rbTreeMapTestCases fun tc => pure (env.runTestCase tc)),
-  -- Multi-STARK recursive verifier: `multi-stark` runs the verifier's
-  -- primitive self-tests, `recursive-verifier` the full
-  -- factorial-prove → recursive-verify → reject-tampering pipeline.
-  .runner "multi-stark" .primary Tests.MultiStark.selfTestSuite,
-  .runner "recursive-verifier" .primary Tests.MultiStark.endToEndSuite,
-  -- Converged heterogeneous aggregation circuit: all fifteen `ix_aggr` shapes,
-  -- driver/cache semantics, and one negative case per broken binding.
+  -- Aggregate driver/cache/manifest semantics.
   .runner "ix-aggr" .primary Tests.Aggr.convergedSuite,
   -- `.ixes` manifest parser: trailing tree/peaks sections and strictness.
   .runner "ixes-manifest" .primary Tests.Ix.Ixes.suite,
@@ -231,6 +184,18 @@ def registry : List Entry := [
   -- Differential comparison of Address.blake3, Address.blake3Pure, and
   -- Address.admissionHash across multi-chunk boundaries and an .ixe artifact.
   .runner "admission-hash-diff" .primary Tests.Ix.Kernel.AdmissionHashDiff.run,
+  -- `KernelRoleSpec.lean` rebuilt from the specification digest's bytes; mutated
+  -- bytes or a mutated file are refused (`IxVM.RoleSpecGen.checkRendering`).
+  .runner "spec-digest-rendering" .primary Tests.Ix.SpecDigestRendering.run,
+  -- Instance symbols: the structural encoding agrees with the JSON form on every
+  -- deployed program (`Aiur.Generic.Instance.symbol`).
+  .runner "instance-symbols" .primary Tests.Ix.InstanceSymbols.run,
+  -- The public IxVM source agrees with native preparation of the imported
+  -- DSL declarations (`IxVM.Check`). In the `ci:ixvm` tier with the other
+  -- suites that import IxVM's modules at run time: the Nix-built test binary
+  -- (the flake's `ix-tests` check, primary tier) carries the root package's
+  -- `.olean` files but not those of the nested `Aiur`/`IxVM` packages.
+  .env "ixvm-source" (.ci .ixvm) Tests.Ix.VMSource.run,
 
   -- CLI integration tests (ci.yml's lean-test job)
   .runner "cli" (.ci .cli) Tests.Cli.suite,
@@ -238,6 +203,59 @@ def registry : List Entry := [
   .suite "kernel-check-lean-cli" (.ci .cli) Tests.Ix.Kernel.CheckLeanCli.suite,
   .suite "artifact-compile-cli" (.ci .cli) Tests.Ix.RoleCompile.suite,
   .suite "host-admission-cli" (.ci .cli) Tests.Ix.HostAdmissionCli.suite,
+
+  -- Claims through the formal IxVM program (`ixvm-proof test` on the claim
+  -- artifact; `Tests.Ix.IxVM.Harness`), each verdict pinned: the only
+  -- evidence, until the refinement proof lands, that the program rejects
+  -- what it must.
+  -- Kernel verdicts and exact FFT costs for constants, the binding claim and a shard.
+  .env "ixvm-kernel-checks" (.ci .ixvm) Tests.Ix.IxVM.kernelChecks,
+  -- The trusted reader (`prepareWith`) accepts the logical records of the closures
+  -- the IxVM suites check (`IxVM.consistent`'s `ReadIn`).
+  .env "ixvm-reader-coverage" (.ci .ixvm) Tests.Ix.Kernel.ReaderCoverage.run,
+  -- Prover-authored malformed Ixon, each exploit with its controls.
+  .env "ixvm-exploits" (.ci .ixvm) Tests.Ix.IxVM.Exploits.run,
+  -- The lean-kernel-arena tutorial fixtures: good accepted, `bad_*` rejected.
+  .env "ixvm-arena" (.ci .ixvm) Tests.Ix.Kernel.Arena.run,
+  -- The program's TagN codec against the host's (`Ixon.putTagN`/`getTagN`).
+  .runner "ixvm-tagn" (.ci .ixvm) Tests.Ix.IxVM.TagN.run,
+  -- The program's Ixon codec (`ixon-v4-tests`' vectors) and claim boundary.
+  .runner "ixvm-codec" (.ci .ixvm) Tests.Ix.IxVM.Codec.run,
+  -- Evaluation claims against Lean's own reduction and generated arithmetic.
+  .env "ixvm-eval" (.ci .ixvm) Tests.Ix.IxVM.Eval.run,
+  -- Every leaf of a claim's axioms tree type-checked, used or not.
+  .runner "ixvm-user-axioms" (.ci .ixvm) Tests.Ix.IxVM.UserAxioms.run,
+  -- A decision's `of_decide_eq_*` roles bound by a compiled binding
+  -- (`Array.extract_append._proof_1_1`).
+  .env "ixvm-decision-roles" (.ci .ixvm) Tests.Ix.IxVM.DecisionRoles.run,
+  -- Circular definitions, binding anchors and the lazy binding frontier.
+  .runner "ixvm-definition-dependencies" (.ci .ixvm) Tests.Ix.IxVM.DefinitionDependencies.run,
+  .runner "ixvm-binding-anchors" (.ci .ixvm) Tests.Ix.IxVM.BindingAnchors.run,
+  .runner "ixvm-binding-frontier" (.ci .ixvm) Tests.Ix.IxVM.BindingFrontier.run,
+  -- A constant byte out of range is refused.
+  .runner "ixvm-io-ingress" (.ci .ixvm) Tests.IOIngress.run,
+  .env "ixvm-model-advice" (.ci .ixvm) Tests.Ix.IxVM.ModelAdvice.run,
+  .env "ixvm-model-report" (.manual "model advice per mutual or nested block of IX_MODEL_IXE") Tests.Ix.IxVM.ModelAdvice.report,
+  .env "ixvm-model-coverage" (.manual "every modeled block of IX_MODEL_IXE through IxVM") Tests.Ix.IxVM.ModelAdvice.coverage,
+  .env "ixvm-model-proj" (.manual "records of IX_MODEL_IXE that project at a modeled block") Tests.Ix.IxVM.ModelAdvice.projUse,
+  -- Execution with every assertion checked gives the circuit's verdict on a witness;
+  -- default execution skips the deferred range checks and can accept what the
+  -- circuit cannot prove.
+  .env "ixvm-circuit-verdict" (.ci .ixvm) Tests.Ix.IxVM.CircuitVerdict.run,
+  -- Typing claims refuse seeds outside Lean's logic (unsafe or partial); the claim
+  -- builders leave them out.
+  .runner "ixvm-claim-safety" (.ci .ixvm) Tests.Ix.IxVM.ClaimSafety.run,
+  .runner "ixvm-claim-safety-corpus" (.manual "walk closure of what stays owned on a compiled corpus; IX_SAFETY_IXE, IX_SAFETY_IXES") Tests.Ix.IxVM.ClaimSafety.corpus,
+  -- IxVM against Lean's kernel on a compiled corpus, and an adversarial mutator over
+  -- real inductive blocks and recursor records (circuit verdict).
+  .env "ixvm-differential" (.manual "a compiled corpus through IxVM and Lean's kernel; IX_DIFF_MODULES, IX_DIFF_LIMIT") Tests.Ix.IxVM.Differential.run,
+  .env "ixvm-differential-shards" (.manual "a sharded corpus: an ix check report against Lean's kernel, rejected shards bisected; IX_DIFF_IXE, IX_DIFF_IXES, IX_DIFF_REPORT, IX_DIFF_OUT") Tests.Ix.IxVM.Differential.runShards,
+  .env "ixvm-mutator" (.manual "mutated blocks and recursors; IX_MUT_MODULES, IX_MUT_BUDGET, IX_MUT_SEED") Tests.Ix.IxVM.Mutator.run,
+  -- Declaration-checker measurements: declaration costs, a Std shard, the
+  -- inductive census and the in-process modeller's records. Not a gate.
+  .env "ixvm-s4-bench" (.manual "declaration-checker cost measurements; needs IX_TEST_OUTPUT_DIR") Tests.Ix.IxVM.S4Bench.bench,
+  .env "ixvm-s4-census" (.manual "inductive census and modeller records") Tests.Ix.IxVM.S4Bench.census,
+  .env "ixvm-s4-model" (.manual "the modeled-route prototype; needs IX_TEST_OUTPUT_DIR") Tests.Ix.IxVM.S4Bench.modelProbe,
   -- `ix prove-binding`, shard proofs that assume the binding, and their
   -- composition with the binding proof file and refusals without it, through
   -- the `ix` binary (`aggregate-binding-reuse` without its two aggregates).
@@ -270,111 +288,8 @@ def registry : List Entry := [
   -- decompile fidelity
   .runner "fidelity-initstd" (.ci .landingInitStdCli) Tests.Ix.InitStd.fidelity,
   .suite "cert-evidence-agreement" .primary Tests.Ix.Cert.Statement.evidenceSuite,
-  .runner "aggregate-proof" (.manual "a proof round trip through the production ix_aggr circuit; minutes of proving") Tests.Aggr.proofRoundTrip,
   .runner "aggregate-binding-reuse" (.manual "one binding proof file discharges two aggregates, end to end through the `ix` binary; minutes of recursion and about 190 GB, needs `lake build ix`; `binding-proof-cli` runs it without the aggregates") Tests.Aggr.BindingReuse.run,
   .runner "aggregate-toolchains" (.manual "libraries from four Lean toolchains proven with one IxVM key and joined into one catalog root, end to end through the `ix` binary; tens of minutes of proving, needs `lake build ix` and `zstd`; IX_TOOLCHAINS_MAX_RAM sets the aggregate RAM budget in GiB (default 140)") Tests.Aggr.Toolchains.run,
-  .runner "kernel-dependencies" (.manual "the IxVM definition-dependency checks alone; `ixvm` runs them too") (do
-    match AiurTestEnv.build IxVM.ixVM IxVM.functionGroups with
-    | .error e => IO.eprintln s!"IxVM setup failed: {e}"; return 1
-    | .ok vm =>
-      let tests ← Tests.Ix.IxVM.DefinitionDependencies.tests vm.compiled
-      LSpec.lspecIO (.ofList [("kernel-dependencies", [tests])]) []),
-  .env "ixvm" (.ci .misc) fun env => do
-    let kernelChecks ← kernelChecks env
-    -- The kernel CheckEnv smokes.
-    let claimEnv ← IxVM.ClaimHarness.loadIxonEnv ``Nat.add_comm env
-    let envFull ← claimCheckEnvFull claimEnv
-    let envFrontier ← claimCheckEnvFrontier claimEnv
-    let checkAsm ← claimCheckWithAsm claimEnv
-    let revealFields ← claimRevealDefnFields claimEnv
-    let revealExpr ← claimRevealDefnExpr claimEnv
-    let revealModes ← claimRevealBinderModes
-    let revealCPrj ← claimRevealCPrj claimEnv
-    let containsTc ← claimContains
-    -- Shared-infrastructure test entrypoints live only in the FULL
-    -- toplevel (pruning drops them so test-only circuits never widen a
-    -- committed kernel system).
-    let kernelUnitTests := .exec `kernel_unit_tests
-    let serdeTest ← serdeNatAddComm env
-    match AiurTestEnv.build IxVM.ixVM IxVM.functionGroups, AiurTestEnv.build IxVM.ixVMFull with
-    | .error e, _ | _, .error e =>
-      IO.eprintln s!"IxVM env build failed: {e}"; return 1
-    | .ok vmEnv, .ok fullVmEnv =>
-      IO.eprintln "[ixvm] eval: reduction, output contracts, and compiled fixtures"
-      let evalSeq ← Tests.Ix.IxVM.Eval.tests vmEnv
-      let evalCompiledSeq ← Tests.Ix.IxVM.Eval.compiledTests env vmEnv
-      let evalCommandSeq ← Tests.Ix.IxVM.Eval.commandTests env vmEnv
-      IO.eprintln "[ixvm] eval: dependent, recursive, and neutral-term fixtures"
-      let evalDifficultSeq ← Tests.Ix.IxVM.Eval.difficultTests env vmEnv
-      IO.eprintln "[ixvm] eval: generated differential corpus (24 samples)"
-      let evalDifferentialSeq ← Tests.Ix.IxVM.Eval.differentialTests env vmEnv
-      -- Kernel-arena fixtures: the repo's NEGATIVE corpus (every
-      -- `bad_*` must be rejected by an in-kernel assert_eq!). Runs
-      -- through the kernel's subject-only `verify_const` debug
-      -- entrypoint, which lives only in the FULL toplevel — the
-      -- production one carries `verify_claim` alone.
-      let arenaSeq ← Tests.Ix.Kernel.Arena.arenaTests env fullVmEnv.compiled
-      -- Adversarial Ixon: exploit attempts authored as raw Ixon
-      -- constants, below the layer the arena's Lean fixtures can
-      -- reach. Each case pins the kernel's verdict, which is REJECT
-      -- except where accepting is the specified claim semantics.
-      let exploitSeq ← Tests.Ix.IxVM.Exploits.exploitTests env vmEnv.compiled
-      let dependencySeq ← Tests.Ix.IxVM.DefinitionDependencies.tests vmEnv.compiled
-      let bindingAnchorChecks ← Tests.Ix.IxVM.BindingAnchors.defaultChecks vmEnv.compiled
-      let bindingAnchorSeq := bindingAnchorChecks.foldl
-        (fun tests (name, passed) => tests ++ LSpec.test name passed) LSpec.TestSeq.done
-      let bindingFrontierChecks ← Tests.Ix.IxVM.BindingFrontier.defaultChecks vmEnv.compiled
-      let bindingFrontierSeq := bindingFrontierChecks.foldl
-        (fun tests (name, passed) => tests ++ LSpec.test name passed) LSpec.TestSeq.done
-      let aiurSeq := (kernelChecks ++
-          [envFull, envFrontier, checkAsm,
-           revealFields, revealExpr, revealModes, revealCPrj, containsTc]).foldl
-        (init := .done) fun s tc => s ++ vmEnv.runTestCase tc
-      -- Codegen parity gate: the generated Rust kernel is emitted from
-      -- the toplevel, so this runs the same witnesses through both
-      -- engines and asserts they agree. It is only meaningful against a
-      -- CURRENT `ix codegen` output — regenerate after any Aiur edit, or
-      -- this gate compares against a stale kernel. Reuses the
-      -- `kernelChecks` cases (`runParityCase` ignores the FFT pins), so
-      -- the per-constant witness setup runs once, not twice.
-      let parityTasks ← kernelChecks.mapM fun tc =>
-        IO.asTask (pure (runParityCase vmEnv.compiled tc))
-      let paritySeq ← parityTasks.foldlM (init := .done) fun s task => do
-        let seq ← IO.ofExcept task.get
-        pure (s ++ seq)
-      let fullSeq := [kernelUnitTests, serdeTest].foldl (init := .done)
-        fun s tc => s ++ fullVmEnv.runTestCase tc
-      -- Shard pipeline: witness built in Rust (thin-frontier claim,
-      -- parallel closure walk) and run on the native kernel. Pinned FFT
-      -- is the regression signal.
-      let shardSeq ← match (← shardCheckEnvCase env) with
-        -- The target constant is absent from this toolchain: a failure, as
-        -- an absent pinned constant is in `kernelChecks`, so that a
-        -- toolchain bump that renames it cannot turn the pin into a pass.
-        -- A fixture that no longer selects any owned constants throws.
-        | none => pure (LSpec.test
-            "shard pipeline: the target ByteArray.utf8DecodeChar?_utf8EncodeChar_append is in the environment"
-            false)
-        | some (handle, ownedBlob) =>
-          let funIdx := vmEnv.compiled.getFuncIdx `verify_claim |>.get!
-          match vmEnv.compiled.bytecode.shardCheckWithEnv
-                  funIdx handle ownedBlob false with
-          | .error e =>
-            pure (LSpec.test s!"shard pipeline execution: {e}" false)
-          | .ok (_, _, qc) =>
-            -- Exact pin, same convention as `kernelCheckEntries`
-            -- (`.round.toUInt64.toNat`): any cost shift must be an
-            -- explicit, reviewed bump.
-            let actual :=
-              (Aiur.computeStats vmEnv.compiled qc vmEnv.shapes).totalFftCost.round.toUInt64.toNat
-            pure (LSpec.test
-              s!"Shard pipeline FFT matches: expected 85_826_059_914, got {actual}"
-              (actual = 85_826_059_914))
-      LSpec.lspecIO
-        (.ofList [("ixvm",
-          [evalSeq, evalCompiledSeq, evalCommandSeq, evalDifficultSeq, evalDifferentialSeq,
-           fullSeq, aiurSeq, arenaSeq, exploitSeq, dependencySeq, bindingAnchorSeq,
-           bindingFrontierSeq, paritySeq, shardSeq])]) [],
   -- Selected closures (Tests.Ix.Compile.{SelectedClosure,ClosureWhole,CheckerSupport,PackUnits}):
   -- closure against whole, checker-support ground, and `ix pack` carrying the reference closure.
   .runner "compiler-selected-closure-e2e" (.ci .compilerClosures) Tests.Ix.Compile.SelectedClosure.run,
@@ -385,11 +300,9 @@ def registry : List Entry := [
   .runner "tc-pins" (.ci .compilerClosures) Tests.Tc.Pins.run,
   -- Exact retained acceleration inputs, value/head witnesses and full closures.
   .runner "kernel-accel-semantics" (.ci .compilerClosures) Tests.Ix.Kernel.AccelSemantics.run,
-  -- the 132-case, twice-executed `ix_aggr` activation matrix, kept out of the
-  -- primary suite and independent of the large environment
-  .runner "aggregate-activation" (.manual "a diagnostic matrix (132 cases, run twice)") Tests.Aggr.activationAudit,
-  -- Compression CLI setup and proof-rejection checks, run explicitly.
-  .runner "compression-cli" (.manual "compression CLI setup and proof-rejection checks; needs `lake build ix`") (do
+  -- Compression CLI setup and proof-rejection checks, and the bundled release
+  -- keys' acceptance of the formal backends.
+  .runner "compression-cli" (.ci .cli) (do
     Tests.CompressionCli.run
     return 0)
 ]
@@ -404,35 +317,51 @@ def required : List (String × String) := [
   ("cert-evidence-agreement", "primary"),
   ("ix-aggr", "primary"),
   ("lean-export", "primary"),
-  ("io-ingress", "primary"),
   ("kernel-source-ingress", "primary"),
   ("kernel-reader-roundtrip", "primary"),
   ("kernel-bundle-evidence", "primary"),
   ("resource-hints", "primary"),
+  ("aiur-statistics", "primary"),
   ("compiler-reports", "primary"),
   ("ground-unit", "primary"),
   ("prim-addrs", "primary"),
+  ("io-ingress", "primary"),
   ("role-table-wire", "primary"),
   ("exact-sharing", "primary"),
   ("ixon-reject-parity", "primary"),
   ("role-equations", "primary"),
-  ("ixvm-tagn", "primary"),
   ("ixes-manifest", "primary"),
   ("kernel-record-check", "primary"),
   ("compile-ind-flags", "primary"),
   ("admission-hash-diff", "primary"),
+  ("spec-digest-rendering", "primary"),
+  ("instance-symbols", "primary"),
+  ("ixvm-source", "ci:ixvm"),
   ("cli", "ci:cli"),
   ("compile-determinism", "ci:cli"),
   ("kernel-check-lean-cli", "ci:cli"),
   ("artifact-compile-cli", "ci:cli"),
   ("host-admission-cli", "ci:cli"),
+  ("compression-cli", "ci:cli"),
+  ("ixvm-kernel-checks", "ci:ixvm"),
+  ("ixvm-reader-coverage", "ci:ixvm"),
+  ("ixvm-exploits", "ci:ixvm"),
+  ("ixvm-arena", "ci:ixvm"),
+  ("ixvm-tagn", "ci:ixvm"),
+  ("ixvm-codec", "ci:ixvm"),
+  ("ixvm-eval", "ci:ixvm"),
+  ("ixvm-user-axioms", "ci:ixvm"),
+  ("ixvm-decision-roles", "ci:ixvm"),
+  ("ixvm-io-ingress", "ci:ixvm"),
+  ("ixvm-model-advice", "ci:ixvm"),
+  ("ixvm-circuit-verdict", "ci:ixvm"),
+  ("ixvm-claim-safety", "ci:ixvm"),
   ("binding-proof-cli", "ci:compiler-closures"),
   ("canon-closure-aux", "ci:compiler-closures"),
   ("compile-closure-whole", "ci:compiler-closures"),
   ("checker-support-regression", "ci:compiler-closures"),
   ("tc-pins", "ci:compiler-closures"),
   ("kernel-accel-semantics", "ci:compiler-closures"),
-  ("ixvm", "ci:misc"),
   ("kernel-tutorial", "ci:misc"),
   ("initstd-reference", "ci:landing-initstd-cli"),
   ("admission-hash-diff-initstd", "ci:landing-initstd-cli"),

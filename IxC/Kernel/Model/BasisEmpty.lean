@@ -86,8 +86,8 @@ theorem denoteMeta_emptyA_type
 theorem extendEmpty (mp : EnvModelM V μ env)
     (hfresh : env.find? emptyName = none)
     (hwf : EnvWF ⟨emptyA :: env.consts⟩) :
-    Nonempty (EnvModelM V μ ⟨emptyA :: env.consts⟩) := by
-  refine nonempty_of_exists (declStep_preserves_of_basis_cons mp
+    ConsLeaf mp emptyA := by
+  refine consLeaf_of (declStep_preserves_of_basis_cons mp
     (A := fun _ => AnnotTerm.const .empty [1]) hfresh
     (fun _ _ _ h => nomatch h)
     (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide))
@@ -227,11 +227,11 @@ theorem extendEmptyRec (mp : EnvModelM V μ env)
     (hE : env.find? emptyName = some emptyA)
     (hfresh : env.find? emptyRecA.name = none)
     (hwf : EnvWF ⟨emptyRecA :: env.consts⟩) :
-    Nonempty (EnvModelM V μ ⟨emptyRecA :: env.consts⟩) := by
+    ConsLeaf mp emptyRecA := by
   have hty := fun ψ =>
     denoteMeta_emptyRecA_type (m := mp.base2)
       (A := fun ψ => AnnotTerm.const .emptyRec [1, ψ uN]) ψ hE
-  refine nonempty_of_exists (declStep_preserves_of_basis_cons mp
+  refine consLeaf_of (declStep_preserves_of_basis_cons mp
     (A := fun ψ => AnnotTerm.const .emptyRec [1, ψ uN]) hfresh
     (fun _ _ _ h => nomatch h)
     (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide))
@@ -274,7 +274,7 @@ it.  `BasisInstallRun` is a right-nested `∧` chain, so the walk is an
 `emptyK` branch. -/
 theorem declBasisPB_emptyK {env₂ : Env md} (mp : EnvModelM V μ env)
     (h : Ix.Kernel.Semantics.BasisInstallRun env Ix.Kernel.BasisKind.emptyK.declsA env₂) :
-    Nonempty (EnvModelM V μ env₂) := by
+    ∃ mp₂ : EnvModelM V μ env₂, ModelExt mp mp₂ := by
   rw [show Ix.Kernel.BasisKind.emptyK.declsA = [emptyA, emptyRecA] from rfl]
     at h
   obtain ⟨h1, h2, hnil⟩ := h
@@ -289,7 +289,7 @@ theorem declBasisPB_emptyK {env₂ : Env md} (mp : EnvModelM V μ env)
         | (refine Ix.Kernel.IndCapsWF.of_caps ?_ ?_ <;> intro h <;>
             first | exact absurd h (by decide) | rfl)
         | exact fun _ _ heq => ConstantInfo.noConfusion rfl (heq_of_eq heq))⟩
-  obtain ⟨mp1⟩ := extendEmpty mp hf1 hwf1
+  obtain ⟨_, mp1, hac1⟩ := extendEmpty mp hf1 hwf1
   have hE : (⟨emptyA :: env.consts⟩ : Env md).find? emptyName
       = some emptyA := by
     rw [Ix.Kernel.Env.find?_cons]; exact if_pos rfl
@@ -323,7 +323,8 @@ theorem declBasisPB_emptyK {env₂ : Env md} (mp : EnvModelM V μ env)
       exact hE
     rw [hf]
     simp
-  exact extendEmptyRec mp1 hE hf2 hwf2
+  obtain ⟨_, mp2, hac2⟩ := extendEmptyRec mp1 hE hf2 hwf2
+  exact ⟨mp2, (((ModelExt.refl (mp₁ := mp)).plain hac1 hf1).plain hac2 hf2)⟩
 
 /-! ## STOP-AND-NAME: no basis `rec_rules` row is vacuous by `fire`
 

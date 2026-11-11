@@ -35,7 +35,7 @@ bounds:
 ```sh
 cargo run --release -p ix-proof-compression --no-default-features \
   --features parallel --example fri_sizing -- --statistics outer-vk.bin | \
-  python3 tools/compression/fri_security_estimate.py -
+  lake exe fri-security -
 ```
 
 The `fri_sizing` example estimates candidate frontend layouts. Materializing the

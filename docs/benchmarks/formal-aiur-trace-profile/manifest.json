@@ -1,0 +1,37 @@
+{
+  "date": "2026-10-28",
+  "base_revision": "1a19788bc051528aa59d37756d405752b166e012",
+  "phase_threads": 64,
+  "phase_samples": 3,
+  "nat_samples": 5,
+  "warmups": 2,
+  "nat_threads": [
+    1,
+    8,
+    32,
+    64
+  ],
+  "reuse_execution": true,
+  "host_lookups": true,
+  "thp_disabled": true,
+  "rustflags": "-Ctarget-cpu=native",
+  "profile_features": "parallel,aiur/trace-profile",
+  "profiled_binary_sha256": "1b3c052fbe957172bbbf4cf8705e3b4ae545cdadf094bc18f04bd3d955489f95",
+  "artifact_input_sha256": {
+    ".lake/formal-integration/ixvm-tuned.json": "1f8c10da7b10587e985d5166b26ad0c7edd4f4cbdfe0978c7deb237cf6683d9a",
+    ".lake/formal-integration/recursion-tuned.json": "40e88dd1f84e4f119626189e83f8eb181f6ef9875c190f33cdd7853e83c5afe1",
+    ".lake/formal-comparison/final/ixvm-input.json": "2733974cdf8d687799f678140ab967d3ab2c5a9f8768c8c3455bc86b5281a7b8",
+    ".lake/formal-comparison/final/environment-input.json": "14a147c1d6141721547092a9a835249969aa1f82c8f57f9ed0a2b0522f7aaa56",
+    ".lake/formal-comparison/final/new-environment-grouped.json.inner/input.json": "2ecf2051d112503637b9d3c1a6201bd66f91df4568a95faff3cef068e3f96a1a"
+  },
+  "validation": [
+    "Profiled Nat.add_comm proof verifies (5478175 bytes, same size as unprofiled)",
+    "Grouped trace/proof regression passes with trace-profile enabled",
+    "Clippy passes with warnings denied for the profiled comparison example"
+  ],
+  "notes": [
+    "Phase timings are sequential wall-clock checkpoints; per-circuit spans overlap and cannot be summed",
+    "Profile logging is outside the reported profile total and inside the outer benchmark timer",
+    "The Nat frontier scaling sweep used the ordinary binary before enabling profiling"
+  ]
+}

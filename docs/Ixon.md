@@ -1755,11 +1755,34 @@ The typing claims (Eval, Check, CheckEnv) are relative to a
 The claim states that its constants are well-typed in Lean's theory over
 the standard axioms (`propext`, `Classical.choice`, `Quot.sound`), with the
 primitives read through the bound roles, each validated against the named
-specifications. The axioms field is reserved: no checker admits another axiom
-yet, and IxVM refuses a claim that lists any. It is a separate commitment from
-`assumptions`, which names constants assumed well-typed and discharged by
-other claims; an axiom is never discharged by typing. A context is 65 bytes
-when there are no further axioms.
+specifications. The axioms field names further axioms, the leaves of a merkle
+tree, and the claim then holds in that theory extended by them. IxVM accepts
+a leaf only if it is a stored safe axiom record that the role table does not
+bind, and it typechecks every leaf with its closure, whether or not the
+claim's constants use it, under the claim's assumptions: a leaf the assumption
+tree also names is not checked, and the claim is conditional on it like on
+any assumption. The field is a
+separate commitment from `assumptions`, which names constants assumed
+well-typed and discharged by other claims; an axiom is never discharged by
+typing. A context is 65 bytes when there are no further axioms.
+
+A Check or CheckEnv claim certifies only constants in Lean's logic. Its
+seeds, the Check constant and the leaves of the CheckEnv tree, must be safe:
+IxVM refuses a seed whose record, or the block it projects from, is an unsafe
+or `partial` definition, an unsafe opaque, axiom or recursor, an unsafe
+inductive or constructor, or a block holding one (`KernelClaim::assert_claimable`,
+`claim seed is unsafe or partial`). Lean's kernel accepts an unsafe constant of
+any type, `False` included, and a `partial` block (the `_unsafe_rec`
+companions) may refer to itself, so "checked" says nothing about them. The face
+of a `partial def` is a safe opaque, and a claim may name it. A theorem is
+never unsafe, and a `partial` opaque is not. A safe constant never references
+an unsafe one, so a seed's closure holds none. The claim builders leave the
+unsafe and partial constants out of seed and owned lists: `ix check` refuses
+one by name and skips them when it checks a whole environment, a shard owns
+none (`Ix.Shard.ownedConstsPer`, `IxVM.ClaimHarness.claimableOwned`), and the
+canonical tree of an environment (`ix tree env`, an aggregate's subjects)
+holds the constants in Lean's logic only. An Eval claim's input and output
+are safe declarations too.
 
 A Check or CheckEnv claim with validator `4` (erased-lean-v2-assumed) has the
 same payload but assumes its binding instead of validating it: it states its
@@ -1769,7 +1792,7 @@ the table binds every role and each bound constant meets its specification.
 Its proof validates every role once, and aggregation discharges the condition
 of a whole aggregate with it (`ix_aggr` shapes 13 and 14), which yields the
 same claim bytes with validator `3`. Validator `4` names no axiom and no
-typing assumption: the reserved axioms field and `assumptions` keep their
+typing assumption: the axioms field and `assumptions` keep their
 meaning.
 
 A CheckEnv claim with validator `5` (erased-lean-v2-class) names a **literal

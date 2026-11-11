@@ -57,13 +57,13 @@ theorem DefEq.redL_sound {d : Nat} {a a' b : Expr md}
 
 /-- `defeqStuck_claim`'s sort arm (`Steps/DefEq.lean:873`). -/
 theorem DefEq.sort_sound {d : Nat} {u v : Level}
-    (h : Level.isEquiv u v = some true) :
+    (h : ∀ φ, Level.eval φ u = Level.eval φ v) :
     DefEqSem m φ d (.sort u) (.sort v) := by
   intro _ _ Δa aa ba _ _ haa hba _ _ ρ _
   rw [denoteMeta_sort] at haa hba
   obtain rfl : aa = AnnotTerm.sort (u.eval φ) := (Option.some.inj haa).symm
   obtain rfl : ba = AnnotTerm.sort (v.eval φ) := (Option.some.inj hba).symm
-  rw [Level.isEquiv_sound h φ]
+  rw [h φ]
 
 /-- The `fvar` arm: the reading ignores the annotation. -/
 theorem DefEq.fvar_sound {d i : Nat} {ty₁ ty₂ : Expr md} :
@@ -77,7 +77,7 @@ theorem DefEq.fvar_sound {d i : Nat} {ty₁ ty₂ : Expr md} :
 /-- `acval_const_congr` (`Steps/DefEq.lean:844`) with `AcvalParams`
 (`Model/Annot/EnvModel.lean:164`, `acvalParams m`). -/
 theorem DefEq.const_sound {d : Nat} {n : Key md} {us us' : List Level}
-    (h : Level.isEquivList us us' = some true) :
+    (h : ∀ φ, Level.EvalEqList φ us us') :
     DefEqSem m φ d (.const n us) (.const n us') := by
   intro _ _ Δa aa ba _ _ haa hba _ _ ρ _
   obtain rfl : aa = ba := acval_const_congr' (acvalParams m) h haa hba
@@ -313,9 +313,9 @@ sort is zero-equivalent interprets to the point. -/
 theorem DefEq.proofIrrel_sound {d : Nat}
     {a ta tta b tb ttb : Expr md} {u v : Level}
     (hta : InferSemIO m φ d a ta) (htta : InferSemIO m φ d ta tta)
-    (hu : RedSem m φ d tta (.sort u)) (hu0 : Level.isEquiv u .zero = some true)
+    (hu : RedSem m φ d tta (.sort u)) (hu0 : ∀ φ, Level.eval φ u = 0)
     (htb : InferSemIO m φ d b tb) (httb : InferSemIO m φ d tb ttb)
-    (hv : RedSem m φ d ttb (.sort v)) (hv0 : Level.isEquiv v .zero = some true) :
+    (hv : RedSem m φ d ttb (.sort v)) (hv0 : ∀ φ, Level.eval φ v = 0) :
     DefEqSem m φ d a b := by
   intro hfa hfb Δa aa ba hCa hCb haa hba hga hgb ρ hρ
   rw [prop_side_pt' hta htta hu hu0 hfa hCa haa hga ρ hρ,
@@ -354,7 +354,7 @@ theorem DefEq.structEta_sound (hin : RulesInputs V m φ) {d : Nat}
     (hlps : cvc.levelParams = cvT.levelParams)
     (hslots : (Ix.Kernel.towerSlotsAll env T caps.etaFields ||
       Ix.Kernel.recSlotsAll env T caps.etaFields) = true)
-    (hus : Level.isEquivList us us' = some true)
+    (hus : ∀ φ, Level.EvalEqList φ us us')
     (hcerts : CertsSem m φ d false
       (cvT.type.instantiateLevelParams cvT.levelParams us') wtb.getAppArgs)
     (hproj : Ix.Kernel.towerSlotsAll env T caps.etaFields = false →
@@ -402,8 +402,7 @@ theorem DefEq.structEta_sound (hin : RulesInputs V m φ) {d : Nat}
   have hψc : Level.substFn φ cvc.levelParams us
       = Level.substFn φ cvT.levelParams us' := by
     rw [hlps]
-    exact Ix.Kernel.Level.substFn_congr
-      (Ix.Kernel.Level.isEquivList_sound hus φ)
+    exact Ix.Kernel.Level.substFn_congr (hus φ)
   -- the slot discipline: every slot is a tower entry (and there is
   -- one), or every slot is a projection function
   have hkind : (Ix.Kernel.towerSlotsAll env T caps.etaFields = true ∧

@@ -30,8 +30,21 @@ helpers or their specializations; every execution allowance is unchanged. -/
 -- from Key and two from SpecDigest, and removes eight old specializations.
 -- The complete extern, unsafe, direct and reached implementation, csimp,
 -- replacement and opaque entry sets are unchanged, as are all runtime rulings.
+-- The specification digest's encoding version 2, with the committed data as a
+-- record the renderer reads back (`Ix.SpecDigest.Committed`), adds 371
+-- compiled functions, measured by diffing the closures by name.
+-- `Ix.SpecDigest` grows 47 -> 291. 186 encode the role names (`Row.ofRole`,
+-- with `Role.leanName`'s table inlined), 42 are `nativeOp`'s table, and 26 are
+-- the rows, the schedule and the record's encoder (`Committed`, `encode`,
+-- `row`, `schedule`, `nameParts`, `str`, `index`, `inert`, `quotKind`), less 10
+-- of the old `specBytes`'s own. `Ix.SpecDigest.Schedule` adds 127: 73 for
+-- `groupOrder`'s closed terms and 54 for the schedule's checks. The decoder
+-- (`Ix/SpecDigest/Decode.lean`) is not reached. Externs, implemented_by,
+-- unsafe, csimp and every ruling are unchanged.
+-- The decisions' `of_decide_eq_*` dependencies (`Role.deps`) add 7 compiled functions
+-- to each closure here (`IxC/Kernel/Audit/Roots.lean`).
 /-- info: runtime closure of [Ix.HostAdmission.certify,
- Ix.HostAdmission.verifyAddressed]: 7173 compiled functions; inherited externs 125, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
+ Ix.HostAdmission.verifyAddressed]: 7551 compiled functions; inherited externs 125, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
 #guard_msgs (whitespace := lax) in
 run_cmd do
   Ix.Kernel.Audit.checkRuntimeWith #[``Ix.HostAdmission.certify, ``Ix.HostAdmission.verifyAddressed]

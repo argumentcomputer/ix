@@ -1,6 +1,5 @@
 import Tests.Ix.IxonV4
 import Tests.Ix.IxonV4FFI
-import Tests.Ix.IxonV4VM
 import Tests.Ix.IxonText
 import Tests.Ix.ResourceAdmit
 import Tests.Ix.ResourceAddressed
@@ -64,8 +63,6 @@ def main (args : List String) : IO Unit := do
   IO.println s!"Ixon v4: {checks} golden byte and rejection checks passed"
   let ffiChecks ← Tests.IxonV4.runFFI cases
   IO.println s!"Ixon v4: {ffiChecks} FFI roundtrip and Lean/Rust byte parity checks passed"
-  let vmChecks ← Tests.IxonV4.runVM cases
-  IO.println s!"Ixon v4: {vmChecks} VM execution, interpretation, and proof checks passed"
   let textChecks ← Tests.IxonText.runText
   IO.println s!"Ixon text grammar {Ixon.Syntax.VERSION}: {textChecks} text contract and \
     rejection checks passed"

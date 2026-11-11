@@ -130,7 +130,7 @@ jobs:
     needs: prepare
     if: ${{ github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch' }}
     # On-demand, as the partitions are: every partition waits for it.
-    runs-on: runs-on=${{ github.run_id }}-merge-build-${{ github.run_attempt }}/cpu=32/family=r7i+r8i+r7a+r8a/spot=false/image=ubuntu26-full-x64/volume=100gb/sticky=ci-lean-test-x86-64-v4:50gb/extras=s3-cache
+    runs-on: runs-on=${{ github.run_id }}-merge-build-${{ github.run_attempt }}/cpu=32/family=r7i+r8i+r7a+r8a/spot=false/image=ubuntu26-full-x64/volume=100gb/sticky=ci-lean-test-x86-64-v4-100gb:100gb/extras=s3-cache
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -152,7 +152,7 @@ jobs:
           sccache: s3
           sticky_cache: |
             rust
-            custom,path=.lake,path=target,path=Models/SetTheory/.lake
+            custom,path=.lake,path=Aiur/.lake,path=IxVM/.lake,path=MultiStark/.lake,path=target,path=Models/SetTheory/.lake
       - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
       - uses: $/.github/actions/setup-rust-toolchain
         with:
@@ -207,7 +207,7 @@ jobs:
     # are what keep the lineage's `main` snapshot fresh. A merge-queue ref
     # has no snapshot of its own until the build job above saves one; a
     # partition that does not find it falls back to `main`'s.
-    runs-on: runs-on=${{ github.run_id }}-merge-tests-${{ github.run_attempt }}-${{ strategy.job-index }}/cpu=32/family=r7i+r8i+r7a+r8a/spot=false/image=ubuntu26-full-x64/volume=100gb/sticky=ci-lean-test-x86-64-v4:50gb/extras=s3-cache
+    runs-on: runs-on=${{ github.run_id }}-merge-tests-${{ github.run_attempt }}-${{ strategy.job-index }}/cpu=32/family=r7i+r8i+r7a+r8a/spot=false/image=ubuntu26-full-x64/volume=100gb/sticky=ci-lean-test-x86-64-v4-100gb:100gb/extras=s3-cache
     steps:
       - name: Validate merge-test variant
         env:
@@ -241,7 +241,7 @@ jobs:
           sccache: s3
           sticky_cache: |
             rust
-            custom,path=.lake,path=target,path=Models/SetTheory/.lake
+            custom,path=.lake,path=Aiur/.lake,path=IxVM/.lake,path=MultiStark/.lake,path=target,path=Models/SetTheory/.lake
       - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
       - uses: $/.github/actions/setup-rust-toolchain
         with:

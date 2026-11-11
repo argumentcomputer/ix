@@ -1,0 +1,77 @@
+import Aiur.Modules.Frontend
+
+/-! # MultiStark module `MultiStark`, aggregation
+
+The aggregator's entry point, `MultiStark::ix_aggr`. `Recursion.lean` defines the
+same module with the recursion entry point instead.
+
+Formal Aiur source, written as Lean syntax (`aiur⟦ … ⟧`). `MultiStark.recursionSource`
+and `MultiStark.aggregateSource` (`MultiStark/MultiStark/Program.lean`) compose the modules. -/
+
+namespace MultiStark.Source
+
+def aggregate : Aiur.Modules.Program Nat := aiur⟦
+module MultiStark {
+  fn ix_aggr(allowed_digest: [Field; 8], out_claim_digest: [Field; 8]) -> () {
+
+      let (aidx, alen) = hint::<(Field, Field)>("stark.io.info", (3, 0));
+      assert_eq!(alen, 80,
+        "aggr: allowed blob must be exactly 80 bytes");
+      let allowed_bytes = StarkIO::read_byte_stream(3, aidx, alen);
+      assert_eq!(Blake3::pack_digest(Blake3::hash(allowed_bytes)), allowed_digest,
+        "aggr: allowed blob digest mismatch");
+      let (ixvm_digest_addr, as1) = Aggregation::aggr_read_address(allowed_bytes);
+      let (verify_idx_limb, as2) = ProofDeserialize::read_u64(as1);
+      let (self_digest_addr, as3) = Aggregation::aggr_read_address(as2);
+      let (aggr_idx_limb, astop) = ProofDeserialize::read_u64(as3);
+      let Lists::Node::Nil = (*(astop));
+      let ixvm_vk_digest = Aggregation::aggr_pack_address(ixvm_digest_addr);
+      let self_vk_digest = Aggregation::aggr_pack_address(self_digest_addr);
+      let verify_idx = UInt64::to_field(verify_idx_limb);
+      let aggr_idx = UInt64::to_field(aggr_idx_limb);
+
+      let (hidx, hlen) = hint::<(Field, Field)>("stark.io.info", (6, 0));
+      assert_eq!(hlen, 1, "aggr: shape hint must be exactly one byte");
+      let hint = StarkIO::read_byte_stream(6, hidx, hlen);
+      let (shape, hstop) = Aggregation::aggr_read_byte(hint);
+      let Lists::Node::Nil = (*(hstop));
+      match UInt8::to_field(shape) {
+        0 => {  Aggregation::aggr_wrap(0, ixvm_vk_digest, self_vk_digest,
+          verify_idx, aggr_idx, allowed_digest, out_claim_digest) } ,
+        1 => {  Aggregation::aggr_wrap(1, ixvm_vk_digest, self_vk_digest,
+          verify_idx, aggr_idx, allowed_digest, out_claim_digest) } ,
+        2 => {  Aggregation::aggr_pair(0, 0, ixvm_vk_digest, self_vk_digest,
+          verify_idx, aggr_idx, allowed_digest, out_claim_digest) } ,
+        3 => {  Aggregation::aggr_pair(0, 1, ixvm_vk_digest, self_vk_digest,
+          verify_idx, aggr_idx, allowed_digest, out_claim_digest) } ,
+        4 => {  Aggregation::aggr_pair(1, 0, ixvm_vk_digest, self_vk_digest,
+          verify_idx, aggr_idx, allowed_digest, out_claim_digest) } ,
+        5 => {  Aggregation::aggr_pair(1, 1, ixvm_vk_digest, self_vk_digest,
+          verify_idx, aggr_idx, allowed_digest, out_claim_digest) } ,
+        6 => {  Aggregation::aggr_pair_structural(0, 0, ixvm_vk_digest, self_vk_digest,
+          verify_idx, aggr_idx, allowed_digest, out_claim_digest) } ,
+        7 => {  Aggregation::aggr_pair_structural(0, 1, ixvm_vk_digest, self_vk_digest,
+          verify_idx, aggr_idx, allowed_digest, out_claim_digest) } ,
+        8 => {  Aggregation::aggr_pair_structural(1, 0, ixvm_vk_digest, self_vk_digest,
+          verify_idx, aggr_idx, allowed_digest, out_claim_digest) } ,
+        9 => {  Aggregation::aggr_pair_structural(1, 1, ixvm_vk_digest, self_vk_digest,
+          verify_idx, aggr_idx, allowed_digest, out_claim_digest) } ,
+        10 => {  Aggregation::aggr_range_leaf(ixvm_vk_digest, self_vk_digest, out_claim_digest) } ,
+        11 => {  Aggregation::aggr_range_join(ixvm_vk_digest, self_vk_digest,
+          verify_idx, aggr_idx, allowed_digest, out_claim_digest) } ,
+        12 => {  Aggregation::aggr_range_root(ixvm_vk_digest, self_vk_digest,
+          verify_idx, aggr_idx, allowed_digest, out_claim_digest) } ,
+        13 => {  Aggregation::aggr_discharge_binding(0, ixvm_vk_digest, self_vk_digest,
+          verify_idx, aggr_idx, allowed_digest, out_claim_digest) } ,
+        14 => {  Aggregation::aggr_discharge_binding(1, ixvm_vk_digest, self_vk_digest,
+          verify_idx, aggr_idx, allowed_digest, out_claim_digest) } ,
+        15 => {  Aggregation::aggr_cross_binding(ixvm_vk_digest, self_vk_digest,
+          verify_idx, aggr_idx, allowed_digest, out_claim_digest) } ,
+        16 => {  Aggregation::aggr_catalog_join(ixvm_vk_digest, self_vk_digest,
+          verify_idx, aggr_idx, allowed_digest, out_claim_digest) } ,
+      }
+    }
+}
+⟧
+
+end MultiStark.Source

@@ -116,46 +116,17 @@ def cases (base : Ixon.Env) : Except String (Array Case) := do
     env := invalid, claim := invalidClaim, expectedError := some typeError }
   return result
 
-/-- Every call starts a fresh interpreter and generated executor. Compare the
-complete outputs, IO and query counts; negative controls must hit their planted
-error, and positive consumers must reach the relevant native constructor.
-Standalone source candidates may disable generated execution until regeneration;
-the registered suite always retains parity. -/
-def checks (compiled : Aiur.CompiledToplevel) (base : Ixon.Env)
-    (selection : String := "") (useGenerated : Bool := true) : IO (Array (String × Bool)) := do
-  let some entry := compiled.getFuncIdx `verify_claim | throw (IO.userError "missing verify_claim")
-  let mut results := #[]
-  for c in ← IO.ofExcept (cases base) do
-    if !selection.isEmpty && (c.name.splitOn selection).length == 1 then continue
-    IO.println s!"[binding-frontier] checking {c.name}"
-    (← IO.getStdout).flush
-    let witness ← IO.ofExcept (IxVM.ClaimHarness.buildClaimWitness c.env c.claim)
-    let interpreted ← IO.lazyPure fun _ => compiled.bytecode.execute entry witness.input witness.inputIOBuffer
-    if useGenerated then
-      let generated ← IO.lazyPure fun _ => compiled.bytecode.executeIxVM entry witness.input witness.inputIOBuffer
-      let parity := match interpreted, generated with
-        | .error a, .error b => a == b
-        | .ok (a, ai, aq), .ok (b, bi, bq) =>
-          a == b && ai == bi && aq.size == bq.size &&
-            (aq.zip bq).all fun (a, b) => a.uniqueRows == b.uniqueRows && a.totalHits == b.totalHits
-        | _, _ => false
-      results := results.push (s!"{c.name}: interpreter/generated parity", parity)
-    match interpreted with
-    | .ok (_, _, counts) =>
-      results := results.push (s!"{c.name}: accepted", c.expectedError.isNone)
-      if let some name := c.requiredQuery then
-        let some query := compiled.getFuncIdx name | throw (IO.userError s!"missing {name}")
-        results := results.push (s!"{c.name}: native result exercised",
-          (counts[query]?.map fun count => decide (count.uniqueRows > 0)).getD false)
-    | .error error =>
-      let expected := c.expectedError.any fun fragment => (error.splitOn fragment).length > 1
-      results := results.push (s!"{c.name}: rejected ({error})", expected)
-  if results.isEmpty then throw (IO.userError s!"no frontier controls selected by '{selection}'")
-  return results
+/-- The cases as claims to the IxVM program: negative controls must hit their
+planted error, and positive consumers must reach the native constructor. -/
+def claimCases (base : Ixon.Env) : Except String (Array Tests.Ix.IxVM.Builder) := do
+  return (← cases base).map fun c _ => do
+    let case ← Tests.Ix.IxVM.Case.ofClaim s!"binding frontier {c.name}" c.env c.claim {}
+      c.expectedError.isNone c.expectedError
+    return { case with exercises := c.requiredQuery.map fun n => s!"KernelNatPrim::{n}" }
 
-def defaultChecks (compiled : Aiur.CompiledToplevel) : IO (Array (String × Bool)) := do
+def run : IO UInt32 := do
   let table ← IO.ofExcept Ix.Kernel.Reader.defaultTable
   let base ← IO.ofExcept (IxVM.ClaimHarness.withRoleTable {} table.toBytes)
-  checks compiled base
+  Tests.Ix.IxVM.runCases "ixvm-binding-frontier" (← IO.ofExcept (claimCases base))
 
 end Tests.Ix.IxVM.BindingFrontier

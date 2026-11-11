@@ -1,137 +1,25 @@
 /-
-  `ix codegen`: write the IxVM kernel, the MultiStark recursive
-  verifier, and the ixAggr aggregation system as Rust source files via
-  the Bytecode → Rust codegen pass.
-
-  Output paths are fixed at compile time:
-  - `crates/ixvm-codegen/src/aiur_ixvm.rs` (the IxVM kernel)
-  - `crates/ixvm-codegen/src/aiur_multi_stark.rs` (the recursive verifier)
-  - `crates/ixvm-codegen/src/aiur_ix_aggr.rs` (the heterogeneous aggregator)
-  The generated files are the single destinations; no flag overrides.
-
-  Output per target: a Rust module body containing one `fn aiur_fn_N(...)`
-  per Aiur function, plus per-fn `IN_N` / `OUT_N` / `INPUT_SIZE_N`
-  size constants and the dispatch entry `execute_generated`. The two
-  files never collide — each is its own Rust module, and every
-  generated item is module-scoped.
-
-  Before integrating into the build pipeline:
-  1. Generate code for a single small Aiur fn (e.g. `klimbs_add`).
-  2. Drop the generated source into a Rust test crate.
-  3. Run both backends (`execute_generated` vs the interpreter
-     `execute::execute`) on identical input.
-  4. Diff the resulting `QueryRecord`. Any divergence ⇒ invalid
-     witnesses ⇒ proving fails hard.
-
-  Only after parity is confirmed should this be wired into the main
-  ix build pipeline as a build-script step.
+  `ix codegen`: render the shared role specification shape fixture derived from
+  the verified IxC specification data, and IxVM's `KernelRoleSpec.lean`, which
+  is rebuilt from the specification digest's bytes alone
+  (`IxVM.RoleSpecGen.renderFromBytes`). `--check` fails when a file on disk
+  differs, so the rendered circuit specification and the digest cannot drift
+  apart; `tools/ixvm/check-formal.sh` runs it.
 -/
 module
 public import Cli
-public import Ix.Aggr
-public import Ix.Aiur.Compiler
-public import Ix.Aiur.Stages.Codegen
-public import Ix.Aiur.Stages.TraceCodegen
-public import Ix.Aiur.Stages.TraceCuda
-public import Ix.IxVM
-public import Ix.IxVM.Toplevel
 public import Ix.IxVM.RoleSpecGen
 public import Ix.RoleBinding.RustSpecGen
-public import MultiStark
 
 public section
 
 namespace Ix.Cli.CodegenCmd
 
-open Aiur
-
-/-- One codegen target: a human label, the Aiur toplevel to compile, and the
-    fixed destination path (compile-time constant, no CLI override). -/
-structure Target where
-  label : String
-  source : Except Aiur.Global Aiur.Source.Toplevel
-  outPath : String
-  groups : Array (String × Array String)
-
-def targets : List Target := [
-  -- the generated kernel is the kernel. Every consumer of
-  -- `execute_ixvm` must select the SAME toplevel for its function-index
-  -- table (CheckCmd / ProveCmd / VerifyCmd), or `funIdx` lookups
-  -- resolve against a different function set than the generated code.
-  { label := "ixvm", source := IxVM.ixVM,
-    outPath := "crates/ixvm-codegen/src/aiur_ixvm.rs", groups := IxVM.functionGroups },
-  { label := "multi-stark", source := MultiStark.multiStark,
-    outPath := "crates/ixvm-codegen/src/aiur_multi_stark.rs",
-    groups := MultiStark.verifierFunctionGroups },
-  -- `ix aggregate` proving/verification must select the SAME toplevel for its
-  -- function-index table (`Aggr.ixAggr`), or `ix_aggr` lookups resolve
-  -- against a different function set than the generated code.
-  { label := "ix-aggr", source := Aggr.ixAggr,
-    outPath := "crates/ixvm-codegen/src/aiur_ix_aggr.rs", groups := Aggr.functionGroups }
-]
-
-/-- Emit one target. In `--check` mode, compares against the on-disk file
-    without writing; otherwise writes. Returns `false` on any failure
-    (source/compile error, missing or stale file in check mode). -/
-def emitTarget (checkOnly : Bool) (t : Target) : IO Bool := do
-  let src ← match t.source with
-    | .ok src => pure src
-    | .error e => IO.eprintln s!"{t.label} source error: {repr e}"; return false
-  let compiled ← match src.compile with
-    | .ok c => pure c
-    | .error e => IO.eprintln s!"{t.label} Aiur compile error: {e}"; return false
-  let rustSource := Aiur.Codegen.emit compiled.bytecode
-  if checkOnly then
-    -- CI mode: compare emitted source against the on-disk file.
-    -- Does not write.
-    let existing ← try
-      pure (some (← IO.FS.readFile t.outPath))
-    catch _ => pure none
-    match existing with
-    | none =>
-      IO.eprintln s!"[codegen --check] {t.outPath} missing"
-      return false
-    | some onDisk =>
-      if onDisk == rustSource then
-        IO.println s!"[codegen --check] {t.outPath} up to date \
-          ({rustSource.length} bytes, {compiled.bytecode.functions.size} aiur fns)"
-        return true
-      else
-        IO.eprintln s!"[codegen --check] {t.outPath} STALE: \
-          on-disk {onDisk.length} bytes, would emit {rustSource.length} bytes. \
-          Re-run `ix codegen` and commit the result."
-        return false
-  IO.FS.writeFile t.outPath rustSource
-  IO.println s!"[codegen] wrote {rustSource.length} bytes to {t.outPath} \
-    ({compiled.bytecode.functions.size} aiur fns)"
-  return true
-
-/-- Where the IxVM role specifications are rendered (`IxVM.RoleSpecGen`). -/
-def roleSpecPath : String := "Ix/IxVM/Kernel/RoleSpec.lean"
-
-/-- Render the IxVM role specifications from IxC's; in `--check` mode,
-    compare against the file instead of writing it. The kernel reads the file,
-    so a regenerated file takes effect after the next build. -/
-def emitRoleSpecs (checkOnly : Bool) : IO Bool := do
-  let source ← match IxVM.RoleSpecGen.render with
-    | .ok s => pure s
-    | .error e => IO.eprintln s!"role specifications: {e}"; return false
-  if checkOnly then
-    let existing ← try pure (some (← IO.FS.readFile roleSpecPath)) catch _ => pure none
-    if existing == some source then
-      IO.println s!"[codegen --check] {roleSpecPath} up to date"
-      return true
-    IO.eprintln s!"[codegen --check] {roleSpecPath} STALE: re-run `ix codegen` and commit the result."
-    return false
-  IO.FS.writeFile roleSpecPath source
-  IO.println s!"[codegen] wrote {roleSpecPath}"
-  return true
-
-/-- Keep the shared role specification shape fixture derived from the
-same specification data used by the verified kernel and circuit renderer. -/
 def emitRustRoleSpecs (checkOnly : Bool) : IO Bool := do
+  let formalAiur ← IO.ofExcept IxVM.RoleSpecGen.renderFormalAiur
   let outputs := #[
-    ("Tests/Fixtures/role-binding-v2/spec-shape.tsv", Ix.RoleBinding.RustSpecGen.shape)]
+    ("Tests/Fixtures/role-binding-v2/spec-shape.tsv", IxVM.RoleSpecGen.renderSpecShapeTsv),
+    ("IxVM/IxVM/Source/KernelRoleSpec.lean", formalAiur)]
   let mut ok := true
   for (path, contents) in outputs do
     if checkOnly then
@@ -140,149 +28,17 @@ def emitRustRoleSpecs (checkOnly : Bool) : IO Bool := do
         IO.println s!"[codegen --check] {path} up to date"
       else
         IO.eprintln s!"[codegen --check] {path} STALE: re-run `ix codegen` and commit the result."
+        if let some text := existing then
+          IO.eprintln s!"[codegen --check] {path}: {IxVM.RoleSpecGen.firstDifference contents text}"
         ok := false
     else
       IO.FS.writeFile path contents
       IO.println s!"[codegen] wrote {path}"
   return ok
 
-/-- Circuits generated beyond the static rule, by circuit name per target:
-the IxVM circuits whose host trace building dominates a proof, small rows
-in very large numbers whose typed seed is a fraction of the row. The list
-was chosen from one environment's measurements; revisit it when a heavier
-one is profiled. -/
-def weightedCircuits : List (String × Array String) := [
-  ("ixvm", #[
-    "blake3_compress_chunks", "get_tagn4", "get_u64_le", "g_list_has",
-    "expr_glb_walk", "expr_inst_many_walk", "get_app_telescope", "expr_glb", "expr_lower",
-    "get_expr", "expr_lbr", "k_infer_app_spine_loop", "list_drop.G", "expr_inst_many_bvar",
-    "expr_lower_walk", "bytes_to_block", "expr_inst_many", "get_expr_list", "collect_spine",
-    "list_concat.G", "apply_spine", "list_lookup.Ptr.KExprNode", "ixvm_group_24"])]
-
-/-- The production selection: `blake3_compress`, every circuit whose members
-pack into at most half their canonical seeds
-(`ProgramPlan.compactCircuitFunctions`), and the measured `weightedCircuits`.
-Every selected writer is generated from the same bytecode library as its
-host seed packer. -/
-@[noinline, never_extract]
-def traceBundle (selectedTargets : List Target) : Except String (Array (String × String)) := do
-  let mut files := #[]
-  let mut units := #[]
-  for target in selectedTargets do
-    let source ← target.source.mapError fun error => s!"{target.label}: {repr error}"
-    let compiled ← source.compile
-    let grouped ← compiled.groupFunctions target.groups
-    let some function := compiled.getFuncIdx `blake3_compress
-      | throw s!"{target.label}: missing blake3_compress"
-    let plan ← (TracePlan.program grouped.bytecode).mapError fun error => s!"{target.label}: {error}"
-    let mut chosen := plan.compactCircuitFunctions.push function
-    -- A weighted name is a function (any of its aliases; its whole circuit
-    -- is taken) or a group circuit's name.
-    for name in (weightedCircuits.lookup target.label).getD #[] do
-      let circuit := match compiled.getFuncIdx (String.toName name) with
-        | some index =>
-          grouped.bytecode.circuits.find? fun (c : Bytecode.Circuit) => c.members.contains index
-        | none => grouped.bytecode.circuits.find? fun (c : Bytecode.Circuit) => c.name == name
-      let some circuit := circuit
-        | throw s!"{target.label}: no function or circuit named {name} in the weighted selection"
-      chosen := chosen ++ circuit.members
-    let selected := some ((chosen.toList.eraseDups.toArray).qsort (· < ·))
-    let unit := target.label.replace "-" "_"
-    let cuda ← TraceCuda.emit grouped.bytecode unit selected
-    let path := s!"cuda/generated/production/{unit}.cu"
-    let digest := (Blake3.Rust.hash cuda.toUTF8).val.data.map fun n => Lean.toJson n.toNat
-    units := units.push (Lean.Json.mkObj [("source", Lean.toJson path), ("digest", Lean.Json.arr digest)])
-    files := files ++ #[
-      (s!"crates/aiur/src/trace_codegen/programs/{unit}.rs", ← TraceCodegen.emit grouped.bytecode "crate" selected),
-      (s!"crates/aiur/src/trace_codegen/programs/{unit}_cuda.rs", ← TraceCuda.registry grouped.bytecode unit "crate" selected),
-      (s!"crates/aiur/{path}", cuda)]
-  let manifest := Lean.Json.mkObj [("abi", Lean.toJson (2 : Nat)), ("units", Lean.Json.arr units)]
-  pure (files.push ("crates/aiur/cuda/generated/production/trace-manifest.json", manifest.pretty ++ "\n"))
-
-def emitTraceBundle (checkOnly : Bool) : IO UInt32 := do
-  let files ← match traceBundle targets with
-    | .ok files => pure files
-    | .error error => IO.eprintln s!"trace bundle: {error}"; return 1
-  for (path, source) in files do
-    if checkOnly then
-      let existing ← try pure (some (← IO.FS.readFile path)) catch _ => pure none
-      unless existing == some source do
-        IO.eprintln s!"{path} is missing or stale; run ix codegen --trace-bundle"
-        return 1
-    else
-      if let some parent := (System.FilePath.mk path).parent then IO.FS.createDirAll parent
-      IO.FS.writeFile path source
-    IO.println s!"{path}: {source.utf8ByteSize} bytes"
-  return 0
-
 def runCodegenCmd (p : Cli.Parsed) : IO UInt32 := do
   let checkOnly := p.hasFlag "check"
-  let traceRust := p.hasFlag "trace-rust"
-  let traceCuda := p.hasFlag "trace-cuda"
-  let traceRegistry := p.hasFlag "trace-cuda-registry"
-  let bundle := p.hasFlag "trace-bundle"
-  if (#[checkOnly && !bundle, bundle, traceRust, traceCuda, traceRegistry].filter id).size > 1 then
-    IO.eprintln "Select one codegen mode: --check, --trace-bundle [--check], --trace-rust, --trace-cuda, or --trace-cuda-registry"
-    return 1
-  if bundle then
-    if p.hasFlag "target" || p.hasFlag "trace-functions" then
-      IO.eprintln "--trace-bundle emits the production selection for all three targets"
-      return 1
-    return ← emitTraceBundle checkOnly
-  let selected ← match (p.flag? "target").map (·.as! String) with
-    | none => pure targets
-    | some label =>
-      let selected := targets.filter (·.label == label)
-      if selected.isEmpty then
-        IO.eprintln s!"Unknown codegen target {label}; expected ixvm, multi-stark, or ix-aggr"
-        return 1
-      pure selected
-  if traceCuda || traceRegistry then
-    let [target] := selected | do
-      IO.eprintln "CUDA emission requires one --target"
-      return 1
-    let some functions := (p.flag? "trace-functions").map (·.as! String) | do
-      IO.eprintln "CUDA emission requires --trace-functions with comma-separated constrained function indices"
-      return 1
-    let emitted : Except String String := do
-      let mut indices := #[]
-      for item in functions.splitOn "," do
-        let some index := item.trimAscii.toString.toNat? | throw s!"invalid function index {item}"
-        indices := indices.push index
-      let source ← target.source.mapError (fun error => s!"{repr error}")
-      let compiled ← source.compile
-      let grouped ← compiled.groupFunctions target.groups
-      let unit := target.label.replace "-" "_"
-      if traceCuda then Aiur.TraceCuda.emit grouped.bytecode unit (some indices)
-      else Aiur.TraceCuda.registry grouped.bytecode unit "aiur" (some indices)
-    match emitted with
-    | .ok source => IO.print source; return 0
-    | .error error => IO.eprintln s!"{target.label} CUDA codegen: {error}"; return 1
-  if traceRust then
-    let [target] := selected | do
-      IO.eprintln "--trace-rust requires one --target"
-      return 1
-    let emitted : Except String String := do
-      let mut selected := none
-      if let some functions := (p.flag? "trace-functions").map (·.as! String) then
-        let mut indices := #[]
-        for item in functions.splitOn "," do
-          let some index := item.trimAscii.toString.toNat? | throw s!"invalid function index {item}"
-          indices := indices.push index
-        selected := some indices
-      let source ← target.source.mapError (fun error => s!"{repr error}")
-      let compiled ← source.compile
-      let grouped ← compiled.groupFunctions target.groups
-      Aiur.TraceCodegen.emit grouped.bytecode "aiur" selected
-    match emitted with
-    | .ok source => IO.print source; return 0
-    | .error error => IO.eprintln s!"{target.label} trace codegen: {error}"; return 1
-  let mut ok := true
-  if selected.any (·.label == "ixvm") then
-    ok := (← emitRoleSpecs checkOnly) && ok
-    ok := (← emitRustRoleSpecs checkOnly) && ok
-  for t in selected do
-    ok := (← emitTarget checkOnly t) && ok
+  let ok ← emitRustRoleSpecs checkOnly
   return if ok then 0 else 1
 
 end Ix.Cli.CodegenCmd
@@ -290,16 +46,10 @@ end Ix.Cli.CodegenCmd
 open Ix.Cli.CodegenCmd in
 def codegenCmd : Cli.Cmd := `[Cli|
   "codegen" VIA runCodegenCmd;
-  "Compile the IxVM kernel, MultiStark verifier, and single-entrypoint ixAggr system to Rust via the Bytecode → Rust codegen pass (fixed output paths, no override). PARITY UNVERIFIED — run their generated/interpreter fixture checks before trusting any witness."
+  "Emit or verify the role-binding specification fixtures derived from IxC."
 
   FLAGS:
-    "trace-bundle"; "Generate production CUDA units, host seed writers, and registry manifests for all three programs; --check detects stale files."
-    "check"; "Compare selected emitted Rust sources against disk and exit 0 if identical, 1 otherwise. Does not modify files."
-    "trace-cuda"; "Emit CUDA row writers for --trace-functions in one --target."
-    "trace-cuda-registry"; "Emit the Rust registry for the same CUDA function selection."
-    "trace-functions" : String; "Comma-separated constrained function indices required for CUDA emission."
-    "trace-rust"; "Emit experimental scalar trace writers and read-only seed packers to stdout for one --target."
-    "target" : String; "Select ixvm, multi-stark, or ix-aggr (default: all three)."
+    "check"; "Compare emitted fixtures against disk and exit 0 if identical, 1 otherwise."
 ]
 
 end

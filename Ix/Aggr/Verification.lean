@@ -19,13 +19,17 @@ def decodeAggregateWrapperAt (proofAddr : Address) (bytes : ByteArray) :
 
 /-- Establish the per-constant interpretation of an aggregate root. A valid
 proof of `CheckEnv(subjects.root, none)` certifies every subject leaf, so this
-single linear audit checks that those leaves are exactly the constants in the
-supplied environment: no omissions, foreign leaves, or duplicates. -/
+single linear audit checks that those leaves are exactly the constants in Lean's
+logic of the supplied environment (`Ixon.Env.inLogicConsts`): no omissions,
+foreign leaves, or duplicates. The unsafe and partial constants are no claim's
+subjects (`KernelClaim::assert_claimable`); a leaf among them counts as foreign. -/
 def auditAggregateConstants (env : Ixon.Env) (statement : Aggr.CheckEnvTrees) :
     Except String Nat := do
   if let some assumptions := statement.assumptions then
     throw s!"aggregate root retains undischarged assumptions {assumptions.root}"
   let leaves := statement.subjects.leaves
+  let claimable := env.inLogicConsts
+  let claimableSet : Std.HashSet Address := claimable.foldl (·.insert ·) {}
   let mut seen : Std.HashSet Address := {}
   let mut duplicates := 0
   let mut foreign := 0
@@ -37,26 +41,26 @@ def auditAggregateConstants (env : Ixon.Env) (statement : Aggr.CheckEnvTrees) :
       if firstDuplicate.isNone then firstDuplicate := some address
     else
       seen := seen.insert address
-    if !env.consts.contains address then
+    if !claimableSet.contains address then
       foreign := foreign + 1
       if firstForeign.isNone then firstForeign := some address
   let mut missing := 0
   let mut firstMissing : Option Address := none
-  for (address, _) in env.consts do
+  for address in claimable do
     if !seen.contains address then
       missing := missing + 1
       if firstMissing.isNone then firstMissing := some address
   if duplicates != 0 || foreign != 0 || missing != 0 then
     let sample (address : Option Address) := address.map toString |>.getD "none"
     throw s!"aggregate constant audit failed: {missing} missing \
-      (first {sample firstMissing}), {foreign} foreign \
+      (first {sample firstMissing}), {foreign} foreign or outside Lean's logic \
       (first {sample firstForeign}), {duplicates} duplicate occurrence(s) \
-      (first {sample firstDuplicate}); environment has {env.consts.size} constants, \
-      subject tree has {leaves.size} leaves"
-  if leaves.size != env.consts.size then
+      (first {sample firstDuplicate}); environment has {claimable.size} constants \
+      in Lean's logic ({env.consts.size} in all), subject tree has {leaves.size} leaves"
+  if leaves.size != claimable.size then
     throw s!"aggregate constant audit cardinality mismatch: environment has \
-      {env.consts.size} constants, subject tree has {leaves.size} leaves"
-  pure env.consts.size
+      {claimable.size} constants in Lean's logic, subject tree has {leaves.size} leaves"
+  pure claimable.size
 
 /-! ## Set-discharge composition soundness
 

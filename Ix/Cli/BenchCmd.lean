@@ -18,16 +18,18 @@ public import Ix.Watchdog
   2. resolves the env's `.ixe` (an explicit `--ixe` path, else `ix
      compile` — except for the `compile` backend, where the compile IS
      the benchmark);
-  3. spawns the run's measured tool — `bench-typecheck` (aiur),
-     `ix check-lean` (ooc),
-     `ix compile` (compile) — wrapped in the RAM watchdog (`Ix.Watchdog`:
-     cgroup `memory.max` via a systemd user scope; the kernel OOM-kills
-     at the ceiling). The per-constant backend (aiur) spawns
-     ONE PROCESS PER CONSTANT: a kill costs exactly that constant (its row
-     is marked `status: oom`, keeping whatever the tool flushed), and each
-     spawn's texray window (`<out>.spans`) belongs wholly to it, folded
-     into the row as flat `phase-<span>` fields — independent bencher
-     measures with no attribution machinery;
+  3. spawns the run's measured tool — `ix shard` then `ix check`
+     (aiur-sharded-env), `ix check-lean` (ooc), `ix compile` (compile),
+     `ix decompile` (decompile) — wrapped in the RAM watchdog
+     (`Ix.Watchdog`: cgroup `memory.max` via a systemd user scope; the
+     kernel OOM-kills at the ceiling). A per-constant tool runs ONE PROCESS
+     PER CONSTANT (`runPerConstant`): a kill costs exactly that constant
+     (its row is marked `status: oom`, keeping whatever the tool flushed),
+     and each spawn's texray window (`<out>.spans`) belongs wholly to it,
+     folded into the row as flat `phase-<span>` fields — independent
+     bencher measures with no attribution machinery. The per-constant
+     proof pipeline (`aiur`) is disabled: its tool, `bench-typecheck`,
+     was retired with the legacy backend;
   4. gates the run on the row contract (`Ix.Benchmark.Results`): exit 3
      when any row is `rejected`, exit 1 when NO rows were produced, else 0.
 
@@ -223,28 +225,20 @@ structure BackendSpec where
   thresholds : List (String × String × String) := []
 
 def backendSpecs : List BackendSpec := [
-  -- aiur: the proof-pipeline benchmark (bench-typecheck --recursive) —
-  -- every stage of the pipeline, per constant, plus the total. The optional
-  -- `bench-typecheck --join` contributes a separate pair row, measured in
-  -- its own process after the per-constant runs. The ixvm
-  -- stage proves the constant's IxVM typecheck; the fri-verifier stage
-  -- executes the in-circuit multi-stark verifier over that fresh proof
-  -- and proves THAT execution; the KZG stages will join as stages 3/4
-  -- when they land, folding into the same ledger. Each stage reports the
-  -- same seven columns — witness execute, prove, throughput, peak RAM,
-  -- proof size, verify, FFT cost — and the closing ledger table carries
-  -- `total-time` (the stages' proves, summed — each prove already runs
-  -- its own witness execution, so the standalone execute times are
-  -- instrumentation and are not added), the end-to-end
-  -- `pipeline-throughput`, and the run's RAM ceiling. The whole system
-  -- runs under the
-  -- recursion-tuned parameters — 50 FRI queries at log-blowup 2 for
-  -- both stages' proofs alike, the soundness level taking
-  -- precedence over fitting every constant in the host's RAM (see
-  -- `recursiveFriParameters` in Benchmarks/Typecheck.lean). execute is
-  -- the fast Phase-1-only signal (witness generation, no proving),
-  -- `unscheduled`: a local / on-demand mode that never uploads.
+  -- aiur (disabled): the per-constant proof-pipeline benchmark of the
+  -- retired legacy backend (`bench-typecheck --recursive`), kept registered
+  -- so its bencher testbeds, plots and thresholds survive until a formal
+  -- Aiur pipeline benchmark replaces it. It measured every stage per
+  -- constant plus the total: the ixvm stage proved the constant's IxVM
+  -- typecheck, and the fri-verifier stage executed the in-circuit
+  -- multi-stark verifier over that fresh proof and proved THAT execution;
+  -- `bench-typecheck --join` added a separate pair row. Each stage reported
+  -- witness execute, prove, throughput, peak RAM, proof size, verify and FFT
+  -- cost, and the closing ledger `total-time` (the stages' proves, summed),
+  -- `pipeline-throughput` and the run's RAM ceiling. `ix bench run` refuses
+  -- a disabled backend, and the CI matrix skips it.
   { name := "aiur", defaultMode := "prove", inputs := .perConstant,
+    disabled := some "its tool, bench-typecheck, was retired with the legacy backend; aiur-sharded-env benchmarks the formal Aiur backend",
     testbeds := [("prove", "aiur"),
                  ("execute", "aiur-execute")],
     unscheduled := ["execute"],
@@ -296,26 +290,28 @@ def backendSpecs : List BackendSpec := [
                    ("fri-verifier-proof-size", "0.05", "_"),
                    ("ixvm-verify-time", "0.10", "_"),
                    ("fri-verifier-verify-time", "0.10", "_")] },
-  -- aiur-sharded-env: whole-env Aiur execution — the sharded feeder pipeline
-  -- end-to-end at env scale, one row per env. Shards the `.ixe` for the
-  -- runner's RAM (`ix shard --max-ram 100`: seed sizing), then one gated
-  -- full-width rayon batch with the split audit (`ix check --ram-budget
-  -- 100`): a seed the spread pushes over the budget is cut in place and
-  -- its parts re-measured, so the row describes the LEAF partition the
-  -- run validated. The byte-weighted RamGate, not a thread cap, bounds
-  -- peak RSS, so the same entry is correct on any runner class. The
-  -- measured window (`check-time`) is the wave-0 batch call; split
-  -- waves are audit extras outside it. ISLB only for now (~10 min/run);
-  -- add "FLT" / "Mathlib" to `envs` for the env-scale tiers when their
-  -- per-push cost is warranted. `shards` counts leaves — deterministic
-  -- per (env static block profile, budget), rising only when the seed under-counts →
-  -- upper-only pin, re-pin on a justified seed or split change.
+  -- aiur-sharded-env: whole-env formal Aiur execution at env scale, one row
+  -- per env. Shards the `.ixe` for the runner's RAM (`ix shard --max-ram
+  -- 100`: seed sizing), then checks every leaf with the split audit (`ix
+  -- check --ram-budget 100 --keep-going`): each leaf is executed by the
+  -- `ixvm-proof` host and its proof planned against the budget, and a leaf
+  -- whose trace-shard batch cannot fit is cut by blocks and its parts
+  -- re-executed, so the row describes the LEAF partition the run validated.
+  -- Leaves run one at a time (`ix check` defaults to `--jobs 1`, and more
+  -- jobs would share the budget). The measured window (`check-time`) covers
+  -- every leaf's execution and planning, splits included, but not the
+  -- environment load. ISLB only for now; add "FLT" / "Mathlib" to `envs` for
+  -- the env-scale tiers when their per-push cost is warranted. `shards`
+  -- counts leaves — deterministic per (env static block profile, budget),
+  -- rising only when the seed under-counts → upper-only pin, re-pin on a
+  -- justified seed or split change.
   { name := "aiur-sharded-env", defaultMode := "execute", inputs := .perEnv,
     envs := some ["ISLB"],
     testbeds := [("execute", "aiur-sharded-env-check")],
     metrics := [("execute", ["check-time", "throughput", "peak-rss",
-                             "constants", "shards"])],
+                             "constants", "shards", "fft-cost"])],
     thresholds := [("constants", "0", "0"), ("shards", "0", "_"),
+                   ("fft-cost", "0.05", "_"),
                    ("check-time", "0.10", "_"), ("throughput", "_", "0.10"),
                    ("peak-rss", "0.10", "_")] },
   { name := "ooc", defaultMode := "execute", inputs := .perConstantWithEnv,
@@ -681,6 +677,9 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
   let some spec := findBackend backend
     | p.printError s!"error: unknown backend '{backend}' (see backendSpecs)"
       return exitUsage
+  if let some reason := spec.disabled then
+    p.printError s!"error: backend '{backend}' is disabled: {reason}"
+    return exitUsage
   let some info := findEnv ((p.flag? "env").map (·.as! String) |>.getD "InitStd")
     | p.printError "error: unknown env (see envSpecs)"
       return exitUsage
@@ -765,13 +764,12 @@ is not a benchmark run"
       if exit != 0 && exit != exitRejected then
         IO.eprintln s!"[bench] per-constant checks failed (exit {exit})"
   | "aiur-sharded-env" =>
-    -- Whole-env sharded Aiur execution: seed the env for the runner's RAM
-    -- from its static block-shape score (`--max-ram 100`), then ONE gated
-    -- full-width rayon batch over the manifest — the RamGate bounds peak
-    -- RSS, so no `--jobs` is passed. The check writes the env-keyed row
-    -- itself (`--json`): check-time, throughput, peak-rss, constants,
-    -- shards. The shard step is deterministic setup, not part of the
-    -- measured window.
+    -- Whole-env sharded formal Aiur execution: seed the env for the
+    -- runner's RAM from its static block-shape score (`--max-ram 100`),
+    -- then check every leaf of the manifest against the same budget. The
+    -- check writes the env-keyed row itself (`--json`): check-time,
+    -- throughput, peak-rss, constants, shards and FFT cost. The shard step is
+    -- deterministic setup, not part of the measured window.
     let ixe ← ensureIxe repo info ((p.flag? "ixe").map (·.as! String)) ceilingGb
     let ix ← resolveBin repo "ix"
     let manifest := s!"{env}-exec.ixes"
@@ -787,30 +785,10 @@ is not a benchmark run"
       IO.eprintln s!"[bench] ix shard failed (exit {exit})"
       return 1
     let exit ← runGuarded watchdog ceilingGb ix
-      #["check", "--ixe", ixe, "--ixes", manifest, "--ram-budget", budgetGib,
+      #["check", "--ixe", ixe, "--ixes", manifest, "--ram-budget", budgetGib, "--keep-going",
         "--json", out, "--json-name", info.name]
     if exit != 0 && exit != exitRejected then
       IO.eprintln s!"[bench] whole-env aiur check failed (exit {exit})"
-  | "aiur" =>
-    -- prove runs the whole pipeline (`bench-typecheck --recursive`):
-    -- every stage per constant, closed by the pipeline ledger. One process
-    -- per constant under the watchdog; `total-time` is the ledger's last
-    -- field, so it doubles as the completion marker — a kill before the
-    -- pipeline finishes records an honest oom/crash row.
-    let ixe ← ensureIxe repo info ((p.flag? "ixe").map (·.as! String)) ceilingGb
-    let bt ← resolveBin repo "bench-typecheck"
-    let (modeArgs, doneKey) := match mode with
-      | "execute" => (#["--execute-only"], "execute-time")
-      | _ => (#["--recursive"], "total-time")
-    runPerConstant out names doneKey fun name =>
-      runGuarded watchdog ceilingGb bt
-        (#["--ixe", ixe, "--consts", name, "--json", out, "--texray"]
-          ++ modeArgs)
-    if !(aiurJoinNames env mode names).isEmpty then
-      runAiurJoin out fun pairOut =>
-        runGuarded watchdog ceilingGb bt
-          #["--ixe", ixe, "--consts", ",".intercalate aiurJoinConstants.toList,
-            "--json", pairOut, "--texray", "--recursive", "--join"]
   | other =>
     p.printError s!"error: backend '{other}' has no runner"
     return exitUsage
@@ -836,7 +814,7 @@ def benchRunCmd : Cli.Cmd := `[Cli|
   "Execute one benchmark run (backend × env × mode), writing benchmark results JSON. Exits 0 on success (rows saved as the local baseline), 3 when the kernel rejected any constant, 1 when no rows were produced."
 
   FLAGS:
-    backend      : String; "aiur | aiur-sharded-env | ooc | compile | decompile"
+    backend      : String; "aiur-sharded-env | ooc | compile | decompile (aiur is disabled)"
     env          : String; "Benchmark env from the registry (default: InitStd)"
     mode         : String; "prove | execute (default: the backend's defaultMode)"
     out          : String; "Benchmark results JSON output path (default: bench.json)"

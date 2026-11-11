@@ -37,10 +37,13 @@ import Ix.Meta
 
 namespace Tests.Registry
 
-/-- A CI job that runs registry entries by tier. `cli` is a step of
+/-- A CI job that runs registry entries by tier. `cli` and `ixvm` are steps of
 `ci.yml`'s `lean-test` job; the others are `merge-tests.yml` partitions. -/
 inductive CiJob where
   | cli
+  /-- Claims through the formal IxVM program (`ixvm-proof test`), after
+  `tools/ixvm/check-formal.sh` has built its host and exported its artifact. -/
+  | ixvm
   | compilerClosures
   | misc
   /-- Init+Std through the `ix` binary: `ix compile-lean` with its report
@@ -51,7 +54,7 @@ inductive CiJob where
   deriving DecidableEq, Repr
 
 def CiJob.all : List CiJob :=
-  [.cli, .compilerClosures, .misc, .landingInitStdCli]
+  [.cli, .ixvm, .compilerClosures, .misc, .landingInitStdCli]
 
 /-- The jobs that `--tier landing` selects together. -/
 def CiJob.isLanding : CiJob → Bool
@@ -61,6 +64,7 @@ def CiJob.isLanding : CiJob → Bool
 /-- The job's name on the command line (`--tier ci:<key>`) and in the workflows. -/
 def CiJob.key : CiJob → String
   | .cli => "cli"
+  | .ixvm => "ixvm"
   | .compilerClosures => "compiler-closures"
   | .misc => "misc"
   | .landingInitStdCli => "landing-initstd-cli"

@@ -100,6 +100,11 @@ structure RulesInputs (V : Type w) [SetTheory V] {env : Env md}
   nat_succ : NatSuccRow m φ
   /-- literal tier: the binary operations -/
   nat_op : NatOpRow m φ
+  /-- install tier: the structural-`Nat` recurrence laws (S2's `nat_ops`, an
+  `EnvModelM` field) -/
+  nat_ops : NatOps m φ
+  /-- basis tier: `Eq` interpreted as equality (an `EnvModelM` field) -/
+  eq_law : EqLaw m
 
 /-- **The env-tier inputs, from the fold's invariant**: every field but
 the two literal rows is an `EnvModelM` projection; the rows stay
@@ -120,5 +125,7 @@ theorem RulesInputs.ofEnvModelM {env : Env md} {φ : LevelParam → Nat}
   caps_ok := mp.caps_ok
   nat_succ := hsucc
   nat_op := hop
+  nat_ops := mp.nat_ops φ
+  eq_law := mp.eq_law
 
 end Ix.Kernel.Model.Rules

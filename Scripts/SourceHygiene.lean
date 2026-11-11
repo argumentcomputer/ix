@@ -95,8 +95,8 @@ def sourceFile (path : System.FilePath) : Bool :=
 
 def files : IO (Array System.FilePath) := do
   let mut result : Array System.FilePath :=
-    #["Ix.lean", "Main.lean", "Tests.lean", "Apps.lean", "MultiStark.lean", "README.md", "lakefile.lean"]
-  for root in ["Ix", "IxC", "IxSharingVerify", "Tests", "crates", "docs", "Benchmarks", "Apps", "MultiStark"] do
+    #["Ix.lean", "Main.lean", "Tests.lean", "Apps.lean", "README.md", "lakefile.lean"]
+  for root in ["Ix", "IxC", "IxSharingVerify", "IxVMRefinement", "Tests", "crates", "docs", "Benchmarks", "Apps", "Aiur", "IxVM", "MultiStark"] do
     for path in ← System.FilePath.walkDir root (fun p =>
         pure (!([".lake", "target", ".git"].contains (p.fileName.getD "")))) do
       if sourceFile path then result := result.push path
