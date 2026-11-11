@@ -1098,6 +1098,7 @@
     "IxCC.X86.Table.Safe",
     "IxCC.X86.Constructors",
     "IxCC.X86.StreamEffects",
+    "IxCC.X86.ByteAgree",
     "IxCC.X86.ByteBranch",
     "IxCC.X86.ByteCall",
     "IxCC.X86.ByteControl",
@@ -4277,6 +4278,8 @@
   {"path": "IxCC/X86/ByteCall.lean", "imports": ["IxCC.X86.ByteControl"]},
   "IxCC.X86.ByteBranch":
   {"path": "IxCC/X86/ByteBranch.lean", "imports": ["IxCC.X86.ByteControl"]},
+  "IxCC.X86.ByteAgree":
+  {"path": "IxCC/X86/ByteAgree.lean", "imports": ["IxCC.X86.ByteEval"]},
   "IxCC.X86.BlockSharing":
   {"path": "IxCC/X86/BlockSharing.lean", "imports": ["IxCC.X86.Basic"]},
   "IxCC.X86.Basic":
@@ -8468,6 +8471,7 @@
     "IxCC.X86.Basic",
     "IxCC.X86.Constructors",
     "IxCC.X86.BlockSharing",
+    "IxCC.X86.ByteAgree",
     "IxCC.X86.ByteBranch",
     "IxCC.X86.ByteCall",
     "IxCC.X86.ByteControl",

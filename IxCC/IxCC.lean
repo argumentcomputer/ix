@@ -360,6 +360,7 @@ import IxCC.Lam.Erase.Proof.WFProg
 import IxCC.X86.Basic
 import IxCC.X86.Constructors
 import IxCC.X86.BlockSharing
+import IxCC.X86.ByteAgree
 import IxCC.X86.ByteBranch
 import IxCC.X86.ByteCall
 import IxCC.X86.ByteControl

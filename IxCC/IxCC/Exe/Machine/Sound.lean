@@ -25,6 +25,14 @@ on the same answers; or it is such a prefix followed by a resource failure;
 or the source step goes wrong at a call its own session reaches.
 `machine_session_sound` is the same for every artifact `Exe.machine` accepts.
 
+**From two call sites** (`objCallAt`, `session_sound_at`,
+`machine_session_sound_at`, `Rc.session_sound_at`): the calls as a caller with
+two call sites makes them, `cx_init` under a driver `D` and the step from a
+site of its own (`X86.LinkedAt`, `Recheck.sound_at`), as the executable's
+shell does. Every one-site call is one of these (`objCall_le`), and the third
+outcome is tied to a prefix of the trace (`Performs.refines_prefix`), so these
+say more than the one-site theorems, which stay as they were.
+
 What it does not say: that a session which the source carries on is carried on
 by the object (the progress direction); and that the executable's shell
 realises this model (the ledger's `x86-linux-machine-shell`).
@@ -48,6 +56,13 @@ def srcCallOf (src : Src.Program) (checked : Src.Relevance.Checked)
 driver that keeps the contract, whatever its initial bytes, at any clock. -/
 def objCallOf (linked : X86.Driver → X86.Linked) (textSize : Nat) : Call := fun s e r =>
   ∃ (D : X86.Driver) (k : Nat), D.Ok textSize ∧ Lang.run (linked D) (0, [s, e]) k = r
+
+/-- The object's calls as a caller with two call sites makes them: `cx_init`
+under a driver `D`, the step from a site of its own, the contract kept at
+both (`X86.LinkedAt`), whatever the initial bytes, at any clock. -/
+def objCallAtOf (linked : X86.Driver → X86.Driver.Site → X86.LinkedAt) (textSize : Nat) : Call := fun s e r =>
+  ∃ (D : X86.Driver) (site : X86.Driver.Site) (k : Nat), D.Ok textSize ∧ (D.withSite site).Ok textSize ∧
+    Lang.run (linked D site) (0, [s, e]) k = r
 
 /-- A machine root: the first root's declared type has two parameters. -/
 def MachineRoot (src : Src.Program) : Prop :=
@@ -140,6 +155,52 @@ theorem machine_session_sound (h : Recheck.run cfg P c = .ok a) {r : Recheck.Roo
     ∃ t₀ c', Reaches (srcCall a) (Config.initial args) t₀ c' ∧ a.front.GoesWrong (0, [c'.state, c'.event]) :=
   session_sound h (machine_root hm) ho
 
+/-- The calls of an immortal or zero-RC object from two call sites. -/
+def objCallAt (a : Recheck.Artifact) : Call := objCallAtOf a.linkedAt a.backend.encoded.text.size
+
+/-- Every one-site call is a two-site call (at the driver's own site). -/
+theorem objCall_le {s e : Nat} {r : Result (Option Obs)} (h : objCall a s e r) : objCallAt a s e r := by
+  obtain ⟨D, k, hD, hr⟩ := h
+  exact ⟨D, D.site, k, hD, hD, hr⟩
+
+/-- `Recheck.sound_at`, per call of a machine root. -/
+theorem callRefines_at (h : Recheck.run cfg P c = .ok a) (hroot : MachineRoot a.front.src) :
+    CallRefines (objCallAt a) (srcCall a) (fun s e => a.front.GoesWrong (0, [s, e])) where
+  ok := by
+    intro s e o ho
+    obtain ⟨D, site, k, hD, hs, hr⟩ := ho
+    have hcov : a.front.Covered c (0, [s, e]) := .inl (hroot.exact s e)
+    rcases (Recheck.sound_at h D hD site hs (0, [s, e]) hcov).1 k o hr with ⟨k', v, hv, hview⟩ | hb
+    · exact .inl ⟨k', v, o, hv, hview, rfl⟩
+    · exact .inr hb
+  wrong := by
+    intro s e r ho hw
+    obtain ⟨D, site, k, hD, hs, hr⟩ := ho
+    have hcov : a.front.Covered c (0, [s, e]) := .inl (hroot.exact s e)
+    refine Classical.byContradiction fun hg => ?_
+    exact (Recheck.sound_at h D hD site hs (0, [s, e]) hcov).2.1 hg k (hr ▸ hw)
+
+/-- **The session theorem from two call sites** (immortal and zero-RC
+objects): as `session_sound`, for the calls the executable's shell makes, and
+with the third outcome at a call the source reaches along a prefix of the
+trace. -/
+theorem session_sound_at (h : Recheck.run cfg P c = .ok a) (hroot : MachineRoot a.front.src)
+    {c₀ : Config} {t : List Event} (ho : Performs (objCallAt a) c₀ t) :
+    Performs (srcCall a) c₀ t ∨
+    (∃ t₀ c' f b, t = t₀ ++ [.fail (statusOf f) b] ∧ Reaches (srcCall a) c₀ t₀ c') ∨
+    ∃ t₀ c', t₀ <+: t ∧ Reaches (srcCall a) c₀ t₀ c' ∧ a.front.GoesWrong (0, [c'.state, c'.event]) :=
+  Performs.refines_prefix (callRefines_at h hroot) ho
+
+/-- **The session theorem for a machine executable, from two call sites.** -/
+theorem machine_session_sound_at (h : Recheck.run cfg P c = .ok a) {r : Recheck.Root}
+    (hm : Exe.machine a = .ok r) (args : List (List Nat)) {t : List Event}
+    (ho : Performs (objCallAt a) (Config.initial args) t) :
+    Performs (srcCall a) (Config.initial args) t ∨
+    (∃ t₀ c' f b, t = t₀ ++ [.fail (statusOf f) b] ∧ Reaches (srcCall a) (Config.initial args) t₀ c') ∨
+    ∃ t₀ c', t₀ <+: t ∧ Reaches (srcCall a) (Config.initial args) t₀ c' ∧
+      a.front.GoesWrong (0, [c'.state, c'.event]) :=
+  session_sound_at h (machine_root hm) ho
+
 end Immortal
 
 namespace Rc
@@ -175,6 +236,38 @@ theorem session_sound (h : Recheck.RcReplay.run cfg P c = .ok a) (hroot : Machin
     (∃ t₀ c' f b, t = t₀ ++ [.fail (statusOf f) b] ∧ Reaches (srcCall a) c₀ t₀ c') ∨
     ∃ t₀ c', Reaches (srcCall a) c₀ t₀ c' ∧ a.front.GoesWrong (0, [c'.state, c'.event]) :=
   Performs.refines (callRefines h hroot) ho
+
+/-- The calls of a plain-RC object from two call sites. -/
+def objCallAt (a : Recheck.RcReplay.Artifact) : Call := objCallAtOf a.linkedAt a.backend.encoded.text.size
+
+theorem objCall_le {s e : Nat} {r : Result (Option Obs)} (h : objCall a s e r) : objCallAt a s e r := by
+  obtain ⟨D, k, hD, hr⟩ := h
+  exact ⟨D, D.site, k, hD, hD, hr⟩
+
+/-- `RcReplay.sound_at`, per call of a machine root. -/
+theorem callRefines_at (h : Recheck.RcReplay.run cfg P c = .ok a) (hroot : MachineRoot a.front.src) :
+    CallRefines (objCallAt a) (srcCall a) (fun s e => a.front.GoesWrong (0, [s, e])) where
+  ok := by
+    intro s e o ho
+    obtain ⟨D, site, k, hD, hs, hr⟩ := ho
+    have hcov : a.front.Covered c (0, [s, e]) := .inl (hroot.exact s e)
+    rcases (Recheck.RcReplay.sound_at h D hD site hs (0, [s, e]) hcov).1 k o hr with ⟨k', v, hv, hview⟩ | hb
+    · exact .inl ⟨k', v, o, hv, hview, rfl⟩
+    · exact .inr hb
+  wrong := by
+    intro s e r ho hw
+    obtain ⟨D, site, k, hD, hs, hr⟩ := ho
+    have hcov : a.front.Covered c (0, [s, e]) := .inl (hroot.exact s e)
+    refine Classical.byContradiction fun hg => ?_
+    exact (Recheck.RcReplay.sound_at h D hD site hs (0, [s, e]) hcov).2.1 hg k (hr ▸ hw)
+
+/-- **The session theorem from two call sites** (plain-RC objects). -/
+theorem session_sound_at (h : Recheck.RcReplay.run cfg P c = .ok a) (hroot : MachineRoot a.front.src)
+    {c₀ : Config} {t : List Event} (ho : Performs (objCallAt a) c₀ t) :
+    Performs (srcCall a) c₀ t ∨
+    (∃ t₀ c' f b, t = t₀ ++ [.fail (statusOf f) b] ∧ Reaches (srcCall a) c₀ t₀ c') ∨
+    ∃ t₀ c', t₀ <+: t ∧ Reaches (srcCall a) c₀ t₀ c' ∧ a.front.GoesWrong (0, [c'.state, c'.event]) :=
+  Performs.refines_prefix (callRefines_at h hroot) ho
 
 end Rc
 

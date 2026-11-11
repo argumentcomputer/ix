@@ -54,7 +54,7 @@ The chain from the bytes to the object's result, link by link:
 | Src to typed x86 | erasure, the middle end, Fir, Own, Cfg, Lir, selection, allocation, layout | **Proved**, standard axioms | Done |
 | Encoder, streams, ELF | E1 per form; E2 and `ELF.check_sound` | **Proved** | Done |
 | Machine, loader | the byte machine is the processor; the loader maps what `ELFRead` parses | **Assumed** ([trust ledger](trusted-extern-ledger.md)) | XB-2 for the machine; the loader stays assumed |
-| Driver | the caller that loads the object and calls its exports (the standalone executable's shell; the native suites' test shell), with symbol targets checked in the written file | **Assumed**; `X86.Driver.Ok` is satisfiable (`driver_exists`); the C driver is gone (X1) | X0-P for standalone executables |
+| Driver | the caller that loads the object and calls its exports (the standalone executable's shell; the native suites' test shell), with symbol targets checked in the written file | **Assumed**; `X86.Driver.Ok` is satisfiable (`driver_exists`); the C driver is gone (X1); a caller with two call sites is modelled (`X86.LinkedAt`, `Recheck.sound_at`) and a non-faulting model run writes only the model's mapping (`X86.ByteAgree`) | X0-P for standalone executables |
 | Readback | the observation names a value | Proved at the machine level; no statement in the model | SP-0's lemma |
 
 Two open items keep the names that code comments use:

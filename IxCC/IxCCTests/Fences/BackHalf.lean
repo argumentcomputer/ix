@@ -371,6 +371,12 @@ verbatim. -/
 /-- info: 'IxCC.Recheck.back_refines' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Recheck.back_refines
 
+/-- info: 'IxCC.Recheck.call_sim_linked_at' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Recheck.call_sim_linked_at
+
+/-- info: 'IxCC.Recheck.back_refines_at' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Recheck.back_refines_at
+
 /-- info: 'IxCC.Recheck.Front.sound_of' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Recheck.Front.sound_of
 
@@ -386,11 +392,17 @@ verbatim. -/
 /-- info: 'IxCC.Recheck.object_refines_traced' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Recheck.object_refines_traced
 
+/-- info: 'IxCC.Recheck.object_refines_at' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Recheck.object_refines_at
+
 /-- info: 'IxCC.Recheck.driver_exists' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Recheck.driver_exists
 
 /-- info: 'IxCC.Recheck.sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Recheck.sound
+
+/-- info: 'IxCC.Recheck.sound_at' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Recheck.sound_at
 
 /-- info: 'IxCC.Recheck.sound_bytes' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Recheck.sound_bytes

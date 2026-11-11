@@ -733,8 +733,14 @@ Until X1 the caller was a C runtime driver linked by the system linker, and the
 assumption covered that driver, the C compiler, the C library and the linker's
 symbol resolution; X1 deleted the driver. The model maps only the region and
 the call stack. A real process maps more (its file, the shell's 256 bytes, the
-initial stack, the vDSO), so the assumption includes that a run the model shows
-non-faulting touches only modelled memory. `Driver.Ok`, the numeric contract,
+initial stack, the vDSO). That a run the model shows non-faulting is the
+process's run, or the process stops on a fault, and writes nothing outside the
+model's mapping is a theorem of the byte machine for every row
+(`X86.ByteAgree`: agreement or fault, and the frame), no longer part of this
+assumption. A caller with two call sites, the shell, calling `cx_init` from one
+and the root from another with other registers, is modelled by `X86.LinkedAt`,
+for which the object theorems hold (`Recheck.sound_at`, `RcReplay.sound_at`);
+`X86.Linked` is its instance at the driver's own site. `Driver.Ok`, the numeric contract,
 is a hypothesis of the theorem, satisfiable for every accepted artifact
 (`Recheck.driver_exists`), not part of this assumption. The reading also rests
 on `x86-v0-local-semantics`; the loader's mapping of the written executable is
@@ -787,9 +793,10 @@ clause of `Driver.CanonicalOk` for each accepted layout and each of the
 shell's return addresses, which `X86.Exe.writeChecked` carries for both calls;
 and `X86.Exe.check_sound`, the written file's structure read back by an
 independent reader, including each call's target decoded from the file. Each
-call is meant to see the driver `Layout.driver` builds; the model's one
-return address and register file for both calls differ from the shell's two
-call sites, which the object theorems tolerate. The driver model's entry
+call is meant to see the driver `Layout.driver` builds, `cx_init` from its call
+site and the root from its own (`X86.LinkedAt`; `Recheck.sound_at` holds for
+it). That a run the model shows non-faulting touches only modelled memory is
+`X86.ByteAgree`'s theorem. The driver model's entry
 (`x86-phase1-runtime-driver-model`) covers the native gates' test executables,
 which replaced the C driver in X1. This shell is retired on its own: the
 shell proof (X0-P) takes the generic machine shell below first, and this one
@@ -817,9 +824,7 @@ byte written to 1 or 2 and the answer 0 or 1; the program's exit status; 72
 for anything else); and write a fixed message for each of its own failures.
 It also assumes the kernel loads the file as its five program headers say
 (the region in a segment of its own, one unmapped page above the stack
-segment) and enters it with the System V initial stack, and, as for every
-executable, that a run the model shows non-faulting touches only modelled
-memory (here: not the shell's own bytes). What is proved:
+segment) and enters it with the System V initial stack. What is proved:
 `X86.Exe.Machine.Layout.driver_canonicalOk`, every clause of
 `Driver.CanonicalOk` at each call site for every initial bytes (a call starts
 from whatever the previous one left), carried by `X86.Exe.Machine.writeChecked`;
@@ -828,8 +833,14 @@ The session theorem is proved over the linked-object model
 (`IxCC.Exe.Machine.session_sound`, `Rc.session_sound`, `machine_session_sound`):
 every finite trace of a session is the source step's iteration on the same
 answers, up to a final resource failure, unless the step goes wrong on the way.
-That the shell realises the session model is not proved; with this assumption
-the theorem is a statement about the executable.
+It is also proved over the calls as the shell makes them, `cx_init` and the
+step from two call sites (`machine_session_sound_at`, `Rc.session_sound_at`,
+over `X86.LinkedAt`), with the third outcome at a call the source reaches along
+a prefix of the trace. That a run the model shows non-faulting is the
+process's run or stops on a fault, and writes nothing outside the model's
+mapping (the shell's bytes included), is `X86.ByteAgree`'s theorem. That the
+shell realises the session model is not proved (X0-P's later parts); with this
+assumption the theorem is a statement about the executable.
 
 The [indexed stream checker](stream-checking.md) preserves this boundary:
 bounded decoding and cached canonical positions are proved exactly equal
@@ -843,7 +854,7 @@ Four additional public fences retain the ordinary logical axiom basis.
 | Encoder stream/layout | Discharged for successful certified production emission. Raw `Encode.encode`/`Program.encode` clients must validate their output or prove the same facts. | `Stream.check_sound` checks every boundary, canonical position, target and relocation. Complete-stream proofs cover call-free execution and internal calls under concrete `SafeTrace` conditions, including residual return-slot bytes. `ELFLink` proves checked PC32 application and runtime CALL transfer. External procedure bodies still require their semantic/ABI contracts. |
 | Runtime driver model | `X86.Driver`/`X86.Linked` model initialization and the root call for accepted scalar and bounded RC objects. The same entry describes `DriverSession`'s separate owned raw-word drop protocol; it does not upgrade the one-call theorem to arbitrary-session adequacy. | Existing pipeline gates plus `tests-rt-rc`, `tests-rc-certificate` and `tests-driver-session` check complete values, ABI, reclamation and same-region reuse. The callers are executables IxCC writes (the production and the test shell); the loader's mapping, the shells' code, source adequacy and general whole-call session framing remain explicit. |
 | Standalone executable shell | `x86-linux-exe-shell`: the shell of `ixcc compile --exe` and the kernel's loading of the static executable, as `X86/Exe/Code.lean` describes them | `Layout.driver_canonicalOk` (the layout keeps the driver contract), `X86.Exe.check_sound` (the file's structure); `tests-corpus --exe` and `tests-exe`. The shell's behaviour from the loader's post-state is not proved; it stays ledgered until byte executables (X3) can replace it |
-| Numeric state machines' shell | `x86-linux-machine-shell`: the generic request shell of `ixcc compile --exe --machine` and the kernel's loading of its executable, as `X86/Exe/Machine.lean` describes them | `X86.Exe.Machine.Layout.driver_canonicalOk` (the contract at every call, from any bytes), `X86.Exe.checkFor_sound`, the session theorem over the linked-object model (`Exe.Machine.session_sound`); `tests-exe` (the `phase1-machines` roots, `fib` against `--exe`, `echo` against Lean's interpreter and the model on the byte evaluator) and `tests-corpus`. The shell's realisation of the session model is not proved; the shell proof takes it first |
+| Numeric state machines' shell | `x86-linux-machine-shell`: the generic request shell of `ixcc compile --exe --machine` and the kernel's loading of its executable, as `X86/Exe/Machine.lean` describes them | `X86.Exe.Machine.Layout.driver_canonicalOk` (the contract at every call, from any bytes), `X86.Exe.checkFor_sound`, the session theorem over the linked-object model (`Exe.Machine.session_sound`) and over the shell's two call sites (`machine_session_sound_at`), `X86.ByteAgree` (a non-faulting model run is the process's and writes only the model's mapping); `tests-exe` (the `phase1-machines` roots, `fib` against `--exe`, `echo` against Lean's interpreter and the model on the byte evaluator) and `tests-corpus`. The shell's realisation of the session model is not proved; the shell proof takes it first |
 | ELF serialization and system loading | Independent interpretation is discharged for successful `ELF.writeChecked` output. Raw `ELF.write` clients lack that certificate. Actual system linker/loader behavior remains assumed. | `ELFRead` independently parses actual fields; `ELF.check_sound` certifies text, bounded/aligned/nonoverlapping sections, export placement, symbols, relocations, non-executable stack and exact provenance. `ObjectEval` begins from the parsed export and text. A real loader must implement the proved PC32 rule, map immutable executable text, resolve named procedures and enter with the stated ABI. |
 
 The reviewed format references are the [generic ABI ELF specification](https://gabi.xinuos.com/elf.pdf)

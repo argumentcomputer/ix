@@ -33,4 +33,8 @@ def Artifact.linkedRoots (a : Artifact) : List X86.Linked.Root :=
 def Artifact.linked (a : Artifact) (D : X86.Driver) : X86.Linked :=
   { object := a.object, init := Rt.Procs.initSymbol, roots := a.linkedRoots, driver := D }
 
+/-- The artifact's object with `cx_init` called under `D` and the roots from
+site `s` (a caller with two call sites; `X86.LinkedAt`). -/
+def Artifact.linkedAt (a : Artifact) (D : X86.Driver) (s : X86.Driver.Site) : X86.LinkedAt := ⟨a.linked D, s⟩
+
 end IxCC.Recheck

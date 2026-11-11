@@ -53,6 +53,37 @@ theorem sound (accepted : run cfg P cert = .ok artifact)
     fun safe clock => Front.safe_of refinement covered safe clock,
     fun diverging => Front.diverges_of refinement covered diverging⟩
 
+/-- The object refines the source from two call sites (`X86.LinkedAt`):
+`cx_init` under `driver`, the roots from a site `s` at which the contract is
+kept too; `object_refines` is the case `s = driver.site`. -/
+theorem object_refines_at (accepted : run cfg P cert = .ok artifact)
+    (driver : X86.Driver) (valid : driver.Ok artifact.backend.encoded.text.size)
+    (s : X86.Driver.Site) (validAt : (driver.withSite s).Ok artifact.backend.encoded.text.size) :
+    Sem.RefinesOn (artifact.front.Covered cert) artifact.front.source (artifact.linkedAt driver s) :=
+  (front_refines_lir (run_parts accepted).1 (model := Recheck.model driver)
+    (X86.Driver.regionOk valid) (X86.Driver.lirRegion valid)).trans_refines
+    (back_refines_at accepted valid validAt)
+
+/-- `sound` from two call sites; `sound` is the case `s = driver.site`. -/
+theorem sound_at (accepted : run cfg P cert = .ok artifact)
+    (driver : X86.Driver) (valid : driver.Ok artifact.backend.encoded.text.size)
+    (s : X86.Driver.Site) (validAt : (driver.withSite s).Ok artifact.backend.encoded.text.size)
+    (input : Nat × List Nat) (covered : artifact.front.Covered cert input) :
+    (∀ clock output, Lang.run (artifact.linkedAt driver s) input clock = .ok output →
+      (∃ sourceClock value,
+        Lang.run (⟨artifact.front.src, artifact.front.checked⟩ : CheckedProgram)
+          input sourceClock = .ok value ∧
+        artifact.front.view input.1 (Lang.obs value) = some output) ∨ artifact.front.GoesWrong input) ∧
+    (¬ artifact.front.GoesWrong input →
+      ∀ clock, ¬ (Lang.run (artifact.linkedAt driver s) input clock).GoesWrong) ∧
+    ((∀ clock, Lang.run (⟨artifact.front.src, artifact.front.checked⟩ : CheckedProgram)
+        input clock = .timeout) →
+      (∀ clock, Lang.run (artifact.linkedAt driver s) input clock = .timeout) ∨
+        ∃ clock resource, Lang.run (artifact.linkedAt driver s) input clock = .resource resource) :=
+  have refinement := object_refines_at accepted driver valid s validAt
+  ⟨fun _ _ success => Front.sound_of refinement covered success,
+    fun safe clock => Front.safe_of refinement covered safe clock,
+    fun diverging => Front.diverges_of refinement covered diverging⟩
 
 theorem sound_bytes {bytes : List UInt8}
     (accepted : (run cfg P cert).map Artifact.bytes = .ok bytes) :

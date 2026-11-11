@@ -78,3 +78,50 @@ and the request interface. -/
 
 /-- info: 'IxCC.Exe.Machine.Rc.session_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Exe.Machine.Rc.session_sound
+
+/-! X0-P, first part: a call site per call, and the session theorem from two sites. -/
+
+/-- info: 'IxCC.X86.Driver.Ok.withSite' does not depend on any axioms -/
+#guard_msgs in #print axioms IxCC.X86.Driver.Ok.withSite
+
+/-- info: 'IxCC.X86.LinkedAt.call_mono' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.X86.LinkedAt.call_mono
+
+/-- info: 'IxCC.X86.LinkedAt.run_site' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.X86.LinkedAt.run_site
+
+/-- info: 'IxCC.Exe.Machine.Reaches.refines_prefix' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Exe.Machine.Reaches.refines_prefix
+
+/-- info: 'IxCC.Exe.Machine.Performs.refines_prefix' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Exe.Machine.Performs.refines_prefix
+
+/-- info: 'IxCC.Exe.Machine.Reaches.mono' does not depend on any axioms -/
+#guard_msgs in #print axioms IxCC.Exe.Machine.Reaches.mono
+
+/-- info: 'IxCC.Exe.Machine.Last.mono' does not depend on any axioms -/
+#guard_msgs in #print axioms IxCC.Exe.Machine.Last.mono
+
+/-- info: 'IxCC.Exe.Machine.Performs.mono' does not depend on any axioms -/
+#guard_msgs in #print axioms IxCC.Exe.Machine.Performs.mono
+
+/-- info: 'IxCC.Exe.Machine.objCall_le' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Exe.Machine.objCall_le
+
+/-- info: 'IxCC.Exe.Machine.callRefines_at' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Exe.Machine.callRefines_at
+
+/-- info: 'IxCC.Exe.Machine.session_sound_at' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Exe.Machine.session_sound_at
+
+/-- info: 'IxCC.Exe.Machine.machine_session_sound_at' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Exe.Machine.machine_session_sound_at
+
+/-- info: 'IxCC.Exe.Machine.Rc.objCall_le' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Exe.Machine.Rc.objCall_le
+
+/-- info: 'IxCC.Exe.Machine.Rc.callRefines_at' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Exe.Machine.Rc.callRefines_at
+
+/-- info: 'IxCC.Exe.Machine.Rc.session_sound_at' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Exe.Machine.Rc.session_sound_at

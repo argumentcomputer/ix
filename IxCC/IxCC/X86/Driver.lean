@@ -15,7 +15,9 @@ from an input is a definite function (`X86.Linked`, the object's `Lang`):
 - every call runs with `rsp = sp`, the caller's return address `ret` in the
   word at `sp` (the caller's `call` pushes it), on the stack below it; the
   other registers hold any values (`other`; the wrappers save and restore
-  what they use);
+  what they use). A caller that calls `cx_init` and the root from two call
+  sites gives the root its own return address, flags and registers
+  (`Driver.Site`, `Driver.withSite`, `X86.LinkedAt`);
 - the process's mapping: the region and the call stack (the `budget + 56`
   bytes below `sp` and the return slot) are readable and writable, nothing
   else is. The program cannot change permissions, so each call starts from
@@ -237,6 +239,39 @@ theorem checkCanonical_iff (D : Driver) (textSize : Nat) :
     exact ⟨hok, hta, hb47, hret47⟩
   · rintro ⟨hok, hta, hb47, hret47⟩
     exact ⟨⟨⟨hok, hta⟩, hb47⟩, hret47⟩
+
+/-! ## Call sites
+
+A caller that calls `cx_init` and a root from two call sites (the standalone
+executable's shell) enters them with two return addresses, two flags values
+and two register files; the layout (text, region, budget, stack pointer) is
+the same. `Driver.withSite` is the driver at another site; `X86.LinkedAt`
+runs the root from its own. -/
+
+/-- Where a caller makes one call from: the return address its `call` pushes,
+and the flags and other registers it enters the callee with. -/
+structure Site where
+  ret : Word
+  flags : ByteEval.Flags
+  other : Registers
+
+/-- A driver's own site. -/
+def site (D : Driver) : Site := ⟨D.ret, D.flags, D.other⟩
+
+/-- `D` with the call made from site `s`: the layout and the bytes are `D`'s. -/
+def withSite (D : Driver) (s : Site) : Driver := { D with ret := s.ret, flags := s.flags, other := s.other }
+
+@[simp] theorem withSite_site (D : Driver) : D.withSite D.site = D := rfl
+
+/-- The contract at another site: only the return address's clause is new. -/
+theorem Ok.withSite {D : Driver} {n : Nat} (hD : D.Ok n) {s : Site} (hret : n ≤ (s.ret - D.base).toNat) :
+    (D.withSite s).Ok n :=
+  ⟨hD.aligned, hD.minSize, hD.below, hD.spAlign, hD.spTop, hD.budgetMin, hD.spLow, hD.apart, hret⟩
+
+/-- A site changes neither the mapping nor the bytes before the first call. -/
+@[simp] theorem withSite_mapped (D : Driver) (s : Site) : (D.withSite s).mapped = D.mapped := rfl
+@[simp] theorem withSite_initBytes (D : Driver) (s : Site) : (D.withSite s).initBytes = D.initBytes := rfl
+@[simp] theorem withSite_lirMem (D : Driver) (s : Site) : (D.withSite s).lirMem = D.lirMem := rfl
 
 end Driver
 

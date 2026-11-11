@@ -28,8 +28,10 @@ The parsing and rendering a program needs are Lean, compiled with it
 (`IxCC/lib/IxccExe.lean`).
 
 Below the interface: the session model (`Config`, `Event`, `Reaches`, `Last`,
-`Performs`), its refinement from a per-call refinement (`Performs.refines`),
-and the model as a function for tests (`runFor`, `runFor_performs`). The
+`Performs`), its refinement from a per-call refinement (`Performs.refines`,
+and `Performs.refines_prefix`, which ties the source's going wrong to a prefix
+of the trace), its monotonicity in the calls (`Performs.mono`), and the model
+as a function for tests (`runFor`, `runFor_performs`). The
 session theorem over the linked object is `IxCC/Exe/Machine/Sound.lean`'s.
 -/
 
@@ -271,6 +273,83 @@ theorem Performs.refines {obj src : Call} {bad : Nat → Nat → Prop} (h : Call
       | resource _ => exact .inr (.inl ⟨t₀, c', _, _, rfl, hs⟩)
       | trap hc => exact .inr (.inr ⟨t₀, c', hs, h.wrong hc trivial⟩)
     · exact .inr (.inr hb)
+
+/-- `Reaches.refines`, with the prefix of the trace along which the source
+reaches the call where it goes wrong. -/
+theorem Reaches.refines_prefix {obj src : Call} {bad : Nat → Nat → Prop} (h : CallRefines obj src bad)
+    {c c' : Config} {t : List Event} (ho : Reaches obj c t c') :
+    Reaches src c t c' ∨ ∃ t₀ c₀, t₀ <+: t ∧ Reaches src c t₀ c₀ ∧ bad c₀.state c₀.event := by
+  induction ho with
+  | refl c => exact .inl (.refl c)
+  | arg hc hq _ ih =>
+    rcases h.ok hc with hs | hb
+    · rcases ih with hr | ⟨t₀, c₀, hp, hr, hb⟩
+      · exact .inl (.arg hs hq hr)
+      · exact .inr ⟨_, c₀, List.cons_prefix_cons.2 ⟨rfl, hp⟩, .arg hs hq hr, hb⟩
+    · exact .inr ⟨[], _, List.nil_prefix, .refl _, hb⟩
+  | write hc hq _ ih =>
+    rcases h.ok hc with hs | hb
+    · rcases ih with hr | ⟨t₀, c₀, hp, hr, hb⟩
+      · exact .inl (.write hs hq hr)
+      · exact .inr ⟨_, c₀, List.cons_prefix_cons.2 ⟨rfl, hp⟩, .write hs hq hr, hb⟩
+    · exact .inr ⟨[], _, List.nil_prefix, .refl _, hb⟩
+
+/-- **The session refines, with the prefix**: `Performs.refines` whose third
+outcome says the source goes wrong at a call it reaches on the answers of a
+prefix of this trace (`t₀ <+: t`), not of some trace. -/
+theorem Performs.refines_prefix {obj src : Call} {bad : Nat → Nat → Prop} (h : CallRefines obj src bad)
+    {c : Config} {t : List Event} (ho : Performs obj c t) :
+    Performs src c t ∨
+    (∃ t₀ c' f b, t = t₀ ++ [.fail (statusOf f) b] ∧ Reaches src c t₀ c') ∨
+    ∃ t₀ c', t₀ <+: t ∧ Reaches src c t₀ c' ∧ bad c'.state c'.event := by
+  rcases ho with ⟨c', hr⟩ | ⟨t₀, c', ev, rfl, hr, hl⟩
+  · rcases hr.refines_prefix h with hs | hb
+    · exact .inl (.inl ⟨c', hs⟩)
+    · exact .inr (.inr hb)
+  · rcases hr.refines_prefix h with hs | ⟨t₁, c₁, hp, hr₁, hb⟩
+    · have hpre : t₀ <+: t₀ ++ [ev] := List.prefix_append _ _
+      cases hl with
+      | exit hc hq =>
+        rcases h.ok hc with hc' | hb
+        · exact .inl (.inr ⟨t₀, c', _, rfl, hs, .exit hc' hq⟩)
+        · exact .inr (.inr ⟨t₀, c', hpre, hs, hb⟩)
+      | request hc hq =>
+        rcases h.ok hc with hc' | hb
+        · exact .inl (.inr ⟨t₀, c', _, rfl, hs, .request hc' hq⟩)
+        · exact .inr (.inr ⟨t₀, c', hpre, hs, hb⟩)
+      | notValue hc hv =>
+        rcases h.ok hc with hc' | hb
+        · exact .inl (.inr ⟨t₀, c', _, rfl, hs, .notValue hc' hv⟩)
+        · exact .inr (.inr ⟨t₀, c', hpre, hs, hb⟩)
+      | resource _ => exact .inr (.inl ⟨t₀, c', _, _, rfl, hs⟩)
+      | trap hc => exact .inr (.inr ⟨t₀, c', hpre, hs, h.wrong hc trivial⟩)
+    · exact .inr (.inr ⟨t₁, c₁, hp.trans (List.prefix_append _ _), hr₁, hb⟩)
+
+/-! ## More calls
+
+A session over calls `c₁` is one over any calls that include them. -/
+
+theorem Reaches.mono {c₁ c₂ : Call} (h : ∀ s e r, c₁ s e r → c₂ s e r) {c c' : Config} {t : List Event}
+    (hr : Reaches c₁ c t c') : Reaches c₂ c t c' := by
+  induction hr with
+  | refl c => exact .refl c
+  | arg hc hq _ ih => exact .arg (h _ _ _ hc) hq ih
+  | write hc hq _ ih => exact .write (h _ _ _ hc) hq ih
+
+theorem Last.mono {c₁ c₂ : Call} (h : ∀ s e r, c₁ s e r → c₂ s e r) {c : Config} {ev : Event}
+    (hl : Last c₁ c ev) : Last c₂ c ev := by
+  cases hl with
+  | exit hc hq => exact .exit (h _ _ _ hc) hq
+  | request hc hq => exact .request (h _ _ _ hc) hq
+  | notValue hc hv => exact .notValue (h _ _ _ hc) hv
+  | resource hc => exact .resource (h _ _ _ hc)
+  | trap hc => exact .trap (h _ _ _ hc)
+
+theorem Performs.mono {c₁ c₂ : Call} (h : ∀ s e r, c₁ s e r → c₂ s e r) {c : Config} {t : List Event}
+    (hp : Performs c₁ c t) : Performs c₂ c t := by
+  rcases hp with ⟨c', hr⟩ | ⟨t₀, c', ev, rfl, hr, hl⟩
+  · exact .inl ⟨c', hr.mono h⟩
+  · exact .inr ⟨t₀, c', ev, rfl, hr.mono h, hl.mono h⟩
 
 /-! ## The model as a function
 

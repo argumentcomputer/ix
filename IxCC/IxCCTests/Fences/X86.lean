@@ -3,6 +3,7 @@ import IxCC.X86.Table.Index
 import IxCC.X86.Table.Safe
 import IxCC.X86.Constructors
 import IxCC.X86.StreamEffects
+import IxCC.X86.ByteAgree
 import IxCC.X86.ByteBranch
 import IxCC.X86.ByteCall
 import IxCC.X86.ByteControl
@@ -287,3 +288,24 @@ failure exit. -/
 
 /-- info: 'IxCC.X86.StreamExamples.unwind_safe' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.X86.StreamExamples.unwind_safe
+
+/-! The byte machine on the process's memory (X0-P): agreement or fault, the frame, and an
+object's text inside a file. -/
+
+/-- info: 'IxCC.X86.ByteAgree.step_agree' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.X86.ByteAgree.step_agree
+
+/-- info: 'IxCC.X86.ByteAgree.step_frame' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.X86.ByteAgree.step_frame
+
+/-- info: 'IxCC.X86.ByteAgree.run_agree' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.X86.ByteAgree.run_agree
+
+/-- info: 'IxCC.X86.ByteAgree.run_frame' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.X86.ByteAgree.run_frame
+
+/-- info: 'IxCC.X86.ByteEval.step_agree' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.X86.ByteEval.step_agree
+
+/-- info: 'IxCC.X86.Decode.decodeAt_window' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.X86.Decode.decodeAt_window

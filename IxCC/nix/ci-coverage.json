@@ -940,6 +940,7 @@
   "IxCC.Vendor.Ix.IndexMap",
   "IxCC.Vendor.Ix.Lib",
   "IxCC.X86.Basic",
+  "IxCC.X86.ByteAgree",
   "IxCC.X86.ByteBranch",
   "IxCC.X86.ByteCall",
   "IxCC.X86.ByteControl",
@@ -1604,7 +1605,7 @@
   "IxCCTests.Sem.Toy.Stack",
   "IxCCTests.Sem.Toy.Tick"],
  "baseline":
- "X2: numeric state machines, the session theorem over the linked-object model and its fences",
+ "X0-P, first part: a call site per call (X86.LinkedAt), the object and session theorems from two sites, the byte machine on the process's memory, and their fences",
  "axiom_sha256":
- "8c06fafb5380cdf9edbc1a10fe59ce6ac7832b07b67aafe5379d0b7b0079bdfa",
- "axiom_count": 5892}
+ "1f7ac293520e0ced3fe2df2607a5dba5193effbf6c6d72b59013d74194f4d8fa",
+ "axiom_count": 5921}

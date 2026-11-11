@@ -30,16 +30,13 @@ this driver (that it really enters each call in `Driver.core`'s state and
 does not touch the region between the calls) is not proved here; the shell is
 trusted code (`docs/trusted-extern-ledger.md`).
 
-**Where the model and a real caller differ.** `X86.Linked` runs `cx_init`
-and the root from one `Driver`, so with one return address `ret`, one flags
-value and one register file `other` for both calls. A real caller does not
-behave that way: the shell calls `cx_init` and the root from two call sites
-(so two return addresses, `driver` at each), and enters them with different
-caller-saved registers. The object's theorems hold for
-every return address and register file, so this costs nothing semantically,
-but the model states one where a caller supplies two. The model is left as it
-is; a proof that the shell realises the contract will have to take one
-`Driver` per call.
+**Two call sites.** `X86.Linked` runs `cx_init` and the root from one
+`Driver`, so with one return address `ret`, one flags value and one register
+file `other` for both calls. The shell calls them from two call sites (two
+return addresses, `driver` at each) and enters them with different
+caller-saved registers. `X86.LinkedAt` models such a caller: the root is
+called from a `Driver.Site` of its own, and the object theorems hold for it
+(`Recheck.sound_at`, `RcReplay.sound_at`).
 -/
 
 namespace IxCC.X86.Exe

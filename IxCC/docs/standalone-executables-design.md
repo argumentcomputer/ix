@@ -6,7 +6,7 @@ their objects as test executables IxCC writes, with no C, see [X1 as
 implemented](#x1-as-implemented)); X2 implemented (`ixcc compile
 --exe --machine` writes numeric state machines whose parsing and rendering are
 Lean, and the session theorem is proved over the linked-object model, see [X2 as
-implemented](#x2-as-implemented)); X0-P and X3 to X6 planned. Milestones X0 to
+implemented](#x2-as-implemented)); X0-P in progress (its first part implemented: a call site per call in the driver model, the object and session theorems from two sites, and the byte machine on the process's memory, see [X0-P so far](#x0-p-so-far)); X3 to X6 planned. Milestones X0 to
 X6 are in the [roadmap](roadmap.md#standalone-executables). Only the lines that
 say *implemented* or *measured* describe code or runs that exist.
 
@@ -155,11 +155,14 @@ mapping with the same bytes), which replaces the ledger's "touches only
 modelled memory". What stays assumed is the initial process state: the
 loader maps the two segments as declared and zero-fills the writable one,
 `rip` is the entry, and the stack holds `argc` and `argv` as the System V
-x86-64 ABI's process initialisation says. One model change is needed: the
-model calls `cx_init` and the root with one register file and one return
-address (`X86.Linked.call` uses one `Driver` for both); a shell calls from two
-sites, so those become per call. The object theorems hold for every register
-file and return address, so the change should be mechanical.
+x86-64 ABI's process initialisation says. One model change was needed: the
+model called `cx_init` and the root with one register file and one return
+address (`X86.Linked.call` uses one `Driver` for both), where a shell calls
+from two sites. **Implemented** (X0-P, first part): `X86.LinkedAt` calls the
+root from a site of its own (`Driver.Site`: its return address, flags and
+registers), and the object theorems hold for it (`Recheck.sound_at`,
+`RcReplay.sound_at`); the permission lemma is `X86.ByteAgree` (agreement or
+fault, and the frame). See [X0-P so far](#x0-p-so-far).
 
 **Where the shell's code comes from.**
 - *First*: typed x86 written in Lean, encoded by IxCC's own encoder and,
@@ -370,7 +373,7 @@ Sizes are estimates, with their basis.
 | Id | Content | Depends on | Exit test | Size [estimate] |
 | --- | --- | --- | --- | --- |
 | X0 | `ixcc compile --exe` for roots of `Nat` parameters and a `Nat` result: the executable writer and its independent checker; the shell as typed x86 with the system call outside the program table; static layout with `CanonicalOk` proved; a ledger entry for the loader's post-state, the system calls and the shell. **Implemented** ([below](#x0-as-implemented)), also for `Bool` and other results without fields, rendered `#k`; the per-call return address and registers in `X86.Driver` moved to X0-P | — | every corpus root of the fragment (K1's and the `phase1-*` families') on every case agrees with the manifest, SrcEval, ByteEval and the C driver; a seccomp filter on; only `prctl`, `seccomp`, `write` and `exit`; the checker rejects mutated headers and truncations | 2–3.5k lines, 3–6 weeks (today's object path is about 2.2k lines across `ELF*.lean`; the shell is about 150 instructions of Lean data). Measured: 1.1k lines of production code and 0.4k of tests |
-| X0-P | The shell proved: the shell lemma, parsing and rendering, the system call's model, permission monotonicity, a return address and register file per call in `X86.Driver`; the `Nat` executable theorem fenced. **Decided:** it takes X2's generic machine shell first (`x86-linux-machine-shell`: no parsing or rendering to prove, and the session theorem already proved over the linked model); `--exe`'s parsing shell (`x86-linux-exe-shell`) stays ledgered until byte executables (X3) can replace it | X0 | the theorem fenced on the standard axioms; the driver-model assumption retired for executables | 3–6k lines, 2–4 months (the `cx_init` proof is 0.5k lines and the stream-trace infrastructure exists) |
+| X0-P | The shell proved: the shell lemma, parsing and rendering, the system call's model, permission monotonicity, a return address and register file per call in `X86.Driver`; the `Nat` executable theorem fenced. **Decided:** it takes X2's generic machine shell first (`x86-linux-machine-shell`: no parsing or rendering to prove, and the session theorem already proved over the linked model); `--exe`'s parsing shell (`x86-linux-exe-shell`) stays ledgered until byte executables (X3) can replace it. **In progress**: the first of three parts implemented (a call site per call, `X86.LinkedAt`; the object and session theorems from two sites; agreement or fault and the frame for the byte machine; [X0-P so far](#x0-p-so-far)) | X0 | the theorem fenced on the standard axioms; the driver-model assumption retired for executables | 3–6k lines, 2–4 months (the `cx_init` proof is 0.5k lines and the stream-trace infrastructure exists); planned 3.2–4.8k for the machine shell |
 | X1 | XB-1 and IxOS-0, redefined: IxCC-written test executables speak today's line protocol (and the session protocol with `cx_drop` for the RC gates); readback on the host side in Lean. **Implemented** ([below](#x1-as-implemented)): the test shell serves binary requests, and the host in Lean speaks the line and session protocols over them; the C drivers are deleted | X0 | the native suites (`tests-rt`, `tests-pipeline`, `tests-corpus`, `tests-own`, the back end's runtime cases, the RC native modes) pass with the C runtime driver off the execution path and no C compiler in their inputs | 1–2k lines, 2–4 weeks after X0 |
 | X2 | Numeric state machines: the generic request shell, parsing and rendering in a small Lean library compiled with the program, the session theorem on `Nat` states. **Implemented** ([below](#x2-as-implemented)): the generic shell and `ixcc compile --exe --machine`, the library, `fib` end to end, the session theorem fenced over the linked-object model, sessions of more than 1,400 calls agreeing with Lean's interpreter and with the model on the byte evaluator | X0 (X0-P for the proof) | `fib` as an executable whose parsing and rendering are Lean; a 1,000-call session against Lean's interpreter; the session theorem fenced | 2–4k lines (DR9 (a) is 3–6k with heap states) |
 | X3 | Batch byte executables: arguments and input bytes in, output bytes and an exit code out; an exported byte-array allocation entry; the model of `read` | Phase 3 (DR2, DR3, DR6) | programs in the manner of `wc` and `sha256sum` byte-identical to Lean-compiled executables over a corpus of inputs | 2–4k lines beyond the DR items |
@@ -414,8 +417,9 @@ root ([`IxCC/Exe.lean`](../IxCC/Exe.lean),
   multiple of 16 and at least 8 KiB, a region of at least 4 KiB, together at
   most `2^40` bytes) and every return address after the object's text and
   below the zero-filled segment. That the shell realises this driver is not
-  proved. The model's one return address and register file for both calls is
-  recorded in that module and left unchanged.
+  proved. The model's one return address and register file for both calls was
+  recorded in that module; X0-P's first part gives the root call a site of its
+  own (`X86.LinkedAt`, [X0-P so far](#x0-p-so-far)).
 - **The fragment** (`Exe.fragment`): at most five parameters, all `Nat`; a
   `Nat` result or a constructor without fields of an inductive whose
   constructors have none (`Bool` among them); immortal, zero-RC or plain-RC
@@ -737,11 +741,11 @@ separately from `--exe`'s shell so that each can be retired on its own:
   `write` and `exit` behave as Linux documents them; the byte machine with the
   system call is the processor, and a run the model shows non-faulting touches
   only modelled memory;
-- *the model's gap*: `X86.Linked` runs `cx_init` and the step under one driver,
-  so one return address and register file for both, where the shell calls
-  from two sites. The session theorem needs no change to the model; the shell
-  proof needs a return address and register file per call site, as recorded
-  for X0.
+- *the model's gap*, **closed** by X0-P's first part: `X86.Linked` runs
+  `cx_init` and the step under one driver, so one return address and register
+  file for both, where the shell calls from two sites. `X86.LinkedAt` gives the
+  step a site of its own, and `machine_session_sound_at` is the session theorem
+  over the calls as the shell makes them ([X0-P so far](#x0-p-so-far)).
 
 ### The session theorem
 
@@ -805,6 +809,66 @@ configuration, for a root whose declared parameter count is two
 `machine_root` derives it from `Exe.machine`). The model as a function,
 `runFor`, gives only traces the model allows (`runFor_performs`), which is how
 the tests above run the model.
+
+### X0-P so far
+
+X0-P proves the shell, taking this machine shell first; it lands in three
+parts. **The first part is implemented**: the model and the byte-machine
+lemmas the shell proof stands on, each true on its own.
+
+- **A call site per call** ([`X86/Driver.lean`](../IxCC/X86/Driver.lean),
+  [`X86/Linked.lean`](../IxCC/X86/Linked.lean)). `Driver.Site` is where a
+  caller makes one call from: the return address its `call` pushes, the flags
+  and the other registers. `Driver.withSite D s` is `D` called from `s`, with
+  `D`'s text, region, budget, stack pointer and bytes. `X86.LinkedAt` is a
+  linked object whose root is called from a site of its own while `cx_init` is
+  called under the driver, which is how the shell makes its two calls.
+  `X86.Linked` is unchanged and is the instance at the driver's own site
+  (`LinkedAt.run_site`, by `rfl`).
+- **The object theorems from two sites.** `Recheck.back_refines_at`,
+  `object_refines_at` and `sound_at`, and the same three for `RcReplay`, hold
+  for `cx_init` under any `D` keeping `Driver.Ok` and the root from any site at
+  which it is kept too. The proof is `back_refines`' with the root's entry
+  invariant taken at `D.withSite s`; the Lir side is the same for every site.
+  The old `call_sim_linked` and `back_refines` are now these at `s = D.site`,
+  with their statements and axiom sets unchanged.
+- **The session theorem from two sites**
+  ([`Exe/Machine/Sound.lean`](../IxCC/Exe/Machine/Sound.lean)).
+  - `objCallAt` is the step's calls as the shell makes them. Every one-site
+    call is one of these (`objCall_le`).
+  - `session_sound_at`, `machine_session_sound_at` and `Rc.session_sound_at`
+    are the session theorem over them. Their third outcome is stronger than
+    `session_sound`'s: the source goes wrong at a call it reaches along a
+    *prefix of this trace* (`Performs.refines_prefix`), not of some trace.
+  - The one-site theorems keep their statements.
+- **The byte machine on the process's memory**
+  ([`X86/ByteAgree.lean`](../IxCC/X86/ByteAgree.lean)). These hold for every
+  row of the instruction table, through `Op.exec`'s memory accesses, and every
+  control row:
+  - *agreement or fault* (`step_agree`, `run_agree`): where the byte machine
+    steps on the model's memory, it steps alike on a memory with the same
+    registers and bytes and any permissions, or faults there on a memory
+    access;
+  - *the frame* (`step_frame`, `run_frame`): a step that succeeds keeps the
+    permissions and changes no byte its memory does not let it write.
+
+  Together they say that a run the model shows non-faulting is the process's
+  run, or the process stops on a fault, and that it writes nothing outside the
+  model's mapping. This is the ledgers' "touches only modelled memory", now a
+  theorem about the byte machine.
+- **An object's text inside a file** (`Decode.decodeAt_window`,
+  [`X86/DecodeWindow.lean`](../IxCC/X86/DecodeWindow.lean)): what the text
+  decodes at `j`, a file that holds the text at `off` decodes the same at
+  `off + j`.
+
+*Planned*:
+- the second part: the process (the loader's post-state, the system calls and
+  the processor, stated as Lean definitions), the shell's text checked when
+  the executable is written, and the call lemma;
+- the third part: the shell's loop and the executable theorem.
+
+Until the third part, the shell itself is still the ledgered
+`x86-linux-machine-shell`.
 
 ## The C drivers, removed
 

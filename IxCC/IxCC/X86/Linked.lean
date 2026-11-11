@@ -24,6 +24,11 @@ A status from either call is its outcome (`statusResult`: 1–3 resource
 failures, 4 a trap). Roots are applied as at every level (`Sem.entryRun`):
 exactly their parameter count calls them; fewer arguments give a value
 with no observation; more call them on the first ones and are stuck.
+
+`X86.LinkedAt` is the same with the root called from a call site of its own
+(its own return address, flags and registers), as a caller with two call
+sites makes the calls; `Linked` is its instance at the driver's own site
+(`LinkedAt.run_site`).
 -/
 
 namespace IxCC.X86
@@ -96,5 +101,69 @@ instance : Lang (Nat × List Nat) Linked where
   obs := id
 
 theorem Linked.lang_run (L : Linked) (i : Nat × List Nat) : Lang.run L i = L.run i := rfl
+
+/-! ## The root from a call site of its own
+
+A caller with two call sites (the standalone executable's shell calls
+`cx_init` from one and the root from another) enters the root with its own
+return address, flags and registers. `LinkedAt` is a linked object whose
+root is called from `rootSite`: `cx_init` exactly as in `Linked`, the root
+under `driver.withSite rootSite` (the same text, region, budget, stack
+pointer and bytes). At the driver's own site it is `Linked`
+(`LinkedAt.run_site`). -/
+
+/-- A linked object whose root is called from its own site. -/
+structure LinkedAt where
+  linked : Linked
+  rootSite : Driver.Site
+
+namespace LinkedAt
+
+variable (L : LinkedAt)
+
+/-- The root call's driver. -/
+def rootDriver : Driver := L.linked.driver.withSite L.rootSite
+
+/-- A root's call on the arguments' words, from the bytes `bytes`, at the root's site. -/
+def rootCall (r : Linked.Root) (ns : List Nat) (bytes : Word → UInt8) (k : Nat) : Result (Word × Memory) :=
+  ObjectEval.call L.linked.object r.symbol L.rootDriver.base (L.rootDriver.core (ns.map UInt64.ofNat) bytes)
+    L.rootDriver.flags k
+
+/-- A call of a root on exactly its arguments: `Linked.call` with the root at its site. -/
+def call (r : Linked.Root) (ns : List Nat) (k : Nat) : Result (Option Obs) :=
+  if ns.all (· < 2 ^ 64) then
+    (L.linked.initCall k).bind fun v => (L.rootCall r ns v.2.bytes k).map fun v' => L.linked.observe r v'.1 v'.2
+  else .resource .natOverflow
+
+/-- A run of root `i.1` on the `Nat` inputs `i.2`, applied as at every level. -/
+def run (i : Nat × List Nat) (k : Nat) : Result (Option Obs) :=
+  match L.linked.roots[i.1]? with
+  | some r => Sem.entryRun r.params none (L.call r) i.2 k
+  | none => .stuck
+
+theorem call_mono (r : Linked.Root) (ns : List Nat) : ClockMono (L.call r ns) := by
+  unfold call
+  split
+  · exact ClockMono.bind (ObjectEval.call_mono _ _ _ _ _) fun _ =>
+      ClockMono.bind (ObjectEval.call_mono _ _ _ _ _) fun _ => ClockMono.const _
+  · exact ClockMono.const _
+
+end LinkedAt
+
+instance : Lang (Nat × List Nat) LinkedAt where
+  Val := Option Obs
+  run := LinkedAt.run
+  mono L i := by
+    unfold LinkedAt.run
+    split
+    · exact Sem.entryRun_mono (fun ns => L.call_mono _ ns) _
+    · exact ClockMono.const _
+  obs := id
+
+theorem LinkedAt.lang_run (L : LinkedAt) (i : Nat × List Nat) : Lang.run L i = L.run i := rfl
+
+/-- **The one-site model is the two-site one at the driver's own site.** -/
+theorem LinkedAt.run_site (L : Linked) (i : Nat × List Nat) (k : Nat) :
+    Lang.run (⟨L, L.driver.site⟩ : LinkedAt) i k = Lang.run L i k := rfl
 
 end IxCC.X86
