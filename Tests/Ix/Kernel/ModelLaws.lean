@@ -333,8 +333,8 @@ theorem univ0_ne_pt : (univ 0 : V) ≠ pt := by
   have h₁ : (empty : V) ∈ˢ pt := by rw [← h]; exact empty_mem_univ 0
   have h₂ : (unitSet : V) ∈ˢ pt := by rw [← h]; exact unitSet_mem_univ 0
   rw [mem_pt] at h₁ h₂
-
   exact unitSet_ne_empty (h₂.trans h₁.symm)
+
 theorem univ1_not_mem_univ0 : ¬ (univ 1 : V) ∈ˢ univ 0 := by
   intro h
   rw [univ_zero] at h
