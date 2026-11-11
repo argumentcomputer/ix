@@ -6,7 +6,7 @@ import Aiur.Library.Bytes.Correctness
 
 /-! # The IxVM ↔ IxC refinement statement
 
-Track B, Phase 2 (`plans/ixvm-certification-gap.md`). Statements
+Statements
 (`def … : Prop`), the observation they read, and the glue to the backend
 headline; nothing here proves the refinement. Frozen in
 `Ix.IxVM.Refinement.Audit`.
@@ -39,7 +39,7 @@ world. The statements range over that observed form
 (`Aiur.Generic.Observe`): the derivations of `Generic.SourceSemantics.EvalFn`
 with their calls recorded (`EvalFn.observe`, `ObsFn.erase`).
 
-## The statement (decision D2)
+## The statement
 
 `VerifyClaimSoundIn`: for every observed `verify_claim` derivation on `d`,
 every claim byte string whose digest packs to `d`, and every authentic view
@@ -51,8 +51,8 @@ same pure BLAKE3 hash as the data and different from it (or a held or hashed
 preimage of `Ix.HostAdmission.Merkle.padding`). Fooling a reader therefore
 requires computing a second preimage of the reader's data or a preimage of zero.
 
-**D2's existential form is false** in this semantics, so it is not stated.
-It said that some environment, addressed by BLAKE3, is accepted by IxC for
+**An existential form is false** in this semantics, so it is not stated:
+that some environment, addressed by BLAKE3, is accepted by IxC for
 the claim. IxVM loads a record each time it needs one
 (`Ingress::get_ci` → `load_verified_constant`, with no per-run cache), and two
 loads of one address may return different bytes that both pass the BLAKE3
@@ -174,7 +174,7 @@ def SourceSound (P : List (Call IxVM.F) → Digest → Prop) : Prop :=
     Aiur.Generic.SourceSemantics.ObsFn IxVM.source.world verifyClaim [digestValue d] []
       value heap calls → P calls d
 
-/-- **The main statement** (D2 as revised): every observed `verify_claim`
+/-- **The main statement**: every observed `verify_claim`
 derivation satisfies `IxVMClaimSpecIn` of its calls. -/
 def VerifyClaimSoundIn : Prop :=
   SourceSound IxVMClaimSpecIn

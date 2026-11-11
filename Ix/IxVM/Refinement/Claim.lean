@@ -9,9 +9,8 @@ import Ix.Address.Pure
 
 /-! # What a claim means, in IxC terms
 
-Track B, Phase 2 (`plans/ixvm-certification-gap.md`): the meaning of the
-claims `IxVM::verify_claim` accepts, stated over IxC's reference-level
-acceptance (decision D3): `Ix.Cert.IxonAcceptsRef`, and for claims that name
+The meaning of the claims `IxVM::verify_claim` accepts, stated over IxC's
+reference-level acceptance: `Ix.Cert.IxonAcceptsRef`, and for claims that name
 user axioms its policy form `Ix.Cert.IxonAcceptsRefUnder .allowUser`.
 Definitions only. The statement over the IxVM program is in
 `Ix.IxVM.Refinement.Statement`.
@@ -24,7 +23,7 @@ meaning is stated relative to a **view** (`View`): an Ixon environment (its
 records, blobs and role table) and the assumption trees a reader holds.
 `Ix.Claim.HoldsIn V c` is the claim's meaning in the view `V`. The main
 statement is about every authentic view that covers the claim; there is no
-existential form (decision D2 was revised; see the statement module).
+existential form (the statement module says why).
 
 Acceptance in a view (`AcceptsIn`) uses only the view's records and blobs,
 except that it may supply recursor records the view lacks (`Draws`): IxC
