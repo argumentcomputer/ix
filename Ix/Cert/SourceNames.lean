@@ -263,19 +263,13 @@ theorem generate_ok_rung {ctx : Ix.Kernel.Frontend.InModel.Ctx md} {b : BlockRec
     ∃ b' ds0, b'.types.map (·.cv.name) = b.types.map (·.cv.name) ∧ b'.ctors = b.ctors ∧
       b'.recs = b.recs ∧ (genNested ctx b' = .ok ds0 ∨ genMutual ctx b' = .ok ds0) ∧
       ∀ d ∈ ds, ∃ d0 ∈ ds0, d.names = d0.names := by
-  unfold generate at h
-  obtain ⟨b', hb', h⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h
-  obtain ⟨ds0, hds0, h⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h
-  simp only [pure, Except.pure, Except.ok.injEq] at h
-  subst h
+  obtain ⟨b', ds0, hb', hrun, rfl⟩ := generate_eq_ok h
   unfold readFormers at hb'
   obtain ⟨ts, hts, hb'⟩ := Ix.CompileCert.Loop.except_bind_ok.mp hb'
   simp only [pure, Except.pure, Except.ok.injEq] at hb'
   subst hb'
-  refine ⟨_, ds0, mapM_readFormer_names hts, rfl, rfl, ?_, fun d hd => mem_restoreFrom hd⟩
-  split at hds0
-  · exact .inl hds0
-  · exact .inr hds0
+  exact ⟨{ b with types := ts }, ds0, mapM_readFormer_names hts, rfl, rfl, hrun,
+    fun d hd => mem_restoreFrom hd⟩
 
 /-- Every successful generator result consists of nonempty, all-derived
 declarations; this says nothing about distinctness between declarations. -/

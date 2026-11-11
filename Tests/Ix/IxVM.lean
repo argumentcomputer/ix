@@ -147,6 +147,7 @@ def entryCheckEntries : List (String × Nat) := [
   ("Tests.Ix.Kernel.EntryCaseDefs.BD2.rec", 666_123_782),
   ("Tests.Ix.Kernel.EntryCaseDefs.EA.rec", 1_048_296_281),
   ("Tests.Ix.Kernel.EntryCaseDefs.GA.rec", 0),
+  ("Tests.Ix.Kernel.EntryCaseDefs.GI.rec", 0),
   ("Tests.Ix.Kernel.EntryCaseDefs.GE.rec", 0)]
 
 /-- A `Check` claim on `name` over `ixonEnv`. -/

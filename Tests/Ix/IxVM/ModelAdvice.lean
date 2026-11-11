@@ -57,8 +57,8 @@ def modeledNames : List String := [
 /-- Claims on nested blocks the modeller models, with the verdict the circuit
 must give: `Tests.Ix.Kernel.EntryCaseDefs.NB4` (an index domain that mentions
 a parameter), `RA1` and `RA3` (a reflexive field into a member), `BD1` and `BD2`
-(a member behind a definition), `EA` (a member only where whnf erases it), and `GA` and
-`GE` (formers declared at a definition). For each, ι reductions through the recursors are accepted, and false ι or constructor
+(a member behind a definition), `EA` (a member only where whnf erases it), and `GA`, `GI`
+and `GE` (formers declared at a definition). For each, ι reductions through the recursors are accepted, and false ι or constructor
 equations installed in Lean unchecked are refused (`bad_thm` declares their
 names at the root). -/
 def nestedVerdicts : List (Lean.Name × Bool) := [
@@ -77,6 +77,7 @@ def nestedVerdicts : List (Lean.Name × Bool) := [
   (`Tests.Ix.Kernel.EntryCaseDefs.eaIota, true),
   (`eaIotaFalse, false),
   (`gaIota, true),
+  (`giIota, true),
   (`geIota, true)]
 
 private def nameOfString (str : String) : Lean.Name :=
