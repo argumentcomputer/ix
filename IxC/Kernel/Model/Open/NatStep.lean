@@ -35,7 +35,6 @@ noncomputable def succIter (s x : V) : Nat → V
   | 0 => x
   | k + 1 => app s (succIter s x k)
 
-omit [SetTheory V] in
 theorem succIter_add (s x : V) (j : Nat) :
     ∀ k, succIter s (succIter s x j) k = succIter s x (j + k)
   | 0 => rfl
@@ -408,7 +407,7 @@ theorem Red.natAddZero_sound {d : Nat} {us : List Level} {b a w : Expr md}
   obtain ⟨-, hfb⟩ := Frame.app_iff.1 hfAb
   obtain ⟨-, -, ka⟩ := hr hfa
   refine ⟨hfb, fun l hl => by simp [Expr.fvarLeaves, hl], fun σ hC v hv hg => ?_⟩
-  obtain ⟨cv, val, hint, r1, -, hfA, hl, -, hAm, hr1, -⟩ :=
+  obtain ⟨cv, val, hint, r1, _, hfA, hl, -, hAm, hr1, -⟩ :=
     natAdd_basis (M := M) (φ := φ) hs ht σ
   obtain ⟨hgAb, hga, -⟩ := Gr.app_iff.1 hg
   obtain ⟨-, hgb, -⟩ := Gr.app_iff.1 hgAb
@@ -478,7 +477,7 @@ theorem natOffset_sem (hs : natLitSupported env = true) :
         Gr M φ σ (.app (.app (.const natAddName us) x) (.lit (.natVal n))) →
         ∃ X, Den M φ σ x X ∧ Gr M φ σ x ∧ v = succIter (M.cval natSuccName φ) X n := by
       intro σ v hv hg
-      obtain ⟨cv, val, hint, r1, -, hfA, hl, -, hAm, hr1, -⟩ :=
+      obtain ⟨cv, val, hint, r1, _, hfA, hl, -, hAm, hr1, -⟩ :=
         natAdd_basis (M := M) (φ := φ) hs ht σ
       obtain ⟨hgAx, -, -⟩ := Gr.app_iff.1 hg
       obtain ⟨-, hgx, -⟩ := Gr.app_iff.1 hgAx
