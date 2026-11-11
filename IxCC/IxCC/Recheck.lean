@@ -154,8 +154,8 @@ def compileInputWithContracts (cfg : Config) (inp : Input) : Except Err (Cert ×
 
 /-- Ingress, `produce`, and contract-aware `runWithContracts`. -/
 def compileWithContracts (cfg : Config) (bytes : ByteArray) (equations : Lean.Json)
-    (roots : List String := []) (typecheck : Bool := true) : Except Err (Cert × Artifact) := do
-  compileInputWithContracts cfg (← ingress bytes equations roots typecheck)
+    (roots : List String := []) : Except Err (Cert × Artifact) := do
+  compileInputWithContracts cfg (← ingress bytes equations roots)
 
 end IxCC.Recheck
 

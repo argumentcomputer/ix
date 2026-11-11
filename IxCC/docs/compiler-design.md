@@ -59,7 +59,8 @@ them.
   shape" and "Evaluator interface" under [Correctness
   statement](#correctness-statement)).
 - **D3. Relevance is a checked annotation.** Relevance is never written into
-  Ixon bytes. An untrusted annotator (`Src.Relevance.annotate`) proposes a
+  Ixon bytes. An untrusted annotator (the certified kernel's, over the accepted
+  environment: `Src.KernelFront.Kernel.annotateChecked`) proposes a
   class for every binder, argument, let, constructor field and constant; the
   annotation travels in the certificate beside the bytes, and the recheck
   path decides it with `Relevance.check` (proved in
@@ -152,7 +153,7 @@ is defined.
 | EV-0 … EV-2 | The evaluator interface's milestones | [evaluator interface](evaluator-interface.md) |
 | AR-1, AR-2; XB-1, XB-2; HD-0 … HD-3; RL-1 … RL-4 | Milestones of the Aiur routes, the x86 back half, hardening, and repository and landing | [roadmap](roadmap.md#milestones) |
 | DC-1 … DC-3, DO-1 … DO-22 | Decisions to confirm and open decisions | [roadmap](roadmap.md#decisions) |
-| Stage A | The byte-level verifiers' requirement that the certificate's relevance annotation equal `Src.Relevance.annotate`'s output on the certificate's table (`Recheck.checkCanonicalRelevance`) | this table |
+| Stage A | The byte-level verifiers' requirement that the certificate's relevance annotation equal the kernel annotator's output (`inp.kernel.annotateChecked`) on the certificate's table (`Recheck.checkCanonicalRelevance`) | this table |
 | S0, S1, S2 (x86) | Steps of the Sail reference-model route | [x86 reference model](x86-reference-model.md) |
 | S1–S12, N1–N14, `B*-*`, `R*-*` | Findings of the 2026-11 reviews | Each document that cites one says what the finding is |
 | RE-0 … RE-3; DC-4, DO-23 … DO-27 | Resource-soundness milestones; decision-register entries added on 2026-11-14 | [resource soundness](resource-soundness-design.md), [roadmap](roadmap.md#decisions) |
@@ -610,11 +611,14 @@ and 4.3 GB per 10⁸ tree nodes before it refuses an empty certificate, so about
 slowest certificate the budgets admit or refuse. That sum is an estimate from
 stages measured separately, not a measurement, and it leaves out typing.
 Measured from bytes as single certificates (native `ixcc check-cert`,
-2026-11-10), typing at ingress dominates: an honest root of the committed
-`fixtures/corpus/phase1-scalar/scalar.ixe` (1,543 constants) is accepted in
-51.8 s, 51.7 s of it typing (0.46 s with `--no-typecheck`). The erased
-typechecker's fuel (`Tc.maxRecFuel`) is per constant, so no budget bounds the
-typing of a whole closure. Of the inputs built to stress the other stages, the
+2026-11-10, before the switch to the kernel front end), typing at ingress
+dominated: an honest root of the committed
+`fixtures/corpus/phase1-scalar/scalar.ixe` (1,543 constants) was accepted in
+51.8 s, 51.7 s of it the erased checker's typing (0.46 s without it). Since the
+switch the certified kernel's acceptance takes about a second and a half on
+the largest committed closures; its fuel bounds each call's recursion, not its
+work, so no budget bounds the acceptance of a whole closure (the [kernel front
+end](kernel-front-end-design.md#resource-bounds)). Of the inputs built to stress the other stages, the
 slowest accepted is a closure of 8,006 constants (`tests-recheck --write-wide
 DIR many 8000`) with its honest certificate padded to 64 middle-end steps and
 its allocation edits at the caps, 7.8 s and 167 MB, 4.7 s of it ingress. A
@@ -659,11 +663,12 @@ of 63 constructors each compile and are accepted (producer 18.9 s, checker
 55.6 s); 2,001 of 127 are past `maxBackWork` and are refused by the producer's middle end in 2.5 s
 (the producer used to run its whole back end, 45 s, before the re-run
 refused them). On the committed programs the producer takes at most about 4 s,
-nearly all of it the relevance annotator on `tags125` (`Src.Relevance.annotate`,
-3.5 s, which Stage A of `check-cert` re-runs); their compile time is
-otherwise erased typing at ingress (35 to 75 s on each 1 MB closure on the shared box, and 240
-to 310 s on the 3.7 MB `strings` decline fixture), which `check-cert` runs as
-well. `tests-recheck --producer` compares the
+nearly all of it the relevance annotator on `tags125` (then the erased checker's
+annotator, 3.5 s, which Stage A of `check-cert` re-ran); their compile time was
+otherwise the erased typing at ingress (35 to 75 s on each 1 MB closure on the shared box, and 240
+to 310 s on the 3.7 MB `strings` decline fixture), which `check-cert` ran as
+well; the certified kernel's acceptance that replaced it takes 0.03 to 3 s on
+the same closures (measured 2026-11-11, [kernel front end](kernel-front-end-design.md#measurements)). `tests-recheck --producer` compares the
 rewritten oracles with reference copies of the code they replaced and checks
 that the producer's work, counted in allocations, grows near-linearly on
 scaling inputs (and times the block order against the code it replaced, whose
@@ -1084,14 +1089,16 @@ verifier must fit an 8 MiB stack.
   text; `selectRcPolicy` was cubic in let-alias chains; frame `Nodup`
   checks are quadratic. Erased type checking (`V3.Tc.checkEnv`) took about
   30 s on a 1 MB closure, against milliseconds for `Recheck.run`, so the
-  roadmap's 10 s target is missed with type checking on.
+  roadmap's 10 s target was missed with type checking on; the certified
+  kernel's acceptance that replaced it takes about a second and a half on the
+  largest committed closures.
 - The producer `ixcc compile` was once seen to run past 180 s on a 917-byte
   input with heavy sharing; it now keeps to the re-run's budgets and refuses
   a share DAG of depth 16 at the Lam node budget in about a second, and its
   own cost is near-linear in a closure's definitions ([the
   producer](#middle-end-budgets), the paragraph "The producer"). On large
   closures the compile time is now the checker's `Backend.finish`, about
-  quadratic in the object's text, and erased typing at ingress.
+  quadratic in the object's text, and the kernel's acceptance at ingress.
 - Declines carry a `stage: code` and a message (for example
   `rt.params`); `lake exe census` reports the first failing stage per
   declaration ([corpus](corpus.md)). Messages name constants by Ixon
@@ -1111,10 +1118,9 @@ verifier must fit an 8 MiB stack.
    per strongly connected component, and cache accepted results by content
    address, so recompiling after a change rechecks only what changed.
    Cached entries are oracle outputs that the consuming checker re-validates.
-4. **Faster ingress.** Run the erased type checker once per closure root
-   and reuse its result across compilations of the same closure; separately,
-   adopt the certified kernel for admission when its interfaces allow (the
-   coordination item in the [roadmap](roadmap.md#coordination)).
+4. **Faster ingress.** Run the certified kernel's acceptance once per
+   closure root and reuse its result across compilations of the same closure
+   (it is the whole closure's, so one run serves every root).
 5. **Diagnostics.** Every decline names the Lean constant (through the named
    environment ix can produce beside the anonymous one), the stage, the
    construct, and what would lift it (for example "a closure captured 40

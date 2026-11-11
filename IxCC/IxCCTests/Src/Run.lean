@@ -73,7 +73,7 @@ def slow (_args : List String) : IO UInt32 := do
     let (v, calls) := Runs.ackCalls 3 10
     let row ← Runs.runRow a l "K1.ack" [3, 10] v calls
     IO.println s!"  {row.label} = {row.expected} in {row.ms} ms"
-    let np ← loadK1 { typecheck := false, table := { prims := [] } }
+    let np ← loadK1 { table := { prims := [] } }
     let row ← Runs.runRow a np "K1.fib" [30] 832040 (Runs.fibCalls 30) (budget := 1 <<< 40)
     IO.println s!"  noPrims {row.label} = {row.expected} in {row.ms} ms"
     IO.println s!"tests-src-slow: {← a.get} assertions passed"

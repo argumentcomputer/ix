@@ -44,10 +44,10 @@ The chain from the bytes to the object's result, link by link:
 | The two readings agree | IxCC and IxCK decode the same constants under the same keys | **Absent.** They share the constant decoder and the role vocabulary (`Ix.Kernel.Role`), not the framing or the reading into declarations | Not needed: premise (ii), or one reading by construction (SP-N) |
 | Kernel acceptance ⇒ strong model | `checkDecls_sound`, `checkBytes_strongModel` | Proved by IxCK. **Not a premise of any IxCC theorem** | Premise (i), restated: a model with the laws of the closure of the target and the table's theorems, discharged by an IxVM `checkEnv` claim on those seeds or by a native run on that closure |
 | The target names a kernel constant | `c.target` and IxCK's key agree | **Absent.** IxCC keys block members by projection addresses computed with the native BLAKE3 extern ([`Src/Ingress.lean`](../IxCC/Src/Ingress.lean)) | SP-0 (pure hashing, the claim binds the target) and premise (ii) |
-| IxCC's erased type checker | `Tc.checkEnv` ([`Ixon/V3/Tc/Driver.lean`](../IxCC/Ixon/V3/Tc/Driver.lean)), run when the `typecheck` flag is set | **No soundness theorem**; every guarantee holds with typing on or off | Off the guarantee path (DC-3) |
-| Ingress | environment to Src program (`Src.Ingress.ofEnv`) | Proved that it ran; no correspondence to IxCK's terms | Premise (ii) |
+| The certified kernel's acceptance at ingress | `KernelFront.accept` in `Recheck.ingress` ([`Src/KernelFront/Accept.lean`](../IxCC/Src/KernelFront/Accept.lean)), on every byte-level path (there is no unchecked mode) | **Stated in every byte-level theorem** (`Recheck.ingress_parts`, `verifyBytes_*_sound`, `verifyBytesRing0Sip_sound`): the kernel's tiered entry accepted exactly the envelope's binding section, records and blobs (`accept_spec`), so IxCK's theorems give the reading's fidelity, a model and the strong model of the whole logical environment under the artifact's table and prelude. Not premise (i) as restated (the closure of the seeds under the default table and committed prelude) | Premise (i) by the closure run (KF-4); IxCC's erased type checker, which it replaced, is off every path and is deleted |
+| Ingress | environment to Src program (`Src.Ingress.readConsts`, the pins of the kernel's admitted table), read against the kernel's reading (`KernelFront.Reading.build`: keys, addresses, headers) | Proved that it ran; the terms the annotator walks are checked to correspond to IxCK's (`Reading.corr`) when it runs; no proved correspondence lemma | Premise (ii) |
 | Unfolding table | each entry valid in the kernel's model | Syntactic checks and the axiom closure proved (`checkAxiomClosure_sound`, [`Src/Table/Check.lean`](../IxCC/Src/Table/Check.lean)); **no semantic lemma** | SP-0's lemmas; the statements in premise (ii) |
-| Relevance annotation | positions tagged irrelevant are types or proofs, and conversely | Structural soundness (`check_sound`, [`Src/Relevance/Proof/Sound.lean`](../IxCC/Src/Relevance/Proof/Sound.lean)); `checkCanonical` and `annotate` have no theorem | Premise (ii), against the kernel's typing, both directions |
+| Relevance annotation | positions tagged irrelevant are types or proofs, and conversely | Structural soundness (`check_sound`, [`Src/Relevance/Proof/Sound.lean`](../IxCC/Src/Relevance/Proof/Sound.lean)); `checkCanonical` has no theorem; the annotator is the kernel's (Stage A), each class proved to be the kernel core's answer at its position (`KernelFront.Ctx.classify*_proof`, `_of_runs`), not yet composed into the kernel's typing judgements | Premise (ii), against the kernel's typing, both directions |
 | Lazification | by-name modes only (`Lazify.run_modeEq`, [`Src/Proof/Lazify.lean`](../IxCC/Src/Proof/Lazify.lean)) | Syntactic; meaning preservation not proved | Premise (ii); by-name slots are handled inside SP-1's relation |
 | SrcEval and the kernel's model | adequacy | **Absent.** [`Models/KernelBridge`](../../Models/KernelBridge/README.md) is conditional, covers one real root and cannot reach recursion | SP-A, SP-1 |
 | `GoesWrong` | the escape clause | Unbounded; a dishonest certificate can choose it; the view case is narrowed at claim roots | SP-1's progress |
@@ -73,16 +73,16 @@ Three facts follow, each a reason for the plan's order.
   before `checkCanonical` ran on every program. So "the object returned
   `true`" tells a consumer nothing unless `¬GoesWrong` is known some other
   way, today only by running SrcEval to completion (`sound_of_eval`).
-- **Typing contributes nothing proved.** The erased checker is about 12,700
-  lines adapted from ix's Ixon-v3 checker, with no whole-checker soundness
-  theorem
-  ([trust ledger](trusted-extern-ledger.md#ix-frontend--ixon-v4-source-boundary)),
-  and `verifyBytes`'s guarantees hold for both values of its `typecheck` flag
-  ([compile boundary](compile-boundary.md)). With typing off, a bogus
-  equation theorem passes `checkEqn` (which checks the theorem's type and
-  axiom closure, not its proof) and the object computes the bogus right-hand
-  side, with every theorem still true. Typing also dominates verification
-  time ([hardening design](hardening-design.md)).
+- **Typing comes from the certified kernel, and is not yet premise (i).** Since
+  the switch to the kernel front end, ingress on every byte-level path runs
+  IxCK's acceptance of the whole artifact, so a bogus equation theorem
+  (one `checkEqn` passes, since it checks the theorem's type and axiom
+  closure, not its proof) is declined at ingress, and the byte-level theorems
+  state the acceptance. IxCC's erased type checker, about 12,700 lines with no
+  soundness theorem, is off every path. The acceptance is of the artifact's
+  whole logical environment under its own table and prelude, which is more
+  than and different from premise (i) ([kernel front
+  end](kernel-front-end-design.md#acceptance)).
 - **One allowlisted kind of entry contradicts IxCK's model.** SrcEval
   evaluates an `opaqueByValue` opaque through its stored value
   ([`Src/Semantics.lean`](../IxCC/Src/Semantics.lean), allowlist in
@@ -656,9 +656,9 @@ awaiting the owner's confirmation), with the typing derivations read off the
 kernel's runs. Designed, and built beside the default front end, as the
 [kernel front end](kernel-front-end-design.md): IxCK's tiered entry accepts
 the whole artifact, IxCC's reading is checked against IxCK's, and the
-relevance annotation comes from IxCK's inference; the erased type checker is
-deleted at its switch. The switch proceeds now (the owner's decision of
-2026-11-11; its step 2 is done), and IxCK's blow-up on chains of `let`,
+relevance annotation comes from IxCK's inference; since the switch it is the only
+front end (the owner's decision of 2026-11-11), and the erased type checker's
+code is deleted in its next step. IxCK's blow-up on chains of `let`,
 fixed in the kernel package on this branch in parallel, has landed; the
 native verifier the switch produces still inherits the kernel's exponential
 time on universe levels it cannot fold, until the kernel's level-metering

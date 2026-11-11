@@ -10,7 +10,8 @@ open IxCC.Ixon
 /-- Parameter ownership/locality mode derived from the frontend's binder
 contracts (`~` borrowed -> `.borrow`, `!`/`1` unique/linear -> `.unique`,
 otherwise `.shared`). Resource admission checks those contracts; it is not
-certified, and the erased typing does not compare them. -/
+certified, and the certified kernel's acceptance compares binders' input
+contracts but not their result contracts. -/
 inductive ParamMode where
   | shared
   | borrow
@@ -227,7 +228,7 @@ structure ProducedFir where
   fires : Anf.Walk.Fires
   stages : List (String × Anf.Program)
 
-/-- Run the front-end (`Table.build`, `Relevance.annotate`, `Recheck.annotation`,
+/-- Run the front-end (`Table.build`, the kernel annotator, `Recheck.annotation`,
 `Src.admit`), `Lam.erase`, `Anf.Pipeline.produce`, the closures step
 (`Recheck.closuresOf`) and `Fir.lower` once. -/
 def produceFir (cfg : Config) (inp : Recheck.Input) : Except Err ProducedFir := do
@@ -235,7 +236,7 @@ def produceFir (cfg : Config) (inp : Recheck.Input) : Except Err ProducedFir := 
   let (table, tableDiags, tableStats) := Src.Table.build cfg.table P inp.hints.proposals
   let p0 := { P with table }
   (Src.Table.validate cfg.table p0).mapError fun m => { stage := .table, code := "table.entry", message := m }
-  let ann ← (Src.Relevance.annotate inp.env p0).mapError fun m =>
+  let ann ← (inp.kernel.annotateChecked p0).mapError fun m =>
     { stage := .relevance, code := "relevance-oracle", message := m }
   let (src, checked) ← match Src.Recheck.annotation p0 ann with
     | .ok r => pure r
@@ -388,8 +389,8 @@ def produceAuto (cfg : Config) (input : Recheck.Input) : Except Err AutoCompiled
 
 /-- Policy-aware compiler from raw closure bytes and sidecar JSON. -/
 def compileAuto (cfg : Config) (bytes : ByteArray) (equations : Lean.Json)
-    (roots : List String := []) (typecheck : Bool := true) : Except Err AutoCompiled := do
-  produceAuto cfg (← Recheck.ingress bytes equations roots typecheck)
+    (roots : List String := []) : Except Err AutoCompiled := do
+  produceAuto cfg (← Recheck.ingress bytes equations roots)
 
 /-- Project an `RcReplay.Artifact` to `Recheck.Artifact` for CLI reporting (`--dump-ir`,
 `--signatures`, `--stats`). -/

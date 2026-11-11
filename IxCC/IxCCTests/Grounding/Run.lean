@@ -1,4 +1,4 @@
-import IxCC.Src.KernelFront.Front
+import IxCC.Recheck.Produce
 import IxCC.Src.Readback
 import IxCCGrounding.Check
 import IxCCGrounding.RootCheck
@@ -13,7 +13,7 @@ certificate's annotation. This suite runs it on the committed closures of the gr
 * `fib` (`fixtures/ixon-v4/bench-k1/fib`, role-bound, root `entry` at `10`);
 * `decide (fib 10 = 55)` (`fixtures/corpus/grounding/decide`, root `Grounding.decideFib10`).
 
-For each: the kernel accepts the closure (`KernelFront.ingress`, the tiered entry), the front end
+For each: the kernel accepts the closure (`Recheck.ingress`, the tiered entry), the front end
 builds the program SrcEval runs and the kernel annotator its annotation, and the key map, the
 level parameters and the set `Sl` (the root's closure under the terms SrcEval runs, with the
 pinned `Bool` constructors) are computed as the theorems take them. Every conjunct of the check is
@@ -82,21 +82,21 @@ parameters and the root's closure. -/
 def load (s : Subject) : IO Input := do
   let bytes ← IO.FS.readBinFile s!"{s.stem}.ixe"
   let json ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile s!"{s.stem}.equations.json"))
-  let k ← match KernelFront.ingress bytes json [s.root] with
+  let k ← match Recheck.ingress bytes json [s.root] with
     | .ok k => pure k
     | .error e => throw (IO.userError s!"{s.label}: ingress: {e.render}")
   let cfg : Recheck.Config := { names := [s.root] }
-  let cfg := cfg.forInput k.inp
-  let P := k.inp.program
-  let (table, _, _) := Src.Table.build cfg.table P k.inp.hints.proposals
+  let cfg := cfg.forInput k
+  let P := k.program
+  let (table, _, _) := Src.Table.build cfg.table P k.hints.proposals
   let p0 := { P with table }
-  let ann ← IO.ofExcept (KernelFront.annotateChecked k p0)
+  let ann ← IO.ofExcept (k.kernel.annotateChecked p0)
   let (src, _) ← match Src.Recheck.annotation p0 ann with
     | .ok r => pure r
     | .error _ => throw (IO.userError s!"{s.label}: the annotation was refused")
   let some (_, rootId) := src.roots.head? | throw (IO.userError s!"{s.label}: no root")
-  let env := k.acc.env
-  let κ : CId → KKey := fun c => (k.rd.key? c).getD Ix.Kernel.natName
+  let env := k.kernel.acc.env
+  let κ : CId → KKey := fun c => (k.kernel.rd.key? c).getD Ix.Kernel.natName
   let lpsOf : CId → List Nat := fun c =>
     match env.find? (κ c) with
     | some ci => ci.toConstantVal.levelParams
@@ -112,7 +112,7 @@ def load (s : Subject) : IO Input := do
         if !sl.contains d then
           sl := sl ++ [d]
           todo := todo ++ [d]
-  let keyless := sl.filter fun c => (k.rd.key? c).isNone
+  let keyless := sl.filter fun c => (k.kernel.rd.key? c).isNone
   return { src, env, κ, lpsOf, ann, Sl := sl, rootId, keyless }
 
 /-- The conjuncts of the check that are false. -/

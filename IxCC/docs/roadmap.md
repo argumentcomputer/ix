@@ -91,10 +91,11 @@ rejects only a result off the root's declared shape
 **Not proved** (the [certification design](certification-design.md#what-is-proved-today)
 lists the chain link by link): that IxCC's reading of the bytes is IxCK's; that
 the target names IxCK's constant; any semantic fact about the front end (S6);
-SrcEval's adequacy for IxCK's model (S8). IxCK's acceptance is a premise of no
-IxCC theorem, IxCC's erased type checker has no soundness theorem and every
-guarantee holds with typing off, and the `GoesWrong` escape can be chosen by a
-dishonest certificate.
+SrcEval's adequacy for IxCK's model (S8). IxCK's acceptance of the whole
+artifact is concluded by every byte-level theorem (ingress runs it, since the
+kernel front end's switch) but is not the grounded statements' first premise
+(the closure of the seeds under the default table), and the `GoesWrong` escape
+can be chosen by a dishonest certificate.
 
 **In progress, not yet in this tree:** the result-type rows of roots compiled
 alone and a shape view that makes the third `GoesWrong` clause an equivalence
@@ -362,9 +363,9 @@ Ixon v4 → Src (relevance-annotated kernel terms + unfolding table)
   claims are about), then the conditional statement (SP-0), the typing-transport
   question and an adequacy spike (SP-A), adequacy and progress on a first
   fragment (SP-1), widening (SP-2), and the native discharge of the premises
-  (SP-N), whose kernel-based front end, to replace the erased checker, is
-  built beside the existing one; the switch proceeds now (the owner's
-  decision of 2026-11-11), with the kernel's blow-up on chains of `let` fixed
+  (SP-N), whose kernel-based front end replaced the erased checker as the
+  only front end at the switch's step 3 (the owner's decision of
+  2026-11-11; the checker's code is deleted in step 4), with the kernel's blow-up on chains of `let` fixed
   in the kernel package on this branch in parallel (landed). Kernel acceptance and the image's faithfulness are premises
   that IxVM proofs (or a native kernel run) discharge, not IxCC theorems.
   Designed in the [certification
@@ -422,7 +423,7 @@ experienced engineer per line of work. *Owner* is the default, subject to the
 | SP-1 | Soundness and progress on the first fragment, by a semantic relation indexed by the kernel's types, discharging SP-0's hypotheses ([certification design](certification-design.md#sp-1-adequacy-and-progress-on-the-first-fragment) compares it with a simulation by kernel reduction). **In progress** since 2026-11-11 as [the grounding library](certification-design.md#the-grounding-library-sp-1-in-progress) (`IxCCGrounding`, required check `ixcc-grounding`): G1a and G1b landed: soundness at a root on first-order arguments (`rootSound`, with `fib` and `decide (fib 10 = 55)` as instances), from checks run on the bytes, over every model with the laws as hypotheses, under `SitesOk`, F5's meaning proved by the generic `case` lemma; two laws (constructor canonicity, the projection of a constructor) restricted on 2026-11-11 to families that are not propositions, both false as first landed in a proof-irrelevant set model, and the laws not yet shown to have a model (canonicity scheduled by no one); next G2 and G3 (`SitesOk`), G4 (widening), G5 (progress) | SP-0, SP-A; the external dependencies of XK | both [exit tests](certification-design.md#the-first-grounded-fragment) | 14–30k lines; 6–12 months after SP-A (erasure's simulation, 10.1k) | shared, IxCC leading | the model fact that discharges an evaluation axiom, given the circuit's refinement and the two premises |
 | XK | **External dependencies of the spine** (none in this repository; listed for tracking): the IxVM consistency theorem's eight obligations proved; its claimed environment fixing kinds and values; its derivations exposed or the lowering claim proving typing; the rules' soundness over the public model; the projection of a constructor and the `Nat` operations on literals as public laws; constructor canonicity across parameters and levels (asked 2026-11-11; else a relation carrying types on IxCC's side); public level irrelevance; "the annotation pass preserves denotation"; the table restriction lemma | the certified-IxVM work | each stated on the kernel or IxVM side | theirs | kernel and IxVM workstreams | — |
 | SP-2 | Widening: `Quot`, nested inductives, strings, data primitives, plain-RC results, other roots | SP-1, the phases | per item | per item | IxCC | wider images |
-| SP-N | Native discharge of the premises, for x86 consumers without IxVM proofs: IxCK run natively (since 2026-11-11, existence by the logical entry on the closure of the seeds under the IxVM claim's table, DO-37, the kernel front end's KF-4), the image's faithfulness and typing discharged against IxCK's reading (DO-6), and the erased checker replaced by IxCK in the producer and on the native verifier path (decided 2026-11-14; in progress, as a kernel-based front end in new modules beside the existing one, designed in the [kernel front end](kernel-front-end-design.md); the switch in progress: its step 2, moving what is not typing out of the checker, done 2026-11-11). Decided by the owner on 2026-11-11 ([decisions](kernel-front-end-design.md#decisions)): the switch proceeds now; the kernel's blow-up on chains of `let` is fixed in the kernel package on this branch, in parallel, and has landed (on a hostile `let` chain the kernel front end's acceptance took 52.2 s at 30 `let`s against the erased checker's 0.19 s, and takes 28 ms with the fix); universe levels the kernel cannot fold stay exponential, as in Lean's own kernel, until its planned level-metering work budget. Working defaults, awaiting the owner's confirmation: IxCC's reading checked natively against IxCK's (DO-6 (c)), the kernel's tiered entry, the artifact's own prelude; unbound environments are refused, which follows from the switch | SP-B; SP-0 for the statement; for the switch's step 3, the role-bound refreeze (RL-1 phase 2, in progress); before the branch merges, the kernel's fix of its blow-up on `let` chains (KF-3, in parallel on this branch) | the x86 statement with both premises discharged in one native run; the erased checker deleted | 2–6k lines (built: about 1.5k; the switch deletes about 13.3k) | IxCC | — |
+| SP-N | Native discharge of the premises, for x86 consumers without IxVM proofs: IxCK run natively (since 2026-11-11, existence by the logical entry on the closure of the seeds under the IxVM claim's table, DO-37, the kernel front end's KF-4), the image's faithfulness and typing discharged against IxCK's reading (DO-6), and the erased checker replaced by IxCK in the producer and on the native verifier path (decided 2026-11-14; in progress, as a kernel-based front end in new modules beside the existing one, designed in the [kernel front end](kernel-front-end-design.md); the switch in progress: its step 2, moving what is not typing out of the checker, and its step 3, the kernel front end the only front end, done 2026-11-11). Decided by the owner on 2026-11-11 ([decisions](kernel-front-end-design.md#decisions)): the switch proceeds now; the kernel's blow-up on chains of `let` is fixed in the kernel package on this branch, in parallel, and has landed (on a hostile `let` chain the kernel front end's acceptance took 52.2 s at 30 `let`s against the erased checker's 0.19 s, and takes 28 ms with the fix); universe levels the kernel cannot fold stay exponential, as in Lean's own kernel, until its planned level-metering work budget. Working defaults, awaiting the owner's confirmation: IxCC's reading checked natively against IxCK's (DO-6 (c)), the kernel's tiered entry, the artifact's own prelude; unbound environments are refused, which follows from the switch | SP-B; SP-0 for the statement; for the switch's step 3, the role-bound refreeze (RL-1 phase 2, in progress); before the branch merges, the kernel's fix of its blow-up on `let` chains (KF-3, in parallel on this branch) | the x86 statement with both premises discharged in one native run; the erased checker deleted | 2–6k lines (built: about 1.5k; the switch deletes about 13.3k) | IxCC | — |
 | AR-1 | The evaluator circuit, its refinement of SrcEval, the lowering claim, aggregation | EV-1, EV-2 (unproved deployment); SP-0, SP-1 (proofs) | the IxVM workstream's | that workstream's estimates: the circuit 5–10k lines of formal Aiur, its refinement 10–25k, the lowering check 3–8k | IxVM workstream | — |
 | AR-2 | Fir → formal Aiur with a backward simulation, one object enumeration per program, small `Nat` below 2^56 | RL-2 (formal Aiur in this repository), a key-derivation story or a standalone customer; CD2 optional | K1 through per-program circuits | 8–15k lines for the `Nat` and tree fragment (a spike outside this tree; the IxVM side estimates 10–25k) | unassigned | — |
 | XB-1 | = IxOS-0, as redefined on 2026-11-14 (DO-34): IxCC-written executables replace the C runtime driver in the native gates, out of process, with no C and no in-process trampoline (X0 then X1 of [standalone executables](#standalone-executables)); first planned as a host loader calling an object's entries through a trampoline. Done with X1 | X0 | as X1 | as X0 and X1 | IxCC | — |
@@ -918,10 +919,10 @@ The owner also decided, on the same day:
   the native-discharge milestone (SP-N). This settles DC-4, and the checker's
   part of DC-3: the checker is replaced rather than kept in untrusted
   production, so there is one type checker, the proved one. Its design is a
-  separate kernel front-end document. It is in progress, built in new modules
-  beside the existing front end; until the switch, the erased checker remains
-  as untrusted production code, and the per-claim typing flag keeps its
-  present meaning.
+  separate kernel front-end document. Since the switch's step 3 (2026-11-11)
+  it is the only front end: every compile path's ingress is the kernel's
+  acceptance, the per-claim typing flag is gone, and the erased checker is
+  off every path until its deletion (step 4).
 - **The standalone-executables design**: accepted as proposed, which settles
   DO-28 to DO-36 as their defaults. "Self-host" means a pure certified program
   plus a small machine-level layer that IxCC generates and later proves, never
@@ -971,15 +972,16 @@ the wrong shape. The plan above is restated on these lines
 - **The kernel's blow-up on chains of `let` is fixed in the kernel package on
   this branch**, in parallel with the switch (KF-3). The fix has landed (the
   ∀ rule's universe level; 28 ms where it took 52 s at 30 `let`s). What
-  stays exposed, once the switch's step 3 lands, is a closure whose universe
+  stays exposed since the switch's step 3 is a closure whose universe
   levels the kernel cannot fold, which can hold the byte-level verifiers as
   long as its author chooses, as in Lean's own kernel; the planned guard is
   a work budget in the kernel's core that meters level sizes (KF-3;
   [resource bounds](kernel-front-end-design.md#resource-bounds),
   [hardening](hardening-design.md#external-dependencies)).
-- **The fixtures are being refrozen in the role-bound form** by another
-  engineer (RL-1 phase 2); the switch's step 3 lands after that, since the
-  kernel admits only role-bound environments.
+- **The fixtures were refrozen in the role-bound form** (RL-1 phase 2), and
+  the switch's step 3 followed (the kernel admits only role-bound
+  environments): the front end over the kernel is the only one; steps 4 and 5
+  (the deletion, the ledger) are next.
 
 What remains a working default, awaiting confirmation, is listed with the
 [kernel front end's decisions](kernel-front-end-design.md#decisions): the

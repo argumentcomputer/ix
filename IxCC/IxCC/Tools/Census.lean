@@ -1,15 +1,21 @@
-import IxCC.Ixon.V3.Validate
+import IxCC.Ixon.V3.Env
+import IxCC.Src.KernelFront.Accept
+import IxCC.Ixon.V3.Support
 import IxCC.Tools.Check
 
-/-! Admission census over an Ixon v4 closure.
+/-! Admission census over an Ixon v4 closure (`ixcc/census/2`).
 
 For every constant, the census records the first stage that rejects it:
-strict decoding, erased typing, then the compilation policy for constants
-without usable kernel semantics (`partial` and `unsafe` definitions, plan
-decision D12). Constants that pass every implemented stage report the next
-stage of the rebuilt pipeline, which does not exist yet. The report also
-records headroom against the consumer budgets. Output is deterministic:
-constants are sorted by address and every summary is a sorted count. -/
+strict decoding; the certified kernel's acceptance, which is of the whole
+closure (`Src.KernelFront.accept`, the tiered entry ingress runs: accepted,
+or refused at the record its refusal names, the other records not reaching
+it); then the compilation policy for the `partial` and `unsafe` definitions,
+which the kernel types as tier constants outside the logical environment
+(plan decision D12). Constants that pass every stage report the next stage,
+`src`. The report also records the kernel's verdict (with the tier constants'
+count, or the refusal's stage, classification and message) and headroom
+against the consumer budgets. Output is deterministic: constants are sorted by
+address and every summary is a sorted count. -/
 
 namespace IxCC.Tools.Census
 
@@ -78,6 +84,8 @@ structure Entry where
   reached : String
   /-- The stage that rejected it, if any, with the message. -/
   rejected : Option (String × String)
+  /-- The next stage, for a constant no stage rejected. -/
+  next : String := nextStage
 
 def Entry.json (entry : Entry) : Json :=
   Json.mkObj <|
@@ -87,7 +95,7 @@ def Entry.json (entry : Entry) : Json :=
      ("bytes", toJson entry.bytes), ("depth", toJson entry.depth),
      ("reached", Json.str entry.reached)] ++
     match entry.rejected with
-    | none => [("next", Json.str nextStage)]
+    | none => [("next", Json.str entry.next)]
     | some (stage, message) =>
         [("rejected_at", Json.str stage), ("message", Json.str message)]
 
@@ -97,48 +105,44 @@ def undecoded (address : Ixon.Address) (name : Option String) (bytes : Nat)
   { address := address, name := name, kind := "undecodable", safety := "unknown",
     bytes := bytes, depth := 0, reached := "ingress", rejected := some ("decode", message) }
 
-/-- Decode, type and classify every constant. Typing continues after a
-rejection from the last accepted checker state, so one failure does not hide
-the verdicts of unrelated constants. -/
-def entries (env : V3.Env) (names : Std.HashMap Ixon.Address String) : Array Entry := Id.run do
+/-- The certified kernel's verdict on the whole closure
+(`Src.KernelFront.accept`, the kernel's tiered entry, as ingress runs it). -/
+def kernelVerdict (env : V3.Env) : Except Src.KernelFront.Refusal Src.KernelFront.Accepted :=
+  Src.KernelFront.accept env
+
+/-- Decode and classify every constant against the kernel's verdict on the
+whole closure: accepted, every constant reached `kernel`, then the
+compilation policy for the `partial` and `unsafe` definitions (the kernel's
+tier constants, plan decision D12); refused, the record the refusal names is
+rejected at `kernel` and the others did not reach it. -/
+def entries (env : V3.Env) (names : Std.HashMap Ixon.Address String)
+    (verdict : Except Src.KernelFront.Refusal Src.KernelFront.Accepted) : Array Entry := Id.run do
   let addresses := env.consts.keys.toArray.qsort (fun a b => a.cmpBytes b == .lt)
-  let mut state := Tc.initialState env
-  let mut sinceClear := 0
   let mut output := #[]
   for address in addresses do
     let raw := env.consts[address]?.getD .empty
     let name := names[address]?
-    let verified := Tc.getConstVerified env address
-    match verified with
+    match decodeConstant raw with
     | .error error =>
-        output := output.push (undecoded address name raw.size (toString error))
-    | .ok none =>
-        output := output.push (undecoded address name raw.size "missing")
-    | .ok (some constant) =>
+        output := output.push (undecoded address name raw.size error)
+    | .ok decoded =>
+      let constant := decoded.value
       let (kind, safety) := describe constant
       let base : Entry :=
         { address := address, name := name, kind := kind, safety := safety,
           bytes := raw.size, depth := constantDepth constant, reached := "decode",
           rejected := none }
-      let typing : Except String (Tc.TcState .anon) := do
-        let target ← Tc.checkTarget address constant
-        match (Tc.TcM.checkConst (⟨target, ()⟩ : Tc.KId .anon)).run
-            { state with recFuel := state.fuelBudget } with
-        | .error error _ => throw (toString (repr error))
-        | .ok () next => pure next
-      match typing with
-      | .error message =>
-          output := output.push { base with rejected := some ("typing", message) }
-      | .ok next =>
-        state := next
-        sinceClear := sinceClear + 1
-        if sinceClear == 50 then
-          state := { state with env := state.env.clearReductionCaches }
-          sinceClear := 0
+      match verdict with
+      | .error r =>
+        if r.record == some (Src.KernelFront.kaddr address) then
+          output := output.push { base with rejected := some ("kernel", r.render) }
+        else
+          output := output.push { base with next := "kernel" }
+      | .ok _ =>
         if safety == "partial" || safety == "unsafe" then
           let message := s!"{safety} definition: rejected by plan decision D12; \
             use partial_fixpoint, termination_by or fuel"
-          output := output.push { base with reached := "typing", rejected := some ("policy", message) }
+          output := output.push { base with reached := "kernel", rejected := some ("policy", message) }
         else
           output := output.push { base with reached := "policy" }
   return output
@@ -155,28 +159,41 @@ def counts (keys : Array String) : Json :=
 def headroom (label : String) (actual limit : Nat) : Json :=
   Json.mkObj [("budget", Json.str label), ("actual", toJson actual), ("limit", toJson limit)]
 
+/-- The kernel's verdict as the report gives it: `accepted` with the count of
+tier constants, or the refusal's stage, classification, message and record. -/
+def verdictJson : Except Src.KernelFront.Refusal Src.KernelFront.Accepted → Json
+  | .ok acc => Json.mkObj [("verdict", Json.str "accepted"),
+      ("records", toJson acc.records.length), ("tier_constants", toJson acc.tier.length)]
+  | .error r => Json.mkObj <|
+      [("verdict", Json.str "refused"), ("stage", Json.str r.stage.word),
+       ("outcome", Json.str (match r.outcome with
+          | some .rejected => "rejected" | some .declined => "declined" | none => "none")),
+       ("message", Json.str r.render)] ++
+      (r.record.map fun a => [("record", Json.str (toString a))]).getD []
+
 /-- The complete census report for one environment. -/
 def report (raw : ByteArray) (names : Std.HashMap Ixon.Address String) : Json :=
   match decodeAnonymousEnv raw with
   | .error error =>
-      Json.mkObj [("format", Json.str "ixcc/census/1"),
+      Json.mkObj [("format", Json.str "ixcc/census/2"),
         ("ingress", Json.str "rejected"), ("message", Json.str error)]
   | .ok env =>
-    let all := entries env names
+    let verdict := kernelVerdict env
+    let all := entries env names verdict
     let maxBytes := all.foldl (fun m e => max m e.bytes) 0
     let maxDepth := all.foldl (fun m e => max m e.depth) 0
     Json.mkObj [
-      ("format", Json.str "ixcc/census/1"),
+      ("format", Json.str "ixcc/census/2"),
       ("ingress", Json.str "accepted"),
       ("root", Json.str env.root.toHex),
       ("constants", toJson all.size),
+      ("kernel", verdictJson verdict),
       ("budgets", Json.arr #[
         headroom "environment bytes" raw.size (16 * 1024 * 1024),
         headroom "constants" env.consts.size 16384,
         headroom "blobs" env.blobs.size 16384,
         headroom "largest constant bytes" maxBytes (1024 * 1024),
-        headroom "deepest expression" maxDepth 256,
-        headroom "typing declarations" all.size 4096]),
+        headroom "deepest expression" maxDepth 256]),
       ("kinds", counts (all.map (·.kind))),
       ("reached", counts (all.map (·.reached))),
       ("rejected_at", counts (all.filterMap (·.rejected.map (·.1)))),

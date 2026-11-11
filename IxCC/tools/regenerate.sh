@@ -38,7 +38,16 @@ die() { echo "regenerate: $*" >&2; exit 1; }
 
 # 0. the producer, the tools, and a `lake` stand-in for ix (it asks `lake env printenv LEAN_PATH`
 #    where it compiles; the stand-in answers with the root workspace's libraries)
-(cd "$ROOT" && step lake build ix > "$LOG/ix-build.log" 2>&1) || die "lake build ix failed ($LOG/ix-build.log)"
+#    The root package's modules the fixtures' sources import (the ownership family's annotated
+#    sources import `Ix.Compile.SourceContract.Elab`, which no default target of the root builds)
+#    are built with `ix`, so that a cold checkout regenerates: `ix compile` elaborates the sources
+#    against the root workspace's libraries, and fails on a module whose build output is absent.
+ROOTMODS=$(cd "$ROOT" && git ls-files 'IxCC/fixtures/*.lean' | grep -v '/historical/' |
+  xargs grep -h '^import ' | awk '{print $2}' | sort -u |
+  while read -r m; do [ -f "$ROOT/$(echo "$m" | tr . /).lean" ] && echo "$m"; done | tr '\n' ' ')
+echo "== the root modules the fixtures' sources import: ${ROOTMODS:-none}"
+# shellcheck disable=SC2086
+(cd "$ROOT" && step lake build ix $ROOTMODS > "$LOG/ix-build.log" 2>&1) || die "lake build ix $ROOTMODS failed ($LOG/ix-build.log)"
 IX=$ROOT/.lake/build/bin/ix
 FAKE=$WORK/fake; mkdir -p "$FAKE"
 LP=$(cd "$ROOT" && lake env printenv LEAN_PATH)

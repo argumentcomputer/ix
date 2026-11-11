@@ -168,8 +168,8 @@ A whole-checker semantic soundness theorem is not provided by the adapter.
 IxVM Resource proofs remain unsupported.
 
 The compiler's front end ([compiler design](compiler-design.md)) starts from
-this boundary (`Src.load`: decoding and erased typing, no resource
-admission). Its ownership checker re-establishes every contract on the
+this boundary (`Src.load`: decoding and the certified kernel's acceptance
+of the role-bound environment, no resource admission). Its ownership checker re-establishes every contract on the
 compiled program, so resource admission is an early, diagnosable gate rather
 than a proof premise, and stronger guarantees are granted only by that
 checker. Aiur Ixon/DSL lowering remains a later target milestone.

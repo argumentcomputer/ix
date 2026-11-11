@@ -3,25 +3,31 @@ import IxCC.Ring0
 import IxCC.Recheck.Linked
 import IxCC.Cli
 import IxCC.X86.Layout.Basic
-import IxCCTests.IxonV3.TypingFixtures
+import IxCCTests.Support.Bound
 import IxCCTests.Src.Support
 
 /-! # Hostile inputs to the verifiers and the middle end's replay
 
 Regression tests for hostile certificates and inputs found in review. Programs
-are written as Ixon v4 bytes with the test byte writer and read through
-`Recheck.ingress` with erased typing on, the route a real `.ixe` takes.
+are added to a committed role-bound closure with the role-bound test builder
+(`IxCCTests.Support.Bound`: each inductive with its recursor, no user axiom),
+written as Ixon v4 bytes and read through `Recheck.ingress`, the route a real
+`.ixe` takes: the certified kernel accepts every one of them, so each refusal
+below is the verifier's own, at the stage and code the test names.
 
-* **Pin-free programs**. A closure with no constant whose
-  content is `Nat`, `Bool` or `Eq` has no pinned identities. `checkCanonical`
-  was skipped on such programs, so a certificate retagging a relevant
-  parameter and its call site as irrelevant compiled to an object returning
-  the wrong constructor, and `Recheck.run`, `CompileClaim.verifyProgram`,
-  `checkClaimProgram` and `Ring0Sip.verifyProgram` accepted a claim naming
-  it. The hostile enumeration has three constructors; a two-constructor one has
-  `Bool`'s content address and is pinned, and is kept as a control.
-* **Stage A on `ixcc check-cert`** (the canonical-annotation check) and the **erased-typing
-  default** of the claim APIs and the command line.
+* **A relevance retagging**. A certificate retagging a relevant parameter of
+  `idc (c : E) : E := c` and its call site in `main := idc c₁` as irrelevant
+  compiles, without the canonical check, to an object returning the wrong
+  constructor; `Recheck.run`, `CompileClaim.verifyProgram`,
+  `checkClaimProgram`, `verifyBytes` and both `Ring0Sip` verifiers refuse it.
+  (The regression was first found on a closure with no pinned identity, on
+  which `checkCanonical` was once skipped; a role-bound closure binds `Nat`,
+  `Bool` and `Eq`, so that precondition cannot be built: the refusal itself is
+  what is kept.) The enumeration has three constructors; a two-constructor
+  one is the base's own `Bool`, kept as a control.
+* **Stage A on `ixcc check-cert`** (the canonical-annotation check), and the
+  certified kernel's acceptance of the whole closure on every byte-level entry
+  point: an ill-typed record the program never reaches declines the artifact.
 * **The root signature checks, the specialisation bound and the
   frontier dedupe of the layout's reachability walk**.
 * **The `--rc auto` immortal fallback** on the hostile annotated
@@ -39,7 +45,8 @@ namespace IxCCTests.Recheck.Hostile
 
 open IxCC IxCC.Ixon IxCC.Ixon.V3
 open IxCCTests.Src (Assert expect annotationNoCanonical)
-open IxCCTests.IxonV3.TypingFixtures (store block bytes arrow lambda)
+open IxCCTests.IxonV3.TypingFixtures (store block arrow lambda)
+open IxCCTests.Support.Bound (loadBase addEnum addSimple Field)
 
 abbrev Addr := IxCC.Ixon.Address
 abbrev X := IxCC.Ixon.V3.Expr
@@ -48,9 +55,9 @@ def defn (ty val : X) : ConstantInfo := .defn ⟨.defn, .safe, 0, ty, val⟩
 
 /-! ## Programs as bytes -/
 
-/-- `inductive E | c₀ | … | cₙ₋₁ : Type`. -/
-def enumInd (n : Nat) : V3.Inductive :=
-  ⟨false, 0, 0, 0, .sort 0, (Array.range n).map fun i => ⟨false, 0, i.toUInt64, 0, 0, .recur 0 #[]⟩⟩
+/-- An environment's role-bound envelope (every environment here extends the
+role-bound base, `Support.Bound.write`). -/
+def bytes (env : Env) : ByteArray := IxCCTests.Support.Bound.write env
 
 /-- The enumeration at `refs[0]`. -/
 def enumC : X := .ref 0 #[]
@@ -61,13 +68,15 @@ structure Base where
   ctors : Array Addr
   /-- `idc (c : E) : E := c`. -/
   idc : Addr
+  /-- whether the enumeration is the base's own block (two constructors: `Bool`) -/
+  existing : Bool
 
-def base (n : Nat) : Base := Id.run do
-  let (e, blk) := block {} ⟨.muts #[.indc (enumInd n)], #[], #[], #[.succ .zero]⟩
-  let enumI := V3.indcProjAddr blk 0
-  let ctors := (Array.range n).map fun j => V3.ctorProjAddr blk 0 j.toUInt64
-  let (e, idc) := store e ⟨defn (arrow enumC enumC) (lambda enumC (.var 0)), #[], #[enumI], #[]⟩
-  return { env := e, enumI, ctors, idc }
+/-- `inductive E | c₀ | … | cₙ₋₁ : Type` (with its recursor) and
+`idc (c : E) : E := c`, added to the role-bound base `env0`. -/
+def base (env0 : Env) (n : Nat) : Base := Id.run do
+  let (e, en) := addEnum env0 n
+  let (e, idc) := store e ⟨defn (arrow enumC enumC) (lambda enumC (.var 0)), #[], #[en.ind], #[]⟩
+  return { env := e, enumI := en.ind, ctors := en.ctors, idc, existing := en.existing }
 
 /-- An `ixcc/k1-equations/1` sidecar naming `roots`, with no equations. -/
 def sidecar (roots : List (String × Addr)) : Lean.Json :=
@@ -77,12 +86,12 @@ def sidecar (roots : List (String × Addr)) : Lean.Json :=
       Lean.Json.mkObj [("name", Lean.Json.str n), ("address", Lean.Json.str (toString a))]).toArray),
     ("equations", Lean.Json.arr #[])]
 
-/-- The pin-free program: `main : E := idc c₁`, and a root `rᵢ := cᵢ` per
+/-- The enumeration program: `main : E := idc c₁`, and a root `rᵢ := cᵢ` per
 constructor, so that every constructor is emitted. With `illTyped`, the
 environment also holds an unreachable constant whose value does not have its
 type. -/
-def pinFreeEnv (n : Nat) (illTyped : Bool := false) : Env × Addr × List (String × Addr) := Id.run do
-  let b := base n
+def enumEnv (env0 : Env) (n : Nat) (illTyped : Bool := false) : Env × Addr × List (String × Addr) := Id.run do
+  let b := base env0 n
   let (e, main) := store b.env
     ⟨defn enumC (.app (.ref 1 #[]) (.ref 2 #[])), #[], #[b.enumI, b.idc, b.ctors[1]!], #[]⟩
   let mut e := e
@@ -99,8 +108,8 @@ def pinFreeEnv (n : Nat) (illTyped : Bool := false) : Env × Addr × List (Strin
 depth `dF` over `x` (`2^(dF+1) - 1` calls of `k`); `g x` a balanced `k`-tree
 of depth `dG` whose `2^dG` leaves are `f x`; `main := g c₁`. Every stored
 expression is a few nodes deep: the trees are `share` DAGs. -/
-def ampEnv (dF dG : Nat) : Env × Addr × Addr × Addr := Id.run do
-  let b := base 3
+def ampEnv (env0 : Env) (dF dG : Nat) : Env × Addr × Addr × Addr := Id.run do
+  let b := base env0 3
   let (e, k) := store b.env
     ⟨defn (arrow enumC (arrow enumC enumC)) (lambda enumC (lambda enumC (.var 1))), #[], #[b.enumI], #[]⟩
   let mut shF : Array X := #[.app (.app (.ref 1 #[]) (.var 0)) (.var 0)]
@@ -189,8 +198,8 @@ def ofErr {α : Type} (label : String) (r : Except Recheck.Err α) : IO α :=
   | .ok x => pure x
   | .error e => throw (IO.userError s!"{label}: {e.render}")
 
-/-- A pin-free (or, for two constructors, `Bool`-pinned) program with its
-honest certificate, and the hostile one: `idc`'s parameter and `main`'s
+/-- The enumeration program (for two constructors, the base's `Bool`) with
+its honest certificate, and the hostile one: `idc`'s parameter and `main`'s
 argument retagged `.type`. -/
 structure Case where
   bytes : ByteArray
@@ -200,16 +209,20 @@ structure Case where
   main : Addr
   honest : Recheck.Cert
   hostile : Recheck.Cert
+  /-- whether the enumeration is the base's own `Bool` -/
+  existing : Bool
 
-def mkCase (n : Nat) (illTyped : Bool := false) : IO Case := do
-  let (env, main, roots) := pinFreeEnv n illTyped
+def mkCase (n : Nat) : IO Case := do
+  let env0 ← loadBase
+  let (env, main, roots) := enumEnv env0 n
   let bs := bytes env
   let json := sidecar roots
-  let inp ← ofErr s!"enum-{n}: ingress" (Recheck.ingress bs json [] (typecheck := !illTyped))
+  let inp ← ofErr s!"enum-{n}: ingress" (Recheck.ingress bs json [])
   let P := inp.program
   let cfg := Recheck.Config.forInput {} inp
   let honest ← ofErr s!"enum-{n}: produce" (Recheck.produce cfg inp)
-  let some idcId := P.lookup (base n).idc | throw (IO.userError s!"enum-{n}: idc not ingested")
+  let b := base env0 n
+  let some idcId := P.lookup b.idc | throw (IO.userError s!"enum-{n}: idc not ingested")
   let some mainId := P.lookup main | throw (IO.userError s!"enum-{n}: main not ingested")
   let hostileAnn : Src.Relevance.Ann :=
     { honest.relevance with
@@ -222,17 +235,18 @@ def mkCase (n : Nat) (illTyped : Bool := false) : IO Case := do
             | t => t)
         else (k, tags) }
   let hostile ← ofErr s!"enum-{n}: hostile certificate" (mkCert cfg P honest.table hostileAnn)
-  return { bytes := bs, json, inp, cfg, main, honest, hostile }
+  return { bytes := bs, json, inp, cfg, main, honest, hostile, existing := b.existing }
 
-/-! ## The program-level verifiers on pin-free programs -/
+/-! ## The program-level and byte-level verifiers on a relevance retagging -/
 
 def pinFree (a : Assert) (n : Nat) : IO String := do
   let c ← mkCase n
   let P := c.inp.program
   let cfg := c.cfg
-  let pinned := P.known.nat.isSome || P.known.bool.isSome || P.known.eq.isSome
-  -- two constructors are `Bool`'s content address; three are nothing pinned
-  expect a (pinned == (n == 2)) s!"enum-{n}: pinned identities {pinned}"
+  let pinned := P.known.nat.isSome && P.known.bool.isSome && P.known.eq.isSome
+  -- the role-bound base binds `Nat`, `Bool` and `Eq`; two constructors are its `Bool`
+  expect a pinned s!"enum-{n}: the base's pinned identities are not all bound"
+  expect a (c.existing == (n == 2)) s!"enum-{n}: the base's Bool block {c.existing}"
   -- The honest certificate is accepted everywhere, and its object returns `c₁`.
   let art ← ofErr s!"enum-{n}: Recheck.run (honest)" (Recheck.run cfg P c.honest)
   let claim : CompileClaim :=
@@ -268,11 +282,12 @@ def pinFree (a : Assert) (n : Nat) : IO String := do
     s!"enum-{n}: verifyBytes accepted the hostile claim"
   expect a (!hsip.verifyProgram P) s!"enum-{n}: Ring0Sip.verifyProgram accepted the hostile SIP"
   expect a (!hsip.verifyBytes c.bytes c.json) s!"enum-{n}: Ring0Sip.verifyBytes accepted the hostile SIP"
-  return s!"enum-{n} ({if pinned then "Bool-pinned" else "nothing pinned"}): honest claim accepted by every \
-    verifier, object returns constructor 1; hostile claim (object {hostileObj.size} bytes) refused by \
-    Recheck.run (relevance-S1), verifyProgram, checkClaimProgram, verifyBytes and both Ring0Sip verifiers"
+  return s!"enum-{n} ({if c.existing then "the base's Bool" else "a new enumeration"}): honest claim \
+    accepted by every verifier, object returns constructor 1; hostile claim (object {hostileObj.size} \
+    bytes) refused by Recheck.run (relevance-S1), verifyProgram, checkClaimProgram, verifyBytes and \
+    both Ring0Sip verifiers"
 
-/-! ## Stage A on the command line, and the erased-typing default -/
+/-! ## Stage A on the command line, and the kernel's acceptance of the whole closure -/
 
 /-- `ixcc check-cert` on files in `dir`, in process, returning the error. -/
 def checkCert (dir : System.FilePath) (cert : Recheck.Cert) (extra : List String) :
@@ -304,32 +319,53 @@ def cliStageA (a : Assert) : IO String := IO.FS.withTempDir fun dir => do
   return "check-cert: the honest certificate accepted; R1's hostile one and the honest one reordered refused \
     by Stage A (relevance-canonical)"
 
-/-- An environment holding an ill-typed constant the program does not reach:
-erased typing (the default) refuses it; without typing it compiles. -/
-def typecheckDefault (a : Assert) : IO String := IO.FS.withTempDir fun dir => do
-  let c ← mkCase 3 (illTyped := true)
-  let cfg := c.cfg
-  expect a (Recheck.ingress c.bytes c.json [] (typecheck := true) matches .error _)
-    "typing accepted the ill-typed constant"
-  let (claim, text, _) ← IO.ofExcept (CompileClaim.makeClaim cfg c.bytes c.json (typecheck := false))
-  expect a (CompileClaim.makeClaim cfg c.bytes c.json matches .error _) "makeClaim does not type by default"
-  expect a (CompileClaim.verifyBytes cfg c.bytes c.json claim text (typecheck := false))
-    "verifyBytes without typing refused the claim"
-  expect a (!CompileClaim.verifyBytes cfg c.bytes c.json claim text) "verifyBytes does not type by default"
-  expect a (!(CompileClaim.checkClaim cfg c.bytes c.json claim text).isOk) "checkClaim does not type by default"
-  let sip : Ring0.Ring0Sip := { cfg, claim, certText := text, driver }
-  expect a (sip.verifyBytes c.bytes c.json (typecheck := false)) "Ring0Sip.verifyBytes without typing refused"
-  expect a (!sip.verifyBytes c.bytes c.json) "Ring0Sip.verifyBytes does not type by default"
-  IO.FS.writeBinFile (dir / "c.ixe") c.bytes
+/-- `ixcc` on a command line, in process, returning the error. -/
+def runCli (args : List String) : IO (Except Recheck.Err Unit) := do
+  let o ← IO.ofExcept (IxCC.Cli.parse args)
+  (IxCC.Cli.execute o).run
+
+/-- An environment holding an ill-typed constant the program never reaches:
+the certified kernel's acceptance is of the whole closure, so ingress declines
+it (`ingress: kernel`, declined: a type mismatch; the kernel does not take a
+failed conversion search as evidence that the input is wrong), and with it every
+byte-level entry point, whatever the claim; the same program without that record
+is accepted (`mkCase`). The flag that skipped typing is gone. -/
+def kernelWhole (a : Assert) : IO String := IO.FS.withTempDir fun dir => do
+  let c ← mkCase 3
+  let env0 ← loadBase
+  let (ill, _, _) := enumEnv env0 3 (illTyped := true)
+  let bs := bytes ill
+  let r := Recheck.ingress bs c.json []
+  let declined := fun (e : Recheck.Err) => e.stage == .ingress && e.code == "kernel" &&
+    (e.message.splitOn "(declined)").length > 1 && (e.message.splitOn "type mismatch").length > 1
+  expect a (match r with | .error e => declined e | .ok _ => false)
+    s!"ill-typed: ingress did not decline the unreachable ill-typed record: \
+      {match r with | .error e => e.render | .ok _ => "accepted"}"
+  let illRoot := (← IO.ofExcept (decodeAnonymousEnv bs)).root
+  let art ← ofErr "ill-typed: Recheck.run (honest)" (Recheck.run c.cfg c.inp.program c.honest)
+  let claim : CompileClaim :=
+    { env := illRoot, roleTable := c.inp.env.bindingAddress, target := c.main
+      policy := .immortal, abiArity := 0, elfHash := Address.blake3Pure art.object }
+  let text := c.honest.toText
+  expect a (CompileClaim.makeClaim c.cfg bs c.json matches .error _) "ill-typed: makeClaim accepted"
+  expect a (!CompileClaim.verifyBytes c.cfg bs c.json claim text) "ill-typed: verifyBytes accepted"
+  expect a (!(CompileClaim.checkClaim c.cfg bs c.json claim text).isOk) "ill-typed: checkClaim accepted"
+  let sip : Ring0.Ring0Sip := { cfg := c.cfg, claim, certText := text, driver }
+  expect a (!sip.verifyBytes bs c.json) "ill-typed: Ring0Sip.verifyBytes accepted"
+  IO.FS.writeBinFile (dir / "c.ixe") bs
   IO.FS.writeFile (dir / "c.json") c.json.pretty
-  match ← checkCert dir c.honest ["--no-typecheck"] with
-  | .ok () => expect a true ""
-  | .error e => expect a false s!"check-cert --no-typecheck refused: {e.render}"
   match ← checkCert dir c.honest [] with
-  | .ok () => expect a false "check-cert does not type by default"
-  | .error e => expect a (e.stage == .ingress) s!"check-cert refused, but not at ingress: {e.render}"
-  return "an unreachable ill-typed constant: makeClaim, verifyBytes, checkClaim, Ring0Sip.verifyBytes and \
-    check-cert refuse it by default and accept it without typing"
+  | .ok () => expect a false "ill-typed: check-cert accepted"
+  | .error e => expect a (declined e) s!"ill-typed: check-cert refused, but not by the kernel: {e.render}"
+  match ← runCli ["compile", (dir / "c.ixe").toString, "--equations", (dir / "c.json").toString,
+      "-o", (dir / "c.o").toString] with
+  | .ok () => expect a false "ill-typed: compile accepted"
+  | .error e => expect a (declined e) s!"ill-typed: compile refused, but not by the kernel: {e.render}"
+  expect a (!(IxCC.Cli.parse ["compile", "c.ixe", "--equations", "c.json", "-o", "c.o",
+      "--no-typecheck"]).toBool) "--no-typecheck is still accepted"
+  return "an unreachable ill-typed record: ingress declines the artifact (kernel, declined, type \
+    mismatch), so makeClaim, verifyBytes, checkClaim, Ring0Sip.verifyBytes, check-cert and compile \
+    refuse it; --no-typecheck is a usage error"
 
 /-! ## The root signature checks and the specialisation bound -/
 
@@ -390,23 +426,22 @@ def reachDedupe (a : Assert) : IO String := do
 
 /-! ## `--rc auto` and `makeClaim` fall back to the immortal policy -/
 
-/-- A one-constructor, two-field structure over the type at `refs[0]`. -/
-def pairBlock (field : Addr) : Constant :=
-  ⟨.muts #[.indc ⟨false, 0, 0, 0, .sort 0,
-      #[⟨false, 0, 0, 0, 2, arrow (.ref 0 #[]) (arrow (.ref 0 #[]) (.recur 0 #[]))⟩]⟩],
-    #[], #[field], #[.succ .zero]⟩
+/-- A one-constructor, two-field structure over the type at `field`, with its
+recursor (`Support.Bound.addSimple`). -/
+def addPair (env : Env) (field : Addr) : Env × IxCCTests.Support.Bound.Ind :=
+  addSimple env #[#[.ext field, .ext field]]
 
 /-- The hostile `auto` program with a claim-eligible first root, `main : E := idc c₁`;
 `Box := mk E E`, `Two := mk Box Box`, `dupf (b : Box) : Two := Two.mk b b`
 (duplicates a heap parameter) and `lin (1 c : E) : E := c` (a linear binder
 contract, which puts the program outside `Own.Plain.programDomain`). -/
-def autoEnv : Env × List (String × Addr) := Id.run do
-  let b := base 3
-  let (e, boxBlk) := block b.env (pairBlock b.enumI)
-  let boxI := V3.indcProjAddr boxBlk 0
-  let (e, twoBlk) := block e (pairBlock boxI)
-  let twoI := V3.indcProjAddr twoBlk 0
-  let twoMk := V3.ctorProjAddr twoBlk 0 0
+def autoEnv (env0 : Env) : Env × List (String × Addr) := Id.run do
+  let b := base env0 3
+  let (e, box) := addPair b.env b.enumI
+  let boxI := box.ind
+  let (e, two) := addPair e boxI
+  let twoI := two.ind
+  let twoMk := two.ctors[0]!
   let (e, main) := store e
     ⟨defn enumC (.app (.ref 1 #[]) (.ref 2 #[])), #[], #[b.enumI, b.idc, b.ctors[1]!], #[]⟩
   let (e, dupf) := store e
@@ -432,10 +467,10 @@ def cli (args : List String) : IO (Except Recheck.Err Unit) := do
   (IxCC.Cli.execute o).run
 
 def autoFallback (a : Assert) : IO String := IO.FS.withTempDir fun dir => do
-  let (env, roots) := autoEnv
+  let (env, roots) := autoEnv (← loadBase)
   let bs := bytes env
   let json := sidecar roots
-  let inp ← ofErr "auto: ingress" (Recheck.ingress bs json [] true)
+  let inp ← ofErr "auto: ingress" (Recheck.ingress bs json [])
   let cfg := Recheck.Config.forInput {} inp
   -- plain RC is selected, and refused
   let front ← ofErr "auto: produceFir" (Recheck.RcReplay.produceFir cfg inp)
@@ -485,16 +520,16 @@ def autoFallback (a : Assert) : IO String := IO.FS.withTempDir fun dir => do
 /-- The `amp` input with the honest table and relevance (so Stage A passes)
 and the single middle-end step `inline [(g, [f])]`. -/
 def ampCase (dF dG : Nat) : IO (ByteArray × Lean.Json × Recheck.Input × Recheck.Config × Addr × Recheck.Cert) := do
-  let (env, f, g, main) := ampEnv dF dG
+  let (env, f, g, main) := ampEnv (← loadBase) dF dG
   let bs := bytes env
   let json := sidecar [("main", main)]
-  let inp ← ofErr "amp: ingress" (Recheck.ingress bs json [] true)
+  let inp ← ofErr "amp: ingress" (Recheck.ingress bs json [])
   let P := inp.program
   let cfg := Recheck.Config.forInput {} inp
   let (table0, _, _) := Src.Table.build cfg.table P inp.hints.proposals
   let tc := Src.Table.TableCert.ofTable table0
   let table ← IO.ofExcept (Src.Table.ofCert cfg.table P tc)
-  let ann ← IO.ofExcept (Src.Relevance.annotate inp.env { P with table })
+  let ann ← IO.ofExcept (inp.kernel.annotateChecked { P with table })
   let base : Recheck.Cert := { table := tc, relevance := ann }
   let (src, checked) ← ofErr "amp: front" (Recheck.front cfg P base)
   let (lam, _) ← match Lam.erase src checked with
@@ -706,17 +741,17 @@ def retryFallbackMechanism (a : Assert) : IO String := do
 `c₁`, `c₂` (so that the `bᵢ` are distinct constants); and
 `main : E := k (pi (b₀ c₀)) (k (pi (b₁ c₀)) (… (pi (b₁₆ c₀))))`. The trees are
 `share` DAGs. -/
-def retryLaterEnv : Env × Addr := Id.run do
-  let b := base 3
+def retryLaterEnv (env0 : Env) : Env × Addr := Id.run do
+  let b := base env0 3
   let mut e := b.env
   -- `tys`: E, T₁ … T₉, W; `mks`: their constructors from T₁'s
   let mut tys : Array Addr := #[b.enumI]
   let mut mks : Array Addr := #[]
   for _ in [0:10] do
-    let (e', blk) := block e (pairBlock tys.back!)
+    let (e', t) := addPair e tys.back!
     e := e'
-    tys := tys.push (V3.indcProjAddr blk 0)
-    mks := mks.push (V3.ctorProjAddr blk 0 0)
+    tys := tys.push t.ind
+    mks := mks.push t.ctors[0]!
   let (e', k) := store e
     ⟨defn (arrow enumC (arrow enumC enumC)) (lambda enumC (lambda enumC (.var 1))), #[], #[b.enumI], #[]⟩
   e := e'
@@ -768,10 +803,10 @@ step: `produceOnce` with the retry refuses the program there. `produce` (and so
 `compileInput`, and `compileInputRetry` around it) falls back to the run without
 the retry, which compiles. -/
 def retryLater (a : Assert) : IO String := do
-  let (env, main) := retryLaterEnv
+  let (env, main) := retryLaterEnv (← loadBase)
   let bs := bytes env
   let json := sidecar [("main", main)]
-  let inp ← ofErr "retryLater: ingress" (Recheck.ingress bs json [] true)
+  let inp ← ofErr "retryLater: ingress" (Recheck.ingress bs json [])
   let cfg := Recheck.Config.forInput {} inp
   let ps ← ofErr "retryLater: front" (Recheck.produceSource cfg inp)
   let (lam, _) ← match Lam.erase ps.src ps.checked with
@@ -828,10 +863,10 @@ phase and nothing is inlined; with it the round is taken without `g` and `f`
 shrinks to its parameter (behind ticks), so the program ends smaller. Both runs
 compile (each certificate replayed by `Recheck.run`). -/
 def retryRound (a : Assert) : IO String := do
-  let (env, f, g, main) := ampEnv 3 8
+  let (env, f, g, main) := ampEnv (← loadBase) 3 8
   let bs := bytes env
   let json := sidecar [("main", main)]
-  let inp ← ofErr "retry: ingress" (Recheck.ingress bs json [] true)
+  let inp ← ofErr "retry: ingress" (Recheck.ingress bs json [])
   let P := inp.program
   let (c1, a1) ← ofErr "retry: compile with the retry" (Recheck.compileInput {} inp)
   let (c0, a0) ← ofErr "retry: compile without the retry"

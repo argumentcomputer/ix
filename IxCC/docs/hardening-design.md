@@ -46,11 +46,15 @@ most 64 MiB of JSON each), through `verifyBytes`, `checkClaim`,
   sum to about 45 s, an estimate, not a run. Memory is proportional to the
   input and capped by it (at most 2.9 GB measured). Details and figures are in
   [Middle-end budgets](compiler-design.md#middle-end-budgets).
-- **Not bounded.** Typing at ingress, on by default, is the largest cost
-  measured: 51.7 s of a 51.8 s check of the committed 1.1 MB `scalar.ixe`
-  (0.46 s with typing off). The erased type checker's fuel is per constant
-  (`Tc.maxRecFuel`), so a closure's typing is bounded only by the decoder's
-  16,384-constant limit times that fuel; a closure at the 16 MiB limit has not
+- **Not bounded.** The certified kernel's acceptance at ingress (every
+  byte-level entry point runs it; there is no unchecked mode) is bounded by the
+  batch limits (16,384 records, 1 MiB each, 16 MiB in all) and its per-call
+  recursion fuel, not by a work budget: on the committed closures it takes
+  about a second and a half at the most (2.5 MB, about 3,600 records), where
+  the erased type checker took about 200 s, but a hostile universe level can
+  hold it as long as its author chooses (below, external dependencies). On an
+  8 MiB and a 2 MiB stack it accepts the generated chains at IxCC's depth
+  budget (`tests-recheck`'s stack part); a closure at the 16 MiB limit has not
   been built. No certificate near all the stage limits at once has been built.
   Programs built in memory without ingress or `Recheck.checkSrc` (a stated
   precondition) reach about 12 GB in the front end at `maxSrcVisits`. No audit
@@ -76,8 +80,9 @@ acceptance is a premise discharged by an IxVM proof or a native kernel run
 IxCC's erased type checker leaves the guarantee path. It is retired, not
 kept as a filter (DC-4, decided): the [kernel front
 end](kernel-front-end-design.md) replaces it in the producer and on the
-native verifier path, and its switch is in progress (the owner's decision of
-2026-11-11). The erased checker's cost leaves IxCC's verifier; the kernel's
+native verifier path, and the switch has made it the only front end (the
+owner's decision of 2026-11-11; the checker's code is deleted in a following
+step). The erased checker's cost leaves IxCC's verifier; the kernel's
 typing core takes its place there, exponential on universe levels it cannot
 fold until its planned work budget lands (its blow-up on chains of `let` is
 fixed, [below](#external-dependencies)).
@@ -133,8 +138,8 @@ decision](roadmap.md#open-decisions).
   normalisation and decision procedure walk it as a tree, while level
   equality is memoised on the pairs it proves equal, so two such levels,
   equal but built apart, compare in time linear in their DAGs). It matters to IxCC
-  because IxCC's verifier runs IxCK itself: once the switch's step 3 lands, the
-  erased checker is gone from the verifier path, and a closure of ordinary
+  because IxCC's verifier runs IxCK itself: since the switch, the erased
+  checker is gone from the verifier path, and a closure of ordinary
   size carrying such a constant can hold the byte-level verifiers as long as
   its author chooses. The core exposes no work counter, and its fuel bounds
   recursion depth, not work; the planned guard is a work budget in the

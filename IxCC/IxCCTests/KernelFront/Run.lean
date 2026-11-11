@@ -1,14 +1,18 @@
 import IxCCTests.KernelFront.Diff
+import IxCCTests.KernelFront.Bound
 import IxCCTests.Src.Support
 import IxCCTests.Support.Envelope
 
-/-! # `tests-kernel-front`: the kernel front end on the committed role-bound closures
+/-! # `tests-kernel-front`: the front end over the certified kernel on the committed closures
 
-On two committed closures (`phase1-scalar`'s `tuple` and `bench-k1`'s `fib`;
-every committed closure is role-bound, as `ix compile` writes it): the kernel
-accepts it; the two front ends (`Diff.diff`) give the same program, the same
-annotation, the same certificate and the same object, and the kernel front
-end's Stage A accepts its own certificate. Then the refusals:
+Since the switch, ingress (`Recheck.ingress`) is the kernel's acceptance and
+the producer's annotator and Stage A are the kernel's. On two committed
+closures (`phase1-scalar`'s `tuple` and `bench-k1`'s `fib`; every committed
+closure is role-bound, as `ix compile` writes it): the kernel accepts it; the
+earlier reading and annotator (`Diff.diff`: IxCC's binding decoder's pins, the
+erased checker's annotator, until they are deleted) give the same program and
+the same annotation, and Stage A accepts the producer's certificate. Then the
+refusals:
 
 * an unbound envelope (the same records without the binding,
   `Support.Envelope.unboundTwin`);
@@ -26,14 +30,17 @@ record: the kernel keeps the chain's universe level small.
 Then, on every committed role-bound closure: the kernel accepts it, but for
 the three refused for their own reasons (`phase1-boundary`'s `fields50` and
 `tags126`, which IxCC's decoder refuses first, at its depth budget, and
-`src-diag`'s `sorry.ixe`, which the kernel declines for its `sorry`); and on those under
-512 KiB the two front ends give the same program and, root by root, the same
-annotation, certificate and object, or refuse the root alike; on `sorry.ixe`
-they differ only in that the kernel's ingress declines it and the erased
-checker's admits it (its `sorry` diagnostics come after ingress).
+`src-diag`'s `sorry.ixe`, which the kernel declines for its `sorry`); and on
+those under 512 KiB the earlier reading and annotator agree with ingress's,
+root by root, and every root that compiles has its certificate accepted by
+Stage A; on `sorry.ixe` ingress declines (the erased checker's acceptance
+admitted it: its `sorry` diagnostics came after ingress).
 
-Differential runs over other role-bound closures, written into scratch by the
-tree's `ix`, are `tests-kernel-front diff …` (`Main`). -/
+Then the role-bound test builder (`IxCCTests.Support.Bound`), with the hostile
+family's enumeration case ported to it (`Bound`).
+
+The comparison on other role-bound closures, written into scratch by the
+tree's `ix`, is `tests-kernel-front diff …` (`Main`). -/
 
 namespace IxCCTests.KernelFront
 
@@ -155,23 +162,23 @@ def run : IO Bool := do
         s!"{label}: a role table naming a record the closure lacks was accepted"
       -- Stage A
       let cfg : Recheck.Config := { names := [root] }
-      let k ← match KernelFront.ingress bb bj [root] with
+      let k ← match Recheck.ingress bb bj [root] with
         | .ok k => pure k
         | .error e => throw (IO.userError s!"{label}: kernel ingress: {e.render}")
-      let cert ← match KernelFront.produce cfg k with
+      let cert ← match Recheck.produce cfg k with
         | .ok c => pure c
         | .error e => throw (IO.userError s!"{label}: kernel produce: {e.render}")
-      expect a (KernelFront.checkCanonicalRelevance cfg k cert.table cert.relevance)
+      expect a (Recheck.checkCanonicalRelevance cfg k cert.table cert.relevance)
         s!"{label}: Stage A refused the kernel annotator's own annotation"
       let flipped := { cert.relevance with nodes := flipOne cert.relevance.nodes }
       expect a (flipped != cert.relevance &&
-          !KernelFront.checkCanonicalRelevance cfg k cert.table flipped)
+          !Recheck.checkCanonicalRelevance cfg k cert.table flipped)
         s!"{label}: Stage A accepted an annotation with one tag changed"
       -- a program that is not the kernel's reading
-      let p := k.inp.program
+      let p := k.program
       let some (_, rootId) := p.roots.head? | throw (IO.userError s!"{label}: no root")
       let wrongValue := p.setTerm (.value rootId) (.natLit 7)
-      expect a ((KernelFront.annotate k.fe k.rd wrongValue).toOption.isNone)
+      expect a ((KernelFront.annotate k.kernel.fe k.kernel.rd wrongValue).toOption.isNone)
         s!"{label}: a value that is not the kernel's reading was annotated"
       let ctorIds := (List.range p.size).filter fun c =>
         match p.decl? c with | some (.ctor ..) => true | _ => false
@@ -186,8 +193,8 @@ def run : IO Bool := do
       expect a ((KernelFront.Reading.build acc wrongAddr).toOption.isNone)
         s!"{label}: a constant keyed by another address was read as the kernel's"
       IO.println s!"{label}: accepted, {acc.records.length} records, {acc.decls.size} declarations; \
-        ingress {rep.newIngressMs} ms (kernel {rep.newAcceptMs} ms) against {rep.oldIngressMs} ms \
-        (erased typing {rep.oldTypingMs} ms); annotation, certificate and object the same"
+        ingress {rep.newIngressMs} ms (kernel {rep.newAcceptMs} ms; the erased checker's typing alone \
+        {rep.oldTypingMs} ms); the two annotators agree, Stage A accepts"
     -- a role-bound closure carrying a constant whose ∀ chain shares one type: the
     -- kernel's entry checks every record, and the chain's levels stay small
     let (tb, _) ← read "fixtures/corpus/phase1-scalar/tuple"
@@ -228,6 +235,16 @@ def run : IO Bool := do
           expect a (kernelDeclined.any (label.endsWith ·) && (match r.outcome with | some .declined => true | _ => false) &&
               (r.message.splitOn "sorryAx").length > 1)
             s!"{label}: the kernel refused it: {r.render}"
+          -- what `ixcc` prints: the kernel's line verbatim, then the plain-words line
+          if kernelDeclined.any (label.endsWith ·) then
+            expect a (r.policy == some .sorryAx) s!"{label}: not classified as the sorryAx policy decline"
+            if let some sidecar ← sidecarOf path then
+              let bj ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile sidecar))
+              let expected := r.render ++ "\n" ++ KernelFront.PolicyDecline.sorryAx.explain
+              expect a (match Recheck.ingress bytes bj [] with
+                  | .error e => e.stage == .ingress && e.code == "kernel" && e.message == expected
+                  | .ok _ => false)
+                s!"{label}: ingress did not report the kernel's line and the explanation"
         if bytes.size < differentialBytes then
           if let some sidecar ← sidecarOf path then
             let bj ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile sidecar))
@@ -245,6 +262,8 @@ def run : IO Bool := do
             compared := compared + 1
     IO.println s!"every committed closure: {accepted} accepted by the kernel, the decoder's and the \
       kernel's refusals as expected; {compared} under {differentialBytes} bytes compared by both front ends"
+    -- the role-bound test builder, and the hostile enumeration case ported to it
+    for line in ← Bound.run a do IO.println line
     IO.println s!"tests-kernel-front: {← a.get} assertions passed"
     return true
   catch error =>

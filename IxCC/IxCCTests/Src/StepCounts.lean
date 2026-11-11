@@ -21,7 +21,7 @@ def run (a : Assert) : IO (List String) := do
     let dir := fixtures / "bench-k1"
     let bytes ← IO.FS.readBinFile (dir / s!"{name}.ixe")
     let json ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile (dir / s!"{name}.equations.json")))
-    let (inp, ps) ← IO.ofExcept ((Steps.front bytes json ["entry"] false).mapError (·.render))
+    let (inp, ps) ← IO.ofExcept ((Steps.front bytes json ["entry"]).mapError (·.render))
     let root ← IO.ofExcept (Steps.rootOf inp ps.src "entry")
     let m ← IO.ofExcept (Steps.measure ps.src root args 1000000000)
     expect a (natOf m.result == some value) s!"{name} {args}: {outcome m.result}, expected {value}"

@@ -38,14 +38,8 @@ namespace IxCCTests.Recheck.Deep
 open IxCC IxCC.Ixon IxCC.Ixon.V3
 open IxCCTests.Recheck.Hostile
 open IxCCTests.Src (Assert expect)
-open IxCCTests.IxonV3.TypingFixtures (store block bytes arrow lambda)
-
-/-- `inductive L | nil | cons (e : E) (l : L)` over the type at `refs[0]`. -/
-def listBlock (elem : Addr) : Constant :=
-  ⟨.muts #[.indc ⟨false, 0, 0, 0, .sort 0,
-      #[⟨false, 0, 0, 0, 0, .recur 0 #[]⟩,
-        ⟨false, 0, 1, 0, 2, arrow (.ref 0 #[]) (arrow (.recur 0 #[]) (.recur 0 #[]))⟩]⟩],
-    #[], #[elem], #[.succ .zero]⟩
+open IxCCTests.IxonV3.TypingFixtures (store arrow lambda)
+open IxCCTests.Support.Bound (loadBase addList addTree)
 
 /-- `step` applied `n` times to `inner`, stored as a chain of shares of at most
 200 steps each: the expression and its share table. -/
@@ -61,20 +55,20 @@ def chain (step : X → X) (inner : X) (n : Nat) : Array X × X := Id.run do
   return (sh, cur)
 
 /-- `deep n`. -/
-def deepEnv (n : Nat) : Env × Addr := Id.run do
-  let b := base 3
-  let (e, blk) := block b.env (listBlock b.enumI)
-  let listI := V3.indcProjAddr blk 0
-  let nil := V3.ctorProjAddr blk 0 0
-  let cons := V3.ctorProjAddr blk 0 1
+def deepEnv (env0 : Env) (n : Nat) : Env × Addr := Id.run do
+  let b := base env0 3
+  let (e, l) := addList b.env b.enumI
+  let listI := l.ind
+  let nil := l.ctors[0]!
+  let cons := l.ctors[1]!
   -- refs: 0 L, 1 cons, 2 nil, 3 c₀
   let (sh, v) := chain (fun t => .app (.app (.ref 1 #[]) (.ref 3 #[])) t) (.ref 2 #[]) n
   let (e, main) := store e ⟨defn (.ref 0 #[]) v, sh, #[listI, cons, nil, b.ctors[0]!], #[]⟩
   return (e, main)
 
 /-- `deepType n`. -/
-def deepTypeEnv (n : Nat) : Env × Addr := Id.run do
-  let b := base 3
+def deepTypeEnv (env0 : Env) (n : Nat) : Env × Addr := Id.run do
+  let b := base env0 3
   let (e, f) := store b.env ⟨defn (arrow (.sort 0) (.sort 0)) (lambda (.sort 0) (.var 0)), #[], #[],
     #[.succ .zero]⟩
   -- refs: 0 E, 1 F, 2 c₀
@@ -84,8 +78,8 @@ def deepTypeEnv (n : Nat) : Env × Addr := Id.run do
 
 /-- `deepApp n`: `main : E := idc (idc (… c₁))`, `n` applications of the identity
 function deep. -/
-def deepAppEnv (n : Nat) : Env × Addr := Id.run do
-  let b := base 3
+def deepAppEnv (env0 : Env) (n : Nat) : Env × Addr := Id.run do
+  let b := base env0 3
   -- refs: 0 E, 1 idc, 2 c₁
   let (sh, v) := chain (fun t => .app (.ref 1 #[]) t) (.ref 2 #[]) n
   let (e, main) := store b.env ⟨defn (.ref 0 #[]) v, sh, #[b.enumI, b.idc, b.ctors[1]!], #[]⟩
@@ -93,8 +87,8 @@ def deepAppEnv (n : Nat) : Env × Addr := Id.run do
 
 /-- `deepLet n`: `main : E := let x₀ : E := c₀; let x₁ : E := x₀; …; xₙ`, `n + 1`
 nested `let`s. -/
-def deepLetEnv (n : Nat) : Env × Addr := Id.run do
-  let b := base 3
+def deepLetEnv (env0 : Env) (n : Nat) : Env × Addr := Id.run do
+  let b := base env0 3
   let c : LetContract := { nonDep := false }
   -- refs: 0 E, 1 c₀
   let (sh, v) := chain (fun t => .letE c (.ref 0 #[]) (.var 0) t) (.var 0) n
@@ -104,8 +98,8 @@ def deepLetEnv (n : Nat) : Env × Addr := Id.run do
 
 /-- `many n`: `main : E := fₙ c₀` with `f₀ x := x` and `fᵢ₊₁ x := fᵢ x`, `n + 1`
 distinct globals, so that every level holds that many functions. -/
-def manyEnv (n : Nat) : Env × Addr := Id.run do
-  let b := base 3
+def manyEnv (env0 : Env) (n : Nat) : Env × Addr := Id.run do
+  let b := base env0 3
   -- f₀: refs 0 E
   let (e0, f0) := store b.env ⟨defn (arrow (.ref 0 #[]) (.ref 0 #[])) (lambda (.ref 0 #[]) (.var 0)), #[],
     #[b.enumI], #[]⟩
@@ -121,14 +115,18 @@ def manyEnv (n : Nat) : Env × Addr := Id.run do
   let (eM, main) := store e ⟨defn (.ref 0 #[]) (.app (.ref 1 #[]) (.ref 2 #[])), #[], #[b.enumI, f, b.ctors[0]!], #[]⟩
   return (eM, main)
 
-/-- `shared n`: `main : E := idc t (w t)`, where `t` is `n` applications of
-`idc` over `c₁` and `w` wraps `n` more around it, all stored as shares of at
-most 200: the term's tree is about `2 n` deep, but `t` is first used shallowly.
+/-- `shared n`: `main : E := k t (w t)` (`k (a b : E) : E := a`), where `t`
+is `n` applications of `idc` over `c₁` and `w` wraps `n` more around it, all
+stored as shares of at most 200: the term's tree is about `2 n` deep, but `t`
+is first used shallowly (the certified kernel accepts it; the program is well
+typed).
 Ingress used to reuse its conversion under `w` without counting its depth
 again; it now checks a reused share's height against the depth left there. -/
-def sharedEnv (n : Nat) : Env × Addr := Id.run do
-  let b := base 3
-  -- refs: 0 E, 1 idc, 2 c₁
+def sharedEnv (env0 : Env) (n : Nat) : Env × Addr := Id.run do
+  let b := base env0 3
+  let (e, k) := store b.env
+    ⟨defn (arrow enumC (arrow enumC enumC)) (lambda enumC (lambda enumC (.var 1))), #[], #[b.enumI], #[]⟩
+  -- refs: 0 E, 1 idc, 2 c₁, 3 k
   let step := fun (t : X) => (.app (.ref 1 #[]) t : X)
   let mut sh : Array X := #[]
   let mut cur : X := .ref 2 #[]
@@ -139,27 +137,20 @@ def sharedEnv (n : Nat) : Env × Addr := Id.run do
   for _ in [0:(n + 199) / 200] do
     sh := sh.push (Nat.repeat step 200 cur)
     cur := .share (sh.size - 1).toUInt64
-  let (e, main) := store b.env ⟨defn (.ref 0 #[]) (.app (.app (.ref 1 #[]) top) cur), sh,
-    #[b.enumI, b.idc, b.ctors[1]!], #[]⟩
+  let (e, main) := store e ⟨defn (.ref 0 #[]) (.app (.app (.ref 3 #[]) top) cur), sh,
+    #[b.enumI, b.idc, b.ctors[1]!, k], #[]⟩
   return (e, main)
-
-/-- `inductive T | leaf | node (l r : T)`. -/
-def treeBlock : Constant :=
-  ⟨.muts #[.indc ⟨false, 0, 0, 0, .sort 0,
-      #[⟨false, 0, 0, 0, 0, .recur 0 #[]⟩,
-        ⟨false, 0, 1, 0, 2, arrow (.recur 0 #[]) (arrow (.recur 0 #[]) (.recur 0 #[]))⟩]⟩],
-    #[], #[], #[.succ .zero]⟩
 
 /-- `main : T`, a balanced tree of `node`s of depth `d` stored as a share DAG
 (`d + 1` stored nodes): its Lam term has `2^(d+1) - 1` constructor nodes and
 ANF conversion makes it a chain of that many constructor bindings, each used
 later, so every shrink round's census reads the rest of the chain at each of
 them. -/
-def treeEnv (d : Nat) : Env × Addr := Id.run do
-  let (e, blk) := block {} treeBlock
-  let tI := V3.indcProjAddr blk 0
-  let leaf := V3.ctorProjAddr blk 0 0
-  let node := V3.ctorProjAddr blk 0 1
+def treeEnv (env0 : Env) (d : Nat) : Env × Addr := Id.run do
+  let (e, t) := addTree env0
+  let tI := t.ind
+  let leaf := t.ctors[0]!
+  let node := t.ctors[1]!
   -- refs: 0 T, 1 node, 2 leaf
   let mut sh : Array X := #[.app (.app (.ref 1 #[]) (.ref 2 #[])) (.ref 2 #[])]
   for i in [1:d+1] do
@@ -169,15 +160,15 @@ def treeEnv (d : Nat) : Env × Addr := Id.run do
   return (e, main)
 
 /-- A shape's bytes and sidecar. -/
-def shape (name : String) (n : Nat) : Except String (ByteArray × Lean.Json) :=
+def shape (env0 : Env) (name : String) (n : Nat) : Except String (ByteArray × Lean.Json) :=
   match name with
-  | "deep" => let (e, main) := deepEnv n; .ok (bytes e, sidecar [("main", main)])
-  | "deepType" => let (e, main) := deepTypeEnv n; .ok (bytes e, sidecar [("main", main)])
-  | "wide" => let (e, _, _, main) := ampEnv n 0; .ok (bytes e, sidecar [("main", main)])
-  | "tree" => let (e, main) := treeEnv n; .ok (bytes e, sidecar [("main", main)])
-  | "deepApp" => let (e, main) := deepAppEnv n; .ok (bytes e, sidecar [("main", main)])
-  | "deepLet" => let (e, main) := deepLetEnv n; .ok (bytes e, sidecar [("main", main)])
-  | "many" => let (e, main) := manyEnv n; .ok (bytes e, sidecar [("main", main)])
+  | "deep" => let (e, main) := deepEnv env0 n; .ok (bytes e, sidecar [("main", main)])
+  | "deepType" => let (e, main) := deepTypeEnv env0 n; .ok (bytes e, sidecar [("main", main)])
+  | "wide" => let (e, _, _, main) := ampEnv env0 n 0; .ok (bytes e, sidecar [("main", main)])
+  | "tree" => let (e, main) := treeEnv env0 n; .ok (bytes e, sidecar [("main", main)])
+  | "deepApp" => let (e, main) := deepAppEnv env0 n; .ok (bytes e, sidecar [("main", main)])
+  | "deepLet" => let (e, main) := deepLetEnv env0 n; .ok (bytes e, sidecar [("main", main)])
+  | "many" => let (e, main) := manyEnv env0 n; .ok (bytes e, sidecar [("main", main)])
   | _ => .error s!"unknown shape {name}"
 
 /-- The certificate Stage A expects: the table `Table.build` proposes and the
@@ -187,19 +178,19 @@ def baseCert (inp : Recheck.Input) (cfg : Recheck.Config) : Except String Rechec
   let (table0, _, _) := Src.Table.build cfg.table P inp.hints.proposals
   let tc := Src.Table.TableCert.ofTable table0
   let table ← Src.Table.ofCert cfg.table P tc
-  let ann ← Src.Relevance.annotate inp.env { P with table }
+  let ann ← inp.kernel.annotateChecked { P with table }
   return { table := tc, relevance := ann }
 
 /-- A shape's environment and root. -/
-def shapeEnv (name : String) (n : Nat) : Except String (Env × Addr) :=
+def shapeEnv (env0 : Env) (name : String) (n : Nat) : Except String (Env × Addr) :=
   match name with
-  | "deep" => .ok (deepEnv n)
-  | "deepType" => .ok (deepTypeEnv n)
-  | "wide" => let (e, _, _, main) := ampEnv n 0; .ok (e, main)
-  | "tree" => .ok (treeEnv n)
-  | "deepApp" => .ok (deepAppEnv n)
-  | "deepLet" => .ok (deepLetEnv n)
-  | "many" => .ok (manyEnv n)
+  | "deep" => .ok (deepEnv env0 n)
+  | "deepType" => .ok (deepTypeEnv env0 n)
+  | "wide" => let (e, _, _, main) := ampEnv env0 n 0; .ok (e, main)
+  | "tree" => .ok (treeEnv env0 n)
+  | "deepApp" => .ok (deepAppEnv env0 n)
+  | "deepLet" => .ok (deepLetEnv env0 n)
+  | "many" => .ok (manyEnv env0 n)
   | _ => .error s!"unknown shape {name}"
 
 /-- A certificate for a deep instance that the annotator cannot produce (it
@@ -208,15 +199,15 @@ shallow instance (`n₀` deep) carried over by address, with the root's value
 tags repeated to its depth. The constants other than the root are the same in
 both, and each level of the chain carries the same tags. This is what a
 claimant can hand a program-level verifier, which runs no annotator. -/
-def transplantedCert (name : String) (n n₀ : Nat) (inp : Recheck.Input) (cfg : Recheck.Config) :
+def transplantedCert (env0 : Env) (name : String) (n n₀ : Nat) (inp : Recheck.Input) (cfg : Recheck.Config) :
     Except String Recheck.Cert := do
-  let (e₀, main₀) ← shapeEnv name n₀
-  let inp₀ ← (Recheck.ingress (bytes e₀) (sidecar [("main", main₀)]) [] true).mapError (·.render)
+  let (e₀, main₀) ← shapeEnv env0 name n₀
+  let inp₀ ← (Recheck.ingress (bytes e₀) (sidecar [("main", main₀)]) []).mapError (·.render)
   let cfg₀ := Recheck.Config.forInput {} inp₀
   let base₀ ← baseCert inp₀ cfg₀
   -- the tags one more level adds, from an instance one level deeper
-  let (e₁, main₁) ← shapeEnv name (n₀ + 1)
-  let inp₁ ← (Recheck.ingress (bytes e₁) (sidecar [("main", main₁)]) [] true).mapError (·.render)
+  let (e₁, main₁) ← shapeEnv env0 name (n₀ + 1)
+  let inp₁ ← (Recheck.ingress (bytes e₁) (sidecar [("main", main₁)]) []).mapError (·.render)
   let base₁ ← baseCert inp₁ (Recheck.Config.forInput {} inp₁)
   let rootTags := fun (inp : Recheck.Input) (main : Addr) (b : Recheck.Cert) =>
     match inp.program.lookup main with
@@ -260,9 +251,9 @@ def withBackend (cfg : Recheck.Config) (P : Src.Program) (c : Recheck.Cert) : Ex
   return { c with alloc := r.outs, frames := layouts, order }
 
 /-- Run the recheck path on `bytes` up to `stage`; the outcome as a line. -/
-def stage (name : String) (bs : ByteArray) (json : Lean.Json) (typecheck : Bool)
+def stage (name : String) (bs : ByteArray) (json : Lean.Json)
     (mkCert : Recheck.Input → Recheck.Config → Except String Recheck.Cert := baseCert) : IO String := do
-  let inp ← match Recheck.ingress bs json [] typecheck with
+  let inp ← match Recheck.ingress bs json [] with
     | .ok i => pure i
     | .error e => return s!"ingress refused: {e.render}"
   if name == "ingress" then return "ingress ok"
@@ -284,9 +275,9 @@ def stage (name : String) (bs : ByteArray) (json : Lean.Json) (typecheck : Bool)
         abiArity := 0, elfHash := Address.blake3Pure (ByteArray.mk #[0]) }
     let text := base.toText
     let sip : Ring0.Ring0Sip := { cfg, claim, certText := text, driver }
-    let rs := [("verifyBytes", CompileClaim.verifyBytes cfg bs json claim text typecheck),
-      ("checkClaim", (CompileClaim.checkClaim cfg bs json claim text typecheck).isOk),
-      ("Ring0Sip.verifyBytes", sip.verifyBytes bs json typecheck),
+    let rs := [("verifyBytes", CompileClaim.verifyBytes cfg bs json claim text),
+      ("checkClaim", (CompileClaim.checkClaim cfg bs json claim text).isOk),
+      ("Ring0Sip.verifyBytes", sip.verifyBytes bs json),
       ("verifyProgram", CompileClaim.verifyProgram cfg P claim text),
       ("checkClaimProgram", (CompileClaim.checkClaimProgram cfg P claim text).isOk),
       ("Ring0Sip.verifyProgram", sip.verifyProgram P)]
@@ -313,10 +304,10 @@ Stage A's and whose middle end is `STEPS` shrink steps (1 by default) of
 `tree-D.shrink.cert` (`tree-D-ROUNDS-STEPS.shrink.cert` if given). -/
 def writeShrink (dir : System.FilePath) (d : Nat) (rounds : Nat := 64) (steps : Nat := 1)
     (stem : String := s!"tree-{d}") : IO Unit := do
-  let (e, main) := treeEnv d
+  let (e, main) := treeEnv (← loadBase) d
   let bs := bytes e
   let json := sidecar [("main", main)]
-  let inp ← IO.ofExcept ((Recheck.ingress bs json [] true).mapError (·.render))
+  let inp ← IO.ofExcept ((Recheck.ingress bs json []).mapError (·.render))
   let cfg := Recheck.Config.forInput {} inp
   let base ← IO.ofExcept (baseCert inp cfg)
   let cert : Recheck.Cert :=
@@ -340,28 +331,29 @@ certificate is Stage A's. -/
 def wideInput (kind : String) (n : Nat) : IO (ByteArray × Lean.Json × String) := do
   let honest := fun (e : Env) (main : Addr) (json : Lean.Json) => do
     let bs := bytes e
-    let inp ← IO.ofExcept ((Recheck.ingress bs json [] true).mapError (·.render))
+    let inp ← IO.ofExcept ((Recheck.ingress bs json []).mapError (·.render))
     let cert ← IO.ofExcept (baseCert inp (Recheck.Config.forInput {} inp))
     let _ := main
     pure (bs, json, cert)
   match kind with
   | "tree" | "many" =>
-    let (e, main) := if kind == "tree" then treeEnv n else manyEnv n
+    let env0 ← loadBase
+    let (e, main) := if kind == "tree" then treeEnv env0 n else manyEnv env0 n
     let json := sidecar [("main", main)]
     let (bs, json, cert) ← honest e main json
     return (bs, json, cert.toText)
   | "roots" =>
-    let (e, main) := deepAppEnv 4
+    let (e, main) := deepAppEnv (← loadBase) 4
     let json := sidecar ((List.range n).map fun _ => ("main", main))
     return (bytes e, json, "{}")
   | "equations" =>
-    let (e, main) := deepAppEnv 4
+    let (e, main) := deepAppEnv (← loadBase) 4
     let json := Lean.Json.mkObj [("format", .str "ixcc/k1-equations/1"),
       ("roots", .arr #[Lean.Json.mkObj [("name", .str "main"), ("address", .str (toString main))]]),
       ("equations", .arr (Array.replicate n (Lean.Json.mkObj [])))]
     return (bytes e, json, "{}")
   | _ =>
-    let (e, main) := treeEnv 4
+    let (e, main) := treeEnv (← loadBase) 4
     let (bs, json, cert) ← honest e main (sidecar [("main", main)])
     let key := (cert.relevance.nodes.head?.map (·.1)).getD (.value 0)
     let wide : Recheck.Cert := { cert with relevance := { cert.relevance with
@@ -386,8 +378,7 @@ def traceInput (label : String) : IO Unit := do
     (← IO.getStderr).flush
 
 /-- The byte-level verifiers on one input (`verifyBytes`, `checkClaim`,
-`Ring0Sip.verifyBytes`, typing on and off, with a claim for the input's first
-root), and an in-process `check-cert`: the outcomes as a line. -/
+`Ring0Sip.verifyBytes`, with a claim for the input's first root), and an in-process `check-cert`: the outcomes as a line. -/
 def bytesEntries (dir : System.FilePath) (label : String) (bs : ByteArray) (json : Lean.Json)
     (text : String) : IO String := do
   traceInput label
@@ -399,13 +390,11 @@ def bytesEntries (dir : System.FilePath) (label : String) (bs : ByteArray) (json
                                 policy := .immortal, abiArity := 0
                                 elfHash := Address.blake3Pure (ByteArray.mk #[0]) }
   let word := fun (b : Bool) => if b then "accepted" else "refused"
-  let mut outs : Array String := #[]
-  for tc in [true, false] do
-    let cfg : Recheck.Config := {}
-    let sip : Ring0.Ring0Sip := { cfg, claim, certText := text, driver }
-    outs := outs ++ #[s!"verifyBytes{if tc then "" else " (untyped)"} {word (CompileClaim.verifyBytes cfg bs json claim text tc)}",
-      s!"checkClaim {word (CompileClaim.checkClaim cfg bs json claim text tc).isOk}",
-      s!"Ring0Sip.verifyBytes {word (sip.verifyBytes bs json tc)}"]
+  let cfg : Recheck.Config := {}
+  let sip : Ring0.Ring0Sip := { cfg, claim, certText := text, driver }
+  let outs := #[s!"verifyBytes {word (CompileClaim.verifyBytes cfg bs json claim text)}",
+    s!"checkClaim {word (CompileClaim.checkClaim cfg bs json claim text).isOk}",
+    s!"Ring0Sip.verifyBytes {word (sip.verifyBytes bs json)}"]
   IO.FS.writeBinFile (dir / "c.ixe") bs
   IO.FS.writeFile (dir / "c.json") json.compress
   IO.FS.writeFile (dir / "cert.json") text
@@ -425,8 +414,8 @@ def probeWide (kind : String) (n : Nat) : IO UInt32 := IO.FS.withTempDir fun dir
 /-- `tests-recheck --size-diag SHAPE N`: the honest allocation certificate of a
 shape against `Xv.Validate.sizeOk`, component by component, per function. -/
 def sizeDiag (name : String) (n : Nat) : IO UInt32 := do
-  let (e, main) ← IO.ofExcept (shapeEnv name n)
-  let inp ← IO.ofExcept ((Recheck.ingress (bytes e) (sidecar [("main", main)]) [] true).mapError (·.render))
+  let (e, main) ← IO.ofExcept (shapeEnv (← loadBase) name n)
+  let inp ← IO.ofExcept ((Recheck.ingress (bytes e) (sidecar [("main", main)]) []).mapError (·.render))
   let cfg := Recheck.Config.forInput {} inp
   let cert ← IO.ofExcept ((Recheck.produce cfg inp).mapError (·.render))
   let f ← IO.ofExcept ((Recheck.runLir cfg inp.program cert).mapError (·.render))
@@ -515,14 +504,14 @@ and root (and a hash no object has, so nothing is accepted): `verifyBytes`,
 them, `verifyProgram`, `checkClaimProgram`, `Ring0Sip.verifyProgram`,
 `Recheck.run` and an in-process `check-cert`. The outcomes as a line. -/
 def entryPoints (dir : System.FilePath) (label : String) (bs : ByteArray) (json : Lean.Json) (main : Addr)
-    (typecheck : Bool) (mkCert : Recheck.Input → Recheck.Config → Except String Recheck.Cert) :
+    (mkCert : Recheck.Input → Recheck.Config → Except String Recheck.Cert) :
     IO String := do
   traceInput label
   let env ← IO.ofExcept (V3.decodeAnonymousEnv bs)
   let claim : CompileClaim := { env := env.root, roleTable := env.bindingAddress, target := main
                                 policy := .immortal, abiArity := 0
                                 elfHash := Address.blake3Pure (ByteArray.mk #[0]) }
-  let (inp?, cert) ← match Recheck.ingress bs json [] typecheck with
+  let (inp?, cert) ← match Recheck.ingress bs json [] with
     | .error e => pure (Sum.inl e.render, ({} : Recheck.Cert))
     | .ok inp => match mkCert inp (Recheck.Config.forInput {} inp) with
       | .ok c => pure (Sum.inr inp, c)
@@ -531,9 +520,9 @@ def entryPoints (dir : System.FilePath) (label : String) (bs : ByteArray) (json 
   let word := fun (b : Bool) => if b then "accepted" else "refused"
   let cfg := match inp? with | .inr inp => Recheck.Config.forInput {} inp | .inl _ => {}
   let sip : Ring0.Ring0Sip := { cfg, claim, certText := text, driver }
-  let bytesLevel := [s!"verifyBytes {word (CompileClaim.verifyBytes cfg bs json claim text typecheck)}",
-    s!"checkClaim {word (CompileClaim.checkClaim cfg bs json claim text typecheck).isOk}",
-    s!"Ring0Sip.verifyBytes {word (sip.verifyBytes bs json typecheck)}"]
+  let bytesLevel := [s!"verifyBytes {word (CompileClaim.verifyBytes cfg bs json claim text)}",
+    s!"checkClaim {word (CompileClaim.checkClaim cfg bs json claim text).isOk}",
+    s!"Ring0Sip.verifyBytes {word (sip.verifyBytes bs json)}"]
   let rest ← match inp? with
     | .inl e => pure [s!"ingress refused ({e})"]
     | .inr inp =>
@@ -543,7 +532,7 @@ def entryPoints (dir : System.FilePath) (label : String) (bs : ByteArray) (json 
         | .error e => s!"refused ({e.stage.name}: {e.code}: {e.message.take 60})"
       IO.FS.writeBinFile (dir / "c.ixe") bs
       IO.FS.writeFile (dir / "c.json") json.pretty
-      let cc ← match ← checkCert dir cert (if typecheck then [] else ["--no-typecheck"]) with
+      let cc ← match ← checkCert dir cert [] with
         | .ok () => pure "accepted"
         | .error e => pure s!"refused ({e.stage.name}: {e.code})"
       pure [s!"verifyProgram {word (CompileClaim.verifyProgram cfg P claim text)}",
@@ -551,11 +540,12 @@ def entryPoints (dir : System.FilePath) (label : String) (bs : ByteArray) (json 
         s!"Ring0Sip.verifyProgram {word (sip.verifyProgram P)}", s!"Recheck.run {run}", s!"check-cert {cc}"]
   return s!"{label} ({bs.size} bytes): {", ".intercalate (bytesLevel ++ rest)}"
 
-/-- The longest chain of shape `name` that ingress accepts (typing off): the
-largest `n` whose terms are within `Src.Ingress.depthBudget`. -/
-def deepest (name : String) : IO Nat := do
-  let ok := fun (n : Nat) => match shapeEnv name n with
-    | .ok (e, main) => (Recheck.ingress (bytes e) (sidecar [("main", main)]) [] false).isOk
+/-- The longest chain of shape `name` that ingress accepts: the largest `n`
+whose terms are within `Src.Ingress.depthBudget` (the kernel accepts every
+chain; IxCC's conversion refuses the ones past the budget). -/
+def deepest (env0 : Env) (name : String) : IO Nat := do
+  let ok := fun (n : Nat) => match shapeEnv env0 name n with
+    | .ok (e, main) => (Recheck.ingress (bytes e) (sidecar [("main", main)]) []).isOk
     | .error _ => false
   let mut lo := 1
   let mut hi := Src.Ingress.depthBudget + 1
@@ -580,8 +570,10 @@ def widthLines : IO (Array String) := IO.FS.withTempDir fun dir => do
 
 /-- Part of the 8 MiB child (`stack8`): every verifier entry point on the
 programs that once overflowed an 8 MiB stack and on generated deep and wide
-inputs at and past each budget, typing on and off. A line per input. -/
+inputs at and past each budget, every one through the certified kernel's
+acceptance. A line per input. -/
 def stack8Lines : IO (Array String) := IO.FS.withTempDir fun dir => do
+  let env0 ← loadBase
   let mut lines : Array String := #[]
   -- The amplifier inputs (`amp-12-11` and `amp-13-13` crashed an 8 MiB checker), the
   -- largest inline the copy budget allows through to the end of the backend,
@@ -590,32 +582,32 @@ def stack8Lines : IO (Array String) := IO.FS.withTempDir fun dir => do
     let (bs, json, _, _, main, hostile) ← ampCase dF dG
     let mk := fun (inp : Recheck.Input) (cfg : Recheck.Config) =>
       .ok (if full then (withBackend cfg inp.program hostile).toOption.getD hostile else hostile)
-    lines := lines.push (← entryPoints dir s!"amp-{dF}-{dG} inline" bs json main true mk)
+    lines := lines.push (← entryPoints dir s!"amp-{dF}-{dG} inline" bs json main mk)
     if !full then
-      lines := lines.push (← entryPoints dir s!"amp-{dF}-{dG} base" bs json main true
+      lines := lines.push (← entryPoints dir s!"amp-{dF}-{dG} base" bs json main
         fun _ _ => .ok { hostile with mid := {} })
   -- wide: the Lam global at the P1 budget and past it
   for d in [11, 13] do
-    let (e, _, _, main) := ampEnv d 0
-    lines := lines.push (← entryPoints dir s!"wide {d}" (bytes e) (sidecar [("main", main)]) main true
+    let (e, _, _, main) := ampEnv env0 d 0
+    lines := lines.push (← entryPoints dir s!"wide {d}" (bytes e) (sidecar [("main", main)]) main
       fun inp cfg => do
         let b ← baseCert inp cfg
         return (withBackend cfg inp.program b).toOption.getD b)
-  -- deep: at the ingress depth budget and past it, typing off (typing refuses
-  -- them sooner), with a certificate carried over from a shallow instance
+  -- deep: at the ingress depth budget and past it, with a certificate carried
+  -- over from a shallow instance
   for name in ["deep", "deepApp", "deepLet", "deepType"] do
-    let n ← deepest name
+    let n ← deepest env0 name
     for (m, pos) in [(n, "at"), (n + 1, "past")] do
-      let (e, main) ← IO.ofExcept (shapeEnv name m)
+      let (e, main) ← IO.ofExcept (shapeEnv env0 name m)
       lines := lines.push (← entryPoints dir s!"{name} {m} ({pos} the depth budget)" (bytes e)
-        (sidecar [("main", main)]) main false fun inp cfg => do
-          let c ← transplantedCert name m 200 inp cfg
+        (sidecar [("main", main)]) main fun inp cfg => do
+          let c ← transplantedCert env0 name m 200 inp cfg
           return (withBackend cfg inp.program c).toOption.getD c)
   -- a share converted once and reused deeper: ingress checks its height
   -- against the depth left at each use
-  let (e, main) := sharedEnv 1200
+  let (e, main) := sharedEnv env0 1200
   lines := lines.push (← entryPoints dir "shared 1200 + 1200 (past the depth budget, shares reused)" (bytes e)
-    (sidecar [("main", main)]) main false fun _ _ => .ok {})
+    (sidecar [("main", main)]) main fun _ _ => .ok {})
   return lines
 
 /-- The parent of `stack8` and `stack2`: the same executable with
@@ -854,16 +846,17 @@ def probeBack (kind : String) (n k : Nat) : IO UInt32 := do
   IO.println s!"back {kind} {n} x{k} (back work {Anf.backWork P}, {(P.globalList.map fun (p : Anf.GlobalId × Anf.GDef) => p.2.body.nodes).foldl (· + ·) 0} nodes): {", ".intercalate (← acc.get).toList}"
   return 0
 
-/-- `tests-recheck --probe STAGE SHAPE N [--no-typecheck] [--transplant]`. -/
+/-- `tests-recheck --probe STAGE SHAPE N [--transplant | --empty]`. -/
 def probe (args : List String) : IO UInt32 := do
+  let env0 ← loadBase
   match args with
   | stg :: shp :: n :: rest =>
-    let (bs, json) ← IO.ofExcept (shape shp n.toNat!)
-    let mkCert := if rest.contains "--transplant" then transplantedCert shp n.toNat! 200
+    let (bs, json) ← IO.ofExcept (shape env0 shp n.toNat!)
+    let mkCert := if rest.contains "--transplant" then transplantedCert env0 shp n.toNat! 200
       else if rest.contains "--empty" then fun _ _ => .ok {} else baseCert
-    IO.println s!"{shp} {n} ({bs.size} bytes) to {stg}: {← stage stg bs json (!rest.contains "--no-typecheck") mkCert}"
+    IO.println s!"{shp} {n} ({bs.size} bytes) to {stg}: {← stage stg bs json mkCert}"
     return 0
-  | _ => IO.eprintln "usage: tests-recheck --probe STAGE SHAPE N [--no-typecheck]"; return 2
+  | _ => IO.eprintln "usage: tests-recheck --probe STAGE SHAPE N [--transplant | --empty]"; return 2
 
 /-! ## Nesting depth on an 8 MiB stack -/
 
@@ -939,10 +932,10 @@ def nestingLines : IO (Array String) := do
 /-- `tree 9` with its producer's whole certificate (accepted by every
 verifier but for the claim's hash), as bytes, sidecar and certificate. -/
 def honestTree9 : IO (ByteArray × Lean.Json × Recheck.Cert) := do
-  let (e, main) := treeEnv 9
+  let (e, main) := treeEnv (← loadBase) 9
   let bs := bytes e
   let json := sidecar [("main", main)]
-  let inp ← IO.ofExcept ((Recheck.ingress bs json [] true).mapError (·.render))
+  let inp ← IO.ofExcept ((Recheck.ingress bs json []).mapError (·.render))
   let cert ← IO.ofExcept ((Recheck.produce (Recheck.Config.forInput {} inp) inp).mapError (·.render))
   return (bs, json, cert)
 
@@ -984,7 +977,7 @@ def allocInput (kind : String) (n : Nat) : IO (ByteArray × Lean.Json × String)
 `Xv.Validate.sizeOk` derives its caps from. -/
 def tree9Funcs : IO (Xv.Func Lir.VReg × Xv.Func Lir.VReg) := do
   let (bs, json, cert) ← honestTree9
-  let inp ← IO.ofExcept ((Recheck.ingress bs json [] true).mapError (·.render))
+  let inp ← IO.ofExcept ((Recheck.ingress bs json []).mapError (·.render))
   let cfg := Recheck.Config.forInput {} inp
   let f ← IO.ofExcept ((Recheck.runLir cfg inp.program cert).mapError (·.render))
   let xv ← IO.ofExcept ((Xv.Select.select f.lowered.program).mapError fun _ => "select")
@@ -1032,7 +1025,7 @@ inline round and a shrink step listing as many globals as the program has
 line each: `bytesEntries`, then `Recheck.run`'s outcome. -/
 def capLines : IO (Array String) := IO.FS.withTempDir fun dir => do
   let (bs, json, cert) ← honestTree9
-  let inp ← IO.ofExcept ((Recheck.ingress bs json [] true).mapError (·.render))
+  let inp ← IO.ofExcept ((Recheck.ingress bs json []).mapError (·.render))
   let cfg := Recheck.Config.forInput {} inp
   let f ← IO.ofExcept ((Recheck.runLir cfg inp.program cert).mapError (·.render))
   let size := inp.program.size

@@ -20,9 +20,11 @@ equals a fresh ingress, `produce` and native run, so the kernel's claims
 are about the live compiler, and that the recheck path's statistics-free
 selection (`Select.select`) selects what `Select.run` selects on generated
 Lir (`--generated N` for a longer campaign; 1,000 by default). It also runs
-the hostile-input regression tests (`Hostile`): hostile
-certificates on pin-free programs through every program-level and byte-level
-verifier, Stage A in `check-cert`, the erased-typing default, the root signature
+the hostile-input regression tests (`Hostile`, every program built on the
+role-bound test builder and accepted by the certified kernel): hostile
+certificates through every program-level and byte-level verifier, Stage A in
+`check-cert`, the kernel's acceptance of the whole closure at every
+byte-level entry point (an unreachable ill-typed record), the root signature
 checks, the specialisation bound, the reachability dedupe, the `--rc auto`
 immortal fallback, and the middle end's budgets on the inline amplifier and
 other over-budget steps; the producer (`Producer`, alone with `--producer`):
@@ -31,11 +33,11 @@ code they replaced, it stays within the re-run's budgets, and its work,
 counted in allocations, grows near-linearly on scaling inputs; the root result shapes (`RootShape`: the view and the shape view accept
 every result of the shape a root's declared type describes, also at roots compiled alone, whose
 objects return each constructor and whose claims `verifyBytes` accepts; SrcEval's results on the
-ABI fixture's roots are of it; the shape view rejects an ill-typed root's constructor of
-another type, which the view relabels; and the plain-RC view accepts the constructor trees of a
+ABI fixture's roots are of it; an ill-typed root's closure is declined at ingress by the
+kernel; and the plain-RC view accepts the constructor trees of a
 plain-RC root's declared type); the role-bound closures (`Bound`: their claims, from `makeClaim`, are
-accepted by `verifyBytes` and `checkClaim` and name the role-bound root, and their objects are
-byte for byte those of the unbound twins); and every verifier entry point on the crashing inputs and on generated deep
+accepted by `verifyBytes` and `checkClaim` and name the role-bound root, and the unbound
+envelope of the same records is refused at ingress); and every verifier entry point on the crashing inputs and on generated deep
 and wide inputs in a child process whose Lean stack is 8 MiB (`--stack-8mib`).
 `--producer-reference` counts the replaced code's allocations on the same
 inputs. `--perf-write`, `--perf-stages` and `--perf-anf` write the producer's scaling
@@ -262,10 +264,10 @@ def main (args : List String) : IO UInt32 := do
   try
     IO.println "tests-recheck"
     part a "negative security checks (S1, S5, A2-2..A2-4, A4-1..A4-5)" (negativeSecurityTests a)
-    part a "pin-free programs through the program-level verifiers (REPORT item 1)" do
+    part a "a relevance retagging through every verifier, on the role-bound builder" do
       return #[← Hostile.pinFree a 3, ← Hostile.pinFree a 2]
-    part a "Stage A in check-cert, erased typing by default, N4, N6 and S10 (B2-4)" do
-      return #[← Hostile.cliStageA a, ← Hostile.typecheckDefault a, ← Hostile.rootChecks a,
+    part a "Stage A in check-cert, the kernel's acceptance of the whole closure, N4, N6 and S10 (B2-4)" do
+      return #[← Hostile.cliStageA a, ← Hostile.kernelWhole a, ← Hostile.rootChecks a,
         ← Hostile.reachDedupe a]
     part a "the --rc auto immortal fallback and check-cert --rc (B1-6, B1-8)" do
       return #[← Hostile.autoFallback a]
@@ -281,7 +283,7 @@ def main (args : List String) : IO UInt32 := do
       return (← RootShape.aloneCases a).push (← RootShape.illTyped a)
     part a "plain-RC roots: the view accepts the constructor trees of the declared type" do
       RootShape.plainRc a
-    part a "role-bound closures: the byte-level verifiers accept their claims; the objects are the unbound twins'" do
+    part a "role-bound closures: the byte-level verifiers accept their claims; the unbound envelopes are refused at ingress" do
       Bound.run a
     part a "every verifier on an 8 MiB stack (FA follow-up, item 1)" (Deep.stackPart a)
     part a "Select.select against Select.run on generated Lir" (selection a count)

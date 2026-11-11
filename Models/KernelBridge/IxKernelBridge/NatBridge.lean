@@ -1870,13 +1870,17 @@ theorem checkDecls_verifyBytes_immortal_denotes_nat {μ : CheckMode} {ev : Evide
     (hchk : Ix.Kernel.Cached.checkDecls μ ev ds = .ok env)
     (hbasis : natBasisStored env = true)
     (hpol : claim.policy = .immortal)
-    (hver : IxCC.CompileClaim.verifyBytes cfg envBytes equations claim certText true = true) :
+    (hver : IxCC.CompileClaim.verifyBytes cfg envBytes equations claim certText = true) :
     Nonempty (EnvModelM V μ env) ∧
     ∃ (inp : IxCC.Recheck.Input) (cert : IxCC.Recheck.Cert) (a : IxCC.Recheck.Artifact)
       (rootId : IxCC.Src.CId) (root : IxCC.Recheck.Root) (sig : IxCC.Rt.Sig) (ty : IxCC.Rt.FoTy),
       claim.WellFormed ∧
       IxCC.Ixon.V3.decodeAnonymousEnv envBytes = .ok inp.env ∧
-      IxCC.Ixon.V3.Tc.checkEnv inp.env = .ok () ∧
+      IxCC.Src.KernelFront.accept inp.env IxCC.Src.KernelFront.defaultLimits = .ok inp.kernel.acc ∧
+      IxCC.Src.KernelFront.AcceptedFrom inp.env IxCC.Src.KernelFront.defaultLimits inp.kernel.acc ∧
+      Ix.Kernel.Admission.checkBytesTieredUsing (IxCC.Src.KernelFront.preludeSource inp.kernel.acc.pre)
+        IxCC.Src.KernelFront.hash inp.kernel.acc.binding inp.kernel.acc.limits inp.kernel.acc.records
+        inp.kernel.acc.blobs = .ok (inp.kernel.acc.env, inp.kernel.acc.tier) ∧
       inp.env.root = claim.env ∧
       inp.env.bindingAddress = claim.roleTable ∧
       inp.program.roots.head? = some (claim.target, rootId) ∧
@@ -1910,10 +1914,10 @@ theorem checkDecls_verifyBytes_immortal_denotes_nat {μ : CheckMode} {ev : Evide
               Denotes (Model.ofEnvModelM mp).cval env φ ρ (natLitToConstructor out) v) := by
   have hmodel : Nonempty (EnvModelM V μ env) :=
     Ix.Kernel.Cached.checkDecls_sound (V := V) hμ hchk
-  obtain ⟨inp, cert, a, rootId, root, sig, ty, hwf, _, hdec, htc, _, _, henv, hrole, hhead, _,
+  obtain ⟨inp, cert, a, rootId, root, sig, ty, hwf, _, hdec, hacc, hfrom, htier, _, _, _, _, henv, hrole, hhead, _,
     hrec, _, _, hahead, _, hty, _, _, hhash, hcovs, _⟩ :=
     IxCC.CompileClaim.verifyBytes_immortal_sound hpol hver
-  refine ⟨hmodel, inp, cert, a, rootId, root, sig, ty, hwf, hdec, htc rfl, henv, hrole, hhead, hrec,
+  refine ⟨hmodel, inp, cert, a, rootId, root, sig, ty, hwf, hdec, hacc, hfrom, htier, henv, hrole, hhead, hrec,
     hahead, hty, hhash, hcovs, ?_⟩
   intro constSpec hconst i k_src rootAddr rootCId eRoot out hrootAt hcov htyAt hrootRel hbRoot hnfRoot hrun
   obtain ⟨_, hred, hx86, hden⟩ :=

@@ -97,7 +97,7 @@
       "named_env_sha256": "07a51879dde3582aa8e374921429dc7a2fd406b45dfdaddeabd46668385fb5b0",
       "census": {
         "path": "closures.census.json",
-        "sha256": "fff5aa204e668e399a9d4aa922c6bcf3540613e3bb57977a3fc729ffb055f450"
+        "sha256": "9e0aa6eee636fcd1bfdbb2bd4c247112ad9e629f50ace99fcadda3ec1f5ab495"
       },
       "roots": [
         {

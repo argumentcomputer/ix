@@ -3,14 +3,16 @@
 Written 2026-11-11. **Status:** decided by the owner: IxCC takes its type
 information and its acceptance of an environment from the certified kernel
 (the `IxCK/` package), and its own erased type checker is to be deleted. The
-new front end is **implemented beside the old one** (`IxCC.Src.KernelFront`,
-[`Src/KernelFront`](../IxCC/Src/KernelFront)), with a differential suite
-(`tests-kernel-front`); the switch that makes it the only front end is **in
-progress** ([The switch](#the-switch)): by the owner's decision of 2026-11-11
-it proceeds now, and the kernel's fix of its blow-up on chains of `let`, made
-in parallel in the kernel package on this branch, has landed ([resource
-bounds](#resource-bounds), [decisions](#decisions)). Its step 2 is done; the old front end is
-still the default. This is most of the native
+front end over the kernel (`IxCC.Src.KernelFront`,
+[`Src/KernelFront`](../IxCC/Src/KernelFront), and `Recheck.ingress`) **is the
+only front end** since the switch's step 3 ([The switch](#the-switch)): every
+compile path's ingress is the kernel's acceptance and every annotation the
+kernel annotator's. The erased checker's code is still in the tree, off every
+path, until step 4 deletes it; `tests-kernel-front` compares its verdicts and
+the earlier annotator's with the kernel's until then. The kernel's fix of its
+blow-up on chains of `let`, made in parallel in the kernel package on this
+branch, has landed ([resource bounds](#resource-bounds),
+[decisions](#decisions)). This is most of the native
 discharge of the premises in the [roadmap](roadmap.md#milestones) (SP-N): the
 faithfulness check and the source of the typing derivations; the first
 premise as restated on 2026-11-11 needs one more kernel run, on the closure
@@ -19,11 +21,13 @@ typing off IxCC's own code.
 
 ## Current state
 
-IxCC's front end reads an `.ixe` environment with its own decoder
-(`V3.decodeAnonymousEnv`), converts it into the table-free `Src.Program`
-(`Src.Ingress.readConsts`), and asks its own erased type checker
+Before the switch, IxCC's front end read an `.ixe` environment with its own
+decoder (`V3.decodeAnonymousEnv`), converted it into the table-free
+`Src.Program` (`Src.Ingress.readConsts`), and asked its own erased type checker
 (`IxCC/IxCC/Ixon/V3/Tc/`, 24 files, 12,680 lines, adapted from an earlier
-Ixon checker of ix, with no soundness theorem) two kinds of question:
+Ixon checker of ix, with no soundness theorem) two kinds of question (the
+table below is that state; since step 3 each row's last column is what the
+kernel front end does instead, [below](#what-each-use-of-the-erased-checker-becomes)):
 
 | Use | Question | Where | What rests on the answer |
 | --- | --- | --- | --- |
@@ -176,6 +180,15 @@ and blobs, byte for byte, with its binding section:
 
 A refusal carries the kernel's reason and classification (rejected or
 declined, `TierError.outcome`). Only role-bound environments are accepted.
+The acceptance is of the whole artifact: a record the kernel does not accept
+refuses every root, reached or not. An ill-typed record is *declined*, not
+rejected (the kernel does not take a failed conversion search as evidence
+that the input is wrong), and so is any axiom other than `propext`,
+`Classical.choice` and `Quot.sound`, and any use of `sorryAx` (the kernel
+installs nothing for it), anywhere among the records: such an environment may
+be inconsistent, so it has no model, and nothing about a program read from it
+could be grounded. What a user sees is in the [compile
+boundary](compile-boundary.md).
 `ix check-lean` admits a role-bound artifact by the same entry, prelude source
 and order; the front end's acceptance differs from it only in the hash
 function's implementation (IxCC's pure BLAKE3, ix's Rust BLAKE3 on a recorded
@@ -212,7 +225,8 @@ Planned; nothing of it is built.
 
 ### The program and its correspondence
 
-`KernelFront.ingress` ([`Front.lean`](../IxCC/Src/KernelFront/Front.lean))
+Ingress (`Recheck.ingress`, [`Recheck/Produce.lean`](../IxCC/Recheck/Produce.lean);
+it was `KernelFront.ingress` beside the old front end until step 3 folded it in)
 builds the program exactly as before (`Src.Ingress.readConsts` for the chosen
 roots), takes the pins from the kernel's admitted table (`pinsOfTable`, the
 same role mapping as `Src.Pinned.ofRoles`), and reads the program against the
@@ -275,7 +289,11 @@ byte-level path; the kernel is already there for acceptance.
 ### What each use of the erased checker becomes
 
 Every use of the checker (`IxCC/IxCC/Ixon/V3/Tc/`) outside its own modules,
-as the tree stands after step 2 (2026-11-11), and what it becomes:
+as the tree stood after step 2 (2026-11-11), and what it becomes. Step 3 made
+every row's last column true but the deletions and the typing conjuncts of
+the resource-validation API and the catalog admission, which step 4 removes
+(until then those two and the erased checker's own tests are the checker's
+only callers, with `tests-kernel-front`'s comparison):
 
 | Use (where) | What rests on it | Becomes at the switch |
 | --- | --- | --- |
@@ -299,25 +317,43 @@ The per-claim `typecheck` flag goes with the first row ([below](#the-typing-flag
 
 ### The byte-level theorems after the switch
 
-`verifyBytes_immortal_sound` and its siblings
-([`CompileClaim/Proof.lean`](../IxCC/CompileClaim/Proof.lean)) conclude today,
-among the front-end facts, `inp.env.bindingAddress = c.roleTable` (the
-envelope's role table is the claim's), `typecheck = true → Tc.checkEnv
-inp.env = .ok ()` and `Src.Relevance.annotate inp.env {…} = .ok
-cert.relevance`. After the switch they keep the first and conclude, in place
-of the other two, for the kernel front end's input `kin`:
+Restated at the switch's step 3 and proved, with their fences' names and axiom
+sets unchanged (`propext`, `Classical.choice`, `Quot.sound`).
+`Recheck.ingress_parts` ([`Compiler/Proof.lean`](../IxCC/Compiler/Proof.lean))
+concludes, from `ingress bytes equations roots = .ok inp`:
 
-- `KernelFront.ingress envBytes equations roots = .ok kin` with
-  `decodeAnonymousEnv envBytes = .ok kin.inp.env`;
-- the acceptance (`accept_spec`): the environment is role-bound with binding
-  `b`; the kernel's entry ran on `b`'s section, on exactly the envelope's
-  records and blobs, and
-  `Ix.Kernel.Admission.checkBytesTieredUsing (preludeSource kin.acc.pre) hash
-  kin.acc.binding defaultLimits kin.acc.records kin.acc.blobs = .ok (kin.acc.env, kin.acc.tier)`;
-  from which the kernel's theorems give, for the logical records, the
-  reading's fidelity, a model in every set theory and the strong model, at
-  IxCC's hash, the artifact's prelude and the artifact's table;
-- Stage A: `KernelFront.annotateChecked kin {kin.inp.program with table} = .ok cert.relevance`.
+- `decodeAnonymousEnv bytes = .ok inp.env`;
+- the acceptance: `KernelFront.accept inp.env defaultLimits = .ok inp.kernel.acc`,
+  `AcceptedFrom inp.env defaultLimits inp.kernel.acc` (the environment is
+  role-bound; the kernel's entry ran on its binding section, on exactly its
+  records and blobs) and `Ix.Kernel.Admission.checkBytesTieredUsing
+  (preludeSource acc.pre) hash acc.binding acc.limits acc.records acc.blobs =
+  .ok (acc.env, acc.tier)` (`accept_spec`), from which the kernel's theorems
+  give, for the logical records, the reading's fidelity, a model in every set
+  theory and the strong model, at IxCC's hash, the artifact's prelude and the
+  artifact's table;
+- `Src.Resource.validate inp.program = .ok ()`;
+- the program read against the kernel's reading:
+  `Reading.build inp.kernel.acc inp.program = .ok inp.kernel.rd` and
+  `inp.kernel.fe = mkFEnv inp.kernel.acc.env`;
+- the program: the sidecar's chosen roots, `Src.Ingress.readConsts inp.env
+  roots = .ok rawProg`, and `inp.program` is `rawProg` with the pinned
+  identities of the kernel's admitted table (`pinsOfTable`) and the sidecar's
+  resource context.
+
+`CompileClaim.verifyBytes_{immortal,zeroRc,plainRc}_sound`
+([`CompileClaim/Proof.lean`](../IxCC/CompileClaim/Proof.lean)) and
+`Ring0.verifyBytesRing0Sip_sound` conclude all of these for the input their
+verifier ingested, `inp.env.bindingAddress = c.roleTable`, and Stage A over
+the kernel: `inp.kernel.annotateChecked { inp.program with table } = .ok
+cert.relevance`. In place of the earlier `typecheck = true → Tc.checkEnv
+inp.env = .ok ()` and `Src.Relevance.annotate inp.env {…} = .ok
+cert.relevance`; the verifiers have no unchecked mode, and every theorem
+lost its `typecheck` parameter (`_rootShape`, `_shape`, `checkClaim_ok_iff`,
+the compiler's theorems in `Compiler/Proof.lean` and
+`Recheck/Proof/Compile.lean`). The kernel bridge's
+`checkDecls_verifyBytes_immortal_denotes_nat` concludes the acceptance in
+place of `Tc.checkEnv`.
 
 The acceptance conjunct says that the kernel accepts the environment with root
 `H` under the table `ρ` the envelope carries. That was premise (i) of the
@@ -450,13 +486,13 @@ positions the evaluator runs.
 ## The typing flag
 
 The flag (`typecheck : Bool := true` on `Recheck.ingress`, `verifyBytes`,
-`checkClaim`, `makeClaim`, `compile`; `--no-typecheck` on `ixcc compile`) never
-contributed to a theorem and is not bound by the claim. With the kernel it
-goes: acceptance is not optional on any byte-level path, `verifyBytes`,
-`checkClaim` and `makeClaim` lose the parameter, `ixcc compile` and
-`check-cert` lose `--no-typecheck` (an unbound closure is refused with the
-kernel's reason, and `--stats` reports the kernel's acceptance: records, tier
-constants and time). A claim's meaning is then "the kernel accepted the
+`checkClaim`, `makeClaim`, `compile`; `--no-typecheck` on `ixcc compile` and
+`check-cert`) never contributed to a theorem and was not bound by the claim.
+It is gone since step 3: acceptance is not optional on any byte-level path;
+`--no-typecheck` is an unknown option (a usage error, exit status 2); an
+unbound closure is refused with the kernel's reason; `--stats` reports the
+kernel's acceptance (records, logical declarations and tier constants;
+ingress's time includes it). A claim's meaning is "the kernel accepted the
 environment with root `H` under the envelope's table and IxCC's object
 refines SrcEval on the checked source program read from it", with no hidden
 parameter. The claim already names the role table's address (`roleTable`,
@@ -551,11 +587,10 @@ much again in the producer and in Stage A. The guard for these is a
 dependency: a work budget in the kernel's core that meters the size of the
 levels it compares (kernel-side item 4), which the front end passes as a
 budget and reports as a decline (milestone KF-3 below). Until that budget
-exists, once the switch's step 3 lands, the kernel's typing time on such levels is outside
+exists (since the switch's step 3), the kernel's typing time on such levels is outside
 the verifier's time bound, and a constant of a few hundred bytes chosen by a
 claimant can hold `verifyBytes`, `Ring0Sip.verifyBytes` and `ixcc check-cert`
-as long as it chooses; before step 3 it is so only for the kernel front end's
-own entry points. On every closure `ix compile` writes, the kernel is faster
+as long as it chooses. On every closure `ix compile` writes, the kernel is faster
 ([measurements](#measurements)).
 The kernel's recursion depth on the verifier's 8 MiB stack is likewise the
 kernel's to bound (HD-3 audits it with IxCC's own).
@@ -576,8 +611,9 @@ landed; what stays exposed is under [resource bounds](#resource-bounds).
    bound neither `choice` nor `natLor` in the larger closures, and the
    kernel declined `Classical.choice` there as a non-standard axiom; the
    closures [measured](#measurements) below come from an `ix` that binds them.
-   In progress (2026-11-11), by another engineer; step 3 cannot land before
-   it.
+   Done (2026-11-11): every committed closure is role-bound but the frozen
+   typing bundles, catalogs, resource handoff vectors and dated historical
+   records.
 2. **Move what is not typing out of the checker** (a refactor, no behaviour
    change). **Done** (2026-11-11): the block-member keys (`V3.defnProjAddr`
    and its siblings, pure BLAKE3) to [`Ixon/V3/Keys.lean`](../IxCC/Ixon/V3/Keys.lean);
@@ -593,8 +629,8 @@ landed; what stays exposed is under [resource bounds](#resource-bounds).
    `Src.Hints`, `Src.Pinned` and the resource adapter no longer import the
    checker; [above](#what-each-use-of-the-erased-checker-becomes) is every use
    that remains.
-3. **One commit: the kernel front end becomes the front end.** After the
-   refreeze (step 1). `Recheck.ingress` returns the kernel front end's input (the `Recheck.Input`
+3. **One commit: the kernel front end becomes the front end.** **Done**
+   (2026-11-11), after the refreeze (step 1). `Recheck.ingress` returns the kernel front end's input (the `Recheck.Input`
    gains the accepted kernel input, or becomes `KInput`); `produceSource` uses
    `KernelFront.annotate`; `checkCanonicalRelevance` is the kernel one; the
    `typecheck` parameters go from `Recheck.ingress`, `compile`,
@@ -730,7 +766,7 @@ front end's acceptance time. A hostile closure is measured under
 | --- | --- | --- |
 | KF-0 | The front end beside the old one, the differential suite, the acceptance and classifier lemmas, the ledger's exception (this change) | `tests-kernel-front` passes; identical annotations, certificates and objects on every role-bound closure the kernel accepts |
 | KF-1 | The walk-level annotation statement; the kernel-side lemmas 1–3 composed into direction 1 | fenced, standard axioms |
-| KF-2 | The switch (steps 2–5). In progress: step 2 done (2026-11-11); steps 3–5 after the refreeze | all required checks on the refrozen corpus; the deletion list gone |
+| KF-2 | The switch (steps 2–5). In progress: steps 2 and 3 done (2026-11-11); steps 4 and 5 (the deletion, the ledger) next | all required checks on the refrozen corpus; the deletion list gone |
 | KF-3 | The kernel's bound on hostile levels (kernel-side item 4). Its fix of the blow-up on `let` chains, made in the kernel package on this branch in parallel with KF-2, has landed: the ∀ rule's level built with `mk_imax`'s folds, the level's has-parameter bit cached. Planned: a work budget in the kernel's core metering the size of the levels it compares, passed by the front end | the hostile `let`-chain closure accepted in time flat in `k` (met: 28 ms at `k = 30` and at `k = 34`); a closure whose levels the kernel cannot fold (two interleaved chains at two universe parameters) declined within the budget (planned) |
 | KF-4 | The closure run (planned, 2026-11-11): the closure of the seeds, the logical entry on it under the default table and committed prelude, the table-restriction check, the run's declarations kept for the typing clause | on every role-bound K1 closure the closure run accepts, and its declarations are a sub-list of the tiered run's up to keys |
 
@@ -739,8 +775,7 @@ front end's acceptance time. A hostile closure is measured under
 **Decided by the owner on 2026-11-11** (decision 5 below): the switch
 proceeds now, and the kernel's blow-up on `let` chains is fixed in the
 kernel package on this branch, in parallel with the switch (the fix has
-landed; what stays exposed is under [resource bounds](#resource-bounds)). The fixtures are being refrozen in the role-bound form by
-another engineer, and the switch's step 3 lands after that. Item 6 (the
+landed; what stays exposed is under [resource bounds](#resource-bounds)). The fixtures were refrozen in the role-bound form, and the switch's step 3 followed. Item 6 (the
 closure run for premise (i)) was decided the same day (DO-37).
 
 Items 1, 2 and 3 below are the working defaults this work proceeds on, each
@@ -762,9 +797,8 @@ rather than choosing between two.
    records are the committed ones. Working default: the artifact's.
 4. **Unbound environments.** Refused by the front end: with the switch
    decided this follows, since the kernel admits only role-bound
-   environments. Until step 3 the old front end stays the default, and the
-   unbound fixtures keep using it; step 3 waits for the refreeze. Working
-   default for what stays unbound after it: the catalog pieces and the
+   environments. Since step 3 an unbound closure is refused at ingress. What
+   stays unbound: the catalog pieces and the
    resource handoff fixtures, read without typing (the table of uses above).
 5. **The exposure on `let` chains** ([resource bounds](#resource-bounds)).
    The switch (step 3; the producer and the verifier go together) either

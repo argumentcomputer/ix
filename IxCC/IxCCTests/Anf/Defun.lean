@@ -414,9 +414,9 @@ def closuresStep (a : Assert) : IO (Array String) := do
   let q ← IO.ofExcept (IxCC.Anf.Pipeline.closures [2] plain)
   expect a (q.beq plain) "closures step: a plain program changed"
   -- over-applied: the root takes one argument and returns a closure, declared 2
-  let over := prog [gd 0 1 (b (fn 1 (b (add (x 1) (x 0)) (.ret (x 0)))) (.ret (x 0)))] [0]
-  let q ← IO.ofExcept (IxCC.Anf.Pipeline.closures [2] over)
-  checkOutput a over q "closures step, over-applied root"
+  let overApplied := prog [gd 0 1 (b (fn 1 (b (add (x 1) (x 0)) (.ret (x 0)))) (.ret (x 0)))] [0]
+  let q ← IO.ofExcept (IxCC.Anf.Pipeline.closures [2] overApplied)
+  checkOutput a overApplied q "closures step, over-applied root"
   expect a ((q.global? (root q)).any fun g => g.ps.length == 2 && g.key matches .entry _ 2)
     "closures step: the over-applied root has no entry of two parameters"
   let r ← runAnf q 100 (root q) [3, 5]
@@ -428,7 +428,7 @@ def closuresStep (a : Assert) : IO (Array String) := do
   let r ← runAnf q 100 (root q) [6, 7]
   expect a (anfOutcome r == "ok lit 42") s!"closures step, point-free root through its entry: {anfOutcome r}"
   -- one declared count per root
-  match IxCC.Anf.Pipeline.closures [] over with
+  match IxCC.Anf.Pipeline.closures [] overApplied with
   | .error e => expect a (e.startsWith "anf.entry") s!"closures step, no declared count: {e}"
   | .ok _ => expect a false "closures step: a program with no declared count for its root was accepted"
   return #["the closures step: a plain program unchanged; an over-applied root (8) and a point-free \

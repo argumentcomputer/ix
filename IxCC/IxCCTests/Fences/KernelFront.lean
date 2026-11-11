@@ -1,18 +1,14 @@
 import IxCC.Src.KernelFront.Proof
-import IxCC.Src.KernelFront.Front
 
 /-! The kernel front end's statements: the acceptance (the kernel's tiered
 entry ran on exactly the envelope's records, blobs and binding section, and
-accepted them), the byte-level Stage A over the kernel annotator, and the
+accepted them), and the
 classifier at one position in both directions (a `proof` class is the zero
 condition of the sort the kernel core's runs give, and such runs give that
 class). -/
 
 /-- info: 'IxCC.Src.KernelFront.accept_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Src.KernelFront.accept_spec
-
-/-- info: 'IxCC.Src.KernelFront.checkCanonicalRelevance_iff' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in #print axioms IxCC.Src.KernelFront.checkCanonicalRelevance_iff
 
 /-- info: 'IxCC.Src.KernelFront.Ctx.sortCond_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Src.KernelFront.Ctx.sortCond_spec

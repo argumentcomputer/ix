@@ -112,7 +112,7 @@
       "named_env_sha256": "33161c350e4e56ca4622e477aeb3eb6f445acb304e378777166128e73ca3b68d",
       "census": {
         "path": "abi.census.json",
-        "sha256": "e4b1ab44562e13c4491184edcf507a6ad090fbfab5e8d117218f50f72accd60d"
+        "sha256": "2f46043a3d8c8b89eb2b914ebfa6250900342a7d5526649fd3b90f906bd35e3d"
       },
       "roots": [
         {

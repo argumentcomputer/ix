@@ -7,6 +7,9 @@ import IxCC.Own.Semantics
 import IxCC.Src.Readback
 import IxCC.Src.Semantics
 import IxCC.Fir.Semantics
+import IxCC.Src.Relevance.Annotate
+import IxCC.Ixon.V3.Tc.Driver
+import IxCC.Recheck.Produce
 
 open Lean System IxCC
 namespace IxCCTests.Own.AnnotatedRecursion
@@ -128,13 +131,44 @@ def ownershipDiagnostic (fir : Fir.Program) (proposal : String) : IO String := d
         s!"  body={repr fd.body}"]
   return String.intercalate "\n" rows ++ "\n"
 
+/-- The historical bytes are unbound (`0xE4`), written by a producer that
+predates the role-bound envelope, so ingress (`Recheck.ingress`, the certified
+kernel's acceptance, which admits only role-bound environments) refuses them.
+This part reads them as the front end did before the switch: decoded, typed by
+IxCC's erased checker (`Tc.checkEnv`), the `entry` root's program read by IxCC's own conversion with the pins of IxCC's
+fixed table (`Src.Ingress.ofEnv`), the resource binding validated, and the
+relevance annotation from the earlier annotator (`Src.Relevance.annotate`),
+These are slated for deletion with the erased checker; this
+part goes or is rebuilt on role-bound bytes before then. -/
+structure LegacyInput where
+  env : Ixon.V3.Env
+  hints : Src.Hints
+  program : Src.Program
+
+def legacyIngress (bytes : ByteArray) (equations : Json) (root : String) : Except String LegacyInput := do
+  let env ← Ixon.V3.decodeAnonymousEnv bytes
+  Ixon.V3.Tc.checkEnv env
+  let hints ← Src.Hints.ofK1Json equations
+  let some r := hints.roots.find? (·.2 == some root) | throw s!"no root named {root}"
+  let hints := { hints with roots := #[r] }
+  let p ← Src.Ingress.ofEnv env #[r.1]
+  let p := { p with known := Src.Pinned.known p, resource := hints.resource }
+  Src.Resource.validate p
+  pure { env, hints, program := p }
+
 def runFixture (dir : FilePath) (variant : String) (phaseOne := false) : IO Unit := do
   need (["Annotated", "Plain"].contains variant) "unknown source variant"
   let equations ← sidecar dir variant
   IO.FS.writeFile (dir / s!"{variant}.consumer.json") (equations.pretty ++ "\n")
   let bytes ← IO.FS.readBinFile (dir / s!"{variant}.ixe")
   let raw ← IO.ofExcept (Json.parse (← IO.FS.readFile (dir / s!"{variant}.anon.json")))
-  let input ← IO.ofExcept ((Recheck.ingress bytes equations ["entry"]).mapError (·.message))
+  -- ingress refuses the unbound envelope; the legacy reading takes it
+  let refusal : String := match IxCC.Recheck.ingress bytes equations ["entry"] with
+    | .ok _ => "accepted"
+    | .error e => if e.code == "kernel" then e.message else s!"{e.code}: {e.message}"
+  need ((refusal.splitOn "unbound").length > 1)
+    s!"{variant}: ingress did not refuse the unbound envelope as unbound: {refusal}"
+  let input ← IO.ofExcept (legacyIngress bytes equations "entry")
   need (toString input.env.root == (← IO.ofExcept (← field raw "root").getStr?)) "fresh anonymous Merkle root/sidecar disagreement"
   let p := input.program
   let (table, diagnostics, _) := Src.Table.build {} p input.hints.proposals

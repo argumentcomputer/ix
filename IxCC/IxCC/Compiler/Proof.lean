@@ -256,14 +256,14 @@ theorem compileInputWithContracts_parts {cfg : Config} {inp : Input} {cert : Cer
       exact ⟨rfl, replayed⟩
 
 theorem compileWithContracts_parts {cfg : Config} {bytes : ByteArray} {equations : Lean.Json}
-    {roots : List String} {typecheck : Bool} {cert : Cert} {artifact : Artifact}
-    (accepted : compileWithContracts cfg bytes equations roots typecheck = .ok (cert, artifact)) :
-    ∃ inp, ingress bytes equations roots typecheck = .ok inp ∧
+    {roots : List String} {cert : Cert} {artifact : Artifact}
+    (accepted : compileWithContracts cfg bytes equations roots = .ok (cert, artifact)) :
+    ∃ inp, ingress bytes equations roots = .ok inp ∧
       produce (cfg.forInput inp) inp = .ok cert ∧
       runWithContracts (cfg.forInput inp) inp.program cert = .ok artifact := by
   unfold compileWithContracts at accepted
   simp only [bind, Except.bind] at accepted
-  cases ingested : ingress bytes equations roots typecheck with
+  cases ingested : ingress bytes equations roots with
   | error e => simp [ingested] at accepted
   | ok inp =>
     simp only [ingested] at accepted
@@ -323,8 +323,8 @@ theorem recheckWithContracts_sound {cfg : Config} {P : Src.Program} {cert : Cert
 
 /-- End-to-end soundness of `Recheck.compileWithContracts`. -/
 theorem compileWithContracts_sound {cfg : Config} {bytes : ByteArray} {equations : Lean.Json}
-    {roots : List String} {typecheck : Bool} {cert : Cert} {artifact : Artifact}
-    (accepted : compileWithContracts cfg bytes equations roots typecheck = .ok (cert, artifact))
+    {roots : List String} {cert : Cert} {artifact : Artifact}
+    (accepted : compileWithContracts cfg bytes equations roots = .ok (cert, artifact))
     (driver : X86.Driver) (valid : driver.Ok artifact.backend.encoded.text.size)
     (input : Nat × List Nat) (hi : artifact.front.Covered cert input) :
     Sem.RefinesOn (artifact.front.Covered cert) (⟨artifact.src, artifact.checked⟩ : CheckedProgram)
@@ -379,8 +379,8 @@ theorem compileInput_sound {cfg : Recheck.Config} {inp : Recheck.Input}
 
 /-- End-to-end soundness of byte-input `Recheck.compile` (`Compiler.compile_sound`). -/
 theorem compile_sound {cfg : Recheck.Config} {bytes : ByteArray} {equations : Lean.Json}
-    {roots : List String} {typecheck : Bool} {cert : Recheck.Cert} {artifact : Recheck.Artifact}
-    (accepted : Recheck.compile cfg bytes equations roots typecheck = .ok (cert, artifact))
+    {roots : List String} {cert : Recheck.Cert} {artifact : Recheck.Artifact}
+    (accepted : Recheck.compile cfg bytes equations roots = .ok (cert, artifact))
     (driver : X86.Driver) (valid : driver.Ok artifact.backend.encoded.text.size)
     (input : Nat × List Nat) (hi : artifact.front.Covered cert input) :
     (∀ clock output, Lang.run (artifact.linked driver) input clock = .ok output →
@@ -622,9 +622,9 @@ theorem produceAuto_immortal_sound {cfg : Recheck.Config} {inp : Recheck.Input}
 
 /-- End-to-end soundness of `RcReplay.compileAuto` on the `.zeroRc` path. -/
 theorem compileAuto_zeroRc_sound {cfg : Recheck.Config} {bytes : ByteArray} {equations : Lean.Json}
-    {roots : List String} {typecheck : Bool}
+    {roots : List String}
     {cert : Recheck.Cert} {artifact : Recheck.Artifact} {alloc : List Xv.Alloc.Outcome}
-    (accepted : Recheck.RcReplay.compileAuto cfg bytes equations roots typecheck = .ok (.zeroRc cert artifact alloc))
+    (accepted : Recheck.RcReplay.compileAuto cfg bytes equations roots = .ok (.zeroRc cert artifact alloc))
     (driver : X86.Driver) (valid : driver.Ok artifact.backend.encoded.text.size)
     (input : Nat × List Nat) (hi : artifact.front.Covered cert input) :
     (∀ clock output, Lang.run (artifact.linked driver) input clock = .ok output →
@@ -636,7 +636,7 @@ theorem compileAuto_zeroRc_sound {cfg : Recheck.Config} {bytes : ByteArray} {equ
         ∃ clock failure, Lang.run (artifact.linked driver) input clock = .resource failure) := by
   unfold Recheck.RcReplay.compileAuto at accepted
   simp only [bind, Except.bind] at accepted
-  cases hing : Recheck.ingress bytes equations roots typecheck with
+  cases hing : Recheck.ingress bytes equations roots with
   | error e => simp [hing] at accepted
   | ok inp =>
     simp only [hing] at accepted
@@ -644,10 +644,10 @@ theorem compileAuto_zeroRc_sound {cfg : Recheck.Config} {bytes : ByteArray} {equ
 
 /-- End-to-end soundness of `RcReplay.compileAuto` on the `.plainRc` path. -/
 theorem compileAuto_plainRc_sound {cfg : Recheck.Config} {bytes : ByteArray} {equations : Lean.Json}
-    {roots : List String} {typecheck : Bool}
+    {roots : List String}
     {cert : Recheck.RcReplay.Cert} {artifact : Recheck.RcReplay.Artifact}
     {alloc : List Xv.Alloc.Outcome}
-    (accepted : Recheck.RcReplay.compileAuto cfg bytes equations roots typecheck = .ok (.plainRc cert artifact alloc))
+    (accepted : Recheck.RcReplay.compileAuto cfg bytes equations roots = .ok (.plainRc cert artifact alloc))
     (driver : X86.Driver) (valid : driver.Ok artifact.backend.encoded.text.size)
     (input : Nat × List Nat) (hi : artifact.front.Covered cert input) :
     (∀ clock output, Lang.run (artifact.linked driver) input clock = .ok output →
@@ -663,7 +663,7 @@ theorem compileAuto_plainRc_sound {cfg : Recheck.Config} {bytes : ByteArray} {eq
         ∃ clock resource, Lang.run (artifact.linked driver) input clock = .resource resource) := by
   unfold Recheck.RcReplay.compileAuto at accepted
   simp only [bind, Except.bind] at accepted
-  cases hing : Recheck.ingress bytes equations roots typecheck with
+  cases hing : Recheck.ingress bytes equations roots with
   | error e => simp [hing] at accepted
   | ok inp =>
     simp only [hing] at accepted
@@ -671,10 +671,10 @@ theorem compileAuto_plainRc_sound {cfg : Recheck.Config} {bytes : ByteArray} {eq
 
 /-- End-to-end soundness of `RcReplay.compileAuto` on its immortal fallback. -/
 theorem compileAuto_immortal_sound {cfg : Recheck.Config} {bytes : ByteArray} {equations : Lean.Json}
-    {roots : List String} {typecheck : Bool}
+    {roots : List String}
     {cert : Recheck.Cert} {artifact : Recheck.Artifact} {alloc : List Xv.Alloc.Outcome}
     {reason : Recheck.Err}
-    (accepted : Recheck.RcReplay.compileAuto cfg bytes equations roots typecheck =
+    (accepted : Recheck.RcReplay.compileAuto cfg bytes equations roots =
       .ok (.immortal cert artifact alloc reason))
     (driver : X86.Driver) (valid : driver.Ok artifact.backend.encoded.text.size)
     (input : Nat × List Nat) (hi : artifact.front.Covered cert input) :
@@ -687,7 +687,7 @@ theorem compileAuto_immortal_sound {cfg : Recheck.Config} {bytes : ByteArray} {e
         ∃ clock failure, Lang.run (artifact.linked driver) input clock = .resource failure) := by
   unfold Recheck.RcReplay.compileAuto at accepted
   simp only [bind, Except.bind] at accepted
-  cases hing : Recheck.ingress bytes equations roots typecheck with
+  cases hing : Recheck.ingress bytes equations roots with
   | error e => simp [hing] at accepted
   | ok inp =>
     simp only [hing] at accepted
@@ -697,54 +697,39 @@ end IxCC.Compiler
 
 namespace IxCC.Recheck
 
-private theorem ingress_after_tc {env : Ixon.V3.Env} {rawHints : Src.Hints}
-    {chosen : Array (Ixon.Address × Option String)} {inp : Input}
-    (hrest :
-      (do
-        let p ← (Src.Ingress.ofEnv env (chosen.map (·.1))).mapError fun m =>
-          ({ stage := .ingress, code := "ingress", message := m } : Err)
-        let p := { p with known := Src.Pinned.known p, resource := rawHints.resource }
-        (Src.Resource.validate p).mapError fun m =>
-          ({ stage := .ingress, code := "resource-binding", message := m } : Err)
-        let names := chosen.toList.zipIdx.map fun ((_, n), i) => n.getD s!"root{i}"
-        pure ({ env, hints := { rawHints with roots := chosen }, program := p, names } : Input)
-        : Except Err Input) = .ok inp) :
-    inp.env = env ∧
-    inp.hints = { rawHints with roots := chosen } ∧
-    Src.Resource.validate inp.program = .ok () ∧
-    ∃ rawProg,
-      Src.Ingress.ofEnv env (chosen.map (·.1)) = .ok rawProg ∧
-      inp.program = { rawProg with known := Src.Pinned.known rawProg, resource := rawHints.resource } := by
-  simp only [bind, Except.bind, Except.mapError] at hrest
-  cases hprog : Src.Ingress.ofEnv env (chosen.map (·.1)) with
-  | error e => rw [hprog] at hrest; cases hrest
-  | ok rawProg =>
-    rw [hprog] at hrest
-    simp only at hrest
-    cases hval : Src.Resource.validate { rawProg with known := Src.Pinned.known rawProg, resource := rawHints.resource } with
-    | error e => rw [hval] at hrest; cases hrest
-    | ok u =>
-      cases u
-      rw [hval] at hrest
-      simp only [pure, Except.pure, Except.ok.injEq] at hrest
-      subst hrest
-      exact ⟨rfl, rfl, hval, rawProg, rfl, rfl⟩
-
-/-- Projection of `Recheck.ingress` exposing `Ixon.V3.decodeAnonymousEnv`,
-optional kernel typecheck `Ixon.V3.Tc.checkEnv inp.env = .ok ()`,
-`Src.Hints.ofK1Json`, `Src.Ingress.ofEnv`, and `Src.Resource.validate`. -/
+/-- **What ingress established** (`Recheck.ingress`): the envelope decoded to
+`inp.env`; the certified kernel's tiered entry accepted the whole environment
+(`Src.KernelFront.accept`, at the front end's batch limits: it ran on exactly
+the envelope's binding section, records and blobs, `accept_spec`); the
+program is IxCC's reading of the chosen roots with the pinned identities of the
+kernel's admitted role table, its resource binding validated, and it is read
+against the kernel's reading (`Reading.build`), whose index the annotator
+asks. The acceptance gives, through the kernel's theorems, the reading's
+fidelity, a model and the strong model of the logical environment, at IxCC's
+hash, under the artifact's own table and behind its own prelude; it is not the
+end-to-end statements' first premise, which is about the closure of the seeds
+under the default table and the committed prelude. -/
 theorem ingress_parts {bytes : ByteArray} {equations : Lean.Json}
-    {roots : List String} {typecheck : Bool} {inp : Input}
-    (h : ingress bytes equations roots typecheck = .ok inp) :
+    {roots : List String} {inp : Input}
+    (h : ingress bytes equations roots = .ok inp) :
     Ixon.V3.decodeAnonymousEnv bytes = .ok inp.env ∧
-    (typecheck = true → Ixon.V3.Tc.checkEnv inp.env = .ok ()) ∧
+    Src.KernelFront.accept inp.env Src.KernelFront.defaultLimits = .ok inp.kernel.acc ∧
+    Src.KernelFront.AcceptedFrom inp.env Src.KernelFront.defaultLimits inp.kernel.acc ∧
+    Ix.Kernel.Admission.checkBytesTieredUsing (Src.KernelFront.preludeSource inp.kernel.acc.pre)
+      Src.KernelFront.hash inp.kernel.acc.binding inp.kernel.acc.limits inp.kernel.acc.records
+      inp.kernel.acc.blobs = .ok (inp.kernel.acc.env, inp.kernel.acc.tier) ∧
     Src.Resource.validate inp.program = .ok () ∧
+    Src.KernelFront.Reading.build inp.kernel.acc inp.program = .ok inp.kernel.rd ∧
+    inp.kernel.fe = Ix.Kernel.mkFEnv inp.kernel.acc.env ∧
     ∃ rawHints chosen rawProg,
       Src.Hints.ofK1Json equations = .ok rawHints ∧
       selectRoots rawHints.roots roots = .ok chosen ∧
       chosen.isEmpty = false ∧
-      Src.Ingress.ofEnv inp.env (chosen.map (·.1)) = .ok rawProg ∧
-      inp.program = { rawProg with known := Src.Pinned.known rawProg, resource := inp.hints.resource } := by
+      Src.Ingress.readConsts inp.env (chosen.map (·.1)) = .ok rawProg ∧
+      inp.program = { rawProg with
+        known := Src.Pinned.known
+          { rawProg with known := { pins := Src.KernelFront.pinsOfTable inp.kernel.acc.table } },
+        resource := inp.hints.resource } := by
   unfold ingress at h
   cases henv : Ixon.V3.decodeAnonymousEnv bytes with
   | error e => simp [henv, bind, Except.bind, Except.mapError] at h
@@ -766,27 +751,37 @@ theorem ingress_parts {bytes : ByteArray} {equations : Lean.Json}
         | false =>
           rw [hempty] at h
           simp only [Bool.false_eq_true, ↓reduceIte, pure, Except.pure] at h
-          cases typecheck with
-          | false =>
-            simp only [Bool.false_eq_true, ↓reduceIte] at h
-            obtain ⟨rfl, hhintsEq, hval, rawProg, hprog, hprogEq⟩ := ingress_after_tc h
-            refine ⟨rfl, fun hc => Bool.noConfusion hc, hval, rawHints, chosen, rawProg,
-              rfl, hchosen, hempty, hprog, ?_⟩
-            rw [hhintsEq]
-            exact hprogEq
-          | true =>
-            simp only [↓reduceIte] at h
-            cases htc : Ixon.V3.Tc.checkEnv env with
-            | error e => rw [htc] at h; cases h
-            | ok u =>
-              cases u
-              rw [htc] at h
+          cases hacc : Src.KernelFront.accept env with
+          | error e => rw [hacc] at h; cases h
+          | ok acc =>
+            rw [hacc] at h
+            simp only at h
+            cases hprog : Src.Ingress.readConsts env (chosen.map (·.1)) with
+            | error e => rw [hprog] at h; cases h
+            | ok rawProg =>
+              rw [hprog] at h
               simp only at h
-              obtain ⟨rfl, hhintsEq, hval, rawProg, hprog, hprogEq⟩ := ingress_after_tc h
-              refine ⟨rfl, fun _ => htc, hval, rawHints, chosen, rawProg,
-                rfl, hchosen, hempty, hprog, ?_⟩
-              rw [hhintsEq]
-              exact hprogEq
+              -- the resource binding (its `mapError` unfolded to a `match`)
+              split at h
+              · cases h
+              · rename_i u hv
+                split at hv
+                · cases hv
+                · rename_i v hval
+                  -- the reading against the kernel's
+                  split at h
+                  · cases h
+                  · rename_i rd0 hb
+                    split at hb
+                    · cases hb
+                    · rename_i rd hrd
+                      injection hb with hb
+                      subst hb
+                      injection h with h
+                      subst h
+                      have hspec := Src.KernelFront.accept_spec hacc
+                      exact ⟨rfl, hacc, hspec.1, hspec.2, hval, hrd, rfl,
+                        rawHints, chosen, rawProg, rfl, hchosen, hempty, hprog, rfl⟩
 
 /-- Projection from `Recheck.run` to the front-end recheck step `Recheck.front`
 (`Src.Table.ofCert`, then `Src.Recheck.annotation`, which runs `Lazify.run`). -/

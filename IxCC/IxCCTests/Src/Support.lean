@@ -58,26 +58,26 @@ def runRoot (p : Program) (k : Nat) (root : CId) (args : List Nat) : IO (Result 
 
 /-- Load a fixture pack. Erased typing of every K1 closure is gated by
 `tests-ixon-v3`, so it is skipped here unless asked for. -/
-def loadPack (ixe eqs : System.FilePath) (cfg : LoadConfig := { typecheck := false })
-    (oracle : RelOracle := Relevance.annotate) : IO Loaded := do
+def loadPack (ixe eqs : System.FilePath) (cfg : LoadConfig := {})
+    (oracle : RelOracle := kernelOracle) : IO Loaded := do
   let bytes ← IO.FS.readBinFile ixe
   let json ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile eqs))
   match load bytes json cfg oracle with
   | .ok l => pure l
   | .error d => throw (IO.userError s!"{ixe}: {d}")
 
-def loadBench (name : String) (cfg : LoadConfig := { typecheck := false })
-    (oracle : RelOracle := Relevance.annotate) : IO Loaded :=
+def loadBench (name : String) (cfg : LoadConfig := {})
+    (oracle : RelOracle := kernelOracle) : IO Loaded :=
   loadPack (fixtures / "bench-k1" / s!"{name}.ixe") (fixtures / "bench-k1" / s!"{name}.equations.json")
     cfg oracle
 
-def loadK1 (cfg : LoadConfig := { typecheck := false }) (oracle : RelOracle := Relevance.annotate) :
+def loadK1 (cfg : LoadConfig := {}) (oracle : RelOracle := kernelOracle) :
     IO Loaded :=
   loadPack (fixtures / "k1/k1.ixe") (fixtures / "k1/equations.json") cfg oracle
 
 /-- Load `k1.ixe` with extra roots (constants run directly by a test must be
 roots, so that the annotator and `Admit` reach them). -/
-def loadK1Roots (extra : Array IxCC.Ixon.Address) (cfg : LoadConfig := { typecheck := false }) :
+def loadK1Roots (extra : Array IxCC.Ixon.Address) (cfg : LoadConfig := {}) :
     IO Loaded := do
   let bytes ← IO.FS.readBinFile (fixtures / "k1/k1.ixe")
   let json ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile (fixtures / "k1/equations.json")))

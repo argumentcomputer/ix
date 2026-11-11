@@ -263,7 +263,9 @@ IxCC/tools/regenerate.sh            # regenerate in place (a refreeze); then rev
 IxCC/tools/regenerate.sh --check    # regenerate into a scratch export of HEAD and compare
 ```
 
-It builds `ix` at the repository root and the IxCC tools, writes a `lake`
+It builds `ix` at the repository root with the root modules the fixtures' sources
+import (`Ix.Compile.SourceContract.Elab`, which no default root target builds, so
+that a cold checkout regenerates) and the IxCC tools, writes a `lake`
 stand-in for `ix` (which asks `lake env printenv LEAN_PATH` where it
 compiles; the stand-in answers with the root workspace's libraries), and
 runs, in this order:
@@ -292,9 +294,9 @@ that differs, and scans the committed tree for commits and absolute paths in
 the fixtures, manifests, READMEs and generated modules (`tools/citations.sh
 --fixtures`); it exits 0 only when nothing differs and nothing is cited. If
 the tables differ it stops there (the tools built from the checkout would be
-stale): regenerate in place. On a 64-core machine it takes about 30 minutes
-and 10 GB at its peak, nearly all of it the families (the erased typing of
-the census of each 2.5 MB closure, about 200 s).
+stale): regenerate in place. On a 64-core machine it takes about 12 minutes
+in place (2026-11-11, after the switch to the kernel front end), nearly all of
+it the families.
 
 Not regenerated, and why: `fixtures/ixon-v4/typing` and `catalog` (the
 erased checker's unbound typing bundles and the catalogs over them; this

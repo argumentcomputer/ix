@@ -270,11 +270,13 @@ private def setLamContracts : List Ixon.V3.BinderContract → Src.Term → Src.T
 that annotating ONLY the heap `List Nat` parameters (`build`: `[.many, 1]`,
 `revAcc`: `[!, !]`, `sumL`: `[~, .many]`) while leaving the scalar `Nat`
 parameters (`n : Nat` on `build`, `acc : Nat` on `sumL`) unannotated selects
-`.zeroRc` via `selectPolicy` and `produceAuto`. -/
+`.zeroRc` (`Own.Plain.selectRcPolicyForSrc` on the producer's steps, with the
+base program's annotation); `selectPolicy` and `produceAuto` refuse the
+in-memory program, whose contracts are not its bytes' reading. -/
 def verifyMixedScalarRealSource : IO Unit := do
   let bytes ← IO.FS.readBinFile "fixtures/ownership/OS16-plain.ixe"
   let eqs ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile "fixtures/ownership/OS16-plain.equations.json"))
-  let baseInp ← IO.ofExcept ((Recheck.ingress bytes eqs ["entry"] false).mapError (·.message))
+  let baseInp ← IO.ofExcept ((Recheck.ingress bytes eqs ["entry"]).mapError (·.message))
   let p0 := baseInp.program
   let cLinear : Ixon.V3.BinderContract := { uses := .linear }
   let cUnique : Ixon.V3.BinderContract := { value := { owned := .unique } }
@@ -321,14 +323,31 @@ def verifyMixedScalarRealSource : IO Unit := do
       | none => none
   let ctx : Src.Resource.Context :=
     { address := profAddr, bytes := profBytes, pairs := checkedPairs }
-  let annotatedInp : Recheck.Input := { baseInp with program := { p0 with consts, resource := some ctx } }
+  let annotated : Src.Program := { p0 with consts, resource := some ctx }
+  let annotatedInp : Recheck.Input := { baseInp with program := annotated }
   let cfg := (Recheck.Config.forInput { names := ["entry"] } annotatedInp)
-  let pol ← IO.ofExcept ((Recheck.RcReplay.selectPolicy cfg annotatedInp).mapError (·.message))
+  -- the producer refuses a program that is not its bytes' reading (the kernel
+  -- annotator's correspondence compares binder contracts)
+  let refused := fun (r : Except Recheck.Err Unit) => match r with
+    | .error e => e.code == "relevance-oracle" && (e.message.splitOn "contract").length > 1
+    | .ok _ => false
+  check "OS16 mixed contracts set in memory: selectPolicy did not refuse them"
+    (refused ((Recheck.RcReplay.selectPolicy cfg annotatedInp).map fun _ => ()))
+  check "OS16 mixed contracts set in memory: produceAuto did not refuse them"
+    (refused ((Recheck.RcReplay.produceAuto cfg annotatedInp).map fun _ => ()))
+  -- the policy of that program, from the base program's annotation (contracts
+  -- other than erased ones change no class), through the producer's own steps
+  let (table, _, _) := Src.Table.build cfg.table annotated annotatedInp.hints.proposals
+  let ann ← IO.ofExcept (baseInp.kernel.annotateChecked { p0 with table })
+  let (src, checked) ← match Src.Recheck.annotation { annotated with table } ann with
+    | .ok r => pure r
+    | .error _ => throw (IO.userError "OS16 mixed: the base annotation was refused on the annotated program")
+  let (lam, _) ← IO.ofExcept ((IxCC.Lam.erase src checked).mapError fun e => (Recheck.Err.ofErase e).message)
+  let trace ← IO.ofExcept (IxCC.Anf.Pipeline.produce cfg.budgets lam)
+  let (anf, _) ← IO.ofExcept ((Recheck.produceClosures src trace).mapError fun (e : Recheck.Err) => e.message)
+  let fir ← IO.ofExcept ((IxCC.Fir.lower anf).mapError fun e => (Recheck.Err.ofFir e).message)
+  let pol := Own.Plain.selectRcPolicyForSrc src fir
   check s!"OS16 mixed scalar/heap contracts expected .zeroRc, got {repr pol}" (pol == .zeroRc)
-  match ← IO.ofExcept ((Recheck.RcReplay.produceAuto cfg annotatedInp).mapError (·.message)) with
-  | .zeroRc .. => pure ()
-  | .plainRc .. | .immortal .. =>
-    throw (IO.userError "OS16 mixed scalar/heap produceAuto did not select .zeroRc")
 
 def run (logs : System.FilePath) : IO Unit := do
   IxCCTests.Recheck.Rc.Fixtures.verify

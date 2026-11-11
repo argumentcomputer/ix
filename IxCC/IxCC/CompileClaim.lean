@@ -28,8 +28,9 @@ object bytes, matching the host `Ix.Claim.compile` wire format byte-for-byte:
    - Global `Coe (List UInt8) ByteArray` has been removed.
 
 2. **Verified Ingress, Policy Unification & Root Observability**:
-   - `verifyBytes`, `checkClaim`, and `makeClaim` default to `typecheck := true`,
-     running `Ixon.V3.Tc.checkEnv` during `Recheck.ingress`.
+   - `verifyBytes`, `checkClaim`, and `makeClaim` run `Recheck.ingress`, which
+     runs the certified kernel's acceptance of the whole role-bound environment
+     (not optional), and Stage A over the kernel's annotator.
    - `verifyProgram` requires `c.abiArity < 2 ^ 64`, verifies that the target root
      declaration is monomorphic with all-`Nat` parameters (`rootParamsAllNat`),
      and requires a readback type, so the value clause observes the root's result
@@ -441,8 +442,9 @@ def selectTargetRoots (cfg : Recheck.Config) (equations : Lean.Json) (target : I
     | .error _ => []
 
 /-- Verify that the serialized certificate's relevance annotation equals the
-canonical output of `Src.Relevance.annotate` on `inp.env` and the validated
-table (`Stage A`). -/
+output of the relevance annotator over the kernel's acceptance
+(`inp.kernel.annotateChecked`) on the validated table (`Stage A`,
+`Recheck.checkCanonicalRelevance`). -/
 def checkCertCanonicalRelevance (cfg : Recheck.Config) (inp : Recheck.Input)
     (policy : CompilePolicy) (certText : String) : Bool :=
   match policy with
@@ -457,14 +459,15 @@ def checkCertCanonicalRelevance (cfg : Recheck.Config) (inp : Recheck.Input)
 
 /-- Verify a `CompileClaim` from raw `.ixe` environment bytes, sidecar equations
 JSON, and serialized certificate `certText`: the environment the bytes are has the
-claim's root and role table (`roleTable` is the binding hash of a role-bound
-envelope, `none` for an unbound one). Defaults to `typecheck := true` so
-`Ixon.V3.Tc.checkEnv` validates the decoded environment at ingress
-and `checkCertCanonicalRelevance` validates canonical relevance (`Stage A`). -/
+claim's root and role table (`roleTable`, the binding hash of the role-bound
+envelope). Ingress (`Recheck.ingress`) runs the certified kernel's acceptance of
+the whole environment, so an unbound envelope, or any record the kernel does not
+accept, refuses the claim; and `checkCertCanonicalRelevance` validates canonical
+relevance (`Stage A`). -/
 def verifyBytes (cfg : Recheck.Config) (envBytes : ByteArray) (equations : Lean.Json)
-    (c : CompileClaim) (certText : String) (typecheck : Bool := true) : Bool :=
+    (c : CompileClaim) (certText : String) : Bool :=
   let roots := selectTargetRoots cfg equations c.target
-  match Recheck.ingress envBytes equations roots typecheck with
+  match Recheck.ingress envBytes equations roots with
   | .ok inp =>
     (inp.env.root == c.env && inp.env.bindingAddress == c.roleTable) &&
       checkCertCanonicalRelevance cfg inp c.policy certText &&
@@ -584,26 +587,25 @@ def checkClaimProgram (cfg : Recheck.Config) (P : Src.Program) (c : CompileClaim
     throw "CompileClaim.checkClaimProgram: claim verification failed"
 
 /-- Check a `CompileClaim` from raw `.ixe` environment bytes, sidecar equations JSON,
-and serialized certificate `certText`. Defaults to `typecheck := true`. -/
+and serialized certificate `certText`. -/
 def checkClaim (cfg : Recheck.Config) (envBytes : ByteArray) (equations : Lean.Json)
-    (c : CompileClaim) (certText : String) (typecheck : Bool := true) : Except String Unit := do
-  unless verifyBytes cfg envBytes equations c certText typecheck do
+    (c : CompileClaim) (certText : String) : Except String Unit := do
+  unless verifyBytes cfg envBytes equations c certText do
     throw "CompileClaim.checkClaim: byte-level claim verification failed"
 
 theorem checkClaim_ok_iff {cfg : Recheck.Config} {envBytes : ByteArray}
-    {equations : Lean.Json} {c : CompileClaim} {certText : String} {typecheck : Bool} :
-    checkClaim cfg envBytes equations c certText typecheck = .ok () ↔
-      verifyBytes cfg envBytes equations c certText typecheck = true := by
+    {equations : Lean.Json} {c : CompileClaim} {certText : String} :
+    checkClaim cfg envBytes equations c certText = .ok () ↔
+      verifyBytes cfg envBytes equations c certText = true := by
   unfold checkClaim
-  cases verifyBytes cfg envBytes equations c certText typecheck <;> simp [pure, Except.pure]
+  cases verifyBytes cfg envBytes equations c certText <;> simp [pure, Except.pure]
 
 /-- Construct a `CompileClaim` from raw `.ixe` environment bytes and sidecar equations JSON
-in a single ingress + compilation pass without redundant re-ingress or double recheck.
-Defaults to `typecheck := true`. -/
+in a single ingress + compilation pass without redundant re-ingress or double recheck. -/
 def makeClaim (cfg : Recheck.Config) (envBytes : ByteArray) (equations : Lean.Json)
-    (mode : Compiler.RcMode := .auto) (typecheck : Bool := true) :
+    (mode : Compiler.RcMode := .auto) :
     Except String (CompileClaim × String × ByteArray) := do
-  let input ← (Recheck.ingress envBytes equations cfg.names typecheck).mapError (·.render)
+  let input ← (Recheck.ingress envBytes equations cfg.names).mapError (·.render)
   (produce cfg input mode).mapError (·.render)
 
 end CompileClaim

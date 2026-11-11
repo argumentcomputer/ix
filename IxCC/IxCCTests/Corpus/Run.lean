@@ -290,7 +290,7 @@ def compileRoot (m : Family) (f : Fixture) (r : Root) : IO (Except Err (Cert × 
   let bytes ← IO.FS.readBinFile (dir / f.closure.path)
   let json ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile (dir / f.equations.path)))
   IO.lazyPure fun _ => do
-    let inp ← ingress bytes json (r.name :: r.together) (typecheck := false)
+    let inp ← ingress bytes json (r.name :: r.together)
     compileInputRetry {} inp
 
 /-- One root: declined as the manifest expects, or compiled and run. -/
@@ -360,7 +360,7 @@ def dumpIR (inp : Input) : Except String String := do
   let P := inp.program
   let (table, _, _) := IxCC.Src.Table.build cfg.table P inp.hints.proposals
   let p0 := { P with table }
-  let ann ← IxCC.Src.Relevance.annotate inp.env p0
+  let ann ← inp.kernel.annotateChecked p0
   let (src, checked) ← match IxCC.Src.Recheck.annotation p0 ann with
     | .ok r => pure r
     | .error _ => throw "relevance rejects it"

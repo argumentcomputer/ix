@@ -24,18 +24,17 @@ def k1Roots : List (String × String) :=
   [("K1.fib", "fib"), ("K1.sumLoop", "sum-loop"), ("K1.ack", "ackermann"), ("K1.tak", "tak"),
    ("K1.gcd", "gcd")]
 
-/-- Ingress on fixture files (erased typing off unless asked: `tests-ixon-v3`
-gates it for every K1 closure). -/
-def ingressFile (ixe eqs : FilePath) (roots : List String := []) (typecheck : Bool := false) :
+/-- Ingress on fixture files (the kernel's acceptance included). -/
+def ingressFile (ixe eqs : FilePath) (roots : List String := []) :
     IO Input := do
   let bytes ← IO.FS.readBinFile ixe
   let json ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile eqs))
-  match ingress bytes json roots typecheck with
+  match ingress bytes json roots with
   | .ok i => pure i
   | .error e => throw (IO.userError s!"{ixe}: {e.render}")
 
-def benchInput (name : String) (typecheck : Bool := false) : IO Input :=
-  ingressFile (benchIxe name) (benchEqs name) [] typecheck
+def benchInput (name : String) : IO Input :=
+  ingressFile (benchIxe name) (benchEqs name) []
 
 /-- An `Except Err` as `IO`, evaluated when the action runs. -/
 def ofErr {α : Type} (label : String) (x : Unit → Except Err α) : IO α := do

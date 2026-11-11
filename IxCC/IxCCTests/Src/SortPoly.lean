@@ -79,7 +79,7 @@ def blindProgram (p : Program) : Program :=
 def run (a : Assert) : IO (Array String) := do
   let mut out := #[]
   let (env, hints) ← pack
-  let cfg : LoadConfig := { typecheck := false }
+  let cfg : LoadConfig := {}
   let covered := hints.roots.filter (·.2 != some typeRoot)
   let l ← match loadEnv cfg env { hints with roots := covered } with
     | .ok l => pure l
@@ -99,8 +99,8 @@ def run (a : Assert) : IO (Array String) := do
   match loadEnv cfg env { hints with roots := typeOnly } with
   | .error d => expect a (d.code == "relevance-C2") s!"{typeRoot}: rejected with {d.code}"
   | .ok _ => expect a false s!"{typeRoot}: accepted, but no universe condition covers it"
-  let (p0, _, _) ← IO.ofExcept ((prepare cfg env { hints with roots := typeOnly }).mapError toString)
-  let ann ← IO.ofExcept (annotate env p0)
+  let (p0, k0, _, _) ← IO.ofExcept ((prepare cfg env { hints with roots := typeOnly }).mapError toString)
+  let ann ← IO.ofExcept (k0.annotateChecked p0)
   let pT := Lazify.run (← IO.ofExcept (install p0 ann)) (ann.nodes.map (·.1))
   let some (_, tc) := p0.roots[0]? | throw (IO.userError s!"{typeRoot}: no root")
   for n in List.range 3 do
@@ -122,8 +122,8 @@ def run (a : Assert) : IO (Array String) := do
   out := out.push s!"{l.checked.instances.length} instances of {l.checked.reached.length} constants; \
     at two profiles: {split.map p.short}"
   -- The level-blind annotation: rejected by the checker, stuck when unchecked.
-  let (p0, _, _) ← IO.ofExcept ((prepare cfg env l.hints).mapError toString)
-  let ann ← IO.ofExcept (annotate env p0)
+  let (p0, k0, _, _) ← IO.ofExcept ((prepare cfg env l.hints).mapError toString)
+  let ann ← IO.ofExcept (k0.annotateChecked p0)
   let blind := blindAnn ann
   let pb := blindProgram p0
   let mut rejected := #[]

@@ -28,13 +28,52 @@ boundaries are:
 | Boundary | Current computation | Role |
 | --- | --- | --- |
 | `V3.decodeAnonymousEnv` | `Address.blake3Pure`, including the canonical constant-root Merkle fold and the role binding's section | Authenticating Ixon objects, blobs, the closure root and, in a role-bound envelope, the role table ([byte contract](byte-contract.md)) |
-| `Src.Ingress.ofEnv` | `Address.blake3` (pure; the block-member keys `V3.*ProjAddr`, `Ixon/V3/Keys.lean`) | Keying block members and constructors by their projection addresses; a projection record must be the alias of a member it keys |
-| `V3.Tc.checkEnv` | `Address.blake3` (pure) for addresses; `Blake3.Rust.Hasher` for internal keys | Rechecking materialized object/blob hashes and constructing projection addresses (pure); expression/universe node, context and reduction-cache keys (the Rust hasher: internal hash-consing keys of the erased checker, not addresses anything names) |
-| `Recheck.produceWith` relevance annotation; `Recheck.checkCanonicalRelevance` | The same erased typechecker's expressions and conversion | In `produce`, a proposal the relevance checks then decide. On the byte-level verifiers (`CompileClaim.verifyBytes`, `Ring0Sip.verifyBytes`, `ixcc check-cert`) `checkCanonicalRelevance` re-runs `Src.Relevance.annotate` on `(inp.env, cert.table)` and requires the certificate's annotation to equal its output, so the annotator is on their acceptance path. It has no correctness theorem: S1's closure on those paths rests on it annotating honest programs correctly |
+| `Src.KernelFront.accept` (in `Recheck.ingress`) | the certified kernel's tiered entry (`Ix.Kernel.Admission.checkBytesTieredUsing`) at IxCC's pure BLAKE3 (`KernelFront.hash`) | The certified kernel's acceptance of the whole role-bound environment, every record reached or not: byte admission and authentication of every record and blob, the role table's admission, canonical decoding, the kernel's reader and verified fold over the logical records, the typing tier over the `partial` and `unsafe` definitions. Not optional; an unbound envelope is refused. Its accept gives, through the kernel's theorems, the reading's fidelity, a model and the strong model of the logical environment (`accept_spec`, `checkConstantsTiered_ok`) |
+| `Src.Ingress.readConsts` with `KernelFront.pinsOfTable`; `KernelFront.Reading.build` | `Address.blake3` (pure; the block-member keys `V3.*ProjAddr`, `Ixon/V3/Keys.lean`) | Keying block members and constructors by their projection addresses (a projection record must be the alias of a member it keys); the pinned identities from the kernel's admitted role table; the program read against the kernel's reading (keys, addresses, declaration headers; refused with code `faithful`) |
+| `Recheck.produceWith` relevance annotation; `Recheck.checkCanonicalRelevance` | the certified kernel's executed core over the accepted environment (`KernelFront.Kernel.annotateChecked`: inference, conversion, weak head normalisation and the annotation pass, each asked of the kernel's own term at the position IxCC's term occupies, with IxCC's term checked to correspond) | In `produce`, a proposal the relevance checks then decide. On the byte-level verifiers (`CompileClaim.verifyBytes`, `Ring0Sip.verifyBytes`, `ixcc check-cert`) `checkCanonicalRelevance` re-runs the kernel annotator on `(inp.kernel, cert.table)` and requires the certificate's annotation to equal its output (Stage A). Each class it gives is the kernel core's answer at that position and conversely (`KernelFront.Ctx.classify*_proof`, `_of_runs`); the composition of those runs into typing derivations at the evaluated positions is planned ([kernel front end](kernel-front-end-design.md)) |
 | `Src.Resource.validateContext` | `Address.blake3Pure` plus the codec's pure framing operations | Binding raw effective profile bytes and checked equation selections to actual Src declarations; no resource-safety claim |
-| Separate `V3.validate` / resource-claim API | Resource profile, object and claim commitments (pure), plus erased typing | Diagnostic addressed admission; not called by `Recheck.compile` or assumed by `Recheck.sound` |
+| Separate `V3.validate` / resource-claim API | Resource profile, object and claim commitments (pure), plus the erased checker's typing until it is deleted | Diagnostic addressed admission; not called by `Recheck.compile` or assumed by `Recheck.sound` |
 
-The erased typechecker's remaining native call sites (its incremental hasher for
+**What ingress refuses, and how.** The certified kernel's acceptance is of the
+whole artifact, so a record the kernel does not accept refuses every root of
+the artifact, reached or not. Its refusal is `ixcc: ingress: kernel: kernel
+front end, STAGE (CLASS): REASON`, exit status 1, where `STAGE` is the
+kernel's (`envelope`, `bytes`, `binding`, `coverage`, `prelude`, `read`,
+`kernel`) and `CLASS` its classification: *rejected* where the input is shown
+wrong, *declined* otherwise. In particular:
+
+- an unbound closure (`0xE4`): `envelope`, "the kernel admits only role-bound
+  environments (0xE5); this one is unbound";
+- an ill-typed record: `kernel` (declined), a type mismatch or a "function
+  expected": the kernel does not take a failed conversion search as evidence
+  that the input is wrong, so it declines rather than rejects;
+- **any axiom other than `propext`, `Classical.choice` and `Quot.sound`, and
+  any use of `sorryAx`, anywhere among the records**: `kernel` (declined),
+  "non-standard axiom" at the axiom's record, or, for `sorryAx` (which the
+  kernel installs nothing for), at the first record using it. Before the
+  switch IxCC refused only a target that reached such an axiom relevantly
+  (`Src.Admit`'s `relevant-axiom`); now the whole artifact is declined. That
+  is the right verdict: an environment holding an arbitrary axiom (or a proof
+  by `sorry`) may be inconsistent, so it has no model, and nothing IxCC would
+  say about a program read from it could be grounded in the kernel's model.
+  For these two, after the kernel's own line (`not implemented yet: use of the
+  sorryAx axiom …`, `not implemented yet: non-standard axiom …`), `ixcc` prints
+  one more line in plain words: that the artifact holds a `sorry` (or an axiom
+  other than the standard three) somewhere among its records, that the kernel
+  accepts an artifact only whole, and that this section explains it
+  (`KernelFront.PolicyDecline`, told apart by the kernel's `notImplemented`
+  failure and its message's leading prose part).
+
+After the kernel, IxCC's own admission still refuses per root, with the
+reference path from the root (`Src.Admit`, stage `admit`): a relevant
+theorem, a relevant standard axiom (`Classical.choice` through
+`Classical.propDecidable`, `propext`), a reached `partial` or `unsafe`
+definition (the kernel types it and keeps it opaque, outside the logical
+environment), an opaque outside the allowlist, a relevant type, a string
+literal, a budget.
+
+IxCC's erased type checker is no longer on any compile or verifier path; until
+it is deleted, its remaining native call sites (its incremental hasher for
 internal keys) are in `Ixon/V3/Tc/{Expr,Level,Metadata,Monad,Inductive,Support}.lean`;
 `Support.finishHash` constructs its length proof explicitly, so no theorem
 depends on the Blake3 package's `native_decide` length proof. A collision among
@@ -82,9 +121,12 @@ declared first-order type, so its view-rejection case means a result off that
 shape (`Recheck.PlainShape`, `verifyProgram_plainRc_rootShape`,
 `verifyBytes_plainRc_rootShape`). The stuck and trap cases remain, and
 nothing proves that SrcEval returns a result of the shape: that is type
-preservation for SrcEval, which is not proved. The guarantees apply to
-both choices of the compiler's `typecheck` flag; neither choice supplies the
-missing model-adequacy proof. Pure hashing on the verifier path does
+preservation for SrcEval, which is not proved. The byte-level guarantees
+hold of every input ingress accepts, and ingress always runs the certified
+kernel's acceptance (there is no unchecked mode); the acceptance does not
+supply the missing model-adequacy proof, and it is not the grounded
+statements' first premise, which is about the closure of the seeds under the
+default table and the committed prelude ([kernel front end](kernel-front-end-design.md#acceptance)). Pure hashing on the verifier path does
 not by itself prove source adequacy.
 
 The stronger theorem relating an input closure to the certified kernel's
@@ -94,6 +136,6 @@ accepts the environment with the claim's root address and that the checked
 source program is faithful to IxCK's reading of it, both discharged outside
 IxCC (by IxVM proofs or a native kernel run), and adds the unfolding table's
 validity in the model and SrcEval's adequacy with progress
-([certification design](certification-design.md)). IxCC's own type checking
+([certification design](certification-design.md)). IxCC's erased type checker
 contributes nothing to it. This boundary does not assert that theorem or
 weaken any existing fence to accommodate it.

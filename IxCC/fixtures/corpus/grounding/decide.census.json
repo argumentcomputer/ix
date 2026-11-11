@@ -1,6 +1,6 @@
 {"root": "a39a8f2e6aef58fd83445febf3f135aeaf89e3076343d2783f78e2a5640db82f",
  "rejected_at": {"policy": 4},
- "reached": {"typing": 4, "policy": 287},
+ "reached": {"policy": 287, "kernel": 4},
  "kinds":
  {"theorem": 65,
   "recursor": 18,
@@ -10,8 +10,9 @@
   "definition": 147,
   "constructor-projection": 19,
   "axiom": 2},
+ "kernel": {"verdict": "accepted", "tier_constants": 4, "records": 291},
  "ingress": "accepted",
- "format": "ixcc/census/1",
+ "format": "ixcc/census/2",
  "entries":
  [{"safety": "safe",
    "reached": "policy",
@@ -537,7 +538,7 @@
    "34f5baf0fac5ad9e8b29082de7eb64a0c72f80d4f9cf68043b29b3703c64e757"},
   {"safety": "partial",
    "rejected_at": "policy",
-   "reached": "typing",
+   "reached": "kernel",
    "message":
    "partial definition: rejected by plan decision D12; use partial_fixpoint, termination_by or fuel",
    "kind": "definition",
@@ -579,7 +580,7 @@
    "3a0ee15052cfe8d5909ddde3185415987c626554839f24d05d707f6028e2d83f"},
   {"safety": "partial",
    "rejected_at": "policy",
-   "reached": "typing",
+   "reached": "kernel",
    "message":
    "partial definition: rejected by plan decision D12; use partial_fixpoint, termination_by or fuel",
    "kind": "definition",
@@ -710,7 +711,7 @@
    "45d91a4d2345f4536a3960244c9bceb6f9c78a2c04b787b0129bcf073a2c4a71"},
   {"safety": "partial",
    "rejected_at": "policy",
-   "reached": "typing",
+   "reached": "kernel",
    "message":
    "partial definition: rejected by plan decision D12; use partial_fixpoint, termination_by or fuel",
    "kind": "definition",
@@ -1066,7 +1067,7 @@
    "71dd0d059902ab0a3acb9d1fd3dc55d0bac584f16b6874088ddae7ad1c95ea46"},
   {"safety": "partial",
    "rejected_at": "policy",
-   "reached": "typing",
+   "reached": "kernel",
    "message":
    "partial definition: rejected by plan decision D12; use partial_fixpoint, termination_by or fuel",
    "kind": "definition",
@@ -2364,5 +2365,4 @@
   {"limit": 16384, "budget": "constants", "actual": 291},
   {"limit": 16384, "budget": "blobs", "actual": 231},
   {"limit": 1048576, "budget": "largest constant bytes", "actual": 1887},
-  {"limit": 256, "budget": "deepest expression", "actual": 47},
-  {"limit": 4096, "budget": "typing declarations", "actual": 291}]}
+  {"limit": 256, "budget": "deepest expression", "actual": 47}]}

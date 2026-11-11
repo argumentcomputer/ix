@@ -127,13 +127,15 @@ for each record kind it meets:
 | `dPrj`, `iPrj`, `rPrj`, `cPrj` (projection records) | an alias of the member it names; a projection record that names no member of a block in the closure is refused (`src ingress: projection record … names no member of a block in the closure`) |
 | §1 blobs | authenticated; read through the constants that reference them (`nat` and `str` literals) |
 | assumptions | read; a reference to a constant the file does not hold is refused at ingress, so IxCC compiles only closed closures |
-| §3 hints | read and range-checked, kept as advice for the erased checker; not covered by `H` |
+| §3 hints | read and range-checked, kept with the environment; the certified kernel's acceptance is run without hints; not covered by `H` |
 | §4–§6 metadata | not part of the closure: kept as opaque bytes, never interpreted |
 | the binding | authenticated, decoded, kept with the environment (`V3.Env.binding`) and read for the pins |
 
 Which records the compiled program *reaches* is decided by the target, as
-before; the rest are read and ignored. Support and certificate records cost
-ingestion and erased typing, not compilation.
+before; the rest are read and ignored. Every record, reached or not, is
+checked by the certified kernel at ingress (an artifact with a record it does not
+accept is refused whole); support and certificate records cost ingestion and
+that acceptance, not compilation.
 
 ## The role binding
 
@@ -186,7 +188,6 @@ Not identities, and so not taken from the table: the `lazy` rows
 (`Pinned.lazyRows`), which are the producer's proposals (the table check
 accepts a `lazy` entry for any definition of the right shape), and the
 primitive table (`V3.PrimAddrs.canonical`, `Ixon/V3/PrimAddrs.lean`), which the
-erased checker uses only to speed up its reduction of literals, and the
 resource profile reads for its literal pins (`V3.checkLiteralProfile`) and its
 `Eq` (`Resource.Addressed`).
 

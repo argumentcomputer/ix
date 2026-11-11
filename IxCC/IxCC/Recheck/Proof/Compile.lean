@@ -35,13 +35,13 @@ theorem compileInput_parts {cfg : Config} {inp : Input} {cert : Cert} {artifact 
       exact ⟨rfl, replayed⟩
 
 theorem compile_parts {cfg : Config} {bytes : ByteArray} {equations : Lean.Json}
-    {roots : List String} {typecheck : Bool} {cert : Cert} {artifact : Artifact}
-    (accepted : compile cfg bytes equations roots typecheck = .ok (cert, artifact)) :
-    ∃ inp, ingress bytes equations roots typecheck = .ok inp ∧
+    {roots : List String} {cert : Cert} {artifact : Artifact}
+    (accepted : compile cfg bytes equations roots = .ok (cert, artifact)) :
+    ∃ inp, ingress bytes equations roots = .ok inp ∧
       produce (cfg.forInput inp) inp = .ok cert ∧ run (cfg.forInput inp) inp.program cert = .ok artifact := by
   unfold compile at accepted
   simp only [bind, Except.bind] at accepted
-  cases ingested : ingress bytes equations roots typecheck with
+  cases ingested : ingress bytes equations roots with
   | error error => simp [ingested] at accepted
   | ok inp =>
     simp only [ingested] at accepted
@@ -54,26 +54,27 @@ theorem compileInput_object_refines {cfg : Config} {inp : Input} {cert : Cert} {
   object_refines (compileInput_parts accepted).2 driver valid
 
 theorem compile_object_refines {cfg : Config} {bytes : ByteArray} {equations : Lean.Json}
-    {roots : List String} {typecheck : Bool} {cert : Cert} {artifact : Artifact}
-    (accepted : compile cfg bytes equations roots typecheck = .ok (cert, artifact))
+    {roots : List String} {cert : Cert} {artifact : Artifact}
+    (accepted : compile cfg bytes equations roots = .ok (cert, artifact))
     (driver : X86.Driver) (valid : driver.Ok artifact.backend.encoded.text.size) :
     Sem.RefinesOn (artifact.front.Covered cert) artifact.front.source (artifact.linked driver) := by
   obtain ⟨inp, _, _, replayed⟩ := compile_parts accepted
   exact object_refines replayed driver valid
 
 theorem compile_driver_exists {cfg : Config} {bytes : ByteArray} {equations : Lean.Json}
-    {roots : List String} {typecheck : Bool} {cert : Cert} {artifact : Artifact}
-    (accepted : compile cfg bytes equations roots typecheck = .ok (cert, artifact)) :
+    {roots : List String} {cert : Cert} {artifact : Artifact}
+    (accepted : compile cfg bytes equations roots = .ok (cert, artifact)) :
     ∃ driver : X86.Driver, driver.Ok artifact.backend.encoded.text.size := by
   obtain ⟨inp, _, _, replayed⟩ := compile_parts accepted
   exact driver_exists replayed
 
 /-- The three existing object guarantees, on every covered input, now follow from
-success of the actual byte-input compiler, including its default or explicit typechecking choice.
-The typechecking switch does not discharge the stronger model/safety boundary. -/
+success of the actual byte-input compiler, whose ingress runs the certified kernel's acceptance.
+That acceptance does not discharge the end-to-end statements' first premise (the closure of the
+seeds under the default table). -/
 theorem compiled_sound {cfg : Config} {bytes : ByteArray} {equations : Lean.Json}
-    {roots : List String} {typecheck : Bool} {cert : Cert} {artifact : Artifact}
-    (accepted : compile cfg bytes equations roots typecheck = .ok (cert, artifact))
+    {roots : List String} {cert : Cert} {artifact : Artifact}
+    (accepted : compile cfg bytes equations roots = .ok (cert, artifact))
     (driver : X86.Driver) (valid : driver.Ok artifact.backend.encoded.text.size) (input : Nat × List Nat)
     (hi : artifact.front.Covered cert input) :
     (∀ clock output, Lang.run (artifact.linked driver) input clock = .ok output →
@@ -89,12 +90,12 @@ theorem compiled_sound {cfg : Config} {bytes : ByteArray} {equations : Lean.Json
 /-- Emitted bytes are those of the actual rechecked object, including the
 certificate and successful ingress/producer/replay that supplied that object. -/
 theorem compile_bytes {cfg : Config} {bytes : ByteArray} {equations : Lean.Json}
-    {roots : List String} {typecheck : Bool} {output : List UInt8}
-    (accepted : (compile cfg bytes equations roots typecheck).map (fun result => result.2.bytes) = .ok output) :
-    ∃ inp cert artifact, ingress bytes equations roots typecheck = .ok inp ∧
+    {roots : List String} {output : List UInt8}
+    (accepted : (compile cfg bytes equations roots).map (fun result => result.2.bytes) = .ok output) :
+    ∃ inp cert artifact, ingress bytes equations roots = .ok inp ∧
       produce (cfg.forInput inp) inp = .ok cert ∧ run (cfg.forInput inp) inp.program cert = .ok artifact ∧
       artifact.bytes = output ∧ ∀ driver : X86.Driver, (artifact.linked driver).object.data.toList = output := by
-  cases compiled : compile cfg bytes equations roots typecheck with
+  cases compiled : compile cfg bytes equations roots with
   | error error => simp [compiled, Except.map] at accepted
   | ok result =>
     obtain ⟨cert, artifact⟩ := result

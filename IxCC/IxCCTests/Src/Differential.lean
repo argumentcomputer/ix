@@ -107,7 +107,7 @@ def primsThroughSrcEval (a : Assert) (l : Loaded) : IO Unit := do
 def primsAgainstNoPrims (a : Assert) (l : Loaded) : IO Unit := do
   let ops := [PrimOp.add, .sub, .mul, .beq, .ble]
   let noPrims ← loadK1Roots (ops.toArray.map Pinned.primAddr)
-    { typecheck := false, table := { prims := [] } }
+    { table := { prims := [] } }
   for op in ops do
     let some c := l.program.lookup (Pinned.primAddr op) | continue
     for x in [0, 1, 2, 5, 13, 30] do

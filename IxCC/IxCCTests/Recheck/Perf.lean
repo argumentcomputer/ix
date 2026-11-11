@@ -34,12 +34,13 @@ namespace IxCCTests.Recheck.Perf
 
 open IxCC IxCC.Ixon IxCC.Ixon.V3
 open IxCCTests.Recheck.Hostile
-open IxCCTests.Recheck.Deep (treeBlock treeEnv manyEnv deepEnv deepAppEnv deepLetEnv)
-open IxCCTests.IxonV3.TypingFixtures (store block bytes arrow lambda)
+open IxCCTests.Recheck.Deep (treeEnv manyEnv deepEnv deepAppEnv deepLetEnv)
+open IxCCTests.IxonV3.TypingFixtures (store arrow lambda)
+open IxCCTests.Support.Bound (loadBase addTree)
 
 /-- `dag d` (see the module note). -/
-def dagEnv (d : Nat) : Env × Addr := Id.run do
-  let b := base 3
+def dagEnv (env0 : Env) (d : Nat) : Env × Addr := Id.run do
+  let b := base env0 3
   let (e, k) := store b.env
     ⟨defn (arrow enumC (arrow enumC enumC)) (lambda enumC (lambda enumC (.var 1))), #[], #[b.enumI], #[]⟩
   -- refs: 0 E, 1 k, 2 c₁
@@ -51,11 +52,11 @@ def dagEnv (d : Nat) : Env × Addr := Id.run do
   return (e, main)
 
 /-- `fns n` (see the module note), with bodies `depth` constructor levels deep. -/
-def fnsEnv (n : Nat) (depth : Nat := 7) : Env × Addr := Id.run do
-  let (e, blk) := block {} treeBlock
-  let tI := V3.indcProjAddr blk 0
-  let leaf := V3.ctorProjAddr blk 0 0
-  let node := V3.ctorProjAddr blk 0 1
+def fnsEnv (env0 : Env) (n : Nat) (depth : Nat := 7) : Env × Addr := Id.run do
+  let (e, t) := addTree env0
+  let tI := t.ind
+  let leaf := t.ctors[0]!
+  let node := t.ctors[1]!
   let tT : X := .ref 0 #[]
   -- f₀ x := node x x; refs: 0 T, 1 node
   let (e, f0) := store e
@@ -79,24 +80,24 @@ def fnsEnv (n : Nat) (depth : Nat := 7) : Env × Addr := Id.run do
   return (eM, main)
 
 /-- A scaling shape's environment and root. -/
-def shapeEnv (name : String) (n : Nat) : Except String (Env × Addr) :=
+def shapeEnv (env0 : Env) (name : String) (n : Nat) : Except String (Env × Addr) :=
   match name with
-  | "dag" => .ok (dagEnv n)
-  | "fns" => .ok (fnsEnv n)
-  | "fns6" => .ok (fnsEnv n 6)
-  | "body" => .ok (fnsEnv 4 n)
-  | "tree" => .ok (treeEnv n)
-  | "wide" => let (e, _, _, main) := ampEnv n 0; .ok (e, main)
-  | "many" => .ok (manyEnv n)
-  | "deep" => .ok (deepEnv n)
-  | "deepApp" => .ok (deepAppEnv n)
-  | "deepLet" => .ok (deepLetEnv n)
+  | "dag" => .ok (dagEnv env0 n)
+  | "fns" => .ok (fnsEnv env0 n)
+  | "fns6" => .ok (fnsEnv env0 n 6)
+  | "body" => .ok (fnsEnv env0 4 n)
+  | "tree" => .ok (treeEnv env0 n)
+  | "wide" => let (e, _, _, main) := ampEnv env0 n 0; .ok (e, main)
+  | "many" => .ok (manyEnv env0 n)
+  | "deep" => .ok (deepEnv env0 n)
+  | "deepApp" => .ok (deepAppEnv env0 n)
+  | "deepLet" => .ok (deepLetEnv env0 n)
   | _ => .error s!"unknown shape {name}"
 
 /-- `tests-recheck --perf-write DIR SHAPE N`: `SHAPE-N.ixe` and
 `SHAPE-N.equations.json` in `DIR`. -/
 def write (dir : System.FilePath) (name : String) (n : Nat) : IO Unit := do
-  let (e, main) ← IO.ofExcept (shapeEnv name n)
+  let (e, main) ← IO.ofExcept (shapeEnv (← loadBase) name n)
   let bs := bytes e
   IO.FS.createDirAll dir
   IO.FS.writeBinFile (dir / s!"{name}-{n}.ixe") bs
@@ -166,7 +167,7 @@ def front (rows : Rows) (cfg : Recheck.Config) (inp : Recheck.Input) : IO Front 
   let p0 := { P with table }
   stage rows "table.validate" fun _ => (Src.Table.validate cfg.table p0).mapError (errOf .table "table.entry")
   let ann ← stage rows "annotate" fun _ =>
-    (Src.Relevance.annotate inp.env p0).mapError (errOf .relevance "relevance-oracle")
+    (inp.kernel.annotateChecked p0).mapError (errOf .relevance "relevance-oracle")
   let (src, checked) ← stage rows "annotation" fun _ =>
     (Src.Recheck.annotation p0 ann).mapError fun _ => errOf .relevance "relevance" "refused"
   stage rows "admit" fun _ =>
@@ -328,14 +329,14 @@ def report (rows : Rows) (label : String) (result : Except IO.Error String) : IO
 /-- `tests-recheck --perf-stages FILE.ixe EQUATIONS.json MODE [ROOT...]`: the
 producer (`MODE` `off`, `on` or `auto`, as `ixcc compile --rc MODE`) and then
 the checker on its certificate, each stage timed (milliseconds; a stage run
-more than once is summed, with its count). Erased typing is on, as in `ixcc
-compile`. -/
+more than once is summed, with its count). Ingress runs the certified kernel's
+acceptance, as in `ixcc compile`. -/
 def stages (file eqs : System.FilePath) (mode : String) (roots : List String) : IO UInt32 := do
   let rows : Rows ← IO.mkRef #[]
   let bs ← IO.FS.readBinFile file
   let text ← IO.FS.readFile eqs
   let json ← IO.ofExcept (Lean.Json.parse text)
-  let inp ← stage rows "ingress" fun _ => Recheck.ingress bs json roots true
+  let inp ← stage rows "ingress" fun _ => Recheck.ingress bs json roots
   let cfg := Recheck.Config.forInput {} inp
   let result ← (do
     let f ← front rows cfg inp
