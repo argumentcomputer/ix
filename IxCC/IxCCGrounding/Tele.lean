@@ -163,21 +163,67 @@ theorem den_bvarsFrom (ρ : BVarIdx → V) (zs : List V) : ∀ (ys a : List V),
 
 theorem den_bvar_at {a c : List V} {y : V} {ρ : BVarIdx → V} :
     Denotes cval env φ (pushAll (a ++ y :: c) ρ) (.bvar c.length) y := by
-  have h := pushAll_at a y c ρ
-  rw [← h] at *
-  conv => rhs; rw [← h]
-  exact .bvar
+  have h := Denotes.bvar (cval := cval) (env := env) (φ := φ)
+    (ρ := pushAll (a ++ y :: c) ρ) (i := c.length)
+  rwa [pushAll_at] at h
+
+/-- Within the bound sets, the environment below them does not matter. -/
+theorem pushAll_lt {xs : List V} {E E' : BVarIdx → V} {i : Nat} (h : i < xs.length) :
+    pushAll xs E i = pushAll xs E' i := by
+  simp only [pushAll, List.getD_eq_getElem?_getD]
+  rw [List.getElem?_eq_getElem (by simpa using h)]
+  rfl
+
+/-- Two environments differing only in a block of as many sets agree outside the block. -/
+theorem pushAll_agree {a b b' c : List V} {ρ : BVarIdx → V} (hb : b.length = b'.length) {i : Nat}
+    (hi : i < c.length ∨ c.length + b.length ≤ i) :
+    pushAll (a ++ b ++ c) ρ i = pushAll (a ++ b' ++ c) ρ i := by
+  rw [pushAll_append, pushAll_append (a ++ b')]
+  rcases hi with hi | hi
+  · exact pushAll_lt hi
+  · obtain ⟨d, rfl⟩ : ∃ d, i = d + c.length := ⟨i - c.length, by omega⟩
+    rw [pushAll_offset, pushAll_offset, pushAll_append, pushAll_append]
+    obtain ⟨e, rfl⟩ : ∃ e, d = e + b.length := ⟨d - b.length, by omega⟩
+    rw [pushAll_offset, hb, pushAll_offset]
+
+/-- A twice-lifted term, read under a block of as many sets as the two lifts insert, denotes what
+the term denotes without the block. -/
+theorem den_lift2 {ps junk xs : List V} {ρ : BVarIdx → V} {A : KExpr} {j k' : Nat}
+    (hj : junk.length = j + 1 + k') {X : V} :
+    Denotes cval env φ (pushAll (ps ++ junk ++ xs) ρ)
+        ((A.liftLooseBVars (j + 1) xs.length).liftLooseBVars k' (j + xs.length)) X ↔
+      Denotes cval env φ (pushAll (ps ++ xs) ρ) A X := by
+  rw [den_lift, den_lift, skipEnv_skipEnv _ (by omega) (by omega), ← hj, skipEnv_pushAll]
+
+theorem denotesList_append_inv {ρ : BVarIdx → V} : ∀ {es1 es2 : List KExpr} {vs : List V},
+    DenotesList cval env φ ρ (es1 ++ es2) vs →
+      ∃ vs1 vs2, vs = vs1 ++ vs2 ∧ DenotesList cval env φ ρ es1 vs1 ∧
+        DenotesList cval env φ ρ es2 vs2
+  | [], _, vs, h => ⟨[], vs, rfl, .nil, h⟩
+  | e :: es1, es2, _, h => by
+    cases h with
+    | cons he h' =>
+      obtain ⟨vs1, vs2, rfl, h1, h2⟩ := denotesList_append_inv (es1 := es1) h'
+      exact ⟨_ :: vs1, vs2, rfl, .cons he h1, h2⟩
 
 /-! ## `Fits` through telescopes -/
 
-theorem fits_append {ρ σ : BVarIdx → V} {T R : KExpr} : ∀ {xs ys : List V},
-    Fits cval env φ ρ T (xs ++ ys) σ R →
-      ∃ σ1 R1, Fits cval env φ ρ T xs σ1 R1 ∧ Fits cval env φ σ1 R1 ys σ R
-  | [], _, h => ⟨ρ, T, .nil, h⟩
-  | x :: xs, ys, h => by
+theorem fits_nil_inv {ρ σ : BVarIdx → V} {T R : KExpr} {xs : List V}
+    (h : Fits cval env φ ρ T xs σ R) (hx : xs = []) : σ = ρ ∧ R = T := by
+  cases h with
+  | nil => exact ⟨rfl, rfl⟩
+  | cons _ _ _ => cases hx
+
+theorem fits_append {ρ σ : BVarIdx → V} {T R : KExpr} {xs ys : List V}
+    (h : Fits cval env φ ρ T (xs ++ ys) σ R) :
+    ∃ σ1 R1, Fits cval env φ ρ T xs σ1 R1 ∧ Fits cval env φ σ1 R1 ys σ R := by
+  induction xs generalizing ρ T with
+  | nil => exact ⟨ρ, T, .nil, h⟩
+  | cons x xs ih =>
+    rw [List.cons_append] at h
     cases h with
     | cons hA hx h' =>
-      obtain ⟨σ1, R1, h1, h2⟩ := fits_append (xs := xs) h'
+      obtain ⟨σ1, R1, h1, h2⟩ := ih h'
       exact ⟨σ1, R1, .cons hA hx h1, h2⟩
 
 theorem fits_trans {ρ σ1 σ : BVarIdx → V} {T R1 R : KExpr} {xs ys : List V}
@@ -194,15 +240,52 @@ theorem fits_piTele : ∀ (bs : List (KExpr × BinderMeta)) (C : KExpr) {ρ σ :
       σ = pushAll xs ρ ∧ R = piTele (bs.drop xs.length) C ∧
         ∀ C', Fits cval env φ ρ (piTele bs C') xs σ (piTele (bs.drop xs.length) C')
   | bs, C, ρ, σ, R, [], h, _ => by
-    cases h
+    obtain ⟨rfl, rfl⟩ := fits_nil_inv h rfl
     exact ⟨(pushAll_nil ρ).symm, rfl, fun _ => .nil⟩
   | [], _, _, _, _, _ :: _, _, hl => by simp at hl
   | (A, m) :: bs, C, ρ, σ, R, x :: xs, h, hl => by
-    cases h with
+    have h0 : Fits cval env φ ρ (.forallE A (piTele bs C) m) (x :: xs) σ R := h
+    cases h0 with
     | cons hA hx h' =>
       obtain ⟨e1, e2, h3⟩ := fits_piTele bs C h' (by simp at hl; omega)
       refine ⟨by rw [e1, pushAll_cons], by simpa using e2, fun C' => ?_⟩
-      simpa using Fits.cons hA hx (h3 C')
+      show Fits cval env φ ρ (.forallE A (piTele bs C') m) (x :: xs) σ (piTele (bs.drop xs.length) C')
+      exact .cons hA hx (h3 C')
+
+/-- The domain at each argument, from `Fits` through a telescope. -/
+theorem fits_get : ∀ (bs : List (KExpr × BinderMeta)) (C : KExpr) {ρ σ : BVarIdx → V}
+    {R : KExpr} {xs : List V}, Fits cval env φ ρ (piTele bs C) xs σ R →
+    ∀ (p : Nat) (h1 : p < xs.length) (h2 : p < bs.length),
+      ∃ X, Denotes cval env φ (pushAll (xs.take p) ρ) bs[p].1 X ∧ xs[p] ∈ˢ X
+  | [], _, _, _, _, _, _, _, _, h2 => by simp at h2
+  | _ :: _, _, _, _, _, [], _, _, h1, _ => by simp at h1
+  | (A, m) :: bs, C, ρ, σ, R, x :: xs, h, p, h1, h2 => by
+    have h0 : Fits cval env φ ρ (.forallE A (piTele bs C) m) (x :: xs) σ R := h
+    cases h0 with
+    | cons hA hx h' =>
+      cases p with
+      | zero => exact ⟨_, by simpa [pushAll_nil] using hA, hx⟩
+      | succ p =>
+        obtain ⟨X, hX, hm⟩ := fits_get bs C h' p (by simp at h1; omega) (by simp at h2; omega)
+        exact ⟨X, by simpa [List.take_succ_cons, pushAll_cons] using hX, by simpa using hm⟩
+
+/-- `Fits` through a telescope from the domain at each argument. -/
+theorem fits_of_forall : ∀ (bs : List (KExpr × BinderMeta)) (C : KExpr) {ρ : BVarIdx → V}
+    {xs : List V}, xs.length = bs.length →
+    (∀ (p : Nat) (h1 : p < xs.length) (h2 : p < bs.length),
+      ∃ X, Denotes cval env φ (pushAll (xs.take p) ρ) bs[p].1 X ∧ xs[p] ∈ˢ X) →
+    Fits cval env φ ρ (piTele bs C) xs (pushAll xs ρ) C
+  | [], _, ρ, [], _, _ => by rw [pushAll_nil]; exact .nil
+  | [], _, _, _ :: _, hl, _ => by simp at hl
+  | _ :: _, _, _, [], hl, _ => by simp at hl
+  | (A, m) :: bs, C, ρ, x :: xs, hl, h => by
+    obtain ⟨X, hX, hm⟩ := h 0 (by simp) (by simp)
+    have hrest := fits_of_forall bs C (ρ := push x ρ) (xs := xs) (by simpa using hl)
+      fun p h1 h2 => by
+        obtain ⟨Y, hY, hy⟩ := h (p + 1) (by simp; omega) (by simp; omega)
+        exact ⟨Y, by simpa [List.take_succ_cons, pushAll_cons] using hY, by simpa using hy⟩
+    rw [pushAll_cons]
+    exact .cons (by simpa [pushAll_nil] using hX) (by simpa using hm) hrest
 
 /-- `Fits` of the arguments in the first binders, from `Fits` of all of them. -/
 theorem fits_prefix {bs : List (KExpr × BinderMeta)} {C : KExpr} {ρ σ : BVarIdx → V}
@@ -247,7 +330,8 @@ theorem fits_transport : ∀ (bsL bsP : List (KExpr × BinderMeta)) (CL CP : KEx
   | bL :: bsL, bP :: bsP, CL, CP, EL, EP, σ, R, x :: xs, hlen, hc, h, hl => by
     obtain ⟨AP, mP⟩ := bP
     obtain ⟨AL, mL⟩ := bL
-    cases h with
+    have h0 : Fits cval env φ EP (.forallE AP (piTele bsP CP) mP) (x :: xs) σ R := h
+    cases h0 with
     | cons hA hx h' =>
       have h2 := fits_transport bsL bsP CL CP (by simpa using hlen) (teleCorr_tail hc x) h'
         (by simp at hl; omega)
@@ -263,7 +347,8 @@ theorem lamTele_app : ∀ (bs : List (KExpr × BinderMeta)) (b C : KExpr) {ρ σ
   | [], _, _, _, _, _, _, _ :: _, _, _, hl => by simp at hl
   | _ :: _, _, _, _, _, _, _, [], _, _, hl => by simp at hl
   | (A, m) :: bs, b, C, ρ, σ, F, R, x :: xs, hF, h, hl => by
-    cases h with
+    have h0 : Fits cval env φ ρ (.forallE A (piTele bs C) m) (x :: xs) σ R := h
+    cases h0 with
     | cons hA hx h' =>
       obtain ⟨Y1, hY1, e1⟩ := app_den_lam hF hA hx
       obtain ⟨Y, hY, e⟩ := lamTele_app bs b C hY1 h' (by simpa using hl)
@@ -301,7 +386,7 @@ theorem lamTele_mem : ∀ (bsL bsP : List (KExpr × BinderMeta)) (b C : KExpr)
     let F : V → V := fun x => if h : x ∈ˢ AA then Classical.choose (hIH x h) else x
     have hF : ∀ x, x ∈ˢ AA → Denotes cval env φ (push x EL) (lamTele bsL b) (F x) ∧ F x ∈ˢ B x :=
       fun x hx => by
-        simp only [F, dif_pos hx]
+        simp only [F, hx, ↓reduceDIte]
         exact Classical.choose_spec (hIH x hx)
     refine ⟨lamR (regime φ mL.pw) AA F, ?_, lamR_mem fun x hx => (hF x hx).2⟩
     refine .lam hAL (fun x hx => (hF x hx).1) fun hr x hx => ?_
@@ -320,7 +405,8 @@ theorem appChain_of_fits : ∀ (bs : List (KExpr × BinderMeta)) (C : KExpr) {E 
   | [], _, _, _, _, _, _, _ :: _, _, _, _, hl, _ => by simp at hl
   | (A, m) :: bs, C, E, σ, P, X, R, y :: ys, hP, hX, h, hl, hr => by
     obtain ⟨AA, B, hAA, hB, _, rfl⟩ := den_pi.mp hP
-    cases h with
+    have h0 : Fits cval env φ E (.forallE A (piTele bs C) m) (y :: ys) σ R := h
+    cases h0 with
     | cons hA hy h' =>
       obtain rfl := Denotes_functional hA hAA
       have hv : regime φ m.pw ≠ 0 := hr (A, m) (by simp)

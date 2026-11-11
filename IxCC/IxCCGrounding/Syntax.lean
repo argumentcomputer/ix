@@ -387,6 +387,48 @@ def CaseShape.ruleRhs (sh : CaseShape) (kr : KKey) (j : Nat) (cs : CtorShape) : 
   lamTele (pre ++ fbs)
     (Expr.mkAppN (.bvar (n + sh.nM - 1 - j)) (bvarsFrom 0 n ++ cs.recFields.map ih))
 
+/-- A recursive field's domain in minor premise `j` (under the parameters, the motive, the minors
+before `j` and the fields before `r`): the inductive at the `case`'s parameters. -/
+def CaseShape.recFieldDom (sh : CaseShape) (j r : Nat) : KExpr :=
+  Expr.mkAppN (.const sh.ind sh.indLevels) (bvarsFrom (r + j + 1) sh.nP)
+
+/-- Induction hypothesis `r`'s domain in minor premise `j` (under the parameters, the motive, the
+minors before `j`, the fields and the hypotheses before `r`): the motive at the recursive field
+`rf`. -/
+def CtorShape.ihDom (cs : CtorShape) (j r rf : Nat) : KExpr :=
+  .app (.bvar (r + cs.nF + j)) (.bvar (r + cs.nF - 1 - rf))
+
+/-- **What the generic `case` lemma needs beyond the builders** (all true of the recursors the
+kernel generates for inductives without indices, nested or reflexive occurrences; decided by
+the check):
+
+* `recFields`, `ihs`: each induction hypothesis is the motive at a recursive field, and each
+  recursive field's domain is the inductive at the `case`'s parameters (without them the
+  wrapper's β at an induction hypothesis has no justification: the hypotheses' binders are free
+  data of the shape);
+* `codom`: a minor premise's codomain does not mention the minors before it (the wrapper reads
+  `casesOn`'s minors there, the recursor's minor premise the wrappers);
+* `regime`: every field binder of every minor premise carries the zero-ness datum of
+  `casesOn`'s last binder (so the minor applies to its fields in the graph regime whenever the
+  saturating site was in it);
+* `ctorRaw`: each constructor's stored type is closed, its level parameters cover it, it has as
+  many level parameters as `indLevels`, and its codomain is headed by the inductive at the
+  constructor's own parameters (what moves a constructor value from the assignment and
+  environment it was built at to the `case`'s, through canonicity). -/
+structure CaseWF (env : KEnv) (sh : CaseShape) : Prop where
+  recFields : ∀ j cs, sh.ctors[j]? = some cs → ∀ rf ∈ cs.recFields,
+    rf < cs.nF ∧ (cs.fields[rf]?).map (·.1) = some (sh.recFieldDom j rf)
+  ihs : ∀ j cs, sh.ctors[j]? = some cs → ∀ r rf, cs.recFields[r]? = some rf →
+    (cs.ihs[r]?).map (·.1) = some (cs.ihDom j r rf)
+  codom : ∀ j cs, sh.ctors[j]? = some cs → avoids cs.nF j cs.codom = true
+  regime : ∃ (A : KExpr) (m : BinderMeta), sh.binders.getLast? = some (A, m) ∧
+    ∀ j cs, sh.ctors[j]? = some cs → ∀ b ∈ cs.fields, b.2.pw = m.pw
+  ctorRaw : ∀ j cs, sh.ctors[j]? = some cs → ∃ cvC : ConstantVal .anon,
+    env.find? cs.key = some (.ctorInfo cvC sh.nP cs.nF) ∧
+    cvC.levelParams.length = sh.indLevels.length ∧ bvarsLt 0 cvC.type = true ∧
+    cvC.type.allLevelParamsDefined cvC.levelParams = true ∧
+    (piBody (sh.nP + cs.nF) cvC.type).getAppFn = .const sh.ind (cvC.levelParams.map .param)
+
 /-- **The checked shape of a `case` constant `kc` over its recursor `kr`**, against the kernel's
 reading. Decided by the check. -/
 structure CaseStored (env : KEnv) (kc kr : KKey) (sh : CaseShape) : Prop where
@@ -415,6 +457,8 @@ structure CaseStored (env : KEnv) (kc kr : KKey) (sh : CaseShape) : Prop where
       piTele pbs (piTele fbs (Expr.mkAppN (.const sh.ind sh.indLevels) (bvarsFrom cs.nF sh.nP))) ∧
     pbs.map (·.1) = (sh.binders.take sh.nP).map (·.1) ∧
     (liftTele (j + 1) 0 fbs).map (·.1) = cs.fields.map (·.1)
+  /-- what the generic `case` lemma needs beyond the builders -/
+  wf : CaseWF env sh
 
 /-- **The program side of a `case` entry**: the recursor `r`'s Src declaration has the shape's
 counts, every constructor of its inductive in `S` is the shape's constructor at its index, and
