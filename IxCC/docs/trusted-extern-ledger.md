@@ -350,9 +350,10 @@ is absent from the runtime closure.
 
 The [source adapter](ixon-v4.md) reads Ixon v4 through ix's pure codec (the
 pure Lean dependency below) and keeps the data model, resource algorithms and
-erased checker adapted from ix `0a31c8dbc63755924c645bf1afedc563e395e88a`
-(Ixon v3), with the checker's primitive table and the resource profile and
-claim framing moved to ix `f829b76044a44a61023d0983516137147bbb12a7`. It
+erased checker adapted from an earlier ix (Ixon v3, a revision outside this
+repository's history), with the checker's primitive table following this
+repository's `Ix/PrimAddrs.lean` and the resource profile and claim framing
+following ix's Ixon v4. It
 preserves independent usage, ownership, relative locality, arrow results, and
 borrow lets. Canonical bytes, source roots, profile identities and native
 resource claim framing are checked against ix's frozen v4 fixture package.
@@ -378,7 +379,8 @@ fat and independently Rust-verified chunk fixtures, corruptions, exact bounds
 and filesystem/CLI tests. Validator 1 does not select a resource profile.
 
 The required ownership consumer regression retains authentic historical
-cb68d94c annotated/plain recursion bytes under
+annotated/plain recursion bytes (a dated record of an earlier ix, outside
+this repository's history, kept as data: DO-18) under
 `fixtures/ownership/historical/annotated-recursion-cb68/`. Its pinned inventory
 includes the source twins, raw named/anonymous bytes and sidecars, original
 profile, address receipts and independent literal reference results. Tests

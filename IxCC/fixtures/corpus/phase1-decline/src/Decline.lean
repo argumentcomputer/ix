@@ -2,12 +2,13 @@
 The Phase 1 decline corpus (phase 1 plan, MT.4; research §9.4.3): real Lean
 programs outside the Phase 1 fragment, each declined with an exact
 `stage: code` that the manifest records. A decline is data: a change in what
-the compiler accepts shows up as a test failure. Every root of this closure
-is declined (the roots of `Symbols.lean` compile alone and are declined only
-together).
+the compiler accepts shows up as a test failure. The roots that the compiler
+has since learnt to compile (`nestedFor`, `mulN`, `unboxMatch`,
+`subtypeMatch`) keep their fixtures, with cases (the roots of `Symbols.lean`
+compile alone and are declined only together).
 
 Uses `partial` and `unsafe` on purpose (the manifest's `allow_constructs`).
-No root here has cases, so the oracle driver at the end prints nothing.
+The oracle driver at the end prints the values of the roots with cases.
 -/
 
 namespace Decline
@@ -105,7 +106,18 @@ def mulN (n k : Nat) : Nat := Id.run do
 
 end Decline
 
-/-- The oracle driver: no root has cases, so it reads its input and prints
-nothing. -/
+/-- The oracle driver: each stdin line `ROOT ARG…` prints one value (only the
+roots that compile have cases). -/
 def main : IO Unit := do
-  let _ ← (← IO.getStdin).readToEnd
+  let input ← (← IO.getStdin).readToEnd
+  for line in input.splitOn "\n" do
+    match (line.splitOn " ").filter (· != "") with
+    | [] => pure ()
+    | root :: args =>
+      let a := args.map String.toNat!
+      IO.println <| match root, a with
+        | "Decline.nestedFor", [k] => toString (Decline.nestedFor k)
+        | "Decline.mulN", [n, k] => toString (Decline.mulN n k)
+        | "Decline.unboxMatch", [k] => toString (Decline.unboxMatch k)
+        | "Decline.subtypeMatch", [k] => toString (Decline.subtypeMatch k)
+        | _, _ => s!"unknown root {root} {args}"

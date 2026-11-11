@@ -108,10 +108,11 @@ inductive WVs : List Val → List Val → Prop
 configuration `C`. -/
 inductive WEnt : Cfg → Ent → Val → List Val → Prop
   | opd {C : Cfg} {o : Opd} {v w : Val} {ρ' : List Val} : o.val ρ' = some w → WV v w → WEnt C (.opd o) v ρ'
-  | fn {C : Cfg} {σf : List Ent} {livef : List Bool} {ρf : List Val} {n : Nat} {fb : Exp} {ρ' : List Val} :
+  | fn {C : Cfg} {σf : List Ent} {livef : List Bool} {ρf : List Val} {n : Nat} {fb : Exp} {id : Nat}
+      {ρ' : List Val} :
       WEnv C livef σf ρf ρ' → NoDead (List.replicate n true ++ livef) [] fb → 0 < n →
       (∀ ρ'', ρ' <:+ ρ'' → VOk C ρf ρ'') →
-      WEnt C (.fn σf n fb) (.clos ρf n fb []) ρ'
+      WEnt C (.fn σf n fb id) (.clos ρf n fb []) ρ'
 
 /-- A source environment against its walk environment; `false` marks a
 dropped binding. -/

@@ -4,10 +4,16 @@
   "roots": [
     {
       "name": "entry",
-      "address": "d821ea2da4dc5a20a143e6bac6209d5cf287b762541164accb0c6da301db2c18"
+      "address": "8ffe337508df704c6c779b4524105a35c0b0ddc6934e772bc77479cf18da8a1e"
     }
   ],
   "equations": [
+    {
+      "definition": "Char.utf8Size",
+      "definition_address": "8713fb91441f3f93ea786dc4cfb7064cd78ea940f47c4f89ee9dba9e6164d146",
+      "equation": "Char.utf8Size.eq_def",
+      "equation_address": "5c3e123c286d77716eb35928f06a1429b7f69f2a0c14d6eefe28d42a88cc3457"
+    },
     {
       "definition": "Int.natAbs",
       "definition_address": "01e7c724508897e01e5d0b8f72e2cfa2607cea5ff0d352d008d0e7512aab2f46",
@@ -16,15 +22,21 @@
     },
     {
       "definition": "K1.ack",
-      "definition_address": "6d14626c288f7e23f42b571bb0ac0fd0366499dfde38f5d80937e60e5ddeaac4",
+      "definition_address": "739d8762afda939eb3293b0ee8fc06e3b4960ec13ead3b4f5e1e12b8bb0cda7f",
       "equation": "K1.ack.eq_def",
-      "equation_address": "c6b2171b5e10d0cbb133abdb72a16cfe86ac2593256068d25eda8064b4aa0568"
+      "equation_address": "ed1a4d4d35ae4a92c3d7ea4f7076f243f3e4714da387f188779b4ec1e5d986f5"
     },
     {
       "definition": "K1.ack._unary",
-      "definition_address": "3b9e0ffc20db3dba5b592ff229d182b318ccd43cf42cacd941ca81d34a582115",
+      "definition_address": "637c57066ccaa8cc78ed956bc0aea6bc605243f402b7093c8d2c9b8a48527981",
       "equation": "K1.ack._unary.eq_def",
-      "equation_address": "3dd93f6ac80a5a913b1247e4235b86ac5aa05caa4d2fed11b7178262e9a09ea7"
+      "equation_address": "f47d9a5a7f99eeb246d13b95c55ebfe4080c3c848a62a63a3d8f3d7d0e85a569"
+    },
+    {
+      "definition": "Lean.Name.sizeOf",
+      "definition_address": "77f9e7b3b038ef0f07a92dd7981eaa97cb4b749b75fe2ccc9ac197c3f22e1dda",
+      "equation": "Lean.Name.sizeOf.eq_def",
+      "equation_address": "b0ac7f3bc6816102a4fc8f40e88f327f8c247f6f56564c2e00fbdffb4ef03f7c"
     },
     {
       "definition": "Lean.Omega.IntList.set",
@@ -43,6 +55,12 @@
       "definition_address": "4f3e4cfe1582fc6b21ea1f49ab447a9a0be3c428946f7e8dd2244538bd6979f3",
       "equation": "List.concat.eq_def",
       "equation_address": "2cc0cb500125abd5a2cccbcdbecfe7c0152ea99c937cddcc0f54fdec20166712"
+    },
+    {
+      "definition": "List.filter",
+      "definition_address": "b170640616cfda402ab8a358dbde5b5d2fc3236df995a3fb1f0449fe82117b6d",
+      "equation": "List.filter.eq_def",
+      "equation_address": "497c066c12632ce44d6ee23c7cb8d028b167f82de625067ca045ed6b1581c2a6"
     },
     {
       "definition": "List.find?",
@@ -79,6 +97,18 @@
       "definition_address": "31a0e1673e76861afd6772861d611d0808a0427404b893f14c0e14c8ed0fef99",
       "equation": "List.get?Internal.eq_def",
       "equation_address": "f5f977072b61d2adc098bdd6dd3d1bd27068d9eb2291eb6c258f70cd726a0c3c"
+    },
+    {
+      "definition": "List.getLast",
+      "definition_address": "85365d27bf31f53d61f94bf121db8925aa4be2ba9304fe7c0ada615ebc79f3dc",
+      "equation": "List.getLast.eq_def",
+      "equation_address": "7f6b69439b1f014f76938c91e5266653ed7c627381e95345e20db19884449838"
+    },
+    {
+      "definition": "List.hasDecEq",
+      "definition_address": "d527515f3a00689f9a9e9b21c26b8f7c364c4192b525b9a2d38973b0684d46f2",
+      "equation": "List.hasDecEq.eq_def",
+      "equation_address": "75a99829c51cccc66e7badee33fcd87499132f425803f08b4332b240b96efce8"
     },
     {
       "definition": "List.length",
@@ -187,6 +217,12 @@
       "definition_address": "5baaf05c969d2cf377312111be51bb64c600c13fa164ee722e92243b0f771bab",
       "equation": "Nat.pow.eq_def",
       "equation_address": "25ea7f65c5fc9991fafe55cfca743b5a38e57db0febca11d81c7eaf895a63b3b"
+    },
+    {
+      "definition": "Nat.shiftLeft",
+      "definition_address": "05bb657e8b9d5dc224e7ef3d53e54153ce3ac26da8d1f1b1d61069a3726566cd",
+      "equation": "Nat.shiftLeft.eq_def",
+      "equation_address": "dce69be8519f213784eb176a14d2c28730641a8832378fe5b123dc782d4b5b7a"
     },
     {
       "definition": "Nat.shiftRight",

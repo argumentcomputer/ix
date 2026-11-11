@@ -27,10 +27,8 @@
     }
   },
   "producer": {
-    "ix_revision": "be45a159f1bb3629d109f742b950786ae8fc11f4",
-    "ix_binary_sha256": "396dffb7f41aa191f388828275460735bff23cb02b0a0a390ff2dbd7b044f9a4",
+    "ix": "the ix of this repository: lake build ix at the repository root, in its dev shell (not a Nix build)",
     "ix_version": "4.34.1|0.0.1",
-    "ix_build": "Built with Lake (lake build ix) at the recorded revision (f829b76044a44a61023d0983516137147bbb12a7 plus the --equations export) inside ix's nix dev shell at that revision, Lean 4.34.1; not a Nix build. Rebuilt on 2026-11-07; the build is not reproducible, so its SHA-256 differs from the 2026-10 build (fc4e07ab...).",
     "anonymous": [
       "ix",
       "compile",
@@ -82,19 +80,19 @@
       "protocol": "stdin",
       "closure": {
         "path": "OS01-annotated.ixe",
-        "sha256": "e4fd1ce9eed6a32e0394a43a9e162d9023c91b4af67934c5293de184e3ea7ff7",
-        "bytes": 12516
+        "sha256": "17351839b28509faa75c55b29382048a5f89215f45d8b049d09b374abc91c898",
+        "bytes": 58943
       },
       "equations": {
         "path": "OS01-annotated.equations.json",
-        "sha256": "6ec2fc46d19a7e1f3106f81311385cfbf3124ff0be5fc2eccc28521da7e2bb35",
-        "equations": 1,
+        "sha256": "65e4974f7496771f4b6607ada5af5284f24fb15f9165708120b67e5fe55d394c",
+        "equations": 2,
         "failures": 0
       },
-      "named_env_sha256": "76dd966fb523db520665dd310a45713e137231ae7605cdbd0336516adfca1fb6",
+      "named_env_sha256": "4c9ac4d463a5a0192099fbc141f1e08126148d86ed201af06b5b08ce2a2cbd57",
       "census": {
         "path": "OS01-annotated.census.json",
-        "sha256": "328410a27269f74043f61002b13b70c46ebc316cac03c61b2df42ea24d5540b1"
+        "sha256": "7d77516c5e6410b95bdef1c558618fa075db2cd0435f4f489ec0de52187ad315"
       },
       "roots": [
         {
@@ -229,19 +227,19 @@
       "protocol": "stdin",
       "closure": {
         "path": "OS01-plain.ixe",
-        "sha256": "1530edfddfb6121f120e21a8b853e4033c2ad4caa7be45af00bd85390bb65b20",
-        "bytes": 12516
+        "sha256": "9d826e1b93ad93fc41c0e5ae1e76812313d6e26590a52d9cfa27c5870b272e07",
+        "bytes": 58704
       },
       "equations": {
         "path": "OS01-plain.equations.json",
-        "sha256": "c837284602fc37dc80fab81748d29a53269d4bedfa8a56431d091c29ef417ab9",
-        "equations": 1,
+        "sha256": "9388f08cfce7041ff9ea80e31b1153a205cb2ef2931bc780aaf190af50116ce6",
+        "equations": 2,
         "failures": 0
       },
-      "named_env_sha256": "83b147fc049b2f7cbc69f0e7a879cd6f0e8016ae99da66e1a7fa000fe1bf701b",
+      "named_env_sha256": "ede5a451e1e06db66e7a1749f5794bdc95455b51237d51ade3bfff04187b244c",
       "census": {
         "path": "OS01-plain.census.json",
-        "sha256": "ecae44e571a33525addb8159f9e35bc5fb214fc64967fbab7571c4f24bac0c1b"
+        "sha256": "1dcd1f8c89c4f8446903eb38ada98948036e276ae2451598c6a6390a787021a9"
       },
       "roots": [
         {
@@ -376,8 +374,8 @@
       "protocol": "stdin",
       "closure": {
         "path": "OS02-plain.ixe",
-        "sha256": "1b779c7d9af7e2f8515e128a94f9e59ef3e945f08d4861da0943e48a28a940de",
-        "bytes": 44805
+        "sha256": "693627bb60e365a703d021af1a57bd0860d46c99b03720ba1e0d9633816c0605",
+        "bytes": 109847
       },
       "equations": {
         "path": "OS02-plain.equations.json",
@@ -385,10 +383,10 @@
         "equations": 3,
         "failures": 0
       },
-      "named_env_sha256": "a694d9c88e2a75d4f937822b8e157a5a6aa933def11d2c49fcb7b7f0086a1f21",
+      "named_env_sha256": "6c0897fbb979b7bf443bb2c7a64d900b326b07b6a1769af75c90ef807411e595",
       "census": {
         "path": "OS02-plain.census.json",
-        "sha256": "3345aec6db34ac8610e0c16183b080a366c3e8c7aea230f6a3c54f2d36c77fbf"
+        "sha256": "3d339d3c6dfb126055cea3b00d55445721852402a646d6f3080b549cdf4230c2"
       },
       "roots": [
         {
@@ -527,19 +525,19 @@
       "protocol": "stdin",
       "closure": {
         "path": "OS03-annotated.ixe",
-        "sha256": "c3f3b68c3b5aaf19de40ec20248da9b5e8e314c3c955faad2f58470d24648203",
-        "bytes": 11942
+        "sha256": "35103a84a8c3f4e300154f9f9d2ee7948c003fad1c7850d2b08cd60ee8133ed3",
+        "bytes": 58734
       },
       "equations": {
         "path": "OS03-annotated.equations.json",
-        "sha256": "b18ee0b7c774542e99c68044c065ec2299b2940815fb8a3be4de773236817bdb",
-        "equations": 1,
+        "sha256": "544366a8340a83c56186b7ed84a5add9b99dfecd4ce4aaa0fe3e1fe0b729c899",
+        "equations": 2,
         "failures": 0
       },
-      "named_env_sha256": "a06fba049bfc553400ac72220f39c1e3031d2623867a096816c91f06c202e08b",
+      "named_env_sha256": "05c9358b6ed5b60abb396bc53f441944c3521667f0c7995d88099870a1b37513",
       "census": {
         "path": "OS03-annotated.census.json",
-        "sha256": "f5ad8def8784a8facafd4e03e7f30ee5adf55bfc78089804f2b81d18e86fb943"
+        "sha256": "97380c48a6b8fc1c0f70917c094c65d538822d7fdb08a4584c31e149f334dcfb"
       },
       "roots": [
         {
@@ -674,19 +672,19 @@
       "protocol": "stdin",
       "closure": {
         "path": "OS03-plain.ixe",
-        "sha256": "0a5b025025c4518e96ac0258e8eaf41945d7b44d1b504320c354355c0aaebaf9",
-        "bytes": 11942
+        "sha256": "55d15f0ee92e3b7e66ee0b26f9067d7ebd4f621e84db1246943c2aa6255c6b8b",
+        "bytes": 58495
       },
       "equations": {
         "path": "OS03-plain.equations.json",
-        "sha256": "bad803a23227faaba8ba1b308c423a40dad99a6acafb16bc74021ee2e6957748",
-        "equations": 1,
+        "sha256": "1b516aa4a9198c6210afe5926a98a6c597f87fce02985aeeb31e823d203ef3a7",
+        "equations": 2,
         "failures": 0
       },
-      "named_env_sha256": "e9b6d358285841b34b03fd83e907c9a358542e86514732ac64ca407bc0e3f093",
+      "named_env_sha256": "60665b9a7ddd31254d43e0d2b4dd47306ae5ac5120070cc3b89201c439222d68",
       "census": {
         "path": "OS03-plain.census.json",
-        "sha256": "65784d5e9b83f082065c4d1f44928ecee4ac29f3e085281c88562cc61fc0870e"
+        "sha256": "4ac44c568561b6eda447d2f2d22ccac6c84a6ad5ad9dbf9bb3d9a69fab2867e5"
       },
       "roots": [
         {
@@ -821,19 +819,19 @@
       "protocol": "stdin",
       "closure": {
         "path": "OS03b-annotated.ixe",
-        "sha256": "18f80bbab804402a08af5b3d9606b52e94315b80cf46081e42fad266d9abc9c2",
-        "bytes": 15327
+        "sha256": "881660779c2b3e8852b8ef341c83ab39a5b63076b3e9fdbbaa8523d581758c68",
+        "bytes": 63624
       },
       "equations": {
         "path": "OS03b-annotated.equations.json",
-        "sha256": "a434ec323262783b1ffc3b23c7d2ce803796717736ff53f38f2c1dfbe19cc928",
-        "equations": 2,
+        "sha256": "794fe65f751c7c40f074ca24c4d84ccd9ded8f5d8dc3e8cdc0ce5bd454868122",
+        "equations": 3,
         "failures": 0
       },
-      "named_env_sha256": "91af8b5b5f8ff3521d22a9b7de1fdd135a13ffe2b5018507e8cb6ea663169421",
+      "named_env_sha256": "3b38eb1e47ee3ef31822898a92bd5fe74b614246d552985ce19958897df304e7",
       "census": {
         "path": "OS03b-annotated.census.json",
-        "sha256": "f12c0a6f72bb64657200c7348ddce8007cf00524c2431cd77352463518384d63"
+        "sha256": "5f17f184314f97978f7c824be8f510dd90d92ede82a5d9c8272c9ed81c60550b"
       },
       "roots": [
         {
@@ -968,19 +966,19 @@
       "protocol": "stdin",
       "closure": {
         "path": "OS03b-plain.ixe",
-        "sha256": "6bb6b4f4c7d6636872de72ed01188c08413ee8d75a0c4182d95b4aeddc87ca6e",
-        "bytes": 15327
+        "sha256": "ce3f45a9cc8f415ea9095ba1e9fecbba1a7e8e3184fbbde3393c20adf6295215",
+        "bytes": 63385
       },
       "equations": {
         "path": "OS03b-plain.equations.json",
-        "sha256": "ac4a788af2d5d8f87f8c00b792350b6d20afd0e20e7bdf53ed795c6710da90f3",
-        "equations": 2,
+        "sha256": "52689f3024db36311d703e5b8eb08e24c5efe250f4211478e11faf264065ab6a",
+        "equations": 3,
         "failures": 0
       },
-      "named_env_sha256": "dacaa2909941b3c1fbf049c2bd1ec431f5f5c993d7fe0b870e5792c81e9c268e",
+      "named_env_sha256": "dc50b897686751d50a52da16f597bbf546f4cfe2dd49dabe536110724e958c59",
       "census": {
         "path": "OS03b-plain.census.json",
-        "sha256": "6637bbcae91bc86ed116acfb362bc7650ed3b3d9be7681b9b25492b76deba092"
+        "sha256": "3d5e9bc69c7ca6f0ed298eb526659eb5551481410984de8cc937fe085d266d44"
       },
       "roots": [
         {
@@ -1116,19 +1114,19 @@
       "protocol": "stdin",
       "closure": {
         "path": "OS13-annotated.ixe",
-        "sha256": "a35e2b14f659a464a75acbf0156a764723af73772f2ddbb2005c93f3d5d5ce4e",
-        "bytes": 936
+        "sha256": "f9f6ec6af0ee596bfb692cd6b4c06b222dface671b4c1f4270b3e35aa3a04b84",
+        "bytes": 58468
       },
       "equations": {
         "path": "OS13-annotated.equations.json",
-        "sha256": "d65d33e829ebee4e48386508a9a807c74c8dca6b6983514fec42a6627b0a4db7",
-        "equations": 0,
+        "sha256": "419cfa35c814085d52d10c8ba1fd558ff4af06697201ea8156149f1153b8d137",
+        "equations": 2,
         "failures": 0
       },
-      "named_env_sha256": "1b676bf04187c953d744c179856348b6c67ec4c3e0995d336cc377f53e927bc2",
+      "named_env_sha256": "42682809cb836295030b07e4abd94de3b9ddd4ce27334edcc3b82101ab8d7ec4",
       "census": {
         "path": "OS13-annotated.census.json",
-        "sha256": "3bb0faed9449b19c021dfad432224de3243faa83f7e82abc19363f896d5f1491"
+        "sha256": "ab80c26c1992963d42289fd0e214d537cfed35b746d1bc3607f7804a415d392e"
       },
       "roots": [
         {
@@ -1379,19 +1377,19 @@
       "protocol": "stdin",
       "closure": {
         "path": "OS13-plain.ixe",
-        "sha256": "2e9455bb421ce6d90c45ae7237c91977dc2dea6e191ea9f0c2b484091de75fcf",
-        "bytes": 936
+        "sha256": "8b903930ae48823aa4521563834f23974d674088471b636f4d99b8540197dcde",
+        "bytes": 58229
       },
       "equations": {
         "path": "OS13-plain.equations.json",
-        "sha256": "9d03e6ff8d3eaa2187ef7e46a36a72e0df590dbb6d99efe0a6020b1b052d0b43",
-        "equations": 0,
+        "sha256": "b4f4e8a91ec5f0a9f93f73da3a4d5214899f8a7b75ac0f3fcfaac49c8ffadceb",
+        "equations": 2,
         "failures": 0
       },
-      "named_env_sha256": "25dc1328b033af2e360bc364575da472b1f18a17fd0329dcc1c80501251711b9",
+      "named_env_sha256": "9fead6b6fd069dda1f350c80b50027ff43b9f80ac2466ab03b8c68b0b5ccb176",
       "census": {
         "path": "OS13-plain.census.json",
-        "sha256": "978a32898f24e99d72ca98064a801675a4648c2abeb63aa0d711340a433fd34b"
+        "sha256": "084c2c05733797981745ced1ddee45fc0dcfd7eb67d813b0e81f4ea36c166c5a"
       },
       "roots": [
         {
@@ -1641,19 +1639,19 @@
       "protocol": "stdin",
       "closure": {
         "path": "OS14-annotated.ixe",
-        "sha256": "24254fd406ca98fcf71d3cebd845a865ed70cf2b3db5534a2dda57545bd12d9a",
-        "bytes": 4083
+        "sha256": "5cbbc451d7bfd9feec54ae8dc2b250a4b38321ba8812e617d57fe93b2e02ddc5",
+        "bytes": 59030
       },
       "equations": {
         "path": "OS14-annotated.equations.json",
-        "sha256": "2a22ba4252d7fe28471251c07ba02145cddeb554610c1b0772a0a249dc91e8ff",
-        "equations": 0,
+        "sha256": "199ad671c60f0bc84a1c9a42c56ce36db5d7ac421c2ee6f85a0704222387568d",
+        "equations": 2,
         "failures": 0
       },
-      "named_env_sha256": "1b92379b113ae57e8b6ec51b3b81e79cea47ad5d3fba409fc36e54628abb0e41",
+      "named_env_sha256": "9aee18d0dc10f87a805f5b06026bcabb616ae19719a15d01e42f0bd02992c12f",
       "census": {
         "path": "OS14-annotated.census.json",
-        "sha256": "6cc4850fabc10f2966bb75195bdf9f42ec07eaceebf2a54f4ac5769a8e7b481e"
+        "sha256": "4c0eaee4c114ee7f7d6a07a3cdacc6d9f07cc51914cb5e8ea3c5b46f31b27ad0"
       },
       "roots": [
         {
@@ -1788,19 +1786,19 @@
       "protocol": "stdin",
       "closure": {
         "path": "OS14-plain.ixe",
-        "sha256": "25cfe3b85696e6c79102955b3a621e4ecde8dd9c7fabe862dd5d10b625df6e21",
-        "bytes": 4083
+        "sha256": "d82fbae51b09c84d929f4db76f03cb6f4b4704f3c069d786fe410632f54c75c1",
+        "bytes": 58791
       },
       "equations": {
         "path": "OS14-plain.equations.json",
-        "sha256": "daa8c259c800b4fbc753487511d929ed3f33bc62858c72258d7c014b11d112d0",
-        "equations": 0,
+        "sha256": "841717c00dc6d6ebb21e55f83ba312edc746869c44d7add4244dac1a395f0383",
+        "equations": 2,
         "failures": 0
       },
-      "named_env_sha256": "f0de57ed850199398a6ebc0d1d56b7312474c9d166881e041635e6be28055454",
+      "named_env_sha256": "bf287b7b38cc0158e7081e9e2c84409fd11bc87230fc043fa4fe5d0fb0eed1df",
       "census": {
         "path": "OS14-plain.census.json",
-        "sha256": "31b75ce46660176ae3c987771dd8d861092df9f99c0c56eaa18fb8da86020918"
+        "sha256": "90a3422bb998900defffdfd66684492f49957e19b6e130a5a2f682737f4c5f83"
       },
       "roots": [
         {
@@ -1935,19 +1933,19 @@
       "protocol": "stdin",
       "closure": {
         "path": "OS16-plain.ixe",
-        "sha256": "467a79ea6a837050bc4d33dd08db880ee83f1131a687a8f95c60332866a88475",
-        "bytes": 22805
+        "sha256": "c42f26733b2b89f3886802713809b05c6f968080f76aa5153751e882d48e7f86",
+        "bytes": 79761
       },
       "equations": {
         "path": "OS16-plain.equations.json",
-        "sha256": "0ad0812260c7538672fc21e2f74b22a3d7f6bb769c46ea00ff3684d994a592bd",
-        "equations": 4,
+        "sha256": "ed959f05f452414293adf1741c8984339b1e44e6b34bdb51aa691a19b7678c64",
+        "equations": 5,
         "failures": 0
       },
-      "named_env_sha256": "be34638a2984e9ae46c7ebe81a54d525718a0b5c345e484610a3e6222c5dcc04",
+      "named_env_sha256": "213a458a1780c562826073dc2a2028db74264187d30766828f5c6713cac411a9",
       "census": {
         "path": "OS16-plain.census.json",
-        "sha256": "b5a5351318b89e62bb0a5164da4b30517aed459deba2936d525423fada8fc2fe"
+        "sha256": "bc357fc1b5c2fea858ee745497bc13c3233931ca4104d189017b9ea68aa41db8"
       },
       "roots": [
         {
@@ -2006,19 +2004,19 @@
       "protocol": "stdin",
       "closure": {
         "path": "OS22-annotated.ixe",
-        "sha256": "3901e56c8228f24e1efd91c89010fafab9826561297de3ca8b80f678a25dfff0",
-        "bytes": 938
+        "sha256": "c9b705ef8f104d462647356830df59f0949969d8130d6c826f8f5bb4dcfe0a56",
+        "bytes": 58470
       },
       "equations": {
         "path": "OS22-annotated.equations.json",
-        "sha256": "336fafe46769803f979fbe7ddd9862575f7faef1aa2da49709c6ad078f916b6c",
-        "equations": 0,
+        "sha256": "81a015a3d0aae0a10417cadc85cba566d4ec96e5b0c60caaca92b184b8a8be78",
+        "equations": 2,
         "failures": 0
       },
-      "named_env_sha256": "fbc6641dfe3d8867fda9a0c1a50cbcfc841b3eb776dd1fc33056fa9421bcec5e",
+      "named_env_sha256": "33bd67fa9401dd491f2b1088ccb176096e0c2ccc7598f2f439f529d359d15119",
       "census": {
         "path": "OS22-annotated.census.json",
-        "sha256": "7deb8c896cf960ff3cbc3f796f1d2ace3da01c3f9d33503da972cead877ec3a0"
+        "sha256": "f63ad2ad3a3d392ef437336559b0cd2abd6d0e5547c8a7a7eec55b97b9a569d9"
       },
       "roots": [
         {
@@ -2153,19 +2151,19 @@
       "protocol": "stdin",
       "closure": {
         "path": "OS22-plain.ixe",
-        "sha256": "148b10df204d249938d61d4a9cf80f3e0d38e5db92bf8d19a781f642f8e0ccf7",
-        "bytes": 938
+        "sha256": "a3ecc8b55fea612b9cc6afdc010b21f96ed679cd53960013d4cda4e20add3bf0",
+        "bytes": 58231
       },
       "equations": {
         "path": "OS22-plain.equations.json",
-        "sha256": "3c3dcbd538451d124011accc2828ba08af2342bb041980df4bdd99dc955ca62f",
-        "equations": 0,
+        "sha256": "05ef4fe2911d5e78dcd1716b98ec52a6b04ad4109e017e2ece19a7712e6e9d1d",
+        "equations": 2,
         "failures": 0
       },
-      "named_env_sha256": "23c1f06771968e6ccef9cd25e03ede9c304c94cb5f5a52aa89054e08bb692028",
+      "named_env_sha256": "1829b3d3133fdff539d4ab7160b53732dc3a67eb25a8ecaad3fb350311d81c11",
       "census": {
         "path": "OS22-plain.census.json",
-        "sha256": "005a770534b8aa0c08fde7effcb320794f2d4d2a1e5c49c92f5082205da930cf"
+        "sha256": "a84f3522c70bdb2b1f36b0d02014991d9bb1e00068f64315a0c4181e678553b6"
       },
       "roots": [
         {

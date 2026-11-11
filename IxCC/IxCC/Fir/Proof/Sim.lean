@@ -201,7 +201,7 @@ theorem step_exp (g : Anf.GlobalId) (e : Anf.Exp) (ρ : List Var) (J : List Join
       by_cases hl : vs.length = gd.ps.length
       · have hcall := call_corr S ih hg hsz hfun hvws hl
         rcases hcase with ⟨htop, rfl, rfl⟩ | ⟨htop, kc, hk, rfl⟩
-        · obtain ⟨hcs, hev⟩ := returnsTop_spec (A := A) htop
+        · obtain ⟨hcs, hev⟩ := returnsTop_spec (A := A) (tailCall_returnsTop htop)
           rw [hcs]
           refine (Corr.bindTail hcall).ofEq (Result.bind_congr _ fun v => hev a v ρa Ja) |>.congr fun k => ?_
           rw [eval_tcall, hws]

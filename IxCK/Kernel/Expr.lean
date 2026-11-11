@@ -70,18 +70,164 @@ deriving DecidableEq, Repr, Inhabited
 `Level` — `lsimpC`, `eqvC` — probe with this). -/
 instance : Hashable Level := ⟨Level.hashData⟩
 
+/-! ### Level equality on shared levels
+
+The structural part of `Level.beqPtr` (distinct objects, equal hashes:
+in practice, equal levels built apart) is a memoised descent, in the
+arrangement of `Expr.beqMemo` below, whose docstring and "The memo
+discipline" say why each piece is there: an entry is a pair of objects
+proved equal with its proof (`Level.EqPair`), a hit is validated by
+identity on both stored objects, every branch returns `Decidable (a = b)`
+for its own `a`, `b` behind a quotient, and only a pair of two shared,
+recursive nodes is probed or recorded.  Two equal levels each shared as
+a DAG (the ∀ rule's levels are, `Level.mkIMax`) then compare in time
+linear in their DAGs, where the derived `DecidableEq` walks their trees:
+`Level.mkIMax`'s and `Level.maxFold`'s equality tests, the keys of the
+level memo maps and `Expr.beq`'s level leaves all go through it. -/
+
+/-- `true` for the levels whose comparison recurses (`Expr.beqRecursive`):
+a `zero` or `param` pair is decided at once, so it is never probed. -/
+@[inline] def Level.beqRecursive : Level → Bool
+  | .succ _ | .max .. | .imax .. => true
+  | _ => false
+
+/-- A memo entry (`Expr.EqPair`): two levels a completed descent proved
+equal, the addresses it saw them at, and the proof. -/
+structure Level.EqPair where
+  fst : Level
+  snd : Level
+  pa : USize
+  pb : USize
+  eq : fst = snd
+
+/-- The default a probe reads on a miss: no object has address `0`,
+so its filter never passes at runtime. -/
+def Level.EqPair.dflt : Level.EqPair := ⟨.zero, .zero, 0, 0, rfl⟩
+
+/-- The memo, keyed on the packed address pair (`Level.beqKey`). -/
+abbrev Level.BeqMap := Std.HashMap Nat Level.EqPair
+
+/-- The packed address pair (`Expr.beqKey`'s packing: a collision
+costs an entry, never an answer). -/
+@[inline] def Level.beqKey (pa pb : USize) : Nat :=
+  ((pa ^^^ (pb * 0x9E3779B97F4A7C15)) &&& 0x3FFFFFFFFFFFFFFF).toNat
+
+/-- One node's comparison: the decision and the memo (absent until the
+first recorded pair). -/
+structure Level.BeqRes (a b : Level) where
+  dec : Decidable (a = b)
+  map : Option Level.BeqMap
+
+/-- The result behind a quotient identifying all of them: a subsingleton,
+so the address and count reads under it are invisible. -/
+abbrev Level.BeqOut (a b : Level) := Squash (Level.BeqRes a b)
+
+@[inline] def Level.BeqOut.mk {a b : Level} (d : Decidable (a = b)) (map : Option Level.BeqMap) :
+    Level.BeqOut a b :=
+  Quot.mk _ ⟨d, map⟩
+
+/-- Identity, decided: the pointer test at runtime, the derived
+structural decision in the pure model. -/
+@[inline] def Level.ptrDec (a b : Level) : Decidable (a = b) :=
+  withPtrEqDecEq a b (fun _ => instDecidableEqLevel a b)
+
+/-- Does the entry at `key` identify the pair `(a, b)` (`Expr.probeHit`)? -/
+@[inline] def Level.probeHit (m : Level.BeqMap) (key : Nat) (pa pb : USize) (a b : Level) :
+    { h : Bool // h = true → a = b } :=
+  let p := m.getD key Level.EqPair.dflt
+  if p.pa == pa && p.pb == pb then
+    match Level.ptrDec p.fst a, Level.ptrDec p.snd b with
+    | isTrue h1, isTrue h2 => ⟨true, fun _ => h1 ▸ h2 ▸ p.eq⟩
+    | _, _ => ⟨false, fun h => Bool.noConfusion h⟩
+  else ⟨false, fun h => Bool.noConfusion h⟩
+
+/-- The write-back: the entry under its key, in the table or a fresh one. -/
+@[inline] def Level.BeqMap.record (mp : Option Level.BeqMap) (key : Nat) (p : Level.EqPair) :
+    Option Level.BeqMap :=
+  match mp with
+  | none => some (({} : Level.BeqMap).insert key p)
+  | some m => some (m.insert key p)
+
+/-- The child step of `Level.beqGo` (`Expr.enterBeq`): pointer identity,
+the cached hash, the leaf test, then the exclusivity of each side; a
+shared/shared pair is probed, and recorded on a completed `true`.  The
+levels are borrowed, so the counts read are those inside the levels. -/
+@[inline] def Level.enterBeq (map : Option Level.BeqMap) (a b : @& Level)
+    (rec : Option Level.BeqMap → Level.BeqOut a b) : Level.BeqOut a b :=
+  withPtrAddr a (fun pa => withPtrAddr b (fun pb =>
+  if pa == pb then .mk (Level.ptrDec a b) map
+  else if h : a.hashData != b.hashData then
+    .mk (isFalse (fun e => by subst e; simp at h)) map
+  else if !a.beqRecursive then rec map
+  else withExcl a fun ea =>
+    if ea then rec map
+    else withExcl b fun eb =>
+    if eb then rec map
+    else
+      let hit : { h : Bool // h = true → a = b } :=
+        match map with
+        | some m => Level.probeHit m (Level.beqKey pa pb) pa pb a b
+        | none => ⟨false, fun h => Bool.noConfusion h⟩
+      if hh : hit.1 then .mk (isTrue (hit.2 hh)) map
+      else Squash.lift (rec map) fun r =>
+        match r.dec with
+        | isTrue h => .mk (isTrue h)
+            (Level.BeqMap.record r.map (Level.beqKey pa pb) ⟨a, b, pa, pb, h⟩)
+        | d => .mk d r.map)
+    (fun _ _ => Subsingleton.elim _ _)) (fun _ _ => Subsingleton.elim _ _)
+
+/-- The memoised structural descent (`Expr.beqGoX`): the constructor
+cases with the child step in front of every recursive call, every branch
+a `Decidable (a = b)` for its own `a`, `b`.  A completed `false` aborts
+the comparison, so only pairs proved equal are stored. -/
+def Level.beqGo (map : Option Level.BeqMap) (a b : @& Level) : Level.BeqOut a b :=
+  match a, b with
+  | .succ x, .succ y =>
+    Squash.lift (Level.enterBeq map x y fun m => Level.beqGo m x y) fun r =>
+      .mk (match r.dec with
+        | isTrue h => isTrue (congrArg Level.succ h)
+        | isFalse h => isFalse (fun e => h (Level.succ.inj e)))
+        r.map
+  | .max x y, .max x' y' =>
+    Squash.lift (Level.enterBeq map x x' fun m => Level.beqGo m x x') fun r₁ =>
+      match r₁.dec with
+      | isFalse h => .mk (isFalse (fun e => h (Level.max.inj e).1)) r₁.map
+      | isTrue h₁ => Squash.lift (Level.enterBeq r₁.map y y' fun m => Level.beqGo m y y') fun r₂ =>
+        .mk (match r₂.dec with
+          | isTrue h₂ => isTrue (by subst h₁; subst h₂; rfl)
+          | isFalse h₂ => isFalse (fun e => h₂ (Level.max.inj e).2))
+          r₂.map
+  | .imax x y, .imax x' y' =>
+    Squash.lift (Level.enterBeq map x x' fun m => Level.beqGo m x x') fun r₁ =>
+      match r₁.dec with
+      | isFalse h => .mk (isFalse (fun e => h (Level.imax.inj e).1)) r₁.map
+      | isTrue h₁ => Squash.lift (Level.enterBeq r₁.map y y' fun m => Level.beqGo m y y') fun r₂ =>
+        .mk (match r₂.dec with
+          | isTrue h₂ => isTrue (by subst h₁; subst h₂; rfl)
+          | isFalse h₂ => isFalse (fun e => h₂ (Level.imax.inj e).2))
+          r₂.map
+  | a', b' => .mk (instDecidableEqLevel a' b') map
+termination_by structural a
+
+/-- Level equality, decided by the memoised descent from a fresh state. -/
+def Level.decMemo (a b : Level) : Decidable (a = b) :=
+  Squash.lift (Level.beqGo none a b) fun r => r.dec
+
 /-- Level equality in the official kernel's shape (task #176 P2):
 the cached **hash** and the **pointer** before the structural walk —
-`level.cpp:125` is `kind` → `hash` → `is_eqp` → structural.  The
-implementation of `Level.beq`; `Level.beqPtr_eq` proves both guards
-redundant. -/
+`level.cpp:125` is `kind` → `hash` → `is_eqp` → structural — and the
+structural walk memoised on the pairs it proves equal (`Level.decMemo`).
+The implementation of `Level.beq`; `Level.beqPtr_eq` proves both guards
+redundant and the descent a decision of `a = b`. -/
 @[inline] def Level.beqPtr (a b : Level) : Bool :=
-  withPtrEq a b (fun _ => a.hashData == b.hashData && decide (a = b))
+  withPtrEq a b (fun _ => a.hashData == b.hashData && @decide (a = b) (Level.decMemo a b))
     (fun h => by subst h; simp)
 
-/-- Both guards are redundant (see `Name.beqPtr_eq`). -/
+/-- Both guards are redundant (see `Name.beqPtr_eq`), and `Level.decMemo`
+is *a* decision of `a = b`, hence *the* decision. -/
 theorem Level.beqPtr_eq (a b : Level) : Level.beqPtr a b = decide (a = b) := by
-  show (a.hashData == b.hashData && decide (a = b)) = decide (a = b)
+  show (a.hashData == b.hashData && @decide (a = b) (Level.decMemo a b)) = decide (a = b)
+  rw [Subsingleton.elim (Level.decMemo a b) (instDecidableEqLevel a b)]
   by_cases h : a = b
   · subst h; simp
   · simp [h]

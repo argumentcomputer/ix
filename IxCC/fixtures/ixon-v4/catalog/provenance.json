@@ -1,36 +1,23 @@
-{"source_revision": "be45a159f1bb3629d109f742b950786ae8fc11f4",
- "schema_version": 1,
- "producer_version": "4.34.1|0.0.1",
- "producer_binary_sha256":
- "fc4e07ab477f2ba9dd4a2ed6398b2d1a85b2f597c0fd671abe0a323bc5d41017",
- "members_root":
- "93f5cb9a9b8215c4be11cffd6635f90974fac93141a998e9ac1646d8c59dad63",
- "independent_check":
- "ix catalog verify --deep accepts both catalogs: the members and content roots below",
- "file_sha256":
- {"fat.ixc/manifest":
-  "6e8998b7f25683e3def97cf8cfcf4e111a9fade6156c7e0fd9ca77ac9271ddb2",
-  "fat.ixc/Quot.lift.ixe":
-  "956933604c44cd89f98b3e0ba3d1b4b55972c761de048dafa0955211d2b9a10a",
-  "fat.ixc/Nat.ixe":
-  "c970bb12c2950046ea815b541c484ad8fc1abfcb5c17a7892ef6dba477a5098b",
-  "fat.ixc/Nat.add.ixe":
-  "28b29a858d4c765bb8fe71c2b62ad7e3443ee689ca596ad0f4afd556da235e22",
-  "chunked.ixc/members.json":
-  "8a858792c729b7f25ff77e83b8c5eda0f9610496d36ead3854d67f1f09bca5d4",
-  "chunked.ixc/manifest":
-  "0145ce079b10ff73e1b14a46a04fb62a5176457ce3da4af2e50acc56251bbfda",
-  "chunked.ixc/Quot.lift.chunk2.ixe":
-  "956933604c44cd89f98b3e0ba3d1b4b55972c761de048dafa0955211d2b9a10a",
-  "chunked.ixc/Nat.chunk0.ixe":
-  "c970bb12c2950046ea815b541c484ad8fc1abfcb5c17a7892ef6dba477a5098b",
-  "chunked.ixc/Nat.add.chunk1.ixe":
-  "077bbe0938fa961a200bf1e1d34079913b7637037bb7520ca7065dc2015eefa4"},
- "fat_origin":
- "ix catalog assemble --labels Nat,Nat.add,Quot.lift --toolchains 4.34.1 --pins SOURCE_REVISION --deps 1:0 fat.ixc Nat.ixe Nat.add.ixe Quot.lift.ixe (the typing bundles), then ix catalog verify --deep fat.ixc",
- "content_root":
- "fd480b2813819f8babf38f86c533536b21b0d5c16b346dd9fae834990b09a7e4",
- "consumer_check":
- "Required tests authenticate full sorted member lists against roots/counts, enforce first ownership/disjointness/full coverage, and typecheck every union constant.",
- "chunk_origin":
- "refreeze-ixon catalog (CatalogFixtures.writeChunked): the first-owner partition of the fat pieces; each chunk keeps its original blobs and presentation bytes and the hints and main of the constants it keeps, and lists the constants an earlier member owns as assumptions; members.json is every member's complete original address set"}
+{
+  "source_revision": "an earlier ix, outside this repository's history (frozen; README.md)",
+  "schema_version": 1,
+  "producer_version": "4.34.1|0.0.1",
+  "producer_binary_sha256": "fc4e07ab477f2ba9dd4a2ed6398b2d1a85b2f597c0fd671abe0a323bc5d41017",
+  "members_root": "93f5cb9a9b8215c4be11cffd6635f90974fac93141a998e9ac1646d8c59dad63",
+  "independent_check": "ix catalog verify --deep accepts both catalogs: the members and content roots below",
+  "file_sha256": {
+    "fat.ixc/manifest": "6e8998b7f25683e3def97cf8cfcf4e111a9fade6156c7e0fd9ca77ac9271ddb2",
+    "fat.ixc/Quot.lift.ixe": "956933604c44cd89f98b3e0ba3d1b4b55972c761de048dafa0955211d2b9a10a",
+    "fat.ixc/Nat.ixe": "c970bb12c2950046ea815b541c484ad8fc1abfcb5c17a7892ef6dba477a5098b",
+    "fat.ixc/Nat.add.ixe": "28b29a858d4c765bb8fe71c2b62ad7e3443ee689ca596ad0f4afd556da235e22",
+    "chunked.ixc/members.json": "8a858792c729b7f25ff77e83b8c5eda0f9610496d36ead3854d67f1f09bca5d4",
+    "chunked.ixc/manifest": "0145ce079b10ff73e1b14a46a04fb62a5176457ce3da4af2e50acc56251bbfda",
+    "chunked.ixc/Quot.lift.chunk2.ixe": "956933604c44cd89f98b3e0ba3d1b4b55972c761de048dafa0955211d2b9a10a",
+    "chunked.ixc/Nat.chunk0.ixe": "c970bb12c2950046ea815b541c484ad8fc1abfcb5c17a7892ef6dba477a5098b",
+    "chunked.ixc/Nat.add.chunk1.ixe": "077bbe0938fa961a200bf1e1d34079913b7637037bb7520ca7065dc2015eefa4"
+  },
+  "fat_origin": "ix catalog assemble --labels Nat,Nat.add,Quot.lift --toolchains 4.34.1 --pins SOURCE_REVISION --deps 1:0 fat.ixc Nat.ixe Nat.add.ixe Quot.lift.ixe (the typing bundles), then ix catalog verify --deep fat.ixc",
+  "content_root": "fd480b2813819f8babf38f86c533536b21b0d5c16b346dd9fae834990b09a7e4",
+  "consumer_check": "Required tests authenticate full sorted member lists against roots/counts, enforce first ownership/disjointness/full coverage, and typecheck every union constant.",
+  "chunk_origin": "refreeze-ixon catalog (CatalogFixtures.writeChunked): the first-owner partition of the fat pieces; each chunk keeps its original blobs and presentation bytes and the hints and main of the constants it keeps, and lists the constants an earlier member owns as assumptions; members.json is every member's complete original address set"
+}

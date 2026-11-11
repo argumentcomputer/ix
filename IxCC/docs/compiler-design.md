@@ -407,17 +407,36 @@ soon as it passes one of these fixed budgets
 | `Recheck.maxSrcVisits` | with `Src.maxTermDepth`, `Recheck.checkSrc`'s check of a program built without ingress: its term nodes counted as trees (a shared term at each use) | 268,435,456 | 32,360,755 | 8.3× |
 | `Anf.maxLamNodes` | each Lam global, before ANF conversion (P1) | 16,384 | 2,256 | 7.3× |
 | `Anf.maxLamDepth` | each Lam global's depth, before P1 | 2,048 | 134 | 15× |
-| `Anf.maxGlobalNodes` | each Anf global, after P1, after every step and after every shrink round | 16,384 | 2,507 | 6.5× |
+| `Anf.maxGlobalNodes` | each Anf global, after P1, after every step and after every shrink round | 16,384 | 9,083 | 1.8× |
 | `Anf.maxDepth` | each Anf global's depth, at the same points | 2,048 | 752 | 2.7× |
-| `Anf.maxProgramNodes` | the whole program at the same points, and the running total while an inline or shrink step rewrites its globals | 1,048,576 | 4,935 | 212× |
-| `Anf.maxBackWork` | the back end's work (`Anf.backWork`: each global's nodes squared, plus its nodes and its `case`s' squared alternative counts times the constructor table's length), at the same points | 268,435,456 | 14,976,810 | 18× |
-| `Walk.maxCopy` | the nodes one walk walks again: inlined callees, β-reduced local functions, inlined join points, case-of-case alternatives | 8,192 | 1,583 (inline), 2,860 (shrink) | 5.2×, 2.9× |
+| `Anf.maxProgramNodes` | the whole program at the same points, and the running total while an inline or shrink step rewrites its globals | 1,048,576 | 25,749 | 41× |
+| `Anf.maxBackWork` | the back end's work (`Anf.backWork`: each global's nodes squared, plus its nodes and its `case`s' squared alternative counts times the constructor table's length), at the same points | 268,435,456 | 158,498,608 | 1.7× |
+| `Walk.maxCopy` | the nodes one walk walks again: inlined callees, inlined join points, case-of-case alternatives and a local function's second and later β-expansions (its first is a move, `Walk.betaFires`) | 8,192 | 6,955 (inline), 1,375 (shrink) | 1.2×, 6.0× |
 | `Walk.maxWalkDepth` | the walk steps on the native stack at once (`Here.lvl`, which a continuation inherits from the point that calls it) | 3,072 | 1,252 | 2.4× |
-| `Walk.maxFires` | rule firings in one walk | 8,192 | 500 | 16× |
-| `Walk.maxWalkWork` | the work one walk does (`Fires.work`, charged before every step of the walk) | 10,000,000 | 572,520 | 17× |
-| `Anf.maxStepWork` | the walk work of one inline or shrink step, over all its walks | 45,000,000 | 2,642,755 | 17× |
-| `Specialize.maxWork` | the work charged for the call sites a specialisation step examines | 67,108,864 | 2,166,288 | 31× |
+| `Walk.maxFires` | rule firings in one walk | 8,192 | 801 | 10× |
+| `Walk.maxWalkWork` | the work one walk does (`Fires.work`, charged before every step of the walk) | 10,000,000 | 1,445,345 | 6.9× |
+| `Anf.maxStepWork` | the walk work of one inline or shrink step, over all its walks | 45,000,000 | 8,208,022 | 5.5× |
+| `Specialize.maxWork` | the work charged for the call sites a specialisation step examines | 67,108,864 | 3,179,143 | 21× |
 | `Specialize.maxNodes` | the nodes of the specialisations those sites may build | 1,048,576 | 3,209 | 326× |
+
+The committed values are `tests-corpus`'s survey of every committed program
+(174 measured, 2026-11-11), which also checks every walk against the visit
+bound of the copy count (`steps ≤ nodes + copied`: 5,050 walks).
+
+That visit bound (a walk takes at most its global's nodes plus `maxCopy`
+steps) is argued in `Anf/Walk.lean`'s module note and checked by the step
+counter `Fires.steps` on every walk of every committed program and on the
+hostile shapes of `tests-recheck`; it is not a Lean statement and is not
+proved. It says how much a walk may visit and emit relative to its input; it
+is not what bounds the verifier. What bounds the verifier's work and stack,
+whatever the certificate asks, are the budgets the walk enforces: its work
+(`maxWalkWork`, charged before every step), its depth on the native stack
+(`maxWalkDepth`), its firings (`maxFires`) and its copies (`maxCopy`, refused
+before the body is walked), the step's work (`maxStepWork`), and the size
+budgets after every round. The
+`phase1-machines` family, registered after the previous survey (169
+programs), raised most of them; the walk's move accounting then lowered the
+largest copy in a shrink round from 7,712 to 1,375.
 
 The certificate's shape is bounded as well (`Recheck.checkMidCert`, `Recheck.CertJson`,
 `Src.Hints.checkJsonText`): at most 64 middle-end steps, 64 shrink rounds per
@@ -894,7 +913,16 @@ Flags never live across instructions except in fused pairs.
 - Callee-saved registers come from the allocation, and leaf functions are
   frameless.
 - The frame layout is checked, and prologues check the stack limit.
-- Calls use native `call`/`ret`; tail calls become jumps.
+- Calls use native `call`/`ret`; tail calls become jumps. A tail call passes
+  its arguments in the seven argument registers only (it reuses the caller's
+  frame, which has no outgoing stack cells), so `Fir.lower` lowers a call in
+  tail position of more arguments to another function as a call and a
+  return (`Fir.Lower.tailCall`): a frame per such call, so a loop through one
+  uses stack in every iteration (`Closures.stateLoop`: 32 bytes per iteration
+  on the immortal route, 96 under plain RC), and a long enough loop ends with
+  the stack-exhaustion status, not a different value. Proper tail calls with
+  stack-passed arguments, or dropping erased parameters (P5), would remove
+  it ([roadmap](roadmap.md), "Internal tail calls").
 
 **Layout.**
 - A checked block permutation, fall-through, branch inversion and tunnelling.

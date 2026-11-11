@@ -33,17 +33,20 @@ Licence: Apache-2.0 OR MIT (original programs).
 
 ## Regenerating
 
-With the ix of this repository built at the repository root (`lake build ix`;
-the revision and the binary's SHA-256 are in [`corpus.json`](corpus.json)),
-Lean 4.34.1 on `PATH`, and the `lake` stand-in of [Refreezing](../../../docs/corpus.md#refreezing)
-in `FAKE`, from `IxCC/`:
+[`tools/regenerate.sh`](../../../tools/regenerate.sh) regenerates it with the
+rest of the committed fixtures ([Refreezing](../../../docs/corpus.md#refreezing)).
+For this family alone: with the ix of this repository built at the repository
+root (`lake build ix`, in its dev shell; its version is in
+[`corpus.json`](corpus.json)), Lean 4.34.1 on `PATH`, and the `lake` stand-in
+`regenerate.sh` writes in `FAKE`, from `IxCC/`:
 
 ```sh
 lake exe corpus rebuild fixtures/corpus/phase1-machines/corpus.json --ix ../.lake/build/bin/ix --ix-path FAKE
 ```
 
 which runs, in `src/`, the commands the manifest records (`ix compile --no-build
---consts … --equations --anon --unbound`, its named twin, `ix addr-of`, and
+--consts … --equations --anon`, which writes the role-bound envelope, its named
+twin, `ix addr-of`, and
 `lean -Dlinter.all=false --run Machines.lean` on the cases). When
 `lib/IxccExe.lean` changes, copy its text over the head of `src/Machines.lean`
 first.

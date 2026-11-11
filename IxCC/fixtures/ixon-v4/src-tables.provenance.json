@@ -157,9 +157,8 @@
    "address":
    "d0e998ecf33a57f1fcf98311611d1402b361f426d81d6a8ade77123e2e7b8046"}],
  "producer_version": "4.34.1|0.0.1",
- "producer_revision": "be45a159f1bb3629d109f742b950786ae8fc11f4",
- "producer_binary_sha256":
- "396dffb7f41aa191f388828275460735bff23cb02b0a0a390ff2dbd7b044f9a4",
+ "producer":
+ "the ix of this repository: lake build ix at the repository root, in its dev shell (not a Nix build)",
  "names_tsv_sha256":
  "b69ebc301cbb6c8ca7c7293816a7f446afbe3685a34df2f06e109145bbd6faac",
  "macro_inline_count": 28,

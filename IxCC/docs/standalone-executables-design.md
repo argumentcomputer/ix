@@ -623,8 +623,13 @@ for `fib` alone 1,168. The library therefore names the primitives
 balanced trees rather than chains, and writes `Main1.step` as one function
 that computes each phase's result one after another and then picks one by the
 phase, large enough that it stays a call: `fibMain` is then 5,852 bytes of
-text on the zero-RC route. The closure form is still 165,137 bytes (plain RC).
-The reproducer and its measurements were handed to the middle end.
+text on the zero-RC route. The closure form was 165,137 bytes (plain RC) until
+the middle end charged a once-used local function's β-reduction as a move
+(2026-11-11, `Anf/Walk.lean`): its last shrink round, refused on the
+walk's copy budget before, now reduces it to first order, 5,781 bytes of text
+on the zero-RC route. The reproducer and its measurements were handed to the
+middle end; what is left of them is in `docs/closures-design.md`, "Measured
+limits".
 
 ### The generic shell
 
@@ -666,7 +671,7 @@ encoded (`--exe`'s: 956 to 977 bytes). Executables of the
 | `Machines.idMain` | zero RC | 5,714 | 7,683 |
 | `Machines.echo` | zero RC | 4,743 | 6,707 |
 | `Machines.badRequest` | zero RC | 1,034 | 2,995 |
-| `Machines.fibMainHO` (closure) | plain RC | 165,137 | 167,107 |
+| `Machines.fibMainHO` (closure) | zero RC | 5,781 | 7,747 |
 
 **Refused**: `exe.machine`, a first root that is not two `Nat` parameters
 (declared and at Cfg) and a `Nat` result; `exe.layout` as for `--exe`;
@@ -705,22 +710,27 @@ encoded (`--exe`'s: 956 to 977 bytes). Executables of the
 
 ### The library under the middle end (*measured*)
 
-The library's shape works around today's middle end. In its walk, the
-β-reduction of a once-used local function is charged its whole body against a
-copy budget, so a chain of `if`s costs quadratically, and a round that would
-pass the budget leaves the function unreduced. A change to that accounting is
-under way. Before it, under `--rc auto`, with the closures step's survey
-(`tests-corpus --survey`):
+The library's shape works around the middle end. In its walk, the
+β-reduction of a once-used local function was charged its whole body against
+a copy budget, so a chain of `if`s cost quadratically, and a round that would
+pass the budget left the function unreduced. Since 2026-11-11 a once-used
+local function's first expansion is a move, not a copy (`Anf/Walk.lean`,
+`betaFires`). Before and after that change, under `--rc auto`, with the
+closures step's survey (`tests-corpus --survey`):
 
 | root | closure keys, dispatchers | policy | text bytes |
 | --- | --- | --- | ---: |
-| `fibMain`, the library as shipped | none (the closures step leaves the program unchanged) | zero RC | 5,852 |
-| `fibMainHO`, the shipped library through a closure | 423, 2 | plain RC | 165,137 |
-| the first library's message step (`if` and `==` chains, three tables) | 105, 2 | plain RC | 48,377 |
-| the first library's `fibMain` | 237, 2 | plain RC | 132,155 |
-| the first library's `fibMainHO` | 353, 2 | plain RC | 181,529 |
+| `fibMain`, the library as shipped | none → none (the closures step leaves the program unchanged) | zero RC | 5,852 → 5,852 |
+| `fibMainHO`, the shipped library through a closure | 423, 2 → none | plain RC → zero RC | 165,137 → 5,781 |
+| the first library's message step (`if` and `==` chains, three tables) | 105, 2 → 6, 2 | plain RC | 48,377 → 27,628 |
+| the first library's `fibMain` | 237, 2 → 159, 2 | plain RC | 132,155 → 109,837 |
+| the first library's `fibMainHO` | 353, 2 → 232, 2 | plain RC | 181,529 → 139,504 |
 
-*After* the change: planned, on the same roots, when it lands.
+Before the change `fibMainHO`'s dispatchers took 57 % of the closures step's
+dispatch budget; after it the step has nothing to do. What still leaves
+closures in the first library is in `docs/closures-design.md`, "Measured
+limits": case-of-case copies on its `==` chains (the message step) and an
+inline round refused for the whole program (its `fibMain` and `fibMainHO`).
 
 ### What is assumed and not proved for an X2 executable
 

@@ -129,9 +129,10 @@ decision](roadmap.md#open-decisions).
   closure at 200). *Still exposed*, as in Lean's own kernel: levels the folds
   cannot merge, such as two chains at two universe parameters each mentioning
   the other at every step, whose level keeps a tree that doubles per step
-  (comparing it with a declared sort doubles in time and memory; level
-  equality is structural below a pointer and hash test, so comparing two such
-  levels, equal but built apart, walks them as trees too). It matters to IxCC
+  (comparing it with a declared sort doubles in time and memory; the level
+  normalisation and decision procedure walk it as a tree, while level
+  equality is memoised on the pairs it proves equal, so two such levels,
+  equal but built apart, compare in time linear in their DAGs). It matters to IxCC
   because IxCC's verifier runs IxCK itself: once the switch's step 3 lands, the
   erased checker is gone from the verifier path, and a closure of ordinary
   size carrying such a constant can hold the byte-level verifiers as long as

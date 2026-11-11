@@ -1,7 +1,7 @@
 {
   "format": "ixcc/corpus/1",
   "family": "phase1-resource",
-  "description": "The Phase 1 resource corpus (phase1.md MT.3): heap, stack and trap failures (statuses 1, 2 and 4) through the driver's --region and --stack, at exact heap thresholds from the immortal cell layout and at stack bounds one of which must succeed and the other fail.",
+  "description": "The Phase 1 resource corpus (phase1.md MT.3): heap, stack and trap failures (statuses 1, 2 and 4) under each case's region and stack (the native test executable's layout), at exact heap thresholds from the immortal cell layout and at stack bounds one of which must succeed and the other fail.",
   "tier": "required",
   "phase": 1,
   "directory": "fixtures/corpus/phase1-resource",
@@ -27,10 +27,8 @@
     }
   },
   "producer": {
-    "ix_revision": "be45a159f1bb3629d109f742b950786ae8fc11f4",
-    "ix_binary_sha256": "396dffb7f41aa191f388828275460735bff23cb02b0a0a390ff2dbd7b044f9a4",
+    "ix": "the ix of this repository: lake build ix at the repository root, in its dev shell (not a Nix build)",
     "ix_version": "4.34.1|0.0.1",
-    "ix_build": "Built with Lake (lake build ix) at the recorded revision (f829b76044a44a61023d0983516137147bbb12a7 plus the --equations export) inside ix's nix dev shell at that revision, Lean 4.34.1; not a Nix build. Rebuilt on 2026-11-07; the build is not reproducible, so its SHA-256 differs from the 2026-10 build (fc4e07ab...).",
     "anonymous": [
       "ix",
       "compile",
@@ -71,7 +69,7 @@
       "name": "resource",
       "source": {
         "path": "Resource.lean",
-        "sha256": "ab942c5feaea09fb8c2271e367c795584e63cdc6df1591696281e9a06d2edcab",
+        "sha256": "067c822a4044ca564deb580bb4766242eae214f5371f95d9c94d3984364650da",
         "license": "Apache-2.0 OR MIT",
         "variant": "original",
         "origins": []
@@ -91,19 +89,19 @@
       "protocol": "stdin",
       "closure": {
         "path": "resource.ixe",
-        "sha256": "af52779e740a92b3662463245cdfa6a39f75247902ea8e357c6bd16a3f66e077",
-        "bytes": 1049324
+        "sha256": "986598033b3f297c53550757a452c24d848026b2f417f58a88c0c280d61f9f3c",
+        "bytes": 2506891
       },
       "equations": {
         "path": "resource.equations.json",
-        "sha256": "68314326b93e58fab1ff95305e73b857d00b0395025b5dd53c32827c2ce6d23f",
-        "equations": 40,
+        "sha256": "8f4f38565696386231ca81a89b527a6ef76ca3cc14529c50f1f5e9a3eb7048a5",
+        "equations": 46,
         "failures": 0
       },
-      "named_env_sha256": "39c5530351781767d1b17e95241e022fe0bf7a835fa06b07946635c2967276d8",
+      "named_env_sha256": "2f8c7936519d30733693f332e56985d8babc325b0a3f71d6654038b68b364c67",
       "census": {
         "path": "resource.census.json",
-        "sha256": "a830f418d98b8671b9129cd9181fbb5d5a186214345fb48efd8e561bd87f0492"
+        "sha256": "e81b2beb640a3722613ae9045502f1be51bf2e4b98418dd02e462b73e5f001c1"
       },
       "roots": [
         {
@@ -166,7 +164,7 @@
         },
         {
           "name": "Resource.twoVars",
-          "address": "7a92d0c58d30db86d6be65abfb4d322a437780127a32975223f30825d8c8489f",
+          "address": "7010c92586b85d560dcebbc6c32b8b2230b834bfc476f163aac3142694a23e20",
           "params": 1,
           "result": "nat",
           "oracles": [
@@ -233,7 +231,7 @@
         },
         {
           "name": "Resource.oneVar",
-          "address": "49367270c744e0856ff93cbcdabd99c8228874e7132b68264848d297031140c0",
+          "address": "65faa70db27857509d6fcc8a8d224c6831da1ea79268110496d729582b139f52",
           "params": 1,
           "result": "nat",
           "oracles": [

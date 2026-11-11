@@ -258,8 +258,19 @@ hosted-CI or cold-store timing is claimed.
   relevant axioms; erasure declines string literals in relevant positions.
   IxCC reads the role-bound envelopes this repository's `ix compile` writes,
   with pinned identities from their role tables ([byte
-  contract](byte-contract.md)); apart from two role-bound closures and the
-  registered role-bound family, the committed fixtures are unbound.
+  contract](byte-contract.md)); every committed fixture is role-bound, written
+  by this repository's `ix` (the typing bundles and catalogs excepted: frozen
+  unbound data, [corpus](corpus.md)).
+- **Known defect: an unreached over-budget record refuses the closure.**
+  The decoder refuses a whole closure if any record exceeds its expression
+  depth budget (256, a `share` node a leaf), and `ix compile` selects a
+  structure's whole logical unit, so a program that only *uses* a structure
+  of 50 or more fields is refused at `ingress: decode` because of its
+  `mk.injEq` (depth `5n + 7`; 257 at 50 fields, 1,277 at 254), a lemma it
+  never reaches. Before the role-bound refreeze, a structure of 254 fields
+  compiled. Remedy: ingress refuses an over-budget record only when the
+  target reaches it (`phase1-boundary`'s README has the measurement).
+
 - **Values.** `Nat`, exact above Lir and at run time a tagged word below
   2^63 (a larger value is the resource failure `natOverflow`); constructors
   of inductive types; □. Fixed-width integers have no representation of
@@ -279,20 +290,28 @@ hosted-CI or cold-store timing is claimed.
 - **Internal tail calls.** The internal calling convention passes seven
   arguments in registers and the rest on the stack, but a tail call passes at
   most seven (the allocation validator's `convention` check: a tail call
-  reuses the caller's frame, which has no outgoing stack cells for it), so
-  register allocation declines a program with a tail call of more
-  (`alloc: alloc.fallback`), whatever its root takes; a non-tail call of more
-  is fine. Erasure keeps every binder slot, erased type and instance
-  parameters included, so monad-transformer code has functions of eight
-  parameters (`StateT.bind`, `StateT.map`), and the closures step's
-  dispatchers call a closure's function in tail position: a
-  `StateT`-over-`Except` loop through the library's `StateT.bind` is declined
-  (`fixtures/corpus/phase2-closures`, `Closures.stateLoop`; the same loop with
-  the stack's `Monad` instance written for it, `Closures.stateLoopSE`,
-  compiles). Of the registered roots it is the only one this limit refuses
-  (2026-11-11). Lowering such a tail call as a call and a return (a frame per
-  call, no stack cells in a reused frame), passing tail-call arguments on the
-  stack, or dropping the erased parameters (P5) would lift it.
+  reuses the caller's frame, which has no outgoing stack cells for it). So
+  `Fir.lower` keeps a call in tail position as a tail call only within seven
+  arguments, or when it calls its own function (a jump to the entry), and
+  lowers one of more as a call and a return (`Fir.Lower.tailCall`, since
+  2026-11-11; before, register allocation declined it, `alloc.fallback`). That
+  costs a frame per such call: a loop through one uses stack in every
+  iteration and a long enough one ends with the stack-exhaustion status
+  (status 2), never a different value. Erasure keeps every binder slot,
+  erased type and instance parameters included, so monad-transformer code has
+  functions of eight parameters (`StateT.bind`, `StateT.map`), and the
+  closures step's dispatchers call a closure's function in tail position: a
+  `StateT`-over-`Except` loop through the library's `StateT.bind`
+  (`fixtures/corpus/phase2-closures`, `Closures.stateLoop`) compiles this way
+  and uses 32 bytes of stack per iteration on the immortal route, 96 under
+  plain RC (its last case: 150 iterations end with the stack status in an
+  8 KiB stack); the same loop with the stack's `Monad` instance written for
+  it, `Closures.stateLoopSE`, has proper tail calls. K3 `rbmap` and
+  `const_fold` compile for the same reason. What removes the frame is proper
+  tail calls with stack-passed arguments (the caller's incoming argument area
+  must hold the callee's: a convention change in Xl's semantics, the
+  validator and stacking, with their proofs), or dropping the erased
+  parameters (P5), which brings `StateT.bind` to four.
 - **Proved.** For an accepted certificate, the object refines SrcEval on the
   checked source `a.src`, with the `GoesWrong` escape, under the x86, loader
   and driver assumptions of the [trust ledger](trusted-extern-ledger.md); at
@@ -412,7 +431,7 @@ experienced engineer per line of work. *Owner* is the default, subject to the
 | HD-1 | Typing off the verifier path: the erased checker replaced by the certified kernel (decided 2026-11-14, done within SP-N) | SP-N | the verifier path and the producer call no erased-checker function | — | IxCC | — |
 | HD-2 | One work budget threaded through the verifier; a total-work theorem | SP-0 | the theorem fenced | 2–5k lines | IxCC | — |
 | HD-3 | No recursion over input-sized data; every entry point at the budgets on 2 MiB | — | the gate | 1–2k lines | IxCC | — |
-| RL-1 | Fixtures regenerated from this tree. Phase 1 (equations export, unbound envelope, a trial family): in progress. Phase 2: the refreeze, and commit-hash provenance replaced by descriptions | DO-15 to DO-20 | `corpus check` and the suites pass on every regenerated family; no tracked file cites a commit outside this repository or of this branch's history | phase 2 changes every closure, sidecar, census and manifest, the pinned tables and generated artifacts | IxCC | regenerable fixtures |
+| RL-1 | Fixtures regenerated from this tree. Phase 1 (equations export, unbound envelope, a trial family): done. Phase 2: the role-bound refreeze by `tools/regenerate.sh` and commit-hash provenance replaced by descriptions: done (2026-11-11); before the merge, a final regeneration on the merged state, checked by `tools/regenerate.sh --check` | DO-15 to DO-20 | `corpus check` and the suites pass on every regenerated family; no tracked file cites a commit outside this repository or of this branch's history | phase 2 changes every closure, sidecar, census and manifest, the pinned tables and generated artifacts | IxCC | regenerable fixtures |
 | RL-3 | Retire the legacy Aiur model (about 5.8k lines) and the vendored snapshot (about 3.5k), superseded or contradicted by the formal Aiur package: tests, fences, tools, fixtures, the `ixcc-aiur` check, its ledger scopes and pins, docs | RL-2, DO-14 | all required checks pass without them | a deletion and inventory updates | IxCC | — |
 | RL-4 | The pull request, after the certified-IxVM work finalizes; the squash | RL-1 phase 2, RL-2 | review | — | IxCC | — |
 | Phase 2 | Heap completion (DR1) and closures (P8) | Phase 1.5's final producer for K0 | [Phase 2](#phase-2-heap-and-closures) | 25–50k lines (DR1 20–40k, P8 5–9k) | IxCC | nothing the evaluator needs |
@@ -646,23 +665,19 @@ disagreement; then the C drivers, their pins and the C link paths went.
 
 ### Repository and landing
 
-- **RL-1, fixtures from this tree.** Every committed fixture is to be
-  regenerated by this repository's `ix`, with no external producer
-  provenance. *Phase 1, in progress:* the equations export ported to this
-  repository's `ix compile`, a flag that writes the unbound version-4
-  envelope of the committed fixtures (this repository's `ix compile` writes
-  role-bound version-5 envelopes, which IxCC also reads), and a trial on one corpus family that passes ingestion
-  and the native corpus suite with the same assertion counts. The closures
-  grow, because this repository's root selection adds recursors, whole logical
-  units and checker support; about 7% of the constants of the larger fixtures
-  get other addresses; equation counts grow. *Phase 2, on hold for DO-15 to
-  DO-20:* the refreeze (every closure, sidecar, census and manifest,
-  [`Src/Pinned.lean`](../IxCC/Src/Pinned.lean), the generated artifacts and the
-  ledger change), and every commit-hash citation in tracked files replaced by
-  a description (those to commits outside this repository, and those to this
-  branch's own history, which the squash removes). The unbound flag is a
-  bridge: IxCC reads role-bound environments ([byte contract](byte-contract.md)),
-  and the flag goes when the fixtures are refrozen in the role-bound form.
+- **RL-1, fixtures from this tree.** Every committed fixture is regenerated
+  by this repository's `ix`, role-bound, with no external producer
+  provenance (done 2026-11-11). One command does it, `tools/regenerate.sh`
+  ([corpus](corpus.md), "Refreezing"), and `tools/regenerate.sh --check`
+  says whether the committed fixtures are current and self-contained (no
+  commit or path outside the repository cited); it is run once more on the
+  final merged state before the merge (#678 changes the role table, so every
+  closure changes again). The closures grew: the selection adds recursors,
+  whole logical units and checker support (DO-20); equation counts grew; no
+  source, root, case, value or decline changed, except the boundary family's
+  field limit, restated at 49/50 fields (the known defect above). The typing
+  bundles and the catalogs are frozen unbound data (DO-16). The unbound flag
+  has no user left and goes next.
 - **RL-2, the certified-IxVM work.** It has priority and lands first; this
   branch adapts to whatever it does: a second merge of `main`, the rename
   pass, re-recorded digests, inventories and ledger, and the move to its formal
@@ -728,8 +743,8 @@ IxOS-0 (= XB-1), IxOS-1, XB-2: no prerequisites
 
 ### Phase 1.5 priorities after the certification work
 
-The upstream `jcb/ix-certify-compile` revision inspected on October 8 is
-`fc058f9357da4e14fd3ff9e4d506f417faf7957a`. It provides several distinct
+The upstream `jcb/ix-certify-compile` revision inspected on October 8 (a
+revision outside this repository's history) provides several distinct
 certification interfaces in `Ix/CompileCert`:
 
 | Route | Established interface | Remaining boundary |

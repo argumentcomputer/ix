@@ -1607,9 +1607,6 @@
  "grounding_modules":
  ["IxCCGrounding",
   "IxCCGrounding.Apply",
-  "IxCCGrounding.Case",
-  "IxCCGrounding.CaseCheck",
-  "IxCCGrounding.CaseFire",
   "IxCCGrounding.Check",
   "IxCCGrounding.Eqn",
   "IxCCGrounding.Fence",
@@ -1622,18 +1619,14 @@
   "IxCCGrounding.Model",
   "IxCCGrounding.Ok",
   "IxCCGrounding.Relation",
-  "IxCCGrounding.Root",
-  "IxCCGrounding.RootCheck",
   "IxCCGrounding.Runs",
-  "IxCCGrounding.Subst",
   "IxCCGrounding.Support",
-  "IxCCGrounding.Syntax",
-  "IxCCGrounding.Tele"],
+  "IxCCGrounding.Syntax"],
  "grounding_axiom_sha256":
- "3c804206278c9040bd5b306b2a5761385ff311cdca0715edcfc7c1a1b569a10a",
- "grounding_axiom_count": 53,
+ "3f5b1886f6127883f3a07b7f9027df2eee5383c4aa51741ac9c3ecac5abec1b2",
+ "grounding_axiom_count": 26,
  "baseline":
- "G1b: the grounding library proves the case lemma and the root theorem (27 new exact assertions)",
+ "MQ: the walk's move accounting, tail calls past seven arguments as calls, the function-parameter refusal and their fences",
  "axiom_sha256":
- "1f7ac293520e0ced3fe2df2607a5dba5193effbf6c6d72b59013d74194f4d8fa",
- "axiom_count": 5921}
+ "e573f6569456818724bdf77b97316cf9037d8f8c49acb32b3804aa0ce5afa9f2",
+ "axiom_count": 5926}

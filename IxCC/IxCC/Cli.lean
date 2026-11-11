@@ -39,6 +39,11 @@ With `--machine` the first root is a numeric state machine
 parses and renders nothing; `FILE ARG…` runs the session the program's own
 Lean code parses and renders (`exe.machine` refuses another shape).
 
+`compile` refuses, right after ingress, a root with a relevant parameter of
+function type (`rt.fnparam`, `Recheck.checkFnParams`; the parameters refused
+are listed in `Recheck/Declared.lean`): a closure cannot cross a program
+boundary, so no caller can pass one.
+
 `--rc off` (the default) compiles a zero-RC-format certificate on the immortal
 backend, `--rc on` under plain RC (which may refuse the program). `--rc auto`
 follows `RcReplay.produceAuto`: zero RC when `Own.Plain.selectRcPolicyForSrc`
@@ -286,6 +291,9 @@ def execute (o : Options) : ExceptT Err IO Unit := do
   let ((bytes, json), tRead) ← timed (readInputs o)
   let (inp, tIngress) ← timed (lift fun _ => ingress bytes json o.roots o.typecheck)
   let cfg := Config.forInput {} inp
+  -- a root whose caller would pass a closure has no meaningful caller: refused
+  -- before anything is produced (every producer refuses it too, `produceClosures`)
+  if o.command == "compile" then lift fun _ => checkFnParams cfg.names inp.program
   -- `policy`: the policy `--rc auto` compiled under, reported on standard output
   let ((cliCert, outcomes, policy), tProduce) ← timed do
     match o.cert with

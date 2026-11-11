@@ -9,20 +9,18 @@ reproduces every other row of ix's committed table. No consumer encoder
 generated their bytes. ix's Rust kernel (`ix check-rs --anon`) accepts all
 four: 3, 15, 278 and 4 declaration targets.
 
-`lake exe refreeze-ixon typing --ix IX --revision REV` makes them and writes
-[`provenance.json`](provenance.json): the producer revision, binary digest and
-version, the commands, the primitive environment's digest, and per bundle its
-hash, constant count and `main`. With the ix of this repository it compiles
-the closure with `--unbound` and records `ix check-lean` on the whole closure
-as the reference check (every bundle constant must be one it passed); the
-committed record, from the producer below, has the Rust kernel's per-bundle
-target counts instead. The ix of this repository reproduces the four bundles
-byte for byte. The producer is the
-corpus manifests' (ix `be45a159`: the certified line `f829b760` plus the
-local `--equations` export); this is not a Nix build. (The v3 bundles came
-from ix's `Tests/IxonV3Primitives` program; its v4 successor,
-`ixon-v4-primitives`, is a test executable of the full ix workspace, which
-the CLI compilation replaces.)
+**Frozen.** They are data, not regenerated: they are unbound (version-4)
+environments, which the ix of this repository no longer writes (its `ix pack
+--anon` of the role-bound primitive closure writes the whole role-bound
+environment), and they are the pieces of the [catalogs](../catalog/README.md),
+which are frozen too. They go when the switch to the certified kernel retires
+the erased checker's typing tests. They were made by an earlier ix, whose
+revision is not in this repository's history, with `ix compile --consts` of the
+primitive names and `ix pack --anon` of each bundle; an `ix compile --unbound`
+of this repository reproduced the four byte for byte while it had that flag.
+[`provenance.json`](provenance.json) records the bundles' hashes, constant
+counts and `main`, and the reference check of that time (the Rust kernel's
+per-bundle target counts).
 
 The required suite checks complete byte admission for each bundle, then
 adds positive Nat/String literals, a proof of `20 + 22 = 42`, and rejection

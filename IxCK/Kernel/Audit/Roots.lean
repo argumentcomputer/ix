@@ -45,23 +45,23 @@ It fails elaboration when
 Expected values were measured before being frozen, and every change to a
 frozen value is a deliberate update whose cause is stated where it is made.
 The closures, as frozen below: the fold `Ix.Kernel.Cached.checkDecls`
-reaches 3684 compiled functions with 67 inherited externs, with 18
+reaches 3688 compiled functions with 67 inherited externs, with 18
 computed-field overrides of `Level`, `Expr` and `Key` and 26 proved
 csimp rewrites; the Ixon reader (`readRecords` with `Admission.readStream`) reaches
-2338, adding `Name`'s computed-field overrides (22 in total) and the codec's
-TagN writer twin; the entry (the four `publicOperations`) reaches 6860 with
+2342, adding `Name`'s computed-field overrides (22 in total) and the codec's
+TagN writer twin; the entry (the four `publicOperations`) reaches 6864 with
 113 inherited externs, 22 computed-field overrides and 29 proved csimp rewrites,
 adding the byte stage (`preflight`, `uniqueKeys`,
 `authenticate`, `decodeRecords`), the binding section's admission
 (`admitBinding`, `RoleTable.ofBytes`, `RoleTable.check`), the committed
 default table and prelude, and the codec's two TagN twins. The tiered
 entries (`checkBytesTiered`, `checkConstantsTiered`: the logical check, then
-the typing tier) are frozen apart: 6970 compiled functions (the entry's closure
+the typing tier) are frozen apart: 6974 compiled functions (the entry's closure
 and the tier's functions), with 22 computed-field overrides, 29 proved csimp
 rewrites, and nothing new to rule; the closures above do not reach the
 tier. The checks that admit user axioms (`userAxiomOperations`: the fold, the
 entries and the tiered entries under `AxiomPolicy.allowUser`, whose accepts are
-conditional on the user axioms they list) are frozen apart too: 6683 compiled
+conditional on the user axioms they list) are frozen apart too: 6687 compiled
 functions, 112 inherited externs, under the same rulings; the certified
 closures above do not reach them, and their theorems (`userAxiomRoots`) are
 guarded and their statements frozen below. Indexing the shape guard's former membership and constructor uniqueness
@@ -668,14 +668,14 @@ run_cmd do
 The entry's import closure stays inside `importAllowlist`, below the ruled
 elaboration-time edges inside `elaborationImports.allowed`; the theorems'
 closure inside `proofImportAllowlist`. The runtime closures are frozen with
-the rulings they use: the fold (`checkDecls`, 3684 compiled functions) reaches
+the rulings they use: the fold (`checkDecls`, 3688 compiled functions) reaches
 the kernel's computed-field overrides of `Level`, `Expr` and `Key` (18) and 26
-proved project csimp rewrites; the reader (`readRecords`, `readStream`, 2338
+proved project csimp rewrites; the reader (`readRecords`, `readStream`, 2342
 compiled functions) reaches 22 computed-field overrides (adding `Name`'s) and 9
 proved csimp rewrites (including the codec's TagN writer twin) and the prelude
 check (`State.keepsPrelude`: the state's keys and the decidable equality of its
-entries); the entry (`publicOperations`, 6860 compiled functions) and the tiered
-entries (`tierOperations`, 6970 compiled functions) reach 22 computed-field
+entries); the entry (`publicOperations`, 6864 compiled functions) and the tiered
+entries (`tierOperations`, 6974 compiled functions) reach 22 computed-field
 overrides and 29 proved csimp rewrites, adding the byte stage, the binding
 section's admission, the committed default table and prelude and the codec's
 TagN reader twin. -/
@@ -732,7 +732,12 @@ run_cmd Ix.Kernel.Audit.checkImportsWith #[`IxCK.Kernel.Admission.UserAxioms.Mod
 -- `isExplicit`, `toOffset`, with the code generator's specialisations) adds 7 compiled
 -- functions to the fold and to every closure that reaches it (the reader's is unchanged);
 -- externs, implemented_by, unsafe, csimp and all ruling counts are unchanged.
-/-- info: runtime closure of [Ix.Kernel.Cached.checkDecls]: 3684 compiled functions; inherited externs 67, implemented_by 0, unsafe 22, csimp 5; ruled computed_field 18, csimp 26 -/
+-- Level equality memoised on the pairs it proves equal (`Level.beqPtr`'s structural case is
+-- `Level.decMemo`, with `Level.beqGo` and the code generator's specialisations) adds
+-- 4 compiled functions to every closure below, the reader's included (it compares levels);
+-- the address and count reads are `withPtrAddr`, `withPtrEqDecEq` and `withExclusive`, already
+-- reached, so externs, implemented_by, unsafe, csimp and all ruling counts are unchanged.
+/-- info: runtime closure of [Ix.Kernel.Cached.checkDecls]: 3688 compiled functions; inherited externs 67, implemented_by 0, unsafe 22, csimp 5; ruled computed_field 18, csimp 26 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.kernelOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
@@ -754,7 +759,7 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.kernelOperations Ix.Ker
 -- The expanded role/key metadata adds 76 compiled functions from Key.
 -- Externs, replacements, unsafe declarations and all rulings are unchanged.
 /-- info: runtime closure of [Ix.Kernel.Reader.readRecords,
- Ix.Kernel.Admission.readStream]: 2338 compiled functions; inherited externs 89, implemented_by 0, unsafe 27, csimp 1; ruled computed_field 22, csimp 9 -/
+ Ix.Kernel.Admission.readStream]: 2342 compiled functions; inherited externs 89, implemented_by 0, unsafe 27, csimp 1; ruled computed_field 22, csimp 9 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.readerOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
@@ -776,7 +781,7 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.readerOperations Ix.Ker
 /-- info: runtime closure of [Ix.Kernel.Admission.checkBytes,
  Ix.Kernel.Admission.checkBytesWith,
  Ix.Kernel.Admission.checkConstantsWith,
- Ix.Kernel.Admission.checkConstants]: 6860 compiled functions; inherited externs 113, implemented_by 0, unsafe 27, csimp 7; ruled computed_field 22, csimp 29 -/
+ Ix.Kernel.Admission.checkConstants]: 6864 compiled functions; inherited externs 113, implemented_by 0, unsafe 27, csimp 7; ruled computed_field 22, csimp 29 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.publicOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
@@ -827,7 +832,7 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.publicOperations Ix.Ker
 -- The tiered closure has the same 811 additions and eight removals as the
 -- logical entry above, with exactly the same execution-trust entries.
 /-- info: runtime closure of [Ix.Kernel.Admission.checkBytesTiered,
- Ix.Kernel.Admission.checkConstantsTiered]: 6970 compiled functions; inherited externs 113, implemented_by 0, unsafe 27, csimp 7; ruled computed_field 22, csimp 29 -/
+ Ix.Kernel.Admission.checkConstantsTiered]: 6974 compiled functions; inherited externs 113, implemented_by 0, unsafe 27, csimp 7; ruled computed_field 22, csimp 29 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.tierOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
@@ -839,8 +844,8 @@ run_cmd Ix.Kernel.Audit.checkImportsWith #[`IxCK.Kernel.Admission.Tier] Ix.Kerne
 -- the axiom arm `checkAxiomDeclC` with the user arm's refusal of an axiom role's
 -- specification, `axiomRolePins`, `axiomRoleSpecHit?`), the table's admission under the
 -- policy (`admitAxiomPolicy`) and the listed user axioms (`preparedUserAxioms`). Frozen apart:
--- the certified closures above do not reach them. Measured at 6683 compiled functions, fewer
--- than the tiered entries' 6970 because none of these reaches the committed default table and
+-- the certified closures above do not reach them. Measured at 6687 compiled functions, fewer
+-- than the tiered entries' 6974 because none of these reaches the committed default table and
 -- prelude (each takes its prelude or table as an argument); inherited externs 112, and the
 -- same rulings admit it with the same unsafe, csimp and ruled counts.
 /-- info: runtime closure of [Ix.Kernel.Admission.checkBytesWithUserAxioms,
@@ -852,7 +857,7 @@ run_cmd Ix.Kernel.Audit.checkImportsWith #[`IxCK.Kernel.Admission.Tier] Ix.Kerne
  Ix.Kernel.Admission.checkBytesTieredUsingUnder,
  Ix.Kernel.Admission.checkConstantsTieredUnder,
  Ix.Kernel.Cached.checkDeclsWithUserAxioms,
- Ix.Kernel.Cached.annotDeclStepWithUserAxioms]: 6683 compiled functions; inherited externs 112, implemented_by 0, unsafe 27, csimp 7; ruled computed_field 22, csimp 29 -/
+ Ix.Kernel.Cached.annotDeclStepWithUserAxioms]: 6687 compiled functions; inherited externs 112, implemented_by 0, unsafe 27, csimp 7; ruled computed_field 22, csimp 29 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.userAxiomOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 

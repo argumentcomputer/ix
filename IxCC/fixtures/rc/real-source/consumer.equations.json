@@ -1,38 +1,51 @@
-{"source": "fixtures/rc/real-source/Reverse.lean",
- "roots":
- [{"name": "IxCCTests.Own.H0.reverseList",
-   "address":
-   "184d5657057c3b822a6be86fc177e82450b202b218be9f9e253655f1faef9880"},
-  {"name": "IxCCTests.Own.H0.reverseRepeated",
-   "address":
-   "1496d54b208beecf51a6e2cc1c22e049bca994b869ba6db8297d166ae9e85654"},
-  {"name": "IxCCTests.Own.H0.sharedReverse",
-   "address":
-   "d49a0d6e7b2fffdc0b9a66ce7fbeea4b29452bf1d92cc264c6764bebc5546a1a"}],
- "format": "ixcc/k1-equations/1",
- "failures": [],
- "equations":
- [{"equation_address":
-   "59939bbd24ab662852a7310fddb9e1e142f7bbc7dbffde3c4fc386bd84264958",
-   "equation": "IxCCTests.Own.H0.descending.eq_def",
-   "definition_address":
-   "1cb34996b9089ab29b09d489bc8299ee9bc114404f5ec92e29be2bcd9b86b784",
-   "definition": "IxCCTests.Own.H0.descending"},
-  {"equation_address":
-   "fd6d74cee1b19660daaef94af13d23d682ddc4de277cb59af049b87662a1e7a1",
-   "equation": "IxCCTests.Own.H0.repeated.eq_def",
-   "definition_address":
-   "22618e884928c0a271619d7b14670da01ae0c66668ed41c829fcf9a34d5476b6",
-   "definition": "IxCCTests.Own.H0.repeated"},
-  {"equation_address":
-   "5148f95371dd4309ff667037a61d8ffcb03cc460fedf87119cb4bbb8109f6ad8",
-   "equation": "List.reverseAux.eq_def",
-   "definition_address":
-   "b2cb0a27e0aa3a957900d7a6242c312e852c586f0668d06ab5fd8bc83e8ce37f",
-   "definition": "List.reverseAux"},
-  {"equation_address":
-   "5961e2bb6235e36fd740af4140b193ff2fc9390b4368b85e33430437701c50e4",
-   "equation": "Nat.add.eq_def",
-   "definition_address":
-   "3e8aadcc611c4d8677cadf00c78506561d33738ee3d571f7a4196e260580c9b8",
-   "definition": "Nat.add"}]}
+{
+  "format": "ixcc/k1-equations/1",
+  "source": "fixtures/rc/real-source/Reverse.lean",
+  "roots": [
+    {
+      "name": "IxCCTests.Own.H0.reverseList",
+      "address": "184d5657057c3b822a6be86fc177e82450b202b218be9f9e253655f1faef9880"
+    },
+    {
+      "name": "IxCCTests.Own.H0.reverseRepeated",
+      "address": "1496d54b208beecf51a6e2cc1c22e049bca994b869ba6db8297d166ae9e85654"
+    },
+    {
+      "name": "IxCCTests.Own.H0.sharedReverse",
+      "address": "d49a0d6e7b2fffdc0b9a66ce7fbeea4b29452bf1d92cc264c6764bebc5546a1a"
+    }
+  ],
+  "equations": [
+    {
+      "definition": "IxCCTests.Own.H0.descending",
+      "definition_address": "1cb34996b9089ab29b09d489bc8299ee9bc114404f5ec92e29be2bcd9b86b784",
+      "equation": "IxCCTests.Own.H0.descending.eq_def",
+      "equation_address": "59939bbd24ab662852a7310fddb9e1e142f7bbc7dbffde3c4fc386bd84264958"
+    },
+    {
+      "definition": "IxCCTests.Own.H0.repeated",
+      "definition_address": "22618e884928c0a271619d7b14670da01ae0c66668ed41c829fcf9a34d5476b6",
+      "equation": "IxCCTests.Own.H0.repeated.eq_def",
+      "equation_address": "fd6d74cee1b19660daaef94af13d23d682ddc4de277cb59af049b87662a1e7a1"
+    },
+    {
+      "definition": "List.reverseAux",
+      "definition_address": "b2cb0a27e0aa3a957900d7a6242c312e852c586f0668d06ab5fd8bc83e8ce37f",
+      "equation": "List.reverseAux.eq_def",
+      "equation_address": "5148f95371dd4309ff667037a61d8ffcb03cc460fedf87119cb4bbb8109f6ad8"
+    },
+    {
+      "definition": "Nat.add",
+      "definition_address": "3e8aadcc611c4d8677cadf00c78506561d33738ee3d571f7a4196e260580c9b8",
+      "equation": "Nat.add.eq_def",
+      "equation_address": "5961e2bb6235e36fd740af4140b193ff2fc9390b4368b85e33430437701c50e4"
+    },
+    {
+      "definition": "Nat.ble",
+      "definition_address": "9e445b9d5f8252772347872e909b5db4e7eca7086cedf4fec6de840f6b7b5f92",
+      "equation": "Nat.ble.eq_def",
+      "equation_address": "235ab44718c8ecf20b3ceab949dfcfad022807cf7f1604d72ae42048c26e47e4"
+    }
+  ],
+  "failures": []
+}

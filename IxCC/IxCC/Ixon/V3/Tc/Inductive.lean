@@ -1,7 +1,8 @@
 import IxCC.Ixon.V3.Tc.Knot
 import IxCC.Ixon.V3.Tc.CanonicalCheck
 
-/-! Adapted from ix `0a31c8dbc63755924c645bf1afedc563e395e88a`, `Ix/Tc/Inductive.lean`.
+/-! Adapted from `Ix/Tc/Inductive.lean` of an earlier ix (a revision outside this
+  repository's history).
 The anonymous checker uses the local v3 byte decoder and existing BLAKE3 interface.
 See docs/ixon-v4.md for the adaptation and validation boundary. -/
 

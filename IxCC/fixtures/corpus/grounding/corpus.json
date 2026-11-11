@@ -27,10 +27,8 @@
     }
   },
   "producer": {
-    "ix_revision": "f5ee4675fb635aa4581076c264bd7d68b52cc334",
-    "ix_binary_sha256": "810a977f3dcbfed725910f2e3f1c349b57dea8a7d61c32da0b46f1a312a752b1",
+    "ix": "the ix of this repository: lake build ix at the repository root, in its dev shell (not a Nix build)",
     "ix_version": "4.34.1|0.0.1",
-    "ix_build": "Built with Lake (lake build ix) from the recorded revision of this repository, in its dev shell, Lean 4.34.1; not a Nix build, and not reproducible, so the binary digest is a record.",
     "anonymous": [
       "ix",
       "compile",

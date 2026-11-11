@@ -107,9 +107,11 @@ end Ixon.Authenticated.Audit
 -- with its `unsafe` override and one ruled csimp to each closure here.
 -- The ∀ rule's level built with `mk_imax`'s folds (`Level.mkIMax` and its helpers) adds 7
 -- compiled functions to each closure here (`IxCK/Kernel/Audit/Roots.lean`).
+-- Level equality memoised on the pairs it proves equal (`Level.decMemo`) adds 4 compiled
+-- functions to each closure here (`IxCK/Kernel/Audit/Roots.lean`).
 /-- info: runtime closure of [Ixon.Authenticated.checkBytes,
  Ixon.Authenticated.checkBytesProjection,
- Address.admissionHash]: 6898 compiled functions; inherited externs 116, implemented_by 1, unsafe 27, csimp 7; ruled assumed 4, computed_field 22, csimp 29 -/
+ Address.admissionHash]: 6902 compiled functions; inherited externs 116, implemented_by 1, unsafe 27, csimp 7; ruled assumed 4, computed_field 22, csimp 29 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.Authenticated.Audit.operations #[`Init, `Std] Ixon.Authenticated.Audit.rulings
 
@@ -259,7 +261,7 @@ and the prelude-copy check (`State.keepsPrelude` in `readStream`) from 6060, lik
 -- refreezing; externs, implemented_by, unsafe, csimp and all ruling counts are unchanged.
 -- The role-shape validation merge adds the same four compiled functions,
 -- measured with the fallback-record guard. Execution allowances are unchanged.
-/-- info: runtime closure of [Ixon.Authenticated.checkBytesTiered]: 6980 compiled functions; inherited externs 116, implemented_by 0, unsafe 27, csimp 7; ruled assumed 4, computed_field 22, csimp 29 -/
+/-- info: runtime closure of [Ixon.Authenticated.checkBytesTiered]: 6984 compiled functions; inherited externs 116, implemented_by 0, unsafe 27, csimp 7; ruled assumed 4, computed_field 22, csimp 29 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ixon.Authenticated.checkBytesTiered] #[`Init, `Std] Ixon.Authenticated.Audit.rulings
 

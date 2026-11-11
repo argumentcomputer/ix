@@ -30,9 +30,6 @@ named by its own address. -/
 
 namespace IxCC.Ixon.V3
 
-/-- The ix revision whose Ixon v4 environment format this reader follows. -/
-def producerRevision : String := "f829b76044a44a61023d0983516137147bbb12a7"
-
 /-- The unbound `.ixe` envelope version (`Ixon.Env.LEGACY_ENV_VERSION` in ix). -/
 def envVersion : UInt64 := 4
 

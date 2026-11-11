@@ -112,7 +112,6 @@ structure PrimAddrs where
   punitSizeOf1 : Address
   sizeOfSizeOf : Address
   stringBack : Address
-  stringLegacyBack : Address
   stringUtf8ByteSize : Address
   stringAppend : Address
   stringDecEq : Address
@@ -216,8 +215,7 @@ def canonical : PrimAddrs where
   unit := h "9232498667f765f437dedaac828e555f6cc67a20e6db28f614fdf3c262710feb"
   punitSizeOf1 := h "523699b6e827b74a950d4718bdf5b13c193e3c7c371aaad4d635667be74b05fa"
   sizeOfSizeOf := h "ea81aee4a7d154faa8211a2594406dfdc7442020c0f29d2d0f79b4e62314da51"
-  stringBack := h "616eeeb0735f93dd10891b72bb659dd80418a6e84a9ce1313ecb41b0adc7623a"
-  stringLegacyBack := h "2f4e032675b915bfd44c2099b41c819971c259ec42f4b5e24fdddf20c03fe573"
+  stringBack := h "6a47d4c02a7bd096323488f1c115081fb0dfe8fc9651751de02e00ca6e0a68f1"
   stringUtf8ByteSize := h "4c086826cc679df3b6aa57a29f3d093a8a92d0de4edecef46a908d8398733dc0"
   stringAppend := h "0eae69f3f8b198d1ffac67b9e88d39526b1b039ff519cd87eec106f63974860c"
   stringDecEq := h "da7bb331e098f9bf5cdabcb9609a7e953dffc609ad9d90871a14c016c52a3011"
@@ -317,7 +315,6 @@ def leanParityTable : Array (String × Address) :=
     ("PUnit._sizeOf_1", p.punitSizeOf1),
     ("SizeOf.sizeOf", p.sizeOfSizeOf),
     ("String.back", p.stringBack),
-    ("String.Legacy.back", p.stringLegacyBack),
     ("String.utf8ByteSize", p.stringUtf8ByteSize),
     ("String.append", p.stringAppend),
     ("String.decEq", p.stringDecEq)

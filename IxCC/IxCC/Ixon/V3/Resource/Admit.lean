@@ -1,6 +1,6 @@
 import IxCC.Ixon.V3.Resource.Check
 
-/-! Adapted from ix `0a31c8dbc63755924c645bf1afedc563e395e88a`
+/-! Adapted from an earlier ix (a revision outside this repository's history)
 (`Ix/Resource/Admit.lean`), with the local expression type and namespaces.
 As in ix's copy, a safe theorem's proof is not scanned for relevance and has
 no usage, ownership or locality obligations (it is never run), but a marked

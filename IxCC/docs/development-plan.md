@@ -234,7 +234,7 @@ requirements without acquiring a dependency on this pilot.
    bookmark or remote run does not describe older checked-out files.
 2. Keep a certification pilot in a separate validation target. Record its
    exact source cone, Ixon bytes, name map, support declarations, selected
-   W/S route and route-specific theorem conclusion. At upstream `fc058f93`,
+   W/S route and route-specific theorem conclusion. At the upstream certify-compile revision inspected then,
    changed-value S+a requires `--strong-changed`; direct/raw S and S+a have
    different conclusions and supported domains. Build and run the target;
    test a valid neighbor and independently corrupted evidence.

@@ -244,7 +244,9 @@ theorem walkBind_fn (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fuel
     simp only [Bool.and_eq_true, beq_iff_eq] at hc
     exact skip_sim hW (run_fire_then h) (hctx.push hV) henv hJ hd hdj hf hnd hk (hpure _ fun _ => .inr ⟨rfl, hc.2⟩)
   · split at h
-    · exact skip_sim hW h (hctx.push hV) henv hJ hd hdj hf hnd hk
+    · -- moved to its applications, under a fresh entry number
+      obtain ⟨_, _, -, h⟩ := Walk.run_bind_ok h
+      exact skip_sim hW h (hctx.push hV) henv hJ hd hdj hf hnd hk
         (hpure _ fun hps => .inl (.fn henv hndfb (List.length_pos_iff.2 hps) (hctx.ext hV)))
     · obtain ⟨fb', s1, h1, h2⟩ := Walk.run_bind_ok h
       obtain ⟨e, s2, h3, h4⟩ := Walk.run_bind_ok h2

@@ -27,10 +27,8 @@
     }
   },
   "producer": {
-    "ix_revision": "be45a159f1bb3629d109f742b950786ae8fc11f4",
-    "ix_binary_sha256": "396dffb7f41aa191f388828275460735bff23cb02b0a0a390ff2dbd7b044f9a4",
+    "ix": "the ix of this repository: lake build ix at the repository root, in its dev shell (not a Nix build)",
     "ix_version": "4.34.1|0.0.1",
-    "ix_build": "Built with Lake (lake build ix) at the recorded revision (f829b76044a44a61023d0983516137147bbb12a7 plus the --equations export) inside ix's nix dev shell at that revision, Lean 4.34.1; not a Nix build. Rebuilt on 2026-11-07; the build is not reproducible, so its SHA-256 differs from the 2026-10 build (fc4e07ab...).",
     "anonymous": [
       "ix",
       "compile",
@@ -71,12 +69,12 @@
       "name": "fib",
       "source": {
         "path": "fib/Fib.lean",
-        "sha256": "5ba3a81e36723691b07932f95752cd71a1814983915323751d0632aa8d53bc47",
+        "sha256": "bbd1484effad14827065083d83bf784bd9abadde4047e5ce59bbcdab50c0527d",
         "license": "Apache-2.0 OR MIT",
         "variant": "original",
         "origins": [
           {
-            "commit": "2e4740dea324ab0122e909613687d2b812eab4e0",
+            "commit": "this repository",
             "declaration": "K1.fib",
             "path": "fixtures/ixon-v4/k1/K1.lean",
             "repository": "IxCC"
@@ -89,19 +87,19 @@
       "protocol": "args",
       "closure": {
         "path": "fib.ixe",
-        "sha256": "fb45a1677c4454485caaf344fac462fa7f1ae553bc4aa6f89e3b1e6971449a25",
-        "bytes": 15121
+        "sha256": "b5be82e89de1da5c5962a614a33b7823ab062cf372d4147ecf561f41fa574d50",
+        "bytes": 63719
       },
       "equations": {
         "path": "fib.equations.json",
-        "sha256": "757eec65da4e6ce249d937e9af571270a800372dd7dee181c79dbce903854b37",
-        "equations": 2,
+        "sha256": "2e89cf6b0ad87f8cf476704f8dcad55283b36b878436317dd4840fb09aff186d",
+        "equations": 3,
         "failures": 0
       },
-      "named_env_sha256": "086ec854d2f7005031f80cd7460e2ade311e063c45e35a798b5313fc96d9ec30",
+      "named_env_sha256": "d9bdc16f232427cc97b7323d6b08ba3c7d78288d19aa169164fbb1bf19447949",
       "census": {
         "path": "fib.census.json",
-        "sha256": "8b4d207a9f240e2df0bdc646dae523eb85ccfdccc953bcf96216e2620982bfc3"
+        "sha256": "8045c7829daa1080ff0e2a7ba0c67f769fbcaca654745ccf671ea97cab6ae403"
       },
       "roots": [
         {
@@ -189,12 +187,12 @@
       "name": "sum-loop",
       "source": {
         "path": "sum-loop/SumLoop.lean",
-        "sha256": "e563a28b8b02a15ddd506fdad127c86f705fe63c6fa1b3875b3eb1c0eb13a5f5",
+        "sha256": "f92aa62e65435a1ebd9a973fc0360d4c79d1de71188aad400de66d24e80dfa40",
         "license": "Apache-2.0 OR MIT",
         "variant": "original",
         "origins": [
           {
-            "commit": "2e4740dea324ab0122e909613687d2b812eab4e0",
+            "commit": "this repository",
             "declaration": "K1.sumLoop",
             "path": "fixtures/ixon-v4/k1/K1.lean",
             "repository": "IxCC"
@@ -207,24 +205,24 @@
       "protocol": "args",
       "closure": {
         "path": "sum-loop.ixe",
-        "sha256": "57a0e477d25899acdd88de8ffb327baa92166d8ae0d6a7a3bf3d3d46752883ac",
-        "bytes": 1030158
+        "sha256": "c07f489dc85de7b04d6a8597957bf144bae482373977591b1f5b31bc6e47150a",
+        "bytes": 2482120
       },
       "equations": {
         "path": "sum-loop.equations.json",
-        "sha256": "4c4f47fdc03dc46dad56a9cdfcdacc4856311b2911cfc7b11b32650fbbe3751e",
-        "equations": 34,
+        "sha256": "b988946eb50445b3199df2e0adf1d25ad294d1a000b99ea1e34f6aca101ab4ab",
+        "equations": 40,
         "failures": 0
       },
-      "named_env_sha256": "393deeeda257d1c92bc793c5e7a3ef5112e0b50fd84e798e764c315365c866d1",
+      "named_env_sha256": "db8364920b721454e70379938e49b53c0e3b21865c8e0ae78e51923a4b83ec23",
       "census": {
         "path": "sum-loop.census.json",
-        "sha256": "c9d18b5495e9992b02d899de020b2d74e4d94385a398e5d2a0d74800270b4323"
+        "sha256": "e35088f83f497686c2019efa632a1e4ef23b24579e9512cc7c19c9f628f4d540"
       },
       "roots": [
         {
           "name": "entry",
-          "address": "b0d8a68956c0956eafadae2947747dcc59003780c4166a4235d5cdabb3ae8e99",
+          "address": "a53d8d87a951ce2714f657b922de5cc18bb6e88f082b403254d066eff9b635b6",
           "params": 1,
           "result": "nat",
           "oracles": [
@@ -307,12 +305,12 @@
       "name": "ackermann",
       "source": {
         "path": "ackermann/Ackermann.lean",
-        "sha256": "344a9a29feaaa22d5bf9462c72bde0c853c033c10b8e7f4aab22e0d21e8dede2",
+        "sha256": "4afee6534a602c65decb36a20587f108500192ac5e20a1629d5e5fe608681dbd",
         "license": "Apache-2.0 OR MIT",
         "variant": "original",
         "origins": [
           {
-            "commit": "2e4740dea324ab0122e909613687d2b812eab4e0",
+            "commit": "this repository",
             "declaration": "K1.ack",
             "path": "fixtures/ixon-v4/k1/K1.lean",
             "repository": "IxCC"
@@ -325,24 +323,24 @@
       "protocol": "args",
       "closure": {
         "path": "ackermann.ixe",
-        "sha256": "25b716f001548cfbd587383ee1f03cf5469a7b55df9fef98d152f3671fae5a6d",
-        "bytes": 911585
+        "sha256": "d786e900777558ad19e7aac9d3eda38d094d50f9828a41692dca269fee0c9433",
+        "bytes": 2445302
       },
       "equations": {
         "path": "ackermann.equations.json",
-        "sha256": "96aa6dec672cc563f2cb3df54635d77057d2707d8ccf6886e344f93f8a020984",
-        "equations": 34,
+        "sha256": "93da6990cd7a8f8cb8cb3ad56653b4e8029942fb198d7283c87d3b9c1735e5a2",
+        "equations": 40,
         "failures": 0
       },
-      "named_env_sha256": "d73f8255465100cd0d9dd6f42f2241d32a6b1022f4c9a6f121d3a2da8a6ac962",
+      "named_env_sha256": "8832f7fb63ce79a13a3dbc837625dcf7bb4c30a2fd12643d74b08636725ff47a",
       "census": {
         "path": "ackermann.census.json",
-        "sha256": "386841524f8fcf90c000d334dc87126191a432218e5fa5bfaf48ddff58cf5b73"
+        "sha256": "29a30c3ccd0a9b1a4361a8e29d4f52365e7873443bb168f84c300b5cda1d4577"
       },
       "roots": [
         {
           "name": "entry",
-          "address": "d821ea2da4dc5a20a143e6bac6209d5cf287b762541164accb0c6da301db2c18",
+          "address": "8ffe337508df704c6c779b4524105a35c0b0ddc6934e772bc77479cf18da8a1e",
           "params": 2,
           "result": "nat",
           "oracles": [
@@ -462,12 +460,12 @@
       "name": "tak",
       "source": {
         "path": "tak/Tak.lean",
-        "sha256": "dc979b1873f7bf13728300480ac0f414ec83cd773804ea06e50f5e8895d9d54f",
+        "sha256": "5384e4d33234e1f2d6550c0339c8856d1dc401d9ba0094b87947f0440ed92ffa",
         "license": "Apache-2.0 OR MIT",
         "variant": "original",
         "origins": [
           {
-            "commit": "2e4740dea324ab0122e909613687d2b812eab4e0",
+            "commit": "this repository",
             "declaration": "K1.tak",
             "path": "fixtures/ixon-v4/k1/K1.lean",
             "repository": "IxCC"
@@ -480,19 +478,19 @@
       "protocol": "args",
       "closure": {
         "path": "tak.ixe",
-        "sha256": "273ed007b44ec4822327bee07036e59f99adf6da4dd0f83a76b7ac5e493eb560",
-        "bytes": 49721
+        "sha256": "77883a8a90ac25f36eac5491ccf5dbacd4fcd1d446d68abc6fb2d609ec8fe7f7",
+        "bytes": 119876
       },
       "equations": {
         "path": "tak.equations.json",
-        "sha256": "e48c92ef3d91535ffbce1bce55549e029359e3a1ff53d6e71f9941092de082d4",
-        "equations": 5,
+        "sha256": "549e30c8f3c0149f1539f508e45a5ae9e94b0d06d23b9365b62f408d64b5874c",
+        "equations": 7,
         "failures": 0
       },
-      "named_env_sha256": "797c3d14c9fe939098566644b7852c4ccbbf887a1320531fb0bc146568c00bb1",
+      "named_env_sha256": "d4d91d128fb7795305a4dd41610dc3a48b96e7031ed0859869803d335e045aeb",
       "census": {
         "path": "tak.census.json",
-        "sha256": "8d0709b91b814b2558c87bc92301501e7461349168cc352397ca52af064ee8d3"
+        "sha256": "40f04d3881e5cfb9a0ed6ba7a3941e2cdf1f84f8074bd1e5c6d9feea9b27b86a"
       },
       "roots": [
         {
@@ -606,12 +604,12 @@
       "name": "gcd",
       "source": {
         "path": "gcd/Gcd.lean",
-        "sha256": "8375dcd325baf250150872686c62e2f660c46e6f45e80151e934420d65be2d8c",
+        "sha256": "1533a5f188de7220c7e3e03a913cb4bf965e87ab88a618aab917e846823d3fbb",
         "license": "Apache-2.0 OR MIT",
         "variant": "original",
         "origins": [
           {
-            "commit": "2e4740dea324ab0122e909613687d2b812eab4e0",
+            "commit": "this repository",
             "declaration": "K1.gcd",
             "path": "fixtures/ixon-v4/k1/K1.lean",
             "repository": "IxCC"
@@ -624,19 +622,19 @@
       "protocol": "args",
       "closure": {
         "path": "gcd.ixe",
-        "sha256": "546017d9632a29dcfa972d7dd072a898549145be12af014d2276dc44f175a573",
-        "bytes": 111787
+        "sha256": "8fa586564ac2e26df0a7febb3ee21b9a4505b5daf679edc47aaf06c21404f60d",
+        "bytes": 216642
       },
       "equations": {
         "path": "gcd.equations.json",
-        "sha256": "0aa0f19759d67e72102569417208c39a4e7e83f81ef6a61195f5296c84a9cbe0",
-        "equations": 7,
+        "sha256": "231b7bc7299997f55409dc9e2fe23d80e90f6c0705159f81f68d4a461722c4bb",
+        "equations": 10,
         "failures": 0
       },
-      "named_env_sha256": "5abf441806f0b5e1b5250c98a028d8240e95dce6cfe39cae15f294ec950bd01f",
+      "named_env_sha256": "e89378fba8a26ba8947e4e64229d22698b5b00d0bbed6d21b57354e3d5db85e9",
       "census": {
         "path": "gcd.census.json",
-        "sha256": "0a2f955bec460f918de9c777e6ed74b7009b5a9d0deed727e3ddb5f51e31ee30"
+        "sha256": "bc38ce43a9f3ae2bd02fe45db88a2e32eecfe39972712b70d0aab7f1ecdad14f"
       },
       "roots": [
         {
@@ -777,24 +775,24 @@
       "protocol": "args",
       "closure": {
         "path": "collatz.ixe",
-        "sha256": "e6fbdc075fbf5efd21cba475bfc3c0abefcbfeb39fa2fe9185a316787bb1532f",
-        "bytes": 1034864
+        "sha256": "23ba3a3664bd27524fe755fb03c7bc73d3c7dda0fc1f2fb02e15c1d6ff5f2bf3",
+        "bytes": 2489734
       },
       "equations": {
         "path": "collatz.equations.json",
-        "sha256": "d764f8e91ee06a0de4ce7fa8714fe729154345899b4eb34c8b38289faa3e6c27",
-        "equations": 35,
+        "sha256": "9421e6749b24b8f803a627761a8200625cab7f8dcbedc28c5bfdd8db188cfc20",
+        "equations": 41,
         "failures": 0
       },
-      "named_env_sha256": "39ee7ebc1847692eccdceee43327f299f5e4fa748e3bfc4b5f2f674059f773d7",
+      "named_env_sha256": "9e0f186415d23ea8470a29cb0febc1a42e8d7d1250c9d0e6d7f86b7ad93ef8a4",
       "census": {
         "path": "collatz.census.json",
-        "sha256": "bf96768b21f26f923022431ba0582cc9ea453a4874e861b51be18d1ba85c8d26"
+        "sha256": "fa258c28b35664a683b210d69701c25cc26e93da5004c2281ab2dbd4db875522"
       },
       "roots": [
         {
           "name": "entry",
-          "address": "a4b3ab76d42ef5acda0520fe2826b0051e5ba3f96dcc1ed9ab2565fd55d06fad",
+          "address": "232e0a3cd1eac79682f723f62d01447a695339f5d6a228571ed32d993ad8f203",
           "params": 1,
           "result": "nat",
           "oracles": [
@@ -878,24 +876,24 @@
       "protocol": "args",
       "closure": {
         "path": "prime-count.ixe",
-        "sha256": "c472a44c22dca0a9c5fe41a9e49f1c4626243c4a868bf7c66a920eeb817e3e0f",
-        "bytes": 1035505
+        "sha256": "0a38dd18ca95088cdef03cc0cbdf3b52c2684c4c6fe068768779c5d6584c7ffb",
+        "bytes": 2489825
       },
       "equations": {
         "path": "prime-count.equations.json",
-        "sha256": "61f1693d4e6050940991e5351a56b6419ba0ae6789b8329cf22a600643c6c22b",
-        "equations": 35,
+        "sha256": "edfb0bb596fc451403af817fa2182331461f333612030a32006a54f7f499f0e2",
+        "equations": 41,
         "failures": 0
       },
-      "named_env_sha256": "64828068fe49e098eee9a3b4f1a739e9b42be970aa7b0f2cf6d76a2fca8b3501",
+      "named_env_sha256": "32d9a569634f8188d9dd3818c0fad70013c6892516a22afbf0e173827f809b77",
       "census": {
         "path": "prime-count.census.json",
-        "sha256": "b1879f55be2018ddbe86c93417e9d44ef50797e385f3e9c9e280947fa3e7d20f"
+        "sha256": "75a8fdaffbc02592e4b0d14865a3c2c758d301a5cac8c6ef3219159cf9ced037"
       },
       "roots": [
         {
           "name": "entry",
-          "address": "f412cc054de18807c31c0e3d344d4def82d27dfe33b859de429e8f46b2ea70c2",
+          "address": "dacf247b838b58aef98d645629030593105fac9105d97f51b1bc1c7174925c21",
           "params": 1,
           "result": "nat",
           "oracles": [
@@ -975,19 +973,19 @@
       "protocol": "args",
       "closure": {
         "path": "even-odd.ixe",
-        "sha256": "e1e6dec644e55ca83aa0f05e2fbcecdff95d5e1331178fe2f09e7c013b7797b2",
-        "bytes": 18339
+        "sha256": "18d4e4e09ded1eeec9f494426ff06685244e90cf218ba5c31622ca26e7df8028",
+        "bytes": 76836
       },
       "equations": {
         "path": "even-odd.equations.json",
-        "sha256": "5bf9087940f721bb4b64263d188e1bcb343246c9231ae35592bdc96db5fea136",
-        "equations": 2,
+        "sha256": "e38f237bb92f80aabc301852dd4fbd0a7d2e5381a771b4730d083023174520ba",
+        "equations": 4,
         "failures": 0
       },
-      "named_env_sha256": "074c609645475a561cf74503174f37afe31be59850dfac8053baaf8ae4a10340",
+      "named_env_sha256": "e04d85b6cb28ab00e33ff1ae38cda105f0c66111cdddcdec4351a7984ebed374",
       "census": {
         "path": "even-odd.census.json",
-        "sha256": "a553191b5b7ed60f69a254ae47639cf7090bb1264770e43b17930f9e6920c2d8"
+        "sha256": "f9c25310e0d30d86c8d064903b4aa12e8035bcff11c7907949f91393b8359a8f"
       },
       "roots": [
         {
@@ -1079,8 +1077,8 @@
       "protocol": "args",
       "closure": {
         "path": "sfib.ixe",
-        "sha256": "a1ef5017b5e42205fce98aaf60a3512333817dc4073d8f2a5d48531838593ac3",
-        "bytes": 49224
+        "sha256": "1bd16782179da8f176b4ba24df77b13883a447b5ec7337ba4b08bc53ac9e6c08",
+        "bytes": 113006
       },
       "equations": {
         "path": "sfib.equations.json",
@@ -1088,10 +1086,10 @@
         "equations": 5,
         "failures": 0
       },
-      "named_env_sha256": "122a50cdd6fbf90d47543a4dba2e565a4ad4a8fe041dfc2baab02f1fcdee9ac8",
+      "named_env_sha256": "496b556f26b8bd4fce091cc40f79cdd92265283d666fdf73aa5bdcef7af6e702",
       "census": {
         "path": "sfib.census.json",
-        "sha256": "a0df7e3a080b95285f8d7f118d360b662008098a2093cef67316146f16e84b35"
+        "sha256": "46e526d61b6600b76f496129594e87cddd5cba62d1db5fd8287677c147674bba"
       },
       "roots": [
         {

@@ -171,16 +171,26 @@ def regressions (a : Assert) (l : Loaded) : IO Unit := do
   expect a (!isOk (Hints.checkJsonText badDepth)) "N10: JSON nesting depth 513 rejected"
   expect a (isOk (Hints.checkJsonText quotedBrackets)) "N10: quoted brackets do not increase JSON depth"
 
+/-- The counts the expectations below state, as observed (printed before they
+are checked, so a regeneration that moves them shows every new value at once:
+the expectations are reviewed literals, updated by hand). -/
+def observed (label : String) (l : Loaded) : String :=
+  let s := l.tableStats
+  s!"{label}: eqn {s.eqnAccepted.size}, case {s.caseAccepted.size}, prim {s.primAccepted.size}, lazy {s.lazyAccepted.size}"
+
 def run (a : Assert) : IO Unit := do
   let k1 ← loadK1
-  packCounts a k1 "k1.ixe" 40
-  expectEq a k1.tableStats.caseAccepted.size 23 "k1.ixe: case entries"
-  expectEq a k1.tableStats.primAccepted.size 12 "k1.ixe: prim entries"
-  expectEq a k1.tableStats.lazyAccepted.size 11 "k1.ixe: lazy entries"
+  IO.println (observed "k1.ixe" k1)
+  for name in ["fib", "sum-loop", "ackermann", "tak", "gcd"] do
+    IO.println (observed name (← loadBench name))
+  packCounts a k1 "k1.ixe" 46
+  expectEq a k1.tableStats.caseAccepted.size 94 "k1.ixe: case entries"
+  expectEq a k1.tableStats.primAccepted.size 14 "k1.ixe: prim entries"
+  expectEq a k1.tableStats.lazyAccepted.size 15 "k1.ixe: lazy entries"
   mutations a k1
   regressions a k1
-  for (name, eqns, cases) in [("fib", 2, 1), ("sum-loop", 34, 22), ("ackermann", 34, 21),
-      ("tak", 5, 5), ("gcd", 7, 9)] do
+  for (name, eqns, cases) in [("fib", 3, 16), ("sum-loop", 40, 93), ("ackermann", 40, 91),
+      ("tak", 7, 21), ("gcd", 10, 23)] do
     let l ← loadBench name
     packCounts a l name eqns
     expectEq a l.tableStats.caseAccepted.size cases s!"{name}: case entries"

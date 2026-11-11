@@ -45,10 +45,10 @@ def checkPack (closure equations : System.FilePath) (expectedEquations : Nat) : 
 
 /-- The benchmark closures and their equation counts. -/
 def benchFixtures : List (String × Nat) :=
-  [("fib", 2), ("sum-loop", 34), ("ackermann", 34), ("tak", 5), ("gcd", 7)]
+  [("fib", 3), ("sum-loop", 40), ("ackermann", 40), ("tak", 7), ("gcd", 10)]
 
 def run (root : System.FilePath) : IO Nat := do
-  let mut assertions ← checkPack (root / "k1/k1.ixe") (root / "k1/equations.json") 40
+  let mut assertions ← checkPack (root / "k1/k1.ixe") (root / "k1/equations.json") 46
   for (name, count) in benchFixtures do
     assertions := assertions +
       (← checkPack (root / "bench-k1" / s!"{name}.ixe") (root / "bench-k1" / s!"{name}.equations.json") count)

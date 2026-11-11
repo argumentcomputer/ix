@@ -14,11 +14,13 @@ import IxCC.Recheck.Produce
   sidecar (`ixcc/k1-equations/1`) and the admission census, draw the
   generated cases from their seeds, run every case through Lean 4.34's
   interpreter (`lean --run`), check the independent constants, and rewrite
-  the manifest's derived fields. It refuses an ix binary whose SHA-256 is not
-  the manifest's. This replaces an earlier shell script, whose
-  commands it runs (byte-identical output on the five K1 closures).
+  the manifest's derived fields, among them `ix --version` (the producer is
+  this repository's ix; no binary is named). Every
+  closure must be role-bound. This replaces an earlier shell script, whose
+  commands it runs.
 * **`check`** (offline; no ix, no Lean unless `--interpret`): verify every
-  frozen file against the manifest (hashes and sizes, the sidecar's roots,
+  frozen file against the manifest (hashes and sizes, every closure
+  role-bound, the sidecar's roots,
   addresses and counts, the census reproduced byte for byte from the
   closure), re-ingress every root, regenerate the generated arguments from
   their seeds, check each case's shape and constants, and scan the sources
@@ -324,8 +326,18 @@ def rebuildFixture (t : Tools) (m : Family) (f : Fixture) (log : IO.Ref (Array S
   IO.FS.createDirAll dir
   let eqText := sidecar.render
   let ixeBytes ← IO.FS.readBinFile anonIxe
-  -- A census reports decoding failures as data. Refreezing must reject them.
-  let _ ← checked (IxCC.Ixon.V3.decodeAnonymousEnv ixeBytes)
+  -- A census reports decoding failures as data. Refreezing rejects them,
+  -- except in a fixture whose every root the manifest expects declined at
+  -- `ingress: decode` (a decoder budget's boundary, `phase1-boundary`). Every
+  -- closure is role-bound.
+  need (ixeBytes.size > 0 && ixeBytes[0]! == 0xE5)
+    s!"{f.name}: ix wrote an unbound closure (every fixture is role-bound)"
+  match IxCC.Ixon.V3.decodeAnonymousEnv ixeBytes with
+  | .ok env => need env.isBound s!"{f.name}: ix wrote an unbound closure (every fixture is role-bound)"
+  | .error e =>
+    need (f.roots.all (·.decline == some ({ stage := "ingress", code := "decode" } : Decline)))
+      s!"{f.name}: the closure does not decode ({e}), and not every root expects `ingress: decode`"
+    log.modify (·.push s!"  {f.name}: does not decode, as every root expects: {e}")
   checkResourceClosure ixeBytes (← checked (Json.parse eqText))
   let census ← censusText ixeBytes (← checked (Json.parse eqText))
   -- Finish the independent interpreter checks before publishing this fixture.
@@ -352,9 +364,9 @@ def rebuildFixture (t : Tools) (m : Family) (f : Fixture) (log : IO.Ref (Array S
 def rebuild (t : Tools) (manifest : FilePath) (only : List String) : IO Unit := do
   let m ← Family.read manifest
   let some ix := t.ix | throw (IO.userError "rebuild needs --ix PATH")
-  let digest ← sha256 ix
-  need (digest == m.producer.ixBinarySha256)
-    s!"{ix}: SHA-256 {digest}, but the manifest pins {m.producer.ixBinarySha256} (ix {m.producer.ixRevision})"
+  -- the producer is this repository's ix, whichever binary of it runs
+  let m := { m with leanVersion := Lean.versionString
+                    producer.ixVersion := (← run ix.toString #["--version"]).trimAscii.toString }
   let m ← match m.producer.profile with
     | some p => do pure { m with producer.profile := some { p with sha256 := ← sha256 p.path } }
     | none => pure m
@@ -460,6 +472,8 @@ def checkFixture (t : Tools) (interpretToo : Bool) (m : Family) (f : Fixture) (s
   let ixe ← IO.FS.readBinFile (dir / f.closure.path)
   need ((← sha256 (dir / f.closure.path)) == f.closure.sha256 && some ixe.size == f.closure.bytes)
     s!"{label}: {f.closure.path} differs from the manifest"
+  -- every committed closure is the role-bound envelope `ix compile` writes
+  need (ixe.size > 0 && ixe[0]! == 0xE5) s!"{label}: {f.closure.path} is not a role-bound environment"
   need ((← sha256 (dir / f.equations.path)) == f.equations.sha256) s!"{label}: {f.equations.path} differs"
   need ((← sha256 (dir / f.census.path)) == f.census.sha256) s!"{label}: {f.census.path} differs"
   let eqs ← readJson (dir / f.equations.path)
@@ -528,8 +542,8 @@ def check (t : Tools) (manifests : List FilePath) (interpretToo : Bool) : IO Uni
     let m ← Family.read path
     -- the manifest is in its canonical form (what a rebuild writes)
     need ((← IO.FS.readFile path) == m.toOJson.render) s!"{path}: not in canonical form (rebuild rewrites it)"
-    need (m.producer.ixBinarySha256.length == 64 && m.producer.ixRevision.length == 40)
-      s!"{path}: producer pins"
+    -- the producer record's form
+    need (!m.producer.ixVersion.isEmpty) s!"{path}: the producer record needs ix's version"
     if let some p := m.producer.profile then
       need ((← sha256 p.path) == p.sha256) s!"{path}: the profile {p.path} differs from the manifest"
     let before := total
