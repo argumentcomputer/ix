@@ -633,23 +633,16 @@ theorem preparedOk_sound (W : Type w) [SetTheory W] {b : Binding} {E : Ixon.Env}
       IxVM.Refinement.TheoremsInProp envA ds.toList ∧
       IxVM.Refinement.UserAxiomsWithin (fun _ => False) ds.toList ∧
       IxVM.Refinement.BindingSpecs b envA ds.toList := by
-  revert h
-  unfold preparedOk
-  cases hpre : (Reader.preludeFor t : Except String (Reader.Prelude .anon)) with
-  | error _ => simp
-  | ok pre =>
-    dsimp only
-    cases hprep : Admission.prepareWith Address.admissionHash b pre admissionLimits
-        (recordsOf E order) (blobsOf E order) (hintsOf E) with
-    | error _ => simp
-    | ok p =>
-      obtain ⟨ev, ds⟩ := p
-      dsimp only
-      cases hck : Cached.checkDecls .verified ev (ds.map IxVM.Refinement.thmToOpaqueDefn) with
-      | error _ => simp
-      | ok envA =>
-        dsimp only
-        intro h
+  unfold preparedOk at h
+  split at h
+  · exact absurd h Bool.false_ne_true
+  · rename_i pre hpre
+    split at h
+    · exact absurd h Bool.false_ne_true
+    · rename_i ev ds hprep
+      split at h
+      · exact absurd h Bool.false_ne_true
+      · rename_i envA hck
         have href := Cached.checkDecls_refines_ref W rfl hck
         rw [Array.toList_map] at href
         obtain ⟨hthm, hax, hspecs⟩ := declsOk_sound (b := b) h
@@ -763,12 +756,10 @@ that walk, not of the statement's meaning). -/
 theorem tableAdmitted_of_check (W : Type w) [SetTheory W] {b : Binding} {E : Ixon.Env}
     (h : check b E = true) (V : IxVM.Refinement.View) (hV : V.env = E) :
     IxVM.Refinement.TableAdmitted V b := by
-  revert h
-  unfold check
-  cases ht : Admission.admitBinding Address.admissionHash b with
-  | error _ => simp
-  | ok t =>
-    intro h
+  unfold check at h
+  split at h
+  · exact absurd h Bool.false_ne_true
+  · rename_i t ht
     exact checkAt_sound (wit := (candidate t E (artifactRecIndex E)).1)
       (order := (candidate t E (artifactRecIndex E)).2) W ht rfl h V hV
 
