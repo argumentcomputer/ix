@@ -20,7 +20,7 @@ theorem mem_profiles : ∀ (n : Nat) (prof : IxCC.Src.Profile), prof.length = n 
   | 0, prof, h => by rw [List.length_eq_zero_iff.mp h]; simp [profiles]
   | n + 1, prof, h => by
     have hne : prof ≠ [] := by intro h'; rw [h'] at h; simp at h
-    have hsplit := List.dropLast_append_getLast hne
+    have hsplit := List.dropLast_concat_getLast hne
     have hlen : prof.dropLast.length = n := by rw [List.length_dropLast, h]; rfl
     have ih := mem_profiles n prof.dropLast hlen
     simp only [profiles, List.mem_flatMap]
@@ -66,7 +66,7 @@ theorem okClosed_of_check {p : Program} {ann : IxCC.Src.Relevance.Ann} {Sl : Lis
   | none => rw [hcd] at hd'; exact absurd hd' (by simp)
   | some r' =>
     rw [hcd] at hd'
-    refine ⟨r', rfl, ?_⟩
+    refine ⟨r', hcd, ?_⟩
     simp only [Bool.not_eq_eq_eq_not, Bool.not_true] at hd'
     simp only [IxCC.Src.Rel.irrAt]
     rw [← IxCC.Src.PropWhen.inst_holds, IxCC.Src.PropWhen.holds_profile]

@@ -34,7 +34,7 @@ variable {V : Type w} [Ix.Kernel.SetTheory V] {env : KEnv}
 /-- `xs` bound in order, the last innermost: index `i < xs.length` reads `xs[n-1-i]`, and the
 indices above read `ρ`. -/
 def pushAll (xs : List V) (ρ : BVarIdx → V) : BVarIdx → V := fun i =>
-  if h : i < xs.length then xs[xs.length - 1 - i] else ρ (i - xs.length)
+  if h : i < xs.length then xs[xs.length - 1 - i]'(by omega) else ρ (i - xs.length)
 
 theorem pushAll_nil (ρ : BVarIdx → V) : pushAll [] ρ = ρ := by
   funext i; simp [pushAll]
@@ -55,6 +55,7 @@ theorem pushAll_snoc (xs : List V) (x : V) (ρ : BVarIdx → V) :
     · have h1 : ¬ i + 1 < xs.length + 1 := by omega
       rw [dif_neg h1, dif_neg h]
       congr 1
+      omega
 
 /-- `n` consecutive variables from `k`, applied to a head, denote the head applied to the sets
 the environment holds there. -/
@@ -74,10 +75,9 @@ theorem den_mkAppN_bvars {cval : KKey → (LevelParam → Nat) → V} {φ : Leve
       simpa using this
     refine den_mkAppN_bvars k xs _ _ (fun j hj => ?_) (.app hg (h0 ▸ .bvar))
     have := hρ (j + 1) (by simp; omega)
-    simp only [List.length_cons, List.getElem_cons_succ] at this
-    rw [← this]
-    congr 1
-    omega
+    have e : k + (x :: xs).length - 1 - (j + 1) = k + xs.length - 1 - j := by simp; omega
+    rw [e] at this
+    simpa using this
 
 /-! ## Inhabited `Eq` -/
 
@@ -111,18 +111,18 @@ theorem eq_of_inhabited (M : Model V env) (hEq : EqBasis env) {φ : LevelParam �
       exact not_mem_empty _ hy
     have m1 := app_mem_piR_pos hv hEm hU
     obtain ⟨B1d, B1f, hB1d, hB1f, _, hB1e⟩ := den_pi.mp (hBU A hU)
-    obtain rfl := den_bvar.mp hB1d
-    rw [hB1e] at m1
+    have eB1 : B1d = A := den_bvar.mp hB1d
+    rw [hB1e, eB1] at m1
     have hv1 : regime (Level.substFn φ [0] [u]) bmN.pw ≠ 0 := hv
-    have haA : xa ∈ˢ push A ρ 0 := by
+    have haA : xa ∈ˢ A := by
       refine Classical.byContradiction fun hn => ?_
       rw [app_off_dom_piR_pos hv1 m1 hn, app_empty] at hy
       exact not_mem_empty _ hy
     have m2 := app_mem_piR_pos hv1 m1 haA
-    obtain ⟨B2d, B2f, hB2d, _, _, hB2e⟩ := den_pi.mp (hB1f xa haA)
-    obtain rfl := den_bvar.mp hB2d
-    rw [hB2e] at m2
-    have hbA : xb ∈ˢ push xa (push A ρ) 1 := by
+    obtain ⟨B2d, B2f, hB2d, _, _, hB2e⟩ := den_pi.mp (hB1f xa (eB1 ▸ haA))
+    have eB2 : B2d = A := den_bvar.mp hB2d
+    rw [hB2e, eB2] at m2
+    have hbA : xb ∈ˢ A := by
       refine Classical.byContradiction fun hn => ?_
       rw [app_off_dom_piR_pos hv1 m2 hn] at hy
       exact not_mem_empty _ hy
@@ -144,7 +144,7 @@ theorem substFn_self (φ : LevelParam → Nat) :
     simp only [List.map_cons, Level.substFn]
     by_cases h : p = n
     · subst h; simp [Level.eval]
-    · rw [if_neg h, substFn_self φ ps]
+    · simp [h, substFn_self φ ps]
 
 /-- Domain, the theorem's binder datum, the function's binder datum. -/
 abbrev TeleB := KExpr × BinderMeta × BinderMeta
@@ -168,8 +168,7 @@ theorem tele_zip : ∀ (Ds : List (KExpr × BinderMeta)) (ms : List BinderMeta),
   | [], _ :: _, h => by simp at h
   | (D, m) :: Ds, m' :: ms, h => by
     obtain ⟨h1, h2⟩ := tele_zip Ds ms (by simpa using h)
-    simp only [List.zip_cons_cons, List.map_cons, teleT, teleF, List.zipWith_cons_cons, h1, h2]
-    exact ⟨rfl, rfl⟩
+    simp [List.zip_cons_cons, teleT, teleF, h1, h2]
 
 /-- **The telescope induction**: at a stage where the sets `pre` have been bound, the theorem's
 value applied to them inhabits the rest of its statement and the function's value applied to them
@@ -196,7 +195,7 @@ theorem eqn_tele (M : Model V env) (hEq : EqBasis env) {φ : LevelParam → Nat}
       subst hl
       refine den_mkAppN_bvars 0 pre _ _ (fun j hj => ?_) (hfk _)
       simp only [pushAll, Nat.zero_add]
-      rw [dif_pos (by omega)]
+      rw [dif_pos (show pre.length - 1 - j < pre.length by omega)]
       congr 1
       omega
     obtain rfl := Denotes_functional hx hfx
@@ -213,17 +212,19 @@ theorem eqn_tele (M : Model V env) (hEq : EqBasis env) {φ : LevelParam → Nat}
       have e1 := pushAll_snoc pre x ρ0
       have e2 : (pre ++ [x]).foldl app F = app (pre.foldl app F) x := by simp
       have e3 : (pre ++ [x]).foldl app P = app (pre.foldl app P) x := by simp
-      have ih := eqn_tele M hEq ρ0 hfk bs (pre ++ [x]) (by simp at hlen ⊢; omega)
+      have ih := eqn_tele M hEq ρ0 (n := n) hfk bs (pre ++ [x]) (by simp at hlen ⊢; omega)
         (TT := BTx) (TF := BFx) (by rw [e1]; exact hBTx) (by rw [e3]; exact hPx)
         (by rw [e1]; exact hBFx) (by rw [e2]; exact hFx)
       rwa [e1, e2] at ih
     have hlam := Denotes.lam (m := mF) hA step (fun h0 x _ => by
       show app (pre.foldl app F) x = pt
-      rw [eq_pt_of_mem_piR_zero (h0 ▸ hF), app_pt])
+      have hz : pre.foldl app F ∈ˢ piR 0 A BF := by rw [← h0]; exact hF
+      rw [eq_pt_of_mem_piR_zero hz, app_pt])
     have heq : lamR (regime φ mF.pw) A (fun x => app (pre.foldl app F) x) = pre.foldl app F := by
       by_cases h0 : regime φ mF.pw = 0
-      · rw [h0, lamR_zero]
-        exact (eq_pt_of_mem_piR_zero (h0 ▸ hF)).symm
+      · have hz : pre.foldl app F ∈ˢ piR 0 A BF := by rw [← h0]; exact hF
+        rw [h0, lamR_zero]
+        exact (eq_pt_of_mem_piR_zero hz).symm
       · exact eq_of_mem_piR_app_eq (lamR_mem (B := BF) fun x hx => app_mem_piR_pos h0 hF hx) hF
           fun x hx => app_lamR_pos h0 hx
     rwa [heq] at hlam
