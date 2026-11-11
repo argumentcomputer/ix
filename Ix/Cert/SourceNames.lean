@@ -247,7 +247,7 @@ theorem restoreAt_names (b : BlockRec md) (i : Nat) (d : Declaration md) :
 theorem mem_restoreFrom {b : BlockRec md} :
     ∀ {i : Nat} {ds : List (Declaration md)} {d : Declaration md},
       d ∈ restoreFrom b i ds → ∃ d0 ∈ ds, d.names = d0.names
-  | _, [], _, h => nomatch h
+  | _, [], _, h => by simp [restoreFrom] at h
   | i, d0 :: ds, d, h => by
     simp only [restoreFrom, List.mem_cons] at h
     rcases h with rfl | h

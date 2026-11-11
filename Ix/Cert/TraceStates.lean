@@ -169,7 +169,7 @@ theorem valued_good_of_fix {Q : md.Id → Prop} (hQ : ∀ i, f i = i → Q i) {d
     (h : d.mapKeys f = d) : ∀ e ∈ CtxAgree.valEntries d, e.2.2.Good (KeyScope.ofId Q) := by
   cases d with
   | defnDecl v e₀ h₀ =>
-    injection h with _ h2 _
+    have h2 := (Declaration.defnDecl.inj h).2.1
     simp only [CtxAgree.valEntries, List.mem_singleton]
     rintro e rfl
     exact expr_good_of_fix hQ h2

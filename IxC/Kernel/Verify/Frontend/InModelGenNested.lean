@@ -1747,8 +1747,8 @@ theorem restoreAt_mapKeys (b : BlockRec md) (i : Nat) (d : Declaration md) :
     | some t =>
       simp only [Option.map_some]
       by_cases hi : 2 ≤ i
-      · simp only [hi, if_true]; rfl
-      · simp only [hi, if_false]; rfl
+      · simp only [if_pos hi]; try rfl
+      · simp only [if_neg hi]; try rfl
   | _ => rfl
 
 theorem restoreFrom_mapKeys (b : BlockRec md) :

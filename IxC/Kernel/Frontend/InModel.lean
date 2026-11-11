@@ -81,4 +81,47 @@ def generate (ctx : Ctx md) (b : BlockRec md) : Except String (List (Declaration
   let ds ← if b.types.any (·.numNested > 0) then genNested ctx b' else genMutual ctx b'
   pure (restoreModelTypes b ds)
 
+theorem except_bind_eq_ok {ε α β : Type} {x : Except ε α} {g : α → Except ε β} {y : β}
+    (h : (x >>= g) = .ok y) : ∃ a, x = .ok a ∧ g a = .ok y := by
+  cases x with
+  | error e => exact nomatch h
+  | ok a => exact ⟨a, rfl, h⟩
+
+/-- **A successful generation** is a rung's run at the block with its formers read
+(`readFormers`), its member models' types put back (`restoreModelTypes`). -/
+theorem generate_eq_ok {ctx : Ctx md} {b : BlockRec md} {ds : List (Declaration md)}
+    (h : generate ctx b = .ok ds) :
+    ∃ b' ds0, readFormers ctx b = .ok b' ∧
+      (genNested ctx b' = .ok ds0 ∨ genMutual ctx b' = .ok ds0) ∧ ds = restoreModelTypes b ds0 := by
+  unfold generate at h
+  obtain ⟨b', h1, h⟩ := except_bind_eq_ok h
+  obtain ⟨ds0, h2, h⟩ := except_bind_eq_ok h
+  refine ⟨b', ds0, h1, ?_, (Except.ok.inj h).symm⟩
+  split at h2
+  · exact .inl h2
+  · exact .inr h2
+
+/-- A record of a restored output is a restored record of the rung's output. -/
+theorem restoreFrom_mem {b : BlockRec md} :
+    ∀ {i : Nat} {ds : List (Declaration md)} {d : Declaration md},
+      d ∈ restoreFrom b i ds → ∃ j, ∃ d0 ∈ ds, d = restoreAt b j d0
+  | _, [], _, h => by simp [restoreFrom] at h
+  | i, d0 :: ds, d, h => by
+    simp only [restoreFrom, List.mem_cons] at h
+    rcases h with rfl | h
+    · exact ⟨i, d0, List.mem_cons_self, rfl⟩
+    · obtain ⟨j, d1, hd1, rfl⟩ := restoreFrom_mem h
+      exact ⟨j, d1, List.mem_cons_of_mem _ hd1, rfl⟩
+
+/-- A restored record is a basis declaration only if the record was. -/
+theorem restoreAt_basis {b : BlockRec md} {i : Nat} {d : Declaration md} {k : BasisKind}
+    (h : restoreAt b i d = .basisDecl k) : d = .basisDecl k := by
+  cases d with
+  | defnDecl cv v hh =>
+    simp only [restoreAt] at h
+    split at h
+    · split at h <;> exact nomatch h
+    · exact nomatch h
+  | _ => exact h
+
 end Ix.Kernel.Frontend.InModel
