@@ -122,6 +122,7 @@ def compressCmd : Cli.Cmd := `[Cli|
     "dev-final-srs"; "Generate and cache local development Groth16 or PLONK keys for the selected inner verifier. With --dev-kzg-srs, no Ignition parameters are required."
     "plonk"; "Add a final PLONK proof using the compiled curve and selected setup."
     "groth16"; "Add a final BN254 Groth16 proof using prepared, independently admitted circuit keys."
+    "allow-custom-binding"; "Compress a claim relative to a role binding other than the default role table, or to a literal class (outside the IxVM consistency theorem)."
     "allow-axioms"; "Compress a claim that depends on axioms beyond the standard three."
     "allow-assumed-binding"; "Compress a claim that assumes its role binding meets the specifications."
     "allow-assumptions"; "Compress a claim conditional on typing assumptions (assumed leaves)."

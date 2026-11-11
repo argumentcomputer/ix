@@ -2,13 +2,14 @@ module
 
 public import LSpec
 public import Ix.Cli.ClaimPolicy
+public import IxC.Kernel.Ixon.Prelude
 
 /-! # The conditional claims `ix verify` and `ix compress` refuse by default
 
 `Ix.Cli.ClaimPolicy.refusal` over hand-made claims: an unconditional typing claim
-is admitted; one with user axioms, an assumed binding or assumed leaves is
-refused unless its flag allows it, or a binding proof or a whole partition
-discharges the condition; claims that state no typing are not restricted. -/
+is admitted; one under a role binding other than the default role table, or with
+user axioms, an assumed binding or assumed leaves, is refused unless its flag
+allows it, or a binding proof or a whole partition discharges the condition; claims that state no typing are not restricted. -/
 
 public section
 
@@ -19,7 +20,8 @@ open LSpec Ix.Cli.ClaimPolicy
 private def addr (s : String) : Address := Address.blake3 s.toUTF8
 
 private def ctx : Ix.ClaimContext :=
-  { spec := addr "spec", binding := addr "binding", axioms := none }
+  { spec := addr "spec", binding := Ix.Kernel.Reader.defaultTableAddress.toOption.getD default,
+    axioms := none }
 
 /-- Whether `pol` admits `claim`. -/
 def admits (pol : Policy) (claim : Ix.Claim) (bindingDischarged assumptionsDischarged : Bool := false) :
@@ -45,6 +47,12 @@ def unitTests : TestSeq :=
   ++ test "a claim that assumes its binding is refused" (!admits {} bound)
   ++ test "  unless a binding proof discharges it" (admits {} bound true)
   ++ test "  or --allow-assumed-binding" (admits { assumedBinding := true } bound)
+  ++ test "a claim under another role table is refused"
+      (!admits {} (.checkEnv { ctx with binding := addr "table" } (addr "root") none))
+  ++ test "  and one under a literal class"
+      (!admits {} (.checkEnv { ctx with literalClass := true } (addr "root") none))
+  ++ test "  unless --allow-custom-binding"
+      (admits { customBinding := true } (.checkEnv { ctx with binding := addr "table" } (addr "root") none))
   ++ test "claims that state no typing are not restricted"
       (admits {} (.contains (addr "tree") (addr "const"))
         && admits {} (.binding (addr "spec") (addr "binding")))

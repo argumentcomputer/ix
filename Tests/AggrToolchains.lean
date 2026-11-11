@@ -97,7 +97,7 @@ private def member (exe : String) (home dir : System.FilePath) (maxRam : Nat) (v
       "--trace-shards"])
   let some root := (lines aggregated.stdout).getLast? | return .error s!"{v}: no root"
   if aggregated.exitCode != 0 || !isAddressHex root then return .error s!"{v}: ix aggregate"
-  let verified ← ix exe home (#["verify", "--aggregate", root] ++ envArgs)
+  let verified ← ix exe home (#["verify", "--aggregate", root, "--allow-custom-binding"] ++ envArgs)
   if verified.exitCode != 0 then return .error s!"{v}: ix verify --aggregate"
   return .ok root
 
@@ -183,7 +183,8 @@ def run : IO UInt32 := do
     checks := checks.push ("the member roots join into one root",
       joined.exitCode == 0 && isAddressHex root)
     IO.println s!"{joined.stderr}"
-    let verified ← ix exe home #["verify", "--aggregate", root, "--ixc", ixc.toString]
+    let verified ← ix exe home #["verify", "--aggregate", root, "--ixc", ixc.toString,
+      "--allow-custom-binding"]
     IO.println verified.stdout
     checks := checks.push ("the root verifies against the catalog", verified.exitCode == 0)
     checks := checks.push ("verification prints every member's context",
@@ -196,7 +197,7 @@ def run : IO UInt32 := do
       (partialLabels.map fun l => (dir / s!"{l}.ixe").toString).toArray ++
       #["--labels", ",".intercalate partialLabels])
     let refusedVerify ← ix exe home
-      #["verify", "--aggregate", root, "--ixc", partialCatalog.toString]
+      #["verify", "--aggregate", root, "--ixc", partialCatalog.toString, "--allow-custom-binding"]
     checks := checks.push ("a catalog without a member does not verify the root",
       assembledPartial.exitCode == 0 && refusedVerify.exitCode != 0)
     let refusedJoin ← ix exe home (#["aggregate", "--ixc", ixc.toString] ++ roots.pop ++
