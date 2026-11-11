@@ -199,11 +199,8 @@
           "oracles": [
             "lean-run"
           ],
-          "decline": {
-            "stage": "alloc",
-            "code": "alloc.fallback"
-          },
-          "note": "Declined by register allocation after the closures step: StateT.bind takes eight parameters, a dispatcher calls it in tail position, and an internal tail call passes at most seven arguments (a non-tail call passes the rest on the stack). Closures.stateLoopSE is the same loop within that limit.",
+          "decline": null,
+          "note": "The dispatcher of arity 1 calls StateT.bind, of eight parameters, in tail position: past the seven argument registers of a tail call, so Fir.lower makes it a call and a return (Fir.Lower.tailCall), and the loop uses a frame per iteration: 32 bytes on the immortal route (96 under plain RC). Closures.stateLoopSE is the same loop within the limit, with proper tail calls. The last two cases run in an 8 KiB stack (a 4 KiB budget) and a 1 MiB region (the loop allocates its closures, about 1 KB per iteration on the immortal route).",
           "cases": [
             {
               "args": [
@@ -239,6 +236,28 @@
                 15
               ],
               "value": "1015"
+            },
+            {
+              "args": [
+                50,
+                100000000
+              ],
+              "value": "101",
+              "region": 1048576,
+              "stack": 8192,
+              "note": "50 iterations, 1.6 KB of frames, within the 4 KiB budget"
+            },
+            {
+              "args": [
+                150,
+                100000000
+              ],
+              "value": "301",
+              "fail": "stack",
+              "spurious": true,
+              "region": 1048576,
+              "stack": 8192,
+              "note": "150 iterations need 4.8 KB of frames, past the 4 KiB budget and the 120 iterations an 8 KiB native stack holds: the stack-exhaustion status, not a fault; spurious, since the source loop is iterative and the frames come from lowering a tail call of eight arguments as a call and a return"
             }
           ]
         },

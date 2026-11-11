@@ -156,6 +156,33 @@ def checkParams (cfg : Config) (C : Cfg.Program) : List (Nat × Fir.FunId) → E
                  the entry wrapper passes at most {maxParams}" }
     else checkParams cfg C rest
 
+/-- A root whose caller would have to pass a closure (`fnParam?`: a relevant
+declared parameter of function type) is refused before an object is made,
+with its own code: a closure cannot cross a program boundary, so the root
+has no meaningful caller. The roots are named by `names` where given, else
+by position. Producer-side (`produceClosures`, `ixcc compile`): the recheck
+path does not run it, and every compile claim refuses such a root anyway
+(`CompileClaim.rootParamsAllNat_of_fnParam`). -/
+def checkFnParams (names : List String) (src : Src.Program) : Except Err Unit :=
+  go 0 src.roots
+where
+  go : Nat → List (Ixon.Address × CId) → Except Err Unit
+    | _, [] => pure ()
+    | i, (_, c) :: rest =>
+      match fnParam? src c with
+      | some j =>
+        .error { stage := .rt, code := "rt.fnparam"
+                 message := s!"root {(names[i]?).getD s!"root{i}"} takes a function as parameter {j + 1} of \
+                   {((declaredParams src c).getD 0)}: a closure cannot cross a program boundary (callers pass \
+                   words, never a closure), so the root has no meaningful caller" }
+      | none => go (i + 1) rest
+
+/-- `Fir.lower` keeps a call in tail position as a tail call only within the
+internal convention's argument registers, the most arguments the allocation
+validator accepts on a tail call (`Xv.Validate`, `convention`); past them it
+is a call and a return (`Fir.Lower.tailCall`). -/
+theorem maxTailArgs_eq : Fir.Lower.maxTailArgs = Xv.Xl.nArgRegs := rfl
+
 /-- A symbol two exports share, if any (the first export's, in order):
 `Backend.sharedSymbol?`, the check `Backend.emit` runs. -/
 def sharedSymbol? (es : List Xv.Stacking.Export) : Option String := Backend.sharedSymbol? es
@@ -293,9 +320,12 @@ def anfOf (c : Cert) (src : Src.Program) (lam : Lam.Program) : Except Err Anf.Pr
 
 /-- The producers' closures step (untrusted, as the rest of the producer): the
 step on the schedule's last program, as the replay runs it, and the
-schedule's stages with the step's output last when it changed the program. -/
+schedule's stages with the step's output last when it changed the program.
+Every producer calls it, so it first refuses a root whose caller would pass a
+closure (`checkFnParams`, `rt.fnparam`). -/
 def produceClosures (src : Src.Program) (trace : Anf.Pipeline.Trace) :
     Except Err (Anf.Program × List (String × Anf.Program)) := do
+  checkFnParams [] src
   let pre := ((trace.stages.getLast?).map (·.2)).getD default
   let anf ← closuresOf src pre
   let plain := match declaredCounts src with

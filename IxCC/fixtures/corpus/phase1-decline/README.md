@@ -19,6 +19,7 @@ that compile alone and collide when compiled together.
 | --- | --- | --- |
 | `admit: unsupported` | `withPanic`, `stringLength` | a string literal in a relevant position (`panic!`'s message; `String.length` reaches the `String` library). Until the Ixon v4 refreeze, `stringLength`'s closure exceeded a count budget of the v3 decoder (`ingress: decode`); the v4 closure is within them |
 | `rt: rt.params` | `six`, `fiveAndType`, `fiveAndProof` | six parameters; an erased type or proof parameter counts |
+| `rt: rt.fnparam` | `applyArg` | a parameter of function type (`f : Nat → Nat`): a closure cannot cross a program boundary, so no caller can pass one and the root has no meaningful caller; refused right after ingress by `ixcc compile` and by every producer (`Recheck.checkFnParams`; which parameters are refused: `IxCC/Recheck/Declared.lean`) |
 | `erase: erase-minor` | `recMinor` | `Nat.rec` with a variable minor premise (S25) |
 | `admit: opaque` | `useOpaque`, `usePartial` | an `opaque` constant; a `partial def` (Lean adds it as an opaque constant, so `admit: partial` is not reached) |
 | `admit: unsafe` | `useUnsafe` | an `unsafe def` |
@@ -28,11 +29,11 @@ that compile alone and collide when compiled together.
 **Previously declined at `fir: fir.closures`, now compiled through the
 closures step** (the roots' entries and P8): `composeClosure` (a closure
 composed with itself per iteration) left this family for
-[`phase2-closures`](../phase2-closures/README.md), where it runs its cases;
-`applyArg` (a function argument applied) compiles with no case, since the
-interpreter takes no function argument from the command line: the program
-builds no closure, so the dispatcher it calls has no alternative and traps
-(`tests-pipeline --only defun` runs it).
+[`phase2-closures`](../phase2-closures/README.md), where it runs its cases.
+`applyArg` (a function argument applied) compiled from 2026-11-11 to its
+refusal at `rt: rt.fnparam` the same day: built anyway, the program builds no
+closure, so the dispatcher it calls has no alternative and traps on every
+input (`tests-pipeline --only defun` still builds it that way and runs it).
 
 **Previously declined, now compiled with cases:** `nestedFor` (nested `for`
 loops, compiled via `.box` specialization and CPS matcher inlining), `mulN`
@@ -42,9 +43,10 @@ reuse and clobber-aware `LinearScan`), and `unboxMatch` / `subtypeMatch`
 
 Elsewhere: `relevance: relevance-C2` (`phase1-scalar`'s
 `typeFormerPolymorphism`); `ingress: decode` for 255 fields and 126
-constructors (`phase1-boundary`); `rt: rt.params` for arity 6 (`phase1-abi`);
-`alloc: alloc.fallback` for a tail call of eight arguments
-(`phase2-closures`' `stateLoop`).
+constructors (`phase1-boundary`); `rt: rt.params` for arity 6 (`phase1-abi`).
+`phase2-closures`' `stateLoop` was declined at `alloc: alloc.fallback` for a
+tail call of eight arguments until 2026-11-11 (`Fir.lower` now makes such a
+call a call and a return).
 
 **Not a decline:** `twinB` compiled together with `twinA` (the same body, so
 the same content address) compiles, but the object exports only the first

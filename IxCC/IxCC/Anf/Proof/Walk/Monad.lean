@@ -3,8 +3,10 @@ import IxCC.Anf.Walk
 /-! # The walk's monad, inverted
 
 The rewriting walk (`Anf.Walk`) runs in `StateT Fires (Except String)`; the
-state only counts rule firings and the nodes they copy. These lemmas invert a
-successful run of a bind, `pure`, `throw` and `fire`. -/
+state only counts (rule firings, the nodes they copy, steps, work, depth) and
+numbers the local function entries and records which were expanded, which
+decides what a β-reduction is charged; nothing the walk returns reads it. These
+lemmas invert a successful run of a bind, `pure`, `throw` and `fire`. -/
 
 set_option autoImplicit false
 

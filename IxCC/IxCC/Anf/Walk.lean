@@ -31,10 +31,11 @@ replacing it by a `tick` (tick dominance):
 * known calls: `app` of a function global's closure, or of a partial
   application of one, becomes `call` when saturated (over-saturated: the
   call, then `app` of the rest);
-* β: a local function whose only occurrence is the head of an application
-  is inlined there behind a `tick` (over-applied: its result is applied to
-  the rest; under-applied: it becomes the function of its remaining
-  parameters, behind a `tick` for the application's charge);
+* β: a local function whose occurrences are all heads of applications (one
+  occurrence, or several saturated ones) is inlined at each behind a `tick`
+  (over-applied: its result is applied to the rest; under-applied: it
+  becomes the function of its remaining parameters, behind a `tick` for the
+  application's charge);
 * a join point jumped to once, or of at most `Cfg.smallJoin` nodes, is
   inlined at its jumps behind a `tick`;
 * case-of-case: a jump with a known constructor to a join point whose body
@@ -56,16 +57,43 @@ Everything recurses on explicit fuel over lists and `NatMap`s
 computed on the source term; a binding is dropped only when its variable has
 no occurrence at all.
 
-**Budgets.** A walk visits each node of its source once, except where a rule
-walks a body again at another place: an inlined callee, a β-reduced local
-function, an inlined join point or a case-of-case alternative. Each such
-firing charges the body's nodes (`copyCost`) to `Fires.copied`, and `fire`
-refuses the walk once its firings exceed `maxFires` or its copies exceed
-`maxCopy`. A walk therefore visits at most its source's nodes plus `maxCopy`
-nodes, whatever the certificate asks for, and its native recursion depth is
-bounded by the same count. (Under shrink, the census counts read at a binding,
-`Exp.occ` and `Exp.headOcc`, walk the rest of the body, so a round on a global
-of `n` nodes still costs up to order `n²` steps.) -/
+**Budgets.** Every walk step is charged its work (`charge`, `maxWalkWork`)
+and refused past `maxWalkDepth` steps on the native stack (`descend`), so a
+walk's work and stack are bounded whatever its input and certificate. The copy
+count bounds what the walk visits in terms of its source:
+
+* A walk visits each node of its source at most once, except where a rule
+  walks a body again at another place: an inlined callee (`inline`,
+  `inlineCaf`), an inlined join point (`joinOnce`, `joinSmall`), a
+  case-of-case alternative, and a β-reduced local function's body *after its
+  first expansion*. Each such firing charges the body's nodes (`copyCost`) to
+  `Fires.copied`, and `fire` refuses the walk once its firings exceed
+  `maxFires` or its copies exceed `maxCopy`, before it walks the body.
+* A local function the walk inlines at its applications (`Ent.fn`) is
+  *moved*, not copied, by its first expansion: the binding skips its body, so
+  the body's nodes, which the walk of the term holding the binding paid for,
+  are walked there once. The entry carries a number (`fresh`, `Fires.ents`)
+  and the walk records the entries it has expanded (`Fires.expanded`); a
+  second or later expansion of the same entry (a function applied at
+  several saturated sites, or at a site that a join point inlined at several
+  jumps or a case-of-case copy walks again) is charged in full (`betaFires`).
+* So, counting as an *instance* the global's body and each body a charged
+  firing walks: every step of the walk is on a node of one instance (a moved
+  body's nodes are those of the instance whose walk reached its binding), no
+  node of an instance is walked twice (the continuations a walk builds, the
+  rest of a caller after an inlined body, are each invoked at most once:
+  `branch` turns one into a join point before any branching), and the
+  instances other than the global's body total `Fires.copied` nodes. A walk,
+  successful or refused, therefore takes at most its source's nodes plus
+  `maxCopy` steps (`Fires.steps`; `tests-corpus` checks
+  `steps ≤ nodes + copied` on every walk of every committed program).
+
+Before 2026-11-11 every β-reduction was charged, a once-used function's too,
+so nested once-used functions (the else-branches of an `if` chain, as `Unit`
+thunks) were charged the square of their nesting while the walk visited each
+node once. (Under shrink, the census counts read at a binding, `Exp.occ` and
+`Exp.headOcc`, walk the rest of the body, so a round on a global of `n` nodes
+still costs up to order `n²` work, which `maxWalkWork` bounds.) -/
 
 namespace IxCC.Anf.Walk
 
@@ -74,9 +102,10 @@ open IxCC.Ixon
 /-- What a source value variable is in the target. -/
 inductive Ent where
   | opd (o : Opd)
-  /-- A local function inlined at its single application: its source
-  environment, arity and body. -/
-  | fn (σ : List Ent) (arity : Nat) (body : Exp)
+  /-- A local function inlined at its applications: its source environment,
+  arity and body, and its number (`fresh`), by which the walk tells its first
+  expansion, a move, from later ones, copies (`betaFires`). -/
+  | fn (σ : List Ent) (arity : Nat) (body : Exp) (id : Nat)
 
 instance : Inhabited Ent := ⟨.opd .box⟩
 
@@ -139,6 +168,14 @@ structure Fires where
   /-- The work the walk's steps charged (`stepCost`): not a rule firing
   either. -/
   work : Nat := 0
+  /-- The walk's steps (calls of `walk`, counted by `charge`): at most the
+  source's nodes plus `copied` (see the module note). -/
+  steps : Nat := 0
+  /-- Local function entries numbered so far (`fresh`). -/
+  ents : Nat := 0
+  /-- The local function entries already expanded once: a later expansion is
+  a copy (`betaFires`). The walk's own state, not a census: `add` drops it. -/
+  expanded : Src.NatMap Unit := .leaf
   deriving Repr, Inhabited
 
 namespace Fires
@@ -158,7 +195,7 @@ def add (f g : Fires) : Fires :=
     sameArms := f.sameArms + g.sameArms, inline := f.inline + g.inline
     inlineCaf := f.inlineCaf + g.inlineCaf, redirect := f.redirect + g.redirect
     copied := f.copied + g.copied, depth := max f.depth g.depth,
-    work := f.work + g.work }
+    work := f.work + g.work, steps := f.steps + g.steps, ents := f.ents + g.ents }
 
 def render (f : Fires) : String :=
   let xs := [("copy", f.copy), ("dead", f.dead), ("projKnown", f.projKnown), ("fold", f.fold),
@@ -219,12 +256,13 @@ instance : Inhabited Kont := ⟨.ret⟩
 any whole corpus program reaches (2,674). -/
 def maxFires : Nat := 8192
 
-/-- Nodes one walk may walk again (`Fires.copied`): inlined callees, β-reduced
-local functions, inlined join points and case-of-case alternatives together.
-A walk recurses natively through what it copies as through its global, so
-this and `maxGlobalNodes` together bound its native depth (see there); the
-committed programs copy at most 2,860 nodes in one walk (a shrink round), a
-third of this. -/
+/-- Nodes one walk may walk again (`Fires.copied`): inlined callees, inlined
+join points, case-of-case alternatives and the second and later expansions
+of a local function, together (a local function's first expansion is a move,
+see the module note). With the source's nodes it bounds the walk's steps. The
+committed programs' largest copies, in an inline walk and in a shrink round,
+are `tests-corpus`'s survey's, recorded in `docs/compiler-design.md`
+("Middle-end budgets"). -/
 def maxCopy : Nat := 8192
 
 /-- The charge for walking `b` again: its nodes, counted up to `maxCopy + 1`
@@ -237,6 +275,18 @@ def fire (f : Fires → Fires) : M Unit := fun s =>
   if (f s).total > maxFires then .error "walk: rule firing budget exhausted"
   else if (f s).copied > maxCopy then .error "walk: copy budget exhausted"
   else .ok ((), f s)
+
+/-- A β-reduction of local function entry `id`, of body `fb`: the entry's
+first expansion moves its body (the walk that reached its binding skipped it)
+and is not charged; every later one walks it again and is charged its nodes.
+The entry is recorded as expanded. -/
+def betaFires (id : Nat) (fb : Exp) (f : Fires) : Fires :=
+  { f with beta := f.beta + 1
+           copied := if f.expanded.contains id then f.copied + copyCost fb else f.copied
+           expanded := f.expanded.insert id () }
+
+/-- A new local function entry's number. -/
+def fresh : M Nat := fun s => .ok (s.ents, { s with ents := s.ents + 1 })
 
 /-- Work one walk may do (`Fires.work`, charged by `stepCost` at every step):
 seventeen times the most one walk of a committed program does (572,520). -/
@@ -265,7 +315,9 @@ case-identity tests that read subterms of `e` (`Exp.occ`, `Exp.headOcc`,
 jump, and the known-primitive search over the levels (`knownPrim`); a call
 being redirected reads the redirection's holes. Charged by `walk` before the
 step runs (`charge`), so a walk's work is at most `maxWalkWork` whatever its
-input and certificate. -/
+input and certificate. (A local function entry's number and the expanded
+entries' map, `fresh` and `betaFires`, cost a constant: a number below the
+walk's steps, at most `maxWalkWork`, has at most 24 bits.) -/
 def stepCost (C : Cfg) (env : Env) (here : Here) (e : Exp) (cap : Nat) : Nat :=
   let lookups := match e with
     | .bind _ b body => atomsCost (bindAtoms b) + (match body with
@@ -287,11 +339,11 @@ def stepCost (C : Cfg) (env : Env) (here : Here) (e : Exp) (cap : Nat) : Nat :=
     | _, _ => 0
   1 + lookups + census + redirect
 
-/-- Charge one step's work (`cost` of the budget left), refusing the walk
-once its work passes `maxWalkWork`. -/
+/-- Charge one step's work (`cost` of the budget left) and count the step,
+refusing the walk once its work passes `maxWalkWork`. -/
 def charge (cost : Nat → Nat) : M Unit := fun s =>
   if s.work + cost (maxWalkWork - s.work) > maxWalkWork then .error "walk: work budget exhausted"
-  else .ok ((), { s with work := s.work + cost (maxWalkWork - s.work) })
+  else .ok ((), { s with work := s.work + cost (maxWalkWork - s.work), steps := s.steps + 1 })
 
 /-- Walk steps one walk may have on the native stack at once: four times below
 the fewest at which a walk overflows an 8 MiB stack (nested single-alternative
@@ -574,13 +626,13 @@ def walkBind (C : Cfg) : Nat → Env → Here → V3.LetContract → Bind → Ex
       let local? := match f with
         | .var i =>
           match env.σ[i]? with
-          | some (.fn σf n fb) => some (σf, n, fb)
+          | some (.fn σf n fb id) => some (σf, n, fb, id)
           | _ => none
         | _ => none
       match local? with
-      | some (σf, n, fb) =>
+      | some (σf, n, fb, id) =>
         if os.length ≥ n then do
-          fire fun f => { f with beta := f.beta + 1, copied := f.copied + copyCost fb }
+          fire (betaFires id fb)
           let rest := os.drop n
           let k' ← if rest.isEmpty then after C fuel env body k
             else pure (.cont fun here' o => do
@@ -592,7 +644,7 @@ def walkBind (C : Cfg) : Nat → Env → Here → V3.LetContract → Bind → Ex
         else do
           -- under-application: the rest of the function, its first
           -- parameters bound (the application's charge becomes a tick)
-          fire fun f => { f with beta := f.beta + 1, copied := f.copied + copyCost fb }
+          fire (betaFires id fb)
           let m := n - os.length
           let fb' ← walk C fuel { σ := entsOf (os ++ fieldOpds here.d m).reverse ++ σf }
             { here with d := here.d + m, dj := 0 } fb .ret
@@ -623,8 +675,9 @@ def walkBind (C : Cfg) : Nat → Env → Here → V3.LetContract → Bind → Ex
       let n := ps.length
       if dead then do fire fun f => { f with dead := f.dead + 1 }; skip (.opd .box)
       else if C.shrink && body.occ 0 == body.headOcc 0 1 &&
-          (body.occ 0 == 1 || body.occ 0 == body.headOcc 0 n) then
-        skip (.fn env.σ n fb)
+          (body.occ 0 == 1 || body.occ 0 == body.headOcc 0 n) then do
+        let id ← fresh
+        skip (.fn env.σ n fb id)
       else do
         let fb' ← walk C fuel { σ := entsOf (paramOpds here.d n) ++ env.σ }
           { here with d := here.d + n, dj := 0 } fb .ret

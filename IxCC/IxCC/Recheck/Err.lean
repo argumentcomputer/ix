@@ -20,7 +20,9 @@ its proof excludes: `erase-univs`, `erase-unbox-elim`, `erase-pin`,
 `defun.tags`, `defun.input` and `defun.budget`, `fir.closures` (unreachable
 after the closures step), `Rt.lower`'s `rt.*`, the allocation
 validator's check names and so on; the compiler adds `rt.params` (a root
-with more parameters than the entry wrapper passes), `rt.dispatch` and
+with more parameters than the entry wrapper passes), `rt.fnparam` (a root
+with a relevant parameter of function type, which no caller can fill: the
+producer's and `ixcc compile`'s check, `Recheck.checkFnParams`), `rt.dispatch` and
 `rt.pins` (the switch check `Rt.checkSwitches`: a default arm, mixed or
 indistinguishable keys, `Nat.zero` and `Nat.succ` on one key), `stacking.symbols`
 (two exports sharing a symbol, `Recheck.checkSymbols`), `cli.*` (arguments and

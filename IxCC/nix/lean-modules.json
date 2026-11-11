@@ -5564,7 +5564,8 @@
     "IxCC.Backend"]},
   "IxCC.Recheck.Declared":
   {"path": "IxCC/Recheck/Declared.lean",
-   "imports": ["IxCC.Recheck.Cert", "IxCC.Anf.Entry"]},
+   "imports":
+   ["IxCC.Recheck.Cert", "IxCC.Anf.Entry", "IxCC.Src.Relevance.Check"]},
   "IxCC.Recheck.Cert":
   {"path": "IxCC/Recheck/Cert.lean",
    "imports":

@@ -279,20 +279,28 @@ hosted-CI or cold-store timing is claimed.
 - **Internal tail calls.** The internal calling convention passes seven
   arguments in registers and the rest on the stack, but a tail call passes at
   most seven (the allocation validator's `convention` check: a tail call
-  reuses the caller's frame, which has no outgoing stack cells for it), so
-  register allocation declines a program with a tail call of more
-  (`alloc: alloc.fallback`), whatever its root takes; a non-tail call of more
-  is fine. Erasure keeps every binder slot, erased type and instance
-  parameters included, so monad-transformer code has functions of eight
-  parameters (`StateT.bind`, `StateT.map`), and the closures step's
-  dispatchers call a closure's function in tail position: a
-  `StateT`-over-`Except` loop through the library's `StateT.bind` is declined
-  (`fixtures/corpus/phase2-closures`, `Closures.stateLoop`; the same loop with
-  the stack's `Monad` instance written for it, `Closures.stateLoopSE`,
-  compiles). Of the registered roots it is the only one this limit refuses
-  (2026-11-11). Lowering such a tail call as a call and a return (a frame per
-  call, no stack cells in a reused frame), passing tail-call arguments on the
-  stack, or dropping the erased parameters (P5) would lift it.
+  reuses the caller's frame, which has no outgoing stack cells for it). So
+  `Fir.lower` keeps a call in tail position as a tail call only within seven
+  arguments, or when it calls its own function (a jump to the entry), and
+  lowers one of more as a call and a return (`Fir.Lower.tailCall`, since
+  2026-11-11; before, register allocation declined it, `alloc.fallback`). That
+  costs a frame per such call: a loop through one uses stack in every
+  iteration and a long enough one ends with the stack-exhaustion status
+  (status 2), never a different value. Erasure keeps every binder slot,
+  erased type and instance parameters included, so monad-transformer code has
+  functions of eight parameters (`StateT.bind`, `StateT.map`), and the
+  closures step's dispatchers call a closure's function in tail position: a
+  `StateT`-over-`Except` loop through the library's `StateT.bind`
+  (`fixtures/corpus/phase2-closures`, `Closures.stateLoop`) compiles this way
+  and uses 32 bytes of stack per iteration on the immortal route, 96 under
+  plain RC (its last case: 150 iterations end with the stack status in an
+  8 KiB stack); the same loop with the stack's `Monad` instance written for
+  it, `Closures.stateLoopSE`, has proper tail calls. K3 `rbmap` and
+  `const_fold` compile for the same reason. What removes the frame is proper
+  tail calls with stack-passed arguments (the caller's incoming argument area
+  must hold the callee's: a convention change in Xl's semantics, the
+  validator and stacking, with their proofs), or dropping the erased
+  parameters (P5), which brings `StateT.bind` to four.
 - **Proved.** For an accepted certificate, the object refines SrcEval on the
   checked source `a.src`, with the `GoesWrong` escape, under the x86, loader
   and driver assumptions of the [trust ledger](trusted-extern-ledger.md); at

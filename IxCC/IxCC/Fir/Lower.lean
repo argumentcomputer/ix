@@ -26,7 +26,9 @@ Anf terms, a threaded name supply, lists and `Src.NatMap`.
   same id, key, contracts and result contract; a CAF (no parameters) becomes
   a zero-argument function called at each use, so `glob g` of a CAF
   is `call g []`. `call` stays a known call; `bind x (call g as) (ret x)`
-  (ticks allowed before the `ret`) is the tail call `tcall g as`. `con`,
+  (ticks allowed before the `ret`) is the tail call `tcall g as` when it
+  passes at most `maxTailArgs` arguments or calls its own global, and stays
+  `bind x (call g as) (ret x)` otherwise (`tailCall`). `con`,
   `proj`, `prim` and `case` map one to one, with `CtorInfo.ofKey`; `join n
   rec b e` becomes `jp j ps rec b e`; `jump` becomes `jmp`.
 * **Names.** De Bruijn indices become variables from a per-function supply
@@ -162,11 +164,33 @@ def atoms (g : Anf.GlobalId) (ρ : List Var) : List Anf.Atom → Except Error (L
     pure (x :: xs)
 
 /-- The continuation returns the value just bound (ticks allowed first): a
-call before it is a tail call. -/
+call before it is in tail position. -/
 def returnsTop : Anf.Exp → Bool
   | .ret (.var 0) => true
   | .tick e => returnsTop e
   | _ => false
+
+/-- The most arguments a tail call passes: the internal calling convention's
+argument registers (`Lir.Conv.argRegs`, `Recheck.maxTailArgs_eq`). A call
+passes the arguments past them on the stack, in its own outgoing area, which
+a tail call cannot keep (it replaces the caller's frame); the allocation
+validator refuses such a tail call (`Xv.Validate`, `convention`). -/
+def maxTailArgs : Nat := 7
+
+/-- A call of `h` with `n` arguments in tail position of global `g` (before
+`e`) becomes a tail call when `e` returns its value (`returnsTop`) and it
+passes at most `maxTailArgs` arguments or calls `g` itself (a self tail call
+is a jump to the entry, `Cfg.lower`, with any number of arguments).
+Otherwise it stays a call followed by a return: a frame per such call, so a
+loop through one uses stack in each iteration (a resource limit, the
+stack-exhaustion status at run time, never a different value). -/
+def tailCall (g h : Anf.GlobalId) (n : Nat) (e : Anf.Exp) : Bool :=
+  returnsTop e && (h == g || n ≤ maxTailArgs)
+
+theorem tailCall_returnsTop {g h : Anf.GlobalId} {n : Nat} {e : Anf.Exp} (t : tailCall g h n e = true) :
+    returnsTop e = true := by
+  simp only [tailCall, Bool.and_eq_true] at t
+  exact t.1
 
 /-- An atom as a variable: a variable is itself; a literal or □ is bound to
 a fresh variable by the returned prefix. -/
@@ -226,7 +250,7 @@ def exp (A : Anf.Program) (g : Anf.GlobalId) (ρ : List Var) (J : List JoinId) (
     | .call h as =>
       let args ← atoms g ρ as
       unless h < A.size do throw (.malformed g s!"call of global {h} beyond the size {A.size}")
-      if returnsTop e then pure (.tcall h args, st)
+      if tailCall g h args.length e then pure (.tcall h args, st)
       else
         let (x, st) := st.bindFresh c
         let (k, st) ← exp A g (x :: ρ) J st e

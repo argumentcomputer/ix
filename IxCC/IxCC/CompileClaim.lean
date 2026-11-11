@@ -322,6 +322,38 @@ def rootParamsAllNat (src : Src.Program) (root : Recheck.Root) : Bool :=
       (d.type.pis.1.take root.params).all fun (_, dom) => isNatType src dom
   | none => false
 
+theorem isNatType_eq_natDomain (src : Src.Program) (dom : Src.Term) :
+    isNatType src dom = Recheck.natDomain src dom := rfl
+
+/-- **The compiler's function-parameter refusal agrees with the claims'.**
+A root `ixcc compile` refuses because a caller would have to pass it a
+closure (`Recheck.fnParam?`, `rt.fnparam`) is refused by every compile claim:
+the refused parameter's domain is not `Nat`, so `rootParamsAllNat` is false
+(and with it `checkImmortalRoot`, `checkPlainRcRoot` and the executables'
+fragment, `Exe.fragment`). -/
+theorem rootParamsAllNat_of_fnParam {src : Src.Program} {root : Recheck.Root} {j : Nat}
+    (h : Recheck.fnParam? src root.const = some j) : rootParamsAllNat src root = false := by
+  unfold Recheck.fnParam? at h
+  unfold rootParamsAllNat
+  cases hd : src.decl? root.const with
+  | none => rfl
+  | some d =>
+    rw [hd] at h
+    simp only [Option.bind_some] at h
+    obtain ⟨⟨b, dom⟩, hm, hn⟩ := Recheck.fnParamAt_mem h
+    simp only at hn
+    by_cases hl : d.type.pis.1.length = root.params
+    · have htake : d.type.pis.1.take root.params = d.type.pis.1 := by
+        rw [← hl]; exact List.take_length
+      have hall : (d.type.pis.1.all fun (_, dom) => isNatType src dom) = false := by
+        cases hall : d.type.pis.1.all (fun (_, dom) => isNatType src dom) with
+        | false => rfl
+        | true =>
+          have := List.all_eq_true.1 hall (b, dom) hm
+          simp [isNatType_eq_natDomain, hn] at this
+      simp only [htake, hall, Bool.and_false]
+    · simp [hl]
+
 /-- Check that a root on the `.immortal` / `.zeroRc` path has all-`Nat` parameters
 and a scalar/enum readback type (`isImmortalViewType`), so that the value clause
 observes its result. For a root it accepts, the view rejects a source result

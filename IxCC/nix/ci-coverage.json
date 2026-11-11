@@ -1626,7 +1626,7 @@
  "3f5b1886f6127883f3a07b7f9027df2eee5383c4aa51741ac9c3ecac5abec1b2",
  "grounding_axiom_count": 26,
  "baseline":
- "GR: the grounding library (IxCCGrounding), its fence and the tests-grounding runtime suite",
+ "MQ: the walk's move accounting, tail calls past seven arguments as calls, the function-parameter refusal and their fences",
  "axiom_sha256":
- "1f7ac293520e0ced3fe2df2607a5dba5193effbf6c6d72b59013d74194f4d8fa",
- "axiom_count": 5921}
+ "e573f6569456818724bdf77b97316cf9037d8f8c49acb32b3804aa0ce5afa9f2",
+ "axiom_count": 5926}

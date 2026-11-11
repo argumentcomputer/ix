@@ -106,8 +106,11 @@
           "oracles": [
             "lean-run"
           ],
-          "decline": null,
-          "note": "an unknown function argument applied: compiled through the closures step, which finds no closure source, so the dispatcher it calls has no alternative and traps (tests-pipeline, its defun part, runs it); no case: the interpreter takes no function argument from the command line",
+          "decline": {
+            "stage": "rt",
+            "code": "rt.fnparam"
+          },
+          "note": "a parameter of function type: refused before an object is made (rt.fnparam), since a closure cannot cross a program boundary and so the root has no meaningful caller; tests-pipeline's defun part also compiles it through the closures step without that check (the dispatcher it calls has no alternative and traps) and asserts the refusal at every surface; no case: the interpreter takes no function argument from the command line",
           "cases": []
         }
       ]

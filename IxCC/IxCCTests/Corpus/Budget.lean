@@ -12,7 +12,10 @@ certificate step by step and records, over all of them, the largest
 * global and program, after P1 and after every step (`maxGlobalNodes`,
   `maxProgramNodes`);
 * nodes one walk copies, in an inline step and in a shrink round
-  (`Walk.maxCopy`), and rule firings in one walk (`Walk.maxFires`);
+  (`Walk.maxCopy`), and rule firings in one walk (`Walk.maxFires`); and it
+  checks the walk's step bound on every walk (`Fires.steps` at most the
+  walked global's nodes plus `Fires.copied`, the bound `Walk.maxCopy` turns
+  into a budget; see `Anf/Walk.lean`, "Budgets");
 * work and nodes a specialisation step charges (`Specialize.maxWork`,
   `Specialize.maxNodes`).
 
@@ -44,6 +47,10 @@ structure Stats where
   maxLamDepth : Nat := 0
   maxDepth : Nat := 0
   maxCopyDepth : Nat := 0
+  /-- Walks whose steps passed their global's nodes plus their copies (must be
+  none), and the walks checked. -/
+  stepsOver : Nat := 0
+  walks : Nat := 0
   maxBackWork : Nat := 0
   maxEditsAt : Nat := 0
   maxEditPermille : Nat := 0
@@ -65,7 +72,13 @@ def Stats.merge (s t : Stats) : Stats :=
     maxBackWork := max s.maxBackWork t.maxBackWork, maxEditsAt := max s.maxEditsAt t.maxEditsAt
     maxEditPermille := max s.maxEditPermille t.maxEditPermille
     maxFactPermille := max s.maxFactPermille t.maxFactPermille, maxSlotsOver := max s.maxSlotsOver t.maxSlotsOver
+    stepsOver := s.stepsOver + t.stepsOver, walks := s.walks + t.walks
     programs := s.programs + t.programs, declined := s.declined + t.declined }
+
+/-- Count one walk of a global of body `b` against the step bound. -/
+def Stats.walk (s : Stats) (b : Anf.Exp) (f : Anf.Walk.Fires) : Stats :=
+  { s with walks := s.walks + 1
+           stepsOver := s.stepsOver + (if f.steps ≤ b.nodes + f.copied then 0 else 1) }
 
 /-- The largest global's nodes and the program's. -/
 def sizes (P : Anf.Program) : Nat × Nat :=
@@ -144,6 +157,7 @@ def measure (lam : Lam.Program) (cert : Anf.Pipeline.Cert) : Except String Stats
         let mut cur := gd
         for _ in [0:c.getD g 0] do
           let (gd', f) ← Anf.Shrink.round P cert.shrink cur
+          s := s.walk cur.body f
           s := { s with maxCopyShrink := max s.maxCopyShrink f.copied, maxFires := max s.maxFires f.total }
           s := { s with maxWalkWork := max s.maxWalkWork f.work, maxCopyDepth := max s.maxCopyDepth f.depth }
           stepWork := stepWork + f.work
@@ -155,6 +169,7 @@ def measure (lam : Lam.Program) (cert : Anf.Pipeline.Cert) : Except String Stats
         match r.lookup g with
         | some cs@(_ :: _) =>
           let (_, f) ← (Anf.Walk.global { prog := P, inline := cs } gd).run {}
+          s := s.walk gd.body f
           s := { s with maxCopyInline := max s.maxCopyInline f.copied, maxFires := max s.maxFires f.total }
           s := { s with maxWalkWork := max s.maxWalkWork f.work, maxCopyDepth := max s.maxCopyDepth f.depth }
           stepWork := stepWork + f.work
@@ -274,6 +289,9 @@ def survey (a : Assert) : IO (Array String) := do
       Xv.Validate.factFactor * 1000),
     ("most frame slots beyond the register mentions", s.maxSlotsOver, Xv.Validate.slotSlack)]
   let mut out := #[s!"{s.programs} programs measured, {s.declined} declined before the middle end"]
+  expect a (s.stepsOver == 0 && s.walks > 0)
+    s!"{s.stepsOver} of {s.walks} walks took more steps than their global's nodes plus their copies"
+  out := out.push s!"walks within their step bound (steps at most the global's nodes plus the copies): {s.walks} of {s.walks}"
   for (label, got, budget) in rows do
     expect a (got < budget) s!"{label}: {got} reaches its budget {budget}"
     out := out.push s!"{label}: {got} (budget {budget}, {if got == 0 then "unused" else s!"{budget / got}×"})"

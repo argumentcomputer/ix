@@ -19,18 +19,26 @@ sidecar, the census, the cases and the interpreter's values.
 **A registered family** (`Corpus.families`): `corpus check` checks it and
 `tests-corpus` compiles every root with the production compiler, whose
 closures step (the roots' entries and P8) runs after the middle end, and runs
-every case at every level and natively. All roots compile and agree but
-`Closures.stateLoop`, which register allocation declines (`alloc:
-alloc.fallback`, the decline the manifest records): `StateT.bind` takes
-eight parameters (its four type and instance arguments, the action, the
-continuation and the state), the closures step's dispatcher calls it in tail
-position, and an internal tail call passes at most seven arguments (a
-non-tail call passes the rest on the stack); `Closures.stateLoopSE` is the
-loop within that limit. `tests-pipeline --only defun`
+every case at every level and natively. All roots compile and agree.
+`Closures.stateLoop` was declined by register allocation until 2026-11-11
+(`alloc: alloc.fallback`): `StateT.bind` takes eight parameters (its four type
+and instance arguments, the action, the continuation and the state), the
+closures step's dispatcher calls it in tail position, and an internal tail
+call passes at most seven arguments (a non-tail call passes the rest on the
+stack). `Fir.lower` now makes such a call a call and a return
+(`Fir.Lower.tailCall`), so the loop uses a frame per iteration (32 bytes on
+the immortal route, 96 under plain RC): its last two cases run in an 8 KiB
+stack (a 4 KiB budget for the machines; natively it holds 120 iterations),
+50 iterations within it and 150 ending with the stack-exhaustion status (marked `spurious`: the source loop
+is iterative). Only the
+manifest's record of the root changed (its decline, note and two cases, whose
+values Lean's interpreter gives: `corpus check --interpret`); the closure
+and the other roots are as frozen. `Closures.stateLoopSE` is the same
+loop within the limit, with proper tail calls. `tests-pipeline --only defun`
 also compiles every root under two middle-end schedules (the Phase 1
 schedule, and P1 and P2 alone, so that P8 meets every closure specialisation
 would otherwise remove), compares the native results with the interpreter's
-values, and certifies every root but `stateLoop` with and without
+values, and certifies every root with and without
 specialisation and inlining (`Recheck.compileInput`, and a compile claim that
 `verifyProgram` and `verifyBytes` accept), natively equal to the interpreter
 both ways.
