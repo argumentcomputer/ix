@@ -26,11 +26,25 @@ structural, the times printed are for reading.
   `Prop`'s or `Sort u`'s chain started from;
 * **the cached bit**: a `.sort` node over a level of depth 200 shared as a DAG
   (no parameter, so the walk could not stop early) is built and reads `false`;
+* **the equality**: two equal levels of depth 200, each shared as a DAG and
+  built apart (two chains at two parameters, `imax A_j B_j` and `imax B_j A_j`,
+  which no fold merges), compare equal through the executed `==`
+  (`Level.beqPtr`'s memoised descent, `Level.decMemo`), through `Expr.beq`'s
+  level leaf, and through `Level.mkIMax`'s own test (which returns its first
+  argument); without the memo each is `2^200` node visits;
+* **levels that do not fold, compared only with equal ones**: over those chains,
+  `def L.{u v} : A k → A k := fun x => x` (`mixedid`) and
+  `def L.{u v} : (A k → A' k) → (A k → A' k) := fun f => f` (`mixeddouble`, with
+  a second pair of chains whose levels equal the first's but are built apart)
+  are accepted at 200 through the certified entry: every comparison of their
+  levels is between equal levels, which `==` decides; without the memo each is
+  `2^200` node visits;
 * **what stays exposed**: two chains at two parameters whose levels `mk_max`
-  cannot fold (`A (j+1) = A j → B j`, `B (j+1) = B j → A j`, `mixeddag`): at
-  length 10 the constant is accepted, and its inferred level is still a DAG
-  whose tree has more than 1,000 nodes, so the comparison of the declared
-  sort with it doubles per step (as in Lean's own kernel). -/
+  cannot fold (`A (j+1) = A j → B j`, `B (j+1) = B j → A j`, `mixeddag`), with
+  the declared sort `Sort (max (u+1) (v+1))`, equal to the inferred one only
+  after normalisation: at length 10 the constant is accepted, and its inferred
+  level is still a DAG whose tree has more than 1,000 nodes, so the comparison
+  of the declared sort with it doubles per step (as in Lean's own kernel). -/
 
 namespace Tests.LevelSharing
 
@@ -98,6 +112,38 @@ def family (k : Nat) : List (String × _root_.Ixon.Constant) :=
 def mixeddag (k : Nat) : _root_.Ixon.Constant :=
   defn 2 (.sort 4) (.share (2 * (k - 1)).toUInt64) (mixedTable k) univsUV
 
+/-- `A`, `B` as in `mixedTable`, and a second pair `A' 1 = Sort u → (Sort v → Sort v)`,
+`B' 1 = (Sort v → Sort v) → Sort u` under the same recurrences, whose levels equal
+`A`'s and `B`'s but are built apart; entries `4j` to `4j+3`. -/
+def doubleTable (k : Nat) : Array IE := Id.run do
+  let mut t : Array IE := #[]
+  let vv : IE := _root_.Ixon.Expr.leanAll (.sort 1) (.sort 1)
+  for j in [0:k] do
+    if j == 0 then
+      t := t.push (_root_.Ixon.Expr.leanAll (.sort 0) (.sort 1))
+      t := t.push (_root_.Ixon.Expr.leanAll (.sort 1) (.sort 0))
+      t := t.push (_root_.Ixon.Expr.leanAll (.sort 0) vv)
+      t := t.push (_root_.Ixon.Expr.leanAll vv (.sort 0))
+    else
+      let b := 4 * (j - 1)
+      for (x, y) in [(0, 1), (1, 0), (2, 3), (3, 2)] do
+        t := t.push (_root_.Ixon.Expr.leanAll (.share (b + x).toUInt64) (.share (b + y).toUInt64))
+  return t
+
+/-- Two constants whose levels do not fold but whose comparisons are between
+equal levels: `def L.{u v} : A k → A k := fun x => x` (`mixedid`) and
+`def L.{u v} : (A k → A' k) → (A k → A' k) := fun f => f` (`mixeddouble`, where
+the ∀ rule's fold compares `A k`'s level with `A' k`'s, equal and built apart). -/
+def mixedEqual (k : Nat) : List (String × _root_.Ixon.Constant) :=
+  let a : IE := .share (2 * (k - 1)).toUInt64
+  let a4 : IE := .share (4 * (k - 1)).toUInt64
+  let a' : IE := .share (4 * (k - 1) + 2).toUInt64
+  let f := _root_.Ixon.Expr.leanAll a4 a'
+  [("mixedid", defn 2 (_root_.Ixon.Expr.leanAll a a) (_root_.Ixon.Expr.leanLam a (.var 0))
+      (mixedTable k) univsUV),
+   ("mixeddouble", defn 2 (_root_.Ixon.Expr.leanAll f f) (_root_.Ixon.Expr.leanLam f (.var 0))
+      (doubleTable k) univsUV)]
+
 /-- Check one constant with the certified entry over decoded records. -/
 def check (c : _root_.Ixon.Constant) : IO (Except String Nat × Nat) := do
   let table ← IO.ofExcept Ix.Kernel.Reader.defaultTable
@@ -152,6 +198,18 @@ def dagLevel : Nat → Level
   | 0 => .zero
   | n + 1 => let l := dagLevel n; .imax l l
 
+/-- `A 0 = u`, `B 0 = v`, `A (j+1) = imax A_j B_j`, `B (j+1) = imax B_j A_j`,
+each one object per depth: DAGs of linear size whose trees double per step. -/
+def mixedLevels : Nat → Level × Level
+  | 0 => (.param 0, .param 1)
+  | n + 1 => let (a, b) := mixedLevels n; (.imax a b, .imax b a)
+
+/-- The same levels built apart: a second function, so that the compiled
+test cannot share its result with `mixedLevels`'. -/
+def mixedLevelsApart : Nat → Level × Level
+  | 0 => (.param 0, .param 1)
+  | n + 1 => let (a, b) := mixedLevelsApart n; (.imax a b, .imax b a)
+
 def run : IO UInt32 := do
   IO.println "kernel-level-sharing: levels the ∀ rule shares"
   let mut failed := 0
@@ -182,6 +240,27 @@ def run : IO UInt32 := do
   let okBit := !s.hasLP
   IO.println s!"  a sort over a level of depth {k} shared as a DAG: has-parameter bit {s.hasLP}{if okBit then "" else "  FAILED"}"
   unless okBit do failed := failed + 1
+  -- the equality on two equal DAG levels built apart
+  let (a, b) := mixedLevels k
+  let (a', b') := mixedLevelsApart k
+  let eqCases : List (String × Bool × Bool) :=
+    [("A == A' (built apart)", a == a', true),
+     ("B == B' (built apart)", b == b', true),
+     ("A == B'", a == b', false),
+     ("Sort A == Sort A' (Expr.beq)", (Expr.sort a : Expr .anon) == Expr.sort a', true),
+     ("mkIMax A A' == A (the fold's test)", Level.mkIMax a a' == a, true)]
+  for (label, got, want) in eqCases do
+    IO.println s!"  depth {k}, {label}: {got}{if got == want then "" else "  FAILED"}"
+    unless got == want do failed := failed + 1
+  -- levels that do not fold, compared only with equal levels: through the entry
+  for (name, c) in mixedEqual k do
+    let (r, ms) ← check c
+    match r with
+    | .ok n =>
+      IO.println s!"  {name} k={k}: accepted ({n} constants), {(_root_.Ixon.serConstant c).size} bytes, {ms} ms"
+    | .error e =>
+      IO.println s!"  {name} k={k}: REFUSED: {e}"
+      failed := failed + 1
   -- what stays exposed: the levels of two interleaved chains do not fold
   let km := 10
   let (r, ms) ← check (mixeddag km)

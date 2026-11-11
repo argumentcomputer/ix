@@ -71,7 +71,11 @@ Modifications
     Model/{AxiomBits,Inductives/FixTeleBound,Inductives/StructBits}.lean
     follow. With the plain imax, a ∀ chain over one shared type built a
     level whose tree doubles per binder, and the level functions walk
-    levels as trees.
+    levels as trees. Expr.lean's Level.beqPtr (the executed Level.beq,
+    by a proved @[csimp]) decides its structural case by a descent
+    memoised on the pairs it proves equal (Level.decMemo, Expr.beqMemo's
+    arrangement), so that equal levels built apart as DAGs, which the
+    folds compare, are compared in time linear in their DAGs.
   * MainTheorem.lean keeps only model_exists; the corollary about NDJSON
     files and the imports it needs are dropped.
   * Verify/Cached/AgreeFloor.lean and Verify/Cached/PushChain.lean import

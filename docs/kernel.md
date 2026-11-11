@@ -442,10 +442,16 @@ check in milliseconds at a thousand steps (the `kernel-level-sharing` test
 checks six of them at 200). Still exposed: levels the folds cannot merge.
 Two chains at two parameters, each step mentioning the other's
 (`A (j+1) = A j → B j`, `B (j+1) = B j → A j`), keep a level whose tree
-doubles per step, and comparing it with a declared sort takes time and memory
-doubling per step, as in Lean's own kernel. Level equality is structural
-below a pointer and hash test, so the folds' own comparison of two such
-levels, equal but built apart, also walks them as trees. A host that checks third-party bytes needs its own time and memory
+doubles per step, and comparing it with a declared sort it equals only after
+normalisation takes time and memory doubling per step, as in Lean's own
+kernel: the normalisation and decision procedure (`Level.simplify`,
+`Level.leqCore`) walk trees. Level equality (`==`) is memoised below its
+pointer and hash tests on the pairs it proves equal (`Level.decMemo`), so a
+comparison of two such levels that are equal, built apart, is linear in their
+DAGs (the folds make one), and a constant over such chains whose levels are
+compared only with equal ones checks in milliseconds (the
+`kernel-level-sharing` test checks two at 200).
+A host that checks third-party bytes needs its own time and memory
 limit.
 
 ## The typing tier
@@ -1163,6 +1169,7 @@ files carry further changes:
 | `IxCK/Kernel/Level.lean`, `IxCK/Kernel/Verify/Level.lean` | the `(param, max)` case falls back on Géran's sublevels, with its soundness case | nanoda's comparison is incomplete there, and Ixon's canonical levels reach the gap (Mathlib's `RatFunc.liftOn_def`) |
 | `IxCK/Kernel/Expr.lean`, `IxCK/Kernel/Cached/ExprNodes.lean` | `Level` caches its has-parameter bit (`hasParamData`), and `levelHasParam` runs as it (`levelHasParam_eq_csimp`) | the walk visited a level shared as a DAG once per path, at every `.sort` node built |
 | `IxCK/Kernel/{Level,Core}.lean`, `IxCK/Kernel/Cached/CoreC.lean`, `IxCK/Kernel/Rules/Rel.lean`, `IxCK/Kernel/Model/Rules/InferSound.lean`, `IxCK/Kernel/Verify/{Level,PropWhen,BinderLoop,InferLemmas,InferIOLemmas}.lean`, `IxCK/Kernel/Verify/Cached/{BinderLoopC,DiscC4}.lean`, `IxCK/Kernel/Model/{AxiomBits,Inductives/FixTeleBound,Inductives/StructBits}.lean` | the ∀ rule's level is `Level.mkIMax u v` (`imax` with `mk_imax`'s and `mk_max`'s folds), in the specification, the executed core and `Infer.forallE`; it equals `imax u v` in every assignment (`eval_mkIMax`) with the same zero-ness datum (`zeronessOf_mkIMax`) | with `imax`, a ∀ chain over one shared type built a level whose tree doubles per binder ("Running time") |
+| `IxCK/Kernel/Expr.lean`, `IxCK/Kernel/Cached/ExprNodes.lean` | the executed level equality (`Level.beqPtr`, through `Level.beq_eq_beqPtr`) decides its structural case by a descent memoised on the pairs it proves equal (`Level.decMemo`, `Expr.beqMemo`'s arrangement); `Level.beqPtr_eq` is unchanged in statement | the folds compare two levels, and on equal levels built apart as DAGs the structural walk visited their trees ("Running time") |
 | `IxCK/Kernel/MainTheorem.lean` | only `model_exists` kept | the NDJSON corollary needs a frontend Ix does not use |
 
 Ix's own files under `IxCK/Kernel/` are `Admission.lean` and the `Admission`
