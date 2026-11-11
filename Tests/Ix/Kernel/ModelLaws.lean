@@ -56,4 +56,10 @@ theorem no_model_of_false_def {env : Env md} {P bad : Key md} {cvP cvB : Constan
     rw [hempty] at hmem'
     exact not_mem_empty _ hmem'
 
+/--
+info: 'Tests.Ix.Kernel.ModelLaws.no_model_of_false_def' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs in
+#print axioms no_model_of_false_def
+
 end Tests.Ix.Kernel.ModelLaws
