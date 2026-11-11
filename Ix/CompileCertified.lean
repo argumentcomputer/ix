@@ -5,6 +5,7 @@ public import Ix.Resource.Validate
 public import Ix.RoleBinding.Compile
 public import Ix.Cli.Common
 public import Ix.Compile.BinderData
+public import Ix.Compile.BinderAnnotate
 public section
 
 /-!
@@ -235,6 +236,20 @@ end Ix.RoleBinding.Compile
 
 namespace Ix.CompileM
 
+/-- How `ix compile` gives records their binder data: not at all (`off`), while
+building each record (`inline`, `Ix.CompileM.withBinderSection` with the
+installed annotator), or by IxC's pass over the finalized artifact, which is then
+re-addressed (`post`, `Ix.Compile.BinderData.apply`). -/
+inductive BinderDataMode where
+  | off | inline | post
+  deriving BEq, Repr, Inhabited
+
+def BinderDataMode.parse? : String → Option BinderDataMode
+  | "off" => some .off
+  | "inline" => some .inline
+  | "post" => some .post
+  | _ => none
+
 /-- What `compileAndFinalize` made of a certified compile. -/
 inductive Finalization where
   /-- Not finalized: a constant failed to compile, and a partial artifact was
@@ -273,9 +288,15 @@ def compileAndFinalize (source : Lean.Environment)
     (log : String → IO Unit := fun _ => pure ())
     (certSource : IO Lean.Environment := Ix.RoleBinding.Compile.nativeCertSource)
     (strip : Ixon.Env → Ixon.Env := id) (defaultRoles : Bool := true)
-    (prefetch : Bool := false) (strictBinderData : Bool := false)
+    (prefetch : Bool := false) (binderData : BinderDataMode := .off)
+    (strictBinderData : Bool := false)
     (onBinders : Ix.Compile.BinderData.Report → Ixon.Env → IO Unit := fun _ _ => pure ()) :
     IO (Except String (CertifiedOut × Finalization)) := do
+  -- Inline binder data: the annotator reads the sources of this compile and of the
+  -- certificate compile. The records' addresses are not the default role table's.
+  let defaultRoles := defaultRoles && binderData != .inline
+  if binderData == .inline then
+    BinderAnnotate.install #[source, ← certSource]
   let backend := Ix.RoleBinding.Compile.certifiedBackend workers defaultRoles
   let certificates? ← if prefetch then
       some <$> Ix.RoleBinding.Compile.prefetchCertificates backend certSource
@@ -293,13 +314,26 @@ def compileAndFinalize (source : Lean.Environment)
         (prefetched? := certificates?)
       let tb ← IO.monoMsNow
       log s!"finalize: {tb - t0}ms, rss {← Ix.Cli.residentSetSize}"
-      let (artifact, binders) ← IO.ofExcept (Ix.Compile.BinderData.apply artifact)
-      log s!"binder data: {(← IO.monoMsNow) - tb}ms, rss {← Ix.Cli.residentSetSize}; \
-        {binders.summary}"
-      onBinders binders artifact
-      if strictBinderData && !binders.undecided.isEmpty then
-        throw (IO.userError s!"binder data: {binders.undecided.size} undecided binder(s) \
-          (--strict-binder-data)")
+      let artifact ← match binderData with
+        | .post =>
+          let (artifact, binders) ← IO.ofExcept (Ix.Compile.BinderData.apply artifact)
+          log s!"binder data: {(← IO.monoMsNow) - tb}ms, rss {← Ix.Cli.residentSetSize}; \
+            {binders.summary}"
+          onBinders binders artifact
+          if strictBinderData && !binders.undecided.isEmpty then
+            throw (IO.userError s!"binder data: {binders.undecided.size} undecided binder(s) \
+              (--strict-binder-data)")
+          pure artifact
+        | .inline =>
+          let undecided ← BinderAnnotate.undecidedSafe.get
+          log s!"binder data: {undecided.size} safe record(s) with an undecided binder"
+          for names in undecided.extract 0 20 do
+            log s!"binder data: undecided binder in safe {names}"
+          if strictBinderData && !undecided.isEmpty then
+            throw (IO.userError s!"binder data: {undecided.size} safe record(s) with an undecided \
+              binder (--strict-binder-data)")
+          pure artifact
+        | .off => pure artifact
       IO.ofExcept (validateFinalized out.annotated artifact)
       let t1 ← IO.monoMsNow
       let artifact := strip artifact

@@ -208,11 +208,13 @@ theorem compileNames_stable (names : Array Ix.Name) : Stable (compileNames names
   exact Stable.applyState _ left right same block state
 
 theorem buildBlockConstant_stable (info : Ixon.ConstantInfo) (refs : Array Address)
-    (univs : Array Ixon.Univ) : Stable (buildBlockConstant info refs univs) := by
+    (univs : Array Ixon.Univ) (names : Array Ix.Name) :
+    Stable (buildBlockConstant info refs univs names) := by
   intro left right same block state
-  change run (liftSharing (buildConstantWithSharing left.sharingLimits info refs univs))
-    (left, block) state = run (liftSharing (buildConstantWithSharing right.sharingLimits info refs univs))
-      (right, block) state
+  change run (liftSharing (withBinderSection names <$>
+      buildConstantWithSharing left.sharingLimits info refs univs)) (left, block) state =
+    run (liftSharing (withBinderSection names <$>
+      buildConstantWithSharing right.sharingLimits info refs univs)) (right, block) state
   rw [same.sharing]
   exact Stable.liftSharing _ left right same block state
 
@@ -232,7 +234,7 @@ scoped macro "stable_step" : tactic => `(tactic|
     | exact storeBlob_stable _
     | exact compileName_stable _
     | exact compileNames_stable _
-    | exact buildBlockConstant_stable _ _ _
+    | exact buildBlockConstant_stable _ _ _ _
     | apply Stable.discard
     | refine Stable.bind ?_ (fun _ => ?_)
     | refine Stable.mapM_array _ _ (fun _ _ => ?_)

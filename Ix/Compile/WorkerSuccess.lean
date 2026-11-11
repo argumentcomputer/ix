@@ -474,17 +474,18 @@ theorem compileNames_success (names : Array Ix.Name) : Successful (compileNames 
     exact ⟨checked.1, fun right _ compatible => checked.2 right.blobs compatible⟩
 
 theorem buildBlockConstant_success (info : Ixon.ConstantInfo) (refs : Array Address)
-    (univs : Array Ixon.Univ) : Successful (buildBlockConstant info refs univs) := by
+    (univs : Array Ixon.Univ) (names : Array Ix.Name) :
+    Successful (buildBlockConstant info refs univs names) := by
   constructor
   · intro env block before value after success
-    change run (liftSharing (buildConstantWithSharing env.sharingLimits info refs univs))
-      (env, block) before = _ at success
+    change run (liftSharing (withBinderSection names <$>
+      buildConstantWithSharing env.sharingLimits info refs univs)) (env, block) before = _ at success
     exact (Successful.liftSharing _).grows env block before value after success
   · intro left right same block before value after success compatible
-    change run (liftSharing (buildConstantWithSharing left.sharingLimits info refs univs))
-      (left, block) before = _ at success
-    change run (liftSharing (buildConstantWithSharing right.sharingLimits info refs univs))
-      (right, block) before = _
+    change run (liftSharing (withBinderSection names <$>
+      buildConstantWithSharing left.sharingLimits info refs univs)) (left, block) before = _ at success
+    change run (liftSharing (withBinderSection names <$>
+      buildConstantWithSharing right.sharingLimits info refs univs)) (right, block) before = _
     rw [same.sharing] at success
     exact (Successful.liftSharing _).transfer left right same block before value after success compatible
 
@@ -518,7 +519,7 @@ scoped macro "successful_step" : tactic => `(tactic|
     | exact storeBlob_success _
     | exact compileName_success _
     | exact compileNames_success _
-    | exact buildBlockConstant_success _ _ _
+    | exact buildBlockConstant_success _ _ _ _
     | apply Successful.discard
     | refine Successful.bind ?_ (fun _ => ?_)
     | refine Successful.mapM_array _ _ (fun _ _ => ?_)
