@@ -17,17 +17,6 @@ open Ix.Kernel.SetTheory
 
 universe w
 
-/-- Binder data: never a proposition; a proposition exactly where the parameter `0` is zero. -/
-def bmN : BinderMeta := { pw := PropWhen.never }
-def bmZ : BinderMeta := { pw := PropWhen.ifAllZero [0] }
-
-def natK : KExpr := .const natName []
-def zeroK : KExpr := .const natZeroName []
-def succK : KExpr := .const natSuccName []
-
-/-- `Nat → Nat`, with its binder datum. -/
-def natFnType : KExpr := .forallE natK natK bmN
-
 variable {V : Type w} [Ix.Kernel.SetTheory V] {env : KEnv}
 
 /-- The facts about the basis the literal reading uses, at an assignment `φ`. -/

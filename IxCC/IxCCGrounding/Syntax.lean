@@ -64,6 +64,26 @@ def primApp (op : IxCC.Src.PrimOp) (a b : Nat) : Expr md :=
 
 end Prims
 
+/-- Binder data: never a proposition; a proposition exactly where the parameter `0` is zero. -/
+def bmN : BinderMeta := { pw := PropWhen.never }
+def bmZ : BinderMeta := { pw := PropWhen.ifAllZero [0] }
+
+def natK : KExpr := .const natName []
+def zeroK : KExpr := .const natZeroName []
+def succK : KExpr := .const natSuccName []
+
+/-- `Nat → Nat`, with its binder datum. -/
+def natFnType : KExpr := .forallE natK natK bmN
+
+/-- `Eq.{u} : ∀ {α : Sort u}, α → α → Prop`, as the kernel stores it. -/
+def eqType : KExpr :=
+  .forallE (.sort (.param 0)) (.forallE (.bvar 0) (.forallE (.bvar 1) (.sort .zero) bmN) bmN) bmN
+
+/-- The built-in `Eq` is stored with its type, which the `eqn` lemma reads. -/
+def EqBasis (env : KEnv) : Prop :=
+  ∃ ci : ConstantInfo .anon, env.find? eqName = some ci ∧ ci.toConstantVal.levelParams = [0] ∧
+    ci.toConstantVal.type = eqType
+
 /-! ## Correspondence -/
 
 /-- A Src universe and a kernel level correspond: Src's variable `i` is the parameter `lps[i]`. -/
@@ -225,7 +245,7 @@ def EqnData.body (d : EqnData) : KExpr :=
 `∀ Ds, @Eq.{u} T (f.{ps} #(n-1) … #0) rhs`, `ps` the function's level parameters, and the
 function `c` with type `∀ Ds, R` over the same domains with its own binder data. -/
 def EqnShape (env : KEnv) (κ : CId → KKey) (c thm : CId) (d : EqnData) : Prop :=
-  ∃ (ciF : ConstantInfo .anon) (cvT : ConstantVal .anon) (pf : KExpr),
+  EqBasis env ∧ ∃ (ciF : ConstantInfo .anon) (cvT : ConstantVal .anon) (pf : KExpr),
     env.find? (κ c) = some ciF ∧ env.find? (κ thm) = some (.thmInfo cvT pf) ∧
     d.Ds.length = d.ms.length ∧ cvT.levelParams = ciF.toConstantVal.levelParams ∧
     cvT.type = piTele d.Ds (Expr.mkAppN (.const eqName [d.u])
