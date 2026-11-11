@@ -746,6 +746,11 @@ theorem run_read_eq (compileEnv : Ix.CompileM.CompileEnv)
     Ix.CompileM.CompileM.run compileEnv blockEnv state read =
       .ok ((compileEnv, blockEnv), state) := rfl
 
+theorem run_getBlockEnv_eq (compileEnv : Ix.CompileM.CompileEnv)
+    (blockEnv : Ix.CompileM.BlockEnv) (state : Ix.CompileM.BlockState) :
+    Ix.CompileM.CompileM.run compileEnv blockEnv state Ix.CompileM.getBlockEnv =
+      .ok (blockEnv, state) := rfl
+
 theorem run_liftSharing_eq (compileEnv : Ix.CompileM.CompileEnv)
     (blockEnv : Ix.CompileM.BlockEnv) (state : Ix.CompileM.BlockState)
     (x : Except Ix.CompileM.CompileError Ixon.Constant) :
@@ -789,7 +794,7 @@ theorem finishConstantWithSharing_run
       | .ok block => .ok (Ix.CompileM.BlockResult.mk' block blockMeta, state)
       | .error e => .error e := by
   simp only [Ix.CompileM.finishConstantWithSharing, Ix.CompileM.buildBlockConstant,
-    Ix.CompileM.getBlockEnv, run_bind, run_getBlockState_eq, run_read_eq, run_liftSharing_eq]
+    run_bind, run_getBlockState_eq, run_getBlockEnv_eq, run_read_eq, run_liftSharing_eq]
   cases Ix.CompileM.buildConstantWithSharing compileEnv.sharingLimits info
     state.refs state.univs >>=
     Ix.CompileM.withBinderSection compileEnv.env.binderAnnotator? #[blockEnv.current] <;> rfl
