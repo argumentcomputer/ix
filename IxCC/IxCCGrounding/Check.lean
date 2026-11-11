@@ -129,7 +129,7 @@ theorem termCorr_of_check {κ : CId → KKey} {lps : List Nat} :
   | const c us =>
     intro e h
     cases e <;> simp only [termCorrB, Bool.and_eq_true, decide_eq_true_eq, beq_iff_eq,
-      List.all_eq_true, Bool.false_eq_true, reduceCtorEq] at h
+      List.all_eq_true, Bool.false_eq_true] at h
     obtain ⟨⟨rfl, hlen⟩, hall⟩ := h
     refine .const hlen fun i u l hu hl => univCorr_of_check _ _ ?_
     exact hall (u, l) (List.mem_of_getElem? (List.getElem?_zip_eq_some.mpr ⟨hu, hl⟩))
@@ -148,11 +148,9 @@ theorem termCorr_of_check {κ : CId → KKey} {lps : List Nat} :
     exact .proj (ih _ h)
   | natLit n =>
     intro e h
-    cases e <;> simp [termCorrB] at h
-    rename_i l
-    cases l <;> simp [termCorrB] at h
-    subst h
-    exact .natLit
+    cases e with
+    | lit l => cases l <;> simp [termCorrB] at h; subst h; exact .natLit
+    | _ => simp [termCorrB] at h
   | strLit => intro e h; cases e <;> simp [termCorrB] at h
 
 /-! ## The shape of an `eqn` entry -/
@@ -247,7 +245,7 @@ theorem eqnShape_body {env : KEnv} {κ : CId → KKey} {c thm : CId} {d d' : Eqn
   obtain ⟨hD, hf1, hrhs⟩ := piTele_inj_app _ _ _ _ _ _ (htT.symm.trans htT')
   have hzl : (d.Ds.zipWith (fun b m => (b.1, m)) d.ms).length =
       (d'.Ds.zipWith (fun b m => (b.1, m)) d'.ms).length := by
-    simp [List.length_zipWith, hl, hl', hD]
+    simp only [List.length_zipWith]; rw [hD] at hl; omega
   obtain ⟨hz, _⟩ := piTele_inj _ _ _ _ hzl (htF.symm.trans htF')
   simp only [EqnData.body, hz, hrhs]
 
@@ -577,8 +575,8 @@ theorem groundFacts_of_check {ann : IxCC.Src.Relevance.Ann}
   have all : ∀ {f : CId → Bool} (name : String), (name, Sl.all f) ∈ checkParts p env κ lpsOf ann Sl →
       ∀ c, c ∈ Sl → f c = true :=
     fun name hm c hc => List.all_eq_true.mp (P name _ hm) c hc
-  have hE : EqBasis env := eqBasis_of_check (P "eqBasis" _ (by simp [checkParts]))
-  have hpins := P "pins" _ (by simp [checkParts])
+  have hE : EqBasis env := eqBasis_of_check (P "eqBasis" (eqBasisB env) (by simp [checkParts]))
+  have hpins := P "pins" (pinsB p env κ Sl) (by simp [checkParts])
   simp only [pinsB, Bool.and_eq_true] at hpins
   obtain ⟨⟨⟨hz, hs⟩, hbt⟩, hbf⟩ := hpins
   have hfaith : Faith p env κ lpsOf (· ∈ Sl) := by
@@ -618,8 +616,8 @@ theorem groundFacts_of_check {ann : IxCC.Src.Relevance.Ann}
       rw [hd] at h2 h3
       exact ⟨d, hd, eqnShape_of_check hE h1, termCorr_of_check _ _ h2, h3⟩
     · exact absurd h1 (by simp)
-  refine ⟨hfaith, natBasis_of (P "natBasis" _ (by simp [checkParts])), ?_, ?_, ?_,
-    okClosed_of_check (P "okClosed" _ (by simp [checkParts]))⟩
+  refine ⟨hfaith, natBasis_of (P "natBasis" (natBasisB env) (by simp [checkParts])), ?_, ?_, ?_,
+    okClosed_of_check (P "okClosed" (okClosedB p ann Sl) (by simp [checkParts]))⟩
   · intro c thm body hc hr
     obtain ⟨d, _, hsh, hcorr, _⟩ := heqn c thm body hc hr
     exact ⟨⟨d, hsh⟩, fun d' hsh' => eqnShape_body hsh hsh' ▸ hcorr⟩
