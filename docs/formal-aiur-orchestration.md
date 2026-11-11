@@ -59,8 +59,8 @@ shard of a `--ixes` run included. The artifact cache (`.lake/aiur`) is resolved 
 `ix` was built in (or `IX_ROOT`), so `ix` runs from any directory; outside a
 checkout it fails unless the artifacts are supplied (see
 [Formal Aiur in Ix](formal-aiur-migration.md#current-port-and-cli-integration)).
-`ix prepare` compiles the IxVM, recursive verifier and aggregation programs
-ahead of time; otherwise the first command that needs a program compiles it
+`lake build ix` compiles the IxVM, recursive verifier and aggregation
+programs ahead of time; otherwise the first command that needs a program compiles it
 in process (several minutes, once per compiler and program revision). A
 command loads each package once into its registry and shares its system
 (verifying backend and key) across every check, key query, proof and
@@ -191,8 +191,9 @@ Executors are only an optimization: an executor runs a job only for a
 program with exactly its fingerprint and no depth circuits, and the
 interpreter produces identical records and proofs. A selected program that
 differs from the one its executor was generated from is reported, or
-rejected under `IX_FORMAL_NATIVE=1`. `ix prepare` prints which executors
-are linked, and check and prove reports name the `executor`. See
+rejected under `IX_FORMAL_NATIVE=1`. Every formal command reports the
+executor each selected program runs on, and check and prove reports name the
+`executor`. See
 [native execution](formal-aiur-native-execution.md).
 
 `ixvm-proof` and `stark-verifier` remain as reference drivers for the check

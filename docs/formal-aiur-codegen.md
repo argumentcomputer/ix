@@ -98,7 +98,7 @@ change, pays the certified compile (several minutes, the three programs
 compiled concurrently). Later builds load the packages from the cache.
 
 `ix codegen --out DIR [--cuda]` writes the same sources to a chosen
-directory for inspection, and `ix prepare` fills the cache ahead of time.
+directory for inspection.
 
 ### Fingerprints
 

@@ -189,16 +189,19 @@ def generatedName : FormalProver.Target → String
   | .verifier => "verifier"
   | .aggregation => "aggregation"
 
-/-- When this build links native executors, check that the one for `target`
-was generated from exactly the selected program: under `IX_FORMAL_NATIVE=1`
-a stale executor is an error, otherwise it is reported. A stale executor is
-never used: the program runs on the interpreter, which produces identical
-records and proofs. -/
+/-- Report the executor `target`'s program runs on, and when this build links
+a native executor for it, check that it was generated from exactly the
+selected program: under `IX_FORMAL_NATIVE=1` a stale executor is an error,
+otherwise it is reported. A stale executor is never used: the program runs on
+the interpreter, which produces identical records and proofs. -/
 def checkExecutor (target : FormalProver.Target) (s : Selected) : IO Unit := do
-  if (← IO.getEnv "IX_PROVER_EXECUTOR") == some "interpreter" then return
   let name := generatedName target
-  unless (← FormalProver.executors).contains s!"native-{name}" do return
+  if (← IO.getEnv "IX_PROVER_EXECUTOR") == some "interpreter" then
+    IO.eprintln s!"[aiur] {name} executor interpreter (IX_PROVER_EXECUTOR)"
+    return
   let (executor, fingerprint, _) ← s.program.executor
+  IO.eprintln s!"[aiur] {name} executor {executor}"
+  unless (← FormalProver.executors).contains s!"native-{name}" do return
   if executor == s!"native-{name}" then return
   let message := s!"the linked native {name} executor was generated from a different \
     program than {s.path} (native fingerprint {fingerprint}), so it runs on the interpreter. \

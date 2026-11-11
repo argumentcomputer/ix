@@ -32,10 +32,11 @@ cargo build --release --locked -p ixvm -p stark-verifier -p ix-prover --features
   --bin ixvm-proof --bin stark-verifier --bin ix-prover --example claim_fixture
 cargo build --release --locked -p aggregate-controller --example streams_parity
 
-# Packages compiled in process by `ix prepare`, unless supplied.
+# The packages `lake build ix` compiled into the checkout's cache, unless
+# supplied: `formal-codegen` reports each one's path as it generates.
 if [[ -z ${IX_AIUR_ARTIFACT:-} || -z ${IX_RECURSION_ARTIFACT:-} || -z ${IX_AGGR_ARTIFACT:-} ]]; then
-  .lake/build/bin/ix prepare > "$formal_tmp/prepare.log"
-  prepared() { awk -v kind="$1" '$1 == kind && $2 == "artifact" { print $3 }' "$formal_tmp/prepare.log"; }
+  IX_ROOT=$PWD .lake/build/bin/formal-codegen "$formal_tmp/generated" > "$formal_tmp/programs.log"
+  prepared() { awk -v kind="$1" '$1 == kind && $2 == "artifact" { print $3 }' "$formal_tmp/programs.log"; }
   IX_AIUR_ARTIFACT=${IX_AIUR_ARTIFACT:-$(prepared ixvm)}
   IX_RECURSION_ARTIFACT=${IX_RECURSION_ARTIFACT:-$(prepared verifier)}
   IX_AGGR_ARTIFACT=${IX_AGGR_ARTIFACT:-$(prepared aggregation)}

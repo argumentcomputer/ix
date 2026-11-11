@@ -167,7 +167,6 @@ selects for `ix` after generating the executors.
 `lakefile.lean`) from the certified IxVM, recursive verifier and aggregation
 packages in the checkout's artifact cache, compiling missing ones in process
 first; the `IX_*_ARTIFACT` variables supply trusted packages instead.
-`ix prepare` (`Ix/Cli/PrepareCmd.lean`) fills the cache ahead of time.
 When a selected program differs from the one its linked executor was
 generated from, `ix` reports it and runs the interpreter, or fails under
 `IX_FORMAL_NATIVE=1`.
@@ -185,7 +184,8 @@ without depth circuits.
 overrides disagree with their tables fails to bind its kernel and runs on
 the interpreter. Single-claim reports (`crates/ix-prover/src/tools.rs`) name
 the executor that ran (`executor`), and `Ix.FormalProver.executors` lists the
-executors linked into the build; `ix prepare` prints them.
+executors linked into the build. Every formal command reports the executor
+each selected program runs on (`[aiur] ixvm executor native-ixvm`).
 
 Generated code keeps the interpreter's register numbering in a local array
 and emits each function as a dispatch loop over basic blocks. Runtime

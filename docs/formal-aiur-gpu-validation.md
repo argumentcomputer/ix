@@ -215,8 +215,8 @@ root as one lane in 3:20 (69 GB peak RSS).
 **Run from anywhere, prepare ahead.** Formal `ix` resolves its exporters,
 sources and artifact cache against the checkout it was built in (or
 `IX_ROOT`) instead of the working directory, and announces a first-use
-export. `ix prepare` exports the IxVM and aggregation artifacts ahead of
-time. At `129c8056` the IxVM export took 9.5
+export. `lake build ix` exports the IxVM and aggregation artifacts ahead
+of time. At `129c8056` the IxVM export took 9.5
 minutes: 41 s parsing and checking, 10 s table checks, 35 s bytecode and 480 s
 compiling the circuits with the verified compiler, grouping and population
 plans.

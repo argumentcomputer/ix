@@ -20,7 +20,7 @@ program is produced (elaborated from Lean, serialized as Ixon) changes them
 only:
 
 - `programArtifact` is the IxVM claim artifact: `$IX_AIUR_ARTIFACT`, or the
-  checkout's cached export (`ix prepare`), exported on first use;
+  checkout's cached export (`lake build ix`), exported on first use;
 - `programHost` is the Rust host: `$IX_AIUR_HOST`, or the checkout's
   `ixvm-proof`, built on first use;
 - `programSources` is the program's source text, which the guards over its
