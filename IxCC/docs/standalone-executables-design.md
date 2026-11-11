@@ -6,7 +6,7 @@ their objects as test executables IxCC writes, with no C, see [X1 as
 implemented](#x1-as-implemented)); X2 implemented (`ixcc compile
 --exe --machine` writes numeric state machines whose parsing and rendering are
 Lean, and the session theorem is proved over the linked-object model, see [X2 as
-implemented](#x2-as-implemented)); X0-P in progress (its first part implemented: a call site per call in the driver model, the object and session theorems from two sites, and the byte machine on the process's memory, see [X0-P so far](#x0-p-so-far)); X3 to X6 planned. Milestones X0 to
+implemented](#x2-as-implemented)); X0-P in progress (its first part implemented: a call site per call in the driver model, the object and session theorems from two sites, and the byte machine on the process's memory; its second part implemented: the process's specification, the shell's text checked when written, and the call lemma; see [X0-P so far](#x0-p-so-far)); X3 to X6 planned. Milestones X0 to
 X6 are in the [roadmap](roadmap.md#standalone-executables). Only the lines that
 say *implemented* or *measured* describe code or runs that exist.
 
@@ -373,7 +373,7 @@ Sizes are estimates, with their basis.
 | Id | Content | Depends on | Exit test | Size [estimate] |
 | --- | --- | --- | --- | --- |
 | X0 | `ixcc compile --exe` for roots of `Nat` parameters and a `Nat` result: the executable writer and its independent checker; the shell as typed x86 with the system call outside the program table; static layout with `CanonicalOk` proved; a ledger entry for the loader's post-state, the system calls and the shell. **Implemented** ([below](#x0-as-implemented)), also for `Bool` and other results without fields, rendered `#k`; the per-call return address and registers in `X86.Driver` moved to X0-P | — | every corpus root of the fragment (K1's and the `phase1-*` families') on every case agrees with the manifest, SrcEval, ByteEval and the C driver; a seccomp filter on; only `prctl`, `seccomp`, `write` and `exit`; the checker rejects mutated headers and truncations | 2–3.5k lines, 3–6 weeks (today's object path is about 2.2k lines across `ELF*.lean`; the shell is about 150 instructions of Lean data). Measured: 1.1k lines of production code and 0.4k of tests |
-| X0-P | The shell proved: the shell lemma, parsing and rendering, the system call's model, permission monotonicity, a return address and register file per call in `X86.Driver`; the `Nat` executable theorem fenced. **Decided:** it takes X2's generic machine shell first (`x86-linux-machine-shell`: no parsing or rendering to prove, and the session theorem already proved over the linked model); `--exe`'s parsing shell (`x86-linux-exe-shell`) stays ledgered until byte executables (X3) can replace it. **In progress**: the first of three parts implemented (a call site per call, `X86.LinkedAt`; the object and session theorems from two sites; agreement or fault and the frame for the byte machine; [X0-P so far](#x0-p-so-far)) | X0 | the theorem fenced on the standard axioms; the driver-model assumption retired for executables | 3–6k lines, 2–4 months (the `cx_init` proof is 0.5k lines and the stream-trace infrastructure exists); planned 3.2–4.8k for the machine shell |
+| X0-P | The shell proved: the shell lemma, parsing and rendering, the system call's model, permission monotonicity, a return address and register file per call in `X86.Driver`; the `Nat` executable theorem fenced. **Decided:** it takes X2's generic machine shell first (`x86-linux-machine-shell`: no parsing or rendering to prove, and the session theorem already proved over the linked model); `--exe`'s parsing shell (`x86-linux-exe-shell`) stays ledgered until byte executables (X3) can replace it. **In progress**: the first of three parts implemented (a call site per call, `X86.LinkedAt`; the object and session theorems from two sites; agreement or fault and the frame for the byte machine), the second implemented (the process's specification modules; the shell's text checked when written; the call lemma and the two calls of an iteration; [X0-P so far](#x0-p-so-far)) | X0 | the theorem fenced on the standard axioms; the driver-model assumption retired for executables | 3–6k lines, 2–4 months (the `cx_init` proof is 0.5k lines and the stream-trace infrastructure exists); planned 3.2–4.8k for the machine shell |
 | X1 | XB-1 and IxOS-0, redefined: IxCC-written test executables speak today's line protocol (and the session protocol with `cx_drop` for the RC gates); readback on the host side in Lean. **Implemented** ([below](#x1-as-implemented)): the test shell serves binary requests, and the host in Lean speaks the line and session protocols over them; the C drivers are deleted | X0 | the native suites (`tests-rt`, `tests-pipeline`, `tests-corpus`, `tests-own`, the back end's runtime cases, the RC native modes) pass with the C runtime driver off the execution path and no C compiler in their inputs | 1–2k lines, 2–4 weeks after X0 |
 | X2 | Numeric state machines: the generic request shell, parsing and rendering in a small Lean library compiled with the program, the session theorem on `Nat` states. **Implemented** ([below](#x2-as-implemented)): the generic shell and `ixcc compile --exe --machine`, the library, `fib` end to end, the session theorem fenced over the linked-object model, sessions of more than 1,400 calls agreeing with Lean's interpreter and with the model on the byte evaluator | X0 (X0-P for the proof) | `fib` as an executable whose parsing and rendering are Lean; a 1,000-call session against Lean's interpreter; the session theorem fenced | 2–4k lines (DR9 (a) is 3–6k with heap states) |
 | X3 | Batch byte executables: arguments and input bytes in, output bytes and an exit code out; an exported byte-array allocation entry; the model of `read` | Phase 3 (DR2, DR3, DR6) | programs in the manner of `wc` and `sha256sum` byte-identical to Lean-compiled executables over a corpus of inputs | 2–4k lines beyond the DR items |
@@ -658,7 +658,8 @@ segment at `0x10000000`; the region in a zero-filled segment of its own, one
 unmapped page above, with nothing mapped right below it or past its last page
 (the native suites' test executables have the same shape). `--exe`'s layout is
 unchanged. The file has five program headers; the writer and its check are
-X1's, for this frame.
+X1's, for this frame, and `writeChecked` also checks the shell's text in the
+written file (`Shell.check`, [X0-P so far](#x0-p-so-far)).
 
 **Measured**: the shell is 38 code blocks and 8 message blocks, 1,059 bytes
 encoded (`--exe`'s: 956 to 977 bytes). Executables of the
@@ -682,10 +683,16 @@ encoded (`--exe`'s: 956 to 977 bytes). Executables of the
 - `tests-corpus`: the `phase1-machines` family, 75 states and events chosen to
   cover every phase and transition of its five roots, at every level, natively
   and as `--exe` executables of the step roots (4,098 assertions).
-- `tests-exe`, its numeric state machines' part (4,504 assertions): the
+- `tests-exe`, its numeric state machines' part (5,076 assertions): the
   library equal to the head of the family's source; the interface; the
   layout's table; the shell's encoding; three machines' files under the check
-  with 4,402 mutations refused; the refusals; and natively: `fib` against
+  with 4,402 mutations refused; the shell check (`Shell.check`, which
+  `writeChecked` runs) passing the same files and refusing an opcode, a block
+  displacement, the step call's target and the system-call bytes, each
+  changed, and the first byte of each of the shell's 181 instructions and
+  terminators, changed; `fib`'s executable at the smallest and a large layout;
+  the writer refusing a shell with an unwind or a branch falling through; the
+  refusals; and natively: `fib` against
   `--exe`'s `fib` on twenty argument lists (the counts, ten non-numerals,
   leading zeros, a numeral past `2^64` followed by `x`: equal standard output,
   standard error and status) and on four numerals of `2^63` and more (both 67;
@@ -696,7 +703,7 @@ encoded (`--exe`'s: 956 to 977 bytes). Executables of the
   prints; the confinement read from `/proc`; the system calls under `strace`;
   and `ixcc compile --exe --machine` in-process.
 - **Sessions of more than 1,000 calls** (`tests-exe`; the part's assertions
-  are 4,511 with them): two `echo` sessions, over argument blocks of at least
+  are 5,083 with them): two `echo` sessions, over argument blocks of at least
   600 bytes drawn by a fixed generator from printable ASCII and multibyte
   UTF-8, of 1,535 and 1,432 calls. Each agrees three ways: the transcript
   Lean's interpreter prints (standard output, standard error, status and
@@ -871,11 +878,80 @@ lemmas the shell proof stands on, each true on its own.
   decodes at `j`, a file that holds the text at `off` decodes the same at
   `off + j`.
 
-*Planned*:
-- the second part: the process (the loader's post-state, the system calls and
-  the processor, stated as Lean definitions), the shell's text checked when
-  the executable is written, and the call lemma;
-- the third part: the shell's loop and the executable theorem.
+**The second part is implemented:**
+
+- **The process** ([`X86/Exe/Process.lean`](../IxCC/X86/Exe/Process.lean)),
+  over three specification modules, one hypothesis each, every definition
+  citing the document it transcribes:
+  - `Process.Loaded` (`Process/Loaded.lean`): the loader's post-state, from
+    the System V gABI ("Program Loading") and the x86-64 psABI's initial
+    stack: `rip` the entry, the file's bytes at `fileBase`, the argument
+    block at `rsp` outside the frame's zero-filled segments; no permission,
+    zero fill, other register or flag is assumed;
+  - `Process.Syscall` (`Process/Syscall.lean`): the system calls, from
+    `syscall(2)` and the manual pages of `prctl`, `seccomp`, `write` and
+    `exit`, each for the arguments the shell passes; only `write`'s result is
+    constrained (a byte count at most its count, or `-errno`); any other call
+    may do anything;
+  - `Process.Step` (`Process/Step.lean`): the processor, the byte machine
+    fetching from the file, with `syscall` where the byte decoder decodes
+    nothing and the bytes are `0F 05`; a fault ends the process.
+
+  `Run` and `Trace` are the process's finite runs and traces; `Denotes`
+  says what a session event is in system calls, `Shows` and `Outcome` what
+  the shell theorem and the executable theorem will say of a trace, and
+  `Shows.refines` turns the first into the second from a per-call
+  refinement.
+- **The shell's text checked when the executable is written**
+  ([`X86/Exe/ShellCheck.lean`](../IxCC/X86/Exe/ShellCheck.lean)):
+  `Machine.writeChecked` refuses a file whose shell bytes the independent
+  decoder does not read back as the shell program (every instruction a
+  linear row at its offset, every block and export target reached, each
+  `syscall` as `0F 05` where nothing decodes), and carries what the check
+  establishes (`CertifiedFor.shell`, from `Shell.check_sound`). It adds a
+  refusal but no byte: every executable it accepts is the one written before.
+
+- **The call lemma**
+  ([`X86/Exe/Machine/Proof/Call.lean`](../IxCC/X86/Exe/Machine/Proof/Call.lean)).
+  `call_lifts`: the process at a call into the object, in the state a driver
+  gives the call, does what the per-call model's outcome at clock `k` says
+  (`Lifts`): for a timeout it runs `k + 1` instructions (so makes no system
+  call); for a value, a resource failure or a trap it returns within `k + 1`
+  instructions with the status in `rax` (and the value in `rdx` and the
+  model's bytes), `rsp` back, the callee-saved registers restored and no byte
+  outside the call's mapping changed; or it faults on a memory access first.
+  Its two hypotheses beyond the call's state are facts of the written file:
+  - `CallsTo`, the `call` lands on the export: without it a displacement that
+    does not fit in 32 signed bits would send the call elsewhere (the shell
+    check's `fitsSigned32` gives it);
+  - `hfit`, the text lies inside the 64-bit address space from the file's
+    start: without it the process's fetch offset `rip − fileBase` would wrap
+    around and need not be the text's (the placement, below the zero-filled
+    segments, gives it).
+
+  `two_calls` composes `cx_init`'s call and the root's from its own site, as
+  `X86.LinkedAt.call` does, given the instructions between them (which the
+  third part's block lemmas give); a value's readback is the session model's
+  observation (`Linked.observe`), so it composes with `session_sound_at`
+  directly.
+- **A fault ends the trace** (`Trace.nil_of_faults`, `Trace.through`): the
+  process has no step at a fault, so a trace that reaches one makes no further
+  system call, and the trace up to it is a prefix of one the session model
+  allows. That a fault ends the process silently is a platform fact recorded
+  with `Process.Step`: the default action of the signal, no handler being
+  installed (the third part shows the shell installs none, since its only
+  system calls are the four listed).
+
+**Faults are allowed, and the theorems are safety only.** Nothing is assumed
+of the process's permissions, so the theorems allow a fault at any memory
+access of the shell or the object: a run can stop early, silently, and every
+statement is about the trace up to there. A loader hypothesis that the
+segments are mapped with the permissions and zero fill the program headers
+ask for would rule such faults out; it is a possible later strengthening,
+together with the progress direction (that a trace goes on while the source
+does), and neither is assumed now.
+
+*Planned*: the third part, the shell's loop and the executable theorem.
 
 Until the third part, the shell itself is still the ledgered
 `x86-linux-machine-shell`.

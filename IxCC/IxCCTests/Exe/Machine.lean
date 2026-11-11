@@ -18,6 +18,14 @@ FILE --machine` writes (`IxCC/X86/Exe/Machine.lean`), for the roots of the
   `checkFrame` with five program headers, and every header byte, a sample of
   every part, every 64th truncation and an appended byte are refused; the
   writer refuses a missing export and layouts outside the contract;
+* **The shell check** (`Shell.check`, run by `Machine.writeChecked`): the
+  family's executables pass it, and it refuses an opcode, a block
+  displacement, the step call's target and the system-call bytes, each
+  changed, and the first byte of every instruction and terminator, changed;
+  the file decides the call lemma's call-site facts (`AtCall`) at the real
+  `cx_init` and step calls; fib's executable is written at the smallest and a
+  large layout; the writer refuses a shell with an unwind or a branch falling
+  through;
   `Exe.machine` refuses first roots of another shape (`exe.machine`);
   `ixcc compile --machine` without `--exe` is a usage error.
 * **Natively** (`--run`, x86-64 Linux): `fib` with Lean parsing and rendering
@@ -128,6 +136,59 @@ def part (a : Assert) (o : IxCCTests.Exe.Suite.Options) (work : FilePath) : IO (
       expect a (!X86.Exe.checkFrame f art.object (bytes.push 0)) s!"{root}: a byte appended, accepted"
       out := out.push s!"{root}: {bytes.size} bytes (text {p.textSize}, data {p.dataSize}, shell {p.shellSize}), \
         {f.segments.length + 3} program headers; {refused + 1} mutations refused"
+      -- the shell check (`Shell.check`, which `writeChecked` runs): the written file passes; an opcode, a
+      -- block's displacement, the step call's target and the system-call bytes, each changed, are refused,
+      -- and so is the first byte of every instruction and terminator, changed
+      let pl := c.checked.plan
+      let shellOk (b : ByteArray) : Bool := X86.Exe.Machine.shellOk f art.object pl b
+      expect a (shellOk bytes) s!"{root}: the shell check refuses the written file"
+      let prog := f.code (X86.Exe.fileBase + p.dataOffset)
+      let blockAt (b : Nat) : Nat := p.shellOffset + X86.Exe.Shell.blockOffset prog b
+      let flip (off : Nat) (mask : UInt8) : ByteArray :=
+        match bytes[off]? with
+        | some byte => bytes.set! off (byte ^^^ mask)
+        | none => bytes
+      let setup := prog.blocks[X86.Exe.Machine.B.setup]!
+      let named : List (String × Nat × UInt8) :=
+        [("an opcode (loop's first instruction)", blockAt X86.Exe.Machine.B.loop, 0x10),
+         ("a block displacement (setup's jump to loop)",
+           blockAt X86.Exe.Machine.B.setup + X86.Exe.Shell.instrOffset setup setup.instructions.size + 1, 0x01),
+         ("the step call's target", (pl.calls[1]?.map (·.field)).getD 0, 0x01),
+         ("the system-call bytes (0F 05 to 0F 04 at the first site)", (pl.syscalls.head?.getD 0) + 1, 0x01)]
+      for (what, off, mask) in named do
+        expect a (p.shellOffset ≤ off && off < p.shellOffset + p.shellSize) s!"{root}: {what}: byte {off} outside the shell"
+        expect a (!shellOk (flip off mask)) s!"{root}: {what} changed (byte {off}), the shell check accepts"
+      let mut swept := 0
+      for b in List.range prog.blocks.size do
+        let blk := prog.blocks[b]!
+        for j in List.range (blk.instructions.size + 1) do
+          let off := blockAt b + X86.Exe.Shell.instrOffset blk j
+          expect a (!shellOk (flip off 0x10)) s!"{root}: block {b}, item {j}: its first byte changed, accepted"
+          swept := swept + 1
+      out := out.push s!"{root}: the shell check passes the file and refuses {named.length} named mutations and \
+        the first byte of each of its {swept} instructions and terminators, changed"
+      -- the parts of the call lemma's call site (`AtCall`, `IxCC/X86/Exe/Machine/Proof/Call.lean`) that the
+      -- file decides, at the real `cx_init` and step call sites: the call decodes and lands on its export,
+      -- its return address and the stack pointer it leaves are the driver's, the driver keeps the
+      -- contract, and the file holds the object's text inside the address space
+      let text := (X86.ELFRead.text? art.object).getD ByteArray.empty
+      expect a ((X86.ELFRead.text? art.object).isSome && decide (p.textOffset + text.size ≤ 2 ^ 64) &&
+          (List.range text.size).all fun i => bytes[p.textOffset + i]? == text[i]?)
+        s!"{root}: the file does not hold the object's text at {p.textOffset}"
+      for c in pl.calls do
+        let D := ({} : Layout).driverWith p.textOffset c.ret fun _ => 0
+        let pos := c.field - 1
+        let rip : X86.Word := UInt64.ofNat (X86.Exe.fileBase + pos)
+        let lands := match X86.ELF.symbol? art.object c.symbol, X86.Decode.decodeAt bytes pos with
+          | some offset, some ⟨.op _ [.imm v], 5⟩ =>
+            X86.Decode.decodeAt bytes (rip - UInt64.ofNat X86.Exe.fileBase).toNat ==
+                some ⟨X86.Decode.Operation.call v.toUInt32, 5⟩ &&
+              X86.ByteEval.relative (rip + 5) v.toUInt32 == D.base + UInt64.ofNat offset
+          | _, _ => false
+        expect a (lands && D.ret == rip + 5 && D.sp + 8 == UInt64.ofNat ({} : Layout).callTop &&
+            D.checkOk p.textSize)
+          s!"{root}: the call of {c.symbol} at byte {pos} is not a call site the call lemma describes"
+      out := out.push s!"{root}: the file decides the call lemma's call-site facts at its {pl.calls.length} calls"
   let some fibArt := fibArt? | throw (IO.userError "Machines.fibMain did not compile")
   -- refusals
   let some fibRoot := fibArt.roots.head? | throw (IO.userError "Machines.fibMain: no root")
@@ -138,6 +199,34 @@ def part (a : Assert) (o : IxCCTests.Exe.Suite.Options) (work : FilePath) : IO (
   refused "a missing export" {} "cx_nothing" (.missingExport "cx_nothing")
   refused "a stack under 8 KiB" { stack := 4096 } fibRoot.symbol .layout
   refused "a region under 4 KiB" { region := 4095 } fibRoot.symbol .layout
+  -- the shell check at the smallest and a large layout (whose constants need `movabs`)
+  for L in [({ stack := 8192, region := 4096 } : Layout), { stack := 1 <<< 39, region := (1 <<< 39) - (1 <<< 13) }] do
+    match X86.Exe.Machine.writeChecked L fibRoot.symbol fibArt.object with
+    | .ok _ => pure ()
+    | .error e => expect a false s!"fib's machine executable for {repr L}: {repr e}"
+  -- the writer refuses a shell the check does not cover: an unwind (not a linear row) or a branch whose
+  -- false edge falls through, each in the first block; the machine frame itself is written
+  let machineFrame := X86.Exe.Machine.frame {} fibRoot.symbol
+  let firstBlock (g : X86.Exe.Shell.Block → X86.Exe.Shell.Block) : X86.Exe.Frame :=
+    { machineFrame with code := fun d => { blocks := (machineFrame.code d).blocks.modify 0 g } }
+  let unwind : X86.Exe.Shell.Instr :=
+    .instr (.unwind { base := some .rbp, index := none, scale := .one, displacement := 0 })
+  let falls (blk : X86.Exe.Shell.Block) : X86.Exe.Shell.Block :=
+    match blk.terminator with
+    | .branch o args cond t e _ => { blk with terminator := .branch o args cond t e .fall }
+    | _ => blk
+  for (what, fr) in [("an unwind", firstBlock fun blk => { blk with instructions := #[unwind] ++ blk.instructions }),
+      ("a branch falling through", firstBlock falls)] do
+    match X86.Exe.Machine.writeCheckedFor fr {} fibArt.object with
+    | .ok _ => expect a false s!"a machine shell with {what}: written"
+    | .error e =>
+      expectEq a (repr e |>.pretty) (repr X86.Exe.Error.invalidExecutable |>.pretty)
+        s!"a machine shell with {what}: refusal"
+  match X86.Exe.Machine.writeCheckedFor machineFrame {} fibArt.object with
+  | .ok _ => pure ()
+  | .error e => expect a false s!"writeCheckedFor of the machine frame: {repr e}"
+  out := out.push "the shell check: fib's executable at the smallest and a large layout written; a shell with an \
+    unwind or a falling-through branch refused (invalidExecutable)"
   for (manifest, fixture, root) in [(benchK1, "fib", "entry"), (abi, "abi", "Abi.bool2"), (abi, "abi", "Abi.nat3")] do
     let (_, _, art) ← compileNamed manifest fixture root
     match IxCC.Exe.machine art with

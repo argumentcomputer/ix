@@ -1,4 +1,5 @@
 import IxCC.X86.Exe.Validate
+import IxCC.X86.Exe.ShellCheck
 import IxCC.Exe.Machine
 
 /-!
@@ -10,9 +11,13 @@ this shell, a `Shell.Program` encoded by the compiler's own encoder and laid
 out by the frame writer (`writeFor`). The shell is the same for every
 machine: its constants are the memory layout, its read-only data's address
 and the step's export symbol. It parses and renders nothing; a program does
-that in Lean (`IxCC/lib/IxccExe.lean`). It is trusted code: nothing here
-proves that it does what this note says (`docs/trusted-extern-ledger.md`,
-`x86-linux-machine-shell`).
+that in Lean (`IxCC/lib/IxccExe.lean`). `writeChecked` refuses a file whose
+shell bytes the independent decoder does not read back as this program
+(`Shell.check`, `X86/Exe/ShellCheck.lean`: every instruction at its offset,
+every block and export target, and each `syscall` as `0F 05` where nothing
+decodes), and carries what the check establishes (`CertifiedFor.shell`). That
+the program does what this note says is not yet proved: it is trusted code
+(`docs/trusted-extern-ledger.md`, `x86-linux-machine-shell`).
 
 **What it does.**
 1. It confines the process before anything else, as `--exe`'s shell does:
@@ -386,29 +391,53 @@ def frame (L : Layout) (step : String) : Frame where
   exports := [initSymbol, step]
   segments := L.segments
 
-/-- A checked executable of frame `f` over layout `L`: the frame's check, and
-the driver contract at each of the frame's calls into the object, for every
-bytes the call starts from. (Stated for any frame, so that the structure's
-declaration does not unfold the shell.) -/
+/-- Where the export `symbol` of `object` is in a file placed by `p`: its
+offset in the object's text (`ELF.symbol?`) from the text's file offset. -/
+def exportAt (object : ByteArray) (p : Placement) (symbol : String) : Option Nat :=
+  (ELF.symbol? object symbol).map (p.textOffset + ·)
+
+/-- The shell check (`Shell.check`) of a file of frame `f` written to plan
+`pl`: the frame's shell for the file's data address, at the shell's file
+offset, its export calls landing on the object's exports. -/
+def shellOk (f : Frame) (object : ByteArray) (pl : Plan) (bytes : ByteArray) : Bool :=
+  Shell.check (f.code (fileBase + pl.placement.dataOffset)) bytes pl.placement.shellOffset
+    (exportAt object pl.placement)
+
+/-- A checked executable of frame `f` over layout `L`: the frame's check, the
+driver contract at each of the frame's calls into the object, for every bytes
+the call starts from, and the shell's text in the file as the shell check
+establishes it (`Shell.Valid`). (Stated for any frame, so that the
+structure's declaration does not unfold the shell.) -/
 structure CertifiedFor (f : Frame) (L : Layout) (object : ByteArray) where
   checked : Checked f object
   contract : ∀ c ∈ checked.plan.calls, ∀ init : Word → UInt8,
     (L.driverWith checked.plan.placement.textOffset c.ret init).CanonicalOk checked.plan.placement.textSize
+  shell : Shell.Valid (f.code (fileBase + checked.plan.placement.dataOffset)) checked.bytes
+    checked.plan.placement.shellOffset (exportAt object checked.plan.placement)
 
 /-- A checked machine executable: `CertifiedFor` the machine frame. -/
 abbrev Certified (L : Layout) (step : String) (object : ByteArray) := CertifiedFor (frame L step) L object
 
-/-- Write the executable of `object` whose step is the export `step`, check
-it, and establish the contract at its calls; refuse if any fails. -/
-def writeChecked (L : Layout) (step : String) (object : ByteArray) : Except Error (Certified L step object) :=
+/-- Write the executable of frame `f` for `object`, check it (`writeFor`'s
+check and the shell check), and establish the contract at its calls; refuse
+if any fails. -/
+def writeCheckedFor (f : Frame) (L : Layout) (object : ByteArray) : Except Error (CertifiedFor f L object) :=
   if hL : L.check = true then
-    match writeFor (frame L step) object with
+    match writeFor f object with
     | .error e => .error e
     | .ok c =>
       if hc : ∀ x ∈ c.plan.calls, fileBase + c.plan.placement.textOffset + c.plan.placement.textSize ≤ x.ret ∧
           x.ret < dataBase then
-        .ok (CertifiedFor.mk c fun x hm init => L.driver_canonicalOk hL (hc x hm).1 (hc x hm).2 init)
+        if hs : shellOk f object c.plan c.bytes = true then
+          .ok (CertifiedFor.mk c (fun x hm init => L.driver_canonicalOk hL (hc x hm).1 (hc x hm).2 init)
+            (Shell.check_sound hs))
+        else .error .invalidExecutable
       else .error .contract
   else .error .layout
+
+/-- Write the executable of `object` whose step is the export `step`, check
+it, and establish the contract at its calls; refuse if any fails. -/
+def writeChecked (L : Layout) (step : String) (object : ByteArray) : Except Error (Certified L step object) :=
+  writeCheckedFor (frame L step) L object
 
 end IxCC.X86.Exe.Machine

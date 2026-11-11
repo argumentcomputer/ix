@@ -399,6 +399,7 @@ import IxCC.X86.ObjectCall
 import IxCC.X86.ObjectCallSafe
 import IxCC.X86.Driver
 import IxCC.X86.Linked
+import IxCC.X86.Exe.Process
 import IxCC.X86.StreamCalls
 import IxCC.X86.StreamControl
 import IxCC.X86.StreamDecidable
