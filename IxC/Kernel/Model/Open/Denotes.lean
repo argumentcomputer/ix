@@ -20,8 +20,11 @@ variable's de Bruijn level, as the checker numbers them) gives it.
 * `DenotesO.congr_env`: a denotation reads the bound variables below the term's bound
   only.
 * `DenotesO.instantiate1`: the substitution lemma for the checker's `instantiate1`, at a
-  value with no loose bound variable (β, and the opening of a binder at a free variable,
-  are instances).
+  value with no loose bound variable (β is an instance).
+* `DenotesO.congr_fvars`, `DenotesO.open_fvar`: a denotation reads only the free
+  variables the term mentions, so opening a binder at a fresh free variable set to `x`
+  reads the body with `x` pushed.
+* `CtxSat`: an assignment gives each free variable a member of its type.
 -/
 
 namespace Ix.Kernel
@@ -242,13 +245,14 @@ theorem push_insertAt (y x : V) (k : Nat) (ρ : BVarIdx → V) :
   cases i with
   | zero => simp [insertAt, push]
   | succ i =>
-    simp only [push, insertAt]
+    show insertAt k x ρ i = insertAt (k + 1) x (push y ρ) (i + 1)
+    unfold insertAt
     by_cases h1 : i < k
-    · rw [if_pos h1, if_pos (by omega)]
-    · rw [if_neg h1, if_neg (by omega)]
+    · (rw [if_pos h1, if_pos (show i + 1 < k + 1 by omega)]) <;> rfl
+    · rw [if_neg h1, if_neg (show ¬ i + 1 < k + 1 by omega)]
       by_cases h2 : i = k
-      · rw [if_pos h2, if_pos (by omega)]
-      · rw [if_neg h2, if_neg (by omega)]
+      · rw [if_pos h2, if_pos (show i + 1 = k + 1 by omega)]
+      · rw [if_neg h2, if_neg (show ¬ i + 1 = k + 1 by omega)]
         obtain ⟨j, rfl⟩ : ∃ j, i = j + 1 := ⟨i - 1, by omega⟩
         simp [push]
 
@@ -404,5 +408,79 @@ theorem DenotesO.instantiate1_zero {a : Expr md} {x : V}
     DenotesO cval env φ σ ρ (e.instantiate1 a) v ↔ DenotesO cval env φ σ (push x ρ) e v := by
   rw [← insertAt_zero]
   exact DenotesO.instantiate1 ha e 0 ρ v
+
+/-! ## Free variables -/
+
+theorem natLitToConstructor_fvarLeaves' (n : Nat) :
+    ((natLitToConstructor (md := md)) n).fvarLeaves = [] := by
+  cases n <;> simp [natLitToConstructor, Expr.fvarLeaves]
+
+/-- **A denotation reads the free variables the term mentions only.** -/
+theorem DenotesO.congr_fvars {ρ : BVarIdx → V} {e : Expr md} {v : V}
+    (h : DenotesO cval env φ σ ρ e v) :
+    ∀ {σ' : Nat → V}, (∀ l ∈ e.fvarLeaves, σ l.1 = σ' l.1) → DenotesO cval env φ σ' ρ e v := by
+  induction h with
+  | bvar => exact fun _ => .bvar
+  | @fvar ρ i ty =>
+    intro σ' hag
+    rw [hag (i, ty) (by simp [Expr.fvarLeaves])]
+    exact .fvar
+  | sort => exact fun _ => .sort
+  | const hf hlen => exact fun _ => .const hf hlen
+  | app _ _ ihf iha =>
+    intro σ' hag
+    exact .app (ihf fun l hl => hag l (by simp [Expr.fvarLeaves, hl]))
+      (iha fun l hl => hag l (by simp [Expr.fvarLeaves, hl]))
+  | lam _ _ hP ihA ihF =>
+    intro σ' hag
+    exact .lam (ihA fun l hl => hag l (by simp [Expr.fvarLeaves, hl]))
+      (fun x hx => ihF x hx fun l hl => hag l (by simp [Expr.fvarLeaves, hl])) hP
+  | pi _ _ hP ihA ihB =>
+    intro σ' hag
+    exact .pi (ihA fun l hl => hag l (by simp [Expr.fvarLeaves, hl]))
+      (fun x hx => ihB x hx fun l hl => hag l (by simp [Expr.fvarLeaves, hl])) hP
+  | proj_table ht _ ih =>
+    exact fun hag => .proj_table ht (ih fun l hl => hag l (by simpa [Expr.fvarLeaves] using hl))
+  | proj_fst ht _ ih =>
+    exact fun hag => .proj_fst ht (ih fun l hl => hag l (by simpa [Expr.fvarLeaves] using hl))
+  | proj_snd ht _ ih =>
+    exact fun hag => .proj_snd ht (ih fun l hl => hag l (by simpa [Expr.fvarLeaves] using hl))
+  | natLit _ ih =>
+    exact fun _ => .natLit (ih fun l hl => by
+      rw [natLitToConstructor_fvarLeaves'] at hl; simp at hl)
+  | strLit _ ih =>
+    exact fun _ => .strLit (ih fun l hl => by
+      rw [strLitToConstructor_fvarLeaves] at hl; simp at hl)
+
+omit [SetTheory V] in
+/-- An assignment with free variable `d` set to `x`. -/
+def setAt (σ : Nat → V) (d : Nat) (x : V) : Nat → V :=
+  fun i => if i = d then x else σ i
+
+/-- **A binder's body, opened at a fresh free variable**: the body with bound variable
+`0` replaced by `.fvar d ty`, read with `d` set to `x`, denotes what the body denotes
+with `x` pushed, when the body mentions no free variable `d`. -/
+theorem DenotesO.open_fvar {d : Nat} {ty body : Expr md} {x : V}
+    (hfresh : ∀ l ∈ body.fvarLeaves, l.1 ≠ d) (ρ : BVarIdx → V) (v : V) :
+    DenotesO cval env φ (setAt σ d x) ρ (body.instantiate1 (.fvar d ty)) v ↔
+      DenotesO cval env φ σ (push x ρ) body v := by
+  have hx : setAt σ d x d = x := by simp [setAt]
+  have ha : ∀ ρ', DenotesO cval env φ (setAt σ d x) ρ' (.fvar d ty) x := fun ρ' => by
+    have h := DenotesO.fvar (cval := cval) (env := env) (φ := φ) (σ := setAt σ d x) (ρ := ρ')
+      (i := d) (ty := ty)
+    rwa [hx] at h
+  rw [DenotesO.instantiate1_zero ha body ρ v]
+  constructor
+  · intro h
+    exact h.congr_fvars fun l hl => by simp [setAt, hfresh l hl]
+  · intro h
+    exact h.congr_fvars fun l hl => by simp [setAt, hfresh l hl]
+
+/-- **An assignment satisfies a term's free variables**: each free variable the term
+mentions is assigned a member of what its type denotes (a free variable's type has no
+loose bound variable, so the variable environment it is read at does not matter). -/
+def CtxSat (cval : Key md → (LevelParam → Nat) → V) (env : Env md) (φ : LevelParam → Nat)
+    (σ : Nat → V) (e : Expr md) : Prop :=
+  ∀ l ∈ e.fvarLeaves, ∃ T, DenotesO cval env φ σ (fun _ => empty) l.2 T ∧ σ l.1 ∈ˢ T
 
 end Ix.Kernel
