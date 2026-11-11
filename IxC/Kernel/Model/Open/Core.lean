@@ -551,7 +551,7 @@ theorem app_typed {d : Nat} {f a ty body : Expr md} {mt : BinderMeta} {σ : Nat 
   exact ⟨Gr.app_iff.2 ⟨hgf, hga, _, A, F, X, B, hF, hX, hFm, hXA, hP⟩,
     (DenotesO.instantiate1_zero haall body ρ₀ _).2 (hB X hXA),
     (GradedBy.instantiate1_zeroO haall (Gr.all hga hfa.2.1) body ρ₀).2 (hgb _ hA _ hXA),
-    app_mem_piR hFm hXA hP⟩
+    app_mem_piR hFm hXA (by rw [← univ_zero]; exact hP)⟩
 
 /-- The frame and leaves of an application's inferred type `body[a]`, from the head's type
 reducing to `∀ ty, body`. -/
@@ -656,6 +656,10 @@ theorem Infer.appSkip_sound {d : Nat} {f a tf ty body : Expr md} {mt : BinderMet
       obtain ⟨-, hbX, hgbX, hmem⟩ := app_typed hfa hF' hX' hgf hga hA hB hP hgpi hFm hx'
       exact ⟨_, hbX, hgbX, hmem⟩
 
+theorem mem_univ_congr {n m : Nat} {B : V} (h : n = m) (hB : B ∈ˢ (univ n : V)) :
+    B ∈ˢ (univ m : V) :=
+  h ▸ hB
+
 /-- A binder datum validated as its codomain sort's zero-ness reads regime `0` exactly where
 the sort is `0`. -/
 theorem regime_zero_iff {v : Level} {pw : PropWhen} (hz : Level.zeronessOf v = pw)
@@ -719,8 +723,7 @@ theorem Infer.forallE_sound {g : Grade} {d : Nat} {ty body s bs : Expr md} {u v 
       fun x hx => Classical.choose_spec (hex x) hx
     have hP : regime φ mb.pw = 0 → ∀ x, x ∈ˢ A → Classical.choose (hex x) ∈ˢ univ 0 := by
       intro h0 x hx
-      have h := (hBs x hx).2.2
-      rwa [(regime_zero_iff hz φ).1 h0] at h
+      exact mem_univ_congr ((regime_zero_iff hz φ).1 h0) (hBs x hx).2.2
     refine ⟨_, _, .pi hA (fun x hx => (hBs x hx).1) hP,
       Gr.pi_iff.2 ⟨hgty, fun A' hA' x hx => ?_⟩, .sort,
       True.intro, piR_mem_univ_imax hz hAS fun x hx => (hBs x hx).2.2⟩
