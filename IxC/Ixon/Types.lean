@@ -207,12 +207,65 @@ namespace ConstantInfo
   def CONST_DPRJ : UInt64 := 7
 end ConstantInfo
 
-/-- A top-level constant with sharing, refs, and univs tables. -/
+/-! ## Binder data
+
+The binder-data section of a record: the zero-ness of the codomain sort of
+every `lam` and `all` binder, as IxC's `PropWhen` (`never`, or "zero exactly
+when all of the parameters are zero"). The section is part of the record's
+bytes, so the record's address covers it.
+
+A block holds the data of one expression: a root (`shared = false`, `index`
+the root's number, `variant = 0`) or a sharing entry (`shared = true`, `index`
+the entry's index, `variant` one of its variants). Its nodes follow the
+expression's numbered nodes in pre-order: every `lam` and `all`, and every
+`share` whose entry has a binder (`BinderNode.share` names the entry's
+variant there). A record without binders has no block. -/
+
+/-- One numbered node of a binder-data block. -/
+inductive BinderNode where
+  /-- A binder whose codomain sort is never zero (wire tag 0). -/
+  | never : BinderNode
+  /-- A binder whose codomain sort is always zero (`ifAllZero []`, wire tag 1). -/
+  | zero : BinderNode
+  /-- A binder whose codomain sort is zero exactly when every universe
+  parameter in `params` is (wire tag 2). Canonical: nonempty and strictly
+  ascending. -/
+  | ifAllZero : Array UInt64 → BinderNode
+  /-- A share site whose entry has a binder: the entry at variant `v` (wire tag 3). -/
+  | share : UInt64 → BinderNode
+  /-- A binder whose datum the compiler could not decide (wire tag 4).
+  Readers accept it; a checker that needs the datum rejects it. -/
+  | undecided : BinderNode
+  deriving BEq, Repr, Inhabited, Hashable
+
+namespace BinderNode
+  def TAG_NEVER : UInt8 := 0
+  def TAG_ZERO : UInt8 := 1
+  def TAG_IF_ALL_ZERO : UInt8 := 2
+  def TAG_SHARE : UInt8 := 3
+  def TAG_UNDECIDED : UInt8 := 4
+end BinderNode
+
+/-- The binder data of one expression of a record (one variant of it, for a
+sharing entry). -/
+structure BinderBlock where
+  /-- `false` for a root expression, `true` for a sharing entry (wire byte 0 or 1). -/
+  shared : Bool
+  /-- The root's number, or the sharing entry's index. -/
+  index : UInt64
+  /-- The variant: 0 for a root. -/
+  variant : UInt64
+  nodes : Array BinderNode
+  deriving BEq, Repr, Inhabited, Hashable
+
+/-- A top-level constant with sharing, refs, and univs tables, and its
+binder-data section (blocks sorted by `(shared, index, variant)`). -/
 structure Constant where
   info : ConstantInfo
   sharing : Array Expr
   refs : Array Address
   univs : Array Univ
+  binders : Array BinderBlock := #[]
   deriving BEq, Repr, Inhabited
 
 namespace Constant

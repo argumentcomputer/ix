@@ -93,9 +93,18 @@ theorem checkExpr_complete (e : Expr) (wf : e.wireWF) :
 
 /-- Soundness and completeness for every production constant variant and
 every structural condition in the retained wire invariant. -/
+@[simp] theorem validBinderNode_iff (node : BinderNode) :
+    validBinderNode node = true ↔ node.wireWF := by
+  cases node <;> simp [validBinderNode, BinderNode.wireWF]
+
+@[simp] theorem validBinderBlock_iff (block : BinderBlock) :
+    validBinderBlock block = true ↔ block.wireWF := by
+  simp [validBinderBlock, BinderBlock.wireWF, validArray, -Array.all_eq_true,
+    Array.all_eq_true']
+
 theorem validConstant_iff (constant : Constant) :
     validConstant constant = true ↔ constant.wireWF := by
-  simp [validConstant, Constant.wireWF, validArray, -Array.all_eq_true,
+  simp [validConstant, Constant.wireWF, bindersWireWF, validArray, -Array.all_eq_true,
     Array.all_eq_true', and_assoc]
 
 end Ixon.Verify.WireCheck

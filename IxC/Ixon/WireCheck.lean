@@ -114,11 +114,77 @@ def validInfo : ConstantInfo → Bool
   | .dPrj p => p.block.hash.size == 32
   | .muts members => validArray members validMutConst
 
+def validBinderNode : BinderNode → Bool
+  | .ifAllZero params => decide (params.size < UInt64.size)
+  | _ => true
+
+def validBinderBlock (block : BinderBlock) : Bool :=
+  validArray block.nodes validBinderNode
+
 /-- Decide exactly the production wire domain, including all side tables.
-This checks representation; it does not assert typing or canonical block order. -/
+This checks representation; it does not assert typing, canonical block order,
+or the binder data's canonical form (`Constant.bindersCanonical`). -/
 def validConstant (constant : Constant) : Bool :=
   validInfo constant.info && validArray constant.sharing validExpr &&
     validArray constant.refs (fun address => address.hash.size == 32) &&
-    validArray constant.univs validUniv
+    validArray constant.univs validUniv &&
+    validArray constant.binders validBinderBlock
 
 end Ixon.WireCheck
+
+namespace Ixon
+
+/-! ## The binder data's canonical form
+
+A datum is unique (the zero-ness of a level is `never` or "zero exactly when
+every parameter of a unique set is zero"), so any annotator that computes the
+codomain sorts' zero-ness correctly writes the same section. The canonical
+form fixes the spelling: blocks strictly sorted by `(shared, index, variant)`,
+a root block at variant 0, and every `ifAllZero` parameter list nonempty,
+strictly ascending and below the record's level count. Readers check it and
+otherwise ignore the data. -/
+
+/-- The level count bounding a record's binder data: the largest level count
+of its members (0 for a projection). -/
+def ConstantInfo.maxLvls : ConstantInfo → Nat
+  | .defn d => d.lvls.toNat
+  | .recr r => r.lvls.toNat
+  | .axio a => a.lvls.toNat
+  | .quot q => q.lvls.toNat
+  | .cPrj _ | .rPrj _ | .iPrj _ | .dPrj _ => 0
+  | .muts ms => ms.foldl (init := 0) fun acc m => max acc <| match m with
+    | .defn d => d.lvls.toNat
+    | .indc i => i.lvls.toNat
+    | .recr r => r.lvls.toNat
+
+/-- Strictly ascending. -/
+def paramsAscending : List UInt64 → Bool
+  | a :: tail@(b :: _) => a < b && paramsAscending tail
+  | _ => true
+
+/-- A node's canonical form: an `ifAllZero` parameter list is nonempty,
+strictly ascending and below `lvls`. -/
+def BinderNode.canonical (lvls : Nat) : BinderNode → Bool
+  | .ifAllZero params =>
+    !params.isEmpty && paramsAscending params.toList && params.all (·.toNat < lvls)
+  | _ => true
+
+/-- The strict `(shared, index, variant)` order of blocks (a root before a
+sharing entry). -/
+def BinderBlock.keyLt (a b : BinderBlock) : Bool :=
+  (!a.shared && b.shared) ||
+    (a.shared == b.shared &&
+      (a.index < b.index || (a.index == b.index && a.variant < b.variant)))
+
+def blocksAscending : List BinderBlock → Bool
+  | a :: tail@(b :: _) => a.keyLt b && blocksAscending tail
+  | _ => true
+
+/-- The binder data of `c` are in canonical form. -/
+def Constant.bindersCanonical (c : Constant) : Bool :=
+  blocksAscending c.binders.toList &&
+    c.binders.all fun block =>
+      (block.shared || block.variant == 0) &&
+        block.nodes.all (BinderNode.canonical c.info.maxLvls)
+
+end Ixon
