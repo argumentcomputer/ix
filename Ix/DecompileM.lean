@@ -952,7 +952,7 @@ def decompileOne (env : DecompileEnv) (ixonEnv : Ixon.Env)
         pure #[(info.getCnst.name, info)]
       | .dPrj _ | .iPrj _ | .rPrj _ | .cPrj _ =>
         match block? with
-        | some { info := .muts mutuals, sharing, refs, univs } =>
+        | some { info := .muts mutuals, sharing, refs, univs, .. } =>
           decompileProjection cnst named.constMeta mutuals sharing refs univs
         | _ => throw (DecompileError.badConstantFormat "projection block is not a mutual block")
       | .muts mutuals =>

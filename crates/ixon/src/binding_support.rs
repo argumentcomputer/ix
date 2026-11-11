@@ -1,7 +1,4 @@
-  if !input.is_empty()
-    || canonical.as_slice() != bytes.as_ref()
-    || !constant.binders_canonical()
-  {//! Host packing availability for an artifact's exact binding. This does not
+//! Host packing availability for an artifact's exact binding. This does not
 //! admit role specifications or proof evidence; the certified consumer does.
 
 use std::collections::VecDeque;
