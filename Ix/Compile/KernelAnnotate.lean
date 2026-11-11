@@ -5,6 +5,7 @@ public import Ix.KernelCheck.Step
 public import Ix.Compile.BinderData
 public import Ix.Compile.Parallel
 public import Ix.Compile.FrontEnd
+public import Ix.CompileM
 
 public section
 
@@ -162,21 +163,24 @@ def install (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (workers : Nat 
     fe := fe'
     match err with
     | none => ok := ok + 1
-    | some e => failures := failures.push
-      (groupName gi, (Benchmarks.Kernel.CheckIxeStep.tierOutcome d.safety e).2)
+    | some e =>
+      let why := (Benchmarks.Kernel.CheckIxeStep.tierOutcome d.safety e).2
+      failures := failures.push (groupName gi, why)
   for d in retry do
     let (fe', pos', err) := step ev fe pos d
     fe := fe'
     pos := pos'
     match err with
     | none => ok := ok + 1
-    | some e => failures := failures.push (declName d, (Benchmarks.Kernel.CheckIxeStep.checkOutcome e).2)
+    | some e =>
+      let why := (Benchmarks.Kernel.CheckIxeStep.checkOutcome e).2
+      failures := failures.push (declName d, why)
   let t3 ← IO.monoMsNow
-  let fe ← (unsafe Runtime.markPersistent fe : BaseIO (FEnv .source))
+  let shared ← (unsafe Runtime.markPersistent fe : BaseIO (FEnv .source))
   let core ← (unsafe Runtime.markPersistent
-    (Ix.Kernel.Cached.coreKnotI .verified fe Ix.Kernel.checkFuel) :
+    (Ix.Kernel.Cached.coreKnotI .verified shared Ix.Kernel.checkFuel) :
       BaseIO (Ix.Kernel.Cached.CoreFnsI .source))
-  return .ok { fe, core, env, installed := ok, failures,
+  return .ok { fe := shared, core, env, installed := ok, failures,
                times := #[("convert", t1 - t0), ("lower", t2 - t1), ("install", t3 - t2)] }
 
 /-- **Install a compile's input**: its condensation (`Ix.CondenseM`, as the
@@ -295,14 +299,14 @@ def walk : Nat → Cx → List CtxEntry → Nat → Ixon.Expr → KExpr → EM (
       let k := bs.size
       let (leaf', bl) ← walk fuel cx inner (depth + k) leafE leafX
       let pw? ← datum cx pi (depth + k) leaf'
-      let bad := bad || bl || pw?.isNone
-      let node : Node := if bad then .undecided else Node.ofPw (pw?.getD .never)
+      let undecided := bad || bl || pw?.isNone
+      let node : Node := if undecided then .undecided else Node.ofPw (pw?.getD .never)
       for ord in ords do setNode ord node
       let mk : KExpr → KExpr → BinderMeta → KExpr :=
         if pi then fun ty b mb => .forallE ty b mb else fun ty b mb => .lam ty b mb
       let out ← (Ix.Kernel.Cached.annotateBindersOutI mk depth (some (pw?.getD .never)) stk (k - 1)
         (leaf'.abstractRangeC depth k) : CM KExpr)
-      pure (out, bad)
+      pure (out, undecided)
     | .letE _ t v b, .letE ty val body _ => do
       -- IxC annotates the type and the value, then the body with the value
       -- transparent (its ζ-reduct)
