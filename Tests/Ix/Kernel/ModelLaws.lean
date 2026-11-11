@@ -333,13 +333,16 @@ theorem univ0_ne_pt : (univ 0 : V) ≠ pt := by
   have h₁ : (empty : V) ∈ˢ pt := by rw [← h]; exact empty_mem_univ 0
   have h₂ : (unitSet : V) ∈ˢ pt := by rw [← h]; exact unitSet_mem_univ 0
   rw [mem_pt] at h₁ h₂
-  exact unitSet_ne_empty (h₂.trans h₁.symm)
 
-theorem univ1_not_mem_univ0 : ¬ (univ 1 : V) ∈ˢ univ 0 := fun h =>
-  univ0_ne_pt (eq_pt_of_mem_univZero h (univ_mem_univ 0 : (univ 0 : V) ∈ˢ univ 1))
+  exact unitSet_ne_empty (h₂.trans h₁.symm)
+theorem univ1_not_mem_univ0 : ¬ (univ 1 : V) ∈ˢ univ 0 := by
+  intro h
+  rw [univ_zero] at h
+  exact univ0_ne_pt (eq_pt_of_mem_univZero h (univ_mem_univ 0))
 
 theorem ne_pt_of_mem_univ0 {T : V} (h : T ∈ˢ univ 0) : T ≠ pt := fun he =>
-  truthVal_ne_pt _ ((mem_univZero_eq_truthVal h).symm.trans he)
+  have hT0 : T ∈ˢ (univZero : V) := by rw [← univ_zero]; exact h
+  truthVal_ne_pt _ ((mem_univZero_eq_truthVal hT0).symm.trans he)
 
 /-! ### The motive, the cases and the right-hand side, in any annotation -/
 
@@ -349,7 +352,7 @@ theorem mot_facts {ρ : BVarIdx → V} {N Z0 Mv : V} {a : BinderMeta}
     (hN : ∀ ρ X, Denotes cval env φ ρ (.const natName []) X → X = N) (hZ0 : Z0 ∈ˢ N)
     (hMv : Denotes cval env φ ρ (.lam (.const natName []) (.sort .zero) a) Mv) :
     (∀ x, x ∈ˢ N → app Mv x = univ 0) ∧
-      ∀ (hφ : φ BasisDSL.uN = 1) (ρ' : BVarIdx → V) (d : BinderMeta) (X : V),
+      φ BasisDSL.uN = 1 → ∀ (ρ' : BVarIdx → V) (d : BinderMeta) (X : V),
         Denotes cval env φ ρ' (motT d) X → Mv ∈ˢ X := by
   obtain ⟨A, F, rfl, hA, hF, hP⟩ := den_lam_inv hMv
   obtain rfl := hN _ _ hA
@@ -419,7 +422,7 @@ theorem succ_mem {ρ ρ' : BVarIdx → V} {N Z0 Mv Fv S0 Tv Sv X : V} {kT : Key 
     obtain ⟨f₃, x₃, rfl, hf₃, hx₃⟩ := den_app_inv hA₃
     have hf₃' : f₃ = Mv := den_bvar_inv hf₃
     have hx₃' : x₃ = n := den_bvar_inv hx₃
-    rw [hf₃', hx₃', happ n hn] at *
+    rw [hf₃', hx₃', happ n hn] at he hB' hP₃
     refine ⟨B', he, fun y hy => ?_, hP₃⟩
     obtain ⟨f₄, x₄, hB'y, hf₄, hx₄⟩ := den_app_inv (hB' y hy)
     obtain ⟨f₅, x₅, rfl, hf₅, hx₅⟩ := den_app_inv hx₄
@@ -445,7 +448,8 @@ theorem succ_mem {ρ ρ' : BVarIdx → V} {N Z0 Mv Fv S0 Tv Sv X : V} {kT : Key 
     intro h
     obtain ⟨F₂, hG₂, -⟩ := hGx Z0 hZ0
     have hmem := hGB Z0 hZ0
-    exact lamR_ne_pt hc (hG₂.symm.trans (eq_pt_of_mem_univZero (hPo h Z0 hZ0) hmem))
+    have hpt := eq_pt_of_mem_univZero (by rw [← univ_zero]; exact hPo h Z0 hZ0) hmem
+    exact lamR_ne_pt hc (hG₂.symm.trans hpt)
   exact lamR_mem_zero_agree ⟨fun h => absurd h hb, fun h => absurd h hs₁⟩ hGB
 
 /-! ### What `StoredAs` says of each kind -/
@@ -574,11 +578,13 @@ theorem no_model_of_natRec_false_installs {ds : List (Declaration .anon)} {env :
   obtain ⟨AS, BS, rfl, hAS, hBS, hPS⟩ := den_pi_inv hTS
   obtain rfl := hconst hAS
   have hSN : ∀ n, n ∈ˢ M.cval natName φ1 → app (M.cval natSuccName φ1) n ∈ˢ M.cval natName φ1 :=
-    fun n hn => by rw [← hconst (hBS n hn)]; exact app_mem_piR hSmem hn hPS
+    fun n hn => by rw [← hconst (hBS n hn)]; exact app_mem_piR hSmem hn
+      (fun hr x hx => by rw [← univ_zero]; exact hPS hr x hx)
   obtain ⟨TT, hTT, hTmem⟩ := M.mem _ (mem_of_find hfT) φ1 (fun _ => empty)
   rw [ann_sort hannT] at hTT
   have hTv : M.cval kT φ1 ∈ˢ (univ 0 : V) := by
-    rw [← hTname, ← (den_sort_inv hTT : TT = univ 0)]; exact hTmem
+    have hTT' : TT = univ 0 := den_sort_inv hTT
+    rw [← hTname, ← hTT']; exact hTmem
   -- `P`'s value
   have hval := M.defn_value _ _ hint (mem_of_find hfP) φ1 (fun _ => empty)
   obtain ⟨F₁, L, hPv, hF₁, hL⟩ := den_app_inv hval
@@ -589,7 +595,7 @@ theorem no_model_of_natRec_false_installs {ds : List (Declaration .anon)} {env :
   have hL0 : L = M.cval natZeroName φ1 := hconst (den_natLit_inv hL)
   have hRv' : Rv = M.cval natRecName (Level.substFn φ1 [BasisDSL.uN] [.succ .zero]) := by
     cases hRv with
-    | @const _ _ _ ci hf _ => rw [hfR] at hf; cases hf; rfl
+    | @const _ _ _ ci hf _ => obtain rfl := Option.some.inj (hfR.symm.trans hf); rfl
   obtain ⟨happ, hmot⟩ := mot_facts (fun _ _ h => hconst h) hZ0 hMv
   -- the recursor's type, read at the motive, the zero case and the successor case
   obtain ⟨TR, hTR, -⟩ := M.mem _ (mem_of_find hfR) φ1 (fun _ => empty)
