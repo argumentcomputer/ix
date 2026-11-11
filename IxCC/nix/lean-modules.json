@@ -186,6 +186,10 @@
    "imports": ["IxCCTests.Support.Rng", "IxCC.Lam.Syntax"]},
   "IxCCTests.Support.Envelope":
   {"path": "IxCCTests/Support/Envelope.lean", "imports": ["IxCC.Ixon.V3.Env"]},
+  "IxCCTests.Support.Bound":
+  {"path": "IxCCTests/Support/Bound.lean",
+   "imports":
+   ["IxCCTests.IxonV3.TypingFixtures", "IxCCTests.Support.Envelope"]},
   "IxCCTests.Src.Table":
   {"path": "IxCCTests/Src/Table.lean", "imports": ["IxCCTests.Src.Support"]},
   "IxCCTests.Src.Support":
@@ -958,6 +962,7 @@
   {"path": "IxCCTests/KernelFront/Run.lean",
    "imports":
    ["IxCCTests.KernelFront.Diff",
+    "IxCCTests.KernelFront.Bound",
     "IxCCTests.Src.Support",
     "IxCCTests.Support.Envelope"]},
   "IxCCTests.KernelFront.Main":
@@ -969,6 +974,12 @@
    ["IxCC.Src.KernelFront.Front",
     "IxCC.Ixon.V3.Tc.Driver",
     "IxCC.Recheck.Json"]},
+  "IxCCTests.KernelFront.Bound":
+  {"path": "IxCCTests/KernelFront/Bound.lean",
+   "imports":
+   ["IxCCTests.Support.Bound",
+    "IxCCTests.Recheck.Hostile",
+    "IxCC.Src.KernelFront.Front"]},
   "IxCCTests.IxonV3.TypingFixtures":
   {"path": "IxCCTests/IxonV3/TypingFixtures.lean",
    "imports": ["IxCC.Ixon.V3.Validate"]},
