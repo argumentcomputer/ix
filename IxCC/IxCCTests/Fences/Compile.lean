@@ -225,24 +225,10 @@ example {p : IxCC.Src.Program} {thm c : IxCC.Src.CId}
 /-- info: 'IxCC.Src.Table.ofCert_ok_props' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Src.Table.ofCert_ok_props
 
-/-! The pins of the program ingress reads are the environment's: its role table's for a
-role-bound closure, the fixed table for an unbound one (`IxCC/docs/byte-contract.md`). -/
-
-/-- info: 'IxCC.Src.Ingress.ofEnv_pins' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in #print axioms IxCC.Src.Ingress.ofEnv_pins
+/-! Resolving the pinned identities keeps the program's pins (`IxCC/docs/byte-contract.md`). -/
 
 /-- info: 'IxCC.Src.Pinned.known_pins' depends on axioms: [propext] -/
 #guard_msgs in #print axioms IxCC.Src.Pinned.known_pins
-
-/-! Statement pin: this fails to elaborate if `ofEnv_pins` stops tying the program's pins to
-the envelope it was read from. -/
-
-example {env : IxCC.Ixon.V3.Env} {roots : Array IxCC.Ixon.Address} {p : IxCC.Src.Program}
-    (h : IxCC.Src.Ingress.ofEnv env roots = .ok p) :
-    p.known.pins = (match env.binding with
-      | some b => IxCC.Src.Pinned.ofRoles b.table
-      | none => IxCC.Src.Pins.fixed) :=
-  IxCC.Src.Ingress.ofEnv_pins h
 
 /-- info: 'IxCC.Src.Table.buildResolve_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Src.Table.buildResolve_sound

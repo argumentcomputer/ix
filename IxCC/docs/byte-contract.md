@@ -161,11 +161,14 @@ and reported, never compared with a value IxCC holds.
 
 ### Pinned identities
 
-For a role-bound artifact, every identity IxCC treats specially is the
-constant the table binds to the identity's role (`Src.Pinned.ofRoles`). An
-identity whose role the table does not bind has no pin and is absent, as an
-identity whose constant is missing from the closure is. For an unbound
-artifact the fixed table stays (`Pins.fixed`, `IxCC/IxCC/Src/Syntax.lean`).
+Every identity IxCC treats specially is the constant that the role table the
+certified kernel admitted binds to the identity's role
+(`KernelFront.pinsOfTable`, through the mapping in `Src.Pinned`). An identity
+whose role the table does not bind has no pin and is absent, as an identity
+whose constant is missing from the closure is. An unbound artifact is refused
+at ingress; the fixed table (`Pins.fixed`, `IxCC/IxCC/Src/Syntax.lean`) is the
+default pins of a program built without ingress and gives the allowlist's
+address.
 
 | IxCC identity | Kernel role |
 | --- | --- |
@@ -181,8 +184,8 @@ The pins travel with the program (`Known.pins`), and every check of a pinned
 identity on the recheck path compares with them: `Pinned.knownOk`, the `prim`
 entries' address check (`Table.checkPrim`), the standard-axiom closure of
 `eqn` and `csimp` theorems (`Table.isStandardAxiom`) and the allowlist
-(`Table.validateOpaque`). `Src.Ingress.ofEnv_pins` states that ingress gives
-the program the pins of the environment it read (`Pinned.pinsOf`).
+(`Table.validateOpaque`). `Recheck.ingress_parts` states that ingress gives
+the program the pins of the table the kernel admitted (`pinsOfTable acc.table`).
 
 Not identities, and so not taken from the table: the `lazy` rows
 (`Pinned.lazyRows`), which are the producer's proposals (the table check
@@ -254,9 +257,10 @@ soundness theorems state both (`verifyBytes_immortal_sound`,
   of the seeds under the IxVM claim's table and the committed prelude
   ([kernel front end](kernel-front-end-design.md#acceptance)).
 - **The unbound bridge.** `ix compile --unbound` stays until it is removed
-  (it has no IxCC user since the role-bound refreeze). IxCC still reads the unbound
-  envelope, with the fixed pins; its tests write it from a role-bound closure
-  (`IxCCTests/Support/Envelope.lean`).
+  (it has no IxCC user since the role-bound refreeze). IxCC's decoder still reads the
+  unbound envelope (the resource-validation API's handoff vectors are
+  unbound), and every compile path refuses it at ingress; its tests write it
+  from a role-bound closure (`IxCCTests/Support/Envelope.lean`).
 - **Two readings.** IxCC's decoder and the kernel's reader each read the
   bytes; they share the record decoder and, for the binding, the role
   vocabulary, not the framing or the reading into declarations. The plan

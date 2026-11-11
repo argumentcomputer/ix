@@ -223,8 +223,9 @@ def majorInductive (isInductive : CId → Bool) (r : V3.Recursor) (type : Term) 
 projection record is converted; a projection record is an alias of the block
 member it names, which is keyed by that record's address, so one that names no
 member of a block in the closure is refused. `roots` are resolved by address.
-The table is left empty (`Table.build` fills it) and the pins are the fixed
-table's (`ofEnv` sets the environment's). -/
+The table is left empty (`Table.build` fills it) and the pins are the default
+(`Pins.fixed`); ingress sets the kernel's admitted role table's
+(`KernelFront.pinsOfTable`). -/
 def readConsts (env : V3.Env) (roots : Array Ixon.Address) : Except String Program := do
   let addresses := env.consts.keys.toArray.qsort (fun a b => a.cmpBytes b == .lt)
   let mut layout : Layout := {}
@@ -303,25 +304,5 @@ def readConsts (env : V3.Env) (roots : Array Ixon.Address) : Except String Progr
     | some c => rootIds := rootIds.push (root, c)
     | none => throw s!"src ingress: root {root} is not in the closure"
   return { Program.ofConsts consts.toList with roots := rootIds.toList }
-
-/-- Read a decoded environment into the table-free `Program` (`readConsts`),
-with the pins for that environment (`Pinned.pinsOf`): its role table's if it
-is role-bound, the fixed table if it is unbound. Ingress works on arrays and
-hash maps (it is not on the recheck path) and returns the kernel-evaluable
-`Program`. -/
-def ofEnv (env : V3.Env) (roots : Array Ixon.Address) : Except String Program := do
-  let p ← readConsts env roots
-  pure { p with known := { pins := Pinned.pinsOf env } }
-
-/-- The program `ofEnv` reads carries the pins of the environment it read. -/
-theorem ofEnv_pins {env : V3.Env} {roots : Array Ixon.Address} {p : Program}
-    (h : ofEnv env roots = .ok p) : p.known.pins = Pinned.pinsOf env := by
-  unfold ofEnv at h
-  cases hr : readConsts env roots with
-  | error e => simp [hr, bind, Except.bind] at h
-  | ok q =>
-    simp only [hr, bind, Except.bind, pure, Except.pure, Except.ok.injEq] at h
-    subst h
-    rfl
 
 end IxCC.Src.Ingress

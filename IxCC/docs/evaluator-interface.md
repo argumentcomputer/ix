@@ -23,9 +23,9 @@ EV-1 and EV-2 planned ([roadmap](roadmap.md#milestones)).
 - **Serialization.** None: nothing serializes `Src.Program`. The certificate
   carries the producer's decisions, not the program, which `Recheck.run`
   rebuilds from the closure.
-- **Pins** come from the role table of a role-bound closure, through a stated
-  mapping from the kernel's roles, and from a fixed table of addresses for an
-  unbound one ([`Src/Pinned.lean`](../IxCC/Src/Pinned.lean),
+- **Pins** come from the role table of the closure as the certified kernel
+  admitted it, through a stated mapping from the kernel's roles (an unbound
+  closure is refused at ingress) ([`Src/Pinned.lean`](../IxCC/Src/Pinned.lean),
   [byte contract](byte-contract.md#pinned-identities)).
 - **Readback** gives constructor indices, not addresses
   ([`Src/Readback.lean`](../IxCC/Src/Readback.lean)).
@@ -161,9 +161,8 @@ the consumer checks; caching by content address does.
 
 **Interfaces.**
 - *Pinned identities* come from the role table of the closure (implemented:
-  ingress reads it from a role-bound envelope, and the pins and the `prim`
-  entries read it instead of the fixed table, which stays for unbound
-  closures; [byte contract](byte-contract.md#pinned-identities)); the claim is
+  ingress reads it from a role-bound envelope, as the kernel admitted it,
+  and the pins and the `prim` entries read it; [byte contract](byte-contract.md#pinned-identities)); the claim is
   to name that table (SP-0).
 - *Readback* to an Ixon expression in one canonical form: a `Nat` value to a
   literal (little-endian, as Ixon stores it); a constructor value to its

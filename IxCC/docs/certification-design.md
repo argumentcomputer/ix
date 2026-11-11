@@ -315,8 +315,8 @@ bytes the IxVM proof is about and state what it guarantees about them.
 - **The same bytes.** IxCC reads role-bound (version-5) environments, which
   IxVM's claims are about and this repository's `ix compile` writes
   (implemented: [`Ixon/V3/Env.lean`](../IxCC/Ixon/V3/Env.lean), the
-  [byte contract](byte-contract.md)); the fixtures' unbound envelope is a
-  bridge, not the design.
+  [byte contract](byte-contract.md)); an unbound envelope is refused at
+  ingress.
 - **The same hash.** Every address in the statement is the same mathematical
   function as in IxVM's claims: pure BLAKE3 (`Address.blake3Pure`) on the whole
   verifier path, including block-member projection addresses, which ingress
@@ -327,9 +327,9 @@ bytes the IxVM proof is about and state what it guarantees about them.
   whose proposition is a bound on the output length, provable from
   `System.Platform.numBits_eq`.
 - **The same identities.** Pinned identities come from the role table, as
-  IxVM's do (implemented for role-bound closures, `Src.Pinned.ofRoles`); IxCC's
-  fixed pins ([`Src/Pinned.lean`](../IxCC/Src/Pinned.lean)) stay for unbound
-  closures.
+  IxVM's do (implemented: from the table the kernel admitted,
+  `KernelFront.pinsOfTable`, through the mapping in
+  [`Src/Pinned.lean`](../IxCC/Src/Pinned.lean)).
 - **The claim binds what composition needs.** The target and the image digest
   `D`, which together determine the seeds `S` (the target and the theorems
   `D`'s table names); the environment root `H` and the role table `ρ` stay as
