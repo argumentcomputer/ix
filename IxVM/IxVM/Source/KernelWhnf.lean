@@ -38,7 +38,7 @@ def peel_beta := aiur_fn⟦
     }
 ⟧
 
-  -- Rule-shaped core (lane cx). Each kernel rule IxVM uses has one step function,
+  -- Rule-shaped core. Each kernel rule IxVM uses has one step function,
   -- called by all three head normalizers (`whnf`, `whnf_struct_core`, `whnf_nd`):
   --   `red_beta`   Red.beta / Red.betaGate, one step per consumed argument;
   --   `red_proj`   Red.proj, the scrutinee already reduced by the caller (Red.projArg);
@@ -69,7 +69,7 @@ def red_beta := aiur_fn⟦
     }
 ⟧
 
-  -- Fix A at β. `peel_beta` consumes arguments while the λs' data are never
+  -- Certified β. `peel_beta` consumes arguments while the λs' data are never
   -- (Red.betaGate). Where it stops at a λ whose datum may be zero with arguments left,
   -- `peel_beta_cert` goes on: each such λ needs its certificate (Red.beta: the argument's
   -- io-grade type is definitionally equal to the domain, instantiated by the arguments
@@ -119,7 +119,7 @@ def peel_beta_cert := aiur_fn⟦
   -- Red.proj. Fires only when the constructor belongs to the projected structure, the
   -- structure is a member of a native block (the rule reads the projection table,
   -- which the kernel installs at native blocks only; `KernelModeled::proj_ctor` is
-  -- inference's gate), has one constructor and no indices (D5), the field exists, the
+  -- inference's gate), has one constructor and no indices, the field exists, the
   -- constructor application has exactly `nparams + nfields` arguments and the right
   -- number of levels, and the structure's sort at those levels is never zero. At a
   -- never-zero structure the rule's `FireSem` guard is vacuous and every slot of the
@@ -310,7 +310,7 @@ def try_quot_iota := aiur_fn⟦
   -- rule for `Quot.mk`): `Quot.lift α r β f h q post ↦ f a post` and
   -- `Quot.ind α r β m q post ↦ m a post` when `q` head-normalizes to
   -- `Quot.mk α' r' a`. Premises: the level counts, the rule's level comparand
-  -- (`Quot.mk`'s level against the eliminator's first), and Fix A's licensed
+  -- (`Quot.mk`'s level against the eliminator's first), and the licensed
   -- certificates of both spines: the eliminator's at a possibly-zero motive
   -- (`Quot.lift`'s `β : Sort v`; `Quot.ind`'s motive is `Prop`, so always), and
   -- `Quot.mk`'s at a possibly-zero `α : Sort u`.
@@ -793,7 +793,7 @@ def iota_cmp := aiur_fn⟦
     }
 ⟧
 
-  -- Fix A at ι (RULES-GAP PM-C): Red.iota's two licensed `Certs` walks, over the
+  -- Certified ι: Red.iota's two licensed `Certs` walks, over the
   -- recursor's type and the constructor's type at the redex's levels. A slot skips
   -- when its own binder's datum is never zero (`Certs.skip`); when every slot of a
   -- walk does, the walk needs no certificate, and otherwise every argument of it is
@@ -947,7 +947,7 @@ def try_struct_eta_iota := aiur_fn⟦
 
   -- Red.rescueEta: the major's type head-normalizes to the structure `parent` at
   -- exactly its parameters, at the structure's level count; the structure's sort at
-  -- the type's levels is never zero (`capsNeverZero`, D4: no structure-η ι at `Sort u`
+  -- the type's levels is never zero (`capsNeverZero`: no structure-η ι at `Sort u`
   -- structures); `fab` is the constructor applied to the type's parameters and the
   -- major's projections. The rule's final `DefEq fab major` is DefEq.structEta, whose
   -- comparisons are reflexive here (`fab`'s parameters are the type's, its fields the
@@ -1073,7 +1073,7 @@ def struct_is_rec := aiur_fn⟦
     }
 ⟧
 
-  -- D6 (Lean's `is_rec`, a block-level flag): whether any constructor of any inductive
+  -- Lean's `is_rec` (a block-level flag): whether any constructor of any inductive
   -- member of the block mentions a member of the block.
 
 def struct_scan_members := aiur_fn⟦

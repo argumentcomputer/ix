@@ -1144,6 +1144,27 @@ def role_type := aiur_fn⟦
         102 => {
           let x0 = (&(Lists::Node::Nil));
           (&(KernelTypes::KExprNode::Forall((&(KernelTypes::KExprNode::Const(KernelRoles::role_bound_addr(tbl, 37), x0))), (&(KernelTypes::KExprNode::Const(KernelRoles::role_bound_addr(tbl, 39), x0))), (&(KernelTypes::KLevelNode::Succ((&(KernelTypes::KLevelNode::Zero)))))))) } ,
+        103 => {  (&(KernelTypes::KExprNode::Const(KernelRoles::role_bound_addr(tbl, 18), (&(Lists::Node::Nil))))) } ,
+        104 => {
+          let x0 = (&(KernelTypes::KExprNode::Const(KernelRoles::role_bound_addr(tbl, 4), (&(Lists::Node::Nil)))));
+          (&(KernelTypes::KExprNode::Forall(x0, x0, (&(KernelTypes::KLevelNode::Succ((&(KernelTypes::KLevelNode::Zero)))))))) } ,
+        105 => {
+          let x0 = (&(KernelTypes::KExprNode::Const(KernelRoles::role_bound_addr(tbl, 0), (&(Lists::Node::Nil)))));
+          (&(KernelTypes::KExprNode::Forall(x0, x0, (&(KernelTypes::KLevelNode::Succ((&(KernelTypes::KLevelNode::Zero)))))))) } ,
+        106 => {
+          let x0 = (&(Lists::Node::Nil));
+          let x1 = (&(KernelTypes::KExprNode::Const(KernelRoles::role_bound_addr(tbl, 4), x0)));
+          let x2 = (&(KernelTypes::KLevelNode::Zero));
+          let x3 = (&(KernelTypes::KExprNode::App((&(KernelTypes::KExprNode::Const(KernelRoles::role_bound_addr(tbl, 8), (&(Lists::Node::Cons((&(KernelTypes::KLevelNode::Succ(x2))), x0)))))), x1)));
+          let x4 = (&(KernelTypes::KExprNode::BVar(1)));
+          (&(KernelTypes::KExprNode::Forall(x1, (&(KernelTypes::KExprNode::Forall(x1, (&(KernelTypes::KExprNode::Forall((&(KernelTypes::KExprNode::App((&(KernelTypes::KExprNode::App(x3, (&(KernelTypes::KExprNode::App((&(KernelTypes::KExprNode::Const(KernelRoles::role_bound_addr(tbl, 104), x0))), x4)))))), (&(KernelTypes::KExprNode::BVar(0)))))), (&(KernelTypes::KExprNode::App((&(KernelTypes::KExprNode::App(x3, (&(KernelTypes::KExprNode::BVar(2)))))), x4))), x2))), x2))), x2))) } ,
+        107 => {
+          let x0 = (&(Lists::Node::Nil));
+          let x1 = (&(KernelTypes::KExprNode::Const(KernelRoles::role_bound_addr(tbl, 0), x0)));
+          let x2 = (&(KernelTypes::KLevelNode::Zero));
+          let x3 = (&(KernelTypes::KExprNode::App((&(KernelTypes::KExprNode::Const(KernelRoles::role_bound_addr(tbl, 8), (&(Lists::Node::Cons((&(KernelTypes::KLevelNode::Succ(x2))), x0)))))), x1)));
+          let x4 = (&(KernelTypes::KExprNode::BVar(1)));
+          (&(KernelTypes::KExprNode::Forall(x1, (&(KernelTypes::KExprNode::Forall(x1, (&(KernelTypes::KExprNode::Forall((&(KernelTypes::KExprNode::App((&(KernelTypes::KExprNode::App(x3, (&(KernelTypes::KExprNode::App((&(KernelTypes::KExprNode::Const(KernelRoles::role_bound_addr(tbl, 105), x0))), x4)))))), (&(KernelTypes::KExprNode::BVar(0)))))), (&(KernelTypes::KExprNode::App((&(KernelTypes::KExprNode::App(x3, (&(KernelTypes::KExprNode::BVar(2)))))), x4))), x2))), x2))), x2))) } ,
         _ => {  (&(KernelTypes::KExprNode::Srt((&(KernelTypes::KLevelNode::Zero))))) } ,
       }
     }

@@ -212,8 +212,8 @@ def is_inductive_prop := aiur_fn⟦
     }
 ⟧
 
-  -- A positive certificate for a 0 answer of `level_equal(l, 0)` (RULES-GAP exact
-  -- site 1): `l` is nonzero at some valuation (its zero-ness is not `ifAllZero []`).
+  -- A positive certificate for a 0 answer of `level_equal(l, 0)`: `l` is nonzero at
+  -- some valuation (its zero-ness is not `ifAllZero []`).
   -- With it, "the structure is data" is a fact, not an absence of proof.
 
 def level_may_be_nonzero := aiur_fn⟦
@@ -232,8 +232,8 @@ def level_may_be_nonzero := aiur_fn⟦
     }
 ⟧
 
-  -- Infer.proj's shape premises (both grades): the structure has no indices (D5:
-  -- `.proj` on an indexed family is rejected), the scrutinee's type has exactly the
+  -- Infer.proj's shape premises (both grades): the structure has no indices
+  -- (`.proj` on an indexed family is rejected), the scrutinee's type has exactly the
   -- structure's parameters, and its level list has the structure's length.
 
 def proj_shape_ok := aiur_fn⟦

@@ -52,7 +52,7 @@ def otherChannels : List (String × Option (List String)) := [
   ("ixvm.io.info", some ["IxVMCompat::io_get_info"]),
   ("ixvm.io.claim", some ["KernelClaim::run_claim"]),
   ("ixvm.io.tag", some ["Ingress::load_constant_hint"]),
-  -- The binder data of the conversion (D2): untrusted, validated by the kernel's rules.
+  -- The binder data of the conversion: untrusted, validated by the kernel's rules.
   ("ixvm.pw", some ["Convert::read_pw"]),
   ("ixvm.pw.param", some ["Convert::pw_params"]),
   ("ixvm.pw.share", some ["Convert::read_pw_share"]),

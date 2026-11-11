@@ -8,14 +8,14 @@ public import Ix.KernelCheck.Step
 public section
 
 /-!
-# IxVM's binder data as witness hints (D2)
+# IxVM's binder data as witness hints
 
 The certified kernel's rules read, at every λ and ∀ binder, its datum
 `pw : PropWhen`: `never` (the binder's codomain sort is never zero) or
 `ifAllZero S` (zero exactly when every level parameter in `S` is). IxVM
 reads the datum of every `Lam` and `All` node it converts as a witness hint
-(`plans/ixvmc/DECISIONS.md`, D2 revised; the interface is lane cx's
-`plans/ixvmc/cx/REPORT.md`, "D2 hint interface"), and validates it where the
+(the interface: `IxVM/IxVM/Source/Convert.lean`, "Binder data", and
+`crates/ixvm/src/pw.rs`), and validates it where the
 kernel's rules do (`Infer.forallE`, `Infer.lam`). So nothing here is
 trusted: a wrong datum can only make a claim fail.
 
@@ -243,6 +243,11 @@ structure View where
   recursor records, which IxC needs to install the block and its projection
   table, are often outside a claim's closure); never annotated -/
   support : Array (Address × Ixon.Constant) := #[]
+  /-- the carried records that are IxVM model records (`Ixon.Env.modelRecords`):
+  installed and annotated like any record, but indexed after the environment's,
+  so that a generated recursor never displaces the environment's recursor of an
+  alpha-equivalent block -/
+  models : Std.HashSet Address := {}
 
 private def addressOfKey (key : Array Aiur.G) : Option Address :=
   if key.size == 32 then some ⟨⟨key.map (·.val.toUInt8)⟩⟩ else none
@@ -271,7 +276,9 @@ def View.ofBuffer (io : Aiur.IOBuffer) (env : Ixon.Env := {}) : View := Id.run d
       | some c => v := { v with records := v.records.push (a, c) }
       | none =>
         match Ixon.deConstantExact (bytesOf io ch info) with
-        | .ok c => v := { v with records := v.records.push (a, c) }
+        | .ok c =>
+          v := { v with records := v.records.push (a, c) }
+          if env.modelRecords.contains a then v := { v with models := v.models.insert a }
         | .error _ => v := { v with undecoded := v.undecoded + 1 }
     | 3 =>
       if let some g := (io.data.getD ch #[])[info.idx]? then
@@ -343,8 +350,8 @@ def levelCount (c : Ixon.Constant) : Nat :=
 
 /-- Records declaring more level parameters than this are not given to IxC:
 its install lists the parameters and checks them pairwise distinct, so a record
-with 2^32 of them (the TagN boundary cases; IxVM cannot prove such a claim either,
-D15) would never finish. Their own data need no count: the walk reads the
+with 2^32 of them (the TagN boundary cases, which IxVM cannot prove either) would
+never finish. Their own data need no count: the walk reads the
 universe table. -/
 def maxLevels : Nat := 1 <<< 12
 
@@ -676,6 +683,7 @@ def KernelEnv.ofView (v : View) (lenient : Bool := true) : Except String KernelE
     (v.support ++ v.records).foldl (fun m (a, c) => m.insert a c) {}
   let hints := Hints.ofStore store v.hints
   let s := Benchmarks.Kernel.CheckIxeStep.setup store (v.blobs[·]?) table pre hints.lookup
+    (late := v.models.contains)
   -- the witness's records with expressions (a projection's block counts only
   -- when the witness carries it: the circuit loads nothing else)
   let carried : Std.HashSet Address := v.records.foldl (fun s (a, _) => s.insert a) {}

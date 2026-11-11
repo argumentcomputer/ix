@@ -32,7 +32,7 @@ pub struct Fixture {
   pub constants: Vec<Serialized>,
   pub blobs: Vec<Serialized>,
   pub roles: Vec<Serialized>,
-  /// The records' binder data (D2), version 2: per record its address and
+  /// The records' binder data, version 2: per record its address and
   /// its stream values as IO channel 8 carries them (`Ix/IxVM/PwHints.lean`).
   pub binder_data: Vec<([u8; 32], Vec<u64>)>,
 }

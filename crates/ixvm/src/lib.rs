@@ -21,7 +21,7 @@ pub fn prepare_streams<'a, B: FieldBackend>(
   let mut channels = HintChannels::new();
   aiur::library::u32::register(&mut channels, program.field())?;
   aiur::library::u64::register(&mut channels, program.field())?;
-  // the binder data of the conversion (D2), from IO channel 8
+  // the binder data of the conversion, from IO channel 8
   let table = std::sync::Arc::new(pw::Table::from_streams(streams)?);
   pw::register(program.field(), table, &mut channels)?;
   arenas.register_read::<1>(io::READ_CHANNEL, true, &mut channels)?;

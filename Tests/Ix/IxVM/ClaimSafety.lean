@@ -5,7 +5,7 @@ import Ix.IxVM.ClaimHarness
 import Tests.Ix.IxVM.Harness
 
 /-!
-# Typing claims on constants outside Lean's logic (decision D20)
+# Typing claims on constants outside Lean's logic
 
 A typing claim certifies its seeds, a `check` target or a `checkEnv` claim's
 owned leaves, only in Lean's logic. IxVM refuses a seed whose record, or the

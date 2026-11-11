@@ -495,7 +495,7 @@ def check_positivity_aug := aiur_fn⟦
                                 _ => {  () } ,
                               } } ,
                             _ => {
-                              -- D7: a nested occurrence is the modeled route's
+                              -- A nested occurrence is the modeled route's
                               -- (`KernelModeled::block_is_modeled`); one that only
                               -- whnf exposes is refused here, as Lean refuses it.
                               assert_eq!(0, 1,
@@ -1071,7 +1071,7 @@ def aux_already_in := aiur_fn⟦
 ⟧
 
   -- Binders are structurally equal when their domains and bodies are and their data
-  -- (D2) agree: equal zero sets, the kernel's `m₁.pw = m₂.pw`.
+  -- agree: equal zero sets, the kernel's `m₁.pw = m₂.pw`.
 
 def kexpr_binder_struct_eq := aiur_fn⟦
   fn kexpr_binder_struct_eq(ta: KernelTypes::KExpr, ba: KernelTypes::KExpr, la: KernelTypes::KLevel,
@@ -1843,7 +1843,7 @@ def check_recursor_canonical_at := aiur_fn⟦
           match parent_ci {
             KernelTypes::KConstantInfo::Induct(pnlvls, pty, pnp, pni, num_ctors, _,
                                    parent_block_addr, parent_ind_idx) => {
-              -- the level link (K1-5(e)): a recursor carries its block's universe
+              -- the level link: a recursor carries its block's universe
               -- parameters, plus one fresh elimination parameter exactly when it is
               -- a large eliminator. The reader decides `large` from the declared
               -- count (`r.lvls == block.lvls + 1`), so an unchecked count installs
@@ -2915,7 +2915,7 @@ def check_block_member_kinds := aiur_fn⟦
     }
 ⟧
 
-  -- One safety per block (D20): Lean's `inductDecl` and mutual definitions carry one
+  -- One safety per block: Lean's `inductDecl` and mutual definitions carry one
   -- flag for the whole block, so a safe seed reaches no unsafe or partial co-member
   -- through its block. Counts the block's constants (members and constructors) and
   -- those outside the logic (`Ingress::defn_is_unsafe_ci` on definitions, the flag

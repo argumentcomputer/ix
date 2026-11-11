@@ -199,7 +199,7 @@ def ensure_sort_only := aiur_fn⟦
     }
 ⟧
 
-  -- Infer.proj's `FireSem` premise at the io grade (RULES-GAP G7): at a `Prop`
+  -- Infer.proj's `FireSem` premise at the io grade: at a `Prop`
   -- structure the projected field's type is a proposition. (Full inference runs the
   -- same guard in `k_infer_proj`; the io grade used to rely on that earlier run.)
 

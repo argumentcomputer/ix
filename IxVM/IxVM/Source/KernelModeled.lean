@@ -2,7 +2,7 @@ import Aiur.Modules.Function
 
 /-! # IxVM module `KernelModeled`
 
-The modeled route for inductive declarations (decision D7): IxVM checks a mutual or
+The modeled route for inductive declarations: IxVM checks a mutual or
 nested block the way the certified kernel's modeled install does
 (`IxC/Kernel/Inductives/Modeled.lean`, `checkModeled`), against a model of the block
 that the prover supplies as advice.
