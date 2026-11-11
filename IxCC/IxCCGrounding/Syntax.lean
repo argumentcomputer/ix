@@ -416,14 +416,14 @@ the check):
   constructor's own parameters (what moves a constructor value from the assignment and
   environment it was built at to the `case`'s, through canonicity). -/
 structure CaseWF (env : KEnv) (sh : CaseShape) : Prop where
-  recFields : ∀ j cs, sh.ctors[j]? = some cs → ∀ rf ∈ cs.recFields,
+  recFields : ∀ (j : Nat) (cs : CtorShape), sh.ctors[j]? = some cs → ∀ rf ∈ cs.recFields,
     rf < cs.nF ∧ (cs.fields[rf]?).map (·.1) = some (sh.recFieldDom j rf)
-  ihs : ∀ j cs, sh.ctors[j]? = some cs → ∀ r rf, cs.recFields[r]? = some rf →
+  ihs : ∀ (j : Nat) (cs : CtorShape), sh.ctors[j]? = some cs → ∀ r rf, cs.recFields[r]? = some rf →
     (cs.ihs[r]?).map (·.1) = some (cs.ihDom j r rf)
-  codom : ∀ j cs, sh.ctors[j]? = some cs → avoids cs.nF j cs.codom = true
+  codom : ∀ (j : Nat) (cs : CtorShape), sh.ctors[j]? = some cs → avoids cs.nF j cs.codom = true
   regime : ∃ (A : KExpr) (m : BinderMeta), sh.binders.getLast? = some (A, m) ∧
-    ∀ j cs, sh.ctors[j]? = some cs → ∀ b ∈ cs.fields, b.2.pw = m.pw
-  ctorRaw : ∀ j cs, sh.ctors[j]? = some cs → ∃ cvC : ConstantVal .anon,
+    ∀ (j : Nat) (cs : CtorShape), sh.ctors[j]? = some cs → ∀ b ∈ cs.fields, b.2.pw = m.pw
+  ctorRaw : ∀ (j : Nat) (cs : CtorShape), sh.ctors[j]? = some cs → ∃ cvC : ConstantVal .anon,
     env.find? cs.key = some (.ctorInfo cvC sh.nP cs.nF) ∧
     cvC.levelParams.length = sh.indLevels.length ∧ bvarsLt 0 cvC.type = true ∧
     cvC.type.allLevelParamsDefined cvC.levelParams = true ∧

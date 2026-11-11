@@ -12,6 +12,7 @@ import IxCCGrounding.Ok
 import IxCCGrounding.Eqn
 import IxCCGrounding.Subst
 import IxCCGrounding.Tele
+import IxCCGrounding.Case
 import IxCCGrounding.Runs
 import IxCCGrounding.Check
 import IxCCGrounding.Ground
