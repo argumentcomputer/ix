@@ -183,7 +183,7 @@
       "named_env_sha256": "06d89ab69f66516ccd459f95deecfabec86d0ff3f3003537c56969de55cfa481",
       "census": {
         "path": "scalar.census.json",
-        "sha256": "6a4f541d6c58fc063651b90db841235a9945520d45714988fdd69489ec9076c2"
+        "sha256": "62de18b4772a254ff92827863a7331dc11594e11e7b99aa16613503a276c20dc"
       },
       "roots": [
         {
@@ -1856,7 +1856,7 @@
       "named_env_sha256": "f8f20d7fb214ad47fd260cf2c7d8909aabfb6284dc8e0189ec9dd6d688b796c4",
       "census": {
         "path": "strictAndOr.census.json",
-        "sha256": "b29e4fb56c9108b01c0d961ef5d5a94083e9a6348e9cbc4bfe68d93b52b32e4a"
+        "sha256": "22aff76e2b2dcfa379e749a63e385530b8ef7f3981ebb2506ff88bceabe6d250"
       },
       "roots": [
         {
@@ -1998,7 +1998,7 @@
       "named_env_sha256": "4e274ea03913964917111d64b59b8698445463dda1c17d7723d558f363c2ac51",
       "census": {
         "path": "tuple.census.json",
-        "sha256": "03cb3ef58b2bbe7a3b436706817d58d98711af783b849257c367d97120059a8c"
+        "sha256": "4b1c6687f06b83ed5eb9bd22c9449281c7b47d8fbb0163589027a71528c49be8"
       },
       "roots": [
         {
@@ -2126,7 +2126,7 @@
       "named_env_sha256": "c01794686cea03d575ec74c7f50cdf341929afd2aaac1b56afebee2e8082957f",
       "census": {
         "path": "bigctor.census.json",
-        "sha256": "aef7fa2f6b9dda23642d122dd3d2bc1e1475cf2300005b3731711aa06a12ab68"
+        "sha256": "b68bda7512fd54abe227fe87fa47360e425e5fd2c9e426be5ceac3fcf277477f"
       },
       "roots": [
         {
@@ -2197,7 +2197,7 @@
       "named_env_sha256": "17747092e15d439ddf18033ab1dbfc3feba5b3f1a29f6f58b9c67c725abeefbb",
       "census": {
         "path": "typeFormerPolymorphism.census.json",
-        "sha256": "7581e7a0e7c04ea7f2e7436bc0dabc9ce8385991ff96e43fad160b4121d0e548"
+        "sha256": "d1f9699759e4e6c73ceaa818873c18665f66d72c81a79d2d0300efe3e58cf964"
       },
       "roots": [
         {
@@ -2271,7 +2271,7 @@
       "named_env_sha256": "927f3f7a0760b5d872462efa1d0d35664eb2e312e138df797eae6f88984cce0b",
       "census": {
         "path": "natShiftr.census.json",
-        "sha256": "881027b62ac3b07e7b6505ccc21e3ea6d35e268d44cdc9a9cc9dcc3b35354f0a"
+        "sha256": "c5d3a29e559bdc17670103e5dff75a0e6bafedbc862c3f0855e41e5b5a8ec79a"
       },
       "roots": [
         {

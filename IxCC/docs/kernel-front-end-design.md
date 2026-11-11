@@ -180,6 +180,15 @@ and blobs, byte for byte, with its binding section:
 
 A refusal carries the kernel's reason and classification (rejected or
 declined, `TierError.outcome`). Only role-bound environments are accepted.
+The acceptance is of the whole artifact: a record the kernel does not accept
+refuses every root, reached or not. An ill-typed record is *declined*, not
+rejected (the kernel does not take a failed conversion search as evidence
+that the input is wrong), and so is any axiom other than `propext`,
+`Classical.choice` and `Quot.sound`, and any use of `sorryAx` (the kernel
+installs nothing for it), anywhere among the records: such an environment may
+be inconsistent, so it has no model, and nothing about a program read from it
+could be grounded. What a user sees is in the [compile
+boundary](compile-boundary.md).
 `ix check-lean` admits a role-bound artifact by the same entry, prelude source
 and order; the front end's acceptance differs from it only in the hash
 function's implementation (IxCC's pure BLAKE3, ix's Rust BLAKE3 on a recorded

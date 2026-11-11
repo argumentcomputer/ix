@@ -101,7 +101,7 @@
       "named_env_sha256": "2f8c7936519d30733693f332e56985d8babc325b0a3f71d6654038b68b364c67",
       "census": {
         "path": "resource.census.json",
-        "sha256": "e81b2beb640a3722613ae9045502f1be51bf2e4b98418dd02e462b73e5f001c1"
+        "sha256": "c4e88e7eb22d3596a0df6efa56a6034637f6dbdda9997cbcabe9d12d87fe8f14"
       },
       "roots": [
         {

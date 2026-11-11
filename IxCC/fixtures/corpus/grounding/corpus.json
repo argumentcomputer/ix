@@ -92,7 +92,7 @@
       "named_env_sha256": "4d3e93544309abef05252a9bf75fed3500aea68c19f58c813d302f5c50224fca",
       "census": {
         "path": "decide.census.json",
-        "sha256": "ac39a7857dad0bf2610cca4545d1798454273c1653b41b5dd0be54c1f378cc62"
+        "sha256": "63a29eafc27e807d8754d2044cdf446662ecf28d4317ccf13dd45dd801a651ea"
       },
       "roots": [
         {
