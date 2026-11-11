@@ -78,7 +78,7 @@ admitted role table, the program read against the kernel's reading, and the
 unfolding table. -/
 def prepare (cfg : LoadConfig) (env : V3.Env) (hints : Hints) :
     Except Diag (Program × KernelFront.Kernel × Array Diag × Table.Stats) := do
-  let acc ← (KernelFront.accept env).mapError fun r => Diag.of "kernel" r.render
+  let acc ← (KernelFront.accept env).mapError fun r => Diag.of "kernel" r.report
   let p ← stage "ingress" (Ingress.readConsts env (hints.roots.map (·.1)))
   let p := { p with known := { pins := KernelFront.pinsOfTable acc.table } }
   let p := { p with known := Pinned.known p, resource := hints.resource }

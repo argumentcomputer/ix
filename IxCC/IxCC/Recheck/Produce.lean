@@ -87,7 +87,7 @@ def ingress (bytes : ByteArray) (equations : Lean.Json) (roots : List String := 
     throw { stage := .ingress, code := "roots", message := "the sidecar names no root" }
   let hints := { hints with roots := chosen }
   let acc ← (Src.KernelFront.accept env).mapError fun r =>
-    { stage := .ingress, code := "kernel", message := r.render }
+    { stage := .ingress, code := "kernel", message := r.report }
   let p ← (Src.Ingress.readConsts env (chosen.map (·.1))).mapError fun m =>
     { stage := .ingress, code := "ingress", message := m }
   let p := { p with known := { pins := Src.KernelFront.pinsOfTable acc.table } }

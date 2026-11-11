@@ -56,6 +56,13 @@ wrong, *declined* otherwise. In particular:
   is the right verdict: an environment holding an arbitrary axiom (or a proof
   by `sorry`) may be inconsistent, so it has no model, and nothing IxCC would
   say about a program read from it could be grounded in the kernel's model.
+  For these two, after the kernel's own line (`not implemented yet: use of the
+  sorryAx axiom …`, `not implemented yet: non-standard axiom …`), `ixcc` prints
+  one more line in plain words: that the artifact holds a `sorry` (or an axiom
+  other than the standard three) somewhere among its records, that the kernel
+  accepts an artifact only whole, and that this section explains it
+  (`KernelFront.PolicyDecline`, told apart by the kernel's `notImplemented`
+  failure and its message's leading prose part).
 
 After the kernel, IxCC's own admission still refuses per root, with the
 reference path from the root (`Src.Admit`, stage `admit`): a relevant

@@ -147,6 +147,17 @@ def run (a : Assert) : IO (List String) := do
   expect a (refusedAt r .kernel .declined &&
       match r with | .error e => (e.message.splitOn "non-standard axiom").length > 1 | .ok _ => false)
     s!"axiom: an unreachable non-standard axiom did not decline the artifact: {describe r}"
+  -- what `ixcc` prints: the kernel's line verbatim, then the plain-words line
+  let expected := match r with
+    | .error e => e.render ++ "\n" ++ Src.KernelFront.PolicyDecline.nonStandardAxiom.explain
+    | .ok _ => ""
+  expect a (match r with | .error e => e.policy == some .nonStandardAxiom | .ok _ => false)
+    "axiom: the refusal is not classified as the non-standard-axiom policy decline"
+  let ing := Recheck.ingress (IxCCTests.Support.Bound.write withAxiom) (sidecar roots) []
+  expect a (match ing with
+      | .error e => e.stage == .ingress && e.code == "kernel" && e.message == expected
+      | .ok _ => false)
+    s!"axiom: ingress did not report the kernel's line and the explanation: {errText ing}"
   -- recursive inductives: the generated recursors are the kernel's
   let (te, tree) := addTree base
   let (te, tmain) := store te

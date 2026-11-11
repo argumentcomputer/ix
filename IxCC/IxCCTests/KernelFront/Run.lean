@@ -235,6 +235,16 @@ def run : IO Bool := do
           expect a (kernelDeclined.any (label.endsWith ·) && (match r.outcome with | some .declined => true | _ => false) &&
               (r.message.splitOn "sorryAx").length > 1)
             s!"{label}: the kernel refused it: {r.render}"
+          -- what `ixcc` prints: the kernel's line verbatim, then the plain-words line
+          if kernelDeclined.any (label.endsWith ·) then
+            expect a (r.policy == some .sorryAx) s!"{label}: not classified as the sorryAx policy decline"
+            if let some sidecar ← sidecarOf path then
+              let bj ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile sidecar))
+              let expected := r.render ++ "\n" ++ KernelFront.PolicyDecline.sorryAx.explain
+              expect a (match Recheck.ingress bytes bj [] with
+                  | .error e => e.stage == .ingress && e.code == "kernel" && e.message == expected
+                  | .ok _ => false)
+                s!"{label}: ingress did not report the kernel's line and the explanation"
         if bytes.size < differentialBytes then
           if let some sidecar ← sidecarOf path then
             let bj ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile sidecar))
