@@ -761,17 +761,27 @@ theorem ingress_parts {bytes : ByteArray} {equations : Lean.Json}
             | ok rawProg =>
               rw [hprog] at h
               simp only at h
+              -- the resource binding (its `mapError` unfolded to a `match`)
               split at h
               · cases h
-              · rename_i u hval
-                split at h
-                · cases h
-                · rename_i rd hrd
-                  injection h with h
-                  subst h
-                  have hspec := Src.KernelFront.accept_spec hacc
-                  exact ⟨rfl, hacc, hspec.1, hspec.2, hval, hrd, rfl,
-                    rawHints, chosen, rawProg, rfl, hchosen, hempty, hprog, rfl⟩
+              · rename_i u hv
+                split at hv
+                · cases hv
+                · rename_i v hval
+                  -- the reading against the kernel's
+                  split at h
+                  · cases h
+                  · rename_i rd0 hb
+                    split at hb
+                    · cases hb
+                    · rename_i rd hrd
+                      injection hb with hb
+                      subst hb
+                      injection h with h
+                      subst h
+                      have hspec := Src.KernelFront.accept_spec hacc
+                      exact ⟨rfl, hacc, hspec.1, hspec.2, hval, hrd, rfl,
+                        rawHints, chosen, rawProg, rfl, hchosen, hempty, hprog, rfl⟩
 
 /-- Projection from `Recheck.run` to the front-end recheck step `Recheck.front`
 (`Src.Table.ofCert`, then `Src.Recheck.annotation`, which runs `Lazify.run`). -/

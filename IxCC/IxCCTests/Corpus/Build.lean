@@ -502,7 +502,7 @@ def checkFixture (t : Tools) (interpretToo : Bool) (m : Family) (f : Fixture) (s
       s!"{label} {r.name}: `together` names other roots of the fixture"
     -- ingress finds the roots (no typing: the census covers it), or declines
     -- them as the manifest expects
-    match IxCC.Recheck.ingress ixe eqsParsed (r.name :: r.together) (typecheck := false) with
+    match IxCC.Recheck.ingress ixe eqsParsed (r.name :: r.together) with
     | .ok _ => pure ()
     | .error e =>
       -- a root the manifest expects declined at ingress

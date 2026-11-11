@@ -87,15 +87,13 @@ def runSizes (a : Assert) (nt : Rt.Native.Tools) (label bench : String) (object 
 /-- The command line on one closure: compile, check the certificate,
 recompile from it, and (natively) run each root. -/
 def closure (a : Assert) (t : Tools) (label : String) (ixe eqs : FilePath)
-    (roots : List (String × String)) (typecheck : Bool) : IO (Array String) := do
+    (roots : List (String × String)) : IO (Array String) := do
   let obj := t.work / s!"{label}.o"
   let cert := t.work / s!"{label}.cert.json"
   let sigs := t.work / s!"{label}.sig.json"
   let rootArgs := roots.flatMap fun (r, _) => ["--root", r]
-  -- erased typing on the first compile only (when asked); the recompiles skip it
-  let common := [ixe.toString, "--equations", eqs.toString] ++ rootArgs ++ ["--no-typecheck"]
-  let first := [ixe.toString, "--equations", eqs.toString] ++ rootArgs ++
-    (if typecheck then [] else ["--no-typecheck"])
+  let common := [ixe.toString, "--equations", eqs.toString] ++ rootArgs
+  let first := common
   let (code, ms) ← timed (cli t (["compile"] ++ first ++ ["-o", obj.toString, "--emit-cert", cert.toString,
     "--signatures", sigs.toString]))
   expectEq a code 0 s!"{label}: compile exit code"
@@ -109,7 +107,7 @@ def closure (a : Assert) (t : Tools) (label : String) (ixe eqs : FilePath)
   expect a ((← IO.FS.readBinFile obj2) == object) s!"{label}: compile --cert wrote a different object"
   let signatures ← readSignatures sigs
   expectEq a signatures.length roots.length s!"{label}: signatures"
-  let mut out := #[s!"{label}: compiled in {ms} ms{if typecheck then " (with erased typing)" else ""}, \
+  let mut out := #[s!"{label}: compiled in {ms} ms, \
     object {object.size} bytes, certificate {(← IO.FS.readFile cert).utf8ByteSize} bytes; \
     check-cert and compile --cert agree"]
   for ((name, bench), (name', symbol, params, ty, sig)) in roots.zip signatures do
@@ -130,7 +128,7 @@ def rcCommandLine (a : Assert) (t : Tools) : IO (Array String) := do
   let gcdAutoObj := t.work / "gcd.rc-auto.o"
   let gcdAutoCert := t.work / "gcd.rc-auto.cert.json"
   let code ← cli t ["compile", gcdIxe, "--equations", gcdEqs, "--root", "entry",
-    "--no-typecheck", "--rc", "auto", "-o", gcdAutoObj.toString, "--emit-cert", gcdAutoCert.toString]
+    "--rc", "auto", "-o", gcdAutoObj.toString, "--emit-cert", gcdAutoCert.toString]
   expectEq a code 0 "gcd --rc auto: compile exit code"
   expect a ((← IO.FS.readBinFile gcdAutoObj) == (← IO.FS.readBinFile gcdOffObj))
     "gcd --rc auto: object differs from --rc off"
@@ -140,17 +138,17 @@ def rcCommandLine (a : Assert) (t : Tools) : IO (Array String) := do
   let gcdOnObj := t.work / "gcd.rc-on.o"
   let gcdOnCert := t.work / "gcd.rc-on.cert.json"
   let code ← cli t ["compile", gcdIxe, "--equations", gcdEqs, "--root", "entry",
-    "--no-typecheck", "--rc", "on", "-o", gcdOnObj.toString, "--emit-cert", gcdOnCert.toString]
+    "--rc", "on", "-o", gcdOnObj.toString, "--emit-cert", gcdOnCert.toString]
   expectEq a code 0 "gcd --rc on: compile exit code"
   let gcdOnCertText := (← IO.FS.readFile gcdOnCert).trimAscii.toString
   expect a (gcdOnCertText.startsWith "[\"ixcc/rc-cert/2\"")
     "gcd --rc on: should emit ixcc/rc-cert/2"
   let code ← cli t ["check-cert", gcdIxe, "--equations", gcdEqs, "--root", "entry",
-    "--no-typecheck", "--cert", gcdOnCert.toString]
+    "--cert", gcdOnCert.toString]
   expectEq a code 0 "gcd --rc on: check-cert exit code"
   let gcdFromRcCertObj := t.work / "gcd.from-rc-cert.o"
   let code ← cli t ["compile", gcdIxe, "--equations", gcdEqs, "--root", "entry",
-    "--no-typecheck", "--cert", gcdOnCert.toString, "-o", gcdFromRcCertObj.toString]
+    "--cert", gcdOnCert.toString, "-o", gcdFromRcCertObj.toString]
   expectEq a code 0 "gcd --rc on: compile --cert exit code"
   expect a ((← IO.FS.readBinFile gcdFromRcCertObj) == (← IO.FS.readBinFile gcdOnObj))
     "gcd --rc on: compile --cert wrote a different object"
@@ -161,7 +159,7 @@ def rcCommandLine (a : Assert) (t : Tools) : IO (Array String) := do
   let revAutoObj := t.work / "reverseList.rc-auto.o"
   let revAutoCert := t.work / "reverseList.rc-auto.cert.json"
   let code ← cli t ["compile", rcIxe, "--equations", rcEqs, "--root", rcRoot,
-    "--no-typecheck", "--rc", "auto", "-o", revAutoObj.toString, "--emit-cert", revAutoCert.toString]
+    "--rc", "auto", "-o", revAutoObj.toString, "--emit-cert", revAutoCert.toString]
   expectEq a code 0 "reverseList --rc auto: compile exit code"
   let revAutoCertText := (← IO.FS.readFile revAutoCert).trimAscii.toString
   expect a (revAutoCertText.startsWith "[\"ixcc/rc-cert/2\"")
@@ -169,33 +167,31 @@ def rcCommandLine (a : Assert) (t : Tools) : IO (Array String) := do
   let revOnObj := t.work / "reverseList.rc-on.o"
   let revOnCert := t.work / "reverseList.rc-on.cert.json"
   let code ← cli t ["compile", rcIxe, "--equations", rcEqs, "--root", rcRoot,
-    "--no-typecheck", "--rc", "on", "-o", revOnObj.toString, "--emit-cert", revOnCert.toString]
+    "--rc", "on", "-o", revOnObj.toString, "--emit-cert", revOnCert.toString]
   expectEq a code 0 "reverseList --rc on: compile exit code"
   expect a ((← IO.FS.readBinFile revAutoObj) == (← IO.FS.readBinFile revOnObj))
     "reverseList: --rc auto and --rc on objects differ"
   expectEq a revAutoCertText ((← IO.FS.readFile revOnCert).trimAscii.toString)
     "reverseList: --rc auto and --rc on certificates differ"
   let code ← cli t ["check-cert", rcIxe, "--equations", rcEqs, "--root", rcRoot,
-    "--no-typecheck", "--cert", revAutoCert.toString]
+    "--cert", revAutoCert.toString]
   expectEq a code 0 "reverseList --rc auto: check-cert exit code"
   let revFromCertObj := t.work / "reverseList.from-rc-cert.o"
   let code ← cli t ["compile", rcIxe, "--equations", rcEqs, "--root", rcRoot,
-    "--no-typecheck", "--cert", revAutoCert.toString, "-o", revFromCertObj.toString]
+    "--cert", revAutoCert.toString, "-o", revFromCertObj.toString]
   expectEq a code 0 "reverseList --rc auto: compile --cert exit code"
   expect a ((← IO.FS.readBinFile revFromCertObj) == (← IO.FS.readBinFile revAutoObj))
     "reverseList --rc auto: compile --cert wrote a different object"
   return #["--rc auto/on: gcd selects zeroRc (ixcc/cert/1), reverseList selects plainRc (ixcc/rc-cert/2); check-cert and compile --cert agree"]
 
-/-- Every bench-k1 closure, and `k1.ixe` with its five roots. Erased typing
-runs in the first compile of fib, tak and gcd (under 0.5 s each); sum-loop,
-ackermann (35–40 s each) and `k1.ixe` (about 43 s) skip it here, as do the
-recompiles (`tests-ixon-v3` types every K1 closure). -/
+/-- Every bench-k1 closure, and `k1.ixe` with its five roots; each compile
+runs the certified kernel's acceptance at ingress (about a second and a half
+on the largest closures). -/
 def commandLine (a : Assert) (t : Tools) : IO (Array String) := do
   let mut out := #[]
   for name in benchNames do
-    let typecheck := !(name == "sum-loop" || name == "ackermann")
-    out := out ++ (← closure a t name (benchIxe name) (benchEqs name) [("entry", name)] typecheck)
-  out := out ++ (← closure a t "k1" k1Ixe k1Eqs k1Roots false)
+    out := out ++ (← closure a t name (benchIxe name) (benchEqs name) [("entry", name)])
+  out := out ++ (← closure a t "k1" k1Ixe k1Eqs k1Roots)
   out := out ++ (← rcCommandLine a t)
   return out
 
@@ -217,7 +213,7 @@ heap closure (`build` + `revAcc` + `sumL`), then verify that it passes `Recheck.
 def contractZeroRc (a : Assert) : IO String := do
   let ixe : FilePath := "fixtures/ownership/OS16-plain.ixe"
   let eqs : FilePath := "fixtures/ownership/OS16-plain.equations.json"
-  let baseInp ← ingressFile ixe eqs ["entry"] (typecheck := false)
+  let baseInp ← ingressFile ixe eqs ["entry"]
   let p0 := baseInp.program
   let cLinear : Ixon.V3.BinderContract := { uses := .linear }
   let cUnique : Ixon.V3.BinderContract := { value := { owned := .unique } }
@@ -356,7 +352,7 @@ def compileClaims (a : Assert) : IO String := do
   let rcRoot := "IxCCTests.Own.H0.reverseList"
   let rcBytes ← IO.FS.readBinFile rcIxe
   let rcJson ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile rcEqs))
-  let rcInp ← ingressFile rcIxe rcEqs [rcRoot] (typecheck := false)
+  let rcInp ← ingressFile rcIxe rcEqs [rcRoot]
   let rcCfg : Config := { names := [rcRoot], provenance := some Rt.Machine.testProvenance }
   let (rcClaim, rcCert, rcElf) ← ofErr "reverseList CompileClaim.produce" fun _ =>
     CompileClaim.produce rcCfg rcInp
@@ -544,14 +540,14 @@ def declines (a : Assert) (t : Tools) : IO (Array String) := do
   IO.FS.writeFile noEqsFile noEqs.pretty
   let bytes ← IO.FS.readBinFile k1Ixe
   for (root, _) in k1Roots do
-    match compile {} bytes noEqs [root] (typecheck := false) with
+    match compile {} bytes noEqs [root] with
     | .ok (_, art) =>
       expect a (Anf.firstOrder art.anf) s!"fallback route {root}: the program Fir lowers is not first order"
       expect a (Anf.Pipeline.residual art.anf).fns.isEmpty s!"fallback route {root}: a local function is left"
       out := out.push s!"fallback route {root}: compiled through the closures step ({art.object.size} bytes)"
     | .error e => expect a false s!"fallback route {root}: {e.render}, expected it to compile"
   let code ← cli t ["compile", k1Ixe.toString, "--equations", noEqsFile.toString, "--root", "K1.fib",
-    "--no-typecheck", "-o", (t.work / "fallback.o").toString]
+    "-o", (t.work / "fallback.o").toString]
   expectEq a code 0 "fallback route: the command line's exit code"
   -- six parameters: declined before lowering; five are fine
   out := out.push (← expectErr a "six parameters" (checkParams { names := ["wide"] } (wide 6) [(0, 0)])

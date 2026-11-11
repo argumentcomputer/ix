@@ -1,6 +1,6 @@
 import IxCCTests.Support.Bound
 import IxCCTests.Recheck.Hostile
-import IxCC.Src.KernelFront.Front
+import IxCC.Recheck.Produce
 
 /-! # The role-bound test builder, against the kernel front end
 
@@ -8,7 +8,7 @@ The builder `IxCCTests.Support.Bound` makes the in-memory test environments of
 `tests-recheck`'s hostile families role-bound, with their recursors, so that
 the certified kernel accepts them. Ported here from the hostile family's
 enumeration case (`IxCCTests.Recheck.Hostile`: `pinFreeEnv`, `mkCase`,
-`pinFree`) and run through the kernel front end (`KernelFront.ingress`,
+`pinFree`) and run through the front end over the kernel (`Recheck.ingress`,
 `produce`, `checkCanonicalRelevance`), each assertion naming the stage or
 code a refusal must have:
 
@@ -98,16 +98,16 @@ def run (a : Assert) : IO (List String) := do
   let (env, en, idc, main, roots) := enumProgram base n
   let bs ← envBytes "enum" env
   let json := sidecar roots
-  let k ← ofErr "enum: kernel ingress" (Src.KernelFront.ingress bs json)
-  expect a (k.acc.records.length == env.consts.size && !en.existing)
+  let k ← ofErr "enum: kernel ingress" (Recheck.ingress bs json)
+  expect a (k.kernel.acc.records.length == env.consts.size && !en.existing)
     "enum: the kernel did not receive every record, or the enumeration was the base's"
-  let P := k.inp.program
-  let cfg := Recheck.Config.forInput {} k.inp
-  let honest ← ofErr "enum: produce" (Src.KernelFront.produce cfg k)
+  let P := k.program
+  let cfg := Recheck.Config.forInput {} k
+  let honest ← ofErr "enum: produce" (Recheck.produce cfg k)
   let art ← ofErr "enum: Recheck.run (honest)" (Recheck.run cfg P honest)
   expect a ((art.linked driver).run (0, []) 1000000 matches .ok (some (.ctor 1 [])))
     "enum: the honest object does not return constructor 1"
-  expect a (Src.KernelFront.checkCanonicalRelevance cfg k honest.table honest.relevance)
+  expect a (Recheck.checkCanonicalRelevance cfg k honest.table honest.relevance)
     "enum: Stage A refused the kernel annotator's own annotation"
   let some idcId := P.lookup idc | throw (IO.userError "enum: idc not ingested")
   let some mainId := P.lookup main | throw (IO.userError "enum: main not ingested")
@@ -127,7 +127,7 @@ def run (a : Assert) : IO (List String) := do
   | .error e =>
     expect a (e.stage == .relevance && e.code == "relevance-S1")
       s!"enum: Recheck.run refused the hostile certificate, but not by checkCanonical: {e.render}"
-  expect a (!Src.KernelFront.checkCanonicalRelevance cfg k hostile.table hostile.relevance)
+  expect a (!Recheck.checkCanonicalRelevance cfg k hostile.table hostile.relevance)
     "enum: Stage A accepted the hostile annotation"
   -- a two-constructor enumeration is the base's `Bool`
   let (_, two) := addEnum base 2
@@ -152,14 +152,14 @@ def run (a : Assert) : IO (List String) := do
   let (te, tmain) := store te
     ⟨defn (.ref 0 #[]) (.app (.app (.ref 1 #[]) (.ref 2 #[])) (.ref 2 #[])), #[],
       #[tree.ind, tree.ctors[1]!, tree.ctors[0]!], #[]⟩
-  let tk : Except Recheck.Err Src.KernelFront.KInput := Src.KernelFront.ingress (← envBytes "tree" te) (sidecar [("main", tmain)])
+  let tk : Except Recheck.Err Recheck.Input := Recheck.ingress (← envBytes "tree" te) (sidecar [("main", tmain)])
   expect a (tk matches Except.ok _)
     s!"tree: the kernel front end refused a recursive inductive with its recursor: {errText tk}"
   let (le, list) := addList env en.ind
   let (le, lmain) := store le
     ⟨defn (.ref 0 #[]) (.app (.app (.ref 1 #[]) (.ref 3 #[])) (.ref 2 #[])), #[],
       #[list.ind, list.ctors[1]!, list.ctors[0]!, en.ctors[0]!], #[]⟩
-  let lk : Except Recheck.Err Src.KernelFront.KInput := Src.KernelFront.ingress (← envBytes "list" le) (sidecar [("main", lmain)])
+  let lk : Except Recheck.Err Recheck.Input := Recheck.ingress (← envBytes "list" le) (sidecar [("main", lmain)])
   expect a (lk matches Except.ok _)
     s!"list: the kernel front end refused a list over the enumeration with its recursor: {errText lk}"
   return [s!"bound builder: the base ({base.consts.size} records) rewritten and accepted; enum-{n} on it \

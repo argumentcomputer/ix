@@ -101,14 +101,14 @@ def orderSame (a : Assert) (count : Nat) : IO (Array String) := do
 /-- A scaling shape's Lam program: ingress, the producer's table and
 annotation, and erasure. -/
 def lamOf (name : String) (n : Nat) : IO Lam.Program := do
-  let (e, main) ← IO.ofExcept (Perf.shapeEnv name n)
-  let inp ← IO.ofExcept ((Recheck.ingress (IxCCTests.IxonV3.TypingFixtures.bytes e)
-    (Hostile.sidecar [("main", main)]) [] true).mapError (·.render))
+  let (e, main) ← IO.ofExcept (Perf.shapeEnv (← IxCCTests.Support.Bound.loadBase) name n)
+  let inp ← IO.ofExcept ((Recheck.ingress (Hostile.bytes e)
+    (Hostile.sidecar [("main", main)]) []).mapError (·.render))
   let cfg := Recheck.Config.forInput {} inp
   let P := inp.program
   let (table, _, _) := Src.Table.build cfg.table P inp.hints.proposals
   let p0 := { P with table }
-  let ann ← IO.ofExcept (Src.Relevance.annotate inp.env p0)
+  let ann ← IO.ofExcept (inp.kernel.annotateChecked p0)
   let (src, checked) ← IO.ofExcept ((Src.Recheck.annotation p0 ann).mapError fun _ => s!"{name} {n}: annotation")
   let (lam, _) ← IO.ofExcept ((Lam.erase src checked).mapError fun _ => s!"{name} {n}: erasure")
   return lam
@@ -189,9 +189,9 @@ def budgets (a : Assert) : IO (Array String) := do
   -- past the depth budget at P1: refused there, with the re-run's message.
   for (shape, n, accepted) in [("deep", 1000, true), ("tree", 10, false), ("dag", 10, false),
       ("wide", 10, false)] do
-    let (e, main) ← IO.ofExcept (Perf.shapeEnv shape n)
-    let inp ← IO.ofExcept ((Recheck.ingress (IxCCTests.IxonV3.TypingFixtures.bytes e)
-      (Hostile.sidecar [("main", main)]) [] true).mapError (·.render))
+    let (e, main) ← IO.ofExcept (Perf.shapeEnv (← IxCCTests.Support.Bound.loadBase) shape n)
+    let inp ← IO.ofExcept ((Recheck.ingress (Hostile.bytes e)
+      (Hostile.sidecar [("main", main)]) []).mapError (·.render))
     let cfg := Recheck.Config.forInput {} inp
     match Recheck.produce cfg inp, accepted with
     | .error e, true => expect a false s!"{shape} {n}: the producer refuses: {e.render}"
@@ -277,9 +277,9 @@ def work (a : Assert) : IO (Array String) := do
     return w) 250)
   -- the whole producer on a closure of n distinct non-recursive functions
   lines := lines.push (← nearLinear a "producer (table to block order), n small functions" (fun n => do
-    let (e, main) ← IO.ofExcept (Perf.shapeEnv "fns" n)
-    let inp ← IO.ofExcept ((Recheck.ingress (IxCCTests.IxonV3.TypingFixtures.bytes e)
-      (Hostile.sidecar [("main", main)]) [] true).mapError (·.render))
+    let (e, main) ← IO.ofExcept (Perf.shapeEnv (← IxCCTests.Support.Bound.loadBase) "fns" n)
+    let inp ← IO.ofExcept ((Recheck.ingress (Hostile.bytes e)
+      (Hostile.sidecar [("main", main)]) []).mapError (·.render))
     let cfg := Recheck.Config.forInput {} inp
     let (w, _) ← allocations (fun _ => Recheck.produce cfg inp) fun r => match r with
       | .ok c => c.alloc.length

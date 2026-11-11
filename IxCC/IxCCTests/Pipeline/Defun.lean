@@ -75,7 +75,7 @@ def front (cfg : Config) (inp : Input) : Except Err (Src.Program × Lam.Program)
   let (table, _, _) := Src.Table.build cfg.table P inp.hints.proposals
   let p0 := { P with table }
   (Src.Table.validate cfg.table p0).mapError fun m => { stage := .table, code := "table.entry", message := m }
-  let ann ← (Src.Relevance.annotate inp.env p0).mapError fun m =>
+  let ann ← (inp.kernel.annotateChecked p0).mapError fun m =>
     { stage := .relevance, code := "relevance-oracle", message := m }
   let (src, checked) ← match Src.Recheck.annotation p0 ann with
     | .ok r => pure r
@@ -665,7 +665,7 @@ def run (a : Assert) (t : Compiler.Tools) : IO (Array String) := do
   let noEqs := json.setObjVal! "equations" (Lean.Json.arr #[])
   let bytes ← IO.FS.readBinFile k1Ixe
   for (root, inputs) in fallbackInputs do
-    let inp ← ofErr root fun _ => ingress bytes noEqs [root] (typecheck := false)
+    let inp ← ofErr root fun _ => ingress bytes noEqs [root]
     let cases := inputs.map fun xs => (xs, (Twin.twin root xs).getD 0)
     out := out.push (← one a native s!"fallback-{root.replace "." "_"}" inp midDefault cases 10)
   out := out ++ (← workloads a native)

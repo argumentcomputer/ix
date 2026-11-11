@@ -9,8 +9,8 @@ import IxCC.Lam.Erase.Proof.Correct
 
 For every root of the ABI fixture (`Nat`, pinned-`Bool` and enumeration
 results, compiled together; two of them also alone), for each root `rⱼ := cⱼ`
-of the pin-free programs with two (`Bool`-pinned) and three constructors,
-compiled alone, and for the pin-free three-constructor enumeration of
+of the enumeration programs with two (the base's `Bool`) and three
+constructors, compiled alone, and for the three-constructor enumeration of
 `Hostile`: the root passes `checkImmortalRoot`; every observation of its
 result shape is accepted by the view, and by the shape view alike, as a
 `ViewShape` observation that reads back from its word (the executable side of
@@ -26,19 +26,18 @@ its linked object, and a claim naming it is accepted by `verifyBytes`
 (`aloneCase`); `tests-corpus` runs the same objects natively as test
 executables (`nativeAlone`).
 
-The hostile case for the shape view (`illTyped`): an erased-typing program
-whose root `main : E := F.c₁` returns a constructor of another enumeration.
-The view relabels it by its table tag, as `E`'s middle constructor, which the
-object returns; the shape view rejects it, so the source goes wrong for the
-shape view; typed ingress refuses the program. The decision procedures are
-also evaluated by `decide` on a two-constant program. -/
+The ill-typed case (`illTyped`): `main : E := F.c₁` returns a constructor of
+another enumeration; the certified kernel declines the closure at ingress, so
+no byte-level path compiles it. The decision procedures are also evaluated by
+`decide` on a two-constant program. -/
 
 namespace IxCCTests.Recheck.RootShape
 
 open IxCC IxCC.Recheck
 open IxCC.Sem (Obs Lang)
 open IxCCTests.Src (Assert expect)
-open IxCCTests.IxonV3.TypingFixtures (store block bytes)
+open IxCCTests.IxonV3.TypingFixtures (store)
+open IxCCTests.Support.Bound (loadBase addEnum)
 
 /-- The observations of root `c`'s result shape the test enumerates: some
 natural numbers at the pinned `Nat`; the pinned `Bool` constructors; every
@@ -126,9 +125,9 @@ def abiRoots : List String :=
   (List.range 6).flatMap fun k => [s!"Abi.nat{k}", s!"Abi.bool{k}", s!"Abi.tri{k}"]
 
 /-- Ingress, produce and run on the roots named `roots`. -/
-def compileAll (bytes : ByteArray) (json : Lean.Json) (roots : List String) (typecheck : Bool := true) :
+def compileAll (bytes : ByteArray) (json : Lean.Json) (roots : List String) :
     IO (Recheck.Input × Recheck.Config × Recheck.Cert × Recheck.Artifact) := do
-  let inp ← Hostile.ofErr s!"{roots}: ingress" (Recheck.ingress bytes json roots typecheck)
+  let inp ← Hostile.ofErr s!"{roots}: ingress" (Recheck.ingress bytes json roots)
   let cfg := Recheck.Config.forInput {} inp
   let cert ← Hostile.ofErr s!"{roots}: produce" (Recheck.produce cfg inp)
   let art ← Hostile.ofErr s!"{roots}: Recheck.run" (Recheck.run cfg inp.program cert)
@@ -162,24 +161,24 @@ def abi (a : Assert) : IO (Array String) := do
 def pinFree (a : Assert) : IO String := do
   let c ← Hostile.mkCase 3
   let art ← Hostile.ofErr "enum-3: Recheck.run" (Recheck.run c.cfg c.inp.program c.honest)
-  checkRoot a "enum-3 (nothing pinned)" art 0 [[]]
+  checkRoot a "enum-3 (a new enumeration)" art 0 [[]]
 
 /-! ## Roots compiled alone -/
 
-/-- Root `rⱼ := cⱼ` of the pin-free program with `n` constructors (`Bool`'s
-content for `n = 2`), compiled alone, with its bytes, sidecar and address. -/
+/-- Root `rⱼ := cⱼ` of the enumeration program with `n` constructors (the base's
+`Bool` for `n = 2`), compiled alone, with its bytes, sidecar and address. -/
 def alone (n j : Nat) :
     IO (ByteArray × Lean.Json × Recheck.Input × Recheck.Config × Recheck.Cert × Recheck.Artifact ×
       Ixon.Address) := do
-  let (env, _, roots) := Hostile.pinFreeEnv n
-  let bs := bytes env
+  let (env, _, roots) := Hostile.enumEnv (← loadBase) n
+  let bs := Hostile.bytes env
   let json := Hostile.sidecar roots
   let name := s!"r{j}"
   let some (_, target) := roots.find? (·.1 == name) | throw (IO.userError s!"enum-{n}: no root {name}")
   let (inp, cfg, cert, art) ← compileAll bs json [name]
   return (bs, json, inp, cfg, cert, art, target)
 
-/-- Each root of the pin-free programs with two and three constructors, alone:
+/-- Each root of the enumeration programs with two and three constructors, alone:
 the checks of `checkRoot`; its object returns constructor `j` in the x86
 model; and a claim naming it is accepted by `verifyBytes`. -/
 def aloneCases (a : Assert) : IO (Array String) := do
@@ -223,55 +222,39 @@ def nativeAlone (a : Assert) (nt : IxCCTests.Rt.Native.Tools) : IO (Array String
       | _ => expect a false s!"{label}: not one result line"
   return lines
 
-/-! ## A constructor of another type, under the shape view -/
+/-! ## A constructor of another type -/
 
-/-- An erased-typing program: `E` with three constructors, `F` with four, and
-`main : E := F.c₁` (ill-typed). -/
-def illTypedEnv : Ixon.V3.Env × Ixon.Address := Id.run do
-  let (e, blkE) := block {} ⟨.muts #[.indc (Hostile.enumInd 3)], #[], #[], #[.succ .zero]⟩
-  let (e, blkF) := block e ⟨.muts #[.indc (Hostile.enumInd 4)], #[], #[], #[.succ .zero]⟩
-  let enumE := Ixon.V3.indcProjAddr blkE 0
-  let f1 := Ixon.V3.ctorProjAddr blkF 0 1
-  store e ⟨Hostile.defn (.ref 0 #[]) (.ref 1 #[]), #[], #[enumE, f1], #[]⟩
+/-- `E` with three constructors, `F` with four (each with its recursor), and
+`main : E := F.c₁` (ill-typed), on the role-bound base. -/
+def illTypedEnv (env0 : Ixon.V3.Env) : Ixon.V3.Env × Ixon.Address := Id.run do
+  let (e, en) := addEnum env0 3
+  let (e, fn) := addEnum e 4
+  store e ⟨Hostile.defn (.ref 0 #[]) (.ref 1 #[]), #[], #[en.ind, fn.ctors[1]!], #[]⟩
 
-/-- The view relabels `F.c₁` by its table tag as `E`'s constructor 1, which
-the object returns; the shape view rejects it (it is not of `main`'s result
-shape), so the source goes wrong for the shape view; typed ingress refuses
-the program, and erased-typing `verifyBytes` accepts the claim. -/
+/-- The certified kernel declines the closure at ingress (a type mismatch; it
+does not take a failed conversion search as evidence that the input is
+wrong), so no byte-level path compiles the program, and `verifyBytes`
+refuses a claim naming its root. (Before the switch, ingress without typing
+compiled it, and the test showed the view relabelling `F.c₁` as `E`'s
+constructor 1 and the shape view rejecting it; no ingress admits an
+ill-typed program now.) -/
 def illTyped (a : Assert) : IO String := do
-  let (env, main) := illTypedEnv
-  let bs := bytes env
+  let (env, main) := illTypedEnv (← loadBase)
+  let bs := Hostile.bytes env
   let json := Hostile.sidecar [("main", main)]
-  expect a (Recheck.ingress bs json ["main"]).toOption.isNone "ill-typed: typed ingress accepts the program"
-  let (inp, cfg, cert, art) ← compileAll bs json ["main"] (typecheck := false)
-  let some root := art.roots.head? | do expect a false "ill-typed: no root"; return "ill-typed"
-  expect a (CompileClaim.checkImmortalRoot art.src root) "ill-typed: checkImmortalRoot refused the root"
-  let c := root.const
-  match Lang.run (⟨art.src, art.checked⟩ : Lam.Erase.Proof.CheckedProgram) (0, []) 1000000 with
-  | .ok v =>
-    match Lang.obs v with
-    | some o@(.ctor k []) =>
-      expect a (!resultShape? art.src c o) "ill-typed: F.c₁ is of E's shape"
-      expect a (art.front.view 0 (some o) == some (some (.ctor 1 [])))
-        s!"ill-typed: the view gives {repr (art.front.view 0 (some o))}, not E's constructor 1"
-      expect a (art.front.shapeView 0 (some o) == none) "ill-typed: the shape view accepts F.c₁"
-      expect a (art.src.decl? k matches some (.ctor _ _ _ 1 _ _ _)) "ill-typed: not constructor 1 of F"
-    | o => expect a false s!"ill-typed: SrcEval's result is {repr o}"
-  | _ => expect a false "ill-typed: SrcEval did not return"
-  match (art.linked Hostile.driver).run (0, []) 1000000 with
-  | .ok (some o) => expect a (o == .ctor 1 []) s!"ill-typed: the object returns {repr o}"
-  | _ => expect a false "ill-typed: the object returns no observation"
+  let r := Recheck.ingress bs json ["main"]
+  expect a (match r with
+    | .error e => e.stage == .ingress && e.code == "kernel" && (e.message.splitOn "(declined)").length > 1
+    | .ok _ => false)
+    s!"ill-typed: ingress did not decline main : E := F.c₁: \
+      {match r with | .error e => e.render | .ok _ => "accepted"}"
+  let decoded ← IO.ofExcept (Ixon.V3.decodeAnonymousEnv bs)
   let claim : CompileClaim :=
-    { env := inp.env.root, roleTable := inp.env.bindingAddress, target := main
-      policy := .immortal, abiArity := 0
-      elfHash := Ixon.Address.blake3Pure art.object }
-  expect a (CompileClaim.verifyBytes cfg bs json claim cert.toText (typecheck := false))
-    "ill-typed: erased-typing verifyBytes refused the claim"
-  expect a (!CompileClaim.verifyBytes cfg bs json claim cert.toText (typecheck := true))
-    "ill-typed: typed verifyBytes accepted the claim"
-  return "ill-typed main : E := F.c₁: the view relabels it as E's constructor 1, which the object \
-    returns; the shape view rejects it; typed ingress and typed verifyBytes refuse the program, \
-    erased-typing verifyBytes accepts the claim"
+    { env := decoded.root, roleTable := decoded.bindingAddress, target := main
+      policy := .immortal, abiArity := 0, elfHash := Ixon.Address.blake3Pure (ByteArray.mk #[0]) }
+  expect a (!CompileClaim.verifyBytes {} bs json claim "") "ill-typed: verifyBytes accepted a claim"
+  return "ill-typed main : E := F.c₁: the kernel declines the closure at ingress, and verifyBytes \
+    refuses a claim naming it"
 
 /-! ## Plain-RC roots: constructor trees -/
 

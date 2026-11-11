@@ -361,12 +361,12 @@ def measure (p : Program) (root : CId) (args : List Nat) (clock : Nat) : Except 
 
 /-! ## The front end, as `ixcc` runs it -/
 
-/-- `ixcc`'s front end up to the source SrcEval runs: ingress (with erased typing
-unless `typecheck` is off), then the producer's front half
+/-- `ixcc`'s front end up to the source SrcEval runs: ingress (with the kernel's
+acceptance), then the producer's front half
 (`Recheck.produceSource`). A decline is the front end's own error. -/
-def front (bytes : ByteArray) (equations : Lean.Json) (roots : List String) (typecheck : Bool) :
+def front (bytes : ByteArray) (equations : Lean.Json) (roots : List String) :
     Except Recheck.Err (Recheck.Input × Recheck.ProducedSource) := do
-  let inp ← Recheck.ingress bytes equations roots typecheck
+  let inp ← Recheck.ingress bytes equations roots
   return (inp, ← Recheck.produceSource (Recheck.Config.forInput {} inp) inp)
 
 /-- The source constant of the root named `name` (the sidecar's name). -/

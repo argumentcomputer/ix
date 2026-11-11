@@ -291,8 +291,8 @@ def load (name : String) : IO (Program × Ann) := do
     (← IO.FS.readFile (fixtures / "bench-k1" / s!"{name}.equations.json")))
   let hints ← IO.ofExcept (Hints.ofK1Json json)
   let env ← IO.ofExcept (IxCC.Ixon.V3.decodeAnonymousEnv bytes)
-  let (p, _, _) ← IO.ofExcept ((prepare { typecheck := false } env hints).mapError toString)
-  let ann ← IO.ofExcept (Relevance.annotate env p)
+  let (p, k, _, _) ← IO.ofExcept ((prepare {} env hints).mapError toString)
+  let ann ← IO.ofExcept (k.annotateChecked p)
   return (p, ann)
 
 /-- Write the modules, or with `check` compare them with the committed ones
