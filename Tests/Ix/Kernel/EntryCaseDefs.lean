@@ -201,6 +201,21 @@ noncomputable def bd2Val (t : BD2) : Nat :=
 
 theorem bd2Iota : bd2Val (BD2.mk [BD2.leaf]) = 2 := rfl
 
+/-- A nested block whose field mentions a member only where whnf erases it:
+`KE Nat (EA α)`, with `KE a _ := a`, at the under-applied `EA α : Nat → Type`. -/
+def KE (a : Type) (_ : Nat → Type) : Type := a
+
+inductive EA (α : Type) : Nat → Type where
+  | base : EA α 0
+  | mk : KE Nat (EA α) → List (EA α 0) → EA α 1
+
+/-- A value by `EA`'s recursors, and an ι reduction through the erasing field. -/
+noncomputable def eaVal (t : EA Nat 1) : Nat :=
+  EA.rec (motive_1 := fun _ _ => Nat) (motive_2 := fun _ => Nat) 0 (fun (n : Nat) _ ih => n + ih + 1) 0
+    (fun _ _ ih1 ih2 => ih1 + ih2) t
+
+theorem eaIota : eaVal (EA.mk (5 : Nat) [EA.base]) = 6 := rfl
+
 /-- The face of a `partial` definition: an opaque constant whose value is an
 inhabitant of its type. The recursive body is the `partial` companion
 `loop._unsafe_rec`. -/
@@ -312,5 +327,9 @@ bad_thm bd1IotaFalse : bd1Val (BD1.mk BD1.leaf [BD1.leaf]) = 4 :=
   unchecked (Eq.refl (bd1Val (BD1.mk BD1.leaf [BD1.leaf])))
 
 bad_thm bd2CtorFalse : BD2.mk [] = BD2.leaf := unchecked (Eq.refl (BD2.mk []))
+
+-- A false ι equation through `EA`'s erasing field, installed in Lean unchecked.
+bad_thm eaIotaFalse : eaVal (EA.mk (5 : Nat) [EA.base]) = 7 :=
+  unchecked (Eq.refl (eaVal (EA.mk (5 : Nat) [EA.base])))
 
 end Tests.Ix.Kernel.EntryCaseDefs

@@ -44,10 +44,8 @@ container `Carrier_j` (over the *model* names) and `aux p⃗ (tag.(r+j))`:
 * `proj_i` of a structure-like owner by `aux.rec` at a constant motive
   (unpacking a packed field), its iota by `unpackPack_j` or `Eq.refl`.
 
-Declines (the residual): a field mentioning the block other than as a
-whole member/mimic carrier, anywhere in it (an occurrence under a binder —
-infinitary nesting; a field whose carriers whnf removes, `K True (Box T)`,
-is ordinary), a container that is itself nested or mutual or whose mimics
+Declines (the residual): a container that is itself nested or mutual or
+whose mimics
 form a cycle, a reflexive field into a mimic (`∀ a⃗, I As`: a nested
 occurrence under a binder), a `Prop` block with a large
 eliminator, a container field a later container field depends on, an
@@ -70,7 +68,11 @@ mimic's (`List (Id' T)`), is recursive: Lean's recursor gives it a
 hypothesis, which names the member and the index arguments.  Such a field
 is read at that normal form (`fieldNorm`), and everything generated over
 the fields takes it; the public models keep the declared types, which
-are definitionally equal.
+are definitionally equal.  Likewise a field that mentions a member only
+where whnf erases it (`K Nat (T α)`, `K a _ := a`, with `T α` under-applied)
+is ordinary: its leftover member constants are replaced by the members'
+models spelled out (`fieldErase`), and the auxiliary family's install
+decides positivity after whnf.
 
 Index arguments that mention the parameters.  A member whose index
 domain mentions a parameter — `inductive NB (α : Type) (a₀ : α) : α →
@@ -337,7 +339,7 @@ def fieldKind (fam : Family md) (memberNames : List (Key md)) (i : Nat) (d : Exp
   if (stripAllPis d).1.any (fun b => mentionsAny memberNames b.1) then none
   else (matchCarrier fam (i + fieldTele d) (stripAllPis d).2).map (·.1)
 
-/-- **A field's domain as Lean's kernel reads it**: the declared domain `d`
+/-- **A field's domain at Lean's hypothesis**: the declared domain `d`
 (at field `i`'s frame) — or, where `d` mentions the block but is no carrier
 syntactically (`fieldKind`) and Lean's recursor gives the field a finitary
 hypothesis on motive `t` at index arguments `e⃗` (`minorIH?`, on the field's
@@ -345,7 +347,7 @@ minor premise `minor`: a member behind a definition, `Id' T`, which Lean's
 kernel reads after whnf), the carrier `C_t e⃗`, its normal form.  The
 auxiliary constructor is built over it (as `Mutual.lean`'s `MCtor.nty`);
 the public models keep the declared types, definitionally equal. -/
-def fieldNorm (fam : Family md) (memberNames : List (Key md)) (M J nF i : Nat) (minor d : Expr md) :
+def fieldNormIH (fam : Family md) (memberNames : List (Key md)) (M J nF i : Nat) (minor d : Expr md) :
     Expr md :=
   if (fieldKind fam memberNames i d).isNone && mentionsAny memberNames d then
     match minorIH? M J nF i minor with
@@ -353,6 +355,45 @@ def fieldNorm (fam : Family md) (memberNames : List (Key md)) (M J nF i : Nat) (
       if t < fam.mems.length then carrierAt fam (fam.mems.getD t default) i idx false else d
     | none => d
   else d
+
+/-- Every constant of a real member in `e`, replaced by the member's model
+spelled out, `λ p⃗ ı⃗, aux p⃗ (tag.m p⃗ ı⃗)`, at the constant's levels: the
+model `T_m._model` unfolded, which the auxiliary family's own constructors
+cannot name (they come before it).  The term is closed, so it needs no
+lifting under binders. -/
+def substMembers (fam : Family md) : Expr md → Expr md
+  | .const x us =>
+    match fam.mems.find? (fun m => m.real?.isSome && m.I == x) with
+    | some mem =>
+      (mkLams (fam.pbs ++ mem.idxBs) (auxAt fam mem.tag mem.nIdx (varsAt 0 mem.nIdx))).instantiateLevelParams
+        fam.lps us
+    | none => .const x us
+  | .app g a => .app (substMembers fam g) (substMembers fam a)
+  | .lam d b m => .lam (substMembers fam d) (substMembers fam b) m
+  | .forallE d b m => .forallE (substMembers fam d) (substMembers fam b) m
+  | .letE t v b lm => .letE (substMembers fam t) (substMembers fam v) (substMembers fam b) lm
+  | .proj s k x => .proj s k (substMembers fam x)
+  | e => e
+
+/-- **A field that mentions the block other than as whole carriers** (`d`, at
+field `i`'s frame, no carrier itself): a member under-applied (`K Nat (T α)`
+at `T (α) : Nat → Type`) or at other parameters, in a position whnf erases
+(`K a _ := a`), as Lean's kernel accepts it after whnf.  Its whole carriers
+rewritten into the auxiliary family (`specAll`), the members left are
+replaced by their models spelled out (`substMembers`): a domain
+definitionally equal to the declared one that mentions no member.  Whether
+whnf indeed erases them is the auxiliary family's positivity check, after
+whnf, at its install. -/
+def fieldErase (fam : Family md) (memberNames : List (Key md)) (i : Nat) (d : Expr md) : Expr md :=
+  if (fieldKind fam memberNames i d).isNone && mentionsAny memberNames (specAll fam i d) then
+    substMembers fam (specAll fam i d)
+  else d
+
+/-- **A field's domain as Lean's kernel reads it** (`fieldNormIH`, then
+`fieldErase`). -/
+def fieldNorm (fam : Family md) (memberNames : List (Key md)) (M J nF i : Nat) (minor d : Expr md) :
+    Expr md :=
+  fieldErase fam memberNames i (fieldNormIH fam memberNames M J nF i minor d)
 
 /-- Read the members off the motives of the first recursor's type
 (after the parameters): motive `m`'s domain `∀ ı⃗ (t : C), Sort ℓ`. -/

@@ -143,7 +143,8 @@ its blocks are declared through Lean's kernel, which the fixtures module
 cannot export), with claims that assume their binding. -/
 def entryCheckEntries : List (String × Nat) := [
   ("Tests.Ix.Kernel.EntryCaseDefs.BD1.rec", 0),
-  ("Tests.Ix.Kernel.EntryCaseDefs.BD2.rec", 0)]
+  ("Tests.Ix.Kernel.EntryCaseDefs.BD2.rec", 0),
+  ("Tests.Ix.Kernel.EntryCaseDefs.EA.rec", 0)]
 
 /-- A `Check` claim on `name` over `ixonEnv`. -/
 def kernelCheckCase (ixonEnv : Ixon.Env) (name : Lean.Name) (assumeBinding : Bool) :
