@@ -68,6 +68,22 @@ theorem built_strip {limits : Ix.Sharing.Exact.Limits} {info : Ixon.ConstantInfo
   rw [strip s (built_binders h)]
   exact h
 
+/-- **A build followed by its section**, as the compiler's mutual builder runs
+them: the sharing built the record without its section, and the section is an
+admitted one. -/
+theorem bind_sectioned {β : Type} {limits : Ix.Sharing.Exact.Limits} {info : Ixon.ConstantInfo}
+    {refs : Array Address} {univs : Array Ixon.Univ} {annotator? : Option Ix.BinderAnnotator}
+    {names : Array Ix.Name} {f : Ixon.Constant → Except CompileError β} {y : β}
+    (h : (buildConstantWithSharing limits info refs univs >>= fun built =>
+      withBinderSection annotator? names built >>= f) = .ok y) :
+    ∃ block, buildConstantWithSharing limits info refs univs = .ok { block with binders := #[] } ∧
+      Sectioned { block with binders := #[] } block ∧ f block = .ok y := by
+  obtain ⟨built, hb, rest⟩ := Ix.Sharing.Verify.except_bind_eq_ok h
+  obtain ⟨block, hsec, returned⟩ := Ix.Sharing.Verify.except_bind_eq_ok rest
+  have sec := of_withBinderSection hsec
+  have strip' := strip sec (built_binders hb)
+  refine ⟨block, by rw [strip']; exact hb, by rw [strip']; exact sec, returned⟩
+
 /-- A record with no root, such as a projection, with the empty section is
 canonical and complete. -/
 theorem empty_of_rootless {c : Ixon.Constant} (roots : c.info.binderRoots = #[])

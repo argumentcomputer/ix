@@ -646,7 +646,7 @@ theorem buildMutual_rows {limits : Ix.Sharing.Exact.Limits} {classes : List MutC
   cases hs : standaloneMutConstInfo? payloads with
   | some info =>
     rw [hs] at ran
-    obtain ⟨block, hb, returned⟩ := Ix.Sharing.Verify.except_bind_eq_ok ran
+    obtain ⟨block, hb, -, returned⟩ := Ix.CompileCert.Sectioned.bind_sectioned ran
     cases Except.ok.inj returned
     intro p hp hne
     exfalso
@@ -659,7 +659,7 @@ theorem buildMutual_rows {limits : Ix.Sharing.Exact.Limits} {classes : List MutC
     exact (Prod.mk.inj e).2.symm
   | none =>
     rw [hs] at ran
-    obtain ⟨block, hb, returned⟩ := Ix.Sharing.Verify.except_bind_eq_ok ran
+    obtain ⟨block, hb, -, returned⟩ := Ix.CompileCert.Sectioned.bind_sectioned ran
     cases Except.ok.inj returned
     intro p hp _
     obtain ⟨targets, h, -⟩ := ProjectionLayout.sharing_mutual_shape _ _ _ _ _ hb
@@ -1122,7 +1122,7 @@ theorem buildMutual_defn {limits : Ix.Sharing.Exact.Limits} {classes : List MutC
   cases hs : standaloneMutConstInfo? payloads with
   | some info =>
     rw [hs] at ran
-    obtain ⟨block, hb, returned⟩ := Ix.Sharing.Verify.except_bind_eq_ok ran
+    obtain ⟨block, hb, -, returned⟩ := Ix.CompileCert.Sectioned.bind_sectioned ran
     cases Except.ok.inj returned
     intro d hd hk
     have erased := (SharingRoots.build_roots (md := .anon) _ _ _ _ _ hb).1
@@ -1165,7 +1165,7 @@ theorem buildMutual_defn {limits : Ix.Sharing.Exact.Limits} {classes : List MutC
       · simp at kinds
   | none =>
     rw [hs] at ran
-    obtain ⟨block, hb, returned⟩ := Ix.Sharing.Verify.except_bind_eq_ok ran
+    obtain ⟨block, hb, -, returned⟩ := Ix.CompileCert.Sectioned.bind_sectioned ran
     cases Except.ok.inj returned
     intro d hd _
     obtain ⟨targets, h, -⟩ := ProjectionLayout.sharing_mutual_shape _ _ _ _ _ hb

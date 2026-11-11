@@ -42,7 +42,7 @@ theorem buildMutual_rows {limits : Ix.Sharing.Exact.Limits} {classes : List MutC
   cases hs : standaloneMutConstInfo? payloads with
   | some info =>
     rw [hs] at ran
-    obtain ⟨block, -, returned⟩ := Ix.Sharing.Verify.except_bind_eq_ok ran
+    obtain ⟨block, -, -, returned⟩ := Ix.CompileCert.Sectioned.bind_sectioned ran
     cases Except.ok.inj returned
     refine .inl fun p hp => ?_
     have logical : (p.1, p.2.1) ∈ MutualProjections.logicalRows
@@ -53,7 +53,7 @@ theorem buildMutual_rows {limits : Ix.Sharing.Exact.Limits} {classes : List MutC
     exact (Prod.mk.inj e).2.symm
   | none =>
     rw [hs] at ran
-    obtain ⟨block, hb, returned⟩ := Ix.Sharing.Verify.except_bind_eq_ok ran
+    obtain ⟨block, hb, -, returned⟩ := Ix.CompileCert.Sectioned.bind_sectioned ran
     cases Except.ok.inj returned
     exact .inr (built_muts hb)
 

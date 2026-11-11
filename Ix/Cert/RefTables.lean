@@ -810,12 +810,12 @@ theorem mutual_refs {limits : Ix.Sharing.Exact.Limits} {classes : List MutConst}
   cases hs : standaloneMutConstInfo? payloads with
   | some info =>
     rw [hs] at ran
-    obtain ⟨block, hb, returned⟩ := Ix.Sharing.Verify.except_bind_eq_ok ran
+    obtain ⟨block, hb, -, returned⟩ := Ix.CompileCert.Sectioned.bind_sectioned ran
     cases Except.ok.inj returned
     exact build_refs hb
   | none =>
     rw [hs] at ran
-    obtain ⟨block, hb, returned⟩ := Ix.Sharing.Verify.except_bind_eq_ok ran
+    obtain ⟨block, hb, -, returned⟩ := Ix.CompileCert.Sectioned.bind_sectioned ran
     cases Except.ok.inj returned
     exact build_refs hb
 

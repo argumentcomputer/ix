@@ -237,7 +237,7 @@ theorem defsBlock_each (σOf : MutConst → Ix.Name → LevelParam) (context : C
     · simp at hlen; omega
     · rfl
   rw [hs] at built
-  obtain ⟨block, hb, returned⟩ := Ix.Sharing.Verify.except_bind_eq_ok built
+  obtain ⟨block, hb, -, returned⟩ := Ix.CompileCert.Sectioned.bind_sectioned built
   cases Except.ok.inj returned
   obtain ⟨erased, reads⟩ := build_reads cx param self _ _ _ block hb
   -- the record's definitions keep the payloads' headers
