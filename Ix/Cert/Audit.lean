@@ -4199,7 +4199,7 @@ fun ixe =>
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.sourceAcceptsQ_addrAt
 
-/-- info: [cert-audit] quotient addresses: 36 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+/-- info: [cert-audit] quotient addresses: 35 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 open Ix.CompileCert.UniverseAudit (checkRoots) in
 run_cmd do
@@ -4209,7 +4209,7 @@ run_cmd do
       `reading_id, `sourceAcceptsQ_addrAt, `LawModel.Rel, `ValueModel.comp, `LawModel.comp,
       `ValueModel.pullback_rel, `substCval, `EnvSubstRel, `EnvSubstRel.find_some,
       `EnvSubstRel.findProj?, `Denotes.substPullback, `Denotes.subst_const_push,
-      `Model.substPullback, `defn_value_substPullback, `ValueModel.substPullback,
+      `defn_value_substPullback, `ValueModel.substPullback,
       `ValueModel.substPullback_rel, `EnvSubstModelPullback, `EnvSubstRel.toModelPullback,
       `EnvSubstModelPullback.comp_envRel_valueModel, `EnvSubstPullback,
       `EnvSubstModelPullback.toPullback, `EnvSubstRel.toPullback,

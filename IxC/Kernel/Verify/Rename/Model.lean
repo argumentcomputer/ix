@@ -8,12 +8,13 @@ public import IxC.Kernel.Denotes
 /-!
 # Models pulled back along a renaming (step 7.3, chunk (iv))
 
-A model of the renamed environment is a model of the original one: every
-constant `k` denotes what its renaming `k.map f` denotes there
+A value model of the renamed environment gives a value model of the original
+one: every constant `k` denotes what its renaming `k.map f` denotes there
 (`pullCval`). The transport is `Denotes.pullback` (a good term denotes, in
-`env`, what its renaming denotes in `env'`); `Model.pullback` assembles the
-model, and `defn_value_pullback` carries the value clause of a value model
-(`Ix.Cert.ValueModel`, assembled by the statements).
+`env`, what its renaming denotes in `env'`), with `Denotes.const_push` for the
+built-in constants and `defn_value_pullback` for the definitions' values; the
+value model itself (`Ix.Cert.ValueModel.pullback`) is assembled by the
+statements.
 -/
 
 namespace Ix.Kernel
@@ -141,22 +142,5 @@ theorem defn_value_pullback {env : Env md} {env' : Env md'} (h : EnvRel P f env 
   have hc' := h.mem hc
   have hg := h.all _ hc
   exact Denotes.pullback h (hv _ _ hint hc' φ ρ) rfl hg.2
-
-/-- **A model of the renamed environment is a model of the original.** -/
-def Model.pullback {env : Env md} {env' : Env md'} (h : EnvRel P f env env')
-    (M : Model V env') : Model V env where
-  cval := pullCval f M.cval
-  mem c hc φ ρ := by
-    obtain ⟨T, hT, hmem⟩ := M.mem _ (h.mem hc) φ ρ
-    have hty : (c.mapKeys f).toConstantVal.type = c.toConstantVal.type.mapKeys f := by
-      simp [ConstantInfo.mapKeys_toConstantVal]
-    rw [hty] at hT
-    refine ⟨T, Denotes.pullback h hT rfl (h.all c hc).toConstantVal.2, ?_⟩
-    have hn : (c.mapKeys f).name = c.name.map f := ConstantInfo.mapKeys_name f c
-    rw [hn] at hmem
-    exact hmem
-  false_empty φ ρ F hF := M.false_empty φ ρ F (Denotes.const_push h hF)
-  eq_equality u φ ρ E A a b hE := M.eq_equality u φ ρ E A a b (Denotes.const_push h hE)
-  defn_value := defn_value_pullback h M.defn_value
 
 end Ix.Kernel
