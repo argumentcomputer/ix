@@ -296,7 +296,6 @@ def checkBinderNodes (lvls : Nat) (undecidedOnly : Bool) (full : Array Bool) (sh
 root with a numbered node (variant 0) and per sharing entry and variant a share
 node names, each matching its expression, variants numbered in order of first
 occurrence and pairwise distinct. -/
-/-- `bindersComplete` for a record with a root. -/
 def Constant.bindersCompleteRooted (c : Constant) : Bool := Id.run do
   unless blocksAscending c.binders.toList do return false
   let lvls := c.info.maxLvls
