@@ -437,6 +437,32 @@ theorem DefEq.lam_sound {d : Nat} {ty₁ body₁ ty₂ body₂ : Expr md} {m₁ 
       exact lamR_congr (binder_bodies hbody hp₁ hp₂ hCb₁ hCb₂ hCty₂ hA₂ hgty₂ hF₁ hF₂
         (fun x hx => hgb₁ _ hA₁ x hx) (fun x hx => hgb₂ _ hA₂ x hx))
 
+/-- The packed zero denotes what `Nat.zero` does: `Denotes` reads a literal as its
+constructor form. -/
+theorem DefEq.natZero_sound {d : Nat} :
+    DefEqS M φ d (.lit (.natVal 0)) (.const natZeroName []) := by
+  intro _ _ _ _ _ x y hx hy _ _
+  cases hx with
+  | natLit h => exact DenotesO.functional h hy
+
+/-- A packed successor against `Nat.succ x`: the literal reads as `Nat.succ` at the packed
+predecessor, which the premise equates with `x`. -/
+theorem DefEq.natSucc_sound {d k : Nat} {x : Expr md}
+    (h : DefEqS M φ d (.lit (.natVal k)) x) :
+    DefEqS M φ d (.lit (.natVal (k + 1))) (.app (.const natSuccName []) x) := by
+  intro _ hfb σ _ hCb v w hv hw _ hgb
+  obtain ⟨-, hfx⟩ := Frame.app_iff.1 hfb
+  obtain ⟨-, hgx, -⟩ := Gr.app_iff.1 hgb
+  cases hv with
+  | natLit hv =>
+    cases hv with
+    | app hS hK =>
+      cases hw with
+      | app hS' hX =>
+        rw [DenotesO.functional hS hS',
+          h (Frame.of_closed rfl rfl) hfx σ (fun l hl => by simp [Expr.fvarLeaves] at hl)
+            (hCb.of_subset fun l hl => by simp [Expr.fvarLeaves, hl]) _ _ hK hX True.intro hgx]
+
 /-! ## `Infer` -/
 
 theorem Infer.sort_sound {g : Grade} {d : Nat} {u : Level} :
