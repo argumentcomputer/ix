@@ -62,7 +62,10 @@ a `Nat` or field-less result. The test suites run objects the same way, as
 executables IxCC writes with a test shell that serves a host in Lean, so no gate
 runs a compiled program through C; C remains in the tree only as test harnesses
 for the system linker's acceptance of relocatable objects and for the
-processor differential. The production shell is trusted code until it is proved,
+processor differential. `ixcc compile --exe --machine` writes a numeric state
+machine instead, run by a generic shell that parses and renders nothing: the
+program parses its arguments and renders its output in Lean compiled with it
+(`lib/IxccExe.lean`). The production shells are trusted code until they are proved,
 and effects are planned in stages
 ([standalone executables](docs/standalone-executables-design.md)).
 

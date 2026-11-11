@@ -1,7 +1,8 @@
 /-!
 The Phase 1 resource corpus (phase 1 plan, MT.3; research §9.4.2): programs
-whose runs fail by the driver's own limits, deterministically, with the
-statuses of 04 §6: 1 heap (`--region`), 2 stack (`--stack`), 4 trap.
+whose runs fail at the limits a run is given, deterministically, with the
+statuses of 04 §6: 1 heap (the region), 2 stack (the stack), 4 trap; natively, the region
+and the stack are the test executable's layout.
 
 * **Heap.** Phase 1 cells are immortal and bump-allocated: a cell of `k`
   fields takes `8 (k + 1)` bytes, and objects start 640 bytes into the
@@ -9,7 +10,7 @@ statuses of 04 §6: 1 heap (`--region`), 2 stack (`--stack`), 4 trap.
   bytes exactly when `24 n ≤ R − 640`, so the threshold is exact.
 * **Stack.** A non-tail call pushes at least its return address, so a
   recursion of depth `d` needs more than `8 d` bytes of the stack budget
-  (the driver passes `--stack` less 4 KiB): one bound must succeed and the
+  (the machines' budget is the stack less 4 KiB): one bound must succeed and the
   other must fail. Tail calls do not grow the stack.
 * **Trap.** A trap is unreachable from a well-typed call: these roots take
   an argument of an empty type (or a proof of `False`), which the entry

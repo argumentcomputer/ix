@@ -1,4 +1,5 @@
 import IxCCTests.IxonV3.TypingFixtures
+import IxCCTests.Support.Envelope
 
 /-! # Role-bound test environments
 
@@ -9,8 +10,8 @@ but the standard ones. The test environments the in-memory builder
 these: unbound, their inductives without recursors, some built on an axiom.
 This module makes role-bound ones the kernel front end accepts:
 
-* a **base**: a committed role-bound closure (`fixtures/ixon-v4/bound/tuple`,
-  233 records), decoded with its role binding, its prelude records and the rest
+* a **base**: a committed role-bound closure (`fixtures/corpus/phase1-scalar/tuple`,
+  the corpus's tuple program), decoded with its role binding, its prelude records and the rest
   of `ix compile`'s output; synthetic records are added to it with `store` and
   `block`, and the base's own constants (`Nat`, `Bool`, `Eq`, …) are there to
   be used or ignored;
@@ -21,7 +22,7 @@ This module makes role-bound ones the kernel front end accepts:
   premise per constructor taking the fields and then one induction hypothesis
   per recursive field, the major premise), written as `ix compile` writes it:
   a `recr` singleton whose rules call the recursor through `recur 0`;
-* the **role-bound envelope** (`bytes`, `0xE5`): the base's role binding after
+* the **role-bound envelope** (`bytes`, `0xE5`, by the suites' one writer, `Support.Envelope`): the base's role binding after
   the assumptions, the constant root recomputed, and the base's reducibility
   hints kept.
 
@@ -32,13 +33,13 @@ recursor (the reader keeps one recursor per motive). -/
 namespace IxCCTests.Support.Bound
 
 open IxCC.Ixon IxCC.Ixon.V3
-open IxCCTests.IxonV3.TypingFixtures (store block arrow lambda)
+open IxCCTests.IxonV3.TypingFixtures (record store block arrow lambda)
 
 abbrev E := IxCC.Ixon.V3.Expr
 abbrev Addr := IxCC.Ixon.Address
 
 /-- The committed role-bound closure every test environment extends. -/
-def baseStem : System.FilePath := "fixtures/ixon-v4/bound/tuple"
+def baseStem : System.FilePath := "fixtures/corpus/phase1-scalar/tuple"
 
 /-- The base, decoded; refused unless it is role-bound. -/
 def loadBase : IO Env := do
@@ -47,39 +48,12 @@ def loadBase : IO Env := do
   unless env.isBound do throw (IO.userError s!"{baseStem}: the base is not role-bound")
   return env
 
-/-- The role-bound envelope (`0xE5`) of `env`: header, constant root, `main`,
-assumptions, the role binding (its address, length and bytes), blobs,
-constants, the reducibility hints of the constants that have one, and no
-metadata. Refused (`none`) for an environment without a binding. -/
-def bytes (env : Env) : Option ByteArray := do
-  let b ← env.binding
-  let constants := env.consts.toArray.qsort (fun x y => x.1.cmpBytes y.1 == .lt)
-  let blobs := env.blobs.toArray.qsort (fun x y => x.1.cmpBytes y.1 == .lt)
-  let hintOf := fun (a : Addr) => (env.hints.find? (·.1 == a)).map (·.2)
-  let hinted := constants.zipIdx.filterMap fun ((a, _), i) => (hintOf a).map (i, ·)
-  return _root_.Ixon.runPut do
-    _root_.Ixon.putTagN 4 0xE boundEnvVersion
-    _root_.Ixon.putBytes (Merkle.rootCanonical (constants.map Prod.fst)).hash
-    match env.main with
-    | some m => _root_.Ixon.putU8 1; _root_.Ixon.putBytes m.hash
-    | none => _root_.Ixon.putU8 0
-    _root_.Ixon.putTagN 0 0 env.assumptions.size.toUInt64
-    for a in env.assumptions do _root_.Ixon.putBytes a.hash
-    _root_.Ixon.putBytes b.address.hash
-    _root_.Ixon.putTagN 0 0 b.bytes.size.toUInt64
-    _root_.Ixon.putBytes b.bytes
-    for table in #[blobs, constants] do
-      _root_.Ixon.putTagN 0 0 table.size.toUInt64
-      for (address, raw) in table do
-        _root_.Ixon.putBytes address.hash
-        _root_.Ixon.putTagN 0 0 raw.size.toUInt64
-        _root_.Ixon.putBytes raw
-    _root_.Ixon.putTagN 0 0 hinted.size.toUInt64
-    let mut cursor := 0
-    for (index, hint) in hinted do
-      _root_.Ixon.putTagN 0 0 (index - cursor + 1).toUInt64
-      _root_.Ixon.putTagN 0 0 hint
-      cursor := index + 1
+/-- The role-bound envelope (`0xE5`) of `env`, written by the suites' one
+envelope writer (`Support.Envelope.envelope`) with the base's role binding:
+the constant root recomputed, the reducibility hints and metadata kept.
+Refused (`none`) for an environment without a binding. -/
+def bytes (env : Env) : Option ByteArray :=
+  env.binding.map fun b => IxCCTests.Support.Envelope.envelope env (some (b.address, b.bytes))
 
 /-- A constructor field: the inductive itself, or a closed type stored at an
 address. -/
@@ -176,12 +150,10 @@ structure Ind where
 is already there, its recursor. -/
 def addSimple (env : Env) (ctors : Array (Array Field)) : Env × Ind := Id.run do
   let c := simpleBlock ctors
-  let blkAddr := Address.blake3 (constantBytes c)
-  let existing := env.consts.contains blkAddr
+  let existing := env.consts.contains (record c).2
   let (env, blk) := block env c
   let recC := simpleRecursor blk ctors
-  let (env, recursor) := if existing then (env, Address.blake3 (constantBytes recC))
-    else store env recC
+  let (env, recursor) := if existing then (env, (record recC).2) else store env recC
   return (env, { block := blk, ind := indcProjAddr blk 0,
                  ctors := (Array.range ctors.size).map (ctorProjAddr blk 0 ·.toUInt64),
                  recursor, existing })

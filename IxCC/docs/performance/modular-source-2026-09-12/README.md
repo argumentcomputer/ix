@@ -5,7 +5,7 @@ units**, reuses unaffected source evidence after dependency edits, and checks
 retained certificates in a fresh process. The same 611-declaration program
 is rejected by the monolithic entry point at its unchanged **512-candidate**
 limit. The implementation and proof contract are in
-modular source certification (`docs/modular-source.md` at archive commit `7599a434`).
+modular source certification (`docs/modular-source.md` on the archive branch of the pre-merge Compilatr.ix repository).
 
 Three fresh reference processes ran from **2026-09-12T20:56:06Z** to
 **2026-09-12T20:56:43Z**, after all 28 x86_64 Linux Nix checks passed. Every
@@ -125,7 +125,7 @@ lake build source-modular check-source-modular
 .lake/build/bin/check-source-modular --fixture .lake/build/bin/source-modular
 ```
 
-The raw archive (`benchmarks/runs/modular-source-2026-09-12.tar.gz` at archive commit `7599a434`)
+The raw archive (`benchmarks/runs/modular-source-2026-09-12.tar.gz` on the archive branch of the pre-merge Compilatr.ix repository)
 is retained in ignored workspace storage: **74,835,897 bytes**, SHA-256
 `4e92c953bab080eab11f15e74279ba87dfedc0749608d6dab1869180edf46d71`.
 It is local retention, not an uploaded artifact-service URL. Its verified
@@ -134,7 +134,7 @@ fixed collection plan and script, tool/runtime closure, environment records,
 all three artifact sets and measurements, process logs, validation, and
 fresh replay. The source archive includes the measured implementation and
 reviewed fixtures over base revision
-`c6ef19a4481aec6b81083210c6833e2758a35cc9`; its SHA-256 is
+the base commit of that date (pre-merge history, not kept by the squash); its SHA-256 is
 `0dcdd3c4ab369d0e2130459c14039f5259f93c483beaab1f4ba8164fe085f5b6`.
 The source manifest identifies those exact bytes independently of the later
 report and commit.

@@ -1,31 +1,35 @@
-{"source_revision": "be45a159f1bb3629d109f742b950786ae8fc11f4",
- "source_generator":
- "ix compile --no-build --consts <every primitives.tsv name the toolchain has; absent: [String.Legacy.back]> --out prims.named.ixe Prims.lean (a source importing only Init); ix addr-of then reproduces every other primitives.tsv address",
- "source_environment_sha256":
- "f3f7d0fcf05d398292d1ab5f3a5263940780cbfb0aea8ec3a45e3d7c9e7d40c7",
- "reference_check": "ix check-rs --anon --workers 1 OUTPUT.ixe",
- "producer_version": "4.34.1|0.0.1",
- "producer_binary_sha256":
- "fc4e07ab477f2ba9dd4a2ed6398b2d1a85b2f597c0fd671abe0a323bc5d41017",
- "files":
- {"String.ixe":
-  {"sha256": "64029609b3dfa020e19c886e1e88657b7df60cc3bcf2ea9c4c0d7e93a079c217",
-   "rust_checked_targets": 278,
-   "main": "221625a00ee2d6b96297e34d7e05bf7e4fd38d8d99d3e1d64a7cd2e06ca0752d",
-   "constants": 0},
-  "Quot.lift.ixe":
-  {"sha256": "956933604c44cd89f98b3e0ba3d1b4b55972c761de048dafa0955211d2b9a10a",
-   "rust_checked_targets": 4,
-   "main": "86b365e75bb4230f04c6e4f3a7ca6988adf574616d79a3d7477ad65cac102110",
-   "constants": 0},
-  "Nat.ixe":
-  {"sha256": "c970bb12c2950046ea815b541c484ad8fc1abfcb5c17a7892ef6dba477a5098b",
-   "rust_checked_targets": 3,
-   "main": "35e1cc809f6f076521a43f85068d5592220407c0532b6a08952f40d8523d04bc",
-   "constants": 0},
-  "Nat.add.ixe":
-  {"sha256": "28b29a858d4c765bb8fe71c2b62ad7e3443ee689ca596ad0f4afd556da235e22",
-   "rust_checked_targets": 15,
-   "main": "3e8aadcc611c4d8677cadf00c78506561d33738ee3d571f7a4196e260580c9b8",
-   "constants": 0}},
- "extraction": "ix pack --anon --out OUTPUT.ixe prims.named.ixe NAME"}
+{
+  "source_revision": "an earlier ix, outside this repository's history (frozen; README.md)",
+  "source_generator": "ix compile --no-build --consts <every primitives.tsv name the toolchain has; absent: [String.Legacy.back]> --out prims.named.ixe Prims.lean (a source importing only Init); ix addr-of then reproduces every other primitives.tsv address",
+  "source_environment_sha256": "f3f7d0fcf05d398292d1ab5f3a5263940780cbfb0aea8ec3a45e3d7c9e7d40c7",
+  "reference_check": "ix check-rs --anon --workers 1 OUTPUT.ixe",
+  "producer_version": "4.34.1|0.0.1",
+  "producer_binary_sha256": "fc4e07ab477f2ba9dd4a2ed6398b2d1a85b2f597c0fd671abe0a323bc5d41017",
+  "files": {
+    "String.ixe": {
+      "sha256": "64029609b3dfa020e19c886e1e88657b7df60cc3bcf2ea9c4c0d7e93a079c217",
+      "rust_checked_targets": 278,
+      "main": "221625a00ee2d6b96297e34d7e05bf7e4fd38d8d99d3e1d64a7cd2e06ca0752d",
+      "constants": 0
+    },
+    "Quot.lift.ixe": {
+      "sha256": "956933604c44cd89f98b3e0ba3d1b4b55972c761de048dafa0955211d2b9a10a",
+      "rust_checked_targets": 4,
+      "main": "86b365e75bb4230f04c6e4f3a7ca6988adf574616d79a3d7477ad65cac102110",
+      "constants": 0
+    },
+    "Nat.ixe": {
+      "sha256": "c970bb12c2950046ea815b541c484ad8fc1abfcb5c17a7892ef6dba477a5098b",
+      "rust_checked_targets": 3,
+      "main": "35e1cc809f6f076521a43f85068d5592220407c0532b6a08952f40d8523d04bc",
+      "constants": 0
+    },
+    "Nat.add.ixe": {
+      "sha256": "28b29a858d4c765bb8fe71c2b62ad7e3443ee689ca596ad0f4afd556da235e22",
+      "rust_checked_targets": 15,
+      "main": "3e8aadcc611c4d8677cadf00c78506561d33738ee3d571f7a4196e260580c9b8",
+      "constants": 0
+    }
+  },
+  "extraction": "ix pack --anon --out OUTPUT.ixe prims.named.ixe NAME"
+}

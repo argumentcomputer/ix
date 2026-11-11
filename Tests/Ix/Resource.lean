@@ -305,7 +305,7 @@ def runContractMatrix : IO Nat := do
       checks := checks + 1
   return checks
 
-/-- Structures with parameters and a dependent field (`866e7fa82`'s field and
+/-- Structures with parameters and a dependent field (the 2026-11-09 change's field and
 projection rules). Declarations: `0` a type `A`, `1` a family `F : A → Type`,
 `2` `Duo : Type → Type → Type` with `3` `Duo.mk : (α β : Type) → α → β → Duo α β`,
 `4` `Sig : (α : Type) → (α → Type) → Type` with

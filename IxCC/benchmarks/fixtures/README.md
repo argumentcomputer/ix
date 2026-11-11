@@ -32,7 +32,7 @@ The source commits are:
 - Lean `v4.34.0`, `293d5d0c0c3f3dded4688b3ccd6a33939ac5102b`;
 - Koka `8b803da69d3941ce1e03173578093aefc41ee548`;
 - CakeML `530c7deec135ad421cce7ca768eed2f5801261b2`;
-- IxCC `2e4740dea324ab0122e909613687d2b812eab4e0`.
+- IxCC: this repository (the K1 programs of `IxCCTests/Fixtures/K1.lean`).
 
 The bench arguments for Lean fixtures come from the upstream `.init.sh`. For
 the ports they are the constants in the upstream program. For K1 they were
@@ -139,8 +139,8 @@ nix develop -c bash -c 'lean --run benchmarks/fixtures/Check.lean \
 or, with explicit paths:
 
 ```sh
-LEAN=/nix/store/…-lean-4.34.0/bin/lean
-CLANG=/nix/store/…-clang-wrapper-21.1.2/bin/clang
+LEAN=$(command -v lean)          # the pinned toolchain's
+CLANG=$(command -v clang)        # clang 21
 $LEAN --run benchmarks/fixtures/Check.lean --cc $CLANG --cxx $CLANG++ \
   [--refs plans/refs] [--interpret] [--bench] [--only rbmap,fib] [--work DIR]
 ```
@@ -193,7 +193,7 @@ starts with a notice saying that it was modified.
 ## Admission census (2026-09-29)
 
 Each fixture's pure `entry` closure was compiled with `ix compile --consts entry
---equations --anon` (ix `9c4b9c65`, see [`fixtures/ixon-v4/k1`](../../fixtures/ixon-v4/k1/README.md))
+--equations --anon` (the ix of that date with the same `--equations` export, see [`fixtures/ixon-v4/k1`](../../fixtures/ixon-v4/k1/README.md))
 and run through `lake exe census`. Every constant of every closure passes
 strict decoding, erased typing and the D12 policy stage; the next stage is the
 rebuilt pipeline's `src`.

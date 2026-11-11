@@ -334,6 +334,9 @@ verbatim. -/
 /-- info: 'IxCC.Fir.Proof.exp_atom' depends on axioms: [propext] -/
 #guard_msgs in #print axioms IxCC.Fir.Proof.exp_atom
 
+/-- info: 'IxCC.Fir.Lower.tailCall_returnsTop' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Fir.Lower.tailCall_returnsTop
+
 /-- info: 'IxCC.Fir.Proof.exp_call' depends on axioms: [propext] -/
 #guard_msgs in #print axioms IxCC.Fir.Proof.exp_call
 

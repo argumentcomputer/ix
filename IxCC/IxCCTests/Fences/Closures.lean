@@ -220,3 +220,14 @@ inputs are covered). -/
 
 /-- info: 'IxCC.Recheck.RcReplay.Artifact.covered_head' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Recheck.RcReplay.Artifact.covered_head
+
+/-! A root whose caller would pass a closure (`Recheck.fnParam?`): the parameter
+it refuses is in the declared telescope and is not `Nat`. A call in tail
+position becomes a tail call only within the convention's argument registers
+(`Fir.Lower.tailCall`). -/
+
+/-- info: 'IxCC.Recheck.fnParamAt_mem' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Recheck.fnParamAt_mem
+
+/-- info: 'IxCC.Recheck.maxTailArgs_eq' does not depend on any axioms -/
+#guard_msgs in #print axioms IxCC.Recheck.maxTailArgs_eq

@@ -119,6 +119,18 @@ theorem isNeverZero_eq_isNever :
   | .imax _ b => by
     rw [Level.isNeverZero, zeronessOf, isNeverZero_eq_isNever b]
 
+/-- Levels equal in every assignment have the same datum: the datum is
+the canonical reading of the zeroing assignments. -/
+theorem zeronessOf_eq_of_eval {a b : Level}
+    (h : ∀ φ : LevelParam → Nat, eval φ a = eval φ b) :
+    zeronessOf a = zeronessOf b :=
+  eq_of_holds fun φ => by rw [zeronessOf_sound, zeronessOf_sound, h φ]
+
+/-- The ∀ rule's level (`mkIMax`) has its codomain's datum, as the
+plain `imax` does by definition. -/
+theorem zeronessOf_mkIMax (u v : Level) : zeronessOf (mkIMax u v) = zeronessOf v :=
+  zeronessOf_eq_of_eval (b := .imax u v) fun φ => eval_mkIMax φ u v
+
 /-- `subst.go` at the identity substitution. -/
 theorem subst_go_self (ks : List LevelParam) (n : LevelParam) :
     subst.go ks (ks.map Level.param) n = .param n := by

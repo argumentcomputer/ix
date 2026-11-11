@@ -1,6 +1,7 @@
 import IxCC.Ixon.V3.Tc.Mode
 
-/-! Adapted from ix `0a31c8dbc63755924c645bf1afedc563e395e88a`, `Ix/Tc/Id.lean`.
+/-! Adapted from `Ix/Tc/Id.lean` of an earlier ix (a revision outside this
+  repository's history).
 The anonymous checker uses the local v3 byte decoder and existing BLAKE3 interface.
 See docs/ixon-v4.md for the adaptation and validation boundary. -/
 

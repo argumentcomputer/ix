@@ -1,7 +1,7 @@
 import IxCC.Ixon.V3.Catalog.Basic
 
-/-! Bounded manifest-v2 parser, from ix 0a31c8dbc63755924c645bf1afedc563e395e88a
-(object format 4 from f829b76044a44a61023d0983516137147bbb12a7)
+/-! Bounded manifest-v2 parser, from an earlier ix (a revision outside this repository's history)
+(object format 4, ix's Ixon v4 envelope),
 Ix/Catalog.lean and crates/ixon/src/catalog.rs. Fixed-width little-endian
 integers are distinct from the environment's canonical TagN encoding. -/
 

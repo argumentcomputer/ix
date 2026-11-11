@@ -116,8 +116,9 @@ variable {A : Anf.Program} {g : Anf.GlobalId} {ρ : List Var} {J : List JoinId} 
 theorem exp_call {c : Ixon.V3.LetContract} {h0 : Anf.GlobalId} {as : List Anf.Atom} {e : Anf.Exp}
     (h : exp A g ρ J st (.bind c (.call h0 as) e) = .ok (code, st')) :
     ∃ args, atoms g ρ as = .ok args ∧ h0 < A.size ∧
-      ((returnsTop e = true ∧ code = .tcall h0 args ∧ st' = st) ∨
-        (returnsTop e = false ∧ ∃ k, exp A g (st.vars :: ρ) J (st.bindFresh c).2 e = .ok (k, st') ∧
+      ((tailCall g h0 args.length e = true ∧ code = .tcall h0 args ∧ st' = st) ∨
+        (tailCall g h0 args.length e = false ∧
+          ∃ k, exp A g (st.vars :: ρ) J (st.bindFresh c).2 e = .ok (k, st') ∧
           code = .bind st.vars (.call h0 args) k)) := by
   simp only [exp, bind, Except.bind, pure, Except.pure] at h
   cases ha : atoms g ρ as with
@@ -128,7 +129,7 @@ theorem exp_call {c : Ixon.V3.LetContract} {h0 : Anf.GlobalId} {as : List Anf.At
     by_cases hs : h0 < A.size
     · simp only [hs, ↓reduceIte] at h
       refine ⟨hs, ?_⟩
-      by_cases hr : returnsTop e = true
+      by_cases hr : tailCall g h0 args.length e = true
       · simp only [hr, ↓reduceIte, Except.ok.injEq, Prod.mk.injEq] at h
         exact .inl ⟨hr, h.1.symm, h.2.symm⟩
       · simp only [hr, Bool.false_eq_true, ↓reduceIte] at h

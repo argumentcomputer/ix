@@ -1237,12 +1237,15 @@ def inferLamsI (r : CoreFnsI md) (d : Nat) :
   | 0, t, k, fvs, stk => inferLamsLeafI mode r d t k fvs stk
 
 /-- Rebuild loop of `inferPisI`: fold the accumulated domain sorts by
-`imax`, innermost binder first — exactly the chained `∀`-rule's result
-value.
+`mkIMax` (the official kernel's `mk_imax`), innermost binder first —
+exactly the chained `∀`-rule's result value.  With the plain `imax` a
+telescope over one shared type built a level whose tree doubled per
+binder.
 
 Task #272 (GitHub issue #9): the codomain sort's zero-ness datum is
-THREADED, not recomputed.  `zeronessOf (imax u v) = zeronessOf v`
-holds definitionally, so every node of a ∀ telescope shares the leaf's
+THREADED, not recomputed.  `zeronessOf (mkIMax u v) = zeronessOf v`
+(`Level.zeronessOf_mkIMax`; for `imax` it holds definitionally), so
+every node of a ∀ telescope shares the leaf's
 datum — the chain the annotation loop already folds
 (`annotateBindersOutI`).  The fold used to read it out of a
 `Level`-keyed memo, which MISSED at every step (a node's key
@@ -1258,8 +1261,8 @@ def inferPisOutI : List (Level × PropWhen) → Level → PropWhen →
     -- `∀`-clause's `v` at this node).
     if mode.verifiedChecks && !(pv == pw) then
       throw (.notImplemented "sort-annotation mismatch (forall-cod)")
-    let v' ← pure (.imax u v)
-    -- `zeronessOf v' = zeronessOf v = pv` (the `.imax` clause).
+    let v' ← pure (Level.mkIMax u v)
+    -- `zeronessOf v' = zeronessOf v = pv` (`Level.zeronessOf_mkIMax`).
     inferPisOutI rest v' pv
 
 /-- Leaf phase of `inferPisI`: bulk-open the residual body, infer its
@@ -1431,7 +1434,7 @@ def inferBodyIOI (r : CoreFnsI md) (fe : FEnv md) : Nat → Expr md → (CheckCM
         if mode.verifiedChecks then
           unless Level.zeronessOf v == mb.pw do
             throw (.notImplemented "sort-annotation mismatch (forall-cod)")
-        let iu ← pure (.imax u v)
+        let iu ← pure (Level.mkIMax u v)
         pure (Expr.sort iu)
       | _ => throw (.invalid (Msg.withTerms "expected a sort" [("got", wtty)]))
     | .lam ty body mb => withChain depth e do

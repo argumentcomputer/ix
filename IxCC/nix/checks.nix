@@ -3,10 +3,12 @@
   system,
   ixccLib,
   programs,
+  grounding,
   auditSrc,
   ledgerWorkspace,
   blake3-lean,
   mkCheck,
+  mkCheckWith,
 }: let
   # The one check with a C compiler: `x86-elf-object` links the object
   # writer's fixtures with the C test harnesses in fixtures/x86 and runs them,
@@ -191,6 +193,14 @@ in
         echo "suites failed: ''${failed[*]}"
         exit 1
       fi
+    '';
+
+    # The grounding of SrcEval in the kernel's model (`IxCCGrounding`, docs/certification-design.md):
+    # building the library checks its axiom fence; `tests-grounding` runs the check its theorems
+    # take on the committed closures, conjunct by conjunct, with its negative controls. Its own
+    # build (`nix/build.nix`), so the kernel's model never enters the shared program build.
+    grounding = mkCheckWith grounding "grounding" [] ''
+      ./.lake/build/bin/tests-grounding
     '';
 
     # Deterministic typed-x86 and ByteEval step counts must

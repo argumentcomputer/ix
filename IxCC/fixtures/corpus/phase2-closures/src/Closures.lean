@@ -62,6 +62,64 @@ def stateLoop (n limit : Nat) : Nat :=
   | .ok ((), s) => s
   | .error e => 1000 + e
 
+/-! ## The same loop within seven parameters
+
+`stateLoop` keeps the library's `StateT.bind`, of eight parameters (its four
+type and instance arguments, the action, the continuation and the state),
+which IxCC's closures step calls in tail position, where its internal
+calling convention passes at most seven arguments. Here
+the stack is the same, `StateT Nat (Except Nat)`, with its `Monad` instance
+written for it, every method given (a method left out would be taken from the
+library's instance, and with it `StateT.bind` and `StateT.map`): `bind` takes
+its two type arguments, the action, the continuation and the state. The error
+is raised by lifting `Except.error`, so no `MonadExceptOf` dictionary is
+built. -/
+
+abbrev SE := StateT Nat (Except Nat)
+
+instance : Monad SE where
+  pure a := fun s => .ok (a, s)
+  bind x f := fun s => match x s with
+    | .ok (a, s') => f a s'
+    | .error e => .error e
+  map f x := fun s => match x s with
+    | .ok (a, s') => .ok (f a, s')
+    | .error e => .error e
+  mapConst b x := fun s => match x s with
+    | .ok (_, s') => .ok (b, s')
+    | .error e => .error e
+  seq f x := fun s => match f s with
+    | .ok (g, s') =>
+      match x () s' with
+      | .ok (a, s'') => .ok (g a, s'')
+      | .error e => .error e
+    | .error e => .error e
+  seqLeft x y := fun s => match x s with
+    | .ok (a, s') =>
+      match y () s' with
+      | .ok (_, s'') => .ok (a, s'')
+      | .error e => .error e
+    | .error e => .error e
+  seqRight x y := fun s => match x s with
+    | .ok (_, s') => y () s'
+    | .error e => .error e
+
+def stepSE (limit : Nat) : SE Unit := do
+  let s ← get
+  if s ≥ limit then StateT.lift (.error s)
+  set (s + 2)
+
+def stepsSE (limit : Nat) : Nat → SE Unit
+  | 0 => pure ()
+  | n + 1 => do
+    stepSE limit
+    stepsSE limit n
+
+def stateLoopSE (n limit : Nat) : Nat :=
+  match (stepsSE limit n).run 1 with
+  | .ok ((), s) => s
+  | .error e => 1000 + e
+
 /-! ## Partial and over-application through a stored closure
 
 `scale` takes one argument and returns a closure, so applying the stored
@@ -126,6 +184,7 @@ def main : IO Unit := do
         | "Closures.composeClosure", [k, n] => toString (Closures.composeClosure k n)
         | "Closures.polyRec", [k, n] => toString (Closures.polyRec k n)
         | "Closures.stateLoop", [n, limit] => toString (Closures.stateLoop n limit)
+        | "Closures.stateLoopSE", [n, limit] => toString (Closures.stateLoopSE n limit)
         | "Closures.storedApply", [n, k] => toString (Closures.storedApply n k)
         | "Closures.knot", [fuel, n] => toString (Closures.knot fuel n)
         | _, _ => s!"unknown root {root} {args}"

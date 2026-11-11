@@ -72,5 +72,13 @@ theorem object_refines_traced (h : run cfg P c = .ok a) (D : X86.Driver) (hD : D
     Sem.TRefinesOn (a.front.Covered c) a.front.source (a.linked D) :=
   Sem.RefinesOn.ofPure (object_refines h D hD)
 
+/-- **The object refines the source, from two call sites**: `cx_init` under
+`D`, the roots from a site `s` at which the contract is kept too
+(`X86.LinkedAt`); `object_refines` is the case `s = D.site`. -/
+theorem object_refines_at (h : run cfg P c = .ok a) (D : X86.Driver) (hD : D.Ok a.backend.encoded.text.size)
+    (s : X86.Driver.Site) (hs : (D.withSite s).Ok a.backend.encoded.text.size) :
+    Sem.RefinesOn (a.front.Covered c) a.front.source (a.linkedAt D s) :=
+  (front_refines_lir (run_parts h).1 (M := model D) (X86.Driver.regionOk hD) (X86.Driver.lirRegion hD)).trans_refines
+    (back_refines_at h hD hs)
 
 end IxCC.Recheck

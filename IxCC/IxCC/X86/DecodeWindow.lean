@@ -230,4 +230,44 @@ theorem decodeWindowAt_eq (text : ByteArray) (offset : Nat) :
     rw [window, decodedList_take]
     rfl
 
+private theorem decodeAt_eq_decodedList (text : ByteArray) (offset : Nat) :
+    decodeAt text offset = if offset ≥ text.size then none else decodedList (text.data.toList.drop offset) := by
+  unfold decodeAt
+  by_cases outside : offset ≥ text.size
+  · simp [outside]
+  · simp only [outside, ite_false]
+    rfl
+
+/-- **What decodes in a text decodes the same inside a file holding it**: if
+the file's bytes from `off` are the text's and then `rest`, the instruction
+the text decodes at `j` is the one the file decodes at `off + j` (a parse
+depends only on the bytes it consumes, `one_stable`). An object's text placed
+in an executable is decoded there as the object model decodes it. -/
+theorem decodeAt_window {text image : ByteArray} {off : Nat} {rest : List UInt8}
+    (hw : image.data.toList.drop off = text.data.toList ++ rest) {j : Nat} {d : Decoded}
+    (h : decodeAt text j = some d) : decodeAt image (off + j) = some d := by
+  rw [decodeAt_eq_decodedList] at h ⊢
+  by_cases hj : j ≥ text.size
+  · simp [hj] at h
+  · simp only [hj, ite_false] at h
+    obtain ⟨consumed, remaining, hsplit, hlen, hpos, hshort, hparse⟩ := decodedList_prefix h
+    have hj' : j ≤ text.data.toList.length := by
+      rw [Array.length_toList]; exact Nat.le_of_lt (Nat.lt_of_not_le hj)
+    have hdrop : image.data.toList.drop (off + j) = consumed ++ (remaining ++ rest) := by
+      have : image.data.toList.drop (off + j) = (image.data.toList.drop off).drop j := by
+        simp only [List.drop_drop]
+      rw [this, hw, List.drop_append_of_le_length hj', hsplit, List.append_assoc]
+    have hsize : ¬ off + j ≥ image.size := by
+      intro hge
+      have hnil : image.data.toList.drop (off + j) = [] :=
+        List.drop_eq_nil_of_le (by rw [Array.length_toList]; exact hge)
+      rw [hdrop] at hnil
+      have hc : consumed = [] := (List.append_eq_nil_iff.mp hnil).1
+      rw [hc] at hlen
+      simp only [List.length_nil] at hlen
+      omega
+    simp only [hsize, ite_false]
+    rw [hdrop]
+    exact decodedList_of_prefix hlen hpos hshort hparse _
+
 end IxCC.X86.Decode

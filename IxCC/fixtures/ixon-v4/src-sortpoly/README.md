@@ -6,8 +6,9 @@ code at `Sort 0`: the regression for level-exact relevance (D18, research
 note `relevance-checker.md` §2.4). `sortpoly.ixe` is the anonymous v4
 closure of those roots and `sortpoly.equations.json` names them by address
 (an `ixcc/k1-equations/1` sidecar with no equations), from `lake exe
-pin-src-tables --sortpoly fixtures/ixon-v4/src-sortpoly` with ix `be45a159`;
-`provenance.json` records the binary, commands and file hashes.
+pin-src-tables --sortpoly fixtures/ixon-v4/src-sortpoly` with the ix of this
+repository (role-bound); `sortpoly.provenance.json` records its version, the commands
+and the file hashes.
 
 | Root | What it exercises | At 3 |
 | --- | --- | --- |

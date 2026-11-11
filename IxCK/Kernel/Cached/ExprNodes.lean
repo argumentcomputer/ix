@@ -51,7 +51,9 @@ enumerated here by hand and this list is the pin.  It has ONE row.
    data (`hash`, `bvarB`, `fvarB`, `hasLP` — since task #167 one
    packed `UInt64`, `Expr.data`; since task #176 P3 also
    `Name.hashData` and `Level.hashData`, the cached hashes
-   `Lean.Name`/`Lean.Level` and the C++ kernel keep too) is declared
+   `Lean.Name`/`Lean.Level` and the C++ kernel keep too, and
+   `Level.hasParamData`, the has-parameter bit they keep beside the
+   hash) is declared
    in the inductive's `with`
    block; logically it is an ordinary recursive function, and the
    *agreement between the stored word and that function is the code
@@ -74,7 +76,7 @@ enumerated here by hand and this list is the pin.  It has ONE row.
    feature `Lean.Expr` itself is built from.
 
 **Why the equalities are not rows.**  The pointer-first
-`Name.beqPtr`/`Level.beqPtr` and the pointer-first, memoised
+`Name.beqPtr` and the pointer-first, memoised `Level.beqPtr` and
 `Expr.beqMemo` (`IxCK/Kernel/Name.lean`, `IxCK/Kernel/Expr.lean`)
 replace `Name.beq`/`Level.beq`/`Expr.beq` in compiled code through
 **`@[csimp]`**, i.e. on the strength of a *kernel-checked equality*
@@ -85,8 +87,11 @@ replace `Name.beq`/`Level.beq`/`Expr.beq` in compiled code through
 by a theorem this repository proves, not by an unchecked attribute.
 The address reads behind them go through `Init.Util`'s `withPtrEq` and
 `withPtrAddr`, whose side conditions those files discharge, and the
-equality memo carries its invariant in its value type (`Expr.EqPair`)
-and verifies every hit by identity.  The tree's compiler-escape scan
+equality memos carry their invariant in their value types
+(`Level.EqPair`, `Expr.EqPair`) and verify every hit by identity; the
+memoised descents read a node's reference count through `withExclusive`
+(`IxCK/Kernel/Exclusive.lean`, the substitution walks' primitive), only
+to skip a probe.  The tree's compiler-escape scan
 (`tests/trust-surface.sh`) is the gate that keeps the census at this
 one row.
 -/

@@ -37,18 +37,18 @@ agrees. Before the closures step was on the production path (closures
 milestone 3), the compiler declined most of these roots at
 `fir: fir.closures`, and `spin` and `main7` compiled at their stored arity.
 
-**How it was produced** (2026-11-10). With the ix of
-[`phase2-closures`](../phase2-closures/README.md) (the same binary: the
-revision and its SHA-256 are in `corpus.json`) and Lean 4.34.1 on `PATH`,
-from `IxCC/`:
+**How it was produced.** By [`tools/regenerate.sh`](../../../tools/regenerate.sh)
+with the rest of the committed fixtures ([corpus guide](../../../docs/corpus.md),
+"Refreezing"), with the ix of this repository (its version is in
+`corpus.json`) and Lean 4.34.1 on `PATH`; for this family alone, from `IxCC/`:
 
 ```sh
-lake exe corpus rebuild fixtures/corpus/phase2-arity/corpus.json --ix ../.lake/build/bin/ix
+lake exe corpus rebuild fixtures/corpus/phase2-arity/corpus.json --ix ../.lake/build/bin/ix --ix-path DIR
 ```
 
 which runs, in `src/`, the commands the manifest records (`ix compile
---no-build --consts … --equations [--anon] --unbound`, `ix addr-of` for every
-name, and `lean -Dlinter.all=false --run Arity.lean` on one line `ROOT ARGS…`
-per case). The closure is larger than the roots suggest because the
-`partial_fixpoint`, `omega` and `decide` proofs come with it; erasure never
-visits them.
+--no-build --consts … --equations [--anon]`, which writes the role-bound
+envelope, `ix addr-of` for every name, and `lean -Dlinter.all=false --run
+Arity.lean` on one line `ROOT ARGS…` per case). The closure is larger than the
+roots suggest because the `partial_fixpoint`, `omega` and `decide` proofs come
+with it; erasure never visits them.

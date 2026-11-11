@@ -1,6 +1,6 @@
 import IxCC.Ixon.V3.Resource.State
 
-/-! Adapted from ix `0a31c8dbc63755924c645bf1afedc563e395e88a`
+/-! Adapted from an earlier ix (a revision outside this repository's history)
 (`Ix/Resource/Check.lean`, identical to the merge base `3d725c8c0`), with the
 local expression type and namespaces. This resource check retains the upstream
 erased-typing prerequisite. Changes since, kept in step with ix's

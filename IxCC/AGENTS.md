@@ -27,7 +27,11 @@ tree still contains monolithic test and proof modules that need migration.
   depends on `../IxCK` (its Ixon codec, the role vocabulary `IxCK.Kernel.Key`
   with which it reads role-bound environments, and the kernel's tiered
   admission entry and executed typing core, which the front end over the
-  kernel uses; not the kernel's proof tree) and Blake3;
+  kernel uses; not the kernel's proof tree) and Blake3; its grounding
+  library (`IxCCGrounding`, beside the production library) also imports the
+  kernel's model, `IxCK.Kernel.Denotes` (the statement half), which nothing
+  in the production library or the shared program build may import
+  (`check-build-graph`);
   ix's root
   package does not depend on IxCC, and IxCC must not import the root
   package's `Ix.*` modules.

@@ -5,6 +5,7 @@ import IxCC.Recheck.RootArity
 import IxCC.CompileClaim
 import IxCCTests.Pipeline.Twin
 import IxCCTests.Corpus.Manifest
+import IxCCTests.Pipeline.Compiler
 
 /-! The closures step end to end, under chosen middle-end schedules
 (`tests-pipeline --only defun`).
@@ -36,9 +37,20 @@ through a stored closure, a fuel-indexed record of closures) and a copy of
 `composeClosure` are the roots of `fixtures/corpus/phase2-closures` (frozen
 with the ix of this repository, a registered family since the closures step
 runs in production): each under both schedules, against the manifest's
-interpreter values; `Closures.stateLoop` must be refused by register
-allocation (`alloc.fallback`): a source global of eight parameters exceeds its
-limit on parameter counts, which is independent of closures.
+interpreter values, and each certified under the production schedule and
+with specialisation and inlining disabled, a compile claim verified both ways
+(exit criterion 2, `certifiedBoth`). In `Closures.stateLoop` a dispatcher
+calls `StateT.bind`, of eight parameters, in tail position: past the seven
+argument registers of a tail call, so `Fir.lower` makes it a call and a
+return (`Fir.Lower.tailCall`; it was refused by register allocation,
+`alloc.fallback`, before 2026-11-11), and the loop uses a frame per
+iteration. `Closures.stateLoopSE` is the same loop within the limit, with
+proper tail calls.
+
+`Decline.applyArg`, a root with a function parameter, at each surface
+(`applyArgSurfaces`): `ixcc compile`, the producer and every compile claim
+refuse it (`rt.fnparam`); the executables' fragment and the verifiers refuse
+it too, given a certificate made without that check.
 
 The roots of `fixtures/corpus/phase2-arity` (unregistered) have stored values
 with fewer or more leading λs than their declared types show. Without an
@@ -211,30 +223,86 @@ def fallbackInputs : List (String × List (List Nat)) :=
 def closuresDir : FilePath := "fixtures/corpus/phase2-closures"
 
 /-- The workloads a later stage refuses, by root, with the refusal's stage
-and code: register allocation's limit on parameter counts (`alloc.fallback`:
-a source global of eight parameters, past the internal calling convention's
-seven argument registers), which is independent of closures. -/
-def refusedLater : List (String × String) := [("Closures.stateLoop", "alloc.fallback")]
+and code: none since 2026-11-11 (`Closures.stateLoop` was refused by register
+allocation's limit on tail calls, `alloc.fallback`, which `Fir.lower` now
+keeps clear of by making a tail call past seven arguments a call and a
+return). -/
+def refusedLater : List (String × String) := []
 
-/-- The closures design's workloads (`fixtures/corpus/phase2-closures`, not
-yet a registered family): every root under both schedules, against the
-manifest's interpreter values; a root of `refusedLater` must be refused by
-that stage, after P8, with the globals over seven parameters all the
-program's own (none of P8's lifted functions or dispatchers). -/
+/-- The producer's budgets with specialisation disabled (the closures
+design's "P4 disabled"), and inlining with it: P4 makes no decision and P3 no
+round, so the certificate's middle end is P1, P2, pruning and empty P4 steps
+(the certified form of the `p1p2` schedule), and every closure the Phase 1
+middle end would remove reaches the closures step. -/
+def noSpec : Config := { budgets := { spec := { maxSpecs := 0 }, inline := { rounds := 0 } } }
+
+def policyName : CompilePolicy → String
+  | .immortal => "immortal"
+  | .zeroRc => "zero-RC"
+  | .plainRc => "plain-RC"
+
+/-- Exit criterion 2 of the closures design for one workload: under the
+production schedule and with specialisation disabled, the production compiler
+certifies the root (`Recheck.compileInput`: the producer's certificate,
+re-checked by `Recheck.run`), a compile claim (`CompileClaim.produce`) is
+accepted by `verifyProgram` and `verifyBytes`, and natively both objects
+give Lean's value on every case, so the two agree. With specialisation and
+inlining disabled (`noSpec`) the closures step changes the program. -/
+def certifiedBoth (a : Assert) (native : Option IxCCTests.Rt.Native.Tools) (root label : String)
+    (inp : Input) (bytes : ByteArray) (json : Lean.Json) (cases : List (List Nat × Nat)) : IO String := do
+  let mut line := s!"{label}-certified:"
+  for (sched, cfg0) in [("default", ({} : Config)), ("no-P3-P4", noSpec)] do
+    -- the root by name, as `verifyBytes` selects it from the sidecar (`selectTargetRoots`)
+    let cfg := { cfg0 with names := [root] }
+    let l := s!"{label}-{sched}"
+    let (cert, art) ← ofErr s!"{l}: compileInput" fun _ => compileInput cfg inp
+    let pre := (IxCC.Anf.Pipeline.run cert.mid art.lam).toOption
+    let changed := pre.any fun p => !p.beq art.anf
+    if sched == "no-P3-P4" then
+      expect a (cert.mid.steps.all fun s => match s with
+          | .specialize c => c.decisions.isEmpty | .inline _ => false | _ => true)
+        s!"{l}: a specialisation decision or an inline round with both disabled"
+      expect a changed s!"{l}: the closures step left the program unchanged"
+    let (claim, certText, _) ← ofErr s!"{l}: CompileClaim.produce" fun _ => CompileClaim.produce cfg inp
+    expect a (CompileClaim.verifyProgram cfg inp.program claim certText) s!"{l}: verifyProgram refuses the claim"
+    expect a (CompileClaim.verifyBytes cfg bytes json claim certText) s!"{l}: verifyBytes refuses the claim"
+    line := line ++ s!" {sched}: certified, {if changed then "P8 ran" else "first order before P8"}, \
+      claim ({policyName claim.policy}) verified;"
+    if let some nt := native then
+      let some root := art.roots.head? | do expect a false s!"{l}: no root"; return line
+      let exe ← link nt s!"defun_{l}_certified" art.object root.symbol
+      let lines ← IxCCTests.Rt.Native.run exe { stack := 1 <<< 28, ty := root.ty } (cases.map (·.1))
+      expect a (lines.length == cases.length) s!"{l}: {lines.length} result lines"
+      for ((args, want), r) in cases.zip lines do
+        expect a (r.status == 0 && r.ok) s!"{l} {args}: status {r.status}"
+        expect a (r.obs == some (toString want)) s!"{l} {args}: native {r.obs}, Lean {want}"
+  if native.isSome then line := line ++ s!" natively both give Lean's {cases.length} values"
+  return line
+
+/-- The closures design's workloads (`fixtures/corpus/phase2-closures`):
+every root under both schedules, against the manifest's interpreter values,
+and certified with and without specialisation (`certifiedBoth`); a root of
+`refusedLater` must be refused by that stage, after P8, with the globals over
+seven parameters all the program's own (none of P8's lifted functions or
+dispatchers). -/
 def workloads (a : Assert) (native : Option IxCCTests.Rt.Native.Tools) : IO (Array String) := do
   let fam ← IxCCTests.Corpus.Family.read (closuresDir / "corpus.json")
   let some fx := fam.fixtures.head? | do expect a false "phase2-closures: no fixture"; return #[]
+  let bytes ← IO.FS.readBinFile (closuresDir / fx.closure.path)
+  let json ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile (closuresDir / fx.equations.path)))
   let mut out := #[]
   for r in fx.roots do
     let cases := r.cases.map fun c => (c.args, c.value.toNat!)
     let inp ← ingressFile (closuresDir / fx.closure.path) (closuresDir / fx.equations.path) [r.name]
+    if refusedLater.lookup r.name |>.isNone then
+      out := out.push (← certifiedBoth a native r.name (r.name.replace "." "_") inp bytes json cases)
     for (sched, mid) in [("phase1", midDefault), ("p1p2", midMinimal)] do
       let label := s!"{r.name.replace "." "_"}-{sched}"
       let res ← IO.lazyPure fun _ => compile {} inp mid
       match res, refusedLater.lookup r.name with
       | .error e, some code =>
         expect a (e.code == code) s!"{label}: refused with {e.render}, expected {code}"
-        -- the globals past the internal convention's seven argument registers
+        -- the program's functions of more than seven parameters (a dispatcher tail-calls them)
         let wide : List (Anf.GlobalId × Key.GKey × Nat) := match front (({} : Config).forInput inp) inp with
           | .ok (src, lam) =>
             match (mid lam).toOption.bind fun pre => (closuresOf src pre).toOption with
@@ -420,8 +488,10 @@ def entryNotInCert (a : Assert) : IO String := do
   return s!"main3: compiled through an entry; the certificate ({text.utf8ByteSize} bytes) is the \
     schedule's middle end, round-trips and makes the same object"
 
-/-- `Decline.applyArg` (a function parameter applied): compiled through the
-closures step, which finds no closure source in the program (no local
+/-- `Decline.applyArg` (a function parameter applied), built by this part's
+pipeline, which runs the closures step without the producers' root check
+(the compiler refuses the root, `rt.fnparam`: `applyArgSurfaces`). The
+closures step finds no closure source in the program (no local
 function, no function global's value), so the one dispatcher it makes, of
 arity 1, has no alternative and no default. Natively it traps: `Rt.lower`
 closes a switch with no alternative and no default with a trap. Every input
@@ -449,9 +519,143 @@ def applyArg (a : Assert) (native : Option IxCCTests.Rt.Native.Tools) : IO Strin
     line := line ++ s!"; natively, {inputs.length} inputs trap (status 4)"
   return line
 
-def run (a : Assert) (native : Option IxCCTests.Rt.Native.Tools) : IO (Array String) := do
+/-- `r` is the refusal of a root whose caller would pass a closure. -/
+def refusedFnParam {α : Type} (a : Assert) (label : String) (r : Except Err α) : IO Unit :=
+  match r with
+  | .error e => expect a (e.stage == .rt && e.code == "rt.fnparam")
+      s!"applyArg: {label} refused with {e.render}, expected rt: rt.fnparam"
+  | .ok _ => expect a false s!"applyArg: {label} accepted it"
+
+/-- `Recheck.produceWith` without the producers' root check
+(`produceClosures` refuses a root whose caller would pass a closure,
+`rt.fnparam`): the certificate an honest producer would make for such a root,
+so that the recheck path and the verifiers can be shown to deal with it
+whatever a producer does. -/
+def produceUnchecked (cfg : Config) (inp : Input) : Except Err Cert := do
+  let ⟨table, _, _, ann, src, checked⟩ ← produceSource cfg inp
+  let (lam, _) ← (IxCC.Lam.erase src checked).mapError Err.ofErase
+  let trace ← (Anf.Pipeline.produce cfg.budgets lam).mapError fun m =>
+    { stage := .anf, code := "anf.produce", message := m }
+  let anf ← closuresOf src ((trace.stages.getLast?.map (·.2)).getD default)
+  let fir ← (IxCC.Fir.lower anf).mapError Err.ofFir
+  let C := IxCC.Cfg.lower (IxCC.Own.immortal fir)
+  let lowered ← (IxCC.Rt.lower { names := cfg.names } C).mapError Err.ofRt
+  let (xv, _) ← (Xv.Select.run lowered.program).mapError Err.ofSelect
+  let r ← (Xv.Alloc.runProducer cfg.env xv).mapError fun m =>
+    { stage := .alloc, code := "alloc.fallback", message := m }
+  let layouts := Xv.Stacking.produce r.program
+  let stacked ← (Xv.Stacking.run r.program layouts lowered.reps cfg.env).mapError (Err.ofBackend ∘ .stacking)
+  let order := X86.Layout.Order.produce (X86.Layout.tunnel stacked.program) stacked.shape
+  pure { table := Src.Table.TableCert.ofTable table, relevance := ann, mid := trace.cert
+         alloc := r.outs, frames := layouts, order }
+
+/-- What a user sees for `Decline.applyArg`, a root with a parameter of
+function type, at each surface. Closures do not cross a program boundary, so
+no caller can pass a closure: such a root has no meaningful caller.
+The compiler refuses it with `rt: rt.fnparam` (`Recheck.checkFnParams`):
+`ixcc compile` right after ingress (exit 1, no object), with `--exe` too, the
+producer (`compileInput`), and so every compile claim
+(`CompileClaim.produce` under each RC mode). With the certificate an
+unchecked producer would make, the recheck path still builds the object (the
+check is the producer's), the executables' fragment refuses it (`exe.params`)
+and `verifyProgram` and `verifyBytes` reject a claim naming it at its arity
+(`rootParamsAllNat` is false, as `CompileClaim.rootParamsAllNat_of_fnParam`
+says of every root the compiler refuses), so no claim covers it. -/
+def applyArgSurfaces (a : Assert) (t : Compiler.Tools) : IO String := do
+  let root := "Decline.applyArg"
+  let inp ← ingressFile declineIxe declineEqs [root]
+  let some (target, c) := inp.program.roots.head? | do expect a false "applyArg: no source root"; return ""
+  expect a (fnParam? inp.program c == some 0) s!"applyArg: fnParam? gives {fnParam? inp.program c}, expected parameter 0"
+  -- the producer refuses it
+  refusedFnParam a "compileInput" (← IO.lazyPure fun _ => compileInput {} inp)
+  -- the command line: no object, no executable (none left from an earlier run either)
+  let obj := t.work / "defun_applyArg.o"
+  let exe := t.work / "defun_applyArg.exe"
+  for f in [obj, exe] do
+    if ← f.pathExists then IO.FS.removeFile f
+  let code ← Compiler.cli t ["compile", declineIxe.toString, "--equations", declineEqs.toString,
+    "--root", root, "-o", obj.toString]
+  expectEq a code 1 "applyArg: ixcc compile's exit code"
+  expect a (!(← obj.pathExists)) "applyArg: ixcc compile wrote an object"
+  let code ← Compiler.cli t ["compile", declineIxe.toString, "--equations", declineEqs.toString,
+    "--root", root, "--exe", exe.toString]
+  expectEq a code 1 "applyArg: ixcc compile --exe's exit code"
+  expect a (!(← exe.pathExists)) "applyArg: ixcc compile --exe wrote an executable"
+  -- compile claims: the producer, under each RC mode
+  for (mode, l) in [(IxCC.Compiler.RcMode.auto, "auto"), (.immortal, "immortal"), (.zeroRc, "zeroRc"), (.plainRc, "plainRc")] do
+    refusedFnParam a s!"CompileClaim.produce ({l})" (CompileClaim.produce {} inp mode)
+  -- the certificate an unchecked producer makes: the recheck path builds the object
+  let cfg := ({} : Config).forInput inp
+  let cert ← ofErr "applyArg: produceUnchecked" fun _ => produceUnchecked cfg inp
+  let art ← ofErr "applyArg: run" fun _ => run cfg inp.program cert
+  let some r := art.roots.head? | do expect a false "applyArg: no root"; return ""
+  expect a (r.params == 2) s!"applyArg: {r.params} parameters, expected 2"
+  expect a (!CompileClaim.rootParamsAllNat art.src r) "applyArg: rootParamsAllNat accepts a function parameter"
+  match IxCC.Exe.fragment art with
+  | .error e => expect a (e.code == "exe.params") s!"applyArg: the executable refused with {e.render}, expected exe.params"
+  | .ok _ => expect a false "applyArg: the executables' fragment accepts it"
+  -- and the verifiers, on a claim right in every field but the root's parameters
+  let bytes ← IO.FS.readBinFile declineIxe
+  let json ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile declineEqs))
+  let claim : CompileClaim :=
+    { env := inp.env.root, roleTable := inp.env.bindingAddress, target, policy := .immortal,
+      abiArity := r.params, elfHash := Ixon.Address.blake3Pure art.object }
+  let text := cert.toText
+  expect a (!CompileClaim.verifyProgram {} inp.program claim text) "applyArg: verifyProgram accepts the claim"
+  expect a (!CompileClaim.verifyBytes {} bytes json claim text) "applyArg: verifyBytes accepts the claim"
+  return s!"applyArg: refused with rt.fnparam by ixcc compile (with and without --exe), the producer and \
+    CompileClaim.produce under each RC mode; with an unchecked producer's certificate the recheck path builds \
+    the object, the executables refuse it (exe.params) and verifyProgram and verifyBytes refuse a claim naming it"
+
+/-- Which declared parameters `Recheck.fnParam?` refuses, on a synthetic program: a `Nat`, a
+`Prop`-valued family `P : Nat → Prop`, a structure `Ops`, `NatFn := Nat → Nat`, and one root
+per parameter domain, of type `(x : D) → Nat` (or two parameters where the domain needs an
+earlier one). Refused: a function type and a definition of one; not refused: `Nat`, a type, a
+type former, a proof, a `∀`-proof, a structure, a variable's type. `rootParamsAllNat`'s
+agreement is the theorem `CompileClaim.rootParamsAllNat_of_fnParam`. -/
+def fnParamTable (a : Assert) : IO String := do
+  let pi (d c : Src.Term) : Src.Term := .pi {} .shared d c
+  let type1 : Src.Term := .sort (.succ .zero)
+  let b : Builder := {}
+  let (b, nat) := b.add (.induct true 0 0 0 type1 [])
+  let natT : Src.Term := .const nat []
+  let (b, natFn) := b.add (.defn .defn .safe 0 type1 (pi natT natT))
+  let (b, pP) := b.add (.induct true 0 0 1 (pi natT (.sort .zero)) [])
+  let (b, ops) := b.add (.induct true 0 0 0 type1 [])
+  let b := { b with known := { b.known with nat := some nat } }
+  -- (label, the root's parameters' domains, the position fnParam? must give)
+  let rows : List (String × List Src.Term × Option Nat) :=
+    [("Nat", [natT], none),
+     ("Nat → Nat", [pi natT natT], some 0),
+     ("NatFn (a definition of Nat → Nat)", [.const natFn []], some 0),
+     ("n, then (Nat → Nat)", [natT, pi natT natT], some 1),
+     ("Type", [type1], none),
+     ("Type → Type", [pi type1 type1], none),
+     ("P 3 (a proof)", [.app (.const pP []) (.natLit 3) .strict .rel], none),
+     ("∀ n, P n (a proof)", [pi natT (.app (.const pP []) (.var 0) .strict .rel)], none),
+     ("Ops (a structure)", [.const ops []], none),
+     ("α : Type, then x : α", [type1, .var 0], none),
+     ("α : Type, then α → α", [type1, pi (.var 0) (.var 1)], some 1)]
+  let mut b := b
+  let mut roots : List (String × Src.CId × Option Nat) := []
+  for (label, doms, want) in rows do
+    let ty := doms.foldr (fun d t => pi d t) natT
+    let (b', c) := b.add (.defn .defn .safe 0 ty (.natLit 0))
+    b := b'
+    roots := roots ++ [(label, c, want)]
+  let p := b.program
+  for (label, c, want) in roots do
+    expect a (fnParam? p c == want) s!"fnParam?: {label}: {fnParam? p c}, expected {want}"
+  return s!"fnParam?: {roots.length} declared parameter shapes classified as documented (refused: a \
+    function type, a definition of one, a function of a type variable; not: Nat, types, type formers, \
+    proofs, a structure, a variable's type)"
+
+def run (a : Assert) (t : Compiler.Tools) : IO (Array String) := do
+  let native := t.native
   let mut out := #[]
   out := out.push (← applyArg a native)
+  out := out.push (← applyArgSurfaces a t)
+  out := out.push (← fnParamTable a)
   out := out.push (← certified a native)
   out := out.push (← entryNotInCert a)
   let compose ← ingressFile declineIxe declineEqs ["Decline.composeClosure"]

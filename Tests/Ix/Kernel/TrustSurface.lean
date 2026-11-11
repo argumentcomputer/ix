@@ -43,7 +43,8 @@ tolerated there). A token in an allowlisted file that is not on its own
 list fails just as loudly as one in a bare file.
 
   IxCK/Kernel/Expr.lean         computed_field
-      The packed `@[computed_field] data` and `Level.hashData`: the
+      The packed `@[computed_field] data`, `Level.hashData` and
+      `Level.hasParamData`: the
       user's ruling R-meta ("we trust the compiler"), the same escape
       class `Lean.Expr` lives on. Expression equality is not an escape:
       it goes through `@[csimp]` + `withPtrEq`/`withPtrAddr` with the

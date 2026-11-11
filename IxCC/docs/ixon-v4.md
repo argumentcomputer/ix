@@ -6,44 +6,33 @@ source and carried, as contracts, in the content-addressed objects. Aiur is
 one consumer. IxCC consumes the resulting binary objects; it does not
 introduce another parser or elaborator.
 
-Three ix sources are pinned, for three different things:
+Three ix sources matter, for three different things:
 
-- **The wire** is Ixon **v4** (`ixon-v4`), as written by ix commit
-  `f829b76044a44a61023d0983516137147bbb12a7` (made on a branch,
-  `jcb/ix-certified`, that no longer exists; the commit survives on ix's
-  `jcb/compilatrix-donor-history-2026-10-11` and
-  `jcb/compilatrix-resource-wip-2026-10-11` branches).
+- **The wire** is Ixon **v4** (`ixon-v4`), as this repository's `ix` writes it
+  (`Ix/Ixon.lean`; the version-5 envelope adds the role binding, [byte
+  contract](byte-contract.md)).
 - **The codec** that reads and writes it is a Lake dependency: ix's `IxCK/`
   package (`«ix-ck»`), beside IxCC in the ix workspace (`../IxCK`), of which
   IxCC imports the 11 modules of `IxCK.Ixon.Canonical`'s import closure (Init
   only), and, to read role-bound environments, the kernel's role vocabulary
-  (`IxCK.Kernel.Key`, with `IxCK.Kernel.Name`; [byte contract](byte-contract.md)). They are `f829b760`'s `Ix.Ixon.*` and `Ix.Address.Core` under the
-  `IxCK` module root, without an unused error type, and with a TagN fast path:
+  (`IxCK.Kernel.Key`, with `IxCK.Kernel.Name`; [byte contract](byte-contract.md)). They are ix's Ixon codec under the `IxCK` module root, without an unused error type, and with a TagN fast path:
   two `@[csimp]` theorems make compiled code use copies of `putTagN` and
   `getTagN` specialized to the flag widths 0, 2 and 4. It is the only reader
   and writer of constant, expression and universe bytes. The trust ledger pins
   it by the SHA-256 of each of those files ([trust
   ledger](trusted-extern-ledger.md), `lean_dependencies`); they were last
-  reviewed as of ix `2dd96055e68cff3dcaf1fe0c32e6a1b7df33d6c2`.
-- **The data model, the resource rules and the erased checker** come from ix commit
-  `0a31c8dbc63755924c645bf1afedc563e395e88a` (Ixon v3, made on a branch,
-  `jcb/ix-ixcc`, that no longer exists; the commit survives on ix's
-  `jcb/ix-compilatrix` branch; v3 introduced the contract-carrying model and
-  v4 changed only the wire),
-  with the erased checker's primitive table and the resource profile and claim
-  framing moved to `f829b760`.
+  reviewed as of the integrity pins recorded there.
+- **The data model, the resource rules and the erased checker** were adapted
+  from an earlier ix (Ixon v3, a revision outside this repository's history;
+  v3 introduced the contract-carrying model and v4 changed only the wire),
+  with the erased checker's primitive table, which follows this repository's
+  `Ix/PrimAddrs.lean` (`refreeze-ixon tc-primitives`).
 
-The producer of the frozen fixtures is a fourth, local revision: `f829b760`
-plus the `--equations` export (`be45a159`, [corpus](corpus.md)). `be45a159`
-is not in this repository's history; it survives on ix's
-`jcb/compilatrix-donor-history-2026-10-11` and
-`jcb/compilatrix-resource-wip-2026-10-11` branches. The ix of this repository
-has the same export (`ix compile --equations`); it writes role-bound
-version-5 closures by default, which ingress reads, and the unbound version-4
-closures of the committed fixtures with `ix compile --unbound`; `refreeze-ixon
-typing` checks the primitive closure with its `ix check-lean`. A refreeze
-with it follows [Refreezing](corpus.md#refreezing), which says what it
-changes and which steps it cannot yet run.
+The producer of the committed fixtures is the ix of this repository (`lake
+build ix`): `ix compile --equations` writes the role-bound closures and their
+unfolding equations ([corpus](corpus.md), "Refreezing";
+`tools/regenerate.sh --check` says whether they are current). The erased
+checker's typing bundles and the catalogs are frozen unbound data.
 
 This source pin is independent of the Aiur target snapshot in
 [`IxCC/Vendor/README.md`](../IxCC/Vendor/README.md). That target contains the
@@ -247,13 +236,13 @@ different provenance and independent Rust verification.
 
 The [K1 pack](../fixtures/ixon-v4/k1/README.md) adds a 1,596-constant closure
 of ordinary Lean programs (`fib`, a `for` loop, Ackermann, `tak`, `gcd`) with
-the unfolding theorems of all 40 recursive definitions it reaches. The suite
+the unfolding theorems of every recursive definition it reaches. The suite
 checks strict ingress, the recorded root, definition and equation addresses,
 and erased typing of the whole closure.
 
 The portable fixture package (expressions, addressed constants and profile,
 claims, the 66 resource cases, the handoff, the text grammar and the primitive
-inventory) is copied byte for byte from ix `f829b760`
+inventory) is copied byte for byte from the root package's
 `Tests/Fixtures/ixon-v4/`. The compiled `tests-ixon-v3` suite (2,300
 assertions) decodes and re-encodes them with this boundary, checks every
 binder/arrow bit pattern, truncation and trailing bytes, native claim framing,

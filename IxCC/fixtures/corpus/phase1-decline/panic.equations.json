@@ -4,7 +4,7 @@
   "roots": [
     {
       "name": "Decline.withPanic",
-      "address": "24037f3228d6cbed3292047d89217bbe4bbfa91809b4bb3a917293abecc9b0b7"
+      "address": "f7cda30f6437bdef43cec615a5aa860454311b08eb4c49713aa6854c2b4aeec6"
     }
   ],
   "equations": [
@@ -25,6 +25,12 @@
       "definition_address": "b75f797a6db81de727707edff629bcbd1d4e1bebf61d971c2789d2124ddf46cd",
       "equation": "List.flatten.eq_def",
       "equation_address": "c1b146fe009228aa812e60bd787a6e6972f58dd036fb616dee946dd134a5e195"
+    },
+    {
+      "definition": "List.hasDecEq",
+      "definition_address": "d527515f3a00689f9a9e9b21c26b8f7c364c4192b525b9a2d38973b0684d46f2",
+      "equation": "List.hasDecEq.eq_def",
+      "equation_address": "75a99829c51cccc66e7badee33fcd87499132f425803f08b4332b240b96efce8"
     },
     {
       "definition": "List.map",

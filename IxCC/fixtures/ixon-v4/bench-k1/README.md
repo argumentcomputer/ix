@@ -7,17 +7,21 @@ with the kernel-checked unfolding theorem `f.eq_def` of every recursive
 definition in the closure. The IxCC and `lean-clang` benchmark rows
 compile the same Lean source.
 
-| Fixture | Entry | Constants | Equations | Bytes |
-| --- | --- | ---: | ---: | ---: |
-| `fib` | `Nat → Nat` | 55 | 2 | 15,121 |
-| `sum-loop` | `Nat → Nat` | 1,540 | 34 | 1,030,158 |
-| `ackermann` | `Nat → Nat → Nat` | 1,405 | 34 | 911,594 |
-| `tak` | `Nat → Nat → Nat → Nat → Nat` | 149 | 5 | 49,721 |
-| `gcd` | `Nat → Nat → Nat` | 265 | 7 | 111,796 |
-| `collatz` | `Nat → Nat` | 1,545 | 35 | 1,034,864 |
-| `prime-count` | `Nat → Nat` | 1,546 | 35 | 1,035,505 |
-| `even-odd` | `Nat → Nat` | 64 | 2 | 18,339 |
-| `sfib` | `Nat → Nat` | 149 | 5 | 49,224 |
+| Fixture | Entry |
+| --- | --- |
+| `fib` | `Nat → Nat` |
+| `sum-loop` | `Nat → Nat` |
+| `ackermann` | `Nat → Nat → Nat` |
+| `tak` | `Nat → Nat → Nat → Nat → Nat` |
+| `gcd` | `Nat → Nat → Nat` |
+| `collatz` | `Nat → Nat` |
+| `prime-count` | `Nat → Nat` |
+| `even-odd` | `Nat → Nat` |
+| `sfib` | `Nat → Nat` |
+
+The manifest ([`corpus.json`](corpus.json)) records each closure's bytes and
+equation count, and each census its constants (they change with every
+regeneration, so they are not repeated here).
 
 The last four are the MT.2 benchmark rows (definitions from the scalar
 corpus, `fixtures/corpus/phase1-scalar`), added on 2026-10-01; `tests-ixon-v3`,
@@ -25,16 +29,18 @@ the `census` check and `tests-pipeline` still cover the first five.
 
 Files per fixture:
 - `<name>.ixe`: the closure, from `ix compile --consts entry --equations
-  --anon`, with the producer the manifest pins (ix `be45a159`: the certified
-  line `f829b760` plus the local `--equations` export), as for the
-  [`k1`](../k1/README.md) pack;
+  --anon` with the ix of this repository (the role-bound envelope: the
+  selected closure, its role support, certificates and role binding), as for
+  the [`k1`](../k1/README.md) pack;
 - `<name>.equations.json` (`ixcc/k1-equations/1`): the root and each
   `(definition, equation)` pair by name and content address. Names are
   diagnostic only; addresses are authoritative, resolved with `ix addr-of`
   against the named twin of the same closure (not retained; its SHA-256 is in
   the manifest);
 - `<name>.census.json`: the reviewed admission census. Every constant of
-  every closure passes decoding, erased typing and the D12 policy stage;
+  every closure passes decoding and erased typing; the D12 policy stage
+  refuses the `partial` and `unsafe` members of the logical units the
+  selection brings in, which no root reaches;
 - `steps.json` (`ixcc/x86-steps/1`): the reviewed typed-x86 and
   `ByteEval` step counts of each program's `cx_init` and root on its
   machine-level test arguments, which `check-steps` (the `x86-steps` check)

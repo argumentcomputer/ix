@@ -1,0 +1,8 @@
+{"source": "Diag.lean",
+ "roots":
+ [{"name": "SrcDiag.rootSorry",
+   "address":
+   "47fb850273289a41bc08885a6d6f524362ded49ba8fe45ae3bd424f316415d43"}],
+ "format": "ixcc/k1-equations/1",
+ "failures": [],
+ "equations": []}

@@ -27,10 +27,8 @@
     }
   },
   "producer": {
-    "ix_revision": "be45a159f1bb3629d109f742b950786ae8fc11f4",
-    "ix_binary_sha256": "fc4e07ab477f2ba9dd4a2ed6398b2d1a85b2f597c0fd671abe0a323bc5d41017",
+    "ix": "the ix of this repository: lake build ix at the repository root, in its dev shell (not a Nix build)",
     "ix_version": "4.34.1|0.0.1",
-    "ix_build": "Built with Lake (lake build ix) from the recorded revision, a local change (jcb/compile-equations, adding --equations, request R1/R5) on ix f829b76044a44a61023d0983516137147bbb12a7 (jcb/ix-certified); not a Nix build.",
     "anonymous": [
       "ix",
       "compile",
@@ -140,8 +138,8 @@
       "protocol": "stdin",
       "closure": {
         "path": "boundary.ixe",
-        "sha256": "fce841fc45e0a1946a75a1ebb49fa38480400e7bd001f02d53953fe6038871b8",
-        "bytes": 246932
+        "sha256": "da070155b9710263be7cb81eb342c5632e98baa5ce5adef5e823f3413ef82d20",
+        "bytes": 456759
       },
       "equations": {
         "path": "boundary.equations.json",
@@ -149,10 +147,10 @@
         "equations": 14,
         "failures": 0
       },
-      "named_env_sha256": "507d7fa20b1298bc7b596a3ec6b19a46ae8f5e44978952751a896b39d7d15767",
+      "named_env_sha256": "1f7a18baeeebeef69c60454c7dcf4aa95f6bf8aa1dc9c2f5cc152fd28116e76f",
       "census": {
         "path": "boundary.census.json",
-        "sha256": "1635da131e5b6dc9674003d66ddb2e1b8c33151be0ae778c94231e98e5c83367"
+        "sha256": "fbaddf8474b3bef158febf56983b41e910e4d7b733d1890436f0b3a6a23017ea"
       },
       "roots": [
         {
@@ -5195,52 +5193,52 @@
       ]
     },
     {
-      "name": "fields254",
+      "name": "fields49",
       "source": {
         "path": "Limits.lean",
-        "sha256": "bb0e4fcb082c784f46499c1bb61857d830ee18ff67f1a173ac2d411f0141e6f0",
+        "sha256": "07373ac0b46a1f83388783520f42dea1a377b76c8b094affe97dfa57f2ad2264",
         "license": "Apache-2.0 OR MIT",
         "variant": "original",
         "origins": []
       },
       "consts": [
-        "Limits.fields254"
+        "Limits.fields49"
       ],
       "protocol": "stdin",
       "closure": {
-        "path": "fields254.ixe",
-        "sha256": "fdaa121eec4ff5909254a835a4a1e99afad4206148f6e0e02996720698423625",
-        "bytes": 43395
+        "path": "fields49.ixe",
+        "sha256": "00bdac6ca3210b855bb96d7df1efdbcd58c01de4bf542d29562d3b371277639f",
+        "bytes": 89439
       },
       "equations": {
-        "path": "fields254.equations.json",
-        "sha256": "bfaddf81fb24981e9a263c84d06e60a81e93eea7a0cf49d598f294e678774b74",
-        "equations": 2,
+        "path": "fields49.equations.json",
+        "sha256": "9f67446705054db3d38bd09e8d1915b50943c9e661bd692171f7ce0099f640ec",
+        "equations": 3,
         "failures": 0
       },
-      "named_env_sha256": "13c712fb6a16b1d8b3ee7d9f0e05828b20134e748e61388ae714fa558dcc0041",
+      "named_env_sha256": "c86635f69896433a7f6f1698b08713ced77851488b7d6337419f6be7b65338b5",
       "census": {
-        "path": "fields254.census.json",
-        "sha256": "b85c9a86af745fdb5f21cbe7a184137d1f5809cc1381b35cb2f9bb9319b93cdc"
+        "path": "fields49.census.json",
+        "sha256": "de68167a13400483fe3415c69f7920d76b406a2d42a74d337fe0487840cab061"
       },
       "roots": [
         {
-          "name": "Limits.fields254",
-          "address": "6004dbed90179302ab7a87c7367f57831d89320ec6cf036e3e439d17109a30bc",
+          "name": "Limits.fields49",
+          "address": "b58701b7ef61262492a309a436e87604a8f1e0d5fa324a98fa7479a9e5d786a2",
           "params": 2,
           "result": "nat",
           "oracles": [
             "lean-run"
           ],
           "decline": null,
-          "note": "254 fields, the most a header counts (04 §3): allocated, kept through a recursion and read",
+          "note": "49 fields, the widest structure whose logical unit decodes (its `mk.injEq`, of depth 5n + 7, is 252 deep): allocated, kept through a recursion and read",
           "cases": [
             {
               "args": [
                 5,
                 3
               ],
-              "value": "258",
+              "value": "53",
               "machine": true
             },
             {
@@ -5248,7 +5246,7 @@
                 0,
                 0
               ],
-              "value": "253",
+              "value": "48",
               "machine": true
             },
             {
@@ -5256,12 +5254,12 @@
                 1000,
                 10
               ],
-              "value": "1253",
+              "value": "1048",
               "machine": true
             },
             {
               "args": [
-                9223372036854775554,
+                9223372036854775759,
                 1
               ],
               "value": "9223372036854775807",
@@ -5272,7 +5270,7 @@
                 9223372036854775807,
                 1
               ],
-              "value": "9223372036854776060",
+              "value": "9223372036854775855",
               "machine": true
             }
           ]
@@ -5280,38 +5278,38 @@
       ]
     },
     {
-      "name": "fields255",
+      "name": "fields50",
       "source": {
         "path": "Limits.lean",
-        "sha256": "bb0e4fcb082c784f46499c1bb61857d830ee18ff67f1a173ac2d411f0141e6f0",
+        "sha256": "07373ac0b46a1f83388783520f42dea1a377b76c8b094affe97dfa57f2ad2264",
         "license": "Apache-2.0 OR MIT",
         "variant": "original",
         "origins": []
       },
       "consts": [
-        "Limits.fields255"
+        "Limits.fields50"
       ],
       "protocol": "stdin",
       "closure": {
-        "path": "fields255.ixe",
-        "sha256": "50ad76144d4598ffcf5ea1c56f1b1f050ab9f7ea2829c3a33a51671e36feb597",
-        "bytes": 43506
+        "path": "fields50.ixe",
+        "sha256": "6ed0b51d47e101b1c66914ffed9d9749b8d09d264fbc9d0fac2cda81b1371ca6",
+        "bytes": 89998
       },
       "equations": {
-        "path": "fields255.equations.json",
-        "sha256": "9534f97e479b39af356d630e44e63a36688802832de921cb80fb3d01d98363ca",
-        "equations": 2,
+        "path": "fields50.equations.json",
+        "sha256": "27f12c6686f3c29b73bf85a5fc829cafbd5dd2a1043f3794165211d48d55b720",
+        "equations": 3,
         "failures": 0
       },
-      "named_env_sha256": "b7fc6c038d4502fbff48f58b4cb70f433224fd5cb5572b5c02647d081d9c5953",
+      "named_env_sha256": "eb705b39e698f4a17b75ff12868d3df5130d957caebed69533ea6f853c98710d",
       "census": {
-        "path": "fields255.census.json",
+        "path": "fields50.census.json",
         "sha256": "14a7af73b49984f2ad0f0ee68b1a7592f502ff478164f10cdb28af504fffb097"
       },
       "roots": [
         {
-          "name": "Limits.fields255",
-          "address": "162fa3d5a1de9abeef35258d662e31f92f1e67629c5efc9d7076fd22fe0a8631",
+          "name": "Limits.fields50",
+          "address": "822090ccee6c11711c9dfc6d49e8dc1ded74bfcc918d98fe73968d39259b43ca",
           "params": 2,
           "result": "nat",
           "oracles": [
@@ -5321,14 +5319,14 @@
             "stage": "ingress",
             "code": "decode"
           },
-          "note": "255 fields: the recursor type is deeper than the decoder budget of 256, so ingress declines it before `Rt.lower`'s `rt.layout` could",
+          "note": "50 fields: the structure's `mk.injEq` (depth 5n + 7 = 257) is deeper than the decoder budget of 256, so ingress declines the closure",
           "cases": [
             {
               "args": [
                 5,
                 3
               ],
-              "value": "259"
+              "value": "54"
             }
           ]
         }
@@ -5338,7 +5336,7 @@
       "name": "tags16",
       "source": {
         "path": "Limits.lean",
-        "sha256": "bb0e4fcb082c784f46499c1bb61857d830ee18ff67f1a173ac2d411f0141e6f0",
+        "sha256": "07373ac0b46a1f83388783520f42dea1a377b76c8b094affe97dfa57f2ad2264",
         "license": "Apache-2.0 OR MIT",
         "variant": "original",
         "origins": []
@@ -5349,19 +5347,19 @@
       "protocol": "stdin",
       "closure": {
         "path": "tags16.ixe",
-        "sha256": "5cf0b48f52e5482aa9583973b5b46572ceb0ada4e36ade6de48f5de0ec7b30ae",
-        "bytes": 191346
+        "sha256": "388a84049bfb39c9da3a2e47321a17eb9a26386d6d9416ab61833e81878a5178",
+        "bytes": 379249
       },
       "equations": {
         "path": "tags16.equations.json",
-        "sha256": "dac50c80c44cd8e1192a5c377a3cb3ae4f55754c5d08d0fe7e1e6b4af82a93b7",
-        "equations": 10,
+        "sha256": "e3f0630c243351ae58a3cf5dd4a403e459123542674b473e4604f53d05fc5ad6",
+        "equations": 13,
         "failures": 0
       },
-      "named_env_sha256": "493358125876552968dc99570718d051d513a68ae98a06d439710a98f3415d87",
+      "named_env_sha256": "7351484b547d42791a6c64d1d1b80f25fde114f02c5dfc1dc8b9eccb99dbbcae",
       "census": {
         "path": "tags16.census.json",
-        "sha256": "88596e763e82d425f40f949559aa108f5cd67a35c488b975d84f47a558e5ea4f"
+        "sha256": "e612434bfe91f91ad7ddb8f438de230bce76f71cb289f71e4888a5b996975388"
       },
       "roots": [
         {
@@ -5423,7 +5421,7 @@
       "name": "tags17",
       "source": {
         "path": "Limits.lean",
-        "sha256": "bb0e4fcb082c784f46499c1bb61857d830ee18ff67f1a173ac2d411f0141e6f0",
+        "sha256": "07373ac0b46a1f83388783520f42dea1a377b76c8b094affe97dfa57f2ad2264",
         "license": "Apache-2.0 OR MIT",
         "variant": "original",
         "origins": []
@@ -5434,19 +5432,19 @@
       "protocol": "stdin",
       "closure": {
         "path": "tags17.ixe",
-        "sha256": "23cd00dfaba78f7e54fe56bfdbdd29471934cf54b31e68885e2d2f488a99c61c",
-        "bytes": 191802
+        "sha256": "ce01cd44b2b7a4729ef22494f714789233238c76e30b4818c29f2d4b4edd01d0",
+        "bytes": 380804
       },
       "equations": {
         "path": "tags17.equations.json",
-        "sha256": "af7f3cf48b9f8ec6114795c75e594cfeced705bb24c9a4f273c1cffc08c2e335",
-        "equations": 10,
+        "sha256": "7717ac9913e412b0b17d1bfd3617c62d84ac10c5b45524202ce3c4ccea9847e9",
+        "equations": 13,
         "failures": 0
       },
-      "named_env_sha256": "05ac1beadffd11869cfc768d78e8725dc6f8f0dc57c7c037fd04b960ac08400d",
+      "named_env_sha256": "8e51baacf9e10438c2cb64a9bb3c89d86d6e0d6be7ba170bf238c432a391e43b",
       "census": {
         "path": "tags17.census.json",
-        "sha256": "18140c71612aa4e161da7c47506c07b274d1d0241a385b1619646c0826d46a05"
+        "sha256": "755489902fe07d4cc04cbebd0f7ba35614464331b397bdc06d00fea3038fc23d"
       },
       "roots": [
         {
@@ -5476,7 +5474,7 @@
       "name": "tags125",
       "source": {
         "path": "Limits.lean",
-        "sha256": "bb0e4fcb082c784f46499c1bb61857d830ee18ff67f1a173ac2d411f0141e6f0",
+        "sha256": "07373ac0b46a1f83388783520f42dea1a377b76c8b094affe97dfa57f2ad2264",
         "license": "Apache-2.0 OR MIT",
         "variant": "original",
         "origins": []
@@ -5487,19 +5485,19 @@
       "protocol": "stdin",
       "closure": {
         "path": "tags125.ixe",
-        "sha256": "1c1956770e221e19a2a018146396e4f362bd55d6e42c107a95fafbc55d7cee2f",
-        "bytes": 275654
+        "sha256": "451d8da62055e44748faf6c7864f7750e1299e39181312c8bcd16c2631b9a3f2",
+        "bytes": 583898
       },
       "equations": {
         "path": "tags125.equations.json",
-        "sha256": "e400380481c3b2bb616e98940b66ce6ea72b74ce19c9ace4e4001b8cbbd0096d",
-        "equations": 10,
+        "sha256": "4e847e6cadaaaf32ecb30e3dea0d8bd4c9ec9027154e6583d59504b25c54593b",
+        "equations": 13,
         "failures": 0
       },
-      "named_env_sha256": "5b2e7ac2322f60029a603ec066af980b155fb75ee559b64eb3197ba676847246",
+      "named_env_sha256": "33161b37f52787c28af07c867923e606fd7ff56ddf0512001f21aff336ce3ad6",
       "census": {
         "path": "tags125.census.json",
-        "sha256": "872052174aa2220672a7c3444bf68795727e4b59089a5241354715e7aa98dc2c"
+        "sha256": "8f0ef3903b2388c1480cb5f71939e1d250c663b09dd4b5120d42bef23f8676eb"
       },
       "roots": [
         {
@@ -5529,7 +5527,7 @@
       "name": "tags126",
       "source": {
         "path": "Limits.lean",
-        "sha256": "bb0e4fcb082c784f46499c1bb61857d830ee18ff67f1a173ac2d411f0141e6f0",
+        "sha256": "07373ac0b46a1f83388783520f42dea1a377b76c8b094affe97dfa57f2ad2264",
         "license": "Apache-2.0 OR MIT",
         "variant": "original",
         "origins": []
@@ -5540,16 +5538,16 @@
       "protocol": "stdin",
       "closure": {
         "path": "tags126.ixe",
-        "sha256": "b9e69a064d40b5d88a52876d51e24b339de72b7e247bb4618db9dae6329882da",
-        "bytes": 276772
+        "sha256": "0480f42bcedc3c36f2befa35b8dd0eae735c58f6e5f0fd23fa25612542353718",
+        "bytes": 586123
       },
       "equations": {
         "path": "tags126.equations.json",
-        "sha256": "e7b5716d799c61cce33142482672bc4e36a3c098cf10f8cf6607e7e5b51899e3",
-        "equations": 10,
+        "sha256": "d2e2662b3f351f0a2b88514b05b80271fa52b29efad0e3ecb006a5f2f43c75aa",
+        "equations": 13,
         "failures": 0
       },
-      "named_env_sha256": "2eefdb7e1cdfe8afede42526f6a7c5aaadba776f31f11d8d099f84f640099586",
+      "named_env_sha256": "9f15b5e6ad0b928ab23b2872e0c8d50b91d87fed5ac9d71727c47b0f48ed4a70",
       "census": {
         "path": "tags126.census.json",
         "sha256": "14a7af73b49984f2ad0f0ee68b1a7592f502ff478164f10cdb28af504fffb097"

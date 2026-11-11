@@ -10,7 +10,7 @@ previous selector still rejects ten under its original expansion budget.
 Physical heap source and snapshot object APIs now default to `.graph`.
 The `.shared` and `.tree` paths remain available. Existing physical and
 source-to-ELF statements and proof assumptions remain in force.
-Implementation, APIs, and limits (`docs/native-graph.md` at archive commit `7599a434`).
+Implementation, APIs, and limits (`docs/native-graph.md` on the archive branch of the pre-merge Compilatr.ix repository).
 
 ## Fixed comparison and representation
 
@@ -123,7 +123,7 @@ interval, or per-stage process isolation. Fixture construction, API replay,
 semantic/mutation tests, budget/context tests, inspection formatting, hashing
 reported artifacts, and file writes are outside the stage intervals. Medians
 must not be added to infer end-to-end latency.
-Commands and protocol (`benchmarks/native-graph.md` at archive commit `7599a434`).
+Commands and protocol (`benchmarks/native-graph.md` on the archive branch of the pre-merge Compilatr.ix repository).
 
 Validation on the final implementation passed:
 
@@ -154,7 +154,7 @@ remain unchanged. No axiom or native interface is added.
 
 ## Provenance and retained replay
 
-Frozen source is base commit `e333e02a722826245d93966d8734dccd0d14c496` plus the complete uncommitted
+Frozen source is the base commit of that date (pre-merge history, not kept by the squash) plus the complete uncommitted
 implementation in `source.tar.gz`. All 769 source files and
 632 code identities remained unchanged through measurement.
 This performance documentation was added afterwards. Tools, versions, linkage,

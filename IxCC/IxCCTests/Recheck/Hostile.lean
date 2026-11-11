@@ -657,6 +657,79 @@ def towers (k depth : Nat) : Anf.Program :=
         (i + 1, ({ key := .dispatch (i + 1), ps := [{}], body := tower depth } : Anf.GDef)))
     size := k + 1, roots := [1], ctors := [], known := {} }
 
+/-- One global over one parameter: a local function of one parameter whose
+body is `fat m` (`m` nodes), applied `uses` times (each result bound, the
+last returned). -/
+def betaProgram (m uses : Nat) : Anf.Program :=
+  let apps := (List.range uses).foldr (fun i e => .bind Anf.freshLet (.app (.var i) [.box]) e)
+    (.ret (.var 0))
+  let gd : Anf.GDef := { key := .dispatch 0, ps := [{}], body := .bind Anf.freshLet (.fn [{}] (fat m)) apps }
+  { globals := Src.NatMap.ofList [(0, gd)], size := 1, roots := [0], ctors := [], known := {} }
+
+/-- The same local function applied once, inside a join point of four nodes
+that a two-way `case` on the parameter jumps to twice: shrink emits the join
+point (its body expands the function first) and inlines it at both jumps (a
+small join point), so the function's body is walked three times. -/
+def betaJoinProgram (m : Nat) : Anf.Program :=
+  let jb : Anf.Exp := .bind Anf.freshLet (.app (.var 1) [.var 0]) (.ret (.var 0))
+  let sw : Anf.Exp := .case (.var 1)
+    [.mk (.src 0) 0 (.jump 0 [.lit (.nat 1)]), .mk (.src 1) 0 (.jump 0 [.lit (.nat 2)])] none
+  let gd : Anf.GDef :=
+    { key := .dispatch 0, ps := [{}], body := .bind Anf.freshLet (.fn [{}] (fat m)) (.join 1 false jb sw) }
+  { globals := Src.NatMap.ofList [(0, gd)], size := 1, roots := [0], ctors := [], known := {} }
+
+/-- The walk's copy accounting for β-reductions (2026-11-11): a local function
+the walk inlines at its applications is moved by its first expansion, which is
+not charged (its body is part of the global, which the binding skips), and
+every later expansion is charged its nodes, whether the function has several
+saturated applications or one application that a join point inlined at two
+jumps walks again. Every walk takes at most its global's nodes plus its copies
+(`Fires.steps`). The first assertion fails on the accounting it replaced, which
+charged every expansion: a once-used function of more than `maxCopy` nodes was
+refused. -/
+def betaMoves (a : Assert) : IO String := do
+  let p := ({} : Anf.Shrink.Params)
+  let round (P : Anf.Program) : Except String Anf.Walk.Fires := do
+    let some gd := P.global? 0 | throw "no global 0"
+    let (_, f) ← Anf.Shrink.round P p gd
+    pure f
+  let nodes (P : Anf.Program) : Nat := ((P.global? 0).map (·.body.nodes)).getD 0
+  let big := Anf.Walk.maxCopy + Anf.Walk.maxCopy / 2
+  let half := Anf.Walk.maxCopy / 2 + 904
+  let third := Anf.Walk.maxCopy / 3 + 300
+  -- moved: one application of a function larger than the copy budget
+  let once := betaProgram big 1
+  expect a (nodes once ≤ Anf.maxGlobalNodes) s!"betaMoves: the {nodes once}-node global is over the node budget"
+  match round once with
+  | .ok f =>
+    expect a (f.beta == 1 && f.copied == 0) s!"betaMoves: once: beta {f.beta}, copied {f.copied}, expected 1 and 0"
+    expect a (f.steps ≤ nodes once + f.copied) s!"betaMoves: once: {f.steps} steps"
+  | .error m => expect a false s!"betaMoves: a once-applied {big}-node local function refused: {m}"
+  -- copied: two applications charge the second; three pass the budget
+  let twice := betaProgram half 2
+  match round twice with
+  | .ok f =>
+    expect a (f.beta == 2 && f.copied == half) s!"betaMoves: twice: beta {f.beta}, copied {f.copied}, expected 2 and {half}"
+    expect a (f.steps ≤ nodes twice + f.copied) s!"betaMoves: twice: {f.steps} steps"
+  | .error m => expect a false s!"betaMoves: a twice-applied {half}-node local function refused: {m}"
+  match round (betaProgram half 3) with
+  | .ok f => expect a false s!"betaMoves: a thrice-applied {half}-node local function accepted (copied {f.copied})"
+  | .error m => expect a ((m.splitOn "copy budget").length > 1) s!"betaMoves: thrice: {m}"
+  -- copied again through a join point inlined at two jumps
+  let jp := betaJoinProgram third
+  match round jp with
+  | .ok f =>
+    expect a (f.beta == 3 && f.joinSmall == 2 && f.copied ≥ 2 * third)
+      s!"betaMoves: join: beta {f.beta}, joinSmall {f.joinSmall}, copied {f.copied}, expected 3, 2, at least {2 * third}"
+    expect a (f.steps ≤ nodes jp + f.copied) s!"betaMoves: join: {f.steps} steps"
+  | .error m => expect a false s!"betaMoves: the join program ({third}-node function) refused: {m}"
+  match round (betaJoinProgram half) with
+  | .ok f => expect a false s!"betaMoves: the join program ({half}-node function) accepted (copied {f.copied})"
+  | .error m => expect a ((m.splitOn "copy budget").length > 1) s!"betaMoves: join, {half} nodes: {m}"
+  return s!"β-reductions: a once-applied {big}-node local function is moved (copied 0); a second \
+    application of a {half}-node one is charged and a third refused; a join point inlined at two jumps \
+    charges both re-expansions ({third} nodes: accepted; {half}: refused); every walk within its step bound"
+
 /-- The shrink census (FA residual): under shrink the walk counts the bound
 variable's uses over the rest of the body at each binding, so one round on a
 global of `n` bindings each used later reads about `n²` nodes: up to the

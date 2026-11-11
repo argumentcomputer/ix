@@ -1,15 +1,18 @@
 import IxCCTests.KernelFront.Diff
 import IxCCTests.KernelFront.Bound
 import IxCCTests.Src.Support
+import IxCCTests.Support.Envelope
 
 /-! # `tests-kernel-front`: the kernel front end on the committed role-bound closures
 
-On each committed role-bound closure (`fixtures/ixon-v4/bound`): the kernel
+On two committed closures (`phase1-scalar`'s `tuple` and `bench-k1`'s `fib`;
+every committed closure is role-bound, as `ix compile` writes it): the kernel
 accepts it; the two front ends (`Diff.diff`) give the same program, the same
 annotation, the same certificate and the same object, and the kernel front
 end's Stage A accepts its own certificate. Then the refusals:
 
-* an unbound envelope (the closures' committed unbound twins);
+* an unbound envelope (the same records without the binding,
+  `Support.Envelope.unboundTwin`);
 * a role binding whose bytes do not hash to its address, a closure missing a
   record its root references, a role table naming a record the closure lacks;
 * a certificate whose annotation differs from the kernel annotator's in one
@@ -17,10 +20,18 @@ end's Stage A accepts its own certificate. Then the refusals:
 * a program that is not the kernel's reading: a constant's value changed, a
   constructor's field count changed, a constant keyed by another address.
 
-Then, on every closure of the registered role-bound family
-(`fixtures/corpus/phase1-bound`): the kernel accepts it, and the two front ends
-give the same program and, root by root, the same annotation, certificate
-and object, or refuse the root alike.
+Then the tuple closure with one more record, a constant whose ∀ chain shares
+one type at each of 200 steps (`sharedLevelConstants`), is accepted with every
+record: the kernel keeps the chain's universe level small.
+
+Then, on every committed role-bound closure: the kernel accepts it, but for
+the three refused for their own reasons (`phase1-boundary`'s `fields50` and
+`tags126`, which IxCC's decoder refuses first, at its depth budget, and
+`src-diag`'s `sorry.ixe`, which the kernel declines for its `sorry`); and on those under
+512 KiB the two front ends give the same program and, root by root, the same
+annotation, certificate and object, or refuse the root alike; on `sorry.ixe`
+they differ only in that the kernel's ingress declines it and the erased
+checker's admits it (its `sorry` diagnostics come after ingress).
 
 Then the role-bound test builder (`IxCCTests.Support.Bound`), with the hostile
 family's enumeration case ported to it (`Bound`).
@@ -33,14 +44,37 @@ namespace IxCCTests.KernelFront
 open IxCC IxCC.Src
 open IxCCTests.Src (Assert expect)
 
-/-- The committed role-bound closures, their unbound twins and their root. -/
-def fixtures : List (String × String × String × String) :=
-  [("tuple", "fixtures/ixon-v4/bound/tuple", "fixtures/corpus/phase1-scalar/tuple", "entry"),
-   ("fib", "fixtures/ixon-v4/bound/fib", "fixtures/ixon-v4/bench-k1/fib", "entry")]
+/-- The committed closures the suite tampers with, and their root. -/
+def fixtures : List (String × String × String) :=
+  [("tuple", "fixtures/corpus/phase1-scalar/tuple", "entry"),
+   ("fib", "fixtures/ixon-v4/bench-k1/fib", "entry")]
 
-/-- The closures of the registered role-bound family (`fixtures/corpus/phase1-bound`). -/
-def boundFamily : List String :=
-  ["strictAndOr", "tuple", "bigctor", "typeFormerPolymorphism", "natShiftr"]
+/-- Every committed role-bound closure under `fixtures/`: not the typing bundles,
+the catalogs, the handoff vectors or the dated historical records (unbound, frozen). -/
+def committedClosures : IO (Array System.FilePath) := do
+  let all ← System.FilePath.walkDir "fixtures"
+  let skip := ["/typing/", "/catalog/", "/handoff/", "/historical/"]
+  let ixe := all.filter fun p => p.extension == some "ixe" && !skip.any fun s => (p.toString.splitOn s).length > 1
+  return ixe.qsort (·.toString < ·.toString)
+
+/-- The closures IxCC's decoder refuses (their expected `ingress: decode`). -/
+def decodeRefused : List String :=
+  ["phase1-boundary/fields50.ixe", "phase1-boundary/tags126.ixe"]
+
+/-- The closures the kernel declines (`sorryAx`, on purpose). -/
+def kernelDeclined : List String := ["src-diag/sorry.ixe"]
+
+/-- Closures below this size also run the differential (both front ends; the
+erased checker types a 2.5 MB closure in about 200 s). -/
+def differentialBytes : Nat := 512 * 1024
+
+/-- A closure's sidecar: `NAME.equations.json` beside it, or the RC input's. -/
+def sidecarOf (path : System.FilePath) : IO (Option System.FilePath) := do
+  let stem := path.withExtension "equations.json"
+  if ← stem.pathExists then return some stem
+  let rc := path.withFileName "consumer.equations.json"
+  if ← rc.pathExists then return some rc
+  return none
 
 def read (stem : String) : IO (ByteArray × Lean.Json) := do
   let bytes ← IO.FS.readBinFile s!"{stem}.ixe"
@@ -51,6 +85,27 @@ def isRefusal (r : Except KernelFront.Refusal α) (stage : KernelFront.Stage) : 
   match r with
   | .error e => e.stage == stage
   | .ok _ => false
+
+/-- Two constants whose ∀ chains share one type at every step, at length `k`:
+`dag` is `def L : Type := T k` with `T 1 = Prop → Prop`, `T (j+1) = T j → T j`
+and each `T j` a sharing entry; `let` is
+`def L : (let a0 : Type := Prop; let a(j+1) : Type := aj → aj; …; Type) := Prop`.
+Until the kernel built the ∀ rule's level with `mk_imax`'s folds, its level was
+shared as a DAG whose tree doubled per step, and each took time doubling in
+`k`. -/
+def sharedLevelConstants (k : Nat) : List (String × _root_.Ixon.Constant) :=
+  let arrow := _root_.Ixon.Expr.leanAll (.var 0) (.var 1)
+  let letType := Id.run do
+    let mut body : _root_.Ixon.Expr := .sort 1
+    for _ in [0:k] do
+      body := _root_.Ixon.Expr.leanLet false (.sort 1) arrow body
+    return _root_.Ixon.Expr.leanLet false (.sort 1) (.sort 0) body
+  let table : Array _root_.Ixon.Expr := (Array.range k).map fun j =>
+    if j == 0 then _root_.Ixon.Expr.leanAll (.sort 0) (.sort 0)
+    else _root_.Ixon.Expr.leanAll (.share (j - 1).toUInt64) (.share (j - 1).toUInt64)
+  let univs : Array _root_.Ixon.Univ := #[.zero, .succ .zero]
+  [("dag", ⟨.defn ⟨.defn, .safe, 0, .sort 1, .share (k - 1).toUInt64⟩, table, #[], univs⟩),
+   ("let", ⟨.defn ⟨.defn, .safe, 0, letType, .sort 0⟩, #[], #[], univs⟩)]
 
 /-- Flip the class of one argument tag (the first relevant one). -/
 def flipOne : List (TermKey × List Relevance.Tag) → List (TermKey × List Relevance.Tag)
@@ -63,9 +118,9 @@ def flipOne : List (TermKey × List Relevance.Tag) → List (TermKey × List Rel
 def run : IO Bool := do
   let a : Assert ← IO.mkRef 0
   try
-    for (label, bound, unbound, root) in fixtures do
+    for (label, bound, root) in fixtures do
       let (bb, bj) ← read bound
-      let (ub, _) ← read unbound
+      let ub ← IxCCTests.Support.Envelope.unboundTwin s!"{bound}.ixe"
       let benv ← IO.ofExcept (Ixon.V3.decodeAnonymousEnv bb)
       let uenv ← IO.ofExcept (Ixon.V3.decodeAnonymousEnv ub)
       -- acceptance
@@ -137,16 +192,63 @@ def run : IO Bool := do
       IO.println s!"{label}: accepted, {acc.records.length} records, {acc.decls.size} declarations; \
         ingress {rep.newIngressMs} ms (kernel {rep.newAcceptMs} ms) against {rep.oldIngressMs} ms \
         (erased typing {rep.oldTypingMs} ms); annotation, certificate and object the same"
-    -- the registered role-bound family: acceptance and the differential, every root
-    for name in boundFamily do
-      let label := s!"phase1-bound/{name}"
-      let (bb, bj) ← read s!"fixtures/corpus/phase1-bound/{name}"
-      let rep ← diff label bb bj
-      expect a (rep.bound && rep.newAccept.startsWith "accepted" && rep.findings.isEmpty &&
-          rep.program.isEmpty && rep.roots.size ≥ 1)
-        s!"{label}: {rep.newAccept}; the front ends differ: {rep.program} {rep.findings}"
-      IO.println s!"{label}: accepted, {rep.records} records, {rep.roots.size} roots alike; \
-        kernel {rep.newAcceptMs} ms against erased typing {rep.oldTypingMs} ms"
+    -- a role-bound closure carrying a constant whose ∀ chain shares one type: the
+    -- kernel's entry checks every record, and the chain's levels stay small
+    let (tb, _) ← read "fixtures/corpus/phase1-scalar/tuple"
+    let tenv ← IO.ofExcept (Ixon.V3.decodeAnonymousEnv tb)
+    for (name, c) in sharedLevelConstants 200 do
+      let bytes := _root_.Ixon.serConstant c
+      let env := { tenv with consts := tenv.consts.insert (Ixon.Address.blake3Pure bytes) bytes }
+      let t0 ← IO.monoMsNow
+      let r ← IO.lazyPure fun _ => KernelFront.accept env
+      let t1 ← IO.monoMsNow
+      match r with
+      | .ok acc =>
+        expect a (acc.records.length == tenv.consts.size + 1)
+          s!"tuple with the {name} chain: the kernel's entry did not receive every record"
+        IO.println s!"tuple with the {name} chain at length 200 ({bytes.size} bytes): accepted, \
+          {acc.records.length} records, {t1 - t0} ms"
+      | .error e =>
+        throw (IO.userError s!"tuple with the {name} chain at length 200: refused: {e}")
+    -- every committed closure: the kernel accepts it, but for the three that
+    -- are refused for their own reasons; and the differential on the small ones
+    let mut accepted := 0
+    let mut compared := 0
+    for path in ← committedClosures do
+      let label := path.toString
+      let bytes ← IO.FS.readBinFile path
+      match Ixon.V3.decodeAnonymousEnv bytes with
+      | .error e =>
+        -- IxCC's decoder refuses these first (a constant deeper than its budget)
+        expect a (decodeRefused.any (label.endsWith ·) && e == "ixon-v4: constant exceeds the consumer budget")
+          s!"{label}: refused by the decoder: {e}"
+      | .ok env =>
+        match KernelFront.accept env with
+        | .ok _ =>
+          expect a (!kernelDeclined.any (label.endsWith ·)) s!"{label}: accepted, but expected declined"
+          accepted := accepted + 1
+        | .error r =>
+          -- the diagnostics fixture holds `sorry` on purpose
+          expect a (kernelDeclined.any (label.endsWith ·) && (match r.outcome with | some .declined => true | _ => false) &&
+              (r.message.splitOn "sorryAx").length > 1)
+            s!"{label}: the kernel refused it: {r.render}"
+        if bytes.size < differentialBytes then
+          if let some sidecar ← sidecarOf path then
+            let bj ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile sidecar))
+            let rep ← diff label bytes bj
+            if kernelDeclined.any (label.endsWith ·) then
+              -- the one expected difference: the erased checker's ingress admits
+              -- `sorry` (its admission diagnostics come later), the kernel's declines it
+              expect a (rep.bound && rep.program.isEmpty && rep.findings.size == 1 &&
+                  rep.findings.all fun f => f.startsWith "new ingress: " &&
+                    (f.splitOn "declined").length > 1 && (f.splitOn "sorryAx").length > 1)
+                s!"{label}: expected only the kernel's ingress to decline (sorryAx): {rep.program} {rep.findings}"
+            else
+              expect a (rep.bound && rep.findings.isEmpty && rep.program.isEmpty)
+                s!"{label}: the front ends differ: {rep.program} {rep.findings}"
+            compared := compared + 1
+    IO.println s!"every committed closure: {accepted} accepted by the kernel, the decoder's and the \
+      kernel's refusals as expected; {compared} under {differentialBytes} bytes compared by both front ends"
     -- the role-bound test builder, and the hostile enumeration case ported to it
     for line in ← Bound.run a do IO.println line
     IO.println s!"tests-kernel-front: {← a.get} assertions passed"

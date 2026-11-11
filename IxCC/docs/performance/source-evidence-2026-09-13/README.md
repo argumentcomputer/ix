@@ -15,12 +15,12 @@ dependencies, usage, literals, ownership, and resource checks still run.
 Lean proves equality with the full fresh result, including rejection behavior.
 Retained records reconstruct canonical evidence afresh. The existing eraser,
 coverage validation, and source-preservation certificates remain in place.
-Implementation and proof scope (`docs/modular-source.md#checked-cache-and-retained-records` at archive commit `7599a434`).
+Implementation and proof scope (`docs/modular-source.md#checked-cache-and-retained-records` on the archive branch of the pre-merge Compilatr.ix repository).
 
 ## Identical before/after workload
 
 The baseline executable was freshly rebuilt from commit
-`4878b0252ec531b54a15bc342fe79583bb8d1e82`, which already includes indexed
+the base commit of that date (pre-merge history, not kept by the squash), which already includes indexed
 whole-program assembly. All **796 extracted repository files**
 were checked against its archive after the build. The pinned Blake3 package
 cache was shared. The optimized executable uses the frozen working source
@@ -105,7 +105,7 @@ checks; subsequent calls repeat selected operations. Fresh preparation precedes
 preparation with canonical facts; fresh checking precedes prepared checking.
 There is no per-stage warm-up or randomization, and shared inputs can affect
 caches. Ordinary assembly is repeated separately. The
-protocol (`benchmarks/source-evidence.md` at archive commit `7599a434`) defines the exact scopes.
+protocol (`benchmarks/source-evidence.md` on the archive branch of the pre-merge Compilatr.ix repository) defines the exact scopes.
 
 ## Correctness and process observations
 
@@ -183,6 +183,6 @@ taskset -c 0 env LEAN_NUM_THREADS=1 MALLOC_ARENA_MAX=1 LC_ALL=C \
   "$source_bundle/profile-1" "$source_output"
 ```
 
-The benchmark protocol (`benchmarks/source-evidence.md` at archive commit `7599a434`) supplies fresh
+The benchmark protocol (`benchmarks/source-evidence.md` on the archive branch of the pre-merge Compilatr.ix repository) supplies fresh
 build, producer, checker, and replay commands. Exact source and seed identities
 and the fixed collection plan are in [provenance.json](provenance.json).

@@ -517,3 +517,12 @@ plain-RC roots (`IxCC.Recheck.Rc.Proof.RootTree`). -/
 
 /-- info: 'IxCC.CompileClaim.verifyBytes_plainRc_rootShape' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.CompileClaim.verifyBytes_plainRc_rootShape
+
+/-! The compiler's function-parameter refusal (`rt.fnparam`) agrees with the
+claims': every root it refuses, `rootParamsAllNat` refuses. -/
+
+/-- info: 'IxCC.CompileClaim.isNatType_eq_natDomain' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.CompileClaim.isNatType_eq_natDomain
+
+/-- info: 'IxCC.CompileClaim.rootParamsAllNat_of_fnParam' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.CompileClaim.rootParamsAllNat_of_fnParam

@@ -1,6 +1,6 @@
 # SrcEval step counts on the committed fixtures
 
-Recorded 2026-11-10 on this tree (commit `d3aff4a5d` of the change that adds
+Recorded 2026-11-10 on this tree (the commit of the change that adds
 `src-steps`), on a 64-core x86-64 Linux build host. The unit, a *charged step*
 (one application of a rule that spends SrcEval's clock), and the other counts
 are defined in [source steps](../../source-steps.md).

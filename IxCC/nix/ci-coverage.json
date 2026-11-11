@@ -1,7 +1,7 @@
-{"runtime_suites": ["IxonV3", "Aiur", "KernelFront"],
+{"runtime_suites": ["IxonV3", "Aiur", "KernelFront", "Grounding"],
  "runtime_failure_sha256":
- "a9c731d17040923655506f218633b05b903f3853608ee0bcaebcdab068645c24",
- "runtime_failure_count": 2,
+ "8c1946cae2bdf7b64465cb15395a607d5420b1a5a65121e2768ea66934547490",
+ "runtime_failure_count": 3,
  "proof_modules":
  ["IxCC.Aiur",
   "IxCC.Aiur.AIR.Expr",
@@ -443,6 +443,8 @@
   "IxCC.CompileClaim.Proof",
   "IxCC.Compiler.Proof",
   "IxCC.Exe",
+  "IxCC.Exe.Machine",
+  "IxCC.Exe.Machine.Sound",
   "IxCC.Fir.Lower",
   "IxCC.Fir.Proof.Corr",
   "IxCC.Fir.Proof.Correct",
@@ -938,6 +940,7 @@
   "IxCC.Vendor.Ix.IndexMap",
   "IxCC.Vendor.Ix.Lib",
   "IxCC.X86.Basic",
+  "IxCC.X86.ByteAgree",
   "IxCC.X86.ByteBranch",
   "IxCC.X86.ByteCall",
   "IxCC.X86.ByteControl",
@@ -975,6 +978,7 @@
   "IxCC.X86.ExactNat",
   "IxCC.X86.Exe.Code",
   "IxCC.X86.Exe.Layout",
+  "IxCC.X86.Exe.Machine",
   "IxCC.X86.Exe.Read",
   "IxCC.X86.Exe.Shell",
   "IxCC.X86.Exe.Validate",
@@ -1600,8 +1604,29 @@
   "IxCCTests.Sem.Toy.Pipeline",
   "IxCCTests.Sem.Toy.Stack",
   "IxCCTests.Sem.Toy.Tick"],
+ "grounding_modules":
+ ["IxCCGrounding",
+  "IxCCGrounding.Apply",
+  "IxCCGrounding.Check",
+  "IxCCGrounding.Eqn",
+  "IxCCGrounding.Fence",
+  "IxCCGrounding.Fundamental",
+  "IxCCGrounding.Ground",
+  "IxCCGrounding.Heads",
+  "IxCCGrounding.Hyps",
+  "IxCCGrounding.Laws",
+  "IxCCGrounding.Lits",
+  "IxCCGrounding.Model",
+  "IxCCGrounding.Ok",
+  "IxCCGrounding.Relation",
+  "IxCCGrounding.Runs",
+  "IxCCGrounding.Support",
+  "IxCCGrounding.Syntax"],
+ "grounding_axiom_sha256":
+ "3f5b1886f6127883f3a07b7f9027df2eee5383c4aa51741ac9c3ecac5abec1b2",
+ "grounding_axiom_count": 26,
  "baseline":
- "KS: the role-bound test builder and the hostile enumeration case ported to it",
+ "MQ: the walk's move accounting, tail calls past seven arguments as calls, the function-parameter refusal and their fences",
  "axiom_sha256":
- "c00704914b675a09977c5dc84beaa5afebefd95254f3ec90ebc0d2e9958e7d86",
- "axiom_count": 5875}
+ "e573f6569456818724bdf77b97316cf9037d8f8c49acb32b3804aa0ce5afa9f2",
+ "axiom_count": 5926}

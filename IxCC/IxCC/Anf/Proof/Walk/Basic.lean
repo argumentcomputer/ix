@@ -170,7 +170,7 @@ theorem resolve_rel {env : Walk.Env} {live : List Bool} {ρ ρ' : List Val}
         obtain ⟨v, hv, hent⟩ := henv.get he (hlive i rfl)
         cases hent with
         | opd hw hvw => exact ⟨rfl, v, _, by simp [Atom.eval, hv], hw, hvw⟩
-      | fn _ _ _ => cases h
+      | fn _ _ _ _ => cases h
   | lit l =>
     simp only [Walk.resolve] at h
     obtain ⟨rfl, rfl⟩ := Walk.run_pure_ok h

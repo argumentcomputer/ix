@@ -68,16 +68,16 @@ theorem walkBind_app (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fue
     intro x hx k; rw [eval_bind, hsrcf hx, bind_assoc']
   split at h2
   · -- a local function inlined at its application
-    next σf nf fb hloc =>
-    obtain ⟨i, rfl, hσi⟩ : ∃ i, f = .var i ∧ env.σ[i]? = some (.fn σf nf fb) := by
+    next σf nf fb fid hloc =>
+    obtain ⟨i, rfl, hσi⟩ : ∃ i, f = .var i ∧ env.σ[i]? = some (.fn σf nf fb fid) := by
       cases f with
       | var i =>
         refine ⟨i, rfl, ?_⟩
         dsimp only at hloc
         split at hloc
-        · next σf' n' fb' heq =>
+        · next σf' n' fb' fid' heq =>
           simp only [Option.some.injEq, Prod.mk.injEq] at hloc
-          obtain ⟨rfl, rfl, rfl⟩ := hloc
+          obtain ⟨rfl, rfl, rfl, rfl⟩ := hloc
           exact heq
         · cases hloc
       | lit l => cases hloc

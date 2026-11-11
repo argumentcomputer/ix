@@ -87,7 +87,7 @@ def run (ixe sidecar checkedLog : FilePath) : IO Unit := do
   IO.ofExcept (Src.Resource.selected p replayed)
   need (Src.Table.TableCert.ofTable replayed == Src.Table.TableCert.ofTable table)
     "producer/certificate table selections coincide"
-  IO.println s!"PASS: authentic cb68d94c OS04 bytes; declarations={p.size}; original100k/depth256; one genuine recursive checked pair; table/certificate selection; five refusal controls"
+  IO.println s!"PASS: authentic OS04 bytes of the dated annotated-recursion-cb68 records; declarations={p.size}; original100k/depth256; one genuine recursive checked pair; table/certificate selection; five refusal controls"
   IO.println "Scope: historical-producer structural consumer boundary only; no selected-producer admission, execution-order adequacy, native result, or final refreeze claim."
 
 end IxCCTests.Own.AnnotatedFixture

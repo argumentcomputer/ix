@@ -1,7 +1,11 @@
 # Pinned pure Aiur target reference
 
-Files from argumentcomputer/ix at `a8c4d2d21eaf45ee9160bdd103dfbcefe31f7f03`,
-vendored under `IxCC.Vendor` so that neither a module nor a declaration name
+Files from argumentcomputer/ix at `a8c4d2d21eaf45ee9160bdd103dfbcefe31f7f03`, an
+upstream revision of another line of ix's Aiur that is not in this
+repository's history (vendor provenance, like a fixture's upstream origin;
+the snapshot, these citations and the reference exports under `tools/aiur-*`
+are to be retired with the legacy Aiur model after pull request #678 lands,
+roadmap RL-3), vendored under `IxCC.Vendor` so that neither a module nor a declaration name
 is shared with ix's own packages: upstream module `Ix.M` is `IxCC.Vendor.Ix.M`
 here, and upstream declaration `D` (`Aiur.Bytecode.Toplevel`, `IndexMap`,
 `List.mapM_except_ok`, …) is `IxCC.Vendor.D`. Two mechanical edits are the
