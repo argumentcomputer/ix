@@ -21,13 +21,20 @@ universe w
 
 variable {V : Type w} [SetTheory V] {env : Env md} {M : Model V env} {φ : LevelParam → Nat}
 
+/-- Terms denoting a list of sets, one by one, at the free-variable assignment `σ`. -/
+inductive DenList (M : Model V env) (φ : LevelParam → Nat) (σ : Nat → V) :
+    List (Expr md) → List V → Prop
+  | nil : DenList M φ σ [] []
+  | cons {e : Expr md} {es : List (Expr md)} {v : V} {vs : List V} :
+      Den M φ σ e v → DenList M φ σ es vs → DenList M φ σ (e :: es) (v :: vs)
+
 /-- **`DefEqList`'s motive.** -/
 def DefEqListS (M : Model V env) (φ : LevelParam → Nat) (d : Nat) (as bs : List (Expr md)) :
     Prop :=
   as.length = bs.length ∧
     ((∀ x ∈ as, Frame d x) → (∀ x ∈ bs, Frame d x) → ∀ σ,
       (∀ x ∈ as, Ctx M φ σ x) → (∀ x ∈ bs, Ctx M φ σ x) →
-      ∀ vs ws, List.Forall₂ (Den M φ σ) as vs → List.Forall₂ (Den M φ σ) bs ws →
+      ∀ vs ws, DenList M φ σ as vs → DenList M φ σ bs ws →
         (∀ x ∈ as, Gr M φ σ x) → (∀ x ∈ bs, Gr M φ σ x) → vs = ws)
 
 theorem DefEqList.nil_sound {d : Nat} : DefEqListS M φ d [] [] := by
