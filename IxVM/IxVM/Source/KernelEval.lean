@@ -59,16 +59,17 @@ def eval_body := aiur_fn⟦
 
 def eval_output := aiur_fn⟦
   fn eval_output(output: Bytes::AddressRef, nlvls: Field, input_type: KernelTypes::KExpr) -> KernelTypes::KExpr {
-      let Ixon::Constant::Mk(info, sharing, refs, univs) = Ingress::load_verified_constant(output);
+      let Ixon::Constant::Mk(info, sharing, refs, univs, binders) = Ingress::load_verified_constant(output);
       let Ixon::ConstantInfo::Defn(defn) = info;
       let Ixon::Definition::Mk(kind, safety, lvls, ty, value) = defn;
       assert_eq!(kind, Ixon::DefKind::Definition, "Eval: output must be a definition");
       assert_eq!(safety, Ixon::DefinitionSafety::Safe, "Eval: unsafe or partial output");
       assert_eq!(UInt64::to_field(lvls), nlvls, "Eval: universe parameter count mismatch");
       let no_recur = (&(Lists::Node::Nil));
-      let output_type = Convert::convert_root(ty, sharing, refs, no_recur, univs, output, 0);
+      let tbl = Convert::binder_table(binders);
+      let output_type = Convert::convert_root(ty, sharing, refs, no_recur, univs, tbl, 0);
       assert_eq!(KernelCheck::kexpr_struct_eq(output_type, input_type), 1, "Eval: output type does not match input");
-      Convert::convert_root(value, sharing, refs, no_recur, univs, output, 1)
+      Convert::convert_root(value, sharing, refs, no_recur, univs, tbl, 1)
     }
 ⟧
 

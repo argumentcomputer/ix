@@ -153,7 +153,7 @@ def const_idxs_muts := aiur_fn⟦
 def const_idxs_of := aiur_fn⟦
   fn const_idxs_of(c: Ixon::Constant) -> Lists::List<Field> {
       match c {
-        Ixon::Constant::Mk(info, sharing, _, _) => {
+        Ixon::Constant::Mk(info, sharing, _, _, _) => {
           let shared = const_idxs_exprs(sharing);
           match info {
             Ixon::ConstantInfo::Defn(d) => {
@@ -204,7 +204,7 @@ def run_check_transitive := aiur_fn⟦
   fn run_check_transitive(rc: KernelRoles::RoleCtx, addr: Bytes::AddressRef) -> () {
       let c = Ingress::load_verified_constant(addr);
       match c {
-        Ixon::Constant::Mk(info, _, refs, _) => {
+        Ixon::Constant::Mk(info, _, refs, _, _) => {
           match info {
             Ixon::ConstantInfo::Muts(members) => {
               check_muts_all(rc, addr, members, members, 0) } ,
@@ -369,7 +369,7 @@ def env_walk := aiur_fn⟦
           };
           let c = Ingress::load_verified_constant(addr);
           match c {
-            Ixon::Constant::Mk(info, _, refs, _) => {
+            Ixon::Constant::Mk(info, _, refs, _, _) => {
               match info {
                 Ixon::ConstantInfo::Muts(members) => {
                   check_muts_all(rc, addr, members, members, 0) } ,
@@ -508,7 +508,7 @@ def record_unsafe := aiur_fn⟦
   fn record_unsafe(addr: Bytes::AddressRef) -> Field {
       let c = Ingress::load_verified_constant(addr);
       match c {
-        Ixon::Constant::Mk(info, _, _, _) => {
+        Ixon::Constant::Mk(info, _, _, _, _) => {
           match info {
             Ixon::ConstantInfo::Defn(d) => {
               match d {
@@ -534,7 +534,7 @@ def assert_claimable := aiur_fn⟦
   fn assert_claimable(rc: KernelRoles::RoleCtx, addr: Bytes::AddressRef) -> () {
       let c = Ingress::load_verified_constant(addr);
       let owner = match c {
-        Ixon::Constant::Mk(info, _, _, _) => {
+        Ixon::Constant::Mk(info, _, _, _, _) => {
           match info {
             Ixon::ConstantInfo::DPrj(p) => {
               match p {
@@ -668,7 +668,7 @@ def env_walk_all := aiur_fn⟦
   fn env_walk_all(rc: KernelRoles::RoleCtx, addr: Bytes::AddressRef) -> () {
       let c = Ingress::load_verified_constant(addr);
       match c {
-        Ixon::Constant::Mk(info, _, refs, _) => {
+        Ixon::Constant::Mk(info, _, refs, _, _) => {
           match info {
             Ixon::ConstantInfo::Muts(members) => {
               check_muts_all(rc, addr, members, members, 0) } ,
@@ -1339,7 +1339,7 @@ def run_reveal := aiur_fn⟦
   fn run_reveal(comm_addr: Bytes::AddressRef, info: RevealConstantInfo) -> () {
       let c = Ingress::load_verified_constant(comm_addr);
       match c {
-        Ixon::Constant::Mk(ci, _, _, _) => {
+        Ixon::Constant::Mk(ci, _, _, _, _) => {
           match ci {
             Ixon::ConstantInfo::Defn(d) => {
               match info {

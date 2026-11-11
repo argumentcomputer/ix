@@ -4,6 +4,14 @@ import Aiur.Modules.Function
 
 The Ixon data types: expressions, universes, constants and their metadata.
 
+A constant carries its record's binder-data section (`BinderBlock`s, sorted by
+`(ekind, eidx, variant)`): per root expression (`ekind` 0, `eidx` the root's
+number, variant 0) and per sharing entry and variant (`ekind` 1), the data of
+the expression's numbered nodes in pre-order. The numbered nodes are the `Lam`
+and `All` nodes (`Never`, `Zero`, `IfAllZero`, or the undecided sentinel) and
+the `Share` nodes whose entry has a binder (`Share`, the entry's variant). The
+record's address hashes the section with the rest of its bytes.
+
 Aiur type declarations, imported by `IxVM.Program`. -/
 
 namespace IxVM
@@ -137,8 +145,20 @@ module Ixon {
       Muts(Lists::List<MutConst>)
     }
 
+  enum BinderNode {
+      Never,
+      Zero,
+      IfAllZero(Lists::List<UInt64::U64>),
+      Share(UInt64::U64),
+      Undecided
+    }
+
+  enum BinderBlock {
+      Mk(Field, UInt64::U64, UInt64::U64, Lists::List<BinderNode>)
+    }
+
   enum Constant {
-      Mk(ConstantInfo, Lists::List<&Expr>, Lists::List<Bytes::AddressRef>, Lists::List<&Univ>)
+      Mk(ConstantInfo, Lists::List<&Expr>, Lists::List<Bytes::AddressRef>, Lists::List<&Univ>, Lists::List<BinderBlock>)
     }
 
   enum BlobEntry {

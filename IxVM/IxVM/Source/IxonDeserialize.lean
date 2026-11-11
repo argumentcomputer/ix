@@ -691,33 +691,229 @@ def get_constant_info := aiur_fn⟦
     }
 ⟧
 
+  -- The binder-data section, the last field of a record:
+  --
+  --   section := nblocks:TagN0 block[nblocks]
+  --   block   := ekind:u8 eidx:TagN0 variant:TagN0 nnodes:TagN0 node[nnodes]
+  --   node    := 0x00 | 0x01 | 0x02 k:TagN0 p[k]:TagN0 | 0x03 v:TagN0 | 0x04
+  --
+  -- It is read in canonical form: `ekind` 0 (a root) or 1 (a sharing entry); a root block at
+  -- variant 0; no empty block; blocks strictly ascending by `(ekind, eidx, variant)`; node tags
+  -- 0 to 4; an `ifAllZero` parameter list (tag 2) nonempty, strictly ascending and below the
+  -- record's level count (`max_lvls`, the largest of its members'); a projection's section
+  -- empty. The undecided node (tag 4) is read; a conversion that reaches it rejects. Indices,
+  -- variants, parameters and level counts are compared as fields by `UInt32::less_than_fields`,
+  -- which refuses a value of 2^32 or more where it compares one.
+
+def mut_const_lvls := aiur_fn⟦
+  fn mut_const_lvls(m: Ixon::MutConst) -> Field {
+      match m {
+        Ixon::MutConst::Defn(d) => {
+          let Ixon::Definition::Mk(_, _, lvls, _, _) = d;
+          UInt64::to_field(lvls) } ,
+        Ixon::MutConst::Indc(i) => {
+          let Ixon::Inductive::Mk(_, lvls, _, _, _, _) = i;
+          UInt64::to_field(lvls) } ,
+        Ixon::MutConst::Recr(r) => {
+          let Ixon::Recursor::Mk(_, _, lvls, _, _, _, _, _, _) = r;
+          UInt64::to_field(lvls) } ,
+      }
+    }
+⟧
+
+def muts_max_lvls := aiur_fn⟦
+  fn muts_max_lvls(members: Lists::List<Ixon::MutConst>, acc: Field) -> Field {
+      match (*(members)) {
+        Lists::Node::Nil => {  acc } ,
+        Lists::Node::Cons(m, rest) => {
+          let lvls = mut_const_lvls(m);
+          match UInt32::less_than_fields(acc, lvls) {
+            1 => {  muts_max_lvls(rest, lvls) } ,
+            0 => {  muts_max_lvls(rest, acc) } ,
+          } } ,
+      }
+    }
+⟧
+
+def max_lvls := aiur_fn⟦
+  fn max_lvls(info: Ixon::ConstantInfo) -> Field {
+      match info {
+        Ixon::ConstantInfo::Defn(d) => {
+          let Ixon::Definition::Mk(_, _, lvls, _, _) = d;
+          UInt64::to_field(lvls) } ,
+        Ixon::ConstantInfo::Recr(r) => {
+          let Ixon::Recursor::Mk(_, _, lvls, _, _, _, _, _, _) = r;
+          UInt64::to_field(lvls) } ,
+        Ixon::ConstantInfo::Axio(a) => {
+          let Ixon::Axiom::Mk(_, lvls, _) = a;
+          UInt64::to_field(lvls) } ,
+        Ixon::ConstantInfo::Quot(q) => {
+          let Ixon::Quotient::Mk(_, lvls, _) = q;
+          UInt64::to_field(lvls) } ,
+        Ixon::ConstantInfo::Muts(members) => {  muts_max_lvls(members, 0) } ,
+        _ => {  0 } ,
+      }
+    }
+⟧
+
+def assert_params_canonical := aiur_fn⟦
+  fn assert_params_canonical(params: Lists::List<UInt64::U64>, lvls: Field) -> () {
+      match (*(params)) {
+        Lists::Node::Nil => {  () } ,
+        Lists::Node::Cons(p, rest) => {
+          let pf = UInt64::to_field(p);
+          assert_eq!(UInt32::less_than_fields(pf, lvls), 1,
+            "binder data: a parameter is not below the level count");
+          match (*(rest)) {
+            Lists::Node::Nil => {  () } ,
+            Lists::Node::Cons(q, _) => {
+              assert_eq!(UInt32::less_than_fields(pf, UInt64::to_field(q)), 1,
+                "binder data: parameters are not strictly ascending");
+              assert_params_canonical(rest, lvls) } ,
+          } } ,
+      }
+    }
+⟧
+
+def get_binder_node := aiur_fn⟦
+  fn get_binder_node(stream: Bytes::Stream, lvls: Field) -> (Ixon::BinderNode, Bytes::Stream) {
+      let (tag, s) = read_byte(stream);
+      match UInt8::to_field(tag) {
+        0 => {  (Ixon::BinderNode::Never, s) } ,
+        1 => {  (Ixon::BinderNode::Zero, s) } ,
+        2 => {
+          let (count, s2) = get_tagn0(s);
+          assert_eq!(UInt64::is_zero(count), 0, "binder data: an empty parameter list");
+          let (params, s3) = get_u64_list(s2, count);
+          assert_params_canonical(params, lvls);
+          (Ixon::BinderNode::IfAllZero(params), s3) } ,
+        3 => {
+          let (variant, s2) = get_tagn0(s);
+          (Ixon::BinderNode::Share(variant), s2) } ,
+        4 => {  (Ixon::BinderNode::Undecided, s) } ,
+      }
+    }
+⟧
+
+def get_binder_node_list := aiur_fn⟦
+  fn get_binder_node_list(stream: Bytes::Stream, count: UInt64::U64, lvls: Field)
+      -> (Lists::List<Ixon::BinderNode>, Bytes::Stream) {
+      let is_zero = UInt64::is_zero(count);
+      match is_zero {
+        1 => {  ((&(Lists::Node::Nil)), stream) } ,
+        0 => {
+          let (node, s) = get_binder_node(stream, lvls);
+          let (rest, s2) = get_binder_node_list(s, UInt64::saturating_pred(count), lvls);
+          ((&(Lists::Node::Cons(node, rest))), s2) } ,
+      }
+    }
+⟧
+
+def get_binder_block := aiur_fn⟦
+  fn get_binder_block(stream: Bytes::Stream, lvls: Field) -> (Ixon::BinderBlock, Bytes::Stream) {
+      let (ekind, s) = read_byte(stream);
+      assert_wire_bool(ekind);
+      let shared = UInt8::to_field(ekind);
+      let (eidx, s2) = get_tagn0(s);
+      let (variant, s3) = get_tagn0(s2);
+      assert_eq!((1 - shared) * (1 - UInt64::is_zero(variant)), 0,
+        "binder data: a root block at a variant other than 0");
+      let (count, s4) = get_tagn0(s3);
+      assert_eq!(UInt64::is_zero(count), 0, "binder data: an empty block");
+      let (nodes, s5) = get_binder_node_list(s4, count, lvls);
+      (Ixon::BinderBlock::Mk(shared, eidx, variant, nodes), s5)
+    }
+⟧
+
+def get_binder_block_list := aiur_fn⟦
+  fn get_binder_block_list(stream: Bytes::Stream, count: UInt64::U64, lvls: Field)
+      -> (Lists::List<Ixon::BinderBlock>, Bytes::Stream) {
+      let is_zero = UInt64::is_zero(count);
+      match is_zero {
+        1 => {  ((&(Lists::Node::Nil)), stream) } ,
+        0 => {
+          let (block, s) = get_binder_block(stream, lvls);
+          let (rest, s2) = get_binder_block_list(s, UInt64::saturating_pred(count), lvls);
+          ((&(Lists::Node::Cons(block, rest))), s2) } ,
+      }
+    }
+⟧
+
+  -- The strict `(ekind, eidx, variant)` order of blocks (a root before a sharing entry).
+
+def binder_block_lt := aiur_fn⟦
+  fn binder_block_lt(a: Ixon::BinderBlock, b: Ixon::BinderBlock) -> Field {
+      let Ixon::BinderBlock::Mk(ea, ia, va, _) = a;
+      let Ixon::BinderBlock::Mk(eb, ib, vb, _) = b;
+      match ea - eb {
+        0 => {
+          let i = UInt64::to_field(ia);
+          let j = UInt64::to_field(ib);
+          match i - j {
+            0 => {  UInt32::less_than_fields(UInt64::to_field(va), UInt64::to_field(vb)) } ,
+            _ => {  UInt32::less_than_fields(i, j) } ,
+          } } ,
+        _ => {  eb } ,
+      }
+    }
+⟧
+
+def assert_blocks_ascending := aiur_fn⟦
+  fn assert_blocks_ascending(blocks: Lists::List<Ixon::BinderBlock>) -> () {
+      match (*(blocks)) {
+        Lists::Node::Nil => {  () } ,
+        Lists::Node::Cons(a, rest) => {
+          match (*(rest)) {
+            Lists::Node::Nil => {  () } ,
+            Lists::Node::Cons(b, _) => {
+              assert_eq!(binder_block_lt(a, b), 1, "binder data: blocks are not strictly ascending");
+              assert_blocks_ascending(rest) } ,
+          } } ,
+      }
+    }
+⟧
+
+def get_binders := aiur_fn⟦
+  fn get_binders(stream: Bytes::Stream, lvls: Field) -> (Lists::List<Ixon::BinderBlock>, Bytes::Stream) {
+      let (len, s) = get_tagn0(stream);
+      let (blocks, s2) = get_binder_block_list(s, len, lvls);
+      assert_blocks_ascending(blocks);
+      (blocks, s2)
+    }
+⟧
+
 def assert_prj_empty_tables := aiur_fn⟦
   fn assert_prj_empty_tables(
     info: Ixon::ConstantInfo,
     sharing: Lists::List<&Ixon::Expr>,
     refs: Lists::List<Bytes::AddressRef>,
-    univs: Lists::List<&Ixon::Univ>
+    univs: Lists::List<&Ixon::Univ>,
+    binders: Lists::List<Ixon::BinderBlock>
   ) -> () {
       match info {
         Ixon::ConstantInfo::DPrj(_) => {
           let Lists::Node::Nil = (*(sharing));
           let Lists::Node::Nil = (*(refs));
           let Lists::Node::Nil = (*(univs));
+          let Lists::Node::Nil = (*(binders));
           () } ,
         Ixon::ConstantInfo::IPrj(_) => {
           let Lists::Node::Nil = (*(sharing));
           let Lists::Node::Nil = (*(refs));
           let Lists::Node::Nil = (*(univs));
+          let Lists::Node::Nil = (*(binders));
           () } ,
         Ixon::ConstantInfo::CPrj(_) => {
           let Lists::Node::Nil = (*(sharing));
           let Lists::Node::Nil = (*(refs));
           let Lists::Node::Nil = (*(univs));
+          let Lists::Node::Nil = (*(binders));
           () } ,
         Ixon::ConstantInfo::RPrj(_) => {
           let Lists::Node::Nil = (*(sharing));
           let Lists::Node::Nil = (*(refs));
           let Lists::Node::Nil = (*(univs));
+          let Lists::Node::Nil = (*(binders));
           () } ,
         _ => {  () } ,
       }
@@ -732,8 +928,9 @@ def get_constant := aiur_fn⟦
       let (sharing, s3) = get_sharing(s2);
       let (refs, s4) = get_refs(s3);
       let (univs, s5) = get_univs(s4);
-      assert_prj_empty_tables(info, sharing, refs, univs);
-      (Ixon::Constant::Mk(info, sharing, refs, univs), s5)
+      let (binders, s6) = get_binders(s5, max_lvls(info));
+      assert_prj_empty_tables(info, sharing, refs, univs, binders);
+      (Ixon::Constant::Mk(info, sharing, refs, univs, binders), s6)
     }
 ⟧
 

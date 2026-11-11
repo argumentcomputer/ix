@@ -1091,7 +1091,7 @@ def struct_block_member_addrs := aiur_fn⟦
   fn struct_block_member_addrs(parent: Bytes::AddressRef, block: Bytes::AddressRef) -> Lists::List<Bytes::AddressRef> {
       let c = Ingress::load_verified_constant(block);
       match c {
-        Ixon::Constant::Mk(info, _, _, _) => {
+        Ixon::Constant::Mk(info, _, _, _, _) => {
           match info {
             Ixon::ConstantInfo::Muts(members) => {  Ingress::build_recur_addrs(members, block) } ,
             _ => {  (&(Lists::Node::Cons(parent, (&(Lists::Node::Nil))))) } ,

@@ -601,11 +601,64 @@ def put_univs := aiur_fn⟦
     }
 ⟧
 
+  -- The binder-data section (`IxonDeserialize::get_binders` reads it back).
+
+def put_binder_node := aiur_fn⟦
+  fn put_binder_node(node: Ixon::BinderNode, rest: Bytes::Stream) -> Bytes::Stream {
+      match node {
+        Ixon::BinderNode::Never => {  (&(Lists::Node::Cons(UInt8::BYTE_0, rest))) } ,
+        Ixon::BinderNode::Zero => {  (&(Lists::Node::Cons(UInt8::BYTE_1, rest))) } ,
+        Ixon::BinderNode::IfAllZero(params) => {
+          (&(Lists::Node::Cons(UInt8::BYTE_2,
+            put_tagn0(WordLists::length_u64(params), put_u64_list(params, rest))))) } ,
+        Ixon::BinderNode::Share(variant) => {
+          (&(Lists::Node::Cons(UInt8::BYTE_3, put_tagn0(variant, rest)))) } ,
+        Ixon::BinderNode::Undecided => {  (&(Lists::Node::Cons(UInt8::BYTE_4, rest))) } ,
+      }
+    }
+⟧
+
+def put_binder_node_list := aiur_fn⟦
+  fn put_binder_node_list(list: Lists::List<Ixon::BinderNode>, rest: Bytes::Stream) -> Bytes::Stream {
+      match (*(list)) {
+        Lists::Node::Nil => {  rest } ,
+        Lists::Node::Cons(node, rest_list) => {
+          put_binder_node(node, put_binder_node_list(rest_list, rest)) } ,
+      }
+    }
+⟧
+
+def put_binder_block := aiur_fn⟦
+  fn put_binder_block(block: Ixon::BinderBlock, rest: Bytes::Stream) -> Bytes::Stream {
+      let Ixon::BinderBlock::Mk(ekind, eidx, variant, nodes) = block;
+      (&(Lists::Node::Cons(UInt8::from_field(ekind),
+        put_tagn0(eidx, put_tagn0(variant,
+          put_tagn0(WordLists::length_u64(nodes), put_binder_node_list(nodes, rest)))))))
+    }
+⟧
+
+def put_binder_block_list := aiur_fn⟦
+  fn put_binder_block_list(list: Lists::List<Ixon::BinderBlock>, rest: Bytes::Stream) -> Bytes::Stream {
+      match (*(list)) {
+        Lists::Node::Nil => {  rest } ,
+        Lists::Node::Cons(block, rest_list) => {
+          put_binder_block(block, put_binder_block_list(rest_list, rest)) } ,
+      }
+    }
+⟧
+
+def put_binders := aiur_fn⟦
+  fn put_binders(list: Lists::List<Ixon::BinderBlock>, rest: Bytes::Stream) -> Bytes::Stream {
+      let len = WordLists::length_u64(list);
+      put_tagn0(len, put_binder_block_list(list, rest))
+    }
+⟧
+
 def put_constant := aiur_fn⟦
   fn put_constant(cnst: Ixon::Constant, rest: Bytes::Stream) -> Bytes::Stream {
       match cnst {
-        Ixon::Constant::Mk(info, sharing, refs, univs) => {
-          let up_to_sharing = put_sharing(sharing, put_refs(refs, put_univs(univs, rest)));
+        Ixon::Constant::Mk(info, sharing, refs, univs, binders) => {
+          let up_to_sharing = put_sharing(sharing, put_refs(refs, put_univs(univs, put_binders(binders, rest))));
           match info {
             Ixon::ConstantInfo::Muts(mutuals) => {
 
