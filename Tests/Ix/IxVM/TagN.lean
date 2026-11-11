@@ -262,21 +262,27 @@ def sweepCases (_ : Unit) : Array Builder := Id.run do
           (rewrite field ⟨#[a.toUInt8, b]⟩))
   return out
 
-/-- `unsafe axiom _ : Sort (var v)` with `lvls` universe parameters: well-formed
-exactly when `v < lvls`, so the program must read `v` as the host wrote it. A
-well-formed one with `lvls ≥ 2^32` is unprovable (the bound's range check has no
-trace), so the circuit rejects it at `u32 comparison`. -/
+/-- `axiom _ : Sort (var v)` with `lvls` universe parameters, a user axiom of
+the claim (its axioms tree names it, so a typing claim checks it under the
+axiom policy; an unsafe axiom is no claim's seed): well-formed exactly when
+`v < lvls`, so the program must read `v` as the host wrote it. A well-formed
+one with `lvls ≥ 2^32` is unprovable (the bound's range check has no trace), so
+the circuit rejects it at `u32 comparison`. -/
 def universeVariableCases (_ : Unit) : Array Builder :=
   let values := (boundaries 2).filter (· < 2 ^ 64 - 1)
   values.toArray.flatMap fun v =>
     #[(v + 1, true), (v, false)].map fun (lvls, wellFormed) _ => do
       let ctx ← Ix.ClaimContext.ofDefaultTable
       let c : Ixon.Constant :=
-        ⟨.axio ⟨true, lvls.toUInt64, .sort 0⟩, #[], #[], #[.var v.toUInt64]⟩
+        ⟨.axio ⟨false, lvls.toUInt64, .sort 0⟩, #[], #[], #[.var v.toUInt64]⟩
       let (env, addr) := Exploits.storeAt {} c
+      let some axioms := Ix.AssumptionTree.canonical #[addr]
+        | throw "the axiom has no tree"
+      let trees := ({} : Std.HashMap Address Ix.AssumptionTree).insert axioms.root axioms
       let provable := lvls < 2 ^ 32
       Case.ofClaim s!"TagN f=2 universe variable {v} under {lvls} parameters" (← bare env)
-        (.check ctx addr none) (accept := wellFormed && provable)
+        (.check { ctx with axioms := some axioms.root } addr none) trees
+        (accept := wellFormed && provable)
         (rejectsWith := if wellFormed && !provable then some "u32 comparison" else none)
 
 /-- The level count by value: a `Reveal` of another count is refused. -/

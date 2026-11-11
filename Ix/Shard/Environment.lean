@@ -31,6 +31,13 @@ def blockIndexOf (lists : Array (Array Address)) :
     call — at env scale (241 shards × 688k consts) that is ~30 min of
     setup, vs seconds here.
 
+    A constant outside Lean's logic (unsafe or partial, or projected from
+    such a block: `Ixon.Env.outsideLogicAt`) is owned by nobody: IxVM refuses
+    it as a claim's seed (`KernelClaim::assert_claimable`). Its whole
+    check-schedule block is set aside, projections included. No constant in
+    Lean's logic references one, so each shard's claim walk still stays
+    within its owned set and its frontier.
+
     Constants whose bytes do not parse are owned by NOBODY. That is safe
     only because `shardsCover` fails the run when any exist; without
     that gate a silent skip here means a constant no shard ever
@@ -38,14 +45,19 @@ def blockIndexOf (lists : Array (Array Address)) :
 def ownedConstsPer (ixonEnv : Ixon.Env) (lists : Array (Array Address)) :
     Array (Array Address) :=
   let blockTo := blockIndexOf lists
-  ixonEnv.consts.fold (init := Array.replicate lists.size #[])
-    fun owned addr lc =>
+  let (owned, aside) := ixonEnv.consts.fold
+    (init := (Array.replicate lists.size (#[] : Array (Address × Address)),
+      ({} : Std.HashSet Address)))
+    fun (owned, aside) addr lc =>
       match lc.get? with
-      | none => owned
+      | none => (owned, aside)
       | some c =>
-        match blockTo.get? (blockAddrOf addr c) with
-        | some k => owned.modify k (·.push addr)
-        | none => owned
+        let aside := if c.outsideLogic then aside.insert addr else aside
+        let blk := blockAddrOf addr c
+        match blockTo.get? blk with
+        | some k => (owned.modify k (·.push (addr, blk)), aside)
+        | none => (owned, aside)
+  owned.map fun l => l.filterMap fun (a, blk) => if aside.contains blk then none else some a
 
 /-- Owned constants of one shard: `ownedConstsPer` over a singleton. -/
 def ownedConstsForBlocks (ixonEnv : Ixon.Env) (blocks : Array Address) :
@@ -55,7 +67,8 @@ def ownedConstsForBlocks (ixonEnv : Ixon.Env) (blocks : Array Address) :
 /-- Partition a shard's already-known `owned` constants among `parts`
     (block lists) by check-schedule block: one pass over the owned
     consts, none over the env — the split-time companion of
-    `ownedConstsPer`, whose full env pass runs once per run. -/
+    `ownedConstsPer`, whose full env pass runs once per run (and has
+    already set aside the constants outside Lean's logic). -/
 def partitionOwned (ixonEnv : Ixon.Env) (owned : Array Address)
     (parts : Array (Array Address)) : Array (Array Address) :=
   let blockTo := blockIndexOf parts
@@ -67,21 +80,13 @@ def partitionOwned (ixonEnv : Ixon.Env) (owned : Array Address)
       | some k => acc.modify k (·.push a)
       | none => acc
 
-/-- Count each shard's owned constants in one environment pass. Callers first
-run `shardsCover`, so every check-schedule block has exactly one owner. This is
+/-- Count each shard's owned constants in one environment pass (`ownedConstsPer`,
+so without the constants outside Lean's logic). Callers first run
+`shardsCover`, so every check-schedule block has exactly one owner. This is
 the subject-leaf count used by aggregate structural-threshold scheduling. -/
 def ownedConstCountsForShards (ixonEnv : Ixon.Env)
-    (shards : Array (Array Address)) : Array Nat := Id.run do
-  let mut blockToShard : Std.HashMap Address Nat := {}
-  for (blocks, shard) in shards.mapIdx fun shard blocks => (blocks, shard) do
-    for block in blocks do
-      blockToShard := blockToShard.insert block shard
-  let mut counts := Array.replicate shards.size 0
-  for (addr, lc) in ixonEnv.consts do
-    let some c := lc.get? | continue
-    let some shard := blockToShard.get? (blockAddrOf addr c) | continue
-    counts := counts.modify shard (· + 1)
-  return counts
+    (shards : Array (Array Address)) : Array Nat :=
+  (ownedConstsPer ixonEnv shards).map (·.size)
 
 /-- Remove manifest shards that provably own no environment constants, then
 contract and densely reindex the corresponding aggregation-tree leaves.
@@ -134,13 +139,16 @@ def loadEnvAndShards (manifestPath ixePath : String) :
     | .error e => return .error s!"deserialize {ixePath} failed: {e}"
     | .ok env => return .ok (env, shards)
 
-/-- Coverage check over already-loaded env + shards: every constant's
-    check-schedule block is owned by **exactly one** shard. That is the whole
-    soundness condition for the check case — each constant is type-checked
-    once, and every shard's frontier (closure minus owned) is therefore owned
-    (checked) by some other shard. Prints the per-shard report; returns whether
-    the partition is a valid disjoint cover (no block owned by two shards, no
-    constant whose block no shard owns). -/
+/-- Coverage check over already-loaded env + shards: every constant in Lean's
+    logic has its check-schedule block owned by **exactly one** shard. That is
+    the whole soundness condition for the check case — each constant is
+    type-checked once, and every shard's frontier (closure minus owned) is
+    therefore owned (checked) by some other shard. The constants outside Lean's
+    logic (`ownedConstsPer`) are set aside, owned by none and counted apart: no
+    claim certifies them, and no constant in Lean's logic references them, so
+    no frontier holds one. Prints the per-shard report; returns whether the
+    partition is a valid disjoint cover (no block owned by two shards, no
+    constant in Lean's logic whose block no shard owns). -/
 def shardsCover (ixonEnv : Ixon.Env) (shards : Array (Array Address)) : IO Bool := do
   -- block → shard, detecting blocks claimed by more than one shard.
   let mut blockToShard : Std.HashMap Address Nat := {}
@@ -150,9 +158,9 @@ def shardsCover (ixonEnv : Ixon.Env) (shards : Array (Array Address)) : IO Bool 
       match blockToShard.get? blk with
       | some _ => dup := dup + 1
       | none => blockToShard := blockToShard.insert blk k
-  -- assign every const to a shard via its block; count + detect unowned.
-  let mut counts : Array Nat := Array.replicate shards.size 0
-  let mut unowned : Nat := 0
+  -- each parsed const's block, and the records outside Lean's logic
+  let mut blockOf : Array Address := #[]
+  let mut aside : Std.HashSet Address := {}
   let mut unparsed : Nat := 0
   for (addr, lc) in ixonEnv.consts do
     -- A constant whose bytes do not parse must FAIL the gate, not be
@@ -164,12 +172,25 @@ def shardsCover (ixonEnv : Ixon.Env) (shards : Array (Array Address)) : IO Bool 
     -- shard's frontier, since that admits an edge on key presence
     -- without parsing — an assumption no shard discharges.
     let some c := lc.get? | unparsed := unparsed + 1; continue
-    match blockToShard.get? (blockAddrOf addr c) with
+    if c.outsideLogic then aside := aside.insert addr
+    blockOf := blockOf.push (blockAddrOf addr c)
+  -- assign every const in Lean's logic to a shard via its block; count + detect unowned.
+  let mut counts : Array Nat := Array.replicate shards.size 0
+  let mut unowned : Nat := 0
+  let mut setAside : Nat := 0
+  for blk in blockOf do
+    if aside.contains blk then
+      setAside := setAside + 1
+      continue
+    match blockToShard.get? blk with
     | some k => counts := counts.modify k (· + 1)  -- total: no-op if out of range
     | none => unowned := unowned + 1
   IO.println s!"[shards] {shards.size} shards, {ixonEnv.consts.size} consts"
   for (blocks, k) in shards.mapIdx (fun k b => (b, k)) do
     IO.println s!"  shard {k}: {blocks.size} blocks, {(counts[k]?).getD 0} consts"
+  if setAside != 0 then
+    IO.println s!"[shards] {setAside} const(s) outside Lean's logic (unsafe or partial) \
+      set aside: owned by no shard, claimed by none"
   if dup != 0 then
     IO.eprintln s!"[shards] FAIL: {dup} block(s) owned by >1 shard (not disjoint)"
   if unowned != 0 then
@@ -179,7 +200,8 @@ def shardsCover (ixonEnv : Ixon.Env) (shards : Array (Array Address)) : IO Bool 
       (cannot be assigned to a shard)"
   let ok := dup == 0 && unowned == 0 && unparsed == 0
   if ok then
-    IO.println s!"[shards] OK: partition covers all {ixonEnv.consts.size} consts, disjoint"
+    IO.println s!"[shards] OK: partition covers all {ixonEnv.consts.size - setAside} consts \
+      in Lean's logic, disjoint"
   pure ok
 
 

@@ -19,6 +19,10 @@ def runShardOwned (ixonEnv : Ixon.Env) (blocks : Array Address) (shardK : Nat)
   let owned := ownedConstsForBlocks ixonEnv blocks
   IO.println s!"[shard] shard {shardK}: {blocks.size} owned blocks → \
     {owned.size}/{ixonEnv.consts.size} owned consts"
+  if owned.isEmpty then
+    -- every block of the shard is outside Lean's logic (`ownedConstsPer`)
+    IO.println s!"[shard] shard {shardK}: owns no constant in Lean's logic, so no claim"
+    return 0
   match IxVM.ClaimHarness.buildShardCheckEnvWitness ixonEnv owned with
   | .error e => IO.eprintln s!"shard witness build failed: {e}"; return 1
   | .ok (claim, witness) => runOne claim witness s!"shard {shardK}"

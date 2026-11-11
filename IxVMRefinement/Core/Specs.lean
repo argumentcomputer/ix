@@ -1,30 +1,33 @@
-import Ix.IxVM.Refinement.Core.Rep
+import IxVMRefinement.Core.Rep
 import Ix.IxVM.Refinement.Statement
+import Ix.IxVM.Consistency.Statement
 import IxVM.Lookup
 
 /-! # The slice's statements: one spec per function, and what is assumed
 
-Spike S3. For a context `c` (the kernel environment, the keying, the view), each
-function of the slice gets a spec over its observed derivations (`*Spec`), in the
-shapes of plan 8.4: a derivation of `whnf(e) = e'` gives `Red`, and so on. Every
+For a context `c` (the kernel environment, the keying, the view), each function
+of the slice gets a spec over its observed derivations (`*Spec`): a derivation of
+`whnf(e) = e'` gives `Red`, a nonzero `is_def_eq` gives `DefEq`, and so on. Every
 spec is conditional on `Good c calls`: no hashed collision (the escape of the
 statement, `View.HashedCollision`), every record the run loads is in the view,
 and the stand-in size bound (below).
 
 `CoreSpecs` bundles the specs of the functions proved by the induction;
 `Assumed` collects the specs of the functions the slice calls but does not
-prove. Each `Assumed` field is that function's Phase 3 obligation, stated in the
-form the induction consumes.
+prove. Each `Assumed` field is what another part of the refinement must prove
+about that function, stated in the form the induction consumes.
 
-**The size bound.** `Lists::length` returns a field element, and
-`whnf_apply_beta` branches on it being `0` or `1`; for a list of `p + 1` consumed
-arguments it would take the one-argument branch on a telescope of `p + 1`
-binders, which is wrong, not merely unproved (T3-2's wrap, in a new place). So a
-bound is needed. The slice uses `calls.length < 2^32` as a stand-in. The bound
-the circuit actually supplies is on *distinct* calls (rows), not on calls
-counted with repetition; it suffices here because the chain of `peel_beta`
-calls that builds the consumed list has pairwise distinct arguments (each
-receives a freshly stored accumulator), but that argument is not made here. -/
+**The size bound.** IxVM counts with field elements (`Lists::length`, the index
+arithmetic of `Lists::lookup`, `take` and `drop`), and a count is faithful only
+below the field's characteristic (past it, a count wraps around). The circuit
+bounds the counts: at most `2^39` distinct memoized calls in a valid ROM
+(`MemoBounded`, the consistency statement's `MemoCallsAtMost`); a list
+`Lists::length` counts is shorter than that, because it recurses through every
+suffix and lists of different lengths need different keys
+(`IxVMRefinement.Core.Bound`, `length_lt`). Since `red_beta` matches the
+consumed arguments structurally, the slice itself branches on no count; the
+bound stays in `Good` for the rest of the core (`red_iota`'s field split,
+`red_proj`'s index). -/
 
 namespace IxVM.Refinement.Core
 
@@ -47,7 +50,7 @@ structure Ctx where
   env : Ix.Kernel.Env .anon
   κ : Bytes.Address → Ix.Kernel.Key .anon
   V : View
-  /-- The records of the fragment: those whose loads the L1 obligation `Assumed.getCI`
+  /-- The records of the fragment: those whose loads the record loader's assumption `Assumed.getCI`
   covers (for the slice, level-free definitions, theorems, axioms, inductives and
   constructors whose terms the relation represents). -/
   frag : _root_.Address → Prop
@@ -62,16 +65,22 @@ def nativeNames : List String :=
    "KernelNatPrim::try_int_prim_dispatch",
    "KernelDefEq::k_is_def_eq_slow", "KernelDefEq::k_def_eq_rebase"]
 
+/-- **The circuit's size bound**: at most `2^39` distinct memoized calls, in a valid ROM
+(the trace ROM of the compiled circuit is valid whenever the consistency statement's width
+ROM is: `traceROM_valid`). -/
+abbrev MemoBounded (calls : List (Call F)) : Prop :=
+  ∃ rom : ROM F, rom.Valid ∧ IxVM.Consistency.MemoCallsAtMost IxVM.source rom calls (2 ^ 39)
+
 /-- **The calls are good**: they hashed no collision; every record they load is
-in the view and in the fragment; they call no native dispatcher; and there are
-fewer than `2^32` of them (the stand-in bound). -/
+in the view and in the fragment; they call no native dispatcher; and they have at
+most `2^39` distinct memoized calls in a valid ROM (the circuit's bound, `MemoBounded`). -/
 def Good (c : Ctx) (calls : List (Call F)) : Prop :=
   ¬ c.V.HashedCollision [] calls ∧
   (∀ cl ∈ calls, cl.name = "Ingress::get_ci" → ∀ addr a, cl.args = [addr] →
     Bytes.RepAddressRef addrTy cl.heap a addr →
       (∃ lc, c.V.env.consts.get? (ixAddr a) = some lc) ∧ c.frag (ixAddr a)) ∧
   (∀ cl ∈ calls, cl.name ∉ nativeNames) ∧
-  calls.length < 4294967296
+  MemoBounded calls
 
 /-- The fragment's hypothesis on loads: every record the calls load is in the view
 and in the fragment. -/
@@ -103,10 +112,11 @@ theorem collision_mono {V : View} {calls₁ calls₂ : List (Call F)}
     · exact .inr (hashed_mono hsub hp)
 
 theorem Good.sub {c : Ctx} {calls₁ calls₂ : List (Call F)} (g : Good c calls₂)
-    (hsub : ∀ x ∈ calls₁, x ∈ calls₂) (hlen : calls₁.length ≤ calls₂.length) :
+    (hsub : ∀ x ∈ calls₁, x ∈ calls₂) (_hlen : calls₁.length ≤ calls₂.length) :
     Good c calls₁ :=
   ⟨fun h => g.1 (collision_mono hsub h), fun cl hcl => g.2.1 cl (hsub cl hcl),
-    fun cl hcl => g.2.2.1 cl (hsub cl hcl), Nat.lt_of_le_of_lt hlen g.2.2.2⟩
+    fun cl hcl => g.2.2.1 cl (hsub cl hcl),
+    let ⟨rom, hv, keys, hk, cover⟩ := g.2.2.2; ⟨rom, hv, keys, hk, fun cl hcl => cover cl (hsub cl hcl)⟩⟩
 
 /-- **The record-load escape** (the mechanics of the statement's escape at one
 load): with no hashed collision, every byte string the run hashed to a stored
@@ -136,10 +146,10 @@ structure CIRep (c : Ctx) (h : Heap F) (ci : SourceValue F)
 
 /-! ## Instance names of the generic list functions -/
 
-abbrev lengthName : String := (Instance.mk "Lists::length" [kexprTy]).symbol
-abbrev lookupName : String := (Instance.mk "Lists::lookup" [kexprTy]).symbol
-abbrev concatName : String := (Instance.mk "Lists::concat" [kexprTy]).symbol
-abbrev snocName : String := (Instance.mk "Lists::snoc" [kexprTy]).symbol
+abbrev lengthName : String := Obs.Names.«Lists::length<&KernelTypes::KExprNode>»
+abbrev lookupName : String := Obs.Names.«Lists::lookup<&KernelTypes::KExprNode>»
+abbrev concatName : String := Obs.Names.«Lists::concat<&KernelTypes::KExprNode>»
+abbrev snocName : String := Obs.Names.«Lists::snoc<&KernelTypes::KExprNode>»
 
 theorem length_inst : instanceName [] "Lists::length" (some [kexprTy]) = lengthName := by
   decide +kernel
@@ -167,11 +177,15 @@ def WithSpineSpec : Prop :=
     ∀ d Γ H As, RepE c.κ d Γ h H hd → RepSpine c.κ d Γ h As sp →
       ∃ E', RepE c.κ d Γ h' E' r ∧ Red c.env d (K.mkAppN H As) E'
 
-/-- `whnf_apply_beta(rc, spine, lam, types)`: `Red` of the applied `λ`. -/
-def ApplyBetaSpec : Prop :=
-  ∀ rc sp lam types, args = [rc, sp, lam, types] → Good c calls →
+/-- `red_beta(rc, lam, spine, types)`: tag `1` is `Red` of the applied `λ` to the
+reduct applied to the rest of the spine (`Red.betaGate`, one step per consumed
+argument). Nothing is claimed for tag `0` (no move). -/
+def RedBetaSpec : Prop :=
+  ∀ rc lam sp types, args = [rc, lam, sp, types] →
     ∀ d Γ L As, RepE c.κ d Γ h L lam → RepSpine c.κ d Γ h As sp →
-      ∃ E', RepE c.κ d Γ h' E' r ∧ Red c.env d (K.mkAppN L As) E'
+      ∀ x y, r = .tuple [.field 1, x, y] →
+        ∃ E Bs, RepE c.κ d Γ h' E x ∧ RepSpine c.κ d Γ h' Bs y ∧
+          Red c.env d (K.mkAppN L As) (K.mkAppN E Bs)
 
 /-- `whnf_const_head(rc, addr, lvls, head, spine, types)`, at a level-free
 constant head: `Red` of the applied constant. -/
@@ -234,7 +248,7 @@ structure CoreSpecs (c : Ctx) (n : String) (args : List (SourceValue F)) (h : He
   whnf : n = "KernelWhnf::whnf" → WhnfSpec c args h r h' calls
   whnfCore : n = "KernelWhnf::whnf_core" → WhnfSpec c args h r h' calls
   withSpine : n = "KernelWhnf::whnf_with_spine" → WithSpineSpec c args h r h' calls
-  applyBeta : n = "KernelWhnf::whnf_apply_beta" → ApplyBetaSpec c args h r h' calls
+  redBeta : n = "KernelWhnf::red_beta" → RedBetaSpec c args h r h'
   constHead : n = "KernelWhnf::whnf_const_head" → ConstHeadSpec c args h r h' calls
   applySpine : n = "KernelWhnf::apply_spine" → ApplySpineSpec c args h r h'
   peel : n = "KernelWhnf::peel_beta" → PeelSpec c args h r h' calls
@@ -255,23 +269,24 @@ def IH (c : Ctx) (calls : List (Call F)) : Prop :=
 /-! ## What the slice assumes -/
 
 /-- **The specs the slice assumes**: those of the functions it calls and does
-not prove. Each field is a Phase 3 obligation of another layer or of the rest
-of L4, stated in the form the induction consumes. -/
+not prove. Each field is a proof obligation of another part of the refinement
+(the record loader, substitution, the native reductions, the rest of the core),
+stated in the form the induction consumes. -/
 structure Assumed (c : Ctx) : Prop where
   /-- The fragment (by reading `try_prim_dispatch`: every family other than `0` calls
   one of `nativeNames`): a run that calls no native dispatcher gets tag `0`. The
-  general obligation (tags `1`, `2` are reductions) belongs to the natives lane and
-  needs rules s2 lists as missing (`Int`, `BitVec`, `String`, decisions). -/
+  general obligation (tags `1`, `2` are reductions) belongs to the proof of the native
+  reductions, and needs kernel rules for `Int`, `BitVec`, `String` and decisions. -/
   tryPrim : ∀ rc addr lvls sp types h r h' calls,
     ObsFn W "KernelWhnf::try_prim_dispatch" [rc, addr, lvls, sp, types] h r h' calls →
     (∀ cl ∈ calls, cl.name ∉ nativeNames) → ∃ x, r = .tuple [.field 0, x]
   /-- The fragment (by reading `projection_definition_info`: tag `1` needs a `Proj`
   node, which no represented term has): the shortcut does not fire on a
   represented value. -/
-  tryProjDef : ∀ value sp h r h' calls,
-    ObsFn W "KernelWhnf::try_reduce_projection_definition" [value, sp] h r h' calls →
+  tryProjDef : ∀ value nl lvls sp h r h' calls,
+    ObsFn W "KernelWhnf::try_reduce_projection_definition" [value, nl, lvls, sp] h r h' calls →
     ∀ d Γ V, RepE c.κ d Γ h V value → ∃ x, r = .tuple [.field 0, x]
-  /-- L1 (decoder, `Convert`, the kernel's reader, BLAKE3): if every byte string
+  /-- The record loader (decoder, `Convert`, the kernel's reader, BLAKE3): if every byte string
   the load hashed to the address is the view's data there, the loaded constant
   represents the environment's constant at the address's key. -/
   getCI : ∀ addr h ci h' calls,
@@ -281,22 +296,16 @@ structure Assumed (c : Ctx) : Prop where
       (∀ bytes, Hashed calls bytes → Address.blake3Pure bytes = ixAddr a →
         c.V.Preimage (ixAddr a) bytes) →
       CIRep c h' ci (c.env.find? (c.κ a))
-  /-- L3: `expr_inst1` is substitution of a closed value at index `0`. -/
+  /-- Substitution: `expr_inst1` substitutes a closed value at index `0`. -/
   inst1 : ∀ body v h r h' calls,
     ObsFn W "KernelSubst::expr_inst1" [body, v, .field 0] h r h' calls →
     ∀ d Γ B A, RepEk c.κ d Γ 1 h B body → RepE c.κ d Γ h A v →
       RepE c.κ d Γ h' (B.instantiate1 A) r
-  /-- L3: `expr_inst_many` is bulk substitution (`instantiateList`). -/
+  /-- Substitution: `expr_inst_many` is bulk substitution (`instantiateList`). -/
   instMany : ∀ body vs h r h' calls,
     ObsFn W "KernelSubst::expr_inst_many" [body, vs, .field 0] h r h' calls →
     ∀ d Γ B As, RepEk c.κ d Γ As.length h B body → RepSpine c.κ d Γ h As vs →
       RepE c.κ d Γ h' (B.instantiateList As 0) r
-  /-- library: `Lists::length` counts. -/
-  length : ∀ l h r h' calls, ObsFn W lengthName [l] h r h' calls →
-    ∀ d Γ As, RepSpine c.κ d Γ h As l → r = .field (As.length : F)
-  /-- library: `Lists::lookup(l, 0)` is the head. -/
-  lookup0 : ∀ l h r h' calls, ObsFn W lookupName [l, .field 0] h r h' calls →
-    ∀ d Γ A As, RepSpine c.κ d Γ h (A :: As) l → RepE c.κ d Γ h' A r
   /-- library: `Lists::concat` appends. -/
   concat : ∀ l₁ l₂ h r h' calls, ObsFn W concatName [l₁, l₂] h r h' calls →
     ∀ d Γ As Bs, RepSpine c.κ d Γ h As l₁ → RepSpine c.κ d Γ h Bs l₂ →
@@ -312,12 +321,12 @@ structure Assumed (c : Ctx) : Prop where
 
 /-! ## Matching helpers -/
 
-theorem natCast_lt_inj {a b : Nat} (ha : a < 4294967296) (hb : b < 4294967296)
+theorem natCast_lt_inj {a b : Nat} (ha : a < 2 ^ 39) (hb : b < 2 ^ 39)
     (heq : (a : F) = (b : F)) : a = b := by
   rw [ZMod.natCast_eq_natCast_iff'] at heq
-  have hm : (4294967296 : Nat) ≤ Aiur.Library.U32.Goldilocks.modulus := by
-    simp only [Aiur.Library.U32.Goldilocks.modulus]; omega
-  rwa [Nat.mod_eq_of_lt (by omega), Nat.mod_eq_of_lt (by omega)] at heq
+  have hm : (2 ^ 39 : Nat) ≤ Aiur.Library.U32.Goldilocks.modulus := by
+    norm_num [Aiur.Library.U32.Goldilocks.modulus]
+  rwa [Nat.mod_eq_of_lt (Nat.lt_of_lt_of_le ha hm), Nat.mod_eq_of_lt (Nat.lt_of_lt_of_le hb hm)] at heq
 
 theorem matchList_wild {heap : Heap F} {types : Types} :
     ∀ (n : Nat) (vs : List (SourceValue F)) {bs : Environment F Nat},

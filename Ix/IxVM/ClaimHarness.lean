@@ -8,6 +8,7 @@ public import Ix.Common
 public import Ix.PrimAddrs
 public import Ix.ClaimContext
 public import Ix.IxVM.PwHints
+public import Ix.IxVM.Model
 
 public section
 
@@ -112,8 +113,11 @@ def withRoleTable (env : Ixon.Env) (bytes : ByteArray) : Except String Ixon.Env 
 /-- `env` with the default role table (`Ix.Kernel.Reader.defaultTable`) as its
     role binding when it carries none (`withRoleTable`). -/
 def withDefaultRoleBinding (env : Ixon.Env) : Except String Ixon.Env := do
-  if env.roleBinding.isSome then return env
-  withRoleTable env (← Ix.Kernel.Reader.defaultTableBytes)
+  let env ← if env.roleBinding.isSome then pure env
+    else withRoleTable env (← Ix.Kernel.Reader.defaultTableBytes)
+  -- the prover-side models of the mutual and nested blocks (witness only:
+  -- `IxVM.Model`; neither `consts` nor any claim changes)
+  IxVM.Model.attach env
 
 /-- Close `roots` under `Lean.collectDependenciesMany` and every collected
     inductive's recursors (`<ind>.rec` and nested `<all0>.rec_N`) so
@@ -151,13 +155,41 @@ private def collectCertifiedClosure (roots : Array Lean.Name)
     deps := dedupConstList (Lean.collectDependenciesMany seeds leanEnv.constants)
   return deps
 
+/-- `roots` with the recursors of every mutual or nested inductive family in
+    their dependency closure and, when there is one, the recursors of every
+    inductive in that closure (a nested block's containers among them): IxVM's
+    modeled route validates such a block together with its whole recursor
+    family (`KernelModeled::check_family`), and the model advice is generated
+    from it, using the containers' recursors (`IxVM.Model`). -/
+def withModeledRecursors (roots : Array Lean.Name) (leanEnv : Lean.Environment) :
+    Array Lean.Name := Id.run do
+  let mut roots := roots
+  for _ in [0:6] do
+    let deps := Lean.collectDependenciesMany roots leanEnv.constants
+    let modeled := deps.any fun (_, ci) => match ci with
+      | .inductInfo v => v.all.length > 1 || v.numNested > 0
+      | _ => false
+    unless modeled do break
+    let mut more : Array Lean.Name := #[]
+    for (_, ci) in deps do
+      if let .inductInfo v := ci then
+        let names := v.all.map Lean.mkRecName ++
+          (List.range v.numNested).map fun i => Lean.Name.mkStr (v.all.headD v.name) s!"rec_{i + 1}"
+        for r in names do
+          if leanEnv.constants.contains r && !roots.contains r && !more.contains r then
+            more := more.push r
+    if more.isEmpty then break
+    roots := roots ++ more
+  return roots
+
 /-- Variant of loadIxonEnv: also seeds the constants the kernel
     fabricates during reduction (Bool.true/false + Nat.zero/succ), so
     their bytes are always in ch 2 even when the target's proof body
     doesn't textually reference them. -/
 def loadIxonEnv (name : Lean.Name) (leanEnv : Lean.Environment) :
     IO Ixon.Env := do
-  let roots := (#[name] ++ synthesizedPrimNames ++ roleNames).filter leanEnv.constants.contains
+  let roots := withModeledRecursors
+    ((#[name] ++ synthesizedPrimNames ++ roleNames).filter leanEnv.constants.contains) leanEnv
   let initial := dedupConstList (Lean.collectDependenciesMany roots leanEnv.constants)
   let res ← match ← Ix.CompileM.compileCertified leanEnv initial 32 with
     | .ok out => pure (.ok out)
@@ -176,7 +208,8 @@ def loadIxonEnv (name : Lean.Name) (leanEnv : Lean.Environment) :
     Ixon env. -/
 def loadSharedIxonEnv (names : Array Lean.Name) (leanEnv : Lean.Environment) :
     IO Ixon.Env := do
-  let roots := (names ++ synthesizedPrimNames ++ roleNames).filter leanEnv.constants.contains
+  let roots := withModeledRecursors
+    ((names ++ synthesizedPrimNames ++ roleNames).filter leanEnv.constants.contains) leanEnv
   let initial := dedupConstList (Lean.collectDependenciesMany roots leanEnv.constants)
   let res ← match ← Ix.CompileM.compileCertified leanEnv initial 32 with
     | .ok out => pure (.ok out)
@@ -242,7 +275,11 @@ partial def closureFromRoots (env : Ixon.Env) (roots : Array Address) :
     worklist := worklist.pop
     if visited.contains addr then continue
     visited := visited.insert addr
-    let some c := env.getConst? addr | continue
+    -- a modeled block brings its model records, its recursor family and the
+    -- container recursors its payload names (witness)
+    if let some deps := env.modelDeps[addr]? then
+      for d in deps do worklist := worklist.push d
+    let some c := env.getConst? addr <|> env.modelRecords[addr]? | continue
     for r in c.refs do worklist := worklist.push r
     match c.info with
     | .iPrj p | .cPrj p => worklist := worklist.push p.block
@@ -298,6 +335,25 @@ def addEntries (ixonEnv : Ixon.Env) (keep : Address → Bool)
     if !keep addr then continue
     let key : Array Aiur.G := addr.hash.data.map .ofUInt8
     ioBuffer := ioBuffer.extend 3 key #[hintToG hints]
+  -- the model records (witness, `IxVM.Model`): served like any record on
+  -- channels 2 and 3, and the unbound advice that finds them on channel 7
+  for (addr, c) in ixonEnv.modelRecords do
+    if !keep addr || ixonEnv.consts.contains addr then continue
+    let key : Array Aiur.G := addr.hash.data.map .ofUInt8
+    ioBuffer := ioBuffer.extend 2 key ((Ixon.ser c).data.map .ofUInt8)
+  for (addr, hints) in ixonEnv.modelHints do
+    if !keep addr || ixonEnv.anonHints.contains addr then continue
+    let key : Array Aiur.G := addr.hash.data.map .ofUInt8
+    ioBuffer := ioBuffer.extend 3 key #[hintToG hints]
+  for (addr, rawBytes) in ixonEnv.modelBlobs do
+    if !keep addr || ixonEnv.blobs.contains addr then continue
+    let key : Array Aiur.G := addr.hash.data.map .ofUInt8
+    ioBuffer := ioBuffer.extend 4 key (rawBytes.data.map fun b => .ofNat b.toNat)
+  -- the payloads, keyed by the modeled block (`KernelModeled::read_payload`)
+  for (addr, payload) in ixonEnv.models do
+    if !keep addr then continue
+    let key : Array Aiur.G := addr.hash.data.map .ofUInt8
+    ioBuffer := ioBuffer.extend 7 key (payload.data.map .ofUInt8)
   return ioBuffer
 
 /-- A ready-to-run Aiur invocation: function name to dispatch, public
@@ -432,12 +488,25 @@ aggregating their members' check-env claims"
   return { funcName := `verify_claim
            input := digestKey, inputIOBuffer := ioBuffer }
 
-/-- The kernel shard claim and its canonical subject/assumption trees, without
-    constructing the witness byte closure. -/
-def shardCheckEnvClaimTrees (env : Ixon.Env) (owned : Array Address)
-    (assumeBinding : Bool := false) :
+/-- The owned constants a shard claim may name: `owned` without those outside
+    Lean's logic (unsafe or partial, or projected from such a block;
+    `Ixon.Env.outsideLogicAt`), which IxVM refuses as seeds
+    (`KernelClaim::assert_claimable`). The rest stays closed under the claim
+    walk: a safe constant references no unsafe one (`KernelCheck::assert_safety`),
+    so no walk from it reaches what is left out. -/
+def claimableOwned (env : Ixon.Env) (owned : Array Address) : Except String (Array Address) := do
+  if owned.isEmpty then throw "shardCheckEnvClaim: empty owned set"
+  let kept := env.dropOutsideLogic owned
+  if kept.isEmpty then
+    throw s!"shardCheckEnvClaim: all {owned.size} owned constant(s) are unsafe or partial, \
+      outside Lean's logic; IxVM certifies none of them"
+  pure kept
+
+/-- The shard claim over `owned`, already `claimableOwned`, under the bound
+    `env`. -/
+def shardCheckEnvClaimTreesOf (env : Ixon.Env) (owned : Array Address)
+    (assumeBinding : Bool) :
     Except String (Ix.Claim × Std.HashMap Address Ix.AssumptionTree) := do
-  let env ← withDefaultRoleBinding env
   let ownedSet : Std.HashSet Address := owned.foldl (·.insert ·) {}
   let frontier : Array Address := Id.run do
     let mut fs : Std.HashSet Address := {}
@@ -476,13 +545,23 @@ def shardCheckEnvClaimTrees (env : Ixon.Env) (owned : Array Address)
   | none => pure ()
   pure (claim, trees)
 
+/-- The kernel shard claim and its canonical subject/assumption trees, without
+    constructing the witness byte closure. Its owned tree holds the
+    `claimableOwned` constants of `owned`. -/
+def shardCheckEnvClaimTrees (env : Ixon.Env) (owned : Array Address)
+    (assumeBinding : Bool := false) :
+    Except String (Ix.Claim × Std.HashMap Address Ix.AssumptionTree) := do
+  let env ← withDefaultRoleBinding env
+  shardCheckEnvClaimTreesOf env (← claimableOwned env owned) assumeBinding
+
 /-- Claim/tree construction plus the byte closure needed by a Lean-built shard
     witness. -/
 def shardCheckEnvClaim (env : Ixon.Env) (owned : Array Address)
     (assumeBinding : Bool := false) :
     Except String (Ix.Claim × Std.HashSet Address × Std.HashMap Address Ix.AssumptionTree) := do
   let env ← withDefaultRoleBinding env
-  let (claim, trees) ← shardCheckEnvClaimTrees env owned assumeBinding
+  let owned ← claimableOwned env owned
+  let (claim, trees) ← shardCheckEnvClaimTreesOf env owned assumeBinding
   let primitiveRoots := Ix.primAddrSet.toArray.filter env.consts.contains
   let closure := closureFromRoots env
     (owned ++ primitiveRoots ++ bindingRoots env assumeBinding ++ Ix.ClaimContext.userAxioms env)
@@ -506,9 +585,12 @@ def buildShardCheckEnvWitness (env : Ixon.Env) (owned : Array Address)
   return (claim, { funcName := `verify_claim
                    input := digestKey, inputIOBuffer := ioBuffer })
 
-/-- Canonical merkle tree over every const address in `env`. -/
+/-- Canonical merkle tree over every const address in `env` in Lean's logic
+    (`Ixon.Env.inLogicConsts`): the owned tree of a `checkEnv` claim on the
+    whole of `env`, which leaves out the unsafe and partial constants IxVM
+    refuses as seeds. -/
 def envCanonicalTree (env : Ixon.Env) : Option Ix.AssumptionTree :=
-  Ix.AssumptionTree.canonical (env.consts.keys.toArray)
+  Ix.AssumptionTree.canonical env.inLogicConsts
 
 /-- Subject-only `verify_const` witness. -/
 def buildVerifyConst (env : Ixon.Env) (target : Address) : Except String ClaimWitness := do

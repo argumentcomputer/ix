@@ -3,6 +3,8 @@ import Aiur.Modules.Function
 /-! # IxVM module `KernelClaim`
 
 Claims: their parsing and the checking entry points (`run_check`, `run_claim`).
+A typing claim refuses a seed outside Lean's logic, an unsafe or partial
+constant or one projected from such a block (`assert_claimable`).
 
 Named Aiur declarations, elaborated together by `IxVM.Program`. -/
 
@@ -438,6 +440,141 @@ def env_walk_leaves := aiur_fn⟦
     }
 ⟧
 
+
+  -- A typing claim certifies its seeds (a `check` target, the owned leaves of a
+  -- `checkEnv`) only in Lean's logic (decision D20). A seed is refused when its
+  -- record, or the block it projects from, is unsafe or partial: an unsafe or
+  -- partial definition, an unsafe opaque, axiom or recursor, an unsafe inductive
+  -- or constructor, or a block holding one. Lean's kernel accepts an unsafe
+  -- constant of any type, `False` included, and a partial block may refer to
+  -- itself. The test is the reader's safety policy (`safetyDeclineOf`,
+  -- `readInductive`, `readRecord` in `IxC/Kernel/Ixon/Reader.lean`), and
+  -- `Ingress::defn_is_unsafe_ci`'s on definitions: a theorem is never unsafe,
+  -- and a `partial` opaque (the face of a `partial def`) is safe. The check
+  -- reads the seed's records only, before the walk. An `eval` claim already
+  -- refuses an unsafe or partial input or output (`KernelEval::eval_body`,
+  -- `eval_output`).
+
+def ctors_unsafe := aiur_fn⟦
+  fn ctors_unsafe(cs: Lists::List<Ixon::Constructor>) -> Field {
+      match (*(cs)) {
+        Lists::Node::Nil => {  0 } ,
+        Lists::Node::Cons(c, rest) => {
+          match c {
+            Ixon::Constructor::Mk(is_unsafe, _, _, _, _, _) => {
+              match is_unsafe {
+                0 => {  ctors_unsafe(rest) } ,
+                _ => {  1 } ,
+              } } ,
+          } } ,
+      }
+    }
+⟧
+
+def muts_unsafe := aiur_fn⟦
+  fn muts_unsafe(ms: Lists::List<Ixon::MutConst>) -> Field {
+      match (*(ms)) {
+        Lists::Node::Nil => {  0 } ,
+        Lists::Node::Cons(m, rest) => {
+          let u = match m {
+            Ixon::MutConst::Defn(d) => {
+              match d {
+                Ixon::Definition::Mk(kind, safety, _, _, _) => {
+                  Ingress::defn_is_unsafe_ci(kind, safety) } ,
+              } } ,
+            Ixon::MutConst::Indc(ind) => {
+              match ind {
+                Ixon::Inductive::Mk(is_unsafe, _, _, _, _, ctors) => {
+                  match is_unsafe {
+                    0 => {  ctors_unsafe(ctors) } ,
+                    _ => {  1 } ,
+                  } } ,
+              } } ,
+            Ixon::MutConst::Recr(r) => {
+              match r {
+                Ixon::Recursor::Mk(_, is_unsafe, _, _, _, _, _, _, _) => {  is_unsafe } ,
+              } } ,
+          };
+          match u {
+            0 => {  muts_unsafe(rest) } ,
+            _ => {  1 } ,
+          } } ,
+      }
+    }
+⟧
+
+def record_unsafe := aiur_fn⟦
+  fn record_unsafe(addr: Bytes::AddressRef) -> Field {
+      let c = Ingress::load_verified_constant(addr);
+      match c {
+        Ixon::Constant::Mk(info, _, _, _) => {
+          match info {
+            Ixon::ConstantInfo::Defn(d) => {
+              match d {
+                Ixon::Definition::Mk(kind, safety, _, _, _) => {
+                  Ingress::defn_is_unsafe_ci(kind, safety) } ,
+              } } ,
+            Ixon::ConstantInfo::Recr(r) => {
+              match r {
+                Ixon::Recursor::Mk(_, is_unsafe, _, _, _, _, _, _, _) => {  is_unsafe } ,
+              } } ,
+            Ixon::ConstantInfo::Axio(a) => {
+              match a {
+                Ixon::Axiom::Mk(is_unsafe, _, _) => {  is_unsafe } ,
+              } } ,
+            Ixon::ConstantInfo::Muts(members) => {  muts_unsafe(members) } ,
+            _ => {  0 } ,
+          } } ,
+      }
+    }
+⟧
+
+def assert_claimable := aiur_fn⟦
+  fn assert_claimable(addr: Bytes::AddressRef) -> () {
+      let c = Ingress::load_verified_constant(addr);
+      let owner = match c {
+        Ixon::Constant::Mk(info, _, _, _) => {
+          match info {
+            Ixon::ConstantInfo::DPrj(p) => {
+              match p {
+                Ixon::DefinitionProj::Mk(_, b) => {  b } ,
+              } } ,
+            Ixon::ConstantInfo::IPrj(p) => {
+              match p {
+                Ixon::InductiveProj::Mk(_, b) => {  b } ,
+              } } ,
+            Ixon::ConstantInfo::CPrj(p) => {
+              match p {
+                Ixon::ConstructorProj::Mk(_, _, b) => {  b } ,
+              } } ,
+            Ixon::ConstantInfo::RPrj(p) => {
+              match p {
+                Ixon::RecursorProj::Mk(_, b) => {  b } ,
+              } } ,
+            _ => {  addr } ,
+          } } ,
+      };
+      assert_eq!(record_unsafe(addr), 0, "claim seed is unsafe or partial");
+      assert_eq!(record_unsafe(owner), 0, "claim seed is unsafe or partial");
+      ()
+    }
+⟧
+
+def assert_leaves_claimable := aiur_fn⟦
+  fn assert_leaves_claimable(leaves: Lists::List<Bytes::AddressRef>) -> () {
+      match (*(leaves)) {
+        Lists::Node::Nil => {  () } ,
+        Lists::Node::Cons(a, rest) => {
+          assert_claimable(a);
+          assert_leaves_claimable(rest) } ,
+      }
+    }
+⟧
+
+  -- Every owned leaf is claimable (`assert_claimable`). On the owned walk the check runs
+  -- inside `IxVMCompat::check_owned`, once per leaf: that is the call a distributed proof
+  -- executes in the record of the worker that owns the leaf, the only record holding the
+  -- leaf's bytes. The other two walks run in one record and check the leaves first.
 def run_check_env := aiur_fn⟦
   fn run_check_env(rc: KernelRoles::RoleCtx, env_root: Bytes::AddressRef, asm: Options::Option<Bytes::AddressRef>) -> () {
       let owned = load_assumption_tree(env_root);
@@ -452,9 +589,12 @@ def run_check_env := aiur_fn⟦
 
           match KernelRoles::role_ctx_axioms(rc) {
             RBTreeMap::RBTreeMap::Nil => {  walk_leaves_owned(rc, owned) } ,
-            RBTreeMap::RBTreeMap::Node(_, _, _, _, _) => {  walk_leaves_transitive(rc, owned) } ,
+            RBTreeMap::RBTreeMap::Node(_, _, _, _, _) => {
+              assert_leaves_claimable(owned);
+              walk_leaves_transitive(rc, owned) } ,
           } } ,
         Options::Option::Some(r) => {
+          assert_leaves_claimable(owned);
           let owned_set = addr_set_build(owned, RBTreeMap::RBTreeMap::Nil);
           let asm_set = addr_set_build(load_assumption_tree(r), RBTreeMap::RBTreeMap::Nil);
           env_walk_leaves(rc, owned, owned_set, asm_set) } ,
@@ -1345,6 +1485,7 @@ def run_claim := aiur_fn⟦
           let (target, s2) = IxonDeserialize::get_address(s);
           let (asm, rest) = get_opt_addr(s2);
           let Lists::Node::Nil = (*(rest));
+          assert_claimable(target);
           match asm {
             Options::Option::None => {  run_check_transitive(rc, target) } ,
             Options::Option::Some(r) => {

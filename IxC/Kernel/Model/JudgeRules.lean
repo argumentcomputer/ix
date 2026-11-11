@@ -5,9 +5,15 @@ public import IxC.Kernel.Model.FoldJ
 public import IxC.Kernel.Rules.Annot
 public import IxC.Kernel.Model.Rules.Sound
 public import IxC.Kernel.Model.Rules.Reads
+import IxC.Kernel.Rules.Inversion
+import IxC.Kernel.Model.Annot.Bit
+import IxC.Kernel.SetModel.Ops
 import IxC.Kernel.Model.Annot.BitLemmas
 import IxC.Kernel.Verify.Abstract
 import IxC.Kernel.Verify.Leaves
+/- `PropWhen` seals its representation; the bit lemmas below compute the pinned
+`Eq`'s instantiated type by `rfl`, which needs the view (as `Model/AxiomBits.lean`). -/
+import all IxC.Kernel.PropWhen
 
 public section
 
@@ -24,7 +30,9 @@ are stated over.
 `judgeSound_rulesJ` discharges `JudgeSound` at any model whose rules inputs hold,
 from the derivations' soundness (`Rules.infer_sound`, `Rules.defeq_sound`) and
 the readability of an accepted subject (`infer_reads`, by recursion on the
-derivation). `foldRules` is `foldJ` at this package.
+derivation). `axiomBits_rulesJ` gives the pinned axioms' bits over derivations
+(by inversion, `Rules/Inversion.lean`), and `foldRules` is `foldJ` at this package,
+which then asks only for the inductive kind's step.
 -/
 
 namespace Ix.Kernel.Model
@@ -223,21 +231,119 @@ theorem judgeSound_rulesJ {env : Env md} (m : EnvModel V env)
         Expr.LeavesBounded e) hC hea
     exact ⟨hwt, hbt, hsub⟩
 
+/-! ## The pinned axioms' bits over derivations
+
+`propext_bits`/`choice_bits` (`Model/AxiomBits.lean`) read the kernel's recorded
+run; here the same three moves read a derivation: the `∀` inversions give each
+binder's validation `zeronessOf v = pw`, the innermost codomain's sort is computed
+(the `Eq`-spine infers `Prop`; `choice`'s is the outer binder's variable), and a
+sort reduces only to itself (`Rules.Red.rigid`), so each codomain sort is the
+inferred one and the telescope collapse carries the bit outward. -/
+
+/-- **The `Eq`-spine at the pinned `Eq` infers `Prop`**, over derivations. -/
+theorem eqSpine_typeR {env : Env md} {d : Nat} {X Y Z bt : Expr md}
+    (hEq : env.find? eqName = some eqA)
+    (h : Infer env .full d (.app (.app (.app (.const eqName [.succ .zero]) X) Y) Z) bt) :
+    bt = .sort .zero := by
+  obtain ⟨tf1, ty1, b1, m1, ta1, h1, hw1, -, -, rfl⟩ := Rules.Infer.app_inv h
+  obtain ⟨tf2, ty2, b2, m2, ta2, h2, hw2, -, -, rfl⟩ := Rules.Infer.app_inv h1
+  obtain ⟨tf3, ty3, b3, m3, ta3, h3, hw3, -, -, rfl⟩ := Rules.Infer.app_inv h2
+  obtain ⟨ci, hci, -, -, rfl⟩ := Rules.Infer.const_inv h3
+  rw [hEq] at hci
+  obtain rfl := Option.some.inj hci
+  rw [show (Expr.instantiateLevelParams (eqA (md := md)).toConstantVal.levelParams
+        [Level.zero.succ] (eqA (md := md)).toConstantVal.type)
+      = .forallE (.sort (.succ .zero))
+        (.forallE (.bvar 0)
+          (.forallE (.bvar 1) (.sort .zero)
+            { pw := .never }) { pw := .never })
+        { pw := .never } from rfl] at hw3
+  injection Rules.Red.rigid hw3 rfl with e1 e2 e3
+  subst e2
+  rw [show (Expr.forallE (.bvar 0)
+        (.forallE (.bvar 1) (.sort .zero)
+          { pw := .never }) { pw := .never }).instantiate1 X
+      = .forallE X
+        (.forallE X (.sort .zero)
+          { pw := .never }) { pw := .never } from rfl] at hw2
+  injection Rules.Red.rigid hw2 rfl with f1 f2 f3
+  subst f2
+  rw [show (Expr.forallE X
+        (.sort .zero) { pw := .never }).instantiate1 Y
+      = .forallE (X.instantiate1 Y 0)
+        (.sort .zero) { pw := .never } from rfl] at hw1
+  injection Rules.Red.rigid hw1 rfl with g1 g2 g3
+  subst g2
+  rfl
+
+/-- **`propext`'s bits, over derivations.** -/
+theorem propext_bitsR {env : Env md} (hEq : env.find? eqName = some eqA)
+    {m₁ m₂ m₃ : BinderMeta} {d : Nat} {stype : Expr md}
+    (h : Infer env .full d
+      (.forallE (.sort .zero)
+        (.forallE (.sort .zero)
+          (.forallE
+            (.app (.app (.const iffName []) (.bvar 1)) (.bvar 0))
+            (.app (.app (.app (.const eqName [.succ .zero])
+                (.sort .zero)) (.bvar 2)) (.bvar 1)) m₃) m₂) m₁) stype)
+    (φ : LevelParam → Nat) :
+    pwBit φ m₁.pw = 0 ∧ pwBit φ m₂.pw = 0 ∧ pwBit φ m₃.pw = 0 := by
+  obtain ⟨-, u1, bs1, v1, -, -, hb1, hv1, hz1, -⟩ := Rules.Infer.forallE_inv h
+  obtain ⟨-, u2, bs2, v2, -, -, hb2, hv2, hz2, rfl⟩ := Rules.Infer.forallE_inv hb1
+  obtain ⟨-, u3, bs3, v3, -, -, hb3, hv3, hz3, rfl⟩ := Rules.Infer.forallE_inv hb2
+  obtain rfl : bs3 = .sort .zero := eqSpine_typeR hEq hb3
+  obtain rfl : v3 = .zero := Rules.Red.sort_eq hv3
+  have hb3' : pwBit φ m₃.pw = 0 := by
+    rw [← hz3]; exact (pwBit_zeronessOf φ _).mpr rfl
+  obtain rfl : v2 = .imax u3 .zero := Rules.Red.sort_eq hv2
+  have hb2' : pwBit φ m₂.pw = 0 := by
+    rw [← hz2]; exact (pwBit_zeronessOf φ _).mpr (by simp [Level.eval])
+  obtain rfl : v1 = .imax u2 (.imax u3 .zero) := Rules.Red.sort_eq hv1
+  have hb1' : pwBit φ m₁.pw = 0 := by
+    rw [← hz1]; exact (pwBit_zeronessOf φ _).mpr (by simp [Level.eval])
+  exact ⟨hb1', hb2', hb3'⟩
+
+/-- **`Classical.choice`'s bits, over derivations.** -/
+theorem choice_bitsR {env : Env md} {m₁ m₂ : BinderMeta} {d : Nat} {stype : Expr md}
+    (h : Infer env .full d
+      (.forallE (.sort (.param uN))
+        (.forallE
+          (.app (.const nonemptyName [.param uN]) (.bvar 0))
+          (.bvar 1) m₂) m₁) stype) (φ : LevelParam → Nat) :
+    (pwBit φ m₁.pw = 0 ↔ φ uN = 0) ∧ (pwBit φ m₂.pw = 0 ↔ φ uN = 0) := by
+  obtain ⟨-, u1, bs1, v1, -, -, hb1, hv1, hz1, -⟩ := Rules.Infer.forallE_inv h
+  obtain ⟨-, u2, bs2, v2, -, -, hb2, hv2, hz2, rfl⟩ := Rules.Infer.forallE_inv hb1
+  -- the innermost codomain is the outer binder's own variable
+  obtain rfl : bs2 = .sort (.param uN) := Rules.Infer.fvar_inv hb2
+  obtain rfl : v2 = .param uN := Rules.Red.sort_eq hv2
+  have hb2' : pwBit φ m₂.pw = 0 ↔ φ uN = 0 := by
+    rw [← hz2, pwBit_zeronessOf]; simp [Level.eval]
+  obtain rfl : v1 = .imax u2 (.param uN) := Rules.Red.sort_eq hv1
+  have hb1' : pwBit φ m₁.pw = 0 ↔ φ uN = 0 := by
+    rw [← hz1, pwBit_zeronessOf]
+    simp only [Level.eval]
+    exact imax_eq_zero_iff _ _
+  exact ⟨hb1', hb2'⟩
+
+/-- **`AxiomBitsJ` for derivations**, at every environment. -/
+theorem axiomBits_rulesJ (env : Env md) : AxiomBitsJ rulesJ env where
+  propext_bits := fun hEq _ _ _ _ _ h φ => propext_bitsR hEq h φ
+  choice_bits := fun h φ => choice_bitsR h φ
+
 /-- At the fold's invariant the rules inputs hold (`RulesInputs.ofSem`). -/
 theorem judgeSound_rulesJ_of {env : Env md} (mp : EnvModelM V μ env) :
     JudgeSound rulesJ mp.base2 :=
   judgeSound_rulesJ mp.base2 (fun φ => Rules.RulesInputs.ofSem mp φ)
 
 /-- **The fold at the derivation package** (`foldJ` at `rulesJ`): what remains
-is the pinned axioms' bits over derivations and the inductive kind's step. -/
+is the inductive kind's step (the pinned axioms' bits are `axiomBits_rulesJ`). -/
 theorem foldRules {Ind : Env md → List (ConstantInfo md) → Nat → Env md → Prop}
-    (hbits : ∀ env : Env md, AxiomBitsJ rulesJ env)
     (hind : ∀ {env : Env md} (mp : EnvModelM V μ env), ThmValOk mp → EtaFamiliesClosed env →
       ∀ {block : List (ConstantInfo md)} {nP : Nat} {envI : Env md},
         Ind env block nP envI →
           EtaFamiliesClosed envI ∧ ∃ mp₂ : EnvModelM V μ envI, ModelExt mp mp₂)
     {env env' : Env md} {ds : List (Declaration md)} :
     DeclsRunJ rulesJ Ind env ds env' → EnvModelT V μ env → EnvModelT V μ env' :=
-  foldJ rulesJ_thmValue (fun mp _ => judgeSound_rulesJ_of mp) hbits hind
+  foldJ rulesJ_thmValue (fun mp _ => judgeSound_rulesJ_of mp) axiomBits_rulesJ hind
 
 end Ix.Kernel.Model

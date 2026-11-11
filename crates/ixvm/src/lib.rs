@@ -31,7 +31,7 @@ pub fn prepare_streams<'a, B: FieldBackend>(
     "ixvm.io.info",
     &address_key,
     None,
-    |s| [1, 2, 4, 6].contains(&s.channel),
+    |s| [1, 2, 4, 6, 7].contains(&s.channel),
     false,
   )?;
   data.extend(arenas.metadata(

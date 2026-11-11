@@ -63,21 +63,26 @@ example : identity.body = .var "x" := rfl
 example : assembled = original := rfl
 #guard (Modules.checkTemplates assembled).isOk
 
+-- The rejected quotations below are `example`s, not `def`s: `#guard_msgs` absorbs the
+-- expected error, but a `def` would still be added with `sorry` as its value, and the
+-- compiled module would evaluate that closed term at initialization, so every executable
+-- importing this module (`aiur_tests`) would stop with "INTERNAL PANIC: executed 'sorry'".
+
 /-- error: function quotations require named parameters; destructure with `let` in the body -/
 #guard_msgs in
-def badParameter : Generic.Function Nat := aiur_fn⟦
+example : Generic.Function Nat := aiur_fn⟦
   fn bad((x, y): (Field, Field)) -> Field { x + y }
 ⟧
 
 /-- error: expected declarations without functions, module parameters, or a signature -/
 #guard_msgs in
-def badDeclarations : Modules.Definitions Nat := aiur_decls⟦
+example : Modules.Definitions Nat := aiur_decls⟦
 module Data { fn ignored() -> Field { 0 } }
 ⟧
 
 /-- error: invalid source identifier 'bad-name' -/
 #guard_msgs in
-def badName : Generic.Function Nat := aiur_fn⟦
+example : Generic.Function Nat := aiur_fn⟦
   fn «bad-name»() -> Field { 0 }
 ⟧
 
