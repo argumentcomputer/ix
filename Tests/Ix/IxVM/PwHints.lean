@@ -529,6 +529,15 @@ def units : IO Unit := do
   let (again, _) ← IO.ofExcept (_root_.Ix.Compile.BinderData.apply env)
   ensure ((← IO.ofExcept (bytesOf again)) == (← IO.ofExcept (bytesOf env')))
     "two runs differ"
+  -- stripping the sections gives back the compiler's environment, and an
+  -- environment mixing both is annotated as one
+  let stripped ← IO.ofExcept (_root_.Ix.Compile.BinderData.strip env')
+  ensure ((← IO.ofExcept (bytesOf stripped)) == (← IO.ofExcept (bytesOf env)))
+    "strip does not give back the compiler's environment"
+  let mixed := env'.consts.fold (fun (e : Ixon.Env) a lc => { e with consts := e.consts.insert a lc }) env
+  let (whole, _) ← IO.ofExcept (_root_.Ix.Compile.BinderData.withBinderData mixed)
+  ensure ((← IO.ofExcept (bytesOf whole)) == (← IO.ofExcept (bytesOf env')))
+    "a mixed environment is not annotated as one"
 
 def run : IO UInt32 := do
   try

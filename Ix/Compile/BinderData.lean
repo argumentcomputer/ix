@@ -246,14 +246,16 @@ def renameTable (rename : Address → Address) (t : Ix.Kernel.RoleTable) : Ix.Ke
       | .proof a => .proof (rename a)
       | .defeq => .defeq) }
 
-/-- **`env` with every record's section, re-addressed**, and what was found
-(addresses in the report are the new ones). -/
-def apply (env : Ixon.Env) : Except String (Ixon.Env × Report) := do
+/-- `env` with each record's section set to its entry in `sections` (empty where
+it has none), re-addressed bottom-up, and the map from old addresses to new.
+Records that become equal are one record (`strip` of an environment holding a
+record both with and without its section). -/
+def readdress (env : Ixon.Env) (records : Array (Address × Ixon.Constant))
+    (sections : Std.HashMap Address (Array Ixon.BinderBlock)) :
+    Except String (Ixon.Env × Std.HashMap Address Address) := do
   unless env.comms.isEmpty do throw "binder data: commitments are not re-addressed"
   unless env.modelRecords.isEmpty && env.models.isEmpty do
     throw "binder data: the environment carries model records"
-  let records ← recordsOf env
-  let (sections, report) ← annotate env records
   let store : Std.HashMap Address Ixon.Constant := records.foldl (fun m (a, c) => m.insert a c) {}
   let order ← bottomUp store records
   let mut renamed : Std.HashMap Address Address := Std.HashMap.emptyWithCapacity records.size
@@ -264,9 +266,8 @@ def apply (env : Ixon.Env) : Except String (Ixon.Env × Report) := do
     let c' := rewriteRecord rename c (sections.getD a #[])
     let bytes := Ixon.serConstant c'
     let a' := Address.blake3 bytes
-    if consts.contains a' then
-      throw s!"binder data: two records re-address to {a'}"
-    consts := consts.insert a' { buf := bytes, len := bytes.size, cache := some c' }
+    unless consts.contains a' do
+      consts := consts.insert a' { buf := bytes, len := bytes.size, cache := some c' }
     renamed := renamed.insert a a'
   let rename (x : Address) : Address := renamed.getD x x
   let named := env.named.fold (init := ({} : Std.HashMap Ix.Name Ixon.Named)) fun m n entry =>
@@ -289,10 +290,33 @@ def apply (env : Ixon.Env) : Except String (Ixon.Env × Report) := do
     main := env.main.map rename
     assumptions := env.assumptions.fold (init := ({} : Std.HashSet Address)) fun s a =>
       s.insert (rename a) }
+  return (env', renamed)
+
+/-- **`env` with every record's section, re-addressed**, and what was found
+(addresses in the report are the new ones). `env`'s records are the compiler's,
+without sections, under `env`'s own binding. -/
+def apply (env : Ixon.Env) : Except String (Ixon.Env × Report) := do
+  let records ← recordsOf env
+  let (sections, report) ← annotate env records
+  let (env', renamed) ← readdress env records sections
+  let rename (x : Address) : Address := renamed.getD x x
   let report := { report with
     undecided := report.undecided.map fun u => { u with address := rename u.address }
     refused := report.refused.map fun (a, why) => (rename a, why) }
   return (env', report)
+
+/-- `env` with every section removed, re-addressed: its records as the compiler
+emits them. An environment with no section is returned as it is. -/
+def strip (env : Ixon.Env) : Except String Ixon.Env := do
+  let records ← recordsOf env
+  if records.all (·.2.binders.isEmpty) then return env
+  return (← readdress env records {}).1
+
+/-- `apply` after `strip`: an environment some of whose records carry their
+sections already (a compiled closure beside role support records that carry
+theirs) is annotated as a whole. -/
+def withBinderData (env : Ixon.Env) : Except String (Ixon.Env × Report) := do
+  apply (← strip env)
 
 /-- The report's summary line. -/
 def Report.summary (r : Report) : String :=
