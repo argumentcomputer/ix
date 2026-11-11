@@ -390,13 +390,16 @@ theorem fieldNormIH_mapKeys (hf : InjOn f P) {fam : Family md} (hfam : fam.Good 
     | none => rfl
     | some p =>
       obtain ⟨t, idx⟩ := p
-      simp only [Option.map_some, Family.mapKeys_mems, List.length_map,
-        getD_map_default Mem.mapKeys_default]
+      simp only [Option.map_some, Family.mapKeys_mems, List.length_map]
       by_cases ht : t < fam.mems.length
       · have hmem : (fam.mems.getD t default).Good P := by
           simp only [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem ht, Option.getD_some]
           exact hfam.2.2.1 _ (List.getElem_mem ht)
-        rw [if_pos ht, if_pos ht]
+        have hget : (fam.mems.map (Mem.mapKeys f)).getD t default =
+            (fam.mems.getD t default).mapKeys f := by
+          simp only [List.getD_eq_getElem?_getD, List.getElem?_map, List.getElem?_eq_getElem ht,
+            Option.map_some, Option.getD_some]
+        rw [if_pos ht, if_pos ht, hget]
         exact carrierAt_mapKeys hf hfam hmem i idx false
       · rw [if_neg ht, if_neg ht]
   · rw [if_neg hc, if_neg hc]
