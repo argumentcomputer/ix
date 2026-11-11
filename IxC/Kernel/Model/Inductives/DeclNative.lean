@@ -1056,7 +1056,7 @@ theorem declNative (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env 
   exact declNativeTable rfl rfl hTbl mpC mp₃ hac₃ hProp hClps hresT
     (by rw [← hTname₀]; exact hpshapeT)
     mp.base2.wf hlenA hnFc hrunOf hfT_C hlpsT hTfresh'
-    (by rw [hTtype]; exact htrT) hFD_C hcf_C hleafT_C' hleafC_C hframes hsortsOf
+    (by rw [hTtype]; exact htrT) hFD_C ⟨_, hstripT⟩ hcf_C hleafT_C' hleafC_C hframes hsortsOf
     (fun ψ ρp h => ⟨(hframesR ψ ρp h).1, (hframesR ψ ρp h).2.1⟩) hRec
 
 end Ix.Kernel.Model

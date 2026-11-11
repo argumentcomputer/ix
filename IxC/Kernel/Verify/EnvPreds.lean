@@ -308,19 +308,38 @@ constructor are unreserved names (the recogniser's own guards, so a
 tower entry never sits at a pinned basis family);
 the index is in range; the former is stored as an inductive and the
 constructor as a constructor at the entry's own arities and level
-parameters.  (Task #175 S1: the entry carries a *body*, not a type;
-the bodies' scoping is `EnvWF`'s table clause.) -/
+parameters; the former's type is `∀ (params), Sort structSort` and the
+constructor's is `∀ (params) (fields), T.{lps} params` (the structure at
+its own level parameters and parameters, no index), so the table's
+structure sort and constructor are the stored structure's.  (Task #175
+S1: the entry carries a *body*, not a type; the bodies' scoping is
+`EnvWF`'s table clause.) -/
 @[expose] def TowerHead (env : Env md) (entry : ProjEntry md) : Prop :=
   reservedBasisNames.contains entry.structName = false ∧
   reservedBasisNames.contains entry.ctor = false ∧
   entry.idx < entry.numFields ∧
   (∃ (cvT : ConstantVal md) (caps : IndCaps md),
     env.find? entry.structName = some (.indInfo cvT caps) ∧
-    cvT.levelParams = entry.levelParams) ∧
+    cvT.levelParams = entry.levelParams ∧
+    ∃ bs, cvT.type.stripPis entry.numParams = some (bs, .sort entry.structSort)) ∧
   (∃ cvC : ConstantVal md,
     env.find? entry.ctor = some (.ctorInfo cvC entry.numParams entry.numFields) ∧
     cvC.levelParams = entry.levelParams ∧
-    (cvC.type.stripPis (entry.numParams + entry.numFields)).isSome = true)
+    ∃ bs, cvC.type.stripPis (entry.numParams + entry.numFields) = some (bs,
+      Expr.mkAppN (.const entry.structName (entry.levelParams.map .param))
+        ((List.range entry.numParams).map fun k =>
+          .bvar (entry.numFields + entry.numParams - 1 - k))))
+
+/-- A table entry's constructor type is a `∀`-telescope at the entry's
+arities. -/
+theorem TowerHead.ctor_stripPis_isSome {env : Env md} {entry : ProjEntry md}
+    {cvC : ConstantVal md} (h : TowerHead env entry)
+    (hC : env.find? entry.ctor = some (.ctorInfo cvC entry.numParams entry.numFields)) :
+    (cvC.type.stripPis (entry.numParams + entry.numFields)).isSome = true := by
+  obtain ⟨-, -, -, -, ⟨cvC', hC', -, bs, hs⟩⟩ := h
+  rw [hC] at hC'
+  obtain ⟨rfl, -, -⟩ := ConstantInfo.ctorInfo.inj (Option.some.inj hC')
+  rw [hs]; rfl
 
 /-- The head data survives any extension that keeps the two lookups. -/
 theorem TowerHead.mono {env env' : Env md} {entry : ProjEntry md}
@@ -328,9 +347,9 @@ theorem TowerHead.mono {env env' : Env md} {entry : ProjEntry md}
       (∀ cv mI rP rules, ci ≠ .recInfo cv mI rP rules) →
       env.find? n = some ci → env'.find? n = some ci)
     (h : TowerHead env entry) : TowerHead env' entry := by
-  obtain ⟨h2, h4, h5, ⟨cvT, caps, hT, hlT⟩, ⟨cvC, hC, hlC, hstrip⟩⟩ := h
+  obtain ⟨h2, h4, h5, ⟨cvT, caps, hT, hlT, hsT⟩, ⟨cvC, hC, hlC, hstrip⟩⟩ := h
   exact ⟨h2, h4, h5,
-    ⟨cvT, caps, hkeep _ _ (fun _ _ _ _ hh => ConstantInfo.noConfusion rfl (heq_of_eq hh)) hT, hlT⟩,
+    ⟨cvT, caps, hkeep _ _ (fun _ _ _ _ hh => ConstantInfo.noConfusion rfl (heq_of_eq hh)) hT, hlT, hsT⟩,
     ⟨cvC, hkeep _ _ (fun _ _ _ _ hh => ConstantInfo.noConfusion rfl (heq_of_eq hh)) hC, hlC, hstrip⟩⟩
 
 /-- **The projection-table discipline**: every stored table carries,

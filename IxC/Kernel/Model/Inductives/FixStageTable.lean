@@ -159,6 +159,10 @@ theorem stageFixTable (mp : EnvModelM V μ env)
     (hfC : env.find? cvCa.name = some (.ctorInfo cvCa p.nP nF))
     (hlpsC : cvCa.levelParams = p.cvT.levelParams)
     (hstripC : (cvCa.type.stripPis (p.nP + nF)).isSome = true)
+    (hresultC : ∃ bs, cvCa.type.stripPis (p.nP + nF) = some (bs,
+      Expr.mkAppN (.const p.cvT.name (p.cvT.levelParams.map .param))
+        ((List.range p.nP).map fun k => .bvar (nF + p.nP - 1 - k))))
+    (hsortT : ∃ bs, cvTa.type.stripPis p.nP = some (bs, .sort p.resSort))
     (hProp : p.isProp = (Level.isEquiv p.resSort .zero == some true))
     (hTshape : p.cvT.name.isProjFnShape = false)
     (hCshape : cvCa.name.isProjFnShape = false)
@@ -343,8 +347,8 @@ theorem stageFixTable (mp : EnvModelM V μ env)
     fun j hj => ⟨tbl.entry j, Ix.Kernel.Env.findProj?_of_table hfTbl₂ hj⟩
   -- the head data at every field
   have hhead : ∀ i, i < nF → Ix.Kernel.TowerHead ⟨.projInfo tbl :: env.consts⟩ (tbl.entry i) :=
-    fun i hi => ⟨hresT, hresC, hi, ⟨cvTa, caps, hfT₂, hlpsT⟩,
-      ⟨cvCa, hfC₂, hlpsC, hstripC⟩⟩
+    fun i hi => ⟨hresT, hresC, hi, ⟨cvTa, caps, hfT₂, hlpsT, hsortT⟩,
+      ⟨cvCa, hfC₂, hlpsC, hresultC⟩⟩
   suffices hlaw : ∀ m₂ : EnvModel V ⟨.projInfo tbl :: env.consts⟩,
       m₂.acval = acvalWith mp.base2.acval (ConstantInfo.projInfo tbl).name (fun _ => .sort 0) →
       ∀ (φ : LevelParam → Nat) (i : Nat), i < tbl.numFields →
@@ -554,6 +558,7 @@ theorem declNativeTable {F : Nat} {env env₁ envC env₂ : Env md} {p : NativeP
     (hTfresh : env.find? p.cvT.name = none)
     (htrT : cvTa.type.constsResolve env = true)
     (hFD_C : FormerData mpC.base2 cvTa (p.nP + p.nIdx) p.resSort ppsAll)
+    (hstripT : ∃ bs, cvTa.type.stripPis (p.nP + p.nIdx) = some (bs, .sort p.resSort))
     (hcf_C : ∀ (j : Nat) (cA : ConstantVal md × Nat), ctorsA[j]? = some cA →
       FixCtorFactsAt mpC.base2 env p.cvT.name p.cvT.levelParams p.nP p.nIdx p.resSort p.isProp
         p.large idxF dsF esF srcsF ksF fvsPF xFvsF xrestF eissF tssF j cA)
@@ -657,9 +662,19 @@ theorem declNativeTable {F : Nat} {env env₁ envC env₂ : Env md} {p : NativeP
           :: envC.consts⟩ : Env md).find? cA.1.name = some (.ctorInfo cA.1 p.nP cA.2) :=
         Ix.Kernel.Env.find?_cons_of_fresh hRfresh hfC_C
       -- the constructor type's shape
-      obtain ⟨⟨_, hccvC⟩, ⟨cbs, es, hstrip, -⟩, -⟩ := Ix.Kernel.checkSumCtor_shape hCtor
+      obtain ⟨⟨_, hccvC⟩, ⟨cbs, es, hstrip, hes⟩, -⟩ := Ix.Kernel.checkSumCtor_shape hCtor
       have hstripC : (cA.1.type.stripPis (p.nP + cA.2)).isSome = true := by
         rw [hstrip]; rfl
+      -- the constructor returns the structure at its own parameters, with no index
+      have hes0 : es = [] := List.eq_nil_of_length_eq_zero (by rw [hes, hnIdx'])
+      have hresultC : ∃ bs, cA.1.type.stripPis (p.nP + cA.2) = some (bs,
+          Expr.mkAppN (.const p.cvT.name (p.cvT.levelParams.map .param))
+            ((List.range p.nP).map fun k => .bvar (cA.2 + p.nP - 1 - k))) :=
+        ⟨cbs, by rw [hstrip, hes0, List.append_nil]; rfl⟩
+      have hsortT : ∃ bs, cvTa.type.stripPis p.nP = some (bs, .sort p.resSort) := by
+        obtain ⟨bs, h⟩ := hstripT
+        rw [hnIdx', Nat.add_zero] at h
+        exact ⟨bs, h⟩
       -- the structure's slots are mentioned by no stored piece: no table
       -- is stored below the table stage
       obtain ⟨-, -, -, -, hfreshTbl₃, -⟩ := Ix.Kernel.checkStructProjTable_inv hTbl
@@ -810,7 +825,7 @@ theorem declNativeTable {F : Nat} {env env₁ envC env₂ : Env md} {p : NativeP
       have hframes₀ := hframes 0 cA rfl
       obtain ⟨sorts'', hsj', -, hleq, hsortsAll⟩ := hsortsOf 0 cA rfl
       obtain rfl : sorts = sorts'' := Option.some.inj hsj'
-      refine stageFixTable mp₃ hTbl hfT₃ hcaps hlpsT hfC₃ hlpsC hstripC
+      refine stageFixTable mp₃ hTbl hfT₃ hcaps hlpsT hfC₃ hlpsC hstripC hresultC hsortT
         hProp hTshape hCshape hresT hresC hnp₃ hFD₃ hCD₃.read hCD₃.len hCD₃.below hleq
         hleafT₃ hleafC₃ hfoldAt ?_ ?_ ?_ ?_
       · intro ψ ρ
