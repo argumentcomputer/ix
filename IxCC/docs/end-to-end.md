@@ -3,8 +3,9 @@
 Written 2026-11-10; the premises restated 2026-11-11 (below). **Status:**
 below the source evaluator the x86 route is implemented and proved; the
 shared spine above it is **in progress**: SrcEval's fundamental lemma is proved
-over every model with the laws, under a check on the bytes and one typing
-hypothesis ([the grounding library](certification-design.md#the-grounding-library-sp-1-in-progress));
+over every model with the laws, under a check on the bytes, one typing
+hypothesis and, until the generic `case` lemma lands, F5's meaning at each
+`case` constant ([the grounding library](certification-design.md#the-grounding-library-sp-1-in-progress));
 the Aiur routes are **planned**, the first of them on the IxVM side. This page says
 what "certified end to end" is to mean for each back end, what the routes
 share and what each trusts. The [roadmap](roadmap.md#plan) schedules the
