@@ -372,7 +372,7 @@ theorem wrapper_mem (hf : (liftTele (j + 1) 0 fbs).map (·.1) = cs.fields.map (�
         (cs.codom.liftLooseBVars 1 (j + cs.fields.length)) _ (liftTele_length _ _ _) hc1 hfx1
         (by omega)
       rw [List.drop_eq_nil_of_le (show (liftTele 1 j cs.fields).length ≤ Fs'.length by
-        rw [liftTele_length, hfl, hF'])] at hfx2
+        rw [liftTele_length]; omega)] at hfx2
       have hMn' : Denotes M.cval env φ (pushAll (ps ++ mo :: t :: mins.take j) ρ)
           (piTele (liftTele 1 j cs.fields) (cs.codom.liftLooseBVars 1 (j + cs.fields.length))) XM := by
         rw [← lift_piTele]; exact hMn
@@ -451,7 +451,7 @@ theorem fits_ctx {cval : KKey → (LevelParam → Nat) → V} {bP bMin : List (K
   have hd : bP.drop ps.length = [] := List.drop_eq_nil_of_le (show bP.length ≤ ps.length by omega)
   rw [hd] at e2
   subst e1 e2
-  refine ⟨fun C' => by simpa [hd] using h3 C', ?_⟩
+  refine ⟨fun C' => by simpa [hd, piTele] using h3 C', ?_⟩
   have h2' : Fits cval env φ (pushAll ps ρ)
       (.forallE bMo.1 (.forallE bMaj.1 (piTele bMin C) bMaj.2) bMo.2) (mo :: t :: mins) σ R := h2
   cases h2' with
@@ -509,7 +509,7 @@ theorem caseIota (M : Model V env) (hL : Laws M) {kc kr : KKey} {sh : CaseShape}
   have hjm : j < mins.length := by omega
   rw [← hps, take_left_ctx] at hFC hmaj
   rw [get_ctx1] at hmaj
-  have ht : t = (ps ++ Fs).foldl app K := (Option.some.inj hmaj).symm
+  have ht : t = (ps ++ Fs).foldl app K := Option.some.inj hmaj
   refine ⟨mins[j], by rw [← hps, get_ctx2, List.getElem?_eq_getElem hjm], ?_⟩
   have hbm : bMaj = (Expr.mkAppN (.const sh.ind sh.indLevels) (bvarsFrom 1 sh.nP), mmaj) := by
     have := get_ctx1 bP bMin bMo bMaj
@@ -557,7 +557,7 @@ theorem caseIota (M : Model V env) (hL : Laws M) {kc kr : KKey} {sh : CaseShape}
       (y := t) (c := mins) (ρ := ρ)) .nil
     rw [hmins, show ps ++ [mo] ++ t :: mins = ps ++ mo :: t :: mins by simp] at this
     exact denotesList_functional h4 this
-  subst eY1 eY2 eY4
+  subst Y1 Y2 Y4
   obtain ⟨hwl, hwg⟩ := filterMap_range sh.ctors (fun j cs => sh.wrapper j cs) sh.nM (Nat.le_refl _)
   have hWl : Ws.length = sh.nM := by rw [denotesList_length hWs, hwl]
   have hWd : ∀ j' cs' (hj' : j' < Ws.length), sh.ctors[j']? = some cs' →
