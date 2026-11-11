@@ -6,6 +6,8 @@ import IxC.Kernel.Model.Denotes
 import IxC.Kernel.Model.Iota
 import IxC.Kernel.Verify.EnvGuards
 import IxC.Kernel.Rules.Rel
+import Aiur.WireMemory
+import Aiur.Memory.Partition
 
 /-! # `IxVM.consistent`: the IxVM circuit accepts only claims with a model
 
@@ -149,11 +151,13 @@ def L0 : Prop :=
           CallsInROM (compiled.traceROM rom) calls ∧
           MemoCallsAtMost source (compiled.traceROM rom) calls (2 ^ 39)
 
-/-- **A bounded derivation**: its calls, read in some ROM, have at most `2^39`
-distinct memoized calls. A sub-derivation of a bounded derivation is bounded
-(its calls are among the derivation's). -/
+/-- **A bounded derivation**: its calls, read in some valid ROM, have at most
+`2^39` distinct memoized calls. The ROM must be valid (no address holds two
+values): in an invalid one, lists of different lengths could share a key, and the
+bound would say nothing. A sub-derivation of a bounded derivation is bounded (its
+calls are among the derivation's). -/
 def Bounded (calls : List (Call IxVM.F)) : Prop :=
-  ∃ rom : Aiur.ROM IxVM.F, MemoCallsAtMost IxVM.source rom calls (2 ^ 39)
+  ∃ rom : Aiur.ROM IxVM.F, rom.Valid ∧ MemoCallsAtMost IxVM.source rom calls (2 ^ 39)
 
 /-- **Source-level soundness for `P`, over bounded derivations**: `SourceSound`
 restricted to observed `verify_claim` derivations with at most `2^39` distinct
@@ -178,7 +182,8 @@ theorem circuitSound_of_bounded (h0 : L0) {P : List (Call IxVM.F) → Digest →
   obtain ⟨value, heap, calls, observed, -, carried, memo⟩ :=
     h0 compiled physical certified bits plan activated (List.mem_singleton.mpr rfl) valid signed
       rooted outside bound checked arguments decoded
-  exact ⟨value, heap, calls, observed, carried, sound d value heap calls observed ⟨_, memo⟩⟩
+  exact ⟨value, heap, calls, observed, carried, sound d value heap calls observed
+    ⟨compiled.traceROM rom, Aiur.WireROM.decode_valid (Aiur.WidthROM.toWireROM_valid valid _ _), memo⟩⟩
 
 /-! ## The claims in scope -/
 
@@ -414,14 +419,26 @@ def ConsistentRead (calls : List (Call IxVM.F)) (seeds : List Address) : Prop :=
     (∀ a ∈ seeds, IsBlockAt E₀ a ∨ SeedStored b ds env a) ∧
     ∀ (V : Type u) [Ix.Kernel.SetTheory V], Nonempty (Ix.Kernel.Model V (claimedEnv env))
 
+/-- **The images the reading takes from the kernel's committed data**, not from the
+run: the default role table's binding section, and the records and blobs behind every
+reading (`Ix.Kernel.Reader.RoleData`: the prelude, the default table's evidence records
+and their blobs). The run loads them by address, so a different byte string it hashes
+at one of their addresses is a collision with them (`View.HashedCollision`). -/
+def committedImages : List ByteArray :=
+  (Ix.Kernel.Reader.RoleData.table ::
+    (Ix.Kernel.Reader.RoleData.prelude ++ Ix.Kernel.Reader.RoleData.evidence ++
+      Ix.Kernel.Reader.RoleData.blobs).toList.map (·.2)).filterMap bytesOfHex
+
 /-- **What a verify_claim derivation establishes**: for every claim
 byte string whose digest packs to `d` and decodes to an in-scope claim, and every
-reader's view of its seeds, the run hashed a collision, or `ConsistentRead`. -/
+reader's view of its seeds, the run hashed a collision (with the claim's bytes, the
+view's data or the committed images the reading uses, `committedImages`), or
+`ConsistentRead`. -/
 def ConsistencySpec (calls : List (Call IxVM.F)) (d : Digest) : Prop :=
   ∀ (bytes : ByteArray) (c : Claim), Claim.de bytes = .ok c →
     packDigest (Address.blake3Pure bytes) = d → InScope c →
       ∀ (V : View) (seeds : List Address), ClaimSeeds c V seeds →
-        V.HashedCollision [bytes] calls ∨ ConsistentRead.{u} calls seeds
+        V.HashedCollision (bytes :: committedImages) calls ∨ ConsistentRead.{u} calls seeds
 
 /-- **The deployed IxVM circuit accepts only claims whose claimed environment has a
 model**: `CircuitSound` of `ConsistencySpec`. -/
@@ -470,7 +487,7 @@ theorem ConsistencySpec.no_false (V : Type u) [Ix.Kernel.SetTheory V]
     {bytes : ByteArray} {c : Claim} (hde : Claim.de bytes = .ok c)
     (hd : packDigest (Address.blake3Pure bytes) = d) (hc : InScope c)
     {W : View} {seeds : List Address} (hs : ClaimSeeds c W seeds) :
-    W.HashedCollision [bytes] calls ∨
+    W.HashedCollision (bytes :: committedImages) calls ∨
       ∃ (b : Binding) (E : Ixon.Env) (ds : Array (Ix.Kernel.Declaration .anon))
         (env : Ix.Kernel.Env .anon), Ix.Kernel.Consistent (claimedEnv env) ∧
         ∀ a ∈ seeds, IsBlockAt E a ∨
@@ -700,7 +717,7 @@ def ClaimPhase : Prop :=
     ∀ (bytes : ByteArray) (c : Claim), Claim.de bytes = .ok c →
       packDigest (Address.blake3Pure bytes) = d → InScope c →
       ∀ (V : View) (seeds : List Address), ClaimSeeds c V seeds →
-        V.HashedCollision [bytes] calls ∨
+        V.HashedCollision (bytes :: committedImages) calls ∨
         ∃ (b : Binding) (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env),
           Ix.Kernel.Admission.defaultBinding = .ok b ∧
           Ix.Kernel.Admission.admitBinding Address.admissionHash b = .ok t ∧
