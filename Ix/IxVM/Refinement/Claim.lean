@@ -256,10 +256,19 @@ theorem AcceptsIn.acceptsRef {V : View} {b : Binding} {S : Address → Prop}
   obtain ⟨ev, ds, envA, accepted, thms, -, q⟩ := h.acceptsRefUnder
   exact ⟨ev, ds, envA, Ix.Kernel.Cached.acceptsRefUnder_strict.mp accepted, thms, q⟩
 
-/-- **The seeds of a role table**: the constants it binds and the theorems
-its evidence names. -/
+/-- **Lean's compiler-trust roles**: the inert axioms `Lean.trustCompiler`,
+`Lean.ofReduceBool` and `Lean.ofReduceNat`, and the opaques `Lean.reduceBool` and
+`Lean.reduceNat` whose values use `Lean.trustCompiler`. The checker accepts no
+declaration of the axioms and no constant using one, so a role table's check leaves
+them out: none of them can enter an environment a claim certifies. -/
+def compilerTrust : Ix.Kernel.Role → Bool
+  | .trustCompiler | .reduceBool | .reduceNat | .ofReduceBool | .ofReduceNat => true
+  | _ => false
+
+/-- **The seeds of a role table**: the constants it binds, but for the
+compiler-trust roles (`compilerTrust`), and the theorems its evidence names. -/
 def BindingSeeds (t : Ix.Kernel.RoleTable) (a : Address) : Prop :=
-  (∃ r, t.addressOf? r = some a) ∨
+  (∃ r, compilerTrust r = false ∧ t.addressOf? r = some a) ∨
     ∃ e ∈ t.evidence.toList, Ix.Kernel.Evidence.proof a ∈ e.2.toList
 
 /-- **The role specifications the pure declaration fold does not check on its
@@ -277,7 +286,8 @@ def BindingSpecs (_ : Binding) (envA : Ix.Kernel.Env .anon)
 /-- **The `binding` claim in a view** (`binding spec b`, validator 3): `spec`
 is IxC's specification digest; the view's role table with hash `b` is
 admitted by IxC, binds every role, and IxC's strict fold accepts the closure
-of its bound constants and evidence theorems under it with `BindingSpecs`,
+of its bound constants (but for the compiler-trust roles) and evidence theorems
+under it with `BindingSpecs`,
 which checks each bound constant against its role's specification. -/
 def BindingIn (V : View) (spec b : Address) : Prop :=
   Ix.SpecDigest.specDigest = .ok spec ∧
@@ -285,6 +295,18 @@ def BindingIn (V : View) (spec b : Address) : Prop :=
       Ix.Kernel.Admission.admitBinding Address.admissionHash bnd = .ok t ∧
       (∀ r ∈ Ix.Kernel.Role.all, (t.addressOf? r).isSome = true) ∧
       AcceptsIn V (Scope.strict bnd) (BindingSeeds t) BindingSpecs
+
+/-- **A role table the kernel admits, its bound constants checked**: the role
+table `b` is admitted (`Ix.Kernel.Admission.admitBinding`: its hash, its canonical
+decoding, `RoleTable.check`), and the strict fold accepts, under it and behind the
+committed prelude (`preludeFor`, inside `AcceptsIn`), the closure of the constants it
+binds and of its evidence theorems in the view's records (`BindingSeeds`), with the
+role specifications the fold does not check on its own (`BindingSpecs`). This is
+`BindingIn` without its claim's two extra conditions (the specification digest, and
+every role bound). -/
+def TableAdmitted (V : View) (b : Binding) : Prop :=
+  ∃ t, Ix.Kernel.Admission.admitBinding Address.admissionHash b = .ok t ∧
+    AcceptsIn V (Scope.strict b) (BindingSeeds t) BindingSpecs
 
 /-- **Every leaf of a claim's axioms tree is a user axiom record**, used or
 not, as IxVM validates it (`KernelRoles::validate_user_axioms`): the view

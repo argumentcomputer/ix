@@ -103,17 +103,17 @@ every set theory, the reading a `ConsistentRead` exhibits holds no such pair at 
 role keys. -/
 theorem consistentRead_no_false_def (V : Type w) [SetTheory V]
     {calls : List (Aiur.Generic.SourceSemantics.Call IxVM.F)} {seeds : List _root_.Address}
-    (h : ConsistentRead.{w} calls seeds) :
-    ∃ (b : _root_.Ix.Kernel.Admission.Binding) (E : _root_.Ixon.Env) (ev : Evidences .anon)
+    {b : _root_.Ix.Kernel.Admission.Binding} (h : ConsistentRead.{w} calls b seeds) :
+    ∃ (E : _root_.Ixon.Env) (ev : Evidences .anon)
       (ds : Array (Declaration .anon)),
       ReadIn b E (fun a => a ∈ seeds) ev ds ∧
       ∀ (cvP cvB : ConstantVal .anon) (hint : ReducibilityHint) (v : Expr .anon),
         .defnDecl cvP (.const falseName []) hint ∈ ds.toList → .thmDecl cvB v ∈ ds.toList →
         cvB.type = .const cvP.name [] → (∀ b t, cvP.name ≠ .aux b t) →
         (∀ b t, cvB.name ≠ .aux b t) → False := by
-  obtain ⟨b, -, E, ev, ds, env, -, -, -, hread, hI, -, hmodel⟩ := h
+  obtain ⟨-, E, ev, ds, env, -, -, hread, hI, -, hmodel⟩ := h
   obtain ⟨M⟩ := hmodel V
-  exact ⟨b, E, ev, ds, hread, fun _ _ _ _ hP hB hty hPk hBk =>
+  exact ⟨E, ev, ds, hread, fun _ _ _ _ hP hB hty hPk hBk =>
     no_model_of_false_def_installs hI hP hB hty hPk hBk M⟩
 
 /--
@@ -675,8 +675,8 @@ set theory, the reading a `ConsistentRead` exhibits, if it holds the pinned `Nat
 and a proposition `T`, holds no such pair at input or role keys. -/
 theorem consistentRead_no_natRec_false (V : Type w) [SetTheory V]
     {calls : List (Aiur.Generic.SourceSemantics.Call IxVM.F)} {seeds : List _root_.Address}
-    (h : ConsistentRead.{w} calls seeds) :
-    ∃ (b : _root_.Ix.Kernel.Admission.Binding) (E : _root_.Ixon.Env) (ev : Evidences .anon)
+    {b : _root_.Ix.Kernel.Admission.Binding} (h : ConsistentRead.{w} calls b seeds) :
+    ∃ (E : _root_.Ixon.Env) (ev : Evidences .anon)
       (ds : Array (Declaration .anon)),
       ReadIn b E (fun a => a ∈ seeds) ev ds ∧
       ∀ (kT : Key .anon) (ciT₀ : ConstantInfo .anon) (cvP cvB : ConstantVal .anon)
@@ -687,9 +687,9 @@ theorem consistentRead_no_natRec_false (V : Type w) [SetTheory V]
         .defnDecl cvP (pValue kT a b c) hint ∈ ds.toList → .thmDecl cvB v ∈ ds.toList →
         cvB.type = .const cvP.name [] → (∀ b t, cvP.name ≠ .aux b t) →
         (∀ b t, cvB.name ≠ .aux b t) → False := by
-  obtain ⟨b, -, E, ev, ds, env, -, -, -, hread, hI, -, hmodel⟩ := h
+  obtain ⟨-, E, ev, ds, env, -, -, hread, hI, -, hmodel⟩ := h
   obtain ⟨M⟩ := hmodel V
-  exact ⟨b, E, ev, ds, hread, fun _ _ _ _ _ _ _ _ _ hNat hT hTn hTty hTk hP hB hty hPk hBk =>
+  exact ⟨E, ev, ds, hread, fun _ _ _ _ _ _ _ _ _ hNat hT hTn hTty hTk hP hB hty hPk hBk =>
     no_model_of_natRec_false_installs hI hNat hT hTn hTty hTk hP hB hty hPk hBk M⟩
 
 end NatRec
