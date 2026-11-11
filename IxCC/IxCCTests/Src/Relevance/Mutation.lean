@@ -154,9 +154,9 @@ def fixture (a : Assert) (name : String) (count : Nat) (seed : Nat) : IO Tally :
   let json ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile (fixtures / "bench-k1" / s!"{name}.equations.json")))
   let hints ← IO.ofExcept (Hints.ofK1Json json)
   let env ← IO.ofExcept (IxCC.Ixon.V3.decodeAnonymousEnv bytes)
-  let cfg : LoadConfig := { typecheck := false }
-  let (p0, _, _) ← IO.ofExcept ((prepare cfg env hints).mapError toString)
-  let ann ← IO.ofExcept (annotate env p0)
+  let cfg : LoadConfig := {}
+  let (p0, k0, _, _) ← IO.ofExcept ((prepare cfg env hints).mapError toString)
+  let ann ← IO.ofExcept (k0.annotateChecked p0)
   let (p1, checked, _) ← IO.ofExcept ((finish cfg hints p0 ann).mapError toString)
   let pI ← IO.ofExcept (install p0 ann)
   let args := smallArgs name

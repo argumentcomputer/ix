@@ -311,7 +311,7 @@ def runRing0Tests : IO Unit := do
   let osEqs : FilePath := "fixtures/ownership/OS16-plain.equations.json"
   let osBytes ← IO.FS.readBinFile osIxe
   let osJson ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile osEqs))
-  let osInp ← ingressFile osIxe osEqs ["entry"] (typecheck := false)
+  let osInp ← ingressFile osIxe osEqs ["entry"]
   let osCfg : Config := { names := ["entry"], provenance := some IxCCTests.Rt.Machine.testProvenance }
 
   let (osClaim, osCert, _osElf) ← ofErr "Ring0 OS16-plain CompileClaim.produce" fun _ =>

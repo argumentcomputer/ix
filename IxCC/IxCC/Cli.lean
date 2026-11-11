@@ -12,10 +12,10 @@ import IxCC.Exe
 ```text
 ixcc compile CLOSURE.ixe --equations EQ.json [--root NAME]... -o OUT.o
     [--rc off|on|auto] [--cert FILE] [--emit-cert FILE] [--signatures FILE]
-    [--dump-ir LEVEL]... [--stats] [--no-typecheck]
+    [--dump-ir LEVEL]... [--stats]
     [--exe FILE [--machine] [--stack BYTES] [--region BYTES]]
 ixcc check-cert CLOSURE.ixe --equations EQ.json [--root NAME]... --cert FILE
-    [-o OUT.o] [--signatures FILE] [--stats] [--no-typecheck]
+    [-o OUT.o] [--signatures FILE] [--stats]
 ```
 
 `compile` runs ingress, `produce` and `Recheck.run` and writes the ELF
@@ -56,10 +56,17 @@ forms of its result type and signature (`type`, `sig`; JSON; `null` when bounded
 first-order signature discovery does not support the result type).
 `--dump-ir LEVEL` prints a level (`lam`, `anf`, `fir`,
 `cfg`, `lir`, `xv`, `xl`, or `all`) to standard output; `--stats` prints
-the closure's envelope, constant root and role table address, timings, sizes
-and the allocation outcomes. The closure is either envelope: role-bound
-(`0xE5`, as `ix compile` writes it) or unbound (`0xE4`). `--no-typecheck` skips erased
-typing at ingress (the fixtures' typing is gated by `tests-ixon-v3`).
+the closure's envelope, constant root and role table address, the certified
+kernel's acceptance (records and tier constants), timings, sizes and the
+allocation outcomes.
+
+Ingress runs the certified kernel's acceptance of the whole closure
+(`Src.KernelFront.accept`, the kernel's tiered entry; not optional): the
+closure must be role-bound (`0xE5`, as `ix compile` writes it; an unbound
+`0xE4` closure is refused), and a closure with any record the kernel does not
+accept is refused whole, reached or not, as `ixcc: ingress: kernel: …` with the
+kernel's stage and classification (an ill-typed record and any axiom but the
+three standard ones, `sorryAx` among them, are declined).
 
 A decline or rejection prints `ixcc: stage: code: message` on
 standard error and exits 1; a usage error exits 2. -/
@@ -96,7 +103,6 @@ structure Options where
   signatures : Option FilePath := none
   dumps : List String := []
   stats : Bool := false
-  typecheck : Bool := true
   rc : RcMode := .off
   rcExplicit : Bool := false
   /-- `--exe FILE`: also write a standalone executable of the first root. -/
@@ -112,10 +118,10 @@ def usage : String :=
   "\n".intercalate [
     "usage:",
     "  ixcc compile CLOSURE.ixe --equations EQ.json [--root NAME]... -o OUT.o",
-    "      [--rc off|on|auto] [--cert FILE] [--emit-cert FILE] [--signatures FILE] [--dump-ir LEVEL]... [--stats] [--no-typecheck]",
+    "      [--rc off|on|auto] [--cert FILE] [--emit-cert FILE] [--signatures FILE] [--dump-ir LEVEL]... [--stats]",
     "      [--exe FILE [--machine] [--stack BYTES] [--region BYTES]]",
     "  ixcc check-cert CLOSURE.ixe --equations EQ.json [--root NAME]... --cert FILE",
-    "      [-o OUT.o] [--signatures FILE] [--stats] [--no-typecheck]",
+    "      [-o OUT.o] [--signatures FILE] [--stats]",
     "dump levels: lam anf fir cfg lir xv xl all"]
 
 def dumpLevels : List String := ["lam", "anf", "fir", "cfg", "lir", "xv", "xl"]
@@ -137,7 +143,6 @@ def parseRest (o : Options) : List String → Except String Options
     else if dumpLevels.contains l then parseRest { o with dumps := o.dumps ++ [l] } rest
     else throw s!"unknown IR level {l}"
   | "--stats" :: rest => parseRest { o with stats := true } rest
-  | "--no-typecheck" :: rest => parseRest { o with typecheck := false } rest
   | "--exe" :: f :: rest => parseRest { o with exe := some f } rest
   | "--machine" :: rest => parseRest { o with machine := true } rest
   | "--stack" :: n :: rest =>
@@ -289,7 +294,7 @@ def lift {α : Type} (x : Unit → Except Err α) : ExceptT Err IO α := ExceptT
 /-- `compile` and `check-cert`. -/
 def execute (o : Options) : ExceptT Err IO Unit := do
   let ((bytes, json), tRead) ← timed (readInputs o)
-  let (inp, tIngress) ← timed (lift fun _ => ingress bytes json o.roots o.typecheck)
+  let (inp, tIngress) ← timed (lift fun _ => ingress bytes json o.roots)
   let cfg := Config.forInput {} inp
   -- a root whose caller would pass a closure has no meaningful caller: refused
   -- before anything is produced (every producer refuses it too, `produceClosures`)
@@ -379,7 +384,11 @@ def execute (o : Options) : ExceptT Err IO Unit := do
     let certBytes := cliCert.toText.utf8ByteSize
     let producer := if o.cert.isSome then "certificate read" else "produce"
     IO.println (envelopeLine inp.env)
-    IO.println s!"time: read {tRead} ms, ingress {tIngress} ms, {producer} {tProduce} ms, run {tRun} ms"
+    IO.println s!"kernel: accepted {inp.kernel.acc.records.length} records, \
+      {inp.kernel.acc.decls.size} logical declarations and {inp.kernel.acc.tier.length} tier constants, \
+      within ingress"
+    IO.println s!"time: read {tRead} ms, ingress {tIngress} ms (the kernel's acceptance included), \
+      {producer} {tProduce} ms, run {tRun} ms"
     IO.println s!"certificate: {certBytes} bytes of JSON; {cert.table.resolve.length} table entries, \
       {cert.relevance.nodes.length} annotated terms, {cert.mid.steps.length} middle-end steps, \
       {cert.alloc.length} allocations, {cert.frames.length} frame layouts"

@@ -116,7 +116,7 @@
       "named_env_sha256": "d13c1c3505666a6f8848a28018caf509b7af810cef148df5f93de487573756eb",
       "census": {
         "path": "arity.census.json",
-        "sha256": "18e6f57b93af6273c19422d79c51c2d6e7a45deef8777f4eedaf5e407532e64b"
+        "sha256": "e628e5b84481d946b31312443d0da6f7fadc6dda8700bfe7c1f66aedceb37b5b"
       },
       "roots": [
         {

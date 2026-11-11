@@ -1,6 +1,6 @@
 {"root": "644dd8e3db0770aa036d3c24084a0cdc4442418735c7a52311884934cc7bf35b",
  "rejected_at": {"policy": 13},
- "reached": {"typing": 13, "policy": 706},
+ "reached": {"policy": 706, "kernel": 13},
  "kinds":
  {"theorem": 162,
   "recursor": 36,
@@ -10,8 +10,9 @@
   "definition": 403,
   "constructor-projection": 40,
   "axiom": 2},
+ "kernel": {"verdict": "accepted", "tier_constants": 13, "records": 719},
  "ingress": "accepted",
- "format": "ixcc/census/1",
+ "format": "ixcc/census/2",
  "entries":
  [{"safety": "safe",
    "reached": "policy",
@@ -402,7 +403,7 @@
    "102b38a464186466850831651e6697ddb5d7e0bd365336a1cced9bcf5127b380"},
   {"safety": "partial",
    "rejected_at": "policy",
-   "reached": "typing",
+   "reached": "kernel",
    "message":
    "partial definition: rejected by plan decision D12; use partial_fixpoint, termination_by or fuel",
    "kind": "definition",
@@ -493,7 +494,7 @@
    "1208a9f141b19f4243bcea6bd266d96a17aa4a441d619015772c9cb57222605c"},
   {"safety": "partial",
    "rejected_at": "policy",
-   "reached": "typing",
+   "reached": "kernel",
    "message":
    "partial definition: rejected by plan decision D12; use partial_fixpoint, termination_by or fuel",
    "kind": "definition",
@@ -1424,7 +1425,7 @@
    "3a641f0c43a8d74ee355d841e935a435576d87aa7849df97407cdb6faa6ef516"},
   {"safety": "partial",
    "rejected_at": "policy",
-   "reached": "typing",
+   "reached": "kernel",
    "message":
    "partial definition: rejected by plan decision D12; use partial_fixpoint, termination_by or fuel",
    "kind": "definition",
@@ -1699,7 +1700,7 @@
    "46dc37759210889f6ef5180f0774581c460b130305d4513fd03f6b657ca40a4e"},
   {"safety": "partial",
    "rejected_at": "policy",
-   "reached": "typing",
+   "reached": "kernel",
    "message":
    "partial definition: rejected by plan decision D12; use partial_fixpoint, termination_by or fuel",
    "kind": "definition",
@@ -1854,7 +1855,7 @@
    "4fd55fa5d8cde36f1b76446ed779a3634e1ad1ada25119a600b44d6be50ea07c"},
   {"safety": "partial",
    "rejected_at": "policy",
-   "reached": "typing",
+   "reached": "kernel",
    "message":
    "partial definition: rejected by plan decision D12; use partial_fixpoint, termination_by or fuel",
    "kind": "definition",
@@ -2072,7 +2073,7 @@
    "583402a4be017951df7c8ce118a73f7f0d5eebf4e2898fcb1a4e2f21d7ec9ac7"},
   {"safety": "partial",
    "rejected_at": "policy",
-   "reached": "typing",
+   "reached": "kernel",
    "message":
    "partial definition: rejected by plan decision D12; use partial_fixpoint, termination_by or fuel",
    "kind": "definition",
@@ -2349,7 +2350,7 @@
    "64f433e409d82c35e1e8c4669063278045b0e4d39f6085bb766ccf05f28906f1"},
   {"safety": "partial",
    "rejected_at": "policy",
-   "reached": "typing",
+   "reached": "kernel",
    "message":
    "partial definition: rejected by plan decision D12; use partial_fixpoint, termination_by or fuel",
    "kind": "definition",
@@ -2667,7 +2668,7 @@
    "71ccbcacead4d2fc9df3e62ab0f27f07faddccbfbd18f84556696c9a35a0d278"},
   {"safety": "partial",
    "rejected_at": "policy",
-   "reached": "typing",
+   "reached": "kernel",
    "message":
    "partial definition: rejected by plan decision D12; use partial_fixpoint, termination_by or fuel",
    "kind": "definition",
@@ -3007,7 +3008,7 @@
    "83b8a6180029ba1455cb904555a2c72ba184b8824048401deaff0dad5d1a69f8"},
   {"safety": "partial",
    "rejected_at": "policy",
-   "reached": "typing",
+   "reached": "kernel",
    "message":
    "partial definition: rejected by plan decision D12; use partial_fixpoint, termination_by or fuel",
    "kind": "definition",
@@ -3644,7 +3645,7 @@
    "9e445b9d5f8252772347872e909b5db4e7eca7086cedf4fec6de840f6b7b5f92"},
   {"safety": "partial",
    "rejected_at": "policy",
-   "reached": "typing",
+   "reached": "kernel",
    "message":
    "partial definition: rejected by plan decision D12; use partial_fixpoint, termination_by or fuel",
    "kind": "definition",
@@ -3654,7 +3655,7 @@
    "9f481c7e854e77a3579b99b1ae927210e184d47d9fb4aca3c7f405f6675f8907"},
   {"safety": "partial",
    "rejected_at": "policy",
-   "reached": "typing",
+   "reached": "kernel",
    "message":
    "partial definition: rejected by plan decision D12; use partial_fixpoint, termination_by or fuel",
    "kind": "definition",
@@ -4710,7 +4711,7 @@
    "d5278fee812cb9fcf0ff9d0eecb2b970dad3226b97961f39abe02078ab93c465"},
   {"safety": "partial",
    "rejected_at": "policy",
-   "reached": "typing",
+   "reached": "kernel",
    "message":
    "partial definition: rejected by plan decision D12; use partial_fixpoint, termination_by or fuel",
    "kind": "definition",
@@ -5128,7 +5129,7 @@
    "e61be633009af74e1abe89e281962164376d32f79209fcbd66d5dfcd6c3ce201"},
   {"safety": "partial",
    "rejected_at": "policy",
-   "reached": "typing",
+   "reached": "kernel",
    "message":
    "partial definition: rejected by plan decision D12; use partial_fixpoint, termination_by or fuel",
    "kind": "definition",
@@ -5831,5 +5832,4 @@
   {"limit": 16384, "budget": "constants", "actual": 719},
   {"limit": 16384, "budget": "blobs", "actual": 546},
   {"limit": 1048576, "budget": "largest constant bytes", "actual": 4048},
-  {"limit": 256, "budget": "deepest expression", "actual": 48},
-  {"limit": 4096, "budget": "typing declarations", "actual": 719}]}
+  {"limit": 256, "budget": "deepest expression", "actual": 48}]}

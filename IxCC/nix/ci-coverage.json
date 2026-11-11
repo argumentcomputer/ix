@@ -895,7 +895,6 @@
   "IxCC.Src.Ingress",
   "IxCC.Src.KernelFront.Accept",
   "IxCC.Src.KernelFront.Annotate",
-  "IxCC.Src.KernelFront.Front",
   "IxCC.Src.KernelFront.Order",
   "IxCC.Src.KernelFront.Proof",
   "IxCC.Src.KernelFront.Reading",
@@ -911,7 +910,6 @@
   "IxCC.Src.Proof.Unfold",
   "IxCC.Src.Readback",
   "IxCC.Src.Recheck",
-  "IxCC.Src.Relevance.Annotate",
   "IxCC.Src.Relevance.Check",
   "IxCC.Src.Relevance.Proof.Sound",
   "IxCC.Src.Relevance.Proof.Terms",
@@ -1639,7 +1637,7 @@
  "4deb87c352422ca62e49b2950ad179a0bf9020eaa9c924a53dacf2a2468d02f3",
  "grounding_axiom_count": 56,
  "baseline":
- "the grounding library: the laws ctor_canon and proj_ctor restricted to families that are not propositions, with their checks and fences",
+ "KS: the switch to the kernel front end, step 3, on the grounding correction 62929be01",
  "axiom_sha256":
- "b7328b7dd7f2ef1dac04816270ce42e3ac2cc353875105432c8cd224239de080",
- "axiom_count": 5965}
+ "8b49d25f5bf75c1eb79dfba0d78a9a70e134207d63c5178534eb661381035056",
+ "axiom_count": 5964}

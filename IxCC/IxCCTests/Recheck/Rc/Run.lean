@@ -58,7 +58,7 @@ def verifyContractsAndPolicy : IO Unit := do
     throw (IO.userError s!"reverseList produceAuto fell back to .immortal: {reason.render}")
   let gcdBytes ← IO.FS.readBinFile "fixtures/ixon-v4/bench-k1/gcd.ixe"
   let gcdEqs ← IO.ofExcept (Json.parse (← IO.FS.readFile "fixtures/ixon-v4/bench-k1/gcd.equations.json"))
-  let gcdInput ← IO.ofExcept ((Recheck.ingress gcdBytes gcdEqs ["entry"] false).mapError (·.message))
+  let gcdInput ← IO.ofExcept ((Recheck.ingress gcdBytes gcdEqs ["entry"]).mapError (·.message))
   let gcdCfg : Recheck.Config := { names := ["gcd"] }
   let gcdPol ← IO.ofExcept ((Recheck.RcReplay.selectPolicy gcdCfg gcdInput).mapError (·.message))
   unless gcdPol == .zeroRc do

@@ -37,10 +37,13 @@ annotated source are in `verdicts.json`. Parts:
   the same; no cell where none is expected; OS-16's `2n` cells, and with
   `--native` its `48n` bump bytes natively; every reference-counting counter 0
   (Phase 1 has no such forms).
-* **`cx1`**: `0` binders in the relevance annotator (`honourErased`): OS-03 compiles;
-  the same program built by writing `ignoreFirst`'s parameter erased into
-  the plain twin compiles to OS-03's object; and writing a *used* parameter
-  erased (OS-01's `n`) is rejected with `relevance: relevance-C1`. -/
+* **`cx1`**: `0` binders in the relevance annotator (`honourErased`): OS-03,
+  whose bytes carry the erased binder, compiles; writing a parameter erased
+  into a plain twin's program in memory (`ignoreFirst`'s, or OS-01's *used*
+  `n`) makes a program that is not its bytes' reading, which the producer
+  refuses (`relevance: relevance-oracle`: the kernel annotator's
+  correspondence compares binder contracts). The recheck path's own refusal
+  of a relevant use of an erased binder (rule C1) is `tests-relevance`'s. -/
 
 namespace IxCCTests.Own.Suite
 
@@ -316,20 +319,18 @@ def cx1 (a : Assert) (m : Family) : IO (Array String) := do
     ingressFile (dir / f.closure.path) (dir / f.equations.path) ["entry"]
   -- the annotated OS-03 compiles (it failed with relevance-C0 before the annotator honoured `0`)
   let inp3 ← input "OS03-annotated"
-  let (_, art3) ← compileIn "OS03-annotated" inp3
+  let _ ← compileIn "OS03-annotated" inp3
   expect a true ""
-  -- the plain twin with ignoreFirst's first parameter written erased: OS-03's object
+  -- the plain twin with ignoreFirst's first parameter written erased in memory: not its
+  -- bytes' reading, so the producer refuses it (the kernel annotator compares contracts)
   let inpP ← input "OS03-plain"
   let some root := inpP.program.roots.head? | throw (IO.userError "OS03-plain: no root")
   let some g := calleeOf inpP.program root.2 | throw (IO.userError "OS03-plain: entry calls no constant")
   let some p' := eraseParam inpP.program g 0 | throw (IO.userError "OS03-plain: ignoreFirst is not a definition")
-  match compileInput {} { inpP with program := p' } with
-  | .ok (_, art) =>
-    let same := match art.roots.head?, art3.roots.head? with
-      | some x, some y => maskAddr art.object x.addr.hash == maskAddr art3.object y.addr.hash
-      | _, _ => false
-    expect a same "OS03-plain with `0 _n` written: not OS-03's object (up to the root's address)"
-  | .error e => expect a false s!"OS03-plain with `0 _n` written: {e.render}"
+  let pos := match compileInput {} { inpP with program := p' } with
+    | .ok _ => "compiled"
+    | .error e => if (e.message.splitOn "contract differs").length > 1 then s!"{e.stage.name}: {e.code}" else e.render
+  expectEq a pos "relevance: relevance-oracle" "OS03-plain with `0 _n` written in memory"
   -- a used parameter written erased: OS-01's `pick (_h : True) (n : Nat) := n + 1`, `n` erased
   let inp1 ← input "OS01-plain"
   let some root := inp1.program.roots.head? | throw (IO.userError "OS01-plain: no root")
@@ -337,8 +338,8 @@ def cx1 (a : Assert) (m : Family) : IO (Array String) := do
   let some p' := eraseParam inp1.program g 1 | throw (IO.userError "OS01-plain: pick is not a definition")
   let neg := match compileInput {} { inp1 with program := p' } with
     | .ok _ => "compiled"
-    | .error e => s!"{e.stage.name}: {e.code}"
-  expectEq a neg "relevance: relevance-C1" "OS01-plain with `0 n` written on a used n"
+    | .error e => if (e.message.splitOn "contract differs").length > 1 then s!"{e.stage.name}: {e.code}" else e.render
+  expectEq a neg "relevance: relevance-oracle" "OS01-plain with `0 n` written on a used n, in memory"
   -- OS16-plain (`build`, `revAcc`, `sumL`, `entry`): unannotated selects `.plainRc`,
   -- annotating list parameters/lets with `1` (linear), `!` (unique), and `~` / `let borrow` switches to `.zeroRc`
   let f16 ← fixtureOf m "OS16-plain"
@@ -390,8 +391,8 @@ def cx1 (a : Assert) (m : Family) : IO (Array String) := do
     "OS16 annotated: checkContractPlainMap refused"
   expect a (Own.Plain.selectRcPolicy annotatedFir16 == .zeroRc)
     "OS16 annotated: selectRcPolicy did not switch from .plainRc to .zeroRc"
-  return #["cx1: OS-03 compiles; the plain twin with `0 _n` written compiles to OS-03's object; \
-    a used `0 n` is rejected with relevance: relevance-C1; OS-16 switches from .plainRc to .zeroRc under 1/!/~ contracts"]
+  return #["cx1: OS-03 compiles; a plain twin with `0` written in memory (on an unused or a used \
+    parameter) is refused by the producer (relevance-oracle: not its bytes' reading); OS-16 switches from .plainRc to .zeroRc under 1/!/~ contracts"]
 
 def suite (a : Assert) (o : Options) (work : FilePath) : IO Unit := do
   IO.println "tests-own"

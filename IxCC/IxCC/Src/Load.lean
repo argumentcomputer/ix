@@ -1,6 +1,6 @@
 import IxCC.Src.Ingress
 import IxCC.Src.Table.Build
-import IxCC.Src.Relevance.Annotate
+import IxCC.Src.KernelFront.Annotate
 import IxCC.Src.Recheck
 import IxCC.Src.Admit
 import IxCC.Src.Semantics
@@ -8,31 +8,39 @@ import IxCC.Src.Readback
 
 /-! # Loading a Src program
 
-The front-end pipeline: Ixon v4 decoding and
-erased typing (no resource admission) → ingress → pinned identities →
-unfolding table → the table's revalidation → relevance annotation (an
-oracle) → installation → the relevance check → `Lazify` → `Admit`. A failure
-names its stage and code. The revalidation, installation, check and `Lazify`
-are the recheck path's steps (`Src.Recheck`). -/
+The front-end pipeline: Ixon v4 decoding → the certified kernel's acceptance
+of the whole role-bound environment (`KernelFront.accept`; no resource
+admission) → ingress → pinned identities from the kernel's admitted role
+table → the program read against the kernel's reading → unfolding table →
+the table's revalidation → relevance annotation (an oracle, by default the
+annotator over the kernel) → installation → the relevance check → `Lazify`
+→ `Admit`. A failure names its stage and code. The revalidation,
+installation, check and `Lazify` are the recheck path's steps
+(`Src.Recheck`). -/
 
 namespace IxCC.Src
 
 open IxCC.Ixon
 
 /-- The relevance oracle: any function may be supplied; the
-checker decides its output. -/
-abbrev RelOracle := V3.Env → Program → Except String Relevance.Ann
+checker decides its output. It is asked with what the kernel accepted. -/
+abbrev RelOracle := KernelFront.Kernel → Program → Except String Relevance.Ann
+
+/-- The default oracle: the relevance annotator over the kernel, with the
+check that the types the program reads are the kernel's. -/
+def kernelOracle : RelOracle := fun k p => k.annotateChecked p
 
 structure LoadConfig where
   table : Table.Config := {}
   admit : AdmitConfig := {}
-  /-- Run erased typing (`Tc.checkEnv`) over the whole closure. -/
-  typecheck : Bool := true
   deriving Inhabited
 
 /-- A loaded program with the evidence of each stage. -/
 structure Loaded where
   env : V3.Env
+  /-- What the certified kernel accepted, and the program keyed to its
+  reading. -/
+  kernel : KernelFront.Kernel
   hints : Hints
   program : Program
   ann : Relevance.Ann
@@ -65,16 +73,21 @@ private def stage (code : String) : Except String α → Except Diag α
   | .ok a => .ok a
   | .error e => .error (Diag.of code e)
 
-/-- Typing, ingress, pinned identities and the unfolding table. -/
+/-- The kernel's acceptance, ingress, the pinned identities of the kernel's
+admitted role table, the program read against the kernel's reading, and the
+unfolding table. -/
 def prepare (cfg : LoadConfig) (env : V3.Env) (hints : Hints) :
-    Except Diag (Program × Array Diag × Table.Stats) := do
-  if cfg.typecheck then stage "typing" (V3.Tc.checkEnv env)
-  let p ← stage "ingress" (Ingress.ofEnv env (hints.roots.map (·.1)))
+    Except Diag (Program × KernelFront.Kernel × Array Diag × Table.Stats) := do
+  let acc ← (KernelFront.accept env).mapError fun r => Diag.of "kernel" r.report
+  let p ← stage "ingress" (Ingress.readConsts env (hints.roots.map (·.1)))
+  let p := { p with known := { pins := KernelFront.pinsOfTable acc.table } }
   let p := { p with known := Pinned.known p, resource := hints.resource }
+  let rd ← stage "faithful" (KernelFront.Reading.build acc p)
+  let kernel : KernelFront.Kernel := { acc, rd, fe := Ix.Kernel.mkFEnv acc.env }
   let (table, tableDiags, tableStats) := Table.build cfg.table p hints.proposals
   let p := { p with table }
   stage "table-recheck" (Table.validate cfg.table p)
-  return (p, tableDiags, tableStats)
+  return (p, kernel, tableDiags, tableStats)
 
 /-- Installation, the relevance check (tiers S and C, then
 `Relevance.checkCanonical`), `Lazify` and `Admit`, for one annotation of a
@@ -98,16 +111,16 @@ def finish (cfg : LoadConfig) (hints : Hints) (p : Program) (ann : Relevance.Ann
 
 /-- The front-end pipeline from a decoded environment and parsed hints. -/
 def loadEnv (cfg : LoadConfig) (env : V3.Env) (hints : Hints)
-    (oracle : RelOracle := Relevance.annotate) : Except Diag Loaded := do
-  let (p, tableDiags, tableStats) ← prepare cfg env hints
-  let ann ← stage "relevance-oracle" (oracle env p)
+    (oracle : RelOracle := kernelOracle) : Except Diag Loaded := do
+  let (p, kernel, tableDiags, tableStats) ← prepare cfg env hints
+  let ann ← stage "relevance-oracle" (oracle kernel p)
   let (p, checked, admitted) ← finish cfg hints p ann
-  return { env, hints, program := p, ann, checked, admitted, tableDiags, tableStats }
+  return { env, kernel, hints, program := p, ann, checked, admitted, tableDiags, tableStats }
 
 /-- The front-end entry point: closure bytes and an `ixcc/k1-equations/1`
 sidecar. -/
 def load (bytes : ByteArray) (equations : Lean.Json) (cfg : LoadConfig := {})
-    (oracle : RelOracle := Relevance.annotate) : Except Diag Loaded := do
+    (oracle : RelOracle := kernelOracle) : Except Diag Loaded := do
   let env ← stage "decode" (V3.decodeAnonymousEnv bytes)
   let hints ← stage "hints" (Hints.ofK1Json equations)
   loadEnv cfg env hints oracle

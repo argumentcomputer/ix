@@ -7,7 +7,8 @@ import Std.Data.HashMap
 /-! # Src ingress
 
 Reads a decoded Ixon closure into the table-free `Src.Program` (the front end
-types the closure separately, `Recheck.ingress`; ingress itself runs no typing).
+accepts the closure by the certified kernel separately, `Recheck.ingress`; this
+conversion itself runs no typing).
 Share nodes expand through a per-constant cache, so the
 result is a DAG in memory. `ref` resolves through the constant's `refs` table
 and the program's address map, `recur` through the block's members, `nat`

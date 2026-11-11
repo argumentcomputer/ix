@@ -1,11 +1,10 @@
 import IxCC.Recheck.Run
 import IxCC.Ixon.V3.Env
-import IxCC.Ixon.V3.Tc.Driver
 import IxCC.Src.Ingress
 import IxCC.Src.Pinned
 import IxCC.Src.Hints
 import IxCC.Src.Table.Build
-import IxCC.Src.Relevance.Annotate
+import IxCC.Src.KernelFront.Annotate
 import IxCC.Src.Admit
 import IxCC.Xv.Alloc.Driver
 import IxCC.Xv.Stacking.Run
@@ -17,11 +16,16 @@ The untrusted half of the compiler (D17) and the whole compiler:
 
 * `ingress` (not on the recheck path): Ixon v4 decoding, the
   `ixcc/k1-equations/1` sidecar (the roots chosen by name, and the
-  table proposals), erased typing, ingress into a `Src.Program` and the
-  pinned identities;
+  table proposals), the certified kernel's acceptance of the whole
+  role-bound environment (`Src.KernelFront.accept`, the kernel's tiered
+  entry: not optional, and an unbound environment is refused), ingress
+  into a `Src.Program` with the pinned identities of the kernel's admitted
+  role table, and the program read against the kernel's reading
+  (`Src.KernelFront.Reading.build`);
 * `produce cfg input`: every search and oracle, natively and unconstrained
   (arrays, hash maps): `Table.build` on the sidecar's proposals, the
-  relevance annotator, `Admit` (a producer gate: a program outside the
+  relevance annotator over the kernel (`Src.KernelFront.Kernel.annotateChecked`),
+  `Admit` (a producer gate: a program outside the
   admitted fragment is declined here), the middle end's default oracles
   (`Anf.Pipeline.produce`), then the closures step as the replay runs it
   (`Recheck.closuresOf`: the roots' entries and P8, a deterministic step that
@@ -37,8 +41,9 @@ open IxCC.Ixon
 open IxCC.Src (CId)
 
 /-- Ingress's output: the program `run` starts from, and what `produce`
-also reads (the decoded environment for the annotator; the sidecar for the
-table proposals and the roots' names). -/
+also reads (the decoded environment; the kernel's acceptance and reading, which
+the annotator asks; the sidecar for the table proposals and the roots'
+names). -/
 structure Input where
   env : V3.Env
   hints : Src.Hints
@@ -46,6 +51,9 @@ structure Input where
   /-- The roots' names, by root position (the sidecar's; `root<i>` where
   it has none). -/
   names : List String
+  /-- What the certified kernel accepted, and the program keyed to its
+  reading. -/
+  kernel : Src.KernelFront.Kernel
 
 /-- The sidecar roots named `names`, in that order (every root when `names`
 is empty); an unknown or repeated name is an error. -/
@@ -63,24 +71,32 @@ def selectRoots (roots : Array (Ixon.Address × Option String)) (names : List St
       throw { stage := .cli, code := "cli.root", message := s!"no root named {n} in the sidecar (it names {known})" }
   return out
 
-/-- Ingress: decode, choose the roots, erased typing (unless `typecheck` is
-off), `Src` ingress and the pinned identities. -/
-def ingress (bytes : ByteArray) (equations : Lean.Json) (roots : List String := [])
-    (typecheck : Bool := true) : Except Err Input := do
+/-- **Ingress**: decode, choose the roots, the certified kernel's acceptance
+of the whole environment (refused with the kernel's reason and classification,
+code `kernel`; only role-bound environments are accepted), IxCC's reading into
+the table-free `Src.Program` for the chosen roots with the pinned identities of
+the kernel's admitted role table (`pinsOfTable`), the resource binding, and the
+program read against the kernel's reading (`Reading.build`, code
+`faithful`). -/
+def ingress (bytes : ByteArray) (equations : Lean.Json) (roots : List String := []) :
+    Except Err Input := do
   let env ← (V3.decodeAnonymousEnv bytes).mapError fun m => { stage := .ingress, code := "decode", message := m }
   let hints ← (Src.Hints.ofK1Json equations).mapError fun m => { stage := .ingress, code := "hints", message := m }
   let chosen ← selectRoots hints.roots roots
   if chosen.isEmpty then
     throw { stage := .ingress, code := "roots", message := "the sidecar names no root" }
   let hints := { hints with roots := chosen }
-  if typecheck then
-    (V3.Tc.checkEnv env).mapError fun m => { stage := .ingress, code := "typing", message := m }
-  let p ← (Src.Ingress.ofEnv env (chosen.map (·.1))).mapError fun m =>
+  let acc ← (Src.KernelFront.accept env).mapError fun r =>
+    { stage := .ingress, code := "kernel", message := r.report }
+  let p ← (Src.Ingress.readConsts env (chosen.map (·.1))).mapError fun m =>
     { stage := .ingress, code := "ingress", message := m }
+  let p := { p with known := { pins := Src.KernelFront.pinsOfTable acc.table } }
   let p := { p with known := Src.Pinned.known p, resource := hints.resource }
   (Src.Resource.validate p).mapError fun m => { stage := .ingress, code := "resource-binding", message := m }
+  let rd ← (Src.KernelFront.Reading.build acc p).mapError fun m =>
+    { stage := .ingress, code := "faithful", message := m }
   let names := chosen.toList.zipIdx.map fun ((_, n), i) => n.getD s!"root{i}"
-  pure { env, hints, program := p, names }
+  pure { env, hints, program := p, names, kernel := { acc, rd, fe := Ix.Kernel.mkFEnv acc.env } }
 
 /-- What `produce` found beside the certificate, for reports. -/
 structure Produced where
@@ -120,7 +136,7 @@ def produceSource (cfg : Config) (inp : Input) : Except Err ProducedSource := do
   let (table, tableDiags, tableStats) := Src.Table.build cfg.table P inp.hints.proposals
   let p0 := { P with table }
   (Src.Table.validate cfg.table p0).mapError fun m => { stage := .table, code := "table.entry", message := m }
-  let ann ← (Src.Relevance.annotate inp.env p0).mapError fun m =>
+  let ann ← (inp.kernel.annotateChecked p0).mapError fun m =>
     { stage := .relevance, code := "relevance-oracle", message := m }
   let (src, checked) ← match Src.Recheck.annotation p0 ann with
     | .ok r => pure r
@@ -157,16 +173,17 @@ def produceWith (cfg : Config) (inp : Input) : Except Err Produced := do
                    alloc := r.outs, frames := layouts, order }
          tableDiags, tableStats, fires := trace.fires, stages, alloc := r.outcomes }
 
-/-- Verify that `rel` is the exact canonical relevance annotation produced by
-`Src.Relevance.annotate` on the theorem-validated table built from `tableCert`
-(independent of `inp.hints`). The comparison is `Ann.eqb`, which runs in constant
-stack however long the annotation's lists are. -/
+/-- **Stage A**: `rel` is exactly the annotation the relevance annotator over
+the kernel (`Src.KernelFront.Kernel.annotateChecked`) gives on the
+theorem-validated table built from `tableCert` (independent of `inp.hints`).
+The comparison is `Ann.eqb`, which runs in constant stack however long the
+annotation's lists are. -/
 def checkCanonicalRelevance (cfg : Config) (inp : Input)
     (tableCert : Src.Table.TableCert) (rel : Src.Relevance.Ann) : Bool :=
   match Src.Table.ofCert cfg.table inp.program tableCert with
   | .error _ => false
   | .ok table =>
-    match Src.Relevance.annotate inp.env { inp.program with table } with
+    match inp.kernel.annotateChecked { inp.program with table } with
     | .ok ann => ann.eqb rel
     | .error _ => false
 
@@ -175,14 +192,14 @@ theorem checkCanonicalRelevance_iff (cfg : Config) (inp : Input)
     checkCanonicalRelevance cfg inp tableCert rel = true ↔
       ∃ table,
         Src.Table.ofCert cfg.table inp.program tableCert = .ok table ∧
-        Src.Relevance.annotate inp.env { inp.program with table } = .ok rel := by
+        inp.kernel.annotateChecked { inp.program with table } = .ok rel := by
   unfold checkCanonicalRelevance
   cases htab : Src.Table.ofCert cfg.table inp.program tableCert with
   | error _ =>
     simp
   | ok table =>
     simp only [Except.ok.injEq, exists_eq_left']
-    cases hann : Src.Relevance.annotate inp.env { inp.program with table } with
+    cases hann : inp.kernel.annotateChecked { inp.program with table } with
     | error _ => simp
     | ok ann =>
       simp only [Src.Relevance.Ann.eqb_iff, Except.ok.injEq]
@@ -219,8 +236,8 @@ def compileInputRetry (cfg : Config) (inp : Input) : Except Err (Cert × Artifac
     compileInput (if retry then cfg else cfg.noRetry) inp
 
 /-- The compiler: ingress, `produce`, `run`. -/
-def compile (cfg : Config) (bytes : ByteArray) (equations : Lean.Json) (roots : List String := [])
-    (typecheck : Bool := true) : Except Err (Cert × Artifact) := do
-  compileInput cfg (← ingress bytes equations roots typecheck)
+def compile (cfg : Config) (bytes : ByteArray) (equations : Lean.Json) (roots : List String := []) :
+    Except Err (Cert × Artifact) := do
+  compileInput cfg (← ingress bytes equations roots)
 
 end IxCC.Recheck

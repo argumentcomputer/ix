@@ -5,13 +5,13 @@ import IxCCTests.Src.Bench
 /-! # `src-steps`: SrcEval step counts
 
 ```text
-src-steps CLOSURE.ixe --equations EQ.json --root NAME [--no-typecheck] [--clock K] ARG...
-src-steps --manifest CORPUS.json [--no-typecheck] [--clock K]
-src-steps --manifests [--no-typecheck] [--clock K]
+src-steps CLOSURE.ixe --equations EQ.json --root NAME [--clock K] ARG...
+src-steps --manifest CORPUS.json [--clock K]
+src-steps --manifests [--clock K]
 ```
 
-The first form runs `ixcc`'s front end on the closure (ingress with erased
-typing unless `--no-typecheck`, then the producer's front half), runs root
+The first form runs `ixcc`'s front end on the closure (ingress with the certified
+kernel's acceptance, then the producer's front half), runs root
 `NAME` on the `Nat` arguments under SrcEval at clock `K` (default 2,000,000; the clock bounds the nesting depth of
 charged steps, so a deeper run, such as a boundary case that never returns,
 reports a timeout), and
@@ -46,7 +46,6 @@ structure Options where
   roots : List String := []
   manifests : List String := []
   allManifests : Bool := false
-  typecheck : Bool := true
   clock : Nat := 2000000
   args : List Nat := []
 
@@ -55,9 +54,9 @@ run goes (the default clock bounds that depth). -/
 def stackKb : Nat := 16 * 1024 * 1024
 
 def usage : String :=
-  "usage: src-steps CLOSURE.ixe --equations EQ.json --root NAME [--no-typecheck] [--clock K] ARG...\n" ++
-  "       src-steps --manifest CORPUS.json [--no-typecheck] [--clock K]\n" ++
-  "       src-steps --manifests [--no-typecheck] [--clock K]"
+  "usage: src-steps CLOSURE.ixe --equations EQ.json --root NAME [--clock K] ARG...\n" ++
+  "       src-steps --manifest CORPUS.json [--clock K]\n" ++
+  "       src-steps --manifests [--clock K]"
 
 def parse : Options → List String → Except String Options
   | o, [] => .ok o
@@ -65,7 +64,6 @@ def parse : Options → List String → Except String Options
   | o, "--root" :: n :: rest => parse { o with roots := o.roots ++ [n] } rest
   | o, "--manifest" :: f :: rest => parse { o with manifests := o.manifests ++ [f] } rest
   | o, "--manifests" :: rest => parse { o with allManifests := true } rest
-  | o, "--no-typecheck" :: rest => parse { o with typecheck := false } rest
   | o, "--clock" :: k :: rest =>
     match k.toNat? with
     | some k => parse { o with clock := k } rest
@@ -99,10 +97,10 @@ def skippedJson (closure root : String) (args : List Nat) (why : String) : Lean.
 /-- One line per case of root `name` (ingested with `together`): a measured
 run, or the decline. Returns whether every counted run agreed with `Src.run`. -/
 def runRoot (closure : FilePath) (equations : FilePath) (label name : String) (together : List String)
-    (cases : List (List Nat)) (typecheck : Bool) (clock : Nat) : IO (Bool × Bool) := do
+    (cases : List (List Nat)) (clock : Nat) : IO (Bool × Bool) := do
   let bytes ← IO.FS.readBinFile closure
   let json ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile equations))
-  match ← IO.lazyPure fun _ => front bytes json (name :: together) typecheck with
+  match ← IO.lazyPure fun _ => front bytes json (name :: together) with
   | .error e =>
     emit (declinedJson label name e)
     return (true, false)
@@ -117,7 +115,7 @@ def runRoot (closure : FilePath) (equations : FilePath) (label name : String) (t
         IO.eprintln s!"src-steps: {label} {name} {args}: {msg}"
     return (agreed, true)
 
-def runManifest (path : String) (typecheck : Bool) (clock : Nat) : IO Bool := do
+def runManifest (path : String) (clock : Nat) : IO Bool := do
   let m ← Family.read path
   let dir : FilePath := m.directory
   let mut ok := true
@@ -128,7 +126,7 @@ def runManifest (path : String) (typecheck : Bool) (clock : Nat) : IO Bool := do
         if let some why := skipReason r c then emit (skippedJson label r.name c.args why)
       let run := r.cases.filter fun c => (skipReason r c).isNone
       let (agreed, _) ← runRoot (dir / f.closure.path) (dir / f.equations.path)
-        label r.name r.together (run.map (·.args)) typecheck clock
+        label r.name r.together (run.map (·.args)) clock
       ok := ok && agreed
   return ok
 
@@ -148,11 +146,11 @@ def main (args : List String) : IO UInt32 := do
     if o.allManifests || !o.manifests.isEmpty then
       let paths := if o.allManifests then families.map (·.toString) else o.manifests
       let mut ok := true
-      for p in paths do ok := ok && (← runManifest p o.typecheck o.clock)
+      for p in paths do ok := ok && (← runManifest p o.clock)
       return if ok then 0 else 1
     match o.closure, o.equations, o.roots with
     | some c, some e, [r] =>
-      let (agreed, ran) ← runRoot c e c r [] [o.args] o.typecheck o.clock
+      let (agreed, ran) ← runRoot c e c r [] [o.args] o.clock
       return if !ran then 1 else if agreed then 0 else 1
     | _, _, _ =>
       IO.eprintln s!"src-steps: a closure, --equations and exactly one --root are required\n{usage}"

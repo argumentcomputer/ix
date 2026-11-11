@@ -209,7 +209,7 @@ def allocStats (cfg : Config) (P : Src.Program) (cert : Recheck.Cert) : Stats :=
 /-- One program: its honest certificate's middle end, measured (none if the
 compiler declines it before the middle end, as the corpus expects of some). -/
 def program (bytes : ByteArray) (json : Lean.Json) (roots : List String) : IO (Option Stats) := do
-  match ingress bytes json roots (typecheck := false) with
+  match ingress bytes json roots with
   | .error _ => return none
   | .ok inp =>
     let P := inp.program
@@ -237,15 +237,17 @@ def program (bytes : ByteArray) (json : Lean.Json) (roots : List String) : IO (O
 def file (path : FilePath) (equations : FilePath) (roots : List String := []) : IO (Option Stats) := do
   program (← IO.FS.readBinFile path) (← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile equations))) roots
 
-/-- The committed closures outside the corpus families, with all their roots. -/
+/-- The committed closures outside the corpus families, with all their roots:
+the role-bound ones ingress accepts (not `src-diag`'s `sorry.ixe`, which the
+kernel declines whole, nor the dated unbound records under
+`fixtures/ownership/historical`, which it refuses as unbound). -/
 def extraFixtures : IO (List (FilePath × FilePath)) := do
   let mut out : List (FilePath × FilePath) := [
     ("fixtures/ixon-v4/k1/k1.ixe", "fixtures/ixon-v4/k1/equations.json"),
     ("fixtures/ixon-v4/src-sortpoly/sortpoly.ixe", "fixtures/ixon-v4/src-sortpoly/sortpoly.equations.json"),
     ("fixtures/ixon-v4/src-diag/diag.ixe", "fixtures/ixon-v4/src-diag/diag.equations.json"),
-    ("fixtures/ixon-v4/src-diag/sorry.ixe", "fixtures/ixon-v4/src-diag/sorry.equations.json"),
     ("fixtures/rc/real-source/anonymous.ixe", "fixtures/rc/real-source/consumer.equations.json")]
-  for dir in ["fixtures/ownership", "fixtures/ownership/historical/annotated-recursion-cb68"] do
+  for dir in ["fixtures/ownership"] do
     let entries ← (dir : FilePath).readDir
     for e in entries.qsort (fun a b => a.fileName < b.fileName) do
       if e.fileName.endsWith ".ixe" then

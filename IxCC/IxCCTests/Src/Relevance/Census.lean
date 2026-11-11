@@ -1,4 +1,5 @@
 import IxCCTests.Src.Support
+import IxCC.Src.Relevance.Annotate
 import IxCC.Tools.Check
 
 /-! The relevance census on `k1.ixe`: annotate and

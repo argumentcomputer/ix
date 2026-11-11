@@ -89,13 +89,38 @@ def Stage.word : Stage → String
   | .envelope => "envelope" | .bytes => "bytes" | .binding => "binding"
   | .coverage => "coverage" | .prelude => "prelude" | .read => "read" | .kernel => "kernel"
 
+/-- The kernel's two declines of policy, not of typing: the artifact uses
+`sorryAx` (the kernel installs nothing for it), or holds an axiom other than
+`propext`, `Classical.choice` and `Quot.sound`. Both are the kernel's
+`CheckError.notImplemented`, which has no constructor of its own for either,
+so they are told apart by the leading prose part of its structured message
+(`MsgPart.text`), not by the rendered line. -/
+inductive PolicyDecline where
+  | sorryAx
+  | nonStandardAxiom
+  deriving Repr, BEq, Inhabited
+
+/-- The policy decline a kernel failure is, if it is one. -/
+def policyOf : Ix.Kernel.CheckError .anon → Option PolicyDecline
+  | .notImplemented (.text s _ :: _) =>
+    if s.startsWith "use of the sorryAx axiom" then some .sorryAx
+    else if s.startsWith "non-standard axiom" then some .nonStandardAxiom
+    else none
+  | _ => none
+
 /-- A refusal, with the kernel's own classification where it gave one
 (`Ix.Kernel.Admission.TierError.outcome`: a reject where the input is shown
-wrong, a decline otherwise). -/
+wrong, a decline otherwise), and the record it names where the kernel's error
+names one by address or by its position among the records (for the census;
+an error at a declaration of the logical fold names a declaration, not a
+record). -/
 structure Refusal where
   stage : Stage
   outcome : Option Ix.Kernel.Admission.Outcome := none
   message : String
+  record : Option KAddr := none
+  /-- The kernel's policy decline, if the refusal is one (`policyOf`). -/
+  policy : Option PolicyDecline := none
   deriving Inhabited
 
 def Refusal.render (r : Refusal) : String :=
@@ -104,6 +129,26 @@ def Refusal.render (r : Refusal) : String :=
     | some .declined => " (declined)"
     | none => ""
   s!"kernel front end, {r.stage.word}{o}: {r.message}"
+
+/-- A plain-words line for the kernel's two policy declines, which `ixcc` prints
+after the kernel's own line. -/
+def PolicyDecline.explain : PolicyDecline → String
+  | .sorryAx =>
+    "the artifact holds a use of `sorry` (`sorryAx`) somewhere among its records; the certified \
+    kernel accepts an artifact only whole, so every root of it is refused, reached or not \
+    (IxCC/docs/compile-boundary.md, \"What ingress refuses, and how\")"
+  | .nonStandardAxiom =>
+    "the artifact holds an axiom other than `propext`, `Classical.choice` and `Quot.sound` \
+    somewhere among its records; the certified kernel accepts an artifact only whole, so \
+    every root of it is refused, reached or not (IxCC/docs/compile-boundary.md, \"What \
+    ingress refuses, and how\")"
+
+/-- The refusal as ingress reports it: the kernel's line, and for a policy
+decline one more line in plain words (`PolicyDecline.explain`). -/
+def Refusal.report (r : Refusal) : String :=
+  match r.policy with
+  | some p => r.render ++ "\n" ++ p.explain
+  | none => r.render
 
 instance : ToString Refusal := ⟨Refusal.render⟩
 
@@ -115,7 +160,13 @@ def Refusal.ofError (e : Ix.Kernel.Admission.Error) : Refusal :=
     | .prelude _ | .preludeCopy => .prelude
     | .read .. => .read
     | .kernel .. | .axiomRoleUnbound _ => .kernel
-  { stage, outcome := some e.outcome, message := toString e }
+  let record : Option KAddr := match e with
+    | .duplicate _ _ a | .mismatch _ _ a | .decode _ a _ => some a
+    | _ => none
+  let policy : Option PolicyDecline := match e with
+    | .kernel ce _ => policyOf ce
+    | _ => none
+  { stage, outcome := some e.outcome, message := toString e, record, policy }
 
 /-- A tiered entry's failure as a refusal, a record position read back to the
 record's address. -/
@@ -126,9 +177,11 @@ def Refusal.ofTierError (records : Ix.Kernel.Admission.Records)
     | none => ""
   match e with
   | .entry e' => { Refusal.ofError e' with outcome := some e.outcome }
-  | .fence .. => { stage := .kernel, outcome := some e.outcome, message := toString e }
-  | .read i _ => { stage := .read, outcome := some e.outcome, message := toString e ++ at_ i }
-  | .tier _ i => { stage := .kernel, outcome := some e.outcome, message := toString e ++ at_ i }
+  | .fence a _ => { stage := .kernel, outcome := some e.outcome, message := toString e, record := some a }
+  | .read i _ => { stage := .read, outcome := some e.outcome, message := toString e ++ at_ i,
+                   record := records[i]?.map (·.1) }
+  | .tier ce i => { stage := .kernel, outcome := some e.outcome, message := toString e ++ at_ i,
+                     record := records[i]?.map (·.1), policy := policyOf ce }
 
 /-- The closure's records and blobs by address, sorted, in the kernel's types. -/
 def recordsOf (env : Ixon.V3.Env) : Array (KAddr × ByteArray) :=

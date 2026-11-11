@@ -50,13 +50,16 @@ def run (a : Assert) : IO Unit := do
 
 /-- The ix-compiled diagnostics fixtures (`fixtures/ixon-v4/src-diag/`: the root
 that uses `sorry` in `sorry.ixe`, the other five in `diag.ixe`): each root,
-loaded alone, gets its expected outcome through the whole pipeline. -/
+loaded alone, gets its expected outcome through the whole pipeline. The
+certified kernel declines `sorry.ixe` whole at the loader's first stage
+(`kernel`): it installs nothing for `sorryAx`, so the first record using it
+declines. -/
 def ixFixture (a : Assert) : IO (Array String) := do
   let dir := fixtures / "src-diag"
   let mut out := #[]
   for (stem, name, expected) in [("diag", "SrcDiag.rootPartial", "opaque"),
       ("diag", "SrcDiag.rootMixHash", "opaque"), ("diag", "SrcDiag.rootFloat", ""),
-      ("diag", "SrcDiag.rootClassical", "relevant-axiom"), ("sorry", "SrcDiag.rootSorry", "relevant-axiom"),
+      ("diag", "SrcDiag.rootClassical", "relevant-axiom"), ("sorry", "SrcDiag.rootSorry", "kernel"),
       ("diag", "SrcDiag.rootOpaqueId", "")] do
     let bytes ← IO.FS.readBinFile (dir / s!"{stem}.ixe")
     let json ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile (dir / s!"{stem}.equations.json")))
@@ -64,9 +67,13 @@ def ixFixture (a : Assert) : IO (Array String) := do
     let env ← IO.ofExcept (IxCC.Ixon.V3.decodeAnonymousEnv bytes)
     let roots := hints.roots.filter (·.2 == some name)
     expect a (roots.size == 1) s!"diag: root {name} recorded"
-    match loadEnv { typecheck := false } env { hints with roots } with
+    match loadEnv {} env { hints with roots } with
     | .error d =>
       expect a (d.code == expected) s!"diag: {name} gave {d.code}, expected {expected}: {d.message}"
+      -- the kernel declines the whole artifact holding `sorryAx`, reached or not
+      if expected == "kernel" then
+        expect a ((d.message.splitOn "(declined)").length > 1 && (d.message.splitOn "sorryAx").length > 1)
+          s!"diag: {name}: the kernel did not decline the artifact for sorryAx: {d.message}"
       out := out.push s!"{name}: {d.code} ({d.message.take 120})"
     | .ok l =>
       let kinds := l.admitted.reached.toList.map fun c =>

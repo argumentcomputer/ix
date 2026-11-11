@@ -504,7 +504,7 @@ import IxCC.Aiur
 import IxCC.CompileClaim
 import IxCC.Ring0
 import IxCC.Exe
-import IxCC.Src.KernelFront.Front
+import IxCC.Src.KernelFront.Annotate
 import IxCC.Src.KernelFront.Proof
 
 /-! Production API: Ixon v3 ingress, the shared semantic vocabulary, the Src

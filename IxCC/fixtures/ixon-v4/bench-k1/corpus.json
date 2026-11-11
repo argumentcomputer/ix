@@ -99,7 +99,7 @@
       "named_env_sha256": "d9bdc16f232427cc97b7323d6b08ba3c7d78288d19aa169164fbb1bf19447949",
       "census": {
         "path": "fib.census.json",
-        "sha256": "8045c7829daa1080ff0e2a7ba0c67f769fbcaca654745ccf671ea97cab6ae403"
+        "sha256": "985ee0fb0dbfd9931ef3b3cb93d77838ef92fdee97577263fd18cbc9fc154eff"
       },
       "roots": [
         {
@@ -217,7 +217,7 @@
       "named_env_sha256": "db8364920b721454e70379938e49b53c0e3b21865c8e0ae78e51923a4b83ec23",
       "census": {
         "path": "sum-loop.census.json",
-        "sha256": "e35088f83f497686c2019efa632a1e4ef23b24579e9512cc7c19c9f628f4d540"
+        "sha256": "2bb704928227d69c19886982dddd2d465b770df29c2b2120c33d860ac8c87abc"
       },
       "roots": [
         {
@@ -335,7 +335,7 @@
       "named_env_sha256": "8832f7fb63ce79a13a3dbc837625dcf7bb4c30a2fd12643d74b08636725ff47a",
       "census": {
         "path": "ackermann.census.json",
-        "sha256": "29a30c3ccd0a9b1a4361a8e29d4f52365e7873443bb168f84c300b5cda1d4577"
+        "sha256": "e898e7d00f0f2ceb890e76dd01475acb7e4728c3229f2ba63d5abf9757865eb2"
       },
       "roots": [
         {
@@ -490,7 +490,7 @@
       "named_env_sha256": "d4d91d128fb7795305a4dd41610dc3a48b96e7031ed0859869803d335e045aeb",
       "census": {
         "path": "tak.census.json",
-        "sha256": "40f04d3881e5cfb9a0ed6ba7a3941e2cdf1f84f8074bd1e5c6d9feea9b27b86a"
+        "sha256": "db61f17a10861b2c93f98c1bf656c2193c3c044bf50e368c9a3a66bb0adcf3f6"
       },
       "roots": [
         {
@@ -634,7 +634,7 @@
       "named_env_sha256": "e89378fba8a26ba8947e4e64229d22698b5b00d0bbed6d21b57354e3d5db85e9",
       "census": {
         "path": "gcd.census.json",
-        "sha256": "bc38ce43a9f3ae2bd02fe45db88a2e32eecfe39972712b70d0aab7f1ecdad14f"
+        "sha256": "89870a81111305aaa22c703c3312e006f07ece7468c7dd6f4fd76f1a66400408"
       },
       "roots": [
         {
@@ -787,7 +787,7 @@
       "named_env_sha256": "9e0f186415d23ea8470a29cb0febc1a42e8d7d1250c9d0e6d7f86b7ad93ef8a4",
       "census": {
         "path": "collatz.census.json",
-        "sha256": "fa258c28b35664a683b210d69701c25cc26e93da5004c2281ab2dbd4db875522"
+        "sha256": "7aedde63f6a39599ebabfc37bcbffe2e4351b35b26434b6498ca0f5e0058d95f"
       },
       "roots": [
         {
@@ -888,7 +888,7 @@
       "named_env_sha256": "32d9a569634f8188d9dd3818c0fad70013c6892516a22afbf0e173827f809b77",
       "census": {
         "path": "prime-count.census.json",
-        "sha256": "75a8fdaffbc02592e4b0d14865a3c2c758d301a5cac8c6ef3219159cf9ced037"
+        "sha256": "b52e7fdd6a8f01208222b07c74287ef027c53722cfdcd4085a8ee7175edc925b"
       },
       "roots": [
         {
@@ -985,7 +985,7 @@
       "named_env_sha256": "e04d85b6cb28ab00e33ff1ae38cda105f0c66111cdddcdec4351a7984ebed374",
       "census": {
         "path": "even-odd.census.json",
-        "sha256": "f9c25310e0d30d86c8d064903b4aa12e8035bcff11c7907949f91393b8359a8f"
+        "sha256": "65c97f34ac8a25be4f313d4012f01157b52eae2894b5a6a50cc8e54bfaaae592"
       },
       "roots": [
         {
@@ -1089,7 +1089,7 @@
       "named_env_sha256": "496b556f26b8bd4fce091cc40f79cdd92265283d666fdf73aa5bdcef7af6e702",
       "census": {
         "path": "sfib.census.json",
-        "sha256": "46e526d61b6600b76f496129594e87cddd5cba62d1db5fd8287677c147674bba"
+        "sha256": "a38ff92c9e5feb4b5ba1d656a46e63f33825879888471e8327085802aac9a455"
       },
       "roots": [
         {

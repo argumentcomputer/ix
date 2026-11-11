@@ -87,12 +87,12 @@ required suite.
 ## The tool
 
 ```text
-src-steps CLOSURE.ixe --equations EQ.json --root NAME [--no-typecheck] [--clock K] ARG...
-src-steps --manifest CORPUS.json [--no-typecheck] [--clock K]
-src-steps --manifests [--no-typecheck] [--clock K]
+src-steps CLOSURE.ixe --equations EQ.json --root NAME [--clock K] ARG...
+src-steps --manifest CORPUS.json [--clock K]
+src-steps --manifests [--clock K]
 ```
 
-It runs `ixcc`'s front end (ingress, erased typing unless `--no-typecheck`,
+It runs `ixcc`'s front end (ingress with the certified kernel's acceptance,
 the unfolding table, the relevance annotation, `Lazify` and admission), then
 the root on the arguments, and prints one JSON object (`ixcc/src-steps/1`) per
 run: the closure, root, arguments and clock; the outcome, with an `ok` value

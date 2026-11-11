@@ -521,7 +521,7 @@ reuse sessions' 114,820); then the C drivers went.
   real-source RC fixture on the plain-RC route, `gcd` on the zero-RC route
   (`--rc auto`), and in one object each the ABI family's eighteen roots of
   arities 0 to 5, the scalar family's twenty-three and the boundary family's,
-  all read without their erased typing; it links each with the system linker
+  each read through the certified kernel's acceptance; it links each with the system linker
   into a static executable with no C library, entered at `cx_init` and never
   run: every global function of the object is required to be defined, and
   `readelf` finds each in the linked file at the linked text's address plus its

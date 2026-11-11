@@ -45,7 +45,8 @@ frame theorems (`multi_sip_frame`, `pairwiseDisjointSips_frame`) live in
      observable root signatures) AND checks `sip.driver.checkCanonical textSize`
      so `sip.driver.CanonicalOk textSize` is verified executable data, never an
      unverified external hypothesis.
-   - `Ring0Sip.verifyBytes` defaults to `typecheck := true` (`Ixon.V3.Tc.checkEnv`).
+   - `Ring0Sip.verifyBytes` runs `Recheck.ingress`, so the certified kernel's acceptance of
+     the whole role-bound environment (not optional), and Stage A over the kernel's annotator.
 
 3. **Hardware Assumptions Outside the Byte Model**:
    - The `X86.ByteEval` / `X86.ObjectEval` model represents user-visible registers
@@ -458,11 +459,10 @@ def verifyProgram (sip : Ring0Sip) (P : Src.Program) : Bool :=
 
 /-- Verify a `Ring0Sip`'s compilation claim and canonical driver contract from
 raw `.ixe` environment bytes and sidecar equations JSON.
-Defaults `typecheck := true` and enforces canonical relevance (`Stage A`). -/
-def verifyBytes (sip : Ring0Sip) (envBytes : ByteArray) (equations : Lean.Json)
-    (typecheck : Bool := true) : Bool :=
+Ingress runs the kernel's acceptance; Stage A enforces canonical relevance. -/
+def verifyBytes (sip : Ring0Sip) (envBytes : ByteArray) (equations : Lean.Json) : Bool :=
   match Recheck.ingress envBytes equations
-      (CompileClaim.selectTargetRoots sip.cfg equations sip.claim.target) typecheck with
+      (CompileClaim.selectTargetRoots sip.cfg equations sip.claim.target) with
   | .error _ => false
   | .ok input =>
     (input.env.root == sip.claim.env && input.env.bindingAddress == sip.claim.roleTable) &&

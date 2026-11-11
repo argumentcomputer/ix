@@ -51,7 +51,7 @@ def fallback (a : Assert) (stages : Stages) : IO (Array String) := do
   let json ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile (fixtures / "k1/equations.json")))
   let hints ← IO.ofExcept (Hints.ofK1Json json)
   let env ← IO.ofExcept (IxCC.Ixon.V3.decodeAnonymousEnv bytes)
-  let l ← match loadEnv { typecheck := false } env { hints with proposals := #[] } with
+  let l ← match loadEnv {} env { hints with proposals := #[] } with
     | .ok l => pure l
     | .error d => throw (IO.userError s!"fallback load: {d}")
   let e ← eraseLoaded l
@@ -83,7 +83,7 @@ def sortpoly (a : Assert) (stages : Stages) : IO (Array String) := do
   for root in hints.roots do
     let name := root.2.getD "?"
     if name == IxCCTests.Src.SortPoly.typeRoot then continue
-    let l ← match loadEnv { typecheck := false } env { hints with roots := #[root] } with
+    let l ← match loadEnv {} env { hints with roots := #[root] } with
       | .ok l => pure l
       | .error d => throw (IO.userError s!"src-sortpoly {name}: {d}")
     let e ← eraseLoaded l

@@ -1,31 +1,29 @@
-import IxCC.Src.KernelFront.Front
+import IxCC.Recheck.Produce
 import IxCC.Ixon.V3.Tc.Driver
+import IxCC.Src.Relevance.Annotate
 import IxCC.Recheck.Json
 
-/-! # The two front ends, side by side
+/-! # The front end over the kernel, against the erased checker's parts
 
-For one closure and its sidecar: the front end over IxCC's erased type checker
-(`Recheck.ingress` with typing, `Recheck.produce`) and the front end over the
-certified kernel (`Src.KernelFront.ingress`, `Src.KernelFront.produce`), each
-followed by `Recheck.run`, compared:
+Since the switch the front end over the certified kernel is the only one
+(`Recheck.ingress`: the kernel's acceptance; `Recheck.produce`: its annotator;
+`Recheck.checkCanonicalRelevance`: Stage A over it). Until the erased checker
+and the earlier annotator are deleted, this compares, for one closure and its
+sidecar, what each of them would have decided:
 
 * **acceptance**: the erased checker's `Tc.checkEnv` against the kernel's
   acceptance (`KernelFront.accept`), each with its reason;
-* **the program**: both are `Src.Ingress.readConsts` of the same decoded
-  environment for the same roots, so their constants, declarations and terms
-  are the same by construction; what is compared is what each front end adds:
-  the pins (IxCC's binding decoder against the kernel's admitted table), their
-  resolution, the roots and the resource context, and every constant's
-  identity;
-* **the annotation**: per root, the two annotators' outputs, exactly, and up
-  to the order of the parameters in a zero condition (the one representation
-  choice a level's form can move);
-* **downstream**: the certificate each producer makes (its JSON text) and the
-  object `Recheck.run` makes from it, byte for byte, and the kernel front end's
-  Stage A on its own certificate.
+* **the program**: the earlier reading (`Src.Ingress.ofEnv`, its pins from
+  IxCC's binding decoder) against ingress's (`Src.Ingress.readConsts` with the
+  pins of the kernel's admitted table): the pins, their resolution, the roots,
+  the resource context and every constant's identity;
+* **the annotation**: per root, the earlier annotator's output
+  (`Src.Relevance.annotate`) against the kernel annotator's, exactly, and up to
+  the order of the parameters in a zero condition;
+* **downstream**: the root produced, Stage A on its own certificate, and
+  `Recheck.run`'s object.
 
 Times are wall-clock milliseconds of each phase in this process. -/
-
 namespace IxCCTests.KernelFront
 
 open IxCC IxCC.Src
@@ -81,7 +79,7 @@ def annDiffs (size : Nat) (old new : Ann) (limit : Nat := 12) : Array String := 
         {(to[i]?.map tagStr).getD "-"} / {(tn[i]?.map tagStr).getD "-"}"
   return out
 
-/-- What one root compiled to on one front end. -/
+/-- What one root compiled to. -/
 structure RootRun where
   ann : Option Ann := none
   cert : Option String := none
@@ -100,37 +98,32 @@ def restrict (inp : Recheck.Input) (i : Nat) : Recheck.Input :=
     program := { inp.program with roots := (inp.program.roots[i]?).toList }
     names := (inp.names[i]?).toList }
 
-def runOld (cfg : Recheck.Config) (inp : Recheck.Input) : IO RootRun := do
+/-- The producer, Stage A on its certificate, and `Recheck.run`. -/
+def runNew (cfg : Recheck.Config) (inp : Recheck.Input) : IO RootRun := do
   let t0 ← IO.monoMsNow
   match ← IO.lazyPure fun _ => Recheck.produceWith cfg inp with
   | .error e => return { error := some e.render, produceMs := ← ms t0 }
   | .ok pr =>
     let produceMs ← ms t0
+    let stageA ← IO.lazyPure fun _ => Recheck.checkCanonicalRelevance cfg inp pr.cert.table pr.cert.relevance
     let t1 ← IO.monoMsNow
     match ← IO.lazyPure fun _ => IxCC.Recheck.run cfg inp.program pr.cert with
-    | .error e => return { ann := some pr.cert.relevance, cert := some pr.cert.toText,
-                           error := some e.render, produceMs, runMs := ← ms t1 }
-    | .ok a => return { ann := some pr.cert.relevance, cert := some pr.cert.toText,
-                        object := some a.object, produceMs, runMs := ← ms t1 }
-
-def runNew (cfg : Recheck.Config) (k : KernelFront.KInput) : IO RootRun := do
-  let t0 ← IO.monoMsNow
-  match ← IO.lazyPure fun _ => KernelFront.produceWith cfg k with
-  | .error e => return { error := some e.render, produceMs := ← ms t0 }
-  | .ok pr =>
-    let produceMs ← ms t0
-    let stageA ← IO.lazyPure fun _ => KernelFront.checkCanonicalRelevance cfg k pr.cert.table pr.cert.relevance
-    let t1 ← IO.monoMsNow
-    match ← IO.lazyPure fun _ => IxCC.Recheck.run cfg k.inp.program pr.cert with
     | .error e => return { ann := some pr.cert.relevance, cert := some pr.cert.toText,
                            error := some e.render, produceMs, runMs := ← ms t1, stageA }
     | .ok a => return { ann := some pr.cert.relevance, cert := some pr.cert.toText,
                         object := some a.object, produceMs, runMs := ← ms t1, stageA }
 
-/-- What each front end adds to IxCC's reading agrees: the pins, their
-resolution, the roots and the resource context, and each constant's identity
-and kind. The constants' declarations and terms come from the same call on the
-same environment. -/
+/-- The earlier front end's reading of the same bytes: IxCC's ingress with the
+pins its own binding decoder reads (`Src.Ingress.ofEnv`), every sidecar root. -/
+def oldProgram (env : Ixon.V3.Env) (sidecar : Json) : Except String Src.Program := do
+  let hints ← Src.Hints.ofK1Json sidecar
+  let p ← Src.Ingress.ofEnv env (hints.roots.map (·.1))
+  pure { p with known := Src.Pinned.known p, resource := hints.resource }
+
+/-- What each reading adds agrees: the pins, their resolution, the roots and
+the resource context, and each constant's identity and kind. The constants'
+declarations and terms come from the same conversion of the same
+environment. -/
 def sameProgram (o n : Src.Program) : List String := Id.run do
   let mut out := []
   if o.size != n.size then out := out ++ [s!"{o.size} constants / {n.size}"]
@@ -153,7 +146,6 @@ structure Report where
   records : Nat := 0
   oldAccept : String := ""
   newAccept : String := ""
-  oldIngressMs : Nat := 0
   oldTypingMs : Nat := 0
   newIngressMs : Nat := 0
   newAcceptMs : Nat := 0
@@ -164,12 +156,12 @@ structure Report where
 def Report.toJson (r : Report) : Json :=
   Json.mkObj [("name", Lean.toJson (r.name)), ("bytes", Lean.toJson (r.bytes)), ("bound", Lean.toJson (r.bound)), ("records", Lean.toJson (r.records)),
     ("old_accept", Lean.toJson (r.oldAccept)), ("new_accept", Lean.toJson (r.newAccept)),
-    ("old_ingress_ms", Lean.toJson (r.oldIngressMs)), ("old_typing_ms", Lean.toJson (r.oldTypingMs)),
+    ("old_typing_ms", Lean.toJson (r.oldTypingMs)),
     ("new_ingress_ms", Lean.toJson (r.newIngressMs)), ("new_accept_ms", Lean.toJson (r.newAcceptMs)),
     ("program", Lean.toJson r.program), ("roots", Json.arr r.roots),
     ("findings", Lean.toJson r.findings)]
 
-/-- Both front ends on one closure, every sidecar root. -/
+/-- The comparison on one closure, every sidecar root. -/
 def diff (name : String) (bytes : ByteArray) (sidecar : Json) : IO Report := do
   let env? := Ixon.V3.decodeAnonymousEnv bytes
   let bound := match env? with | .ok e => e.isBound | .error _ => false
@@ -191,88 +183,63 @@ def diff (name : String) (bytes : ByteArray) (sidecar : Json) : IO Report := do
       | .error m => s!"refused: {m.render}"
     | .error m => s!"undecodable: {m}"
   r := { r with newAccept, newAcceptMs := ← ms t0 }
-  -- the two ingresses, every root
+  -- ingress, every root
   let t0 ← IO.monoMsNow
-  let old ← IO.lazyPure fun _ => Recheck.ingress bytes sidecar [] (typecheck := false)
-  let oldIngressMs ← ms t0
-  let t0 ← IO.monoMsNow
-  let new ← IO.lazyPure fun _ => KernelFront.ingress bytes sidecar []
-  let newIngressMs ← ms t0
-  r := { r with oldIngressMs := oldIngressMs + r.oldTypingMs, newIngressMs }
-  match old, new with
-  | .error e, _ => return { r with findings := r.findings.push s!"old ingress: {e.render}" }
-  | _, .error e => return { r with findings := r.findings.push s!"new ingress: {e.render}" }
-  | .ok inp, .ok k =>
-    r := { r with program := sameProgram inp.program k.inp.program }
+  let new ← IO.lazyPure fun _ => Recheck.ingress bytes sidecar []
+  r := { r with newIngressMs := ← ms t0 }
+  match new with
+  | .error e => return { r with findings := r.findings.push s!"new ingress: {e.render}" }
+  | .ok inp =>
+    match oldProgram inp.env sidecar with
+    | .error e => r := { r with findings := r.findings.push s!"old reading: {e}" }
+    | .ok op => r := { r with program := sameProgram op inp.program }
     for i in [0:inp.names.length] do
       let name := inp.names[i]!
       let cfg : Recheck.Config := { names := [name] }
-      let oi := restrict inp i
-      let ki := { k with inp := restrict k.inp i }
+      let ki := restrict inp i
       -- the two annotators directly, on the program with the producer's table
       -- (before the admission policy, which may decline the root)
-      let (table, _, _) := Src.Table.build cfg.table oi.program oi.hints.proposals
-      let p0 := { oi.program with table }
+      let (table, _, _) := Src.Table.build cfg.table ki.program ki.hints.proposals
+      let p0 := { ki.program with table }
       let t0 ← IO.monoMsNow
-      let oa ← IO.lazyPure fun _ => Src.Relevance.annotate oi.env p0
+      let oa ← IO.lazyPure fun _ => Src.Relevance.annotate ki.env p0
       let oldAnnotateMs ← ms t0
       let t0 ← IO.monoMsNow
-      let na ← IO.lazyPure fun _ => KernelFront.annotateChecked ki p0
+      let na ← IO.lazyPure fun _ => ki.kernel.annotateChecked p0
       let newAnnotateMs ← ms t0
       let (annSame, annNorm, diffs, annErrors) := match oa, na with
         | .ok a, .ok b =>
           (a == b, (normAnn a).eqb (normAnn b), if a == b then #[] else annDiffs inp.program.size a b, "")
-        | .error x, .error y => (false, false, #[], s!"both annotators refused: {x} / {y}")
+        | .error x, .error y => (x == y, false, #[], s!"both annotators refused: {x} / {y}")
         | .error x, .ok _ => (false, false, #[], s!"old annotator refused: {x}")
         | .ok _, .error y => (false, false, #[], s!"kernel annotator refused: {y}")
-      let o ← runOld cfg oi
       let n ← runNew cfg ki
-      let bothRan := o.object.isSome && n.object.isSome
-      let certSame := o.cert == n.cert
-      let objSame := o.object == n.object
-      unless annSame && certSame && objSame && (!bothRan || n.stageA == some true) &&
-          (o.error.isSome == n.error.isSome) do
+      unless (annSame || annErrors.startsWith "both") && (n.object.isNone || n.stageA == some true) do
         r := { r with findings := r.findings.push s!"root {name}: annotation {annSame} \
-          (up to parameter order {annNorm}) {annErrors} {diffs}, certificate {certSame}, object {objSame}, \
-          stage A {n.stageA}; old error {o.error}; new error {n.error}" }
+          (up to parameter order {annNorm}) {annErrors} {diffs}, stage A {n.stageA}; error {n.error}" }
       r := { r with roots := r.roots.push (Json.mkObj [
         ("root", Lean.toJson (name)), ("annotation_same", Lean.toJson (annSame)), ("annotation_same_up_to_order", Lean.toJson (annNorm)),
         ("annotation_diffs", Lean.toJson diffs), ("annotation_errors", Lean.toJson annErrors),
         ("old_annotate_ms", Lean.toJson oldAnnotateMs), ("new_annotate_ms", Lean.toJson newAnnotateMs),
-        ("certificate_same", Lean.toJson (certSame)), ("object_same", Lean.toJson (objSame)),
-        ("object_bytes", Lean.toJson ((o.object.map (·.size)).getD 0)),
-        ("stage_a", Lean.toJson n.stageA),
-        ("old_error", Lean.toJson o.error), ("new_error", Lean.toJson n.error),
-        ("old_produce_ms", Lean.toJson (o.produceMs)), ("new_produce_ms", Lean.toJson (n.produceMs)),
-        ("old_run_ms", Lean.toJson (o.runMs)), ("new_run_ms", Lean.toJson (n.runMs))]) }
+        ("object_bytes", Lean.toJson ((n.object.map (·.size)).getD 0)),
+        ("stage_a", Lean.toJson n.stageA), ("error", Lean.toJson n.error),
+        ("produce_ms", Lean.toJson (n.produceMs)), ("run_ms", Lean.toJson (n.runMs))]) }
     return r
 
-/-- One front end alone on one closure (for timing and peak memory in a
+/-- The front end alone on one closure (for timing and peak memory in a
 process of its own): ingress, then every root produced and run. -/
-def single (front : String) (bytes : ByteArray) (sidecar : Json) : IO Json := do
+def single (bytes : ByteArray) (sidecar : Json) : IO Json := do
   let t0 ← IO.monoMsNow
-  if front == "old" then
-    match ← IO.lazyPure fun _ => Recheck.ingress bytes sidecar [] (typecheck := true) with
-    | .error e => return Json.mkObj [("front", Lean.toJson (front)), ("error", Lean.toJson (e.render)), ("ingress_ms", Lean.toJson (← ms t0))]
-    | .ok inp =>
-      let ingressMs ← ms t0
-      let mut out := #[]
-      for i in [0:inp.names.length] do
-        let o ← runOld { names := (inp.names[i]?).toList } (restrict inp i)
-        out := out.push (Json.mkObj [("root", Lean.toJson ((inp.names[i]?).getD "")), ("error", Lean.toJson o.error),
-          ("produce_ms", Lean.toJson (o.produceMs)), ("run_ms", Lean.toJson (o.runMs))])
-      return Json.mkObj [("front", Lean.toJson (front)), ("ingress_ms", Lean.toJson (ingressMs)), ("roots", Json.arr out)]
-  else
-    match ← IO.lazyPure fun _ => KernelFront.ingress bytes sidecar [] with
-    | .error e => return Json.mkObj [("front", Lean.toJson (front)), ("error", Lean.toJson (e.render)), ("ingress_ms", Lean.toJson (← ms t0))]
-    | .ok k =>
-      let ingressMs ← ms t0
-      let mut out := #[]
-      for i in [0:k.inp.names.length] do
-        let n ← runNew { names := (k.inp.names[i]?).toList } { k with inp := restrict k.inp i }
-        out := out.push (Json.mkObj [("root", Lean.toJson ((k.inp.names[i]?).getD "")), ("error", Lean.toJson n.error),
-          ("produce_ms", Lean.toJson (n.produceMs)), ("run_ms", Lean.toJson (n.runMs)), ("stage_a", Lean.toJson n.stageA)])
-      return Json.mkObj [("front", Lean.toJson (front)), ("ingress_ms", Lean.toJson (ingressMs)), ("roots", Json.arr out)]
+  match ← IO.lazyPure fun _ => Recheck.ingress bytes sidecar [] with
+  | .error e => return Json.mkObj [("error", Lean.toJson (e.render)), ("ingress_ms", Lean.toJson (← ms t0))]
+  | .ok inp =>
+    let ingressMs ← ms t0
+    let mut out := #[]
+    for i in [0:inp.names.length] do
+      let n ← runNew { names := (inp.names[i]?).toList } (restrict inp i)
+      out := out.push (Json.mkObj [("root", Lean.toJson ((inp.names[i]?).getD "")), ("error", Lean.toJson n.error),
+        ("produce_ms", Lean.toJson (n.produceMs)), ("run_ms", Lean.toJson (n.runMs)), ("stage_a", Lean.toJson n.stageA)])
+    return Json.mkObj [("ingress_ms", Lean.toJson (ingressMs)), ("roots", Json.arr out)]
 
 end IxCCTests.KernelFront
 

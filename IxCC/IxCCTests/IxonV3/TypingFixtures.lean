@@ -15,9 +15,15 @@ abbrev Environment := IxCC.Ixon.V3.Env
 def arrow (a b : E) : E := .all .many .shared a b
 def lambda (a b : E) : E := .lam .many a b
 
-def store (env : Environment) (c : C) : Environment × IxCC.Ixon.Address :=
+/-- A synthesized record's bytes and content address: the one place the test
+builders finish and encode a record (`store`, `block` and the role-bound
+builder, `IxCCTests.Support.Bound`, all come here). -/
+def record (c : C) : ByteArray × IxCC.Ixon.Address :=
   let raw := constantBytes c
-  let address := Address.blake3 raw
+  (raw, Address.blake3 raw)
+
+def store (env : Environment) (c : C) : Environment × IxCC.Ixon.Address :=
+  let (raw, address) := record c
   ({ env with consts := env.consts.insert address raw }, address)
 
 def block (env : Environment) (c : C) : Environment × IxCC.Ixon.Address := Id.run do
