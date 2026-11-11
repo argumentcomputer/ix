@@ -348,8 +348,9 @@ inductive Fits (cval : Key md → (LevelParam → Nat) → V) (env : Env md) (φ
       Denotes cval env φ ρ A X → x ∈ˢ X → Fits cval env φ (push x ρ) B xs ρ' R →
       Fits cval env φ ρ (.forallE A B m) (x :: xs) ρ' R
 
-/-- **ι, the computation rule of a stored recursor.** At a stored recursor `r` and any
-rule `rl` of it, whose constructor `C` is stored with `nP` parameters and `nF` fields:
+/-- **ι, the computation rule of one stored recursor rule.** At a stored recursor `r`
+(`recInfo cv mI rP rules`) and a rule `rl` of it, whose constructor `C` is stored with `nP`
+parameters and `nF` fields:
 the recursor applied to its arguments `xs` (parameters, motives, minor premises,
 indices) and to a constructor application `C ys` equals the rule's right-hand side
 applied to the prefix `xs.take rP` (parameters, motives, minor premises) and to the
@@ -374,10 +375,9 @@ premise `C ys` must have the type the recursor's telescope gives it, `D.{ls} as`
 the constructor's type gives it the type `RC`, the same family at the constructor's
 parameters and its own indices; the two agree only if the parameters and the indices
 do. -/
-def IotaLaw (cval : Key md → (LevelParam → Nat) → V) (env : Env md) : Prop :=
-  ∀ (r : Key md) (cv : ConstantVal md) (mI rP : Nat) (rules : List (RecRule md))
-    (rl : RecRule md) (cvC : ConstantVal md) (nP nF : Nat),
-    env.find? r = some (.recInfo cv mI rP rules) → rl ∈ rules →
+def IotaRule (cval : Key md → (LevelParam → Nat) → V) (env : Env md) (r : Key md)
+    (cv : ConstantVal md) (mI rP : Nat) (rl : RecRule md) : Prop :=
+  ∀ (cvC : ConstantVal md) (nP nF : Nat),
     env.find? rl.ctor = some (.ctorInfo cvC nP nF) →
     ∀ (us : List Level) (φ : LevelParam → Nat) (ρ σ σC : BVarIdx → V) (xs ys : List V)
       (dom body RC : Expr md) (m : BinderMeta) (D : Key md) (ls : List Level) (R K H X : V),
@@ -393,6 +393,12 @@ def IotaLaw (cval : Key md → (LevelParam → Nat) → V) (env : Env md) : Prop
       DenotesList cval env φ σC (RC.getAppArgs.drop nP) (xs.drop rP) →
       Denotes cval env φ ρ (rl.rhs.instantiateLevelParams cv.levelParams us) H →
       (xs ++ [ys.foldl app K]).foldl app R = (xs.take rP ++ ys.drop nP).foldl app H
+
+/-- **ι at every stored recursor rule** (`IotaRule`). -/
+def IotaLaw (cval : Key md → (LevelParam → Nat) → V) (env : Env md) : Prop :=
+  ∀ (r : Key md) (cv : ConstantVal md) (mI rP : Nat) (rules : List (RecRule md))
+    (rl : RecRule md),
+    env.find? r = some (.recInfo cv mI rP rules) → rl ∈ rules → IotaRule cval env r cv mI rP rl
 
 /-! ## Semantic consistency -/
 
