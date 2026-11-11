@@ -628,16 +628,20 @@ theorem preparedOkWith_sound {P Ev Ds En ε₁ ε₂ ε₃ : Type} {pref : Excep
     ∃ pre ev ds envA, pref = .ok pre ∧ prep pre = .ok (ev, ds) ∧ ck ev ds = .ok envA ∧
       fin envA ev ds = true := by
   unfold preparedOkWith at h
-  split at h
-  · exact absurd h Bool.false_ne_true
-  · rename_i pre hpre
-    split at h
-    · exact absurd h Bool.false_ne_true
-    · rename_i ev ds hprep
-      split at h
-      · exact absurd h Bool.false_ne_true
-      · rename_i envA hck
-        exact ⟨pre, ev, ds, envA, hpre, hprep, hck, h⟩
+  cases hpre : pref with
+  | error _ => simp [hpre] at h
+  | ok pre =>
+    simp only [hpre] at h
+    cases hprep : prep pre with
+    | error _ => simp [hprep] at h
+    | ok p =>
+      obtain ⟨ev, ds⟩ := p
+      simp only [hprep] at h
+      cases hck : ck ev ds with
+      | error _ => simp [hck] at h
+      | ok envA =>
+        simp only [hck] at h
+        exact ⟨pre, ev, ds, envA, by simp [hpre], hprep, hck, h⟩
 
 /-- **The reading and the fold accept the records of `order`** under the admitted
 table `t` (of the binding `b`), behind its committed prelude, and the installed
