@@ -9,6 +9,7 @@ import IxC.Kernel.Model.Rules.CertsSound
 import IxC.Kernel.Model.Rules.ThmSound
 import IxC.Kernel.Model.Rules.EqSound
 import IxC.Kernel.Model.Rules.NatOffsetSound
+import IxC.Kernel.Model.Rules.IrrelSound
 import IxC.Kernel.Rules.Derived
 
 public section
@@ -140,6 +141,13 @@ theorem defeq_sound (hin : ∀ ψ, RulesInputs V m ψ) {φ : LevelParam → Nat}
     DefEq.structUnit_sound (hin φ) (infer_sound hin hta) (red_sound hin hwta) hthead
       hind hunit hresT htlen hlv (infer_sound hin htb) (red_sound hin hwtb)
       (defeq_sound hin hd) (certs_sound hin hcerts)
+  | _, _, _, .proofIrrelTy hta htta hu hu0 htb hd =>
+    DefEq.proofIrrelTy_sound (infer_sound hin hta) (infer_sound hin htta)
+      (red_sound hin hu) hu0 (infer_sound hin htb) (defeq_sound hin hd)
+  | _, _, _, .unitLikeTy hta hwta hthead hind hunit htlen hcerts hkind htb hd =>
+    DefEq.unitLikeTy_sound (hin φ) (infer_sound hin hta) (red_sound hin hwta) hthead
+      hind hunit htlen (certs_sound hin hcerts) hkind (infer_sound hin htb)
+      (defeq_sound hin hd)
 
 theorem infer_sound (hin : ∀ ψ, RulesInputs V m ψ) {φ : LevelParam → Nat} :
     ∀ {g : Grade} {d : Nat} {e t : Expr md}, Infer env g d e t → InferSem m φ g d e t

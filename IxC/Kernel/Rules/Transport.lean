@@ -418,6 +418,17 @@ theorem defEq_tr {env env' : Env md} {ρ δ : Nat → Nat} {ok : Nat → Prop}
     exact .structUnit (infer_tr hT hta hd) (red_tr hT hwta hd) (getAppFn_renFV_const hthead)
       (hT.ext.find hind) hunit hresT (by rw [getAppArgs_renFV, List.length_map]; exact htlen)
       hlv (infer_tr hT htb hd) (red_tr hT hwtb hd) (defEq_tr hT hd' hd) hcs
+  | _, _, _, .proofIrrelTy hta htta hu hu0 htb hd', hd =>
+    .proofIrrelTy (infer_tr hT hta hd) (infer_tr hT htta hd) (red_tr hT hu hd) hu0
+      (infer_tr hT htb hd) (defEq_tr hT hd' hd)
+  | _, _, _, .unitLikeTy (cvT := cvT) hta hwta hthead hind hunit htlen hcerts hkind htb hd',
+      hd => by
+    have hcs := certs_tr hT hcerts hd
+    rw [hT.fixType (cv := cvT) hind rfl, ← getAppArgs_renFV] at hcs
+    exact .unitLikeTy (infer_tr hT hta hd) (red_tr hT hwta hd) (getAppFn_renFV_const hthead)
+      (hT.ext.find hind) hunit (by rw [getAppArgs_renFV, List.length_map]; exact htlen) hcs
+      (hkind.imp id (fun h => by rw [isUnitLikeTy_renFV]; exact hT.ext.isUnitLikeTy_mono h))
+      (infer_tr hT htb hd) (defEq_tr hT hd' hd)
 
 /-- **An inference, transported.** -/
 theorem infer_tr {env env' : Env md} {ρ δ : Nat → Nat} {ok : Nat → Prop}

@@ -646,6 +646,33 @@ inductive DefEq (env : Env md) : Nat → Expr md → Expr md → Prop where
       Certs env d false (cvT.type.instantiateLevelParams cvT.levelParams us')
         wta.getAppArgs →
       DefEq env d a b
+  /-- **Proof irrelevance at a compared type** (IxVM's proof-irrelevance test):
+  `a`'s io-inferred type has a sort that is `Prop` at every assignment, and `b`'s
+  io-inferred type is definitionally equal to `a`'s. Unlike `proofIrrel`, one
+  sort is inferred and the two types are compared. -/
+  | proofIrrelTy {d : Nat} {a ta tta b tb : Expr md} {u : Level} :
+      Infer env .io d a ta → Infer env .io d ta tta →
+      Red env d tta (.sort u) → (∀ φ, Level.eval φ u = 0) →
+      Infer env .io d b tb → DefEq env d ta tb →
+      DefEq env d a b
+  /-- **Unit-likeness at a compared type** (IxVM's unit-like test): `a`'s
+  io-inferred type head-normalises to a unit-like family at its parameter count,
+  with the family's telescope certified against the parameters (licensed: a
+  `.never` slot skips), and `b`'s io-inferred type is definitionally equal to `a`'s.
+  The family is a stored one, or the basis `PUnit` (`isUnitLikeTy`). Unlike
+  `structUnit`, the types are compared before normalisation. -/
+  | unitLikeTy {d : Nat} {a ta wta b tb : Expr md} {T : Key md} {us : List Level}
+      {cvT : ConstantVal md} {caps : IndCaps md} :
+      Infer env .io d a ta → Red env d ta wta →
+      wta.getAppFn = .const T us →
+      env.find? T = some (.indInfo cvT caps) →
+      caps.unitlike = true →
+      wta.getAppArgs.length = caps.unitParams →
+      Certs env d true (cvT.type.instantiateLevelParams cvT.levelParams us)
+        wta.getAppArgs →
+      (reservedBasisNames.contains T = false ∨ isUnitLikeTy env wta = true) →
+      Infer env .io d b tb → DefEq env d ta tb →
+      DefEq env d a b
 
 /-- **Type inference** at a grade. -/
 inductive Infer (env : Env md) : Grade → Nat → Expr md → Expr md → Prop where

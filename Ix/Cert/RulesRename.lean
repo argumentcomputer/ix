@@ -733,6 +733,24 @@ theorem defEq_rename (hR : Renaming P f env env') :
       (by rw [reservedBasisNames_contains_map]; exact hresT)
       (by rw [Expr.getAppArgs_mapKeys, List.length_map]; exact htlen) hlv i3 r2
       (defEq_rename hR hd g2 g4) (by simpa [Expr.getAppArgs_mapKeys] using hcerts')
+  | _, _, _, .proofIrrelTy hta htta hu hu0 htb hd, ha, hb => by
+    obtain ⟨g1, i1⟩ := infer_rename hR hta ha
+    obtain ⟨g2, i2⟩ := infer_rename hR htta g1
+    obtain ⟨-, r1⟩ := red_rename hR hu g2
+    obtain ⟨g3, i3⟩ := infer_rename hR htb hb
+    exact .proofIrrelTy i1 i2 r1 hu0 i3 (defEq_rename hR hd g1 g3)
+  | _, _, _, .unitLikeTy hta hwta hthead hind hunit htlen hcerts hkind htb hd, ha, hb => by
+    obtain ⟨g1, i1⟩ := infer_rename hR hta ha
+    obtain ⟨g2, r1⟩ := red_rename hR hwta g1
+    obtain ⟨g3, i3⟩ := infer_rename hR htb hb
+    have hcerts' := certs_rename hR hcerts
+      (Expr.Good.instantiateLevelParams (hR.good hind).1.2 _ _) (Expr.Good.getAppArgs g2)
+    exact .unitLikeTy i1 r1 (head_map hthead) (hR.find hind) hunit
+      (by rw [Expr.getAppArgs_mapKeys, List.length_map]; exact htlen)
+      (by simpa [Expr.getAppArgs_mapKeys] using hcerts')
+      (hkind.imp (fun h => by rw [reservedBasisNames_contains_map]; exact h)
+        (fun h => by rw [isUnitLikeTy_ren hR.rel g2]; exact h))
+      i3 (defEq_rename hR hd g1 g3)
 
 /-- **An inference, renamed**: a good subject has a good type, and the renamed
 subject infers the renamed type. -/
