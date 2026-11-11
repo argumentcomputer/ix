@@ -1,7 +1,7 @@
-{"runtime_suites": ["IxonV3", "Aiur", "KernelFront"],
+{"runtime_suites": ["IxonV3", "Aiur", "KernelFront", "Grounding"],
  "runtime_failure_sha256":
- "a9c731d17040923655506f218633b05b903f3853608ee0bcaebcdab068645c24",
- "runtime_failure_count": 2,
+ "8c1946cae2bdf7b64465cb15395a607d5420b1a5a65121e2768ea66934547490",
+ "runtime_failure_count": 3,
  "proof_modules":
  ["IxCC.Aiur",
   "IxCC.Aiur.AIR.Expr",
@@ -1604,8 +1604,29 @@
   "IxCCTests.Sem.Toy.Pipeline",
   "IxCCTests.Sem.Toy.Stack",
   "IxCCTests.Sem.Toy.Tick"],
+ "grounding_modules":
+ ["IxCCGrounding",
+  "IxCCGrounding.Apply",
+  "IxCCGrounding.Check",
+  "IxCCGrounding.Eqn",
+  "IxCCGrounding.Fence",
+  "IxCCGrounding.Fundamental",
+  "IxCCGrounding.Ground",
+  "IxCCGrounding.Heads",
+  "IxCCGrounding.Hyps",
+  "IxCCGrounding.Laws",
+  "IxCCGrounding.Lits",
+  "IxCCGrounding.Model",
+  "IxCCGrounding.Ok",
+  "IxCCGrounding.Relation",
+  "IxCCGrounding.Runs",
+  "IxCCGrounding.Support",
+  "IxCCGrounding.Syntax"],
+ "grounding_axiom_sha256":
+ "3f5b1886f6127883f3a07b7f9027df2eee5383c4aa51741ac9c3ecac5abec1b2",
+ "grounding_axiom_count": 26,
  "baseline":
- "X0-P, first part: a call site per call (X86.LinkedAt), the object and session theorems from two sites, the byte machine on the process's memory, and their fences",
+ "GR: the grounding library (IxCCGrounding), its fence and the tests-grounding runtime suite",
  "axiom_sha256":
  "1f7ac293520e0ced3fe2df2607a5dba5193effbf6c6d72b59013d74194f4d8fa",
  "axiom_count": 5921}
