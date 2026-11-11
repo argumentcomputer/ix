@@ -110,7 +110,8 @@ record that has no section but has a binder its section from IxC's pass
 deliberately ill-typed record is still rejected where it was), re-addresses it and
 every record that names it, and renames the environment's names, hints, role
 binding, assumptions, the claim and its trees to follow. Every other record keeps
-its bytes, so a hand-crafted encoding stays as it was. -/
+its bytes (as does a record whose bytes are not its canonical encoding), so a hand-crafted
+encoding stays as it was, and the old records stay for whatever still names them. -/
 
 /-- Whether `c` lacks the section it needs: none, and a binder in a root. -/
 def needsSection (c : Ixon.Constant) : Bool :=
@@ -136,9 +137,11 @@ its section. Nothing changes when no record needs one. -/
 def withRecordSections (env : Ixon.Env) (claim : Ix.Claim)
     (trees : Std.HashMap Address Ix.AssumptionTree) :
     Except String (Ixon.Env × Ix.Claim × Std.HashMap Address Ix.AssumptionTree) := do
+  -- the records whose bytes are their canonical encoding: a hand-crafted encoding is left as it is
   let mut store : Std.HashMap Address Ixon.Constant := {}
   for (a, lc) in env.consts do
-    if let some c := lc.get? then store := store.insert a c
+    if let some c := lc.get? then
+      if Ixon.serConstant c == lc.rawBytes then store := store.insert a c
   let pending := store.toArray.filter (needsSection ·.2)
   if pending.isEmpty then return (env, claim, trees)
   let support := store.toArray.filter (!needsSection ·.2)
@@ -166,7 +169,8 @@ def withRecordSections (env : Ixon.Env) (claim : Ix.Claim)
     let c' := Ix.Compile.BinderData.rewriteRecord rename c binders
     let bytes := Ixon.serConstant c'
     let a' := Address.blake3 bytes
-    consts := (consts.erase a).insert a' { buf := bytes, len := bytes.size, cache := some c' }
+    -- the old record stays, for a hand-crafted record that still names it
+    consts := consts.insert a' { buf := bytes, len := bytes.size, cache := some c' }
     renamed := renamed.insert a a'
   let rename (x : Address) : Address := renamed.getD x x
   let named := env.named.fold (init := ({} : Std.HashMap Ix.Name Ixon.Named)) fun m n entry =>
