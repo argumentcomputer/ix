@@ -120,7 +120,10 @@ def cases (base : Ixon.Env) : Except String (Array Case) := do
         name := s!"binding-anchor-{label}-consumer-assumed-{assumed}"
         env := env
         claim := claim
-        expectAccept := accept
+        -- With the native `Int` results removed (B9-B11, REMOVED-MOVES.md) the consumer's
+        -- `Int.neg` reduces by its definition and never reaches the anchor, so an invalid
+        -- anchor binding no longer reaches it either: both bindings accept the consumer.
+        expectAccept := true
         requireNativeInt := accept }
       result := result.push entry
   return result

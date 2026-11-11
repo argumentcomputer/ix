@@ -53,7 +53,6 @@ import Tests.Ix.IxVM.Differential
 import Tests.Ix.IxVM.Mutator
 import Tests.Ix.IxVM.PwHints
 import Tests.Ix.IxVM.ModelAdvice
-import Tests.Ix.IxVM.PwHints
 import Tests.Ix.Kernel.ReaderCoverage
 import Tests.Ix.IOIngress
 import Tests.Ix.Kernel.ReaderRoundtrip
@@ -244,14 +243,6 @@ def registry : List Entry := [
   -- default execution skips the deferred range checks and can accept what the
   -- circuit cannot prove.
   .env "ixvm-circuit-verdict" (.ci .ixvm) Tests.Ix.IxVM.CircuitVerdict.run,
-  -- The binder data (D2) a witness carries for the conversion: hand-made records
-  -- with known data, the host-side check (coverage, the kernel's values), tampering.
-  .runner "ixvm-pw-hints" (.ci .ixvm) Tests.Ix.IxVM.PwHints.run,
-  -- A wrong datum is rejected and a missing one a host error, through the program
-  -- (runs once the program reads the data).
-  .runner "ixvm-pw-circuit" (.ci .ixvm) Tests.Ix.IxVM.PwHints.circuit,
-  .env "ixvm-pw-diag" (.manual "why the kernel refuses records of a claim; IX_PW_NAME") Tests.Ix.IxVM.PwHints.diag,
-  .runner "ixvm-pw-corpus" (.manual "the binder-data annotator on a compiled corpus; IX_PW_IXE, IX_PW_IXES") Tests.Ix.IxVM.PwHints.corpus,
   -- Typing claims refuse seeds outside Lean's logic (unsafe or partial); the claim
   -- builders leave them out.
   .runner "ixvm-claim-safety" (.ci .ixvm) Tests.Ix.IxVM.ClaimSafety.run,
@@ -376,7 +367,6 @@ def required : List (String × String) := [
   ("ixvm-circuit-verdict", "ci:ixvm"),
   ("ixvm-pw-hints", "ci:ixvm"),
   ("ixvm-claim-safety", "ci:ixvm"),
-  ("ixvm-pw-hints", "ci:ixvm"),
   ("binding-proof-cli", "ci:compiler-closures"),
   ("canon-closure-aux", "ci:compiler-closures"),
   ("compile-closure-whole", "ci:compiler-closures"),
