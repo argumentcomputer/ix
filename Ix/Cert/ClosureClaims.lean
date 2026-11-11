@@ -81,12 +81,13 @@ theorem claim_name {k n : Ix.Name} {r : BlockResult} {a : Address} {b : ByteArra
 
 /-! ## The driver's environment -/
 
-theorem view_get (E : Ix.Environment) (x : Ix.Name) :
-    ({ consts := {}, fallback? := some E.get? } : Ix.Environment).get? x = E.get? x := by
+theorem view_get (E : Ix.Environment) {annotator? : Option Ix.BinderAnnotator} (x : Ix.Name) :
+    ({ consts := {}, fallback? := some E.get?, binderAnnotator? := annotator? } : Ix.Environment).get? x =
+      E.get? x := by
   simp [Ix.Environment.get?]
 
-theorem input_get (consts : Std.HashMap Ix.Name Ix.ConstantInfo) (x : Ix.Name) :
-    ({ consts } : Ix.Environment).get? x = consts.get? x := by
+theorem input_get (consts : Std.HashMap Ix.Name Ix.ConstantInfo) {annotator? : Option Ix.BinderAnnotator}
+    (x : Ix.Name) : ({ consts, binderAnnotator? := annotator? } : Ix.Environment).get? x = consts.get? x := by
   unfold Ix.Environment.get?
   split <;> simp_all
 
