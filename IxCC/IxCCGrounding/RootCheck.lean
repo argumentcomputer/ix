@@ -162,13 +162,19 @@ def rootParts (ann : IxCC.Src.Relevance.Ann) (root : CId) (args : List FoTy) (re
 def rootCheck (ann : IxCC.Src.Relevance.Ann) (root : CId) (args : List FoTy) (res : FoTy) : Bool :=
   (rootParts p env κ Sl ann root args res).all (·.2)
 
+/-- The listed constructors of an enumeration of the fragment. -/
+def enumCtors (D : CId) : Option (List CId) :=
+  match p.decl? D with
+  | some (.induct _ 0 0 0 _ cs) => some cs
+  | _ => none
+
 def foValB : FoTy → Value → KExpr → Bool
   | .nat, .lit n, e => decide (e = litE n)
   | .enum D, .con c [] [] [], e =>
     decide (e = .const (κ c) []) &&
-      match p.decl? D with
-      | some (.induct _ lv np ni _ cs) => lv == 0 && np == 0 && ni == 0 && decide (c ∈ cs)
-      | _ => false
+      match enumCtors p D with
+      | some cs => decide (c ∈ cs)
+      | none => false
   | _, _, _ => false
 
 def foArgsB : List FoTy → List Value → List KExpr → Bool
@@ -261,6 +267,15 @@ theorem rootFacts_of_check {ann : IxCC.Src.Relevance.Ann} {root : CId} {args : L
     · exact ⟨.enum D, List.mem_cons_of_mem _ hD, rfl⟩
     · exact ⟨.enum D, by rw [hD]; exact List.mem_cons_self .., rfl⟩
 
+theorem enumCtors_some {D : CId} {cs : List CId} (h : enumCtors p D = some cs) :
+    ∃ safe ty, p.decl? D = some (.induct safe 0 0 0 ty cs) := by
+  unfold enumCtors at h
+  split at h
+  · rename_i safe ty cs' hd
+    cases h
+    exact ⟨safe, ty, hd⟩
+  · cases h
+
 theorem foVal_of_check {t : FoTy} {x : Value} {e : KExpr} (h : foValB p κ t x e = true) :
     FoVal p κ t x e := by
   match t, x, h with
@@ -270,16 +285,14 @@ theorem foVal_of_check {t : FoTy} {x : Value} {e : KExpr} (h : foValB p κ t x e
   | .enum D, .con c [] [] [], h =>
     simp only [foValB, Bool.and_eq_true, decide_eq_true_eq] at h
     obtain ⟨rfl, h⟩ := h
-    cases hd : p.decl? D with
-    | none => simp [hd] at h
-    | some d =>
-      cases d with
-      | induct safe lv np ni ty cs =>
-        simp only [hd, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at h
-        obtain ⟨⟨⟨rfl, rfl⟩, rfl⟩, hc⟩ := h
-        obtain ⟨i, hi⟩ := List.mem_iff_getElem?.mp hc
-        exact .enum hd hi
-      | _ => simp [hd] at h
+    cases hcs : enumCtors p D with
+    | none => rw [hcs] at h; cases h
+    | some cs =>
+      rw [hcs] at h
+      have hc : c ∈ cs := of_decide_eq_true h
+      obtain ⟨safe, ty, hd⟩ := enumCtors_some hcs
+      obtain ⟨i, hi⟩ := List.mem_iff_getElem?.mp hc
+      exact .enum hd hi
 
 theorem foArgs_length : ∀ {ts : List FoTy} {xs : List Value} {es : List KExpr},
     FoArgs p κ ts xs es → es.length = ts.length
