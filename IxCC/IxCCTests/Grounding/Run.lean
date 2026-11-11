@@ -2,6 +2,7 @@ import IxCC.Src.KernelFront.Front
 import IxCC.Src.Readback
 import IxCCGrounding.Check
 import IxCCGrounding.RootCheck
+import IxCCGrounding.Direct.Check
 import IxCCTests.Src.Support
 
 /-! # `tests-grounding`: the grounding check on committed closures
@@ -33,6 +34,11 @@ Then the negative controls, on `fib`: each mutation makes exactly the conjunct i
 | the first `case` entry's `casesOn` value hands its recursor the last two minors swapped | `caseShape` |
 | `Nat`'s stored sort made `Prop` (its `case` entry is then over a family of propositions) | `caseShape` |
 | a structure of `Sl` with fields, its constructor in `Sl`, made a family of propositions | `proj` |
+
+The direct route (`IxCCGrounding.Direct.Check`, a Boolean beside `groundCheck`): `sitesDirectB`
+refuses no application site of either subject; two controls on `fib` each make it false and leave
+`groundCheck` true: (a) the stored type of a constant passed as an argument made `Nat`; (h) a head
+constant's first binder datum (`never`) made "always a proposition".
 
 and, for the root's checks, on `decide`: the observation `false` (tag `0`) fails `resultTagB`
 (`PUnit.unit` is a field-less constructor at index `0` in `Sl` beside `Bool.false`, so the check
@@ -205,6 +211,50 @@ def projectedStruct (i : Input) : Option CId :=
         | _ => false
     | _ => false
 
+/-- Every application site of `Sl`'s run terms (relevant or not), with its constant. -/
+def allRunSites (i : Input) : List (CId × Site) :=
+  i.Sl.flatMap fun c => (runPairsB i.src i.env i.κ c).flatMap fun (t, e) =>
+    (allSites [] t e).map fun s => (c, s)
+
+/-- The refused sites of `Sl`'s run terms. -/
+def refusedSites (i : Input) : List (CId × Site) :=
+  i.Sl.flatMap fun c => (runPairsB i.src i.env i.κ c).flatMap fun (t, e) =>
+    (runRefused i.src i.env i.lpsOf i.ann c t e).map fun s => (c, s)
+
+def directOk (i : Input) : Bool := sitesDirectB i.src i.env i.κ i.lpsOf i.ann i.Sl
+
+/-- (a) The stored type of a constant passed as an argument made `Nat`. -/
+def mutateArgType (i : Input) : Option (Input × KKey) := do
+  let k ← (allRunSites i).findSome? fun (_, _, _, a) =>
+    match a with
+    | .const k _ => match i.env.find? k with
+      | some (.defnInfo cv _ _) => if cv.type != natK then some k else none
+      | _ => none
+    | _ => none
+  return ({ i with env := mapConst i.env k fun
+      | .defnInfo cv v h => .defnInfo { cv with type := natK } v h
+      | ci => ci }, k)
+
+/-- (h) A head constant's first binder datum (`never`) made "always a proposition". -/
+def mutateHeadDatum (i : Input) : Option (Input × KKey) := do
+  let (k, T) ← (allRunSites i).findSome? fun (_, _, f, _) =>
+    match f with
+    | .const k _ => match i.env.find? k with
+      | some ci => match ci.toConstantVal.type with
+        | .forallE d b m =>
+          if m.pw == .never && ci.toConstantVal.levelParams.isEmpty && k != Ix.Kernel.natSuccName then
+            some (k, (.forallE d b { m with pw := .ifAllZero [] } : KExpr))
+          else none
+        | _ => none
+      | none => none
+    | _ => none
+  return ({ i with env := mapConst i.env k fun
+      | .defnInfo cv v h => .defnInfo { cv with type := T } v h
+      | .ctorInfo cv np nf => .ctorInfo { cv with type := T } np nf
+      | .axiomInfo cv => .axiomInfo { cv with type := T }
+      | .thmInfo cv v => .thmInfo { cv with type := T } v
+      | ci => ci }, k)
+
 /-- The root's result type: `Nat`, or the pinned `Bool`. -/
 def resTy (s : Subject) (i : Input) : Option FoTy :=
   if s.boolResult then i.src.known.bool.map .enum else some .nat
@@ -247,6 +297,11 @@ def run : IO Bool := do
         dec? := some (i, boolD)
       IO.println s!"{s.label}: {i.Sl.length} constants, every conjunct of the check and of the \
         root's checks true; SrcEval reads back {repr out}"
+      -- the direct route (G2a): no site refused
+      expect a (directOk i)
+        s!"{s.label}: sitesDirect is false: {(refusedSites i).length} sites refused"
+      IO.println s!"{s.label}: sitesDirect true: none of {(allRunSites i).length} application sites \
+        of the run terms refused"
       if s.label == "fib" then fib? := some i
     let some i := fib? | throw (IO.userError "no fib subject")
     -- negative controls
@@ -274,6 +329,15 @@ def run : IO Bool := do
     let pp := failing (mutateIndSort pj (pj.κ ps))
     expect a (pp == ["proj"])
       s!"structure c{ps} made a family of propositions: false conjuncts {pp}, expected [proj]"
+    -- the direct route's controls: each makes `sitesDirect` false and leaves `groundCheck` true
+    let some (ia, ka) := mutateArgType i | throw (IO.userError "fib: no constant argument")
+    expect a (!directOk ia && (failing ia).isEmpty)
+      s!"argument {ka}'s stored type made Nat: sitesDirect {directOk ia}, false conjuncts {failing ia}"
+    let some (ih, kh) := mutateHeadDatum i | throw (IO.userError "fib: no head with a `never` binder")
+    expect a (!directOk ih && (failing ih).isEmpty)
+      s!"head {kh}'s first binder datum made always: sitesDirect {directOk ih}, false conjuncts {failing ih}"
+    IO.println s!"direct-route controls: argument {ka}'s type made Nat, head {kh}'s datum made \
+      always a proposition: sitesDirect false, groundCheck true"
     IO.println s!"negative controls: each mutation falsifies exactly its conjunct \
       (valueCorr, eqnCorr, okClosed, natBasis, caseShape at c{cc}; Nat made Prop: caseShape; \
       structure c{ps} made Prop: proj)"
