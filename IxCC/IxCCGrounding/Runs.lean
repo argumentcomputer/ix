@@ -69,6 +69,7 @@ theorem denotesIn_proj {φ : LevelParam → Nat} {Γ : List KExpr} {s : KKey} {i
   | proj_fst _ he => exact ⟨_, he⟩
   | proj_snd _ he => exact ⟨_, he⟩
 
+omit [Ix.Kernel.SetTheory V] in
 theorem push_head_tail (ρ : BVarIdx → V) : push (ρ 0) (fun i => ρ (i + 1)) = ρ := by
   funext i; cases i <;> rfl
 
@@ -104,7 +105,7 @@ theorem runs_of_corr {κ : CId → KKey} {lps : List Nat} {ls : Levels} {φ : Le
     simp only [bvarsLt, Bool.and_eq_true] at hb
     refine .app (ihf hb.1 (denotesIn_app_left hd) (fun s h => hs s ?_) (fun d us h => hok d us ?_))
       (fun hr => iha hb.2 (denotesIn_app_right hd) (fun s h => hs s ?_) (fun d us h => hok d us ?_))
-      (fun _ => ⟨ha, denotesIn_app_right hd⟩) (hs _ ?_)
+      (fun _ => ⟨ha, denotesIn_app_right hd⟩) (hs (Γ, f', a') ?_)
     · simp [evalSites, h]
     · simp [evalConsts, h]
     · simp [evalSites, hr, h]
