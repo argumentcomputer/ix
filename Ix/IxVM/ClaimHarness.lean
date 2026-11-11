@@ -191,9 +191,6 @@ def loadIxonEnv (name : Lean.Name) (leanEnv : Lean.Environment) :
   let roots := withModeledRecursors
     ((#[name] ++ synthesizedPrimNames ++ roleNames).filter leanEnv.constants.contains) leanEnv
   let initial := dedupConstList (Lean.collectDependenciesMany roots leanEnv.constants)
-  -- The records carry their binder data from the compiler's inline annotator. The
-  -- compiler will install it itself; until then the harness does.
-  BinderAnnotate.install #[leanEnv]
   let res ← match ← Ix.CompileM.compileCertified leanEnv initial 32 with
     | .ok out => pure (.ok out)
     | .error _ => Ix.CompileM.compileCertified leanEnv (collectCertifiedClosure roots leanEnv) 32
@@ -214,9 +211,6 @@ def loadSharedIxonEnv (names : Array Lean.Name) (leanEnv : Lean.Environment) :
   let roots := withModeledRecursors
     ((names ++ synthesizedPrimNames ++ roleNames).filter leanEnv.constants.contains) leanEnv
   let initial := dedupConstList (Lean.collectDependenciesMany roots leanEnv.constants)
-  -- The records carry their binder data from the compiler's inline annotator. The
-  -- compiler will install it itself; until then the harness does.
-  BinderAnnotate.install #[leanEnv]
   let res ← match ← Ix.CompileM.compileCertified leanEnv initial 32 with
     | .ok out => pure (.ok out)
     | .error _ => Ix.CompileM.compileCertified leanEnv (collectCertifiedClosure roots leanEnv) 32
