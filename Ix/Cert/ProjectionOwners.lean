@@ -35,7 +35,8 @@ theorem built_muts {limits : Ix.Sharing.Exact.Limits} {ms : Array Ixon.MutConst}
 /-- **A mutual build's rows are its block, or its block is a block record.** -/
 theorem buildMutual_rows {limits : Ix.Sharing.Exact.Limits} {classes : List MutConst}
     {payloads : Array Ixon.MutConst} {metas : Array (Ix.Name × Ixon.ConstantMeta)} {cache : BlockState}
-    {out : BlockResult} (ran : buildCompiledMutualBlock limits classes payloads metas cache = .ok out) :
+    {out : BlockResult} {annotator? : Option Ix.BinderAnnotator}
+    (ran : buildCompiledMutualBlock limits annotator? classes payloads metas cache = .ok out) :
     (∀ p ∈ out.projections, p.2.1 = out.block) ∨ ∃ ms, out.block.info = .muts ms := by
   unfold buildCompiledMutualBlock at ran
   cases hs : standaloneMutConstInfo? payloads with

@@ -639,7 +639,8 @@ theorem finishInductive_rows (i : Ix.InductiveVal) (ind : Ixon.Inductive) (indMe
 
 theorem buildMutual_rows {limits : Ix.Sharing.Exact.Limits} {classes : List MutConst}
     {payloads : Array Ixon.MutConst} {metas : Array (Ix.Name × Ixon.ConstantMeta)} {cache : BlockState}
-    {out : BlockResult} (ran : buildCompiledMutualBlock limits classes payloads metas cache = .ok out) :
+    {out : BlockResult} {annotator? : Option Ix.BinderAnnotator}
+    (ran : buildCompiledMutualBlock limits annotator? classes payloads metas cache = .ok out) :
     RowsMuts out := by
   unfold buildCompiledMutualBlock at ran
   cases hs : standaloneMutConstInfo? payloads with
@@ -1115,7 +1116,8 @@ theorem buildMutual_defn {limits : Ix.Sharing.Exact.Limits} {classes : List MutC
     {payloads : Array Ixon.MutConst} {metas : Array (Ix.Name × Ixon.ConstantMeta)} {cache : BlockState}
     {out : BlockResult}
     (kinds : payloads.toList.map payloadKind = classes.map srcKind)
-    (ran : buildCompiledMutualBlock limits classes payloads metas cache = .ok out) : MutDefnOut classes out := by
+    {annotator? : Option Ix.BinderAnnotator}
+    (ran : buildCompiledMutualBlock limits annotator? classes payloads metas cache = .ok out) : MutDefnOut classes out := by
   unfold buildCompiledMutualBlock at ran
   cases hs : standaloneMutConstInfo? payloads with
   | some info =>

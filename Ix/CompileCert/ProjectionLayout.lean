@@ -106,7 +106,7 @@ theorem finish_mutual_ok (context : CompileEnv × BlockEnv) (classes : List MutC
     {output : BlockResult}
     (ran : rawRun (finishMutualCompilation classes members metadata) context before = (.ok output, after)) :
     after = before ∧ Ix.Sharing.Verify.ConstantInfoHeaderWF (.muts members) ∧
-      buildCompiledMutualBlock context.1.sharingLimits classes members metadata before = .ok output := by
+      buildCompiledMutualBlock context.1.sharingLimits context.1.env.binderAnnotator? classes members metadata before = .ok output := by
   unfold finishMutualCompilation at ran
   obtain ⟨done, middle, guarded, rest⟩ := bind_ok ran
   have same := EmissionDispatch.mutual_state members context before
@@ -122,7 +122,7 @@ theorem finish_mutual_ok (context : CompileEnv × BlockEnv) (classes : List MutC
   rw [readEq] at readRan
   cases readRan
   try dsimp only at rest
-  cases built : buildCompiledMutualBlock context.1.sharingLimits classes members metadata middle with
+  cases built : buildCompiledMutualBlock context.1.sharingLimits context.1.env.binderAnnotator? classes members metadata middle with
   | error error => rw [built] at rest; cases rest
   | ok result =>
     rw [built, rawRun_pure] at rest
@@ -367,7 +367,8 @@ theorem standalone_shape (members : Array Ixon.MutConst) (info : Ixon.ConstantIn
 
 theorem build_mutual_shape (limits : Ix.Sharing.Exact.Limits) (classes : List MutConst)
     (members : Array Ixon.MutConst) (metadata : Array (Ix.Name × Ixon.ConstantMeta)) (state : BlockState)
-    (output : BlockResult) (ran : buildCompiledMutualBlock limits classes members metadata state = .ok output) :
+    (output : BlockResult) {annotator? : Option Ix.BinderAnnotator}
+    (ran : buildCompiledMutualBlock limits annotator? classes members metadata state = .ok output) :
     blockShape output.block.info = some (members.toList.map memberShape) := by
   unfold buildCompiledMutualBlock at ran
   cases chosen : standaloneMutConstInfo? members with

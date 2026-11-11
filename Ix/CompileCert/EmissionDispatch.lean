@@ -300,7 +300,8 @@ members and wire-valid tables. -/
 theorem build_mutual_codec (limits : Ix.Sharing.Exact.Limits) (classes : List MutConst)
     (members : Array Ixon.MutConst) (metadata : Array (Ix.Name × Ixon.ConstantMeta)) (state : BlockState)
     (bounds : ConstantInfoHeaderWF (.muts members)) (tables : BlockWireTablesWF state) (output : BlockResult)
-    (ran : buildCompiledMutualBlock limits classes members metadata state = .ok output) :
+    {annotator? : Option Ix.BinderAnnotator}
+    (ran : buildCompiledMutualBlock limits annotator? classes members metadata state = .ok output) :
     BlockResultCodecWF output := by
   unfold buildCompiledMutualBlock at ran
   cases chosen : standaloneMutConstInfo? members with
@@ -338,7 +339,7 @@ theorem finish_mutual_codec (context : CompileEnv × BlockEnv) (classes : List M
   rw [readEq] at readRan
   cases readRan
   try dsimp only at rest
-  cases built : buildCompiledMutualBlock context.1.sharingLimits classes members metadata middle with
+  cases built : buildCompiledMutualBlock context.1.sharingLimits context.1.env.binderAnnotator? classes members metadata middle with
   | error error => rw [built] at rest; cases rest
   | ok result =>
     rw [built, rawRun_pure] at rest

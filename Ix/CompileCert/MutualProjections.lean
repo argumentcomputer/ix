@@ -219,7 +219,8 @@ def ProjectionWire (output : BlockResult) : Prop := ∀ row ∈ output.projectio
 
 theorem build_projection_wire (limits : Ix.Sharing.Exact.Limits) (classes : List MutConst)
     (members : Array Ixon.MutConst) (metadata : Array (Ix.Name × Ixon.ConstantMeta)) (state : BlockState)
-    (output : BlockResult) (ran : buildCompiledMutualBlock limits classes members metadata state = .ok output)
+    (output : BlockResult) {annotator? : Option Ix.BinderAnnotator}
+    (ran : buildCompiledMutualBlock limits annotator? classes members metadata state = .ok output)
     (main : output.block.wireWF) : ProjectionWire output := by
   unfold buildCompiledMutualBlock at ran
   cases chosen : standaloneMutConstInfo? members with

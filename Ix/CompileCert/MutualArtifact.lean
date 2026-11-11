@@ -76,7 +76,8 @@ def CollapsedRows (sources : List MutConst) (members : Array Ixon.MutConst) (out
 /-- **The mutual builder's two cases**, with the block's address. -/
 theorem build_cases (limits : Ix.Sharing.Exact.Limits) (sources : List MutConst)
     (members : Array Ixon.MutConst) (metadata : Array (Ix.Name × Ixon.ConstantMeta)) (state : BlockState)
-    (output : BlockResult) (ran : buildCompiledMutualBlock limits sources members metadata state = .ok output) :
+    (output : BlockResult) {annotator? : Option Ix.BinderAnnotator}
+    (ran : buildCompiledMutualBlock limits annotator? sources members metadata state = .ok output) :
     output.blockAddr = Address.admissionHash (Ixon.ser output.block) ∧
       (WrappedRows sources members output ∨ CollapsedRows sources members output) := by
   unfold buildCompiledMutualBlock at ran
@@ -126,7 +127,8 @@ theorem standalone_resolves (store : Store) (owner : Address) (block : Ixon.Cons
 /-- **The built block's rows read as their sources**, in either case. -/
 theorem build_resolves (limits : Ix.Sharing.Exact.Limits) (sources : List MutConst)
     (members : Array Ixon.MutConst) (metadata : Array (Ix.Name × Ixon.ConstantMeta)) (state : BlockState)
-    (output : BlockResult) (ran : buildCompiledMutualBlock limits sources members metadata state = .ok output)
+    (output : BlockResult) {annotator? : Option Ix.BinderAnnotator}
+    (ran : buildCompiledMutualBlock limits annotator? sources members metadata state = .ok output)
     (shape : members.toList.map memberShape = sources.map sourceShape)
     (positions : ∀ source ∈ sources, MutualProjections.ConstructorPositions source)
     (store : Store) (stored : store output.blockAddr = some output.block) (wire : output.block.wireWF) :
