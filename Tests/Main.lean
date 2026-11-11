@@ -52,6 +52,7 @@ import Tests.Ix.IxVM.ClaimSafety
 import Tests.Ix.IxVM.Differential
 import Tests.Ix.IxVM.Mutator
 import Tests.Ix.IxVM.PwHints
+import Tests.Ix.IxVM.BinderAnnotators
 import Tests.Ix.IxVM.ModelAdvice
 import Tests.Ix.Kernel.ReaderCoverage
 import Tests.Ix.IOIngress
@@ -254,6 +255,7 @@ def registry : List Entry := [
   -- (runs once the program reads the data).
   .runner "ixvm-pw-circuit" (.ci .ixvm) Tests.Ix.IxVM.PwHints.circuit,
   .env "ixvm-fixture" (.manual "rebuild the dev fixture IxVM/IxVM/fixtures/nat-add-comm.ixf; IX_FIXTURE_OUT") Tests.Ix.IxVM.PwHints.fixture,
+  .runner "binder-data-annotators" (.manual "the compiler's inline annotator against IxC's pass on a compiled artifact, byte for byte; IX_BD_IXE") Tests.Ix.IxVM.BinderAnnotators.run,
   .env "ixvm-pw-diag" (.manual "why the kernel refuses records of a claim; IX_PW_NAME") Tests.Ix.IxVM.PwHints.diag,
   .runner "ixvm-pw-corpus" (.manual "the binder-data annotator on a compiled corpus; IX_PW_IXE, IX_PW_IXES") Tests.Ix.IxVM.PwHints.corpus,
   -- The compiler's binder-data sections and re-addressing (`Ix.Compile.BinderData`).

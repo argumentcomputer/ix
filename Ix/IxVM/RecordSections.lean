@@ -24,9 +24,28 @@ namespace IxVM.RecordSections
 
 open IxVM.PwHints
 
+/-- Whether a member of `c` is unsafe or partial. Such a record carries the
+all-undecided section (`Ix.CompileM.undecidedSection`) whatever its data could be, as
+the compiler writes it: one canonical record per constant, and IxVM refuses such
+constants anyway. -/
+def unsafeOrPartial (c : Ixon.Constant) : Bool :=
+  let defn (d : Ixon.Definition) : Bool := match d.safety with
+    | .safe => false
+    | _ => true
+  match c.info with
+  | .defn d => defn d
+  | .recr r => r.isUnsafe
+  | .axio a => a.isUnsafe
+  | .muts ms => ms.any fun
+    | .defn d => defn d
+    | .indc i => i.isUnsafe || i.ctors.any (·.isUnsafe)
+    | .recr r => r.isUnsafe
+  | _ => false
+
 /-- The sections of `records` (by address; a record without a numbered node gets
 the empty one), typed against `support`, records the kernel reads without
-annotating them, under the role table and prelude `chosen`. With `taint`, a
+annotating them, under the role table and prelude `chosen`. An unsafe or partial
+record gets the all-undecided section. With `taint`, a
 binder whose datum IxC's datum function cannot compute is the undecided node, as
 the compiler writes it; without, it is `never` (deliberately ill-typed test
 records, whose rejection should not move to the sentinel). -/
@@ -43,7 +62,8 @@ def sectionsOf (records support : Array (Address × Ixon.Constant))
   let mut out : Std.HashMap Address (Array Ixon.BinderBlock) := {}
   for (a, blocks) in tables do
     let some c := store[a]? | continue
-    out := out.insert a (← Ix.Compile.BinderData.sectionOf c blocks)
+    if unsafeOrPartial c then out := out.insert a (Ix.CompileM.undecidedSection c)
+    else out := out.insert a (← Ix.Compile.BinderData.sectionOf c blocks)
   return out
 
 /-- The role table and prelude of `env`: its binding, the prelude read from its
