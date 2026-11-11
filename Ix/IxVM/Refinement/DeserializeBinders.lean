@@ -109,9 +109,9 @@ theorem getBool_of_drop_cons {bytes : List UInt8} {i : Nat} {b : UInt8} {rest : 
   rw [EStateM.bind, hu8]
   obtain hb0 | hb1 : b.toNat = 0 ∨ b.toNat = 1 := by omega
   · obtain rfl : b = 0 := UInt8.ext hb0
-    first | rfl | simp [pure, EStateM.pure]
+    rfl
   · obtain rfl : b = 1 := UInt8.ext hb1
-    first | rfl | simp [pure, EStateM.pure]
+    rfl
 
 /-! ## Nodes -/
 
@@ -531,8 +531,8 @@ theorem getBinderBlock_refines_at {bytes : List UInt8} {i : Nat}
   obtain ⟨rfl, rfl⟩ := args173.nil_inv
   have hsharedVal : ((if decide (b.toNat = 1) then 1 else 0 : Nat) : F) = (b.toNat : F) := by
     obtain hb0 | hb1 : b.toNat = 0 ∨ b.toNat = 1 := by omega
-    · rw [hb0]; first | rfl | simp
-    · rw [hb1]; first | rfl | simp
+    · rw [hb0]; rfl
+    · rw [hb1]; rfl
   refine ⟨hext, ⟨decide (b.toNat = 1), t1.value, t2.value, nodes⟩, 1 + n1 + n2 + n3 + n4, _,
     restPtr5, ?_, rfl, ⟨nodesPtr, ?_, nodesRep⟩, ?_⟩
   · rw [show i + (1 + n1 + n2 + n3 + n4) = i + 1 + n1 + n2 + n3 + n4 by omega]
