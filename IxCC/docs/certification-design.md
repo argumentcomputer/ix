@@ -468,7 +468,7 @@ imports the kernel's model (`IxCK.Kernel.Denotes`, the statement half, in
 model, from the production library or from any program of the shared build.
 
 **What is proved, fenced on `propext`, `Classical.choice` and `Quot.sound` or
-fewer (`IxCCGrounding/Fence.lean`, 53 exact assertions):**
+fewer (`IxCCGrounding/Fence.lean`, 56 exact assertions):**
 
 - *Soundness at a root* (`rootSound`, in `IxCCGrounding.Root`). For every
   program, kernel reading `env`, key map, level parameters, certificate
@@ -596,6 +596,14 @@ nested occurrences (a field `List T` inside `T`) and for recursive fields behind
 a function type (a field `Nat → T`, whose induction hypothesis is not the motive
 at the field). Such a program fails the check; nothing unsound is admitted.
 Widening is G4.
+Since the laws' restriction (2026-11-11) it also fails, and the projection case
+too (`proj`), for a family whose stored sort can be zero at some assignment:
+`PUnit`, a `Prop` structure (`And.casesOn` into `Type`), anything
+universe-polymorphic down to `Prop`. Measured on the 20 corpus closures that load
+(the nine `bench-k1` ones, `grounding/decide`, five of `phase1-scalar` and five of
+`phase1-boundary`): no `case` entry and no structure of a closure's `Sl` is newly
+refused; over whole program tables 3 to 7 `case` entries per closure that passed
+`caseShape` before now fail it.
 
 **What `ResultTag` rejects on the committed closures.** Both closures' `Sl`
 hold `PUnit.unit` (index `0`, no parameters, no fields) beside `Bool.false`, so
