@@ -9,6 +9,7 @@ import IxCC.Anf.Proof.Defun.Assemble
 import IxCC.Anf.Proof.Defun.Rename
 import IxCC.Anf.Proof.Defun.Translate
 import IxCC.Anf.Proof.Defun.WellScoped
+import IxCC.Anf.Proof.Defun.Fund
 
 /-! Required axiom fences for P8 (closed-world defunctionalisation, not yet in
 the pipeline): its output is first order (`Anf.Defun.Proof.run_firstOrder`),
@@ -20,7 +21,9 @@ and their arities, and the root-arity guard pins a compiled root to its
 declared count (`Recheck.RootArity`); the closure sources' keys are distinct
 and the dispatcher lemmas hold of P8's own output, the walk is the
 translation, the output is well scoped when the input is, and renaming is
-exact on code without local functions (the last section). The headline
+exact on code without local functions; the fundamental lemma of the
+translation holds at every clock bound, with the dispatcher and call
+simulations (the last two sections). The headline
 theorems come first, then every other public theorem of these modules. -/
 
 /-- info: 'IxCC.Anf.Defun.Proof.run_firstOrder' depends on axioms: [propext, Classical.choice, Quot.sound] -/
@@ -689,3 +692,102 @@ other public theorem of these modules. -/
 
 /-- info: 'IxCC.Anf.Defun.Proof.nodup_map_of_fst' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Anf.Defun.Proof.nodup_map_of_fst
+
+/-! The fundamental lemma of the translation (`Anf.Defun.Proof.Fund`): the headline theorems, then every
+other public theorem of the module. -/
+
+/-- info: 'IxCC.Anf.Defun.Proof.fund' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.fund
+
+/-- info: 'IxCC.Anf.Defun.Proof.dispatch_sim' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.dispatch_sim
+
+/-- info: 'IxCC.Anf.Defun.Proof.call_sim' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.call_sim
+
+/-- info: 'IxCC.Anf.Defun.Proof.clo_step' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.clo_step
+
+/-- info: 'IxCC.Anf.Defun.Proof.pw_of_dvs' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.pw_of_dvs
+
+/-- info: 'IxCC.Anf.Defun.Proof.dvs_of_pw' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.dvs_of_pw
+
+/-- info: 'IxCC.Anf.Defun.Proof.dv_atom' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.dv_atom
+
+/-- info: 'IxCC.Anf.Defun.Proof.dv_atoms' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.dv_atoms
+
+/-- info: 'IxCC.Anf.Defun.Proof.natArgs_dv' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.natArgs_dv
+
+/-- info: 'IxCC.Anf.Defun.Proof.prim_dv' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.prim_dv
+
+/-- info: 'IxCC.Anf.Defun.Proof.proj_dv' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.proj_dv
+
+/-- info: 'IxCC.Anf.Defun.Proof.asCtor_dv' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.asCtor_dv
+
+/-- info: 'IxCC.Anf.Defun.Proof.tr_fo' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.tr_fo
+
+/-- info: 'IxCC.Anf.Defun.Proof.trB_fo' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.trB_fo
+
+/-- info: 'IxCC.Anf.Defun.Proof.trAlts_fo' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.trAlts_fo
+
+/-- info: 'IxCC.Anf.Defun.Proof.trOpt_fo' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.trOpt_fo
+
+/-- info: 'IxCC.Anf.Defun.Proof.JRel.get' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.JRel.get
+
+/-- info: 'IxCC.Anf.Defun.Proof.later_bind' does not depend on any axioms -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.later_bind
+
+/-- info: 'IxCC.Anf.Defun.Proof.bind_ok_right' does not depend on any axioms -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.bind_ok_right
+
+/-- info: 'IxCC.Anf.Defun.Proof.clockMono_shift' does not depend on any axioms -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.clockMono_shift
+
+/-- info: 'IxCC.Anf.Defun.Proof.callVal_mono' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.callVal_mono
+
+/-- info: 'IxCC.Anf.Defun.Proof.simUpTo_shift' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.simUpTo_shift
+
+/-- info: 'IxCC.Anf.Defun.Proof.callVal_dispatcher' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.callVal_dispatcher
+
+/-- info: 'IxCC.Anf.Defun.Proof.eval_altBody_exact_later' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.eval_altBody_exact_later
+
+/-- info: 'IxCC.Anf.Defun.Proof.evalAtoms_alt_take' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.evalAtoms_alt_take
+
+/-- info: 'IxCC.Anf.Defun.Proof.evalAtoms_alt_drop' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.evalAtoms_alt_drop
+
+/-- info: 'IxCC.Anf.Defun.Proof.eval_altBody_over_later' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.eval_altBody_over_later
+
+/-- info: 'IxCC.Anf.Defun.Proof.evalAtoms_vars' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.evalAtoms_vars
+
+/-- info: 'IxCC.Anf.Defun.Proof.fund_bind' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.fund_bind
+
+/-- info: 'IxCC.Anf.Defun.Proof.fund_exp' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.fund_exp
+
+/-- info: 'IxCC.Anf.Defun.Proof.fund_opt' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.fund_opt
+
+/-- info: 'IxCC.Anf.Defun.Proof.fund_alts' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Anf.Defun.Proof.fund_alts

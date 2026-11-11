@@ -119,8 +119,17 @@ always remove.
   is on parameter counts and independent of closures. The roots of
   [`phase2-arity`](../fixtures/corpus/phase2-arity/corpus.json) (not
   registered) are the root-arity guard's regression cases (see [Proof
-  obligation](#proof-obligation)). The fundamental lemma and the simulation
-  theorem are not written yet. No P9 code exists.
+  obligation](#proof-obligation)). The fundamental lemma holds at every clock
+  bound (`Anf.Defun.Proof.fund`, in
+  [`Anf/Proof/Defun/Fund.lean`](../IxCC/Anf/Proof/Defun/Fund.lean)), with
+  the dispatcher simulation (`dispatch_sim`: applying related values in the
+  source is calling the dispatcher of the arguments' arity in the target, a
+  saturated call one charge deeper, by `SimUpTo.laterR`) and the call
+  simulation (`call_sim`); environments are related pointwise and of at least
+  the static depth, and a local function's closure relates to its cell over
+  its whole related target environment. The simulation theorem on the
+  program (`run_refines`, `Anf.Defun.correct`) is not written yet. No P9 code
+  exists.
 - *Implemented: P8's own input checks.* The pipeline does not establish
   `Anf.WellScoped`, so the pass refuses (`defun.input`) what its correctness
   relies on and a well-scoped program never has: a global already keyed `lam`

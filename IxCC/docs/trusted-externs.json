@@ -1895,7 +1895,7 @@
       "IxCC/Ixon/V3/Validate.lean": "38f99333264daad36d1b26b593d2e8c916bd9577485e32cc21821fc2b4ec415c",
       "IxCC/Ixon/V3/Wire.lean": "d7020d6212f1358f6029dae1eb8add37f30d38f3478ce85dd5ccd10c34eaa83d",
       "IxCC/Ixon/V4/Convert.lean": "4d626e6ef55460063cbca9a7f33a916086633078117b443f7a1dc4e75bae5b3b",
-      "IxCC.lean": "54c2128912dd5bf26e10e44abb21cc4234ce02df1de6b7e5cd33058050bc6169",
+      "IxCC.lean": "68dca37e458cf8e7465c9136db961e56fe274010abfc9f6082a0224e638e2c3a",
       "IxCCTests/Aiur/CounterAnalysis/Fixtures.lean": "ce028bda6eebd49f453f4225f6f3c5f12423ac5ffcdec2621f3e72e23fe88128",
       "IxCCTests/Aiur/CounterAnalysis/Proofs.lean": "41e3a5bf0bc6795a8f7848e804156910ca82bf24791e986436511a2626250846",
       "IxCCTests/Aiur/Execution/ControlCases.lean": "70c96489917dd7e35ebb262cbd372b2b0606064d9703f883b8647bb3573f3989",
@@ -2270,8 +2270,8 @@
       "lean-toolchain": "d5edba4e4b8faad9c1baeadb265716d20d03be4d1a2647dc5e35b0c0325bea7b",
       "nix/build.nix": "199b85f37dd693b545211d21d86f285b3172224188c14b05b0e8c48bd296d013",
       "nix/checks.nix": "6606cae41425bfa21c9e6d4568586e559417e08478dc34ea006606cfd31af215",
-      "nix/ci-coverage.json": "187fed33dc6a8c4cbea362acc9a0b01ce2f96856e386f55616d0090ea1c21d08",
-      "nix/lean-modules.json": "84e6781ff6676294efc66ca1d829bb6705eb548f0c0623f4430b777fd1631e78",
+      "nix/ci-coverage.json": "5a7e1f9d818ceaa22b402e66038d735c69ab95965aa57d590deb4cc09a952ae6",
+      "nix/lean-modules.json": "bf8555c50a3520fcbb86b82261f715bda0426957a4a7aedba011dc0566174d71",
       "nix/sources.nix": "a5c2f8ea09a33eeb9b4902b3932bcde58084f30acbbf03ad4c7f3ef9a6b1c205",
       "IxCCTests/Scripts/CheckAiur.lean": "f5f1c7cdf6921d9d6fdbafd93163d823c4ce2c9f6bd52751c3357c383585729a",
       "IxCCTests/Scripts/CheckBuildGraph.lean": "806e4b62f9aff562ad35797ecf772ef6c908ee931e768146e6910fa4bdf916a2",
@@ -3065,11 +3065,11 @@
       "fixtures/corpus/phase2-closures/closures.census.json": "aba707d870b8e74d2bb5a86ffeda0b52a74ab8f7d092e776c0bdee87d1496868",
       "fixtures/corpus/phase2-closures/README.md": "f3338a676c0516ec1dfd1868c0d1494f193ffd7e6de219dcb26aaaed51979786",
       "IxCCTests/Pipeline/Defun.lean": "47a70905ebb6140664deddbedafa91145c3bb50cfa474414764b622c8c63a6a3",
-      "IxCCTests/Fences/Defun.lean": "318dc44bed703e885ea080a1aa262ee022a65a2dfabc707332565cb41e187075",
+      "IxCCTests/Fences/Defun.lean": "54e896bae843649aaf75d05ca6113ffec5ae0f7e2c826c5977832b82728c8ef8",
       "IxCCTests/Anf/Defun.lean": "7bddfb7416ac1459e059705934af0eb2eeecc1eaf978e826c7748d0ced076ee0",
       "IxCC/Fir/Proof/FirstOrder.lean": "5aacdf1ba2f567480b08727d93bc55be2dc4daa12a9eebf639872b792894f362",
       "IxCC/Anf/Proof/Defun/Scope.lean": "e2936ebd60c9d571fa4a3314b70df5682f0734e82227f7608c26831edd7f311e",
-      "IxCC/Anf/Proof/Defun/Rel.lean": "7b567f562e2e71bc8ae9ecbe88862c6ec73e3149b4dcec5d609c619a996ed2e1",
+      "IxCC/Anf/Proof/Defun/Rel.lean": "85bd60dc05343bb18fc950788f8cad2e2a1e1e8c36184a163bba47c3e4333528",
       "IxCC/Anf/Proof/Defun/FirstOrder.lean": "f4b11966ad711fd2ecd37dfc966f223fd9602609222a72931b3fbff239e2c943",
       "IxCC/Anf/Defun/Lift.lean": "4f3a05e7604b1f2768efe86ee5093dae791526a7527db34e2ba0f42b04eb510a",
       "IxCC/Anf/Defun/Dispatch.lean": "bbd35c7ecef21cbfb957cdb391a675a8e95ec6678253953757599ac79791448e",
@@ -3106,7 +3106,8 @@
       "IxCC/X86/Exe/Read.lean": "9d65d9d7c6c9dfb52669fc104322ba5bd58fe9cc07fce9a2e06d764326f21ae3",
       "IxCC/X86/Exe/Layout.lean": "8f55affed5748b9fbd9a582ad6fc57cefac4c19f782396b0e7b543a8dadf472c",
       "IxCC/X86/Exe/Code.lean": "7bdc5f28f9c4a57b747d2c68a38be52e9bae61a50b912050c23cbf6a318f7fb4",
-      "IxCC/Exe.lean": "7b838138ef4f85d2868730dd9c4f3ce8e7e67cc96199a0107a5ace7cfedc71da"
+      "IxCC/Exe.lean": "7b838138ef4f85d2868730dd9c4f3ce8e7e67cc96199a0107a5ace7cfedc71da",
+      "IxCC/Anf/Proof/Defun/Fund.lean": "8e233b9c2b3d028a36eb1cf04842f0b1d125485475d9d519d8e33d9cee618f7f"
     },
     "repository_files": {
       ".github/workflows/ixcc.yml": "5e53255060769431514df41c6c65e15f134b62cb088313c6ae67d47f4eaef4e3"

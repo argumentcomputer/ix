@@ -111,6 +111,7 @@
   "IxCC.Anf.Proof.Defun.Assemble",
   "IxCC.Anf.Proof.Defun.Dispatch",
   "IxCC.Anf.Proof.Defun.FirstOrder",
+  "IxCC.Anf.Proof.Defun.Fund",
   "IxCC.Anf.Proof.Defun.Keys",
   "IxCC.Anf.Proof.Defun.Rel",
   "IxCC.Anf.Proof.Defun.Rename",
@@ -1582,8 +1583,7 @@
   "IxCCTests.Sem.Toy.Pipeline",
   "IxCCTests.Sem.Toy.Stack",
   "IxCCTests.Sem.Toy.Tick"],
- "baseline":
- "Standalone executables: the layout's driver contract and the executable check; their fences",
+ "baseline": "P8: the fundamental lemma of the translation; its fences",
  "axiom_sha256":
- "3a5c4437f853359021c361fc67ab1c41e196f41155f6af16cfa0911791dfcf3a",
- "axiom_count": 5753}
+ "0b18df8a6486968f6667541bd68df2614c0e3d329b1ab6049c10ae30cd4da49b",
+ "axiom_count": 5785}

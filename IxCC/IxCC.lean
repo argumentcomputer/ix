@@ -224,6 +224,7 @@ import IxCC.Anf.Proof.Defun.Assemble
 import IxCC.Anf.Proof.Defun.Rename
 import IxCC.Anf.Proof.Defun.Translate
 import IxCC.Anf.Proof.Defun.WellScoped
+import IxCC.Anf.Proof.Defun.Fund
 import IxCC.Own.Kind
 import IxCC.Fir.Syntax
 import IxCC.Fir.Semantics

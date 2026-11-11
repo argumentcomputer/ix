@@ -4,8 +4,8 @@ import IxCC.Anf.Proof.Lang
 
 /-! # P8's simulation: the relations
 
-The definitions P8's correctness proof is stated with (the proof itself is
-not written yet; `docs/closures-design.md`, "Proof obligation", says what it proves):
+The definitions P8's correctness proof is stated with
+(`docs/closures-design.md`, "Proof obligation", says what it proves):
 
 * `Setting`: the source program, P8's output, the closure sources and the
   largest dispatcher arity;
@@ -15,17 +15,22 @@ not written yet; `docs/closures-design.md`, "Proof obligation", says what it pro
   a call of a dispatcher, everything else unchanged;
 * `DV`: the value relation. It is **structural, with no step index**, as the
   implemented Anf relation is (`Anf.Rel.Structural`): literals and □ relate
-  to themselves, constructors pointwise; a closure of a local function
-  relates to the cell of its lifted global, whose fields are the values of
-  the captures in the closure's environment followed by the arguments
-  supplied so far; a function global's closure relates to the cell of the
-  global's key with those arguments. The closure clauses mention only `Tr`
-  and the target program, not `DV`, so the relation is an ordinary
-  inductive;
-* `EnvOn`, `JRel`: environments related on the free variables an
-  expression reads (λ-lifting captures only those, so the relation cannot be
-  pointwise as `Anf.Rel.Pw` is), and join closures with translated bodies;
-* `FundAt`: the fundamental lemma's statement at a clock bound;
+  to themselves, constructors pointwise; a closure of a local function, made
+  in an environment related pointwise to a target environment, relates to
+  the cell of its lifted global, whose fields are the captures' values in
+  that target environment followed by the arguments supplied so far (the
+  cell keeps only the captures; the relation keeps the whole target
+  environment, so that the lifted body, renamed back, runs over an
+  environment related pointwise to the source's, by `eval_rename` and
+  `capRen_env`); a function global's closure relates to the cell of the
+  global's key with those arguments. An ordinary mutual inductive with `DVs`;
+* `JRel`: join closures with translated bodies over related environments of
+  at least the depth they were made at;
+* `FundAt`: the fundamental lemma's statement at a clock bound: an expression
+  at value depth `Γ` and its image, in environments related pointwise and of
+  at least that depth (every binder pushes exactly its values, so the bound
+  holds wherever code runs, and a local function's captures, below `Γ`, are
+  in the target environment);
 * `ExactArity`, `RefinesOn`: the inputs P8 refines on. A root applied to
   more arguments than it takes applies its result to the rest; when the
   result is a closure the source continues and the target, which holds a
@@ -126,15 +131,16 @@ inductive DV (X : Setting) : Val → Val → Prop
   | lit {l : Lam.Lit} : DV X (.lit l) (.lit l)
   | box : DV X .box .box
   | con {c : Key.CtorKey} {vs ws : List Val} : DVs X vs ws → DV X (.con c vs) (.con c ws)
-  /-- A local function's closure, made at value depth `Γ`, with `got`
-  supplied. -/
-  | lam {ρ : List Val} {n Γ : Nat} {b b' : Exp} {got ws : List Val} {s : Source} {gd : GDef} :
+  /-- A local function's closure, made at value depth `Γ` in an environment
+  `ρ` related to the target's `ρ'`, with `got` supplied: the cell of its
+  lifted global holds the captures' values in `ρ'`, then the arguments. -/
+  | lam {ρ ρ' : List Val} {n Γ : Nat} {b b' : Exp} {got got' : List Val} {s : Source} {gd : GDef} :
       s ∈ X.srcs → s.arity = n → got.length < n → Tr X (Γ + n) b b' → (∀ x ∈ b'.free n, x < Γ) →
       s.caps = (capsOf Γ n b').length → X.Q.global? s.id = some gd → gd.ps.length = s.caps + n →
-      gd.body = Exp.renameVars (capRen (capsOf Γ n b') n) 0 b' →
-      (∀ x ∈ capsOf Γ n b', x < ρ.length) →
-      DVs X ((capsOf Γ n b').map (fun x => ρ.getD x .box) ++ got) ws →
-      DV X (.clos ρ n b got) (.con (.clo s.key got.length) ws)
+      gd.body = Exp.renameVars (capRen (capsOf Γ n b') n) 0 b' → Γ ≤ ρ.length →
+      DVs X ρ ρ' → DVs X got got' →
+      DV X (.clos ρ n b got)
+        (.con (.clo s.key got.length) ((capsOf Γ n b').map (fun x => ρ'.getD x .box) ++ got'))
   /-- A function global's closure, with `got` supplied. -/
   | glob {h n : Nat} {hd gd : GDef} {got ws : List Val} :
       X.P.global? h = some hd → hd.ps.length = n →
@@ -148,22 +154,20 @@ inductive DVs (X : Setting) : List Val → List Val → Prop
 
 end
 
-/-- Environments related on the indices of `S` (the free variables read). -/
-def EnvOn (X : Setting) (S : Nat → Prop) (ρ ρ' : List Val) : Prop :=
-  ∀ x, S x → ∃ v w, ρ[x]? = some v ∧ ρ'[x]? = some w ∧ DV X v w
-
-/-- Join closures with translated bodies over environments related on the
-bodies' free variables. -/
+/-- Join closures with translated bodies over related environments of at
+least the depth they were made at. -/
 inductive JRel (X : Setting) : List JClo → List JClo → Prop
   | nil : JRel X [] []
   | cons {ρ ρ' : List Val} {J0 J0' J J' : List JClo} {Γ n : Nat} {b b' : Exp} {r : Bool} :
-      Tr X (Γ + n) b b' → EnvOn X (· ∈ b.free n) ρ ρ' → JRel X J0 J0' → JRel X J J' →
+      Tr X (Γ + n) b b' → Γ ≤ ρ.length → DVs X ρ ρ' → JRel X J0 J0' → JRel X J J' →
       JRel X (.mk ρ J0 n b r :: J) (.mk ρ' J0' n b' r :: J')
 
-/-- The fundamental lemma of the translation at clock bound `n`. -/
+/-- The fundamental lemma of the translation at clock bound `n`: an
+expression at value depth `Γ` and its image, in related environments of at
+least that depth. -/
 def FundAt (X : Setting) (n : Nat) : Prop :=
-  ∀ ⦃Γ : Nat⦄ ⦃e e' : Exp⦄ ⦃ρ ρ' : List Val⦄ ⦃J J' : List JClo⦄, Tr X Γ e e' →
-    EnvOn X (· ∈ e.free 0) ρ ρ' → JRel X J J' →
+  ∀ ⦃Γ : Nat⦄ ⦃e e' : Exp⦄ ⦃ρ ρ' : List Val⦄ ⦃J J' : List JClo⦄, Tr X Γ e e' → Γ ≤ ρ.length →
+    DVs X ρ ρ' → JRel X J J' →
     SimUpTo (DV X) n (fun k => eval X.P k ρ J e) (fun k => eval X.Q k ρ' J' e')
 
 /-- Inputs that apply a root to exactly as many arguments as it takes. -/
