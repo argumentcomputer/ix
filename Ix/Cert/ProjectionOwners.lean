@@ -55,7 +55,8 @@ theorem buildMutual_rows {limits : Ix.Sharing.Exact.Limits} {classes : List MutC
     rw [hs] at ran
     obtain ⟨block, hb, -, returned⟩ := Ix.CompileCert.Sectioned.bind_sectioned ran
     cases Except.ok.inj returned
-    exact .inr (built_muts hb)
+    have muts := built_muts hb
+    exact .inr muts
 
 /-- `buildMutual_rows` for the mutual block compile. -/
 theorem compileMutualBlock_rows (classes : List MutConst) :
