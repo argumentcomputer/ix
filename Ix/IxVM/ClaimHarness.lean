@@ -448,7 +448,7 @@ def buildClaimWitness (env : Ixon.Env) (claim : Ix.Claim)
   | .catalog .. =>
     throw "catalog claims have no single-run witness; they are formed by \
 aggregating their members' check-env claims"
-  -- the binder data the conversion reads (D2, `IxVM.PwHints`)
+  -- the binder data the conversion reads (`IxVM.PwHints`)
   ioBuffer ← IxVM.PwHints.withHints claim ioBuffer env
   return { funcName := `verify_claim
            input := digestKey, inputIOBuffer := ioBuffer }

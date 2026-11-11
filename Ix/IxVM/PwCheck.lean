@@ -11,7 +11,7 @@ Two checks of the data `IxVM.PwHints.annotate` writes on a witness's
 channel 8, over every record the witness carries on channel 2:
 
 * **Coverage.** The conversion of every root of every record, as IxVM
-  converts it (`plans/ixvmc/cx/REPORT.md`, "D2 hint interface": roots at
+  converts it (`IxVM/IxVM/Source/Convert.lean`, "Binder data": roots at
   variant 0, each `Share n` read at its key and its entry converted at the
   variant read, each entry's `Lam`, `All` and `Share` nodes numbered in
   pre-order), finds a value of the right kind at every key it asks for, and

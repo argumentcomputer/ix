@@ -114,7 +114,7 @@ def Case.ofClaim (label : String) (env : Ixon.Env) (claim : Ix.Claim)
   let env ← if _root_.IxVM.PwHints.converts claim then withDefaultRoleBinding env else pure {}
   return { label, accept, rejectsWith, witness, env }
 
-/-- `c` with the binder data (D2, `IxVM.PwHints`) its claim's conversion
+/-- `c` with the binder data (`IxVM.PwHints`) its claim's conversion
 reads, when its witness carries none: a suite that builds its IO by hand gets
 them as `IxVM.ClaimHarness`'s builders give them. -/
 def Case.withPwHints (c : Case) : Except String Case := do

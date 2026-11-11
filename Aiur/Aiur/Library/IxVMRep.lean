@@ -656,7 +656,7 @@ theorem RepIxVMKUniv.det {h : Heap F} {u₁ u₂ : IxVMKUniv F} {ptr : SourceVal
 /-! ## 5. `IxVMKExpr` (`KernelTypes::KExpr`) Representation, `HeapMono`, and Determinism -/
 
 /-- Mathematical AST of `KernelTypes::KExpr` kernel expressions. A `λ` or `∀` carries its
-binder datum as a level (D2, `KExprNode::Lam(ty, body, ℓ)`): the binder's codomain sort is zero
+binder datum as a level (`KExprNode::Lam(ty, body, ℓ)`): the binder's codomain sort is zero
 exactly when `ℓ` is, so the kernel's datum is the zero-ness of `ℓ`. -/
 inductive IxVMKExpr (F : Type) where
   | bvar (idx : F) : IxVMKExpr F

@@ -6,7 +6,7 @@ import Aiur.Generic.TypeFacts
 
 /-! # Mirror lemmas: reading a source derivation off a concrete body
 
-Track B, Phase 3 (`plans/ixvm-certification-gap.md`). A mirror lemma says
+A mirror lemma says
 what every derivation of one function computes. Its proof walks the
 function's body: each step inverts the derivation at the body's head
 (`EvalExpr.*_inv`, one lemma per expression form), evaluates the side

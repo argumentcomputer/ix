@@ -54,11 +54,23 @@ list fails just as loudly as one in a bare file.
       equality goes through `@[csimp]` + `withPtrEq` with the redundancy
       proved (`Name.beqPtr_eq`).
 
-  IxC/Kernel/Key.lean           computed_field
+  IxC/Kernel/Key.lean           computed_field, ofReduceBool
       A cached hash only (`Key.hashData`), as `Name`'s: the constant keys
       (input, role and derived) hash in O(1). Pointer equality goes
       through `@[csimp]` + `withPtrEq` with the redundancy proved
       (`Key.beqPtr_eq`).
+      NAMES ONLY: `ofReduceBool` and `ofReduceNat` are constructors of
+      `Role`, the roles of Lean's compiler-trust axioms `Lean.ofReduceBool`
+      and `Lean.ofReduceNat`, with their Lean names (`Role.leanName`). A
+      binding names them so that it can bind them as inert axioms
+      (`Role.inert`): the kernel declines their declarations (non-standard
+      axioms), IxVM refuses each as a claim's seed and refuses every use,
+      and nothing here evaluates natively.
+
+  IxC/Kernel/Roles.lean         ofReduceBool
+      NAMES ONLY, the same two `Role` constructors: their specification
+      (`Role.spec`, an axiom of the stated type), the roles their types
+      mention (`Role.deps`) and `Role.inert`, which marks them inert.
 
   IxC/Kernel/Exclusive.lean     unsafe, implemented_by
       `withExclusive`: defined as `k false` and `@[implemented_by]` the
@@ -140,7 +152,8 @@ def tokens : List String :=
 def allow : List (String × List String) := [
   ("IxC/Kernel/Expr.lean", ["computed_field"]),
   ("IxC/Kernel/Name.lean", ["computed_field"]),
-  ("IxC/Kernel/Key.lean", ["computed_field"]),
+  ("IxC/Kernel/Key.lean", ["computed_field", "ofReduceBool"]),
+  ("IxC/Kernel/Roles.lean", ["ofReduceBool"]),
   ("IxC/Kernel/BasisGen.lean", ["unsafe", "implemented_by"]),
   ("IxC/Kernel/Exclusive.lean", ["unsafe", "implemented_by"]),
   ("Ix/Address/Admission.lean", ["implemented_by"]),
