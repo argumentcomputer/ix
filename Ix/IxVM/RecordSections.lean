@@ -58,9 +58,10 @@ def chosenOf (env : Ixon.Env) :
   | .ok p => pure p
   | .error _ =>
     let table ← match env.roleBinding with
-      | some b => match Ix.Kernel.RoleTable.ofBytes b.bytes with
-        | some t => pure t
-        | none => throw "record sections: the role binding does not decode"
+      | some b =>
+        (match Ix.Kernel.RoleTable.ofBytes b.bytes with
+          | some t => pure t
+          | none => throw "record sections: the role binding does not decode")
       | none => Ix.Kernel.Reader.defaultTable
     return (table, ← Ix.Kernel.Reader.preludeFor (md := .anon) table)
 

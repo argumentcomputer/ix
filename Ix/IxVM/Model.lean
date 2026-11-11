@@ -573,13 +573,13 @@ def BlockAdvice.withSections (adv : BlockAdvice) (support : Array (Address × Ix
   let layout : Payload := { l with
     recBlock := rename l.recBlock
     advice := records.map (·.1)
-    witnesses := l.witnesses.map fun (x, k, steps, extra) => (rename x, k, steps, extra)
+    witnesses := l.witnesses.map (fun (x, k, steps, extra) => (rename x, k, steps, extra))
     typeModels := l.typeModels.map rename
     ctorModels := l.ctorModels.map rename
     recModels := l.recModels.map rename
     iotas := l.iotas.map rename }
   return { adv with layout, records,
-                    hints := adv.hints.map fun (a, h) => (rename a, h),
+                    hints := adv.hints.map (fun (a, h) => (rename a, h)),
                     deps := adv.deps.map rename }
 
 /-! ## Attaching the models -/
