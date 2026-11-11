@@ -237,7 +237,7 @@ theorem ctorRaw_of_check {env : KEnv} {sh : CaseShape} {cs : CtorShape}
   split at h
   · rename_i cvC np nf hf
     simp only [Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at h
-    obtain ⟨⟨⟨⟨⟨⟨rfl, rfl⟩, h1⟩, h2⟩, h3⟩, h4⟩⟩ := h
+    obtain ⟨⟨⟨⟨⟨rfl, rfl⟩, h1⟩, h2⟩, h3⟩, h4⟩ := h
     exact ⟨cvC, hf, h1, h2, h3, h4⟩
   · cases h
 
@@ -286,7 +286,7 @@ theorem caseStored_of_check {env : KEnv} {kc kr : KKey} {sh : CaseShape}
   · split at hrec
     · rename_i cvr mI rP rules hf
       simp only [Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at hrec
-      obtain ⟨⟨⟨⟨⟨⟨rfl, rfl⟩, hlp⟩, hty⟩, hrl⟩, hrs⟩⟩ := hrec
+      obtain ⟨⟨⟨⟨⟨rfl, rfl⟩, hlp⟩, hty⟩, hrl⟩, hrs⟩ := hrec
       refine ⟨cvr, rules, hf, hlp, hty, hrl, fun j cs rl hj hr => ?_⟩
       have := allCtors_spec hrs j cs hj
       simp only [hr, Bool.and_eq_true, decide_eq_true_eq] at this
@@ -300,7 +300,7 @@ theorem caseProg_of_check {p : Program} {κ : CId → KKey} {Sl : List CId} {r :
   split at h
   · rename_i sf kk lvls np nmot nmin ni ind rules ty hd
     simp only [Bool.and_eq_true, beq_iff_eq] at h
-    obtain ⟨⟨⟨⟨⟨⟨rfl, rfl⟩, rfl⟩, rfl⟩, hS⟩, hN⟩⟩ := h
+    obtain ⟨⟨⟨⟨⟨rfl, rfl⟩, rfl⟩, rfl⟩, hS⟩, hN⟩ := h
     refine ⟨⟨sf, kk, lvls, ind, rules, ty, hd, fun c hc sf' lv' cidx np nf ty' hdc => ?_, fun hn => ?_⟩⟩
     · have := List.all_eq_true.mp hS c hc
       simp only [hdc, beq_self_eq_true, ↓reduceIte, Bool.and_eq_true, beq_iff_eq] at this
