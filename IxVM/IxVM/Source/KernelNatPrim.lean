@@ -243,6 +243,18 @@ def klimbs_from_g := aiur_fn⟦
 
 
 
+  -- A `Nat` reading (`rawNatLit?`, through `Red.natSucc`): a literal, or `Nat.zero` and
+  -- `Nat.succ` at an empty level list.
+
+def lvls_empty := aiur_fn⟦
+  inline fn lvls_empty(lvls: Lists::List<KernelTypes::KLevel>) -> Field {
+      match (*(lvls)) {
+        Lists::Node::Nil => {  1 } ,
+        _ => {  0 } ,
+      }
+    }
+⟧
+
 def try_extract_nat := aiur_fn⟦
   fn try_extract_nat(rc: KernelRoles::RoleCtx, e: KernelTypes::KExpr) -> (Field, KernelTypes::KLimbs) {
       match (*(e)) {
@@ -251,8 +263,8 @@ def try_extract_nat := aiur_fn⟦
             KernelTypes::KLiteral::Nat(limbs) => {  (1, limbs) } ,
             _ => {  (0, (&(Lists::Node::Nil))) } ,
           } } ,
-        KernelTypes::KExprNode::Const(caddr, _) => {
-          match KernelRoles::role_is(rc, caddr, KernelRoleSpec::role_nat_zero()) {
+        KernelTypes::KExprNode::Const(caddr, clvls) => {
+          match KernelRoles::role_is(rc, caddr, KernelRoleSpec::role_nat_zero()) * lvls_empty(clvls) {
             1 => {  (1, (&(Lists::Node::Nil))) } ,
             _ => {  (0, (&(Lists::Node::Nil))) } ,
           } } ,
@@ -265,8 +277,8 @@ def try_extract_nat := aiur_fn⟦
 def try_extract_nat_app := aiur_fn⟦
   fn try_extract_nat_app(rc: KernelRoles::RoleCtx, f: KernelTypes::KExpr, a: KernelTypes::KExpr) -> (Field, KernelTypes::KLimbs) {
       match (*(f)) {
-        KernelTypes::KExprNode::Const(caddr, _) => {
-          match KernelRoles::role_is(rc, caddr, KernelRoleSpec::role_nat_succ()) {
+        KernelTypes::KExprNode::Const(caddr, clvls) => {
+          match KernelRoles::role_is(rc, caddr, KernelRoleSpec::role_nat_succ()) * lvls_empty(clvls) {
             1 => {
               match try_extract_nat(rc, a) {
                 (1, pred_limbs) => {  (1, KernelKlimbs::klimbs_succ(pred_limbs)) } ,

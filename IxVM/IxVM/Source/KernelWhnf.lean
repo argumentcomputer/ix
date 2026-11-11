@@ -117,7 +117,9 @@ def peel_beta_cert := aiur_fn⟦
 ⟧
 
   -- Red.proj. Fires only when the constructor belongs to the projected structure, the
-  -- structure has one constructor and no indices (D5), the field exists, the
+  -- structure is a member of a native block (the rule reads the projection table,
+  -- which the kernel installs at native blocks only; `KernelModeled::proj_ctor` is
+  -- inference's gate), has one constructor and no indices (D5), the field exists, the
   -- constructor application has exactly `nparams + nfields` arguments and the right
   -- number of levels, and the structure's sort at those levels is never zero. At a
   -- never-zero structure the rule's `FireSem` guard is vacuous and every slot of the
@@ -141,8 +143,12 @@ def red_proj := aiur_fn⟦
                                   * Fields::is_zero(Lists::length(clvls) - cnl);
                       match ((owner * shape) * arity) * UInt32::less_than_fields(fidx, nfields) {
                         1 => {
-                          match type_sort_never(sty, snp, clvls) {
-                            1 => {  (1, Lists::lookup(args, nparams + fidx)) } ,
+                          match KernelModeled::block_is_modeled(sblock) {
+                            0 => {
+                              match type_sort_never(sty, snp, clvls) {
+                                1 => {  (1, Lists::lookup(args, nparams + fidx)) } ,
+                                _ => {  (0, scrut) } ,
+                              } } ,
                             _ => {  (0, scrut) } ,
                           } } ,
                         _ => {  (0, scrut) } ,
@@ -272,9 +278,14 @@ def try_prim_dispatch := aiur_fn⟦
   fn try_prim_dispatch(rc: KernelRoles::RoleCtx, addr: Bytes::AddressRef, lvls: Lists::List<KernelTypes::KLevel>,
                               spine: Lists::List<KernelTypes::KExpr>,
                               types: Lists::List<KernelTypes::KExpr>) -> (Field, KernelTypes::KExpr) {
-      let (fam, op) = prim_family(rc, addr);
-      match fam {
-        1 => {  try_nat_dispatch_prewhnf(rc, addr, op, spine, types) } ,
+      -- the native rules read the operation at an empty level list (`.const c []`)
+      match (*(lvls)) {
+        Lists::Node::Nil => {
+          let (fam, op) = prim_family(rc, addr);
+          match fam {
+            1 => {  try_nat_dispatch_prewhnf(rc, addr, op, spine, types) } ,
+            _ => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
+          } } ,
         _ => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
       }
     }
@@ -716,7 +727,7 @@ def red_iota := aiur_fn⟦
                           let rec_ty_i = KernelLevels::expr_inst_levels(rec_ty, lvls);
                           let pre = Lists::take(spine, major_idx);
                           match iota_cmp(rc, rec_ty_i, pre, major_idx, cty, clvls, cnp, margs, nindices, types)
-                                * iota_certs(rc, rec_ty_i, nparams, Lists::snoc(pre, major), cty, cblock, cind, clvls, margs, types) {
+                                * iota_certs(rc, rec_ty_i, Lists::snoc(pre, major), cty, clvls, margs, types) {
                             1 => {
                               let rhs_lvled = KernelLevels::expr_inst_levels(rrhs, lvls);
                               let r1 = apply_spine(rhs_lvled, Lists::take(spine, pmm_end));
@@ -781,58 +792,50 @@ def iota_cmp := aiur_fn⟦
     }
 ⟧
 
-  -- Fix A at ι (RULES-GAP PM-C): Red.iota's two licensed `Certs` walks. The binder
-  -- datum of every slot of a stored type former's telescope is the zero-ness of the
-  -- sort it ends in (D2's entry point for stored declaration types): for the
-  -- recursor, its motive's sort; for the constructor, its inductive's sort. At a
-  -- never-zero datum every slot skips; otherwise every argument is certified.
+  -- Fix A at ι (RULES-GAP PM-C): Red.iota's two licensed `Certs` walks, over the
+  -- recursor's type and the constructor's type at the redex's levels. A slot skips
+  -- when its own binder's datum is never zero (`Certs.skip`); when every slot of a
+  -- walk does, the walk needs no certificate, and otherwise every argument of it is
+  -- certified (`Certs.cert`).
 
 def iota_certs := aiur_fn⟦
-  fn iota_certs(rc: KernelRoles::RoleCtx, rec_ty_i: KernelTypes::KExpr, nparams: Field,
-                rec_args: Lists::List<KernelTypes::KExpr>, cty: KernelTypes::KExpr, cblock: Bytes::AddressRef,
-                cind: Field, clvls: Lists::List<KernelTypes::KLevel>, margs: Lists::List<KernelTypes::KExpr>,
+  fn iota_certs(rc: KernelRoles::RoleCtx, rec_ty_i: KernelTypes::KExpr,
+                rec_args: Lists::List<KernelTypes::KExpr>, cty: KernelTypes::KExpr,
+                clvls: Lists::List<KernelTypes::KLevel>, margs: Lists::List<KernelTypes::KExpr>,
                 types: Lists::List<KernelTypes::KExpr>) -> Field {
-      let c1 = match rec_slots_never(rec_ty_i, nparams) {
+      let c1 = match slots_never(rec_ty_i, rec_args) {
         1 => {  1 } ,
         _ => {  certs_all(rc, rec_ty_i, rec_args, (&(Lists::Node::Nil)), types) } ,
       };
       match c1 {
         1 => {
-          match (*(Ingress::get_ci_iprj(cblock, cind))) {
-            KernelTypes::KConstantInfo::Induct(_, ind_ty, inp, ini, _, _, _, _) => {
-              match type_sort_never(ind_ty, inp + ini, clvls) {
-                1 => {  1 } ,
-                _ => {  certs_all(rc, KernelLevels::expr_inst_levels(cty, clvls), margs, (&(Lists::Node::Nil)), types) } ,
+          let cty_i = KernelLevels::expr_inst_levels(cty, clvls);
+          match slots_never(cty_i, margs) {
+            1 => {  1 } ,
+            _ => {  certs_all(rc, cty_i, margs, (&(Lists::Node::Nil)), types) } ,
+          } } ,
+        _ => {  0 } ,
+      }
+    }
+⟧
+
+  -- Whether every slot of the telescope `t` that the arguments `args` fill has a
+  -- binder datum that is never zero (`Certs.skip`'s premise, slot by slot). 0 when
+  -- `t` is not syntactically a telescope that long.
+
+def slots_never := aiur_fn⟦
+  fn slots_never(t: KernelTypes::KExpr, args: Lists::List<KernelTypes::KExpr>) -> Field {
+      match (*(args)) {
+        Lists::Node::Nil => {  1 } ,
+        Lists::Node::Cons(_, rest) => {
+          match (*(t)) {
+            KernelTypes::KExprNode::Forall(_, body, bl) => {
+              match KernelLevels::level_is_not_zero(bl) {
+                1 => {  slots_never(body, rest) } ,
+                _ => {  0 } ,
               } } ,
             _ => {  0 } ,
           } } ,
-        _ => {  0 } ,
-      }
-    }
-⟧
-
-  -- The datum of a recursor type's slots: whether its (first) motive's type ends in
-  -- a never-zero sort. The recursor type must be syntactically a telescope there.
-
-def rec_slots_never := aiur_fn⟦
-  fn rec_slots_never(t: KernelTypes::KExpr, nparams: Field) -> Field {
-      match (*(t)) {
-        KernelTypes::KExprNode::Forall(dom, body, _) => {
-          match nparams {
-            0 => {  final_sort_never(dom) } ,
-            _ => {  rec_slots_never(body, nparams - 1) } ,
-          } } ,
-        _ => {  0 } ,
-      }
-    }
-⟧
-
-def final_sort_never := aiur_fn⟦
-  fn final_sort_never(t: KernelTypes::KExpr) -> Field {
-      match (*(t)) {
-        KernelTypes::KExprNode::Forall(_, body, _) => {  final_sort_never(body) } ,
-        KernelTypes::KExprNode::Srt(l) => {  KernelLevels::level_is_not_zero(l) } ,
-        _ => {  0 } ,
       }
     }
 ⟧
@@ -912,7 +915,7 @@ def try_struct_eta_iota := aiur_fn⟦
                 (0, _) => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
                 (_, parent) => {
                   match (*(Ingress::get_ci(parent))) {
-                    KernelTypes::KConstantInfo::Induct(_, ind_ty, ind_np, ind_nidx, num_ctors, _, block, idx) => {
+                    KernelTypes::KConstantInfo::Induct(ind_nl, ind_ty, ind_np, ind_nidx, num_ctors, _, block, idx) => {
                       match Fields::is_zero(num_ctors - 1) * Fields::is_zero(ind_nidx) {
                         1 => {
                           match struct_is_rec(parent) {
@@ -921,7 +924,7 @@ def try_struct_eta_iota := aiur_fn⟦
                               match UInt32::less_than_fields(Lists::length(types), KernelSubst::expr_lbr(major)) {
                                 1 => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
                                 _ => {
-                                  match eta_iota_fab(rc, ind_ty, ind_np, block, idx, parent, major, types) {
+                                  match eta_iota_fab(rc, ind_nl, ind_ty, ind_np, block, idx, parent, major, types) {
                                     (1, fab) => {
                                       red_iota(rc, rec_ty, lvls, spine, nparams, nmotives, nminors, nindices,
                                                rules, parent, fab, types) } ,
@@ -941,16 +944,16 @@ def try_struct_eta_iota := aiur_fn⟦
 ⟧
 
   -- Red.rescueEta: the major's type head-normalizes to the structure `parent` at
-  -- exactly its parameters; the structure's sort at the type's levels is never zero
-  -- (`capsNeverZero`, D4: no structure-η ι at `Sort u` structures); `fab` is the
-  -- constructor applied to the type's parameters and the major's projections. The
-  -- rule's final `DefEq fab major` is DefEq.structEta, whose comparisons are
-  -- reflexive here (`fab`'s parameters are the type's, its fields the major's
-  -- projections) and whose unlicensed `Certs` of the type's arguments are checked
-  -- (`certs_all`). ι then fires on `fab` (`red_iota`).
+  -- exactly its parameters, at the structure's level count; the structure's sort at
+  -- the type's levels is never zero (`capsNeverZero`, D4: no structure-η ι at `Sort u`
+  -- structures); `fab` is the constructor applied to the type's parameters and the
+  -- major's projections. The rule's final `DefEq fab major` is DefEq.structEta, whose
+  -- comparisons are reflexive here (`fab`'s parameters are the type's, its fields the
+  -- major's projections) and whose unlicensed `Certs` of the type's arguments are
+  -- checked (`certs_all`). ι then fires on `fab` (`red_iota`).
 
 def eta_iota_fab := aiur_fn⟦
-  fn eta_iota_fab(rc: KernelRoles::RoleCtx, ind_ty: KernelTypes::KExpr, ind_np: Field,
+  fn eta_iota_fab(rc: KernelRoles::RoleCtx, ind_nl: Field, ind_ty: KernelTypes::KExpr, ind_np: Field,
                   block: Bytes::AddressRef, idx: Field, parent: Bytes::AddressRef,
                   major: KernelTypes::KExpr, types: Lists::List<KernelTypes::KExpr>) -> (Field, KernelTypes::KExpr) {
       let major_ty_w = whnf(rc, KernelInfer::k_infer(rc, major, types), types);
@@ -958,7 +961,8 @@ def eta_iota_fab := aiur_fn⟦
         (th, targs) => {
           match (*(th)) {
             KernelTypes::KExprNode::Const(taddr, tus) => {
-              match Bytes::address_eq(taddr, parent) * Fields::is_zero(Lists::length(targs) - ind_np) {
+              match (Bytes::address_eq(taddr, parent) * Fields::is_zero(Lists::length(targs) - ind_np))
+                    * Fields::is_zero(Lists::length(tus) - ind_nl) {
                 1 => {
                   match type_sort_never(ind_ty, ind_np, tus) {
                     1 => {
