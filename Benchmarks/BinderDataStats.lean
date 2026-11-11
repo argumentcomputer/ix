@@ -188,12 +188,62 @@ equal_data={equalData} differ={differ} unreadable={unreadable} missing={missing}
 data_compared_in_differing_sections={binders}"
   return if differ == 0 && unreadable == 0 then 0 else 1
 
+/-! ## Why two compiles' sections differ -/
+
+/-- The refs table is strictly ascending by address bytes. -/
+def refsSorted (c : Ixon.Constant) : Bool :=
+  (List.range (c.refs.size - 1)).all fun i => (c.refs[i]!.cmpBytes c.refs[i + 1]!) == .lt
+
+/-- For owners whose sections differ, whether their payloads, sharing and refs
+order agree; the names one artifact has and the other lacks. -/
+def diag (pathA pathB : String) : IO UInt32 := do
+  let a ← load pathA
+  let b ← load pathB
+  let mut seen : Std.HashSet Address := {}
+  let mut differ := 0
+  let mut sameInfo := 0
+  let mut sameSharing := 0
+  let mut sameRefs := 0
+  let mut sortedA := 0
+  let mut sortedB := 0
+  let mut completeA := 0
+  let mut completeB := 0
+  let mut shown := 0
+  let mut missing : Array String := #[]
+  for (n, named) in a.named do
+    let some (oa, ca) := ownerOf a named.addr | continue
+    if seen.contains oa then continue
+    seen := seen.insert oa
+    let some nb := b.named.get? n | do missing := missing.push n.pretty; continue
+    let some (_, cb) := ownerOf b nb.addr | do missing := missing.push s!"{n.pretty} (no owner)"; continue
+    if ca.binders == cb.binders then continue
+    differ := differ + 1
+    if ca.info == cb.info then sameInfo := sameInfo + 1
+    if ca.sharing == cb.sharing then sameSharing := sameSharing + 1
+    if ca.refs.size == cb.refs.size then sameRefs := sameRefs + 1
+    if refsSorted ca then sortedA := sortedA + 1
+    if refsSorted cb then sortedB := sortedB + 1
+    if ca.bindersComplete then completeA := completeA + 1
+    if cb.bindersComplete then completeB := completeB + 1
+    if shown < 5 && ca.info == cb.info && ca.sharing == cb.sharing then
+      shown := shown + 1
+      IO.println s!"BDDIAG same payload, sections differ: {n.pretty}\n  A {repr ca.binders}\n  B {repr cb.binders}"
+  let unsortedA := (← records a).filter (fun (_, c, _) => !refsSorted c) |>.size
+  let unsortedB := (← records b).filter (fun (_, c, _) => !refsSorted c) |>.size
+  IO.println s!"BDDIAG {pathA} vs {pathB}: owners with different sections={differ} same_info={sameInfo} \
+same_sharing={sameSharing} same_refs_count={sameRefs} refs_sorted_A={sortedA} refs_sorted_B={sortedB} \
+complete_A={completeA} complete_B={completeB}; records with unsorted refs: A={unsortedA} B={unsortedB}; \
+missing in B={missing.size}"
+  for m in missing.extract 0 20 do IO.println s!"BDDIAG missing in B: {m}"
+  return 0
+
 end Benchmarks.BinderDataStats
 
 def main (args : List String) : IO UInt32 := do
   match args with
   | ["stats", path] => Benchmarks.BinderDataStats.stats path
   | ["compare", a, b] => Benchmarks.BinderDataStats.compare a b
+  | ["diag", a, b] => Benchmarks.BinderDataStats.diag a b
   | _ =>
     IO.eprintln "usage: binder-data-stats stats A.ixe | compare A.ixe B.ixe"
     return 2

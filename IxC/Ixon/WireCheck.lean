@@ -193,7 +193,8 @@ numbered node, its kind matching, every share node naming a variant that the
 section holds, and each sharing entry's variants pairwise distinct and
 numbered in order of first occurrence. A record with no numbered node has the
 empty section, and a record with one cannot: a binder whose datum is not
-decided carries the undecided node. So a record has one complete section for
+decided carries the undecided node, and so does every binder of an unsafe or
+partial constant. So a record has one complete section for
 each choice of data, and the data are the only freedom left: a checker
 validates every datum it uses. -/
 
@@ -212,6 +213,20 @@ def ConstantInfo.binderRoots : ConstantInfo → Array Expr
     | .defn d => #[d.typ, d.value]
     | .indc i => #[i.typ] ++ i.ctors.map (·.typ)
     | .recr r => #[r.typ] ++ r.rules.map (·.rhs)
+
+/-- Whether the record's constants are unsafe or partial: their every binder
+carries the undecided node, whether or not a datum could be decided (a checker
+never checks such a constant). A block's members share their safety. -/
+def ConstantInfo.uncheckedSafety : ConstantInfo → Bool
+  | .defn d => d.safety != .safe
+  | .recr r => r.isUnsafe
+  | .axio a => a.isUnsafe
+  | .quot _ => false
+  | .cPrj _ | .rPrj _ | .iPrj _ | .dPrj _ => false
+  | .muts ms => ms.any fun m => match m with
+    | .defn d => d.safety != .safe
+    | .indc i => i.isUnsafe
+    | .recr r => r.isUnsafe
 
 /-- Whether `e` has a binder, directly or through the sharing entries before
 it (`full`, one flag per earlier entry). -/
@@ -250,7 +265,7 @@ structure BinderWalk where
 /-- Check `nodes` against the numbered nodes `shape` of their expression,
 visiting each share node's variant at its first occurrence (`fuel` bounds the
 nesting by the number of blocks). -/
-def checkBinderNodes (lvls : Nat) (full : Array Bool) (sharing : Array Expr)
+def checkBinderNodes (lvls : Nat) (undecidedOnly : Bool) (full : Array Bool) (sharing : Array Expr)
     (blocks : Std.HashMap (Bool × UInt64 × UInt64) (Array BinderNode)) :
     Nat → Array (Option Nat) → Array BinderNode → BinderWalk → Option BinderWalk
   | 0, _, _, _ => none
@@ -260,7 +275,10 @@ def checkBinderNodes (lvls : Nat) (full : Array Bool) (sharing : Array Expr)
     for (kind, node) in shape.zip nodes do
       match kind, node with
       | none, .share _ => none
-      | none, node => if !node.canonical lvls then none
+      | none, node =>
+        if undecidedOnly then
+          unless node == .undecided do none
+        else if !node.canonical lvls then none
       | some _, .never | some _, .zero | some _, .ifAllZero _ | some _, .undecided => none
       | some n, .share v =>
         let key := (true, n.toUInt64, v)
@@ -271,7 +289,7 @@ def checkBinderNodes (lvls : Nat) (full : Array Bool) (sharing : Array Expr)
         let some sub := blocks[key]? | none
         walk := { visited := walk.visited.insert key,
                   variants := walk.variants.insert n (v.toNat + 1) }
-        walk ← checkBinderNodes lvls full sharing blocks fuel (entry.numberedNodes full #[]) sub walk
+        walk ← checkBinderNodes lvls undecidedOnly full sharing blocks fuel (entry.numberedNodes full #[]) sub walk
     return walk
 
 /-- The section of `c` is complete: blocks strictly sorted, exactly one per
@@ -293,7 +311,7 @@ def Constant.bindersComplete (c : Constant) : Bool := Id.run do
     let key := (false, r.toUInt64, (0 : UInt64))
     let some nodes := blocks[key]? | return false
     walk := { walk with visited := walk.visited.insert key }
-    match checkBinderNodes lvls full c.sharing blocks (c.binders.size + 1) shape nodes walk with
+    match checkBinderNodes lvls c.info.uncheckedSafety full c.sharing blocks (c.binders.size + 1) shape nodes walk with
     | some w => walk := w
     | none => return false
   -- no block outside the traversal
