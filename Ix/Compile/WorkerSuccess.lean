@@ -478,15 +478,15 @@ theorem buildBlockConstant_success (info : Ixon.ConstantInfo) (refs : Array Addr
     Successful (buildBlockConstant info refs univs names) := by
   constructor
   · intro env block before value after success
-    change run (liftSharing (withBinderSection names <$>
-      buildConstantWithSharing env.sharingLimits info refs univs)) (env, block) before = _ at success
+    change run (liftSharing (buildConstantWithSharing env.sharingLimits info refs univs >>=
+      withBinderSection env.env.binderAnnotator? names)) (env, block) before = _ at success
     exact (Successful.liftSharing _).grows env block before value after success
   · intro left right same block before value after success compatible
-    change run (liftSharing (withBinderSection names <$>
-      buildConstantWithSharing left.sharingLimits info refs univs)) (left, block) before = _ at success
-    change run (liftSharing (withBinderSection names <$>
-      buildConstantWithSharing right.sharingLimits info refs univs)) (right, block) before = _
-    rw [same.sharing] at success
+    change run (liftSharing (buildConstantWithSharing left.sharingLimits info refs univs >>=
+      withBinderSection left.env.binderAnnotator? names)) (left, block) before = _ at success
+    change run (liftSharing (buildConstantWithSharing right.sharingLimits info refs univs >>=
+      withBinderSection right.env.binderAnnotator? names)) (right, block) before = _
+    rw [same.sharing, same.env] at success
     exact (Successful.liftSharing _).transfer left right same block before value after success compatible
 
 theorem internRef_blobs (before : BlockState) (address : Address) :
@@ -1007,24 +1007,24 @@ theorem finishMutualCompilation_success (sources : List Ix.MutConst)
   intro cache
   constructor
   · intro env block before value after success
-    change run (match buildCompiledMutualBlock env.sharingLimits sources payloads metas cache with
+    change run (match buildCompiledMutualBlock env.sharingLimits env.env.binderAnnotator? sources payloads metas cache with
         | .ok result => pure result
         | .error error => throw error) (env, block) before = _ at success
-    cases ran : buildCompiledMutualBlock env.sharingLimits sources payloads metas cache with
+    cases ran : buildCompiledMutualBlock env.sharingLimits env.env.binderAnnotator? sources payloads metas cache with
     | error error => simp only [ran] at success; cases success
     | ok result =>
       simp only [ran] at success
       cases success
       exact .refl _
   · intro left right same block before value after success compatible
-    change run (match buildCompiledMutualBlock left.sharingLimits sources payloads metas cache with
+    change run (match buildCompiledMutualBlock left.sharingLimits left.env.binderAnnotator? sources payloads metas cache with
         | .ok result => pure result
         | .error error => throw error) (left, block) before = _ at success
-    change run (match buildCompiledMutualBlock right.sharingLimits sources payloads metas cache with
+    change run (match buildCompiledMutualBlock right.sharingLimits right.env.binderAnnotator? sources payloads metas cache with
         | .ok result => pure result
         | .error error => throw error) (right, block) before = _
-    rw [same.sharing] at success
-    cases ran : buildCompiledMutualBlock right.sharingLimits sources payloads metas cache <;>
+    rw [same.sharing, same.env] at success
+    cases ran : buildCompiledMutualBlock right.sharingLimits right.env.binderAnnotator? sources payloads metas cache <;>
       simp only [ran] at success ⊢ <;> exact success
 
 theorem compileMutualBlock_success (sources : List Ix.MutConst) : Successful (compileMutualBlock sources) := by

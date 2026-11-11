@@ -138,13 +138,16 @@ namespace Ixon
 
 /-! ## The binder data's canonical form
 
-A datum is unique (the zero-ness of a level is `never` or "zero exactly when
-every parameter of a unique set is zero"), so any annotator that computes the
-codomain sorts' zero-ness correctly writes the same section. The canonical
-form fixes the spelling: blocks strictly sorted by `(shared, index, variant)`,
-a root block at variant 0, and every `ifAllZero` parameter list nonempty,
-strictly ascending and below the record's level count. Readers check it and
-otherwise ignore the data. -/
+Two forms. The **canonical** form (`Constant.bindersCanonical`) is local, and is
+what every reader checks: blocks strictly sorted by `(shared, index, variant)`, a
+root block at variant 0, no empty block, every `ifAllZero` parameter list
+nonempty, strictly ascending and below the record's level count, and the empty
+section for a record with no root (a projection). The **complete** form
+(`Constant.bindersComplete`) is what the compiler writes: the canonical form,
+with exactly the blocks and nodes the record's expressions call for. The
+compiler's records are complete, so their addresses are a function of the data;
+a record with an incomplete section is another record, at another address, and a
+checker validates every datum it reads. -/
 
 /-- The level count bounding a record's binder data: the largest level count
 of its members (0 for a projection). -/
@@ -182,16 +185,17 @@ def blocksAscending : List BinderBlock → Bool
   | a :: tail@(b :: _) => a.keyLt b && blocksAscending tail
   | _ => true
 
-/-! ### The section's structure
+/-! ### The complete form
 
-A section is either empty (a record compiled without binder data, which a
-checker that needs a datum rejects at its first lookup) or complete: exactly
+A record's section is complete when it holds exactly
 the blocks the record's expressions call for, each with exactly one node per
 numbered node, its kind matching, every share node naming a variant that the
 section holds, and each sharing entry's variants pairwise distinct and
-numbered in order of first occurrence. So a record has one canonical
-complete section for each choice of data, and the data are the only freedom
-left: a checker validates every datum it uses. -/
+numbered in order of first occurrence. A record with no numbered node has the
+empty section, and a record with one cannot: a binder whose datum is not
+decided carries the undecided node. So a record has one complete section for
+each choice of data, and the data are the only freedom left: a checker
+validates every datum it uses. -/
 
 /-- A record's root expressions, in the order the section numbers them: a
 definition's type and value; an axiom's or quotient's type; a recursor's type
@@ -275,6 +279,7 @@ root with a numbered node (variant 0) and per sharing entry and variant a share
 node names, each matching its expression, variants numbered in order of first
 occurrence and pairwise distinct. -/
 def Constant.bindersComplete (c : Constant) : Bool := Id.run do
+  if c.info.binderRoots.isEmpty then return c.binders.isEmpty
   unless blocksAscending c.binders.toList do return false
   let lvls := c.info.maxLvls
   let full := binderfulEntries c.sharing
@@ -301,9 +306,14 @@ def Constant.bindersComplete (c : Constant) : Bool := Id.run do
           return false
   return true
 
-/-- The binder data of `c` are in canonical form: the empty section, or the
-complete one (`Constant.bindersComplete`). -/
+/-- The binder data of `c` are in canonical form (local): blocks strictly
+sorted, a root block at variant 0, no empty block, canonical nodes, and the empty
+section for a record with no root. -/
 def Constant.bindersCanonical (c : Constant) : Bool :=
-  c.binders.isEmpty || c.bindersComplete
+  blocksAscending c.binders.toList &&
+    c.binders.all (fun block =>
+      (block.shared || block.variant == 0) && !block.nodes.isEmpty &&
+        block.nodes.all (BinderNode.canonical c.info.maxLvls)) &&
+    (!c.info.binderRoots.isEmpty || c.binders.isEmpty)
 
 end Ixon

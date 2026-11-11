@@ -137,7 +137,7 @@ input. -/
 structure FoldStart (env : Ix.Environment) (cenv₀ : CompileEnv) : Prop where
   constants : cenv₀.constants = {}
   nameToAddr : cenv₀.nameToAddr = {}
-  view : cenv₀.env = { consts := {}, fallback? := some (Ix.Environment.get? { consts := env.consts }) }
+  view : cenv₀.env = env.materialized.lookupView
 
 /-- **The fold behind a compile**: `compileReport` ran the waves over its condensation from a
 start with an empty store (`FoldStart`), and the artifact stores the final state's records,
@@ -146,9 +146,9 @@ theorem compileReport_start {env : Ix.Environment} {ixe : Ixon.Env} {failures : 
     (h : compileReport env = .ok (ixe, failures)) :
     ∃ (cenv₀ : CompileEnv) (sched : FoldSchedule) (st : FoldState),
       FoldStart env cenv₀ ∧
-      foldWavesSeq (Ix.CondenseM.run (groundSplit { consts := env.consts }).1) sched
-        ((Ix.CondenseM.run (groundSplit { consts := env.consts }).1).blocks.size + 1)
-        (FoldState.init cenv₀ (Ix.CondenseM.run (groundSplit { consts := env.consts }).1) sched) = .ok st ∧
+      foldWavesSeq (Ix.CondenseM.run (groundSplit env.materialized).1) sched
+        ((Ix.CondenseM.run (groundSplit env.materialized).1).blocks.size + 1)
+        (FoldState.init cenv₀ (Ix.CondenseM.run (groundSplit env.materialized).1) sched) = .ok st ∧
       ∀ a lc, ixe.consts.get? a = some lc →
         ∃ b, st.acc.cenv.constants.get? a = some b ∧ lc = { buf := b, len := b.size } := by
   obtain ⟨cenv, hu, -⟩ := compileReport_ok h
@@ -174,17 +174,17 @@ encoded. -/
 theorem storedCanonical_of_steps {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures}
     (h : compileReport env = .ok (ixe, failures))
     (steps : ∀ (cenv₀ : CompileEnv) (sched : FoldSchedule), FoldStart env cenv₀ →
-      StepsEncode (Ix.CondenseM.run (groundSplit { consts := env.consts }).1)
-        (FoldState.init cenv₀ (Ix.CondenseM.run (groundSplit { consts := env.consts }).1) sched).acc)
+      StepsEncode (Ix.CondenseM.run (groundSplit env.materialized).1)
+        (FoldState.init cenv₀ (Ix.CondenseM.run (groundSplit env.materialized).1) sched).acc)
     (order : List Address) : Stream.StoredCanonical ixe order := by
   obtain ⟨cenv₀, sched, st, h₀, hst, stores⟩ := compileReport_start h
-  have start : Encoded (FoldState.init cenv₀ (Ix.CondenseM.run (groundSplit { consts := env.consts }).1)
+  have start : Encoded (FoldState.init cenv₀ (Ix.CondenseM.run (groundSplit env.materialized).1)
       sched).acc.cenv.constants := by
     show Encoded cenv₀.constants
     rw [h₀.constants]
     exact encoded_empty
   have reached := foldWavesSeq_reach _ _ _ hst (Reach.init (blocks := Ix.CondenseM.run
-    (groundSplit { consts := env.consts }).1) (init := (FoldState.init cenv₀ _ sched).acc))
+    (groundSplit env.materialized).1) (init := (FoldState.init cenv₀ _ sched).acc))
   exact storedCanonical_of_store stores (reach_encoded start (steps cenv₀ sched h₀) reached) order
 
 /--

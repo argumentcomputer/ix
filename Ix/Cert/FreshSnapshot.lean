@@ -908,7 +908,7 @@ theorem compileEnvFold_final_blobs {env : Ix.Environment} {blocks : Ix.Condensed
     (h : compileEnvFold env blocks dbg sharingLimits width = .ok (ixe, bytes, cenv)) :
     ∃ (cenv₀ : CompileEnv) (sched : FoldSchedule) (st : FoldState),
       cenv₀.nameToAddr = {} ∧
-      (FoldState.init cenv₀ blocks sched).acc.cenv.env = { consts := {}, fallback? := some env.get? } ∧
+      (FoldState.init cenv₀ blocks sched).acc.cenv.env = env.lookupView ∧
       foldWavesSeq blocks sched (blocks.blocks.size + 1) (FoldState.init cenv₀ blocks sched) = .ok st ∧
       (assembleEnv st.acc).1 = ixe ∧
       cenv.nameToAddr = st.acc.cenv.nameToAddr ∧
@@ -938,10 +938,10 @@ theorem compileEnvFold_provenanceFresh {env : Ix.Environment} {blocks : Ix.Conde
     (h : compileEnvFold env blocks dbg sharingLimits width = .ok (ixe, bytes, cenv))
     (hd : Disjoint blocks)
     (claimsAt : ∀ (cenv₀ : CompileEnv) (sched : FoldSchedule) (st : FoldState),
-      (FoldState.init cenv₀ blocks sched).acc.cenv.env = { consts := {}, fallback? := some env.get? } →
+      (FoldState.init cenv₀ blocks sched).acc.cenv.env = env.lookupView →
       WaveStart blocks sched (FoldState.init cenv₀ blocks sched) st → ClaimsOwn blocks sched st) :
     ∃ (cenv₀ : CompileEnv) (sched : FoldSchedule), FoldRun env blocks cenv cenv₀ sched ∧
-      (FoldState.init cenv₀ blocks sched).acc.cenv.env = { consts := {}, fallback? := some env.get? } ∧
+      (FoldState.init cenv₀ blocks sched).acc.cenv.env = env.lookupView ∧
       (∀ (acc : DriverAcc) (a : Address) (b : ByteArray),
         OnRun blocks sched (FoldState.init cenv₀ blocks sched) acc → acc.cenv.constants.get? a = some b →
           ixe.consts.get? a = some { buf := b, len := b.size }) ∧
@@ -1253,12 +1253,12 @@ returns. -/
 theorem ctorsInBlock {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures}
     (h : compileReport env = .ok (ixe, failures)) {E : Ix.Environment}
     (hE : ∀ x, E.get? x = env.consts.get? x) :
-    CtorsInBlock (Ix.CondenseM.run (groundSplit { consts := env.consts }).1) E := by
+    CtorsInBlock (Ix.CondenseM.run (groundSplit env.materialized).1) E := by
   intro rep all I iv c hall hI hiv hc hmc
   rw [hE] at hiv
   obtain ⟨cv, hcv, hind⟩ := ctorsBelong h I iv hiv c hc
   obtain ⟨repc, allc, hrc, hcc⟩ := hmc
-  generalize hrefs : (groundSplit { consts := env.consts }).1 = refs at hall hrc
+  generalize hrefs : (groundSplit env.materialized).1 = refs at hall hrc
   obtain ⟨hr, hv, e⟩ := Condense.blocks_eq refs
   rw [e] at hall hrc
   obtain ⟨_, _, hbI, hrepI, hnI⟩ := Condense.blocksOfDisc_mem hall hI
@@ -1276,13 +1276,13 @@ theorem ctorsInBlock {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failure
       (Condense.nodesOf refs).1[v].2.contains y = true := by
     intro v hv x ci y ex hx hy hky
     have hget' := Condense.node_get hv
-    have hget : (groundSplit { consts := env.consts }).1.get? (Condense.nodesOf refs).1[v].1 =
+    have hget : (groundSplit env.materialized).1.get? (Condense.nodesOf refs).1[v].1 =
         some (Condense.nodesOf refs).1[v].2 := by rw [hrefs]; exact hget'
-    have hky' : (groundSplit { consts := env.consts }).1.contains y = true := by rw [hrefs]; exact hky
+    have hky' : (groundSplit env.materialized).1.contains y = true := by rw [hrefs]; exact hky
     obtain ⟨rs₀, h₀, -⟩ := Condense.groundSplit_get hget
     obtain ⟨ci', hci', rfl⟩ := Condense.envSerial_get h₀
     have : ci' = ci := by
-      have e' : ({ consts := env.consts } : Ix.Environment).consts.get? (Condense.nodesOf refs).1[v].1 =
+      have e' : (env.materialized : Ix.Environment).consts.get? (Condense.nodesOf refs).1[v].1 =
           env.consts.get? x := by
         rw [Std.HashMap.get?_eq_getElem?, Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_congr ex]
       rw [e', hx] at hci'
@@ -1320,11 +1320,11 @@ theorem compileReport_owned_block_of {env : Ix.Environment} {ixe : Ixon.Env}
     (h : compileReport env = .ok (ixe, failures)) (hcl : IsClosure env roots sub)
     (nofail : NoFailure failures sub)
     (hctor : ∀ E : Ix.Environment, (∀ x, E.get? x = env.consts.get? x) →
-      CtorsInBlock (Ix.CondenseM.run (groundSplit { consts := env.consts }).1) E) :
+      CtorsInBlock (Ix.CondenseM.run (groundSplit env.materialized).1) E) :
     ∃ (cenv : CompileEnv) (blocks : Ix.CondensedBlocks) (cenv₀ : CompileEnv) (sched : FoldSchedule),
       compileUnchecked env = .ok (ixe, failures, cenv) ∧
-      blocks = Ix.CondenseM.run (groundSplit { consts := env.consts }).1 ∧
-      FoldRun { consts := env.consts } blocks cenv cenv₀ sched ∧
+      blocks = Ix.CondenseM.run (groundSplit env.materialized).1 ∧
+      FoldRun env.materialized blocks cenv cenv₀ sched ∧
       (∀ (acc : DriverAcc), OnRun blocks sched (FoldState.init cenv₀ blocks sched) acc →
         ∀ (n : Ix.Name) (a : Address), (sub.consts.get? n).isSome = true →
           acc.cenv.nameToAddr.get? n = some a → (ixe.named.get? n).map (·.addr) = some a) ∧
@@ -1350,11 +1350,11 @@ theorem compileReport_owned_block_of {env : Ix.Environment} {ixe : Ixon.Env}
   obtain ⟨cenv, hu, pub⟩ := Ix.Cert.resolvedPublished h
   obtain ⟨bytes, hf⟩ := compileUnchecked_fold hu
   have claimsAt : ∀ (cenv₀ : CompileEnv) (sched : FoldSchedule) (st : FoldState),
-      (FoldState.init cenv₀ (Ix.CondenseM.run (groundSplit { consts := env.consts }).1) sched).acc.cenv.env =
-        { consts := {}, fallback? := some (Ix.Environment.get? { consts := env.consts }) } →
-      WaveStart (Ix.CondenseM.run (groundSplit { consts := env.consts }).1) sched
-        (FoldState.init cenv₀ (Ix.CondenseM.run (groundSplit { consts := env.consts }).1) sched) st →
-      ClaimsOwn (Ix.CondenseM.run (groundSplit { consts := env.consts }).1) sched st := by
+      (FoldState.init cenv₀ (Ix.CondenseM.run (groundSplit env.materialized).1) sched).acc.cenv.env =
+        env.materialized.lookupView →
+      WaveStart (Ix.CondenseM.run (groundSplit env.materialized).1) sched
+        (FoldState.init cenv₀ (Ix.CondenseM.run (groundSplit env.materialized).1) sched) st →
+      ClaimsOwn (Ix.CondenseM.run (groundSplit env.materialized).1) sched st := by
     intro cenv₀ sched st henv hst x hx n a b hclaim hm
     have he := (reach_env (waveStart_reach hst)).trans henv
     have hE : ∀ y, st.acc.cenv.env.get? y = env.consts.get? y := fun y => by
@@ -1367,8 +1367,8 @@ theorem compileReport_owned_block_of {env : Ix.Environment} {ixe : Ixon.Env}
     exact claims_members hnamed (hctor _ hE) hall (Condense.condense_nonempty hall) hclaim hm
   obtain ⟨cenv₀, sched, hrun, henv, stored, blobsOnRun, prov⟩ :=
     compileEnvFold_provenanceFresh hf (disjoint_run _) claimsAt
-  have pubOnRun : ∀ (acc : DriverAcc), OnRun (Ix.CondenseM.run (groundSplit { consts := env.consts }).1) sched
-      (FoldState.init cenv₀ (Ix.CondenseM.run (groundSplit { consts := env.consts }).1) sched) acc →
+  have pubOnRun : ∀ (acc : DriverAcc), OnRun (Ix.CondenseM.run (groundSplit env.materialized).1) sched
+      (FoldState.init cenv₀ (Ix.CondenseM.run (groundSplit env.materialized).1) sched) acc →
       ∀ (n : Ix.Name) (a : Address), (sub.consts.get? n).isSome = true → acc.cenv.nameToAddr.get? n = some a →
         (ixe.named.get? n).map (·.addr) = some a := by
     intro acc hacc n a hs ha
@@ -1447,8 +1447,8 @@ theorem Ix.Cert.compileReport_owned_blobs {env : Ix.Environment} {ixe : Ixon.Env
     (nofail : NoFailure failures sub) :
     ∃ (cenv : CompileEnv) (blocks : Ix.CondensedBlocks) (cenv₀ : CompileEnv) (sched : FoldSchedule),
       compileUnchecked env = .ok (ixe, failures, cenv) ∧
-      blocks = Ix.CondenseM.run (groundSplit { consts := env.consts }).1 ∧
-      FoldRun { consts := env.consts } blocks cenv cenv₀ sched ∧
+      blocks = Ix.CondenseM.run (groundSplit env.materialized).1 ∧
+      FoldRun env.materialized blocks cenv cenv₀ sched ∧
       (∀ (acc : DriverAcc), OnRun blocks sched (FoldState.init cenv₀ blocks sched) acc →
         ∀ (n : Ix.Name) (a : Address), (sub.consts.get? n).isSome = true →
           acc.cenv.nameToAddr.get? n = some a → (ixe.named.get? n).map (·.addr) = some a) ∧
@@ -1483,8 +1483,8 @@ theorem Ix.Cert.compileReport_owned_block {env : Ix.Environment} {ixe : Ixon.Env
     (nofail : NoFailure failures sub) :
     ∃ (cenv : CompileEnv) (blocks : Ix.CondensedBlocks) (cenv₀ : CompileEnv) (sched : FoldSchedule),
       compileUnchecked env = .ok (ixe, failures, cenv) ∧
-      blocks = Ix.CondenseM.run (groundSplit { consts := env.consts }).1 ∧
-      FoldRun { consts := env.consts } blocks cenv cenv₀ sched ∧
+      blocks = Ix.CondenseM.run (groundSplit env.materialized).1 ∧
+      FoldRun env.materialized blocks cenv cenv₀ sched ∧
       (∀ (acc : DriverAcc), OnRun blocks sched (FoldState.init cenv₀ blocks sched) acc →
         ∀ (n : Ix.Name) (a : Address), (sub.consts.get? n).isSome = true →
           acc.cenv.nameToAddr.get? n = some a → (ixe.named.get? n).map (·.addr) = some a) ∧
@@ -1522,8 +1522,8 @@ theorem Ix.Cert.compileReport_owned_stored {env : Ix.Environment} {ixe : Ixon.En
     (nofail : NoFailure failures sub) :
     ∃ (cenv : CompileEnv) (blocks : Ix.CondensedBlocks) (cenv₀ : CompileEnv) (sched : FoldSchedule),
       compileUnchecked env = .ok (ixe, failures, cenv) ∧
-      blocks = Ix.CondenseM.run (groundSplit { consts := env.consts }).1 ∧
-      FoldRun { consts := env.consts } blocks cenv cenv₀ sched ∧
+      blocks = Ix.CondenseM.run (groundSplit env.materialized).1 ∧
+      FoldRun env.materialized blocks cenv cenv₀ sched ∧
       ∀ (n : ExactName) (a : Address), cenv.nameToAddr.get? n = some a →
         (sub.consts.get? n).isSome = true →
         (ixe.named.get? n).map (·.addr) = some a ∧
@@ -1554,8 +1554,8 @@ theorem Ix.Cert.compileReport_owned_fresh {env : Ix.Environment} {ixe : Ixon.Env
     (nofail : NoFailure failures sub) :
     ∃ (cenv : CompileEnv) (blocks : Ix.CondensedBlocks) (cenv₀ : CompileEnv) (sched : FoldSchedule),
       compileUnchecked env = .ok (ixe, failures, cenv) ∧
-      blocks = Ix.CondenseM.run (groundSplit { consts := env.consts }).1 ∧
-      FoldRun { consts := env.consts } blocks cenv cenv₀ sched ∧
+      blocks = Ix.CondenseM.run (groundSplit env.materialized).1 ∧
+      FoldRun env.materialized blocks cenv cenv₀ sched ∧
       ∀ (n : ExactName) (a : Address), cenv.nameToAddr.get? n = some a →
         (sub.consts.get? n).isSome = true →
         (ixe.named.get? n).map (·.addr) = some a ∧

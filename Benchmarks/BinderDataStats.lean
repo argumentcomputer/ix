@@ -74,7 +74,7 @@ def stats (path : String) : IO UInt32 := do
       addedSizes := addedSizes.push (full - without)
       blocks := blocks + c.binders.size
       extraVariants := extraVariants + (c.binders.filter (·.variant > 0)).size
-      let u := c.binders.foldl (fun n b => n + (b.nodes.filter (· == .undecided)).size) 0
+      let u := c.binders.foldl (fun n b => n + (b.nodes.filter (· == .undecided)).size) (0 : Nat)
       nodes := c.binders.foldl (fun n b => n + b.nodes.size) nodes
       undecidedNodes := undecidedNodes + u
       if u > 0 then undecidedRecords := undecidedRecords + 1
