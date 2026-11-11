@@ -271,15 +271,39 @@ def BindingSeeds (t : Ix.Kernel.RoleTable) (a : Address) : Prop :=
   (∃ r, compilerTrust r = false ∧ t.addressOf? r = some a) ∨
     ∃ e ∈ t.evidence.toList, Ix.Kernel.Evidence.proof a ∈ e.2.toList
 
+/-- **An anchor role's specification as a pin** (`Ix.Kernel.Role.spec`'s `anchor`):
+its key, its level count (positional) and its type. -/
+def anchorPin? : Ix.Kernel.Key .anon → Option (Ix.Kernel.ConstantVal .anon)
+  | .role r =>
+    match (Ix.Kernel.Role.spec (md := .anon)) r with
+    | .anchor n ty => some { name := .role r, levelParams := List.range n, type := ty }
+    | _ => none
+  | _ => none
+
+/-- The constants a declaration declares, with their types. -/
+def declaredVals : Ix.Kernel.Declaration .anon → List (Ix.Kernel.ConstantVal .anon)
+  | .axiomDecl cv | .defnDecl cv _ _ | .thmDecl cv _ | .opaqueDecl cv _ | .quotDecl _ cv => [cv]
+  | .indDecl block _ => block.map (·.toConstantVal)
+  | .basisDecl _ => []
+
+/-- **Every declared constant at an anchor role has its specification's type**, up
+to binder data (`ConstantVal.matchesPin`). The checker's rules read the literals'
+support (`String`, `String.ofList`, `List` and its constructors, `Char`,
+`Char.ofNat`) and the other anchors at these shapes. -/
+def AnchorsTyped (ds : List (Ix.Kernel.Declaration .anon)) : Prop :=
+  ∀ d ∈ ds, ∀ cv ∈ declaredVals d, ∀ pin, anchorPin? cv.name = some pin →
+    cv.matchesPin pin = true
+
 /-- **The role specifications the pure declaration fold does not check on its
 own** (`IxC/Kernel/Roles.lean`, `IxC/Kernel/RoleEquations.lean`): no
 declaration mismatches an install-checked anchor
-(`Ix.Kernel.Declaration.anchorMismatch?`), and every role specified by
-definition equations (`SpecKind.eqns`) passes `Ix.Kernel.eqnsCheck` at some
-fuel in the installed environment. -/
+(`Ix.Kernel.Declaration.anchorMismatch?`), every declared anchor has its
+specification's type (`AnchorsTyped`), and every role specified by definition
+equations (`SpecKind.eqns`) passes `Ix.Kernel.eqnsCheck` at some fuel in the
+installed environment. -/
 def BindingSpecs (_ : Binding) (envA : Ix.Kernel.Env .anon)
     (ds : List (Ix.Kernel.Declaration .anon)) : Prop :=
-  (∀ d ∈ ds, d.anchorMismatch? = none) ∧
+  (∀ d ∈ ds, d.anchorMismatch? = none) ∧ AnchorsTyped ds ∧
     ∃ ev, ∀ r ∈ Ix.Kernel.Role.all, (r.spec (md := .anon)).kind = .eqns →
       ∃ F, Ix.Kernel.eqnsCheck (Ix.Kernel.fueledOps .verified F) envA r ev = .ok ()
 
