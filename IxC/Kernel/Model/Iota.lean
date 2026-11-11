@@ -52,8 +52,8 @@ universe w
 section
 variable {V : Type w} [SetTheory V]
 
-/-- Pushing a value keeps an agreement below a bound, one index higher. -/
 omit [SetTheory V] in
+/-- Pushing a value keeps an agreement below a bound, one index higher. -/
 theorem push_agree {k : Nat} {ρ ρ' : BVarIdx → V} (h : ∀ i, i < k → ρ i = ρ' i) (x : V) :
     ∀ i, i < k + 1 → push x ρ i = push x ρ' i
   | 0, _ => rfl
@@ -139,6 +139,7 @@ theorem pushVals_ge : ∀ (xs : List V) (ρ : BVarIdx → V) (i : Nat), xs.lengt
     rw [hj, show i - (xs.length + 1) = j by omega]
     rfl
 
+omit [SetTheory V] in
 theorem pushVals_lt : ∀ (xs : List V) (ρ : BVarIdx → V) (i : Nat) (d : V), i < xs.length →
     pushVals ρ xs i = xs.getD (xs.length - 1 - i) d
   | [], _, _, _, h => absurd h (by simp)
@@ -702,7 +703,7 @@ theorem iotaRule_of_fires {μ : Ix.Kernel.CheckMode} {env : Env md} (m : EnvMode
         exact openFvars_WScoped (by omega) q x hq)
       (fun x hx => openFvars_bounded 0 rP x hx)
       hp'F hp'B hvpa hzslen (vals := xsA.take rP) (n := rP) hzslen (Nat.le_refl _)
-      (by omega) (List.take_of_length_le (by rw [hzslen]))
+      (by omega) (List.take_of_length_le (Nat.le_of_eq hzslen))
     simp only [Nat.add_zero, Nat.sub_self, List.replicate_zero, List.append_nil] at hw0 hcross
     have hgr0 : WellDenotedV V (chain V ρ' (xsA.take rP)) w0 := by
       rw [← hcross] at hgr
@@ -727,27 +728,31 @@ theorem iotaRule_of_fires {μ : Ix.Kernel.CheckMode} {env : Env md} (m : EnvMode
         pushVals_lt _ _ j SetTheory.empty (by rw [htl]; exact hj), htl]
       simp only [List.getD]
       rw [List.getElem?_take_of_lt (by omega)])
+    have hsplit := Ix.Kernel.pushVals_append ρ (xs.take rP) (xs.drop rP)
+    rw [List.take_append_drop] at hsplit
+    have hdl : (xs.drop rP).length = mI - rP := by rw [List.length_drop, hxs]
     have hlift := hbr'.lift (k := mI - rP) (c := 0) (ρ1 := σ) (fun j hj => absurd hj (by omega))
       (by
         intro j _
-        rw [hσ, ← List.take_append_drop rP xs, Ix.Kernel.pushVals_append,
-          pushVals_ge _ _ _ (by simp; omega)]
-        congr 1
-        simp; omega)
+        rw [hσ, hsplit, pushVals_ge _ _ _ (by rw [hdl]; omega), hdl,
+          show j + (mI - rP) - (mI - rP) = j by omega])
     -- the major premise's parameter argument is that lifted instantiation
     have hargi : (dom.getAppArgs.take rl.ctorParams).getD i (Expr.bvar 0) =
         (p.instantiateLevelParams cv.levelParams us).liftLooseBVars (mI - rP) 0 := by
-      rw [hdomOf hs0, Expr.getAppArgs_instantiateLevelParams, hargs0]
-      simp only [List.getD, List.getElem?_take_of_lt hi, List.getElem?_map,
-        List.getElem?_append_left (by rw [List.length_map]; omega), hp, Option.map_some,
-        Option.getD_some]
+      have hlt : i < (pins.map (Expr.liftLooseBVars (mI - rP) 0)).length := by
+        rw [List.length_map]; omega
+      rw [hdomOf hs0, Expr.getAppArgs_instantiateLevelParams, hargs0, List.getD,
+        List.getElem?_take_of_lt hi, List.getElem?_map, List.getElem?_append_left hlt,
+        List.getElem?_map, hp]
+      simp only [Option.map_some, Option.getD_some]
       exact instantiateLevelParams_liftLooseBVars _ _ _ _ _
     have hd := hpar.getD (Expr.bvar 0) SetTheory.empty i (by
       rw [List.length_take, hdomOf hs0, Expr.getAppArgs_instantiateLevelParams, hargs0]
       simp; omega)
     rw [hargi] at hd
     have hv := Ix.Kernel.Denotes_functional hd hlift
-    rw [hysA_val i (by rw [hys]; omega), ← hcross, interp_instSeq, ← hv]
+    rw [hysA_val i (by rw [hys]; omega), ← hcross,
+      show rP - 1 = (xsA.take rP).length - 1 by rw [hzslen], interp_instSeq, ← hv]
     simp only [List.getD, List.getElem?_take_of_lt hi]
   -- the index pin: the constructor's residual is the family at its indices
   have hpin : IotaIndexPin (V := V) ρ'
