@@ -270,7 +270,9 @@ def main (args : List String) : IO UInt32 := do
     part a "the --rc auto immortal fallback and check-cert --rc (B1-6, B1-8)" do
       return #[← Hostile.autoFallback a]
     part a "middle-end budgets (REPORT item 2)" do
-      return #[← Hostile.budgets a, ← Hostile.betaMoves a, ← Hostile.shrinkWork a, ← Hostile.inlineAmplifier a]
+      return #[← Hostile.budgets a, ← Hostile.betaMoves a, ← Hostile.retryFallbackMechanism a,
+        ← Hostile.retryRound a, ← Hostile.retryLater a, ← Hostile.shrinkWork a,
+        ← Hostile.inlineAmplifier a]
     part a "the producer: rewritten oracles give the reference's output, and near-linear work" do
       producerPart a count
     part a "root result shapes: totality of the view on the shapes, SrcEval results of the shape" do

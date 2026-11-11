@@ -979,8 +979,14 @@
   "IxCC.X86.Exe.Code",
   "IxCC.X86.Exe.Layout",
   "IxCC.X86.Exe.Machine",
+  "IxCC.X86.Exe.Machine.Proof.Call",
+  "IxCC.X86.Exe.Process",
+  "IxCC.X86.Exe.Process.Loaded",
+  "IxCC.X86.Exe.Process.Step",
+  "IxCC.X86.Exe.Process.Syscall",
   "IxCC.X86.Exe.Read",
   "IxCC.X86.Exe.Shell",
+  "IxCC.X86.Exe.ShellCheck",
   "IxCC.X86.Exe.Validate",
   "IxCC.X86.Exe.Write",
   "IxCC.X86.Execution",
@@ -1633,7 +1639,7 @@
  "3c804206278c9040bd5b306b2a5761385ff311cdca0715edcfc7c1a1b569a10a",
  "grounding_axiom_count": 53,
  "baseline":
- "2d244c364: G1b (the generic case lemma and the root theorem) merged onto ea7619dc8",
+ "X0-P, second part: the process's specification modules, the shell check run by the machine writer, the call lemma and the two calls of an iteration, and their fences",
  "axiom_sha256":
- "e573f6569456818724bdf77b97316cf9037d8f8c49acb32b3804aa0ce5afa9f2",
- "axiom_count": 5926}
+ "b7328b7dd7f2ef1dac04816270ce42e3ac2cc353875105432c8cd224239de080",
+ "axiom_count": 5965}

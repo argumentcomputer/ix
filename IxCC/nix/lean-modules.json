@@ -3116,7 +3116,11 @@
   {"path": "IxCCTests/Fences/Fir.lean", "imports": ["IxCC.Fir.Semantics"]},
   "IxCCTests.Fences.Exe":
   {"path": "IxCCTests/Fences/Exe.lean",
-   "imports": ["IxCC.Exe", "IxCC.Exe.Machine.Sound"]},
+   "imports":
+   ["IxCC.Exe",
+    "IxCC.Exe.Machine.Sound",
+    "IxCC.X86.Exe.Process",
+    "IxCC.X86.Exe.Machine.Proof.Call"]},
   "IxCCTests.Fences.Erase":
   {"path": "IxCCTests/Fences/Erase.lean",
    "imports":
@@ -4294,13 +4298,41 @@
   "IxCC.X86.Exe.Validate":
   {"path": "IxCC/X86/Exe/Validate.lean",
    "imports": ["IxCC.X86.Exe.Write", "IxCC.X86.Exe.Read"]},
+  "IxCC.X86.Exe.ShellCheck":
+  {"path": "IxCC/X86/Exe/ShellCheck.lean",
+   "imports": ["IxCC.X86.Exe.Shell", "IxCC.X86.StreamSpec"]},
   "IxCC.X86.Exe.Shell":
   {"path": "IxCC/X86/Exe/Shell.lean", "imports": ["IxCC.X86.Encode"]},
   "IxCC.X86.Exe.Read":
   {"path": "IxCC/X86/Exe/Read.lean", "imports": ["IxCC.X86.ELFRead"]},
+  "IxCC.X86.Exe.Process.Syscall":
+  {"path": "IxCC/X86/Exe/Process/Syscall.lean",
+   "imports": ["IxCC.X86.ByteEval"]},
+  "IxCC.X86.Exe.Process.Step":
+  {"path": "IxCC/X86/Exe/Process/Step.lean",
+   "imports": ["IxCC.X86.Exe.Process.Syscall", "IxCC.X86.Exe.Layout"]},
+  "IxCC.X86.Exe.Process.Loaded":
+  {"path": "IxCC/X86/Exe/Process/Loaded.lean",
+   "imports": ["IxCC.X86.Exe.Validate"]},
+  "IxCC.X86.Exe.Process":
+  {"path": "IxCC/X86/Exe/Process.lean",
+   "imports":
+   ["IxCC.X86.Exe.Process.Loaded",
+    "IxCC.X86.Exe.Process.Step",
+    "IxCC.X86.Exe.Machine",
+    "IxCC.X86.Linked",
+    "IxCC.Rt.Procs.Entry"]},
+  "IxCC.X86.Exe.Machine.Proof.Call":
+  {"path": "IxCC/X86/Exe/Machine/Proof/Call.lean",
+   "imports":
+   ["IxCC.X86.Exe.Process",
+    "IxCC.X86.ByteAgree",
+    "IxCC.X86.DecodeWindow",
+    "IxCC.X86.Memory"]},
   "IxCC.X86.Exe.Machine":
   {"path": "IxCC/X86/Exe/Machine.lean",
-   "imports": ["IxCC.X86.Exe.Validate", "IxCC.Exe.Machine"]},
+   "imports":
+   ["IxCC.X86.Exe.Validate", "IxCC.X86.Exe.ShellCheck", "IxCC.Exe.Machine"]},
   "IxCC.X86.Exe.Layout":
   {"path": "IxCC/X86/Exe/Layout.lean", "imports": ["IxCC.X86.Driver"]},
   "IxCC.X86.Exe.Code":
@@ -8629,6 +8661,7 @@
     "IxCC.X86.ObjectCallSafe",
     "IxCC.X86.Driver",
     "IxCC.X86.Linked",
+    "IxCC.X86.Exe.Process",
     "IxCC.X86.StreamCalls",
     "IxCC.X86.StreamControl",
     "IxCC.X86.StreamDecidable",

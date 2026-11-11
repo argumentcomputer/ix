@@ -291,7 +291,7 @@ def compileRoot (m : Family) (f : Fixture) (r : Root) : IO (Except Err (Cert × 
   let json ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile (dir / f.equations.path)))
   IO.lazyPure fun _ => do
     let inp ← ingress bytes json (r.name :: r.together) (typecheck := false)
-    compileInput {} inp
+    compileInputRetry {} inp
 
 /-- One root: declined as the manifest expects, or compiled and run. -/
 def root (a : Assert) (o : Options) (native : Option Rt.Native.Tools) (work : FilePath) (m : Family) (f : Fixture) (r : Root)
@@ -377,11 +377,34 @@ def dumpIR (inp : Input) : Except String String := do
   let (xv, _) ← (IxCC.Xv.Select.run lowered.program).mapError fun e => (Err.ofSelect e).render
   return s!"== anf\n{anf.render}\n== lir\n{lowered.program.text}\n== xv\n{xv.text}"
 
+mutual
+/-- The closure allocation sites of a term: its `con` bindings of P8's closure
+constructors. -/
+def cloSites : Anf.Exp → Nat
+  | .bind _ b e => bindCloSites b + cloSites e
+  | .join _ _ b e => cloSites b + cloSites e
+  | .case _ alts d => altsCloSites alts + optCloSites d
+  | .tick e => cloSites e
+  | .jump .. | .ret _ | .trap => 0
+def bindCloSites : Anf.Bind → Nat
+  | .con (.clo ..) _ => 1
+  | .fn _ b => cloSites b
+  | _ => 0
+def altsCloSites : List Anf.Alt → Nat
+  | [] => 0
+  | .mk _ _ b :: as => cloSites b + altsCloSites as
+def optCloSites : Option Anf.Exp → Nat
+  | some e => cloSites e
+  | none => 0
+end
+
 /-- What the closures step made of a compiled root's program: unchanged, or
 its closure keys `K` (P8's constructor rows), its dispatchers `M`, and the
 back end's work on their switches (`Anf.Defun.dispatchWork`) against the
 budget past which P8 refuses (`Anf.maxBackWork`), with the most keys that
-budget admits at this `M` and table. -/
+budget admits at this `M` and table; and what the closures cost the program
+where they are built and applied: its closure allocation sites (`con` of a
+closure constructor) and its dispatch call sites. -/
 def closuresLine (cert : Cert) (art : Artifact) : String :=
   match Anf.Pipeline.run cert.mid art.lam with
   | .error _ => "closures step: the middle end does not replay"
@@ -394,8 +417,13 @@ def closuresLine (cert : Cert) (art : Artifact) : String :=
       let w := Anf.Defun.dispatchWork pre M K
       let kmax := (List.range 4096).foldl (fun k _ =>
         if M > 0 && Anf.Defun.dispatchWork pre M (k + 1) ≤ Anf.maxBackWork then k + 1 else k) K
+      let disp := (art.anf.globalList.filter fun (_, g) => g.key matches .dispatch _).map (·.1)
+      let allocs := art.anf.globalList.foldl (fun n (_, g) => n + cloSites g.body) 0
+      let dcalls := art.anf.globalList.foldl (fun n (_, g) =>
+        n + (g.body.sites.filter fun f => disp.contains f).length) 0
       s!"closures step: {entries} entries, {K} closure keys, {M} dispatchers, dispatch work {w} \
-        ({w * 100 / Anf.maxBackWork}% of {Anf.maxBackWork}; at most {kmax} keys at {M} dispatchers)"
+        ({w * 100 / Anf.maxBackWork}% of {Anf.maxBackWork}; at most {kmax} keys at {M} dispatchers); \
+        {allocs} closure allocation sites, {dcalls} dispatch call sites"
 
 /-- Survey mode: compile every root and print `compiled` or its
 `stage: code`, with what the manifest expects, and for a compiled root what

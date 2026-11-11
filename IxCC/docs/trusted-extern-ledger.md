@@ -853,9 +853,18 @@ step from two call sites (`machine_session_sound_at`, `Rc.session_sound_at`,
 over `X86.LinkedAt`), with the third outcome at a call the source reaches along
 a prefix of the trace. That a run the model shows non-faulting is the
 process's run or stops on a fault, and writes nothing outside the model's
-mapping (the shell's bytes included), is `X86.ByteAgree`'s theorem. That the
-shell realises the session model is not proved (X0-P's later parts); with this
-assumption the theorem is a statement about the executable.
+mapping (the shell's bytes included), is `X86.ByteAgree`'s theorem. The
+writer refuses a file whose shell bytes the independent decoder does not read
+back as the shell program (`X86.Exe.Shell.check`, carried in
+`CertifiedFor.shell`), and the process the shell theorem is about is specified
+in `X86/Exe/Process.lean` over `Process.Loaded`, `Process.Syscall` and
+`Process.Step` (X0-P's second part). `X86.Exe.Process.call_lifts` and
+`two_calls` lift each call the model runs to the process (it runs, returns as
+the model says, or faults first), and a fault ends the trace
+(`Trace.nil_of_faults`): the platform fact recorded with `Process.Step` is that
+a fault's signal takes its default action, no handler being installed. That the
+shell realises the session model is not proved (X0-P's third part); with this assumption the
+theorem is a statement about the executable.
 
 The [indexed stream checker](stream-checking.md) preserves this boundary:
 bounded decoding and cached canonical positions are proved exactly equal
@@ -869,7 +878,7 @@ Four additional public fences retain the ordinary logical axiom basis.
 | Encoder stream/layout | Discharged for successful certified production emission. Raw `Encode.encode`/`Program.encode` clients must validate their output or prove the same facts. | `Stream.check_sound` checks every boundary, canonical position, target and relocation. Complete-stream proofs cover call-free execution and internal calls under concrete `SafeTrace` conditions, including residual return-slot bytes. `ELFLink` proves checked PC32 application and runtime CALL transfer. External procedure bodies still require their semantic/ABI contracts. |
 | Runtime driver model | `X86.Driver`/`X86.Linked` model initialization and the root call for accepted scalar and bounded RC objects. The same entry describes `DriverSession`'s separate owned raw-word drop protocol; it does not upgrade the one-call theorem to arbitrary-session adequacy. | Existing pipeline gates plus `tests-rt-rc`, `tests-rc-certificate` and `tests-driver-session` check complete values, ABI, reclamation and same-region reuse. The callers are executables IxCC writes (the production and the test shell); the loader's mapping, the shells' code, source adequacy and general whole-call session framing remain explicit. |
 | Standalone executable shell | `x86-linux-exe-shell`: the shell of `ixcc compile --exe` and the kernel's loading of the static executable, as `X86/Exe/Code.lean` describes them | `Layout.driver_canonicalOk` (the layout keeps the driver contract), `X86.Exe.check_sound` (the file's structure); `tests-corpus --exe` and `tests-exe`. The shell's behaviour from the loader's post-state is not proved; it stays ledgered until byte executables (X3) can replace it |
-| Numeric state machines' shell | `x86-linux-machine-shell`: the generic request shell of `ixcc compile --exe --machine` and the kernel's loading of its executable, as `X86/Exe/Machine.lean` describes them | `X86.Exe.Machine.Layout.driver_canonicalOk` (the contract at every call, from any bytes), `X86.Exe.checkFor_sound`, the session theorem over the linked-object model (`Exe.Machine.session_sound`) and over the shell's two call sites (`machine_session_sound_at`), `X86.ByteAgree` (a non-faulting model run is the process's and writes only the model's mapping); `tests-exe` (the `phase1-machines` roots, `fib` against `--exe`, `echo` against Lean's interpreter and the model on the byte evaluator) and `tests-corpus`. The shell's realisation of the session model is not proved; the shell proof takes it first |
+| Numeric state machines' shell | `x86-linux-machine-shell`: the generic request shell of `ixcc compile --exe --machine` and the kernel's loading of its executable, as `X86/Exe/Machine.lean` describes them | `X86.Exe.Machine.Layout.driver_canonicalOk` (the contract at every call, from any bytes), `X86.Exe.checkFor_sound`, the session theorem over the linked-object model (`Exe.Machine.session_sound`) and over the shell's two call sites (`machine_session_sound_at`), `X86.ByteAgree` (a non-faulting model run is the process's and writes only the model's mapping), `X86.Exe.Shell.check_sound` (the shell's text in the written file, checked by the writer), `X86.Exe.Process.call_lifts` and `two_calls` (each call on the process); `tests-exe` (the `phase1-machines` roots, `fib` against `--exe`, `echo` against Lean's interpreter and the model on the byte evaluator) and `tests-corpus`. The shell's realisation of the session model is not proved; the shell proof takes it first |
 | ELF serialization and system loading | Independent interpretation is discharged for successful `ELF.writeChecked` output. Raw `ELF.write` clients lack that certificate. Actual system linker/loader behavior remains assumed. | `ELFRead` independently parses actual fields; `ELF.check_sound` certifies text, bounded/aligned/nonoverlapping sections, export placement, symbols, relocations, non-executable stack and exact provenance. `ObjectEval` begins from the parsed export and text. A real loader must implement the proved PC32 rule, map immutable executable text, resolve named procedures and enter with the stated ABI. |
 
 The reviewed format references are the [generic ABI ELF specification](https://gabi.xinuos.com/elf.pdf)

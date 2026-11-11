@@ -295,43 +295,52 @@ def execute (o : Options) : ExceptT Err IO Unit := do
   -- before anything is produced (every producer refuses it too, `produceClosures`)
   if o.command == "compile" then lift fun _ => checkFnParams cfg.names inp.program
   -- `policy`: the policy `--rc auto` compiled under, reported on standard output
-  let ((cliCert, outcomes, policy), tProduce) ← timed do
-    match o.cert with
-    | some f =>
-      let cc ← readCliCert f
-      unless checkCanonicalRelevance cfg inp cc.base.table cc.base.relevance do
-        throw { stage := .relevance, code := "relevance-canonical",
-                message := "certificate relevance annotation does not match canonical annotator output" }
-      pure (cc, none, none)
-    | none =>
-      match o.rc with
-      | .off =>
-        let p ← lift fun _ => produceWith cfg inp
-        pure (.zeroRc p.cert, some p.alloc, none)
-      | .on =>
-        let p ← lift fun _ => RcReplay.produceWith cfg inp
-        pure (.plainRc p.cert, some p.alloc, none)
-      | .auto =>
-        -- `RcReplay.produceAuto`'s choice: plain RC when it is selected and its
-        -- certificate is produced and replayed, else the immortal policy
-        let front ← lift fun _ => RcReplay.produceFir cfg inp
-        match Own.Plain.selectRcPolicyForSrc front.src front.fir with
-        | .zeroRc =>
-          let p ← lift fun _ => RcReplay.finishZeroRcCert cfg front
-          pure (.zeroRc p.cert, some p.alloc, some "zero-rc")
-        | .plainRc =>
-          match ← lift fun _ => .ok (RcReplay.producePlain cfg inp front) with
-          | .ok (p, _) => pure (.plainRc p.cert, some p.alloc, some "plain-rc")
-          | .error reason =>
+  -- produce and replay at a configuration; with the middle end's inline-round
+  -- retry first and, if that fails at any stage, without it (each run is the
+  -- proved composition at its own configuration)
+  let produceRun := fun (cfg : Config) => show ExceptT Err IO _ from do
+    let ((cliCert, outcomes, policy), tProduce) ← timed do
+      match o.cert with
+      | some f =>
+        let cc ← readCliCert f
+        unless checkCanonicalRelevance cfg inp cc.base.table cc.base.relevance do
+          throw { stage := .relevance, code := "relevance-canonical",
+                  message := "certificate relevance annotation does not match canonical annotator output" }
+        pure (cc, none, none)
+      | none =>
+        match o.rc with
+        | .off =>
+          let p ← lift fun _ => produceWith cfg inp
+          pure (.zeroRc p.cert, some p.alloc, none)
+        | .on =>
+          let p ← lift fun _ => RcReplay.produceWith cfg inp
+          pure (.plainRc p.cert, some p.alloc, none)
+        | .auto =>
+          -- `RcReplay.produceAuto`'s choice: plain RC when it is selected and its
+          -- certificate is produced and replayed, else the immortal policy
+          let front ← lift fun _ => RcReplay.produceFir cfg inp
+          match Own.Plain.selectRcPolicyForSrc front.src front.fir with
+          | .zeroRc =>
             let p ← lift fun _ => RcReplay.finishZeroRcCert cfg front
-            pure (.zeroRc p.cert, some p.alloc,
-              some s!"immortal (plain RC refused: {reason.stage.name}: {reason.code})")
-  let (a, tRun) ← timed do
-    match cliCert with
-    | .zeroRc cert => lift fun _ => run cfg inp.program cert
-    | .plainRc rcCert =>
-      let rcArt ← lift fun _ => RcReplay.run cfg inp.program rcCert
-      lift fun _ => rcArt.toRecheckArtifact rcCert
+            pure (.zeroRc p.cert, some p.alloc, some "zero-rc")
+          | .plainRc =>
+            match ← lift fun _ => .ok (RcReplay.producePlain cfg inp front) with
+            | .ok (p, _) => pure (.plainRc p.cert, some p.alloc, some "plain-rc")
+            | .error reason =>
+              let p ← lift fun _ => RcReplay.finishZeroRcCert cfg front
+              pure (.zeroRc p.cert, some p.alloc,
+                some s!"immortal (plain RC refused: {reason.stage.name}: {reason.code})")
+    let (a, tRun) ← timed do
+      match cliCert with
+      | .zeroRc cert => lift fun _ => run cfg inp.program cert
+      | .plainRc rcCert =>
+        let rcArt ← lift fun _ => RcReplay.run cfg inp.program rcCert
+        lift fun _ => rcArt.toRecheckArtifact rcCert
+    pure (cliCert, outcomes, policy, tProduce, a, tRun)
+  let (cliCert, outcomes, policy, tProduce, a, tRun) ←
+    if o.cert.isNone && cfg.budgets.retryInline then
+      tryCatch (produceRun cfg) fun _ => produceRun cfg.noRetry
+    else produceRun cfg
   if let some f := o.out then
     write f do
       let tmp : FilePath := s!"{f}.tmp.{← IO.monoNanosNow}"
