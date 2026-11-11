@@ -608,6 +608,28 @@ theorem declsOk_sound {b : Binding} {envA : Env .anon} {ev : Evidences .anon}
 /-- The coverage limits of the reading (input bounds only). -/
 def admissionLimits : Limits := ⟨1 <<< 22, 1 <<< 22, 1 <<< 34, 1 <<< 28, 1 <<< 26⟩
 
+/-- The map `hintsOf` reads (each definition block member's projection record). -/
+def hintsProjAt (ixe : Ixon.Env) : Std.HashMap (ConstRef Address) Address :=
+  ixe.consts.fold (init := {}) fun m a lc =>
+    match lc.get? with
+    | some c =>
+      match c.info with
+      | .dPrj p => m.insert (.member p.block p.idx.toNat) a
+      | _ => m
+    | none => m
+
+/-- `hintsOf`'s lookup at a map passed in. `hintsOf ixe` is compiled at its full arity, so
+its partial application rebuilds the map, decoding every record of `ixe`, at every lookup;
+the check builds the map once (`hintsProjAt`) and reads through it. -/
+def hintsAt (projAt : Std.HashMap (ConstRef Address) Address) (ixe : Ixon.Env)
+    (r : ConstRef Address) : Option ReducibilityHint :=
+  hintOf <$> ixe.anonHints.get? ((projAt.get? r).getD r.block)
+
+theorem hintsAt_hintsProjAt (ixe : Ixon.Env) : hintsAt (hintsProjAt ixe) ixe = hintsOf ixe := by
+  funext r
+  unfold hintsAt hintsProjAt hintsOf
+  rfl
+
 /-- The three stages of `preparedOk`, abstracted over the computations: the
 prelude, the reading, the fold, then `fin` on the fold's environment. -/
 def preparedOkWith {P Ev Ds En ε₁ ε₂ ε₃ : Type} (pref : Except ε₁ P)
@@ -646,11 +668,13 @@ theorem preparedOkWith_sound {P Ev Ds En ε₁ ε₂ ε₃ : Type} {pref : Excep
 
 /-- **The reading and the fold accept the records of `order`** under the admitted
 table `t` (of the binding `b`), behind its committed prelude, and the installed
-environment meets `declsOk`. -/
+environment meets `declsOk`. The artifact's hints are read through a map built once
+(`hintsAt`, equal to `hintsOf`). -/
 def preparedOk (b : Binding) (E : Ixon.Env) (t : RoleTable) (order : List Address) : Bool :=
+  let projAt := hintsProjAt E
   preparedOkWith (Reader.preludeFor t : Except String (Reader.Prelude .anon))
     (fun pre => Admission.prepareWith Address.admissionHash b pre admissionLimits
-      (recordsOf E order) (blobsOf E order) (hintsOf E))
+      (recordsOf E order) (blobsOf E order) (hintsAt projAt E))
     (fun ev ds => Cached.checkDecls .verified ev (ds.map IxVM.Refinement.thmToOpaqueDefn))
     (fun envA ev ds => declsOk envA ev ds.toList)
 
@@ -669,8 +693,10 @@ theorem preparedOk_sound (W : Type w) [SetTheory W] {b : Binding} {E : Ixon.Env}
   have href := Cached.checkDecls_refines_ref W rfl hck
   rw [Array.toList_map] at href
   obtain ⟨hthm, hax, hspecs⟩ := declsOk_sound (b := b) hfin
-  exact ⟨pre, ev, ds, envA, hpre, hprep, Cached.acceptsRefUnder_strict.mpr href,
+  refine ⟨pre, ev, ds, envA, hpre, ?_, Cached.acceptsRefUnder_strict.mpr href,
     hthm, hax, hspecs⟩
+  rw [← hintsAt_hintsProjAt]
+  exact hprep
 
 /-! ## The check -/
 
