@@ -2,7 +2,7 @@ module
 
 public import IxC.Kernel.Model.Open.Denotes
 import IxC.Kernel.Verify.PropWhen
-import IxC.Kernel.Verify.StrLitExpr
+public import IxC.Kernel.Verify.StrLitExpr
 
 @[expose] public section
 
