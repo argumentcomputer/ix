@@ -366,11 +366,15 @@ theorem fieldKind_mapKeys (hf : InjOn f P) {fam : Family md} (hfam : fam.Good P)
     (hns : ∀ n ∈ ns, n.Good P) (i : Nat) {e : Expr md} (he : e.Good P) :
     fieldKind (fam.mapKeys f) (ns.map (Key.map f)) i (e.mapKeys f) = fieldKind fam ns i e := by
   have hs := stripAllPis_good he
-  unfold fieldKind
-  rw [fieldTele_mapKeys, stripAllPis_mapKeys]
-  simp only [Expr.mapTele]
-  rw [any_mapBinders_mentions hf hns hs.1, matchCarrier_mapKeys hf hfam _ hs.2, Option.map_map]
-  rfl
+  have h1 : (stripAllPis (e.mapKeys f)).1.any (fun b => mentionsAny (ns.map (Key.map f)) b.1) =
+      (stripAllPis e).1.any (fun b => mentionsAny ns b.1) := by
+    rw [stripAllPis_mapKeys]; exact any_mapBinders_mentions hf hns hs.1
+  have h2 : (matchCarrier (fam.mapKeys f) (i + fieldTele (e.mapKeys f)) (stripAllPis (e.mapKeys f)).2).map
+      (·.1) = (matchCarrier fam (i + fieldTele e) (stripAllPis e).2).map (·.1) := by
+    simp only [fieldTele_mapKeys, stripAllPis_mapKeys, Expr.mapTele]
+    rw [matchCarrier_mapKeys hf hfam _ hs.2, Option.map_map]
+    rfl
+  simp only [fieldKind, h1, h2]
 
 /-- **A field's normal form, renamed** (`fieldNorm`). -/
 theorem fieldNorm_mapKeys (hf : InjOn f P) {fam : Family md} (hfam : fam.Good P) {ns : List (Key md)}
@@ -378,8 +382,8 @@ theorem fieldNorm_mapKeys (hf : InjOn f P) {fam : Family md} (hfam : fam.Good P)
     (hd : d.Good P) :
     fieldNorm (fam.mapKeys f) (ns.map (Key.map f)) M J nF i (minor.mapKeys f) (d.mapKeys f) =
       (fieldNorm fam ns M J nF i minor d).mapKeys f := by
-  unfold fieldNorm
-  rw [fieldKind_mapKeys hf hfam hns i hd, mentionsAny_mapKeys hf hns hd, minorIH?_mapKeys hf M J nF i hmin]
+  simp only [fieldNorm, fieldKind_mapKeys hf hfam hns i hd, mentionsAny_mapKeys hf hns hd,
+    minorIH?_mapKeys hf M J nF i hmin]
   by_cases hc : ((fieldKind fam ns i d).isNone && mentionsAny ns d) = true
   · rw [if_pos hc, if_pos hc]
     cases minorIH? M J nF i minor with
