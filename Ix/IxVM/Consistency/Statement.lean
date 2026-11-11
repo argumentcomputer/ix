@@ -3,6 +3,7 @@ import Ix.IxVM.Refinement.KernelLevels
 import IxC.Kernel.MainTheorem
 import IxC.Kernel.Model.Fold
 import IxC.Kernel.Model.Denotes
+import IxC.Kernel.Model.Iota
 import IxC.Kernel.Verify.EnvGuards
 import IxC.Kernel.Rules.Rel
 

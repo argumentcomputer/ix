@@ -148,17 +148,41 @@ theorem Denotes.const_back {cval : Key md → (LevelParam → Nat) → V} {env e
   cases h with
   | const hf hlen => exact .const (by rw [← hfind]; exact hf) hlen
 
+/-- Level instantiation keeps the keys a term mentions. -/
+theorem Expr.RefsIn.instantiateLevelParams {K : Key md → Prop} (ks : List LevelParam)
+    (us : List Level) : ∀ {e : Expr md}, e.RefsIn K → (e.instantiateLevelParams ks us).RefsIn K := by
+  intro e
+  induction e <;> simp_all [Expr.RefsIn, Expr.instantiateLevelParams]
+
+/-- A spine's arguments mention only the keys the spine does. -/
+theorem Expr.RefsIn.getAppArgs {K : Key md → Prop} :
+    ∀ {e : Expr md}, e.RefsIn K → ∀ x ∈ e.getAppArgs, x.RefsIn K := by
+  intro e
+  induction e with
+  | app f a ihf _ =>
+    intro h x hx
+    simp only [Expr.RefsIn] at h
+    simp only [Expr.getAppArgs, List.mem_append, List.mem_singleton] at hx
+    rcases hx with hx | rfl
+    · exact ihf h.1 x hx
+    · exact h.2
+  | _ => intro _ x hx; simp [Expr.getAppArgs] at hx
+
 /-- **A model restricts** to a sub-environment that agrees with the environment
-on the keys its stored types and definitions' values mention (and on `False`
-and `Eq`) and on projection tables. -/
+on the keys its stored constants' names and types, its definitions' values and its
+recursor rules' right-hand sides mention (and on `False` and `Eq`) and on projection
+tables. -/
 def Model.restrict {env env' : Env md} (M : Model V env) {K : Key md → Prop}
     (hfind : ∀ n, K n → env'.find? n = env.find? n)
     (hproj : ∀ T i, env'.findProj? T i = env.findProj? T i)
     (hlit : LitKeys K)
     (hsub : ∀ c ∈ env'.consts, c ∈ env.consts)
+    (hname : ∀ c ∈ env'.consts, K c.name)
     (htype : ∀ c ∈ env'.consts, c.toConstantVal.type.RefsIn K)
     (hvalue : ∀ cv value hint, ConstantInfo.defnInfo cv value hint ∈ env'.consts →
       value.RefsIn K)
+    (hrhs : ∀ cv mI rP rules, ConstantInfo.recInfo cv mI rP rules ∈ env'.consts →
+      ∀ rl ∈ rules, rl.rhs.RefsIn K)
     (hF : K falseName) (hE : K eqName) : Model V env' where
   cval := M.cval
   mem := fun c hc φ ρ =>
@@ -170,5 +194,36 @@ def Model.restrict {env env' : Env md} (M : Model V env) {K : Key md → Prop}
   defn_value := fun cv value hint hc φ ρ =>
     Denotes.mono_env hfind hproj hlit (M.defn_value cv value hint (hsub _ hc) φ ρ)
       (hvalue cv value hint hc)
+  iota_rule := by
+    intro r cv mI rP rules rl hf hrl cvC nP nF hC us φ ρ σ σC xs ys dom body RC m D ls R K' H X
+      hus hxs hys hR hfitR hdomFn hX hK hfitC hmaj hpar hidx hH
+    have hfind' : ∀ n, K n → env.find? n = env'.find? n := fun n h => (hfind n h).symm
+    have hproj' : ∀ T i, env.findProj? T i = env'.findProj? T i := fun T i => (hproj T i).symm
+    have hmR := List.mem_of_find?_eq_some hf
+    have hmC := List.mem_of_find?_eq_some hC
+    have hKr : K r := by
+      have h := hname _ hmR
+      rwa [show (ConstantInfo.recInfo cv mI rP rules).name = r from
+        beq_iff_eq.mp (List.find?_some hf)] at h
+    have hKc : K rl.ctor := by
+      have h := hname _ hmC
+      rwa [show (ConstantInfo.ctorInfo cvC nP nF).name = rl.ctor from
+        beq_iff_eq.mp (List.find?_some hC)] at h
+    obtain ⟨hfitR', hresR⟩ := Fits.mono_env hfind' hproj' hlit hfitR
+      (Expr.RefsIn.instantiateLevelParams _ _ (htype _ hmR))
+    have hdomK : dom.RefsIn K := hresR.1
+    obtain ⟨hfitC', hresC⟩ := Fits.mono_env hfind' hproj' hlit hfitC
+      (Expr.RefsIn.instantiateLevelParams _ _ (htype _ hmC))
+    exact M.iota_rule r cv mI rP rules rl (by rw [← hfind r hKr]; exact hf) hrl cvC nP nF
+      (by rw [← hfind _ hKc]; exact hC) us φ ρ σ σC xs ys dom body RC m D ls R K' H X
+      hus hxs hys (Denotes.mono_env hfind' hproj' hlit hR hKr) hfitR' hdomFn
+      (Denotes.mono_env hfind' hproj' hlit hX hdomK)
+      (Denotes.mono_env hfind' hproj' hlit hK hKc) hfitC' hmaj
+      (DenotesList.mono_env hfind' hproj' hlit hpar
+        (fun e he => Expr.RefsIn.getAppArgs hdomK e (List.mem_of_mem_take he)))
+      (DenotesList.mono_env hfind' hproj' hlit hidx
+        (fun e he => Expr.RefsIn.getAppArgs hresC e (List.mem_of_mem_drop he)))
+      (Denotes.mono_env hfind' hproj' hlit hH
+        (Expr.RefsIn.instantiateLevelParams _ _ (hrhs cv mI rP rules hmR rl hrl)))
 
 end Ix.Kernel

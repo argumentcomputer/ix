@@ -7,6 +7,10 @@ public import IxC.Kernel.Model.IndFire
 public import IxC.Kernel.Model.IndPointKit
 public import IxC.Kernel.Verify.InstSpine
 public import IxC.Kernel.Verify.InstLevels
+public import IxC.Kernel.Model.IndOpenRev
+public import IxC.Kernel.Model.IndPinGrade
+public import IxC.Kernel.Model.WellDenotedTransport
+public import IxC.Kernel.Model.Inductives.FixRecRead
 import IxC.Kernel.Verify.InferLeaves
 import IxC.Kernel.Verify.StrLitExpr
 import IxC.Kernel.Verify.InferLemmas
@@ -377,25 +381,125 @@ theorem hasFvar_getAppArgs_false : ∀ {e : Expr md}, e.hasFvar = false →
     · exact h.2
   | _ => intro _ x hx; simp [Expr.getAppArgs] at hx
 
-/-- **The computation rule of a canonical recursor rule**, from the invariant: its
-fired law (`RecRuleLaw`) at bound-variable readings, with the recorded canonical shape
-(`RuleCtorOk`) supplying the parameter agreement and the level link. -/
-theorem iotaRule_plain {μ : Ix.Kernel.CheckMode} {env : Env md} (m : EnvModelM V μ env)
+
+theorem _root_.Ix.Kernel.pushVals_append (ρ : Ix.Kernel.BVarIdx → V) :
+    ∀ (xs ys : List V), pushVals ρ (xs ++ ys) = pushVals (pushVals ρ xs) ys
+  | [], _ => rfl
+  | x :: xs, ys => Ix.Kernel.pushVals_append (Ix.Kernel.push x ρ) xs ys
+
+/-- **Lifting a term's loose variables is reading it in an environment that
+skips the lifted indices.** -/
+theorem _root_.Ix.Kernel.Denotes.lift {cval : Key md → (LevelParam → Nat) → V}
+    {env : Env md} {φ : LevelParam → Nat} {ρ0 : Ix.Kernel.BVarIdx → V} {e : Expr md} {v : V}
+    (h : Denotes cval env φ ρ0 e v) :
+    ∀ {k c : Nat} {ρ1 : Ix.Kernel.BVarIdx → V}, (∀ i, i < c → ρ1 i = ρ0 i) →
+      (∀ i, c ≤ i → ρ1 (i + k) = ρ0 i) →
+      Denotes cval env φ ρ1 (e.liftLooseBVars k c) v := by
+  have hpush : ∀ {c k : Nat} {ρ0 ρ1 : Ix.Kernel.BVarIdx → V} (x : V),
+      (∀ i, i < c → ρ1 i = ρ0 i) → (∀ i, c ≤ i → ρ1 (i + k) = ρ0 i) →
+      (∀ i, i < c + 1 → Ix.Kernel.push x ρ1 i = Ix.Kernel.push x ρ0 i) ∧
+      (∀ i, c + 1 ≤ i → Ix.Kernel.push x ρ1 (i + k) = Ix.Kernel.push x ρ0 i) := by
+    intro c k ρ0 ρ1 x hlo hhi
+    refine ⟨fun i hi => ?_, fun i hi => ?_⟩
+    · cases i with
+      | zero => rfl
+      | succ i => exact hlo i (by omega)
+    · obtain ⟨j, rfl⟩ : ∃ j, i = j + 1 := ⟨i - 1, by omega⟩
+      rw [show j + 1 + k = (j + k) + 1 by omega]
+      exact hhi j (by omega)
+  induction h with
+  | @bvar ρ i =>
+    intro k c ρ1 hlo hhi
+    by_cases hic : i ≥ c
+    · simp only [Expr.liftLooseBVars, if_pos hic]
+      rw [← hhi i hic]
+      exact .bvar
+    · simp only [Expr.liftLooseBVars, if_neg hic]
+      rw [← hlo i (by omega)]
+      exact .bvar
+  | sort => intros; exact .sort
+  | const hf hlen => intros; exact .const hf hlen
+  | app _ _ ihf iha => intro k c ρ1 hlo hhi; exact .app (ihf hlo hhi) (iha hlo hhi)
+  | lam _ _ hP ihA ihF =>
+    intro k c ρ1 hlo hhi
+    exact .lam (ihA hlo hhi)
+      (fun x hx => ihF x hx (hpush x hlo hhi).1 (hpush x hlo hhi).2) hP
+  | pi _ _ hP ihA ihB =>
+    intro k c ρ1 hlo hhi
+    exact .pi (ihA hlo hhi)
+      (fun x hx => ihB x hx (hpush x hlo hhi).1 (hpush x hlo hhi).2) hP
+  | proj_table ht _ ih => intro k c ρ1 hlo hhi; exact .proj_table ht (ih hlo hhi)
+  | proj_fst ht _ ih => intro k c ρ1 hlo hhi; exact .proj_fst ht (ih hlo hhi)
+  | proj_snd ht _ ih => intro k c ρ1 hlo hhi; exact .proj_snd ht (ih hlo hhi)
+  | natLit hd _ =>
+    intro k c ρ1 _ _
+    exact .natLit (hd.congr_below (Ix.Kernel.natLitToConstructor_looseBVars _ (k := 0))
+      (fun i hi => absurd hi (by omega)))
+  | strLit hd _ =>
+    intro k c ρ1 _ _
+    exact .strLit (hd.congr_below (Ix.Kernel.strLitToConstructor_looseBVars _ 0)
+      (fun i hi => absurd hi (by omega)))
+
+theorem instantiateLevelParams_liftLooseBVars (ks : List LevelParam) (us : List Level)
+    (k : Nat) : ∀ (e : Expr md) (c : Nat),
+    (e.liftLooseBVars k c).instantiateLevelParams ks us =
+      (e.instantiateLevelParams ks us).liftLooseBVars k c := by
+  intro e
+  induction e with
+  | bvar i =>
+    intro c
+    by_cases h : i ≥ c <;> simp [Expr.liftLooseBVars, Expr.instantiateLevelParams, h]
+  | _ => intro c; simp_all [Expr.liftLooseBVars, Expr.instantiateLevelParams]
+
+/-- **The grading crosses `instSeq` backwards**: a substituted reading graded at the
+ambient environment, along graded arguments, is graded at their chain. -/
+theorem wellDenotedV_of_instSeq {ρ : Nat → V} :
+    ∀ (ws : List AnnotTerm) {X : AnnotTerm},
+      (∀ w ∈ ws, WellDenotedV V ρ w) →
+      WellDenotedV V ρ (Ix.Kernel.Model.AnnotTerm.instSeq ws (ws.length - 1) X) →
+      WellDenotedV V (chain V ρ ws) X := by
+  intro ws
+  induction ws with
+  | nil => intro X _ hX; exact hX
+  | cons w ws ih =>
+    intro X hoks hX
+    have hokw : WellDenotedV V ρ w := hoks w List.mem_cons_self
+    rw [AnnotTerm.instSeq_cons] at hX
+    have hX' : WellDenotedV V ρ
+        (Ix.Kernel.Model.AnnotTerm.instSeq ws (ws.length - 1) (X.inst w ws.length)) := by
+      simpa using hX
+    have hstep := ih (fun x hx => hoks x (List.mem_cons_of_mem _ hx)) hX'
+    have hshift : shiftE ws.length 0 (chain V ρ ws) = ρ := shiftE_chain ρ ws
+    refine ⟨?_, ?_⟩
+    · have h := (WellDenoted_inst V X w ws.length (chain V ρ ws)
+        (by rw [hshift]; exact hokw.1)).mp hstep.1
+      rwa [hshift, ← chain_cons_eq_instE] at h
+    · have h := (AnnotValid_inst V X w ws.length (chain V ρ ws)
+        (by rw [hshift]; exact hokw.2)).mp hstep.2
+      rwa [hshift, ← chain_cons_eq_instE] at h
+
+/-- **The computation rule of every fired recursor rule**, from the invariant: the
+rule's fired law (`RecRuleLaw`) at bound-variable readings, with the store's record of
+the rule's constructor (`RuleCtorOk`) supplying the level link and the parameter
+agreement — a canonical rule's parameters are the recursor's parameter variables, a
+certified nested rule's are its stored instantiations, read along the recursor's
+prefix (`pinCross`). -/
+theorem iotaRule_of_fires {μ : Ix.Kernel.CheckMode} {env : Env md} (m : EnvModelM V μ env)
     {r : Key md} {cv : ConstantVal md} {mI rP : Nat} {rules : List (RecRule md)}
     {rl : RecRule md} (hf : env.find? r = some (.recInfo cv mI rP rules)) (hrl : rl ∈ rules)
-    (hplain : RecRule.fire rl = .plain) :
+    (hfire : RecRule.fire rl ≠ .inert) :
     Ix.Kernel.IotaRule (cvalOf (V := V) m.base2.acval) env r cv mI rP rl := by
   intro cvC nP nF hC us φ ρ σ σC xs ys dom body RC mb D ls R K H X hus hxs hys hR hfitR
     hdomFn hX hK hfitC hmaj hpar hidx hH
   have hcl := m.base2.cval_closedL
   -- the rule's constructor, as the store records it
-  obtain ⟨⟨cvj, hfj, hplainShape, -⟩, -, -⟩ := m.base2.rec_ctors r cv mI rP rules hf rl hrl
+  obtain ⟨⟨cvj, hfj, hplainShape, hnestLen, -⟩, -, -⟩ :=
+    m.base2.rec_ctors r cv mI rP rules hf rl hrl
   rw [hC] at hfj
   obtain ⟨rfl, hnP, hnF⟩ := ConstantInfo.ctorInfo.inj (Option.some.inj hfj)
   subst hnP hnF
-  have hfire : RecRule.fire rl ≠ .inert := by rw [hplain]; exact fun h => nomatch h
   obtain ⟨hrPmI, hlawU⟩ := m.rec_rules φ r cv mI rP rules hf rl hrl hfire
-  obtain ⟨Ra, hRa, hRaok, -, hmain⟩ := hlawU us hus
+  obtain ⟨Ra, hRa, hRaok, hpinGrade, hmain⟩ := hlawU us hus
   -- the constants' values
   have hRv : R = cvalOf m.base2.acval r (Level.substFn φ cv.levelParams us) := by
     cases hR with
@@ -407,7 +511,7 @@ theorem iotaRule_plain {μ : Ix.Kernel.CheckMode} {env : Env md} (m : EnvModelM 
   -- the stored types and the right-hand side are closed
   have hwfR := m.base2.wf _ (Ix.Kernel.Semantics.Env.find?_mem hf)
   have hwfC := m.base2.wf _ (Ix.Kernel.Semantics.Env.find?_mem hC)
-  obtain ⟨hrhsF, -, -, hrhsB, -⟩ := hwfR.2.2.2.2.2.1 cv mI rP rules rfl rl hrl
+  obtain ⟨hrhsF, -, -, hrhsB, hnestWF⟩ := hwfR.2.2.2.2.2.1 cv mI rP rules rfl rl hrl
   have hTf : (cv.type.instantiateLevelParams cv.levelParams us).hasFvar = false := by
     rw [Expr.hasFvar_instantiateLevelParams]; exact hwfR.1
   have hTb : (cv.type.instantiateLevelParams cv.levelParams us).looseBVarsBounded 0 = true := by
@@ -435,11 +539,13 @@ theorem iotaRule_plain {μ : Ix.Kernel.CheckMode} {env : Env md} (m : EnvModelM 
       Nat.add_sub_cancel_left]
   have hxsA_len : xsA.length = mI := by simp [xsA]
   have hysA_len : ysA.length = ys.length := by simp [ysA, hys]
+  have hxsA_get : ∀ n, n < mI → xsA.getD n default = AnnotTerm.bvar n := by
+    intro n hn
+    simp [xsA, List.getD, List.getElem?_range hn]
   have hxsA_val : ∀ n, n < mI →
       interp V ρ' (xsA.getD n default) = xs.getD n SetTheory.empty := by
     intro n hn
-    rw [show xsA.getD n default = AnnotTerm.bvar n by
-      simp [xsA, List.getD, List.getElem?_range hn], interp_bvar]
+    rw [hxsA_get n hn, interp_bvar]
     exact hρx n hn
   have hysA_val : ∀ n, n < ys.length →
       interp V ρ' (ysA.getD n default) = ys.getD n SetTheory.empty := by
@@ -489,29 +595,50 @@ theorem iotaRule_plain {μ : Ix.Kernel.CheckMode} {env : Env md} (m : EnvModelM 
       (by simp [xsA, hxs]) hvalR
   obtain ⟨-, -, CC, -, -, hCC, hteleC, hCCok, hσC, hRCb, hRCf⟩ :=
     fits_teleFitPA (V := V) hcl hTCf hTCb hTVja hTVjaok hfitC hysA_len hysA_val
-  -- the canonical shape: the major premise's levels and parameters
+  -- the major premise's domain is the stored one's, instantiated
   obtain ⟨bsR, hstripR, hσ, -, -, -⟩ := hfitR.strip (j := 0) hTb hTf
-  obtain ⟨pre0, dom0, body0, bm0, D0, hs0, hfn0, hargs0⟩ :=
-    recRulePlain_shapeT (hplainShape hplain)
   rw [hxs] at hstripR
-  obtain ⟨hbodyEq, -⟩ :=
-    Expr.stripPis_instantiateLevelParams_eq cv.levelParams us mI hs0 hstripR
-  simp only [Expr.instantiateLevelParams] at hbodyEq
-  obtain ⟨hdomEq, -, -⟩ := Expr.forallE.inj hbodyEq
-  have hls : ls = cvC.levelParams.map fun p => Level.subst cv.levelParams us (.param p) := by
+  have hdomOf : ∀ {pre0 : List (Expr md × Ix.Kernel.BinderMeta)} {dom0 body0 : Expr md}
+      {bm0 : Ix.Kernel.BinderMeta},
+      cv.type.stripPis mI = some (pre0, .forallE dom0 body0 bm0) →
+      dom = dom0.instantiateLevelParams cv.levelParams us := by
+    intro pre0 dom0 body0 bm0 hs0
+    obtain ⟨hbodyEq, -⟩ :=
+      Expr.stripPis_instantiateLevelParams_eq cv.levelParams us mI hs0 hstripR
+    simp only [Expr.instantiateLevelParams] at hbodyEq
+    exact (Expr.forallE.inj hbodyEq).1
+  have hlsOf : ∀ {dom0 : Expr md} {D0 : Key md} {L : List Level},
+      dom = dom0.instantiateLevelParams cv.levelParams us → dom0.getAppFn = .const D0 L →
+      ls = L.map (Level.subst cv.levelParams us) := by
+    intro dom0 D0 L hdomEq hfn0
     have h := hdomFn
     rw [hdomEq, Expr.getAppFn_instantiateLevelParams, hfn0] at h
-    simp only [Expr.instantiateLevelParams, List.map_map] at h
-    obtain ⟨-, h2⟩ := Expr.const.inj h
-    rw [← h2]
-    rfl
-  have hargs : dom.getAppArgs.take rl.ctorParams =
-      (List.range rl.ctorParams).map (fun k => Expr.bvar (mI - 1 - k)) := by
-    rw [hdomEq, Expr.getAppArgs_instantiateLevelParams, ← List.map_take, hargs0]
-    simp [Function.comp_def, Expr.instantiateLevelParams]
-  have hparams : ∀ i, i < rl.ctorParams → i < mI →
+    simp only [Expr.instantiateLevelParams] at h
+    exact (Expr.const.inj h).2.symm
+  -- the level link: the constructor at the major premise's levels is at the comparands
+  have hlev : Level.substFn φ cvC.levelParams ls = Level.substFn φ cvC.levelParams
+      (Ix.Kernel.recFireComparands rl cv.levelParams us cvC.levelParams [] rP).1 := by
+    cases hfr : RecRule.fire rl with
+    | inert => exact absurd hfr hfire
+    | plain =>
+      obtain ⟨pre0, dom0, body0, bm0, D0, hs0, hfn0, -⟩ :=
+        recRulePlain_shapeT (hplainShape hfr)
+      rw [Ix.Kernel.recFireComparands_plain hfr, hlsOf (hdomOf hs0) hfn0, List.map_map]
+      rfl
+    | nested lvls pins =>
+      obtain ⟨-, -, -, pre0, dom0, body0, bm0, D0, hs0, hfn0, -⟩ := hnestWF lvls pins hfr
+      rw [hlsOf (hdomOf hs0) hfn0]
+      simp [Ix.Kernel.recFireComparands, hfr]
+  -- a canonical rule's parameters are the recursor's parameter variables
+  have hparams : RecRule.fire rl = .plain → ∀ i, i < rl.ctorParams → i < mI →
       ys.getD i SetTheory.empty = xs.getD i SetTheory.empty := by
-    intro i hi him
+    intro hpl i hi him
+    obtain ⟨pre0, dom0, body0, bm0, D0, hs0, -, hargs0⟩ :=
+      recRulePlain_shapeT (hplainShape hpl)
+    have hargs : dom.getAppArgs.take rl.ctorParams =
+        (List.range rl.ctorParams).map (fun k => Expr.bvar (mI - 1 - k)) := by
+      rw [hdomOf hs0, Expr.getAppArgs_instantiateLevelParams, ← List.map_take, hargs0]
+      simp [Function.comp_def, Expr.instantiateLevelParams]
     have hd := hpar.getD (Expr.bvar 0) SetTheory.empty i (by rw [hargs]; simpa using hi)
     rw [show (dom.getAppArgs.take rl.ctorParams).getD i (Expr.bvar 0)
         = Expr.bvar (mI - 1 - i) by
@@ -521,6 +648,104 @@ theorem iotaRule_plain {μ : Ix.Kernel.CheckMode} {env : Env md} (m : EnvModelM 
     rw [hσ, pushVals_lt xs ρ (mI - 1 - i) SetTheory.empty (by omega), hxs,
       show mI - 1 - (mI - 1 - i) = i by omega] at hv
     rw [← hv]
+    simp only [List.getD, List.getElem?_take_of_lt hi]
+  -- a certified nested rule's parameters are its stored instantiations, read along the
+  -- recursor's prefix
+  have hnestPar : ∀ lvls pins, RecRule.fire rl = .nested lvls pins →
+      ∀ i, i < RecRule.ctorParams rl → ∀ vpa : AnnotTerm,
+        denoteMeta m.base2.acval env φ rP
+          (openRev 0 rP ((pins.getD i default).instantiateLevelParams cv.levelParams us))
+          = some vpa →
+        interp V ρ' (ysA.getD i default)
+          = interp V ρ' (Ix.Kernel.Model.AnnotTerm.instRevChain (xsA.take rP) vpa) := by
+    intro lvls pins hn i hi vpa hvpa
+    obtain ⟨-, -, hpinsWf, pre0, dom0, body0, bm0, D0, hs0, -, hargs0⟩ :=
+      hnestWF lvls pins hn
+    have hplen : pins.length = rl.ctorParams := hnestLen lvls pins hn
+    obtain ⟨p, hp⟩ : ∃ p, pins[i]? = some p := ⟨_, List.getElem?_eq_getElem (by omega)⟩
+    have hpget : pins.getD i default = p := by simp [List.getD, hp]
+    obtain ⟨hpF, -, -, hpB⟩ := hpinsWf p (List.mem_of_getElem? hp)
+    have hp'F : (p.instantiateLevelParams cv.levelParams us).hasFvar = false := by
+      rw [Expr.hasFvar_instantiateLevelParams]; exact hpF
+    have hp'B : (p.instantiateLevelParams cv.levelParams us).looseBVarsBounded rP = true := by
+      rw [Expr.looseBVarsBounded_instantiateLevelParams]; exact hpB
+    rw [hpget] at hvpa
+    -- the pin's reading is graded at the prefix readings
+    obtain ⟨vpa', hvpa', hgrade⟩ := hpinGrade lvls pins hn i hi
+    rw [hpget] at hvpa'
+    obtain rfl : vpa' = vpa := Option.some.inj (hvpa'.symm.trans hvpa)
+    have hzslen : (xsA.take rP).length = rP := by rw [List.length_take, hxsA_len]; omega
+    have hzsok : ∀ z ∈ xsA.take rP, WellDenotedV V ρ' z := by
+      intro z hz
+      obtain ⟨j, -, rfl⟩ : ∃ j, j < mI ∧ AnnotTerm.bvar j = z := by
+        have := List.mem_of_mem_take hz
+        simpa [xsA] using this
+      exact ⟨by simp, by simp⟩
+    obtain ⟨midR, hfitZ⟩ := hteleR.take rP
+    rw [List.take_append_of_le_length (by rw [hxsA_len]; omega)] at hfitZ
+    have hgr := hgrade ρ' (xsA.take rP) TVa midR hzslen hzsok hTVa hfitZ
+    -- the pin's reading at the prefix frame
+    obtain ⟨w0, hw0, hcross⟩ := pinCross (acval := m.base2.acval) (cval := m.base2.cvalE)
+      (env := env) (φ := φ) (cnF := 0)
+      m.base2.acval_closed (acval_inst_self m.base2) m.base2.acval_erase
+      m.base2.cval_closed (AnnotTerm.sort 0) (os := openFvars 0 rP) (by simp)
+      (fun j x hx => by
+        have hj : j < rP := by
+          have := (List.getElem?_eq_some_iff.mp hx).1
+          simpa using this
+        rw [openFvars_getElem? hj] at hx
+        exact ⟨_, (Option.some.inj hx).symm.trans (by rw [Nat.zero_add])⟩)
+      (fun x hx => by
+        obtain ⟨q, hq⟩ := List.mem_iff_getElem?.mp hx
+        exact openFvars_WScoped (by omega) q x hq)
+      (fun x hx => openFvars_bounded 0 rP x hx)
+      hp'F hp'B hvpa hzslen (vals := xsA.take rP) (n := rP) hzslen (Nat.le_refl _)
+      (by omega) (List.take_of_length_le (by rw [hzslen]))
+    simp only [Nat.add_zero, Nat.sub_self, List.replicate_zero, List.append_nil] at hw0 hcross
+    have hgr0 : WellDenotedV V (chain V ρ' (xsA.take rP)) w0 := by
+      rw [← hcross] at hgr
+      exact wellDenotedV_of_instSeq _ hzsok (by rw [hzslen]; exact hgr)
+    rw [Ix.Kernel.Expr.instSpine_eq_instSeq] at hw0
+    obtain ⟨hfb, hlb0⟩ := Ix.Kernel.instSeq_openFvars_scoped rP 0 _ hp'B
+      (Ix.Kernel.fvarsBelow_zero_of_hasFvar_false hp'F)
+    have hbr := Denotes_of_denoteMeta (V := V) hcl rP _ hw0 (by simpa using hfb) hlb0
+      (chain V ρ' (xsA.take rP)) hgr0
+    rw [show Expr.closeN rP (Expr.instSeq (openFvars 0 rP) (rP - 1)
+        (p.instantiateLevelParams cv.levelParams us)) 0
+        = p.instantiateLevelParams cv.levelParams us by
+      have h := Ix.Kernel.closeN_instSeq_openFvars rP 0 _ hp'B
+        (Ix.Kernel.fvarsBelow_zero_of_hasFvar_false hp'F)
+      rw [Nat.zero_add] at h
+      rw [h, Expr.closeN_of_hasFvar _ 0 _ hp'F]] at hbr
+    -- moved to the prefix's own environment, then lifted past the indices
+    have hbr' := hbr.congr_below (ρ' := pushVals ρ (xs.take rP)) hp'B (by
+      intro j hj
+      have htl : (xs.take rP).length = rP := by rw [List.length_take]; omega
+      rw [chain_take_lt (by rw [hxsA_len]; omega) hj, hxsA_val _ (by omega),
+        pushVals_lt _ _ j SetTheory.empty (by rw [htl]; exact hj), htl]
+      simp only [List.getD]
+      rw [List.getElem?_take_of_lt (by omega)])
+    have hlift := hbr'.lift (k := mI - rP) (c := 0) (ρ1 := σ) (fun j hj => absurd hj (by omega))
+      (by
+        intro j _
+        rw [hσ, ← List.take_append_drop rP xs, Ix.Kernel.pushVals_append,
+          pushVals_ge _ _ _ (by simp; omega)]
+        congr 1
+        simp; omega)
+    -- the major premise's parameter argument is that lifted instantiation
+    have hargi : (dom.getAppArgs.take rl.ctorParams).getD i (Expr.bvar 0) =
+        (p.instantiateLevelParams cv.levelParams us).liftLooseBVars (mI - rP) 0 := by
+      rw [hdomOf hs0, Expr.getAppArgs_instantiateLevelParams, hargs0]
+      simp only [List.getD, List.getElem?_take_of_lt hi, List.getElem?_map,
+        List.getElem?_append_left (by rw [List.length_map]; omega), hp, Option.map_some,
+        Option.getD_some]
+      exact instantiateLevelParams_liftLooseBVars _ _ _ _ _
+    have hd := hpar.getD (Expr.bvar 0) SetTheory.empty i (by
+      rw [List.length_take, hdomOf hs0, Expr.getAppArgs_instantiateLevelParams, hargs0]
+      simp; omega)
+    rw [hargi] at hd
+    have hv := Ix.Kernel.Denotes_functional hd hlift
+    rw [hysA_val i (by rw [hys]; omega), ← hcross, interp_instSeq, ← hv]
     simp only [List.getD, List.getElem?_take_of_lt hi]
   -- the index pin: the constructor's residual is the family at its indices
   have hpin : IotaIndexPin (V := V) ρ'
@@ -543,7 +768,6 @@ theorem iotaRule_plain {μ : Ix.Kernel.CheckMode} {env : Env md} (m : EnvModelM 
       have hab : a.looseBVarsBounded ys.length = true :=
         Expr.looseBVarsBounded_getAppArgs hRCb a hamem
       have haf : a.hasFvar = false := hasFvar_getAppArgs_false hRCf a hamem
-      -- the argument's reading
       have hread := hsp.getD (Expr.bvar 0) (rl.ctorParams + i) (by simpa using hargLen)
       simp only [List.getD, List.getElem?_map, ha, Option.map_some, Option.getD_some] at hread
       obtain ⟨va, hva⟩ : ∃ va, vs'[rl.ctorParams + i]? = some va :=
@@ -573,16 +797,12 @@ theorem iotaRule_plain {μ : Ix.Kernel.CheckMode} {env : Env md} (m : EnvModelM 
       simp only [List.getD] at this
       rw [this]
   -- the fired law
-  have hlev : Level.substFn φ cvC.levelParams ls = Level.substFn φ cvC.levelParams
-      (Ix.Kernel.recFireComparands rl cv.levelParams us cvC.levelParams [] rP).1 := by
-    rw [Ix.Kernel.recFireComparands_plain hplain, hls]
   have hlawEq := (hmain cvC rl.ctorParams rl.nfields hC ls ρ' xsA ysA TVa TVja _ _
     hxsA_len (by rw [hysA_len, hys]) hlsLen hlev
-    (fun _ _ i hi him => by
+    (fun _ hpl i hi him => by
       rw [hysA_val i (by omega), hxsA_val i him]
-      exact hparams i hi him)
-    (fun lvls pins h => by rw [hplain] at h; exact nomatch h)
-    hpin hTVa hTVja hteleR hteleC).1
+      exact hparams hpl i hi him)
+    hnestPar hpin hTVa hTVja hteleR hteleC).1
   -- the right-hand side's value
   have hHv : H = interp V ρ' Ra := by
     have hnf : (rl.rhs.instantiateLevelParams cv.levelParams us).hasFvar = false := by
@@ -592,7 +812,8 @@ theorem iotaRule_plain {μ : Ix.Kernel.CheckMode} {env : Env md} (m : EnvModelM 
     have hbr := Denotes_of_denoteMeta (V := V) hcl 0 _ hRa
       (Ix.Kernel.fvarsBelow_zero_of_hasFvar_false hnf) hlb ρ' (hRaok ρ')
     rw [Expr.closeN_of_hasFvar _ 0 0 hnf] at hbr
-    exact Ix.Kernel.Denotes_functional (hH.congr_below hlb (fun i hi => absurd hi (by omega))) hbr
+    exact Ix.Kernel.Denotes_functional
+      (hH.congr_below hlb (fun i hi => absurd hi (by omega))) hbr
   calc (xs ++ [ys.foldl app K]).foldl app R
       = ((xsA ++ [majA]).map (interp V ρ')).foldl app
           (interp V ρ' (m.base2.acval r (Level.substFn φ cv.levelParams us))) := by
@@ -606,5 +827,75 @@ theorem iotaRule_plain {μ : Ix.Kernel.CheckMode} {env : Env md} (m : EnvModelM 
         rw [interp_mkAppN, List.foldl_map]
     _ = (xs.take rP ++ ys.drop rl.ctorParams).foldl app H := by
         rw [List.map_append, List.map_take, List.map_drop, hxsMap, hysMap, hHv]
+
+/-- **ι at every stored rule, from the invariant**: the store records that every stored
+rule fires (`RuleCtorOk`), and a fired rule's computation rule holds. -/
+theorem iotaLaw_of_envModelM {μ : Ix.Kernel.CheckMode} {env : Env md} (m : EnvModelM V μ env) :
+    Ix.Kernel.IotaLaw (cvalOf (V := V) m.base2.acval) env := by
+  intro r cv mI rP rules rl hf hrl
+  obtain ⟨⟨-, -, -, -, hfire⟩, -, -⟩ := m.base2.rec_ctors r cv mI rP rules hf rl hrl
+  exact iotaRule_of_fires m hf hrl hfire
+
+/-! ### The model -/
+
+/-- **The model, read off the invariant**: `Model V env` from
+`EnvModelM V μ env`. -/
+noncomputable def Model.ofEnvModelM {μ : Ix.Kernel.CheckMode} {env : Env md}
+    (m : EnvModelM V μ env) : Ix.Kernel.Model V env where
+  cval := cvalOf m.base2.acval
+  mem := by
+    intro c hc φ ρ
+    obtain ⟨ta, hta⟩ := m.type_reads c hc φ
+    have hwf := m.base2.wf c hc
+    have hnf : c.toConstantVal.type.hasFvar = false := hwf.1
+    have hlb : c.toConstantVal.type.looseBVarsBounded 0 = true := hwf.2.2.2.1
+    have hbr := Denotes_of_denoteMeta (V := V) m.base2.cval_closedL 0
+      c.toConstantVal.type hta (Ix.Kernel.fvarsBelow_zero_of_hasFvar_false hnf) hlb ρ
+      (m.type_wellDenotedV c hc φ ta hta ρ)
+    rw [Expr.closeN_of_hasFvar _ 0 0 hnf] at hbr
+    refine ⟨interp V ρ ta, hbr, ?_⟩
+    rw [← interp_cvalOf m.base2.cval_closedL]
+    exact m.mem_type c hc φ ta hta ρ
+  false_empty := by
+    intro φ ρ F h
+    suffices hs : ∀ (ψ : LevelParam → Nat) (ci : ConstantInfo md),
+        env.find? falseName = some ci →
+        cvalOf (V := V) m.base2.acval falseName ψ = SetTheory.empty by
+      cases h with
+      | const hf hlen => exact hs _ _ hf
+    intro ψ ci hf
+    have hpd : Ix.Kernel.Verify.pinnedStructT (md := md) falseName ψ
+        = some (Term.const .empty [0]) := by
+      cases md <;> simp +decide [Ix.Kernel.Verify.pinnedStructT]
+    have he : (m.base2.acval falseName ψ).erase = Term.const .empty [0] :=
+      m.base2.cvalE_pinned (n := falseName) (by (cases md <;> decide)) (by rw [hf]; rfl) ψ hpd
+    rw [cvalOf, erase_eq_const he, interp_const]
+    rfl
+  eq_equality := by
+    intro u φ ρ E A a b h hA ha hb
+    cases h with
+    | const hf hlen =>
+      have hpin := (m.base2.basis_pinned _ _ hf (by (cases md <;> decide))).1
+      rw [show Ix.Kernel.pinnedInfo Ix.Kernel.eqName = Ix.Kernel.eqA from rfl]
+        at hpin
+      subst hpin
+      rw [show (Ix.Kernel.eqA : ConstantInfo md).toConstantVal.levelParams
+        = [Ix.Kernel.uN] from rfl]
+      have hψ : Level.substFn φ [Ix.Kernel.uN] [u] Ix.Kernel.uN = Level.eval φ u := by
+        simp [Level.substFn]
+      have hlaw := (m.eq_law hf (Level.substFn φ [Ix.Kernel.uN] [u])).1 ρ A a b
+        (by rw [hψ]; exact hA) ha hb
+      rw [interp_cvalOf m.base2.cval_closedL] at hlaw
+      exact hlaw
+  defn_value := by
+    intro cv value hint hmem φ ρ
+    have hr := m.defn_reads φ cv value ⟨hint, hmem⟩
+    have hv := (m.base2.wf _ hmem).2.2.2.2.1 cv value hint rfl
+    have hb := Denotes_of_denoteMeta (V := V) m.base2.cval_closedL 0 value hr
+      (Ix.Kernel.fvarsBelow_zero_of_hasFvar_false hv.1) hv.2.2.2 ρ
+      ⟨m.base2.acval_wellDenoted _ φ ρ, m.acval_validV _ φ ρ⟩
+    rw [Expr.closeN_of_hasFvar _ 0 0 hv.1, interp_cvalOf m.base2.cval_closedL] at hb
+    exact hb
+  iota_rule := iotaLaw_of_envModelM m
 
 end Ix.Kernel.Model

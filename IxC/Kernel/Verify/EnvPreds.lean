@@ -93,8 +93,8 @@ theorem RuleCtorOk.of_plain {find? : Key md → Option (ConstantInfo md)} {cv : 
     (hfire : RecRule.fire r = .plain)
     (hpl : Expr.recRulePlain cv.type mI rP r.ctorParams cvj.levelParams = true) :
     RuleCtorOk find? cv mI rP r :=
-  ⟨cvj, hf, fun _ => hpl, fun _ _ h => by rw [hfire] at h; exact nomatch h,
-    by rw [hfire]; exact fun h => nomatch h⟩
+  ⟨cvj, hf, fun _ => hpl, fun _ _ h => (by rw [hfire] at h; exact nomatch h),
+    (by rw [hfire]; exact fun h => nomatch h)⟩
 
 /-- **A stored recursor's rules against the store**: every rule's
 constructor is itself stored (blocks carry their constructors, and the

@@ -505,9 +505,10 @@ theorem checkProjShape_inv {pty cty : Expr md} {nP nF : Nat} {cjLps : List Level
       cbody.getAppArgs.length = nP := by
   simp only [checkProjShape, Bind.bind, Except.bind] at h
   have hpl : Expr.recRulePlain pty nP nP nP cjLps = true := by
-    by_contra hc
-    rw [if_neg hc] at h
-    exact absurd h (by simp [throw, throwThe, MonadExceptOf.throw])
+    cases hc : Expr.recRulePlain pty nP nP nP cjLps
+    · rw [hc] at h
+      exact absurd h (by simp [throw, throwThe, MonadExceptOf.throw])
+    · rfl
   rw [if_pos hpl] at h
   refine ⟨hpl, ?_⟩
   revert h

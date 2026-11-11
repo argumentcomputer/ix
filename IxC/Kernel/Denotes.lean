@@ -235,98 +235,10 @@ theorem Denotes_functional {V : Type w} [SetTheory V]
     cases hw with
     | strLit h' => exact ih h'
 
-/-- **A model of the environment `env` in the set theory `V`**: one
-assignment `cval` of a set to every constant at every level
-assignment — fixed once, for the whole environment — under which every
-stored constant is a member of what its type denotes, the built-in
-`False` is the empty set, the built-in `Eq` is set equality, and every
-stored definition is what its value denotes.
+/-! ## Telescopes, and the computation rules of recursors
 
-The interpretation of the constants *is* the model: there is nothing
-else to choose (`Sort`, `∀`, `λ`, application and projection are read
-by fixed set operations).  `mem` is what makes every stored theorem
-true — a theorem `t : P` is a constant whose type `P` denotes a truth
-value, and `cval t φ ∈ˢ ⟦P⟧` says that truth value is `{pt}` — and
-`false_empty` is what makes truth mean something: a proof of `False`
-would be a member of `∅`.
-
-`False` and `Eq` are both built in (the checker installs them from its
-own pins and rejects a stream that declares them otherwise), so
-`false_empty` and `eq_equality` are facts about the checker's own
-constants, not hypotheses about the input; each is stated of whatever
-the stored constant denotes, so it says nothing when nothing is stored.
-
-**The constants mean what Lean means.**  Membership alone lets a
-constant denote any inhabitant of its type: with `mem` and nothing
-else, `def P : Prop := False` and `theorem t : P` have a model in which
-`P` is true.  So the model also keeps Lean's definitional equalities
-where they are laws of stored constants:
-
-* **δ** (`defn_value`): a stored definition denotes what its value
-  denotes.  Theorems need no such law: a theorem's statement is a
-  proposition, whose only possible member is `pt`, so a theorem denotes
-  what any proof of its statement denotes (which is why the checker may
-  unfold one).  An opaque constant is stored with no value.
-
-The kernel's other generic definitional equalities do not depend on
-`cval`: they hold in every model because of how `Denotes` reads terms.
-
-* **β**: a `λ` denotes the graph of its body over its domain, and a
-  graph applied to a point of its domain is the body's value there; in
-  regime `0` both are the proof point (`SetModel.app_lamR`).
-* **function η**: a member of a `∀` set is the graph of its own
-  applications over the domain, or `pt` in regime `0`
-  (`SetModel.lamR_eta`).
-* **proof irrelevance**: a proposition denotes a subset of `{pt}`, so
-  its members are all equal (`SetModel.subsingleton_of_mem_univZero`).
-* **ζ**: a stored term has no `let` (the checker's annotation pass
-  replaces each by its reduct), and `Denotes` reads none.
-* **literals**: a `Nat` or `String` literal denotes its constructor
-  form, by `Denotes`' own rules, so the literal `n + 1` and
-  `Nat.succ n` denote the same set.
-
-Not yet fields of this structure, because the checker does not yet establish
-them for every stored constant: the ι rules of recursors (`IotaLaw`, below; the
-quotient's computation rules are among them, since `Quot.lift` and `Quot.ind`
-are stored as recursors), structure η and unit-like η, the projection of a
-constructor, and the kernel's acceleration of `Nat` operations on literals. -/
-structure Model (V : Type w) [SetTheory V] (env : Env md) where
-  /-- the set a constant denotes, per level assignment -/
-  cval : Key md → (LevelParam → Nat) → V
-  /-- every stored constant is a member of what its type denotes, at
-  every level assignment (and every variable environment — the type
-  is closed) -/
-  mem : ∀ c ∈ env.consts, ∀ (φ : LevelParam → Nat) (ρ : BVarIdx → V),
-    ∃ T, Denotes cval env φ ρ c.toConstantVal.type T ∧ cval c.name φ ∈ˢ T
-  /-- whatever the built-in `False` denotes is the empty set -/
-  false_empty : ∀ (φ : LevelParam → Nat) (ρ : BVarIdx → V) (F : V),
-    Denotes cval env φ ρ (.const falseName []) F → F = empty
-  /-- whatever the built-in `Eq` denotes is set equality: at a type `A`
-  of the universe the level `u` names, and two of its members `a` and
-  `b`, `@Eq.{u} A a b` denotes the truth value of `a = b`.  The three
-  membership premises are the graph's domains — `Eq`'s denotation is a
-  three-fold graph over `univ (Level.eval φ u)`, then over `A`, then
-  over `A` again, and a graph read off its domain says nothing -/
-  eq_equality : ∀ (u : Level) (φ : LevelParam → Nat) (ρ : BVarIdx → V) (E A a b : V),
-    Denotes cval env φ ρ (.const eqName [u]) E →
-    A ∈ˢ univ (Level.eval φ u) → a ∈ˢ A → b ∈ˢ A →
-    app (app (app E A) a) b = eqv a b
-  /-- **δ**: every stored definition denotes what its value denotes, at
-  every level assignment (and every variable environment — the value is
-  closed).  A use `c.{us}` denotes `cval c` at the assignment `us`
-  induces, which is where the value is read too -/
-  defn_value : ∀ (cv : ConstantVal md) (value : Expr md) (hint : ReducibilityHint),
-    ConstantInfo.defnInfo cv value hint ∈ env.consts →
-    ∀ (φ : LevelParam → Nat) (ρ : BVarIdx → V),
-      Denotes cval env φ ρ value (cval cv.name φ)
-
-/-! ## Telescopes, and the laws that are not yet fields
-
-`Model` carries a law as a field only when the checker can establish it for every
-stored constant. The laws below are stated in the same vocabulary, to be proved for
-the cases the checker covers; each becomes a field once it
-covers every case. They need two notions beyond `Denotes`: a list of terms denoting a
-list of sets, and a list of sets fitting a telescope. -/
+The ι law below needs two notions beyond `Denotes`: a list of terms denoting a list of
+sets, and a list of sets fitting a telescope. -/
 
 /-- `DenotesList cval env φ ρ es vs`: the terms `es` denote the sets `vs`, one by one. -/
 inductive DenotesList (cval : Key md → (LevelParam → Nat) → V) (env : Env md)
@@ -399,6 +311,98 @@ def IotaLaw (cval : Key md → (LevelParam → Nat) → V) (env : Env md) : Prop
   ∀ (r : Key md) (cv : ConstantVal md) (mI rP : Nat) (rules : List (RecRule md))
     (rl : RecRule md),
     env.find? r = some (.recInfo cv mI rP rules) → rl ∈ rules → IotaRule cval env r cv mI rP rl
+
+/-- **A model of the environment `env` in the set theory `V`**: one
+assignment `cval` of a set to every constant at every level
+assignment — fixed once, for the whole environment — under which every
+stored constant is a member of what its type denotes, the built-in
+`False` is the empty set, the built-in `Eq` is set equality, and every
+stored definition is what its value denotes.
+
+The interpretation of the constants *is* the model: there is nothing
+else to choose (`Sort`, `∀`, `λ`, application and projection are read
+by fixed set operations).  `mem` is what makes every stored theorem
+true — a theorem `t : P` is a constant whose type `P` denotes a truth
+value, and `cval t φ ∈ˢ ⟦P⟧` says that truth value is `{pt}` — and
+`false_empty` is what makes truth mean something: a proof of `False`
+would be a member of `∅`.
+
+`False` and `Eq` are both built in (the checker installs them from its
+own pins and rejects a stream that declares them otherwise), so
+`false_empty` and `eq_equality` are facts about the checker's own
+constants, not hypotheses about the input; each is stated of whatever
+the stored constant denotes, so it says nothing when nothing is stored.
+
+**The constants mean what Lean means.**  Membership alone lets a
+constant denote any inhabitant of its type: with `mem` and nothing
+else, `def P : Prop := False` and `theorem t : P` have a model in which
+`P` is true.  So the model also keeps Lean's definitional equalities
+where they are laws of stored constants:
+
+* **δ** (`defn_value`): a stored definition denotes what its value
+  denotes.  Theorems need no such law: a theorem's statement is a
+  proposition, whose only possible member is `pt`, so a theorem denotes
+  what any proof of its statement denotes (which is why the checker may
+  unfold one).  An opaque constant is stored with no value.
+* **ι** (`iota_rule`): every stored recursor rule computes as Lean's
+  does (`IotaRule`): the recursor at arguments that fit its type and at
+  a constructor application of its major premise's family is the rule's
+  right-hand side at the prefix and the constructor's fields.  The
+  quotient's computation rules are among them: `Quot.lift` and
+  `Quot.ind` are stored as recursors.
+
+The kernel's other generic definitional equalities do not depend on
+`cval`: they hold in every model because of how `Denotes` reads terms.
+
+* **β**: a `λ` denotes the graph of its body over its domain, and a
+  graph applied to a point of its domain is the body's value there; in
+  regime `0` both are the proof point (`SetModel.app_lamR`).
+* **function η**: a member of a `∀` set is the graph of its own
+  applications over the domain, or `pt` in regime `0`
+  (`SetModel.lamR_eta`).
+* **proof irrelevance**: a proposition denotes a subset of `{pt}`, so
+  its members are all equal (`SetModel.subsingleton_of_mem_univZero`).
+* **ζ**: a stored term has no `let` (the checker's annotation pass
+  replaces each by its reduct), and `Denotes` reads none.
+* **literals**: a `Nat` or `String` literal denotes its constructor
+  form, by `Denotes`' own rules, so the literal `n + 1` and
+  `Nat.succ n` denote the same set.
+
+Not yet fields of this structure, because the checker does not yet establish
+them for every stored constant: structure η and unit-like η, the projection
+of a constructor, and the kernel's acceleration of `Nat` operations on
+literals. -/
+structure Model (V : Type w) [SetTheory V] (env : Env md) where
+  /-- the set a constant denotes, per level assignment -/
+  cval : Key md → (LevelParam → Nat) → V
+  /-- every stored constant is a member of what its type denotes, at
+  every level assignment (and every variable environment — the type
+  is closed) -/
+  mem : ∀ c ∈ env.consts, ∀ (φ : LevelParam → Nat) (ρ : BVarIdx → V),
+    ∃ T, Denotes cval env φ ρ c.toConstantVal.type T ∧ cval c.name φ ∈ˢ T
+  /-- whatever the built-in `False` denotes is the empty set -/
+  false_empty : ∀ (φ : LevelParam → Nat) (ρ : BVarIdx → V) (F : V),
+    Denotes cval env φ ρ (.const falseName []) F → F = empty
+  /-- whatever the built-in `Eq` denotes is set equality: at a type `A`
+  of the universe the level `u` names, and two of its members `a` and
+  `b`, `@Eq.{u} A a b` denotes the truth value of `a = b`.  The three
+  membership premises are the graph's domains — `Eq`'s denotation is a
+  three-fold graph over `univ (Level.eval φ u)`, then over `A`, then
+  over `A` again, and a graph read off its domain says nothing -/
+  eq_equality : ∀ (u : Level) (φ : LevelParam → Nat) (ρ : BVarIdx → V) (E A a b : V),
+    Denotes cval env φ ρ (.const eqName [u]) E →
+    A ∈ˢ univ (Level.eval φ u) → a ∈ˢ A → b ∈ˢ A →
+    app (app (app E A) a) b = eqv a b
+  /-- **δ**: every stored definition denotes what its value denotes, at
+  every level assignment (and every variable environment — the value is
+  closed).  A use `c.{us}` denotes `cval c` at the assignment `us`
+  induces, which is where the value is read too -/
+  defn_value : ∀ (cv : ConstantVal md) (value : Expr md) (hint : ReducibilityHint),
+    ConstantInfo.defnInfo cv value hint ∈ env.consts →
+    ∀ (φ : LevelParam → Nat) (ρ : BVarIdx → V),
+      Denotes cval env φ ρ value (cval cv.name φ)
+  /-- **ι**: every stored recursor rule computes as Lean's does (`IotaRule`) -/
+  iota_rule : IotaLaw cval env
 
 /-! ## Semantic consistency -/
 
