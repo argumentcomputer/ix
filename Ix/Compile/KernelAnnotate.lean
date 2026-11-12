@@ -1229,7 +1229,7 @@ def undecidedSafe (env : Ixon.Env) (workers : Nat := 32) : Array Address :=
   (Ix.Compile.Parallel.map (max workers 1) (fun (a, lc) =>
     match lc.get? with
     | some c =>
-      if !unsafeOrPartial c && c.binders.any (·.nodes.any (· == .undecided)) then some a else none
+      if !unsafeOrPartial c && c.binders.any (·.nodes.any (·.isUndecided)) then some a else none
     | none => none) records).filterMap id
 
 end Ix.Compile.KernelAnnotate

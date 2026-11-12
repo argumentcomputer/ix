@@ -408,7 +408,7 @@ def compileAndFinalize (source : Lean.Environment)
           let addedUndecided := added.filterMap fun (a, lc) => match lc.get? with
             | some c =>
               if !Ix.Compile.KernelAnnotate.unsafeOrPartial c &&
-                  c.binders.any (·.nodes.any (· == .undecided)) then some (toString a) else none
+                  c.binders.any (·.nodes.any (·.isUndecided)) then some (toString a) else none
             | none => none
           let undecided := out.undecided ++ addedUndecided
           if defaultRoles && defaultRoleTableCurrent then

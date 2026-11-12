@@ -536,7 +536,7 @@ def run (args : List String) : IO UInt32 := do
     let sections ← IxVM.RecordSections.sectionsOf #[(a0, c)] secSupport
       (blobs.foldl (fun m (a, b) => m.insert a b) secBlobs) secHints (boundOnly, pre0)
     let binders := sections.getD a0 #[]
-    if binders.any (·.nodes.any (· == .undecided)) then throw "an undecided binder"
+    if binders.any (·.nodes.any (·.isUndecided)) then throw "an undecided binder"
     return { c with binders }
   let mut evRecords : Array (Address × Ixon.Constant) := #[]
   let mut evBlobs : Array (Address × ByteArray) := #[]

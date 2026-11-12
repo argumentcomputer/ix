@@ -434,7 +434,7 @@ private def zkPatternTest : IO (Bool × Nat × Nat × Option String) := do
     let some bytes := env2.constants.get? chained
       | return (false, 0, 0, some "compileDef stored no record")
     let defn ← IO.ofExcept (Ixon.deConstantAt bytes 0 bytes.size)
-    if defn.binders.isEmpty || defn.binders.any (·.nodes.any (· == .undecided)) then
+    if defn.binders.isEmpty || defn.binders.any (·.nodes.any (·.isUndecided)) then
       return (false, 0, 0, some "a definition compiled over the input has no decided binder data")
     -- Commit a private value of the imported type.
     let voteType := Lean.Expr.const nN []
