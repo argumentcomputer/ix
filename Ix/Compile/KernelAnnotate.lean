@@ -3,6 +3,7 @@ module
 public import Ix.LeanIngress
 public import Ix.KernelCheck.Step
 public import Ix.Compile.BinderData
+public import Ix.Compile.BinderRead
 public import Ix.Compile.Parallel
 public import Ix.Compile.FrontEnd
 public import Ix.CompileM
@@ -128,6 +129,9 @@ structure Installed where
   fixes : Fixes := {}
   /-- whether the syntactic reading is measured beside the walk (`IX_BD_TIER1`) -/
   tier1 : Bool := false
+  /-- whether each record's route (the source reading or the walk) is printed
+  (`IX_BD_T1STAT`, for measurement) -/
+  t1stat : Bool := false
   /-- projection tables added for structures the install left without one, and
   those skipped because the structure is a proposition -/
   tablesAdded : Nat := 0
@@ -546,8 +550,20 @@ compile's front end builds it), then `install`. For measurement (the data are
 the same): with `IX_BD_SEQUENTIAL` set phase A takes every step in turn, with
 `IX_BD_WALK_ALL` every root is walked. -/
 def installInput (env : Ix.Environment) (workers : Nat := 32) : IO (Except String Installed) := do
+  -- `IX_BD_RESTRICT` (measurement): install only the constants a file names, one
+  -- per line, theorems with a placeholder value (nothing reads a theorem's value);
+  -- the sources stay the input's
+  let envI ← match (← IO.getEnv "IX_BD_RESTRICT") with
+    | some path => do
+      let keep : Std.HashSet String := (← IO.FS.lines path).foldl (·.insert ·) {}
+      let blank : Ix.ConstantInfo → Ix.ConstantInfo
+        | .thmInfo t => .thmInfo { t with value := Ix.Expr.mkSort Ix.Level.mkZero }
+        | ci => ci
+      pure { env with consts := env.consts.fold (init := {}) fun m n ci =>
+        if keep.contains n.pretty then m.insert n (blank ci) else m }
+    | none => pure env
   let t0 ← IO.monoMsNow
-  let blocks ← IO.lazyPure fun _ => Ix.CondenseM.run (Ix.Compile.FrontEnd.graph env)
+  let blocks ← IO.lazyPure fun _ => Ix.CondenseM.run (Ix.Compile.FrontEnd.graph envI)
   let t1 ← IO.monoMsNow
   let parallel := (← IO.getEnv "IX_BD_SEQUENTIAL").isNone
   let stored := (← IO.getEnv "IX_BD_WALK_ALL").isNone
@@ -555,9 +571,11 @@ def installInput (env : Ix.Environment) (workers : Nat := 32) : IO (Except Strin
   let trace := ((← IO.getEnv "IX_BD_TRACE").map fun s => (s.splitOn ",").toArray).getD #[]
   let fixes := Fixes.parse ((← IO.getEnv "IX_BD_OFF").getD "")
   let tier1 := (← IO.getEnv "IX_BD_TIER1").isSome
+  let t1stat := (← IO.getEnv "IX_BD_T1STAT").isSome
   let persist := (← IO.getEnv "IX_BD_NOPERSIST").isNone
-  return (← install env blocks workers parallel (!trace.isEmpty) fixes persist).map fun k =>
-    { k with stored, memo, trace, tier1, times := #[("condense", t1 - t0)] ++ k.times }
+  return (← install envI blocks workers parallel (!trace.isEmpty) fixes persist).map fun k =>
+    { k with env, stored, memo, trace, tier1, t1stat,
+             times := #[("installed constants (count)", envI.consts.size), ("condense", t1 - t0)] ++ k.times }
 
 /-! ## The walk -/
 
@@ -1132,7 +1150,7 @@ def sourceRoots (env : Ix.Environment) (extra : Array (Ix.Name × Ix.ConstantInf
 
 /-- **The section of a block record**, from its members' sources: IxC's pass
 over each root beside its source, against the installed environment. -/
-def annotate (k : Installed) (extra : Array (Ix.Name × Ix.ConstantInfo)) (names : Array Ix.Name)
+def annotateWalk (k : Installed) (extra : Array (Ix.Name × Ix.ConstantInfo)) (names : Array Ix.Name)
     (c : Ixon.Constant) : Array Ixon.BinderBlock :=
   let rs := IxVM.PwHints.roots c
   if rs.isEmpty then #[] else
@@ -1205,6 +1223,24 @@ def annotate (k : Installed) (extra : Array (Ix.Name × Ix.ConstantInfo)) (names
         dbgTrace s!"binder data trace: {names.map (·.pretty)}: the walk fails: {traceError e}"
           fun _ => Ix.CompileM.undecidedSection c
       else Ix.CompileM.undecidedSection c
+
+/-- **The section of a block record**: read off its members' sources where every
+binder shows its datum (`Ix.Compile.BinderRead`), else IxC's pass over each root
+beside its source (`annotateWalk`). -/
+def annotate (k : Installed) (extra : Array (Ix.Name × Ix.ConstantInfo)) (names : Array Ix.Name)
+    (c : Ixon.Constant) : Array Ixon.BinderBlock :=
+  if (IxVM.PwHints.roots c).isEmpty then #[] else
+  if unsafeOrPartial c then Ix.CompileM.undecidedSection c else
+  let find : Ix.Compile.BinderRead.Find := fun n =>
+    ((extra.find? (·.1 == n)).map (·.2)).orElse fun _ => k.env.consts.get? n
+  let stat (route : String) (s : Array Ixon.BinderBlock) : Array Ixon.BinderBlock :=
+    if k.t1stat then
+      let name := (names[0]?.map (·.pretty)).getD "?"
+      dbgTrace s!"BDT1R {route} {name}" fun _ => s
+    else s
+  match Ix.Compile.BinderRead.section? find names c with
+  | some s => stat "read" s
+  | none => stat "walk" (annotateWalk k extra names c)
 
 /-- **The annotator of a compile** over its installed input. -/
 def annotator (k : Installed) : Ix.BinderAnnotator :=
