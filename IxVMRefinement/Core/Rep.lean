@@ -16,7 +16,9 @@ keying `κ` of addresses. One inductive over the heap cells, one constructor per
 * `BVar i` with `i < k` is the local `.bvar i`; with `k ≤ i < k + d` it is the opened
   variable `.fvar j (Γ j)`, `j = d - 1 - (i - k)`: IxVM's index counts from the inside, the
   kernel's opened variable from the outside, and the variable carries its type (`Γ j`), as
-  the rules require.
+  the rules require. Every index is below `2^63`, so IxVM's field arithmetic on indices
+  (`expr_lbr`'s `i + 1`, the lifts' `i + shift` by a shift below `2^32`) does not wrap
+  (conversion's `UInt64::to_field` already bounds a converted index by `2^56`).
 * `Srt ℓ` and `Const a ls`: levels are related **up to semantic equality** (`LvEq`,
   `Level.EvalEqList`) with the level the heap represents (`RepKLevel`, the level slice's
   relation), because `DefEq` has no transitivity and IxVM's level operations simplify.
@@ -181,9 +183,9 @@ def limbsVal : List UInt64 → Nat
   | [] => 0
   | l :: ls => l.toNat + 18446744073709551616 * limbsVal ls
 
-/-- **A string literal's bytes**: `bytes` is the UTF-8 encoding of `s` (so the bytes are
-valid UTF-8, and `s` is determined). -/
-def StrBytes (s : String) (bytes : List UInt8) : Prop := s.toUTF8.data.toList = bytes
+/-- **A string literal's bytes**: `bytes` are valid UTF-8 and decode to `s`, as the kernel
+reader decodes a string literal's blob (`String.fromUTF8?`, `Reader.convExpr`). -/
+def StrBytes (s : String) (bytes : List UInt8) : Prop := String.fromUTF8? ⟨bytes.toArray⟩ = some s
 
 /-- **Capture-avoiding instantiation**: the loose bound variable `j` of `e` replaced by `v`,
 lifted over the `j` binders passed (`liftLooseBVars j 0 v`), the loose bound variables above
@@ -213,11 +215,11 @@ inductive Tm (κ : _root_.Address → KKey) (d : Nat) (Γ : Nat → KExpr) (h : 
     Nat → KExpr → SourceValue F → Prop where
   | bvarLocal {k addr : Nat} {i : F}
       (cell : h[addr]? = some (.construct kexprEnum "BVar" [.field i]))
-      (hi : (ZMod.val i) < k) :
+      (hsmall : (ZMod.val i) < 9223372036854775808) (hi : (ZMod.val i) < k) :
       Tm κ d Γ h k (.bvar (ZMod.val i)) (.ptr (.enum kexprEnum) addr)
   | bvarFree {k addr : Nat} {i : F}
       (cell : h[addr]? = some (.construct kexprEnum "BVar" [.field i]))
-      (hk : k ≤ (ZMod.val i)) (hd : (ZMod.val i) - k < d) :
+      (hsmall : (ZMod.val i) < 9223372036854775808) (hk : k ≤ (ZMod.val i)) (hd : (ZMod.val i) - k < d) :
       Tm κ d Γ h k (.fvar (fvIdx d k (ZMod.val i)) (Γ (fvIdx d k (ZMod.val i)))) (.ptr (.enum kexprEnum) addr)
   | sort {k addr : Nat} {lp : SourceValue F} {l u : KLevel}
       (cell : h[addr]? = some (.construct kexprEnum "Srt" [lp]))
@@ -280,8 +282,8 @@ theorem Tm.mono {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr} {h
     {k : Nat} {E : KExpr} {p : SourceValue F}
     (ext : Heap.Extends h₁ h₂) (rep : Tm κ d Γ h₁ k E p) : Tm κ d Γ h₂ k E p := by
   induction rep with
-  | bvarLocal cell hi => exact .bvarLocal (ext.getElem?_eq cell) hi
-  | bvarFree cell hk hd => exact .bvarFree (ext.getElem?_eq cell) hk hd
+  | bvarLocal cell hs hi => exact .bvarLocal (ext.getElem?_eq cell) hs hi
+  | bvarFree cell hs hk hd => exact .bvarFree (ext.getElem?_eq cell) hs hk hd
   | sort cell rl hu => exact .sort (ext.getElem?_eq cell) (rl.mono ext) hu
   | const cell ra rls hus =>
     exact .const (ext.getElem?_eq cell) (Bytes.repAddressRef_heapMono₂ addrTy ext ra)
@@ -315,8 +317,8 @@ theorem Tm.of_depth_zero {κ : _root_.Address → KKey} {Γ Γ' : Nat → KExpr}
     {k : Nat} {E : KExpr} {p : SourceValue F} (rep : Tm κ 0 Γ h k E p) :
     ∀ d, Tm κ d Γ' h k E p := by
   induction rep with
-  | bvarLocal cell hi => exact fun _ => .bvarLocal cell hi
-  | bvarFree _ _ hd => exact absurd hd (by omega)
+  | bvarLocal cell hs hi => exact fun _ => .bvarLocal cell hs hi
+  | bvarFree _ _ _ hd => exact absurd hd (by omega)
   | sort cell rl hu => exact fun _ => .sort cell rl hu
   | const cell ra rls hus => exact fun _ => .const cell ra rls hus
   | app cell _ _ ihf iha => exact fun d => .app cell (ihf d) (iha d)
@@ -345,16 +347,16 @@ theorem Tm.isPtr (rep : Tm κ d Γ h k E p) : ∃ addr, p = .ptr (.enum kexprEnu
 
 theorem Tm.bvar_of_load {x : SourceValue F} (rep : Tm κ d Γ h k E p)
     (hl : loadValue h p = .ok (.construct kexprEnum "BVar" [x])) :
-    ∃ i : F, x = .field i ∧
+    ∃ i : F, x = .field i ∧ (ZMod.val i) < 9223372036854775808 ∧
       (((ZMod.val i) < k ∧ E = .bvar (ZMod.val i)) ∨
         (k ≤ (ZMod.val i) ∧ (ZMod.val i) - k < d ∧ E = .fvar (fvIdx d k (ZMod.val i)) (Γ (fvIdx d k (ZMod.val i))))) := by
   cases rep with
-  | bvarLocal cell hi =>
+  | bvarLocal cell hs hi =>
     obtain ⟨-, hxs⟩ := load_cell cell hl
-    injection hxs with hx; exact ⟨_, hx.symm, .inl ⟨hi, rfl⟩⟩
-  | bvarFree cell hk hd =>
+    injection hxs with hx; exact ⟨_, hx.symm, hs, .inl ⟨hi, rfl⟩⟩
+  | bvarFree cell hs hk hd =>
     obtain ⟨-, hxs⟩ := load_cell cell hl
-    injection hxs with hx; exact ⟨_, hx.symm, .inr ⟨hk, hd, rfl⟩⟩
+    injection hxs with hx; exact ⟨_, hx.symm, hs, .inr ⟨hk, hd, rfl⟩⟩
   | sort cell _ _ | const cell _ _ _ | app cell _ _ | lam cell _ _ _ | forallE cell _ _ _
   | letE cell _ _ _ | litNat cell _ | litStr cell _ _ | proj cell _ _ =>
     exact (load_cell_ne cell hl (by decide)).elim
@@ -366,7 +368,7 @@ theorem Tm.sort_of_load {x : SourceValue F} (rep : Tm κ d Γ h k E p)
   | sort cell rl hu =>
     obtain ⟨-, hxs⟩ := load_cell cell hl
     injection hxs with hx; subst hx; exact ⟨_, rfl, _, rl, hu⟩
-  | bvarLocal cell _ | bvarFree cell _ _ | const cell _ _ _ | app cell _ _ | lam cell _ _ _
+  | bvarLocal cell _ _ | bvarFree cell _ _ _ | const cell _ _ _ | app cell _ _ | lam cell _ _ _
   | forallE cell _ _ _ | letE cell _ _ _ | litNat cell _ | litStr cell _ _ | proj cell _ _ =>
     exact (load_cell_ne cell hl (by decide)).elim
 
@@ -378,7 +380,7 @@ theorem Tm.const_of_load {x y : SourceValue F} (rep : Tm κ d Γ h k E p)
     obtain ⟨-, hxs⟩ := load_cell cell hl
     injection hxs with hx hrest; injection hrest with hy
     subst hx hy; exact ⟨_, _, rfl, ra, _, rls, hus⟩
-  | bvarLocal cell _ | bvarFree cell _ _ | sort cell _ _ | app cell _ _ | lam cell _ _ _
+  | bvarLocal cell _ _ | bvarFree cell _ _ _ | sort cell _ _ | app cell _ _ | lam cell _ _ _
   | forallE cell _ _ _ | letE cell _ _ _ | litNat cell _ | litStr cell _ _ | proj cell _ _ =>
     exact (load_cell_ne cell hl (by decide)).elim
 
@@ -390,7 +392,7 @@ theorem Tm.app_of_load {x y : SourceValue F} (rep : Tm κ d Γ h k E p)
     obtain ⟨-, hxs⟩ := load_cell cell hl
     injection hxs with hx hrest; injection hrest with hy
     subst hx hy; exact ⟨_, _, rfl, rf, ra⟩
-  | bvarLocal cell _ | bvarFree cell _ _ | sort cell _ _ | const cell _ _ _ | lam cell _ _ _
+  | bvarLocal cell _ _ | bvarFree cell _ _ _ | sort cell _ _ | const cell _ _ _ | lam cell _ _ _
   | forallE cell _ _ _ | letE cell _ _ _ | litNat cell _ | litStr cell _ _ | proj cell _ _ =>
     exact (load_cell_ne cell hl (by decide)).elim
 
@@ -403,7 +405,7 @@ theorem Tm.lam_of_load {x y z : SourceValue F} (rep : Tm κ d Γ h k E p)
     obtain ⟨-, hxs⟩ := load_cell cell hl
     injection hxs with hx hrest; injection hrest with hy hrest'; injection hrest' with hz
     subst hx hy hz; exact ⟨_, _, _, rfl, rt, rb, rl⟩
-  | bvarLocal cell _ | bvarFree cell _ _ | sort cell _ _ | const cell _ _ _ | app cell _ _
+  | bvarLocal cell _ _ | bvarFree cell _ _ _ | sort cell _ _ | const cell _ _ _ | app cell _ _
   | forallE cell _ _ _ | letE cell _ _ _ | litNat cell _ | litStr cell _ _ | proj cell _ _ =>
     exact (load_cell_ne cell hl (by decide)).elim
 
@@ -416,7 +418,7 @@ theorem Tm.forallE_of_load {x y z : SourceValue F} (rep : Tm κ d Γ h k E p)
     obtain ⟨-, hxs⟩ := load_cell cell hl
     injection hxs with hx hrest; injection hrest with hy hrest'; injection hrest' with hz
     subst hx hy hz; exact ⟨_, _, _, rfl, rt, rb, rl⟩
-  | bvarLocal cell _ | bvarFree cell _ _ | sort cell _ _ | const cell _ _ _ | app cell _ _
+  | bvarLocal cell _ _ | bvarFree cell _ _ _ | sort cell _ _ | const cell _ _ _ | app cell _ _
   | lam cell _ _ _ | letE cell _ _ _ | litNat cell _ | litStr cell _ _ | proj cell _ _ =>
     exact (load_cell_ne cell hl (by decide)).elim
 
@@ -429,7 +431,7 @@ theorem Tm.letE_of_load {x y z : SourceValue F} (rep : Tm κ d Γ h k E p)
     obtain ⟨-, hxs⟩ := load_cell cell hl
     injection hxs with hx hrest; injection hrest with hy hrest'; injection hrest' with hz
     subst hx hy hz; exact ⟨_, _, _, rfl, rt, rv, rb⟩
-  | bvarLocal cell _ | bvarFree cell _ _ | sort cell _ _ | const cell _ _ _ | app cell _ _
+  | bvarLocal cell _ _ | bvarFree cell _ _ _ | sort cell _ _ | const cell _ _ _ | app cell _ _
   | lam cell _ _ _ | forallE cell _ _ _ | litNat cell _ | litStr cell _ _ | proj cell _ _ =>
     exact (load_cell_ne cell hl (by decide)).elim
 
@@ -446,7 +448,7 @@ theorem Tm.lit_of_load {x : SourceValue F} (rep : Tm κ d Γ h k E p)
   | litStr cell rb hs =>
     obtain ⟨-, hxs⟩ := load_cell cell hl
     injection hxs with hx; exact .inr ⟨_, _, _, hx.symm, rb, hs, rfl⟩
-  | bvarLocal cell _ | bvarFree cell _ _ | sort cell _ _ | const cell _ _ _ | app cell _ _
+  | bvarLocal cell _ _ | bvarFree cell _ _ _ | sort cell _ _ | const cell _ _ _ | app cell _ _
   | lam cell _ _ _ | forallE cell _ _ _ | letE cell _ _ _ | proj cell _ _ =>
     exact (load_cell_ne cell hl (by decide)).elim
 
@@ -459,7 +461,7 @@ theorem Tm.proj_of_load {x y z : SourceValue F} (rep : Tm κ d Γ h k E p)
     obtain ⟨-, hxs⟩ := load_cell cell hl
     injection hxs with hx hrest; injection hrest with hy hrest'; injection hrest' with hz
     subst hx hz; exact ⟨_, _, _, hy.symm, rfl, ra, re⟩
-  | bvarLocal cell _ | bvarFree cell _ _ | sort cell _ _ | const cell _ _ _ | app cell _ _
+  | bvarLocal cell _ _ | bvarFree cell _ _ _ | sort cell _ _ | const cell _ _ _ | app cell _ _
   | lam cell _ _ _ | forallE cell _ _ _ | letE cell _ _ _ | litNat cell _ | litStr cell _ _ =>
     exact (load_cell_ne cell hl (by decide)).elim
 
