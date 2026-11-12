@@ -25,8 +25,9 @@ laws are then the claimed constants' own: none of them reads a model-family cons
 
 The kernel's rules are sound over a model of an environment whose stored terms are
 closed (`Ix.Kernel.Open.StoredClosed`) and whose stored telescopes have the binders the
-laws read (`Ix.Kernel.Open.StoredArities`), and whose projection tables are their
-structures' (`Ix.Kernel.Open.StoredTables`). The fold's invariant gives all three for the
+laws read (`Ix.Kernel.Open.StoredArities`), whose projection tables are their structures'
+(`Ix.Kernel.Open.StoredTables`), and whose η rules' constructors carry their families' level
+parameters (`Ix.Kernel.Open.StoredEtaRules`). The fold's invariant gives all four for the
 installed environment, and the claimed sub-environment keeps them:
 `storedClosed_of_envModelOk`, `storedArities_of_envModelOk`, `storedEnv_of_envModelOk`.
 -/
