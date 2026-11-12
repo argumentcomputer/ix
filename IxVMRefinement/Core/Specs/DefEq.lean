@@ -72,22 +72,28 @@ def LoopResult (c : Ctx) (d : Nat) (Γ : Nat → KExpr) (h' : Heap F) (r : Sourc
       (tag ≠ .field 0 → Ix.Kernel.Rules.DefEq c.env d A B)
 
 /-- **A `Nat` offset split as IxVM reads one** (`nat_offset_of`): `E` is `B` plus `k`, read
-through a `Nat` literal (base the literal `0`), `Nat.succ x` (one step of `1`) and
+through a `Nat` literal (base the literal `0`), `Nat.succ x` at no levels (one step of `1`) and
 `Nat.add x (lit m)` (one step of `m`), where the split may stop at any `Nat.succ`/`Nat.add`
-layer (IxVM stops where its role lookup does not recognize the head). The kernel's `natOffsetOf`
-is the split that stops only where no layer is left. The heads' level lists are not read, as in
-`natOffsetOf`. -/
-inductive OffsetSplit : KExpr → KExpr → Nat → Prop where
-  | lit {n : Nat} : OffsetSplit (.lit (.natVal n)) (.lit (.natVal 0)) n
-  | succStop {us : List KLevel} {x : KExpr} :
-      OffsetSplit (.app (.const Ix.Kernel.natSuccName us) x) x 1
-  | succ {us : List KLevel} {x B : KExpr} {k : Nat} :
-      OffsetSplit x B k → OffsetSplit (.app (.const Ix.Kernel.natSuccName us) x) B (k + 1)
-  | addStop {us : List KLevel} {x : KExpr} {m : Nat} :
-      OffsetSplit (.app (.app (.const Ix.Kernel.natAddName us) x) (.lit (.natVal m))) x m
-  | add {us : List KLevel} {x B : KExpr} {m k : Nat} :
-      OffsetSplit x B k →
-        OffsetSplit (.app (.app (.const Ix.Kernel.natAddName us) x) (.lit (.natVal m))) B (k + m)
+layer: IxVM stops where its role lookup does not answer, as it does for a role not in force
+during the validation of a group. Each `Nat.succ` step carries `ps` and each `Nat.add` step `pa`
+(for `nat_offset_of`: the role is in force, `Ctx.inForce`, which the lookup that peeled the
+layer establishes). The kernel's `natOffsetOf` is the split that stops only where no layer is
+left, at any levels; where IxVM stops earlier, a proof reduces both sides to `Nat.succ` towers
+(`Red.natLit`, `Red.natAddSucc`, `Red.natAddZero` under `Red.appArg`), whose heads are at no
+levels. A `Nat.add` head's level list is not read (`natAddSucc` and `natAddZero` read none). -/
+inductive OffsetSplit (ps pa : Prop) : KExpr → KExpr → Nat → Prop where
+  | lit {n : Nat} : OffsetSplit ps pa (.lit (.natVal n)) (.lit (.natVal 0)) n
+  | succStop {x : KExpr} (hs : ps) :
+      OffsetSplit ps pa (.app (.const Ix.Kernel.natSuccName []) x) x 1
+  | succ {x B : KExpr} {k : Nat} (hs : ps) :
+      OffsetSplit ps pa x B k →
+        OffsetSplit ps pa (.app (.const Ix.Kernel.natSuccName []) x) B (k + 1)
+  | addStop {us : List KLevel} {x : KExpr} {m : Nat} (ha : pa) :
+      OffsetSplit ps pa (.app (.app (.const Ix.Kernel.natAddName us) x) (.lit (.natVal m))) x m
+  | add {us : List KLevel} {x B : KExpr} {m k : Nat} (ha : pa) :
+      OffsetSplit ps pa x B k →
+        OffsetSplit ps pa (.app (.app (.const Ix.Kernel.natAddName us) x) (.lit (.natVal m)))
+          B (k + m)
 
 /-- `n` leading `∀`s, syntactically. -/
 def HasPis : Nat → KExpr → Prop
@@ -150,24 +156,34 @@ def is_nat_zero : SpecFn := fun c args h r _ calls =>
     ∀ d Γ E, c.tm d Γ h E e → E = .lit (.natVal 0) ∨ E = .const Ix.Kernel.natZeroName []
 
 /-- `nat_offset_of(rc, e) -> (tag, base, limbs)`: **a tag other than `0` is an offset split**
-(`OffsetSplit`): the image is the base's image plus the limbs' value. Tag `0` returns the input
-and the empty limbs (decided by the code; IxVM's own recursion reads the base of a tag-`0`
-result). The split is IxVM's: it stops at a `Nat.succ` or `Nat.add` head its role lookup does
-not recognize, where the kernel's `natOffsetOf` (a function of the term, the reading
-`DefEq.natOffset` asks for) goes on; the two agree where the lookup recognizes every head the
-table binds to those roles. -/
+(`OffsetSplit` at the roles in force: every `Nat.succ` step's role `Nat.succ` and every `Nat.add`
+step's role `Nat.add` is in force, which `role_is` gives where it peels the layer): the image is
+the base's image plus the limbs' value. A `Nat.succ` head is peeled only at no levels
+(`KernelNatPrim::lvls_empty`). Tag `0` returns the input and the empty limbs (decided by the code;
+IxVM's own recursion reads the base of a tag-`0` result). The split is IxVM's: it stops at a head
+its role lookup does not answer, where the kernel's `natOffsetOf` (the reading
+`DefEq.natOffset` asks for) may go on.
+Stated for the circuit after the pending batch; its path lemmas change at the pin. -/
 def nat_offset_of : SpecFn := fun c args h r h' calls =>
   ∀ rc e, args = [rc, e] → Good c calls → c.rc h rc →
     (∀ x y, r = .tuple [.field 0, x, y] → x = e ∧ RepLimbs h' 0 y) ∧
     (∀ tag x y, r = .tuple [tag, x, y] → tag ≠ .field 0 → ∀ d Γ E, c.tm d Γ h E e →
-      ∃ B k, OffsetSplit E B k ∧ c.tm d Γ h' B x ∧ RepLimbs h' k y)
+      ∃ B k, OffsetSplit (c.inForce .natSucc) (c.inForce .natAdd) E B k ∧
+        c.tm d Γ h' B x ∧ RepLimbs h' k y)
 
 /-- `try_def_eq_nat(rc, a, b, types) -> (decided, answer)`: **`(1, x)` with `x` other than `0`
-is `DefEq`**: both images are zero readings (`DefEq.refl`, `DefEq.natZero`), or both split at
-the same offset with definitionally equal bases: `DefEq.natOffset` where IxVM's splits are the
-kernel's `natOffsetOf`; where IxVM stopped earlier, through `Red.natAddSucc`, `Red.natAddZero`,
-`Red.natSucc`, `DefEq.natSucc` and congruence, which read the `Nat.succ` heads at the empty
-level list. `(1, 0)` and `(0, _)` claim nothing. -/
+is `DefEq`**: both images are zero readings (`DefEq.refl`, `DefEq.natZero`, `DefEq.symm`), or
+both split at the same offset (`nat_offset_of`, `klimbs_eq`) with definitionally equal bases.
+Where both splits are the kernel's `natOffsetOf`, that is `DefEq.natOffset`; where IxVM stopped
+earlier, both sides reduce to `Nat.succ` towers over their bases (`Red.natLit`,
+`Red.natAddSucc`, `Red.natAddZero`, under `Red.appArg`; the towers' heads are at no levels, as
+the split's `Nat.succ` steps are), which compare by congruence, and `DefEq.redBoth` carries the
+comparison back. The rules' guards come from `EnvFacts` at the roles in force: `natAddTyOk` from
+`natAdd` where a split has a `Nat.add` step, `natLitSupported` from `natLit` where a split has
+any step (`Nat`, `Nat.zero` and `Nat.succ` are one block, the first group, and `Nat.add`
+depends on `Nat`, so they are in force whenever `Nat.succ` or `Nat.add` is). Two literals at
+one offset are one term (`DefEq.refl`). `(1, 0)` and `(0, _)` claim nothing.
+Stated for the circuit after the pending batch; its path lemmas change at the pin. -/
 def try_def_eq_nat : SpecFn := fun c args h r _ calls =>
   ∀ rc a b types, args = [rc, a, b, types] → Good c calls → c.rc h rc →
     ∀ d Γ, c.types Γ h d types → ∀ A B, c.tm d Γ h A a → c.tm d Γ h B b →
