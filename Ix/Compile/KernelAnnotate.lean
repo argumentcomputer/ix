@@ -86,9 +86,10 @@ abbrev CM := Ix.Kernel.Cached.CheckCM .source
 /-! ## The installed environment -/
 
 /-- The mode IxC's core runs at for the annotator. The annotation pass is the
-same at both modes (it is ungated); `.trusted` leaves out the certificate
-families, which only the soundness proof consumes. -/
-def annotatorMode : Ix.Kernel.CheckMode := .trusted
+same at both modes (it is ungated). At `.verified` its certificates re-check
+every argument, β-redex and projection the walk builds, so a term the walk got
+wrong shows as an undecided binder rather than as a datum. -/
+def annotatorMode : Ix.Kernel.CheckMode := .verified
 
 /-- IxC's environment of a compile's input, and what installing it found. -/
 structure Installed where
