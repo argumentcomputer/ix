@@ -9,7 +9,10 @@ list forms (`fresh`, `scopeOk`, with `signatures`), written out here as the inde
 On each program given (`tests-own-owned` passes every corpus root, then `synthetic`'s programs):
 both domains, the set and list forms function by function, and one ill-scoped (or, for two kinds,
 well-scoped) edit per kind per function, at its first site. Every edit must get the same verdict
-from both forms; each refusal kind must be refused somewhere and each acceptance kind accepted. -/
+from both forms; each refusal kind must be refused somewhere and each acceptance kind accepted.
+On every program and every edited program, the zero-RC route's former check of the canonical map
+(`checkContractPlainMap F (canonical F).bodies`) must equal the domain and pins alone, which
+`Recheck.Artifact.checkContractOwn` now runs (`checkContractPlainMap_canonical`). -/
 
 set_option autoImplicit false
 
@@ -119,6 +122,9 @@ structure Tally where
   /-- kind, mutants, accepted, refused -/
   byKind : List (String × Nat × Nat × Nat) := []
   failures : Array String := #[]
+  /-- Programs (and edited programs) on which the zero-RC route's check of the canonical map
+  (`checkContractPlainMap F (canonical F).bodies`) was compared with the domain and pins alone. -/
+  canonical : Nat := 0
 
 def Tally.fail (t : Tally) (msg : String) : Tally := { t with failures := t.failures.push msg }
 
@@ -129,12 +135,24 @@ def Tally.kind (t : Tally) (k : String) (acc : Bool) : Tally :=
         if k' == k then (k', n + 1, x + a, r + (1 - a)) else (k', n, x, r) }
   else { t with byKind := t.byKind ++ [(k, 1, a, 1 - a)] }
 
-/-- Both forms on `F`, function by function, and on one edit per kind per function. -/
+/-- The zero-RC route's check of the canonical map (`checkContractPlainMap F (canonical F).bodies`,
+the canonical map computed and compared with itself) against the domain and pins alone, which
+`Recheck.Artifact.checkContractOwn` now runs (`checkContractPlainMap_canonical`). -/
+def canonicalAgrees (t : Tally) (label : String) (F : Fir.Program) : Tally :=
+  let old := checkContractPlainMap F (Program.canonical F).bodies
+  let new := contractProgramDomain F && checkBoolPins F
+  let t := { t with canonical := t.canonical + 1 }
+  if old != new then t.fail s!"{label}: the canonical map's check {old}, the domain and pins {new}"
+  else t
+
+/-- Both forms on `F`, function by function, and on one edit per kind per function; on each, the
+zero-RC route's two checks (`canonicalAgrees`). -/
 def checkProgram (t : Tally) (label : String) (F : Fir.Program) : Tally := Id.run do
   let mut t := { t with programs := t.programs + 1 }
   let ld := listDomainWith funDomain F; let lc := listDomainWith contractFunDomain F
   if programDomain F != ld || contractProgramDomain F != lc then
     t := t.fail s!"{label}: programDomain {programDomain F} (list form {ld}), contractProgramDomain {contractProgramDomain F} (list form {lc})"
+  t := canonicalAgrees t label F
   for f in List.range F.size do
     let some fd := F.fun? f | continue
     t := { t with functions := t.functions + 1 }
@@ -150,6 +168,7 @@ def checkProgram (t : Tally) (label : String) (F : Fir.Program) : Tally := Id.ru
       if a != setFun F' fd' || listDomainWith funDomain F' != programDomain F' ||
           listDomainWith contractFunDomain F' != contractProgramDomain F' then
         t := t.fail s!"{label} f{f} {kind}: the forms differ (function: list {a}, set {setFun F' fd'})"
+      t := canonicalAgrees t s!"{label} f{f} {kind}" F'
   return t
 
 /-! ## Synthetic programs -/
@@ -198,7 +217,7 @@ def synthetic (t : Tally) : Tally := Id.run do
 never accepted. -/
 def report (t : Tally) : List String × Tally := Id.run do
   let mut t := t
-  let mut lines := [s!"scope check (set form against list form): programs {t.programs}, functions {t.functions}, edits {t.mutants} (accepted {t.accepted}, refused {t.refused})"]
+  let mut lines := [s!"scope check (set form against list form): programs {t.programs}, functions {t.functions}, edits {t.mutants} (accepted {t.accepted}, refused {t.refused}); the canonical map's check against the domain and pins on {t.canonical} programs and edited programs"]
   for (k, n, a, r) in t.byKind do
     lines := lines ++ [s!"  {k}: {n} edits, accepted {a}, refused {r}"]
     if acceptKinds.contains k then

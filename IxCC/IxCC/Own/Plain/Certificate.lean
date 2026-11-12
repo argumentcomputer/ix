@@ -142,6 +142,53 @@ theorem checkBudget_ok {budget : Nat} {bodies : Src.NatMap Code} :
   simp only [checkBudget]
   split <;> simp_all
 
+/-! ## The parameter total
+
+A function's parameters and a join point's cost no Anf node (a join counts one node whatever its
+arity), so the node budgets do not bound them; but the source-domain check (`programDomain`,
+`contractProgramDomain`: `freshSet` and `insertVars` over every parameter list) and the ownership
+checker (a token for each parameter at every entry) walk every one, and the plain-RC verifier runs
+both three times. Admission first counts them (a linear walk over the program) and refuses a
+program past `params` (by default `Anf.maxParamTotal`) before it decodes the certificate;
+`Recheck.runWithContracts` does the same before its domain check. A refusal is policy, not
+soundness: acceptance is monotone in the limit (`admit_params_mono`). -/
+
+mutual
+/-- The parameters of the join points one body declares, added to `acc`. -/
+def joinParamsCode (acc : Nat) : Fir.Code → Nat
+  | .bind _ _ k => joinParamsCode acc k
+  | .jp _ ps _ b k => joinParamsCode (joinParamsCode (acc + ps.length) b) k
+  | .jmp .. => acc
+  | .case _ alts dflt => joinParamsOpt (joinParamsAlts acc alts) dflt
+  | .ret _ => acc
+  | .tcall .. => acc
+  | .trap => acc
+def joinParamsAlts (acc : Nat) : List Fir.Alt → Nat
+  | [] => acc
+  | .mk _ body :: rest => joinParamsAlts (joinParamsCode acc body) rest
+def joinParamsOpt (acc : Nat) : Option Fir.Code → Nat
+  | none => acc
+  | some c => joinParamsCode acc c
+end
+
+/-- The parameter total of a program: over its numbered functions (those `programDomain` checks),
+each one's parameters and those of the join points its body declares. -/
+def paramTotal (F : Fir.Program) : Nat :=
+  (List.range F.size).foldl (fun acc f =>
+    match F.fun? f with
+    | none => acc
+    | some fd => joinParamsCode (acc + fd.params.length) fd.body) 0
+
+def checkParamTotal (limit : Nat) (F : Fir.Program) : Except String Unit :=
+  let total := paramTotal F
+  if total ≤ limit then .ok ()
+  else .error s!"own.cert.params: the program has {total} parameters (of its functions and join points together), past the limit {limit} (Anf.maxParamTotal)"
+
+theorem checkParamTotal_ok {limit : Nat} {F : Fir.Program} :
+    checkParamTotal limit F = .ok () ↔ paramTotal F ≤ limit := by
+  simp only [checkParamTotal]
+  split <;> simp_all
+
 /-- The refusal of a map the checker does not accept: the checker's first reason when the source
 is in the domain and its pins are sound, the domain refusal otherwise. Computed only on refusal. -/
 def checkRefusal (domain : Bool) (F : Fir.Program) (bodies : Src.NatMap Code) : String :=
@@ -149,34 +196,36 @@ def checkRefusal (domain : Bool) (F : Fir.Program) (bodies : Src.NatMap Code) : 
   | true, .error e => s!"own.cert.check: ownership proposal refused: {e}"
   | _, _ => "own.cert.check: ownership proposal or source domain refused"
 
-/-- **Certificate admission.** The decoded map must be within the captured-work budget (checked
-first, linear) and accepted by the ownership checker, which judges any placement of `inc`/`dec`
-(`Own.Plain.checkOwned`). -/
-def admit (F : Fir.Program) (j : Json) (budget : Nat := Anf.maxCapturedWork) :
-    Except String Program := do
+/-- **Certificate admission.** The program must be within the parameter total (checked first, from
+the program alone), the decoded map within the captured-work budget (linear), and the map accepted
+by the ownership checker, which judges any placement of `inc`/`dec` (`Own.Plain.checkOwned`). -/
+def admit (F : Fir.Program) (j : Json) (budget : Nat := Anf.maxCapturedWork)
+    (params : Nat := Anf.maxParamTotal) : Except String Program := do
+  checkParamTotal params F
   let bodies ← decode F j
   checkBudget budget bodies
   if checkOwned F bodies then return { source := F, bodies }
   else throw (checkRefusal (programDomain F) F bodies)
 
-def ofText (F : Fir.Program) (text : String) (budget : Nat := Anf.maxCapturedWork) :
-    Except String Program := do
+def ofText (F : Fir.Program) (text : String) (budget : Nat := Anf.maxCapturedWork)
+    (params : Nat := Anf.maxParamTotal) : Except String Program := do
   Src.Hints.checkJsonText text
-  admit F (← Json.parse text) budget
+  admit F (← Json.parse text) budget params
 
 /-- Contract-aware certificate admission: the same, with the checker's contract-aware domain
 (`checkContractOwned`), admitting all frontend binder and let contract annotations (`0`, `1`,
 `&`, `*`, `!`, `~`, `let borrow`). -/
-def admitContract (F : Fir.Program) (j : Json) (budget : Nat := Anf.maxCapturedWork) :
-    Except String Program := do
+def admitContract (F : Fir.Program) (j : Json) (budget : Nat := Anf.maxCapturedWork)
+    (params : Nat := Anf.maxParamTotal) : Except String Program := do
+  checkParamTotal params F
   let bodies ← decode F j
   checkBudget budget bodies
   if checkContractOwned F bodies then return { source := F, bodies }
   else throw (checkRefusal (contractProgramDomain F) F bodies)
 
-def ofTextContract (F : Fir.Program) (text : String) (budget : Nat := Anf.maxCapturedWork) :
-    Except String Program := do
+def ofTextContract (F : Fir.Program) (text : String) (budget : Nat := Anf.maxCapturedWork)
+    (params : Nat := Anf.maxParamTotal) : Except String Program := do
   Src.Hints.checkJsonText text
-  admitContract F (← Json.parse text) budget
+  admitContract F (← Json.parse text) budget params
 
 end IxCC.Own.Plain.Certificate
