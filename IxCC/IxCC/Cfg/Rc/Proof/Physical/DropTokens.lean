@@ -1,4 +1,6 @@
-import IxCC.Cfg.Rc.Proof.Physical.CopyPrefix
+import IxCC.Cfg.Rc.Proof.Physical.CopyStep
+import IxCC.Cfg.Rc.Proof.Prefix
+import IxCC.Own.Plain.Proof.Scope
 
 set_option autoImplicit false
 namespace IxCC.Cfg.Rc.Native

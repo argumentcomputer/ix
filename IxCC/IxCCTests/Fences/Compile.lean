@@ -184,9 +184,6 @@ default-argument proofs of its root module, which the trust ledger admits as
 /-- info: 'IxCC.Recheck.compile_sound_of_eval' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Recheck.compile_sound_of_eval
 
-/-- info: 'IxCC.Own.Plain.Certificate.admitWithContracts_lower_refines' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in #print axioms IxCC.Own.Plain.Certificate.admitWithContracts_lower_refines
-
 /-- info: 'IxCC.Recheck.Rc.contract_source_refines' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Recheck.Rc.contract_source_refines
 

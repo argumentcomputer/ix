@@ -1,4 +1,4 @@
-import IxCC.Cfg.Rc.Proof.Owned.Activation
+import IxCC.Cfg.Rc.Proof.Native.CodeRecursion
 import IxCC.Cfg.Rc.Proof.Physical.CheckedPrefix
 import IxCC.Cfg.Rc.Proof.Physical.CopyStep
 import IxCC.Cfg.Rc.Proof.Physical.DropStep
@@ -112,8 +112,8 @@ variable {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code} {P : Program}
 /-- **One increment**, of an owned, borrowed or immediate variable. -/
 theorem physical_inc (admission : CodeAdmission F bodies P config pairs functions)
     {x : Fir.Var} {n : Nat} {k : Own.Plain.Code}
-    (next : PhysicalCodeOwned F P config pairs main clock sourceJoins k) :
-    PhysicalCodeOwned F P config pairs main clock sourceJoins (.act (.inc x n) k) := by
+    (next : PhysicalCode F P config pairs main clock sourceJoins k) :
+    PhysicalCode F P config pairs main clock sourceJoins (.act (.inc x n) k) := by
   intro H addresses external live Γ Δ sourceEnv ownedEnv roots lex ownedJoins sourceFunction
     function source target memory context base bump limit regionBytes slots lists callers
     sourceLookup before heap
@@ -153,7 +153,7 @@ theorem physical_inc (admission : CodeAdmission F bodies P config pairs function
     have consuming : consume P (layoutOf P) (marker P.base.size first (.inc x 1)) =
         .ok (.bind first (.fir (.call P.base.size [.var x, .lit (.nat 1)]))) :=
       IxCC.Cfg.Rc.Proof.Physical.Bridge.consume_increment P (layoutOf P) first x
-    have activation : ActivationOwned F P pairs
+    have activation : Activation F P pairs
         (Public.Spec.sourceStage P (Public.Spec.rawSource config P pairs) main) H' addresses external
         live Γ' Δ sourceEnv ownedEnv owned' lex sourceJoins ownedJoins k sourceFunction.vars function
         {source with rest := tail}
@@ -174,8 +174,8 @@ theorem physical_inc (admission : CodeAdmission F bodies P config pairs function
 /-- **One decrement**, of an owned or immediate variable: a release. -/
 theorem physical_dec (admission : CodeAdmission F bodies P config pairs functions)
     {x : Fir.Var} {k : Own.Plain.Code}
-    (next : PhysicalCodeOwned F P config pairs main clock sourceJoins k) :
-    PhysicalCodeOwned F P config pairs main clock sourceJoins (.act (.dec x) k) := by
+    (next : PhysicalCode F P config pairs main clock sourceJoins k) :
+    PhysicalCode F P config pairs main clock sourceJoins (.act (.dec x) k) := by
   intro H addresses external live Γ Δ sourceEnv ownedEnv roots lex ownedJoins sourceFunction
     function source target memory context base bump limit regionBytes slots lists callers
     sourceLookup before heap
@@ -233,7 +233,7 @@ theorem physical_dec (admission : CodeAdmission F bodies P config pairs function
     have consuming : consume P (layoutOf P) (marker P.base.size first (.dec x)) =
         .ok (.bind first (.fir (.call (P.base.size+1) [.var x]))) :=
       IxCC.Cfg.Rc.Proof.Physical.Bridge.consume_decrement P (layoutOf P) first x
-    have activation : ActivationOwned F P pairs
+    have activation : Activation F P pairs
         (Public.Spec.sourceStage P (Public.Spec.rawSource config P pairs) main) H' addresses external
         live Γ' Δ sourceEnv ownedEnv owned' lex sourceJoins ownedJoins k sourceFunction.vars function
         {source with rest := tail}

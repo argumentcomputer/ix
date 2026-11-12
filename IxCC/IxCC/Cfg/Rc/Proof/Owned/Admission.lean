@@ -1,14 +1,20 @@
-import IxCC.Cfg.Rc.Proof.Owned.Activation
+import IxCC.Cfg.Rc.Proof.Check
+import IxCC.Cfg.Rc.Proof.Scoped
 import IxCC.Own.Plain.Proof.Owned.Program
 
 /-! # What the program gate says about the ownership code (heap stage 2)
 
-From the program gate: the source domain, the Boolean pins, and for every numbered function a
-body in the map that erases to the source body and that the ownership checker accepts from the
-function's parameters. -/
+The gate runs the ownership checker (`Cfg.Rc.checkProgram`'s Boolean is `Own.Plain.checkOwned`):
+the source domain, the Boolean pins, and for every numbered function a body in the map that
+erases to the source body and that the checker accepts from the function's parameters. -/
 
 set_option autoImplicit false
 namespace IxCC.Cfg.Rc
+
+/-- The program gate admits only maps the ownership checker accepts. -/
+theorem checkScopedProgram_checkOwned {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
+    {P : Program} (h : checkScopedProgram F bodies P = true) : Own.Plain.checkOwned F bodies = true :=
+  (checkProgram_parts (checkScopedProgram_parts h).1).1
 
 /-- The checker's parts, read from the program gate. -/
 theorem checkScopedProgram_ownedParts {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}

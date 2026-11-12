@@ -26,7 +26,7 @@ theorem programEq_iff (a b : Program) : programEq a b = true ↔ a = b := by
 
 theorem checkProgram_parts {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code}
     {candidate : Program} (h : checkProgram F bodies candidate = true) :
-    Own.Plain.checkPlainMap F bodies = true ∧ generate F bodies = some candidate := by
+    Own.Plain.checkOwned F bodies = true ∧ generate F bodies = some candidate := by
   simp only [checkProgram, Bool.and_eq_true] at h
   refine ⟨h.1, ?_⟩
   cases hg : generate F bodies with

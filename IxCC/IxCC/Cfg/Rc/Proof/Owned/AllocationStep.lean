@@ -1,4 +1,10 @@
-import IxCC.Cfg.Rc.Proof.Physical.AllocationStep
+import IxCC.Cfg.Rc.Proof.Native.CtorBinding
+import IxCC.Cfg.Rc.Proof.Physical.ConsumedMarkers
+import IxCC.Cfg.Rc.Proof.Physical.AllocationArguments
+import IxCC.Cfg.Rc.Proof.Physical.AllocationOutcome
+import IxCC.Cfg.Rc.Proof.Physical.Bridge.FusedOperands
+import IxCC.Cfg.Rc.Proof.Physical.Bridge.FusedWords
+import IxCC.Own.Plain.Proof.Actions
 
 /-! # The allocation step for a multiset of tokens (heap stage 2)
 

@@ -39,13 +39,6 @@ structure Tokens (H : Heap) (external : Nat → Nat) (held : List RVal)
   balance : Balance H (holdRoots external held) roots
   distinct : live.Nodup
 
-def Tokens.ofState {functions : Own.Plain.Signatures} {H : Heap} {external : Nat → Nat}
-    {held roots : List RVal} {live imm : List Fir.Var} {ρf : Fir.Env} {ρo : Own.Env}
-    {joins : Own.Plain.Joins} {Jf : List Fir.JEntry} {Jo : List Own.Plain.JEntry}
-    (state : Own.Plain.State functions H (holdRoots external held) live ρf ρo roots joins Jf Jo imm) :
-    Tokens H external held live ρf ρo roots :=
-  ⟨state.env, state.roots, state.counts, state.distinct⟩
-
 /-- Concrete syntax cursor, exact source-owned roots and real register words.
 This is a local boundary relation, not a premise claiming whole-run reachability.
 It must ultimately be constructed by the checked execution induction. -/

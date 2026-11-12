@@ -1,4 +1,5 @@
 import IxCC.Own.Plain.Check
+import IxCC.Own.Plain.Owned
 import IxCC.Recheck.Json
 import IxCC.Src.Hints
 import IxCC.Anf.Budget
@@ -141,25 +142,41 @@ theorem checkBudget_ok {budget : Nat} {bodies : Src.NatMap Code} :
   simp only [checkBudget]
   split <;> simp_all
 
-def admit (F : Fir.Program) (j : Json) : Except String Program := do
+/-- The refusal of a map the checker does not accept: the checker's first reason when the source
+is in the domain and its pins are sound, the domain refusal otherwise. Computed only on refusal. -/
+def checkRefusal (domain : Bool) (F : Fir.Program) (bodies : Src.NatMap Code) : String :=
+  match domain && checkBoolPins F, checkMapE F bodies with
+  | true, .error e => s!"own.cert.check: ownership proposal refused: {e}"
+  | _, _ => "own.cert.check: ownership proposal or source domain refused"
+
+/-- **Certificate admission.** The decoded map must be within the captured-work budget (checked
+first, linear) and accepted by the ownership checker, which judges any placement of `inc`/`dec`
+(`Own.Plain.checkOwned`). -/
+def admit (F : Fir.Program) (j : Json) (budget : Nat := Anf.maxCapturedWork) :
+    Except String Program := do
   let bodies ← decode F j
-  if checkPlainMap F bodies then return { source := F, bodies }
-  else throw "own.cert.check: ownership proposal or source domain refused"
+  checkBudget budget bodies
+  if checkOwned F bodies then return { source := F, bodies }
+  else throw (checkRefusal (programDomain F) F bodies)
 
-def ofText (F : Fir.Program) (text : String) : Except String Program := do
+def ofText (F : Fir.Program) (text : String) (budget : Nat := Anf.maxCapturedWork) :
+    Except String Program := do
   Src.Hints.checkJsonText text
-  admit F (← Json.parse text)
+  admit F (← Json.parse text) budget
 
-/-- Contract-aware certificate admission: decodes the candidate body map against
-`F` and checks `checkContractPlainMap F bodies`, admitting all frontend binder
-and let contract annotations (`0`, `1`, `&`, `*`, `!`, `~`, `let borrow`). -/
-def admitContract (F : Fir.Program) (j : Json) : Except String Program := do
+/-- Contract-aware certificate admission: the same, with the checker's contract-aware domain
+(`checkContractOwned`), admitting all frontend binder and let contract annotations (`0`, `1`,
+`&`, `*`, `!`, `~`, `let borrow`). -/
+def admitContract (F : Fir.Program) (j : Json) (budget : Nat := Anf.maxCapturedWork) :
+    Except String Program := do
   let bodies ← decode F j
-  if checkContractPlainMap F bodies then return { source := F, bodies }
-  else throw "own.cert.check: ownership proposal or source domain refused"
+  checkBudget budget bodies
+  if checkContractOwned F bodies then return { source := F, bodies }
+  else throw (checkRefusal (contractProgramDomain F) F bodies)
 
-def ofTextContract (F : Fir.Program) (text : String) : Except String Program := do
+def ofTextContract (F : Fir.Program) (text : String) (budget : Nat := Anf.maxCapturedWork) :
+    Except String Program := do
   Src.Hints.checkJsonText text
-  admitContract F (← Json.parse text)
+  admitContract F (← Json.parse text) budget
 
 end IxCC.Own.Plain.Certificate
