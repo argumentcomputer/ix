@@ -1605,7 +1605,7 @@
  "4deb87c352422ca62e49b2950ad179a0bf9020eaa9c924a53dacf2a2468d02f3",
  "grounding_axiom_count": 56,
  "baseline":
- "KS: the switch to the kernel front end, step 4 (the deletion), on 05b9d83bc",
+ "KS: the switch to the kernel front end, step 5 (the ledger), on 05b9d83bc",
  "axiom_sha256":
- "0bd09ffc7611f11d4578640579ecb0cd21020bfbdbfacd0fa72763efd68114c7",
- "axiom_count": 5958}
+ "c13c2c0d483b79a3e69de8840954b3420cede84ae0ad6c0a1212b83cbf8f2e02",
+ "axiom_count": 5959}

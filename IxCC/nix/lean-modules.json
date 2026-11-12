@@ -3115,7 +3115,8 @@
     "IxCC.Compiler.Proof",
     "IxCC.CompileClaim.Proof",
     "IxCC.Ring0.Proof",
-    "IxCC.Src.Proof.Lazify"]},
+    "IxCC.Src.Proof.Lazify",
+    "IxCC.Ixon.PureHash"]},
   "IxCCTests.Fences.Closures":
   {"path": "IxCCTests/Fences/Closures.lean",
    "imports":
