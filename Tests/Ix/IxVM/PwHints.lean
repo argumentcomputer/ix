@@ -448,18 +448,21 @@ open _root_.IxVM.PwHints
 
 /-- `ixvm-fixture` (manual): the dev fixture `IxVM/IxVM/fixtures/nat-add-comm.ixf`
 (version 3, Ixon v5; `IX_FIXTURE_OUT` to write elsewhere), built from the test
-binary's environment: `Nat.add_comm`'s closure as `verify_constant` reads it
-(`IxVM.ClaimHarness.closureFrom`), compiled with each record's binder data, the
-blobs those records name, the default role table, each definition's channel-3
-tag, and an invalid proof: `Nat.add_comm`'s record with its proof replaced by
-`Sort 0`, correctly hashed, which the verifier must reject. -/
+binary's environment: `Nat.add_comm`'s own closure (`IxVM.ClaimHarness.closureFromRoots`
+from the target alone), compiled with each record's binder data, the blobs those
+records name, the default role table, each definition's channel-3 tag, and an
+invalid proof: `Nat.add_comm`'s record with its proof replaced by `Sort 0`,
+correctly hashed, which the verifier must reject. The entries that read the
+fixture (`verify_constant`, `verify_transitive`) run with the binding assumed, so
+they read neither the evidence nor the bound roles outside that closure, which a
+claim's witness carries (`IxVM.ClaimHarness.closureFrom`). -/
 def fixture (env : Lean.Environment) : IO UInt32 := do
   let outPath := (← IO.getEnv "IX_FIXTURE_OUT").getD "IxVM/IxVM/fixtures/nat-add-comm.ixf"
   let name := ``Nat.add_comm
   let ixon ← _root_.IxVM.ClaimHarness.loadIxonEnv name env
   let target ← _root_.IxVM.ClaimHarness.lookupAddr ixon name
   let some binding := ixon.roleBinding | throw (IO.userError "the environment has no role binding")
-  let closure := _root_.IxVM.ClaimHarness.closureFrom ixon target
+  let closure := _root_.IxVM.ClaimHarness.closureFromRoots ixon #[target]
   let words (a : Address) : Array Nat := a.hash.data.map (·.toNat)
   -- the harness's channel-3 encoding (`Ingress::load_constant_hint`)
   let tag (a : Address) : Nat := match ixon.anonHints[a]? with
