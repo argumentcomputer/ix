@@ -228,6 +228,8 @@ structure ProducedFir where
   tableStats : Src.Table.Stats
   fires : Anf.Walk.Fires
   stages : List (String × Anf.Program)
+  /-- The word hints after admission (`Src.Table.wordHints`, stage W1). -/
+  wordHints : Array Src.Diag := #[]
 
 /-- Run the front-end (`Table.build`, the kernel annotator, `Recheck.annotation`,
 `Src.admit`), `Lam.erase`, `Anf.Pipeline.produce`, the closures step
@@ -246,11 +248,11 @@ def produceFir (cfg : Config) (inp : Recheck.Input) : Except Err ProducedFir := 
       throw { stage := .relevance, code := s!"relevance-{(errs[0]?.map (·.rule)).getD "S1"}"
               message := "; ".intercalate (errs.toList.take 8 |>.map (·.render p0)) }
     | .error (.table m) => throw { stage := .table, code := "table.entry", message := m }
-  match Src.admit src (Recheck.sidecarName inp.hints) cfg.admit with
-  | .ok _ => pure ()
-  | .error diags =>
-    let d := diags[0]?.getD (Src.Diag.of "admit" "rejected")
-    throw { Err.ofDiag .admit d with message := "; ".intercalate (diags.toList.map fun d => (splitCode d.render).2) }
+  let adm ← match Src.admit src (Recheck.sidecarName inp.hints) cfg.admit with
+    | .ok adm => pure adm
+    | .error diags =>
+      let d := diags[0]?.getD (Src.Diag.of "admit" "rejected")
+      throw { Err.ofDiag .admit d with message := "; ".intercalate (diags.toList.map fun d => (splitCode d.render).2) }
   let (lam, _) ← (Lam.erase src checked).mapError Err.ofErase
   let trace ← (Anf.Pipeline.produce cfg.budgets lam).mapError fun m =>
     { stage := .anf, code := "anf.produce", message := m }
@@ -261,7 +263,8 @@ def produceFir (cfg : Config) (inp : Recheck.Input) : Except Err ProducedFir := 
          tableCert := Src.Table.TableCert.ofTable table
          relevance := ann
          mid := trace.cert
-         tableDiags, tableStats, fires := trace.fires, stages }
+         tableDiags, tableStats, fires := trace.fires, stages
+         wordHints := Src.Table.wordHints src adm.reached }
 
 /-- Finish a zero-RC (`ixcc/cert/1`) certificate from an already-produced `ProducedFir`. -/
 def finishZeroRcCert (cfg : Config) (front : ProducedFir) : Except Err Recheck.Produced := do
@@ -278,7 +281,8 @@ def finishZeroRcCert (cfg : Config) (front : ProducedFir) : Except Err Recheck.P
   pure { cert := { table := front.tableCert, relevance := front.relevance, mid := front.mid
                    alloc := r.outs, frames := layouts, order }
          tableDiags := front.tableDiags, tableStats := front.tableStats
-         fires := front.fires, stages := front.stages, alloc := r.outcomes }
+         fires := front.fires, stages := front.stages, alloc := r.outcomes
+         wordHints := front.wordHints }
 
 /-- What single-pass `RcReplay.produceWith` found beside the certificate. -/
 structure Produced where

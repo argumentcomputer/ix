@@ -315,6 +315,7 @@ theorem headOf_quotMk {c₀ c : CId} (h : S.I.headOf c₀ = some (.quotMk c)) :
   · cases h
   · cases h
   · cases h
+  · cases h
   · split at h
     · cases h
     · cases h

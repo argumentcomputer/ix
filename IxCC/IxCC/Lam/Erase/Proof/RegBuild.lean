@@ -170,6 +170,16 @@ theorem reg_primForm (wf : ProgWF I) (cx : Cx) (op : Src.PrimOp) (args : List Sr
   · exact CSound.bind (csound_registerBool I wf) fun _ => hk.imp fun _ _ h _ => h
   · exact hk
 
+theorem reg_wordForm (cx : Cx) (w : Src.Width) (op : Src.WordOp) (args : List Src.Term.Arg) :
+    CSound I (wordForm I rec cx w op args) fun t T => RegT T t := by
+  unfold wordForm
+  dsimp only
+  refine CSound.ite (fun _ => ?_) fun _ => CSound.decline_bind
+  exact CSound.bind (reg_strictArgs hrec cx args) fun args' => CSound.pure fun _ h =>
+    .prim fun a ha => by
+      obtain ⟨y, hy, rfl⟩ := List.mem_map.1 ha
+      exact h y hy
+
 theorem reg_quotMkForm (cx : Cx) (args : List Src.Term.Arg) :
     CSound I (quotMkForm rec cx args) fun t T => RegT T t := by
   unfold quotMkForm
@@ -303,7 +313,7 @@ theorem reg_saturated (wf : ProgWF I) (cx : Cx) (h : Head) (q : Profile)
   unfold saturated
   cases h with
   | prim op => exact reg_primForm hrec wf cx op args
-  | word w op => exact CSound.decline
+  | word w op => exact reg_wordForm hrec cx w op args
   | ctor c => exact reg_ctorForm hrec cx c q args
   | quotMk c => exact reg_quotMkForm hrec cx args
   | quotLift c => exact reg_quotLiftForm hrec cx args
@@ -364,7 +374,7 @@ theorem reg_constSpine (wf : ProgWF I) (cx : Cx) (c : CId) (us : List Ixon.Univ)
   refine CSound.ite (fun _ => CSound.decline_bind) fun _ => ?_
   split
   · exact reg_special hrec wf cx _ _ args
-  · exact CSound.decline
+  · exact reg_special hrec wf cx _ _ args
   · exact reg_special hrec wf cx _ _ args
   · exact reg_plainConst hrec cx c _ args
   · exact reg_plainConst hrec cx c _ args

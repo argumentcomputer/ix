@@ -95,14 +95,21 @@ def runtimeKeys (p : Program) (c : CId) : List TermKey :=
     | _ => []
 
 /-- Constants reached through the table rather than a term, with their
-universe arguments over `c`'s parameters: a `csimp` target and the recursor
-under a `case` key (whose levels are the key's, `Table.checkCase`). -/
+universe arguments over `c`'s parameters: a `csimp` target, the recursor
+under a `case` key (whose levels are the key's, `Table.checkCase`), and for a
+`word` entry the constructors of the towers F6w reads and builds
+(`UIntN.ofBitVec` at the operation's width and at its result width,
+`BitVec.ofFin`, `Fin.mk`; level-monomorphic), so that the relevant closure,
+and with it the relevance annotation, covers them (stage W1). -/
 def runtimeRefs (p : Program) (c : CId) : List (CId × List Ixon.Univ) :=
   match p.table.resolveOf c with
   | some (.csimp g us _) => [(g, us)]
   | some (.case r) =>
     let lvls := ((p.decl? c).map Decl.lvls).getD 0
     [(r, (List.range lvls).map fun i => Ixon.Univ.var i.toUInt64)]
+  | some (.word w op _) =>
+    (([w, op.resultWidth w].filterMap fun w => p.known.wordCtors.lookup w) ++
+      p.known.bitVecOfFin.toList ++ p.known.finMk.toList).map (·, [])
   | _ => []
 
 end Program

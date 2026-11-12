@@ -1,5 +1,6 @@
 import IxCCTests.Src.Steps
 import IxCCTests.Support.Bound
+import IxCC.Lam.Erase.Val
 
 /-! F6w, the fixed-width word rule of SrcEval (stage W1), on Lean 4.34.1's own word operations
 (`fixtures/ixon-v4/src-words`, every operation of every width, compiled with
@@ -18,7 +19,10 @@ import IxCCTests.Support.Bound
 * **The table**: with words enabled, the front end makes every primitive operation the root
   reaches a `word` entry (the sidecar's `theorems` list names each stored equation and
   `checkWord` accepts it; `proposals` checks that nothing else makes one); with words off, none.
-  Erasure declines a word entry (`erase-word`) until the lowering exists.
+  Erasure emits a word entry as the Lam word primitive `Lam.Prim.word w op` (stage W1).
+* **The hint** (`hints`): with words off, every primitive operation the program reaches at run
+  time is named by an admission-time hint (`Table.wordHints`) that says how to get its entry;
+  with words on, none is; the table builder reports no word diagnostic without a proposal.
 * **A tampered word theorem is refused** (`tampered`), and where: the closure re-encoded with
   `UInt64.add`'s proposal naming a new record whose proof is ill-typed, whose proof is a
   non-standard axiom, or whose statement has its two sides swapped, is refused at ingress (the
@@ -146,11 +150,54 @@ def wordEntries (p : Program) (t : Table) : List (CId × Width × WordOp × CId)
     | some (.word w op thm) => some (c, w, op, thm)
     | _ => none
 
+mutual
+/-- The word primitives a Lam term applies. -/
+partial def termWords : IxCC.Lam.Term → List (Width × WordOp)
+  | .prim (.word w op) args => (w, op) :: args.flatMap termWords
+  | .prim _ args | .con _ args => args.flatMap termWords
+  | .lam _ _ b | .tick b | .proj _ _ b => termWords b
+  | .app f x _ | .letE _ f x => termWords f ++ termWords x
+  | .case s alts d => termWords s ++ alts.flatMap altWords ++ (d.map termWords).getD []
+  | _ => []
+partial def altWords : IxCC.Lam.Alt → List (Width × WordOp)
+  | .mk _ _ b => termWords b
+end
+
+/-- The distinct word primitives of a Lam program. -/
+def lamWords (L : IxCC.Lam.Program) : List (Width × WordOp) :=
+  (L.globalList.flatMap fun (_, g) => termWords g.body).eraseDups
+
+/-- **The hint** (stage W1): with words off, an admission-time hint for every primitive word
+operation the program reaches at run time (the four roots reach the 68), naming the operation
+and how to make it a primitive; with words on (every one an entry), none. -/
+def hints (a : Assert) (off on : Loaded) : IO Unit := do
+  expectEq a off.wordHints.size 68
+    s!"words off: a hint per reached primitive operation ({off.wordHints.size})"
+  expect a (off.wordHints.all fun d => d.code == "hint" &&
+      (d.message.splitOn Table.wordEquationsAdvice).length == 2 &&
+      (d.name.map fun n => decide ((d.message.splitOn n).length > 1)).getD false)
+    s!"each hint names its operation and the flag: {(off.wordHints.toList.take 2).map (·.message)}"
+  expectEq a on.wordHints.size 0 s!"words on: no hint ({(on.wordHints.toList.take 2).map (·.message)})"
+  -- the one line `ixcc compile` prints on standard error
+  let names := (off.wordHints.toList.take 3).filterMap (·.name)
+  let three := ", ".intercalate names
+  let one := ", ".intercalate (names.take 1)
+  expectEq a (Table.wordHintLine off.wordHints)
+    (some s!"hint: 68 word operations are reached at run time without an accepted word equation \
+      and run their reference bodies ({three} and 65 more): {Table.wordEquationsAdvice}")
+    "the hint line for 68 operations"
+  expectEq a (Table.wordHintLine (off.wordHints.extract 0 1))
+    (some s!"hint: 1 word operation is reached at run time without an accepted word equation \
+      and runs its reference body ({one}): {Table.wordEquationsAdvice}")
+    "the hint line for one operation"
+  expectEq a (Table.wordHintLine on.wordHints) none "no hint line without a hint"
+
 /-- **Where a word entry comes from: the sidecar's `theorems` list** (kind `word`), never a search
 of the closure. The fixture's sidecar names every primitive operation of every width with its
-theorem (68); with them the table has 68 word entries, without them none (and a diagnostic per
-pinned operation); a proposal whose theorem is another operation's, or whose subject is not a
-pinned word operation, is refused with a diagnostic; the reader refuses an unknown kind. -/
+theorem (68); with them the table has 68 word entries, without them none (and no table
+diagnostic: the hint is admission's, `hints`); a proposal whose theorem is another operation's,
+or whose subject is not a pinned word operation, is refused with a diagnostic; the reader refuses
+an unknown kind. -/
 def proposals (a : Assert) (p : Program) (props : Array Proposal) : IO Unit := do
   let words := props.filter (·.kind == .word)
   expectEq a words.size 68 "the sidecar names 68 word theorems"
@@ -160,8 +207,8 @@ def proposals (a : Assert) (p : Program) (props : Array Proposal) : IO Unit := d
   let others := props.filter (·.kind != .word)
   let (t0, d0, _) := Table.build cfg p others
   expectEq a (wordEntries p t0).length 0 "without word proposals, no word entry"
-  expectEq a (d0.filter (·.message.startsWith "word: no accepted equation")).size 68
-    "without word proposals, a diagnostic per pinned operation"
+  expect a (d0.all fun d => !d.message.startsWith "word:")
+    s!"without word proposals, no table diagnostic about words: {d0.map (·.message)}"
   -- the theorem of UInt64.add proposed for UInt64.sub, and the root proposed as a word operation
   let byName := fun (n : String) => words.find? (·.name? == some n)
   match byName "UInt64.add", byName "UInt64.sub" with
@@ -365,6 +412,108 @@ def tampered (a : Assert) : IO Unit := do
         s!"with checkAxiomClosure's diagnostic: {(d.map (·.message)).toList.take 3}"
     | _ => expect a false "UInt64.add's theorem is a safe level-monomorphic theorem"
 
+/-! ### Erasure's word case on instances
+
+What the proof of erasure's word case states (`Lam.Erase.Proof.word_value_sim` and its lemmas
+`vr_word`, `vr_mkWord`, `wordUnboxAt_of_B`), tested on every case of the harness, in each root's
+program **compiled alone** (`Steps.front`, as `ixcc compile --root` reads it): there the relevance
+annotation covers a tower's constructors only through the word entries' runtime references
+(`Src.Program.runtimeRefs`). -/
+
+/-- The number a Lam value is, if a literal. -/
+def litOf : Option IxCC.Lam.Val → Option Nat
+  | some (.lit (.nat n)) => some n
+  | _ => none
+
+/-- The value a Lam result is, if one. -/
+def okOf : IxCC.Sem.Result IxCC.Lam.Val → Option IxCC.Lam.Val
+  | .ok v => some v
+  | _ => none
+
+/-- A wrong Lam meaning (the negative control): `sub` truncating instead of wrapping. -/
+def truncSub (w : Width) (op : WordOp) (vs : List IxCC.Lam.Val) (K : IxCC.Lam.Known) : Option Nat :=
+  match op, IxCC.Lam.natArgs vs with
+  | .sub, some [a, b] => if a < w.size && b < w.size then some (a - b) else none
+  | _, _ => litOf (okOf (IxCC.Lam.primResult K (.word w op) vs))
+
+/-- Erasure's word case on every harness case and every out-of-range tower of width `w`, in a
+root's program: where F6w gives a value, every argument it reads as a word erases to its number
+(`vr_word`), its result erases (`eraseVal`) to exactly what the Lam word primitive gives on the
+erased arguments (`word_value_sim`, through `vr_mkWord` for a tower); where F6w is stuck nothing is
+owed (the Lam primitive is stuck too on an out-of-range number, counted). Returns the cases
+related, the cases F6w is stuck on with how many of them the Lam primitive is stuck on, how many
+cases the truncating `sub` gets wrong (must be some), and the first failures. -/
+def lamCases (p : Program) (ch : Relevance.Checked) (w : Width) :
+    Nat × Nat × Nat × Nat × List String := Id.run do
+  let I := IxCC.Lam.Erase.Input.ofProgram p ch
+  let K := I.lamKnown
+  let word := fun n => (p.mkWord? w n).getD (.lit n)
+  let mut related := 0
+  let mut stuck := 0
+  let mut lamStuck := 0
+  let mut wrong := 0
+  let mut bad : List String := []
+  for op in WordOp.primitives w do
+    let extra : List (List Value) :=
+      if op == .ofNat then []
+      else if op.arity == 1 then (outs w).map fun x => [word x]
+      else (outs w).flatMap fun x => [[word x, word 1], [word 1, word x]]
+    for args in cases p w op ++ extra do
+      let vs := args.filterMap (IxCC.Lam.Erase.eraseVal I)
+      let lam := IxCC.Lam.primResult K (.word w op) vs
+      match p.wordValue w op args with
+      | .ok v =>
+        related := related + 1
+        for x in args do
+          if let some k := p.asWord? w x then
+            if litOf (IxCC.Lam.Erase.eraseVal I x) != some k && bad.length < 5 then
+              bad := bad ++ [s!"{op.leanName w}: the word {k} does not erase to its number"]
+        let image := IxCC.Lam.Erase.eraseVal I v
+        -- every result is a literal (a tower erases to its number, a `toNat` is one)
+        if vs.length != args.length || (litOf image).isNone || litOf (okOf lam) != litOf image then
+          if bad.length < 5 then
+            bad := bad ++ [s!"{op.leanName w} {args.map (p.asWord? w ·)}: Lam {litOf (okOf lam)}, image {litOf image}"]
+        if truncSub w op vs K != litOf image then wrong := wrong + 1
+      | _ =>
+        stuck := stuck + 1
+        if okOf lam |>.isNone then lamStuck := lamStuck + 1
+  return (related, stuck, lamStuck, wrong, bad)
+
+/-- **The unboxing check in a root's program**: every word entry's towers (its width and its
+result width) erase to their number (`Input.wordUnboxAtB`, what erasure checks before it emits
+the primitive); the failures. Control: `Fin.mk` taken with one field is refused. -/
+def unboxCheck (p : Program) (ch : Relevance.Checked) : List String × Bool :=
+  let I := IxCC.Lam.Erase.Input.ofProgram p ch
+  let bad := (List.range p.size).filterMap fun c =>
+    match p.table.resolveOf c with
+    | some (.word w op _) =>
+      if I.wordUnboxAtB w && I.wordUnboxAtB (op.resultWidth w) then none else some (op.leanName w)
+    | _ => none
+  (bad, I.known.finMk.isSome && !I.unboxesAt0B (I.known.finMk.getD 0) 1)
+
+/-- Each root compiled alone: its program's unboxing check, and erasure's word case on every case
+of the harness at its width. -/
+def alone (a : Assert) : IO (List String) := do
+  let bytes ← IO.FS.readBinFile (dir / "words.ixe")
+  let json ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile (dir / "words.equations.json")))
+  let mut lines := []
+  let mut total := 0
+  for (root, w) in roots do
+    let (_, s) ← IO.ofExcept ((Steps.front bytes json [root]).mapError (·.render))
+    let (bad, ctl) := unboxCheck s.src s.checked
+    let entries := (List.range s.src.size).filter fun c => s.src.table.resolveOf c matches some (.word ..)
+    expect a (!entries.isEmpty && bad.isEmpty) s!"{root} alone: the unboxing check fails at {bad}"
+    expect a ctl s!"{root} alone: Fin.mk taken with one field is refused"
+    let (n, st, lst, wrong, badL) := lamCases s.src s.checked w
+    expect a badL.isEmpty s!"{root} alone: F6w and the Lam word primitive: {badL}"
+    expect a (wrong > 0) s!"{root} alone: the truncating sub is caught"
+    expectEq a lst st s!"{root} alone: where F6w is stuck, the Lam primitive is too"
+    total := total + n
+    lines := lines ++ [s!"{root} alone: {entries.length} word entries, the unboxing check holds; \
+      {n} cases related, {st} stuck at both levels, the truncating sub wrong on {wrong}"]
+  expectEq a total 21996 "erasure's word case: the harness's case count"
+  return lines
+
 def run (a : Assert) (verbose : Bool := false) : IO (List String) := do
   let mut lines : List String := []
   let t0 ← IO.monoMsNow
@@ -375,16 +524,18 @@ def run (a : Assert) (verbose : Bool := false) : IO (List String) := do
   let mut total := 0
   let mut totalOut := 0
   -- one load each way: the sidecar names the four roots, so the annotation covers every width
-  let off ← loadPack (dir / "words.ixe") (dir / "words.equations.json")
+  let off ← loadPack (dir / "words.ixe") (dir / "words.equations.json") { table := { words := false } }
   note "loaded, words off"
   let on ← loadPack (dir / "words.ixe") (dir / "words.equations.json") { table := { words := true } }
   note "loaded, words on"
-  -- until the lowering exists, erasure declines a word entry (and accepts the program without)
-  expect a (match IxCC.Lam.erase on.program on.checked with
-      | .error e => e.code == "erase-word"
-      | .ok _ => false) "erasure declines a word entry"
+  -- erasure emits a word entry as the Lam word primitive (and accepts the program without)
+  match IxCC.Lam.erase on.program on.checked with
+  | .ok (L, _) =>
+    expectEq a (lamWords L).length 68 "erasure emits the 68 word entries as Lam word primitives"
+  | .error e => expect a false s!"erasure declines a word entry: {e.code}: {e.message}"
   expect a (IxCC.Lam.erase off.program off.checked).toOption.isSome
     "erasure accepts the program without word entries"
+  hints a off on
   proposals a off.program off.hints.proposals
   note "the sidecar's word proposals"
   tampered a
@@ -434,6 +585,8 @@ def run (a : Assert) (verbose : Bool := false) : IO (List String) := do
       s!"steps {stepsOn} with words, {stepsOff} with the reference bodies"]
   expectEq a total 21996 "the harness's case count"
   expectEq a totalOut 1216 "the out-of-range case count"
+  lines := lines ++ (← alone a)
+  note "each root alone: erasure's word case"
   return lines
 
 end IxCCTests.Src.WordRules

@@ -1,5 +1,6 @@
 import IxCC.Lam.Erase.Proof.BuildArgs
 import IxCC.Lam.Erase.Proof.Bind
+import IxCC.Lam.Erase.Proof.Word
 
 /-! # Erasure's saturated forms meet their specification
 
@@ -164,6 +165,18 @@ theorem sound_primForm (cx : Cx) (op : Src.PrimOp) (q : Profile) (args : List Sr
   split
   · exact Sound.bind (sound_registerBool I) fun _ => hk.imp fun _ _ h _ => h
   · exact hk
+
+/-- A saturated word primitive (stage W1): the unboxing check, then the primitive on the strict
+arguments. -/
+theorem sound_wordForm (cx : Cx) (w : Src.Width) (op : Src.WordOp) (q : Profile)
+    (args : List Src.Term.Arg) :
+    Sound (wordForm I rec cx w op args) fun t G => SatR I G cx (.word w op) q args t := by
+  unfold wordForm
+  dsimp only
+  refine Sound.ite (fun hc => ?_) fun _ => Sound.decline_bind
+  simp only [Bool.and_eq_true] at hc
+  exact Sound.bind (sound_strictArgs hrec cx args) fun _ =>
+    Sound.pure fun _ h => .word (wordUnboxAt_of_B hc.1) (wordUnboxAt_of_B hc.2) h
 
 theorem sound_quotMkForm (cx : Cx) (c : CId) (q : Profile) (args : List Src.Term.Arg) :
     Sound (quotMkForm rec cx args) fun t G => SatR I G cx (.quotMk c) q args t := by
@@ -358,7 +371,7 @@ theorem sound_saturated (cx : Cx) (h : Head) (q : Profile) (args : List Src.Term
   unfold saturated
   cases h with
   | prim op => exact sound_primForm hrec cx op q args
-  | word w op => exact Sound.decline
+  | word w op => exact sound_wordForm hrec cx w op q args
   | ctor c => exact sound_ctorForm hrec cx c q args
   | quotMk c => exact sound_quotMkForm hrec cx c q args
   | quotLift c => exact sound_quotLiftForm hrec cx c q args

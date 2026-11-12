@@ -10,7 +10,8 @@ import IxCC.Lam.Erase.Proof.WFProg
 /-! Required axiom fences for the source-to-Lam theorems: clock
 monotonicity of SrcEval and Lam, erasure's correctness, the relevance
 checker's soundness, and the fixed-width words' lemmas (stage W1: the range lemma
-`WordOp.eval_word_lt`, the width facts it uses, and F6w's unfolding `fire_word`).
+`WordOp.eval_word_lt`, the width facts it uses, F6w's unfolding `fire_word`, and erasure's word
+case).
 Expected messages are preserved verbatim. -/
 
 /-- info: 'IxCC.Src.eval_mono' depends on axioms: [propext, Quot.sound] -/
@@ -218,3 +219,51 @@ checked against it. -/
 /-- info: 'IxCC.Lam.wordSem_one' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Lam.wordSem_one
 
+
+/-! Stage W1: erasure's word case (`IxCC.Lam.Erase.Proof.Word`, the producer cases `sound_wordForm`
+and `reg_wordForm`). -/
+
+/-- info: 'IxCC.Src.WordOp.eval_resultWidth' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Src.WordOp.eval_resultWidth
+
+/-- info: 'IxCC.Lam.Erase.Proof.unboxesAt0_of_B' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Lam.Erase.Proof.unboxesAt0_of_B
+
+/-- info: 'IxCC.Lam.Erase.Proof.wordUnboxAt_of_B' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Lam.Erase.Proof.wordUnboxAt_of_B
+
+/-- info: 'IxCC.Lam.Erase.Proof.VR.unbox0_inv' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Lam.Erase.Proof.VR.unbox0_inv
+
+/-- info: 'IxCC.Lam.Erase.Proof.VR.unbox0' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Lam.Erase.Proof.VR.unbox0
+
+/-- info: 'IxCC.Lam.Erase.Proof.asWord?_some' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Lam.Erase.Proof.asWord?_some
+
+/-- info: 'IxCC.Lam.Erase.Proof.vr_word' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Lam.Erase.Proof.vr_word
+
+/-- info: 'IxCC.Lam.Erase.Proof.vr_mkWord' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Lam.Erase.Proof.vr_mkWord
+
+/-- info: 'IxCC.Lam.Erase.Proof.wordResult_sim' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Lam.Erase.Proof.wordResult_sim
+
+/-- info: 'IxCC.Lam.Erase.Proof.wordResult_dec' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Lam.Erase.Proof.wordResult_dec
+
+/-- info: 'IxCC.Lam.Erase.Proof.primResult_word1' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Lam.Erase.Proof.primResult_word1
+
+/-- info: 'IxCC.Lam.Erase.Proof.primResult_word2' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Lam.Erase.Proof.primResult_word2
+
+/-- info: 'IxCC.Lam.Erase.Proof.word_value_sim' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Lam.Erase.Proof.word_value_sim
+
+/-- info: 'IxCC.Lam.Erase.Proof.sound_wordForm' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Lam.Erase.Proof.sound_wordForm
+
+/-- info: 'IxCC.Lam.Erase.Proof.reg_wordForm' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Lam.Erase.Proof.reg_wordForm

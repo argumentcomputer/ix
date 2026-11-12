@@ -287,6 +287,14 @@ def primForm (cx : Cx) (op : PrimOp) (args : List Src.Term.Arg) : M Term := do
   if op.isPredicate then registerBool I
   return .prim (Prim.ofSrc op) ((← strictArgs rec cx args).map (·.1))
 
+/-- A saturated word primitive (stage W1): all arguments strict, as a primitive's; declined
+(`erase-word`) unless the towers of the operation's width and of its result width erase to their
+number (`Input.wordUnboxAtB`). -/
+def wordForm (cx : Cx) (w : Src.Width) (op : Src.WordOp) (args : List Src.Term.Arg) : M Term := do
+  unless I.wordUnboxAtB w && I.wordUnboxAtB (op.resultWidth w) do
+    decline "erase-word" s!"{op.leanName w}: the word constructors do not unbox to their number"
+  return .prim (.word w op) ((← strictArgs rec cx args).map (·.1))
+
 /-- A saturated constructor: relevant strict parameters `let`-bound and
 discarded (SrcEval evaluates them, E7); kept fields in order (S2: dropped
 fields are built from irrelevant arguments); `Nat.zero`/`Nat.succ` as
@@ -463,7 +471,7 @@ def headReads : Head → Nat → Bool
 def saturated (cx : Cx) (h : Head) (q : Profile) (args : List Src.Term.Arg) : M Term :=
   match h with
   | .prim op => primForm I rec cx op args
-  | .word w op => decline "erase-word" s!"{op.leanName w}: fixed-width words are not lowered yet"
+  | .word w op => wordForm I rec cx w op args
   | .ctor c => ctorForm I rec cx c q args
   | .quotMk _ => quotMkForm rec cx args
   | .quotLift _ => quotLiftForm rec cx args
@@ -518,8 +526,7 @@ def constSpine (cx : Cx) (c : CId) (us : List Ixon.Univ) (args : List Src.Term.A
   let q := I.profileOf c cx.prof us
   match I.resolve.get? c with
   | some (.prim op) => special I rec cx (.prim op) q args
-  | some (.word w op _) =>
-    decline "erase-word" s!"{op.leanName w}: fixed-width words are not lowered yet" c
+  | some (.word w op _) => special I rec cx (.word w op) q args
   | some (.case _) => special I rec cx (.cases c) q args
   | some (.csimp ..) | some (.eqn ..) => plainConst I rec cx c q args
   | none =>
