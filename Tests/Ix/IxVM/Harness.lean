@@ -138,7 +138,6 @@ def renameClaim (a t : Address → Address) : Ix.Claim → Ix.Claim
     | other => other)
   | .contains tree c => .contains (t tree) (a c)
   | .catalog members => .catalog (t members)
-  | .resource r p => .resource (t r) p
   | .binding spec b => .binding spec (a b)
 
 /-- `env`, `claim` and `trees` with every hand-built record that needs one given

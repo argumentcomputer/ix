@@ -7,8 +7,6 @@ public section
 
 namespace Tests.ClaimsV4
 
-/-- The claims, with the retired resource claim's bytes (`Claim.ser` still
-writes them): every reader refuses that row. -/
 def fixtures : Array (String × Ix.Claim) :=
   let a := Address.blake3 "a".toUTF8
   let b := Address.blake3 "b".toUTF8
@@ -22,7 +20,6 @@ def fixtures : Array (String × Ix.Claim) :=
   #[ ("eval", .eval ctx a b asm), ("check", .check ctx a none),
      ("check_env", .checkEnv ctx a asm), ("reveal", .reveal a (.axio none none none)),
      ("contains", .contains a b), ("catalog", .catalog a),
-     ("resource", .resource a b),
      ("check_assumed", .check assumed a none),
      ("check_env_assumed", .checkEnv assumed a asm),
      ("binding", .binding ctx.spec ctx.binding),
@@ -38,16 +35,19 @@ def fixtureText : String := Id.run do
     text := text ++ s!"{name}\t{Ix.Claim.commit claim}\t{hexOfBytes (Ix.Claim.ser claim)}\n"
   return text
 
-/-- The retired resource claim's bytes, and its proof's, fail to decode with
-the retired message. -/
-def checkRetired (claim : Ix.Claim) (bytes : ByteArray) : IO Unit := do
-  match Ix.Claim.de bytes with
+/-- The retired resource claim's tag (`E8 01`) and its proof's (`F6`), with the
+scope and payload they had: every reader refuses them with the retired
+message. -/
+def checkRetired : IO Unit := do
+  let payload := ByteArray.mk (Array.replicate 64 0)
+  let claimBytes := ByteArray.mk #[0xE8, 0x01, Ixon.Env.OBJECT_FORMAT, 2] ++ payload
+  match Ix.Claim.de claimBytes with
   | .ok _ => throw <| IO.userError "the retired resource claim decoded"
   | .error e =>
     unless e.startsWith "claim: variant 9 (the resource claim) is retired" do
       throw <| IO.userError s!"resource claim: unexpected error {e}"
-  let proof : Ixon.Proof := { claim, proof := ⟨#[1, 2, 3]⟩ }
-  match Ixon.Proof.de (Ixon.Proof.ser proof) with
+  let proofBytes := ByteArray.mk #[0xF6, Ixon.Env.OBJECT_FORMAT, 2] ++ payload ++ ByteArray.mk #[3, 1, 2, 3]
+  match Ixon.Proof.de proofBytes with
   | .ok _ => throw <| IO.userError "the retired resource proof decoded"
   | .error e =>
     unless e.startsWith "proof: variant 6 (the resource proof) is retired" do
@@ -60,9 +60,6 @@ def run : IO Unit := do
       `lake exe ixon-v4-tests --export-fixtures`"
   for (_, claim) in fixtures do
     let bytes := Ix.Claim.ser claim
-    if let .resource .. := claim then
-      checkRetired claim bytes
-      continue
     unless (Ix.Claim.de bytes).toOption == some claim do throw <| IO.userError "claim roundtrip"
     for n in [:bytes.size] do
       unless (Ix.Claim.de (bytes.extract 0 n)).toOption.isNone do
@@ -107,6 +104,7 @@ def run : IO Unit := do
     unless proofBytes[1]! == Ixon.Env.OBJECT_FORMAT do throw <| IO.userError "proof scope offset"
     unless (Ixon.Proof.de (proofBytes.set! 1 3)).toOption.isNone do
       throw <| IO.userError "proof with version 3 object format accepted"
+  checkRetired
   let result ← LSpec.lspecIO (.ofList [("claims", Tests.Claim.suite)]) []
   unless result == 0 do throw <| IO.userError "existing claim tests failed"
   IO.println s!"Ixon v{Ixon.Env.VERSION} claims: fixtures, strict envelopes, proof wrappers, and the retired resource claim passed"

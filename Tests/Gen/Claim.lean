@@ -148,7 +148,6 @@ instance : Shrinkable Claim where
       (.reveal comm <$> Shrinkable.shrink info) ++ [.check default comm none]
     | .contains t _ => [.checkEnv default t none]
     | .catalog m => [.checkEnv default m none]
-    | .resource _ _ => []
     | .binding _ _ => []
 
 /-! ## SampleableExt instances -/

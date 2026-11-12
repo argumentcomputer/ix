@@ -6,6 +6,7 @@ public import Ix.Meta
 public import Ix.CompileCertified
 public import Ix.Commit
 public import Ix.IxEval
+public import Ix.Ixon.Authenticated
 
 /-!
   IxVM evaluation claim tests (`Tests.Ix.IxVM.Eval`).
@@ -420,6 +421,12 @@ private def natOutput (env : Ixon.Env) (n : Nat) : IO (Ixon.Env × Ixon.Constant
   let (env, addr) := env.storeBlob (ByteArray.mk (Nat.toBytesLE n))
   return (env, definition (.ref 0 #[]) (.nat 1) #[nat, addr] 0 #[])
 
+/-- `natOutput` with the literal's blob as given, canonical or not. -/
+private def natBlobOutput (env : Ixon.Env) (blob : ByteArray) : IO (Ixon.Env × Ixon.Constant) := do
+  let nat ← lookupAddr env ``Nat
+  let (env, addr) := env.storeBlob blob
+  return (env, definition (.ref 0 #[]) (.nat 1) #[nat, addr] 0 #[])
+
 private def listOutput (env : Ixon.Env) : IO (Ixon.Env × Ixon.Constant) := do
   let nat ← lookupAddr env ``Nat
   let consAddr ← lookupAddr env ``List.cons
@@ -462,6 +469,14 @@ def compiledTests (leanEnv : Lean.Environment) (r : Tests.Ix.IxVM.Runner) : IO U
       let (fixture, wrongObj) ← natOutput env 9
       r.build <| execute "wrong result with the same type"
         (← witness fixture input wrongObj) (some "result does not match")
+      -- A Nat literal's blob is the compiler's (`Nat.toBytesLE`): one with a
+      -- trailing zero byte, or an empty one, is refused.
+      let (fixture, trailing) ← natBlobOutput env (ByteArray.mk #[42, 0])
+      r.build <| execute "a Nat literal blob with a trailing zero byte"
+        (← witness fixture input trailing) (some "Nat literal: a blob with a trailing zero byte")
+      let (fixture, empty) ← natBlobOutput env ByteArray.empty
+      r.build <| execute "an empty Nat literal blob"
+        (← witness fixture input empty) (some "Nat literal: an empty blob")
 
 /-- The compile of `names`' closure with every inductive's recursors
 (`collectCertifiedClosure`): the binder-data annotator installs an inductive block
@@ -677,6 +692,30 @@ def commandTests (leanEnv : Lean.Environment) (r : Tests.Ix.IxVM.Runner) : IO Te
 
 /-- Every evaluation claim through the IxVM program, and the Lean oracles
 that pin their expected results independently. -/
+/-- IxC's reader on the same Nat literal blobs as the program: the compiler's
+`[0]` and `[42]` are read, a trailing zero byte and the empty blob are refused
+(`Ix.Kernel.Reader.canonicalNatural`), each output record through the certified
+entry under the default table. -/
+def natBlobParity (leanEnv : Lean.Environment) : IO TestSeq := do
+  let env ← loadSharedIxonEnv #[``Nat] leanEnv
+  let some binding := Ix.Kernel.Admission.defaultBinding.toOption
+    | return test "the default role table loads" false
+  let limits : Ix.Kernel.Admission.Limits := ⟨1 <<< 22, 1 <<< 22, 1 <<< 34, 1 <<< 28, 1 <<< 26⟩
+  let mut tests := TestSeq.done
+  for (label, blob, canonical) in [("[0]", ByteArray.mk #[0], true), ("[42]", ByteArray.mk #[42], true),
+      ("[42, 0]", ByteArray.mk #[42, 0], false), ("[]", ByteArray.empty, false)] do
+    let (_, c) ← natBlobOutput env blob
+    let bytes := Ixon.serConstant c
+    let blobs := [(Address.blake3 blob, blob)]
+    let verdict := Ixon.Authenticated.checkBytes binding limits [(Address.blake3 bytes, bytes)] blobs
+    let ok := match verdict, canonical with
+      | .ok _, true => true
+      | .error e, false => ((toString e).splitOn "natural literal blob is not canonical").length > 1
+      | _, _ => false
+    tests := tests ++ test s!"IxC's reader {if canonical then "reads" else "refuses"} the Nat literal blob {label}"
+      (ok && Ix.Kernel.Reader.canonicalNatural blob == canonical)
+  return tests
+
 def run (leanEnv : Lean.Environment) : IO UInt32 := do
   let oracles ← IO.mkRef TestSeq.done
   let code ← Tests.Ix.IxVM.withRunner "ixvm-eval" fun r => do
@@ -685,7 +724,8 @@ def run (leanEnv : Lean.Environment) : IO UInt32 := do
     let difficult ← difficultTests leanEnv r
     let generated ← differentialTests leanEnv r
     let command ← commandTests leanEnv r
-    oracles.set (difficult ++ generated ++ command)
+    let parity ← natBlobParity leanEnv
+    oracles.set (difficult ++ generated ++ command ++ parity)
     let labels ← r.labels.get
     for (name, _) in evalFftCosts do
       unless labels.contains s!"eval accepts {name}" do
