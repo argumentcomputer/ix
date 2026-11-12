@@ -70,7 +70,7 @@ private theorem lookup_signatures_range' (P : Fir.Program) (f : FunId) : ∀ (m 
       if s ≤ f ∧ f < s + m then (P.fun? f).map (·.arity) else none
   | 0, s => by
     simp only [List.range'_zero, List.filterMap_nil, List.map_nil, List.lookup_nil]
-    split <;> first | rfl | omega
+    rw [if_neg (fun hc => absurd hc.2 (by have := hc.1; omega))]
   | m + 1, s => by
     rw [List.range'_succ, List.filterMap_cons]
     have ih := lookup_signatures_range' P f m (s + 1)
@@ -81,7 +81,8 @@ private theorem lookup_signatures_range' (P : Fir.Program) (f : FunId) : ∀ (m 
       by_cases hf : f = s
       · subst hf
         simp [hs]
-      · have : (s + 1 ≤ f ∧ f < s + 1 + m) ↔ (s ≤ f ∧ f < s + (m + 1)) := by omega
+      · have : (s + 1 ≤ f ∧ f < s + 1 + m) ↔ (s ≤ f ∧ f < s + (m + 1)) :=
+          ⟨fun ⟨h1, h2⟩ => ⟨by omega, by omega⟩, fun ⟨h1, h2⟩ => ⟨by omega, by omega⟩⟩
         simp only [this]
     | some fd =>
       simp only [Option.map_some, List.map_cons, List.lookup_cons]
@@ -91,7 +92,8 @@ private theorem lookup_signatures_range' (P : Fir.Program) (f : FunId) : ∀ (m 
       · have hb : (f == s) = false := by simpa using hf
         simp only [hb]
         rw [ih]
-        have : (s + 1 ≤ f ∧ f < s + 1 + m) ↔ (s ≤ f ∧ f < s + (m + 1)) := by omega
+        have : (s + 1 ≤ f ∧ f < s + 1 + m) ↔ (s ≤ f ∧ f < s + (m + 1)) :=
+          ⟨fun ⟨h1, h2⟩ => ⟨by omega, by omega⟩, fun ⟨h1, h2⟩ => ⟨by omega, by omega⟩⟩
         simp only [this]
 
 theorem signatureArity_eq (P : Fir.Program) (f : FunId) :
