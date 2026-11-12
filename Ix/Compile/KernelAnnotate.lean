@@ -21,6 +21,11 @@ module is the annotator it runs there. The data are IxC's: its annotation pass
 every binder the zero-ness of the codomain sort, by `annotPwPiI`/`annotPwLamI`
 on the annotated opened body; nothing here infers anything itself.
 
+**The reading first.** Most records show every binder's datum in their Lean
+source without inference (`Ix.Compile.BinderRead`: a ∀-body's sort from its
+head's declared type, a λ-run's from the sort of the type it stands at); those
+records are read and never walked. The rest are walked as below.
+
 **The environment.** Before the compile, IxC ingests the compile's own input
 in Source mode (`Ix.LeanIngress`: every constant keyed by its Lean name, or its
 role's key) and installs it with phase A of its fold
@@ -28,7 +33,8 @@ role's key) and installs it with phase A of its fold
 dependency order (`install`). Unsafe and partial groups go through the typing
 tier; a declaration that fails is retried after them, and one refused again
 (a compiler-trust axiom, say) enters without its checks, with its
-annotated type (`lenient`). The installed
+annotated type (`lenient`); a structure the install leaves without a projection
+table gets one (`addTables`). The installed
 environment and IxC's core over it are marked persistent: every worker reads
 them, none writes them.
 
@@ -43,7 +49,11 @@ a run of binders of one kind is opened in bulk, its leaf annotated, the datum
 computed once at the leaf (every binder of the run has it, since the
 zero-ness of `imax u v` is that of `v`) and the run closed with one
 `abstractRangeC`; a `let` is ζ-reduced, its type and value annotated first; a
-share is walked once per context of the variables it can name. Each record's
+share is walked once per context of the variables it can name and per source
+term (content-equal constants, `HAdd` and `HSub` say, share one record entry and
+differ in the source). IxC's core runs at `annotatorMode`; where its datum
+function fails at a λ-run, the run takes the zero-ness of the sort of the type it
+stands at (`Expect`). Each record's
 caches start empty and are dropped with it.
 
 Where phase A annotated a root and stored it (a definition's type and value, a
@@ -75,34 +85,10 @@ abbrev CM := Ix.Kernel.Cached.CheckCM .source
 
 /-! ## The installed environment -/
 
-/-- The annotator's corrections, each of which can be turned off for
-measurement (`IX_BD_OFF`: a comma-separated list of their names, or `all`). -/
-structure Fixes where
-  /-- IxC's core at `.trusted`, its certificate families off: the data are the
-  same where both modes succeed (the annotation pass is ungated) -/
-  trusted : Bool := true
-  /-- a projection table for every one-constructor, index-free inductive the
-  install left without one -/
-  proj : Bool := true
-  /-- the zero-ness of the expected type's sort, threaded through λ runs, `let`s
-  and shares -/
-  exppw : Bool := true
-  /-- share sites memoized by their source term too (alias constants share one
-  record entry and differ in the source) -/
-  memo : Bool := true
-  /-- a refused inductive block entered without its checks -/
-  lenient : Bool := true
-  deriving Inhabited, Repr
-
-/-- `IX_BD_OFF`'s reading. -/
-def Fixes.parse (off : String) : Fixes :=
-  let xs := off.splitOn ","
-  let has (n : String) := xs.contains n || xs.contains "all"
-  { trusted := !has "trusted", proj := !has "proj", exppw := !has "exppw", memo := !has "memo",
-    lenient := !has "lenient" }
-
-/-- The mode IxC's core runs at. -/
-def Fixes.mode (f : Fixes) : Ix.Kernel.CheckMode := if f.trusted then .trusted else .verified
+/-- The mode IxC's core runs at for the annotator. The annotation pass is the
+same at both modes (it is ungated); `.trusted` leaves out the certificate
+families, which only the soundness proof consumes. -/
+def annotatorMode : Ix.Kernel.CheckMode := .trusted
 
 /-- IxC's environment of a compile's input, and what installing it found. -/
 structure Installed where
@@ -126,7 +112,6 @@ structure Installed where
   stored : Bool := true
   /-- whether the walk memoizes share sites (`IX_BD_NOMEMO` turns it off, for diagnosis) -/
   memo : Bool := true
-  fixes : Fixes := {}
   /-- whether the syntactic reading is measured beside the walk (`IX_BD_TIER1`) -/
   tier1 : Bool := false
   /-- whether each record's route (the source reading or the walk) is printed
@@ -172,7 +157,7 @@ unfolds; a theorem keeps its value, which nothing reduces), as phase A would
 have pushed it. The annotation is IxC's (`annotConstantValC`, `annotValueC`);
 only the step's policy and checks are skipped. `none` where the annotation
 itself fails. The data are not checked here: the annotator is not trusted. -/
-def lenient (mode : Ix.Kernel.CheckMode) (blocks : Bool) (fe : FEnv .source)
+def lenient (mode : Ix.Kernel.CheckMode) (fe : FEnv .source)
     (d : Ix.Kernel.Declaration .source) : Option (FEnv .source) :=
   let run {α : Type} (act : CM α) : Option α := match act.run {} with
     | .ok (a, _) => some a
@@ -187,7 +172,7 @@ def lenient (mode : Ix.Kernel.CheckMode) (blocks : Bool) (fe : FEnv .source)
   | .defnDecl cv v h =>
     (run (Ix.Kernel.Cached.annotValueC mode fe cv v)).map fun r =>
       fe.push (.defnInfo r.1 r.2.2 h)
-  | .indDecl block _ => if blocks then lenientBlock mode fe block else none
+  | .indDecl block _ => lenientBlock mode fe block
   | _ => none
 where
   /-- An inductive block's constants in order (its types, constructors and
@@ -376,9 +361,9 @@ def graphOfPar (width : Nat) (blocks : Ix.CondensedBlocks) (groups : Array Group
 /-- **Install the compile's input** in Source mode, phase A only, and mark the
 environment and IxC's core over it persistent. -/
 def install (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (workers : Nat := 32)
-    (parallel : Bool := true) (trace : Bool := false) (fixes : Fixes := {}) (persist : Bool := true) :
+    (parallel : Bool := true) (trace : Bool := false) (persist : Bool := true) :
     IO (Except String Installed) := do
-  let mode := fixes.mode
+  let mode := annotatorMode
   let t0 ← IO.monoMsNow
   let pre ← match (Ix.Kernel.Reader.builtinPrelude : Except String (Ix.Kernel.Reader.Prelude .source)) with
     | .ok p => pure p
@@ -511,11 +496,11 @@ def install (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (workers : Nat 
     | some e =>
       let why := (Benchmarks.Kernel.CheckIxeStep.checkOutcome e).2
       failures := failures.push (declName d, why)
-      if let some fe' := lenient mode fixes.lenient fe d then
+      if let some fe' := lenient mode fe d then
         fe := fe'
         lenientCount := lenientCount + 1
   -- projection tables for the structures left without one
-  let (feT, tablesAdded, tablesProp) := if fixes.proj then addTables env fe else (fe, 0, 0)
+  let (feT, tablesAdded, tablesProp) := addTables env fe
   fe := feT
   let t5 ← IO.monoMsNow
   -- marked persistent: every worker reads them, none writes them, and their reference
@@ -544,7 +529,7 @@ def install (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (workers : Nat 
               IO.eprintln s!"binder data trace: {ci.toConstantVal.name} projects from {k}, which has no projection table"
 
   return .ok { fe := shared, core, env, installed := ok, failures, lenient := lenientCount,
-               ahead, waves := waves.size, fixes, tablesAdded, tablesProp,
+               ahead, waves := waves.size, tablesAdded, tablesProp,
                times := #[("prelude", tPre - t0), ("groups", tGroups - tPre), ("convert", tConv - tGroups),
                  ("graph", tGraph - tConv), ("schedule", t1 - tGraph), ("lower", t2 - t1), ("canon", tCanon - t2), ("prepare", tPrep - tCanon), ("evidence", t3 - tPrep),
                  ("phaseA", t4 - t3), ("A:ahead", nsAhead / 1000000), ("A:push", nsPush / 1000000),
@@ -646,13 +631,12 @@ def installInput (env : Ix.Environment) (workers : Nat := 32) : IO (Except Strin
   let stored := (← IO.getEnv "IX_BD_WALK_ALL").isNone
   let memo := (← IO.getEnv "IX_BD_NOMEMO").isNone
   let trace := ((← IO.getEnv "IX_BD_TRACE").map fun s => (s.splitOn ",").toArray).getD #[]
-  let fixes := Fixes.parse ((← IO.getEnv "IX_BD_OFF").getD "")
   let tier1 := (← IO.getEnv "IX_BD_TIER1").isSome
   let t1stat := (← IO.getEnv "IX_BD_T1STAT").isSome
   let noread := (← IO.getEnv "IX_BD_NOREAD").isSome
   let readonly := (← IO.getEnv "IX_BD_READONLY").isSome
   let persist := (← IO.getEnv "IX_BD_NOPERSIST").isNone
-  return (← install envI blocks workers parallel (!trace.isEmpty) fixes persist).map fun k =>
+  return (← install envI blocks workers parallel (!trace.isEmpty) persist).map fun k =>
     { k with env, stored, memo, trace, tier1, t1stat, noread, readonly,
              times := #[("installed constants (count)", envI.consts.size), ("restriction", tc1 - tc0),
                ("condense", t1 - t0)] ++ k.times }
@@ -683,7 +667,6 @@ structure Cx where
   /-- whether share sites under the same context reuse one walk (`IX_BD_NOMEMO`
   turns it off, for diagnosis) -/
   memo : Bool := true
-  fixes : Fixes := {}
   /-- whether the syntactic reading is measured beside the walk (`IX_BD_TIER1`) -/
   tier1 : Bool := false
 
@@ -704,7 +687,7 @@ structure WState where
   nextId : Nat := 0
   variants : Std.HashMap Nat (Std.HashMap (Array Node) Nat) := {}
   blocks : Array Block := #[]
-  memo : Std.HashMap (Nat × Bool × List Nat × Option PropWhen × Option KExpr)
+  memo : Std.HashMap (Nat × Bool × List Nat × Option PropWhen × KExpr)
     (KExpr × Nat × Bool × KExpr) := {}
   /-- the stored walk's memo (`walkStored`): the variant of a share site -/
   memoS : Std.HashMap (Nat × Bool × List Nat) Nat := {}
@@ -850,24 +833,14 @@ def binderRun (pi : Bool) : Ixon.Expr → KExpr → Array (Ixon.Expr × KExpr ×
     if pi then binderRun pi b body (acc.push (t, ty, BinderMeta.ofContracts c r)) else (e, x, acc)
   | e, x, acc => (e, x, acc)
 
-/-- The datum of the `n`-th binder of a ∀-chain. -/
-def forallDatumAt : Nat → KExpr → Option PropWhen
-  | 0, .forallE _ _ mb => some mb.pw
-  | n + 1, .forallE _ b _ => forallDatumAt n b
-  | _, _ => none
-
-/-- What the walk knows of the type `T` of the term it walks.
-
-* `ty`: a definition value's annotated, decided type, at the value's top
-  λ-chain (where IxC's datum function fails at a λ of that chain, the λ takes
-  the datum of the type's ∀ at the same place).
-* `pw`: the zero-ness of `T`'s sort. A λ's codomain sort has the zero-ness of
-  the sort of the λ's own type (the zero-ness of `imax u v` is that of `v`), so
-  `pw` is the datum of every λ of a run at `T`, and it passes unchanged to the
-  run's body, to a `let`'s body and into a share. A theorem's value has
-  `pw = always`; a `let`'s value has its declared type's. -/
+/-- What the walk knows of the type `T` of the term it walks: the zero-ness of
+`T`'s sort (`pw`), the datum of a λ-run at `T` where IxC's datum function
+fails. A λ's codomain sort has the zero-ness of the sort of the λ's own type
+(the zero-ness of `imax u v` is that of `v`), so `pw` is the datum of every λ
+of a run at `T`, and it passes unchanged to the run's body, to a `let`'s body
+and into a share. A theorem's value has `pw = always`; a `let`'s value has its
+declared type's. -/
 structure Expect where
-  ty : Option KExpr := none
   pw : Option PropWhen := none
   /-- `pw` as the syntactic reading finds it (`synSort`; measurement only) -/
   syn : Option PropWhen := none
@@ -984,12 +957,11 @@ def walk : Nat → Cx → List CtxEntry → Nat → Expect → Ixon.Expr → KEx
         inner := ⟨id, .fvar (depth + j) t', some t'⟩ :: inner
         stk := (t', mb) :: stk
       let k := bs.size
-      let leafEx : Expect := { pw := if !pi && cx.fixes.exppw then ex.pw else none,
+      let leafEx : Expect := { pw := if !pi then ex.pw else none,
                                syn := if !pi && cx.tier1 then ex.syn else none }
       let (leaf', bl) ← walk fuel cx inner (depth + k) leafEx leafE leafX
       let pw? ← datum cx pi (depth + k) leaf'
-      let pw? := if pw?.isSome || pi then pw?
-        else if cx.fixes.exppw then ex.pw else ex.ty.bind (forallDatumAt (k - 1))
+      let pw? := if pw?.isSome || pi then pw? else ex.pw
       let undecided := bad || bl || pw?.isNone
       let node : Node := if undecided then .undecided else cx.nodeOf (pw?.getD .never)
       for ord in ords do setNode ord node
@@ -1007,7 +979,7 @@ def walk : Nat → Cx → List CtxEntry → Nat → Expect → Ixon.Expr → KEx
       -- IxC annotates the type and the value, then the body with the value
       -- transparent (its ζ-reduct)
       let (t', bt) ← walk fuel cx ctx depth {} t ty
-      let vex : Expect ← if cx.fixes.exppw && !bt then do
+      let vex : Expect ← if !bt then do
           let p ← (sortPwC cx depth t' : CM (Option PropWhen))
           pure { pw := p, syn := if cx.tier1 then synSort cx.fe id 64 (ctx.map (·.ty)) ty else none }
         else pure { syn := if cx.tier1 then synSort cx.fe id 64 (ctx.map (·.ty)) ty else none }
@@ -1033,10 +1005,9 @@ def walk : Nat → Cx → List CtxEntry → Nat → Expect → Ixon.Expr → KEx
     | .share n, _ => do
       let ord ← reserve
       let n := n.toNat
-      let shareEx : Expect := { pw := if cx.fixes.exppw then ex.pw else none,
+      let shareEx : Expect := { pw := ex.pw,
                                 syn := if cx.tier1 then ex.syn else none }
-      let src? : Option KExpr := if cx.fixes.memo then some x else none
-      let key := (n, cx.large, (ctx.take (cx.bounds[n]?.getD 0)).map (·.id), shareEx.pw, src?)
+      let key := (n, cx.large, (ctx.take (cx.bounds[n]?.getD 0)).map (·.id), shareEx.pw, x)
       let st0 ← getThe WState
       let hit? := if cx.memo then st0.memo[key]? else none
       let (e', variant, bad) ← match hit? with
@@ -1241,7 +1212,7 @@ def annotateWalk (k : Installed) (extra : Array (Ix.Name × Ix.ConstantInfo)) (n
     let traced := !k.trace.isEmpty && names.any fun n => k.trace.contains n.pretty
     let cx0 : Cx := { fe := k.fe, core := k.core, sharing := c.sharing,
                       bounds := IxVM.PwHints.bounds c.sharing, trace := traced, memo := k.memo,
-                      fixes := k.fixes, tier1 := k.tier1 }
+                      tier1 := k.tier1 }
     let stored : Array (Option KExpr) := if !k.stored then #[] else
       ((members c).zip names).foldl (fun acc (m, n) => acc ++ storedItems k.fe n m) #[]
     let tys := IxVM.PwHints.valueTypes c
@@ -1266,18 +1237,16 @@ def annotateWalk (k : Installed) (extra : Array (Ix.Name × Ix.ConstantInfo)) (n
           | _ => pure none
         let ex : Expect ← match tys[i]? with
           | some (some j) => do
-            let ty := annotated[j]?.join
             -- the syntactic reading's expectation (measurement only)
             let syn : Option PropWhen := if !cx.tier1 then none
               else if thms[i]?.getD false then some (PropWhen.ifAllZero [])
               else (xs[j]?).bind fun (tx, _) => synSort cx.fe id 64 [] tx
-            if !cx.fixes.exppw then pure { ty, syn }
-            else if thms[i]?.getD false then pure { ty, pw := some (PropWhen.ifAllZero []), syn }
-            else match ty with
+            if thms[i]?.getD false then pure { pw := some (PropWhen.ifAllZero []), syn }
+            else match annotated[j]?.join with
               | some t => do
                 let p ← (sortPwC cx 0 t : CM (Option PropWhen))
-                pure { ty, pw := p, syn }
-              | none => pure { ty, syn }
+                pure { pw := p, syn }
+              | none => pure { syn }
           | _ => pure {}
         let (nodes, kx?) ← match read, stored[i]? with
           | some nodes, some kx => pure (nodes, kx)
