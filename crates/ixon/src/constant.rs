@@ -481,7 +481,10 @@ impl Constant {
     }
     for b in self.binders.iter().filter(|b| b.shared) {
       if self.binders.iter().any(|o| {
-        o.shared && o.index == b.index && o.variant < b.variant && o.nodes == b.nodes
+        o.shared
+          && o.index == b.index
+          && o.variant < b.variant
+          && o.nodes == b.nodes
       }) {
         return false;
       }
@@ -607,7 +610,6 @@ impl BinderCheck<'_> {
     }
     true
   }
-
 }
 
 // ============================================================================
@@ -928,7 +930,11 @@ pub mod tests {
     }));
     let mut buf = Vec::new();
     empty.put(&mut buf);
-    assert_eq!(buf[buf.len() - 4..], [0, 0, 0, 0], "sharing, refs, univs, binders");
+    assert_eq!(
+      buf[buf.len() - 4..],
+      [0, 0, 0, 0],
+      "sharing, refs, univs, binders"
+    );
     assert!(constant_roundtrip(&empty));
     assert!(empty.binders_canonical());
 
@@ -968,9 +974,9 @@ pub mod tests {
       nodes,
     };
     let cases = [
-      with(&|b| b.swap(0, 1)),                 // blocks out of order
-      with(&|b| b.push(b[3].clone())),         // a repeated key
-      with(&|b| b[1].variant = 1),             // a root block at variant 1
+      with(&|b| b.swap(0, 1)),         // blocks out of order
+      with(&|b| b.push(b[3].clone())), // a repeated key
+      with(&|b| b[1].variant = 1),     // a root block at variant 1
       with(&|b| b[0].nodes[0] = BinderNode::IfAllZero(vec![])), // empty list
       with(&|b| b[0].nodes[0] = BinderNode::IfAllZero(vec![2, 0])), // descending
       with(&|b| b[0].nodes[0] = BinderNode::IfAllZero(vec![1, 1])), // repeated
@@ -986,10 +992,10 @@ pub mod tests {
       with(&|b| b.push(block(true, 0, 2, vec![BinderNode::Never]))), // a dead variant
       with(&|b| {
         b.remove(1);
-      }), // a missing root block
+      }),                       // a missing root block
       with(&|b| {
         b.remove(3);
-      }), // a missing variant
+      }),                       // a missing variant
       with(&|b| {
         b[0].nodes[1] = BinderNode::Share(1);
         b[1].nodes[1] = BinderNode::Share(0);
@@ -999,7 +1005,7 @@ pub mod tests {
       with(&|b| b[0].nodes[1] = BinderNode::Never), // a binder node at a share
       with(&|b| b[2].nodes = vec![BinderNode::Zero, BinderNode::Zero]), // a node too many
       with(&|b| b.push(block(true, 1, 0, vec![BinderNode::Never]))), // no such entry
-      with(&|b| b.clear()),                    // a record with binders and no section
+      with(&|b| b.clear()), // a record with binders and no section
     ];
     for c in &incomplete {
       assert!(constant_roundtrip(c));

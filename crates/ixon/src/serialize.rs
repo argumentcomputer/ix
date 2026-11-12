@@ -1157,9 +1157,7 @@ pub(crate) fn put_binders(blocks: &[BinderBlock], buf: &mut Vec<u8>) {
   }
 }
 
-pub(crate) fn get_binders(
-  buf: &mut &[u8],
-) -> Result<Vec<BinderBlock>, String> {
+pub(crate) fn get_binders(buf: &mut &[u8]) -> Result<Vec<BinderBlock>, String> {
   let count = get_u64(buf)?;
   let mut blocks = Vec::with_capacity(capped_capacity(count, buf));
   for _ in 0..count {

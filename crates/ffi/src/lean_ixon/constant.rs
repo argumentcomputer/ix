@@ -8,11 +8,11 @@ use std::sync::Arc;
 
 use crate::lean::{
   LeanIxAddress, LeanIxonAxiom, LeanIxonBinderBlock, LeanIxonBinderNode,
-  LeanIxonConstant, LeanIxonConstantInfo,
-  LeanIxonConstructor, LeanIxonConstructorProj, LeanIxonDefinition,
-  LeanIxonDefinitionProj, LeanIxonExpr, LeanIxonInductive,
-  LeanIxonInductiveProj, LeanIxonMutConst, LeanIxonQuotient, LeanIxonRecursor,
-  LeanIxonRecursorProj, LeanIxonRecursorRule, LeanIxonUniv,
+  LeanIxonConstant, LeanIxonConstantInfo, LeanIxonConstructor,
+  LeanIxonConstructorProj, LeanIxonDefinition, LeanIxonDefinitionProj,
+  LeanIxonExpr, LeanIxonInductive, LeanIxonInductiveProj, LeanIxonMutConst,
+  LeanIxonQuotient, LeanIxonRecursor, LeanIxonRecursorProj,
+  LeanIxonRecursorRule, LeanIxonUniv,
 };
 use ixon::constant::{
   Axiom as IxonAxiom, BinderBlock, BinderNode, Constant as IxonConstant,
