@@ -16,9 +16,7 @@ mirrors in `Ix.IxVM.Refinement.Mirrors.Deserialize`, this module establishes:
   leaf primitives (`UInt64::is_zero`, `UInt64::eq`, `UInt64::saturating_pred`,
   `UInt64::to_field`, `IxonDeserialize::read_byte`,
   `IxonDeserialize::assert_wire_bool`, `IxonDeserialize::get_quot_kind`,
-  `IxonDeserialize::unpack_def_kind_safety`,
-  `IxonDeserialize::value_contract_from_bits`,
-  `IxonDeserialize::binder_contract_from_bits`). -/
+  `IxonDeserialize::unpack_def_kind_safety`). -/
 
 set_option maxRecDepth 100000
 set_option maxHeartbeats 4000000
@@ -547,40 +545,6 @@ theorem assertWireBool_run {b : Nat} (hb : b < 256) (k : Nat) (h : Heap F) :
   · simp [Mirrors.«IxonDeserialize::assert_wire_bool», hlt, hb2, Builtin.apply, evalAssertEq,
       Value.pointerFree]
 
-/-- **`IxonDeserialize::value_contract_from_bits`** on wire bits `b0, b1 ∈ {0, 1}`. -/
-theorem valueContractFromBits_run {b0 b1 : Nat} (hb0 : b0 < 2) (hb1 : b1 < 2) (k : Nat) (h : Heap F) :
-    Mirrors.«IxonDeserialize::value_contract_from_bits» (k + 1) h (.field (b0 : F)) (.field (b1 : F)) =
-      some (.construct "Ixon::ValueContract" "Mk" [
-        .construct "Ixon::Owned" (if b0 = 0 then "Unique" else "Shared") [],
-        .construct "Ixon::Locality" (if b1 = 0 then "Unrestricted" else "Local") []], h) := by
-  obtain rfl | rfl : b0 = 0 ∨ b0 = 1 := by omega
-  all_goals
-    obtain rfl | rfl : b1 = 0 ∨ b1 = 1 := by omega
-    all_goals simp (config := { decide := true }) [Mirrors.«IxonDeserialize::value_contract_from_bits»]
-
-/-- **`IxonDeserialize::binder_contract_from_bits`** on wire bits `b0, b1, b2, b3 ∈ {0, 1}`. -/
-theorem binderContractFromBits_run {b0 b1 b2 b3 : Nat}
-    (hb0 : b0 < 2) (hb1 : b1 < 2) (hb2 : b2 < 2) (hb3 : b3 < 2) (k : Nat) (h : Heap F) :
-    Mirrors.«IxonDeserialize::binder_contract_from_bits» (k + 2) h
-        (.field (b0 : F)) (.field (b1 : F)) (.field (b2 : F)) (.field (b3 : F)) =
-      some (.construct "Ixon::BinderContract" "Mk" [
-        .construct "Ixon::Uses"
-          (match b0 + 2 * b1 with
-            | 0 => "Erased" | 1 => "Linear" | 2 => "Affine" | _ => "Many") [],
-        .construct "Ixon::ValueContract" "Mk" [
-          .construct "Ixon::Owned" (if b2 = 0 then "Unique" else "Shared") [],
-          .construct "Ixon::Locality" (if b3 = 0 then "Unrestricted" else "Local") []]], h) := by
-  obtain rfl | rfl : b0 = 0 ∨ b0 = 1 := by omega
-  all_goals
-    obtain rfl | rfl : b1 = 0 ∨ b1 = 1 := by omega
-    all_goals
-      obtain rfl | rfl : b2 = 0 ∨ b2 = 1 := by omega
-      all_goals
-        obtain rfl | rfl : b3 = 0 ∨ b3 = 1 := by omega
-        all_goals simp (config := { decide := true })
-          [Mirrors.«IxonDeserialize::binder_contract_from_bits»,
-            Mirrors.«IxonDeserialize::value_contract_from_bits», evalBinOp]
-
 theorem natCast_ne_of_ne {a b : Nat} (ha : a < 256) (hb : b < 256) (hne : a ≠ b) :
     (a : F) ≠ (b : F) :=
   fun e => hne (IxVM.natCast_inj (by omega) (by omega) e)
@@ -601,121 +565,34 @@ theorem getQuotKind_run {b : Nat} (hb : b < 256) (k : Nat) (h : Heap F) :
     natCast_eq_ofNat_iff (n := 3) hb (by omega)]
   rcases b with _ | _ | _ | _ | b <;> simp
 
-/-- **`IxonDeserialize::unpack_def_kind_safety`** on a byte `b < 256`. -/
-theorem unpackDefKindSafety_run {b : Nat} (hb : b < 256) (k : Nat) (h : Heap F) :
+/-- The `DefKind` constructor of a kind and safety nibble `b` (`b / 4`). -/
+def defKindName (b : Nat) : String :=
+  match b / 4 with | 0 => "Definition" | 1 => "Opaque" | _ => "Theorem"
+
+/-- The `DefinitionSafety` constructor of a kind and safety nibble `b` (`b % 4`). -/
+def defSafetyName (b : Nat) : String :=
+  match b % 4 with | 0 => "Unsafe" | 1 => "Safe" | _ => "Partial"
+
+/-- **`IxonDeserialize::unpack_def_kind_safety`** on one of the nine bytes of a
+definition without assertions (`b < 11`, `b % 4 < 3`): its kind, its safety and
+the assertion code 0. -/
+theorem unpackDefKindSafety_run {b : Nat} (hb : b < 11) (hb3 : b % 4 < 3) (k : Nat) (h : Heap F) :
     Mirrors.«IxonDeserialize::unpack_def_kind_safety» (k + 2) h (.field (b : F)) =
-      match b with
-      | 0 => some (.tuple [.construct "Ixon::DefKind" "Definition" [], .construct "Ixon::DefinitionSafety" "Unsafe" []], h)
-      | 1 => some (.tuple [.construct "Ixon::DefKind" "Definition" [], .construct "Ixon::DefinitionSafety" "Safe" []], h)
-      | 2 => some (.tuple [.construct "Ixon::DefKind" "Definition" [], .construct "Ixon::DefinitionSafety" "Partial" []], h)
-      | 4 => some (.tuple [.construct "Ixon::DefKind" "Opaque" [], .construct "Ixon::DefinitionSafety" "Unsafe" []], h)
-      | 5 => some (.tuple [.construct "Ixon::DefKind" "Opaque" [], .construct "Ixon::DefinitionSafety" "Safe" []], h)
-      | 6 => some (.tuple [.construct "Ixon::DefKind" "Opaque" [], .construct "Ixon::DefinitionSafety" "Partial" []], h)
-      | 8 => some (.tuple [.construct "Ixon::DefKind" "Theorem" [], .construct "Ixon::DefinitionSafety" "Unsafe" []], h)
-      | 9 => some (.tuple [.construct "Ixon::DefKind" "Theorem" [], .construct "Ixon::DefinitionSafety" "Safe" []], h)
-      | 10 => some (.tuple [.construct "Ixon::DefKind" "Theorem" [], .construct "Ixon::DefinitionSafety" "Partial" []], h)
-      | _ => none := by
+      some (.tuple [.construct "Ixon::DefKind" (defKindName b) [],
+        .construct "Ixon::DefinitionSafety" (defSafetyName b) [], .field 0], h) := by
+  have hb256 : b < 256 := by omega
   simp only [Mirrors.«IxonDeserialize::unpack_def_kind_safety», Mirrors.«UInt8::to_field»,
     bind, Option.bind, Value.field.injEq,
-    natCast_eq_zero_iff hb, natCast_eq_one_iff hb,
-    natCast_eq_ofNat_iff (n := 2) hb (by omega),
-    natCast_eq_ofNat_iff (n := 4) hb (by omega),
-    natCast_eq_ofNat_iff (n := 5) hb (by omega),
-    natCast_eq_ofNat_iff (n := 6) hb (by omega),
-    natCast_eq_ofNat_iff (n := 8) hb (by omega),
-    natCast_eq_ofNat_iff (n := 9) hb (by omega),
-    natCast_eq_ofNat_iff (n := 10) hb (by omega)]
-  rcases b with _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | b <;> simp
-
-/-- **`IxonDeserialize::get_lam_mode` on a non-empty byte stream** decodes a
-4-bit binder contract when `b.toNat < 16` and rejects (`none`) when `b.toNat ≥ 16`. -/
-theorem getLamMode_run {b : UInt8} {rest : List UInt8} {stream : SourceValue F} {h : Heap F}
-    (rep : Aiur.Library.Bytes.RepByteStream byteStreamEnum h (b :: rest) stream) :
-    ∃ restPtr, Aiur.Library.Bytes.RepByteStream byteStreamEnum h rest restPtr ∧
-      ∀ k, Mirrors.«IxonDeserialize::get_lam_mode» (k + 3) h stream =
-        if b.toNat < 16 then
-          some (.tuple [
-            .construct "Ixon::BinderContract" "Mk" [
-              .construct "Ixon::Uses"
-                (match b.toNat % 4 with
-                  | 0 => "Erased" | 1 => "Linear" | 2 => "Affine" | _ => "Many") [],
-              .construct "Ixon::ValueContract" "Mk" [
-                .construct "Ixon::Owned" (if b.toNat / 4 % 2 = 0 then "Unique" else "Shared") [],
-                .construct "Ixon::Locality" (if b.toNat / 8 % 2 = 0 then "Unrestricted" else "Local") []]],
-            restPtr], h)
-        else none := by
-  obtain ⟨restPtr, tailRep, hread⟩ := readByte_run rep
-  refine ⟨restPtr, tailRep, fun k => ?_⟩
-  have hb := b.toNat_lt
-  have hbits := bitDecomp_run hb (k + 1) h
-  have hbc := binderContractFromBits_run (b0 := b.toNat % 2) (b1 := b.toNat / 2 % 2)
-    (b2 := b.toNat / 4 % 2) (b3 := b.toNat / 8 % 2) (by omega) (by omega) (by omega) (by omega) k h
-  rw [show b.toNat % 2 + 2 * (b.toNat / 2 % 2) = b.toNat % 4 by omega] at hbc
-  by_cases hlt : b.toNat < 16
-  · have hb4 : b.toNat / 16 % 2 = 0 := by omega
-    have hb5 : b.toNat / 32 % 2 = 0 := by omega
-    have hb6 : b.toNat / 64 % 2 = 0 := by omega
-    have hb7 : b.toNat / 128 % 2 = 0 := by omega
-    simp [Mirrors.«IxonDeserialize::get_lam_mode», hread (k + 1), hbits, hbc, hlt,
-      hb4, hb5, hb6, hb7, evalBinOp, Builtin.apply, evalAssertEq, Value.pointerFree]
-  · have he : b.toNat / 16 =
-        b.toNat / 16 % 2 + 2 * (b.toNat / 32 % 2) + 4 * (b.toNat / 64 % 2) + 8 * (b.toNat / 128 % 2) := by omega
-    have hsum_ne : (((b.toNat / 16 % 2 : Nat) : F) + ((b.toNat / 32 % 2 : Nat) : F) +
-        ((b.toNat / 64 % 2 : Nat) : F) + ((b.toNat / 128 % 2 : Nat) : F)) ≠ 0 := by
-      have hcast : (((b.toNat / 16 % 2 : Nat) : F) + ((b.toNat / 32 % 2 : Nat) : F) +
-          ((b.toNat / 64 % 2 : Nat) : F) + ((b.toNat / 128 % 2 : Nat) : F)) =
-          (((b.toNat / 16 % 2 + b.toNat / 32 % 2 + b.toNat / 64 % 2 + b.toNat / 128 % 2 : Nat)) : F) := by
-        push_cast; ring
-      rw [hcast]
-      exact natCast_ne_of_ne (b := 0) (by omega) (by omega) (by omega)
-    simp [Mirrors.«IxonDeserialize::get_lam_mode», hread (k + 1), hbits, hlt,
-      evalBinOp, Builtin.apply, evalAssertEq, Value.pointerFree, hsum_ne]
-
-/-- **`IxonDeserialize::get_all_mode` on a non-empty byte stream** decodes a
-6-bit `(BinderContract, ValueContract)` pair when `b.toNat < 64` and rejects
-(`none`) when `b.toNat ≥ 64`. -/
-theorem getAllMode_run {b : UInt8} {rest : List UInt8} {stream : SourceValue F} {h : Heap F}
-    (rep : Aiur.Library.Bytes.RepByteStream byteStreamEnum h (b :: rest) stream) :
-    ∃ restPtr, Aiur.Library.Bytes.RepByteStream byteStreamEnum h rest restPtr ∧
-      ∀ k, Mirrors.«IxonDeserialize::get_all_mode» (k + 3) h stream =
-        if b.toNat < 64 then
-          some (.tuple [
-            .tuple [
-              .construct "Ixon::BinderContract" "Mk" [
-                .construct "Ixon::Uses"
-                  (match b.toNat % 4 with
-                    | 0 => "Erased" | 1 => "Linear" | 2 => "Affine" | _ => "Many") [],
-                .construct "Ixon::ValueContract" "Mk" [
-                  .construct "Ixon::Owned" (if b.toNat / 4 % 2 = 0 then "Unique" else "Shared") [],
-                  .construct "Ixon::Locality" (if b.toNat / 8 % 2 = 0 then "Unrestricted" else "Local") []]],
-              .construct "Ixon::ValueContract" "Mk" [
-                .construct "Ixon::Owned" (if b.toNat / 16 % 2 = 0 then "Unique" else "Shared") [],
-                .construct "Ixon::Locality" (if b.toNat / 32 % 2 = 0 then "Unrestricted" else "Local") []]],
-            restPtr], h)
-        else none := by
-  obtain ⟨restPtr, tailRep, hread⟩ := readByte_run rep
-  refine ⟨restPtr, tailRep, fun k => ?_⟩
-  have hb := b.toNat_lt
-  have hbits := bitDecomp_run hb (k + 1) h
-  have hbc := binderContractFromBits_run (b0 := b.toNat % 2) (b1 := b.toNat / 2 % 2)
-    (b2 := b.toNat / 4 % 2) (b3 := b.toNat / 8 % 2) (by omega) (by omega) (by omega) (by omega) k h
-  rw [show b.toNat % 2 + 2 * (b.toNat / 2 % 2) = b.toNat % 4 by omega] at hbc
-  have hvc := valueContractFromBits_run (b0 := b.toNat / 16 % 2) (b1 := b.toNat / 32 % 2)
-    (by omega) (by omega) (k + 1) h
-  by_cases hlt : b.toNat < 64
-  · have hb6 : b.toNat / 64 % 2 = 0 := by omega
-    have hb7 : b.toNat / 128 % 2 = 0 := by omega
-    simp [Mirrors.«IxonDeserialize::get_all_mode», hread (k + 1), hbits, hbc, hvc, hlt,
-      hb6, hb7, evalBinOp, Builtin.apply, evalAssertEq, Value.pointerFree]
-  · have he : b.toNat / 64 = b.toNat / 64 % 2 + 2 * (b.toNat / 128 % 2) := by omega
-    have hsum_ne : (((b.toNat / 64 % 2 : Nat) : F) + ((b.toNat / 128 % 2 : Nat) : F)) ≠ 0 := by
-      have hcast : (((b.toNat / 64 % 2 : Nat) : F) + ((b.toNat / 128 % 2 : Nat) : F)) =
-          (((b.toNat / 64 % 2 + b.toNat / 128 % 2 : Nat)) : F) := by
-        push_cast; ring
-      rw [hcast]
-      exact natCast_ne_of_ne (b := 0) (by omega) (by omega) (by omega)
-    simp [Mirrors.«IxonDeserialize::get_all_mode», hread (k + 1), hbits, hlt,
-      evalBinOp, Builtin.apply, evalAssertEq, Value.pointerFree, hsum_ne]
+    natCast_eq_zero_iff hb256, natCast_eq_one_iff hb256,
+    natCast_eq_ofNat_iff (n := 2) hb256 (by omega),
+    natCast_eq_ofNat_iff (n := 4) hb256 (by omega),
+    natCast_eq_ofNat_iff (n := 5) hb256 (by omega),
+    natCast_eq_ofNat_iff (n := 6) hb256 (by omega),
+    natCast_eq_ofNat_iff (n := 8) hb256 (by omega),
+    natCast_eq_ofNat_iff (n := 9) hb256 (by omega),
+    natCast_eq_ofNat_iff (n := 10) hb256 (by omega)]
+  rcases b with _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | b
+  all_goals first | omega | simp [defKindName, defSafetyName]
 
 /-- **Pure heap-allocating specification of `IxonDeserialize::build_succ_chain`.** -/
 def buildSuccChainSpec (base : SourceValue F) : Nat → Heap F → SourceValue F × Heap F
@@ -802,91 +679,18 @@ theorem getQuotKind_refines {b : Nat} (hb : b < 256) {r : SourceValue F} {h h' :
   }
 
 /-- **Every terminating derivation of `IxonDeserialize::unpack_def_kind_safety`
-on a byte `< 256`** witnesses `b / 4 < 3 ∧ b % 4 < 3` and returns the matching
-`(DefKind, DefinitionSafety)` pair. -/
-theorem unpackDefKindSafety_refines {b : Nat} (hb : b < 256) {r : SourceValue F} {h h' : Heap F}
+on one of the nine bytes without assertions** returns that byte's kind, its
+safety and the assertion code 0, and leaves the heap unchanged. -/
+theorem unpackDefKindSafety_refines {b : Nat} (hb : b < 11) (hb3 : b % 4 < 3)
+    {r : SourceValue F} {h h' : Heap F}
     (ev : EvalFn W "IxonDeserialize::unpack_def_kind_safety" [.field (b : F)] h r h') :
-    (b / 4 < 3 ∧ b % 4 < 3) ∧ h' = h ∧
-      r = .tuple [
-        .construct "Ixon::DefKind" (match b / 4 with | 0 => "Definition" | 1 => "Opaque" | _ => "Theorem") [],
-        .construct "Ixon::DefinitionSafety" (match b % 4 with | 0 => "Unsafe" | 1 => "Safe" | _ => "Partial") []] := by
+    h' = h ∧ r = .tuple [.construct "Ixon::DefKind" (defKindName b) [],
+      .construct "Ixon::DefinitionSafety" (defSafetyName b) [], .field 0] := by
   obtain ⟨k0, hk0⟩ := Mirrors.«IxonDeserialize::unpack_def_kind_safety».of_eval ev
   have run := hk0 (k0 + 2) (by omega)
-  rw [unpackDefKindSafety_run hb k0 h] at run
-  rcases b with _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | b <;> simp at run
-  all_goals {
-    rcases run with ⟨rfl, rfl⟩
-    exact ⟨⟨by omega, by omega⟩, rfl, rfl⟩
-  }
+  rw [unpackDefKindSafety_run hb hb3 k0 h, Option.some.injEq, Prod.mk.injEq] at run
+  exact ⟨run.2.symm, run.1.symm⟩
 
-/-- **Every terminating derivation of `IxonDeserialize::get_lam_mode` on a
-valid byte stream** requires `bytes = b :: rest` with `b.toNat < 16`, leaves
-the heap unchanged, and returns the decoded `BinderContract` and tail stream. -/
-theorem getLamMode_refines {bytes : List UInt8} {stream r : SourceValue F} {h h' : Heap F}
-    (rep : Aiur.Library.Bytes.RepByteStream byteStreamEnum h bytes stream)
-    (ev : EvalFn W "IxonDeserialize::get_lam_mode" [stream] h r h') :
-    h' = h ∧ ∃ (b : UInt8) (rest : List UInt8) (restPtr : SourceValue F),
-      bytes = b :: rest ∧ b.toNat < 16 ∧
-      Aiur.Library.Bytes.RepByteStream byteStreamEnum h rest restPtr ∧
-      r = .tuple [
-        .construct "Ixon::BinderContract" "Mk" [
-          .construct "Ixon::Uses"
-            (match b.toNat % 4 with
-              | 0 => "Erased" | 1 => "Linear" | 2 => "Affine" | _ => "Many") [],
-          .construct "Ixon::ValueContract" "Mk" [
-            .construct "Ixon::Owned" (if b.toNat / 4 % 2 = 0 then "Unique" else "Shared") [],
-            .construct "Ixon::Locality" (if b.toNat / 8 % 2 = 0 then "Unrestricted" else "Local") []]],
-        restPtr] := by
-  obtain ⟨k0, hk0⟩ := Mirrors.«IxonDeserialize::get_lam_mode».of_eval ev
-  have run := hk0 (k0 + 3) (by omega)
-  cases bytes with
-  | nil =>
-    simp [Mirrors.«IxonDeserialize::get_lam_mode», readByte_nil rep] at run
-  | cons b rest =>
-    obtain ⟨restPtr, tailRep, hmode⟩ := getLamMode_run rep
-    rw [hmode k0] at run
-    by_cases hlt : b.toNat < 16
-    · simp only [hlt, ↓reduceIte, Option.some.injEq, Prod.mk.injEq] at run
-      rcases run with ⟨rfl, rfl⟩
-      exact ⟨rfl, b, rest, restPtr, rfl, hlt, tailRep, rfl⟩
-    · simp [hlt] at run
-
-/-- **Every terminating derivation of `IxonDeserialize::get_all_mode` on a
-valid byte stream** requires `bytes = b :: rest` with `b.toNat < 64`, leaves
-the heap unchanged, and returns the decoded `(BinderContract, ValueContract)`
-pair and tail stream. -/
-theorem getAllMode_refines {bytes : List UInt8} {stream r : SourceValue F} {h h' : Heap F}
-    (rep : Aiur.Library.Bytes.RepByteStream byteStreamEnum h bytes stream)
-    (ev : EvalFn W "IxonDeserialize::get_all_mode" [stream] h r h') :
-    h' = h ∧ ∃ (b : UInt8) (rest : List UInt8) (restPtr : SourceValue F),
-      bytes = b :: rest ∧ b.toNat < 64 ∧
-      Aiur.Library.Bytes.RepByteStream byteStreamEnum h rest restPtr ∧
-      r = .tuple [
-        .tuple [
-          .construct "Ixon::BinderContract" "Mk" [
-            .construct "Ixon::Uses"
-              (match b.toNat % 4 with
-                | 0 => "Erased" | 1 => "Linear" | 2 => "Affine" | _ => "Many") [],
-            .construct "Ixon::ValueContract" "Mk" [
-              .construct "Ixon::Owned" (if b.toNat / 4 % 2 = 0 then "Unique" else "Shared") [],
-              .construct "Ixon::Locality" (if b.toNat / 8 % 2 = 0 then "Unrestricted" else "Local") []]],
-          .construct "Ixon::ValueContract" "Mk" [
-            .construct "Ixon::Owned" (if b.toNat / 16 % 2 = 0 then "Unique" else "Shared") [],
-            .construct "Ixon::Locality" (if b.toNat / 32 % 2 = 0 then "Unrestricted" else "Local") []]],
-        restPtr] := by
-  obtain ⟨k0, hk0⟩ := Mirrors.«IxonDeserialize::get_all_mode».of_eval ev
-  have run := hk0 (k0 + 3) (by omega)
-  cases bytes with
-  | nil =>
-    simp [Mirrors.«IxonDeserialize::get_all_mode», readByte_nil rep] at run
-  | cons b rest =>
-    obtain ⟨restPtr, tailRep, hmode⟩ := getAllMode_run rep
-    rw [hmode k0] at run
-    by_cases hlt : b.toNat < 64
-    · simp only [hlt, ↓reduceIte, Option.some.injEq, Prod.mk.injEq] at run
-      rcases run with ⟨rfl, rfl⟩
-      exact ⟨rfl, b, rest, restPtr, rfl, hlt, tailRep, rfl⟩
-    · simp [hlt] at run
 
 /-- **Every terminating derivation of `IxonDeserialize::build_succ_chain` on
 `u64Value count`** computes `buildSuccChainSpec base count h`. -/
@@ -2908,144 +2712,32 @@ theorem getUnivs_refines {bytes : List UInt8} {stream r : SourceValue F} {h h' :
     deserializeUnivChildren_refines t.value.toNat t.value.toNat_lt hrep1 callee27
   exact ⟨ext, t, n1, n2, univs, listPtr, restPtr2, hok1, hflag, hok2, hlen, rfl, listRep, dropRep⟩
 
-/-! ### Contract Value Encodings and Representation of `Ixon.Expr` / `RepShareVec` -/
+/-! ### Let headers and the representation of `Ixon.Expr` / `RepShareVec` -/
 
-/-- Source-level encoding of `Ixon.Uses` as an `Ixon::Uses` enum value. -/
-def usesValue : Ixon.Uses → SourceValue F
-  | .erased => .construct "Ixon::Uses" "Erased" []
-  | .linear => .construct "Ixon::Uses" "Linear" []
-  | .affine => .construct "Ixon::Uses" "Affine" []
-  | .many   => .construct "Ixon::Uses" "Many" []
+/-- The `let` mode whose code is `c` (`< 8`): a value `let` at the binder mode of
+that code, or a `borrow` (code 7). -/
+def letModeOfCode : Nat → Ixon.LetMode
+  | 0 => .value .many
+  | 1 => .value .borrowed
+  | 2 => .value .unique
+  | 3 => .value .uniqueBorrowed
+  | 4 => .value .once
+  | 5 => .value .onceBorrowed
+  | 6 => .value .erased
+  | _ => .borrow
 
-/-- Source-level encoding of `Ixon.Owned` as an `Ixon::Owned` enum value. -/
-def ownedValue : Ixon.Owned → SourceValue F
-  | .unique => .construct "Ixon::Owned" "Unique" []
-  | .shared => .construct "Ixon::Owned" "Shared" []
-
-/-- Source-level encoding of `Ixon.Locality` as an `Ixon::Locality` enum value. -/
-def localityValue : Ixon.Locality → SourceValue F
-  | .unrestricted => .construct "Ixon::Locality" "Unrestricted" []
-  | .local        => .construct "Ixon::Locality" "Local" []
-
-/-- Source-level encoding of `Ixon.ValueContract` as `Ixon::ValueContract::Mk(owned, locality)`. -/
-def valueContractValue (vc : Ixon.ValueContract) : SourceValue F :=
-  .construct "Ixon::ValueContract" "Mk" [ownedValue vc.owned, localityValue vc.locality]
-
-/-- Source-level encoding of `Ixon.BinderContract` as `Ixon::BinderContract::Mk(uses, value)`. -/
-def binderContractValue (bc : Ixon.BinderContract) : SourceValue F :=
-  .construct "Ixon::BinderContract" "Mk" [usesValue bc.uses, valueContractValue bc.value]
-
-/-- Source-level encoding of `Ixon.LetKind` as an `Ixon::LetKind` enum value. -/
-def letKindValue : Ixon.LetKind → SourceValue F
-  | .value        => .construct "Ixon::LetKind" "Value" []
-  | .borrowShared => .construct "Ixon::LetKind" "BorrowShared" []
-
-/-- Source-level encoding of `Ixon.LetContract` as `Ixon::LetContract::Mk(nonDep, kind, binder)`. -/
-def letContractValue (lc : Ixon.LetContract) : SourceValue F :=
-  .construct "Ixon::LetContract" "Mk"
-    [.field (if lc.nonDep then 1 else 0), letKindValue lc.kind, binderContractValue lc.binder]
-
-/-- Aliases matching the `encode*` naming convention. -/
-abbrev encodeUses : Ixon.Uses → SourceValue F := usesValue
-abbrev encodeOwned : Ixon.Owned → SourceValue F := ownedValue
-abbrev encodeLocality : Ixon.Locality → SourceValue F := localityValue
-abbrev encodeValueContract : Ixon.ValueContract → SourceValue F := valueContractValue
-abbrev encodeBinderContract : Ixon.BinderContract → SourceValue F := binderContractValue
-abbrev encodeLetKind : Ixon.LetKind → SourceValue F := letKindValue
-abbrev encodeLetContract : Ixon.LetContract → SourceValue F := letContractValue
-
-/-- Decode a `BinderContract` from the low 4 bits of a mode byte `b`. -/
-def binderContractOfByte (b : Nat) : Ixon.BinderContract :=
-  let uses : Ixon.Uses :=
-    match b % 4 with
-    | 0 => .erased
-    | 1 => .linear
-    | 2 => .affine
-    | _ => .many
-  let owned : Ixon.Owned := if b / 4 % 2 = 0 then .unique else .shared
-  let locality : Ixon.Locality := if b / 8 % 2 = 0 then .unrestricted else .local
-  { uses, value := { owned, locality } }
-
-/-- Decode a `ValueContract` from bits 4 and 5 of a mode byte `b`. -/
-def valueContractOfHighBits (b : Nat) : Ixon.ValueContract :=
-  let owned : Ixon.Owned := if b / 16 % 2 = 0 then .unique else .shared
-  let locality : Ixon.Locality := if b / 32 % 2 = 0 then .unrestricted else .local
-  { owned, locality }
-
-/-- Decode a `LetContract` from 2-bit `flags` (`< 4`) and a `BinderContract`. -/
-def letContractOfFlags (flags : Nat) (binder : Ixon.BinderContract) : Ixon.LetContract :=
-  { nonDep := flags % 2 != 0
-  , kind := if flags / 2 % 2 = 0 then .value else .borrowShared
-  , binder }
-
-theorem binderContractValue_ofByte (b : Nat) :
-    binderContractValue (binderContractOfByte b) =
-      .construct "Ixon::BinderContract" "Mk" [
-        .construct "Ixon::Uses"
-          (match b % 4 with
-            | 0 => "Erased" | 1 => "Linear" | 2 => "Affine" | _ => "Many") [],
-        .construct "Ixon::ValueContract" "Mk" [
-          .construct "Ixon::Owned" (if b / 4 % 2 = 0 then "Unique" else "Shared") [],
-          .construct "Ixon::Locality" (if b / 8 % 2 = 0 then "Unrestricted" else "Local") []]] := by
-  dsimp [binderContractOfByte, binderContractValue, usesValue, valueContractValue,
-    ownedValue, localityValue]
-  have h4 : b % 4 = 0 ∨ b % 4 = 1 ∨ b % 4 = 2 ∨ b % 4 = 3 := by omega
-  have hb2 : b / 4 % 2 = 0 ∨ b / 4 % 2 = 1 := Nat.mod_two_eq_zero_or_one (b / 4)
-  have hb3 : b / 8 % 2 = 0 ∨ b / 8 % 2 = 1 := Nat.mod_two_eq_zero_or_one (b / 8)
-  rcases h4 with h | h | h | h <;> rcases hb2 with h2 | h2 <;> rcases hb3 with h3 | h3 <;>
-    simp [h, h2, h3]
-
-theorem valueContractValue_ofHighBits (b : Nat) :
-    valueContractValue (valueContractOfHighBits b) =
-      .construct "Ixon::ValueContract" "Mk" [
-        .construct "Ixon::Owned" (if b / 16 % 2 = 0 then "Unique" else "Shared") [],
-        .construct "Ixon::Locality" (if b / 32 % 2 = 0 then "Unrestricted" else "Local") []] := by
-  dsimp [valueContractOfHighBits, valueContractValue, ownedValue, localityValue]
-  have hb4 : b / 16 % 2 = 0 ∨ b / 16 % 2 = 1 := Nat.mod_two_eq_zero_or_one (b / 16)
-  have hb5 : b / 32 % 2 = 0 ∨ b / 32 % 2 = 1 := Nat.mod_two_eq_zero_or_one (b / 32)
-  rcases hb4 with h4 | h4 <;> rcases hb5 with h5 | h5 <;> simp [h4, h5]
-
-theorem letContractValue_ofFlags (flags : Nat) (bc : Ixon.BinderContract) :
-    letContractValue (letContractOfFlags flags bc) =
-      .construct "Ixon::LetContract" "Mk" [
-        .field ((flags % 2 : Nat) : F),
-        .construct "Ixon::LetKind" (if flags / 2 % 2 = 0 then "Value" else "BorrowShared") [],
-        binderContractValue bc] := by
-  dsimp [letContractOfFlags, letContractValue, letKindValue]
-  have hb0 : flags % 2 = 0 ∨ flags % 2 = 1 := Nat.mod_two_eq_zero_or_one flags
-  have hb1 : flags / 2 % 2 = 0 ∨ flags / 2 % 2 = 1 := Nat.mod_two_eq_zero_or_one (flags / 2)
-  rcases hb0 with h0 | h0 <;> rcases hb1 with h1 | h1 <;> simp [h0, h1]
-
-theorem binderContract_ofBits?_of_lt16 {b : UInt8} (hb : b.toNat < 16) :
-    Ixon.BinderContract.ofBits? b = some (binderContractOfByte b.toNat) := by
-  have hb_eq : UInt8.ofNat b.toNat = b := UInt8.ofNat_toNat
-  rw [← hb_eq]
-  generalize b.toNat = n at hb
-  rcases n with _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | n
-  all_goals try omega
-  all_goals rfl
-
-theorem unpackAllContract?_of_lt64 {b : UInt8} (hb : b.toNat < 64) :
-    Ixon.unpackAllContract? b =
-      some (binderContractOfByte b.toNat, valueContractOfHighBits b.toNat) := by
-  have hb_eq : UInt8.ofNat b.toNat = b := UInt8.ofNat_toNat
-  rw [← hb_eq]
-  generalize b.toNat = n at hb
-  rcases n with _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ |
-    _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ |
-    _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ |
-    _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | n
-  all_goals try omega
-  all_goals rfl
-
-theorem letContract_ofFlags?_of_lt4 {sz : UInt64} (hsz : sz.toNat < 4) (bc : Ixon.BinderContract) :
-    Ixon.LetContract.ofFlags? sz bc = some (letContractOfFlags sz.toNat bc) := by
+/-- **A `let` header value below 16** decodes (`LetMode.ofHeader?`) to its low
+bit and the mode whose code is the rest, and is that pair's header. -/
+theorem letMode_ofHeader?_of_lt16 {sz : UInt64} (hsz : sz.toNat < 16) :
+    Ixon.LetMode.ofHeader? sz = some (sz.toNat % 2 == 1, letModeOfCode (sz.toNat / 2)) ∧
+      (Ixon.LetMode.header (sz.toNat % 2 == 1) (letModeOfCode (sz.toNat / 2))).toNat =
+        sz.toNat := by
   have hsz_eq : UInt64.ofNat sz.toNat = sz := UInt64.ofNat_toNat
   rw [← hsz_eq]
   generalize sz.toNat = n at hsz
-  rcases n with _ | _ | _ | _ | n
+  rcases n with _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | n
   all_goals try omega
-  all_goals rfl
+  all_goals exact ⟨rfl, rfl⟩
 
 /-- `RepExpr h e v` asserts that `v` is a heap pointer `.ptr (.enum "Ixon::Expr") addr`
 in `h : Heap F` pointing to an `Ixon::Expr` constructor cell representing `e : Ixon.Expr`. -/
@@ -3079,24 +2771,24 @@ inductive RepExpr (h : Heap F) : Ixon.Expr → SourceValue F → Prop where
       (fnRep : RepExpr h fnE fnPtr)
       (argRep : RepExpr h arg argPtr) :
       RepExpr h (.app fnE arg) (.ptr (.enum "Ixon::Expr") addr)
-  | lam {bc : Ixon.BinderContract} {ty body : Ixon.Expr} {tyPtr bodyPtr : SourceValue F} {addr : Nat}
-      (cell : h[addr]? = some (.construct "Ixon::Expr" "Lam" [binderContractValue bc, tyPtr, bodyPtr]))
+  | lam {ty body : Ixon.Expr} {tyPtr bodyPtr : SourceValue F} {addr : Nat}
+      (cell : h[addr]? = some (.construct "Ixon::Expr" "Lam" [tyPtr, bodyPtr]))
       (tyRep : RepExpr h ty tyPtr)
       (bodyRep : RepExpr h body bodyPtr) :
-      RepExpr h (.lam bc ty body) (.ptr (.enum "Ixon::Expr") addr)
-  | all {bc : Ixon.BinderContract} {vc : Ixon.ValueContract} {ty body : Ixon.Expr}
-      {tyPtr bodyPtr : SourceValue F} {addr : Nat}
-      (cell : h[addr]? = some (.construct "Ixon::Expr" "All" [binderContractValue bc, valueContractValue vc, tyPtr, bodyPtr]))
+      RepExpr h (.lam ty body) (.ptr (.enum "Ixon::Expr") addr)
+  | all {ty body : Ixon.Expr} {tyPtr bodyPtr : SourceValue F} {addr : Nat}
+      (cell : h[addr]? = some (.construct "Ixon::Expr" "All" [tyPtr, bodyPtr]))
       (tyRep : RepExpr h ty tyPtr)
       (bodyRep : RepExpr h body bodyPtr) :
-      RepExpr h (.all bc vc ty body) (.ptr (.enum "Ixon::Expr") addr)
-  | letE {lc : Ixon.LetContract} {ty val body : Ixon.Expr}
+      RepExpr h (.all ty body) (.ptr (.enum "Ixon::Expr") addr)
+  | letE {nonDep : Bool} {mode : Ixon.LetMode} {ty val body : Ixon.Expr}
       {tyPtr valPtr bodyPtr : SourceValue F} {addr : Nat}
-      (cell : h[addr]? = some (.construct "Ixon::Expr" "Let" [letContractValue lc, tyPtr, valPtr, bodyPtr]))
+      (cell : h[addr]? = some (.construct "Ixon::Expr" "Let"
+        [.field (((Ixon.LetMode.header nonDep mode).toNat : Nat) : F), tyPtr, valPtr, bodyPtr]))
       (tyRep : RepExpr h ty tyPtr)
       (valRep : RepExpr h val valPtr)
       (bodyRep : RepExpr h body bodyPtr) :
-      RepExpr h (.letE lc ty val body) (.ptr (.enum "Ixon::Expr") addr)
+      RepExpr h (.letE nonDep mode ty val body) (.ptr (.enum "Ixon::Expr") addr)
   | share {idx : UInt64} {addr : Nat}
       (cell : h[addr]? = some (.construct "Ixon::Expr" "Share" [u64Value idx.toNat])) :
       RepExpr h (.share idx) (.ptr (.enum "Ixon::Expr") addr)
@@ -3274,60 +2966,6 @@ theorem getU64List_progress (count : Nat) (hcount : count < 18446744073709551616
         · simp [Ixon.getTagN0Values, bind, EStateM.bind, hok1, hok2, pure, EStateM.pure, Nat.add_assoc]
       · exact (hc28 rfl).elim
 
-theorem getLamMode_refines_at {bytes : List UInt8} {i : Nat}
-    {stream r : SourceValue F} {h h' : Heap F}
-    (rep : Aiur.Library.Bytes.RepByteStream byteStreamEnum h (bytes.drop i) stream)
-    (ev : EvalFn W "IxonDeserialize::get_lam_mode" [stream] h r h') :
-    h' = h ∧ ∃ (bc : Ixon.BinderContract) (restPtr : SourceValue F),
-      (bytes.drop (i + 1)).length + 1 = (bytes.drop i).length ∧
-      Ixon.getBinderContract { idx := i, bytes := ⟨bytes.toArray⟩ } =
-        .ok bc { idx := i + 1, bytes := ⟨bytes.toArray⟩ } ∧
-      Aiur.Library.Bytes.RepByteStream byteStreamEnum h (bytes.drop (i + 1)) restPtr ∧
-      r = .tuple [binderContractValue bc, restPtr] := by
-  obtain ⟨rfl, b, rest, restPtr, hcons, hlt, tailRep, hr⟩ := getLamMode_refines rep ev
-  rw [← binderContractValue_ofByte] at hr
-  obtain ⟨hu8, hdrop, _⟩ := getU8_of_drop_cons hcons
-  have hlen_eq : (bytes.drop (i + 1)).length + 1 = (bytes.drop i).length := by
-    rw [hdrop, hcons, List.length_cons]
-  rw [← hdrop] at tailRep
-  have hbits := binderContract_ofBits?_of_lt16 hlt
-  refine ⟨rfl, binderContractOfByte b.toNat, restPtr, hlen_eq, ?_, tailRep, hr⟩
-  simp [Ixon.getBinderContract, bind, EStateM.bind, hu8, hbits, pure, EStateM.pure]
-
-theorem getAllMode_refines_at {bytes : List UInt8} {i : Nat}
-    {stream r : SourceValue F} {h h' : Heap F}
-    (rep : Aiur.Library.Bytes.RepByteStream byteStreamEnum h (bytes.drop i) stream)
-    (ev : EvalFn W "IxonDeserialize::get_all_mode" [stream] h r h') :
-    h' = h ∧ ∃ (bc : Ixon.BinderContract) (vc : Ixon.ValueContract) (restPtr : SourceValue F),
-      (bytes.drop (i + 1)).length + 1 = (bytes.drop i).length ∧
-      Ixon.getU8 { idx := i, bytes := ⟨bytes.toArray⟩ } =
-        .ok (Ixon.packAllContract bc vc) { idx := i + 1, bytes := ⟨bytes.toArray⟩ } ∧
-      (∃ bits,
-        Ixon.getU8 { idx := i, bytes := ⟨bytes.toArray⟩ } =
-          .ok bits { idx := i + 1, bytes := ⟨bytes.toArray⟩ } ∧
-        Ixon.unpackAllContract? bits = some (bc, vc)) ∧
-      Aiur.Library.Bytes.RepByteStream byteStreamEnum h (bytes.drop (i + 1)) restPtr ∧
-      r = .tuple [.tuple [binderContractValue bc, valueContractValue vc], restPtr] := by
-  obtain ⟨rfl, b, rest, restPtr, hcons, hlt, tailRep, hr⟩ := getAllMode_refines rep ev
-  rw [← binderContractValue_ofByte, ← valueContractValue_ofHighBits] at hr
-  obtain ⟨hu8, hdrop, _⟩ := getU8_of_drop_cons hcons
-  have hlen_eq : (bytes.drop (i + 1)).length + 1 = (bytes.drop i).length := by
-    rw [hdrop, hcons, List.length_cons]
-  rw [← hdrop] at tailRep
-  have hbits := unpackAllContract?_of_lt64 hlt
-  have hpack : Ixon.packAllContract (binderContractOfByte b.toNat) (valueContractOfHighBits b.toNat) = b := by
-    have hb_eq : UInt8.ofNat b.toNat = b := UInt8.ofNat_toNat
-    rw [← hb_eq]
-    generalize b.toNat = n at hlt
-    rcases n with _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ |
-      _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ |
-      _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ |
-      _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | n
-    all_goals try omega
-    all_goals rfl
-  refine ⟨rfl, binderContractOfByte b.toNat, valueContractOfHighBits b.toNat, restPtr,
-    hlen_eq, by rw [hpack]; exact hu8, ⟨b, hu8, hbits⟩, tailRep, hr⟩
-
 theorem evalExpr_reject_ctor_inv {types : Types} {locals : Environment F Nat}
     {varName ctor : String} {wildcards : List (Generic.Pattern F)} {ptr : SourceValue F}
     {msg : Option String} {failBody okBody : Generic.Expr F}
@@ -3385,9 +3023,9 @@ theorem repExpr_ne_app {h : Heap F} {e : Ixon.Expr} {ptr v : SourceValue F}
 
 theorem repExpr_ne_lam {h : Heap F} {e : Ixon.Expr} {ptr v : SourceValue F}
     (rep : RepExpr h e ptr) (hload : loadValue h ptr = .ok v)
-    (hmp : W.matchPattern [] h (.construct (.named "Ixon::Expr" []) "Lam" [.wildcard, .wildcard, .wildcard]) v = .ok none) :
-    ∀ bc ty body, e ≠ .lam bc ty body := by
-  intro bc ty body heq
+    (hmp : W.matchPattern [] h (.construct (.named "Ixon::Expr" []) "Lam" [.wildcard, .wildcard]) v = .ok none) :
+    ∀ ty body, e ≠ .lam ty body := by
+  intro ty body heq
   subst heq
   cases rep with
   | lam cell _ _ =>
@@ -3401,9 +3039,9 @@ theorem repExpr_ne_lam {h : Heap F} {e : Ixon.Expr} {ptr v : SourceValue F}
 
 theorem repExpr_ne_all {h : Heap F} {e : Ixon.Expr} {ptr v : SourceValue F}
     (rep : RepExpr h e ptr) (hload : loadValue h ptr = .ok v)
-    (hmp : W.matchPattern [] h (.construct (.named "Ixon::Expr" []) "All" [.wildcard, .wildcard, .wildcard, .wildcard]) v = .ok none) :
-    ∀ bc vc ty body, e ≠ .all bc vc ty body := by
-  intro bc vc ty body heq
+    (hmp : W.matchPattern [] h (.construct (.named "Ixon::Expr" []) "All" [.wildcard, .wildcard]) v = .ok none) :
+    ∀ ty body, e ≠ .all ty body := by
+  intro ty body heq
   subst heq
   cases rep with
   | all cell _ _ =>
@@ -3423,20 +3061,20 @@ theorem match_not_app_ok {e : Ixon.Expr} (hne : ∀ fnE arg, e ≠ .app fnE arg)
   | app fnE arg => exact (hne fnE arg rfl).elim
   | _ => rfl
 
-theorem match_not_lam_ok {e : Ixon.Expr} (hne : ∀ bc ty body, e ≠ .lam bc ty body) :
+theorem match_not_lam_ok {e : Ixon.Expr} (hne : ∀ ty body, e ≠ .lam ty body) :
     (match e with
      | .lam .. => (throw "getExpr: non-canonical lam telescope" : Ixon.GetM Unit)
      | _ => pure ()) = pure () := by
   cases e with
-  | lam bc ty body => exact (hne bc ty body rfl).elim
+  | lam ty body => exact (hne ty body rfl).elim
   | _ => rfl
 
-theorem match_not_all_ok {e : Ixon.Expr} (hne : ∀ bc vc ty body, e ≠ .all bc vc ty body) :
+theorem match_not_all_ok {e : Ixon.Expr} (hne : ∀ ty body, e ≠ .all ty body) :
     (match e with
      | .all .. => (throw "getExpr: non-canonical all telescope" : Ixon.GetM Unit)
      | _ => pure ()) = pure () := by
   cases e with
-  | all bc vc ty body => exact (hne bc vc ty body rfl).elim
+  | all ty body => exact (hne ty body rfl).elim
   | _ => rfl
 
 theorem matchPattern_u64Value_array8 {types : Types} {heap : Heap F} {sz : Nat}
@@ -3607,11 +3245,11 @@ theorem getLamTelescope_refines_at_of_ih (count : Nat) (hcount : count < 1844674
       Aiur.Library.Bytes.RepByteStream byteStreamEnum h (bytes.drop i) stream →
       EvalFn W "IxonDeserialize::get_lam_telescope" [stream, u64Value count] h r h' →
       Heap.Extends h h' ∧
-      ∃ (binders : List (Ixon.BinderContract × Ixon.Expr)) (body : Ixon.Expr)
+      ∃ (binders : List Ixon.Expr) (body : Ixon.Expr)
         (nb n : Nat) (resPtr restPtr : SourceValue F),
         0 < n ∧
-        (bytes.drop (i + n)).length + (count * 2 + 1) ≤ (bytes.drop i).length ∧
-        (∀ bc ty b, body ≠ .lam bc ty b) ∧
+        (bytes.drop (i + n)).length + (count + 1) ≤ (bytes.drop i).length ∧
+        (∀ ty b, body ≠ .lam ty b) ∧
         (∀ fuel, (bytes.drop i).length < fuel →
           Ixon.getExprLamBinders (Ixon.getExprFuel fuel) count
             { idx := i, bytes := ⟨bytes.toArray⟩ } =
@@ -3619,7 +3257,7 @@ theorem getLamTelescope_refines_at_of_ih (count : Nat) (hcount : count < 1844674
           Ixon.getExprFuel fuel { idx := i + nb, bytes := ⟨bytes.toArray⟩ } =
             .ok body { idx := i + n, bytes := ⟨bytes.toArray⟩ }) ∧
         r = .tuple [resPtr, restPtr] ∧
-        RepExpr h' (binders.foldr (fun (uses, ty) result => .lam uses ty result) body) resPtr ∧
+        RepExpr h' (binders.foldr (fun ty result => .lam ty result) body) resPtr ∧
         Aiur.Library.Bytes.RepByteStream byteStreamEnum h' (bytes.drop (i + n)) restPtr := by
   induction count with
   | zero =>
@@ -3682,24 +3320,17 @@ theorem getLamTelescope_refines_at_of_ih (count : Nat) (hcount : count < 1844674
     rcases selectArm_literal_inv sel23 with ⟨hc26, _, _⟩ | ⟨_, sel27⟩
     · simp at hc26
     · rcases selectArm_literal_inv sel27 with ⟨_, rfl, rfl⟩ | ⟨hc28, _⟩
-      · obtain ⟨v30, m31, bs32, d33, mt34, d35⟩ := d24.letValue_inv
-        obtain ⟨vs36, m37, args38, callee39⟩ := d33.call_inv
-        obtain ⟨v40, vs41, m42, rfl, d43, args44⟩ := args38.cons_inv
-        obtain ⟨l45, rfl⟩ := d43.var_inv; simp at l45; subst l45
-        obtain ⟨rfl, rfl⟩ := args44.nil_inv
-        rw [instanceName_plain_some] at callee39
-        obtain ⟨rfl, bc, restPtr1, hlen_mode, hok_mode, hrep1, rfl⟩ :=
-          getLamMode_refines_at hrep callee39
-        obtain rfl := matchPattern_tuple2_bind rfl mt34
-        obtain ⟨v46, m47, bs48, d49, mt50, d51⟩ := d35.letValue_inv
+      · -- let (ty, s2) = get_expr(stream)
+        obtain ⟨v46, m47, bs48, d49, mt50, d51⟩ := d24.letValue_inv
         obtain ⟨vs52, m53, args54, callee55⟩ := d49.call_inv
         obtain ⟨v56, vs57, m58, rfl, d59, args60⟩ := args54.cons_inv
         obtain ⟨l61, rfl⟩ := d59.var_inv; simp at l61; subst l61
         obtain ⟨rfl, rfl⟩ := args60.nil_inv
         rw [instanceName_plain_some] at callee55
         obtain ⟨ext1, ty, n2, tyPtr, restPtr2, hn2_pos, hdrop_lt2, hfuel_ty, rfl, tyRep, hrep2⟩ :=
-          hIH (by omega) hrep1 callee55
+          hIH (Nat.lt_succ_self _) hrep callee55
         obtain rfl := matchPattern_tuple2_bind rfl mt50
+        -- let (inner, s3) = get_lam_telescope(s2, UInt64::saturating_pred(count))
         obtain ⟨v62, m63, bs64, d65, mt66, d67⟩ := d51.letValue_inv
         obtain ⟨vs68, m69, args70, callee71⟩ := d65.call_inv
         obtain ⟨v72, vs73, m74, rfl, d75, args76⟩ := args70.cons_inv
@@ -3714,19 +3345,18 @@ theorem getLamTelescope_refines_at_of_ih (count : Nat) (hcount : count < 1844674
         simp only [Nat.add_sub_cancel] at hsp; subst hsp
         obtain ⟨rfl, rfl⟩ := args82.nil_inv
         rw [instanceName_plain_some] at callee71
-        have hIH2 : ExprRefinesAtUpTo bytes ((bytes.drop (i + 1 + n2)).length + 1) :=
+        have hIH2 : ExprRefinesAtUpTo bytes ((bytes.drop (i + n2)).length + 1) :=
           hIH.mono (by omega)
         obtain ⟨ext2, tailBinders, bodyExpr, nb, n3, innerPtr, restPtr3,
             hn3_pos, hprog3, hne_lam, hfuel_tail, rfl, innerRep, hrep3⟩ :=
           ih (by omega) hIH2 hrep2 callee71
         obtain rfl := matchPattern_tuple2_bind rfl mt66
+        -- ((&(Lam(ty, inner))), s3)
         obtain ⟨vs93, args94, rfl⟩ := d67.tuple_inv
         obtain ⟨v95, vs96, m97, rfl, d98, args99⟩ := args94.cons_inv
         obtain ⟨v100, m101, d102, rfl, rfl⟩ := d98.store_inv
         obtain ⟨vs103, args104, rfl⟩ := d102.construct_inv
-        obtain ⟨v105, vs106, m107, rfl, d108, args109⟩ := args104.cons_inv
-        obtain ⟨l110, rfl⟩ := d108.var_inv; simp at l110; subst l110
-        obtain ⟨v111, vs112, m113, rfl, d114, args115⟩ := args109.cons_inv
+        obtain ⟨v111, vs112, m113, rfl, d114, args115⟩ := args104.cons_inv
         obtain ⟨l116, rfl⟩ := d114.var_inv; simp at l116; subst l116
         obtain ⟨v117, vs118, m119, rfl, d120, args121⟩ := args115.cons_inv
         obtain ⟨l122, rfl⟩ := d120.var_inv; simp at l122; subst l122
@@ -3735,24 +3365,23 @@ theorem getLamTelescope_refines_at_of_ih (count : Nat) (hcount : count < 1844674
         obtain ⟨l128, rfl⟩ := d126.var_inv; simp at l128; subst l128
         obtain ⟨rfl, rfl⟩ := args127.nil_inv
         simp only [instanceName_plain_some, value_type_construct]
-        let cellLam : SourceValue F := .construct "Ixon::Expr" "Lam" [binderContractValue bc, tyPtr, innerPtr]
+        let cellLam : SourceValue F := .construct "Ixon::Expr" "Lam" [tyPtr, innerPtr]
         have extStore : Heap.Extends m101 (m101 ++ [cellLam]) := Heap.Extends.snoc m101 cellLam
         have lamRep : RepExpr (m101 ++ [cellLam])
-            (((bc, ty) :: tailBinders).foldr (fun (uses, ty) result => .lam uses ty result) bodyExpr)
+            ((ty :: tailBinders).foldr (fun ty result => .lam ty result) bodyExpr)
             (.ptr (.enum "Ixon::Expr") m101.length) :=
           .lam (by simp [cellLam]) ((tyRep.mono ext2).mono extStore) (innerRep.mono extStore)
         have hrep3' := Aiur.Library.Bytes.repByteStream_heapMono₂ byteStreamEnum extStore hrep3
-        rw [show i + 1 + n2 + n3 = i + (1 + n2 + n3) by omega] at hprog3 hrep3'
-        refine ⟨(ext1.trans ext2).trans extStore, (bc, ty) :: tailBinders, bodyExpr,
-          1 + n2 + nb, 1 + n2 + n3, .ptr (.enum "Ixon::Expr") m101.length, restPtr3,
+        rw [show i + n2 + n3 = i + (n2 + n3) by omega] at hprog3 hrep3'
+        refine ⟨(ext1.trans ext2).trans extStore, ty :: tailBinders, bodyExpr,
+          n2 + nb, n2 + n3, .ptr (.enum "Ixon::Expr") m101.length, restPtr3,
           by omega, by omega, hne_lam, fun fuel hfuel => ?_, rfl, lamRep, hrep3'⟩
         have hty_ok := hfuel_ty fuel (by omega)
         obtain ⟨htail_b, htail_body⟩ := hfuel_tail fuel (by omega)
-        rw [show i + 1 + n2 + nb = i + (1 + n2 + nb) by omega] at htail_b htail_body
-        rw [show i + 1 + n2 + n3 = i + (1 + n2 + n3) by omega] at htail_body
+        rw [show i + n2 + nb = i + (n2 + nb) by omega] at htail_b htail_body
+        rw [show i + n2 + n3 = i + (n2 + n3) by omega] at htail_body
         refine ⟨?_, htail_body⟩
-        simp [Ixon.getExprLamBinders, bind, EStateM.bind, hok_mode, hty_ok, htail_b,
-          pure, EStateM.pure]
+        simp [Ixon.getExprLamBinders, bind, EStateM.bind, hty_ok, htail_b, pure, EStateM.pure]
       · exact (hc28 rfl).elim
 
 /-- **Refinement of `IxonDeserialize::get_all_telescope` at offset `i`** under
@@ -3763,11 +3392,11 @@ theorem getAllTelescope_refines_at_of_ih (count : Nat) (hcount : count < 1844674
       Aiur.Library.Bytes.RepByteStream byteStreamEnum h (bytes.drop i) stream →
       EvalFn W "IxonDeserialize::get_all_telescope" [stream, u64Value count] h r h' →
       Heap.Extends h h' ∧
-      ∃ (binders : List (Ixon.BinderContract × Ixon.ValueContract × Ixon.Expr)) (body : Ixon.Expr)
+      ∃ (binders : List Ixon.Expr) (body : Ixon.Expr)
         (nb n : Nat) (resPtr restPtr : SourceValue F),
         0 < n ∧
-        (bytes.drop (i + n)).length + (count * 2 + 1) ≤ (bytes.drop i).length ∧
-        (∀ bc vc ty b, body ≠ .all bc vc ty b) ∧
+        (bytes.drop (i + n)).length + (count + 1) ≤ (bytes.drop i).length ∧
+        (∀ ty b, body ≠ .all ty b) ∧
         (∀ fuel, (bytes.drop i).length < fuel →
           Ixon.getExprAllBinders (Ixon.getExprFuel fuel) count
             { idx := i, bytes := ⟨bytes.toArray⟩ } =
@@ -3775,7 +3404,7 @@ theorem getAllTelescope_refines_at_of_ih (count : Nat) (hcount : count < 1844674
           Ixon.getExprFuel fuel { idx := i + nb, bytes := ⟨bytes.toArray⟩ } =
             .ok body { idx := i + n, bytes := ⟨bytes.toArray⟩ }) ∧
         r = .tuple [resPtr, restPtr] ∧
-        RepExpr h' (binders.foldr (fun (uses, owned, ty) result => .all uses owned ty result) body) resPtr ∧
+        RepExpr h' (binders.foldr (fun ty result => .all ty result) body) resPtr ∧
         Aiur.Library.Bytes.RepByteStream byteStreamEnum h' (bytes.drop (i + n)) restPtr := by
   induction count with
   | zero =>
@@ -3838,112 +3467,96 @@ theorem getAllTelescope_refines_at_of_ih (count : Nat) (hcount : count < 1844674
     rcases selectArm_literal_inv sel23 with ⟨hc26, _, _⟩ | ⟨_, sel27⟩
     · simp at hc26
     · rcases selectArm_literal_inv sel27 with ⟨_, rfl, rfl⟩ | ⟨hc28, _⟩
-      · obtain ⟨v30, m31, bs32, d33, mt34, d35⟩ := d24.letValue_inv
-        obtain ⟨vs36, m37, args38, callee39⟩ := d33.call_inv
-        obtain ⟨v40, vs41, m42, rfl, d43, args44⟩ := args38.cons_inv
-        obtain ⟨l45, rfl⟩ := d43.var_inv; simp at l45; subst l45
-        obtain ⟨rfl, rfl⟩ := args44.nil_inv
-        rw [instanceName_plain_some] at callee39
-        obtain ⟨rfl, bc, vc, restPtr1, hlen_mode, _, ⟨bits, hu8_bits, hunpack_bits⟩, hrep1, rfl⟩ :=
-          getAllMode_refines_at hrep callee39
-        obtain rfl := matchPattern_tuple2_bind rfl mt34
-        obtain ⟨v45, m46, bs47, d48, mt49, d50⟩ := d35.letValue_inv
-        obtain ⟨l51, rfl⟩ := d48.var_inv; simp at l51; subst l51
-        obtain rfl := matchPattern_tuple2_bind rfl mt49
-        obtain ⟨v52, m53, bs54, d55, mt56, d57⟩ := d50.letValue_inv
-        obtain ⟨vs58, m59, args60, callee61⟩ := d55.call_inv
-        obtain ⟨v62, vs63, m64, rfl, d65, args66⟩ := args60.cons_inv
-        obtain ⟨l67, rfl⟩ := d65.var_inv; simp at l67; subst l67
-        obtain ⟨rfl, rfl⟩ := args66.nil_inv
-        rw [instanceName_plain_some] at callee61
+      · -- let (ty, s2) = get_expr(stream)
+        obtain ⟨v46, m47, bs48, d49, mt50, d51⟩ := d24.letValue_inv
+        obtain ⟨vs52, m53, args54, callee55⟩ := d49.call_inv
+        obtain ⟨v56, vs57, m58, rfl, d59, args60⟩ := args54.cons_inv
+        obtain ⟨l61, rfl⟩ := d59.var_inv; simp at l61; subst l61
+        obtain ⟨rfl, rfl⟩ := args60.nil_inv
+        rw [instanceName_plain_some] at callee55
         obtain ⟨ext1, ty, n2, tyPtr, restPtr2, hn2_pos, hdrop_lt2, hfuel_ty, rfl, tyRep, hrep2⟩ :=
-          hIH (by omega) hrep1 callee61
-        obtain rfl := matchPattern_tuple2_bind rfl mt56
-        obtain ⟨v68, m69, bs70, d71, mt72, d73⟩ := d57.letValue_inv
-        obtain ⟨vs74, m75, args76, callee77⟩ := d71.call_inv
+          hIH (Nat.lt_succ_self _) hrep callee55
+        obtain rfl := matchPattern_tuple2_bind rfl mt50
+        -- let (inner, s3) = get_all_telescope(s2, UInt64::saturating_pred(count))
+        obtain ⟨v62, m63, bs64, d65, mt66, d67⟩ := d51.letValue_inv
+        obtain ⟨vs68, m69, args70, callee71⟩ := d65.call_inv
+        obtain ⟨v72, vs73, m74, rfl, d75, args76⟩ := args70.cons_inv
+        obtain ⟨l77, rfl⟩ := d75.var_inv; simp at l77; subst l77
         obtain ⟨v78, vs79, m80, rfl, d81, args82⟩ := args76.cons_inv
-        obtain ⟨l83, rfl⟩ := d81.var_inv; simp at l83; subst l83
-        obtain ⟨v84, vs85, m86, rfl, d87, args88⟩ := args82.cons_inv
-        obtain ⟨vs89, m90, args91, callee92⟩ := d87.call_inv
-        obtain ⟨v93, vs94, m95, rfl, d96, args97⟩ := args91.cons_inv
-        obtain ⟨l98, rfl⟩ := d96.var_inv; simp at l98; subst l98
-        obtain ⟨rfl, rfl⟩ := args97.nil_inv
-        rw [instanceName_plain_some] at callee92
-        obtain ⟨hsp, rfl⟩ := u64SaturatingPred_refines hcount callee92
+        obtain ⟨vs83, m84, args85, callee86⟩ := d81.call_inv
+        obtain ⟨v87, vs88, m89, rfl, d90, args91⟩ := args85.cons_inv
+        obtain ⟨l92, rfl⟩ := d90.var_inv; simp at l92; subst l92
+        obtain ⟨rfl, rfl⟩ := args91.nil_inv
+        rw [instanceName_plain_some] at callee86
+        obtain ⟨hsp, rfl⟩ := u64SaturatingPred_refines hcount callee86
         simp only [Nat.add_sub_cancel] at hsp; subst hsp
-        obtain ⟨rfl, rfl⟩ := args88.nil_inv
-        rw [instanceName_plain_some] at callee77
-        have hIH2 : ExprRefinesAtUpTo bytes ((bytes.drop (i + 1 + n2)).length + 1) :=
+        obtain ⟨rfl, rfl⟩ := args82.nil_inv
+        rw [instanceName_plain_some] at callee71
+        have hIH2 : ExprRefinesAtUpTo bytes ((bytes.drop (i + n2)).length + 1) :=
           hIH.mono (by omega)
         obtain ⟨ext2, tailBinders, bodyExpr, nb, n3, innerPtr, restPtr3,
             hn3_pos, hprog3, hne_all, hfuel_tail, rfl, innerRep, hrep3⟩ :=
-          ih (by omega) hIH2 hrep2 callee77
-        obtain rfl := matchPattern_tuple2_bind rfl mt72
-        obtain ⟨vs99, args100, rfl⟩ := d73.tuple_inv
-        obtain ⟨v101, vs102, m103, rfl, d104, args105⟩ := args100.cons_inv
-        obtain ⟨v106, m107, d108, rfl, rfl⟩ := d104.store_inv
-        obtain ⟨vs109, args110, rfl⟩ := d108.construct_inv
-        obtain ⟨v111, vs112, m113, rfl, d114, args115⟩ := args110.cons_inv
+          ih (by omega) hIH2 hrep2 callee71
+        obtain rfl := matchPattern_tuple2_bind rfl mt66
+        -- ((&(All(ty, inner))), s3)
+        obtain ⟨vs93, args94, rfl⟩ := d67.tuple_inv
+        obtain ⟨v95, vs96, m97, rfl, d98, args99⟩ := args94.cons_inv
+        obtain ⟨v100, m101, d102, rfl, rfl⟩ := d98.store_inv
+        obtain ⟨vs103, args104, rfl⟩ := d102.construct_inv
+        obtain ⟨v111, vs112, m113, rfl, d114, args115⟩ := args104.cons_inv
         obtain ⟨l116, rfl⟩ := d114.var_inv; simp at l116; subst l116
         obtain ⟨v117, vs118, m119, rfl, d120, args121⟩ := args115.cons_inv
         obtain ⟨l122, rfl⟩ := d120.var_inv; simp at l122; subst l122
-        obtain ⟨v123, vs124, m125, rfl, d126, args127⟩ := args121.cons_inv
+        obtain ⟨rfl, rfl⟩ := args121.nil_inv
+        obtain ⟨v123, vs124, m125, rfl, d126, args127⟩ := args99.cons_inv
         obtain ⟨l128, rfl⟩ := d126.var_inv; simp at l128; subst l128
-        obtain ⟨v129, vs130, m131, rfl, d132, args133⟩ := args127.cons_inv
-        obtain ⟨l134, rfl⟩ := d132.var_inv; simp at l134; subst l134
-        obtain ⟨rfl, rfl⟩ := args133.nil_inv
-        obtain ⟨v135, vs136, m137, rfl, d138, args139⟩ := args105.cons_inv
-        obtain ⟨l140, rfl⟩ := d138.var_inv; simp at l140; subst l140
-        obtain ⟨rfl, rfl⟩ := args139.nil_inv
+        obtain ⟨rfl, rfl⟩ := args127.nil_inv
         simp only [instanceName_plain_some, value_type_construct]
-        let cellAll : SourceValue F := .construct "Ixon::Expr" "All"
-          [binderContractValue bc, valueContractValue vc, tyPtr, innerPtr]
-        have extStore : Heap.Extends m107 (m107 ++ [cellAll]) := Heap.Extends.snoc m107 cellAll
-        have allRep : RepExpr (m107 ++ [cellAll])
-            (((bc, vc, ty) :: tailBinders).foldr (fun (uses, owned, ty) result => .all uses owned ty result) bodyExpr)
-            (.ptr (.enum "Ixon::Expr") m107.length) :=
+        let cellAll : SourceValue F := .construct "Ixon::Expr" "All" [tyPtr, innerPtr]
+        have extStore : Heap.Extends m101 (m101 ++ [cellAll]) := Heap.Extends.snoc m101 cellAll
+        have allRep : RepExpr (m101 ++ [cellAll])
+            ((ty :: tailBinders).foldr (fun ty result => .all ty result) bodyExpr)
+            (.ptr (.enum "Ixon::Expr") m101.length) :=
           .all (by simp [cellAll]) ((tyRep.mono ext2).mono extStore) (innerRep.mono extStore)
         have hrep3' := Aiur.Library.Bytes.repByteStream_heapMono₂ byteStreamEnum extStore hrep3
-        rw [show i + 1 + n2 + n3 = i + (1 + n2 + n3) by omega] at hprog3 hrep3'
-        refine ⟨(ext1.trans ext2).trans extStore, (bc, vc, ty) :: tailBinders, bodyExpr,
-          1 + n2 + nb, 1 + n2 + n3, .ptr (.enum "Ixon::Expr") m107.length, restPtr3,
+        rw [show i + n2 + n3 = i + (n2 + n3) by omega] at hprog3 hrep3'
+        refine ⟨(ext1.trans ext2).trans extStore, ty :: tailBinders, bodyExpr,
+          n2 + nb, n2 + n3, .ptr (.enum "Ixon::Expr") m101.length, restPtr3,
           by omega, by omega, hne_all, fun fuel hfuel => ?_, rfl, allRep, hrep3'⟩
         have hty_ok := hfuel_ty fuel (by omega)
         obtain ⟨htail_b, htail_body⟩ := hfuel_tail fuel (by omega)
-        rw [show i + 1 + n2 + nb = i + (1 + n2 + nb) by omega] at htail_b htail_body
-        rw [show i + 1 + n2 + n3 = i + (1 + n2 + n3) by omega] at htail_body
+        rw [show i + n2 + nb = i + (n2 + nb) by omega] at htail_b htail_body
+        rw [show i + n2 + n3 = i + (n2 + n3) by omega] at htail_body
         refine ⟨?_, htail_body⟩
-        simp [Ixon.getExprAllBinders, bind, EStateM.bind, hu8_bits, hunpack_bits, hty_ok,
-          htail_b, pure, EStateM.pure]
+        simp [Ixon.getExprAllBinders, bind, EStateM.bind, hty_ok, htail_b, pure, EStateM.pure]
       · exact (hc28 rfl).elim
 
 /-- **Refinement of `IxonDeserialize::get_expr_let` at offset `i`** under
-`ExprRefinesAtUpTo bytes ((bytes.drop i).length + 1)`. -/
+`ExprRefinesAtUpTo bytes ((bytes.drop i).length + 1)`: the header value `sz` is
+below 16 (a `nonDep` bit and a `let` mode's code), and the type, value and body
+follow. -/
 theorem getExprLet_refines_at_of_ih (sz : UInt64) :
     ∀ {bytes : List UInt8} {i : Nat} {stream r : SourceValue F} {h h' : Heap F},
       ExprRefinesAtUpTo bytes ((bytes.drop i).length + 1) →
       Aiur.Library.Bytes.RepByteStream byteStreamEnum h (bytes.drop i) stream →
       EvalFn W "IxonDeserialize::get_expr_let" [stream, u64Value sz.toNat] h r h' →
       Heap.Extends h h' ∧
-      sz.toNat < 4 ∧
-      ∃ (bc : Ixon.BinderContract) (ty val body : Ixon.Expr)
-        (n : Nat) (resPtr restPtr : SourceValue F),
+      sz.toNat < 16 ∧
+      ∃ (ty val body : Ixon.Expr) (n : Nat) (resPtr restPtr : SourceValue F),
         0 < n ∧
         (bytes.drop (i + n)).length < (bytes.drop i).length ∧
         (∀ fuel, (bytes.drop i).length < fuel →
           (do
-            let binder ← Ixon.getBinderContract
-            let some contract := Ixon.LetContract.ofFlags? sz binder
-              | throw "getExpr: invalid let flags"
             let ty ← Ixon.getExprFuel fuel
             let val ← Ixon.getExprFuel fuel
             let body ← Ixon.getExprFuel fuel
-            return Ixon.Expr.letE contract ty val body : Ixon.GetM Ixon.Expr)
+            return Ixon.Expr.letE (sz.toNat % 2 == 1) (letModeOfCode (sz.toNat / 2)) ty val body :
+              Ixon.GetM Ixon.Expr)
             { idx := i, bytes := ⟨bytes.toArray⟩ } =
-            .ok (.letE (letContractOfFlags sz.toNat bc) ty val body)
+            .ok (.letE (sz.toNat % 2 == 1) (letModeOfCode (sz.toNat / 2)) ty val body)
               { idx := i + n, bytes := ⟨bytes.toArray⟩ }) ∧
         r = .tuple [resPtr, restPtr] ∧
-        RepExpr h' (.letE (letContractOfFlags sz.toNat bc) ty val body) resPtr ∧
+        RepExpr h' (.letE (sz.toNat % 2 == 1) (letModeOfCode (sz.toNat / 2)) ty val body) resPtr ∧
         Aiur.Library.Bytes.RepByteStream byteStreamEnum h' (bytes.drop (i + n)) restPtr := by
   intro bytes i stream r h h' hIH hrep ev
   have body := ev.function_inv IxVM.IxonDeserialize.get_expr_let.lookup
@@ -4016,71 +3629,30 @@ theorem getExprLet_refines_at_of_ih (sz : UInt64) :
   obtain ⟨v41, vs42, m43, rfl, d44, args45⟩ := args39.cons_inv
   obtain ⟨l46, rfl⟩ := d44.var_inv; simp at l46; subst l46
   obtain ⟨v47, vs48, m49, rfl, d50, args51⟩ := args45.cons_inv
-  obtain ⟨rfl, rfl⟩ := d50.global_literal_inv (x := ((4 : Nat) : F)) (eq_of_isLiteral (by decide +kernel))
+  obtain ⟨rfl, rfl⟩ := d50.global_literal_inv (x := ((16 : Nat) : F)) (eq_of_isLiteral (by decide +kernel))
   obtain ⟨rfl, rfl⟩ := args51.nil_inv
   rw [instanceName_plain_some, hmod256] at callee40
   obtain ⟨rfl, rfl⟩ := u8LessThan_refines hsz_lt256 (by omega) callee40
   obtain ⟨v52, vs53, m54, rfl, d55, args56⟩ := args36.cons_inv
   obtain ⟨rfl, rfl⟩ := d55.literal_inv
   obtain ⟨rfl, rfl⟩ := args56.nil_inv
-  have hsz_lt4 : sz.toNat < 4 := by
+  have hsz_lt16 : sz.toNat < 16 := by
     by_contra hge
     simp [hge, Builtin.apply, evalAssertEq, Value.pointerFree] at app31
   rw [matchPattern_wildcard] at mt27
   simp only [Except.ok.injEq, Option.some.injEq] at mt27; subst mt27
+  -- let (ty, s1) = get_expr(s)
   obtain ⟨v57, m58, bs59, d60, mt61, d62⟩ := d28.letValue_inv
   obtain ⟨vs63, m64, args65, callee66⟩ := d60.call_inv
   obtain ⟨v67, vs68, m69, rfl, d70, args71⟩ := args65.cons_inv
   obtain ⟨l72, rfl⟩ := d70.var_inv; simp at l72; subst l72
   obtain ⟨rfl, rfl⟩ := args71.nil_inv
-  rw [instanceName_plain_some, hmod256] at callee66
-  obtain ⟨rfl, rfl⟩ := u8BitDecomposition_refines hsz_lt256 callee66
-  rw [matchPattern_bind] at mt61
-  simp only [Except.ok.injEq, Option.some.injEq] at mt61; subst mt61
-  obtain ⟨v73, m74, bs75, d76, mt77, d78⟩ := d62.letValue_inv
-  obtain ⟨v79, m80, bs81, body82, d83, sel84, d85⟩ := d76.matchValue_inv
-  obtain ⟨v_bits, d_bits_var, hproj1⟩ := d83.index_inv
-  obtain ⟨l_bits, rfl⟩ := d_bits_var.var_inv; simp at l_bits; subst l_bits
-  simp only [projectValue, List.getElem?_cons_succ, List.getElem?_cons_zero,
-    pure, Except.pure, Except.ok.injEq] at hproj1
-  subst hproj1
-  have hkind : v73 = .construct "Ixon::LetKind" (if sz.toNat / 2 % 2 = 0 then "Value" else "BorrowShared") [] ∧ m74 = m80 := by
-    have hb1_01 : sz.toNat / 2 % 2 = 0 ∨ sz.toNat / 2 % 2 = 1 := Nat.mod_two_eq_zero_or_one (sz.toNat / 2)
-    rcases hb1_01 with h1 | h1
-    · rcases selectArm_literal_inv sel84 with ⟨_, rfl, rfl⟩ | ⟨hne, _⟩
-      · obtain ⟨vs_k, args_k, rfl⟩ := d85.construct_inv
-        obtain ⟨rfl, rfl⟩ := args_k.nil_inv
-        simp [h1]
-      · simp [h1] at hne
-    · rcases selectArm_literal_inv sel84 with ⟨heq, _, _⟩ | ⟨_, sel85⟩
-      · simp [h1] at heq
-      · rcases selectArm_literal_inv sel85 with ⟨_, rfl, rfl⟩ | ⟨hne, _⟩
-        · obtain ⟨vs_k, args_k, rfl⟩ := d85.construct_inv
-          obtain ⟨rfl, rfl⟩ := args_k.nil_inv
-          simp [h1]
-        · simp [h1] at hne
-  rcases hkind with ⟨rfl, rfl⟩
-  rw [matchPattern_bind] at mt77
-  simp only [Except.ok.injEq, Option.some.injEq] at mt77; subst mt77
-  obtain ⟨v86, m87, bs88, d89, mt90, d91⟩ := d78.letValue_inv
-  obtain ⟨vs92, m93, args94, callee95⟩ := d89.call_inv
-  obtain ⟨v96, vs97, m98, rfl, d99, args100⟩ := args94.cons_inv
-  obtain ⟨l101, rfl⟩ := d99.var_inv; simp at l101; subst l101
-  obtain ⟨rfl, rfl⟩ := args100.nil_inv
-  rw [instanceName_plain_some] at callee95
-  obtain ⟨rfl, bc, restPtr1, hlen_mode, hok_mode, hrep1, rfl⟩ :=
-    getLamMode_refines_at hrep callee95
-  obtain rfl := matchPattern_tuple2_bind rfl mt90
-  obtain ⟨v102, m103, bs104, d105, mt106, d107⟩ := d91.letValue_inv
-  obtain ⟨vs108, m109, args110, callee111⟩ := d105.call_inv
-  obtain ⟨v112, vs113, m114, rfl, d115, args116⟩ := args110.cons_inv
-  obtain ⟨l117, rfl⟩ := d115.var_inv; simp at l117; subst l117
-  obtain ⟨rfl, rfl⟩ := args116.nil_inv
-  rw [instanceName_plain_some] at callee111
+  rw [instanceName_plain_some] at callee66
   obtain ⟨ext1, ty, n2, tyPtr, restPtr2, hn2_pos, hdrop_lt2, hfuel_ty, rfl, tyRep, hrep2⟩ :=
-    hIH (by omega) hrep1 callee111
-  obtain rfl := matchPattern_tuple2_bind rfl mt106
-  obtain ⟨v118, m119, bs120, d121, mt122, d123⟩ := d107.letValue_inv
+    hIH (Nat.lt_succ_self _) hrep callee66
+  obtain rfl := matchPattern_tuple2_bind rfl mt61
+  -- let (value, s2) = get_expr(s1)
+  obtain ⟨v118, m119, bs120, d121, mt122, d123⟩ := d62.letValue_inv
   obtain ⟨vs124, m125, args126, callee127⟩ := d121.call_inv
   obtain ⟨v128, vs129, m130, rfl, d131, args132⟩ := args126.cons_inv
   obtain ⟨l133, rfl⟩ := d131.var_inv; simp at l133; subst l133
@@ -4089,6 +3661,7 @@ theorem getExprLet_refines_at_of_ih (sz : UInt64) :
   obtain ⟨ext2, val, n3, valPtr, restPtr3, hn3_pos, hdrop_lt3, hfuel_val, rfl, valRep, hrep3⟩ :=
     hIH (by omega) hrep2 callee127
   obtain rfl := matchPattern_tuple2_bind rfl mt122
+  -- let (body, rest) = get_expr(s2)
   obtain ⟨v134, m135, bs136, d137, mt138, d139⟩ := d123.letValue_inv
   obtain ⟨vs140, m141, args142, callee143⟩ := d137.call_inv
   obtain ⟨v144, vs145, m146, rfl, d147, args148⟩ := args142.cons_inv
@@ -4098,22 +3671,13 @@ theorem getExprLet_refines_at_of_ih (sz : UInt64) :
   obtain ⟨ext3, bodyExpr, n4, bodyPtr, restPtr4, hn4_pos, hdrop_lt4, hfuel_body, rfl, bodyRep, hrep4⟩ :=
     hIH (by omega) hrep3 callee143
   obtain rfl := matchPattern_tuple2_bind rfl mt138
+  -- ((&(Let(UInt8::to_field(head), ty, value, body))), rest)
   obtain ⟨vs150, args151, rfl⟩ := d139.tuple_inv
   obtain ⟨v152, vs153, m154, rfl, d155, args156⟩ := args151.cons_inv
   obtain ⟨v157, m158, d159, rfl, rfl⟩ := d155.store_inv
   obtain ⟨vs160, args161, rfl⟩ := d159.construct_inv
   obtain ⟨v162, vs163, m164, rfl, d165, args166⟩ := args161.cons_inv
-  obtain ⟨vs167, args168, rfl⟩ := d165.construct_inv
-  obtain ⟨v169, vs170, m171, rfl, d172, args173⟩ := args168.cons_inv
-  obtain ⟨v_b0, d_b0_var, hproj0⟩ := d172.index_inv
-  obtain ⟨l_b0, rfl⟩ := d_b0_var.var_inv; simp at l_b0; subst l_b0
-  simp only [projectValue, List.getElem?_cons_zero, pure, Except.pure, Except.ok.injEq] at hproj0
-  subst hproj0
-  obtain ⟨v174, vs175, m176, rfl, d177, args178⟩ := args173.cons_inv
-  obtain ⟨l179, rfl⟩ := d177.var_inv; simp at l179; subst l179
-  obtain ⟨v180, vs181, m182, rfl, d183, args184⟩ := args178.cons_inv
-  obtain ⟨l185, rfl⟩ := d183.var_inv; simp at l185; subst l185
-  obtain ⟨rfl, rfl⟩ := args184.nil_inv
+  obtain ⟨lhead, rfl⟩ := evalExpr_toField_var d165; simp at lhead; subst lhead
   obtain ⟨v186, vs187, m188, rfl, d189, args190⟩ := args166.cons_inv
   obtain ⟨l191, rfl⟩ := d189.var_inv; simp at l191; subst l191
   obtain ⟨v192, vs193, m194, rfl, d195, args196⟩ := args190.cons_inv
@@ -4124,28 +3688,33 @@ theorem getExprLet_refines_at_of_ih (sz : UInt64) :
   obtain ⟨v204, vs205, m206, rfl, d207, args208⟩ := args156.cons_inv
   obtain ⟨l209, rfl⟩ := d207.var_inv; simp at l209; subst l209
   obtain ⟨rfl, rfl⟩ := args208.nil_inv
-  simp only [instanceName_plain_some, value_type_construct, ← letContractValue_ofFlags]
-  let lc := letContractOfFlags sz.toNat bc
+  simp only [instanceName_plain_some, value_type_construct]
+  obtain ⟨-, hheader⟩ := letMode_ofHeader?_of_lt16 hsz_lt16
   let cellLet : SourceValue F := .construct "Ixon::Expr" "Let"
-    [letContractValue lc, tyPtr, valPtr, bodyPtr]
+    [.field ((sz.toNat % 256 : Nat) : F), tyPtr, valPtr, bodyPtr]
+  have hcell : (.construct "Ixon::Expr" "Let"
+      [.field (((Ixon.LetMode.header (sz.toNat % 2 == 1) (letModeOfCode (sz.toNat / 2))).toNat : Nat) : F),
+        tyPtr, valPtr, bodyPtr] : SourceValue F) =
+      .construct "Ixon::Expr" "Let" [.field ((sz.toNat % 256 : Nat) : F), tyPtr, valPtr, bodyPtr] := by
+    rw [hheader, hmod256]
   have extStore : Heap.Extends m158 (m158 ++ [cellLet]) := Heap.Extends.snoc m158 cellLet
-  have letRep : RepExpr (m158 ++ [cellLet]) (.letE lc ty val bodyExpr)
+  have letRep : RepExpr (m158 ++ [cellLet])
+      (.letE (sz.toNat % 2 == 1) (letModeOfCode (sz.toNat / 2)) ty val bodyExpr)
       (.ptr (.enum "Ixon::Expr") m158.length) :=
-    .letE (by simp [cellLet])
+    .letE (by rw [hcell]; simp [cellLet])
       (((tyRep.mono ext2).mono ext3).mono extStore)
       ((valRep.mono ext3).mono extStore)
       (bodyRep.mono extStore)
   have hrep4' := Aiur.Library.Bytes.repByteStream_heapMono₂ byteStreamEnum extStore hrep4
-  rw [show i + 1 + n2 + n3 + n4 = i + (1 + n2 + n3 + n4) by omega] at hdrop_lt4 hrep4'
-  refine ⟨((ext1.trans ext2).trans ext3).trans extStore, hsz_lt4, bc, ty, val, bodyExpr,
-    1 + n2 + n3 + n4, .ptr (.enum "Ixon::Expr") m158.length, restPtr4,
+  rw [show i + n2 + n3 + n4 = i + (n2 + n3 + n4) by omega] at hdrop_lt4 hrep4'
+  refine ⟨((ext1.trans ext2).trans ext3).trans extStore, hsz_lt16, ty, val, bodyExpr,
+    n2 + n3 + n4, .ptr (.enum "Ixon::Expr") m158.length, restPtr4,
     by omega, by omega, fun fuel hfuel => ?_, rfl, letRep, hrep4'⟩
-  have hflags := letContract_ofFlags?_of_lt4 hsz_lt4 bc
   have hty_ok := hfuel_ty fuel (by omega)
   have hval_ok := hfuel_val fuel (by omega)
   have hbody_ok := hfuel_body fuel (by omega)
-  rw [show i + 1 + n2 + n3 + n4 = i + (1 + n2 + n3 + n4) by omega] at hbody_ok
-  simp [bind, EStateM.bind, hok_mode, hflags, hty_ok, hval_ok, hbody_ok, pure, EStateM.pure]
+  rw [show i + n2 + n3 + n4 = i + (n2 + n3 + n4) by omega] at hbody_ok
+  simp [bind, EStateM.bind, hty_ok, hval_ok, hbody_ok, pure, EStateM.pure]
 
 /-- **Every terminating derivation of `IxonDeserialize::get_expr` at reader
 offset `i`** refines `Ixon.getExprFuel fuel` for every `fuel > (bytes.drop i).length`,
@@ -4504,11 +4073,11 @@ theorem deserializeExpr_refines_at {bytes : List UInt8} {i : Nat}
                         hn2_pos, hprog2, hne_lam, hfuel_lam, rfl, resRep, hrep2⟩ :=
                       getLamTelescope_refines_at_of_ih t.value.toNat t.value.toNat_lt hIH1 hrep1 callee34
                     rw [show i + n1 + n2 = i + (n1 + n2) by omega] at hprog2 hrep2
-                    refine ⟨ext1, binders.foldr (fun (uses, ty) result => .lam uses ty result) bodyExpr,
+                    refine ⟨ext1, binders.foldr (fun ty result => .lam ty result) bodyExpr,
                       n1 + n2, resPtr, restPtr2,
                       by omega, by omega, fun fuel hfuel => ?_, rfl, resRep, hrep2⟩
                     obtain ⟨fuel', rfl⟩ : ∃ fuel', fuel = fuel' + 1 := ⟨fuel - 1, by omega⟩
-                    have hchk : Ixon.checkCount t.value 2 { idx := i + n1, bytes := ⟨bytes.toArray⟩ } =
+                    have hchk : Ixon.checkCount t.value 1 { idx := i + n1, bytes := ⟨bytes.toArray⟩ } =
                         .ok () { idx := i + n1, bytes := ⟨bytes.toArray⟩ } :=
                       checkCount_ok (by omega)
                     obtain ⟨hbinders_ok, hbody_ok⟩ := hfuel_lam fuel' (by omega)
@@ -4536,11 +4105,11 @@ theorem deserializeExpr_refines_at {bytes : List UInt8} {i : Nat}
                           hn2_pos, hprog2, hne_all, hfuel_all, rfl, resRep, hrep2⟩ :=
                         getAllTelescope_refines_at_of_ih t.value.toNat t.value.toNat_lt hIH1 hrep1 callee34
                       rw [show i + n1 + n2 = i + (n1 + n2) by omega] at hprog2 hrep2
-                      refine ⟨ext1, binders.foldr (fun (uses, owned, ty) result => .all uses owned ty result) bodyExpr,
+                      refine ⟨ext1, binders.foldr (fun ty result => .all ty result) bodyExpr,
                         n1 + n2, resPtr, restPtr2,
                         by omega, by omega, fun fuel hfuel => ?_, rfl, resRep, hrep2⟩
                       obtain ⟨fuel', rfl⟩ : ∃ fuel', fuel = fuel' + 1 := ⟨fuel - 1, by omega⟩
-                      have hchk : Ixon.checkCount t.value 2 { idx := i + n1, bytes := ⟨bytes.toArray⟩ } =
+                      have hchk : Ixon.checkCount t.value 1 { idx := i + n1, bytes := ⟨bytes.toArray⟩ } =
                           .ok () { idx := i + n1, bytes := ⟨bytes.toArray⟩ } :=
                         checkCount_ok (by omega)
                       obtain ⟨hbinders_ok, hbody_ok⟩ := hfuel_all fuel' (by omega)
@@ -4559,23 +4128,20 @@ theorem deserializeExpr_refines_at {bytes : List UInt8} {i : Nat}
                         obtain ⟨l46, rfl⟩ := d44.var_inv; simp at l46; subst l46
                         obtain ⟨rfl, rfl⟩ := args45.nil_inv
                         rw [instanceName_plain_some] at callee34
-                        obtain ⟨ext1, hsz_lt4, bc, ty, val, bodyExpr, n2, resPtr, restPtr2,
+                        obtain ⟨ext1, hsz_lt16, ty, val, bodyExpr, n2, resPtr, restPtr2,
                             hn2_pos, hdrop_lt2, hfuel_let, rfl, resRep, hrep2⟩ :=
                           getExprLet_refines_at_of_ih t.value hIH1 hrep1 callee34
-                        have hng3 : ¬ (t.value > 3) := by
-                          show ¬ (3 < t.value)
-                          rw [UInt64.lt_iff_toNat_lt]
-                          change ¬ (3 < t.value.toNat)
-                          omega
+                        have hofHeader := (letMode_ofHeader?_of_lt16 hsz_lt16).1
                         rw [show i + n1 + n2 = i + (n1 + n2) by omega] at hdrop_lt2 hrep2
-                        refine ⟨ext1, .letE (letContractOfFlags t.value.toNat bc) ty val bodyExpr,
+                        refine ⟨ext1, .letE (t.value.toNat % 2 == 1) (letModeOfCode (t.value.toNat / 2))
+                          ty val bodyExpr,
                           n1 + n2, resPtr, restPtr2,
                           by omega, by omega, fun fuel hfuel => ?_, rfl, resRep, hrep2⟩
                         obtain ⟨fuel', rfl⟩ : ∃ fuel', fuel = fuel' + 1 := ⟨fuel - 1, by omega⟩
                         have hlet_ok := hfuel_let fuel' (by omega)
                         rw [show i + n1 + n2 = i + (n1 + n2) by omega] at hlet_ok
                         simp only [Ixon.getExprFuel, Ixon.getExprFromTag,
-                          bind, EStateM.bind, hok1, hflag10, ↓reduceIte, hng3]
+                          bind, EStateM.bind, hok1, hflag10, hofHeader]
                         simp only [bind, EStateM.bind] at hlet_ok
                         exact hlet_ok
                       · rcases selectArm_literal_inv sel11 with ⟨hc11, rfl, rfl⟩ | ⟨_, sel12⟩
@@ -4682,11 +4248,11 @@ theorem getLamTelescope_refines_at (count : Nat) (hcount : count < 1844674407370
     (rep : Aiur.Library.Bytes.RepByteStream byteStreamEnum h (bytes.drop i) stream)
     (ev : EvalFn W "IxonDeserialize::get_lam_telescope" [stream, u64Value count] h r h') :
     Heap.Extends h h' ∧
-    ∃ (binders : List (Ixon.BinderContract × Ixon.Expr)) (body : Ixon.Expr)
+    ∃ (binders : List Ixon.Expr) (body : Ixon.Expr)
       (nb n : Nat) (resPtr restPtr : SourceValue F),
       0 < n ∧
-      (bytes.drop (i + n)).length + (count * 2 + 1) ≤ (bytes.drop i).length ∧
-      (∀ bc ty b, body ≠ .lam bc ty b) ∧
+      (bytes.drop (i + n)).length + (count + 1) ≤ (bytes.drop i).length ∧
+      (∀ ty b, body ≠ .lam ty b) ∧
       (∀ fuel, (bytes.drop i).length < fuel →
         Ixon.getExprLamBinders (Ixon.getExprFuel fuel) count
           { idx := i, bytes := ⟨bytes.toArray⟩ } =
@@ -4694,7 +4260,7 @@ theorem getLamTelescope_refines_at (count : Nat) (hcount : count < 1844674407370
         Ixon.getExprFuel fuel { idx := i + nb, bytes := ⟨bytes.toArray⟩ } =
           .ok body { idx := i + n, bytes := ⟨bytes.toArray⟩ }) ∧
       r = .tuple [resPtr, restPtr] ∧
-      RepExpr h' (binders.foldr (fun (uses, ty) result => .lam uses ty result) body) resPtr ∧
+      RepExpr h' (binders.foldr (fun ty result => .lam ty result) body) resPtr ∧
       Aiur.Library.Bytes.RepByteStream byteStreamEnum h' (bytes.drop (i + n)) restPtr :=
   getLamTelescope_refines_at_of_ih count hcount
     (fun _ rep' ev' => deserializeExpr_refines_at rep' ev') rep ev
@@ -4705,11 +4271,11 @@ theorem getAllTelescope_refines_at (count : Nat) (hcount : count < 1844674407370
     (rep : Aiur.Library.Bytes.RepByteStream byteStreamEnum h (bytes.drop i) stream)
     (ev : EvalFn W "IxonDeserialize::get_all_telescope" [stream, u64Value count] h r h') :
     Heap.Extends h h' ∧
-    ∃ (binders : List (Ixon.BinderContract × Ixon.ValueContract × Ixon.Expr)) (body : Ixon.Expr)
+    ∃ (binders : List Ixon.Expr) (body : Ixon.Expr)
       (nb n : Nat) (resPtr restPtr : SourceValue F),
       0 < n ∧
-      (bytes.drop (i + n)).length + (count * 2 + 1) ≤ (bytes.drop i).length ∧
-      (∀ bc vc ty b, body ≠ .all bc vc ty b) ∧
+      (bytes.drop (i + n)).length + (count + 1) ≤ (bytes.drop i).length ∧
+      (∀ ty b, body ≠ .all ty b) ∧
       (∀ fuel, (bytes.drop i).length < fuel →
         Ixon.getExprAllBinders (Ixon.getExprFuel fuel) count
           { idx := i, bytes := ⟨bytes.toArray⟩ } =
@@ -4717,7 +4283,7 @@ theorem getAllTelescope_refines_at (count : Nat) (hcount : count < 1844674407370
         Ixon.getExprFuel fuel { idx := i + nb, bytes := ⟨bytes.toArray⟩ } =
           .ok body { idx := i + n, bytes := ⟨bytes.toArray⟩ }) ∧
       r = .tuple [resPtr, restPtr] ∧
-      RepExpr h' (binders.foldr (fun (uses, owned, ty) result => .all uses owned ty result) body) resPtr ∧
+      RepExpr h' (binders.foldr (fun ty result => .all ty result) body) resPtr ∧
       Aiur.Library.Bytes.RepByteStream byteStreamEnum h' (bytes.drop (i + n)) restPtr :=
   getAllTelescope_refines_at_of_ih count hcount
     (fun _ rep' ev' => deserializeExpr_refines_at rep' ev') rep ev
@@ -4728,25 +4294,22 @@ theorem getExprLet_refines_at (sz : UInt64)
     (rep : Aiur.Library.Bytes.RepByteStream byteStreamEnum h (bytes.drop i) stream)
     (ev : EvalFn W "IxonDeserialize::get_expr_let" [stream, u64Value sz.toNat] h r h') :
     Heap.Extends h h' ∧
-    sz.toNat < 4 ∧
-    ∃ (bc : Ixon.BinderContract) (ty val body : Ixon.Expr)
-      (n : Nat) (resPtr restPtr : SourceValue F),
+    sz.toNat < 16 ∧
+    ∃ (ty val body : Ixon.Expr) (n : Nat) (resPtr restPtr : SourceValue F),
       0 < n ∧
       (bytes.drop (i + n)).length < (bytes.drop i).length ∧
       (∀ fuel, (bytes.drop i).length < fuel →
         (do
-          let binder ← Ixon.getBinderContract
-          let some contract := Ixon.LetContract.ofFlags? sz binder
-            | throw "getExpr: invalid let flags"
           let ty ← Ixon.getExprFuel fuel
           let val ← Ixon.getExprFuel fuel
           let body ← Ixon.getExprFuel fuel
-          return Ixon.Expr.letE contract ty val body : Ixon.GetM Ixon.Expr)
+          return Ixon.Expr.letE (sz.toNat % 2 == 1) (letModeOfCode (sz.toNat / 2)) ty val body :
+            Ixon.GetM Ixon.Expr)
           { idx := i, bytes := ⟨bytes.toArray⟩ } =
-          .ok (.letE (letContractOfFlags sz.toNat bc) ty val body)
+          .ok (.letE (sz.toNat % 2 == 1) (letModeOfCode (sz.toNat / 2)) ty val body)
             { idx := i + n, bytes := ⟨bytes.toArray⟩ }) ∧
       r = .tuple [resPtr, restPtr] ∧
-      RepExpr h' (.letE (letContractOfFlags sz.toNat bc) ty val body) resPtr ∧
+      RepExpr h' (.letE (sz.toNat % 2 == 1) (letModeOfCode (sz.toNat / 2)) ty val body) resPtr ∧
       Aiur.Library.Bytes.RepByteStream byteStreamEnum h' (bytes.drop (i + n)) restPtr :=
   getExprLet_refines_at_of_ih sz
     (fun _ rep' ev' => deserializeExpr_refines_at rep' ev') rep ev
