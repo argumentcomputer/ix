@@ -117,9 +117,12 @@ end Ixon.Authenticated.Audit
 -- `deltaHead`, `restoreModelTypes`) and the reader's definition values (`State.defValues`,
 -- `valuesOff`) add 19 compiled functions. Externs, implemented_by, unsafe, csimp and all
 -- ruling counts are unchanged.
+-- Deriving a nested block's auxiliary members in the in-model generator (`nestedAuxOk`)
+-- adds 21 compiled functions. Externs, implemented_by, unsafe, csimp and all ruling counts are
+-- unchanged.
 /-- info: runtime closure of [Ixon.Authenticated.checkBytes,
  Ixon.Authenticated.checkBytesProjection,
- Address.admissionHash]: 7002 compiled functions; inherited externs 116, implemented_by 1, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 28 -/
+ Address.admissionHash]: 7023 compiled functions; inherited externs 116, implemented_by 1, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 28 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.Authenticated.Audit.operations #[`Init, `Std] Ixon.Authenticated.Audit.rulings
 
@@ -281,7 +284,10 @@ and the prelude-copy check (`State.keepsPrelude` in `readStream`) from 6060, lik
 -- `deltaHead`, `restoreModelTypes`) and the reader's definition values (`State.defValues`,
 -- `valuesOff`) add 21 compiled functions. Externs, implemented_by, unsafe, csimp and all
 -- ruling counts are unchanged.
-/-- info: runtime closure of [Ixon.Authenticated.checkBytesTiered]: 7084 compiled functions; inherited externs 116, implemented_by 0, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 28 -/
+-- Deriving a nested block's auxiliary members in the in-model generator (`nestedAuxOk`)
+-- adds 21 compiled functions. Externs, implemented_by, unsafe, csimp and all ruling counts are
+-- unchanged.
+/-- info: runtime closure of [Ixon.Authenticated.checkBytesTiered]: 7105 compiled functions; inherited externs 116, implemented_by 0, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 28 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ixon.Authenticated.checkBytesTiered] #[`Init, `Std] Ixon.Authenticated.Audit.rulings
 
