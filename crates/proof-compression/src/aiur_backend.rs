@@ -13,6 +13,7 @@ pub mod compress_gl;
 pub mod fq;
 pub mod g1;
 pub mod kzg;
+pub mod kzg_advice;
 pub mod pairing;
 pub mod plonk;
 
