@@ -1,4 +1,5 @@
 import IxCC.Src.Proof.Mono
+import IxCC.Src.Word
 import IxCC.Lam.Proof.Mono
 import IxCC.Lam.Erase.Proof.Correct
 import IxCC.Src.Relevance.Proof.Sound
@@ -6,11 +7,15 @@ import IxCC.Lam.Erase.Proof.ModesOk
 import IxCC.Lam.Erase.Proof.WFProg
 
 /-! Required axiom fences for the source-to-Lam theorems: clock
-monotonicity of SrcEval and Lam, erasure's correctness, and the relevance
-checker's soundness. Expected messages are preserved verbatim. -/
+monotonicity of SrcEval and Lam, erasure's correctness, the relevance
+checker's soundness, and the range lemma of the fixed-width words' meaning
+(`WordOp.eval_word_lt`). Expected messages are preserved verbatim. -/
 
 /-- info: 'IxCC.Src.eval_mono' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Src.eval_mono
+
+/-- info: 'IxCC.Src.WordOp.eval_word_lt' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.WordOp.eval_word_lt
 
 /-- info: 'IxCC.Src.apply_mono' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Src.apply_mono

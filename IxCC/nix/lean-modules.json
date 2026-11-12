@@ -3100,6 +3100,7 @@
   {"path": "IxCCTests/Fences/Erase.lean",
    "imports":
    ["IxCC.Src.Proof.Mono",
+    "IxCC.Src.Word",
     "IxCC.Lam.Proof.Mono",
     "IxCC.Lam.Erase.Proof.Correct",
     "IxCC.Src.Relevance.Proof.Sound",

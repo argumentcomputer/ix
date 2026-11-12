@@ -148,7 +148,7 @@ example : (WordOp.eval .w64 (.convert .w8) 300 0).val ≠ 300 := by decide
 implementations, so a runtime that disagreed with the elaborator's evaluation is caught too. -/
 def run (a : Assert) : IO Unit := do
   let (n, bad) := checkAll
-  expect a bad.isEmpty s!"words: {bad.length} of {n} comparisons disagree with Lean: {bad.take 5}"
+  expect a bad.isEmpty s!"words: {bad.length} of {n} comparisons disagree with Lean: {reprStr (bad.take 5)}"
   expect a ofNatOk "words: ofNat around every size"
   expectEq a n 8420 s!"words: {n} comparisons"
 
