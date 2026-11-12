@@ -616,6 +616,20 @@ def install (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (workers : Nat 
       failures := failures.push (declName d, "names a constant that is not installed")
       pos := pos + 1
       continue
+    -- a separable declaration's step is its annotation and push (`separable`): made
+    -- without the step, a failure leaves nothing to roll back
+    if separableKind d then
+      pos := pos + 1
+      match separable mode fe d with
+      | some ci =>
+        fe := fe.push ci
+        ok := ok + 1
+      | none =>
+        failures := failures.push (declName d, "its annotation fails")
+        if let some fe' := lenient mode fe d then
+          fe := fe'
+          lenientCount := lenientCount + 1
+      continue
     let (fe', pos', err) := step mode ev fe pos d
     fe := fe'
     pos := pos'
