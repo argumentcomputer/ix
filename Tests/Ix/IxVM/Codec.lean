@@ -152,9 +152,9 @@ def claimCases (r : Runner) : IO Unit := do
     if name == "check" then
       add "catalog-no-arm" (replaceClaimBytes witness (Ix.Claim.ser (.catalog tree.root))) false
         "no matching arm"
-      -- The retired resource claim's bytes (validator 2) are refused.
-      add "resource-retired"
-        (replaceClaimBytes witness (Ix.Claim.ser (.resource tree.root tree.root))) false
+      -- The retired resource claim's tag and scope (`E8 01`, validator 2) are refused.
+      add "resource-retired" (replaceClaimBytes witness
+        (ByteArray.mk #[0xE8, 0x01, Ixon.Env.OBJECT_FORMAT, 2] ++ tree.root.hash ++ tree.root.hash)) false
 
 def run : IO UInt32 := do
   let golden ← Tests.IxonV4.readExprCases

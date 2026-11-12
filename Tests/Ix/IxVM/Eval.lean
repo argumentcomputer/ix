@@ -690,8 +690,6 @@ def commandTests (leanEnv : Lean.Environment) (r : Tests.Ix.IxVM.Runner) : IO Te
   r.build (execute "command claim after bundle transport" w)
   return seq
 
-/-- Every evaluation claim through the IxVM program, and the Lean oracles
-that pin their expected results independently. -/
 /-- IxC's reader on the same Nat literal blobs as the program: the compiler's
 `[0]` and `[42]` are read, a trailing zero byte and the empty blob are refused
 (`Ix.Kernel.Reader.canonicalNatural`), each output record through the certified
@@ -716,6 +714,8 @@ def natBlobParity (leanEnv : Lean.Environment) : IO TestSeq := do
       (ok && Ix.Kernel.Reader.canonicalNatural blob == canonical)
   return tests
 
+/-- Every evaluation claim through the IxVM program, and the Lean oracles
+that pin their expected results independently. -/
 def run (leanEnv : Lean.Environment) : IO UInt32 := do
   let oracles ← IO.mkRef TestSeq.done
   let code ← Tests.Ix.IxVM.withRunner "ixvm-eval" fun r => do
