@@ -75,9 +75,10 @@ partial def evalI (P : Program) (budget : Nat) (ρ : Env) (J : List JEntry) (H :
     evalI P budget (ρ.insert x v) J H' c
   | .bind x r c => do
     tick budget
+    let before := H.size
     match evalRhs P.tables ρ H r with
     | .ok (v, H') =>
-      if H'.size > H.size then
+      if H'.size > before then
         modify fun s => let live := s.live + 1
           { s with allocs := s.allocs + 1, live, peak := max s.peak live }
       evalI P budget (ρ.insert x v) J H' c
