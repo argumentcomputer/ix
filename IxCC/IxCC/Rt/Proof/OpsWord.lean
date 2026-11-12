@@ -31,7 +31,7 @@ macro "word_run" " at " h:ident : tactic =>
       emit, untag, check, coldBlock, newLabel, close, openAt, put, retag, divMod, StateT.run, bind, StateT.bind, pure,
       StateT.pure, modify, modifyGet, MonadStateOf.modifyGet, StateT.modifyGet, MonadState.modifyGet, Except.bind,
       Except.pure, Except.ok.injEq, Prod.mk.injEq, true_and, throw, throwThe, MonadExceptOf.throw, StateT.lift,
-      ↓reduceIte, eq_self_iff_true, if_true, if_false] at $h:ident)
+      ↓reduceIte, eq_self_iff_true, ite_true, ite_false] at $h:ident)
 
 /-- A word primitive with no expansion (a decision, an arity mismatch) never runs to a state. -/
 macro "word_bad" : tactic =>
@@ -360,7 +360,7 @@ macro "word_run_n" " at " h:ident " using " hw:term : tactic =>
       assign, emit, untag, check, coldBlock, newLabel, close, openAt, put, retag, StateT.run, bind, StateT.bind, pure,
       StateT.pure, modify, modifyGet, MonadStateOf.modifyGet, StateT.modifyGet, MonadState.modifyGet, Except.bind,
       Except.pure, Except.ok.injEq, Prod.mk.injEq, true_and, throw, throwThe, MonadExceptOf.throw, StateT.lift,
-      $hw:term, ↓reduceIte, if_false, if_true] at $h:ident)
+      $hw:term, ↓reduceIte, ite_false, ite_true] at $h:ident)
 
 section ops
 

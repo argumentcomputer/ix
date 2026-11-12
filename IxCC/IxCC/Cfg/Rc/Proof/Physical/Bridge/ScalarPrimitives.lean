@@ -2,6 +2,7 @@ import IxCC.Cfg.Rc.Proof.Physical.Bridge.ScalarChecked
 import IxCC.Cfg.Rc.Proof.Physical.Bridge.ScalarDiv
 import IxCC.Cfg.Rc.Proof.Physical.Bridge.ScalarCall
 import IxCC.Rt.Proof.Instr
+import IxCC.Cfg.Rc.Proof.Physical.Bridge.ScalarWord
 
 set_option autoImplicit false
 namespace IxCC.Cfg.Rc.Proof.Physical.Bridge.Scalar
@@ -22,14 +23,14 @@ theorem primitive_sim {T : Tables} (hT : BoolsOk T) {f : Fir.FunId} {lp : Lir.Pr
       (.fir (.prim op as)) := by
   rcases las with _ | ⟨la, _ | ⟨lb, _ | ⟨lc, las⟩⟩⟩
   · cases op
-    case word w o => sorry -- TEMPORARY (WE): the RC bridge's word case, written against the restated bridge at the merge
+    case word w o => exact prim_word hF hH hrun hC hl ho hsup hx hops hlive
     all_goals bad_shape
   · cases op
     case natPred => exact prim_natPred hF hH hrun hC ho hsup hx hops hlive
-    case word w o => sorry -- TEMPORARY (WE): the RC bridge's word case, written against the restated bridge at the merge
+    case word w o => exact prim_word hF hH hrun hC hl ho hsup hx hops hlive
     all_goals bad_shape
   · cases op
-    case word w o => sorry -- TEMPORARY (WE): the RC bridge's word case, written against the restated bridge at the merge
+    case word w o => exact prim_word hF hH hrun hC hl ho hsup hx hops hlive
     case natAdd => exact prim_natAdd hF hH hrun hC hl ho hsup hx hops hlive
     case natSub => exact prim_natSub hF hH hrun hC ho hsup hx hops hlive
     case natMul => exact prim_natMul hF hH hrun hC hl ho hsup hx hops hlive
@@ -47,7 +48,7 @@ theorem primitive_sim {T : Tables} (hT : BoolsOk T) {f : Fir.FunId} {lp : Lir.Pr
     case natShr => exact prim_natShr hF hH hrun hC ho hsup hx hops hlive
     case natPred => bad_shape
   · cases op
-    case word w o => sorry -- TEMPORARY (WE): the RC bridge's word case, written against the restated bridge at the merge
+    case word w o => exact prim_word hF hH hrun hC hl ho hsup hx hops hlive
     all_goals bad_shape
 
 
