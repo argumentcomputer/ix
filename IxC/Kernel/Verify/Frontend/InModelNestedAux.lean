@@ -483,9 +483,22 @@ theorem nestedAuxOk_mapKeys (hf : InjOn f P) {ctx : Ctx md} {ctx' : Ctx md'}
       (types.map (·.cv.name) ++ ctors.map (·.cv.name) ++ recs.map (·.cv.name)).map
         (Key.map f) := by
     simp [List.map_map, Function.comp_def]
+  have hauxEq : ((mems.map (Mem.mapKeys f)).filter (·.real?.isNone)).map
+      (fun m => ((m.I, m.pins, m.lv) : AuxEntry md')) =
+      ((mems.filter (·.real?.isNone)).map
+        (fun m => ((m.I, m.pins, m.lv) : AuxEntry md))).map (AuxEntry.mapKeys f) := by
+    rw [List.filter_map]
+    simp [List.map_map, Function.comp_def, AuxEntry.mapKeys, Mem.mapKeys]
+  have hauxG : ∀ y ∈ (mems.filter (·.real?.isNone)).map
+      (fun m => ((m.I, m.pins, m.lv) : AuxEntry md)), AuxEntry.Good P y := by
+    intro y hy
+    obtain ⟨m, hm, rfl⟩ := List.mem_map.mp hy
+    have hmG := hmem m (List.mem_filter.mp hm).1
+    exact ⟨hmG.1, hmG.2.1⟩
   unfold nestedAuxOk
   simp only []
-  rw [hnsEq]
+  rw [hnsEq, hauxEq]
+  simp only [List.length_map]
   obtain ⟨hbe, hbg⟩ := mapM_option_mapKeys (P := P) (f := f) (l := ctors)
     (g := fun c : IndCtorRec md => (c.cv.type.stripPis nP).map (·.2))
     (g' := fun c : IndCtorRec md' => (c.cv.type.stripPis nP).map (·.2)) (h := IndCtorRec.mapKeys f)
@@ -516,29 +529,15 @@ theorem nestedAuxOk_mapKeys (hf : InjOn f P) {ctx : Ctx md} {ctx' : Ctx md'}
     | none => rfl
     | some acc =>
       simp only [Option.map_some]
-      have hw := nestedWalk_mapKeys hf hctx hns nestedFuel 0 (hs.2 acc hsc)
+      have hw := nestedWalk_mapKeys hf hctx hns ((mems.filter (·.real?.isNone)).length + 1) 0
+        (hs.2 acc hsc)
       rw [hw.1]
-      cases hwk : nestedWalk ctx _ nestedFuel 0 acc with
+      cases hwk : nestedWalk ctx _ ((mems.filter (·.real?.isNone)).length + 1) 0 acc with
       | none => rfl
       | some derived =>
         have hdG := hw.2 derived hwk
         simp only [Option.map_some, List.length_map]
-        have hauxEq : ((mems.map (Mem.mapKeys f)).filter (·.real?.isNone)).map
-            (fun m => ((m.I, m.pins, m.lv) : AuxEntry md')) =
-            ((mems.filter (·.real?.isNone)).map
-              (fun m => ((m.I, m.pins, m.lv) : AuxEntry md))).map (AuxEntry.mapKeys f) := by
-          rw [List.filter_map]
-          simp [List.map_map, Function.comp_def, AuxEntry.mapKeys, Mem.mapKeys]
-        have hauxG : ∀ y ∈ (mems.filter (·.real?.isNone)).map
-            (fun m => ((m.I, m.pins, m.lv) : AuxEntry md)), AuxEntry.Good P y := by
-          intro y hy
-          obtain ⟨m, hm, rfl⟩ := List.mem_map.mp hy
-          have hmG := hmem m (List.mem_filter.mp hm).1
-          exact ⟨hmG.1, hmG.2.1⟩
-        have hlen : ((mems.map (Mem.mapKeys f)).filter (·.real?.isNone)).length =
-            (mems.filter (·.real?.isNone)).length := by
-          rw [List.filter_map, List.length_map]; rfl
-        rw [hauxEq, hlen, List.all_map]
+        rw [List.all_map]
         congr 1
         exact all_congr_mem fun x hx => any_auxEntryEq_mapKeys hf (hdG x hx) hauxG
 

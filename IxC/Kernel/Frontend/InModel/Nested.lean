@@ -678,26 +678,24 @@ def nestedWalk (ctx : Ctx md) (ns : List (Key md)) :
         | none => none
         | some acc' => nestedWalk ctx ns fuel (i + 1) acc'
 
-/-- The worklist's bound: more auxiliary members than this decline. -/
-def nestedFuel : Nat := 4096
-
 /-- **The mimics are the constructors' nested occurrences**, as a set: the auxiliary members
 derived from the block's own constructors (each type's, after the parameters `nP`) are
-distinct, as many as the family's mimics, and each is one of them. -/
+distinct, as many as the family's mimics, and each is one of them. The worklist runs for at
+most one entry more than the family has mimics: a derivation with more entries cannot match. -/
 def nestedAuxOk (ctx : Ctx md) (nP : Nat) (types : List (IndTypeRec md))
     (ctors : List (IndCtorRec md)) (recs : List (IndRecRec md)) (mems : List (Mem md)) : Bool :=
   let ns := types.map (·.cv.name) ++ ctors.map (·.cv.name) ++ recs.map (·.cv.name)
+  let aux : List (AuxEntry md) :=
+    (mems.filter (·.real?.isNone)).map fun m => (m.I, m.pins, m.lv)
   match ctors.mapM (fun c => (c.cv.type.stripPis nP).map (·.2)) with
   | none => false
   | some bodies =>
     match nestedScanAll ctx ns bodies (some []) with
     | none => false
     | some acc =>
-      match nestedWalk ctx ns nestedFuel 0 acc with
+      match nestedWalk ctx ns (aux.length + 1) 0 acc with
       | none => false
       | some derived =>
-        let aux : List (AuxEntry md) :=
-          (mems.filter (·.real?.isNone)).map fun m => (m.I, m.pins, m.lv)
         derived.length == aux.length && derived.all (fun x => aux.any (auxEntryEq x))
 
 /-! ## The nested rung -/
