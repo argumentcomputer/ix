@@ -253,10 +253,13 @@ def tamper (env : Ixon.V3.Env) (hints : Hints) (subject : String) (t : Tamper) :
   return (env, { hints with proposals := hints.proposals.set! i { prop with theorem? := some a' } },
     a' == ta)
 
-/-- **A tampered word theorem is refused**, at the stage each assertion names. The control
-(the record re-stored) loads with 68 word entries; the three tampered closures are refused by the
-kernel's acceptance at ingress; at the Src level, past the kernel, a theorem with `UInt64.add`'s
-statement whose proof is a non-standard axiom gets no word entry, `checkWord`'s
+/-- **A word theorem is read with its proof, and a tampered one is refused**, at the stage each
+assertion names. The control (the record re-stored) loads with 68 word entries, each theorem read
+with its proof (a proposal's theorem is a proof seed once its subject is reached), and the unread
+marker in its place (the theorem recorded as read by statement) gets no entry; with `Words.u8`
+the only root, `UInt64.add` and its theorem are not read at all. The three tampered closures are
+refused by the kernel's acceptance at ingress; at the Src level, past the kernel, a theorem with
+`UInt64.add`'s statement whose proof is a non-standard axiom gets no word entry, `checkWord`'s
 `checkAxiomClosure` naming the axiom. -/
 def tampered (a : Assert) : IO Unit := do
   let bytes ← IO.FS.readBinFile (dir / "words.ixe")
@@ -271,9 +274,59 @@ def tampered (a : Assert) : IO Unit := do
   let control := load env0 hints0
   match control with
   | .ok l =>
-    expectEq a (wordEntries l.program l.program.table).length 68
-      "tamper control: the re-encoded closure has 68 word entries"
+    let p := l.program
+    let entries := wordEntries p p.table
+    expectEq a entries.length 68 "tamper control: the re-encoded closure has 68 word entries"
+    -- every word entry's theorem was read with its proof (a proposal's theorem is a proof seed
+    -- once its subject is reached), so `checkWord`'s `checkAxiomClosure` walked a proof, never
+    -- the unread marker
+    expect a (entries.all fun (_, _, _, thm) => !p.byStatement.contains thm &&
+        match p.decl? thm with
+        | some (.defn .thm _ _ _ v) => v != Term.unreadProof
+        | _ => false)
+      "every word entry's theorem is read with its proof"
+    -- the unread marker, were a word theorem read by statement, is refused by `checkWord`
+    match entries.find? fun (f, _, _, _) => some (p.addr f) == ((hints.proposals.find? fun q =>
+        q.kind == .word && q.name? == some "UInt64.add").map (·.subject)) with
+    | some (f, _, _, thm) =>
+      let pb := { p with byStatement := p.byStatement.insert thm }
+      let (t, d, _) := Table.build cfg.table pb hints.proposals
+      expect a ((wordEntries pb t).all (·.1 != f))
+        "a word theorem read by statement gets no word entry"
+      expect a (d.any (·.message.startsWith "word: the equation was read by its statement"))
+        "with checkWord's diagnostic"
+      -- and `checkAxiomClosure` alone refuses it too (both of its branches)
+      expect a (Table.checkAxiomClosure pb thm matches .error _)
+        "checkAxiomClosure refuses a theorem read by statement"
+      expect a (Table.checkAxiomClosure p thm matches .ok _)
+        "checkAxiomClosure accepts the theorem read with its proof"
+    | none => expect a false "UInt64.add is a word entry"
   | .error d => expect a false s!"tamper control: refused ({d.code}: {d.message})"
+  -- a word proposal whose subject is not reached is not read: with `Words.u8` the only root,
+  -- `UInt64.add`'s theorem is not in the program, `UInt8.add`'s is, read with its proof
+  let u8 := { hints with roots := hints.roots.filter (·.2 == some "Words.u8") }
+  expectEq a u8.roots.size 1 "the sidecar names the root Words.u8"
+  match load env u8 with
+  | .ok l =>
+    let p := l.program
+    let index := Table.addrIndex p
+    let thmOf := fun (n : String) => (hints.proposals.find? fun q =>
+      q.kind == .word && q.name? == some n).bind (·.theorem?)
+    let subjOf := fun (n : String) => (hints.proposals.find? fun q =>
+      q.kind == .word && q.name? == some n).map (·.subject)
+    expect a ((subjOf "UInt64.add").all (index[·]?.isNone) &&
+        (thmOf "UInt64.add").all (index[·]?.isNone))
+      "Words.u8 alone: UInt64.add and its theorem are not read"
+    expect a ((thmOf "UInt8.add").any fun x => match index[x]? with
+        | some c => !p.byStatement.contains c
+        | none => false)
+      "Words.u8 alone: UInt8.add's theorem is read with its proof"
+    let entries := wordEntries p p.table
+    expect a ((WordOp.primitives .w8).all fun op => entries.any fun e => e.2.1 == .w8 && e.2.2.1 == op)
+      "Words.u8 alone: every UInt8 primitive operation is a word entry"
+    expect a (entries.all fun e => !(e.2.1 == .w64 && e.2.2.1 == .add))
+      "Words.u8 alone: UInt64.add is not a word entry"
+  | .error d => expect a false s!"Words.u8 alone: refused ({d.code}: {d.message})"
   let cases : List (String × Tamper) := [("an ill-typed proof", illTypedProof),
     ("a non-standard axiom as proof", axiomProof), ("the statement's sides swapped", swappedStatement)]
   for (label, t) in cases do

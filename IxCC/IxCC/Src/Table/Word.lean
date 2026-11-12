@@ -5,9 +5,11 @@ import IxCC.Src.Table.Check
 A `word w op thm` entry makes the constant pinned for the operation `op` at width `w` a special
 head of SrcEval (rule F6w), its meaning the stored theorem `thm`. The check (`checkWord`) asks:
 words are enabled (`Config.words`); `op` is one of the width's primitive operations; the constant
-is at the operation's pinned address; and `thm` is a safe, level-monomorphic theorem with a
-standard-axiom closure whose stored statement is, syntactically (`Term.eqv`), the one `wordEqnType`
-builds from the program's pinned constants:
+is at the operation's pinned address; and `thm` is a safe, level-monomorphic theorem, read with its
+proof (a proposal's theorem is a proof seed of ingress once its subject is reached; one read by
+statement, `Program.byStatement`, is refused, as `checkEqn` refuses it), with a standard-axiom
+closure (`checkAxiomClosure` walks the proof), whose stored statement is, syntactically
+(`Term.eqv`), the one `wordEqnType` builds from the program's pinned constants:
 
 * a binary operation: `∀ x y : Nat, op (ofNat x) (ofNat y) = ofNat (spec x y)`;
 * `complement`, `neg`: `∀ x : Nat, op (ofNat x) = ofNat (spec x)`;
@@ -123,6 +125,8 @@ def checkWord (cfg : Config) (p : Program) (f : CId) (w : Width) (op : WordOp) (
     | throw s!"word: a constant the statement of {op.leanName w} names is absent"
   let some (.defn .thm .safe 0 ty _) := p.decl? thm
     | throw "word: the equation is not a safe level-monomorphic theorem"
+  if p.byStatement.contains thm then
+    throw "word: the equation was read by its statement; its proof is not in the program"
   unless ty.nodesLe maxTermNodes do throw "word: the statement exceeds the node budget"
   unless ty.eqv expected do throw s!"word: the theorem does not state {op.leanName w}'s equation"
   checkAxiomClosure p thm
