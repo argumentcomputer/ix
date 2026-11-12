@@ -34,6 +34,9 @@ pub fn compile(
   output: &Path,
 ) -> Result<CircuitInfo, Box<dyn std::error::Error>> {
   let schema = serde_json::to_vec(schema)?;
+  if schema.len() > 16 << 20 {
+    return Err("Aiur PLONK schema exceeds the 16 MiB bridge limit".into());
+  }
   let path = output.to_str().ok_or("gnark paths must be UTF-8")?.as_bytes();
   let view =
     |data: &[u8]| raw::ix_gnark_view { data: data.as_ptr(), len: data.len() };

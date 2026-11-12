@@ -39,6 +39,10 @@ an oversized circuit before parameter loading or setup. Each capacity determines
 the full next-row cycle, including zero-padded rows; authenticated fixed tables
 retain their exact height.
 
+The exporter uses minimal hexadecimal scalar strings. Removing leading zero
+padding keeps byte-table-heavy schemas within the bridge's 16 MiB input bound
+without changing their field values, compiled constraints or verifier keys.
+
 The JSON schema and compiled constraint system are trusted key-generation inputs.
 `boolean_requests` explicitly selects the compiler's boolean-enable contract.
 Schemas with weighted requests leave it false and retain integer multiplicity

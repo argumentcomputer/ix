@@ -74,7 +74,7 @@ pub struct Witness {
 
 fn scalar(value: Scalar) -> String {
   format!(
-    "0x{:064x}",
+    "0x{:x}",
     num_bigint::BigUint::from_bytes_le(
       &value
         .canonical_limbs_le()

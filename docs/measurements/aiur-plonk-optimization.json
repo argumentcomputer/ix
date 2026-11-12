@@ -24,5 +24,10 @@
   },
   "verifying_key_sha256": "300a751c9f824534c24b37532c7979d89b4b9313d608c25a56650defee9277a1",
   "schema_sha256": "8e30e8ed60d36b728bd2f689b0e13ddf4b34e001fcbfcb6b992e52dad81b32a8",
-  "witness_sha256": "df4cddacc21629764fc20e3517557e5d9de0598b11c188187563b67c9b223dc2"
+  "witness_sha256": "df4cddacc21629764fc20e3517557e5d9de0598b11c188187563b67c9b223dc2",
+  "compact_transport": {
+    "schema_sha256": "bb4d29f6cc1064df98153a92e8b20adf202413fd08f3158c70cf5bab165077ec",
+    "witness_sha256": "82bbc09175e5ee8d3aa36224e0b5360d76e9300a6c070be2a8aafbf6444c32e5",
+    "verifying_key_and_solidity_identical": true
+  }
 }
