@@ -218,6 +218,11 @@ def build (cfg : Config) (p : Program) (hints : Array Proposal) :
   let recKind := NatMap.ofOptions ((List.range n).map (deriveRecKind p))
   return ({ resolve, recKind, lazy, inline, opaqueByValue }, diags, stats)
 
+/-- How a program gets its word entries, named once for every word hint (`wordHints`,
+`wordHintLine`) and the tests: `ix compile`'s flags as they are today. -/
+def wordEquationsAdvice : String :=
+  "compile the closure with `ix compile --equations --word-equations`"
+
 /-- **The word hints** (stage W1), after admission: a `hint` for each pinned primitive word
 operation the admitted program reaches in a runtime term (`reached`, `Admitted.reached`) without a
 `word` entry, which therefore runs its reference body. A word operation reached only through
@@ -229,9 +234,8 @@ def wordHints (p : Program) (reached : Array CId) : Array Diag := Id.run do
       if op.isPrimitive && !(p.table.resolveOf c matches some (.word ..)) then
         out := out.push { code := "hint", addr := some (p.addr c), name := some (op.leanName w)
                           message := s!"word: {op.leanName w} is reached at run time without an \
-                            accepted word equation, so it runs its reference body; compile the \
-                            closure with `ix compile --equations --word-equations` to make it a \
-                            primitive" }
+                            accepted word equation, so it runs its reference body; \
+                            {wordEquationsAdvice} to make it a primitive" }
   return out
 
 /-- The one line `ixcc compile` prints on standard error for the word hints (`none` when there are
@@ -244,7 +248,6 @@ def wordHintLine (hints : Array Diag) (shown : Nat := 3) : Option String :=
   let what := if hints.size == 1 then "word operation is" else "word operations are"
   let runs := if hints.size == 1 then "runs its reference body" else "run their reference bodies"
   some s!"hint: {hints.size} {what} reached at run time without an accepted word equation and \
-    {runs} ({listed}{more}): compile the closure with \
-    `ix compile --equations --word-equations`"
+    {runs} ({listed}{more}): {wordEquationsAdvice}"
 
 end IxCC.Src.Table

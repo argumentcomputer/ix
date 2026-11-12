@@ -177,9 +177,9 @@ def cliHints (a : Assert) (work : FilePath) : IO (Array String) := do
   let obj := (work / "words-hint.o").toString
   let (rc, lines) ← hintLines ["compile", ixe.toString, "--equations", bare.toString, "--root", "Words.u8", "-o", obj]
   expect a (rc == 0) s!"Words.u8 without word equations: exit {rc}"
-  expectEq a lines ["hint: 20 word operations are reached at run time without an accepted word \
+  expectEq a lines [s!"hint: 20 word operations are reached at run time without an accepted word \
     equation and run their reference bodies (UInt8.toNat, UInt16.toNat, UInt8.toUInt16 and 17 more): \
-    compile the closure with `ix compile --equations --word-equations`"]
+    {Src.Table.wordEquationsAdvice}"]
     s!"Words.u8 without word equations: one hint line"
   let (rc, full) ← hintLines ["compile", ixe.toString, "--equations", eqs.toString, "--root", "Words.u8", "-o", obj]
   expect a (rc == 0 && full.isEmpty) s!"Words.u8 with its word equations: exit {rc}, no hint line ({full})"

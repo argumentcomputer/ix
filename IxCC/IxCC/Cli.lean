@@ -65,8 +65,8 @@ allocation outcomes, then each of the producer's word hints in full.
 
 When the program reaches a pinned primitive word operation at run time without a word entry
 (`Src.Table.wordHints`; it then runs the operation's reference body), `compile` prints one line
-on standard error (`Src.Table.wordHintLine`: how many, the first names, and that
-`ix compile --equations --word-equations` stores the equations that make them primitives). It
+on standard error (`Src.Table.wordHintLine`: how many, the first names, and how to get the
+equations that make them primitives, `Src.Table.wordEquationsAdvice`). It
 changes no object, certificate or exit status; nothing is printed when there is none, or when the
 certificate is read.
 

@@ -174,7 +174,7 @@ def hints (a : Assert) (off on : Loaded) : IO Unit := do
   expectEq a off.wordHints.size 68
     s!"words off: a hint per reached primitive operation ({off.wordHints.size})"
   expect a (off.wordHints.all fun d => d.code == "hint" &&
-      (d.message.splitOn "ix compile --equations --word-equations").length == 2 &&
+      (d.message.splitOn Table.wordEquationsAdvice).length == 2 &&
       (d.name.map fun n => decide ((d.message.splitOn n).length > 1)).getD false)
     s!"each hint names its operation and the flag: {(off.wordHints.toList.take 2).map (·.message)}"
   expectEq a on.wordHints.size 0 s!"words on: no hint ({(on.wordHints.toList.take 2).map (·.message)})"
@@ -184,12 +184,12 @@ def hints (a : Assert) (off on : Loaded) : IO Unit := do
   let one := ", ".intercalate (names.take 1)
   expectEq a (Table.wordHintLine off.wordHints)
     (some s!"hint: 68 word operations are reached at run time without an accepted word equation \
-      and run their reference bodies ({three} and 65 more): compile the closure \
-      with `ix compile --equations --word-equations`") "the hint line for 68 operations"
+      and run their reference bodies ({three} and 65 more): {Table.wordEquationsAdvice}")
+    "the hint line for 68 operations"
   expectEq a (Table.wordHintLine (off.wordHints.extract 0 1))
     (some s!"hint: 1 word operation is reached at run time without an accepted word equation \
-      and runs its reference body ({one}): compile the closure \
-      with `ix compile --equations --word-equations`") "the hint line for one operation"
+      and runs its reference body ({one}): {Table.wordEquationsAdvice}")
+    "the hint line for one operation"
   expectEq a (Table.wordHintLine on.wordHints) none "no hint line without a hint"
 
 /-- **Where a word entry comes from: the sidecar's `theorems` list** (kind `word`), never a search
