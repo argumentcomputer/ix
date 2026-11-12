@@ -9,8 +9,8 @@
  {"words.ixe":
   "9c9b2557111d735c63a0fe69d6a304b439012df860b2c977a6b4aea1f7731862",
   "words.equations.json":
-  "2166964a191c8dbd8e20b3ef5a1e78a20c6d74bf18486bac8783b9756f345b94"},
+  "9d96a5903bc44cf31064dbf3953c3fc3e25b7a6b246a482048fe1bab685f82fe"},
  "commands":
  ["ix compile --no-build --consts <roots> --equations --anon --out words.ixe Words.lean",
   "ix compile --no-build --consts <roots> --equations --out words.named.ixe Words.lean",
-  "ix addr-of --ixe words.named.ixe NAME, for every root"]}
+  "ix addr-of --ixe words.named.ixe NAME, for every root and every name of the equations output"]}
