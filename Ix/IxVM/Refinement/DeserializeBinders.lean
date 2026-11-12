@@ -234,7 +234,9 @@ that follows. -/
 theorem getBinderNode_share {σ σ' σ2 : Ixon.GetState} {t : Ixon.TagN}
     (hu8 : Ixon.getU8 σ = .ok 3 σ') (hok2 : Ixon.getTagN 0 σ' = .ok t σ2) :
     Ixon.getBinderNode σ = .ok (.share t.value) σ2 := by
-  simp only [Ixon.getBinderNode, bind, EStateM.bind, hu8, hok2] <;> rfl
+  have h3 : ((3 : UInt8) == 3) = true := by decide
+  simp only [Ixon.getBinderNode, bind, EStateM.bind, hu8, h3, eq_self_iff_true, ↓reduceIte, hok2]
+    <;> rfl
 
 /-! ## Nodes -/
 
