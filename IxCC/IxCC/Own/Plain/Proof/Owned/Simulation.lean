@@ -46,7 +46,7 @@ theorem ownedState_entry (functions : Signatures) (H : Heap) (external : Nat →
   have himm : ∀ y, (Ctx.entry params).isImm y = false := fun _ => rfl
   have hbrw : ∀ y, (Ctx.entry params).brw.get? y = none := fun _ => rfl
   refine ⟨vs, ⟨fun y hy => ?_, ⟨params, htok, hroots⟩, hb, fun y hy => ?_, hn,
-    fun y hy => by rw [himm y] at hy; cases hy, fun y hy => ?_, fun y e hy => ?_, .nil _ _ _,
+    fun y hy => absurd hy (by simp [himm y]), fun y hy => ?_, fun y e hy => ?_, .nil _ _ _,
     .nil _⟩, hb⟩
   · simp only [Ctx.avail_eq, himm, Ctx.borrowed_eq, hbrw, Bool.false_or, Bool.or_eq_true,
       decide_eq_true_eq] at hy
