@@ -20,8 +20,8 @@ here (they cannot be elaborated) are checked three ways:
 * **`.meta`**: the closure is compiled by Ix's compiler with its metadata and
   the kernel annotator's binder data (`IxVM.ClaimHarness.withKernelAnnotator`),
   as the default table's records are, so a constant the table binds is at its
-  bound address; read at `.meta`, named from the metadata (`Ix.KernelDisplay.nameRead`) and checked, as
-  `kernel-check-ixe --meta` does;
+  bound address; read at `.meta`, named from the metadata
+  (`Ix.KernelDisplay.nameRead`) and checked, as `kernel-check-ixe --meta` does;
 * **`.source`**: the same constants through the Source ingress, which names
   binders from the Lean terms (`Ix.LeanIngress.nameExprs`), and checked group
   by group, as `kernel-source-ingress` does.
