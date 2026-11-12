@@ -9,6 +9,7 @@ use aiur::{FieldWord, field::FieldBackend};
 use ark_bn254::Fr;
 use ark_ff::{Field, PrimeField};
 
+pub mod compress_bn;
 pub mod compress_gl;
 pub mod fq;
 pub mod fq_relation;

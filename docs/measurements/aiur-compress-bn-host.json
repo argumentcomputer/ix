@@ -1,0 +1,65 @@
+{
+  "format": "ix-aiur-compress-bn-host-v1",
+  "date_utc": "2026-11-12",
+  "scope": "Host execution/profile of the saved fresh Init CompressGL proof under Ignition. No Init BN proof or end-to-end timing measured.",
+  "artifact_blake3": "8f37c540a414148dbfe9ab59760c80db8222b5b667b9de6aa99d72e448c610df",
+  "artifact_entry": "CompressBN::compress_v1 from the checked-in kzg-source fixture",
+  "public_capacity": {
+    "max_log_height": 24,
+    "quotient_degree": 8
+  },
+  "input": {
+    "artifact_blake3": "a05f4ee78f024e8aebfbbdd31a9c4ac9a974a6bcd1cb615b9bdd2eeea71b97ab",
+    "key_blake3": "c7cff0dc21de3439bf547efd3f6320a703ab449bd02315bcef49b11d63e647ad",
+    "root_key_blake3": "55f0b8b04acdc211e249b538adcdab95fec15de6c9504ba875ffb52b1f1f8e86",
+    "root_claims_blake3": "c67d7ce5ac847836c4962eef2eadc71de89c08577e63d25f1982a145c09a6908",
+    "max_record_bytes": 68719476736,
+    "max_trace_bytes": 103079215104
+  },
+  "prepared_key": {
+    "artifact_blake3": "8f37c540a414148dbfe9ab59760c80db8222b5b667b9de6aa99d72e448c610df",
+    "entry": 152,
+    "format": "ix-aiur-compress-bn-key-v1",
+    "max_log_height": 24,
+    "portable_key_blake3": "17cde8918b89af704d4eb764cf8a3179df6446635a965c724a5ac5c140b99077",
+    "quotient_degree": 8,
+    "setup": "ignition",
+    "source_key_blake3": "bf84a42cc749f8dcf14bce1ca2c0fb5d8b1eb490c8646ce719d58b7faa2195c4"
+  },
+  "profile": {
+    "artifact_blake3": "8f37c540a414148dbfe9ab59760c80db8222b5b667b9de6aa99d72e448c610df",
+    "concrete_lookup_cells": 1828689289,
+    "fixed_cells": 1055000,
+    "instructions": 1776747892,
+    "main_cells": 615485074,
+    "main_fixed_lookup_bytes": 29870400128,
+    "max_height": 16777216,
+    "policy_blake3": "b2dcc4b13ab238a08575ae68142b33f79ba44c1c607d588c87cec3585f317af7",
+    "quotient_degree": 2,
+    "record": {
+      "query_index_estimate_bytes": 323100580,
+      "query_payload_bytes": 4011348896,
+      "query_vector_capacity_bytes": 4367302856,
+      "rom_index_estimate_bytes": 75497488,
+      "rom_payload_bytes": 631094560,
+      "rom_vector_capacity_bytes": 1385212288
+    },
+    "stage": 1,
+    "stage2_accumulator_cells": 316909930,
+    "statement_blake3": "8f2b55dec474487065c6b4937fc129bb58efc1687686c2f00127751b007bb955",
+    "total_rows": 40785803
+  },
+  "column_commitments": {
+    "main_width": 8084,
+    "lookup_width": 2451,
+    "quotient_degree": 248
+  },
+  "validation": {
+    "focused_host_tests": 4,
+    "development_success_proof": "Passed actual BN proof generation, portable verification, changed-stage rejection and next-stage source export.",
+    "admission": "Missing or short SRS prefixes rejected before witness allocation; concrete lookup tuples count against memory limits when streaming is disabled.",
+    "clippy": "Library, host tests and example pass with -D warnings.",
+    "production_input": "Pinned GL artifact/key and independently supplied root statement verified natively before source projection; Aiur step execution then succeeded."
+  },
+  "deferred_pairing": "A native proof of the step does not discharge the carried accumulator. CompressFinal remains required."
+}

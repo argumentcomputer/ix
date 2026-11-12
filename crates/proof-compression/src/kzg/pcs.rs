@@ -428,6 +428,12 @@ impl KzgPcs {
     &self.verifier
   }
 
+  /// Loaded proving powers, independent of the public trace capacity.
+  /// Verifier-only configurations do not carry proving powers.
+  pub fn proving_capacity(&self) -> Option<usize> {
+    self.srs.as_ref().map(|srs| srs.max_len())
+  }
+
   /// The public setup these parameters commit to.
   pub fn public_setup(&self) -> super::PublicSetup {
     self.verifier.public_setup()

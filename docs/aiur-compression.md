@@ -1038,3 +1038,24 @@ cells. A fitting final PLONK circuit and the full Init compression chain still
 need validation. Focused curve, encoding, source-verifier, tower and pairing
 tests pass, including actual forged KZG witnesses, and all dependent compiler
 fixtures are regenerated.
+
+## 21. BN host execution and admission
+
+The `compress_bn` host wrapper authenticates the compiler artifact, policy,
+source-wire key and exact predecessor statement before bounded execution.
+Proving checks actual loaded SRS capacity, fixed-table requirements and trace
+memory before witness allocation. Non-streaming lookup tuples count against
+the memory allowance. A small development step proves, verifies independently,
+rejects a changed stage and exports source inputs for the next step.
+
+The [saved fresh Init GL proof](measurements/aiur-compress-bn-host.json) also
+passes the new native-input projection and Aiur BN execution under Ignition.
+Its ungrouped count profile has 615,485,074 main cells, 316,909,930 lookup cells
+and maximum height `2^24`, within the unchanged public height cap. Main, fixed
+and lookup matrices total 29,870,400,128 bytes before prover workspaces. This
+is an execution/profile result, not an Init BN proof or end-to-end timing.
+
+The [standalone host tool](../crates/proof-compression/examples/compress_bn.md)
+prepares pinned keys and policy, projects an independently verified GL proof,
+and runs count-only or proving modes. The stage still carries a deferred
+pairing accumulator; terminal verification is required to accept the chain.

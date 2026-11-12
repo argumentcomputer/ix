@@ -97,7 +97,7 @@ pub struct Capacity {
 }
 
 impl Capacity {
-  fn height(self) -> Result<usize, String> {
+  pub fn height(self) -> Result<usize, String> {
     if self.max_log_height == 0
       || !self.quotient_degree.is_power_of_two()
       || u32::from(self.max_log_height) + self.quotient_degree.ilog2() > 28
@@ -109,7 +109,9 @@ impl Capacity {
       .ok_or_else(|| "trace capacity overflow".into())
   }
 
-  fn config(
+  /// Load proving powers under the same setup identity for every Aiur stage.
+  /// The loaded prefix affects memory use, while the public capacity stays fixed.
+  pub fn config(
     self,
     setup: &SetupConfig,
     loaded_height: usize,
