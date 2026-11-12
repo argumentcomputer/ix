@@ -73,9 +73,9 @@ theorem SharesIn.mono {P Q : Nat → Prop} (hPQ : ∀ i, P i → Q i) (e : Ixon.
   | share i => exact hPQ _ h
   | prj _ _ v ih => exact ih h
   | app f a ihf iha => exact ⟨ihf h.1, iha h.2⟩
-  | lam _ t b iht ihb => exact ⟨iht h.1, ihb h.2⟩
-  | all _ _ t b iht ihb => exact ⟨iht h.1, ihb h.2⟩
-  | letE _ t v b iht ihv ihb => exact ⟨iht h.1, ihv h.2.1, ihb h.2.2⟩
+  | lam t b iht ihb => exact ⟨iht h.1, ihb h.2⟩
+  | all t b iht ihb => exact ⟨iht h.1, ihb h.2⟩
+  | letE _ _ t v b iht ihv ihb => exact ⟨iht h.1, ihv h.2.1, ihb h.2.2⟩
   | _ => trivial
 
 theorem foldl_some_mem {α : Type} (f : Option α → α → Option α)
@@ -182,7 +182,7 @@ theorem below_child {dag : Dag} {t k : Nat} (hk : k < (dag.node t).children.size
 /-- A telescope node. -/
 def IsSpine (n : Node) : Prop :=
   match n.head with
-  | .app | .lam _ | .all .. => True
+  | .app | .lam | .all => True
   | _ => False
 
 theorem spine_children {dag : Dag} (harity : DagArity dag) (v : Nat)
@@ -319,7 +319,7 @@ theorem build_shares_below (p : Prep) (ev : DictEval) (index width : Array (Opti
             obtain ⟨v, hv, hpure⟩ := bind_eq_ok h
             cases hpure
             exact lift _ v (below_child (by rw [ha, hh]; simp [Head.arity])) hv
-          case letE lc =>
+          case letE nonDep mode =>
             obtain ⟨ty, hty, h2⟩ := bind_eq_ok h
             obtain ⟨v, hv, h3⟩ := bind_eq_ok h2
             obtain ⟨b, hb, hpure⟩ := bind_eq_ok h3
