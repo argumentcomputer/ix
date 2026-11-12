@@ -126,14 +126,19 @@ theorem Weaker.avail {Γ' Γ : Ctx} (h : Weaker Γ' Γ) {y : Var} (ha : Γ'.avai
     Γ.avail y = true := by
   have ht := h.tokens y
   simp only [avail_eq, h.isImm, h.borrowed, Bool.or_eq_true, decide_eq_true_eq] at ha ⊢
-  omega
+  rcases ha with (h1 | h2) | h3
+  · exact Or.inl (Or.inl h1)
+  · exact Or.inl (Or.inr (Nat.lt_of_lt_of_le h2 ht))
+  · exact Or.inr h3
 
 theorem Weaker.known {Γ' Γ : Ctx} (h : Weaker Γ' Γ) {y : Var} (hk : Γ'.known y = true) :
     Γ.known y = true := by
-  have ho := h.ownHas y
-  simp only [known_eq, h.brw, Bool.or_eq_true] at hk ⊢
-  rw [show Γ'.imm.contains y = Γ.imm.contains y by rw [h.imm]] at hk
-  tauto
+  simp only [known_eq, Bool.or_eq_true] at hk ⊢
+  rw [h.isImm y, h.brw] at hk
+  rcases hk with (h1 | h2) | h3
+  · exact Or.inl (Or.inl h1)
+  · exact Or.inl (Or.inr (h.ownHas y h2))
+  · exact Or.inr h3
 
 theorem take_weaker {Γ Γ' : Ctx} {x : Var} (h : Γ.take x = .ok Γ') : Weaker Γ' Γ := by
   rcases take_ok h with ⟨_, rfl⟩ | ⟨_, n, hn, rfl⟩
@@ -285,7 +290,7 @@ theorem Tokens.addOwn {Γ : Ctx} {toks : List Var} (h : Tokens Γ toks) (x : Var
   · rw [tokens_addOwn, List.count_cons, h.count]
     by_cases hy : y = x
     · subst hy; simp
-    · simp [hy]
+    · simp [hy, Ne.symm hy]
   · simp [h.total]
 
 theorem count_filter_ne (x : Var) : ∀ (zs : List Var) (y : Var),
@@ -295,8 +300,8 @@ theorem count_filter_ne (x : Var) : ∀ (zs : List Var) (y : Var),
     have ih := count_filter_ne x zs y
     by_cases hz : z = x
     · subst hz
-      have hf : (z :: zs).filter (fun w => w != z) = zs.filter (fun w => w != z) := by
-        simp [List.filter_cons]
+      have hf : (z :: zs).filter (fun w => w != z) = zs.filter (fun w => w != z) :=
+        List.filter_cons_of_neg (by simp)
       rw [hf, ih, List.count_cons]
       by_cases hy : y = z
       · simp [hy]
@@ -308,7 +313,7 @@ theorem count_filter_ne (x : Var) : ∀ (zs : List Var) (y : Var),
       by_cases hy : y = x
       · have hzy : (z == y) = false := by
           simp only [beq_eq_false_iff_ne]; intro he; exact hz (he.trans hy)
-        simp [hy, hzy]
+        simp [hy, hzy, hz]
       · simp [hy]
 
 theorem length_filter_ne (x : Var) : ∀ (zs : List Var),
@@ -318,8 +323,8 @@ theorem length_filter_ne (x : Var) : ∀ (zs : List Var),
     have ih := length_filter_ne x zs
     by_cases hz : z = x
     · subst hz
-      have hf : (z :: zs).filter (fun w => w != z) = zs.filter (fun w => w != z) := by
-        simp [List.filter_cons]
+      have hf : (z :: zs).filter (fun w => w != z) = zs.filter (fun w => w != z) :=
+        List.filter_cons_of_neg (by simp)
       rw [hf, List.count_cons]
       simp only [beq_self_eq_true, ↓reduceIte, List.length_cons]
       omega
@@ -336,9 +341,18 @@ theorem count_nodup {y : Var} : ∀ {xs : List Var}, xs.Nodup → xs.count y = i
     rw [List.nodup_cons] at hn
     rw [List.count_cons, count_nodup hn.2]
     by_cases hy : y = z
-    · subst hy; simp [hn.1]
+    · subst hy
+      have h0 : (y == y) = true := beq_self_eq_true y
+      rw [h0, if_neg hn.1, if_pos List.mem_cons_self]
     · have hzy : (z == y) = false := by simpa [eq_comm] using hy
-      simp [hy, hzy]
+      rw [hzy]
+      by_cases hm : y ∈ zs
+      · rw [if_pos hm, if_pos (List.mem_cons_of_mem _ hm)]; rfl
+      · have hm' : y ∉ z :: zs := by
+          intro h; rcases List.mem_cons.mp h with h | h
+          · exact hy h
+          · exact hm h
+        rw [if_neg hm, if_neg hm']; rfl
 
 theorem Tokens.setImm {Γ : Ctx} {toks : List Var} (h : Tokens Γ toks) (x : Var) :
     Tokens (Γ.setImm x) (toks.filter (fun y => y != x)) := by
@@ -353,15 +367,21 @@ theorem Tokens.same {Γ Γ' : Ctx} {toks : List Var} (h : Tokens Γ toks)
     (ho : Γ'.own = Γ.own) (ht : Γ'.total = Γ.total) : Tokens Γ' toks :=
   ⟨fun y => by rw [h.count]; simp only [tokens_eq, ho], by rw [ht, h.total]⟩
 
+theorem map_fst_pairs (xs : List Var) (n : Nat) :
+    (xs.map (fun x => (x, n))).map (fun p => p.1) = xs := by
+  induction xs with
+  | nil => rfl
+  | cons z zs ih => simp only [List.map_cons, ih]
+
 theorem tokens_ofList {xs : List Var} (hn : xs.Nodup) (y : Var) :
     (({ own := Src.NatMap.ofList (xs.map (·, 1)) } : Ctx)).tokens y = if y ∈ xs then 1 else 0 := by
-  have hk : ((xs.map (·, 1)).map (·.1)).Nodup := by simpa [List.map_map] using hn
+  have hk : ((xs.map (·, 1)).map (·.1)).Nodup := by rw [map_fst_pairs]; exact hn
   by_cases hy : y ∈ xs
   · rw [if_pos hy, tokens_eq]
     rw [Src.NatMap.get?_ofList hk (x := 1) (by simpa using hy)]
     rfl
   · rw [if_neg hy, tokens_eq]
-    rw [Src.NatMap.get?_ofList_none hk (by simpa [List.map_map] using hy)]
+    rw [Src.NatMap.get?_ofList_none hk (by rw [map_fst_pairs]; exact hy)]
     rfl
 
 theorem Tokens.ofList {xs : List Var} (hn : xs.Nodup) (Γ : Ctx)
