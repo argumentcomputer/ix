@@ -255,6 +255,17 @@ theorem SumCtorRunJ.names {J : Judgements md} {env₀ env : Env md} {T : Key md}
     · exact h₀.levelParams_eq
     · exact h₁.levelParams_eq
 
+/-- A stored constructor is a constant check of the declared one at some type. -/
+theorem SumCtorRunJ.check {J : Judgements md} {env₀ env : Env md} {T : Key md}
+    {lps : List LevelParam} {nP nIdx : Nat} {resSort : Level} {isProp large : Bool}
+    {cvC : ConstantVal md} {nF : Nat} {cvTa cvCa : ConstantVal md} {sorts : List Level}
+    (h : SumCtorRunJ J env₀ env T lps nP nIdx resSort isProp large cvC nF cvTa cvCa sorts) :
+    ∃ ty', ConstantValCheckJ J env { cvC with type := ty' } cvCa := by
+  obtain ⟨⟨cvCa₀, h₀, hbr⟩, -⟩ := h
+  rcases hbr with rfl | hty
+  · exact ⟨cvC.type, h₀⟩
+  · exact hty
+
 /-- The stored former keeps the declared name and level parameters; the name is
 fresh before the block and passes the front door's shape test. -/
 theorem SumIndRunJ.former {J : Judgements md} {env envI : Env md} {p p' : InductiveShape md}
