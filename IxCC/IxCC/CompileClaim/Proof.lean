@@ -860,7 +860,7 @@ theorem verifyBytes_immortal_sound {cfg : Recheck.Config} {envBytes : ByteArray}
       Src.KernelFront.AcceptedFrom inp.env Src.KernelFront.defaultLimits inp.kernel.acc ∧
       Ix.Kernel.Admission.checkBytesTieredUsing (Src.KernelFront.preludeSource inp.kernel.acc.pre)
         Src.KernelFront.hash inp.kernel.acc.binding inp.kernel.acc.limits inp.kernel.acc.records
-        inp.kernel.acc.blobs = .ok (inp.kernel.acc.env, inp.kernel.acc.tier) ∧
+        inp.kernel.acc.blobs inp.kernel.acc.hints.lookup = .ok (inp.kernel.acc.env, inp.kernel.acc.tier) ∧
       Src.Resource.validate inp.program = .ok () ∧
       Src.KernelFront.Reading.build inp.kernel.acc inp.program = .ok inp.kernel.rd ∧
       inp.kernel.fe = Ix.Kernel.mkFEnv inp.kernel.acc.env ∧
@@ -949,7 +949,7 @@ theorem verifyBytes_zeroRc_sound {cfg : Recheck.Config} {envBytes : ByteArray}
       Src.KernelFront.AcceptedFrom inp.env Src.KernelFront.defaultLimits inp.kernel.acc ∧
       Ix.Kernel.Admission.checkBytesTieredUsing (Src.KernelFront.preludeSource inp.kernel.acc.pre)
         Src.KernelFront.hash inp.kernel.acc.binding inp.kernel.acc.limits inp.kernel.acc.records
-        inp.kernel.acc.blobs = .ok (inp.kernel.acc.env, inp.kernel.acc.tier) ∧
+        inp.kernel.acc.blobs inp.kernel.acc.hints.lookup = .ok (inp.kernel.acc.env, inp.kernel.acc.tier) ∧
       Src.Resource.validate inp.program = .ok () ∧
       Src.KernelFront.Reading.build inp.kernel.acc inp.program = .ok inp.kernel.rd ∧
       inp.kernel.fe = Ix.Kernel.mkFEnv inp.kernel.acc.env ∧
@@ -1043,7 +1043,7 @@ theorem verifyBytes_plainRc_sound {cfg : Recheck.Config} {envBytes : ByteArray}
       Src.KernelFront.AcceptedFrom inp.env Src.KernelFront.defaultLimits inp.kernel.acc ∧
       Ix.Kernel.Admission.checkBytesTieredUsing (Src.KernelFront.preludeSource inp.kernel.acc.pre)
         Src.KernelFront.hash inp.kernel.acc.binding inp.kernel.acc.limits inp.kernel.acc.records
-        inp.kernel.acc.blobs = .ok (inp.kernel.acc.env, inp.kernel.acc.tier) ∧
+        inp.kernel.acc.blobs inp.kernel.acc.hints.lookup = .ok (inp.kernel.acc.env, inp.kernel.acc.tier) ∧
       Src.Resource.validate inp.program = .ok () ∧
       Src.KernelFront.Reading.build inp.kernel.acc inp.program = .ok inp.kernel.rd ∧
       inp.kernel.fe = Ix.Kernel.mkFEnv inp.kernel.acc.env ∧

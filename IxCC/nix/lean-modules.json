@@ -956,6 +956,7 @@
    "imports":
    ["IxCCTests.KernelFront.Report",
     "IxCCTests.KernelFront.Bound",
+    "IxCCTests.KernelFront.Hints",
     "IxCCTests.Src.Support",
     "IxCCTests.Support.Envelope"]},
   "IxCCTests.KernelFront.Report":
@@ -964,6 +965,13 @@
   "IxCCTests.KernelFront.Main":
   {"path": "IxCCTests/KernelFront/Main.lean",
    "imports": ["IxCCTests.KernelFront.Run"]},
+  "IxCCTests.KernelFront.Hints":
+  {"path": "IxCCTests/KernelFront/Hints.lean",
+   "imports":
+   ["IxCCTests.Src.Support",
+    "IxCCTests.Support.Envelope",
+    "IxCC.Recheck.Produce",
+    "IxCC.Recheck.Json"]},
   "IxCCTests.KernelFront.Bound":
   {"path": "IxCCTests/KernelFront/Bound.lean",
    "imports":

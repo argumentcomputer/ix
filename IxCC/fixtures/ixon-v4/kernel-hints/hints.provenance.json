@@ -1,0 +1,16 @@
+{"source_sha256":
+ "0a750a079e25e215be3820834e673a3208e09f434f50ce740700ad978a66daac",
+ "producer_version": "4.34.1|0.0.1",
+ "producer":
+ "the ix of this repository: lake build ix at the repository root, in its dev shell (not a Nix build)",
+ "named_env_sha256":
+ "22b793855f7c6f713370d10e9a106d79e70449ac1c01cb8d176e1e9250d2ebd0",
+ "files":
+ {"hints.ixe":
+  "601cc17542905a645d1604ab6a2f80c0bb4ede86e5275898064c3ec30e91a967",
+  "hints.equations.json":
+  "a6cd89118338b9cde6235fe113da231181db67e970ba1fe091edde1aee4f035d"},
+ "commands":
+ ["ix compile --no-build --consts <roots and seeds> --anon --out hints.ixe KernelHints.lean",
+  "ix compile --no-build --consts <roots and seeds> --out hints.named.ixe KernelHints.lean",
+  "ix addr-of --ixe hints.named.ixe NAME, for every root"]}

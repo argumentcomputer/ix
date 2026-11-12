@@ -130,7 +130,7 @@ for each record kind it meets:
 | `dPrj`, `iPrj`, `rPrj`, `cPrj` (projection records) | an alias of the member it names; a projection record that names no member of a block in the closure is refused (`src ingress: projection record … names no member of a block in the closure`) |
 | §1 blobs | authenticated; read through the constants that reference them (`nat` and `str` literals) |
 | assumptions | read; a reference to a constant the file does not hold is refused at ingress, so IxCC compiles only closed closures |
-| §3 hints | read and range-checked, kept with the environment; the certified kernel's acceptance is run without hints; not covered by `H` |
+| §3 hints | read and range-checked, kept with the environment, and passed to the certified kernel's acceptance and reading as advice about unfolding order (`KernelFront.HintTable.of`: a block member's hint under its projection record's address, as `ix check-lean` passes them), by the producer and the verifier alike; no theorem depends on them; not covered by `H` |
 | §4–§6 metadata | not part of the closure: kept as opaque bytes, never interpreted |
 | the binding | authenticated, decoded, kept with the environment (`V3.Env.binding`) and read for the pins |
 
@@ -241,6 +241,15 @@ the environment's root and role-table address are the claim's, and their
 soundness theorems state both (`verifyBytes_immortal_sound`,
 `verifyBytes_zeroRc_sound`, `verifyBytes_plainRc_sound`,
 `verifyBytesRing0Sip_sound`).
+
+Neither name covers the hints section (§3) or the metadata: two parties can
+hold the same compile claim over files that differ in their hints. Hints are
+advice about the order in which the kernel unfolds definitions, and every
+theorem of the kernel's entry holds for every hint function, so the two files
+have the same acceptances; but the kernel may run out of fuel under one set
+of hints and not under another, so one party's verifier may decline the claim
+where the other's accepts it, never accept a different one ([kernel front
+end](kernel-front-end-design.md#acceptance), "Reducibility hints").
 
 ## What is not yet so
 

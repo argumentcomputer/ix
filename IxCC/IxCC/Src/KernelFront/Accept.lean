@@ -38,6 +38,18 @@ kernel's reader under the artifact's table, as `ix check-lean` admits an
 artifact; the limits are IxCC's decoder's caps (`defaultLimits`), so the
 entry's batch limits never refuse what ingress let through.
 
+The entry and the reading take the artifact's own reducibility hints
+(`HintTable.of`: the envelope's hints section, a block member's hint looked up
+under its projection record's address, as `ix check-lean` passes them). Hints
+are advice about the order in which conversion unfolds definitions: every
+theorem of the entry holds for every hint function, so no guarantee depends on
+their being right, but the kernel's work does. Without them the kernel's reader
+computes every height itself and has no `abbrev`, and a conversion Lean's kernel
+closes in a millisecond can take time exponential in a literal's size
+(`IxCC/plans/aiur-backend/KERNEL-NOTES.md`, section 10). The kernel can decline
+on fuel under one hint function and accept under another, so a verdict is about
+the artifact as stored, hints section included.
+
 Besides the entry's verdict the front end keeps the reader's declarations of
 the logical records and the tier reader's declarations of the tier records
 (`Accepted.decls`, `Accepted.tierDecls`): the reading the annotator asks the
@@ -195,6 +207,36 @@ acceptance compares the ordered records with. -/
 def sortRecords (records : List (KAddr × ByteArray)) : List (KAddr × ByteArray) :=
   (records.toArray.qsort fun x y => x.1.cmpBytes y.1 == .lt).toList
 
+/-- A hint as the envelope's hints section codes it: `0` opaque, `1` abbrev,
+`2 + h` regular at height `h` (`IxCC.Ixon.V3.Env.hints`). -/
+def hintOfCode (h : UInt64) : Ix.Kernel.ReducibilityHint :=
+  if h == 0 then .opaque else if h == 1 then .abbrev else .regular (h.toNat - 2)
+
+/-- **The artifact's reducibility hints, as the kernel's entries take them**:
+the hints section by address, and the address a block member's hint is
+recorded under, its projection record's (the compiler records a hint per named
+constant, and a member of a block is named by its projection). Built once per
+artifact; `lookup` is two probes. -/
+structure HintTable where
+  projAt : Std.HashMap (ConstRef KAddr) KAddr := {}
+  hints : Std.HashMap KAddr Ix.Kernel.ReducibilityHint := {}
+  deriving Inhabited
+
+/-- The hint table of an artifact: its hints section (`hints`) and its records
+decoded (`constants`), the projection records naming the block members. -/
+def HintTable.of (hints : Array (Ixon.Address × UInt64)) (constants : List (KAddr × KConstant)) :
+    HintTable :=
+  { projAt := constants.foldl (fun m (a, c) =>
+      match c.info with
+      | .dPrj q => m.insert (.member q.block q.idx.toNat) a
+      | _ => m) {}
+    hints := hints.foldl (fun m (a, h) => m.insert (kaddr a) (hintOfCode h)) {} }
+
+/-- The hint the entry is given for a constant reference: the one recorded
+under the member's projection record, or under the block's own address. -/
+def HintTable.lookup (t : HintTable) (r : ConstRef KAddr) : Option Ix.Kernel.ReducibilityHint :=
+  t.hints[(t.projAt[r]?).getD r.block]?
+
 /-- The prelude source the entry is given: the artifact's own prelude. -/
 def preludeSource (pre : Ix.Kernel.Reader.Prelude .anon) :
     Ix.Kernel.RoleTable → Except String (Ix.Kernel.Reader.Prelude .anon) :=
@@ -211,13 +253,16 @@ structure Accepted where
   /-- The closure's records, in check order. -/
   records : Ix.Kernel.Admission.Records
   blobs : Ix.Kernel.Ingress.Blobs
+  /-- The reducibility hints the entry and the reading ran with: the
+  artifact's own (`HintTable.of`, `AcceptedFrom`). -/
+  hints : HintTable
   /-- The logical environment the entry installed. -/
   env : Ix.Kernel.Env .anon
   /-- The tier constants (the `partial` and `unsafe` definitions), typed. -/
   tier : List (Ix.Kernel.Tier.TierConst .anon)
   /-- **The entry's accept.** -/
   accepted : Ix.Kernel.Admission.checkBytesTieredUsing (preludeSource pre) hash binding limits
-    records blobs = .ok (env, tier)
+    records blobs hints.lookup = .ok (env, tier)
   /-- The records, decoded by the kernel's canonical decoder, in check order. -/
   constants : List (KAddr × KConstant)
   decoded : Ix.Kernel.Admission.decodeRecords limits records = .ok constants
@@ -226,11 +271,11 @@ structure Accepted where
   evidence : Ix.Kernel.Evidences .anon
   readDecls : Array (Ix.Kernel.Declaration .anon)
   read : Ix.Kernel.Admission.readStream hash table pre
-    (Ix.Kernel.Admission.partitionTier constants).1 blobs = .ok (evidence, readDecls)
+    (Ix.Kernel.Admission.partitionTier constants).1 blobs hints.lookup = .ok (evidence, readDecls)
   /-- The tier reader's declarations of the tier records. -/
   tierDecls : Array (Nat × Ix.Kernel.Tier.TierDecl .anon)
   tierRead : Ix.Kernel.Admission.readTier
-    (Ix.Kernel.Admission.streamContext hash table pre constants blobs (fun _ => none))
+    (Ix.Kernel.Admission.streamContext hash table pre constants blobs hints.lookup)
     (Ix.Kernel.Admission.partitionTier constants).2 = .ok tierDecls
 
 /-- The declarations the fold ran over: the reader's, behind the prelude. -/
@@ -242,7 +287,7 @@ bindings and the keys the reading gave every reference
 (`Ix.Kernel.Admission.streamContext`, as the entry builds it for the tier
 reader). -/
 def Accepted.ctx (a : Accepted) : Ix.Kernel.Reader.Ctx .anon :=
-  Ix.Kernel.Admission.streamContext hash a.table a.pre a.constants a.blobs (fun _ => none)
+  Ix.Kernel.Admission.streamContext hash a.table a.pre a.constants a.blobs a.hints.lookup
 
 /-- The entry's inputs before it runs: the binding section, the admitted
 table, the artifact's prelude and the records in check order. Every one is a
@@ -289,16 +334,22 @@ def prepare (env : Ixon.V3.Env) (limits : Ix.Kernel.Admission.Limits) : Except R
 /-- **What an acceptance of `env` is about**: the environment is role-bound;
 the entry ran on its binding section, on exactly its records (sorted by
 address the entry's records are the envelope's) and on exactly its blobs, at
-the given batch limits. -/
+the given batch limits, with the envelope's own reducibility hints (its hints
+section, keyed by the records' own projections: a function of the artifact's
+bytes, which the verifier computes as the producer does). -/
 def AcceptedFrom (env : Ixon.V3.Env) (limits : Ix.Kernel.Admission.Limits) (a : Accepted) : Prop :=
   ∃ b, env.binding = some b ∧ (a.binding.address = kaddr b.address ∧ a.binding.bytes = b.bytes) ∧
-    sortRecords a.records = (recordsOf env).toList ∧ a.blobs = blobsOf env ∧ a.limits = limits
+    sortRecords a.records = (recordsOf env).toList ∧ a.blobs = blobsOf env ∧ a.limits = limits ∧
+    a.hints = HintTable.of env.hints a.constants
 
 /-- **The kernel's entry on prepared inputs**: refused unless the binding is
 the envelope's and the records are exactly the envelope's (the same
-address-and-bytes pairs, in the check order), then the tiered entry, refused
-with the kernel's reason; then the reader's declarations of the same inputs,
-which the annotator asks about. -/
+address-and-bytes pairs, in the check order), then the tiered entry with the
+envelope's hints (`HintTable.of` over the records decoded), refused with the
+kernel's reason; then the reader's declarations of the same inputs, which the
+annotator asks about. Records that do not decode are refused with the entry's
+own reason, as the entry finds it (it decodes the same records, after its byte
+checks). -/
 def acceptPrepared (env : Ixon.V3.Env) (limits : Ix.Kernel.Admission.Limits) (p : Prepared) :
     Except Refusal { a : Accepted // AcceptedFrom env limits a } :=
   match hb : env.binding with
@@ -307,27 +358,33 @@ def acceptPrepared (env : Ixon.V3.Env) (limits : Ix.Kernel.Admission.Limits) (p 
     if h1 : p.binding.address = kaddr b.address ∧ p.binding.bytes = b.bytes then
       if h2 : sortRecords p.records = (recordsOf env).toList then
         let blobs := blobsOf env
-        match ha : Ix.Kernel.Admission.checkBytesTieredUsing (preludeSource p.pre) hash p.binding limits
-            p.records blobs with
-        | .error e => throw (Refusal.ofTierError p.records e)
-        | .ok (kenv, tier) =>
-          match hd : Ix.Kernel.Admission.decodeRecords limits p.records with
-          | .error e => throw (Refusal.ofError (Ix.Kernel.Admission.Error.ofBytes e))
-          | .ok constants =>
+        match hd : Ix.Kernel.Admission.decodeRecords limits p.records with
+        | .error e =>
+          -- the entry's own refusal (its byte checks run before its decoding)
+          match Ix.Kernel.Admission.checkBytesTieredUsing (preludeSource p.pre) hash p.binding limits
+              p.records blobs with
+          | .error e' => throw (Refusal.ofTierError p.records e')
+          | .ok _ => throw (Refusal.ofError (Ix.Kernel.Admission.Error.ofBytes e))
+        | .ok constants =>
+          let hints := HintTable.of env.hints constants
+          match ha : Ix.Kernel.Admission.checkBytesTieredUsing (preludeSource p.pre) hash p.binding limits
+              p.records blobs hints.lookup with
+          | .error e => throw (Refusal.ofTierError p.records e)
+          | .ok (kenv, tier) =>
             match hr : Ix.Kernel.Admission.readStream hash p.table p.pre
-                (Ix.Kernel.Admission.partitionTier constants).1 blobs with
+                (Ix.Kernel.Admission.partitionTier constants).1 blobs hints.lookup with
             | .error e => throw (Refusal.ofError e)
             | .ok (evidence, readDecls) =>
               match ht : Ix.Kernel.Admission.readTier
-                  (Ix.Kernel.Admission.streamContext hash p.table p.pre constants blobs (fun _ => none))
+                  (Ix.Kernel.Admission.streamContext hash p.table p.pre constants blobs hints.lookup)
                   (Ix.Kernel.Admission.partitionTier constants).2 with
               | .error (i, e) => throw (Refusal.ofTierError p.records (.read i e))
               | .ok tierDecls =>
                 pure ⟨{ binding := p.binding, table := p.table, pre := p.pre, limits,
-                        records := p.records, blobs, env := kenv, tier, accepted := ha,
+                        records := p.records, blobs, hints, env := kenv, tier, accepted := ha,
                         constants, decoded := hd, evidence, readDecls, read := hr,
                         tierDecls, tierRead := ht },
-                      ⟨b, hb, h1, h2, rfl, rfl⟩⟩
+                      ⟨b, hb, h1, h2, rfl, rfl, rfl⟩⟩
       else throw { stage := .coverage, message := "the ordered records are not the envelope's records" }
     else throw { stage := .coverage, message := "the prepared binding is not the envelope's" }
 
@@ -342,15 +399,16 @@ def accept (env : Ixon.V3.Env) (limits : Ix.Kernel.Admission.Limits := defaultLi
 
 /-- **What an acceptance is.** The environment is role-bound; the kernel's
 tiered entry ran on its binding section, on exactly its records (sorted by
-address they are the envelope's) and on exactly its blobs, at IxCC's hash, and
-accepted them, installing the accepted logical environment. Every theorem of
-the tiered entry then applies (`Ix.Kernel.Admission.checkBytesTieredUsing_ok`,
-`checkConstantsTiered_ok`). -/
+address they are the envelope's) and on exactly its blobs, at IxCC's hash, with
+the envelope's own reducibility hints, and accepted them, installing the
+accepted logical environment. Every theorem of the tiered entry then applies
+(`Ix.Kernel.Admission.checkBytesTieredUsing_ok`, `checkConstantsTiered_ok`),
+each stated for every hint function. -/
 theorem accept_spec {env : Ixon.V3.Env} {limits : Ix.Kernel.Admission.Limits} {a : Accepted}
     (h : accept env limits = .ok a) :
     AcceptedFrom env limits a ∧
       Ix.Kernel.Admission.checkBytesTieredUsing (preludeSource a.pre) hash a.binding a.limits
-        a.records a.blobs = .ok (a.env, a.tier) := by
+        a.records a.blobs a.hints.lookup = .ok (a.env, a.tier) := by
   refine ⟨?_, a.accepted⟩
   unfold accept at h
   cases hp : prepare env limits with

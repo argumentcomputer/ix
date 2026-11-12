@@ -1,5 +1,6 @@
 import IxCCTests.KernelFront.Report
 import IxCCTests.KernelFront.Bound
+import IxCCTests.KernelFront.Hints
 import IxCCTests.Src.Support
 import IxCCTests.Support.Envelope
 
@@ -35,6 +36,12 @@ its certificate accepted by Stage A; on `sorry.ixe` ingress declines.
 
 Then the role-bound test builder (`IxCCTests.Support.Bound`), with the hostile
 family's enumeration case ported to it (`Bound`).
+
+Then the artifact's reducibility hints (`Hints`): the closure the kernel checks
+in exponential time without them accepted within a bound, the hint function
+the statements name read a second way, and hostile and missing hints through
+the front end, each ending in the honest object and certificate or a clean
+decline.
 
 The same report on other role-bound closures, written into scratch by the
 tree's `ix`, is `tests-kernel-front report …` (`Main`). -/
@@ -261,6 +268,7 @@ def run : IO Bool := do
       the producer and Stage A, root by root"
     -- the role-bound test builder, and the hostile enumeration case ported to it
     for line in ← Bound.run a do IO.println line
+    IxCCTests.KernelFront.Hints.run a
     IO.println s!"tests-kernel-front: {← a.get} assertions passed"
     return true
   catch error =>
