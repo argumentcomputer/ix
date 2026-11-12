@@ -1820,7 +1820,7 @@
  "b5456c729984fc0b2a87a4011cfb011f916eebe9a30d7e4157299c64cf5e3006",
  "grounding_axiom_count": 139,
  "baseline":
- "G3 part D first step: the class flat (field-less recursors without parameters) admitted; F2 there proved (IxCCGrounding.RecFlat); grounding fence 139",
+ "G3 part D first step: the class flat (field-less recursors without parameters) admitted; F2 there proved (IxCCGrounding.RecFlat); grounding fence 139; merged with 4b6dc13f1",
  "axiom_sha256":
  "3a0650413fe3002cb0f07f18a28874d85b2cde59a5f2a88965ba28eb7c63dc24",
  "axiom_count": 6507}
