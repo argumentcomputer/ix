@@ -646,7 +646,7 @@ landed; what stays exposed is under [resource bounds](#resource-bounds).
    and does not change); the duplicated producer of `KernelFront.Front` folds
    back into `Recheck.Produce`.
 4. **Delete** (no behaviour change: every registered root compiles to the same
-   object and certificate). **Done** (2026-11-11), in groups that each build:
+   object and certificate). **Done** (2026-11-11), in groups:
    the earlier annotator (`IxCC/IxCC/Src/Relevance/Annotate.lean`) and
    `tests-kernel-front`'s comparison with it and with the erased checker (the
    module is now `IxCCTests/KernelFront/Report.lean`); IxCC's catalog support
