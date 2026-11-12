@@ -566,47 +566,69 @@ install is annotated by the walk (the kernel's datum functions over the
 constants installed before it), and its constants enter the environment
 directly, without the fold's checks: a definition with its annotated value
 (so that it unfolds), a theorem with its value, everything else by its annotated
-type. -/
+type. A constant whose type, or a definition whose value, the walk leaves with an
+undecided binder is left out (`lenientInfos`). -/
 
-/-- A record's roots, annotated by the walk against `fe`. -/
+/-- A record's roots, annotated by the walk against `fe`, each with whether
+anything in it is undecided (a datum the kernel's function could not compute,
+written `never`). -/
 def annotatedRoots (cx : Ctx .anon) (fe : Ix.Kernel.FEnv .anon) (addr : Address)
-    (c : Ixon.Constant) : Array KExpr :=
+    (c : Ixon.Constant) : Array (KExpr × Bool) :=
   let n := memberCount c
   let self : Nat → Option (Ix.Kernel.Reader.ReadM (Ix.Kernel.Key .anon)) := fun i =>
     if i < n then some (cx.memberKey (.member addr i)) else none
   let ecx : ECx .anon := ⟨cx, c, c.univs.map (Ix.Kernel.Reader.convUniv id), self⟩
   let core := Ix.Kernel.Cached.coreKnotI .verified fe Ix.Kernel.checkFuel
   let rc : RecCx := { fe, core, ecx, sharing := c.sharing, bounds := bounds c.sharing }
-  let act : WM (Array KExpr) := do
-    let mut out : Array KExpr := #[]
+  let act : WM (Array (KExpr × Bool)) := do
+    let mut out : Array (KExpr × Bool) := #[]
     let tys := valueTypes c
     for (e, i) in (roots c).zipIdx do
+      -- a definition's value is walked against its annotated type, when that is decided
       let exp := match tys[i]? with
-        | some (some j) => out[j]?
+        | some (some j) => match out[j]? with
+          | some (k, false) => some k
+          | _ => none
         | _ => none
-      let ((kx, _), _) ← (walk walkFuel rc [] 0 exp e).run #[]
-      out := out.push kx
+      let ((kx, bad), _) ← (walk walkFuel rc [] 0 exp e).run #[]
+      out := out.push (kx, bad)
     return out
   match (act.run {}).run {} with
   | .ok ((rs, _), _) => rs
   | .error _ => #[]
 
 /-- The constants of a record the kernel does not install, with their annotated
-types (and a definition's or theorem's annotated value). -/
+types (and a definition's or theorem's annotated value), and the number of its
+constants left out. A root with an undecided binder carries `never` there, which
+the kernel's readers would trust, so it is not offered: a constant whose type, or
+a definition whose value, has one is left out, and a record typed against it then
+taints instead of reading a wrong datum. A theorem keeps its decided statement
+with its value whatever that value's data are, and an opaque definition its
+statement alone: neither unfolds (`unfoldDefinition` has no arm for them), so no
+reader takes data from their values. -/
 def lenientInfos (cx : Ctx .anon) (fe : Ix.Kernel.FEnv .anon)
     (hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint) (addr : Address)
-    (c : Ixon.Constant) : Array (Ix.Kernel.ConstantInfo .anon) := Id.run do
+    (c : Ixon.Constant) : Array (Ix.Kernel.ConstantInfo .anon) × Nat := Id.run do
   let rs := annotatedRoots cx fe addr c
+  let decided (i : Nat) : Option KExpr := match rs[i]? with
+    | some (k, false) => some k
+    | _ => none
+  let undecided (i : Nat) : Bool := match rs[i]? with
+    | some (_, true) => true
+    | _ => false
   let key (r : Ix.Kernel.ConstRef Address) : Option (Ix.Kernel.Key .anon) := (cx.memberKey r).toOption
   let lps (n : UInt64) : List Nat := List.range n.toNat
   let mut out : Array (Ix.Kernel.ConstantInfo .anon) := #[]
+  let mut left := 0
   match c.info with
   | .axio x =>
-    if let (some k, some ty) := (key (.member addr 0), rs[0]?) then
+    if let (some k, some ty) := (key (.member addr 0), decided 0) then
       out := out.push (.axiomInfo ⟨k, lps x.lvls, ty⟩)
+    else if undecided 0 then left := left + 1
   | .quot q =>
-    if let (some k, some ty) := (key (.member addr 0), rs[0]?) then
+    if let (some k, some ty) := (key (.member addr 0), decided 0) then
       out := out.push (.axiomInfo ⟨k, lps q.lvls, ty⟩)
+    else if undecided 0 then left := left + 1
   | _ =>
     let members : Array Ixon.MutConst := match c.info with
       | .defn d => #[.defn d]
@@ -617,39 +639,48 @@ def lenientInfos (cx : Ctx .anon) (fe : Ix.Kernel.FEnv .anon)
     for (m, i) in members.zipIdx do
       match m with
       | .defn d =>
-        if let (some k, some ty, some v) := (key (.member addr i), rs[j]?, rs[j + 1]?) then
+        if let (some k, some ty) := (key (.member addr i), decided j) then
           let cv : Ix.Kernel.ConstantVal .anon := ⟨k, lps d.lvls, ty⟩
-          out := out.push (match d.kind with
-            | .defn => .defnInfo cv v ((hint (.member addr i)).getD (.regular 1))
-            | .thm => .thmInfo cv v
-            | .opaq => .axiomInfo cv)
+          if d.kind == .defn then
+            -- a definition unfolds: its value's data are read
+            if let some v := decided (j + 1) then
+              out := out.push (.defnInfo cv v ((hint (.member addr i)).getD (.regular 1)))
+            else if undecided (j + 1) then left := left + 1
+          else if d.kind == .thm then
+            if let some (v, _) := rs[j + 1]? then out := out.push (.thmInfo cv v)
+          else out := out.push (.axiomInfo cv)
+        else if undecided j then left := left + 1
         j := j + 2
       | .recr r =>
-        if let (some k, some ty) := (key (.member addr i), rs[j]?) then
+        if let (some k, some ty) := (key (.member addr i), decided j) then
           out := out.push (.axiomInfo ⟨k, lps r.lvls, ty⟩)
+        else if undecided j then left := left + 1
         j := j + 1 + r.rules.size
       | .indc ind =>
-        if let (some k, some ty) := (key (.member addr i), rs[j]?) then
+        if let (some k, some ty) := (key (.member addr i), decided j) then
           out := out.push (.axiomInfo ⟨k, lps ind.lvls, ty⟩)
+        else if undecided j then left := left + 1
         for (ctor, ci) in ind.ctors.zipIdx do
-          if let (some k, some ty) := (key (.ctor addr i ci), rs[j + 1 + ci]?) then
+          if let (some k, some ty) := (key (.ctor addr i ci), decided (j + 1 + ci)) then
             out := out.push (.axiomInfo ⟨k, lps ctor.lvls, ty⟩)
+          else if undecided (j + 1 + ci) then left := left + 1
         j := j + 1 + ind.ctors.size
-  return out
+  return (out, left)
 
 /-- Install `addresses` (owners, in check order) as phase A of IxC's fold
 does, continuing past failures: a failed declaration leaves the environment
 as it was. Partial and unsafe records go through the typing tier. A record
 the kernel does not install enters directly, annotated by the walk
-(`lenientInfos`). Returns the environment, the declarations installed and the
-records refused. -/
+(`lenientInfos`). Returns the environment, the declarations installed, the
+records refused, and the constants of those records left out (undecided). -/
 def install (s : Setup) (addresses : Array Address) (lenient : Bool := true) :
-    Ix.Kernel.FEnv .anon × Nat × Array (Address × String) := Id.run do
+    Ix.Kernel.FEnv .anon × Nat × Array (Address × String) × Nat := Id.run do
   let mut fe : Ix.Kernel.FEnv .anon := Ix.Kernel.mkFEnv Ix.Kernel.Env.empty
   let mut st : Ix.Kernel.Reader.State .anon := {}
   let mut pos := 0
   let mut ok := 0
   let mut failures : Array (Address × String) := #[]
+  let mut leftOut := 0
   for a in addresses do
     let mut failure : Option String := none
     let mut unread := false
@@ -684,9 +715,11 @@ def install (s : Setup) (addresses : Array Address) (lenient : Bool := true) :
     if let some why := failure then failures := failures.push (a, why)
     if lenient && (failure.isSome || unread) then
       if let some c := s.store[a]? then
-        for ci in lenientInfos s.cx fe s.cx.hint a c do
+        let (infos, left) := lenientInfos s.cx fe s.cx.hint a c
+        leftOut := leftOut + left
+        for ci in infos do
           if (fe.find? ci.name).isNone then fe := fe.push ci
-  return (fe, ok, failures)
+  return (fe, ok, failures, leftOut)
 
 /-- The kernel's environment for a view. `prelude?` gives the role table and
 its prelude read from the environment's own records (the compiler's, whose
@@ -727,8 +760,8 @@ def KernelEnv.ofView (v : View) (lenient : Bool := true)
       unless (roots oc).isEmpty do owners := owners.push o
   let first := pre.records.map (·.1)
   let addresses := Ixon.CheckOrder.closure s.store s.extra (first ++ owners)
-  let (fe, installed, failures) := install s addresses lenient
-  return { setup := s, fe, owners, installed, refused := failures.size, failures }
+  let (fe, installed, failures, lenientLeftOut) := install s addresses lenient
+  return { setup := s, fe, owners, installed, refused := failures.size, failures, lenientLeftOut }
 
 /-- Every owner record's blocks. -/
 def annotateKernel (k : KernelEnv) (taint : Bool := false) :
