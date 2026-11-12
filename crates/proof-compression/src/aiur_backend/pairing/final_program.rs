@@ -29,16 +29,13 @@ impl Program {
     if blake3::hash(bytes).as_bytes() != expected {
       return Err("terminal Aiur artifact digest mismatch".into());
     }
-    let package =
-      WidePackage::decode(bytes).map_err(|error| error.to_string())?;
+    let package = WidePackage::decode(bytes)?;
     let trace =
       package.trace.ok_or("terminal artifact has no compiler trace")?;
-    let mut program =
-      package.program.check_with(Bn254).map_err(|error| error.to_string())?;
-    program.track_depth(&trace).map_err(|error| error.to_string())?;
-    let plan = TracePlan::new(Arc::new(program), trace)
-      .map_err(|error| error.to_string())?;
-    plan.program().entry(ENTRY).map_err(|error| error.to_string())?;
+    let mut program = package.program.check_with(Bn254)?;
+    program.track_depth(&trace)?;
+    let plan = TracePlan::new(Arc::new(program), trace)?;
+    plan.program().entry(ENTRY)?;
     let mut maps = MapOverrides::new();
     aiur::library::u8::register_maps(plan.program(), &mut maps)?;
     Ok(Self { plan, maps })
@@ -72,10 +69,8 @@ impl Program {
     self
       .plan
       .program()
-      .prepare_hint_channels(&[], &hints)
-      .map_err(|error| error.to_string())?
-      .with_map_overrides(&self.maps)
-      .map_err(|error| error.to_string())?
+      .prepare_hint_channels(&[], &hints)?
+      .with_map_overrides(&self.maps)?
       .execute(ENTRY, statement_arguments(statement).to_vec())
       .map_err(|error| error.to_string())
   }

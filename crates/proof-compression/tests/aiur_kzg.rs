@@ -42,16 +42,26 @@ fn compiled_bn254_recursion_maps_and_rom_prove_expected_calls() {
   let plan = plan(package());
   assert!(plan.artifact().chips.iter().any(|chip| chip.depth.column.is_some()));
   assert!(plan.artifact().chips.iter().any(|chip| !chip.memory.is_empty()));
-  let backend = Backend::new(&plan, config()).unwrap();
+  let backend = Backend::new(
+    &plan,
+    KzgConfig::new(
+      Arc::new(Srs::unsafe_dev_setup(256, b"aiur-bn254-compiler-test")),
+      8,
+    ),
+  )
+  .unwrap();
   assert!(
     backend.circuit_names().iter().any(|name| name.starts_with("<table:"))
   );
   assert!(backend.circuit_names().iter().any(|name| name.starts_with("<ROM:")));
   let f = |value| Bn254.from_u64(value);
   let minus_one = Bn254.neg(Bn254.one());
-  for (n, x, expected) in
-    [(0, f(0), minus_one), (3, minus_one, f(9)), (5, f(0), f(4))]
-  {
+  for (n, x, expected) in [
+    (0, f(0), minus_one),
+    (3, minus_one, f(9)),
+    (5, f(0), f(4)),
+    (129, f(0), f(128)),
+  ] {
     let args = [f(n), x];
     let record = plan.program().execute(ENTRY, args.to_vec()).unwrap();
     assert_eq!(record.output, [expected]);

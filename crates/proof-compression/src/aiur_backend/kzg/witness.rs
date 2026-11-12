@@ -2,6 +2,7 @@ use super::*;
 use aiur::field::FieldBackend;
 use multi_stark::traits::Algebra;
 use p3_matrix::{Matrix, dense::RowMajorMatrix};
+use p3_maybe_rayon::prelude::*;
 
 fn empty_trace(
   height: usize,
@@ -57,34 +58,52 @@ impl Packing<'_, '_, '_> {
       if matrix.height != 0 && !matrix.height.is_power_of_two() {
         return Err("compiler trace height is not a power of two".into());
       }
-      let output = &mut traces[placement.circuit];
-      for row_index in 0..matrix.height {
-        let source = matrix.row(row_index);
-        if row_index >= matrix.unpadded_height {
-          if source.iter().any(|&value| value != Scalar::ZERO)
-            || matrix.multiplicities[row_index] != 0
-          {
-            return Err("nonzero compiler trace padding".into());
-          }
-          continue;
-        }
-        if source[chip.activation] != Scalar::ONE {
-          return Err("inactive real compiler row".into());
-        }
-        let row = cursors[placement.circuit];
-        let start = row * output.width;
-        let dest = &mut output.values[start..start + output.width];
-        for (&column, &value) in placement.columns.iter().zip(source) {
-          dest[column] = value;
-        }
-        dest[placement.selector] = Scalar::ONE;
-        for write in &placement.writes {
-          dest[write.column] = circuits::evaluate(&write.value, dest);
-        }
-        *dest.last_mut().ok_or("empty compiler circuit")? =
-          Bn254.from_u64(matrix.multiplicities[row_index]);
-        cursors[placement.circuit] += 1;
+      if matrix.unpadded_height > matrix.height {
+        return Err("compiler rows exceed their padded height".into());
       }
+      let real_values = matrix.unpadded_height * matrix.width;
+      if matrix.values[real_values..]
+        .par_iter()
+        .any(|&value| value != Scalar::ZERO)
+        || matrix.multiplicities[matrix.unpadded_height..]
+          .par_iter()
+          .any(|&value| value != 0)
+      {
+        return Err("nonzero compiler trace padding".into());
+      }
+      let output = &mut traces[placement.circuit];
+      let first = cursors[placement.circuit];
+      let end = first + matrix.unpadded_height;
+      let width = output.width;
+      let identity = !placement.grouped
+        && placement.columns.iter().copied().eq(0..matrix.width);
+      output.values[first * width..end * width]
+        .par_chunks_mut(64 * width)
+        .enumerate()
+        .try_for_each(|(block, rows)| -> Result<(), String> {
+          for (offset, dest) in rows.chunks_mut(width).enumerate() {
+            let row_index = block * 64 + offset;
+            let source = matrix.row(row_index);
+            if source[chip.activation] != Scalar::ONE {
+              return Err("inactive real compiler row".into());
+            }
+            if identity {
+              dest[..source.len()].copy_from_slice(source);
+            } else {
+              for (&column, &value) in placement.columns.iter().zip(source) {
+                dest[column] = value;
+              }
+            }
+            dest[placement.selector] = Scalar::ONE;
+            for write in &placement.writes {
+              dest[write.column] = circuits::evaluate(&write.value, dest);
+            }
+            *dest.last_mut().ok_or("empty compiler circuit")? =
+              Bn254.from_u64(matrix.multiplicities[row_index]);
+          }
+          Ok(())
+        })?;
+      cursors[placement.circuit] = end;
     }
 
     let program = self.plan.program().program();
