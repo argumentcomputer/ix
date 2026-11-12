@@ -100,7 +100,8 @@ theorem termRefused_sound (hL : Laws M) (hN : NatBasis env) {tab : KTab}
       IxCC.Src.profileOf ls ∈ P → DenotesIn M φ Γ (Expr.mkAppN h acc) →
       ∀ s ∈ spineSites Γ h acc, s ∉ spineRefused { tab, lps, profs := P } n Γ h acc →
         SiteOk M φ s.1 s.2.1 s.2.2 :=
-    fun P Γ h acc hP hD => spineRefused_sound hL hN htab ⟨_, hP, hφ⟩ hD
+    fun P Γ h acc hP hD =>
+      spineRefused_sound (x := { tab, lps, profs := P }) hL hN htab ⟨_, hP, hφ⟩ hD
   intro t
   induction t with
   | app f a mo r ihf iha =>
