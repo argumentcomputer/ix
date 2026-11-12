@@ -23,6 +23,7 @@
   the primitive it encodes, if any, from `Ix.PrimAddrs`.
 -/
 import Ix.Meta
+import Ix.Ixon
 import Ix.PrimAddrs
 import Ix.SpecDigest
 import Tests.Ix.IxVM.Sources
@@ -89,5 +90,37 @@ def literalGuard : TestSeq :=
       if ok then none else some ("; ".intercalate found.toList))) .done
 
 def suite : List TestSeq := [literalGuard] ++ Tests.Ix.Kernel.PrimitiveTable.suite
+
+/-- A dotted Lean name as an `Ix.Name` (string components only). -/
+private def ixNameOf (s : String) : Ix.Name :=
+  s.splitOn "." |>.foldl Ix.Name.mkStr Ix.Name.mkAnon
+
+/-- `prim-addrs-artifact` (manual): every primitive address of `Ix.PrimAddrs`
+(`leanParityTable`, without the reserved markers, which are not constants) is the
+record a compiled environment (`IX_PRIM_IXE`, an `.ixe` file such as Init+Std's)
+holds and publishes under the primitive's Lean name. The table is hand-copied from
+the compiler's output (`ixon-v4-primitives`), so a change to the record format or
+to the compiler's output that is not carried into it fails here. -/
+def artifact : IO UInt32 := do
+  let some path ← IO.getEnv "IX_PRIM_IXE"
+    | IO.eprintln "[prim-addrs-artifact] set IX_PRIM_IXE to an .ixe file"; return 1
+  let env ← IO.ofExcept (Ixon.deEnv (← IO.FS.readBinFile path))
+  let markers := Ix.PrimAddrs.reservedMarkerAddrs.map (·.2)
+  let mut bad : Array String := #[]
+  let mut checked := 0
+  for (name, a) in Ix.PrimAddrs.leanParityTable do
+    if markers.contains a then continue
+    checked := checked + 1
+    match env.named[ixNameOf name]? with
+    | some named =>
+      unless named.addr == a do
+        bad := bad.push s!"{name}: published at {named.addr}, the table has {a}"
+      unless env.consts.contains a do
+        bad := bad.push s!"{name}: no record at {a}"
+    | none => bad := bad.push s!"{name}: not published"
+  for b in bad do IO.eprintln s!"[prim-addrs-artifact] {b}"
+  IO.println s!"[prim-addrs-artifact] {checked} primitive addresses against {path}: \
+    {checked - bad.size} resolve, {bad.size} problems"
+  return if bad.isEmpty then 0 else 1
 
 end Tests.Ix.Kernel.PrimAddrs
