@@ -71,7 +71,7 @@ theorem lookup_signatures_range' (P : Fir.Program) (f : Nat) : ∀ (m s : Nat),
   | 0, s => by
     simp only [List.range'_zero, List.filterMap_nil, List.map_nil, List.lookup_nil]
     have hc : ¬ (s ≤ f ∧ f < s + 0) := fun hc => absurd hc.2 (by have := hc.1; omega)
-    simp [hc]
+    rw [ite_cond_eq_false _ _ (eq_false hc)]
   | m + 1, s => by
     rw [List.range'_succ, List.filterMap_cons]
     have ih := lookup_signatures_range' P f m (s + 1)
