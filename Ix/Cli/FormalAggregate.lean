@@ -593,8 +593,11 @@ def runPipeline (p : Cli.Parsed) (onRoot : Address → IO Unit := fun _ => pure 
 
 def verify (p : Cli.Parsed) : IO UInt32 := do
   rejectFlags p #["shard", "record", "distributed"]
-  let expected ← match (p.flag? "ixe").map (·.as! String), (p.flag? "ixes").map (·.as! String) with
-  | none, none => pure none
+  -- the expected claim, and the environment whose records the kernel's admission of
+  -- the claim's table reads
+  let (expected, tableEnvs) ← match (p.flag? "ixe").map (·.as! String),
+      (p.flag? "ixes").map (·.as! String) with
+  | none, none => pure ((none : Option Ix.Claim), ([] : List Ixon.Env))
   | none, some _ => throw (IO.userError "--ixes requires --ixe")
   | some path, none => do
     let env ← IO.ofExcept (IxVM.ClaimHarness.withDefaultRoleBinding (← IO.ofExcept (Ixon.deEnvAnon (← IO.FS.readBinFile path))))
@@ -602,13 +605,13 @@ def verify (p : Cli.Parsed) : IO UInt32 := do
     let envCtx ← IO.ofExcept (Ix.ClaimContext.ofEnv env false)
     let statement : CheckEnvTrees := { ctx := envCtx, subjects, assumptions := none }
     let _ ← IO.ofExcept (auditAggregateConstants env statement)
-    pure (some statement.claim)
+    pure (some statement.claim, [env])
   | some _, some _ => do
     let (env, view, _) ← manifest p
     let above := ((p.flag? "structural-above").map (·.as! Nat)).getD defaultStructuralAbove
     let root ← IO.ofExcept (Reference.expectedFromManifest env view above)
     let _ ← IO.ofExcept (auditAggregateConstants env root)
-    pure (some root.claim)
+    pure (some root.claim, [env])
   let proofs := p.variableArgsAs! String
   if proofs.isEmpty then throw (IO.userError "expected an aggregate proof address")
   let mut ctx? : Option Context := none
@@ -616,7 +619,7 @@ def verify (p : Cli.Parsed) : IO UInt32 := do
     let some addr := Address.fromString hex | throw (IO.userError "invalid aggregate address")
     let wrapper ← Compression.readProof addr
     unless expected.all (· == wrapper.claim) do throw (IO.userError "aggregate does not match the requested environment/manifest")
-    ClaimPolicy.admit p wrapper.claim
+    ClaimPolicy.admit p wrapper.claim (envs := pure tableEnvs)
     if Compression.isCompressed wrapper.proof then
       let .checkEnv .. := wrapper.claim
         | throw (IO.userError s!"aggregate proof {addr} does not bundle a CheckEnv claim")

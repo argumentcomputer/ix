@@ -25,6 +25,7 @@ import Ix.Cli.VerifyCmd
 import Ix.Cli.VerifyHostCmd
 import Ix.Cli.ServeCmd
 import Ix.Cli.ConnectCmd
+import Ix.Cli.TableAdmissionKernel
 import Ix
 
 /-! CLI entry point for the `ix` executable. -/
@@ -69,4 +70,6 @@ def main (args : List String) : IO UInt32 := do
   if args.isEmpty then
     ixCmd.printHelp
     return 0
+  -- the kernel's admission of a claim's role table, for `verify` and `compress`
+  Ix.Cli.TableAdmissionKernel.install
   ixCmd.validate args

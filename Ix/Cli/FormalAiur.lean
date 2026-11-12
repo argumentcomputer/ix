@@ -636,11 +636,14 @@ def verify (p : Cli.Parsed) : IO UInt32 := do
   let assumeBinding := bindingProof?.isSome
   let mut expected : Array Ix.Claim := #[]
   let mut envCtx? : Option Ix.ClaimContext := none
+  -- the environment whose records the kernel's admission of a claim's table reads
+  let mut tableEnvs : List Ixon.Env := []
   match ixe, manifest with
   | some ixe, some manifest =>
     let env ← IO.ofExcept (withDefaultRoleBinding (← IO.ofExcept (Ixon.deEnvAnon (← IO.FS.readBinFile ixe))))
     let ctx ← IO.ofExcept (Ix.ClaimContext.ofEnv env assumeBinding)
     envCtx? := some ctx
+    tableEnvs := [env]
     let view ← IO.ofExcept (Ix.Shard.parseIxesManifest (← IO.FS.readBinFile manifest))
     if !(← Ix.Shard.shardsCover env view.shards) then return 1
     match shard with
@@ -692,7 +695,7 @@ def verify (p : Cli.Parsed) : IO UInt32 := do
       -- a whole partition discharges its shards' assumed leaves; a verified binding
       -- proof, their assumed binding
       ClaimPolicy.admit p wrapper.claim (bindingDischarged := assumeBinding)
-        (assumptionsDischarged := !expected.isEmpty && shard.isNone)
+        (assumptionsDischarged := !expected.isEmpty && shard.isNone) (envs := pure tableEnvs)
       let digest := Address.blake3 (Ix.Claim.ser wrapper.claim)
       if Compression.isCompressed wrapper.proof then
         let rc ← Compression.verifyProof addr wrapper (p.hasFlag "dev-srs")

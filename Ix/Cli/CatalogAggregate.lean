@@ -228,8 +228,10 @@ def verifyCatalog (p : Cli.Parsed) (ixc : String) : IO UInt32 := do
     | .ok r => pure r
     | .error e => IO.eprintln s!"error: {e}"; return 1
   printStatements members plan
+  -- each member's table is admitted over the member's own piece, read only if needed
   for (m, _, _) in members do
-    ClaimPolicy.admit p m.claim
+    let piece := (System.FilePath.mk ixc / s!"{m.label}.ixe").toString
+    ClaimPolicy.admit p m.claim (envs := do return [← TableAdmission.readEnv piece])
   let ctx ← FormalAggregate.context p
   let constants := members.foldl (fun n m => n + m.2.2) 0
   let mut rc : UInt32 := 0

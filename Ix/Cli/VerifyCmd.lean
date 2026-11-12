@@ -78,6 +78,8 @@ def verifyCmd : Cli.Cmd := `[Cli|
     "distributed";    "Bind one default-backend distributed proof to the whole environment. Requires --ixe and --ixes; the manifest must cover the environment exactly."
     "structural-above" : Nat; "For --aggregate + --ixes, reproduce structural joins above N subject leaves (default 4096; must match proving)."
     "record";         "With --ixe + --ixes and proof(s): after a proof binds to its shard and verifies, record it in the shard-proof index (`~/.ix/cache/formal-shard-proofs/<claim-digest>` → address) so `ix prove --skip-proven` and `ix shard refine` reuse it."
+    "binding-env" : String; "An `.ixe` whose role binding is the claim's table, with the records it binds and its evidence theorems: the kernel admits the table over them (once per table; recorded in `~/.ix/cache/table-admission`). --ixe serves when its binding is the claim's; a catalog's pieces serve their members."
+    "allow-custom-binding"; "Accept a claim relative to a role binding the kernel does not admit here, or to a literal class (outside the IxVM consistency theorem)."
     "allow-axioms"; "Accept a claim that depends on axioms beyond the standard three."
     "allow-assumed-binding"; "Accept a claim that assumes its role binding meets the specifications, with no binding proof."
     "allow-assumptions"; "Accept a claim conditional on typing assumptions (assumed leaves) that no verified proof discharges."
