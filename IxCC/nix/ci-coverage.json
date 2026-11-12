@@ -1011,7 +1011,9 @@
   "IxCC.Src.Table.Check",
   "IxCC.Src.Table.Shape",
   "IxCC.Src.Table.Validate",
+  "IxCC.Src.Table.Word",
   "IxCC.Src.Value",
+  "IxCC.Src.Word",
   "IxCC.Vendor.Ix.Aiur.Compiler.CallOrder",
   "IxCC.Vendor.Ix.Aiur.Compiler.Layout",
   "IxCC.Vendor.Ix.Aiur.Compiler.UnitCounter",
@@ -1843,7 +1845,7 @@
  "b5456c729984fc0b2a87a4011cfb011f916eebe9a30d7e4157299c64cf5e3006",
  "grounding_axiom_count": 139,
  "baseline":
- "heap stage 1 part 3: in-place reuse lemmas (50 exact axiom assertions); merged with cf7b0e5c6",
+ "W1 first piece: fixed-width words behind a switch (eval_word_lt and the words lemmas fenced); merged with a8c77ba8d",
  "axiom_sha256":
- "656758eedb3c69598c4c5fb452873ce169a9f525819956ee2286707d0889c991",
- "axiom_count": 6582}
+ "c0ed774830aff9db7ba0a6af6b4ebbe6a036ce9911d984bdddea3f268d723354",
+ "axiom_count": 6587}

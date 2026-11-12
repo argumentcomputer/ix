@@ -193,7 +193,8 @@
   {"path": "IxCCTests/Src/Words.lean",
    "imports": ["IxCCTests.Src.Support", "IxCC.Src.Word"]},
   "IxCCTests.Src.WordRules":
-  {"path": "IxCCTests/Src/WordRules.lean", "imports": ["IxCCTests.Src.Steps"]},
+  {"path": "IxCCTests/Src/WordRules.lean",
+   "imports": ["IxCCTests.Src.Steps", "IxCCTests.Support.Bound"]},
   "IxCCTests.Src.Table":
   {"path": "IxCCTests/Src/Table.lean",
    "imports": ["IxCCTests.Src.Support", "IxCC.Src.Table.Cert"]},
