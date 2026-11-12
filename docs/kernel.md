@@ -486,6 +486,80 @@ chain with two parameters swapped), on which `leqCore`'s memo leaves a
 polynomial of degree about 4 (10 s at 128 parameters). A host that checks
 third-party bytes needs its own time and memory limit.
 
+**Native stack.** The executed kernel recurses on the native stack, so how
+deep an input it survives depends on the thread it runs on. Two drivers of
+that depth are removed: neither the number of reduction steps nor the
+number of records takes native stack. The reduction loops
+(`Cached.whnfCoreLoopI`, `whnfLoopI`, `defeqLoopI`) hand the loop to the
+step as a continuation; called through a closure, that kept native frames
+per step, so a chain of 52,000 unfoldings of one-line definitions overflowed
+an 8 MiB stack. Each loop's executed form runs a twin of the step that
+returns its tail call instead of making it, then continues by a self tail
+call, a loop in the emitted C (`whnfCoreLoopFast`, `whnfLoopFast`,
+`defeqLoopFast`, swapped in by `@[csimp]`; `…Step_factor` proves the step
+equal to its twin followed by the continuation, for every continuation).
+The index build (`mkFEnvGo`, run again by the record-by-record check after
+every failing declaration) and the whole-unit check of the certified entry
+(`unitsGo`) recursed once per constant; their executed forms are a fold and
+an accumulator loop (`mkFEnvGo_eq_mkFEnvGoFast`, `unitsGo_eq_unitsGoFast`),
+and the host's record loop (`CheckIxeStep.checkLoopWith`) is a tail-recursive
+loop in `IO` (`forArrayIO`). The `kernel-depth` test runs 90,000 unfoldings,
+100,000 ι reductions, 200,000 one-line records through the certified entry
+and 200,000 through the record-by-record check on a 2 MiB stack, and
+Init+Std checks with every thread at 8 MiB (`initstd-stack`); before, each
+of them overflowed (Init+Std on every stack up to 16 MiB).
+
+The five substitutions are compiled-code replacements under the project
+`@[csimp]` ruling (`runtimeRulings.csimpModules`); each theorem depends on
+the standard axioms only, and IxCC's ledger lists them
+(`lean_dependencies`, `csimp_theorems`):
+
+| `@[csimp]` theorem | runs | in place of | proved from |
+| --- | --- | --- | --- |
+| `Cached.whnfCoreLoopI_eq_whnfCoreLoopFast` | `whnfCoreLoopFast` | `whnfCoreLoopI` | `whnfCoreStepI_factor` (with `whnfAppI_factor` and `betaPeelI_factor`, by well-founded recursion on the spine), by induction on the fuel |
+| `Cached.whnfLoopI_eq_whnfLoopFast` | `whnfLoopFast` | `whnfLoopI` | `whnfStepI_factor`, by induction on the fuel |
+| `Cached.defeqLoopI_eq_defeqLoopFast` | `defeqLoopFast` | `defeqLoopI` | `defeqStepI_factor`, by induction on the fuel |
+| `mkFEnvGo_eq_mkFEnvGoFast` | `mkFEnvGoFast` | `mkFEnvGo` | `mkFEnvGo_eq_foldr` and `List.foldl_reverse` |
+| `unitsGo_eq_unitsGoFast` | `unitsGoFast` | `unitsGo` | `unitsGoTR_spec`, by induction on the list |
+
+What this bounds, and what it does not. The three loops and the two
+record-count recursions take no native stack per iteration: a reduction
+step or a record costs heap, not stack. The loops' fuels stay as bounds on
+the steps (1,000,000 head-normalisation steps, 100,000 `whnf` and 100,000
+conversion steps, each exhausted as a decline). Two calls of the
+head-normalisation loop are not iterations and stay nested: `whnfAppR` after
+an ι reduction with arguments left over, and `betaPeelR` when the peeled body
+is not a λ and arguments remain, need the reduct's normal form before the
+spine continues. Each nested call costs one step of the same loop's fuel, so
+the nesting is at most 1,000,000 deep. Measured on a chain whose head
+normalisation nests once per level (`(λx. E) P L`, each `E` the next link),
+a level takes 750 to 780 bytes of stack: 2 MiB holds 2,750 levels, 8 MiB
+10,500; at that rate the fuel's 1,000,000 levels would need about 750 MB, and
+the command line's 256 MiB thread holds about 340,000 (inferred, not run).
+In every construction found so far this nesting follows the input's own β
+structure; whether ι reduction can produce it from a shallow input is not
+settled. Init+Std still needs more than 2 MiB (it aborts on 2 MiB, 1 MiB and
+512 KiB, in the typing core's nesting through `iotaRecI`, `prepareMajorI` and
+`whnf`); see the next paragraph.
+
+What still takes native stack is nesting, and nothing in the kernel bounds
+it yet: the canonical decoder on a record nested without shares (about 30,000
+levels overflow a 2 MiB stack, 100,000 an 8 MiB one), the reader and the
+install walks on the nesting of the terms they read, the typing core on the
+nesting of the terms it infers and compares (its recursion is bounded only by
+`checkFuel`, 100,000 nested calls), and the level functions on a level's
+depth. The core's nesting is not only the input's: the conversion that
+unfolding across records builds nests as deep as the records together
+(10,000 levels from five records overflow 2 MiB, 40,000 from twenty 8 MiB),
+and so does a long string literal met as a constructor, one level per
+character. Init+Std itself needs more than 2 MiB for this (it checks on
+8 MiB). `ix check-lean` and `ix verify-host` run the entry on a 256 MiB
+thread. IxCC's envelope bounds the depth of each stored record, shares
+expanded, at 2,560 (`IxCC.Ixon.V3.withinKernelDepth`): that bounds the
+records as stored, after the decoder, and not the terms the kernel builds
+while typing them. A depth limit in the kernel, the entry's thread sized from
+it, and a decline past it are planned.
+
 ## The typing tier
 
 The logical fold gives what it accepts a model, so it declines every
@@ -1203,6 +1277,7 @@ files carry further changes:
 | `IxCK/Kernel/{Level,Core}.lean`, `IxCK/Kernel/Cached/CoreC.lean`, `IxCK/Kernel/Rules/Rel.lean`, `IxCK/Kernel/Model/Rules/InferSound.lean`, `IxCK/Kernel/Verify/{Level,PropWhen,BinderLoop,InferLemmas,InferIOLemmas}.lean`, `IxCK/Kernel/Verify/Cached/{BinderLoopC,DiscC4}.lean`, `IxCK/Kernel/Model/{AxiomBits,Inductives/FixTeleBound,Inductives/StructBits}.lean` | the ∀ rule's level is `Level.mkIMax u v` (`imax` with `mk_imax`'s and `mk_max`'s folds), in the specification, the executed core and `Infer.forallE`; it equals `imax u v` in every assignment (`eval_mkIMax`) with the same zero-ness datum (`zeronessOf_mkIMax`) | with `imax`, a ∀ chain over one shared type built a level whose tree doubles per binder ("Running time") |
 | `IxCK/Kernel/Expr.lean`, `IxCK/Kernel/Cached/ExprNodes.lean` | the executed level equality (`Level.beqPtr`, through `Level.beq_eq_beqPtr`) decides its structural case by a descent memoised on the pairs it proves equal (`Level.decMemo`, `Expr.beqMemo`'s arrangement); `Level.beqPtr_eq` is unchanged in statement | the folds compare two levels, and on equal levels built apart as DAGs the structural walk visited their trees ("Running time") |
 | `IxCK/Kernel/Level.lean` | the executed `simplify`, `leqCore`, `zeronessOf` and `isNeverZero` are memoised per call on the nodes (for `leqCore`, the subproblems) they finish (`simplifyFast`, `leqCoreFast`, `zeronessOfFast`, `isNeverZeroFast`, each swapped in by a `@[csimp]` theorem proving it equal to the unchanged specification), and the memoised `leqCore`'s case split substitutes with a memoised `subst` (`substMemo`); below a small tree size each runs an exact copy of the plain recursion | the walks visited a level shared as a DAG once per path, and `leqCore` re-solved the subproblems its distributions meet again ("Running time") |
+| `IxCK/Kernel/Cached/CoreC.lean`, `IxCK/Kernel/FEnv.lean`, `IxCK/Kernel/Units.lean` | the executed `whnfCoreLoopI`, `whnfLoopI` and `defeqLoopI` are loops over a twin of the step that returns its tail call of the continuation (`whnfCoreLoopFast`, `whnfLoopFast`, `defeqLoopFast`), and the executed `mkFEnvGo` and `unitsGo` a fold and an accumulator loop (`mkFEnvGoFast`, `unitsGoFast`), each swapped in by a `@[csimp]` theorem proving it equal to the unchanged function | the loops called their continuation through a closure, which kept native frames per reduction step, and the two recursions one per constant ("Native stack") |
 | `IxCK/Kernel/MainTheorem.lean` | only `model_exists` kept | the NDJSON corollary needs a frontend Ix does not use |
 
 Ix's own files under `IxCK/Kernel/` are `Admission.lean` and the `Admission`

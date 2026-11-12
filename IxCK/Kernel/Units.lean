@@ -57,6 +57,36 @@ def unitsGo : List (Declaration md) → List (Declaration md) → List (List (De
   | acc, d :: ds =>
     if d.isGenerated then unitsGo (d :: acc) ds else (d :: acc).reverse :: unitsGo [] ds
 
+/-- `unitsGo` with the finished units accumulated, reversed, in `out`: a
+loop, where `unitsGo` keeps one native frame per declaration (75 B: the
+certified entry overflowed an 8 MiB stack at 112,000 one-line records). -/
+def unitsGoTR (out : List (List (Declaration md))) :
+    List (Declaration md) → List (Declaration md) → List (List (Declaration md))
+  | acc, [] => if acc.isEmpty then out.reverse else (acc.reverse :: out).reverse
+  | acc, d :: ds =>
+    if d.isGenerated then unitsGoTR out (d :: acc) ds
+    else unitsGoTR ((d :: acc).reverse :: out) [] ds
+
+theorem unitsGoTR_spec : ∀ (out : List (List (Declaration md))) (acc ds : List (Declaration md)),
+    unitsGoTR out acc ds = out.reverse ++ unitsGo acc ds
+  | out, acc, [] => by
+    simp only [unitsGoTR, unitsGo]
+    split <;> simp
+  | out, acc, d :: ds => by
+    simp only [unitsGoTR, unitsGo]
+    split
+    · exact unitsGoTR_spec out (d :: acc) ds
+    · rw [unitsGoTR_spec]; simp
+
+/-- `unitsGo`'s executed form (`unitsGoTR` from no finished unit), swapped
+in by `@[csimp]`. -/
+def unitsGoFast (acc ds : List (Declaration md)) : List (List (Declaration md)) :=
+  unitsGoTR [] acc ds
+
+@[csimp] theorem unitsGo_eq_unitsGoFast : @unitsGo = @unitsGoFast := by
+  funext md acc ds
+  simp [unitsGoFast, unitsGoTR_spec]
+
 /-- **The units of a list**: maximal runs of generated records, each closed by
 the next declaration (a trailing run is a unit of its own). -/
 def unitsOf (ds : List (Declaration md)) : List (List (Declaration md)) := unitsGo [] ds

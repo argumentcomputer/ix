@@ -3264,6 +3264,24 @@
           "replacement": "getTagNFast"
         },
         {
+          "file": "IxCK/Kernel/Cached/CoreC.lean",
+          "theorem": "whnfCoreLoopI_eq_whnfCoreLoopFast",
+          "replaces": "whnfCoreLoopI",
+          "replacement": "whnfCoreLoopFast"
+        },
+        {
+          "file": "IxCK/Kernel/Cached/CoreC.lean",
+          "theorem": "whnfLoopI_eq_whnfLoopFast",
+          "replaces": "whnfLoopI",
+          "replacement": "whnfLoopFast"
+        },
+        {
+          "file": "IxCK/Kernel/Cached/CoreC.lean",
+          "theorem": "defeqLoopI_eq_defeqLoopFast",
+          "replaces": "defeqLoopI",
+          "replacement": "defeqLoopFast"
+        },
+        {
           "file": "IxCK/Kernel/Cached/StateC.lean",
           "theorem": "withChain_eq_impl",
           "replaces": "withChain",
@@ -3426,6 +3444,12 @@
           "replacement": "Expr.mentionsConstFast"
         },
         {
+          "file": "IxCK/Kernel/FEnv.lean",
+          "theorem": "mkFEnvGo_eq_mkFEnvGoFast",
+          "replaces": "mkFEnvGo",
+          "replacement": "mkFEnvGoFast"
+        },
+        {
           "file": "IxCK/Kernel/Key.lean",
           "theorem": "Key.beq_eq_beqPtr",
           "replaces": "Key.beq",
@@ -3472,6 +3496,12 @@
           "theorem": "ConstantVal.matchesPin_eq_matchesPinFast",
           "replaces": "ConstantVal.matchesPin",
           "replacement": "ConstantVal.matchesPinFast"
+        },
+        {
+          "file": "IxCK/Kernel/Units.lean",
+          "theorem": "unitsGo_eq_unitsGoFast",
+          "replaces": "unitsGo",
+          "replacement": "unitsGoFast"
         }
       ],
       "imported_modules": [
@@ -3511,7 +3541,7 @@
         "IxCK/Kernel/Basis/PUnit.lean": "7893504dcbc5a843a78fb42d71e87a177c325233748e6656e806831a99e68406",
         "IxCK/Kernel/Basis/Quot.lean": "8572dcd9abe0707fc94a2b9ae6d16a99085c637b869b933bd904854db7135dde",
         "IxCK/Kernel/Cached/CheckerC.lean": "6a55f6ee56e5f56659290d88388307bbc367788dd218bee4020813f1a4e02741",
-        "IxCK/Kernel/Cached/CoreC.lean": "a0a446734ad0f310f56d19e1c3bf1d8dad12fe69a3f7e709604c79b9f8d2e548",
+        "IxCK/Kernel/Cached/CoreC.lean": "1c22537adb9aa5ce2eda0b8409b099262ee3de4b8a7732bdc106ff72242018cf",
         "IxCK/Kernel/Cached/ExprNodes.lean": "b99bad8780c38d8cc7d73a9f55d96e7e2d1b8897d90921732317b8887e6d6d2a",
         "IxCK/Kernel/Cached/ExprOpsC.lean": "5529f6bdff306b3c92f18cc682ccf86e5647b36b8b008c3f1418d4621cd73b03",
         "IxCK/Kernel/Cached/Installed.lean": "6da2c2a3fa07d2854670ef1f0becc09d70638cea426889357fb895a3a2ef0dff",
@@ -3530,7 +3560,7 @@
         "IxCK/Kernel/Exclusive.lean": "a1510e8af60cc1cd65eb838930fbb875da8c312465791f40b30f1f8e6eb6a806",
         "IxCK/Kernel/Expr.lean": "082b588bf9ea3c3073e3ba5c95dc3a30ba0579dabe1b1c9500ca83bf3a73dd94",
         "IxCK/Kernel/ExprOps.lean": "efca8903517d58660b2b27d1c0b11f9423cd90bc62f693bb73c206e1b144fe4f",
-        "IxCK/Kernel/FEnv.lean": "020dab160334e06768ee7e21154a60fdf5d5ab0e6924ce68629628bc690289b5",
+        "IxCK/Kernel/FEnv.lean": "b7e881e480c514f4e3d469d021e2dbbfa133851026009931a896767925170326",
         "IxCK/Kernel/Frontend/InModel.lean": "5025bb65a9f38422d25cc4c6e527809d45a1a80549de2d76bd5d04b1440acd00",
         "IxCK/Kernel/Frontend/InModel/Kit.lean": "ce3bd715cb0e1c6d66577cba8f1fc6d20d2f638ccd054b4894fc860374a7af31",
         "IxCK/Kernel/Frontend/InModel/Mutual.lean": "538f15d52234ba7c688ff051e44db3d975c402e04fcd31cad0c9d06aba9d6bc0",
@@ -3566,7 +3596,7 @@
         "IxCK/Kernel/Tier/Basic.lean": "47cc5a7713687dda88f9a0308928912ab6606011dc349bcf345eda66569114b3",
         "IxCK/Kernel/Tier/Check.lean": "b377b1bd74f19edfbb9a0473a7097b5b68242e39ab941b9c3c74ba7c9e828ce9",
         "IxCK/Kernel/TypeChecker.lean": "4c8e083d4c57811f374a7bfba961ace3e29a36bafd6da03aa80375e35759c997",
-        "IxCK/Kernel/Units.lean": "4eb78ed9e422b8666057eeb4d594718e9e7e6f5be165c1573cc0613fef3e978e",
+        "IxCK/Kernel/Units.lean": "5a3b36f554b21f53621d4470cf2a097afef64a7ef381088fc6379404200d4e6d",
         "IxCK/Kernel/Denotes.lean": "baf0f9c1d0e692114ae2eb37924ffd62de1a0b17b127f10f3628b26ff365064b",
         "IxCK/Kernel/SetModel/Ops.lean": "533513cd2cd2f504f0e33de3e014304ee74c7528f134075128c46867186f6154",
         "IxCK/Kernel/SetTheory/Basic.lean": "dc7582b03f266ea93ddcd03c44909ef7ce4586ea15a052916a809a19b35b3c18",

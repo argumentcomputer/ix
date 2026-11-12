@@ -416,9 +416,9 @@
               # its prebuilt archive input if a Lake target needs refreshing.
               mkdir -p src/target/release
               ln -s ${rustPkgTest}/lib/libix_ffi.a src/target/release/libix_ffi.a
-              # Both subprocesses are built by IxTests.needs. Use their
+              # The subprocesses are built by IxTests.needs. Use their
               # wrappers so runtime imports keep the packaged search paths.
-              for exe in ix kernel-check-ixe; do
+              for exe in ix kernel-check-ixe kernel-depth-case; do
                 ln -sf ${ixTest}/bin/$exe src/.lake/build/bin/$exe
               done
               cd src

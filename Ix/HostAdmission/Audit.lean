@@ -39,8 +39,11 @@ helpers or their specializations; every execution allowance is unchanged. -/
 -- the inherited extern `Int.decEq` to each closure here (`IxCK/Kernel/Audit/Roots.lean`).
 -- Level equality memoised on the pairs it proves equal (`Level.decMemo`) adds 4 compiled
 -- functions to each closure here (`IxCK/Kernel/Audit/Roots.lean`).
+-- The kernel's reduction loops, index build and units check as loops add 3 compiled functions
+-- net and five ruled csimps to each closure below (`IxCK/Kernel/Audit/Roots.lean`); every other
+-- count is unchanged.
 /-- info: runtime closure of [Ix.HostAdmission.certify,
- Ix.HostAdmission.verifyAddressed]: 7223 compiled functions; inherited externs 126, implemented_by 0, unsafe 27, csimp 8; ruled assumed 4, computed_field 22, csimp 33 -/
+ Ix.HostAdmission.verifyAddressed]: 7226 compiled functions; inherited externs 126, implemented_by 0, unsafe 27, csimp 8; ruled assumed 4, computed_field 22, csimp 38 -/
 #guard_msgs (whitespace := lax) in
 run_cmd do
   Ix.Kernel.Audit.checkRuntimeWith #[``Ix.HostAdmission.certify, ``Ix.HostAdmission.verifyAddressed]

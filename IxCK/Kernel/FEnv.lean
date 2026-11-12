@@ -59,6 +59,24 @@ def mkFEnvGo : List (ConstantInfo md) → Nat × Std.HashMap (Key md) (Nat × Co
     let p := mkFEnvGo cs
     (p.1 + 1, p.2.insert ci.name (p.1, ci))
 
+/-- `mkFEnvGo`'s executed form: the same inserts in the same order, by a
+loop over the reversed list, so the build takes no native stack per
+constant (the recursion kept one frame per installed constant, about
+170 B: an index of Init+Std's 98,000 constants overflowed a 16 MiB
+stack). Swapped in by `@[csimp]`. -/
+def mkFEnvGoFast (cs : List (ConstantInfo md)) :
+    Nat × Std.HashMap (Key md) (Nat × ConstantInfo md) :=
+  cs.reverse.foldl (fun p ci => (p.1 + 1, p.2.insert ci.name (p.1, ci))) (0, ∅)
+
+theorem mkFEnvGo_eq_foldr : ∀ cs : List (ConstantInfo md),
+    mkFEnvGo cs = cs.foldr (fun ci p => (p.1 + 1, p.2.insert ci.name (p.1, ci))) (0, ∅)
+  | [] => rfl
+  | ci :: cs => by rw [mkFEnvGo, List.foldr_cons, mkFEnvGo_eq_foldr cs]
+
+@[csimp] theorem mkFEnvGo_eq_mkFEnvGoFast : @mkFEnvGo = @mkFEnvGoFast := by
+  funext md cs
+  rw [mkFEnvGo_eq_foldr, mkFEnvGoFast, List.foldl_reverse]
+
 /-- Build the index of `env`, with nothing hidden (`visibleBelow` is the
 constant count). -/
 def mkFEnv (env : Env md) : FEnv md :=
