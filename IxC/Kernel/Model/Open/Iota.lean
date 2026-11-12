@@ -46,15 +46,6 @@ variable {V : Type w} [SetTheory V] {env : Env md}
 
 /-! ## Lists -/
 
-theorem evalEqList_length {ψ : LevelParam → Nat} : ∀ {us vs : List Level},
-    Level.EvalEqList ψ us vs → us.length = vs.length
-  | [], [], _ => rfl
-  | _ :: _, _ :: _, h => by
-    simp only [Level.EvalEqList] at h
-    simp only [List.length_cons, evalEqList_length h.2]
-  | [], _ :: _, h => by simp [Level.EvalEqList] at h
-  | _ :: _, [], h => by simp [Level.EvalEqList] at h
-
 theorem eq_take_append_getD {α : Type _} (d : α) : ∀ {l : List α} {n : Nat}, l.length = n + 1 →
     l = l.take n ++ [l.getD n d]
   | [], _, h => by simp at h
@@ -62,7 +53,7 @@ theorem eq_take_append_getD {α : Type _} (d : α) : ∀ {l : List α} {n : Nat}
   | _ :: _ :: _, 0, h => by simp at h
   | x :: xs, n + 1, h => by
     simp only [List.length_cons, Nat.add_right_cancel_iff] at h
-    rw [List.take_succ_cons, List.getD_cons_succ, List.cons_append, ← eq_take_append_getD d h]
+    rw [List.take_succ_cons, List.getD_cons_succ, List.cons_append, ← eq_take_append_getD (l := xs) (n := n) d h]
 
 /-! ## Substituting a spine into a residual -/
 
@@ -124,7 +115,7 @@ telescope is the telescope's fit at the assignment the instantiation induces. -/
 theorem Fits.of_instLP (hcp : CvalParams cval env) (ks : List LevelParam) (us : List Level) :
     ∀ (xs : List V) (T : Expr md) (ρ ρ' : BVarIdx → V) (R' : Expr md), T.hasFvar = false →
       Fits cval env φ ρ (T.instantiateLevelParams ks us) xs ρ' R' →
-      ∃ R, R' = R.instantiateLevelParams ks us ∧
+      ∃ R : Expr md, R' = R.instantiateLevelParams ks us ∧
         Fits cval env (Level.substFn φ ks us) ρ T xs ρ' R
   | [], T, ρ, ρ', R', _, h => by
     obtain ⟨rfl, rfl⟩ := Fits.nil_inv' h
@@ -164,7 +155,7 @@ theorem Fits.congr_instLP (hcp : CvalParams cval env) {ks : List LevelParam}
     {us us' : List Level} (heq : Level.substFn φ ks us = Level.substFn φ ks us')
     {xs : List V} {T : Expr md} {ρ ρ' : BVarIdx → V} {R' : Expr md} (hT : T.hasFvar = false)
     (h : Fits cval env φ ρ (T.instantiateLevelParams ks us) xs ρ' R') :
-    ∃ R, R' = R.instantiateLevelParams ks us ∧
+    ∃ R : Expr md, R' = R.instantiateLevelParams ks us ∧
       Fits cval env φ ρ (T.instantiateLevelParams ks us') xs ρ' (R.instantiateLevelParams ks us') := by
   obtain ⟨R, rfl, hfit⟩ := Fits.of_instLP hcp ks us xs T ρ ρ' R' hT h
   rw [heq] at hfit
@@ -232,7 +223,7 @@ theorem FitsO.graded {σ : Nat → V} {ρ ρ' : BVarIdx → V} {T R : Expr md} {
 theorem DenotesO.mkAppN_inv' {σ : Nat → V} {ρ : BVarIdx → V} :
     ∀ {as : List (Expr md)} {f : Expr md} {W : V},
       DenotesO M.cval env φ σ ρ (Expr.mkAppN f as) W →
-      ∃ F vs, DenotesO M.cval env φ σ ρ f F ∧
+      ∃ (F : V) (vs : List V), DenotesO M.cval env φ σ ρ f F ∧
         (∀ k, k < as.length → DenotesO M.cval env φ σ ρ (as.getD k (.bvar 0)) (vs.getD k empty)) ∧
         vs.length = as.length ∧ W = vs.foldl app F
   | [], _, _, h => ⟨_, [], h, fun k hk => absurd hk (Nat.not_lt_zero _), rfl, rfl⟩
@@ -240,7 +231,7 @@ theorem DenotesO.mkAppN_inv' {σ : Nat → V} {ρ : BVarIdx → V} :
     obtain ⟨F', vs, hF', hvs, hlen, rfl⟩ := DenotesO.mkAppN_inv' (as := as) (f := .app f a) h
     cases hF' with
     | app hF hX =>
-      refine ⟨_, _ :: vs, hF, fun k hk => ?_, by simp [hlen], rfl⟩
+      refine ⟨_, _ :: vs, hF, fun k hk => ?_, by simp only [List.length_cons, hlen], rfl⟩
       cases k with
       | zero => rw [List.getD_cons_zero, List.getD_cons_zero]; exact hX
       | succ k =>
@@ -422,13 +413,13 @@ theorem GradedBy.unliftO {σ : Nat → V} :
     simp only [Expr.liftLooseBVars, GradedBy] at h ⊢
     exact ⟨ihty hlo hhi h.1, fun A hA x hx =>
       ihb (push_agree_lift x hlo hhi).1 (push_agree_lift x hlo hhi).2
-        (h.2 A (hA.lift hlo hhi) x hx)⟩
+        (h.2 A (DenotesO.lift hA hlo hhi) x hx)⟩
   | forallE ty b _ ihty ihb =>
     intro k c ρ0 ρ1 hlo hhi h
     simp only [Expr.liftLooseBVars, GradedBy] at h ⊢
     exact ⟨ihty hlo hhi h.1, fun A hA x hx =>
       ihb (push_agree_lift x hlo hhi).1 (push_agree_lift x hlo hhi).2
-        (h.2 A (hA.lift hlo hhi) x hx)⟩
+        (h.2 A (DenotesO.lift hA hlo hhi) x hx)⟩
   | proj s i e ih =>
     intro k c ρ0 ρ1 hlo hhi h
     simp only [Expr.liftLooseBVars, GradedBy] at h ⊢
@@ -466,7 +457,7 @@ theorem Gr.mkAppN_of_spineOk {σ : Nat → V} :
           exact pt_mem_piR_zero_of fun _ _ => pt_mem_truthVal trivial
         · rw [univ_zero]; exact truthVal_mem_univZero True
       · exact ⟨r, A, F, _, B, hF, hx, hFm, hxA, fun h => absurd h hr⟩
-    exact Gr.mkAppN_of_spineOk hga (.app hF hx) (fun y hy => hgs y (List.mem_cons_of_mem _ hy))
+    exact Gr.mkAppN_of_spineOk (as := as) (f := .app f a) hga (.app hF hx) (fun y hy => hgs y (List.mem_cons_of_mem _ hy))
       hxs hrest
 
 /-- A list read pointwise is read. -/
@@ -662,7 +653,7 @@ theorem Red.iota_sound (hse : StoredEnv env) {d : Nat} {e : Expr md} {c : Key md
       Level.substFn φ cvj.levelParams (L0.map (Level.subst cv.levelParams us)) :=
     Ix.Kernel.Level.substFn_congr hlvφ
   have hlsLen : (L0.map (Level.subst cv.levelParams us)).length = cvj.levelParams.length := by
-    rw [← evalEqList_length hlvφ]; exact hlenusj
+    rw [← Ix.Kernel.Level.EvalEqList.length_eq hlvφ]; exact hlenusj
   -- the domain's arguments, read and graded at the fit's environment
   have hdomF : (dom0.instantiateLevelParams cv.levelParams us).hasFvar = false := by
     have := hfitRO.hasFvar hTRf
@@ -867,8 +858,8 @@ theorem Red.iota_sound (hse : StoredEnv env) {d : Nat} {e : Expr md} {c : Key md
           · rw [Expr.fvarLeaves_eq_nil_of_not_hasFvar (hpinF p hp)] at hl'; exact nomatch hl'
           · exact hCargs y (List.mem_of_mem_take hy) l hly)
         _ (wsD.take rl.ctorParams) (hys.take _)
-        (DenList.of_getD' (by rw [hcmpLen, List.length_take, hwsDlen,
-            Expr.getAppArgs_instantiateLevelParams, hargs0]
+        (DenList.of_getD' (by
+            rw [hcmpLen, List.length_take, hwsDlen, Expr.getAppArgs_instantiateLevelParams, hargs0]
             simp only [List.length_map, List.length_append, List.length_range, hpinsLen]; omega)
           fun i hi => by
             rw [hcmpLen] at hi
@@ -893,7 +884,7 @@ theorem Red.iota_sound (hse : StoredEnv env) {d : Nat} {e : Expr md} {c : Key md
       rw [hyv]
       have hiD : i < (dom0.instantiateLevelParams cv.levelParams us).getAppArgs.length := by
         rw [Expr.getAppArgs_instantiateLevelParams, hargs0]
-          simp only [List.length_map, List.length_append, List.length_range, hpinsLen]; omega
+        simp only [List.length_map, List.length_append, List.length_range, hpinsLen]; omega
       exact (hwsD i hiD).to_denotes (hdomArgsF _ (getD_mem_of_lt (.bvar 0) hiD))
   have hidxD : mI ≠ rP → DenotesList M.cval env φ σC
       (((Expr.mkAppN (.const cH uH) as0).instantiateLevelParams cvj.levelParams
