@@ -561,14 +561,6 @@ theorem fieldsBoundSrc_at {ρ : Nat → V} :
 
 /-! ## The stage -/
 
-/-- A type opened at `n` binders, then `m` more, has `n + m` binders. -/
-theorem stripPis_isSome_of_opens {e o o' : Expr md} {n m : Nat} {fvs fvs' : List (Expr md)}
-    (h1 : openPisAtFvars n e 0 = some (fvs, o)) (h2 : openPisAtFvars m o n = some (fvs', o')) :
-    (e.stripPis (n + m)).isSome = true := by
-  have h2' : openPisAtFvars m o (0 + n) = some (fvs', o') := by rw [Nat.zero_add]; exact h2
-  obtain ⟨bs, b0, hs, -⟩ := openPisAtFvars_stripPis _ (openPisAtFvars_add n h1 h2')
-  rw [hs]; rfl
-
 /-- The recursor leaf of a recursive block at an assignment. -/
 @[expose] def fixLeafAV {env : Env md} (m : EnvModel V env) (p : NativeParts md)
     (ppsAll : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm))
@@ -1111,9 +1103,9 @@ theorem stageFixRec {p : NativeParts md} (hE : Ix.Kernel.EtaFamiliesClosedExcept
         obtain ⟨j, cA, rhs, hj, -, rfl⟩ := Ix.Kernel.sumRules_getElem? hr
         obtain ⟨hf, -, hD⟩ := hcf j cA hj
         have hpl := List.all_eq_true.mp hplAll cA (List.mem_of_getElem? hj)
-        obtain ⟨crest, hop1, hop2⟩ := hD.opens
+        obtain ⟨cbs, es, hres, -⟩ := hD.resid
         exact ⟨Ix.Kernel.RuleCtorOk.of_plain hf (by simp [Ix.Kernel.recRuleBits, hpl]) hpl
-            (stripPis_isSome_of_opens hop1 hop2),
+            (Ix.Kernel.Expr.ctorTeleOk_of hres (by rw [Ix.Kernel.Expr.getAppFn_mkAppN]; rfl)),
           fun hb => hb, fun hb => hb⟩))
     (fun ψ k => AnnotTerm.liftN_eq_self _ (Term.bvarsBelow.mono (Nat.zero_le k) (hAcl ψ)) 1)
     hAparams (fun ψ ρ => (hleafF ψ ρ).1.1) (fun ψ ρ => (hleafF ψ ρ).1.2) (fun ψ => ⟨_, hreadR ψ⟩)

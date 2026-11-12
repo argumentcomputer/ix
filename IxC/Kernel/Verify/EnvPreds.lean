@@ -60,12 +60,13 @@ canonical (`.plain`) rule has the shape its install tested
 constructor's own level parameters, applied first to the recursor's
 leading variables); a certified nested rule stores one instantiation
 per constructor parameter; and the constructor's stored type has a
-binder for each of its parameters and fields (the install reads the
-constructor's telescope at that arity before it fires the rule).  These
-are what Lean's reading of the rule needs beyond the rule's firing law:
-that the constructor the law fires at is the one the major premise's
-type names, at its levels and parameters, and that its arguments fit
-its type binder by binder. -/
+binder for each of its parameters and fields, and a residual headed by
+a constant (`Expr.ctorTeleOk`; the install reads the constructor's
+telescope at that arity before it fires the rule).  These are what
+Lean's reading of the rule needs beyond the rule's firing law: that the
+constructor the law fires at is the one the major premise's type names,
+at its levels and parameters, and that its arguments fit its type binder
+by binder, with the residual's arguments where substitution leaves them. -/
 @[expose] def RuleCtorOk (find? : Key md → Option (ConstantInfo md)) (cv : ConstantVal md)
     (mI rP : Nat) (r : RecRule md) : Prop :=
   ∃ cvj, find? (RecRule.ctor r) = some (.ctorInfo cvj r.ctorParams r.nfields) ∧
@@ -73,7 +74,7 @@ its type binder by binder. -/
       Expr.recRulePlain cv.type mI rP r.ctorParams cvj.levelParams = true) ∧
     (∀ lvls pins, RecRule.fire r = .nested lvls pins → pins.length = r.ctorParams) ∧
     RecRule.fire r ≠ .inert ∧
-    (cvj.type.stripPis (r.ctorParams + r.nfields)).isSome = true
+    Expr.ctorTeleOk cvj.type (r.ctorParams + r.nfields) = true
 
 /-- The rule's constructor is stored. -/
 theorem RuleCtorOk.stored {find? : Key md → Option (ConstantInfo md)} {cv : ConstantVal md}
@@ -96,7 +97,7 @@ theorem RuleCtorOk.of_plain {find? : Key md → Option (ConstantInfo md)} {cv : 
     (hf : find? (RecRule.ctor r) = some (.ctorInfo cvj r.ctorParams r.nfields))
     (hfire : RecRule.fire r = .plain)
     (hpl : Expr.recRulePlain cv.type mI rP r.ctorParams cvj.levelParams = true)
-    (hstrip : (cvj.type.stripPis (r.ctorParams + r.nfields)).isSome = true) :
+    (hstrip : Expr.ctorTeleOk cvj.type (r.ctorParams + r.nfields) = true) :
     RuleCtorOk find? cv mI rP r :=
   ⟨cvj, hf, fun _ => hpl, fun _ _ h => (by rw [hfire] at h; exact nomatch h),
     (by rw [hfire]; exact fun h => nomatch h), hstrip⟩

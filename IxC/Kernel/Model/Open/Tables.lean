@@ -101,7 +101,8 @@ theorem EnvWF.storedBodies {env : Env md} (h : EnvWF env) : StoredBodies env :=
 
 /-- **A firing recursor rule's shape**: at a stored recursor's rule that fires, the rule
 prefix is within the major premise's position; the rule's constructor, if stored, is stored
-at the rule's counts, with a binder for each of its parameters and fields, and a canonical
+at the rule's counts, with a binder for each of its parameters and fields and a residual
+headed by a constant (`Expr.ctorTeleOk`), and a canonical
 rule has the shape its install tested (`Expr.recRulePlain`); a certified nested rule has
 one stored instantiation per constructor parameter, closed and scoped in the rule prefix,
 and the recursor's major premise's domain is the family at the rule's levels applied to
@@ -111,7 +112,7 @@ def StoredRules (env : Env md) : Prop :=
     env.find? r = some (.recInfo cv mI rP rules) → ∀ rl ∈ rules, rl.fire ≠ .inert →
     rP ≤ mI ∧
     (∀ (cvC : ConstantVal md) (nP nF : Nat), env.find? rl.ctor = some (.ctorInfo cvC nP nF) →
-      nP = rl.ctorParams ∧ nF = rl.nfields ∧ (cvC.type.stripPis (nP + nF)).isSome = true ∧
+      nP = rl.ctorParams ∧ nF = rl.nfields ∧ Expr.ctorTeleOk cvC.type (nP + nF) = true ∧
       (rl.fire = .plain → Expr.recRulePlain cv.type mI rP nP cvC.levelParams = true)) ∧
     ∀ (lvls : List Level) (pins : List (Expr md)), rl.fire = .nested lvls pins →
       pins.length = rl.ctorParams ∧
