@@ -1,5 +1,6 @@
 import IxVMRefinement.Nat.Klimbs
 import IxVMRefinement.Nat.WordMul
+import IxVMRefinement.Core.RomBound
 
 /-! # `KernelKlimbs`: multiplication, division, gcd, powers, shifts; the division helpers
 
@@ -43,14 +44,12 @@ theorem div_mod_double {n m : Nat} (hm : 0 < m) :
   have hlt := Nat.mod_lt n (show 0 < m + m by omega)
   refine ⟨fun hr => ?_, fun hr => ?_⟩
   · refine (Nat.div_mod_unique hm).mpr ⟨?_, hr⟩
-    rw [← hd]
-    ring
+    nlinarith [hd]
   · refine (Nat.div_mod_unique hm).mpr ⟨?_, by omega⟩
     obtain ⟨e, he⟩ : ∃ e, n % (m + m) = m + e := ⟨n % (m + m) - m, by omega⟩
     rw [he, show m + e - m = e by omega]
     rw [he] at hd
-    rw [← hd]
-    ring
+    nlinarith [hd]
 
 theorem pow40 : (2 : Nat) ^ 40 = 1099511627776 := by norm_num
 
