@@ -1,15 +1,13 @@
 import IxCC.Ixon.V3.Validate
 
-/-! Combined admission rests on the standard axioms (pure BLAKE3). -/
+/-! The resource-validation API (resource admission and the literal pins)
+rests on the standard axioms (pure BLAKE3). -/
 
 /-- info: 'IxCC.Ixon.V3.literalPinAllowed_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Ixon.V3.literalPinAllowed_sound
 
 /-- info: 'IxCC.Ixon.V3.checkLiteralProfile_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Ixon.V3.checkLiteralProfile_sound
-
-/-- info: 'IxCC.Ixon.V3.ValidatedInput.typing_checked' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in #print axioms IxCC.Ixon.V3.ValidatedInput.typing_checked
 
 /-- info: 'IxCC.Ixon.V3.ValidatedInput.literal_profile_checked' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Ixon.V3.ValidatedInput.literal_profile_checked

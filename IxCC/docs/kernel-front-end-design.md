@@ -2,14 +2,16 @@
 
 Written 2026-11-11. **Status:** decided by the owner: IxCC takes its type
 information and its acceptance of an environment from the certified kernel
-(the `IxCK/` package), and its own erased type checker is to be deleted. The
+(the `IxCK/` package), and its own erased type checker is deleted. The
 front end over the kernel (`IxCC.Src.KernelFront`,
 [`Src/KernelFront`](../IxCC/Src/KernelFront), and `Recheck.ingress`) **is the
 only front end** since the switch's step 3 ([The switch](#the-switch)): every
 compile path's ingress is the kernel's acceptance and every annotation the
-kernel annotator's. The erased checker's code is still in the tree, off every
-path, until step 4 deletes it; `tests-kernel-front` compares its verdicts and
-the earlier annotator's with the kernel's until then. The kernel's fix of its
+kernel annotator's. Step 4 deleted the earlier front end: the earlier
+annotator, with `tests-kernel-front`'s comparison, which found the two
+annotators equal on every committed closure, IxCC's catalog support, the
+erased checker, the unbound environment's reading, IxCC's binding decoder and
+the Rust hasher's import. The kernel's fix of its
 blow-up on chains of `let`, made in parallel in the kernel package on this
 branch, has landed ([resource bounds](#resource-bounds),
 [decisions](#decisions)). This is most of the native
@@ -229,7 +231,7 @@ Ingress (`Recheck.ingress`, [`Recheck/Produce.lean`](../IxCC/Recheck/Produce.lea
 it was `KernelFront.ingress` beside the old front end until step 3 folded it in)
 builds the program exactly as before (`Src.Ingress.readConsts` for the chosen
 roots), takes the pins from the kernel's admitted table (`pinsOfTable`, the
-same role mapping as `Src.Pinned.ofRoles`), and reads the program against the
+role mapping of `Src.Pinned`), and reads the program against the
 kernel's reading (`Reading.build`,
 [`Reading.lean`](../IxCC/Src/KernelFront/Reading.lean)):
 
@@ -289,11 +291,8 @@ byte-level path; the kernel is already there for acceptance.
 ### What each use of the erased checker becomes
 
 Every use of the checker (`IxCC/IxCC/Ixon/V3/Tc/`) outside its own modules,
-as the tree stood after step 2 (2026-11-11), and what it becomes. Step 3 made
-every row's last column true but the deletions and the typing conjuncts of
-the resource-validation API and the catalog admission, which step 4 removes
-(until then those two and the erased checker's own tests are the checker's
-only callers, with `tests-kernel-front`'s comparison):
+as the tree stood after step 2 (2026-11-11), and what it becomes. Steps 3 and
+4 made every row's last column true; the checker is deleted:
 
 | Use (where) | What rests on it | Becomes at the switch |
 | --- | --- | --- |
@@ -302,12 +301,12 @@ only callers, with `tests-kernel-front`'s comparison):
 | `V3.Tc.checkEnv` in `Src.prepare` (`Src/Load.lean`), when `LoadConfig.typecheck`; `RelOracle` takes a `V3.Env` | the loader of the Src, Lam and pipeline suites and of `src-steps` | `KernelFront.ingress` and its annotator; `LoadConfig.typecheck` goes, and the oracle takes the accepted input |
 | `V3.TypedInput`, `V3.validateTyped` (`Ixon/V3/Typed.lean`) | nothing: since step 2 only the umbrella `IxCC.lean` imports it | deleted |
 | `ValidatedInput.typingChecked` in `V3.validate` (`Ixon/V3/Validate.lean`), and `ValidatedInput.typing_checked` | the resource-validation API (`check-ixon-v3`, `tests-ixon-v3`), which keeps typing as its prerequisite | the typing conjunct goes (resource admission and the literal pins stay); the kernel's acceptance where the input is role-bound. Its handoff fixtures are unbound |
-| `Admitted.typingChecked` in `Catalog.admitWith` (`Ixon/V3/Catalog/Admit.lean`), and `Admitted.typing_checked` | catalog validator 1 (`check-ixon-v3-catalog`) | decoder-level admission without typing: the catalogs are unbound pieces IxCC assembles |
+| `Admitted.typingChecked` in `Catalog.admitWith` (`Ixon/V3/Catalog/Admit.lean`), and `Admitted.typing_checked` | catalog validator 1 (`check-ixon-v3-catalog`) | IxCC's catalog support retired in step 4 (validator 1 certified erased typing; ix retired it): the reader, the admission, its four fences, `ixcc-ixon-v3`'s catalog step, the two frozen catalogs and their tests |
 | `Tc.initialState`, `getConstVerified`, `checkTarget`, `TcM.checkConst` in `Tools.Census.entries` (`Tools/Census.lean`) | the per-constant typing verdicts of the required `census` check, compared with reviewed baselines | the kernel's acceptance of the whole role-bound closure, its refusal naming the record; the baselines regenerated with the refreeze |
 | `typecheck = true → V3.Tc.checkEnv inp.env = .ok ()` and `Src.Relevance.annotate … = .ok …` in statements: `Recheck.ingress_parts` (`Compiler/Proof.lean`), `verifyBytes_{immortal,zeroRc,plainRc}_sound` (`CompileClaim/Proof.lean`), `verifyBytesRing0Sip_sound` (`Ring0/Proof.lean`), and the bridge's `checkDecls_verifyBytes_immortal_denotes_nat` (`Models/KernelBridge/IxKernelBridge/NatBridge.lean`); the `typecheck` parameter alone in `compile_parts` and its siblings (`Recheck/Proof/Compile.lean`), `compileWithContracts_*` and `compileAuto_*_sound` (`Compiler/Proof.lean`), `checkClaim_iff` (`CompileClaim.lean`) | the byte-level guarantees | restated with the acceptance and the kernel Stage A conjuncts ([statements](#the-byte-level-theorems-after-the-switch)) |
 | `--no-typecheck` (`Cli.lean`) | skips typing at ingress | removed ([the typing flag](#the-typing-flag)) |
 | the erased checker's tests: `IxCCTests/IxonV3/{Typing,Primitives,K1}.lean` (`Tc.checkEnv`, `KUniv`, `univEq`, `getConstVerified`, `primAddrSet`, `tcUInt64BytesLE`) | `tests-ixon-v3`'s typing part | deleted; its assertions that are not typing (the primitive table against `primitives.tsv`, the `Nat` literal bytes) move to the suite's other parts |
-| `IxCCTests/KernelFront/Diff.lean` (`V3.Tc.checkEnv`, the old front end) | the differential | the old side goes; the kernel front end's regressions stay, and its run over the refrozen corpus becomes the required differential's successor |
+| `IxCCTests/KernelFront/Diff.lean` (`V3.Tc.checkEnv`, the old front end) | the differential | the old side went in step 4 (the module is now `IxCCTests/KernelFront/Report.lean`: the kernel's acceptance, ingress, and every root through the producer and Stage A); the kernel front end's regressions stay, and its run over the refrozen corpus is the required differential's successor |
 | docstrings: `Ixon/Hash.lean` (`V3.Tc.finishHash`, the Rust hasher's one user), `Src/Prim.lean` (`Tc.computeNatBin`), `Src/KernelFront/Front.lean`, `Ixon/V4/Convert.lean`, `CompileClaim.lean`, `Ring0.lean` | — | rewritten; with the checker gone, `Blake3.Rust` has no user in IxCC |
 | not typing: the block-member keys, the `Nat` literal bytes, address order and hexadecimal reading, the primitive table | ingress, the pinned identities, the sidecar's reader, the resource profile | moved by step 2 to `V3.*ProjAddr` ([`Ixon/V3/Keys.lean`](../IxCC/Ixon/V3/Keys.lean)), `V3.natFromBytesLE`, `V3.natBytesLE`, `Address.cmpBytes`, `Address.fromString` ([`Ixon/V3/Support.lean`](../IxCC/Ixon/V3/Support.lean)) and `V3.PrimAddrs` ([`Ixon/V3/PrimAddrs.lean`](../IxCC/Ixon/V3/PrimAddrs.lean)); the kernel's key map checks the keys against its own reconstruction (`Reading.build`) |
 
@@ -505,7 +504,8 @@ paired IxVM claim's table ([end-to-end](end-to-end.md#the-shared-spine)).
 
 **Modules.** The front end imports `IxCK.Kernel.Admission.Tier` (the tiered
 entry, which imports the logical entry and the reader), `IxCK.Kernel.Cached.CoreC`
-(the executed core) and `IxCK.Kernel.Ixon.Prelude`: an 82-module closure of
+(the executed core) and `IxCK.Kernel.Ixon.Prelude`: an 82-module closure (98
+files since later kernel landings) of
 about 49,000 lines, against 13 files before (the codec and the role
 vocabulary). It includes the committed role data
 (`IxCK/Kernel/Ixon/RoleData.lean`, 13,737 lines of hexadecimal records) through
@@ -517,7 +517,7 @@ where that tree is built.
 [measurements](#measurements) below.
 
 **The ledger** ([trust ledger](trusted-extern-ledger.md)). The dependency
-entry's closure grows to the 82 files, each pinned by its SHA-256;
+entry's closure grows to the 82 files (98 since), each pinned by its SHA-256;
 `imported_modules` lists the six modules IxCC's sources import (the codec's
 three and the kernel's three); the
 `@[csimp]` inventory grows with the kernel's replacements (each a proved
@@ -612,8 +612,8 @@ landed; what stays exposed is under [resource bounds](#resource-bounds).
    kernel declined `Classical.choice` there as a non-standard axiom; the
    closures [measured](#measurements) below come from an `ix` that binds them.
    Done (2026-11-11): every committed closure is role-bound but the frozen
-   typing bundles, catalogs, resource handoff vectors and dated historical
-   records.
+   typing bundles, catalogs and resource handoff vectors (the dated
+   historical ownership records, unbound, were retired in step 4).
 2. **Move what is not typing out of the checker** (a refactor, no behaviour
    change). **Done** (2026-11-11): the block-member keys (`V3.defnProjAddr`
    and its siblings, pure BLAKE3) to [`Ixon/V3/Keys.lean`](../IxCC/Ixon/V3/Keys.lean);
@@ -646,32 +646,52 @@ landed; what stays exposed is under [resource bounds](#resource-bounds).
    `Recheck/Proof/Parts.lean`, is about `Recheck.front`, which runs no typing,
    and does not change); the duplicated producer of `KernelFront.Front` folds
    back into `Recheck.Produce`.
-4. **Delete** (a separate commit, no behaviour change): `IxCC/IxCC/Ixon/V3/Tc/`
-   (24 files, 12,339 lines since step 2), `IxCC/IxCC/Src/Relevance/Annotate.lean` (336),
-   `IxCC/IxCC/Ixon/V3/Typed.lean` (34), the typing parts of
-   `IxCC/IxCC/Ixon/V3/Validate.lean` (106 lines in all) and
-   `IxCC/IxCC/Ixon/V3/Catalog/Admit.lean` (49), the typing tests
-   (`IxCCTests/IxonV3/{Typing,Primitives,K1}.lean`, less the primitive table's
-   parity and the `Nat` literal bytes, which move to the suite's other parts),
-   and IxCC's own binding decoder (`IxCC/IxCC/Ixon/V3/Binding.lean`, 171), whose
-   reading the kernel's `admitBinding` replaces; about 13,300 lines. Not
-   deleted: `IxCCTests/IxonV3/TypingFixtures.lean`, which is the in-memory
-   environment builder of `tests-recheck`, the catalog tests and
-   `ResourceBudget` (renamed, less anything typing-only); and the typing
-   bundles `fixtures/ixon-v4/typing/`, which also seeded the catalog fixtures,
-   are the refreeze's to keep or drop.
-5. **The ledger last**: the closure and the exception are already recorded;
-   the integrity pins re-recorded by the documented procedure; the
-   `tests-ixon-v3` typing part and the `tests-relevance` annotator part move to
-   `tests-kernel-front`, whose runs over the refrozen corpus become the
-   required differential's successor (a corpus-wide `KernelFront` pass in
-   `corpus check`).
+4. **Delete** (no behaviour change: every registered root compiles to the same
+   object and certificate). **Done** (2026-11-11), in groups:
+   the earlier annotator (`IxCC/IxCC/Src/Relevance/Annotate.lean`) and
+   `tests-kernel-front`'s comparison with it and with the erased checker (the
+   module is now `IxCCTests/KernelFront/Report.lean`); IxCC's catalog support
+   (the reader, the validator-1 admission, its four fences, the catalog step of
+   `ixcc-ixon-v3`, the two frozen catalogs and their tests: validator 1
+   certified erased typing, and ix retired it); the erased checker
+   (`IxCC/IxCC/Ixon/V3/Tc/`, 24 files, 12,357 lines), `Ixon/V3/Typed.lean`,
+   the typing conjunct of the resource-validation API (`V3.validate` types
+   nothing; on every compile path the kernel's acceptance comes first), the
+   checker's typing tests and its four typing bundles (the primitive table's
+   parity, the `Nat` literal bytes and the API's resource cases kept in
+   `IxCCTests/IxonV3/Validation.lean`; the K1 packs checked by the kernel's
+   acceptance); the unbound environment's reading (`Src.Ingress.ofEnv`, its
+   fence, `Pinned.pinsOf`; the fixed table `Pins.fixed`, `src-tables.tsv` and
+   `pin-src-tables`, once listed with it, stay: they are not unbound-only, being
+   the allowlist's address and the default pins, and the source of
+   `Src.Pinned`'s `lazy` and allowlist rows, `src-names.tsv` and the
+   diagnostics fixtures, on every compile path); IxCC's own binding decoder
+   (`IxCC/IxCC/Ixon/V3/Binding.lean`: the envelope keeps the section's address
+   and bytes, the kernel decodes and admits the table, and the pins read the
+   table it admitted); and the `Blake3.Rust` import (no IxCC executable links
+   the Rust hasher). The in-memory environment builder of the tests stays,
+   renamed `IxCCTests/IxonV3/Builder.lean`. Removed in all: about 15,400 lines
+   of Lean and 16,500 lines in all, including the dated historical ownership
+   records the kernel front end refuses (unbound) and `ix` can no longer write.
+5. **The ledger last** (done): the kernel closure and its exception were
+   already recorded; the native-interface entry is gone, Blake3 is recorded as
+   a git-pinned pure dependency (the two files IxCC takes from it, with three
+   admitted `native_decide` default-argument proofs), and the ledger audits
+   that IxCC imports only `Blake3.Pure` and that no executable the checks
+   build links either of the package's native backends
+   ([trust ledger](trusted-extern-ledger.md), "No native interface"); the
+   integrity pins re-recorded by the documented procedure. The runs of `tests-kernel-front`, `corpus check` and
+   `tests-corpus` over the refrozen corpus (every one through the kernel's
+   acceptance and annotator) are the required differential's successor.
 
-Suites affected: `tests-ixon-v3` (typing fixtures), `tests-relevance` and
-`tests-lam` (annotation mutation draws from the annotator), `tests-recheck`
-(Stage A, the hostile and deep families), `tests-pipeline`, `tests-corpus`,
-`corpus check` and `census` (every family re-ingested through the kernel),
-`ixcc-proofs` (restated fences).
+Suites affected: `tests-ixon-v3` (typing fixtures, the catalogs, the binding
+decoder), `tests-relevance` and `tests-lam` (annotation mutation draws from
+the annotator), `tests-recheck` (Stage A, the hostile and deep families),
+`tests-pipeline`, `tests-corpus`, `corpus check` and `census` (every family
+re-ingested through the kernel), `tests-own` (the historical
+annotated-recursion part retired), `tests-kernel-front` (its comparison),
+`ixcc-proofs` (restated fences in step 3; six fences gone with their theorems
+in step 4).
 
 ## Measurements
 
@@ -798,8 +818,9 @@ rather than choosing between two.
 4. **Unbound environments.** Refused by the front end: with the switch
    decided this follows, since the kernel admits only role-bound
    environments. Since step 3 an unbound closure is refused at ingress. What
-   stays unbound: the catalog pieces and the
-   resource handoff fixtures, read without typing (the table of uses above).
+   stays unbound: the resource handoff fixtures, read without typing (the
+   table of uses above); the catalog pieces went with IxCC's catalog support
+   in step 4.
 5. **The exposure on `let` chains** ([resource bounds](#resource-bounds)).
    The switch (step 3; the producer and the verifier go together) either
    lands with the exposure documented or waits for the kernel's fix

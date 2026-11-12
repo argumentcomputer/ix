@@ -167,12 +167,21 @@ def censusText (ixe : ByteArray) (equations : Json) : IO String := do
   return (IxCC.Tools.Census.report ixe (← IxCC.Tools.Census.names equations)).pretty ++ "\n"
 
 /-- Validate structural resource metadata against the entire authenticated
-closure, independently of roots and expected compiler declines. -/
+closure, independently of roots and expected compiler declines: its constants
+read as ingress reads them (`Src.Ingress.readConsts`), with the pins of its
+role table as the certified kernel decodes it (`KernelFront.pinsOfTable`; the
+kernel's acceptance, which may decline the closure for reasons of its own, is
+not run here). An unbound closure, which no compile path reads, is refused. -/
 def checkResourceClosure (ixe : ByteArray) (eqs : Json) : IO Unit := do
   let context ← checked (IxCC.Src.Hints.resourceOfJson eqs)
   if context.isSome then
     let env ← checked (IxCC.Ixon.V3.decodeAnonymousEnv ixe)
-    let p ← checked (IxCC.Src.Ingress.ofEnv env #[])
+    let some b := env.binding
+      | throw (IO.userError "resource metadata on an unbound closure, which no compile path reads")
+    let some table := Ix.Kernel.RoleTable.ofBytes b.bytes
+      | throw (IO.userError "resource metadata: the role binding is not a role table")
+    let p ← checked (IxCC.Src.Ingress.readConsts env #[])
+    let p := { p with known := { pins := IxCC.Src.KernelFront.pinsOfTable table } }
     let p := { p with known := IxCC.Src.Pinned.known p, resource := context }
     checked (IxCC.Src.Resource.validate p)
 

@@ -79,7 +79,7 @@ Three facts follow, each a reason for the plan's order.
   (one `checkEqn` passes, since it checks the theorem's type and axiom
   closure, not its proof) is declined at ingress, and the byte-level theorems
   state the acceptance. IxCC's erased type checker, about 12,700 lines with no
-  soundness theorem, is off every path. The acceptance is of the artifact's
+  soundness theorem, is deleted (the switch's step 4). The acceptance is of the artifact's
   whole logical environment under its own table and prelude, which is more
   than and different from premise (i) ([kernel front
   end](kernel-front-end-design.md#acceptance)).
@@ -273,11 +273,11 @@ where a law exists there, so that the statements elaborate here before any of
 that work lands.
 
 **What this removes from IxCC's obligations.**
-- A soundness theorem for IxCC's erased type checker. It stops being part of
-  any guarantee. Its remaining uses are untrusted production: the relevance
-  annotator works through its expressions and conversion, and the producer
-  can reject ill-typed input early with a diagnostic. On the verifier path it
-  is at most an optional filter ([roadmap](roadmap.md#decisions-to-confirm)).
+- A soundness theorem for IxCC's erased type checker. It stopped being part of
+  any guarantee, and the checker is deleted: the kernel front end's acceptance
+  and annotator took over its uses (the relevance annotation, the early
+  refusal of ill-typed input) and it is not kept as a filter
+  ([roadmap](roadmap.md#decisions-to-confirm), DC-4).
 - A proof that IxCC's decoder and IxCK's reader agree. Either the party that
   holds the kernel's reading checks the image against it (the lowering claim),
   so IxCC's own decoder is not on the trusted path; or IxCC's ingress is
@@ -315,21 +315,20 @@ bytes the IxVM proof is about and state what it guarantees about them.
 - **The same bytes.** IxCC reads role-bound (version-5) environments, which
   IxVM's claims are about and this repository's `ix compile` writes
   (implemented: [`Ixon/V3/Env.lean`](../IxCC/Ixon/V3/Env.lean), the
-  [byte contract](byte-contract.md)); the fixtures' unbound envelope is a
-  bridge, not the design.
+  [byte contract](byte-contract.md)); an unbound envelope is refused at
+  ingress.
 - **The same hash.** Every address in the statement is the same mathematical
   function as in IxVM's claims: pure BLAKE3 (`Address.blake3Pure`) on the whole
-  verifier path, including block-member projection addresses, which ingress
-  computes today with the native extern
-  ([`Src/Ingress.lean`](../IxCC/Src/Ingress.lean)). The byte-level theorems'
-  one non-standard axiom is removed: by reading, it comes from a
-  `native_decide` proof inside the Blake3 package's `finalizeWithLength`
-  whose proposition is a bound on the output length, provable from
-  `System.Platform.numBits_eq`.
+  verifier path, including block-member projection addresses (implemented:
+  every address IxCC computes is pure BLAKE3, [byte
+  contract](byte-contract.md), and no IxCC module imports the Blake3
+  package's Rust backend). The byte-level theorems' former non-standard
+  axiom, a `native_decide` proof inside the Blake3 package's hasher, is gone
+  with it.
 - **The same identities.** Pinned identities come from the role table, as
-  IxVM's do (implemented for role-bound closures, `Src.Pinned.ofRoles`); IxCC's
-  fixed pins ([`Src/Pinned.lean`](../IxCC/Src/Pinned.lean)) stay for unbound
-  closures.
+  IxVM's do (implemented: from the table the kernel admitted,
+  `KernelFront.pinsOfTable`, through the mapping in
+  [`Src/Pinned.lean`](../IxCC/Src/Pinned.lean)).
 - **The claim binds what composition needs.** The target and the image digest
   `D`, which together determine the seeds `S` (the target and the theorems
   `D`'s table names); the environment root `H` and the role table `ρ` stay as
@@ -813,7 +812,7 @@ kernel's runs. Designed, and built beside the default front end, as the
 the whole artifact, IxCC's reading is checked against IxCK's, and the
 relevance annotation comes from IxCK's inference; since the switch it is the only
 front end (the owner's decision of 2026-11-11), and the erased type checker's
-code is deleted in its next step. IxCK's blow-up on chains of `let`,
+code is deleted (its step 4). IxCK's blow-up on chains of `let`,
 fixed in the kernel package on this branch in parallel, has landed; the
 native verifier the switch produces still inherits the kernel's exponential
 time on universe levels it cannot fold, until the kernel's level-metering
@@ -1072,7 +1071,7 @@ corrections to the 2026-11-09 statement (the third and fourth of 2026-11-11):
 - **Existence, faithfulness and typing as premises.** The environment is the
   kernel's reading of the closure of the seeds; that it has a model is
   premise (i), discharged by an IxVM claim or a native IxCK run; typing is in
-  premise (ii); IxCC's erased type checker supplies nothing.
+  premise (ii); IxCC's erased type checker (deleted) supplied nothing.
 - **Soundness and progress apart.** "Adequacy is not progress" is true of an
   untyped relation, not of the typed one this route needs: on the fragment,
   related terms neither get stuck nor trap, so the grounded statement has no

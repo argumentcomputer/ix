@@ -38,7 +38,7 @@ namespace IxCCTests.Recheck.Deep
 open IxCC IxCC.Ixon IxCC.Ixon.V3
 open IxCCTests.Recheck.Hostile
 open IxCCTests.Src (Assert expect)
-open IxCCTests.IxonV3.TypingFixtures (store arrow lambda)
+open IxCCTests.IxonV3.Builder (store arrow lambda)
 open IxCCTests.Support.Bound (loadBase addList addTree)
 
 /-- `step` applied `n` times to `inner`, stored as a chain of shares of at most
@@ -193,12 +193,12 @@ def shapeEnv (env0 : Env) (name : String) (n : Nat) : Except String (Env × Addr
   | "many" => .ok (manyEnv env0 n)
   | _ => .error s!"unknown shape {name}"
 
-/-- A certificate for a deep instance that the annotator cannot produce (it
-types through `Tc`, whose stack stops at 1,024 frames): the annotation of a
-shallow instance (`n₀` deep) carried over by address, with the root's value
-tags repeated to its depth. The constants other than the root are the same in
-both, and each level of the chain carries the same tags. This is what a
-claimant can hand a program-level verifier, which runs no annotator. -/
+/-- A certificate for a deep instance made without the annotator, as a
+claimant could make it: the annotation of a shallow instance (`n₀` deep)
+carried over by address, with the root's value tags repeated to its depth.
+The constants other than the root are the same in both, and each level of
+the chain carries the same tags. This is what a claimant can hand a
+program-level verifier, which runs no annotator. -/
 def transplantedCert (env0 : Env) (name : String) (n n₀ : Nat) (inp : Recheck.Input) (cfg : Recheck.Config) :
     Except String Recheck.Cert := do
   let (e₀, main₀) ← shapeEnv env0 name n₀

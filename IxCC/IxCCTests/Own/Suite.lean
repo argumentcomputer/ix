@@ -3,7 +3,6 @@ import IxCCTests.Corpus.ResourceChecks
 import IxCCTests.Own.Verdicts
 import IxCCTests.Own.Strip
 import IxCCTests.Own.Counters
-import IxCCTests.Own.AnnotatedRecursion
 import IxCC.Fir.Print
 import IxCC.Cfg.Print
 
@@ -53,7 +52,7 @@ open System
 
 def manifest : FilePath := "fixtures/ownership/corpus.json"
 
-def parts : List String := ["strip", "fixtures", "resource-records", "annotated-recursion", "equiv", "erasure", "counters", "cx1"]
+def parts : List String := ["strip", "fixtures", "resource-records", "equiv", "erasure", "counters", "cx1"]
 
 structure Options where
   /-- Run natively, as test executables IxCC writes. -/
@@ -407,7 +406,6 @@ def suite (a : Assert) (o : Options) (work : FilePath) : IO Unit := do
   run "strip" (strip a m)
   run "fixtures" (fixtures a)
   run "resource-records" (IxCCTests.Corpus.ResourceChecks.run a work)
-  run "annotated-recursion" (IxCCTests.Own.AnnotatedRecursion.run a work)
   run "equiv" (equiv a o work m)
   run "erasure" (erasure a m)
   run "counters" (counters a o work m)

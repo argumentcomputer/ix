@@ -9,9 +9,9 @@ erased-typing prerequisite. Changes since, kept in step with ix's
 - safe theorems are a declaration kind of their own: admission checks a marked
   theorem's proof against its statement with contracts but without usage,
   ownership or locality obligations (`conform`, `checkTheorem`), and terms in
-  erased positions are checked the same way. The erased typing compares no
-  contracts, so a proof it accepts can equate types that differ only in a
-  contract. A proof of an equation between values of a literal type is not
+  erased positions are checked the same way. Typing (the certified kernel's
+  acceptance) does not compare result contracts, so a proof it accepts can
+  equate types that differ only in a contract. A proof of an equation between values of a literal type is not
   inspected (`dataEquation`; the adapter supplies the kernel's `Eq`);
 - projections of single-constructor structures with parameters and dependent
   fields: `Field.binders`, `fieldType`, and projection reduction in `whnf`;
@@ -452,7 +452,7 @@ def typeOf : Nat → Context → Expr → CheckM Expr
 `Program.stringType`). Such a statement relates two values of a type whose
 values are data. Contracts do not change how a term computes, so two such
 values are equal with contracts exactly when they are equal without, and a
-proof the erased typing accepts proves it. A transport along it replaces one
+proof the kernel accepts proves it. A transport along it replaces one
 such value by the other inside a type; this checker never selects a type by
 computing with a value (it has no recursor or literal reduction), so no
 contract it reads changes. -/
@@ -476,8 +476,9 @@ def dataEquation (program : Program) : Nat → Expr → CheckM Bool
 
 /-- Contract-aware typing of a term the analysis does not run: a theorem's
 proof, and a term in an erased (`0`) position. `typeOf` computes a type from
-declared interfaces without looking at arguments, and the erased typing
-(`Tc`) compares no contracts at all, so a proof it accepts can state an
+declared interfaces without looking at arguments, and the certified kernel
+compares binders' input contracts but not result contracts, so a proof it
+accepts can state an
 equality between types that differ in a contract (`rfl : ((~ x : A) → ~ B) =
 ((~ x : A) → B)`). A transport (`cast`, `Eq.mpr`, `▸`, `Eq.rec`) along such a
 proof would change a contract. `conform` checks the term the way `analyze`

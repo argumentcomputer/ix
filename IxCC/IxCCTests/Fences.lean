@@ -7,7 +7,6 @@ import IxCCTests.Fences.AiurMemoryAIR
 import IxCCTests.Fences.AiurRankAIR
 import IxCCTests.Fences.IxonV3
 import IxCCTests.Fences.IxonV3Typing
-import IxCCTests.Fences.IxonV3Catalog
 import IxCCTests.Fences.X86
 import IxCCTests.Fences.X86Kernel
 import IxCCTests.Fences.Lir

@@ -97,14 +97,66 @@ def scan (input : String) (cSource : Bool := false) : Except String (Array Token
       index := index + 1
   return tokens
 
-def imports (tokens : Array Token) : List String := Id.run do
+/-- The module name written from `tokens[start]` on, with the index after it: a
+name, or a name with guillemet-quoted components (`«Blake3».Rust`,
+`Blake3.«Rust»`), which the lexer splits at each guillemet and which is read
+here whole, its components unquoted, as Lean reads it. -/
+private def moduleAt (tokens : Array Token) (start : Nat) : Option (String × Nat) := Id.run do
+  let some first := tokens[start]? | return none
+  unless first.kind == .name || first.kind == .quotedName do return none
+  let mut text := first.text
+  let mut index := start + 1
+  for _ in [start + 1:tokens.size] do
+    let some next := tokens[index]? | break
+    let continues := next.line == first.line &&
+      ((text.endsWith "." && (next.kind == .name || next.kind == .quotedName)) ||
+        (next.kind == .name && next.text.startsWith "."))
+    unless continues do break
+    text := text ++ next.text
+    index := index + 1
+  return some (text, index)
+
+/-- The import commands of `tokens`: for each, the index of its module name's
+first token, the index after the name, and the module. An import command is the
+keyword `import`, whatever modifiers come before it (`public import M`,
+`meta import M`, `public meta import M` are read alike: the keyword is what is
+matched), with `all` after it read through (`import all M`). A keyword `import`
+followed by no module name yields `<unreadable import at line N>`, which names
+no module, so every check that compares imports fails on it. -/
+private def importCommands (tokens : Array Token) : List (Nat × Nat × String) := Id.run do
   let mut result := []
   for index in [:tokens.size] do
-    if tokens[index]!.text == "import" && tokens[index]!.kind == .name then
-      -- `import all M` (module system) names M
-      let skip := if tokens[index + 1]?.map (·.text) == some "all" then 2 else 1
-      if let some next := tokens[index + skip]? then
-        if next.kind == .name then result := next.text :: result
+    let token := tokens[index]!
+    unless token.kind == .name && token.text == "import" do continue
+    let start := if (tokens[index + 1]?.map fun t => t.kind == .name && t.text == "all").getD false
+      then index + 2 else index + 1
+    match moduleAt tokens start with
+    | some (mod, finish) => result := (start, finish, mod) :: result
+    | none => result := (start, start, s!"<unreadable import at line {token.line}>") :: result
+  return result.reverse
+
+/-- The modules `tokens` imports, in order (`importCommands`). -/
+def imports (tokens : Array Token) : List String :=
+  (importCommands tokens).map (·.2.2)
+
+/-- The names under the module root `root` that `tokens` spell outside their
+import commands: each name token that is `root` or starts with `root.` (so
+`open root` and `open root.M` count, as do qualified uses), and `root` for a
+guillemet-quoted `«root»` (as in `«Blake3».Rust.x`). A name reached without
+spelling `root` (after an `open` of it elsewhere, by generalized field
+notation, through an instance) is not seen: this is a reading of the text. -/
+def namesUnder (tokens : Array Token) (root : String) : List String := Id.run do
+  let mut inImport := (List.replicate tokens.size false).toArray
+  for (start, finish, _) in importCommands tokens do
+    for index in [start:finish] do inImport := inImport.set! index true
+  let mut result := []
+  for index in [:tokens.size] do
+    let token := tokens[index]!
+    if inImport[index]! then continue
+    if token.kind == .name && (token.text == root || token.text.startsWith (root ++ ".")) then
+      result := token.text :: result
+    else if token.kind == .quotedName && token.text == root then
+      result := root :: result
   return result.reverse
 
 /-- Names that declare an axiom, leave a proof hole, or evaluate natively: the
@@ -158,6 +210,72 @@ def hygieneDependency (tokens : Array Token) : Except String Unit :=
     !(tokens[index]!.kind == .name && tokens[index]!.text == "axiom" &&
       index > 0 && ["|", "."].contains tokens[index - 1]!.text)
   hygiene (keep.toArray.map (tokens[·]!))
+
+/-- Keywords after which a declaration's name follows. -/
+private def declarationKeywords : List String :=
+  ["def", "theorem", "lemma", "abbrev", "instance", "structure", "class", "inductive",
+   "opaque", "axiom", "example"]
+
+/-- Commands that can only stand between declarations: a `native_decide` after
+one belongs to no declaration. -/
+private def commandKeywords : List String :=
+  ["variable", "universe", "deriving", "initialize", "builtin_initialize", "macro", "syntax",
+   "elab", "notation", "macro_rules", "elab_rules"]
+
+/-- Each `native_decide` tactic of `tokens` with the declaration whose text holds
+it (in its signature, as a default argument's proof, or in its body) and its
+line. The declaration is the one the nearest preceding declaration keyword
+names, qualified by the open namespaces (`namespace A.B` … `end A.B`;
+`section` and `mutual` open scopes that add none; `_root_.` names are not
+qualified). A `native_decide` that no named declaration holds (in an `example`,
+an anonymous `instance`, after a command such as `variable`), and an `end` that
+closes no scope, are refused. -/
+def nativeDecideSites (tokens : Array Token) : Except String (List (String × Nat)) := do
+  let mut scopes : List (Option String) := []
+  let mut current : Option String := none
+  let mut result := []
+  for index in [:tokens.size] do
+    let token := tokens[index]!
+    unless token.kind == .name do continue
+    let next := tokens[index + 1]?
+    let sameLine := (next.map fun t => t.line == token.line && t.kind == .name).getD false
+    if token.text == "namespace" then
+      let some name := next | throw s!"line {token.line}: namespace without a name"
+      scopes := (name.text.splitOn ".").reverse.map some ++ scopes
+      current := none
+    else if token.text == "section" || token.text == "mutual" then
+      scopes := none :: scopes
+      current := none
+    else if token.text == "end" then
+      let count := if sameLine then (next.map fun t => (t.text.splitOn ".").length).getD 1 else 1
+      if scopes.length < count then throw s!"line {token.line}: end closes no open scope"
+      scopes := scopes.drop count
+      current := none
+    else if token.text == "native_decide" then
+      let some name := current
+        | throw s!"line {token.line}: native_decide outside a named declaration"
+      result := (name, token.line) :: result
+    else if commandKeywords.contains token.text then
+      current := none
+    else if declarationKeywords.contains token.text then
+      current := match next with
+        | some name =>
+          if name.kind == .name && !name.text.startsWith "." then
+            if name.text.startsWith "_root_." then some (name.text.drop 7).toString
+            else some (".".intercalate ((scopes.filterMap id).reverse ++ [name.text]))
+          else none
+        | none => none
+  return result.reverse
+
+/-- The hygiene of a pure Lean dependency's closure file, with each
+`native_decide` it holds as `(declaration, line)` (`nativeDecideSites`), for the
+dependency's reviewed inventory (`native_decide_sites`) to account for. Every
+other name and spelling `hygieneDependency` refuses is still refused here,
+`decide +native` and `Lean.ofReduceBool` among them. -/
+def dependencyHygiene (tokens : Array Token) : Except String (List (String × Nat)) := do
+  let isTactic (token : Token) : Bool := token.kind == .name && token.text == "native_decide"
+  hygieneDependency (tokens.filter (!isTactic ·))
+  if tokens.any isTactic then nativeDecideSites tokens else return []
 
 private def modifier (name : String) : Bool :=
   ["public", "protected", "private", "unsafe", "partial", "noncomputable", "meta"].contains name

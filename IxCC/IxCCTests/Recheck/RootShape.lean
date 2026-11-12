@@ -36,7 +36,7 @@ namespace IxCCTests.Recheck.RootShape
 open IxCC IxCC.Recheck
 open IxCC.Sem (Obs Lang)
 open IxCCTests.Src (Assert expect)
-open IxCCTests.IxonV3.TypingFixtures (store)
+open IxCCTests.IxonV3.Builder (store)
 open IxCCTests.Support.Bound (loadBase addEnum)
 
 /-- The observations of root `c`'s result shape the test enumerates: some

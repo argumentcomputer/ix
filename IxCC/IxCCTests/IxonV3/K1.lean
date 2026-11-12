@@ -1,4 +1,5 @@
 import IxCC.Ixon.V3.Validate
+import IxCC.Src.KernelFront.Accept
 import IxCC.Tools.Check
 
 /-! The K1 fixture packs: ordinary Lean scalar programs and the unfolding
@@ -20,8 +21,8 @@ private def address (text : String) : IO IxCC.Ixon.Address := do
   | none => throw (IO.userError s!"v3 K1: invalid address {text}")
 
 /-- Strict ingress, every recorded root/definition/equation address present,
-the expected equation count, no realization failures, and erased typing of
-the complete closure. -/
+the expected equation count, no realization failures, and the certified
+kernel's acceptance of the complete closure (`Src.KernelFront.accept`). -/
 def checkPack (closure equations : System.FilePath) (expectedEquations : Nat) : IO Nat := do
   let env ← IO.ofExcept (decodeAnonymousEnv (← IO.FS.readBinFile closure))
   let pack ← readJson equations
@@ -38,9 +39,9 @@ def checkPack (closure equations : System.FilePath) (expectedEquations : Nat) : 
         s!"{closure}: missing {key} of {← strField entry "definition"}"
       assertions := assertions + 1
   require (← arrField pack "failures").isEmpty s!"{closure}: equation realization failures recorded"
-  match Tc.checkEnv env with
-  | .ok () => pure ()
-  | .error error => throw (IO.userError s!"v3 K1: erased typing rejected {closure}: {error}")
+  match IxCC.Src.KernelFront.accept env with
+  | .ok _ => pure ()
+  | .error refusal => throw (IO.userError s!"v3 K1: the kernel refused {closure}: {refusal.render}")
   return assertions + 3
 
 /-- The benchmark closures and their equation counts. -/

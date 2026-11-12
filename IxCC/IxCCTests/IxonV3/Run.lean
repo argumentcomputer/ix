@@ -1,8 +1,6 @@
 import IxCCTests.IxonV3.Fixtures
 import IxCCTests.IxonV3.Handoff
-import IxCCTests.IxonV3.Typing
-import IxCCTests.IxonV3.Primitives
-import IxCCTests.IxonV3.Catalog.Run
+import IxCCTests.IxonV3.Validation
 import IxCCTests.IxonV3.K1
 import IxCCTests.IxonV3.ResourceTransport
 import IxCCTests.IxonV3.ResourceBudget
@@ -77,14 +75,12 @@ def run : IO Bool := do
     require ((decodeExpr oversizedLevels).toOption.isNone) "universe arguments bypassed count bound"
     assertions := assertions + 3
     assertions := assertions + (← handoff root)
-    assertions := assertions + (← Typing.run root)
-    assertions := assertions + (← Primitives.run root)
-    assertions := assertions + (← CatalogTests.run root)
+    assertions := assertions + (← Validation.run root)
     assertions := assertions + (← K1.run root)
     assertions := assertions + (← ResourceBudget.run)
     assertions := assertions + (← ResourceTransport.run)
     assertions := assertions + (← Binding.run root)
-    IO.println s!"ixon-v3-tests-ok: {assertions} contract, wire, typing, resource and role-binding assertions"
+    IO.println s!"ixon-v3-tests-ok: {assertions} contract, wire, validation, kernel acceptance, resource and role-binding assertions"
     return true
   catch error =>
     IO.eprintln s!"FAIL: Ixon v3: {error}"

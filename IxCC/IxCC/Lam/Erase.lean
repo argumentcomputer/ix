@@ -297,7 +297,7 @@ end Erase
 
 open Erase in
 /-- Erase a checked Src program. Its declarations must be structurally well
-formed (`Input.progWF`, as Tc typing ensures), which the correctness proof
+formed (`Input.progWF`, as the kernel's acceptance at ingress ensures), which the correctness proof
 assumes, and the erased program must be `ModesOk` (ANF's precondition). -/
 def erase (p : Src.Program) (c : Src.Relevance.Checked) : Except EraseError (Program × Stats) :=
   let I := Input.ofProgram p c

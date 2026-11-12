@@ -282,8 +282,7 @@ def file (path : FilePath) (equations : FilePath) (roots : List String := []) : 
 
 /-- The committed closures outside the corpus families, with all their roots:
 the role-bound ones ingress accepts (not `src-diag`'s `sorry.ixe`, which the
-kernel declines whole, nor the dated unbound records under
-`fixtures/ownership/historical`, which it refuses as unbound). -/
+kernel declines whole). -/
 def extraFixtures : IO (List (FilePath × FilePath)) := do
   let mut out : List (FilePath × FilePath) := [
     ("fixtures/ixon-v4/k1/k1.ixe", "fixtures/ixon-v4/k1/equations.json"),

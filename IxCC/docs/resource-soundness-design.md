@@ -65,7 +65,7 @@ compile pipeline does not run the resource checker (IxCC's copy,
 and the separate validation API).
 - *Implemented:* IxCC re-establishes `0` itself. The untrusted annotator
   marks a binder written `0` irrelevant (`honourErased`,
-  [`Src/Relevance/Annotate.lean`](../IxCC/Src/Relevance/Annotate.lean)), and the
+  [`Src/KernelFront/Annotate.lean`](../IxCC/Src/KernelFront/Annotate.lean)), and the
   proved checker `Relevance.check` enforces that such a binder is irrelevant
   and has no relevant use. SrcEval never evaluates an irrelevant position, so
   a wrong `0` can only make IxCC refuse or the source go wrong.

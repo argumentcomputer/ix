@@ -10,15 +10,13 @@
 #                                      their manifests and READMEs and the generated modules, for
 #                                      commits other than those on main, and for absolute paths
 #                                      (/home, /nix/store, /tmp). Not scanned: the vendored Aiur
-#                                      reference fixtures (fixtures/aiur-*), the dated historical
-#                                      ownership records and the frozen catalogs (whose
-#                                      manifests hold their producer revision as bytes),
-#                                      each described where it lives.
+#                                      reference fixtures (fixtures/aiur-*), described where
+#                                      they live.
 set -uo pipefail
 cd "$(git rev-parse --show-toplevel)"
 known_missing="fc058f935 a8c4d2d2"
 if [ "${1:-}" = --fixtures ]; then
-  paths=(IxCC/fixtures ':!IxCC/fixtures/aiur-*' ':!IxCC/fixtures/ownership/historical' ':!IxCC/fixtures/ixon-v4/catalog'
+  paths=(IxCC/fixtures ':!IxCC/fixtures/aiur-*'
          IxCC/IxCCTests/Src/Artifacts IxCC/IxCCTests/Recheck/Artifacts IxCC/IxCCTests/Corpus/Artifacts
          IxCC/IxCCTests/Fir/Artifacts.lean IxCC/benchmarks/fixtures)
   git grep -I -n -E '(/home/|/nix/store/|/tmp/)' -- "${paths[@]}" | sed 's/^\([^:]*\):\([0-9]*\):.*/\1\t\2\tabsolute path\tpath/'

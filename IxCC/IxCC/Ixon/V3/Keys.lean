@@ -9,9 +9,9 @@ canonical bytes of its projection record, `⟨.dPrj ⟨idx, block⟩, #[], #[], 
 and its siblings, the record `ix compile` stores for it. Ingress keys each
 member and constructor by it (`Src.Ingress`), and the kernel front end checks
 that the address the certified kernel's reader keys each of them by is this
-one (`Src.KernelFront.Reading`). Not typing: these were kept with the erased
-type checker (`IxCC.Ixon.V3.Tc`) and moved here
-(`docs/kernel-front-end-design.md`, "The switch", step 2). -/
+one (`Src.KernelFront.Reading`). Not typing: these were kept with IxCC's
+erased type checker, which the switch to the certified kernel deleted, and
+were moved here first (`docs/kernel-front-end-design.md`, "The switch"). -/
 
 namespace IxCC.Ixon.V3
 

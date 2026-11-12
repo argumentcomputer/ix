@@ -2,21 +2,22 @@ import IxCC.Ixon.V3.Env
 import IxCC.Src.Ingress
 import IxCC.Src.Hints
 import IxCC.Src.Table.Check
-import IxCCTests.IxonV3.Catalog.Fixtures
+import IxCC.Recheck.Produce
 import IxCCTests.Support.Envelope
 
 /-! # Role-bound environments
 
-`tests-ixon-v3` runs `Binding.run`: the binding section's decoder against
-sections written in the kernel's grammar (`IxCK/Kernel/Ixon/RoleTable.lean`)
-and their refusals; the role-bound envelope (`0xE5`) against the unbound one
-of the same closure, and its refusals; the pins a role table gives, an
-identity whose role the table does not bind being absent; the refusal of a
-projection record that names no block member; a catalog's refusal of a
-role-bound piece; and, on two committed closures (every committed closure is
-role-bound, as `ix compile` writes it; the unbound envelope is the same
-closure without its binding), the binding, its pins against the fixed table and
-the program ingress reads (`IxCC/docs/byte-contract.md`). -/
+`tests-ixon-v3` runs `Binding.run`: sections written in the kernel's grammar
+(`IxCK/Kernel/Ixon/RoleTable.lean`) against the kernel's decoder, which IxCC
+reads the binding with, and its refusals; the role-bound envelope (`0xE5`)
+against the unbound one of the same closure, and the refusals of IxCC's
+decoder and of the kernel's acceptance; the pins a role table gives
+(`KernelFront.pinsOfTable`), an identity whose role the table does not bind
+being absent; the refusal of a projection record that names no block member;
+and, on two committed closures (every committed closure is role-bound, as
+`ix compile` writes it; the unbound envelope is the same closure without its
+binding), the binding as the kernel decodes it, its pins against the fixed
+table and the program ingress reads (`IxCC/docs/byte-contract.md`). -/
 
 namespace IxCCTests.IxonV3.Binding
 
@@ -49,26 +50,30 @@ def sectionBytes (version : Nat) (bound : List (Nat × IxCC.Ixon.Address))
 def unboundFib (root : System.FilePath) : IO ByteArray := unboundTwin (root / "bench-k1/fib.ixe")
 
 /-- The kernel's role indices this suite writes (positions in `Role.all`). -/
+def roleIdx (r : Ix.Kernel.Role) : Nat := r.idx
 def natIdx : Nat := roleIdx .nat
 def boolIdx : Nat := roleIdx .bool
 
-/-- The section decoder: the grammar, and every refusal the kernel's decoder
-makes. -/
+/-- The suite's section writer (`sectionBytes`) against the kernel's decoder
+(`Ix.Kernel.RoleTable.ofBytes`), which IxCC reads the binding with: the
+grammar, the decoder's refusals, and the table check's refusal of an address
+bound to two roles (`Ix.Kernel.RoleTable.check`). -/
 def sections : IO Nat := do
   let a1 := IxCC.Ixon.Address.replicate 1
   let a2 := IxCC.Ixon.Address.replicate 2
   let a3 := IxCC.Ixon.Address.replicate 3
+  let k := KernelFront.kaddr
   require (natIdx == 0 && boolIdx == 4 && roleIdx .natAdd == 42 && roleIdx .stringBack == 102 &&
     Ix.Kernel.Role.all.length == 103) "the kernel's role indices moved"
   let good := sectionBytes 3 [(natIdx, a1), (boolIdx, a2)] [(roleIdx .natAdd, [none, some a3])]
-  let some t := RoleTable.decode good.data.toList | throw (IO.userError "role binding: section refused")
-  require (t.version == 3 && t.bound.map (·.1) == [.nat, .bool] && t.bound.map (·.2) == [a1, a2])
+  let some t := Ix.Kernel.RoleTable.ofBytes good | throw (IO.userError "role binding: section refused")
+  require (t.version == 3 && t.bound.map (·.1) == #[.nat, .bool] && t.bound.map (·.2) == #[k a1, k a2])
     "bound roles misread"
-  require (t.evidence.map (·.1) == [.natAdd] &&
-    t.evidence.map (·.2) == [[RoleEvidence.defeq, .proof a3]]) "evidence misread"
-  require (t.addressOf? .bool == some a2 && t.addressOf? .eq == none) "addressOf?"
+  require (t.evidence.map (·.1) == #[.natAdd] &&
+    t.evidence.map (·.2) == #[#[Ix.Kernel.Evidence.defeq, .proof (k a3)]]) "evidence misread"
+  require (t.addressOf? .bool == some (k a2) && t.addressOf? .eq == none) "addressOf?"
   let refused := fun (label : String) (bytes : ByteArray) =>
-    require (RoleTable.decode bytes.data.toList).isNone s!"accepted {label}"
+    require (Ix.Kernel.RoleTable.ofBytes bytes).isNone s!"accepted {label}"
   refused "descending roles" (sectionBytes 3 [(boolIdx, a1), (natIdx, a2)] [])
   refused "a repeated role" (sectionBytes 3 [(natIdx, a1), (natIdx, a2)] [])
   refused "descending evidence" (sectionBytes 3 [] [(roleIdx .natMul, []), (roleIdx .natAdd, [])])
@@ -78,12 +83,14 @@ def sections : IO Nat := do
   refused "an unknown evidence kind" (sectionBytes 3 [] [(roleIdx .natAdd, [none])] |>.set! 7 2)
   for length in [:good.size] do refused s!"a prefix of {length} bytes" (good.extract 0 length)
   let twice := sectionBytes 3 [(natIdx, a1), (boolIdx, a1)] []
-  require ((errorOf (Binding.ofSection (IxCC.Ixon.Address.blake3Pure twice) twice)).endsWith
-    "is bound to two roles") "an address bound to two roles"
+  let some tt := Ix.Kernel.RoleTable.ofBytes twice | throw (IO.userError "role binding: section refused")
+  require ((errorOf tt.check).endsWith "is bound to two roles") "an address bound to two roles"
   return 14 + good.size
 
 /-- The role-bound envelope of a committed closure: the same anonymous
-sections and the binding; its refusals. -/
+sections and the binding; IxCC's decoder's refusals (the hash, the size, the
+header), and the kernel's acceptance's refusals of a section that is not a
+canonical role table or binds an address twice. -/
 def envelopes (root : System.FilePath) : IO Nat := do
   let committed ← IO.FS.readBinFile (root / "bench-k1/fib.ixe")
   let cenv ← IO.ofExcept (decodeAnonymousEnv committed)
@@ -99,7 +106,7 @@ def envelopes (root : System.FilePath) : IO Nat := do
   require (bound[0]! == 0xE5 && raw[0]! == 0xE4) "envelope header bytes"
   let benv ← IO.ofExcept (decodeAnonymousEnv bound)
   let some b := benv.binding | throw (IO.userError "role binding: binding not kept")
-  require (b.address == address && b.bytes == sec && b.table.bound.length == 1) "binding not kept"
+  require (b.address == address && b.bytes == sec) "binding not kept"
   require (benv.root == env.root && benv.consts.size == env.consts.size &&
     env.consts.toList.all (fun (a, bs) => benv.consts[a]? == some bs) &&
     benv.blobs.size == env.blobs.size && benv.hints == env.hints && benv.main == env.main &&
@@ -110,15 +117,25 @@ def envelopes (root : System.FilePath) : IO Nat := do
   refusal "a binding whose bytes do not hash to its address"
     "role binding: the section's bytes do not hash to its address"
     (envelope env (some (IxCC.Ixon.Address.replicate 7, sec)))
-  let long := sec.push 0
-  refusal "a noncanonical section" "role binding: not a canonical binding section"
-    (envelope env (some (IxCC.Ixon.Address.blake3Pure long, long)))
-  let twice := sectionBytes 3 [(natIdx, IxCC.Ixon.Address.replicate 1), (boolIdx, IxCC.Ixon.Address.replicate 1)] []
-  refusal "an address bound twice" "role binding: address"
-    (envelope env (some (IxCC.Ixon.Address.blake3Pure twice, twice)))
+  -- the committed closure's own table, made noncanonical or binding one address
+  -- twice: IxCC's decoder keeps it, the kernel's acceptance refuses the binding
+  let some ct := Ix.Kernel.RoleTable.ofBytes cb.bytes
+    | throw (IO.userError "role binding: the kernel does not decode bench-k1/fib's binding")
+  let kernelRefusal := fun (label expected : String) (secBytes : ByteArray) => do
+    let tampered ← IO.ofExcept (decodeAnonymousEnv
+      (envelope cenv (some (IxCC.Ixon.Address.blake3Pure secBytes, secBytes))))
+    match KernelFront.accept tampered with
+    | .ok _ => throw (IO.userError s!"role binding: {label}: the kernel accepted it")
+    | .error r =>
+      require (r.stage == .binding && (expected.isEmpty || (r.message.splitOn expected).length > 1))
+        s!"{label}: {r.render}"
+  kernelRefusal "a noncanonical section" "" (cb.bytes.push 0)
+  let some (_, first) := ct.bound[0]? | throw (IO.userError "role binding: an empty committed table")
+  let twice : Ix.Kernel.RoleTable := { ct with bound := ct.bound.modify 1 fun (r, _) => (r, first) }
+  kernelRefusal "an address bound twice" "bound to two roles" twice.toBytes
   let header := (envelope env none).extract 0 (1 + 32 + 1 + 1)
   let oversized := header.set! 0 0xE5 ++ (IxCC.Ixon.Address.replicate 1).hash ++
-    _root_.Ixon.runPut (_root_.Ixon.putTagN 0 0 (RoleTable.maxBytes + 1).toUInt64)
+    _root_.Ixon.runPut (_root_.Ixon.putTagN 0 0 (Binding.maxBytes + 1).toUInt64)
   refusal "an oversized section" "role binding: the section exceeds the format's size" oversized
   require (decodeAnonymousEnv (raw.set! 0 0xE5)).toOption.isNone
     "a role-bound header without a binding"
@@ -129,25 +146,24 @@ def envelopes (root : System.FilePath) : IO Nat := do
       s!"envelope header {header}"
   return 15
 
-/-- The pins of a role table: each identity with a role at the address the
-table binds to it, none for a role it does not bind; the fixed table for an
-unbound environment; the program ingress reads carries them. -/
+
+/-- The pins of a role table, as ingress takes them from the table the kernel
+admitted (`KernelFront.pinsOfTable`): each identity with a role at the address
+the table binds to it, none for a role it does not bind, the allowlist at its
+fixed address. The program is `readConsts`' reading of a committed closure's
+records; `q` keeps the default pins (the fixed table). -/
 def pins (root : System.FilePath) : IO Nat := do
   let raw ← unboundFib root
   let env ← IO.ofExcept (decodeAnonymousEnv raw)
-  require (reprStr (Pinned.pinsOf env) == reprStr Pins.fixed) "an unbound environment's pins"
-  let at_ := fun (pin : Option Nat) => (pin.map Pinned.addrOfNat).getD (IxCC.Ixon.Address.replicate 0)
+  let at_ := fun (pin : Option Nat) =>
+    KernelFront.kaddr ((pin.map Pinned.addrOfNat).getD (IxCC.Ixon.Address.replicate 0))
   -- Nat, its constructors and recursor, and Eq: not `Bool`, not the addition.
-  let bound : List (Nat × IxCC.Ixon.Address) :=
-    [(roleIdx .nat, at_ Pins.fixed.nat), (roleIdx .natZero, at_ Pins.fixed.natZero),
-      (roleIdx .natSucc, at_ Pins.fixed.natSucc), (roleIdx .natRec, at_ Pins.fixed.natRec),
-      (roleIdx .eq, at_ Pins.fixed.eq)]
-  let sec := sectionBytes 3 bound []
-  let benv ← IO.ofExcept (decodeAnonymousEnv (envelope env (some (IxCC.Ixon.Address.blake3Pure sec, sec))))
-  let p ← IO.ofExcept (Ingress.ofEnv benv #[])
-  let q ← IO.ofExcept (Ingress.ofEnv env #[])
-  require (reprStr p.known.pins == reprStr (Pinned.pinsOf benv)) "ingress's pins (ofEnv_pins)"
-  let ps := p.known.pins
+  let t : Ix.Kernel.RoleTable := { version := 3, evidence := #[], bound :=
+    #[(.nat, at_ Pins.fixed.nat), (.natZero, at_ Pins.fixed.natZero),
+      (.natSucc, at_ Pins.fixed.natSucc), (.natRec, at_ Pins.fixed.natRec), (.eq, at_ Pins.fixed.eq)] }
+  let q ← IO.ofExcept (Ingress.readConsts env #[])
+  let ps := KernelFront.pinsOfTable t
+  let p := { q with known := { pins := ps } }
   require (ps.nat == Pins.fixed.nat && ps.eq == Pins.fixed.eq && ps.bool == none &&
     ps.boolTrue == none && ps.decIsTrue == none) "pins of the bound roles and of the others"
   require (ps.prims.isEmpty && ps.prim? .add == none &&
@@ -170,7 +186,7 @@ def pins (root : System.FilePath) : IO Nat := do
     "a primitive whose role is not bound was accepted"
   require ((Pinned.primAt? ps (Pinned.primAddr .add)).isNone &&
     Pinned.primAt? Pins.fixed (Pinned.primAddr .add) == some .add) "primAt?"
-  return 9
+  return 8
 
 /-- A projection record that names no member of a block in the closure is
 refused; one that names a member is an alias. -/
@@ -180,7 +196,7 @@ def projections (root : System.FilePath) : IO Nat := do
   let dangling := constantBytes ⟨.dPrj ⟨0, IxCC.Ixon.Address.replicate 9⟩, #[], #[], #[]⟩
   let env' := { env with consts := env.consts.insert (IxCC.Ixon.Address.blake3Pure dangling) dangling }
   let decoded ← IO.ofExcept (decodeAnonymousEnv (envelope env' none))
-  let message := errorOf (Ingress.ofEnv decoded #[])
+  let message := errorOf (Ingress.readConsts decoded #[])
   require (message.startsWith "src ingress: projection record" &&
     message.endsWith "names no member of a block in the closure")
     s!"a dangling projection record: {message}"
@@ -190,31 +206,15 @@ def projections (root : System.FilePath) : IO Nat := do
       | .cPrj _ | .rPrj _ | .iPrj _ | .dPrj _ => true
       | _ => false
     | .error _ => false
-  require (projectionCount > 0 && (Ingress.ofEnv env #[]).toOption.isSome)
+  require (projectionCount > 0 && (Ingress.readConsts env #[]).toOption.isSome)
     "a closure with projection records"
   return 2
 
-/-- A catalog's pieces are unbound. -/
-def catalog (root : System.FilePath) : IO Nat := do
-  let raw ← unboundFib root
-  let env ← IO.ofExcept (decodeAnonymousEnv raw)
-  let sec := sectionBytes 3 [(natIdx, IxCC.Ixon.Address.replicate 1)] []
-  let raws := #[envelope env (some (IxCC.Ixon.Address.blake3Pure sec, sec))]
-  let m ← IO.ofExcept (CatalogFixtures.fat raws)
-  match Catalog.load (CatalogFixtures.manifestBytes m) raws with
-  | .ok _ => throw (IO.userError "role binding: a catalog accepted a role-bound piece")
-  | .error e =>
-    require ((reprStr e).contains "must be an unbound environment") s!"catalog refusal: {reprStr e}"
-  let plain := #[raw]
-  let mPlain ← IO.ofExcept (CatalogFixtures.fat plain)
-  require (Catalog.load (CatalogFixtures.manifestBytes mPlain) plain).toOption.isSome
-    "a catalog refused an unbound piece"
-  return 2
-
-/-- The pinned identities of a role-bound closure, by name: the role table's pin
-and the fixed table's. -/
-def pinPairs (t : RoleTable) : List (String × Option Nat × Option Nat) :=
-  let rp := Pinned.ofRoles t
+/-- The pinned identities of a role-bound closure, by name: the pin of the
+role table as the kernel decodes it (`KernelFront.pinsOfTable`) and the fixed
+table's. -/
+def pinPairs (t : Ix.Kernel.RoleTable) : List (String × Option Nat × Option Nat) :=
+  let rp := KernelFront.pinsOfTable t
   let fp := Pins.fixed
   [("Nat", rp.nat, fp.nat), ("Nat.zero", rp.natZero, fp.natZero),
     ("Nat.succ", rp.natSucc, fp.natSucc), ("Nat.rec", rp.natRec, fp.natRec),
@@ -224,15 +224,15 @@ def pinPairs (t : RoleTable) : List (String × Option Nat × Option Nat) :=
     ("Decidable.isTrue", rp.decIsTrue, fp.decIsTrue)] ++
   PrimOp.all.map (fun op => (op.name, rp.prim? op, fp.prim? op)) ++
   (Pinned.stdAxiomRoles.zip Pinned.stdAxiomRows).map (fun ((name, r), (_, hex)) =>
-    (name, (t.addressOf? r).map Pinned.addrNat, some (Pinned.addrNat (Pinned.addr hex))))
+    (name, (t.addressOf? r).map KernelFront.addrNatK, some (Pinned.addrNat (Pinned.addr hex))))
 
 /-- The role-bound closures `ix compile` writes (two committed fixtures, `phase1-scalar`'s
 `tuple` and `bench-k1`'s `fib`):
-the binding is authenticated and read; every identity that both the role table
-and the fixed table pin is pinned at the same address, and where the table
-binds no role the fixed table's constant is absent from the closure; ingress
-reads the program with the role table's pins, and its pinned identities
-resolve to the constants the fixed table's would. -/
+the binding is authenticated and the kernel decodes it; every identity that
+both its table and the fixed table pin is pinned at the same address, and where
+the table binds no role the fixed table's constant is absent from the closure;
+ingress reads the program with the pins of the table the kernel admitted, and
+its pinned identities resolve to the constants the fixed table's would. -/
 def boundFixtures (root : System.FilePath) : IO Nat := do
   let mut count := 0
   for (name, stem) in [("tuple", root / ".." / "corpus" / "phase1-scalar" / "tuple"), ("fib", root / "bench-k1" / "fib")] do
@@ -240,29 +240,31 @@ def boundFixtures (root : System.FilePath) : IO Nat := do
     require (raw[0]! == 0xE5) s!"{name}: not a role-bound envelope"
     let env ← IO.ofExcept (decodeAnonymousEnv raw)
     let some b := env.binding | throw (IO.userError s!"role binding: {name}: no binding read")
-    require (IxCC.Ixon.Address.blake3Pure b.bytes == b.address &&
-      b.table.bound.length > 0) s!"{name}: binding"
+    let some t := Ix.Kernel.RoleTable.ofBytes b.bytes
+      | throw (IO.userError s!"role binding: {name}: the kernel does not decode the binding section")
+    require (IxCC.Ixon.Address.blake3Pure b.bytes == b.address && t.bound.size > 0) s!"{name}: binding"
     let present := fun (pin : Option Nat) => match pin with
       | some n => env.consts.contains (Pinned.addrOfNat n)
       | none => false
-    for (label, r, f) in pinPairs b.table do
+    for (label, r, f) in pinPairs t do
       require (r == f || (r.isNone && !present f))
         s!"{name}: the role table pins {label} differently from the fixed table"
       count := count + 1
     let json ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile (stem.toString ++ ".equations.json")))
-    let hints ← IO.ofExcept (Hints.ofK1Json json)
-    let p ← IO.ofExcept (Ingress.ofEnv env (hints.roots.map (·.1)))
-    require (reprStr p.known.pins == reprStr (Pinned.ofRoles b.table)) s!"{name}: ingress's pins"
-    let kp := Pinned.known p
+    let inp ← match IxCC.Recheck.ingress raw json [] with
+      | .ok inp => pure inp
+      | .error e => throw (IO.userError s!"role binding: {name}: ingress refused it: {e.render}")
+    let p := inp.program
+    require (reprStr p.known.pins == reprStr (KernelFront.pinsOfTable t)) s!"{name}: ingress's pins"
     let kf := Pinned.known { p with known := { pins := Pins.fixed } }
-    require (reprStr { kp with pins := Pins.fixed } == reprStr kf && kp.nat.isSome)
+    require (reprStr { p.known with pins := Pins.fixed } == reprStr kf && p.known.nat.isSome)
       s!"{name}: the role table's and the fixed table's pins resolve differently"
-    require (Pinned.knownOk { p with known := kp }) s!"{name}: knownOk"
+    require (Pinned.knownOk p) s!"{name}: knownOk"
     count := count + 4
   return count
 
 def run (root : System.FilePath) : IO Nat := do
   return (← sections) + (← envelopes root) + (← pins root) + (← projections root) +
-    (← catalog root) + (← boundFixtures root)
+    (← boundFixtures root)
 
 end IxCCTests.IxonV3.Binding

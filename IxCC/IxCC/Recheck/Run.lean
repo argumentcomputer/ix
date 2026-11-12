@@ -427,7 +427,7 @@ def runTyped (cfg : Config) (P : Src.Program) (c : Cert) : Except Err Typed := d
 or the stage and code that declined or rejected it: `runTyped`, then
 `checkSymbols` (every export its own symbol) and `Backend.finish` (`Program.check`, E1/E2 and
 the ELF writer). **Precondition:** `P` came from ingress (`Recheck.ingress`,
-`Src.Ingress.ofEnv`), which bounds every term's depth by `Src.maxTermDepth`,
+through `Src.Ingress.readConsts`), which bounds every term's depth by `Src.maxTermDepth`,
 reused shares included, or passed `checkSrc`; the front end recurses on its
 terms before any later budget applies, so a deeper program can overflow an
 8 MiB stack. From erasure on every level is bounded by the middle end's budgets

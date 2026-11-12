@@ -9,10 +9,15 @@ to fresh temporary copies; the source tree and reviewed ledger are never edited.
 open Lean System IxCC.Tools.Check IxCC.Tools.SourceScan
 open IxCC.Tools.TrustLedger
 
-private def rejects (label fragment : String) (action : IO Unit) : IO Unit := do
+/-- `action` fails, and its error contains every one of `fragments`. -/
+private def rejectsAll (label : String) (fragments : List String) (action : IO Unit) : IO Unit := do
   let error ← try action; pure none catch error => pure (some error.toString)
   let some error := error | throw (IO.userError s!"{label}: unexpectedly accepted")
-  need (error.contains fragment) s!"{label}: rejected for the wrong reason: {error}"
+  need (fragments.all fun fragment => error.contains fragment)
+    s!"{label}: rejected for the wrong reason: {error}"
+
+private def rejects (label fragment : String) (action : IO Unit) : IO Unit :=
+  rejectsAll label [fragment] action
 
 private def replaceField (value : Json) (key : String) (replacement : Json) : IO Json := do
   let entries ← pairs value
@@ -40,12 +45,36 @@ private def copyRelative (sourceRoot targetRoot source : FilePath) : IO Unit := 
   need (source.toString.startsWith base) s!"test source escapes root: {source}"
   copyFile source (targetRoot / (source.toString.drop base.length).toString)
 
+/-- The index of the ledger's one pure Lean dependency whose `source_kind` is
+`kind`. -/
+private def dependencyIndex (ledger : Json) (kind : String) : IO Nat := do
+  let entries ← arrField ledger "lean_dependencies"
+  let mut found := none
+  for index in [:entries.size] do
+    if (← strField entries[index]! "source_kind") == kind then
+      need found.isNone s!"test fixture has several {kind} dependencies"
+      found := some index
+  present found s!"test fixture has no {kind} dependency"
+
+/-- `ledger` with its pure Lean dependency at `index` replaced by `change` of it. -/
+private def changeDependency (ledger : Json) (index : Nat) (change : Json → IO Json) : IO Json := do
+  let entries ← arrField ledger "lean_dependencies"
+  replaceField ledger "lean_dependencies" (Json.arr (entries.set! index (← change entries[index]!)))
+
+/-- `ledger` with the closure file `relative` of its pure Lean dependency at
+`index` re-recorded from `path`. -/
+private def rehashClosure (ledger : Json) (index : Nat) (relative : String) (path : FilePath) :
+    IO Json :=
+  changeDependency ledger index fun entry => do
+    replaceField entry "closure" (← replaceField (← field entry "closure") relative (toJson (← sha256 path)))
+
 /-- Copy what the audit reads of the project at `source` and of the
 repository around it into `target`, the copy's repository root: the project's
 Lean sources, tracked files and ledger, at the project's path in the
-repository; each pure Lean dependency's lakefile and recorded closure; the
-repository's `flake.lock` and `lean-toolchain`; and its `.github` (workflows and
-local actions).
+repository; each workspace dependency's lakefile and recorded closure (a git
+dependency is read from the copy `--blake3` gives); the repository's
+`flake.lock` and `lean-toolchain`; and its `.github` (workflows and local
+actions).
 Returns the copied project's root. -/
 private def cloneWorkspace (source target : FilePath) : IO FilePath := do
   let ledger ← readJson (source / "docs/trusted-externs.json")
@@ -57,7 +86,7 @@ private def cloneWorkspace (source target : FilePath) : IO FilePath := do
     copy (source / path)
   copy (source / "docs/trusted-externs.json")
   for entry in ← leanDependencies ledger do
-    let directory ← strField (← field entry "pins") "workspace_path"
+    let .workspace directory ← leanSource entry | continue
     let sourceDir ← strField entry "source_dir"
     copy (source / directory / "lakefile.lean")
     for (relative, _) in ← pairs (← field entry "closure") do
@@ -168,6 +197,42 @@ private def lexerTests : IO Unit := do
     let _ ← lakeRoots (← checked (scan "lean_lib Main where\n  roots := #[]\n"))
   rejects "unauditable roots" "unsupported Lake roots" do
     let _ ← lakeRoots (← checked (scan "lean_lib Main where\n  roots := computedRoots\n"))
+  -- every spelling of the import command the module system has, and module
+  -- names with guillemet-quoted components; a keyword without a module name
+  -- yields a name no module has
+  let importInput := "module\nimport A.B\npublic import C\nmeta import D.E\npublic meta import F\n" ++
+    "import all G\npublic import all H.I\nimport «J».K\nimport L.«M»\nimport «N»\n" ++
+    "-- import Hidden\ndef s := \"import Quoted\"\n"
+  need (imports (← checked (scan importInput)) == ["A.B", "C", "D.E", "F", "G", "H.I", "J.K", "L.M", "N"])
+    "import inventory changed"
+  need ((imports (← checked (scan "def x := 1\nimport\n"))).all (·.startsWith "<unreadable import"))
+    "an import without a module name was not refused"
+  -- the names under a module root, outside import commands, comments and literals
+  need (namesUnder (← checked (scan ("import Blake3.Pure\nopen Blake3\ndef f := Blake3.Pure.hash x\n" ++
+      "def g := «Blake3».Rust.v\n-- Blake3.Rust\ndef s := \"Blake3.C\"\ndef h := Blake3NoCollision\n")))
+      "Blake3" == ["Blake3", "Blake3.Pure.hash", "Blake3"])
+    "names under a module root changed"
+  -- each native_decide with the declaration that holds it, qualified by the
+  -- open namespaces
+  let decideInput := "theorem top : 1 = 1 := by native_decide\nnamespace A.B\npublic section\n" ++
+    "namespace C\ndef f (h : 2 < 3 := by native_decide) := 0\nend C\nend\nend A.B\nmutual\n" ++
+    "def g := by native_decide\nend\ntheorem _root_.r : True := by native_decide\n"
+  need ((← checked (nativeDecideSites (← checked (scan decideInput)))) ==
+      [("top", 1), ("A.B.C.f", 5), ("g", 10), ("r", 12)]) "native_decide sites changed"
+  for (source, fragment) in [("example : 1 = 1 := by native_decide\n", "outside a named declaration"),
+      ("def f := 0\nvariable (h : 1 = 1 := by native_decide)\n", "outside a named declaration"),
+      ("instance : Inhabited Nat := by native_decide\n", "outside a named declaration"),
+      ("namespace A\nend A\nend\n", "end closes no open scope")] do
+    rejects s!"native_decide site of {source}" fragment do
+      discard (checked (nativeDecideSites (← checked (scan source))))
+  -- a dependency's hygiene leaves native_decide to the site inventory and
+  -- refuses every other spelling of native evaluation
+  need ((← checked (dependencyHygiene (← checked (scan "def f (h : 1 = 1 := by native_decide) := 0\n")))) ==
+    [("f", 1)]) "dependency hygiene lost a native_decide site"
+  for (source, fragment) in [("theorem t : 2 + 2 = 4 := by decide +native", "decide +native is not allowed"),
+      ("theorem t : True := Lean.ofReduceBool _ _ rfl", "Lean.ofReduceBool is not allowed"),
+      ("theorem t : False := sorry", "sorry is not allowed")] do
+    rejects s!"dependency {source}" fragment do discard (checked (dependencyHygiene (← checked (scan source))))
 
 /-- The Nix attribute lexer behind the required-check inventory, and the globs
 of the integrity rule. -/
@@ -351,16 +416,17 @@ private def repositoryTests (temporary repositoryRoot root blake : FilePath) (le
   withFile (repositoryRoot / "lean-toolchain") "leanprover/lean4:v4.0.0\n" do
     rejects "repository toolchain" "the repository's lean-toolchain differs from the project's" audited
 
-/-- The pure Lean dependency is a package of the enclosing workspace, pinned
-by its path (`../IxCK` from `IxCC/` inside ix): the manifest and the ledger
-must agree on it, the path must be relative and hold that package, and the pin
-records nothing else. -/
+/-- The workspace dependency (the kernel package) is pinned by its path
+(`../IxCK` from `IxCC/` inside ix): the manifest and the ledger must agree on
+it, the path must be relative and hold that package, and the pin records
+nothing else. -/
 private def workspaceDependencyTests (root blake : FilePath) (ledger : Json) : IO Unit := do
   let audited : IO Unit := audit root [("Blake3", blake.toString)] (some "6.3.0")
   let ledgerPath := root / "docs/trusted-externs.json"
   let manifestPath := root / "lake-manifest.json"
   let manifest ← readJson manifestPath
-  let dependency := (← arrField ledger "lean_dependencies")[0]!
+  let index ← dependencyIndex ledger "workspace_path"
+  let dependency := (← arrField ledger "lean_dependencies")[index]!
   let package ← strField dependency "lake_package"
   let recorded ← strField (← field dependency "pins") "workspace_path"
   let pathManifest (dir : String) : IO String := do
@@ -368,10 +434,8 @@ private def workspaceDependencyTests (root blake : FilePath) (ledger : Json) : I
       if (← strField entry "name") != package then return entry
       return entry.setObjVal! "dir" (toJson dir)
     return (← replaceField manifest "packages" (Json.arr packages)).compress
-  let pinned (pins : List (String × Json)) : IO Json := do
-    let entries ← (← arrField ledger "lean_dependencies").mapM fun entry =>
-      replaceField entry "pins" (Json.mkObj pins)
-    replaceField ledger "lean_dependencies" (Json.arr entries)
+  let pinned (pins : List (String × Json)) : IO Json :=
+    changeDependency ledger index fun entry => replaceField entry "pins" (Json.mkObj pins)
   -- the manifest and the ledger record the dependency by path; the ledger
   -- re-records the manifest's hash
   let withPaths (manifestDir : String) (pins : List (String × Json)) (action : IO Unit) : IO Unit := do
@@ -387,58 +451,244 @@ private def workspaceDependencyTests (root blake : FilePath) (ledger : Json) : I
     rejects "absolute workspace path" "must be relative" audited
   withFile (root / recorded / "lakefile.lean") "import Lake\nopen Lake DSL\n\npackage other where\n" do
     rejects "workspace path holding another package" "does not hold its lakefile.lean" audited
-  -- a pure Lean dependency is a workspace package: a git pin is refused
-  let gitPinned ← (← arrField ledger "lean_dependencies").mapM fun entry =>
-    replaceField entry "source_kind" (toJson "git")
-  withFile ledgerPath (← replaceField ledger "lean_dependencies" (Json.arr gitPinned)).compress do
-    rejects "git-pinned pure dependency" "unknown lean dependency source_kind git" audited
+  -- a workspace package recorded as git-pinned keeps a workspace pin, which
+  -- is not a git dependency's; an unknown kind is refused
+  for (kind, fragment) in [("git", "a git dependency pins only lake_rev and flake_node"),
+      ("registry", "unknown lean dependency source_kind registry")] do
+    withFile ledgerPath (← changeDependency ledger index fun entry =>
+        replaceField entry "source_kind" (toJson kind)).compress do
+      rejects s!"workspace dependency recorded as {kind}" fragment audited
+
+/-- The git-pinned pure dependency (the Blake3 package, of which IxCC takes
+`Blake3/Pure.lean` and the root module `Blake3.lean`): its revision against
+the ledger, `lake-manifest.json` and `flake.lock`; the package its root holds;
+its closure's hashes, hygiene and admitted `native_decide`s; and the project's
+imports and names under its root, the audit that refuses a native backend. -/
+private def gitDependencyTests (repositoryRoot root blake : FilePath) (ledger : Json) : IO Unit := do
+  let check : IO Unit := audit root [("Blake3", blake.toString)] (some "6.3.0")
+  let ledgerPath := root / "docs/trusted-externs.json"
+  let index ← dependencyIndex ledger "git"
+  let entry := (← arrField ledger "lean_dependencies")[index]!
+  need ((← strField entry "lake_package") == "Blake3") "test fixture: the git dependency is not Blake3"
+  let rev ← strField (← field entry "pins") "lake_rev"
+  let node ← strField (← field entry "pins") "flake_node"
+  let zero := String.ofList (List.replicate 40 '0')
+  let regression := root / "IxCC/AuditRegression.lean"
+  -- the project imports under Blake3 exactly Blake3.Pure, whatever the spelling
+  -- of the import command or of the module name
+  for (source, mod) in [("import Blake3.Rust", "Blake3.Rust"), ("import Blake3.C", "Blake3.C"),
+      ("import Blake3", "Blake3"), ("public import Blake3.Rust", "Blake3.Rust"),
+      ("meta import Blake3.C", "Blake3.C"), ("public meta import Blake3.Rust", "Blake3.Rust"),
+      ("import all Blake3.C", "Blake3.C"), ("import «Blake3».Rust", "Blake3.Rust"),
+      ("import Blake3.«C»", "Blake3.C")] do
+    withFile regression s!"{source}\n" do
+      rejects source s!"imports {mod}; the project may import only [Blake3.Pure] under Blake3" check
+  withFile ledgerPath (← changeDependency ledger index fun entry =>
+      replaceField entry "imported_modules" (toJson ["Blake3.Pure", "Blake3"])).compress do
+    rejects "a recorded module the project does not import"
+      "recorded module Blake3 is not imported by the project" check
+  -- the project's names under Blake3 are exactly Blake3.Pure.hash: a backend's
+  -- entry point, the generic interface or an open of the root is refused
+  -- (what the native entry's qualified-use inventory guarded)
+  for (source, name) in [("def drift := Blake3.Rust.internalVersion\n", "Blake3.Rust.internalVersion"),
+      ("def drift := Blake3.HasherOps.hash\n", "Blake3.HasherOps.hash"), ("open Blake3\n", "\"Blake3\"")] do
+    withFile regression source do
+      rejectsAll s!"name {name}" ["qualified uses of Blake3 drifted", name] check
+  -- the revision: the ledger's, the manifest's and the flake lock's node agree
+  withFile ledgerPath (← changeDependency ledger index fun entry => do
+      replaceField entry "pins" ((← field entry "pins").setObjVal! "lake_rev" (toJson zero))).compress do
+    rejects "changed revision in the ledger" s!"the ledger pins the git revision {zero}" check
+  let manifestPath := root / "lake-manifest.json"
+  let manifest ← IO.FS.readFile manifestPath
+  need ((manifest.replace rev zero) != manifest) "test fixture: lake-manifest.json lacks the Blake3 revision"
+  withFile manifestPath (manifest.replace rev zero) do
+    withFile ledgerPath (← rehash ledger root "lake-manifest.json").compress do
+      rejectsAll "changed revision in lake-manifest.json"
+        [zero, s!"the ledger pins the git revision {rev}"] check
+  let flakeLock := repositoryRoot / "flake.lock"
+  let lock ← IO.FS.readFile flakeLock
+  need ((lock.replace rev zero) != lock) "test fixture: flake.lock lacks the Blake3 revision"
+  withFile flakeLock (lock.replace rev zero) do
+    -- with the node inventory re-recorded, the dependency's own pin refuses it
+    let integrity ← field ledger "integrity"
+    let nodes := (← field integrity "flake_nodes").setObjVal! node (toJson zero)
+    withFile ledgerPath (← replaceField ledger "integrity" (integrity.setObjVal! "flake_nodes" nodes)).compress do
+      rejects "changed revision in flake.lock" s!"Blake3: flake.lock node {node} is at {zero}, the ledger pins {rev}" check
+  withFile ledgerPath (← changeDependency ledger index fun entry => do
+      replaceField entry "pins" ((← field entry "pins").setObjVal! "flake_node" (toJson "absent-node"))).compress do
+    rejects "absent flake node" "Blake3: flake.lock has no node absent-node" check
+  withFile ledgerPath (← changeDependency ledger index fun entry => do
+      replaceField entry "pins" ((← field entry "pins").setObjVal! "blake3_lean_rev" (toJson rev))).compress do
+    rejects "git pin with another field" "a git dependency pins only lake_rev and flake_node" check
+  withFile (blake / "lakefile.lean") "import Lake\nopen Lake DSL\n\npackage other where\n" do
+    rejects "git dependency root holding another package" "does not hold its lakefile.lean" check
+  -- the two closure files are pinned by hash
+  let pure := blake / "Blake3/Pure.lean"
+  let shared := blake / "Blake3.lean"
+  withFile pure ((← IO.FS.readFile pure) ++ "\n") do
+    rejects "changed Blake3/Pure.lean" "Blake3: Blake3/Pure.lean changed" check
+  withFile shared ((← IO.FS.readFile shared) ++ "\n") do
+    rejects "changed Blake3.lean" "Blake3: Blake3.lean changed" check
+  -- with its hash re-recorded, what a closure file holds is still audited
+  for (text, label, fragment) in [
+      ("\n@[extern \"rogue_blake3\"] opaque rogue : Nat\n", "an extern", "Blake3: Blake3/Pure.lean declares native symbols"),
+      ("\npublic import Blake3.Rust\n", "a backend imported",
+        "Blake3: Blake3/Pure.lean imports Blake3.Rust outside the recorded closure"),
+      ("\ntheorem rogue : 2 + 2 = 4 := by decide +native\n", "decide +native", "decide +native is not allowed"),
+      ("\ntheorem rogue : True := Lean.ofReduceBool _ _ rfl\n", "Lean.ofReduceBool", "Lean.ofReduceBool is not allowed"),
+      ("\ntheorem rogue : 2 + 2 = 4 := by native_decide\n", "a native_decide",
+        "native_decide in rogue is not a listed native_decide site")] do
+    withFile pure ((← IO.FS.readFile pure) ++ text) do
+      withFile ledgerPath (← rehashClosure ledger index "Blake3/Pure.lean" pure).compress do
+        rejects s!"{label} in Blake3/Pure.lean" fragment check
+  -- the native_decides of Blake3.lean are exactly the three listed, occurrence
+  -- by occurrence
+  withFile shared ((← IO.FS.readFile shared) ++ "\ntheorem rogue_nd : 2 + 2 = 4 := by native_decide\n") do
+    withFile ledgerPath (← rehashClosure ledger index "Blake3.lean" shared).compress do
+      rejects "a fourth native_decide" "native_decide in rogue_nd is not a listed native_decide site" check
+  let sharedText ← IO.FS.readFile shared
+  let bound := "(h : length < 2 ^ System.Platform.numBits := by native_decide) :"
+  let doubled := sharedText.replace bound
+    "(h : length < 2 ^ System.Platform.numBits := by native_decide) (_h2 : 0 < 1 := by native_decide) :"
+  need (doubled != sharedText) "test fixture: Blake3.lean no longer bounds finalizeWithLength's length"
+  withFile shared doubled do
+    withFile ledgerPath (← rehashClosure ledger index "Blake3.lean" shared).compress do
+      rejects "a second native_decide in a listed declaration"
+        "native_decide in Blake3.HasherOps.finalizeWithLength is not a listed native_decide site" check
+  withFile shared ((← IO.FS.readFile shared) ++ "\nexample : 2 + 2 = 4 := by native_decide\n") do
+    withFile ledgerPath (← rehashClosure ledger index "Blake3.lean" shared).compress do
+      rejects "a native_decide in no declaration" "native_decide outside a named declaration" check
+  let sites ← arrField entry "native_decide_sites"
+  need (sites.size == 3) "test fixture: Blake3's native_decide sites are not three"
+  withFile ledgerPath (← changeDependency ledger index fun entry =>
+      replaceField entry "native_decide_sites" (Json.arr sites.pop)).compress do
+    rejects "a site removed from the list" "native_decide in Blake3.Sponge.squeeze is not a listed native_decide site" check
+  let staleSite := Json.mkObj [("file", toJson "Blake3.lean"), ("declaration", toJson "Blake3.HasherOps.hash"),
+    ("ruling", toJson "test")]
+  withFile ledgerPath (← changeDependency ledger index fun entry =>
+      replaceField entry "native_decide_sites" (Json.arr (sites.push staleSite))).compress do
+    rejects "a stale site" "stale native_decide site: Blake3.HasherOps.hash in Blake3.lean" check
+  let unruled := Json.mkObj [("file", toJson "Blake3.lean"), ("declaration", toJson "Blake3.Sponge.init"),
+    ("ruling", toJson "")]
+  withFile ledgerPath (← changeDependency ledger index fun entry =>
+      replaceField entry "native_decide_sites" (Json.arr (sites.set! 1 unruled))).compress do
+    rejects "a site without its ruling" "a native_decide site names no ruling" check
+
+/-- The audit of a native dependency, which the ledger no longer exercises (it
+records no native interface), run against a fixture entry planted in the
+copy's ledger: the Blake3 package's Rust FFI as it was last recorded
+(`fixtures/ledger/blake3-native-entry.json`), with every symbol unimported.
+The audit accepts it; each regression then changes one thing. -/
+private def nativeFixtureTests (root blake : FilePath) (ledger : Json) : IO Unit := do
+  let check : IO Unit := audit root [("Blake3", blake.toString)] (some "6.3.0")
+  let ledgerPath := root / "docs/trusted-externs.json"
+  let fixture ← readJson (root / "fixtures/ledger/blake3-native-entry.json")
+  let planted (entry : Json) : IO Json := replaceField ledger "native_interfaces" (Json.arr #[entry])
+  let nativeLedger ← planted fixture
+  let regression := root / "IxCC/AuditRegression.lean"
+  withFile ledgerPath nativeLedger.compress do
+    check
+    -- every extern of the package tree is listed, imported or not
+    withFile (blake / "Sibling.lean") "@[extern \"unreviewed_sibling\"] opaque sibling : Nat\n" do
+      rejects "dependency sibling extern" "package-tree extern inventory drifted" check
+    -- the project's qualified uses of the native module are its entry points
+    withFile regression "def drift := Blake3.Rust.internalVersion\n" do
+      rejects "native entrypoint drift" "qualified uses of Blake3.Rust drifted" check
+    -- a symbol recorded as unimported, whose module the project imports
+    withFile regression "import Blake3.Rust\n" do
+      rejects "reachability of an imported backend" "reachability disagrees with imports of Blake3.Rust" check
+  -- the Cargo lock: its hash, its crate inventory and its syntax
+  let cargoRelative ← strField (← field fixture "cargo_lock") "path"
+  let blake3Version ← strField (← field fixture "pins") "blake3_version"
+  let cargo := blake / cargoRelative
+  let original ← IO.FS.readFile cargo
+  let record (version : String) := s!"\n[[package]]\nname = \"blake3\"\nversion = \"{version}\"\n"
+  for (contents, diagnostic) in [(original ++ record blake3Version, "Cargo package records"),
+      (original ++ record "999.0.0", "Cargo package inventory drifted"),
+      ("package = [", "invalid Cargo TOML")] do
+    withFile cargo contents do
+      withFile ledgerPath nativeLedger.compress do
+        rejects "Cargo hash drift" "Cargo lockfile hash drifted" check
+      let data ← replaceField (← field fixture "cargo_lock") "sha256" (toJson (← sha256 cargo))
+      withFile ledgerPath (← planted (← replaceField fixture "cargo_lock" data)).compress do
+        rejects "Cargo metadata drift" diagnostic check
+  -- the upstream BLAKE3 revision and the lean-ffi revision
+  for (key, diagnostic) in [("blake3_upstream_rev", "upstream BLAKE3 revision drifted"),
+      ("lean_ffi_rev", "lean-ffi Cargo revision drifted")] do
+    let pins := (← field fixture "pins").setObjVal! key (toJson (String.ofList (List.replicate 40 '0')))
+    withFile ledgerPath (← planted (← replaceField fixture "pins" pins)).compress do
+      rejects s!"changed {key}" diagnostic check
+
+/-- The link audit over `nm -P` output: the pure implementation's own symbols
+(`lp_Blake3_Blake3_Pure_…`, the root module's `lp_Blake3_Blake3_HasherOps_…`,
+IxCC's `…_blake3Pure`) pass; a symbol of either backend (its foreign exports,
+the upstream C library's, its compiled Lean declarations and module
+initializer), and a symbol table without `main`, are each refused. -/
+private def linkAuditTests : IO Unit := do
+  let clean := "main T 159f1d0 c0\nlp_Blake3_Blake3_Pure_hash T 1000 10\n" ++
+    "initialize_Blake3_Blake3_Pure T 1100 10\nlp_Blake3_Blake3_HasherOps_finalizeWithLength t 1200 10\n" ++
+    "lp_ix_x2dcc_IxCC_Ixon_Address_blake3Pure T 1300 10\nmemcpy@GLIBC_2.14 U\n"
+  need ((← checked (auditLinked "clean" clean)) == 6) "the link audit read the wrong number of symbols"
+  for line in ["rs_blake3_init T 2000 10", "c_blake3_hasher_update T 2000 10", "blake3_hasher_init U",
+      "blake3_compress_in_place_portable t 2000 40", "lp_Blake3_Blake3_Rust_hasherInit T 2000 10",
+      "lp_Blake3_Blake3_C_hasherFinalize T 2000 10", "initialize_Blake3_Blake3_C T 2000 10",
+      "runtime_initialize_Blake3_Blake3_Rust T 2000 10"] do
+    let name := (words line).headD ""
+    rejectsAll s!"linked {name}" ["links a native backend of the Blake3 package", name] do
+      discard (checked (auditLinked "planted" (clean ++ line ++ "\n")))
+  rejects "a symbol table without main" "nm lists no main symbol" do
+    discard (checked (auditLinked "stripped" "lp_Blake3_Blake3_Pure_hash T 1000 10\n"))
 
 private def regressionTests (source blakeSource : FilePath) : IO Unit := IO.FS.withTempDir fun temporary => do
   let repositoryRoot := temporary / "repository"
   let root ← cloneWorkspace source repositoryRoot
   let blake := temporary / "Blake3"
   let originalLedger ← readJson (root / "docs/trusted-externs.json")
-  -- the pure Lean dependency's recorded closure, under the source directory
+  let ledgerPath := root / "docs/trusted-externs.json"
+  -- the workspace dependency's recorded closure, under the source directory
   -- its module names are relative to
-  let dependency := (← arrField originalLedger "lean_dependencies")[0]!
+  let ixIndex ← dependencyIndex originalLedger "workspace_path"
+  let dependency := (← arrField originalLedger "lean_dependencies")[ixIndex]!
   let ixCKSources := root / (← strField (← field dependency "pins") "workspace_path") /
     (← strField dependency "source_dir")
   let ixClosure := (← pairs (← field dependency "closure")).map (·.1)
   need (!ixClosure.isEmpty) "test fixture lost the ix-ck closure"
+  -- the Blake3 package: its Lean sources and, for the native fixture entry,
+  -- its Cargo lock
   for path in (← files blakeSource true).filter (·.extension == some "lean") do
     copyRelative blakeSource blake path
-  let interfaces ← arrField originalLedger "native_interfaces"
-  let mut cargoRelative := ""
-  let mut blake3Version := ""
-  for entry in interfaces do
-    if (entry.getObjValAs? String "lake_package").toOption == some "Blake3" then
-      cargoRelative ← strField (← field entry "cargo_lock") "path"
-      blake3Version ← strField (← field entry "pins") "blake3_version"
-  need (!cargoRelative.isEmpty) "test fixture lost the Blake3 Cargo lock"
+  let fixture ← readJson (root / "fixtures/ledger/blake3-native-entry.json")
+  let cargoRelative ← strField (← field fixture "cargo_lock") "path"
   copyFile (blakeSource / cargoRelative) (blake / cargoRelative)
+  need (← arrField originalLedger "native_interfaces").isEmpty
+    "test fixture: the ledger records a native interface"
   let check := audit root [("Blake3", blake.toString)] (some "6.3.0")
   check
   withFile (root / "IxCC/AuditRegression.lean") "import IxCK.Ixon.Verify\n" do
     rejects "unledgered pure dependency import" "imports of pure Lean dependencies drifted" check
   let codec := ixCKSources / ixClosure.head!
+  let rehashedCodec : IO Json := rehashClosure originalLedger ixIndex ixClosure.head! codec
   withFile codec ((← IO.FS.readFile codec) ++ "\n") do
     rejects "pure dependency source drift" "changed" check
   withFile codec ((← IO.FS.readFile codec) ++ "\n@[extern \"rogue\"] opaque rogue : Nat\n") do
     -- with its hash re-recorded, the native declaration itself is refused
-    let entries ← (← arrField originalLedger "lean_dependencies").mapM fun entry => do
-      let closure ← replaceField (← field entry "closure") ixClosure.head! (toJson (← sha256 codec))
-      replaceField entry "closure" closure
-    let ledger ← replaceField originalLedger "lean_dependencies" (Json.arr entries)
-    withFile (root / "docs/trusted-externs.json") ledger.compress do
+    withFile ledgerPath (← rehashedCodec).compress do
       rejects "pure dependency native code" "declares native symbols" check
+  -- the kernel's closure admits no native_decide (it lists no site), and an
+  -- import outside the closure is refused in every spelling of the command
+  withFile codec ((← IO.FS.readFile codec) ++ "\ntheorem rogue_nd : 2 + 2 = 4 := by native_decide\n") do
+    withFile ledgerPath (← rehashedCodec).compress do
+      rejects "native_decide in the kernel closure" "native_decide in rogue_nd is not a listed native_decide site" check
+  for command in ["public import", "meta import", "import all"] do
+    withFile codec ((← IO.FS.readFile codec) ++ s!"\n{command} IxCK.Ixon.Verify\n") do
+      withFile ledgerPath (← rehashedCodec).compress do
+        rejects s!"{command} outside the kernel closure" "imports IxCK.Ixon.Verify outside the recorded closure" check
   -- the reviewed dependency csimp inventory is exact: dropping a listed
   -- theorem is refused
-  let dropped ← (← arrField originalLedger "lean_dependencies").mapM fun entry => do
-    let listed ← arrField entry "csimp_theorems"
-    need (!listed.isEmpty) "test fixture lost the dependency csimp inventory"
-    replaceField entry "csimp_theorems" (Json.arr listed.pop)
-  withFile (root / "docs/trusted-externs.json")
-      (← replaceField originalLedger "lean_dependencies" (Json.arr dropped)).compress do
+  withFile ledgerPath (← changeDependency originalLedger ixIndex fun entry => do
+      let listed ← arrField entry "csimp_theorems"
+      need (!listed.isEmpty) "test fixture lost the dependency csimp inventory"
+      replaceField entry "csimp_theorems" (Json.arr listed.pop)).compress do
     rejects "dropped dependency csimp" "csimp inventory drifted" check
   -- a csimp theorem added to the dependency closure, with its hash
   -- re-recorded: refused until the ledger lists it
@@ -447,39 +697,31 @@ private def regressionTests (source blakeSource : FilePath) : IO Unit := IO.FS.w
   let csimpTheorem := "@[csimp] theorem rogue_eq : @rogue = @rogueFast := rfl\n"
   withFile codec ((← IO.FS.readFile codec) ++ "\n" ++ csimpTheorem) do
     let rehashed (records : Array Json) : IO Json := do
-      let entries ← (← arrField originalLedger "lean_dependencies").mapM fun entry => do
-        let closure ← replaceField (← field entry "closure") ixClosure.head! (toJson (← sha256 codec))
-        let listed ← arrField entry "csimp_theorems"
-        replaceField (← replaceField entry "closure" closure) "csimp_theorems" (Json.arr (listed ++ records))
-      replaceField originalLedger "lean_dependencies" (Json.arr entries)
-    withFile (root / "docs/trusted-externs.json") (← rehashed #[]).compress do
+      changeDependency (← rehashedCodec) ixIndex fun entry => do
+        replaceField entry "csimp_theorems" (Json.arr ((← arrField entry "csimp_theorems") ++ records))
+    withFile ledgerPath (← rehashed #[]).compress do
       rejects "unlisted dependency csimp" "csimp inventory drifted" check
-    withFile (root / "docs/trusted-externs.json") (← rehashed #[csimpRecord ixClosure.head!]).compress do
+    withFile ledgerPath (← rehashed #[csimpRecord ixClosure.head!]).compress do
       check
   -- the dependency's implemented_by sites are exact: dropping a listed site is
   -- refused; a site added to the closure, with its hash re-recorded, is refused
   -- until the ledger lists it
-  let droppedSites ← (← arrField originalLedger "lean_dependencies").mapM fun entry => do
-    let listed ← arrField entry "implemented_by_sites"
-    need (!listed.isEmpty) "test fixture lost the dependency implemented_by inventory"
-    replaceField entry "implemented_by_sites" (Json.arr listed.pop)
-  withFile (root / "docs/trusted-externs.json")
-      (← replaceField originalLedger "lean_dependencies" (Json.arr droppedSites)).compress do
+  withFile ledgerPath (← changeDependency originalLedger ixIndex fun entry => do
+      let listed ← arrField entry "implemented_by_sites"
+      need (!listed.isEmpty) "test fixture lost the dependency implemented_by inventory"
+      replaceField entry "implemented_by_sites" (Json.arr listed.pop)).compress do
     rejects "dropped dependency implemented_by" "implemented_by inventory drifted" check
   let siteRecord (file : String) : Json := Json.mkObj [("file", toJson file),
     ("declaration", toJson "rogue"), ("implementation", toJson "rogueImpl"),
     ("ruling", toJson "test")]
   withFile codec ((← IO.FS.readFile codec) ++ "\n@[implemented_by rogueImpl] def rogue : Nat := 0\n") do
     let rehashedSites (records : Array Json) : IO Json := do
-      let entries ← (← arrField originalLedger "lean_dependencies").mapM fun entry => do
-        let closure ← replaceField (← field entry "closure") ixClosure.head! (toJson (← sha256 codec))
-        let listed ← arrField entry "implemented_by_sites"
-        replaceField (← replaceField entry "closure" closure) "implemented_by_sites"
-          (Json.arr (listed ++ records))
-      replaceField originalLedger "lean_dependencies" (Json.arr entries)
-    withFile (root / "docs/trusted-externs.json") (← rehashedSites #[]).compress do
+      changeDependency (← rehashedCodec) ixIndex fun entry => do
+        replaceField entry "implemented_by_sites"
+          (Json.arr ((← arrField entry "implemented_by_sites") ++ records))
+    withFile ledgerPath (← rehashedSites #[]).compress do
       rejects "unlisted dependency implemented_by" "implemented_by inventory drifted" check
-    withFile (root / "docs/trusted-externs.json") (← rehashedSites #[siteRecord ixClosure.head!]).compress do
+    withFile ledgerPath (← rehashedSites #[siteRecord ixClosure.head!]).compress do
       check
   buildGraphTests root
   let regression := root / "IxCC/AuditRegression.lean"
@@ -497,12 +739,18 @@ private def regressionTests (source blakeSource : FilePath) : IO Unit := IO.FS.w
   for token in ["axiom", "sorry", "native_decide"] do
     withFile regression s!"{token} injected\n" do
       rejects token (token ++ " is not allowed") check
+  -- with no native interface recorded, a project extern and a C source the
+  -- Lake file names are each refused
   withFile regression "@[extern \"unexpected_symbol\"] opaque rogue : Nat\n" do
     rejects "project extern drift" "project extern inventory drifted" check
+  let lakefile := root / "lakefile.lean"
+  withFile lakefile ((← IO.FS.readFile lakefile) ++ "\ndef rogueSource := \"native/rogue.c\"\n") do
+    withFile ledgerPath (← rehash originalLedger root "lakefile.lean").compress do
+      rejects "unrecorded foreign source" "project foreign-source inventory drifted" check
   withFile regression "import UnreviewedPackage\n" do
     rejects "external import drift" "external Lean import roots drifted" check
-  withFile regression "def drift := Blake3.Rust.internalVersion\n" do
-    rejects "native entrypoint drift" "qualified uses of Blake3.Rust drifted" check
+  withFile regression "public import UnreviewedPackage.Module\n" do
+    rejects "external public import drift" "external Lean import roots drifted" check
   -- Every remote action of a scoped workflow must be pinned and reviewed into
   -- the ledger (`ci_actions`).
   let workflow := repositoryRoot / ".github/workflows/regression.yml"
@@ -571,25 +819,10 @@ private def regressionTests (source blakeSource : FilePath) : IO Unit := IO.FS.w
     withFile (root / "docs/trusted-externs.json") ledger.compress do
       withFile (root / "Regression.lean") "axiom outsideLibrary : False\n" do
         rejects "new executable inventory" "axiom is not allowed" check
-  withFile (blake / "Sibling.lean") "@[extern \"unreviewed_sibling\"] opaque sibling : Nat\n" do
-    rejects "dependency sibling extern" "package-tree extern inventory drifted" check
-  let cargo := blake / cargoRelative
-  let original ← IO.FS.readFile cargo
-  let record (version : String) := s!"\n[[package]]\nname = \"blake3\"\nversion = \"{version}\"\n"
-  for (contents, diagnostic) in [(original ++ record blake3Version, "Cargo package records"),
-      (original ++ record "999.0.0", "Cargo package inventory drifted"),
-      ("package = [", "invalid Cargo TOML")] do
-    withFile cargo contents do
-      rejects "Cargo hash drift" "Cargo lockfile hash drifted" check
-      let entries ← interfaces.mapM fun entry => do
-        if (entry.getObjValAs? String "lake_package").toOption != some "Blake3" then return entry
-        let data ← replaceField (← field entry "cargo_lock") "sha256" (toJson (← sha256 cargo))
-        replaceField entry "cargo_lock" data
-      let ledger ← replaceField originalLedger "native_interfaces" (Json.arr entries)
-      withFile (root / "docs/trusted-externs.json") ledger.compress do
-        rejects "Cargo metadata drift" diagnostic check
   repositoryTests temporary repositoryRoot root blake originalLedger
   workspaceDependencyTests root blake originalLedger
+  gitDependencyTests repositoryRoot root blake originalLedger
+  nativeFixtureTests root blake originalLedger
 
 def main (args : List String) : IO UInt32 := cli "Lean check regressions failed" do
   let args ← checked (parseArgs ["--root", "--blake3"] args)
@@ -598,5 +831,6 @@ def main (args : List String) : IO UInt32 := cli "Lean check regressions failed"
   lexerTests
   inventoryTests
   disassemblyTests
+  linkAuditTests
   regressionTests root blake
-  IO.println "Lean check regressions ok: source lexing (including native evaluation), root/native/csimp inventories, Nix check inventory, build graph, proof/runtime coverage, integrity pins and rule, Cargo, CI, repository and workspace-dependency rejection paths"
+  IO.println "Lean check regressions ok: source lexing (including native evaluation, every import spelling and native_decide sites), root/native/csimp inventories, Nix check inventory, build graph, proof/runtime coverage, integrity pins and rule, CI, repository, workspace and git dependency rejection paths, the native-dependency audit on its fixture entry (Cargo included), and the link audit"

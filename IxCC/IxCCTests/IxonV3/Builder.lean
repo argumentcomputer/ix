@@ -1,10 +1,15 @@
 import IxCC.Ixon.V3.Validate
+import IxCC.Ixon.V3.Keys
 
-/-! Small addressed fixtures adapted from the producer's
-Tests/Ix/Tc/{IxonFixtures,CheckTests}.lean at the v3 source pin, framed as Ixon v4.
-The byte writer is test-only; production admission always reads bytes. -/
+/-! The in-memory environment builder of the tests: synthesized records
+(`record`, `store`, `block`, which adds a mutual block's projection records),
+a small axiom base, and an unbound (`0xE4`) writer for the resource-validation
+suites (`bytes`). The role-bound builder (`IxCCTests.Support.Bound`) encodes
+its records here too. Adapted from the producer's v3 test fixtures, framed as
+Ixon v4. The byte writer is test-only; production admission always reads
+bytes. -/
 
-namespace IxCCTests.IxonV3.TypingFixtures
+namespace IxCCTests.IxonV3.Builder
 
 open IxCC.Ixon IxCC.Ixon.V3
 
@@ -48,28 +53,6 @@ def identity (a : IxCC.Ixon.Address) : C :=
   ⟨.defn ⟨.defn, .safe, 0, arrow (.ref 0 #[]) (.ref 0 #[]),
     lambda (.ref 0 #[]) (.var 0)⟩, #[], #[a], #[]⟩
 
-def natLike : V3.Inductive :=
-  ⟨false, 0, 0, 0, .sort 0,
-    #[⟨false, 0, 0, 0, 0, .recur 0 #[]⟩,
-      ⟨false, 0, 1, 0, 1, arrow (.recur 0 #[]) (.recur 0 #[])⟩]⟩
-
-def indEnv (ind : V3.Inductive) (univs : Array Univ := #[.succ .zero]) : Environment :=
-  (block {} ⟨.muts #[.indc ind], #[], #[], univs⟩).1
-
-/-- The producer's canonical singleton recursor and independent mutations. -/
-def recursorEnv (k tamper : Bool) (levelCount : UInt64 := 1) : Environment := Id.run do
-  let ind : V3.Inductive := ⟨false, 0, 0, 0, .sort 0,
-    #[⟨false, 0, 0, 0, 0, .recur 0 #[]⟩]⟩
-  let (env, parent) := block {} ⟨.muts #[.indc ind], #[], #[], #[.succ .zero]⟩
-  let motive := arrow (.ref 0 #[]) (.sort 0)
-  let typ := arrow motive (arrow (.app (.var 0) (.ref 1 #[]))
-    (arrow (.ref 0 #[]) (.app (.var 2) (.var 0))))
-  let rhs := lambda motive (lambda (.app (.var 0) (.ref 1 #[]))
-    (.var (if tamper then 1 else 0)))
-  let recursor : V3.Recursor := ⟨k, false, levelCount, 0, 0, 1, 1, typ, #[⟨0, rhs⟩]⟩
-  return (block env ⟨.muts #[.recr recursor], #[],
-    #[V3.indcProjAddr parent 0, V3.ctorProjAddr parent 0 0], #[.var 0]⟩).1
-
 /-- Independent framing for constructing complete adversarial input files. -/
 def bytes (env : Environment) : ByteArray := _root_.Ixon.runPut do
   let constants := env.consts.toArray.qsort (fun a b => a.1.cmpBytes b.1 == .lt)
@@ -87,4 +70,4 @@ def bytes (env : Environment) : ByteArray := _root_.Ixon.runPut do
       _root_.Ixon.putBytes raw
   _root_.Ixon.putTagN 0 0 0
 
-end IxCCTests.IxonV3.TypingFixtures
+end IxCCTests.IxonV3.Builder

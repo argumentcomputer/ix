@@ -51,7 +51,7 @@ namespace IxCCTests.Recheck.Hostile
 
 open IxCC IxCC.Ixon IxCC.Ixon.V3
 open IxCCTests.Src (Assert expect annotationNoCanonical)
-open IxCCTests.IxonV3.TypingFixtures (store block arrow lambda)
+open IxCCTests.IxonV3.Builder (store block arrow lambda)
 open IxCCTests.Support.Bound (loadBase addEnum addSimple Field)
 
 abbrev Addr := IxCC.Ixon.Address

@@ -6,8 +6,8 @@ The byte order of addresses (`Address.cmpBytes` and the `Ord` instance), the
 reading of an address from hexadecimal (`Address.fromString`), and the
 little-endian bytes of a `Nat` literal's blob (`V3.natFromBytesLE` and its
 inverse on the canonical encoding, `V3.natBytesLE`). None of them is typing:
-they were kept with the erased type checker (`IxCC.Ixon.V3.Tc`), and moved
-here because ingress (`Src.Ingress`), the pinned identities (`Src.Pinned`),
+they were kept with IxCC's erased type checker (deleted by the switch to the
+certified kernel), and moved here because ingress (`Src.Ingress`), the pinned identities (`Src.Pinned`),
 the sidecar's reader (`Src.Hints`), the primitive table (`V3.PrimAddrs`) and
 the resource profile (`V3.Validate`) use them
 (`docs/kernel-front-end-design.md`, "The switch", step 2). -/

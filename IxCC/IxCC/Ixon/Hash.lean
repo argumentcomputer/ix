@@ -1,25 +1,21 @@
-import Blake3.Rust
 import IxCC.Ixon.PureHash
 
 /-!
 # Content hashing
 
 `Address.blake3` is the content hash of every address IxCC computes: object
-and blob authentication, Merkle roots, projection keys, catalog file hashes,
-resource commitments. It is pure BLAKE3 (`Address.blake3Pure`, a total Lean
+and blob authentication, Merkle roots, projection keys, resource
+commitments. It is pure BLAKE3 (`Address.blake3Pure`, a total Lean
 implementation, `IxCC.Ixon.PureHash`), the function the statements and the
 certified kernel's admission hash are about, so no address on the verifier
 path comes from foreign code and no theorem depends on the `native_decide`
 length proof inside the Blake3 package's `HasherOps.hash`
 (`IxCC/docs/byte-contract.md`, "The hash").
 
-The Rust backend (Blake3.lean's `Blake3.Rust`, the trust ledger's native
-interface) stays imported for one user: the erased type checker's incremental
-hasher (`Blake3.Rust.Hasher`, `IxCC.Ixon.V3.Tc`), which builds the checker's
-internal hash-consing and cache keys. Those keys are not addresses of anything
-a claim or a statement names: a collision among them can change only the
-checker's verdict, which no theorem uses, and their length proofs are
-explicit (`V3.Tc.finishHash`).
+No IxCC module imports the Blake3 package's Rust backend (`Blake3.Rust`):
+its one user, the erased type checker's incremental hasher, was deleted with
+the checker by the switch to the certified kernel, so no IxCC executable
+links the Rust hasher (`IxCC/docs/trusted-extern-ledger.md`).
 
 The semantic `Constant.address?` boundary lives in `Ixon.Sharing`, after the
 layer-2 recompression check. IxIR declaration preimages and address APIs live

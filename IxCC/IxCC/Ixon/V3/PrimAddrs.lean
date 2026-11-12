@@ -11,10 +11,9 @@ them (`leanParityTable`, which `tests-ixon-v3` compares with
 `fixtures/ixon-v4/primitives.tsv`).
 
 Not typing: the resource profile's literal pins (`V3.Validate`) and its
-`Eq` (`Resource.Addressed`) read `canonical` as well as the erased type
-checker (`IxCC.Ixon.V3.Tc`, whose `Tc.Primitive` keeps what only the checker
-uses: the reserved reduction markers and the primitive set), so the table was
-moved here (`docs/kernel-front-end-design.md`, "The switch", step 2).
+`Eq` (`Resource.Addressed`) read `canonical`. The table was kept with IxCC's
+erased type checker, which the switch to the certified kernel deleted, and
+was moved here first (`docs/kernel-front-end-design.md`, "The switch").
 `eagerReduce` is not a compiled Lean content hash but a synthetic marker:
 the real declaration shares its content address with `id` and must not
 trigger special reduction. -/

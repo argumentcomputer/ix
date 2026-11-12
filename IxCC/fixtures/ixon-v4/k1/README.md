@@ -33,11 +33,11 @@ verifies it offline.
 
 The required `tests-ixon-v3` suite decodes `k1.ixe` through strict v4
 ingress, checks that every recorded root, definition and equation address is
-present, and runs erased typing over the whole closure.
+present, and runs the certified kernel's acceptance of the whole closure.
 
 [`census.json`](census.json) is the reviewed admission census of `k1.ixe`
-(`lake exe census k1.ixe --names equations.json`): every anonymous constant
-passes decoding and erased typing; the D12 policy stage refuses the `partial`
+(`lake exe census k1.ixe --names equations.json`): the closure passes
+decoding and the certified kernel's acceptance; the D12 policy stage refuses the `partial`
 and `unsafe` members of the logical units the selection brings in, which no
 root reaches. It records the budget headroom. The `census`
 check requires the tool to reproduce this file exactly.

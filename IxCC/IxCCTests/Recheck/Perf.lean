@@ -35,7 +35,7 @@ namespace IxCCTests.Recheck.Perf
 open IxCC IxCC.Ixon IxCC.Ixon.V3
 open IxCCTests.Recheck.Hostile
 open IxCCTests.Recheck.Deep (treeEnv manyEnv deepEnv deepAppEnv deepLetEnv)
-open IxCCTests.IxonV3.TypingFixtures (store arrow lambda)
+open IxCCTests.IxonV3.Builder (store arrow lambda)
 open IxCCTests.Support.Bound (loadBase addTree)
 
 /-- `dag d` (see the module note). -/

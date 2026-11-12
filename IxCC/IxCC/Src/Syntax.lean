@@ -5,7 +5,7 @@ import IxCC.Src.Resource.Syntax
 
 /-! # Src syntax
 
-The first IR of the rebuilt pipeline: the resolved, table-free reading of a Tc-typed Ixon closure,
+The first IR of the rebuilt pipeline: the resolved, table-free reading of an Ixon closure the certified kernel accepted,
 with the relevance annotation written into its binders, arguments and
 lets, and the evaluation modes that `Src.Lazify` sets.
 
@@ -259,10 +259,10 @@ end Table
 bytes read big-endian (`Src.Pinned.addrNat`), so that the recheck path compares
 addresses with pins in the kernel (D17). An identity without a pin (`none`, or
 an operation or axiom missing from its list) is absent from the program, as an
-identity whose constant is missing from the closure is. Ingress chooses the
-pins (`Src.Pinned.pinsOf`): for a role-bound environment the role table's,
-through the stated mapping from the kernel's roles (`Src.Pinned.ofRoles`), and
-for an unbound one the fixed table `Pins.fixed`. -/
+identity whose constant is missing from the closure is. Ingress takes the pins
+from the role table the certified kernel admitted, through the stated mapping
+from the kernel's roles (`KernelFront.pinsOfTable`); the fixed table
+`Pins.fixed` is the default (`Src.Pinned`). -/
 structure Pins where
   nat : Option Nat := none
   natZero : Option Nat := none
@@ -285,8 +285,9 @@ structure Pins where
 namespace Pins
 
 /-- The fixed table: the addresses of `fixtures/ixon-v4/primitives.tsv` and
-`src-tables.tsv` (`Src.Pinned`'s rows, which `#guard`s tie to these numbers),
-used for an environment without a role binding. -/
+`src-tables.tsv` (`Src.Pinned`'s rows, which `#guard`s tie to these numbers):
+the default pins of a program built without ingress, and the allowlist's
+address (`KernelFront.pinsOfTable`). -/
 def fixed : Pins :=
   { nat := some 0x35e1cc809f6f076521a43f85068d5592220407c0532b6a08952f40d8523d04bc
     natZero := some 0xeeb2e6268ff6d0e6b2e9764d9940b81bb64b9f8f4b1358d294ff9817e6941a46

@@ -209,8 +209,8 @@ open IxCC.Src (CId)
 
 /-- What the simulation assumes of the Src program's declarations: every
 constructor is listed by its inductive at its index, and every listed
-constructor declares that inductive and index. Ingress (Tc typing) ensures
-it; erasure decides it (`Input.progWF`, `progWF_iff`). -/
+constructor declares that inductive and index. Ingress (the kernel's
+acceptance) ensures it; erasure decides it (`Input.progWF`, `progWF_iff`). -/
 structure ProgWF (I : Input) : Prop where
   ctorIn : ∀ {c : CId} {sf : Bool} {lv : Nat} {ind : CId} {cidx np nf : Nat} {ty : Src.Term},
     I.decl? c = some (.ctor sf lv ind cidx np nf ty) → (I.ctorsOf ind)[cidx]? = some c

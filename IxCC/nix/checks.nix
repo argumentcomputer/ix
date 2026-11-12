@@ -42,16 +42,12 @@ in
     build = ixccLib;
     proofs = programs;
 
-    # The catalog reader rejects symlinked files, so the fixture commands read
-    # the store copy of the source tree rather than the symlinked work tree.
+    # The fixture command reads the store copy of the source tree.
     ixon-v3 = mkCheck "ixon-v3" [] ''
       ./.lake/build/bin/tests-ixon-v3
       ./.lake/build/bin/check-ixon-v3 ${auditSrc}/fixtures/ixon-v4/handoff/accepted.ixe \
         ${auditSrc}/fixtures/ixon-v4/handoff/profile.bin \
         ${auditSrc}/fixtures/ixon-v4/handoff/accepted.claim
-      ./.lake/build/bin/check-ixon-v3-catalog ${auditSrc}/fixtures/ixon-v4/catalog/fat.ixc
-      ./.lake/build/bin/check-ixon-v3-catalog ${auditSrc}/fixtures/ixon-v4/catalog/chunked.ixc \
-        ${auditSrc}/fixtures/ixon-v4/catalog/chunked.ixc/members.json
     '';
 
     # The admission census must reproduce its reviewed baseline exactly, so
@@ -93,11 +89,16 @@ in
 
     # The ledger audits IxCC in its workspace: «ix-ck» at its recorded path
     # (`../IxCK`), the repository's flake.lock and the workflows it scopes.
-    trusted-extern-ledger = mkCheck "trusted-extern-ledger" [] ''
+    # The link audit reads the symbol table of every executable the checks
+    # ship or run (the shared program build and the grounding suite) and
+    # refuses the Blake3 package's native backends.
+    trusted-extern-ledger = mkCheck "trusted-extern-ledger" [pkgs.binutils] ''
       ./.lake/build/bin/check-trusted-externs \
         --root ${ledgerWorkspace}/IxCC \
         --dependency-root Blake3=${blake3-lean.outPath} \
         --gmp-version ${pkgs.gmp.version}
+      ./.lake/build/bin/check-trusted-externs --linked --nm ${pkgs.binutils}/bin/nm \
+        ./.lake/build/bin ${grounding}/bin
       ./.lake/build/bin/check-tools-tests \
         --root ${ledgerWorkspace}/IxCC --blake3 ${blake3-lean.outPath}
     '';

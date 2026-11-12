@@ -3,11 +3,18 @@ import IxCC.Compiler.Proof
 import IxCC.CompileClaim.Proof
 import IxCC.Ring0.Proof
 import IxCC.Src.Proof.Lazify
+import IxCC.Ixon.PureHash
 
 /-! The actual compiler statements, through ingress and production, and the replay
 fences alike rest on the standard axioms only: every address IxCC computes is pure BLAKE3
-(`IxCC.Ixon.Address.blake3`), so no statement depends on the Blake3 package's `native_decide`
-length proof. This file adds no assumption to `Recheck.run` or `sound`. -/
+(`IxCC.Ixon.Address.blake3`, which is `Address.blake3Pure` over `Blake3.Pure.hash`), so no
+statement depends on a native-evaluation axiom of the Blake3 package (the `native_decide`
+default-argument proofs of its root module, which the trust ledger admits as
+`native_decide_sites` because their callers are not IxCC's). This file adds no assumption to
+`Recheck.run` or `sound`. -/
+
+/-- info: 'IxCC.Ixon.Address.blake3Pure' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Ixon.Address.blake3Pure
 
 /-- info: 'IxCC.Recheck.compileInput_parts' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Recheck.compileInput_parts
@@ -225,24 +232,10 @@ example {p : IxCC.Src.Program} {thm c : IxCC.Src.CId}
 /-- info: 'IxCC.Src.Table.ofCert_ok_props' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Src.Table.ofCert_ok_props
 
-/-! The pins of the program ingress reads are the environment's: its role table's for a
-role-bound closure, the fixed table for an unbound one (`IxCC/docs/byte-contract.md`). -/
-
-/-- info: 'IxCC.Src.Ingress.ofEnv_pins' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in #print axioms IxCC.Src.Ingress.ofEnv_pins
+/-! Resolving the pinned identities keeps the program's pins (`IxCC/docs/byte-contract.md`). -/
 
 /-- info: 'IxCC.Src.Pinned.known_pins' depends on axioms: [propext] -/
 #guard_msgs in #print axioms IxCC.Src.Pinned.known_pins
-
-/-! Statement pin: this fails to elaborate if `ofEnv_pins` stops tying the program's pins to
-the envelope it was read from. -/
-
-example {env : IxCC.Ixon.V3.Env} {roots : Array IxCC.Ixon.Address} {p : IxCC.Src.Program}
-    (h : IxCC.Src.Ingress.ofEnv env roots = .ok p) :
-    p.known.pins = (match env.binding with
-      | some b => IxCC.Src.Pinned.ofRoles b.table
-      | none => IxCC.Src.Pins.fixed) :=
-  IxCC.Src.Ingress.ofEnv_pins h
 
 /-- info: 'IxCC.Src.Table.buildResolve_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Src.Table.buildResolve_sound

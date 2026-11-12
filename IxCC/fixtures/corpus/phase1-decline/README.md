@@ -59,7 +59,7 @@ By reading the compiler (2026-10-01); these are not exercised here.
 
 | Codes | Why |
 | --- | --- |
-| `erase-progwf`, `erase-univs`, `erase-proj`, `erase-record`, `erase-scope`, `erase-recursor`, `erase-ctor-layout`, `erase-pin`, `erase-key` | erased typing, the kernel's recursors, relevance (S1, C3) or the annotator establish these forms first |
+| `erase-progwf`, `erase-univs`, `erase-proj`, `erase-record`, `erase-scope`, `erase-recursor`, `erase-ctor-layout`, `erase-pin`, `erase-key` | the certified kernel's acceptance, the kernel's recursors, relevance (S1, C3) or the annotator establish these forms first |
 | `erase-const-kind`, `erase-root`, `erase-string`, `erase-budget`, `erase-C2`, `erase-C4`, `erase-S2`, `erase-fuel` | an earlier stage declines the same program first: admission (`opaque`, `unsafe`, `relevant-axiom`, `unsupported`, `budget`) or relevance (`relevance-C2`, `-C4`, `-S2`, `relevance-oracle` at depth 2¹⁴) |
 | `erase-modes`, `erase-mode`, `erase-lazy` | by-name binders come only from pinned lazy constants and recursor minors, whose shapes Lazify and the pinned table fix; the sidecar carries only equation hints |
 | `convert-root-name`, `convert-dense` | a root is always compiled strictly (`rootId` never uses a by-name key), so no source has a by-name root; erasure numbers globals densely |
