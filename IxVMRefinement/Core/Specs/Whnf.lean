@@ -24,7 +24,7 @@ set_option linter.unusedVariables false
 /-! ## Vocabulary -/
 
 /-- Application to a list of arguments. -/
-abbrev mkAppN (f : KExpr) (as : List KExpr) : KExpr := Ix.Kernel.Expr.mkAppN f as
+abbrev mkAppN (f : KExpr) (zs : List KExpr) : KExpr := Ix.Kernel.Expr.mkAppN f zs
 
 /-- A list of terms under `k` local binders. -/
 abbrev TmLk (c : Ctx) (d : Nat) (Γ : Nat → KExpr) (k : Nat) (h : Heap F) (Es : List KExpr)
@@ -40,10 +40,10 @@ def lamsNb : List KExpr → KExpr → KExpr
   | T :: Ts, D => .lam T (lamsNb Ts D) nbMeta
 
 /-- The domain of the `n`-th binder of a `∀`-telescope after instantiating the binders before it
-with `as`, in order (the arguments have no loose bound variable). -/
+with `zs`, in order (the arguments have no loose bound variable). -/
 def piDomInst : KExpr → List KExpr → Nat → Option KExpr
   | .forallE dom _ _, _, 0 => some dom
-  | .forallE _ b _, a :: as, n + 1 => piDomInst (b.instantiate1 a) as n
+  | .forallE _ b _, a :: zs, n + 1 => piDomInst (b.instantiate1 a) zs n
   | _, _, _ => none
 
 /-- The sort a `∀`-telescope ends in after exactly `n` binders. -/
@@ -119,8 +119,8 @@ inductive CertsR (env : Ix.Kernel.Env .anon) (d : Nat) (lic : Bool) :
   | cert {ty body arg ta : KExpr} {mb : Ix.Kernel.BinderMeta} {rest : List KExpr} :
       Infer env .io d arg ta → DefEq env d ta ty → CertsR env d lic (body.instantiate1 arg) rest →
       CertsR env d lic (.forallE ty body mb) (arg :: rest)
-  | red {T T' : KExpr} {as : List KExpr} :
-      Red env d T T' → CertsR env d lic T' as → CertsR env d lic T as
+  | red {T T' : KExpr} {zs : List KExpr} :
+      Red env d T T' → CertsR env d lic T' zs → CertsR env d lic T zs
 
 /-- **A recursor's loaded data**: the environment stores the recursor `ci` at `k`, and a loaded
 `Rec` value with these fields represents it (`CIRep.recr`: level count, closed type, the
@@ -284,9 +284,9 @@ def slots_never : SpecFn := fun c args h r h' calls =>
 the telescope's bound variables instantiated by `subs_rev` (innermost first) and the binders
 before `n` by `args` in order. Tag `0`: no claim. -/
 def pi_peel : SpecFn := fun c args h r h' calls =>
-  ∀ t as subs n, args = [t, as, subs, n] → Good c calls →
+  ∀ t zs subs n, args = [t, zs, subs, n] → Good c calls →
     ∀ d Γ T Cs As (m : F), c.tmk d Γ Cs.length h T t → c.tml d Γ h Cs subs →
-      c.tml d Γ h As as → n = .field m →
+      c.tml d Γ h As zs → n = .field m →
       ∀ x, r = .tuple [.field 1, x] →
         ∃ D, c.tm d Γ h' D x ∧ piDomInst (T.instantiateList Cs 0) As (ZMod.val m) = some D
 
@@ -294,8 +294,8 @@ def pi_peel : SpecFn := fun c args h r h' calls =>
 `args` (`Ix.Kernel.piResidual`), its bound variables instantiated by `subs_rev` first. Tag `0`:
 no claim. -/
 def pi_residual : SpecFn := fun c args h r h' calls =>
-  ∀ t as subs, args = [t, as, subs] → Good c calls →
-    ∀ d Γ T Cs As, c.tmk d Γ Cs.length h T t → c.tml d Γ h Cs subs → c.tml d Γ h As as →
+  ∀ t zs subs, args = [t, zs, subs] → Good c calls →
+    ∀ d Γ T Cs As, c.tmk d Γ Cs.length h T t → c.tml d Γ h Cs subs → c.tml d Γ h As zs →
       ∀ x, r = .tuple [.field 1, x] →
         ∃ R, c.tm d Γ h' R x ∧ Ix.Kernel.piResidual (T.instantiateList Cs 0) As = some R
 
@@ -314,9 +314,9 @@ def find_rule : SpecFn := fun c args h r h' calls =>
 certificate of `args` against the telescope (its bound variables instantiated by `subs_rev`
 first), up to reduction of the telescope (`CertsR … false`). Answer `0`: no claim. -/
 def certs_all : SpecFn := fun c args h r h' calls =>
-  ∀ rc t as subs types, args = [rc, t, as, subs, types] → Good c calls → c.rc h rc →
+  ∀ rc t zs subs types, args = [rc, t, zs, subs, types] → Good c calls → c.rc h rc →
     ∀ d Γ, c.types Γ h d types →
-      ∀ T Cs As, c.tmk d Γ Cs.length h T t → c.tml d Γ h Cs subs → c.tml d Γ h As as →
+      ∀ T Cs As, c.tmk d Γ Cs.length h T t → c.tml d Γ h Cs subs → c.tml d Γ h As zs →
         r = .field 1 → CertsR c.env d false (T.instantiateList Cs 0) As
 
 /-- `iota_certs(rc, rec_ty_i, rec_args, n_rec, cty, clvls, margs, n_ctor, types)`: answer `1`
@@ -491,10 +491,10 @@ def quot_certs : SpecFn := fun c args h r h' calls =>
       ∀ (a b : Bytes.Address) us mus RA MA, RepAddr h a addr → LvListRep h us lvls →
         c.tml d Γ h RA ra → RepAddr h b mk → LvListRep h mus mklvls → c.tml d Γ h MA ma →
         r = .field 1 →
-          (∃ ci, c.env.find? (c.κ (ixAddr a)) = some ci ∧
+          (∀ ci, c.env.find? (c.κ (ixAddr a)) = some ci →
             CertsR c.env d true
               (ci.toConstantVal.type.instantiateLevelParams ci.toConstantVal.levelParams us) RA) ∧
-          (∃ ci, c.env.find? (c.κ (ixAddr b)) = some ci ∧
+          (∀ ci, c.env.find? (c.κ (ixAddr b)) = some ci →
             CertsR c.env d true
               (ci.toConstantVal.type.instantiateLevelParams ci.toConstantVal.levelParams mus) MA)
 
@@ -684,7 +684,7 @@ def apply_n_projs : SpecFn := fun c args h r h' calls =>
       c.tm d Γ h M major → nf = .field n → i = .field j →
       ∃ m : Nat, j + (m : F) = n ∧
         c.tm d Γ h' (mkAppN H ((List.range m).map fun t =>
-          .proj (c.κ (ixAddr p)) (ZMod.val (j + (t : F))) M)) r
+          (Ix.Kernel.Expr.proj (c.κ (ixAddr p)) (ZMod.val (j + (t : F))) M : KExpr))) r
 
 /-- `se_addr_in(a, xs)`: exact membership (`Bytes::address_eq` decides). -/
 def se_addr_in : SpecFn := fun c args h r h' calls =>
@@ -714,57 +714,66 @@ def se_scan_fields : SpecFn := fun c args h r h' calls =>
       ∀ j B dom body m, stripForalls j T = some B → B = .forallE dom body m →
         ¬ mentionsKey (fun key => ∃ a ∈ ms, key = c.κ (ixAddr a)) dom
 
-/-- `struct_block_member_addrs(parent, block)`: the addresses of the members of the block's
-record (their projection records, `Ingress::build_recur_addrs`), every inductive member's
-among them; `[parent]` if the record at `block` is not a block. -/
+/-- No binder domain of the telescope `T` after its first `p` binders mentions a constant at an
+address of `membs` (outside `fvar` annotations). -/
+def FieldsClean (c : Ctx) (p : Nat) (membs : List Bytes.Address) (T : KExpr) : Prop :=
+  ∀ q B dom body mb, stripForalls (p + q) T = some B → B = .forallE dom body mb →
+    ¬ mentionsKey (fun key => ∃ a ∈ membs, key = c.κ (ixAddr a)) dom
+
+/-- Every inductive among the addresses `ms` has, for some block `b`, member index `i`,
+parameter count `np` and constructor count `nc` (the fields IxVM loaded for it), constructors
+`0, …, nc - 1` (keyed by their projection records) whose field domains mention no member of
+`membs`. The link between those fields and the inductive's own address is not claimed. -/
+def MembersClean (c : Ctx) (ms membs : List Bytes.Address) : Prop :=
+  ∀ m ∈ ms, (∃ cv caps, c.env.find? (c.κ (ixAddr m)) = some (.indInfo cv caps)) →
+    ∃ (b : _root_.Address) (i np nc : Nat), ∀ t < nc, ∃ cicon,
+      c.env.find? (c.κ (cprjAddr b i t)) = some cicon ∧
+      FieldsClean c np membs cicon.toConstantVal.type
+
+/-- `struct_block_member_addrs(parent, block)`: for a record at `block` in the records `c.E`,
+the addresses of its members' projection records (`Ingress::build_recur_addrs`), every
+inductive member's among them, when it is a block, and `[parent]` otherwise. -/
 def struct_block_member_addrs : SpecFn := fun c args h r h' calls =>
   ∀ par blk, args = [par, blk] → Good c calls →
     ∀ (p b : Bytes.Address), RepAddr h p par → RepAddr h b blk →
       ∃ xs, RepList addrListEnum RepAddr h' xs r ∧
-        ((∃ cb ms, Ix.Cert.recordAt c.E (ixAddr b) = some cb ∧ cb.info = .muts ms ∧
-            ∀ i ind, ms[i]? = some (.indc ind) → ∃ a ∈ xs, ixAddr a = iprjAddr (ixAddr b) i) ∨
-          xs = [p])
+        ∀ cb, Ix.Cert.recordAt c.E (ixAddr b) = some cb →
+          (∀ ms, cb.info = .muts ms → ∀ i ind, ms[i]? = some (.indc ind) →
+            ∃ a ∈ xs, ixAddr a = iprjAddr (ixAddr b) i) ∧
+          ((∀ ms, cb.info ≠ .muts ms) → xs = [p])
 
-/-- `struct_scan_ctors(block, idx, num_ctors, n_params, members, c)`: answer `0` means no field
-domain of the constructors `c, …, num_ctors - 1` of member `idx` of the block (their stored
-types after `n_params` binders) mentions a constant at an address of `members`. Answer `1`:
-no claim. -/
+/-- `struct_scan_ctors(block, idx, num_ctors, n_params, members, c)`: answer `0` means the
+constructors `c, …, num_ctors - 1` of member `idx` of the block (keyed by their projection
+records) have stored types whose field domains, after `n_params` binders, mention no member of
+`members`. Answer `1`: no claim. -/
 def struct_scan_ctors : SpecFn := fun c args h r h' calls =>
   ∀ blk idx nc np xs ci, args = [blk, idx, nc, np, xs, ci] → Good c calls →
     ∀ (b : Bytes.Address) (i n p j : F) ms, RepAddr h b blk → idx = .field i → nc = .field n →
       np = .field p → RepList addrListEnum RepAddr h ms xs → ci = .field j → r = .field 0 →
       ∃ m : Nat, j + (m : F) = n ∧ ∀ t < m, ∃ cicon,
         c.env.find? (c.κ (cprjAddr (ixAddr b) (ZMod.val i) (ZMod.val (j + (t : F))))) =
-          some cicon ∧
-        ∀ q B dom body mb, stripForalls (ZMod.val p + q) cicon.toConstantVal.type =
-            some B → B = .forallE dom body mb →
-          ¬ mentionsKey (fun key => ∃ a ∈ ms, key = c.κ (ixAddr a)) dom
+          some cicon ∧ FieldsClean c (ZMod.val p) ms cicon.toConstantVal.type
 
-/-- `struct_scan_members(ms, members)`: answer `0` means, for every inductive among the
-addresses `ms`, no field domain of any of its constructors mentions a constant at an address
-of `members` (`struct_scan_ctors` from `0`). Answer `1`: no claim. -/
+/-- `struct_scan_members(ms, members)`: answer `0` is `MembersClean ms members`. Answer `1`: no
+claim. -/
 def struct_scan_members : SpecFn := fun c args h r h' calls =>
   ∀ msp xs, args = [msp, xs] → Good c calls →
     ∀ ms membs, RepList addrListEnum RepAddr h ms msp → RepList addrListEnum RepAddr h membs xs →
-      r = .field 0 →
-      ∀ m ∈ ms, ∀ cv caps, c.env.find? (c.κ (ixAddr m)) = some (.indInfo cv caps) →
-        ∀ cicon, (∃ (b : _root_.Address) (i j : Nat),
-            c.env.find? (c.κ (cprjAddr b i j)) = some cicon ∧ ixAddr m = iprjAddr b i) →
-          ∀ q B dom body mb, stripForalls q cicon.toConstantVal.type = some B →
-            B = .forallE dom body mb →
-            ¬ mentionsKey (fun key => ∃ a ∈ membs, key = c.κ (ixAddr a)) dom
+      r = .field 0 → MembersClean c ms membs
 
-/-- `struct_is_rec(parent)`: Lean's block-level `is_rec`. Answer `0` means the inductive at
-`parent` is the only inductive member of its block's record (`block_is_multi` answers `0`) and
-no field domain of its constructors mentions a member of the block. Answer `1`: no claim. -/
+/-- `struct_is_rec(parent)`: Lean's block-level `is_rec`. Answer `0` means: for the block `b`
+IxVM loaded for the parent (when `block_is_multi` answers `0`), the member list it computed
+(`struct_block_member_addrs`: every inductive member's projection record when the record at
+`b` is a block, `[parent]` otherwise) is clean against itself (`MembersClean`). The link
+between `b` and the parent's address is not claimed. Answer `1`: no claim. -/
 def struct_is_rec : SpecFn := fun c args h r h' calls =>
   ∀ par, args = [par] → Good c calls →
     ∀ (p : Bytes.Address), RepAddr h p par → r = .field 0 →
-      ∃ (b : _root_.Address) (i : Nat) (cv : Ix.Kernel.ConstantVal .anon) (caps : Ix.Kernel.IndCaps .anon),
-        c.env.find? (c.κ (ixAddr p)) = some (.indInfo cv caps) ∧ ixAddr p = iprjAddr b i ∧
-        ∀ j cicon, c.env.find? (c.κ (cprjAddr b i j)) = some cicon →
-          ∀ q B dom body mb, stripForalls q cicon.toConstantVal.type = some B →
-            B = .forallE dom body mb → ¬ mentionsKey (fun key => key = c.κ (ixAddr p)) dom
+      ∃ (b : Bytes.Address) (ms : List Bytes.Address), MembersClean c ms ms ∧
+        ∀ cb, Ix.Cert.recordAt c.E (ixAddr b) = some cb →
+          (∀ xs, cb.info = .muts xs → ∀ i ind, xs[i]? = some (.indc ind) →
+            ∃ a ∈ ms, ixAddr a = iprjAddr (ixAddr b) i) ∧
+          ((∀ xs, cb.info ≠ .muts xs) → ms = [p])
 
 /-! ## The family -/
 
@@ -846,63 +855,63 @@ def Fn.name : Fn → String
 
 /-- The function's spec. -/
 def Fn.spec : Fn → SpecFn
-  | .apply_spine => apply_spine
-  | .peel_beta => peel_beta
-  | .red_beta => red_beta
-  | .beta_more => beta_more
-  | .peel_beta_cert => peel_beta_cert
-  | .red_proj => red_proj
-  | .type_sort_never => type_sort_never
-  | .red_unfold => red_unfold
-  | .whnf_with_spine => whnf_with_spine
-  | .whnf_proj_head => whnf_proj_head
-  | .whnf_spine => whnf_spine
-  | .try_nat_dispatch_prewhnf => try_nat_dispatch_prewhnf
-  | .prim_family => prim_family
-  | .try_prim_dispatch => try_prim_dispatch
-  | .try_quot_iota => try_quot_iota
-  | .red_quot => red_quot
-  | .quot_certs => quot_certs
-  | .whnf_const_head => whnf_const_head
-  | .red_rec => red_rec
-  | .try_reduce_projection_definition => try_reduce_projection_definition
-  | .lams_never => lams_never
-  | .projection_definition_info => projection_definition_info
-  | .nat_lit_to_ctor_or_self => nat_lit_to_ctor_or_self
-  | .try_k_synth_iota => try_k_synth_iota
-  | .k_synth_fab => k_synth_fab
-  | .whnf_iota_major => whnf_iota_major
-  | .try_iota => try_iota
-  | .red_iota => red_iota
-  | .iota_cmp => iota_cmp
-  | .iota_certs => iota_certs
-  | .slots_never => slots_never
-  | .pi_peel => pi_peel
-  | .pi_residual => pi_residual
-  | .find_rule => find_rule
-  | .try_struct_eta_iota => try_struct_eta_iota
-  | .eta_iota_fab => eta_iota_fab
-  | .certs_all => certs_all
-  | .se_parent_addr => se_parent_addr
-  | .apply_n_projs => apply_n_projs
-  | .struct_is_rec => struct_is_rec
-  | .struct_scan_members => struct_scan_members
-  | .struct_block_member_addrs => struct_block_member_addrs
-  | .struct_scan_ctors => struct_scan_ctors
-  | .se_peel_tol => se_peel_tol
-  | .se_scan_fields => se_scan_fields
-  | .se_mentions => se_mentions
-  | .se_addr_in => se_addr_in
-  | .whnf => whnf
-  | .whnf_core => whnf_core
-  | .whnf_struct_core => whnf_struct_core
-  | .whnf_struct_core_spine => whnf_struct_core_spine
-  | .whnf_struct_core_proj => whnf_struct_core_proj
-  | .whnf_struct_core_const => whnf_struct_core_const
-  | .whnf_nd => whnf_nd
-  | .whnf_nd_core => whnf_nd_core
-  | .whnf_nd_with_spine => whnf_nd_with_spine
-  | .whnf_nd_proj_head => whnf_nd_proj_head
-  | .whnf_nd_const_head => whnf_nd_const_head
+  | .apply_spine => Whnf.apply_spine
+  | .peel_beta => Whnf.peel_beta
+  | .red_beta => Whnf.red_beta
+  | .beta_more => Whnf.beta_more
+  | .peel_beta_cert => Whnf.peel_beta_cert
+  | .red_proj => Whnf.red_proj
+  | .type_sort_never => Whnf.type_sort_never
+  | .red_unfold => Whnf.red_unfold
+  | .whnf_with_spine => Whnf.whnf_with_spine
+  | .whnf_proj_head => Whnf.whnf_proj_head
+  | .whnf_spine => Whnf.whnf_spine
+  | .try_nat_dispatch_prewhnf => Whnf.try_nat_dispatch_prewhnf
+  | .prim_family => Whnf.prim_family
+  | .try_prim_dispatch => Whnf.try_prim_dispatch
+  | .try_quot_iota => Whnf.try_quot_iota
+  | .red_quot => Whnf.red_quot
+  | .quot_certs => Whnf.quot_certs
+  | .whnf_const_head => Whnf.whnf_const_head
+  | .red_rec => Whnf.red_rec
+  | .try_reduce_projection_definition => Whnf.try_reduce_projection_definition
+  | .lams_never => Whnf.lams_never
+  | .projection_definition_info => Whnf.projection_definition_info
+  | .nat_lit_to_ctor_or_self => Whnf.nat_lit_to_ctor_or_self
+  | .try_k_synth_iota => Whnf.try_k_synth_iota
+  | .k_synth_fab => Whnf.k_synth_fab
+  | .whnf_iota_major => Whnf.whnf_iota_major
+  | .try_iota => Whnf.try_iota
+  | .red_iota => Whnf.red_iota
+  | .iota_cmp => Whnf.iota_cmp
+  | .iota_certs => Whnf.iota_certs
+  | .slots_never => Whnf.slots_never
+  | .pi_peel => Whnf.pi_peel
+  | .pi_residual => Whnf.pi_residual
+  | .find_rule => Whnf.find_rule
+  | .try_struct_eta_iota => Whnf.try_struct_eta_iota
+  | .eta_iota_fab => Whnf.eta_iota_fab
+  | .certs_all => Whnf.certs_all
+  | .se_parent_addr => Whnf.se_parent_addr
+  | .apply_n_projs => Whnf.apply_n_projs
+  | .struct_is_rec => Whnf.struct_is_rec
+  | .struct_scan_members => Whnf.struct_scan_members
+  | .struct_block_member_addrs => Whnf.struct_block_member_addrs
+  | .struct_scan_ctors => Whnf.struct_scan_ctors
+  | .se_peel_tol => Whnf.se_peel_tol
+  | .se_scan_fields => Whnf.se_scan_fields
+  | .se_mentions => Whnf.se_mentions
+  | .se_addr_in => Whnf.se_addr_in
+  | .whnf => Whnf.whnf
+  | .whnf_core => Whnf.whnf_core
+  | .whnf_struct_core => Whnf.whnf_struct_core
+  | .whnf_struct_core_spine => Whnf.whnf_struct_core_spine
+  | .whnf_struct_core_proj => Whnf.whnf_struct_core_proj
+  | .whnf_struct_core_const => Whnf.whnf_struct_core_const
+  | .whnf_nd => Whnf.whnf_nd
+  | .whnf_nd_core => Whnf.whnf_nd_core
+  | .whnf_nd_with_spine => Whnf.whnf_nd_with_spine
+  | .whnf_nd_proj_head => Whnf.whnf_nd_proj_head
+  | .whnf_nd_const_head => Whnf.whnf_nd_const_head
 
 end IxVM.Refinement.Core.Specs.Whnf
