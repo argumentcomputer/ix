@@ -11,6 +11,7 @@ import IxCCTests.Recheck.Perf
 import IxCCTests.Recheck.Producer
 import IxCCTests.Recheck.RootShape
 import IxCCTests.Recheck.Bound
+import IxCCTests.Recheck.Erased
 
 /-! The `tests-recheck` suite: the recheck path in kernel-evaluable
 style. Building the suite evaluates, in the kernel
@@ -277,6 +278,8 @@ def main (args : List String) : IO UInt32 := do
       return #[← Hostile.autoFallback a]
     part a "a certificate's lazy rows: a pinned row or a sparse casesOn, nothing else" do
       return #[← Hostile.sparseLazy a]
+    part a "erased parameters: what a caller drops, no route's run behaviour reads (C2PRE)"
+      (Erased.run a)
     part a "middle-end budgets (REPORT item 2)" do
       return #[← Hostile.budgets a, ← Hostile.betaMoves a, ← Hostile.pendingJoin a,
         ← Hostile.pendChoice a, ← Hostile.retryFallbackMechanism a,
