@@ -17,7 +17,7 @@ mutation targeting one makes exactly that one false.
 | `stored` | every constant of `Sl` is stored under its key, with its level parameters |
 | `lvls` | the program's level count is the stored one |
 | `nodup` | the level parameters are distinct |
-| `noCsimp`, `declOk`, `notOpaque` | the fragment: no `csimp` entry, quotient constant, or opaque by value; a recursor only in an admitted class (`recClassB`, `admittedClasses`) |
+| `noCsimp`, `noWord`, `declOk`, `notOpaque` | the fragment: no `csimp` entry, fixed-width word entry (stage W1), quotient constant, or opaque by value; a recursor only in an admitted class (`recClassB`, `admittedClasses`) |
 | `recShape` | a recursor is stored with the program's counts, level parameters and rules, its type a binder for every argument SrcEval takes (`RecStored`); at `Eq.rec`, `Eq.refl` and `Eq.rec` stored as F3 reads them (`EqReflBasis`, `EqRecBasis`: `Eq.rec`'s type and its one rule compared with `eqRecType` and `eqRecRhs`) |
 | `prim` | a `prim` entry is the operation's role, stored with no level parameters, telescope long enough |
 | `ctor` | a constructor is stored with the program's counts, telescope long enough |
@@ -325,6 +325,11 @@ def noCsimpB (c : CId) : Bool :=
   | some (.csimp ..) => false
   | _ => true
 
+def noWordB (c : CId) : Bool :=
+  match p.table.resolveOf c with
+  | some (.word ..) => false
+  | _ => true
+
 /-- No quotient constant; a recursor only in a class of `adm` (the check takes the library's
 `admittedClasses`; as first landed, no class: `declOkB_nil`). -/
 def declOkB (adm : List RecClass) (c : CId) : Bool :=
@@ -586,6 +591,7 @@ def checkPartsWith (adm : List RecClass) (p : Program) (env : KEnv) (κ : CId �
    ("lvls", Sl.all (lvlsB p lpsOf)),
    ("nodup", Sl.all (nodupB lpsOf)),
    ("noCsimp", Sl.all (noCsimpB p)),
+   ("noWord", Sl.all (noWordB p)),
    ("declOk", Sl.all (declOkB p env κ adm)),
    ("recShape", Sl.all (recShapeB p env κ lpsOf Sl)),
    ("notOpaque", Sl.all fun c => p.table.isOpaqueByValue c == false),
@@ -670,9 +676,9 @@ theorem groundCheckWith_mono {adm adm' : List RecClass} (hsub : ∀ k ∈ adm, k
   unfold groundCheckWith checkPartsWith at h ⊢
   simp only [List.all_cons, List.all_nil, Bool.and_true, Bool.and_eq_true] at h ⊢
   obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, h12, h13, h14, h15, h16, h17, h18, h19,
-    h20, h21, h22, h23, h24⟩ := h
-  exact ⟨h1, h2, h3, h4, List.all_eq_true.mpr fun c hc => hd c (List.all_eq_true.mp h5 c hc), h6,
-    h7, h8, h9, h10, h11, h12, h13, h14, h15, h16, h17, h18, h19, h20, h21, h22, h23, h24⟩
+    h20, h21, h22, h23, h24, h25⟩ := h
+  exact ⟨h1, h2, h3, h4, h5, List.all_eq_true.mpr fun c hc => hd c (List.all_eq_true.mp h6 c hc),
+    h7, h8, h9, h10, h11, h12, h13, h14, h15, h16, h17, h18, h19, h20, h21, h22, h23, h24, h25⟩
 
 /-! ## Soundness -/
 
@@ -697,6 +703,11 @@ theorem noCsimp_of {c : CId} (h : noCsimpB p c = true) :
     ∀ g us thm, p.table.resolveOf c ≠ some (.csimp g us thm) := by
   intro g us thm hr
   simp [noCsimpB, hr] at h
+
+theorem noWord_of {c : CId} (h : noWordB p c = true) :
+    ∀ w op thm, p.table.resolveOf c ≠ some (.word w op thm) := by
+  intro w op thm hr
+  simp [noWordB, hr] at h
 
 theorem recClass_of {adm : List RecClass} {c : CId} (h : declOkB p env κ adm c = true) :
     ∀ sf kk lvls np nmot nmin ni ind rules ty,
@@ -978,6 +989,7 @@ theorem groundFacts_of_check {ann : IxCC.Src.Relevance.Ann}
       fun c hc => beq_iff_eq.mp (all (f := lvlsB p lpsOf) "lvls" (by simp [checkParts, checkPartsWith]) c hc),
       fun c hc => of_decide_eq_true (all (f := nodupB lpsOf) "nodup" (by simp [checkParts, checkPartsWith]) c hc),
       fun c g us thm hc => noCsimp_of (all "noCsimp" (by simp [checkParts, checkPartsWith]) c hc) g us thm,
+      fun c w op thm hc => noWord_of (all "noWord" (by simp [checkParts, checkPartsWith]) c hc) w op thm,
       { cls := fun r hr sf kk lvls np nmot nmin ni ind rules ty hd =>
           recClass_of (all (f := declOkB p env κ admittedClasses) "declOk"
             (by simp [checkParts, checkPartsWith]) r hr) sf kk lvls np nmot nmin ni ind rules ty hd

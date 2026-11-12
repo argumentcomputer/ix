@@ -89,6 +89,7 @@ def headCode : Src.Head → List Nat
   | .recr c => [3, c]
   | .cases c => [4, c]
   | .prim op => [5, Src.PrimOp.all.idxOf op]
+  | .word w op => [6, Src.Width.all.idxOf w, (Src.WordOp.ofWidth w).idxOf op]
 
 mutual
 

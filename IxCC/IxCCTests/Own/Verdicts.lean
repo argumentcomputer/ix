@@ -254,8 +254,9 @@ def compileResult (status : UInt32) (log : String) (closure sidecar : FilePath) 
   let bytes ← IO.FS.readBinFile closure
   let _ ← checked (IxCC.Ixon.V3.decodeAnonymousEnv bytes)
   let json ← readJson sidecar
-  need ((← strField json "format") == "ix/compile-equations/1") "ix emitted an unknown equation sidecar"
+  need ((← strField json "format") == "ix/compile-equations/2") "ix emitted an unknown equation sidecar"
   let _ ← arrField json "equations"
+  let _ ← arrField json "theorems"
   let _ ← arrField json "failures"
   return { verdict := "ok" }
 

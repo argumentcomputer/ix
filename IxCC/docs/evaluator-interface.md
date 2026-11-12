@@ -6,8 +6,10 @@ EV-1 and EV-2 planned ([roadmap](roadmap.md#milestones)).
 ## What exists today
 
 - **SrcEval** ([`Src/Semantics.lean`](../IxCC/Src/Semantics.lean)): the rules
-  E1–E9, A1–A3 and F1–F8 are named only in the module's docstring; no
-  identifier carries them, and there is no version.
+  E1–E9, A1–A3, F1–F8 and F6w are named only in the module's docstring; no
+  identifier carries them. The constant `Src.contractVersion` names the
+  version (2: EV-1's versions so far, below); the rest of EV-1 (rule anchors,
+  the changelog document, the pin check) is not implemented.
 - **The unfolding lemmas** are complete: one bind-form equation per case of
   the evaluator ([`Src/Proof/Unfold.lean`](../IxCC/Src/Proof/Unfold.lean)),
   and clock monotonicity ([`Src/Proof/Mono.lean`](../IxCC/Src/Proof/Mono.lean)).
@@ -103,6 +105,23 @@ clock is a depth bound, counting needs a separate counter.
   question of evaluation through a stored opaque value (DC-2 in the
   [roadmap](roadmap.md#decisions-to-confirm)). P8, shape typing and the
   result-shape work change no rule.
+- **Versions so far.**
+  - *1*: E1–E9, A1–A3 and F1–F8 as the Phase 1 fragment has them.
+  - *2* (stage W1 of [DR2](data-and-roots-design.md#dr2-fixed-width-integers-and-int)): **F6w**, the
+    fixed-width word operations. A `word w op thm` entry of the unfolding table makes the
+    constant pinned for operation `op` at width `w` (`UInt8` to `UInt64`) a special head of
+    `op`'s arity; saturated, it forces its arguments, reads each as the tower
+    `UIntN.ofBitVec (BitVec.ofFin (Fin.mk n _))` of the pinned constructors with `n` below the
+    width's size (`ofNat`'s as a literal), and returns `WordOp.eval`'s result as such a tower or
+    a literal; otherwise it is stuck. A tower whose number is at or above the size (only a
+    false proof of `Fin.mk`'s bound builds one) is stuck, although the reference body would
+    compute on it: the grounding then needs no fact about such towers, and every tower the rule
+    builds is in range (`WordOp.eval_word_lt`). Not charged. `thm` names the stored theorem that fixes the operation's meaning (an
+    equation over `Nat`'s operations; `ofNat`'s, the bridge to the tower), checked by statement.
+    No other rule changes, and the producer proposes word entries only when the table's `words`
+    switch is on (off until the native lowering exists). Whether the rule agrees with SrcEval's
+    own run of the pinned constant's reference body is tested on every boundary case, not
+    proved (`tests-src`, "F6w against the reference bodies").
 - **Exit.** The version constant and changelog; the entries agree with
   `Src.run` on the K1 roots; the pin check fails on an unversioned change.
 - **Size [estimate].** 0.3–0.6k lines and the documents; weeks.

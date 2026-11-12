@@ -80,6 +80,7 @@ theorem evalConst_eq (c : CId) :
     evalConst p k ls c =
       match p.table.resolveOf c with
       | some (.prim op) => headValue p k ls (.prim op)
+      | some (.word w op _) => headValue p k ls (.word w op)
       | some (.csimp g vs _) => later k fun k => eval p k ls [] (.const g vs)
       | some (.eqn _ body) => later k fun k => eval p k ls [] body
       | some (.case _) => headValue p k ls (.cases c)
@@ -349,6 +350,13 @@ theorem fire_cases (c : CId) (args : List Slot) :
 
 theorem fire_prim (op : PrimOp) (args : List Slot) :
     fire p k (.prim op) ls args = (forceAll p k args).bind (primValue p op) := by
+  rw [fire.eq_def]
+  simp only
+  cases forceAll p k args <;> rfl
+
+/-- F6w: a word operation on its forced arguments. -/
+theorem fire_word (w : Width) (op : WordOp) (args : List Slot) :
+    fire p k (.word w op) ls args = (forceAll p k args).bind (p.wordValue w op) := by
   rw [fire.eq_def]
   simp only
   cases forceAll p k args <;> rfl

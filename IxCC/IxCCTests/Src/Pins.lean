@@ -5,7 +5,8 @@ import IxCC.Tools.Check
 rows of `primitives.tsv` it transcribes and all of `src-tables.tsv`, and
 every pinned address that `k1.ixe` contains is a declaration of the right
 shape (each prim row passes its type check, each lazy row its λ count, and
-the opaque-by-value row is a safe opaque). -/
+the opaque-by-value row is a safe opaque), and the fixed-width words' rows (stage W1) are
+`Pinned.wordTableRows`. -/
 
 namespace IxCCTests.Src.Pins
 
@@ -33,7 +34,12 @@ def run (a : Assert) : IO Unit := do
   expectEq a obvRows.size Pinned.opaqueByValueRows.length "src-tables.tsv opaque-by-value rows"
   for (row, (name, hex)) in obvRows.toList.zip Pinned.opaqueByValueRows do
     expect a (row == ["opaque-by-value", name, hex, "-"]) s!"src-tables.tsv row {name}: {row}"
-  expectEq a tables.size (lazyRows.size + obvRows.size) "src-tables.tsv has no other rows"
+  let wordRows := tables.filter fun row => (row.head?.map (·.startsWith "word")).getD false
+  expectEq a wordRows.size Pinned.wordTableRows.length "src-tables.tsv word rows"
+  for (row, (kind, name, hex)) in wordRows.toList.zip Pinned.wordTableRows do
+    expect a (row == [kind, name, hex, "-"]) s!"src-tables.tsv row {name}: {row}"
+  expectEq a tables.size (lazyRows.size + obvRows.size + wordRows.size)
+    "src-tables.tsv has no other rows"
   -- The provenance records the TSV's hash.
   let prov ← IxCC.Tools.Check.readJson (fixtures / "src-tables.provenance.json")
   let recorded ← IxCC.Tools.Check.strField prov "tsv_sha256"

@@ -301,8 +301,8 @@ reached record. Nothing in IxCC takes a theorem's value as a runtime term:
 SrcEval unfolds only safe definitions and allowlisted opaques, erasure the
 same, and the annotator walks the runtime terms `Program.runtimeKeys` gives,
 which name a value only under `isEvaluatedBody`. The consumers that examine a
-theorem's proof refuse one read by statement: `Table.checkEqn` and
-`checkCsimp` (so a table entry names only a theorem whose proof was read), the
+theorem's proof refuse one read by statement: `Table.checkEqn`, `checkCsimp`
+and `checkWord` (so a table entry names only a theorem whose proof was read), the
 axiom-closure walk, and the recheck path's annotation check
 (`Recheck.checkRelevanceKeys`, for an annotation naming its value). The kernel
 still accepts the whole artifact, so every record IxCC reads is one the kernel

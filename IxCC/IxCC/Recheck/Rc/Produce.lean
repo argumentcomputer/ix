@@ -105,6 +105,7 @@ def srcKeyContracts (src : Src.Program) : Key.GKey → List V3.BinderContract
     match h with
     | .ctor c | .quotMk c | .quotLift c | .recr c | .cases c => srcConstContracts src c
     | .prim _ => []
+    | .word .. => []
   | .spec g args =>
     let base := srcKeyContracts src g
     let holeContracts : List (Nat × V3.BinderContract) :=

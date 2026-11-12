@@ -720,6 +720,7 @@ theorem evalConst_step (H : FundHyps M p κ lpsOf S Ok) {k : Nat}
       rw [hk]
       exact hhv _ _ _ φ _ _ hrun (.prim hf' hlp' har')
     | csimp g us thm => exact absurd hres (H.faith.noCsimp c g us thm hSc)
+    | word w op thm => exact absurd hres (H.faith.noWord c w op thm hSc)
     | eqn thm body =>
       obtain ⟨e, hcomp, hrunsE⟩ := H.eqn c thm body hSc hres
       cases k with

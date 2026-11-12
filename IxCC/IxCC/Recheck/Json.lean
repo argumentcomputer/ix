@@ -21,7 +21,7 @@ the relevance annotation of a large closure has many entries:
 | `FieldClass` | `"k"`, `"t"`, `["p", W]` |
 | `TermKey` | `["v", c]` (value), `["q", c]` (eqn body), `["u", r, j]` (rule) |
 | `Tag` | `["l", R, W]`, `["a", R]`, `["e", R]` |
-| table entry | `["prim", op]`, `["csimp", g, thm]`, `["eqn", thm]`, `["case"]` |
+| table entry | `["prim", op]`, `["word", name, thm]` (`name` as `UInt64.add`), `["csimp", g, thm]`, `["eqn", thm]`, `["case"]` |
 | Anf step | `["P2", rounds]`, `["P3", [[caller, [callee, …]], …]]`, `["P4", inv, [[caller, callee, mask], …]]`, `["prune"]` |
 | `Loc` | a register name, `["s", i]`, `["i", i]`, `["o", i]` |
 | allocation | `[numSlots, [[locs, termLocs, [[i, dst, src], …], [[loc, [v, …]], …]], …]]` |
@@ -158,8 +158,16 @@ def primOp? (s : String) : Dec Src.PrimOp :=
   | some op => pure op
   | none => throw s!"bad primitive {s}"
 
+/-- A word operation by its Lean name (`UInt64.add`, `UInt8.toUInt32`). -/
+def wordOp? (s : String) : Dec (Src.Width × Src.WordOp) :=
+  let all := Src.Width.all.flatMap fun w => (Src.WordOp.ofWidth w).map (w, ·)
+  match all.find? (fun (w, op) => op.leanName w == s) with
+  | some wop => pure wop
+  | none => throw s!"bad word operation {s}"
+
 def entry : Src.Table.Entry → Json
   | .prim op => arr [str "prim", str op.name]
+  | .word w op thm => arr [str "word", str (op.leanName w), nat thm]
   | .csimp g thm => arr [str "csimp", nat g, nat thm]
   | .eqn thm => arr [str "eqn", nat thm]
   | .case => arr [str "case"]
@@ -167,6 +175,9 @@ def entry : Src.Table.Entry → Json
 def entry? (j : Json) : Dec Src.Table.Entry := do
   match ← getArr j with
   | [.str "prim", .str op] => .prim <$> primOp? op
+  | [.str "word", .str name, thm] => do
+    let (w, op) ← wordOp? name
+    return .word w op (← natKey? thm)
   | [.str "csimp", g, thm] => return .csimp (← natKey? g) (← natKey? thm)
   | [.str "eqn", thm] => .eqn <$> natKey? thm
   | [.str "case"] => pure .case

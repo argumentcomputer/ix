@@ -1,17 +1,19 @@
 import Lean
 import IxCC.Tools.Check
 import IxCCTests.Corpus.Manifest
+import IxCC.Src.Word
 
 /-! Generator for `fixtures/ixon-v4/src-tables.tsv`.
 
 It enumerates `@[macro_inline]` declarations over the Lean `Init`
 environment of the running toolchain (excluding the generated `T.ctorIdx`
 functions), requires exactly 28 of them, adds
-`Bool.or`/`Bool.and` (lazy through their `Bool.rec` bodies) and
-`Lean.opaqueId` (opaque-by-value), compiles their closure with the pinned ix
-producer, resolves every name with `ix addr-of`, and writes one TSV row per
-constant plus a provenance JSON. The by-name arity of a `lazy` row is the
-number of leading λs of its Lean value.
+`Bool.or`/`Bool.and` (lazy through their `Bool.rec` bodies),
+`Lean.opaqueId` (opaque-by-value) and the fixed-width words' constants
+(`word-type`, `word-ctor`, `word-part` and `word` rows, stage W1), compiles
+their closure with the pinned ix producer, resolves every name with
+`ix addr-of`, and writes one TSV row per constant plus a provenance JSON. The
+by-name arity of a `lazy` row is the number of leading λs of its Lean value.
 
 Regeneration is a manual gate:
 
@@ -23,9 +25,12 @@ lake exe pin-src-tables --ix PATH/TO/ix --work plans/<task>/src-tables \
 ```
 
 `--diagnostics fixtures/ixon-v4/src-diag`, `--sortpoly
-fixtures/ixon-v4/src-sortpoly` and `--kernel-hints fixtures/ixon-v4/kernel-hints`
-instead compile a roots-only fixture from the Lean source in that directory (the
-kernel-hints fixture with seeds beside its root, which the sidecar does not name). -/
+fixtures/ixon-v4/src-sortpoly`, `--words fixtures/ixon-v4/src-words` and
+`--kernel-hints fixtures/ixon-v4/kernel-hints` instead compile a roots-only
+fixture from the Lean source in that directory (the words fixture with
+`--equations`, so that the word operations' stored equations join its closure;
+the kernel-hints fixture with seeds beside its root, which the sidecar does not
+name). -/
 
 open Lean IxCC.Tools.Check
 
@@ -37,6 +42,16 @@ def expectedMacroInline : Nat := 28
 def extraLazy : List Name := [`Bool.or, `Bool.and]
 
 def opaqueByValue : List Name := [`Lean.opaqueId]
+
+/-- The fixed-width words' constants (stage W1), which no kernel role names: per width the type
+and its constructor, the tower's inner constructors, `Nat.le` (the bridge's bound), and every
+primitive operation (`IxCC.Src.WordOp.primitives`), each a row of its own kind. -/
+def wordRows : List (String × Name) :=
+  IxCC.Src.Width.all.map (fun w => ("word-type", w.name.toName)) ++
+  IxCC.Src.Width.all.map (fun w => ("word-ctor", s!"{w.name}.ofBitVec".toName)) ++
+  [("word-part", `BitVec.ofFin), ("word-part", `Fin.mk), ("word-part", `Nat.le)] ++
+  IxCC.Src.Width.all.flatMap fun w =>
+    (IxCC.Src.WordOp.primitives w).map fun op => ("word", (op.leanName w).toName)
 
 /-- Names resolved for tests only (`src-names.tsv`, an untrusted test oracle:
 the relevance census and runtime-set reports). -/
@@ -73,6 +88,8 @@ structure RootsFixture where
   sourceRoot : Option System.FilePath := none
   stem : String
   roots : List Name
+  /-- Compile with `--equations` (the fixed-width words' stored equations join the closure). -/
+  equations : Bool := false
   /-- Constants compiled into the closure beside the roots, which the sidecar does not name. -/
   seeds : List Name := []
 
@@ -96,6 +113,14 @@ def sortPolyFixture : RootsFixture where
     `SortPoly.punitCasesType, `SortPoly.punitRec, `SortPoly.unitBoth, `SortPoly.sigmaRoot,
     `SortPoly.typeArg]
 
+/-- The fixed-width words fixture `fixtures/ixon-v4/src-words/` (stage W1): every word operation
+of every width, compiled with `--equations`, one root per width. -/
+def wordsFixture : RootsFixture where
+  source := "Words.lean"
+  stem := "words"
+  roots := [`Words.u8, `Words.u16, `Words.u32, `Words.u64]
+  equations := true
+
 /-- The kernel-hints fixture `fixtures/ixon-v4/kernel-hints/`: a root, and as seeds the proofs the
 certified kernel checks quickly only with the artifact's reducibility hints, and a mutual block of
 definitions whose hints are recorded under its members' projection records
@@ -107,9 +132,43 @@ def kernelHintsFixture : RootsFixture where
   seeds := [`KernelHints.allOnesXor, `KernelHints.complement16, `KernelHints.complement32,
     `KernelHints.complement64, `KernelHints.ping, `KernelHints.pong]
 
+/-- Resolve `name` against the named twin `named` (`ix addr-of`). -/
+def addrOf (ix : String) (named : System.FilePath) (name : String) : IO String := do
+  let output ← run ix #["addr-of", "--ixe", named.toString, name]
+  let address := (words output).getLastD ""
+  need (isHex 64 address) s!"{name}: ix addr-of gave {repr output}"
+  return address
+
+/-- The sidecar's `equations`, `theorems` and `failures` from `ix compile --equations`'s output
+(`ix/compile-equations/2`), every name resolved against the named twin, as the corpus tool writes
+them (`IxCCTests.Corpus.Build`): `theorems` only when there is one. -/
+def sidecarEquations (ix : String) (named out : System.FilePath) : IO (List (String × Json)) := do
+  let j ← IO.ofExcept (Json.parse (← IO.FS.readFile out))
+  let format ← IO.ofExcept (j.getObjValAs? String "format")
+  need (format == "ix/compile-equations/2") s!"{out}: format {format}"
+  let str := fun (o : Json) (k : String) => IO.ofExcept (o.getObjValAs? String k)
+  let mut eqs : Array Json := #[]
+  for e in ← IO.ofExcept ((← IO.ofExcept (j.getObjVal? "equations")).getArr?) do
+    let d ← str e "definition"
+    let t ← str e "equation"
+    eqs := eqs.push (Json.mkObj [("definition", d), ("definition_address", ← addrOf ix named d),
+      ("equation", t), ("equation_address", ← addrOf ix named t)])
+  let mut thms : Array Json := #[]
+  for e in ← IO.ofExcept ((← IO.ofExcept (j.getObjVal? "theorems")).getArr?) do
+    let s ← str e "subject"
+    let t ← str e "theorem"
+    thms := thms.push (Json.mkObj [("kind", ← str e "kind"), ("subject", s),
+      ("subject_address", ← addrOf ix named s), ("theorem", t),
+      ("theorem_address", ← addrOf ix named t)])
+  let failures ← IO.ofExcept (j.getObjVal? "failures")
+  return [("equations", Json.arr eqs)] ++
+    (if thms.isEmpty then [] else [("theorems", Json.arr thms)]) ++ [("failures", failures)]
+
 /-- Compile a roots-only fixture (anonymous and named), resolve its roots and
-write the closure, its `ixcc/k1-equations/1` sidecar (roots only) and
-a provenance record (`STEM.provenance.json`). -/
+write the closure, its `ixcc/k1-equations/1` sidecar and a provenance record
+(`STEM.provenance.json`). The sidecar names the roots; compiled with
+`--equations`, it also carries `ix`'s equation associations and theorem
+proposals with their addresses (`sidecarEquations`), otherwise none. -/
 def rootsFixture (fx : RootsFixture) (ix : String) (work dir : System.FilePath)
     : IO Unit := do
   IO.FS.createDirAll work
@@ -117,27 +176,29 @@ def rootsFixture (fx : RootsFixture) (ix : String) (work dir : System.FilePath)
   let closure := dir / s!"{fx.stem}.ixe"
   let named := work / s!"{fx.stem}.named.ixe"
   let consts := String.intercalate "," ((fx.roots ++ fx.seeds).map toString)
-  let _ ← run ix #["compile", "--no-build", "--consts", consts, "--anon", "--out", closure.toString,
-    source.toString]
-  let _ ← run ix #["compile", "--no-build", "--consts", consts, "--out", named.toString,
-    source.toString]
+  let eqns := fun (out : String) =>
+    if fx.equations then #["--equations", "--word-equations", "--equations-out", out] else #[]
+  let _ ← run ix (#["compile", "--no-build", "--consts", consts, "--anon", "--out", closure.toString]
+    ++ eqns (work / s!"{fx.stem}.ix-equations.json").toString ++ #[source.toString])
+  let _ ← run ix (#["compile", "--no-build", "--consts", consts, "--out", named.toString]
+    ++ eqns (work / s!"{fx.stem}.named.ix-equations.json").toString ++ #[source.toString])
   let mut roots : Array Json := #[]
   for name in fx.roots do
-    let output ← run ix #["addr-of", "--ixe", named.toString, name.toString]
-    let address := (words output).getLastD ""
-    need (isHex 64 address) s!"{name}: ix addr-of gave {repr output}"
-    roots := roots.push (Json.mkObj [("name", name.toString), ("address", address)])
+    roots := roots.push (Json.mkObj [("name", name.toString),
+      ("address", ← addrOf ix named name.toString)])
+  let rest ← if fx.equations then sidecarEquations ix named (work / s!"{fx.stem}.named.ix-equations.json")
+    else pure [("equations", Json.arr #[]), ("failures", Json.arr #[])]
   let sidecar := dir / s!"{fx.stem}.equations.json"
-  IO.FS.writeFile sidecar ((Json.mkObj [("format", "ixcc/k1-equations/1"),
-    ("source", fx.source), ("roots", Json.arr roots), ("equations", Json.arr #[]),
-    ("failures", Json.arr #[])]).pretty ++ "\n")
+  let head : List (String × Json) :=
+    [("format", "ixcc/k1-equations/1"), ("source", fx.source), ("roots", Json.arr roots)]
+  IO.FS.writeFile sidecar ((Json.mkObj (head ++ rest)).pretty ++ "\n")
   IO.FS.writeFile (dir / s!"{fx.stem}.provenance.json") ((Json.mkObj [
     ("producer_version", String.intercalate " " (words (← run ix #["--version"]))),
     ("producer", IxCCTests.Corpus.producerIx),
     ("commands", toJson [
-      s!"ix compile --no-build --consts <roots{if fx.seeds.isEmpty then "" else " and seeds"}> --anon --out {fx.stem}.ixe {fx.source}",
-      s!"ix compile --no-build --consts <roots{if fx.seeds.isEmpty then "" else " and seeds"}> --out {fx.stem}.named.ixe {fx.source}",
-      s!"ix addr-of --ixe {fx.stem}.named.ixe NAME, for every root"]),
+      s!"ix compile --no-build --consts <roots{if fx.seeds.isEmpty then "" else " and seeds"}>{if fx.equations then " --equations --word-equations" else ""} --anon --out {fx.stem}.ixe {fx.source}",
+      s!"ix compile --no-build --consts <roots{if fx.seeds.isEmpty then "" else " and seeds"}>{if fx.equations then " --equations --word-equations" else ""} --out {fx.stem}.named.ixe {fx.source}",
+      s!"ix addr-of --ixe {fx.stem}.named.ixe NAME, for every root{if fx.equations then " and every name of the equations output" else ""}"]),
     ("source_sha256", ← sha256 source),
     ("named_env_sha256", ← sha256 named),
     ("files", Json.mkObj [(s!"{fx.stem}.ixe", toJson (← sha256 closure)),
@@ -202,14 +263,15 @@ def repin (file oldPrims oldTables : System.FilePath) (newPrims newTables : Syst
 
 def main (args : List String) : IO Unit := do
   let options ← checked (parseArgs ["--ix", "--work", "--out", "--provenance", "--names",
-    "--diagnostics", "--sortpoly", "--kernel-hints", "--repin", "--old-primitives", "--old-tables"] args)
+    "--diagnostics", "--sortpoly", "--words", "--kernel-hints", "--repin", "--old-primitives",
+    "--old-tables"] args)
   if let some file := optional options "--repin" then
     let some oldPrims := optional options "--old-primitives" | throw (IO.userError "missing --old-primitives")
     let some oldTables := optional options "--old-tables" | throw (IO.userError "missing --old-tables")
     repin file oldPrims oldTables "fixtures/ixon-v4/primitives.tsv" "fixtures/ixon-v4/src-tables.tsv"
     return
   for (flag, fxs) in [("--diagnostics", diagFixtures), ("--sortpoly", [sortPolyFixture]),
-      ("--kernel-hints", [kernelHintsFixture])] do
+      ("--words", [wordsFixture]), ("--kernel-hints", [kernelHintsFixture])] do
     if let some dir := optional options flag then
       let some ix := optional options "--ix" | throw (IO.userError "missing --ix")
       for fx in fxs do
@@ -237,6 +299,9 @@ def main (args : List String) : IO Unit := do
   for name in opaqueByValue do
     let _ ← valueOf env name
     rows := rows.push ("opaque-by-value", name, none)
+  for (kind, name) in wordRows do
+    need (env.contains name) s!"{name}: not in the Init environment"
+    rows := rows.push (kind, name, none)
   IO.FS.createDirAll work
   let source := work / "SrcTables.lean"
   IO.FS.writeFile source "/-! Seed file for `ix compile --consts`: the Init environment only. -/\n"

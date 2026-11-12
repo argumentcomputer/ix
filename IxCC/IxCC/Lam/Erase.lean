@@ -145,6 +145,7 @@ def wrapperBody (h : Head) (q : Profile) : M Term := do
   match h with
   | .prim op =>
     return Term.lams modes (.prim (Prim.ofSrc op) ((List.range a).map fun i => cx.lvl i))
+  | .word w op => decline "erase-word" s!"{op.leanName w}: fixed-width words are not lowered yet"
   | .ctor c | .quotMk c | .quotLift c | .recr c | .cases c =>
     unless I.headOf c == some h do
       decline "erase-key" s!"a wrapper of a head that {c} is not" c
@@ -273,6 +274,8 @@ def rootId (c : CId) : M GlobalId := do
     if I.isOpaqueByValue c then globalId (.const c q)
     else decline "erase-root" "an opaque root" c
   | some (.prim op), _ => globalId (.wrapper (.prim op) q)
+  | some (.word w op _), _ =>
+    decline "erase-word" s!"{op.leanName w}: fixed-width words are not lowered yet" c
   | some (.case _), _ => globalId (.wrapper (.cases c) q)
   | none, some (.ctor ..) => globalId (.wrapper (.ctor c) q)
   | none, some (.recr ..) => globalId (.wrapper (.recr c) q)

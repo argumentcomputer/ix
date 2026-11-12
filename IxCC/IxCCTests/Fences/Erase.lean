@@ -1,4 +1,5 @@
 import IxCC.Src.Proof.Mono
+import IxCC.Src.Word
 import IxCC.Lam.Proof.Mono
 import IxCC.Lam.Erase.Proof.Correct
 import IxCC.Src.Relevance.Proof.Sound
@@ -6,11 +7,28 @@ import IxCC.Lam.Erase.Proof.ModesOk
 import IxCC.Lam.Erase.Proof.WFProg
 
 /-! Required axiom fences for the source-to-Lam theorems: clock
-monotonicity of SrcEval and Lam, erasure's correctness, and the relevance
-checker's soundness. Expected messages are preserved verbatim. -/
+monotonicity of SrcEval and Lam, erasure's correctness, the relevance
+checker's soundness, and the fixed-width words' lemmas (stage W1: the range lemma
+`WordOp.eval_word_lt`, the width facts it uses, and F6w's unfolding `fire_word`).
+Expected messages are preserved verbatim. -/
 
 /-- info: 'IxCC.Src.eval_mono' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Src.eval_mono
+
+/-- info: 'IxCC.Src.WordOp.eval_word_lt' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.WordOp.eval_word_lt
+
+/-- info: 'IxCC.Src.Width.size_pos' does not depend on any axioms -/
+#guard_msgs in #print axioms IxCC.Src.Width.size_pos
+
+/-- info: 'IxCC.Src.Width.bits_pos' does not depend on any axioms -/
+#guard_msgs in #print axioms IxCC.Src.Width.bits_pos
+
+/-- info: 'IxCC.Src.Width.size_le_of_bits_le' does not depend on any axioms -/
+#guard_msgs in #print axioms IxCC.Src.Width.size_le_of_bits_le
+
+/-- info: 'IxCC.Src.fire_word' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.fire_word
 
 /-- info: 'IxCC.Src.apply_mono' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Src.apply_mono

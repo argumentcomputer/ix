@@ -322,7 +322,9 @@ annotated twin measured against the plain one.
 
 ## DR2. Fixed-width integers and `Int`
 
-**Status: planned** (Phase 3).
+**Status: in progress** (Phase 3, stage W1: the word operations as primitives, tagged at run
+time). Implemented so far: the operations' exact meaning, SrcEval's rule, the pins, the stored
+equations and their table check, behind a switch that is off (below, "Stage W1").
 
 **Motivation.** BLAKE3 and `qsort` (K4); the bignum library's limbs; IxCK,
 whose executable closure uses `UInt64`, `UInt8`, `USize` and `Int`
@@ -331,11 +333,16 @@ throughout (occurrences in the 79 modules of the import closure of
 `UInt64` 219, `UInt8` 137, `Int` 70, `USize` 7); IxOS, where addresses and page-table
 entries are 64-bit words.
 
-**Current state.** There are no fixed-width primitives. Erasure unboxes
+**Current state.** No compiled program uses a fixed-width primitive yet. Erasure unboxes
 single-field structures ([Relevance and
 erasure](compiler-design.md#relevance-and-erasure)), so `UInt64` (a structure
-over `BitVec 64`, over `Fin (2^64)`) arrives at Lir as a tagged `Nat`; a value
-at or above 2^63 then fails with `natOverflow` ([`Rt/Layout.lean:35`](../IxCC/Rt/Layout.lean)).
+over `BitVec 64`, over `Fin (2^64)`) arrives at Lir as a tagged `Nat`, and its operations compile
+from their reference bodies. **Every** `UInt64` operation then fails natively with `natOverflow`
+([`Rt/Layout.lean:35`](../IxCC/Rt/Layout.lean)), on every input, `3 + 4` included: each body
+computes `x % 2^64` with `2^64` a `Nat` (`BitVec.ofNat`, `Fin.Internal.ofNat`), which has no tagged
+word. (An earlier version of this paragraph said only values at or above `2^63` fail.) `UInt8`,
+`UInt16` and `UInt32` work, their sizes fitting; compiled, the middle end inlines their bodies and
+folds the constants.
 Fir has a `word` representation that nothing selects
 ([`Fir/Syntax.lean:70-77`](../IxCC/Fir/Syntax.lean)). `USize`'s width comes
 from `System.Platform.getNumBits`, an `@[extern]` opaque in Lean's
@@ -361,6 +368,54 @@ over `Nat`. No committed fixture exercises any of these types.
 3. `Int` first compiles as ordinary data through its reference bodies
    (needs only DR1). Then a signed small representation and primitives;
    large values use the bignum library (Phase 4).
+
+**Stage W1** (words as primitives, tagged at run time; the data-types plan's first stage). What
+exists, behind `Table.Config.words`, which is off, so no compile changes:
+- the exact meaning `WordOp.eval` of every operation of `UInt8` to `UInt64`
+  ([`Src/Word.lean`](../IxCC/Src/Word.lean)), tested against Lean's C implementations and, by the
+  kernel's `decide`, against the reference bodies;
+- SrcEval's rule F6w (contract version 2, [evaluator interface](evaluator-interface.md)) and the
+  table entry `word w op thm`. The rule reads a word only when its number is below the width's
+  size, so it is stuck on a tower only a false proof builds (the reference body would compute
+  on it), and every tower it builds is in range (`WordOp.eval_word_lt`). The entry names the
+  constant at the operation's pinned address
+  (`src-tables.tsv`'s `word` rows), and `thm` a stored theorem whose statement is the operation's
+  equation over `Nat`'s operations on `UIntN.ofNat x` (and `y`); `ofNat`'s theorem is the
+  *reducing bridge* `∀ x (h : Nat.le (Nat.succ (x % size)) size), ofNat x = tower (x % size) h`
+  ([`Src/Table/Word.lean`](../IxCC/Src/Table/Word.lean)). An earlier draft's bridge, below the
+  size only, constrained nothing above it (a key returning `5` there satisfied it);
+  `IxCCTests/Src/Words.lean` refutes that key with the reducing bridge;
+- the theorems, which `ix compile --equations --word-equations` adds for every word operation a closure reaches
+  (`Ix/Compile/WordEquations.lean`) and names, with the operation, in its output's `theorems`
+  list; the sidecar carries the list with addresses ([corpus](corpus.md), "The sidecar"), and the
+  producer proposes a word entry from it only, so ingress, which reads only what a program
+  reaches, finds each theorem and reads it with its proof once its operation is reached (a
+  proposal's theorem is a proof seed); `checkWord` refuses a theorem read by its statement, as
+  `checkEqn` does, and its axiom-closure walk sees the proof; a tampered theorem is refused by
+  the kernel's acceptance at ingress (`tests-src`, `WordRules.tampered`);
+- the harness (`tests-src`): on every boundary case of every primitive operation at every width,
+  F6w's result equals SrcEval's own run of the operation's Lean 4.34.1 reference body (21,996
+  cases), and on a tower at or above the size F6w is stuck (1,216 cases);
+- the decisions (`decEq`, `decLt`, `decLe`) stay reference bodies, not primitives: their bodies
+  reduce to `Nat`'s decisions and never build `2^64`. A primitive decision would need, in the
+  grounding, that every element of `Decidable p` in the model is one of its two constructors'
+  images, which no law states.
+
+Not yet: the native lowering (erasure declines a word entry, `erase-word`), and the grounding.
+The grounding check refuses a word entry (`Faith.noWord`, conjunct `noWord`, temporary): the word
+case of the fundamental lemma is not proved. Besides what the stored equations say (`mem` and
+`eq_equality` make each hold in every model; `nat_accel` evaluates its right side), that case needs
+the result tower typed in the model: its constructors' stored types mention
+`OfNat.ofNat Nat 64 _`, `2 ^ w` through `HPow` and `LT.lt Nat instLTNat`, which no stored
+equation speaks of. The grounding's direct route decides them by its conversion (δ, `proj_ctor`,
+`nat_accel`; measured on the words closure), so no law or further stored theorem is expected.
+The input towers' range needs no fact: F6w reads only towers below the size. When that case is
+proved, `noWord` gives way to a check that every word entry's facts hold. Open for turning the
+switch on: `ix compile --word-equations` is opt-in (a closure reaches word operations through
+proofs alone, an `omega` termination proof for one, so adding the equations by default would
+change closures that never run a word operation); whether `ix` should add them by itself for the
+word operations a closure reaches in positions that run is not decided, and until it is, the
+families that need word entries pass the flag.
 
 SrcEval needs one rule for raw words to be sound: a bounded construction
 whose erased proof is false (for example `UInt64.ofNatLT n h` with

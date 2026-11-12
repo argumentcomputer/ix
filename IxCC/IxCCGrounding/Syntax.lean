@@ -956,6 +956,9 @@ structure FaithWith (Recs : Prop) (p : Program) (env : KEnv) (κ : CId → KKey)
   lvls : ∀ c, S c → lvlsOf p c = (lpsOf c).length
   nodup : ∀ c, S c → (lpsOf c).Nodup
   noCsimp : ∀ c g us thm, S c → p.table.resolveOf c ≠ some (.csimp g us thm)
+  /-- No fixed-width word entry (stage W1): their model fact (`wordAccel_of_eqns`) is not yet in
+  the library, so a program whose relevant closure reaches one is outside the grounded fragment. -/
+  noWord : ∀ c w op thm, S c → p.table.resolveOf c ≠ some (.word w op thm)
   /-- the recursors of `S` (`RecFacts`: each in an admitted class, with the checked shape; as
   first landed, `NoRecr`: none) -/
   recs : Recs

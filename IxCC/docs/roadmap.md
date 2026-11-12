@@ -299,8 +299,14 @@ hosted-CI or cold-store timing is claimed.
 - **Values.** `Nat`, exact above Lir and at run time a tagged word below
   2^63 (a larger value is the resource failure `natOverflow`); constructors
   of inductive types; □. Fixed-width integers have no representation of
-  their own (erasure unboxes them to `Nat`, so a `UInt64` at or above 2^63
-  fails like a `Nat`); there are no arrays, byte arrays or strings.
+  their own (erasure unboxes them to `Nat`); `UInt8` to `UInt32` work, but
+  every `UInt64` operation fails natively with `natOverflow` on every input,
+  since its reference body computes modulo the `Nat` 2^64 (measured,
+  [DR2](data-and-roots-design.md#dr2-fixed-width-integers-and-int)). Stage W1
+  makes the word operations primitives; so far SrcEval's rule F6w, its table
+  entry and check, and the stored equations `ix compile --equations --word-equations` adds and
+  names exist behind a switch that is off (`Table.Config.words`), so nothing
+  compiles differently yet. There are no arrays, byte arrays or strings.
 - **Higher-order code**: bounded inlining and specialisation (P3, P4)
   remove what they can; the closures step (P8, Phase 2) turns any remaining
   closure into a constructor cell and every unknown call into a call of a

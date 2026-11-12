@@ -898,6 +898,7 @@ def checkCanonical (p : Program) (ann : Ann) (ch : Checked) : List RelError :=
       let (ps, res) := classifyTelescope p [] (d.type.piCount + 1) d.type
       let okPrim := match p.table.resolveOf c with
         | some (.prim op) => cr.result == .rel && cr.params == List.replicate op.arity .rel
+        | some (.word _ op _) => cr.result == .rel && cr.params == List.replicate op.arity .rel
         | _ => true
       okPrim &&
       cr.params.length == ps.length &&

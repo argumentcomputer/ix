@@ -171,6 +171,7 @@ def declText (r : Nat → String) : DeclRef → String
 
 def entryText : Table.Entry → String
   | .prim op => paren s!".prim {primOp op}"
+  | .word w op thm => paren s!".word {reprArg w} {reprArg op} {thm}"
   | .csimp g thm => paren s!".csimp {g} {thm}"
   | .eqn thm => paren s!".eqn {thm}"
   | .case => ".case"

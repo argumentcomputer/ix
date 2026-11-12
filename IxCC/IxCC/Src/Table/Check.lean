@@ -16,6 +16,9 @@ structure Config where
   /-- The primitive operations with native lowering; others resolve
   through their `eqn` entry or kernel body. -/
   prims : List PrimOp := PrimOp.all
+  /-- Whether the fixed-width word operations are primitives (stage W1, `Table.Word`); until
+  their lowering exists, only SrcEval's tests and tools turn this on. -/
+  words : Bool := false
   /-- Node cap for `inline` entries. -/
   inlineCap : Nat := 256
   deriving Inhabited

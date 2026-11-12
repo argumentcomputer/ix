@@ -107,6 +107,7 @@ step "$BIN/refreeze-ixon" rc-real-source --ix "$IX" --ix-path "$FAKE" --work "$W
 unset LEAN_PATH
 step env PATH="$FAKE:$PATH" "$BIN/pin-src-tables" --ix "$IX" --diagnostics fixtures/ixon-v4/src-diag --work "$WORK/diag" > "$LOG/diag.log" 2>&1 || die "src-diag"
 step env PATH="$FAKE:$PATH" "$BIN/pin-src-tables" --ix "$IX" --sortpoly fixtures/ixon-v4/src-sortpoly --work "$WORK/sortpoly" > "$LOG/sortpoly.log" 2>&1 || die "src-sortpoly"
+step env PATH="$FAKE:$PATH" "$BIN/pin-src-tables" --ix "$IX" --words fixtures/ixon-v4/src-words --work "$WORK/words" > "$LOG/words.log" 2>&1 || die "src-words"
 step env PATH="$FAKE:$PATH" "$BIN/pin-src-tables" --ix "$IX" --kernel-hints fixtures/ixon-v4/kernel-hints --work "$WORK/kernel-hints" > "$LOG/kernel-hints.log" 2>&1 || die "kernel-hints"
 
 # 3. the generated modules (written into the tree; the generators read its fixtures)

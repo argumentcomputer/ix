@@ -30,6 +30,12 @@ meaning of a program. Rules:
   levels and F2 elsewhere); F4 empty recursors trap; F5 `case` forces the major and the
   selected minor and applies it to the fields (charged); F6 primitives on
   literals; F7 `Quot.mk`; F8 `Quot.lift` (charged).
+* F6w (stage W1): a fixed-width word operation (a `word` table entry) forces its
+  arguments, reads each as the tower `UIntN.ofBitVec (BitVec.ofFin (Fin.mk n _))`
+  of the pinned constructors with `n` below the width's size (`ofNat`'s as a
+  `Nat` literal), and returns `WordOp.eval`'s result as a tower (`mkWord?`) or a
+  literal; anything else, an out-of-range tower included, is stuck. Not
+  charged, as F6 is not.
 * E9 string expansion is not in the Phase 1 fragment: a string used as a
   projection subject or major is stuck (`Admit` declines strings).
 
@@ -68,6 +74,7 @@ def headArity (p : Program) : Head → Nat
       | _ => 0
     | _ => 0
   | .prim op => op.arity
+  | .word _ op => op.arity
 
 /-- The rule and field slots for a forced major (F2): `Nat` literals peel
 when the recursor's inductive is the pinned `Nat`; otherwise the value must
@@ -97,6 +104,59 @@ def boolValue (p : Program) (b : Bool) : Result Value :=
   match (if b then p.known.boolTrue else p.known.boolFalse) with
   | some c => .ok (.con c [] [] [])
   | none => .stuck
+
+/-- The constructor `UIntN.ofBitVec` of width `w`, where pinned and present. -/
+def wordCtor? (p : Program) (w : Width) : Option CId := p.known.wordCtors.lookup w
+
+/-- A value read as a word of width `w` (F6w): the tower `UIntN.ofBitVec (BitVec.ofFin (Fin.mk n
+_))` of the pinned constructors around a literal `n` below the width's size. Its parameter slots
+and proof are not read; the number is, and a tower whose number is at or above the size (which
+only a false proof of `Fin.mk`'s bound builds) is not a word here, so F6w is stuck on it rather
+than computing what the reference body would. -/
+def asWord? (p : Program) (w : Width) : Value → Option Nat
+  | .con c _ [] [.con c' _ [_] [.con c'' _ [_] [.lit n, _]]] =>
+    if some c == p.wordCtor? w && some c' == p.known.bitVecOfFin && some c'' == p.known.finMk &&
+        decide (n < w.size) then
+      some n
+    else none
+  | _ => none
+
+/-- The tower of a word (F6w's result): the parameters as literal slots, the proof field `irr`
+with no term. -/
+def mkWord? (p : Program) (w : Width) (n : Nat) : Option Value := do
+  let c ← p.wordCtor? w
+  let bv ← p.known.bitVecOfFin
+  let fin ← p.known.finMk
+  pure (.con c [] [] [.con bv [] [.val (.lit w.bits)]
+    [.con fin [] [.val (.lit w.size)] [.lit n, .irr none [] []]]])
+
+/-- A word operation's result as a value: a tower or a literal. A decision is stuck: no table
+entry makes one a primitive in stage W1 (`WordOp.isPrimitive`). -/
+def wordResult (p : Program) : WordResult → Result Value
+  | .word w n => Result.ofOption (p.mkWord? w n)
+  | .nat n => .ok (.lit n)
+  | .dec _ => .stuck
+
+/-- F6w on the forced arguments: `ofNat`'s a literal, every other argument a word of width
+`w`, as many as the operation's arity. -/
+def wordValue (p : Program) (w : Width) (op : WordOp) : List Value → Result Value
+  | [a] =>
+    if op.arity != 1 then .stuck
+    else
+      let x? : Option Nat := match op, a with
+        | .ofNat, .lit n => some n
+        | .ofNat, _ => none
+        | _, v => p.asWord? w v
+      match x? with
+      | some x => p.wordResult (op.eval w x 0)
+      | none => .stuck
+  | [a, b] =>
+    if op.arity != 2 then .stuck
+    else
+      match p.asWord? w a, p.asWord? w b with
+      | some x, some y => p.wordResult (op.eval w x y)
+      | _, _ => .stuck
+  | _ => .stuck
 
 /-- E6: the field of the structure's only constructor. -/
 def projectField (p : Program) (s : CId) (i : Nat) : Value → Result Value
@@ -168,6 +228,7 @@ termination_by (k, sizeOf t + 3, 0)
 def evalConst (p : Program) (k : Nat) (ls : Levels) (c : CId) : Result Value :=
   match p.table.resolveOf c with
   | some (.prim op) => headValue p k ls (.prim op)
+  | some (.word w op _) => headValue p k ls (.word w op)
   | some (.csimp g vs _) =>
     match k with
     | 0 => .timeout
@@ -367,6 +428,13 @@ def fire (p : Program) (k : Nat) (h : Head) (ls : Levels) (args : List Slot) : R
     | .resource r => .resource r
     | .trap => .trap
     | .stuck => .stuck
+  | .word w op =>
+    match forceAll p k args with
+    | .ok vs => p.wordValue w op vs
+    | .timeout => .timeout
+    | .resource r => .resource r
+    | .trap => .trap
+    | .stuck => .stuck
 termination_by (k, 1, 0)
 
 def force (p : Program) (k : Nat) (s : Slot) : Result Value :=
@@ -397,6 +465,10 @@ def forceAll (p : Program) (k : Nat) (ss : List Slot) : Result (List Value) :=
 termination_by (k, 0, ss.length + 1)
 
 end
+
+/-- The evaluator contract's version (`docs/evaluator-interface.md`, EV-1's versions so far): 1,
+the rules E1–E9, A1–A3 and F1–F8; 2, with F6w (stage W1, the fixed-width word operations). -/
+def contractVersion : Nat := 2
 
 /-- Run a root on argument values: δ on the root, then β per argument. -/
 def run (p : Program) (k : Nat) (root : CId) (xs : List Value) : Result Value :=

@@ -5231,7 +5231,7 @@
             "lean-run"
           ],
           "decline": null,
-          "note": "254 fields, the most a header counts: allocated, kept through a recursion and read. The structure's logical unit holds records over the decoder's depth budget (`mk.injEq`, `mk.inj`, `noConfusion`, `rec`, `casesOn`), which the root does not reach; the block and `mk254`, which it does, are within it",
+          "note": "254 fields, the most a header counts: allocated, kept through a recursion and read. The structure's logical unit holds records over the decoder's depth budget (`noConfusionType`, `mk.noConfusion`, `_sizeOf_1`, `mk.sizeOf_spec`, `noConfusion`, `casesOn`, `recOn`, `rec`), which the root does not reach (`mk.inj` and `mk.injEq` are not generated: the source turns `genInjectivity` off); the block and `mk254`, which it does, are within it",
           "cases": [
             {
               "args": [

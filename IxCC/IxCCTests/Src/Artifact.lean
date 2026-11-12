@@ -113,6 +113,7 @@ def primOp (op : PrimOp) : String := s!".{op.name}"
 
 def resolve : Resolve → String
   | .prim op => paren s!".prim {primOp op}"
+  | .word w op thm => paren s!".word {reprArg w} {reprArg op} {thm}"
   | .csimp g us thm => paren s!".csimp {g} {listOf univ us} {thm}"
   | .eqn thm body => paren s!".eqn {thm}\n    {term body}"
   | .case r => paren s!".case {r}"

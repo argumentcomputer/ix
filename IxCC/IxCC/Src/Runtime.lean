@@ -84,6 +84,7 @@ def isEvaluatedBody (p : Program) (c : CId) : Bool :=
 def runtimeKeys (p : Program) (c : CId) : List TermKey :=
   match p.table.resolveOf c with
   | some (.prim _) => []
+  | some (.word ..) => []
   | some (.csimp ..) => []
   | some (.eqn ..) => [.eqn c]
   | some (.case _) => []

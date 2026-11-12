@@ -172,9 +172,9 @@ examined by neither through IxCC: its validity is the kernel's acceptance of the
 whole artifact, and premise (i)'s where its theorem is in the closure of `S`.
 
 The table's checks rest on one property of that reading: **everything a proof
-seed reaches is read with proofs** (an `eqn` or `csimp` theorem's proof closure
-holds no theorem read by its statement). `Table.checkEqn` and `checkCsimp`
-refuse a theorem read by its statement, and the axiom-closure walk refuses one
+seed reaches is read with proofs** (an `eqn`, `csimp` or `word` theorem's proof
+closure holds no theorem read by its statement). `Table.checkEqn`, `checkCsimp`
+and `checkWord` refuse a theorem read by its statement, and the axiom-closure walk refuses one
 at every step, so the walk's guarantee (`checkAxiomClosure_sound`) is about
 proofs that were read. But `checkAxiomClosure`'s shortcut (every axiom of `P`
 standard, so no walk) looks only at the theorem it is asked about, not at what
@@ -295,6 +295,7 @@ denotation to lie in its domain, which only premise (ii)'s derivations give.
 | E8 δ, a definition | a stored definition denotes its value, at the levels its use induces | δ (`defn_value`) | a field, proved, on a follow-up branch (not on the pull request's head) | no | **blocks** until the claim fixes values |
 | E8, level instantiation | a constant depends on the level assignment only through its own parameters | level-parameter irrelevance | a theorem of the internal-backed model, not public | no | **blocks** (every level assignment) |
 | E8, `prim` entry; F6 | the operation on literals denotes the literal of its value, for all literals (no `pow` cap) | the `Nat` accelerations | to build | no | **blocks**, unless derived from δ, ι and the role specifications (2–4k lines on IxCC's side) |
+| E8, `word` entry; F6w (stage W1, words off by default) | a pinned word operation on words in range denotes the tower (or literal) of `WordOp.eval`'s result | none: derived from the operation's stored equation theorem, which the entry names (`mem`, `eq_equality`), `nat_accel` on the `Nat` formula, and the width's stored bridge from `UIntN.ofNat` to the tower; holds for whatever the pins name, since the theorems say what the constants compute | not yet derived (`wordAccel_of_eqns`, planned: its corrected premise, the reducing bridge, tested on instances in `IxCCTests/Src/Words.lean`); the fundamental lemma's case also needs the result tower typed in the model (its constructors' stored types mention `OfNat.ofNat Nat 64 _`, `2 ^ w` and `LT.lt Nat instLTNat`), which no stored equation gives: the direct route's conversion (`convD`, sound from δ, `proj_ctor` and `nat_accel`) decides those types on the words closure, so no further law or stored theorem is expected; the grounding check refuses a word entry (`noWord`, temporary) until both are | no | no (later fragment) |
 | E8, `eqn f thm` | `⟦f xs⟧ = ⟦rhs xs⟧` for arguments in the binders' domains | none: derived from `mem` of the stored theorem and of `Eq`, and `eq_equality` (an inhabited `@Eq A a b` forces `a`, `b` into the domains, since a graph read off its domain is empty, and then equal) | `mem`, `eq_equality` fields everywhere; the derivation is IxCC's lemma | yes (the arguments) | yes, with the theorem a seed |
 | E8, `csimp f g thm` | `⟦@f⟧ = ⟦@g⟧` | as `eqn` | as `eqn` | no | yes, with the theorem a seed |
 | E8, `case` entry; F5 | `T.casesOn` on a constructor is the selected minor on its fields | δ (`casesOn`'s value) and ι | δ and ι fields, proved | yes | yes |

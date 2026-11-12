@@ -52,6 +52,19 @@ Per fixture:
 | `census` | derived | the admission census (`lake exe census`): `path`, `sha256` |
 | `roots[]` | | one closure root each |
 
+**The sidecar** (`ixcc/k1-equations/1`, read by `Src.Hints.ofK1Json`; every entry an untrusted
+proposal the table checks) holds `format`, `source`, `roots` (`name`, `address`), `equations`
+(`definition`, `definition_address`, `equation`, `equation_address`: an `eqn` proposal each),
+`failures` (`ix`'s, for the record), the resource keys when `ix` ran resource admission, and,
+only when `ix` named one, `theorems`: a theorem named with its subject and a kind (`kind`,
+`subject`, `subject_address`, `theorem`, `theorem_address`). The one kind so far is `word`: a
+fixed-width word operation and its stored equation (stage W1 of
+[DR2](data-and-roots-design.md#dr2-fixed-width-integers-and-int)), which nothing in a program
+refers to, so a reader that reads only what a program reaches finds it here; `csimp` theorems
+are to use the same list. `ix` writes word theorems only with `--word-equations`, which no family uses yet (the words fixture, `pin-src-tables --words`, does); the rebuild copies the list from `ix compile --equations`'s output
+(`ix/compile-equations/2`: `equations`, `theorems` with `kind`, `subject`, `theorem`, and
+`failures`, by name).
+
 Per root:
 
 | Field | Kind | Meaning |
@@ -131,8 +144,8 @@ on every case.
 `rebuild` runs, per fixture, the anonymous closure and the named twin
 (`ix compile --no-build --consts ROOTS --equations [--anon]`: the role-bound
 envelope, `ix compile`'s output), checks that their equation lists agree,
-resolves every root, definition and equation name with `ix addr-of` against
-the twin, and writes the sidecar and census. A closure whose envelope does not
+resolves every root, definition, equation, theorem and subject name with
+`ix addr-of` against the twin, and writes the sidecar and census. A closure whose envelope does not
 decode is refused unless the manifest expects every root of the fixture
 declined at `ingress: decode`. (A root that reaches a record over IxCC's
 consumer budget, `phase1-boundary`'s `fields255` and `tags126`, is declined at
