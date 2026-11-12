@@ -724,7 +724,7 @@ widening, at most 1.2 s where it was true) and up to 28.8 s where it is false (`
 its first refused site), except on `tags125`, where it takes 624 s (3.9 s before;
 below); compiled, it is
 not measured apart from the suite, which runs it with the kernel oracle on the
-two subjects and the three widening closures in 5.6 s.
+two subjects and the three widening closures in 5.1 to 5.3 s.
 
 **The direct route on the corpus.** Measured on the 48 committed closures that
 load (the families `bench-k1`, `grounding`, `phase1-scalar`, `phase1-boundary`,
