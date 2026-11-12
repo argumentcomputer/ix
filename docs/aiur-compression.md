@@ -359,26 +359,26 @@ moves inside the formalized compiler's scope.
 
 ## 6. Work required
 
-**Rust (`crates/aiur`).** The interpreter supports wide fields; proving and
-several interchange boundaries still need generalization:
+**Rust (`crates/aiur`).** The interpreter and host trace population support
+wide fields. Several interchange and acceleration boundaries remain narrow:
 
 - `FieldBackend` separates its canonical `Word` from its native `Element`;
   `Program<Word>` carries the matching modulus and constants. Goldilocks
   retains `Word = u64`; the BN254 adapter uses four-limb `FieldWord` (§13).
   Bounded counters and indices use checked narrowing, while full field
   serialization preserves every limb.
-- The trace adapter fixes `System<GoldilocksBlake3Config>` and rejects other
-  moduli (`trace/stark.rs`); `WitnessField::words()` assumes a transparent
-  `u64`. A `System<KzgConfig>` adapter proves the same `CircuitInputs`
-  (constraints and lookups) that `KzgConfig` already accepts in
-  `proof-compression`.
+- The Goldilocks adapter retains `System<GoldilocksBlake3Config>` and
+  `WitnessField::words()`'s `u64` boundary. The BN254 adapter in
+  `proof-compression::aiur_backend::kzg` lowers compiler circuits to
+  `System<KzgConfig>` and proves native host traces (§14). It still needs
+  streaming and resource planning for large verifier executions.
 - Artifact version 2 is limited to 64-bit moduli and constants on both sides.
   The Lean `modulus: Nat` signature does not make the encoding wide:
   `Execution/Encode.lean` rejects moduli at or above `2^64`, and `Ixon.lean`
   rejects such naturals before writing its UInt64 TagN. Trace constants have
   the same bound. The opt-in version-three package codec now carries wide
   field values while keeping counts and indices bounded (§12). Execution
-  inputs, data-hint values, trace population and generated native executors
+  inputs, data-hint values and generated native executors
   (`formal-generated`) still need the corresponding wide support. Native
   execution arguments and host callbacks already carry the full field.
 
@@ -415,8 +415,8 @@ still need implementation:
 - Fq, G1/G2, pairings, MSM and FFTs over Fr come from `ark-bn254`, `ark-ec`
   and `ark-poly`, with `sppark` for the GPU MSM; all are dependencies today.
   They compute the hints the emulation libraries check.
-- The interpreter's wide-field support must extend to host trace population
-  before BN254 proving is available. Native executors and CUDA population stay
+- Native host trace population and a KZG adapter support small BN254 programs.
+  Native executors and CUDA population stay
   Goldilocks-only until measurements call for them. Measure execution and
   proving separately before choosing further acceleration; verifying one
   proof can still involve substantial work.
@@ -715,8 +715,56 @@ falls back to hashing when keys are too large for its small-index shortcut.
 Native-element arguments and callbacks can carry the full field. The existing
 UInt64 invocation, data-hint, structured-value and Lean FFI formats remain
 narrow; structured output fails when a field value cannot be represented.
-Trace population, native code generation and the existing Goldilocks proving
-adapter also retain their UInt64 boundary. A BN254 trace/KZG adapter, wide
-invocation/data-hint formats and the compression programs themselves remain
-later work. This checkpoint executes programs; it does not produce BN254
-Aiur proofs.
+Native code generation and the existing Goldilocks proving adapter retain
+their UInt64 boundary. Wide invocation/data-hint formats and the compression
+programs themselves remain later work. Native host trace generation and KZG
+proving build on this execution interface as described below.
+
+## 14. Native BN254 trace and KZG checkpoint
+
+`TracePlan<Bn254>` validates wide compiler artifacts and populates native Fr
+rows through both compiled recipes and an independent reference interpreter.
+Typed public claims, recursive depth words, fixed-table counts, ROM accesses
+and physical group placements preserve every field limb.
+
+`ix_proof_compression::aiur_backend::kzg::Backend` lowers those compiler
+artifacts to the existing KZG backend's circuit interface. The program, trace
+artifact, fixed tables and setup are trusted configuration; the verifier
+checks the proof against an independently supplied entry, arguments and
+output. Its row, quotient and SRS-domain limits are checked before proving
+and verification. Host diagnostics are not part of verifier acceptance.
+
+Three Lean-generated fixtures exercise recursion, memory and fixed maps;
+certified grouping; and unequal recursive subcalls with the standard `[16, 8]`
+gap range tables. Honest proofs verify. Rebuilt proofs with forged ROM data,
+multiplicities, group selections, depth gaps or range counts fail, as do
+wrong public inputs, outputs and recursive depths. The gap fixture uses a
+65,536-row fixed table. These focused tests use development SRS parameters;
+they do not measure production Ignition proving or replace a compression
+stage yet.
+
+## 15. Whole-environment benchmark entry point
+
+`ix bench run` has an explicit `--env-mode prove|compress` for whole-environment
+proofs. Its ordinary constant-row `--mode` and default execution behavior
+remain separate. The proving mode uses fresh witnesses, verifies the root
+against the refined manifest and records the existing prove/verify metrics.
+Compression adds its own time, memory, proof size and verification metrics;
+`e2e-time` covers proving through final verification. Compilation and initial
+partitioning are setup outside that interval.
+
+The stage-validation command is:
+
+```sh
+ix bench run --backend ixvm --env Init --constants none \
+  --env-mode compress --env-compression plonk --gpu-device 0 \
+  --out target/aiur-compression/init.json
+```
+
+The configured production setup is required unless `--env-dev-srs` is explicit.
+`--ixe` and `--ixes` can select an existing environment and initial manifest.
+The same command with `--env Mathlib` is the final workload once the full Aiur
+pipeline's Init performance is comparable. Benchmark results must identify
+which pipeline implementation was selected; the benchmark entry point itself
+does not replace the current compression stages or establish the final
+two-hour Mathlib target.

@@ -406,6 +406,11 @@ impl<B: FieldBackend> QueryMap<B> {
       None => table.len() == 0,
     })
   }
+  /// Multiplicities in the original fixed map's row order, including unused
+  /// rows. Function callables and unknown IDs have no fixed counts.
+  pub fn fixed_counts(&self, callable: usize) -> Option<&[u64]> {
+    self.tables.get(callable)?.static_map.as_ref().map(|map| &*map.counts)
+  }
   pub fn get(
     &self,
     key: &QueryInput<B::Element>,

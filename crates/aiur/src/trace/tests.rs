@@ -106,6 +106,61 @@ fn square() -> (CheckedProgram, TraceArtifact) {
 }
 
 #[test]
+fn public_claim_checks_typed_boundaries_without_an_execution() {
+  let (program, artifact) = square();
+  let plan = TracePlan::new(&program, activate(artifact)).unwrap();
+  assert_eq!(plan.callable_id("main"), Some(0));
+  assert_eq!(plan.callable_id("missing"), None);
+  assert_eq!(plan.depth_range_tables().count(), 0);
+  assert_eq!(plan.public_claim("main", &[7], &[49]).unwrap(), [1, 0, 7, 49]);
+  assert!(plan.public_claim("missing", &[7], &[49]).is_err());
+  assert!(plan.public_claim("main", &[], &[49]).is_err());
+  assert!(plan.public_claim("main", &[7], &[]).is_err());
+  assert!(plan.public_claim("main", &[97], &[49]).is_err());
+  assert!(plan.public_claim("main", &[7], &[97]).is_err());
+}
+
+#[test]
+fn host_depth_population_exposes_range_maps_and_recursive_public_depth() {
+  let (program, artifact) = crate::artifact::Package::decode(include_bytes!(
+    concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/depth.ixa")
+  ))
+  .and_then(crate::artifact::Package::traced)
+  .unwrap();
+  let mut program = program.check().unwrap();
+  program.track_depth(&artifact).unwrap();
+  let plan = TracePlan::new(&program, artifact).unwrap();
+  assert_eq!(
+    plan.depth_range_tables().collect::<Vec<_>>(),
+    [
+      (0, program.callable_id("Depth::range16").unwrap()),
+      (1, program.callable_id("Depth::range8").unwrap()),
+    ]
+  );
+  let record = program.execute("Depth::run", vec![12]).unwrap();
+  let generated = plan.generate(&record, "Depth::run", &[12], true).unwrap();
+  assert_eq!(
+    generated,
+    plan.generate_reference(&record, "Depth::run", &[12], true).unwrap()
+  );
+  plan.check(&record, &generated, "Depth::run", &[12]).unwrap();
+  assert_eq!(generated.ranges.table(0).iter().sum::<u64>(), 22);
+  assert_eq!(generated.ranges.table(1).iter().sum::<u64>(), 22);
+
+  let record = program.execute("Depth::fib", vec![10]).unwrap();
+  let args = plan.public_args(&record, "Depth::fib", &[10]).unwrap();
+  assert_eq!(args, [10, 9]);
+  let callable =
+    u64::try_from(plan.callable_id("Depth::fib").unwrap()).unwrap();
+  assert_eq!(
+    plan.public_claim("Depth::fib", &args, &[55]).unwrap(),
+    [1, callable, 10, 9, 55]
+  );
+  assert!(plan.public_claim("Depth::fib", &[10], &[55]).is_err());
+  assert!(plan.public_claim("Depth::fib", &[10, u64::MAX], &[55]).is_err());
+}
+
+#[test]
 fn detects_corrupt_rows_counts_shapes_and_plan_indices() {
   let (program, artifact) = square();
   let record = program.execute("main", vec![7]).unwrap();

@@ -5,7 +5,7 @@
 //! hints. Constraints and exact integer message balance can be checked separately.
 use crate::bytecode::{CheckedProgram, Instruction, Type};
 use crate::execute::Execution;
-use crate::field::{FieldBackend, PrimeField};
+use crate::field::{FieldBackend, PrimeField, Word};
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 use rustc_hash::{FxHashMap, FxHashSet};
@@ -30,7 +30,7 @@ pub enum Polynomial<F = u64> {
   Mul(Box<[Polynomial<F>; 2]>),
 }
 
-impl Polynomial {
+impl<W: Word> Polynomial<W> {
   fn visit(&self, f: &mut impl FnMut(usize)) {
     match self {
       Self::Var(v) => f(*v),
@@ -41,7 +41,7 @@ impl Polynomial {
       },
     }
   }
-  fn validate<B: FieldBackend<Word = u64>>(
+  pub fn validate<B: FieldBackend<Word = W>>(
     &self,
     width: usize,
     field: B,
@@ -60,13 +60,13 @@ impl Polynomial {
       _ => Ok(()),
     }
   }
-  pub(crate) fn eval<B: FieldBackend<Word = u64>>(
+  pub(crate) fn eval<B: FieldBackend<Word = W>>(
     &self,
     row: &[B::Element],
     field: B,
   ) -> B::Element {
     match self {
-      Self::Const(v) => field.from_u64(*v),
+      Self::Const(v) => field.from_word(*v),
       Self::Var(v) => row[*v],
       Self::Add(xs) => {
         field.add(xs[0].eval(row, field), xs[1].eval(row, field))
@@ -126,7 +126,7 @@ pub enum Action<F = u64> {
   },
 }
 
-impl Action {
+impl<W> Action<W> {
   fn dest(&self) -> &[usize] {
     match self {
       Self::Assign { dest, .. }
@@ -140,7 +140,7 @@ impl Action {
       },
     }
   }
-  fn expressions(&self) -> Vec<&Polynomial> {
+  fn expressions(&self) -> Vec<&Polynomial<W>> {
     match self {
       Self::Assign { values, .. } | Self::Store { values, .. } => {
         values.iter().collect()
@@ -291,13 +291,13 @@ pub struct FunctionGroup<F = u64> {
 /// `selector` set to one, then each group write in order (evaluated over the
 /// row written so far), then the multiplicity in the last column.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Placement {
+pub struct Placement<W = u64> {
   pub grouped: bool,
   /// Index among the function circuits, in [`Layout::circuits`] order.
   pub circuit: usize,
   pub columns: Vec<usize>,
   pub selector: usize,
-  pub writes: Vec<GroupWrite>,
+  pub writes: Vec<GroupWrite<W>>,
 }
 
 /// The artifact source of one physical function circuit.
@@ -312,9 +312,9 @@ pub enum FunctionCircuit {
 /// The certified physical placement of every chip: function circuits are
 /// emitted in chip order, a group at its first member chip.
 #[derive(Clone, Debug)]
-pub struct Layout {
+pub struct Layout<W = u64> {
   /// By chip index.
-  pub placements: Vec<Placement>,
+  pub placements: Vec<Placement<W>>,
   pub circuits: Vec<FunctionCircuit>,
 }
 
@@ -352,13 +352,13 @@ pub struct PopulationTimings {
 }
 
 /// A checked plan is tied to the immutable checked execution program.
-pub struct TracePlan<'a, B: FieldBackend<Word = u64> = PrimeField> {
+pub struct TracePlan<'a, B: FieldBackend = PrimeField> {
   program: crate::shared::Shared<'a, CheckedProgram<B>>,
-  artifact: TraceArtifact,
+  artifact: TraceArtifact<B::Word>,
   callables: FxHashMap<String, usize>,
   members: Vec<usize>,
   fills: Vec<plan::FillPlan<B>>,
-  depth: depth::DepthPlan,
+  depth: depth::DepthPlan<B::Word>,
 }
 
 fn indices(xs: &[usize], width: usize) -> Result<(), String> {
@@ -369,10 +369,10 @@ fn indices(xs: &[usize], width: usize) -> Result<(), String> {
   }
 }
 
-impl<'a, B: FieldBackend<Word = u64>> TracePlan<'a, B> {
+impl<'a, B: FieldBackend> TracePlan<'a, B> {
   pub fn new(
     program: impl Into<crate::shared::Shared<'a, CheckedProgram<B>>>,
-    mut artifact: TraceArtifact,
+    mut artifact: TraceArtifact<B::Word>,
   ) -> Result<Self, String> {
     let shared = program.into();
     let program = &*shared;
@@ -581,7 +581,7 @@ impl<'a, B: FieldBackend<Word = u64>> TracePlan<'a, B> {
     Ok(Self { program: shared, artifact, callables, members, fills, depth })
   }
 
-  pub fn artifact(&self) -> &TraceArtifact {
+  pub fn artifact(&self) -> &TraceArtifact<B::Word> {
     &self.artifact
   }
 
@@ -594,8 +594,63 @@ impl<'a, B: FieldBackend<Word = u64>> TracePlan<'a, B> {
     &self.members
   }
 
+  pub fn callable_id(&self, name: &str) -> Option<usize> {
+    self.callables.get(name).copied()
+  }
+
+  /// Each depth range table's count-vector index and global callable index.
+  /// Global callable indices include functions before static maps.
+  pub fn depth_range_tables(
+    &self,
+  ) -> impl Iterator<Item = (usize, usize)> + '_ {
+    self
+      .depth
+      .tables
+      .iter()
+      .enumerate()
+      .map(|(index, table)| (index, table.map))
+  }
+
+  /// The ordinary Aiur call message, including a recursive entry's public
+  /// depth word. Its typed arguments and result are checked independently of
+  /// any execution record.
+  pub fn public_claim(
+    &self,
+    entry: &str,
+    args: &[B::Element],
+    output: &[B::Element],
+  ) -> Result<Vec<B::Element>, String> {
+    let id = self.program.entry(entry)?.function;
+    let chip = &self.artifact.chips[self.members[id]];
+    let (inputs, depth) = self.entry_args(id, args);
+    let field = self.program.field;
+    self.program.inputs[id].validate(inputs, field)?;
+    self.program.outputs[id].validate(output, field)?;
+    if chip.depth.column.is_some() && depth.is_none() {
+      return Err(format!(
+        "{entry} is recursive: its public claim needs a depth word after its arguments"
+      ));
+    }
+    if depth.is_some_and(|value| !field.valid(value)) {
+      return Err("noncanonical public depth word".into());
+    }
+    let callable = u64::try_from(self.callables[&chip.name])
+      .map_err(|error| format!("callable index: {error}"))?;
+    if !field.contains(B::Word::from(callable)) {
+      return Err("callable index reaches field characteristic".into());
+    }
+    let mut claim = Vec::with_capacity(
+      2 + inputs.len() + usize::from(depth.is_some()) + output.len(),
+    );
+    claim.extend([field.one(), field.from_u64(callable)]);
+    claim.extend_from_slice(inputs);
+    claim.extend(depth);
+    claim.extend_from_slice(output);
+    Ok(claim)
+  }
+
   /// The physical placement of every chip, validated against the groups.
-  pub fn layout(&self) -> Result<Layout, String> {
+  pub fn layout(&self) -> Result<Layout<B::Word>, String> {
     let artifact = &self.artifact;
     let mut grouped = FxHashMap::default();
     for (gi, group) in artifact.groups.iter().enumerate() {
@@ -608,7 +663,7 @@ impl<'a, B: FieldBackend<Word = u64>> TracePlan<'a, B> {
         }
       }
     }
-    let mut placements: Vec<Option<Placement>> =
+    let mut placements: Vec<Option<Placement<B::Word>>> =
       (0..artifact.chips.len()).map(|_| None).collect();
     let mut circuits = vec![];
     let mut emitted = vec![false; artifact.groups.len()];
@@ -666,8 +721,8 @@ impl<'a, B: FieldBackend<Word = u64>> TracePlan<'a, B> {
   fn validate_member(
     &self,
     width: usize,
-    member: &GroupMember,
-    source: &Chip,
+    member: &GroupMember<B::Word>,
+    source: &Chip<B::Word>,
   ) -> Result<(), String> {
     if member.columns.len() != source.width
       || member.selector >= width
@@ -935,10 +990,13 @@ impl<'a, B: FieldBackend<Word = u64>> TracePlan<'a, B> {
                 );
               },
               Action::Load { address, dest, .. } => {
-                let address =
-                  usize::try_from(field.to_u64(address.eval(&scratch, field)))
-                    .ok()
-                    .ok_or("ROM address overflow")?;
+                let address = usize::try_from(
+                  field
+                    .try_to_u64(address.eval(&scratch, field))
+                    .map_err(|_error| "ROM address overflow")?,
+                )
+                .ok()
+                .ok_or("ROM address overflow")?;
                 let cell = &record
                   .memory
                   .get_by_width(dest.len(), address)
@@ -1039,7 +1097,11 @@ impl<'a, B: FieldBackend<Word = u64>> TracePlan<'a, B> {
       {
         return Err("query record is missing depth heights".into());
       }
-      if table.depths().iter().any(|&d| !self.program.field.contains(d)) {
+      if table
+        .depths()
+        .iter()
+        .any(|&d| !self.program.field.contains(B::Word::from(d)))
+      {
         return Err("query record depth reaches field characteristic".into());
       }
     }
@@ -1075,11 +1137,11 @@ impl<'a, B: FieldBackend<Word = u64>> TracePlan<'a, B> {
       .try_for_each(validate_table)?;
     #[cfg(not(feature = "parallel"))]
     record.queries.tables.iter().enumerate().try_for_each(validate_table)?;
-    if record
-      .memory
-      .iter()
-      .any(|m| m.address as u128 >= u128::from(self.program.field.modulus()))
-    {
+    if record.memory.iter().any(|m| {
+      u64::try_from(m.address).map_or(true, |address| {
+        !self.program.field.contains(B::Word::from(address))
+      })
+    }) {
       return Err("ROM exceeds field capacity".into());
     }
     let validate_memory = |m: crate::memory::MemoryEntryRef<'_, B::Element>| {
@@ -1157,7 +1219,11 @@ impl<'a, B: FieldBackend<Word = u64>> TracePlan<'a, B> {
     })
   }
 
-  fn claim(&self, chip: &Chip, row: &[B::Element]) -> Claim<B::Element> {
+  fn claim(
+    &self,
+    chip: &Chip<B::Word>,
+    row: &[B::Element],
+  ) -> Claim<B::Element> {
     Claim {
       channel: self.callables[&chip.name],
       args: chip.inputs.iter().map(|&i| row[i]).collect(),
@@ -1168,7 +1234,11 @@ impl<'a, B: FieldBackend<Word = u64>> TracePlan<'a, B> {
         .collect(),
     }
   }
-  fn send_claim(&self, send: &Send, row: &[B::Element]) -> Claim<B::Element> {
+  fn send_claim(
+    &self,
+    send: &Send<B::Word>,
+    row: &[B::Element],
+  ) -> Claim<B::Element> {
     Claim {
       channel: self.callables[&send.channel],
       args: send.args.iter().map(|p| p.eval(row, self.program.field)).collect(),
@@ -1241,10 +1311,13 @@ impl<'a, B: FieldBackend<Word = u64>> TracePlan<'a, B> {
           if cell.enable.eval(row, field) != field.one() {
             continue;
           }
-          let address =
-            usize::try_from(field.to_u64(cell.address.eval(row, field)))
-              .ok()
-              .ok_or("ROM address overflow")?;
+          let address = usize::try_from(
+            field
+              .try_to_u64(cell.address.eval(row, field))
+              .map_err(|_error| "ROM address overflow")?,
+          )
+          .ok()
+          .ok_or("ROM address overflow")?;
           let value = &record
             .memory
             .get_by_width(cell.values.len(), address)

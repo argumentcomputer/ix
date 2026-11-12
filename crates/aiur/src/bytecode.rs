@@ -632,11 +632,8 @@ impl<B: FieldBackend> CheckedProgram<B> {
   /// requires a program prepared this way for the same trace.
   pub fn track_depth(
     &mut self,
-    trace: &crate::trace::TraceArtifact,
-  ) -> Result<(), String>
-  where
-    B: FieldBackend<Word = u64>,
-  {
+    trace: &crate::trace::TraceArtifact<B::Word>,
+  ) -> Result<(), String> {
     let sccs = crate::trace::depth::function_sccs(trace)?;
     if sccs.len() != self.program.functions.len() {
       return Err("trace function count mismatch".into());
@@ -667,6 +664,9 @@ impl<B: FieldBackend> CheckedProgram<B> {
   /// of its flattened parameters.
   pub fn input_width(&self, id: usize) -> Option<usize> {
     self.inputs.get(id).map(Layout::width)
+  }
+  pub fn output_width(&self, id: usize) -> Option<usize> {
+    self.outputs.get(id).map(Layout::width)
   }
   pub fn callable_id(&self, name: &str) -> Option<usize> {
     (0..self.inputs.len()).find(|&id| self.callable_name(id) == Some(name))

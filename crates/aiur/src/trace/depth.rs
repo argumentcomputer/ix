@@ -83,11 +83,11 @@ pub(super) enum Kind {
   External(usize),
 }
 
-pub(super) struct SlotFill {
+pub(super) struct SlotFill<W = u64> {
   pub(super) kind: Kind,
-  pub(super) enable: Polynomial,
+  pub(super) enable: Polynomial<W>,
   /// The send's arguments without its final depth word: the callee query.
-  pub(super) args: Vec<Polynomial>,
+  pub(super) args: Vec<Polynomial<W>>,
   /// The functions whose rows the callee circuit holds.
   pub(super) callees: Vec<usize>,
 }
@@ -96,24 +96,24 @@ pub(super) struct SlotFill {
 /// checks that the callee's recorded height is the caller's minus one, so a
 /// slot the Lean planner misclassified fails here, by name, rather than as an
 /// unbalanced lookup at verification.
-pub(super) struct ExactCheck {
+pub(super) struct ExactCheck<W = u64> {
   channel: String,
-  pub(super) enable: Polynomial,
+  pub(super) enable: Polynomial<W>,
   /// The send's arguments without its final depth word: the callee query.
-  pub(super) args: Vec<Polynomial>,
+  pub(super) args: Vec<Polynomial<W>>,
   /// The functions whose rows the callee circuit holds.
   pub(super) callees: Vec<usize>,
 }
 
 /// One circuit's depth columns (exact slots need none), and its exact slots.
-pub(super) struct DepthFill {
+pub(super) struct DepthFill<W = u64> {
   pub(super) column: Option<usize>,
-  pub(super) slots: Vec<SlotFill>,
-  pub(super) exact: Vec<ExactCheck>,
+  pub(super) slots: Vec<SlotFill<W>>,
+  pub(super) exact: Vec<ExactCheck<W>>,
 }
 
 #[cfg(feature = "stark")]
-impl DepthFill {
+impl<W> DepthFill<W> {
   pub(super) fn is_empty(&self) -> bool {
     self.column.is_none() && self.slots.is_empty()
   }
@@ -127,8 +127,8 @@ pub(super) struct RangeTable {
 }
 
 /// Depth population for every circuit of a trace plan.
-pub(super) struct DepthPlan {
-  pub fills: Vec<DepthFill>,
+pub(super) struct DepthPlan<W = u64> {
+  pub fills: Vec<DepthFill<W>>,
   /// Per limb, low first: its width and its range table.
   pub(super) limbs: Vec<(u32, usize)>,
   pub tables: Vec<RangeTable>,
@@ -137,10 +137,10 @@ pub(super) struct DepthPlan {
 
 /// The SCC of every function's circuit, or [`NO_SCC`]: what the executor
 /// needs to record honest heights ([`CheckedProgram::track_depth`]).
-pub(crate) fn function_sccs(
-  artifact: &TraceArtifact,
+pub(crate) fn function_sccs<W>(
+  artifact: &TraceArtifact<W>,
 ) -> Result<Vec<u32>, String> {
-  let chips: FxHashMap<&str, &Chip> =
+  let chips: FxHashMap<&str, &Chip<W>> =
     artifact.chips.iter().map(|c| (c.name.as_str(), c)).collect();
   artifact
     .functions
@@ -159,11 +159,11 @@ pub(crate) fn function_sccs(
     .collect()
 }
 
-impl DepthPlan {
+impl<W: Word> DepthPlan<W> {
   /// Validate the depth metadata of `artifact` against its circuits and
   /// compile it. `members[f]` is function `f`'s circuit.
-  pub(super) fn compile<B: FieldBackend<Word = u64>>(
-    artifact: &TraceArtifact,
+  pub(super) fn compile<B: FieldBackend<Word = W>>(
+    artifact: &TraceArtifact<W>,
     chips: &FxHashMap<String, usize>,
     callables: &FxHashMap<String, usize>,
     members: &[usize],
@@ -193,7 +193,13 @@ impl DepthPlan {
           || program.outputs[map].width() != 0
           || input.len() != 1 << width
           || input.iter().enumerate().any(|(n, row)| {
-            row.len() != 1 || program.field.to_u64(row[0]) != n as u64
+            row.len() != 1
+              || program
+                .field
+                .try_to_u64(row[0])
+                .ok()
+                .and_then(|value| usize::try_from(value).ok())
+                != Some(n)
           })
         {
           return Err(format!("malformed depth range map {name}"));
@@ -286,7 +292,7 @@ impl DepthPlan {
   /// Fill circuit `chip`'s depth columns in `row`, a populated row of the
   /// query whose height is `depth`, and count its range-table uses.
   #[allow(clippy::too_many_arguments)]
-  pub(super) fn fill<B: FieldBackend<Word = u64>>(
+  pub(super) fn fill<B: FieldBackend<Word = W>>(
     &self,
     chip: usize,
     record: &Execution<B>,
@@ -352,7 +358,7 @@ impl DepthPlan {
 
 /// The recorded height of the callee query `args` of a slot, from whichever
 /// of the callee circuit's functions recorded it.
-fn callee_depth<B: FieldBackend<Word = u64>>(
+fn callee_depth<B: FieldBackend>(
   record: &Execution<B>,
   callees: &[usize],
   args: &[B::Element],
@@ -391,7 +397,7 @@ pub struct DepthStatistics {
   pub gap_slot_uses: u64,
 }
 
-impl<B: FieldBackend<Word = u64>> TracePlan<'_, B> {
+impl<B: FieldBackend> TracePlan<'_, B> {
   /// Heights per SCC in `record` and the largest gap limbs `ranges` counted.
   pub fn depth_statistics(
     &self,

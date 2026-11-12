@@ -9,6 +9,8 @@ use aiur::{FieldWord, field::FieldBackend};
 use ark_bn254::Fr;
 use ark_ff::{Field, PrimeField};
 
+pub mod kzg;
+
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Bn254;
 
