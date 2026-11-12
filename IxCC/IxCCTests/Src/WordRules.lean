@@ -26,8 +26,7 @@ open IxCC.Sem (Result)
 
 def dir : System.FilePath := fixtures / "src-words"
 
-/-- The roots, one per width (the relevance annotation covers what a root reaches, so each run
-loads the closure with its own root). -/
+/-- The roots, one per width. -/
 def roots : List (String × Width) :=
   [("Words.u8", .w8), ("Words.u16", .w16), ("Words.u32", .w32), ("Words.u64", .w64)]
 
@@ -96,9 +95,16 @@ def opNumber : WordOp → Width → Option Nat
 def run (a : Assert) : IO (List String) := do
   let mut lines : List String := []
   let mut total := 0
+  -- one load each way: the sidecar names the four roots, so the annotation covers every width
+  let off ← loadPack (dir / "words.ixe") (dir / "words.equations.json")
+  let on ← loadPack (dir / "words.ixe") (dir / "words.equations.json") { table := { words := true } }
+  -- until the lowering exists, erasure declines a word entry (and accepts the program without)
+  expect a (match IxCC.Lam.erase on.program on.checked with
+      | .error e => e.code == "erase-word"
+      | .ok _ => false) "erasure declines a word entry"
+  expect a (IxCC.Lam.erase off.program off.checked).toOption.isSome
+    "erasure accepts the program without word entries"
   for (root, w) in roots do
-    let off ← loadPack (dir / "words.ixe") (dir / "words.equations.json")
-    let on ← loadPack (dir / "words.ixe") (dir / "words.equations.json") { table := { words := true } }
     let rootOff ← rootNamed off root
     let rootOn ← rootNamed on root
     -- the harness, on the program without word entries
@@ -115,12 +121,6 @@ def run (a : Assert) : IO (List String) := do
       | _ => none
     for op in WordOp.primitives w do
       expect a (entries.contains (w, op)) s!"{root}: {op.leanName w} is a word entry"
-    -- until the lowering exists, erasure declines a word entry (and accepts the program without)
-    expect a (match IxCC.Lam.erase on.program on.checked with
-        | .error e => e.code == "erase-word"
-        | .ok _ => false) s!"{root}: erasure declines a word entry"
-    expect a (IxCC.Lam.erase off.program off.checked).toOption.isSome
-      s!"{root}: erasure accepts the program without word entries"
     -- runs, on and off, against eval, at a few boundary pairs per operation
     let mut stepsOn := 0
     let mut stepsOff := 0
