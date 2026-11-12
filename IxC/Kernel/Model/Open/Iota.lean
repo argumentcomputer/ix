@@ -1,6 +1,6 @@
 module
 
-public import IxC.Kernel.Model.Open.ProjType
+public import IxC.Kernel.Model.Open.StructEta
 import IxC.Kernel.Model.Open.Levels
 import IxC.Kernel.Model.Iota
 import IxC.Kernel.Verify.Inductives.StructBody
@@ -715,7 +715,9 @@ theorem Red.iota_sound (hse : StoredEnv env) {d : Nat} {e : Expr md} {c : Key md
       (M.cval rl.ctor (Level.substFn φ cvj.levelParams usj)) := by
     rw [hsubst]; exact .const hctor hlsLen
   have hmaj : ys.foldl app (M.cval rl.ctor (Level.substFn φ cvj.levelParams usj)) ∈ˢ X := by
-    rw [← hm0eq]; exact hm0X
+    have hm0eq' : vs.getD mI empty =
+        ys.foldl app (M.cval rl.ctor (Level.substFn φ cvj.levelParams usj)) := hm0eq
+    rw [← hm0eq']; exact hm0X
   have hparD : rl.compareParams = true →
       DenotesList M.cval env φ σR
         ((dom0.instantiateLevelParams cv.levelParams us).getAppArgs.take rl.ctorParams)
@@ -729,7 +731,7 @@ theorem Red.iota_sound (hse : StoredEnv env) {d : Nat} {e : Expr md} {c : Key md
     | plain =>
       have hpl := hplainF hfr
       have hcpR := recRulePlain_leT hpl
-      obtain ⟨-, dom0', -, -, -, hs0', -, hargs0⟩ := recRulePlain_shapeT hpl
+      obtain ⟨pre0', dom0', body0', bm0', D0', hs0', -, hargs0⟩ := recRulePlain_shapeT hpl
       rw [hs0] at hs0'
       have hs0'' := Option.some.inj hs0'
       simp only [Prod.mk.injEq, Expr.forallE.injEq] at hs0''
@@ -764,7 +766,8 @@ theorem Red.iota_sound (hse : StoredEnv env) {d : Nat} {e : Expr md} {c : Key md
       rw [hget, hyv, ← hσR]
       exact .bvar
     | nested lvls pins =>
-      obtain ⟨hpinsLen, hpinsWF, pre0', dom0', -, -, -, hs0', -, hargs0⟩ := hnestF lvls pins hfr
+      obtain ⟨hpinsLen, hpinsWF, pre0', dom0', body0', bm0', D0', hs0', -, hargs0⟩ :=
+        hnestF lvls pins hfr
       rw [hs0] at hs0'
       have hs0'' := Option.some.inj hs0'
       simp only [Prod.mk.injEq, Expr.forallE.injEq] at hs0''
