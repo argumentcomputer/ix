@@ -76,6 +76,7 @@ theorem Red.rigid {env : Env md} :
     rw [isSortOrPi_false_of_head hhead] at he
     exact nomatch he
   | _, _, _, .natLit _, he => nomatch he
+  | _, _, _, .natZeroLit _, he => nomatch he
   | _, _, _, .strLit _, he => nomatch he
   | _, _, _, .natSucc .., he => nomatch he
   | _, _, _, .natOp .., he => nomatch he

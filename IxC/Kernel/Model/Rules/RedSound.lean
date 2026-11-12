@@ -267,6 +267,19 @@ theorem Red.natLit_sound {d n : Nat} (h : Ix.Kernel.natLitSupported env = true) 
     rw [Ix.Kernel.natLitToConstructor_fvarLeaves] at hl; exact nomatch hl
   · rw [denoteMeta_natLitToConstructor h]; exact hea
 
+/-- `Nat.zero` and the literal `0` read alike (`denoteMeta_natLitToConstructor` at `0`). -/
+theorem Red.natZeroLit_sound {d : Nat} (h : Ix.Kernel.natLitSupported env = true) :
+    RedSem m φ d (.const natZeroName []) (.lit (.natVal 0)) := by
+  intro _ Δa ea _ hea hg
+  have h0 : denoteMeta m.acval env φ d (.lit (.natVal 0)) = some ea := by
+    rw [← denoteMeta_natLitToConstructor h d 0]; exact hea
+  have hnf : (Expr.lit (.natVal 0) : Expr md).hasFvar = false := rfl
+  refine ⟨⟨Ix.Kernel.Expr.WScoped.of_not_hasFvar hnf, rfl,
+      Ix.Kernel.Expr.LeavesBounded.of_not_hasFvar hnf⟩, fun l hl => ?_, ea, h0, hg,
+    fun _ _ => rfl⟩
+  rw [Ix.Kernel.Expr.fvarLeaves_eq_nil_of_not_hasFvar hnf] at hl
+  exact nomatch hl
+
 /-- `denotePStrLit_of_guard` (`Steps/Stuck.lean:540`). -/
 theorem Red.strLit_sound {d : Nat} {s : String}
     (h : Ix.Kernel.strLitSupported env = true) :

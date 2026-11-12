@@ -434,6 +434,11 @@ theorem red_rename (hR : Renaming P f env env') :
     refine ⟨natLitToConstructor_good hR.roles.pre _, ?_⟩
     rw [natLitToConstructor_mapKeys]
     exact .natLit (by rw [natLitSupported_ren hR.rel]; exact h)
+  | _, _, _, .natZeroLit h, _ => by
+    refine ⟨trivial, ?_⟩
+    rw [show (Expr.const natZeroName [] : Expr md) = natLitToConstructor 0 from rfl,
+      natLitToConstructor_mapKeys]
+    exact .natZeroLit (by rw [natLitSupported_ren hR.rel]; exact h)
   | _, _, _, .strLit h, _ => by
     refine ⟨strLitToConstructor_good hR.roles.pre hR.roles.str _, ?_⟩
     rw [strLitToConstructor_mapKeys]
