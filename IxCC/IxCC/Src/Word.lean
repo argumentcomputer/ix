@@ -148,7 +148,7 @@ theorem eval_word_lt (w : Width) (op : WordOp) (a b : Nat) (ha : a < w.size) (hb
       exact Nat.lt_of_lt_of_le ha (Width.size_le_of_bits_le hw)
     · simp only [hw, if_false, WordResult.word.injEq] at h
       obtain ⟨rfl, rfl⟩ := h
-      exact Nat.mod_lt _ w'.size_pos
+      exact Nat.mod_lt _ (Width.size_pos _)
   all_goals obtain ⟨rfl, rfl⟩ := h
   · exact Nat.mod_lt _ hs
   · exact Nat.mod_lt _ hs
