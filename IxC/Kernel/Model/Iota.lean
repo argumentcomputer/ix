@@ -927,6 +927,28 @@ theorem unitLikeLaw_of_envModelM {μ : Ix.Kernel.CheckMode} {env : Env md} (m : 
     exact hz
   exact hlaw ρ' ts _ x y hts hfitT (hmem x hx) (hmem y hy)
 
+/-- **The built-in `PUnit`'s members from the invariant**: the stored `PUnit` is the pin
+(`basis_pinned`), whose leaf is the unit set at every level, so a member at any level is the
+proof point. -/
+theorem punit_pt_of_envModelM {μ : Ix.Kernel.CheckMode} {env : Env md} (m : EnvModelM V μ env)
+    {us : List Level} {φ : LevelParam → Nat} {ρ : Ix.Kernel.BVarIdx → V} {P x : V}
+    (hP : Denotes (cvalOf (V := V) m.base2.acval) env φ ρ (.const Ix.Kernel.punitName us) P)
+    (hx : x ∈ˢ P) : x = pt := by
+  cases hP with
+  | const hf hlen =>
+    have hpin := (m.base2.basis_pinned Ix.Kernel.punitName _ hf (by (cases md <;> decide))).1
+    rw [show Ix.Kernel.pinnedInfo Ix.Kernel.punitName = Ix.Kernel.punitA from rfl] at hpin
+    subst hpin
+    have hpinT : m.base2.cvalE Ix.Kernel.punitName (Level.substFn φ [Ix.Kernel.uN] us)
+        = Term.punitT (Level.substFn φ [Ix.Kernel.uN] us Ix.Kernel.uN) :=
+      (m.base2.basis_pinned Ix.Kernel.punitName _ hf (by (cases md <;> decide))).2 _ _ rfl
+    have hleaf : m.base2.acval Ix.Kernel.punitName (Level.substFn φ [Ix.Kernel.uN] us)
+        = .const .punit [Level.substFn φ [Ix.Kernel.uN] us Ix.Kernel.uN] :=
+      erase_eq_const (by rw [m.base2.acval_erase, hpinT]; rfl)
+    rw [show (Ix.Kernel.punitA : ConstantInfo md).toConstantVal.levelParams = [Ix.Kernel.uN]
+      from rfl, cvalOf, hleaf, interp_const] at hx
+    exact mem_unitSet hx
+
 /-- **The projection tables' laws from the invariant.** The table's pins are its head data
 (`TowerHead`, which `ProjOkT` keeps for every stored table). The projection of a
 constructor is the tower entry's ι clause (`TowerEntryLaw`, clause (B)) at the
@@ -1090,6 +1112,8 @@ noncomputable def Model.ofEnvModelM {μ : Ix.Kernel.CheckMode} {env : Env md}
         (by rw [hψ]; exact hA) ha hb
       rw [interp_cvalOf m.base2.cval_closedL] at hlaw
       exact hlaw
+  punit_unit := fun _ _ _ _ _ _ _ _ _ _ hP hQ hx hy =>
+    (punit_pt_of_envModelM m hP hx).trans (punit_pt_of_envModelM m hQ hy).symm
   defn_value := by
     intro cv value hint hmem φ ρ
     have hr := m.defn_reads φ cv value ⟨hint, hmem⟩

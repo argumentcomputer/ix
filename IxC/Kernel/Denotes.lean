@@ -469,7 +469,8 @@ def GradedLaw (cval : Key md → (LevelParam → Nat) → V) (env : Env md) : Pr
 assignment `cval` of a set to every constant at every level
 assignment — fixed once, for the whole environment — under which every
 stored constant is a member of what its type denotes, the built-in
-`False` is the empty set, the built-in `Eq` is set equality, every
+`False` is the empty set, the built-in `Eq` is set equality, the built-in
+`PUnit` has one member, the same at every level, every
 stored definition is what its value denotes, every stored recursor rule
 computes as Lean's does, the kernel's η laws hold at stored structures and
 unit-like families, the `Nat` operations compute on literals, every
@@ -484,10 +485,10 @@ value, and `cval t φ ∈ˢ ⟦P⟧` says that truth value is `{pt}` — and
 `false_empty` is what makes truth mean something: a proof of `False`
 would be a member of `∅`.
 
-`False` and `Eq` are both built in (the checker installs them from its
+`False`, `Eq` and `PUnit` are built in (the checker installs them from its
 own pins and rejects a stream that declares them otherwise), so
-`false_empty` and `eq_equality` are facts about the checker's own
-constants, not hypotheses about the input; each is stated of whatever
+`false_empty`, `eq_equality` and `punit_unit` are facts about the checker's
+own constants, not hypotheses about the input; each is stated of whatever
 the stored constant denotes, so it says nothing when nothing is stored.
 
 **The constants mean what Lean means.**  Membership alone lets a
@@ -559,6 +560,14 @@ structure Model (V : Type w) [SetTheory V] (env : Env md) where
     Denotes cval env φ ρ (.const eqName [u]) E →
     A ∈ˢ univ (Level.eval φ u) → a ∈ˢ A → b ∈ˢ A →
     app (app (app E A) a) b = eqv a b
+  /-- whatever the built-in `PUnit` denotes has one member at most, and the same one at
+  every level: a member of `PUnit.{us}` at `φ` and a member of `PUnit.{vs}` at `ψ` are
+  equal. The checker identifies any two terms whose types reduce to `PUnit`, whatever
+  the levels (its unit-like test reads the head only) -/
+  punit_unit : ∀ (us vs : List Level) (φ ψ : LevelParam → Nat) (ρ ρ' : BVarIdx → V)
+    (P Q x y : V),
+    Denotes cval env φ ρ (.const punitName us) P →
+    Denotes cval env ψ ρ' (.const punitName vs) Q → x ∈ˢ P → y ∈ˢ Q → x = y
   /-- **δ**: every stored definition denotes what its value denotes, at
   every level assignment (and every variable environment — the value is
   closed).  A use `c.{us}` denotes `cval c` at the assignment `us`

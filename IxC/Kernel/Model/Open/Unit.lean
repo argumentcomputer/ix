@@ -13,6 +13,9 @@ public import IxC.Kernel.Model.Open.Irrel
   certificate's walk is the parameters' fit (`WalkFits.fits`, at the family's arity,
   `StoredArities`), so the unit-like law (`Model.unit_like`) makes the two members equal.
   The law holds at every stored family with the flag, the basis `PUnit` among them.
+* `DefEq.unitLike`: both sides' types reduce to the built-in `PUnit`, at levels the rule
+  never compares. The law that `PUnit` has one member, the same at every level
+  (`Model.punit_unit`), makes the two members equal.
 -/
 
 namespace Ix.Kernel.Open
@@ -109,5 +112,25 @@ theorem DefEq.structUnit_sound (hsc : StoredClosed env) (har : StoredArities env
     hgwa hgwb
   exact unitLike_members hsc har hhead hT hunit hlen hcerts hfwa (hCta.of_subset hsubwa) hTwa
     hgwa hxTa hyTb
+
+/-- **Unit-likeness at the built-in `PUnit`** (`DefEq.unitLike`): both sides' types reduce to
+`PUnit`, at whatever levels, and `PUnit` has one member at every level. -/
+theorem DefEq.unitLike_sound {d : Nat} {a ta wta b tb wtb : Expr md}
+    (ha : InferIOS M φ d a ta) (hwa : RedS M φ d ta wta) (hua : isUnitLikeTy env wta = true)
+    (hb : InferIOS M φ d b tb) (hwb : RedS M φ d tb wtb) (hub : isUnitLikeTy env wtb = true) :
+    DefEqS M φ d a b := by
+  intro hfa hfb σ hCa hCb x y hx hy hga hgb
+  obtain ⟨hfta, hsubta, ka⟩ := ha hfa
+  obtain ⟨-, -, kwa⟩ := hwa hfta
+  obtain ⟨Ta, hTa, hgTa, hxTa⟩ := ka σ hCa x hx hga
+  obtain ⟨hTwa, -⟩ := kwa σ (hCa.of_subset hsubta) Ta hTa hgTa
+  obtain ⟨hftb, hsubtb, kb⟩ := hb hfb
+  obtain ⟨-, -, kwb⟩ := hwb hftb
+  obtain ⟨Tb, hTb, hgTb, hyTb⟩ := kb σ hCb y hy hgb
+  obtain ⟨hTwb, -⟩ := kwb σ (hCb.of_subset hsubtb) Tb hTb hgTb
+  obtain ⟨us, -, -, -, -, -, -, rfl, -⟩ := isUnitLikeTy_inv hua
+  obtain ⟨vs, -, -, -, -, -, -, rfl, -⟩ := isUnitLikeTy_inv hub
+  exact M.punit_unit us vs φ φ ρ₀ ρ₀ Ta Tb x y (DenotesO.to_denotes hTwa rfl)
+    (DenotesO.to_denotes hTwb rfl) hxTa hyTb
 
 end Ix.Kernel.Open

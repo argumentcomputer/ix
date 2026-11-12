@@ -193,6 +193,13 @@ theorem Denotes.const_back {cval : Key md → (LevelParam → Nat) → V} {env e
   cases h with
   | const hf hlen => exact .const (by rw [← hfind]; exact hf) hlen
 
+/-- A constant that denotes is stored. -/
+theorem Denotes.const_stored {cval : Key md → (LevelParam → Nat) → V} {env : Env md}
+    {φ : LevelParam → Nat} {ρ : BVarIdx → V} {n : Key md} {us : List Level} {F : V}
+    (h : Denotes cval env φ ρ (.const n us) F) : ∃ ci, env.find? n = some ci := by
+  cases h with
+  | const hf _ => exact ⟨_, hf⟩
+
 /-- Level instantiation keeps the keys a term mentions. -/
 theorem Expr.RefsIn.instantiateLevelParams {K : Key md → Prop} (ks : List LevelParam)
     (us : List Level) : ∀ {e : Expr md}, e.RefsIn K → (e.instantiateLevelParams ks us).RefsIn K := by
@@ -240,6 +247,16 @@ def Model.restrict {env env' : Env md} (M : Model V env) {K : Key md → Prop}
   false_empty := fun φ ρ F h => M.false_empty φ ρ F (Denotes.const_back (hfind _ hF) h)
   eq_equality := fun u φ ρ E A a b h =>
     M.eq_equality u φ ρ E A a b (Denotes.const_back (hfind _ hE) h)
+  punit_unit := by
+    intro us vs φ ψ ρ ρ' P Q x y hP hQ hx hy
+    obtain ⟨ci, hf⟩ := hP.const_stored
+    have hK : K punitName := by
+      have h := hname _ (List.mem_of_find?_eq_some hf)
+      rwa [show ci.name = punitName from
+        by simpa using List.find?_some (p := fun c : ConstantInfo md => c.name == punitName) hf]
+        at h
+    exact M.punit_unit us vs φ ψ ρ ρ' P Q x y (Denotes.const_back (hfind _ hK) hP)
+      (Denotes.const_back (hfind _ hK) hQ) hx hy
   defn_value := fun cv value hint hc φ ρ =>
     Denotes.mono_env hfind hproj hlit (M.defn_value cv value hint (hsub _ hc) φ ρ)
       (hvalue cv value hint hc)
