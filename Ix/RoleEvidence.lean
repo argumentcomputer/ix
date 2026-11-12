@@ -429,15 +429,15 @@ def Bundle.conv (b : Bundle) (c : Ixon.Constant) (univs : Array CLevel)
     pure (.lit (.strVal s))
   | .nat i => do pure (.lit (.natVal (Ix.Kernel.Reader.natural (← b.blobAt c i))))
   | .app f a => do pure (.app (← b.conv c univs tbl f) (← b.conv c univs tbl a))
-  | .lam ct t bd => do
+  | .lam t bd => do
     pure (.lam (← b.conv c univs tbl t) (← b.conv c univs tbl bd)
-      (Ix.Kernel.BinderMeta.ofContracts ct .shared))
-  | .all ct r t bd => do
+      (Ix.Kernel.BinderMeta.ofContracts .many .shared))
+  | .all t bd => do
     pure (.forallE (← b.conv c univs tbl t) (← b.conv c univs tbl bd)
-      (Ix.Kernel.BinderMeta.ofContracts ct r))
-  | .letE ct t v bd => do
+      (Ix.Kernel.BinderMeta.ofContracts .many .shared))
+  | .letE nonDep _ t v bd => do
     pure (.letE (← b.conv c univs tbl t) (← b.conv c univs tbl v) (← b.conv c univs tbl bd)
-      { contract := ct })
+      { nonDep })
   | .share i =>
     match tbl[i.toNat]? with
     | some r => r
