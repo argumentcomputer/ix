@@ -9,11 +9,13 @@ import IxCCTests.Src.Bench
 import IxCCTests.Src.SortPoly
 import IxCCTests.Src.ResourceCsimp
 import IxCCTests.Src.StepCounts
+import IxCCTests.Src.Words
 
 /-! The `tests-src` suite: rules, the K1 table, K1 runs
 on the eqn route, the native differential, pins, diagnostics, sort-polymorphic
 code at `Sort 0` (level-exact relevance, D18), and the
-bench-k1 entries, and pinned step counts. `tests-src-slow` adds `ack 3 10` and `fib 30` without
+bench-k1 entries, pinned step counts, and the fixed-width words' meaning against Lean's
+(`Words`). `tests-src-slow` adds `ack 3 10` and `fib 30` without
 primitives. -/
 
 namespace IxCCTests.Src.Run
@@ -51,6 +53,7 @@ def main (args : List String) : IO UInt32 := do
       for line in ← StepCounts.run a do IO.println s!"    {line}"
     part a "differential against native Lean" (Differential.run a)
     part a "pins" (Pins.run a)
+    part a "fixed-width words against Lean" (Words.run a)
     part a "diagnostics" do
       Diagnostics.run a
       for line in ← Diagnostics.ixFixture a do IO.println s!"    {line}"
