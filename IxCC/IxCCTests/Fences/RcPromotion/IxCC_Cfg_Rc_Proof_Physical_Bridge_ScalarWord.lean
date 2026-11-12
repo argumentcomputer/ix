@@ -2,7 +2,9 @@ import IxCC.Cfg.Rc.Proof.Physical.Bridge.ScalarWord
 
 /-! Exact accepted RC axiom inventory. -/
 
-/-- info: 'IxCC.Cfg.Rc.Proof.Physical.Bridge.Scalar.envRel_insert_frame' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'IxCC.Cfg.Rc.Proof.Physical.Bridge.Scalar.envRel_insert_frame' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Cfg.Rc.Proof.Physical.Bridge.Scalar.envRel_insert_frame
 
 /-- info: 'IxCC.Cfg.Rc.Proof.Physical.Bridge.Scalar.rhsSim_of_core' depends on axioms: [propext, Classical.choice, Quot.sound] -/
