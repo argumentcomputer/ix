@@ -1,6 +1,7 @@
 module
 
 public import IxC.Kernel.Model.Inductives.NativeJudge
+public import IxC.Kernel.Model.ThmVal
 public import IxC.Kernel.Model.Inductives.FixEntryLaw
 public import IxC.Kernel.Model.Inductives.FixAssemblyKit
 import IxC.Kernel.Model.Inductives.StructStageTable
@@ -208,7 +209,9 @@ theorem stageFixTable (mp : EnvModelM V μ env)
           SpineFit ρ ((((ds ψ).drop p.nP).map (·.2.2)).take j) as →
           interp V (consList as ρ) ((((ds ψ).drop p.nP).map (·.2.2)).getD j default)
             ∈ˢ (univ ((sorts.getD j .zero).eval ψ) : V)) :
-    Nonempty (EnvModelM V μ envOut) := by
+    ∃ mp' : EnvModelM V μ envOut,
+      (∀ (cv : ConstantVal md) (v : Expr md), ConstantInfo.thmInfo cv v ∈ env.consts →
+        ∀ i, Expr.NoProjAt p.cvT.name i v) → ModelExt mp mp' := by
   have hwf' : Ix.Kernel.EnvWF envOut := Ix.Kernel.direct_table_wf mp.base2.wf hTbl
   obtain ⟨bodies, hbodies, -, -, hfresh, rfl⟩ := Ix.Kernel.checkStructProjTable_inv hTbl
   let tbl : ProjTable md := ⟨p.cvT.name, p.cvT.levelParams, p.nP, cvCa.name, nF, p.resSort,
@@ -355,8 +358,13 @@ theorem stageFixTable (mp : EnvModelM V μ env)
       m₂.acval = acvalWith mp.base2.acval (ConstantInfo.projInfo tbl).name (fun _ => .sort 0) →
       ∀ (φ : LevelParam → Nat) (i : Nat), i < tbl.numFields →
         TowerEntryLaw m₂ φ tbl.structName i (tbl.entry i) by
-    obtain ⟨mp', -⟩ := declStep_preserves_of_tower_cons mp (tbl := tbl) hfresh hnres hwf' hnp hhead hlaw
-    exact ⟨mp'⟩
+    obtain ⟨mp', hac'⟩ :=
+      declStep_preserves_of_tower_cons mp (tbl := tbl) hfresh hnres hwf' hnp hhead hlaw
+    refine ⟨mp', fun hthm => ModelExt.step (c₀ := .projInfo tbl) ModelExt.refl hfresh ?_
+      (fun _ _ h => nomatch h) hac'⟩
+    intro cv v hm tbl' heq i
+    obtain rfl : tbl = tbl' := ConstantInfo.projInfo.inj heq
+    exact hthm cv v hm i
   -- the fields' laws
   intro m₂ hac φ i hi
   replace hi : i < nF := hi
@@ -611,7 +619,9 @@ theorem declNativeTableJ {env env₁ envC env₂ : Env md} {p : NativeParts md}
         (fssOfR p.nP (fixCtorDataList dsF esF ksF eissF tssF ψ ctorsA 0))
         (essOfR (fixCtorDataList dsF esF ksF eissF tssF ψ ctorsA 0)))
     (hRec : NativeRecRunJ J envC p cvTa ctorsA cvRa rhss) :
-    Nonempty (EnvModelM V μ env₂) := by
+    ∃ mp₂ : EnvModelM V μ env₂,
+      (∀ (cv : ConstantVal md) (v : Expr md), ConstantInfo.thmInfo cv v ∈ envC.consts →
+        ∀ i, Expr.NoProjAt p.cvT.name i v) → ModelExt mp₃ mp₂ := by
   -- the case split: only a structure-like block conses a table
   unfold Ix.Kernel.checkNativeTable at hTbl
   split at hTbl
@@ -829,24 +839,22 @@ theorem declNativeTableJ {env env₁ envC env₂ : Env md} {p : NativeParts md}
       have hframes₀ := hframes 0 cA rfl
       obtain ⟨sorts'', hsj', -, hleq, hsortsAll⟩ := hsortsOf 0 cA rfl
       obtain rfl : sorts = sorts'' := Option.some.inj hsj'
-      refine stageFixTable mp₃ hTbl hfT₃ hcaps hlpsT hfC₃ hlpsC hstripC hresultC hsortT
-        hProp hTshape hCshape hresT hresC hnp₃ hFD₃ hCD₃.read hCD₃.len hCD₃.below hleq
-        hleafT₃ hleafC₃ hfoldAt ?_ ?_ ?_ ?_
-      · intro ψ ρ
-        have := hframes₀.1 ψ ρ
-        rwa [hTake] at this
-      · intro ψ ρ hρ
-        exact ⟨(hframes₀.2 ψ ρ hρ).1, (hframes₀.2 ψ ρ hρ).2.1⟩
-      · intro ψ ρ hρ hp
-        exact (hsortsAll ψ ρ hρ).1 hp
-      · intro ψ ρ hρ
-        exact (hsortsAll ψ ρ hρ).2
+      obtain ⟨mp₂, hx⟩ := stageFixTable mp₃ hTbl hfT₃ hcaps hlpsT hfC₃ hlpsC hstripC hresultC
+        hsortT hProp hTshape hCshape hresT hresC hnp₃ hFD₃ hCD₃.read hCD₃.len hCD₃.below hleq
+        hleafT₃ hleafC₃ hfoldAt
+        (fun ψ ρ => by have := hframes₀.1 ψ ρ; rwa [hTake] at this)
+        (fun ψ ρ hρ => ⟨(hframes₀.2 ψ ρ hρ).1, (hframes₀.2 ψ ρ hρ).2.1⟩)
+        (fun ψ ρ hρ hp => (hsortsAll ψ ρ hρ).1 hp) (fun ψ ρ hρ => (hsortsAll ψ ρ hρ).2)
+      refine ⟨mp₂, fun hthm => hx fun cv v hm => ?_⟩
+      rcases List.mem_cons.mp hm with h0 | h0
+      · exact nomatch h0
+      · exact hthm cv v h0
     · next =>
       obtain rfl := Except.ok.inj hTbl
-      exact ⟨mp₃⟩
+      exact ⟨mp₃, fun _ => .refl⟩
   · next =>
     obtain rfl := Except.ok.inj hTbl
-    exact ⟨mp₃⟩
+    exact ⟨mp₃, fun _ => .refl⟩
 
 
 /-- The table stage from the stage runs: `declNativeTableJ` at the kernel's runs. -/
@@ -948,12 +956,12 @@ theorem declNativeTable {F : Nat} {env env₁ envC env₂ : Env md} {p : NativeP
         (essOfR (fixCtorDataList dsF esF ksF eissF tssF ψ ctorsA 0)))
     (hRec : Ix.Kernel.checkNativeRec (Ix.Kernel.fueledOps μ F) envC p cvTa ctorsA = .ok (cvRa, rhss)) :
     Nonempty (EnvModelM V μ env₂) :=
-  declNativeTableJ (judgeInv_runJ hμ F) h₁ hC hTbl mpC mp₃ hac₃ hProp hCres hresT hTshape hwfEnv
+  (declNativeTableJ (judgeInv_runJ hμ F) h₁ hC hTbl mpC mp₃ hac₃ hProp hCres hresT hTshape hwfEnv
     hlenA hnFc
     (fun j cA hj => by
       obtain ⟨c, h1, h2, h3, h4, h5, h6, sorts, hs, hrun⟩ := hrunOf j cA hj
       exact ⟨c, h1, h2, h3, h4, h5, h6, sorts, hs, Ix.Kernel.Semantics.sumCtorRunJ_of_run hrun⟩)
     hfT_C hlpsT hTfresh htrT hFD_C hstripT hcf_C hleafT hleafC hframes hsortsOf hXR
-    (Ix.Kernel.Semantics.nativeRecRunJ_of_run hRec)
+    (Ix.Kernel.Semantics.nativeRecRunJ_of_run hRec)).elim fun mp₂ _ => ⟨mp₂⟩
 
 end Ix.Kernel.Model

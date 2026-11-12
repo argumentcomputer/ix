@@ -260,6 +260,27 @@ theorem ConstantValCheckJ.levelParams_eq {J : Judgements md} {env : Env md}
   obtain ⟨_, -, rfl⟩ := h
   rfl
 
+/-- **A constant check's facts** (`checkConstantVal_inv` over a package), in the
+kernel inversion's order. -/
+theorem ConstantValCheckJ.inv {J : Judgements md} {env : Env md} {cv cv' : ConstantVal md}
+    (h : ConstantValCheckJ J env cv cv') :
+    env.find? cv.name = none ∧
+    reservedBasisNames.contains cv.name = false ∧
+    cv.name.isProjFnShape = false ∧
+    LevelParam.nodup cv.levelParams = true ∧
+    cv.type.looseBVarsBounded 0 = true ∧
+    cv.type.hasFvar = false ∧
+    ∃ type stype u,
+      J.annot env 0 cv.type type ∧
+      type.allLevelParamsDefined cv.levelParams = true ∧
+      type.constsResolve env = true ∧
+      J.infer env 0 type stype ∧
+      J.sort env 0 stype u ∧
+      cv' = { cv with type := type } := by
+  obtain ⟨type, ⟨hf, hres, hpsh, hnd, hlbt, hitf, hann, htp, htr, stype, u, hst, hsort⟩, rfl⟩ := h
+  exact ⟨Option.isNone_iff_eq_none.mp hf, hres, hpsh, hnd, hlbt, hitf, type, stype, u, hann,
+    htp, htr, hst, hsort, rfl⟩
+
 /-- A stored constructor keeps the declared name and level parameters; its name is
 fresh where it is checked and passes the front door's shape test. -/
 theorem SumCtorRunJ.names {J : Judgements md} {env₀ env : Env md} {T : Key md}
@@ -303,6 +324,51 @@ theorem SumIndRunJ.former {J : Judgements md} {env envI : Env md} {p p' : Induct
   · rcases hbr with rfl | ⟨ty, h₁⟩
     · exact h₀.levelParams_eq
     · exact h₁.levelParams_eq
+
+/-- **The former's stage's shape** (`checkSumInd_shape` over a package): a constant
+check of the declared former at some type, the completed record, the stored
+former (`FormerStoredJ`), and the telescope ending in the record's sort. -/
+theorem SumIndRunJ.shape {J : Judgements md} {env envI : Env md} {p p' : InductiveShape md}
+    {capsOf : InductiveShape md → IndCaps md} {cvTa : ConstantVal md}
+    (h : SumIndRunJ J env p capsOf envI cvTa p') :
+    ∃ (cvT : ConstantVal md) (s : Level),
+      cvT.name = p.cvT.name ∧ cvT.levelParams = p.cvT.levelParams ∧
+      ConstantValCheckJ J env cvT cvTa ∧
+      p' = p.withSort s ∧
+      envI = ⟨.indInfo cvTa (capsOf p') :: env.consts⟩ ∧
+      ∃ bs, cvTa.type.stripPis (p.nP + p.nIdx) = some (bs, .sort s) := by
+  obtain ⟨cvTa₀, s, bs, cvS, h₀, hbr, hstrip, hSt, hp', henv⟩ := h
+  obtain rfl : cvS = cvTa := hSt
+  rcases hbr with rfl | ⟨ty, h₁⟩
+  · exact ⟨p.cvT, s, rfl, rfl, h₀, hp', henv, bs, hstrip⟩
+  · exact ⟨{ p.cvT with type := ty }, s, rfl, rfl, h₁, hp', henv, bs, hstrip⟩
+
+/-- **The recursor record's pins** (`checkNativeRec_pins` over a package): at a
+large eliminator the elimination parameter is the recursor's, and the family's
+level parameters are the recursor's. -/
+theorem NativeRecRunJ.pins {J : Judgements md} {env : Env md} {p : NativeParts md}
+    {cvTa cvRa : ConstantVal md} {ctorsA : List (ConstantVal md × Nat)}
+    {rhss : List (Expr md)} (h : NativeRecRunJ J env p cvTa ctorsA cvRa rhss) :
+    (p.large = true → p.elim ∈ p.cvR.levelParams) ∧
+    (∀ q ∈ p.cvT.levelParams, q ∈ p.cvR.levelParams) := by
+  obtain ⟨hlp, -⟩ := h
+  unfold Ix.Kernel.nativeRecLpsOk at hlp
+  refine ⟨?_, ?_⟩
+  · intro hL
+    rw [if_pos hL] at hlp
+    simp only [beq_iff_eq] at hlp
+    rw [hlp]
+    exact List.mem_cons_self
+  · intro q hq
+    by_cases hL : p.large = true
+    · rw [if_pos hL] at hlp
+      simp only [beq_iff_eq] at hlp
+      rw [hlp]
+      exact List.mem_cons_of_mem _ hq
+    · rw [if_neg hL] at hlp
+      simp only [beq_iff_eq] at hlp
+      rw [hlp]
+      exact hq
 
 /-- The stored recursor keeps the declared name and level parameters; the name is
 fresh where it is checked and passes the front door's shape test. -/

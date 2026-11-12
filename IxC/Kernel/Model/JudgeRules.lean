@@ -17,6 +17,8 @@ import IxC.Kernel.Verify.ProjSlots
 import IxC.Kernel.Verify.Subst
 import IxC.Kernel.Model.CtxOkKit
 import IxC.Kernel.Model.Tiers
+import IxC.Kernel.Model.Inductives.DeclNative
+import IxC.Kernel.Semantics.Inductives.DeclNativeExtJ
 /- `PropWhen` seals its representation; the bit lemmas below compute the pinned
 `Eq`'s instantiated type by `rfl`, which needs the view (as `Model/AxiomBits.lean`). -/
 import all IxC.Kernel.PropWhen
@@ -39,7 +41,9 @@ the readability of an accepted subject (`infer_reads`, by recursion on the
 derivation). `axiomBits_rulesJ` gives the pinned axioms' bits over derivations
 (by inversion, `Rules/Inversion.lean`), and `foldRules` is `foldJ` at this package,
 which then asks only for the inductive kind's step; `foldRulesModeled` discharges
-it when every inductive block takes the modeled route (`Model/DeclIndJ.lean`).
+it when every inductive block takes the modeled route (`Model/DeclIndJ.lean`), and
+`foldRulesRoutes` over both routes (`IndRoutesJ`), the native one by
+`nativeStep_rulesJ` (`declNativeJ`, `Model/Inductives/DeclNative.lean`).
 -/
 
 namespace Ix.Kernel.Model
@@ -548,5 +552,36 @@ theorem sortClaim_rulesJ {env : Env md} (m : EnvModel V env)
   have hm := hmem ρ hρ
   rw [heq ρ hρ, interp_sort] at hm
   exact hm
+
+/-- At the fold's invariant the sort claim holds (`RulesInputs.ofSem`). -/
+theorem sortClaim_rulesJ_of {env : Env md} (mp : EnvModelM V μ env) (φ : LevelParam → Nat) :
+    SortClaimJ rulesJ mp.base2 φ :=
+  sortClaim_rulesJ mp.base2 (fun φ => Rules.RulesInputs.ofSem mp φ) φ
+
+/-! ## The native route over derivations, and the fold over both routes -/
+
+/-- **A native block, over derivations**: the restated native record at `rulesJ`
+gives the two facts `foldRules` asks of the inductive kind, at a model whose stored
+theorem values are read. -/
+theorem nativeStep_rulesJ {env env₂ : Env md} {block : List (ConstantInfo md)} {nP : Nat}
+    {p₀ : Ix.Kernel.NativeParts md} (mp : EnvModelM V μ env) (hT : ThmValOk mp)
+    (hE : EtaFamiliesClosed env) (hdp : Ix.Kernel.nativeParts? nP block = some p₀)
+    (h : DeclNativeRunJ rulesJ env p₀ env₂) :
+    EtaFamiliesClosed env₂ ∧ ∃ mp₂ : EnvModelM V μ env₂, ModelExt mp mp₂ := by
+  refine ⟨declNativeRunJ_etaClosed hE h, ?_⟩
+  obtain ⟨mp₂, hext⟩ := declNativeJ judgeFrames_rulesJ (fun m => judgeSound_rulesJ_of m)
+    judgeInv_rulesJ (fun m φ => sortClaim_rulesJ_of m φ) mp hE hdp h
+  exact ⟨mp₂, hext hT⟩
+
+/-- **The fold at the derivation package over both routes** (`IndRoutesJ`): every
+inductive block takes the native route at the parts the recogniser reads off it
+(`nativeStep_rulesJ`) or the modeled route (`modeledStep_rulesJ`). -/
+theorem foldRulesRoutes {env env' : Env md} {ds : List (Declaration md)} :
+    DeclsRunJ rulesJ (IndRoutesJ rulesJ) env ds env' →
+    EnvModelT V μ env → EnvModelT V μ env' :=
+  foldRules fun {_} mp hT hE {_ _ _} h => by
+    rcases h with ⟨p₀, hdp, hN⟩ | hM
+    · exact nativeStep_rulesJ mp hT hE hdp hN
+    · exact modeledStep_rulesJ mp hE hM
 
 end Ix.Kernel.Model
