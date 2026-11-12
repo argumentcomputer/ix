@@ -29,7 +29,7 @@ def runFFI (cases : List ExprCase) : IO Nat := do
     ("axiom", .axio ⟨true, 5, typ⟩), ("quotient", .quot ⟨.lift, 5, typ⟩),
     ("mutual", .muts #[.defn defn, .indc ind, .recr recr])]
   for (name, info) in infos do
-    let c : Constant := ⟨info, #[value], #[], #[.zero]⟩
+    let c : Constant := ⟨info, #[value], #[], #[.zero], #[]⟩
     unless roundtripConstant c == c do
       throw <| IO.userError s!"{name}: declaration FFI roundtrip differs"
     unless equalConstantBytes c (serConstant c) do
