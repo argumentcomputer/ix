@@ -513,7 +513,7 @@ theorem g_expr_inst_many (κ : _root_.Address → KKey) {args : List (SourceValu
     rw [hv] at hnf
     have hn := noIdx_of_noIdxF_tm hB (by omega) hnf
     have hlow := ih.get .expr_lower lt_calls e5 _ _ _ rfl (bounded_sub sub_calls bd) As.length 0
-      (by rw [val_natCast (by omega)]) (by rw [hv]; omega) d Γ B (Nat.zero_le _)
+      (by rw [val_natCast (by omega), Nat.add_zero]) (by rw [hv]; omega) d Γ B (Nat.zero_le _)
       (by rw [hv]; exact hB) (by rw [hv, Nat.add_sub_cancel, Nat.add_zero]; exact hn)
     rw [hv, Nat.add_sub_cancel, Nat.sub_zero] at hlow
     rw [Ix.Kernel.Expr.instantiateList_eq_self (tm_lbb hB (Nat.le_add_right _ _) hn)]
