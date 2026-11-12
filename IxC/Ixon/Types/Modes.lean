@@ -272,8 +272,8 @@ instance : Inhabited (FieldModes n) := ⟨.inherited⟩
 instance : DecidableEq (FieldModes n) := fun a b =>
   match a, b with
   | .inherited, .inherited => isTrue rfl
-  | .inherited, .listed .. => isFalse (fun h => FieldModes.noConfusion h)
-  | .listed .., .inherited => isFalse (fun h => FieldModes.noConfusion h)
+  | .inherited, .listed .. => isFalse (by intro h; cases h)
+  | .listed .., .inherited => isFalse (by intro h; cases h)
   | .listed v _, .listed w _ =>
     if h : v = w then isTrue (by subst h; rfl)
     else isFalse (fun e => h (by cases e; rfl))
