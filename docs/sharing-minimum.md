@@ -148,12 +148,17 @@ Known complete-Constant measurements:
 | Nine independent repeated Ref atoms; hot atom previously at slot 8 | 676 | — | 578 with same entries reordered |
 
 The small witness has `P = Sort(0)`, `T1 = All(P,P)`, `T2 = All(P,T1)`,
-`R = All(T2,T2)`, default contracts, `Axio(false,0,R)`, refs `[]`, univs `[Zero]`.
-Its old table is `[T1, All(P,Share(0))]`; the minimum stores only `[T2]`.
+`R = All(T2,T2)`, default modes, `Axio(false,0,R)`, refs `[]`, univs `[Zero]`.
+Its old table is `[T1, All(P,Share(0))]`; the minimum stores only `[T2]`. The bytes
+above and below are the wire in which every binder carried a contract byte. In the
+current wire a binder's mode lives in the record's binder-data section, so a binder costs
+only its type: the same witness is 15 bytes unshared and 14 at the minimum, which still
+stores only `[T2]`.
 
 ```text
-old:     d200009117b1b10291170000911700b0000100  (19 bytes)
-minimum: d200009117b0b001921700170000000100       (17 bytes)
+old:     d200009117b1b10291170000911700b0000100  (19 bytes, contract bytes)
+minimum: d200009117b0b001921700170000000100       (17 bytes, contract bytes)
+minimum: d2000091b0b00192000000000100             (14 bytes, current wire)
 ```
 
 Another closed fixture has two different minimum 25-byte encodings: let
@@ -234,13 +239,13 @@ compared numerically, not by host memory layout:
 | Str / `0x5` | `[refIdx]` | `[]` |
 | Nat / `0x6` | `[refIdx]` | `[]` |
 | App / `0x7` | `[]` | `[function, argument]` |
-| Lam / `0x8` | `[binderContract.toBits]` | `[type, body]` |
-| All / `0x9` | `[packAllContract(input,result)]` | `[type, body]` |
-| Let / `0xA` | `[letContract.flags, binderContract.toBits]` | `[type, value, body]` |
+| Lam / `0x8` | `[]` | `[type, body]` |
+| All / `0x9` | `[]` | `[type, body]` |
+| Let / `0xA` | `[LetMode.header nonDep mode]` (`nonDep + 2 · mode.code`, below 16) | `[type, value, body]` |
 
 There is no Share node in this input alphabet. Update the rule explicitly if the target
-revision has additional semantic constructors/fields. The existing contract pack/unpack
-theorems can justify the packed scalar keys. Hash tables and pointer caches may accelerate
+revision has additional semantic constructors/fields. The let header determines
+`(nonDep, mode)` (`LetMode.ofHeader?_header`), which justifies its scalar key. Hash tables and pointer caches may accelerate
 discovery, but collisions must resolve by structural keys; hash equality alone is not the
 normative identity. No metadata, names, allocator addresses or hash-map traversal order
 participates in ID assignment.
@@ -357,14 +362,15 @@ nodes, with each step's side children/contracts and a final nonmatching tail:
 
 - Consider sharing the entire expression if available.
 - For every inline prefix length `j` from 1 through `l`, charge the actual Tag4 header for
-  `j`, every emitted contract byte, and each side child's optimal standalone cost.
+  `j` and each side child's optimal standalone cost (a Lam or All binder adds no byte of
+  its own: its mode is in the binder-data section).
 - If `j < l`, the remaining matching spine can terminate that telescope only as a Share
   to the corresponding available subterm. Charge its reference width, or reject that cut
   if unavailable. Do not use an arbitrary inline representation of the same-family tail;
   the canonical writer would merge it back into the telescope.
 - If `j = l`, charge the optimal standalone representation of the natural nonmatching tail.
 - App traverses its function spine and emits arguments in the existing wire order; Lam/All
-  traverse bodies and emit binder types/contracts in outer-to-inner order.
+  traverse bodies and emit binder types in outer-to-inner order.
 
 Memoize by `(dictionary-width state, term ID)` and share spine data/prefix sums where useful.
 The scalar recurrence is polynomial per dictionary state; avoid enumerating the Cartesian
