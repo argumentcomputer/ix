@@ -46,7 +46,8 @@ def unsafeOrPartial (c : Ixon.Constant) : Bool :=
 
 /-- The sections of `records` (by address; a record without a numbered node gets
 the empty one), typed against `support`, records the kernel reads without
-annotating them, under the role table and prelude `chosen`. An unsafe or partial
+annotating them, under the role table and prelude `chosen`; `models` are the generated
+model records among them, which the kernel view indexes after the environment's. An unsafe or partial
 record gets the all-undecided section. With `taint`, a
 binder whose datum IxC's datum function cannot compute is the undecided node, as
 the compiler writes it; without, it is `never` (deliberately ill-typed test
@@ -54,9 +55,10 @@ records, whose rejection should not move to the sentinel). -/
 def sectionsOf (records support : Array (Address × Ixon.Constant))
     (blobs : Std.HashMap Address ByteArray)
     (hints : Std.HashMap Address Lean.ReducibilityHints)
-    (chosen : Ix.Kernel.RoleTable × Ix.Kernel.Reader.Prelude .anon) (taint : Bool := true) :
+    (chosen : Ix.Kernel.RoleTable × Ix.Kernel.Reader.Prelude .anon) (taint : Bool := true)
+    (models : Std.HashSet Address := {}) :
     Except String (Std.HashMap Address (Array Ixon.BinderBlock)) := do
-  let view : View := { records, support, blobs, hints, table := some chosen.1.toBytes }
+  let view : View := { records, support, blobs, hints, table := some chosen.1.toBytes, models }
   let k ← KernelEnv.ofView view (prelude? := some chosen)
   let (tables, _) := annotateKernel k (taint := taint)
   let store : Std.HashMap Address Ixon.Constant :=

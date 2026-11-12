@@ -548,7 +548,10 @@ def BlockAdvice.withSections (adv : BlockAdvice) (support : Array (Address × Ix
     (chosen : Ix.Kernel.RoleTable × Ix.Kernel.Reader.Prelude .anon) : Except String BlockAdvice := do
   let blobs := adv.blobs.foldl (fun m (a, b) => m.insert a b) blobs
   let hints := adv.hints.foldl (fun m (a, h) => m.insert a h) hints
-  let sections ← IxVM.RecordSections.sectionsOf adv.records support blobs hints chosen
+  -- the advice records are the view's models: indexed after the environment's, so a generated
+  -- recursor cannot displace the environment's recursor of an alpha-equivalent block
+  let models : Std.HashSet Address := adv.records.foldl (fun s (a, _) => s.insert a) {}
+  let sections ← IxVM.RecordSections.sectionsOf adv.records support blobs hints chosen (models := models)
   let store : Std.HashMap Address Ixon.Constant :=
     adv.records.foldl (fun m (a, c) => m.insert a c) {}
   let order ← Ix.Compile.BinderData.bottomUp store adv.records
