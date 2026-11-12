@@ -401,16 +401,16 @@ def try_iota : SpecFn := fun c args h r h' calls =>
           ∃ E, c.tm d Γ h' E x ∧ Red c.env d (mkAppN (.const k us) As) E
 
 /-- `k_synth_fab(rc, raw_major, cidx, nparams, rec_parent, types)`: the K rescue's
-fabrication. For a single-rule recursor stored at `k` with the K flag set in its record
-(`kf = 1`), whose major inductive is at `rec_parent`, with the rule's index `cidx` and
-parameter count `nparams`: tag `1` gives `fab` with `Red.rescueK`: the major reduces to it.
-Tag `0`: no claim. (The proof needs the stored rule's K bit, `rl.k = true`, from the record's
-flag, and `Red.rescueK`'s `Certs` and scope guards; see the hand-back.) -/
+fabrication. For a single-rule recursor stored at `k` whose rule has the K bit (`rl.k = true`,
+which the caller reads off the record's K flag), whose major inductive is at `rec_parent`,
+with the rule's index `cidx` and parameter count `nparams`: tag `1` gives `fab` with
+`Red.rescueK`: the major reduces to it. Tag `0`: no claim. -/
 def k_synth_fab : SpecFn := fun c args h r h' calls =>
   ∀ rc maj cidx np rp types, args = [rc, maj, cidx, np, rp, types] → Good c calls → c.rc h rc →
     ∀ d Γ, c.types Γ h d types →
       ∀ k nl rt ni nm nmi rules cv mI rP rl (p : Bytes.Address) M,
         RecInfoAt c h k nl rt np ni nm nmi rules (.field 1) (.recInfo cv mI rP [rl]) →
+        rl.k = true →
         cidx = .field 0 → RepAddr h p rp → MajorHead c cv mI p → c.tm d Γ h M maj →
         ∀ x, r = .tuple [.field 1, x] →
           ∃ FAB, c.tm d Γ h' FAB x ∧ Red c.env d M FAB
@@ -431,16 +431,17 @@ def try_k_synth_iota : SpecFn := fun c args h r h' calls =>
           ∃ E, c.tm d Γ h' E x ∧ Red c.env d (mkAppN (.const k us) As) E
 
 /-- `eta_iota_fab(rc, ind_nl, ind_ty, ind_np, block, idx, parent, major, types)`: the
-structure-η rescue's fabrication. For a single-rule recursor stored at `k` whose major
+structure-η rescue's fabrication. For a single-rule recursor stored at `k` whose rule has the
+η bit (`rl.eta = true`, which the caller establishes from its shape checks) and whose major
 inductive, at `parent`, is loaded with these fields: tag `1` gives `fab` with
-`Red.rescueEta`: the major reduces to it. Tag `0`: no claim. (The proof needs the stored
-rule's η bit and the structure's projection tables; see the hand-back.) -/
+`Red.rescueEta`: the major reduces to it. Tag `0`: no claim. -/
 def eta_iota_fab : SpecFn := fun c args h r h' calls =>
   ∀ rc inl ity inp blk idx par major types,
     args = [rc, inl, ity, inp, blk, idx, par, major, types] → Good c calls → c.rc h rc →
     ∀ d Γ, c.types Γ h d types →
       ∀ k nl rt np ni nm nmi rules kf cv mI rP rl (p : Bytes.Address) ici nix nc u M,
         RecInfoAt c h k nl rt np ni nm nmi rules kf (.recInfo cv mI rP [rl]) →
+        rl.eta = true →
         RepAddr h p par → MajorHead c cv mI p →
         c.env.find? (c.κ (ixAddr p)) = some ici →
         c.ci h (.construct kciEnum "Induct" [inl, ity, inp, nix, nc, u, blk, idx]) ici →
@@ -480,16 +481,23 @@ def red_rec : SpecFn := fun c args h r h' calls =>
 
 /-! ## Quotients -/
 
-/-- `quot_certs(rc, is_lift, addr, lvls, rec_args, mk_addr, mk_lvls, mk_args, types)`: answer
-`1` gives `Red.iota`'s two licensed walks at a quotient eliminator, up to reduction of the
-telescope: the eliminator's stored type at `lvls` over its arguments and `Quot.mk`'s stored
-type at `mk_lvls` over its arguments. Answer `0`: no claim. -/
+/-- `quot_certs(rc, is_lift, addr, lvls, rec_args, mk_addr, mk_lvls, mk_args, types)`: for the
+eliminator the table binds at `addr` (`Quot.lift` with six arguments when `is_lift = 1`,
+`Quot.ind` with five when `0`) and `Quot.mk`, bound at `mk_addr`, with three arguments (the
+caller has checked the roles and the counts; where a level is never zero the walk is skipped
+without reading the stored type, so the claim needs them): answer `1` gives `Red.iota`'s two
+licensed walks, up to reduction of the telescope: the eliminator's stored type at `lvls` over
+its arguments and `Quot.mk`'s stored type at `mk_lvls` over its arguments. Answer `0`: no
+claim. -/
 def quot_certs : SpecFn := fun c args h r h' calls =>
   ∀ rc il addr lvls ra mk mklvls ma types,
     args = [rc, il, addr, lvls, ra, mk, mklvls, ma, types] → Good c calls → c.rc h rc →
     ∀ d Γ, c.types Γ h d types →
       ∀ (a b : Bytes.Address) us mus RA MA, RepAddr h a addr → LvListRep h us lvls →
         c.tml d Γ h RA ra → RepAddr h b mk → LvListRep h mus mklvls → c.tml d Γ h MA ma →
+        ((il = .field 1 ∧ c.t.addressOf? .quotLift = some (ixAddr a) ∧ RA.length = 6) ∨
+          (il = .field 0 ∧ c.t.addressOf? .quotInd = some (ixAddr a) ∧ RA.length = 5)) →
+        c.t.addressOf? .quotMk = some (ixAddr b) → MA.length = 3 →
         r = .field 1 →
           (∀ ci, c.env.find? (c.κ (ixAddr a)) = some ci →
             CertsR c.env d true
