@@ -153,21 +153,49 @@ def remapRefs (f : UInt64 → UInt64) : Ixon.Expr → Ixon.Expr
   | .letE lc t v b => .letE lc (remapRefs f t) (remapRefs f v) (remapRefs f b)
   | e => e
 
-/-- A generated record with the compiler's refs table and canonical sharing: the
-refs sorted by address bytes, as the compiler preseeds them, every index into the
-table moved with it, then `Ix.CompileM.buildConstantWithSharing`. A generated record
-that is alpha-equivalent to a compiled one (a tag enumeration, `Bool`) is then the
-same record whatever order the encoder met its references in. Its binder data come
-later, per block (`BlockAdvice.withSections`). -/
+/-- `e` with every index into the record's univs table moved by `f`: a sort's level
+and the universe arguments of a reference or of a recursive reference. -/
+def remapUnivs (f : UInt64 → UInt64) : Ixon.Expr → Ixon.Expr
+  | .sort i => .sort (f i)
+  | .ref i us => .ref i (us.map f)
+  | .recur i us => .recur i (us.map f)
+  | .prj t i v => .prj t i (remapUnivs f v)
+  | .app a b => .app (remapUnivs f a) (remapUnivs f b)
+  | .lam bc t b => .lam bc (remapUnivs f t) (remapUnivs f b)
+  | .all bc vc t b => .all bc vc (remapUnivs f t) (remapUnivs f b)
+  | .letE lc t v b => .letE lc (remapUnivs f t) (remapUnivs f v) (remapUnivs f b)
+  | e => e
+
+/-- The compiler's univs table for the levels `univs` (`Ix.CompileM.preseedExprTables`):
+each in its canonical form (`Ixon.canonUniv`), sorted by encoding
+(`Ix.CompileM.univSortKey`), each once; with the new index of each old one. -/
+def canonicalUnivs (univs : Array Ixon.Univ) : Array Ixon.Univ × (UInt64 → UInt64) :=
+  let canon := univs.map Ixon.canonUniv
+  let keyed := (canon.map fun u => (Ix.CompileM.univSortKey u, u)).qsort
+    fun (ka, _) (kb, _) => Ix.CompileM.byteArrayCmp ka kb == .lt
+  let table : Array Ixon.Univ :=
+    keyed.foldl (fun acc (_, u) => if acc.back? == some u then acc else acc.push u) #[]
+  let pos : Std.HashMap Ixon.Univ UInt64 :=
+    table.zipIdx.foldl (fun m (u, i) => m.insert u i.toUInt64) {}
+  (table, fun i => ((canon[i.toNat]?).bind (pos[·]?)).getD i)
+
+/-- A generated record with the compiler's tables and canonical sharing: the refs
+sorted by address bytes and the levels canonical and sorted by encoding, as the
+compiler preseeds them, every index into either table moved with it, then
+`Ix.CompileM.buildConstantWithSharing`. A generated record that is alpha-equivalent
+to a compiled one (a tag enumeration, `Bool`) is then the same record whatever order
+the encoder met its references and levels in. Its binder data come later, per block
+(`BlockAdvice.withSections`). -/
 def sharedRecord (info : Ixon.ConstantInfo) (refs : Array Address) (univs : Array Ixon.Univ) :
     Except String Ixon.Constant := do
   let sorted := refs.qsort fun a b => a.cmpBytes b == .lt
   let pos : Std.HashMap Address UInt64 :=
     sorted.zipIdx.foldl (fun m (a, i) => m.insert a i.toUInt64) {}
   let move (i : UInt64) : UInt64 := ((refs[i.toNat]?).bind (pos[·]?)).getD i
-  let roots := (Ix.CompileM.constantInfoRootExprs info).map (remapRefs move)
+  let (table, umove) := canonicalUnivs univs
+  let roots := (Ix.CompileM.constantInfoRootExprs info).map (remapUnivs umove ∘ remapRefs move)
   let info ← (Ix.CompileM.withRootExprs info roots).mapError (s!"model record refs: {·}")
-  (Ix.CompileM.buildConstantWithSharing Ix.CompileM.compilerSharingLimits info sorted univs).mapError
+  (Ix.CompileM.buildConstantWithSharing Ix.CompileM.compilerSharingLimits info sorted table).mapError
     (s!"model record sharing: {·}")
 
 def hintOf : Ix.Kernel.ReducibilityHint → Lean.ReducibilityHints
