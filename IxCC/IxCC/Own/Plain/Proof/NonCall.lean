@@ -1,9 +1,9 @@
-import IxCC.Own.Plain.Proof.CtorStep
+import IxCC.Own.Plain.Proof.Scalars
+import IxCC.Fir.Proof.Unfold
 import IxCC.Own.Plain.Proof.ResultCompose
 
-/-! Lift the actual non-call ownership steps into the code induction. The
-only continuation premise is the local induction hypothesis; the eventual
-checked-program theorem discharges it by source-code/clock induction. -/
+/-! A source binding that calls nothing either is stuck or succeeds (`fir_rhs_pure`): the
+pure outcomes the physical simulation over the typing context splits on. -/
 
 set_option autoImplicit false
 
@@ -56,27 +56,5 @@ theorem fir_rhs_pure (F : Fir.Program) (ρ : Fir.Env) (rhs : Fir.Rhs) :
     | none => simp [Fir.evalRhs, ha, PureOutcome]
     | some vs => simpa only [Fir.evalRhs, ha] using fir_primitive_pure F op vs
   | call f args => exact Or.inl rfl
-
-theorem nonCall_refines {functions : Signatures} {H : Heap} {external : Nat → Nat}
-    {live imm : List Fir.Var} {ρf : Fir.Env} {ρo : Own.Env} {roots : List RVal}
-    {joins : Joins} {Jf : List Fir.JEntry} {Jo : List JEntry}
-    (h : State functions H external live ρf ρo roots joins Jf Jo imm)
-    (P : Program) (k : Nat) (x : Fir.Var) (rhs : Fir.Rhs) (body : Fir.Code)
-    (hpins : BoolPinsOk P.source) (hx : x ∉ live)
-    (hs : rhsIn functions live rhs = true) (hn : ∀ f args, rhs ≠ .call f args)
-    (ih : ∀ w v H',
-      State functions H' external (live ++ [x]) (ρf.insert x w) (ρo.insert x v)
-        (roots ++ [v]) joins Jf Jo (nextImm imm x rhs) →
-      ResultRel H' external (Fir.eval P.source k (ρf.insert x w) Jf body)
-        (eval P k (ρo.insert x v) Jo H' (lowerCode (live ++ [x]) joins body (nextImm imm x rhs)))) :
-    ResultRel H external (Fir.eval P.source k ρf Jf (.bind x rhs body))
-      (eval P k ρo Jo H (lowerCode live joins (.bind x rhs body) imm)) := by
-  rcases fir_rhs_pure P.source ρf rhs with hstuck | ⟨w, hw⟩
-  · rw [Fir.eval_bindRhs P.source k ρf Jf x rhs body hn, hstuck]
-    exact .stuck
-  · obtain ⟨v, H', hstep, hstate, hpreserve⟩ := nonCall_step h P k x rhs body hpins hx hs hn hw
-    rw [Fir.eval_bindRhs P.source k ρf Jf x rhs body hn, hw, Result.bind_ok, hstep]
-    exact (ih w v H' hstate).preheap (fun root value _ hd => hpreserve root value hd)
-
 
 end IxCC.Own.Plain

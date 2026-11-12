@@ -3,22 +3,16 @@ import IxCC.Own.Plain.Proof.Actions
 import IxCC.Own.Plain.Proof.Admission
 import IxCC.Own.Plain.Proof.Bindings
 import IxCC.Own.Plain.Proof.Bounds
-import IxCC.Own.Plain.Proof.Call
-import IxCC.Own.Plain.Proof.CallBind
 import IxCC.Own.Plain.Proof.Candidate
 import IxCC.Own.Plain.Proof.CaptureIdentity
 import IxCC.Own.Plain.Proof.CaptureRoots
 import IxCC.Own.Plain.Proof.Captures
-import IxCC.Own.Plain.Proof.Checked
 import IxCC.Own.Plain.Proof.CheckedShape
-import IxCC.Own.Plain.Proof.CtorStep
 import IxCC.Own.Plain.Proof.Drops
 import IxCC.Own.Plain.Proof.Environment
 import IxCC.Own.Plain.Proof.EvalShape
 import IxCC.Own.Plain.Proof.Frames
 import IxCC.Own.Plain.Proof.JoinLookup
-import IxCC.Own.Plain.Proof.Jump
-import IxCC.Own.Plain.Proof.JumpState
 import IxCC.Own.Plain.Proof.Mono
 import IxCC.Own.Plain.Proof.NonCall
 import IxCC.Own.Plain.Proof.Prefixes
@@ -27,19 +21,15 @@ import IxCC.Own.Plain.Proof.Projection
 import IxCC.Own.Plain.Proof.ResultCompose
 import IxCC.Own.Plain.Proof.Results
 import IxCC.Own.Plain.Proof.RhsShape
-import IxCC.Own.Plain.Proof.RhsSteps
 import IxCC.Own.Plain.Proof.Scalars
 import IxCC.Own.Plain.Proof.Scope
 import IxCC.Own.Plain.Proof.Selected
 import IxCC.Own.Plain.Proof.ShapeOps
 import IxCC.Own.Plain.Proof.ShapeResult
-import IxCC.Own.Plain.Proof.Simulation
 import IxCC.Own.Plain.Proof.StackIdentity
 import IxCC.Own.Plain.Proof.StackRetain
 import IxCC.Own.Plain.Proof.StackScope
 import IxCC.Own.Plain.Proof.State
-import IxCC.Own.Plain.Proof.TailCall
-import IxCC.Own.Plain.Proof.Terminals
 import IxCC.Own.Plain.Proof.Transfers
 import IxCC.Own.Plain.Proof.Unfold
 import IxCC.Own.Plain.Proof.ValidRoots
@@ -63,9 +53,6 @@ import IxCC.Own.Plain.Syntax
 
 /-- info: 'IxCC.Own.Plain.args_den' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Own.Plain.args_den
-
-/-- info: 'IxCC.Own.Plain.argument_step' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in #print axioms IxCC.Own.Plain.argument_step
 
 /-- info: 'IxCC.Own.Plain.asCtor_bounded' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Own.Plain.asCtor_bounded
@@ -94,14 +81,8 @@ import IxCC.Own.Plain.Syntax
 /-- info: 'IxCC.Own.Plain.callFun_agrees_of' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Own.Plain.callFun_agrees_of
 
-/-- info: 'IxCC.Own.Plain.call_bind_refines' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in #print axioms IxCC.Own.Plain.call_bind_refines
-
 /-- info: 'IxCC.Own.Plain.call_heap_shape' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Own.Plain.call_heap_shape
-
-/-- info: 'IxCC.Own.Plain.call_of_smaller_clocks' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in #print axioms IxCC.Own.Plain.call_of_smaller_clocks
 
 /-- info: 'IxCC.Own.Plain.call_shape_of_smaller' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Own.Plain.call_shape_of_smaller
@@ -117,12 +98,6 @@ import IxCC.Own.Plain.Syntax
 
 /-- info: 'IxCC.Own.Plain.canonical_call' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Own.Plain.canonical_call
-
-/-- info: 'IxCC.Own.Plain.canonical_call_refines' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in #print axioms IxCC.Own.Plain.canonical_call_refines
-
-/-- info: 'IxCC.Own.Plain.canonical_refines' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in #print axioms IxCC.Own.Plain.canonical_refines
 
 /-- info: 'IxCC.Own.Plain.checkBody_erases' depends on axioms: [propext] -/
 #guard_msgs in #print axioms IxCC.Own.Plain.checkBody_erases
@@ -145,9 +120,6 @@ import IxCC.Own.Plain.Syntax
 /-- info: 'IxCC.Own.Plain.checked_body_is_canonical' depends on axioms: [propext] -/
 #guard_msgs in #print axioms IxCC.Own.Plain.checked_body_is_canonical
 
-/-- info: 'IxCC.Own.Plain.checked_body_refines' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in #print axioms IxCC.Own.Plain.checked_body_refines
-
 /-- info: 'IxCC.Own.Plain.checked_program_reclaims' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Own.Plain.checked_program_reclaims
 
@@ -160,9 +132,6 @@ import IxCC.Own.Plain.Syntax
 /-- info: 'IxCC.Own.Plain.codeEq_iff' depends on axioms: [propext] -/
 #guard_msgs in #print axioms IxCC.Own.Plain.codeEq_iff
 
-/-- info: 'IxCC.Own.Plain.constructor_step' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in #print axioms IxCC.Own.Plain.constructor_step
-
 /-- info: 'IxCC.Own.Plain.copies_sound' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Own.Plain.copies_sound
 
@@ -174,12 +143,6 @@ import IxCC.Own.Plain.Syntax
 
 /-- info: 'IxCC.Own.Plain.dens_bounded' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Own.Plain.dens_bounded
-
-/-- info: 'IxCC.Own.Plain.dens_preserve' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in #print axioms IxCC.Own.Plain.dens_preserve
-
-/-- info: 'IxCC.Own.Plain.dens_transport' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in #print axioms IxCC.Own.Plain.dens_transport
 
 /-- info: 'IxCC.Own.Plain.drops_sound' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Own.Plain.drops_sound
@@ -228,9 +191,6 @@ import IxCC.Own.Plain.Syntax
 
 /-- info: 'IxCC.Own.Plain.evalAlts_nil' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Own.Plain.evalAlts_nil
-
-/-- info: 'IxCC.Own.Plain.evalAlts_refines' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in #print axioms IxCC.Own.Plain.evalAlts_refines
 
 /-- info: 'IxCC.Own.Plain.evalAlts_shape' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Own.Plain.evalAlts_shape
@@ -289,9 +249,6 @@ import IxCC.Own.Plain.Syntax
 /-- info: 'IxCC.Own.Plain.eval_mono' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Own.Plain.eval_mono
 
-/-- info: 'IxCC.Own.Plain.eval_refines' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in #print axioms IxCC.Own.Plain.eval_refines
-
 /-- info: 'IxCC.Own.Plain.eval_ret' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Own.Plain.eval_ret
 
@@ -322,23 +279,11 @@ import IxCC.Own.Plain.Syntax
 /-- info: 'IxCC.Own.Plain.jump_measure' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Own.Plain.jump_measure
 
-/-- info: 'IxCC.Own.Plain.jump_progress' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in #print axioms IxCC.Own.Plain.jump_progress
-
-/-- info: 'IxCC.Own.Plain.jump_state' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in #print axioms IxCC.Own.Plain.jump_state
-
 /-- info: 'IxCC.Own.Plain.lookupJ_weight' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Own.Plain.lookupJ_weight
 
 /-- info: 'IxCC.Own.Plain.lookup_ready' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Own.Plain.lookup_ready
-
-/-- info: 'IxCC.Own.Plain.nonCall_refines' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in #print axioms IxCC.Own.Plain.nonCall_refines
-
-/-- info: 'IxCC.Own.Plain.nonCall_step' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in #print axioms IxCC.Own.Plain.nonCall_step
 
 /-- info: 'IxCC.Own.Plain.ofOption_pure' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Own.Plain.ofOption_pure
@@ -355,26 +300,14 @@ import IxCC.Own.Plain.Syntax
 /-- info: 'IxCC.Own.Plain.primitive_owned' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Own.Plain.primitive_owned
 
-/-- info: 'IxCC.Own.Plain.primitive_step' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in #print axioms IxCC.Own.Plain.primitive_step
-
 /-- info: 'IxCC.Own.Plain.programDomain_function' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Own.Plain.programDomain_function
 
 /-- info: 'IxCC.Own.Plain.projection_owned' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Own.Plain.projection_owned
 
-/-- info: 'IxCC.Own.Plain.projection_step' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in #print axioms IxCC.Own.Plain.projection_step
-
-/-- info: 'IxCC.Own.Plain.retained_empty' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in #print axioms IxCC.Own.Plain.retained_empty
-
 /-- info: 'IxCC.Own.Plain.retained_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Own.Plain.retained_eq
-
-/-- info: 'IxCC.Own.Plain.return_refines' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in #print axioms IxCC.Own.Plain.return_refines
 
 /-- info: 'IxCC.Own.Plain.rhs_shape' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Own.Plain.rhs_shape
@@ -403,14 +336,8 @@ import IxCC.Own.Plain.Syntax
 /-- info: 'IxCC.Own.Plain.state_entry' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Own.Plain.state_entry
 
-/-- info: 'IxCC.Own.Plain.tailCall_transfer' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in #print axioms IxCC.Own.Plain.tailCall_transfer
-
 /-- info: 'IxCC.Own.Plain.transfer_sound' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Own.Plain.transfer_sound
-
-/-- info: 'IxCC.Own.Plain.trap_refines' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in #print axioms IxCC.Own.Plain.trap_refines
 
 /-- info: 'IxCC.Own.Rc.changeCount_heapOk' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Own.Rc.changeCount_heapOk
