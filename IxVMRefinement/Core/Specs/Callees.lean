@@ -163,10 +163,13 @@ def get_ci_iprj : SpecFn := fun c args h r h' calls =>
   ∀ bp (i : F) (b : Bytes.Address), args = [bp, .field i] → Good c calls → RepAddr h b bp →
     ∃ ci, c.env.find? (c.κ (iprjAddr (ixAddr b) (ZMod.val i))) = some ci ∧ CIPtrRep c.κ h' r ci
 
-/-- `Ingress::load_verified_constant(addr)`: the record of `c.E` at the address, decoded,
-shallowly. Nothing is claimed at an address `c.E` holds no record at. -/
+/-- `Ingress::load_verified_constant(addr)`: the derivation hashed bytes whose BLAKE3 address is
+the address (whether or not `c.E` holds a record there: the loader verifies the hint against the
+address), and the result is the record of `c.E` at the address, decoded, shallowly. -/
 def load_verified_constant : SpecFn := fun c args h r h' calls =>
   ∀ ap (a : Bytes.Address), args = [ap] → Good c calls → RepAddr h a ap →
+    (∃ bytes : List UInt8, Hashed calls ⟨bytes.toArray⟩ ∧
+      Address.blake3Pure ⟨bytes.toArray⟩ = ixAddr a) ∧
     ∀ cst, Ix.Cert.recordAt c.E (ixAddr a) = some cst → ConstShapeRep h' cst r
 
 /-- `Ingress::build_recur_addrs(members, block)`: the projection-record addresses of the block's
