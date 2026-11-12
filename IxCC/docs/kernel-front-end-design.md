@@ -504,7 +504,8 @@ paired IxVM claim's table ([end-to-end](end-to-end.md#the-shared-spine)).
 
 **Modules.** The front end imports `IxCK.Kernel.Admission.Tier` (the tiered
 entry, which imports the logical entry and the reader), `IxCK.Kernel.Cached.CoreC`
-(the executed core) and `IxCK.Kernel.Ixon.Prelude`: an 82-module closure of
+(the executed core) and `IxCK.Kernel.Ixon.Prelude`: an 82-module closure (98
+files since later kernel landings) of
 about 49,000 lines, against 13 files before (the codec and the role
 vocabulary). It includes the committed role data
 (`IxCK/Kernel/Ixon/RoleData.lean`, 13,737 lines of hexadecimal records) through
@@ -516,7 +517,7 @@ where that tree is built.
 [measurements](#measurements) below.
 
 **The ledger** ([trust ledger](trusted-extern-ledger.md)). The dependency
-entry's closure grows to the 82 files, each pinned by its SHA-256;
+entry's closure grows to the 82 files (98 since), each pinned by its SHA-256;
 `imported_modules` lists the six modules IxCC's sources import (the codec's
 three and the kernel's three); the
 `@[csimp]` inventory grows with the kernel's replacements (each a proved
@@ -660,7 +661,11 @@ landed; what stays exposed is under [resource bounds](#resource-bounds).
    parity, the `Nat` literal bytes and the API's resource cases kept in
    `IxCCTests/IxonV3/Validation.lean`; the K1 packs checked by the kernel's
    acceptance); the unbound environment's reading (`Src.Ingress.ofEnv`, its
-   fence, `Pinned.pinsOf`); IxCC's own binding decoder
+   fence, `Pinned.pinsOf`; the fixed table `Pins.fixed`, `src-tables.tsv` and
+   `pin-src-tables`, once listed with it, stay: they are not unbound-only, being
+   the allowlist's address and the default pins, and the source of
+   `Src.Pinned`'s `lazy` and allowlist rows, `src-names.tsv` and the
+   diagnostics fixtures, on every compile path); IxCC's own binding decoder
    (`IxCC/IxCC/Ixon/V3/Binding.lean`: the envelope keeps the section's address
    and bytes, the kernel decodes and admits the table, and the pins read the
    table it admitted); and the `Blake3.Rust` import (no IxCC executable links

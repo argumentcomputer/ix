@@ -624,6 +624,34 @@ native route:* in-place update, elided reference counting and stack allocation
 only where RE-1 verified. *For the evaluator route:* write-once memory has
 nothing to optimise; the annotations mean something there only through RE-2.
 
+**No end-to-end test of contract-annotated recursive programs (since
+2026-11-11).** IxCC's path for them is: contracts written in the source, a
+resource context in the equations sidecar (the profile and the checked
+equation pairs of the annotated recursive definitions), the table selecting
+each annotated equation only against its checked pair, and the producer
+choosing plain RC or zero RC accordingly. No committed input takes that path:
+this repository's `ix compile` no longer has the option that wrote the
+resource profile (`--profile`) and writes no checked pairs in its sidecar, so
+neither an annotated recursive fixture nor the dated one it replaced (an
+earlier producer's, unbound, which the kernel front end refuses) can be
+produced; `ix` refuses OS-04's annotated `len` at its resource admission. What
+still covers the pieces: the resource binding's checks and refusals on
+synthetic contexts (`tests-src`, `tests-own --only resource-records`), the
+resource checker on the role-bound `OS16-plain` closure (`tests-ixon-v3`), the
+non-recursive annotated fixtures through every Own level (`tests-own`), and
+the refusal tests with contracts written into programs in memory
+(`tests-pipeline`'s OS16-contract part, `rc-runtime`'s mixed-contract case),
+whose recheck-path replays still run. Production code that no committed input
+reaches: the annotated branch of `Src.Table.equationBody` (with
+`Src.Resource.requirePair`), `Src.Resource.validateContext` and the
+checked-pair loop of `Src.Resource.selected` (a program with a resource
+context), and the reading of a present resource profile and checked pairs in
+`Src.Hints.resourceOfJson`; the producer's zero-RC choice on a heap program
+whose written contracts allow it is exercised only on programs built in
+memory. What would restore the test: `ix compile` writing a resource context
+again (a profile option and the checked pairs in its sidecar), then a
+role-bound annotated recursive fixture in the ownership family.
+
 ### Standalone executables
 
 Decided by the owner (2026-11-14): standalone executables are a target, with

@@ -11,7 +11,9 @@ package «ix-cc» where
         "-lleanshared_2", "-lleanshared_1", "-lInit_shared"]
     | none => #[]
 
-/- Blake3 FFI. Keep this revision in lockstep with ix's (`../lakefile.lean`),
+/- Blake3. IxCC imports only its pure Lean `Blake3.Pure` (every address IxCC
+computes is pure BLAKE3); the trust ledger refuses an import of the package's
+Rust or C backend. Keep this revision in lockstep with ix's (`../lakefile.lean`),
 the repository flake's `blake3-lean` input and `lake-manifest.json`. -/
 require Blake3 from git
   "https://github.com/argumentcomputer/Blake3.lean" @
@@ -28,7 +30,7 @@ and its tiered admission entry, prelude and executed typing core
 `IxCK.Kernel.Cached.CoreC`) by the front end over the kernel
 (`IxCC.Src.KernelFront`, `docs/kernel-front-end-design.md`). It is the
 package beside this one in the ix workspace; the trust ledger records the
-SHA-256 of every file of the imported closure (82 files, not the kernel's
+SHA-256 of every file of the imported closure (98 files, not the kernel's
 proof tree), so a change to it is reviewed here. -/
 require «ix-ck» from "../IxCK"
 

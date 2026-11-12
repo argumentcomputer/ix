@@ -27,7 +27,10 @@ tree still contains monolithic test and proof modules that need migration.
   depends on `../IxCK` (its Ixon codec, the role vocabulary `IxCK.Kernel.Key`
   with which it maps the kernel's roles to its pinned identities, and the kernel's tiered
   admission entry and executed typing core, which the front end over the
-  kernel uses; not the kernel's proof tree) and Blake3; its grounding
+  kernel uses; not the kernel's proof tree) and Blake3 (its pure Lean module
+  `Blake3.Pure` only: every address IxCC computes is pure BLAKE3, and no IxCC
+  module may import the package's Rust or C backend, which the trust ledger
+  audits); its grounding
   library (`IxCCGrounding`, beside the production library) also imports the
   kernel's model, `IxCK.Kernel.Denotes` (the statement half), which nothing
   in the production library or the shared program build may import
@@ -47,7 +50,7 @@ tree still contains monolithic test and proof modules that need migration.
   is updated and reviewed in the same change: every IxCC file its integrity
   rule covers (Lake files, `IxCC/`, `IxCCTests/`, `fixtures/`, `nix/`,
   `tools/` and a few named specifications; not the rest of `docs/`, the
-  READMEs, this file or `benchmarks/`), the 82 files of the `IxCK` closure
+  READMEs, this file or `benchmarks/`), the 98 files of the `IxCK` closure
   IxCC imports (the codec, the role vocabulary, the admission entry and the
   typing core, with the kernel's `implemented_by` rulings enumerated), the
   revisions of ix's `flake.lock`, the full text of
