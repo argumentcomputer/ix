@@ -305,16 +305,17 @@ def utf8_decode_one : SpecFn := fun c args h r h' calls =>
     ∃ (ch : Char) (bs' : List UInt8) (rem : SourceValue F), b :: bs = String.utf8EncodeChar ch ++ bs' ∧
       r = .tuple [.field (ch.toNat : F), rem] ∧ RepBytes h' bs' rem
 
-/-- `utf8_validate(bs)`: the bytes are a valid UTF-8 encoding of some characters (what
-`Convert` reads off a string literal's blob; the term seam's `StrBytes` needs the string). -/
+/-- `utf8_validate(bs)`: the bytes decode as UTF-8 (`String.fromUTF8?`, as the kernel reader
+decodes a string literal's blob): what `Convert` reads off a literal's blob, and what the term
+seam's `StrBytes` needs. -/
 def utf8_validate : SpecFn := fun c args h r h' calls =>
-  ∀ bp, args = [bp] → Good c calls → ∀ bs, RepBytes h bs bp →
-    ∃ cs : List Char, cs.flatMap String.utf8EncodeChar = bs
+  ∀ bp, args = [bp] → Good c calls → ∀ bs, RepBytes h bs bp → ∃ s, StrBytes s bs
 
 /-- `build_char_list(bs, nil_app, cons_partial, con_const)`: the character list of the string
 whose UTF-8 encoding the bytes are, over the given `List.nil Char`, `List.cons Char` and
-`Char.ofNat` (`charList`). Stated for the characters the bytes encode (the caller knows them from
-the literal: `StrBytes`). -/
+`Char.ofNat` (`charList`). Stated for the characters the bytes encode, one
+`String.utf8EncodeChar` each (the caller has the string from the literal, `StrBytes`, whose bytes
+are its characters' encodings). -/
 def build_char_list : SpecFn := fun c args h r h' calls =>
   ∀ bp n cp k, args = [bp, n, cp, k] → Good c calls →
     ∀ bs, RepBytes h bs bp → ∀ cs : List Char, cs.flatMap String.utf8EncodeChar = bs →
@@ -322,7 +323,8 @@ def build_char_list : SpecFn := fun c args h r h' calls =>
         c.tm d Γ h' (charList N C K cs) r
 
 /-- `str_lit_to_ctor(rc, bs)`: the closed constructor form of the string literal
-(`strLitToConstructor s`, the right side of `Red.strLit`), for the string `s` the bytes encode.
+(`strLitToConstructor s`, the right side of `Red.strLit`), for the string `s` the bytes decode to
+(`StrBytes`: `String.fromUTF8?`).
 The constants are the roles' (`role_used_implicitly`: bound, and checked), at the level `0`
 where `strLitToConstructor` writes one. -/
 def str_lit_to_ctor : SpecFn := fun c args h r h' calls =>
