@@ -127,7 +127,7 @@ def compileLeanCmd : Cli.Cmd := `[Cli|
     "no-build" ;           "Skip the Lake build/cache step and reuse existing import artifacts. The input file is still elaborated. The caller must ensure all imports are built and up to date."
     "local" ;              "Compile only the constants the input file itself declares, with their transitive dependencies (the selected closure: recursors, whole logical units, checker support), instead of the whole import env."
     "allow-partial" ;      "Allow writing the successfully compiled subset despite requested compilation failures. Without this flag, those failures cause a nonzero exit and leave the output path untouched."
-    "binder-data" : String; "How records get their binder data: inline (the default: while each record is built, from Lean's elaboration of its sources), off (every binder undecided; for measurement), or post (off, then IxC's pass over the finalized artifact and re-addressing; for comparison)."
+    "binder-data" : String; "How records get their binder data: inline (the default: while each record is built, from IxC's pass over the compile's input), off (every binder undecided; for measurement), or post (off, then IxC's pass over the finalized artifact and re-addressing; for comparison)."
     "strict-binder-data" ; "Fail the compile, naming the record and binder, where the annotator cannot decide a binder's datum. Without it such a binder carries the undecided node (Ixon section tag 4), which IxVM rejects when it reads it, and is reported."
 
   ARGS:
