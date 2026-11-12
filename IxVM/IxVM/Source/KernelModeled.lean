@@ -980,6 +980,9 @@ def check_family := aiur_fn⟦
               -- flattens) eliminates into every sort exactly when that universe is never
               -- `Prop` (Lean's `elim_only_at_universe_zero`)
               let (bnl, univ_offset) = block_elim(rc, type_addrs);
+              -- the family's auxiliary members are the nested occurrences the block's
+              -- constructors require, no more and no fewer
+              check_nested_aux(block, KernelCheck::build_flat_block(rec_block, block, univ_offset));
               -- the family record references only what the block's own walk checks:
               -- the block's used references, members of the blocks those project from,
               -- the block's members, and witnessed members of its closure
@@ -1024,6 +1027,271 @@ def peers_agree := aiur_fn⟦
               assert_eq!(KernelLevels::level_equal(lvl, lvl0), 1,
                 "modeled block: types land in different universes");
               peers_agree(rc, rest, nl0, lvl0) } ,
+          } } ,
+      }
+    }
+⟧
+
+  -- ## The family: its auxiliary members
+
+  -- The auxiliary members a nested block's recursor family has, derived from the block's
+  -- constructors as Lean's kernel derives them when it reduces a nested block to a mutual one
+  -- (`elim_nested_inductive`): in a constructor's type after its parameters, an occurrence
+  -- `I Ds is` of an inductive `I` outside the block whose parameters `Ds` mention a type of
+  -- the block, read outermost first and not inside an occurrence, adds every type of `I`'s
+  -- block at `Ds` and at the occurrence's levels; their constructors, at `Ds`, are read in
+  -- turn. The family's auxiliary members (`flat`, read off the family record) must be these,
+  -- as a set: no motive for an occurrence the constructors do not have, and none missing.
+  -- An entry is `(type, is auxiliary, parameters, levels)`, at the recursor's levels.
+
+def check_nested_aux := aiur_fn⟦
+  fn check_nested_aux(block: Bytes::AddressRef,
+                      flat: Lists::List<(Bytes::AddressRef, Field, Lists::List<KernelTypes::KExpr>, Lists::List<KernelTypes::KLevel>)>) -> () {
+      let derived = nested_walk(block, flat_reals(flat), 0);
+      assert_eq!(aux_count(derived), aux_count(flat),
+        "modeled recursor family: its auxiliary members are not the constructors' nested occurrences");
+      assert_eq!(aux_all_in(derived, flat), 1,
+        "modeled recursor family: its auxiliary members are not the constructors' nested occurrences");
+      ()
+    }
+⟧
+
+  -- The block's own types among the entries, in order.
+
+def flat_reals := aiur_fn⟦
+  fn flat_reals(flat: Lists::List<(Bytes::AddressRef, Field, Lists::List<KernelTypes::KExpr>, Lists::List<KernelTypes::KLevel>)>)
+        -> Lists::List<(Bytes::AddressRef, Field, Lists::List<KernelTypes::KExpr>, Lists::List<KernelTypes::KLevel>)> {
+      match (*(flat)) {
+        Lists::Node::Nil => {  (&(Lists::Node::Nil)) } ,
+        Lists::Node::Cons(m, rest) => {
+          match m {
+            (_, is_aux, _, _) => {
+              match is_aux {
+                0 => {  (&(Lists::Node::Cons(m, flat_reals(rest)))) } ,
+                _ => {  flat_reals(rest) } ,
+              } } ,
+          } } ,
+      }
+    }
+⟧
+
+  -- The worklist: the constructors of entry `i` onwards, each new entry appended.
+
+def nested_walk := aiur_fn⟦
+  fn nested_walk(block: Bytes::AddressRef,
+                 acc: Lists::List<(Bytes::AddressRef, Field, Lists::List<KernelTypes::KExpr>, Lists::List<KernelTypes::KLevel>)>,
+                 i: Field)
+        -> Lists::List<(Bytes::AddressRef, Field, Lists::List<KernelTypes::KExpr>, Lists::List<KernelTypes::KLevel>)> {
+      match Lists::length(acc) - i {
+        0 => {  acc } ,
+        _ => {
+          let (addr, is_aux, sp, us) = Lists::lookup(acc, i);
+          match (*(Ingress::get_ci(addr))) {
+            KernelTypes::KConstantInfo::Induct(_, _, np, _, nctors, _, mblk, midx) => {
+              nested_walk(block,
+                ctors_scan(block, mblk, midx, nctors, 0, np, is_aux, sp, us, acc), i + 1) } ,
+          } } ,
+      }
+    }
+⟧
+
+  -- The constructors `c..` of one entry: a type of the block at its own parameters, an
+  -- auxiliary one at its parameters `sp`; both at the entry's levels `us`.
+
+def ctors_scan := aiur_fn⟦
+  fn ctors_scan(block: Bytes::AddressRef, mblk: Bytes::AddressRef, midx: Field, nctors: Field, c: Field,
+                np: Field, is_aux: Field, sp: Lists::List<KernelTypes::KExpr>,
+                us: Lists::List<KernelTypes::KLevel>,
+                acc: Lists::List<(Bytes::AddressRef, Field, Lists::List<KernelTypes::KExpr>, Lists::List<KernelTypes::KLevel>)>)
+        -> Lists::List<(Bytes::AddressRef, Field, Lists::List<KernelTypes::KExpr>, Lists::List<KernelTypes::KLevel>)> {
+      match nctors - c {
+        0 => {  acc } ,
+        _ => {
+          match (*(Ingress::get_ci_cprj(mblk, midx, c))) {
+            KernelTypes::KConstantInfo::Ctor(_, cty, _, _, _, _, _, _) => {
+              let t = KernelLevels::expr_inst_levels(cty, us);
+              let body = match is_aux {
+                0 => {  KernelCheck::peel_n_foralls(t, np) } ,
+                _ => {  inst_ctor_params(t, sp) } ,
+              };
+              ctors_scan(block, mblk, midx, nctors, c + 1, np, is_aux, sp, us,
+                         occ_scan(block, body, 0, acc)) } ,
+          } } ,
+      }
+    }
+⟧
+
+  -- A constructor type's parameters, syntactic binders, instantiated by `sp` (terms over
+  -- the recursor's parameters).
+
+def inst_ctor_params := aiur_fn⟦
+  fn inst_ctor_params(t: KernelTypes::KExpr, sp: Lists::List<KernelTypes::KExpr>) -> KernelTypes::KExpr {
+      match (*(sp)) {
+        Lists::Node::Nil => {  t } ,
+        Lists::Node::Cons(v, rest) => {
+          match (*(t)) {
+            KernelTypes::KExprNode::Forall(_, body, _) => {
+              inst_ctor_params(KernelSubst::expr_inst1(body, v, 0), rest) } ,
+          } } ,
+      }
+    }
+⟧
+
+  -- The nested occurrences in `e`, under `d` binders of the constructor's type. A subterm
+  -- that does not mention the block has none.
+
+def occ_scan := aiur_fn⟦
+  fn occ_scan(block: Bytes::AddressRef, e: KernelTypes::KExpr, d: Field,
+              acc: Lists::List<(Bytes::AddressRef, Field, Lists::List<KernelTypes::KExpr>, Lists::List<KernelTypes::KLevel>)>)
+        -> Lists::List<(Bytes::AddressRef, Field, Lists::List<KernelTypes::KExpr>, Lists::List<KernelTypes::KLevel>)> {
+      let blocks = (&(Lists::Node::Cons(block, (&(Lists::Node::Nil)))));
+      match KernelCheck::expr_mentions_block(e, blocks) {
+        0 => {  acc } ,
+        _ => {
+          match (*(e)) {
+            KernelTypes::KExprNode::App(_, _) => {
+              let (head, args) = KernelTypes::collect_spine(e);
+              match (*(head)) {
+                KernelTypes::KExprNode::Const(c, us) => {
+                  match (*(Ingress::get_ci(c))) {
+                    KernelTypes::KConstantInfo::Induct(_, _, cnp, _, _, _, cblk, _) => {
+                      let nested = match Bytes::address_eq(cblk, block) {
+                        1 => {  0 } ,
+                        _ => {
+                          match UInt32::less_than_fields(Lists::length(args), cnp) {
+                            1 => {  0 } ,
+                            _ => {  KernelCheck::list_any_mentions_block(Lists::take(args, cnp), blocks) } ,
+                          } } ,
+                      };
+                      match nested {
+                        1 => {
+                          add_block_members(KernelCheck::build_flat_originals(cblk, 0),
+                            occ_params_lower(Lists::take(args, cnp), d), us, acc) } ,
+                        _ => {  occ_scan_list(block, args, d, acc) } ,
+                      } } ,
+                    _ => {  occ_scan_list(block, args, d, acc) } ,
+                  } } ,
+                _ => {  occ_scan_list(block, args, d, occ_scan(block, head, d, acc)) } ,
+              } } ,
+            KernelTypes::KExprNode::Lam(t, b, _) => {
+              occ_scan(block, b, d + 1, occ_scan(block, t, d, acc)) } ,
+            KernelTypes::KExprNode::Forall(t, b, _) => {
+              occ_scan(block, b, d + 1, occ_scan(block, t, d, acc)) } ,
+            KernelTypes::KExprNode::Let(t, v, b) => {
+              occ_scan(block, b, d + 1, occ_scan(block, v, d, occ_scan(block, t, d, acc))) } ,
+            KernelTypes::KExprNode::Proj(_, _, x) => {  occ_scan(block, x, d, acc) } ,
+            _ => {  acc } ,
+          } } ,
+      }
+    }
+⟧
+
+def occ_scan_list := aiur_fn⟦
+  fn occ_scan_list(block: Bytes::AddressRef, es: Lists::List<KernelTypes::KExpr>, d: Field,
+                   acc: Lists::List<(Bytes::AddressRef, Field, Lists::List<KernelTypes::KExpr>, Lists::List<KernelTypes::KLevel>)>)
+        -> Lists::List<(Bytes::AddressRef, Field, Lists::List<KernelTypes::KExpr>, Lists::List<KernelTypes::KLevel>)> {
+      match (*(es)) {
+        Lists::Node::Nil => {  acc } ,
+        Lists::Node::Cons(x, rest) => {  occ_scan_list(block, rest, d, occ_scan(block, x, d, acc)) } ,
+      }
+    }
+⟧
+
+  -- An occurrence's parameters, from under `d` binders to the recursor's parameters: they
+  -- mention no binder of the constructor's type (Lean's kernel refuses such a nested
+  -- occurrence).
+
+def occ_params_lower := aiur_fn⟦
+  fn occ_params_lower(ds: Lists::List<KernelTypes::KExpr>, d: Field) -> Lists::List<KernelTypes::KExpr> {
+      match (*(ds)) {
+        Lists::Node::Nil => {  (&(Lists::Node::Nil)) } ,
+        Lists::Node::Cons(x, rest) => {
+          assert_eq!(KernelSubst::has_bvar_in_range(x, 0, d), 0,
+            "nested occurrence: its parameters mention a local variable");
+          (&(Lists::Node::Cons(KernelSubst::expr_lower(x, d, 0), occ_params_lower(rest, d)))) } ,
+      }
+    }
+⟧
+
+  -- Every type of an occurrence's block (`members`, as `build_flat_originals` lists them)
+  -- at the occurrence's parameters and levels, unless already an entry.
+
+def add_block_members := aiur_fn⟦
+  fn add_block_members(members: Lists::List<(Bytes::AddressRef, Field, Lists::List<KernelTypes::KExpr>, Lists::List<KernelTypes::KLevel>)>,
+                       sp: Lists::List<KernelTypes::KExpr>, us: Lists::List<KernelTypes::KLevel>,
+                       acc: Lists::List<(Bytes::AddressRef, Field, Lists::List<KernelTypes::KExpr>, Lists::List<KernelTypes::KLevel>)>)
+        -> Lists::List<(Bytes::AddressRef, Field, Lists::List<KernelTypes::KExpr>, Lists::List<KernelTypes::KLevel>)> {
+      match (*(members)) {
+        Lists::Node::Nil => {  acc } ,
+        Lists::Node::Cons(m, rest) => {
+          match m {
+            (maddr, _, _, _) => {
+              let acc2 = match aux_entry_in(acc, maddr, sp, us) {
+                1 => {  acc } ,
+                _ => {  Lists::snoc(acc, (maddr, 1, sp, us)) } ,
+              };
+              add_block_members(rest, sp, us, acc2) } ,
+          } } ,
+      }
+    }
+⟧
+
+  -- Whether `(addr, sp, us)` is an auxiliary entry: the same type, structurally the same
+  -- parameters and levels.
+
+def aux_entry_in := aiur_fn⟦
+  fn aux_entry_in(flat: Lists::List<(Bytes::AddressRef, Field, Lists::List<KernelTypes::KExpr>, Lists::List<KernelTypes::KLevel>)>,
+                  addr: Bytes::AddressRef, sp: Lists::List<KernelTypes::KExpr>,
+                  us: Lists::List<KernelTypes::KLevel>) -> Field {
+      match (*(flat)) {
+        Lists::Node::Nil => {  0 } ,
+        Lists::Node::Cons(m, rest) => {
+          match m {
+            (a, is_aux, s, u) => {
+              match is_aux * Bytes::address_eq(a, addr) {
+                1 => {
+                  match KernelCheck::spec_params_ptr_eq(s, sp) * KernelCheck::level_list_struct_eq(u, us) {
+                    1 => {  1 } ,
+                    _ => {  aux_entry_in(rest, addr, sp, us) } ,
+                  } } ,
+                _ => {  aux_entry_in(rest, addr, sp, us) } ,
+              } } ,
+          } } ,
+      }
+    }
+⟧
+
+def aux_count := aiur_fn⟦
+  fn aux_count(flat: Lists::List<(Bytes::AddressRef, Field, Lists::List<KernelTypes::KExpr>, Lists::List<KernelTypes::KLevel>)>) -> Field {
+      match (*(flat)) {
+        Lists::Node::Nil => {  0 } ,
+        Lists::Node::Cons(m, rest) => {
+          match m {
+            (_, is_aux, _, _) => {  aux_count(rest) + is_aux } ,
+          } } ,
+      }
+    }
+⟧
+
+  -- Every auxiliary entry of `derived` is one of `flat`'s. The derived entries are distinct,
+  -- and `flat`'s are distinct by type and parameters, so with equal counts the two sets agree.
+
+def aux_all_in := aiur_fn⟦
+  fn aux_all_in(derived: Lists::List<(Bytes::AddressRef, Field, Lists::List<KernelTypes::KExpr>, Lists::List<KernelTypes::KLevel>)>,
+                flat: Lists::List<(Bytes::AddressRef, Field, Lists::List<KernelTypes::KExpr>, Lists::List<KernelTypes::KLevel>)>) -> Field {
+      match (*(derived)) {
+        Lists::Node::Nil => {  1 } ,
+        Lists::Node::Cons(m, rest) => {
+          match m {
+            (a, is_aux, s, u) => {
+              match is_aux {
+                0 => {  aux_all_in(rest, flat) } ,
+                _ => {
+                  match aux_entry_in(flat, a, s, u) {
+                    1 => {  aux_all_in(rest, flat) } ,
+                    _ => {  0 } ,
+                  } } ,
+              } } ,
           } } ,
       }
     }
