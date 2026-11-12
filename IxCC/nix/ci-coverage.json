@@ -1742,6 +1742,7 @@
   "IxCCTests.Sem.Toy.Tick"],
  "grounding_modules":
  ["IxCCGrounding",
+  "IxCCGrounding.Adapt678",
   "IxCCGrounding.Apply",
   "IxCCGrounding.Case",
   "IxCCGrounding.CaseBlind",
@@ -1777,10 +1778,10 @@
   "IxCCGrounding.Syntax",
   "IxCCGrounding.Tele"],
  "grounding_axiom_sha256":
- "38cfa81590de80f92178daa16500d44b8c805dbef8e51871635a0e09c1036361",
- "grounding_axiom_count": 189,
+ "dcfe005edf93d0cc7428fec97d65fcc6499e28e067f4dc8438c4947445dee77b",
+ "grounding_axiom_count": 209,
  "baseline":
- "jcb/ixcc-data: fixed-width words below Lam, stage W1 piece 2 landing A (the Lam word primitive, the Rt tagged lowering proved once against a heap-free core, both routes)",
+ "GR13: the canonicity-free family over copies of #678 fields (IxCCGrounding.Adapt678, Laws678, LitDefs); grounding fence 209; merged with 5fc7926f8",
  "axiom_sha256":
  "cdad40c3d56169fe04b07ac1bd6ada81ab344cef2137483d5654a628901eef78",
  "axiom_count": 6603}

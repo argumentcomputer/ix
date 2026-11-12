@@ -4103,7 +4103,8 @@
     "IxCCGrounding.Check",
     "IxCCGrounding.CaseFire",
     "IxCCGrounding.Direct.Sites",
-    "IxCCGrounding.CaseBlind"]},
+    "IxCCGrounding.CaseBlind",
+    "IxCCGrounding.Adapt678"]},
   "IxCCGrounding.Fundamental":
   {"path": "IxCCGrounding/Fundamental.lean",
    "imports":
@@ -4118,7 +4119,8 @@
    ["IxCCGrounding.Ground",
     "IxCCGrounding.Root",
     "IxCCGrounding.Direct.Sites",
-    "IxCCGrounding.CaseBlind"]},
+    "IxCCGrounding.CaseBlind",
+    "IxCCGrounding.Adapt678"]},
   "IxCCGrounding.Facts":
   {"path": "IxCCGrounding/Facts.lean",
    "imports": ["IxCCGrounding.Direct.Check"]},
@@ -4172,6 +4174,9 @@
    "imports": ["IxCCGrounding.Tele", "IxCCGrounding.Heads"]},
   "IxCCGrounding.Apply":
   {"path": "IxCCGrounding/Apply.lean", "imports": ["IxCCGrounding.Relation"]},
+  "IxCCGrounding.Adapt678":
+  {"path": "IxCCGrounding/Adapt678.lean",
+   "imports": ["IxCCGrounding.Subst", "IxCCGrounding.Facts"]},
   "IxCCGrounding":
   {"path": "IxCCGrounding.lean",
    "imports":
@@ -4195,6 +4200,7 @@
     "IxCCGrounding.Case",
     "IxCCGrounding.CaseFire",
     "IxCCGrounding.CaseBlind",
+    "IxCCGrounding.Adapt678",
     "IxCCGrounding.Runs",
     "IxCCGrounding.CaseCheck",
     "IxCCGrounding.Check",
