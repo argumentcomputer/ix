@@ -157,10 +157,10 @@ theorem eval_word_lt (w : Width) (op : WordOp) (a b : Nat) (ha : a < w.size) (hb
   cases op <;> simp only [eval, WordResult.word.injEq, reduceCtorEq] at h
   case convert w'' =>
     by_cases hw : w.bits ≤ w''.bits
-    · simp only [hw, if_true, WordResult.word.injEq] at h
+    · simp only [hw, ↓reduceIte, WordResult.word.injEq] at h
       obtain ⟨rfl, rfl⟩ := h
       exact Nat.lt_of_lt_of_le ha (Width.size_le_of_bits_le hw)
-    · simp only [hw, if_false, WordResult.word.injEq] at h
+    · simp only [hw, ↓reduceIte, WordResult.word.injEq] at h
       obtain ⟨rfl, rfl⟩ := h
       exact Nat.mod_lt _ (Width.size_pos _)
   all_goals obtain ⟨rfl, rfl⟩ := h

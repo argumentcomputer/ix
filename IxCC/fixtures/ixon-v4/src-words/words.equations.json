@@ -1,0 +1,17 @@
+{"source": "Words.lean",
+ "roots":
+ [{"name": "Words.u8",
+   "address":
+   "85686610e7646e7cdafea0835ec659f6ba76754e41e95e3ec16a8fa6eef865bb"},
+  {"name": "Words.u16",
+   "address":
+   "30a4e8aadf29b29200333514ae67f67b1d5f04ef9b9afbe31f283d8fcd5199dc"},
+  {"name": "Words.u32",
+   "address":
+   "ac5182818ec2f1df4ab0fee4e393461fa2896e47c5b1534a092b248ec37626fc"},
+  {"name": "Words.u64",
+   "address":
+   "701cf2851acbec8ac08fb0b5c9c35276bbff41ccb16aca6ff93ddf598fb23415"}],
+ "format": "ixcc/k1-equations/1",
+ "failures": [],
+ "equations": []}
