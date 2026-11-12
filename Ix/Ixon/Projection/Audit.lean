@@ -149,9 +149,13 @@ from 5962, by the entry's change (38 in: the check, the state's keys and the der
 -- counts are unchanged.
 -- The canonical rule's level link and the declines of rules that would not fire add
 -- 17 compiled functions (`IxC/Kernel/Audit/Roots.lean`).
+-- The Ixon v5 binder-data section (its parser and the local canonical check that
+-- `Admission.decodeRecords` runs on every record) adds 38 compiled functions, as for
+-- `Admission.checkBytes` (`IxC/Kernel/Admission/Audit.lean`). Externs, implemented_by,
+-- unsafe, csimp and all ruling counts are unchanged.
 /-- info: runtime closure of [Ixon.Projection.address,
  Ixon.Projection.reconstruct,
- Ixon.Projection.checkBytes]: 6971 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 28 -/
+ Ixon.Projection.checkBytes]: 7009 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 28 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.Projection.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
 
