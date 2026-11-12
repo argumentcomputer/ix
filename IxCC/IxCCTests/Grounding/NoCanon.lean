@@ -8,8 +8,10 @@ on `phase1-decline/erase` and `OS16-plain`, each for one `case` entry over a fam
 parameter (its recursor's rules do not compare parameters). Controls on `decide`: the
 `Decidable.casesOn` entry's recursor made to compare parameters (its rules marked not blind) makes
 `noCanonB` false and leaves every conjunct of the check true; a constructor of that recursor given a
-level parameter makes `noCanonB` false (the check, which reads a constructor's level count against
-the family's, then refuses the shape too). -/
+level parameter makes `noCanonB` false, and the check's `stored` and `caseShape` with it: the landed
+check already refuses a constructor whose level count differs from its family's (`CaseWF.ctorRaw`,
+and `stored` against the program's levels), which is why no mutation of that kind leaves the check
+true. -/
 
 namespace IxCCTests.Grounding.NoCanon
 
