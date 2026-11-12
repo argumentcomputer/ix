@@ -155,6 +155,9 @@ theorem DefEq.unitLikeTy_sound (hin : RulesInputs V m φ) {d : Nat}
     (Option.some.inj hvT).symm
   -- the family's stored type: read at every depth, graded, the leaf a member
   obtain ⟨Ta, hTa, hokT, hmemT, hnfT, hbdT⟩ := constTy_pkg hin.const_ty hind rfl hlv
+  replace hnfT : (cvT.type.instantiateLevelParams cvT.levelParams us).hasFvar = false := hnfT
+  replace hbdT : (cvT.type.instantiateLevelParams cvT.levelParams us).looseBVarsBounded 0 = true :=
+    hbdT
   -- the family's unit law, at the same reading
   obtain ⟨TVa, hTVa, -, hlaw⟩ := hin.caps_ok.2 T cvT caps hind hunit hres φ us hlv
   have hTVeq : TVa = Ta := Option.some.inj (hTVa.symm.trans (hTa 0))
@@ -279,6 +282,9 @@ theorem DefEq.structEtaTy_sound (hin : RulesInputs V m φ) {d : Nat}
   obtain rfl := Option.some.inj (hwtaa.symm.trans hwD)
   -- the structure's stored type: read at every depth, graded, the leaf a member
   obtain ⟨Ta, hTa, hokT, hmemT, hnfT, hbdT⟩ := constTy_pkg hin.const_ty hind rfl hlvT
+  replace hnfT : (cvT.type.instantiateLevelParams cvT.levelParams us).hasFvar = false := hnfT
+  replace hbdT : (cvT.type.instantiateLevelParams cvT.levelParams us).looseBVarsBounded 0 = true :=
+    hbdT
   have hTF : Frame d (cvT.type.instantiateLevelParams cvT.levelParams us) :=
     ⟨Ix.Kernel.Expr.WScoped.of_not_hasFvar hnfT, hbdT,
       Ix.Kernel.Expr.LeavesBounded.of_not_hasFvar hnfT⟩

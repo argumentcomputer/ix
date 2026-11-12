@@ -389,7 +389,7 @@ theorem red_rename (hR : Renaming P f env env') :
   | _, _, _, .delta hu, he =>
     ⟨unfoldDefinition_good hR.rel he hu,
       .delta (by rw [unfoldDefinition_ren hR.rel he, hu]; rfl)⟩
-  | _, _, _, .deltaThm (n := n) (us := us) (cv := cv) (value := value)
+  | d, _, _, .deltaThm (n := n) (us := us) (cv := cv) (value := value)
       hf hlen hvf hvb hinf hde hinfT hred hz, _ => by
     have hci := hR.good hf
     simp only [ConstantInfo.Good] at hci
@@ -400,7 +400,7 @@ theorem red_rename (hR : Renaming P f env env') :
     obtain ⟨-, rs⟩ := red_rename hR hred gs
     have dvt := defEq_rename hR hde gvt hci.1.2
     refine ⟨hvg, ?_⟩
-    have key := Red.deltaThm (env := env') (n := n.map f) (us := us)
+    have key := Red.deltaThm (env := env') (d := d) (n := n.map f) (us := us)
       (cv := cv.mapKeys f) (value := value.mapKeys f)
       (by rw [hR.find hf]; rfl)
       (by rw [ConstantVal.mapKeys_levelParams]; exact hlen)
