@@ -158,12 +158,29 @@ def validate_user_axioms := aiur_fn⟦
     }
 ⟧
 
+  -- A claim with user axioms needs the table to bind `propext`, `Classical.choice` and
+  -- `sorryAx`: an unbound one's own axiom is an unbound safe axiom, which the claim could
+  -- otherwise list as a user axiom (the kernel's admission of a table under user axioms).
+
+def assert_axiom_roles_bound := aiur_fn⟦
+  fn assert_axiom_roles_bound(tbl: RoleTable) -> () {
+      assert_eq!(role_is_bound(tbl, KernelRoleSpec::role_propext()), 1,
+        "claim: user axioms need propext, Classical.choice and sorryAx bound");
+      assert_eq!(role_is_bound(tbl, KernelRoleSpec::role_choice()), 1,
+        "claim: user axioms need propext, Classical.choice and sorryAx bound");
+      assert_eq!(role_is_bound(tbl, KernelRoleSpec::role_sorry_ax()), 1,
+        "claim: user axioms need propext, Classical.choice and sorryAx bound");
+      ()
+    }
+⟧
+
 def load_role_ctx := aiur_fn⟦
   fn load_role_ctx(binding: Bytes::AddressRef, validator: Field, axioms_opt: Options::Option<Bytes::AddressRef>) -> RoleCtx {
       let tbl = load_role_table(binding);
       let axioms = match axioms_opt {
         Options::Option::None => {  RBTreeMap::RBTreeMap::Nil } ,
         Options::Option::Some(ax_root) => {
+          assert_axiom_roles_bound(tbl);
           validate_user_axioms(tbl, KernelClaim::load_assumption_tree(ax_root), RBTreeMap::RBTreeMap::Nil) } ,
       };
       match validator {
