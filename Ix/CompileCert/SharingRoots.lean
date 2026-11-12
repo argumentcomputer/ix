@@ -52,9 +52,9 @@ theorem convExpr_subst (context : ECx md) (substitution : Nat → Ixon.Expr)
   induction source with
   | share index => simp only [convExpr, substShares, meaning index.toNat bounded]
   | prj _ _ _ ih => simp only [convExpr, substShares, ih bounded]
-  | app _ _ ihf iha | lam _ _ _ ihf iha | all _ _ _ _ ihf iha =>
+  | app _ _ ihf iha | lam _ _ ihf iha | all _ _ ihf iha =>
     simp only [convExpr, substShares, ihf bounded.1, iha bounded.2]
-  | letE _ _ _ _ iht ihv ihb =>
+  | letE _ _ _ _ _ iht ihv ihb =>
     simp only [convExpr, substShares, iht bounded.1, ihv bounded.2.1, ihb bounded.2.2]
   | _ => rfl
 
