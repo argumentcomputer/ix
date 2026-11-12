@@ -650,6 +650,17 @@ def restrictClosure (env : Ix.Environment) (seeds : Array Ix.Name) (workers : Na
     level := Ix.Compile.Parallel.map workers (needsOf false) next
   return (seen, whole)
 
+/-- `env` restricted to the constants `inClosure` holds, a theorem `keepValue` does not
+hold with a placeholder value (nothing reads a theorem's value). -/
+def restrictEnv (env : Ix.Environment) (inClosure keepValue : Std.HashSet Ix.Name) : Ix.Environment :=
+  let blank (n : Ix.Name) (ci : Ix.ConstantInfo) : Ix.ConstantInfo :=
+    match ci with
+    | .thmInfo t =>
+      if keepValue.contains n then ci else .thmInfo { t with value := Ix.Expr.mkSort Ix.Level.mkZero }
+    | _ => ci
+  { env with consts := env.consts.fold (init := {}) fun m n ci =>
+      if inClosure.contains n then m.insert n (blank n ci) else m }
+
 /-- **Install a compile's input**: the constants whose source does not read
 (`Ix.Compile.BinderRead.sourceReads`: the records the walk will see) are found, and
 only their install closure (`restrictClosure`) is installed, theorems outside its
@@ -665,14 +676,8 @@ def installInput (env : Ix.Environment) (workers : Nat := 32) : IO (Except Strin
       if Ix.Compile.BinderRead.sourceReads find nc.2 then none else some nc.1) env.consts.toArray
   let seeds := unread.filterMap id
   let tcP ← IO.monoMsNow
-  let (closure, whole) ← IO.lazyPure fun _ => restrictClosure env seeds width
-  -- a theorem outside the whole part, with a placeholder value
-  let blank (n : Ix.Name) : Ix.ConstantInfo → Ix.ConstantInfo
-    | .thmInfo t =>
-      if whole.contains n then .thmInfo t else .thmInfo { t with value := Ix.Expr.mkSort Ix.Level.mkZero }
-    | ci => ci
-  let envI : Ix.Environment := { env with consts := env.consts.fold (init := {}) fun m n ci =>
-    if closure.contains n then m.insert n (blank n ci) else m }
+  let (inClosure, keepValue) ← IO.lazyPure fun _ => restrictClosure env seeds width
+  let envI := restrictEnv env inClosure keepValue
   let tc1 ← IO.monoMsNow
   let blocks ← IO.lazyPure fun _ => Ix.CondenseM.run (Ix.Compile.FrontEnd.graph envI)
   let t1 ← IO.monoMsNow
@@ -761,7 +766,8 @@ def datum (cx : Cx) (pi : Bool) (depth : Nat) (leaf : KExpr) : EM (Option PropWh
   let act : CM PropWhen :=
     if pi then Ix.Kernel.Cached.annotPwPiI cx.core cx.fe depth leaf
     else Ix.Kernel.Cached.annotPwLamI cx.core cx.fe depth leaf
-  (tryCatch (some <$> act) (fun _ => pure none) : CM (Option PropWhen))
+  let res ← (tryCatch (some <$> act) (fun _ => pure none) : CM (Option PropWhen))
+  pure res
 
 /-- A run of binders of one kind in both trees: each binder's domain in the
 record and in the source, and its metadata (the record's contracts); then both
