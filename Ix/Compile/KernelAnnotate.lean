@@ -132,6 +132,9 @@ structure Installed where
   /-- whether each record's route (the source reading or the walk) is printed
   (`IX_BD_T1STAT`, for measurement) -/
   t1stat : Bool := false
+  /-- whether every record is walked, the source reading off (`IX_BD_NOREAD`, for the
+  cross-check of the reading against IxC's pass) -/
+  noread : Bool := false
   /-- projection tables added for structures the install left without one, and
   those skipped because the structure is a proposition -/
   tablesAdded : Nat := 0
@@ -572,9 +575,10 @@ def installInput (env : Ix.Environment) (workers : Nat := 32) : IO (Except Strin
   let fixes := Fixes.parse ((← IO.getEnv "IX_BD_OFF").getD "")
   let tier1 := (← IO.getEnv "IX_BD_TIER1").isSome
   let t1stat := (← IO.getEnv "IX_BD_T1STAT").isSome
+  let noread := (← IO.getEnv "IX_BD_NOREAD").isSome
   let persist := (← IO.getEnv "IX_BD_NOPERSIST").isNone
   return (← install envI blocks workers parallel (!trace.isEmpty) fixes persist).map fun k =>
-    { k with env, stored, memo, trace, tier1, t1stat,
+    { k with env, stored, memo, trace, tier1, t1stat, noread,
              times := #[("installed constants (count)", envI.consts.size), ("condense", t1 - t0)] ++ k.times }
 
 /-! ## The walk -/
@@ -1238,7 +1242,7 @@ def annotate (k : Installed) (extra : Array (Ix.Name × Ix.ConstantInfo)) (names
       let name := (names[0]?.map (·.pretty)).getD "?"
       dbgTrace s!"BDT1R {route} {name}" fun _ => s
     else s
-  match Ix.Compile.BinderRead.section? find names c with
+  match (if k.noread then none else Ix.Compile.BinderRead.section? find names c) with
   | some s => stat "read" s
   | none => stat "walk" (annotateWalk k extra names c)
 
