@@ -26,9 +26,9 @@ the same bytes, and returns the data the Aiur values represent
 * `getBinders_refines_at`, `getBinders_refines`: `Ixon.getBinders`.
 
 IxVM's reader also asserts the section's local canonical form (a known
-`ekind`, a root block at variant 0, no empty block or parameter list,
-parameters strictly ascending and below the level count, blocks strictly
-ascending). Those assertions only narrow what IxVM accepts, so the proofs pass
+`ekind`, a block's index and variant below 2^32, a root block at variant 0, no
+empty block or parameter list, parameters strictly ascending and below the level
+count, blocks strictly ascending). Those assertions only narrow what IxVM accepts, so the proofs pass
 over them: they need only that an assertion leaves the heap extended. -/
 
 set_option maxRecDepth 100000
@@ -477,8 +477,13 @@ theorem getBinderBlock_refines_at {bytes : List UInt8} {i : Nat}
   rw [instanceName_plain_some] at callee73
   obtain ⟨rfl, t2, n2, restPtr3, hok2, -, hrep3, rfl⟩ := getTagN0_refines_at hrep2 callee73
   obtain rfl := matchPattern_tuple2_bind rfl mt68
+  -- UInt32::less_than_fields(UInt64::to_field(eidx), UInt64::to_field(variant)): both below 2^32
+  obtain ⟨v200, m201, bs202, d203, mt204, d205⟩ := d69.letValue_inv
+  rw [matchPattern_wildcard] at mt204
+  simp only [Except.ok.injEq, Option.some.injEq] at mt204; subst mt204
+  have ext203 := d203.heap_extends
   -- assert_eq!((1 - shared) * (1 - UInt64::is_zero(variant)), 0, ...)
-  obtain ⟨v80, m81, bs82, d83, mt84, d85⟩ := d69.letValue_inv
+  obtain ⟨v80, m81, bs82, d83, mt84, d85⟩ := d205.letValue_inv
   rw [matchPattern_wildcard] at mt84
   simp only [Except.ok.injEq, Option.some.injEq] at mt84; subst mt84
   have ext83 := d83.heap_extends
@@ -490,7 +495,7 @@ theorem getBinderBlock_refines_at {bytes : List UInt8} {i : Nat}
   obtain ⟨rfl, rfl⟩ := args100.nil_inv
   rw [instanceName_plain_some] at callee95
   obtain ⟨rfl, t3, n3, restPtr4, hok3, -, hrep4, rfl⟩ :=
-    getTagN0_refines_at (Aiur.Library.Bytes.repByteStream_heapMono₂ byteStreamEnum ext83 hrep3)
+    getTagN0_refines_at (Aiur.Library.Bytes.repByteStream_heapMono₂ byteStreamEnum (ext203.trans ext83) hrep3)
       callee95
   obtain rfl := matchPattern_tuple2_bind rfl mt90
   -- assert_eq!(UInt64::is_zero(count), 0, ...)

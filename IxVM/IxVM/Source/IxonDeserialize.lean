@@ -702,9 +702,9 @@ def get_constant_info := aiur_fn⟦
   -- 0 to 4; an `ifAllZero` parameter list (tag 2) nonempty, strictly ascending and below the
   -- record's level count (`max_lvls`, the largest of its members'); the section of a record with
   -- no root (a projection, an empty mutual block) empty. The undecided node (tag 4) is read; a
-  -- conversion that reaches it rejects. Indices,
-  -- variants, parameters and level counts are compared as fields by `UInt32::less_than_fields`,
-  -- which refuses a value of 2^32 or more where it compares one.
+  -- conversion that reaches it rejects. A block's index and variant are below 2^32;
+  -- parameters and level counts are compared as fields by `UInt32::less_than_fields`, which
+  -- refuses a value of 2^32 or more.
 
 def mut_const_lvls := aiur_fn⟦
   fn mut_const_lvls(m: Ixon::MutConst) -> Field {
@@ -817,6 +817,9 @@ def get_binder_block := aiur_fn⟦
       let shared = UInt8::to_field(ekind);
       let (eidx, s2) = get_tagn0(s);
       let (variant, s3) = get_tagn0(s2);
+      -- the index and the variant are below 2^32, which every comparison of them needs (block
+      -- order, the conversion's binder table), whether or not one reaches this block
+      UInt32::less_than_fields(UInt64::to_field(eidx), UInt64::to_field(variant));
       assert_eq!((1 - shared) * (1 - UInt64::is_zero(variant)), 0,
         "binder data: a root block at a variant other than 0");
       let (count, s4) = get_tagn0(s3);
