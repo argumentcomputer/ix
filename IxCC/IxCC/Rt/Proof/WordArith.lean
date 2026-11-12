@@ -154,6 +154,9 @@ theorem narrowShl_word (hp : p < w.size) (hq : q < w.size) :
     have := narrow_bits hw
     have := Nat.mod_lt q (Nat.lt_of_lt_of_le (by decide) (show 1 ≤ w.bits by cases w <;> decide))
     omega
+  have e : (WordOp.eval w .shiftLeft p q).val = (p * 2 ^ (q % w.bits)) % w.size := by
+    simp only [WordOp.eval, Src.WordResult.val, Nat.shiftLeft_eq]
+  rw [e]
   refine narrow_word hw (X := p * 2 ^ (q % w.bits)) ?_
   rw [UInt64.toNat_or, UInt64.toNat_shiftLeft, sub_one_toNat ha, hc, UInt64.toNat_one,
     Nat.mod_eq_of_lt hlt, Nat.shiftLeft_eq, Nat.mul_assoc]
@@ -170,7 +173,7 @@ theorem narrowComplement_word (hp : p < w.size) :
     rw [UInt64.toNat_sub, tagMask_toNat hw, UInt64.toNat_one]
     omega
   have hx : (w.size - 1) ^^^ p < w.size := by
-    have := Nat.xor_lt_two_pow (n := w.bits) (show w.size - 1 < 2 ^ w.bits by unfold Width.size; omega) hp
+    have := Nat.xor_lt_two_pow (n := w.bits) (show w.size - 1 < 2 ^ w.bits by have := w.size_pos; unfold Width.size at this ⊢; omega) hp
     exact this
   have e : (WordOp.eval w .complement p 0).val = ((w.size - 1) ^^^ p) % w.size := by
     simp only [WordOp.eval, Src.WordResult.val, Nat.mod_eq_of_lt hx]
@@ -286,7 +289,7 @@ theorem wideComplement_toNat :
   rfl
 
 include ha in
-theorem wideNeg_toNat : (0 - (a >>> 1)).toNat = (WordOp.eval .w64 .neg p 0).val := by
+theorem wideNeg_toNat : ((0 : Word) - (a >>> 1)).toNat = (WordOp.eval .w64 .neg p 0).val := by
   rw [UInt64.toNat_sub, untag_toNat ha]
   simp only [UInt64.toNat_zero, Nat.add_zero, WordOp.eval, Src.WordResult.val, Width.size, Width.bits]
 
