@@ -75,6 +75,8 @@ def suite : IO (List LSpec.TestSeq) := do
           | _, _, _ => none
       | .error _ => []
     let named := Ix.Compile.WordEquations.all.filter (added.contains ·.theoremName)
+    let subjects : List String := listed.map (·.2.1)
+    let sorted : Bool := subjects == subjects.mergeSort (fun a b => decide (a ≤ b))
     return [
       test "68 equations: per width one per primitive operation (17; `ofNat`'s is the bridge)"
         (all.length == 68),
@@ -88,8 +90,7 @@ def suite : IO (List LSpec.TestSeq) := do
       test s!"the output's theorems name each equation of the closure with its operation: {listed}"
         (listed.length == added.length && named.all fun e =>
           listed.contains ("word", e.operation.toString, e.theoremName.toString)),
-      test "the output's theorems are sorted by subject"
-        (let s := listed.map (·.2.1); s == s.mergeSort (· ≤ ·)),
+      test "the output's theorems are sorted by subject" sorted,
       test "a closure without words gets no theorem proposal"
         (Ix.Compile.Equations.theorems (plainClosed.map (·.1))).isEmpty]
 
