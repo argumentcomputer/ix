@@ -115,6 +115,11 @@ def liftExcept {α} (x : Except String α) : EncM α := match x with
   | .ok a => pure a
   | .error e => throw e
 
+/-- `e` as a record's expression. A binder or a let keeps its contracts
+(`BinderMeta.contract`/`result`, `LetMeta.contract`: a let's `nonDep` flag among
+them), which are committed content of the record the kernel read it from, so a
+declaration read from a record encodes to that record's expressions; the modeller's
+own binders and lets carry the Lean fragment's. -/
 partial def encExpr (nm : Names) (lps : List Nat) (self : Key .anon → Option Nat) :
     Expr .anon → EncM Ixon.Expr
   | .bvar i => pure (.var i.toUInt64)
@@ -126,10 +131,11 @@ partial def encExpr (nm : Names) (lps : List Nat) (self : Key .anon → Option N
     | some i => pure (.recur i.toUInt64 uis)
     | none => pure (.ref (← refOf (← liftExcept (nm.addr k))) uis)
   | .app f a => return .app (← encExpr nm lps self f) (← encExpr nm lps self a)
-  | .lam t b _ => return .leanLam (← encExpr nm lps self t) (← encExpr nm lps self b)
-  | .forallE t b _ => return .leanAll (← encExpr nm lps self t) (← encExpr nm lps self b)
-  | .letE t v b _ =>
-    return .leanLet false (← encExpr nm lps self t) (← encExpr nm lps self v) (← encExpr nm lps self b)
+  | .lam t b m => return .lam m.contract (← encExpr nm lps self t) (← encExpr nm lps self b)
+  | .forallE t b m =>
+    return .all m.contract m.result (← encExpr nm lps self t) (← encExpr nm lps self b)
+  | .letE t v b l =>
+    return .letE l.contract (← encExpr nm lps self t) (← encExpr nm lps self v) (← encExpr nm lps self b)
   | .lit (.natVal n) => return .nat (← blobOf (ByteArray.mk (Nat.toBytesLE n)))
   | .lit (.strVal s) => return .str (← blobOf s.toUTF8)
   | .proj s i e => do
