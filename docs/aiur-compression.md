@@ -689,8 +689,8 @@ catalog and deployed contracts are unchanged; adoption requires the
 versioned statement policy described in §3.4 and independent authorization
 of the new key. Existing default aggregation and recursion verification keys
 remain byte-identical after the native GL interface refactor. Their changed
-artifact identities and the acceptance-path fingerprint have separate review
-candidates, as the repository's pin gates require.
+artifact identities and the acceptance-path fingerprint are pinned separately
+under the repository's review gates.
 
 ## 12. Wide-field transport checkpoint
 
@@ -814,8 +814,7 @@ it is not the final two-field compression verifier or an Init performance result
 `CompressGL` now exports and small aggregate roots prove through its BN254 KZG
 adapter. An Init execution and count-only profile measured about 45.6 seconds,
 14.0 GB process peak RSS, and 61.7 GB of base main/fixed/lookup matrices. Proving
-workspaces are additional. The first full Init run through `ix bench run` is
-separate validation. A native baseline attempt proved and independently verified
+workspaces are additional. A native baseline attempt proved and independently verified
 Init but its compression preflight rejected the mismatch between the current
 authorized aggregation key and the older release compression key. No release
 check was relaxed, and that attempt is not a completed compression baseline.
@@ -835,6 +834,15 @@ compression from 972.9 to 130.0 seconds. The resulting proofs are byte-identical
 This is a compression-only measurement; root proving, the later Aiur KZG stage
 and terminal PLONK are outside its scope. The two external verification commands
 add approximately 199 seconds to the optimized diagnostic's total runtime.
+
+A [fresh Init run through `ix bench run`](measurements/aiur-compression-fresh-init.json)
+then passed with the key-bound KZG transcript and parallel physical packing.
+It reused no cached claims or joins and independently verified both the original
+aggregate and the compressed proof. Fresh proving took 588.8 seconds, root
+verification 98.5 seconds, first-stage compression 122.8 seconds, and compressed
+verification 99.9 seconds: 910.1 seconds total. Packing took 7.8 seconds and total
+trace preparation 24.7 seconds. This validates the first Aiur stage only; it does
+not include recursive Aiur KZG compression or terminal PLONK.
 
 The terminal `CompressFinal` source now composes the KZG verifier, policy and
 stage checks, accumulator handling and constrained pairing. Its exporter
