@@ -2022,7 +2022,7 @@
       "lean-toolchain": "d5edba4e4b8faad9c1baeadb265716d20d03be4d1a2647dc5e35b0c0325bea7b",
       "nix/build.nix": "46388020f117a06b447ce84229d08a077c3a57ceccf90eb3c91ad2eb0751c2f9",
       "nix/checks.nix": "56daef313f4b7232a5732333d4225e92f415c1eaf379a1814a0e2728febabf3f",
-      "nix/ci-coverage.json": "ba90c426be7cd90dcd748089d2414b8441e8badebde3e52bc01e26c8927a56db",
+      "nix/ci-coverage.json": "4dd1049f1e172f74fe69f83a09c9b434ccc466199b7a1c273a195d70bc3255d0",
       "nix/lean-modules.json": "948fc050dbde3e392ffe898f4fc2e9b4947d7590ff24448fb5c38a2e378478a7",
       "nix/sources.nix": "68ac9be48afc58308053746c2c556bfcab92a5c28a68d663890b1ee84e0fe553",
       "IxCCTests/Scripts/CheckAiur.lean": "f5f1c7cdf6921d9d6fdbafd93163d823c4ce2c9f6bd52751c3357c383585729a",
