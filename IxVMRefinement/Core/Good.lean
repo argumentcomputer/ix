@@ -82,13 +82,13 @@ structure LoadFacts (c : Ctx) : Prop where
       (b : Bytes.Address),
     ObsFn W "Ingress::get_ci_cprj" [bp, .field i, .field j] h ptr h' cs → Good c cs →
     Bytes.RepAddressRef addrTy h b bp →
-      ∃ ci, c.env.find? (c.κ (cprjAddr (ixAddr b) i.val j.val)) = some ci ∧
+      ∃ ci, c.env.find? (c.κ (cprjAddr (ixAddr b) (ZMod.val i) (ZMod.val j))) = some ci ∧
         CIPtrRep c.κ h' ptr ci
   getIprj : ∀ (bp ptr : SourceValue F) (i : F) (h h' : Heap F) (cs : List (Call F))
       (b : Bytes.Address),
     ObsFn W "Ingress::get_ci_iprj" [bp, .field i] h ptr h' cs → Good c cs →
     Bytes.RepAddressRef addrTy h b bp →
-      ∃ ci, c.env.find? (c.κ (iprjAddr (ixAddr b) i.val)) = some ci ∧ CIPtrRep c.κ h' ptr ci
+      ∃ ci, c.env.find? (c.κ (iprjAddr (ixAddr b) (ZMod.val i))) = some ci ∧ CIPtrRep c.κ h' ptr ci
 
 /-! ## Specs -/
 

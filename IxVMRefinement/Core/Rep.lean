@@ -213,12 +213,12 @@ inductive Tm (κ : _root_.Address → KKey) (d : Nat) (Γ : Nat → KExpr) (h : 
     Nat → KExpr → SourceValue F → Prop where
   | bvarLocal {k addr : Nat} {i : F}
       (cell : h[addr]? = some (.construct kexprEnum "BVar" [.field i]))
-      (hi : i.val < k) :
-      Tm κ d Γ h k (.bvar i.val) (.ptr (.enum kexprEnum) addr)
+      (hi : (ZMod.val i) < k) :
+      Tm κ d Γ h k (.bvar (ZMod.val i)) (.ptr (.enum kexprEnum) addr)
   | bvarFree {k addr : Nat} {i : F}
       (cell : h[addr]? = some (.construct kexprEnum "BVar" [.field i]))
-      (hk : k ≤ i.val) (hd : i.val - k < d) :
-      Tm κ d Γ h k (.fvar (fvIdx d k i.val) (Γ (fvIdx d k i.val))) (.ptr (.enum kexprEnum) addr)
+      (hk : k ≤ (ZMod.val i)) (hd : (ZMod.val i) - k < d) :
+      Tm κ d Γ h k (.fvar (fvIdx d k (ZMod.val i)) (Γ (fvIdx d k (ZMod.val i)))) (.ptr (.enum kexprEnum) addr)
   | sort {k addr : Nat} {lp : SourceValue F} {l u : KLevel}
       (cell : h[addr]? = some (.construct kexprEnum "Srt" [lp]))
       (rl : RepKLevel h l lp) (hu : LvEq u l) :
@@ -255,7 +255,7 @@ inductive Tm (κ : _root_.Address → KKey) (d : Nat) (Γ : Nat → KExpr) (h : 
   | proj {k addr : Nat} {ap ep : SourceValue F} {a : Bytes.Address} {i : F} {E : KExpr}
       (cell : h[addr]? = some (.construct kexprEnum "Proj" [ap, .field i, ep]))
       (ra : Bytes.RepAddressRef addrTy h a ap) (re : Tm κ d Γ h k E ep) :
-      Tm κ d Γ h k (.proj (κ (ixAddr a)) i.val E) (.ptr (.enum kexprEnum) addr)
+      Tm κ d Γ h k (.proj (κ (ixAddr a)) (ZMod.val i) E) (.ptr (.enum kexprEnum) addr)
 
 section
 variable (κ : _root_.Address → KKey) (d : Nat) (Γ : Nat → KExpr)
@@ -346,8 +346,8 @@ theorem Tm.isPtr (rep : Tm κ d Γ h k E p) : ∃ addr, p = .ptr (.enum kexprEnu
 theorem Tm.bvar_of_load {x : SourceValue F} (rep : Tm κ d Γ h k E p)
     (hl : loadValue h p = .ok (.construct kexprEnum "BVar" [x])) :
     ∃ i : F, x = .field i ∧
-      ((i.val < k ∧ E = .bvar i.val) ∨
-        (k ≤ i.val ∧ i.val - k < d ∧ E = .fvar (fvIdx d k i.val) (Γ (fvIdx d k i.val)))) := by
+      (((ZMod.val i) < k ∧ E = .bvar (ZMod.val i)) ∨
+        (k ≤ (ZMod.val i) ∧ (ZMod.val i) - k < d ∧ E = .fvar (fvIdx d k (ZMod.val i)) (Γ (fvIdx d k (ZMod.val i))))) := by
   cases rep with
   | bvarLocal cell hi =>
     obtain ⟨-, hxs⟩ := load_cell cell hl
@@ -452,7 +452,7 @@ theorem Tm.lit_of_load {x : SourceValue F} (rep : Tm κ d Γ h k E p)
 
 theorem Tm.proj_of_load {x y z : SourceValue F} (rep : Tm κ d Γ h k E p)
     (hl : loadValue h p = .ok (.construct kexprEnum "Proj" [x, y, z])) :
-    ∃ a (i : F) Es, y = .field i ∧ E = .proj (κ (ixAddr a)) i.val Es ∧
+    ∃ (a : Bytes.Address) (i : F) (Es : KExpr), y = .field i ∧ E = .proj (κ (ixAddr a)) (ZMod.val i) Es ∧
       Bytes.RepAddressRef addrTy h a x ∧ Tm κ d Γ h k Es z := by
   cases rep with
   | proj cell ra re =>
