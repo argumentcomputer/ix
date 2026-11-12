@@ -120,8 +120,10 @@ it). Recursors now enter the checked set by class, each class once its case of
 the fundamental lemma is proved (G3, parts A and B: a recursor head in the
 relation, the checked recursor shape, the class of `False.rec`, which traps;
 part C: the built-in `Eq.rec`, whose meaning, the minor premise returned, is
-proved from ι and the model's `Eq` law), so the check accepts 29 of the 49
-closures. One checked hypothesis, `ResultTag`, still rejects some roots (a `Bool` root returning `false` on the committed
+proved from ι and the model's `Eq` law; part D's first step: the field-less
+recursors without parameters, `Bool.rec`, whose meaning is proved from ι and
+level-parameter irrelevance alone), so the check accepts 31 of the 50 closures
+that load. One checked hypothesis, `ResultTag`, still rejects some roots (a `Bool` root returning `false` on the committed
 closures). What remains: a model of the laws (below), widening the fragment
 and the direct route's conversion, `ResultTag`, and progress; the
 certification design lists every hypothesis with who discharges it.

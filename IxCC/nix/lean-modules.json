@@ -4125,6 +4125,8 @@
    "imports": ["IxCCGrounding.Ground", "IxCCGrounding.RootCheck"]},
   "IxCCGrounding.Relation":
   {"path": "IxCCGrounding/Relation.lean", "imports": ["IxCCGrounding.Model"]},
+  "IxCCGrounding.RecFlat":
+  {"path": "IxCCGrounding/RecFlat.lean", "imports": ["IxCCGrounding.CaseFire"]},
   "IxCCGrounding.Ok":
   {"path": "IxCCGrounding/Ok.lean", "imports": ["IxCCGrounding.Syntax"]},
   "IxCCGrounding.Model":
@@ -4150,7 +4152,10 @@
   "IxCCGrounding.Fundamental":
   {"path": "IxCCGrounding/Fundamental.lean",
    "imports":
-   ["IxCCGrounding.Hyps", "IxCCGrounding.Heads", "IxCCGrounding.EqRec"]},
+   ["IxCCGrounding.Hyps",
+    "IxCCGrounding.Heads",
+    "IxCCGrounding.EqRec",
+    "IxCCGrounding.RecFlat"]},
   "IxCCGrounding.Fence":
   {"path": "IxCCGrounding/Fence.lean",
    "imports":
@@ -4212,6 +4217,7 @@
     "IxCCGrounding.Support",
     "IxCCGrounding.Heads",
     "IxCCGrounding.EqRec",
+    "IxCCGrounding.RecFlat",
     "IxCCGrounding.Hyps",
     "IxCCGrounding.Fundamental",
     "IxCCGrounding.Ok",
