@@ -264,6 +264,21 @@ recursor clause and its implication from the landed one. -/
 /-- info: 'IxCC.Grounding.caseStored_of_named' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Grounding.caseStored_of_named
 
+/-- info: 'IxCC.Grounding.KTab.get_of' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.KTab.get_of
+
+/-- info: 'IxCC.Grounding.DCtx.findProj?_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.DCtx.findProj?_eq
+
+/-- info: 'IxCC.Grounding.DCtx.neverProp_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.DCtx.neverProp_sound
+
+/-- info: 'IxCC.Grounding.betaStar_reduces' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.betaStar_reduces
+
+/-- info: 'IxCC.Grounding.fitsWith_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.fitsWith_sound
+
 /-- info: 'IxCC.Grounding.spine_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Grounding.spine_sound
 

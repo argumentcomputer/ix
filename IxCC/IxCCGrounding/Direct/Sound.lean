@@ -91,7 +91,7 @@ theorem directSound_zero {x : DCtx} : DirectSound M φ x 0 where
 
 section Succ
 
-variable (hL : Laws M) (hN : NatBasis env) {x : DCtx} (hx : x.env = env) (hφ : AtProf φ x)
+variable (hL : Laws M) (hN : NatBasis env) {x : DCtx} (hx : x.Reads env) (hφ : AtProf φ x)
   {n : Nat} (IH : DirectSound M φ x n)
 include IH
 
@@ -135,7 +135,7 @@ theorem infer_succ : ∀ Γ e T, dInfer x (n + 1) Γ e = some T → HasTy M φ �
       · rename_i hc
         cases h
         simp only [Bool.and_eq_true] at hc
-        exact hasTy_const hL (hx ▸ hf) hc.2
+        exact hasTy_const hL ((hx k).symm.trans hf) hc.2
       · cases h
     · cases h
   | app f a =>
@@ -190,11 +190,13 @@ theorem whnf_succ : ∀ δ Γ e e', whnfD x (n + 1) δ Γ e = some e' → Reduce
   split at h
   · rename_i D b m a1 rest hfn hargs
     split at h
-    · rename_i hc
+    · cases h; exact reduces_refl
+    · rename_i k e2 hb
       rw [hfn, hargs] at he
       rw [← he]
-      exact reduces_trans (reduces_beta rest (IH.check Γ a1 D hc)) (IH.whnf δ Γ _ _ h)
-    · cases h; exact reduces_refl
+      have hr := betaStar_reduces (fun a A hc => IH.check Γ a A hc) (a1 :: rest) (.lam D b m)
+      rw [hb] at hr
+      exact reduces_trans hr (IH.whnf δ Γ _ _ h)
   · rename_i k us hfn
     split at h
     · -- a `Nat` primitive on literals
@@ -206,10 +208,9 @@ theorem whnf_succ : ∀ δ Γ e e', whnfD x (n + 1) δ Γ e = some e' → Reduce
     · split at h
       · -- ι
         rename_i _ e2 hi
-        rw [hx] at hi
         rw [hfn] at he
         rw [← he]
-        exact reduces_trans (iotaStep_sound hL (fun a a' hw => IH.whnf true Γ a a' hw)
+        exact reduces_trans (iotaStep_sound hL hx (fun a a' hw => IH.whnf true Γ a a' hw)
           (fun T as hf => IH.fits Γ T as hf) (fun ps qs hc => IH.args Γ ps qs hc) hi)
           (IH.whnf δ Γ _ _ h)
       · split at h
@@ -219,7 +220,7 @@ theorem whnf_succ : ∀ δ Γ e e', whnfD x (n + 1) δ Γ e = some e' → Reduce
             simp only [Bool.and_eq_true, beq_iff_eq] at hc
             rw [hfn] at he
             rw [← he]
-            exact reduces_trans (reduces_delta hL (hx ▸ hf) hc.2 _) (IH.whnf δ Γ _ _ h)
+            exact reduces_trans (reduces_delta hL ((hx k).symm.trans hf) hc.2 _) (IH.whnf δ Γ _ _ h)
           · cases h; exact reduces_refl
         · cases h; exact reduces_refl
   · rename_i s i p hfn
@@ -239,8 +240,9 @@ theorem whnf_succ : ∀ δ Γ e e', whnfD x (n + 1) δ Γ e = some e' → Reduce
             rw [hfn] at he
             rw [← he]
             exact reduces_trans
-              (reduces_proj hL _ (IH.whnf δ Γ p p' hp) hpfn hpargs (hx ▸ hck0) (hx ▸ hfp) hct
-                (hx ▸ neverProp_of_check hns) hlen hdef (IH.fits Γ _ cargs hfits) hfi)
+              (reduces_proj hL _ (IH.whnf δ Γ p p' hp) hpfn hpargs ((hx _).symm.trans hck0)
+                ((DCtx.findProj?_eq hx s i).symm.trans hfp) hct
+                (DCtx.neverProp_sound hx hns) hlen hdef (IH.fits Γ _ cargs hfits) hfi)
               (IH.whnf δ Γ _ _ h)
           · cases h; exact reduces_refl
         · cases h; exact reduces_refl
@@ -284,14 +286,8 @@ theorem check_succ : ∀ Γ a A, dCheck x (n + 1) Γ a A = true → ChecksAt M �
 
 theorem fits_succ : ∀ Γ T as, dFits x (n + 1) Γ T as = true → FitsAt M φ Γ T as := by
   intro Γ T as h
-  cases as with
-  | nil => exact fitsAt_nil
-  | cons a as =>
-    cases T with
-    | forallE A B m =>
-      simp only [dFits, Bool.and_eq_true, decide_eq_true_eq] at h
-      exact fitsAt_cons h.1.1 (IH.check Γ a A h.1.2) (IH.fits Γ _ as h.2)
-    | _ => simp [dFits] at h
+  unfold dFits at h
+  exact fitsWith_sound (fun a A hc => IH.check Γ a A hc) as T h
 
 theorem args_succ : ∀ Γ ps qs, convArgs x (n + 1) Γ ps qs = true → ∀ ρ, CtxSat M φ Γ ρ →
     ∀ Ys Ys', DenotesList M.cval env φ ρ ps Ys → DenotesList M.cval env φ ρ qs Ys' → Ys = Ys' := by
@@ -360,7 +356,7 @@ end Succ
 
 /-- **The direct route is sound**, in every model with the laws, at every assignment one of the
 profiles stands for. -/
-theorem direct_sound (hL : Laws M) (hN : NatBasis env) {x : DCtx} (hx : x.env = env)
+theorem direct_sound (hL : Laws M) (hN : NatBasis env) {x : DCtx} (hx : x.Reads env)
     (hφ : AtProf φ x) : ∀ n, DirectSound M φ x n
   | 0 => directSound_zero
   | n + 1 =>

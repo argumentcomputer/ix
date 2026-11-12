@@ -24,7 +24,7 @@ section Sem
 variable {V : Type w} [Ix.Kernel.SetTheory V] {env : KEnv} {M : Model V env}
 
 /-- **The sites of a spine the walk accepts are `SiteOk`**, when the spine denotes. -/
-theorem spine_sound (hL : Laws M) (hN : NatBasis env) {x : DCtx} (hx : x.env = env)
+theorem spine_sound (hL : Laws M) (hN : NatBasis env) {x : DCtx} (hx : x.Reads env)
     {φ : LevelParam → Nat} (hφ : AtProf φ x) {n : Nat} {Γ : List KExpr} {h : KExpr}
     {args : List KExpr} (hD : DenotesIn M φ Γ (Expr.mkAppN h args)) :
     ∀ s ∈ (spineSites Γ h args).take (spineAccepted x n Γ h args),
@@ -75,7 +75,7 @@ theorem spine_sound (hL : Laws M) (hN : NatBasis env) {x : DCtx} (hx : x.env = e
       · simp at hs
 
 /-- A site the spine walk does not refuse is typed. -/
-theorem spineRefused_sound (hL : Laws M) (hN : NatBasis env) {x : DCtx} (hx : x.env = env)
+theorem spineRefused_sound (hL : Laws M) (hN : NatBasis env) {x : DCtx} (hx : x.Reads env)
     {φ : LevelParam → Nat} (hφ : AtProf φ x) {n : Nat} {Γ : List KExpr} {h : KExpr}
     {args : List KExpr} (hD : DenotesIn M φ Γ (Expr.mkAppN h args)) :
     ∀ s ∈ spineSites Γ h args, s ∉ spineRefused x n Γ h args → SiteOk M φ s.1 s.2.1 s.2.2 := by
@@ -89,17 +89,19 @@ theorem spineRefused_sound (hL : Laws M) (hN : NatBasis env) {x : DCtx} (hx : x.
 /-- **A site of a run term the walk does not refuse is `SiteOk`**: at a level instantiation whose
 profile is in the walk's set, every site `evalSites` lists, and every pending site of the
 enclosing applications (`spineSites Γ e acc`), is refused or typed. -/
-theorem termRefused_sound (hL : Laws M) (hN : NatBasis env) {lps : List Nat} {n : Nat}
+theorem termRefused_sound (hL : Laws M) (hN : NatBasis env) {tab : KTab}
+    (htab : ∀ k, tab[k]? = env.find? k) {lps : List Nat} {n : Nat}
     {ls : Levels} {φ : LevelParam → Nat} (hφ : ProfAt φ lps (IxCC.Src.profileOf ls)) :
     ∀ (t : Term) (P : List IxCC.Src.Profile) (Γ : List KExpr) (e : KExpr) (acc : List KExpr),
       IxCC.Src.profileOf ls ∈ P → DenotesIn M φ Γ (Expr.mkAppN e acc) →
       ∀ s, (s ∈ evalSites ls Γ t e ∨ s ∈ spineSites Γ e acc) →
-        s ∉ termRefused env lps n P Γ t e acc → SiteOk M φ s.1 s.2.1 s.2.2 := by
+        s ∉ termRefused tab lps n P Γ t e acc → SiteOk M φ s.1 s.2.1 s.2.2 := by
   have spine : ∀ (P : List IxCC.Src.Profile) (Γ : List KExpr) (h : KExpr) (acc : List KExpr),
       IxCC.Src.profileOf ls ∈ P → DenotesIn M φ Γ (Expr.mkAppN h acc) →
-      ∀ s ∈ spineSites Γ h acc, s ∉ spineRefused { env, lps, profs := P } n Γ h acc →
+      ∀ s ∈ spineSites Γ h acc, s ∉ spineRefused { tab, lps, profs := P } n Γ h acc →
         SiteOk M φ s.1 s.2.1 s.2.2 :=
-    fun P Γ h acc hP hD => spineRefused_sound hL hN rfl ⟨_, hP, hφ⟩ hD
+    fun P Γ h acc hP hD =>
+      spineRefused_sound (x := { tab, lps, profs := P }) hL hN htab ⟨_, hP, hφ⟩ hD
   intro t
   induction t with
   | app f a mo r ihf iha =>
@@ -256,13 +258,14 @@ theorem sitesOk_of_res (hL : Laws M) {p : Program} {κ : CId → KKey} {lpsOf : 
       refine ⟨mem_profiles _ _ (by rw [IxCC.Src.profileOf, List.length_map, hlen]), ?_⟩
       rw [← irrAt_profile, hirr]
       rfl
-    unfold runRefused at hin
+    unfold runRefused runRefusedT at hin
     split at hin
     · cases hPq : okProfiles p ann c with
       | nil => rw [hPq] at hP; simp at hP
       | cons q qs =>
         rw [hPq] at hin hP
-        exact termRefused_sound hL hG.natBasis hφ t (q :: qs) [] e [] hP hden s (Or.inl hs) hin
+        exact termRefused_sound hL hG.natBasis (KTab.get_of env) hφ t (q :: qs) [] e [] hP hden s
+          (Or.inl hs) hin
     · exact absurd (evalSites_sub_allSites ls t [] e s hs) hin
 
 /-- **The check refuses no site** (decided by `sitesDirectB`). -/
@@ -276,7 +279,10 @@ theorem directFacts_of_check {p : Program} {κ : CId → KKey} {lpsOf : CId → 
     {ann : IxCC.Src.Relevance.Ann} {Sl : List CId} (hchk : groundCheck p env κ lpsOf ann Sl = true)
     (hD : sitesDirectB p env κ lpsOf ann Sl = true) : DirectFacts p env κ lpsOf ann (· ∈ Sl) := by
   intro c ls t e hc _ hrp s _ hin
-  have h1 := List.all_eq_true.mp hD c hc
+  unfold runRefused at hin
+  have hD' : Sl.all (fun c => (runPairsB p env κ c).all fun (t, e) =>
+      (runRefusedT (KTab.of env) p lpsOf ann c t e).isEmpty) = true := hD
+  have h1 := List.all_eq_true.mp hD' c hc
   have h2 := List.all_eq_true.mp h1 (t, e) (runPair_mem_of_check hchk hc hrp)
   simp only [List.isEmpty_iff] at h2
   rw [h2] at hin

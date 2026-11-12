@@ -3742,10 +3742,13 @@
     "IxCCGrounding.Case"]},
   "IxCCGrounding.Direct.Eq":
   {"path": "IxCCGrounding/Direct/Eq.lean",
-   "imports": ["IxCCGrounding.Direct.Check", "IxCCGrounding.Subst"]},
+   "imports":
+   ["IxCCGrounding.Direct.Check",
+    "IxCCGrounding.Subst",
+    "Std.Data.HashMap.Lemmas"]},
   "IxCCGrounding.Direct.Check":
   {"path": "IxCCGrounding/Direct/Check.lean",
-   "imports": ["IxCCGrounding.Check"]},
+   "imports": ["IxCCGrounding.Check", "Std.Data.HashMap"]},
   "IxCCGrounding.Check":
   {"path": "IxCCGrounding/Check.lean",
    "imports": ["IxCCGrounding.Ok", "IxCCGrounding.CaseCheck"]},

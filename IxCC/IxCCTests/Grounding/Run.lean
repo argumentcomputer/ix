@@ -230,12 +230,19 @@ def allRunSites (i : Input) : List (CId × Site) :=
   i.Sl.flatMap fun c => (runPairsB i.src i.env i.κ c).flatMap fun (t, e) =>
     (allSites [] t e).map fun s => (c, s)
 
-/-- The refused sites of `Sl`'s run terms. -/
+/-- The refused sites of `Sl`'s run terms (`runRefused`, with the reading's table built once). -/
 def refusedSites (i : Input) : List (CId × Site) :=
+  let tab := KTab.of i.env
   i.Sl.flatMap fun c => (runPairsB i.src i.env i.κ c).flatMap fun (t, e) =>
-    (runRefused i.src i.env i.lpsOf i.ann c t e).map fun s => (c, s)
+    (runRefusedT tab i.src i.lpsOf i.ann c t e).map fun s => (c, s)
 
 def directOk (i : Input) : Bool := sitesDirectB i.src i.env i.κ i.lpsOf i.ann i.Sl
+
+/-- `expect` with its failure message computed only when the assertion fails (several messages
+count refused sites, a walk of the closure). -/
+def expectL (a : Assert) (cond : Bool) (msg : Unit → String) : IO Unit := do
+  unless cond do throw (IO.userError (msg ()))
+  a.modify (· + 1)
 
 /-- (a) The stored type of a constant passed as an argument made `Nat`. -/
 def mutateArgType (i : Input) : Option (Input × KKey) := do
@@ -422,7 +429,7 @@ def run : IO Bool := do
       IO.println s!"{s.label}: {i.Sl.length} constants, every conjunct of the check and of the \
         root's checks true; SrcEval reads back {repr out}"
       -- the direct route (G2a): no site refused
-      expect a (directOk i)
+      expectL a (directOk i) fun _ =>
         s!"{s.label}: sitesDirect is false: {(refusedSites i).length} sites refused"
       IO.println s!"{s.label}: sitesDirect true: none of {(allRunSites i).length} application sites \
         of the run terms refused"
@@ -470,10 +477,10 @@ def run : IO Bool := do
       s!"structure c{ps} made a family of propositions: false conjuncts {pp}, expected [proj]"
     -- the direct route's controls: each makes `sitesDirect` false and leaves `groundCheck` true
     let some (ia, ka) := mutateArgType i | throw (IO.userError "fib: no constant argument")
-    expect a (!directOk ia && (failing ia).isEmpty)
+    expectL a (!directOk ia && (failing ia).isEmpty) fun _ =>
       s!"argument {ka}'s stored type made Nat: sitesDirect {directOk ia}, false conjuncts {failing ia}"
     let some (ih, kh) := mutateHeadDatum i | throw (IO.userError "fib: no head with a `never` binder")
-    expect a (!directOk ih && (failing ih).isEmpty)
+    expectL a (!directOk ih && (failing ih).isEmpty) fun _ =>
       s!"head {kh}'s first binder datum made always: sitesDirect {directOk ih}, false conjuncts {failing ih}"
     IO.println s!"direct-route controls: argument {ka}'s type made Nat, head {kh}'s datum made \
       always a proposition: sitesDirect false, groundCheck true"
@@ -507,7 +514,7 @@ def run : IO Bool := do
       "lvlEq equates two levels that differ at some assignment"
     -- the fuel: a nested argument costs two levels, so 31 nested `Nat.succ`s are typed at the
     -- check's fuel and 32 are not
-    let xf : DCtx := { env := i.env, lps := [], profs := [[]] }
+    let xf : DCtx := { tab := KTab.of i.env, lps := [], profs := [[]] }
     expect a (dInfer xf directFuel [] (succs 31) == some natK && (dInfer xf directFuel [] (succs 32)).isNone)
       s!"the fuel: 31 nested Nat.succ typed {dInfer xf directFuel [] (succs 31) |>.isSome}, \
         32 typed {dInfer xf directFuel [] (succs 32) |>.isSome}"
@@ -527,7 +534,7 @@ def run : IO Bool := do
     -- ι, `Nat` arithmetic on literals and `imax u u`, on `tags16`: the landed route refused 36 of
     -- its 200 sites, the widened one none
     let (ti, tcore) ← loadClosure "tags16" "fixtures/corpus/phase1-boundary/tags16" ["Limits.tags16"]
-    expect a (directOk ti) s!"tags16: sitesDirect is false: {(refusedSites ti).length} sites refused"
+    expectL a (directOk ti) fun _ => s!"tags16: sitesDirect is false: {(refusedSites ti).length} sites refused"
     let tt ← oracleOn a "tags16" tcore ti
     expect a ((tt.sites, tt.instances, tt.datumHolds) == (200, 214, 76))
       s!"tags16: oracle counts {(tt.sites, tt.instances, tt.datumHolds)}, expected (200, 214, 76)"
@@ -538,17 +545,19 @@ def run : IO Bool := do
       site-profile instances; Bool.rec's `true` rule given `false`'s right-hand side: sitesDirect false ({(refusedSites tm).length} \
       sites refused)"
     -- string literals, on `panic`: the landed route refused 34 of its 762 sites (25 at string
-    -- literals), the widened one 1
+    -- literals), the widened one 1 (a `Char` validity proof), none since G3's cost fix (a
+    -- telescope's width costs no fuel), the kernel agreeing
     let (pa, pcore) ← loadClosure "panic" "fixtures/corpus/phase1-decline/panic" ["Decline.withPanic"]
     let pt ← oracleOn a "panic" pcore pa
-    expect a ((pt.sites, pt.accepted) == (762, 761))
-      s!"panic: {pt.accepted} of {pt.sites} sites accepted, expected 761 of 762"
+    expect a ((pt.sites, pt.accepted) == (762, 762))
+      s!"panic: {pt.accepted} of {pt.sites} sites accepted, expected 762 of 762"
     let pm := mutateStringOfList pa
-    expect a ((refusedSites pm).length > (refusedSites pa).length)
+    let npm := (refusedSites pm).length
+    expect a (npm > (refusedSites pa).length)
       s!"panic: String.ofList's codomain made Nat, and no more site is refused"
     IO.println s!"panic: {pt.accepted} of {pt.sites} sites accepted, the kernel agrees at all \
       {pt.acceptedInstances} accepted instances; String.ofList's codomain made Nat: \
-      {(refusedSites pm).length} refused"
+      {npm} refused"
     -- the renaming-tolerant `case` shape, on `OS16-plain`: `List.casesOn`'s recursor names its
     -- level parameters apart; the landed check refused the closure at `caseShape` alone
     let (oi, _) ← loadClosure "OS16-plain" "fixtures/ownership/OS16-plain" []

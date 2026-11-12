@@ -1,8 +1,12 @@
 import IxCCGrounding.Direct.Check
 import IxCCGrounding.Subst
+import Std.Data.HashMap.Lemmas
 
 /-!
 # Profiles and equality up to what the denotation does not read (`IxCCGrounding.Direct.Eq`)
+
+**The reading's table** (`KTab.get_of`): a lookup in `KTab.of env` is `env.find?`, so a checker
+context built on it reads `env` (`DCtx.Reads`), its projection entries and `NeverProp` too.
 
 **Part A, profiles.** A binder datum reads an assignment only through which of its parameters are
 zero, so its value at a profile is its value at every assignment that profile stands for
@@ -22,6 +26,46 @@ open Ix.Kernel.SetTheory
 open Ix.Kernel.SetModel
 
 universe w
+
+/-! ## The reading's table -/
+
+/-- **A lookup in the table is `Env.find?`**: the table is built from the end of the list, so the
+first constant of a key is inserted last and wins. -/
+theorem KTab.get_of (env : KEnv) (k : KKey) : (KTab.of env)[k]? = env.find? k := by
+  obtain ⟨cs⟩ := env
+  show (cs.foldr (fun ci m => m.insert ci.name ci) ({} : KTab))[k]? = cs.find? (·.name == k)
+  induction cs with
+  | nil => simp
+  | cons ci cs ih =>
+    simp only [List.foldr_cons, List.find?_cons]
+    rw [Std.HashMap.getElem?_insert, ih]
+    cases h : (ci.name == k) <;> simp
+
+/-- **A checker context reads `env`**: its table's lookups are `env`'s. -/
+def DCtx.Reads (x : DCtx) (env : KEnv) : Prop := ∀ k, x.find? k = env.find? k
+
+theorem DCtx.reads_of (env : KEnv) (lps : List Nat) (profs : List IxCC.Src.Profile) :
+    DCtx.Reads { tab := KTab.of env, lps, profs } env :=
+  fun k => KTab.get_of env k
+
+theorem DCtx.findProj?_eq {x : DCtx} {env : KEnv} (hx : x.Reads env) (T : KKey) (i : Nat) :
+    x.findProj? T i = env.findProj? T i := by
+  unfold DCtx.findProj? Env.findProj?
+  rw [hx (projTableName T)]
+  cases env.find? (projTableName T) with
+  | none => rfl
+  | some ci => cases ci <;> rfl
+
+theorem DCtx.neverProp_sound {x : DCtx} {env : KEnv} (hx : x.Reads env) {D : KKey}
+    (h : x.neverProp D = true) : NeverProp env D := by
+  unfold DCtx.neverProp at h
+  split at h
+  · rename_i cvD caps hf
+    split at h
+    · rename_i s hs
+      exact ⟨cvD, caps, s, (hx D).symm.trans hf, hs, of_decide_eq_true h⟩
+    · cases h
+  · cases h
 
 /-! ## Part A. Profiles -/
 

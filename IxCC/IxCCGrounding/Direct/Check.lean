@@ -1,4 +1,5 @@
 import IxCCGrounding.Check
+import Std.Data.HashMap
 
 /-!
 # The direct route, decided (`IxCCGrounding.Direct.Check`)
@@ -13,11 +14,14 @@ theorems, discharged where this check accepts (`IxCCGrounding.Direct.Sites`). De
   level assignment (a binder datum, a level's zero-ness) is required at each of them.
 * **Spines.** Each maximal evaluated application spine is walked once, left to right, from its
   head's type (`dStep` per argument); the sites of its prefixes are accepted in order until the
-  first refusal. A spine's width costs no fuel; a nested argument costs two levels (its check and
-  its type's inference).
+  first refusal. A spine's width costs no fuel, nor does a telescope's (the arguments fitted
+  against a `∀`-telescope, `fitsWith`; β through a λ-telescope, `betaStar`); a nested argument
+  costs two levels (its check and its type's inference).
+* **The reading by key** (`KTab`): a hash map built once per closure; `Env.find?` walks the
+  reading's list of constants.
 * **Conversion** (`convD`): syntactic equality; equality up to what the denotation does not read
   (`eqUpTo`: levels by `lvlEq`, binder data at the profiles, a literal against its constructor
-  form); β with the argument checked; δ (`Laws.defn_value`); the projection of a constructor whose
+  form); β with each argument checked; δ (`Laws.defn_value`); the projection of a constructor whose
   arguments fit its type, at a structure that is never a proposition (`Laws.proj_ctor`); ι at a
   recursor of an inductive without indices whose major premise reduces to a constructor or a
   literal (`Laws.iota_rule`, `iotaStep`); a `Nat` primitive on literals (`Laws.nat_accel`,
@@ -67,12 +71,39 @@ argument checked against its λ's domain), δ at a head (`defn_value`), the proj
 constructor whose arguments fit its type (`proj_ctor`) and a literal against its constructor
 form. Every function takes a fuel (a recursion depth) and is total. -/
 
-/-- What the checker reads besides the term: the kernel's reading, the level parameters of the
-run term's constant, and the profiles at which the term is evaluated. -/
+/-- **The kernel's reading by key**: a hash map from each key to its constant, built once per
+closure. `Env.find?` walks the reading's list of constants, so with it every lookup costs the
+reading's length (1,054 constants on `tags125`): half of the check's time, interpreted, before
+this table. The first constant of a key wins, as `Env.find?` reads it (`KTab.get_of`). -/
+abbrev KTab := Std.HashMap KKey (ConstantInfo .anon)
+
+/-- The table of a reading. -/
+def KTab.of (env : KEnv) : KTab := env.consts.foldr (fun ci m => m.insert ci.name ci) {}
+
+/-- What the checker reads besides the term: the kernel's reading (by key, `KTab.of` of it), the
+level parameters of the run term's constant, and the profiles at which the term is evaluated. -/
 structure DCtx where
-  env : KEnv
+  tab : KTab
   lps : List Nat
   profs : List IxCC.Src.Profile
+
+/-- A constant of the reading. -/
+def DCtx.find? (x : DCtx) (k : KKey) : Option (ConstantInfo .anon) := x.tab[k]?
+
+/-- A projection-table entry (`Env.findProj?` through the table). -/
+def DCtx.findProj? (x : DCtx) (T : KKey) (i : Nat) : Option (ProjEntry .anon) :=
+  match x.find? (projTableName T) with
+  | some (.projInfo tbl) => if i < tbl.numFields then some (tbl.entry i) else none
+  | _ => none
+
+/-- `neverPropB` through the table. -/
+def DCtx.neverProp (x : DCtx) (D : KKey) : Bool :=
+  match x.find? D with
+  | some (.indInfo cvD _) =>
+    match finalSort cvD.type with
+    | some s => decide (Level.zeronessOf s = PropWhen.never)
+    | none => false
+  | _ => false
 
 /-- A binder datum holds at none of the profiles (the graph regime at each). -/
 def DCtx.pwFalse (x : DCtx) (pw : PropWhen) : Bool :=
@@ -175,10 +206,11 @@ def eqUpTo (x : DCtx) : KExpr → KExpr → Bool
   | e, e' => e == e'
 
 /-- A constructor application: its key, levels, parameter and field counts, arguments. -/
-def ctorApp? (env : KEnv) (e : KExpr) : Option (KKey × List Level × Nat × Nat × List KExpr) :=
+def ctorApp? (look : KKey → Option (ConstantInfo .anon)) (e : KExpr) :
+    Option (KKey × List Level × Nat × Nat × List KExpr) :=
   match e.getAppFn with
   | .const k us =>
-    match env.find? k with
+    match look k with
     | some (.ctorInfo _ np nf) => some (k, us, np, nf, e.getAppArgs)
     | _ => none
   | _ => none
@@ -190,6 +222,27 @@ def walkArgs (step : KExpr → KExpr → Option KExpr) : KExpr → List KExpr �
     match step T a with
     | some T' => walkArgs step T' as
     | none => none
+
+/-- **β through a λ-telescope**, each argument checked against its λ's domain by `c`: the number
+of β-steps taken (until the head is not a λ, the arguments run out or `c` refuses) and the
+reduct. Head reduction takes the whole telescope at one fuel, so a recursor's rule (a λ over its
+parameters, motives, minor premises and fields: 127 binders at a 125-constructor enumeration)
+reduces at the fuel a two-constructor one does. -/
+def betaStar (c : KExpr → KExpr → Bool) : KExpr → List KExpr → Nat × KExpr
+  | .lam D b m, a :: rest =>
+    if c a D then
+      let r := betaStar c (b.instantiate1Lift a 0) rest
+      (r.1 + 1, r.2)
+    else (0, Expr.mkAppN (.lam D b m) (a :: rest))
+  | h, args => (0, Expr.mkAppN h args)
+
+/-- `as` fit the `∀`-telescope `T`, each argument checked against its domain by `c`, the earlier
+ones substituted; the telescope has a `∀` for every argument before substitution. -/
+def fitsWith (c : KExpr → KExpr → Bool) : KExpr → List KExpr → Bool
+  | _, [] => true
+  | .forallE A B _, a :: as =>
+    decide (as.length ≤ kPis B) && c a A && fitsWith c (B.instantiate1Lift a 0) as
+  | _, _ :: _ => false
 
 /-- How many arguments `step` takes, from `T`, before its first refusal. -/
 def walkCount (step : KExpr → KExpr → Option KExpr) : KExpr → List KExpr → Nat
@@ -257,19 +310,20 @@ own (`fits`); the major's parameters are the recursor's (`conv`); the constructo
 no index. The reduct: the matching rule's right-hand side at `us`, applied to the arguments before
 the major, the constructor's fields and the arguments after the major. `none` when the step does
 not apply. -/
-def iotaStep (env : KEnv) (w : KExpr → Option KExpr) (fits : KExpr → List KExpr → Bool)
+def iotaStep (look : KKey → Option (ConstantInfo .anon)) (w : KExpr → Option KExpr)
+    (fits : KExpr → List KExpr → Bool)
     (conv : List KExpr → List KExpr → Bool) (k : KKey) (us : List Level) (args : List KExpr) :
     Option KExpr :=
-  match env.find? k with
+  match look k with
   | some (.recInfo cv mI rP rules) =>
     match args[mI]? with
     | some maj =>
       match w maj with
       | some maj' =>
-        match ctorApp? env (majorForm maj'),
+        match ctorApp? look (majorForm maj'),
             piBody mI (cv.type.instantiateLevelParams cv.levelParams us) with
         | some (ck, cus, np, nf, cargs), .forallE dom _ _ =>
-          match rules.find? (fun rl => rl.ctor == ck), env.find? ck, dom.getAppFn with
+          match rules.find? (fun rl => rl.ctor == ck), look ck, dom.getAppFn with
           | some rl, some (.ctorInfo cvC _ _), .const _ ls =>
             if mI == rP && us.length == cv.levelParams.length && ls == cus &&
                 dom.getAppArgs == bvarsFrom (mI - np) np && decide (np ≤ mI) &&
@@ -301,7 +355,7 @@ def dInfer (x : DCtx) : Nat → List KExpr → KExpr → Option KExpr
   | 0, _, _ => none
   | _ + 1, Γ, .bvar i => (Γ[i]?).map (·.liftLooseBVars (i + 1) 0)
   | _ + 1, _, .const k us =>
-    match x.env.find? k with
+    match x.find? k with
     | some ci =>
       if us.length == ci.toConstantVal.levelParams.length &&
           ci.toConstantVal.type.allLevelParamsDefined ci.toConstantVal.levelParams then
@@ -358,38 +412,39 @@ def dCheck (x : DCtx) : Nat → List KExpr → KExpr → KExpr → Bool
     | none => false
 
 /-- `as` fit the `∀`-telescope `T` in `Γ`, read syntactically: each checked against its domain,
-the earlier ones substituted (what the projection of a constructor consumes, as `Fits`); the
-telescope has a `∀` for every argument before substitution (`Fits` reads it syntactically). -/
+the earlier ones substituted (what the projection of a constructor and ι consume, as `Fits`); the
+telescope has a `∀` for every argument before substitution (`Fits` reads it syntactically). Every
+argument is checked at the same fuel (`fitsWith`): a telescope's width costs none, so ι at a
+recursor with 125 minor premises fits its arguments at the fuel one with two does. -/
 def dFits (x : DCtx) : Nat → List KExpr → KExpr → List KExpr → Bool
   | 0, _, _, _ => false
-  | _ + 1, _, _, [] => true
-  | n + 1, Γ, .forallE A B _, a :: as =>
-    decide (as.length ≤ kPis B) && dCheck x n Γ a A && dFits x n Γ (B.instantiate1Lift a 0) as
-  | _ + 1, _, _, _ :: _ => false
+  | n + 1, Γ, T, as => fitsWith (fun a A => dCheck x n Γ a A) T as
 
-/-- **Head reduction**: β (the argument checked against the λ's domain), a `Nat` primitive on
-arguments that reduce to literals (`Laws.nat_accel`), ι at a recursor of an inductive without
-indices whose major premise reduces to a constructor or a literal (`Laws.iota_rule`; the
-recursor's arguments up to the major fit its type, the constructor's arguments fit its own, the
-major's parameters are the recursor's), the projection of a constructor whose arguments fit its
-type, at the projection table's constructor, and with `delta`, δ (a definition at its levels).
-Returns the term itself when stuck; `none` only when the fuel runs out. -/
+/-- **Head reduction**: β through a λ-telescope at one fuel (`betaStar`, each argument checked
+against its λ's domain), a `Nat` primitive on arguments that reduce to literals
+(`Laws.nat_accel`), ι at a recursor of an inductive without indices whose major premise reduces
+to a constructor or a literal (`Laws.iota_rule`; the recursor's arguments up to the major fit its
+type, the constructor's arguments fit its own, the major's parameters are the recursor's), the
+projection of a constructor whose arguments fit its type, at the projection table's constructor,
+and with `delta`, δ (a definition at its levels). Returns the term itself when stuck; `none` only
+when the fuel runs out. -/
 def whnfD (x : DCtx) : Nat → Bool → List KExpr → KExpr → Option KExpr
   | 0, _, _, _ => none
   | n + 1, delta, Γ, e =>
     match e.getAppFn, e.getAppArgs with
-    | .lam D b _, a1 :: rest =>
-      if dCheck x n Γ a1 D then whnfD x n delta Γ (Expr.mkAppN (b.instantiate1Lift a1 0) rest)
-      else some e
+    | .lam D b m, a1 :: rest =>
+      match betaStar (fun a A => dCheck x n Γ a A) (.lam D b m) (a1 :: rest) with
+      | (0, _) => some e
+      | (_ + 1, e') => whnfD x n delta Γ e'
     | .const k us, args =>
       match primStep (fun a => whnfD x n true Γ a) k us args with
       | some e' => whnfD x n delta Γ e'
       | none =>
-      match iotaStep x.env (fun a => whnfD x n true Γ a) (fun T as => dFits x n Γ T as)
+      match iotaStep x.find? (fun a => whnfD x n true Γ a) (fun T as => dFits x n Γ T as)
           (fun ps qs => convArgs x n Γ ps qs) k us args with
       | some e' => whnfD x n delta Γ e'
       | none =>
-      match x.env.find? k with
+      match x.find? k with
       | some (.defnInfo cv val _) =>
         if delta && us.length == cv.levelParams.length &&
             val.allLevelParamsDefined cv.levelParams then
@@ -399,11 +454,11 @@ def whnfD (x : DCtx) : Nat → Bool → List KExpr → KExpr → Option KExpr
     | .proj s i p, args =>
       match whnfD x n delta Γ p with
       | some p' =>
-        match ctorApp? x.env p', x.env.findProj? s i with
+        match ctorApp? x.find? p', x.findProj? s i with
         | some (ck, cus, np, nf, cargs), some entry =>
-          match x.env.find? ck, cargs[np + i]? with
+          match x.find? ck, cargs[np + i]? with
           | some (.ctorInfo cvC _ _), some fi =>
-            if entry.ctor == ck && neverPropB x.env s && i < nf && cargs.length == np + nf &&
+            if entry.ctor == ck && x.neverProp s && i < nf && cargs.length == np + nf &&
                 cus.length == cvC.levelParams.length &&
                 cvC.type.allLevelParamsDefined cvC.levelParams &&
                 dFits x n Γ (cvC.type.instantiateLevelParams cvC.levelParams cus) cargs then
@@ -435,8 +490,8 @@ def convStruct (x : DCtx) : Nat → List KExpr → KExpr → KExpr → Bool
     x.pwEq m.pw m'.pw && convD x n Γ d d' && convD x n (d :: Γ) b b'
   | n + 1, Γ, .lam d b m, .lam d' b' m' =>
     x.pwEq m.pw m'.pw && convD x n Γ d d' && convD x n (d :: Γ) b b'
-  | n + 1, Γ, .lit (.natVal k), e => (ctorApp? x.env e).isSome && convD x n Γ (natLitToConstructor k) e
-  | n + 1, Γ, e, .lit (.natVal k) => (ctorApp? x.env e).isSome && convD x n Γ e (natLitToConstructor k)
+  | n + 1, Γ, .lit (.natVal k), e => (ctorApp? x.find? e).isSome && convD x n Γ (natLitToConstructor k) e
+  | n + 1, Γ, e, .lit (.natVal k) => (ctorApp? x.find? e).isSome && convD x n Γ e (natLitToConstructor k)
   | n + 1, Γ, T, A =>
     !T.getAppArgs.isEmpty && T.getAppArgs.length == A.getAppArgs.length &&
       eqUpTo x T.getAppFn A.getAppFn && convArgs x n Γ T.getAppArgs A.getAppArgs
@@ -499,19 +554,19 @@ def spineRefused (x : DCtx) (n : Nat) (Γ : List KExpr) (h : KExpr) (args : List
 evaluated (`acc`: the arguments of the enclosing applications, innermost first). Mirrors
 `evalSites`: each maximal evaluated spine is walked once, at its head; each argument is entered
 with the profiles at which it is relevant (none: not entered). -/
-def termRefused (env : KEnv) (lps : List Nat) (n : Nat) :
+def termRefused (tab : KTab) (lps : List Nat) (n : Nat) :
     List IxCC.Src.Profile → List KExpr → Term → KExpr → List KExpr → List Site
   | P, Γ, .app f a _ r, .app f' a', acc =>
     let P' := P.filter fun prof => !r.irrP prof
-    (if P'.isEmpty then [] else termRefused env lps n P' Γ a a' []) ++
-      termRefused env lps n P Γ f f' (a' :: acc)
+    (if P'.isEmpty then [] else termRefused tab lps n P' Γ a a' []) ++
+      termRefused tab lps n P Γ f f' (a' :: acc)
   | P, Γ, .lam _ _ body, .lam d' body' m, acc =>
-    spineRefused { env, lps, profs := P } n Γ (.lam d' body' m) acc ++
-      termRefused env lps n P (d' :: Γ) body body' []
+    spineRefused { tab, lps, profs := P } n Γ (.lam d' body' m) acc ++
+      termRefused tab lps n P (d' :: Γ) body body' []
   | P, Γ, .proj _ _ t, .proj s i e, acc =>
-    spineRefused { env, lps, profs := P } n Γ (.proj s i e) acc ++
-      termRefused env lps n P Γ t e []
-  | P, Γ, _, e, acc => spineRefused { env, lps, profs := P } n Γ e acc
+    spineRefused { tab, lps, profs := P } n Γ (.proj s i e) acc ++
+      termRefused tab lps n P Γ t e []
+  | P, Γ, _, e, acc => spineRefused { tab, lps, profs := P } n Γ e acc
 
 /-- Every application site of a run term, at any level (relevant or not). -/
 def allSites : List KExpr → Term → KExpr → List Site
@@ -544,20 +599,27 @@ def okProfiles (p : Program) (ann : IxCC.Src.Relevance.Ann) (c : CId) : List IxC
   | some r => (profiles (lvlsOf p c)).filter fun prof => !r.irrP prof
   | none => []
 
-/-- **The sites of `c`'s run pair the direct route refuses**: walked at `c`'s `Ok` profiles; all
-of them when `c` has more than `maxDirectParams` level parameters. -/
-def runRefused (p : Program) (env : KEnv) (lpsOf : CId → List Nat) (ann : IxCC.Src.Relevance.Ann)
+/-- `runRefused` with the reading's table given (`sitesDirectB` builds it once per closure). -/
+def runRefusedT (tab : KTab) (p : Program) (lpsOf : CId → List Nat) (ann : IxCC.Src.Relevance.Ann)
     (c : CId) (t : Term) (e : KExpr) : List Site :=
   if lvlsOf p c ≤ maxDirectParams then
     match okProfiles p ann c with
     | [] => []
-    | P => termRefused env (lpsOf c) directFuel P [] t e []
+    | P => termRefused tab (lpsOf c) directFuel P [] t e []
   else allSites [] t e
 
+/-- **The sites of `c`'s run pair the direct route refuses**: walked at `c`'s `Ok` profiles; all
+of them when `c` has more than `maxDirectParams` level parameters. -/
+def runRefused (p : Program) (env : KEnv) (lpsOf : CId → List Nat) (ann : IxCC.Src.Relevance.Ann)
+    (c : CId) (t : Term) (e : KExpr) : List Site :=
+  runRefusedT (KTab.of env) p lpsOf ann c t e
+
 /-- **`sitesDirect`**, the Boolean beside `groundCheck`: the direct route refuses no site of any
-run pair of any constant of `Sl`. -/
+run pair of any constant of `Sl` (the reading's table built once). -/
 def sitesDirectB (p : Program) (env : KEnv) (κ : CId → KKey) (lpsOf : CId → List Nat)
     (ann : IxCC.Src.Relevance.Ann) (Sl : List CId) : Bool :=
-  Sl.all fun c => (runPairsB p env κ c).all fun (t, e) => (runRefused p env lpsOf ann c t e).isEmpty
+  let tab := KTab.of env
+  Sl.all fun c => (runPairsB p env κ c).all fun (t, e) =>
+    (runRefusedT tab p lpsOf ann c t e).isEmpty
 
 end IxCC.Grounding
