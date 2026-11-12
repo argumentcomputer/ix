@@ -270,7 +270,7 @@ def hostcert (clo eqs : System.FilePath) (root : String) (out : System.FilePath)
   IO.println s!"  contractProgramDomain: {d} {fmt td} ms"
   let (k, tk) ← timeMs fun _ => a.checkContractOwn
   IO.println s!"  checkContractOwn (domain, canonical map compared with itself): {k} {fmt tk} ms"
-  let (pz, tz) ← timeMs fun _ => Own.Plain.selectRcPolicyForSrc a.src a.front.fir
+  let (pz, tz) ← timeMs fun _ => Own.Plain.selectRcPolicyForSrc a.src a.fir
   IO.println s!"  selectRcPolicyForSrc (CompileClaim's zero-RC verifier): {repr pz} {fmt tz} ms"
   -- the counted route: `RcReplay.runFront`, stage by stage
   IO.println s!"== {root}: plain-RC certificate, the verifier's stages (RcReplay.run)"
