@@ -188,8 +188,8 @@ theorem digest_bytes_spec {cv : CV} {r : SourceValue F} {h h' : Heap F} {cs : Li
   obtain rfl := ok_inj ((proj_wv_1 _).symm.trans pr534)
   obtain rfl := ok_inj ((proj_wv_2 _).symm.trans pr544)
   obtain rfl := ok_inj ((proj_wv_3 _).symm.trans pr554)
-  subst he235 he556
-  refine ⟨?_, rfl⟩
+  subst he235
+  refine ⟨?_, by subst_vars; rfl⟩
   rw [digestV, digest_list]
 
 /-- **`Blake3::address_to_fields`** reads the first 32 entries of its argument
@@ -265,15 +265,13 @@ theorem verify_spec {bytes : List UInt8} {inp expected r : SourceValue F} {h h' 
     heq89, he92, he93, hc94⟩ := «Blake3::verify_bytes_against».obs ev
   obtain ⟨ext1, rfl⟩ := hash_spec hs ev14
   obtain ⟨rfl, hm50⟩ := digest_bytes_spec ev60
-  subst m50
   obtain ⟨hm37, l1, rfl, hl1⟩ := address_to_fields_spec ev47
-  subst m37
   obtain ⟨hm70, l2, rfl, hl2⟩ := address_to_fields_spec ev80
-  subst m70
   have e : l1 = l2 := Value.tuple.inj heq89
   subst e
-  subst he93
-  refine ⟨ext1, by rw [hc94]; simp, ?_⟩
+  refine ⟨?_, by rw [hc94]; simp, ?_⟩
+  · rw [he93, hm70, hm37, hm50]
+    exact ext1
   intro i hi
   rw [hl2 i hi, ← hl1 i hi, proj_digestV _ i hi]
 

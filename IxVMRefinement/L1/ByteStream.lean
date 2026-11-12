@@ -57,7 +57,6 @@ theorem lt_fields_zero_spec {x r : SourceValue F} {h h' : Heap F} {cs : List (Ca
   obtain ⟨rfl, hm168⟩ := u32_compact ev178
   subst m168
   obtain ⟨rfl, hm214⟩ := u32_compact ev225
-  subst m214
   subst heq187
   obtain rfl := binop_add op219
   obtain rfl := binop_sub op211
@@ -79,7 +78,7 @@ theorem lt_fields_zero_spec {x r : SourceValue F} {h h' : Heap F} {cs : List (Ca
     (difference := (wordOfBytes d0 d1 d2 d3).toNat)
     (word_lt _) (word_lt _) (word_lt _) (by rw [hl0]; simp) rfl valid
   rw [base_cast, hl0] at res
-  refine ⟨(wordOfBytes e0 e1 e2 e3).toNat, ?_, rfl, ?_, he282⟩
+  refine ⟨(wordOfBytes e0 e1 e2 e3).toNat, ?_, rfl, ?_, he282.trans hm214⟩
   · have := word_lt (wordOfBytes e0 e1 e2 e3)
     simpa [Aiur.Library.U32.base] using this
   · rw [he281, res]
