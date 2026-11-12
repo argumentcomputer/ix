@@ -14,11 +14,14 @@ theorems, discharged where this check accepts (`IxCCGrounding.Direct.Sites`). De
   level assignment (a binder datum, a level's zero-ness) is required at each of them.
 * **Spines.** Each maximal evaluated application spine is walked once, left to right, from its
   head's type (`dStep` per argument); the sites of its prefixes are accepted in order until the
-  first refusal. A spine's width costs no fuel; a nested argument costs two levels (its check and
-  its type's inference).
+  first refusal. A spine's width costs no fuel, nor does a telescope's (the arguments fitted
+  against a `∀`-telescope, `fitsWith`; β through a λ-telescope, `betaStar`); a nested argument
+  costs two levels (its check and its type's inference).
+* **The reading by key** (`KTab`): a hash map built once per closure; `Env.find?` walks the
+  reading's list of constants.
 * **Conversion** (`convD`): syntactic equality; equality up to what the denotation does not read
   (`eqUpTo`: levels by `lvlEq`, binder data at the profiles, a literal against its constructor
-  form); β with the argument checked; δ (`Laws.defn_value`); the projection of a constructor whose
+  form); β with each argument checked; δ (`Laws.defn_value`); the projection of a constructor whose
   arguments fit its type, at a structure that is never a proposition (`Laws.proj_ctor`); ι at a
   recursor of an inductive without indices whose major premise reduces to a constructor or a
   literal (`Laws.iota_rule`, `iotaStep`); a `Nat` primitive on literals (`Laws.nat_accel`,
@@ -233,6 +236,14 @@ def betaStar (c : KExpr → KExpr → Bool) : KExpr → List KExpr → Nat × KE
     else (0, Expr.mkAppN (.lam D b m) (a :: rest))
   | h, args => (0, Expr.mkAppN h args)
 
+/-- `as` fit the `∀`-telescope `T`, each argument checked against its domain by `c`, the earlier
+ones substituted; the telescope has a `∀` for every argument before substitution. -/
+def fitsWith (c : KExpr → KExpr → Bool) : KExpr → List KExpr → Bool
+  | _, [] => true
+  | .forallE A B _, a :: as =>
+    decide (as.length ≤ kPis B) && c a A && fitsWith c (B.instantiate1Lift a 0) as
+  | _, _ :: _ => false
+
 /-- How many arguments `step` takes, from `T`, before its first refusal. -/
 def walkCount (step : KExpr → KExpr → Option KExpr) : KExpr → List KExpr → Nat
   | _, [] => 0
@@ -401,14 +412,13 @@ def dCheck (x : DCtx) : Nat → List KExpr → KExpr → KExpr → Bool
     | none => false
 
 /-- `as` fit the `∀`-telescope `T` in `Γ`, read syntactically: each checked against its domain,
-the earlier ones substituted (what the projection of a constructor consumes, as `Fits`); the
-telescope has a `∀` for every argument before substitution (`Fits` reads it syntactically). -/
+the earlier ones substituted (what the projection of a constructor and ι consume, as `Fits`); the
+telescope has a `∀` for every argument before substitution (`Fits` reads it syntactically). Every
+argument is checked at the same fuel (`fitsWith`): a telescope's width costs none, so ι at a
+recursor with 125 minor premises fits its arguments at the fuel one with two does. -/
 def dFits (x : DCtx) : Nat → List KExpr → KExpr → List KExpr → Bool
   | 0, _, _, _ => false
-  | _ + 1, _, _, [] => true
-  | n + 1, Γ, .forallE A B _, a :: as =>
-    decide (as.length ≤ kPis B) && dCheck x n Γ a A && dFits x n Γ (B.instantiate1Lift a 0) as
-  | _ + 1, _, _, _ :: _ => false
+  | n + 1, Γ, T, as => fitsWith (fun a A => dCheck x n Γ a A) T as
 
 /-- **Head reduction**: β through a λ-telescope at one fuel (`betaStar`, each argument checked
 against its λ's domain), a `Nat` primitive on arguments that reduce to literals

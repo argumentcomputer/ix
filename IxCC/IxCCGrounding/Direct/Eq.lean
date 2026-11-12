@@ -37,7 +37,8 @@ theorem KTab.get_of (env : KEnv) (k : KKey) : (KTab.of env)[k]? = env.find? k :=
   induction cs with
   | nil => simp
   | cons ci cs ih =>
-    rw [List.foldr_cons, Std.HashMap.getElem?_insert, ih, List.find?_cons]
+    simp only [List.foldr_cons, List.find?_cons]
+    rw [Std.HashMap.getElem?_insert, ih]
     cases h : (ci.name == k) <;> simp
 
 /-- **A checker context reads `env`**: its table's lookups are `env`'s. -/
@@ -50,14 +51,14 @@ theorem DCtx.reads_of (env : KEnv) (lps : List Nat) (profs : List IxCC.Src.Profi
 theorem DCtx.findProj?_eq {x : DCtx} {env : KEnv} (hx : x.Reads env) (T : KKey) (i : Nat) :
     x.findProj? T i = env.findProj? T i := by
   unfold DCtx.findProj? Env.findProj?
-  rw [hx]
+  rw [hx (projTableName T)]
 
 theorem DCtx.neverProp_sound {x : DCtx} {env : KEnv} (hx : x.Reads env) {D : KKey}
     (h : x.neverProp D = true) : NeverProp env D := by
   apply neverProp_of_check
   unfold DCtx.neverProp at h
   unfold neverPropB
-  rw [← hx]
+  rw [← hx D]
   exact h
 
 /-! ## Part A. Profiles -/

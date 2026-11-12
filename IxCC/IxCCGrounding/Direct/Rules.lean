@@ -399,6 +399,17 @@ theorem fitsAt_cons {Γ : List KExpr} {A B a : KExpr} {m : BinderMeta} {as : Lis
     rw [pushAll_nil] at hf''
     exact ⟨σ', R', .cons hAd hx hf''⟩
 
+/-- **Fitting a telescope, each argument checked by `c`** (`fitsWith`). -/
+theorem fitsWith_sound {Γ : List KExpr} {c : KExpr → KExpr → Bool}
+    (hc : ∀ a A, c a A = true → ChecksAt M φ Γ a A) :
+    ∀ (as : List KExpr) (T : KExpr), fitsWith c T as = true → FitsAt M φ Γ T as
+  | [], _, _ => fitsAt_nil
+  | a :: as, T, h => by
+    cases T with
+    | forallE A B m =>
+      simp only [fitsWith, Bool.and_eq_true, decide_eq_true_eq] at h
+      exact fitsAt_cons h.1.1 (hc a A h.1.2) (fitsWith_sound hc as _ h.2)
+    | _ => simp [fitsWith] at h
 
 theorem ctorApp?_spec {look : KKey → Option (ConstantInfo .anon)} {e : KExpr} {ck : KKey}
     {cus : List Level} {np nf : Nat}

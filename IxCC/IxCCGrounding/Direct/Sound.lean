@@ -286,14 +286,8 @@ theorem check_succ : ∀ Γ a A, dCheck x (n + 1) Γ a A = true → ChecksAt M �
 
 theorem fits_succ : ∀ Γ T as, dFits x (n + 1) Γ T as = true → FitsAt M φ Γ T as := by
   intro Γ T as h
-  cases as with
-  | nil => exact fitsAt_nil
-  | cons a as =>
-    cases T with
-    | forallE A B m =>
-      simp only [dFits, Bool.and_eq_true, decide_eq_true_eq] at h
-      exact fitsAt_cons h.1.1 (IH.check Γ a A h.1.2) (IH.fits Γ _ as h.2)
-    | _ => simp [dFits] at h
+  unfold dFits at h
+  exact fitsWith_sound (fun a A hc => IH.check Γ a A hc) as T h
 
 theorem args_succ : ∀ Γ ps qs, convArgs x (n + 1) Γ ps qs = true → ∀ ρ, CtxSat M φ Γ ρ →
     ∀ Ys Ys', DenotesList M.cval env φ ρ ps Ys → DenotesList M.cval env φ ρ qs Ys' → Ys = Ys' := by
