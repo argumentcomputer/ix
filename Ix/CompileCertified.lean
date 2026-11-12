@@ -129,6 +129,9 @@ structure CertifiedOut where
   failures : Ix.Cert.Failures
   /-- Pre-validated source-address map from `Ix.RoleBinding.sourceAddresses env`. -/
   existing? : Option (Std.HashMap Ix.Kernel.Name Address) := none
+  /-- The binder-data annotator the compile ran with (`none` without binder data), for the
+  definitions compiled later over the same input (`compilePhasesOf`). -/
+  annotator? : Option Ix.BinderAnnotator := none
   /-- The safe records the annotator gave an undecided binder (their member names). -/
   undecided : Array String := #[]
 
@@ -162,7 +165,7 @@ their binder data, so its check is made only with `binderData`, and only while t
 current (`defaultRoleTableCurrent`). -/
 def compileCertifiedPrepared (prepared : List (Lean.Name × Lean.ConstantInfo))
     (annotated : Bool) (workers : Nat := 32) (log : String → IO Unit := fun _ => pure ())
-    (defaultRoles : Bool := true) (binderData : Bool := false) :
+    (defaultRoles : Bool := true) (binderData : Bool := false) (keepAnnotator : Bool := false) :
     IO (Except String CertifiedOut) := do
   let t0 ← IO.monoMsNow
   let env ← IO.lazyPure fun _ => canonInput prepared.toArray workers
@@ -193,6 +196,7 @@ def compileCertifiedPrepared (prepared : List (Lean.Name × Lean.ConstantInfo))
     | .error e => return .error e
   if let some n := failureOutside env failures then
     return .error s!"source accounting: failure name '{n.pretty}' is outside the original input"
+  let annotator? := if keepAnnotator then env.binderAnnotator? else none
   let _ ← dropAsync _ env
   let existing ← match Ix.RoleBinding.sourceAddresses ixe with
     | .ok m => pure m
@@ -210,6 +214,7 @@ def compileCertifiedPrepared (prepared : List (Lean.Name × Lean.ConstantInfo))
       (Ix.Compile.KernelAnnotate.undecidedSafe ixe workers).map toString
     else #[]
   return .ok { prepared, annotated, inputs, env := ixe, failures, existing? := some existing,
+               annotator?,
                undecided }
 
 /-- **The certified compile** of the constants `constants` of `source`:
@@ -219,7 +224,7 @@ the binder data from IxC's pass over the input (`Ix.Compile.KernelAnnotate`), un
 section. -/
 def compileCertified (source : Lean.Environment) (constants : List (Lean.Name × Lean.ConstantInfo))
     (workers : Nat := 32) (log : String → IO Unit := fun _ => pure ())
-    (defaultRoles : Bool := true) (binderData : Bool := true) :
+    (defaultRoles : Bool := true) (binderData : Bool := true) (keepAnnotator : Bool := false) :
     IO (Except String CertifiedOut) := do
   let t0 ← IO.monoMsNow
   let (prepared, annotated) ← match prepareCertified source constants with
@@ -227,7 +232,7 @@ def compileCertified (source : Lean.Environment) (constants : List (Lean.Name ×
     | .error e => return .error e
   log s!"source contracts ({if annotated then "semantic contracts" else "none"}): \
 {(← IO.monoMsNow) - t0}ms"
-  compileCertifiedPrepared prepared annotated workers log defaultRoles binderData
+  compileCertifiedPrepared prepared annotated workers log defaultRoles binderData keepAnnotator
 
 /-- An input with semantic contracts is emitted only if its finalized artifact
 validates too: `compileCertifiedPrepared` validates the compiled artifact, this
@@ -245,11 +250,13 @@ def recordedFailures (failures : Std.HashMap Ix.Name String) : String :=
 def compilePhasesOf (leanEnv : Lean.Environment)
     (constList : List (Lean.Name × Lean.ConstantInfo))
     (workers : Nat := 8) : IO CompilePhases := do
-  let certOut ← IO.ofExcept (← compileCertified leanEnv constList workers)
+  let certOut ← IO.ofExcept (← compileCertified leanEnv constList workers (keepAnnotator := true))
   unless certOut.failures.isEmpty do
     let fMap := certOut.failures.toMap
     throw (IO.userError s!"compilePhasesOf: {fMap.size} constant(s) failed to compile: {recordedFailures fMap}")
-  let rawEnv := canonInput certOut.prepared.toArray workers
+  -- the compile's annotator, so that a definition compiled over the input later
+  -- (`Ix.Commit.compileDef`) gets its binder data
+  let rawEnv := { canonInput certOut.prepared.toArray workers with binderAnnotator? := certOut.annotator? }
   let condensed := Ix.Cert.blocksOf rawEnv
   return { rawEnv, condensed, compileEnv := certOut.env }
 
