@@ -277,7 +277,11 @@ def main (args : List String) : IO UInt32 := do
   | ["compare", a, b] => Benchmarks.BinderDataStats.compare a b
   | ["diag", a, b] => Benchmarks.BinderDataStats.diag a b
   | ["addrs", a, b] => Benchmarks.BinderDataStats.addrs a b
+  | ["binding", a] => do
+    let e ← Benchmarks.BinderDataStats.load a
+    IO.println s!"BDBIND {a}: records={e.consts.size} binding={(e.roleBinding.map (toString ·.address)).getD "none"}"
+    return 0
   | _ =>
     IO.eprintln "usage: binder-data-stats stats A.ixe | compare A.ixe B.ixe | diag A.ixe B.ixe | \
-addrs A.ixe B.ixe"
+addrs A.ixe B.ixe | binding A.ixe"
     return 2
