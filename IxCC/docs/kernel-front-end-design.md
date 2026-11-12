@@ -459,11 +459,15 @@ asks a change of behaviour:
    level with `mk_imax`'s folds and caches the has-parameter bit ([hardening
    design](hardening-design.md#external-dependencies)), which closes those
    families. Levels the folds cannot merge (two chains at two universe
-   parameters, each step mentioning the other) still take time doubling per
-   step, as in Lean's own kernel. A step counter on the core's calls would
-   not bound them, since the calls grow linearly: the budget has to meter the
-   size of the levels the core compares (a saturating size on `Level`, and a
-   decline where a level consumer meets one over the bound). That budget,
+   parameters, each step mentioning the other) are now walked once per node:
+   the kernel's level walks are memoised on shared levels (`docs/kernel.md`,
+   "Running time"). What stays is the level comparison itself, coNP-hard for
+   levels with `imax`, which takes time exponential in the number of universe
+   parameters on some small constants (Lean's kernel refuses them, its
+   comparison being incomplete). A step counter on the core's calls would not
+   bound it, since the core makes few calls: the budget has to count the
+   comparison's own calls, up to a bound the caller sets, and decline where it
+   runs out. That budget,
    with acceptance stated within it, is what lets IxCC bound its verifier
    ([Resource bounds](#resource-bounds)); it is planned (KF-3).
 5. **The rules' soundness over the public model** (added 2026-11-11).
@@ -574,18 +578,20 @@ terms, for comparison):
 | 30 | 0.19 s | 50.4 s | 0.028 s |
 | 34 | | | 0.028 s |
 
-All accept. (`tests-kernel-front` checks such a closure at `k = 200`.) What
-remains exposed is a universe level the folds cannot merge: two chains at two
-universe parameters, each step mentioning the other, keep a level whose tree
-doubles per step, and the kernel's comparisons of it (with a declared sort,
-or in its proof-irrelevance test) take time doubling per step, as in Lean's
-own kernel. So the switch still adds an exposure the erased checker does not
+All accept. (`tests-kernel-front` checks such a closure at `k = 200`.) Levels
+the folds cannot merge (two chains at two universe parameters, each step
+mentioning the other) no longer cost their trees: the kernel's level walks
+are memoised on shared levels. What remains exposed is the level comparison
+itself: deciding `l ≤ r` for levels with `imax` is coNP-hard, and the
+kernel's complete comparison takes time exponential in the number of
+universe parameters on some constants of a few hundred bytes (Lean's own
+kernel refuses them, its comparison being incomplete). So the switch still adds an exposure the erased checker does not
 have: a claimant can make the verifier's acceptance take as long as it likes
 with a closure of ordinary size. The annotator asks the same core about
 `let`-substituted subterms, so a root whose terms carry such a chain costs as
 much again in the producer and in Stage A. The guard for these is a
-dependency: a work budget in the kernel's core that meters the size of the
-levels it compares (kernel-side item 4), which the front end passes as a
+dependency: a call budget in the kernel's level comparison (kernel-side
+item 4), which the front end passes as a
 budget and reports as a decline (milestone KF-3 below). Until that budget
 exists (since the switch's step 3), the kernel's typing time on such levels is outside
 the verifier's time bound, and a constant of a few hundred bytes chosen by a
@@ -787,7 +793,7 @@ front end's acceptance time. A hostile closure is measured under
 | KF-0 | The front end beside the old one, the differential suite, the acceptance and classifier lemmas, the ledger's exception (this change) | `tests-kernel-front` passes; identical annotations, certificates and objects on every role-bound closure the kernel accepts |
 | KF-1 | The walk-level annotation statement; the kernel-side lemmas 1–3 composed into direction 1 | fenced, standard axioms |
 | KF-2 | The switch (steps 2–5). In progress: steps 2 and 3 done (2026-11-11); steps 4 and 5 (the deletion, the ledger) next | all required checks on the refrozen corpus; the deletion list gone |
-| KF-3 | The kernel's bound on hostile levels (kernel-side item 4). Its fix of the blow-up on `let` chains, made in the kernel package on this branch in parallel with KF-2, has landed: the ∀ rule's level built with `mk_imax`'s folds, the level's has-parameter bit cached. Planned: a work budget in the kernel's core metering the size of the levels it compares, passed by the front end | the hostile `let`-chain closure accepted in time flat in `k` (met: 28 ms at `k = 30` and at `k = 34`); a closure whose levels the kernel cannot fold (two interleaved chains at two universe parameters) declined within the budget (planned) |
+| KF-3 | The kernel's bound on hostile levels (kernel-side item 4). Its fix of the blow-up on `let` chains, made in the kernel package on this branch in parallel with KF-2, has landed: the ∀ rule's level built with `mk_imax`'s folds, the level's has-parameter bit cached; and since, the kernel's level walks memoised on shared levels (two interleaved chains at two universe parameters check in milliseconds). Planned: a call budget in the kernel's level comparison, set by the caller and passed by the front end | the hostile `let`-chain closure accepted in time flat in `k` (met: 28 ms at `k = 30` and at `k = 34`); a constant whose level comparison is exponential (the reduction from satisfiability in `docs/kernel.md`) declined within the budget (planned) |
 | KF-4 | The closure run (planned, 2026-11-11): the closure of the seeds, the logical entry on it under the default table and committed prelude, the table-restriction check, the run's declarations kept for the typing clause | on every role-bound K1 closure the closure run accepts, and its declarations are a sub-list of the tiered run's up to keys |
 
 ## Decisions

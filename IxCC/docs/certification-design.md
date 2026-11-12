@@ -951,8 +951,8 @@ front end (the owner's decision of 2026-11-11), and the erased type checker's
 code is deleted (its step 4). IxCK's blow-up on chains of `let`,
 fixed in the kernel package on this branch in parallel, has landed; the
 native verifier the switch produces still inherits the kernel's exponential
-time on universe levels it cannot fold, until the kernel's level-metering
-work budget lands.
+time on some universe-level comparisons (coNP-hard for levels with `imax`),
+until the kernel's call budget in that comparison lands.
 
 **Which entry discharges existence natively.** The tiered entry's acceptance
 of the artifact gives a model of the artifact's whole logical environment,
@@ -1233,7 +1233,8 @@ IxCC's derivations), public level irrelevance, the rules' soundness over the
 public model, "the annotation pass preserves denotation", an opaque value law
 (none, by design); and, if IxCK runs on the claim path, a typing core whose
 work is bounded on hostile input (the chains of `let` that made it
-exponential are fixed; universe levels the kernel cannot fold remain,
+exponential are fixed, and so are the level walks on shared levels; the
+level comparison, coNP-hard for levels with `imax`, remains,
 [hardening design](hardening-design.md#external-dependencies)).
 
 **The hard points.** Dependent types (SrcEval drops type arguments the model

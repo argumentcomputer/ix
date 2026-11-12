@@ -76,6 +76,17 @@ Modifications
     memoised on the pairs it proves equal (Level.decMemo, Expr.beqMemo's
     arrangement), so that equal levels built apart as DAGs, which the
     folds compare, are compared in time linear in their DAGs.
+  * Level walks on shared levels (2026-11): Level.lean runs simplify,
+    leqCore, zeronessOf and isNeverZero, through four proved @[csimp]
+    theorems (simplify_eq_simplifyFast, leqCore_eq_leqCoreFast,
+    zeronessOf_eq_zeronessOfFast, isNeverZero_eq_isNeverZeroFast), as
+    walks memoised per call on the nodes they finish (for leqCore, on its
+    subproblems (fuel, l, r, diff), with a memoised subst, substMemo, in
+    its case split), and below a small tree size as exact copies of the
+    plain recursion. The functions themselves are unchanged. Levels that
+    the ∀ rule builds, and that unfolding builds by instantiating at
+    max u u, are shared as DAGs whose trees are exponentially larger, and
+    leqCore's distributions meet the same subproblems again.
   * MainTheorem.lean keeps only model_exists; the corollary about NDJSON
     files and the imports it needs are dropped.
   * Verify/Cached/AgreeFloor.lean and Verify/Cached/PushChain.lean import

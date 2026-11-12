@@ -39,12 +39,23 @@ structural, the times printed are for reading.
   are accepted at 200 through the certified entry: every comparison of their
   levels is between equal levels, which `==` decides; without the memo each is
   `2^200` node visits;
-* **what stays exposed**: two chains at two parameters whose levels `mk_max`
-  cannot fold (`A (j+1) = A j → B j`, `B (j+1) = B j → A j`, `mixeddag`), with
-  the declared sort `Sort (max (u+1) (v+1))`, equal to the inferred one only
-  after normalisation: at length 10 the constant is accepted, and its inferred
-  level is still a DAG whose tree has more than 1,000 nodes, so the comparison
-  of the declared sort with it doubles per step (as in Lean's own kernel). -/
+* **levels compared with unequal ones** (the memoised level walks:
+  `Level.simplify`, `leqCore`, `subst`, `zeronessOf`, `isNeverZero`, each run
+  with a per-call memo on large levels): two chains at two parameters whose
+  levels `mk_max` cannot fold (`A (j+1) = A j → B j`, `B (j+1) = B j → A j`,
+  `mixeddag`), declared `Sort (max (u+1) (v+1))`, equal to the inferred sort
+  only after normalisation, whose inferred level at length 10 is still a DAG
+  with a tree of more than 1,000 nodes; and `imaxswap` (a chain of `imax` over
+  parameters compared with a permutation of itself), `deltamax` and
+  `deltazero` (unfolding a chain of definitions each instantiating the previous
+  at `max u u`; the second makes the ∀ rule read the resulting sort). Each is
+  accepted at a length that ends only with the memos (`imaxswap` at 40,
+  the others at 200);
+* **the reduction from satisfiability**: the comparison of levels with `imax`
+  is coNP-hard (section below), so a family stays exponential for any
+  complete comparison; its generator, with the two controls run on the
+  kernel: an unsatisfiable formula's constant is accepted, a satisfiable
+  one's refused (6 variables). -/
 
 namespace Tests.LevelSharing
 
@@ -93,9 +104,13 @@ def mixedTable (k : Nat) : Array IE := Id.run do
       t := t.push (_root_.Ixon.Expr.leanAll (.share b) (.share a))
   return t
 
+def defnR (lvls : UInt64) (ty val : IE) (sharing : Array IE) (refs : Array Address)
+    (us : Array _root_.Ixon.Univ) : _root_.Ixon.Constant :=
+  ⟨.defn ⟨.defn, .safe, lvls, ty, val⟩, sharing, refs, us⟩
+
 def defn (lvls : UInt64) (ty val : IE) (sharing : Array IE) (us : Array _root_.Ixon.Univ) :
     _root_.Ixon.Constant :=
-  ⟨.defn ⟨.defn, .safe, lvls, ty, val⟩, sharing, #[], us⟩
+  defnR lvls ty val sharing #[] us
 
 /-- The families, at length `k ≥ 1`. -/
 def family (k : Nat) : List (String × _root_.Ixon.Constant) :=
@@ -144,18 +159,140 @@ def mixedEqual (k : Nat) : List (String × _root_.Ixon.Constant) :=
    ("mixeddouble", defn 2 (_root_.Ixon.Expr.leanAll f f) (_root_.Ixon.Expr.leanLam f (.var 0))
       (doubleTable k) univsUV)]
 
-/-- Check one constant with the certified entry over decoded records. -/
-def check (c : _root_.Ixon.Constant) : IO (Except String Nat × Nat) := do
+/-! ## Families the memoised level walks close
+
+`imaxswap n`: `def S.{u0 … u(n-1)} : Sort (succ L) := Sort L'`, `L` the chain
+`imax u0 (imax u1 (… u(n-1)))`, `L'` the same with `u0` and `u1` swapped: equal
+levels of `2n − 1` nodes, no sharing. `leqCore` distributes
+`imax a (imax x y)` into a `max` whose halves distribute the same suffixes
+again: `2^(n-1)` calls at least without its memo. -/
+
+/-- `imax u(i) (imax u(i+1) (… u(n-1)))` over the listed parameter indices. -/
+def imaxChain : List Nat → _root_.Ixon.Univ
+  | [] => .zero
+  | [i] => .var i.toUInt64
+  | i :: rest => .imax (.var i.toUInt64) (imaxChain rest)
+
+def imaxswap (n : Nat) : _root_.Ixon.Constant :=
+  let idx := List.range n
+  let l' := imaxChain (match idx with | a :: b :: rest => b :: a :: rest | x => x)
+  defn n.toUInt64 (.sort 1) (.sort 0) #[] #[l', .succ (imaxChain idx)]
+
+/-- The address of a constant, as the entry computes it. -/
+def addrOf (c : _root_.Ixon.Constant) : Address := Address.blake3Pure (_root_.Ixon.serConstant c)
+
+/-- `succ^n u`. -/
+def succs : Nat → _root_.Ixon.Univ
+  | 0 => .var 0
+  | n + 1 => .succ (succs n)
+
+/-- `D0.{u} : Sort (u + top) := Sort (u + top - 1)`, `Dj.{u} : Sort (u + top) :=
+D(j-1).{max u u}` for `j = 1 … k`, then `last` with the address of `Dk`:
+unfolding `Dk.{v}` instantiates `max u u` `k` times, and `Level.subst` puts one
+object at both sides of each `max`, a level of `k` distinct nodes and a tree
+of `2^k`. -/
+def deltaChain (k top : Nat) (last : Address → _root_.Ixon.Constant) :
+    List _root_.Ixon.Constant := Id.run do
+  let d0 := defn 1 (.sort 2) (.sort 1) #[] #[.var 0, succs (top - 1), succs top]
+  let mut cs := #[d0]
+  let mut prev := addrOf d0
+  for _ in [0:k] do
+    let dj := defnR 1 (.sort 1) (.ref 0 #[2]) #[] #[prev] #[.var 0, succs top, .max (.var 0) (.var 0)]
+    cs := cs.push dj
+    prev := addrOf dj
+  return (cs.push (last prev)).toList
+
+/-- `deltamax k`: `top = 2`, then `X.{v} : Dk.{v} := Sort v`; the declared
+sort `Sort (L_k + 2)` is compared with `Sort (v + 2)` (`simplify`, `leqCore`). -/
+def deltamax (k : Nat) : List _root_.Ixon.Constant :=
+  deltaChain k 2 fun prev => defnR 1 (.ref 0 #[0]) (.sort 0) #[] #[prev] #[.var 0]
+
+/-- `deltazero k`: `top = 1`, then `Y.{v} : Sort (imax (v+1) v) := ∀ x : Dk.{v}, x`:
+the ∀ rule meets the codomain sort `L_k` (`zeronessOf`, `isNeverZero` in
+`mkIMax`), and the sort comparison splits on `v`, substituting into `L_k`. -/
+def deltazero (k : Nat) : List _root_.Ixon.Constant :=
+  deltaChain k 1 fun prev =>
+    defnR 1 (.sort 1) (_root_.Ixon.Expr.leanAll (.ref 0 #[0]) (.var 0)) #[] #[prev]
+      #[.var 0, .imax (.succ (.var 0)) (.var 0)]
+
+/-! ## The comparison is coNP-hard: the reduction from satisfiability
+
+A CNF formula φ over variables `1 … n` (clauses of literals `±i`) becomes the
+constant `def S.{x1 y1 … xn yn} : Sort (succ R) := Sort (max G R)`, accepted
+exactly when `G ≤ R` at every assignment of the parameters, which holds
+exactly when φ is unsatisfiable (`docs/kernel.md`, "Running time"):
+
+* each variable `i` becomes two parameters, `xi` (index `2(i-1)`, nonzero:
+  "i true") and `yi` (index `2(i-1)+1`, nonzero: "i false");
+* `2` is `succ (succ zero)`, and `imaxAll [c1, …, cm]` is
+  `imax (… (imax 2 c1) …) cm`. Its value is never above `max 2 c1 … cm`,
+  and when every parameter is `0` or `1` it is at least `2` exactly when
+  no `cj` is zero (`imax a b` is `0` where `b` is, else `max a b`);
+* `G = imaxAll [max x1 y1, …, max xn yn]`;
+* a clause `C` becomes `T_C = imaxAll` of the complements of its literals
+  (`yi` for `i`, `xi` for `-i`);
+* `R = max (T_C1, …, T_Cm, x1, y1, …, xn, yn)`.
+
+Why: `G` is at most `max 2` (its parameters) and `R` at least every
+parameter, so `G ≤ R` can fail only where every parameter is `0` or `1`;
+there `G` is `2` when each pair has a nonzero member and at most `1`
+otherwise, and `R ≤ 1` exactly when each `T_C` has a zero parameter. So
+`G ≤ R` fails exactly where each pair has a nonzero member and each clause
+has a literal whose complement is `0`. Reading `i` as true where `yi = 0`
+makes every such literal true, so φ is satisfied; and an assignment that
+satisfies φ gives such a valuation (`xi = 1, yi = 0` where `i` is true,
+`xi = 0, yi = 1` where it is false).
+
+`G` has `4n + 3` nodes and `R` has `2 |φ| + 4m + 4n − 1` (`|φ|` literal
+occurrences, `m` clauses): the instance is linear in the formula. -/
+
+/-- A CNF formula: clauses of literals `±i`, variables numbered from 1. -/
+abbrev Cnf := List (List Int)
+
+def two : _root_.Ixon.Univ := .succ (.succ .zero)
+
+/-- The parameter of variable `i` (from 1): `xi` if `pos`, else `yi`. -/
+def litParam (i : Nat) (pos : Bool) : _root_.Ixon.Univ :=
+  .var (if pos then 2 * (i - 1) else 2 * (i - 1) + 1).toUInt64
+
+def imaxAll (cs : List _root_.Ixon.Univ) : _root_.Ixon.Univ := cs.foldl (fun acc c => .imax acc c) two
+
+def maxAll : List _root_.Ixon.Univ → _root_.Ixon.Univ
+  | [] => .zero
+  | [c] => c
+  | c :: cs => .max c (maxAll cs)
+
+/-- The constant of the reduction for `φ` over `n` variables. -/
+def cnfConst (n : Nat) (φ : Cnf) : _root_.Ixon.Constant :=
+  let g := imaxAll ((List.range n).map fun i => .max (litParam (i + 1) true) (litParam (i + 1) false))
+  let ts := φ.map fun cl => imaxAll (cl.map fun l => litParam l.natAbs (l < 0))
+  let ps := (List.range n).flatMap fun i => [litParam (i + 1) true, litParam (i + 1) false]
+  let r := maxAll (ts ++ ps)
+  defn (2 * n).toUInt64 (.sort 0) (.sort 1) #[] #[.succ r, .max g r]
+
+/-- `1 ∧ (¬1 ∨ 2) ∧ … ∧ (¬(n-1) ∨ n) ∧ ¬n`: unsatisfiable, and exponential for
+the kernel's comparison (measured: about ×4 per two variables). -/
+def cnfChain (n : Nat) : Cnf :=
+  [[1]] ++ ((List.range (n - 1)).map fun (i : Nat) => [-((i : Int) + 1), (i : Int) + 2]) ++
+    [[-(n : Int)]]
+
+/-- The same chain without its last clause: satisfiable (every variable true). -/
+def cnfChainSat (n : Nat) : Cnf := (cnfChain n).dropLast
+
+/-- Check constants, in order, with the certified entry over decoded records. -/
+def checkAll (cs : List _root_.Ixon.Constant) : IO (Except String Nat × Nat) := do
   let table ← IO.ofExcept Ix.Kernel.Reader.defaultTable
-  let addr := Address.blake3Pure (_root_.Ixon.serConstant c)
   let t0 ← IO.monoMsNow
   let r ← IO.lazyPure fun _ =>
-    Ix.Kernel.Admission.checkConstants Address.blake3Pure table [(addr, c)] []
+    Ix.Kernel.Admission.checkConstants Address.blake3Pure table (cs.map fun c => (addrOf c, c)) []
       (fun _ => some (Ix.Kernel.ReducibilityHint.regular 1))
   let t1 ← IO.monoMsNow
   return (match r with
     | .ok env => .ok env.consts.length
     | .error e => .error s!"{e}", t1 - t0)
+
+/-- Check one constant with the certified entry over decoded records. -/
+def check (c : _root_.Ixon.Constant) : IO (Except String Nat × Nat) := checkAll [c]
 
 /-! ## The level, through the executed core -/
 
@@ -261,15 +398,38 @@ def run : IO UInt32 := do
     | .error e =>
       IO.println s!"  {name} k={k}: REFUSED: {e}"
       failed := failed + 1
-  -- what stays exposed: the levels of two interleaved chains do not fold
+  -- levels that do not fold, compared with unequal ones: the memoised walks.
+  -- Their trees stay large (the folds cannot merge them) ...
   let km := 10
-  let (r, ms) ← check (mixeddag km)
-  let accepted := match r with | .ok _ => true | .error _ => false
   let tree := match infer false (mixedTerms km).1 with
     | .ok (.sort l) => !sizeAtMost 1000 l
     | _ => false
-  IO.println s!"  mixeddag k={km}: {if accepted then "accepted" else "REFUSED"} in {ms} ms; its level's tree has {if tree then "more than 1,000" else "AT MOST 1,000"} nodes (not folded, as expected)"
-  unless accepted && tree do failed := failed + 1
+  IO.println s!"  mixeddag's level at k={km}: its tree has {if tree then "more than 1,000" else "AT MOST 1,000"} nodes (not folded, as expected)"
+  unless tree do failed := failed + 1
+  -- ... and the families are accepted at lengths that end only with the memos
+  -- (`simplify`, `leqCore`, `subst`, `zeronessOf`, `isNeverZero`): each is at
+  -- least `2^39` steps without them.
+  let memoCases : List (String × List _root_.Ixon.Constant) :=
+    [("imaxswap n=40", [imaxswap 40]), ("deltamax k=200", deltamax 200),
+     ("mixeddag k=200", [mixeddag 200]), ("deltazero k=200", deltazero 200)]
+  for (name, cs) in memoCases do
+    let (r, ms) ← checkAll cs
+    let bytes := cs.foldl (fun n c => n + (_root_.Ixon.serConstant c).size) 0
+    match r with
+    | .ok n => IO.println s!"  {name}: accepted ({n} constants), {bytes} bytes, {ms} ms"
+    | .error e =>
+      IO.println s!"  {name}: REFUSED: {e}"
+      failed := failed + 1
+  -- the reduction from satisfiability (coNP-hardness of the comparison): an
+  -- unsatisfiable formula is accepted, a satisfiable one refused. Verdicts only:
+  -- the comparison is exponential on this family, so the size is small.
+  let nc := 6
+  for (name, φ, want) in [("unsatisfiable chain", cnfChain nc, true),
+      ("satisfiable chain", cnfChainSat nc, false)] do
+    let (r, ms) ← check (cnfConst nc φ)
+    let got := match r with | .ok _ => true | .error _ => false
+    IO.println s!"  CNF reduction, {name}, {nc} variables: {if got then "accepted" else "refused"} in {ms} ms{if got == want then "" else "  FAILED"}"
+    unless got == want do failed := failed + 1
   (← IO.getStdout).flush
   if failed == 0 then
     IO.println "kernel-level-sharing: every case passed"

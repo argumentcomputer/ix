@@ -144,11 +144,14 @@ externs, `implemented_by`, `unsafe`, csimp and their rulings are unchanged. -/
 -- compiled functions (`IxCK/Kernel/Audit/Roots.lean`); every other field is unchanged.
 -- Level equality memoised on the pairs it proves equal (`Level.decMemo`) adds 4 compiled
 -- functions (`IxCK/Kernel/Audit/Roots.lean`); every other field is unchanged.
+-- The level walks memoised on shared levels add 39 compiled functions, four ruled csimps and
+-- the inherited extern `Int.decEq` (`IxCK/Kernel/Audit/Roots.lean`); every other field is
+-- unchanged.
 /-- info: runtime closure of [Ix.Kernel.Admission.preflight,
  Ix.Kernel.Admission.uniqueKeys,
  Ix.Kernel.Admission.authenticate,
  Ix.Kernel.Admission.decodeRecords,
- Ix.Kernel.Admission.checkBytes]: 6861 compiled functions; inherited externs 113, implemented_by 0, unsafe 27, csimp 7; ruled computed_field 22, csimp 29 -/
+ Ix.Kernel.Admission.checkBytes]: 6900 compiled functions; inherited externs 114, implemented_by 0, unsafe 27, csimp 7; ruled computed_field 22, csimp 33 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Admission.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
 
