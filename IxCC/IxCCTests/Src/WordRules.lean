@@ -13,7 +13,8 @@ import IxCCTests.Src.Steps
   literal. Every case of the harness, not a sample.
 * **The table**: with words enabled, the front end makes every primitive operation the root
   reaches a `word` entry (the producer finds each stored equation and `checkWord` accepts it);
-  with words off, none.
+  with words off, none. Erasure declines a word entry (`erase-word`) until the lowering
+  exists.
 * **Runs**: every root on every operation and boundary pair returns the same value with words on
   and off, that value is `WordOp.eval`'s (which `Words` compares with Lean's C implementations),
   and the run with words on makes fewer SrcEval steps than the reference bodies. -/
@@ -114,6 +115,12 @@ def run (a : Assert) : IO (List String) := do
       | _ => none
     for op in WordOp.primitives w do
       expect a (entries.contains (w, op)) s!"{root}: {op.leanName w} is a word entry"
+    -- until the lowering exists, erasure declines a word entry (and accepts the program without)
+    expect a (match IxCC.Lam.erase on.program on.checked with
+        | .error e => e.code == "erase-word"
+        | .ok _ => false) s!"{root}: erasure declines a word entry"
+    expect a (IxCC.Lam.erase off.program off.checked).toOption.isSome
+      s!"{root}: erasure accepts the program without word entries"
     -- runs, on and off, against eval, at a few boundary pairs per operation
     let mut stepsOn := 0
     let mut stepsOff := 0
