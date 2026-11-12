@@ -198,10 +198,9 @@ structure EnvFacts (c : Ctx) : Prop where
   /-- (L5, L6) The `Nat` literal support, when the table binds `Nat`, `Nat.zero`, `Nat.succ`. -/
   natLit : c.binds .nat → c.binds .natZero → c.binds .natSucc →
     Ix.Kernel.natLitSupported c.env = true
-  /-- (L5, L6) The `String` literal support, when the table binds its roles. -/
-  strLit : c.binds .nat → c.binds .natZero → c.binds .natSucc → c.binds .string →
-    c.binds .stringOfList → c.binds .char → c.binds .charOfNat → c.binds .list →
-    c.binds .listNil → c.binds .listCons → Ix.Kernel.strLitSupported c.env = true
+  /-- (L5, L6) The `String` literal support, when the table binds `String` (the default table and
+  an admitted one bind its literal support with it: `LiteralSupportBound`). -/
+  strLit : c.binds .string → Ix.Kernel.strLitSupported c.env = true
   /-- (L5, L6) Every bound binary `Nat` operation is a stored definition (`natOpStored`). -/
   natOps : ∀ r, c.binds r → (.role r : KKey) ∈ Ix.Kernel.Rules.natBinOpNames →
     Ix.Kernel.natOpStored c.env (.role r) = true

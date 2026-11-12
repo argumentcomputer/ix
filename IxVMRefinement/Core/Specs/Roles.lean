@@ -6,11 +6,12 @@ The core reads the role table only through a few lookups of `KernelRoles` (is th
 address bound to a given role? which address does the table bind to a role?) and a few constant
 tables of `KernelRoleSpec` (a role's number, the native rule that fires on a role's constant).
 Against `RCRep`/`TableRep` (`Ctx.lean`), whose maps hold only the table's entries, every
-**positive** answer is the table's: `role_is(rc, a, r) = 1` gives `c.t.addressOf? r = some a`
-(so `c.κ a = .role r` once `EnvFacts.tableWf` holds), and `role_addr(rc, r)` returns an address
-the table binds to `r`. A failed lookup claims nothing (the maps' search order is not
-constrained). A role's number is its index in `Ix.Kernel.Role.all` (`roleNum`, the binding
-section's role byte); the generated constant tables agree with it (`role_nat` is `0`, …).
+**positive** answer is the table's: a nonzero `role_is(rc, a, r)` gives
+`c.t.addressOf? r = some a` (so `c.κ a = .role r` once `EnvFacts.tableWf` holds), and
+`role_addr(rc, r)` returns an address the table binds to `r`. A failed lookup claims nothing
+(the maps' entries are the table's; that every entry of the table is found is not claimed). A
+role's number is its index in `Ix.Kernel.Role.all` (`roleNum`, the binding section's role byte);
+the generated constant tables agree with it (`role_nat` is `0`, …).
 
 The role arguments are stated at a role's number: `∀ ro, args = [.., .field (roleNum ro)]`.
 Callers obtain them from the constant tables, whose specs give exactly that form. -/
@@ -22,30 +23,69 @@ open Aiur.Library Aiur.Library.List
 
 set_option linter.unusedVariables false
 
+/-! ## The role maps' search
+
+`role_map_lookup_or_default` is called twice on the same map by `role_bound_addr` (once inside
+`role_is_bound`, once for the answer), and the two answers must agree. So its spec is functional:
+the result is the outcome of the search the code runs, a relation that determines its outcome. -/
+
+/-- **The search `KernelRoles::role_map_lookup_or_default` runs** for the key `k` in a role map
+held by value (`Node(color, key, value, &left, &right)`): the value at a node whose key is `k`;
+the left subtree where `k` is below the node's key, the right one where it is above (the code
+compares with `UInt32::less_than_fields`, which answers `1` exactly on `<`); `none` at `Nil`. The
+three node cases exclude one another, so a map and a key have at most one outcome, and the
+outcome is the same in every extension of the heap. -/
+inductive RoleMapSearch (en : String) (h : Heap F) (k : F) :
+    SourceValue F → Option (SourceValue F) → Prop where
+  | nil : RoleMapSearch en h k (.construct en "Nil" []) none
+  | here {c v lp rp : SourceValue F} :
+      RoleMapSearch en h k (.construct en "Node" [c, .field k, v, lp, rp]) (some v)
+  | left {c v lp rp lv : SourceValue F} {key : F} {res : Option (SourceValue F)}
+      (hlt : ZMod.val k < ZMod.val key) (hl : loadValue h lp = .ok lv)
+      (hs : RoleMapSearch en h k lv res) :
+      RoleMapSearch en h k (.construct en "Node" [c, .field key, v, lp, rp]) res
+  | right {c v lp rp rv : SourceValue F} {key : F} {res : Option (SourceValue F)}
+      (hgt : ZMod.val key < ZMod.val k) (hr : loadValue h rp = .ok rv)
+      (hs : RoleMapSearch en h k rv res) :
+      RoleMapSearch en h k (.construct en "Node" [c, .field key, v, lp, rp]) res
+
+/-- The zero address (`&[UInt8::BYTE_0; 32]`, the role → address lookup's default). -/
+def zeroAddr : Bytes.Address := Vector.ofFn fun _ => 0
+
+/-- `byRole` is the role → address map of the table node `tbl` points to. -/
+def ByRole (h : Heap F) (tbl byRole : SourceValue F) : Prop :=
+  ∃ bp byAddr ev, loadValue h tbl = .ok (.construct rtEnum "Mk" [bp, byRole, byAddr, ev])
+
+/-- **The outcome of the role → address search binds the role**: a found value is an address the
+table binds to the role; a failed search means the table binds the role to the zero address
+(what `role_is_bound`'s index test establishes for the default). -/
+def BoundAt (c : Ctx) (h : Heap F) (ro : Ix.Kernel.Role) : Option (SourceValue F) → Prop
+  | some v => ∃ a : Bytes.Address, RepAddr h a v ∧ c.t.addressOf? ro = some (ixAddr a)
+  | none => c.t.addressOf? ro = some (ixAddr zeroAddr)
+
 /-! ## Map lookups -/
 
 /-- `KernelRoles::role_map_lookup_or_default<&[Field; 32]>(key, tree, default)` (the role →
-address map): the default, or a value whose entry, at the key, satisfies whatever every entry of
-the tree satisfies. Allocates nothing. -/
+address map): the outcome of the search (`RoleMapSearch`), or the default where it finds
+nothing. -/
 def role_map_lookup_or_default_addr : SpecFn := fun _c args h r h' calls =>
   ∀ kv tree dflt, args = [kv, tree, dflt] → ∀ k : F, kv = .field k →
-    ∀ P : Heap F → F → SourceValue F → Prop, RoleMapAll roleAddrMapEnum P h tree →
-      h' = h ∧ (r = dflt ∨ P h k r)
+    ∃ res, RoleMapSearch roleAddrMapEnum h k tree res ∧ r = res.getD dflt
 
 /-- `KernelRoles::role_map_lookup_or_default<&Lists::Node<KernelRoles::RoleEvidence>>(key, tree,
 default)` (the role → evidence map), as `role_map_lookup_or_default_addr`. -/
 def role_map_lookup_or_default_evidence : SpecFn := fun _c args h r h' calls =>
   ∀ kv tree dflt, args = [kv, tree, dflt] → ∀ k : F, kv = .field k →
-    ∀ P : Heap F → F → SourceValue F → Prop, RoleMapAll roleEvMapEnum P h tree →
-      h' = h ∧ (r = dflt ∨ P h k r)
+    ∃ res, RoleMapSearch roleEvMapEnum h k tree res ∧ r = res.getD dflt
 
 /-- `RBTreeMap::rbtree_map_lookup_or_default<Field>(key, tree, default)` (the address → role
 map): the default, or a value whose entry is at an address equal to the key (`canon_addr_cmp`
-answers "equal" only on equal addresses) and satisfies whatever every entry satisfies. -/
+answers "equal" only on equal addresses) and satisfies whatever every entry satisfies. Which of
+the two is not claimed. -/
 def rbtree_map_lookup_or_default_field : SpecFn := fun _c args h r h' calls =>
   ∀ kp tree dflt, args = [kp, tree, dflt] → ∀ a : Bytes.Address, RepAddr h a kp →
     ∀ P : Heap F → Bytes.Address → SourceValue F → Prop, AddrMapAll addrMapEnum P h tree →
-      h' = h ∧ (r = dflt ∨ P h a r)
+      r = dflt ∨ P h a r
 
 /-! ## The table and the role context -/
 
@@ -59,19 +99,21 @@ def role_addr_index : SpecFn := fun c args h r h' _calls =>
   ∀ tbl, args = [tbl] → TableRep c.t h tbl →
     h' = h ∧ AddrMapAll addrMapEnum (IndexEntry c.t) h r
 
-/-- `KernelRoles::role_bound_addr_or_zero(tbl, r)`: an address that the table binds to the role
-numbered `k`, or the zero address. -/
-def role_bound_addr_or_zero : SpecFn := fun c args h r h' calls =>
-  ∀ tbl (k : F), args = [tbl, .field k] → Good c calls → TableRep c.t h tbl →
-    ∃ a : Bytes.Address, RepAddr h' a r ∧
-      ((∃ ro, k = roleNum ro ∧ c.t.addressOf? ro = some (ixAddr a)) ∨
-        a.toList = List.replicate 32 0)
+/-- `KernelRoles::role_bound_addr_or_zero(tbl, r)`: the outcome of the search for `r` in the
+table's role → address map, or a fresh pointer to the zero address where it finds nothing. -/
+def role_bound_addr_or_zero : SpecFn := fun _c args h r h' calls =>
+  ∀ tbl (k : F), args = [tbl, .field k] → ∀ byRole, ByRole h tbl byRole →
+    ∃ res, RoleMapSearch roleAddrMapEnum h k byRole res ∧
+      (res = some r ∨ (res = none ∧ RepAddr h' zeroAddr r))
 
-/-- `KernelRoles::role_is_bound(tbl, r)` at a role's number: `1` only if the table binds the
+/-- `KernelRoles::role_is_bound(tbl, r)` at a role's number: a nonzero answer means the search
+for the role in the table's role → address map has an outcome that binds the role (`BoundAt`):
+the address found, or the zero address where nothing is found. In particular the table binds the
 role. Nothing is claimed for `0`. -/
 def role_is_bound : SpecFn := fun c args h r h' calls =>
   ∀ tbl (ro : Ix.Kernel.Role), args = [tbl, .field (roleNum ro)] → Good c calls →
-    TableRep c.t h tbl → r = .field 1 → c.binds ro
+    TableRep c.t h tbl → r ≠ .field 0 → ∀ byRole, ByRole h tbl byRole →
+      ∃ res, RoleMapSearch roleAddrMapEnum h (roleNum ro) byRole res ∧ BoundAt c h ro res
 
 /-- `KernelRoles::role_bound_addr(tbl, r)` at a role's number (it asserts `role_is_bound`): an
 address the table binds to the role. -/
@@ -81,11 +123,11 @@ def role_bound_addr : SpecFn := fun c args h r h' calls =>
       ∃ a : Bytes.Address, RepAddr h' a r ∧ c.t.addressOf? ro = some (ixAddr a)
 
 /-- `KernelRoles::role_index_of(rc, a)`: `0`, or one more than the number of a role the table
-binds to `a`. Allocates nothing. -/
+binds to `a`. -/
 def role_index_of : SpecFn := fun c args h r h' calls =>
   ∀ rc ap (a : Bytes.Address), args = [rc, ap] → Good c calls → c.rc h rc → RepAddr h a ap →
-    h' = h ∧ (r = .field 0 ∨
-      ∃ ro : Ix.Kernel.Role, r = .field (roleNum ro + 1) ∧ c.t.addressOf? ro = some (ixAddr a))
+    r = .field 0 ∨
+      ∃ ro : Ix.Kernel.Role, r = .field (roleNum ro + 1) ∧ c.t.addressOf? ro = some (ixAddr a)
 
 /-- `KernelRoles::role_of(rc, a)`: `0` (no role, or one whose group is not yet in force), or one
 more than the number of a role the table binds to `a`. -/
@@ -94,11 +136,12 @@ def role_of : SpecFn := fun c args h r h' calls =>
     r = .field 0 ∨
       ∃ ro : Ix.Kernel.Role, r = .field (roleNum ro + 1) ∧ c.t.addressOf? ro = some (ixAddr a)
 
-/-- `KernelRoles::role_is(rc, a, r)` at a role's number: `1` only if the table binds the role to
-`a` (`Ctx.κ (ixAddr a) = .role ro` given `EnvFacts.tableWf`). Nothing is claimed for `0`. -/
+/-- `KernelRoles::role_is(rc, a, r)` at a role's number: a nonzero answer (the code answers `0`
+or `1`) means the table binds the role to `a` (`Ctx.κ (ixAddr a) = .role ro` given
+`EnvFacts.tableWf`). Nothing is claimed for `0`. -/
 def role_is : SpecFn := fun c args h r h' calls =>
   ∀ rc ap (a : Bytes.Address) (ro : Ix.Kernel.Role), args = [rc, ap, .field (roleNum ro)] →
-    Good c calls → c.rc h rc → RepAddr h a ap → r = .field 1 →
+    Good c calls → c.rc h rc → RepAddr h a ap → r ≠ .field 0 →
       c.t.addressOf? ro = some (ixAddr a)
 
 /-- `KernelRoles::role_addr(rc, r)` at a role's number: an address the table binds to the role

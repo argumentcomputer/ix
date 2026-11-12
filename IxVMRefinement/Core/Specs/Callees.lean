@@ -212,18 +212,25 @@ def bytes_to_addr : SpecFn := fun c args h r h' calls =>
 
 /-! ## The modeled route's gates -/
 
-/-- `KernelModeled::block_is_multi(block)`: `0` only if the record at the block address is no
-block of two or more inductives. Nothing is claimed for `1`. -/
+/-- `KernelModeled::block_is_multi(block)`: the answer is `0` or `1` (a caller adds it to a
+count), and for a record of `c.E` at the block address it is exact: `1` exactly when the record is
+a block of two or more inductives (`FewInductives` at `0`). -/
 def block_is_multi : SpecFn := fun c args h r h' calls =>
   ∀ bp (b : Bytes.Address), args = [bp] → Good c calls → RepAddr h b bp →
-    r = .field 0 → FewInductives c (ixAddr b)
+    (r = .field 0 ∨ r = .field 1) ∧
+      ∀ cst, Ix.Cert.recordAt c.E (ixAddr b) = some cst →
+        (r = .field 1 ↔ ∃ ms, cst.info = .muts ms ∧ 2 ≤ (ms.toList.filter isIndc).length)
 
-/-- `KernelModeled::block_is_modeled(block)`: `0` only if the record at the block address is no
-block of two or more inductives (its nested-occurrence scan is not read). Nothing is claimed for
-`1`. -/
+/-- `KernelModeled::block_is_modeled(block)`, for a record of `c.E` at the block address: `1` at
+a block of two or more inductives, `0` at a record with no inductive member (a block of none, or
+no block). So an answer `0` gives `FewInductives`. At a block of exactly one inductive the answer
+is the circuit's scan of its constructors for a nested occurrence, which is not described here
+(nothing is claimed for either answer there). -/
 def block_is_modeled : SpecFn := fun c args h r h' calls =>
   ∀ bp (b : Bytes.Address), args = [bp] → Good c calls → RepAddr h b bp →
-    r = .field 0 → FewInductives c (ixAddr b)
+    ∀ cst, Ix.Cert.recordAt c.E (ixAddr b) = some cst →
+      ((∃ ms, cst.info = .muts ms ∧ 2 ≤ (ms.toList.filter isIndc).length) → r = .field 1) ∧
+      ((∀ ms, cst.info = .muts ms → (ms.toList.filter isIndc).length = 0) → r = .field 0)
 
 /-- `KernelModeled::proj_ctor(block, i)` (it asserts `block_is_modeled(block) = 0`): the block
 has at most one inductive, and the result is the constant at the key of the constructor
@@ -234,15 +241,16 @@ def proj_ctor : SpecFn := fun c args h r h' calls =>
       ∃ ci, c.env.find? (c.κ (cprjAddr (ixAddr b) (ZMod.val i) 0)) = some ci ∧
         CIPtrRep c.κ h' r ci
 
-/-- `KernelModeled::defeq_list_ok(rc, xs, ys, types)`: `1` only if the two lists are pairwise
-definitionally equal (`DefEqList`). Nothing is claimed for `0`. -/
+/-- `KernelModeled::defeq_list_ok(rc, xs, ys, types)`: a nonzero answer (the code answers `0` or
+`1`) means the two lists are pairwise definitionally equal (`DefEqList`). Nothing is claimed
+for `0`. -/
 def defeq_list_ok : SpecFn := fun c args h r h' calls =>
   ∀ rc xs ys types, args = [rc, xs, ys, types] → Good c calls → c.rc h rc →
     ∀ d Γ, c.types Γ h d types → ∀ As Bs, c.tml d Γ h As xs → c.tml d Γ h Bs ys →
-      r = .field 1 → Ix.Kernel.Rules.DefEqList c.env d As Bs
+      r ≠ .field 0 → Ix.Kernel.Rules.DefEqList c.env d As Bs
 
 /-- `KernelModeled::fire_compare(rc, head, us, spine, major, types)` at a recursor head
-`Const(a, us)`: `1` only if the recursor's family block has at most one inductive
+`Const(a, us)`: a nonzero answer means the recursor's family block has at most one inductive
 (`FamilyFew`), or the major's comparands are the rule's pinned ones (`FireCompared`). Nothing
 is claimed for `0`. -/
 def fire_compare : SpecFn := fun c args h r h' calls =>
@@ -250,21 +258,22 @@ def fire_compare : SpecFn := fun c args h r h' calls =>
     c.rc h rc → ∀ ap lp, loadValue h head = .ok (.construct kexprEnum "Const" [ap, lp]) →
     ∀ (a : Bytes.Address) cv mI rP rls, RepAddr h a ap →
       c.env.find? (c.κ (ixAddr a)) = some (.recInfo cv mI rP rls) →
-    ∀ usK, LvListRep h usK us →
+    ∀ usK, LvListRep h usK us → usK.length = cv.levelParams.length →
     ∀ d Γ, c.types Γ h d types → ∀ As M, c.tml d Γ h As spine → c.tm d Γ h M major →
-      r = .field 1 → FamilyFew c cv ∨ FireCompared c d cv mI rP usK As M
+      r ≠ .field 0 → FamilyFew c cv ∨ FireCompared c d cv mI rP usK As M
 
 /-- `KernelModeled::fire_ok(rc, nmot, head, us, spine, major, types)` at a recursor head
-`Const(a, us)`: `1` only if the recursor has one motive, or `fire_compare`'s claim holds.
+`Const(a, us)`: a nonzero answer (its caller fires on any) means the recursor has one motive, or
+`fire_compare`'s claim holds.
 Nothing is claimed for `0`. -/
 def fire_ok : SpecFn := fun c args h r h' calls =>
   ∀ rc nmot head us spine major types, args = [rc, nmot, head, us, spine, major, types] →
     Good c calls → c.rc h rc → ∀ ap lp, loadValue h head = .ok (.construct kexprEnum "Const" [ap, lp]) →
     ∀ (a : Bytes.Address) cv mI rP rls, RepAddr h a ap →
       c.env.find? (c.κ (ixAddr a)) = some (.recInfo cv mI rP rls) →
-    ∀ usK, LvListRep h usK us →
+    ∀ usK, LvListRep h usK us → usK.length = cv.levelParams.length →
     ∀ d Γ, c.types Γ h d types → ∀ As M, c.tml d Γ h As spine → c.tm d Γ h M major →
-      r = .field 1 → nmot = .field 1 ∨ FamilyFew c cv ∨ FireCompared c d cv mI rP usK As M
+      r ≠ .field 0 → nmot = .field 1 ∨ FamilyFew c cv ∨ FireCompared c d cv mI rP usK As M
 
 /-! ## The family -/
 

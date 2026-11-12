@@ -55,11 +55,12 @@ def dprjAddr (b : _root_.Address) (i : Nat) : _root_.Address :=
 /-! ## The relation -/
 
 /-- **A constant's level count and type**: `nl` is the number of its (positional) level
-parameters, and `ty` represents its closed type. -/
+parameters, below `2^32` (the decoders' bound on level counts), and `ty` represents its closed
+type. -/
 def ValRep (κ : _root_.Address → KKey) (h : Heap F) (nl ty : SourceValue F)
     (cv : Ix.Kernel.ConstantVal .anon) : Prop :=
-  nl = .field (cv.levelParams.length : F) ∧ cv.levelParams = List.range cv.levelParams.length ∧
-    TmC κ h cv.type ty
+  nl = .field (cv.levelParams.length : F) ∧ cv.levelParams.length < 4294967296 ∧
+    cv.levelParams = List.range cv.levelParams.length ∧ TmC κ h cv.type ty
 
 /-- **A recursor rule** (`KernelTypes::KRecRule::Mk(cidx, nfields, rhs)`, the `j`-th of its
 list): its constructor index is its position, its field count and closed right-hand side are
@@ -110,18 +111,24 @@ inductive CIRep (κ : _root_.Address → KKey) (h : Heap F) :
       CIRep κ h (.construct kciEnum "Quot" [nl, ty, kind]) ci
   | induct {nl ty np ni nc u blk idx : SourceValue F} {cv : Ix.Kernel.ConstantVal .anon}
       {caps : Ix.Kernel.IndCaps .anon}
-      (hv : ValRep κ h nl ty cv) :
+      (hv : ValRep κ h nl ty cv)
+      (hkey : ∃ (b : Bytes.Address) (i : F), Bytes.RepAddressRef addrTy h b blk ∧ idx = .field i ∧
+        cv.name = κ (iprjAddr (ixAddr b) (ZMod.val i))) :
       CIRep κ h (.construct kciEnum "Induct" [nl, ty, np, ni, nc, u, blk, idx]) (.indInfo cv caps)
   | ctor {nl ty blk ind cidx np nf u : SourceValue F} {cv : Ix.Kernel.ConstantVal .anon}
       {nP nF : Nat}
-      (hv : ValRep κ h nl ty cv) (hnp : np = .field (nP : F)) (hnf : nf = .field (nF : F)) :
+      (hv : ValRep κ h nl ty cv) (hnp : np = .field (nP : F)) (hnf : nf = .field (nF : F))
+      (hkey : ∃ (b : Bytes.Address) (i j : F), Bytes.RepAddressRef addrTy h b blk ∧ ind = .field i ∧
+        cidx = .field j ∧ cv.name = κ (cprjAddr (ixAddr b) (ZMod.val i) (ZMod.val j))) :
       CIRep κ h (.construct kciEnum "Ctor" [nl, ty, blk, ind, cidx, np, nf, u]) (.ctorInfo cv nP nF)
   | recr {nl ty np ni nm nmi rules k u blk idx : SourceValue F}
       {cv : Ix.Kernel.ConstantVal .anon} {mI rP : Nat} {rls : List (Ix.Kernel.RecRule .anon)}
       {p i m mi : F}
       (hv : ValRep κ h nl ty cv) (hnp : np = .field p) (hni : ni = .field i) (hnm : nm = .field m)
       (hnmi : nmi = .field mi) (hrP : (rP : F) = p + m + mi) (hmI : (mI : F) = p + m + mi + i)
-      (hrules : RulesRep κ h 0 rules rls) :
+      (hrules : RulesRep κ h 0 rules rls)
+      (hkey : ∃ (b : Bytes.Address) (i : F), Bytes.RepAddressRef addrTy h b blk ∧ idx = .field i ∧
+        (cv.name = κ (ixAddr b) ∨ cv.name = κ (rprjAddr (ixAddr b) (ZMod.val i)))) :
       CIRep κ h (.construct kciEnum "Rec" [nl, ty, np, ni, nm, nmi, rules, k, u, blk, idx])
         (.recInfo cv mI rP rls)
 
@@ -136,7 +143,7 @@ def CIPtrRep (κ : _root_.Address → KKey) (h : Heap F) (p : SourceValue F)
 theorem ValRep.mono {κ : _root_.Address → KKey} {h₁ h₂ : Heap F} {nl ty : SourceValue F}
     {cv : Ix.Kernel.ConstantVal .anon} (ext : Heap.Extends h₁ h₂) (r : ValRep κ h₁ nl ty cv) :
     ValRep κ h₂ nl ty cv :=
-  ⟨r.1, r.2.1, TmC.mono ext r.2.2⟩
+  ⟨r.1, r.2.1, r.2.2.1, TmC.mono ext r.2.2.2⟩
 
 theorem RulesRep.mono {κ : _root_.Address → KKey} {h₁ h₂ : Heap F} {j : Nat} {v : SourceValue F}
     {rls : List (Ix.Kernel.RecRule .anon)} (ext : Heap.Extends h₁ h₂) (r : RulesRep κ h₁ j v rls) :
@@ -156,10 +163,16 @@ theorem CIRep.mono {κ : _root_.Address → KKey} {h₁ h₂ : Heap F} {v : Sour
   | defn hv hV => exact .defn (hv.mono ext) (TmC.mono ext hV)
   | thm hv hV => exact .thm (hv.mono ext) (TmC.mono ext hV)
   | quot hv hk => exact .quot (hv.mono ext) hk
-  | induct hv => exact .induct (hv.mono ext)
-  | ctor hv hnp hnf => exact .ctor (hv.mono ext) hnp hnf
-  | recr hv hnp hni hnm hnmi hrP hmI hrules =>
+  | induct hv hkey =>
+    obtain ⟨b, i, hb, hi, hn⟩ := hkey
+    exact .induct (hv.mono ext) ⟨b, i, Bytes.repAddressRef_heapMono₂ addrTy ext hb, hi, hn⟩
+  | ctor hv hnp hnf hkey =>
+    obtain ⟨b, i, j, hb, hi, hj, hn⟩ := hkey
+    exact .ctor (hv.mono ext) hnp hnf ⟨b, i, j, Bytes.repAddressRef_heapMono₂ addrTy ext hb, hi, hj, hn⟩
+  | recr hv hnp hni hnm hnmi hrP hmI hrules hkey =>
+    obtain ⟨b, i, hb, hi, hn⟩ := hkey
     exact .recr (hv.mono ext) hnp hni hnm hnmi hrP hmI (hrules.mono ext)
+      ⟨b, i, Bytes.repAddressRef_heapMono₂ addrTy ext hb, hi, hn⟩
 
 theorem CIPtrRep.mono {κ : _root_.Address → KKey} {h₁ h₂ : Heap F} {p : SourceValue F}
     {ci : Ix.Kernel.ConstantInfo .anon} (ext : Heap.Extends h₁ h₂) (r : CIPtrRep κ h₁ p ci) :

@@ -59,6 +59,11 @@ abbrev Ctx.tml (c : Ctx) (d : Nat) (Γ : Nat → KExpr) (h : Heap F) (Es : List 
     (p : SourceValue F) : Prop :=
   TmL c.κ d Γ h Es p
 
+/-- A list of terms under `k` local binders. -/
+abbrev Ctx.tmlk (c : Ctx) (d : Nat) (Γ : Nat → KExpr) (k : Nat) (h : Heap F) (Es : List KExpr)
+    (p : SourceValue F) : Prop :=
+  RepList kexprListEnum (fun h E p => Tm c.κ d Γ h k E p) h Es p
+
 /-- A closed term. -/
 abbrev Ctx.tmc (c : Ctx) (h : Heap F) (E : KExpr) (p : SourceValue F) : Prop :=
   TmC c.κ h E p

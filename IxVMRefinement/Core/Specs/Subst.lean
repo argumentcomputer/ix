@@ -363,11 +363,12 @@ def ctx_close_cut : SpecFn := fun c args h r h' calls =>
 
 /-! ## Spines and level instantiation -/
 
-/-- `KernelTypes::collect_spine(e)`: **the head and the spine** of a top-level term,
-`E = mkAppN H As`. -/
+/-- `KernelTypes::collect_spine(e)`: **the head and the spine** of a term under any number `k`
+of local binders, `E = mkAppN H As` (its callers include walks under binders:
+`KernelCheck::rec_to_parent_addr`, `KernelModeled::rec_major_pins`). -/
 def collect_spine : SpecFn := fun c args h r h' calls =>
-  ∀ e, args = [e] → Good c calls → ∀ d Γ E, c.tm d Γ h E e →
-    ∃ hd sp H As, r = .tuple [hd, sp] ∧ c.tm d Γ h' H hd ∧ c.tml d Γ h' As sp ∧
+  ∀ e, args = [e] → Good c calls → ∀ d Γ k E, c.tmk d Γ k h E e →
+    ∃ hd sp H As, r = .tuple [hd, sp] ∧ c.tmk d Γ k h' H hd ∧ c.tmlk d Γ k h' As sp ∧
       E = Ix.Kernel.Expr.mkAppN H As
 
 /-- `KernelLevels::expr_inst_levels(e, params)`: **the kernel's level instantiation at the
