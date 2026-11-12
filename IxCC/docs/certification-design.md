@@ -952,8 +952,8 @@ front end (the owner's decision of 2026-11-11), and the erased type checker's
 code is deleted (its step 4). IxCK's blow-up on chains of `let`,
 fixed in the kernel package on this branch in parallel, has landed; the
 native verifier the switch produces still inherits the kernel's exponential
-time on universe levels it cannot fold, until the kernel's level-metering
-work budget lands.
+time on some universe-level comparisons (coNP-hard for levels with `imax`),
+until the kernel's call budget in that comparison lands.
 
 **Which entry discharges existence natively.** The tiered entry's acceptance
 of the artifact gives a model of the artifact's whole logical environment,
@@ -1234,7 +1234,8 @@ IxCC's derivations), public level irrelevance, the rules' soundness over the
 public model, "the annotation pass preserves denotation", an opaque value law
 (none, by design); and, if IxCK runs on the claim path, a typing core whose
 work is bounded on hostile input (the chains of `let` that made it
-exponential are fixed; universe levels the kernel cannot fold remain,
+exponential are fixed, and so are the level walks on shared levels; the
+level comparison, coNP-hard for levels with `imax`, remains,
 [hardening design](hardening-design.md#external-dependencies)).
 
 **The hard points.** Dependent types (SrcEval drops type arguments the model
@@ -1264,7 +1265,7 @@ confirm, [roadmap](roadmap.md#open-decisions)).
 | Extension | Spine (contract, image, adequacy) | CD2 (shapes) | CD3 (translator) | Aiur evaluator route |
 | --- | --- | --- | --- | --- |
 | P8 closures ([design](closures-design.md)) | nothing: P8 is below SrcEval | function shapes by arity | higher-order functions | nothing: the evaluator has closures natively |
-| Heap completion, RC, reuse | nothing (below SrcEval) | — | — | nothing |
+| Heap completion, RC, reuse | nothing (below SrcEval): general cell layouts change the runtime's procedures and heap invariant (`Rt.Rc.Gen`, [DR1](data-and-roots-design.md#dr1-heap-completion)) under the object theorem, whose statement stays | — | — | nothing |
 | Fixed-width integers, arrays, strings | new primitives: a new contract version, new image entries, one meaning lemma each at the SrcEval level | shapes for words and arrays; the bounded-construction rule remains | the primitives' meanings are their Lean bodies | the same meaning lemmas, implemented over write-once memory |
 | Interpreted opaques (`mixHash`, `getNumBits`) | excluded from the grounded statement; statements relative to the interpretation, kept separate from evaluation through a stored value | — | the theorem holds only if `f`'s result is proved independent of the opaque | refused for discharging axioms |
 | Bignums ([design](bignum-design.md)) | nothing above SrcEval (`Nat` is exact there) | — | the library closure (its layer 3) | shares the `Nat` specification with the evaluator's in-circuit `Nat` |

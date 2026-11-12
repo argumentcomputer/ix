@@ -42,15 +42,119 @@ that closures (P8), arrays and bignums need.
   ([`Recheck/Rc/Proof/ObjectSound.lean:37`](../IxCC/Recheck/Rc/Proof/ObjectSound.lean)).
   `List.reverse` from Lean's library compiles and runs through it
   ([`fixtures/rc/real-source`](../fixtures/rc/real-source/README.md)).
-- *Not implemented.* Scalar fields in cells; constructors with more than 31
-  fields and a large-object path; reset/reuse and the runtime uniqueness
-  test; static reuse from `unique` contracts; borrowed parameters beyond the
+- *Implemented, library only (heap stage 1, first landing).* The runtime of
+  general cell layouts, which nothing in the pipeline emits yet:
+  71 size classes and cell layouts ([`Rt/Rc/Classes.lean`](../IxCC/Rt/Rc/Classes.lean):
+  `classWords`, the least fitting class `classFor` with `classFor_spec`
+  and its waste bounds); allocation by layout, the general release and the
+  uniqueness test ([`Rt/Rc/Gen/Procs.lean`](../IxCC/Rt/Rc/Gen/Procs.lean),
+  [compiler design, "Runtime"](compiler-design.md#runtime)); and their proofs
+  over a general heap invariant (`Rt/Rc/Gen/Proof/`, 93 modules, beside the
+  bounded route's `Rt/Rc/Proof/`, which is unchanged): `AllocatorReady.reserve_total`,
+  `release_caller_complete(_frame)`, `increment_caller_complete`,
+  `Init.cxInit_ready` (all 71 free-list heads recorded), `isUnique_spec`
+  (the test answers `Own.Rc.uniqueOf` and writes nothing), and
+  `Procs.LiveCell.toGen`, `Procs.HeapLive.toGen` (today's cells are cells of
+  the general invariant). 236 exact axiom fences
+  (`IxCCTests/Fences/RtRcGen/`). The general release costs a little more
+  than today's on cells of fewer than three scanned fields
+  ([below](#the-general-releases-cost)).
+- *Not implemented.* Scalar fields and constructors with more than 31 fields
+  in compiled programs (the runtime library above has them; the pipeline's
+  switch to it is the next landing); reset/reuse (the runtime uniqueness test
+  exists, unused); static reuse from `unique` contracts; borrowed parameters beyond the
   zero-RC policy selection; inline fast paths (each RC operation calls a runtime
   procedure today, `rt_rc_inc` or `rt_rc_dec` in `Rt.Rc.Procs`); static constant objects (closed
   constructor trees as immortal read-only cells, `Rhs.const` in the Fir
   design, [`Fir/Syntax.lean:29-31`](../IxCC/Fir/Syntax.lean)). The Own IR
   has no `reset`, `reuse` or credit forms
   ([`Own/Syntax.lean:14-20`](../IxCC/Own/Syntax.lean)).
+
+**The general heap invariant.** The planned statements of stage 1 use names
+with an `L` suffix; the code keeps the bounded route's names in the
+namespace `Rt.Rc.Gen`:
+
+| Plan | Code |
+| --- | --- |
+| `Layout`, `Layout.ok`, `Layout.cls?` | `Rt.Rc.CellLayout`, `.ok`, `.cls?` |
+| `LiveCellL`, `HeapLiveL`, `ArenaPartitionL` | `Gen.LiveCell`, `Gen.HeapLive`, `Gen.ArenaPartition` |
+| `PendingCursorL`, `CursorChainL` | `Gen.PendingCursor`, `Gen.CursorChain` |
+| `ReleaseInvariantL`, `AllocatorReadyL` | `Gen.ReleaseInvariant`, `Gen.AllocatorReady` |
+| `allocL`, `decL`, `isUnique` | `Gen.alloc`, `Gen.dec`, `Gen.isUnique` |
+| `LiveCell.toL` | `Procs.LiveCell.toGen` |
+
+Beyond the plan's statements, the invariant carries what the proofs needed:
+- a cell's fields as one clause with a per-position encoding (`fieldWord`:
+  a value word for a scanned field, the raw word of a `Nat` literal below
+  2⁶⁴ for a scalar position), from which `LiveCell.scanned` and
+  `LiveCell.scalar_values` derive the plan's two clauses;
+- scalar positions as literal tokens a release step may drop
+  (`ScalarTokens`, `dropAll_scalars`, `Balance.drop_scalars`; the release
+  step `ReleasePoint.Move` drops them: `ReleasePoint`, `FramePointScalar`,
+  `RecycleLive`, `RecycleDetailed`);
+- `ReleaseInvariant.cursor_layout` and `cursor_scan`, beside the bounded
+  route's `cursor_class`: a suspended parent has a valid layout and its scan
+  byte (the release's loads of the scan count, `CursorLoads`, and the
+  invariant's preservation through detach, advance and recycle);
+- `PendingCursor.layout`, `arity` and `scalars` (the scalar tail of a
+  finished parent is dropped as tokens when it is recycled,
+  `FramePointRecycle`, `RecycleLive`), `remaining` (the countdown in the count word) and
+  `header_low` (the scan, class and tag bytes kept while the cell is
+  pending), in `Cursor`, `CursorPreserve` and `CursorLoads`;
+- `ArenaPartition.valid` with `1 ≤ classWords cls ≤ 2²⁶` (the arithmetic
+  of slot bounds) and `ArenaPartition.bounded`, every slot's class at most a
+  parameter `cmax` (allocation's `reserve_total` takes `cls ≤ cmax`). The
+  pipeline will instantiate `cmax` at 71, where `bounded` follows from
+  `valid`; it stays because removing the parameter would restate every
+  theorem of the 93 modules for no gain;
+- the five recycle lemmas (`pending_free_separation`, `recycle_chain(s)`,
+  `pending_not_free`, `recycle_distinct`, `recycle_free_placed`) for any
+  slot that is not free, so the recycling of a scalar-only cell (a live
+  slot) reuses them.
+
+#### The general release's cost
+
+On today's layouts (1–31 scanned fields, class `fields + 1`) `Gen.dec`
+executes `3 − n` more Lir steps, and `4 − n` more x86 instructions, than
+`Procs.dec` per freed cell of `n` scanned fields: up to 3 steps (4
+instructions) more for cells of fewer than three scanned fields, fewer for
+four or more. The extra instructions: a branch on the scan byte, for
+cells without scanned fields (+1 step; x86 `test` and `je`), and a reload of
+the class byte when a cell is recycled, since the loop now loads the scan
+count instead of the class (+1; x86 `movzx`); against one subtraction fewer
+for each field after the first (the bounded release's `class − 1`).
+Measured on the same cell graphs, the procedures as emitted (critical edges
+split): Lir steps on the interpreter, x86 instructions on the byte machine
+running the object the backend writes behind one export wrapper (wrapper
+included); both procedures end in the same memory on every graph. The Lir
+counts are pinned by `tests-rt-rc controls`.
+
+| Graph | Lir steps, bounded → general | x86 instructions, bounded → general |
+| --- | --- | --- |
+| list of 1,000 cells (x86: 100) | 31,005 → 32,005 (+3.2 %) | 4,139 → 4,339 (+4.8 %) |
+| chain of 1,000 one-field cells (x86: 100) | 19,005 → 21,005 (+10.5 %) | 2,739 → 3,039 (+10.9 %) |
+| tree of 1,023 two-field nodes (x86: 127) | 31,718 → 32,741 (+3.2 %) | 5,246 → 5,500 (+4.8 %) |
+| tree of three-field nodes | 0 | +1.8 % |
+| tree of four-field nodes | −2.1 % | 0 |
+| one cell of 31 immediates | 384 → 356 (−8.7 %) | 486 → 459 (−6.4 %) |
+| one cell of 31 unique two-field children | 1,345 → 1,348 (+0.2 %) | 1,757 → 1,792 (+1.9 %) |
+| a shared cell (one decrement) | 10 → 10 | 47 → 47 |
+| a list of 1,000 (x86: 100), then a shared tail | +3.2 % | +4.8 % |
+
+Accepted for stage 1, with one release procedure rather than two; the
+pipeline's switch is gated on whole-program executed-instruction counts.
+**Open for heap stage 3** (inline fast paths): two variants, measured on the
+same graphs but not proved. `asc`, the count word holding the next field's
+index with the end test `j = scan` (field order kept): `3 − 2n` steps and
+`4 − 2n` instructions per freed cell (lists −4.7 % steps, 0.0 %
+instructions; one-field chains +5.2 %, +7.3 %). `desc`, the count word
+holding the scan count and counting down to 1 (fields visited 0, then
+`scan − 1` down to 1): `3 − 3n` and `4 − 3n` (one-field chains 0.0 % steps,
++3.6 % instructions; every other graph below the bounded release). `asc`
+changes the cursor's count-word clause and the step lemmas of the release's
+blocks 7, 8 and 12 (15 of the 93 proof modules mention the countdown);
+`desc` also changes the order of visits, which reaches the cursor's suffix
+and its correspondence with the abstract release's worklist.
 
 **Options for the ownership checker.** (i) Keep "equal to the canonical
 producer": safe, but leaves no room for optimisation. (ii) The proved static

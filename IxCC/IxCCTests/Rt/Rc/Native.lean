@@ -1,10 +1,12 @@
 import IxCCTests.Rt.Rc.Emit
 import IxCCTests.Rt.Rc.NativeControls
+import IxCCTests.Rt.Rc.GenNativeControls
 import Lean
 
 /-! `tests-rt-rc native LOGDIR`: the production RC procedures emitted as one
 object and run natively in a test executable IxCC writes of it, under the
-independent controls of `NativeControls` (4,393 checks), with every step's
+independent controls of `NativeControls` (4,393 checks); then the general-layout procedures
+(`Rt.Rc.Gen`) emitted as a second object and run under `GenNativeControls`; with every step's
 command, output and timing retained in `LOGDIR`. -/
 
 set_option autoImplicit false
@@ -47,7 +49,26 @@ def run (logs : FilePath) : IO Unit := do
     ("elapsed_ms", toJson elapsed)]).pretty ++ "\n")
   for l in lines do IO.println l
   IO.println s!"native: {n} assertions, {elapsed}ms; logs {logs}"
-  command logs "artifacts" "sha256sum" #[object.toString, executable.toString]
+  let genObject := logs / "gen-rc.o"
+  Emit.emitGen genObject
+  let genExecutable := logs / "gen-native-controls"
+  match IxCCTests.Exe.TestShell.writeExe GenNativeControls.mem GenNativeControls.exports
+      (← IO.FS.readBinFile genObject) with
+  | .ok bytes =>
+    IO.FS.writeBinFile genExecutable bytes
+    IO.setAccessRights genExecutable { user := { read := true, write := true, execution := true } }
+  | .error e => throw (IO.userError s!"no test executable of the general-layout procedures: {e}")
+  let genStart ← IO.monoMsNow
+  let (genLines, genN) ← GenNativeControls.run genExecutable
+  let genElapsed := (← IO.monoMsNow) - genStart
+  IO.FS.writeFile (logs / "gen-native.stdout") (String.join (genLines.map (· ++ "\n")))
+  IO.FS.writeFile (logs / "gen-native.json") ((Json.mkObj [
+    ("executable", toJson genExecutable.toString), ("assertions", toJson genN),
+    ("elapsed_ms", toJson genElapsed)]).pretty ++ "\n")
+  for l in genLines do IO.println l
+  IO.println s!"general-layout native: {genN} assertions, {genElapsed}ms; logs {logs}"
+  command logs "artifacts" "sha256sum"
+    #[object.toString, executable.toString, genObject.toString, genExecutable.toString]
   command logs "fixtures-after" "sha256sum"
     #["--status", "--check", "fixtures/rc/real-source/manifest.sha256"]
   IO.FS.writeFile (logs / "complete.txt")

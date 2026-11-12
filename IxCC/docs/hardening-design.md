@@ -83,8 +83,8 @@ end](kernel-front-end-design.md) replaces it in the producer and on the
 native verifier path, and the switch has made it the only front end (the
 owner's decision of 2026-11-11); the checker's code is deleted (the switch's
 step 4). The erased checker's cost leaves IxCC's verifier; the kernel's
-typing core takes its place there, exponential on universe levels it cannot
-fold until its planned work budget lands (its blow-up on chains of `let` is
+typing core takes its place there, exponential on some universe-level
+comparisons until its planned call budget lands (its blow-up on chains of `let` is
 fixed, [below](#external-dependencies)).
 
 **HD-2. A metered verifier by construction (planned; after SP-0).** Replace
@@ -131,20 +131,23 @@ decision](roadmap.md#open-decisions).
   and through IxCC's front end over it (28 ms at 30 `let`s where it took 50 s,
   [kernel front end](kernel-front-end-design.md#resource-bounds), which keeps
   the measurements from before the fix; `tests-kernel-front` checks such a
-  closure at 200). *Still exposed*, as in Lean's own kernel: levels the folds
-  cannot merge, such as two chains at two universe parameters each mentioning
-  the other at every step, whose level keeps a tree that doubles per step
-  (comparing it with a declared sort doubles in time and memory; the level
-  normalisation and decision procedure walk it as a tree, while level
-  equality is memoised on the pairs it proves equal, so two such levels,
-  equal but built apart, compare in time linear in their DAGs). It matters to IxCC
-  because IxCC's verifier runs IxCK itself: since the switch, the erased
-  checker is gone from the verifier path, and a closure of ordinary
-  size carrying such a constant can hold the byte-level verifiers as long as
-  its author chooses. The core exposes no work counter, and its fuel bounds
-  recursion depth, not work; the planned guard is a work budget in the
-  kernel's core that meters the size of the levels it compares, which the
-  front end passes as a budget and reports as a decline (KF-3). Until it
+  closure at 200). Levels the folds cannot merge (two chains at two universe
+  parameters each mentioning the other at every step, or levels unfolding
+  builds by instantiating at `max u u`) stay shared as DAGs, and the kernel's
+  level walks are now memoised on them (`docs/kernel.md`, "Running time"), so
+  such constants also check in milliseconds. *Still exposed*: the level
+  comparison itself. Deciding `l ≤ r` for levels with `imax` is coNP-hard
+  (the reduction is in `docs/kernel.md`), so any complete comparison, the
+  kernel's included, takes time exponential in the number of universe
+  parameters on some small constants; Lean's kernel avoids this by an
+  incomplete comparison that refuses them. It matters to IxCC because IxCC's
+  verifier runs IxCK itself: since the switch, the erased checker is gone
+  from the verifier path, and a closure of ordinary size carrying such a
+  constant can hold the byte-level verifiers as long as its author chooses.
+  The core exposes no work counter, and its fuel bounds recursion depth, not
+  work; the planned guard is a call budget in the kernel's level comparison,
+  set by the caller, which the front end passes and reports as a decline
+  (KF-3). Until it
   lands, a verifier that runs IxCK's admission on hostile bytes needs a time
   and memory limit of its own.
 - **The proof system's verifier** on the Aiur routes, which has its own

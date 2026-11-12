@@ -437,20 +437,54 @@ The rule now builds `Level.mkIMax u v`, `imax` with the official kernel's
 `mk_imax` and `mk_max` folds, which is always `u`, `v` or `imax u v`
 (`Level.mkIMax_cases`), and `Level` caches its has-parameter bit; such chains
 check in milliseconds at a thousand steps (the `kernel-level-sharing` test
-checks six of them at 200). Still exposed: levels the folds cannot merge.
-Two chains at two parameters, each step mentioning the other's
-(`A (j+1) = A j → B j`, `B (j+1) = B j → A j`), keep a level whose tree
-doubles per step, and comparing it with a declared sort it equals only after
-normalisation takes time and memory doubling per step, as in Lean's own
-kernel: the normalisation and decision procedure (`Level.simplify`,
-`Level.leqCore`) walk trees. Level equality (`==`) is memoised below its
-pointer and hash tests on the pairs it proves equal (`Level.decMemo`), so a
-comparison of two such levels that are equal, built apart, is linear in their
-DAGs (the folds make one), and a constant over such chains whose levels are
-compared only with equal ones checks in milliseconds (the
-`kernel-level-sharing` test checks two at 200).
-A host that checks third-party bytes needs its own time and memory
-limit.
+checks six of them at 200). Levels the folds cannot merge stay shared as DAGs
+whose trees double per step: two chains at two parameters, each step
+mentioning the other's (`A (j+1) = A j → B j`, `B (j+1) = B j → A j`), and
+the levels unfolding builds when each of a chain of definitions instantiates
+the previous at `max u u` (`Level.subst` puts one object at both sides).
+Level equality (`==`) is memoised below its pointer and hash tests on the
+pairs it proves equal (`Level.decMemo`), and the executed forms of
+`Level.simplify`, `Level.leqCore`, `Level.zeronessOf` and `Level.isNeverZero`
+remember, for one call, the result at every node (for `leqCore`, every
+subproblem `(fuel, l, r, diff)`) they have finished; `leqCore`'s case split
+on a large level substitutes with a memoised `subst` (`Level.substMemo`).
+Each executed form is proved equal to its specification and swapped in by
+`@[csimp]`; below 64 nodes (32 for `leqCore`'s two operands) an exact copy
+of the plain recursion runs instead, so ordinary levels cost what they did.
+So every level walk is linear in the level's DAG, and such constants check
+in milliseconds at hundreds of steps (the `kernel-level-sharing` test checks
+four families at 200).
+
+What remains is the comparison itself. `Level.leqCore` decides
+`eval l ≤ eval r + diff` at every assignment by nanoda's case analysis:
+splitting on a parameter being zero or not (`byCases`), distributing `imax`
+over `imax` and `max`, and Géran's sublevels for the case nanoda's split
+misses; it is complete when it answers. Deciding `l ≤ r` at every assignment
+for levels built from `zero`, `succ`, `max`, `imax` and parameters is
+coNP-hard, by a reduction from satisfiability (our own; not taken from the
+literature): a CNF formula φ over variables `1 … n` becomes, with two
+parameters `xi`, `yi` per variable, `2 = succ (succ zero)` and
+`I [c1, …, cm] = imax (… (imax 2 c1) …) cm`, the levels
+`G = I [max x1 y1, …, max xn yn]` and
+`R = max (T_C1, …, T_Cm, x1, y1, …, xn, yn)`, where `T_C` is `I` of the
+complements of clause `C`'s literals (`yi` for `i`, `xi` for `¬i`).
+`G ≤ R` can fail only where every parameter is `0` or `1` (`G` is at most
+`max 2` its parameters, `R` at least each), and there it fails exactly where
+each pair has a nonzero member and each clause has a literal whose complement
+is `0`: read `i` as true where `yi = 0`, that is an assignment satisfying φ,
+and every satisfying assignment gives one. Both levels are linear in φ, and
+`G = R` reduces to it as `max G R = R`. So no complete comparison is
+polynomial unless P = NP: some bound or some incompleteness is unavoidable.
+On the constant `def S : Sort (succ R) := Sort (max G R)` this kernel accepts
+the unsatisfiable formulas and refuses the satisfiable ones (the
+`kernel-level-sharing` test checks one of each), in time growing about ×4
+per two variables on the chain `1 ∧ (¬1 ∨ 2) ∧ … ∧ ¬n`. Lean's kernel
+decides level equality by normalisation only, which is incomplete: it refuses
+all of these in under a millisecond, and also a well-typed constant this
+kernel accepts (a chain of `imax` over `n` parameters compared with the same
+chain with two parameters swapped), on which `leqCore`'s memo leaves a
+polynomial of degree about 4 (10 s at 128 parameters). A host that checks
+third-party bytes needs its own time and memory limit.
 
 ## The typing tier
 
@@ -1168,6 +1202,7 @@ files carry further changes:
 | `IxCK/Kernel/Expr.lean`, `IxCK/Kernel/Cached/ExprNodes.lean` | `Level` caches its has-parameter bit (`hasParamData`), and `levelHasParam` runs as it (`levelHasParam_eq_csimp`) | the walk visited a level shared as a DAG once per path, at every `.sort` node built |
 | `IxCK/Kernel/{Level,Core}.lean`, `IxCK/Kernel/Cached/CoreC.lean`, `IxCK/Kernel/Rules/Rel.lean`, `IxCK/Kernel/Model/Rules/InferSound.lean`, `IxCK/Kernel/Verify/{Level,PropWhen,BinderLoop,InferLemmas,InferIOLemmas}.lean`, `IxCK/Kernel/Verify/Cached/{BinderLoopC,DiscC4}.lean`, `IxCK/Kernel/Model/{AxiomBits,Inductives/FixTeleBound,Inductives/StructBits}.lean` | the ∀ rule's level is `Level.mkIMax u v` (`imax` with `mk_imax`'s and `mk_max`'s folds), in the specification, the executed core and `Infer.forallE`; it equals `imax u v` in every assignment (`eval_mkIMax`) with the same zero-ness datum (`zeronessOf_mkIMax`) | with `imax`, a ∀ chain over one shared type built a level whose tree doubles per binder ("Running time") |
 | `IxCK/Kernel/Expr.lean`, `IxCK/Kernel/Cached/ExprNodes.lean` | the executed level equality (`Level.beqPtr`, through `Level.beq_eq_beqPtr`) decides its structural case by a descent memoised on the pairs it proves equal (`Level.decMemo`, `Expr.beqMemo`'s arrangement); `Level.beqPtr_eq` is unchanged in statement | the folds compare two levels, and on equal levels built apart as DAGs the structural walk visited their trees ("Running time") |
+| `IxCK/Kernel/Level.lean` | the executed `simplify`, `leqCore`, `zeronessOf` and `isNeverZero` are memoised per call on the nodes (for `leqCore`, the subproblems) they finish (`simplifyFast`, `leqCoreFast`, `zeronessOfFast`, `isNeverZeroFast`, each swapped in by a `@[csimp]` theorem proving it equal to the unchanged specification), and the memoised `leqCore`'s case split substitutes with a memoised `subst` (`substMemo`); below a small tree size each runs an exact copy of the plain recursion | the walks visited a level shared as a DAG once per path, and `leqCore` re-solved the subproblems its distributions meet again ("Running time") |
 | `IxCK/Kernel/MainTheorem.lean` | only `model_exists` kept | the NDJSON corollary needs a frontend Ix does not use |
 
 Ix's own files under `IxCK/Kernel/` are `Admission.lean` and the `Admission`
