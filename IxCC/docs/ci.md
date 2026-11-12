@@ -224,6 +224,23 @@ lake exe check-build-graph --write-coverage "COMMIT: reason"
 Review the diff before committing; the inventory exists to make coverage
 changes visible.
 
+### Fence accounting: heap stage 2, second landing (2026-11-12)
+
+The exact axiom assertions the landing removes and adds, against the tree it lands on (6,587),
+checked against the regenerated `nix/ci-coverage.json`:
+
+| Group | Assertions |
+| --- | ---: |
+| removed: the Cfg prefix files (`AllocationPrefix`, `AllocationCopies`, `AllocationState`, `CopyPrefix`, `CopyState`, `DropPrefix`, `DropPreservation`, `TokenEnvironments`, `TransferPrefix`, `UnitActions`) | −31 |
+| removed: the fused allocation chain over `Tokens` (`FusedAllocationSource`, `…Instruction`, `…Consumed`, `AllocationStep`) | −4 |
+| removed: the canonical per-construct step lemmas with no counterpart (`*_activation`, `firCase_lower`, `projection_activation`, …) | −16 |
+| removed: the canonical Own simulation (`Own/Plain/Proof/{Simulation, Checked, CallBind, Jump, JumpState, RhsSteps, CtorStep, Terminals, TailCall, Call}`, `nonCall_refines`) | −21 |
+| removed: `admitWithContracts_lower_refines` (`Fences/Compile.lean`) | −1 |
+| removed: the canonical Own state and what only it used (`State`, `ValidRoots`, `StackIdentity`'s `StackViews`, `StackRetain`, `Selected`, `JoinLookup`, `Transfers`; `copies_sound`, `drops_sound`, `State.resume`), `DropTokens`, `BorrowedCursor` | −25 |
+| added: `IxCCTests/Fences/OwnOwnedSwitch.lean` (the new steps, admission with the budget, the checker's language and retained forms, the strengthened milestone-1 lemmas, `checkScopedProgram_owned`, `admit_of_checkPlainMap`, `admitContract_of_checkContractPlainMap`) | +36 |
+| kept, statements restated over the checker's typing context (names unchanged; a fence pins a theorem's axiom set, not its text): `Activation.{declare, lexical, return_value}`, `PhysicalAtClock.{code, of_code}`, `{allocation, call, case, jump, tail}_result`, `eval_physical`, `checked_physical`, `public_physical`, `physical_{declare, return, trap}`, `entry_activation`, `self_entry_activation`, `entry_result`, `main_entry_result`, `Scalar.{argument, fieldless, primitive, projection}_result`, `checkProgram_parts` (25); and admission's `_parts` lemmas, whose conclusions name `checkOwned` | 0 |
+| total | 6,587 → ⟦COV⟧ |
+
 ## Coverage change record
 
 Rows are dated records and keep their original wording. Identifiers in older

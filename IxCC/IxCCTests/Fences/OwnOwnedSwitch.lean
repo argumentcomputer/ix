@@ -78,7 +78,9 @@ lemmas strengthened for it, and that nothing admitted before the switch is refus
 /-- info: 'IxCC.Own.Plain.Certificate.admitContract_of' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Own.Plain.Certificate.admitContract_of
 
-/-- info: 'IxCC.Own.Plain.Certificate.admitContract_of_checkContractPlainMap' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'IxCC.Own.Plain.Certificate.admitContract_of_checkContractPlainMap' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Own.Plain.Certificate.admitContract_of_checkContractPlainMap
 
 /-- info: 'IxCC.Own.Plain.Certificate.admitContract_mono' depends on axioms: [propext, Classical.choice, Quot.sound] -/
