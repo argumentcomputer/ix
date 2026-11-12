@@ -761,7 +761,7 @@ def check (lim : Limits) (env : Ix.Kernel.Env .anon) (s : Subject) : Verdict := 
       | .error e => return readFailure (refName r) e
   -- an annotated constant with no run body makes promises nothing can check
   for r in toCheck do
-    if let some (.stuck ps res _ _) := (defs.find? (·.1 == r)).map (·.2) then
+    if let some (RunDef.stuck ps res _ _) := (defs.find? (·.1 == r)).map (·.2) then
       unless ps.all (·.mode == .many) && res == .shared do
         return .refuse (refName r) "an annotated constant with no run body is not in the extern set: \
           its modes are promises nothing checks"
