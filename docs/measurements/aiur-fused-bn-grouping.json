@@ -1,0 +1,187 @@
+{
+  "format": "ix-aiur-fused-bn-grouping-v1",
+  "protocol_changed": false,
+  "lookup_group_size": 1,
+  "policy": "docs/measurements/aiur-fused-bn-grouping-policy.json",
+  "search_report": "target/fused-arithmetic/grouping/policy.report.json",
+  "search": {
+    "dimensions": [
+      "stage1_columns",
+      "function_circuits",
+      "cells_0",
+      "fft_0",
+      "cells_1",
+      "fft_1"
+    ],
+    "initial": [
+      6657,
+      147,
+      7050682,
+      532191226,
+      461208422,
+      49864242882
+    ],
+    "optimized": [
+      2948,
+      44,
+      6895542,
+      531328631,
+      436074438,
+      47353250551
+    ]
+  },
+  "scope": "Certified opt-in function grouping on two saved development predecessors using unchanged column KZG. Exact source execution and cell/FFT budgets pass for both. Includes an actual small grouped KZG proof; the larger workload is profiled without proving, and no actual Init BN proof is claimed.",
+  "small": {
+    "input": {
+      "claims_blake3": "692cfcee6e75aa8e44850a4d9140a157d770cd2ce680633d2eb0d2bc698cd0cd",
+      "key_blake3": "c75a8dcc1a238e1b3870afa0fad164d47e4e3ff4bc6fdd8b7362926b32232341",
+      "proof_blake3": "be84132464f4fa608ffe485b20ace5bc8118befa82a6bac9869515d367bfedae",
+      "proof_bytes": 3339,
+      "proof_curve_points": 26
+    },
+    "same_output": true,
+    "before": {
+      "fixed_cells": 1055000,
+      "lookup_cells": 4679592,
+      "main_cells": 8229518,
+      "quotient_cells": 694996,
+      "quotient_degree": 238,
+      "stage1_width": 7045,
+      "stage2_width": 1968,
+      "unpadded_main_cells": 5310047
+    },
+    "after": {
+      "fixed_cells": 1055000,
+      "lookup_cells": 4450973,
+      "main_cells": 8074378,
+      "quotient_cells": 747497,
+      "quotient_degree": 103,
+      "stage1_width": 3336,
+      "stage2_width": 946,
+      "unpadded_main_cells": 6242822
+    },
+    "before_active_circuits": 168,
+    "after_active_circuits": 65,
+    "before_max_height": 262144,
+    "after_max_height": 262144,
+    "budget_cells_fft": [
+      7050682,
+      532191226
+    ],
+    "actual_cells_fft": [
+      6895542,
+      531328631
+    ],
+    "all_circuits_fft_before": 633335346,
+    "all_circuits_fft_after": 632472751,
+    "profile": "target/fused-arithmetic/grouping/small/profile.json",
+    "outer_proof": {
+      "changed_output_rejected": true,
+      "key_blake3": "3d286e17eb1e1e3778c0adeadb5b9cec4dfeba9e93792824934c6bd1c429f98f",
+      "max_trace_height": 1048576,
+      "portable_verification": true,
+      "proof_blake3": "75040427d293102f85cbb0a6ee32e66b35e8b0bee7a76b04b6cbba188d550284",
+      "proof_bytes": 326710,
+      "scope": "Actual proof of this Aiur verifier execution using the existing column KZG PCS and explicit development setup; not Init",
+      "variable_g1_points": 4402,
+      "key_path": "target/fused-arithmetic/grouping/proof/outer-key.bin",
+      "proof_path": "target/fused-arithmetic/grouping/proof/outer-proof.bin"
+    },
+    "public_call_blake3": "f8ef0029daf605be6bc4d79bfc7a76c028c35f8ec1b82c3019e4a06849f309bc",
+    "proof_report": "target/fused-arithmetic/grouping/proof/comparison.json",
+    "native_predecessor_verified": true,
+    "both_budgets_pass": true
+  },
+  "artifact": "target/fused-arithmetic/grouping/grouped.ixa",
+  "artifact_blake3": "476ee75439ce5d323ca0fe0e2252c984f63d5534c4760d050845aae95341e25a",
+  "larger": {
+    "input": {
+      "call_blake3": "f8ef0029daf605be6bc4d79bfc7a76c028c35f8ec1b82c3019e4a06849f309bc",
+      "key_blake3": "9c06bed6d9337ac342714c168725c1f47206ef05b5e6ba69657f31873aaa57dd",
+      "proof_blake3": "430b9f23ed4748ffd1d85898dfab8db35ce2733d95d34b928d37b5a3c678f27f",
+      "proof_bytes": 299070
+    },
+    "same_output": true,
+    "before": {
+      "fixed_cells": 1055000,
+      "lookup_cells": 272531300,
+      "main_cells": 499342386,
+      "quotient_cells": 41569950,
+      "quotient_degree": 238,
+      "stage1_width": 7045,
+      "stage2_width": 1968,
+      "unpadded_main_cells": 328883372
+    },
+    "after": {
+      "fixed_cells": 1055000,
+      "lookup_cells": 246200897,
+      "main_cells": 474208402,
+      "quotient_cells": 43355917,
+      "quotient_degree": 103,
+      "stage1_width": 3336,
+      "stage2_width": 946,
+      "unpadded_main_cells": 392080840
+    },
+    "before_active_circuits": 168,
+    "after_active_circuits": 65,
+    "before_max_height": 16777216,
+    "after_max_height": 16777216,
+    "budget_cells_fft": [
+      461208422,
+      49864242882
+    ],
+    "actual_cells_fft": [
+      436074438,
+      47353250551
+    ],
+    "all_circuits_fft_before": 53311049714,
+    "all_circuits_fft_after": 50800057383,
+    "profile": "target/fused-arithmetic/grouping/larger/profile.json",
+    "native_predecessor_verified": true,
+    "both_budgets_pass": true,
+    "proof_generated": false
+  },
+  "artifact_bytes": 3689035,
+  "source_arithmetic_commit": "914b6bfe886fcc2165698b50fd1ee9fb8eedd665",
+  "date_utc": "2026-11-12",
+  "default_grouping_changed": false,
+  "actual_init_bn_proof_generated": false,
+  "policy_blake3": "80bcc26bc1adb19da81c96a5c25c52422880cf98fdd416e43b175062a7146b0f",
+  "search_options": {
+    "extension_degree": 1,
+    "max_lookup_group": 1,
+    "max_members": 16,
+    "sweeps": 8
+  },
+  "budget_dimensions": [
+    "padded_function_main_cells",
+    "function_fft_cost"
+  ],
+  "small_proof_max_log_height": 20,
+  "frozen_inputs": {
+    "bn_grouping-914b6bfe8": {
+      "path": "target/fused-arithmetic/grouping/bn_grouping-914b6bfe8",
+      "blake3": "3e1f1f2f9af1d28078a2b27b28ced75cca8d48b5472b03ccc87651003a8813b8"
+    },
+    "aiur_verifier_comparison-914b6bfe8": {
+      "path": "target/fused-arithmetic/grouping/aiur_verifier_comparison-914b6bfe8",
+      "blake3": "e93e908ecea7751983ff58260dd90772b5c0a0e78847d1dc3d8c32c6434eab34"
+    },
+    "snapshot-914b6bfe8.json": {
+      "path": "target/fused-arithmetic/grouping/snapshot-914b6bfe8.json",
+      "blake3": "cda0491eeba2a42ac7d313f9b527af2db8f56192e08d9b5b0c757759b3859b6d"
+    },
+    "metrics-914b6bfe8.json": {
+      "path": "target/fused-arithmetic/grouping/metrics-914b6bfe8.json",
+      "blake3": "35ffe200413b9b37ad71ce4ecaf557c6ec8745f33836f934dd075812512629ed"
+    }
+  },
+  "reproduce": [
+    "source /tmp/aiur-stage-lean-env.sh",
+    "Aiur/.lake/build/bin/grouping_search target/fused-arithmetic/verifier/metrics.json NEW_POLICY --prefix KzgGroup --profile target/fused-arithmetic/verifier/small/profile.json target/fused-arithmetic/verifier/small/profile.json --profile target/fused-arithmetic/verifier/larger/profile.json target/fused-arithmetic/verifier/larger/profile.json --extension-degree 1 --max-lookup-group 1 --max-members 16 --sweeps 8",
+    "target/fused-arithmetic/grouping/bn_grouping-914b6bfe8 export NEW_ARTIFACT docs/measurements/aiur-fused-bn-grouping-policy.json",
+    "target/fused-arithmetic/verifier/profile NEW_ARTIFACT small NEW_SMALL_PROFILE",
+    "target/fused-arithmetic/verifier/profile NEW_ARTIFACT larger NEW_LARGER_PROFILE",
+    "target/fused-arithmetic/grouping/aiur_verifier_comparison-914b6bfe8 NEW_ARTIFACT NEW_PROOF_OUTPUT --prove-kzg 20"
+  ]
+}

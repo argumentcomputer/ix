@@ -1062,3 +1062,18 @@ The [standalone host tool](../crates/proof-compression/examples/compress_bn.md)
 prepares pinned keys and policy, projects an independently verified GL proof,
 and runs count-only or proving modes. The stage still carries a deferred
 pairing accumulator; terminal verification is required to accept the chain.
+
+## 22. Grouping with fused arithmetic
+
+The [revised grouping policy](measurements/aiur-fused-bn-grouping.json) uses
+the arithmetic from `914b6bfe8` and meets both saved workloads' main-cell and
+estimated FFT budgets. It reduces main/lookup/quotient columns from
+7,045/1,968/238 to 3,336/946/103. Small main cells fall from 8,229,518 to
+8,074,378; larger main cells fall from 499,342,386 to 474,208,402. Maximum
+heights and both deferred outputs are unchanged.
+
+The actual small grouped proof has 4,402 variable G1 points and 326,710 bytes;
+portable verification succeeds and a changed output is rejected. These are
+development-fixture results with the existing KZG protocol, lookup group size
+one and the unchanged proof capacity. The policy remains opt-in; the larger
+workload is a count profile and an actual Init BN proof is not yet established.
