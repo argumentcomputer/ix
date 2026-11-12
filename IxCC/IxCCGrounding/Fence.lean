@@ -376,7 +376,7 @@ recursor clause and its implication from the landed one. -/
 /-- info: 'IxCC.Grounding.eqRecBasisB_of' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Grounding.eqRecBasisB_of
 
-/-- info: 'IxCC.Grounding.peelLams_corr' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'IxCC.Grounding.peelLams_corr' depends on axioms: [propext] -/
 #guard_msgs in #print axioms IxCC.Grounding.peelLams_corr
 
 /-- info: 'IxCC.Grounding.peelLams_eqRecRhs' depends on axioms: [propext, Classical.choice, Quot.sound] -/
