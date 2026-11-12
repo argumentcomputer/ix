@@ -408,7 +408,7 @@ theorem red_beta_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
     injection he167 with he
     injection he with he1 _
     injection he1 with he2
-    exact one_ne_zero he2
+    exact (one_ne_zero he2).elim
   · -- one argument consumed: `expr_inst1`
     subst hm42 hc281 he280
     obtain ⟨D2, Cs2, Bs, hD2, hCs2, hBs, hred⟩ := red_beta_common c ih good ev15 ev81
