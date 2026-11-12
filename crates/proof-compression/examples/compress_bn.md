@@ -58,6 +58,7 @@ refer to the preceding stage's `source-key.bin`, `source-claims.bin` and
 `source-proof.bin`. Increment the stage while retaining the independently
 authorized policy and statement digests.
 
-The stage proof authenticates a deferred pairing accumulator. Successful native
-verification of this proof does not discharge that accumulator; terminal
-`CompressFinal` verification is required to accept the complete chain.
+The stage proof authenticates a deferred pairing accumulator. The proving tool
+checks both the generated proof and that accumulator natively, reporting the
+two checks separately. The accumulator remains public proof data for the next
+stage; terminal `CompressFinal` discharges it inside the final Aiur relation.

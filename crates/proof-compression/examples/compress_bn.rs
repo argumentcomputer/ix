@@ -259,7 +259,9 @@ fn main() -> Result<()> {
   }
   let config = capacity.config(&setup, profile.max_height)?;
   let class = SetupClass::of(config.pcs().verifier_params());
+  let parameters = config.pcs().verifier_params().clone();
   let proven = wrapper.prove(&execution, config, limits)?;
+  proven.accumulator.check_pairing(&parameters)?;
   for (name, bytes) in [
     ("key.bin", proven.keys.portable.as_slice()),
     ("source-key.bin", proven.keys.source.as_slice()),
@@ -270,6 +272,7 @@ fn main() -> Result<()> {
     fs::write(out.join(name), bytes)?;
   }
   report["proof_verified"] = true.into();
+  report["native_accumulator_verified"] = true.into();
   report["setup"] = class.label().into();
   report["proof_bytes"] = proven.proof.len().into();
   report["setup_seconds"] = proven.setup_seconds.into();

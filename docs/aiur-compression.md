@@ -1060,8 +1060,10 @@ is an execution/profile result, not an Init BN proof or end-to-end timing.
 
 The [standalone host tool](../crates/proof-compression/examples/compress_bn.md)
 prepares pinned keys and policy, projects an independently verified GL proof,
-and runs count-only or proving modes. The stage still carries a deferred
-pairing accumulator; terminal verification is required to accept the chain.
+and runs count-only or proving modes. Proving mode checks the outer proof and
+carried accumulator natively under the policy's trusted anchors. The stage
+still carries that accumulator as public data; `CompressFinal` discharges it
+inside the final Aiur relation for PLONK.
 
 ## 22. Grouping with fused arithmetic
 

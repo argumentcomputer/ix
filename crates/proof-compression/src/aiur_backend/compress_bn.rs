@@ -12,11 +12,16 @@ use super::{
   kzg::{Backend, Compiler, MAX_TOTAL_ROWS, VerifyingKey},
   kzg_advice as wire,
 };
-use crate::kzg::{KzgConfig, Scalar, TranscriptKind, curve::G1Affine};
+use crate::kzg::{
+  KzgConfig, Scalar, TranscriptKind, VerifierParams,
+  curve::{G1Affine, PairingCurve},
+};
 use aiur::{
   Execution, artifact::WidePackage, budget::RecordPool, field::FieldBackend,
   hints::HintChannels, maps::MapOverrides, trace::TracePlan,
 };
+use ark_ec::{AffineRepr, pairing::Pairing};
+use ark_ff::Zero;
 use ark_serialize::CanonicalDeserialize;
 use multi_stark::{
   config::ProofConfig, lookup::logup_max_degree, system::extension_params,
@@ -128,6 +133,27 @@ impl Accumulator {
 
   pub fn points(&self) -> [G1Affine; 2] {
     wire::decode_accumulator(&self.0).expect("validated accumulator")
+  }
+
+  /// Discharge the carried equation natively under independently trusted
+  /// anchors. Acceptance also requires a verified proof binding these words
+  /// to the expected policy, stage and root statement.
+  pub fn check_pairing(
+    &self,
+    parameters: &VerifierParams,
+  ) -> Result<(), String> {
+    let anchors = [parameters.g2, parameters.tau_g2];
+    if anchors.iter().any(|point| {
+      point.is_zero()
+        || !point.is_on_curve()
+        || !point.is_in_correct_subgroup_assuming_on_curve()
+    }) {
+      return Err("invalid CompressBN pairing anchors".into());
+    }
+    if !PairingCurve::multi_pairing(self.points(), anchors).is_zero() {
+      return Err("CompressBN deferred pairing equation failed".into());
+    }
+    Ok(())
   }
 }
 

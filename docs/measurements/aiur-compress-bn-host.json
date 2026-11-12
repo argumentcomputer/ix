@@ -55,11 +55,12 @@
     "quotient_degree": 248
   },
   "validation": {
-    "focused_host_tests": 4,
+    "focused_host_tests": 5,
     "development_success_proof": "Passed actual BN proof generation, portable verification, changed-stage rejection and next-stage source export.",
     "admission": "Missing or short SRS prefixes rejected before witness allocation; concrete lookup tuples count against memory limits when streaming is disabled.",
     "clippy": "Library, host tests and example pass with -D warnings.",
-    "production_input": "Pinned GL artifact/key and independently supplied root statement verified natively before source projection; Aiur step execution then succeeded."
+    "production_input": "Pinned GL artifact/key and independently supplied root statement verified natively before source projection; Aiur step execution then succeeded.",
+    "native_accumulator_check": "The successful development proof also passes native accumulator verification. Wrong points, mismatched anchors and zero anchors are rejected; identity accumulation is accepted."
   },
-  "deferred_pairing": "A native proof of the step does not discharge the carried accumulator. CompressFinal remains required."
+  "deferred_pairing": "The step proof carries the accumulator. Standalone proving verifies it natively after checking the outer proof; CompressFinal enforces it inside the final PLONK relation."
 }

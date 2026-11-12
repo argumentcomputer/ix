@@ -168,6 +168,29 @@ fn recursive_public_call_rejects_stage_gaps_and_noncanonical_accumulators() {
 }
 
 #[test]
+fn native_accumulator_check_rejects_wrong_points_and_anchors() {
+  let setup = srs(4);
+  let config = KzgConfig::with_max_trace_len(Arc::clone(&setup), CAP, 8);
+  let parameters = config.pcs().verifier_params();
+  let valid = Accumulator::from_points(&[setup.g1[1], -setup.g1[0]]).unwrap();
+  valid.check_pairing(parameters).unwrap();
+  let invalid = Accumulator::from_points(&[setup.g1[1], setup.g1[0]]).unwrap();
+  assert!(invalid.check_pairing(parameters).is_err());
+  let other =
+    KzgConfig::new(Arc::new(Srs::unsafe_dev_setup(4, b"other anchors")), 8);
+  assert!(valid.check_pairing(other.pcs().verifier_params()).is_err());
+  let mut invalid_setup = Srs::unsafe_dev_setup(4, b"invalid anchors");
+  invalid_setup.g2 = ark_bn254::G2Affine::identity();
+  let invalid_parameters =
+    ix_proof_compression::kzg::VerifierParams::from_srs(&invalid_setup);
+  assert!(valid.check_pairing(&invalid_parameters).is_err());
+  Accumulator::from_points(&[G1Affine::identity(); 2])
+    .unwrap()
+    .check_pairing(parameters)
+    .unwrap();
+}
+
+#[test]
 fn wrapper_pins_artifact_bounds_execution_and_profiles_without_traces() {
   let bytes = artifact();
   assert!(Wrapper::from_bytes(&bytes, &[0; 32]).is_err());
@@ -307,6 +330,10 @@ fn wrapper_proves_and_exports_the_same_deferred_public_call() {
   fixture.policy = policy.to_bytes();
   let input = fixture.input().unwrap();
   let execution = wrapper.execute(&input, 4 << 30).unwrap();
+  execution
+    .accumulator()
+    .check_pairing(config(64).pcs().verifier_params())
+    .unwrap();
   let limits = TraceLimits {
     max_height: 1 << 23,
     max_total_rows: 1 << 26,
@@ -329,6 +356,10 @@ fn wrapper_proves_and_exports_the_same_deferred_public_call() {
   )
   .unwrap();
   key.verify_bytes(&proven.claim, &proven.proof).unwrap();
+  proven
+    .accumulator
+    .check_pairing(key.system().config.pcs().verifier_params())
+    .unwrap();
   let mut changed = input.public_inputs();
   changed.stage = changed.stage.next().unwrap();
   assert!(
