@@ -23,16 +23,43 @@ the state after it. It transcribes:
   - `write(fd, buf, count)` (`write(2)`; number 1): the `count` bytes at
     `buf` recorded, and a result that is a byte count no larger than `count`
     when it is non-negative as a signed word (a negative one is `-errno`);
-  - `exit(status)` (`_exit(2)`; number 60): the process ends;
+  - `exit(status)` (number 60, the system call `_exit(2)` describes): the
+    process ends. The call ends the calling thread (the C library's `_exit`
+    calls `exit_group` instead); it ends the process because the process has
+    one thread (below);
 - **anything else**: any other number, or `prctl` and `seccomp` with other
   arguments, may do anything, including end the process (`other`).
 
+**The environment.** This is the kernel's own behaviour for a process nothing
+outside it interferes with, which the specification assumes in four ways
+(`Process.Step` relies on the same four):
+- *No tracer is attached.* A `ptrace` tracer (a debugger, `strace`) can change
+  a call's result, registers and memory: `strace -e inject=exit:error=EPERM`
+  makes `exit` return, and the shell's exit block, which jumps back to itself,
+  then repeats the call, a trace no theorem allows (`exit` is last).
+- *No seccomp filter or supervisor installed by an ancestor changes what
+  `write`, `exit`, `prctl` or `seccomp` do or return* (a filter survives
+  `execve`). A filter answering `exit` with an error (`SECCOMP_RET_ERRNO`, or
+  `SECCOMP_RET_TRACE` with no tracer) makes it return, as above; a
+  user-notification supervisor can answer `write` with more than its count,
+  and the report loop then steps past its message and writes bytes the
+  specification does not allow. A filter that kills the process does no harm
+  (the trace ends there).
+- *No other process writes this process's memory* (`process_vm_writev`,
+  `/proc/PID/mem`) *or the file it is mapped from.* Each call here leaves the
+  memory as it was, and `Process.Step` fetches from the file; a writer outside
+  would change the bytes the shell writes or runs.
+- *The process has one thread.* `execve` leaves one and the shell creates none
+  (its only system calls are the four above until a call the model shows
+  stuck). With another thread, system call 60 would end only the calling
+  thread, and the other could change the memory between instructions.
+
 **Not assumed**: that the confinement works (the theorem never relies on the
-filter), that a write succeeds or writes all its bytes, that the flags
-survive a call, or anything of a call the shell does not make. A signal that
-ends the process (the filter's kill, `SIGPIPE`) ends its trace, which the
-traces of `IxCC/X86/Exe/Process.lean` already allow: every prefix of a trace
-is a trace.
+filter the shell installs), that a write succeeds or writes all its bytes,
+that the flags survive a call, or anything of a call the shell does not make.
+A signal that ends the process (the filter's kill, `SIGPIPE`) ends its trace,
+which the traces of `IxCC/X86/Exe/Process.lean` already allow: every prefix
+of a trace is a trace.
 -/
 
 set_option autoImplicit false
@@ -55,7 +82,8 @@ inductive Sys where
   /-- `write(fd, buf, count)` (`write(2)`): the `count` bytes at `buf`, and
   the result (how many of them it wrote, or `-errno`). -/
   | write (fd : Word) (bytes : List UInt8) (result : Word)
-  /-- `exit(status)` (`_exit(2)`): the process ends with `status & 0xff`. -/
+  /-- `exit(status)` (number 60, `_exit(2)`): the calling thread ends, so the
+  process, which has one thread, ends with `status & 0xff`. -/
   | exit (status : Word)
   /-- Any other system call, by its number (the theorem shows none occurs). -/
   | other (number : Word)

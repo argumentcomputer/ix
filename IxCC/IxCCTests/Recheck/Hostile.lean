@@ -3,6 +3,7 @@ import IxCC.Ring0
 import IxCC.Recheck.Linked
 import IxCC.Cli
 import IxCC.X86.Layout.Basic
+import IxCC.Anf.Semantics
 import IxCCTests.Support.Bound
 import IxCCTests.Src.Support
 
@@ -39,7 +40,12 @@ below is the verifier's own, at the stage and code the test names.
   be refused with an ordinary error, not by running out of stack, memory or
   time. And the producer's inline-round retry: a round the re-run refuses for
   one caller is retried without it, and a program whose retried round takes it
-  past a budget checked later compiles through the run without the retry. -/
+  past a budget checked later compiles through the run without the retry.
+  And the shrink walk's pending join entry (case-of-case as a move): equal
+  to its source at every clock, correct forced on through its inlining
+  fallback, not taken for a large alternative selected twice; and its
+  test-only switch confined to the producer (that the checker re-derives the
+  choice is `tests-corpus`'s). -/
 
 namespace IxCCTests.Recheck.Hostile
 
@@ -965,6 +971,209 @@ def betaMoves (a : Assert) : IO String := do
   return s!"β-reductions: a once-applied {big}-node local function is moved (copied 0); a second \
     application of a {half}-node one is charged and a third refused; a join point inlined at two jumps \
     charges both re-expansions ({third} nodes: accepted; {half}: refused); every walk within its step bound"
+
+/-- Two field-less constructors for the pending join entry's tests. -/
+def keyA : IxCC.Key.CtorKey := .src 0
+def keyB : IxCC.Key.CtorKey := .src 1
+
+/-- One global over `ps` parameters whose body is `join j y = jb in scope`,
+with the constructors `A` and `B`. -/
+def joinProgram (ps : Nat) (jb scope : Anf.Exp) : Anf.Program :=
+  let gd : Anf.GDef := { key := .dispatch 0, ps := List.replicate ps {}, body := .join 1 false jb scope }
+  { globals := Src.NatMap.ofList [(0, gd)], size := 1, roots := [0]
+    ctors := [{ key := keyA, tag := 0, arity := 0 }, { key := keyB, tag := 1, arity := 0 }], known := {} }
+
+/-- `y := c []; jump j [y]`. -/
+def jumpCon (c : IxCC.Key.CtorKey) : Anf.Exp := .bind Anf.freshLet (.con c []) (.jump 0 [.var 0])
+
+/-- A result as `SimUpTo` compares it: a stuck source is matched by
+anything, a resource failure matches anything, otherwise equal outcomes and
+equal values (a literal's number, a constructor's key). -/
+def refinesAt (s t : IxCC.Sem.Result Anf.Val) : Bool :=
+  match s, t with
+  | .stuck, _ | _, .resource _ | .timeout, .timeout | .trap, .trap => true
+  | .ok (.lit (.nat a)), .ok (.lit (.nat b)) => a == b
+  | .ok (.con c _), .ok (.con c' _) => c == c'
+  | _, _ => false
+
+/-- The walk's output `tgt` against its source `src` (both bodies of global 0
+of `P`, so with the same parameters) on each environment, at each clock up to
+`clocks`: a source timeout must be a target timeout (or a resource failure)
+at the same clock, and any other source outcome must be refined by the
+target's at some clock up to `clocks + 4`. The clocks at which a pair fails. -/
+def simAtClocks (P : Anf.Program) (src tgt : Anf.Exp) (envs : List (List Anf.Val)) (clocks : Nat) :
+    List (List Anf.Val × Nat) :=
+  envs.flatMap fun ρ => (List.range (clocks + 1)).filterMap fun k =>
+    let s := Anf.eval P k ρ [] src
+    let good := match s with
+      | .timeout => match Anf.eval P k ρ [] tgt with
+        | .timeout | .resource _ => true
+        | _ => false
+      | _ => (List.range (clocks + 5)).any fun k' => refinesAt s (Anf.eval P k' ρ [] tgt)
+    if good then none else some (ρ, k)
+
+/-- The pending join entry (case-of-case as a move): under shrink a
+non-recursive join point of one parameter whose body is a `case` on it, every
+jump to which passes a known constructor its `case` selects, is walked as
+pending (`Walk.pendOk`): each jump takes its alternative, the first selection of
+each a move, and the join point is emitted dead with body `trap`.
+
+* **Simulated.** `join j y = tick (case y {A ⇒ ret 1; B ⇒ ret 2})` in
+  `case x {A ⇒ y := B; jump j [y]; B ⇒ y := A; jump j [y]}`: one round takes it
+  as pending (two selections, nothing copied, the join point's body `trap`), and
+  the output, evaluated on `x = A`, `B` and a literal at every clock 0 … 8, is
+  what the source gives (a source timeout at the same clock, any other outcome
+  at some clock).
+* **Forced on, through the inlining fallback.** With a jump passing the second
+  parameter `z`, whose constructor the walk does not know, the pre-check
+  refuses it; forced on (`Walk.Cfg.pendForce := some true`, a test-only
+  switch), the jump the walk cannot resolve inlines the join point's body
+  (`Fires.pendInline`), and the output is still what the source gives on every
+  `x`, `z` and clock.
+* **A large alternative selected twice is not pending.** With an alternative
+  over the case-of-case bound selected by both jumps, the pre-check refuses it
+  and the walk is the one without the pending entry (the same output and counts
+  as forced off); selected by one jump, it is pending and moved (nothing
+  copied). -/
+def pendingJoin (a : Assert) : IO String := do
+  let p := ({} : Anf.Shrink.Params)
+  let r (n : Nat) : Anf.Exp := .ret (.lit (.nat n))
+  let isPending : Anf.Exp → Bool := fun
+    | .join 1 false .trap _ => true
+    | _ => false
+  -- simulated
+  let jb : Anf.Exp := .tick (.case (.var 0) [.mk keyA 0 (r 1), .mk keyB 0 (r 2)] none)
+  let scope : Anf.Exp := .case (.var 0) [.mk keyA 0 (jumpCon keyB), .mk keyB 0 (jumpCon keyA)] none
+  let P := joinProgram 1 jb scope
+  let some gd := P.global? 0 | throw (IO.userError "pendingJoin: no global")
+  match Anf.Shrink.round P p gd with
+  | .error m => expect a false s!"pendingJoin: the round refused: {m}"
+  | .ok (gd', f) =>
+    expect a (isPending gd'.body && f.caseOfCase == 2 && f.copied == 0 && f.pendInline == 0)
+      s!"pendingJoin: not walked as pending (caseOfCase {f.caseOfCase}, copied {f.copied}, pendInline {f.pendInline})"
+    expect a (f.steps ≤ gd.body.nodes + f.copied) s!"pendingJoin: {f.steps} steps"
+    let bad := simAtClocks P gd.body gd'.body [[.con keyA []], [.con keyB []], [.lit (.nat 7)]] 8
+    expect a bad.isEmpty s!"pendingJoin: the output differs from the source at {bad.length} environments and clocks"
+  -- forced on: one jump the walk cannot resolve
+  let scopeZ : Anf.Exp := .case (.var 1) [.mk keyA 0 (jumpCon keyB), .mk keyB 0 (.jump 0 [.var 0])] none
+  let PZ := joinProgram 2 jb scopeZ
+  let some gz := PZ.global? 0 | throw (IO.userError "pendingJoin: no global")
+  let C := Anf.Shrink.cfg PZ p
+  expect a (!Anf.Walk.pendOk C 2 .leaf jb scopeZ) "pendingJoin: the pre-check admits a jump of unknown constructor"
+  match (Anf.Walk.global { C with pendForce := some true } gz).run {} with
+  | .error m => expect a false s!"pendingJoin: forced on, refused: {m}"
+  | .ok (gz', f) =>
+    expect a (isPending gz'.body && f.pendInline == 1 && f.caseOfCase == 1)
+      s!"pendingJoin: forced on: pendInline {f.pendInline}, caseOfCase {f.caseOfCase}, expected 1 and 1"
+    expect a (f.steps ≤ gz.body.nodes + f.copied) s!"pendingJoin: forced on: {f.steps} steps"
+    let vs : List Anf.Val := [.con keyA [], .con keyB [], .lit (.nat 7)]
+    let bad := simAtClocks PZ gz.body gz'.body (vs.flatMap fun x => vs.map fun z => [z, x]) 8
+    expect a bad.isEmpty s!"pendingJoin: forced on, the output differs from the source at {bad.length} environments and clocks"
+  match Anf.Shrink.round PZ p gz with
+  | .ok (gz', f) => expect a (!isPending gz'.body && f.pendInline == 0) "pendingJoin: decided, the unresolvable join is pending"
+  | .error m => expect a false s!"pendingJoin: decided, refused: {m}"
+  -- a large alternative selected twice, then once
+  let big := p.caseOfCase + 88
+  let jbig : Anf.Exp := .case (.var 0) [.mk keyA 0 (fat big), .mk keyB 0 (r 2)] none
+  -- the arms differ (a dead binding in one), so that the pre-check's refusal is not the
+  -- same-arms rule's
+  let twice : Anf.Exp := .case (.var 0)
+    [.mk keyA 0 (jumpCon keyA), .mk keyB 0 (.bind Anf.freshLet (.con keyB []) (jumpCon keyA))] none
+  let PT := joinProgram 1 jbig twice
+  let some gt := PT.global? 0 | throw (IO.userError "pendingJoin: no global")
+  let CT := Anf.Shrink.cfg PT p
+  expect a (!Anf.Walk.pendOk CT 1 .leaf jbig twice) "pendingJoin: the pre-check admits a large alternative selected twice"
+  match Anf.Shrink.round PT p gt, (Anf.Walk.global { CT with pendForce := some false } gt).run {} with
+  | .ok (gd1, f1), .ok (gd0, f0) =>
+    expect a (!isPending gd1.body && gd1.body.beq gd0.body && f1.copied == f0.copied && f1.total == f0.total)
+      "pendingJoin: a large alternative selected twice: the walk differs from today's"
+  | _, _ => expect a false "pendingJoin: a large alternative selected twice: a round refused"
+  -- the arms pass the other constructor (passing their own would be a case identity, which
+  -- the pre-check refuses and the walk turns into one jump)
+  let once : Anf.Exp := .case (.var 0) [.mk keyA 0 (jumpCon keyB), .mk keyB 0 (jumpCon keyA)] none
+  let PO := joinProgram 1 jbig once
+  let some go := PO.global? 0 | throw (IO.userError "pendingJoin: no global")
+  match Anf.Shrink.round PO p go with
+  | .ok (go', f) =>
+    expect a (isPending go'.body && f.copied == 0)
+      s!"pendingJoin: a large alternative selected once: not moved (copied {f.copied})"
+  | .error m => expect a false s!"pendingJoin: a large alternative selected once: refused: {m}"
+  return s!"pending join entry: walked as pending (two selections moved, body trap) and equal to its source \
+    at clocks 0 … 8; forced on, a jump of unknown constructor inlines the body (pendInline 1), equal to its \
+    source; a {big}-node alternative selected twice is walked as without the pending entry, selected once moved"
+
+/-- The code lines (outside comments, trimmed) of a Lean source that mention
+`word`. -/
+def codeLinesWith (text word : String) : List String := Id.run do
+  let mut inBlock := false
+  let mut out : Array String := #[]
+  for line in text.splitOn "\n" do
+    let t := line.trimAscii.toString
+    if inBlock then
+      if (t.splitOn "-/").length > 1 then inBlock := false
+    else if t.startsWith "/-" then
+      if (t.splitOn "-/").length == 1 then inBlock := true
+    else if ((((t.splitOn "--").headD "").splitOn word).length > 1) then
+      out := out.push t
+  return out.toList
+
+/-- The production library's files (`IxCC/`, read from the package root) whose
+code mentions `word`, with those lines, in path order. -/
+def productionMentions (word : String) : IO (List (String × List String)) := do
+  let files ← System.FilePath.walkDir "IxCC"
+  let files := (files.filter (·.extension == some "lean")).qsort (·.toString < ·.toString)
+  let mut out : Array (String × List String) := #[]
+  for f in files do
+    let ls := codeLinesWith (← IO.FS.readFile f) word
+    if !ls.isEmpty then out := out.push (f.toString, ls)
+  return out.toList
+
+/- The re-run's shrink walks never force the pending choice: `Shrink.cfg`,
+which `round`, `rounds` and `run` use, leaves it at `none`. -/
+example (P : Anf.Program) (p : Anf.Shrink.Params) : (Anf.Shrink.cfg P p).pendForce = none := rfl
+
+/- The command line's configuration (`Cli.execute`: `Config.forInput {}` of the
+input, and its `noRetry`) leaves the producer's switch at its default: the
+first at `none`, the second as the first. -/
+example (inp : Recheck.Input) : (Recheck.Config.forInput {} inp).budgets.shrink.pendForce = none := by
+  unfold Recheck.Config.forInput
+  split <;> rfl
+
+example (cfg : Recheck.Config) : cfg.noRetry.budgets.shrink = cfg.budgets.shrink := rfl
+
+/-- The pending choice's test-only switch (`Shrink.Budgets.pendForce`) reaches
+only the producer. The production library's code mentions the switch on five
+lines only: `Walk.Cfg`'s field and the walk's one read of it, and
+`Shrink.Budgets`' field, the producer's round (`Shrink.produceRound`) and
+`Shrink.produce`. The producer's rounds (`produceRound`, `fixpointWithin`) are
+used in `Anf/Shrink.lean` only, `Shrink.produce` in `Anf/Pipeline.lean` only
+(the middle end's producer), and that producer (`Pipeline.produce`,
+`produceOnce`) only there and in the producers (`Recheck/Produce.lean`,
+`Recheck/Rc/Produce.lean`): none in the checker
+(`Recheck.run`, `RcReplay.run`, `verifyProgram` and what they call), whose
+shrink walks are `Shrink.cfg`'s (the first `example` above), and none in the
+command line, whose configuration is the default (the other two). That the
+checker re-derives the choice, refusing a deviating producer's certificate
+where its own walk reaches another program, is `tests-corpus`'s (the
+`natural` fixture of `phase1-machines`). -/
+def pendChoice (a : Assert) : IO String := do
+  let lines ← productionMentions "pendForce"
+  let want : List (String × List String) :=
+    [("IxCC/Anf/Shrink.lean",
+       ["pendForce : Option Bool := none", "(Walk.global { cfg P p with pendForce := force } gd).run {}",
+        "let (gd', n, work, f) := fixpointWithin B.pendForce P B.params gd B.rounds 0 work {}"]),
+     ("IxCC/Anf/Walk.lean",
+       ["pendForce : Option Bool := none", "pure (C.pendForce.getD (pendOk C d seed b body))"])]
+  expect a (lines == want) s!"pendChoice: the switch is mentioned in the production library's code at {lines}"
+  let only : List (String × List String) :=
+    [("produceRound", ["IxCC/Anf/Shrink.lean"]), ("fixpointWithin", ["IxCC/Anf/Shrink.lean"]),
+     ("Shrink.produce", ["IxCC/Anf/Pipeline.lean"]), ("produceOnce", ["IxCC/Anf/Pipeline.lean"]),
+     ("Pipeline.produce", ["IxCC/Recheck/Produce.lean", "IxCC/Recheck/Rc/Produce.lean"])]
+  for (word, files) in only do
+    let at_ := (← productionMentions word).map (·.1)
+    expect a (at_.all files.contains) s!"pendChoice: {word} is used in {at_}, expected only in {files}"
+  return s!"pending choice: its test-only switch is mentioned on {(lines.map (·.2.length)).sum} code lines of \
+    {lines.length} production files, and the producer's entry points only by producers"
 
 /-- The shrink census (FA residual): under shrink the walk counts the bound
 variable's uses over the rest of the body at each binding, so one round on a

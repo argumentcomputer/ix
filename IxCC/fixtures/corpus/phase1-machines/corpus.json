@@ -783,6 +783,270 @@
           ]
         }
       ]
+    },
+    {
+      "name": "natural",
+      "source": {
+        "path": "Natural.lean",
+        "sha256": "290f4bd12facce313af2d0dbbcbbf0eafe30856b647aeab501ec78ef9e3c1c45",
+        "license": "Apache-2.0 OR MIT",
+        "variant": "original",
+        "origins": []
+      },
+      "consts": [
+        "Natural.fibMain",
+        "Natural.onMessage"
+      ],
+      "protocol": "stdin",
+      "closure": {
+        "path": "natural.ixe",
+        "sha256": "cf4126fcc99c5a3e06a1362c15329c81d9d08ab9972ce94f05ad401cccfba4fc",
+        "bytes": 229887
+      },
+      "equations": {
+        "path": "natural.equations.json",
+        "sha256": "8bbc4fe0253b386d5340662ab457596a4b8c2bf011715fda7f1924e159a15f6c",
+        "equations": 11,
+        "failures": 0
+      },
+      "named_env_sha256": "4afd5db7692b6b5e9d93aad8e9785f8d34827fe47b3d7c5f0b8259b525365c80",
+      "census": {
+        "path": "natural.census.json",
+        "sha256": "7c1a0e09eba9c6f80885c5bc357ff439995d601b1359af7da0be349aea39a4b5"
+      },
+      "roots": [
+        {
+          "name": "Natural.fibMain",
+          "address": "e3e901ee877577b51d98eb4af566947313dca16fdad58e7ed4142de55e6c457a",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "note": "fib through the library written in the natural style (if, ==, &&, if-chain tables, a nested if on the phase): the states of Machines.fibMain's cases",
+          "cases": [
+            {
+              "args": [
+                0,
+                1
+              ],
+              "value": "2048",
+              "machine": true,
+              "note": "the start, one argument: ask for its first byte"
+            },
+            {
+              "args": [
+                0,
+                0
+              ],
+              "value": "39754",
+              "note": "the start, no argument: the count message"
+            },
+            {
+              "args": [
+                0,
+                2
+              ],
+              "value": "39754",
+              "note": "the start, two arguments: the count message"
+            },
+            {
+              "args": [
+                1,
+                50
+              ],
+              "value": "43008",
+              "machine": true,
+              "note": "a digit"
+            },
+            {
+              "args": [
+                1,
+                120
+              ],
+              "value": "47946",
+              "note": "not a digit: the numeral message"
+            },
+            {
+              "args": [
+                1,
+                256
+              ],
+              "value": "47946",
+              "note": "an empty argument: the numeral message"
+            },
+            {
+              "args": [
+                1,
+                257
+              ],
+              "value": "47946",
+              "note": "no argument after all: the numeral message"
+            },
+            {
+              "args": [
+                21,
+                53
+              ],
+              "value": "419840",
+              "note": "a second digit"
+            },
+            {
+              "args": [
+                85,
+                256
+              ],
+              "value": "127401",
+              "machine": true,
+              "note": "the argument 10 complete: the program runs"
+            },
+            {
+              "args": [
+                85,
+                48
+              ],
+              "value": "1648640",
+              "note": "a digit after 10"
+            },
+            {
+              "args": [
+                60102,
+                0
+              ],
+              "value": "8401321",
+              "machine": true,
+              "note": "rendering 15025 after its first digit"
+            },
+            {
+              "args": [
+                60102,
+                1
+              ],
+              "value": "595",
+              "note": "a refused write: status 74"
+            },
+            {
+              "args": [
+                6,
+                0
+              ],
+              "value": "4177",
+              "note": "the newline"
+            },
+            {
+              "args": [
+                2,
+                0
+              ],
+              "value": "3",
+              "note": "exit 0"
+            },
+            {
+              "args": [
+                2,
+                1
+              ],
+              "value": "595",
+              "note": "a refused write: status 74"
+            },
+            {
+              "args": [
+                19,
+                0
+              ],
+              "value": "72642",
+              "machine": true,
+              "note": "the count message, its second byte"
+            },
+            {
+              "args": [
+                19,
+                1
+              ],
+              "value": "595",
+              "note": "a refused write in a message: status 74"
+            },
+            {
+              "args": [
+                403,
+                0
+              ],
+              "value": "858466",
+              "note": "the count message, byte 25"
+            },
+            {
+              "args": [
+                835,
+                0
+              ],
+              "value": "19",
+              "note": "the count message, at its end: status 2"
+            },
+            {
+              "args": [
+                2251799813685253,
+                256
+              ],
+              "value": "56138",
+              "note": "an argument saturated at 2^48: the range message"
+            },
+            {
+              "args": [
+                2251799813685253,
+                57
+              ],
+              "value": "4611686018427398144",
+              "note": "a digit after saturation stays saturated"
+            }
+          ]
+        },
+        {
+          "name": "Natural.onMessage",
+          "address": "e9f2333db1a3e9d99cafaae62266063e6950750b2bff6f9b3527e2e6dbfb7a11",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "note": "the message phase's step alone (payload pos * 4 + id): its if and == chains",
+          "cases": [
+            {
+              "args": [
+                4,
+                0
+              ],
+              "value": "72642",
+              "note": "the count message, its second byte"
+            },
+            {
+              "args": [
+                100,
+                0
+              ],
+              "value": "858466",
+              "note": "the count message, byte 25"
+            },
+            {
+              "args": [
+                4,
+                1
+              ],
+              "value": "595",
+              "note": "a refused write in a message: status 74"
+            },
+            {
+              "args": [
+                208,
+                0
+              ],
+              "value": "19",
+              "note": "the count message, at its end: status 2"
+            }
+          ]
+        }
+      ]
     }
   ]
 }

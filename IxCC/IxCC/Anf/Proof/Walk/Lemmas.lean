@@ -198,52 +198,86 @@ theorem JEnv.suffixK {n : Nat} {k : Kont} {ρ' ρ'' : List Val} {J' J'' : List J
 /-- An emitted join entry that is live. -/
 theorem JEnv.get_emitted {n : Nat} {T : Option (Val → Nat → Result Val)} {ρ' : List Val}
     {J' : List JClo} : ∀ {jl : List Bool} {jσ : List JEnt} {J : List JClo},
-    JEnv P Q Valid Xc C n T ρ' J' jl jσ J → ∀ {j l ar : Nat} {r : Bool} {σj : List Ent} {jσj : List JEnt}
-    {b : Exp}, jσ[j]? = some (.mk (some l) σj jσj ar r b) → jl[j]? = some true →
+    JEnv P Q Valid Xc C n T ρ' J' jl jσ J → ∀ {j l ar id : Nat} {r : Bool} {σj : List Ent} {jσj : List JEnt}
+    {b : Exp}, jσ[j]? = some (.mk (some l) σj jσj ar r b id) → jl[j]? = some true →
     ∃ ρj Jj livej jlj jc' Tk, J[j]? = some (.mk ρj Jj ar b r) ∧ l < J'.length ∧
       J'[J'.length - 1 - l]? = some jc' ∧ T = some Tk ∧ JoinR P Q Valid Xc n Tk (.mk ρj Jj ar b r) jc' ∧
       WEnv Q Valid Xc C livej σj ρj ρ' ∧ JEnv P Q Valid Xc C n T ρ' J' jlj jσj Jj ∧
       NoDead (List.replicate ar true ++ livej) (if r then true :: jlj else jlj) b ∧
       (∀ ρ'', ρ' <:+ ρ'' → VOk Q Valid Xc C ρj ρ'')
-  | _, _, _, .nil, _, _, _, _, _, _, _, h, _ => by simp at h
-  | _, _, _, .emitted hl hjc hT hR henv hJj hnd hv _, 0, _, _, _, _, _, _, h, _ => by
+  | _, _, _, .nil, _, _, _, _, _, _, _, _, h, _ => by simp at h
+  | _, _, _, .emitted hl hjc hT hR henv hJj hnd hv _, 0, _, _, _, _, _, _, _, h, _ => by
     simp only [List.getElem?_cons_zero, Option.some.injEq, JEnt.mk.injEq] at h
-    obtain ⟨⟨rfl⟩, rfl, rfl, rfl, rfl, rfl⟩ := h
+    obtain ⟨⟨rfl⟩, rfl, rfl, rfl, rfl, rfl, -⟩ := h
     exact ⟨_, _, _, _, _, _, rfl, hl, hjc, hT, hR, henv, hJj, hnd, hv⟩
-  | _, _, _, .once _ _ _ _ _, 0, _, _, _, _, _, _, h, _ => by
+  | _, _, _, .once _ _ _ _ _, 0, _, _, _, _, _, _, _, h, _ => by
     simp only [List.getElem?_cons_zero, Option.some.injEq, JEnt.mk.injEq] at h
     cases h.1
-  | _, _, _, .dead _, 0, _, _, _, _, _, _, _, hl => by simp at hl
-  | _, _, _, .emitted _ _ _ _ _ _ _ _ h, j + 1, _, _, _, _, _, _, he, hl => by
+  | _, _, _, .pend _ _ _ _ _, 0, _, _, _, _, _, _, _, h, _ => by
+    simp at h
+  | _, _, _, .dead _, 0, _, _, _, _, _, _, _, _, hl => by simp at hl
+  | _, _, _, .emitted _ _ _ _ _ _ _ _ h, j + 1, _, _, _, _, _, _, _, he, hl => by
     simpa using h.get_emitted (by simpa using he) (by simpa using hl)
-  | _, _, _, .once _ _ _ _ h, j + 1, _, _, _, _, _, _, he, hl => by
+  | _, _, _, .once _ _ _ _ h, j + 1, _, _, _, _, _, _, _, he, hl => by
     simpa using h.get_emitted (by simpa using he) (by simpa using hl)
-  | _, _, _, .dead h, j + 1, _, _, _, _, _, _, he, hl => by
+  | _, _, _, .pend _ _ _ _ h, j + 1, _, _, _, _, _, _, _, he, hl => by
+    simpa using h.get_emitted (by simpa using he) (by simpa using hl)
+  | _, _, _, .dead h, j + 1, _, _, _, _, _, _, _, he, hl => by
     simpa using h.get_emitted (by simpa using he) (by simpa using hl)
 
 /-- A join entry inlined at its single jump, live. -/
 theorem JEnv.get_once {n : Nat} {T : Option (Val → Nat → Result Val)} {ρ' : List Val}
     {J' : List JClo} : ∀ {jl : List Bool} {jσ : List JEnt} {J : List JClo},
-    JEnv P Q Valid Xc C n T ρ' J' jl jσ J → ∀ {j ar : Nat} {r : Bool} {σj : List Ent} {jσj : List JEnt}
-    {b : Exp}, jσ[j]? = some (.mk none σj jσj ar r b) → jl[j]? = some true →
+    JEnv P Q Valid Xc C n T ρ' J' jl jσ J → ∀ {j ar id : Nat} {r : Bool} {σj : List Ent} {jσj : List JEnt}
+    {b : Exp}, jσ[j]? = some (.mk none σj jσj ar r b id) → jl[j]? = some true →
     r = false ∧ ∃ ρj Jj livej jlj, J[j]? = some (.mk ρj Jj ar b false) ∧
       WEnv Q Valid Xc C livej σj ρj ρ' ∧ JEnv P Q Valid Xc C n T ρ' J' jlj jσj Jj ∧
       NoDead (List.replicate ar true ++ livej) jlj b ∧ (∀ ρ'', ρ' <:+ ρ'' → VOk Q Valid Xc C ρj ρ'')
-  | _, _, _, .nil, _, _, _, _, _, _, h, _ => by simp at h
-  | _, _, _, .emitted _ _ _ _ _ _ _ _ _, 0, _, _, _, _, _, h, _ => by
+  | _, _, _, .nil, _, _, _, _, _, _, _, h, _ => by simp at h
+  | _, _, _, .emitted _ _ _ _ _ _ _ _ _, 0, _, _, _, _, _, _, h, _ => by
     simp only [List.getElem?_cons_zero, Option.some.injEq, JEnt.mk.injEq] at h
     cases h.1
-  | _, _, _, .once henv hJj hnd hv _, 0, _, _, _, _, _, h, _ => by
+  | _, _, _, .once henv hJj hnd hv _, 0, _, _, _, _, _, _, h, _ => by
     simp only [List.getElem?_cons_zero, Option.some.injEq, JEnt.mk.injEq] at h
-    obtain ⟨-, rfl, rfl, rfl, rfl, rfl⟩ := h
+    obtain ⟨-, rfl, rfl, rfl, rfl, rfl, -⟩ := h
     exact ⟨rfl, _, _, _, _, rfl, henv, hJj, hnd, hv⟩
-  | _, _, _, .dead _, 0, _, _, _, _, _, _, hl => by simp at hl
-  | _, _, _, .emitted _ _ _ _ _ _ _ _ h, j + 1, _, _, _, _, _, he, hl => by
+  | _, _, _, .pend _ _ _ _ _, 0, _, _, _, _, _, _, h, _ => by
+    simp at h
+  | _, _, _, .dead _, 0, _, _, _, _, _, _, _, hl => by simp at hl
+  | _, _, _, .emitted _ _ _ _ _ _ _ _ h, j + 1, _, _, _, _, _, _, he, hl => by
     simpa using h.get_once (by simpa using he) (by simpa using hl)
-  | _, _, _, .once _ _ _ _ h, j + 1, _, _, _, _, _, he, hl => by
+  | _, _, _, .once _ _ _ _ h, j + 1, _, _, _, _, _, _, he, hl => by
     simpa using h.get_once (by simpa using he) (by simpa using hl)
-  | _, _, _, .dead h, j + 1, _, _, _, _, _, he, hl => by
+  | _, _, _, .pend _ _ _ _ h, j + 1, _, _, _, _, _, _, he, hl => by
     simpa using h.get_once (by simpa using he) (by simpa using hl)
+  | _, _, _, .dead h, j + 1, _, _, _, _, _, _, he, hl => by
+    simpa using h.get_once (by simpa using he) (by simpa using hl)
+
+/-- A pending join entry, live: the source join closure is one of arity one,
+not recursive, with the entry's body. -/
+theorem JEnv.get_pend {n : Nat} {T : Option (Val → Nat → Result Val)} {ρ' : List Val}
+    {J' : List JClo} : ∀ {jl : List Bool} {jσ : List JEnt} {J : List JClo},
+    JEnv P Q Valid Xc C n T ρ' J' jl jσ J → ∀ {j l : Nat} {σj : List Ent} {jσj : List JEnt}
+    {b : Exp}, jσ[j]? = some (.pend l σj jσj b) → jl[j]? = some true →
+    ∃ ρj Jj livej jlj, J[j]? = some (.mk ρj Jj 1 b false) ∧
+      WEnv Q Valid Xc C livej σj ρj ρ' ∧ JEnv P Q Valid Xc C n T ρ' J' jlj jσj Jj ∧
+      NoDead (List.replicate 1 true ++ livej) jlj b ∧ (∀ ρ'', ρ' <:+ ρ'' → VOk Q Valid Xc C ρj ρ'')
+  | _, _, _, .nil, _, _, _, _, _, h, _ => by simp at h
+  | _, _, _, .emitted _ _ _ _ _ _ _ _ _, 0, _, _, _, _, h, _ => by simp at h
+  | _, _, _, .once _ _ _ _ _, 0, _, _, _, _, h, _ => by simp at h
+  | _, _, _, .pend henv hJj hnd hv _, 0, _, _, _, _, h, _ => by
+    simp only [List.getElem?_cons_zero, Option.some.injEq, JEnt.pend.injEq] at h
+    obtain ⟨-, rfl, rfl, rfl⟩ := h
+    exact ⟨_, _, _, _, rfl, henv, hJj, hnd, hv⟩
+  | _, _, _, .dead _, 0, _, _, _, _, _, hl => by simp at hl
+  | _, _, _, .emitted _ _ _ _ _ _ _ _ h, j + 1, _, _, _, _, he, hl => by
+    simpa using h.get_pend (by simpa using he) (by simpa using hl)
+  | _, _, _, .once _ _ _ _ h, j + 1, _, _, _, _, he, hl => by
+    simpa using h.get_pend (by simpa using he) (by simpa using hl)
+  | _, _, _, .pend _ _ _ _ h, j + 1, _, _, _, _, he, hl => by
+    simpa using h.get_pend (by simpa using he) (by simpa using hl)
+  | _, _, _, .dead h, j + 1, _, _, _, _, he, hl => by
+    simpa using h.get_pend (by simpa using he) (by simpa using hl)
 
 /-- A jump's target is live: it occurs. -/
 theorem jlive_of_occ {jl : List Bool} {jσ : List JEnt} {j : Nat} {je : JEnt}

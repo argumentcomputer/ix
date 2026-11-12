@@ -5,9 +5,11 @@ import IxCCGrounding.Ok
 /-!
 # The run terms run (`IxCCGrounding.Runs`)
 
-**The one typing hypothesis is `SitesOk`**: at every instance `Ok` admits of every constant of
+**The typing hypothesis here is `SitesOk`**: at every instance `Ok` admits of every constant of
 `S` that SrcEval unfolds (by δ, or by its `eqn` entry), every application site SrcEval may
 evaluate in the run term (`evalSites`) is in the graph regime with its argument in the domain.
+The root theorems assume less: typing only at the sites the direct route refuses (`SitesOkRes`),
+from which `sitesOk_of_res` (`IxCCGrounding.Direct.Sites`) derives `SitesOk`.
 
 Everything else the fundamental lemma asks of a run term (`Runs`) is derived here
 (`runs_of_sites`):

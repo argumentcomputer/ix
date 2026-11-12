@@ -38,6 +38,9 @@ open IxCC.X86.Exe (Layout ResultKind)
 structure Options where
   run : Bool := false
   strace : Option String := none
+  /-- Also the shell-against-model cases of the roots the suite does not otherwise compile
+  (`Machines.fibMainHO`, `Machines.badRequest`). -/
+  allCases : Bool := false
   deriving Inhabited
 
 /-- Compile one root of a corpus fixture (as `tests-corpus` does). -/
@@ -451,13 +454,14 @@ def parseOptions : List String → Except String Options
   | [] => pure {}
   | "--run" :: rest => do return { (← parseOptions rest) with run := true }
   | "--strace" :: s :: rest => do return { (← parseOptions rest) with strace := some s }
+  | "--all-machine-cases" :: rest => do return { (← parseOptions rest) with allCases := true }
   | arg :: _ => throw s!"unknown argument {arg}"
 
 /-- A further part of the suite (`IxCCTests.Exe.Machine`): its lines, from the
 assertion counter, the options and a work directory. -/
 abbrev Part := Assert → Options → FilePath → IO (Array String)
 
-/-- Usage: `tests-exe [--run [--strace PATH]]`; `extra` are further parts,
+/-- Usage: `tests-exe [--run [--strace PATH]] [--all-machine-cases]`; `extra` are further parts,
 run after the others. -/
 def mainWith (extra : List (String × Part)) (args : List String) : IO UInt32 := do
   let o ← match parseOptions args with
