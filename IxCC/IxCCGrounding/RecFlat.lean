@@ -202,7 +202,7 @@ theorem flatIota_noLevels (M : Model V env) (hι : IotaLaw M.cval env) (hcv : Cv
 /-- **A field-less constructor without parameters, built at any assignment, is its image at the
 levels a member's family names, by canonicity** (`Laws.ctor_canon`, at a family never a
 proposition): what ι needs where the constructor has level parameters. -/
-theorem ctorImage_canon (M : Model V env) (hL : Laws M) {c D : KKey} {cvC : ConstantVal .anon}
+theorem ctorImage_canon (M : Model V env) (hL : LawsCore M) (hcc : CtorCanon M) {c D : KKey} {cvC : ConstantVal .anon}
     (hcC : env.find? c = some (.ctorInfo cvC 0 0)) (hnd : cvC.levelParams.Nodup)
     (hhead : cvC.type.getAppFn = .const D (cvC.levelParams.map .param)) (hN : NeverProp env D)
     {ls : List Level} (hls : cvC.levelParams.length = ls.length)
@@ -235,7 +235,7 @@ theorem ctorImage_canon (M : Model V env) (hL : Laws M) {c D : KKey} {cvC : Cons
   -- constructors are read in the graph regime, and an image lying in the family at other levels
   -- is the image there
   obtain ⟨cvD, capsD, sD, hfD, hsD, hnvD⟩ := hN
-  obtain ⟨heqK, -⟩ := hL.ctor_canon c cvC 0 0 hcC D cvD capsD sD ls ls'' φ ρ τ ρ dom
+  obtain ⟨heqK, -⟩ := hcc c cvC 0 0 hcC D cvD capsD sD ls ls'' φ ρ τ ρ dom
     (cvC.type.instantiateLevelParams cvC.levelParams ls'') [] [] [] _ _ X hfD hsD
     (eval_ne_zero_of_never hnvD _) (eval_ne_zero_of_never hnvD _) rfl rfl rfl hK hK' .nil
     hR'head hdom hX (by simp; exact .nil) (by simpa using hm)

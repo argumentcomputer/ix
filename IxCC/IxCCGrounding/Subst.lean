@@ -557,7 +557,7 @@ theorem fits_inst_cv (M : Model V env) (hcv : CvalParams M) {ks : List LevelPara
     exact .cons (den_inst_cv M hcv hψ hA hd.1.1) hx (ih hd.1.2)
 
 /-- `den_inst_cv` over the laws (`Laws.cval_params` only). -/
-theorem den_inst (M : Model V env) (hL : Laws M) {ks : List LevelParam} {us : List Level}
+theorem den_inst (M : Model V env) (hL : LawsCore M) {ks : List LevelParam} {us : List Level}
     {φ ψ : LevelParam → Nat} (hψ : ∀ p ∈ ks, Level.substFn φ ks us p = ψ p)
     {ρ : BVarIdx → V} {e : KExpr} {X : V} (h : Denotes M.cval env ψ ρ e X) :
     e.allLevelParamsDefined ks = true →
@@ -565,14 +565,14 @@ theorem den_inst (M : Model V env) (hL : Laws M) {ks : List LevelParam} {us : Li
   den_inst_cv M hL.cval_params hψ h
 
 /-- `den_inst_exact_cv` over the laws (`Laws.cval_params` only). -/
-theorem den_inst_exact (M : Model V env) (hL : Laws M) {ks : List LevelParam} {us : List Level}
+theorem den_inst_exact (M : Model V env) (hL : LawsCore M) {ks : List LevelParam} {us : List Level}
     {φ : LevelParam → Nat} {ρ : BVarIdx → V} {e : KExpr} {X : V}
     (h : Denotes M.cval env (Level.substFn φ ks us) ρ e X) :
     Denotes M.cval env φ ρ (e.instantiateLevelParams ks us) X :=
   den_inst_exact_cv M hL.cval_params h
 
 /-- `fits_inst_cv` over the laws (`Laws.cval_params` only). -/
-theorem fits_inst (M : Model V env) (hL : Laws M) {ks : List LevelParam} {us : List Level}
+theorem fits_inst (M : Model V env) (hL : LawsCore M) {ks : List LevelParam} {us : List Level}
     {φ ψ : LevelParam → Nat} (hψ : ∀ p ∈ ks, Level.substFn φ ks us p = ψ p)
     {ρ σ : BVarIdx → V} {T R : KExpr} {xs : List V} (h : Fits M.cval env ψ ρ T xs σ R) :
     T.allLevelParamsDefined ks = true →

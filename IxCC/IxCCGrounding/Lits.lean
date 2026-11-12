@@ -81,7 +81,7 @@ theorem litSet_indep_cv (M : Model V env) (hcv : CvalParams M) (hS : NatBasis en
       litSet_indep_cv M hcv hS φ φ' n]
 
 /-- `litSet_indep_cv` over the laws (`Laws.cval_params` only). -/
-theorem litSet_indep (M : Model V env) (hL : Laws M) (hS : NatBasis env)
+theorem litSet_indep (M : Model V env) (hL : LawsCore M) (hS : NatBasis env)
     (φ φ' : LevelParam → Nat) : ∀ n, litSet M φ n = litSet M φ' n :=
   litSet_indep_cv M hL.cval_params hS φ φ'
 

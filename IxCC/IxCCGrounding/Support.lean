@@ -240,7 +240,7 @@ theorem relV_lit_eq_cv (hcv : CvalParams M) (hS : NatBasis env) (φ : LevelParam
     exact litSet_indep_cv M hcv hS φ' φ n
 
 /-- A literal value relates to the literal's set, at any assignment. -/
-theorem relV_lit_eq (hL : Laws M) (hS : NatBasis env) (φ : LevelParam → Nat)
+theorem relV_lit_eq (hL : LawsCore M) (hS : NatBasis env) (φ : LevelParam → Nat)
     {n : Nat} {X : V} (h : RelV M κ lpsOf S Ok (.lit n) X) : X = litSet M φ n :=
   relV_lit_eq_cv hL.cval_params hS φ h
 

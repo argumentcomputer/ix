@@ -125,16 +125,18 @@ theorem allP_of_facts (hL : Laws M) {p : Program} {κ : CId → KKey} {lpsOf : C
     {ann : IxCC.Src.Relevance.Ann} {Sl : List CId}
     (hG : GroundFacts p env κ lpsOf ann (· ∈ Sl)) (hC : CaseFacts p env κ (· ∈ Sl))
     (hT : SitesOkRes M p κ lpsOf ann (· ∈ Sl)) : ∀ k, AllP M p κ lpsOf (· ∈ Sl) (Ok p ann) k :=
-  allP (fundHyps_of hL hG (sitesOk_of_res hL hG hT) fun c r hc hr => by
+  allP (fundHyps_of hL hG (sitesOk_of_res (lawsCore_of_laws hL) hG hT) fun c r hc hr => by
     obtain ⟨sh, hst, hpr⟩ := hC c r hc hr
     exact caseFires_of_shape hL hG.faith hG.natBasis hc hr hst hpr)
 
-/-- **Soundness at a root.** -/
-theorem rootSound (hL : Laws M) {p : Program} {κ : CId → KKey} {lpsOf : CId → List Nat}
-    {ann : IxCC.Src.Relevance.Ann} {Sl : List CId} {root : CId} {args : List FoTy} {res : FoTy}
-    (hG : GroundFacts p env κ lpsOf ann (· ∈ Sl)) (hC : CaseFacts p env κ (· ∈ Sl))
+/-- **Soundness at a root, from the fundamental lemma**: the part of `rootSound` after the
+fundamental lemma, over the laws other than canonicity (both families call it). -/
+theorem rootSound_core (hL : LawsCore M) {p : Program} {κ : CId → KKey}
+    {lpsOf : CId → List Nat} {ann : IxCC.Src.Relevance.Ann} {Sl : List CId} {root : CId}
+    {args : List FoTy} {res : FoTy}
+    (hG : GroundFacts p env κ lpsOf ann (· ∈ Sl))
     (hR : RootFacts p env κ ann (· ∈ Sl) root args res)
-    (hT : SitesOkRes M p κ lpsOf ann (· ∈ Sl))
+    (hAllK : ∀ k, AllP M p κ lpsOf (· ∈ Sl) (Ok p ann) k)
     {k : Nat} {xs : List Value} {es : List KExpr} {v : Value} {o : IxCC.Sem.Obs} {eo : KExpr}
     (hA : FoArgs p κ args xs es) (hrun : IxCC.Src.run p k root xs = .ok v)
     (hrb : IxCC.Src.readbackAll p v = some o) (hRT : ResultTag p env κ (· ∈ Sl) res o)
@@ -143,7 +145,7 @@ theorem rootSound (hL : Laws M) {p : Program} {κ : CId → KKey} {lpsOf : CId �
     Denotes M.cval env φ ρ eo X := by
   have hN := hG.natBasis
   have hF0 := natFacts M hN φ
-  have hAll := allP_of_facts hL hG hC hT k
+  have hAll := hAllK k
   obtain ⟨ci, hfr, hlr, htr⟩ := hR.stored
   -- δ on the root
   rw [IxCC.Src.run_eq] at hrun
@@ -235,6 +237,20 @@ theorem rootSound (hL : Laws M) {p : Program} {κ : CId → KKey} {lpsOf : CId �
     rw [List.nil_append, List.foldl_nil, hkey,
       hL.cval_params _ _ hfc ψ φ (by simp [ConstantInfo.toConstantVal, hlc])]
     exact (hden ρ _).mpr rfl
+
+/-- **Soundness at a root.** -/
+theorem rootSound (hL : Laws M) {p : Program} {κ : CId → KKey} {lpsOf : CId → List Nat}
+    {ann : IxCC.Src.Relevance.Ann} {Sl : List CId} {root : CId} {args : List FoTy} {res : FoTy}
+    (hG : GroundFacts p env κ lpsOf ann (· ∈ Sl)) (hC : CaseFacts p env κ (· ∈ Sl))
+    (hR : RootFacts p env κ ann (· ∈ Sl) root args res)
+    (hT : SitesOkRes M p κ lpsOf ann (· ∈ Sl))
+    {k : Nat} {xs : List Value} {es : List KExpr} {v : Value} {o : IxCC.Sem.Obs} {eo : KExpr}
+    (hA : FoArgs p κ args xs es) (hrun : IxCC.Src.run p k root xs = .ok v)
+    (hrb : IxCC.Src.readbackAll p v = some o) (hRT : ResultTag p env κ (· ∈ Sl) res o)
+    (hO : FoObs p κ res o eo) (φ : LevelParam → Nat) (ρ : BVarIdx → V) (X : V)
+    (hX : Denotes M.cval env φ ρ (Expr.mkAppN (.const (κ root) []) es) X) :
+    Denotes M.cval env φ ρ eo X :=
+  rootSound_core (lawsCore_of_laws hL) hG hR (allP_of_facts hL hG hC hT) hA hrun hrb hRT hO φ ρ X hX
 
 /-- The landed form of `rootSound`, under `SitesOk`. -/
 theorem rootSound_of_sitesOk (hL : Laws M) {p : Program} {κ : CId → KKey}
@@ -358,5 +374,61 @@ theorem decideRoot_noRecr (hL : Laws M) {p : Program} {κ : CId → KKey} {lpsOf
     (ρ : BVarIdx → V) (X : V) (hX : Denotes M.cval env φ ρ (.const (κ root) []) X) :
     Denotes M.cval env φ ρ (.const boolTrueName []) X :=
   decideRoot hL hb hBL (groundFacts_of_noRecr hG) hC hR hD hRT hrun hrb φ ρ X hX
+
+/-! ## The canonicity-free family: the same conclusions over `LawsNoCanon`, with `NoCanon` -/
+
+/-- **Soundness at a root, without canonicity**: `rootSound`'s conclusion, over `LawsNoCanon` in
+place of `Laws`, with `NoCanon` among the checked facts. -/
+theorem rootSound_noCanon (hL : LawsNoCanon M) {p : Program} {κ : CId → KKey}
+    {lpsOf : CId → List Nat} {ann : IxCC.Src.Relevance.Ann} {Sl : List CId} {root : CId}
+    {args : List FoTy} {res : FoTy}
+    (hG : GroundFacts p env κ lpsOf ann (· ∈ Sl)) (hC : CaseFacts p env κ (· ∈ Sl))
+    (hNC : NoCanon p env κ (· ∈ Sl))
+    (hR : RootFacts p env κ ann (· ∈ Sl) root args res)
+    (hT : SitesOkRes M p κ lpsOf ann (· ∈ Sl))
+    {k : Nat} {xs : List Value} {es : List KExpr} {v : Value} {o : IxCC.Sem.Obs} {eo : KExpr}
+    (hA : FoArgs p κ args xs es) (hrun : IxCC.Src.run p k root xs = .ok v)
+    (hrb : IxCC.Src.readbackAll p v = some o) (hRT : ResultTag p env κ (· ∈ Sl) res o)
+    (hO : FoObs p κ res o eo) (φ : LevelParam → Nat) (ρ : BVarIdx → V) (X : V)
+    (hX : Denotes M.cval env φ ρ (Expr.mkAppN (.const (κ root) []) es) X) :
+    Denotes M.cval env φ ρ eo X :=
+  rootSound_core hL.core hG hR
+    (allP (fundHyps_of_noCanon hL hG hC hNC (sitesOk_of_res hL.core hG hT))) hA hrun hrb hRT hO
+    φ ρ X hX
+
+/-- **`fib`, without canonicity and with no typing hypothesis.** -/
+theorem fibRoot_noCanon (hL : LawsNoCanon M) {p : Program} {κ : CId → KKey}
+    {lpsOf : CId → List Nat} {ann : IxCC.Src.Relevance.Ann} {Sl : List CId} {root : CId}
+    (hG : GroundFacts p env κ lpsOf ann (· ∈ Sl)) (hC : CaseFacts p env κ (· ∈ Sl))
+    (hNC : NoCanon p env κ (· ∈ Sl))
+    (hR : RootFacts p env κ ann (· ∈ Sl) root [.nat] .nat)
+    (hD : DirectFacts p env κ lpsOf ann (· ∈ Sl))
+    {k n : Nat} {v : Value} {w : Nat} (hrun : IxCC.Src.run p k root [.lit n] = .ok v)
+    (hrb : IxCC.Src.readbackAll p v = some (.nat w)) (φ : LevelParam → Nat) (ρ : BVarIdx → V)
+    (X : V) (hX : Denotes M.cval env φ ρ (.app (.const (κ root) []) (litE n)) X) :
+    Denotes M.cval env φ ρ (litE w) X :=
+  rootSound_noCanon hL hG hC hNC hR (sitesOkRes_of_direct hD) (.cons (.nat n) .nil) hrun hrb
+    trivial (.nat w) φ ρ X hX
+
+/-- **`decide (fib 10 = 55)`, without canonicity and with no typing hypothesis.** -/
+theorem decideRoot_noCanon (hL : LawsNoCanon M) {p : Program} {κ : CId → KKey}
+    {lpsOf : CId → List Nat} {ann : IxCC.Src.Relevance.Ann} {Sl : List CId} {root boolD : CId}
+    (_hb : p.known.bool = some boolD) (hBL : BoolListed p boolD)
+    (hG : GroundFacts p env κ lpsOf ann (· ∈ Sl)) (hC : CaseFacts p env κ (· ∈ Sl))
+    (hNC : NoCanon p env κ (· ∈ Sl))
+    (hR : RootFacts p env κ ann (· ∈ Sl) root [] (.enum boolD))
+    (hD : DirectFacts p env κ lpsOf ann (· ∈ Sl))
+    (hRT : ResultTag p env κ (· ∈ Sl) (.enum boolD) (.ctor 1 []))
+    {k : Nat} {v : Value} (hrun : IxCC.Src.run p k root [] = .ok v)
+    (hrb : IxCC.Src.readbackAll p v = some (.ctor 1 [])) (φ : LevelParam → Nat)
+    (ρ : BVarIdx → V) (X : V) (hX : Denotes M.cval env φ ρ (.const (κ root) []) X) :
+    Denotes M.cval env φ ρ (.const boolTrueName []) X := by
+  obtain ⟨safe, ty, cs, hd, h1, hsome⟩ := hBL
+  obtain ⟨t, ht⟩ := Option.isSome_iff_exists.mp hsome
+  rw [ht] at h1
+  obtain ⟨_, hkt, _⟩ := hG.faith.bool true t (by simpa using ht)
+  have h := rootSound_noCanon hL hG hC hNC hR (sitesOkRes_of_direct hD) .nil hrun hrb hRT
+    (.enum hd h1) φ ρ X hX
+  simpa [hkt] using h
 
 end IxCC.Grounding

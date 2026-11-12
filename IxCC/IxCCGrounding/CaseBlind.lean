@@ -1,5 +1,6 @@
 import IxCCGrounding.CaseFire
 import IxCCGrounding.CaseCheck
+import IxCCGrounding.Direct.Eq
 
 /-!
 # The generic `case` lemma without canonicity (`IxCCGrounding.CaseBlind`)
@@ -100,9 +101,44 @@ theorem fits_of_spineOk {cval : KKey → (LevelParam → Nat) → V} {φ : Level
     rw [pushAll_cons]
     exact .cons hAd hxA ih
 
+/-- **The fields fit the constructor's field telescope at the `case`'s parameters**, from
+`SpineOk` along the rule's field λs (graph regime) and `fieldsCorr_rev`: the step of `caseIotaG`
+that replaces canonicity at parameters. No law. -/
+theorem fields_fit_of_spineOk {M : Model V env} {φ : LevelParam → Nat} {sh : CaseShape}
+    {j : Nat} {cs : CtorShape} {fbs : List (KExpr × BinderMeta)} {ps Ws Fs : List V} {mo : V}
+    {ρ : BVarIdx → V} {b D : KExpr} {Y1 : V}
+    (hf : (liftTele (j + 1) 0 fbs).map (·.1) = cs.fields.map (·.1))
+    (hY1 : Denotes M.cval env φ (pushAll (ps ++ [mo] ++ Ws) ρ)
+      (lamTele (liftTele (sh.nM - j) j cs.fields) b) Y1)
+    (hsp : SpineOk Y1 Fs) (hWl : Ws.length = sh.nM) (hj : j < sh.nM)
+    (hreg : ∀ bm ∈ cs.fields, regime φ bm.2.pw ≠ 0) (hFl : Fs.length = cs.fields.length)
+    (hfbl : fbs.length = Fs.length) :
+    Fits M.cval env φ (pushAll ps ρ) (piTele fbs D) Fs (pushAll Fs (pushAll ps ρ)) D := by
+  have hregR : ∀ bm ∈ liftTele (sh.nM - j) j cs.fields, regime φ bm.2.pw ≠ 0 := by
+    intro bm hb
+    have hb2 : bm.2 ∈ (liftTele (sh.nM - j) j cs.fields).map (·.2) := List.mem_map_of_mem hb
+    rw [liftTele_metas] at hb2
+    obtain ⟨b', hb', e⟩ := List.mem_map.mp hb2
+    rw [← e]
+    exact hreg b' hb'
+  have hFR0 := fits_of_spineOk (cval := M.cval) (env := env) (φ := φ)
+    (liftTele (sh.nM - j) j cs.fields) _ D hY1 hsp (by rw [liftTele_length]; omega) hregR
+  have hcRr : TeleCorr M.cval env φ (pushAll ps ρ) (pushAll (ps ++ [mo] ++ Ws) ρ) fbs
+      (liftTele (sh.nM - j) j cs.fields) := by
+    have := fieldsCorr_rev (M := M) (φ := φ) (ps := ps) (ρ := ρ) (fbs := fbs) (cs := cs) (j := j)
+      (k' := sh.nM - j) (junk := [mo] ++ Ws) hf (by simp; omega)
+    rwa [← List.append_assoc] at this
+  have hFCf := fits_transport fbs (liftTele (sh.nM - j) j cs.fields) D _
+    (by rw [liftTele_length]; omega) hcRr hFR0 (by rw [liftTele_length]; omega)
+  rwa [List.drop_eq_nil_of_le (show fbs.length ≤ Fs.length by omega)] at hFCf
+
 /-! ## The model side -/
 
--- `caseIota`'s proof and the `SpineOk` step: past the default budget, within twice it
+-- Over the default budget (200000), within 400000. `caseIota`, whose proof this copies, elaborates
+-- within 150000 (measured), and the `SpineOk` step is a lemma of its own
+-- (`fields_fit_of_spineOk`); the excess is in the steps added here around the guarded ι law
+-- (its application at the constructor's own parameters, the rule's blindness, the moved regime
+-- step), not localized further.
 set_option maxHeartbeats 400000 in
 /-- **The generic `case` lemma, model side, without canonicity** (as `caseIota`, whose proof this
 follows): at a checked shape whose recursor's rules do not compare parameters, `casesOn` applied to
@@ -349,26 +385,9 @@ theorem caseIotaG (M : Model V env) (hδ : DefnValue M) (hι : IotaLawG M.cval e
     rw [e5] at hsp
     have := spineOk_append hsp
     rwa [eY1] at this
-  have hregR : ∀ b ∈ liftTele (sh.nM - j) j cs.fields, regime φ b.2.pw ≠ 0 := by
-    intro b hb
-    have hb2 : b.2 ∈ (liftTele (sh.nM - j) j cs.fields).map (·.2) := List.mem_map_of_mem hb
-    rw [liftTele_metas] at hb2
-    obtain ⟨b', hb', e⟩ := List.mem_map.mp hb2
-    rw [← e, hreg j cs hj b' hb']
-    exact hlastReg
-  have hFR0 := fits_of_spineOk (cval := M.cval) (env := env) (φ := φ)
-    (liftTele (sh.nM - j) j cs.fields) _
-    (Expr.mkAppN (.const sh.ind sh.indLevels) (bvarsFrom cs.nF sh.nP)) hY1 hsp1
-    (by rw [liftTele_length]; omega) hregR
-  have hcRr : TeleCorr M.cval env φ (pushAll ps ρ) (pushAll (ps ++ [mo] ++ Ws) ρ) fbs
-      (liftTele (sh.nM - j) j cs.fields) := by
-    have := fieldsCorr_rev (M := M) (φ := φ) (ps := ps) (ρ := ρ) (fbs := fbs) (cs := cs) (j := j)
-      (k' := sh.nM - j) (junk := [mo] ++ Ws) hf (by simp; omega)
-    rwa [← List.append_assoc] at this
-  have hFCf := fits_transport fbs (liftTele (sh.nM - j) j cs.fields)
-    (Expr.mkAppN (.const sh.ind sh.indLevels) (bvarsFrom cs.nF sh.nP)) _
-    (by rw [liftTele_length]; omega) hcRr hFR0 (by rw [liftTele_length]; omega)
-  rw [List.drop_eq_nil_of_le (show fbs.length ≤ Fs.length by omega)] at hFCf
+  have hFCf := fields_fit_of_spineOk (M := M) (sh := sh) (D := Expr.mkAppN (.const sh.ind
+    sh.indLevels) (bvarsFrom cs.nF sh.nP)) hf hY1 hsp1 (by omega) (by omega)
+    (fun b hb => by rw [hreg j cs hj b hb]; exact hlastReg) (by omega) (by omega)
   have hcR : TeleCorr M.cval env φ (pushAll (ps ++ [mo] ++ Ws) ρ) (pushAll ps ρ)
       (liftTele (sh.nM - j) j cs.fields) fbs := by
     have := fieldsCorr (M := M) (φ := φ) (ps := ps) (ρ := ρ) (fbs := fbs) (cs := cs) (j := j)
@@ -706,5 +725,81 @@ theorem caseFires_of_blind (hδ : DefnValue M) (hι : IotaLawG M.cval env) (hcv 
         · simp at hsel
       | _ => simp [hd'] at hsel
   | _ => simp at hsel
+
+/-! ## The decided fact of the canonicity-free family -/
+
+/-- **`noCanonB` is sound** (the indexed reading answers as `Env.find?`, `KTab.get_of`). -/
+theorem noCanon_of_check {p : Program} {κ : CId → KKey} {Sl : List CId}
+    (h : noCanonB p env κ Sl = true) : NoCanon p env κ (· ∈ Sl) := by
+  have hn : ∀ (rules : List (RecRule .anon)), ctorsNoLevelsB (KTab.of env) rules = true →
+      ∀ rl ∈ rules, ∃ (cvC : ConstantVal .anon) (nP nF : Nat),
+        env.find? rl.ctor = some (.ctorInfo cvC nP nF) ∧ cvC.levelParams = [] := by
+    intro rules hr rl hrl
+    have h1 := List.all_eq_true.mp hr rl hrl
+    rw [KTab.get_of] at h1
+    split at h1
+    · rename_i cvC nP nF hc
+      exact ⟨cvC, nP, nF, hc, List.isEmpty_iff.mp h1⟩
+    · cases h1
+  have hall := List.all_eq_true.mp h
+  refine ⟨fun c r hc hr => ?_, fun r hr hk => ?_⟩
+  · have h1 := hall c hc
+    simp only [hr, Bool.and_eq_true] at h1
+    have h2 := h1.1
+    rw [KTab.get_of] at h2
+    split at h2
+    · rename_i cvr mI rP rules hf
+      simp only [Bool.and_eq_true, List.all_eq_true, Bool.not_eq_true'] at h2
+      exact ⟨cvr, mI, rP, rules, hf, fun rl hrl => ⟨h2.1 rl hrl, hn rules h2.2 rl hrl⟩⟩
+    · cases h2
+  · have h1 := (Bool.and_eq_true _ _).mp (hall r hr)
+    have h2 := h1.2
+    have hk' : (match recClassB p env κ r with
+        | some .flat | some .noParams =>
+          match (KTab.of env)[κ r]? with
+          | some (.recInfo _ _ _ rules) => ctorsNoLevelsB (KTab.of env) rules
+          | _ => false
+        | _ => true) = true := h2
+    rcases hk with hk | hk <;> rw [hk] at hk' <;> simp only at hk' <;> rw [KTab.get_of] at hk' <;>
+      split at hk' <;>
+      first
+        | (rename_i cvr mI rP rules hf; exact ⟨cvr, mI, rP, rules, hf, hn rules hk'⟩)
+        | cases hk'
+
+/-- **A `case` recursor that needs no canonicity, at a checked shape**: its rules do not compare
+parameters, and the inductive has no level (each constructor has as many level parameters as
+`sh.indLevels`, `CaseWF.ctorRaw`, and there is one, `CaseStored.arity`). -/
+theorem caseBlind_of_noCanon {kc kr : KKey} {sh : CaseShape} (h : CaseNoCanon env kr)
+    (hst : CaseStored env kc kr sh) : CaseRulesBlind env kr ∧ sh.indLevels = [] := by
+  obtain ⟨cvr, mI, rP, rules, hf, hall⟩ := h
+  refine ⟨⟨cvr, mI, rP, rules, hf, fun rl hrl => (hall rl hrl).1⟩, ?_⟩
+  obtain ⟨cvr', rules', hf', -, -, hlen, hrules⟩ := hst.recursor
+  rw [hf] at hf'
+  simp only [Option.some.injEq, ConstantInfo.recInfo.injEq] at hf'
+  obtain ⟨-, -, -, rfl⟩ := hf'
+  have hpos : 0 < sh.ctors.length := hst.arity.2
+  obtain ⟨cs, hcs⟩ : ∃ cs, sh.ctors[0]? = some cs := ⟨_, List.getElem?_eq_getElem hpos⟩
+  obtain ⟨rl, hrl⟩ : ∃ rl, rules[0]? = some rl :=
+    ⟨_, List.getElem?_eq_getElem (show 0 < rules.length by rw [hlen]; exact hpos)⟩
+  obtain ⟨hkey, -⟩ := hrules 0 cs rl hcs hrl
+  obtain ⟨-, cvC, nP, nF, hc, hlp⟩ := hall rl (List.mem_of_getElem? hrl)
+  obtain ⟨cvC', hfC, hlenC, -⟩ := hst.wf.ctorRaw 0 cs hcs
+  rw [← hkey, hc] at hfC
+  simp only [Option.some.injEq, ConstantInfo.ctorInfo.injEq] at hfC
+  obtain ⟨rfl, -, -⟩ := hfC
+  rw [hlp] at hlenC
+  exact List.eq_nil_of_length_eq_zero hlenC.symm
+
+/-- **F5 at every `case` entry of `S`, with no canonicity**: `CaseFacts` gives each a checked
+shape, `NoCanon` makes it blind and level-free (`caseBlind_of_noCanon`), and `caseFires_of_blind`
+does the rest. Laws: `DefnValue`, `IotaLawG`, `CvalParams`. -/
+theorem caseFires_of_noCanon (hδ : DefnValue M) (hι : IotaLawG M.cval env) (hcv : CvalParams M)
+    {p : Program} (hF : Faith p env κ lpsOf S) (hN : NatBasis env) (hC : CaseFacts p env κ S)
+    (hNC : NoCanon p env κ S) :
+    ∀ c r, S c → p.table.resolveOf c = some (.case r) → CaseFires M p κ lpsOf S Ok c := by
+  intro c r hc hr
+  obtain ⟨sh, hst, hpr⟩ := hC c r hc hr
+  obtain ⟨hB, hlv⟩ := caseBlind_of_noCanon (hNC.cases c r hc hr) hst
+  exact caseFires_of_blind hδ hι hcv hF hN hc hr hst hpr hB hlv
 
 end IxCC.Grounding

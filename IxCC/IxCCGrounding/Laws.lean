@@ -301,6 +301,43 @@ structure Laws {env : Env md} (M : Model V env) : Prop where
   /-- constructor canonicity at families that are not propositions. Not scheduled by anyone. -/
   ctor_canon : CtorCanon M
 
+/-- **The laws other than canonicity, ι in the landed form**: what every lemma of the library that
+does not read `ctor_canon` takes (the direct route's soundness, the heads, δ, the `Eq.rec` and
+`case` model lemmas, level instantiation, the literals). Both law structures give it
+(`lawsCore_of_laws`, `LawsNoCanon.core`). -/
+structure LawsCore {env : Env md} (M : Model V env) : Prop where
+  defn_value : DefnValue M
+  iota_rule : IotaLaw M.cval env
+  cval_params : CvalParams M
+  proj_ctor : ProjCtor M
+  nat_accel : NatAccel M
+
+/-- `Laws` without its canonicity. -/
+theorem lawsCore_of_laws {env : Env md} {M : Model V env} (hL : Laws M) : LawsCore M :=
+  ⟨hL.defn_value, hL.iota_rule, hL.cval_params, hL.proj_ctor, hL.nat_accel⟩
+
+/-- **The laws of the canonicity-free family** (`rootSound_noCanon` and its corollaries): no
+`ctor_canon`, and ι in #678's guarded form.
+
+| Field | #678's public `Model` (`jcb/ixvmc-int` at `d4c079de2`) |
+| --- | --- |
+| `defn_value` | its field `defn_value`, the same statement |
+| `iota_rule` | its field `iota_rule`, less the graded conjunct (`IotaLawG`) |
+| `cval_params` | its field `cval_params`, the same statement |
+| `proj_ctor` | **not yet derived**: a theorem from its field `proj_law` by an adapter, not written |
+| `nat_accel` | **not yet derived**: its field `lit_ops` gives it where each role's constant is stored as a definition, a premise not yet checked |
+-/
+structure LawsNoCanon {env : Env md} (M : Model V env) : Prop where
+  defn_value : DefnValue M
+  iota_rule : IotaLawG M.cval env
+  cval_params : CvalParams M
+  proj_ctor : ProjCtor M
+  nat_accel : NatAccel M
+
+/-- The canonicity-free laws give the core (ι in the landed form, `IotaLawG.toIotaLaw`). -/
+theorem LawsNoCanon.core {env : Env md} {M : Model V env} (hL : LawsNoCanon M) : LawsCore M :=
+  ⟨hL.defn_value, hL.iota_rule.toIotaLaw, hL.cval_params, hL.proj_ctor, hL.nat_accel⟩
+
 end Laws
 
 end IxCC.Grounding
