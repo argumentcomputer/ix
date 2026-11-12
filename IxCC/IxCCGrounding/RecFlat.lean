@@ -18,11 +18,29 @@ applied to the arguments as the rule's right-hand side applied to the first `mI`
 `mI` λs (their domains the type's, so the arguments lie in them by `Fits`; no regime is read,
 `app_den_lam`) gives the variable's set.
 
-**What it assumes of the model.** `Laws.iota_rule` at a stored rule of a recursor whose inductive
-is never a proposition (the class asks it), at the recursor's own level parameters. How the
-major's set is shown to be `K` (the constructor's image at the major domain's levels, while the
-relation gives the image at the constructor value's own assignment) is the open point of part D
-and is not in this lemma.
+**The major's set at the major domain's levels.** The relation gives the major's set as the
+constructor's image at the assignment the constructor value was built at; ι names the image at
+the levels the major domain names. Where the constructor has no level parameters (every flat
+recursor of the measured closures: `Bool.rec`), its image is the same set at every assignment
+(`ctorImage_noLevels`, by `Laws.cval_params`): no canonicity. Where it has some, canonicity at the
+inductive, which the class asks to be never a proposition (`ctorImage_canon`, by the restricted
+`Laws.ctor_canon`), reading the constructor's codomain as `RecCtorsRaw` checks it.
+
+**What it assumes of the model, and why each holds in a proof-irrelevant set model.**
+
+* `Laws.iota_rule` (ι) at a stored rule of a recursor whose inductive is never a proposition, at
+  the recursor's own level parameters: proved on the side that owes the laws for every stored rule;
+  in this repository the kernel's own model proves the rule law for canonical (`.plain`) rules
+  (`iotaRulePlain`, `IxCK/Kernel/Model/IotaRulePlain.lean`). Tested against the kernel on the
+  measured recursors (`Bool.rec` in seven closures, the enumeration recursors of `tags16` and
+  `tags17`, `Nat.rec`, `List.rec`: each rule at its constructor reduces to its minor premise and
+  not to another; probes `GR-3f-q1`, `q3`, `k1`, not in the suite).
+* `Laws.cval_params` (a constant depends on the level assignment only through its own parameters):
+  proved on that side; here only at constructors without level parameters, where it says that
+  their image is one set.
+* `Laws.ctor_canon`, restricted to families that are never propositions, only where a flat
+  recursor's constructor has level parameters (no measured closure has one): the same kind of
+  instance the generic `case` lemma uses (`caseFires_of_shape`), with no parameter and no field.
 -/
 
 namespace IxCC.Grounding
