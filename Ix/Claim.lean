@@ -199,9 +199,6 @@ Eight variants in five families:
   the merkle tree rooted at `tree`. Used by aggregation to discharge
   leaves from a conditional claim's assumption set. Carries no
   assumptions.
-- **`resource`**: retired. It claimed combined erased typing and resource
-  admission; every reader refuses its tag (`E8 01`) and its proof's (`F6`),
-  and nothing makes one.
 - **`binding`**: the role table with hash `binding` binds every role, and
   each bound constant meets its specification in `spec`. It discharges the
   condition of the typing claims that assume their binding
@@ -225,10 +222,6 @@ inductive Claim where
   /-- Every claim whose digest is a leaf of the canonical merkle tree `members`
   holds: each an unconditional `checkEnv`. -/
   | catalog  (members : Address)
-  /-- Retired: combined erased typing and resource admission of the complete
-  addressed environment under the profile committed by `profile`. Every
-  reader refuses it. -/
-  | resource (root profile : Address)
   /-- The role table with hash `binding` binds every role, and each bound
   constant meets its specification in the set with digest `spec`. -/
   | binding (spec binding : Address)
@@ -669,7 +662,6 @@ def variantOf : Claim → UInt64
   | .reveal .. => VARIANT_REVEAL_CLAIM
   | .contains .. => VARIANT_CONTAINS_CLAIM
   | .catalog .. => VARIANT_CATALOG_CLAIM
-  | .resource .. => VARIANT_RESOURCE_CLAIM_RETIRED
   | .binding .. => VARIANT_BINDING_CLAIM
 
 /-- The validator a claim's scope names: its variant's,
@@ -683,7 +675,6 @@ def validatorOf : Claim → UInt8
     else if ctx.bindingAssumed then VALIDATOR_ERASED_LEAN_ASSUMED else VALIDATOR_ERASED_LEAN
   | .check ctx .. =>
     if ctx.bindingAssumed then VALIDATOR_ERASED_LEAN_ASSUMED else VALIDATOR_ERASED_LEAN
-  | .resource .. => VALIDATOR_RESOURCE_RETIRED
   | c => validatorForVariant (variantOf c)
 
 def putScope (validator : UInt8) : PutM Unit := do
@@ -742,9 +733,6 @@ def putPayload : Claim → PutM Unit
   | .catalog members => do
     -- A two-byte claim tag: `E8 00` on the wire.
     Serialize.put members
-  | .resource root profile => do
-    Serialize.put root
-    Serialize.put profile
   | .binding spec bound => do
     -- A two-byte claim tag: `E8 02` on the wire.
     Serialize.put spec
@@ -829,7 +817,6 @@ instance : ToString Claim where
     | .reveal comm info => s!"Reveal({comm}, {repr info})"
     | .contains t c => s!"Contains({t}, {c})"
     | .catalog m => s!"Catalog({m})"
-    | .resource root profile => s!"Resource({root}, {profile})"
     | .binding spec bound => s!"Binding({bound} meets spec {spec})"
 
 end Claim
@@ -969,7 +956,6 @@ def variantOf : Ix.Claim → UInt64
   | .reveal ..   => Ix.Claim.VARIANT_REVEAL_PROOF
   | .contains .. => Ix.Claim.VARIANT_CONTAINS_PROOF
   | .catalog ..  => Ix.Claim.VARIANT_CATALOG_PROOF
-  | .resource .. => Ix.Claim.VARIANT_RESOURCE_PROOF_RETIRED
   | .binding ..  => Ix.Claim.VARIANT_BINDING_PROOF
 
 def put (p : Proof) : PutM Unit := do

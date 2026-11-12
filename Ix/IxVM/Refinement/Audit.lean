@@ -409,7 +409,6 @@ fun V x =>
   | Ix.Claim.reveal comm info => ∃ c, Ix.Cert.recordAt V.env comm = some c ∧ IxVM.Refinement.RevealLE info c.info
   | Ix.Claim.contains tree a => V.HoldsTree tree ∧ ∀ (leaves : List Address), V.LeavesAt tree leaves → a ∈ leaves
   | Ix.Claim.catalog members => False
-  | Ix.Claim.resource root profile => False
   | Ix.Claim.binding spec b => IxVM.Refinement.BindingIn V spec b
 -/
 #guard_msgs in
@@ -434,7 +433,6 @@ fun V x =>
   | Ix.Claim.contains tree const => V.HoldsTree tree
   | Ix.Claim.binding spec b => V.Closed ∧ (V.binding? b).isSome = true
   | Ix.Claim.catalog members => True
-  | Ix.Claim.resource root profile => True
 -/
 #guard_msgs in
 #print Ix.Claim.Covers
