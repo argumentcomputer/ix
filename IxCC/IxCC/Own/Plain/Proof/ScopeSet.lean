@@ -1,6 +1,5 @@
 import IxCC.Own.Plain.Check
 import IxCC.Own.Plain.ScopeSet
-import IxCC.Src.Proof.NatMap
 
 /-! # The scope check over sets equals the scope check over lists
 
@@ -18,12 +17,63 @@ namespace IxCC.Own.Plain
 
 open IxCC.Fir (Var JoinId FunId Arg Rhs)
 
+/-- A lookup after `setF` (the insertion of `Src.NatMap`), proved without classical reasoning:
+`Src.NatMap.get?_setF`'s proof uses `Classical.choice`, which `programDomain_function`'s exact
+axiom set (`propext`, `Quot.sound`) does not admit. -/
+theorem natMap_setF_get? {α : Type} : ∀ (fuel : Nat) (m : Src.NatMap α) (k : Nat) (v : Option α)
+    (y : Nat), k < fuel → (Src.NatMap.setF fuel m k v).get? y = if y = k then v else m.get? y
+  | 0, _, _, _, _, h => absurd h (Nat.not_lt_zero _)
+  | fuel + 1, m, k, v, y, h => by
+    have node : ∀ (w : Option α) (z o : Src.NatMap α), (Src.NatMap.node w z o).get? y =
+        if y = 0 then w else if y % 2 = 0 then z.get? (y / 2) else o.get? (y / 2) := by
+      intro w z o
+      simp only [Src.NatMap.get?, beq_iff_eq]
+    have parts : ∃ w z o, Src.NatMap.parts m = (w, z, o) ∧ m.get? y =
+        if y = 0 then w else if y % 2 = 0 then z.get? (y / 2) else o.get? (y / 2) := by
+      cases m with
+      | leaf =>
+        refine ⟨none, .leaf, .leaf, rfl, ?_⟩
+        simp only [Src.NatMap.get?]
+        split <;> (try split) <;> rfl
+      | node w z o => exact ⟨w, z, o, rfl, node w z o⟩
+    obtain ⟨w, z, o, hp, hm⟩ := parts
+    rw [hm]
+    simp only [Src.NatMap.setF, hp, beq_iff_eq]
+    by_cases hk : k = 0
+    · subst hk
+      by_cases hy : y = 0
+      · subst hy
+        simp only [↓reduceIte, Src.NatMap.get?, beq_iff_eq]
+      · simp only [hy, ↓reduceIte, node]
+    · by_cases he : k % 2 = 0
+      · simp only [hk, he, ↓reduceIte, node]
+        rw [natMap_setF_get? fuel z (k / 2) v (y / 2) (by omega)]
+        by_cases hy : y = 0
+        · subst hy
+          simp only [Ne.symm hk, ↓reduceIte]
+        · by_cases hye : y % 2 = 0
+          · have hiff : (y / 2 = k / 2) ↔ (y = k) := ⟨fun _ => by omega, fun _ => by omega⟩
+            simp only [hy, hye, ↓reduceIte, hiff]
+          · have hyk : ¬ y = k := fun _ => by omega
+            simp only [hy, hye, hyk, ↓reduceIte]
+      · simp only [hk, he, ↓reduceIte, node]
+        rw [natMap_setF_get? fuel o (k / 2) v (y / 2) (by omega)]
+        by_cases hy : y = 0
+        · subst hy
+          simp only [Ne.symm hk, ↓reduceIte]
+        · by_cases hye : y % 2 = 0
+          · have hyk : ¬ y = k := fun _ => by omega
+            simp only [hy, hye, hyk, ↓reduceIte]
+          · have hiff : (y / 2 = k / 2) ↔ (y = k) := ⟨fun _ => by omega, fun _ => by omega⟩
+            simp only [hy, hye, ↓reduceIte, hiff]
+
 theorem natSet_contains_insert (s : Src.NatSet) (k x : Nat) :
     (s.insert k).contains x = (x == k || s.contains x) := by
-  simp only [Src.NatSet.insert, Src.NatMap.contains, Src.NatMap.get?_insert]
-  by_cases h : x = k
-  · simp [h]
-  · simp [h]
+  simp only [Src.NatSet.insert, Src.NatMap.insert, Src.NatMap.contains]
+  rw [natMap_setF_get? (k + 1) s k (some ()) x (Nat.lt_succ_self k)]
+  split
+  · next h => simp only [show (x == k) = true from decide_eq_true h, Bool.true_or, Option.isSome_some]
+  · next h => simp only [show (x == k) = false from beq_false_of_ne h, Bool.false_or]
 
 theorem list_contains_append_single (live : List Var) (y x : Var) :
     (live ++ [y]).contains x = (x == y || live.contains x) := by
@@ -70,8 +120,9 @@ theorem lookup_signatures_range' (P : Fir.Program) (f : Nat) : ∀ (m s : Nat),
       if s ≤ f ∧ f < s + m then (P.fun? f).map (·.arity) else none
   | 0, s => by
     simp only [List.range'_zero, List.filterMap_nil, List.map_nil, List.lookup_nil]
-    have hc : ¬ (s ≤ f ∧ f < s + 0) := fun hc => absurd hc.2 (by have := hc.1; omega)
-    rw [ite_cond_eq_false _ _ (eq_false hc)]
+    split
+    · next hc => exact absurd hc.2 (by have := hc.1; omega)
+    · rfl
   | m + 1, s => by
     rw [List.range'_succ, List.filterMap_cons]
     have ih := lookup_signatures_range' P f m (s + 1)
@@ -80,21 +131,26 @@ theorem lookup_signatures_range' (P : Fir.Program) (f : Nat) : ∀ (m s : Nat),
       simp only [Option.map_none]
       rw [ih]
       by_cases hf : f = s
-      · subst hf
-        simp [hs]
+      · have h1 : ¬ (s + 1 ≤ f ∧ f < s + 1 + m) := fun ⟨_, _⟩ => by omega
+        split
+        · next hc => exact absurd hc h1
+        · split
+          · simp only [hf, hs, Option.map_none]
+          · rfl
       · have : (s + 1 ≤ f ∧ f < s + 1 + m) ↔ (s ≤ f ∧ f < s + (m + 1)) :=
-          ⟨fun ⟨h1, h2⟩ => ⟨by omega, by omega⟩, fun ⟨h1, h2⟩ => ⟨by omega, by omega⟩⟩
+          ⟨fun ⟨_, _⟩ => ⟨by omega, by omega⟩, fun ⟨_, _⟩ => ⟨by omega, by omega⟩⟩
         simp only [this]
     | some fd =>
       simp only [Option.map_some, List.map_cons, List.lookup_cons]
       by_cases hf : f = s
-      · subst hf
-        simp [hs]
-      · have hb : (f == s) = false := by simpa using hf
-        simp only [hb]
+      · simp only [show (f == s) = true from decide_eq_true hf]
+        split
+        · simp only [hf, hs, Option.map_some]
+        · next hc => exact absurd ⟨by omega, by omega⟩ hc
+      · simp only [show (f == s) = false from beq_false_of_ne hf]
         rw [ih]
         have : (s + 1 ≤ f ∧ f < s + 1 + m) ↔ (s ≤ f ∧ f < s + (m + 1)) :=
-          ⟨fun ⟨h1, h2⟩ => ⟨by omega, by omega⟩, fun ⟨h1, h2⟩ => ⟨by omega, by omega⟩⟩
+          ⟨fun ⟨_, _⟩ => ⟨by omega, by omega⟩, fun ⟨_, _⟩ => ⟨by omega, by omega⟩⟩
         simp only [this]
 
 theorem signatureArity_eq (P : Fir.Program) (f : FunId) :
