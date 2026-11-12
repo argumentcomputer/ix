@@ -218,6 +218,7 @@ theorem sound_wrapperBody (h : Head) (q : Profile) :
   unfold wrapperBody
   cases h with
   | prim op => exact Sound.pure fun _ => .prim rfl
+  | word w op => exact Sound.decline
   | ctor c =>
     dsimp only
     refine Sound.ite (fun hh => ?_) fun _ => Sound.decline_bind

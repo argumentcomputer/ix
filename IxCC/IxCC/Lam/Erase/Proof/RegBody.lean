@@ -92,6 +92,7 @@ theorem reg_wrapperBody (h : Head) (q : Profile) :
     exact CSound.pure fun _ => RegT.lams (.prim fun a ha => by
       obtain ⟨i, _, rfl⟩ := List.mem_map.1 ha
       exact .var _)
+  | word w op => exact CSound.decline
   | ctor c | quotMk c | quotLift c | recr c | cases c =>
     dsimp only
     refine CSound.ite (fun _ => ?_) fun _ => CSound.decline_bind

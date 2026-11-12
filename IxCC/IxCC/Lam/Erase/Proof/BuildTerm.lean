@@ -140,6 +140,7 @@ theorem sound_constSpine (cx : Cx) (c : CId) (us : List Ixon.Univ) (args : List 
   have hus' : us.length ≤ I.lvls c := by omega
   split
   · next op hr => exact sound_special hrec cx hus' (by simp [Input.headOf, hr]) args
+  · exact Sound.decline
   · next r' hr => exact sound_special hrec cx hus' (by simp [Input.headOf, hr]) args
   · next g vs thm hr =>
     exact sound_plainConst hrec cx hus' (b := .const g vs) (by simp [Input.deltaBody, hr]) args

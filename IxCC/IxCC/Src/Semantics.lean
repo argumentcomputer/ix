@@ -461,6 +461,10 @@ termination_by (k, 0, ss.length + 1)
 
 end
 
+/-- The evaluator contract's version (`docs/evaluator-interface.md`, EV-1's versions so far): 1,
+the rules E1–E9, A1–A3 and F1–F8; 2, with F6w (stage W1, the fixed-width word operations). -/
+def contractVersion : Nat := 2
+
 /-- Run a root on argument values: δ on the root, then β per argument. -/
 def run (p : Program) (k : Nat) (root : CId) (xs : List Value) : Result Value :=
   match evalConst p k [] root with
