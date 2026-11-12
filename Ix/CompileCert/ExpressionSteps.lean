@@ -313,9 +313,13 @@ theorem nat_step_checked (compile : Ix.Expr → CompileM (Ixon.Expr × UInt64)) 
   rw [nat_step_eq]
   apply literal_checked cx param self related bindings _ _ _ _ context before good aligned rel
   intro state index read
-  change (do pure (Ix.Kernel.Expr.lit (.natVal (Kernel.Reader.natural (← (reader state).ecx.blobAt index))))) = _
-  rw [read]
-  simp only [bind, Except.bind, pure, Except.pure, natural_toBytes]
+  change (do pure (Ix.Kernel.Expr.lit (.natVal (← (reader state).ecx.natAt index)))) = _
+  have natRead : (reader state).ecx.natAt index = .ok value := by
+    unfold Kernel.Reader.ECx.natAt
+    rw [read]
+    simp only [bind, Except.bind, canonicalNatural_toBytes, ↓reduceIte, pure, Except.pure, natural_toBytes]
+  rw [natRead]
+  rfl
 
 theorem string_step_checked (compile : Ix.Expr → CompileM (Ixon.Expr × UInt64)) (value : String)
     (hash : Address) (context : CompileEnv × BlockEnv) (before : BlockState)
