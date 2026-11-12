@@ -127,6 +127,11 @@ impl KzgConfig {
     self
   }
 
+  /// Whether lookup messages can be rebuilt from committed stage-one traces.
+  pub const fn uses_streaming_lookups(&self) -> bool {
+    self.stream_lookups
+  }
+
   /// Evaluate each quotient on trace-sized cosets, bounding temporary matrices.
   pub fn with_streaming_quotient(mut self) -> Self {
     self.stream_quotient = true;

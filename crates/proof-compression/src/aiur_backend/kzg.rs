@@ -13,9 +13,10 @@ use aiur::{
 };
 use multi_stark::{
   config::ProofConfig,
-  lookup::logup_max_degree,
+  lookup::{LookupValues, logup_max_degree},
   system::{CircuitInputs, ProverKey, System, SystemWitness, extension_params},
 };
+use p3_matrix::Matrix;
 
 mod circuits;
 mod verifier;
@@ -159,7 +160,25 @@ impl<'p, 'a> Backend<'p, 'a> {
     .main_traces(record, trace)?;
     let (active, degrees) = self.trace_shape(&traces)?;
     self.check_shape(&active, &degrees)?;
-    Ok(SystemWitness::from_stage_1(traces, &self.system))
+    if !self.system.config.uses_streaming_lookups() {
+      return Ok(SystemWitness::from_stage_1(traces, &self.system));
+    }
+    // Concrete lookup tuples can exceed the trace matrices by several times.
+    // The prover rebuilds them from committed columns, including CPU fallbacks.
+    let lookups = traces
+      .iter()
+      .zip(&self.system.circuits)
+      .map(|(trace, circuit)| {
+        let widths: Vec<_> = circuit
+          .graph
+          .lookups
+          .iter()
+          .map(|lookup| lookup.args.len())
+          .collect();
+        LookupValues::shape_only(trace.height(), &widths)
+      })
+      .collect();
+    Ok(SystemWitness { traces, lookups })
   }
 
   /// A malformed witness can produce an invalid proof. Verification against

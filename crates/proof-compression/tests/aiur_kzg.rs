@@ -71,6 +71,37 @@ fn compiled_bn254_recursion_maps_and_rom_prove_expected_calls() {
 }
 
 #[test]
+fn deferred_lookup_witness_produces_the_same_proof_as_materialized_tuples() {
+  let plan = plan(package());
+  let args = [Bn254.from_u64(3), Bn254.neg(Bn254.one())];
+  let record = plan.program().execute(ENTRY, args.to_vec()).unwrap();
+  let public = plan.public_args(&record, ENTRY, &args).unwrap();
+  for streaming in [false, true] {
+    let config =
+      if streaming { config().with_streaming_lookups() } else { config() };
+    let backend = Backend::new(&plan, config).unwrap();
+    let deferred = backend.generate(&record, ENTRY, &args).unwrap();
+    assert!(
+      deferred
+        .lookups
+        .iter()
+        .all(|values| values.is_materialized() != streaming)
+    );
+    let eager =
+      SystemWitness::from_stage_1(deferred.traces.clone(), backend.system());
+    let eager = backend.prove(ENTRY, &public, &record.output, eager).unwrap();
+    let deferred =
+      backend.prove(ENTRY, &public, &record.output, deferred).unwrap();
+    let key = backend.verifying_key().unwrap();
+    assert_eq!(
+      key.encode_proof(&deferred).unwrap(),
+      key.encode_proof(&eager).unwrap()
+    );
+    backend.verify(ENTRY, &public, &record.output, &deferred).unwrap();
+  }
+}
+
+#[test]
 fn verifier_rejects_forged_multiplicities_rom_depth_and_activation() {
   let plan = plan(package());
   let backend = Backend::new(&plan, config()).unwrap();
