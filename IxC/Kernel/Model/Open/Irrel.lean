@@ -9,8 +9,11 @@ import IxC.Kernel.Verify.Shift
 # The rules' soundness over the public `Model`: proof irrelevance and equality
 
 * `DefEq.proofIrrel`: two terms whose types are propositions denote the proof point.
+* `DefEq.proofIrrelTy`: so do two terms whose types are definitionally equal, the first a
+  proposition.
 * `Red.deltaThm`: a theorem and its value are both members of its statement, a proposition,
-  so they denote alike.
+  so they denote alike. The rule checks the value at the theorem's own level parameters and
+  in the empty context; its premises are read at the assignment the use's levels induce.
 * `Red.eqProof`: a proof of `a = b` makes `a` and `b` denote alike (`Model.eq_equality`).
 -/
 
@@ -56,42 +59,68 @@ theorem DefEq.proofIrrel_sound {d : Nat} {a ta tta b tb ttb : Expr md} {u v : Le
     (proof_pt ha hta hu (hu0 φ) hfa hCa hx hga).trans
       (proof_pt hb htb hv (hv0 φ) hfb hCb hy hgb).symm
 
-/-- **A theorem unfolds to its value** (`Red.deltaThm`): both are members of the theorem's
-statement, which is a proposition, so both denote the proof point. -/
+/-- **Proof irrelevance at a compared type** (`DefEq.proofIrrelTy`): `a`'s type is a
+proposition, so `a` denotes the proof point; `b`'s type denotes the same set, so `b` does
+too. -/
+theorem DefEq.proofIrrelTy_sound {d : Nat} {a ta tta b tb : Expr md} {u : Level}
+    (ha : InferIOS M φ d a ta) (hta : InferIOS M φ d ta tta) (hu : RedS M φ d tta (.sort u))
+    (hu0 : ∀ φ, Level.eval φ u = 0) (hb : InferIOS M φ d b tb) (hd : DefEqS M φ d ta tb) :
+    DefEqS M φ d a b := by
+  intro hfa hfb σ hCa hCb x y hx hy hga hgb
+  obtain ⟨hfta, hsubta, ka⟩ := ha hfa
+  obtain ⟨hftta, hsubtta, kta⟩ := hta hfta
+  obtain ⟨-, -, ku⟩ := hu hftta
+  obtain ⟨T, hT, hgT, hxT⟩ := ka σ hCa x hx hga
+  obtain ⟨TT, hTT, hgTT, hTTT⟩ := kta σ (hCa.of_subset hsubta) T hT hgT
+  obtain ⟨hTTu, -⟩ := ku σ ((hCa.of_subset hsubta).of_subset hsubtta) TT hTT hgTT
+  cases hTTu
+  rw [hu0, univ_zero] at hTTT
+  obtain ⟨hftb, hsubtb, kb⟩ := hb hfb
+  obtain ⟨Tb, hTb, hgTb, hyTb⟩ := kb σ hCb y hy hgb
+  obtain rfl := hd hfta hftb σ (hCa.of_subset hsubta) (hCb.of_subset hsubtb) T Tb hT hTb hgT hgTb
+  exact (eq_pt_of_mem_univZero hTTT hxT).trans (eq_pt_of_mem_univZero hTTT hyTb).symm
+
+/-- **A theorem unfolds to its value** (`Red.deltaThm`). The rule checks the value against
+the theorem's type at the theorem's own level parameters and in the empty context. Read at
+the assignment the use's levels induce, the value is a member of the statement, a
+proposition, and so is the theorem: both denote the proof point. At `φ` the instantiated
+value denotes what the value denotes there (`DenotesO.instantiateLevelParams`). -/
 theorem Red.deltaThm_sound (hsc : StoredClosed env) {d : Nat} {n : Key md} {us : List Level}
     {cv : ConstantVal md} {value vt s : Expr md} {u : Level}
     (hf : env.find? n = some (.thmInfo cv value)) (hus : us.length = cv.levelParams.length)
     (hvf : value.hasFvar = false) (hvb : value.looseBVarsBounded 0 = true)
-    (hvt : InferFullS M φ d (value.instantiateLevelParams cv.levelParams us) vt)
-    (hd : DefEqS M φ d vt (cv.type.instantiateLevelParams cv.levelParams us))
-    (hs : InferFullS M φ d (cv.type.instantiateLevelParams cv.levelParams us) s)
-    (hr : RedS M φ d s (.sort u)) (hu0 : ∀ φ, Level.eval φ u = 0) :
+    (hvt : InferFullS M (Level.substFn φ cv.levelParams us) 0 value vt)
+    (hd : DefEqS M (Level.substFn φ cv.levelParams us) 0 vt cv.type)
+    (hs : InferFullS M (Level.substFn φ cv.levelParams us) 0 cv.type s)
+    (hr : RedS M (Level.substFn φ cv.levelParams us) 0 s (.sort u))
+    (hu0 : ∀ φ, Level.eval φ u = 0) :
     RedS M φ d (.const n us) (value.instantiateLevelParams cv.levelParams us) := by
+  have hcp : CvalParams M.cval env := M.cval_params
   have hvf' : (value.instantiateLevelParams cv.levelParams us).hasFvar = false := by
     rw [Expr.hasFvar_instantiateLevelParams]; exact hvf
   have hvb' : (value.instantiateLevelParams cv.levelParams us).looseBVarsBounded 0 = true := by
     rw [Expr.looseBVarsBounded_instantiateLevelParams]; exact hvb
+  have htf : cv.type.hasFvar = false := (hsc _ (List.mem_of_find?_eq_some hf)).1.1
+  have htb : cv.type.looseBVarsBounded 0 = true := (hsc _ (List.mem_of_find?_eq_some hf)).1.2
   intro _
   refine ⟨Frame.of_closed hvf' hvb', LeavesSub.of_closed hvf', fun σ _ v hv _ => ?_⟩
-  obtain ⟨hftT, -⟩ := const_type_frame (d := d) (us := us) hsc hf
-  obtain ⟨hfvt, hsubvt, kvt⟩ := hvt (Frame.of_closed hvf' hvb')
-  obtain ⟨x, X, hx, hgx, hX, hgX, hxX⟩ := kvt σ (Ctx.of_closed hvf')
-  obtain ⟨hfs, hsubs, ks⟩ := hs hftT
-  have hCT : Ctx M φ σ (cv.type.instantiateLevelParams cv.levelParams us) :=
-    Ctx.of_closed (by
-      rw [Expr.hasFvar_instantiateLevelParams]
-      exact (hsc _ (List.mem_of_find?_eq_some hf)).1.1)
+  obtain ⟨hfvt, hsubvt, kvt⟩ := hvt (Frame.of_closed hvf hvb)
+  obtain ⟨x, X, hx, hgx, hX, hgX, hxX⟩ := kvt σ (Ctx.of_closed hvf)
+  obtain ⟨hfs, hsubs, ks⟩ := hs (Frame.of_closed htf htb)
+  have hCT : Ctx M (Level.substFn φ cv.levelParams us) σ cv.type := Ctx.of_closed htf
   obtain ⟨T, S, hT, hgT, hS, hgS, hTS⟩ := ks σ hCT
   obtain ⟨-, -, ku⟩ := hr hfs
   obtain ⟨hSu, -⟩ := ku σ (hCT.of_subset hsubs) S hS hgS
   cases hSu
-  rw [hu0 φ, univ_zero] at hTS
-  obtain rfl := hd hfvt hftT σ ((Ctx.of_closed hvf').of_subset hsubvt) hCT _ _ hX hT hgX hgT
+  rw [hu0, univ_zero] at hTS
+  obtain rfl := hd hfvt (Frame.of_closed htf htb) σ ((Ctx.of_closed hvf).of_subset hsubvt) hCT
+    _ _ hX hT hgX hgT
   obtain ⟨T', hc, hT', -, hcT'⟩ := const_typed (M := M) (φ := φ) hsc hf hus σ
-  obtain rfl := DenotesO.functional hT' hT
+  obtain rfl := DenotesO.functional ((DenotesO.instantiateLevelParams hcp _ us _ ρ₀ _).1 hT') hT
   obtain rfl := DenotesO.functional hv hc
   rw [eq_pt_of_mem_univZero hTS hcT', ← eq_pt_of_mem_univZero hTS hxX]
-  exact ⟨hx, hgx⟩
+  exact ⟨(DenotesO.instantiateLevelParams hcp _ us _ ρ₀ _).2 hx,
+    (GradedBy.instantiateLevelParamsO hcp _ us _ ρ₀).2 hgx⟩
 
 /-- **An equation's proof rewrites its left side** (`Red.eqProof`): `Eq` denotes equality
 (`Model.eq_equality`), so a member of `@Eq T a b`'s denotation makes `a` and `b` denote

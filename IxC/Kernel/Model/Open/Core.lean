@@ -131,6 +131,12 @@ theorem EnvWF.storedClosed {env : Env md} (h : EnvWF env) : StoredClosed env := 
   · obtain ⟨a, -, -, b, -⟩ := h6 cv mI rP rules he r hr
     exact ⟨a, b⟩
 
+/-- **A sub-environment keeps the stored terms closed**: its constants are the
+environment's. -/
+theorem StoredClosed.of_sub {env env' : Env md} (h : StoredClosed env)
+    (hsub : ∀ c ∈ env'.consts, c ∈ env.consts) : StoredClosed env' :=
+  fun c hc => h c (hsub c hc)
+
 /-- **A δ-unfolding is a closed value applied to the spine.** -/
 theorem unfold_closed (hsc : StoredClosed env) {e e' : Expr md}
     (h : unfoldDefinition env e = some e') :
