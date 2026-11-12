@@ -1,4 +1,5 @@
 import IxCC.Rt.Rc.Procs
+import IxCC.Rt.Rc.Gen.Procs
 import IxCC.Rt.Procs.Entry
 import IxCC.Lir.SplitEdges
 import IxCC.Lir.WellFormed
@@ -34,5 +35,27 @@ def emit (path : System.FilePath) : IO Unit := do
   let result ← IO.ofExcept ((Backend.compile p cfg).mapError toString)
   IO.FS.writeBinFile path result.object
   IO.println s!"H2 native object: {result.object.size} bytes, {result.exports.length} exports"
+
+
+/-- The general-layout procedures (`Rt.Rc.Gen`), exported for `GenNativeControls`: `cx_init`,
+allocation by layout for five layouts (classes 34, 2, 44 and 3, and a refused field-less layout),
+the release behind an effect wrapper, and the uniqueness test. -/
+def genProgram : Lir.Program :=
+  let allocExport (n s t : Nat) : Lir.Func :=
+    { Rt.Rc.Gen.alloc ⟨n, s, t⟩ with conv := .sysvExport s!"cx_rc_alloc_{n}_{s}_{t}" }
+  { funcs := #[Rt.Rc.Gen.dec, Rt.Procs.cxInit, allocExport 40 0 3, allocExport 0 1 5,
+      allocExport 254 1 7, allocExport 2 0 1, allocExport 0 0 1, effectWrapper "cx_rc_dec" 0,
+      { Rt.Rc.Gen.isUnique with conv := .sysvExport "cx_rc_is_unique" }]
+    main := 2 }
+
+def emitGen (path : System.FilePath) : IO Unit := do
+  let p := genProgram.splitCriticalEdges
+  IO.ofExcept p.check
+  let cfg : Backend.Config :=
+    { provenance := .ixir1Policy (Ixon.Address.replicate 0x52) 1 1
+      reps := fun f => (p.funcs[f]?).map fun fd => fd.params.map fun _ => .word }
+  let result ← IO.ofExcept ((Backend.compile p cfg).mapError toString)
+  IO.FS.writeBinFile path result.object
+  IO.println s!"general-layout native object: {result.object.size} bytes, {result.exports.length} exports"
 
 end IxCCTests.Rt.Rc.Emit
