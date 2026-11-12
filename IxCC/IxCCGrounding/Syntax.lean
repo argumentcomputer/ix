@@ -826,9 +826,7 @@ theorem recClassB_flat {p : Program} {env : KEnv} {κ : CId → KKey} {r : CId}
         simp only [Bool.and_eq_true, beq_iff_eq, List.all_eq_true] at hc
         obtain ⟨rfl, hall⟩ := hc
         refine ⟨hk, sf, kk, lvls, nmot, nmin, ind, rules, ty, hd, hn, fun rl hrl => ?_⟩
-        have h1 := hall rl hrl
-        simp only [Bool.and_eq_true, beq_iff_eq] at h1
-        obtain ⟨hf, hb⟩ := h1
+        obtain ⟨hf, hb⟩ := hall rl hrl
         refine ⟨hf, ?_⟩
         unfold bodyVarB at hb
         split at hb
