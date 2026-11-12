@@ -23,6 +23,7 @@ pub mod lazy;
 pub mod map;
 pub mod merkle;
 pub mod metadata;
+pub mod modes;
 pub mod proof;
 pub mod role_table;
 pub mod serialize;
@@ -54,6 +55,10 @@ pub use lazy::LazyConstant;
 pub use metadata::{
   ConstantMeta, DataValue, ExprMeta, ExprMetaData, KVMap, NameIndex,
   NameReverseIndex,
+};
+pub use modes::{
+  AllMode, AllocAssert, BinderMode, DefAsserts, FieldMode, FieldModes, LetMode,
+  ResultMode,
 };
 pub use proof::{
   Claim, ClaimContext, Proof, RevealConstantInfo, RevealConstructorInfo,
