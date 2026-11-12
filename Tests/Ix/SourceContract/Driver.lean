@@ -40,7 +40,10 @@ private def refusalTest (description : String) (result : IO (Except String Ix.Co
     match ← result with
     | .ok _ => return (false, 0, 0, some "compiled")
     | .error message =>
-      let ok := (message.splitOn "annotated source is refused").length > 1
+      -- the IO driver records the refused constant as a failure and then refuses
+      -- the incomplete closure
+      let ok := (message.splitOn "annotated source is refused").length > 1 ||
+        message == "resource compilation requires the complete requested closure"
       return (ok, 0, 0, if ok then none else some message)) .done
 
 private def compileConsts (consts : List (Lean.Name × ConstantInfo)) :

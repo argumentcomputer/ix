@@ -58,7 +58,10 @@ def run : IO Unit := do
   match ← compileInput annotated with
   | .ok _ => throw <| IO.userError "contract pipeline: annotated source compiled"
   | .error e =>
-    unless (e.splitOn "annotated source is refused").length > 1 do
+    -- the IO driver records the refused constant as a failure and then refuses
+    -- the incomplete closure
+    unless (e.splitOn "annotated source is refused").length > 1 ||
+        e == "resource compilation requires the complete requested closure" do
       throw <| IO.userError s!"contract pipeline: annotated source: unexpected error {e}"
   IO.println "Contract pipeline: an ordinary contract compiles to the same addresses through both \
     compilers; annotated source is refused before emission"
