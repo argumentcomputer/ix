@@ -229,7 +229,7 @@ def expr_lift_walk : SpecFn := fun c args h r h' calls =>
       c.tmk (d + s₂) Γ (ZMod.val cut + s₁) h' E r
 
 /-- `KernelSubst::expr_lift_bvar(i, shift, cutoff)`: the index `i`, lifted. -/
-def expr_lift_bvar : SpecFn := fun c args h r h' calls =>
+def expr_lift_bvar : SpecFn := fun c args _ r h' calls =>
   ∀ i s cut : F, args = [.field i, .field s, .field cut] → Good c calls →
     ZMod.val s < 4611686018427387904 →
     ∀ s₁ s₂, ZMod.val s = s₁ + s₂ → ∀ d Γ E, BVarIm d Γ (ZMod.val cut) (ZMod.val i) E →

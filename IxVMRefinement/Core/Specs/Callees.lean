@@ -307,20 +307,20 @@ def Fn.name : Fn → String
 
 /-- Each function's spec. -/
 def Fn.spec : Fn → SpecFn
-  | .get_ci => get_ci
-  | .get_ci_cprj => get_ci_cprj
-  | .get_ci_iprj => get_ci_iprj
-  | .load_verified_constant => load_verified_constant
-  | .build_recur_addrs => build_recur_addrs
-  | .rec_to_parent_addr => rec_to_parent_addr
-  | .projection_addr_ctor => projection_addr_ctor
-  | .put_constant => put_constant
-  | .bytes_to_addr => bytes_to_addr
-  | .block_is_multi => block_is_multi
-  | .block_is_modeled => block_is_modeled
-  | .proj_ctor => proj_ctor
-  | .defeq_list_ok => defeq_list_ok
-  | .fire_compare => fire_compare
-  | .fire_ok => fire_ok
+  | .get_ci => Specs.Callees.get_ci
+  | .get_ci_cprj => Specs.Callees.get_ci_cprj
+  | .get_ci_iprj => Specs.Callees.get_ci_iprj
+  | .load_verified_constant => Specs.Callees.load_verified_constant
+  | .build_recur_addrs => Specs.Callees.build_recur_addrs
+  | .rec_to_parent_addr => Specs.Callees.rec_to_parent_addr
+  | .projection_addr_ctor => Specs.Callees.projection_addr_ctor
+  | .put_constant => Specs.Callees.put_constant
+  | .bytes_to_addr => Specs.Callees.bytes_to_addr
+  | .block_is_multi => Specs.Callees.block_is_multi
+  | .block_is_modeled => Specs.Callees.block_is_modeled
+  | .proj_ctor => Specs.Callees.proj_ctor
+  | .defeq_list_ok => Specs.Callees.defeq_list_ok
+  | .fire_compare => Specs.Callees.fire_compare
+  | .fire_ok => Specs.Callees.fire_ok
 
 end IxVM.Refinement.Core.Specs.Callees
