@@ -482,22 +482,23 @@ example (bytes : ByteArray) (value : Ixon.Constant)
 
 end Tests.Ix.Kernel.Codec
 
-/-- Independently specified Ixon v4 expression bytes, every vector of
-`Tests/Fixtures/ixon-v4/expressions.txt`: the binder, result and let contract
-cases (all integers in rung 1, so byte-identical to Ixon v3), and the
+/-- Independently specified Ixon expression bytes, every vector of
+`Tests/Fixtures/ixon-v4/expressions.txt`: binder telescopes (domains only),
+let headers at every let mode (`nonDep + 2 ·` the mode's code), and the
 multi-byte TagN cases (the first and last value of every rung of `f = 4` and
 `f = 0`, a count of 8 and a rung-3 `Share`), checked for the codec's exact
 round trip. -/
 def upstreamV4Expressions : List (String × List UInt8) := [
   ("app", [0x73, 0x13, 0x12, 0x11, 0x10]),
-  ("lam", [0x83, 0x07, 0x00, 0x07, 0x00, 0x07, 0x00, 0x10]),
-  ("lam_local_unique", [0x81, 0x09, 0x00, 0x10]),
-  ("lam_affine_local", [0x81, 0x0e, 0x00, 0x10]),
-  ("all", [0x92, 0x29, 0x00, 0x17, 0x00, 0x10]),
-  ("ordinary_let", [0xa1, 0x00, 0x00, 0x61, 0x10]),
-  ("local_unique_let", [0xa0, 0x0a, 0x00, 0x11, 0x10]),
-  ("borrow", [0xa2, 0x0e, 0x00, 0x41, 0x02, 0x11, 0x10]),
-  ("borrow_nondep", [0xa3, 0x0f, 0x00, 0x11, 0x10]),
+  ("lam", [0x83, 0x00, 0x00, 0x00, 0x10]),
+  ("all", [0x92, 0x00, 0x00, 0x10]),
+  ("ordinary_let", [0xa1, 0x00, 0x61, 0x10]),
+  ("unique_let", [0xa4, 0x00, 0x11, 0x10]),
+  ("unique_borrowed_let_nondep", [0xa7, 0x00, 0x11, 0x10]),
+  ("once_let_nondep", [0xa8, 0x01, 0x00, 0x11, 0x10]),
+  ("erased_let", [0xa8, 0x04, 0x00, 0x11, 0x10]),
+  ("borrow", [0xa8, 0x06, 0x00, 0x41, 0x02, 0x11, 0x10]),
+  ("borrow_nondep", [0xa8, 0x07, 0x00, 0x11, 0x10]),
   ("reference", [0x20, 0x00]),
   ("recursion", [0x32, 0x02, 0x00, 0x01]),
   ("tagn4_rung1_last", [0x17]),
@@ -526,7 +527,7 @@ def upstreamV4Expressions : List (String × List UInt8) := [
   ("ref_univs_8", [0x28, 0x00, 0x00, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07]),
   ("share_rung3", [0xbc, 0x00, 0x00])]
 
-#guard upstreamV4Expressions.length == 36
+#guard upstreamV4Expressions.length == 37
 #guard upstreamV4Expressions.all fun (_, bytes) =>
   match Ixon.deExpr ⟨bytes.toArray⟩ with
   | .ok source => Ixon.serExpr source == ⟨bytes.toArray⟩
@@ -535,7 +536,7 @@ def upstreamV4Expressions : List (String × List UInt8) := [
 /-- The values the fixture's rung vectors encode, from its rung table:
 `tagn4_rungK_{first,last}` is `var` of the first and last value of rung `K`
 of `f = 4`, `tagn0_rungK_{first,last}` a `ref` whose index is that value for
-`f = 0`; and its last three vectors. -/
+`f = 0`; its count, universe and share vectors; and its binder and let vectors. -/
 def rungValue (f : Nat) (first : Bool) (rung : Nat) : UInt64 :=
   let ends := [0, Ixon.tagNEnd1 f, Ixon.tagNEnd2 f, Ixon.tagNEnd3 f, Ixon.tagNEnd4 f,
     Ixon.tagNEnd5 f, 2 ^ 64]
@@ -551,9 +552,18 @@ def upstreamV4Values : List (String × Ixon.Expr) :=
      (s!"tagn0_rung{rung}_last", .ref (rungValue 0 false rung) #[])]) ++
   [("app_telescope_8", (List.range 8).foldl (fun e i => .app e (.var (7 - i).toUInt64)) (.var 8)),
    ("ref_univs_8", .ref 0 #[0, 1, 2, 3, 4, 5, 6, 7]),
-   ("share_rung3", .share 1032)]
+   ("share_rung3", .share 1032),
+   ("lam", .lam (.sort 0) (.lam (.sort 0) (.lam (.sort 0) (.var 0)))),
+   ("all", .all (.sort 0) (.all (.sort 0) (.var 0))),
+   ("ordinary_let", .letE true (.value .many) (.sort 0) (.nat 1) (.var 0)),
+   ("unique_let", .letE false (.value .unique) (.sort 0) (.var 1) (.var 0)),
+   ("unique_borrowed_let_nondep", .letE true (.value .uniqueBorrowed) (.sort 0) (.var 1) (.var 0)),
+   ("once_let_nondep", .letE true (.value .once) (.sort 0) (.var 1) (.var 0)),
+   ("erased_let", .letE false (.value .erased) (.sort 0) (.var 1) (.var 0)),
+   ("borrow", .letE false .borrow (.sort 0) (.prj 2 1 (.var 1)) (.var 0)),
+   ("borrow_nondep", .letE true .borrow (.sort 0) (.var 1) (.var 0))]
 
-#guard upstreamV4Values.length == 25
+#guard upstreamV4Values.length == 34
 #guard upstreamV4Values.all fun (name, value) =>
   match upstreamV4Expressions.lookup name with
   | some bytes => match Ixon.deExpr ⟨bytes.toArray⟩ with
