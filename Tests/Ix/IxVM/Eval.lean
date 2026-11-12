@@ -285,6 +285,12 @@ def tests (r : Tests.Ix.IxVM.Runner) : IO Unit := do
       (← witness fixture subject idOutput) (some "result does not match")
     r.build <| execute s!"does not replace {label} by an equivalent proof"
       (← witness fixture subject { expected with refs := #[b] }) (some "result does not match")
+  -- The raw-output cases bypass the host's reading of the output only: the input and its
+  -- dependency carry their sections, as the compiler writes them, so a refusal is about
+  -- the output's bytes.
+  let (rawEnv, rawClaim, _) ← IO.ofExcept
+    (Tests.Ix.IxVM.withRecordSections env (.check evalCtx input none) {})
+  let .check _ rawInput _ := rawClaim | throw <| IO.userError "the input's claim changed kind"
   for (name, c) in [
       ("free variable", withValue idOutput (.var 0)),
       ("bad ref", withValue idOutput (.ref 0 #[])),
@@ -294,17 +300,17 @@ def tests (r : Tests.Ix.IxVM.Runner) : IO Unit := do
       ("free variable through sharing", { (withValue idOutput (.share 0)) with sharing := #[.var 0] }),
       ("output axiom", { idOutput with info := .axio ⟨false, 0, idType⟩ }),
       ("output projection", projection), ("output block", block)] do
-    r.build <| execute name (rawWitness env input (Ixon.ser c)) (some "")
+    r.build <| execute name (rawWitness rawEnv rawInput (Ixon.ser c)) (some "")
   -- the record with its section, as the compiler writes it, then one byte more: the case is
   -- about the trailing byte, not the binder data
-  let outputBytes := Ixon.ser (← IO.ofExcept (_root_.IxVM.RecordSections.withSection env idOutput))
+  let outputBytes := Ixon.ser (← IO.ofExcept (_root_.IxVM.RecordSections.withSection rawEnv idOutput))
   r.build <| execute "trailing output bytes"
-    (rawWitness env input (outputBytes.push 0)) (some "Ingress::load_verified_constant")
+    (rawWitness rawEnv rawInput (outputBytes.push 0)) (some "Ingress::load_verified_constant")
   for n in [:outputBytes.size] do
     r.build <| execute s!"truncated output at {n}"
-      (rawWitness env input (outputBytes.extract 0 n)) (some "")
-  let w ← witness env input idOutput
-  let cb := Ix.Claim.ser (.eval evalCtx input (Address.blake3 outputBytes) none)
+      (rawWitness rawEnv rawInput (outputBytes.extract 0 n)) (some "")
+  let w ← witness rawEnv rawInput idOutput
+  let cb := Ix.Claim.ser (.eval evalCtx rawInput (Address.blake3 outputBytes) none)
   for (label, bytes) in [
       ("wrong format", cb.set! 1 3), ("wrong validator", cb.set! 2 0),
       ("trailing claim bytes", cb.push 0)] do
@@ -312,7 +318,7 @@ def tests (r : Tests.Ix.IxVM.Runner) : IO Unit := do
     let io := w.inputIOBuffer.extend 0 digest (bytes.data.map .ofUInt8)
     r.build <| execute label { w with input := digest, inputIOBuffer := io } (some "")
   r.build <| execute "unauthenticated output bytes"
-    (rawWitness env input (Ixon.ser (withValue idOutput (.sort 0)))
+    (rawWitness rawEnv rawInput (Ixon.ser (withValue idOutput (.sort 0)))
       (some (Address.blake3 outputBytes))) (some "")
 
 -- Ordinary compiled Lean programs exercise primitive, recursor, constructor,
@@ -457,16 +463,13 @@ def compiledTests (leanEnv : Lean.Environment) (r : Tests.Ix.IxVM.Runner) : IO U
       r.build <| execute "wrong result with the same type"
         (← witness fixture input wrongObj) (some "result does not match")
 
+/-- The compile of `names`' closure with every inductive's recursors
+(`collectCertifiedClosure`): the binder-data annotator installs an inductive block
+only with its recursor, and over a closure without them (`Add`, `OfNat`, `PProd`, …)
+it leaves undecided data in every definition typed over such a block. -/
 private def compileClosure (leanEnv : Lean.Environment) (names : Array Lean.Name) :
-    IO Ix.CompileM.CompilePhases := do
-  let mut seen : Lean.NameSet := {}
-  let mut entries := #[]
-  for n in names ++ synthesizedPrimNames do
-    for entry in Lean.collectDependencies n leanEnv.constants do
-      unless seen.contains entry.1 do
-        seen := seen.insert entry.1
-        entries := entries.push entry
-  Ix.CompileM.compilePhasesOf leanEnv entries.toList
+    IO Ix.CompileM.CompilePhases :=
+  Ix.CompileM.compilePhasesOf leanEnv (collectCertifiedClosure (names ++ synthesizedPrimNames) leanEnv)
 
 private def compiledOutput (base : Ix.CompileM.CompileEnv) (env : Ixon.Env)
     (lvls : List Lean.Name) (ty value : Lean.Expr) : IO (Ixon.Env × Ixon.Constant) := do
