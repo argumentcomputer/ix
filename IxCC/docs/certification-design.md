@@ -80,7 +80,15 @@ Three facts follow, each a reason for the plan's order.
 - **The escape is the certificate's.** No theorem says that any check
   excludes `GoesWrong`, and a dishonest certificate can make SrcEval stuck or
   make it return a value the view rejects. A reviewer's probe did the second
-  before `checkCanonical` ran on every program. So "the object returned
+  before `checkCanonical` ran on every program. Until 2026-11-12 an honest
+  certificate could too: a kernel-accepted artifact whose casesOn-shaped
+  definition writes `0` on a minor made SrcEval return an irrelevant value,
+  and the object a wrong constructor, under the kernel annotator's own
+  annotation; `checkCanonical` now refuses it (the invariant in [compiler
+  design](compiler-design.md#relevance-and-erasure), "What a caller drops,
+  the callee never reads"). `ixcc` itself never runs SrcEval: the object
+  returns, and an `--exe` executable prints, whatever the object computes, and
+  nothing in either distinguishes a source that goes wrong. So "the object returned
   `true`" tells a consumer nothing unless `¬GoesWrong` is known some other
   way, today only by running SrcEval to completion (`sound_of_eval`).
 - **Typing comes from the certified kernel, and is not yet premise (i).** Since

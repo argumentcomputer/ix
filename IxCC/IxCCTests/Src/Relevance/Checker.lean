@@ -1,5 +1,6 @@
 import IxCCTests.Src.Support
 import IxCC.Src.Relevance.Check
+import IxCC.Lam.Erase.Term
 
 /-! The relevance checker's rules on synthetic programs: an accepted baseline, and one violation per
 rule, each rejected with that rule's code; then the level-exact rules (D18): each decided at the
@@ -8,6 +9,12 @@ instance's universe profile, with one constant reached at two profiles. -/
 namespace IxCCTests.Src.Relevance.Checker
 
 open IxCC IxCC.Src IxCC.Src.Relevance IxCCTests.Src
+
+/-- What a special head reads, as `checkCanonical` decides it (`headReadsWith`), is erasure's
+`Lam.Erase.headReads`: this does not build if the two differ. -/
+example (I : IxCC.Lam.Erase.Input) (h : Head) (i : Nat) :
+    IxCC.Lam.Erase.headReads I h i = Check.Canonical.headReadsWith I.decl? I.resolve.get? h i := by
+  cases h <;> rfl
 
 /-- The base program plus the given definitions and one root definition
 (the last constant). -/
@@ -262,6 +269,141 @@ def regressions (a : Assert) : IO Unit := do
   expect a (!(checkCanonical pUnres annUnres chUnres).isEmpty)
     "N2: unresolved result sort with non-.rel result rejected by checkCanonical"
 
+/-- A program for the header agreement cases, with its annotation. -/
+structure HeaderCase where
+  p : Program
+  ann : Ann
+  f : CId
+  main : CId
+  c₂ : CId
+
+/-- An enumeration `E` with constructors `c₀ c₁ c₂`, `idc (c : E) : E := c`,
+`k (a b : E) : E := a`, `f : (0 x : E) → E → E := fValue E idc k`, and the root
+`main : E := f c₁ c₂`, whose first argument is dropped, as is every argument of
+a parameter written erased. The annotation is the annotator's (`f`'s parameters
+a proof, then relevant), with the tags of the terms as written. -/
+def headerCase (fValue : Term → CId → CId → Term) : HeaderCase := Id.run do
+  let eT : Term := .const 0 []
+  let mut bld : Builder := {}
+  let (b1, e) := bld.add (.induct true 0 0 0 (.sort (.succ .zero)) [])
+  bld := b1
+  let mut cs : Array CId := #[]
+  for i in [0:3] do
+    let (b1, k) := bld.add (.ctor true 0 e i 0 0 eT)
+    bld := b1
+    cs := cs.push k
+  bld := bld.setDecl e (.induct true 0 0 0 (.sort (.succ .zero)) cs.toList)
+  let (b1, idc) := bld.add (.defn .defn .safe 0 (.pi {} {} eT eT) (.lam {} eT (.var 0)))
+  bld := b1
+  let (b1, k) := bld.add (.defn .defn .safe 0 (.pi {} {} eT (.pi {} {} eT eT))
+    (.lam {} eT (.lam {} eT (.var 1))))
+  bld := b1
+  let fTy : Term := .pi { contract := .erased } {} eT (.pi {} {} eT eT)
+  let (b1, f) := bld.add (.defn .defn .safe 0 fTy (fValue eT idc k))
+  bld := b1
+  let (b1, main) := bld.add (.defn .defn .safe 0 eT
+    (appM (.const f []) [(.const cs[1]! [], .irr), (.const cs[2]! [], .strict)]))
+  bld := b1
+  let p := bld.program #[main]
+  let consts : List (CId × ConstRel) :=
+    [(e, { result := .type, params := [] }), (idc, { result := .rel, params := [.rel] }),
+     (k, { result := .rel, params := [.rel, .rel] }),
+     (f, { result := .rel, params := [Rel.prf, .rel] }), (main, { result := .rel, params := [] })] ++
+    cs.toList.map fun c => (c, { result := .rel, params := [] })
+  let ann : Ann := {
+    consts := NatMap.ofList consts
+    ctors := NatMap.ofList (cs.toList.map fun c => (c, { fields := [] }))
+    nodes := [idc, k, f, main].filterMap fun c => (p.termOf (.value c)).map fun t => (.value c, t.tagOrder) }
+  return { p, ann, f, main, c₂ := cs[2]! }
+
+/-- `checkCanonical` compares a run body with its constant's header exactly: the
+body's leading λs must cover every parameter written erased, with the
+parameter's class at each. The counter-instance is `f := k`, η-short under the
+erased parameter: tiers S and C accept it, and without this comparison SrcEval
+runs `main` to an irrelevant value and the compiled object returns `c₀` (the
+box word read at `E`) where the meaning is `k c₁ c₂ = c₁`. Its honest twin binds
+the erased parameter; a body whose λ over it is relevant, and the literal
+η-expansion of the counter-instance, are refused. -/
+def headerAgreement (a : Assert) : IO Unit := do
+  let ePrf : Binder := { contract := .erased, rel := Rel.prf }
+  let recheck (label : String) (hc : HeaderCase) : IO (Except IxCC.Src.Recheck.Error (Program × Checked)) := do
+    expect a (check hc.p hc.ann matches .ok _) s!"{label}: tiers S and C refuse it"
+    return IxCC.Src.Recheck.annotation hc.p hc.ann
+  -- The honest twin: the erased parameter is a λ of the body, η-short only under the relevant one.
+  let twin := headerCase fun eT idc _ => .lam ePrf eT (.const idc [])
+  match ← recheck "twin" twin with
+  | .ok (src, _) =>
+    expect a (outcome (IxCC.Src.run src 10000 twin.main []) == s!"ok con {twin.c₂}/0")
+      "twin: main does not run to c₂"
+  | .error _ => expect a false "twin: refused by Src.Recheck.annotation"
+  -- The counter-instance, refused naming the definition and the parameter.
+  let short := headerCase fun _ _ k => .const k []
+  match ← recheck "η-short" short with
+  | .error (.relevance errs) =>
+    expect a (errs.toList.any fun e => e.rule == "S1" && e.key == some (.value short.f) &&
+        (e.render short.p).contains s!"in the value of {short.p.short short.f}" &&
+        (e.render short.p).contains "parameter 0 is written erased")
+      s!"η-short: refused without naming f and parameter 0: {errs.toList.map (·.render short.p)}"
+  | _ => expect a false "η-short: accepted by Src.Recheck.annotation"
+  match IxCCTests.Src.annotationNoCanonical short.p short.ann with
+  | .ok (src, _) =>
+    expect a (outcome (IxCC.Src.run src 10000 short.main []) == "ok irr")
+      "η-short without checkCanonical: main does not run to an irrelevant value"
+  | .error _ => expect a false "η-short: refused by tiers S and C"
+  -- A wrong class at a covered position: the λ over the erased parameter relevant.
+  let wrong := headerCase fun eT idc _ => .lam {} eT (.const idc [])
+  match ← recheck "wrong class" wrong with
+  | .error (.relevance errs) =>
+    expect a (errs.toList.any fun e => (e.render wrong.p).contains "λ 0 is relevant")
+      s!"wrong class: refused without naming λ 0: {errs.toList.map (·.render wrong.p)}"
+  | _ => expect a false "wrong class: accepted by Src.Recheck.annotation"
+  -- The literal η-expansion of the counter-instance uses the erased binder (C1).
+  let literal := headerCase fun eT _ k => .lam ePrf eT (.app (.const k []) (.var 0) .strict .rel)
+  expectRule a literal.p literal.ann "C1" "the literal η-expansion of the counter-instance"
+
+/-- A primitive or word entry reads every argument, so a constant resolved to one must write
+none erased (`checkCanonical`'s `readsErased?`; `okPrim` refuses the record too). The program:
+`Nat` with `zero` and `succ`, `op : (x : Nat) → Nat → Nat` (its first parameter written `0` or
+not) resolved to `entry`, and the root `main : Nat := op 2 3`. -/
+def headReadsCase (entry : Resolve) (erased : Bool) : Program × Ann × Checked × CId := Id.run do
+  let mut bld : Builder := {}
+  let (b1, nat) := bld.add (.induct true 0 0 0 (.sort (.succ .zero)) [])
+  bld := b1
+  let natT : Term := .const nat []
+  let (b1, zero) := bld.add (.ctor true 0 nat 0 0 0 natT)
+  bld := b1
+  let (b1, succ) := bld.add (.ctor true 0 nat 1 0 1 (.pi {} {} natT natT))
+  bld := b1
+  bld := bld.setDecl nat (.induct true 0 0 0 (.sort (.succ .zero)) [zero, succ])
+  let b0 : Binder := if erased then { contract := .erased } else {}
+  let (b1, op) := bld.add (.defn .defn .safe 0 (.pi b0 {} natT (.pi {} {} natT natT)) (lams 2 (.natLit 0)))
+  bld := { b1 with resolve := b1.resolve.set! op (some entry) }
+  let r0 : Rel := if erased then Rel.prf else .rel
+  let mainV := appM (.const op []) [(.natLit 2, if erased then .irr else .strict), (.natLit 3, .strict)]
+  let (b1, main) := bld.add (.defn .defn .safe 0 natT mainV)
+  bld := b1
+  let p := bld.program #[main]
+  let ann : Ann := {
+    consts := NatMap.ofList [(nat, { result := .type, params := [] }), (zero, { result := .rel, params := [] }),
+      (succ, { result := .rel, params := [.rel] }), (op, { result := .rel, params := [r0, .rel] }),
+      (main, { result := .rel, params := [] })]
+    ctors := NatMap.ofList [(zero, { fields := [] }), (succ, { fields := [.keep] })]
+    nodes := [(.value main, mainV.tagOrder)] }
+  let ch : Checked := { consts := ann.consts, ctors := ann.ctors, keys := [.value main],
+                        reached := [main, op], instances := [] }
+  return (p, ann, ch, op)
+
+def specialHeadReads (a : Assert) : IO Unit := do
+  for (entry, what) in [(Resolve.prim .add, "the primitive Nat.add"),
+      (.word .w64 .add 0, s!"the word operation {WordOp.leanName .w64 .add}")] do
+    let (p, ann, ch, _) := headReadsCase entry false
+    expect a (checkCanonical p ann ch).isEmpty s!"{what}, nothing erased: refused"
+    let (p, ann, ch, op) := headReadsCase entry true
+    let shown := (checkCanonical p ann ch).map (·.render p)
+    expect a (shown.any fun m => m.contains s!"({p.short op})" &&
+        m.contains s!"parameter 0 is written erased, but {what} reads it")
+      s!"{what} with parameter 0 written erased: {shown}"
+
 def run (a : Assert) : IO Unit := do
   -- Baseline: λ x. add x (succ x).
   let b := base.2
@@ -330,5 +472,7 @@ def run (a : Assert) : IO Unit := do
   | .error es => expect a false s!"irrelevant reference: {es.map (·.rule)}"
   levelExact a
   regressions a
+  headerAgreement a
+  specialHeadReads a
 
 end IxCCTests.Src.Relevance.Checker

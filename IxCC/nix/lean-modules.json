@@ -266,7 +266,10 @@
    "imports": ["IxCCTests.Src.Relevance.Run"]},
   "IxCCTests.Src.Relevance.Checker":
   {"path": "IxCCTests/Src/Relevance/Checker.lean",
-   "imports": ["IxCCTests.Src.Support", "IxCC.Src.Relevance.Check"]},
+   "imports":
+   ["IxCCTests.Src.Support",
+    "IxCC.Src.Relevance.Check",
+    "IxCC.Lam.Erase.Term"]},
   "IxCCTests.Src.Relevance.Census":
   {"path": "IxCCTests/Src/Relevance/Census.lean",
    "imports": ["IxCCTests.Src.Support", "IxCC.Tools.Check"]},
@@ -530,7 +533,8 @@
     "IxCCTests.Recheck.Perf",
     "IxCCTests.Recheck.Producer",
     "IxCCTests.Recheck.RootShape",
-    "IxCCTests.Recheck.Bound"]},
+    "IxCCTests.Recheck.Bound",
+    "IxCCTests.Recheck.Erased"]},
   "IxCCTests.Recheck.RootShape":
   {"path": "IxCCTests/Recheck/RootShape.lean",
    "imports":
@@ -667,6 +671,9 @@
     "IxCC.Anf.Semantics",
     "IxCCTests.Support.Bound",
     "IxCCTests.Src.Support"]},
+  "IxCCTests.Recheck.Erased":
+  {"path": "IxCCTests/Recheck/Erased.lean",
+   "imports": ["IxCCTests.Recheck.Hostile"]},
   "IxCCTests.Recheck.Deep":
   {"path": "IxCCTests/Recheck/Deep.lean",
    "imports": ["IxCCTests.Recheck.Hostile"]},
@@ -5144,7 +5151,8 @@
    "imports": ["IxCC.Src.Relevance.Proof.Terms", "IxCC.Src.Proof.NatMap"]},
   "IxCC.Src.Relevance.Check":
   {"path": "IxCC/Src/Relevance/Check.lean",
-   "imports": ["IxCC.Src.Relevance.Syntax", "IxCC.Src.NatMap"]},
+   "imports":
+   ["IxCC.Src.Relevance.Syntax", "IxCC.Src.NatMap", "IxCC.Src.Value"]},
   "IxCC.Src.Recheck":
   {"path": "IxCC/Src/Recheck.lean",
    "imports":

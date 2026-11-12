@@ -1847,7 +1847,7 @@
  "74f7cb9d0657e80e780d5c545287a2af197a92b5ab4ad2ae8bc7ba3974916be0",
  "grounding_axiom_count": 161,
  "baseline":
- "G3 part E: the class noParams admitted; F2 there proved (IxCCGrounding.RecRun, IxCCGrounding.Facts); grounding fence 161 with noWord_of; merged with c2943efb7",
+ "C2PRE: what a caller drops, the callee never reads (checks and tests; no fence changed); merged with 098d839c8",
  "axiom_sha256":
  "c0ed774830aff9db7ba0a6af6b4ebbe6a036ce9911d984bdddea3f268d723354",
  "axiom_count": 6587}
