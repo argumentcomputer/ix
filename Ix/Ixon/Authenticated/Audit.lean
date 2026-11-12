@@ -113,9 +113,13 @@ end Ixon.Authenticated.Audit
 -- (`fieldKind`, `fieldNorm`, `substMembers`, `ihBinder`) and the reader's K check on a nested
 -- block add 21 compiled functions. Externs, implemented_by, unsafe, csimp and all ruling
 -- counts are unchanged.
+-- The Ixon v5 binder-data section (its parser and the local canonical check that
+-- `Admission.decodeRecords` runs on every record) adds 38 compiled functions, as for
+-- `Admission.checkBytes` (`IxC/Kernel/Admission/Audit.lean`). Externs, implemented_by,
+-- unsafe, csimp and all ruling counts are unchanged.
 /-- info: runtime closure of [Ixon.Authenticated.checkBytes,
  Ixon.Authenticated.checkBytesProjection,
- Address.admissionHash]: 6987 compiled functions; inherited externs 116, implemented_by 1, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 28 -/
+ Address.admissionHash]: 7025 compiled functions; inherited externs 116, implemented_by 1, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 28 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.Authenticated.Audit.operations #[`Init, `Std] Ixon.Authenticated.Audit.rulings
 
@@ -273,7 +277,11 @@ and the prelude-copy check (`State.keepsPrelude` in `readStream`) from 6060, lik
 -- (`fieldKind`, `fieldNorm`, `substMembers`, `ihBinder`) and the reader's K check on a nested
 -- block add 21 compiled functions. Externs, implemented_by, unsafe, csimp and all ruling
 -- counts are unchanged.
-/-- info: runtime closure of [Ixon.Authenticated.checkBytesTiered]: 7069 compiled functions; inherited externs 116, implemented_by 0, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 28 -/
+-- The Ixon v5 binder-data section (its parser and the local canonical check that
+-- `Admission.decodeRecords` runs on every record) adds 38 compiled functions, as for
+-- `Admission.checkBytes` (`IxC/Kernel/Admission/Audit.lean`). Externs, implemented_by,
+-- unsafe, csimp and all ruling counts are unchanged.
+/-- info: runtime closure of [Ixon.Authenticated.checkBytesTiered]: 7107 compiled functions; inherited externs 116, implemented_by 0, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 28 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ixon.Authenticated.checkBytesTiered] #[`Init, `Std] Ixon.Authenticated.Audit.rulings
 
