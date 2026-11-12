@@ -159,7 +159,7 @@ theorem payload_defns : ∀ (defs : List Ix.Def) (ps : List Ixon.MutConst),
 theorem defns_of_erase : ∀ (ms : List Ixon.MutConst) (qs : List Ixon.Definition),
     ms.map SharingRoots.eraseMut = qs.map (fun q => SharingRoots.eraseMut (.defn q)) →
     ∃ ts : List Ixon.Definition, ms = ts.map .defn ∧
-      List.Forall₂ (fun t q => t.kind = q.kind ∧ t.safety = q.safety ∧ t.lvls = q.lvls) ts qs
+      List.Forall₂ (fun t q => t.kind = q.kind ∧ t.safety = q.safety ∧ t.asserts = q.asserts ∧ t.lvls = q.lvls) ts qs
   | [], [], _ => ⟨[], rfl, .nil⟩
   | m :: ms, q :: qs, h => by
     simp only [List.map_cons, List.cons.injEq] at h
@@ -169,7 +169,7 @@ theorem defns_of_erase : ∀ (ms : List Ixon.MutConst) (qs : List Ixon.Definitio
     | defn t =>
       simp only [SharingRoots.eraseMut, Ix.Sharing.Exact.mapMutConstRoots, Ixon.MutConst.defn.injEq,
         Ixon.Definition.mk.injEq] at h₁
-      exact ⟨t :: ts, rfl, .cons ⟨h₁.1, h₁.2.1, h₁.2.2.1⟩ hr⟩
+      exact ⟨t :: ts, rfl, .cons ⟨h₁.1, h₁.2.1, h₁.2.2.1, h₁.2.2.2.1⟩ hr⟩
     | indc i => simp [SharingRoots.eraseMut, Ix.Sharing.Exact.mapMutConstRoots] at h₁
     | recr r => simp [SharingRoots.eraseMut, Ix.Sharing.Exact.mapMutConstRoots] at h₁
   | [], _ :: _, h => by simp at h
@@ -243,7 +243,7 @@ theorem defsBlock_each (σOf : MutConst → Ix.Name → LevelParam) (context : C
   rw [SharingRoots.memberReader_read_same_tables _ { block with binders := #[] } block _ _ rfl rfl rfl] at reads
   -- the record's definitions keep the payloads' headers
   have hblock : ∃ ts : List Ixon.Definition, block.info = .muts (ts.map Ixon.MutConst.defn).toArray ∧
-      List.Forall₂ (fun t q => t.kind = q.kind ∧ t.safety = q.safety ∧ t.lvls = q.lvls) ts qs := by
+      List.Forall₂ (fun t q => t.kind = q.kind ∧ t.safety = q.safety ∧ t.asserts = q.asserts ∧ t.lvls = q.lvls) ts qs := by
     cases hinfo : block.info with
     | muts ms =>
       rw [hinfo] at erased
@@ -273,12 +273,12 @@ theorem defsBlock_each (σOf : MutConst → Ix.Name → LevelParam) (context : C
       simp only [SharingRoots.RootsRead, memberSources, mutConstRootExprs, List.forall₂_cons] at roots
       exact ⟨hp, lv d _ rfl rfl, roots.1, roots.2.1⟩) (forall₂_defns defs qs each)
   refine ⟨ts, hinfo, forall₂_imp (fun d t h => ?_) (forall₂_join each' (forall₂_and headers readsF))⟩
-  obtain ⟨q, ⟨hq, hlv, ⟨tT, rT, hT⟩, ⟨tV, rV, hV⟩⟩, ⟨hk, hs, hl⟩, eT, eV⟩ := h
+  obtain ⟨q, ⟨hq, hlv, ⟨tT, rT, hT⟩, ⟨tV, rV, hV⟩⟩, ⟨hk, hs, ha, hl⟩, eT, eV⟩ := h
   refine ⟨?_, by rw [hl]; exact hlv, ⟨tT, eT.trans hT, rT⟩, ⟨tV, eV.trans hV, rV⟩⟩
-  rw [hq] at hk hs hl
-  obtain ⟨kind, safety, lvls, typ, value⟩ := t
-  simp only [Emission.definitionPayload] at hk hs hl ⊢
-  rw [hk, hs, hl]
+  rw [hq] at hk hs ha hl
+  obtain ⟨kind, safety, asserts, lvls, typ, value⟩ := t
+  simp only [Emission.definitionPayload] at hk hs ha hl ⊢
+  rw [hk, hs, ha, hl]
 
 end Definitions
 

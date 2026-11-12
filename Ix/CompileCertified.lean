@@ -135,10 +135,10 @@ structure CertifiedOut where
   /-- The safe records the annotator gave an undecided binder (their member names). -/
   undecided : Array String := #[]
 
-/-- Whether the default role table binds the records the compiler writes. It binds the
-records of the compile without binder data; regenerating it from records with their
-binder data makes it current again. Until then the default-role check is not made. -/
-def defaultRoleTableCurrent : Bool := false
+/-- Whether the default role table binds the records the compiler writes: it binds the
+records of the compile with binder data (the table is generated from that compile), so
+the default-role check is made. -/
+def defaultRoleTableCurrent : Bool := true
 
 /-- **The certified compile of a prepared list**: its canonical environment
 (`canonInput`), then `Ix.Cert.compileReport`, then the accounting and, for an

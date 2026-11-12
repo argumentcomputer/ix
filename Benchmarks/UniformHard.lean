@@ -56,9 +56,9 @@ def headName : Ix.Sharing.Exact.Head → String
   | .str _ => "str"
   | .nat _ => "nat"
   | .app => "app"
-  | .lam _ => "lam"
-  | .all .. => "all"
-  | .letE _ => "let"
+  | .lam => "lam"
+  | .all => "all"
+  | .letE .. => "let"
 
 /-- The compiler's sharing limits (`Ix.CompileM.compilerSharingLimits`),
 under which the tiered runs measure the production construction. -/

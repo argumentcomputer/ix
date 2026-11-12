@@ -129,9 +129,9 @@ theorem withContract_good {Q : KeyScope .source} {c : Ix.SemanticContract.Contra
     {e : Ix.Expr} {x y : Ix.Kernel.Expr .source} (h : Ix.LeanIngress.withContract c e x = .ok y) :
     y.Good Q ↔ x.Good Q := by
   unfold Ix.LeanIngress.withContract at h
-  split at h <;> first
-    | (simp only [pure, Except.pure, Except.ok.injEq] at h; subst h; exact Iff.rfl)
-    | cases h
+  split at h
+  · cases h; exact Iff.rfl
+  · split at h <;> cases h
 
 /-- **A converted term is good when the ingress keys of the names its Lean term references
 are**. -/
