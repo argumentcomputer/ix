@@ -42,8 +42,13 @@ open IxCCTests.IxonV3.Builder (store arrow lambda)
 open IxCCTests.Support.Bound (loadBase addList addTree)
 
 /-- `step` applied `n` times to `inner`, stored as a chain of shares of at most
-200 steps each: the expression and its share table. -/
-def chain (step : X → X) (inner : X) (n : Nat) : Array X × X := Id.run do
+200 steps each (with `flat`, as one expression with no share): the expression and
+its share table. -/
+def chain (step : X → X) (inner : X) (n : Nat) (flat : Bool := false) : Array X × X := Id.run do
+  if flat then
+    let mut t := inner
+    for _ in [0:n] do t := step t
+    return (#[], t)
   let mut sh : Array X := #[]
   let mut cur := inner
   let mut remaining := n
@@ -55,45 +60,63 @@ def chain (step : X → X) (inner : X) (n : Nat) : Array X × X := Id.run do
   return (sh, cur)
 
 /-- `deep n`. -/
-def deepEnv (env0 : Env) (n : Nat) : Env × Addr := Id.run do
+def deepEnv (env0 : Env) (n : Nat) (flat : Bool := false) : Env × Addr := Id.run do
   let b := base env0 3
   let (e, l) := addList b.env b.enumI
   let listI := l.ind
   let nil := l.ctors[0]!
   let cons := l.ctors[1]!
   -- refs: 0 L, 1 cons, 2 nil, 3 c₀
-  let (sh, v) := chain (fun t => .app (.app (.ref 1 #[]) (.ref 3 #[])) t) (.ref 2 #[]) n
+  let (sh, v) := chain (fun t => .app (.app (.ref 1 #[]) (.ref 3 #[])) t) (.ref 2 #[]) n flat
   let (e, main) := store e ⟨defn (.ref 0 #[]) v, sh, #[listI, cons, nil, b.ctors[0]!], #[]⟩
   return (e, main)
 
 /-- `deepType n`. -/
-def deepTypeEnv (env0 : Env) (n : Nat) : Env × Addr := Id.run do
+def deepTypeEnv (env0 : Env) (n : Nat) (flat : Bool := false) : Env × Addr := Id.run do
   let b := base env0 3
   let (e, f) := store b.env ⟨defn (arrow (.sort 0) (.sort 0)) (lambda (.sort 0) (.var 0)), #[], #[],
     #[.succ .zero]⟩
   -- refs: 0 E, 1 F, 2 c₀
-  let (sh, ty) := chain (fun t => .app (.ref 1 #[]) t) (.ref 0 #[]) n
+  let (sh, ty) := chain (fun t => .app (.ref 1 #[]) t) (.ref 0 #[]) n flat
   let (e, main) := store e ⟨defn ty (.ref 2 #[]), sh, #[b.enumI, f, b.ctors[0]!], #[]⟩
   return (e, main)
 
 /-- `deepApp n`: `main : E := idc (idc (… c₁))`, `n` applications of the identity
 function deep. -/
-def deepAppEnv (env0 : Env) (n : Nat) : Env × Addr := Id.run do
+def deepAppEnv (env0 : Env) (n : Nat) (flat : Bool := false) : Env × Addr := Id.run do
   let b := base env0 3
   -- refs: 0 E, 1 idc, 2 c₁
-  let (sh, v) := chain (fun t => .app (.ref 1 #[]) t) (.ref 2 #[]) n
+  let (sh, v) := chain (fun t => .app (.ref 1 #[]) t) (.ref 2 #[]) n flat
   let (e, main) := store b.env ⟨defn (.ref 0 #[]) v, sh, #[b.enumI, b.idc, b.ctors[1]!], #[]⟩
   return (e, main)
 
 /-- `deepLet n`: `main : E := let x₀ : E := c₀; let x₁ : E := x₀; …; xₙ`, `n + 1`
 nested `let`s. -/
-def deepLetEnv (env0 : Env) (n : Nat) : Env × Addr := Id.run do
+def deepLetEnv (env0 : Env) (n : Nat) (flat : Bool := false) : Env × Addr := Id.run do
   let b := base env0 3
   let c : LetContract := { nonDep := false }
   -- refs: 0 E, 1 c₀
-  let (sh, v) := chain (fun t => .letE c (.ref 0 #[]) (.var 0) t) (.var 0) n
+  let (sh, v) := chain (fun t => .letE c (.ref 0 #[]) (.var 0) t) (.var 0) n flat
   let (e, main) := store b.env
     ⟨defn (.ref 0 #[]) (.letE c (.ref 0 #[]) (.ref 1 #[]) v), sh, #[b.enumI, b.ctors[0]!], #[]⟩
+  return (e, main)
+
+/-- `deepPi n`: `main : Type := E → E → … → E`, a telescope of `n` binders,
+`n + 1` deep. -/
+def deepPiEnv (env0 : Env) (n : Nat) (flat : Bool := false) : Env × Addr := Id.run do
+  let b := base env0 3
+  -- refs: 0 E; universes: 0 is `1`
+  let (sh, v) := chain (fun t => arrow (.ref 0 #[]) t) (.ref 0 #[]) n flat
+  let (e, main) := store b.env ⟨defn (.sort 0) v, sh, #[b.enumI], #[.succ .zero]⟩
+  return (e, main)
+
+/-- `deepLam n`: `main : E := (λ x : E. (λ x : E. … c₀) c₀) c₀`, `n` nested
+β-redexes, `2n + 1` deep (a λ under each application). -/
+def deepLamEnv (env0 : Env) (n : Nat) (flat : Bool := false) : Env × Addr := Id.run do
+  let b := base env0 3
+  -- refs: 0 E, 1 c₀
+  let (sh, v) := chain (fun t => .app (lambda (.ref 0 #[]) t) (.ref 1 #[])) (.ref 1 #[]) n flat
+  let (e, main) := store b.env ⟨defn (.ref 0 #[]) v, sh, #[b.enumI, b.ctors[0]!], #[]⟩
   return (e, main)
 
 /-- `many n`: `main : E := fₙ c₀` with `f₀ x := x` and `fᵢ₊₁ x := fᵢ x`, `n + 1`
@@ -192,6 +215,63 @@ def shapeEnv (env0 : Env) (name : String) (n : Nat) : Except String (Env × Addr
   | "deepLet" => .ok (deepLetEnv env0 n)
   | "many" => .ok (manyEnv env0 n)
   | _ => .error s!"unknown shape {name}"
+
+/-- The deep shapes, shared (`deep`, …) or flat (`flat:deep`, …: one
+expression `n` deep, no share), each optionally unreached (`unreached:…`: the
+deep constant stays in the closure, and the root is `top : E := c₀`, which
+reaches nothing of it). -/
+def hostileEnv (env0 : Env) (name : String) (n : Nat) : Except String (Env × Addr) := do
+  let (unreached, name) := match name.dropPrefix? "unreached:" with
+    | some rest => (true, rest.toString)
+    | none => (false, name)
+  let (flat, name) := match name.dropPrefix? "flat:" with
+    | some rest => (true, rest.toString)
+    | none => (false, name)
+  let (e, main) ← match name with
+    | "deep" => pure (deepEnv env0 n flat)
+    | "deepType" => pure (deepTypeEnv env0 n flat)
+    | "deepApp" => pure (deepAppEnv env0 n flat)
+    | "deepLet" => pure (deepLetEnv env0 n flat)
+    | "deepPi" => pure (deepPiEnv env0 n flat)
+    | "deepLam" => pure (deepLamEnv env0 n flat)
+    | _ => if flat then throw s!"no flat {name}" else shapeEnv env0 name n
+  if !unreached then return (e, main)
+  let b := base env0 3
+  -- refs: 0 E, 1 c₀
+  return store e ⟨defn (.ref 0 #[]) (.ref 1 #[]), #[], #[b.enumI, b.ctors[0]!], #[]⟩
+
+/-- `tests-recheck --write-hostile DIR SHAPE N`: `hostileEnv`'s bytes and
+sidecar as `DIR/hostile.ixe` and `DIR/hostile.equations.json`, built in this
+process (whose stack may be large) for `layers` to read in another. -/
+def writeHostile (dir : System.FilePath) (name : String) (n : Nat) : IO UInt32 := do
+  let env0 ← loadBase
+  let (e, main) ← IO.ofExcept (hostileEnv env0 name n)
+  IO.FS.createDirAll dir
+  IO.FS.writeBinFile (dir / "hostile.ixe") (bytes e)
+  IO.FS.writeFile (dir / "hostile.equations.json") (sidecar [("main", main)]).compress
+  return 0
+
+/-- `tests-recheck --layers IXE SIDECAR`: the envelope (`decodeAnonymousEnv`),
+the certified kernel's acceptance and ingress, one at a time, each line
+printed and flushed before the next starts, so that a run that aborts shows the
+layer it aborted in. -/
+def layers (ixe sidecarPath : System.FilePath) : IO UInt32 := do
+  let out ← IO.getStdout
+  let say := fun (s : String) => do out.putStrLn s; out.flush
+  let bs ← IO.FS.readBinFile ixe
+  let json ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile sidecarPath))
+  say s!"layers: {bs.size} bytes"
+  match V3.decodeAnonymousEnv bs with
+  | .error e => say s!"envelope refused: {e}"; return 0
+  | .ok env =>
+    say "envelope ok"
+    match Src.KernelFront.accept env with
+    | .error r => say s!"kernel refused: {r.render}"
+    | .ok _ => say "kernel ok"
+    match Recheck.ingress bs json [] with
+    | .error e => say s!"ingress refused: {e.render}"
+    | .ok inp => say s!"ingress ok: {inp.program.size} constants"
+    return 0
 
 /-- A certificate for a deep instance made without the annotator, as a
 claimant could make it: the annotation of a shallow instance (`n₀` deep)
@@ -695,6 +775,98 @@ def stackPart (a : Assert) : IO (Array String) := do
     expect a (if inL l "(at " then (inL l "check accepted" && inL l "inline walk accepted")
       else (inL l "inline walk refused" && inL l "walk: depth budget exhausted")) s!"inline copy: {l}"
   return lines.toArray
+
+/-! ## Deep records ahead of the kernel
+
+Ingress reads only the records the seeds reach, so a record no root reaches
+meets no IxCC budget but the envelope's; the certified kernel reads every
+record, recursing natively on its expressions with shares expanded. The
+envelope bounds that depth (`V3.withinKernelDepth`, `V3.kernelDepthLimit`).
+These inputs, built here (on this process's stack) and read in a child on an
+8 MiB and on a 2 MiB stack, must each end with a line, never an abort. -/
+
+/-- The hostile depth inputs: a record past the kernel's depth bound, shared
+(chains of shares) and flat (no share), unreached and reached, of up to 100,000
+levels (the flat ones only where the kernel's codec, which decodes before the
+bound is checked, survives a 2 MiB stack: 10,000); and every shape exactly at
+the bound and one level past it, unreached: at the bound it is read (the
+kernel's acceptance survives it on both stacks), past it refused. Each with
+whether the envelope admits it: the deepest expression, shares expanded, at
+most `kernelDepthLimit` (`deepApp`, `deepType` and `deepPi n` nest `n + 1`
+deep, `deep` and `deepLet n` nest `n + 2`, `deepLam n` nests `2n + 1`, odd, so
+one level under the bound). -/
+def depthInputs : List (String × Nat × Bool) :=
+  let L := V3.kernelDepthLimit
+  [("unreached:deepApp", L - 1, true), ("unreached:deepApp", L, false),
+   ("unreached:deep", L - 2, true), ("unreached:deep", L - 1, false),
+   ("unreached:deepType", L - 1, true), ("unreached:deepType", L, false),
+   ("unreached:deepLet", L - 2, true), ("unreached:deepLet", L - 1, false),
+   ("unreached:deepPi", L - 1, true), ("unreached:deepPi", L, false),
+   ("unreached:deepLam", (L - 1) / 2, true), ("unreached:deepLam", (L + 1) / 2, false),
+   ("unreached:flat:deepPi", L - 1, true), ("unreached:flat:deepLam", (L - 1) / 2, true),
+   ("unreached:deep", 10000, false), ("unreached:deep", 100000, false),
+   ("unreached:deepLet", 100000, false), ("unreached:deepType", 100000, false),
+   ("unreached:flat:deepApp", L, false), ("unreached:flat:deep", 10000, false),
+   ("unreached:flat:deepType", 10000, false), ("unreached:flat:deepLet", 10000, false),
+   ("deep", 100000, false), ("flat:deepApp", 10000, false)]
+
+/-- `tests-recheck --hostile-depth DIR`, run by `depthPart` on each stack: ingress on
+every input `depthInputs` wrote to `DIR` (`i.ixe`, `i.equations.json`), a line
+each, then a summary line. -/
+def depthChild (dir : System.FilePath) : IO UInt32 := do
+  let out ← IO.getStdout
+  for ((name, n, _), i) in depthInputs.zipIdx do
+    let bs ← IO.FS.readBinFile (dir / s!"{i}.ixe")
+    let json ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile (dir / s!"{i}.equations.json")))
+    let r := match Recheck.ingress bs json [] with
+      | .ok inp => s!"ingress ok, {inp.program.size} constants"
+      | .error e => s!"ingress refused: {e.render}"
+    out.putStrLn s!"depth {name} {n}: {r}"
+    out.flush
+  out.putStrLn s!"hostile-depth: {depthInputs.length} inputs"
+  return 0
+
+/-- `T : Sort n := Sort (n - 1)`: universes `n + 1` and `n` deep (successor
+chains), which the envelope does not bound in depth (IxCC never did). -/
+def deepUnivEnv (env0 : Env) (n : Nat) : Env × Addr :=
+  let u := fun k => Nat.repeat IxCC.Ixon.Univ.succ k IxCC.Ixon.Univ.zero
+  store env0 ⟨defn (.sort 0) (.sort 1), #[], #[], #[u n, u (n - 1)]⟩
+
+/-- Records past the kernel's depth bound, reached or not, shared or flat, are
+refused at `ingress: decode` by the envelope's bound on an 8 MiB and a 2 MiB
+stack, and every shape at the bound, unreached, is read. Universes are not bounded in
+depth: `T : Sort 2000` and `T : Sort 3000` (3,001 deep, which the bound refused
+before universes left it, as the tip did not) are read, on this process's
+stack. -/
+def depthPart (a : Assert) : IO (Array String) := IO.FS.withTempDir fun dir => do
+  let env0 ← loadBase
+  for n in [2000, 3000] do
+    let (e, main) := deepUnivEnv env0 n
+    match Recheck.ingress (bytes e) (sidecar [("main", main)]) [] with
+    | .ok _ => pure ()
+    | .error err => expect a false s!"T : Sort {n} (a universe {n + 1} deep): ingress refused: {err.render}"
+  for ((name, n, _), i) in depthInputs.zipIdx do
+    let (e, main) ← IO.ofExcept (hostileEnv env0 name n)
+    IO.FS.writeBinFile (dir / s!"{i}.ixe") (bytes e)
+    IO.FS.writeFile (dir / s!"{i}.equations.json") (sidecar [("main", main)]).compress
+  let mut all : Array String := #[]
+  for kb in ["8192", "2048"] do
+    let out ← IO.Process.output { cmd := (← IO.appPath).toString, args := #["--hostile-depth", dir.toString]
+                                  env := #[("LEAN_STACK_SIZE_KB", some kb)] }
+    expect a (out.exitCode == 0)
+      s!"tests-recheck --hostile-depth exited with {out.exitCode} on a {kb} KiB stack: {out.stderr}"
+    let lines := (out.stdout.splitOn "\n").filter (!·.isEmpty)
+    expect a (lines.getLast?.any (·.startsWith "hostile-depth:")) s!"hostile-depth on {kb} KiB: no summary"
+    for (name, n, admitted) in depthInputs do
+      let l := (lines.find? (·.startsWith s!"depth {name} {n}:")).getD ""
+      if admitted then
+        expect a ((l.splitOn "ingress ok").length > 1) s!"{name} {n} on {kb} KiB: not read: {l}"
+      else
+        expect a ((l.splitOn "ingress refused: ingress: decode").length > 1 &&
+            (l.splitOn "nests deeper than the kernel reads").length > 1)
+          s!"{name} {n} on {kb} KiB: not refused by the envelope's depth bound: {l}"
+    all := all ++ lines.map (s!"{kb} KiB: " ++ ·)
+  return all
 
 /-! ## Lam chains of one nesting constructor -/
 

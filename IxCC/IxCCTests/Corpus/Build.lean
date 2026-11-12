@@ -166,12 +166,14 @@ def freshWorkDir (base : FilePath) : IO FilePath := do
 def censusText (ixe : ByteArray) (equations : Json) : IO String := do
   return (IxCC.Tools.Census.report ixe (← IxCC.Tools.Census.names equations)).pretty ++ "\n"
 
-/-- Validate structural resource metadata against the entire authenticated
-closure, independently of roots and expected compiler declines: its constants
-read as ingress reads them (`Src.Ingress.readConsts`), with the pins of its
-role table as the certified kernel decodes it (`KernelFront.pinsOfTable`; the
-kernel's acceptance, which may decline the closure for reasons of its own, is
-not run here). An unbound closure, which no compile path reads, is refused. -/
+/-- Validate structural resource metadata against the authenticated closure,
+independently of the roots a compile chooses and of expected compiler
+declines: its constants read as ingress reads them (the records the whole
+sidecar reaches, `Src.Ingress.reach` from `Seeds.of`, then
+`Src.Ingress.readConsts`), with the pins of its role table as the certified
+kernel decodes it (`KernelFront.pinsOfTable`; the kernel's acceptance, which
+may decline the closure for reasons of its own, is not run here). An unbound
+closure, which no compile path reads, is refused. -/
 def checkResourceClosure (ixe : ByteArray) (eqs : Json) : IO Unit := do
   let context ← checked (IxCC.Src.Hints.resourceOfJson eqs)
   if context.isSome then
@@ -180,7 +182,10 @@ def checkResourceClosure (ixe : ByteArray) (eqs : Json) : IO Unit := do
       | throw (IO.userError "resource metadata on an unbound closure, which no compile path reads")
     let some table := Ix.Kernel.RoleTable.ofBytes b.bytes
       | throw (IO.userError "resource metadata: the role binding is not a role table")
-    let p ← checked (IxCC.Src.Ingress.readConsts env #[])
+    let hints ← checked (IxCC.Src.Hints.ofK1Json eqs)
+    let records ← checked (IxCC.Src.Ingress.reach env
+      (IxCC.Src.Ingress.Seeds.of hints (IxCC.Src.KernelFront.pinsOfTable table)))
+    let p ← checked (IxCC.Src.Ingress.readConsts env records #[])
     let p := { p with known := { pins := IxCC.Src.KernelFront.pinsOfTable table } }
     let p := { p with known := IxCC.Src.Pinned.known p, resource := context }
     checked (IxCC.Src.Resource.validate p)
@@ -335,10 +340,12 @@ def rebuildFixture (t : Tools) (m : Family) (f : Fixture) (log : IO.Ref (Array S
   IO.FS.createDirAll dir
   let eqText := sidecar.render
   let ixeBytes ← IO.FS.readBinFile anonIxe
-  -- A census reports decoding failures as data. Refreezing rejects them,
-  -- except in a fixture whose every root the manifest expects declined at
-  -- `ingress: decode` (a decoder budget's boundary, `phase1-boundary`). Every
-  -- closure is role-bound.
+  -- A census reports decoding failures as data. Refreezing rejects an
+  -- envelope that does not decode, except in a fixture whose every root the
+  -- manifest expects declined at `ingress: decode`. (A reached record over
+  -- IxCC's consumer budget, `phase1-boundary`'s `tags126` and `fields255`, is
+  -- refused per root by ingress, with that stage and code, and the envelope
+  -- decodes.) Every closure is role-bound.
   need (ixeBytes.size > 0 && ixeBytes[0]! == 0xE5)
     s!"{f.name}: ix wrote an unbound closure (every fixture is role-bound)"
   match IxCC.Ixon.V3.decodeAnonymousEnv ixeBytes with

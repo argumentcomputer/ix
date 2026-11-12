@@ -23,7 +23,16 @@ whose module is outside ix's pure codec package):
   a section that is not a canonical, well-formed role table.
 
 Every count, length, hint delta and hint is a TagN(0) integer read by ix's
-codec, and constants are decoded by `decodeConstant` (ix's canonical decoder).
+codec, and every constant must decode by the kernel's canonical decoder
+(`Ixon.Canonical.deConstant`: its byte and universe-expansion budgets, the
+wire domain check, re-encoding to exactly the stored bytes) and nest no deeper
+than one record the kernel's reader and typing core were measured to walk
+(`withinKernelDepth`: its expressions with every share expanded, not its
+universes nor the terms the kernel builds while typing, at most
+`kernelDepthLimit`). IxCC's own consumer budget (`Constant.withinBudget`) is
+not applied here: ingress applies it to the records the seeds reach
+(`Src.Ingress.reach`, from `Src.Ingress.Seeds.of`), so a record none of those
+seeds reaches cannot refuse the artifact by IxCC's limits on what it reads.
 Every blob and constant must hash to its address, and the constant root must be
 the canonical Merkle root of the constant addresses, both with pure BLAKE3
 (`Address.blake3Pure`): ix's certified reader treats addresses as keys, so
@@ -130,8 +139,14 @@ def getObjectTable (constants : Bool) : EnvM (Array (Address × ByteArray)) := d
     let bytes ← _root_.Ixon.getBytes size
     unless Address.blake3Pure bytes == address do throw "ixon-v4: object hash mismatch"
     if constants then
-      match decodeConstant bytes with
-      | .ok _ => pure ()
+      -- the kernel's canonical decoder only: IxCC's consumer budget applies to
+      -- the records the seeds reach (`Src.Ingress.reach`)
+      match _root_.Ixon.Canonical.deConstant (1024 * 1024) univNodeLimit bytes with
+      | .ok c =>
+        -- what the kernel's reader and typing core walk (`withinKernelDepth`)
+        unless withinKernelDepth c do
+          throw s!"ixon-v4: record {address} nests deeper than the kernel reads \
+            ({kernelDepthLimit}, shares expanded)"
       | .error error => throw error
     result := result.push (address, bytes)
   return result

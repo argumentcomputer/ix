@@ -1836,7 +1836,7 @@
  "b5456c729984fc0b2a87a4011cfb011f916eebe9a30d7e4157299c64cf5e3006",
  "grounding_axiom_count": 139,
  "baseline":
- "heap stage 2, first landing: the ownership checker Own.Plain.checkOwned and its proofs (refinement, reclamation, canonical acceptance, the landed statements re-derived), 25 exact fences, tests-own-owned; merged with 83cd7d9e3",
+ "closure ingress: ingress reads only the records its seeds reach (Src.Ingress.reach, Program.byStatement), every record within the envelope's depth bound; IxCCTests.Recheck.Reach; merged with 2f0e523e2",
  "axiom_sha256":
  "8f3b878fc82eda8be41197e2a618e2b2e96db46f062babda809beebb70f37ef4",
  "axiom_count": 6532}

@@ -6,8 +6,9 @@ import IxCC.Ixon.V4.Convert
 /-! # IxCC's program against the kernel's reading
 
 The kernel front end keeps IxCC's own reading of the bytes into a
-`Src.Program` (`Src.Ingress.readConsts`: the same constants, `CId`s,
-declarations and terms as before), and checks it against the reading the
+`Src.Program` (`Src.Ingress.readConsts` of the records its seeds reach,
+`Src.Ingress.reach`: a subset of the records the kernel accepted, numbered
+over what is read), and checks it against the reading the
 kernel accepted (`Accepted.decls`, the declarations the verified fold ran
 over), so that every relevance question is asked about the kernel's own terms
 at the positions IxCC's terms occupy. This module holds the correspondence:

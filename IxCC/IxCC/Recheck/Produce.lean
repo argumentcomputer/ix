@@ -18,9 +18,10 @@ The untrusted half of the compiler (D17) and the whole compiler:
   `ixcc/k1-equations/1` sidecar (the roots chosen by name, and the
   table proposals), the certified kernel's acceptance of the whole
   role-bound environment (`Src.KernelFront.accept`, the kernel's tiered
-  entry: not optional, and an unbound environment is refused), ingress
-  into a `Src.Program` with the pinned identities of the kernel's admitted
-  role table, and the program read against the kernel's reading
+  entry: not optional, and an unbound environment is refused), ingress of
+  the records the seeds reach (`Src.Ingress.reach`) into a `Src.Program`
+  with the pinned identities of the kernel's admitted role table, and the
+  program read against the kernel's reading
   (`Src.KernelFront.Reading.build`);
 * `produce cfg input`: every search and oracle, natively and unconstrained
   (arrays, hash maps): `Table.build` on the sidecar's proposals, the
@@ -71,24 +72,30 @@ def selectRoots (roots : Array (Ixon.Address × Option String)) (names : List St
       throw { stage := .cli, code := "cli.root", message := s!"no root named {n} in the sidecar (it names {known})" }
   return out
 
-/-- **Ingress**: decode, choose the roots, the certified kernel's acceptance
-of the whole environment (refused with the kernel's reason and classification,
-code `kernel`; only role-bound environments are accepted), IxCC's reading into
-the table-free `Src.Program` for the chosen roots with the pinned identities of
-the kernel's admitted role table (`pinsOfTable`), the resource binding, and the
-program read against the kernel's reading (`Reading.build`, code
-`faithful`). -/
+/-- **Ingress**: decode the envelope, choose the roots, the certified kernel's
+acceptance of the whole environment (refused with the kernel's reason and
+classification, code `kernel`; only role-bound environments are accepted), the
+records the seeds reach (`Src.Ingress.reach` from the seeds of the whole
+sidecar and the kernel's admitted role table, `Seeds.of`; a reached record
+over IxCC's consumer budget is refused with code `decode`), IxCC's reading of
+them into the table-free `Src.Program` for the chosen roots with the pinned
+identities of the kernel's admitted role table (`pinsOfTable`), the resource
+binding, and the program read against the kernel's reading (`Reading.build`,
+code `faithful`). -/
 def ingress (bytes : ByteArray) (equations : Lean.Json) (roots : List String := []) :
     Except Err Input := do
   let env ← (V3.decodeAnonymousEnv bytes).mapError fun m => { stage := .ingress, code := "decode", message := m }
-  let hints ← (Src.Hints.ofK1Json equations).mapError fun m => { stage := .ingress, code := "hints", message := m }
-  let chosen ← selectRoots hints.roots roots
+  let sidecar ← (Src.Hints.ofK1Json equations).mapError fun m => { stage := .ingress, code := "hints", message := m }
+  let chosen ← selectRoots sidecar.roots roots
   if chosen.isEmpty then
     throw { stage := .ingress, code := "roots", message := "the sidecar names no root" }
-  let hints := { hints with roots := chosen }
+  let hints := { sidecar with roots := chosen }
   let acc ← (Src.KernelFront.accept env).mapError fun r =>
     { stage := .ingress, code := "kernel", message := r.report }
-  let p ← (Src.Ingress.readConsts env (chosen.map (·.1))).mapError fun m =>
+  let records ← (Src.Ingress.reach env (Src.Ingress.Seeds.of sidecar
+      (Src.KernelFront.pinsOfTable acc.table))).mapError fun m =>
+    { stage := .ingress, code := "decode", message := m }
+  let p ← (Src.Ingress.readConsts env records (chosen.map (·.1))).mapError fun m =>
     { stage := .ingress, code := "ingress", message := m }
   let p := { p with known := { pins := Src.KernelFront.pinsOfTable acc.table } }
   let p := { p with known := Src.Pinned.known p, resource := hints.resource }

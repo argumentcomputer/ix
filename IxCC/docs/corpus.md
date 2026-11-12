@@ -132,10 +132,11 @@ on every case.
 (`ix compile --no-build --consts ROOTS --equations [--anon]`: the role-bound
 envelope, `ix compile`'s output), checks that their equation lists agree,
 resolves every root, definition and equation name with `ix addr-of` against
-the twin, and writes the sidecar and census. A closure that does not decode is
-refused unless the manifest expects every root of the fixture declined at
-`ingress: decode` (`phase1-boundary`'s `fields50` and `tags126`, at the
-decoder's depth budget). It draws the generated cases, runs every case through
+the twin, and writes the sidecar and census. A closure whose envelope does not
+decode is refused unless the manifest expects every root of the fixture
+declined at `ingress: decode`. (A root that reaches a record over IxCC's
+consumer budget, `phase1-boundary`'s `fields255` and `tags126`, is declined at
+`ingress: decode` by ingress; its envelope decodes.) It draws the generated cases, runs every case through
 `lean -Dlinter.all=false --run`, checks the constants, and rewrites the
 derived fields, the producer record among them. Files that do not change are
 not rewritten; the log says which did. ix asks `lake env` for `LEAN_PATH`, so
@@ -299,9 +300,13 @@ that differs, and scans the committed tree for commits and absolute paths in
 the fixtures, manifests, READMEs and generated modules (`tools/citations.sh
 --fixtures`); it exits 0 only when nothing differs and nothing is cited. If
 the tables differ it stops there (the tools built from the checkout would be
-stale): regenerate in place. On a 64-core machine it takes about 12 minutes
-in place (2026-11-11, after the switch to the kernel front end), nearly all of
-it the families.
+stale): regenerate in place. On a 64-core machine shared with other jobs it
+takes about 13 minutes in place and 13 with `--check` (2026-11-12: 791 and 784
+seconds, the families 516 and 488 of them). The slowest family is
+`phase1-boundary` (seven fixtures in sequence, each compiled twice by `ix` and
+interpreted once); its sources turn off what costs `ix` minutes at the field
+limit (`genInjectivity`, `phase1-boundary/README.md`), without which the run
+took 56 minutes.
 
 Not regenerated, and why: the vendored Aiur snapshot and its reference
 exports (not written by `ix`), and `fixtures/ixon-v4/bench-k1/steps.json` (a

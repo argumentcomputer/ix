@@ -143,8 +143,13 @@ reachable from `S`). The statements take two hypotheses:
    table](#the-law-table) in every set theory.
 2. **Faithfulness and typing.** `P` satisfies the faithfulness clauses with
    respect to `E`: it is the installed and lazified program read from the
-   same records, each Src term corresponding node for node to the kernel
-   reader's term (`let`s kept) whose annotation `E` stores; its `eqn` and
+   records its seeds reach (below), a theorem's proof read only where an
+   equation theorem's closure reaches it (any other theorem is read by its
+   statement, `Src.Program.byStatement`: its type, not its proof; nothing
+   about such a proof's content is used or claimed by IxCC, and its validity
+   is the kernel's acceptance of the whole artifact), each Src term it reads
+   corresponding node for node to the kernel reader's term (`let`s kept)
+   whose annotation `E` stores; its `eqn` and
    `csimp` entries name theorems of `E` with the right statements; its
    relevance annotation is the one the kernel's typing judgement gives (every
    position tagged irrelevant is a type or a proof at its profile, and every
@@ -153,6 +158,41 @@ reachable from `S`). The statements take two hypotheses:
    value, rule right-hand side and equation SrcEval runs has a typing
    derivation in `E` in the kernel's rules (`Infer`, `DefEq`, `Red`,
    [`IxCK/Kernel/Rules/Rel.lean`](../../IxCK/Kernel/Rules/Rel.lean)).
+
+What `P` is read from (since 2026-11-12): ingress reads the records its seeds
+reach, the seeds being every root the sidecar names, the constants the role
+table binds to the identities IxCC pins, the resource context's addresses, and
+the equation theorems the unfolding table may examine, whose closures it reads
+with their proofs; any other theorem it reaches is read by its statement. Those
+seeds can reach records outside the closure of `S` (another root's, a pin's), as
+they could when ingress read every record; the clauses concern the constants
+of `P` that `S` reaches. Premise (i) covers `E`, proofs included (the kernel
+checks them); premise (ii) covers what `P` reads. A proof read by statement is
+examined by neither through IxCC: its validity is the kernel's acceptance of the
+whole artifact, and premise (i)'s where its theorem is in the closure of `S`.
+
+The table's checks rest on one property of that reading: **everything a proof
+seed reaches is read with proofs** (an `eqn` or `csimp` theorem's proof closure
+holds no theorem read by its statement). `Table.checkEqn` and `checkCsimp`
+refuse a theorem read by its statement, and the axiom-closure walk refuses one
+at every step, so the walk's guarantee (`checkAxiomClosure_sound`) is about
+proofs that were read. But `checkAxiomClosure`'s shortcut (every axiom of `P`
+standard, so no walk) looks only at the theorem it is asked about, not at what
+its proof reaches, and since `P` holds only what was read, an axiom used only
+inside an unread proof is not among `P`'s axioms. The shortcut is sound for a
+theorem read with its proof because of the property above, which is an
+invariant of `Src.Ingress.reach` (a record reached with proofs pushes every
+reference with proofs, and a record read by statement first is read again with
+proofs when a proof seed reaches it) that is **tested, not proved**
+(`tests-recheck`, `Reach.proofs` and `Reach.reread`). The kernel's acceptance
+also declines non-standard axioms anywhere in the artifact. Proving it would
+mean stating `reach`'s result as the least set closed under its edges, with the
+read-with-proofs set closed under every reference: a loop invariant of the
+worklist (`reach` is an imperative `while` over hash maps, so first a
+functional restatement or a fuel-indexed recursion, then lemmas on
+`Std.HashMap` insert/lookup and on `edges`), on the order of a few days'
+proof work; or replacing the shortcut by the walk, which costs a walk of each
+table theorem's proof closure on every compile and every verification.
 
 IxCC's obligations are then two theorems, kept apart because their
 consumers differ: **soundness** (if SrcEval returns `v` for `c` on literal
@@ -972,7 +1012,10 @@ load (the families `bench-k1`, `grounding`, `phase1-scalar`, `phase1-boundary`,
 `phase1-machines` and `phase2-arity`, the fourteen `ownership` closures and
 `src-diag/diag`; five do not load: `typeFormerPolymorphism` and `src-sortpoly`,
 whose annotation is refused, `fields50` and `tags126`, past the decoder's depth
-budget, and `src-diag/sorry`, which the kernel declines), each with `Sl` built as
+budget when ingress read every record (since 2026-11-12 ingress reads what the
+root reaches: `fields254`, which replaced `fields50`, loads, and `tags126`'s root
+still reaches a record past the budget), and `src-diag/sorry`, which the kernel
+declines), each with `Sl` built as
 `tests-grounding` builds it. Of 14,990 application sites (20,363 site-profile
 instances) the direct route discharges 14,969 (20,322) and refuses 21. Against
 the route as widened (G2b), position by position: 248 sites gained (247 in

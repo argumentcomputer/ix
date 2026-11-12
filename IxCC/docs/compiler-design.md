@@ -710,8 +710,8 @@ checked against the admitted closure.
 
 | Entry | Meaning |
 | --- | --- |
-| `eqn f thm` | Unfold `f` through a kernel-accepted `thm : ∀ xs, f xs = rhs`, usually `f.eq_def`. Structural, well-founded, mutual and `partial_fixpoint` recursion then compile as direct recursion. |
-| `csimp f g thm` | Use `g` for `f` through a kernel-accepted `thm : @f = @g`. |
+| `eqn f thm` | Unfold `f` through a kernel-accepted `thm : ∀ xs, f xs = rhs`, usually `f.eq_def`. Structural, well-founded, mutual and `partial_fixpoint` recursion then compile as direct recursion. `thm` must be read with its proof: a theorem a sidecar proposal names for a reached `f` (ingress reads any other theorem by its statement, and `Table.checkEqn` refuses it). |
+| `csimp f g thm` | Use `g` for `f` through a kernel-accepted `thm : @f = @g`. As for `eqn`, `thm` must be read with its proof, so named by a sidecar proposal; the `ixcc/k1-equations/1` sidecar carries no `csimp` proposals, so no certificate with a `csimp` entry verifies from a sidecar today (the roadmap's "csimp proposals"). |
 | `case T` | `T.casesOn` becomes a primitive case. |
 | `inline f` | Unfold matchers and `@[inline]`/`@[macro_inline]` definitions. |
 | `lazy f n` | Pass the first `n` arguments by name. Only for a pinned row (`ite`, `dite`, `cond`, `Bool.or`, …: an address and an arity, `Src.Pinned.lazyPins`) or a sparse casesOn (`T…._sparseCasesOn_N`, which Lean generates for a `match` with a catch-all and its code generator compiles as a `cases`), recognised by its shape, every binder used at most once, at its binder count (`Table.checkSparseCases`), and without a `resolve` entry, which would replace the value that shape was checked on (`Table.lazyResolveOk`). The producer, `Table.validate` and `Table.ofCert` check a row with the same functions (`Table.checkLazy`, `Table.lazyResolveOk`), so a sidecar hint or a certificate row for any other definition is refused. |

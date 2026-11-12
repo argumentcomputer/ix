@@ -27,12 +27,13 @@ Then the tuple closure with one more record, a constant whose ∀ chain shares
 one type at each of 200 steps (`sharedLevelConstants`), is accepted with every
 record: the kernel keeps the chain's universe level small.
 
-Then, on every committed role-bound closure: the kernel accepts it, but for
-the three refused for their own reasons (`phase1-boundary`'s `fields50` and
-`tags126`, which IxCC's decoder refuses first, at its depth budget, and
-`src-diag`'s `sorry.ixe`, which the kernel declines for its `sorry`); and on
-those under 512 KiB ingress reads every root and every root that compiles has
-its certificate accepted by Stage A; on `sorry.ixe` ingress declines.
+Then, on every committed role-bound closure: the envelope decodes it and the
+kernel accepts it, but for `src-diag`'s `sorry.ixe`, which the kernel declines
+for its `sorry`; on `phase1-boundary`'s `fields255` and `tags126`, whose roots
+reach a record over IxCC's consumer budget, ingress refuses at `decode`, naming
+the record; and on the others under 512 KiB ingress reads every root and every
+root that compiles has its certificate accepted by Stage A; on `sorry.ixe`
+ingress declines.
 
 Then the role-bound test builder (`IxCCTests.Support.Bound`), with the hostile
 family's enumeration case ported to it (`Bound`).
@@ -64,9 +65,11 @@ def committedClosures : IO (Array System.FilePath) := do
   let ixe := all.filter fun p => p.extension == some "ixe" && !skip.any fun s => (p.toString.splitOn s).length > 1
   return ixe.qsort (·.toString < ·.toString)
 
-/-- The closures IxCC's decoder refuses (their expected `ingress: decode`). -/
-def decodeRefused : List String :=
-  ["phase1-boundary/fields50.ixe", "phase1-boundary/tags126.ixe"]
+/-- The closures whose every root reaches a record over IxCC's consumer budget:
+the envelope decodes them and the kernel accepts them; ingress refuses every
+root at `ingress: decode`, naming the record (their expected decline). -/
+def reachRefused : List String :=
+  ["phase1-boundary/fields255.ixe", "phase1-boundary/tags126.ixe"]
 
 /-- The closures the kernel declines (`sorryAx`, on purpose). -/
 def kernelDeclined : List String := ["src-diag/sorry.ixe"]
@@ -226,9 +229,8 @@ def run : IO Bool := do
       let bytes ← IO.FS.readBinFile path
       match Ixon.V3.decodeAnonymousEnv bytes with
       | .error e =>
-        -- IxCC's decoder refuses these first (a constant deeper than its budget)
-        expect a (decodeRefused.any (label.endsWith ·) && e == "ixon-v4: constant exceeds the consumer budget")
-          s!"{label}: refused by the decoder: {e}"
+        -- every committed closure decodes: IxCC's budget applies to what a root reaches
+        expect a false s!"{label}: the envelope does not decode: {e}"
       | .ok env =>
         match KernelFront.accept env with
         | .ok _ =>
@@ -249,7 +251,16 @@ def run : IO Bool := do
                   | .error e => e.stage == .ingress && e.code == "kernel" && e.message == expected
                   | .ok _ => false)
                 s!"{label}: ingress did not report the kernel's line and the explanation"
-        if bytes.size < reportBytes then
+        if reachRefused.any (label.endsWith ·) then
+          -- every root reaches a record over IxCC's budget: refused at decode, the record named
+          if let some sidecar ← sidecarOf path then
+            let bj ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile sidecar))
+            expect a (match Recheck.ingress bytes bj [] with
+                | .error e => e.stage == .ingress && e.code == "decode" &&
+                    (e.message.splitOn "constant exceeds the consumer budget (record").length > 1
+                | .ok _ => false)
+              s!"{label}: ingress did not refuse the reached over-budget record at decode"
+        else if bytes.size < reportBytes then
           if let some sidecar ← sidecarOf path then
             let bj ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile sidecar))
             let rep ← report label bytes bj
@@ -263,7 +274,7 @@ def run : IO Bool := do
               expect a (rep.bound && rep.findings.isEmpty)
                 s!"{label}: ingress refused it or Stage A refused a certificate: {rep.findings}"
             compared := compared + 1
-    IO.println s!"every committed closure: {accepted} accepted by the kernel, the decoder's and the \
+    IO.println s!"every committed closure: {accepted} accepted by the kernel, the reached-budget and the \
       kernel's refusals as expected; {compared} under {reportBytes} bytes run through ingress, \
       the producer and Stage A, root by root"
     -- the role-bound test builder, and the hostile enumeration case ported to it

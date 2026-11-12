@@ -150,8 +150,8 @@ def envelopes (root : System.FilePath) : IO Nat := do
 /-- The pins of a role table, as ingress takes them from the table the kernel
 admitted (`KernelFront.pinsOfTable`): each identity with a role at the address
 the table binds to it, none for a role it does not bind, the allowlist at its
-fixed address. The program is `readConsts`' reading of a committed closure's
-records; `q` keeps the default pins (the fixed table). -/
+fixed address. The program is the reading of every record of a committed closure
+(`Ingress.readAll`); `q` keeps the default pins (the fixed table). -/
 def pins (root : System.FilePath) : IO Nat := do
   let raw ← unboundFib root
   let env ← IO.ofExcept (decodeAnonymousEnv raw)
@@ -161,7 +161,7 @@ def pins (root : System.FilePath) : IO Nat := do
   let t : Ix.Kernel.RoleTable := { version := 3, evidence := #[], bound :=
     #[(.nat, at_ Pins.fixed.nat), (.natZero, at_ Pins.fixed.natZero),
       (.natSucc, at_ Pins.fixed.natSucc), (.natRec, at_ Pins.fixed.natRec), (.eq, at_ Pins.fixed.eq)] }
-  let q ← IO.ofExcept (Ingress.readConsts env #[])
+  let q ← IO.ofExcept (Ingress.readAll env #[])
   let ps := KernelFront.pinsOfTable t
   let p := { q with known := { pins := ps } }
   require (ps.nat == Pins.fixed.nat && ps.eq == Pins.fixed.eq && ps.bool == none &&
@@ -189,14 +189,20 @@ def pins (root : System.FilePath) : IO Nat := do
   return 8
 
 /-- A projection record that names no member of a block in the closure is
-refused; one that names a member is an alias. -/
+refused by ingress's reading as compile paths run it (the records the seeds
+reach, `Ingress.reach`, then `Ingress.readConsts`), the record reached as a
+sidecar root would reach it; one that names a member is an alias. (On a compile
+path the kernel's acceptance, which runs first, refuses such a record too.) -/
 def projections (root : System.FilePath) : IO Nat := do
   let raw ← unboundFib root
   let env ← IO.ofExcept (decodeAnonymousEnv raw)
   let dangling := constantBytes ⟨.dPrj ⟨0, IxCC.Ixon.Address.replicate 9⟩, #[], #[], #[]⟩
-  let env' := { env with consts := env.consts.insert (IxCC.Ixon.Address.blake3Pure dangling) dangling }
+  let danglingAddr := IxCC.Ixon.Address.blake3Pure dangling
+  let env' := { env with consts := env.consts.insert danglingAddr dangling }
   let decoded ← IO.ofExcept (decodeAnonymousEnv (envelope env' none))
-  let message := errorOf (Ingress.readConsts decoded #[])
+  let message := errorOf do
+    let records ← Ingress.reach decoded { statement := #[danglingAddr] }
+    Ingress.readConsts decoded records #[]
   require (message.startsWith "src ingress: projection record" &&
     message.endsWith "names no member of a block in the closure")
     s!"a dangling projection record: {message}"
@@ -206,7 +212,7 @@ def projections (root : System.FilePath) : IO Nat := do
       | .cPrj _ | .rPrj _ | .iPrj _ | .dPrj _ => true
       | _ => false
     | .error _ => false
-  require (projectionCount > 0 && (Ingress.readConsts env #[]).toOption.isSome)
+  require (projectionCount > 0 && (Ingress.readAll env #[]).toOption.isSome)
     "a closure with projection records"
   return 2
 

@@ -235,14 +235,27 @@ def relevanceKeysOk (size : Nat) (a : Src.Relevance.Ann) : Bool :=
   a.consts.toList.all (·.1 < size) && a.ctors.toList.all (·.1 < size) &&
     termKeysDistinct size a.nodes .leaf
 
+/-- No node of the annotation is the value of a theorem ingress read by its
+statement (`Program.byStatement`): that value is `Src.Term.unreadProof`, not
+the theorem's proof, and is never a runtime term. -/
+def byStatementUntouched (P : Src.Program) (a : Src.Relevance.Ann) : Bool :=
+  a.nodes.all fun (k, _) => match k with
+    | .value c => !P.byStatement.contains c
+    | _ => true
+
 /-- The annotation in proportion to the program (`relevanceKeysOk`), before
-installation reads it. (The table's columns are checked first thing in
+installation reads it, and naming no value of a theorem read by its statement
+(`byStatementUntouched`). (The table's columns are checked first thing in
 `Table.ofCert`, `TableCert.keysOk`, and the middle end's steps by
 `checkMidCert`.) -/
 def checkRelevanceKeys (P : Src.Program) (a : Src.Relevance.Ann) : Except Err Unit :=
-  if relevanceKeysOk P.size a then .ok ()
-  else .error { stage := .relevance, code := "relevance-S1",
-                message := "the annotation names a constant outside the program, or a runtime term twice" }
+  if !relevanceKeysOk P.size a then
+    .error { stage := .relevance, code := "relevance-S1",
+             message := "the annotation names a constant outside the program, or a runtime term twice" }
+  else if !byStatementUntouched P a then
+    .error { stage := .relevance, code := "relevance-S1",
+             message := "the annotation names the value of a theorem read by its statement" }
+  else .ok ()
 
 /-- Whether the source terms in `todo` (each paired with its level) nest at
 most `depth` levels, visiting at most `fuel` nodes. Counted as trees: a term

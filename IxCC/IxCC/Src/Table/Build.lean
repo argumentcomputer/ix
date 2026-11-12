@@ -34,11 +34,18 @@ later constants win, as in ingress). -/
 def addrIndex (p : Program) : Std.HashMap Ixon.Address CId :=
   (List.range p.size).foldl (fun m c => m.insert (p.addr c) c) {}
 
+/-- Why a proposal's address resolves to no constant: ingress reads only the
+records its seeds reach (`Ingress.reach`), so the address is either a record
+nothing reaches or not in the artifact at all; the table cannot tell which. -/
+def notRead : String :=
+  "is not in the program read (not reached from the sidecar's roots and the other seeds of \
+  ingress, or absent from the artifact)"
+
 private def resolveHint (index : Std.HashMap Ixon.Address CId) (a : Ixon.Address) (what : String) :
     Except String CId :=
   match index[a]? with
   | some c => .ok c
-  | none => .error s!"{what} {((toString a).take 8).toString} is not in the closure"
+  | none => .error s!"{what} {((toString a).take 8).toString} {notRead}"
 
 def csimpProposal (p : Program) (index : Std.HashMap Ixon.Address CId) (prop : Proposal) :
     Except String (CId × Resolve) := do
@@ -180,7 +187,7 @@ def build (cfg : Config) (p : Program) (hints : Array Proposal) :
       match checkInline p c cfg.inlineCap with
       | .ok () => inline := inline.insert c
       | .error msg => diags := diags.push (hintDiag prop msg)
-    | none => diags := diags.push (hintDiag prop "inline: subject is not in the closure")
+    | none => diags := diags.push (hintDiag prop s!"inline: subject {notRead}")
   -- Derived recursor kinds.
   let recKind := NatMap.ofOptions ((List.range n).map (deriveRecKind p))
   return ({ resolve, recKind, lazy, inline, opaqueByValue }, diags, stats)
