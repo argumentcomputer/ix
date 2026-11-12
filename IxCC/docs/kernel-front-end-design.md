@@ -185,7 +185,11 @@ and blobs, byte for byte, with its binding section:
 A refusal carries the kernel's reason and classification (rejected or
 declined, `TierError.outcome`). Only role-bound environments are accepted.
 The acceptance is of the whole artifact: a record the kernel does not accept
-refuses every root, reached or not. An ill-typed record is *declined*, not
+refuses every root, reached or not. IxCC's own reading is of the records its
+seeds reach (every root the sidecar names, the pinned identities, the resource
+context's addresses, and the equation theorems of the proposals on reached
+subjects; [below](#the-program-and-its-correspondence)), so its limits refuse
+an artifact only where one of those reaches a record past them. An ill-typed record is *declined*, not
 rejected (the kernel does not take a failed conversion search as evidence
 that the input is wrong), and so is any axiom other than `propext`,
 `Classical.choice` and `Quot.sound`, and any use of `sorryAx` (the kernel
@@ -271,11 +275,40 @@ Planned; nothing of it is built.
 
 Ingress (`Recheck.ingress`, [`Recheck/Produce.lean`](../IxCC/Recheck/Produce.lean);
 it was `KernelFront.ingress` beside the old front end until step 3 folded it in)
-builds the program exactly as before (`Src.Ingress.readConsts` for the chosen
-roots), takes the pins from the kernel's admitted table (`pinsOfTable`, the
-role mapping of `Src.Pinned`), and reads the program against the
-kernel's reading (`Reading.build`,
-[`Reading.lean`](../IxCC/Src/KernelFront/Reading.lean)):
+reads the records its seeds reach into the program (`Src.Ingress.reach`,
+then `Src.Ingress.readConsts` for the chosen roots), takes the pins from the
+kernel's admitted table (`pinsOfTable`, the role mapping of `Src.Pinned`), and
+reads the program against the kernel's reading (`Reading.build`,
+[`Reading.lean`](../IxCC/Src/KernelFront/Reading.lean)).
+
+**What is read** (since 2026-11-12; before, every record of the artifact was
+read, so a record no root reaches, over IxCC's consumer budget, refused the
+artifact). The walk starts from every root the sidecar names (not only the
+chosen ones, so the numbering does not depend on the choice and a producer's
+and a verifier's ingress agree), the constants the admitted table binds to the
+identities IxCC pins, every address the resource context names, and, as *proof
+seeds*, the equation theorem of every sidecar proposal whose subject is
+reached and the resource context's equation theorems. It follows every
+reference of what is read, and a projection record to its block. A record a
+proof seed reaches is read with its theorems' proofs; any other is read *by
+statement*: a theorem's type is read, its proof is not read and its references
+are not followed, its stored value is `Src.Term.unreadProof` and it is
+recorded in `Program.byStatement`. The recursors of a reached inductive are not
+followed (one the program uses is reached by reference: a `casesOn` names its
+recursor). The result is the least fixpoint, a function of the records, the
+sidecar and the table; IxCC's consumer budget applies to what is read of each
+reached record. Nothing in IxCC takes a theorem's value as a runtime term:
+SrcEval unfolds only safe definitions and allowlisted opaques, erasure the
+same, and the annotator walks the runtime terms `Program.runtimeKeys` gives,
+which name a value only under `isEvaluatedBody`. The consumers that examine a
+theorem's proof refuse one read by statement: `Table.checkEqn` and
+`checkCsimp` (so a table entry names only a theorem whose proof was read), the
+axiom-closure walk, and the recheck path's annotation check
+(`Recheck.checkRelevanceKeys`, for an annotation naming its value). The kernel
+still accepts the whole artifact, so every record IxCC reads is one the kernel
+accepted.
+
+The correspondence:
 
 - every constant's kernel key is the reader's key for its identity
   (`Ctx.memberKey` of its block member or constructor), and the address the
@@ -380,10 +413,14 @@ concludes, from `ingress bytes equations roots = .ok inp`:
 - the program read against the kernel's reading:
   `Reading.build inp.kernel.acc inp.program = .ok inp.kernel.rd` and
   `inp.kernel.fe = mkFEnv inp.kernel.acc.env`;
-- the program: the sidecar's chosen roots, `Src.Ingress.readConsts inp.env
-  roots = .ok rawProg`, and `inp.program` is `rawProg` with the pinned
+- the program: the sidecar's chosen roots, the records the seeds reach
+  (`Src.Ingress.reach inp.env (Seeds.of rawHints (pinsOfTable
+  inp.kernel.acc.table)) = .ok records`), `Src.Ingress.readConsts inp.env
+  records roots = .ok rawProg`, and `inp.program` is `rawProg` with the pinned
   identities of the kernel's admitted table (`pinsOfTable`) and the sidecar's
-  resource context.
+  resource context. The decode no longer implies that every record of the
+  artifact is within IxCC's consumer budget (only the reached ones are, by
+  `reach`); the program says what it said, of the records the seeds reach.
 
 `CompileClaim.verifyBytes_{immortal,zeroRc,plainRc}_sound`
 ([`CompileClaim/Proof.lean`](../IxCC/CompileClaim/Proof.lean)) and
@@ -644,7 +681,23 @@ claimant can hold `verifyBytes`, `Ring0Sip.verifyBytes` and `ixcc check-cert`
 as long as it chooses. On every closure `ix compile` writes, the kernel is faster
 ([measurements](#measurements)).
 The kernel's recursion depth on the verifier's 8 MiB stack is likewise the
-kernel's to bound (HD-3 audits it with IxCC's own).
+kernel's to bound (HD-3 audits it with IxCC's own). Until it is, the envelope
+bounds the depth of every stored record: its expressions, shares expanded, at
+most `V3.kernelDepthLimit` (2,560) deep (`V3.withinKernelDepth`; universes are
+not bounded in depth, as IxCC never bounded them). Measured on generated chains
+(shared and flat, reached and unreached, four shapes), the kernel's acceptance
+of one such record survives 3,000 levels on a 2 MiB stack and 10,000 on 8 MiB
+and overflows at 4,096 and at 30,000 respectively; real artifacts stay far
+below (deepest 775 in IxCC's committed closures, 325 in Init+Std, 1,221 in
+Mathlib). IxCC's consumer budget (a `share` a leaf) never bounded the expanded
+depth, so before the bound a shared chain of 100,000 levels in one record
+crashed the verifier whether reached or not. The bound does not make the kernel
+safe: it runs after the kernel's canonical decoder, which still overflows on a
+record nested about 30,000 deep without shares on 2 MiB (100,000 on 8 MiB), and
+it limits stored records, not the terms the kernel's conversion builds, which
+unfolding across records takes past the stack (10,000 levels from five records
+on 2 MiB; 40,000 from twenty on 8 MiB; a long string literal met as a
+constructor does the same). These are the kernel package's to fix.
 
 ## The switch
 
@@ -819,10 +872,12 @@ closures' times vary by up to about 15 % between runs.
 
 At the time of this measurement five fixtures had no bound form; the
 refreeze settled them (`phase1-decline`'s oracle driver; `phase1-boundary`
-restated at 49/50 fields). Three committed closures are not accepted, for
-their own reasons, which `tests-kernel-front` asserts: `phase1-boundary`'s
-`fields50` and `tags126` (a record over IxCC's decoder budget, refused before
-the kernel) and `src-diag` (the kernel declines its `sorry`).
+restated at 49/50 fields, and since 2026-11-12, when ingress reads only what
+its seeds reach, at 254/255). One committed closure is not accepted, which
+`tests-kernel-front` asserts: `src-diag` (the kernel declines its `sorry`).
+`phase1-boundary`'s `fields255` and `tags126` are accepted, and ingress refuses
+their roots at `decode`: each reaches a record over IxCC's consumer budget
+(`mk255`, `casesOn`).
 
 The kernel's logical entry alone (`checkBytesWith`) declines each closure
 tried (`tuple`, `fib`, `abi`, `scalar`, `OS02-plain`) at its first `partial`
@@ -839,7 +894,7 @@ front end's acceptance time. A hostile closure is measured under
 | KF-1 | The walk-level annotation statement; the kernel-side lemmas 1–3 composed into direction 1 | fenced, standard axioms |
 | KF-2 | The switch (steps 2–5). In progress: steps 2 and 3 done (2026-11-11); steps 4 and 5 (the deletion, the ledger) next | all required checks on the refrozen corpus; the deletion list gone |
 | KF-3 | The kernel's bound on hostile levels (kernel-side item 4). Its fix of the blow-up on `let` chains, made in the kernel package on this branch in parallel with KF-2, has landed: the ∀ rule's level built with `mk_imax`'s folds, the level's has-parameter bit cached; and since, the kernel's level walks memoised on shared levels (two interleaved chains at two universe parameters check in milliseconds). Planned: a call budget in the kernel's level comparison, set by the caller and passed by the front end | the hostile `let`-chain closure accepted in time flat in `k` (met: 28 ms at `k = 30` and at `k = 34`); a constant whose level comparison is exponential (the reduction from satisfiability in `docs/kernel.md`) declined within the budget (planned) |
-| KF-4 | The closure run (planned, 2026-11-11): the closure of the seeds, the logical entry on it under the default table and committed prelude, the table-restriction check, the run's declarations kept for the typing clause | on every role-bound K1 closure the closure run accepts, and its declarations are a sub-list of the tiered run's up to keys |
+| KF-4 | The closure run (planned, 2026-11-11): the closure of the seeds, the logical entry on it under the default table and committed prelude, the table-restriction check, the run's declarations kept for the typing clause. Done beside it (2026-11-12): IxCC's own reading is of the records its seeds reach (`Src.Ingress.reach`), so a record the target never reaches no longer refuses an artifact by IxCC's limits; the kernel still accepts the whole artifact. What the closure run would add: the kernel's run on the kernel's closure of the seeds (every reference, proofs included, and the recursors, certified-operation ground and literal edges it needs), under the default table and committed prelude, discharging premise (i) natively; the worklist can be shared over an edge function | on every role-bound K1 closure the closure run accepts, and its declarations are a sub-list of the tiered run's up to keys |
 
 ## Decisions
 

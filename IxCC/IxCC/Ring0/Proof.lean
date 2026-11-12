@@ -1126,7 +1126,8 @@ Any `Ring0Sip` that passes `sip.verifyBytes envBytes equations = true` yields an
 certified kernel's acceptance of the whole environment (`Src.KernelFront.accept`: its tiered
 entry ran on exactly the envelope's binding section, records and blobs, and accepted them),
 `Src.Resource.validate inp.program = .ok ()`, `inp.program` built by `Src.Ingress.readConsts`
-from `inp.env` and the selected roots with the pins of the kernel's admitted table and read
+from the records of `inp.env` the seeds reach (`Src.Ingress.reach`) and the selected roots,
+with the pins of the kernel's admitted table, and read
 against the kernel's reading (`Recheck.ingress_parts`), and canonical relevance (`Stage A`):
 the certificate's table passes `Src.Table.ofCert` and its annotation is exactly
 `inp.kernel.annotateChecked { inp.program with table }` (`Recheck.checkCanonicalRelevance_iff`,
@@ -1150,12 +1151,14 @@ theorem verifyBytesRing0Sip_sound {sip : Ring0Sip} {envBytes : ByteArray}
       Src.Resource.validate inp.program = .ok () ∧
       Src.KernelFront.Reading.build inp.kernel.acc inp.program = .ok inp.kernel.rd ∧
       inp.kernel.fe = Ix.Kernel.mkFEnv inp.kernel.acc.env ∧
-      (∃ rawHints chosen rawProg,
+      (∃ rawHints chosen records rawProg,
         Src.Hints.ofK1Json equations = .ok rawHints ∧
         Recheck.selectRoots rawHints.roots
           (CompileClaim.selectTargetRoots sip.cfg equations sip.claim.target) = .ok chosen ∧
         chosen.isEmpty = false ∧
-        Src.Ingress.readConsts inp.env (chosen.map (·.1)) = .ok rawProg ∧
+        Src.Ingress.reach inp.env (Src.Ingress.Seeds.of rawHints
+          (Src.KernelFront.pinsOfTable inp.kernel.acc.table)) = .ok records ∧
+        Src.Ingress.readConsts inp.env records (chosen.map (·.1)) = .ok rawProg ∧
         inp.program = { rawProg with
           known := Src.Pinned.known
             { rawProg with known := { pins := Src.KernelFront.pinsOfTable inp.kernel.acc.table } },

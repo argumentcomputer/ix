@@ -37,6 +37,25 @@ private def rejects (a : Assert) (label : String) (action : IO α) : IO Unit := 
   catch _ => pure true
   expect a rejected s!"resource-records: {label} unexpectedly succeeded"
 
+/-- `rejects`, refused for the reason `reason` (a part of its message), so that
+it cannot pass on an unrelated refusal. -/
+private def rejectsFor (a : Assert) (label reason : String) (action : IO α) : IO Unit := do
+  let message ← try
+    let _ ← action
+    pure none
+  catch e => pure (some e.toString)
+  match message with
+  | none => expect a false s!"resource-records: {label} unexpectedly succeeded"
+  | some m =>
+    let why := s!"resource-records: {label} refused for another reason: {m} (expected {reason})"
+    expect a (!reason.isEmpty && (m.splitOn reason).length > 1) why
+
+/-- The refusal `Hints.resourceOfJson` gives `j` (empty if it accepts). -/
+private def contextRefusal (j : Json) : String :=
+  match IxCC.Src.Hints.resourceOfJson j with
+  | .error e => e
+  | .ok _ => ""
+
 private def protocol (a : Assert) : IO Unit := do
   expect a ((verifiedPairs emptyOutput profileAddress).toOption == some []) "resource-records: valid empty CLI result"
   expect a ((verifiedPairs pairOutput profileAddress).toOption == some [pair]) "resource-records: valid CLI pair"
@@ -247,22 +266,32 @@ private def contextRecords (a : Assert) : IO Unit := do
   let address := IxCC.Ixon.Address.blake3Pure bytes
   let hex := bytes.data.foldl (fun s b => s ++ hexDigitRepr (b.toNat / 16) ++
     hexDigitRepr (b.toNat % 16)) ""
-  let metadata := Json.mkObj [
-    ("resource_profile", Json.mkObj [("address", .str (toString address)), ("bytes", .str hex)]),
-    ("resource_checked", .arr #[])]
+  -- a sidecar (`checkResourceClosure` reads what the sidecar's roots and
+  -- proposals reach, as ingress does), with no roots and no equations
+  let sidecarOf := fun (fields : List (String × Json)) => Json.mkObj ([
+    ("format", .str "ixcc/k1-equations/1"), ("roots", .arr #[]), ("equations", .arr #[])] ++ fields)
+  let profileJson := Json.mkObj [("address", .str (toString address)), ("bytes", .str hex)]
+  let metadata := sidecarOf [("resource_profile", profileJson), ("resource_checked", .arr #[])]
   checkResourceClosure closure metadata
   expect a true "resource-records: empty pair context validates without roots"
   let badBytes := bytes.push 0
   let badAddress := IxCC.Ixon.Address.blake3Pure badBytes
   let changed := metadata.setObjVal! "resource_profile" (Json.mkObj [
     ("address", .str (toString badAddress)), ("bytes", .str (hex ++ "00"))])
-  rejects a "rehashed malformed context even without roots" (checkResourceClosure closure changed)
+  -- refused by the profile's decoding in `Resource.validate`, not by the parse
+  let undecodable := match IxCC.Src.Resource.Profile.ofBytes badBytes with
+    | .error e => e
+    | .ok _ => ""
+  expect a (!undecodable.isEmpty) "resource-records: the rehashed profile decodes (the next check would show nothing)"
+  rejectsFor a "rehashed malformed context even without roots" undecodable
+    (checkResourceClosure closure changed)
   for bad in [Json.null, .str "", .arr #[], Json.mkObj []] do
-    rejects a "malformed present profile" (checkResourceClosure closure (metadata.setObjVal! "resource_profile" bad))
-  rejects a "missing companion checked records" (checkResourceClosure closure
-    (Json.mkObj [("resource_profile", ← IO.ofExcept (metadata.getObjVal? "resource_profile"))]))
-  rejects a "missing companion profile" (checkResourceClosure closure
-    (Json.mkObj [("resource_checked", .arr #[])]))
+    let j := metadata.setObjVal! "resource_profile" bad
+    rejectsFor a "malformed present profile" (contextRefusal j) (checkResourceClosure closure j)
+  rejectsFor a "missing companion checked records" "must occur together" (checkResourceClosure closure
+    (sidecarOf [("resource_profile", profileJson)]))
+  rejectsFor a "missing companion profile" "must occur together" (checkResourceClosure closure
+    (sidecarOf [("resource_checked", .arr #[])]))
   IxCCTests.Src.Resource.run a
 
 def run (a : Assert) (work : FilePath) : IO (Array String) := do

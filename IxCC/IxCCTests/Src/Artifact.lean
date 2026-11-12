@@ -257,7 +257,8 @@ noncomputable def program : Program :=
     size := {p.size}
     table
     roots := {listOf (fun ((a, c) : IxCC.Ixon.Address × CId) => s!"({addrName a}, {c})") p.roots}
-    known := {known p.known}{resourceField addrName p.resource} }
+    known := {known p.known}{resourceField addrName p.resource}
+    byStatement := {natMap (fun (_ : Unit) => "()") p.byStatement} }
 
 /-- The relevance annotation (the annotator's output for the program). -/
 noncomputable def ann : Ann :=
