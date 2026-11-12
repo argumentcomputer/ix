@@ -20,7 +20,7 @@ about that function, stated in the form the induction consumes.
 **The size bound.** IxVM counts with field elements (`Lists::length`, the index
 arithmetic of `Lists::lookup`, `take` and `drop`), and a count is faithful only
 below the field's characteristic (past it, a count wraps around). The circuit
-bounds the counts: at most `2^39` distinct memoized calls in a valid ROM
+bounds the counts: at most `2^39` distinct calls of each memoized callee in a valid ROM
 (`MemoBounded`, the consistency statement's `MemoCallsAtMost`); a list
 `Lists::length` counts is shorter than that, because it recurses through every
 suffix and lists of different lengths need different keys
@@ -67,7 +67,7 @@ def nativeNames : List String :=
   ["KernelWhnf::try_nat_dispatch_prewhnf", "KernelWhnf::peel_beta_cert",
    "KernelDefEq::k_is_def_eq_slow", "KernelDefEq::k_def_eq_rebase"]
 
-/-- **The circuit's size bound**: at most `2^39` distinct memoized calls, in a valid ROM
+/-- **The circuit's size bound**: at most `2^39` distinct calls of each memoized callee, in a valid ROM
 (the trace ROM of the compiled circuit is valid whenever the consistency statement's width
 ROM is: `traceROM_valid`). -/
 abbrev MemoBounded (calls : List (Call F)) : Prop :=
@@ -75,7 +75,7 @@ abbrev MemoBounded (calls : List (Call F)) : Prop :=
 
 /-- **The calls are good**: they hashed no collision; every record they load is
 in the view and in the fragment; they call none of `nativeNames`; and they have at
-most `2^39` distinct memoized calls in a valid ROM (the circuit's bound, `MemoBounded`). -/
+most `2^39` distinct calls of each memoized callee in a valid ROM (the circuit's bound, `MemoBounded`). -/
 def Good (c : Ctx) (calls : List (Call F)) : Prop :=
   ¬ c.V.HashedCollision [] calls ∧
   (∀ cl ∈ calls, cl.name = "Ingress::get_ci" → ∀ addr a, cl.args = [addr] →
