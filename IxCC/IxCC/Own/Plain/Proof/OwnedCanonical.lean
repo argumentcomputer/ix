@@ -493,8 +493,8 @@ theorem needArgs_ok {Γ : Ctx} : ∀ {args : List Arg}, (∀ x, Arg.var x ∈ ar
     simp only [Ctx.needArgs]
     exact except_bind_of_ok (need_ok (h x List.mem_cons_self) _)
       (needArgs_ok (fun y hy => h y (List.mem_cons_of_mem _ hy)))
-  | .lit _ :: as, h => needArgs_ok (fun y hy => h y (List.mem_cons_of_mem _ hy))
-  | .erased :: as, h => needArgs_ok (fun y hy => h y (List.mem_cons_of_mem _ hy))
+  | .lit _ :: as, h => needArgs_ok (args := as) (fun y hy => h y (List.mem_cons_of_mem _ hy))
+  | .erased :: as, h => needArgs_ok (args := as) (fun y hy => h y (List.mem_cons_of_mem _ hy))
 
 theorem needCaptured_ok {Γ : Ctx} {j : Fir.JoinId} : ∀ {cs : List Var},
     (∀ c, c ∈ cs → Γ.avail c = true) → Γ.needCaptured j cs = .ok ()
