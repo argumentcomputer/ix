@@ -560,7 +560,7 @@ def try_eta_struct := aiur_fn⟦
       match KernelTypes::collect_spine(s) {
         (s_head, s_args) => {
           match (*(s_head)) {
-            KernelTypes::KExprNode::Const(ctor_addr, _) => {
+            KernelTypes::KExprNode::Const(ctor_addr, s_lvls) => {
               let ci = (*(Ingress::get_ci(ctor_addr)));
               match ci {
                 KernelTypes::KConstantInfo::Ctor(_, _, ind_block_addr, ind_idx, _, nparams, nfields, _) => {
@@ -568,8 +568,11 @@ def try_eta_struct := aiur_fn⟦
                     0 => {
                       let ind_ci = (*(Ingress::get_ci_iprj(ind_block_addr, ind_idx)));
                       match ind_ci {
-                        KernelTypes::KConstantInfo::Induct(_, _, _, nindices, nctors, _, _, _) => {
-                          let shape_ok = Fields::is_zero(nindices) * Fields::is_zero(nctors - 1);
+                        KernelTypes::KConstantInfo::Induct(ind_nl, ind_ty, _, nindices, nctors, _, _, _) => {
+                          -- DefEq.structEtaTy reads the fields as `.proj` nodes, which read only
+                          -- at a native block (the kernel installs projection tables there)
+                          let shape_ok = (Fields::is_zero(nindices) * Fields::is_zero(nctors - 1))
+                            * Fields::is_zero(KernelModeled::block_is_modeled(ind_block_addr));
                           match shape_ok {
                             0 => {  0 } ,
                             _ => {
@@ -579,13 +582,18 @@ def try_eta_struct := aiur_fn⟦
                                 1 => {  0 } ,
                                 _ => {
 
-                                  let t_ty = KernelInferOnly::k_infer_only(rc, t, types);
-                                  let s_ty = KernelInferOnly::k_infer_only(rc, s, types);
-                                  match k_is_def_eq(rc, t_ty, s_ty, types) {
+                                  match family_params(rc, ind_nl, ind_ty, nparams, s_lvls,
+                                                      Lists::take(s_args, nparams), types) {
                                     0 => {  0 } ,
                                     _ => {
-                                      compare_struct_fields(rc, struct_addr, nparams,
-                                                                 nfields, t, s_args, 0, types) } ,
+                                      let t_ty = KernelInferOnly::k_infer_only(rc, t, types);
+                                      let s_ty = KernelInferOnly::k_infer_only(rc, s, types);
+                                      match k_is_def_eq(rc, t_ty, s_ty, types) {
+                                        0 => {  0 } ,
+                                        _ => {
+                                          compare_struct_fields(rc, struct_addr, nparams,
+                                                                nfields, t, s_args, 0, types) } ,
+                                      } } ,
                                   } } ,
                               } } ,
                           } } ,
