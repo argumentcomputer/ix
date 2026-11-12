@@ -64,7 +64,7 @@ def sort (i : Nat) : E := .sort i.toUInt64
 def one : Ixon.Univ := .succ .zero
 
 def const (info : Ixon.ConstantInfo) (refs : List Address) (univs : List Ixon.Univ) : Ixon.Constant :=
-  ⟨info, #[], refs.toArray, univs.toArray⟩
+  ⟨info, #[], refs.toArray, univs.toArray, #[]⟩
 
 def defn (kind : Ix.DefKind) (typ value : E) (refs : List Address) (univs : List Ixon.Univ := [])
     (lvls : Nat := 0) (safety : Ix.DefinitionSafety := .safe) : Ixon.Constant :=
