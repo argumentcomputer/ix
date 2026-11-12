@@ -150,7 +150,7 @@ environment before the wave, and pushes each result in order unless the
 environment has meanwhile gained its name (the step's duplicate check). An
 environment that holds more constants answers every lookup the annotation made
 the same way, and a datum is unique, so the push is the step's. Any other
-declaration is run ahead by `aheadStep`. -/
+declaration takes the ordinary step. -/
 def separable (fe : FEnv .source) (d : CDecl .source) : Option (Ix.Kernel.ConstantInfo .source) :=
   let run {α : Type} (act : CM α) : Option α := match act.run {} with
     | .ok (a, _) => some a
@@ -166,30 +166,24 @@ def separable (fe : FEnv .source) (d : CDecl .source) : Option (Ix.Kernel.Consta
     (run (Ix.Kernel.Cached.annotValueC .verified fe cv v)).map fun r => .axiomInfo r.1
   | _ => none
 
-/-- What the ordinary step pushes for `d` against `fe`, in push order, for a
-declaration that is not separable (a block, an axiom, a pinned `Nat`
-operation...); `none` where the step fails. Run ahead on a wave like
-`separable`, and pushed in order under the same duplicate check: the step
-pushes the same constants against an environment that holds more. (The
-step's first push copies `fe`'s index, which every task shares.) -/
-def aheadStep (ev : Ix.Kernel.Evidences .source) (fe : FEnv .source) (d : CDecl .source) :
+/-- A declaration's pushes computed ahead against `fe` (`separable`'s). A
+declaration that is not separable (a block, an axiom, a pinned `Nat` operation)
+takes the ordinary step in turn: run ahead, its first push would copy the
+index every task shares, a cost that grows with the environment. -/
+def pushesAhead (fe : FEnv .source) (d : CDecl .source) :
     Option (Array (Ix.Kernel.ConstantInfo .source)) :=
-  match Ix.Kernel.Cached.annotDeclStepWithUserAxioms .verified ev (0, fe, #[]) d {} with
-  | .ok ((_, fe', _), _) =>
-    some (fe'.env.consts.take (fe'.visibleBelow - fe.visibleBelow)).reverse.toArray
-  | .error _ => none
+  (separable fe d).map (#[·])
 
-/-- A declaration's pushes computed ahead against `fe`: `separable`'s, else
-`aheadStep`'s. -/
-def pushesAhead (ev : Ix.Kernel.Evidences .source) (fe : FEnv .source) (d : CDecl .source) :
-    Option (Array (Ix.Kernel.ConstantInfo .source)) :=
+/-- Whether every constant a definition, theorem, opaque or axiom names is
+installed (`constsResolveFC`). One that names a missing constant would fail
+its step, and a failed step rebuilds the index (`reindex`), so it goes to the
+retry list without a step. -/
+def resolves (fe : FEnv .source) (d : CDecl .source) : Bool :=
   match d with
-  | .defnDecl cv .. =>
-    if Ix.Kernel.natOpNames.contains cv.name || Ix.Kernel.natDivModNames.contains cv.name then
-      aheadStep ev fe d
-    else (separable fe d).map (#[·])
-  | .thmDecl .. | .opaqueDecl .. => (separable fe d).map (#[·])
-  | _ => aheadStep ev fe d
+  | .defnDecl cv v _ | .thmDecl cv v | .opaqueDecl cv v =>
+    Ix.Kernel.Cached.constsResolveFC fe cv.type && Ix.Kernel.Cached.constsResolveFC fe v
+  | .axiomDecl cv => Ix.Kernel.Cached.constsResolveFC fe cv.type
+  | _ => true
 
 /-- A kernel error on one line, for `IX_BD_TRACE`. -/
 def traceError (e : Ix.Kernel.CheckError .source) : String :=
@@ -353,7 +347,7 @@ def install (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (workers : Nat 
     let n0 ← IO.monoNanosNow
     let pushes : Array (Option (Array (Ix.Kernel.ConstantInfo .source))) ← IO.lazyPure fun _ =>
       if !parallel || wave.size < 8 then wave.map fun _ => none
-      else Ix.Compile.Parallel.map (4 * max workers 1) (fun i => pushesAhead ev base prepared[i]!) wave
+      else Ix.Compile.Parallel.map (4 * max workers 1) (fun i => pushesAhead base prepared[i]!) wave
     let n1 ← IO.monoNanosNow
     nsAhead := nsAhead + (n1 - n0)
     for (i, r) in wave.zip pushes do
@@ -369,6 +363,10 @@ def install (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (workers : Nat 
           ahead := ahead + 1
           continue
       let d := prepared[i]!
+      if !resolves fe d then
+        retry := retry.push d
+        pos := pos + 1
+        continue
       let m0 ← IO.monoNanosNow
       let (fe', pos', err) ← IO.lazyPure fun _ => step ev fe pos d
       nsStep := nsStep + ((← IO.monoNanosNow) - m0)
@@ -393,6 +391,10 @@ def install (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (workers : Nat 
   -- records referencing it are annotated
   let mut lenientCount := 0
   for d in retry do
+    if !resolves fe d then
+      failures := failures.push (declName d, "names a constant that is not installed")
+      pos := pos + 1
+      continue
     let (fe', pos', err) := step ev fe pos d
     fe := fe'
     pos := pos'
