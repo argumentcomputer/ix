@@ -1,7 +1,7 @@
 module
 public import Ix.Cert.Compile
 public import Ix.Compile.ReadyCompile
-public import Ix.Resource.Validate
+public import Ix.Typing
 public import Ix.RoleBinding.Compile
 public import Ix.Cli.Common
 public section
@@ -39,15 +39,24 @@ about, on the canonical environment of their input (`compileAndFinalize`):
 4. **Accounting**: every failure it reports is an input constant's
    (`failureOutside`). With `compileReport`'s coverage check, every input
    constant is then published or reported as failed, and never both.
-5. **Resources**: an input with semantic contracts compiles completely, and its
-   artifact validates (`Ix.Resource.validate`), before `finalize` and after it
-   (`validateFinalized`).
+5. **Modes**: an input with semantic contracts compiles completely, and its
+   artifact passes the mode checker the caller passes (`ModeChecker`; the
+   compile commands pass the uncertified `Ix.ModeCheck.checkArtifact`, so this
+   module, which `ix verify` reaches, does not import it), before `finalize` and
+   after it (`validateFinalized`). With none, annotated source is refused.
 
 The artifact's role support and certificates are compiled the same way
 (`certifiedBackend`), by `Ix.RoleBinding.Compile.finalize`.
 -/
 
 namespace Ix.CompileM
+
+/-- A mode checker for an annotated artifact: an accept's message, or the refusal. -/
+abbrev ModeChecker := Ixon.Env → Except String String
+
+/-- No mode checker: annotated source is refused. -/
+def noModeChecker : ModeChecker := fun _ =>
+  .error "annotated source is refused: this compile runs no mode checker"
 
 /-- The selected constants, prepared: unchanged when none has a contract
 registration or contract metadata, otherwise resolved, decorated and checked.
@@ -130,7 +139,7 @@ structure CertifiedOut where
 
 /-- **The certified compile of a prepared list**: its canonical environment
 (`canonInput`), then `Ix.Cert.compileReport`, then the accounting and, for an
-input with semantic contracts, the resource checks. `log` receives each
+input with semantic contracts, the mode checker (uncertified). `log` receives each
 phase's time.
 
 With `defaultRoles`, every published role name must sit at the default role
@@ -144,7 +153,7 @@ name against that table (`Ix.Cert.PublishedRolesBound` at the artifact's own
 binding). -/
 def compileCertifiedPrepared (prepared : List (Lean.Name × Lean.ConstantInfo))
     (annotated : Bool) (workers : Nat := 32) (log : String → IO Unit := fun _ => pure ())
-    (defaultRoles : Bool := true) :
+    (defaultRoles : Bool := true) (modeCheck : ModeChecker := noModeChecker) :
     IO (Except String CertifiedOut) := do
   let t0 ← IO.monoMsNow
   let env ← IO.lazyPure fun _ => canonInput prepared.toArray workers
@@ -171,16 +180,17 @@ def compileCertifiedPrepared (prepared : List (Lean.Name × Lean.ConstantInfo))
         not its bound address in the default role table"
   if annotated then
     unless failures.isEmpty do
-      return .error "resource compilation requires the complete requested closure"
-    if let .error e := Ix.Resource.validate ixe (Ix.Resource.standardProfile ixe) then
-      return .error e
+      return .error "mode checking requires the complete requested closure"
+    match modeCheck ixe with
+    | .ok msg => log msg
+    | .error e => return .error e
   return .ok { prepared, annotated, inputs, env := ixe, failures, existing? := some existing }
 
 /-- **The certified compile** of the constants `constants` of `source`:
 `prepareCertified`, then `compileCertifiedPrepared` (with `defaultRoles`). -/
 def compileCertified (source : Lean.Environment) (constants : List (Lean.Name × Lean.ConstantInfo))
     (workers : Nat := 32) (log : String → IO Unit := fun _ => pure ())
-    (defaultRoles : Bool := true) :
+    (defaultRoles : Bool := true) (modeCheck : ModeChecker := noModeChecker) :
     IO (Except String CertifiedOut) := do
   let t0 ← IO.monoMsNow
   let (prepared, annotated) ← match prepareCertified source constants with
@@ -188,14 +198,15 @@ def compileCertified (source : Lean.Environment) (constants : List (Lean.Name ×
     | .error e => return .error e
   log s!"source contracts ({if annotated then "semantic contracts" else "none"}): \
 {(← IO.monoMsNow) - t0}ms"
-  compileCertifiedPrepared prepared annotated workers log defaultRoles
+  compileCertifiedPrepared prepared annotated workers log defaultRoles modeCheck
 
 /-- An input with semantic contracts is emitted only if its finalized artifact
 validates too: `compileCertifiedPrepared` validates the compiled artifact, this
 the finalized one. -/
-def validateFinalized (annotated : Bool) (artifact : Ixon.Env) : Except String Unit := do
+def validateFinalized (annotated : Bool) (modeCheck : ModeChecker) (artifact : Ixon.Env) :
+    Except String Unit := do
   if annotated then
-    let _ ← Ix.Resource.validate artifact (Ix.Resource.standardProfile artifact)
+    let _ ← modeCheck artifact
 
 /-- Up to three recorded failures, root causes first (`Ix.Cli.rootCausesFirst`). -/
 def recordedFailures (failures : Std.HashMap Ix.Name String) : String :=
@@ -221,11 +232,13 @@ namespace Ix.RoleBinding.Compile
 /-- The certified compiler as `finalize`'s backend: the role support and the
 certificates are compiled with `Ix.Cert.compileReport`, and must compile
 completely. `defaultRoles` as in `Ix.CompileM.compileCertifiedPrepared`. -/
-def certifiedBackend (workers : Nat) (defaultRoles : Bool := true) : Backend := fun _ input => do
+def certifiedBackend (workers : Nat) (defaultRoles : Bool := true)
+    (modeCheck : Ix.CompileM.ModeChecker := Ix.CompileM.noModeChecker) : Backend := fun _ input => do
   let prepared ← IO.ofExcept input.prepare
   let annotated ← IO.ofExcept (Ix.CompileM.checkPreparedSource prepared)
   let out ← IO.ofExcept
-    (← Ix.CompileM.compileCertifiedPrepared prepared annotated workers (defaultRoles := defaultRoles))
+    (← Ix.CompileM.compileCertifiedPrepared prepared annotated workers (defaultRoles := defaultRoles)
+      (modeCheck := modeCheck))
   unless out.failures.isEmpty do
     throw (IO.userError "artifact support: incomplete certified compilation")
   return out.env
@@ -266,14 +279,14 @@ def compileAndFinalize (source : Lean.Environment)
     (log : String → IO Unit := fun _ => pure ())
     (certSource : IO Lean.Environment := Ix.RoleBinding.Compile.nativeCertSource)
     (strip : Ixon.Env → Ixon.Env := id) (defaultRoles : Bool := true)
-    (prefetch : Bool := false) :
+    (prefetch : Bool := false) (modeCheck : ModeChecker := noModeChecker) :
     IO (Except String (CertifiedOut × Finalization)) := do
-  let backend := Ix.RoleBinding.Compile.certifiedBackend workers defaultRoles
+  let backend := Ix.RoleBinding.Compile.certifiedBackend workers defaultRoles modeCheck
   let certificates? ← if prefetch then
       some <$> Ix.RoleBinding.Compile.prefetchCertificates backend certSource
     else pure none
   let run : IO (Except String (CertifiedOut × Finalization)) := do
-    let out ← match ← compileCertified source constants workers log defaultRoles with
+    let out ← match ← compileCertified source constants workers log defaultRoles modeCheck with
       | .ok out => pure out
       | .error e => return .error e
     log s!"rss after the compile: {← Ix.Cli.residentSetSize}"
@@ -281,9 +294,9 @@ def compileAndFinalize (source : Lean.Environment)
     try
       let t0 ← IO.monoMsNow
       let artifact ← Ix.RoleBinding.Compile.finalize backend source certSource
-        (.plain constants) out.env Ix.Resource.typingLimits (existing? := out.existing?)
+        (.plain constants) out.env Ix.Typing.typingLimits (existing? := out.existing?)
         (prefetched? := certificates?)
-      IO.ofExcept (validateFinalized out.annotated artifact)
+      IO.ofExcept (validateFinalized out.annotated modeCheck artifact)
       let t1 ← IO.monoMsNow
       log s!"finalize: {t1 - t0}ms, rss {← Ix.Cli.residentSetSize}"
       let artifact := strip artifact

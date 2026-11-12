@@ -332,10 +332,14 @@ def ret (P : Prog) (fuel s cur : Nat) (r : ResultMode) (c : Cls) (v : Val) : M V
     pure (renameTaint s cur v)
 
 /-- A value read out of a container confined to `t`: confined with it, unless
-the field is `@shared` (`inherit = false`) or the value is a leaf. -/
+the field is `@shared` (`inherit = false`). A leaf read out of a container is a
+counted reference of its own, confined to nothing. -/
 def readOut (inherit : Bool) (t : List Nat) (v : Val) : M Val := do
+  if ← isLeaf v then
+    match v with
+    | .ref l c _ => return .ref l c []
+    | .imm _ => return v
   if !inherit then return v
-  if ← isLeaf v then return v
   pure (t.foldl (fun v s => addTaint s v) v)
 
 /-- **Where capture transfers**: forming a closure transfers each captured

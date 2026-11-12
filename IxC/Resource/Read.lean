@@ -232,6 +232,25 @@ def RCx.isInd (x : RCx) (e : Ixon.Expr) : Bool :=
     | none => false
   | _ => false
 
+/-- Whether no value of type `ty` is a leaf, read from the record: a function
+type, a sort, or an inductive type with other than one constructor (a leaf is
+`Nat` or a one-constructor wrapper of it). -/
+def RCx.noLeafType (x : RCx) (ty : Ixon.Expr) : Bool :=
+  let ty := Ix.Kernel.Reader.unshare x.c ty
+  match view ty with
+  | .ok (.all ..) | .ok .sort => true
+  | _ =>
+    match ixSpine 4096 ty with
+    | .ok (h, _) =>
+      let r? : Option Ref := match view (Ix.Kernel.Reader.unshare x.c h) with
+        | .ok (.ref i) => (x.refAt i).toOption
+        | .ok (.recur i) => x.recur i
+        | _ => none
+      match r?.bind (inductiveAt? x.s) with
+      | some ind => ind.ctors.size != 1
+      | none => false
+    | .error _ => false
+
 /-! ## Skeletons -/
 
 /-- **A type's mode skeleton**, read from the record (no unfolding): a ∀ its
@@ -326,7 +345,8 @@ def readTerm (x : RCx) (caseOf : Ref → Option CaseInfo) :
       let ps ← readSkel x n ty
       let (bt, bc) ← readTerm x caseOf n (⟨.fvar ctx.length k, pc⟩ :: ctx) b
       let fvs ← freeVars n 1 bt
-      pure (.lam { mode := m.input, cls := pc, skel := ps } m.result bc fvs.toArray bt, c)
+      pure (.lam { mode := m.input, cls := pc, skel := ps, noLeaf := x.noLeafType ty } m.result bc
+        fvs.toArray bt, c)
     | .letE m ty v b => do
       let k ← x.toK ctx ty
       let dc ← x.cl.type ctx.length k
@@ -366,7 +386,7 @@ def readIface (x : RCx) (fuel : Nat) (ty : Ixon.Expr) :
   for (m, sk, dom) in alls do
     let k ← x.toK ctx dom
     let pc ← x.cl.type ctx.length k
-    ps := ps.push { mode := m.input, cls := pc, skel := sk }
+    ps := ps.push { mode := m.input, cls := pc, skel := sk, noLeaf := x.noLeafType dom }
     ctx := ⟨.fvar ctx.length k, pc⟩ :: ctx
   let n := alls.length
   for (m, _, _) in alls.take (n - 1) do
@@ -388,7 +408,7 @@ def readLams (x : RCx) : Nat → List Local → Ixon.Expr →
       let pc ← x.cl.type ctx.length k
       let sk ← readSkel x n ty
       let (rest, ctx', body) ← readLams x n (⟨.fvar ctx.length k, pc⟩ :: ctx) b
-      pure ((m, { mode := m.input, cls := pc, skel := sk }) :: rest, ctx', body)
+      pure ((m, { mode := m.input, cls := pc, skel := sk, noLeaf := x.noLeafType ty }) :: rest, ctx', body)
     | _ => pure ([], ctx, e)
 
 /-- Strip `k` leading ∀s (not through sharing references). -/
@@ -816,8 +836,8 @@ def readEquation (rd : Reading) (cl : Classifier) (x : RCx) (eqRef andRef : Opti
       for (m, _, _) in alls.take (xs - 1) do
         unless m.result == .shared do throw "a non-default result mode before a definition's last binder"
       let clsList := (ctx.reverse.map (·.cls)).toArray
-      let params := ((alls.take xs).zipIdx.map fun ((m, sk, _), i) =>
-        ({ mode := m.input, cls := clsList[i]?.getD .val, skel := sk } : Param)).toArray
+      let params := ((alls.take xs).zipIdx.map fun ((m, sk, dom), i) =>
+        ({ mode := m.input, cls := clsList[i]?.getD .val, skel := sk, noLeaf := fx.noLeafType dom } : Param)).toArray
       let res := ((alls.take xs).getLast?.map (·.1.result)).getD .shared
       let rs := arrowChain ((alls.drop xs).map fun (m, s, _) => (m, s)) codSkel
       return #[(f, .body params res rc rs rhs)]

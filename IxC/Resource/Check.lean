@@ -201,6 +201,8 @@ def callResult (ifc : Iface) (avs : Array (Option AVal)) (w : String) : CM AVal 
   let mut deps : List Nat := []
   let mut sdeps : List Nat := []
   let mut regs : List Nat := []
+  -- the regions a leaf result may carry: an argument's, where a leaf may pass
+  let mut leafRegs : List Nat := []
   for (p, i) in ifc.params.zipIdx do
     match avs[i]? with
     | some (some a) =>
@@ -208,6 +210,7 @@ def callResult (ifc : Iface) (avs : Array (Option AVal)) (w : String) : CM AVal 
       flowTo d p.skel a w
       if a.cls == .val then deps := natUnion deps a.deps
       regs := natUnion regs a.regs
+      if !p.noLeaf then leafRegs := natUnion leafRegs a.regs
       match d with
       | .share => sdeps := natUnion sdeps a.deps
       | _ => pure ()
@@ -219,7 +222,9 @@ def callResult (ifc : Iface) (avs : Array (Option AVal)) (w : String) : CM AVal 
   | .unique => pure { base with own := .uniq }
   | .uniqueBorrowed => pure { base with own := .uniq, deps, regs := natUnion regs [inner] }
   | .borrowed => pure { base with deps, regs := natUnion regs [inner] }
-  | .shared => pure { base with deps := (if ifc.resCls == .leaf then [] else sdeps), regs }
+  | .shared =>
+    if ifc.resCls == .leaf then pure { base with regs := leafRegs }
+    else pure { base with deps := sdeps, regs }
 
 /-- A partial application: its arguments at unique parameters transferred now
 (`captureTransfers`), which makes it callable once; the others retained. -/
@@ -345,7 +350,9 @@ def anCtor (nP : Nat) (fields : Array Field) (avs : Array (Option AVal)) (c : Cl
       if v.onceOnly then refuseM "onceReentry: a once-only closure stored in a cell"
       unless Skel.unknown.admits v.skel do refuseM "mode skeletons differ: a moded closure stored in a cell"
       regs := natUnion regs v.regs
-      if f.fmode == .shared then flowTo .share v.skel v "a shared field"
+      if f.fmode == .shared then
+        unless v.regs.isEmpty do refuseM "borrowEscape: a borrowed value stored in a @shared field"
+        flowTo .share v.skel v "a shared field"
       else if v.cls == .val then
         unless ← isUniq v do own := .shared
         deps := natUnion deps v.deps
@@ -366,7 +373,10 @@ def anProj (P : Prog) (s : Ref) (i : Nat) (v : AVal) (c : Cls) : CM AVal := do
   if f.cls == .irr || c == .irr then return { cls := .irr }
   if c == .imm then return { cls := .imm }
   if v.cls != .val then return { v with cls := c, src := none }
-  if f.fmode == .shared || c == .leaf then return { cls := c, skel := .unknown }
+  if f.fmode == .shared then return { cls := c, skel := .unknown }
+  -- a leaf: read out of a cell it is unconfined, but the container may be a
+  -- trivial wrapper represented by it
+  if c == .leaf then return { cls := c, regs := v.regs, skel := .unknown }
   pure { cls := c, deps := v.deps, regs := v.regs, skel := .unknown }
 
 /-- The value of field `i` of a case's constructor, whether it is erased, and
@@ -383,8 +393,11 @@ def caseField (P : Prog) (k : CaseInfo) (fields : Array Field) (mv : AVal) (cons
       else if mv.cls != .val && P.wrapperField? k.ind == some i then ({ mv with src := none }, false, false)
       else if f.cls != .val then ({ cls := f.cls }, false, false)
       else if f.fmode == .shared then ({ cls := .val }, false, false)
-      else if consuming then ({ cls := .val, own := .uniq, regs := mv.regs }, false, true)
-      else ({ cls := .val, deps := mv.deps, regs := mv.regs }, false, true)
+      else
+        -- read out of a cell, unless the inductive may be a trivial wrapper
+        let fromCell := (P.ctorsOf k.ind).size != 1
+        if consuming then ({ cls := .val, own := .uniq, regs := mv.regs }, false, fromCell)
+        else ({ cls := .val, deps := mv.deps, regs := mv.regs }, false, fromCell)
 
 /-! ## The abstract run -/
 

@@ -23,8 +23,7 @@ bytes an `.ixe` stores for it after its length prefix), a projection
 record's likewise, and a blob's is BLAKE3 of its payload. This is how the
 compiler addresses them (`Ix.CompileM`, `Address.blake3` over
 `Ixon.serConstant`), how the `.ixe` loaders verify them (`Ixon.getEnv`,
-`Ixon.getEnvVerifiedLazy`), and how the resource adapter commits them
-(`Ix.Resource.Addressed.commit`).
+`Ixon.getEnvVerifiedLazy`).
 
 Theorems: `Ixon.Authenticated.Theorems`; audit: `Ixon.Authenticated.Audit`. -/
 

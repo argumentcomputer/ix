@@ -1,6 +1,7 @@
 module
 
 public import Ix.CompileCertified
+public import Ix.ModeCheck
 
 /-!
   Contract pipeline test suite (`Tests.ContractPipeline`).
@@ -26,7 +27,7 @@ def identitySource : Lean.ConstantInfo := .defnInfo {
 
 def input (result : Ixon.ValueContract := .localShared) : Except SourceContractError CompileInput := do
   let contract ← SourceContract.ofTelescope identitySource #[{
-    binder := .position 0, uses := .linear, value := .localShared, result := some result }]
+    binder := .position 0, uses := .many, value := .localShared, result := some result }]
   return { constants := [(typeName, typeSource), (identityName, identitySource)], contracts := #[contract] }
 
 def get (label : String) (r : Except String α) : IO α :=
@@ -35,7 +36,8 @@ def get (label : String) (r : Except String α) : IO α :=
 def compileInput (input : CompileInput) : IO (Except String Ix.CompileM.CertifiedOut) := do
   match input.prepare >>= fun p => (Ix.CompileM.checkPreparedSource p).map (p, ·) with
   | .error e => return .error e
-  | .ok (prepared, annotated) => Ix.CompileM.compileCertifiedPrepared prepared annotated 1
+  | .ok (prepared, annotated) =>
+    Ix.CompileM.compileCertifiedPrepared prepared annotated 1 (modeCheck := Ix.ModeCheck.checkArtifact)
 
 def run : IO Unit := do
   let valid ← get "input" ((input).mapError toString)
@@ -45,15 +47,11 @@ def run : IO Unit := do
   unless (lean.env.consts.toList.map Prod.fst).mergeSort (fun a b => Address.cmpBytes a b != .gt) ==
       (certEnv.consts.toList.map Prod.fst).mergeSort (fun a b => Address.cmpBytes a b != .gt) do
     throw <| IO.userError "contract pipeline: Lean/certified address sets differ"
-  let profile : Ix.Resource.Profile := {}
-  let _ ← get "explicit profile" (Ix.Resource.validate lean.env profile)
-  let malformedRejected := (Ix.Resource.Profile.ofBytes (profile.bytes.push 0)).toOption.isNone
-  unless malformedRejected do
-    throw <| IO.userError "contract pipeline: malformed profile bytes accepted"
+  let _ ← get "mode checking" (Ix.ModeCheck.checkArtifact lean.env)
   let invalid ← get "invalid input" ((input .shared).mapError toString)
   if (← compileInput invalid).toOption.isSome then
     throw <| IO.userError "contract pipeline: pure compiler emitted an escaping local value"
-  IO.println "Contract pipeline: certified compiler preserves addresses and rejects local escape before emission"
+  IO.println "Contract pipeline: certified compiler preserves addresses, its modes check, and a borrowed result escaping is refused before emission"
 
 end Tests.ContractPipeline
 

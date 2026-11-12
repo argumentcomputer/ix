@@ -53,8 +53,12 @@ def tblR := mem 19
 def fld (c : Cls := .val) (fm : FieldMode := .inherited) (m : BinderMode := .many) : Field :=
   { mode := m, fmode := fm, cls := c }
 
-def par (m : BinderMode := .many) (c : Cls := .val) (s : Skel := .data) : Param :=
-  { mode := m, cls := c, skel := s }
+def par (m : BinderMode := .many) (c : Cls := .val) (s : Skel := .data) (noLeaf : Bool := false) :
+    Param :=
+  { mode := m, cls := c, skel := s, noLeaf }
+
+/-- A list parameter: no leaf inhabits its type. -/
+def parL (m : BinderMode := .many) : Param := par m .val .data true
 
 /-- A closure, its captures computed. -/
 def lam (p : Param) (body : Term) (res : ResultMode := .shared) (rc : Cls := .val) : Term :=
@@ -97,7 +101,7 @@ def lib : Array (Ref × RunDef) := #[
   (consumeBR, body [par .unique] (.natLit 0) .shared .leaf),
   (consumeSR, body [par .unique] (.natLit 0) .shared .leaf),
   (incR, body [par .many .leaf] (add (v 0 .leaf) (.natLit 1)) .shared .leaf),
-  (lenR, body [par .many] (onList (v 0) (.natLit 0) (add (lenOf (v 0)) (.natLit 1)) .val .leaf)
+  (lenR, body [parL] (onList (v 0) (.natLit 0) (add (lenOf (v 0)) (.natLit 1)) .val .leaf)
     .shared .leaf),
   -- `use (k : List → Nat) (xs : List) : Nat := k xs + len xs`
   (useR, body [par .many .val (arrowSk), par .many] (add (app (v 1) [v 0] .leaf) (lenOf (v 0)))
@@ -260,6 +264,8 @@ def letOk := mem 126
 def escN := mem 127
 def addN := mem 128
 def headN := mem 129
+def storeN := mem 132
+def shf := mem 133
 
 def borrowCases : List LSpec.TestSeq := [
   runCase "borrow: a borrowed parameter returned" [(esc, body [par .borrowed] (v 0))] esc oneList
@@ -284,7 +290,16 @@ def borrowCases : List LSpec.TestSeq := [
     (add (v 0 .leaf) (.natLit 1)) .shared .leaf)] addN oneNat none true,
   -- `headN (@borrowed xs : List Nat) : Nat := match xs with | [] => 0 | h :: _ => h`
   runCase "borrow: a leaf read out of a borrowed container is not confined" [(headN, body [par .borrowed]
-    (onList (v 0) (.natLit 0) (v 1 .leaf) .leaf .leaf) .shared .leaf)] headN oneList none true
+    (onList (v 0) (.natLit 0) (v 1 .leaf) .leaf .leaf) .shared .leaf)] headN oneList none true,
+  -- `storeN (@borrowed n : Nat) : Nat := match [n] with | [] => 0 | h :: _ => h`
+  runCase "borrow: a borrowed leaf stored in a cell and read back is a counted value" [(storeN,
+    body [par .borrowed .leaf]
+      (onList (app (.const consR .val) [.irr, v 0 .leaf, app (.const nilR .val) [.irr] .imm])
+        (.natLit 0) (v 1 .leaf) .leaf .leaf) .shared .leaf)] storeN oneNat none true,
+  -- `shf (@borrowed b : List) : List := (⟨b⟩ : S).1` (a borrowed value in a `@shared` field)
+  runCase "borrow: a borrowed value stored in a @shared field and returned" [(shf,
+    body [par .borrowed] (.proj S 0 (app (.const sboxR .val) [v 0]) .val))] shf oneList
+    (some .borrowEscape) false
 ]
 
 /-! ### Once -/

@@ -174,12 +174,57 @@ def RecordModes.block? (rm : RecordModes) (k : BlockKey) : Option (Array ModeNod
 def RecordModes.binderfulAt (rm : RecordModes) (n : Nat) : Bool :=
   rm.binderful[n]?.getD false
 
-/-- **The record's modes** (this format: from the inline contracts). -/
+/-- The positions, among `e`'s numbered nodes, of its leading `lam`s (or `all`s,
+with `alls`), up to its first sharing reference. -/
+def leadingBinders (full : Array Bool) (alls : Bool) : Nat → Ixon.Expr → Nat → Except String (List Nat)
+  | 0, _, _ => pure []
+  | n + 1, e, pos =>
+    match e, alls with
+    | .lam _ t b, false | .all _ _ t b, true => do
+      let inner ← inlineNodes full t #[]
+      pure (pos :: (← leadingBinders full alls n b (pos + 1 + inner.size)))
+    | _, _ => pure []
+
+/-- The definitions of a record: each one's type and value root numbers. -/
+def definitionRoots (info : ConstantInfo) : List (Nat × Ixon.Expr × Nat × Ixon.Expr) :=
+  match info with
+  | .defn d => [(0, d.typ, 1, d.value)]
+  | .muts ms => Id.run do
+    let mut out : List (Nat × Ixon.Expr × Nat × Ixon.Expr) := []
+    let mut base := 0
+    for m in ms do
+      match m with
+      | .defn d =>
+        out := out ++ [(base, d.typ, base + 1, d.value)]
+        base := base + 2
+      | .indc i => base := base + 1 + i.ctors.size
+      | .recr r => base := base + 1 + r.rules.size
+    return out
+  | _ => []
+
+/-- **The record's modes** (this format: from the inline contracts). A `lam`
+here has no result mode of its own, so a definition value's leading `lam`s
+take theirs from the type's leading `all`s, node for node. -/
 def recordModes (c : Ixon.Constant) : Except String RecordModes := do
   let full := binderfulEntries c.sharing
   let mut blocks : Array (BlockKey × Array ModeNode) := #[]
-  for (root, i) in (binderRoots c.info).zipIdx do
-    let nodes ← inlineNodes full root #[]
+  let defs := definitionRoots c.info
+  let mut rootNodes : Array (Array ModeNode) := #[]
+  for root in binderRoots c.info do
+    rootNodes := rootNodes.push (← inlineNodes full root #[])
+  for (ti, ty, vi, val) in defs do
+    let tys ← leadingBinders full true 4096 ty 0
+    let vals ← leadingBinders full false 4096 val 0
+    let some tNodes := rootNodes[ti]? | continue
+    let some vNodes := rootNodes[vi]? | continue
+    let mut vNodes := vNodes
+    for (tp, vp) in tys.zip vals do
+      match tNodes[tp]?, vNodes[vp]? with
+      | some (.binder tm), some (.binder vm) =>
+        vNodes := vNodes.set! vp (.binder { vm with result := tm.result })
+      | _, _ => pure ()
+    rootNodes := rootNodes.set! vi vNodes
+  for (nodes, i) in rootNodes.zipIdx do
     unless nodes.isEmpty do blocks := blocks.push ({ shared := false, index := i, variant := 0 }, nodes)
   for (e, n) in c.sharing.zipIdx do
     if full[n]?.getD false then

@@ -5,7 +5,7 @@ import Tests.Ix.Kernel.FocusedLeanCheck
 import Ix.CompileM
 import Ix.CompileCertified
 import Ix.RoleBinding.Compile
-import Ix.Resource.Typing
+import Ix.Typing
 import LSpec
 
 /-!
@@ -204,7 +204,7 @@ def compileClosure (env : Lean.Environment) (dir : System.FilePath)
     try
       artifact ← Ix.RoleBinding.Compile.finalize (Ix.RoleBinding.Compile.certifiedBackend 32) env
         Ix.RoleBinding.Compile.nativeCertSource (Ix.Compile.CompileInput.plain consts) out.env
-        Ix.Resource.typingLimits (existing? := out.existing?)
+        Ix.Typing.typingLimits (existing? := out.existing?)
     catch e => return .error s!"finalize: {e}"
   let path := artifactPath dir tag
   let bytes ← IO.ofExcept (Ixon.serEnv artifact)

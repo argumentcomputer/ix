@@ -1,8 +1,6 @@
 module
 
 public import Ix.ClaimContext
-public import Ix.Resource.Claim
-public import Tests.Ix.ResourceAddressed
 public import Tests.Ix.Claim
 
 public section
@@ -89,22 +87,9 @@ def run : IO Unit := do
     unless proofBytes[1]! == Ixon.Env.OBJECT_FORMAT do throw <| IO.userError "proof scope offset"
     unless (Ixon.Proof.de (proofBytes.set! 1 3)).toOption.isNone do
       throw <| IO.userError "proof with version 3 object format accepted"
-  let (base, unit) := Tests.ResourceAddressed.unitEnv
-  let (env, _) := Tests.ResourceAddressed.store base (Tests.ResourceAddressed.identity unit)
-  let profile : Ix.Resource.Profile := {}
-  let claim ← IO.ofExcept (Ix.Resource.makeClaim env profile)
-  let _ ← IO.ofExcept (Ix.Resource.checkClaim env profile claim)
-  Tests.ResourceAddressed.check "resource claim rejects erased validator"
-    (Ix.Resource.checkClaim env profile
-      (.checkEnv (Ix.ClaimContext.ofDefaultTable.toOption.getD default) env.merkleRoot.get! none))
-    false
-  Tests.ResourceAddressed.check "resource claim binds the entire subject"
-    (Ix.Resource.checkClaim base profile claim) false
-  Tests.ResourceAddressed.check "resource claim binds limits"
-    (Ix.Resource.checkClaim env { profile with limits := { steps := 100001 } } claim) false
   let result ← LSpec.lspecIO (.ofList [("claims", Tests.Claim.suite)]) []
   unless result == 0 do throw <| IO.userError "existing claim tests failed"
-  IO.println s!"Ixon v{Ixon.Env.VERSION} claims: fixtures, strict envelopes, proof wrappers, subjects, and profiles passed"
+  IO.println s!"Ixon v{Ixon.Env.VERSION} claims: fixtures, strict envelopes, proof wrappers and subjects passed"
 
 end Tests.ClaimsV4
 

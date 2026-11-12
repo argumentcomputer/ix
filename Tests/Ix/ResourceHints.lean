@@ -2,7 +2,7 @@ import LSpec
 import Ix.Meta
 import Ix.CompileCertified
 import Ix.EnvScope
-import Ix.Resource.Validate
+import Ix.Typing
 import Tests.Ix.Kernel.SourceIngress
 import Tests.Ix.ContractPipeline
 import Tests.Ix.SourceContract.SyntaxFixture
@@ -10,7 +10,7 @@ import Tests.Ix.Kernel.TierIndDefs
 
 /-! # The resource validator's typing half on compiled closures (`resource-hints`)
 
-Actual typing verdicts (`Ix.Resource.typeCheck`) on compiled closures the typing
+Actual typing verdicts (`Ix.Typing.typeCheck`) on compiled closures the typing
 half accepts: the reader-fidelity and Source-ingress fixtures (with assumption
 axioms), the source-contract syntax fixture (a contract input), the contract
 pipeline's input (an assumption axiom, `ContractA`) and the typing tier's
@@ -39,15 +39,15 @@ def closureOf (leanEnv : Lean.Environment) (modules : Array Lean.Name) (extra : 
 /-- Size of the initial uncertified split. The typing fallback may expand
 this set to include all tier owners; this helper does not observe that path. -/
 def uncertifiedSize (ixe : Ixon.Env) : Nat :=
-  match Ix.Resource.typingInput ixe with
+  match Ix.Typing.typingInput ixe with
   | .error _ => 0
   | .ok input =>
-    let unc := Ix.Resource.splitOf input
+    let unc := Ix.Typing.splitOf input
     (input.ordered.filter fun (a, c, _) => unc.contains (Ixon.CheckOrder.owner a c)).size
 
 /-- The typing half must accept the actual compiled `ixe`. -/
 def verdict (label : String) (ixe : Ixon.Env) : Array String × Array String :=
-  let ixc := Ix.Resource.typeCheck ixe
+  let ixc := Ix.Typing.typeCheck ixe
   let named (e : String) : List String := ixe.named.toList.filterMap fun (n, nd) =>
     if (e.splitOn (toString nd.addr)).length > 1 then some (toString n) else none
   let errors := match ixc with

@@ -100,11 +100,14 @@ def admits : Skel → Skel → Bool
 end Skel
 
 /-- A parameter or binder: its mode, the class of its values, the skeleton of
-its type. -/
+its type, and whether its type is one no leaf inhabits (a function type, a
+sort, an inductive type with other than one constructor: read from the record,
+not from the class oracle). -/
 structure Param where
   mode : BinderMode := .many
   cls : Cls := .val
   skel : Skel := .unknown
+  noLeaf : Bool := false
   deriving BEq, Repr, Inhabited
 
 /-- What a case alternative is applied to: a field of the matched constructor,

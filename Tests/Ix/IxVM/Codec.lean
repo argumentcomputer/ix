@@ -1,7 +1,8 @@
 import Tests.Ix.IxonV4
 import Tests.Ix.ResourceAddressed
 import Tests.Ix.IxVM.TagN
-import Ix.Resource.Claim
+import Ix.Claim
+import Ix.ModeCheck
 
 /-!
 # The IxVM program's Ixon codec and claim boundary
@@ -149,22 +150,23 @@ def claimCases (r : Runner) : IO Unit := do
     if name == "check" then
       add "catalog-no-arm" (replaceClaimBytes witness (Ix.Claim.ser (.catalog tree.root))) false
         "no matching arm"
-  -- Erased typing deliberately accepts a resource-invalid body; the validator
-  -- byte keeps that apart from resource admission.
+  -- Erased typing deliberately accepts a body the mode checker refuses; the
+  -- validator byte keeps typing apart from mode checking.
   let (escaping, escapingTarget) := Tests.ResourceAddressed.store base
     (Tests.ResourceAddressed.identity unit Tests.ResourceAddressed.linearLocal .shared)
   let escaping := { escaping with anonHints := escaping.anonHints.insert escapingTarget .opaque }
-  unless (Ix.Resource.validate escaping {}).toOption.isNone do
-    throw <| IO.userError "the escaping fixture passed native resource validation"
+  unless (Ix.ModeCheck.checkArtifact escaping).toOption.isNone do
+    throw <| IO.userError "the escaping fixture passed mode checking"
   add "explicit erased typing" (← IO.ofExcept (IxVM.ClaimHarness.buildClaimWitness escaping
     (.check ctx escapingTarget none))) true
-  -- A resource claim has a native validator, and fails explicitly at the
-  -- circuit boundary rather than accepting a host validation result.
-  let profile : Ix.Resource.Profile := {}
-  let claim ← IO.ofExcept (Ix.Resource.makeClaim env profile)
-  let profileAddr ← IO.ofExcept profile.address
+  -- A resource claim (variant 9, `resource-v1`: it has no validator) fails
+  -- explicitly at the circuit boundary, whatever its profile.
+  let some root := env.merkleRoot | throw <| IO.userError "the claim fixture has no subject"
+  let profileBytes : ByteArray := ⟨#[0x52]⟩
+  let profileAddr := Address.blake3 profileBytes
+  let claim := Ix.Claim.resource root profileAddr
   let witness ← IO.ofExcept (IxVM.ClaimHarness.buildClaimWitness env claim trees
-    (({} : Std.HashMap Address ByteArray).insert profileAddr profile.bytes))
+    (({} : Std.HashMap Address ByteArray).insert profileAddr profileBytes))
   r.add { label := "claim boundary unsupported resource validator", accept := false,
           rejectsWith := some "resource-v1 is not implemented by IxVM", witness }
 
