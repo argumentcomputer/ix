@@ -338,8 +338,12 @@ about 1.0 µs per captured entry at a declaration, about 0.1 µs per action;
 so a map within the budget checks in about a second at most, and its actions
 (at most 64 MiB of text) in about 0.6 s. The registered corpus needs at most
 1,925 (`Machines.fibMain`, canonical placement; 145 with a liveness
-placement), 545 times below the limit; the captured work is at most ⟦RATIO⟧
-times the program's Anf nodes over the corpus (⟦RATIOLARGE⟧).
+placement), 545 times below the limit. Measured against the program's Anf nodes, the
+captured work is at most 0.75 times them on the corpus (`Machines.echo`, 1,316 tokens for 1,754
+nodes; `Machines.fibMain` 0.52), 0.16 on the largest programs (`Natural.fibMain`, 8,459 nodes;
+`Closures.stateLoop`, 11,536 nodes, captures nothing), 0.04 on the benchmark closures and 0.04
+with a liveness placement; since the limit equals `Anf.maxProgramNodes`, a program reaches it only
+with more than one captured token per node.
 A legitimate program can exceed the budget: `fixtures/rc/budget`'s `fanOver`
 (forty-one functions, each a join capturing 200 values jumped to from 127
 leaves: 1,049,600 canonical captured tokens). Under `--rc on` it is refused
@@ -352,7 +356,7 @@ program, within the limit. The limit is not settable at invocation yet (a
 mechanism to raise the verifier's limits as `IXCC_<LIMIT>` is being built).
 The verifier's other costs on hostile input (the source-domain check
 `programDomain`, quadratic, and the check run three times per certificate)
-are listed in the [roadmap](roadmap.md#cost-and-crash-on-hostile-input).
+are listed in the [roadmap](roadmap.md#hardening).
 ⟦VERIFIERTIME⟧
 
 **Statics.** Closed constructor trees (and, after P8, field-less closure
