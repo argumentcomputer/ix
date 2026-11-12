@@ -108,7 +108,7 @@ application sites SrcEval evaluates), is assumed only at the sites a checked
 direct route (types read off stored types, a small conversion on the laws)
 refuses (`SitesOkRes`). It refuses none on the two instances, so `fibRoot` and
 `decideRoot` have no typing hypothesis; on the measured corpus it refuses no
-site of any closure the check accepts. Since its widening (G2b: ι and `Nat`
+site of any closure the check accepts but one (`OS02-plain`, one site). Since its widening (G2b: ι and `Nat`
 arithmetic on literals in the conversion, which adds two laws to the ones it
 rests on, string literals, `imax a a`, the fuel per nested argument) and its
 cost fix (G3: constants looked up in a table of the reading, a telescope's
@@ -118,8 +118,10 @@ that load (262 in twenty before G2b), and a `case` shape tolerant of a
 recursor's level-parameter names lets the check accept 24 of them (22 before
 it). Recursors now enter the checked set by class, each class once its case of
 the fundamental lemma is proved (G3, parts A and B: a recursor head in the
-relation, the checked recursor shape; so far only the class of `False.rec`,
-which traps, so no closure of the corpus is newly accepted). One checked hypothesis, `ResultTag`, still rejects some roots (a `Bool` root returning `false` on the committed
+relation, the checked recursor shape, the class of `False.rec`, which traps;
+part C: the built-in `Eq.rec`, whose meaning, the minor premise returned, is
+proved from ι and the model's `Eq` law), so the check accepts 29 of the 49
+closures. One checked hypothesis, `ResultTag`, still rejects some roots (a `Bool` root returning `false` on the committed
 closures). What remains: a model of the laws (below), widening the fragment
 and the direct route's conversion, `ResultTag`, and progress; the
 certification design lists every hypothesis with who discharges it.

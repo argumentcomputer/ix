@@ -1794,6 +1794,7 @@
   "IxCCGrounding.Direct.Sites",
   "IxCCGrounding.Direct.Sound",
   "IxCCGrounding.Direct.Subst",
+  "IxCCGrounding.EqRec",
   "IxCCGrounding.Eqn",
   "IxCCGrounding.Fence",
   "IxCCGrounding.Fundamental",
@@ -1813,10 +1814,10 @@
   "IxCCGrounding.Syntax",
   "IxCCGrounding.Tele"],
  "grounding_axiom_sha256":
- "bf89e40a0278da2fa017bf8faef2a51ea2a6b11b4da3b21a40c6be272c03d9a5",
- "grounding_axiom_count": 116,
+ "1491b49b801096fd4908aefe24a1fdb595c4a309ba7740b34ff297da879f69eb",
+ "grounding_axiom_count": 125,
  "baseline":
- "heap stage 1, first landing: the general-layout runtime Rt.Rc.Gen and its proofs, 236 exact fences, the general-layout runtime controls; merged with the grounding library s G3 parts A and B",
+ "G3 part C (Eq.rec admitted): grounding fence 125 exact assertions",
  "axiom_sha256":
  "4f83a07e18aea8ed3b718a877b55c6f7c28e1dc861b53b5474f593e508aeee3d",
  "axiom_count": 6491}
