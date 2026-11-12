@@ -570,9 +570,13 @@ def try_eta_struct := aiur_fn⟦
                       match ind_ci {
                         KernelTypes::KConstantInfo::Induct(ind_nl, ind_ty, _, nindices, nctors, _, _, _) => {
                           -- DefEq.structEtaTy reads the fields as `.proj` nodes, which read only
-                          -- at a native block (the kernel installs projection tables there)
-                          let shape_ok = (Fields::is_zero(nindices) * Fields::is_zero(nctors - 1))
-                            * Fields::is_zero(KernelModeled::block_is_modeled(ind_block_addr));
+                          -- at a native block (the kernel installs projection tables there). It
+                          -- also needs a field (`0 < cnF`; a field-less structure is unit-like)
+                          -- and a structure whose sort is never zero (`caps.eta`).
+                          let shape_ok = ((Fields::is_zero(nindices) * Fields::is_zero(nctors - 1))
+                            * Fields::is_zero(KernelModeled::block_is_modeled(ind_block_addr)))
+                            * ((1 - Fields::is_zero(nfields))
+                              * KernelWhnf::type_sort_never(ind_ty, nparams, s_lvls));
                           match shape_ok {
                             0 => {  0 } ,
                             _ => {
@@ -730,9 +734,29 @@ def family_params := aiur_fn⟦
           let ty_i = KernelLevels::expr_inst_levels(ind_ty, lvls);
           match KernelWhnf::slots_never(ty_i, ind_np) {
             1 => {  1 } ,
-            _ => {  KernelWhnf::certs_all(rc, ty_i, args, (&(Lists::Node::Nil)), types) } ,
+            _ => {
+              -- certified only along `ind_np` syntactic binders (`Certs` reads no whnf)
+              match leading_foralls(ty_i, ind_np) {
+                1 => {  KernelWhnf::certs_all(rc, ty_i, args, (&(Lists::Node::Nil)), types) } ,
+                _ => {  0 } ,
+              } } ,
           } } ,
         _ => {  0 } ,
+      }
+    }
+⟧
+
+  -- Whether `t` begins with `n` syntactic binders.
+
+def leading_foralls := aiur_fn⟦
+  fn leading_foralls(t: KernelTypes::KExpr, n: Field) -> Field {
+      match n {
+        0 => {  1 } ,
+        _ => {
+          match (*(t)) {
+            KernelTypes::KExprNode::Forall(_, body, _) => {  leading_foralls(body, n - 1) } ,
+            _ => {  0 } ,
+          } } ,
       }
     }
 ⟧
