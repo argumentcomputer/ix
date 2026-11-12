@@ -52,14 +52,14 @@ def Fn.name : Fn → String
   | .level_list_inst => "KernelLevels::level_list_inst"
 
 def Fn.spec : Fn → SpecFn
-  | .level_leq => level_leq
-  | .level_equal => level_equal
-  | .level_is_not_zero => level_is_not_zero
-  | .level_struct_eq => level_struct_eq
-  | .level_max => level_max
-  | .level_imax => level_imax
-  | .level_reduce => level_reduce
-  | .level_inst_params => level_inst_params
-  | .level_list_inst => level_list_inst
+  | .level_leq => Specs.LevelOps.level_leq
+  | .level_equal => Specs.LevelOps.level_equal
+  | .level_is_not_zero => Specs.LevelOps.level_is_not_zero
+  | .level_struct_eq => Specs.LevelOps.level_struct_eq
+  | .level_max => Specs.LevelOps.level_max
+  | .level_imax => Specs.LevelOps.level_imax
+  | .level_reduce => Specs.LevelOps.level_reduce
+  | .level_inst_params => Specs.LevelOps.level_inst_params
+  | .level_list_inst => Specs.LevelOps.level_list_inst
 
 end IxVM.Refinement.Core.Specs.LevelOps
