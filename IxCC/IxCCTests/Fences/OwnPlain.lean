@@ -22,6 +22,7 @@ import IxCC.Own.Plain.Proof.Results
 import IxCC.Own.Plain.Proof.RhsShape
 import IxCC.Own.Plain.Proof.Scalars
 import IxCC.Own.Plain.Proof.Scope
+import IxCC.Own.Plain.Proof.ScopeSet
 import IxCC.Own.Plain.Proof.ShapeOps
 import IxCC.Own.Plain.Proof.ShapeResult
 import IxCC.Own.Plain.Proof.StackScope
@@ -463,3 +464,54 @@ import IxCC.Own.Plain.Syntax
 
 /-- info: 'IxCC.Own.Plain.Values.natArgs_den' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Own.Plain.Values.natArgs_den
+
+/-! `programDomain` and `contractProgramDomain` over sets (`Own/Plain/ScopeSet.lean`): the set forms
+equal the list forms (`Own/Plain/Proof/ScopeSet.lean`). -/
+
+/-- info: 'IxCC.Own.Plain.natMap_setF_get?' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Own.Plain.natMap_setF_get?
+
+/-- info: 'IxCC.Own.Plain.natSet_contains_insert' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Own.Plain.natSet_contains_insert
+
+/-- info: 'IxCC.Own.Plain.list_contains_append_single' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Own.Plain.list_contains_append_single
+
+/-- info: 'IxCC.Own.Plain.contains_insert_append' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Own.Plain.contains_insert_append
+
+/-- info: 'IxCC.Own.Plain.contains_insertVars' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Own.Plain.contains_insertVars
+
+/-- info: 'IxCC.Own.Plain.argInSet_eq' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Own.Plain.argInSet_eq
+
+/-- info: 'IxCC.Own.Plain.freshSet_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Own.Plain.freshSet_eq
+
+/-- info: 'IxCC.Own.Plain.lookup_signatures_range'' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Own.Plain.lookup_signatures_range'
+
+/-- info: 'IxCC.Own.Plain.signatureArity_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Own.Plain.signatureArity_eq
+
+/-- info: 'IxCC.Own.Plain.rhsInSet_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Own.Plain.rhsInSet_eq
+
+/-- info: 'IxCC.Own.Plain.scopeOkSet_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Own.Plain.scopeOkSet_eq
+
+/-- info: 'IxCC.Own.Plain.scopeAltsSet_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Own.Plain.scopeAltsSet_eq
+
+/-- info: 'IxCC.Own.Plain.scopeOptSet_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Own.Plain.scopeOptSet_eq
+
+/-- info: 'IxCC.Own.Plain.functionScope_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Own.Plain.functionScope_eq
+
+/-- info: 'IxCC.Own.Plain.programDomain_eq_list' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Own.Plain.programDomain_eq_list
+
+/-- info: 'IxCC.Own.Plain.contractProgramDomain_eq_list' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Own.Plain.contractProgramDomain_eq_list
