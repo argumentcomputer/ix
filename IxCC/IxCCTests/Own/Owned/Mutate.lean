@@ -1,6 +1,6 @@
-import IxCCTests.Own.Stage2.Owned
+import IxCC.Own.Plain.Owned
 
-/-! # Heap stage 2, step 0: negative controls (probe)
+/-! # The ownership checker's suite: negative controls
 
 Each control edits one site of an accepted ownership body, chosen with the checker's own context
 at that site so that the edit is a real error (the variable is not an immediate and holds exactly
@@ -14,7 +14,7 @@ the tokens the error needs), and expects a refusal for the stated reason:
 
 set_option autoImplicit false
 
-namespace IxCCTests.Own.Stage2
+namespace IxCCTests.Own.Owned
 
 open IxCC IxCC.Own.Plain
 open IxCC.Fir (Var JoinId FunId Arg Rhs)
@@ -134,4 +134,4 @@ def mutant (kind : Kind) (target : Nat) (params : List Var) (body : Code) : Opti
   let (c, s) := (mutCode kind target .leaf (Ctx.entry params) false body).run {}
   if s.done then some c else none
 
-end IxCCTests.Own.Stage2
+end IxCCTests.Own.Owned

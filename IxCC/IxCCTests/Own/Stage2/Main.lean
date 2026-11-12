@@ -1,10 +1,10 @@
-import IxCCTests.Own.Stage2.Owned
-import IxCCTests.Own.Stage2.Live
-import IxCCTests.Own.Stage2.Interp
-import IxCCTests.Own.Stage2.Mutate
+import IxCC.Own.Plain.Owned
+import IxCCTests.Own.Owned.Live
+import IxCCTests.Own.Owned.Interp
+import IxCCTests.Own.Owned.Mutate
 import IxCCTests.Own.Stage2.Hostile
-import IxCCTests.Own.Stage2.Oracle
-import IxCCTests.Own.Stage2.Sites
+import IxCCTests.Own.Stage2.Random
+import IxCCTests.Own.Owned.Sites
 import IxCC.Own.Plain.Certificate
 import IxCC.Recheck.Rc.Produce
 import IxCC.Cfg.Rc.Run
@@ -21,7 +21,7 @@ import IxCC.Rt.Readback
   generated program); results compared; events and the peak counted.
 * `hostile`: `checkOwned` and `checkPlainMap` timed on maps built to be expensive. -/
 
-open IxCC IxCC.Own.Plain IxCCTests.Own.Stage2
+open IxCC IxCC.Own.Plain IxCCTests.Own.Stage2 IxCCTests.Own.Owned
 
 namespace IxCCTests.Own.Stage2.Main
 

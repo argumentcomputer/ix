@@ -1,6 +1,6 @@
 import IxCC.Own.Plain.Program
 
-/-! # Heap stage 2, step 0: a liveness-based ownership producer (prototype, untrusted)
+/-! # The ownership checker's suite: a liveness-based ownership producer (untrusted)
 
 Places `inc`/`dec` by liveness over `Fir.Code`: a variable is dropped right after its last use on
 each path (at the start of a `case` branch that does not use it, after the projection or read
@@ -12,12 +12,12 @@ declaration excluded). Function parameters not used are dropped at entry. `trap`
 
 Two passes: `annotate` computes each node's live-in set (a fixpoint for a recursive join);
 `place` walks forward with the owned and immediate sets. It is untrusted: the checker
-(`Stage2.Owned`) decides. `partial` is acceptable here (no checked path); the production version
+(`IxCC.Own.Plain.checkOwned`) decides. `partial` is acceptable here (a test; no checked path); a production version
 would carry fuel. -/
 
 set_option autoImplicit false
 
-namespace IxCCTests.Own.Stage2
+namespace IxCCTests.Own.Owned
 
 open IxCC IxCC.Own.Plain
 open IxCC.Fir (Var JoinId FunId Arg Rhs)
@@ -171,4 +171,4 @@ def liveBody (params : List Var) (body : Fir.Code) : Code :=
 def liveMap (F : Fir.Program) : Src.NatMap Code :=
   F.funs.map fun fd => liveBody (fd.params.map (·.1)) fd.body
 
-end IxCCTests.Own.Stage2
+end IxCCTests.Own.Owned

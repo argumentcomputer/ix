@@ -1,7 +1,8 @@
 import IxCCTests.Own.Stage2.Owned
-import IxCCTests.Own.Stage2.Live
-import IxCCTests.Own.Stage2.Mutate
-import IxCCTests.Own.Stage2.Sites
+import IxCCTests.Own.Owned.Live
+import IxCCTests.Own.Owned.Mutate
+import IxCCTests.Own.Stage2.Random
+import IxCCTests.Own.Owned.Sites
 import IxCCTests.Own.Stage2.Hostile
 import IxCC.Own.Plain.Owned
 import IxCC.Recheck.Rc.Produce
@@ -26,7 +27,7 @@ namespace IxCCTests.Own.Stage2.Diff
 
 open IxCC
 open IxCC.Own.Plain (Code Program)
-open IxCCTests.Own.Stage2 (Rng Op Kind SiteKind mutant siteEdit applyOp liveMap)
+open IxCCTests.Own.Owned
 
 def render (e : Except String Unit) : String :=
   match e with | .ok () => "ok" | .error m => s!"error: {m}"

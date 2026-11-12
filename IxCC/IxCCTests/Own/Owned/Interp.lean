@@ -1,16 +1,16 @@
 import IxCC.Own.Plain.Semantics
 
-/-! # Heap stage 2, step 0: an instrumented Own-level interpreter (probe)
+/-! # The ownership checker's suite: an instrumented Own-level interpreter
 
 `Own.Plain.eval` without the clock, counting events: steps, allocations (cells), increments
 (calls, and how many found an immediate), decrements (calls, and on immediates), cells freed,
 cells live and the peak. The heap operations are the production ones (`Own.Plain.evalRhs`,
 `Own.Rc.inc`, `Own.Rc.releaseOne`); a free is a `releaseOne` of a cell at count one. Its results
-are compared with the production `Own.Plain.run` by the driver. -/
+are compared with the production `Own.Plain.run` (`Main`). -/
 
 set_option autoImplicit false
 
-namespace IxCCTests.Own.Stage2
+namespace IxCCTests.Own.Owned
 
 open IxCC IxCC.Own.Plain
 open IxCC.Own (RVal Heap Env)
@@ -164,4 +164,4 @@ def runI (P : Program) (budget : Nat) (f : FunId) (args : List RVal) (watch : Na
     Except String (RVal × Heap) × Counts :=
   (callI P budget f args {}).run.run { watch }
 
-end IxCCTests.Own.Stage2
+end IxCCTests.Own.Owned

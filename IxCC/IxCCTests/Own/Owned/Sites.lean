@@ -1,9 +1,10 @@
-import IxCCTests.Own.Stage2.Oracle
+import IxCCTests.Own.Owned.Oracle
+import IxCCTests.Own.Owned.Mutate
 
-/-! # Heap stage 2: site-directed mutants (the stronger test of the theorem's direction)
+/-! # The ownership checker's suite: site-directed mutants (the theorem's direction, tested)
 
-The random campaign (`Oracle.lean`, `Main.campaign`) mostly produced accepted mutants that act on
-immediates or on paths no input runs. Here every edit is chosen with the checker's own context at
+Random edits of a placement mostly act on immediates or on paths no input runs (the probe's
+random campaign, `plans/heap/stage2/PLAN.md` §3.3). Here every edit is chosen with the checker's own context at
 the site, as the negative controls are: its subject is a variable that is not an immediate and
 holds a token (or is borrowed) there, and the edit is one a placement could legitimately make, so
 that the checker accepts many of them and an accepted one changes the reference-count traffic on
@@ -29,7 +30,7 @@ A third of the mutants carry a second edit. -/
 
 set_option autoImplicit false
 
-namespace IxCCTests.Own.Stage2
+namespace IxCCTests.Own.Owned
 
 open IxCC IxCC.Own.Plain
 open IxCC.Fir (Var JoinId FunId Arg Rhs)
@@ -339,4 +340,4 @@ def siteEdit (kind : SiteKind) (params : List Var) (body : Code) (r : Rng) :
     if let some what := s.what then return (some (c, what), r)
   return (none, r)
 
-end IxCCTests.Own.Stage2
+end IxCCTests.Own.Owned
