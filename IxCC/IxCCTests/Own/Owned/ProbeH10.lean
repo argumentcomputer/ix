@@ -236,8 +236,10 @@ def hostcert (clo eqs : System.FilePath) (root : String) (out : System.FilePath)
   IO.println s!"== {root}: making the certificates (producer side, not the verifier)"
   let inp ← stage "ingress" fun _ => Recheck.ingress bytes json [root]
   let cfg := Recheck.Config.forInput {} inp
-  let fr ← stage "producer front (produceFir: its schedule prunes)" fun _ =>
-    Recheck.RcReplay.produceFir cfg inp
+  -- the producer's own admission limit (`Src.admit`, 2²² runtime nodes; not read by the verifier)
+  -- refuses the larger inputs: raised here, for the producer half of the probe only
+  let fr ← stage "producer front (produceFir: its schedule prunes; admission limit raised)" fun _ =>
+    Recheck.RcReplay.produceFir { cfg with admit := { maxNodes := 1 <<< 30 } } inp
   IO.println s!"  (producer's Fir: {fr.fir.size} functions, parameter total {paramTotal fr.fir})"
   let p1 ← stage "P1 alone" fun _ => (Anf.Pipeline.run {} fr.lam).mapError anfErr
   let mid : Anf.Pipeline.Cert := { steps := [.shrink (List.replicate p1.size 3)] }
