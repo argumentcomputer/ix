@@ -361,8 +361,9 @@ Ingress authenticates every object and the constant root with pure BLAKE3
 (`Blake3.Pure`), as do the resource commitments. The resource-validation API
 (`V3.validate`) runs resource admission and fixes literal primitives on the
 same raw bytes; it types nothing (the erased checker it once ran is deleted;
-on every compile path the certified kernel's acceptance comes first). Seven
-exact fences retain the standard axiom basis. Backend simulation and IxVM
+on every compile path the certified kernel's acceptance comes first). Its
+seven exact fences (`IxCCTests/Fences/IxonV3Typing.lean`) and the 27 of the
+contracts and the resource checker (`IxonV3.lean`) retain the standard axiom basis. Backend simulation and IxVM
 resource proofs remain outside this boundary.
 
 The valid-neighbor resource and `csimp` controls of the source suite add no
