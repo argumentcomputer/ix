@@ -94,4 +94,99 @@ theorem de_args_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
       (tml_mono ext hAs') (tml_mono ext hBs') hr
     exact .cons hAB hrest
 
+/-! ## Spine congruence -/
+
+/-- `KernelDefEq::try_def_eq_app`: the same variable head, or the same constant at equal
+levels, with pairwise equal arguments (`DefEq.app` along the spine). -/
+theorem try_def_eq_app_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+    {r : SourceValue F} {calls : List (Call F)}
+    (ev : ObsFn W "KernelDefEq::try_def_eq_app" args h r h' calls) (ih : IH c calls) :
+    Specs.DefEq.try_def_eq_app c args h r h' calls := by
+  intro rc a b types hargs good hrc d Γ htypes A B hA hB hr
+  subst hargs
+  have p := Obs.«KernelDefEq::try_def_eq_app».obs ev
+  cases p
+  case BVar_BVar_n0 m2 cs13 x_ah x_aa m41 cs52 x_bh x_bb x_i x_j cs153 ev15 ev54 ld90 ld114 op143
+      ev155 hc188 =>
+    subst hc188
+    have g1 : Good c cs13 := good.sub fun x hx => by simp [hx]
+    have g2 : Good c cs52 := good.sub fun x hx => by simp [hx]
+    have g3 : Good c cs153 := good.sub fun x hx => by simp [hx]
+    have e0 := ObsFn.heap_extends ev15
+    have e1 := ObsFn.heap_extends ev54
+    obtain ⟨ah, aa, H, As, he1, hH, hAs, rfl⟩ :=
+      ih.get (.subst .collect_spine) (by lt_calls) ev15 a rfl g1 d Γ 0 A hA
+    obtain ⟨bh, bb, Hb, Bs, he2, hHb, hBs, rfl⟩ :=
+      ih.get (.subst .collect_spine) (by lt_calls) ev54 b rfl g2 d Γ 0 B (Tm.mono e0 hB)
+    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at he1 he2
+    obtain ⟨rfl, rfl⟩ := he1
+    obtain ⟨rfl, rfl⟩ := he2
+    obtain ⟨i, rfl, -, hi⟩ := (Tm.mono e1 hH).bvar_of_load ld90
+    obtain ⟨j, rfl, -, hj⟩ := hHb.bvar_of_load ld114
+    obtain ⟨i', j', hi', hj', h0⟩ := evalBinOp_sub_inv' op143
+    injection hi' with hi'
+    injection hj' with hj'
+    injection h0 with h0
+    subst hi' hj'
+    have hij : i = j := (sub_eq_zero.mp h0.symm)
+    subst hij
+    have hHH : H = Hb := by
+      rcases hi with ⟨hlt, -⟩ | ⟨-, -, rfl⟩
+      · omega
+      rcases hj with ⟨hlt, -⟩ | ⟨-, -, rfl⟩
+      · omega
+      rfl
+    subst hHH
+    have ext := e0.trans e1
+    have hl := ih.get (.defEq .de_args) (by lt_calls) ev155 rc x_aa x_bb types rfl g3
+      (RCRep.mono ext hrc) d Γ (types_mono ext htypes) As Bs (tml_mono e1 hAs) hBs hr
+    exact defEq_mkAppN_congr hl .refl
+  case Const_Const_n0_other_n0 m2 cs13 x_ah x_aa m41 cs52 x_bh x_bb x_a_addr x_al x_b_addr x_bl
+      m250 y259 cs269 v292 m293 cs304 m335 x343 y344 m345 cs354 cs368 cs386 ev15 ev54 ld90 ld231
+      ev271 op265 ev306 hne330 ev356 ev370 op350 ev388 hc421 =>
+    subst hc421
+    have g1 : Good c cs13 := good.sub fun x hx => by simp [hx]
+    have g2 : Good c cs52 := good.sub fun x hx => by simp [hx]
+    have g3 : Good c cs304 := good.sub fun x hx => by simp [hx]
+    have g4 : Good c cs386 := good.sub fun x hx => by simp [hx]
+    have e0 := ObsFn.heap_extends ev15
+    have e1 := ObsFn.heap_extends ev54
+    have e2 := ObsFn.heap_extends ev271
+    have e3 := ObsFn.heap_extends ev306
+    have e4 := ObsFn.heap_extends ev356
+    have e5 := ObsFn.heap_extends ev370
+    obtain ⟨ah, aa, H, As, he1, hH, hAs, rfl⟩ :=
+      ih.get (.subst .collect_spine) (by lt_calls) ev15 a rfl g1 d Γ 0 A hA
+    obtain ⟨bh, bb, Hb, Bs, he2, hHb, hBs, rfl⟩ :=
+      ih.get (.subst .collect_spine) (by lt_calls) ev54 b rfl g2 d Γ 0 B (Tm.mono e0 hB)
+    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at he1 he2
+    obtain ⟨rfl, rfl⟩ := he1
+    obtain ⟨rfl, rfl⟩ := he2
+    obtain ⟨a1, us, rfl, ha1, hus⟩ := (Tm.mono e1 hH).const_of_load ld90
+    obtain ⟨a2, us', rfl, ha2, hus'⟩ := hHb.const_of_load ld231
+    obtain ⟨hy, -⟩ := Lib.address_eq_spec ev271 ha1 ha2
+    obtain ⟨o, y', ho, hy', h0⟩ := evalBinOp_sub_inv' op265
+    injection ho with ho
+    subst hy'
+    injection hy with hy
+    injection h0 with h0
+    have hy1 : y' = 1 := by
+      have := sub_eq_zero.mp h0.symm
+      rw [← ho] at this
+      exact this.symm
+    have ha : a1 = a2 := by
+      by_contra hne
+      rw [ite_eq_right hne, hy1] at hy
+      exact one_ne_zero hy
+    subst ha
+    have hlv := ih.get (.defEq .level_list_eq) (by lt_calls) ev306 x_al x_bl rfl g3 us us'
+      (LvListRep.mono e2 hus) (LvListRep.mono e2 hus') hne330
+    have ext : Heap.Extends h m335 := e0.trans (e1.trans (e2.trans (e3.trans (e4.trans e5))))
+    have ext' : Heap.Extends m41 m335 := e2.trans (e3.trans (e4.trans e5))
+    have hl := ih.get (.defEq .de_args) (by lt_calls) ev388 rc x_aa x_bb types rfl g4
+      (RCRep.mono ext hrc) d Γ (types_mono ext htypes) As Bs (tml_mono (e1.trans ext') hAs)
+      (tml_mono ext' hBs) hr
+    exact defEq_mkAppN_congr hl (.const hlv)
+  all_goals (subst_vars; exact absurd rfl hr)
+
 end IxVM.Refinement.Core
