@@ -595,6 +595,8 @@ def install (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (workers : Nat 
       | none => ok := ok + 1
       | some _ => retry := retry.push d
   let t4 ← IO.monoMsNow
+  let retried := retry.size
+  let tiered := tiers.size
   -- the typing tier, then the declarations that failed before it (those that
   -- reference a tier constant)
   let logical := fe
@@ -659,7 +661,8 @@ def install (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (workers : Nat 
                times := #[("prelude", tPre - t0), ("groups", tGroups - tPre), ("convert", tConv - tGroups),
                  ("graph", tGraph - tConv), ("schedule", t1 - tGraph), ("lower", t2 - t1), ("canon", tCanon - t2), ("prepare", tPrep - tCanon), ("evidence", t3 - tPrep),
                  ("phaseA", t4 - t3), ("A:ahead", nsAhead / 1000000), ("A:push", nsPush / 1000000),
-                 ("A:step", nsStep / 1000000), ("tier+retry", t5 - t4), ("persist", t6 - t5),
+                 ("A:step", nsStep / 1000000), ("retried (count)", retried), ("tier (count)", tiered),
+                 ("tier+retry", t5 - t4), ("persist", t6 - t5),
                  ("tables added (count)", tablesAdded), ("tables of propositions (count)", tablesProp)] }
 
 /-! ## A restricted install (measurement, `IX_BD_RESTRICT`) -/
