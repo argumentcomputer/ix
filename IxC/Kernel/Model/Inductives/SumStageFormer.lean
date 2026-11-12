@@ -74,13 +74,13 @@ theorem formerWalksS {m : EnvModel V env} {cvT : ConstantVal md} {nP : Nat}
 
 /-- **The P step at the sum former's cons**, for a given list of field
 chains. -/
-theorem stageSumFormer (mp : EnvModelM V μ env)
+theorem stageSumFormerJ (mp : EnvModelM V μ env)
     (hE₀ : Ix.Kernel.EtaFamiliesClosed env)
-    {F : Nat} {p : InductiveShape md} {cvT cvTa : ConstantVal md}
+    {J : Judgements md} (hfr : JudgeFrames J env) {p : InductiveShape md} {cvT cvTa : ConstantVal md}
     -- the former's `checkConstantVal` run at the block's header — its
     -- declared type or its whnf'd telescope (task #195); the stage never
     -- asks which
-    (hccv : Ix.Kernel.checkConstantVal (Ix.Kernel.fueledOps μ F) env cvT = .ok cvTa)
+    (hccv : ConstantValCheckJ J env cvT cvTa)
     (hname₀ : cvT.name = p.cvT.name)
     {pps : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
     (hFD : FormerData mp.base2 cvTa (p.nP + p.nIdx) p.resSort pps)
@@ -104,15 +104,16 @@ theorem stageSumFormer (mp : EnvModelM V μ env)
     ∃ mp' : EnvModelM V μ ⟨.indInfo cvTa caps :: env.consts⟩,
       mp'.base2.acval = acvalWith mp.base2.acval cvTa.name
         (fun ψ => sumTyAV (p.resSort.eval ψ) (pps ψ) (Fss ψ)) := by
-  obtain ⟨hfind, hnres, hpshape, -, -, -, type', -, -, -, -, htr', -, -, hty⟩ :=
-    Ix.Kernel.checkConstantVal_inv hccv
+  obtain ⟨type', ⟨hfind', hnres, hpshape, -, -, -, -, -, htr', -⟩, hty⟩ :=
+    id hccv
+  have hfind := Option.isNone_iff_eq_none.mp hfind'
   have hname : cvTa.name = p.cvT.name := by rw [hty]; exact hname₀
   have hfresh : env.find? cvTa.name = none := by
     rw [hname, ← hname₀]; exact hfind
   have htr : cvTa.type.constsResolve env = true := by rw [hty]; exact htr'
   have hcb : ConstsBound env cvTa.type := constsBound_of_constsResolve _ htr
   have hwfI : Ix.Kernel.EnvWF ⟨.indInfo cvTa caps :: env.consts⟩ :=
-    Ix.Kernel.envWF_cons_ind mp.base2.wf hccv hicw
+    envWF_cons_indJ hfr mp.base2.wf hccv hicw
   let A : (LevelParam → Nat) → AnnotTerm :=
     fun ψ => sumTyAV (p.resSort.eval ψ) (pps ψ) (Fss ψ)
   have hAbelow : ∀ ψ, Term.bvarsBelow 0 (A ψ).erase := fun ψ =>
@@ -167,5 +168,40 @@ theorem stageSumFormer (mp : EnvModelM V μ env)
     obtain ⟨rfl, rfl⟩ :=
       ConstantInfo.indInfo.inj (Option.some.inj (hself.symm.trans hf))
     exact hTlaws m₂ hac
+
+
+/-- The former's cons from its constant check run: `stageSumFormerJ` at the kernel's runs. -/
+theorem stageSumFormer (mp : EnvModelM V μ env)
+    (hE₀ : Ix.Kernel.EtaFamiliesClosed env)
+    {F : Nat} {p : InductiveShape md} {cvT cvTa : ConstantVal md}
+    -- the former's `checkConstantVal` run at the block's header — its
+    -- declared type or its whnf'd telescope (task #195); the stage never
+    -- asks which
+    (hccv : Ix.Kernel.checkConstantVal (Ix.Kernel.fueledOps μ F) env cvT = .ok cvTa)
+    (hname₀ : cvT.name = p.cvT.name)
+    {pps : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
+    (hFD : FormerData mp.base2 cvTa (p.nP + p.nIdx) p.resSort pps)
+    (Fss : (LevelParam → Nat) → List (List AnnotTerm))
+    (hFssParams : ∀ ψ₁ ψ₂ : LevelParam → Nat,
+      (∀ q ∈ cvTa.levelParams, ψ₁ q = ψ₂ q) → Fss ψ₁ = Fss ψ₂)
+    (hFssBelow : ∀ ψ : LevelParam → Nat, ∀ Fs ∈ Fss ψ, FieldsBelow (p.nP + p.nIdx) Fs)
+    (hFssOk : ∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
+      Sat V ((pps ψ).map (·.2.2)).reverse ρ →
+      SumFieldsOkB (p.resSort.eval ψ) ρ (Fss ψ) ∧ SumFieldsValid ρ (Fss ψ))
+    -- the block's capability record and its laws at the cons (task
+    -- #210 Part A: `sumCaps` on the sum route, `nativeCaps` on
+    -- the fixpoint route)
+    (caps : IndCaps md)
+    -- the record's arities, from the install's telescope pin
+    (hicw : Ix.Kernel.IndCapsWF (.indInfo cvTa caps))
+    (hTlaws : ∀ m₂ : EnvModel V ⟨.indInfo cvTa caps :: env.consts⟩,
+      m₂.acval = acvalWith mp.base2.acval cvTa.name
+        (fun ψ => sumTyAV (p.resSort.eval ψ) (pps ψ) (Fss ψ)) →
+      CapsLawsAt m₂ cvTa.name cvTa caps) :
+    ∃ mp' : EnvModelM V μ ⟨.indInfo cvTa caps :: env.consts⟩,
+      mp'.base2.acval = acvalWith mp.base2.acval cvTa.name
+        (fun ψ => sumTyAV (p.resSort.eval ψ) (pps ψ) (Fss ψ)) :=
+  stageSumFormerJ mp hE₀ (judgeFrames_runJ F) (Ix.Kernel.Semantics.constantValCheckJ_of_run hccv)
+    hname₀ hFD Fss hFssParams hFssBelow hFssOk caps hicw hTlaws
 
 end Ix.Kernel.Model

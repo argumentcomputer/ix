@@ -5,6 +5,7 @@ public import IxC.Kernel.Model.Inductives.StructRows
 public import IxC.Kernel.Model.JudgeSound
 public import IxC.Kernel.Verify.ProjSlots
 public import IxC.Kernel.Semantics.Inductives.DeclNativeJ
+public import IxC.Kernel.Verify.Inductives.StructWF
 import IxC.Kernel.Verify.InferLemmas
 import IxC.Kernel.Verify.Mono
 import IxC.Kernel.Verify.BinderLoop
@@ -99,6 +100,21 @@ theorem ConstantValCheckJ.typeWF {J : Judgements md} {env : Env md} {cv cv' : Co
   obtain ⟨type', ⟨-, -, -, -, hlbt, hitf, hann, htp, htr, -⟩, rfl⟩ := h
   obtain ⟨htf, hbt⟩ := hfr.annot_syntax hann hitf hlbt
   exact ⟨htf, htp, htr, hbt⟩
+
+/-- A former checked over a package extends a well-formed environment well-formedly
+(`envWF_cons_ind` over a package). -/
+theorem envWF_cons_indJ {J : Judgements md} {env : Env md} (hfr : JudgeFrames J env)
+    (henv : Ix.Kernel.EnvWF env) {cvA : ConstantVal md} {caps : Ix.Kernel.IndCaps md}
+    {cv : ConstantVal md} (hccv : ConstantValCheckJ J env cv cvA)
+    (hcaps : Ix.Kernel.IndCapsWF (.indInfo cvA caps)) :
+    Ix.Kernel.EnvWF ⟨.indInfo cvA caps :: env.consts⟩ := by
+  obtain ⟨htf, htp, htr, htb⟩ := hccv.typeWF hfr
+  exact Ix.Kernel.EnvWF.cons henv (Ix.Kernel.structConstWF htf htp
+    (Ix.Kernel.Expr.constsResolve_mono htr) htb
+    (fun _ _ _ heq => nomatch heq)
+    (fun _ _ _ _ heq => nomatch heq)
+    (by intro tbl h; exact ConstantInfo.noConfusion rfl (heq_of_eq h))
+    hcaps)
 
 /-! ## The rows, over a package -/
 
