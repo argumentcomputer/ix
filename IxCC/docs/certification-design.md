@@ -533,7 +533,7 @@ imports the kernel's model (`IxCK.Kernel.Denotes`, the statement half, in
 model, from the production library or from any program of the shared build.
 
 **What is proved, fenced on `propext`, `Classical.choice` and `Quot.sound` or
-fewer (`IxCCGrounding/Fence.lean`, 160 exact assertions):**
+fewer (`IxCCGrounding/Fence.lean`, 161 exact assertions):**
 
 - *Soundness at a root* (`rootSound`, in `IxCCGrounding.Root`). For every
   program, kernel reading `env`, key map, level parameters, certificate
@@ -1070,7 +1070,8 @@ constructor `0` denote the same set.
 **The direct route's bounds and cost.** The check runs each run term once
 against the set of profiles of its constant's level parameters at which it is
 evaluated, so it refuses every site of a constant with more than 8 level
-parameters (256 profiles). Measured on the corpus (below), the most level
+parameters (256 profiles). Measured on the corpus (below; on the reading before ingress read
+only what the seeds reach, not re-measured since), the most level
 parameters of a constant in a checked set `Sl` is 4 (the `for`-loop closures,
 `scalar`, `resource`) and of any constant of a closure's reading 7, so the bound
 refuses nothing there. It walks each maximal application spine once. The fuel
@@ -1106,7 +1107,9 @@ cost on a hostile closure is not otherwise bounded; a conversion that fails is
 the expensive case, since it tries every path before refusing. Interpreted, on
 the corpus, `sitesDirectB` takes at most 1.24 s (`strings`, where it is false;
 `scalar` 0.84 s, where it is true), except on `tags125`, the matcher of a
-125-constructor inductive: 48.7 s, the measured worst case. There (counted by an
+125-constructor inductive: 48.7 s, the measured worst case (on the reading
+since ingress reads only what the seeds reach, 2026-11-12: at most 1.06 s,
+`strings`, and 37.4 s on `tags125`, `GR-3g-cA2`, other sessions' jobs running). There (counted by an
 instrumented copy of the checker) the work is dominated by the reductions of
 `T125.ctorIdx c` that its wildcard alternatives' proofs need, each a β-telescope
 over `T125.casesOn`'s 127 binders, a fit of 127 arguments at ι on `T125.rec` and
@@ -1140,29 +1143,34 @@ instances; on `tags16` 0.56 s; `tests-grounding` 1.36 to 1.39 s compiled
 (100 to 105 MB; the time is not broken down). The suite also no longer computes
 the refused sites for an assertion's failure message when the assertion holds.
 
-**The direct route on the corpus.** Measured on the 49 committed closures that
-load (the families `bench-k1`, `grounding`, `phase1-scalar`, `phase1-boundary`,
-`phase1-resource`, `phase1-decline`, `phase1-abi`, `phase2-closures`,
-`phase1-machines` and `phase2-arity`, the fourteen `ownership` closures and
-`src-diag/diag`; five do not load: `typeFormerPolymorphism` and `src-sortpoly`,
-whose annotation is refused, `fields50` and `tags126`, past the decoder's depth
-budget when ingress read every record (since 2026-11-12 ingress reads what the
-root reaches: `fields254`, which replaced `fields50`, loads, and `tags126`'s root
-still reaches a record past the budget), and `src-diag/sorry`, which the kernel
-declines), each with `Sl` built as
-`tests-grounding` builds it. Of 14,990 application sites (20,363 site-profile
-instances) the direct route discharges 14,969 (20,322) and refuses 21. Against
-the route as widened (G2b), position by position: 248 sites gained (247 in
-`tags125`, one in `panic`), none lost. The kernel's typing core types every
-instance the route accepts in the graph regime, and each of the 2,289 pairs of
-an accepted site and a profile where the kernel's binder datum is a proposition
-is refused at that profile; at each of the 21 sites it still refuses the kernel
-types the site too, so each refusal is an incompleteness of the direct route,
-none a site the kernel rejects. It refuses no site on 46 of the 49, among them
-30 of the 31 that `groundCheck` accepts (all 24 it accepted before G3's part C;
-`strictAndOr` and `boundary`, accepted since part D, among them), so on every measured closure the check
-accepts but `OS02-plain` the root theorems need no typing hypothesis (on `OS02-plain` they keep it at one site).
-A fiftieth closure, `phase2-closures/sparse` (registered with the lazy table rows
+**The direct route on the corpus.** Measured on the 50 committed closures that
+load, on the reading since ingress reads only the records its seeds reach
+(2026-11-12; `GR-3g-o3`, `o4`): the families `bench-k1`, `grounding`,
+`phase1-scalar`, `phase1-boundary`, `phase1-resource`, `phase1-decline`,
+`phase1-abi`, `phase2-closures`, `phase1-machines` and `phase2-arity`, the
+fourteen `ownership` closures and `src-diag/diag`; five do not load:
+`typeFormerPolymorphism` and `src-sortpoly`, whose annotation is refused,
+`fields255` and `tags126`, whose roots reach a record past the decoder's depth
+budget, and `src-diag/sorry`, which the kernel declines (`fields254`, which
+replaced `fields50` with that change, loads), each with `Sl` built as
+`tests-grounding` builds it. Of 16,404 application sites (21,778 site-profile
+instances) the direct route discharges 16,383 (21,737) and refuses 21. The
+kernel's typing core types every instance the route accepts in the graph regime
+(21,737 of 21,737), and each of the 2,423 pairs of an accepted site and a
+profile where the kernel's binder datum is a proposition is refused at that
+profile (on the reading before the change, on the 49 closures then measured:
+14,990 sites, 20,363 instances, 14,969 and 20,322 discharged, 2,289 pairs;
+`GR-3c-cA` to `cE`); at each of the 21 sites it still refuses the kernel types
+the site too (measured on the earlier reading), so each refusal is an
+incompleteness of the direct route, none a site the kernel rejects. It refuses
+no site on 47 of the 50, among them 33 of the 34 that `groundCheck` accepts
+(all 24 it accepted before G3's part C; `strictAndOr` and `boundary`, accepted
+since part D, and `tags16`, `tags17` and `tags125`, since part E, among them),
+so on every measured closure the check accepts but `OS02-plain` the root
+theorems need no typing hypothesis (on `OS02-plain` they keep it at one site).
+Against the route as widened (G2b), position by position on the earlier
+reading: 248 sites gained (247 in `tags125`, one in `panic`), none lost. The
+fiftieth closure, `phase2-closures/sparse` (registered with the lazy table rows
 of sparse `casesOn` helpers, 2026-11-12), loads, and the direct route refuses
 none of its sites; merging that change left every verdict on the other 49
 unchanged (`GR-3f-cA2`, `cB2` against `GR-3f-cA`, `cB`). What the widening (G2b)
@@ -1243,7 +1251,8 @@ ordered by how many closures each blocks (a closure can have several):
    opaque definition (`notOpaque`, 1: `diag`).
 
 The most level parameters of a constant in any closure's `Sl` is 4, in any
-closure's reading 7; the largest level, 18 nodes.
+closure's reading 7; the largest level, 18 nodes (measured before ingress
+read only what the seeds reach; not re-measured since).
 
 `Ok` is the certificate's own datum: the annotation's class of each constant
 (`ConstRel.result`, the zero condition of the sort of its stored type, as the
