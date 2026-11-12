@@ -397,8 +397,8 @@ impl Constant {
       ConstantInfo::Defn(d) => defn(d),
       ConstantInfo::Recr(r) => r.is_unsafe,
       ConstantInfo::Axio(a) => a.is_unsafe,
-      ConstantInfo::Quot(_) => false,
-      ConstantInfo::CPrj(_)
+      ConstantInfo::Quot(_)
+      | ConstantInfo::CPrj(_)
       | ConstantInfo::RPrj(_)
       | ConstantInfo::IPrj(_)
       | ConstantInfo::DPrj(_) => false,
@@ -504,7 +504,10 @@ fn binderful_entries(sharing: &[Arc<Expr>]) -> Vec<bool> {
         has_binder(full, t) || has_binder(full, v) || has_binder(full, b)
       },
       Expr::Prj(_, _, v) => has_binder(full, v),
-      Expr::Share(n) => full.get(*n as usize).copied().unwrap_or(false),
+      Expr::Share(n) => usize::try_from(*n)
+        .ok()
+        .and_then(|n| full.get(n).copied())
+        .unwrap_or(false),
       _ => false,
     }
   }
@@ -536,8 +539,9 @@ fn numbered_nodes(full: &[bool], e: &Expr, acc: &mut Vec<Option<usize>>) {
     },
     Expr::Prj(_, _, v) => numbered_nodes(full, v, acc),
     Expr::Share(n) => {
-      if full.get(*n as usize).copied().unwrap_or(false) {
-        acc.push(Some(*n as usize));
+      let n = usize::try_from(*n).unwrap_or(usize::MAX);
+      if full.get(n).copied().unwrap_or(false) {
+        acc.push(Some(n));
       }
     },
     _ => {},
