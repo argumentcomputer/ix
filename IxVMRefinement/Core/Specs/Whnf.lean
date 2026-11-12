@@ -212,15 +212,15 @@ def lams_never : SpecFn := fun c args h r h' calls =>
       r ≠ .field 0 → lamsNeverAt (List.range us.length) us (ZMod.val m) V
 
 /-- `try_reduce_projection_definition(value, nl, lvls, spine)`: the projection-function
-shortcut. For the definition stored at `k` with this value and level count, tag `1` is `Red`
-of the applied constant (`Red.delta`, then `Red.betaGate` at each of the value's `λ`s, whose
+shortcut. For the definition stored at `k` with this value (its level parameters renamed to
+positions, `posOf`, as the loaded constant holds it) and level count, tag `1` is `Red` of the
+applied constant (`Red.delta`, then `Red.betaGate` at each of the value's `λ`s, whose
 data are `never` at the use's levels) to the result. Tag `0`: no claim. -/
 def try_reduce_projection_definition : SpecFn := fun c args h r h' calls =>
   ∀ value nl lvls sp, args = [value, nl, lvls, sp] → Good c calls →
     ∀ d Γ k cv V hn us As, c.env.find? k = some (.defnInfo cv V hn) →
-      c.tmc h V value → nl = .field (cv.levelParams.length : F) →
-      cv.levelParams = List.range cv.levelParams.length →
-      LvListRep h us lvls → c.tml d Γ h As sp →
+      c.tmc h (posOf cv.levelParams V) value → cv.levelParams.Nodup →
+      nl = .field (cv.levelParams.length : F) → LvListRep h us lvls → c.tml d Γ h As sp →
       ∀ x, r = .tuple [.field 1, x] →
         ∃ E, c.tm d Γ h' E x ∧ Red c.env d (mkAppN (.const k us) As) E
 
