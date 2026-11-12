@@ -69,11 +69,15 @@ that is not `Depth.Certified` (`Trace.depthConfig`, by `Depth.certify`) and a pl
 that is not `Plan.WellFormedActivation`, and uses gap limbs `[16, 8]`, or none when
 no call slot needs a gap, so `cfg.bits ≤ 24` as the `…_goldilocks` theorems take.
 The IxVM claim, recursive verifier and aggregation artifacts are exported this way.
-Both verifiers enforce the row bound over the whole batch (every shard and active
-circuit, padded heights): in Rust, `check_shape` and `validate_preamble`
-(`MAX_BATCH_ROWS = 2^39`); in circuit, `StarkVerifier::assert_batch_bounds`, called
-by `verify_batch` and `Aggregation::aggr_range_root`. The rows an accepting proof
-yields are rows of that batch, so the theorems' `rows.length ≤ 2^39` follows.
+Both verifiers enforce the row bound over the whole batch (every shard and every
+active circuit, the memory circuits included, padded heights): in Rust, `check_shape`
+and `validate_preamble` (`MAX_BATCH_ROWS = 2^39`); in circuit,
+`StarkVerifier::assert_batch_bounds`, called by `verify_batch` and
+`Aggregation::aggr_range_root`. The memory circuits are circuits of the batch
+(`Rom::append_circuits`), one per payload width, with one active row per width-ROM
+entry. The rows an accepting proof yields are rows of that batch, so the theorems'
+`rows.length ≤ 2^39` follows, and so does `rom.entries.length ≤ 2^39` for the
+`WidthROM` its memory circuits hold, which the IxVM circuit statement assumes.
 
 Section 3b strengthens the headlines to observed derivations
 (`Generic.SourceSemantics.ObsFn`: the source semantics with every call recorded,

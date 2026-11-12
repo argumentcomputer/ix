@@ -133,26 +133,27 @@ fun P =>
           plan.WellFormedActivation →
             ∀ {rom : Aiur.WidthROM IxVM.F},
               rom.Valid →
-                ∀ (d : IxVM.Refinement.Digest) {wires : List (Aiur.WireValue IxVM.F)} {output : Aiur.WireValue IxVM.F}
-                  {result : Aiur.Value IxVM.F},
-                  Aiur.Circuit.Erasure.Signed compiled.system
-                      { channel := IxVM.Refinement.verifyClaim, args := wires, result := output } →
-                    ∀ {root : Aiur.Circuit.Message IxVM.F},
-                      Aiur.Optimized.Depth.erase cfg root =
-                          Aiur.Circuit.Erasure.message compiled.system
-                            { channel := IxVM.Refinement.verifyClaim, args := wires, result := output } →
-                        root.channel ∉ cfg.names →
-                          ∀ {rows : List (Aiur.Circuit.WeightedRow IxVM.F)},
-                            rows.length ≤ 2 ^ 39 →
-                              plan.checkMemo (Aiur.Circuit.Erasure.rawROM rom) root rows = Except.ok () →
-                                Aiur.DecodesValues specialized.program.enums wires
-                                    (Aiur.entryValues [IxVM.Refinement.digestValue d]) →
-                                  Aiur.WireValue.decode specialized.program.enums output = some result →
-                                    ∃ value heap calls,
-                                      Aiur.Generic.SourceSemantics.ObsFn IxVM.source.world IxVM.Refinement.verifyClaim
-                                          [IxVM.Refinement.digestValue d] [] value heap calls ∧
-                                        Aiur.Generic.SourceSemantics.CallsInROM (compiled.traceROM rom) calls ∧
-                                          P calls d
+                rom.entries.length ≤ 2 ^ 39 →
+                  ∀ (d : IxVM.Refinement.Digest) {wires : List (Aiur.WireValue IxVM.F)} {output : Aiur.WireValue IxVM.F}
+                    {result : Aiur.Value IxVM.F},
+                    Aiur.Circuit.Erasure.Signed compiled.system
+                        { channel := IxVM.Refinement.verifyClaim, args := wires, result := output } →
+                      ∀ {root : Aiur.Circuit.Message IxVM.F},
+                        Aiur.Optimized.Depth.erase cfg root =
+                            Aiur.Circuit.Erasure.message compiled.system
+                              { channel := IxVM.Refinement.verifyClaim, args := wires, result := output } →
+                          root.channel ∉ cfg.names →
+                            ∀ {rows : List (Aiur.Circuit.WeightedRow IxVM.F)},
+                              rows.length ≤ 2 ^ 39 →
+                                plan.checkMemo (Aiur.Circuit.Erasure.rawROM rom) root rows = Except.ok () →
+                                  Aiur.DecodesValues specialized.program.enums wires
+                                      (Aiur.entryValues [IxVM.Refinement.digestValue d]) →
+                                    Aiur.WireValue.decode specialized.program.enums output = some result →
+                                      ∃ value heap calls,
+                                        Aiur.Generic.SourceSemantics.ObsFn IxVM.source.world IxVM.Refinement.verifyClaim
+                                            [IxVM.Refinement.digestValue d] [] value heap calls ∧
+                                          Aiur.Generic.SourceSemantics.CallsInROM (compiled.traceROM rom) calls ∧
+                                            P calls d
 -/
 #guard_msgs in
 #print IxVM.Refinement.CircuitSound

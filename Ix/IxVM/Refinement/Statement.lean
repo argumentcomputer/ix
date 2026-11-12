@@ -69,8 +69,9 @@ the derivation itself hashed.
 * `SourceSound P`: every observed `verify_claim` derivation gives `P`. The
   obligation Phases 3 and 4 discharge.
 * `CircuitSound P` (the main circuit statement): from the circuit compiled
-  from the prepared source, over the certified depth pass, rows the grouped,
-  activated memo checker accepts with at most `2^39` rows give an observed
+  from the prepared source, over the certified depth pass and a valid ROM of
+  at most `2^39` entries, rows the grouped, activated memo checker accepts
+  with at most `2^39` rows give an observed
   derivation whose calls the trace's memory carries (`CallsInROM`), so the
   escape's byte string is read off the trace; it gives `P`. No acyclicity is
   assumed. Proved from `SourceSound P` (`circuitSound_of_sourceSound`),
@@ -208,13 +209,18 @@ its physical deduplication, any depth configuration with gap words of at
 most 24 bits that the depth pass certifies (`Depth.Certified`, as
 `Depth.plan` builds it),
 any grouping plan over the depth pass with well-formed activation, any valid
-ROM, any signed message on `verify_claim`'s channel whose arguments decode to
-`d`, and any rows, at most `2^39` of them, that the grouped, activated memo
-checker accepts for a root outside the depth pass's names that erases to that
-message: some observed derivation of `verify_claim(d)`, whose calls the
-trace's memory carries (`CallsInROM`), gives `P` of its calls. No acyclicity
-is assumed: the depth words make every accepted memo graph acyclic (Track A,
-`Depth.plan_checkMemo_sound`). -/
+ROM of at most `2^39` entries, any signed message on `verify_claim`'s channel
+whose arguments decode to `d`, and any rows, at most `2^39` of them, that the
+grouped, activated memo checker accepts for a root outside the depth pass's
+names that erases to that message: some observed derivation of
+`verify_claim(d)`, whose calls the trace's memory carries (`CallsInROM`), gives
+`P` of its calls. No acyclicity is assumed: the depth words make every accepted
+memo graph acyclic (Track A, `Depth.plan_checkMemo_sound`).
+
+Both bounds come from the verifiers' batch row bound (`MAX_BATCH_ROWS = 2^39`,
+summed over every shard and every active circuit, the memory circuits
+included): the rows are rows of the batch, and so is every entry of the ROM,
+one per active row of its width's memory circuit. -/
 def CircuitSound (P : List (Call IxVM.F) → Digest → Prop) : Prop :=
   ∀ {id : String → Except String Nat}
     {specialized : Aiur.Generic.Specialized IxVM.source [verifyClaim]}
@@ -224,7 +230,7 @@ def CircuitSound (P : List (Call IxVM.F) → Digest → Prop) : Prop :=
     Aiur.Optimized.Depth.Certified cfg physical.system → cfg.bits ≤ 24 →
     ∀ (plan : Aiur.Optimized.Grouping.Plan (Aiur.Optimized.Depth.system cfg physical.system) id),
     plan.WellFormedActivation →
-    ∀ {rom : Aiur.WidthROM IxVM.F}, rom.Valid →
+    ∀ {rom : Aiur.WidthROM IxVM.F}, rom.Valid → rom.entries.length ≤ 2 ^ 39 →
     ∀ (d : Digest) {wires : List (Aiur.WireValue IxVM.F)} {output : Aiur.WireValue IxVM.F}
       {result : Aiur.Value IxVM.F},
       Aiur.Circuit.Erasure.Signed compiled.system
@@ -330,7 +336,7 @@ memo-checker soundness, `Depth.plan_checkMemo_sound`, with Goldilocks'
 characteristic for 24-bit words). -/
 theorem circuitSound_of_sourceSound {P : List (Call IxVM.F) → Digest → Prop}
     (sound : SourceSound P) : CircuitSound P := by
-  intro id specialized compiled physical cfg certified bits plan activated rom valid d wires output
+  intro id specialized compiled physical cfg certified bits plan activated rom valid _ d wires output
     result signed root rooted outside rows bound checked arguments decoded
   obtain ⟨value, heap, calls, observed, -, carried⟩ :=
     physical.depth_grouped_activated_native_heap_sound_goldilocks_observed compiled certified bits

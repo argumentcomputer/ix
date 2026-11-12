@@ -8,8 +8,7 @@ import IxC.Kernel.Verify.EnvGuards
 import IxC.Kernel.Rules.Rel
 import Aiur.WireMemory
 import Aiur.Memory.Partition
-import Aiur.Generic.PreparationFunctionFacts
-import Aiur.Inlining.Program
+import Ix.IxVM.Consistency.MemoCalls
 
 /-! # `IxVM.consistent`: the IxVM circuit accepts only claims with a model
 
@@ -20,7 +19,8 @@ another role table or user axioms, `eval`) are not covered.
 ## The statement (`CircuitConsistent`)
 
 Suppose the verifier's checks hold for the deployed IxVM circuit on at most
-`2^39` rows (`CircuitSound`, reused from `Ix.IxVM.Refinement.Statement`), for a
+`2^39` rows and a memory (ROM) of at most `2^39` entries (`CircuitSound`, reused
+from `Ix.IxVM.Refinement.Statement`), for a
 public claim digest whose claim is `check` or `checkEnv` that validates its role
 table, with no user axioms and no assumed leaves (`InScope`), and every role table
 the reader reads it under (the default table, or one the kernel admits with its
@@ -71,7 +71,7 @@ Corollary (`ConsistentRead.seeds_not_false`): no claimed constant has type
 
 | Layer | Obligation | Content |
 |---|---|---|
-| L0 circuit to source | `L0` | the Aiur headline with "at most `2^39` distinct calls of each memoized callee" (`MemoCallsAtMost`) added to its conclusion; an obligation, not proved |
+| L0 circuit to source | `L0` | the Aiur headline over a ROM of at most `2^39` entries, with "the trace's memory has at most `2^39` addresses" (`ROMAddressesAtMost`) added to its conclusion; an obligation of the reduction, which follows from the headline |
 | L1 bytes to records | `L1` = `Records` | every record load returns the reading of bytes the run hashed under that address, in records the run hashed |
 | L2 levels | `L2` = `Levels` | `level_leq`/`level_equal` sound for `Level.eval` with no depth hypothesis, and exact at zero |
 | L3 term operations | `L3` | given `Levels`, `Terms`: substitution and lifting refine the kernel's |
@@ -89,9 +89,12 @@ mention them.
 
 `circuitSound_of_sourceSound` concludes `CircuitSound` from a source statement
 over *every* derivation, so it cannot hand the source level a bound on the
-derivation the trace gives. The source proofs need one: IxVM compares list lengths
-as field elements, which a derivation with more than `2^32` calls could wrap.
-`circuitSound_of_bounded` is
+derivation the trace gives. The source proofs need one: IxVM counts with field
+elements (a list's length, an index into a list), and a count wraps past the
+field's characteristic. The bound is on the trace's memory: it has at most
+`2^39` addresses (`ROMAddressesAtMost`), and in a valid ROM the cells of a list
+are at pairwise different addresses, so every list the run's calls receive has
+fewer than `2^39` elements (`Bounded`). `circuitSound_of_bounded` is
 its bounded form, from `L0`; `sourceSoundBounded_of_sourceSound` shows the
 unbounded statement is the special case. -/
 
@@ -105,101 +108,35 @@ open Ix (Claim ClaimContext AssumptionTree)
 open Ix.Kernel.Admission (Binding)
 
 
-/-! ## L0: the circuit gives a derivation with at most `2^39` distinct calls of each memoized callee -/
+/-! ## L0: the circuit gives a derivation whose calls a memory of at most `2^39` addresses carries -/
 
-/-- **A memoized call**: its callee is a function of the source program that the
-compiler does not inline (the negation of `Aiur.Generic.Specialized.inlineNames`'s
-test; `memoCall_iff_retained` checks the agreement). An inlined call has no memo rows
-of its own, and a lookup map's callee is not a function of the program (its table has
-no trace rows), so neither is counted. -/
-def memoCall {G : Type} [DecidableEq G] (s : Aiur.Generic.Source G) (name : String) : Bool :=
-  match Aiur.Generic.Instance.ofSymbol name with
-  | .error _ => false
-  | .ok key => (s.program.findFunction? key.name).any (fun f => !f.isInline)
+/-- **At most `n` addresses**: every entry of `rom` is at one of `n` addresses.
 
-/-- **`memoCall` is the compiler's inlining decision, negated**: at a function of a
-specialized program, the program handed to chip compilation (`Inlining.Prepared`'s
-program, which drops exactly the functions `inlineNames` lists) keeps it exactly when
-`memoCall` holds. The specialization's validity gives every function a generic
-declaration in the source, so neither the symbol's parse nor the lookup fails there. -/
-theorem memoCall_iff_retained {G : Type} [Field G] [DecidableEq G] {s : Aiur.Generic.Source G}
-    {entries : List String} {specialized : Aiur.Generic.Specialized s entries}
-    (compiled : Aiur.Optimized.GenericArtifact specialized) {name : String}
-    (hf : (specialized.program.findFunction? name).isSome = true) :
-    (compiled.inlined.program.findFunction? name).isSome = memoCall s name := by
-  obtain ⟨f, hfound⟩ := Option.isSome_iff_exists.mp hf
-  have hcall : name ∈ Aiur.Generic.callableNames specialized.program := by
-    simp only [Aiur.Generic.callableNames, List.mem_append, List.mem_map]
-    exact Or.inl ⟨f, List.mem_of_find?_eq_some hfound, Aiur.Inlining.function_name hfound⟩
-  have hc := specialized.valid.2.2.2.1 name hcall
-  rw [hfound] at hc
-  cases hsym : Aiur.Generic.Instance.ofSymbol name with
-  | error e =>
-    simp [Aiur.Generic.Source.compilerFunction?, hsym, Except.toOption, Except.bind] at hc
-  | ok key =>
-    have hprep : Aiur.Generic.Preparation.function s.program key = .ok f := by
-      cases run : Aiur.Generic.Preparation.function s.program key with
-      | error e' =>
-        simp [Aiur.Generic.Source.compilerFunction?, hsym, run, Except.toOption, Except.bind] at hc
-      | ok f' =>
-        simp [Aiur.Generic.Source.compilerFunction?, hsym, run, Except.toOption, Except.bind] at hc
-        rw [hc]
-    obtain ⟨g, -, -, -, hg, -⟩ := Aiur.Generic.Preparation.function_ok hprep
-    have hmem : name ∈ specialized.inlineNames ↔ g.isInline = true := by
-      unfold Aiur.Generic.Specialized.inlineNames
-      rw [List.mem_filterMap]
-      constructor
-      · rintro ⟨f', -, hsome⟩
-        split at hsome
-        · exact nomatch hsome
-        · rename_i key' hsym'
-          split at hsome
-          · rename_i hinl
-            obtain rfl : f'.name = name := Option.some.inj hsome
-            rw [hsym] at hsym'
-            obtain rfl := Except.ok.inj hsym'
-            rw [hg] at hinl
-            simpa using hinl
-          · exact nomatch hsome
-      · intro hi
-        refine ⟨f, List.mem_of_find?_eq_some hfound, ?_⟩
-        rw [Aiur.Inlining.function_name hfound, hsym]
-        simp [hg, hi]
-    have hmc : memoCall s name = !g.isInline := by
-      unfold memoCall
-      rw [hsym]
-      simp [hg]
-    rw [hmc]
-    show ((compiled.inlined.bodies.program specialized.program
-        specialized.inlineNames).findFunction? name).isSome = _
-    rw [Aiur.Inlining.Bodies.findFunction]
-    by_cases hin : name ∈ specialized.inlineNames
-    · simp [hin, hmem.mp hin]
-    · have hi : g.isInline = false := by
-        cases h : g.isInline
-        · rfl
-        · exact absurd (hmem.mpr h) hin
-      simp [hin, hi, hfound]
+In a valid ROM an address holds one value of each type, so cells of one type that
+hold pairwise different values are at pairwise different addresses. The cells of a
+list are such cells (each holds a list of a different length), so a list the ROM
+represents has fewer than `n` elements. The same count bounds a telescope's depth,
+an index into a list, and the sum of the sizes of structures whose cells are at
+pairwise different addresses (for structures of one type: structures that share no
+cell). These are the counts IxVM compares as field elements.
 
-/-- **At most `n` distinct calls of each memoized callee**, up to representation in the
-ROM: for each memoized callee, at most `n` argument lists cover its calls, each one
-representing the call's arguments relative to the heap at the call. Two calls of one
-callee that a memo row serves alike share an argument list, so a callee has at most as
-many as there are memo rows. The count is per callee because the compiler may merge two
-callees with the same constraints into one chip, whose rows then serve both. -/
-def MemoCallsAtMost {G : Type} [DecidableEq G] (s : Aiur.Generic.Source G) (rom : Aiur.ROM G)
-    (calls : List (Call G)) (n : Nat) : Prop :=
-  ∀ name, memoCall s name = true →
-    ∃ keys : List (List (Aiur.Value G)), keys.length ≤ n ∧
-      ∀ c ∈ calls, c.name = name →
-        ∃ k ∈ keys, List.Forall₂ (Aiur.Represents rom c.heap) c.args k
+What it does not bound is the number of calls. A memoized callee may be called on
+more than `n` argument lists that differ only in field values, with no structure in
+the ROM behind them (a recursion on a field counter that runs more than `n` steps).
+The circuit's row bound is meant to exclude that (each distinct call of a memoized
+callee is served by a memo row), but no hypothesis or conclusion here says so. No
+layer needs it: every count the layers bound is the size of a structure in the ROM. -/
+def ROMAddressesAtMost {G : Type} (rom : Aiur.ROM G) (n : Nat) : Prop :=
+  ∃ addrs : List G, addrs.length ≤ n ∧ ∀ e ∈ rom.entries, e.1 ∈ addrs
 
 /-- **Obligation L0** (Aiur): the depth-grouped Goldilocks observed
 headline (`Aiur.Optimized.Physical.Prepared.depth_grouped_activated_native_heap_sound_goldilocks_observed`,
-frozen in `Aiur.Audit`), with one more conjunct: the derivation it gives has at
-most `2^39` distinct calls of each memoized callee (`MemoCallsAtMost`). Every other
-hypothesis and conjunct is the headline's, verbatim. L0 is an obligation: it is
-assumed by `IxVM.consistent`, not proved. -/
+frozen in `Aiur.Audit`) over a ROM of at most `2^39` entries, with one more
+conjunct: the trace's memory has at most `2^39` addresses (`ROMAddressesAtMost`).
+Every other hypothesis and conjunct is the headline's, verbatim. The ROM's size
+is `CircuitSound`'s hypothesis (the verifiers' batch row bound counts the memory
+circuits' rows), and every address of the trace's memory is an address of that
+ROM, so the conjunct follows. `IxVM.consistent` takes L0 as a hypothesis. -/
 def L0 : Prop :=
   ∀ {id : String → Except String Nat} {source : Aiur.Generic.Source IxVM.F} {entries : List String}
     {specialized : Aiur.Generic.Specialized source entries}
@@ -209,7 +146,7 @@ def L0 : Prop :=
     ∀ (plan : Aiur.Optimized.Grouping.Plan (Aiur.Optimized.Depth.system cfg prepared.system) id),
     plan.WellFormedActivation →
     ∀ {name : String}, name ∈ entries →
-    ∀ {rom : Aiur.WidthROM IxVM.F}, rom.Valid →
+    ∀ {rom : Aiur.WidthROM IxVM.F}, rom.Valid → rom.entries.length ≤ 2 ^ 39 →
     ∀ {args : List (Aiur.SourceValue IxVM.F)} {result : Aiur.Value IxVM.F}
       {wires : List (Aiur.WireValue IxVM.F)} {output : Aiur.WireValue IxVM.F},
       Aiur.Circuit.Erasure.Signed compiled.system { channel := name, args := wires, result := output } →
@@ -226,19 +163,20 @@ def L0 : Prop :=
         ObsFn source.world name args [] value heap calls ∧
           Aiur.Represents (compiled.traceROM rom) heap value result ∧
           CallsInROM (compiled.traceROM rom) calls ∧
-          MemoCallsAtMost source (compiled.traceROM rom) calls (2 ^ 39)
+          ROMAddressesAtMost (compiled.traceROM rom) (2 ^ 39)
 
-/-- **A bounded derivation**: its calls, read in some valid ROM, have at most
-`2^39` distinct calls of each memoized callee. The ROM must be valid (no address holds two
-values): in an invalid one, lists of different lengths could share a key, and the
-bound would say nothing. A sub-derivation of a bounded derivation is bounded (its
-calls are among the derivation's). -/
+/-- **A bounded derivation**: some valid ROM of at most `2^39` addresses carries its
+calls (`CallsInROM`: every argument of every call is represented in it, relative to
+the heap at the call). The ROM must be valid (an address holds one value of each
+type): in an invalid one, lists of different lengths could share a cell, and the
+address count would bound nothing. A sub-derivation of a bounded derivation is
+bounded (its calls are among the derivation's). -/
 def Bounded (calls : List (Call IxVM.F)) : Prop :=
-  ∃ rom : Aiur.ROM IxVM.F, rom.Valid ∧ MemoCallsAtMost IxVM.source rom calls (2 ^ 39)
+  ∃ rom : Aiur.ROM IxVM.F, rom.Valid ∧ ROMAddressesAtMost rom (2 ^ 39) ∧ CallsInROM rom calls
 
 /-- **Source-level soundness for `P`, over bounded derivations**: `SourceSound`
-restricted to observed `verify_claim` derivations with at most `2^39` distinct
-calls of each memoized callee. -/
+restricted to observed `verify_claim` derivations whose calls a valid ROM of at most
+`2^39` addresses carries (`Bounded`). -/
 def SourceSoundBounded (P : List (Call IxVM.F) → Digest → Prop) : Prop :=
   ∀ (d : Digest) (value : Aiur.SourceValue IxVM.F) (heap : Aiur.Heap IxVM.F)
     (calls : List (Call IxVM.F)),
@@ -254,13 +192,14 @@ theorem sourceSoundBounded_of_sourceSound {P : List (Call IxVM.F) → Digest →
 `circuitSound_of_sourceSound` with the bound handed down. -/
 theorem circuitSound_of_bounded (h0 : L0) {P : List (Call IxVM.F) → Digest → Prop}
     (sound : SourceSoundBounded P) : CircuitSound P := by
-  intro id specialized compiled physical cfg certified bits plan activated rom valid d wires output
-    result signed root rooted outside rows bound checked arguments decoded
-  obtain ⟨value, heap, calls, observed, -, carried, memo⟩ :=
-    h0 compiled physical certified bits plan activated (List.mem_singleton.mpr rfl) valid signed
-      rooted outside bound checked arguments decoded
+  intro id specialized compiled physical cfg certified bits plan activated rom valid small d wires
+    output result signed root rooted outside rows bound checked arguments decoded
+  obtain ⟨value, heap, calls, observed, -, carried, addresses⟩ :=
+    h0 compiled physical certified bits plan activated (List.mem_singleton.mpr rfl) valid small
+      signed rooted outside bound checked arguments decoded
   exact ⟨value, heap, calls, observed, carried, sound d value heap calls observed
-    ⟨compiled.traceROM rom, Aiur.WireROM.decode_valid (Aiur.WidthROM.toWireROM_valid valid _ _), memo⟩⟩
+    ⟨compiled.traceROM rom, Aiur.WireROM.decode_valid (Aiur.WidthROM.toWireROM_valid valid _ _),
+      addresses, carried⟩⟩
 
 /-! ## The claims in scope -/
 
