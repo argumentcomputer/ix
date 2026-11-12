@@ -37,11 +37,13 @@ model is witness data. Two properties are tested here:
   constructors, so in the encoder's order of references the generated recursor
   would equal the compiled one for one order in 24. Checks of `TriA` and of
   `Tri.rec`, with the generated and the compiled records one, are accepted.
-* **A model record has the compiler's univs table** (`univTables`): every
-  definition of a compiled environment, read by the kernel's reader and encoded
-  again by the model's encoder, has the compiled record's univs table (canonical
-  levels sorted by encoding), including `IxVMInd.univOrder`, whose two levels the
-  encoder meets in the other order.
+* **A model record is the compiled record** (`univTables`): every definition of
+  a compiled environment, read by the kernel's reader and encoded again by the
+  model's encoder, is the compiled record (tables, sharing, binder and let
+  contracts), including `IxVMInd.univOrder`, whose two levels the encoder meets
+  in the other order. The default table's evidence theorems are not compiler
+  records (`kernel-pin-gen` closes and writes them, tables in first-use order),
+  and no model record is one: they are counted, not compared.
 
 The must-reject cases for advice (wrong member models, wrong iota statements,
 axioms, self-reference, another block's payload, missing payloads, oversized
@@ -201,17 +203,29 @@ def reencoded (env : Ixon.Env) :
     out := out.push (a, { c with binders := #[] }, c', met)
   return out
 
-/-- **A model record has the compiler's univs table.** `IxVMInd.univOrder`, whose levels
-the encoder meets out of the table's order, re-encoded by the model's encoder, is the
-compiled record. Every other definition of `env` re-encoded is compared too: how many are
-the compiled record, how many of those the encoder met out of the table's order, and
-the ones that differ (in the univs table or elsewhere, where the kernel's reading of a
-record is not the encoder's input: lets, literals) are reported. -/
+/-- The default table's evidence theorems (`Ix.Kernel.Reader.evidenceRecords`):
+`kernel-pin-gen` closes each over its operation's dependency closure and writes its
+record with the tables in first-use order, not in the compiler's form. No model
+record is an evidence theorem. -/
+def evidenceAddresses : Std.HashSet Address :=
+  match Ix.Kernel.Reader.evidenceRecords with
+  | .ok rs => rs.foldl (fun s (a, _) => s.insert a) {}
+  | .error _ => {}
+
+/-- **A model record is the compiled record.** `IxVMInd.univOrder`, whose levels the
+encoder meets out of the table's order, re-encoded by the model's encoder, is the
+compiled record, and so is every other definition of `env` the kernel's reader reads as
+one declaration, except the default table's evidence theorems (`evidenceAddresses`),
+which no compiler wrote: they are counted, with how many are the encoder's record once
+put in the compiler's form (`IxVM.Model.renormalize`). Any other difference is a
+failure, reported. -/
 def univTables (env : Ixon.Env) : IO Bool := do
   let rows ← IO.ofExcept (reencoded env)
   let mut same := 0
   let mut multi := 0
   let mut reordered := 0
+  let mut evidence := 0
+  let mut evidenceForm := 0
   let mut univsDiffer : Array Address := #[]
   let mut otherDiffer : Array String := #[]
   for (a, c, c', met) in rows do
@@ -219,6 +233,12 @@ def univTables (env : Ixon.Env) : IO Bool := do
       same := same + 1
       if c.univs.size ≥ 2 then multi := multi + 1
       if met != c.univs then reordered := reordered + 1
+    else if evidenceAddresses.contains a then
+      evidence := evidence + 1
+      if (match IxVM.Model.renormalize id c with
+          | .ok r => IxVM.Model.addressOf r == IxVM.Model.addressOf c'
+          | .error _ => false) then
+        evidenceForm := evidenceForm + 1
     else if c.univs != c'.univs then
       univsDiffer := univsDiffer.push a
     else
@@ -232,16 +252,17 @@ def univTables (env : Ixon.Env) : IO Bool := do
     | none => false
   IO.println s!"[ixvm-model-advice] {rows.size} definitions re-encoded by the model's encoder: \
     {same} are the compiled record ({multi} with two levels or more, {reordered} met in another \
-    order than the table's); {univsDiffer.size} have another univs table, {otherDiffer.size} \
-    differ elsewhere"
+    order than the table's); {evidence} are evidence theorems ({evidenceForm} of them the encoder's record \
+    in the compiler's form); \
+    {univsDiffer.size} have another univs table, {otherDiffer.size} differ elsewhere"
   for a in univsDiffer.toList.take 10 do
-    IO.println s!"[ixvm-model-advice] another univs table than the compiled record's (reported): {a}"
+    IO.eprintln s!"[ixvm-model-advice] another univs table than the compiled record's: {a}"
   for s in otherDiffer.toList.take 10 do
-    IO.println s!"[ixvm-model-advice] differs from the compiled record outside the univs table: {s}"
+    IO.eprintln s!"[ixvm-model-advice] differs from the compiled record outside the univs table: {s}"
   unless targetOk do
     IO.eprintln "[ixvm-model-advice] IxVMInd.univOrder: the re-encoded record is not the compiled \
       one, or its levels are not met out of the table's order"
-  return targetOk
+  return targetOk && univsDiffer.isEmpty && otherDiffer.isEmpty
 
 /-- Each enumeration's compiled block and recursor are model records of `env`
 (the generated tag enumeration and its recursor, by address). -/
