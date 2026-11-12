@@ -147,7 +147,8 @@ def is_nat_zero := aiur_fn⟦
             KernelTypes::KLiteral::Nat(limbs) => {  KernelKlimbs::klimbs_is_zero(limbs) } ,
             _ => {  0 } ,
           } } ,
-        KernelTypes::KExprNode::Const(caddr, _) => {  KernelRoles::role_is(rc, caddr, KernelRoleSpec::role_nat_zero()) } ,
+        KernelTypes::KExprNode::Const(caddr, clvls) => {
+          KernelRoles::role_is(rc, caddr, KernelRoleSpec::role_nat_zero()) * KernelNatPrim::lvls_empty(clvls) } ,
         _ => {  0 } ,
       }
     }
@@ -559,7 +560,7 @@ def try_eta_struct := aiur_fn⟦
       match KernelTypes::collect_spine(s) {
         (s_head, s_args) => {
           match (*(s_head)) {
-            KernelTypes::KExprNode::Const(ctor_addr, _) => {
+            KernelTypes::KExprNode::Const(ctor_addr, s_lvls) => {
               let ci = (*(Ingress::get_ci(ctor_addr)));
               match ci {
                 KernelTypes::KConstantInfo::Ctor(_, _, ind_block_addr, ind_idx, _, nparams, nfields, _) => {
@@ -567,8 +568,15 @@ def try_eta_struct := aiur_fn⟦
                     0 => {
                       let ind_ci = (*(Ingress::get_ci_iprj(ind_block_addr, ind_idx)));
                       match ind_ci {
-                        KernelTypes::KConstantInfo::Induct(_, _, _, nindices, nctors, _, _, _) => {
-                          let shape_ok = Fields::is_zero(nindices) * Fields::is_zero(nctors - 1);
+                        KernelTypes::KConstantInfo::Induct(ind_nl, ind_ty, _, nindices, nctors, _, _, _) => {
+                          -- DefEq.structEtaTy reads the fields as `.proj` nodes, which read only
+                          -- at a native block (the kernel installs projection tables there). It
+                          -- also needs a field (`0 < cnF`; a field-less structure is unit-like)
+                          -- and a structure whose sort is never zero (`caps.eta`).
+                          let shape_ok = ((Fields::is_zero(nindices) * Fields::is_zero(nctors - 1))
+                            * Fields::is_zero(KernelModeled::block_is_modeled(ind_block_addr)))
+                            * ((1 - Fields::is_zero(nfields))
+                              * KernelWhnf::type_sort_never(ind_ty, nparams, s_lvls));
                           match shape_ok {
                             0 => {  0 } ,
                             _ => {
@@ -578,13 +586,18 @@ def try_eta_struct := aiur_fn⟦
                                 1 => {  0 } ,
                                 _ => {
 
-                                  let t_ty = KernelInferOnly::k_infer_only(rc, t, types);
-                                  let s_ty = KernelInferOnly::k_infer_only(rc, s, types);
-                                  match k_is_def_eq(rc, t_ty, s_ty, types) {
+                                  match family_params(rc, ind_nl, ind_ty, nparams, s_lvls,
+                                                      Lists::take(s_args, nparams), types) {
                                     0 => {  0 } ,
                                     _ => {
-                                      compare_struct_fields(rc, struct_addr, nparams,
-                                                                 nfields, t, s_args, 0, types) } ,
+                                      let t_ty = KernelInferOnly::k_infer_only(rc, t, types);
+                                      let s_ty = KernelInferOnly::k_infer_only(rc, s, types);
+                                      match k_is_def_eq(rc, t_ty, s_ty, types) {
+                                        0 => {  0 } ,
+                                        _ => {
+                                          compare_struct_fields(rc, struct_addr, nparams,
+                                                                nfields, t, s_args, 0, types) } ,
+                                      } } ,
                                   } } ,
                               } } ,
                           } } ,
@@ -653,7 +666,7 @@ def try_unit_like := aiur_fn⟦
   fn try_unit_like(rc: KernelRoles::RoleCtx, a: KernelTypes::KExpr, b: KernelTypes::KExpr, types: Lists::List<KernelTypes::KExpr>) -> Field {
       let ta = KernelInferOnly::k_infer_only(rc, a, types);
       let ta_w = KernelWhnf::whnf(rc, ta, types);
-      match is_unit_like_type(ta_w) {
+      match is_unit_like_type(rc, ta_w, types) {
         0 => {  0 } ,
         _ => {
           let tb = KernelInferOnly::k_infer_only(rc, b, types);
@@ -662,15 +675,19 @@ def try_unit_like := aiur_fn⟦
     }
 ⟧
 
+  -- DefEq.unitLikeTy's shape: `ty` is a unit-like family applied to exactly its
+  -- parameters, at its level count, with the family's telescope certified against
+  -- the parameters (`family_params`).
+
 def is_unit_like_type := aiur_fn⟦
-  fn is_unit_like_type(ty: KernelTypes::KExpr) -> Field {
+  fn is_unit_like_type(rc: KernelRoles::RoleCtx, ty: KernelTypes::KExpr, types: Lists::List<KernelTypes::KExpr>) -> Field {
       match KernelTypes::collect_spine(ty) {
-        (head, _) => {
+        (head, args) => {
           match (*(head)) {
-            KernelTypes::KExprNode::Const(addr, _) => {
+            KernelTypes::KExprNode::Const(addr, lvls) => {
               let ci = (*(Ingress::get_ci(addr)));
               match ci {
-                KernelTypes::KConstantInfo::Induct(_, _, _, n_indices, num_ctors, _, block, idx) => {
+                KernelTypes::KConstantInfo::Induct(ind_nl, ind_ty, ind_np, n_indices, num_ctors, _, block, idx) => {
 
                   -- No unit-like conversion at a member of a mutual block (the kernel
                   -- grants it only from a model theorem; a field-less type is never nested)
@@ -682,7 +699,11 @@ def is_unit_like_type := aiur_fn⟦
                           match cci {
                             KernelTypes::KConstantInfo::Ctor(_, _, _, _, _, _, nfields, _) => {
                               match nfields {
-                                0 => {  1 - KernelWhnf::struct_is_rec(addr) } ,
+                                0 => {
+                                  match KernelWhnf::struct_is_rec(addr) {
+                                    0 => {  family_params(rc, ind_nl, ind_ty, ind_np, lvls, args, types) } ,
+                                    _ => {  0 } ,
+                                  } } ,
                                 _ => {  0 } ,
                               } } ,
                             _ => {  0 } ,
@@ -693,6 +714,47 @@ def is_unit_like_type := aiur_fn⟦
                   } } ,
                 _ => {  0 } ,
               } } ,
+            _ => {  0 } ,
+          } } ,
+      }
+    }
+⟧
+
+  -- A family's parameters, as DefEq.unitLikeTy and DefEq.structEtaTy read them: exactly
+  -- `ind_np` of them at `ind_nl` levels, and the licensed telescope certificate (`Certs`):
+  -- a slot whose binder datum is never zero skips, and otherwise every parameter is
+  -- certified (`certs_all`).
+
+def family_params := aiur_fn⟦
+  fn family_params(rc: KernelRoles::RoleCtx, ind_nl: Field, ind_ty: KernelTypes::KExpr, ind_np: Field,
+                   lvls: Lists::List<KernelTypes::KLevel>, args: Lists::List<KernelTypes::KExpr>,
+                   types: Lists::List<KernelTypes::KExpr>) -> Field {
+      match Fields::is_zero(Lists::length(args) - ind_np) * Fields::is_zero(Lists::length(lvls) - ind_nl) {
+        1 => {
+          let ty_i = KernelLevels::expr_inst_levels(ind_ty, lvls);
+          match KernelWhnf::slots_never(ty_i, ind_np) {
+            1 => {  1 } ,
+            _ => {
+              -- certified only along `ind_np` syntactic binders (`Certs` reads no whnf)
+              match leading_foralls(ty_i, ind_np) {
+                1 => {  KernelWhnf::certs_all(rc, ty_i, args, (&(Lists::Node::Nil)), types) } ,
+                _ => {  0 } ,
+              } } ,
+          } } ,
+        _ => {  0 } ,
+      }
+    }
+⟧
+
+  -- Whether `t` begins with `n` syntactic binders.
+
+def leading_foralls := aiur_fn⟦
+  fn leading_foralls(t: KernelTypes::KExpr, n: Field) -> Field {
+      match n {
+        0 => {  1 } ,
+        _ => {
+          match (*(t)) {
+            KernelTypes::KExprNode::Forall(_, body, _) => {  leading_foralls(body, n - 1) } ,
             _ => {  0 } ,
           } } ,
       }

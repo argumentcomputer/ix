@@ -225,19 +225,27 @@ inductive Red (env : Env md) : Nat → Expr md → Expr md → Prop where
       unfoldDefinition env e = some e' → Red env d e e'
   /-- **A theorem unfolds** (IxVM unfolds theorems in lazy δ and
   at ι majors, the checker does not): a stored theorem constant becomes its
-  stored value at the use's levels. The rule carries what its soundness reads:
-  the value is closed and has the theorem's type at this environment, and that
-  type is a proposition at every assignment, so value and constant are the one
-  proof (proof irrelevance). The rest of a spine unfolds by `appFn`. -/
+  stored value at the use's levels. The rule carries the theorem's own check,
+  at the theorem's level parameters and in the empty context: the value is
+  closed and has the theorem's type at this environment, and that type is a
+  proposition at every assignment. Read at the assignment the use's levels
+  induce, value and constant are then the one proof (proof irrelevance).
+
+  The check is stated at the theorem's own levels because a derivation is not
+  closed under level instantiation (a binder's datum is the zero-ness of a level,
+  which instantiation can change). It is the check the theorem's declaration
+  ran, carried from the environment that declaration was checked in to this one
+  by `Transport.weaken` (`Rules/Transport.lean`). The rest of a spine unfolds by
+  `appFn`. -/
   | deltaThm {d : Nat} {n : Key md} {us : List Level} {cv : ConstantVal md}
       {value vt s : Expr md} {u : Level} :
       env.find? n = some (.thmInfo cv value) →
       us.length = cv.levelParams.length →
       value.hasFvar = false → value.looseBVarsBounded 0 = true →
-      Infer env .full d (value.instantiateLevelParams cv.levelParams us) vt →
-      DefEq env d vt (cv.type.instantiateLevelParams cv.levelParams us) →
-      Infer env .full d (cv.type.instantiateLevelParams cv.levelParams us) s →
-      Red env d s (.sort u) → (∀ φ : LevelParam → Nat, Level.eval φ u = 0) →
+      Infer env .full 0 value vt →
+      DefEq env 0 vt cv.type →
+      Infer env .full 0 cv.type s →
+      Red env 0 s (.sort u) → (∀ φ : LevelParam → Nat, Level.eval φ u = 0) →
       Red env d (.const n us) (value.instantiateLevelParams cv.levelParams us)
   /-- **An equation's proof rewrites its left side** (equality reflection): a
   constant application `a` reduces to `b` given a proof
@@ -263,6 +271,11 @@ inductive Red (env : Env md) : Nat → Expr md → Expr md → Prop where
   | natLit {d : Nat} {n : Nat} :
       natLitSupported env = true →
       Red env d (.lit (.natVal n)) (natLitToConstructor n)
+  /-- **`Nat.zero` as the literal `0`**, `natLit`'s converse at `0`: IxVM's stuck
+  `Nat` operations keep an argument they read as a literal in literal form. -/
+  | natZeroLit {d : Nat} :
+      natLitSupported env = true →
+      Red env d (.const natZeroName []) (.lit (.natVal 0))
   /-- A `String` literal expands to its constructor form
   (`litMajorToCtor`, `Core.lean:736-738`; `projLitToCtor`, `:752-754`;
   `defeqStep`'s string arms, `:1610-1617` — one rule for the three
@@ -638,6 +651,57 @@ inductive DefEq (env : Env md) : Nat → Expr md → Expr md → Prop where
       Certs env d false (cvT.type.instantiateLevelParams cvT.levelParams us')
         wta.getAppArgs →
       DefEq env d a b
+  /-- **Proof irrelevance at a compared type** (IxVM's proof-irrelevance test):
+  `a`'s io-inferred type has a sort that is `Prop` at every assignment, and `b`'s
+  io-inferred type is definitionally equal to `a`'s. Unlike `proofIrrel`, one
+  sort is inferred and the two types are compared. -/
+  | proofIrrelTy {d : Nat} {a ta tta b tb : Expr md} {u : Level} :
+      Infer env .io d a ta → Infer env .io d ta tta →
+      Red env d tta (.sort u) → (∀ φ, Level.eval φ u = 0) →
+      Infer env .io d b tb → DefEq env d ta tb →
+      DefEq env d a b
+  /-- **Unit-likeness at a compared type** (IxVM's unit-like test): `a`'s
+  io-inferred type head-normalises to a unit-like family at its parameter count,
+  with the family's telescope certified against the parameters (licensed: a
+  `.never` slot skips), and `b`'s io-inferred type is definitionally equal to `a`'s.
+  The family is a stored one, or the basis `PUnit` (`isUnitLikeTy`). Unlike
+  `structUnit`, the types are compared before normalisation. -/
+  | unitLikeTy {d : Nat} {a ta wta b tb : Expr md} {T : Key md} {us : List Level}
+      {cvT : ConstantVal md} {caps : IndCaps md} :
+      Infer env .io d a ta → Red env d ta wta →
+      wta.getAppFn = .const T us →
+      env.find? T = some (.indInfo cvT caps) →
+      caps.unitlike = true →
+      wta.getAppArgs.length = caps.unitParams →
+      Certs env d true (cvT.type.instantiateLevelParams cvT.levelParams us)
+        wta.getAppArgs →
+      (reservedBasisNames.contains T = false ∨ isUnitLikeTy env wta = true) →
+      Infer env .io d b tb → DefEq env d ta tb →
+      DefEq env d a b
+  /-- **Structure η at a compared type** (IxVM's structure-η test), at a structure
+  whose fields are projection-table entries: `a` is a fully applied constructor of an
+  η-capable stored structure with at least one field; `a`'s io-inferred type reduces to
+  the structure at `a`'s levels and parameters, which the structure's telescope
+  certifies (licensed: a `.never` slot skips); `b`'s io-inferred type is definitionally
+  equal to `a`'s; and each `.proj` of `b` is definitionally equal to the corresponding
+  field of `a`. Unlike `structEta`, the two types are compared and the parameters are
+  `a`'s own. -/
+  | structEtaTy {d : Nat} {a b ta tb : Expr md} {c : Key md} {us : List Level}
+      {cvc : ConstantVal md} {cnP cnF : Nat} {T : Key md} {cvT : ConstantVal md}
+      {caps : IndCaps md} :
+      a.getAppFn = .const c us →
+      env.find? c = some (.ctorInfo cvc cnP cnF) →
+      a.getAppArgs.length = cnP + cnF →
+      env.find? T = some (.indInfo cvT caps) →
+      caps.eta = true → caps.etaCtor = some c →
+      0 < cnF → towerSlotsAll env T cnF = true →
+      Infer env .io d a ta →
+      Red env d ta (Expr.mkAppN (.const T us) (a.getAppArgs.take cnP)) →
+      Certs env d true (cvT.type.instantiateLevelParams cvT.levelParams us)
+        (a.getAppArgs.take cnP) →
+      Infer env .io d b tb → DefEq env d tb ta →
+      DefEqList env d ((List.range cnF).map fun i => .proj T i b) (a.getAppArgs.drop cnP) →
+      DefEq env d b a
 
 /-- **Type inference** at a grade. -/
 inductive Infer (env : Env md) : Grade → Nat → Expr md → Expr md → Prop where

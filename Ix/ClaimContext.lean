@@ -46,7 +46,7 @@ def ofBinding (binding : Address) (bindingAssumed : Bool := false) : Except Stri
 /-- Safe axioms in `env` not bound by its role binding. The default table binds
     `propext` and `Classical.choice` and the inert `sorryAx`, `Lean.trustCompiler`,
     `Lean.ofReduceBool` and `Lean.ofReduceNat`, so a claim over Lean's `Init` lists
-    none of them; `Quot.sound` is a `.quot` record. Mirrors
+    none of them; it binds `Quot.sound`, an axiom record, as its role. Mirrors
     `ClaimContext::user_axioms` in `crates/ixon/src/proof.rs`. -/
 def userAxioms (env : Ixon.Env) : Array Address := Id.run do
   let some binding := env.roleBinding | return #[]
@@ -87,17 +87,18 @@ def ofDefaultTable : Except String ClaimContext := do
 - `List`, `List.nil`, `List.cons`, `String`, `String.ofList`, `Char` and
   `Char.ofNat`: a `String` literal's type and constructor form (IxVM
   `str_lit_to_ctor`; IxC `litStrKeys`);
-- `propext` and `Classical.choice`: the standard axioms the axiom policy
-  admits as the binding binds them (IxVM `axiom_standing`; IxC `stdAxiomOk`).
-`Quot.sound` and the quotient block are fixed by their specifications. -/
+- `Quot.sound`, `propext` and `Classical.choice`: the standard axioms the axiom
+  policy admits as the binding binds them (IxVM `axiom_standing`; IxC `stdAxiomOk`).
+  `Quot.sound` is an axiom record, not a quotient record.
+The quotient block's other members are fixed by their specifications. -/
 def classRoles : List Role :=
-  [.nat, .natZero, .natSucc, .list, .listNil, .listCons, .string, .stringOfList,
-   .char, .charOfNat, .propext, .choice]
+  [.nat, .natZero, .natSucc, .list, .listNil, .listCons, .quotSound, .string,
+   .stringOfList, .char, .charOfNat, .propext, .choice]
 
 /-- The class roles' indices in a binding section: `ix_aggr` reads a complete
 table's entries for them at these positions. -/
 theorem classRoles_idx :
-    classRoles.map Role.idx = [0, 1, 2, 29, 30, 31, 37, 38, 39, 40, 56, 57] := by
+    classRoles.map Role.idx = [0, 1, 2, 29, 30, 31, 36, 37, 38, 39, 40, 56, 57] := by
   decide
 
 /-- The tag of a literal class preimage: `N4(0xE, 12)`, after the binding

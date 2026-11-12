@@ -2719,6 +2719,6 @@ mod tests {
     incomplete.bound.pop();
     assert!(incomplete.literal_class().is_err());
     let indices: Vec<u8> = CLASS_ROLES.iter().map(|r| r.index()).collect();
-    assert_eq!(indices, [0, 1, 2, 29, 30, 31, 37, 38, 39, 40, 56, 57]);
+    assert_eq!(indices, [0, 1, 2, 29, 30, 31, 36, 37, 38, 39, 40, 56, 57]);
   }
 }

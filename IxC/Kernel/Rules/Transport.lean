@@ -178,6 +178,17 @@ theorem lbb {e : Expr md} (h : e.looseBVarsBounded 0 = true) :
     (e.renFV ρ).looseBVarsBounded 0 = true := by
   rw [looseBVarsBounded_renFV]; exact h
 
+/-- **Environment weakening**: the identity renaming along an extension. -/
+theorem weaken {env env' : Env md} (h : EnvExt env env') :
+    Transport (fun i => i) (fun d => d) (fun _ => True) env env' where
+  mono := id
+  ok_succ := fun _ => trivial
+  δ_succ := fun _ => rfl
+  open_eq := fun _ => rfl
+  lt := fun _ hi => hi
+  ext := h
+  store := .inl fun _ => rfl
+
 end Transport
 
 /-! ## The transport -/
@@ -185,7 +196,7 @@ end Transport
 mutual
 
 /-- **A reduction, transported.** -/
-theorem red_tr {ρ δ : Nat → Nat} {ok : Nat → Prop} {env env' : Env md}
+theorem red_tr {env env' : Env md} {ρ δ : Nat → Nat} {ok : Nat → Prop}
     (hT : Transport ρ δ ok env env') :
     ∀ {d : Nat} {e e' : Expr md}, Red env d e e' → ok d →
       Red env' (δ d) (e.renFV ρ) (e'.renFV ρ)
@@ -202,15 +213,16 @@ theorem red_tr {ρ δ : Nat → Nat} {ok : Nat → Prop} {env env' : Env md}
     exact .beta (infer_tr hT hta hd) (defEq_tr hT hd' hd)
   | _, _, _, .delta hu, _ => .delta (hT.unfold hu)
   | _, _, _, .deltaThm (us := us) (cv := cv) (value := value) hf hlen hvf hvb hinf hde hinfT
-      hred hz, hd => by
-    have hV := renFV_instantiateLevelParams_closed (ρ := ρ) cv.levelParams us hvf
-    have i1 := infer_tr hT hinf hd
-    have d1 := defEq_tr hT hde hd
-    have i2 := infer_tr hT hinfT hd
-    rw [hV] at i1
-    rw [hT.fixType (cv := cv) hf rfl] at d1 i2
-    rw [hV]
-    exact .deltaThm (hT.ext.find hf) hlen hvf hvb i1 d1 i2 (red_tr hT hred hd) hz
+      hred hz, _ => by
+    -- the theorem's own check is closed and at depth 0: it moves by weakening
+    have hw := Transport.weaken hT.ext
+    have i1 := infer_tr hw hinf trivial
+    have d1 := defEq_tr hw hde trivial
+    have i2 := infer_tr hw hinfT trivial
+    have r1 := red_tr hw hred trivial
+    simp only [renFV_of_id (fun _ => rfl)] at i1 d1 i2 r1
+    rw [renFV_instantiateLevelParams_closed (ρ := ρ) cv.levelParams us hvf]
+    exact .deltaThm (hT.ext.find hf) hlen hvf hvb i1 d1 i2 r1 hz
   | _, _, _, .eqProof hhead hfE hp hwp hbp hlp ha hda hb hdb hTT hred hv, hd =>
     .eqProof (getAppFn_renFV_const hhead) (hT.ext.find hfE) (infer_tr hT hp hd)
       (hT.wscoped hd hwp) (Transport.lbb hbp) (fvarLeaves_sub_renFV hlp)
@@ -219,6 +231,7 @@ theorem red_tr {ρ δ : Nat → Nat} {ok : Nat → Prop} {env env' : Env md}
   | _, _, _, .natLit h, _ => by
     rw [renFV_natLitToConstructor]
     exact .natLit (hT.ext.natLitSupported_mono h)
+  | _, _, _, .natZeroLit h, _ => .natZeroLit (hT.ext.natLitSupported_mono h)
   | _, _, _, .strLit h, _ => by
     rw [renFV_strLitToConstructor]
     exact .strLit (hT.ext.strLitSupported_mono h)
@@ -332,7 +345,7 @@ theorem red_tr {ρ δ : Nat → Nat} {ok : Nat → Prop} {env env' : Env md}
       (infer_tr hT htf hd) (defEq_tr hT hdt hd) (defEq_tr hT hpi hd)
 
 /-- **A conversion, transported.** -/
-theorem defEq_tr {ρ δ : Nat → Nat} {ok : Nat → Prop} {env env' : Env md}
+theorem defEq_tr {env env' : Env md} {ρ δ : Nat → Nat} {ok : Nat → Prop}
     (hT : Transport ρ δ ok env env') :
     ∀ {d : Nat} {a b : Expr md}, DefEq env d a b → ok d →
       DefEq env' (δ d) (a.renFV ρ) (b.renFV ρ)
@@ -406,9 +419,32 @@ theorem defEq_tr {ρ δ : Nat → Nat} {ok : Nat → Prop} {env env' : Env md}
     exact .structUnit (infer_tr hT hta hd) (red_tr hT hwta hd) (getAppFn_renFV_const hthead)
       (hT.ext.find hind) hunit hresT (by rw [getAppArgs_renFV, List.length_map]; exact htlen)
       hlv (infer_tr hT htb hd) (red_tr hT hwtb hd) (defEq_tr hT hd' hd) hcs
+  | _, _, _, .proofIrrelTy hta htta hu hu0 htb hd', hd =>
+    .proofIrrelTy (infer_tr hT hta hd) (infer_tr hT htta hd) (red_tr hT hu hd) hu0
+      (infer_tr hT htb hd) (defEq_tr hT hd' hd)
+  | _, _, _, .unitLikeTy (cvT := cvT) hta hwta hthead hind hunit htlen hcerts hkind htb hd',
+      hd => by
+    have hcs := certs_tr hT hcerts hd
+    rw [hT.fixType (cv := cvT) hind rfl, ← getAppArgs_renFV] at hcs
+    exact .unitLikeTy (infer_tr hT hta hd) (red_tr hT hwta hd) (getAppFn_renFV_const hthead)
+      (hT.ext.find hind) hunit (by rw [getAppArgs_renFV, List.length_map]; exact htlen) hcs
+      (hkind.imp id (fun h => by rw [isUnitLikeTy_renFV]; exact hT.ext.isUnitLikeTy_mono h))
+      (infer_tr hT htb hd) (defEq_tr hT hd' hd)
+  | _, _, _, .structEtaTy (cvT := cvT) hhead hctor hlen hind heta hetaCtor hpos htow hta hwta
+      hcerts htb hd' hfields, hd => by
+    have hr := red_tr hT hwta hd
+    rw [renFV_mkAppN, List.map_take, ← getAppArgs_renFV] at hr
+    have hcs := certs_tr hT hcerts hd
+    rw [hT.fixType (cv := cvT) hind rfl, List.map_take, ← getAppArgs_renFV] at hcs
+    have hf := defEqList_tr hT hfields hd
+    rw [List.map_map, List.map_drop, ← getAppArgs_renFV] at hf
+    exact .structEtaTy (getAppFn_renFV_const hhead) (hT.ext.find hctor)
+      (by rw [getAppArgs_renFV, List.length_map]; exact hlen) (hT.ext.find hind) heta hetaCtor
+      hpos (by rw [hT.ext.towerSlotsAll_eq hind]; exact htow) (infer_tr hT hta hd) hr hcs
+      (infer_tr hT htb hd) (defEq_tr hT hd' hd) hf
 
 /-- **An inference, transported.** -/
-theorem infer_tr {ρ δ : Nat → Nat} {ok : Nat → Prop} {env env' : Env md}
+theorem infer_tr {env env' : Env md} {ρ δ : Nat → Nat} {ok : Nat → Prop}
     (hT : Transport ρ δ ok env env') :
     ∀ {g : Grade} {d : Nat} {e t : Expr md}, Infer env g d e t → ok d →
       Infer env' g (δ d) (e.renFV ρ) (t.renFV ρ)
@@ -454,7 +490,7 @@ theorem infer_tr {ρ δ : Nat → Nat} {ok : Nat → Prop} {env env' : Env md}
       (hT.ext.findProj? hent) (by rw [getAppArgs_renFV, List.length_map]; exact hlen) hus hprop
 
 /-- **A telescope certificate, transported.** -/
-theorem certs_tr {ρ δ : Nat → Nat} {ok : Nat → Prop} {env env' : Env md}
+theorem certs_tr {env env' : Env md} {ρ δ : Nat → Nat} {ok : Nat → Prop}
     (hT : Transport ρ δ ok env env') :
     ∀ {d : Nat} {lic : Bool} {ty : Expr md} {args : List (Expr md)},
       Certs env d lic ty args → ok d →
@@ -470,7 +506,7 @@ theorem certs_tr {ρ δ : Nat → Nat} {ok : Nat → Prop} {env env' : Env md}
     exact .cert (infer_tr hT hta hd) (defEq_tr hT hd' hd) h
 
 /-- **A pairwise conversion, transported.** -/
-theorem defEqList_tr {ρ δ : Nat → Nat} {ok : Nat → Prop} {env env' : Env md}
+theorem defEqList_tr {env env' : Env md} {ρ δ : Nat → Nat} {ok : Nat → Prop}
     (hT : Transport ρ δ ok env env') :
     ∀ {d : Nat} {as bs : List (Expr md)}, DefEqList env d as bs → ok d →
       DefEqList env' (δ d) (as.map (renFV ρ)) (bs.map (renFV ρ))
@@ -478,7 +514,7 @@ theorem defEqList_tr {ρ δ : Nat → Nat} {ok : Nat → Prop} {env env' : Env m
   | _, _, _, .cons h hs, hd => .cons (defEq_tr hT h hd) (defEqList_tr hT hs hd)
 
 /-- **The per-field certificates of a projection-function family, transported.** -/
-theorem etaProjCerts_tr {ρ δ : Nat → Nat} {ok : Nat → Prop} {env env' : Env md}
+theorem etaProjCerts_tr {env env' : Env md} {ρ δ : Nat → Nat} {ok : Nat → Prop}
     (hT : Transport ρ δ ok env env') :
     ∀ {d : Nat} {T : Key md} {us' : List Level} {targs : List (Expr md)} {b : Expr md}
       {lpsT : List LevelParam} {idxs : List Nat},
@@ -496,17 +532,6 @@ end
 /-! ## The two instances -/
 
 namespace Transport
-
-/-- **Environment weakening**: the identity renaming along an extension. -/
-theorem weaken {env env' : Env md} (h : EnvExt env env') :
-    Transport (fun i => i) (fun d => d) (fun _ => True) env env' where
-  mono := id
-  ok_succ := fun _ => trivial
-  δ_succ := fun _ => rfl
-  open_eq := fun _ => rfl
-  lt := fun _ hi => hi
-  ext := h
-  store := .inl fun _ => rfl
 
 /-- **Top weakening**: the variables from `p` on move up by `g`, at the depths
 from `p`, along an extension of an environment whose stored terms are closed. -/
