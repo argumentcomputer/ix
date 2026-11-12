@@ -103,6 +103,19 @@ fn noncanonical_records_are_refused() {
   }
 }
 
+/// Records a rule beyond the codec refuses (a theorem with assertions): the
+/// codec reads them, the canonical decoder refuses them.
+#[test]
+fn rule_refused_records_are_read_by_the_codec_only() {
+  for (name, bytes) in of_kind("canonical-rule-accept") {
+    canonical(&bytes).unwrap_or_else(|e| panic!("{name}: {e}"));
+  }
+  for (name, bytes) in of_kind("canonical-rule") {
+    assert!(canonical(&bytes).is_err(), "{name} accepted");
+    constant(&bytes).unwrap_or_else(|e| panic!("{name}: codec refused: {e}"));
+  }
+}
+
 #[test]
 fn environments_are_refused_by_every_full_reader() {
   for (name, bytes) in of_kind("env-accept") {
