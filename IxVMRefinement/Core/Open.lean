@@ -23,6 +23,7 @@ The facts about the term relation `Tm` that every layer reading it needs:
 namespace IxVM.Refinement.Core
 
 open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
+open Aiur.Library Aiur.Library.List
 open Ix.Kernel (Expr)
 
 /-! ## Substitution on closed values -/
@@ -155,12 +156,12 @@ theorem Tm.open {κ : _root_.Address → KKey} {d : Nat} {Γ Γ' : Nat → KExpr
     subst hk
     simp only [Expr.instantiate1]
     by_cases hik : ZMod.val i = k
-    · rw [if_pos hik]
+    · rw [ite_eq_left hik]
       have hf := Tm.bvarFree (κ := κ) (d := d + 1) (Γ := Γ') cell hs (k := k) (by omega) (by omega)
       have e : fvIdx (d + 1) k (ZMod.val i) = d := by unfold fvIdx; omega
       rw [e, hT] at hf
       exact hf
-    · rw [if_neg hik, if_neg (by omega)]
+    · rw [ite_eq_right hik, ite_eq_right (by omega)]
       exact .bvarLocal cell hs (by omega)
   | @bvarFree k₁ addr i cell hs hk hd =>
     intro k hk'
@@ -316,7 +317,7 @@ theorem Tm.wscopedB {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr
   | app _ _ _ ihf iha => simp [Expr.wscopedB, ihf, iha]
   | lam _ _ _ _ iht ihb => simp [Expr.wscopedB, iht, ihb]
   | forallE _ _ _ _ iht ihb => simp [Expr.wscopedB, iht, ihb]
-  | letE _ _ _ _ _ _ ihv ihb => exact wscopedB_instantiate1Lift ihv ihb
+  | letE _ _ _ _ _ ihv ihb => exact wscopedB_instantiate1Lift ihv ihb
   | litNat => simp [Expr.wscopedB]
   | litStr => simp [Expr.wscopedB]
   | proj _ _ _ ihe => simpa [Expr.wscopedB] using ihe
@@ -434,12 +435,10 @@ theorem segEntries_succ (Γ : Nat → KExpr) (d n : Nat) :
     segEntries Γ (d + 1) (n + 1) = (d, Γ d) :: segEntries Γ d n := by
   unfold segEntries
   rw [List.range_succ_eq_map, List.map_cons, List.map_map]
-  congr 1
-  · simp
-  · apply List.map_congr_left
-    intro i _
-    have e : d + 1 - 1 - (i + 1) = d - 1 - i := by omega
-    simp only [Function.comp_apply, Nat.succ_eq_add_one, e]
+  simp
+  intro a _
+  have e : d - (a + 1) = d - 1 - a := by omega
+  exact ⟨e, by rw [e]⟩
 
 /-- **A context list is a list of segment entries**: of some `n ≤ d` entries ending at `d`. -/
 theorem TypesRep.toRepList {κ : _root_.Address → KKey} {Γ : Nat → KExpr} {h : Heap F} {d : Nat}
