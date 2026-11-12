@@ -1,6 +1,7 @@
 import Ix.Ixon
 import Ix.Ixon.CheckOrder
 import IxC.Ixon.WireCheck
+import Ix.Compile.BinderData
 
 /-!
 # Binder-data sections of a compiled environment (manual measurement)
@@ -269,11 +270,40 @@ only_A={onlyA.size} only_B={onlyB} names_at_other_addresses={moved} binding_A={b
 binding_B={bind b}"
   return if onlyA.isEmpty && onlyB == 0 then 0 else 1
 
+/-- Whether a member of `c` is unsafe or partial (such records carry the undecided section). -/
+def unsafeOrPartial (c : Ixon.Constant) : Bool :=
+  let defn (d : Ixon.Definition) : Bool := match d.safety with
+    | .safe => false
+    | _ => true
+  match c.info with
+  | .defn d => defn d
+  | .recr r => r.isUnsafe
+  | .axio a => a.isUnsafe
+  | .muts ms => ms.any fun
+    | .defn d => defn d
+    | .indc i => i.isUnsafe || i.ctors.any (·.isUnsafe)
+    | .recr r => r.isUnsafe
+  | _ => false
+
+/-- **The safe records of an artifact with an undecided binder**, named. -/
+def undecided (path : String) : IO UInt32 := do
+  let e ← load path
+  let mut addrs : Array Address := #[]
+  for (a, lc) in e.consts do
+    if let some c := lc.get? then
+      if !unsafeOrPartial c && c.binders.any (·.nodes.any (· == .undecided)) then
+        addrs := addrs.push a
+  let names := Ix.Compile.BinderData.namesOf e (addrs.foldl (·.insert ·) {})
+  IO.println s!"BDUND {path}: safe_undecided={addrs.size}"
+  for a in addrs do IO.println s!"BDUND {names.getD a "?"} {a}"
+  return 0
+
 end Benchmarks.BinderDataStats
 
 def main (args : List String) : IO UInt32 := do
   match args with
   | ["stats", path] => Benchmarks.BinderDataStats.stats path
+  | ["undecided", path] => Benchmarks.BinderDataStats.undecided path
   | ["compare", a, b] => Benchmarks.BinderDataStats.compare a b
   | ["diag", a, b] => Benchmarks.BinderDataStats.diag a b
   | ["addrs", a, b] => Benchmarks.BinderDataStats.addrs a b
@@ -282,6 +312,6 @@ def main (args : List String) : IO UInt32 := do
     IO.println s!"BDBIND {a}: records={e.consts.size} binding={(e.roleBinding.map (toString ·.address)).getD "none"}"
     return 0
   | _ =>
-    IO.eprintln "usage: binder-data-stats stats A.ixe | compare A.ixe B.ixe | diag A.ixe B.ixe | \
+    IO.eprintln "usage: binder-data-stats stats A.ixe | undecided A.ixe | compare A.ixe B.ixe | diag A.ixe B.ixe | \
 addrs A.ixe B.ixe | binding A.ixe"
     return 2
