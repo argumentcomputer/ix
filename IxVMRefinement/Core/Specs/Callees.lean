@@ -120,11 +120,11 @@ def ProjConstRep (h : Heap F) (info : Ixon.ConstantInfo) (v : SourceValue F) : P
 
 /-- **The family block of a recursor has at most one inductive** (`KernelModeled::fire_compare`'s
 first exit: `block_is_modeled(rec_family_block(r)) = 0`): after the recursor's parameters, the
-first motive's type's last binder domain is headed by member `i` of a block `b` that is no block
-of two or more inductives. -/
+first motive's type has a binder domain (IxVM reads its last one: `last_binder_dom`) headed by member
+`i` of a block `b` that is no block of two or more inductives. -/
 def FamilyFew (c : Ctx) (cv : Ix.Kernel.ConstantVal .anon) : Prop :=
   ∃ (np k : Nat) (mdom dom : KExpr) (b : _root_.Address) (i : Nat) (us : List KLevel),
-    piDomAt np cv.type = some mdom ∧ piDomAt k mdom = some dom ∧ piDomAt (k + 1) mdom = none ∧
+    piDomAt np cv.type = some mdom ∧ piDomAt k mdom = some dom ∧
     dom.getAppFn = .const (c.κ (iprjAddr b i)) us ∧ FewInductives c b
 
 /-- **The comparands a modeled family's rule fires at** (`KernelModeled::fire_compare`'s
