@@ -159,7 +159,7 @@ an ordinary frame on a binder of its kind, a refusal for an annotated one. -/
     Except ExprError KExpr :=
   if c.admits e then pure x
   else if c.attachedTo e then
-    throw (.contract "annotated source is refused: the compiler writes only default binder modes")
+    throw (.contract "annotated source is refused until a mode checker lands")
   else throw (.contract "semantic contract is not attached to its original binder")
 
 /-- An `mdata` node with data `d` over the term `e`, whose conversion is `x`:

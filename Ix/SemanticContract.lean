@@ -123,7 +123,7 @@ def Contract.lower (contract : Contract) (source : Ix.Expr) (compiled : Ixon.Exp
     Except String Ixon.Expr :=
   if contract.admits source then .ok compiled
   else if contract.attachedTo source then
-    .error "annotated source is refused: the compiler writes only default binder modes"
+    .error "annotated source is refused until a mode checker lands"
   else .error "semantic contract is not attached to its original binder"
 
 /-- Inspect an entire source expression before rewrites can remove subterms. -/
