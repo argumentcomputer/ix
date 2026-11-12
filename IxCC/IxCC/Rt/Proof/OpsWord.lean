@@ -87,7 +87,7 @@ theorem word2_of {T : Tables} {P : List Word} {D : Nat → Prop} {sup : Nat} {ρ
       natWord q = some wb ∧ p < w.size ∧ q < w.size ∧ v = .lit (.nat (op.eval w p q).val) ∧
       ArgReads sup la ∧ ArgReads sup lb := by
   obtain ⟨rfl, ⟨p, q, n, wa, wb, ha, hb, hwa, hwb, hs, rfl, hra, hrb⟩⟩ :=
-    bin2_of hρ hops hlive (fun ns b => Lam.wordSem_ne_bool w op ns b) hr
+    bin2_of (op := .word w op) hρ hops hlive (fun ns b => Lam.wordSem_ne_bool w op ns b) hr
   rw [Lam.Prim.sem_word] at hs
   obtain ⟨-, -, hp, hq, rfl⟩ := Lam.wordSem_two hs
   exact ⟨rfl, p, q, wa, wb, ha, hb, hwa, hwb, hp, hq, rfl, hra, hrb⟩
@@ -156,7 +156,7 @@ theorem rhsSim_of_nat {T : Tables} {lp : Lir.Program} {ctx : Word} {D : Nat → 
           rw [himp ns n hs]
           exact hres
         | bool b => exact absurd hs (Lam.wordSem_ne_bool w op ns b)
-  simp only [Own.evalRhs, hvs, hres', Sem.Result.map]
+  simp only [Own.evalRhs, hvs, hres', Sem.Result.map, Sem.Result.bind]
 
 /-- A binary word primitive's straight expansion. -/
 theorem word2_sim {T : Tables} {f : Fir.FunId} {lp : Lir.Program} {ctx : Word} {D : Nat → Prop} {sup : Nat}
@@ -213,7 +213,7 @@ theorem checked_tail {T : Tables} {P : List Word} {D : Nat → Prop} {sup : Nat}
     simp [Lir.Cond.holds, hgt] at hfalse
   have hw := (wide_word hu).1 hle
   refine ⟨ρl₁.insert x (u + u + 1), mem, P, ?_, hheap, List.prefix_refl _, ?_⟩
-  · simp only [lir_eval, retag, hr1, retag_val]
+  · simp only [lir_eval, retag, hr1, retag_val, UInt64.mul_one]
     rfl
   · exact (envRel_frame hρ hf).insert hx hw
 
