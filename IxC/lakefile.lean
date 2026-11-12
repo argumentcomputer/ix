@@ -55,6 +55,17 @@ lean_lib IxC.Ixon where
   roots := #[`IxC.Address.Core, `IxC.Ixon]
   globs := #[.one `IxC.Address.Core, .submodules `IxC.Ixon]
 
+/-- The resource-mode model and the mode checker: run programs read from
+Ixon records, the reference evaluator `runR` with its four monitors, the
+mode-safety statement `ModeSafe` (a definition; nothing here is proved
+about the checker), and the uncertified checker `IxC.Resource.check`. It
+imports the kernel and the Ixon types; no kernel module imports it. -/
+@[default_target]
+lean_lib IxC.Resource where
+  srcDir := ".."
+  roots := #[`IxC.Resource]
+  globs := #[.andSubmodules `IxC.Resource]
+
 /-- Certified fixtures that also build without the host package's
 dependencies: the Ixon record fixtures, the codec, and the certified entry's
 byte admission. The root test library imports them. -/
