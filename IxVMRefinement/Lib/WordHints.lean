@@ -1,6 +1,6 @@
 import IxVMRefinement.Lib.WordSub
 
-/-! # Word library functions that read a hint, over observed derivations
+/-! # `UInt64::from_field`, over observed derivations
 
 `UInt64::from_field` decomposes a field element into bytes from a hint (`bytes_le`) and
 checks the decomposition: each pair of bytes is range-checked (`UInt8::from_fields`), and
@@ -217,77 +217,17 @@ theorem u64_from_field_spec {x r : SourceValue F} {h h' : Heap F} {cs : List (Ca
   -- the bytes recompose to the value, below `2^56`
   have hlt := leBytes8_lt hn0 hn1 hn2 hn3 hn4 hn5 hn6 hn7
   have hval := u64Value_leBytes8 hn0 hn1 hn2 hn3 hn4 hn5 hn6 hn7
-  have hrep := repU64_ofNatLT h hlt
-  rw [hval] at hrep
-  obtain ⟨h56, ht, rfl⟩ := u64_to_field_spec hrep ev363
+  have hrep : ∀ hp : Heap F, RepU64 hp (UInt64.ofNatLT _ hlt)
+      (.tuple [.field (n0 : F), .field (n1 : F), .field (n2 : F), .field (n3 : F),
+        .field (n4 : F), .field (n5 : F), .field (n6 : F), .field (n7 : F)]) := by
+    intro hp
+    have e := repU64_ofNatLT hp hlt
+    rw [hval] at e
+    exact e
+  obtain ⟨h56, ht, rfl⟩ := u64_to_field_spec (hrep _) ev363
   rw [UInt64.toNat_ofNatLT] at h56 ht
   subst ht
-  exact ⟨leBytes8 n0 n1 n2 n3 n4 n5 n6 n7, h56, heq380.symm, hval.symm, rfl⟩
-
-/-! ## `UInt64::mul_column` -/
-
-set_option maxHeartbeats 1000000 in
-/-- **Every derivation of `UInt64::mul_column` is a run of its mirror**: the hint's five
-bytes are range-checked and must recompose to the column value, which is therefore below
-`2^40` and is returned as its low two bytes and next three bytes. -/
-theorem mulColumn_complete : Mirrors.«UInt64::mul_column».Complete := by
-  intro x h h' r ev
-  obtain ⟨cs, ob⟩ := ev.observe
-  rcases Obs.«UInt64::mul_column».obs ob with
-    ⟨k10, m15, cs25, v28, v29, xr0, xr1, m64, cs74, v77, v78, xc0, xc1, m113, cs123, v126, xc2,
-      w147, v170, m179, x184, y185, m186, x192, y193, m194, cs203, y215, cs225, y237, x244, y245,
-      m246, x252, y253, m254, cs263, y275, cs285, y297, cs307, ty12, pr38, pr48, ev27, pr87, pr97,
-      ev76, pr136, ev125, ev205, ev227, op221, op199, ev265, ev287, op281, op259, ev309, op303,
-      op251, op243, op191, heq318, rfl, rfl, -⟩
-  obtain ⟨hr27, rfl, a0, a1, ha0, ha1, rfl, rfl⟩ := KernelLevels.u8FromFields_eval_inv ev27.erase
-  simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hr27
-  obtain ⟨rfl, rfl⟩ := hr27
-  obtain ⟨hr76, rfl, c0, c1, hc0, hc1, rfl, rfl⟩ := KernelLevels.u8FromFields_eval_inv ev76.erase
-  simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hr76
-  obtain ⟨rfl, rfl⟩ := hr76
-  obtain ⟨hr125, rfl, c2, z, hc2, hz, rfl, hz0⟩ := KernelLevels.u8FromFields_eval_inv ev125.erase
-  simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hr125
-  obtain ⟨rfl, rfl⟩ := hr125
-  obtain ⟨rfl, rfl, -⟩ := Obs.«UInt8::to_field».obs ev205
-  obtain ⟨rfl, rfl, -⟩ := Obs.«UInt8::to_field».obs ev227
-  obtain ⟨rfl, rfl, -⟩ := Obs.«UInt8::to_field».obs ev265
-  obtain ⟨rfl, rfl, -⟩ := Obs.«UInt8::to_field».obs ev287
-  obtain ⟨rfl, rfl, -⟩ := Obs.«UInt8::to_field».obs ev309
-  simp only [evalBinOp, Except.ok.injEq] at op221
-  subst op221
-  simp only [evalBinOp, Except.ok.injEq] at op199
-  subst op199
-  simp only [evalBinOp, Except.ok.injEq] at op281
-  subst op281
-  simp only [evalBinOp, Except.ok.injEq] at op259
-  subst op259
-  simp only [evalBinOp, Except.ok.injEq] at op303
-  subst op303
-  simp only [evalBinOp, Except.ok.injEq] at op251
-  subst op251
-  simp only [evalBinOp, Except.ok.injEq] at op243
-  subst op243
-  simp only [evalBinOp, Except.ok.injEq] at op191
-  subst op191
-  subst heq318
-  have hN : (((a0 + 256 * a1 + 65536 * (c0 + 256 * c1 + 65536 * c2) : Nat)) : F) =
-      (a0 : F) + 256 * (a1 : F) + 65536 * ((c0 : F) + 256 * (c1 : F) + 65536 * (c2 : F)) := by
-    push_cast <;> ring
-  have hlt : a0 + 256 * a1 + 65536 * (c0 + 256 * c1 + 65536 * c2) < 1099511627776 := by omega
-  have hval : (((a0 + 256 * a1 + 65536 * (c0 + 256 * c1 + 65536 * c2) : Nat)) : F).val =
-      a0 + 256 * a1 + 65536 * (c0 + 256 * c1 + 65536 * c2) :=
-    ZMod.val_natCast_of_lt (by unfold Aiur.Library.U32.Goldilocks.modulus; omega)
-  have d0 : (a0 + 256 * a1 + 65536 * (c0 + 256 * c1 + 65536 * c2)) % 256 = a0 := by omega
-  have d1 : (a0 + 256 * a1 + 65536 * (c0 + 256 * c1 + 65536 * c2)) / 256 % 256 = a1 := by omega
-  have d2 : (a0 + 256 * a1 + 65536 * (c0 + 256 * c1 + 65536 * c2)) / 65536 % 256 = c0 := by
-    omega
-  have d3 : (a0 + 256 * a1 + 65536 * (c0 + 256 * c1 + 65536 * c2)) / 16777216 % 256 = c1 := by
-    omega
-  have d4 : (a0 + 256 * a1 + 65536 * (c0 + 256 * c1 + 65536 * c2)) / 4294967296 % 256 = c2 := by
-    omega
-  refine ⟨1, fun k hk => ?_⟩
-  obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-  rw [← hN]
-  simp only [Mirrors.«UInt64::mul_column», hval, hlt, ↓reduceIte, d0, d1, d2, d3, d4]
+  exact ⟨leBytes8 n0 n1 n2 n3 n4 n5 n6 n7, h56, by first | exact heq380.symm | exact heq380,
+    hval.symm, rfl⟩
 
 end IxVM.Refinement.Lib
