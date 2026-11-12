@@ -1,24 +1,88 @@
-import IxVMRefinement.Levels.Bound
-import IxVMRefinement.Core.Bound
+import Ix.IxVM.Refinement.KernelLevels
+import Ix.IxVM.Consistency.Statement
+import Mathlib.Data.List.Forall2
 
-/-! # A level argument of a bounded derivation is lower than the field size
+/-! # A level a bounded derivation handles is lower than `2^39`
 
 The smart constructors (`level_max`, `level_imax`, `level_reduce`, `level_inst_params`) count
-successors with field elements (`level_explicit_val`, `level_offset_of`) and compare the
-counts. A comparison bounds what it compares, but a count that wrapped around the
-characteristic would be compared wrongly, so their refinement is proved for levels lower than
-the field size (`fieldSize`). This module supplies that bound from the circuit's: a level
-passed to a memoized call of a bounded derivation is represented in a valid ROM, and in a
-valid ROM the nodes on a longest path of a level are distinct levels, so they sit at distinct
-addresses of one type, of which the field has `fieldSize` (`levelDepth_lt_of_represents`,
-`arg_levelDepth_lt`). -/
+successors with field elements (`level_explicit_val`, `level_offset_of`), and the normalizer
+of `level_leq` and `level_equal` counts them in its offsets. A comparison bounds what it
+compares, but a count that wrapped around the characteristic would be compared, or stored,
+wrongly. What bounds the counts is the trace's memory: a bounded derivation's calls are
+carried by a valid ROM of at most `2^39` addresses (`IxVM.Consistency.Bounded`), and in a
+valid ROM the nodes on a longest path of a represented level are distinct levels, hence sit at
+pairwise different addresses (`rep_rom_det`, `rep_rom_addrs`). So a level any call of a
+bounded derivation receives is lower than `2^39` (`levelDepth_lt_of_rom`,
+`arg_levelDepth_lt`), and every count of its successors is below that. -/
 
 namespace IxVM.Refinement.Levels
 
 open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 open IxVM (F)
 open IxVM.Refinement.KernelLevels
-open IxVM.Consistency (MemoCallsAtMost memoCall Bounded)
+open IxVM.Consistency (ROMAddressesAtMost Bounded)
+
+/-! ## Reading represented values -/
+
+theorem represents_ptr_inv {rom : ROM F} {h : Heap F} {t : Aiur.Ty} {loc : Nat} {w : Value F}
+    (r : Represents rom h (.ptr t loc) w) :
+    ∃ stored address encoded, h[loc]? = some stored ∧ (address, encoded) ∈ rom.entries ∧
+      Represents rom h stored encoded ∧ w = .ptr encoded.type address := by
+  generalize hp : (Value.ptr t loc : SourceValue F) = p at r
+  cases r with
+  | ptr source cell contents =>
+    injection hp with _ hl
+    subst hl
+    exact ⟨_, _, _, source, cell, contents, rfl⟩
+  | field => cases hp
+  | tuple _ => cases hp
+  | construct _ => cases hp
+
+theorem represents_construct_inv {rom : ROM F} {h : Heap F} {e c : String}
+    {vs : List (SourceValue F)} {w : Value F} (r : Represents rom h (.construct e c vs) w) :
+    ∃ ws, w = .construct e c ws ∧ List.Forall₂ (Represents rom h) vs ws := by
+  generalize hp : (Value.construct e c vs : SourceValue F) = p at r
+  cases r with
+  | construct items =>
+    injection hp with h1 h2 h3
+    subst h1 h2 h3
+    exact ⟨_, rfl, items⟩
+  | field => cases hp
+  | tuple _ => cases hp
+  | ptr _ _ _ => cases hp
+
+theorem represents_field_inv {rom : ROM F} {h : Heap F} {x : F} {w : Value F}
+    (r : Represents rom h (.field x) w) : w = .field x := by
+  generalize hp : (Value.field x : SourceValue F) = p at r
+  cases r with
+  | field =>
+    injection hp with hx
+    rw [hx]
+  | tuple _ => cases hp
+  | construct _ => cases hp
+  | ptr _ _ _ => cases hp
+
+theorem forall₂_pair {α β : Type} {R : α → β → Prop} {a b : α} {ws : List β}
+    (h : List.Forall₂ R [a, b] ws) : ∃ wa wb, ws = [wa, wb] ∧ R a wa ∧ R b wb := by
+  obtain ⟨wa, u, ha, hu, rfl⟩ := List.forall₂_cons_left_iff.mp h
+  obtain ⟨wb, u', hb, hu', rfl⟩ := List.forall₂_cons_left_iff.mp hu
+  rw [List.forall₂_nil_left_iff] at hu'
+  subst hu'
+  exact ⟨wa, wb, rfl, ha, hb⟩
+
+/-- The ROM value a represented level cell is stored as. -/
+theorem cell_represented {rom : ROM F} {h : Heap F} {en c : String} {addr : Nat}
+    {vs : List (SourceValue F)} {w : Value F}
+    (cell : h[addr]? = some (.construct en c vs)) (r : Represents rom h (.ptr (.enum en) addr) w) :
+    ∃ address ws, (address, .construct en c ws) ∈ rom.entries ∧
+      List.Forall₂ (Represents rom h) vs ws ∧ w = .ptr (.enum en) address := by
+  obtain ⟨stored, address, encoded, src, mem, rep, rfl⟩ := represents_ptr_inv r
+  rw [cell] at src
+  cases src
+  obtain ⟨ws, rfl, items⟩ := represents_construct_inv rep
+  exact ⟨address, ws, mem, items, by simp [Value.type]⟩
+
+/-! ## Distinct levels, distinct addresses -/
 
 /-- In a valid ROM, two level cells represented by one pointer value hold one ROM value: the
 same constructor, with arguments represented by the same values. -/
@@ -30,8 +94,8 @@ theorem cells_same {rom : ROM F} (valid : rom.Valid) {h₁ h₂ : Heap F} {a₁ 
     (w₂ : Represents rom h₂ (.ptr (.enum klevelEnum) a₂) w) :
     c₁ = c₂ ∧ ∃ ws, List.Forall₂ (Represents rom h₁) vs₁ ws ∧
       List.Forall₂ (Represents rom h₂) vs₂ ws := by
-  obtain ⟨b₁, ws₁, mem₁, items₁, rfl⟩ := Core.cell_represented cell₁ w₁
-  obtain ⟨b₂, ws₂, mem₂, items₂, hw⟩ := Core.cell_represented cell₂ w₂
+  obtain ⟨b₁, ws₁, mem₁, items₁, rfl⟩ := cell_represented cell₁ w₁
+  obtain ⟨b₂, ws₂, mem₂, items₂, hw⟩ := cell_represented cell₂ w₂
   injection hw with _ hb
   have := valid _ mem₁ _ mem₂ hb (by simp [Value.type])
   injection this with _ hc hws
@@ -62,7 +126,7 @@ theorem rep_rom_det {rom : ROM F} (valid : rom.Valid) {h₁ h₂ : Heap F}
     cases r₂ with
     | max cell₂ r₂a r₂b =>
       obtain ⟨-, ws, i₁, i₂⟩ := cells_same valid cell₁ cell₂ w₁ w₂
-      obtain ⟨wa, wb, rfl, ha₁, hb₁⟩ := Core.forall₂_pair i₁
+      obtain ⟨wa, wb, rfl, ha₁, hb₁⟩ := forall₂_pair i₁
       obtain ⟨ha₂, i₂'⟩ := List.forall₂_cons.mp i₂
       obtain ⟨hb₂, -⟩ := List.forall₂_cons.mp i₂'
       rw [iha r₂a ha₁ ha₂, ihb r₂b hb₁ hb₂]
@@ -72,7 +136,7 @@ theorem rep_rom_det {rom : ROM F} (valid : rom.Valid) {h₁ h₂ : Heap F}
     cases r₂ with
     | imax cell₂ r₂a r₂b =>
       obtain ⟨-, ws, i₁, i₂⟩ := cells_same valid cell₁ cell₂ w₁ w₂
-      obtain ⟨wa, wb, rfl, ha₁, hb₁⟩ := Core.forall₂_pair i₁
+      obtain ⟨wa, wb, rfl, ha₁, hb₁⟩ := forall₂_pair i₁
       obtain ⟨ha₂, i₂'⟩ := List.forall₂_cons.mp i₂
       obtain ⟨hb₂, -⟩ := List.forall₂_cons.mp i₂'
       rw [iha r₂a ha₁ ha₂, ihb r₂b hb₁ hb₂]
@@ -92,7 +156,6 @@ theorem rep_rom_det {rom : ROM F} (valid : rom.Valid) {h₁ h₂ : Heap F}
     | zero cell₂ | succ cell₂ _ | max cell₂ _ _ | imax cell₂ _ _ =>
       exact absurd (cells_same valid cell₁ cell₂ w₁ w₂).1 (by decide)
 
-instance : NeZero Aiur.Library.U32.Goldilocks.modulus := ⟨by decide⟩
 
 /-- The addresses of a represented level's nodes, enough of them for its height. -/
 theorem rep_rom_addrs {rom : ROM F} (valid : rom.Valid) {h : Heap F} {l : Ix.Kernel.Level}
@@ -103,19 +166,19 @@ theorem rep_rom_addrs {rom : ROM F} (valid : rom.Valid) {h : Heap F} {l : Ix.Ker
           levelDepth l' ≤ levelDepth l := by
   induction rep generalizing w with
   | zero cell =>
-    obtain ⟨a₀, -, -, -, rfl⟩ := Core.cell_represented cell wr
+    obtain ⟨a₀, -, -, -, rfl⟩ := cell_represented cell wr
     refine ⟨{a₀}, by simp [levelDepth], fun a ha => ?_⟩
     rw [Finset.mem_singleton] at ha
     subst ha
     exact ⟨_, _, _, .zero cell, wr, le_refl _⟩
   | param hn cell =>
-    obtain ⟨a₀, -, -, -, rfl⟩ := Core.cell_represented cell wr
+    obtain ⟨a₀, -, -, -, rfl⟩ := cell_represented cell wr
     refine ⟨{a₀}, by simp [levelDepth], fun a ha => ?_⟩
     rw [Finset.mem_singleton] at ha
     subst ha
     exact ⟨_, _, _, .param hn cell, wr, le_refl _⟩
   | @succ addr u uPtr cell repU ih =>
-    obtain ⟨a₀, ws, -, items, rfl⟩ := Core.cell_represented cell wr
+    obtain ⟨a₀, ws, -, items, rfl⟩ := cell_represented cell wr
     obtain ⟨wu, -, hu, -, rfl⟩ := List.forall₂_cons_left_iff.mp items
     obtain ⟨S, hcard, hS⟩ := ih hu
     have hnot : a₀ ∉ S := by
@@ -134,8 +197,8 @@ theorem rep_rom_addrs {rom : ROM F} (valid : rom.Valid) {h : Heap F} {l : Ix.Ker
       · obtain ⟨h', l', p', rep', wr', hd⟩ := hS a ha
         exact ⟨h', l', p', rep', wr', by simp only [levelDepth]; omega⟩
   | @max addr a b aPtr bPtr cell repA repB iha ihb =>
-    obtain ⟨a₀, ws, -, items, rfl⟩ := Core.cell_represented cell wr
-    obtain ⟨wa, wb, rfl, ha, hb⟩ := Core.forall₂_pair items
+    obtain ⟨a₀, ws, -, items, rfl⟩ := cell_represented cell wr
+    obtain ⟨wa, wb, rfl, ha, hb⟩ := forall₂_pair items
     obtain ⟨SA, hcA, hSA⟩ := iha ha
     obtain ⟨SB, hcB, hSB⟩ := ihb hb
     have hnot : a₀ ∉ SA ∪ SB := by
@@ -165,8 +228,8 @@ theorem rep_rom_addrs {rom : ROM F} (valid : rom.Valid) {h : Heap F} {l : Ix.Ker
         · obtain ⟨h', l', p', rep', wr', hd⟩ := hSB x hm
           exact ⟨h', l', p', rep', wr', by simp only [levelDepth]; omega⟩
   | @imax addr a b aPtr bPtr cell repA repB iha ihb =>
-    obtain ⟨a₀, ws, -, items, rfl⟩ := Core.cell_represented cell wr
-    obtain ⟨wa, wb, rfl, ha, hb⟩ := Core.forall₂_pair items
+    obtain ⟨a₀, ws, -, items, rfl⟩ := cell_represented cell wr
+    obtain ⟨wa, wb, rfl, ha, hb⟩ := forall₂_pair items
     obtain ⟨SA, hcA, hSA⟩ := iha ha
     obtain ⟨SB, hcB, hSB⟩ := ihb hb
     have hnot : a₀ ∉ SA ∪ SB := by
@@ -196,34 +259,42 @@ theorem rep_rom_addrs {rom : ROM F} (valid : rom.Valid) {h : Heap F} {l : Ix.Ker
         · obtain ⟨h', l', p', rep', wr', hd⟩ := hSB x hm
           exact ⟨h', l', p', rep', wr', by simp only [levelDepth]; omega⟩
 
-/-- **A level represented in a valid ROM is lower than the field size.** -/
-theorem levelDepth_lt_of_represents {rom : ROM F} (valid : rom.Valid) {h : Heap F}
-    {l : Ix.Kernel.Level} {p : SourceValue F} {w : Value F}
-    (rep : RepKLevel h l p) (wr : Represents rom h p w) : levelDepth l < fieldSize := by
-  obtain ⟨S, hcard, -⟩ := rep_rom_addrs valid rep wr
-  have hle : S.card ≤ Fintype.card F := Finset.card_le_univ S
-  have hF : Fintype.card F = fieldSize := ZMod.card _
+/-- **A level represented in a valid ROM of at most `N` addresses is lower than `N`.** -/
+theorem levelDepth_lt_of_rom {rom : ROM F} (valid : rom.Valid) {N : Nat}
+    (bound : ROMAddressesAtMost rom N) {h : Heap F} {l : Ix.Kernel.Level} {p : SourceValue F}
+    {w : Value F} (rep : RepKLevel h l p) (wr : Represents rom h p w) : levelDepth l < N := by
+  obtain ⟨S, hcard, hS⟩ := rep_rom_addrs valid rep wr
+  obtain ⟨addrs, small, cover⟩ := bound
+  have hsub : S ⊆ addrs.toFinset := by
+    intro a ha
+    obtain ⟨h', l', p', rep', wr', -⟩ := hS a ha
+    obtain ⟨addr', rfl⟩ := rep'.isPtr
+    obtain ⟨-, address, encoded, -, mem, -, hw⟩ := represents_ptr_inv wr'
+    injection hw with _ ha'
+    rw [List.mem_toFinset, ha']
+    exact cover _ mem
+  have h1 := Finset.card_le_card hsub
+  have h2 := List.toFinset_card_le addrs
   omega
 
-theorem forall₂_exists_of_mem {α β : Type} {R : α → β → Prop} {xs : List α} {ys : List β}
-    (h : List.Forall₂ R xs ys) {x : α} (hx : x ∈ xs) : ∃ y, R x y := by
-  induction h with
-  | nil => cases hx
-  | cons hr _ ih =>
-    rcases List.mem_cons.mp hx with rfl | hx
-    · exact ⟨_, hr⟩
-    · exact ih hx
-
-/-- **A level passed to a memoized call of a bounded derivation is lower than the field
-size.** -/
+/-- **A level any call of a bounded derivation receives is lower than `2^39`.** -/
 theorem arg_levelDepth_lt {calls : List (Call F)} (hb : Bounded calls) {c : Call F}
-    (hc : c ∈ calls) (hm : memoCall IxVM.source c.name = true) {p : SourceValue F}
-    (hp : p ∈ c.args) {l : Ix.Kernel.Level} (rep : RepKLevel c.heap l p) :
-    levelDepth l < fieldSize := by
-  obtain ⟨rom, valid, bound⟩ := hb
-  obtain ⟨keys, -, cover⟩ := bound c.name hm
-  obtain ⟨key, -, hfa⟩ := cover c hc rfl
-  obtain ⟨w, hw⟩ := forall₂_exists_of_mem hfa hp
-  exact levelDepth_lt_of_represents valid rep hw
+    (hc : c ∈ calls) {p : SourceValue F} (hp : p ∈ c.args) {l : Ix.Kernel.Level}
+    (rep : RepKLevel c.heap l p) : levelDepth l < 2 ^ 39 := by
+  obtain ⟨rom, valid, bound, carried⟩ := hb
+  obtain ⟨w, hw⟩ := carried c hc p hp
+  exact levelDepth_lt_of_rom valid bound rep hw
+
+/-- The same, against the field size (the bound the smart constructors are proved under). -/
+theorem arg_levelDepth_lt_field {calls : List (Call F)} (hb : Bounded calls) {c : Call F}
+    (hc : c ∈ calls) {p : SourceValue F} (hp : p ∈ c.args) {l : Ix.Kernel.Level}
+    (rep : RepKLevel c.heap l p) : levelDepth l < fieldSize :=
+  lt_trans (arg_levelDepth_lt hb hc hp rep) (by decide)
+
+/-- A sub-derivation of a bounded derivation is bounded. -/
+theorem bounded_sub {calls₁ calls₂ : List (Call F)} (hb : Bounded calls₂)
+    (hsub : ∀ x ∈ calls₁, x ∈ calls₂) : Bounded calls₁ := by
+  obtain ⟨rom, valid, bound, carried⟩ := hb
+  exact ⟨rom, valid, bound, fun c hc => carried c (hsub c hc)⟩
 
 end IxVM.Refinement.Levels

@@ -1,12 +1,12 @@
-import IxVMRefinement.Levels.Rom
+import IxVMRefinement.Levels.Bound
 
 /-! # The smart constructors over observed, bounded derivations
 
 `level_max`, `level_imax`, `level_reduce`, `level_inst_params` and `level_list_inst` with no
-hypothesis on the heights of the levels: `level_max` hands both its arguments to memoized
-callees (`level_explicit_val`, `level_max_go`), so in a bounded derivation they are lower than
-the field size (`arg_levelDepth_lt`), which is what `levelMax_refines` needs; `level_imax`
-calls `level_max` whenever its result depends on a comparison; `level_reduce`,
+hypothesis on the heights of the levels: `level_max` hands both its arguments to callees
+(`level_explicit_val`, `level_max_go`), so in a bounded derivation they are represented in the
+ROM and lower than `2^39` (`arg_levelDepth_lt`), which is what `levelMax_refines` needs;
+`level_imax` calls `level_max` whenever its result depends on a comparison; `level_reduce`,
 `level_inst_params` and `level_list_inst` are proved by induction on the derivation, through
 the first two. -/
 
@@ -15,32 +15,13 @@ namespace IxVM.Refinement.Levels
 open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 open IxVM (F)
 open IxVM.Refinement.KernelLevels
-open IxVM.Consistency (memoCall Bounded)
+open IxVM.Consistency (Bounded)
 
 set_option maxHeartbeats 4000000
 set_option linter.unusedVariables false
 
-theorem explicitVal_memoized :
-    memoCall IxVM.source "KernelLevels::level_explicit_val" = true := by decide +kernel
-theorem maxGo_memoized : memoCall IxVM.source "KernelLevels::level_max_go" = true := by
-  decide +kernel
-theorem max_memoized : memoCall IxVM.source "KernelLevels::level_max" = true := by
-  decide +kernel
-theorem isNotZero_memoized : memoCall IxVM.source "KernelLevels::level_is_not_zero" = true := by
-  decide +kernel
-theorem eq_memoized : memoCall IxVM.source "KernelLevels::level_eq" = true := by
-  decide +kernel
-
 theorem klevelList_names :
     klevelListEnum = Obs.Names.«Lists::Node<&KernelTypes::KLevelNode>» := by decide +kernel
-
-/-- A sub-derivation of a bounded derivation is bounded. -/
-theorem bounded_sub {calls₁ calls₂ : List (Call F)} (hb : Bounded calls₂)
-    (hsub : ∀ x ∈ calls₁, x ∈ calls₂) : Bounded calls₁ := by
-  obtain ⟨rom, valid, bound⟩ := hb
-  exact ⟨rom, valid, fun name hm =>
-    let ⟨keys, hk, cover⟩ := bound name hm
-    ⟨keys, hk, fun c hc => cover c (hsub c hc)⟩⟩
 
 theorem rep_param_of_load' {h : Heap F} {l : Ix.Kernel.Level} {p x : SourceValue F}
     (rep : RepKLevel h l p)
@@ -66,21 +47,21 @@ theorem levelMax_obs {x_a x_b r : SourceValue F} {h h' : Heap F} {cs : List (Cal
     have hmem : (⟨"KernelLevels::level_explicit_val", [x_a], h⟩ : Call F) ∈ cs := by
       cases Obs.«KernelLevels::level_max».obs ev <;>
         (rename_i hc; rw [hc]; simp)
-    exact arg_levelDepth_lt hb hmem explicitVal_memoized (by simp) repA
+    exact arg_levelDepth_lt_field hb hmem (by simp) repA
   have hlb : levelDepth lb < fieldSize := by
     cases Obs.«KernelLevels::level_max».obs ev with
     | n1_bind_n1_bind_n1 m2 cs13 x_na m43 cs54 x_nb m84 cs95 ev15 ev56 ev97 he1 he2 hc =>
-      exact arg_levelDepth_lt hb (c := ⟨"KernelLevels::level_explicit_val", [x_b], m2⟩)
-        (by rw [hc]; simp) explicitVal_memoized (by simp) (repB.mono ev15.heap_extends)
+      exact arg_levelDepth_lt_field hb (c := ⟨"KernelLevels::level_explicit_val", [x_b], m2⟩)
+        (by rw [hc]; simp) (by simp) (repB.mono ev15.heap_extends)
     | n1_bind_n1_bind_n0 m2 cs13 x_na m43 cs54 x_nb m84 cs95 ev15 ev56 ev97 he1 he2 hc =>
-      exact arg_levelDepth_lt hb (c := ⟨"KernelLevels::level_explicit_val", [x_b], m2⟩)
-        (by rw [hc]; simp) explicitVal_memoized (by simp) (repB.mono ev15.heap_extends)
+      exact arg_levelDepth_lt_field hb (c := ⟨"KernelLevels::level_explicit_val", [x_b], m2⟩)
+        (by rw [hc]; simp) (by simp) (repB.mono ev15.heap_extends)
     | n1_bind_other m2 cs13 x_na v42 m43 cs54 cs138 ev15 ev56 ev140 hc =>
-      exact arg_levelDepth_lt hb (c := ⟨"KernelLevels::level_explicit_val", [x_b], m2⟩)
-        (by rw [hc]; simp) explicitVal_memoized (by simp) (repB.mono ev15.heap_extends)
+      exact arg_levelDepth_lt_field hb (c := ⟨"KernelLevels::level_explicit_val", [x_b], m2⟩)
+        (by rw [hc]; simp) (by simp) (repB.mono ev15.heap_extends)
     | other v1 m2 cs13 cs164 ev15 ev166 hc =>
-      exact arg_levelDepth_lt hb (c := ⟨"KernelLevels::level_max_go", [x_a, x_b], m2⟩)
-        (by rw [hc]; simp) maxGo_memoized (by simp) (repB.mono ev15.heap_extends)
+      exact arg_levelDepth_lt_field hb (c := ⟨"KernelLevels::level_max_go", [x_a, x_b], m2⟩)
+        (by rw [hc]; simp) (by simp) (repB.mono ev15.heap_extends)
   exact levelMax_refines repA repB hla hlb ev.erase
 
 /-- **`level_imax` returns `levelIMax`** on represented levels, in a bounded derivation. -/
@@ -97,35 +78,35 @@ theorem levelIMax_obs {x_a x_b r : SourceValue F} {h h' : Heap F} {cs : List (Ca
   | Succ w36 cs45 ld ev47 hc =>
     have hmem : (⟨"KernelLevels::level_max", [x_a, x_b], h⟩ : Call F) ∈ cs := by rw [hc]; simp
     exact levelIMax_refines repA repB
-      (arg_levelDepth_lt hb hmem max_memoized (by simp) repA)
-      (arg_levelDepth_lt hb hmem max_memoized (by simp) repB) ev.erase
+      (arg_levelDepth_lt_field hb hmem (by simp) repA)
+      (arg_levelDepth_lt_field hb hmem (by simp) repB) ev.erase
   | other_n1 v1 m70 cs80 cs108 ld hne29 hne65 ev82 ev110 hc =>
     have ext := ev82.heap_extends
     have hmem : (⟨"KernelLevels::level_max", [x_a, x_b], m70⟩ : Call F) ∈ cs := by rw [hc]; simp
     exact levelIMax_refines repA repB
-      (arg_levelDepth_lt hb hmem max_memoized (by simp) (repA.mono ext))
-      (arg_levelDepth_lt hb hmem max_memoized (by simp) (repB.mono ext)) ev.erase
+      (arg_levelDepth_lt_field hb hmem (by simp) (repA.mono ext))
+      (arg_levelDepth_lt_field hb hmem (by simp) (repB.mono ext)) ev.erase
   | other_n0_Zero v1 m70 cs80 ld hne29 hne65 ev82 ld144 he he' hc =>
     have ext := ev82.heap_extends
     obtain rfl := rep_zero_of_load (repA.mono ext) ld144
     have hmem : (⟨"KernelLevels::level_is_not_zero", [x_b], h⟩ : Call F) ∈ cs := by
       rw [hc]; simp
     exact levelIMax_refines repA repB (by simp [levelDepth])
-      (arg_levelDepth_lt hb hmem isNotZero_memoized (by simp) repB) ev.erase
+      (arg_levelDepth_lt_field hb hmem (by simp) repB) ev.erase
   | other_n0_other_n1 v1 m70 cs80 v133 m161 cs171 ld hne29 hne65 ev82 ld144 hne156 ev173
       he he' hc =>
     have ext := ev82.heap_extends
     have hmem : (⟨"KernelLevels::level_eq", [x_a, x_b], m70⟩ : Call F) ∈ cs := by rw [hc]; simp
     exact levelIMax_refines repA repB
-      (arg_levelDepth_lt hb hmem eq_memoized (by simp) (repA.mono ext))
-      (arg_levelDepth_lt hb hmem eq_memoized (by simp) (repB.mono ext)) ev.erase
+      (arg_levelDepth_lt_field hb hmem (by simp) (repA.mono ext))
+      (arg_levelDepth_lt_field hb hmem (by simp) (repB.mono ext)) ev.erase
   | other_n0_other_n0 v1 m70 cs80 v133 m161 cs171 ld hne29 hne65 ev82 ld144 hne156 ev173
       he hm hc =>
     have ext := ev82.heap_extends
     have hmem : (⟨"KernelLevels::level_eq", [x_a, x_b], m70⟩ : Call F) ∈ cs := by rw [hc]; simp
     exact levelIMax_refines repA repB
-      (arg_levelDepth_lt hb hmem eq_memoized (by simp) (repA.mono ext))
-      (arg_levelDepth_lt hb hmem eq_memoized (by simp) (repB.mono ext)) ev.erase
+      (arg_levelDepth_lt_field hb hmem (by simp) (repA.mono ext))
+      (arg_levelDepth_lt_field hb hmem (by simp) (repB.mono ext)) ev.erase
 
 /-! ## `level_reduce`, `level_inst_params`, `level_list_inst`: induction on the derivation -/
 

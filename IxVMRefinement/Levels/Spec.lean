@@ -6,14 +6,15 @@ import IxVMRefinement.Levels.Smart
 obligation `L2`): on bounded observed derivations and represented levels, `level_leq = 1`
 gives `≤` and `level_equal = 1` gives `=` at every assignment, and `level_equal(l, Zero) = 0`
 refutes that `l` is zero at every assignment. No hypothesis on the depth of the levels: the
-offsets the normalizer reaches are bounded by the memo bound (`Levels.Bound`), and the
+offsets the normalizer reaches are bounded by the level's height, which the trace's memory
+bounds (`Levels.Bound`, `Levels.Rom`), and the
 comparisons bound what they compare themselves.
 
 The second part states, for each level function the core calls, its spec over observed
 derivations in the form the core's induction consumes (`*Spec`, one per function, with its
 step lemma `*_step`). The level functions call no core function, so the steps need no
 induction hypothesis, and no spec has a hypothesis on the heights of the levels: the
-smart constructors get theirs from the circuit's bound (`Levels.Rom`, `Levels.Smart`). -/
+smart constructors get theirs from the trace's memory too (`Levels.Rom`, `Levels.Smart`). -/
 
 namespace IxVM.Refinement.Levels
 
@@ -27,24 +28,24 @@ open IxVM.Consistency (Bounded)
 /-- **The level layer of `IxVM.consistent`** (`L2`). -/
 theorem levels : IxVM.Consistency.Levels := by
   refine ⟨?_, ?_, ?_⟩
-  · rintro a b heap after cs la lb ev ⟨rom, -, bound⟩ repA repB φ
-    obtain ⟨hr, -⟩ := levelLeq_obs ev bound repA repB
+  · intro a b heap after cs la lb ev hb repA repB φ
+    obtain ⟨hr, -⟩ := levelLeq_obs ev hb repA repB
     have ht : levelLeq la lb = true := by
       by_contra hf
       simp [hf] at hr
     exact levelLeq_eq_true_sound ht φ
-  · rintro a b heap after cs la lb ev ⟨rom, -, bound⟩ repA repB φ
-    obtain ⟨hr, -⟩ := levelEqual_obs ev bound repA repB
+  · intro a b heap after cs la lb ev hb repA repB φ
+    obtain ⟨hr, -⟩ := levelEqual_obs ev hb repA repB
     have ht : levelEqual la lb = true := by
       by_contra hf
       simp [hf] at hr
     exact levelEqual_eq_true_sound ht φ
-  · rintro a b heap after cs la ev ⟨rom, -, bound⟩ repA repB
-    obtain ⟨hr, -⟩ := levelEqual_obs ev bound repA repB
+  · intro a b heap after cs la ev hb repA repB
+    obtain ⟨hr, -⟩ := levelEqual_obs ev hb repA repB
     have hf : levelEqual la .zero = false := by
-      cases hb : levelEqual la .zero
+      cases hbe : levelEqual la .zero
       · rfl
-      · simp [hb] at hr
+      · simp [hbe] at hr
     exact not_eval_zero_of_levelEqual_false hf
 
 /-- **Obligation `L2` is discharged.** -/
@@ -129,16 +130,16 @@ variable {args : List (SourceValue F)} {h : Heap F} {r : SourceValue F} {h' : He
 theorem levelLeq_step
     (ev : ObsFn IxVM.source.world "KernelLevels::level_leq" args h r h' calls) :
     LevelLeqSpec args h r h' calls := by
-  rintro a b hargs ⟨rom, -, bound⟩ la lb repA repB
+  intro a b hargs hb la lb repA repB
   subst hargs
-  exact levelLeq_obs ev bound repA repB
+  exact levelLeq_obs ev hb repA repB
 
 theorem levelEqual_step
     (ev : ObsFn IxVM.source.world "KernelLevels::level_equal" args h r h' calls) :
     LevelEqualSpec args h r h' calls := by
-  rintro a b hargs ⟨rom, -, bound⟩ la lb repA repB
+  intro a b hargs hb la lb repA repB
   subst hargs
-  exact levelEqual_obs ev bound repA repB
+  exact levelEqual_obs ev hb repA repB
 
 theorem levelIsNotZero_step
     (ev : ObsFn IxVM.source.world "KernelLevels::level_is_not_zero" args h r h' calls) :
