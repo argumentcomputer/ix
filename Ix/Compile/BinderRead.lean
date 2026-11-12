@@ -35,7 +35,8 @@ A head's declared type is peeled through the definitions that return one of thei
 arguments (`outParam T` is `T`) and, where no ∀ is there, through the definition at
 its head (δβ: `MorphismProperty C` is `∀ ⦃X Y⦄, (X ⟶ Y) → Prop`). A head is a
 constant, a bound variable (its
-declared type), or a field of a bound variable whose declared type is a structure
+declared type), or a field of a bound variable or of an application of a constant
+whose declared type is a structure
 (the field's declared type). An argument beyond its head's ∀s, where the head's
 type ends in one of the head's own variables (a `casesOn`'s `motive t`), takes its
 domain from the actual argument there, `λ y⃗, R` with as many λs as that variable
@@ -43,7 +44,8 @@ has arguments: the domain is `R`'s, and the type after all the arguments is `R`'
 past the rest. A `let` at the head of a type is read through
 (its body has the sort of its ζ-reduct).
 
-Anything else (a body headed by a projection of anything but a bound variable, a
+Anything else (a body headed by a projection of anything but a bound variable or an
+application of a constant, a
 redex, a match whose motive computes a sort, a constant whose type is not
 syntactically such a telescope)
 is not read, and the record falls to IxC's pass (`Ix.Compile.KernelAnnotate`):
@@ -211,17 +213,32 @@ def piCount (find : Find) : Nat → Ix.Expr → Nat
 /-- Bounds the ∀s and `let`s a sort is read through. -/
 def sortFuel : Nat := 1 <<< 12
 
-/-- **The field a projection `.proj S i v` reads**, when `v` is a bound variable
-whose declared type (under `ctx`) is `S.{us} p⃗`, `S` a structure (one
-constructor, no indices): the field's type in its constructor's telescope, the
-constructor's domains before it (innermost first), the constructor's level
-parameters, and `us`. -/
+/-- **The type of a projection's subject `v`, read syntactically**: a bound
+variable's declared type (under `ctx`), or, for an application `g a⃗` of a constant,
+`g`'s declared type past `|a⃗|` ∀s (each found as `peelN` finds it) with `a⃗` for
+them, at `g`'s levels (the application's type, by β). -/
+def subjectType (find : Find) (ctx : List (Option Ix.Expr)) (v : Ix.Expr) : Option Ix.Expr :=
+  match unmeta v with
+  | .bvar k _ => (ctx[k]?).join
+  | v => do
+    let (h, n) := headArgs v
+    let .const g us _ := h | none
+    let cv := (← find g).getCnst
+    guard (us.size == cv.levelParams.size)
+    let r ← peelN find n cv.type
+    let args := (spineArgs v #[]).reverse
+    pure (Ix.IndFlags.instantiateRev (Ix.IndFlags.substLevels r cv.levelParams us)
+      (args.extract 0 n).reverse)
+
+/-- **The field a projection `.proj S i v` reads**, when the type of `v` (a bound
+variable, or an application of a constant: `subjectType`) is `S.{us} p⃗`, `S` a
+structure (one constructor, no indices): the field's type in its constructor's
+telescope, the constructor's domains before it (innermost first), the
+constructor's level parameters, and `us`. -/
 def projField (find : Find) (ctx : List (Option Ix.Expr)) (sName : Ix.Name) (i : Nat)
     (v : Ix.Expr) :
     Option (Ix.Expr × List (Option Ix.Expr) × Array Ix.Name × Array Ix.Level × Array Ix.Expr) := do
-  let .bvar k _ := unmeta v | none
-  let vty ← (ctx[k]?).join
-  let vty := unwrap find 8 vty
+  let vty := unwrap find 8 (← subjectType find ctx v)
   let (vh, np) := headArgs vty
   let .const S us _ := vh | none
   guard (Ix.Name.beqRaw S sName)
@@ -312,7 +329,8 @@ def sortPw (find : Find) (σ : Ix.Name → Nat) (sub : Ix.Kernel.Level → Ix.Ke
             let .sort l _ := unwrap find 8 (← beyondType find ty (spineArgs t #[]).reverse n) | none
             (ingressLevel σ l).toOption
         | .proj sName i v _ => do
-          -- a field of a bound structure variable: the field's declared type
+          -- a field of a bound variable or of a constant's application whose type is a
+          -- structure: the field's declared type
           let (fty, _, lps, us, pargs) ← projField find ctx sName i v
           match unwrap find 8 (← peelN find n fty) with
           | .sort l _ =>
@@ -371,7 +389,7 @@ def lamDomainAt : Nat → Ix.Expr → List (Option Ix.Expr) → Option (Ix.Expr 
 
 
 /-- `argPw` at a spine head that is a constant, a bound variable under `ctx`, or a
-field of a bound structure variable. -/
+field of a structure-typed bound variable or constant application (`projField`). -/
 def argPwHead (find : Find) (σ : Ix.Name → Nat) (ctx : List (Option Ix.Expr)) (h : Ix.Expr)
     (args : Array Ix.Expr) (idx : Nat) : Option PropWhen :=
   match h with
@@ -402,8 +420,8 @@ def argPwHead (find : Find) (σ : Ix.Name → Nat) (ctx : List (Option Ix.Expr))
   | _ => none
 
 /-- The zero-ness of the sort of the domain at `idx` of the type of the spine
-head `h` (a constant, a bound variable under `ctx`, a field of a bound structure
-variable, or a β-redex's λs; `args` the spine's arguments before `idx`, outermost
+head `h` (a constant, a bound variable under `ctx`, a field (`projField`),
+or a β-redex's λs; `args` the spine's arguments before `idx`, outermost
 first): what an argument there has as its type's sort.
 
 At a β-redex's head `λ y₁…yₖ, b`, an argument at `idx < k` has the domain of the
