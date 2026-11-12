@@ -169,6 +169,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     record.output,
     native_assignment.public_values()[public_locations.len()..]
   );
+  let public_args =
+    plan.public_args(&record, "KzgVerifier::verify_deferred", &public)?;
+  let call = plan.public_claim(
+    "KzgVerifier::verify_deferred",
+    &public_args,
+    &record.output,
+  )?;
+  let call_bytes =
+    bincode::serde::encode_to_vec(&call, bincode::config::standard())?;
+  fs::write(out.join("expected-call.bin"), &call_bytes)?;
   let compiler = Compiler::new(&plan)?;
   let heights = compiler.row_counts(&record)?;
   let layout = plan.layout()?;
@@ -242,6 +252,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     },
     "aiur":{
       "artifact_blake3":blake3::hash(&artifact).to_hex().as_str(),
+      "public_call_blake3":blake3::hash(&call_bytes).to_hex().as_str(),
       "totals":totals(&circuits),
       "calls":calls,
       "circuits":circuits,

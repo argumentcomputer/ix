@@ -973,3 +973,15 @@ Goldilocks defaults are retained. This candidate's function-cell and FFT
 estimates stayed within the ungrouped budgets and matched the exported
 dimensions. The [policy](measurements/aiur-kzg-grouping-policy.json) is not yet
 a default: larger predecessor workloads still need validation before adoption.
+
+The [larger predecessor comparison](measurements/aiur-kzg-grouping-multi.json)
+found that the first policy increases main cells from 747,613,222 to
+1,010,164,102 when verifying a real grouped verifier proof. It therefore does
+not meet the adoption criterion. Searching against both workload budgets
+produces a [revised candidate](measurements/aiur-kzg-grouping-multi-policy.json):
+the small workload uses 11,487,262 main cells and 4,210 column commitments;
+the larger uses 736,158,854 main cells, with the same outputs and maximum
+height as its baseline. The small revised circuit also proves and verifies
+through the existing KZG backend. The larger execution is only a count profile;
+its `2^25` height and remaining arithmetic work still need attention before
+full recursion. These measurements use the arithmetic in commit `ac3d341fa`.
