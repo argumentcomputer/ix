@@ -26,13 +26,13 @@ universe w
 variable {V : Type w} [SetTheory V] {env : Env md} {M : Model V env} {φ : LevelParam → Nat}
 
 /-- **Members of a certified unit-like family's instance are equal**: a graded, framed reading
-of `.const T us` applied to arguments whose licensed certificate walk fits `T`'s telescope
-holds at most one member. -/
-theorem unitLike_members (hsc : StoredClosed env) (har : StoredArities env) {d : Nat}
+of `.const T us` applied to arguments whose certificate walk fits `T`'s telescope holds at
+most one member. -/
+theorem unitLike_members (hsc : StoredClosed env) (har : StoredArities env) {d : Nat} {lic : Bool}
     {w : Expr md} {T : Key md} {us : List Level} {cvT : ConstantVal md} {caps : IndCaps md}
     (hhead : w.getAppFn = .const T us) (hT : env.find? T = some (.indInfo cvT caps))
     (hunit : caps.unitlike = true) (hlen : w.getAppArgs.length = caps.unitParams)
-    (hcerts : CertsS M φ d true (cvT.type.instantiateLevelParams cvT.levelParams us)
+    (hcerts : CertsS M φ d lic (cvT.type.instantiateLevelParams cvT.levelParams us)
       w.getAppArgs)
     (hfw : Frame d w) {σ : Nat → V} (hCw : Ctx M φ σ w) {W : V} (hW : Den M φ σ w W)
     (hgw : Gr M φ σ w) {x y : V} (hx : x ∈ˢ W) (hy : y ∈ˢ W) : x = y := by
@@ -81,5 +81,33 @@ theorem DefEq.unitLikeTy_sound (hsc : StoredClosed env) (har : StoredArities env
   obtain rfl := hd hfta hftb σ hCta (hCb.of_subset hsubtb) Ta Tb hTa hTb hgTa hgTb
   exact unitLike_members hsc har hhead hT hunit hlen hcerts hfw (hCta.of_subset hsubw) hTw hgw
     hxTa hyTb
+
+/-- **A unit-like structure** (`DefEq.structUnit`): `a`'s type reduces to a certified unit-like
+family instance and `b`'s reduced type is definitionally equal to it. -/
+theorem DefEq.structUnit_sound (hsc : StoredClosed env) (har : StoredArities env) {d : Nat}
+    {a ta wta b tb wtb : Expr md} {T : Key md} {us' : List Level} {cvT : ConstantVal md}
+    {caps : IndCaps md}
+    (ha : InferIOS M φ d a ta) (hwa : RedS M φ d ta wta) (hhead : wta.getAppFn = .const T us')
+    (hT : env.find? T = some (.indInfo cvT caps)) (hunit : caps.unitlike = true)
+    (hlen : wta.getAppArgs.length = caps.unitParams)
+    (hb : InferIOS M φ d b tb) (hwb : RedS M φ d tb wtb) (hd : DefEqS M φ d wta wtb)
+    (hcerts : CertsS M φ d false (cvT.type.instantiateLevelParams cvT.levelParams us')
+      wta.getAppArgs) :
+    DefEqS M φ d a b := by
+  intro hfa hfb σ hCa hCb x y hx hy hga hgb
+  obtain ⟨hfta, hsubta, ka⟩ := ha hfa
+  obtain ⟨hfwa, hsubwa, kwa⟩ := hwa hfta
+  obtain ⟨Ta, hTa, hgTa, hxTa⟩ := ka σ hCa x hx hga
+  have hCta : Ctx M φ σ ta := hCa.of_subset hsubta
+  obtain ⟨hTwa, hgwa⟩ := kwa σ hCta Ta hTa hgTa
+  obtain ⟨hftb, hsubtb, kb⟩ := hb hfb
+  obtain ⟨hfwb, hsubwb, kwb⟩ := hwb hftb
+  obtain ⟨Tb, hTb, hgTb, hyTb⟩ := kb σ hCb y hy hgb
+  have hCtb : Ctx M φ σ tb := hCb.of_subset hsubtb
+  obtain ⟨hTwb, hgwb⟩ := kwb σ hCtb Tb hTb hgTb
+  obtain rfl := hd hfwa hfwb σ (hCta.of_subset hsubwa) (hCtb.of_subset hsubwb) Ta Tb hTwa hTwb
+    hgwa hgwb
+  exact unitLike_members hsc har hhead hT hunit hlen hcerts hfwa (hCta.of_subset hsubwa) hTwa
+    hgwa hxTa hyTb
 
 end Ix.Kernel.Open

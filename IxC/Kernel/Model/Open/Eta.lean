@@ -27,7 +27,8 @@ theorem Frame.succ {d : Nat} {e : Expr md} (h : Frame d e) : Frame (d + 1) e :=
   ⟨Expr.WScoped.mono (Nat.le_succ d) h.1, h.2.1, h.2.2⟩
 
 /-- **A fresh variable is framed** one binder in, at a framed type. -/
-theorem Frame.fvar_fresh {d : Nat} {ty : Expr md} (h : Frame d ty) : Frame (d + 1) (.fvar d ty) := by
+theorem Frame.fvar_fresh {d : Nat} {ty : Expr md} (h : Frame d ty) :
+    Frame (d + 1) (.fvar d ty) := by
   refine ⟨⟨Nat.lt_succ_self d, h.1⟩, rfl, ?_⟩
   intro l hl
   simp only [Expr.fvarLeaves, List.mem_cons] at hl
@@ -60,10 +61,10 @@ theorem DefEq.eta_sound {d : Nat} {ty₁ body₁ b tb ty₂ B : Expr md} {m₁ m
   | @lam _ _ _ _ A₁ F hA₁ hF₁ _ =>
     cases hpi with
     | @pi _ _ _ _ A₂ B₂ hA₂ _ hP₂ =>
-      obtain rfl := hty hp₂.ty hp.ty σ hCty₂ hCty₁ _ _ hA₂ hA₁ hgty₂ hgty₁
+      have hAA : A₂ = A₁ := hty hp₂.ty hp.ty σ hCty₂ hCty₁ _ _ hA₂ hA₁ hgty₂ hgty₁
       have hfresh : ∀ l ∈ body₁.fvarLeaves, l.1 ≠ d := fun l hl =>
         Nat.ne_of_lt (leaves_scoped hp.ws l hl).1
-      have hagree : ∀ x, x ∈ˢ A₂ → F x = app w x := by
+      have hagree : ∀ x, x ∈ˢ A₁ → F x = app w x := by
         intro x hx
         have hfx : Den M φ (setAt σ d x) (.fvar d ty₁) x := by
           have h := DenotesO.fvar (cval := M.cval) (env := env) (φ := φ) (σ := setAt σ d x)
@@ -75,18 +76,19 @@ theorem DefEq.eta_sound {d : Nat} {ty₁ body₁ b tb ty₂ B : Expr md} {m₁ m
           simp only [Expr.fvarLeaves, List.mem_append, List.mem_cons] at hl
           rcases hl with hl | rfl | hl
           · exact Ctx.setAbove hfb.1 hCb l hl
-          · refine ⟨⟨A₂, (Den.setAbove hp.ty.1).2 hA₁, ?_⟩, (Gr.setAbove hp.ty.1).2 hgty₁⟩
-            show setAt σ d x d ∈ˢ A₂
+          · refine ⟨⟨A₁, (Den.setAbove hp.ty.1).2 hA₁, ?_⟩, (Gr.setAbove hp.ty.1).2 hgty₁⟩
+            show setAt σ d x d ∈ˢ A₁
             rw [setAt_self]
             exact hx
           · exact Ctx.setAbove hp.ty.1 hCty₁ l hl
-        exact hbody hp.open (Frame.app_iff.2 ⟨Frame.succ hfb, Frame.fvar_fresh hp.ty⟩) (setAt σ d x)
+        exact hbody hp.open (Frame.app_iff.2 ⟨Frame.succ hfb, Frame.fvar_fresh hp.ty⟩)
+          (setAt σ d x)
           (Ctx.open hp.ty.1 hp.ws hCty₁ hCb₁ hA₁ hx hgty₁) hCapp _ _
           ((DenotesO.open_fvar hfresh ρ₀ _).2 (hF₁ x hx)) (.app hwx hfx)
           ((GradedBy.open_fvarO hfresh ρ₀).2 (hgb₁ _ hA₁ x hx))
           (Gr.app_iff.2 ⟨(Gr.setAbove hfb.1).2 hgb, True.intro, _, A₂, w, x, B₂, hwx, hfx,
-            hwTb, hx, hP₂⟩)
-      rw [hpw, lamR_congr hagree]
+            hwTb, (by rw [hAA]; exact hx), hP₂⟩)
+      rw [hpw, lamR_congr hagree, ← hAA]
       exact lamR_eta hwTb
 
 end Ix.Kernel.Open

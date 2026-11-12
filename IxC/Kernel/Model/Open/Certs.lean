@@ -42,10 +42,11 @@ variable {V : Type w} [SetTheory V] {env : Env md} {M : Model V env} {φ : Level
 
 /-! ## Lists of readings -/
 
-theorem DenList.length_eq {σ : Nat → V} :
-    ∀ {es : List (Expr md)} {vs : List V}, DenList M φ σ es vs → es.length = vs.length
-  | _, _, .nil => rfl
-  | _, _, .cons _ h => by simp [h.length_eq]
+theorem DenList.length_eq {σ : Nat → V} {es : List (Expr md)} {vs : List V}
+    (h : DenList M φ σ es vs) : es.length = vs.length := by
+  induction h with
+  | nil => rfl
+  | cons _ _ ih => simp only [List.length_cons, ih]
 
 /-! ## The walk and its licence -/
 
@@ -236,7 +237,8 @@ theorem FitsO.instantiate1 {σ : Nat → V} {a : Expr md} {x : V}
       | cons hA hy hrest =>
         obtain ⟨R, hfit, hR⟩ := ih B (k + 1) (push y ρ) ρ' R' hs hrest
         rw [← push_insertAt] at hfit
-        have hk : k + (y :: ys).length = k + 1 + ys.length := by simp; omega
+        have hk : k + (y :: ys).length = k + 1 + ys.length := by
+          simp only [List.length_cons]; omega
         rw [hk]
         exact ⟨R, .cons ((DenotesO.instantiate1 ha A k ρ _).1 hA) hy hfit, hR⟩
 
