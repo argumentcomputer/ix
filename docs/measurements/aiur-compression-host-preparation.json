@@ -1,0 +1,65 @@
+{
+  "format": "ix-aiur-host-preparation-comparison-v1",
+  "scope": "Init first-stage CompressGL compression-only diagnostic",
+  "root": "e8a453782a8bcc21e4fdef97799381d1fdccd4cabf91376665e760c913e2f204",
+  "runs": {
+    "aiur-gl-streamed-diagnostic": {
+      "metrics": {
+        "compress-peak-rss": 114955640832,
+        "compress-proof-size": 388203,
+        "compress-time": 972.917049,
+        "compress-verify-time": 99.810067,
+        "compression-system": "aiur-gl",
+        "input-root": "e8a453782a8bcc21e4fdef97799381d1fdccd4cabf91376665e760c913e2f204",
+        "scope": "compression-only",
+        "status": "ok",
+        "verify-time": 98.408394
+      },
+      "phase_seconds": {
+        "setup_seconds": 0.632362092,
+        "trace_seconds": 872.890017622,
+        "proving_seconds": 51.101752385,
+        "verification_seconds": 0.082886139
+      },
+      "execution_seconds": 43.219995464,
+      "proof_sha256": "c613fb9203588a32fbc0ab87d2d6029b8bd070e907d5dd61ebb8e65f63d332db",
+      "binary_sha256": "6d620f17025ec8dedb8948710e68f49a240d25fe21984b96046cf69ea2da1311",
+      "exit_code": 0
+    },
+    "aiur-gl-parallel-diagnostic": {
+      "metrics": {
+        "compress-peak-rss": 107662716928,
+        "compress-proof-size": 388203,
+        "compress-time": 129.998728,
+        "compress-verify-time": 100.173912,
+        "compression-system": "aiur-gl",
+        "input-root": "e8a453782a8bcc21e4fdef97799381d1fdccd4cabf91376665e760c913e2f204",
+        "scope": "compression-only",
+        "status": "ok",
+        "verify-time": 98.681733
+      },
+      "phase_seconds": {
+        "setup_seconds": 0.640246568,
+        "trace_seconds": 31.111260869,
+        "proving_seconds": 50.573143693,
+        "verification_seconds": 0.091258897
+      },
+      "execution_seconds": 42.565989983,
+      "proof_sha256": "c613fb9203588a32fbc0ab87d2d6029b8bd070e907d5dd61ebb8e65f63d332db",
+      "binary_sha256": "fad5d79862af3a2c4bfd7acd063f2c31f9215ed4ff50db13ef2e053fce624d30",
+      "exit_code": 0
+    }
+  },
+  "proof_bytes_identical": true,
+  "optimized_trace_phases_seconds": {
+    "record_validation": 0.08905308,
+    "allocation": 6.705070515,
+    "population": 10.118567649,
+    "packing": 14.081479115
+  },
+  "remaining_validation": [
+    "fresh Init end-to-end proving through the completed pipeline",
+    "complete Aiur CompressBN and CompressFinal integration",
+    "final Mathlib benchmark"
+  ]
+}

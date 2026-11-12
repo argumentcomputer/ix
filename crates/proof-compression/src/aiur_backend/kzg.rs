@@ -131,8 +131,15 @@ impl<'p, 'a> Backend<'p, 'a> {
     entry: &str,
     args: &[Scalar],
   ) -> Result<SystemWitness<Scalar>, String> {
-    let trace = self.plan.generate(record, entry, args, true)?;
-    self.witness(record, &trace, entry, args)
+    let (trace, timings) =
+      self.plan.generate_profiled(record, entry, args, true, false)?;
+    tracing::info!(
+      validate_seconds = timings.validate_seconds,
+      allocation_seconds = timings.bind_seconds,
+      fill_seconds = timings.fill_seconds,
+      "Aiur logical traces populated"
+    );
+    self.pack(record, &trace)
   }
 
   /// Validate the populated compiler rows and exact integer lookup balance
@@ -146,6 +153,15 @@ impl<'p, 'a> Backend<'p, 'a> {
     args: &[Scalar],
   ) -> Result<SystemWitness<Scalar>, String> {
     self.plan.check(record, trace, entry, args)?;
+    self.pack(record, trace)
+  }
+
+  fn pack(
+    &self,
+    record: &Execution<Bn254>,
+    trace: &Trace<Scalar>,
+  ) -> Result<SystemWitness<Scalar>, String> {
+    let started = std::time::Instant::now();
     let widths: Vec<_> = self.system.circuits[..self.function_circuits]
       .iter()
       .map(|circuit| circuit.main_width)
@@ -158,6 +174,10 @@ impl<'p, 'a> Backend<'p, 'a> {
       memory_widths: &self.memory_widths,
     }
     .main_traces(record, trace)?;
+    tracing::info!(
+      seconds = started.elapsed().as_secs_f64(),
+      "Aiur physical traces packed"
+    );
     let (active, degrees) = self.trace_shape(&traces)?;
     self.check_shape(&active, &degrees)?;
     if !self.system.config.uses_streaming_lookups() {
@@ -317,7 +337,6 @@ impl<'p, 'a> Compiler<'p, 'a> {
     args: &[Scalar],
   ) -> Result<Vec<p3_matrix::dense::RowMajorMatrix<Scalar>>, String> {
     let trace = self.plan.generate(record, entry, args, true)?;
-    self.plan.check(record, &trace, entry, args)?;
     witness::Packing {
       plan: self.plan,
       placements: &self.lowered.placements,

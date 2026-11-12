@@ -42,6 +42,26 @@ fn compiled_and_reference_population_agree_on_native_bn254_rows() {
 }
 
 #[test]
+fn parallel_population_preserves_recursive_gap_counts() {
+  let package = WidePackage::decode(include_bytes!(
+    "../../aiur/tests/fixtures/bn254-gap.ixa"
+  ))
+  .unwrap();
+  let artifact = package.trace.unwrap();
+  let mut program = package.program.check_with(Bn254).unwrap();
+  program.track_depth(&artifact).unwrap();
+  let plan = TracePlan::new(&program, artifact).unwrap();
+  let args = vec![Bn254.from_u64(2048), Bn254.neg(Bn254.one())];
+  let record = program.execute("BN254Gap::run", args.clone()).unwrap();
+  let compiled = plan.generate(&record, "BN254Gap::run", &args, true).unwrap();
+  let reference =
+    plan.generate_reference(&record, "BN254Gap::run", &args, true).unwrap();
+  assert_eq!(compiled, reference);
+  assert!(!compiled.ranges.0.is_empty());
+  plan.check(&record, &compiled, "BN254Gap::run", &args).unwrap();
+}
+
+#[test]
 fn both_population_engines_reject_a_wide_memory_address() {
   let mut package = WidePackage::decode(include_bytes!(
     "../../aiur/tests/fixtures/bn254-trace.ixa"

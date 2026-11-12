@@ -865,6 +865,12 @@ impl<'a, B: FieldBackend> TracePlan<'a, B> {
     let field = self.program.field;
     timings.bind_seconds = start.elapsed().as_secs_f64();
     let start = std::time::Instant::now();
+    #[cfg(feature = "parallel")]
+    if !reference {
+      let ranges = self.fill_parallel(record, &mut matrices)?;
+      timings.fill_seconds = start.elapsed().as_secs_f64();
+      return Ok(Trace { matrices, ranges });
+    }
     for (function, plan) in self.artifact.functions.iter().enumerate() {
       let table = &record.queries.tables[function];
       let matrix = &mut matrices[self.members[function]];
@@ -1058,6 +1064,64 @@ impl<'a, B: FieldBackend> TracePlan<'a, B> {
     // Allocation already zeroed the inactive padding rows. Their lookup
     // multiplicities are zero, so execution counts require no repair.
     Ok(Trace { matrices, ranges })
+  }
+
+  #[cfg(feature = "parallel")]
+  fn fill_parallel(
+    &self,
+    record: &Execution<B>,
+    matrices: &mut [Matrix<B::Element>],
+  ) -> Result<RangeCounts, String> {
+    let field = self.program.field;
+    let mut offsets = vec![0usize; matrices.len()];
+    let mut ranges = RangeCounts::default();
+    for (function, plan) in self.artifact.functions.iter().enumerate() {
+      let chip = self.members[function];
+      let table = &record.queries.tables[function];
+      let matrix = &mut matrices[chip];
+      let start = offsets[chip];
+      let end = start + table.len();
+      let values = &mut matrix.values[start * matrix.width..end * matrix.width];
+      let counts = &mut matrix.multiplicities[start..end];
+      let init = || (Vec::new(), Vec::new(), RangeCounts::default());
+      let local = values
+        .par_chunks_mut(matrix.width)
+        .zip(counts.par_iter_mut())
+        .enumerate()
+        .try_fold(init, |mut state, (query, (row, count))| {
+          let output = table.output(query);
+          *count = output.multiplicity;
+          row[self.artifact.chips[chip].activation] = field.one();
+          self.fills[function]
+            .fill(
+              record,
+              (table.input(query), output),
+              &mut state.0,
+              &mut state.1,
+              row,
+            )
+            .and_then(|()| {
+              self.depth.fill(
+                chip,
+                record,
+                table.depth(query),
+                row,
+                field,
+                &mut state.1,
+                &mut state.2,
+              )
+            })
+            .map_err(|error| format!("{} query {query}: {error}", plan.name))?;
+          Ok::<_, String>(state)
+        })
+        .try_reduce(init, |mut left, right| {
+          left.2 = left.2.merge(right.2);
+          Ok(left)
+        })?;
+      ranges = ranges.merge(local.2);
+      offsets[chip] = end;
+    }
+    Ok(ranges)
   }
 
   fn validate_record_shape(&self, record: &Execution<B>) -> Result<(), String> {

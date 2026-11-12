@@ -89,6 +89,10 @@ fn deferred_lookup_witness_produces_the_same_proof_as_materialized_tuples() {
     );
     let eager =
       SystemWitness::from_stage_1(deferred.traces.clone(), backend.system());
+    let reference =
+      plan.generate_reference(&record, ENTRY, &args, true).unwrap();
+    let checked = backend.witness(&record, &reference, ENTRY, &args).unwrap();
+    assert_eq!(deferred.traces, checked.traces);
     let eager = backend.prove(ENTRY, &public, &record.output, eager).unwrap();
     let deferred =
       backend.prove(ENTRY, &public, &record.output, deferred).unwrap();
