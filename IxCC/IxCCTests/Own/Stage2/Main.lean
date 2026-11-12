@@ -209,19 +209,20 @@ def inputsFor (F : Fir.Program) (f : Nat) (ns : List Nat) : List (List Own.RVal)
   ns.map fun n => List.replicate arity (.lit (.nat n))
 
 /-- References: each input's result on the unmutated map; inputs where it fails are skipped. -/
-def references (P : Program) (f : Nat) (inputs : List (List Own.RVal)) : List (List Own.RVal × String) :=
+def references (P : Program) (f : Nat) (inputs : List (List Own.RVal)) : List (List Own.RVal × String × (Nat × Nat × Nat)) :=
   inputs.filterMap fun args =>
-    let (r, _) := runI P 200000000 f args
+    let (r, c) := runI P 200000000 f args
     match r with
-    | .ok _ => some (args, readOf r)
+    | .ok _ => some (args, readOf r, (c.incs - c.incImm, c.decs - c.decImm, c.peak))
     | .error _ => none
 
 /-- Run the oracle on every input; `(runs, reached, failures)`. -/
-def judge (P : Program) (f watch : Nat) (refs : List (List Own.RVal × String)) :
-    Nat × Bool × List String :=
-  refs.foldl (fun (runs, reached, fails) (args, ref) =>
-    let (v, hits) := oracle P f args ref watch
-    (runs + 1, reached || hits > 0, match v with | some e => fails ++ [e] | none => fails)) (0, false, [])
+def judge (P : Program) (f watch : Nat) (refs : List (List Own.RVal × String × (Nat × Nat × Nat))) :
+    Nat × Bool × Bool × List String :=
+  refs.foldl (fun (runs, reached, eff, fails) (args, ref, sig) =>
+    let (v, hits, sig') := oracle P f args ref watch
+    (runs + 1, reached || hits > 0, eff || sig != sig',
+      match v with | some e => fails ++ [e] | none => fails)) (0, false, false, [])
 
 def borrowed (closure eqs root label : String) (ns : List Nat) : IO UInt32 := do
   let fr ← front closure eqs root
@@ -239,7 +240,7 @@ def borrowed (closure eqs root label : String) (ns : List Nat) : IO UInt32 := do
         tried := tried + 1
         if (checkBodyE fd body').isOk then
           accepted := accepted + 1
-          let (runs, reached, fails) := judge { source := F, bodies := m.insert g body' } f g refs
+          let (runs, reached, _, fails) := judge { source := F, bodies := m.insert g body' } f g refs
           if fails.isEmpty then clean := clean + 1
           IO.println s!"{label}\t{name}\tf{g} site {t}\taccepted\truns {runs}\treached {reached}\t{if fails.isEmpty then "clean" else s!"FAIL {fails.head!}"}"
     IO.println s!"{label}\t{name}\tsites {tried}\taccepted {accepted}\tclean {clean}\tinputs with a reference {refs.length}/{inputs.length}"
@@ -255,7 +256,7 @@ def campaign (closure eqs root label : String) (count seed : Nat) (ns : List Nat
   for (name, m) in [("canonical", fr.canonical), ("liveness", liveMap F)] do
     let refs := references { source := F, bodies := m } f inputs
     let mut r : Rng := ⟨UInt64.ofNat (seed + name.length)⟩
-    let mut stats : List (String × Nat × Nat × Nat × Nat × Nat) := Op.all.map fun op => (op.name, 0, 0, 0, 0, 0)
+    let mut stats : List (String × Nat × Nat × Nat × Nat × Nat × Nat) := Op.all.map fun op => (op.name, 0, 0, 0, 0, 0, 0)
     let mut failures : List String := []
     for _ in List.range count do
       let (g, r1) := r.pick funs
@@ -278,18 +279,18 @@ def campaign (closure eqs root label : String) (count seed : Nat) (ns : List Nat
             | none => (body1, what1))
         else (body1, what1)
       let ok := (checkBodyE fd body').isOk
-      let (runs, reached, fails) := if ok then judge { source := F, bodies := m.insert g body' } f g refs
-        else (0, false, [])
-      stats := stats.map fun (n, gen, acc, run, rea, bad) =>
+      let (runs, reached, eff, fails) := if ok then judge { source := F, bodies := m.insert g body' } f g refs
+        else (0, false, false, [])
+      stats := stats.map fun (n, gen, acc, run, rea, ef, bad) =>
         if n == op.name then (n, gen + 1, acc + (if ok then 1 else 0), run + runs,
-          rea + (if reached then 1 else 0), bad + (if fails.isEmpty then 0 else 1))
-        else (n, gen, acc, run, rea, bad)
+          rea + (if reached then 1 else 0), ef + (if eff then 1 else 0), bad + (if fails.isEmpty then 0 else 1))
+        else (n, gen, acc, run, rea, ef, bad)
       unless fails.isEmpty do
         failures := failures ++ [s!"f{g}: {what}: {fails.head!}"]
     IO.println s!"{label}\t{name}\tinputs with a reference {refs.length}/{inputs.length}"
-    IO.println "op\tgenerated\taccepted\toracle runs\taccepted and reached\taccepted and misbehaving"
-    for (n, gen, acc, run, rea, bad) in stats do
-      IO.println s!"{label}\t{name}\t{n}\t{gen}\t{acc}\t{run}\t{rea}\t{bad}"
+    IO.println "op\tgenerated\taccepted\toracle runs\taccepted and reached\taccepted with changed heap RC traffic\taccepted and misbehaving"
+    for (n, gen, acc, run, rea, ef, bad) in stats do
+      IO.println s!"{label}\t{name}\t{n}\t{gen}\t{acc}\t{run}\t{rea}\t{ef}\t{bad}"
     for e in failures.take 20 do IO.println s!"COUNTEREXAMPLE {label} {name}: {e}"
     (← IO.getStdout).flush
   return 0

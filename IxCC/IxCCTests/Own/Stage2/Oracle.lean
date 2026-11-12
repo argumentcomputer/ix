@@ -56,7 +56,7 @@ def readOf (r : Except String (RVal × Heap)) : String :=
 
 /-- `none` when the run is safe and equal to `reference`; otherwise what went wrong. -/
 def oracle (P : Program) (f : Nat) (args : List RVal) (reference : String) (watch : Nat) :
-    Option String × Nat :=
+    Option String × Nat × (Nat × Nat × Nat) :=
   let (r, c) := runI P 200000000 f args watch
   let verdict := match r with
     | .error e => some s!"run failed: {e}"
@@ -66,7 +66,7 @@ def oracle (P : Program) (f : Nat) (args : List RVal) (reference : String) (watc
       else if !balancedAt H v then some "counts at return are not exact"
       else if !reclaimed H v then some "not everything reclaimed after dropping the result"
       else none
-  (verdict, c.hits)
+  (verdict, c.hits, (c.incs - c.incImm, c.decs - c.decImm, c.peak))
 
 /-! ## Edits of one body, by preorder position -/
 
