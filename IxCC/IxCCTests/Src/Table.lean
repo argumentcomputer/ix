@@ -1,10 +1,12 @@
 import IxCCTests.Src.Support
 import IxCC.Src.Table.Cert
 
-/-! The unfolding table on the K1 packs: every
-`eqn` proposal of `k1.ixe` and of each bench-k1 closure is accepted, the
-`case`, `prim` and `lazy` entries resolve, and each entry check refuses one
-mutation while accepting the unmutated input. -/
+/-! The unfolding table on the K1 packs: on ingress's reading (the records the
+seeds reach) an `eqn` proposal of `k1.ixe` and of each bench-k1 closure is
+accepted exactly when its subject is read, and on every record read (as ingress
+read before 2026-11-12) every one is accepted; the `case`, `prim` and `lazy`
+entries resolve, and each entry check refuses one mutation while accepting the
+unmutated input. -/
 
 namespace IxCCTests.Src.Table
 
@@ -32,11 +34,54 @@ def eqnNamed (l : Loaded) (name : String) : IO (CId × CId) := do
   let some thm := l.program.lookup ta | throw (IO.userError s!"{name}: theorem absent")
   return (f, thm)
 
-def packCounts (a : Assert) (l : Loaded) (label : String) (eqns : Nat) : IO Unit := do
+/-- The pack's `eqn` proposals under ingress's reading (the records the seeds
+reach): one is accepted exactly when the program read holds its subject; the
+others are `dropped` (by name, in the sidecar's order), and each has the one
+diagnostic `Table.notRead`, the only diagnostics there are. -/
+def reachedProposals (a : Assert) (l : Loaded) (label : String) (dropped : List String) : IO Unit := do
+  let p := l.program
+  let eqns := l.hints.proposals.filter (·.kind == .eqn)
+  let held := eqns.filter fun prop => (p.lookup prop.subject).isSome
+  let unheld := eqns.filter fun prop => (p.lookup prop.subject).isNone
+  let accepted := l.tableStats.eqnAccepted.map p.addr
+  expect a (held.all fun prop => accepted.contains prop.subject)
+    s!"{label}: a proposal whose subject is read is not accepted"
+  expectEq a accepted.size held.size s!"{label}: accepted eqn proposals, against those whose subject is read"
+  expect a ((unheld.map (·.name?.getD "?")).toList == dropped)
+    s!"{label}: proposals whose subject is not read {unheld.map (·.name?)}, expected {dropped}"
+  expectEq a l.tableDiags.size unheld.size s!"{label}: table diagnostics {l.tableDiags.map toString}"
+  expect a (l.tableDiags.all fun d => (d.message.splitOn Table.notRead).length > 1 &&
+      unheld.any fun prop => d.addr == some prop.subject)
+    s!"{label}: a diagnostic other than a subject not read: {l.tableDiags.map toString}"
+
+/-- The table on every record of the pack read with proofs (`Ingress.readAll`),
+as ingress read before it read only what the seeds reach. -/
+def fullStats (l : Loaded) : IO (Array Diag × Table.Stats) := do
+  let full ← IO.ofExcept (Ingress.readAll l.env (l.hints.roots.map (·.1)))
+  let full := { full with known := { pins := KernelFront.pinsOfTable l.kernel.acc.table } }
+  let full := { full with known := Pinned.known full, resource := l.hints.resource }
+  let (_, d, s) := Table.build {} full l.hints.proposals
+  return (d, s)
+
+/-- On every record read, every `eqn` proposal of the sidecar is accepted
+(every equation `ix compile` exports is acceptable), with no diagnostic, and
+the pack has `cases` case entries. -/
+def fullCounts (a : Assert) (l : Loaded) (label : String) (eqns cases : Nat) : IO Table.Stats := do
+  let (d, s) ← fullStats l
+  expectEq a s.eqnAccepted.size eqns s!"{label}, every record read: accepted eqn proposals"
+  expectEq a s.eqnAccepted.size (l.hints.proposals.filter (·.kind == .eqn)).size
+    s!"{label}, every record read: proposals not all accepted"
+  expect a (s.eqnRefused.isEmpty && d.isEmpty)
+    s!"{label}, every record read: refused {s.eqnRefused.map (·.2)}, diagnostics {d.map toString}"
+  expectEq a s.caseAccepted.size cases s!"{label}, every record read: case entries"
+  return s
+
+def packCounts (a : Assert) (l : Loaded) (label : String) (eqns : Nat) (dropped : List String) :
+    IO Unit := do
   let s := l.tableStats
   expectEq a s.eqnAccepted.size eqns s!"{label}: accepted eqn proposals"
   expect a s.eqnRefused.isEmpty s!"{label}: refused eqn proposals {s.eqnRefused.map (·.2)}"
-  expect a (l.tableDiags.isEmpty) s!"{label}: table diagnostics {l.tableDiags.map toString}"
+  reachedProposals a l label dropped
   -- The pinned Nat.casesOn resolves as a case entry.
   if let some cases := l.program.lookup (Pinned.constAddr "Nat.casesOn") then
     match l.program.table.resolveOf cases with
@@ -319,28 +364,54 @@ def sparseCases (a : Assert) (count : Nat) : IO Unit := do
 /-- The counts the expectations below state, as observed (printed before they
 are checked, so a regeneration that moves them shows every new value at once:
 the expectations are reviewed literals, updated by hand). -/
-def observed (label : String) (l : Loaded) : String :=
-  let s := l.tableStats
+def observedStats (label : String) (s : Table.Stats) : String :=
   s!"{label}: eqn {s.eqnAccepted.size}, case {s.caseAccepted.size}, prim {s.primAccepted.size}, lazy {s.lazyAccepted.size}, sparse casesOn {s.sparseAccepted.size}"
+
+/-- Both readings' counts: the records the seeds reach (ingress's) and every
+record (`fullStats`). -/
+def observed (label : String) (l : Loaded) : IO String := do
+  let (_, full) ← fullStats l
+  return s!"{observedStats label l.tableStats}; every record read: {observedStats label full}"
+
+/-- The proposals k1's sidecar makes for definitions none of its roots reaches
+(each bench closure carries the whole sidecar of its source). -/
+def unreachedK1 : List String :=
+  ["Char.utf8Size", "Lean.Name.sizeOf", "List.filter", "List.getLast", "List.hasDecEq"]
 
 def run (a : Assert) : IO Unit := do
   let k1 ← loadK1
-  IO.println (observed "k1.ixe" k1)
+  IO.println (← observed "k1.ixe" k1)
   for name in ["fib", "sum-loop", "ackermann", "tak", "gcd"] do
-    IO.println (observed name (← loadBench name))
-  packCounts a k1 "k1.ixe" 46
-  expectEq a k1.tableStats.caseAccepted.size 94 "k1.ixe: case entries"
+    IO.println (← observed name (← loadBench name))
+  -- ingress's reading: the proposals on what the roots reach
+  packCounts a k1 "k1.ixe" 41 unreachedK1
+  expectEq a k1.tableStats.caseAccepted.size 23 "k1.ixe: case entries"
   expectEq a k1.tableStats.primAccepted.size 14 "k1.ixe: prim entries"
-  expectEq a k1.tableStats.lazyAccepted.size 15 "k1.ixe: lazy entries"
-  expectEq a k1.tableStats.sparseAccepted.size 3 "k1.ixe: sparse casesOn"
+  expectEq a k1.tableStats.lazyAccepted.size 12 "k1.ixe: lazy entries"
+  expectEq a k1.tableStats.sparseAccepted.size 2 "k1.ixe: sparse casesOn"
+  -- every record read: every proposal accepted, the counts before ingress read what the seeds reach
+  let full ← fullCounts a k1 "k1.ixe" 46 94
+  expectEq a full.primAccepted.size 14 "k1.ixe, every record read: prim entries"
+  expectEq a full.lazyAccepted.size 15 "k1.ixe, every record read: lazy entries"
+  expectEq a full.sparseAccepted.size 3 "k1.ixe, every record read: sparse casesOn"
+  -- a proposal whose subject is not in the artifact at all: the same diagnostic
+  let absent := Builder.fakeAddr 4242424
+  let (_, absentDiags, _) := Table.build {} k1.program
+    #[{ kind := .eqn, subject := absent, theorem? := some absent, name? := some "absent" }]
+  expect a (!k1.env.consts.contains absent && absentDiags.any fun d =>
+      d.addr == some absent && (d.message.splitOn Table.notRead).length > 1)
+    s!"an equation whose subject is absent from the artifact: {absentDiags.map toString}"
   mutations a k1
   regressions a k1
-  IO.println (observed "sparse" (← loadSparse))
+  IO.println (← observed "sparse" (← loadSparse))
   sparseCases a 3
-  for (name, eqns, cases) in [("fib", 3, 16), ("sum-loop", 40, 93), ("ackermann", 40, 91),
-      ("tak", 7, 21), ("gcd", 10, 23)] do
+  for (name, eqns, cases, dropped, fullEqns, fullCases) in
+      [("fib", 3, 1, ([] : List String), 3, 16), ("sum-loop", 35, 22, unreachedK1, 40, 93),
+       ("ackermann", 35, 21, unreachedK1, 40, 91), ("tak", 7, 5, ([] : List String), 7, 21),
+       ("gcd", 9, 9, ["Nat.div.go"], 10, 23)] do
     let l ← loadBench name
-    packCounts a l name eqns
+    packCounts a l name eqns dropped
     expectEq a l.tableStats.caseAccepted.size cases s!"{name}: case entries"
+    let _ ← fullCounts a l name fullEqns fullCases
 
 end IxCCTests.Src.Table

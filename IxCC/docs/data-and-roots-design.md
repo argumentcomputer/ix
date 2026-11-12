@@ -70,6 +70,20 @@ that closures (P8), arrays and bignums need.
   increment `Procs.inc` is still the one the pipeline calls. The general
   release costs a little more than the bounded one on cells of fewer than
   three scanned fields ([below](#the-general-releases-cost)).
+- *Implemented, library only (heap stage 2, first landing).* An ownership
+  checker that judges any placement of `inc` and `dec`, not only the
+  canonical one: `Own.Plain.checkOwned` and `checkContractOwned`
+  ([`Own/Plain/Owned.lean`](../IxCC/Own/Plain/Owned.lean)), with
+  `checkOwned_refines` and `checkContractOwned_refines` (an accepted map
+  refines Fir's `evalCall`: the conclusion of `checked_program_refines`) and
+  `checkOwned_reclaims` (the conclusion of `checked_program_reclaims`)
+  ([`Own/Plain/Proof/Owned/Program.lean`](../IxCC/Own/Plain/Proof/Owned/Program.lean)),
+  and `checkPlainMap_checkOwned` (every map `checkPlainMap` accepts, it
+  accepts; [`Own/Plain/Proof/OwnedAccepts.lean`](../IxCC/Own/Plain/Proof/OwnedAccepts.lean)),
+  from which `checked_program_refines`, `checked_contract_program_refines`
+  and `checked_program_reclaims` are re-derived with their statements
+  unchanged. Nothing in production calls it, and where reference counts are
+  placed is unchanged ([below](#the-ownership-checker)).
 - *Not implemented.* Scalar fields in compiled programs (the runtime above
   has them; the constructor table has none, and `Cfg.Rc.Native` and
   `Rt.Lower` refuse a constructor with scalar fields until DR2 produces
@@ -185,6 +199,52 @@ linear typing of Own described under
 **Recommendation: (ii)**, keeping (i) as the always-accepted fallback, as
 the compiler design already intends. (iii) duplicates (ii) with weaker
 reuse.
+
+#### The ownership checker
+
+(ii) for today's syntax, as a library (heap stage 2, first landing). The
+judgement types `Own.Plain.Code` as it is, against its Fir body, with no
+syntax or certificate change: on one path each variable in scope is an
+*immediate* (a literal, `□` or a field-less constructor, on which every
+action is free), *owned* with `n` tokens, or *borrowed* (a projection's
+result not yet incremented, valid until the next release). `inc x 1` adds a
+token (a borrowed variable becomes owned); `dec x` takes one and is a
+release, which ends every borrow, as a non-tail call is; a consuming use (a
+constructor field, a call or tail-call argument, `x := y`, a returned or
+jumped value) takes one token per occurrence; a read (`case`, `proj`, a
+primitive's argument) needs the variable available and takes nothing; after
+a primitive, the arguments its signature marks (`primImmArgs`: today every
+argument of every primitive, all on `Nat`) are immediates. At `ret`, `tcall`
+and `jmp` every token must have been consumed, a jump also taking one token
+of each variable the target join captures; a join body starts with one token
+per captured non-immediate and per parameter. A `case`'s branches are checked
+from the same context: Own has no merge point. The proof is an induction on
+the ownership code over a typing context (`OwnedState`, `owned_refines`,
+[`Own/Plain/Proof/Owned/`](../IxCC/Own/Plain/Proof/Owned/Simulation.lean));
+reclamation follows from refinement and the producer-independent
+`call_heap_shape`, as for the canonical map; 25 exact fences
+([`IxCCTests/Fences/OwnOwned.lean`](../IxCCTests/Fences/OwnOwned.lean)): the
+refinement, reclamation and canonical-acceptance theorems on `propext`,
+`Classical.choice` and `Quot.sound`, as the landed `checked_program_refines`.
+`tests-own-owned` runs it on every registered corpus
+root: the canonical and a liveness placement accepted and run under a
+refinement oracle, the negative controls refused, and a site-directed
+mutation campaign whose accepted mutants must run clean
+([CI](ci.md#suite-costs)).
+
+Known properties: a path that ends in `trap` may keep tokens it holds (a
+trap ends the whole run, and `ResultRel.trap` has no heap clause; an
+embedding with recoverable traps would need `trap` to require none, as
+`checkContractOwned_refines`'s docstring says); and a jump costs its target's
+captured list, so the worst case is quadratic in the body (a join capturing
+3,000 variables jumped to from 3,000 branches, a 103 KB certificate, checks in
+5.2 s on the build box; `checkPlainMap` is cubic on that family). Only unit
+increments are admitted. Not yet done: nothing in production calls the
+checker (`Own.Plain.Certificate.admit` and `Cfg.Rc.checkProgram` still call
+`checkPlainMap`), and the producer is still the canonical one. Putting the
+checker in the verifier needs the Cfg activation layer restated over the
+typing context, and its quadratic case measured against the middle end's
+limits first; a liveness placement is the landing after that.
 
 **Statics.** Closed constructor trees (and, after P8, field-less closure
 constructors) become immortal cells in the object's read-only data instead
