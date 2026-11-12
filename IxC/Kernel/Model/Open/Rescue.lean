@@ -51,7 +51,9 @@ theorem DenList.of_forall {σ : Nat → V} :
 theorem Den.mkAppN {σ : Nat → V} : ∀ {as : List (Expr md)} {f : Expr md} {F : V} {vs : List V},
     Den M φ σ f F → DenList M φ σ as vs → Den M φ σ (Expr.mkAppN f as) (vs.foldl app F)
   | [], _, _, _, hF, .nil => hF
-  | a :: as, f, _, _, hF, .cons hx hxs => Den.mkAppN (as := as) (f := .app f a) (.app hF hx) hxs
+  | a :: as, f, _, _, hF, .cons hx hxs => by
+    have h := Den.mkAppN (as := as) (f := .app f a) (DenotesO.app hF hx) hxs
+    exact h
 
 /-- **A walk grades the spine**: a member of the telescope's denotation, applied along the
 walk's values, applies each function on its domain. -/
