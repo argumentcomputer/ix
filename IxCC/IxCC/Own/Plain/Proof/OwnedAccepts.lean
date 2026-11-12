@@ -125,10 +125,10 @@ theorem shape_immArgs {P : Var → Prop} : ∀ (args : List Arg) {Γ : Ctx} {I :
     · by_cases h1 : y ∈ argVars as <;> by_cases h2 : y = x <;> simp [argVars, h1, h2]
   | .lit _ :: as, Γ, I, t, h => by
     show Shape (Ctx.immArgs Γ (List.replicate as.length true) as) _ _ P
-    exact (shape_immArgs as h).congrI (fun y => by simp [argVars]) (fun y => by simp [argVars])
+    exact (shape_immArgs as h).congrI (fun y => rfl) (fun y => rfl)
   | .erased :: as, Γ, I, t, h => by
     show Shape (Ctx.immArgs Γ (List.replicate as.length true) as) _ _ P
-    exact (shape_immArgs as h).congrI (fun y => by simp [argVars]) (fun y => by simp [argVars])
+    exact (shape_immArgs as h).congrI (fun y => rfl) (fun y => rfl)
 
 /-! ## The invariant through declarations and bindings -/
 
@@ -224,7 +224,7 @@ theorem Canon.enter (h : Canon Γ Δ live joins imm arities) (j : Fir.JoinId) (p
   have hk : ((Γ.entered live ps).map (·, 1) |>.map (·.1)).Nodup := by
     rw [Ctx.map_fst_pairs]; exact hent
   refine ⟨⟨fun x => rfl, fun x => ?_, fun x => rfl, ⟨_, Ctx.Tokens.enter Γ live ps hent⟩,
-      fun x hx => ?_, fun x hx => ?_⟩, fun z hz => by cases hz, fun z hz => ?_, fun j' => ?_,
+      fun x hx => ?_, fun x hx => ?_⟩, fun z hz => (by cases hz), fun z hz => ?_, fun j' => ?_,
       fun j' C hC => ?_, fun j' m hm => ?_, hn⟩
   · rw [htok, himm]
     by_cases hx : x ∈ Γ.entered live ps
@@ -350,7 +350,8 @@ theorem lowerCode_checks (functions : Signatures) : ∀ (c : Fir.Code) {Γ : Ctx
             simp only [bindCtx, hy, hiy₁, hiy] <;> rfl
           refine checkCode_bind_of hknown hb ?_
           have hyi : imm.contains y = false := by simpa using h.notImmOfImm hiy
-          rw [show nextImm imm x (.arg (.var y)) = imm by simp [nextImm, isImmRhs, isImmArg, hyi]]
+          rw [show nextImm imm x (.arg (.var y)) = imm by
+            simp only [nextImm, isImmRhs, isImmArg, hyi, Bool.false_eq_true, ↓reduceIte]]
           exact lowerCode_checks functions k (canon_bindOwn h hx' h₂ h.immIn imm h.immSub) hk
         · have hb : bindCtx Γ₁ x (.arg (.var y)) = .ok (Γ₂.setImm x) := by
             simp only [bindCtx, hy, hiy₁, hiy] <;> rfl
@@ -414,7 +415,8 @@ theorem lowerCode_checks (functions : Signatures) : ∀ (c : Fir.Code) {Γ : Ctx
       have hneed : Γ.need y "projected" = .ok () := need_ok (h.avail hy) _
       cases hc : imm.contains y
       · simp only [lowerCode, hc, Bool.false_eq_true, ↓reduceIte]
-        rw [show nextImm imm x (.proj y c i) = imm by simp [nextImm, isImmRhs, hc]]
+        rw [show nextImm imm x (.proj y c i) = imm by
+          simp only [nextImm, isImmRhs, hc, Bool.false_eq_true, ↓reduceIte]]
         cases hiy : Γ.isImm y
         · -- borrowed, then the producer's increment makes it owned
           have hb : bindCtx Γ x (.proj y c i) = .ok (Γ.setBorrow x) := by
@@ -598,8 +600,8 @@ theorem canon_entry (params : List Var) (hn : params.Nodup) :
     Canon (Ctx.entry params) .leaf params [] [] [] := by
   have hk : ((params.map (·, 1)).map (·.1)).Nodup := by rw [Ctx.map_fst_pairs]; exact hn
   refine ⟨⟨fun x => rfl, fun x => ?_, fun x => rfl, ⟨_, Ctx.Tokens.entry params hn⟩,
-      fun x hx => ?_, fun x hx => ?_⟩, fun z hz => by cases hz, fun z hz => ?_,
-      fun j => rfl, fun j C hC => by cases hC, fun j m hm => by cases hm, hn⟩
+      fun x hx => ?_, fun x hx => ?_⟩, fun z hz => (by cases hz), fun z hz => ?_,
+      fun j => rfl, fun j C hC => (by cases hC), fun j m hm => (by cases hm), hn⟩
   · rw [show (Ctx.entry params).tokens x = if x ∈ params then 1 else 0 from Ctx.tokens_ofList hn x,
       isImm_entry]
     simp
