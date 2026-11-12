@@ -157,8 +157,7 @@ theorem check_incs {Δ : JCtx} {I : Var → Bool} {P : Var → Prop} {k : Code} 
       · right; split <;> omega
     · by_cases he : y = x
       · subst he
-        cases hi : I y <;> simp [hi, List.count_cons]
-        omega
+        cases hi : I y <;> simp [hi, List.count_cons] <;> omega
       · have hxy : (x == y) = false := beq_eq_false_iff_ne.mpr (fun h => he h.symm)
         simp [he, List.count_cons, hxy]
 
@@ -200,12 +199,12 @@ theorem check_takeArgs {I : Var → Bool} {P : Var → Prop} :
   | .lit l :: as, Γ, t, h, hc, hp => by
     obtain ⟨Γ', h1, h2, h3⟩ := check_takeArgs as h (fun x hx => by simpa [argVars] using hc x hx)
       (fun x hx => hp x (by simpa [argVars] using hx))
-    exact ⟨Γ', by simpa [Ctx.takeArgs, Ctx.takeArg] using h1, h2,
+    exact ⟨Γ', h1, h2,
       h3.congr (fun y => by simp [argVars])⟩
   | .erased :: as, Γ, t, h, hc, hp => by
     obtain ⟨Γ', h1, h2, h3⟩ := check_takeArgs as h (fun x hx => by simpa [argVars] using hc x hx)
       (fun x hx => hp x (by simpa [argVars] using hx))
-    exact ⟨Γ', by simpa [Ctx.takeArgs, Ctx.takeArg] using h1, h2,
+    exact ⟨Γ', h1, h2,
       h3.congr (fun y => by simp [argVars])⟩
   | .var x :: as, Γ, t, h, hc, hp => by
     have hx : I x = true ∨ 0 < t x := by
@@ -223,8 +222,7 @@ theorem check_takeArgs {I : Var → Bool} {P : Var → Prop} :
       · simp only [Ctx.takeArgs, Ctx.takeArg, htake]; exact h1
       · by_cases he : y = x
         · subst he
-          cases hi : I y <;> simp [hi, argVars, List.count_cons]
-          omega
+          cases hi : I y <;> simp [hi, argVars, List.count_cons] <;> omega
         · have hxy : (x == y) = false := beq_eq_false_iff_ne.mpr (fun h => he h.symm)
           simp [he, argVars, List.count_cons, hxy]
     · have := hc y hy
