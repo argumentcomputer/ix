@@ -676,10 +676,11 @@ structure BinderAnnotator where
   run : Array (Name × ConstantInfo) → Array Name → Ixon.Constant → Array Ixon.BinderBlock
   extra : Array (Name × ConstantInfo) := #[]
 
-/-- `a` with the source constant `ci` of `n` added. -/
+/-- `a` with the source constant `ci` of `n` added, replacing an earlier source of
+`n` (successive anonymous definitions share the name). -/
 def BinderAnnotator.withSource (a : BinderAnnotator) (n : Name) (ci : ConstantInfo) :
     BinderAnnotator :=
-  { a with extra := a.extra.push (n, ci) }
+  { a with extra := (a.extra.filter fun (m, _) => !Name.beqRaw m n).push (n, ci) }
 
 /-- A content-addressed Lean environment: a map from `Ix.Name` to `ConstantInfo`.
 

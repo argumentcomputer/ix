@@ -1593,20 +1593,25 @@ with a binder that entry's one variant. -/
   | some annotate => annotate.run annotate.extra names c
   | none => #[]
 
-/-- The section the compiler gives a block record `c`: the annotator's when it
-is admissible, otherwise the undecided section (`undecidedSection`). A record
-for which neither is admissible does not compile; among them, every record with
-`Ixon.maxLevelCount` (`2^32`) universe parameters or more, whose level count no
-reader admits (`Ixon.Constant.bindersCanonical`). -/
-@[expose] def sectionFor (annotator? : Option BinderAnnotator) (names : Array Name)
-    (c : Ixon.Constant) : Except CompileError (Array Ixon.BinderBlock) :=
-  if sectionAdmissible c (annotatorSection annotator? names c) then
-    .ok (annotatorSection annotator? names c)
+/-- The section kept for `c` given the annotator's section `s`: `s` when it is
+admissible, otherwise the undecided section, otherwise none; among the records
+with none, every record with `Ixon.maxLevelCount` (`2^32`) universe parameters
+or more, whose level count no reader admits (`Ixon.Constant.bindersCanonical`). -/
+@[expose] def sectionChoose (c : Ixon.Constant) (s : Array Ixon.BinderBlock) :
+    Except CompileError (Array Ixon.BinderBlock) :=
+  if sectionAdmissible c s then .ok s
   else if sectionAdmissible c (undecidedSection c) then .ok (undecidedSection c)
   else if c.info.maxLvls < Ixon.maxLevelCount then
     .error (.binderData "no admissible binder-data section")
   else
     .error (.binderData "2^32 universe parameters or more, which no reader admits")
+
+/-- The section the compiler gives a block record `c`: the annotator's when it
+is admissible, otherwise the undecided section (`undecidedSection`). A record
+for which neither is admissible does not compile. The annotator runs once. -/
+@[expose] def sectionFor (annotator? : Option BinderAnnotator) (names : Array Name)
+    (c : Ixon.Constant) : Except CompileError (Array Ixon.BinderBlock) :=
+  sectionChoose c (annotatorSection annotator? names c)
 
 /-- `c` with the section the compiler gives it (`sectionFor`). Every other
 field is `c`'s, definitionally. -/
@@ -1620,7 +1625,7 @@ field is `c`'s, definitionally. -/
 theorem sectionFor_ok {annotator? : Option BinderAnnotator} {names : Array Name}
     {c : Ixon.Constant} {binders : Array Ixon.BinderBlock}
     (h : sectionFor annotator? names c = .ok binders) : sectionAdmissible c binders = true := by
-  unfold sectionFor at h
+  unfold sectionFor sectionChoose at h
   split at h
   · rename_i ha
     cases h
@@ -1652,7 +1657,7 @@ theorem withBinderSection_error {annotator? : Option BinderAnnotator} {names : A
   · cases h
   · rename_i e hs
     cases h
-    unfold sectionFor at hs
+    unfold sectionFor sectionChoose at hs
     split at hs
     · cases hs
     · split at hs

@@ -298,12 +298,122 @@ def undecided (path : String) : IO UInt32 := do
   for a in addrs do IO.println s!"BDUND {names.getD a "?"} {a}"
   return 0
 
+/-- The refs-table indices an expression names (`ref` targets and projection
+types), through the record's shares. -/
+partial def refIdxs (c : Ixon.Constant) (seen : Std.HashSet Nat) (acc : Std.HashSet Nat) :
+    Ixon.Expr → Std.HashSet Nat × Std.HashSet Nat
+  | .ref i _ => (seen, acc.insert i.toNat)
+  | .prj i _ v => refIdxs c seen (acc.insert i.toNat) v
+  | .app f a =>
+    let (seen, acc) := refIdxs c seen acc f
+    refIdxs c seen acc a
+  | .lam _ t b | .all _ _ t b =>
+    let (seen, acc) := refIdxs c seen acc t
+    refIdxs c seen acc b
+  | .letE _ t v b =>
+    let (seen, acc) := refIdxs c seen acc t
+    let (seen, acc) := refIdxs c seen acc v
+    refIdxs c seen acc b
+  | .share n =>
+    if seen.contains n.toNat then (seen, acc) else
+    match c.sharing[n.toNat]? with
+    | some e => refIdxs c (seen.insert n.toNat) acc e
+    | none => (seen, acc)
+  | _ => (seen, acc)
+
+/-- The constants a record needs installed for what reads it: a theorem's type's
+(nothing reduces its value), every other record's whole refs table. -/
+def neededRefs (c : Ixon.Constant) : Array Address :=
+  let typeOnly (ts : Array Ixon.Expr) : Array Address :=
+    let (_, idxs) := ts.foldl (fun (s, a) t => refIdxs c s a t) ({}, {})
+    idxs.toArray.filterMap (c.refs[·]?)
+  let isThm (d : Ixon.Definition) : Bool := match d.kind with | .thm => true | _ => false
+  match c.info with
+  | .defn d => if isThm d then typeOnly #[d.typ] else c.refs
+  | .muts ms =>
+    if ms.all (fun | .defn d => isThm d | _ => false) then
+      typeOnly (ms.filterMap fun | .defn d => some d.typ | _ => none)
+    else c.refs
+  | _ => c.refs
+
+/-- **The dependency closure of a set of records** (named in `namesFile`, one per
+line): every record they reference, and transitively what installing those needs
+(`neededRefs`). Prints its size against the artifact's, and writes the names of
+its constants to `outFile`. -/
+def closure (path namesFile outFile : String) : IO UInt32 := do
+  let e ← load path
+  let wanted : Std.HashSet String := (← IO.FS.lines namesFile).foldl (·.insert ·) {}
+  let ownerOf (a : Address) : Address := match e.getConst? a with
+    | some c => Ixon.CheckOrder.owner a c
+    | none => a
+  let mut work : Array Address := #[]
+  let mut seeds : Std.HashSet Address := {}
+  for (n, entry) in e.named do
+    if wanted.contains n.pretty then
+      let o := ownerOf entry.addr
+      unless seeds.contains o do
+        seeds := seeds.insert o
+        if let some c := e.getConst? o then
+          for r in c.refs do work := work.push (ownerOf r)
+  let mut seen : Std.HashSet Address := seeds
+  while h : work.size > 0 do
+    let a := work[work.size - 1]
+    work := work.pop
+    if seen.contains a then continue
+    seen := seen.insert a
+    if let some c := e.getConst? a then
+      for r in neededRefs c do
+        let o := ownerOf r
+        unless seen.contains o do work := work.push o
+  let mut names : Array String := #[]
+  for (n, entry) in e.named do
+    if seen.contains (ownerOf entry.addr) then names := names.push n.pretty
+  IO.FS.writeFile outFile (String.intercalate "\n" names.toList ++ "\n")
+  let owners := e.consts.fold (fun (s : Std.HashSet Address) a c =>
+    match c.get? with
+    | some k => s.insert (Ixon.CheckOrder.owner a k)
+    | none => s) {}
+  IO.println s!"BDCLOS {path}: seeds={seeds.size} closure_records={seen.size} records={owners.size} \
+    closure_names={names.size} names={e.named.size}"
+  return 0
+
+/-- The records whose members `namesFile` names (one a line), and their sections'
+binder nodes (every node but a share's), against the artifact's records and nodes. -/
+def residual (path namesFile : String) : IO UInt32 := do
+  let e ← load path
+  let wanted : Std.HashSet String := (← IO.FS.lines namesFile).foldl (·.insert ·) {}
+  let ownerOf (a : Address) : Address := match e.getConst? a with
+    | some c => Ixon.CheckOrder.owner a c
+    | none => a
+  let binders (c : Ixon.Constant) : Nat :=
+    c.binders.foldl (fun acc b => acc + (b.nodes.filter fun
+      | .share _ => false
+      | _ => true).size) 0
+  let mut owners : Std.HashSet Address := {}
+  for (n, entry) in e.named do
+    if wanted.contains n.pretty then owners := owners.insert (ownerOf entry.addr)
+  let mut resBinders := 0
+  for o in owners do
+    if let some c := e.getConst? o then resBinders := resBinders + binders c
+  let mut allRecords := 0
+  let mut allBinders := 0
+  for (a, lc) in e.consts do
+    if let some c := lc.get? then
+      if Ixon.CheckOrder.owner a c == a then
+        allRecords := allRecords + 1
+        allBinders := allBinders + binders c
+  IO.println s!"BDRES {path}: residual_records={owners.size} residual_binder_nodes={resBinders} \
+    records={allRecords} binder_nodes={allBinders}"
+  return 0
+
 end Benchmarks.BinderDataStats
 
 def main (args : List String) : IO UInt32 := do
   match args with
   | ["stats", path] => Benchmarks.BinderDataStats.stats path
   | ["undecided", path] => Benchmarks.BinderDataStats.undecided path
+  | ["closure", path, names, out] => Benchmarks.BinderDataStats.closure path names out
+  | ["residual", path, names] => Benchmarks.BinderDataStats.residual path names
   | ["compare", a, b] => Benchmarks.BinderDataStats.compare a b
   | ["diag", a, b] => Benchmarks.BinderDataStats.diag a b
   | ["addrs", a, b] => Benchmarks.BinderDataStats.addrs a b
@@ -312,6 +422,6 @@ def main (args : List String) : IO UInt32 := do
     IO.println s!"BDBIND {a}: records={e.consts.size} binding={(e.roleBinding.map (toString ·.address)).getD "none"}"
     return 0
   | _ =>
-    IO.eprintln "usage: binder-data-stats stats A.ixe | undecided A.ixe | compare A.ixe B.ixe | diag A.ixe B.ixe | \
+    IO.eprintln "usage: binder-data-stats stats A.ixe | undecided A.ixe | closure A.ixe NAMES OUT | residual A.ixe NAMES | compare A.ixe B.ixe | diag A.ixe B.ixe | \
 addrs A.ixe B.ixe | binding A.ixe"
     return 2
