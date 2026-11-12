@@ -7,6 +7,7 @@ import IxCC.Cfg.Rc.Proof.Physical.Jump
 
 set_option autoImplicit false
 namespace IxCC.Cfg.Rc.Native.Spec
+open IxCC.Rt.Rc
 open IxCC.Cfg.Rc.Proof.Physical.Bridge IxCC.Rt IxCC.Rt.Proof IxCC.Rt.Lower
 open IxCC.Rt.Rc.Procs
 
@@ -20,7 +21,7 @@ theorem Cursor.switch_reaches {T : Tables} {P : Cfg.Program} {lp : Lir.Program}
     (finished : source.rest = []) {x : Nat} {alts : List (Key.CtorKey × Cfg.Edge)}
     {default : Option Cfg.Edge} (terminal : block.term = .switch x alts default)
     {heap : Own.Heap} {addresses : AddressMap} {mem : X86.Memory} {bound : Nat}
-    (liveHeap : HeapLive heap addresses mem) (compatibleHeap : HeapCtorOk T heap)
+    (liveHeap : Gen.HeapLive heap addresses mem) (compatibleHeap : HeapCtorOk T heap)
     (registers : FusedWords addresses (Fused T fd) bound source.env target.env)
     (compatibleEnv : FusedCtorOk T (Fused T fd) source.env)
     (real : bound ≤ supOf fd) (done : FusedDone T fd block source)

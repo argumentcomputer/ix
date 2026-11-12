@@ -5,6 +5,7 @@ import IxCC.Own.Plain.Proof.Values
 
 set_option autoImplicit false
 namespace IxCC.Cfg.Rc.Proof.Physical.Bridge
+open IxCC.Rt.Rc
 open IxCC IxCC.Own IxCC.Own.Rc
 open IxCC.Rt.Rc.Procs IxCC.Cfg.Rc.Native
 
@@ -39,10 +40,10 @@ theorem projection_increment
     (before : Tokens H external held live ρf ρo roots)
     {y location refs : Nat} {body : Own.Body}
     (member : y ∈ live) (lookup : ρo.get? y = some (.loc location))
-    (cell : H.cell? location = some (.live refs .dyn body))
+    (cell : H.cell? location = some (.live refs .dyn body)) (scanned : body.ctor.nscalar = 0)
     {addresses : AddressMap} {mem : X86.Memory} {context base bump limit : Lir.Word}
     {slots : List Slot} {lists : Nat → List Lir.Word}
-    (ready : AllocatorReady H addresses mem (holdRoots external (roots ++ held))
+    (ready : Gen.AllocatorReady maxClass H addresses mem (holdRoots external (roots ++ held))
       context base bump limit slots lists)
     {P : Lir.Program} {wrapper procedure dummy bound : Nat}
     (wrapperLookup : P.funcs[wrapper]? = some (incrementWrapper procedure))
@@ -70,7 +71,7 @@ theorem projection_increment
       Tokens H' external (value :: held) live ρf (ρo.insert x value) roots ∧
       Own.Proof.Den H' value logical ∧
       Tokens H' external held (x :: live) (ρf.insert x logical) (ρo.insert x value) (value :: roots) ∧
-      ((∃ mem', AllocatorReady H' addresses mem'
+      ((∃ mem', Gen.AllocatorReady maxClass H' addresses mem'
           (holdRoots external (roots ++ value :: held))
           context base bump limit slots lists ∧
           Sem.Star (Lir.semStep P)
@@ -89,7 +90,7 @@ theorem projection_increment
   have equal : parentWord = address := Option.some.inj (parentRep.symm.trans placement)
   subst parentWord
   obtain ⟨word, represented, source, load, borrowed, words, permission⟩ :=
-    projection_step before lookup cell physical registers parentRegister x i value fresh field tables context
+    projection_step before lookup cell physical scanned registers parentRegister x i value fresh field tables context
       functionLookup blockLookup (by omega) projection
   let next : Lir.Frame := {caller with pos := caller.pos+1, env := caller.env.insert x word}
   obtain ⟨H', action, tokens, values, outcome⟩ := increment_ready_instruction borrowed

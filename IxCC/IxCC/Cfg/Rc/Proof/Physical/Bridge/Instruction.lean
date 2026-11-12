@@ -2,6 +2,7 @@ import IxCC.Cfg.Rc.Proof.Physical.Bridge.Cursor
 
 set_option autoImplicit false
 namespace IxCC.Cfg.Rc.Proof.Physical.Bridge
+open IxCC.Rt.Rc
 open IxCC IxCC.Own IxCC.Own.Rc
 open IxCC.Rt.Rc.Procs
 open IxCC.Cfg.Rc.Native
@@ -15,11 +16,11 @@ theorem decrement_instruction
     (before : Tokens H external held (x :: live) ρf ρo roots)
     {addresses : AddressMap} {mem : X86.Memory} {context base bump limit : Lir.Word}
     {slots : List Slot} {lists : Nat → List Lir.Word}
-    (idle : ReleaseInvariant H addresses mem (holdRoots external (roots ++ held)) none []
+    (idle : Gen.ReleaseInvariant maxClass H addresses mem (holdRoots external (roots ++ held)) none []
       context base bump limit slots lists)
     {P : Lir.Program} {wrapper procedure dummy bound : Nat}
     (wrapperLookup : P.funcs[wrapper]? = some (decrementWrapper procedure))
-    (procedureLookup : P.funcs[procedure]? = some dec)
+    (procedureLookup : P.funcs[procedure]? = some Gen.dec)
     (caller : Lir.Frame) (callers : List Lir.Frame)
     {function : Lir.Func} {block : Lir.Block}
     (functionLookup : P.funcs[caller.fn]? = some function)
@@ -32,7 +33,7 @@ theorem decrement_instruction
       ρo.get? x = some value ∧ roots = value :: remaining ∧
       Own.Plain.evalAction ρo H (.dec x) = .ok H' ∧
       Tokens H' external held live ρf ρo remaining ∧
-      ReleaseInvariant H' addresses mem' (holdRoots external (remaining ++ held)) none []
+      Gen.ReleaseInvariant maxClass H' addresses mem' (holdRoots external (remaining ++ held)) none []
         context base bump limit slots' lists' ∧
       Sem.Star (Lir.semStep P)
         {mem, ctx := context, stack := caller :: callers}
@@ -42,7 +43,7 @@ theorem decrement_instruction
             pos := caller.pos+1
             env := caller.env.insert dummy 1
             dsts := []} :: callers} ∧
-      ProtectedFrame mem mem' context base bump ∧
+      Gen.ProtectedFrame mem mem' context base bump ∧
       EnvWordsBelow addresses bound ρo (caller.env.insert dummy 1) ∧
       (∀ root ∈ held, H.value? root = H'.value? root) := by
   obtain ⟨value, remaining, lookup, _, _⟩ := Own.Plain.envRoots_cons before.exactRoots

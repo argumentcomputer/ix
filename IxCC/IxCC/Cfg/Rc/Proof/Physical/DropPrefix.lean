@@ -3,6 +3,7 @@ import IxCC.Cfg.Rc.Proof.Physical.DropTokens
 
 set_option autoImplicit false
 namespace IxCC.Cfg.Rc.Native
+open IxCC.Rt.Rc
 open Spec IxCC.Cfg.Rc.Proof.Physical.Bridge
 open IxCC.Own IxCC.Own.Rc
 open IxCC.Rt.Rc.Procs
@@ -23,7 +24,7 @@ theorem drop_prefix
     (before : Tokens H external held live ρf ρo roots)
     {addresses : AddressMap} {mem : X86.Memory} {context base bump limit : Lir.Word}
     {slots : List Slot} {lists : Nat → List Lir.Word}
-    (ready : AllocatorReady H addresses mem (holdRoots external (roots ++ held))
+    (ready : Gen.AllocatorReady maxClass H addresses mem (holdRoots external (roots ++ held))
       context base bump limit slots lists)
     {bound : Nat}
     (registers : FusedWords addresses (Rt.Proof.Fused (tablesOf P pairs) function) bound ρo target.env)
@@ -32,7 +33,7 @@ theorem drop_prefix
     (∃ kept H' mem' slots' lists' final cost,
       Own.Plain.evalActions ρo H (Own.Plain.drops captured live) = .ok H' ∧
       Tokens H' external held (Own.Plain.retained captured live) ρf ρo kept ∧
-      AllocatorReady H' addresses mem' (holdRoots external (kept ++ held))
+      Gen.AllocatorReady maxClass H' addresses mem' (holdRoots external (kept ++ held))
         context base bump limit slots' lists' ∧
       Sem.Star (Lir.semStep (Public.Spec.sourceStage P functions main))
         {mem, ctx := context, stack := target :: callers} cost

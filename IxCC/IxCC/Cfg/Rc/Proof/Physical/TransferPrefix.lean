@@ -5,6 +5,7 @@ import IxCC.Own.Plain.Proof.Scope
 
 set_option autoImplicit false
 namespace IxCC.Cfg.Rc.Native
+open IxCC.Rt.Rc
 open Spec IxCC.Cfg.Rc.Proof.Physical.Bridge
 open IxCC.Own IxCC.Own.Rc
 open IxCC.Rt.Rc.Procs
@@ -37,7 +38,7 @@ theorem transfer_prefix
     (scope : args.all (Own.Plain.argIn live) = true)
     {addresses : AddressMap} {mem : X86.Memory} {context base bump limit : Lir.Word}
     {slots : List Slot} {lists : Nat → List Lir.Word}
-    (ready : AllocatorReady H addresses mem (holdRoots external (roots ++ held))
+    (ready : Gen.AllocatorReady maxClass H addresses mem (holdRoots external (roots ++ held))
       context base bump limit slots lists)
     {bound : Nat}
     (registers : FusedWords addresses (Rt.Proof.Fused (tablesOf P pairs) function) bound ρo target.env)
@@ -49,7 +50,7 @@ theorem transfer_prefix
         (Own.Plain.transferActions imm captured live args) = .ok H' ∧
       Tokens H' external (fields ++ held) (Own.Plain.retained captured live) ρf ρo kept ∧
       Sem.Forall2 (Own.Proof.Den H') fields logical ∧
-      AllocatorReady H' addresses mem' (holdRoots external (kept ++ (fields ++ held)))
+      Gen.AllocatorReady maxClass H' addresses mem' (holdRoots external (kept ++ (fields ++ held)))
         context base bump limit slots' lists' ∧
       Sem.Star (Lir.semStep (Public.Spec.sourceStage P functions main))
         {mem, ctx := context, stack := target :: callers} cost
@@ -123,7 +124,7 @@ theorem transfer_prefix
         have hr := hrefs location
         simp only [holdRoots, refsIn_append] at hr ⊢
         omega
-      have restored : AllocatorReady H' addresses mem' (holdRoots external (kept ++ (fields ++ held)))
+      have restored : Gen.AllocatorReady maxClass H' addresses mem' (holdRoots external (kept ++ (fields ++ held)))
           context base bump limit slots' lists' := hhold ▸ restoredAll
       refine .inl ⟨fields, logical, kept, H', mem', slots', lists', final,
         2 * (Own.Plain.copies (Own.Plain.copiedArgs (captured ++ imm) (Own.Plain.heapArgs imm args))).length + cost, arguments, sourceArgs, ?_, tokens,

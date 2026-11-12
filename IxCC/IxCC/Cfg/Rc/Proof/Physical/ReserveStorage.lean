@@ -1,7 +1,9 @@
 import IxCC.Cfg.Rc.Proof.Physical.ReservedHeader
+import IxCC.Rt.Rc.Gen.Proof.Scanned
 
 set_option autoImplicit false
 namespace IxCC.Cfg.Rc.Native
+open IxCC.Rt.Rc.Gen (fieldsClass)
 open IxCC.Lir
 open IxCC.Rt IxCC.Rt.Rc IxCC.Rt.Proof IxCC.Rt.Rc.Procs
 
@@ -10,21 +12,21 @@ does not grant a payload interpretation; ReservedCell.publish supplies that
 only after executing all field stores. Both free-pop and bump paths end in
 this same store, and preceding context writes preserve permissions. -/
 theorem reserve_header (mem : X86.Memory) (address : Word) (body : Own.Body)
-    (positive : 0 < body.fields.length) (small : body.fields.length < 32)
+    (positive : 0 < body.fields.length) (small : body.fields.length ≤ maxFields)
     (tagBound : body.ctor.tag ≤ maxTag) (nobj : body.ctor.nobj = body.fields.length)
     (nscalar : body.ctor.nscalar = 0)
     (shared : body.ctor.fieldKinds = List.replicate body.fields.length .shared)
     (nonzero : address ≠ 0) (aligned : address.toNat % 8 = 0)
-    (fit : address.toNat + cellBytes body.fields.length < 2^63)
-    (readable : ∀ j < cellBytes body.fields.length, mem.readable (address + UInt64.ofNat j) = true)
-    (writable : ∀ j < cellBytes body.fields.length, mem.writable (address + UInt64.ofNat j) = true) :
+    (fit : address.toNat + classBytes (fieldsClass body.fields.length) < 2^63)
+    (readable : ∀ j < classBytes (fieldsClass body.fields.length), mem.readable (address + UInt64.ofNat j) = true)
+    (writable : ∀ j < classBytes (fieldsClass body.fields.length), mem.writable (address + UInt64.ofNat j) = true) :
     ReservedCell (mem.write .w64 address
-      (dynamicHeader body.fields.length (smallClass body.fields.length) body.ctor.tag 1)) address body := by
+      (dynamicHeader body.fields.length (fieldsClass body.fields.length) body.ctor.tag 1)) address body := by
+  obtain ⟨_, _, hlow, _⟩ := Gen.fieldsClass_spec positive small
   have represented := wordAt_write64 (v := dynamicHeader body.fields.length
-    (smallClass body.fields.length) body.ctor.tag 1) (m := mem) (b := address) (by
+    (fieldsClass body.fields.length) body.ctor.tag 1) (m := mem) (b := address) (by
       intro j hj
       apply readable
-      simp only [cellBytes]
       omega)
   have header := unique_header_reads small tagBound represented
   refine {

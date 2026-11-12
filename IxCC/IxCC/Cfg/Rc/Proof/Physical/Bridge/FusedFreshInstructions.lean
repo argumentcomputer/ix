@@ -5,6 +5,7 @@ import IxCC.Cfg.Rc.Proof.Physical.Bridge.FusedDomain
 
 set_option autoImplicit false
 namespace IxCC.Cfg.Rc.Proof.Physical.Bridge
+open IxCC.Rt.Rc
 open IxCC IxCC.Own IxCC.Own.Rc
 open IxCC.Rt.Rc.Procs IxCC.Cfg.Rc.Native
 
@@ -17,7 +18,7 @@ theorem fused_increment_ready_instruction_fresh
     (lookup : ρo.get? x = some value) (permission : CanDup H value)
     {addresses : AddressMap} {mem : X86.Memory} {context base bump limit : Lir.Word}
     {slots : List Slot} {lists : Nat → List Lir.Word}
-    (ready : AllocatorReady H addresses mem (holdRoots external (roots ++ held))
+    (ready : Gen.AllocatorReady maxClass H addresses mem (holdRoots external (roots ++ held))
       context base bump limit slots lists)
     {P : Lir.Program} {wrapper procedure dummy bound : Nat} {D : Nat → Prop}
     (wrapperLookup : P.funcs[wrapper]? = some (incrementWrapper procedure))
@@ -33,7 +34,7 @@ theorem fused_increment_ready_instruction_fresh
     ∃ H', Own.Plain.evalAction ρo H (.inc x 1) = .ok H' ∧
       Tokens H' external (value :: held) live ρf ρo roots ∧
       (∀ root, H.value? root = H'.value? root) ∧
-      ((∃ mem', AllocatorReady H' addresses mem'
+      ((∃ mem', Gen.AllocatorReady maxClass H' addresses mem'
           (holdRoots external (roots ++ value :: held))
           context base bump limit slots lists ∧
           Sem.Star (Lir.semStep P)
@@ -81,11 +82,11 @@ theorem fused_decrement_ready_instruction_fresh
     (before : Tokens H external held (x :: live) ρf ρo roots)
     {addresses : AddressMap} {mem : X86.Memory} {context base bump limit : Lir.Word}
     {slots : List Slot} {lists : Nat → List Lir.Word}
-    (ready : AllocatorReady H addresses mem (holdRoots external (roots ++ held))
+    (ready : Gen.AllocatorReady maxClass H addresses mem (holdRoots external (roots ++ held))
       context base bump limit slots lists)
     {P : Lir.Program} {wrapper procedure dummy bound : Nat} {D : Nat → Prop}
     (wrapperLookup : P.funcs[wrapper]? = some (decrementWrapper procedure))
-    (procedureLookup : P.funcs[procedure]? = some dec)
+    (procedureLookup : P.funcs[procedure]? = some Gen.dec)
     (caller : Lir.Frame) (callers : List Lir.Frame)
     {function : Lir.Func} {block : Lir.Block}
     (functionLookup : P.funcs[caller.fn]? = some function)
@@ -98,7 +99,7 @@ theorem fused_decrement_ready_instruction_fresh
       ρo.get? x = some value ∧ roots = value :: remaining ∧
       Own.Plain.evalAction ρo H (.dec x) = .ok H' ∧
       Tokens H' external held live ρf ρo remaining ∧
-      AllocatorReady H' addresses mem' (holdRoots external (remaining ++ held))
+      Gen.AllocatorReady maxClass H' addresses mem' (holdRoots external (remaining ++ held))
         context base bump limit slots' lists' ∧
       Sem.Star (Lir.semStep P)
         {mem, ctx := context, stack := caller :: callers} (2 + charges)

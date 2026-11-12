@@ -41,7 +41,7 @@ theorem raw_inc_proc {l : Layout} {funcs : List Lir.Func} (hlen : funcs.length =
 
 theorem raw_dec_proc {l : Layout} {funcs : List Lir.Func} (hlen : funcs.length = l.sourceCount)
     (main : Nat) :
-    (rawProgram l funcs main).funcs[l.decProc]? = some Rt.Rc.Procs.dec := by
+    (rawProgram l funcs main).funcs[l.decProc]? = some Rt.Rc.Gen.dec := by
   simp only [rawProgram, List.getElem?_toArray, List.append_assoc]
   rw [show l.decProc = funcs.length + ((wrappers l).length + 1) by
     rw [hlen, wrappers_length]; simp [Layout.decProc, Layout.incProc]; omega, suffix_at, suffix_at]
@@ -49,7 +49,7 @@ theorem raw_dec_proc {l : Layout} {funcs : List Lir.Func} (hlen : funcs.length =
 
 theorem raw_alloc_proc {l : Layout} {funcs : List Lir.Func} (hlen : funcs.length = l.sourceCount)
     (main i : Nat) {c : Lam.CtorInfo} (hc : l.ctors[i]? = some c) :
-    (rawProgram l funcs main).funcs[l.allocProc i]? = some (Rt.Rc.Procs.alloc c.arity c.tag) := by
+    (rawProgram l funcs main).funcs[l.allocProc i]? = some (Rt.Rc.Gen.alloc (Rt.Rc.CellLayout.ofFields c.arity c.tag)) := by
   simp only [rawProgram, List.getElem?_toArray, List.append_assoc]
   rw [show l.allocProc i = funcs.length + ((wrappers l).length + (2 + i)) by
     rw [hlen, wrappers_length]; simp [Layout.allocProc, Layout.incProc]; omega, suffix_at, suffix_at]
