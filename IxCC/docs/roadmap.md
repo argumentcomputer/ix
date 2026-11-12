@@ -298,16 +298,16 @@ hosted-CI or cold-store timing is claimed.
 
 - **Values.** `Nat`, exact above Lir and at run time a tagged word below
   2^63 (a larger value is the resource failure `natOverflow`); constructors
-  of inductive types; □. Fixed-width integers have no representation of
-  their own (erasure unboxes them to `Nat`); `UInt8` to `UInt32` work, but
-  every `UInt64` operation fails natively with `natOverflow` on every input,
-  since its reference body computes modulo the `Nat` 2^64 (measured,
-  [DR2](data-and-roots-design.md#dr2-fixed-width-integers-and-int)). Stage W1
-  makes the word operations primitives; so far SrcEval's rule F6w, its table
-  entry and check, the stored equations `ix compile --equations --word-equations` adds and
-  names, Lam's word primitive and Rt's proved tagged lowering of it exist behind a
-  switch that is off (`Table.Config.words`; erasure still declines a word entry), so
-  nothing compiles differently yet. Two limits stay after W1, by design:
+  of inductive types; □. Fixed-width integers are tagged words (erasure unboxes
+  a tower to its number). Stage W1 makes the word operations primitives
+  ([DR2](data-and-roots-design.md#dr2-fixed-width-integers-and-int), "Stage W1"): a
+  closure compiled with `ix compile --equations --word-equations` runs them as
+  SrcEval's rule F6w, Lam's word primitive and Rt's proved tagged lowering; without
+  the flag they run their reference bodies, as before W1 (`UInt8` to `UInt32` work,
+  every `UInt64` operation fails natively with `natOverflow`, since its body computes
+  modulo the `Nat` 2^64), and `ixcc compile` prints a `hint:` line saying so. A
+  program with a word entry is outside the grounded fragment (`noWord`) until the
+  grounding's word case is proved. Two limits stay after W1, by design:
   a `UInt64` is native only below 2^63 (a word is a tagged immediate, so a width-64
   result at or above 2^63 fails with `natOverflow`, as a `Nat` does); stage W2 is planned
   to lift it by keeping words unboxed, raw 64-bit words in registers and frames (a word
