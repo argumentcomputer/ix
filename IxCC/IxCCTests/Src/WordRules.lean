@@ -92,12 +92,19 @@ def opNumber : WordOp → Width → Option Nat
     (others.idxOf? t).map (15 + ·)
   | _, _ => none
 
-def run (a : Assert) : IO (List String) := do
+def run (a : Assert) (verbose : Bool := false) : IO (List String) := do
   let mut lines : List String := []
+  let t0 ← IO.monoMsNow
+  let note := fun (s : String) => do
+    if verbose then
+      IO.println s!"    [{(← IO.monoMsNow) - t0} ms] {s}"
+      (← IO.getStdout).flush
   let mut total := 0
   -- one load each way: the sidecar names the four roots, so the annotation covers every width
   let off ← loadPack (dir / "words.ixe") (dir / "words.equations.json")
+  note "loaded, words off"
   let on ← loadPack (dir / "words.ixe") (dir / "words.equations.json") { table := { words := true } }
+  note "loaded, words on"
   -- until the lowering exists, erasure declines a word entry (and accepts the program without)
   expect a (match IxCC.Lam.erase on.program on.checked with
       | .error e => e.code == "erase-word"
@@ -113,6 +120,7 @@ def run (a : Assert) : IO (List String) := do
       s!"{root}: words off, no word entry"
     let (n, bad) := harness off.program w 100000
     expect a bad.isEmpty s!"{root}: F6w against the reference bodies: {bad}"
+    note s!"{root}: harness"
     total := total + n
     -- the table with words on: every primitive operation the root reaches
     let entries := (List.range on.program.size).filterMap fun c =>

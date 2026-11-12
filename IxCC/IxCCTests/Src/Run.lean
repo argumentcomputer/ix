@@ -34,6 +34,13 @@ def main (args : List String) : IO UInt32 := do
   | ["--entry", name] =>
     IO.println (← Bench.runEntry name)
     return 0
+  | ["--words"] =>
+    -- the fixed-width words' parts alone, with each phase timed
+    let a ← IO.mkRef 0
+    Words.run a
+    for line in ← WordRules.run a (verbose := true) do IO.println s!"    {line}"
+    IO.println s!"tests-src --words: {← a.get} assertions passed"
+    return 0
   | _ => pure ()
   let a ← IO.mkRef 0
   try
