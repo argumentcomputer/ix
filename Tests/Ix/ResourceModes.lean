@@ -540,7 +540,18 @@ def recordCases : List RecCase := [
     entry := `ModeFixture.callF, erase := some (`ModeFixture.f, 0, false), reads := false, accept := false }
 ]
 
-/-- Change the fixture's records as the case says, then read, run and check. -/
+/-- `RespectsErasure`, decided over a program's constants. -/
+def respectsErasure (s : Subject) (P : Prog) : Bool :=
+  P.defs.all fun (r, d) =>
+    match d.suppliedReads with
+    | none => true
+    | some reads =>
+      match ifaceErased s r with
+      | .ok es => es.all fun i => !reads i
+      | .error _ => false
+
+/-- Change the fixture's records as the case says, then read (and decide
+`RespectsErasure` of what reads), run and check. -/
 def runRecCase (b : Built) (c : RecCase) : Except String (Bool × String) := do
   let refOf (n : Lean.Name) : Except String (Address × Ref) := do
     let some a := b.named n | throw s!"{n} has no address"
@@ -572,7 +583,9 @@ def runRecCase (b : Built) (c : RecCase) : Except String (Bool × String) := do
         | none, _ => true
         | some r, .value (.imm (.con r')) _ => r == r'
         | some _, _ => false
-      (true, "reads", outcomeName o, valueOk)
+      let erasureOk := respectsErasure s P
+      (true, s!"reads (supplied behaviours respect erasure: {erasureOk})", outcomeName o,
+        valueOk && erasureOk)
   let v := check {} b.env s
   let ok := readOk == c.reads && v.isAccept == c.accept && valueOk
   pure (ok, s!"{c.label}: {readStr}; run: {runStr}; checker: {verdictName v}")

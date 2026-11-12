@@ -346,6 +346,54 @@ def ModeSafe (env : Env .anon) (s : Subject) : Prop :=
     ∀ ext, ExternOk P ext → ∀ h args, InputsOk P h params args →
     ∀ fuel k, runR P ext fuel r h args ≠ .violation k
 
+/-! ## Supplied run behaviours and erasure -/
+
+/-- The argument positions a run behaviour **supplied other than by a run body**
+reads, when `d` is one: a case rule its major premise, its alternatives and the
+arguments past its arity (`Term.case`); a primitive its arguments; a
+constructor its kept fields (`construct`); an extern its parameters that are not
+erased (`callExtern` binds an erased one as `irr`) and the arguments past them.
+A run body supplies none (what it reads is what `runR` runs, and an erased read
+there is a violation `ModeSafe` excludes); an inductive type and a stuck
+constant have no behaviour in `runR`. -/
+def RunDef.suppliedReads : RunDef → Option (Nat → Bool)
+  | .caseDef k => some fun i => i == k.major || k.alts.any (·.alt == i) || k.arity ≤ i
+  | .prim p => some fun i => i < p.arity
+  | .ctor _ _ nP fs => some fun i => nP ≤ i && (fs[i - nP]?.map Field.kept).getD false
+  | .extern ps .. => some fun i => (ps[i]?.map (·.mode != .erased)).getD true
+  | .body .. | .ind _ | .stuck .. => none
+
+/-- **Supplied behaviours respect erasure** in `P`: none reads a position its
+constant's record erases (`ifaceErased`). -/
+def RespectsErasure (s : Subject) (P : Prog) : Prop :=
+  ∀ (r : Ref) (d : RunDef) (reads : Nat → Bool) (es : List Nat) (i : Nat),
+    P.find? r = some d → d.suppliedReads = some reads → ifaceErased s r = .ok es → i ∈ es →
+    reads i = false
+
+/-- **To prove: the reading gives it.** For a program that reads, no run
+behaviour supplied other than by a run body (a case rule, a primitive, a
+constructor, an extern) reads a position its interface erases. So it follows
+from `ModeSafe`'s first conjunct alone (`Reads`; the reading is a function, so
+the program is the one `ModeSafe`'s runs run), through the reading's rules:
+
+* a case rule: `caseModes` (the major premise and the alternatives are not
+  erased, a ∀ past the arity is default, a λ and its ∀ agree);
+* a primitive: a role-bound constant's record carries only default modes
+  (`Reading.readDef`);
+* a constructor: `readCtorFields` gives each field its binder's mode, and
+  `construct` keeps exactly the fields not erased (and relevant);
+* an extern: its parameters are its type's binders (`readIface`), and
+  `callExtern` binds an erased one as `irr`.
+
+A constant with no run body (a recursor, a quotient, an axiom or opaque outside
+the extern set, an unsafe or `partial` constant, a theorem) has no behaviour in
+`runR`, and its interface erases nothing (`stuckAt`), so an implementation run
+natively in its place reads no erased position either. For run bodies the
+corresponding sentence is `ModeSafe`'s second conjunct: no run of a seed reads
+an erased binding. -/
+def ReadsRespectErasure : Prop :=
+  ∀ env s P, Reads env s P → RespectsErasure s P
+
 /-! ## Statements for the follow-up work (definitions; nothing is proved here) -/
 
 /-- A run term with every mode default. -/

@@ -34,6 +34,16 @@ the kernel's own judgements; the checker reads with a fueled one.
   table's `Nat` operations, and every other constant without a run body is
   `stuck` with its interface.
 
+**No supplied behaviour reads what an interface erases.** A case rule, a
+primitive, a constructor and an extern run in place of a body, so their modes
+are read against what they do, and a record that disagrees does not read: a
+case definition's major premise and alternatives are not erased, and its other
+parameters are default or erased (`caseModes`); a constant the role table binds
+sits in a record with only default modes; a constant with no run body outside
+the extern set has the default interface (`stuckAt`); a run body's interface,
+read for itself or for its callers, is its telescopes' agreed reading
+(`teleAgree`). `IxC.Resource.ReadsRespectErasure` states the consequence.
+
 Telescopes are read up to their first sharing reference.
 -/
 
@@ -361,6 +371,9 @@ def readTerm (x : RCx) (caseOf : Ref → Option CaseInfo) :
 
 /-! ## Telescopes and interfaces -/
 
+/-- The fuel of every syntactic walk. -/
+def readFuel : Nat := 1 <<< 20
+
 /-- A type's leading ∀s (up to its first sharing reference): each node's mode and
 its domain's skeleton and expression, then the codomain. Consumes the nodes. -/
 def readForalls (x : RCx) : Nat → Ixon.Expr → RM (List (AllMode × Skel × Ixon.Expr) × Ixon.Expr)
@@ -374,6 +387,19 @@ def readForalls (x : RCx) : Nat → Ixon.Expr → RM (List (AllMode × Skel × I
       pure ((m, d, ty) :: rest, cod)
     | _ => pure ([], e)
 
+/-- A telescope's parameters, opened in order: each binder's mode, its domain's
+class (by the oracle) and skeleton; and the context under them. -/
+def openParams (x : RCx) (tele : List (AllMode × Skel × Ixon.Expr)) :
+    Except String (List Local × Array Param) := do
+  let mut ctx : List Local := []
+  let mut ps : Array Param := #[]
+  for (m, sk, dom) in tele do
+    let k ← x.toK ctx dom
+    let pc ← x.cl.type ctx.length k
+    ps := ps.push { mode := m.input, cls := pc, skel := sk, noLeaf := x.noLeafType dom }
+    ctx := ⟨.fvar ctx.length k, pc⟩ :: ctx
+  pure (ctx, ps)
+
 /-- **An interface from a type**: its ∀s as parameters (mode, class, skeleton)
 and its codomain's result mode, class and skeleton. A result mode before the
 last ∀'s is `shared`. Reads in the type's block. -/
@@ -381,13 +407,7 @@ def readIface (x : RCx) (fuel : Nat) (ty : Ixon.Expr) :
     RM (Array Param × ResultMode × Cls × Skel) := do
   let (alls, cod) ← readForalls x fuel ty
   let codSkel ← readSkel x fuel cod
-  let mut ctx : List Local := []
-  let mut ps : Array Param := #[]
-  for (m, sk, dom) in alls do
-    let k ← x.toK ctx dom
-    let pc ← x.cl.type ctx.length k
-    ps := ps.push { mode := m.input, cls := pc, skel := sk, noLeaf := x.noLeafType dom }
-    ctx := ⟨.fvar ctx.length k, pc⟩ :: ctx
+  let (ctx, ps) ← openParams x alls
   let n := alls.length
   for (m, _, _) in alls.take (n - 1) do
     unless m.result == .shared do throw "a non-default result mode before an interface's last binder"
@@ -395,21 +415,19 @@ def readIface (x : RCx) (fuel : Nat) (ty : Ixon.Expr) :
   let rc ← x.cl.type ctx.length (← x.toK ctx cod)
   pure (ps, res, rc, codSkel)
 
-/-- The λs of a definition's value (up to its first sharing reference), with
-each node's mode, its domain's skeleton and class; then the body. -/
-def readLams (x : RCx) : Nat → List Local → Ixon.Expr →
-    RM (List (AllMode × Param) × List Local × Ixon.Expr)
-  | 0, _, _ => throw "expression too large"
-  | n + 1, ctx, e => do
+/-- The λs of a definition's value (up to its first sharing reference): each
+node's mode, its domain's skeleton and expression; then the body. Consumes the
+nodes. -/
+def readLamNodes (x : RCx) : Nat → Ixon.Expr → RM (List (AllMode × Skel × Ixon.Expr) × Ixon.Expr)
+  | 0, _ => throw "expression too large"
+  | n + 1, e => do
     match ← view e with
     | .lam ty b => do
       let m ← nextBinder
-      let k ← x.toK ctx ty
-      let pc ← x.cl.type ctx.length k
       let sk ← readSkel x n ty
-      let (rest, ctx', body) ← readLams x n (⟨.fvar ctx.length k, pc⟩ :: ctx) b
-      pure ((m, { mode := m.input, cls := pc, skel := sk, noLeaf := x.noLeafType ty }) :: rest, ctx', body)
-    | _ => pure ([], ctx, e)
+      let (rest, body) ← readLamNodes x n b
+      pure ((m, sk, ty) :: rest, body)
+    | _ => pure ([], e)
 
 /-- Strip `k` leading ∀s (not through sharing references). -/
 def dropAlls : Nat → Ixon.Expr → Except String Ixon.Expr
@@ -419,42 +437,96 @@ def dropAlls : Nat → Ixon.Expr → Except String Ixon.Expr
     | .all _ b => dropAlls k b
     | _ => throw "fewer binders than expected"
 
-/-- **A definition's run body**: its value's λs and its type's ∀s, agreeing; the
-body under the λs. `tyKey`/`valKey` are the two roots' blocks. -/
-def readBody (x : RCx) (caseOf : Ref → Option CaseInfo) (fuel : Nat) (ty val : Ixon.Expr)
-    (tyKey valKey : BlockKey) : Except String RunDef := do
-  let ((alls, codSkel), _) ← (inBlock x.rm tyKey (do
-      let (alls, cod) ← readForalls x fuel ty
-      let cs ← readSkel x fuel cod
-      pure (alls, cs))).run {}
-  let ((lams, ctx, bodyT, bodyC), _) ← (inBlock x.rm valKey (do
-      let (lams, ctx, body) ← readLams x fuel [] val
-      let (bt, bc) ← readTerm x caseOf fuel ctx body
-      pure (lams, ctx, bt, bc))).run {}
+/-- **Telescope agreement**: a value's λs and its type's ∀s agree node for node,
+modes and domain skeletons both; a λ beyond the ∀s, or a ∀ beyond the λs, has
+the default mode (and a λ beyond them a default skeleton); a λ's result before
+the last is `shared`. -/
+def teleAgree (alls lams : List (AllMode × Skel × Ixon.Expr)) : Except String Unit := do
   let j := alls.length
   let k := lams.length
   for i in [0:k] do
-    let (lm, lp) := lams[i]!
+    let (lm, lsk, _) := lams[i]!
     if i < j then
       let (tm, tsk, _) := alls[i]!
       unless lm == tm do throw "a λ's mode differs from its type's ∀"
-      unless tsk.admits lp.skel do throw "a λ's domain skeleton differs from its type's ∀"
+      unless tsk.admits lsk do throw "a λ's domain skeleton differs from its type's ∀"
     else
-      unless lm.isDefault && lp.skel.isDefault do throw "a moded λ beyond its type's ∀s"
+      unless lm.isDefault && lsk.isDefault do throw "a moded λ beyond its type's ∀s"
     if i + 1 < k then
       unless lm.result == .shared do throw "a non-default result mode before a definition's last λ"
   for i in [k:j] do
     let (tm, _, _) := alls[i]!
     unless tm.isDefault do throw "a moded ∀ beyond its definition's λs"
-  let params := (lams.map (·.2)).toArray
+
+/-- The class of a body read for its interface only: a variable's from its
+binder, anything else's from the oracle. -/
+def bodyClass (x : RCx) (ctx : List Local) (e : Ixon.Expr) : Except String Cls := do
+  if let .var i := (← view e) then
+    let some l := ctx[i]? | throw "variable out of scope"
+    return l.cls
+  x.cl.node ctx.length (← x.toK ctx e)
+
+/-- **A definition's run body**: its value's λs and its type's ∀s, agreeing
+(`teleAgree`); the body under the λs. `tyKey`/`valKey` are the two roots'
+blocks. With `bodies = false` the body is not read (its nodes are consumed) and
+the definition is read for its interface: the same telescopes, the same
+agreement, the same parameters, with `Term.irr` for the body. -/
+def readBody (x : RCx) (caseOf : Ref → Option CaseInfo) (fuel : Nat) (bodies : Bool)
+    (ty val : Ixon.Expr) (tyKey valKey : BlockKey) : Except String RunDef := do
+  let ((alls, codSkel), _) ← (inBlock x.rm tyKey (do
+      let (alls, cod) ← readForalls x fuel ty
+      let cs ← readSkel x fuel cod
+      pure (alls, cs))).run {}
+  let ((lams, ctx, params, body, bodyT, bodyC?), _) ← (inBlock x.rm valKey (do
+      let (lams, body) ← readLamNodes x fuel val
+      let (ctx, params) ← openParams x lams
+      if bodies then
+        let (bt, bc) ← readTerm x caseOf fuel ctx body
+        pure (lams, ctx, params, body, bt, some bc)
+      else do
+        skip x.rm fuel body
+        pure (lams, ctx, params, body, Term.irr, none))).run {}
+  teleAgree alls lams
+  let k := lams.length
   let res := (lams.getLast?.map (·.1.result)).getD .shared
-  if k ≤ j then
+  if k ≤ alls.length then
     let rest ← dropAlls k ty
     let rc ← x.cl.type ctx.length (← x.toK ctx rest)
     let rs := arrowChain ((alls.drop k).map fun (m, s, _) => (m, s)) codSkel
     pure (.body params res rc rs bodyT)
   else
+    let bodyC ← match bodyC? with
+      | some c => pure c
+      | none => bodyClass x ctx body
     pure (.body params res bodyC .unknown bodyT)
+
+/-- **A case definition's modes**: its type's and value's telescopes agree as a
+run body's do (`teleAgree`); every binder's result mode is `shared`; and every
+parameter's mode is the default, except that a position the case rule does not
+read (neither the major premise nor an alternative) may be `erased`, at the
+same position in the type and the value. The case rule reads the major premise
+and the selected alternative and nothing else, so these are exactly the modes
+it honours. The value's body is not read: the case rule runs in its place. -/
+def caseModes (x : RCx) (k : CaseInfo) (ty val : Ixon.Expr) (tyKey valKey : BlockKey) :
+    Except String Unit := do
+  let (alls, _) ← (inBlock x.rm tyKey (do
+      let (alls, cod) ← readForalls x readFuel ty
+      let _ ← readSkel x readFuel cod
+      pure alls)).run {}
+  let (lams, _) ← (inBlock x.rm valKey (do
+      let (lams, body) ← readLamNodes x readFuel val
+      skip x.rm readFuel body
+      pure lams)).run {}
+  teleAgree alls lams
+  for ((m, _, _), i) in lams.zipIdx do
+    unless m.result == .shared do throw "a case definition's binder with a result mode"
+    if i == k.major || k.alts.any (·.alt == i) then
+      unless m.input == .many do
+        throw "a case definition's major premise or alternative is not of the default mode: \
+          its case rule reads it"
+    else
+      unless m.input == .many || m.input == .erased do
+        throw "a case definition's binder with a mode other than erased"
 
 /-! ## Case shapes -/
 
@@ -671,9 +743,6 @@ def rootBase (c : Ixon.Constant) (i : Nat) : Nat :=
 
 def rootKey (i : Nat) : BlockKey := { shared := false, index := i, variant := 0 }
 
-/-- The fuel of every syntactic walk. -/
-def readFuel : Nat := 1 <<< 20
-
 /-- The primitive a role names. -/
 def primOf (s : Subject) : Ix.Kernel.Role → Option Prim
   | .natZero => some .zero
@@ -727,11 +796,61 @@ def readCtorFields (x : RCx) (member ci : Nat) (nParams : Nat) (ty : Ixon.Expr) 
       out := out.push { mode := m.input, fmode := fieldMode x.c member ci (i - nParams), cls := pc }
   pure out
 
-/-- **The run definition of a constant** (`bodies = false` leaves run bodies out,
-for an interface). -/
+/-- An extern's interface: its type's, with any modes. -/
+def externAt (x : RCx) (ty : Ixon.Expr) (key : BlockKey) : Except String RunDef := do
+  let (ps, res, rc, rs) ← ifaceAt x ty key
+  pure (.extern ps res rc rs)
+
+/-- **A constant with no run body** outside the extern set (an axiom, an opaque,
+a theorem, an unsafe or `partial` constant, a quotient, a recursor): `stuck`,
+with its interface, whose parameters and result must have the default modes.
+Nothing checks what such a constant does with its arguments (`runR` stops at
+it; a compiler links or runs it natively), so its modes would be promises; the
+extern set is where a constant with no body may carry modes. -/
+def stuckAt (x : RCx) (ty : Ixon.Expr) (key : BlockKey) : Except String RunDef := do
+  let (ps, res, rc, rs) ← ifaceAt x ty key
+  unless ps.all (·.mode == .many) && res == .shared do
+    throw "an annotated constant with no run body is not in the extern set: its modes are promises \
+      nothing checks"
+  pure (.stuck ps res rc rs)
+
+/-- Whether an expression's `let`s all have the default mode. -/
+def letsDefault : Nat → Ixon.Expr → Except String Bool
+  | 0, _ => throw "expression too large"
+  | n + 1, e => do
+    match ← view e with
+    | .letE m t v b =>
+      pure (m == .value .many && (← letsDefault n t) && (← letsDefault n v) && (← letsDefault n b))
+    | .lam t b | .all t b => pure ((← letsDefault n t) && (← letsDefault n b))
+    | .app f a => pure ((← letsDefault n f) && (← letsDefault n a))
+    | .prj _ _ v => letsDefault n v
+    | _ => pure true
+
+/-- Whether a record carries only default modes (binders, `let`s, fields). -/
+def recordDefault (c : Ixon.Constant) : Except String Bool := do
+  let rm ← recordModes c
+  let mut ok := rm.blocks.all fun (_, ns) => ns.all fun
+    | .binder m => m.isDefault
+    | .share _ => true
+  for root in binderRoots c.info ++ c.sharing do
+    ok := ok && (← letsDefault readFuel root)
+  pure (ok && fieldModesDefault c)
+
+/-- **The run definition of a constant** (`bodies = false` reads a run body's
+telescopes and not its body, for an interface).
+
+* A constant the role table binds sits in a record carrying only default modes:
+  `runR` runs the primitives natively, and the classes read `Nat`'s and `BitVec`'s
+  representation from the roles, so no mode of such a record is honoured.
+* A case shape's modes are read (`caseModes`).
+* A constant with no run body outside the extern set has the default interface
+  (`stuckAt`). -/
 def Reading.readDef (rd : Reading) (cl : Classifier) (rt : Array (Ref × RunDef)) (bodies : Bool)
     (r : Ref) : Except String RunDef := do
   if let some role := roleOf? rd.s r then
+    let some c := rd.s.store r.block | throw s!"record {r.block} is missing"
+    unless (← recordDefault c) do
+      throw "a constant the role table binds sits in a record that carries modes"
     if let some p := primOf rd.s role then return .prim p
   if let some (_, d) := rt.find? (·.1 == r) then
     return d
@@ -745,37 +864,67 @@ def Reading.readDef (rd : Reading) (cl : Classifier) (rt : Array (Ref × RunDef)
     let fields ← readCtorFields x i ci ind.params.toNat ctor.typ (rootKey (rootBase x.c i + 1 + ci))
     pure (.ctor (.member b i) ci ind.params.toNat fields)
   | .member _ i => do
-    if let some info := caseOf r then return .caseDef info
     let base := rootBase x.c i
+    if let some info := caseOf r then
+      let some (_, d) := definitionAt? rd.s r | throw "a case shape that is no definition"
+      caseModes x info d.typ d.value (rootKey base) (rootKey (base + 1))
+      return .caseDef info
     let member : Option Ixon.MutConst := match x.c.info with
       | .muts ms => ms[i]?
       | .defn d => some (.defn d)
       | .recr rr => some (.recr rr)
       | _ => none
     match x.c.info, member with
-    | .axio a, _ => do
-      let (ps, res, rc, rs) ← ifaceAt x a.typ (rootKey 0)
-      pure (if isExtern rd.s r then .extern ps res rc rs else .stuck ps res rc rs)
-    | .quot q, _ => do
-      let (ps, res, rc, rs) ← ifaceAt x q.typ (rootKey 0)
-      pure (.stuck ps res rc rs)
+    | .axio a, _ =>
+      if isExtern rd.s r then externAt x a.typ (rootKey 0) else stuckAt x a.typ (rootKey 0)
+    | .quot q, _ => stuckAt x q.typ (rootKey 0)
     | _, some (.indc ind) =>
       pure (.ind ((List.range ind.ctors.size).toArray.map fun ci => ConstRef.ctor r.block i ci))
-    | _, some (.recr rr) => do
-      let (ps, res, rc, rs) ← ifaceAt x rr.typ (rootKey base)
-      pure (.stuck ps res rc rs)
-    | _, some (.defn d) => do
+    | _, some (.recr rr) => stuckAt x rr.typ (rootKey base)
+    | _, some (.defn d) =>
       let runnable := d.kind == .defn && d.safety == .safe
-      if runnable && !isExtern rd.s r then
-        if bodies then
-          readBody x caseOf readFuel d.typ d.value (rootKey base) (rootKey (base + 1))
-        else do
-          let (ps, res, rc, rs) ← ifaceAt x d.typ (rootKey base)
-          pure (.body ps res rc rs .irr)
-      else do
-        let (ps, res, rc, rs) ← ifaceAt x d.typ (rootKey base)
-        pure (if isExtern rd.s r then .extern ps res rc rs else .stuck ps res rc rs)
+      if isExtern rd.s r then externAt x d.typ (rootKey base)
+      else if runnable then readBody x caseOf readFuel bodies d.typ d.value (rootKey base) (rootKey (base + 1))
+      else stuckAt x d.typ (rootKey base)
     | _, _ => throw "no constant at this reference"
+
+/-- The type root of the constant `r` in its record `c`: its block number and
+its expression. -/
+def typeRootOf (c : Ixon.Constant) : Ref → Option (Nat × Ixon.Expr)
+  | .member _ i =>
+    match c.info with
+    | .defn d => if i == 0 then some (0, d.typ) else none
+    | .recr rr => if i == 0 then some (0, rr.typ) else none
+    | .axio a => if i == 0 then some (0, a.typ) else none
+    | .quot q => if i == 0 then some (0, q.typ) else none
+    | .muts ms =>
+      match ms[i]? with
+      | some (.defn d) => some (rootBase c i, d.typ)
+      | some (.indc ind) => some (rootBase c i, ind.typ)
+      | some (.recr rr) => some (rootBase c i, rr.typ)
+      | none => none
+    | _ => none
+  | .ctor _ i ci =>
+    match c.info with
+    | .muts ms =>
+      match ms[i]? with
+      | some (.indc ind) => (ind.ctors[ci]?).map fun ctor => (rootBase c i + 1 + ci, ctor.typ)
+      | _ => none
+    | _ => none
+
+/-- **The positions a constant's interface erases**: the leading ∀s of its type
+(up to its first sharing reference) whose binder mode is `erased`, read from its
+record. -/
+def ifaceErased (s : Subject) (r : Ref) : Except String (List Nat) := do
+  let some c := s.store r.block | throw s!"record {r.block} is missing"
+  let some (root, ty) := typeRootOf c r | throw "no constant at this reference"
+  let rm ← recordModes c
+  let pos ← leadingBinders rm.binderful true 4096 ty 0
+  let nodes := (rm.block? (rootKey root)).getD #[]
+  pure (pos.zipIdx.filterMap fun (p, i) =>
+    match nodes[p]? with
+    | some (.binder m) => if m.input == .erased then some i else none
+    | _ => none)
 
 /-! ## The run table -/
 

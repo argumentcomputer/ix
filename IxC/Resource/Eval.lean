@@ -690,7 +690,9 @@ def applyOne (P : Prog) (ext : ExternOracle) : Nat → Val → Val → Cls → M
 
 /-- A case alternative applied to its constructor's fields, by need: a λ
 telescope binds them in place (a call of arity one per binder, with no closure
-formed); anything else is evaluated and applied. -/
+formed; an erased field is bound erased, whatever the binder's mode); anything
+else is evaluated and applied, and an erased field reaching it is an erased
+read (the field holds nothing to pass). -/
 def applyAlt (P : Prog) (ext : ExternOracle) : Nat → List Bnd → Term → List (Val × Bool) → M Val
   | 0, _, _, _ => throw .outOfFuel
   | n + 1, env, t, [] => eval P ext n env t
@@ -704,6 +706,7 @@ def applyAlt (P : Prog) (ext : ExternOracle) : Nat → List Bnd → Term → Lis
       closeRegion s
       pure r
     | _ => do
+      if ((a, er) :: rest).any (·.2) then violate .erasedRead
       let f ← eval P ext n env t
       applyAll P ext n f (((a, er) :: rest).map (·.1)) .val
 

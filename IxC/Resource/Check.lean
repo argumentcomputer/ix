@@ -578,7 +578,7 @@ def anCase (P : Prog) :
     pure r
 
 /-- An alternative applied to its fields, as `applyAlt`: a λ telescope binds
-them in place. -/
+them in place; an erased field reaching anything else is an erased read. -/
 def anAlt (P : Prog) : Nat → List ABnd → Term → List (AVal × Bool × Bool) → CM AVal
   | 0, _, _, _ => declineM "the checker's depth limit"
   | n + 1, env, t, [] => anTerm P n env t
@@ -596,6 +596,8 @@ def anAlt (P : Prog) : Nat → List ABnd → Term → List (AVal × Bool × Bool
       closeReg s
       pure { r with cls := rc }
     | _ => do
+      if ((a0, er, fromCell) :: rest).any (·.2.1) then
+        refuseM "erasedRead: an erased field passed to an alternative that is not a λ for it"
       let mut f ← anTerm P n env t
       for (av, _, _) in (a0, er, fromCell) :: rest do
         f ← applyValue f av .val "an alternative"
@@ -635,28 +637,6 @@ inductive Verdict where
 def Verdict.isAccept : Verdict → Bool
   | .accept .. => true
   | _ => false
-
-/-- Whether an expression's `let`s all have the default mode. -/
-def letsDefault : Nat → Ixon.Expr → Except String Bool
-  | 0, _ => throw "expression too large"
-  | n + 1, e => do
-    match ← view e with
-    | .letE m t v b =>
-      pure (m == .value .many && (← letsDefault n t) && (← letsDefault n v) && (← letsDefault n b))
-    | .lam t b | .all t b => pure ((← letsDefault n t) && (← letsDefault n b))
-    | .app f a => pure ((← letsDefault n f) && (← letsDefault n a))
-    | .prj _ _ v => letsDefault n v
-    | _ => pure true
-
-/-- Whether a record carries only default modes (binders, `let`s, fields). -/
-def recordDefault (c : Ixon.Constant) : Except String Bool := do
-  let rm ← recordModes c
-  let mut ok := rm.blocks.all fun (_, ns) => ns.all fun
-    | .binder m => m.isDefault
-    | .share _ => true
-  for root in binderRoots c.info ++ c.sharing do
-    ok := ok && (← letsDefault readFuel root)
-  pure (ok && fieldModesDefault c)
 
 /-- The constants a run term names. -/
 def termRefs : Nat → Term → List Ref
@@ -759,12 +739,6 @@ def check (lim : Limits) (env : Ix.Kernel.Env .anon) (s : Subject) : Verdict := 
         | .ctor ind .. => todo := todo ++ [ind]
         | _ => pure ()
       | .error e => return readFailure (refName r) e
-  -- an annotated constant with no run body makes promises nothing can check
-  for r in toCheck do
-    if let some (RunDef.stuck ps res _ _) := (defs.find? (·.1 == r)).map (·.2) then
-      unless ps.all (·.mode == .many) && res == .shared do
-        return .refuse (refName r) "an annotated constant with no run body is not in the extern set: \
-          its modes are promises nothing checks"
   let P : Prog := { defs, nat := roleRef? s .nat }
   checkBodies lim P toCheck.toList
 
