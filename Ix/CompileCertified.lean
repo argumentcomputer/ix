@@ -182,7 +182,7 @@ def compileCertifiedPrepared (prepared : List (Lean.Name × Lean.ConstantInfo))
         carries the undecided section"
     | .ok installed =>
       log s!"binder data: installed {installed.installed} declarations, {installed.failures.size} \
-        refused ({installed.lenient} of them entered without their checks), {installed.ahead} pushed ahead in {installed.waves} waves; phases (ms) {installed.times}; {(← IO.monoMsNow) - t1}ms, rss \
+        refused ({installed.lenient} of them entered without their checks), phase A in {installed.waves} waves; phases (ms) {installed.times}; {(← IO.monoMsNow) - t1}ms, rss \
         {← Ix.Cli.residentSetSize}"
       for (name, why) in installed.failures.extract 0 20 do
         log s!"binder data: the kernel refused {name}: {(why.replace "\n" " ").take 200}"

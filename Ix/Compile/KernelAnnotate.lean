@@ -106,28 +106,8 @@ structure Installed where
   failures : Array (String × String) := #[]
   /-- the refused declarations entered without their checks (`lenient`) -/
   lenient : Nat := 0
-  /-- the declarations phase A pushed from a wave's ahead-of-time annotation (`separable`) -/
-  ahead : Nat := 0
   /-- phase A's waves -/
   waves : Nat := 0
-  /-- the member names whose records are traced (`IX_BD_TRACE`, for diagnosis) -/
-  trace : Array String := #[]
-  /-- whether a root phase A annotated is read off its stored term (`walkStored`)
-  rather than walked -/
-  stored : Bool := true
-  /-- whether the walk memoizes share sites (`IX_BD_NOMEMO` turns it off, for diagnosis) -/
-  memo : Bool := true
-  /-- whether the syntactic reading is measured beside the walk (`IX_BD_TIER1`) -/
-  tier1 : Bool := false
-  /-- whether each record's route (the source reading or the walk) is printed
-  (`IX_BD_T1STAT`, for measurement) -/
-  t1stat : Bool := false
-  /-- whether every record is walked, the source reading off (`IX_BD_NOREAD`, for the
-  cross-check of the reading against IxC's pass) -/
-  noread : Bool := false
-  /-- whether a record the source reading does not decide gets the undecided section
-  instead of the walk (`IX_BD_READONLY`, for measurement) -/
-  readonly : Bool := false
   /-- projection tables added for structures the install left without one, and
   those skipped because the structure is a proposition -/
   tablesAdded : Nat := 0
@@ -241,12 +221,11 @@ pinned `Nat` operation, a theorem, an opaque), computed against `fe`:
 empty memo state, which every step starts from. `none` for any other
 declaration, or where the annotation fails.
 
-Phase A runs this ahead, on a wave of declarations at once, against the
-environment before the wave, and pushes each result in order unless the
-environment has meanwhile gained its name (the step's duplicate check). An
-environment that holds more constants answers every lookup the annotation made
-the same way, and a datum is unique, so the push is the step's. Any other
-declaration takes the ordinary step. -/
+Phase A makes it on a worker's environment (`makeOne`), which holds the
+constants of the waves before and may hold more of the same wave: an environment
+that holds more constants answers every lookup the annotation made the same way,
+and a datum is unique, so the push is the step's. Any other declaration takes the
+ordinary step. -/
 def separable (mode : Ix.Kernel.CheckMode) (fe : FEnv .source) (d : CDecl .source) : Option (Ix.Kernel.ConstantInfo .source) :=
   let run {α : Type} (act : CM α) : Option α := match act.run {} with
     | .ok (a, _) => some a
@@ -261,14 +240,6 @@ def separable (mode : Ix.Kernel.CheckMode) (fe : FEnv .source) (d : CDecl .sourc
   | .opaqueDecl cv v =>
     (run (Ix.Kernel.Cached.annotValueC mode fe cv v)).map fun r => .axiomInfo r.1
   | _ => none
-
-/-- A declaration's pushes computed ahead against `fe` (`separable`'s). A
-declaration that is not separable (a block, an axiom, a pinned `Nat` operation)
-takes the ordinary step in turn: run ahead, its first push would copy the
-index every task shares, a cost that grows with the environment. -/
-def pushesAhead (mode : Ix.Kernel.CheckMode) (fe : FEnv .source) (d : CDecl .source) :
-    Option (Array (Ix.Kernel.ConstantInfo .source)) :=
-  (separable mode fe d).map (#[·])
 
 /-- Whether every constant a definition, theorem, opaque or axiom names is
 installed (`constsResolveFC`). One that names a missing constant would fail
@@ -384,10 +355,6 @@ def phaseAWorkers (mode : Ix.Kernel.CheckMode) (ev : Ix.Kernel.Evidences .source
   | some r => return r
   | none => return (Ix.Kernel.mkFEnv Ix.Kernel.Env.empty, #[])
 
-/-- A kernel error on one line, for `IX_BD_TRACE`. -/
-def traceError (e : Ix.Kernel.CheckError .source) : String :=
-  ((Benchmarks.Kernel.CheckIxeStep.checkOutcome e).2.replace "\n" " ").take 400 |>.toString
-
 def readErrorString : ReadError → String
   | .malformed m => s!"malformed: {m}"
   | .declined m => s!"declined: {m}"
@@ -402,24 +369,6 @@ private instance : Nonempty (FEnv .source) := ⟨Ix.Kernel.mkFEnv Ix.Kernel.Env.
 
 private instance : Nonempty (Ix.Kernel.Cached.CoreFnsI .source) :=
   ⟨Ix.Kernel.Cached.coreKnotI .verified (Ix.Kernel.mkFEnv Ix.Kernel.Env.empty) 0⟩
-
-/-- The structures a term projects from (`IX_BD_TRACE`'s diagnosis). -/
-def projKeys (e : KExpr) : Array (Ix.Kernel.Key .source) := Id.run do
-  let mut seen : Std.HashSet KExpr := {}
-  let mut todo := #[e]
-  let mut out := #[]
-  while h : todo.size > 0 do
-    let e := todo[todo.size - 1]
-    todo := todo.pop
-    if seen.contains e then continue
-    seen := seen.insert e
-    match e with
-    | .proj k _ x => out := out.push k; todo := todo.push x
-    | .app f a => todo := todo.push f |>.push a
-    | .lam t b _ | .forallE t b _ => todo := todo.push t |>.push b
-    | .letE t v b _ => todo := todo.push t |>.push v |>.push b
-    | _ => pure ()
-  return out
 
 /-- `Ix.LeanIngress.graphOf`, with each group's literal kinds (`literalKinds`,
 a walk of all its terms) computed on `width` tasks: the same graph. -/
@@ -468,9 +417,7 @@ def graphOfPar (width : Nat) (blocks : Ix.CondensedBlocks) (groups : Array Group
 
 /-- **Install the compile's input** in Source mode, phase A only, and mark the
 environment and IxC's core over it persistent. -/
-def install (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (workers : Nat := 32)
-    (parallel : Bool := true) (trace : Bool := false) (persist : Bool := true)
-    (onWorkers : Bool := true) :
+def install (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (workers : Nat := 32) :
     IO (Except String Installed) := do
   let mode := annotatorMode
   let t0 ← IO.monoMsNow
@@ -535,65 +482,16 @@ def install (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (workers : Nat 
       1 + ((prepared[i].names.head?.bind (levelOf[·]?)).getD 0)
     while waves.size ≤ l do waves := waves.push #[]
     waves := waves.modify l (·.push i)
-  let mut fe : FEnv .source := Ix.Kernel.mkFEnv Ix.Kernel.Env.empty
-  let mut pos := 0
-  let mut ok := 0
-  let mut ahead := 0
-  let mut retry : Array (CDecl .source) := #[]
-  -- phase A's time (ns): the waves' ahead-of-time annotation, the pushes of its
-  -- results, the ordinary steps
-  let mut nsAhead := 0
-  let mut nsPush := 0
-  let mut nsStep := 0
-  if onWorkers then
-    let n0 ← IO.monoNanosNow
-    -- each declaration's group, by position in `prepared`
-    let mut groupOf : Array Nat := Array.mkEmpty prepared.size
-    for h : i in [:prepared.size] do
-      groupOf := groupOf.push ((prepared[i].names.head?.bind (groupKey[·]?)).getD i)
-    let (feW, again) ← phaseAWorkers mode ev prepared groupOf waves workers
-    nsStep := (← IO.monoNanosNow) - n0
-    fe := feW
-    pos := prepared.size
-    ok := prepared.size - again.size
-    retry := again.map (prepared[·]!)
-  -- (`IX_BD_WAVES`, for measurement: phase A on one environment, its waves' separable
-  -- declarations annotated ahead)
-  for wave in (if onWorkers then #[] else waves) do
-    -- the wave's separable declarations, annotated against the environment as
-    -- it stands before the wave (`separable`)
-    let base := fe
-    let n0 ← IO.monoNanosNow
-    let pushes : Array (Option (Array (Ix.Kernel.ConstantInfo .source))) ← IO.lazyPure fun _ =>
-      if !parallel || wave.size < 8 then wave.map fun _ => none
-      else Ix.Compile.Parallel.map (4 * max workers 1) (fun i => pushesAhead mode base prepared[i]!) wave
-    let n1 ← IO.monoNanosNow
-    nsAhead := nsAhead + (n1 - n0)
-    for (i, r) in wave.zip pushes do
-      if let some cis := r then
-        if cis.all fun ci => (fe.find? ci.name).isNone then
-          let m0 ← IO.monoNanosNow
-          for ci in cis do
-            let ci ← (unsafe Runtime.markPersistent ci : BaseIO (Ix.Kernel.ConstantInfo .source))
-            fe := fe.push ci
-          nsPush := nsPush + ((← IO.monoNanosNow) - m0)
-          pos := pos + 1
-          ok := ok + 1
-          ahead := ahead + 1
-          continue
-      let d := prepared[i]!
-      if !resolves fe d then
-        retry := retry.push d
-        pos := pos + 1
-        continue
-      let m0 ← IO.monoNanosNow
-      let (fe', pos', err) ← IO.lazyPure fun _ => step mode ev fe pos d
-      nsStep := nsStep + ((← IO.monoNanosNow) - m0)
-      fe := fe'
-      pos := pos'
-      match err with
-      | none => ok := ok + 1
-      | some _ => retry := retry.push d
+  -- phase A on workers (`phaseAWorkers`), each declaration's group by position in
+  -- `prepared`
+  let mut groupOf : Array Nat := Array.mkEmpty prepared.size
+  for h : i in [:prepared.size] do
+    groupOf := groupOf.push ((prepared[i].names.head?.bind (groupKey[·]?)).getD i)
+  let (feW, again) ← phaseAWorkers mode ev prepared groupOf waves workers
+  let mut fe := feW
+  let mut pos := prepared.size
+  let mut ok := prepared.size - again.size
+  let retry : Array (CDecl .source) := again.map (prepared[·]!)
   let t4 ← IO.monoMsNow
   let retried := retry.size
   let tiered := tiers.size
@@ -646,36 +544,16 @@ def install (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (workers : Nat 
   fe := feT
   let t5 ← IO.monoMsNow
   -- marked persistent: every worker reads them, none writes them, and their reference
-  -- counts are never touched (`IX_BD_NOPERSIST` leaves them ordinary shared objects, for
-  -- measurement)
-  let shared ← if persist then (unsafe Runtime.markPersistent fe : BaseIO (FEnv .source)) else pure fe
-  let core0 := Ix.Kernel.Cached.coreKnotI mode shared Ix.Kernel.checkFuel
-  let core ← if persist then (unsafe Runtime.markPersistent core0 : BaseIO (Ix.Kernel.Cached.CoreFnsI .source))
-    else pure core0
+  -- counts are never touched
+  let shared ← (unsafe Runtime.markPersistent fe : BaseIO (FEnv .source))
+  let core ← (unsafe Runtime.markPersistent (Ix.Kernel.Cached.coreKnotI mode shared Ix.Kernel.checkFuel) :
+    BaseIO (Ix.Kernel.Cached.CoreFnsI .source))
   let t6 ← IO.monoMsNow
-  if trace then
-    -- the structures some installed term projects from that have no projection table
-    let mut seen : Std.HashSet (Ix.Kernel.Key .source) := {}
-    let mut shown := 0
-    for ci in shared.env.consts do
-      let terms : List KExpr := match ci with
-        | .defnInfo cv v _ => [cv.type, v]
-        | .thmInfo cv v => [cv.type, v]
-        | ci => [ci.toConstantVal.type]
-      for t in terms do
-        for k in projKeys t do
-          if !seen.contains k then
-            seen := seen.insert k
-            if (shared.findProj? k 0).isNone && shown < 40 then
-              shown := shown + 1
-              IO.eprintln s!"binder data trace: {ci.toConstantVal.name} projects from {k}, which has no projection table"
-
   return .ok { fe := shared, core, env, installed := ok, failures, lenient := lenientCount,
-               ahead, waves := waves.size, tablesAdded, tablesProp,
+               waves := waves.size, tablesAdded, tablesProp,
                times := #[("prelude", tPre - t0), ("groups", tGroups - tPre), ("convert", tConv - tGroups),
                  ("graph", tGraph - tConv), ("schedule", t1 - tGraph), ("lower", t2 - t1), ("canon", tCanon - t2), ("prepare", tPrep - tCanon), ("evidence", t3 - tPrep),
-                 ("phaseA", t4 - t3), ("A:ahead", nsAhead / 1000000), ("A:push", nsPush / 1000000),
-                 ("A:step", nsStep / 1000000), ("retried (count)", retried), ("tier (count)", tiered),
+                 ("phaseA", t4 - t3), ("retried (count)", retried), ("tier (count)", tiered),
                  ("tier+retry", t5 - t4), ("persist", t6 - t5),
                  ("tables added (count)", tablesAdded), ("tables of propositions (count)", tablesProp)] }
 
@@ -772,67 +650,37 @@ def restrictClosure (env : Ix.Environment) (seeds : Array Ix.Name) (workers : Na
     level := Ix.Compile.Parallel.map workers (needsOf false) next
   return (seen, whole)
 
-/-- **Install a compile's input**: its condensation (`Ix.CondenseM`, as the
-compile's front end builds it), then `install`. For measurement (the data are
-the same): with `IX_BD_SEQUENTIAL` set phase A takes every step in turn, with
-`IX_BD_WALK_ALL` every root is walked, with `IX_BD_WAVES` phase A runs on one
-environment (its waves' separable declarations annotated ahead). -/
+/-- **Install a compile's input**: the constants whose source does not read
+(`Ix.Compile.BinderRead.sourceReads`: the records the walk will see) are found, and
+only their install closure (`restrictClosure`) is installed, theorems outside its
+whole part with a placeholder value (nothing reads a theorem's value); its
+condensation (`Ix.CondenseM`, as the compile's front end builds it), then
+`install`. The sources stay the input's. -/
 def installInput (env : Ix.Environment) (workers : Nat := 32) : IO (Except String Installed) := do
-  -- only the install closure (`restrictClosure`) of the constants whose source does
-  -- not read (`Ix.Compile.BinderRead.sourceReads`: the records the walk will see) is
-  -- installed, theorems with a placeholder value (nothing reads a theorem's value);
-  -- the sources stay the input's. For measurement: `IX_BD_RESTRICT` names the
-  -- records in a file instead, one per line; `IX_BD_FULL` (and `IX_BD_NOREAD`, which
-  -- walks every record) installs the whole input
   let width := 4 * max workers 1
   let tc0 ← IO.monoMsNow
-  let full := (← IO.getEnv "IX_BD_FULL").isSome || (← IO.getEnv "IX_BD_NOREAD").isSome
-  let seeds? : Option (Array Ix.Name) ← match (← IO.getEnv "IX_BD_RESTRICT") with
-    | some path => do
-      let keep : Std.HashSet String := (← IO.FS.lines path).foldl (·.insert ·) {}
-      pure (some (env.consts.fold (init := #[]) fun acc n _ => if keep.contains n.pretty then acc.push n else acc))
-    | none =>
-      if full then pure none else do
-        let find : Ix.Compile.BinderRead.Find := fun n => env.consts.get? n
-        let unread ← IO.lazyPure fun _ => Ix.Compile.Parallel.map width
-          (fun (nc : Ix.Name × Ix.ConstantInfo) =>
-            if Ix.Compile.BinderRead.sourceReads find nc.2 then none else some nc.1) env.consts.toArray
-        pure (some (unread.filterMap id))
+  let find : Ix.Compile.BinderRead.Find := fun n => env.consts.get? n
+  let unread ← IO.lazyPure fun _ => Ix.Compile.Parallel.map width
+    (fun (nc : Ix.Name × Ix.ConstantInfo) =>
+      if Ix.Compile.BinderRead.sourceReads find nc.2 then none else some nc.1) env.consts.toArray
+  let seeds := unread.filterMap id
   let tcP ← IO.monoMsNow
-  let envI ← match seeds? with
-    | some seeds => do
-      let (closure, whole) ← IO.lazyPure fun _ => restrictClosure env seeds width
-      -- a theorem outside the whole part, with a placeholder value
-      let blank (n : Ix.Name) : Ix.ConstantInfo → Ix.ConstantInfo
-        | .thmInfo t =>
-          if whole.contains n then .thmInfo t else .thmInfo { t with value := Ix.Expr.mkSort Ix.Level.mkZero }
-        | ci => ci
-      pure { env with consts := env.consts.fold (init := {}) fun m n ci =>
-        if closure.contains n then m.insert n (blank n ci) else m }
-    | none => pure env
-  let seedCount := (seeds?.map (·.size)).getD env.consts.size
-  -- (measurement, with `IX_BD_T1STAT`) the seeds, one a line
-  if (← IO.getEnv "IX_BD_T1STAT").isSome then
-    for n in seeds?.getD #[] do IO.eprintln s!"BDSEED {n.pretty}"
+  let (closure, whole) ← IO.lazyPure fun _ => restrictClosure env seeds width
+  -- a theorem outside the whole part, with a placeholder value
+  let blank (n : Ix.Name) : Ix.ConstantInfo → Ix.ConstantInfo
+    | .thmInfo t =>
+      if whole.contains n then .thmInfo t else .thmInfo { t with value := Ix.Expr.mkSort Ix.Level.mkZero }
+    | ci => ci
+  let envI : Ix.Environment := { env with consts := env.consts.fold (init := {}) fun m n ci =>
+    if closure.contains n then m.insert n (blank n ci) else m }
   let tc1 ← IO.monoMsNow
-  let t0 ← IO.monoMsNow
   let blocks ← IO.lazyPure fun _ => Ix.CondenseM.run (Ix.Compile.FrontEnd.graph envI)
   let t1 ← IO.monoMsNow
-  let parallel := (← IO.getEnv "IX_BD_SEQUENTIAL").isNone
-  let stored := (← IO.getEnv "IX_BD_WALK_ALL").isNone
-  let memo := (← IO.getEnv "IX_BD_NOMEMO").isNone
-  let trace := ((← IO.getEnv "IX_BD_TRACE").map fun s => (s.splitOn ",").toArray).getD #[]
-  let tier1 := (← IO.getEnv "IX_BD_TIER1").isSome
-  let t1stat := (← IO.getEnv "IX_BD_T1STAT").isSome
-  let noread := (← IO.getEnv "IX_BD_NOREAD").isSome
-  let readonly := (← IO.getEnv "IX_BD_READONLY").isSome
-  let persist := (← IO.getEnv "IX_BD_NOPERSIST").isNone
-  let onWorkers := (← IO.getEnv "IX_BD_WAVES").isNone
-  return (← install envI blocks workers parallel (!trace.isEmpty) persist onWorkers).map fun k =>
-    { k with env, stored, memo, trace, tier1, t1stat, noread, readonly,
-             times := #[("seeds (count)", seedCount), ("installed constants (count)", envI.consts.size),
+  return (← install envI blocks workers).map fun k =>
+    { k with env,
+             times := #[("seeds (count)", seeds.size), ("installed constants (count)", envI.consts.size),
                ("prediction", tcP - tc0), ("restriction", tc1 - tcP),
-               ("condense", t1 - t0)] ++ k.times }
+               ("condense", t1 - tc1)] ++ k.times }
 
 /-! ## The walk -/
 
@@ -841,9 +689,6 @@ an identity for the sharing memo. -/
 structure CtxEntry where
   id : Nat
   val : KExpr
-  /-- its type (a binder's annotated domain, a `let`'s annotated type), for the syntactic
-  reading (`IX_BD_TIER1`) -/
-  ty : Option KExpr := none
 
 /-- What a record's walk reads. `large` and `params` are the root's numbering
 of level parameters (`Ix.LeanIngress.Numbering`): a large eliminator's source
@@ -855,13 +700,6 @@ structure Cx where
   bounds : Array Nat
   large : Bool := false
   params : Nat := 0
-  /-- print why a datum is undecided (`IX_BD_TRACE`, for diagnosis) -/
-  trace : Bool := false
-  /-- whether share sites under the same context reuse one walk (`IX_BD_NOMEMO`
-  turns it off, for diagnosis) -/
-  memo : Bool := true
-  /-- whether the syntactic reading is measured beside the walk (`IX_BD_TIER1`) -/
-  tier1 : Bool := false
 
 /-- A source level parameter's index in the record's numbering (the inverse of
 `Ix.LeanIngress.Numbering.pos`). -/
@@ -880,14 +718,9 @@ structure WState where
   nextId : Nat := 0
   variants : Std.HashMap Nat (Std.HashMap (Array Node) Nat) := {}
   blocks : Array Block := #[]
-  memo : Std.HashMap (Nat × Bool × List Nat × Option PropWhen × KExpr)
-    (KExpr × Nat × Bool × KExpr) := {}
+  memo : Std.HashMap (Nat × Bool × List Nat × Option PropWhen × KExpr) (KExpr × Nat × Bool) := {}
   /-- the stored walk's memo (`walkStored`): the variant of a share site -/
   memoS : Std.HashMap (Nat × Bool × List Nat) Nat := {}
-  /-- the syntactic reading's binder counts (`IX_BD_TIER1`): agreeing with the walk's datum,
-  disagreeing, not read where the walk decides, read where the walk does not, neither -/
-  t1 : Array Nat := #[0, 0, 0, 0, 0]
-  t1First : Option String := none
 
 abbrev WM := StateT WState CM
 /-- An entry's walk: its nodes' data, by ordinal. -/
@@ -921,88 +754,6 @@ private def variantOf (n : Nat) (nodes : Array Node) : WM Nat :=
       (v, { st with variants := st.variants.insert n (table.insert nodes v)
                     blocks := st.blocks.push ⟨1, n, v, nodes⟩ })
 
-/-! ### Diagnosis (`IX_BD_TRACE`) -/
-
-/-- A term for a trace line (keys as names, a bounded print). -/
-def showTerm (e : KExpr) : String :=
-  (Ix.KernelDisplay.renderTerm ({ maxSteps := 300 } : Ix.KernelDisplay.Cx .source) e).replace "\n" " "
-
-private def nodeTag : KExpr → String
-  | .bvar _ => "bvar" | .fvar .. => "fvar" | .app .. => "app" | .lam .. => "lam"
-  | .forallE .. => "forall" | .letE .. => "let" | .proj .. => "proj" | .sort _ => "sort"
-  | .const .. => "const" | .lit _ => "lit"
-
-/-- The first place two terms differ (a trace's comparison of two sources), to
-depth `fuel`. -/
-def firstDiff : Nat → KExpr → KExpr → Option String
-  | 0, _, _ => some "(the comparison's depth bound)"
-  | fuel + 1, a, b =>
-    if a == b then none else
-    match a, b with
-    | .app f x, .app g y => (firstDiff fuel f g).orElse fun _ => firstDiff fuel x y
-    | .lam t c _, .lam u d _ | .forallE t c _, .forallE u d _ =>
-      (firstDiff fuel t u).orElse fun _ => firstDiff fuel c d
-    | .letE t v c _, .letE u w d _ =>
-      ((firstDiff fuel t u).orElse fun _ => firstDiff fuel v w).orElse fun _ => firstDiff fuel c d
-    | .proj k i x, .proj l j y =>
-      if k == l && i == j then firstDiff fuel x y else some s!"proj {k}.{i} against {l}.{j}"
-    | .const k us, .const l vs => some s!"const {k} {repr us} against {l} {repr vs}"
-    | .sort u, .sort v => some s!"sort {repr u} against {repr v}"
-    | .fvar i _, .fvar j _ => some s!"fvar {i} against {j}"
-    | .bvar i, .bvar j => some s!"bvar {i} against {j}"
-    | _, _ => some s!"{nodeTag a} against {nodeTag b}"
-
-private def infers (cx : Cx) (depth : Nat) (e : KExpr) : CM Bool :=
-  tryCatch (do let _ ← cx.core.infer depth e; pure true) (fun _ => pure false)
-
-/-- Where `e`'s inference fails at `depth`, for a trace: the innermost failing
-node found by descending (an application's first mismatching argument, a
-projection's subject and table, a binder's domain or body). -/
-def explain : Nat → Cx → Nat → KExpr → CM String
-  | 0, _, _, _ => pure "(the descent's bound)"
-  | fuel + 1, cx, depth, e => do
-    if ← infers cx depth e then return "infers"
-    match e with
-    | .app .. =>
-      let h := e.getAppFn
-      unless ← infers cx depth h do return s!"head {showTerm h}: " ++ (← explain fuel cx depth h)
-      let mut ty ← cx.core.infer depth h
-      let mut i := 0
-      for a in e.getAppArgsC do
-        let w ← cx.core.whnf depth ty
-        match w with
-        | .forallE dom body _ =>
-          unless ← infers cx depth a do
-            return s!"argument {i} of {showTerm h}: " ++ (← explain fuel cx depth a)
-          let ta ← cx.core.infer depth a
-          unless ← cx.core.defeq depth ta dom do
-            let wa ← cx.core.whnf depth ta
-            let wd ← cx.core.whnf depth dom
-            return s!"argument {i} of {showTerm h} mismatches: {showTerm a} : {showTerm ta} \
-              (whnf {showTerm wa}), expected {showTerm dom} (whnf {showTerm wd}); \
-              first difference of the whnfs: {(firstDiff 4096 wa wd).getD "none"}"
-          ty := body.instantiate1C a
-        | _ => return s!"argument {i} of {showTerm h}: a function was expected, its type is {showTerm w}"
-        i := i + 1
-      return s!"the spine of {showTerm h} checks, but the application does not infer"
-    | .proj k i v =>
-      unless ← infers cx depth v do return s!"the subject of {k}.{i}: " ++ (← explain fuel cx depth v)
-      let tv ← cx.core.infer depth v
-      let w ← cx.core.whnf depth tv
-      match w.getAppFn with
-      | .const T us =>
-        match cx.fe.findProj? T i with
-        | some en =>
-          return s!"the projection {k}.{i}: its subject's type is headed by {T} (the same: {T == k}), \
-            {w.getAppArgsC.length} arguments (table {en.numParams}), {us.length} levels \
-            (table {en.levelParams.length}); the subject {showTerm v} : {showTerm w}"
-        | none => return s!"the projection {k}.{i}: no table for {T}; the subject's type {showTerm w}"
-      | _ => return s!"the projection {k}.{i}: the subject's type {showTerm w} is not a constant's"
-    | .lam ty b _ | .forallE ty b _ =>
-      unless ← infers cx depth ty do return "a binder's domain: " ++ (← explain fuel cx depth ty)
-      return "under a binder: " ++ (← explain fuel cx (depth + 1) (b.instantiate1C (.fvar depth ty)))
-    | _ => return s!"the leaf {showTerm e} ({nodeTag e})"
-
 /-- IxC's datum of a run whose annotated opened leaf is `leaf` at `depth`
 (`annotPwPiI` for a ∀ run, `annotPwLamI` for a λ run); `none` where IxC's
 function fails. -/
@@ -1010,13 +761,7 @@ def datum (cx : Cx) (pi : Bool) (depth : Nat) (leaf : KExpr) : EM (Option PropWh
   let act : CM PropWhen :=
     if pi then Ix.Kernel.Cached.annotPwPiI cx.core cx.fe depth leaf
     else Ix.Kernel.Cached.annotPwLamI cx.core cx.fe depth leaf
-  let res : Option PropWhen ← (tryCatch (some <$> act) (fun e => do
-      if cx.trace then
-        let why ← (tryCatch (explain 64 cx depth leaf) (fun e => pure s!"(explain fails: {traceError e})") : CM String)
-        dbgTrace s!"binder data trace: the datum of a {if pi then "∀" else "λ"} run at depth {depth} \
-          fails: {traceError e}; {why}" fun _ => pure none
-      else pure none) : CM (Option PropWhen))
-  pure res
+  (tryCatch (some <$> act) (fun _ => pure none) : CM (Option PropWhen))
 
 /-- A run of binders of one kind in both trees: each binder's domain in the
 record and in the source, and its metadata (the record's contracts); then both
@@ -1038,87 +783,12 @@ and into a share. A theorem's value has `pw = always`; a `let`'s value has its
 declared type's. -/
 structure Expect where
   pw : Option PropWhen := none
-  /-- `pw` as the syntactic reading finds it (`synSort`; measurement only) -/
-  syn : Option PropWhen := none
   deriving Inhabited
 
 /-- The zero-ness of the sort of `t`, an annotated type at `depth` (IxC's
 `annotPwPiI`); `none` where IxC's function fails. -/
 def sortPwC (cx : Cx) (depth : Nat) (t : KExpr) : CM (Option PropWhen) :=
   tryCatch (some <$> Ix.Kernel.Cached.annotPwPiI cx.core cx.fe depth t) (fun _ => pure none)
-
-/-! ### A syntactic reading of the data (measurement, `IX_BD_TIER1`)
-
-Nothing below decides a datum the annotator writes: the walk counts where this
-reading agrees with the datum it decided. -/
-
-/-- `t` past exactly `n` leading ∀s. -/
-def peelN : Nat → KExpr → Option KExpr
-  | 0, t => some t
-  | n + 1, .forallE _ b _ => peelN n b
-  | _, _ => none
-
-/-- The `n`-th ∀-domain of `t`, with the domains before it (innermost first). -/
-def domainAt : Nat → KExpr → List (Option KExpr) → Option (KExpr × List (Option KExpr))
-  | 0, .forallE d _ _, acc => some (d, acc)
-  | n + 1, .forallE d b _, acc => domainAt n b (some d :: acc)
-  | _, _, _ => none
-
-/-- **The zero-ness of the sort of a type `t`, read syntactically**: its ∀-leaf is
-a sort, or an application headed by a constant or a variable whose type, past
-exactly the argument count of ∀s, is a sort. `ctx` holds the types of `t`'s loose
-variables, innermost first; `sub` maps the levels found to the reader's
-numbering. `none` where the reading does not apply (no whnf, no inference). -/
-def synSort (fe : FEnv .source) (sub : Ix.Kernel.Level → Ix.Kernel.Level) :
-    Nat → List (Option KExpr) → KExpr → Option PropWhen
-  | 0, _, _ => none
-  | fuel + 1, ctx, t =>
-    match t with
-    | .sort _ => some .never
-    | .forallE dom body _ => synSort fe sub fuel (some dom :: ctx) body
-    | _ =>
-      let n := t.getAppArgsC.length
-      let res : Option Ix.Kernel.Level := match t.getAppFn with
-        | .const c us => (fe.find? c).bind fun ci =>
-          match peelN n ci.toConstantVal.type with
-          | some (.sort s) => some (Ix.Kernel.Level.subst ci.toConstantVal.levelParams us s)
-          | _ => none
-        | .bvar i => (ctx[i]?).join.bind fun ty => match peelN n ty with
-          | some (.sort s) => some s
-          | _ => none
-        | .fvar _ ty => match peelN n ty with
-          | some (.sort s) => some s
-          | _ => none
-        | _ => none
-      res.map fun s => Ix.Kernel.Level.zeronessOf (sub s)
-
-/-- The syntactic expectation of the argument at `idx` of a spine headed by `h`
-(a source head under `ctx`): the zero-ness of the sort of the head type's
-`idx`-th domain. -/
-def synArg (fe : FEnv .source) (ctx : List CtxEntry) (h : KExpr) (idx : Nat) : Option PropWhen :=
-  match h with
-  | .const c us => (fe.find? c).bind fun ci =>
-    (domainAt idx ci.toConstantVal.type []).bind fun (d, before) =>
-      synSort fe (Ix.Kernel.Level.subst ci.toConstantVal.levelParams us) 64 before d
-  | .bvar i => (ctx[i]?.bind (·.ty)).bind fun ty =>
-    (domainAt idx ty []).bind fun (d, before) => synSort fe id 64 before d
-  | _ => none
-
-/-- Count `k` binders whose walked node is `node` against the syntactic reading
-`syn` (`WState.t1`). -/
-def countT1 (cx : Cx) (pi : Bool) (depth k : Nat) (node : Node) (syn : Option PropWhen) :
-    WM Unit := do
-  if !cx.tier1 then return
-  let slot := match node, syn with
-    | .undecided, some _ => 3
-    | .undecided, none => 4
-    | _, none => 2
-    | _, some p => if cx.nodeOf p == node then 0 else 1
-  modify fun st =>
-    let first := if slot == 1 && st.t1First.isNone then
-        some s!"{if pi then "∀" else "λ"} run at depth {depth}: read {repr syn}, walked {repr node}"
-      else st.t1First
-    { st with t1 := st.t1.modify slot (· + k), t1First := first }
 
 /-- The walk of one entry's tree `e` beside its source `x`, under `ctx`
 (innermost first) at binder depth `depth`, knowing `ex` of its type: the
@@ -1134,8 +804,7 @@ def walk : Nat → Cx → List CtxEntry → Nat → Expect → Ixon.Expr → KEx
       | none => mismatch "a loose variable"
     | .app f a, .app xf xa => do
       let (f', bf) ← walk fuel cx ctx depth {} f xf
-      let aex : Expect := if cx.tier1 then { syn := synArg cx.fe ctx x.getAppFn xf.getAppArgsC.length } else {}
-      let (a', ba) ← walk fuel cx ctx depth aex a xa
+      let (a', ba) ← walk fuel cx ctx depth {} a xa
       pure (.app f' a', bf || ba)
     | .lam .., .lam .. | .all .., .forallE .. => do
       let pi := e matches .all ..
@@ -1150,22 +819,16 @@ def walk : Nat → Cx → List CtxEntry → Nat → Expect → Ixon.Expr → KEx
         let (t', bt) ← walk fuel cx inner (depth + j) {} t ty
         bad := bad || bt
         let id ← freshId
-        inner := ⟨id, .fvar (depth + j) t', some t'⟩ :: inner
+        inner := ⟨id, .fvar (depth + j) t'⟩ :: inner
         stk := (t', mb) :: stk
       let k := bs.size
-      let leafEx : Expect := { pw := if !pi then ex.pw else none,
-                               syn := if !pi && cx.tier1 then ex.syn else none }
+      let leafEx : Expect := { pw := if !pi then ex.pw else none }
       let (leaf', bl) ← walk fuel cx inner (depth + k) leafEx leafE leafX
       let pw? ← datum cx pi (depth + k) leaf'
       let pw? := if pw?.isSome || pi then pw? else ex.pw
       let undecided := bad || bl || pw?.isNone
       let node : Node := if undecided then .undecided else cx.nodeOf (pw?.getD .never)
       for ord in ords do setNode ord node
-      if cx.tier1 then
-        let synD : Option PropWhen := if pi then
-            synSort cx.fe id 64 ((bs.toList.map fun (_, ty, _) => some ty).reverse ++ ctx.map (·.ty)) leafX
-          else ex.syn
-        countT1 cx pi depth k node synD
       let mk : KExpr → KExpr → BinderMeta → KExpr :=
         if pi then fun ty b mb => .forallE ty b mb else fun ty b mb => .lam ty b mb
       let out ← (Ix.Kernel.Cached.annotateBindersOutI mk depth (some (pw?.getD .never)) stk (k - 1)
@@ -1177,47 +840,28 @@ def walk : Nat → Cx → List CtxEntry → Nat → Expect → Ixon.Expr → KEx
       let (t', bt) ← walk fuel cx ctx depth {} t ty
       let vex : Expect ← if !bt then do
           let p ← (sortPwC cx depth t' : CM (Option PropWhen))
-          pure { pw := p, syn := if cx.tier1 then synSort cx.fe id 64 (ctx.map (·.ty)) ty else none }
-        else pure { syn := if cx.tier1 then synSort cx.fe id 64 (ctx.map (·.ty)) ty else none }
+          pure { pw := p }
+        else pure {}
       let (v', bv) ← walk fuel cx ctx depth vex v val
       let id ← freshId
-      let (b', bb) ← walk fuel cx (⟨id, v', some t'⟩ :: ctx) depth ex b body
+      let (b', bb) ← walk fuel cx (⟨id, v'⟩ :: ctx) depth ex b body
       pure (b', bt || bv || bb)
     | .prj _ _ v, .proj k i xv => do
       let (v', bv) ← walk fuel cx ctx depth {} v xv
-      if cx.trace then
-        let probe : CM String := do
-          let tpe ← cx.core.infer depth v'
-          let te ← cx.core.whnf depth tpe
-          let head := match Ix.Kernel.Expr.getAppFn te with
-            | .const T _ => s!"const {T} (table: {(cx.fe.findProj? T i).isSome})"
-            | _ => "not a constant"
-          pure s!"the projection {k}.{i}: its subject's type is headed by {head}"
-        let msg ← (tryCatch probe (fun e => do
-          let why ← (tryCatch (explain 64 cx depth v') (fun e => pure s!"(explain fails: {traceError e})") : CM String)
-          pure s!"the projection {k}.{i}: {traceError e}; {why}") : CM String)
-        dbgTrace s!"binder data trace: {msg.take 3000}" fun _ => pure ()
       pure (.proj k i v', bv)
     | .share n, _ => do
       let ord ← reserve
       let n := n.toNat
-      let shareEx : Expect := { pw := ex.pw,
-                                syn := if cx.tier1 then ex.syn else none }
-      let key := (n, cx.large, (ctx.take (cx.bounds[n]?.getD 0)).map (·.id), shareEx.pw, x)
-      let hit? ← if cx.memo then modifyGetThe WState fun st => (st.memo[key]?, st) else pure none
+      let key := (n, cx.large, (ctx.take (cx.bounds[n]?.getD 0)).map (·.id), ex.pw, x)
+      let hit? ← modifyGetThe WState fun st => (st.memo[key]?, st)
       let (e', variant, bad) ← match hit? with
-        | some (e', variant, bad, src) => do
-          if cx.trace then
-            if let some d := firstDiff 4096 src x then
-              dbgTrace s!"binder data trace: share {n}: a memoized site's source differs: {d}"
-                fun _ => pure ()
-          pure (e', variant, bad)
+        | some r => pure r
         | none => do
           let some entry := cx.sharing[n]? | mismatch "a share"
-          let ((e', bad), nodes) ← ((walk fuel cx ctx depth shareEx entry x).run #[] :
+          let ((e', bad), nodes) ← ((walk fuel cx ctx depth { pw := ex.pw } entry x).run #[] :
             WM ((KExpr × Bool) × Array Node))
           let variant ← variantOf n nodes
-          modifyThe WState fun st => { st with memo := st.memo.insert key (e', variant, bad, x) }
+          modifyThe WState fun st => { st with memo := st.memo.insert key (e', variant, bad) }
           pure (e', variant, bad)
       setNode ord (.share variant)
       pure (e', bad)
@@ -1410,11 +1054,9 @@ def annotateWalk (k : Installed) (extra : Array (Ix.Name × Ix.ConstantInfo)) (n
   match sourceRoots k.env extra names c with
   | none => Ix.CompileM.undecidedSection c
   | some items =>
-    let traced := !k.trace.isEmpty && names.any fun n => k.trace.contains n.pretty
     let cx0 : Cx := { fe := k.fe, core := k.core, sharing := c.sharing,
-                      bounds := IxVM.PwHints.bounds c.sharing, trace := traced, memo := k.memo,
-                      tier1 := k.tier1 }
-    let stored : Array (Option KExpr) := if !k.stored then #[] else
+                      bounds := IxVM.PwHints.bounds c.sharing }
+    let stored : Array (Option KExpr) :=
       ((members c).zip names).foldl (fun acc (m, n) => acc ++ storedItems k.fe n m) #[]
     let tys := IxVM.PwHints.valueTypes c
     let thms := thmValues c
@@ -1431,23 +1073,16 @@ def annotateWalk (k : Installed) (extra : Array (Ix.Name × Ix.ConstantInfo)) (n
             tryCatch (do
                 let ((), nodes) ← (walkStored walkFuel cx [] rs[i] kx).run #[]
                 pure (some nodes))
-              (fun e => if cx.trace then
-                  dbgTrace s!"binder data trace: root {i}: the stored walk fails: {traceError e}"
-                    fun _ => pure none
-                else pure none)
+              (fun _ => pure none)
           | _ => pure none
         let ex : Expect ← match tys[i]? with
-          | some (some j) => do
-            -- the syntactic reading's expectation (measurement only)
-            let syn : Option PropWhen := if !cx.tier1 then none
-              else if thms[i]?.getD false then some (PropWhen.ifAllZero [])
-              else (items[j]?).bind fun (τ, t) => (convertRoot τ t).bind fun tx => synSort cx.fe id 64 [] tx
-            if thms[i]?.getD false then pure { pw := some (PropWhen.ifAllZero []), syn }
+          | some (some j) =>
+            if thms[i]?.getD false then pure { pw := some (PropWhen.ifAllZero []) }
             else match annotated[j]?.join with
               | some t => do
                 let p ← (sortPwC cx 0 t : CM (Option PropWhen))
-                pure { pw := p, syn }
-              | none => pure { syn }
+                pure { pw := p }
+              | none => pure {}
           | _ => pure {}
         let (nodes, kx?) ← match read, stored[i]? with
           | some nodes, some kx => pure (nodes, kx)
@@ -1460,20 +1095,10 @@ def annotateWalk (k : Installed) (extra : Array (Ix.Name × Ix.ConstantInfo)) (n
       return out
     match (act.run {}).run {} with
     | .ok ((roots, st), _) =>
-      let sec := match Ix.Compile.BinderData.sectionOf c (roots ++ st.blocks) with
-        | .ok s => s
-        | .error _ => Ix.CompileM.undecidedSection c
-      if k.tier1 then
-        let counts := String.intercalate " " (st.t1.toList.map toString)
-        let name := (names[0]?.map (·.pretty)).getD "?"
-        let first := st.t1First.getD ""
-        dbgTrace s!"BDT1 {counts} {name} {first}" fun _ => sec
-      else sec
-    | .error e =>
-      if traced then
-        dbgTrace s!"binder data trace: {names.map (·.pretty)}: the walk fails: {traceError e}"
-          fun _ => Ix.CompileM.undecidedSection c
-      else Ix.CompileM.undecidedSection c
+      match Ix.Compile.BinderData.sectionOf c (roots ++ st.blocks) with
+      | .ok s => s
+      | .error _ => Ix.CompileM.undecidedSection c
+    | .error _ => Ix.CompileM.undecidedSection c
 
 /-- **The section of a block record**: read off its members' sources where every
 binder shows its datum (`Ix.Compile.BinderRead`), else IxC's pass over each root
@@ -1484,17 +1109,9 @@ def annotate (k : Installed) (extra : Array (Ix.Name × Ix.ConstantInfo)) (names
   if unsafeOrPartial c then Ix.CompileM.undecidedSection c else
   let find : Ix.Compile.BinderRead.Find := fun n =>
     ((extra.find? (·.1 == n)).map (·.2)).orElse fun _ => k.env.consts.get? n
-  let stat (route why : String) (s : Array Ixon.BinderBlock) : Array Ixon.BinderBlock :=
-    if k.t1stat then
-      let name := (names[0]?.map (·.pretty)).getD "?"
-      dbgTrace s!"BDT1R {route} {name} {why}" fun _ => s
-    else s
-  let read : Except String (Array Ixon.BinderBlock) :=
-    if k.noread then .error "the reading is off" else Ix.Compile.BinderRead.sectionWhy find names c
-  match read with
-  | .ok s => stat "read" "" s
-  | .error why =>
-    stat "walk" why (if k.readonly then Ix.CompileM.undecidedSection c else annotateWalk k extra names c)
+  match Ix.Compile.BinderRead.section? find names c with
+  | some s => s
+  | none => annotateWalk k extra names c
 
 /-- **The annotator of a compile** over its installed input. -/
 def annotator (k : Installed) : Ix.BinderAnnotator :=
