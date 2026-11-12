@@ -21,7 +21,8 @@ the circuit keeps (`mk_nat_offset_stuck`, `mk_nat_binop_stuck`).
 reads (`role_is`, `role_addr`, `role_used_implicitly`) is bound; the roles of its block and its
 dependencies are then bound too (`RoleTable.check`, through `EnvFacts.tableWf`), and the key of a
 bound address is its role (`keyOf`, no address bound twice). A proof of a spec below reads those
-facts from `CoreFacts`; the specs themselves state no environment hypothesis. -/
+facts from `CoreFacts`; the one environment guard a spec states is `strLitSupported`, which
+`str_lit_to_ctor` gives and `str_lit_delta_step` takes. -/
 
 namespace IxVM.Refinement.Core.Specs.Nat
 
@@ -122,11 +123,12 @@ def klimbs_le : SpecFn := fun c args h r h' calls =>
 def klimbs_dec : SpecFn := fun c args h r h' calls =>
   ∀ a, args = [a] → Good c calls → ∀ n, RepLimbs h n a → RepLimbsC h' (n - 1) r
 
-/-- `divmod_256(x, q)` at `x < 2^32` (the range of `UInt32::less_than_fields`, which it tests):
-`(x mod 256, q + x div 256)`. -/
+/-- `divmod_256(x, q)`: `(x mod 256, q + x div 256)`. A derivation exists only at `x < 2^32`
+(the range of `UInt32::less_than_fields`, which it tests), which the claim records. -/
 def divmod_256 : SpecFn := fun c args h r h' calls =>
-  ∀ (x q : F), args = [.field x, .field q] → Good c calls → (ZMod.val x) < 2 ^ 32 →
-    r = .tuple [.field (((ZMod.val x) % 256 : Nat) : F), .field (q + (((ZMod.val x) / 256 : Nat) : F))] ∧ h' = h
+  ∀ (x q : F), args = [.field x, .field q] → Good c calls → (ZMod.val x) < 2 ^ 32 ∧
+    r = .tuple [.field (((ZMod.val x) % 256 : Nat) : F),
+      .field (q + (((ZMod.val x) / 256 : Nat) : F))] ∧ h' = h
 
 /-- `klimbs_mul(a, b)`: `a * b` (not canonical: a zero factor can leave zero limbs). -/
 def klimbs_mul : SpecFn := fun c args h r h' calls =>
@@ -221,7 +223,8 @@ def divide_grow : SpecFn := fun c args h r h' calls =>
       ∃ q rr, r = .tuple [q, rr] ∧ RepLimbs h' (n / m) q ∧ RepLimbs h' (n % m) rr
 
 /-- `IxVMCompat::ordinary_div_mod(a, b)`: `(a / b, a % b)` (`Nat`'s, `(0, a)` at `b = 0`).
-Values only. `klimbs_div_mod` checks the hint, so its own spec does not need this one. -/
+Values only. `klimbs_div_mod` checks the result again, so it reads from this spec only that the
+two results are limb lists. -/
 def ordinary_div_mod : SpecFn := fun c args h r h' calls =>
   ∀ a b, args = [a, b] → Good c calls →
     ∀ n m, RepLimbs h n a → RepLimbs h m b →
@@ -250,9 +253,10 @@ def lvls_empty : SpecFn := fun c args h r h' calls =>
   ∀ lp, args = [lp] → Good c calls →
     ∀ us, LvListRep h us lp → r = .field (if us = [] then 1 else 0) ∧ h' = h
 
-/-- `split_u32(x)` at `x < 2^32`: its four base-256 digits, least significant first. -/
+/-- `split_u32(x)`: the four base-256 digits of `x`, least significant first. A derivation exists
+only at `x < 2^32` (`divmod_256`), which the claim records. -/
 def split_u32 : SpecFn := fun c args h r h' calls =>
-  ∀ (x : F), args = [.field x] → Good c calls → (ZMod.val x) < 2 ^ 32 →
+  ∀ (x : F), args = [.field x] → Good c calls → (ZMod.val x) < 2 ^ 32 ∧
     r = .tuple [.field (((ZMod.val x) % 256 : Nat) : F), .field (((ZMod.val x) / 256 % 256 : Nat) : F),
       .field (((ZMod.val x) / 65536 % 256 : Nat) : F), .field (((ZMod.val x) / 16777216 % 256 : Nat) : F)] ∧
       h' = h
@@ -313,12 +317,12 @@ def utf8_validate : SpecFn := fun c args h r h' calls =>
 
 /-- `build_char_list(bs, nil_app, cons_partial, con_const)`: the character list of the string
 whose UTF-8 encoding the bytes are, over the given `List.nil Char`, `List.cons Char` and
-`Char.ofNat` (`charList`). Stated for the characters the bytes encode, one
-`String.utf8EncodeChar` each (the caller has the string from the literal, `StrBytes`, whose bytes
-are its characters' encodings). -/
+`Char.ofNat` (`charList`): there are characters whose encodings (`String.utf8EncodeChar`, one
+each) the bytes are, and the result is their list. The characters are the string's: a byte string
+has at most one such reading (`List.utf8Encode` is injective). -/
 def build_char_list : SpecFn := fun c args h r h' calls =>
-  ∀ bp n cp k, args = [bp, n, cp, k] → Good c calls →
-    ∀ bs, RepBytes h bs bp → ∀ cs : List Char, cs.flatMap String.utf8EncodeChar = bs →
+  ∀ bp n cp k, args = [bp, n, cp, k] → Good c calls → ∀ bs, RepBytes h bs bp →
+    ∃ cs : List Char, cs.flatMap String.utf8EncodeChar = bs ∧
       ∀ d Γ N C K, c.tm d Γ h N n → c.tm d Γ h C cp → c.tm d Γ h K k →
         c.tm d Γ h' (charList N C K cs) r
 
@@ -326,17 +330,23 @@ def build_char_list : SpecFn := fun c args h r h' calls =>
 (`strLitToConstructor s`, the right side of `Red.strLit`), for the string `s` the bytes decode to
 (`StrBytes`: `String.fromUTF8?`).
 The constants are the roles' (`role_used_implicitly`: bound, and checked), at the level `0`
-where `strLitToConstructor` writes one. -/
+where `strLitToConstructor` writes one. It also gives the rule's guard, `strLitSupported`: the
+five roles it reads are bound, hence (their blocks and dependencies) all ten of
+`EnvFacts.strLit`; its callers need the guard for `Red.strLit` and for `str_lit_delta_step`. -/
 def str_lit_to_ctor : SpecFn := fun c args h r h' calls =>
   ∀ rc bp, args = [rc, bp] → Good c calls → c.rc h rc →
-    ∀ bs s, RepBytes h bs bp → StrBytes s bs → c.tmc h' (Ix.Kernel.strLitToConstructor s) r
+    ∀ bs s, RepBytes h bs bp → StrBytes s bs →
+      Ix.Kernel.strLitSupported c.env = true ∧ c.tmc h' (Ix.Kernel.strLitToConstructor s) r
 
 /-- `str_lit_delta_step(rc, expanded, types)` on a `String.ofList` application (the form
-`str_lit_to_ctor` builds, its only callers' input): a reduct, by `Red.delta` at the role's
-definition (level-free: `strLitSupported`'s `stringOfListTyOk`, through `EnvFacts.strLit`),
-`Red.betaGate` at a `never` binder (`level_is_not_zero`), and `whnf_nd`'s `Red`. -/
+`str_lit_to_ctor` builds, its only callers' input), under the string support
+(`strLitSupported`, which `str_lit_to_ctor` gives): a reduct, by `Red.delta` at the role's
+definition (level-free by `strLitSupported`'s `stringOfListTyOk`: the circuit instantiates the
+value at no levels without testing the count), `Red.betaGate` at a `never` binder
+(`level_is_not_zero`), and `whnf_nd`'s `Red`. Not stated for another head. -/
 def str_lit_delta_step : SpecFn := fun c args h r h' calls =>
   ∀ rc e types, args = [rc, e, types] → Good c calls → c.rc h rc →
+    Ix.Kernel.strLitSupported c.env = true →
     ∀ d Γ, c.types Γ h d types → ∀ L, c.tm d Γ h (.app (.const Ix.Kernel.stringOfListName []) L) e →
       ∃ E', c.tm d Γ h' E' r ∧ Red c.env d (.app (.const Ix.Kernel.stringOfListName []) L) E'
 
