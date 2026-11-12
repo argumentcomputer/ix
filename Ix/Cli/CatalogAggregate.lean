@@ -228,10 +228,17 @@ def verifyCatalog (p : Cli.Parsed) (ixc : String) : IO UInt32 := do
     | .ok r => pure r
     | .error e => IO.eprintln s!"error: {e}"; return 1
   printStatements members plan
-  -- each member's table is admitted over the member's own piece, read only if needed
+  -- The root's conditions are its members': each is admitted under the claim
+  -- policy, its table over the member's own piece, read only if needed.
   for (m, _, _) in members do
     let piece := (System.FilePath.mk ixc / s!"{m.label}.ixe").toString
-    ClaimPolicy.admit p m.claim (envs := do return [← TableAdmission.readEnv piece])
+    try
+      let statement ← ClaimPolicy.admit p m.claim
+        (envs := do return [← TableAdmission.readEnv piece])
+      IO.println s!"[catalog] member {m.label} admitted, claim {Ix.Claim.commit m.claim}:\n{statement}"
+    catch e =>
+      IO.eprintln s!"error: member {m.label}: {e}"
+      return 1
   let ctx ← FormalAggregate.context p
   let constants := members.foldl (fun n m => n + m.2.2) 0
   let mut rc : UInt32 := 0
@@ -257,7 +264,10 @@ where
       FormalAggregate.verifyWrapper ctx .aggr root.wrapper
       return .ok s!"ok: aggregate proof {address} verifies the catalog's root {expected}: \
         {count} members, all {constants} of their constants well-typed, each member's under \
-        its own role binding"
+        its own role binding\n  \
+        kind: {ClaimPolicy.kind expected} (the catalog's root, claim {Ix.Claim.commit expected})\n  \
+        subject: the {count} members' claims, as admitted above\n  \
+        conditions: each member's, as admitted above"
     catch e =>
       return .error s!"aggregate verification of {address} failed: {e}"
 
