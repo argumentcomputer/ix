@@ -12,14 +12,13 @@ The components of the one seams instance every layer states its results against
 * `S0.addr h v a`: `v` is a `Bytes::AddressRef` holding `a`;
 * `S0.loaded`, `S0.Walked`, `S0.Checked`: first definitions (below).
 
-**The ghost state.** A term's image depends on two things the current `Seams.term` and
-`Seams.ctx` signatures do not carry: the keying of addresses (the table the run read) and the
-types of the opened variables (the kernel's `fvar` carries its type; IxVM's `types` list holds
-them). Both relations must agree on them, so they share a ghost argument `g : Ghost`, which
-`Terms` and `Core` quantify over. Without it `Core`'s inference conjunct is unprovable for a
-bound variable (its inferred type is the `fvar`'s annotation, which nothing would tie to
-`types`). The statement change that adds the argument is proposed separately; every component
-here is already stated with it. -/
+**The ghost state.** A term's image depends on two things beyond the environment: the keying of
+addresses (the table the run read) and the types of the opened variables (the kernel's `fvar`
+carries its type; IxVM's `types` list holds them). The term and context relations agree on them
+through the seams' shared ghost argument (`Seams.Ghost`), here `Ghost`, which `Terms` and `Core`
+quantify over. `S₀` is the instance; `consistent_S₀` is `IxVM.consistent` at it. -/
+
+universe u
 
 namespace IxVM.Refinement.Core
 
@@ -126,5 +125,25 @@ theorem loaded_mono {E₀ : Ixon.Env} {h₁ h₂ : Heap F} {ptr : SourceValue F}
   exact ⟨c, t, ci, hd, ht, hr.mono ext⟩
 
 end S0
+
+/-! ## The instance -/
+
+/-- **The seams instance every layer states its results against.** -/
+def S₀ : IxVM.Consistency.Seams where
+  addr := S0.addr
+  loaded := S0.loaded
+  Ghost := Ghost
+  term := S0.term
+  ctx := S0.ctx
+  Walked := S0.Walked
+  Checked := S0.Checked
+
+/-- **`IxVM.consistent` at `S₀`**: the eight obligations stated against the instance give the
+concrete statement. -/
+theorem consistent_S₀ (h0 : IxVM.Consistency.L0) (h1 : IxVM.Consistency.L1 S₀)
+    (h2 : IxVM.Consistency.L2) (h3 : IxVM.Consistency.L3 S₀) (h4 : IxVM.Consistency.L4 S₀)
+    (h5 : IxVM.Consistency.L5.{u} S₀) (h6 : IxVM.Consistency.L6 S₀)
+    (h7 : IxVM.Consistency.L7.{u} S₀) : IxVM.Consistency.CircuitConsistent.{u} :=
+  IxVM.consistent S₀ h0 h1 h2 h3 h4 h5 h6 h7
 
 end IxVM.Refinement.Core
