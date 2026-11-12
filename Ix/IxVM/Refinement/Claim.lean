@@ -616,11 +616,11 @@ and direct structure projections (`ConstantExprsClosed`), every reference of a
 stored record resolves to a stored record or blob, a projection's block is
 stored, and the role table the view holds is a valid role table admitted by IxC
 (`RoleTable.check`, `preludeFor`, which pins the prelude roles) whose bound
-constants and evidence theorems are stored and whose `.anchor` roles are
-accepted by IxC with their pinned specification types (`AnchorPinned`) in the
-view. Because `SafeConstant` restricts to the safe fragment, whole-environment
-`checkEnv` claims whose leaves include `unsafe` or `partial` constants are
-outside `Covers`. -/
+constants and evidence theorems are stored and whose `.anchor` roles, but for the
+compiler-trust ones (`compilerTrust`, which IxC declines), are accepted by IxC with their
+pinned specification types (`AnchorPinned`) in the view. Because `SafeConstant` restricts
+to the safe fragment, whole-environment `checkEnv` claims whose leaves include `unsafe` or
+`partial` constants are outside `Covers`. -/
 def View.Closed (V : View) : Prop :=
   (∀ a c, Ix.Cert.recordAt V.env a = some c →
     SafeConstant c ∧ ConstantExprsClosed V.env c ∧
@@ -630,9 +630,10 @@ def View.Closed (V : View) : Prop :=
     ∃ t, Ix.Kernel.RoleTable.ofBytes rb.bytes = some t ∧ t.check = .ok () ∧
       (∃ pre : Ix.Kernel.Reader.Prelude .anon, Ix.Kernel.Reader.preludeFor t = .ok pre) ∧
       (∀ a, BindingSeeds t a → V.env.consts.contains a = true) ∧
-      ∀ r, (r.spec (md := .anon)).kind = .anchor → ∀ a, t.addressOf? r = some a →
-        AcceptsIn V (Scope.strict ⟨rb.address, rb.bytes⟩) (· = a) fun _ envA _ =>
-          AnchorPinned envA r)
+      ∀ r, (r.spec (md := .anon)).kind = .anchor → compilerTrust r = false →
+        ∀ a, t.addressOf? r = some a →
+          AcceptsIn V (Scope.strict ⟨rb.address, rb.bytes⟩) (· = a) fun _ envA _ =>
+            AnchorPinned envA r)
 
 /-- What a view must hold for a typing claim: it is closed, it holds the
 claim's role table, the assumption tree, if any, and the axioms tree, if any,
