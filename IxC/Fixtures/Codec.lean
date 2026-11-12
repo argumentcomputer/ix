@@ -72,6 +72,8 @@ def sharedUniverseBudget : Ixon.Constant :=
   | .ok value => value == sharedUniverseBudget
   | .error _ => false
 
+/-- An empty block with empty sharing and reference tables, a universe table of
+`count` entries spelled by `payload`, and the empty binder-data section. -/
 def recordUnivsPayload (count : UInt64) (payload : ByteArray) : ByteArray :=
   Ixon.runPut do
     Ixon.putConstantInfo (.muts #[])
@@ -79,6 +81,7 @@ def recordUnivsPayload (count : UInt64) (payload : ByteArray) : ByteArray :=
     Ixon.putTagN 0 0 0
     Ixon.putTagN 0 0 count
     Ixon.putBytes payload
+    Ixon.putBinders #[]
 
 /-- An empty block whose sharing count is the raw bytes `count`, followed by
 empty reference and universe tables. -/
