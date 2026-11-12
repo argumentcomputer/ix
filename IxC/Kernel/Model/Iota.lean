@@ -1151,7 +1151,6 @@ theorem projTypeLaw_of_envModelM {μ : Ix.Kernel.CheckMode} {env : Env md}
     simp only [List.getD, List.getElem?_map, List.getElem?_range hq', Option.map_some,
       Option.getD_some]
     congr 2
-    omega
   have hframes : ∀ a ∈ openFvars (md := md) 0 entry.numParams ++
       [Expr.fvar entry.numParams (.sort .zero)],
       Expr.WScoped (entry.numParams + 1) a ∧ a.looseBVarsBounded 0 = true := by
