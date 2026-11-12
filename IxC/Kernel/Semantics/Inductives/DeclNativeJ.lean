@@ -41,8 +41,11 @@ the modeled route:
   comparison, the table) are unchanged.
 
 `DeclNativeRunJ J env p₀ env₂` is the native route at a package; the kernel's
-record gives it at its runs (`declNativeRun_runJ`). `IndRoutesJ` is the inductive
-kind's two routes, native at the recognised parts or modeled (`DeclIndRunJ`).
+record gives it at its runs (`declNativeRun_runJ`). `DeclNativeNoRecRunJ` is the
+same route for a one-type block without its recursor record (`nativePartsNoRec?`):
+the former's and the constructors' stages and the table, with no recursor stage.
+`IndRoutesJ` is the inductive kind's routes: native at the recognised parts,
+modeled (`DeclIndRunJ`), or native without a recursor.
 -/
 
 namespace Ix.Kernel.Semantics
@@ -229,13 +232,68 @@ def DeclNativeRunJ (J : Judgements md) (env : Env md) (p₀ : NativeParts md)
           cvRa.type ctorsA rhss)
         :: (consSumCtors p.nP ctorsA env₁).consts⟩ = .ok env₂
 
-/-- **An inductive block's two routes over a package**: the native route at the
-parts the recogniser reads off the block, or the modeled route (`DeclIndRunJ`,
-stated for every block). -/
+/-! ## The native route without a recursor record -/
+
+/-- **The recursor slot of a block read without its recursor record**: the small
+eliminator's level shape (the block's own level parameters) under a derived key
+(`Key.aux`, which no input names), with no rule and argument sums `0`. It only fills
+the recogniser's recursor fields: the route without a recursor reads none of them
+and installs nothing for them. -/
+def nativeRecStub (cvT : ConstantVal md) : ConstantInfo md :=
+  .recInfo ⟨Ix.Kernel.auxKey cvT.name .recursor, cvT.levelParams, .sort .zero⟩ 0 0 []
+
+/-- **A one-type block without its recursor record**: the type former followed by
+constructors only. It is recognised as `nativeParts?` recognises the block with the
+recursor slot `nativeRecStub` appended, so every condition on the former and the
+constructors is the same. The slot is the small eliminator (`large = false`), so
+no elimination restriction applies. A former declared at a definition is not
+recognised here: its index count is read off the recursor record, and the slot has
+none. -/
+def nativePartsNoRec? (nPd : Nat) (block : List (ConstantInfo md)) :
+    Option (NativeParts md) :=
+  match block with
+  | .indInfo cvT caps :: rest =>
+    if rest.all (fun | .ctorInfo .. => true | _ => false) then
+      Ix.Kernel.nativeParts? nPd (.indInfo cvT caps :: (rest ++ [nativeRecStub cvT]))
+    else none
+  | _ => none
+
+/-- **The native route without a recursor record, over a package**: the stages of
+`DeclNativeRunJ` for the former and the constructors (the former's stage, the
+constructors' stage, the kinds' classification, the capability record, the index
+binders' sorts, the kinds re-checked on the stored constructors), then, at a
+structure-like block, the projection table over the constructors' environment. No
+recursor is generated, compared or installed, so the block has no ι rule. -/
+def DeclNativeNoRecRunJ (J : Judgements md) (env : Env md) (p₀ : NativeParts md)
+    (env₂ : Env md) : Prop :=
+  (p₀.ctors.map (·.1.name)).Nodup ∧
+  ∃ (isRec : Bool) (env₁ : Env md) (cvTa : ConstantVal md) (p₁ : InductiveShape md)
+    (p : NativeParts md) (ctorsA : List (ConstantVal md × Nat))
+    (sortss : List (List Level)) (kinds : List (List RecFieldKind))
+    (tfvs : List (Expr md)) (trest : Expr md) (isorts : List Level),
+    SumIndRunJ J env p₀.toInductiveShape (fun p₁ => nativeCapsAt p₁ isRec) env₁ cvTa p₁ ∧
+    p = (p₀.complete p₁).withKinds kinds ∧
+    SumCtorsRunJ J env₁ env₁ p.cvT.name p.cvT.levelParams p.nP p.nIdx p.resSort p.isProp
+      p.large cvTa p.ctors ctorsA sortss ∧
+    Ix.Kernel.classifyFixKinds (m := Ix.Kernel.CheckM md) p.cvT.name p.cvT.levelParams p.nP
+      p.nIdx ctorsA = .ok kinds ∧
+    nativeCaps p = nativeCapsAt p₁ isRec ∧
+    openPisAtFvars (p.nP + p.nIdx) cvTa.type 0 = some (tfvs, trest) ∧
+    FieldSortsJ J env₁ true false p.resSort p.nP (tfvs.drop p.nP) [] p.nIdx isorts ∧
+    nativeFieldsOk env p.cvT.name p.cvT.levelParams p.nP p.nIdx ctorsA p.kinds = true ∧
+    -- the projection table at a structure-like block, over the constructors
+    checkNativeTable (m := Ix.Kernel.CheckM md) p ctorsA sortss (consSumCtors p.nP ctorsA env₁)
+      = .ok env₂
+
+/-- **An inductive block's routes over a package**: the native route at the parts
+the recogniser reads off the block, the modeled route (`DeclIndRunJ`, stated for
+every block), or the native route without a recursor record at the parts read off
+a one-type block that has none (`nativePartsNoRec?`). -/
 def IndRoutesJ (J : Judgements md) (env : Env md) (block : List (ConstantInfo md))
     (nP : Nat) (env₂ : Env md) : Prop :=
   (∃ p₀, Ix.Kernel.nativeParts? nP block = some p₀ ∧ DeclNativeRunJ J env p₀ env₂) ∨
-  DeclIndRunJ J env block env₂
+  DeclIndRunJ J env block env₂ ∨
+  (∃ p₀, nativePartsNoRec? nP block = some p₀ ∧ DeclNativeNoRecRunJ J env p₀ env₂)
 
 /-! ## Facts the records carry -/
 

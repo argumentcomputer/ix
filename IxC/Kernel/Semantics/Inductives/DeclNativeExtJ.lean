@@ -3,6 +3,7 @@ module
 public import IxC.Kernel.Semantics.Inductives.DeclNativeJ
 public import IxC.Kernel.Semantics.Inductives.DeclSumEta
 public import IxC.Kernel.Semantics.DeclExt
+import IxC.Kernel.Semantics.IndBlockRun
 import IxC.Kernel.Verify.Inductives.StructWF
 
 @[expose] public section
@@ -20,6 +21,11 @@ cons shapes, so they hold at every package:
   adds is fresh before the block, and the one table it may add is its own new
   structure's, so no structure stored before the step gains a table. This is the
   native route's half of `declRunJ_envExt`'s inductive premise.
+
+The route without a recursor record has both facts by the same proofs, with the
+table over the constructors (`declNativeNoRecRunJ_etaClosed`,
+`declNativeNoRecRunJ_envExt`), and every route of `IndRoutesJ` has them
+(`indRoutesJ_etaClosed`, `indRoutesJ_envExt`).
 -/
 
 namespace Ix.Kernel.Semantics
@@ -123,6 +129,96 @@ theorem declNativeRunJ_etaClosed {J : Judgements md} {env env₂ : Env md}
     ⟨.indInfo cvTa (nativeCaps p) :: env.consts⟩).find?
       cvRa.name = none
   rw [hnR]; exact hfR
+
+/-- **The native route without a recursor record keeps the η-families closed**, over
+a package: as `declNativeRunJ_etaClosed`, with the table over the constructors. -/
+theorem declNativeNoRecRunJ_etaClosed {J : Judgements md} {env env₂ : Env md}
+    {p₀ : NativeParts md} (hE : EtaFamiliesClosed env)
+    (h : DeclNativeNoRecRunJ J env p₀ env₂) : EtaFamiliesClosed env₂ := by
+  obtain ⟨hnd, isRec, env₁, cvTa, p₁, p, ctorsA, sortss, kinds, -, -, -, hInd, rfl,
+    hCtors, -, hcaps, -, -, -, hTbl⟩ := h
+  obtain ⟨hTn, -, hfT, -⟩ := hInd.former
+  obtain ⟨cvTa₀, s, bs, cvS, -, -, -, hSt, rfl, rfl⟩ := hInd
+  obtain rfl : cvTa = cvS := (show cvS = cvTa from hSt).symm
+  try dsimp only at hCtors hTbl hcaps
+  rw [← hcaps] at hCtors hTbl
+  have hpT : ((p₀.complete (p₀.toInductiveShape.withSort s)).withKinds kinds).cvT = p₀.cvT := by
+    simp [Ix.Kernel.NativeParts.withKinds]
+  have hpC : ((p₀.complete (p₀.toInductiveShape.withSort s)).withKinds kinds).ctors
+      = p₀.ctors := by simp [Ix.Kernel.NativeParts.withKinds]
+  generalize hp : (p₀.complete (p₀.toInductiveShape.withSort s)).withKinds kinds = p
+    at hCtors hTbl hpT hpC
+  have hn : cvTa.name = p.cvT.name := by rw [hpT]; exact hTn
+  replace hnd : (p.ctors.map (·.1.name)).Nodup := by rw [hpC]; exact hnd
+  have hfreshT : env.find? cvTa.name = none := by rw [hTn]; exact hfT
+  have hE₁ : EtaFamiliesClosedExcept
+      ⟨.indInfo cvTa (nativeCaps p) :: env.consts⟩
+      p.cvT.name :=
+    (hE.except p.cvT.name).cons hfreshT (fun cv caps heq _ => Or.inr (by
+      obtain ⟨rfl, -⟩ := ConstantInfo.indInfo.inj heq
+      exact hn))
+  obtain ⟨hlen, -, hall⟩ := hCtors
+  have hnames : ctorsA.map (·.1.name) = p.ctors.map (·.1.name) := by
+    apply List.ext_getElem
+    · simp [hlen]
+    · intro j h1 h2
+      simp only [List.getElem_map]
+      have hj : j < p.ctors.length := by simpa using h2
+      obtain ⟨-, _, -, hrun⟩ := hall j (p.ctors[j]) (ctorsA[j])
+        (List.getElem?_eq_getElem hj) (List.getElem?_eq_getElem (by omega))
+      exact hrun.names.1
+  have hfreshC : ∀ c ∈ ctorsA,
+      (⟨.indInfo cvTa (nativeCaps p) :: env.consts⟩ : Env md).find?
+        c.1.name = none := by
+    intro c hc
+    obtain ⟨j, hj⟩ := List.getElem?_of_mem hc
+    have hj' : j < p.ctors.length := by
+      have := (List.getElem?_eq_some_iff.mp hj).1
+      omega
+    obtain ⟨-, _, -, hrun⟩ := hall j (p.ctors[j]) c (List.getElem?_eq_getElem hj') hj
+    obtain ⟨hCn, -, hfC, -⟩ := hrun.names
+    rw [hCn]; exact hfC
+  have hE₂ : EtaFamiliesClosedExcept
+      (consSumCtors p.nP ctorsA
+        ⟨.indInfo cvTa (nativeCaps p) :: env.consts⟩)
+      p.cvT.name :=
+    consSumCtors_etaClosedExcept hE₁ hfreshC (by rw [hnames]; exact hnd)
+  have hTnot : p.cvT.name ∉ ctorsA.map (·.1.name) := by
+    intro hmem
+    obtain ⟨c, hc, hcn⟩ := List.mem_map.mp hmem
+    have := hfreshC c hc
+    rw [hcn, ← hn] at this
+    exact nomatch this.symm.trans (Ix.Kernel.Env.find?_cons_self
+      (ConstantInfo.indInfo cvTa (nativeCaps p)) env)
+  have hE₂' : EtaFamiliesClosed
+      (consSumCtors p.nP ctorsA
+        ⟨.indInfo cvTa (nativeCaps p) :: env.consts⟩) := by
+    refine hE₂.closed ?_
+    intro cvT' caps hf he _
+    rw [consSumCtors_find?_of_not_mem hTnot, ← hn] at hf
+    obtain ⟨rfl, rfl⟩ := ConstantInfo.indInfo.inj (Option.some.inj
+      ((Ix.Kernel.Env.find?_cons_self
+        (ConstantInfo.indInfo cvTa (nativeCaps p)) env).symm.trans hf))
+    simp only [Ix.Kernel.nativeCaps, Ix.Kernel.nativeCapsAt] at he ⊢
+    revert he hlen hnames hall
+    cases hcs : p.ctors with
+    | nil => intro _ _ _ he; exact nomatch he
+    | cons c cs =>
+      cases cs with
+      | cons _ _ => intro _ _ _ he; exact nomatch he
+      | nil =>
+        intro hlen hall hnames _
+        match ctorsA, hlen, hnames, hall with
+        | [cA], _, hnames, hall =>
+          have hn' : cA.1.name = c.1.name := by simpa using hnames
+          simp only [consSumCtors]
+          refine ⟨c.1.name, cA.1, rfl, ?_⟩
+          show Env.find? ⟨.ctorInfo cA.1 p.nP cA.2 :: _⟩ c.1.name
+            = some (.ctorInfo cA.1 p.nP c.2)
+          have hnF : cA.2 = c.2 := (hall 0 c cA rfl rfl).1
+          rw [← hn', ← hnF]
+          exact Ix.Kernel.Env.find?_cons_self _ _
+  exact checkNativeTable_etaClosed hTbl hE₂'
 
 /-! ## The extension -/
 
@@ -257,5 +353,80 @@ theorem declNativeRunJ_envExt {J : Judgements md} {env env₂ : Env md} {p₀ : 
   · intro T _ _ _
     show cvRa.name ≠ projTableName T
     rw [hnR]; exact ne_projTableName_of_shape hshR T
+
+/-- **A native step without a recursor record extends the environment**, over a
+package: the former and the constructors are fresh and pass the front door's shape
+test, and the table, at a structure-like block, is the new structure's own. -/
+theorem declNativeNoRecRunJ_envExt {J : Judgements md} {env env₂ : Env md} {p₀ : NativeParts md}
+    (h : DeclNativeNoRecRunJ J env p₀ env₂) : EnvExt env env₂ := by
+  obtain ⟨hnd, isRec, env₁, cvTa, p₁, p, ctorsA, sortss, kinds, -, -, -, hInd, rfl,
+    hCtors, -, -, -, -, -, hTbl⟩ := h
+  obtain ⟨hTn, -, hfT, hTsh⟩ := hInd.former
+  obtain ⟨cvTa₀, s, bs, cvS, -, -, -, hSt, rfl, rfl⟩ := hInd
+  obtain rfl : cvTa = cvS := (show cvS = cvTa from hSt).symm
+  try dsimp only at hCtors hTbl
+  have hpT : ((p₀.complete (p₀.toInductiveShape.withSort s)).withKinds kinds).cvT = p₀.cvT := by
+    simp [Ix.Kernel.NativeParts.withKinds]
+  have hpC : ((p₀.complete (p₀.toInductiveShape.withSort s)).withKinds kinds).ctors
+      = p₀.ctors := by simp [Ix.Kernel.NativeParts.withKinds]
+  generalize hp : (p₀.complete (p₀.toInductiveShape.withSort s)).withKinds kinds = p
+    at hCtors hTbl hpT hpC
+  -- the former
+  have hX₁ : EnvExt env ⟨.indInfo cvTa (Ix.Kernel.nativeCapsAt (p₀.toInductiveShape.withSort s)
+      isRec) :: env.consts⟩ := by
+    refine EnvExt.cons ?_ ?_
+    · show env.find? cvTa.name = none
+      rw [hTn]; exact hfT
+    · intro T _ _ _
+      show cvTa.name ≠ projTableName T
+      rw [hTn]; exact ne_projTableName_of_shape hTsh T
+  -- the constructors
+  obtain ⟨hlen, -, hall⟩ := hCtors
+  have hrunOf : ∀ c ∈ ctorsA,
+      (⟨.indInfo cvTa (Ix.Kernel.nativeCapsAt (p₀.toInductiveShape.withSort s) isRec)
+        :: env.consts⟩ : Env md).find? c.1.name = none ∧
+      c.1.name.isProjFnShape = false := by
+    intro c hc
+    obtain ⟨j, hj⟩ := List.getElem?_of_mem hc
+    have hj' : j < p.ctors.length := by
+      have := (List.getElem?_eq_some_iff.mp hj).1
+      omega
+    obtain ⟨-, _, -, hrun⟩ := hall j (p.ctors[j]) c (List.getElem?_eq_getElem hj') hj
+    obtain ⟨hCn, -, hfC, hshC⟩ := hrun.names
+    rw [hCn]; exact ⟨hfC, hshC⟩
+  have hnames : ctorsA.map (·.1.name) = p.ctors.map (·.1.name) := by
+    apply List.ext_getElem
+    · simp [hlen]
+    · intro j h1 h2
+      simp only [List.getElem_map]
+      have hj : j < p.ctors.length := by simpa using h2
+      obtain ⟨-, _, -, hrun⟩ := hall j (p.ctors[j]) (ctorsA[j])
+        (List.getElem?_eq_getElem hj) (List.getElem?_eq_getElem (by omega))
+      exact hrun.names.1
+  have hX₂ := EnvExt.consSumCtors_over (nP := p.nP) hX₁ (fun c hc => (hrunOf c hc).1)
+    (by rw [hnames, hpC]; exact hnd) (fun c hc => (hrunOf c hc).2)
+  -- the table
+  exact checkNativeTable_envExt_over hX₂ (by rw [hpT]; exact hfT) hTbl
+
+/-! ## The routes -/
+
+/-- **An inductive block's routes keep the η-families closed**, over a package. -/
+theorem indRoutesJ_etaClosed {J : Judgements md} {env env₂ : Env md}
+    {block : List (ConstantInfo md)} {nP : Nat} (hE : EtaFamiliesClosed env)
+    (h : IndRoutesJ J env block nP env₂) : EtaFamiliesClosed env₂ := by
+  rcases h with ⟨_, -, hN⟩ | hM | ⟨_, -, hN⟩
+  · exact declNativeRunJ_etaClosed hE hN
+  · exact declIndEtaClosedRunJ hE hM
+  · exact declNativeNoRecRunJ_etaClosed hE hN
+
+/-- **An inductive block's routes extend the environment**, over a package: the
+inductive premise of `declRunJ_envExt` at `IndRoutesJ`. -/
+theorem indRoutesJ_envExt {J : Judgements md} {env env₂ : Env md}
+    {block : List (ConstantInfo md)} {nP : Nat} (h : IndRoutesJ J env block nP env₂) :
+    EnvExt env env₂ := by
+  rcases h with ⟨_, -, hN⟩ | hM | ⟨_, -, hN⟩
+  · exact declNativeRunJ_envExt hN
+  · exact declIndRunJ_envExt hM
+  · exact declNativeNoRecRunJ_envExt hN
 
 end Ix.Kernel.Semantics
