@@ -250,11 +250,11 @@ def neverEmitted (logs : FilePath) : IO Unit := do
 def budgetDir : FilePath := "fixtures/rc/budget"
 
 /-- `fanUnder` and `fanOver` (`Fan.lean`): each the sum of forty-one fan functions whose `C`
-parameters (199 and 200), all passed `n`, are live across a tree of 127 leaves on `s`, leaf `lo` of
+parameters (197 and 198), all passed `n`, are live across a tree of 127 leaves on `s`, leaf `lo` of
 the `j`-th returning `lo + 10000·j`; the pair of that sum and `s`. -/
 def fanFunctions : Nat := 41
 def fanLeaves : Nat := 127
-def fanBindings (root : String) : Nat := if root == "fanOver" then 200 else 199
+def fanBindings (root : String) : Nat := if root == "fanOver" then 198 else 197
 
 def fanWant (root : String) : List Nat → Sem.Obs
   | [n, s] =>
