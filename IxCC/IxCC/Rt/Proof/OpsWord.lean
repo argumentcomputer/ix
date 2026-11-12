@@ -38,15 +38,6 @@ macro "word_bad" : tactic =>
   `(tactic| (simp only [primitive, Lower.word, word64, wordNarrow] at *; (try split at *) <;>
       simp [throw, throwThe, MonadExceptOf.throw, StateT.lift, Except.bind, bind, StateT.bind, StateT.run] at *))
 
-theorem envRel_frame {T : Tables} {P : List Word} {D : Nat → Prop} {sup : Nat} {ρ : Own.Env}
-    {ρl ρl' : Lir.Env} (h : EnvRel T P D sup ρ ρl) (hf : ∀ y, y < sup → ρl'[y]? = ρl[y]?) :
-    EnvRel T P D sup ρ ρl' where
-  dom := h.dom
-  val := by
-    intro y v hy hD
-    obtain ⟨w, hw, hv⟩ := h.val hy hD
-    exact ⟨w, by rw [hf y (h.dom hy)]; exact hw, hv⟩
-
 /-- The relation after an expansion: `x` bound to the word of the new value, every other register
 below the supply as before. -/
 theorem envRel_insert_frame {T : Tables} {P : List Word} {D : Nat → Prop} {sup : Nat} {ρ : Own.Env}
@@ -73,60 +64,6 @@ theorem envRel_insert_frame {T : Tables} {P : List Word} {D : Nat → Prop} {sup
 
 theorem retag_val (u : Word) : u + u * X86.Scale.one.word + Lir.dispWord 1 = u + u + 1 := by
   rw [show X86.Scale.one.word = 1 from rfl, show Lir.dispWord 1 = 1 from rfl, UInt64.mul_one]
-
-/-! ## Cfg's side -/
-
-/-- A binary word primitive that Cfg evaluates: tagged operands of numbers in range, and
-`eval`'s number. -/
-theorem word2_of {T : Tables} {P : List Word} {D : Nat → Prop} {sup : Nat} {ρ : Own.Env} {ρl : Lir.Env}
-    (hρ : EnvRel T P D sup ρ ρl) {f : Fir.FunId} {as : List Fir.Arg} {la lb : Lir.Arg}
-    (hops : operands f as = .ok (some [la, lb])) (hlive : ∀ a ∈ as, LiveArg D a) {w : Width} {op : WordOp}
-    {H H' : Own.Heap} {v : Own.RVal}
-    (hr : Own.evalRhs .immortal (ownTables T) ρ H (.fir (.prim (.word w op) as)) = .ok (v, H')) :
-    H' = H ∧ ∃ p q wa wb, la.eval ρl = some wa ∧ lb.eval ρl = some wb ∧ natWord p = some wa ∧
-      natWord q = some wb ∧ p < w.size ∧ q < w.size ∧ v = .lit (.nat (op.eval w p q).val) ∧
-      ArgReads sup la ∧ ArgReads sup lb := by
-  obtain ⟨rfl, ⟨p, q, n, wa, wb, ha, hb, hwa, hwb, hs, rfl, hra, hrb⟩⟩ :=
-    bin2_of (op := .word w op) hρ hops hlive (fun ns b => Lam.wordSem_ne_bool w op ns b) hr
-  rw [Lam.Prim.sem_word] at hs
-  obtain ⟨-, -, hp, hq, rfl⟩ := Lam.wordSem_two hs
-  exact ⟨rfl, p, q, wa, wb, ha, hb, hwa, hwb, hp, hq, rfl, hra, hrb⟩
-
-/-- A unary word primitive that Cfg evaluates. -/
-theorem word1_of {T : Tables} {P : List Word} {D : Nat → Prop} {sup : Nat} {ρ : Own.Env} {ρl : Lir.Env}
-    (hρ : EnvRel T P D sup ρ ρl) {f : Fir.FunId} {as : List Fir.Arg} {la : Lir.Arg}
-    (hops : operands f as = .ok (some [la])) (hlive : ∀ a ∈ as, LiveArg D a) {w : Width} {op : WordOp}
-    {H H' : Own.Heap} {v : Own.RVal}
-    (hr : Own.evalRhs .immortal (ownTables T) ρ H (.fir (.prim (.word w op) as)) = .ok (v, H')) :
-    H' = H ∧ ∃ p wa, la.eval ρl = some wa ∧ natWord p = some wa ∧ (op = .ofNat ∨ p < w.size) ∧
-      v = .lit (.nat (op.eval w p 0).val) ∧ ArgReads sup la := by
-  obtain ⟨rfl, vs, hvs, hres⟩ := evalRhs_prim hr
-  obtain ⟨ws, hws, hrel, hreads⟩ := operands_rel hρ hops hlive hvs
-  simp only [Lir.evalArgs_cons, Lir.evalArgs_nil, Option.bind_eq_bind] at hws
-  cases ha : la.eval ρl with
-  | none => simp [ha] at hws
-  | some wa =>
-    simp [ha] at hws
-    subst hws
-    rcases hrel with _ | ⟨hva, hnil⟩
-    rcases hnil
-    rename_i va
-    simp only [Own.primResult] at hres
-    cases hn : Own.natArgs [va] with
-    | none => simp [hn] at hres
-    | some ns =>
-      obtain ⟨p, rfl, rfl⟩ := natArgs_one hn
-      simp only [hn] at hres
-      cases hs : (Lam.Prim.word w op).sem [p] with
-      | none => simp [hs] at hres
-      | some r =>
-        cases r with
-        | nat n =>
-          simp only [hs, Sem.Result.ok.injEq] at hres
-          rw [Lam.Prim.sem_word] at hs
-          obtain ⟨-, -, hp, rfl⟩ := Lam.wordSem_one hs
-          exact ⟨rfl, p, wa, rfl, hva, hp, hres.symm, hreads la (by simp)⟩
-        | bool b => exact absurd hs (Lam.wordSem_ne_bool w op [p] b)
 
 /-! ## Generic simulations -/
 
@@ -158,107 +95,246 @@ theorem rhsSim_of_nat {T : Tables} {lp : Lir.Program} {ctx : Word} {D : Nat → 
         | bool b => exact absurd hs (Lam.wordSem_ne_bool w op ns b)
   simp only [Own.evalRhs, hvs, hres', Sem.Result.map, Sem.Result.bind]
 
-/-- A binary word primitive's straight expansion. -/
-theorem word2_sim {T : Tables} {f : Fir.FunId} {lp : Lir.Program} {ctx : Word} {D : Nat → Prop} {sup : Nat}
-    {fn : Nat} {F : Lir.Func} {off : Nat} {starts : NatMap Nat} {C : List PBlock} (hF : lp.funcs[fn]? = some F)
+
+/-! ## The heap-free core
+
+A primitive's expansion touches no memory and no heap: it reads its operands' words and binds
+`x`. `PrimCore` states exactly that, without a heap invariant or an environment relation, so a
+word operation's expansion is proved once (`word_core`) and each route's simulation relation
+follows from it by one lemma (`rhsSim_of_core` here; the plain-RC bridge's own). -/
+
+/-- **The heap-free core of a primitive's expansion**: from registers in which the lowered
+operands `las` evaluate to the tagged words of numbers `ns` on which `op` returns the number `n`,
+Lir runs from `(L, p)` to `(L', p')` of function `fn` with the memory unchanged, binding `x` to the
+word of `n` and keeping every register below `sup` but `x`; or it fails. -/
+def PrimCore (lp : Lir.Program) (ctx : Word) (sup fn L p L' p' x : Nat) (op : Lam.Prim)
+    (las : List Lir.Arg) : Prop :=
+  ∀ (ρl : Lir.Env) (mem : X86.Memory) (rest : List Lir.Frame) (ns : List Nat) (ws : List Word) (n : Nat),
+    Lir.evalArgs ρl las = some ws → ListRel (fun n w => natWord n = some w) ns ws →
+    (∀ la ∈ las, ArgReads sup la) → op.sem ns = some (.nat n) →
+    (∃ c ρl' w, Sem.Star (Lir.semStep lp) (Lir.atState mem ctx fn L p ρl rest) c
+        (Lir.atState mem ctx fn L' p' ρl' rest) ∧ natWord n = some w ∧ ρl'[x]? = some w ∧
+        ∀ y, y < sup → y ≠ x → ρl'[y]? = ρl[y]?) ∨
+    Sem.Fails (Lir.semStep lp) (Lir.atState mem ctx fn L p ρl rest)
+
+/-- The numbers of related literal arguments have the related words. -/
+theorem natArgs_words {R : Own.RVal → Word → Prop}
+    (hR : ∀ {n : Nat} {w : Word}, R (.lit (.nat n)) w → natWord n = some w)
+    {vs : List Own.RVal} {ws : List Word} (h : ListRel R vs ws) :
+    ∀ {ns : List Nat}, Own.natArgs vs = some ns → ListRel (fun n w => natWord n = some w) ns ws := by
+  induction h with
+  | nil =>
+    intro ns hn
+    simp only [Own.natArgs, Option.some.injEq] at hn
+    subst hn
+    exact .nil
+  | @cons v w vs ws hvw _ ih =>
+    intro ns hn
+    match v, hvw, hn with
+    | .lit (.nat n), hvw, hn =>
+      simp only [Own.natArgs] at hn
+      cases hm : Own.natArgs vs with
+      | none => simp [hm] at hn
+      | some ns' =>
+        simp only [hm, Option.map, Option.some.injEq] at hn
+        subst hn
+        exact .cons (hR hvw) (ih hm)
+    | .lit (.str _), _, hn => simp [Own.natArgs] at hn
+    | .ctor0 _, _, hn => simp [Own.natArgs] at hn
+    | .erased, _, hn => simp [Own.natArgs] at hn
+    | .loc _, _, hn => simp [Own.natArgs] at hn
+
+/-- **The immortal route's simulation from the core.** -/
+theorem rhsSim_of_core {T : Tables} {lp : Lir.Program} {ctx : Word} {D : Nat → Prop} {sup fn L p L' p' x : Nat}
+    {f : Fir.FunId} {op : Lam.Prim} {las : List Lir.Arg} {as : List Fir.Arg}
+    (hops : operands f as = .ok (some las)) (hlive : ∀ a ∈ as, LiveArg D a) (hx : x < sup)
+    (hnb : ∀ ns b, op.sem ns ≠ some (.bool b)) (hc : PrimCore lp ctx sup fn L p L' p' x op las) :
+    RhsSim T lp ctx D sup fn L p L' p' x (.fir (.prim op as)) := by
+  intro P H ρ ρl mem rest v H' hheap hρ hr
+  obtain ⟨rfl, vs, hvs, hres⟩ := evalRhs_prim hr
+  obtain ⟨ws, hws, hrel, hreads⟩ := operands_rel hρ hops hlive hvs
+  simp only [Own.primResult] at hres
+  cases hn : Own.natArgs vs with
+  | none => simp [hn] at hres
+  | some ns =>
+    simp only [hn] at hres
+    cases hs : op.sem ns with
+    | none => simp [hs] at hres
+    | some r =>
+      cases r with
+      | bool b => exact absurd hs (hnb ns b)
+      | nat n =>
+        simp only [hs, Sem.Result.ok.injEq] at hres
+        subst hres
+        rcases hc ρl mem rest ns ws n hws (natArgs_words (fun h => h) hrel hn) hreads hs with
+          ⟨c, ρl', w, hstar, hw, hρx, hρy⟩ | hfail
+        · exact .inl ⟨c, ρl', mem, P, hstar, hheap, List.prefix_refl _, envRel_insert_frame hρ hx hρx hw hρy⟩
+        · exact .inr hfail
+
+/-- The operands of a binary word primitive in the core. -/
+theorem core_two {ρl : Lir.Env} {la lb : Lir.Arg} {ns : List Nat} {ws : List Word}
+    (hws : Lir.evalArgs ρl [la, lb] = some ws) (hrel : ListRel (fun n w => natWord n = some w) ns ws) :
+    ∃ p q wa wb, ns = [p, q] ∧ la.eval ρl = some wa ∧ lb.eval ρl = some wb ∧ natWord p = some wa ∧
+      natWord q = some wb := by
+  simp only [Lir.evalArgs_cons, Lir.evalArgs_nil, Option.bind_eq_bind] at hws
+  cases ha : la.eval ρl with
+  | none => simp [ha] at hws
+  | some wa =>
+    cases hb : lb.eval ρl with
+    | none => simp [ha, hb] at hws
+    | some wb =>
+      simp [ha, hb] at hws
+      subst hws
+      cases hrel with
+      | @cons p _ _ _ hwa hrel' =>
+        cases hrel' with
+        | @cons q _ _ _ hwb hnil =>
+          cases hnil
+          exact ⟨p, q, wa, wb, rfl, rfl, rfl, hwa, hwb⟩
+
+/-- The operand of a unary word primitive in the core. -/
+theorem core_one {ρl : Lir.Env} {la : Lir.Arg} {ns : List Nat} {ws : List Word}
+    (hws : Lir.evalArgs ρl [la] = some ws) (hrel : ListRel (fun n w => natWord n = some w) ns ws) :
+    ∃ p wa, ns = [p] ∧ la.eval ρl = some wa ∧ natWord p = some wa := by
+  simp only [Lir.evalArgs_cons, Lir.evalArgs_nil, Option.bind_eq_bind] at hws
+  cases ha : la.eval ρl with
+  | none => simp [ha] at hws
+  | some wa =>
+    simp [ha] at hws
+    subst hws
+    cases hrel with
+    | @cons p _ _ _ hwa hnil =>
+      cases hnil
+      exact ⟨p, wa, rfl, rfl, hwa⟩
+
+/-- A binary word primitive's straight expansion, in the core. -/
+theorem word2_core {f : Fir.FunId} {lp : Lir.Program} {ctx : Word} {sup : Nat} {fn : Nat} {F : Lir.Func}
+    {off : Nat} {starts : NatMap Nat} {C : List PBlock} (hF : lp.funcs[fn]? = some F)
     (hH : Holds f F off starts C) {st : St} {ss : List Lir.Stmt} {f' : Nat}
     (hC : Ext C { st with acc := ss.reverse ++ st.acc, fresh := f' }) (ho : Open st)
-    (hnc : ∀ s ∈ ss, s.isCall = false) {x : Nat} (hx : x < sup) {la lb : Lir.Arg}
-    {as : List Fir.Arg} (hops : operands f as = .ok (some [la, lb])) (hlive : ∀ a ∈ as, LiveArg D a)
-    {w : Width} {op : WordOp}
+    (hnc : ∀ s ∈ ss, s.isCall = false) {x : Nat} {la lb : Lir.Arg} {w : Width} {op : WordOp}
     (hexec : ∀ (ρl : Lir.Env) (mem : X86.Memory) (p q : Nat) (wa wb : Word), la.eval ρl = some wa →
       lb.eval ρl = some wb → natWord p = some wa → natWord q = some wb → p < w.size → q < w.size →
       ArgReads sup la → ArgReads sup lb →
       ∃ ρl' w', Lir.execList ρl mem ctx ss = some (ρl', mem) ∧ natWord (op.eval w p q).val = some w' ∧
         ρl'[x]? = some w' ∧ ∀ y, y < sup → y ≠ x → ρl'[y]? = ρl[y]?) :
-    RhsSim T lp ctx D sup fn (off + st.cur) st.acc.length (off + st.cur) (ss.reverse ++ st.acc).length x
-      (.fir (.prim (.word w op) as)) := by
-  apply straight_sim hF hH hC ho hnc
-  intro P H ρ ρl mem v H' hρ hr
-  obtain ⟨rfl, p, q, wa, wb, ha, hb, hwa, hwb, hp, hq, rfl, hra, hrb⟩ := word2_of hρ hops hlive hr
-  obtain ⟨ρl', w', hx', hw, hρx, hρy⟩ := hexec ρl mem p q wa wb ha hb hwa hwb hp hq hra hrb
-  exact ⟨rfl, ρl', hx', envRel_insert_frame hρ hx hρx hw hρy⟩
+    PrimCore lp ctx sup fn (off + st.cur) st.acc.length (off + st.cur) (ss.reverse ++ st.acc).length x
+      (.word w op) [la, lb] := by
+  intro ρl mem rest ns ws n hws hrel hreads hsem
+  obtain ⟨p, q, wa, wb, rfl, ha, hb, hwa, hwb⟩ := core_two hws hrel
+  rw [Lam.Prim.sem_word] at hsem
+  obtain ⟨-, -, hp, hq, rfl⟩ := Lam.wordSem_two hsem
+  obtain ⟨ρl', w', hx', hw, hρx, hρy⟩ :=
+    hexec ρl mem p q wa wb ha hb hwa hwb hp hq (hreads la (by simp)) (hreads lb (by simp))
+  exact .inl ⟨0, ρl', w', straight_star hF hH hC ho hnc hx', hw, hρx, hρy⟩
 
-/-- A unary word primitive's straight expansion. -/
-theorem word1_sim {T : Tables} {f : Fir.FunId} {lp : Lir.Program} {ctx : Word} {D : Nat → Prop} {sup : Nat}
-    {fn : Nat} {F : Lir.Func} {off : Nat} {starts : NatMap Nat} {C : List PBlock} (hF : lp.funcs[fn]? = some F)
+/-- A unary word primitive's straight expansion, in the core. -/
+theorem word1_core {f : Fir.FunId} {lp : Lir.Program} {ctx : Word} {sup : Nat} {fn : Nat} {F : Lir.Func}
+    {off : Nat} {starts : NatMap Nat} {C : List PBlock} (hF : lp.funcs[fn]? = some F)
     (hH : Holds f F off starts C) {st : St} {ss : List Lir.Stmt} {f' : Nat}
     (hC : Ext C { st with acc := ss.reverse ++ st.acc, fresh := f' }) (ho : Open st)
-    (hnc : ∀ s ∈ ss, s.isCall = false) {x : Nat} (hx : x < sup) {la : Lir.Arg}
-    {as : List Fir.Arg} (hops : operands f as = .ok (some [la])) (hlive : ∀ a ∈ as, LiveArg D a)
-    {w : Width} {op : WordOp}
+    (hnc : ∀ s ∈ ss, s.isCall = false) {x : Nat} {la : Lir.Arg} {w : Width} {op : WordOp}
     (hexec : ∀ (ρl : Lir.Env) (mem : X86.Memory) (p : Nat) (wa : Word), la.eval ρl = some wa →
       natWord p = some wa → (op = .ofNat ∨ p < w.size) → ArgReads sup la →
       ∃ ρl' w', Lir.execList ρl mem ctx ss = some (ρl', mem) ∧ natWord (op.eval w p 0).val = some w' ∧
         ρl'[x]? = some w' ∧ ∀ y, y < sup → y ≠ x → ρl'[y]? = ρl[y]?) :
-    RhsSim T lp ctx D sup fn (off + st.cur) st.acc.length (off + st.cur) (ss.reverse ++ st.acc).length x
-      (.fir (.prim (.word w op) as)) := by
-  apply straight_sim hF hH hC ho hnc
-  intro P H ρ ρl mem v H' hρ hr
-  obtain ⟨rfl, p, wa, ha, hwa, hp, rfl, hra⟩ := word1_of hρ hops hlive hr
-  obtain ⟨ρl', w', hx', hw, hρx, hρy⟩ := hexec ρl mem p wa ha hwa hp hra
-  exact ⟨rfl, ρl', hx', envRel_insert_frame hρ hx hρx hw hρy⟩
+    PrimCore lp ctx sup fn (off + st.cur) st.acc.length (off + st.cur) (ss.reverse ++ st.acc).length x
+      (.word w op) [la] := by
+  intro ρl mem rest ns ws n hws hrel hreads hsem
+  obtain ⟨p, wa, rfl, ha, hwa⟩ := core_one hws hrel
+  rw [Lam.Prim.sem_word] at hsem
+  obtain ⟨-, -, hp, rfl⟩ := Lam.wordSem_one hsem
+  obtain ⟨ρl', w', hx', hw, hρx, hρy⟩ := hexec ρl mem p wa ha hwa hp (hreads la (by simp))
+  exact .inl ⟨0, ρl', w', straight_star hF hH hC ho hnc hx', hw, hρx, hρy⟩
 
-/-- The end of a width-64 expansion: the check on the untagged result `u` in register `r`,
-then `x := 2u + 1`. -/
-theorem checked_tail {T : Tables} {P : List Word} {D : Nat → Prop} {sup : Nat} {ρ : Own.Env}
-    {ρl ρl₁ : Lir.Env} {ctx : Word} {mem : X86.Memory} {H : Own.Heap} (hheap : HeapInv T P H ctx mem)
-    (hρ : EnvRel T P D sup ρ ρl) {x r : Nat} (hx : x < sup) {u : Word} {n : Nat} (hr1 : ρl₁[r]? = some u)
-    (hu : u.toNat = n) (hf : ∀ y, y < sup → ρl₁[y]? = ρl[y]?)
-    (hfalse : Lir.Cond.holds .ugt .w64 u 0x7fffffffffffffff = false) :
-    ∃ ρl' mem' P', Lir.execList ρl₁ mem ctx [.assign x (retag (.v r))] = some (ρl', mem') ∧
-      HeapInv T P' H ctx mem' ∧ P <+: P' ∧ EnvRel T P' D sup (ρ.insert x (.lit (.nat n))) ρl' := by
-  have hle : ¬ u > 0x7fffffffffffffff := by
-    intro hgt
-    simp [Lir.Cond.holds, hgt] at hfalse
-  have hw := (wide_word hu).1 hle
-  refine ⟨ρl₁.insert x (u + u + 1), mem, P, ?_, hheap, List.prefix_refl _, ?_⟩
-  · simp only [lir_eval, retag, hr1, retag_val, UInt64.mul_one]
-  · exact (envRel_frame hρ hf).insert hx hw
-
-/-- A binary width-64 expansion: its statements compute the untagged result, then the check. -/
-theorem word2_checked_sim {T : Tables} {f : Fir.FunId} {lp : Lir.Program} {ctx : Word} {D : Nat → Prop}
-    {sup : Nat} {fn : Nat} {F : Lir.Func} {off : Nat} {starts : NatMap Nat} {C : List PBlock}
-    (hF : lp.funcs[fn]? = some F) (hH : Holds f F off starts C) {st : St} {ss1 : List Lir.Stmt} {r x : Nat}
-    {f' : Nat}
+/-- A check on the untagged result `u` in register `r`, then `x := 2u + 1`: the run up to the
+continuation, or the failure. -/
+theorem checked_core {f : Fir.FunId} {lp : Lir.Program} {ctx : Word} {sup : Nat} {fn : Nat} {F : Lir.Func}
+    {off : Nat} {starts : NatMap Nat} {C : List PBlock} (hF : lp.funcs[fn]? = some F)
+    (hH : Holds f F off starts C) {st : St} {ss1 : List Lir.Stmt} {r x : Nat} {f' : Nat}
     (hC : Ext C (CheckSt st .natOverflow ss1 [.assign x (retag (.v r))]
       (.br .ugt (.v r) (.imm 0x7fffffffffffffff) (loc st.next) (loc (st.next + 1))) f'))
-    (hl : Labels st) (ho : Open st) (hnc : ∀ s ∈ ss1, s.isCall = false) (hx : x < sup) {la lb : Lir.Arg}
-    {as : List Fir.Arg} (hops : operands f as = .ok (some [la, lb])) (hlive : ∀ a ∈ as, LiveArg D a)
-    {op : WordOp}
+    (hl : Labels st) (ho : Open st) (hnc : ∀ s ∈ ss1, s.isCall = false) {ρl ρl₁ : Lir.Env}
+    {mem : X86.Memory} {rest : List Lir.Frame} {u : Word} {n : Nat}
+    (hx1 : Lir.execList ρl mem ctx ss1 = some (ρl₁, mem)) (hr1 : ρl₁[r]? = some u) (hu : u.toNat = n)
+    (hf : ∀ y, y < sup → ρl₁[y]? = ρl[y]?) :
+    (∃ c ρl' w, Sem.Star (Lir.semStep lp) (Lir.atState mem ctx fn (off + st.cur) st.acc.length ρl rest) c
+        (Lir.atState mem ctx fn (off + (st.next + 1)) [Lir.Stmt.assign x (retag (.v r))].length ρl' rest) ∧
+        natWord n = some w ∧ ρl'[x]? = some w ∧ ∀ y, y < sup → y ≠ x → ρl'[y]? = ρl[y]?) ∨
+    Sem.Fails (Lir.semStep lp) (Lir.atState mem ctx fn (off + st.cur) st.acc.length ρl rest) := by
+  obtain ⟨⟨lb, hlb, hbody, hterm⟩, hbad, ⟨cbk, post, hcb, hcp, hcbody⟩⟩ := check_code hH hC hl ho
+  simp only [resolveTerm, resolveEdge, resolveTgt, loc, bind, Except.bind, pure, Except.pure, Except.ok.injEq] at hterm
+  have h1 := Lir.stmts_at (p := lp) (ctx := ctx) (rest := rest) (pre := st.acc.reverse) (post := []) hF hlb
+    (by simpa using hbody) hnc hx1
+  simp only [List.length_reverse] at h1
+  have hpos : st.acc.length + ss1.length = lb.body.size := by
+    rw [← Array.length_toList, hbody]; simp
+  have hca : (Lir.Arg.v r).eval ρl₁ = some u := hr1
+  have hcbv : (Lir.Arg.imm 0x7fffffffffffffff).eval ρl₁ = some 0x7fffffffffffffff := rfl
+  cases hz : Lir.Cond.holds .ugt .w64 u 0x7fffffffffffffff with
+  | false =>
+    have hle : ¬ u > 0x7fffffffffffffff := by
+      intro hgt
+      simp [Lir.Cond.holds, hgt] at hz
+    have hw := (wide_word hu).1 hle
+    have hx2 : Lir.execList ρl₁ mem ctx [Lir.Stmt.assign x (retag (.v r))] =
+        some (ρl₁.insert x (u + u + 1), mem) := by
+      simp only [lir_eval, retag, hr1, retag_val, UInt64.mul_one]
+    have h2 := Lir.br_at (p := lp) (mem := mem) (ctx := ctx) (rest := rest) (ρ := ρl₁) (ρ' := ρl₁)
+      (e := ⟨off + (st.next + 1), []⟩) (vals := []) (va := u) (vb := 0x7fffffffffffffff) hF hlb hpos hterm.symm hca
+      hcbv (by simp [hz]) rfl hcb (by simp [hcp, Lir.bindParams])
+    have h3 := Lir.stmts_at (p := lp) (ctx := ctx) (rest := rest) (pre := []) (post := post) hF hcb
+      (by simpa using hcbody) (by simp [Lir.Stmt.isCall]) hx2
+    refine .inl ⟨_, ρl₁.insert x (u + u + 1), u + u + 1, h1.trans ((Lir.star_of_step h2).trans (by simpa using h3)),
+      hw, by simp, fun y hy hyx => ?_⟩
+    rw [Lir.env_insert_ne _ _ (Ne.symm hyx), hf y hy]
+  | true =>
+    have h2 := Lir.br_at (p := lp) (mem := mem) (ctx := ctx) (rest := rest) (ρ := ρl₁) (ρ' := ρl₁)
+      (e := ⟨off + st.next, []⟩) (vals := []) (va := u) (vb := 0x7fffffffffffffff) hF hlb hpos hterm.symm hca hcbv
+      (by simp [hz]) rfl hbad rfl
+    have h3 := Lir.fail_at (p := lp) (mem := mem) (ctx := ctx) (rest := rest) (pos := 0) (ρ := ρl₁) hF hbad rfl rfl
+    exact .inr (Lir.fails_of_star (h1.trans (Lir.star_of_step h2)) h3)
+
+/-- A binary width-64 expansion, in the core: its statements compute the untagged result, then
+the check. -/
+theorem word2_checked_core {f : Fir.FunId} {lp : Lir.Program} {ctx : Word} {sup : Nat} {fn : Nat}
+    {F : Lir.Func} {off : Nat} {starts : NatMap Nat} {C : List PBlock} (hF : lp.funcs[fn]? = some F)
+    (hH : Holds f F off starts C) {st : St} {ss1 : List Lir.Stmt} {r x : Nat} {f' : Nat}
+    (hC : Ext C (CheckSt st .natOverflow ss1 [.assign x (retag (.v r))]
+      (.br .ugt (.v r) (.imm 0x7fffffffffffffff) (loc st.next) (loc (st.next + 1))) f'))
+    (hl : Labels st) (ho : Open st) (hnc : ∀ s ∈ ss1, s.isCall = false) {la lb : Lir.Arg} {op : WordOp}
     (hexec : ∀ (ρl : Lir.Env) (mem : X86.Memory) (p q : Nat) (wa wb : Word), la.eval ρl = some wa →
       lb.eval ρl = some wb → natWord p = some wa → natWord q = some wb → ArgReads sup la → ArgReads sup lb →
       ∃ ρl₁ u, Lir.execList ρl mem ctx ss1 = some (ρl₁, mem) ∧ ρl₁[r]? = some u ∧
         u.toNat = (op.eval .w64 p q).val ∧ ∀ y, y < sup → ρl₁[y]? = ρl[y]?) :
-    RhsSim T lp ctx D sup fn (off + st.cur) st.acc.length (off + (st.next + 1))
-      [Lir.Stmt.assign x (retag (.v r))].length x (.fir (.prim (.word .w64 op) as)) := by
-  refine check_br_sim hF hH hC hl ho hnc (by simp [Lir.Stmt.isCall]) ?_
-  intro P H ρ ρl mem v H' hheap hρ hr
-  obtain ⟨rfl, p, q, wa, wb, ha, hb, hwa, hwb, -, -, rfl, hra, hrb⟩ := word2_of hρ hops hlive hr
-  obtain ⟨ρl₁, u, hx1, hr1, hu, hf⟩ := hexec ρl mem p q wa wb ha hb hwa hwb hra hrb
-  exact ⟨ρl₁, mem, u, 0x7fffffffffffffff, hx1, hr1, rfl, checked_tail hheap hρ hx hr1 hu hf⟩
+    PrimCore lp ctx sup fn (off + st.cur) st.acc.length (off + (st.next + 1))
+      [Lir.Stmt.assign x (retag (.v r))].length x (.word .w64 op) [la, lb] := by
+  intro ρl mem rest ns ws n hws hrel hreads hsem
+  obtain ⟨p, q, wa, wb, rfl, ha, hb, hwa, hwb⟩ := core_two hws hrel
+  rw [Lam.Prim.sem_word] at hsem
+  obtain ⟨-, -, -, -, rfl⟩ := Lam.wordSem_two hsem
+  obtain ⟨ρl₁, u, hx1, hr1, hu, hf⟩ := hexec ρl mem p q wa wb ha hb hwa hwb (hreads la (by simp)) (hreads lb (by simp))
+  exact checked_core hF hH hC hl ho hnc hx1 hr1 hu hf
 
-/-- A unary width-64 expansion. -/
-theorem word1_checked_sim {T : Tables} {f : Fir.FunId} {lp : Lir.Program} {ctx : Word} {D : Nat → Prop}
-    {sup : Nat} {fn : Nat} {F : Lir.Func} {off : Nat} {starts : NatMap Nat} {C : List PBlock}
-    (hF : lp.funcs[fn]? = some F) (hH : Holds f F off starts C) {st : St} {ss1 : List Lir.Stmt} {r x : Nat}
-    {f' : Nat}
+/-- A unary width-64 expansion, in the core. -/
+theorem word1_checked_core {f : Fir.FunId} {lp : Lir.Program} {ctx : Word} {sup : Nat} {fn : Nat}
+    {F : Lir.Func} {off : Nat} {starts : NatMap Nat} {C : List PBlock} (hF : lp.funcs[fn]? = some F)
+    (hH : Holds f F off starts C) {st : St} {ss1 : List Lir.Stmt} {r x : Nat} {f' : Nat}
     (hC : Ext C (CheckSt st .natOverflow ss1 [.assign x (retag (.v r))]
       (.br .ugt (.v r) (.imm 0x7fffffffffffffff) (loc st.next) (loc (st.next + 1))) f'))
-    (hl : Labels st) (ho : Open st) (hnc : ∀ s ∈ ss1, s.isCall = false) (hx : x < sup) {la : Lir.Arg}
-    {as : List Fir.Arg} (hops : operands f as = .ok (some [la])) (hlive : ∀ a ∈ as, LiveArg D a)
-    {op : WordOp}
+    (hl : Labels st) (ho : Open st) (hnc : ∀ s ∈ ss1, s.isCall = false) {la : Lir.Arg} {op : WordOp}
     (hexec : ∀ (ρl : Lir.Env) (mem : X86.Memory) (p : Nat) (wa : Word), la.eval ρl = some wa →
       natWord p = some wa → ArgReads sup la →
       ∃ ρl₁ u, Lir.execList ρl mem ctx ss1 = some (ρl₁, mem) ∧ ρl₁[r]? = some u ∧
         u.toNat = (op.eval .w64 p 0).val ∧ ∀ y, y < sup → ρl₁[y]? = ρl[y]?) :
-    RhsSim T lp ctx D sup fn (off + st.cur) st.acc.length (off + (st.next + 1))
-      [Lir.Stmt.assign x (retag (.v r))].length x (.fir (.prim (.word .w64 op) as)) := by
-  refine check_br_sim hF hH hC hl ho hnc (by simp [Lir.Stmt.isCall]) ?_
-  intro P H ρ ρl mem v H' hheap hρ hr
-  obtain ⟨rfl, p, wa, ha, hwa, -, rfl, hra⟩ := word1_of hρ hops hlive hr
-  obtain ⟨ρl₁, u, hx1, hr1, hu, hf⟩ := hexec ρl mem p wa ha hwa hra
-  exact ⟨ρl₁, mem, u, 0x7fffffffffffffff, hx1, hr1, rfl, checked_tail hheap hρ hx hr1 hu hf⟩
+    PrimCore lp ctx sup fn (off + st.cur) st.acc.length (off + (st.next + 1))
+      [Lir.Stmt.assign x (retag (.v r))].length x (.word .w64 op) [la] := by
+  intro ρl mem rest ns ws n hws hrel hreads hsem
+  obtain ⟨p, wa, rfl, ha, hwa⟩ := core_one hws hrel
+  rw [Lam.Prim.sem_word] at hsem
+  obtain ⟨-, -, -, rfl⟩ := Lam.wordSem_one hsem
+  obtain ⟨ρl₁, u, hx1, hr1, hu, hf⟩ := hexec ρl mem p wa ha hwa (hreads la (by simp))
+  exact checked_core hF hH hC hl ho hnc hx1 hr1 hu hf
 
 /-- Where a binary word operation's number is the `Nat` primitive's on the same arguments, the
 `Nat` primitive returns the same number. -/
@@ -354,293 +430,276 @@ theorem prim_wordXor {w : Width} {la lb : Lir.Arg}
 
 /-! ### Every width: `shiftRight`, `toNat`, `convert` -/
 
-include hF hH hC ho hsup hx hlive in
-theorem prim_wordShr {w : Width} {la lb : Lir.Arg}
-    (hrun : (primitive f T x (.word w .shiftRight) [la, lb]).run st = .ok ((), st'))
-    (hops : operands f as = .ok (some [la, lb])) :
-    RhsSim T lp ctx D sup fn (off + st.cur) st.acc.length (off + st'.cur) st'.acc.length x
-      (.fir (.prim (.word w .shiftRight) as)) := by
+include hF hH hC ho hsup in
+theorem core_wordShr {w : Width} {la lb : Lir.Arg}
+    (hrun : (primitive f T x (.word w .shiftRight) [la, lb]).run st = .ok ((), st')) :
+    PrimCore lp ctx sup fn (off + st.cur) st.acc.length (off + st'.cur) st'.acc.length x
+      (.word w .shiftRight) [la, lb] := by
   word_run at hrun
   subst hrun
-  refine word2_sim (ss := [.assign st.fresh (.bin .shr .w64 lb (.imm 1)),
+  refine word2_core (ss := [.assign st.fresh (.bin .shr .w64 lb (.imm 1)),
       .assign (st.fresh + 1) (.bin .and .w64 (.v st.fresh) (.imm (UInt64.ofNat (w.bits - 1)))),
       .assign (st.fresh + 1 + 1) (.bin .shr .w64 la (.v (st.fresh + 1))),
       .assign x (.bin .or .w64 (.v (st.fresh + 1 + 1)) (.imm 1))])
-    hF hH hC ho (by simp [Lir.Stmt.isCall]) hx hops hlive ?_
+    hF hH hC ho (by simp [Lir.Stmt.isCall]) ?_
   intro ρl mem p q wa wb ha hb hwa hwb _ _ hra _
   refine ⟨_, _, by
       simp (disch := omega) only [lir_eval, ha, hb, arg_eval_temp hra (t := st.fresh) hsup,
         arg_eval_temp hra (t := st.fresh + 1) (by omega), ↓reduceIte, if_neg]; try rfl,
     wordShr_word w hwa hwb, by simp, fun y hy hyx => by regs_ne⟩
 
-include hF hH hC ho hsup hx hlive in
-theorem prim_wordToNat {w : Width} {la : Lir.Arg}
-    (hrun : (primitive f T x (.word w .toNat) [la]).run st = .ok ((), st'))
-    (hops : operands f as = .ok (some [la])) :
-    RhsSim T lp ctx D sup fn (off + st.cur) st.acc.length (off + st'.cur) st'.acc.length x
-      (.fir (.prim (.word w .toNat) as)) := by
+include hF hH hC ho hsup in
+theorem core_wordToNat {w : Width} {la : Lir.Arg}
+    (hrun : (primitive f T x (.word w .toNat) [la]).run st = .ok ((), st')) :
+    PrimCore lp ctx sup fn (off + st.cur) st.acc.length (off + st'.cur) st'.acc.length x
+      (.word w .toNat) [la] := by
   word_run at hrun
   subst hrun
-  refine word1_sim (ss := [.assign x (.arg la)]) hF hH hC ho (by simp [Lir.Stmt.isCall]) hx hops hlive ?_
+  refine word1_core (ss := [.assign x (.arg la)]) hF hH hC ho (by simp [Lir.Stmt.isCall]) ?_
   intro ρl mem p wa ha hwa _ _
   exact ⟨_, _, by simp only [lir_eval, ha]; try rfl, toNat_word hwa, by simp, fun y hy hyx => by regs_ne⟩
 
-include hF hH hC ho hsup hx hlive in
-theorem prim_wordConvert {w w' : Width} {la : Lir.Arg}
-    (hrun : (primitive f T x (.word w (.convert w')) [la]).run st = .ok ((), st'))
-    (hops : operands f as = .ok (some [la])) :
-    RhsSim T lp ctx D sup fn (off + st.cur) st.acc.length (off + st'.cur) st'.acc.length x
-      (.fir (.prim (.word w (.convert w')) as)) := by
+include hF hH hC ho hsup in
+theorem core_wordConvert {w w' : Width} {la : Lir.Arg}
+    (hrun : (primitive f T x (.word w (.convert w')) [la]).run st = .ok ((), st')) :
+    PrimCore lp ctx sup fn (off + st.cur) st.acc.length (off + st'.cur) st'.acc.length x
+      (.word w (.convert w')) [la] := by
   by_cases hww : w.bits ≤ w'.bits
   · word_run_n at hrun using hww
     subst hrun
-    refine word1_sim (ss := [.assign x (.arg la)]) hF hH hC ho (by simp [Lir.Stmt.isCall]) hx hops hlive ?_
+    refine word1_core (ss := [.assign x (.arg la)]) hF hH hC ho (by simp [Lir.Stmt.isCall]) ?_
     intro ρl mem p wa ha hwa _ _
     exact ⟨_, _, by simp only [lir_eval, ha]; try rfl, convertWide_word hww hwa, by simp,
       fun y hy hyx => by regs_ne⟩
   · word_run_n at hrun using hww
     subst hrun
-    refine word1_sim (ss := [.assign x (.bin .and .w64 la (.imm (tagMask w')))]) hF hH hC ho
-      (by simp [Lir.Stmt.isCall]) hx hops hlive ?_
+    refine word1_core (ss := [.assign x (.bin .and .w64 la (.imm (tagMask w')))]) hF hH hC ho
+      (by simp [Lir.Stmt.isCall]) ?_
     intro ρl mem p wa ha hwa _ _
     exact ⟨_, _, by simp only [lir_eval, ha]; try rfl, convertNarrow_word hww hwa, by simp,
       fun y hy hyx => by regs_ne⟩
 
 /-! ### Below width 64 -/
 
-include hF hH hC ho hsup hx hlive in
-theorem prim_wordAddN {w : Width} (hw : w ≠ .w64) {la lb : Lir.Arg}
-    (hrun : (primitive f T x (.word w .add) [la, lb]).run st = .ok ((), st'))
-    (hops : operands f as = .ok (some [la, lb])) :
-    RhsSim T lp ctx D sup fn (off + st.cur) st.acc.length (off + st'.cur) st'.acc.length x
-      (.fir (.prim (.word w .add) as)) := by
+include hF hH hC ho hsup in
+theorem core_wordAddN {w : Width} (hw : w ≠ .w64) {la lb : Lir.Arg}
+    (hrun : (primitive f T x (.word w .add) [la, lb]).run st = .ok ((), st')) :
+    PrimCore lp ctx sup fn (off + st.cur) st.acc.length (off + st'.cur) st'.acc.length x
+      (.word w .add) [la, lb] := by
   word_run_n at hrun using hw
   subst hrun
-  refine word2_sim (ss := [.assign st.fresh (.bin .add .w64 la lb),
+  refine word2_core (ss := [.assign st.fresh (.bin .add .w64 la lb),
       .assign (st.fresh + 1) (.bin .sub .w64 (.v st.fresh) (.imm 1)),
       .assign x (.bin .and .w64 (.v (st.fresh + 1)) (.imm (tagMask w)))])
-    hF hH hC ho (by simp [Lir.Stmt.isCall]) hx hops hlive ?_
+    hF hH hC ho (by simp [Lir.Stmt.isCall]) ?_
   intro ρl mem p q wa wb ha hb hwa hwb hp hq _ _
   exact ⟨_, _, by simp (disch := omega) only [lir_eval, ha, hb, ↓reduceIte, if_neg]; try rfl,
     narrowAdd_word hw hwa hwb hp hq, by simp, fun y hy hyx => by regs_ne⟩
 
-include hF hH hC ho hsup hx hlive in
-theorem prim_wordSubN {w : Width} (hw : w ≠ .w64) {la lb : Lir.Arg}
-    (hrun : (primitive f T x (.word w .sub) [la, lb]).run st = .ok ((), st'))
-    (hops : operands f as = .ok (some [la, lb])) :
-    RhsSim T lp ctx D sup fn (off + st.cur) st.acc.length (off + st'.cur) st'.acc.length x
-      (.fir (.prim (.word w .sub) as)) := by
+include hF hH hC ho hsup in
+theorem core_wordSubN {w : Width} (hw : w ≠ .w64) {la lb : Lir.Arg}
+    (hrun : (primitive f T x (.word w .sub) [la, lb]).run st = .ok ((), st')) :
+    PrimCore lp ctx sup fn (off + st.cur) st.acc.length (off + st'.cur) st'.acc.length x
+      (.word w .sub) [la, lb] := by
   word_run_n at hrun using hw
   subst hrun
-  refine word2_sim (ss := [.assign st.fresh (.bin .sub .w64 la lb),
+  refine word2_core (ss := [.assign st.fresh (.bin .sub .w64 la lb),
       .assign (st.fresh + 1) (.bin .or .w64 (.v st.fresh) (.imm 1)),
       .assign x (.bin .and .w64 (.v (st.fresh + 1)) (.imm (tagMask w)))])
-    hF hH hC ho (by simp [Lir.Stmt.isCall]) hx hops hlive ?_
+    hF hH hC ho (by simp [Lir.Stmt.isCall]) ?_
   intro ρl mem p q wa wb ha hb hwa hwb hp hq _ _
   exact ⟨_, _, by simp (disch := omega) only [lir_eval, ha, hb, ↓reduceIte, if_neg]; try rfl,
     narrowSub_word hw hwa hwb hp hq, by simp, fun y hy hyx => by regs_ne⟩
 
-include hF hH hC ho hsup hx hlive in
-theorem prim_wordMulN {w : Width} (hw : w ≠ .w64) {la lb : Lir.Arg}
-    (hrun : (primitive f T x (.word w .mul) [la, lb]).run st = .ok ((), st'))
-    (hops : operands f as = .ok (some [la, lb])) :
-    RhsSim T lp ctx D sup fn (off + st.cur) st.acc.length (off + st'.cur) st'.acc.length x
-      (.fir (.prim (.word w .mul) as)) := by
+include hF hH hC ho hsup in
+theorem core_wordMulN {w : Width} (hw : w ≠ .w64) {la lb : Lir.Arg}
+    (hrun : (primitive f T x (.word w .mul) [la, lb]).run st = .ok ((), st')) :
+    PrimCore lp ctx sup fn (off + st.cur) st.acc.length (off + st'.cur) st'.acc.length x
+      (.word w .mul) [la, lb] := by
   word_run_n at hrun using hw
   subst hrun
-  refine word2_sim (ss := [.assign st.fresh (.bin .shr .w64 la (.imm 1)),
+  refine word2_core (ss := [.assign st.fresh (.bin .shr .w64 la (.imm 1)),
       .assign (st.fresh + 1) (.bin .sub .w64 lb (.imm 1)),
       .assign (st.fresh + 1 + 1) (.bin .mul .w64 (.v st.fresh) (.v (st.fresh + 1))),
       .assign (st.fresh + 1 + 1 + 1) (.bin .or .w64 (.v (st.fresh + 1 + 1)) (.imm 1)),
       .assign x (.bin .and .w64 (.v (st.fresh + 1 + 1 + 1)) (.imm (tagMask w)))])
-    hF hH hC ho (by simp [Lir.Stmt.isCall]) hx hops hlive ?_
+    hF hH hC ho (by simp [Lir.Stmt.isCall]) ?_
   intro ρl mem p q wa wb ha hb hwa hwb hp hq _ hrb
   exact ⟨_, _, by
       simp (disch := omega) only [lir_eval, ha, hb, arg_eval_temp hrb (t := st.fresh) hsup, ↓reduceIte,
         if_neg]; try rfl,
     narrowMul_word hw hwa hwb hp hq, by simp, fun y hy hyx => by regs_ne⟩
 
-include hF hH hC ho hsup hx hlive in
-theorem prim_wordShlN {w : Width} (hw : w ≠ .w64) {la lb : Lir.Arg}
-    (hrun : (primitive f T x (.word w .shiftLeft) [la, lb]).run st = .ok ((), st'))
-    (hops : operands f as = .ok (some [la, lb])) :
-    RhsSim T lp ctx D sup fn (off + st.cur) st.acc.length (off + st'.cur) st'.acc.length x
-      (.fir (.prim (.word w .shiftLeft) as)) := by
+include hF hH hC ho hsup in
+theorem core_wordShlN {w : Width} (hw : w ≠ .w64) {la lb : Lir.Arg}
+    (hrun : (primitive f T x (.word w .shiftLeft) [la, lb]).run st = .ok ((), st')) :
+    PrimCore lp ctx sup fn (off + st.cur) st.acc.length (off + st'.cur) st'.acc.length x
+      (.word w .shiftLeft) [la, lb] := by
   word_run_n at hrun using hw
   subst hrun
-  refine word2_sim (ss := [.assign st.fresh (.bin .shr .w64 lb (.imm 1)),
+  refine word2_core (ss := [.assign st.fresh (.bin .shr .w64 lb (.imm 1)),
       .assign (st.fresh + 1) (.bin .and .w64 (.v st.fresh) (.imm (UInt64.ofNat (w.bits - 1)))),
       .assign (st.fresh + 1 + 1) (.bin .sub .w64 la (.imm 1)),
       .assign (st.fresh + 1 + 1 + 1) (.bin .shl .w64 (.v (st.fresh + 1 + 1)) (.v (st.fresh + 1))),
       .assign (st.fresh + 1 + 1 + 1 + 1) (.bin .or .w64 (.v (st.fresh + 1 + 1 + 1)) (.imm 1)),
       .assign x (.bin .and .w64 (.v (st.fresh + 1 + 1 + 1 + 1)) (.imm (tagMask w)))])
-    hF hH hC ho (by simp [Lir.Stmt.isCall]) hx hops hlive ?_
+    hF hH hC ho (by simp [Lir.Stmt.isCall]) ?_
   intro ρl mem p q wa wb ha hb hwa hwb hp hq hra _
   exact ⟨_, _, by
       simp (disch := omega) only [lir_eval, ha, hb, arg_eval_temp hra (t := st.fresh) hsup,
         arg_eval_temp hra (t := st.fresh + 1) (by omega), ↓reduceIte, if_neg]; try rfl,
     narrowShl_word hw hwa hwb hp hq, by simp, fun y hy hyx => by regs_ne⟩
 
-include hF hH hC ho hsup hx hlive in
-theorem prim_wordComplementN {w : Width} (hw : w ≠ .w64) {la : Lir.Arg}
-    (hrun : (primitive f T x (.word w .complement) [la]).run st = .ok ((), st'))
-    (hops : operands f as = .ok (some [la])) :
-    RhsSim T lp ctx D sup fn (off + st.cur) st.acc.length (off + st'.cur) st'.acc.length x
-      (.fir (.prim (.word w .complement) as)) := by
+include hF hH hC ho hsup in
+theorem core_wordComplementN {w : Width} (hw : w ≠ .w64) {la : Lir.Arg}
+    (hrun : (primitive f T x (.word w .complement) [la]).run st = .ok ((), st')) :
+    PrimCore lp ctx sup fn (off + st.cur) st.acc.length (off + st'.cur) st'.acc.length x
+      (.word w .complement) [la] := by
   word_run_n at hrun using hw
   subst hrun
-  refine word1_sim (ss := [.assign st.fresh (.bin .xor .w64 la (.imm (tagMask w - 1))),
+  refine word1_core (ss := [.assign st.fresh (.bin .xor .w64 la (.imm (tagMask w - 1))),
       .assign x (.bin .and .w64 (.v st.fresh) (.imm (tagMask w)))])
-    hF hH hC ho (by simp [Lir.Stmt.isCall]) hx hops hlive ?_
+    hF hH hC ho (by simp [Lir.Stmt.isCall]) ?_
   intro ρl mem p wa ha hwa hp _
   have hp' : p < w.size := hp.resolve_left (by simp)
   exact ⟨_, _, by simp (disch := omega) only [lir_eval, ha, ↓reduceIte, if_neg]; try rfl,
     narrowComplement_word hw hwa hp', by simp, fun y hy hyx => by regs_ne⟩
 
-include hF hH hC ho hsup hx hlive in
-theorem prim_wordNegN {w : Width} (hw : w ≠ .w64) {la : Lir.Arg}
-    (hrun : (primitive f T x (.word w .neg) [la]).run st = .ok ((), st'))
-    (hops : operands f as = .ok (some [la])) :
-    RhsSim T lp ctx D sup fn (off + st.cur) st.acc.length (off + st'.cur) st'.acc.length x
-      (.fir (.prim (.word w .neg) as)) := by
+include hF hH hC ho hsup in
+theorem core_wordNegN {w : Width} (hw : w ≠ .w64) {la : Lir.Arg}
+    (hrun : (primitive f T x (.word w .neg) [la]).run st = .ok ((), st')) :
+    PrimCore lp ctx sup fn (off + st.cur) st.acc.length (off + st'.cur) st'.acc.length x
+      (.word w .neg) [la] := by
   word_run_n at hrun using hw
   subst hrun
-  refine word1_sim (ss := [.assign st.fresh (.bin .sub .w64 (.imm 2) la),
+  refine word1_core (ss := [.assign st.fresh (.bin .sub .w64 (.imm 2) la),
       .assign x (.bin .and .w64 (.v st.fresh) (.imm (tagMask w)))])
-    hF hH hC ho (by simp [Lir.Stmt.isCall]) hx hops hlive ?_
+    hF hH hC ho (by simp [Lir.Stmt.isCall]) ?_
   intro ρl mem p wa ha hwa hp _
   have hp' : p < w.size := hp.resolve_left (by simp)
   exact ⟨_, _, by simp (disch := omega) only [lir_eval, ha, ↓reduceIte, if_neg]; try rfl,
     narrowNeg_word hw hwa hp', by simp, fun y hy hyx => by regs_ne⟩
 
-include hF hH hC ho hsup hx hlive in
-theorem prim_wordOfNatN {w : Width} (hw : w ≠ .w64) {la : Lir.Arg}
-    (hrun : (primitive f T x (.word w .ofNat) [la]).run st = .ok ((), st'))
-    (hops : operands f as = .ok (some [la])) :
-    RhsSim T lp ctx D sup fn (off + st.cur) st.acc.length (off + st'.cur) st'.acc.length x
-      (.fir (.prim (.word w .ofNat) as)) := by
+include hF hH hC ho hsup in
+theorem core_wordOfNatN {w : Width} (hw : w ≠ .w64) {la : Lir.Arg}
+    (hrun : (primitive f T x (.word w .ofNat) [la]).run st = .ok ((), st')) :
+    PrimCore lp ctx sup fn (off + st.cur) st.acc.length (off + st'.cur) st'.acc.length x
+      (.word w .ofNat) [la] := by
   word_run_n at hrun using hw
   subst hrun
-  refine word1_sim (ss := [.assign x (.bin .and .w64 la (.imm (tagMask w)))])
-    hF hH hC ho (by simp [Lir.Stmt.isCall]) hx hops hlive ?_
+  refine word1_core (ss := [.assign x (.bin .and .w64 la (.imm (tagMask w)))])
+    hF hH hC ho (by simp [Lir.Stmt.isCall]) ?_
   intro ρl mem p wa ha hwa _ _
   exact ⟨_, _, by simp only [lir_eval, ha]; try rfl, narrowOfNat_word hw hwa, by simp,
     fun y hy hyx => by regs_ne⟩
 
 /-! ### Width 64 -/
 
-include hF hH hC ho hsup hx hlive in
-theorem prim_wordOfNat64 {la : Lir.Arg}
-    (hrun : (primitive f T x (.word .w64 .ofNat) [la]).run st = .ok ((), st'))
-    (hops : operands f as = .ok (some [la])) :
-    RhsSim T lp ctx D sup fn (off + st.cur) st.acc.length (off + st'.cur) st'.acc.length x
-      (.fir (.prim (.word .w64 .ofNat) as)) := by
+include hF hH hC ho hsup in
+theorem core_wordOfNat64 {la : Lir.Arg}
+    (hrun : (primitive f T x (.word .w64 .ofNat) [la]).run st = .ok ((), st')) :
+    PrimCore lp ctx sup fn (off + st.cur) st.acc.length (off + st'.cur) st'.acc.length x
+      (.word .w64 .ofNat) [la] := by
   word_run at hrun
   subst hrun
-  refine word1_sim (ss := [.assign x (.arg la)]) hF hH hC ho (by simp [Lir.Stmt.isCall]) hx hops hlive ?_
+  refine word1_core (ss := [.assign x (.arg la)]) hF hH hC ho (by simp [Lir.Stmt.isCall]) ?_
   intro ρl mem p wa ha hwa _ _
   exact ⟨_, _, by simp only [lir_eval, ha]; try rfl, wideOfNat_word hwa, by simp, fun y hy hyx => by regs_ne⟩
 
 
-include hF hH hC ho hsup hx hlive in
-theorem prim_wordAdd64 (hl : Labels st) {la lb : Lir.Arg}
-    (hrun : (primitive f T x (.word .w64 .add) [la, lb]).run st = .ok ((), st'))
-    (hops : operands f as = .ok (some [la, lb])) :
-    RhsSim T lp ctx D sup fn (off + st.cur) st.acc.length (off + st'.cur) st'.acc.length x
-      (.fir (.prim (.word .w64 .add) as)) := by
+include hF hH hC ho hsup in
+theorem core_wordAdd64 (hl : Labels st) {la lb : Lir.Arg}
+    (hrun : (primitive f T x (.word .w64 .add) [la, lb]).run st = .ok ((), st')) :
+    PrimCore lp ctx sup fn (off + st.cur) st.acc.length (off + st'.cur) st'.acc.length x
+      (.word .w64 .add) [la, lb] := by
   word_run at hrun
   subst hrun
-  refine word2_checked_sim (ss1 := [.assign st.fresh (.bin .shr .w64 la (.imm 1)),
+  refine word2_checked_core (ss1 := [.assign st.fresh (.bin .shr .w64 la (.imm 1)),
       .assign (st.fresh + 1) (.bin .shr .w64 lb (.imm 1)),
       .assign (st.fresh + 1 + 1) (.bin .add .w64 (.v st.fresh) (.v (st.fresh + 1)))])
-    (r := st.fresh + 1 + 1) hF hH hC hl ho (by simp [Lir.Stmt.isCall]) hx hops hlive ?_
+    (r := st.fresh + 1 + 1) hF hH hC hl ho (by simp [Lir.Stmt.isCall]) ?_
   intro ρl mem p q wa wb ha hb hwa hwb _ hrb
   exact ⟨_, _, by
       simp (disch := omega) only [lir_eval, ha, hb, arg_eval_temp hrb (t := st.fresh) hsup, ↓reduceIte,
         if_neg]; try rfl,
     by simp, wideAdd_toNat hwa hwb, fun y hy => by regs_ne⟩
 
-include hF hH hC ho hsup hx hlive in
-theorem prim_wordSub64 (hl : Labels st) {la lb : Lir.Arg}
-    (hrun : (primitive f T x (.word .w64 .sub) [la, lb]).run st = .ok ((), st'))
-    (hops : operands f as = .ok (some [la, lb])) :
-    RhsSim T lp ctx D sup fn (off + st.cur) st.acc.length (off + st'.cur) st'.acc.length x
-      (.fir (.prim (.word .w64 .sub) as)) := by
+include hF hH hC ho hsup in
+theorem core_wordSub64 (hl : Labels st) {la lb : Lir.Arg}
+    (hrun : (primitive f T x (.word .w64 .sub) [la, lb]).run st = .ok ((), st')) :
+    PrimCore lp ctx sup fn (off + st.cur) st.acc.length (off + st'.cur) st'.acc.length x
+      (.word .w64 .sub) [la, lb] := by
   word_run at hrun
   subst hrun
-  refine word2_checked_sim (ss1 := [.assign st.fresh (.bin .shr .w64 la (.imm 1)),
+  refine word2_checked_core (ss1 := [.assign st.fresh (.bin .shr .w64 la (.imm 1)),
       .assign (st.fresh + 1) (.bin .shr .w64 lb (.imm 1)),
       .assign (st.fresh + 1 + 1) (.bin .sub .w64 (.v st.fresh) (.v (st.fresh + 1)))])
-    (r := st.fresh + 1 + 1) hF hH hC hl ho (by simp [Lir.Stmt.isCall]) hx hops hlive ?_
+    (r := st.fresh + 1 + 1) hF hH hC hl ho (by simp [Lir.Stmt.isCall]) ?_
   intro ρl mem p q wa wb ha hb hwa hwb _ hrb
   exact ⟨_, _, by
       simp (disch := omega) only [lir_eval, ha, hb, arg_eval_temp hrb (t := st.fresh) hsup, ↓reduceIte,
         if_neg]; try rfl,
     by simp, wideSub_toNat hwa hwb, fun y hy => by regs_ne⟩
 
-include hF hH hC ho hsup hx hlive in
-theorem prim_wordMul64 (hl : Labels st) {la lb : Lir.Arg}
-    (hrun : (primitive f T x (.word .w64 .mul) [la, lb]).run st = .ok ((), st'))
-    (hops : operands f as = .ok (some [la, lb])) :
-    RhsSim T lp ctx D sup fn (off + st.cur) st.acc.length (off + st'.cur) st'.acc.length x
-      (.fir (.prim (.word .w64 .mul) as)) := by
+include hF hH hC ho hsup in
+theorem core_wordMul64 (hl : Labels st) {la lb : Lir.Arg}
+    (hrun : (primitive f T x (.word .w64 .mul) [la, lb]).run st = .ok ((), st')) :
+    PrimCore lp ctx sup fn (off + st.cur) st.acc.length (off + st'.cur) st'.acc.length x
+      (.word .w64 .mul) [la, lb] := by
   word_run at hrun
   subst hrun
-  refine word2_checked_sim (ss1 := [.assign st.fresh (.bin .shr .w64 la (.imm 1)),
+  refine word2_checked_core (ss1 := [.assign st.fresh (.bin .shr .w64 la (.imm 1)),
       .assign (st.fresh + 1) (.bin .shr .w64 lb (.imm 1)),
       .assign (st.fresh + 1 + 1) (.bin .mul .w64 (.v st.fresh) (.v (st.fresh + 1)))])
-    (r := st.fresh + 1 + 1) hF hH hC hl ho (by simp [Lir.Stmt.isCall]) hx hops hlive ?_
+    (r := st.fresh + 1 + 1) hF hH hC hl ho (by simp [Lir.Stmt.isCall]) ?_
   intro ρl mem p q wa wb ha hb hwa hwb _ hrb
   exact ⟨_, _, by
       simp (disch := omega) only [lir_eval, ha, hb, arg_eval_temp hrb (t := st.fresh) hsup, ↓reduceIte,
         if_neg]; try rfl,
     by simp, wideMul_toNat hwa hwb, fun y hy => by regs_ne⟩
 
-include hF hH hC ho hsup hx hlive in
-theorem prim_wordShl64 (hl : Labels st) {la lb : Lir.Arg}
-    (hrun : (primitive f T x (.word .w64 .shiftLeft) [la, lb]).run st = .ok ((), st'))
-    (hops : operands f as = .ok (some [la, lb])) :
-    RhsSim T lp ctx D sup fn (off + st.cur) st.acc.length (off + st'.cur) st'.acc.length x
-      (.fir (.prim (.word .w64 .shiftLeft) as)) := by
+include hF hH hC ho hsup in
+theorem core_wordShl64 (hl : Labels st) {la lb : Lir.Arg}
+    (hrun : (primitive f T x (.word .w64 .shiftLeft) [la, lb]).run st = .ok ((), st')) :
+    PrimCore lp ctx sup fn (off + st.cur) st.acc.length (off + st'.cur) st'.acc.length x
+      (.word .w64 .shiftLeft) [la, lb] := by
   word_run at hrun
   subst hrun
-  refine word2_checked_sim (ss1 := [.assign st.fresh (.bin .shr .w64 lb (.imm 1)),
+  refine word2_checked_core (ss1 := [.assign st.fresh (.bin .shr .w64 lb (.imm 1)),
       .assign (st.fresh + 1) (.bin .and .w64 (.v st.fresh) (.imm (UInt64.ofNat (Width.bits .w64 - 1)))),
       .assign (st.fresh + 1 + 1) (.bin .shr .w64 la (.imm 1)),
       .assign (st.fresh + 1 + 1 + 1) (.bin .shl .w64 (.v (st.fresh + 1 + 1)) (.v (st.fresh + 1)))])
-    (r := st.fresh + 1 + 1 + 1) hF hH hC hl ho (by simp [Lir.Stmt.isCall]) hx hops hlive ?_
+    (r := st.fresh + 1 + 1 + 1) hF hH hC hl ho (by simp [Lir.Stmt.isCall]) ?_
   intro ρl mem p q wa wb ha hb hwa hwb hra _
   exact ⟨_, _, by
       simp (disch := omega) only [lir_eval, ha, hb, arg_eval_temp hra (t := st.fresh) hsup,
         arg_eval_temp hra (t := st.fresh + 1) (by omega), ↓reduceIte, if_neg]; try rfl,
     by simp, wideShl_toNat hwa hwb, fun y hy => by regs_ne⟩
 
-include hF hH hC ho hsup hx hlive in
-theorem prim_wordComplement64 (hl : Labels st) {la : Lir.Arg}
-    (hrun : (primitive f T x (.word .w64 .complement) [la]).run st = .ok ((), st'))
-    (hops : operands f as = .ok (some [la])) :
-    RhsSim T lp ctx D sup fn (off + st.cur) st.acc.length (off + st'.cur) st'.acc.length x
-      (.fir (.prim (.word .w64 .complement) as)) := by
+include hF hH hC ho hsup in
+theorem core_wordComplement64 (hl : Labels st) {la : Lir.Arg}
+    (hrun : (primitive f T x (.word .w64 .complement) [la]).run st = .ok ((), st')) :
+    PrimCore lp ctx sup fn (off + st.cur) st.acc.length (off + st'.cur) st'.acc.length x
+      (.word .w64 .complement) [la] := by
   word_run at hrun
   subst hrun
-  refine word1_checked_sim (ss1 := [.assign st.fresh (.bin .shr .w64 la (.imm 1)),
+  refine word1_checked_core (ss1 := [.assign st.fresh (.bin .shr .w64 la (.imm 1)),
       .assign (st.fresh + 1) (.bin .xor .w64 (.v st.fresh) (.imm 0xFFFFFFFFFFFFFFFF))])
-    (r := st.fresh + 1) hF hH hC hl ho (by simp [Lir.Stmt.isCall]) hx hops hlive ?_
+    (r := st.fresh + 1) hF hH hC hl ho (by simp [Lir.Stmt.isCall]) ?_
   intro ρl mem p wa ha hwa _
   exact ⟨_, _, by simp (disch := omega) only [lir_eval, ha, ↓reduceIte, if_neg]; try rfl,
     by simp, wideComplement_toNat hwa, fun y hy => by regs_ne⟩
 
-include hF hH hC ho hsup hx hlive in
-theorem prim_wordNeg64 (hl : Labels st) {la : Lir.Arg}
-    (hrun : (primitive f T x (.word .w64 .neg) [la]).run st = .ok ((), st'))
-    (hops : operands f as = .ok (some [la])) :
-    RhsSim T lp ctx D sup fn (off + st.cur) st.acc.length (off + st'.cur) st'.acc.length x
-      (.fir (.prim (.word .w64 .neg) as)) := by
+include hF hH hC ho hsup in
+theorem core_wordNeg64 (hl : Labels st) {la : Lir.Arg}
+    (hrun : (primitive f T x (.word .w64 .neg) [la]).run st = .ok ((), st')) :
+    PrimCore lp ctx sup fn (off + st.cur) st.acc.length (off + st'.cur) st'.acc.length x
+      (.word .w64 .neg) [la] := by
   word_run at hrun
   subst hrun
-  refine word1_checked_sim (ss1 := [.assign st.fresh (.bin .shr .w64 la (.imm 1)),
+  refine word1_checked_core (ss1 := [.assign st.fresh (.bin .shr .w64 la (.imm 1)),
       .assign (st.fresh + 1) (.bin .sub .w64 (.imm 0) (.v st.fresh))])
-    (r := st.fresh + 1) hF hH hC hl ho (by simp [Lir.Stmt.isCall]) hx hops hlive ?_
+    (r := st.fresh + 1) hF hH hC hl ho (by simp [Lir.Stmt.isCall]) ?_
   intro ρl mem p wa ha hwa _
   exact ⟨_, _, by simp (disch := omega) only [lir_eval, ha, ↓reduceIte, if_neg]; try rfl,
     by simp, wideNeg_toNat hwa, fun y hy => by regs_ne⟩
@@ -648,6 +707,68 @@ theorem prim_wordNeg64 (hl : Labels st) {la : Lir.Arg}
 end ops
 
 /-! ## The dispatch -/
+
+/-- The operations whose code is a `Nat` primitive's (`div`, `mod`, `land`, `lor`, `xor`): their
+simulations transfer from the `Nat` primitives' in each route (`rhsSim_of_nat`). -/
+def natCodeOp : WordOp → Bool
+  | .div | .mod | .land | .lor | .xor => true
+  | _ => false
+
+theorem word_not_bool (w : Width) (o : WordOp) : ∀ ns b, (Lam.Prim.word w o).sem ns ≠ some (.bool b) :=
+  fun ns b => by rw [Lam.Prim.sem_word]; exact Lam.wordSem_ne_bool w o ns b
+
+/-- **The core of every other word operation's expansion.** -/
+theorem word_core {T : Tables} {f : Fir.FunId} {lp : Lir.Program} {ctx : Word} {sup : Nat} {fn : Nat}
+    {F : Lir.Func} {off : Nat} {starts : NatMap Nat} {C : List PBlock} (hF : lp.funcs[fn]? = some F)
+    (hH : Holds f F off starts C) {st st' : St} {x : Nat} {w : Width} {o : WordOp} {las : List Lir.Arg}
+    (hrun : (primitive f T x (.word w o) las).run st = .ok ((), st')) (hC : Ext C st') (hl : Labels st)
+    (ho : Open st) (hsup : sup ≤ st.fresh) (hcode : natCodeOp o = false) :
+    PrimCore lp ctx sup fn (off + st.cur) st.acc.length (off + st'.cur) st'.acc.length x (.word w o) las := by
+  rcases las with _ | ⟨la, _ | ⟨lb, _ | ⟨lc, las⟩⟩⟩
+  · exfalso
+    cases o <;> word_bad
+  · cases o
+    case complement =>
+      by_cases hw : w = .w64
+      · subst hw; exact core_wordComplement64 hF hH hC ho hsup hl hrun
+      · exact core_wordComplementN hF hH hC ho hsup hw hrun
+    case neg =>
+      by_cases hw : w = .w64
+      · subst hw; exact core_wordNeg64 hF hH hC ho hsup hl hrun
+      · exact core_wordNegN hF hH hC ho hsup hw hrun
+    case ofNat =>
+      by_cases hw : w = .w64
+      · subst hw; exact core_wordOfNat64 hF hH hC ho hsup hrun
+      · exact core_wordOfNatN hF hH hC ho hsup hw hrun
+    case toNat => exact core_wordToNat hF hH hC ho hsup hrun
+    case convert w' => exact core_wordConvert hF hH hC ho hsup hrun
+    all_goals exfalso; word_bad
+  · cases o
+    case add =>
+      by_cases hw : w = .w64
+      · subst hw; exact core_wordAdd64 hF hH hC ho hsup hl hrun
+      · exact core_wordAddN hF hH hC ho hsup hw hrun
+    case sub =>
+      by_cases hw : w = .w64
+      · subst hw; exact core_wordSub64 hF hH hC ho hsup hl hrun
+      · exact core_wordSubN hF hH hC ho hsup hw hrun
+    case mul =>
+      by_cases hw : w = .w64
+      · subst hw; exact core_wordMul64 hF hH hC ho hsup hl hrun
+      · exact core_wordMulN hF hH hC ho hsup hw hrun
+    case shiftLeft =>
+      by_cases hw : w = .w64
+      · subst hw; exact core_wordShl64 hF hH hC ho hsup hl hrun
+      · exact core_wordShlN hF hH hC ho hsup hw hrun
+    case shiftRight => exact core_wordShr hF hH hC ho hsup hrun
+    case div => simp [natCodeOp] at hcode
+    case mod => simp [natCodeOp] at hcode
+    case land => simp [natCodeOp] at hcode
+    case lor => simp [natCodeOp] at hcode
+    case xor => simp [natCodeOp] at hcode
+    all_goals exfalso; word_bad
+  · exfalso
+    cases o <;> word_bad
 
 /-- **Every word primitive's expansion simulates Cfg's primitive** (the case of `primitive_sim`
 for `Lam.Prim.word`). -/
@@ -660,50 +781,22 @@ theorem prim_word {T : Tables} {f : Fir.FunId} {lp : Lir.Program} {ctx : Word} {
     (hlive : ∀ a ∈ as, LiveArg D a) :
     RhsSim T lp ctx D sup fn (off + st.cur) st.acc.length (off + st'.cur) st'.acc.length x
       (.fir (.prim (.word w o) as)) := by
-  rcases las with _ | ⟨la, _ | ⟨lb, _ | ⟨lc, las⟩⟩⟩
-  · exfalso
-    cases o <;> word_bad
-  · cases o
-    case complement =>
-      by_cases hw : w = .w64
-      · subst hw; exact prim_wordComplement64 hF hH hC ho hsup hx hlive hl hrun hops
-      · exact prim_wordComplementN hF hH hC ho hsup hx hlive hw hrun hops
-    case neg =>
-      by_cases hw : w = .w64
-      · subst hw; exact prim_wordNeg64 hF hH hC ho hsup hx hlive hl hrun hops
-      · exact prim_wordNegN hF hH hC ho hsup hx hlive hw hrun hops
-    case ofNat =>
-      by_cases hw : w = .w64
-      · subst hw; exact prim_wordOfNat64 hF hH hC ho hsup hx hlive hrun hops
-      · exact prim_wordOfNatN hF hH hC ho hsup hx hlive hw hrun hops
-    case toNat => exact prim_wordToNat hF hH hC ho hsup hx hlive hrun hops
-    case convert w' => exact prim_wordConvert hF hH hC ho hsup hx hlive hrun hops
-    all_goals exfalso; word_bad
-  · cases o
-    case add =>
-      by_cases hw : w = .w64
-      · subst hw; exact prim_wordAdd64 hF hH hC ho hsup hx hlive hl hrun hops
-      · exact prim_wordAddN hF hH hC ho hsup hx hlive hw hrun hops
-    case sub =>
-      by_cases hw : w = .w64
-      · subst hw; exact prim_wordSub64 hF hH hC ho hsup hx hlive hl hrun hops
-      · exact prim_wordSubN hF hH hC ho hsup hx hlive hw hrun hops
-    case mul =>
-      by_cases hw : w = .w64
-      · subst hw; exact prim_wordMul64 hF hH hC ho hsup hx hlive hl hrun hops
-      · exact prim_wordMulN hF hH hC ho hsup hx hlive hw hrun hops
-    case shiftLeft =>
-      by_cases hw : w = .w64
-      · subst hw; exact prim_wordShl64 hF hH hC ho hsup hx hlive hl hrun hops
-      · exact prim_wordShlN hF hH hC ho hsup hx hlive hw hrun hops
-    case div => exact prim_wordDiv hF hH hC ho hsup hx hlive hrun hops
-    case mod => exact prim_wordMod hF hH hC ho hsup hx hlive hrun hops
-    case land => exact prim_wordLand hF hH hC ho hsup hx hlive hrun hops
-    case lor => exact prim_wordLor hF hH hC ho hsup hx hlive hrun hops
-    case xor => exact prim_wordXor hF hH hC ho hsup hx hlive hrun hops
-    case shiftRight => exact prim_wordShr hF hH hC ho hsup hx hlive hrun hops
-    all_goals exfalso; word_bad
-  · exfalso
-    cases o <;> word_bad
+  cases o
+  case div =>
+    rcases las with _ | ⟨la, _ | ⟨lb, _ | ⟨lc, las⟩⟩⟩ <;>
+      first | exact prim_wordDiv hF hH hC ho hsup hx hlive hrun hops | (exfalso; word_bad)
+  case mod =>
+    rcases las with _ | ⟨la, _ | ⟨lb, _ | ⟨lc, las⟩⟩⟩ <;>
+      first | exact prim_wordMod hF hH hC ho hsup hx hlive hrun hops | (exfalso; word_bad)
+  case land =>
+    rcases las with _ | ⟨la, _ | ⟨lb, _ | ⟨lc, las⟩⟩⟩ <;>
+      first | exact prim_wordLand hF hH hC ho hsup hx hlive hrun hops | (exfalso; word_bad)
+  case lor =>
+    rcases las with _ | ⟨la, _ | ⟨lb, _ | ⟨lc, las⟩⟩⟩ <;>
+      first | exact prim_wordLor hF hH hC ho hsup hx hlive hrun hops | (exfalso; word_bad)
+  case xor =>
+    rcases las with _ | ⟨la, _ | ⟨lb, _ | ⟨lc, las⟩⟩⟩ <;>
+      first | exact prim_wordXor hF hH hC ho hsup hx hlive hrun hops | (exfalso; word_bad)
+  all_goals exact rhsSim_of_core hops hlive hx (word_not_bool _ _) (word_core hF hH hrun hC hl ho hsup rfl)
 
 end IxCC.Rt.Proof
