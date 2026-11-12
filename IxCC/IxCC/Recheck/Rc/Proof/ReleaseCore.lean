@@ -1,12 +1,13 @@
 import IxCC.Cfg.Rc.Proof.Native.Activation
 import IxCC.Cfg.Rc.Proof.Physical.NativeMarkers
-import IxCC.Rt.Rc.Proof.FrameReleaseCaller
-import IxCC.Rt.Rc.Proof.AllocatorMetadata
+import IxCC.Rt.Rc.Gen.Proof.FrameReleaseCaller
+import IxCC.Rt.Rc.Gen.Proof.AllocatorMetadata
 import IxCC.Own.Rc.Proof.LeakFreedom
 import IxCC.Lir.Proof.Run
 
 set_option autoImplicit false
 namespace IxCC.Cfg.Rc.Native.Spec
+open IxCC.Rt.Rc
 open IxCC.Cfg.Rc.Proof.Physical.Bridge IxCC.Own IxCC.Own.Rc IxCC.Rt.Rc.Procs
 
 /-- The returned value contributes exactly one owned root occurrence. The
@@ -20,12 +21,12 @@ theorem drop_top {P : Program} {pairs : List (Nat × Cfg.Fun)}
     (represented : valueWord addresses value = some word)
     {program : Lir.Program} {drop procedure : Nat}
     (wrapper : program.funcs[drop]? = some (Public.dropWrapper procedure))
-    (runtime : program.funcs[procedure]? = some dec) (main : program.main = drop) :
+    (runtime : program.funcs[procedure]? = some Gen.dec) (main : program.main = drop) :
     ∃ H' memory' slots' lists' clock,
       dropAll H [value] = some H' ∧
       HeapState P pairs H' addresses memory' external []
         context base bump limit regionBytes slots' lists' ∧
-      ProtectedFrame memory memory' context base bump ∧
+      Gen.ProtectedFrame memory memory' context base bump ∧
       Lir.eval program clock [word] memory context = .ok ([1], memory') := by
   let env : Lir.Env := ({} : Lir.Env).insert 0 word
   let continuation : Lir.Frame := {fn := drop, label := 0, pos := 1, env}
@@ -34,15 +35,15 @@ theorem drop_top {P : Program} {pairs : List (Nat × Cfg.Fun)}
     simp [Lir.State.initial, Lir.enter, main, wrapper, Public.dropWrapper,
       decrementWrapper, Lir.bindParams, env]
   have enterDec : Lir.enter program procedure [word] =
-      some {fn := procedure, label := 0, pos := 0, env := decEnv word} := by
-    simp [Lir.enter, runtime, dec, Lir.bindParams, decEnv]
+      some {fn := procedure, label := 0, pos := 0, env := Gen.decEnv word} := by
+    simp [Lir.enter, runtime, Gen.dec, Lir.bindParams, Gen.decEnv]
   have callStep := marker_call (g := drop) (env := env) (rest := [])
     (mem := memory) (ctx := context) wrapper rfl (Lir.env_insert_self ..) enterDec
-  have idle : ReleaseInvariant H addresses memory
+  have idle : Gen.ReleaseInvariant maxClass H addresses memory
       (fun location => external location + refsIn location [value]) none []
       context base bump limit slots lists := heap.ready.idle
   obtain ⟨H', memory', slots', lists', charges, released, restored, trace, frame⟩ :=
-    release_caller_complete_frame idle word represented program procedure runtime continuation [] rfl
+    Gen.release_caller_complete_frame idle word represented program procedure runtime continuation [] rfl
   have ready := heap.ready.after_protected frame restored
   have balance : Balance H external [value] := by
     intro location
@@ -57,7 +58,7 @@ theorem drop_top {P : Program} {pairs : List (Nat × Cfg.Fun)}
       .done [1] memory' := by
     apply Lir.step_ret_done wrapper (by rfl) (by rfl) (by rfl)
     simp [Lir.evalArgs, Lir.Arg.eval]
-  have readyEmpty : AllocatorReady H' addresses memory' (holdRoots external [])
+  have readyEmpty : Gen.AllocatorReady maxClass H' addresses memory' (holdRoots external [])
       context base bump limit slots' lists' := by
     have roots : holdRoots external [] = external := by
       funext location

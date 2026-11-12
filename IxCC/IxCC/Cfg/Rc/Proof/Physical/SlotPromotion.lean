@@ -2,6 +2,7 @@ import IxCC.Cfg.Rc.Proof.Physical.HeapAppend
 
 set_option autoImplicit false
 namespace IxCC.Cfg.Rc.Native
+open IxCC.Rt.Rc
 open IxCC.Lir
 open IxCC.Rt.Rc.Procs
 
@@ -29,7 +30,7 @@ theorem publishSlots_get {fresh : Nat} {address : Word} {slots : List Slot} {i :
 
 theorem partition_address_unique {heap : Own.Heap} {addresses : AddressMap}
     {base bump limit : Word} {slots : List Slot}
-    (partition : ArenaPartition heap addresses base bump limit slots)
+    (partition : Gen.ArenaPartition maxClass heap addresses base bump limit slots)
     {first second : Slot} (hm : first ∈ slots) (hn : second ∈ slots)
     (same : first.address = second.address) : first = second := by
   obtain ⟨i, hi⟩ := List.getElem?_of_mem hm
@@ -38,22 +39,23 @@ theorem partition_address_unique {heap : Own.Heap} {addresses : AddressMap}
   · subst j
     exact Option.some.inj (hi.symm.trans hj)
   · have separated := partition.disjoint i j first second hi hj equal
-    have firstPositive := (partition.valid first hm).1
-    have secondPositive := (partition.valid second hn).1
+    have firstPositive := partition.valid first hm
+    have secondPositive := partition.valid second hn
     have sameNat := congrArg UInt64.toNat same
     rcases separated with h | h <;> omega
 
 /-- A reserved slot becomes the new abstract cell without changing any byte
 interval, coverage fact, or old live placement. -/
 theorem partition_publish {heap : Own.Heap} {addresses : AddressMap} {base bump limit : Word}
-    {slots : List Slot} (partition : ArenaPartition heap addresses base bump limit slots)
+    {slots : List Slot} (partition : Gen.ArenaPartition maxClass heap addresses base bump limit slots)
     {chosen : Slot} (member : chosen ∈ slots) (reserved : chosen.kind = .reserved)
-    (body : Own.Body) (sizeClass : chosen.cls = Rt.Rc.smallClass body.fields.length) :
-    ArenaPartition (heap.alloc .rc body).2 (placeFresh addresses heap.size chosen.address)
+    (body : Own.Body) (sizeClass : chosen.cls = Gen.classOf body.ctor) :
+    Gen.ArenaPartition maxClass (heap.alloc .rc body).2 (placeFresh addresses heap.size chosen.address)
       base bump limit (publishSlots heap.size chosen.address slots) := by
   refine {
     bounds := partition.bounds
     valid := ?_
+    bounded := ?_
     disjoint := ?_
     accounted := ?_
     live := ?_
@@ -62,6 +64,9 @@ theorem partition_publish {heap : Own.Heap} {addresses : AddressMap} {base bump 
   · intro slot present
     obtain ⟨old, oldMember, rfl⟩ := List.mem_map.mp present
     simpa using partition.valid old oldMember
+  · intro slot present
+    obtain ⟨old, oldMember, rfl⟩ := List.mem_map.mp present
+    simpa using partition.bounded old oldMember
   · intro i j first second hi hj different
     obtain ⟨oldFirst, oldI, rfl⟩ := publishSlots_get hi
     obtain ⟨oldSecond, oldJ, rfl⟩ := publishSlots_get hj

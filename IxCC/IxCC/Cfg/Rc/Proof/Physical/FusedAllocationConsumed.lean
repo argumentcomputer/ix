@@ -19,7 +19,7 @@ theorem fused_allocation_consumed_instruction
     (arguments : Own.evalArgs ρo args = some fields) (positive : 0 < ctor.arity)
     {addresses : AddressMap} {mem : X86.Memory} {context base bump limit : Lir.Word}
     {slots : List Slot} {lists : Nat → List Lir.Word}
-    (ready : AllocatorReady H addresses mem
+    (ready : Gen.AllocatorReady maxClass H addresses mem
       (holdRoots external (roots ++ fields ++ held)) context base bump limit slots lists)
     {source : Program} {funcs : List Lir.Func} {main wrapper bound : Nat} {kind : Own.Kind}
     (length : funcs.length = source.base.size)
@@ -46,7 +46,7 @@ theorem fused_allocation_consumed_instruction
       Tokens allocated.2 external held (live ++ [x])
         (ρf.insert x (.ctor ctor sourceValues)) (ρo.insert x allocated.1) (roots ++ [allocated.1]) ∧
       ((∃ address next finalMem finalSlots finalLists,
-        AllocatorReady allocated.2 (placeFresh addresses H.size address) finalMem
+        Gen.AllocatorReady maxClass allocated.2 (placeFresh addresses H.size address) finalMem
           (holdRoots external ((roots ++ [allocated.1]) ++ held))
           context base next limit finalSlots finalLists ∧
         Sem.Star (Lir.semStep (rawProgram (layoutOf source) funcs main))

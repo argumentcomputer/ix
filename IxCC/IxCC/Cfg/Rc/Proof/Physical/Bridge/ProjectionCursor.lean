@@ -4,6 +4,7 @@ import IxCC.Cfg.Rc.Proof.Native.FrameState
 
 set_option autoImplicit false
 namespace IxCC.Cfg.Rc.Proof.Physical.Bridge.Scalar
+open IxCC.Rt.Rc
 open IxCC IxCC.Rt IxCC.Rt.Proof IxCC.Rt.Lower
 open IxCC.Rt.Rc.Procs IxCC.Cfg.Rc.Native.Spec IxCC.Cfg.Rc.Native
 open IxCC.Lir (Word)
@@ -12,7 +13,7 @@ theorem projection_cursor {T : Tables} {P : Cfg.Program} {lp : Lir.Program}
     {source : Cfg.Frame} {target : Lir.Frame} {fd : Cfg.Fun}
     (lookup : P.fun? source.fn = some fd) (cursor : Cursor T P lp source target)
     {addresses : AddressMap} {bound : Nat} {H : Own.Heap} {mem : X86.Memory}
-    (physical : HeapLive H addresses mem) (compatible : HeapCtorOk T H) (ordered : Own.Rc.HeapOk H)
+    (physical : Gen.HeapLive H addresses mem) (compatible : HeapCtorOk T H) (ordered : Own.Rc.HeapOk H)
     (words : FusedWords addresses (Fused T fd) bound source.env target.env)
     (ctors : FusedCtorOk T (Fused T fd) source.env)
     (bounded : Own.Plain.EnvBounded H.size source.env)
@@ -81,7 +82,7 @@ theorem projection_frame {P : Cfg.Rc.Program} {pairs : List (Nat × Cfg.Fun)} {l
     {addresses : AddressMap} {H : Own.Heap} {bound : Nat} {fd : Cfg.Fun}
     {source : Cfg.Frame} {target : Lir.Frame}
     (before : FrameState P pairs lp addresses H.size bound fd source target)
-    {mem : X86.Memory} (physical : HeapLive H addresses mem)
+    {mem : X86.Memory} (physical : Gen.HeapLive H addresses mem)
     (compatible : HeapCtorOk (tablesOf P pairs) H) (ordered : Own.Rc.HeapOk H)
     {x y i : Nat} {key : Key.CtorKey} {tail : List Cfg.Instr}
     (head : source.rest = .bind x (.proj y key i) :: tail) (real : x < bound)

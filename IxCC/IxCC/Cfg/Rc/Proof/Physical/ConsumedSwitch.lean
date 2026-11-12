@@ -3,6 +3,7 @@ import IxCC.Cfg.Rc.Proof.Native.FrameState
 
 set_option autoImplicit false
 namespace IxCC.Cfg.Rc.Native.Spec
+open IxCC.Rt.Rc
 open IxCC.Cfg.Rc.Proof.Physical.Bridge IxCC.Rt.Proof IxCC.Rt.Lower
 open IxCC.Rt.Rc.Procs
 
@@ -15,7 +16,7 @@ theorem ConsumedCursor.switch_reaches {P : Program} {pairs : List (Nat × Cfg.Fu
     {block : Cfg.Block} (blockLookup : fd.blocks[source.blk]? = some block)
     (finished : source.rest = []) {x : Nat} {alts : List (Key.CtorKey × Cfg.Edge)}
     {default : Option Cfg.Edge} (terminal : block.term = .switch x alts default)
-    {mem : X86.Memory} (liveHeap : HeapLive heap addresses mem)
+    {mem : X86.Memory} (liveHeap : Gen.HeapLive heap addresses mem)
     (compatibleHeap : HeapCtorOk (tablesOf P pairs) heap) (real : bound ≤ supOf actual)
     (done : ∀ block, actual.blocks[source.blk]? = some block →
       FusedDone (tablesOf P pairs) actual block source)

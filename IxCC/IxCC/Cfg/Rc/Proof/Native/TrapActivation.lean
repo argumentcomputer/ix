@@ -3,6 +3,7 @@ import IxCC.Cfg.Rc.Proof.Native.TrapCursor
 
 set_option autoImplicit false
 namespace IxCC.Cfg.Rc.Native.Spec
+open IxCC.Rt.Rc
 open IxCC.Cfg.Rc.Proof.Physical.Bridge IxCC.Rt.Rc.Procs IxCC.Own.Rc
 
 /-- The canonical trap performs its real cleanup before the emitted trap.
@@ -51,7 +52,7 @@ theorem Activation.trap
   have nativeRange : source.fn < P.base.size := by simpa only [programSize] using range
   have initialTokens := Tokens.extend
     (Tokens.ofState (external := external) (held := []) before.canonical) lexical
-  have initialReady : AllocatorReady H addresses memory (holdRoots external (roots ++ []))
+  have initialReady : Gen.AllocatorReady maxClass H addresses memory (holdRoots external (roots ++ []))
       context base bump limit slots lists := by simpa only [List.append_nil] using heap.ready
   rcases transfer_prefix functions main [] imm [] live before.frame.cursor head before.frame.lookup
       initialTokens (ImmEnv.sub before.canonical.immOk lexical) (by rfl) initialReady

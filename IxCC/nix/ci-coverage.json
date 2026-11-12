@@ -803,6 +803,7 @@
   "IxCC.Rt.Rc.Gen.Proof.ReservePartition",
   "IxCC.Rt.Rc.Gen.Proof.Resume",
   "IxCC.Rt.Rc.Gen.Proof.ResumeStep",
+  "IxCC.Rt.Rc.Gen.Proof.Scanned",
   "IxCC.Rt.Rc.Gen.Proof.SharedInvariant",
   "IxCC.Rt.Rc.Gen.Proof.SharedStep",
   "IxCC.Rt.Rc.Gen.Proof.UniqueDispatch",
@@ -1751,6 +1752,7 @@
   "IxCCTests.Fences.RtRcGen.IxCC_Rt_Rc_Gen_Proof_ReservePartition",
   "IxCCTests.Fences.RtRcGen.IxCC_Rt_Rc_Gen_Proof_Resume",
   "IxCCTests.Fences.RtRcGen.IxCC_Rt_Rc_Gen_Proof_ResumeStep",
+  "IxCCTests.Fences.RtRcGen.IxCC_Rt_Rc_Gen_Proof_Scanned",
   "IxCCTests.Fences.RtRcGen.IxCC_Rt_Rc_Gen_Proof_SharedInvariant",
   "IxCCTests.Fences.RtRcGen.IxCC_Rt_Rc_Gen_Proof_SharedStep",
   "IxCCTests.Fences.RtRcGen.IxCC_Rt_Rc_Gen_Proof_UniqueDispatch",
@@ -1817,7 +1819,7 @@
  "1491b49b801096fd4908aefe24a1fdb595c4a309ba7740b34ff297da879f69eb",
  "grounding_axiom_count": 125,
  "baseline":
- "G3 part C (Eq.rec admitted): grounding fence 125 exact assertions",
+ "heap stage 1, part 2: the pipeline on the general-layout runtime; the scanned-cell facts and CtorOk.scanned, 16 exact fences; the wide roots test; merged with a0a744f60",
  "axiom_sha256":
- "4f83a07e18aea8ed3b718a877b55c6f7c28e1dc861b53b5474f593e508aeee3d",
- "axiom_count": 6491}
+ "3a0650413fe3002cb0f07f18a28874d85b2cde59a5f2a88965ba28eb7c63dc24",
+ "axiom_count": 6507}

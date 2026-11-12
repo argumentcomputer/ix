@@ -6,7 +6,7 @@ import IxCC.Rt.Rc.Layout
 
 Independent controls of the general-layout RC procedures (`Rt.Rc.Gen`) emitted as one object
 (`Emit.genProgram`: `cx_init`, allocation by layout for five layouts, the release `cx_rc_dec`, the
-uniqueness test `cx_rc_is_unique`) and run natively in a test executable IxCC writes
+uniqueness test `cx_rc_is_unique`, and for two negative controls today's release and a mutant) and run natively in a test executable IxCC writes
 (`IxCCTests.Exe.TestShell`, a 64 KiB region): the host writes cells and reads memory through the
 session; the generated procedures do every allocation, release and test. The cases are those of
 the interpreter controls (`GenControls`), with the expected words written out independently.
@@ -19,7 +19,7 @@ open IxCCTests.Exe
 /-- The exports, by the index the session calls them with. -/
 def exports : List String :=
   ["cx_init", "cx_rc_alloc_40_0_3", "cx_rc_alloc_0_1_5", "cx_rc_alloc_254_1_7", "cx_rc_alloc_2_0_1",
-   "cx_rc_alloc_0_0_1", "cx_rc_dec", "cx_rc_is_unique"]
+   "cx_rc_alloc_0_0_1", "cx_rc_dec", "cx_rc_is_unique", "cx_rc_dec_today", "cx_rc_dec_mutant"]
 
 def initK := 0
 def alloc40 := 1
@@ -29,6 +29,8 @@ def alloc2 := 4
 def allocNone := 5
 def dec := 6
 def isUnique := 7
+def decToday := 8
+def decMutant := 9
 
 def mem : TestShell.Mem := { stack := 65536, region := 65536 }
 def regionSize : Nat := 65536
@@ -222,6 +224,41 @@ def uniqueness (e : Env) : IO Unit := do
       (← ctxField e (-40)) == bump) "rewritten cell released, its tail kept with one reference"
   emit e "PASS uniqueness test: immediate, unique, shared, static, largest count, no writes, in place"
 
+/-- Negative controls, natively: each fails a test the general release passes. Today's release on
+two scanned fields and a scalar word that names a live cell (class 4) computes the second index
+from the class, so it follows the scalar: it frees the cell the scalar names and leaks the second
+child. A release indexing the next field by `remaining` frees the 40 children of a 40-field cell
+out of field order. -/
+def negative (e : Env) : IO Unit := do
+  let mixed : IO (Nat × Nat × Nat × Nat) := do
+    let start ← fresh e 4096
+    cellAt e start (hdr 2 3 1 1) [1, 3]
+    cellAt e (start + 64) (hdr 2 3 1 1) [1, 3]
+    cellAt e (start + 128) (hdr 2 3 1 1) [1, 3]
+    cellAt e (start + 192) (hdr 2 4 4 1) [start, start + 64, start + 128]
+    return (start, start + 64, start + 128, start + 192)
+  let (a, b, c, p) ← mixed
+  discard <| ok e dec p
+  require e ((← freeList e 4) == [p] && (← freeList e 3) == [b, a] && (← word e c) == hdr 2 3 1 1)
+    "general release: both children freed, the cell the scalar names untouched"
+  let (_, b, c, p) ← mixed
+  discard <| ok e decToday p
+  let l ← freeList e 3
+  require e (l.contains c && !l.contains b) "negative control: today's release follows the scalar word"
+  let _ ← fresh e 8192
+  let kids ← (List.range 40).mapM fun _ => do
+    let k ← ok e alloc2 0
+    putword e (k + 8) 1
+    putword e (k + 16) 3
+    pure k
+  let parent ← ok e alloc40 0
+  for (k, j) in kids.zipIdx do putword e (parent + 8 + 8 * j) k
+  discard <| ok e decMutant parent
+  let l ← freeList e 3
+  require e (l.length == 40 && l != kids.reverse)
+    "negative control: a release indexing by remaining frees the children out of field order"
+  emit e "PASS negative controls: today's release follows a scalar word; a mutant breaks field order"
+
 /-- Run the controls in the test executable `exe`: the output lines and the assertion count. -/
 def run (exe : System.FilePath) : IO (List String × Nat) := do
   Session.withSession exe (seconds := some 30) fun s => do
@@ -232,6 +269,7 @@ def run (exe : System.FilePath) : IO (List String × Nat) := do
     allocation e
     release e
     uniqueness e
+    negative e
     let n ← e.assertions.get
     emit e s!"PASS native general-layout procedures: {n} independent assertions"
     return ((← e.out.get).toList, n)

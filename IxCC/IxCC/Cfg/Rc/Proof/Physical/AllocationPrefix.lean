@@ -6,6 +6,7 @@ import IxCC.Cfg.Rc.Proof.Physical.Bridge.FusedContinuation
 
 set_option autoImplicit false
 namespace IxCC.Cfg.Rc.Native
+open IxCC.Rt.Rc
 open Spec IxCC.Cfg.Rc.Proof.Physical.Bridge
 open IxCC.Own IxCC.Own.Rc
 open IxCC.Rt.Rc.Procs
@@ -31,7 +32,7 @@ theorem allocation_prefix
     (fresh : x ∉ live) (scope : args.all (Own.Plain.argIn live) = true) (positive : 0 < ctor.arity)
     {addresses : AddressMap} {mem : X86.Memory} {context base bump limit : Lir.Word}
     {slots : List Slot} {lists : Nat → List Lir.Word}
-    (ready : AllocatorReady H addresses mem (holdRoots external (roots ++ held))
+    (ready : Gen.AllocatorReady maxClass H addresses mem (holdRoots external (roots ++ held))
       context base bump limit slots lists)
     {bound : Nat}
     (registers : FusedWords addresses (Rt.Proof.Fused (tablesOf P pairs) function) bound source.env target.env)
@@ -46,7 +47,7 @@ theorem allocation_prefix
       Own.Plain.State signatures allocated.2 (holdRoots external held) (live ++ [x])
         (ρf.insert x (.ctor ctor logical)) (ρo.insert x allocated.1)
         (roots ++ [allocated.1]) joins Jf Jo imm ∧
-      AllocatorReady allocated.2 (placeFresh addresses copied.size address) mem'
+      Gen.AllocatorReady maxClass allocated.2 (placeFresh addresses copied.size address) mem'
         (holdRoots external ((roots ++ [allocated.1]) ++ held))
         context base next limit slots' lists' ∧
       Sem.Star (Lir.semStep (Public.Spec.sourceStage P functions main))

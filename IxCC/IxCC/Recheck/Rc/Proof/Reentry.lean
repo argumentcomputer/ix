@@ -4,6 +4,7 @@ import IxCC.Cfg.Rc.Proof.Physical.PublicEntry
 
 set_option autoImplicit false
 namespace IxCC.Cfg.Rc.Native.Spec
+open IxCC.Rt.Rc
 open IxCC.Cfg.Rc.Proof.Physical.Bridge IxCC.Own IxCC.Own.Rc IxCC.Rt.Rc.Procs
 
 /-- Numeric arguments own no heap edges, even in an arena with a nonempty
@@ -79,7 +80,7 @@ theorem recycled_call_and_release {F : Fir.Program} {bodies : Src.NatMap Own.Pla
       dropAll returned.heap [returned.value] = some H' ∧
       HeapState P pairs H' returned.addresses memory' external []
         context base returned.bump limit regionBytes slots' lists' ∧
-      ProtectedFrame returned.memory memory' context base returned.bump ∧
+      Gen.ProtectedFrame returned.memory memory' context base returned.bump ∧
       Lir.eval {lowered.runtime.program with main := lowered.drop} dropClock
         [returned.word] returned.memory context = .ok ([1], memory')) ∨
     ∃ callClock resource,
@@ -131,7 +132,7 @@ theorem recycled_call_and_release_idle {F : Fir.Program} {bodies : Src.NatMap Ow
       dropAll returned.heap [returned.value] = some H' ∧
       HeapState P pairs H' returned.addresses memory' (fun _ => 0) []
         context base returned.bump limit regionBytes slots' lists' ∧
-      ProtectedFrame returned.memory memory' context base returned.bump ∧
+      Gen.ProtectedFrame returned.memory memory' context base returned.bump ∧
       Lir.eval {lowered.runtime.program with main := lowered.drop} dropClock
         [returned.word] returned.memory context = .ok ([1], memory')) ∨
     ∃ callClock resource,
@@ -184,7 +185,7 @@ inductive RecycledPrefix (F : Fir.Program) (P : Program) (config : Rt.Config)
       bump₁ = returned.bump →
       HeapState P pairs H₁ addresses₁ memory₁ external []
         context base bump₁ limit regionBytes slots₁ lists₁ →
-      ProtectedFrame returned.memory memory₁ context base bump₁ →
+      Gen.ProtectedFrame returned.memory memory₁ context base bump₁ →
       Lir.eval {lowered.runtime.program with main := lowered.drop} dropClock
         [returned.word] returned.memory context = .ok ([1], memory₁) →
       RecycledPrefix F P config pairs lowered external context base limit regionBytes calls
@@ -298,7 +299,7 @@ inductive RecycledSession (F : Fir.Program) (P : Program) (config : Rt.Config)
       dropAll returned.heap [returned.value] = some H' →
       HeapState P pairs H' returned.addresses memory' external []
         context base returned.bump limit regionBytes slots' lists' →
-      ProtectedFrame returned.memory memory' context base returned.bump →
+      Gen.ProtectedFrame returned.memory memory' context base returned.bump →
       Lir.eval {lowered.runtime.program with main := lowered.drop} dropClock
         [returned.word] returned.memory context = .ok ([1], memory') →
       RecycledSession F P config pairs lowered external context base limit regionBytes calls

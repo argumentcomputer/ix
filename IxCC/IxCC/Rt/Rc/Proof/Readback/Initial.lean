@@ -1,4 +1,4 @@
-import IxCC.Rt.Rc.Proof.InitReady
+import IxCC.Rt.Rc.Gen.Proof.InitReady
 
 set_option autoImplicit false
 namespace IxCC.Rt.Rc.Procs.Init
@@ -39,10 +39,10 @@ theorem cxInit_ready_extent {q : Program} {g : FunId}
     ∃ left mem' base limit,
       (∀ k, eval q k [size,budget] mem ctx = .ok ([left],mem')) ∧
       InitPost ctx budget mem mem' ∧
-      AllocatorReady {cells := #[]} (fun _ => none) mem' (fun _ => 0)
+      Gen.AllocatorReady maxClass {cells := #[]} (fun _ => none) mem' (fun _ => 0)
         ctx base base limit [] (fun _ => []) ∧
       limit.toNat-base.toNat ≤ size.toNat := by
-  obtain ⟨left, mem', base, limit, run, post, ready⟩ := cxInit_ready hq hmain hok hreg
+  obtain ⟨left, mem', base, limit, run, post, ready⟩ := Gen.Init.cxInit_ready (cmax := maxClass) hq hmain hok hreg
   rcases cxInit_cases_exact hq hmain size budget ctx mem with ⟨_, bad⟩ | ⟨_, good⟩
   · exact False.elim (bad hok)
   obtain ⟨left', exactMem, exactRun, _, exactEq⟩ := good hreg

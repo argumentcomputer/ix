@@ -1,5 +1,5 @@
 import IxCC.Cfg.Rc.Check
-import IxCC.Rt.Rc.Procs
+import IxCC.Rt.Rc.Gen.Procs
 import IxCC.Rt.Lower
 import IxCC.Rt.Switches
 import IxCC.Lir.WellFormed
@@ -59,7 +59,7 @@ def consume (P : Program) (l : Layout) (i : Instr) : Except String Instr := do
       throw "Nat constructor allocation is not admitted"
     if c.fieldless then return i
     if args.contains (.var x) then throw "allocation overwrites an input field"
-    if c.arity > 31 then throw "constructor exceeds first RC size-class fragment"
+    if c.arity > Rt.maxFields then throw "constructor exceeds the counted heap's scanned fields"
     let some index := ctorIndex l c.key | throw "missing allocation wrapper"
     return .bind x (.fir (.call (l.allocWrapper index) args))
   | _ => return i
@@ -78,8 +78,8 @@ def lower (config : Rt.Config) (F : Fir.Program) (bodies : Src.NatMap Own.Plain.
   (Rt.checkSwitches P.base).mapError (·.render)
   let some main := P.base.exports.head? | throw "no exports"
   let l : Layout := ⟨P.base.size, P.base.ctors.filter (fun c => c.arity > 0)⟩
-  unless l.ctors.all (fun c => decide (c.arity ≤ 31 ∧ c.tag ≤ Rt.maxTag)) do
-    throw "constructor table exceeds first RC layout fragment"
+  unless l.ctors.all (fun c => (Rt.Rc.CellLayout.ofFields c.arity c.tag).ok) do
+    throw "constructor table has a layout the counted heap does not allocate"
   let pairs ← (List.range P.base.size).mapM fun f => do
     let some fd := P.base.fun? f | throw "missing admitted source function"
     let lowered ← consumeFunction P l fd
@@ -92,8 +92,8 @@ def lower (config : Rt.Config) (F : Fir.Program) (bodies : Src.NatMap Own.Plain.
   let funcs ← (Rt.Lower.functions tables consumed roots (List.range P.base.size)).mapError Rt.Error.render
   let wrappers := [incrementWrapper l.incProc, decrementWrapper l.decProc] ++
     l.ctors.zipIdx.map (fun (c, i) => allocationWrapper (l.allocProc i) c.arity)
-  let procedures := [Rt.Rc.Procs.inc, Rt.Rc.Procs.dec] ++
-    l.ctors.map (fun c => Rt.Rc.Procs.alloc c.arity c.tag)
+  let procedures := [Rt.Rc.Procs.inc, Rt.Rc.Gen.dec] ++
+    l.ctors.map (fun c => Rt.Rc.Gen.alloc (Rt.Rc.CellLayout.ofFields c.arity c.tag))
   let program : Lir.Program := ({ funcs := (funcs ++ wrappers ++ procedures ++
     [Rt.Procs.cxInit, Rt.Procs.natPow, Rt.Procs.natGcd]).toArray, main } : Lir.Program).splitCriticalEdges
   program.check
