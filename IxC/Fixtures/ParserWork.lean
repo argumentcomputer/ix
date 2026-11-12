@@ -79,14 +79,14 @@ def exactExprCost (value : Ixon.Expr) (expected : Nat) : Bool :=
 -- The first array element is complete. The second fails inside a let after
 -- parsing its header, type and value. Its work must be retained, and the
 -- claimed array count must not cause extra iterations or allocation.
-/-- info: [("EOF", 4, 0), ("EOF", 4, 0), ("EOF", 4, 0)] -/
+/-- info: [("EOF", 4, 14), ("EOF", 4, 14), ("EOF", 4, 14)] -/
 #guard_msgs in
 #eval [2, 64, 18446744073709551615].map fun count =>
   match Work.array Work.expr count { bytes := ⟨#[0x10, 0xA0, 0x03, 0x10]⟩ } with
   | (.error reason stop, work) => (reason, stop.idx, work)
   | _ => ("accepted", 0, 0)
 -- A let header outside the sixteen (nonDep, mode) values fails before its type.
-/-- info: ("getExpr: invalid let header 16", 3, 0) -/
+/-- info: ("getExpr: invalid let header 16", 3, 8) -/
 #guard_msgs in
 #eval match Work.array Work.expr 2 { bytes := ⟨#[0x10, 0xA8, 0x08, 0x10]⟩ } with
   | (.error reason stop, work) => (reason, stop.idx, work)

@@ -61,7 +61,7 @@ def eval_output := aiur_fn⟦
   fn eval_output(output: Bytes::AddressRef, nlvls: Field, input_type: KernelTypes::KExpr) -> KernelTypes::KExpr {
       let Ixon::Constant::Mk(info, sharing, refs, univs, binders) = Ingress::load_verified_constant(output);
       let Ixon::ConstantInfo::Defn(defn) = info;
-      let Ixon::Definition::Mk(kind, safety, lvls, ty, value) = defn;
+      let Ixon::Definition::Mk(kind, safety, _, lvls, ty, value) = defn;
       assert_eq!(kind, Ixon::DefKind::Definition, "Eval: output must be a definition");
       assert_eq!(safety, Ixon::DefinitionSafety::Safe, "Eval: unsafe or partial output");
       assert_eq!(UInt64::to_field(lvls), nlvls, "Eval: universe parameter count mismatch");

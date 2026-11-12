@@ -407,8 +407,7 @@ def closureFrom (env : Ixon.Env) (target : Address)
     address the claim variant names (plus any caller-supplied
     `AssumptionTree`s under their merkle roots). -/
 def buildClaimWitness (env : Ixon.Env) (claim : Ix.Claim)
-    (trees : Std.HashMap Address Ix.AssumptionTree := {})
-    (profiles : Std.HashMap Address ByteArray := {}) :
+    (trees : Std.HashMap Address Ix.AssumptionTree := {}) :
     Except String ClaimWitness := do
   let env ← withDefaultRoleBinding env
   let claimBytes := Ix.Claim.ser claim
@@ -448,13 +447,6 @@ def buildClaimWitness (env : Ixon.Env) (claim : Ix.Claim)
     ioBuffer ← seedTreeAt root trees ioBuffer
     ioBuffer ← seedAxioms ctx ioBuffer
     ioBuffer ← seedAsm asm ioBuffer
-  | .resource root profile =>
-    ioBuffer := addEntries env (fun _ => true) ioBuffer
-    ioBuffer ← seedTreeAt root trees ioBuffer
-    let some bytes := profiles[profile]? <|> env.blobs[profile]?
-      | throw s!"no resource profile supplied for {profile}"
-    unless Address.blake3 bytes == profile do throw "resource profile hash mismatch"
-    ioBuffer := ioBuffer.extend 5 (addrKey profile) (bytes.data.map .ofUInt8)
   | .reveal comm _info =>
     ioBuffer := addEntries env (closureFrom env comm).contains ioBuffer
   | .contains tree _target =>

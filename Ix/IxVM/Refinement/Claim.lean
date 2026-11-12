@@ -48,9 +48,10 @@ them as unauthenticated advice.
 * `contains tree a`: `a` is a leaf of the tree at `tree`.
 * `binding spec b`: the role table with hash `b` binds every role, and IxC
   accepts the closure of the bound constants and evidence theorems under it.
-* `catalog`, `resource`: `False`. IxVM rejects both (no arm for variant 8;
-  variant 9 asserts `0 = 1`), so `False` is the strongest true statement for
-  the IxVM theorem.
+* `catalog`: `False`. IxVM rejects it (no arm for variant 8), so `False` is
+  the strongest true statement for the IxVM theorem. Variant 9, the retired
+  resource claim, is no claim: every reader refuses its tag, and IxVM asserts
+  `0 = 1` on it.
 
 The typing claims (`check`, `checkEnv`, `eval`) carry, beside their context's
 specification digest (which must be IxC's, `Ix.SpecDigest.specDigest`):
@@ -596,7 +597,6 @@ def HoldsIn (V : View) : Claim → Prop
   | .reveal comm info => ∃ c, Ix.Cert.recordAt V.env comm = some c ∧ RevealLE info c.info
   | .contains tree a => V.HoldsTree tree ∧ ∀ leaves, V.LeavesAt tree leaves → a ∈ leaves
   | .catalog _ => False
-  | .resource _ _ => False
   | .binding spec b => BindingIn V spec b
 
 /-- **What a view must hold for the claim** before the main statement says
@@ -613,6 +613,5 @@ def Covers (V : View) : Claim → Prop
   | .contains tree _ => V.HoldsTree tree
   | .binding _ b => V.Closed ∧ (V.binding? b).isSome = true
   | .catalog _ => True
-  | .resource _ _ => True
 
 end Ix.Claim

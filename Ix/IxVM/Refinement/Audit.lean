@@ -409,7 +409,6 @@ fun V x =>
   | Ix.Claim.reveal comm info => ∃ c, Ix.Cert.recordAt V.env comm = some c ∧ IxVM.Refinement.RevealLE info c.info
   | Ix.Claim.contains tree a => V.HoldsTree tree ∧ ∀ (leaves : List Address), V.LeavesAt tree leaves → a ∈ leaves
   | Ix.Claim.catalog members => False
-  | Ix.Claim.resource root profile => False
   | Ix.Claim.binding spec b => IxVM.Refinement.BindingIn V spec b
 -/
 #guard_msgs in
@@ -434,7 +433,6 @@ fun V x =>
   | Ix.Claim.contains tree const => V.HoldsTree tree
   | Ix.Claim.binding spec b => V.Closed ∧ (V.binding? b).isSome = true
   | Ix.Claim.catalog members => True
-  | Ix.Claim.resource root profile => True
 -/
 #guard_msgs in
 #print Ix.Claim.Covers
@@ -1469,24 +1467,22 @@ info: @Ix.Kernel.nfGo_of_whnf_sort : ∀ {md : Ix.Kernel.Mode} {mode : Ix.Kernel
 #guard_kernel_axioms IxVM.Refinement.Deserialize.u64WrappingSucc_run [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms IxVM.Refinement.Deserialize.getQuotKind_run [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms IxVM.Refinement.Deserialize.unpackDefKindSafety_run [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms IxVM.Refinement.Deserialize.getLamMode_run [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms IxVM.Refinement.Deserialize.getAllMode_run [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms IxVM.Refinement.Deserialize.letMode_ofHeader?_of_lt16 [propext, Quot.sound]
 #guard_kernel_axioms IxVM.Refinement.Deserialize.buildSuccChain_run [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms IxVM.Refinement.Deserialize.readByte_refines [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms IxVM.Refinement.Deserialize.assertWireBool_refines [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms IxVM.Refinement.Deserialize.getQuotKind_refines [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms IxVM.Refinement.Deserialize.unpackDefKindSafety_refines [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms IxVM.Refinement.Deserialize.getLamMode_refines [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms IxVM.Refinement.Deserialize.getAllMode_refines [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms IxVM.Refinement.Deserialize.buildSuccChain_refines [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms IxVM.Refinement.Deserialize.getBinderNode_binder [propext, Quot.sound]
+#guard_kernel_axioms IxVM.Refinement.Deserialize.getModedBinderNode_refines_at [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms IxVM.Refinement.Deserialize.getBinderNode_refines_at [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms IxVM.Refinement.Deserialize.getBinderNodeList_refines_at [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms IxVM.Refinement.Deserialize.getBinderBlock_refines_at [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms IxVM.Refinement.Deserialize.getBinderBlockList_refines_at [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms IxVM.Refinement.Deserialize.getBinders_refines_at [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms IxVM.Refinement.Deserialize.getBinders_refines [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms IxVM.Refinement.Mirrors.«IxonDeserialize::get_all_mode».of_eval [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms IxVM.Refinement.Mirrors.«IxonDeserialize::get_lam_mode».of_eval [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms IxVM.Refinement.Mirrors.«IxonDeserialize::unpack_def_kind_safety».of_eval [propext, Classical.choice, Quot.sound]
 
 #guard_module_axioms Aiur.Generic.Observe Ix.IxVM.Refinement.Claim Ix.IxVM.Refinement.Statement
   Ix.Cert.AcceptsUnder IxC.Kernel.Verify.Cached.ReferenceUnder IxC.Kernel.Verify.Cached.NormalizeRef

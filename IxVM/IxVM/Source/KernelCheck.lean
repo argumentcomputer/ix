@@ -2775,7 +2775,7 @@ def muts_safety_counts := aiur_fn⟦
           match m {
             Ixon::MutConst::Defn(d) => {
               match d {
-                Ixon::Definition::Mk(kind, safety, _, _, _) => {
+                Ixon::Definition::Mk(kind, safety, _, _, _, _) => {
                   muts_safety_counts(rest, u + Ingress::defn_is_unsafe_ci(kind, safety), n + 1) } ,
               } } ,
             Ixon::MutConst::Indc(ind) => {
@@ -2808,7 +2808,7 @@ def ctors_safety_counts := aiur_fn⟦
         Lists::Node::Nil => {  (u, n) } ,
         Lists::Node::Cons(c, rest) => {
           match c {
-            Ixon::Constructor::Mk(is_unsafe, _, _, _, _, _) => {
+            Ixon::Constructor::Mk(is_unsafe, _, _, _, _, _, _) => {
               let cu = match is_unsafe {
                 0 => {  0 } ,
                 _ => {  1 } ,
