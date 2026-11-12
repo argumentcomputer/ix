@@ -260,8 +260,11 @@ def ReadIn (b : Binding) (E : Ixon.Env) (seeds : Address → Prop)
 
 /-- **`t'` is an annotation of `t`**: the same term up to binder metadata (the
 checker's annotation pass writes each binder's `pw` datum), with every `let`
-replaced by its reduct (the pass ζ-reduces). A wrong annotation denotes nothing
-(`Ix.Kernel.Denotes`), so a model of an environment storing `t'` certifies it. -/
+replaced by its reduct (the pass ζ-reduces). The reduct substitutes the value
+without capture (`Expr.instantiate1Lift`: the value's loose bound variables, the
+enclosing binders, are lifted past the binders of the body), as the pass does on
+opened terms. A wrong annotation denotes nothing (`Ix.Kernel.Denotes`), so a model
+of an environment storing `t'` certifies it. -/
 inductive Annotates : Ix.Kernel.Expr .anon → Ix.Kernel.Expr .anon → Prop
   | bvar {i : Nat} : Annotates (.bvar i) (.bvar i)
   | fvar {i : Nat} {ty' ty : Ix.Kernel.Expr .anon} :
@@ -279,7 +282,7 @@ inductive Annotates : Ix.Kernel.Expr .anon → Ix.Kernel.Expr .anon → Prop
   | proj {s : Ix.Kernel.Key .anon} {i : Nat} {e' e : Ix.Kernel.Expr .anon} :
       Annotates e' e → Annotates (.proj s i e') (.proj s i e)
   | letE {e' ty v b : Ix.Kernel.Expr .anon} {m : Ix.Kernel.LetMeta} :
-      Annotates e' (b.instantiate1 v) → Annotates e' (.letE ty v b m)
+      Annotates e' (b.instantiate1Lift v) → Annotates e' (.letE ty v b m)
 
 /-- An annotation of a constant is the constant. -/
 theorem Annotates.const_inv {t' : Ix.Kernel.Expr .anon} {n : Ix.Kernel.Key .anon}
