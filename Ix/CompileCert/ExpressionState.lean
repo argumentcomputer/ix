@@ -229,6 +229,47 @@ theorem natural_go (fuel value : Nat) (bounded : value ≤ fuel) :
       exact Nat.mod_add_div _ _
       all_goals omega
 
+/-- The bytes `Nat.toBytesLE.go` writes for a positive value its fuel covers:
+at least one, the last nonzero. -/
+theorem toBytesLE_go_last (fuel value : Nat) (pos : 0 < value) (bounded : value ≤ fuel) :
+    ∃ init last, Nat.toBytesLE.go fuel value = init ++ [last] ∧ last ≠ 0 := by
+  induction fuel generalizing value with
+  | zero => omega
+  | succ fuel ih =>
+    cases value with
+    | zero => omega
+    | succ value =>
+      rw [Nat.toBytesLE.go]
+      by_cases small : (value + 1) / 256 = 0
+      · refine ⟨[], Nat.toUInt8 (value + 1), ?_, ?_⟩
+        · rw [small]
+          cases fuel <;> rfl
+        · intro zero
+          have byte : (Nat.toUInt8 (value + 1)).toNat = (value + 1) % 256 := rfl
+          rw [zero] at byte
+          have whole : (value + 1) % 256 = value + 1 := Nat.mod_eq_of_lt (by omega)
+          simp at byte
+          omega
+      · have smaller : (value + 1) / 256 ≤ fuel := by
+          have less := Nat.div_lt_self (by omega : 0 < value + 1) (by decide : 1 < 256)
+          omega
+        obtain ⟨init, last, eq, ne⟩ := ih _ (by omega) smaller
+        exact ⟨Nat.toUInt8 (value + 1) :: init, last, by rw [eq]; rfl, ne⟩
+      all_goals omega
+
+/-- A natural-number literal's blob is the reader's canonical one. -/
+theorem canonicalNatural_toBytes (value : Nat) :
+    Kernel.Reader.canonicalNatural (ByteArray.mk (Nat.toBytesLE value)) = true := by
+  unfold Kernel.Reader.canonicalNatural Nat.toBytesLE
+  by_cases zero : value = 0
+  · subst value; rfl
+  · simp only [beq_iff_eq, zero, ↓reduceIte]
+    obtain ⟨init, last, eq, ne⟩ := toBytesLE_go_last value value (by omega) (Nat.le_refl _)
+    rw [eq]
+    cases init with
+    | nil => rfl
+    | cons byte rest => simp [ne]
+
 /-- A natural-number literal's blob reads back as the literal. -/
 theorem natural_toBytes (value : Nat) :
     Kernel.Reader.natural (ByteArray.mk (Nat.toBytesLE value)) = value := by

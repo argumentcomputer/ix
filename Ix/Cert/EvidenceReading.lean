@@ -159,12 +159,24 @@ theorem conv_read {ρ : Ix.LeanIngress.FiberMap} {f : Ix.Kernel.Mode.Id .source 
   | nat i =>
     intro p h
     simp only [Bundle.conv, bind, Except.bind, pure, Except.pure] at h
-    cases hb : b.blobAt c i with
-    | error err => rw [hb] at h; cases h
-    | ok bs =>
-      rw [hb] at h
+    cases hn : b.natAt c i with
+    | error err => rw [hn] at h; cases h
+    | ok n =>
+      rw [hn] at h
       cases h
-      simp [convExpr, hblob i bs hb, bind, Except.bind, pure, Except.pure]
+      have read : e.natAt i = .ok n := by
+        unfold Bundle.natAt at hn
+        unfold ECx.natAt
+        cases hb : b.blobAt c i with
+        | error err => rw [hb] at hn; cases hn
+        | ok bs =>
+          rw [hb] at hn
+          rw [hblob i bs hb]
+          by_cases hc : Ix.Kernel.Reader.canonicalNatural bs = true
+          · simp only [bind, Except.bind, hc, ↓reduceIte, pure, Except.pure, Except.ok.injEq] at hn ⊢
+            exact hn
+          · simp [bind, Except.bind, hc, throw, throwThe, MonadExceptOf.throw] at hn
+      simp [convExpr, read, bind, Except.bind, pure, Except.pure]
   | app a d iha ihd =>
     intro p h
     simp only [Bundle.conv, bind, Except.bind, pure, Except.pure] at h

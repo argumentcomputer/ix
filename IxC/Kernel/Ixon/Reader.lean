@@ -549,6 +549,12 @@ def recLps (large : Bool) (blockLps : List LevelParam) : List LevelParam :=
 def natural (bytes : ByteArray) : Nat :=
   bytes.data.foldr (fun byte rest => byte.toNat + 256 * rest) 0
 
+/-- Whether `bytes` is a natural number's one blob, the compiler's (Ix's
+`Nat.toBytesLE`): little-endian with no trailing zero byte, and `[0]` for
+zero. -/
+def canonicalNatural (bytes : ByteArray) : Bool :=
+  bytes.size == 1 || (bytes.size > 1 && bytes.data.back? != some 0)
+
 def convUniv (param : Nat → LevelParam) : Ixon.Univ → CLevel
   | .zero => .zero
   | .succ u => .succ (convUniv param u)
@@ -587,6 +593,14 @@ def ECx.blobAt (e : ECx md) (i : UInt64) : ReadM ByteArray := do
   let some b := e.cx.blob a | malformed s!"literal blob {a} is missing"
   pure b
 
+/-- The natural number whose blob is at `refs[i]`. A blob other than the number's
+canonical one (`canonicalNatural`) is refused, so each number has one record
+spelling. -/
+def ECx.natAt (e : ECx md) (i : UInt64) : ReadM Nat := do
+  let bytes ← e.blobAt i
+  if canonicalNatural bytes then pure (natural bytes)
+  else malformed "natural literal blob is not canonical"
+
 /-- One expression, against the converted sharing entries before it. -/
 def convExpr (e : ECx md) (tbl : Array (ReadM (CExpr md))) : Ixon.Expr → ReadM (CExpr md)
   | .var i => pure (Ix.Kernel.Expr.mkBvar i.toNat)
@@ -604,7 +618,7 @@ def convExpr (e : ECx md) (tbl : Array (ReadM (CExpr md))) : Ixon.Expr → ReadM
     let bytes ← e.blobAt i
     let some s := String.fromUTF8? bytes | malformed "string literal is not valid UTF-8"
     pure (.lit (.strVal s))
-  | .nat i => do pure (.lit (.natVal (natural (← e.blobAt i))))
+  | .nat i => do pure (.lit (.natVal (← e.natAt i)))
   | .app f a => do pure (.app (← convExpr e tbl f) (← convExpr e tbl a))
   | .lam t b => do
     pure (.lam (← convExpr e tbl t) (← convExpr e tbl b) (BinderMeta.ofContracts .many .shared))

@@ -117,6 +117,13 @@ def decodeFailureOf (records : Records) (position : Nat) (bounds : Limits := lim
 #guard accepts [(address 1, { identity with
     binders := #[⟨false, 1, 0, #[.never { input := .unique }, .never { result := .borrowed }]⟩] })]
 
+-- A natural-number literal has one blob, the compiler's: little-endian with no
+-- trailing zero byte, `[0]` for zero. The reader refuses any other (`ECx.natAt`).
+#guard Ix.Kernel.Reader.canonicalNatural ⟨#[0]⟩ && Ix.Kernel.Reader.canonicalNatural ⟨#[5]⟩ &&
+  Ix.Kernel.Reader.canonicalNatural ⟨#[0, 1]⟩ && Ix.Kernel.Reader.canonicalNatural ⟨#[255, 255, 3]⟩
+#guard !Ix.Kernel.Reader.canonicalNatural ⟨#[]⟩ && !Ix.Kernel.Reader.canonicalNatural ⟨#[0, 0]⟩ &&
+  !Ix.Kernel.Reader.canonicalNatural ⟨#[5, 0]⟩
+
 -- A duplicate record or blob address is malformed (the byte stage rejects
 -- it); a reference to a later record and a family stored without its
 -- recursor are checker or reader verdicts, which decline at the Ix API

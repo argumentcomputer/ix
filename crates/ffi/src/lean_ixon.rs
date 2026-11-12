@@ -4,12 +4,12 @@
 //! cross-implementation compatibility testing and serialization.
 
 pub mod constant;
-pub mod contract;
 pub mod diff;
 pub mod enums;
 pub mod env;
 pub mod expr;
 pub mod meta;
+pub mod modes;
 pub mod pack;
 #[cfg(feature = "test-ffi")]
 pub mod serialize;

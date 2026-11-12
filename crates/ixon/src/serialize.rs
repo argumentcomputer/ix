@@ -17,12 +17,9 @@ use super::constant::{
   ConstructorProj, DefKind, Definition, DefinitionProj, Inductive,
   InductiveProj, MutConst, Quotient, Recursor, RecursorProj, RecursorRule,
 };
-use super::contract::{
-  BinderContract, LetContract, ValueContract, get_binder_contract,
-  pack_all_contract, put_binder_contract, unpack_all_contract,
-};
 use super::expr::Expr;
 use super::metadata::IxonByteSerde;
+use super::modes::{AllMode, DefAsserts, FieldMode, FieldModes, LetMode};
 use super::tag::TagN;
 use super::univ::{MAX_UNIV_NODES, Univ, get_univ_within, put_univ};
 
@@ -392,21 +389,13 @@ pub fn unpack_bools(n: usize, b: u8) -> Vec<bool> {
 // Expression serialization
 // ============================================================================
 
-/// Serialize maximal ordinary telescopes without recursive host-stack calls.
+/// Serialize maximal telescopes without recursive host-stack calls. A `Lam`
+/// or `All` telescope is its binder count, its domains, then its body (a
+/// binder's mode is in the record's binder-data section); a `Let`'s header
+/// value is `LetMode::header(non_dep, mode)`.
 pub fn put_expr(e: &Expr, buf: &mut Vec<u8>) {
-  enum Work<'a> {
-    Expr(&'a Expr),
-    Byte(u8),
-  }
-  let mut work = vec![Work::Expr(e)];
-  while let Some(next) = work.pop() {
-    let e = match next {
-      Work::Expr(e) => e,
-      Work::Byte(b) => {
-        buf.push(b);
-        continue;
-      },
-    };
+  let mut work = vec![e];
+  while let Some(e) = work.pop() {
     match e {
       Expr::Sort(n) => TagN::put(4, Expr::FLAG_SORT, *n, buf),
       Expr::Var(n) => TagN::put(4, Expr::FLAG_VAR, *n, buf),
@@ -432,16 +421,16 @@ pub fn put_expr(e: &Expr, buf: &mut Vec<u8>) {
       Expr::Prj(t, field, value) => {
         TagN::put(4, Expr::FLAG_PRJ, *field, buf);
         put_u64(*t, buf);
-        work.push(Work::Expr(value));
+        work.push(value.as_ref());
       },
       Expr::App(..) => {
         TagN::put(4, Expr::FLAG_APP, e.app_telescope_count(), buf);
         let mut head = e;
         while let Expr::App(f, a) = head {
-          work.push(Work::Expr(a));
+          work.push(a.as_ref());
           head = f;
         }
-        work.push(Work::Expr(head));
+        work.push(head);
       },
       Expr::Lam(..) | Expr::All(..) => {
         let all = matches!(e, Expr::All(..));
@@ -452,36 +441,23 @@ pub fn put_expr(e: &Expr, buf: &mut Vec<u8>) {
           buf,
         );
         let mut body = e;
-        let mut binders = vec![];
-        loop {
-          match body {
-            Expr::Lam(c, ty, b) if !all => {
-              binders.extend([Work::Byte(c.to_bits()), Work::Expr(ty)]);
-              body = b;
-            },
-            Expr::All(c, v, ty, b) if all => {
-              binders.extend([
-                Work::Byte(pack_all_contract(*c, *v)),
-                Work::Expr(ty),
-              ]);
-              body = b;
-            },
-            _ => break,
-          }
+        let mut domains = vec![];
+        while let Expr::Lam(ty, b) | Expr::All(ty, b) = body
+          && matches!(body, Expr::All(..)) == all
+        {
+          domains.push(ty.as_ref());
+          body = b;
         }
-        work.push(Work::Expr(body));
-        work.extend(binders.into_iter().rev());
+        work.push(body);
+        work.extend(domains.into_iter().rev());
       },
-      Expr::Let(c, ty, value, body) => {
-        TagN::put(4, Expr::FLAG_LET, c.flags(), buf);
-        put_binder_contract(&c.binder, buf);
-        work.extend([Work::Expr(body), Work::Expr(value), Work::Expr(ty)]);
+      Expr::Let(non_dep, mode, ty, value, body) => {
+        TagN::put(4, Expr::FLAG_LET, LetMode::header(*non_dep, *mode), buf);
+        work.extend([body.as_ref(), value.as_ref(), ty.as_ref()]);
       },
     }
   }
 }
-
-type BinderGroup = (BinderContract, Option<ValueContract>, Arc<Expr>);
 
 enum GetExprFrame {
   Parse,
@@ -489,26 +465,27 @@ enum GetExprFrame {
   App,
   CheckApp(u64),
   Apps(u64),
-  Groups {
+  /// A telescope with `remaining` domains still to read, then its body.
+  Domains {
     all: bool,
-    groups: Vec<BinderGroup>,
+    domains: Vec<Arc<Expr>>,
     remaining: u64,
   },
+  /// Take the domain just read.
   Domain {
     all: bool,
-    groups: Vec<BinderGroup>,
+    domains: Vec<Arc<Expr>>,
     remaining: u64,
-    binder: BinderContract,
-    result: Option<ValueContract>,
   },
+  /// Take the body just read and build the telescope.
   Binders {
     all: bool,
-    groups: Vec<BinderGroup>,
+    domains: Vec<Arc<Expr>>,
   },
-  Let(LetContract),
+  Let(bool, LetMode),
 }
 
-/// Bounded iterative decoding with canonical telescope and contract checks.
+/// Bounded iterative decoding with canonical telescope and header checks.
 /// Type, scope, and resource validity are separate admission obligations.
 pub fn get_expr(buf: &mut &[u8]) -> Result<Arc<Expr>, String> {
   let mut work = vec![GetExprFrame::Parse];
@@ -550,8 +527,7 @@ pub fn get_expr(buf: &mut &[u8]) -> Result<Arc<Expr>, String> {
             if tag.value == 0 {
               return Err("get_expr: empty telescope".into());
             }
-            let minimum = if tag.flag == Expr::FLAG_APP { 1 } else { 2 };
-            if tag.value > (buf.len() / minimum) as u64 {
+            if tag.value > buf.len() as u64 {
               return Err(
                 "get_expr: telescope count exceeds remaining bytes".into(),
               );
@@ -562,22 +538,20 @@ pub fn get_expr(buf: &mut &[u8]) -> Result<Arc<Expr>, String> {
                 GetExprFrame::Parse,
               ]);
             } else {
-              work.push(GetExprFrame::Groups {
+              work.push(GetExprFrame::Domains {
                 all: tag.flag == Expr::FLAG_ALL,
-                groups: vec![],
+                domains: vec![],
                 remaining: tag.value,
               });
             }
           },
           Expr::FLAG_LET => {
-            if tag.value > 3 {
-              return Err("get_expr: invalid let flags".into());
-            }
-            let binder = get_binder_contract(buf)?;
-            let contract = LetContract::from_flags(tag.value, binder)
-              .ok_or("get_expr: invalid let flags")?;
+            let (non_dep, mode) =
+              LetMode::of_header(tag.value).ok_or_else(|| {
+                format!("get_expr: invalid let header {}", tag.value)
+              })?;
             work.extend([
-              GetExprFrame::Let(contract),
+              GetExprFrame::Let(non_dep, mode),
               GetExprFrame::Parse,
               GetExprFrame::Parse,
               GetExprFrame::Parse,
@@ -611,65 +585,41 @@ pub fn get_expr(buf: &mut &[u8]) -> Result<Arc<Expr>, String> {
           ]);
         }
       },
-      GetExprFrame::Groups { all, groups, remaining } => {
+      GetExprFrame::Domains { all, domains, remaining } => {
         if remaining == 0 {
           work.extend([
-            GetExprFrame::Binders { all, groups },
+            GetExprFrame::Binders { all, domains },
             GetExprFrame::Parse,
           ]);
         } else {
-          let bits = get_u8(buf)?;
-          let (binder, result) = if all {
-            let (binder, result) =
-              unpack_all_contract(bits).ok_or_else(|| {
-                format!("get_expr: invalid forall contract {bits}")
-              })?;
-            (binder, Some(result))
-          } else {
-            (
-              BinderContract::from_bits(bits).ok_or_else(|| {
-                format!("get_expr: invalid lambda contract {bits}")
-              })?,
-              None,
-            )
-          };
           work.extend([
-            GetExprFrame::Domain {
-              all,
-              groups,
-              remaining: remaining - 1,
-              binder,
-              result,
-            },
+            GetExprFrame::Domain { all, domains, remaining: remaining - 1 },
             GetExprFrame::Parse,
           ]);
         }
       },
-      GetExprFrame::Domain { all, mut groups, remaining, binder, result } => {
+      GetExprFrame::Domain { all, mut domains, remaining } => {
         let ty = results.pop().ok_or("get_expr: missing binder domain")?;
-        groups.push((binder, result, ty));
-        work.push(GetExprFrame::Groups { all, groups, remaining });
+        domains.push(ty);
+        work.push(GetExprFrame::Domains { all, domains, remaining });
       },
-      GetExprFrame::Binders { all, groups } => {
+      GetExprFrame::Binders { all, domains } => {
         let mut body = results.pop().ok_or("get_expr: missing binder body")?;
         if (all && matches!(body.as_ref(), Expr::All(..)))
           || (!all && matches!(body.as_ref(), Expr::Lam(..)))
         {
           return Err("get_expr: non-canonical binder telescope".into());
         }
-        for (contract, result, ty) in groups.into_iter().rev() {
-          body = match result {
-            Some(result) => Expr::all_contract(contract, result, ty, body),
-            None => Expr::lam_contract(contract, ty, body),
-          };
+        for ty in domains.into_iter().rev() {
+          body = if all { Expr::all(ty, body) } else { Expr::lam(ty, body) };
         }
         results.push(body);
       },
-      GetExprFrame::Let(contract) => {
+      GetExprFrame::Let(non_dep, mode) => {
         let body = results.pop().ok_or("get_expr: missing let body")?;
         let value = results.pop().ok_or("get_expr: missing let value")?;
         let ty = results.pop().ok_or("get_expr: missing let type")?;
-        results.push(Expr::let_contract(contract, ty, value, body));
+        results.push(Expr::let_mode(non_dep, mode, ty, value, body));
       },
     }
   }
@@ -724,13 +674,20 @@ fn pack_def_kind_safety(kind: DefKind, safety: DefinitionSafety) -> u8 {
   (kind.to_u8() << 2) | definition_safety_to_u8(safety)
 }
 
-/// Unpack DefKind and DefinitionSafety from a single byte.
+/// Unpack DefKind and DefinitionSafety from a byte's low nibble.
 fn unpack_def_kind_safety(
   b: u8,
 ) -> Result<(DefKind, DefinitionSafety), String> {
-  let kind = DefKind::from_u8(b >> 2)?;
+  let kind = DefKind::from_u8((b & 0xF) >> 2)?;
   let safety = definition_safety_from_u8(b & 0x3)?;
   Ok((kind, safety))
+}
+
+/// A definition's first byte: its kind and safety in the low nibble
+/// (`pack_def_kind_safety`), its assertions' code in the high one
+/// (`Ixon.packDefinitionFlags`).
+fn pack_definition_flags(d: &Definition) -> u8 {
+  pack_def_kind_safety(d.kind, d.safety) | (d.asserts.to_code() << 4)
 }
 
 impl IxonByteSerde for QuotKind {
@@ -772,19 +729,26 @@ fn get_sharing(buf: &mut &[u8]) -> Result<Vec<Arc<Expr>>, String> {
 
 impl Definition {
   pub fn put(&self, buf: &mut Vec<u8>) {
-    // Pack DefKind + DefinitionSafety into single byte
-    put_u8(pack_def_kind_safety(self.kind, self.safety), buf);
+    // DefKind, DefinitionSafety and DefAsserts in a single byte
+    put_u8(pack_definition_flags(self), buf);
     put_u64(self.lvls, buf);
     put_expr(&self.typ, buf);
     put_expr(&self.value, buf);
   }
 
+  /// Read a definition (`Ixon.getDefinition`): the first byte's low nibble
+  /// is kind·4 + safety (kind and safety each at most 2), its high nibble a
+  /// `DefAsserts` code (refused from 8 on, or with allocation code 3).
   pub fn get(buf: &mut &[u8]) -> Result<Self, String> {
-    let (kind, safety) = unpack_def_kind_safety(get_u8(buf)?)?;
+    let flags = get_u8(buf)?;
+    let (kind, safety) = unpack_def_kind_safety(flags)
+      .map_err(|_| "invalid definition kind/safety".to_string())?;
+    let asserts = DefAsserts::of_code(flags >> 4)
+      .ok_or_else(|| format!("invalid definition assertions {}", flags >> 4))?;
     let lvls = get_u64(buf)?;
     let typ = get_expr(buf)?;
     let value = get_expr(buf)?;
-    Ok(Definition { kind, safety, lvls, typ, value })
+    Ok(Definition { kind, safety, asserts, lvls, typ, value })
   }
 }
 
@@ -878,24 +842,64 @@ impl Quotient {
 }
 
 impl Constructor {
+  /// The first byte: bit 0 `is_unsafe`, bit 1 set when the field modes are
+  /// listed (`Ixon.packConstructorFlags`).
+  fn flags(&self) -> u8 {
+    let listed = if self.field_modes.is_inherited() { 0 } else { 2 };
+    u8::from(self.is_unsafe) | listed
+  }
+
   pub fn put(&self, buf: &mut Vec<u8>) {
-    put_bool(self.is_unsafe, buf);
+    put_u8(self.flags(), buf);
     put_u64(self.lvls, buf);
     put_u64(self.cidx, buf);
     put_u64(self.params, buf);
     put_u64(self.fields, buf);
+    for m in self.field_modes.as_slice() {
+      put_u8(m.to_code(), buf);
+    }
     put_expr(&self.typ, buf);
   }
 
+  /// Read a constructor (`Ixon.getConstructor`): its first byte at most 3;
+  /// with bit 1 set, `fields` field-mode bytes after the field count, each 0
+  /// or 1 and at least one 1.
   pub fn get(buf: &mut &[u8]) -> Result<Self, String> {
-    let is_unsafe = get_bool(buf)?;
+    let flags = get_u8(buf)?;
+    if flags > 3 {
+      return Err(format!("invalid constructor flags {flags}"));
+    }
+    let is_unsafe = flags & 1 == 1;
     let lvls = get_u64(buf)?;
     let cidx = get_u64(buf)?;
     let params = get_u64(buf)?;
     let fields = get_u64(buf)?;
+    let field_modes = if flags & 2 == 2 {
+      get_field_modes(fields, buf)?
+    } else {
+      FieldModes::Inherited
+    };
     let typ = get_expr(buf)?;
-    Ok(Constructor { is_unsafe, lvls, cidx, params, fields, typ })
+    Ok(Constructor { is_unsafe, lvls, cidx, params, fields, field_modes, typ })
   }
+}
+
+/// A constructor's listed field modes, `n` of them, at least one shared
+/// (`Ixon.getFieldModes`).
+fn get_field_modes(n: u64, buf: &mut &[u8]) -> Result<FieldModes, String> {
+  if n > buf.len() as u64 {
+    return Err("count exceeds remaining bytes".into());
+  }
+  let mut modes = Vec::with_capacity(capped_capacity(n, buf));
+  for _ in 0..n {
+    let b = get_u8(buf)?;
+    modes.push(
+      FieldMode::of_code(b).ok_or_else(|| format!("invalid field mode {b}"))?,
+    );
+  }
+  FieldModes::listed(modes, n).ok_or_else(|| {
+    "constructor: listed field modes with no shared field".to_string()
+  })
 }
 
 impl Inductive {
@@ -1082,18 +1086,26 @@ fn get_univs(buf: &mut &[u8]) -> Result<Vec<Arc<Univ>>, String> {
 //
 // section := nblocks:TagN0 block[nblocks]
 // block   := ekind:u8 eidx:TagN0 variant:TagN0 nnodes:TagN0 node[nnodes]
-// node    := 0x00 | 0x01 | 0x02 k:TagN0 p[k]:TagN0 | 0x03 v:TagN0 | 0x04
+// node    := tag|mode<<3 (tag 0, 1, 4) | tag|mode<<3 (tag 2) k:TagN0 p[k]:TagN0
+//          | 0x03 v:TagN0
 //
-// Mirrors `Ixon.putBinders`/`Ixon.getBinders`: one constructor per tag; the
-// canonical form is `Constant::binders_canonical`.
+// Mirrors `Ixon.putBinders`/`Ixon.getBinders`. A binder node's byte holds its
+// tag (0 never, 1 zero, 2 ifAllZero, 4 undecided) in its low three bits and
+// its mode's code (`AllMode::to_code`) in its high five, so a node at the
+// default mode is its tag alone; a share node's byte is exactly 0x03. The
+// codec maps each byte to one node and refuses the others (tags 5 to 7, a
+// share byte with mode bits, a mode code that is no mode); the canonical form
+// is `Constant::binders_canonical`.
 
 impl BinderNode {
   pub fn put(&self, buf: &mut Vec<u8>) {
     match self {
-      BinderNode::Never => put_u8(Self::TAG_NEVER, buf),
-      BinderNode::Zero => put_u8(Self::TAG_ZERO, buf),
-      BinderNode::IfAllZero(params) => {
-        put_u8(Self::TAG_IF_ALL_ZERO, buf);
+      BinderNode::Never(m) => {
+        put_u8(Self::binder_byte(Self::TAG_NEVER, *m), buf);
+      },
+      BinderNode::Zero(m) => put_u8(Self::binder_byte(Self::TAG_ZERO, *m), buf),
+      BinderNode::IfAllZero(params, m) => {
+        put_u8(Self::binder_byte(Self::TAG_IF_ALL_ZERO, *m), buf);
         put_u64(params.len() as u64, buf);
         for p in params {
           put_u64(*p, buf);
@@ -1103,25 +1115,32 @@ impl BinderNode {
         put_u8(Self::TAG_SHARE, buf);
         put_u64(*variant, buf);
       },
-      BinderNode::Undecided => put_u8(Self::TAG_UNDECIDED, buf),
+      BinderNode::Undecided(m) => {
+        put_u8(Self::binder_byte(Self::TAG_UNDECIDED, *m), buf);
+      },
     }
   }
 
   pub fn get(buf: &mut &[u8]) -> Result<Self, String> {
-    match get_u8(buf)? {
-      Self::TAG_NEVER => Ok(BinderNode::Never),
-      Self::TAG_ZERO => Ok(BinderNode::Zero),
+    let b = get_u8(buf)?;
+    if b == Self::TAG_SHARE {
+      return Ok(BinderNode::Share(get_u64(buf)?));
+    }
+    let mode = AllMode::of_code(b >> 3)
+      .ok_or_else(|| format!("BinderNode::get: invalid mode in {b}"))?;
+    match b & 7 {
+      Self::TAG_NEVER => Ok(BinderNode::Never(mode)),
+      Self::TAG_ZERO => Ok(BinderNode::Zero(mode)),
       Self::TAG_IF_ALL_ZERO => {
         let count = get_u64(buf)?;
         let mut params = Vec::with_capacity(capped_capacity(count, buf));
         for _ in 0..count {
           params.push(get_u64(buf)?);
         }
-        Ok(BinderNode::IfAllZero(params))
+        Ok(BinderNode::IfAllZero(params, mode))
       },
-      Self::TAG_SHARE => Ok(BinderNode::Share(get_u64(buf)?)),
-      Self::TAG_UNDECIDED => Ok(BinderNode::Undecided),
-      t => Err(format!("BinderNode::get: invalid tag {t}")),
+      Self::TAG_UNDECIDED => Ok(BinderNode::Undecided(mode)),
+      t => Err(format!("BinderNode::get: invalid tag {t} in {b}")),
     }
   }
 }
@@ -1157,9 +1176,7 @@ pub(crate) fn put_binders(blocks: &[BinderBlock], buf: &mut Vec<u8>) {
   }
 }
 
-pub(crate) fn get_binders(
-  buf: &mut &[u8],
-) -> Result<Vec<BinderBlock>, String> {
+pub(crate) fn get_binders(buf: &mut &[u8]) -> Result<Vec<BinderBlock>, String> {
   let count = get_u64(buf)?;
   let mut blocks = Vec::with_capacity(capped_capacity(count, buf));
   for _ in 0..count {
@@ -1228,6 +1245,39 @@ impl Constant {
     self.put(&mut buf);
     let addr = Address::hash(&buf);
     (addr, buf)
+  }
+
+  /// Read `bytes` as one canonical record, refusing what
+  /// `Ixon.Canonical.deConstant` refuses: the codec reads them whole (every
+  /// byte that is no mode is refused there), the record re-encodes to exactly
+  /// them, its level count and binder data are in canonical form
+  /// ([`Constant::binders_canonical`]), and no theorem asserts anything
+  /// ([`Constant::modes_canonical`]).
+  pub fn get_canonical(bytes: &[u8]) -> Result<Self, String> {
+    let mut input = bytes;
+    let constant = Self::get(&mut input)?;
+    if !input.is_empty() {
+      return Err(format!(
+        "getConstantCanonical: {} trailing bytes",
+        input.len()
+      ));
+    }
+    let mut encoded = Vec::with_capacity(bytes.len());
+    constant.put(&mut encoded);
+    if encoded != bytes {
+      return Err("getConstantCanonical: non-canonical encoding".into());
+    }
+    if !constant.binders_canonical() {
+      return Err(
+        "getConstantCanonical: level count or binder data not in canonical \
+         form"
+          .into(),
+      );
+    }
+    if !constant.modes_canonical() {
+      return Err("getConstantCanonical: a theorem with assertions".into());
+    }
+    Ok(constant)
   }
 }
 
@@ -3525,9 +3575,10 @@ mod tests {
   use quickcheck_macros::quickcheck;
 
   fn v4_fixture_exprs() -> Vec<(&'static str, Arc<Expr>)> {
-    use crate::contract::LetKind;
-    use crate::expr::Uses;
-    let binder = |uses, value| BinderContract { uses, value };
+    use crate::modes::BinderMode;
+    let let_ = |non_dep, mode, val| {
+      Expr::let_mode(non_dep, mode, Expr::sort(0), val, Expr::var(0))
+    };
     vec![
       (
         "app",
@@ -3543,75 +3594,26 @@ mod tests {
           Expr::lam(Expr::sort(0), Expr::lam(Expr::sort(0), Expr::var(0))),
         ),
       ),
+      ("all", Expr::all(Expr::sort(0), Expr::all(Expr::sort(0), Expr::var(0)))),
+      ("ordinary_let", let_(true, LetMode::default(), Expr::nat(1))),
       (
-        "lam_local_unique",
-        Expr::lam_contract(
-          binder(Uses::Linear, ValueContract::local_unique()),
-          Expr::sort(0),
-          Expr::var(0),
-        ),
+        "unique_let",
+        let_(false, LetMode::Value(BinderMode::Unique), Expr::var(1)),
       ),
       (
-        "lam_affine_local",
-        Expr::lam_contract(
-          binder(Uses::Affine, ValueContract::local_shared()),
-          Expr::sort(0),
-          Expr::var(0),
-        ),
+        "unique_borrowed_let_nondep",
+        let_(true, LetMode::Value(BinderMode::UniqueBorrowed), Expr::var(1)),
       ),
       (
-        "all",
-        Expr::all_contract(
-          binder(Uses::Linear, ValueContract::local_unique()),
-          ValueContract::local_unique(),
-          Expr::sort(0),
-          Expr::all(Expr::sort(0), Expr::var(0)),
-        ),
+        "once_let_nondep",
+        let_(true, LetMode::Value(BinderMode::Once), Expr::var(1)),
       ),
       (
-        "ordinary_let",
-        Expr::let_contract(
-          LetContract {
-            non_dep: true,
-            kind: LetKind::Value,
-            binder: binder(Uses::Erased, ValueContract::unique()),
-          },
-          Expr::sort(0),
-          Expr::nat(1),
-          Expr::var(0),
-        ),
+        "erased_let",
+        let_(false, LetMode::Value(BinderMode::Erased), Expr::var(1)),
       ),
-      (
-        "local_unique_let",
-        Expr::let_contract(
-          LetContract {
-            non_dep: false,
-            kind: LetKind::Value,
-            binder: binder(Uses::Affine, ValueContract::local_unique()),
-          },
-          Expr::sort(0),
-          Expr::var(1),
-          Expr::var(0),
-        ),
-      ),
-      (
-        "borrow",
-        Expr::let_contract(
-          LetContract::borrow(false, Uses::Affine),
-          Expr::sort(0),
-          Expr::prj(2, 1, Expr::var(1)),
-          Expr::var(0),
-        ),
-      ),
-      (
-        "borrow_nondep",
-        Expr::let_contract(
-          LetContract::borrow(true, Uses::Many),
-          Expr::sort(0),
-          Expr::var(1),
-          Expr::var(0),
-        ),
-      ),
+      ("borrow", let_(false, LetMode::Borrow, Expr::prj(2, 1, Expr::var(1)))),
+      ("borrow_nondep", let_(true, LetMode::Borrow, Expr::var(1))),
       ("reference", Expr::reference(0, vec![])),
       ("recursion", Expr::rec(2, vec![0, 1])),
       // The last and first value of every TagN rung, f = 4 (an expression
@@ -3646,6 +3648,32 @@ mod tests {
       ("ref_univs_8", Expr::reference(0, (0..8).collect())),
       ("share_rung3", Expr::share(1032)),
     ]
+  }
+
+  /// The fixture's binder and let rows, derived by hand: a `Lam` or `All`
+  /// telescope is its count, its domains, then its body; a `Let` header is
+  /// TagN(4, 0xA, non_dep + 2 * mode code), one byte below 8 and two from 8
+  /// (rung 2: 0xA8, then the value minus 8).
+  #[test]
+  fn binder_and_let_rows_by_hand() {
+    let rows: [(&str, &[u8]); 9] = [
+      ("lam", &[0x83, 0x00, 0x00, 0x00, 0x10]),
+      ("all", &[0x92, 0x00, 0x00, 0x10]),
+      ("ordinary_let", &[0xA1, 0x00, 0x61, 0x10]),
+      ("unique_let", &[0xA4, 0x00, 0x11, 0x10]),
+      ("unique_borrowed_let_nondep", &[0xA7, 0x00, 0x11, 0x10]),
+      ("once_let_nondep", &[0xA8, 0x01, 0x00, 0x11, 0x10]),
+      ("erased_let", &[0xA8, 0x04, 0x00, 0x11, 0x10]),
+      ("borrow", &[0xA8, 0x06, 0x00, 0x41, 0x02, 0x11, 0x10]),
+      ("borrow_nondep", &[0xA8, 0x07, 0x00, 0x11, 0x10]),
+    ];
+    let cases = v4_fixture_exprs();
+    for (name, expected) in rows {
+      let (_, expr) = cases.iter().find(|(n, _)| *n == name).unwrap();
+      let mut actual = vec![];
+      put_expr(expr, &mut actual);
+      assert_eq!(actual, expected, "{name}");
+    }
   }
 
   #[test]
@@ -3687,69 +3715,38 @@ mod tests {
     }
   }
 
+  /// A `Lam` or `All` binder is its domain alone; every `Let` header value
+  /// below 16 is one `(non_dep, mode)` and every other is refused.
   #[test]
-  fn exhaustive_mode_bytes_are_distinct() {
-    use crate::contract::LetKind;
-    use crate::expr::Uses;
-    let values = [
-      ValueContract::unique(),
-      ValueContract::shared(),
-      ValueContract::local_unique(),
-      ValueContract::local_shared(),
-    ];
-    let uses = [Uses::Erased, Uses::Linear, Uses::Affine, Uses::Many];
-    let mut hashes = std::collections::HashSet::new();
-    for (value_code, value) in values.into_iter().enumerate() {
-      for (use_code, uses) in uses.into_iter().enumerate() {
-        let input = BinderContract { uses, value };
-        let input_code = (use_code + 4 * value_code) as u8;
-        let lam = Expr::lam_contract(input, Expr::sort(0), Expr::var(0));
-        let mut bytes = vec![];
-        put_expr(&lam, &mut bytes);
-        assert_eq!(bytes, [0x81, input_code, 0x00, 0x10]);
-        assert_eq!(get_expr(&mut bytes.as_slice()).unwrap(), lam);
-        assert!(hashes.insert(bytes.clone()));
-        for (result_code, result) in values.into_iter().enumerate() {
-          let all =
-            Expr::all_contract(input, result, Expr::sort(0), Expr::var(0));
-          let mut bytes = vec![];
-          put_expr(&all, &mut bytes);
-          assert_eq!(
-            bytes,
-            [0x91, input_code + 16 * result_code as u8, 0x00, 0x10]
-          );
-          assert_eq!(get_expr(&mut bytes.as_slice()).unwrap(), all);
-          assert!(hashes.insert(bytes.clone()));
-        }
-        for non_dep in [false, true] {
-          for kind in [LetKind::Value, LetKind::BorrowShared] {
-            let let_expr = Expr::let_contract(
-              LetContract { non_dep, kind, binder: input },
-              Expr::sort(0),
-              Expr::var(1),
-              Expr::var(0),
-            );
-            let mut bytes = vec![];
-            put_expr(&let_expr, &mut bytes);
-            assert_eq!(
-              bytes,
-              [
-                0xA0
-                  + u8::from(non_dep)
-                  + if kind == LetKind::BorrowShared { 2 } else { 0 },
-                input_code,
-                0x00,
-                0x11,
-                0x10
-              ]
-            );
-            assert_eq!(get_expr(&mut bytes.as_slice()).unwrap(), let_expr);
-            assert!(hashes.insert(bytes.clone()));
-          }
-        }
+  fn let_headers_and_binders_without_mode_bytes() {
+    let lam = Expr::lam(Expr::sort(0), Expr::var(0));
+    let all = Expr::all(Expr::sort(0), Expr::var(0));
+    for (e, bytes) in [(&lam, [0x81, 0x00, 0x10]), (&all, [0x91, 0x00, 0x10])] {
+      let mut out = vec![];
+      put_expr(e, &mut out);
+      assert_eq!(out, bytes);
+      assert_eq!(get_expr(&mut bytes.as_slice()).unwrap(), *e);
+    }
+    let mut seen = std::collections::HashSet::new();
+    for header in 0..64u64 {
+      let mut bytes = vec![];
+      TagN::put(4, Expr::FLAG_LET, header, &mut bytes);
+      bytes.extend_from_slice(&[0x00, 0x11, 0x10]);
+      let read = get_expr(&mut bytes.as_slice());
+      if header < 16 {
+        let e = read.unwrap();
+        let Expr::Let(non_dep, mode, ..) = e.as_ref() else { panic!() };
+        assert_eq!(LetMode::header(*non_dep, *mode), header);
+        assert!(seen.insert((*non_dep, *mode)));
+        let mut out = vec![];
+        put_expr(&e, &mut out);
+        assert_eq!(out, bytes);
+      } else {
+        let err = read.unwrap_err();
+        assert!(err.contains("invalid let header"), "{header}: {err}");
       }
     }
-    assert_eq!(hashes.len(), 16 + 64 + 64);
+    assert_eq!(seen.len(), 16);
   }
 
   #[test]
@@ -3757,31 +3754,267 @@ mod tests {
     let malformed: &[&[u8]] = &[
       &[0x70],
       &[0x80],
-      &[0x90],                                     // empty telescopes
-      &[0x71, 0x71, 0x10, 0x11, 0x12],             // nonmaximal application
-      &[0x81, 0x07, 0x00, 0x81, 0x07, 0x00, 0x10], // nonmaximal lambda
-      &[0x91, 0x17, 0x00, 0x91, 0x17, 0x00, 0x10], // nonmaximal forall
-      &[0xA4, 0x07, 0x00, 0x10, 0x10],             // reserved let flag
+      &[0x90],                         // empty telescopes
+      &[0x71, 0x71, 0x10, 0x11, 0x12], // nonmaximal application
+      &[0x81, 0x00, 0x81, 0x00, 0x10], // nonmaximal lambda
+      &[0x91, 0x00, 0x91, 0x00, 0x10], // nonmaximal forall
+      &[0xA8, 0x08, 0x00, 0x10, 0x10], // let header 16
+      &[0xAF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF], // let header 2^64-1
       &[0x1F, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF], // TagN > u64
-      &[0x1F, 0x00, 0x00, 0x00],                   // truncated nine-byte TagN
-      &[0x1D, 0x00, 0x00],                         // truncated four-byte TagN
-      &[0x18],                                     // truncated two-byte TagN
-      &[0x20, 0xFF], // reference index: invalid TagN code (f = 0)
-      &[0x87, 0x07, 0x00, 0x10], // impossible binder count
-      &[0x77, 0x10], // impossible argument count
+      &[0x1F, 0x00, 0x00, 0x00], // truncated nine-byte TagN
+      &[0x1D, 0x00, 0x00],       // truncated four-byte TagN
+      &[0x18],                   // truncated two-byte TagN
+      &[0x20, 0xFF],             // reference index: invalid TagN code (f = 0)
+      &[0x84, 0x00, 0x10],       // impossible binder count
+      &[0x77, 0x10],             // impossible argument count
     ];
     for bytes in malformed {
       let mut input = *bytes;
       assert!(get_expr(&mut input).is_err(), "accepted {bytes:02x?}");
     }
-    for code in 16..=u8::MAX {
-      assert!(get_expr(&mut [0x81, code, 0x00, 0x10].as_slice()).is_err());
-      assert!(
-        get_expr(&mut [0xA0, code, 0x00, 0x10, 0x10].as_slice()).is_err()
-      );
+  }
+
+  /// A canonical definition `fun (x : Sort 0) => x : Sort 0 → Sort 0` with
+  /// one binder node per root, and its bytes.
+  fn mode_record() -> (Constant, Vec<u8>) {
+    let defn = Definition {
+      kind: DefKind::Definition,
+      safety: DefinitionSafety::Safe,
+      asserts: DefAsserts::default(),
+      lvls: 0,
+      typ: Expr::all(Expr::sort(0), Expr::sort(0)),
+      value: Expr::lam(Expr::sort(0), Expr::var(0)),
+    };
+    let block = |index| BinderBlock {
+      shared: false,
+      index,
+      variant: 0,
+      nodes: vec![BinderNode::Never(AllMode::default())],
+    };
+    let c = Constant::with_tables(
+      ConstantInfo::Defn(defn),
+      vec![],
+      vec![],
+      vec![Arc::new(Univ::Zero)],
+    )
+    .with_binders(vec![block(0), block(1)]);
+    let mut bytes = vec![];
+    c.put(&mut bytes);
+    (c, bytes)
+  }
+
+  /// One refused byte string per illegal mode byte class, each refused by
+  /// the canonical decoder (and all but the theorem rule by the codec); the
+  /// legal neighbours of each are accepted.
+  #[test]
+  fn canonical_decoder_refuses_every_illegal_mode_byte() {
+    use crate::modes::{AllocAssert, BinderMode, ResultMode};
+    let (base, bytes) = mode_record();
+    // D0, kind/safety, lvls, all, sort, sort, lam, sort, var, sharing, refs,
+    // univs (1, zero), 2 blocks, (0 0 0 1 node), (0 1 0 1 node).
+    assert_eq!(
+      bytes,
+      [
+        0xD0, 0x01, 0x00, 0x91, 0x00, 0x00, 0x81, 0x00, 0x10, 0x00, 0x00, 0x01,
+        0x00, 0x02, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00
+      ]
+    );
+    assert_eq!(Constant::get_canonical(&bytes).unwrap(), base);
+    let node = bytes.len() - 6;
+    let refused = |bad: &[u8], what: &str| {
+      let err = Constant::get_canonical(bad).unwrap_err();
+      assert!(err.contains(what), "{bad:02x?}: {err}");
+    };
+    let with = |i: usize, b: u8| {
+      let mut v = bytes.clone();
+      v[i] = b;
+      v
+    };
+    // Section node bytes: input code 7 (any result, any binder tag), tags 5
+    // to 7 (any mode bits), and a share byte with mode bits.
+    for tag in [0u8, 1, 4] {
+      for result in 0..4u8 {
+        refused(&with(node, tag | ((7 | (result << 3)) << 3)), "invalid mode");
+        for input in 0..7u8 {
+          let ok = with(node, tag | ((input | (result << 3)) << 3));
+          let c = Constant::get_canonical(&ok).unwrap();
+          let m = c.binders[0].nodes[0].mode().unwrap();
+          assert_eq!(
+            (m.input, m.result),
+            (
+              BinderMode::of_code(input).unwrap(),
+              ResultMode::of_code(result).unwrap()
+            )
+          );
+        }
+      }
     }
-    for code in 64..=u8::MAX {
-      assert!(get_expr(&mut [0x91, code, 0x00, 0x10].as_slice()).is_err());
+    for b in 0..=u8::MAX {
+      let tag = b & 7;
+      if tag >= 5 {
+        refused(&with(node, b), "BinderNode::get: invalid");
+      }
+      if tag == 3 && b != 3 {
+        refused(&with(node, b), "BinderNode::get: invalid");
+      }
+    }
+    // A let header of 16 or more: `Sort 0 → Sort 0` with a `let` value.
+    let let_record = |header: u64| {
+      let mut v = bytes[..6].to_vec();
+      TagN::put(4, Expr::FLAG_LET, header, &mut v);
+      v.extend_from_slice(&[0x00, 0x00, 0x10]);
+      v.extend_from_slice(&[0x00, 0x00, 0x01, 0x00]);
+      v.extend_from_slice(&[0x01, 0x00, 0x00, 0x00, 0x01, 0x00]);
+      v
+    };
+    for header in 0..16 {
+      Constant::get_canonical(&let_record(header)).unwrap();
+    }
+    for header in [16, 17, 31, 255, u64::MAX] {
+      refused(&let_record(header), "invalid let header");
+    }
+    // The definition's byte: kind 3 (a low nibble of 12 or more) or safety
+    // 3, an allocation code of 3, a code of 8 or more (bit 7), and assertions
+    // on a theorem (refused by the canonical rule, read by the codec).
+    for low in 0..16u8 {
+      for high in 0..16u8 {
+        let b = low | (high << 4);
+        let v = with(1, b);
+        let low_ok = low >> 2 <= 2 && low & 3 <= 2;
+        let high_ok = high < 8 && high & 3 != 3;
+        let theorem = low >> 2 == 2;
+        match Constant::get_canonical(&v) {
+          Ok(c) => {
+            assert!(low_ok && high_ok && (!theorem || high == 0), "{b:#04x}");
+            let ConstantInfo::Defn(d) = &c.info else { panic!() };
+            assert_eq!(d.asserts, DefAsserts::of_code(high).unwrap());
+          },
+          Err(err) => {
+            assert!(!low_ok || !high_ok || (theorem && high != 0), "{b:#04x}");
+            if !low_ok {
+              assert!(err.contains("kind/safety"), "{b:#04x}: {err}");
+            } else if !high_ok {
+              assert!(err.contains("invalid definition assertions"), "{err}");
+            } else {
+              assert!(err.contains("a theorem with assertions"), "{err}");
+              let mut input = v.as_slice();
+              assert!(Constant::get(&mut input).is_ok(), "{b:#04x}");
+            }
+          },
+        }
+      }
+    }
+    refused(&with(1, 0x09 | (3 << 4)), "invalid definition assertions"); // alloc 3
+    refused(&with(1, 0x81), "invalid definition assertions"); // bit 7
+    refused(&with(1, 0x09 | (1 << 4)), "a theorem with assertions");
+    // The same rule for a theorem in a block.
+    let member = |kind, asserts| {
+      MutConst::Defn(Definition {
+        kind,
+        safety: DefinitionSafety::Safe,
+        asserts,
+        lvls: 0,
+        typ: Expr::sort(0),
+        value: Expr::sort(0),
+      })
+    };
+    let no_rc = DefAsserts { alloc: AllocAssert::NoRc, bounded_stack: false };
+    for (kind, ok) in [(DefKind::Definition, true), (DefKind::Theorem, false)] {
+      let block = Constant::with_tables(
+        ConstantInfo::Muts(vec![member(kind, no_rc)]),
+        vec![],
+        vec![],
+        vec![Arc::new(Univ::Zero)],
+      );
+      let (_, v) = block.commit();
+      assert_eq!(Constant::get_canonical(&v).is_ok(), ok, "{kind:?}");
+    }
+    // Constructors: the first byte at most 3, mode bytes 0 or 1, and the flag
+    // set only with a shared field.
+    let ctor = |fields, field_modes| Constructor {
+      is_unsafe: false,
+      lvls: 0,
+      cidx: 0,
+      params: 0,
+      fields,
+      field_modes,
+      typ: Expr::sort(0),
+    };
+    let inductive = |c: Constructor| {
+      let block = Constant::with_tables(
+        ConstantInfo::Muts(vec![MutConst::Indc(Inductive {
+          is_unsafe: false,
+          lvls: 0,
+          params: 0,
+          indices: 0,
+          typ: Expr::sort(0),
+          ctors: vec![c],
+        })]),
+        vec![],
+        vec![],
+        vec![Arc::new(Univ::Zero)],
+      );
+      block.commit().1
+    };
+    let listed =
+      FieldModes::listed(vec![FieldMode::Inherited, FieldMode::Shared], 2)
+        .unwrap();
+    let v = inductive(ctor(2, listed.clone()));
+    // C1, member tag 1, flags, lvls, params, indices, typ, 1 ctor, then the
+    // constructor: flags 2, lvls, cidx, params, fields 2, modes 0 1, typ.
+    let ctor_at = 8;
+    assert_eq!(&v[ctor_at..ctor_at + 8], [2, 0, 0, 0, 2, 0, 1, 0]);
+    let c = Constant::get_canonical(&v).unwrap();
+    let ConstantInfo::Muts(ms) = &c.info else { panic!() };
+    let MutConst::Indc(i) = &ms[0] else { panic!() };
+    assert_eq!(i.ctors[0].field_modes, listed);
+    for flags in 0..=u8::MAX {
+      let mut bad = v.clone();
+      bad[ctor_at] = flags;
+      match flags {
+        2 | 3 => {
+          Constant::get_canonical(&bad).unwrap();
+        },
+        0 | 1 => assert!(Constant::get_canonical(&bad).is_err()),
+        _ => refused(&bad, "invalid constructor flags"),
+      }
+    }
+    for mode in 2..=u8::MAX {
+      let mut bad = v.clone();
+      bad[ctor_at + 5] = mode;
+      refused(&bad, "invalid field mode");
+    }
+    let mut none_shared = v.clone();
+    none_shared[ctor_at + 6] = 0;
+    refused(&none_shared, "no shared field");
+    // A flag set on a constructor with no field: no byte follows, and
+    // nothing is shared.
+    let mut empty = inductive(ctor(0, FieldModes::Inherited));
+    assert_eq!(&empty[ctor_at..ctor_at + 6], [0, 0, 0, 0, 0, 0]);
+    Constant::get_canonical(&empty).unwrap();
+    empty[ctor_at] = 2;
+    refused(&empty, "no shared field");
+    // An unflagged constructor reads no mode byte; a count beyond the bytes
+    // left is refused before reading.
+    let mut huge = inductive(ctor(2, listed));
+    huge[ctor_at + 4] = 0x7F;
+    refused(&huge, "count exceeds remaining bytes");
+  }
+
+  /// Generated records with modes round-trip, and the canonical decoder
+  /// accepts exactly those whose theorems assert nothing and whose section is
+  /// canonical.
+  #[test]
+  fn constants_with_modes_roundtrip_canonically() {
+    let mut g = Gen::new(12);
+    for _ in 0..500 {
+      let c = gen_constant(&mut g);
+      let (_, bytes) = c.commit();
+      let mut input = bytes.as_slice();
+      assert_eq!(Constant::get(&mut input).unwrap(), c);
+      assert!(input.is_empty());
+      let canonical = c.binders_canonical() && c.modes_canonical();
+      assert_eq!(Constant::get_canonical(&bytes).is_ok(), canonical, "{c:?}");
     }
   }
 
@@ -4299,6 +4532,7 @@ mod tests {
       ConstantInfo::Defn(Definition {
         kind: DefKind::Definition,
         safety: DefinitionSafety::Safe,
+        asserts: Default::default(),
         lvls,
         typ: Expr::sort(0),
         value: Expr::var(0),

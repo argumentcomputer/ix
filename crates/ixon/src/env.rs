@@ -1789,6 +1789,7 @@ mod tests {
     Definition {
       kind: DefKind::Definition,
       safety: DefinitionSafety::Safe,
+      asserts: Default::default(),
       lvls: discriminator,
       typ: Arc::new(Expr::Sort(0)),
       value: Arc::new(Expr::Var(0)),
