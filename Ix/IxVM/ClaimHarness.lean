@@ -193,9 +193,13 @@ binder-data annotator over it, installed as `Ix.CompileM.compileCertifiedPrepare
 it: a compile of `env` (`Ix.Cert.compileUnchecked`, `compileReport`) then writes each
 record's binder data, as `ix compile` does. Fails if IxC's environment does not install. -/
 def withKernelAnnotator (env : Ix.Environment) (workers : Nat := 32) : IO Ix.Environment := do
-  match ← Ix.Compile.KernelAnnotate.installInput env workers with
+  let pre ← match Ix.Compile.KernelAnnotate.prelude? with
+    | .ok pre => pure pre
+    | .error e => throw (IO.userError s!"binder data: IxC's prelude is not installed: {e}")
+  match ← Ix.Compile.KernelAnnotate.installInput env pre workers with
   | .ok installed =>
-    pure { env with binderAnnotator? := some (Ix.Compile.KernelAnnotate.annotator installed) }
+    pure { env with
+      binderAnnotator? := some (Ix.Compile.KernelAnnotate.annotator env (Task.pure (.ok installed))) }
   | .error e => throw (IO.userError s!"binder data: IxC's environment is not installed: {e}")
 
 /-- Variant of loadIxonEnv: also seeds the constants the kernel
