@@ -1,6 +1,8 @@
 //! Canonical tower transport and preparation of trusted fixed G2 operands.
 //! Runtime pairing arithmetic belongs to the constrained Aiur source library.
 
+pub mod final_program;
+
 use super::{Bn254, fq};
 use crate::kzg::Scalar;
 use aiur::field::FieldBackend;

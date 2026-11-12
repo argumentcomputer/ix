@@ -1,0 +1,18 @@
+{
+  "artifact_blake3": "4efb17d2af02f2717338a167443d355a424079e8441abb05358b37bad70e62a5",
+  "execution_seconds": 2.051125038,
+  "format": "ix-aiur-final-fixture-cost-v1",
+  "kzg_prove_seconds": 26.283534326,
+  "main_cells": 16390828,
+  "max_height": 524288,
+  "public_fields": 2,
+  "schema_bytes": 8119324,
+  "scope": "development regression, not Init compression",
+  "validation": {
+    "honest_kzg_proof": true,
+    "changed_statement_rejected": true,
+    "forged_opening_rejected_by_source": true,
+    "fixture_regeneration_matches": true
+  },
+  "timing_scope": "Diagnostic under concurrent compilation; not an isolated performance benchmark"
+}

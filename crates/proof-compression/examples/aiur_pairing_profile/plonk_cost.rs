@@ -3,7 +3,7 @@ use std::{fs, path::Path};
 
 /// Measure compiler increments at small capacities, preserving the full fixed
 /// tables. The result is an extrapolation, not a full-capacity compilation.
-pub fn estimate(
+pub(crate) fn estimate(
   schema: &Schema,
   directory: &Path,
 ) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
