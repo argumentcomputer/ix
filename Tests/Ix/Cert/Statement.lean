@@ -733,7 +733,7 @@ def parity (label : String) (consts : List (Lean.Name × Lean.ConstantInfo)) (wo
   let mut errors : Array String := #[]
   let mut lines : Array String := #[]
   let t0 ← IO.monoMsNow
-  let env ← IO.lazyPure fun _ => Tests.Ix.Kernel.SourceIngressStep.canon consts.toArray workers
+  let env ← Tests.Ix.Cert.ExecutedChecks.annotated (Tests.Ix.Kernel.SourceIngressStep.canon consts.toArray workers)
   let t1 ← IO.monoMsNow
   let pure? ← IO.lazyPure fun _ => Ix.Cert.compileUnchecked env
   let t2 ← IO.monoMsNow
@@ -869,7 +869,7 @@ fixtures: errors, and lines for the report. -/
 def perRoot (leanEnv : Lean.Environment) : IO (Array String × Array String) := do
   let mut errors : Array String := #[]
   let mut lines : Array String := #[]
-  let env := Tests.Ix.Kernel.SourceIngressStep.canon (← fixtureConsts leanEnv).toArray
+  let env ← Tests.Ix.Cert.ExecutedChecks.annotated (Tests.Ix.Kernel.SourceIngressStep.canon (← fixtureConsts leanEnv).toArray)
   let roots := (acceptedSeeds ++ preludeNames).toList.map Ix.Name.fromLeanName
   for r in roots do
     unless env.consts.contains r do errors := errors.push s!"root {r} is not in the environment"
@@ -1135,7 +1135,7 @@ def evidenceAgreement (leanEnv : Lean.Environment) : IO (Array String × Array S
     #[`Nat.div, `Nat.mod, `Nat.gcd, `Nat.land, `Nat.lor, `Nat.xor, `Nat.shiftLeft, `Nat.shiftRight]
   let closed ← IO.ofExcept (Tests.Ix.Kernel.ReaderFidelity.closure leanEnv roots)
   let prepared ← IO.ofExcept (Ix.Compile.prepareRegisteredConstants leanEnv closed)
-  let env := Tests.Ix.Kernel.SourceIngressStep.canon prepared.toArray
+  let env ← Tests.Ix.Cert.ExecutedChecks.annotated (Tests.Ix.Kernel.SourceIngressStep.canon prepared.toArray)
   let sub := Ix.Cert.closure env (roots.toList.map Ix.Name.fromLeanName)
   let ixe ← match Ix.Cert.compile env with
     | .ok ixe => pure ixe
@@ -1228,7 +1228,7 @@ def evidenceAgreement (leanEnv : Lean.Environment) : IO (Array String × Array S
     match Ix.Compile.prepareRegisteredConstants leanEnv closedSmall with
     | .error e => errors := errors.push s!"evidence: the closure of `List.length` does not prepare: {e}"
     | .ok preparedSmall =>
-      let envSmall := Tests.Ix.Kernel.SourceIngressStep.canon preparedSmall.toArray
+      let envSmall ← Tests.Ix.Cert.ExecutedChecks.annotated (Tests.Ix.Kernel.SourceIngressStep.canon preparedSmall.toArray)
       match Ix.Cert.compile envSmall with
       | .error e => errors := errors.push s!"evidence: the closure of `List.length` does not compile: {e}"
       | .ok ixeSmall =>
@@ -1305,10 +1305,13 @@ so that the literal's bytes are exactly the record's. -/
 def blobRecordCase : IO (Array String × Array String) := do
   let target : Lean.Name := `Tests.Ix.Cert.Statement.blobTarget
   let literal : Lean.Name := `Tests.Ix.Cert.Statement.blobLiteral
-  -- `Sort u` first: its universe table ends with a parameter, whose tag byte is nonzero
-  for (params, lvl) in [([`u], Lean.Level.param `u), ([], Lean.Level.succ .zero)] do
+  -- A record ends with its binder-data section: a record without binders with the
+  -- section's count, 0, so only the last candidate, whose binder's undecided node (`04`)
+  -- ends its record, can be a canonical Nat blob.
+  for (params, type) in [([`u], Lean.mkSort (.param `u)), ([], Lean.mkSort (.succ .zero)),
+      ([], Lean.mkForall `x .default (Lean.mkSort .zero) (Lean.mkSort .zero))] do
     let targetC : Lean.ConstantInfo :=
-      .axiomInfo { name := target, levelParams := params, type := .sort lvl, isUnsafe := false }
+      .axiomInfo { name := target, levelParams := params, type, isUnsafe := false }
     let alone ← IO.lazyPure fun _ => Tests.Ix.Kernel.SourceIngressStep.canon #[(target, targetC)]
     let (ixe₀, _) ← match Ix.Cert.compileReport alone with
       | .ok out => pure out
@@ -1372,7 +1375,7 @@ def roleKindCase (leanEnv : Lean.Environment) : IO (Array String × Array String
     | .ok t => pure t
     | .error e => return (#[s!"role kinds: the default role table failed: {e}"], #[])
   let closed ← IO.ofExcept (Tests.Ix.Kernel.ReaderFidelity.closure leanEnv #[``propext, ``Nat.add])
-  let env ← IO.lazyPure fun _ => Tests.Ix.Kernel.SourceIngressStep.canon closed.toArray 2
+  let env ← Tests.Ix.Cert.ExecutedChecks.annotated (Tests.Ix.Kernel.SourceIngressStep.canon closed.toArray 2)
   let (ixe, failures, cenv) ← match Ix.Cert.compileUnchecked env with
     | .ok out => pure out
     | .error e => return (#[s!"role kinds: the closure failed to compile: {e}"], #[])
@@ -1425,7 +1428,7 @@ def literalRoleCase (leanEnv : Lean.Environment) : IO (Array String × Array Str
   let advNat := `Tests.Ix.Kernel.TutorialDefs.AdvNat
   let closed ← IO.ofExcept (Tests.Ix.Kernel.ReaderFidelity.closure leanEnv #[advNat])
   -- the copy alone: no literal, accepted
-  let plain ← IO.lazyPure fun _ => Tests.Ix.Kernel.SourceIngressStep.canon closed.toArray 2
+  let plain ← Tests.Ix.Cert.ExecutedChecks.annotated (Tests.Ix.Kernel.SourceIngressStep.canon closed.toArray 2)
   match Ix.Cert.compileReport plain with
   | .error e =>
     return (#[s!"literal roles: the copy of Nat without a literal is refused: {e}"], #[])
@@ -1437,8 +1440,8 @@ def literalRoleCase (leanEnv : Lean.Environment) : IO (Array String × Array Str
   let lit : Lean.ConstantInfo := .defnInfo {
     name := litName, levelParams := [], type := .const advNat [], value := .lit (.natVal 5),
     hints := .abbrev, safety := .safe, all := [litName] }
-  let env ← IO.lazyPure fun _ =>
-    Tests.Ix.Kernel.SourceIngressStep.canon (closed.toArray.push (litName, lit)) 2
+  let env ← Tests.Ix.Cert.ExecutedChecks.annotated
+    (Tests.Ix.Kernel.SourceIngressStep.canon (closed.toArray.push (litName, lit)) 2)
   let (ixe, failures, cenv) ← match Ix.Cert.compileUnchecked env with
     | .ok out => pure out
     | .error e => return (#[s!"literal roles: the copy of Nat with a literal failed to compile: {e}"], #[])

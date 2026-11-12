@@ -1,6 +1,7 @@
 import Ix.Common
 import Ix.CompileM
 import Ix.CompileCertified
+import Ix.IxVM.ClaimHarness
 import Ix.Meta
 import Ix.Address
 import Ix.Environment
@@ -152,7 +153,9 @@ def testBuildPrimitives : TestSeq :=
 
     IO.println s!"[build-primitives] {filtered.length} constants in transitive closure"
 
-    let (env, _) ← IO.ofExcept (Ix.Cert.compileReport (Ix.CompileM.canonInput filtered.toArray 32))
+    -- with the compile's binder-data annotator, as `PrimAddrs` was computed
+    let input ← IxVM.ClaimHarness.withKernelAnnotator (Ix.CompileM.canonInput filtered.toArray 32)
+    let (env, _) ← IO.ofExcept (Ix.Cert.compileReport input)
 
     IO.println s!"[build-primitives] Ixon env: {env.consts.size} consts, {env.named.size} named"
     IO.println ""
@@ -216,7 +219,9 @@ def testPrimitivesParity : TestSeq :=
     let needed := collectDeps leanEnv roots
     let filtered := leanEnv.constants.toList.filter fun (name, _) =>
       needed.contains name
-    let (env, _) ← IO.ofExcept (Ix.Cert.compileReport (Ix.CompileM.canonInput filtered.toArray 32))
+    -- with the compile's binder-data annotator, as `PrimAddrs` was computed
+    let input ← IxVM.ClaimHarness.withKernelAnnotator (Ix.CompileM.canonInput filtered.toArray 32)
+    let (env, _) ← IO.ofExcept (Ix.Cert.compileReport input)
 
     let hardcoded ← rsPrimAddrsCanonicalFFI
     let lookup : Std.HashMap String String :=
