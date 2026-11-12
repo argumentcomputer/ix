@@ -1,7 +1,6 @@
 module
 
 public import Ix.Ixon
-public import Ix.IxonUniv
 public import Ix.Address.Admission
 public import IxC.Kernel.Ixon.Reader
 
@@ -137,15 +136,14 @@ def renumber (refMap univMap : Array UInt64) : Ixon.Expr → Ixon.Expr
   | e => e
 
 /-- The record's tables in the compiler's order (`Ix.preseedExprTables`):
-references ascending by their address bytes, universes in canonical form
-(`Ixon.canonUniv`) ascending by their serialized bytes, each once; the
-expressions renumbered to them. -/
+references ascending by their address bytes, universes ascending by their
+serialized bytes, each once; the expressions renumbered to them. The universes
+keep their spelling (the compiler's are canonical, `Ixon.canonUniv`): a proof
+must read back as the closed value it was written from. -/
 def canonicalTables (c : Ixon.Constant) : Ixon.Constant := Id.run do
   let refs := (c.refs.qsort fun a b => a.cmpBytes b == .lt).toList.eraseDups.toArray
   let refMap := c.refs.map fun a => (refs.idxOf a).toUInt64
-  let keyed := c.univs.map fun u =>
-    let canon := Ixon.canonUniv u
-    (Ixon.runPut (Ixon.putUniv canon), canon)
+  let keyed := c.univs.map fun u => (Ixon.runPut (Ixon.putUniv u), u)
   let sorted := keyed.qsort fun (ka, _) (kb, _) => bytesLt ka kb
   let mut univs : Array Ixon.Univ := #[]
   let mut keys : Array ByteArray := #[]
