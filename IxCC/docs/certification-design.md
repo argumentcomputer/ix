@@ -1263,7 +1263,7 @@ confirm, [roadmap](roadmap.md#open-decisions)).
 | Extension | Spine (contract, image, adequacy) | CD2 (shapes) | CD3 (translator) | Aiur evaluator route |
 | --- | --- | --- | --- | --- |
 | P8 closures ([design](closures-design.md)) | nothing: P8 is below SrcEval | function shapes by arity | higher-order functions | nothing: the evaluator has closures natively |
-| Heap completion, RC, reuse | nothing (below SrcEval) | — | — | nothing |
+| Heap completion, RC, reuse | nothing (below SrcEval): general cell layouts change the runtime's procedures and heap invariant (`Rt.Rc.Gen`, [DR1](data-and-roots-design.md#dr1-heap-completion)) under the object theorem, whose statement stays | — | — | nothing |
 | Fixed-width integers, arrays, strings | new primitives: a new contract version, new image entries, one meaning lemma each at the SrcEval level | shapes for words and arrays; the bounded-construction rule remains | the primitives' meanings are their Lean bodies | the same meaning lemmas, implemented over write-once memory |
 | Interpreted opaques (`mixHash`, `getNumBits`) | excluded from the grounded statement; statements relative to the interpretation, kept separate from evaluation through a stored value | — | the theorem holds only if `f`'s result is proved independent of the opaque | refused for discharging axioms |
 | Bignums ([design](bignum-design.md)) | nothing above SrcEval (`Nat` is exact there) | — | the library closure (its layer 3) | shares the `Nat` specification with the evaluator's in-circuit `Nat` |

@@ -273,6 +273,8 @@ import IxCC.Rt.Procs.Nat
 import IxCC.Rt.Lower
 import IxCC.Rt.Readback
 import IxCC.Rt.Rc.Layout
+import IxCC.Rt.Rc.Classes
+import IxCC.Rt.Rc.Gen.Procs
 import IxCC.Rt.Rc.Readback
 import IxCC.Rt.Switches
 import IxCC.Rt.Proof.Words
