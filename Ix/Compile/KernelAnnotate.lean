@@ -1359,10 +1359,11 @@ def storedItems (fe : FEnv .source) (n : Ix.Name) :
   | .inr (.quot _) => #[none]
   | .inr _ => #[]
 
-/-- The Source roots of a record, from its members' sources (`extra` first,
-then the compile's input), each with the numbering of its level parameters. -/
+/-- The sources of a record's roots, from its members' sources (`extra` first,
+then the compile's input): each root's Lean term with the numbering of its level
+parameters, converted (`convertRoot`) only where the root is walked. -/
 def sourceRoots (env : Ix.Environment) (extra : Array (Ix.Name × Ix.ConstantInfo))
-    (names : Array Ix.Name) (c : Ixon.Constant) : Option (Array (KExpr × Numbering)) := do
+    (names : Array Ix.Name) (c : Ixon.Constant) : Option (Array (Numbering × Ix.Expr)) := do
   let ms := members c
   guard (ms.size == names.size)
   let find (n : Ix.Name) : Option Ix.ConstantInfo :=
@@ -1371,13 +1372,17 @@ def sourceRoots (env : Ix.Environment) (extra : Array (Ix.Name × Ix.ConstantInf
   for (m, n) in ms.zip names do
     let ci ← find n
     items := items ++ (← sourceItems find ci m)
-  let roots := (exprsOf items).toOption
-  let roots ← roots
-  guard (roots.size == (IxVM.PwHints.roots c).size && roots.size == items.size)
-  -- each root's levels in the compiler's canonical form, as the install's
-  -- declarations carry them (`Ix.LeanIngress.canonDecl`), over its constant's own
-  -- level parameters
-  return (roots.zip (items.map (·.1))).map fun (x, σ) => ((canonExprM σ.params x).run' {}, σ)
+  guard (items.size == (IxVM.PwHints.roots c).size)
+  return items
+
+/-- A root's Source term (the Lean source converted as the ingress converts it), its
+levels in the compiler's canonical form, as the install's declarations carry them
+(`Ix.LeanIngress.canonDecl`), over its constant's own level parameters. Converted
+only for a root that is walked. -/
+def convertRoot (σ : Numbering) (e : Ix.Expr) : Option KExpr := do
+  let xs ← (exprsOf #[(σ, e)]).toOption
+  let x ← xs[0]?
+  pure ((canonExprM σ.params x).run' {})
 
 /-! ## The annotator -/
 
@@ -1390,7 +1395,7 @@ def annotateWalk (k : Installed) (extra : Array (Ix.Name × Ix.ConstantInfo)) (n
   if unsafeOrPartial c then Ix.CompileM.undecidedSection c else
   match sourceRoots k.env extra names c with
   | none => Ix.CompileM.undecidedSection c
-  | some xs =>
+  | some items =>
     let traced := !k.trace.isEmpty && names.any fun n => k.trace.contains n.pretty
     let cx0 : Cx := { fe := k.fe, core := k.core, sharing := c.sharing,
                       bounds := IxVM.PwHints.bounds c.sharing, trace := traced, memo := k.memo,
@@ -1404,7 +1409,7 @@ def annotateWalk (k : Installed) (extra : Array (Ix.Name × Ix.ConstantInfo)) (n
       -- each root's annotated term, where nothing in it is undecided
       let mut annotated : Array (Option KExpr) := #[]
       for h : i in [:rs.size] do
-        let some (x, σ) := xs[i]? | throw (.internal "binder data: a root without a source")
+        let some (σ, src) := items[i]? | throw (.internal "binder data: a root without a source")
         let cx := { cx0 with large := σ.large, params := σ.names.size }
         -- the stored term's data where phase A annotated the root, else the walk
         let read : Option (Array Node) ← match stored[i]? with
@@ -1422,7 +1427,7 @@ def annotateWalk (k : Installed) (extra : Array (Ix.Name × Ix.ConstantInfo)) (n
             -- the syntactic reading's expectation (measurement only)
             let syn : Option PropWhen := if !cx.tier1 then none
               else if thms[i]?.getD false then some (PropWhen.ifAllZero [])
-              else (xs[j]?).bind fun (tx, _) => synSort cx.fe id 64 [] tx
+              else (items[j]?).bind fun (τ, t) => (convertRoot τ t).bind fun tx => synSort cx.fe id 64 [] tx
             if thms[i]?.getD false then pure { pw := some (PropWhen.ifAllZero []), syn }
             else match annotated[j]?.join with
               | some t => do
@@ -1433,6 +1438,7 @@ def annotateWalk (k : Installed) (extra : Array (Ix.Name × Ix.ConstantInfo)) (n
         let (nodes, kx?) ← match read, stored[i]? with
           | some nodes, some kx => pure (nodes, kx)
           | _, _ => do
+            let some x := convertRoot σ src | throw (.internal "binder data: a root's source does not convert")
             let ((kx, bad), nodes) ← (walk walkFuel cx [] 0 ex rs[i] x).run #[]
             pure (nodes, if bad then none else some kx)
         annotated := annotated.push kx?
