@@ -43,23 +43,43 @@ def genDefinitionSafety : Gen DefinitionSafety :=
 def genQuotKindNew : Gen QuotKind :=
   elements #[.type, .ctor, .lift, .ind]
 
-def genUses : Gen Uses :=
-  elements #[.erased, .linear, .affine, .many]
+def genBinderMode : Gen BinderMode :=
+  elements #[.many, .borrowed, .unique, .uniqueBorrowed, .once, .onceBorrowed, .erased]
 
-def genOwned : Gen Owned :=
-  elements #[.unique, .shared]
+def genResultMode : Gen ResultMode :=
+  elements #[.shared, .borrowed, .unique, .uniqueBorrowed]
 
-def genLocality : Gen Locality :=
-  elements #[.unrestricted, .local]
+/-- A binder node's mode, the default most of the time. -/
+def genAllMode : Gen AllMode :=
+  frequency [
+    (3, pure {}),
+    (2, AllMode.mk <$> genBinderMode <*> genResultMode),
+  ]
 
-def genValueContract : Gen ValueContract :=
-  ValueContract.mk <$> genOwned <*> genLocality
+/-- A `let`'s mode, the default most of the time. -/
+def genLetMode : Gen LetMode :=
+  frequency [
+    (3, pure (.value .many)),
+    (2, LetMode.value <$> genBinderMode),
+    (1, pure .borrow),
+  ]
 
-def genBinderContract : Gen BinderContract :=
-  BinderContract.mk <$> genUses <*> genValueContract
+def genDefAsserts : Gen DefAsserts :=
+  DefAsserts.mk <$> elements #[AllocAssert.unrestricted, .noRc, .noAlloc] <*> genBool
 
-def genLetContract : Gen LetContract :=
-  LetContract.mk <$> genBool <*> elements #[.value, .borrowShared] <*> genBinderContract
+def genFieldMode : Gen FieldMode :=
+  elements #[.inherited, .shared]
+
+/-- Field modes for a constructor with `n` fields: listed (one of them
+`shared`) for a few fields, otherwise inherited. -/
+def genFieldModes (n : Nat) : Gen (FieldModes n) := do
+  if n == 0 || n > 8 then return .inherited
+  if !(← genBool) then return .inherited
+  let mut modes : Array FieldMode := #[]
+  for _ in [:n] do
+    modes := modes.push (← genFieldMode)
+  let i ← Gen.choose Nat 0 (n - 1)
+  return FieldModes.ofArray (modes.set! i .shared)
 
 def genArray (g: Gen α) : Gen (Array α) :=
   Array.mk <$> genList g
@@ -203,13 +223,17 @@ partial def genExpr : Gen Expr :=
     (15, .recur <$> genUInt64Small <*> genArray genUInt64Small),
     (5, .prj <$> genUInt64Small <*> genUInt64Small <*> genExpr),
     (5, .app <$> genExpr <*> genExpr),
-    (5, .lam <$> genBinderContract <*> genExpr <*> genExpr),
-    (5, .all <$> genBinderContract <*> genValueContract <*> genExpr <*> genExpr),
-    (2, .letE <$> genLetContract <*> genExpr <*> genExpr <*> genExpr),
+    (5, .lam <$> genExpr <*> genExpr),
+    (5, .all <$> genExpr <*> genExpr),
+    (2, .letE <$> genBool <*> genLetMode <*> genExpr <*> genExpr <*> genExpr),
   ]
 
-def genDefinition : Gen Definition :=
-  .mk <$> genDefKind <*> genDefinitionSafety <*> genUInt64Small <*> genExpr <*> genExpr
+/-- A definition; a theorem asserts nothing. -/
+def genDefinition : Gen Definition := do
+  let kind ← genDefKind
+  let safety ← genDefinitionSafety
+  let asserts ← if kind == .thm then pure {} else genDefAsserts
+  return { kind, safety, asserts, lvls := ← genUInt64Small, typ := ← genExpr, value := ← genExpr }
 
 def genAxiom : Gen Axiom :=
   .mk <$> genBool <*> genUInt64Small <*> genExpr
@@ -239,8 +263,14 @@ def genRecursor : Gen Recursor :=
   .mk <$> genBool <*> genBool <*> genUInt64Small <*> genUInt64Small <*> genUInt64Small
     <*> genUInt64Small <*> genUInt64Small <*> genExpr <*> genArray genRecursorRule
 
-def genConstructor : Gen Constructor :=
-  .mk <$> genBool <*> genUInt64Small <*> genUInt64Small <*> genUInt64Small <*> genUInt64Small <*> genExpr
+def genConstructor : Gen Constructor := do
+  let isUnsafe ← genBool
+  let lvls ← genUInt64Small
+  let cidx ← genUInt64Small
+  let params ← genUInt64Small
+  let fields ← genUInt64Small
+  let fieldModes ← genFieldModes fields.toNat
+  return { isUnsafe, lvls, cidx, params, fields, fieldModes, typ := ← genExpr }
 
 def genInductive : Gen Inductive :=
   .mk <$> genBool <*> genUInt64Small <*> genUInt64Small
@@ -288,11 +318,11 @@ def genConstantInfo : Gen ConstantInfo :=
 /-- Generate a binder-data node -/
 def genBinderNode : Gen BinderNode :=
   frequency [
-    (10, pure .never),
-    (10, pure .zero),
-    (10, .ifAllZero <$> genArray genUInt64Small),
+    (10, .never <$> genAllMode),
+    (10, .zero <$> genAllMode),
+    (10, .ifAllZero <$> genArray genUInt64Small <*> genAllMode),
     (10, .share <$> genUInt64Small),
-    (5, pure .undecided),
+    (5, .undecided <$> genAllMode),
   ]
 
 /-- Generate a binder-data block. A section need not be canonical to round-trip. -/
@@ -314,8 +344,6 @@ def genConstant : Gen Constant :=
 instance : Shrinkable DefKind where shrink _ := []
 instance : Shrinkable DefinitionSafety where shrink _ := []
 instance : Shrinkable QuotKind where shrink _ := []
-instance : Shrinkable Uses where shrink _ := []
-instance : Shrinkable Owned where shrink _ := []
 
 -- Recursive types - shrink by returning sub-terms / halving indices
 instance : Shrinkable Univ where
@@ -338,9 +366,9 @@ instance : Shrinkable Expr where
     | .str ri => if ri > 0 then [.str (ri / 2)] else []
     | .nat ri => if ri > 0 then [.nat (ri / 2)] else []
     | .app f a => [f, a]
-    | .lam _ ty body => [ty, body]
-    | .all _ _ ty body => [ty, body]
-    | .letE _ ty val body => [ty, val, body]
+    | .lam ty body => [ty, body]
+    | .all ty body => [ty, body]
+    | .letE _ _ ty val body => [ty, val, body]
     | .share idx => if idx > 0 then [.share (idx / 2)] else []
 
 -- Struct types - shrink by simplifying expressions
@@ -399,8 +427,8 @@ instance : Shrinkable DefinitionProj where
 instance : Shrinkable MutConst where
   shrink
     | .defn d => .defn <$> Shrinkable.shrink d
-    | .indc i => [.defn ⟨.defn, .safe, 0, .sort 0, .sort 0⟩] ++ (.indc <$> Shrinkable.shrink i)
-    | .recr r => [.defn ⟨.defn, .safe, 0, .sort 0, .sort 0⟩] ++ (.recr <$> Shrinkable.shrink r)
+    | .indc i => [.defn ⟨.defn, .safe, {}, 0, .sort 0, .sort 0⟩] ++ (.indc <$> Shrinkable.shrink i)
+    | .recr r => [.defn ⟨.defn, .safe, {}, 0, .sort 0, .sort 0⟩] ++ (.recr <$> Shrinkable.shrink r)
 
 instance : Shrinkable ConstantInfo where
   shrink
