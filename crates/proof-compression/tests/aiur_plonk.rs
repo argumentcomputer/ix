@@ -42,6 +42,10 @@ fn compiler_export_matches_gnark_recursion_map_rom_fixture() {
     serde_json::to_value(exporter.witness(&record, &args).unwrap()).unwrap(),
     witness
   );
+  assert_eq!(
+    exporter.binary_witness(&record, &args).unwrap(),
+    include_bytes!("../../../tools/gnark/testdata/aiur/witness.bin")
+  );
   let mut changed_args = args;
   changed_args[0] = Bn254.from_u64(0);
   let smaller = plan.program().execute(entry, changed_args.to_vec()).unwrap();
@@ -105,5 +109,94 @@ fn gnark_archive_compiles_the_generic_export() {
   assert_eq!(info.commitments, 1);
   assert!(info.constraints > 30_000);
   assert!(std::fs::metadata(path).unwrap().len() > 0);
+  std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[cfg(feature = "plonk")]
+#[test]
+#[ignore = "requires independently authenticated IX_AIUR_PLONK_SRS and IX_AIUR_PLONK_SRS_BLAKE3"]
+fn retained_backend_proves_distinct_calls_with_one_ignition_key() {
+  use ix_proof_compression::aiur_backend::plonk::gnark;
+  use sha2::{Digest, Sha256};
+  let srs =
+    std::path::PathBuf::from(std::env::var_os("IX_AIUR_PLONK_SRS").unwrap());
+  let receipt = std::env::var("IX_AIUR_PLONK_SRS_BLAKE3").unwrap();
+  let plan = plan();
+  let entry = "BN254Trace::run";
+  let args = [Bn254.from_u64(3), Bn254.neg(Bn254.one())];
+  let record = plan.program().execute(entry, args.to_vec()).unwrap();
+  let public = plan.public_args(&record, entry, &args).unwrap();
+  let compiler = Compiler::new(&plan).unwrap();
+  let capacities: Vec<_> = compiler
+    .row_counts(&record)
+    .unwrap()
+    .into_iter()
+    .map(|n| n.max(1))
+    .collect();
+  let exporter =
+    Exporter::new(&plan, &capacities, entry, &public, &record.output).unwrap();
+  let stamp = std::time::SystemTime::now()
+    .duration_since(std::time::UNIX_EPOCH)
+    .unwrap()
+    .as_nanos();
+  let directory = std::env::temp_dir()
+    .join(format!("ix-aiur-plonk-retained-{}-{stamp}", std::process::id()));
+  std::fs::create_dir(&directory).unwrap();
+  let circuit = directory.join("compiled.bin");
+  let info = gnark::compile(exporter.schema(), &circuit).unwrap();
+  let bytes = std::fs::read(&circuit).unwrap();
+  let hash = gnark::Artifact {
+    sha256: format!("{:x}", Sha256::digest(&bytes)),
+    bytes: bytes.len() as u64,
+  };
+  let output = directory.join("prepared");
+  let manifest = gnark::prepare(&gnark::Preparation {
+    schema: exporter.schema(),
+    circuit: &circuit,
+    circuit_hash: &hash,
+    info: &info,
+    srs: &srs,
+    srs_blake3: &receipt,
+    lagrange: &directory.join("lagrange.bin"),
+    lagrange_sha256: "",
+    output: &output,
+  })
+  .unwrap();
+  let key = std::fs::read(output.join("verifying-key.bin")).unwrap();
+  let key_pin: [u8; 32] = Sha256::digest(&key).into();
+  let anchors = gnark::anchors(
+    &ix_proof_compression::pipeline::ignition_parameters().unwrap(),
+  );
+  let mut prover =
+    gnark::Prover::open(&output, &manifest, gnark::Backend::Cpu).unwrap();
+  for args in [args, [Bn254.zero(), Bn254.zero()]] {
+    let record = plan.program().execute(entry, args.to_vec()).unwrap();
+    let call = plan.public_args(&record, entry, &args).unwrap();
+    let expected =
+      plan.public_claim(entry, &call, &record.output).unwrap()[2..].to_vec();
+    let witness = exporter.binary_witness(&record, &args).unwrap();
+    let mut wrong = expected.clone();
+    wrong[0] += Bn254.one();
+    assert!(prover.prove(&witness, &wrong).is_err());
+    let proof = prover.prove(&witness, &expected).unwrap();
+    assert_eq!(proof.solidity.len(), 864);
+    gnark::verify(&key, &key_pin, &proof.native, &expected, &anchors).unwrap();
+    assert!(
+      gnark::verify(&key, &key_pin, &proof.native, &wrong, &anchors).is_err()
+    );
+    let mut wrong_pin = key_pin;
+    wrong_pin[0] ^= 1;
+    assert!(
+      gnark::verify(&key, &wrong_pin, &proof.native, &expected, &anchors)
+        .is_err()
+    );
+    let mut wrong_anchors = anchors.clone();
+    wrong_anchors[0] ^= 1;
+    assert!(
+      gnark::verify(&key, &key_pin, &proof.native, &expected, &wrong_anchors)
+        .is_err()
+    );
+  }
+  prover.close().unwrap();
   std::fs::remove_dir_all(directory).unwrap();
 }

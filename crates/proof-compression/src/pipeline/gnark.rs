@@ -1,8 +1,6 @@
 //! Owned gnark objects behind the gnark archive's C ABI.
 use super::Result;
-use serde::Deserialize;
-#[cfg(feature = "plonk")]
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 #[cfg(feature = "plonk")]
 use std::collections::BTreeMap;
 use std::{ffi::c_void, marker::PhantomData, path::Path, rc::Rc};
@@ -36,7 +34,7 @@ pub struct Manifest {
   pub files: BTreeMap<String, Artifact>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct CircuitInfo {
   pub domain: u64,

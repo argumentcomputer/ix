@@ -49,10 +49,36 @@ Schemas with weighted requests leave it false and retain integer multiplicity
 checks, so an honest request count greater than one remains supported.
 Host witness checks are diagnostics; their acceptance is not a proof assumption.
 The compiler-to-PLONK lowering and log-derivative composition still require
-independent review and formal coverage. The current prototype exposes typed
-public fields. Final compression needs the explicit two-limb statement
-projection, a retained proving/verification API, and the `CompressFinal`
-verifier/pairing program before replacing the existing final pipeline.
+independent review and formal coverage. The frontend exposes typed public fields.
+`CompressFinal` supplies the two-limb statement projection and verifier/pairing
+program. Its capacity and the full recursive pipeline still need substantial
+optimization before replacing the existing final pipeline.
+
+## Retained proving API
+
+`aiur_backend::plonk::gnark` compiles a trusted schema, prepares its PLONK keys
+using an independently authenticated SRS export, and opens an owned prover handle.
+The handle reuses its circuit and keys across executions within the same capacity.
+The selected CPU or CUDA backend is the existing native PLONK proving backend.
+
+Preparation returns a manifest containing the schema, circuit and key digests.
+Opening checks those artifacts, their dimensions and the verifier embedded in
+the proving key. The manifest must come from trusted preparation or an
+authenticated catalog; a manifest packaged with an untrusted proof does not
+authorize its key. Verification requires the caller's expected public fields,
+trusted verifier-key SHA-256 and independently selected setup anchors.
+
+`Exporter::binary_witness` uses the pinned gnark binary format: three big-endian
+u32 counts (public, secret, total), then canonical 32-byte big-endian field words.
+Public fields precede the row-major main matrices in schema order. The decoder
+checks all counts and the exact length against the authenticated schema before
+allocating. It supports up to `2^25` private cells and `2^15` public fields,
+without constructing diagnostic JSON strings for large execution traces.
+
+The cross-language fixture compares Rust's binary output with gnark's native
+encoding. Ignition-backed retained-prover tests cover distinct executions under
+one key, changed public inputs, setup/key substitution, malformed proofs,
+unsatisfied private assignments and use after close or prover failure.
 
 ## Receiver weights and exact occurrence counts
 

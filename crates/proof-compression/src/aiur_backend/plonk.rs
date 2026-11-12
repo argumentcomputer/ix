@@ -11,6 +11,7 @@ use multi_stark::{
   system::CircuitInputs,
 };
 use p3_matrix::Matrix;
+use p3_matrix::dense::RowMajorMatrix;
 use serde::Serialize;
 use std::collections::HashMap;
 
@@ -20,6 +21,25 @@ pub mod gnark;
 pub const FORMAT: &str = "ix-aiur-plonk-v1";
 /// The retained Ignition prefix currently admits at most this PLONK domain.
 pub const MAX_DOMAIN: usize = 1 << 25;
+pub const MAX_PUBLIC_INPUTS: usize = 1 << 15;
+
+/// Canonical big-endian field words, in typed public-call order.
+pub fn public_bytes(values: &[Scalar]) -> Result<Vec<u8>, String> {
+  if values.len() > MAX_PUBLIC_INPUTS {
+    return Err("too many Aiur PLONK public fields".into());
+  }
+  let mut out = Vec::with_capacity(32 * values.len());
+  for value in values {
+    put_scalar(&mut out, *value);
+  }
+  Ok(out)
+}
+
+fn put_scalar(out: &mut Vec<u8>, value: Scalar) {
+  for limb in value.canonical_limbs_le().into_iter().rev() {
+    out.extend(limb.to_be_bytes());
+  }
+}
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq, Hash)]
 #[serde(tag = "op", rename_all = "snake_case")]
@@ -273,6 +293,50 @@ impl<'p, 'a> Exporter<'p, 'a> {
     record: &Execution<Bn254>,
     args: &[Scalar],
   ) -> Result<Witness, String> {
+    let (public, traces) = self.populated(record, args)?;
+    Ok(Witness {
+      public: public.into_iter().map(scalar).collect(),
+      main: traces
+        .into_iter()
+        .map(|trace| trace.values.into_iter().map(scalar).collect())
+        .collect(),
+    })
+  }
+
+  /// Gnark's binary witness: three big-endian u32 counts followed by public
+  /// then private canonical field words. Matrix order is fixed by the schema.
+  pub fn binary_witness(
+    &self,
+    record: &Execution<Bn254>,
+    args: &[Scalar],
+  ) -> Result<Vec<u8>, String> {
+    if self.schema.public_inputs > MAX_PUBLIC_INPUTS {
+      return Err("too many Aiur PLONK public fields".into());
+    }
+    let (public, traces) = self.populated(record, args)?;
+    let secret: usize = traces.iter().map(|trace| trace.values.len()).sum();
+    let total =
+      public.len().checked_add(secret).ok_or("PLONK witness size overflow")?;
+    let mut out = Vec::with_capacity(12 + 32 * total);
+    for count in [public.len(), secret, total] {
+      out.extend(
+        u32::try_from(count).map_err(|error| error.to_string())?.to_be_bytes(),
+      );
+    }
+    for value in public
+      .into_iter()
+      .chain(traces.into_iter().flat_map(|trace| trace.values))
+    {
+      put_scalar(&mut out, value);
+    }
+    Ok(out)
+  }
+
+  fn populated(
+    &self,
+    record: &Execution<Bn254>,
+    args: &[Scalar],
+  ) -> Result<(Vec<Scalar>, Vec<RowMajorMatrix<Scalar>>), String> {
     let public_args = self.plan.public_args(record, &self.entry, args)?;
     let claim =
       self.plan.public_claim(&self.entry, &public_args, &record.output)?;
@@ -292,12 +356,9 @@ impl<'p, 'a> Exporter<'p, 'a> {
           .checked_mul(circuit.main_width)
           .ok_or("PLONK witness size overflow")?;
         trace.values.resize(cells, Bn254.zero());
-        Ok(trace.values.into_iter().map(scalar).collect())
+        Ok(trace)
       })
       .collect::<Result<_, String>>()?;
-    Ok(Witness {
-      public: claim[2..].iter().copied().map(scalar).collect(),
-      main,
-    })
+    Ok((claim[2..].to_vec(), main))
   }
 }

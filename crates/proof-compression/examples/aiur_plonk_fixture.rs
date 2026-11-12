@@ -60,6 +60,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     directory.join("witness.json"),
     serde_json::to_vec_pretty(&exporter.witness(&record, &args)?)?,
   )?;
+  std::fs::write(
+    directory.join("witness.bin"),
+    exporter.binary_witness(&record, &args)?,
+  )?;
   let layout = plan.layout()?;
   let (chip_index, chip) = plan
     .artifact()
