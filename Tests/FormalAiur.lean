@@ -29,8 +29,12 @@ private def evalCases : Except String (Array Ix.AiurInvocation.Case) := do
     claimCase "Eval rejects an unreduced claimed result" unreduced false]
 
 /-- Small, dependency-bearing environment for the orchestration gate. This
-exercises real IxVM checking and cross-record calls without importing Init. -/
-private def controllerEnv : Ixon.Env := Id.run do
+exercises real IxVM checking and cross-record calls without importing Init.
+Its role binding is the default role table, under which `ix verify` admits a
+typing claim by default; its three definitions use no role, so it carries no
+role records. (An empty table is refused: the kernel admits no table that
+leaves the prelude's roles unbound.) -/
+private def controllerEnv : Except String Ixon.Env := do
   let ty : Ixon.Expr := .leanAll (.sort 0) (.leanAll (.var 0) (.var 1))
   let value : Ixon.Expr := .leanLam (.sort 0) (.leanLam (.var 0) (.var 0))
   let mut env : Ixon.Env := {}
@@ -44,9 +48,9 @@ private def controllerEnv : Ixon.Env := Id.run do
     env := env.storeConst addr c
     env := { env with anonHints := env.anonHints.insert addr (.regular 0) }
     prior := some addr
-  let emptyTable : Ix.Kernel.RoleTable := { version := Ix.Kernel.specVersion, bound := #[], evidence := #[] }
-  let bytes := emptyTable.toBytes
-  return { env with roleBinding := some { address := Address.blake3 bytes, bytes } }
+  let bytes ← Ix.Kernel.Reader.defaultTableBytes
+  let address ← Ix.Kernel.Reader.defaultTableAddress
+  return { env with roleBinding := some { address, bytes } }
 
 private def findConstWithOrThrow (ixonEnv : Ixon.Env) (label : String)
     (pred : Ixon.ConstantInfo → Bool) : IO (Address × Ixon.ConstantInfo) := do
@@ -188,7 +192,7 @@ def main (args : List String) : IO Unit := do
   let env ← get_env!
   let fixture ← loadIxonEnv ``Nat.add_comm env
   IO.FS.writeBinFile (path ++ ".ixe") (← IO.ofExcept (Ixon.serEnv fixture))
-  IO.FS.writeBinFile (path ++ ".controller.ixe") (← IO.ofExcept (Ixon.serEnv controllerEnv))
+  IO.FS.writeBinFile (path ++ ".controller.ixe") (← IO.ofExcept (Ixon.serEnv (← IO.ofExcept controllerEnv)))
   let mut cases := (← IO.ofExcept evalCases) ++ (← IO.ofExcept assumptionCases)
   for build in [claimCheckWithAsm,
       claimCheckEnvFull, claimCheckEnvFrontier,

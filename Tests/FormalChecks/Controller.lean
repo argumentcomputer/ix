@@ -218,8 +218,13 @@ def main (argv : List String) : IO UInt32 := do
         tiny.toString, "--ixes", manifest.toString, address] #[("AIUR_TRACE_ONLY_LOOKUPS", some "1")]
     unless proofAddresses[0]! == proofAddresses[1]! do fail "retention changed distributed proof"
     report.set "distributed_proof" (toJson proofAddresses[0]!)
-    let _ ← run c "reject-leaf-binding" #[ix, "verify", "--ixe", tiny.toString, "--ixes",
+    -- The whole-environment proof is not a proof of the manifest's leaf claims. The refusal
+    -- must be that one: any other (the claim policy's, a decoding error) would let this
+    -- check pass without testing it.
+    let rejected ← run c "reject-leaf-binding" #[ix, "verify", "--ixe", tiny.toString, "--ixes",
       manifest.toString, proofAddresses[0]!] (succeeds := false)
+    unless (rejected.splitOn "proof does not match a requested manifest shard").length > 1 do
+      fail "reject-leaf-binding: refused for another reason than the leaf claims' mismatch"
     let failedManifest := out / "failed.ixes"
     let failedReport := out / "failed-pipeline.json"
     let text ← run c "pipeline-budget-failure" #[ix, "prove", "--aggregate", "--direct-joins",
