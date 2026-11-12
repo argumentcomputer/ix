@@ -48,6 +48,9 @@ allows dead join points; Lir does not) are dropped, keeping the order, and
   above 63 gives 0); `natShl` shifts `2p` and checks that shifting back
   restores it; `natPow` and `natGcd` call the runtime procedures
   `rt_nat_pow` and `rt_nat_gcd` (`Rt.Procs.Nat`).
+* The fixed-width word primitives (stage W1) on tagged words: below width
+  64 a word congruent to the tagged result, masked; at width 64 the untagged
+  wrapped result, `natOverflow` at or above 2^63 (`word`, below).
 * A comparison whose only use is the block's `switch` on `Bool` becomes
   the branch itself.
 

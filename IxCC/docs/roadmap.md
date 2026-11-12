@@ -304,9 +304,18 @@ hosted-CI or cold-store timing is claimed.
   since its reference body computes modulo the `Nat` 2^64 (measured,
   [DR2](data-and-roots-design.md#dr2-fixed-width-integers-and-int)). Stage W1
   makes the word operations primitives; so far SrcEval's rule F6w, its table
-  entry and check, and the stored equations `ix compile --equations --word-equations` adds and
-  names exist behind a switch that is off (`Table.Config.words`), so nothing
-  compiles differently yet. There are no arrays, byte arrays or strings.
+  entry and check, the stored equations `ix compile --equations --word-equations` adds and
+  names, Lam's word primitive and Rt's proved tagged lowering of it exist behind a
+  switch that is off (`Table.Config.words`; erasure still declines a word entry), so
+  nothing compiles differently yet. Two limits stay after W1, by design:
+  a `UInt64` is native only below 2^63 (a word is a tagged immediate, so a width-64
+  result at or above 2^63 fails with `natOverflow`, as a `Nat` does) until stage W2
+  stores words unboxed as raw 64-bit words; and the comparisons (`decEq`, `decLt`,
+  `decLe`) stay reference bodies, so `x < y` at `x = 2^63 − 1` fails with
+  `natOverflow` (`Nat.lt` is `x + 1 ≤ y`). Making the decisions primitives needs,
+  per decision, a stored theorem fixing what it denotes as a `Decidable` value
+  (as each operation's equation does; see DR2, "Stage W1"). There are no arrays,
+  byte arrays or strings.
 - **Higher-order code**: bounded inlining and specialisation (P3, P4)
   remove what they can; the closures step (P8, Phase 2) turns any remaining
   closure into a constructor cell and every unknown call into a call of a
