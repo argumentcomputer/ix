@@ -142,7 +142,7 @@ theorem OwnedEntry.after_stack {Δ Δd : JCtx} {Γd : Ctx} {lexd captured : List
     have oview : CaptureView eo.env (Own.bindAll eo.env ef.params vs) lexd (lexd ++ ef.params) :=
       (CaptureView.declare eo.env lexd hn).rebind ef.params vs hf
     exact .cons entry' oview
-      (fun x hx => (Fir.Proof.bindAll_get_notin (fresh_avoids hf hx)).symm) tail'
+      (fun x hx => (Fir.Proof.bindAll_get_notin (ρf := ef.env) (ws := ws) (fresh_avoids hf hx)).symm) tail'
 
 section
 variable {functions : Signatures} {H : Heap} {external : Nat → Nat} {live : List Var}
@@ -224,7 +224,7 @@ theorem jump_body (st : OwnedState functions H external live Γ ρf ρo owned le
     have hi : Γd.isImm c = true := by simpa [p] using hpc
     obtain ⟨v, _, hv, _, himm, _⟩ := entry.imm c hi
     exact ⟨v, by rw [← hsav c (hsubC c hc)]; exact hv, himm⟩)
-  have hfilt : ∀ c, c ∈ captured.filter p → c ∈ lexd := fun c hc => hsubC c (List.mem_of_mem_filter hc)
+  have hfilt : ∀ c, c ∈ captured.filter p → c ∈ lexd := fun c hc => hsubC c ((List.mem_filter.mp hc).1)
   have hnlex : lexd.Nodup := oview.captured_nodup
   have hfreshF : fresh (captured.filter p) ef.params = true := fresh_mono escope.1 hfilt
   have hnodupE : (Γd.entered captured ef.params).Nodup :=
@@ -241,7 +241,7 @@ theorem jump_body (st : OwnedState functions H external live Γ ρf ρo owned le
   -- Denotations of what the body may read.
   have hdenF : EnvDen H (captured.filter p) ef.env eo.env := by
     intro c hc
-    have hcC : c ∈ captured := List.mem_of_mem_filter hc
+    have hcC : c ∈ captured := (List.mem_filter.mp hc).1
     obtain ⟨v, w, hv, hw, hd⟩ := inv₁.den c (havail c hcC)
     exact ⟨v, w, by rw [hsav c (hsubC c hcC)]; exact hv, by rw [fview c (hsubC c hcC)]; exact hw, hd⟩
   have hdenB := hdenF.bindAll ef.params hds hvlen
@@ -266,7 +266,7 @@ theorem jump_body (st : OwnedState functions H external live Γ ρf ρo owned le
       obtain ⟨h1', h2'⟩ := hbody y (entry.immIn y hi)
       exact ⟨v, w, by rw [h1']; exact hv, by rw [h2']; exact hw, hall H⟩
     · have hm : y ∈ Γd.entered captured ef.params := htokB.mem hp
-      exact hdenB y hm
+      rw [entry.params]; exact hdenB y hm
     · simp at hb
   · simp only [Ctx.known_eq, hbrwB, Option.isSome_none, Bool.or_false, Bool.or_eq_true] at hy
     rcases hy with hi | ho
