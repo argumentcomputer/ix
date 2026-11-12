@@ -168,14 +168,14 @@ theorem computes_match0 {s b0 b1 : Generic.Expr F} {c w0 w1 : F} {dec : Decidabl
     obtain ⟨hv, hbs⟩ := MatchesConst.some_inv (MatchesConst.literal 0) mt
     subst hbs
     have hc : c = 0 := Value.field.inj hv
-    rw [if_pos hc]
+    rw [ite_eq_left hc]
     first
       | exact h0 hc _ _ _ db
       | (simp only [List.nil_append] at db
          exact h0 hc _ _ _ db)
   · have hne := MatchesConst.none_inv (MatchesConst.literal 0) nm
     have hc : c ≠ 0 := fun e => hne (congrArg Value.field e)
-    rw [if_neg hc]
+    rw [ite_eq_right hc]
     rcases selectArm_cons_inv sel2 with ⟨mt2, hbody⟩ | ⟨nm2, sel3⟩
     · subst hbody
       have hbs := matchPattern_wildcard_inv mt2
@@ -293,7 +293,7 @@ theorem load_addr {h : Heap F} {a : Bytes.Address} {x : SourceValue F}
   subst hx
   have hv2 : v0 = .tuple (a.toList.map fun c => Value.field (c.toNat : F)) := hv
   have hv0 : v0 = .tuple (addrCell F a) :=
-    hv2.trans (by rw [vec32_toList a] <;> rfl)
+    hv2.trans (by rw [vec32_toList a]; rfl)
   exact (load_ptr_inv cell hl).trans hv0
 
 /-- The first projection of a tuple. -/
@@ -406,7 +406,7 @@ theorem address_eq_model {x y r : SourceValue F} {h h' : Heap F} {cs : List (Cal
     have e0 := Value.field.inj op41
     have haddr : Bytes.addressEq F a b = Bytes.addressEqTail F a b := by
       unfold Bytes.addressEq
-      exact if_pos e0
+      exact ite_eq_left e0
     obtain ⟨hr, hh⟩ := tail_eval hxl hyl ev85
     exact ⟨hr.trans (congrArg Value.field haddr.symm), hh⟩
   · -- the first bytes differ: `0`
@@ -425,7 +425,7 @@ theorem address_eq_model {x y r : SourceValue F} {h h' : Heap F} {cs : List (Cal
     have n0 : ¬ (_ = _) := fun e => hne (congrArg Value.field e)
     have haddr : Bytes.addressEq F a b = 0 := by
       unfold Bytes.addressEq
-      exact if_neg n0
+      exact ite_eq_right n0
     exact ⟨hr.trans (congrArg Value.field haddr.symm), hh⟩
 
 /-- **`Bytes::address_eq`**: on two represented addresses, `1` if they are equal and `0`
@@ -438,10 +438,10 @@ theorem address_eq_spec {x y r : SourceValue F} {h h' : Heap F} {cs : List (Call
   have key := address_eq_model ev ha hb
   have large : Aiur.Library.U64.Compatible F := Aiur.Library.U64.Goldilocks.compatible
   by_cases hab : a = b
-  · rw [if_pos hab]
+  · rw [ite_eq_left hab]
     exact ⟨key.1.trans (congrArg Value.field ((Bytes.address_eq_one_iff large a b).mpr hab)),
       key.2⟩
-  · rw [if_neg hab]
+  · rw [ite_eq_right hab]
     exact ⟨key.1.trans (congrArg Value.field ((Bytes.address_eq_zero_iff large a b).mpr hab)),
       key.2⟩
 
