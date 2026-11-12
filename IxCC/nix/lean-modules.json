@@ -188,7 +188,8 @@
   {"path": "IxCCTests/Support/Bound.lean",
    "imports": ["IxCCTests.IxonV3.Builder", "IxCCTests.Support.Envelope"]},
   "IxCCTests.Src.Table":
-  {"path": "IxCCTests/Src/Table.lean", "imports": ["IxCCTests.Src.Support"]},
+  {"path": "IxCCTests/Src/Table.lean",
+   "imports": ["IxCCTests.Src.Support", "IxCC.Src.Table.Cert"]},
   "IxCCTests.Src.Support":
   {"path": "IxCCTests/Src/Support.lean", "imports": ["IxCC.Src.Load"]},
   "IxCCTests.Src.StuckEval":
@@ -4131,7 +4132,8 @@
     "IxCCGrounding.Direct.Sites"]},
   "IxCCGrounding.Fundamental":
   {"path": "IxCCGrounding/Fundamental.lean",
-   "imports": ["IxCCGrounding.Hyps", "IxCCGrounding.Heads"]},
+   "imports":
+   ["IxCCGrounding.Hyps", "IxCCGrounding.Heads", "IxCCGrounding.EqRec"]},
   "IxCCGrounding.Fence":
   {"path": "IxCCGrounding/Fence.lean",
    "imports":
@@ -4140,6 +4142,8 @@
     "IxCCGrounding.Direct.Sites"]},
   "IxCCGrounding.Eqn":
   {"path": "IxCCGrounding/Eqn.lean", "imports": ["IxCCGrounding.Apply"]},
+  "IxCCGrounding.EqRec":
+  {"path": "IxCCGrounding/EqRec.lean", "imports": ["IxCCGrounding.Tele"]},
   "IxCCGrounding.Direct.Subst":
   {"path": "IxCCGrounding/Direct/Subst.lean",
    "imports": ["IxCCGrounding.Tele"]},
@@ -4190,6 +4194,7 @@
     "IxCCGrounding.Apply",
     "IxCCGrounding.Support",
     "IxCCGrounding.Heads",
+    "IxCCGrounding.EqRec",
     "IxCCGrounding.Hyps",
     "IxCCGrounding.Fundamental",
     "IxCCGrounding.Ok",

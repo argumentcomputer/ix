@@ -141,11 +141,13 @@ from 5962, by the entry's change (38 in: the check, the state's keys and the der
 -- with its `unsafe` override and one ruled csimp to each closure here.
 -- The ∀ rule's level built with `mk_imax`'s folds (`Level.mkIMax` and its helpers) adds 7
 -- compiled functions to each closure here (`IxCK/Kernel/Audit/Roots.lean`).
+-- The level walks memoised on shared levels add 39 compiled functions, four ruled csimps and
+-- the inherited extern `Int.decEq` to each closure here (`IxCK/Kernel/Audit/Roots.lean`).
 -- Level equality memoised on the pairs it proves equal (`Level.decMemo`) adds 4 compiled
 -- functions to each closure here (`IxCK/Kernel/Audit/Roots.lean`).
 /-- info: runtime closure of [Ixon.Projection.address,
  Ixon.Projection.reconstruct,
- Ixon.Projection.checkBytes]: 6886 compiled functions; inherited externs 113, implemented_by 0, unsafe 27, csimp 7; ruled computed_field 22, csimp 29 -/
+ Ixon.Projection.checkBytes]: 6925 compiled functions; inherited externs 114, implemented_by 0, unsafe 27, csimp 7; ruled computed_field 22, csimp 33 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.Projection.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
 

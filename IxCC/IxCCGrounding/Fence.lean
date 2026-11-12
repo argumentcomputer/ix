@@ -358,3 +358,32 @@ recursor clause and its implication from the landed one. -/
 
 /-- info: 'IxCC.Grounding.decideRoot_noRecr' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Grounding.decideRoot_noRecr
+
+/-! G3 part C: `Eq.rec` admitted (F3). -/
+
+/-- info: 'IxCC.Grounding.eq_of_inhabited_pt' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.eq_of_inhabited_pt
+
+/-- info: 'IxCC.Grounding.recClassB_eqRec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.recClassB_eqRec
+
+/-- info: 'IxCC.Grounding.recFacts_of_emptyOnly' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.recFacts_of_emptyOnly
+
+/-- info: 'IxCC.Grounding.eqRecBasis_of_check' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.eqRecBasis_of_check
+
+/-- info: 'IxCC.Grounding.eqRecBasisB_of' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.eqRecBasisB_of
+
+/-- info: 'IxCC.Grounding.peelLams_corr' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Grounding.peelLams_corr
+
+/-- info: 'IxCC.Grounding.peelLams_eqRecRhs' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.peelLams_eqRecRhs
+
+/-- info: 'IxCC.Grounding.eqRefl_pt' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.eqRefl_pt
+
+/-- info: 'IxCC.Grounding.eqRec_iota' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.eqRec_iota

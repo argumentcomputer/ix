@@ -392,6 +392,407 @@
           ]
         }
       ]
+    },
+    {
+      "name": "sparse",
+      "source": {
+        "path": "Sparse.lean",
+        "sha256": "086771ce3497525f2cf528c6d4a9bfd157f75e9cbe97f1535806f2374434243d",
+        "license": "Apache-2.0 OR MIT",
+        "variant": "original",
+        "origins": []
+      },
+      "consts": [
+        "Sparse.minS",
+        "Sparse.minF",
+        "Sparse.minO",
+        "Sparse.minE",
+        "Sparse.minN",
+        "Sparse.minD",
+        "Sparse.minH",
+        "Sparse.sumS",
+        "Sparse.sumF",
+        "Sparse.minM"
+      ],
+      "protocol": "stdin",
+      "closure": {
+        "path": "sparse.ixe",
+        "sha256": "945212cf0d57e6b29f572089beb065a9952533b0d98c42defc895c0ca10ca21c",
+        "bytes": 406046
+      },
+      "equations": {
+        "path": "sparse.equations.json",
+        "sha256": "6229b510e4639c8798bdeea70148eefa10dda778a6df140e856c01814dfe4da2",
+        "equations": 18,
+        "failures": 0
+      },
+      "named_env_sha256": "da287e3f380e21f1a829de5604cd6e8880f02cce051d7a52e4a1dd9b4ffc335d",
+      "census": {
+        "path": "sparse.census.json",
+        "sha256": "3af4a39904d456c9694e679872d01194b45ff4d0fb3de7a3ca58140b44a48306"
+      },
+      "roots": [
+        {
+          "name": "Sparse.minS",
+          "address": "8bfbe012fcf18d050cd93651fc9cfefd3b9ec7d3e5278d2a01adaf9007f77898",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "note": "A list's [] arm and a catch-all (a sparse casesOn, by name): the arm is evaluated only when b = 0; at n = 2^62 the untaken arm would never return if it were evaluated",
+          "cases": [
+            {
+              "args": [
+                0,
+                10
+              ],
+              "value": "10"
+            },
+            {
+              "args": [
+                1,
+                10
+              ],
+              "value": "1"
+            },
+            {
+              "args": [
+                0,
+                1000
+              ],
+              "value": "1000"
+            },
+            {
+              "args": [
+                1,
+                100000
+              ],
+              "value": "1"
+            },
+            {
+              "args": [
+                1,
+                4611686018427387904
+              ],
+              "value": "1"
+            }
+          ]
+        },
+        {
+          "name": "Sparse.minF",
+          "address": "e53db1fe65bf335b41b6d3933fa6389ea81e18af6e039e3305dc29cde7e9d408",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "note": "The same match with both constructors named (List.casesOn): the control",
+          "cases": [
+            {
+              "args": [
+                0,
+                10
+              ],
+              "value": "10"
+            },
+            {
+              "args": [
+                1,
+                10
+              ],
+              "value": "1"
+            },
+            {
+              "args": [
+                1,
+                100000
+              ],
+              "value": "1"
+            }
+          ]
+        },
+        {
+          "name": "Sparse.minO",
+          "address": "3ea4f2d084f2aef61117871434dc0c5c135dd43321ec3a31d36554f3a2060682",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "note": "Option's none arm and a catch-all",
+          "cases": [
+            {
+              "args": [
+                0,
+                10
+              ],
+              "value": "10"
+            },
+            {
+              "args": [
+                1,
+                10
+              ],
+              "value": "1"
+            },
+            {
+              "args": [
+                1,
+                100000
+              ],
+              "value": "1"
+            }
+          ]
+        },
+        {
+          "name": "Sparse.minE",
+          "address": "6a4d3a62a5aaa431dbbf62459b6bf475b6c6b799aebc1b49f81a8756bceadd8f",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "note": "An enumeration's first constructor and a catch-all",
+          "cases": [
+            {
+              "args": [
+                0,
+                10
+              ],
+              "value": "10"
+            },
+            {
+              "args": [
+                1,
+                100000
+              ],
+              "value": "1"
+            },
+            {
+              "args": [
+                2,
+                100000
+              ],
+              "value": "1"
+            }
+          ]
+        },
+        {
+          "name": "Sparse.minN",
+          "address": "02038afe6ec8a3533ea9c6d7362d410c2e716f52f795681d0c15bf6c2b422aba",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "note": "A nested pattern, as Queue.checkf's .queue [] xs: Pair.casesOn, then a sparse casesOn on the first field",
+          "cases": [
+            {
+              "args": [
+                0,
+                10
+              ],
+              "value": "10"
+            },
+            {
+              "args": [
+                1,
+                10
+              ],
+              "value": "1"
+            },
+            {
+              "args": [
+                1,
+                100000
+              ],
+              "value": "1"
+            }
+          ]
+        },
+        {
+          "name": "Sparse.minD",
+          "address": "dac2b321412c26269e9017e9856e5f575e4ebcaadd4b215f45578d1636b48a1f",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "note": "The arm needs n frames of stack",
+          "cases": [
+            {
+              "args": [
+                0,
+                10
+              ],
+              "value": "10"
+            },
+            {
+              "args": [
+                0,
+                1000
+              ],
+              "value": "1000"
+            },
+            {
+              "args": [
+                1,
+                1000000
+              ],
+              "value": "1",
+              "region": 67108864,
+              "stack": 8388608,
+              "note": "the arm is not taken: 1, at the default executable layout (8 MiB stack, 64 MiB region); while the sparse casesOn had no lazy row, the arm ran first and exhausted the stack (status 2)"
+            }
+          ]
+        },
+        {
+          "name": "Sparse.minH",
+          "address": "ba9b4a5ffb3663334ea4df345be3fa99c4ad47e892dcdc6955a7d25618a40886",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "note": "The arm allocates n cells",
+          "cases": [
+            {
+              "args": [
+                0,
+                10
+              ],
+              "value": "10"
+            },
+            {
+              "args": [
+                0,
+                100
+              ],
+              "value": "100"
+            },
+            {
+              "args": [
+                1,
+                10000000
+              ],
+              "value": "1",
+              "region": 67108864,
+              "stack": 8388608,
+              "note": "the arm is not taken: 1, at the default executable layout (8 MiB stack, 64 MiB region); while the sparse casesOn had no lazy row, the arm ran first and exhausted the region (status 1)"
+            }
+          ]
+        },
+        {
+          "name": "Sparse.sumS",
+          "address": "4a4500e2267bc9af1c3a11aa214ae7460476f3553b3908d1ea6f62ea08132ee6",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "note": "The sum over i < n of minS b i: linear when b ≠ 0 (quadratic while the untaken arm ran)",
+          "cases": [
+            {
+              "args": [
+                0,
+                10
+              ],
+              "value": "45"
+            },
+            {
+              "args": [
+                0,
+                100
+              ],
+              "value": "4950"
+            },
+            {
+              "args": [
+                1,
+                100
+              ],
+              "value": "100"
+            },
+            {
+              "args": [
+                1,
+                200
+              ],
+              "value": "200"
+            }
+          ]
+        },
+        {
+          "name": "Sparse.sumF",
+          "address": "9226b3290890c8b6124d3eeb5481e1ecde07caff291e6638a932ab49673bee4a",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "note": "The same sum through minF: the control",
+          "cases": [
+            {
+              "args": [
+                0,
+                100
+              ],
+              "value": "4950"
+            },
+            {
+              "args": [
+                1,
+                200
+              ],
+              "value": "200"
+            }
+          ]
+        },
+        {
+          "name": "Sparse.minM",
+          "address": "581bb23fcee7c8ea258238bf0d3c58c715bc4bb28019e421d1a22a3524988c5e",
+          "params": 2,
+          "result": "nat",
+          "oracles": [
+            "lean-run"
+          ],
+          "decline": null,
+          "note": "An ordinary function named as a sparse casesOn is (Sparse.mimic._sparseCasesOn_1): its arguments are evaluated first, by Lean and by IxCC, whose table gives it no lazy row",
+          "cases": [
+            {
+              "args": [
+                0,
+                10
+              ],
+              "value": "10"
+            },
+            {
+              "args": [
+                1,
+                10
+              ],
+              "value": "1"
+            },
+            {
+              "args": [
+                1,
+                1000
+              ],
+              "value": "1"
+            }
+          ]
+        }
+      ]
     }
   ]
 }

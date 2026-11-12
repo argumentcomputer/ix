@@ -1,5 +1,6 @@
 import IxCCGrounding.Hyps
 import IxCCGrounding.Heads
+import IxCCGrounding.EqRec
 
 /-!
 # The fundamental lemma (`IxCCGrounding.Fundamental`), step (f)
@@ -13,7 +14,7 @@ SrcEval's eight mutual functions returns values related to what their kernel cou
 | --- | --- | --- |
 | `force` | a forced slot's value relates to the slot's set | `RelSlot.name` and `eval` at `k - 1` |
 | `forceAll` | likewise, pointwise | `force` |
-| `fire` | a saturated head's value relates to the head applied to the arguments | F1 by `Fits` and the pins; F5 by `CaseFires`; F6 by `nat_accel`; at a recursor, its class admitted (`RecFacts`): F4 traps, so returns no value |
+| `fire` | a saturated head's value relates to the head applied to the arguments | F1 by `Fits` and the pins; F5 by `CaseFires`; F6 by `nat_accel`; at a recursor, its class admitted (`RecFacts`): F4 traps, so returns no value; F3 at `Eq.rec` returns the minor premise's slot, forced, by `eqRec_iota` |
 | `headValue` | a head's value relates to the head | `fire` on no arguments, or `RelV.pap` |
 | `apply` | at a graph-regime site, the result relates to the application | `apply_clo` and `eval` at `k - 1`; `apply_pap` and `fire` |
 | `applyAll` | along a graph-regime chain, likewise | `apply` |
@@ -208,7 +209,7 @@ theorem forceAll_step {k : Nat} (hf : ForceP M p κ lpsOf S Ok k) :
       rw [← ok_inj hfin]
       exact .cons (hf _ _ _ hv hs) (ih _ _ hvs' hss')
 
-/-- F1, F5 and F6. -/
+/-- F1, F3 at `Eq.rec`, F4, F5 and F6. -/
 theorem fire_step (H : FundHyps M p κ lpsOf S Ok) {k : Nat}
     (ih : ∀ k' < k, AllP M p κ lpsOf S Ok k') (hfa : ForceAllP M p κ lpsOf S Ok k) :
     FireP M p κ lpsOf S Ok k := by
@@ -326,11 +327,57 @@ theorem fire_step (H : FundHyps M p κ lpsOf S Ok) {k : Nat}
         | recr sf kk' lvls np nmot nmin ni ind rules ty =>
           obtain ⟨cl, hcl, hadm⟩ :=
             H.faith.recs.cls r hSr sf kk' lvls np nmot nmin ni ind rules ty hd
-          simp only [admittedClasses, List.mem_singleton] at hadm
-          subst hadm
-          -- `empty`: the table's kind is `empty`, at every level, and F4 traps
-          have hkind := recClassB_empty hcl
-          simp [hd, hkind, IxCC.Src.RecKind.atLevels, IxCC.Src.recChosen, Result.bind] at hrun
+          simp only [admittedClasses, List.mem_cons, List.not_mem_nil, or_false] at hadm
+          rcases hadm with rfl | rfl
+          · -- `empty`: the table's kind is `empty`, at every level, and F4 traps
+            have hkind := recClassB_empty hcl
+            simp [hd, hkind, IxCC.Src.RecKind.atLevels, IxCC.Src.recChosen, Result.bind] at hrun
+          · -- `eqRec`: F3 at every level; the rule's body is the minor premise's slot
+            obtain ⟨hκ, hkind, sf', kk'', lvls', ind', rl, ty', hd'⟩ := recClassB_eqRec hcl
+            rw [hd] at hd'
+            simp only [Option.some.injEq, IxCC.Src.Decl.recr.injEq] at hd'
+            obtain ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩ := hd'
+            obtain ⟨hEb, hB⟩ := H.faith.recs.eqRec r hSr hcl
+            have hRb := H.faith.recs.eqRefl r hSr hcl
+            obtain ⟨⟨_, _, _, np', nmot', nmin', ni', _, rules', _, cvr, krules, hdS, hfS, _, _, _,
+              hruleS⟩⟩ := H.faith.recs.stored r hSr _ _ _ _ _ _ _ _ _ _ hd
+            rw [hd] at hdS
+            simp only [Option.some.injEq, IxCC.Src.Decl.recr.injEq] at hdS
+            obtain ⟨-, -, -, rfl, rfl, rfl, rfl, -, rfl, -⟩ := hdS
+            have hB' := hB
+            obtain ⟨cvr0, krl0, hfr0, hty0, _, hrhs0⟩ := hB'
+            rw [hκ, hfr0] at hfS
+            injection hfS with hfS
+            injection hfS with e1 _ _ e4
+            subst e1 e4
+            rw [hκ, hfr0] at hfind
+            cases hfind
+            obtain ⟨-, -, hcorr⟩ := hruleS 0 rl krl0 rfl rfl
+            rw [hrhs0] at hcorr
+            have hpeel := peelLams_eqRecRhs hcorr
+            -- the six arguments, and SrcEval's F3: the minor premise's slot, forced
+            have harity : args.length = 6 := by
+              rw [hlen]; simp [Program.headArity, hd, IxCC.Src.Decl.recArity]
+            have hAsl : As.length = 6 := by rw [relSlots_length hargs, harity]
+            obtain ⟨s0, s1, s2, s3, s4, s5, rfl⟩ :
+                ∃ s0 s1 s2 s3 s4 s5, args = [s0, s1, s2, s3, s4, s5] := by
+              match args, harity with
+              | [s0, s1, s2, s3, s4, s5], _ => exact ⟨s0, s1, s2, s3, s4, s5, rfl⟩
+              | [], hl | [_], hl | [_, _], hl | [_, _, _], hl | [_, _, _, _], hl
+              | [_, _, _, _, _], hl => simp only [List.length_cons, List.length_nil] at hl <;> omega
+              | _ :: _ :: _ :: _ :: _ :: _ :: _ :: _, hl =>
+                simp only [List.length_cons] at hl <;> omega
+            have hrun' : IxCC.Src.force p k' s3 = .ok v := by
+              simpa [hd, hkind, IxCC.Src.RecKind.atLevels, IxCC.Src.PropWhen.holds,
+                IxCC.Src.recChosen, Result.bind, hpeel, IxCC.Src.eval_var] using hrun
+            obtain ⟨X3, hX3, hrel3⟩ := relSlots_get (i := 3) hargs rfl
+            have hv := (ih k' (Nat.lt_succ_self k')).force _ _ _ hrun' hrel3
+            obtain ⟨Mn, hMn, heq⟩ := eqRec_iota M H.laws hEb hRb hB (by rwa [← hty0]) hAsl
+            rw [hX3] at hMn
+            cases hMn
+            show RelV M κ lpsOf S Ok v (As.foldl app (M.cval (κ r) φ))
+            rw [hκ, heq]
+            exact hv
         | _ => simp [hd] at hrun
   | @prim op _ _ ci hfind hlp _ =>
     -- F6

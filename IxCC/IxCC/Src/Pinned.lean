@@ -33,9 +33,10 @@ new tables. Addresses are anonymous content hashes, so equal content shares an
 address (`cast` and `Eq.mp`); that is harmless, since equal content means an
 equal value.
 
-The `lazy` rows are the producer's proposals, not identities: the table check
-accepts a `lazy` entry for any definition of the right shape, whatever its
-address, so they are fixed. -/
+The `lazy` rows are identities: the table check accepts a `lazy` entry at a
+row's address with the row's arity (`lazyPins`, the same rows as numbers), or
+for a sparse casesOn (`Table.checkSparseCases`), and for no other definition.
+They are fixed, as the allowlist is. -/
 
 namespace IxCC.Src.Pinned
 
@@ -152,6 +153,41 @@ def addrOfNat (n : Nat) : Ixon.Address :=
     Pins.fixed.decIsFalse, Pins.fixed.decIsTrue] ==
   ["Nat", "Nat.zero", "Nat.succ", "Nat.rec", "Bool", "Bool.true", "Bool.false", "Eq",
     "Decidable.isFalse", "Decidable.isTrue"].map (some ∘ addrNat ∘ constAddr)
+/-- The `lazy` rows as the recheck path reads them: each row's address as a
+256-bit number and its by-name arity. -/
+def lazyPins : List (Nat × Nat) :=
+  [ (0x8aecd1899a1abee9a31981b685d9ef3ce0c71ffb17e0c9f99156673eb9420321, 2), -- Bool.Internal.and
+    (0x84e3d5d2658b83e7df8ba6671a718f4e5e7d26a659fdd7883df18aae805e8b4c, 2), -- Bool.Internal.or
+    (0xe1fda335132697d6d1033672e926074305dfda2ba0eaedaacc80b2a1297d567a, 4), -- Bool.dcond
+    (0xccedbaecf614590292f1a0056ebb08c52f50893b6a55e5985a76ae1c8bb39c03, 5), -- Decidable.byCases
+    (0xdd0a1d92482375a620bb02be517bfa7888a89359c6d9c497fc02780fec0f77f6, 2), -- Empty.elim
+    (0xb8968164f87ec4f5e47abba133802573ed3344bd8970ce6aa01a4da58a65dde6, 4), -- Eq.mp
+    (0x24b70f41992f54374a770e24aa9efcea1e482ee79acc03f59ebe669fe1a94bb6, 4), -- Eq.mpr
+    (0x37a4e5f7a83669fe4145c8798097172a8cf16d2d13053370a2b39ca0cc453892, 2), -- False.elim
+    (0x373d75775b9c2330be5be327adbf315bce35973d9b1667f28ed90cbf7f064614, 3), -- IO.Promise.resultD
+    (0x3e8f690010de45112576cbc3757b7eb23d419bd17424f9b9ef3d5bd6997ddb66, 3), -- Option.getD
+    (0x5d03f769376a68dd9cd024fef1c2e595f2e4cf9746754c5319e53755b61ed4f8, 3), -- Option.or
+    (0x2ae96ce801c763491f575b03200dcb754e55a6f6e75b49906513429ce2a993a4, 3), -- Option.orElse
+    (0x3e4b7bd89de6a5960436112a201a3e0796ae0d20e9f17cff4163c21bff4c0453, 2), -- Ordering.then
+    (0x58f691c06d6fa1845be65300442559b5c12e23df90e0792773f3641332139057, 2), -- PEmpty.elim
+    (0x456c548337f901b432fed5364396628709e83737dbcd5dca046c9d24edb2dc41, 5), -- Quot.indep
+    (0xf79aee413ee47bb1fa6f2027fb04ef1597871a4086d4217cff4913fa1d6ae0ba, 4), -- absurd
+    (0x7e95d703176cd27ad0e683a2ea5311ff48d436f654de3cf129eb5ee0fb753c7b, 6), -- andM
+    (0xcf4af596699212b63db5461637f587a3b8631f3e2fe571b0950e5c1d1128dd78, 6), -- bool
+    (0xb8968164f87ec4f5e47abba133802573ed3344bd8970ce6aa01a4da58a65dde6, 4), -- cast
+    (0x8e5edab25811750a5e2edaafb70ccf03cbd6ca091ca41ec81402549ba3df969b, 4), -- cond
+    (0xe40e768eb60d4d15047d0dc3b820eaaf6bfdfbc8a1ad268dcd78722d32164ab9, 5), -- dite
+    (0xc88094ee69ede73cf3ed4928a43cbc3899fb22829483557e30a136eb6d064910, 4), -- instDecidableAnd
+    (0x6aba75ff2b781cf5f24b4555ab3c26e3a3f972300b96678ea4bf5ec039dee227, 4), -- instDecidableForall
+    (0x49343bf26d48be15080b3947b0149f5b636ee59f8d65d209b2b2c964cbeeb182, 6), -- instDecidableIte
+    (0xa6037c1dcfd5fc3e1e63c157f6e543a85df3ce58561ac4757f193e9cab7765e2, 4), -- instDecidableOr
+    (0x717463825c552702ba1908b9fa5d8f3f7786d7730c633e41d8d380939feeb748, 5), -- ite
+    (0xf80598d53042259ee247d25a61645831e38d5ef186ef3b1c06fb476415222521, 3), -- notM
+    (0xc2c229cf2f49e5c368fcb79f6d9f816672224758778ed0dd77003e1a67c693d1, 6), -- orM
+    (0xa5c0e8c9e71e5afd925536c00092750ac8b34af67793c564617e2abbca5c100b, 2), -- Bool.or
+    (0x83353e9273ba68884a3890c6411de16698457cc9d148a5bf29e73d280fbaf091, 2) ] -- Bool.and
+
+#guard lazyRows.map (fun (_, hex, arity) => (addrNat (addr hex), arity)) == lazyPins
 #guard opaqueByValueRows.map (addrNat ∘ addr ∘ (·.2)) == Pins.fixed.opaqueByValue
 #guard stdAxiomRows.map (addrNat ∘ addr ∘ (·.2)) == Pins.fixed.stdAxioms
 #guard PrimOp.all.all fun op => (Pins.fixed.prim? op).map (addrNat ∘ addrOfNat) == Pins.fixed.prim? op

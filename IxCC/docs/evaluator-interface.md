@@ -33,7 +33,10 @@ EV-1 and EV-2 planned ([roadmap](roadmap.md#milestones)).
   sidecar and the configuration ([`Src/Load.lean`](../IxCC/Src/Load.lean)),
   but the sidecar (the root list, whose order fixes the constant numbering,
   and the equation proposals, which decide the table) is not fixed by the
-  closure.
+  closure. The evaluation order is the program's, not a rule's: an argument is
+  by name where `Lazify` marks it, from the table's `lazy` rows (pinned rows,
+  and since 2026-11-12 the sparse casesOn Lean generates for a `match` with a
+  catch-all, found by their shape), which no proposal can extend.
 - **Budgets** are constants scattered over the front end (`Src.maxTermDepth`,
   the table's node limits, the universe-expansion limit).
 
@@ -52,8 +55,8 @@ program the grounded theorem speaks of.
 ## EV-0. Step counts
 
 **Implemented**, as [source steps](source-steps.md) describes: the unit, the
-counter (`IxCCTests/Src/Steps.lean`), the `src-steps` tool, three pinned rows in
-`tests-src`, and the tables of every committed corpus family and benchmark
+counter (`IxCCTests/Src/Steps.lean`), the `src-steps` tool, pinned rows in
+`tests-src` (three bench-k1 rows, and nine of the sparse casesOn fixture), and the tables of every committed corpus family and benchmark
 fixture ([performance/src-steps-2026-11-10](performance/src-steps-2026-11-10/README.md)).
 The IxVM workstream's four families wait for their closures. The common unit of cost between IxCC's evaluator and IxVM's
 kernel is one SrcEval step: one application of a charged rule. Because the
