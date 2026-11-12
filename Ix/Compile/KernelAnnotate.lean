@@ -665,21 +665,23 @@ def install (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (workers : Nat 
                  ("tier+retry", t5 - t4), ("persist", t6 - t5),
                  ("tables added (count)", tablesAdded), ("tables of propositions (count)", tablesProp)] }
 
-/-! ## A restricted install (measurement, `IX_BD_RESTRICT`) -/
+/-! ## The install's restriction -/
 
 /-- The constants a source term names, through its shared subterms once. -/
-partial def exprRefs (e : Ix.Expr) (st : Std.HashSet Address × Std.HashSet Ix.Name) :
+def exprRefs (e : Ix.Expr) (st : Std.HashSet Address × Std.HashSet Ix.Name) :
     Std.HashSet Address × Std.HashSet Ix.Name :=
   if st.1.contains e.getHash then st else
   let st := (st.1.insert e.getHash, st.2)
   match e with
   | .const n _ _ => (st.1, st.2.insert n)
   | .app f a _ => exprRefs a (exprRefs f st)
-  | .lam _ t b _ _ | .forallE _ t b _ _ => exprRefs b (exprRefs t st)
+  | .lam _ t b _ _ => exprRefs b (exprRefs t st)
+  | .forallE _ t b _ _ => exprRefs b (exprRefs t st)
   | .letE _ t v b _ _ => exprRefs b (exprRefs v (exprRefs t st))
   | .mdata _ x _ => exprRefs x st
   | .proj n _ x _ => exprRefs x (st.1, st.2.insert n)
   | _ => st
+termination_by structural e
 
 /-- **The install closure of the walked records `seeds`**: every constant their
 whole terms name, then what installing each constant reached needs: a theorem's
@@ -894,22 +896,25 @@ private def nodeTag : KExpr → String
   | .forallE .. => "forall" | .letE .. => "let" | .proj .. => "proj" | .sort _ => "sort"
   | .const .. => "const" | .lit _ => "lit"
 
-/-- The first place two terms differ (a trace's comparison of two sources). -/
-partial def firstDiff (a b : KExpr) : Option String :=
-  if a == b then none else
-  match a, b with
-  | .app f x, .app g y => (firstDiff f g).orElse fun _ => firstDiff x y
-  | .lam t c _, .lam u d _ | .forallE t c _, .forallE u d _ =>
-    (firstDiff t u).orElse fun _ => firstDiff c d
-  | .letE t v c _, .letE u w d _ =>
-    ((firstDiff t u).orElse fun _ => firstDiff v w).orElse fun _ => firstDiff c d
-  | .proj k i x, .proj l j y =>
-    if k == l && i == j then firstDiff x y else some s!"proj {k}.{i} against {l}.{j}"
-  | .const k us, .const l vs => some s!"const {k} {repr us} against {l} {repr vs}"
-  | .sort u, .sort v => some s!"sort {repr u} against {repr v}"
-  | .fvar i _, .fvar j _ => some s!"fvar {i} against {j}"
-  | .bvar i, .bvar j => some s!"bvar {i} against {j}"
-  | _, _ => some s!"{nodeTag a} against {nodeTag b}"
+/-- The first place two terms differ (a trace's comparison of two sources), to
+depth `fuel`. -/
+def firstDiff : Nat → KExpr → KExpr → Option String
+  | 0, _, _ => some "(the comparison's depth bound)"
+  | fuel + 1, a, b =>
+    if a == b then none else
+    match a, b with
+    | .app f x, .app g y => (firstDiff fuel f g).orElse fun _ => firstDiff fuel x y
+    | .lam t c _, .lam u d _ | .forallE t c _, .forallE u d _ =>
+      (firstDiff fuel t u).orElse fun _ => firstDiff fuel c d
+    | .letE t v c _, .letE u w d _ =>
+      ((firstDiff fuel t u).orElse fun _ => firstDiff fuel v w).orElse fun _ => firstDiff fuel c d
+    | .proj k i x, .proj l j y =>
+      if k == l && i == j then firstDiff fuel x y else some s!"proj {k}.{i} against {l}.{j}"
+    | .const k us, .const l vs => some s!"const {k} {repr us} against {l} {repr vs}"
+    | .sort u, .sort v => some s!"sort {repr u} against {repr v}"
+    | .fvar i _, .fvar j _ => some s!"fvar {i} against {j}"
+    | .bvar i, .bvar j => some s!"bvar {i} against {j}"
+    | _, _ => some s!"{nodeTag a} against {nodeTag b}"
 
 private def infers (cx : Cx) (depth : Nat) (e : KExpr) : CM Bool :=
   tryCatch (do let _ ← cx.core.infer depth e; pure true) (fun _ => pure false)
@@ -939,7 +944,7 @@ def explain : Nat → Cx → Nat → KExpr → CM String
             let wd ← cx.core.whnf depth dom
             return s!"argument {i} of {showTerm h} mismatches: {showTerm a} : {showTerm ta} \
               (whnf {showTerm wa}), expected {showTerm dom} (whnf {showTerm wd}); \
-              first difference of the whnfs: {(firstDiff wa wd).getD "none"}"
+              first difference of the whnfs: {(firstDiff 4096 wa wd).getD "none"}"
           ty := body.instantiate1C a
         | _ => return s!"argument {i} of {showTerm h}: a function was expected, its type is {showTerm w}"
         i := i + 1
@@ -1168,7 +1173,7 @@ def walk : Nat → Cx → List CtxEntry → Nat → Expect → Ixon.Expr → KEx
       let (e', variant, bad) ← match hit? with
         | some (e', variant, bad, src) => do
           if cx.trace then
-            if let some d := firstDiff src x then
+            if let some d := firstDiff 4096 src x then
               dbgTrace s!"binder data trace: share {n}: a memoized site's source differs: {d}"
                 fun _ => pure ()
           pure (e', variant, bad)
