@@ -5,7 +5,7 @@ import IxVMRefinement.Core.Specs.Common
 One spec per function of `IxVM/IxVM/Source/KernelWhnf.lean` (58). The normalizers and the
 spine forms conclude `Red`; the step functions (`red_*`, `try_*`) conclude `Red` for the tags
 that mean "moved"; the telescope walks conclude the certificate relations; the structure-η
-scans state their meaning on the image. A yes/no answer claims at every answer other than `0`
+scans state their meaning on the heap terms. A yes/no answer claims at every answer other than `0`
 (the scans, whose useful answer is "none found", at every answer other than `1`); nothing is
 claimed for tag `0` / answer `0` unless the docstring says so.
 
@@ -77,17 +77,6 @@ def forallsNever : Nat → KExpr → Prop
   | 0, _ => True
   | n + 1, .forallE _ b m => m.pw.isNever = true ∧ forallsNever n b
   | _ + 1, _ => False
-
-/-- The term mentions a constant whose key satisfies `P` (outside `fvar` annotations, which
-IxVM's scans do not read). -/
-def mentionsKey (P : KKey → Prop) : KExpr → Prop
-  | .const k _ => P k
-  | .app f a => mentionsKey P f ∨ mentionsKey P a
-  | .lam t b _ => mentionsKey P t ∨ mentionsKey P b
-  | .forallE t b _ => mentionsKey P t ∨ mentionsKey P b
-  | .letE t v b _ => mentionsKey P t ∨ mentionsKey P v ∨ mentionsKey P b
-  | .proj _ _ e => mentionsKey P e
-  | _ => False
 
 /-- The `Nat` operation a primitive-family code stands for (`KernelRoleSpec::role_prim_family`,
 family `1`). -/
@@ -339,10 +328,10 @@ def iota_certs : SpecFn := fun c args h r h' calls =>
 /-- `iota_cmp(rc, rec_ty_i, pre, major_idx, cty, clvls, cnp, margs, nindices, types)`:
 a nonzero answer gives `Red.iota`'s comparisons, read off the major's domain `MD` in the
 recursor's (level-instantiated) type instantiated by the arguments before the major: the
-constructor's levels equal `MD`'s head's levels, the constructor's parameters are pairwise definitionally
-equal to `MD`'s, and for an indexed family the residual indices of the constructor's type at
-the major's arguments are pairwise definitionally equal to `MD`'s indices. Answer `0`: no
-claim. -/
+constructor's levels equal `MD`'s head's levels, the constructor's parameters are pairwise
+definitionally equal to `MD`'s, and for an indexed family the residual indices of the
+constructor's type at the major's arguments are pairwise definitionally equal to `MD`'s
+indices. Answer `0`: no claim. -/
 def iota_cmp : SpecFn := fun c args h r h' calls =>
   ∀ rc rt pre mi cty clvls cnp ma ni types,
     args = [rc, rt, pre, mi, cty, clvls, cnp, ma, ni, types] → Good c calls → c.rc h rc →
@@ -702,44 +691,103 @@ def se_addr_in : SpecFn := fun c args h r h' calls =>
     ∀ (a : Bytes.Address) ms, RepAddr h a ap → RepList addrListEnum RepAddr h ms xs →
       r = .field (if a ∈ ms then 1 else 0) ∧ h' = h
 
-/-- `se_mentions(e, members)`: an answer other than `1` means the term mentions no constant at an
-address of `members` (its image, `mentionsKey`, outside `fvar` annotations). Answer `1`: no
-claim. -/
+/-! ### Heap syntax
+
+The scans run on IxVM's heap terms, not on their images: a `Let` node is not a `∀` node (its
+image, ζ-expanded, may be a `∀`), and a `Let`'s value is scanned even where the body does not
+use it. The kernel's own reading is syntactic too (`Ix.Kernel.nativeRawRec`, over the reader's
+types: `stripPis` of exactly `nP + nF` binders, then `mentionsConst` on the field domains), so
+the claims are stated on the heap, positively (they persist as the heap grows). -/
+
+/-- **A chain of `∀` nodes in the heap**: the term at `p` is `∀` nodes with the domains `ds`
+(outermost first) over the term at `q`. A `Let` node ends a chain. -/
+inductive ForallChain (h : Heap F) :
+    SourceValue F → List (SourceValue F) → SourceValue F → Prop where
+  | nil {p : SourceValue F} : ForallChain h p [] p
+  | cons {p dom cod lvl q : SourceValue F} {ds : List (SourceValue F)} :
+      loadValue h p = .ok (.construct kexprEnum "Forall" [dom, cod, lvl]) →
+      ForallChain h cod ds q → ForallChain h p (dom :: ds) q
+
+/-- The heap term at `q` is a node other than a `∀` node. -/
+def NotForallNode (h : Heap F) (q : SourceValue F) : Prop :=
+  ∃ (ctor : String) (xs : List (SourceValue F)),
+    loadValue h q = .ok (.construct kexprEnum ctor xs) ∧ ctor ≠ "Forall"
+
+/-- **No constant of the heap term is at an address satisfying `P`** (heap syntax: every node,
+the parts of a `Let` included; a `Proj` node's structure address is not read, as IxVM's scans
+do not read it). -/
+inductive HeapClean (P : Bytes.Address → Prop) (h : Heap F) : SourceValue F → Prop where
+  | bvar {p : SourceValue F} {xs : List (SourceValue F)} :
+      loadValue h p = .ok (.construct kexprEnum "BVar" xs) → HeapClean P h p
+  | srt {p : SourceValue F} {xs : List (SourceValue F)} :
+      loadValue h p = .ok (.construct kexprEnum "Srt" xs) → HeapClean P h p
+  | lit {p : SourceValue F} {xs : List (SourceValue F)} :
+      loadValue h p = .ok (.construct kexprEnum "Lit" xs) → HeapClean P h p
+  | const {p ap lp : SourceValue F} {a : Bytes.Address} :
+      loadValue h p = .ok (.construct kexprEnum "Const" [ap, lp]) → RepAddr h a ap → ¬ P a →
+      HeapClean P h p
+  | app {p x y : SourceValue F} :
+      loadValue h p = .ok (.construct kexprEnum "App" [x, y]) →
+      HeapClean P h x → HeapClean P h y → HeapClean P h p
+  | lam {p x y l : SourceValue F} :
+      loadValue h p = .ok (.construct kexprEnum "Lam" [x, y, l]) →
+      HeapClean P h x → HeapClean P h y → HeapClean P h p
+  | forallE {p x y l : SourceValue F} :
+      loadValue h p = .ok (.construct kexprEnum "Forall" [x, y, l]) →
+      HeapClean P h x → HeapClean P h y → HeapClean P h p
+  | letE {p x y z : SourceValue F} :
+      loadValue h p = .ok (.construct kexprEnum "Let" [x, y, z]) →
+      HeapClean P h x → HeapClean P h y → HeapClean P h z → HeapClean P h p
+  | proj {p ap i e : SourceValue F} :
+      loadValue h p = .ok (.construct kexprEnum "Proj" [ap, i, e]) → HeapClean P h e →
+      HeapClean P h p
+
+/-- **The fields of a constructor type are clean**: the maximal `∀` chain of the heap term
+`ty` (ending at a node other than a `∀`) has, after its first `p` domains, only domains that
+mention no address of `membs`. A chain shorter than `p` makes the claim vacuous, as for
+`nativeRawRec`. -/
+def FieldsClean (h : Heap F) (p : Nat) (membs : List Bytes.Address) (ty : SourceValue F) : Prop :=
+  ∃ ds q, ForallChain h ty ds q ∧ NotForallNode h q ∧
+    ∀ dp ∈ ds.drop p, HeapClean (· ∈ membs) h dp
+
+/-- **A loaded inductive's constructors are clean**: the inductive the environment stores at
+`κ m` is loaded (`CIRep`) as `Induct(…, np, …, nc, …, block, idx)`, and each of its constructors
+`0, …, nc - 1` (the constant at the key of the projection record `(idx, t, block)`) is loaded
+with a type whose fields mention no address of `membs` (`FieldsClean` after `np` binders). -/
+def CtorsClean (c : Ctx) (h : Heap F) (ci : Ix.Kernel.ConstantInfo .anon)
+    (membs : List Bytes.Address) : Prop :=
+  ∃ (v nl ty np ni nc u blk idx : SourceValue F) (b : Bytes.Address) (i n p : F) (m : Nat),
+    v = .construct kciEnum "Induct" [nl, ty, np, ni, nc, u, blk, idx] ∧ c.ci h v ci ∧
+    RepAddr h b blk ∧ idx = .field i ∧ nc = .field n ∧ np = .field p ∧ (m : F) = n ∧
+    ∀ t < m, ∃ (cicon : Ix.Kernel.ConstantInfo .anon) (w nl' ty' : SourceValue F)
+        (rest : List (SourceValue F)),
+      c.env.find? (c.κ (cprjAddr (ixAddr b) (ZMod.val i) t)) = some cicon ∧ c.ci h w cicon ∧
+      w = .construct kciEnum "Ctor" (nl' :: ty' :: rest) ∧ FieldsClean h (ZMod.val p) membs ty'
+
+/-- Every inductive among the addresses `ms` has clean constructors (`CtorsClean`). -/
+def MembersClean (c : Ctx) (h : Heap F) (ms membs : List Bytes.Address) : Prop :=
+  ∀ m ∈ ms, ∀ ci, c.env.find? (c.κ (ixAddr m)) = some ci →
+    (∃ cv caps, ci = .indInfo cv caps) → CtorsClean c h ci membs
+
+/-- `se_mentions(e, members)`: an answer other than `1` means the heap term mentions no
+address of `members` (`HeapClean`). Answer `1`: no claim. -/
 def se_mentions : SpecFn := fun c args h r h' calls =>
   ∀ e xs, args = [e, xs] → Good c calls →
-    ∀ d Γ k E ms, c.tmk d Γ k h E e → RepList addrListEnum RepAddr h ms xs →
-      r ≠ .field 1 → ¬ mentionsKey (fun key => ∃ m ∈ ms, key = c.κ (ixAddr m)) E
+    ∀ ms, RepList addrListEnum RepAddr h ms xs → r ≠ .field 1 → HeapClean (· ∈ ms) h e
 
-/-- `se_peel_tol(ty, n)`: the telescope with up to `n` leading `∀`s removed (fewer where it
-stops being a `∀`), the body under as many more local binders. -/
+/-- `se_peel_tol(ty, n)`: the term after up to `n` leading `∀` nodes (fewer where the chain ends
+at another node); nothing is allocated. -/
 def se_peel_tol : SpecFn := fun c args h r h' calls =>
-  ∀ ty n, args = [ty, n] → Good c calls →
-    ∀ d Γ k T (m : F), c.tmk d Γ k h T ty → n = .field m →
-      ∃ j B, j ≤ ZMod.val m ∧ stripForalls j T = some B ∧ c.tmk d Γ (k + j) h' B r
+  ∀ ty n, args = [ty, n] → Good c calls → ∀ m : F, n = .field m →
+    h' = h ∧ ∃ ds, ForallChain h ty ds r ∧ ds.length ≤ ZMod.val m ∧
+      (ds.length < ZMod.val m → NotForallNode h r)
 
-/-- `se_scan_fields(ty, members)`: an answer other than `1` means no binder domain along the
-telescope mentions a constant at an address of `members`. Answer `1`: no claim. -/
+/-- `se_scan_fields(ty, members)`: an answer other than `1` means the maximal `∀` chain of the
+heap term has only domains that mention no address of `members`. Answer `1`: no claim. -/
 def se_scan_fields : SpecFn := fun c args h r h' calls =>
   ∀ ty xs, args = [ty, xs] → Good c calls →
-    ∀ d Γ k T ms, c.tmk d Γ k h T ty → RepList addrListEnum RepAddr h ms xs → r ≠ .field 1 →
-      ∀ j B dom body m, stripForalls j T = some B → B = .forallE dom body m →
-        ¬ mentionsKey (fun key => ∃ a ∈ ms, key = c.κ (ixAddr a)) dom
-
-/-- No binder domain of the telescope `T` after its first `p` binders mentions a constant at an
-address of `membs` (outside `fvar` annotations). -/
-def FieldsClean (c : Ctx) (p : Nat) (membs : List Bytes.Address) (T : KExpr) : Prop :=
-  ∀ q B dom body mb, stripForalls (p + q) T = some B → B = .forallE dom body mb →
-    ¬ mentionsKey (fun key => ∃ a ∈ membs, key = c.κ (ixAddr a)) dom
-
-/-- Every inductive among the addresses `ms` has, for some block `b`, member index `i`,
-parameter count `np` and constructor count `nc` (the fields IxVM loaded for it), constructors
-`0, …, nc - 1` (keyed by their projection records) whose field domains mention no member of
-`membs`. The link between those fields and the inductive's own address is not claimed. -/
-def MembersClean (c : Ctx) (ms membs : List Bytes.Address) : Prop :=
-  ∀ m ∈ ms, (∃ cv caps, c.env.find? (c.κ (ixAddr m)) = some (.indInfo cv caps)) →
-    ∃ (b : _root_.Address) (i np nc : Nat), ∀ t < nc, ∃ cicon,
-      c.env.find? (c.κ (cprjAddr b i t)) = some cicon ∧
-      FieldsClean c np membs cicon.toConstantVal.type
+    ∀ ms, RepList addrListEnum RepAddr h ms xs → r ≠ .field 1 →
+      ∃ ds q, ForallChain h ty ds q ∧ NotForallNode h q ∧ ∀ dp ∈ ds, HeapClean (· ∈ ms) h dp
 
 /-- `struct_block_member_addrs(parent, block)`: for a record at `block` in the records `c.E`,
 the addresses of its members' projection records (`Ingress::build_recur_addrs`), every
@@ -754,34 +802,40 @@ def struct_block_member_addrs : SpecFn := fun c args h r h' calls =>
           ((∀ ms, cb.info ≠ .muts ms) → xs = [p])
 
 /-- `struct_scan_ctors(block, idx, num_ctors, n_params, members, c)`: an answer other than `1`
-means the
-constructors `c, …, num_ctors - 1` of member `idx` of the block (keyed by their projection
-records) have stored types whose field domains, after `n_params` binders, mention no member of
-`members`. Answer `1`: no claim. -/
+means the constructors `c, …, num_ctors - 1` of member `idx` of the block (the constants at the
+keys of their projection records) are loaded with types whose fields, after `n_params`
+binders, mention no address of `members` (`FieldsClean`). Answer `1`: no claim. -/
 def struct_scan_ctors : SpecFn := fun c args h r h' calls =>
   ∀ blk idx nc np xs ci, args = [blk, idx, nc, np, xs, ci] → Good c calls →
     ∀ (b : Bytes.Address) (i n p j : F) ms, RepAddr h b blk → idx = .field i → nc = .field n →
       np = .field p → RepList addrListEnum RepAddr h ms xs → ci = .field j → r ≠ .field 1 →
-      ∃ m : Nat, j + (m : F) = n ∧ ∀ t < m, ∃ cicon,
-        c.env.find? (c.κ (cprjAddr (ixAddr b) (ZMod.val i) (ZMod.val (j + (t : F))))) =
-          some cicon ∧ FieldsClean c (ZMod.val p) ms cicon.toConstantVal.type
+      ∃ m : Nat, j + (m : F) = n ∧ ∀ t < m,
+        ∃ (cicon : Ix.Kernel.ConstantInfo .anon) (w nl' ty' : SourceValue F)
+          (rest : List (SourceValue F)),
+          c.env.find? (c.κ (cprjAddr (ixAddr b) (ZMod.val i) (ZMod.val (j + (t : F))))) =
+            some cicon ∧ c.ci h' w cicon ∧ w = .construct kciEnum "Ctor" (nl' :: ty' :: rest) ∧
+          FieldsClean h' (ZMod.val p) ms ty'
 
 /-- `struct_scan_members(ms, members)`: an answer other than `1` is `MembersClean ms members`.
 Answer `1`: no claim. -/
 def struct_scan_members : SpecFn := fun c args h r h' calls =>
   ∀ msp xs, args = [msp, xs] → Good c calls →
     ∀ ms membs, RepList addrListEnum RepAddr h ms msp → RepList addrListEnum RepAddr h membs xs →
-      r ≠ .field 1 → MembersClean c ms membs
+      r ≠ .field 1 → MembersClean c h' ms membs
 
-/-- `struct_is_rec(parent)`: Lean's block-level `is_rec`. An answer other than `1` means: for the
-block `b` IxVM loaded for the parent (when `block_is_multi` answers `0`), the member list it computed
-(`struct_block_member_addrs`: every inductive member's projection record when the record at
-`b` is a block, `[parent]` otherwise) is clean against itself (`MembersClean`). The link
-between `b` and the parent's address is not claimed. Answer `1`: no claim. -/
+/-- `struct_is_rec(parent)`: Lean's block-level `is_rec`. An answer other than `1` means: the
+inductive the environment stores at `κ parent` is loaded with block `b`, and the member list
+IxVM computed for `b` (every inductive member's projection record when the record at `b` is a
+block, `[parent]` otherwise; `block_is_multi` answered `0`) has clean constructors against
+itself (`MembersClean`). Answer `1`: no claim. -/
 def struct_is_rec : SpecFn := fun c args h r h' calls =>
   ∀ par, args = [par] → Good c calls →
     ∀ (p : Bytes.Address), RepAddr h p par → r ≠ .field 1 →
-      ∃ (b : Bytes.Address) (ms : List Bytes.Address), MembersClean c ms ms ∧
+      ∃ (ci : Ix.Kernel.ConstantInfo .anon) (v nl ty np ni nc u blk idx : SourceValue F)
+        (b : Bytes.Address) (ms : List Bytes.Address),
+        c.env.find? (c.κ (ixAddr p)) = some ci ∧
+        v = .construct kciEnum "Induct" [nl, ty, np, ni, nc, u, blk, idx] ∧ c.ci h' v ci ∧
+        RepAddr h' b blk ∧ MembersClean c h' ms ms ∧
         ∀ cb, Ix.Cert.recordAt c.E (ixAddr b) = some cb →
           (∀ xs, cb.info = .muts xs → ∀ i ind, xs[i]? = some (.indc ind) →
             ∃ a ∈ ms, ixAddr a = iprjAddr (ixAddr b) i) ∧
