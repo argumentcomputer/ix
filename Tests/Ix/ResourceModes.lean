@@ -376,23 +376,26 @@ def limitCase : LSpec.TestSeq :=
       | _ => false
     return (ok, 0, 0, if ok then none else some (verdictName verdict))) .done
 
-/-- A closure of default records is accepted without reading; a record with a
-non-default binder mode is read. -/
+/-- A closure of default records is accepted without reading; an annotated axiom
+is read and refused outside the extern set, accepted inside it. -/
 def fastPathCase : LSpec.TestSeq :=
-  .individualIO "fast path: default records are accepted unread" none (do
+  .individualIO "fast path and externs: default records unread; an annotated axiom only as an extern" none (do
     let plain : Ixon.Constant :=
       { info := .axio ⟨false, 0, .sort 0⟩, sharing := #[], refs := #[], univs := #[.zero] }
     let moded : Ixon.Constant :=
       { info := .axio ⟨false, 0, .all ⟨.many, .unique⟩ .shared (.sort 0) (.sort 0)⟩,
         sharing := #[], refs := #[], univs := #[.zero] }
     let table : Ix.Kernel.RoleTable := { version := 0, bound := #[], evidence := #[] }
-    let mk (c : Ixon.Constant) : Subject :=
-      { table, store := fun a => if a == addr 200 then some c else none, seeds := [addr 200] }
+    let mk (c : Ixon.Constant) (externs : List Address := []) : Subject :=
+      { table, store := fun a => if a == addr 200 then some c else none, seeds := [addr 200], externs }
     let v1 := check {} Ix.Kernel.Env.empty (mk plain)
     let v2 := check {} Ix.Kernel.Env.empty (mk moded)
+    let v3 := check {} Ix.Kernel.Env.empty (mk moded [addr 200])
     let ok := (match v1 with | .accept 0 true => true | _ => false) &&
-      (match v2 with | .accept _ false => true | _ => false)
-    return (ok, 0, 0, if ok then none else some s!"{verdictName v1}; {verdictName v2}")) .done
+      (match v2 with | .refuse _ w => (w.splitOn "not in the extern set").length > 1 | _ => false) &&
+      (match v3 with | .accept _ false => true | _ => false)
+    return (ok, 0, 0, if ok then none else
+      some s!"{verdictName v1}; {verdictName v2}; {verdictName v3}")) .done
 
 public def suite : List LSpec.TestSeq :=
   erasedCases ++ uniqueCases ++ borrowCases ++ onceCases ++ captureCases ++ skeletonCases ++
