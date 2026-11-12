@@ -44,13 +44,13 @@ import Tests.Ix.Cert.ExecutedChecks
   - the reading (`Ix.Cert.reading`) reads every constant of the closure as an
     installed compiled constant with as many level parameters as it has
     level arguments, the condition under which `Commutes` can hold.
-* **Binder contracts on both sides**, on declarations of the source-contract
+* **Annotated source on both sides**, on declarations of the source-contract
   syntax fixture (`Tests.Ix.SourceContract.SyntaxFixture`) with input and
   result contracts on arrows, λs and lets: their source contracts resolved
   (`Ix.Compile.prepareRegisteredConstants`, as the IO pipeline does) and
-  canonicalized, Source mode accepts them, and every constant's binders carry
-  the same contracts in Source mode as its reading does in the certified
-  entry's environment of `Ix.Cert.compile`'s output.
+  canonicalized, Source mode refuses them and `Ix.Cert.compile` lists each
+  as failed, both with the annotated-source refusal (the compiler writes only
+  default binder modes).
 
 The statements' freeze, `Ix.Cert.Audit`, is not imported here: the certified
 kernel gate (`lake run check-kernel`) and `lake lint` build it, so the test
@@ -990,7 +990,7 @@ def perRoot (leanEnv : Lean.Environment) : IO (Array String × Array String) := 
     (for example {unread.toList.take 6})"
   return (errors, lines)
 
-/-! ## Binder contracts on both sides -/
+/-! ## Annotated source on both sides -/
 
 def syntaxModule : Lean.Name := `Tests.Ix.SourceContract.SyntaxFixture
 
@@ -1000,81 +1000,43 @@ def contractSeeds : Array Lean.Name := #[`linear, `unique, `erased, `dependent, 
   `localResult, `localUniqueResult, `curriedResult, `dependentArrow, `anonymousArrow,
   `quantified, `nestedLambda, `lambdaDefinition, `localLet, `sharedLoan].map (syntaxModule ++ ·)
 
-abbrev Contracts := List (Ixon.BinderContract × Ixon.ValueContract)
+/-- The refusal of annotated source, by the compiler and by Source mode. -/
+def annotatedRefusal : String :=
+  "annotated source is refused: the compiler writes only default binder modes"
 
-/-- The contracts of a term's binders, in preorder. -/
-def contractsOf : Ix.Kernel.Expr md → Contracts
-  | .lam t b m | .forallE t b m => (m.contract, m.result) :: (contractsOf t ++ contractsOf b)
-  | .app f a => contractsOf f ++ contractsOf a
-  | .letE t v b _ => contractsOf t ++ contractsOf v ++ contractsOf b
-  | .proj _ _ e | .fvar _ e => contractsOf e
-  | _ => []
+def mentionsRefusal (message : String) : Bool :=
+  (message.splitOn annotatedRefusal).length > 1
 
-/-- An installed constant's type's and value's binder contracts. -/
-def installedContracts : Ix.Kernel.ConstantInfo md → Contracts × Contracts
-  | .defnInfo cv v _ => (contractsOf cv.type, contractsOf v)
-  | .thmInfo cv v => (contractsOf cv.type, contractsOf v)
-  | ci => (contractsOf ci.toConstantVal.type, [])
-
-/-- The resolved syntax fixtures in Source mode and through `Ix.Cert.compile`
-and the certified entry: errors, and lines for the report. -/
+/-- The resolved syntax fixtures in Source mode and through `Ix.Cert.compile`:
+both refuse every annotated declaration. Errors, and lines for the report. -/
 def contractAgreement (leanEnv : Lean.Environment) : IO (Array String × Array String) := do
   let mut errors : Array String := #[]
   let mut lines : Array String := #[]
   let closed ← IO.ofExcept (Tests.Ix.Kernel.ReaderFidelity.closure leanEnv (contractSeeds ++ preludeNames))
   let prepared ← IO.ofExcept (Ix.Compile.prepareRegisteredConstants leanEnv closed)
   let env := Tests.Ix.Kernel.SourceIngressStep.canon prepared.toArray
-  let envS ← match Ix.LeanIngress.checkSource env (Ix.Cert.blocksOf env) with
-    | .ok envS => pure envS
-    | .error e => return (#[s!"Source mode refuses the resolved fixtures: {e}"], lines)
-  let ixe ← match Ix.Cert.compile env with
-    | .ok ixe => pure ixe
-    | .error e => return (#[s!"Ix.Cert.compile failed on the resolved fixtures: {e}"], lines)
-  let seeds : Array Address := env.consts.toArray.filterMap fun (n, _) => (ixe.named.get? n).map (·.addr)
-  let order := closureOrder ixe seeds
-  let records := Ix.Cert.recordsOf ixe order.toList
-  let blobs := Ix.Cert.blobsOf ixe order.toList
-  let some binding := Ix.Kernel.Admission.defaultBinding.toOption
-    | return (#["the default role table does not load"], lines)
-  let envA ← match Ixon.Authenticated.checkBytes binding limits records blobs (Ix.Cert.hintsOf ixe) with
-    | .ok envA => pure envA
-    | .error e => return (#[s!"the certified entry refuses the compiled fixtures: {e}"], lines)
-  let some cx := Ix.Cert.admissionContext binding limits ixe order.toList
-    | return (#["no admission context"], lines)
-  let mut contracted : Array Lean.Name := #[]
-  let mut seen : Std.HashMap Lean.Name (Contracts × Contracts) := {}
+  match Ix.LeanIngress.checkSource env (Ix.Cert.blocksOf env) with
+  | .ok _ => errors := errors.push "Source mode accepts the annotated fixtures"
+  | .error e =>
+    unless mentionsRefusal (toString e) do
+      errors := errors.push s!"Source mode refuses the annotated fixtures for another reason: {e}"
+  let (ixe, failures) ← match Ix.Cert.compileReport env with
+    | .ok out => pure out
+    | .error e => return (#[s!"Ix.Cert.compileReport failed on the resolved fixtures: {e}"], lines)
+  let failed := failures.toMap
+  let mut refused := 0
   for n in contractSeeds do
-    let some c := envS.find? (Ix.Kernel.Key.ofName (Ix.Kernel.Name.ofLeanName n))
-      | errors := errors.push s!"{n}: not installed in Source mode"
-    let some (.const k _) := Ix.Cert.reading ixe cx c
-      | errors := errors.push s!"{n}: not read"
-    let some ci := envA.find? k
-      | errors := errors.push s!"{n}: its reading {k} is not installed"
-    let s := installedContracts c
-    let a := installedContracts ci
-    unless s == a do errors := errors.push s!"{n}: Source {repr s} but Ixon {repr a}"
-    if (s.1 ++ s.2).any (· != (.many, .shared)) then contracted := contracted.push n
-    seen := seen.insert n s
-  -- every declaration keeps a binder contract on both sides except `localLet`,
-  -- whose only contract is its `let`'s: erased on both sides, as the checker's
-  -- `letE` has no field for it
-  let letOnly := syntaxModule ++ `localLet
-  unless contracted == contractSeeds.filter (· != letOnly) do
-    errors := errors.push s!"declarations that keep a contract: {contracted}"
-  -- the resolved contracts themselves
-  let expect (n : Lean.Name) (s : Contracts × Contracts) :=
-    seen.get? (syntaxModule ++ n) == some s
-  unless expect `linear ([(.linear, .shared)], [(.linear, .shared)]) &&
-      expect `localUniqueResult
-        ([({ uses := .linear, value := .localUnique }, .localUnique)],
-          [({ uses := .linear, value := .localUnique }, .shared)]) &&
-      expect `anonymousArrow ([(.many, .localUnique)], [(.many, .shared)]) do
-    errors := errors.push s!"unexpected contracts: {repr (seen.toList.filter fun (n, _) =>
-      [`linear, `localUniqueResult, `anonymousArrow].any (syntaxModule ++ · == n))}"
-  lines := lines.push s!"contracts: {env.consts.size} resolved constants; Source accepts them \
-    ({envS.consts.length} kernel constants), the certified entry accepts the compile \
-    ({envA.consts.length}); {contractSeeds.size} declarations with contracts, each carrying the \
-    same contracts on both sides ({contracted.size} keep one; `localLet`'s is a `let`'s)"
+    let key := Ix.Name.fromLeanName n
+    if (ixe.named.get? key).isSome then
+      errors := errors.push s!"{n}: published by Ix.Cert.compile"
+    match failed.get? key with
+    | some why =>
+      if mentionsRefusal why then refused := refused + 1
+      else errors := errors.push s!"{n}: failed for another reason: {why}"
+    | none => errors := errors.push s!"{n}: not in the compile's failures"
+  lines := lines.push s!"contracts: {env.consts.size} resolved constants; Source mode refuses \
+    them, and Ix.Cert.compile refuses each of the {contractSeeds.size} annotated declarations \
+    ({refused} with the annotated-source refusal)"
   return (errors, lines)
 
 /-- Route A, B6b: `Ix.Cert.RoleClosure.RoleEvidenceChecks` on the committed RoleData, through
@@ -1643,7 +1605,7 @@ def suite : List TestSeq := [
     Tests.Ix.Cert.ExecutedChecks.checkedCase (← getCompileEnv #[defsModule, ownModule])) 1,
   report "the evidence check refuses a misbound table and a replaced fallback record" (do
     Tests.Ix.Cert.ExecutedChecks.evidenceRefusals (← getCompileEnv #[defsModule, ownModule])) 1,
-  report "binder contracts on both sides, on the resolved source-contract syntax fixtures" (do
+  report "annotated source refused on both sides, on the resolved source-contract syntax fixtures" (do
     contractAgreement (← getCompileEnv #[syntaxModule])) 1,
   report "the shipped role table's certificates check on their pinned closure (Route A, B6b)"
     roleEvidenceCase 1,
