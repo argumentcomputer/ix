@@ -21,6 +21,7 @@ import IxCCTests.Src.Steps
 namespace IxCCTests.Src.WordRules
 
 open IxCC IxCC.Src IxCCTests.Src
+open IxCC.Sem (Result)
 
 def dir : System.FilePath := fixtures / "src-words"
 
