@@ -330,10 +330,10 @@ def phaseAWorkers (mode : Ix.Kernel.CheckMode) (ev : Ix.Kernel.Evidences .source
     (workers : Nat) : IO (FEnv .source × Array Nat) := do
   let W := max 1 workers
   -- worker `w`'s results at wave `k`, at `k * W + w`
-  let mut outs : Array (IO.Promise (Array (Nat × Made))) := #[]
+  let mut made : Array (IO.Promise (Array (Nat × Made))) := #[]
   for _ in [:waves.size * W] do
-    outs := outs.push (← IO.Promise.new)
-  let outs := outs
+    made := made.push (← IO.Promise.new)
+  let outs := made
   let run (w : Nat) : IO (FEnv .source × Array Nat) := do
     let mut fe : FEnv .source := Ix.Kernel.mkFEnv Ix.Kernel.Env.empty
     let mut retry : Array Nat := #[]
