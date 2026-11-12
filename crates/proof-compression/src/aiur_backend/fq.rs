@@ -213,6 +213,13 @@ pub fn advice(channel: &str, input: &[Scalar]) -> Result<Vec<Scalar>, String> {
     "bn254.fq.add" => arithmetic("add", input),
     "bn254.fq.sub" => arithmetic("sub", input),
     "bn254.fq.mul" => arithmetic("mul", input),
+    "bn254.fq.mul_pairs" => {
+      let mut values = arithmetic("mul", input)?;
+      let carries = [values[9], values[11], values[13]];
+      values.truncate(8);
+      values.extend(carries);
+      Ok(values)
+    },
     "bn254.fq.inverse" => {
       let inverse = decode(input)?.inverse().ok_or("Fq inverse of zero")?;
       Ok(encode(inverse).to_vec())
@@ -249,8 +256,13 @@ pub fn register(channels: &mut HintChannels<Scalar>) -> Result<(), String> {
     ),
     (
       "bn254.fq.mul",
-      pair,
+      pair.clone(),
       Type::Tuple { items: vec![fields(4), fields(4), fields(7)] },
+    ),
+    (
+      "bn254.fq.mul_pairs",
+      pair,
+      Type::Tuple { items: vec![fields(4), fields(4), fields(3)] },
     ),
     ("bn254.fq.inverse", fields(4), fields(4)),
   ] {

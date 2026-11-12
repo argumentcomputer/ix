@@ -1,6 +1,7 @@
 import Aiur.Library.Field.BN254
 import Aiur.Library.Field
 import Aiur.Library.Frontend
+import Mathlib.Tactic.LinearCombination
 
 /-! Canonical BN254 base-field elements in four radix-2^80 limbs over Fr.
 Advice supplies candidate bytes, remainders, quotients and signed carries.
@@ -17,6 +18,19 @@ theorem coefficient_bound : 32 * radix^2 + 32 * radix < BN254.modulus := by deci
 theorem byte_pack_bound : 2^88 < BN254.modulus := by decide
 theorem canonical_bound : 4 * radix < BN254.modulus := by decide
 
+
+theorem paired_coefficient_bound :
+    64 * radix^3 + 64 * radix^2 + 64 * radix < BN254.modulus := by decide
+
+/-- Adjacent radix equations telescope with only the even-boundary carries. -/
+theorem paired_telescope (b bias c0 c1 c2 c3 c4 c5 c6 c7 u v w : Int)
+    (h0 : c0 + b*c1 + bias + (b^2-1)*bias = b^2*u)
+    (h1 : c2 + b*c3 + u + (b^2-1)*bias = b^2*v)
+    (h2 : c4 + b*c5 + v + (b^2-1)*bias = b^2*w)
+    (h3 : c6 + b*c7 + w + (b^2-1)*bias = b^2*bias) :
+    c0 + b*c1 + b^2*c2 + b^3*c3 + b^4*c4 + b^5*c5 + b^6*c6 + b^7*c7 = 0 := by
+  linear_combination h0 + b^2 * h1 + b^4 * h2 + b^6 * h3
+
 def dependencies : Modules.Program Nat := Library.Field.declarations
 
 private def implementation : Modules.Program Nat := aiur_library% dependencies ⟦
@@ -31,6 +45,8 @@ module BN254Fq {
   const RADIX: Field = 1208925819614629174706176;
   const BIAS: Field = 9671406556917033397649408;
   const CORRECTION: Field = 11692013098647223345629468990323707240214062694400;
+  const PAIR_RADIX: Field = 1461501637330902918203684832716283019655932542976;
+  const PAIR_CORRECTION: Field = 14134776518227074636666380005943348126619871174995280258415932576943308800;
   const ZERO: Fq = [0; 4];
   const ONE: Fq = [1, 0, 0, 0];
 
@@ -124,24 +140,14 @@ module BN254Fq {
   inline fn neg(value: Fq) -> Fq { sub(ZERO, value) }
 
   fn mul(a: Fq, b: Fq) -> Fq {
-    let (raw, quotient, carry) = hint::<([Field; 4], [Field; 4], [Field; 7])>("bn254.fq.mul", (to_limbs(a), to_limbs(b)));
+    let (raw, quotient, carry) = hint::<([Field; 4], [Field; 4], [Field; 3])>("bn254.fq.mul_pairs", (to_limbs(a), to_limbs(b)));
     let result = from_limbs(raw);
     bound(quotient);
-    range84(carry[0]);
-    range84(carry[1]);
-    range84(carry[2]);
-    range84(carry[3]);
-    range84(carry[4]);
-    range84(carry[5]);
-    range84(carry[6]);
-    assert_eq!(a[0] * b[0] - quotient[0] * 956523353070932659600711 - raw[0] + BIAS + CORRECTION, RADIX * carry[0], "Fq mul limb 0");
-    assert_eq!(a[0] * b[1] + a[1] * b[0] - quotient[0] * 611571273687723030964337 - quotient[1] * 956523353070932659600711 - raw[1] + carry[0] + CORRECTION, RADIX * carry[1], "Fq mul limb 1");
-    assert_eq!(a[0] * b[2] + a[1] * b[1] + a[2] * b[0] - quotient[0] * 370463741415268654532022 - quotient[1] * 611571273687723030964337 - quotient[2] * 956523353070932659600711 - raw[2] + carry[1] + CORRECTION, RADIX * carry[2], "Fq mul limb 2");
-    assert_eq!(a[0] * b[3] + a[1] * b[2] + a[2] * b[1] + a[3] * b[0] - quotient[0] * 12388 - quotient[1] * 370463741415268654532022 - quotient[2] * 611571273687723030964337 - quotient[3] * 956523353070932659600711 - raw[3] + carry[2] + CORRECTION, RADIX * carry[3], "Fq mul limb 3");
-    assert_eq!(a[1] * b[3] + a[2] * b[2] + a[3] * b[1] - quotient[1] * 12388 - quotient[2] * 370463741415268654532022 - quotient[3] * 611571273687723030964337 + carry[3] + CORRECTION, RADIX * carry[4], "Fq mul limb 4");
-    assert_eq!(a[2] * b[3] + a[3] * b[2] - quotient[2] * 12388 - quotient[3] * 370463741415268654532022 + carry[4] + CORRECTION, RADIX * carry[5], "Fq mul limb 5");
-    assert_eq!(a[3] * b[3] - quotient[3] * 12388 + carry[5] + CORRECTION, RADIX * carry[6], "Fq mul limb 6");
-    assert_eq!(0 + carry[6] + CORRECTION, RADIX * BIAS, "Fq mul limb 7");
+    range84(carry[0]); range84(carry[1]); range84(carry[2]);
+    assert_eq!((a[0] * b[0] - quotient[0] * 956523353070932659600711 - raw[0]) + RADIX * (a[0] * b[1] + a[1] * b[0] - quotient[0] * 611571273687723030964337 - quotient[1] * 956523353070932659600711 - raw[1]) + BIAS + PAIR_CORRECTION, PAIR_RADIX * carry[0], "Fq mul pair 0");
+    assert_eq!((a[0] * b[2] + a[1] * b[1] + a[2] * b[0] - quotient[0] * 370463741415268654532022 - quotient[1] * 611571273687723030964337 - quotient[2] * 956523353070932659600711 - raw[2]) + RADIX * (a[0] * b[3] + a[1] * b[2] + a[2] * b[1] + a[3] * b[0] - quotient[0] * 12388 - quotient[1] * 370463741415268654532022 - quotient[2] * 611571273687723030964337 - quotient[3] * 956523353070932659600711 - raw[3]) + carry[0] + PAIR_CORRECTION, PAIR_RADIX * carry[1], "Fq mul pair 1");
+    assert_eq!((a[1] * b[3] + a[2] * b[2] + a[3] * b[1] - quotient[1] * 12388 - quotient[2] * 370463741415268654532022 - quotient[3] * 611571273687723030964337) + RADIX * (a[2] * b[3] + a[3] * b[2] - quotient[2] * 12388 - quotient[3] * 370463741415268654532022) + carry[1] + PAIR_CORRECTION, PAIR_RADIX * carry[2], "Fq mul pair 2");
+    assert_eq!((a[3] * b[3] - quotient[3] * 12388) + RADIX * (0) + carry[2] + PAIR_CORRECTION, PAIR_RADIX * BIAS, "Fq mul pair 3");
     result
   }
 

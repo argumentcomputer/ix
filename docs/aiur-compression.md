@@ -985,3 +985,24 @@ height as its baseline. The small revised circuit also proves and verifies
 through the existing KZG backend. The larger execution is only a count profile;
 its `2^25` height and remaining arithmetic work still need attention before
 full recursion. These measurements use the arithmetic in commit `ac3d341fa`.
+
+## 19. Paired multiplication carries
+
+The [paired-carry multiplication change](measurements/aiur-fq-mul-pairs.json)
+combines adjacent radix equations, reducing seven carry range checks to three.
+The integer residual remains below Fr, and the four equations telescope to
+the same integer multiplication relation. Lean checks that bound and identity;
+canonical inputs/results and bounded quotient limbs remain constrained.
+
+With unchanged verifier inputs and no grouping, padded main cells decrease
+from 11,929,538 to 11,306,946 on the small profile, and from 747,613,222 to
+707,767,334 on the larger predecessor. The terminal development fixture falls
+from 12,851,884 to 12,565,164 main cells and from 90,043,556 to 87,970,978
+estimated PLONK constraints. Its estimated domain remains `2^27`, so it still
+does not fit the available Ignition powers.
+
+Arithmetic boundaries, positive and negative carries, forged advice and actual
+forged KZG witnesses pass focused checks. Dependent curve, pairing, encoding
+and verifier tests also pass, and their compiler fixtures are regenerated.
+This is an arithmetic-library optimization under the existing protocols;
+these counts do not establish Init runtime or full-pipeline completion.

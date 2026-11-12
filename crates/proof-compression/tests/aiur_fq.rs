@@ -99,6 +99,7 @@ fn native_advice_preserves_eighty_bit_limbs_and_integer_bounds() {
   let r = BigUint::from_bytes_le(&ark_bn254::Fr::MODULUS.to_bytes_le());
   let radix = BigUint::from(1u8) << fq::LIMB_BITS;
   assert!((32u8 * &radix * &radix + 32u8 * &radix) < r);
+  assert!((64u8 * radix.pow(3) + 64u8 * radix.pow(2) + 64u8 * &radix) < r);
   for value in [
     BigUint::from(0u8),
     BigUint::from(1u8),
@@ -148,6 +149,15 @@ fn native_advice_preserves_eighty_bit_limbs_and_integer_bounds() {
     fq::advice("bn254.fq.mul", &positive).unwrap()[8..]
       .iter()
       .any(|&carry| integer(carry) > bias)
+  );
+  let paired_positive: Vec<_> =
+    raw(&(radix.pow(2) - 1u8)).into_iter().chain(raw(&high)).collect();
+  let retained = fq::advice("bn254.fq.mul_pairs", &paired_positive).unwrap();
+  assert_eq!(integer(retained[8]), &bias + &radix - 2u8);
+  assert!(
+    fq::advice("bn254.fq.mul_pairs", &negative).unwrap()[8..]
+      .iter()
+      .all(|&carry| integer(carry) < bias)
   );
 }
 
@@ -207,9 +217,12 @@ fn source_constraints_reject_forged_quotients_carries_ranges_and_zero_inverse()
     .chain(fq::encode(-Fq::from(2)))
     .collect();
   for (target, entry, index) in [
-    ("bn254.fq.mul", "FqTest::mul", 4),
-    ("bn254.fq.mul", "FqTest::mul", 8),
-    ("bn254.fq.mul", "FqTest::mul", 14),
+    ("bn254.fq.mul_pairs", "FqTest::mul", 0),
+    ("bn254.fq.mul_pairs", "FqTest::mul", 4),
+    ("bn254.fq.mul_pairs", "FqTest::mul", 7),
+    ("bn254.fq.mul_pairs", "FqTest::mul", 8),
+    ("bn254.fq.mul_pairs", "FqTest::mul", 9),
+    ("bn254.fq.mul_pairs", "FqTest::mul", 10),
     ("bn254.fq.add", "FqTest::add", 4),
     ("bn254.fq.sub", "FqTest::sub", 4),
     ("bn254.fq.canonical", "FqTest::mul", 7),
@@ -285,8 +298,11 @@ fn compiled_fq_kzg_proofs_reject_altered_quotient_and_carry_columns() {
   .unwrap();
   let a = Fq::from_le_bytes_mod_order(&(modulus() / 2u8).to_bytes_le());
   let b = Fq::from_le_bytes_mod_order(&(modulus() / 3u8).to_bytes_le());
-  let positive = Fq::from_le_bytes_mod_order(
+  let positive_b = Fq::from_le_bytes_mod_order(
     &((BigUint::from(1u8) << 80usize) - 1u8).to_bytes_le(),
+  );
+  let positive_a = Fq::from_le_bytes_mod_order(
+    &((BigUint::from(1u8) << 160usize) - 1u8).to_bytes_le(),
   );
   let pair: Vec<_> = fq::encode(a).into_iter().chain(fq::encode(b)).collect();
   for (entry, args, expected) in [
@@ -295,8 +311,11 @@ fn compiled_fq_kzg_proofs_reject_altered_quotient_and_carry_columns() {
     ("FqTest::mul", pair, a * b),
     (
       "FqTest::mul",
-      fq::encode(positive).into_iter().chain(fq::encode(positive)).collect(),
-      positive * positive,
+      fq::encode(positive_a)
+        .into_iter()
+        .chain(fq::encode(positive_b))
+        .collect(),
+      positive_a * positive_b,
     ),
     ("FqTest::inverse", fq::encode(b).to_vec(), b.inverse().unwrap()),
   ] {
@@ -323,7 +342,9 @@ fn compiled_fq_kzg_proofs_reject_altered_quotient_and_carry_columns() {
         .steps
         .iter()
         .find_map(|step| match &step.action {
-          Action::Hint { channel, dest, .. } if channel == "bn254.fq.mul" => {
+          Action::Hint { channel, dest, .. }
+            if channel == "bn254.fq.mul_pairs" =>
+          {
             Some(dest)
           },
           _ => None,
@@ -333,7 +354,7 @@ fn compiled_fq_kzg_proofs_reject_altered_quotient_and_carry_columns() {
       let layout = plan.layout().unwrap();
       let placement = &layout.placements[chip];
       assert!(!placement.grouped);
-      for advice_index in [4, 8] {
+      for advice_index in [4, 7, 8, 9, 10] {
         let column = fill
           .writes
           .iter()
