@@ -395,7 +395,7 @@ partial def joinStats : Fir.Code → Nat × Nat
     let (s2, m2) := joinStats k
     (ps.length + s1 + s2, max ps.length (max m1 m2))
   | .case _ alts d =>
-    (alts.map (fun (.mk _ b) => b) ++ d.toList).foldl
+    (alts.map Fir.Alt.body ++ d.toList).foldl
       (fun (s, m) c => let (s', m') := joinStats c; (s + s', max m m')) (0, 0)
   | _ => (0, 0)
 
