@@ -87,6 +87,19 @@ Modifications
     the ∀ rule builds, and that unfolding builds by instantiating at
     max u u, are shared as DAGs whose trees are exponentially larger, and
     leqCore's distributions meet the same subproblems again.
+  * Native stack per step and per record (2026-11): Cached/CoreC.lean runs
+    whnfCoreLoopI, whnfLoopI and defeqLoopI, through three proved @[csimp]
+    theorems (whnfCoreLoopI_eq_whnfCoreLoopFast, whnfLoopI_eq_whnfLoopFast,
+    defeqLoopI_eq_defeqLoopFast), as loops over a twin of the step that
+    returns its tail call of the continuation instead of making it
+    (whnfCoreStepR, whnfAppR, betaPeelR, whnfStepR, defeqStepR; each step
+    proved to factor through its twin); FEnv.lean runs mkFEnvGo
+    (mkFEnvGo_eq_mkFEnvGoFast) as a fold over the reversed list and
+    Units.lean runs unitsGo (unitsGo_eq_unitsGoFast) with an accumulator.
+    The functions themselves are unchanged. The loops called their
+    continuation through a closure, which kept native frames per
+    reduction step, and the two recursions kept one per installed
+    constant or declaration.
   * MainTheorem.lean keeps only model_exists; the corollary about NDJSON
     files and the imports it needs are dropped.
   * Verify/Cached/AgreeFloor.lean and Verify/Cached/PushChain.lean import
