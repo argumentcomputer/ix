@@ -303,17 +303,19 @@ impl RoleTable {
 /// The roles the checker uses without a reference to them, in role order:
 /// a `Nat` literal's type and constructor forms, a `String` literal's type and
 /// constructor form, and the standard axioms the axiom policy admits as the
-/// binding binds them. Two bindings that bind these alike have the same literal
+/// binding binds them (`propext`, `Classical.choice`, and `Quot.sound`, an axiom
+/// record). Two bindings that bind these alike have the same literal
 /// class, and typing transfers between them. Mirrors
 /// `Ix.ClaimContext.classRoles`; a checker change that fabricates a reference
 /// to another role must add it to both.
-pub const CLASS_ROLES: [Role; 12] = [
+pub const CLASS_ROLES: [Role; 13] = [
   Role::Nat,
   Role::NatZero,
   Role::NatSucc,
   Role::List,
   Role::ListNil,
   Role::ListCons,
+  Role::QuotSound,
   Role::String,
   Role::StringOfList,
   Role::Char,
