@@ -79,6 +79,13 @@ impl<F: Copy + Eq + Hash + Send + Sync> Memory<F> {
     self.slots.is_empty()
   }
 
+  /// Distinct interned cells per payload width, including empty width buckets.
+  pub fn width_counts(
+    &self,
+  ) -> impl ExactSizeIterator<Item = (usize, usize)> + '_ {
+    self.widths.iter().copied().zip(self.buckets.iter().map(Vec::len))
+  }
+
   pub(crate) fn storage_usage(&self) -> (usize, usize, usize) {
     let payload = self.words.len() * size_of::<F>();
     let vectors = self.words.capacity() * size_of::<F>()

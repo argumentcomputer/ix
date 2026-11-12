@@ -12,6 +12,7 @@ use ark_ff::{Field, PrimeField};
 pub mod fq;
 pub mod g1;
 pub mod kzg;
+pub mod plonk;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Bn254;

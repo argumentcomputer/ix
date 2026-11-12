@@ -411,6 +411,11 @@ impl<B: FieldBackend> QueryMap<B> {
   pub fn fixed_counts(&self, callable: usize) -> Option<&[u64]> {
     self.tables.get(callable)?.static_map.as_ref().map(|map| &*map.counts)
   }
+  /// Stored rows for one callable. Fixed maps include unused rows; function
+  /// callables count distinct memoized queries, without scanning their payloads.
+  pub fn callable_rows(&self, callable: usize) -> Option<usize> {
+    self.tables.get(callable).map(QueryTable::len)
+  }
   pub fn get(
     &self,
     key: &QueryInput<B::Element>,

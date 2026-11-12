@@ -18,14 +18,22 @@ fn empty_trace(
   ))
 }
 
-impl Backend<'_, '_> {
+pub(super) struct Packing<'p, 'a, 'm> {
+  pub(super) plan: &'p TracePlan<'a, Bn254>,
+  pub(super) placements: &'m [Placement<FieldWord>],
+  pub(super) function_widths: &'m [usize],
+  pub(super) tables: &'m [circuits::FixedTable],
+  pub(super) memory_widths: &'m [usize],
+}
+
+impl Packing<'_, '_, '_> {
   pub(super) fn main_traces(
     &self,
     record: &Execution<Bn254>,
     trace: &Trace<Scalar>,
   ) -> Result<Vec<RowMajorMatrix<Scalar>>, String> {
-    let mut heights = vec![0usize; self.function_circuits];
-    for (matrix, placement) in trace.matrices.iter().zip(&self.placements) {
+    let mut heights = vec![0usize; self.function_widths.len()];
+    for (matrix, placement) in trace.matrices.iter().zip(self.placements) {
       let height =
         if placement.grouped { matrix.unpadded_height } else { matrix.height };
       heights[placement.circuit] = heights[placement.circuit]
@@ -34,17 +42,17 @@ impl Backend<'_, '_> {
     }
     let mut traces = heights
       .iter()
-      .zip(&self.system.circuits)
-      .map(|(&height, circuit)| empty_trace(height, circuit.main_width))
+      .zip(self.function_widths)
+      .map(|(&height, &width)| empty_trace(height, width))
       .collect::<Result<Vec<_>, _>>()?;
-    let mut cursors = vec![0usize; self.function_circuits];
+    let mut cursors = vec![0usize; self.function_widths.len()];
     for ((chip, matrix), placement) in self
       .plan
       .artifact()
       .chips
       .iter()
       .zip(&trace.matrices)
-      .zip(&self.placements)
+      .zip(self.placements)
     {
       if matrix.height != 0 && !matrix.height.is_power_of_two() {
         return Err("compiler trace height is not a power of two".into());
@@ -113,7 +121,7 @@ impl Backend<'_, '_> {
     {
       return Err("unknown depth range counts".into());
     }
-    for table in &self.tables {
+    for table in self.tables {
       let mut values = Vec::with_capacity(
         table
           .height
@@ -155,7 +163,9 @@ impl Backend<'_, '_> {
     }
     Ok(traces)
   }
+}
 
+impl Backend<'_, '_> {
   pub(super) fn trace_shape(
     &self,
     traces: &[RowMajorMatrix<Scalar>],

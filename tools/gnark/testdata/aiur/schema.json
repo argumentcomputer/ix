@@ -1,0 +1,554 @@
+{
+  "format": "ix-aiur-plonk-v1",
+  "callable": 0,
+  "public_inputs": 3,
+  "circuits": [
+    {
+      "name": "BN254Trace::run",
+      "rows": 1,
+      "main_width": 10,
+      "fixed_width": 0,
+      "fixed": [],
+      "nodes": [
+        {
+          "op": "main",
+          "column": 8,
+          "next": false
+        },
+        {
+          "op": "constant",
+          "value": "0x0000000000000000000000000000000000000000000000000000000000000001"
+        },
+        {
+          "op": "sub",
+          "a": 0,
+          "b": 1
+        },
+        {
+          "op": "mul",
+          "a": 0,
+          "b": 2
+        },
+        {
+          "op": "sub",
+          "a": 1,
+          "b": 0
+        },
+        {
+          "op": "sub",
+          "a": 1,
+          "b": 4
+        },
+        {
+          "op": "mul",
+          "a": 4,
+          "b": 5
+        },
+        {
+          "op": "main",
+          "column": 9,
+          "next": false
+        },
+        {
+          "op": "mul",
+          "a": 4,
+          "b": 7
+        },
+        {
+          "op": "constant",
+          "value": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "op": "main",
+          "column": 0,
+          "next": false
+        },
+        {
+          "op": "main",
+          "column": 1,
+          "next": false
+        },
+        {
+          "op": "main",
+          "column": 5,
+          "next": false
+        },
+        {
+          "op": "main",
+          "column": 6,
+          "next": false
+        },
+        {
+          "op": "add",
+          "a": 12,
+          "b": 13
+        },
+        {
+          "op": "main",
+          "column": 7,
+          "next": false
+        },
+        {
+          "op": "main",
+          "column": 2,
+          "next": false
+        },
+        {
+          "op": "constant",
+          "value": "0x0000000000000000000000000000000000000000000000000000000000000002"
+        },
+        {
+          "op": "main",
+          "column": 3,
+          "next": false
+        },
+        {
+          "op": "main",
+          "column": 4,
+          "next": false
+        }
+      ],
+      "constraints": [
+        3,
+        6,
+        8
+      ],
+      "lookups": [
+        {
+          "negative": true,
+          "count": 7,
+          "args": [
+            1,
+            9,
+            10,
+            11,
+            14
+          ]
+        },
+        {
+          "negative": false,
+          "count": 5,
+          "args": [
+            1,
+            1,
+            10,
+            11,
+            15,
+            16
+          ]
+        },
+        {
+          "negative": false,
+          "count": 5,
+          "args": [
+            1,
+            17,
+            11,
+            18
+          ]
+        },
+        {
+          "negative": false,
+          "count": 5,
+          "args": [
+            17,
+            17,
+            19,
+            16,
+            18
+          ]
+        },
+        {
+          "negative": false,
+          "count": 5,
+          "args": [
+            17,
+            17,
+            19,
+            12,
+            13
+          ]
+        }
+      ]
+    },
+    {
+      "name": "BN254Trace::walk",
+      "rows": 4,
+      "main_width": 8,
+      "fixed_width": 0,
+      "fixed": [],
+      "nodes": [
+        {
+          "op": "main",
+          "column": 6,
+          "next": false
+        },
+        {
+          "op": "constant",
+          "value": "0x0000000000000000000000000000000000000000000000000000000000000001"
+        },
+        {
+          "op": "sub",
+          "a": 0,
+          "b": 1
+        },
+        {
+          "op": "mul",
+          "a": 0,
+          "b": 2
+        },
+        {
+          "op": "constant",
+          "value": "0x30644e72e131a029b85045b68181585d2833e84879b9709143e1f593f0000000"
+        },
+        {
+          "op": "main",
+          "column": 3,
+          "next": false
+        },
+        {
+          "op": "mul",
+          "a": 4,
+          "b": 5
+        },
+        {
+          "op": "add",
+          "a": 6,
+          "b": 1
+        },
+        {
+          "op": "mul",
+          "a": 7,
+          "b": 6
+        },
+        {
+          "op": "add",
+          "a": 5,
+          "b": 4
+        },
+        {
+          "op": "mul",
+          "a": 5,
+          "b": 9
+        },
+        {
+          "op": "mul",
+          "a": 5,
+          "b": 7
+        },
+        {
+          "op": "main",
+          "column": 0,
+          "next": false
+        },
+        {
+          "op": "mul",
+          "a": 7,
+          "b": 12
+        },
+        {
+          "op": "main",
+          "column": 1,
+          "next": false
+        },
+        {
+          "op": "mul",
+          "a": 4,
+          "b": 14
+        },
+        {
+          "op": "main",
+          "column": 2,
+          "next": false
+        },
+        {
+          "op": "add",
+          "a": 15,
+          "b": 16
+        },
+        {
+          "op": "mul",
+          "a": 7,
+          "b": 17
+        },
+        {
+          "op": "main",
+          "column": 4,
+          "next": false
+        },
+        {
+          "op": "mul",
+          "a": 12,
+          "b": 19
+        },
+        {
+          "op": "sub",
+          "a": 20,
+          "b": 1
+        },
+        {
+          "op": "mul",
+          "a": 5,
+          "b": 21
+        },
+        {
+          "op": "sub",
+          "a": 1,
+          "b": 0
+        },
+        {
+          "op": "mul",
+          "a": 23,
+          "b": 5
+        },
+        {
+          "op": "main",
+          "column": 7,
+          "next": false
+        },
+        {
+          "op": "mul",
+          "a": 23,
+          "b": 25
+        },
+        {
+          "op": "main",
+          "column": 5,
+          "next": false
+        },
+        {
+          "op": "add",
+          "a": 12,
+          "b": 4
+        },
+        {
+          "op": "add",
+          "a": 14,
+          "b": 1
+        },
+        {
+          "op": "sub",
+          "a": 27,
+          "b": 1
+        }
+      ],
+      "constraints": [
+        3,
+        8,
+        10,
+        11,
+        13,
+        18,
+        22,
+        24,
+        26
+      ],
+      "lookups": [
+        {
+          "negative": true,
+          "count": 25,
+          "args": [
+            1,
+            1,
+            12,
+            14,
+            27,
+            16
+          ]
+        },
+        {
+          "negative": false,
+          "count": 5,
+          "args": [
+            1,
+            1,
+            28,
+            29,
+            30,
+            16
+          ]
+        }
+      ]
+    },
+    {
+      "name": "<table:BN254Trace::inputs>",
+      "rows": 2,
+      "main_width": 1,
+      "fixed_width": 3,
+      "fixed": [
+        "0x0000000000000000000000000000000000000000000000000000000000000001",
+        "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "0x30644e72e131a029b85045b68181585d2833e84879b9709143e1f593f0000000",
+        "0x0000000000000000000000000000000000000000000000000000000000000001",
+        "0x30644e72e131a029b85045b68181585d2833e84879b9709143e1f593f0000000",
+        "0x0000000000000000000000000000000000000000000000000000000000000007"
+      ],
+      "nodes": [
+        {
+          "op": "main",
+          "column": 0,
+          "next": false
+        },
+        {
+          "op": "constant",
+          "value": "0x0000000000000000000000000000000000000000000000000000000000000001"
+        },
+        {
+          "op": "constant",
+          "value": "0x0000000000000000000000000000000000000000000000000000000000000002"
+        },
+        {
+          "op": "fixed",
+          "column": 1,
+          "next": false
+        },
+        {
+          "op": "fixed",
+          "column": 2,
+          "next": false
+        }
+      ],
+      "constraints": [],
+      "lookups": [
+        {
+          "negative": true,
+          "count": 0,
+          "args": [
+            1,
+            2,
+            3,
+            4
+          ]
+        }
+      ]
+    },
+    {
+      "name": "<ROM:2>",
+      "rows": 1,
+      "main_width": 5,
+      "fixed_width": 0,
+      "fixed": [],
+      "nodes": [
+        {
+          "op": "main",
+          "column": 1,
+          "next": false
+        },
+        {
+          "op": "constant",
+          "value": "0x0000000000000000000000000000000000000000000000000000000000000001"
+        },
+        {
+          "op": "sub",
+          "a": 0,
+          "b": 1
+        },
+        {
+          "op": "mul",
+          "a": 0,
+          "b": 2
+        },
+        {
+          "op": "main",
+          "column": 0,
+          "next": false
+        },
+        {
+          "op": "sub",
+          "a": 1,
+          "b": 0
+        },
+        {
+          "op": "mul",
+          "a": 4,
+          "b": 5
+        },
+        {
+          "op": "transition"
+        },
+        {
+          "op": "main",
+          "column": 1,
+          "next": true
+        },
+        {
+          "op": "mul",
+          "a": 7,
+          "b": 8
+        },
+        {
+          "op": "mul",
+          "a": 9,
+          "b": 2
+        },
+        {
+          "op": "main",
+          "column": 2,
+          "next": true
+        },
+        {
+          "op": "main",
+          "column": 2,
+          "next": false
+        },
+        {
+          "op": "sub",
+          "a": 11,
+          "b": 12
+        },
+        {
+          "op": "sub",
+          "a": 13,
+          "b": 1
+        },
+        {
+          "op": "mul",
+          "a": 9,
+          "b": 14
+        },
+        {
+          "op": "first"
+        },
+        {
+          "op": "mul",
+          "a": 16,
+          "b": 12
+        },
+        {
+          "op": "constant",
+          "value": "0x0000000000000000000000000000000000000000000000000000000000000002"
+        },
+        {
+          "op": "main",
+          "column": 3,
+          "next": false
+        },
+        {
+          "op": "main",
+          "column": 4,
+          "next": false
+        }
+      ],
+      "constraints": [
+        3,
+        6,
+        10,
+        15,
+        17
+      ],
+      "lookups": [
+        {
+          "negative": true,
+          "count": 4,
+          "args": [
+            18,
+            18,
+            12,
+            19,
+            20
+          ]
+        }
+      ]
+    }
+  ]
+}

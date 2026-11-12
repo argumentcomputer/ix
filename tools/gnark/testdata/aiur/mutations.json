@@ -1,0 +1,30 @@
+{
+  "activation": [
+    1,
+    6
+  ],
+  "depth": [
+    1,
+    5
+  ],
+  "map_count": [
+    2,
+    0
+  ],
+  "multiplicity": [
+    1,
+    7
+  ],
+  "rom_address": [
+    3,
+    2
+  ],
+  "rom_count": [
+    3,
+    0
+  ],
+  "rom_value": [
+    3,
+    3
+  ]
+}
