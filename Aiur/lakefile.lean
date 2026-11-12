@@ -121,6 +121,8 @@ lean_exe emulated_goldilocks_fixture where
   root := `Examples.EmulatedGoldilocks
 lean_exe wide_artifact_fixture where
   root := `Examples.WideArtifact
+lean_exe table_uniqueness_checks where
+  root := `Examples.TableUniqueness
 
 /-- Fails if any declaration of the package uses an axiom beyond propext,
 Classical.choice and Quot.sound. Run after `lake build aiur/Aiur`:
