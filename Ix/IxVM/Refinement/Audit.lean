@@ -1159,8 +1159,8 @@ fun V =>
                         ∀ (a : Address),
                           t.addressOf? r = some a →
                             IxVM.Refinement.AcceptsIn V
-                              (IxVM.Refinement.Scope.strict { address := rb.address, bytes := rb.bytes }) (fun x => x = a)
-                              fun x envA x_1 => IxVM.Refinement.AnchorPinned envA r
+                              (IxVM.Refinement.Scope.strict { address := rb.address, bytes := rb.bytes })
+                              (fun x => x = a) fun x envA x_1 => IxVM.Refinement.AnchorPinned envA r
 -/
 #guard_msgs in
 #print IxVM.Refinement.View.Closed
