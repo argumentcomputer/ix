@@ -5,8 +5,13 @@ import IxVMRefinement.Core.Specs.Common
 A `Nat` literal is a list of little-endian 64-bit limbs (`KernelTypes::KLimbs`), read as its
 value (`RepLimbs`); a limb list may carry trailing zero limbs, so the limb functions are stated on
 values, and a result is claimed canonical (`RepLimbsC`, no trailing zero limb) only where the code
-normalizes it. The native reductions target the kernel's rules: `Red.natLit`, `Red.natZeroLit`,
-`Red.strLit`, `Red.natSucc`, `Red.natOp` (with `natOpResult`, the `Nat.pow` cap included),
+normalizes it. Every literal node the core builds has canonical limbs (`Convert::bytes_to_limbs`
+and every `mk_nat_lit` argument are normalized), and `Nat.beq` compares limbs structurally
+(`KernelLevels::klimbs_eq`), so the specs that read or build literal nodes are stated at canonical
+limbs; `try_extract_nat`'s claim needs the term seam to record that a literal's limbs are canonical.
+
+The native reductions target the kernel's rules: `Red.natLit`, `Red.natZeroLit`, `Red.strLit`,
+`Red.natSucc`, `Red.natOp` (with `natOpResult`, the `Nat.pow` cap included),
 `Red.natAddSucc`, `Red.natAddZero`, and the congruences `Red.appArg`/`appFn` for the stuck forms
 the circuit keeps (`mk_nat_offset_stuck`, `mk_nat_binop_stuck`).
 
@@ -72,9 +77,11 @@ abbrev mkAppN : KExpr → List KExpr → KExpr := Ix.Kernel.Expr.mkAppN
 
 /-! ## `KernelKlimbs` -/
 
-/-- `klimbs_succ(n)`: the successor, `n + 1`. -/
+/-- `klimbs_succ(n)`: the successor, `n + 1`; canonical when the input is (a carry out of the
+last limb adds a limb `1`). -/
 def klimbs_succ : SpecFn := fun c args h r h' calls =>
-  ∀ a, args = [a] → Good c calls → ∀ n, RepLimbs h n a → RepLimbs h' (n + 1) r
+  ∀ a, args = [a] → Good c calls → ∀ n,
+    (RepLimbs h n a → RepLimbs h' (n + 1) r) ∧ (RepLimbsC h n a → RepLimbsC h' (n + 1) r)
 
 /-- `klimbs_add_carry(a, b, carry)` with a carry `0` or `1`: `a + b + carry` (the callers pass
 `0`, and recurse with the limbs' carry, which is at most `1`). -/
@@ -126,11 +133,14 @@ def klimbs_mul : SpecFn := fun c args h r h' calls =>
   ∀ a b, args = [a, b] → Good c calls →
     ∀ n m, RepLimbs h n a → RepLimbs h m b → RepLimbs h' (n * m) r
 
-/-- `klimbs_mul_outer(a, b, acc, shift)`: `acc + a * b * 2^(64 * shift)`. -/
+/-- `klimbs_mul_outer(a, b, acc, shift)`: `acc + a * b * 2^(64 * shift)`, while the shift counter
+does not wrap: it is stated for a shift plus the number of `a`'s limbs below `2^40` (the caller
+starts at `0`, and a represented list is shorter than `2^39`). -/
 def klimbs_mul_outer : SpecFn := fun c args h r h' calls =>
   ∀ a b acc (s : F), args = [a, b, acc, .field s] → Good c calls →
-    ∀ n m k, RepLimbs h n a → RepLimbs h m b → RepLimbs h k acc →
-      RepLimbs h' (k + n * m * 2 ^ (64 * (ZMod.val s))) r
+    ∀ (limbs : List UInt64) m k, RepList limbListEnum RepU64 h limbs a → RepLimbs h m b →
+      RepLimbs h k acc → ZMod.val s + limbs.length < 2 ^ 40 →
+      RepLimbs h' (k + limbsVal limbs * m * 2 ^ (64 * (ZMod.val s))) r
 
 /-- `klimbs_mul_single(a_limb, b, carry)`: `a_limb * b + carry`, for 64-bit `a_limb` and
 `carry`. -/
@@ -225,9 +235,10 @@ def mk_bool : SpecFn := fun c args h r h' calls =>
   ∀ rc (g : F), args = [rc, .field g] → Good c calls → c.rc h rc →
     c.tmc h' (.const (if g = 0 then Ix.Kernel.boolFalseName else Ix.Kernel.boolTrueName) []) r
 
-/-- `mk_nat_lit(n)`: the closed literal of the limbs' value. -/
+/-- `mk_nat_lit(n)`: the closed literal of the limbs' value, at canonical limbs (every literal
+node the core builds has canonical limbs). -/
 def mk_nat_lit : SpecFn := fun c args h r h' calls =>
-  ∀ a, args = [a] → Good c calls → ∀ n, RepLimbs h n a → c.tmc h' (natLit n) r
+  ∀ a, args = [a] → Good c calls → ∀ n, RepLimbsC h n a → c.tmc h' (natLit n) r
 
 /-- `np_apply_spine(head, spine)`: the application `mkAppN head spine`. -/
 def np_apply_spine : SpecFn := fun c args h r h' calls =>
@@ -257,7 +268,7 @@ spelling (`natAddLit`: the base itself at `n = 0`, else `Nat.add base (lit n)`),
 `post`. The `Nat.add` head is the role's key at an empty level list. -/
 def mk_nat_offset_stuck : SpecFn := fun c args h r h' calls =>
   ∀ rc b np post, args = [rc, b, np, post] → Good c calls → c.rc h rc →
-    ∀ d Γ B n Ps, c.tm d Γ h B b → RepLimbs h n np → c.tml d Γ h Ps post →
+    ∀ d Γ B n Ps, c.tm d Γ h B b → RepLimbsC h n np → c.tml d Γ h Ps post →
       ∃ x, r = .tuple [.field 1, x] ∧
         c.tm d Γ h' (mkAppN (Ix.Kernel.Rules.natAddLit B n) Ps) x
 
@@ -266,7 +277,7 @@ literal, applied to `post`: `mkAppN (op base (lit n)) post`, the operation at it
 and an empty level list. -/
 def mk_nat_binop_stuck : SpecFn := fun c args h r h' calls =>
   ∀ ap b np post, args = [ap, b, np, post] → Good c calls →
-    ∀ a d Γ B n Ps, RepAddr h a ap → c.tm d Γ h B b → RepLimbs h n np → c.tml d Γ h Ps post →
+    ∀ a d Γ B n Ps, RepAddr h a ap → c.tm d Γ h B b → RepLimbsC h n np → c.tml d Γ h Ps post →
       c.tm d Γ h' (mkAppN (.app (.app (.const (c.κ (ixAddr a)) []) B) (natLit n)) Ps) r
 
 /-- `build_succ_offset(rc, base, lit)`: `Nat.succ (base + (lit - 1))` in the offset rules'
@@ -339,18 +350,21 @@ def str_lit_to_ctor_app_or_self : SpecFn := fun c args h r h' calls =>
 /-- `try_extract_nat(rc, e)`: tag `1` reads a `Nat` value off a literal, `Nat.zero`, or
 `Nat.succ x` with `x` readable, each at an empty level list: the term reduces to that literal
 (`Red.refl`, `Red.natZeroLit`, `Red.natSucc`; `natLitSupported` from `EnvFacts.natLit`, the
-`Nat` block being bound once `role_is` finds `Nat.zero` or `Nat.succ`). Nothing at tag `0`. -/
+`Nat` block being bound once `role_is` finds `Nat.zero` or `Nat.succ`). The limbs are canonical:
+a literal node's limbs are canonical (every producer normalizes; the term seam must record it at
+`Tm.litNat`), `Nat.zero` reads as the empty list, and `klimbs_succ` keeps canonicity. Nothing at
+tag `0`. -/
 def try_extract_nat : SpecFn := fun c args h r h' calls =>
   ∀ rc e, args = [rc, e] → Good c calls → c.rc h rc →
     ∀ d Γ E, c.tm d Γ h E e → ∀ x, r = .tuple [.field 1, x] →
-      ∃ n, RepLimbs h' n x ∧ Red c.env d E (natLit n)
+      ∃ n, RepLimbsC h' n x ∧ Red c.env d E (natLit n)
 
 /-- `try_extract_nat_app(rc, f, a)`: tag `1` at `f = Nat.succ` (empty level list) and `a`
 readable: the application reduces to the successor literal (`Red.natSucc`). -/
 def try_extract_nat_app : SpecFn := fun c args h r h' calls =>
   ∀ rc f a, args = [rc, f, a] → Good c calls → c.rc h rc →
     ∀ d Γ Fh A, c.tm d Γ h Fh f → c.tm d Γ h A a → ∀ x, r = .tuple [.field 1, x] →
-      ∃ n, RepLimbs h' n x ∧ Red c.env d (.app Fh A) (natLit n)
+      ∃ n, RepLimbsC h' n x ∧ Red c.env d (.app Fh A) (natLit n)
 
 /-- `try_nat_binop_addr(rc, op, a, b)`: tag `1` gives the closed term `natOpResult` gives for the
 operation with code `op` on the two values (a canonical literal, or a `Bool` constructor;
@@ -358,7 +372,7 @@ operation with code `op` on the two values (a canonical literal, or a `Bool` con
 operation it does not fold, `succ` and `pred` among them). -/
 def try_nat_binop_addr : SpecFn := fun c args h r h' calls =>
   ∀ rc (o : F) a b, args = [rc, .field o, a, b] → Good c calls → c.rc h rc →
-    ∀ n m, RepLimbs h n a → RepLimbs h m b → ∀ x, r = .tuple [.field 1, x] →
+    ∀ n m, RepLimbsC h n a → RepLimbsC h m b → ∀ x, r = .tuple [.field 1, x] →
       ∀ role, natPrimOp role = some (ZMod.val o) →
         ∃ E, Ix.Kernel.natOpResult (.role role) n m = some E ∧ c.tmc h' E x
 
@@ -368,7 +382,7 @@ def try_match_nat_add : SpecFn := fun c args h r h' calls =>
   ∀ rc hd sp, args = [rc, hd, sp] → Good c calls → c.rc h rc →
     ∀ d Γ H As, c.tm d Γ h H hd → c.tml d Γ h As sp → ∀ b l, r = .tuple [.field 1, b, l] →
       ∃ us B n, H = .const Ix.Kernel.natAddName us ∧ As = [B, natLit n] ∧
-        c.tm d Γ h' B b ∧ RepLimbs h' n l
+        c.tm d Γ h' B b ∧ RepLimbsC h' n l
 
 /-- `cleanup_nat_offset_major(rc, e)`: a reduct: `Nat.add b (lit (k + 1))` becomes
 `Nat.succ (b + k)` (`Red.natAddSucc`; `natLitSupported` and `natAddTyOk` from `EnvFacts`), any
@@ -385,7 +399,7 @@ form (`Nat.add`: `A₀ + nb` by `Red.natAddZero` at `0`, else `Red.appArg`; `div
 def try_nat_offset_dispatch : SpecFn := fun c args h r h' calls =>
   ∀ rc ap (o : F) a0 nb sp, args = [rc, ap, .field o, a0, nb, sp] → Good c calls → c.rc h rc →
     ∀ a, RepAddr h a ap → NatOpAt c a (ZMod.val o) →
-      ∀ d Γ A₀ A₁ Ps n, c.tml d Γ h (A₀ :: A₁ :: Ps) sp → c.tm d Γ h A₀ a0 → RepLimbs h n nb →
+      ∀ d Γ A₀ A₁ Ps n, c.tml d Γ h (A₀ :: A₁ :: Ps) sp → c.tm d Γ h A₀ a0 → RepLimbsC h n nb →
         Red c.env d A₁ (natLit n) →
         ∀ (t : F) x, r = .tuple [.field t, x] → t ≠ 0 →
           ∃ E', c.tm d Γ h' E' x ∧
