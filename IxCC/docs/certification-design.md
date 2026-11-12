@@ -57,6 +57,16 @@ The chain from the bytes to the object's result, link by link:
 | Driver | the caller that loads the object and calls its exports (the standalone executable's shell; the native suites' test shell), with symbol targets checked in the written file | **Proved** for numeric state machines' executables: their generic shell realises the session model (`X86.Exe.Process.shell_sound`, with `machine_exe_sound` and `Rc.machine_exe_sound` composing it with the per-call theorems), from three platform specifications (`Process.Loaded`, `Process.Syscall`, `Process.Step`, the last promising nothing where the byte machine does not say what the processor does), a memory fault or divide error ending the process, and the environment they describe (no tracer, no inherited seccomp filter or supervisor, no outside writer, one thread). **Assumed** for `--exe`'s shell and the native suites' test shell; `X86.Driver.Ok` is satisfiable (`driver_exists`); the C driver is gone (X1); a caller with two call sites is modelled (`X86.LinkedAt`, `Recheck.sound_at`) and a non-faulting model run writes only the model's mapping (`X86.ByteAgree`) | the platform's specifications: verified models of the Linux kernel and the x86-64 processor; `--exe`'s shell: byte executables (X3) |
 | Readback | the observation names a value | Proved at the machine level; no statement in the model | SP-0's lemma |
 
+The Own link of the middle-end row is proved, on the compile path, for the
+canonical placement of reference counts only (`Own.Plain.checked_program_refines`,
+through `checkPlainMap`). For any placement, the ownership checker
+`Own.Plain.checkOwned` has the same conclusion (`checkOwned_refines`) and
+reclamation (`checkOwned_reclaims`), and accepts every map `checkPlainMap`
+accepts (`checkPlainMap_checkOwned`); `checked_program_refines` and
+`checked_program_reclaims` are re-derived from them with unchanged statements.
+It is a library result: nothing on the compile or recheck path calls the
+checker yet ([data and roots, DR1](data-and-roots-design.md#the-ownership-checker)).
+
 Two open items keep the names that code comments use:
 - **S6**: nothing relates `a.src` semantically to the ingested program. What
   is proved about the front end is that it ran and how (the rows from IxCC's

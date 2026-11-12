@@ -172,6 +172,7 @@ in
       launch tests-anf $bin/tests-anf
       launch tests-own $bin/tests-own ${nativeArg}
       launch tests-own-plain $bin/tests-own-plain
+      launch tests-own-owned $bin/tests-own-owned
       launch tests-shrink $bin/tests-shrink
       launch tests-relevance $bin/tests-relevance
       launch tests-recheck $bin/tests-recheck

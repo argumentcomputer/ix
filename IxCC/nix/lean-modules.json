@@ -19,6 +19,8 @@
   "tests-pipeline": {"roots": ["IxCCTests.Pipeline.Main"], "kind": "lean_exe"},
   "tests-own-plain":
   {"roots": ["IxCCTests.Own.Plain.Main"], "kind": "lean_exe"},
+  "tests-own-owned":
+  {"roots": ["IxCCTests.Own.Owned.Main"], "kind": "lean_exe"},
   "tests-own": {"roots": ["IxCCTests.Own.Main"], "kind": "lean_exe"},
   "tests-lam": {"roots": ["IxCCTests.Lam.Main"], "kind": "lean_exe"},
   "tests-kernel-front":
@@ -860,6 +862,30 @@
   "IxCCTests.Own.Plain.CandidateTests":
   {"path": "IxCCTests/Own/Plain/CandidateTests.lean",
    "imports": ["IxCC.Own.Plain.Check"]},
+  "IxCCTests.Own.Owned.Sites":
+  {"path": "IxCCTests/Own/Owned/Sites.lean",
+   "imports": ["IxCCTests.Own.Owned.Oracle", "IxCCTests.Own.Owned.Mutate"]},
+  "IxCCTests.Own.Owned.Oracle":
+  {"path": "IxCCTests/Own/Owned/Oracle.lean",
+   "imports": ["IxCCTests.Own.Owned.Interp", "IxCC.Rt.Readback"]},
+  "IxCCTests.Own.Owned.Mutate":
+  {"path": "IxCCTests/Own/Owned/Mutate.lean",
+   "imports": ["IxCC.Own.Plain.Owned"]},
+  "IxCCTests.Own.Owned.Main":
+  {"path": "IxCCTests/Own/Owned/Main.lean",
+   "imports":
+   ["IxCCTests.Own.Owned.Live",
+    "IxCCTests.Own.Owned.Sites",
+    "IxCCTests.Corpus.Manifest",
+    "IxCC.Own.Plain.Certificate",
+    "IxCC.Recheck.Rc.Produce",
+    "IxCC.Cfg.Rc.Run"]},
+  "IxCCTests.Own.Owned.Live":
+  {"path": "IxCCTests/Own/Owned/Live.lean",
+   "imports": ["IxCC.Own.Plain.Program"]},
+  "IxCCTests.Own.Owned.Interp":
+  {"path": "IxCCTests/Own/Owned/Interp.lean",
+   "imports": ["IxCC.Own.Plain.Semantics"]},
   "IxCCTests.Own.Main":
   {"path": "IxCCTests/Own/Main.lean", "imports": ["IxCCTests.Own.Suite"]},
   "IxCCTests.Own.Counters":
@@ -3477,6 +3503,24 @@
     "IxCC.Own.Plain.Proof.Values",
     "IxCC.Own.Plain.Semantics",
     "IxCC.Own.Plain.Syntax"]},
+  "IxCCTests.Fences.OwnOwned":
+  {"path": "IxCCTests/Fences/OwnOwned.lean",
+   "imports":
+   ["IxCC.Own.Plain.Owned",
+    "IxCC.Own.Plain.Proof.Owned.Context",
+    "IxCC.Own.Plain.Proof.Owned.Roots",
+    "IxCC.Own.Plain.Proof.Owned.State",
+    "IxCC.Own.Plain.Proof.Owned.Takes",
+    "IxCC.Own.Plain.Proof.Owned.Steps",
+    "IxCC.Own.Plain.Proof.Owned.Binds",
+    "IxCC.Own.Plain.Proof.Owned.Actions",
+    "IxCC.Own.Plain.Proof.Owned.Rhs",
+    "IxCC.Own.Plain.Proof.Owned.Joins",
+    "IxCC.Own.Plain.Proof.Owned.Inversion",
+    "IxCC.Own.Plain.Proof.Owned.Simulation",
+    "IxCC.Own.Plain.Proof.Owned.Program",
+    "IxCC.Own.Plain.Proof.OwnedCanonical",
+    "IxCC.Own.Plain.Proof.OwnedAccepts"]},
   "IxCCTests.Fences.Own":
   {"path": "IxCCTests/Fences/Own.lean",
    "imports": ["IxCC.Own.Immortal", "IxCC.Own.Semantics"]},
@@ -3679,6 +3723,7 @@
     "IxCCTests.Fences.Fir",
     "IxCCTests.Fences.Own",
     "IxCCTests.Fences.OwnPlain",
+    "IxCCTests.Fences.OwnOwned",
     "IxCCTests.Fences.OwnRc",
     "IxCCTests.Fences.Rt",
     "IxCCTests.Fences.RtRc",
@@ -6773,6 +6818,73 @@
    ["IxCC.Own.Plain.Proof.Actions",
     "IxCC.Own.Plain.Proof.Environment",
     "IxCC.Own.Plain.Proof.Unfold"]},
+  "IxCC.Own.Plain.Proof.OwnedCanonical":
+  {"path": "IxCC/Own/Plain/Proof/OwnedCanonical.lean",
+   "imports":
+   ["IxCC.Own.Plain.Proof.Owned.Program",
+    "IxCC.Own.Plain.Proof.Candidate",
+    "IxCC.Own.Plain.Proof.CheckedShape"]},
+  "IxCC.Own.Plain.Proof.OwnedAccepts":
+  {"path": "IxCC/Own/Plain/Proof/OwnedAccepts.lean",
+   "imports": ["IxCC.Own.Plain.Proof.OwnedCanonical"]},
+  "IxCC.Own.Plain.Proof.Owned.Takes":
+  {"path": "IxCC/Own/Plain/Proof/Owned/Takes.lean",
+   "imports": ["IxCC.Own.Plain.Proof.Owned.State"]},
+  "IxCC.Own.Plain.Proof.Owned.Steps":
+  {"path": "IxCC/Own/Plain/Proof/Owned/Steps.lean",
+   "imports":
+   ["IxCC.Own.Plain.Proof.Owned.Takes",
+    "IxCC.Own.Plain.Proof.Actions",
+    "IxCC.Own.Plain.Proof.Projection",
+    "IxCC.Own.Plain.Proof.Scalars",
+    "IxCC.Own.Plain.Proof.NonCall"]},
+  "IxCC.Own.Plain.Proof.Owned.State":
+  {"path": "IxCC/Own/Plain/Proof/Owned/State.lean",
+   "imports":
+   ["IxCC.Own.Plain.Proof.Owned.Roots",
+    "IxCC.Own.Plain.Proof.StackScope",
+    "IxCC.Own.Plain.Proof.StackIdentity",
+    "IxCC.Own.Plain.Proof.Results",
+    "IxCC.Fir.Proof.Env"]},
+  "IxCC.Own.Plain.Proof.Owned.Simulation":
+  {"path": "IxCC/Own/Plain/Proof/Owned/Simulation.lean",
+   "imports":
+   ["IxCC.Own.Plain.Proof.Owned.Joins",
+    "IxCC.Own.Plain.Proof.Owned.Actions",
+    "IxCC.Own.Plain.Proof.Owned.Inversion",
+    "IxCC.Own.Plain.Proof.ResultCompose",
+    "IxCC.Own.Plain.Proof.Admission",
+    "IxCC.Fir.Proof.Unfold"]},
+  "IxCC.Own.Plain.Proof.Owned.Roots":
+  {"path": "IxCC/Own/Plain/Proof/Owned/Roots.lean",
+   "imports":
+   ["IxCC.Own.Plain.Proof.Owned.Context",
+    "IxCC.Own.Plain.Proof.CaptureRoots",
+    "IxCC.Own.Plain.Proof.Bindings"]},
+  "IxCC.Own.Plain.Proof.Owned.Rhs":
+  {"path": "IxCC/Own/Plain/Proof/Owned/Rhs.lean",
+   "imports": ["IxCC.Own.Plain.Proof.Owned.Binds", "IxCC.Fir.Proof.Unfold"]},
+  "IxCC.Own.Plain.Proof.Owned.Program":
+  {"path": "IxCC/Own/Plain/Proof/Owned/Program.lean",
+   "imports":
+   ["IxCC.Own.Plain.Proof.Owned.Simulation",
+    "IxCC.Own.Plain.Proof.EvalShape",
+    "IxCC.Own.Rc.Proof.LeakFreedom"]},
+  "IxCC.Own.Plain.Proof.Owned.Joins":
+  {"path": "IxCC/Own/Plain/Proof/Owned/Joins.lean",
+   "imports": ["IxCC.Own.Plain.Proof.Owned.Rhs"]},
+  "IxCC.Own.Plain.Proof.Owned.Inversion":
+  {"path": "IxCC/Own/Plain/Proof/Owned/Inversion.lean",
+   "imports": ["IxCC.Own.Plain.Proof.Owned.Context"]},
+  "IxCC.Own.Plain.Proof.Owned.Context":
+  {"path": "IxCC/Own/Plain/Proof/Owned/Context.lean",
+   "imports": ["IxCC.Own.Plain.Owned", "IxCC.Src.Proof.NatMap"]},
+  "IxCC.Own.Plain.Proof.Owned.Binds":
+  {"path": "IxCC/Own/Plain/Proof/Owned/Binds.lean",
+   "imports": ["IxCC.Own.Plain.Proof.Owned.Steps"]},
+  "IxCC.Own.Plain.Proof.Owned.Actions":
+  {"path": "IxCC/Own/Plain/Proof/Owned/Actions.lean",
+   "imports": ["IxCC.Own.Plain.Proof.Owned.Binds"]},
   "IxCC.Own.Plain.Proof.NonCall":
   {"path": "IxCC/Own/Plain/Proof/NonCall.lean",
    "imports":
@@ -6884,6 +6996,8 @@
     "IxCC.Own.Rc.Proof.Transfer"]},
   "IxCC.Own.Plain.Program":
   {"path": "IxCC/Own/Plain/Program.lean", "imports": ["IxCC.Own.Plain.Syntax"]},
+  "IxCC.Own.Plain.Owned":
+  {"path": "IxCC/Own/Plain/Owned.lean", "imports": ["IxCC.Own.Plain.Check"]},
   "IxCC.Own.Plain.Check":
   {"path": "IxCC/Own/Plain/Check.lean", "imports": ["IxCC.Own.Plain.Program"]},
   "IxCC.Own.Plain.Certificate":
