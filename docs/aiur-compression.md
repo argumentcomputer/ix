@@ -843,6 +843,15 @@ development fixture exposes two public 128-bit statement limbs and rejects
 changed statements, policies, stages and a forged KZG opening. Its 16.4 million
 main-trace cells do not establish the final PLONK constraint count or Init cost.
 
+The [terminal PLONK cost estimate](measurements/aiur-final-plonk-estimate.json)
+compiles small capacity changes for each circuit, retaining every fixed table,
+and extrapolates 111,277,220 constraints for that small terminal fixture.
+The implied `2^27` domain exceeds both the retained `2^25` prefix and Ignition's
+100,800,000 total G1 powers. This is not a full-capacity compile or proof.
+The estimator checks a second increment for boundary-sensitive circuits and
+agrees with a complete small ROM/recursion fixture compilation. Substantial
+arithmetic and layout reductions are required before terminal PLONK is viable.
+
 A [two-stage KZG recursion preflight](measurements/aiur-kzg-recursion-preflight.json)
 proved a small first-stage execution, then executed the verifier on that proof.
 The second execution required 2,111,189,304 main cells and a maximum height of
