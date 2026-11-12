@@ -531,7 +531,7 @@ theorem evalConst_step (H : FundHyps M p κ lpsOf S Ok) {k : Nat}
       cases d with
       | ctor sf lvls ind cidx np nf ty => exact hhv _ _ _ φ _ _ hrun (.ctor hSc hlv hfind)
       | recr sf kk lvls np nmot nmin ni ind rules ty =>
-        exact absurd hd (H.faith.noRecr c hSc sf kk lvls np nmot nmin ni ind rules ty)
+        exact hhv _ _ _ φ _ _ hrun (.recr hSc hlv hfind)
       | quot qk lvls ty => exact absurd hd (H.faith.noQuot c hSc qk lvls ty)
       | defn kind safety lvls ty v' =>
         cases kind with

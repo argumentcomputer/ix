@@ -316,4 +316,47 @@ theorem decideRoot_of_sitesOk (hL : Laws M) {p : Program} {κ : CId → KKey}
     hX
   simpa [hkt] using h
 
+/-! ## The landed forms, over `GroundFacts` as first landed (no recursor in `Sl`)
+
+Since G3, `GroundFacts` takes `RecFacts` (each recursor of `Sl` in an admitted class, with the
+checked shape) where it took `NoRecr` (no recursor in `Sl`). The landed hypothesis implies the new
+one (`groundFacts_of_noRecr`), so each root theorem implies its landed statement. -/
+
+theorem rootSound_noRecr (hL : Laws M) {p : Program} {κ : CId → KKey} {lpsOf : CId → List Nat}
+    {ann : IxCC.Src.Relevance.Ann} {Sl : List CId} {root : CId} {args : List FoTy} {res : FoTy}
+    (hG : GroundFactsNoRecr p env κ lpsOf ann (· ∈ Sl)) (hC : CaseFacts p env κ (· ∈ Sl))
+    (hR : RootFacts p env κ ann (· ∈ Sl) root args res)
+    (hT : SitesOkRes M p κ lpsOf ann (· ∈ Sl))
+    {k : Nat} {xs : List Value} {es : List KExpr} {v : Value} {o : IxCC.Sem.Obs} {eo : KExpr}
+    (hA : FoArgs p κ args xs es) (hrun : IxCC.Src.run p k root xs = .ok v)
+    (hrb : IxCC.Src.readbackAll p v = some o) (hRT : ResultTag p env κ (· ∈ Sl) res o)
+    (hO : FoObs p κ res o eo) (φ : LevelParam → Nat) (ρ : BVarIdx → V) (X : V)
+    (hX : Denotes M.cval env φ ρ (Expr.mkAppN (.const (κ root) []) es) X) :
+    Denotes M.cval env φ ρ eo X :=
+  rootSound hL (groundFacts_of_noRecr hG) hC hR hT hA hrun hrb hRT hO φ ρ X hX
+
+theorem fibRoot_noRecr (hL : Laws M) {p : Program} {κ : CId → KKey} {lpsOf : CId → List Nat}
+    {ann : IxCC.Src.Relevance.Ann} {Sl : List CId} {root : CId}
+    (hG : GroundFactsNoRecr p env κ lpsOf ann (· ∈ Sl)) (hC : CaseFacts p env κ (· ∈ Sl))
+    (hR : RootFacts p env κ ann (· ∈ Sl) root [.nat] .nat)
+    (hD : DirectFacts p env κ lpsOf ann (· ∈ Sl))
+    {k n : Nat} {v : Value} {w : Nat} (hrun : IxCC.Src.run p k root [.lit n] = .ok v)
+    (hrb : IxCC.Src.readbackAll p v = some (.nat w)) (φ : LevelParam → Nat) (ρ : BVarIdx → V)
+    (X : V) (hX : Denotes M.cval env φ ρ (.app (.const (κ root) []) (litE n)) X) :
+    Denotes M.cval env φ ρ (litE w) X :=
+  fibRoot hL (groundFacts_of_noRecr hG) hC hR hD hrun hrb φ ρ X hX
+
+theorem decideRoot_noRecr (hL : Laws M) {p : Program} {κ : CId → KKey} {lpsOf : CId → List Nat}
+    {ann : IxCC.Src.Relevance.Ann} {Sl : List CId} {root boolD : CId}
+    (hb : p.known.bool = some boolD) (hBL : BoolListed p boolD)
+    (hG : GroundFactsNoRecr p env κ lpsOf ann (· ∈ Sl)) (hC : CaseFacts p env κ (· ∈ Sl))
+    (hR : RootFacts p env κ ann (· ∈ Sl) root [] (.enum boolD))
+    (hD : DirectFacts p env κ lpsOf ann (· ∈ Sl))
+    (hRT : ResultTag p env κ (· ∈ Sl) (.enum boolD) (.ctor 1 []))
+    {k : Nat} {v : Value} (hrun : IxCC.Src.run p k root [] = .ok v)
+    (hrb : IxCC.Src.readbackAll p v = some (.ctor 1 [])) (φ : LevelParam → Nat)
+    (ρ : BVarIdx → V) (X : V) (hX : Denotes M.cval env φ ρ (.const (κ root) []) X) :
+    Denotes M.cval env φ ρ (.const boolTrueName []) X :=
+  decideRoot hL hb hBL (groundFacts_of_noRecr hG) hC hR hD hRT hrun hrb φ ρ X hX
+
 end IxCC.Grounding
