@@ -6,6 +6,7 @@ public import Ix.Compile.BinderData
 public import Ix.Compile.Parallel
 public import Ix.Compile.FrontEnd
 public import Ix.CompileM
+public import Ix.KernelDisplay.Render
 
 public section
 
@@ -93,6 +94,8 @@ structure Installed where
   /-- whether a root phase A annotated is read off its stored term (`walkStored`)
   rather than walked -/
   stored : Bool := true
+  /-- whether the walk memoizes share sites (`IX_BD_NOMEMO` turns it off, for diagnosis) -/
+  memo : Bool := true
   /-- the phases' times (ms) -/
   times : Array (String × Nat) := #[]
 
@@ -446,9 +449,10 @@ def installInput (env : Ix.Environment) (workers : Nat := 32) : IO (Except Strin
   let t1 ← IO.monoMsNow
   let parallel := (← IO.getEnv "IX_BD_SEQUENTIAL").isNone
   let stored := (← IO.getEnv "IX_BD_WALK_ALL").isNone
+  let memo := (← IO.getEnv "IX_BD_NOMEMO").isNone
   let trace := ((← IO.getEnv "IX_BD_TRACE").map fun s => (s.splitOn ",").toArray).getD #[]
   return (← install env blocks workers parallel (!trace.isEmpty)).map fun k =>
-    { k with stored, trace, times := #[("condense", t1 - t0)] ++ k.times }
+    { k with stored, memo, trace, times := #[("condense", t1 - t0)] ++ k.times }
 
 /-! ## The walk -/
 
@@ -470,6 +474,9 @@ structure Cx where
   params : Nat := 0
   /-- print why a datum is undecided (`IX_BD_TRACE`, for diagnosis) -/
   trace : Bool := false
+  /-- whether share sites under the same context reuse one walk (`IX_BD_NOMEMO`
+  turns it off, for diagnosis) -/
+  memo : Bool := true
 
 /-- A source level parameter's index in the record's numbering (the inverse of
 `Ix.LeanIngress.Numbering.pos`). -/
@@ -488,7 +495,7 @@ structure WState where
   nextId : Nat := 0
   variants : Std.HashMap Nat (Std.HashMap (Array Node) Nat) := {}
   blocks : Array Block := #[]
-  memo : Std.HashMap (Nat × Bool × List Nat) (KExpr × Nat × Bool) := {}
+  memo : Std.HashMap (Nat × Bool × List Nat) (KExpr × Nat × Bool × KExpr) := {}
   /-- the stored walk's memo (`walkStored`): the variant of a share site -/
   memoS : Std.HashMap (Nat × Bool × List Nat) Nat := {}
 
@@ -524,6 +531,85 @@ private def variantOf (n : Nat) (nodes : Array Node) : WM Nat := do
                   blocks := st.blocks.push ⟨1, n, v, nodes⟩ }
     pure v
 
+/-! ### Diagnosis (`IX_BD_TRACE`) -/
+
+/-- A term for a trace line (keys as names, a bounded print). -/
+def showTerm (e : KExpr) : String :=
+  (Ix.KernelDisplay.renderTerm ({ maxSteps := 300 } : Ix.KernelDisplay.Cx .source) e).replace "\n" " "
+
+private def nodeTag : KExpr → String
+  | .bvar _ => "bvar" | .fvar .. => "fvar" | .app .. => "app" | .lam .. => "lam"
+  | .forallE .. => "forall" | .letE .. => "let" | .proj .. => "proj" | .sort _ => "sort"
+  | .const .. => "const" | .lit _ => "lit"
+
+/-- The first place two terms differ (a trace's comparison of two sources). -/
+partial def firstDiff (a b : KExpr) : Option String :=
+  if a == b then none else
+  match a, b with
+  | .app f x, .app g y => (firstDiff f g).orElse fun _ => firstDiff x y
+  | .lam t c _, .lam u d _ | .forallE t c _, .forallE u d _ =>
+    (firstDiff t u).orElse fun _ => firstDiff c d
+  | .letE t v c _, .letE u w d _ =>
+    ((firstDiff t u).orElse fun _ => firstDiff v w).orElse fun _ => firstDiff c d
+  | .proj k i x, .proj l j y =>
+    if k == l && i == j then firstDiff x y else some s!"proj {k}.{i} against {l}.{j}"
+  | .const k us, .const l vs => some s!"const {k} {repr us} against {l} {repr vs}"
+  | .sort u, .sort v => some s!"sort {repr u} against {repr v}"
+  | .fvar i _, .fvar j _ => some s!"fvar {i} against {j}"
+  | .bvar i, .bvar j => some s!"bvar {i} against {j}"
+  | _, _ => some s!"{nodeTag a} against {nodeTag b}"
+
+private def infers (cx : Cx) (depth : Nat) (e : KExpr) : CM Bool :=
+  tryCatch (do let _ ← cx.core.infer depth e; pure true) (fun _ => pure false)
+
+/-- Where `e`'s inference fails at `depth`, for a trace: the innermost failing
+node found by descending (an application's first mismatching argument, a
+projection's subject and table, a binder's domain or body). -/
+def explain : Nat → Cx → Nat → KExpr → CM String
+  | 0, _, _, _ => pure "(the descent's bound)"
+  | fuel + 1, cx, depth, e => do
+    if ← infers cx depth e then return "infers"
+    match e with
+    | .app .. =>
+      let h := e.getAppFn
+      unless ← infers cx depth h do return s!"head {showTerm h}: " ++ (← explain fuel cx depth h)
+      let mut ty ← cx.core.infer depth h
+      let mut i := 0
+      for a in e.getAppArgsC do
+        let w ← cx.core.whnf depth ty
+        match w with
+        | .forallE dom body _ =>
+          unless ← infers cx depth a do
+            return s!"argument {i} of {showTerm h}: " ++ (← explain fuel cx depth a)
+          let ta ← cx.core.infer depth a
+          unless ← cx.core.defeq depth ta dom do
+            let wa ← cx.core.whnf depth ta
+            let wd ← cx.core.whnf depth dom
+            return s!"argument {i} of {showTerm h} mismatches: {showTerm a} : {showTerm ta} \
+              (whnf {showTerm wa}), expected {showTerm dom} (whnf {showTerm wd}); \
+              first difference of the whnfs: {(firstDiff wa wd).getD "none"}"
+          ty := body.instantiate1C a
+        | _ => return s!"argument {i} of {showTerm h}: a function was expected, its type is {showTerm w}"
+        i := i + 1
+      return s!"the spine of {showTerm h} checks, but the application does not infer"
+    | .proj k i v =>
+      unless ← infers cx depth v do return s!"the subject of {k}.{i}: " ++ (← explain fuel cx depth v)
+      let tv ← cx.core.infer depth v
+      let w ← cx.core.whnf depth tv
+      match w.getAppFn with
+      | .const T us =>
+        match cx.fe.findProj? T i with
+        | some en =>
+          return s!"the projection {k}.{i}: its subject's type is headed by {T} (the same: {T == k}), \
+            {w.getAppArgsC.length} arguments (table {en.numParams}), {us.length} levels \
+            (table {en.levelParams.length}); the subject {showTerm v} : {showTerm w}"
+        | none => return s!"the projection {k}.{i}: no table for {T}; the subject's type {showTerm w}"
+      | _ => return s!"the projection {k}.{i}: the subject's type {showTerm w} is not a constant's"
+    | .lam ty b _ | .forallE ty b _ =>
+      unless ← infers cx depth ty do return "a binder's domain: " ++ (← explain fuel cx depth ty)
+      return "under a binder: " ++ (← explain fuel cx (depth + 1) (b.instantiate1C (.fvar depth ty)))
+    | _ => return s!"the leaf {showTerm e} ({nodeTag e})"
+
 /-- IxC's datum of a run whose annotated opened leaf is `leaf` at `depth`
 (`annotPwPiI` for a ∀ run, `annotPwLamI` for a λ run); `none` where IxC's
 function fails. -/
@@ -531,10 +617,11 @@ def datum (cx : Cx) (pi : Bool) (depth : Nat) (leaf : KExpr) : EM (Option PropWh
   let act : CM PropWhen :=
     if pi then Ix.Kernel.Cached.annotPwPiI cx.core cx.fe depth leaf
     else Ix.Kernel.Cached.annotPwLamI cx.core cx.fe depth leaf
-  let res : Option PropWhen ← (tryCatch (some <$> act) (fun e =>
+  let res : Option PropWhen ← (tryCatch (some <$> act) (fun e => do
       if cx.trace then
+        let why ← (tryCatch (explain 64 cx depth leaf) (fun e => pure s!"(explain fails: {traceError e})") : CM String)
         dbgTrace s!"binder data trace: the datum of a {if pi then "∀" else "λ"} run at depth {depth} \
-          fails: {traceError e}" fun _ => pure none
+          fails: {traceError e}; {why}" fun _ => pure none
       else pure none) : CM (Option PropWhen))
   pure res
 
@@ -622,21 +709,29 @@ def walk : Nat → Cx → List CtxEntry → Nat → Option KExpr → Ixon.Expr �
             | .const T _ => s!"const {T} (table: {(cx.fe.findProj? T i).isSome})"
             | _ => "not a constant"
           pure s!"the projection {k}.{i}: its subject's type is headed by {head}"
-        let msg ← (tryCatch probe (fun e => pure s!"the projection {k}.{i}: {traceError e}") : CM String)
-        dbgTrace s!"binder data trace: {msg}" fun _ => pure ()
+        let msg ← (tryCatch probe (fun e => do
+          let why ← (tryCatch (explain 64 cx depth v') (fun e => pure s!"(explain fails: {traceError e})") : CM String)
+          pure s!"the projection {k}.{i}: {traceError e}; {why}") : CM String)
+        dbgTrace s!"binder data trace: {msg.take 3000}" fun _ => pure ()
       pure (.proj k i v', bv)
     | .share n, _ => do
       let ord ← reserve
       let n := n.toNat
       let key := (n, cx.large, (ctx.take (cx.bounds[n]?.getD 0)).map (·.id))
-      let (e', variant, bad) ← match (← getThe WState).memo[key]? with
-        | some hit => pure hit
+      let hit? := if cx.memo then (← getThe WState).memo[key]? else none
+      let (e', variant, bad) ← match hit? with
+        | some (e', variant, bad, src) => do
+          if cx.trace then
+            if let some d := firstDiff src x then
+              dbgTrace s!"binder data trace: share {n}: a memoized site's source differs: {d}"
+                fun _ => pure ()
+          pure (e', variant, bad)
         | none => do
           let some entry := cx.sharing[n]? | mismatch "a share"
           let ((e', bad), nodes) ← ((walk fuel cx ctx depth none entry x).run #[] :
             WM ((KExpr × Bool) × Array Node))
           let variant ← variantOf n nodes
-          modifyThe WState fun st => { st with memo := st.memo.insert key (e', variant, bad) }
+          modifyThe WState fun st => { st with memo := st.memo.insert key (e', variant, bad, x) }
           pure (e', variant, bad)
       setNode ord (.share variant)
       pure (e', bad)
@@ -809,7 +904,7 @@ def annotate (k : Installed) (extra : Array (Ix.Name × Ix.ConstantInfo)) (names
   | some xs =>
     let traced := !k.trace.isEmpty && names.any fun n => k.trace.contains n.pretty
     let cx0 : Cx := { fe := k.fe, core := k.core, sharing := c.sharing,
-                      bounds := IxVM.PwHints.bounds c.sharing, trace := traced }
+                      bounds := IxVM.PwHints.bounds c.sharing, trace := traced, memo := k.memo }
     let stored : Array (Option KExpr) := if !k.stored then #[] else
       ((members c).zip names).foldl (fun acc (m, n) => acc ++ storedItems k.fe n m) #[]
     let tys := IxVM.PwHints.valueTypes c
