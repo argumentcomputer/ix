@@ -647,7 +647,7 @@ Linux process or under the IxOS tender
 | Id | Content | Depends on | Exit test | Size [estimate] | State |
 | --- | --- | --- | --- | --- | --- |
 | X0 | `ixcc compile --exe` for `Nat` roots (and results without fields): executable writer and checker, typed-x86 shell with the system call outside the program table, static layout with the driver contract proved; the shell ledgered (`x86-linux-exe-shell`). The per-call registers in the driver model move to X0-P | — | every corpus root of the fragment as an executable agrees with the manifest, SrcEval, ByteEval and the C driver, under a seccomp filter, with only `prctl`, `seccomp`, `write` and `exit` | 2–3.5k lines; 3–6 weeks (measured: 1.5k lines with tests) | Implemented ([as implemented](standalone-executables-design.md#x0-as-implemented)) |
-| X0-P | The shell proved; a return address and register file per call in `X86.Driver`; the `Nat` executable theorem; the driver-model assumption retired for executables | X0 | the theorem fenced | 3–6k lines; 2–4 months | In progress: the first of three parts implemented (a call site per call, `X86.LinkedAt`; the object and session theorems from two sites; the byte machine on the process's memory), the second implemented (the process's specification modules, the shell's text checked when written, the call lemma; [design](standalone-executables-design.md#x0-p-so-far)) |
+| X0-P | The shell proved; a return address and register file per call in `X86.Driver`; the `Nat` executable theorem; the driver-model assumption retired for executables | X0 | the theorem fenced | 3–6k lines; 2–4 months | Implemented for X2's machine shell: the shell theorem (`shell_sound`) and the executable theorems (`machine_exe_sound`, `Rc.machine_exe_sound`) fenced, against three platform specifications (the loader's post-state, the system calls, the processor, which promises nothing where the byte machine does not say what the processor does), a memory fault or divide error ending the process, and the environment they describe (no tracer, no inherited seccomp filter or supervisor, no outside writer, one thread); safety only, faults allowed anywhere; `--exe`'s parsing shell still ledgered ([design](standalone-executables-design.md#x0-p-the-shell-proved)) |
 | X1 | The redefined XB-1 and IxOS-0: IxCC-written test executables replace the C runtime driver in every native gate, out of process, with no trampoline and no C | X0 | the native suites pass with the C driver off the execution path and no C compiler in their inputs | 1–2k lines; 2–4 weeks after X0 | Implemented ([as implemented](standalone-executables-design.md#x1-as-implemented)): the C drivers are deleted; no gate runs a compiled program through C |
 | X1b | No C at all: the four remaining C test harnesses (linker acceptance of relocatable objects, unwinding, the processor differential) replaced by objects and executables IxCC writes; no C source in the tree and no C compiler in any check's inputs (decided 2026-11-11; [what each needs](standalone-executables-design.md#the-c-drivers-removed)) | X1 | the `x86-elf-object` and `x86-hardware` checks pass with no C compiler in their inputs, with the same assertions | not estimated | Planned, not urgent |
 | X2 | Numeric state machines: a generic request shell, parsing and rendering in Lean, the session theorem on `Nat` states | X0 (X0-P for the proof) | a 1,000-call session against Lean's interpreter; the theorem fenced | 2–4k lines | Implemented: `ixcc compile --exe --machine`, the `IxccExe` library, `fib` end to end, the session theorem fenced over the linked-object model, sessions of more than 1,400 calls agreeing with Lean's interpreter ([design](standalone-executables-design.md#x2-as-implemented)) |
@@ -663,6 +663,14 @@ executable exits after writing `w`", and the driver model by the loader's
 post-state and the platform's system-call model. *X1, done:* every native suite
 ran both the C driver and the test executables, line by line, with no
 disagreement; then the C drivers, their pins and the C link paths went.
+
+*A possible later hardening of the machine shell (not part of X0-P, not
+planned):* an instruction certain to fault right after the `exit` block's
+`syscall` (today the block jumps back to itself), so that an `exit` that
+returns (under a tracer or an inherited seccomp filter, which the shell
+proof's environment assumption excludes) ends the trace instead of repeating
+the call. It would change the shell's bytes, so it needs its own proof
+update and artifact comparison.
 
 ### Repository and landing
 

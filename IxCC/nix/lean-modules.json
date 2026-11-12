@@ -3139,6 +3139,9 @@
    "imports": ["IxCC.Fir.Proof.Mono", "IxCC.Fir.Proof.Lang"]},
   "IxCCTests.Fences.Fir":
   {"path": "IxCCTests/Fences/Fir.lean", "imports": ["IxCC.Fir.Semantics"]},
+  "IxCCTests.Fences.ExeShell":
+  {"path": "IxCCTests/Fences/ExeShell.lean",
+   "imports": ["IxCC.Exe.Machine.Exe", "IxCC.X86.Exe.Machine.Proof.Loaded"]},
   "IxCCTests.Fences.Exe":
   {"path": "IxCCTests/Fences/Exe.lean",
    "imports":
@@ -3324,6 +3327,7 @@
     "IxCCTests.Fences.BackendEnds",
     "IxCCTests.Fences.BackHalf",
     "IxCCTests.Fences.Exe",
+    "IxCCTests.Fences.ExeShell",
     "IxCCTests.Fences.KernelFront"]},
   "IxCCTests.Exe.TestShell":
   {"path": "IxCCTests/Exe/TestShell.lean",
@@ -3340,9 +3344,15 @@
   {"path": "IxCCTests/Exe/Main.lean", "imports": ["IxCCTests.Exe.Machine"]},
   "IxCCTests.Exe.MachineSessions":
   {"path": "IxCCTests/Exe/MachineSessions.lean", "imports": []},
+  "IxCCTests.Exe.MachineProcess":
+  {"path": "IxCCTests/Exe/MachineProcess.lean",
+   "imports": ["IxCC.X86.Exe.Machine.Proof.Blocks", "IxCC.Exe.Machine"]},
   "IxCCTests.Exe.Machine":
   {"path": "IxCCTests/Exe/Machine.lean",
-   "imports": ["IxCCTests.Exe.Run", "IxCCTests.Exe.MachineSessions"]},
+   "imports":
+   ["IxCCTests.Exe.Run",
+    "IxCCTests.Exe.MachineSessions",
+    "IxCCTests.Exe.MachineProcess"]},
   "IxCCTests.Corpus.ToolMain":
   {"path": "IxCCTests/Corpus/ToolMain.lean",
    "imports": ["IxCCTests.Corpus.Build", "IxCCTests.Corpus.KernelGen"]},
@@ -4381,6 +4391,39 @@
     "IxCC.X86.Exe.Machine",
     "IxCC.X86.Linked",
     "IxCC.Rt.Procs.Entry"]},
+  "IxCC.X86.Exe.Machine.Proof.Steps":
+  {"path": "IxCC/X86/Exe/Machine/Proof/Steps.lean",
+   "imports": ["IxCC.X86.Exe.Machine.Proof.Effects", "IxCC.X86.ByteControl"]},
+  "IxCC.X86.Exe.Machine.Proof.Start":
+  {"path": "IxCC/X86/Exe/Machine/Proof/Start.lean",
+   "imports": ["IxCC.X86.Exe.Machine.Proof.Loop"]},
+  "IxCC.X86.Exe.Machine.Proof.Shell":
+  {"path": "IxCC/X86/Exe/Machine/Proof/Shell.lean",
+   "imports": ["IxCC.X86.Exe.Machine.Proof.Start"]},
+  "IxCC.X86.Exe.Machine.Proof.Report":
+  {"path": "IxCC/X86/Exe/Machine/Proof/Report.lean",
+   "imports": ["IxCC.X86.Exe.Machine.Proof.Glue"]},
+  "IxCC.X86.Exe.Machine.Proof.Placement":
+  {"path": "IxCC/X86/Exe/Machine/Proof/Placement.lean",
+   "imports": ["IxCC.X86.Exe.Machine"]},
+  "IxCC.X86.Exe.Machine.Proof.Paths":
+  {"path": "IxCC/X86/Exe/Machine/Proof/Paths.lean",
+   "imports": ["IxCC.X86.Exe.Machine.Proof.Report"]},
+  "IxCC.X86.Exe.Machine.Proof.Loop":
+  {"path": "IxCC/X86/Exe/Machine/Proof/Loop.lean",
+   "imports": ["IxCC.X86.Exe.Machine.Proof.Paths", "IxCC.Exe.Machine.Sound"]},
+  "IxCC.X86.Exe.Machine.Proof.Loaded":
+  {"path": "IxCC/X86/Exe/Machine/Proof/Loaded.lean",
+   "imports": ["IxCC.X86.Exe.Machine.Proof.Start"]},
+  "IxCC.X86.Exe.Machine.Proof.Glue":
+  {"path": "IxCC/X86/Exe/Machine/Proof/Glue.lean",
+   "imports": ["IxCC.X86.Exe.Machine.Proof.Blocks"]},
+  "IxCC.X86.Exe.Machine.Proof.Effects":
+  {"path": "IxCC/X86/Exe/Machine/Proof/Effects.lean",
+   "imports":
+   ["IxCC.X86.Exe.Machine.Proof.Call",
+    "IxCC.X86.ByteFlags",
+    "IxCC.X86.Constructors"]},
   "IxCC.X86.Exe.Machine.Proof.Call":
   {"path": "IxCC/X86/Exe/Machine/Proof/Call.lean",
    "imports":
@@ -4388,6 +4431,11 @@
     "IxCC.X86.ByteAgree",
     "IxCC.X86.DecodeWindow",
     "IxCC.X86.Memory"]},
+  "IxCC.X86.Exe.Machine.Proof.Blocks":
+  {"path": "IxCC/X86/Exe/Machine/Proof/Blocks.lean",
+   "imports":
+   ["IxCC.X86.Exe.Machine.Proof.Steps",
+    "IxCC.X86.Exe.Machine.Proof.Placement"]},
   "IxCC.X86.Exe.Machine":
   {"path": "IxCC/X86/Exe/Machine.lean",
    "imports":
@@ -6433,6 +6481,18 @@
     "IxCC.Exe.Machine",
     "IxCC.Recheck.Proof.Soundness",
     "IxCC.Recheck.Rc.Proof.ObjectSound"]},
+  "IxCC.Exe.Machine.Exe":
+  {"path": "IxCC/Exe/Machine/Exe.lean",
+   "imports":
+   ["IxCC.Exe.Machine.Sound",
+    "IxCC.X86.Exe.Machine.Proof.Shell",
+    "IxCC.Backend.Proof.Emit",
+    "IxCC.Recheck.Proof.Parts",
+    "IxCC.Recheck.Proof.Front",
+    "IxCC.Recheck.Rc.Proof.Parts",
+    "IxCC.Recheck.Rc.Proof.Roots",
+    "IxCC.Recheck.Rc.Proof.Exports",
+    "IxCC.Recheck.Rc.Proof.FrontParts"]},
   "IxCC.Exe.Machine":
   {"path": "IxCC/Exe/Machine.lean",
    "imports": ["IxCC.Sem.Result", "IxCC.Sem.Simulation"]},

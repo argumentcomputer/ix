@@ -16,7 +16,14 @@ shell bytes the independent decoder does not read back as this program
 (`Shell.check`, `X86/Exe/ShellCheck.lean`: every instruction at its offset,
 every block and export target, and each `syscall` as `0F 05` where nothing
 decodes), and carries what the check establishes (`CertifiedFor.shell`). That
-the program does what this note says is not yet proved: it is trusted code
+the program realises the session model is proved, not trusted:
+`X86.Exe.Process.shell_sound` (`X86/Exe/Machine/Proof/Shell.lean`) shows, for
+every file `writeChecked` accepts, that every finite trace of the process's
+system calls from the loader's post-state is a prefix of the system calls of
+a trace the session model performs (after the confinement), or has passed a
+call the model shows stuck, or is the confinement's refusal, from the
+platform's three specifications (`X86/Exe/Process/`). Those specifications,
+and the environment they assume, are what stays ledgered
 (`docs/trusted-extern-ledger.md`, `x86-linux-machine-shell`).
 
 **What it does.**
