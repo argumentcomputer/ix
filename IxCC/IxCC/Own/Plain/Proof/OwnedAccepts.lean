@@ -183,15 +183,15 @@ theorem Canon.declare (h : Canon Γ Δ live joins imm arities) (j : Fir.JoinId) 
   · rw [Src.NatMap.get?_insert, lookup_cons', h.jctx]
   · rw [lookup_cons'] at hC
     by_cases hj : j' = j
-    · rw [if_pos hj] at hC
+    · simp only [hj, ↓reduceIte] at hC
       cases hC
       exact List.Sublist.refl _
-    · rw [if_neg hj] at hC
+    · simp only [hj, ↓reduceIte] at hC
       exact h.capIn j' C hC
   · rw [lookup_cons'] at hm ⊢
     by_cases hj : j' = j
-    · rw [if_pos hj]; exact ⟨_, rfl⟩
-    · rw [if_neg hj] at hm ⊢; exact h.arity j' m hm
+    · simp only [hj, ↓reduceIte]; exact ⟨_, rfl⟩
+    · simp only [hj, ↓reduceIte] at hm ⊢; exact h.arity j' m hm
 
 /-- A join body starts from `Γ.enter live ps`: the producer captures the whole scope. -/
 theorem Canon.enter (h : Canon Γ Δ live joins imm arities) (j : Fir.JoinId) (ps : List Var)
@@ -228,8 +228,8 @@ theorem Canon.enter (h : Canon Γ Δ live joins imm arities) (j : Fir.JoinId) (p
       fun j' C hC => ?_, fun j' m hm => ?_, hn⟩
   · rw [htok, himm]
     by_cases hx : x ∈ Γ.entered live ps
-    · rw [if_pos hx, if_pos ((hmem x).mp hx)]
-    · rw [if_neg hx, if_neg (fun h' => hx ((hmem x).mpr h'))]
+    · simp only [hx, (hmem x).mp hx, ↓reduceIte]
+    · simp only [hx, (fun h' => hx ((hmem x).mpr h') : ¬(x ∈ live ++ ps ∧ Γ.isImm x = false)), ↓reduceIte]
   · have hx' : (Γ.enter live ps).isImm x = true := hx
     simp [hx']
   · by_cases hx' : x ∈ Γ.entered live ps
@@ -248,18 +248,18 @@ theorem Canon.enter (h : Canon Γ Δ live joins imm arities) (j : Fir.JoinId) (p
     · simp only [↓reduceIte] at hC
       rw [lookup_cons'] at hC
       by_cases hj : j' = j
-      · rw [if_pos hj] at hC
+      · simp only [hj, ↓reduceIte] at hC
         cases hC
         exact List.sublist_append_left _ _
-      · rw [if_neg hj] at hC
+      · simp only [hj, ↓reduceIte] at hC
         exact (h.capIn j' C hC).trans (List.sublist_append_left _ _)
   · cases rec
     · exact h.arity j' m hm
     · simp only [↓reduceIte] at hm ⊢
       rw [lookup_cons'] at hm ⊢
       by_cases hj : j' = j
-      · rw [if_pos hj]; exact ⟨_, rfl⟩
-      · rw [if_neg hj] at hm ⊢; exact h.arity j' m hm
+      · simp only [hj, ↓reduceIte]; exact ⟨_, rfl⟩
+      · simp only [hj, ↓reduceIte] at hm ⊢; exact h.arity j' m hm
 
 /-- The producer's copies of a consuming binding's arguments, then the binding's take: the
 counts come back to the canonical ones. -/
@@ -318,7 +318,7 @@ theorem rhsIn_ctor {functions : Signatures} {live : List Var} {c : Fir.CtorInfo}
   simp only [rhsIn, Bool.and_eq_true, decide_eq_true_eq] at h
   exact ⟨h.1.1.1.1, h.1.1.1.2⟩
 
-theorem rhsIn_args {functions : Signatures} {live : List Var} {args : List Arg} {b : Bool}
+theorem rhsIn_args {live : List Var} {args : List Arg} {b : Bool}
     (h : (b && args.all (argIn live)) = true) : args.all (argIn live) = true := by
   simp only [Bool.and_eq_true] at h
   exact h.2
@@ -429,8 +429,8 @@ theorem lowerCode_checks (functions : Signatures) : ∀ (c : Fir.Code) {Γ : Ctx
             show ((Γ.setBorrow x).brw.erase x).get? z = none
             rw [Src.NatMap.get?_erase, Ctx.brw_setBorrow]
             by_cases hz : z = x
-            · rw [if_pos hz]
-            · rw [if_neg hz, if_neg hz]; exact h.shape.brw z
+            · simp only [hz, ↓reduceIte]
+            · simp only [hz, ↓reduceIte]; exact h.shape.brw z
           have htx : Γ.tokens x = 0 := by
             rw [h.shape.tokens x]; simp [hx']
           have hbx : (Γ.setBorrow x).borrowed x = true := by
@@ -515,8 +515,8 @@ theorem lowerCode_checks (functions : Signatures) : ∀ (c : Fir.Code) {Γ : Ctx
       refine ⟨?_, hCl.subset hy⟩
       cases hi : Γ.isImm y
       · right
-        rw [ht y hi, Ctx.count_nodup hCn, if_pos hy]
-        simp only [Bool.false_eq_true, ↓reduceIte]
+        rw [ht y hi, Ctx.count_nodup hCn]
+        simp only [hy, Bool.false_eq_true, ↓reduceIte]
         omega
       · left; rfl
     obtain ⟨Γ₂, h2, h₂⟩ := check_takeVars C hCn h₁ hpre
