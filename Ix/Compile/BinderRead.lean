@@ -770,12 +770,18 @@ def readSrc (find : Find) (σ : Ix.Name → Nat) : Nat → List (Option Ix.Expr)
       if seen then return
     | _ => pure ()
     match x with
-    | .app xf xa _ =>
-      readSrc find σ fuel ctx ch ex xf
-      let aex : Expect :=
-        if readsExpectSrc xa then argExpectOf find σ ctx xf
-        else unknown "an argument that reads no expectation"
-      readSrc find σ fuel ctx ch aex xa
+    | .app .. =>
+      -- the whole spine at once: its head (a β-redex's λ-run takes the application's
+      -- expectation), then each argument with the expectation its head gives it
+      let h := (headArgs x).1
+      let args := (spineArgs x #[]).reverse
+      readSrc find σ fuel ctx ch ex h
+      for h' : i in [:args.size] do
+        let a := args[i]
+        let aex : Expect :=
+          if readsExpectSrc a then argExpect find σ ctx h (args.extract 0 i) i
+          else unknown "an argument that reads no expectation"
+        readSrc find σ fuel ctx ch aex a
     | .lam .. | .forallE .. =>
       let pi := x matches .forallE ..
       let (tys, leaf) := srcRun pi readFuel x #[]
