@@ -179,6 +179,51 @@ private instance : Nonempty (FEnv .source) := ⟨Ix.Kernel.mkFEnv Ix.Kernel.Env.
 private instance : Nonempty (Ix.Kernel.Cached.CoreFnsI .source) :=
   ⟨Ix.Kernel.Cached.coreKnotI .verified (Ix.Kernel.mkFEnv Ix.Kernel.Env.empty) 0⟩
 
+/-- `Ix.LeanIngress.graphOf`, with each group's literal kinds (`literalKinds`,
+a walk of all its terms) computed on `width` tasks: the same graph. -/
+def graphOfPar (width : Nat) (blocks : Ix.CondensedBlocks) (groups : Array Group)
+    (converted : Array (Except ReadError Converted)) : Graph := Id.run do
+  let supportNames := Ix.Kernel.Reader.strLitSupportNames
+  let mut groupOf : Ix.Map TableName Nat := {}
+  let mut supportOf : Std.HashMap (CName .source) Nat := {}
+  for (g, i) in groups.zipIdx do
+    for n in g.names do
+      groupOf := groupOf.insert n i
+      if let some k := supportNames.find? (nameIs n) then supportOf := supportOf.insert k i
+  let mut hard : Array (Array Nat) := #[]
+  let mut unplaced : Array (Option ReadError) := #[]
+  for (g, i) in groups.zipIdx do
+    let mut seenLo : Ix.Set TableName := {}
+    let mut ds : Std.HashSet Nat := {}
+    let mut bad : Option ReadError := none
+    for n in g.names do
+      let some lo := blocks.lowLinks.get? n
+        | if bad.isNone then
+            bad := some (.malformed s!"constant {ingressName n} is not in the condensation")
+      if seenLo.contains lo then continue
+      seenLo := seenLo.insert lo
+      for r in (blocks.blockRefs.get? lo).getD {} do
+        match groupOf.get? r with
+        | some j => if j != i then ds := ds.insert j
+        | none =>
+          if bad.isNone then
+            bad := some (.malformed s!"references {ingressName r}, which is not in the environment")
+    hard := hard.push (ds.toArray.qsort (· < ·))
+    unplaced := unplaced.push bad
+  let support (names : List (CName .source)) : Array Nat :=
+    names.foldl (fun acc n => match supportOf[n]? with
+      | some j => if acc.contains j then acc else acc.push j
+      | none => acc) #[]
+  let natTargets := support Ix.Kernel.Reader.natLitSupportNames
+  let strTargets := support supportNames
+  let kinds := Ix.Compile.Parallel.map width (fun (c : Except ReadError Converted) => match c with
+    | .ok c => some (literalKinds c)
+    | .error _ => none) converted
+  let literal := kinds.zipIdx.map fun (k, i) => match k with
+    | some (nat, str) => (if str then strTargets else if nat then natTargets else #[]).filter (· != i)
+    | none => #[]
+  return ⟨groups, converted, hard, literal, unplaced⟩
+
 /-- **Install the compile's input** in Source mode, phase A only, and mark the
 environment and IxC's core over it persistent. -/
 def install (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (workers : Nat := 32)
@@ -192,7 +237,7 @@ def install (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (workers : Nat 
   let tGroups ← IO.monoMsNow
   let converted ← IO.lazyPure fun _ => Ix.Compile.Parallel.map (4 * max workers 1) convert groups
   let tConv ← IO.monoMsNow
-  let g ← IO.lazyPure fun _ => graphOf blocks groups converted
+  let g ← IO.lazyPure fun _ => graphOfPar (4 * max workers 1) blocks groups converted
   let tGraph ← IO.monoMsNow
   let tierConv : Array (Option (Except ReadError (Ix.Kernel.Tier.TierDecl .source))) ←
     IO.lazyPure fun _ => groups.map fun grp => if isTierGroup grp then some (convertTier grp) else none
