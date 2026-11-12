@@ -9,7 +9,8 @@ Independent controls of the general-layout RC procedures (`Rt.Rc.Gen`) emitted a
 uniqueness test `cx_rc_is_unique`, and for two negative controls today's release and a mutant) and run natively in a test executable IxCC writes
 (`IxCCTests.Exe.TestShell`, a 64 KiB region): the host writes cells and reads memory through the
 session; the generated procedures do every allocation, release and test. The cases are those of
-the interpreter controls (`GenControls`), with the expected words written out independently.
+the interpreter controls (`GenControls`, and `GenReuseControls` for in-place reuse), with the
+expected words written out independently.
 -/
 
 namespace IxCCTests.Rt.Rc.GenNativeControls
@@ -259,6 +260,68 @@ def negative (e : Env) : IO Unit := do
     "negative control: a release indexing by remaining frees the children out of field order"
   emit e "PASS negative controls: today's release follows a scalar word; a mutant breaks field order"
 
+/-- In-place reuse, natively (`GenReuseControls`' instances where the harness allows): the host
+rewrites a cell the generated `isUnique` finds unique with the words `Gen.writeCell` stores (written
+out here: a one-reference header at the old cell's class, then the new fields), and the generated
+`isUnique` and release run on the result. Two negative controls: a shared cell rewritten anyway is
+freed under its other holder; a rewrite at a larger class overwrites the next cell's header, and a
+shared neighbour then looks unique. (A scanned field without a word, stored as `0`, is not run
+natively: its release reads page 0 and would end the session; the interpreter controls show it.) -/
+def reuse (e : Env) : IO Unit := do
+  -- three class-3 cells: l0 = 1 :: [], l1 = 2 :: l0 (two references), l2 = 3 :: l1 (unique)
+  let list : IO (Nat × Nat × Nat) := do
+    let start ← fresh e 4096
+    cellAt e start (hdr 2 3 1 1) [3, 1]
+    cellAt e (start + 24) (hdr 2 3 1 2) [5, start]
+    cellAt e (start + 48) (hdr 2 3 1 1) [7, start + 24]
+    return (start, start + 24, start + 48)
+  -- A: the same layout, 3 :: l1 rewritten as 4 :: l1
+  let (l0, l1, l2) ← list
+  let bump ← ctxField e (-40)
+  require e ((← ok e isUnique l2) == 1 && (← ok e isUnique l1) == 0) "reuse: the cell unique, its tail shared"
+  cellAt e l2 (hdr 2 3 1 1) [9, l1]
+  require e ((← ok e isUnique l2) == 1) "reuse A: the rewritten cell is unique"
+  discard <| ok e dec l2
+  require e ((← freeList e 3) == [l2] && (← word e l1) == hdr 2 3 1 1 && (← word e l0) == hdr 2 3 1 1 &&
+      (← ctxField e (-40)) == bump) "reuse A: released into class 3, the shared tail down to one reference"
+  -- B: another layout of class 3, one scanned field (l1) and a scalar word naming the live cell l0
+  let (l0, l1, l2) ← list
+  cellAt e l2 (hdr 1 3 5 1) [l1, l0]
+  require e ((← ok e isUnique l2) == 1) "reuse B: the rewritten cell is unique"
+  discard <| ok e dec l2
+  require e ((← freeList e 3) == [l2] && (← word e l1) == hdr 2 3 1 1 && (← word e l0) == hdr 2 3 1 1)
+    "reuse B: another layout of the class; its scalar word is not followed"
+  -- D: class 33, 39 scanned fields (U, S, immediates, V) rewritten as 32 scanned (S, U, S) and 3 scalars
+  let start ← fresh e 4096
+  let (s, u, v, w) := (start, start + 24, start + 48, start + 128)
+  cellAt e s (hdr 2 3 1 2) [21, 1]
+  cellAt e u (hdr 2 3 1 1) [23, 1]
+  cellAt e v (hdr 2 3 1 1) [25, 1]
+  cellAt e w (hdr 39 33 2 1) ([u, s, 1, 1] ++ (List.range 34).map (fun j => 2 * (j + 20) + 1) ++ [v])
+  require e ((← ok e isUnique w) == 1) "reuse D: the class-33 cell is unique"
+  cellAt e w (hdr 32 33 4 1)
+    ([s, u, 1, 1] ++ (List.range 27).map (fun j => 2 * (j + 50) + 1) ++ [s] ++ [0, 2 ^ 63, 123])
+  require e ((← ok e isUnique w) == 1 && (← word e (w + 8 * 39)) == v) "reuse D: unique, V's address left past it"
+  discard <| ok e dec w
+  require e ((← freeList e 33) == [w] && (← freeList e 3) == [s, u] && (← word e v) == hdr 2 3 1 1)
+    "reuse D: the cell, S and U freed; the stale word past the cell not followed (V kept)"
+  -- negative control: a shared cell rewritten anyway
+  let (_, l1, l2) ← list
+  cellAt e l1 (hdr 2 3 1 1) [19, l1 - 24]
+  discard <| ok e dec l1
+  require e ((← freeList e 3).contains l1 && (← word e (l2 + 16)) == l1)
+    "negative control: a shared cell rewritten in place is freed while another cell still names it"
+  -- negative control: a class-3 cell rewritten at class 4 overwrites its shared neighbour's header
+  let start ← fresh e 4096
+  cellAt e start (hdr 2 3 1 1) [3, 1]
+  cellAt e (start + 24) (hdr 2 3 1 1) [5, 1]
+  cellAt e (start + 48) (hdr 2 3 1 2) [7, 1]
+  require e ((← ok e isUnique (start + 48)) == 0) "the neighbour is shared"
+  cellAt e (start + 24) (hdr 3 4 1 1) [9, 11, 13]
+  require e ((← word e (start + 48)) == 13 && (← ok e isUnique (start + 48)) == 1)
+    "negative control: a rewrite at a larger class overwrites the next header; the shared neighbour looks unique"
+  emit e "PASS in-place reuse: same layout, another layout, class 33 with a stale word; shared cell and larger class (negative)"
+
 /-- Run the controls in the test executable `exe`: the output lines and the assertion count. -/
 def run (exe : System.FilePath) : IO (List String × Nat) := do
   Session.withSession exe (seconds := some 30) fun s => do
@@ -270,6 +333,7 @@ def run (exe : System.FilePath) : IO (List String × Nat) := do
     release e
     uniqueness e
     negative e
+    reuse e
     let n ← e.assertions.get
     emit e s!"PASS native general-layout procedures: {n} independent assertions"
     return ((← e.out.get).toList, n)

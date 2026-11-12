@@ -564,23 +564,26 @@ data:
   objects, reset/reuse with a uniqueness test, static reuse from `unique`
   contracts, borrowed parameters, inline RC fast paths, and the proved Own
   checker with the canonical plain producer as its fallback. Stage 1
-  (general cell layouts and the uniqueness test) in progress: the pipeline
-  emits the general runtime (`Rt.Rc.Gen`: allocation by layout, `Gen.dec`
-  as the one release) for constructors of 1 to 254 scanned fields, within
-  +1.6 % of the bounded route's executed instructions on every measured
-  program; the in-place reuse lemmas are next. Stage 2 (the proved Own
+  (general cell layouts, the uniqueness test, the in-place reuse lemmas)
+  done: the pipeline emits the general runtime (`Rt.Rc.Gen`: allocation by
+  layout, `Gen.dec` as the one release) for constructors of 1 to 254
+  scanned fields, within +1.6 % of the bounded route's executed
+  instructions on every measured program; reuse of a unique cell in place
+  is proved to keep the heap invariant (`inPlace_ready`,
+  [DR1](data-and-roots-design.md#in-place-reuse)), but no pass emits a
+  reuse yet (stage 4, after stage 2's placement). Stage 2 (the proved Own
   checker), first landing: the checker `Own.Plain.checkOwned` over today's
   syntax with refinement, reclamation and canonical acceptance proved, as a
   library that nothing in production calls
   ([DR1, "The ownership checker"](data-and-roots-design.md#the-ownership-checker));
   next, the Cfg activation layer restated over its typing context and the
-  recheck switched to it, then a liveness placement. **Open for stage 3** (inline fast paths): the
-  general release executes up to 3 Lir steps (4 x86 instructions) more per
-  freed cell than the bounded route's for cells of fewer than three scanned
-  fields, fewer for four or more (lists +3.2 % steps, +4.8 % instructions;
-  chains of one-field cells +10.5 %, +10.9 %), from a branch for scalar-only
-  cells and a reload of the class byte; two cheaper variants (`asc`,
-  `desc`) are measured but not proved
+  recheck switched to it, then a liveness placement. **Open for stage 3**
+  (inline fast paths): the general release executes up to 3 Lir steps (4
+  x86 instructions) more per freed cell than the bounded route's for
+  cells of fewer than three scanned fields, fewer for four or more (lists
+  +3.2 % steps, +4.8 % instructions; chains of one-field cells +10.5 %,
+  +10.9 %), from a branch for scalar-only cells and a reload of the class
+  byte; two cheaper variants (`asc`, `desc`) are measured but not proved
   ([DR1, "The general release's cost"](data-and-roots-design.md#the-general-releases-cost)).
 - **P8** ([closures design](closures-design.md)): defunctionalisation,
   dispatchers, the known-dispatch shrink rule, `Anf.Defun.correct`. Started
