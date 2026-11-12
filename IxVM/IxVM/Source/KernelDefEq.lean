@@ -769,7 +769,11 @@ def try_proof_irrel := aiur_fn⟦
         _ => {
           match proof_class(b, types) {
             0 => {  0 } ,
-            _ => {  try_proof_irrel_slow(rc, a, b, types) } ,
+            _ => {
+              match proof_class(a, types) * proof_class(b, types) {
+                1 => {  1 } ,
+                _ => {  try_proof_irrel_slow(rc, a, b, types) } ,
+              } } ,
           } } ,
       }
     }
