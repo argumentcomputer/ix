@@ -78,28 +78,25 @@ theorem flatIota (M : Model V env) (hL : Laws M) {kr : KKey} {cvr : ConstantVal 
     (htbs : tbs.length = mI) {krl : RecRule .anon} (hkrl : krl ∈ krules)
     {cvC : ConstantVal .anon} (hcC : env.find? krl.ctor = some (.ctorInfo cvC 0 0))
     (hcod : cvC.type.getAppArgs = []) {i : Nat} {bs : List (KExpr × BinderMeta)}
-    (hrhs : krl.rhs = lamTele bs (.bvar i)) (hbs : bs.map (·.1) = tbs.map (·.1))
+    (hrhs : krl.rhs = lamTele bs (.bvar i)) (hbs : bs.map (·.1) = tbs.map (·.1)) (hi : i < mI)
     {φ : LevelParam → Nat} {ρ σ : BVarIdx → V} {R : KExpr} {As : List V}
     (hfit : Fits M.cval env φ ρ cvr.type As σ R) (hlen : As.length = mI + 1)
     {dom body : KExpr} {m : BinderMeta} {D : KKey} {ls : List Level}
     (hpb : piBody mI cvr.type = .forallE dom body m) (hdom : dom.getAppFn = .const D ls)
-    {K : V} (hK : Denotes M.cval env φ ρ (.const krl.ctor ls) K) (hmaj : As[mI]? = some K) :
+    {K : V}
+    (hK : ∀ τ X, Denotes M.cval env φ τ dom X → K ∈ˢ X → Denotes M.cval env φ ρ (.const krl.ctor ls) K)
+    (hmaj : As[mI]? = some K) :
     ∃ X, (As.take mI).reverse[i]? = some X ∧ As.foldl app (M.cval kr φ) = X := by
   have hbsl : bs.length = mI := by
     have := congrArg List.length hbs
     simp only [List.length_map] at this
     omega
   -- the arguments: the prefix and the major
-  have hsplit : As = As.take mI ++ [K] := by
-    rw [← List.take_append_drop mI As]
-    congr 1
-    · simp
-    · rw [List.drop_append_of_le_length (by simp; omega)]
-      have hd : As.drop mI = [K] := by
-        rw [List.drop_eq_getElem_cons (by omega), List.drop_eq_nil_of_le (by omega)]
-        rw [List.getElem?_eq_getElem (by omega)] at hmaj
-        rw [Option.some.inj hmaj]
-      simp [hd]
+  have hdrop : As.drop mI = [K] := by
+    rw [List.getElem?_eq_getElem (by omega)] at hmaj
+    rw [List.drop_eq_getElem_cons (by omega), Option.some.inj hmaj,
+      List.drop_eq_nil_of_le (by omega)]
+  have hsplit : As = As.take mI ++ [K] := by rw [← hdrop, List.take_append_drop]
   have hxl : (As.take mI).length = mI := by simp; omega
   have hfit' := hfit
   rw [hsplit] at hfit'
@@ -118,12 +115,12 @@ theorem flatIota (M : Model V env) (hL : Laws M) {kr : KKey} {cvr : ConstantVal 
   have hidx : DenotesList M.cval env φ ρ
       ((cvC.type.instantiateLevelParams cvC.levelParams ls).getAppArgs.drop 0)
       ((As.take mI).drop mI) := by
-    rw [getAppArgs_inst, hcod, List.drop_eq_nil_of_le (by omega)]
+    rw [getAppArgs_inst, hcod, List.drop_eq_nil_of_le (l := As.take mI) (by omega)]
     exact .nil
   obtain ⟨H, hH, heq⟩ := hL.iota_rule kr cvr mI mI krules krl hf hkrl cvC 0 0 hcC
     (cvr.levelParams.map .param) φ ρ σ1 ρ (As.take mI) [] dom body
     (cvC.type.instantiateLevelParams cvC.levelParams ls) m D ls (M.cval kr φ) K X (by simp) hxl
-    rfl hRden (by rw [inst_self]; exact hf1) hdom hX hK .nil (by simpa using hKX)
+    rfl hRden (by rw [inst_self]; exact hf1) hdom hX (hK σ1 X hX hKX) .nil (by simpa using hKX)
     (by simp; exact .nil) hidx
   -- β through the rule's right-hand side
   rw [inst_self, hrhs] at hH
@@ -134,14 +131,72 @@ theorem flatIota (M : Model V env) (hL : Laws M) {kr : KKey} {cvr : ConstantVal 
   · have hy := den_bvar.mp hY
     rw [hy]
     simp only [pushAll, List.getD_eq_getElem?_getD]
-    rw [List.getElem?_eq_getElem (by simp; omega)]
+    rw [List.getElem?_eq_getElem (by rw [List.length_reverse, hxl]; omega)]
     rfl
-  · rw [hsplit]
-    simp only [List.take_append_drop, List.drop_nil, List.append_nil] at heq ⊢
-    have e1 : (As.take mI ++ [K]).foldl app (M.cval kr φ) =
-        (As.take mI ++ [([] : List V).foldl app K]).foldl app (M.cval kr φ) := rfl
-    rw [e1, heq]
-    simpa using hYe
+  · have e2 : (As.take mI).take mI ++ ([] : List V).drop 0 = As.take mI := by simp
+    rw [e2] at heq
+    have e1 : As.foldl app (M.cval kr φ) =
+        (As.take mI ++ [([] : List V).foldl app K]).foldl app (M.cval kr φ) := by
+      conv_lhs => rw [hsplit]
+      rfl
+    rw [e1, heq, hYe]
+
+/-- **A constructor without level parameters, used at none, denotes its image at any assignment**
+(`Laws.cval_params`; no canonicity): so the major's set, built at the constructor value's own
+assignment, is the image ι names. -/
+theorem ctorImage_noLevels (M : Model V env) (hL : Laws M) {c : KKey} {cvC : ConstantVal .anon}
+    {nP nF : Nat} (hcC : env.find? c = some (.ctorInfo cvC nP nF)) (hlp : cvC.levelParams = [])
+    (φ ψ : LevelParam → Nat) (ρ : BVarIdx → V) :
+    Denotes M.cval env φ ρ (.const c []) (M.cval c ψ) := by
+  have h1 : Denotes M.cval env φ ρ (.const c [])
+      (M.cval c (Level.substFn φ cvC.levelParams [])) :=
+    Denotes.const (ci := .ctorInfo cvC nP nF) hcC (by simp [ConstantInfo.toConstantVal, hlp])
+  rwa [hL.cval_params c _ hcC (Level.substFn φ cvC.levelParams []) ψ
+    (fun q hq => by simp [ConstantInfo.toConstantVal, hlp] at hq)] at h1
+
+/-- **A field-less constructor without parameters, built at any assignment, is its image at the
+levels a member's family names, by canonicity** (`Laws.ctor_canon`, at a family never a
+proposition): what ι needs where the constructor has level parameters. -/
+theorem ctorImage_canon (M : Model V env) (hL : Laws M) {c D : KKey} {cvC : ConstantVal .anon}
+    (hcC : env.find? c = some (.ctorInfo cvC 0 0)) (hnd : cvC.levelParams.Nodup)
+    (hhead : cvC.type.getAppFn = .const D (cvC.levelParams.map .param)) (hN : NeverProp env D)
+    {ls : List Level} (hls : cvC.levelParams.length = ls.length)
+    {φ ψ : LevelParam → Nat} {ρ τ : BVarIdx → V} {dom : KExpr} {X : V}
+    (hdom : dom.getAppFn = .const D ls) (hX : Denotes M.cval env φ τ dom X)
+    (hm : M.cval c ψ ∈ˢ X) :
+    Denotes M.cval env φ ρ (.const c ls) (M.cval c ψ) := by
+  obtain ⟨ls'', hls''⟩ : ∃ ls'' : List Level,
+      ls'' = cvC.levelParams.map fun q => lvlOf (ψ q) := ⟨_, rfl⟩
+  have hψ : ∀ q ∈ cvC.levelParams, Level.substFn φ cvC.levelParams ls'' q = ψ q := by
+    intro q hq
+    obtain ⟨i, hi⟩ := List.mem_iff_getElem?.mp hq
+    rw [substFn_at φ cvC.levelParams ls'' i q (lvlOf (ψ q)) hnd hi
+      (by rw [hls'', List.getElem?_map, hi]; rfl), eval_lvlOf]
+  have hK' : Denotes M.cval env φ ρ (.const c ls'') (M.cval c ψ) := by
+    have h1 : Denotes M.cval env φ ρ (.const c ls'')
+        (M.cval c (Level.substFn φ cvC.levelParams ls'')) :=
+      Denotes.const (ci := .ctorInfo cvC 0 0) hcC (by rw [hls'', List.length_map]; rfl)
+    rwa [hL.cval_params _ _ hcC (Level.substFn φ cvC.levelParams ls'') ψ
+      fun q hq => hψ q hq] at h1
+  have hK : Denotes M.cval env φ ρ (.const c ls)
+      (M.cval c (Level.substFn φ cvC.levelParams ls)) :=
+    Denotes.const (ci := .ctorInfo cvC 0 0) hcC (by rw [← hls]; rfl)
+  have hR'head : (cvC.type.instantiateLevelParams cvC.levelParams ls'').getAppFn =
+      .const D ls'' := by
+    rw [getAppFn_inst, hhead]
+    simp only [Expr.instantiateLevelParams]
+    rw [subst_params hnd (by rw [hls'', List.length_map])]
+  -- canonicity at `D`, which is never a proposition: in a proof-irrelevant set model its
+  -- constructors are read in the graph regime, and an image lying in the family at other levels
+  -- is the image there
+  obtain ⟨cvD, capsD, sD, hfD, hsD, hnvD⟩ := hN
+  obtain ⟨heqK, -⟩ := hL.ctor_canon c cvC 0 0 hcC D cvD capsD sD ls ls'' φ ρ τ ρ dom
+    (cvC.type.instantiateLevelParams cvC.levelParams ls'') [] [] [] _ _ X hfD hsD
+    (eval_ne_zero_of_never hnvD _) (eval_ne_zero_of_never hnvD _) rfl rfl rfl hK hK' .nil
+    hR'head hdom hX (by simp; exact .nil) (by simpa using hm)
+  simp only [List.append_nil, List.foldl_nil] at heqK
+  rw [heqK]
+  exact hK
 
 section Rel
 

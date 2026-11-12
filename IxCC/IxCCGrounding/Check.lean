@@ -396,15 +396,37 @@ def recProgB (r : CId) : Bool :=
     else true)
   | _ => false
 
+/-- `RecCtorsRaw`, decided (terms compared structurally). -/
+def recCtorsRawB (r : CId) : Bool :=
+  match p.decl? r, env.find? (κ r) with
+  | some (.recr _ _ _ np _ _ _ ind _ _), some (.recInfo cvr mI _ krules) =>
+    match piBody mI cvr.type with
+    | .forallE dom _ _ =>
+      match dom.getAppFn with
+      | .const _ ls =>
+        decide (dom = Expr.mkAppN (.const (κ ind) ls) (bvarsFrom (mI - np) np)) &&
+        krules.all fun krl =>
+          match env.find? krl.ctor with
+          | some (.ctorInfo cvC np' nF) =>
+            np' == np && cvC.levelParams.length == ls.length &&
+              decide ((piBody (np + nF) cvC.type).getAppFn =
+                .const (κ ind) (cvC.levelParams.map .param)) &&
+              decide ((piBody (np + nF) cvC.type).getAppArgs.length ≤ np)
+          | _ => false
+      | _ => false
+    | _ => false
+  | _, _ => false
+
 /-- A recursor has the checked shape (`RecStored`); where it is `Eq.rec` the `Eq.refl` and
-`Eq.rec` bases hold; where it is `flat`, its rules' telescopes (`RecTele`) and the program side
-(`RecProg`). -/
+`Eq.rec` bases hold; where it is `flat`, its rules' telescopes (`RecTele`), the program side
+(`RecProg`) and its rules' constructors (`RecCtorsRaw`). -/
 def recShapeB (c : CId) : Bool :=
   match p.decl? c with
   | some (.recr ..) =>
     recStoredB p env κ lpsOf c &&
       (recClassB p env κ c != some .eqRec || (eqReflBasisB env && eqRecBasisB env)) &&
-      (recClassB p env κ c != some .flat || (recTeleB env (κ c) && recProgB p κ Sl c))
+      (recClassB p env κ c != some .flat ||
+        (recTeleB env (κ c) && recProgB p κ Sl c && recCtorsRawB p env κ c))
   | _ => true
 
 def primB (c : CId) : Bool :=
@@ -780,14 +802,40 @@ theorem recProg_of_check {r : CId} (h : recProgB p κ Sl r = true) : RecProg p �
       exact hN
   · cases h
 
+theorem recCtorsRaw_of_check {r : CId} (h : recCtorsRawB p env κ r = true) :
+    RecCtorsRaw p env κ r := by
+  unfold recCtorsRawB at h
+  split at h
+  · rename_i sf kk lvls np nmot nmin ni ind rules ty cvr mI rP krules hd hf
+    split at h
+    · rename_i dom body m hpb
+      split at h
+      · rename_i D ls hD
+        simp only [Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true] at h
+        obtain ⟨hdom, hall⟩ := h
+        refine ⟨sf, kk, lvls, np, nmot, nmin, ni, ind, rules, ty, cvr, mI, rP, krules, dom, body, m,
+          ls, hd, hf, hpb, hdom, fun krl hkrl => ?_⟩
+        have h1 := hall krl hkrl
+        split at h1
+        · rename_i cvC np' nF hc
+          simp only [Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at h1
+          obtain ⟨⟨⟨rfl, hl⟩, hhead⟩, hargs⟩ := h1
+          exact ⟨cvC, nF, hc, hl, hhead, hargs⟩
+        · cases h1
+      · cases h
+    · cases h
+  · cases h
+
 /-- The `recShape` conjunct gives the checked shape, the `Eq.refl` and `Eq.rec` bases at
-`Eq.rec`, and the rules' telescopes and the program side at a flat recursor. -/
+`Eq.rec`, and at a flat recursor its rules' telescopes, the program side and its rules'
+constructors. -/
 theorem recShape_of {c : CId} (h : recShapeB p env κ lpsOf Sl c = true) :
     ∀ sf kk lvls np nmot nmin ni ind rules ty,
       p.decl? c = some (.recr sf kk lvls np nmot nmin ni ind rules ty) →
       RecStored p env κ lpsOf c ∧
         (recClassB p env κ c = some .eqRec → EqReflBasis env ∧ EqRecBasis env) ∧
-        (recClassB p env κ c = some .flat → RecTele env (κ c) ∧ RecProg p κ (· ∈ Sl) c) := by
+        (recClassB p env κ c = some .flat →
+          RecTele env (κ c) ∧ RecProg p κ (· ∈ Sl) c ∧ RecCtorsRaw p env κ c) := by
   intro sf kk lvls np nmot nmin ni ind rules ty hd
   unfold recShapeB at h
   rw [hd] at h
@@ -797,9 +845,9 @@ theorem recShape_of {c : CId} (h : recShapeB p env κ lpsOf Sl c = true) :
   · rcases h2 with h2 | ⟨h2, h3⟩
     · exact absurd hk h2
     · exact ⟨eqReflBasis_of_check h2, eqRecBasis_of_check h3⟩
-  · rcases h4 with h4 | ⟨h4, h5⟩
+  · rcases h4 with h4 | ⟨⟨h4, h5⟩, h6⟩
     · exact absurd hk h4
-    · exact ⟨recTele_of_check h4, recProg_of_check h5⟩
+    · exact ⟨recTele_of_check h4, recProg_of_check h5, recCtorsRaw_of_check h6⟩
 
 theorem prim_of {c : CId} (h : primB p env κ c = true) :
     ∀ op, p.table.resolveOf c = some (.prim op) → κ c = primKey op ∧

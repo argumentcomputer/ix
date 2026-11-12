@@ -726,6 +726,30 @@ def RecProg (p : Program) (κ : CId → KKey) (S : CId → Prop) (r : CId) : Pro
       rules.map (fun rl => (κ rl.ctor, rl.fields)) =
         [((natZeroName : KKey), 0), ((natSuccName : KKey), 1)])
 
+/-- **The rules' constructors, as ι and canonicity read them** (G3, part D): the recursor's major
+premise's domain (its stored type's binder after the `mI` of the prefix) is the declared
+inductive at some levels `ls` applied to the recursor's parameters; every stored rule's
+constructor is stored with the recursor's parameter count and as many level parameters as `ls`,
+and its stored type, after its parameters and fields, ends in the inductive at the constructor's
+own level parameters with at most its parameters as arguments (no index). What the proof reads:
+ι names the constructor at the major domain's levels `ls` and asks its codomain to carry no index;
+the relation gives the major's set as the constructor's image at the assignment it was built at,
+which is the image at `ls` without a law where the constructor has no level parameters
+(`Laws.cval_params`) and by canonicity (`Laws.ctor_canon`, at the inductive, never a proposition
+by the class) where it has some, canonicity reading the codomain's head. As the `case` shape's
+`CaseWF.ctorRaw`; compared structurally. -/
+def RecCtorsRaw (p : Program) (env : KEnv) (κ : CId → KKey) (r : CId) : Prop :=
+  ∃ (sf kk : Bool) (lvls np nmot nmin ni : Nat) (ind : CId) (rules : List IxCC.Src.Rule)
+    (ty : Term) (cvr : ConstantVal .anon) (mI rP : Nat) (krules : List (RecRule .anon))
+    (dom body : KExpr) (m : BinderMeta) (ls : List Level),
+    p.decl? r = some (.recr sf kk lvls np nmot nmin ni ind rules ty) ∧
+    env.find? (κ r) = some (.recInfo cvr mI rP krules) ∧ piBody mI cvr.type = .forallE dom body m ∧
+    dom = Expr.mkAppN (.const (κ ind) ls) (bvarsFrom (mI - np) np) ∧
+    ∀ krl ∈ krules, ∃ (cvC : ConstantVal .anon) (nF : Nat),
+      env.find? krl.ctor = some (.ctorInfo cvC np nF) ∧ cvC.levelParams.length = ls.length ∧
+      (piBody (np + nF) cvC.type).getAppFn = .const (κ ind) (cvC.levelParams.map .param) ∧
+      (piBody (np + nF) cvC.type).getAppArgs.length ≤ np
+
 /-- **The recursor clause as first landed**: no constant of `S` is a recursor. -/
 def NoRecr (p : Program) (S : CId → Prop) : Prop :=
   ∀ c, S c → ∀ sf kk lvls np nmot nmin ni ind rules ty,
@@ -744,8 +768,10 @@ structure RecFacts (p : Program) (env : KEnv) (κ : CId → KKey) (lpsOf : CId �
   eqRefl : ∀ r, S r → recClassB p env κ r = some .eqRec → EqReflBasis env
   /-- where it is `Eq.rec`, `Eq` and `Eq.rec` are stored as F3 there reads them (G3, part C) -/
   eqRec : ∀ r, S r → recClassB p env κ r = some .eqRec → EqBasis env ∧ EqRecBasis env
-  /-- where it is flat, its rules' telescopes and the program side (G3, part D) -/
-  flat : ∀ r, S r → recClassB p env κ r = some .flat → RecTele env (κ r) ∧ RecProg p κ S r
+  /-- where it is flat, its rules' telescopes, the program side and its rules' constructors as ι
+  reads them (G3, part D) -/
+  flat : ∀ r, S r → recClassB p env κ r = some .flat →
+    RecTele env (κ r) ∧ RecProg p κ S r ∧ RecCtorsRaw p env κ r
 
 /-- A recursor's class is read off its declaration. -/
 theorem recClassB_recr {p : Program} {env : KEnv} {κ : CId → KKey} {r : CId} {k : RecClass}
