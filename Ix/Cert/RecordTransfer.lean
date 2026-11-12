@@ -117,21 +117,21 @@ theorem convExpr_le {tbl tbl' : Array (ReadM (CExpr md))} (ht : TblLe tbl tbl') 
     obtain ⟨u, hu, hv⟩ := bind_ok hv
     rw [ihf w hw, iha u hu]
     exact hv
-  | lam c t b iht ihb =>
+  | lam t b iht ihb =>
     intro v hv
     simp only [convExpr] at hv ⊢
     obtain ⟨w, hw, hv⟩ := bind_ok hv
     obtain ⟨u, hu, hv⟩ := bind_ok hv
     rw [iht w hw, ihb u hu]
     exact hv
-  | all c r t b iht ihb =>
+  | all t b iht ihb =>
     intro v hv
     simp only [convExpr] at hv ⊢
     obtain ⟨w, hw, hv⟩ := bind_ok hv
     obtain ⟨u, hu, hv⟩ := bind_ok hv
     rw [iht w hw, ihb u hu]
     exact hv
-  | letE c t x b iht ihx ihb =>
+  | letE nd m t x b iht ihx ihb =>
     intro v hv
     simp only [convExpr] at hv ⊢
     obtain ⟨w, hw, hv⟩ := bind_ok hv
