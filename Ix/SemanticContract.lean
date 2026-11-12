@@ -101,17 +101,30 @@ def read (data : Array (Ix.Name × Ix.DataValue)) : Except String Contract := do
   let some codeValue := code | throw "missing semantic contract code"
   decode kindValue codeValue
 
+/-- Whether the frame sits directly on a binder of its kind. -/
+def Contract.attachedTo (contract : Contract) (source : Ix.Expr) : Bool :=
+  match contract.kind, source with
+  | .lam, .lam .. => true
+  | .all, .forallE .. => true
+  | .letE, .letE .. => true
+  | _, _ => false
+
+/-- Whether the compiler lowers the frame: an ordinary contract on a binder of
+its kind. -/
+def Contract.admits (contract : Contract) (source : Ix.Expr) : Bool :=
+  contract.isOrdinary && contract.attachedTo source
+
 /-- Lower a contract frame onto the binder it annotates. An Ixon record holds
 its binders' modes in its binder-data section, which the compiler writes
-with the default mode for every binder, so only the ordinary contract lowers;
-annotated source is refused until source modes reach the section. -/
+with the default mode for every binder, so only the ordinary contract lowers
+(to the compiled binder itself); annotated source is refused until source
+modes reach the section. -/
 def Contract.lower (contract : Contract) (source : Ix.Expr) (compiled : Ixon.Expr) :
-    Except String Ixon.Expr := do
-  match contract.kind, source, compiled with
-  | .lam, .lam .., .lam .. | .all, .forallE .., .all .. | .letE, .letE .., .letE .. =>
-    if contract.isOrdinary then return compiled
-    else throw "annotated source is refused: the compiler writes only default binder modes"
-  | _, _, _ => throw "semantic contract is not attached to its original binder"
+    Except String Ixon.Expr :=
+  if contract.admits source then .ok compiled
+  else if contract.attachedTo source then
+    .error "annotated source is refused: the compiler writes only default binder modes"
+  else .error "semantic contract is not attached to its original binder"
 
 /-- Inspect an entire source expression before rewrites can remove subterms. -/
 def inspect (top : Ix.Expr) : Except String Bool := do

@@ -60,22 +60,16 @@ theorem skipAllBinders_eq (recur : GetM Ixon.Expr) (n : Nat) :
   induction n with
   | zero => simp only [skipAllBinders, getExprAllBinders, map_pure, List.isEmpty_nil]
   | succ n ih =>
-    simp only [skipAllBinders, getExprAllBinders, map_bind]
-    congr 1
-    funext bits
-    cases unpackAllContract? bits with
-    | none => rfl
-    | some cr =>
-      obtain ⟨c, r⟩ := cr
-      simp only [ih, map_bind, bind_map_left, map_pure, List.isEmpty_cons]
+    simp only [skipAllBinders, getExprAllBinders, ih, map_bind, bind_map_left, map_pure,
+      List.isEmpty_cons]
 
-theorem head_foldr_lam (bs : List (BinderContract × Ixon.Expr)) (body : Ixon.Expr) :
-    head (bs.foldr (fun (uses, ty) result => .lam uses ty result) body) =
+theorem head_foldr_lam (bs : List Ixon.Expr) (body : Ixon.Expr) :
+    head (bs.foldr (fun ty result => .lam ty result) body) =
       if bs.isEmpty then head body else .lam := by
   cases bs <;> rfl
 
-theorem head_foldr_all (bs : List (BinderContract × ValueContract × Ixon.Expr)) (body : Ixon.Expr) :
-    head (bs.foldr (fun (uses, owned, ty) result => .all uses owned ty result) body) =
+theorem head_foldr_all (bs : List Ixon.Expr) (body : Ixon.Expr) :
+    head (bs.foldr (fun ty result => .all ty result) body) =
       if bs.isEmpty then head body else .all := by
   cases bs <;> rfl
 
@@ -118,14 +112,11 @@ theorem skipExprFromTag_eq (recur : GetM Ixon.Expr) (tag : TagN) :
       cases body <;> simp only [head_foldr_all, map_pure, map_throw, throw_bind] <;> simp only [head]
   next h =>
     simp only [h]
-    split
-    · rfl
-    · simp only [map_bind]
-      congr 1; funext binder
-      cases LetContract.ofFlags? _ binder with
-      | none => rfl
-      | some _ => simp only [map_bind, bind_map_left, bind_pure_comp, Functor.map_map,
-          head]
+    cases LetMode.ofHeader? tag.value with
+    | none => rfl
+    | some header =>
+      obtain ⟨nonDep, mode⟩ := header
+      simp only [map_bind, bind_map_left, bind_pure_comp, Functor.map_map, head]
   next h => simp only [h, map_pure, head]
   next =>
     split <;> first | rfl | (exfalso; simp_all)

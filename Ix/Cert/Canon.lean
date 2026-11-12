@@ -287,7 +287,7 @@ def leanExpr (σ : Lean.Name → LevelParam) : Lean.Expr → Except ExprError KE
   | .lam _ t b _ => return .lam (← leanExpr σ t) (← leanExpr σ b) { pw := .never }
   | .forallE _ t b _ => return .forallE (← leanExpr σ t) (← leanExpr σ b) { pw := .never }
   | .letE _ t v b nd =>
-    return .letE (← leanExpr σ t) (← leanExpr σ v) (← leanExpr σ b) { contract := .lean nd }
+    return .letE (← leanExpr σ t) (← leanExpr σ v) (← leanExpr σ b) { nonDep := nd }
   | .lit (.natVal n) => pure (.lit (.natVal n))
   | .lit (.strVal s) => pure (.lit (.strVal s))
   | .mdata d e => leanMData d e (leanExpr σ e)

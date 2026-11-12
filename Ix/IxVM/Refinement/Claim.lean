@@ -526,12 +526,11 @@ def ExprRefsClosed (ixe : Ixon.Env) (c : Ixon.Constant) (directProj : Bool) :
       ExprRefsClosed ixe c directProj body
   | _ => True
 
-/-- Every expression of `c` is in the Lean contract fragment (`leanFragment`),
-resolves its references by kind (`ExprRefsClosed`), and outside projection
-functions (`IsProjFnAt`) projects only from direct structures. -/
+/-- Every expression of `c` resolves its references by kind (`ExprRefsClosed`),
+and outside projection functions (`IsProjFnAt`) projects only from direct
+structures. -/
 def ConstantExprsClosed (ixe : Ixon.Env) (c : Ixon.Constant) : Prop :=
-  (∀ e ∈ c.info.exprs ++ c.sharing.toList,
-    e.leanFragment = true ∧ ExprRefsClosed ixe c false e) ∧
+  (∀ e ∈ c.info.exprs ++ c.sharing.toList, ExprRefsClosed ixe c false e) ∧
   ∀ e ∈ c.info.exprs,
     (¬ ∃ d n, c.info = .defn d ∧ e = d.value ∧ IsProjFnAt c n d.value) →
       ExprRefsClosed ixe c true (Ix.Kernel.Reader.unshare c e)

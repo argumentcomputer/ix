@@ -44,7 +44,7 @@ outer constructor, the children's readings on spines and telescopes, and
 the head key. -/
 def Outer (reader : ECx md) : Ixon.Expr → CExpr md → Prop
   | .var index, .bvar target => index.toNat = target
-  | .all _ _ type body, .forallE targetType targetBody _ =>
+  | .all type body, .forallE targetType targetBody _ =>
     convExpr reader #[] type = .ok targetType ∧ convExpr reader #[] body = .ok targetBody
   | .app function argument, .app targetFunction targetArgument =>
     convExpr reader #[] function = .ok targetFunction ∧ convExpr reader #[] argument = .ok targetArgument
@@ -261,9 +261,15 @@ theorem withContract_shape {c : Ix.SemanticContract.Contract} {source : Ix.Expr}
       (∃ name type value body nonDep hash, source = .letE name type value body nonDep hash) := by
   unfold withContract at lowered
   split at lowered
-  · exact .inl ⟨_, _, _, _, _, rfl⟩
-  · exact .inr (.inl ⟨_, _, _, _, _, rfl⟩)
-  · exact .inr (.inr ⟨_, _, _, _, _, _, rfl⟩)
+  · rename_i admits
+    simp only [Ix.SemanticContract.Contract.admits, Bool.and_eq_true] at admits
+    have attached := admits.2
+    unfold Ix.SemanticContract.Contract.attachedTo at attached
+    split at attached
+    · exact .inl ⟨_, _, _, _, _, rfl⟩
+    · exact .inr (.inl ⟨_, _, _, _, _, rfl⟩)
+    · exact .inr (.inr ⟨_, _, _, _, _, _, rfl⟩)
+    · cases attached
   · cases lowered
 
 theorem withContract_depth {c : Ix.SemanticContract.Contract} {source : Ix.Expr} {target result : CExpr md}
@@ -282,10 +288,7 @@ theorem withContract_piTypes {c : Ix.SemanticContract.Contract} {source : Ix.Exp
     (lowered : withContract c source target = some result) (count : Nat) :
     piTypes (count + 1) result = piTypes (count + 1) target := by
   unfold withContract at lowered
-  split at lowered <;> cases lowered
-  · rfl
-  · rw [piTypes_forall, piTypes_forall]
-  · rfl
+  split at lowered <;> cases lowered <;> rfl
 
 theorem related_appDepth {names : Ix.Name → CName md → Prop} {levels : Ix.Level → Ix.Kernel.Level → Prop}
     {source : Ix.Expr} {target : CExpr md} (related : Related names levels source target) :
@@ -530,13 +533,11 @@ def KernelNonForall : CExpr md → Prop
   | _ => True
 
 theorem withContract_nonForall {c : Ix.SemanticContract.Contract} {source : Ix.Expr} {target result : CExpr md}
-    (lowered : withContract c source target = some result) (last : SourceNonForall source) :
+    (lowered : withContract c source target = some result) (inner : KernelNonForall target) :
     KernelNonForall result := by
   unfold withContract at lowered
   split at lowered <;> cases lowered
-  · trivial
-  · exact False.elim last
-  · trivial
+  exact inner
 
 theorem related_kernelNonForall {names : Ix.Name → CName md → Prop}
     {levels : Ix.Level → Ix.Kernel.Level → Prop} {source : Ix.Expr} {target : CExpr md}
@@ -544,7 +545,7 @@ theorem related_kernelNonForall {names : Ix.Name → CName md → Prop}
   induction related with
   | all => exact False.elim last
   | mdata _ _ _ _ ih => exact ih last
-  | contract _ _ _ _ _ _ lowered _ => exact withContract_nonForall lowered last
+  | contract _ _ _ _ _ _ lowered ih => exact withContract_nonForall lowered (ih last)
   | bvar => rw [Ix.Kernel.Expr.mkBvar_eq]; trivial
   | _ => trivial
 

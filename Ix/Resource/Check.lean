@@ -100,14 +100,14 @@ def shift (program : Program) : Nat → Ixon.Expr → Nat → Nat → CheckM Ixo
       else return .var (← checkedIndex (idx.toNat + amount))
     | .app fn arg =>
       return .app (← shift program fuel fn amount cutoff) (← shift program fuel arg amount cutoff)
-    | .lam c ty body =>
-      return .lam c (← shift program fuel ty amount cutoff)
+    | .lam ty body =>
+      return .lam (← shift program fuel ty amount cutoff)
         (← shift program fuel body amount (cutoff + 1))
-    | .all c r ty body =>
-      return .all c r (← shift program fuel ty amount cutoff)
+    | .all ty body =>
+      return .all (← shift program fuel ty amount cutoff)
         (← shift program fuel body amount (cutoff + 1))
-    | .letE c ty val body =>
-      return .letE c (← shift program fuel ty amount cutoff)
+    | .letE nd m ty val body =>
+      return .letE nd m (← shift program fuel ty amount cutoff)
         (← shift program fuel val amount cutoff)
         (← shift program fuel body amount (cutoff + 1))
     | .prj t i val => return .prj t i (← shift program fuel val amount cutoff)
@@ -127,14 +127,14 @@ def substitute (program : Program) : Nat → Ixon.Expr → Ixon.Expr → Nat →
     | .app fn arg =>
       return .app (← substitute program fuel fn value depth)
         (← substitute program fuel arg value depth)
-    | .lam c ty body =>
-      return .lam c (← substitute program fuel ty value depth)
+    | .lam ty body =>
+      return .lam (← substitute program fuel ty value depth)
         (← substitute program fuel body value (depth + 1))
-    | .all c r ty body =>
-      return .all c r (← substitute program fuel ty value depth)
+    | .all ty body =>
+      return .all (← substitute program fuel ty value depth)
         (← substitute program fuel body value (depth + 1))
-    | .letE c ty val body =>
-      return .letE c (← substitute program fuel ty value depth)
+    | .letE nd m ty val body =>
+      return .letE nd m (← substitute program fuel ty value depth)
         (← substitute program fuel val value depth)
         (← substitute program fuel body value (depth + 1))
     | .prj t i val => return .prj t i (← substitute program fuel val value depth)
@@ -150,12 +150,12 @@ def whnf (program : Program) : Nat → Ixon.Expr → CheckM Ixon.Expr
     tick
     match e with
     | .share idx => whnf program fuel (← expansion program idx)
-    | .letE _ _ value body =>
+    | .letE _ _ _ value body =>
       whnf program fuel (← substitute program fuel body value 0)
     | .app fn arg =>
       let fn ← whnf program fuel fn
       match fn with
-      | .lam _ _ body => whnf program fuel (← substitute program fuel body arg 0)
+      | .lam _ body => whnf program fuel (← substitute program fuel body arg 0)
       | _ => return .app fn arg
     | .ref idx _ =>
       let d ← declaration program idx
@@ -174,12 +174,10 @@ def compatible (program : Program) : Nat → Ixon.Expr → Ixon.Expr → CheckM 
     let left ← whnf program fuel left
     let right ← whnf program fuel right
     match left, right with
-    | .all c r a b, .all c' r' a' b' =>
-      if c != c' || r != r' then return false
+    | .all a b, .all a' b' =>
       if !(← compatible program fuel a a') then return false
       compatible program fuel b b'
-    | .lam c a b, .lam c' a' b' =>
-      if c != c' then return false
+    | .lam a b, .lam a' b' =>
       if !(← compatible program fuel a a') then return false
       compatible program fuel b b'
     | .app f a, .app f' a' =>
@@ -198,7 +196,7 @@ def requireType (program : Program) (fuel : Nat) (actual expected : Ixon.Expr) :
 def arrow (program : Program) (fuel : Nat) (type : Ixon.Expr) :
     CheckM (BinderContract × ValueContract × Ixon.Expr × Ixon.Expr) := do
   match ← whnf program fuel type with
-  | .all input result domain codomain => return (input, result, domain, codomain)
+  | .all domain codomain => return (.many, .shared, domain, codomain)
   | _ => throw (.unsupported "a callable interface must expose its arrow contracts")
 
 def isShareable (program : Program) (fuel : Nat) (type : Ixon.Expr) : CheckM Bool := do
@@ -276,13 +274,14 @@ def typeOf : Nat → Context → Ixon.Expr → CheckM Ixon.Expr
     | .app fn arg =>
       let (_, _, _, codomain) ← arrow ctx.program fuel (← typeOf fuel ctx fn)
       substitute ctx.program fuel codomain arg 0
-    | .lam input domain body =>
+    | .lam domain body =>
       let before ← get
-      let id ← pushBinding input { type := domain }
+      let id ← pushBinding .many { type := domain }
       let codomain ← typeOf fuel { ctx with vars := ctx.vars.push id } body
       modify fun s => { s with bindings := before.bindings }
-      return .all input .shared domain codomain
-    | .letE contract type initializer body =>
+      return .all domain codomain
+    | .letE nonDep _ type initializer body =>
+      let contract : LetContract := { nonDep }
       let before ← get
       let id ← pushBinding contract.binder { type }
       let type ← typeOf fuel { ctx with vars := ctx.vars.push id } body
@@ -363,7 +362,8 @@ def analyze : Nat → Context → Ixon.Expr → Option (Ixon.Expr × ValueContra
       | .sort _ | .all .. => pure { type := .sort 0, owned := .unique }
       | .nat _ => pure { type := ← literalType ctx.program.natType, owned := .unique }
       | .str _ => pure { type := ← literalType ctx.program.stringType, owned := .unique }
-      | .lam input domain body => do
+      | .lam domain body => do
+        let input : BinderContract := .many
         let (result, codomain) ← match expected with
           | some (type, _) => do
             let (declared, result, ty, codomain) ← arrow ctx.program fuel type
@@ -417,11 +417,12 @@ def analyze : Nat → Context → Ixon.Expr → Option (Ixon.Expr × ValueContra
         set { after with bindings }
         let codomain := codomain.getD output.type
         pure {
-          type := .all input result domain codomain
+          type := .all domain codomain
           owned := .unique
           origins
           duplicable }
-      | .letE contract type initializer body => do
+      | .letE nonDep _ type initializer body => do
+        let contract : LetContract := { nonDep }
         let scope ← newScope ctx.scope
         let inner := { ctx with scope }
         let initialized ← match contract.kind with

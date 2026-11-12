@@ -60,14 +60,11 @@ def scanExpr (program : Program) (fuel : Nat) (top : Ixon.Expr) : CheckM Scan :=
       scan := { scan with dependencies := scan.dependencies.push index.toNat }
       stack := stack.push (value, false)
     | .app fn arg => stack := stack.push (arg, false) |>.push (fn, false)
-    | .lam input type body =>
-      scan := { scan with annotated := scan.annotated || input != .many }
+    | .lam type body =>
       stack := stack.push (body, false) |>.push (type, false)
-    | .all input result type body =>
-      scan := { scan with annotated := scan.annotated || input != .many || result != .shared }
+    | .all type body =>
       stack := stack.push (body, false) |>.push (type, false)
-    | .letE contract type value body =>
-      scan := { scan with annotated := scan.annotated || contract.binder != .many || contract.kind != .value }
+    | .letE _ _ type value body =>
       stack := stack.push (body, false) |>.push (value, false) |>.push (type, false)
     | _ => pure ()
   return scan
@@ -138,7 +135,9 @@ def checkConstructorType (program : Program) :
     tick
     let type ← whnf program fuel type
     match type with
-    | .all input result domain codomain =>
+    | .all domain codomain =>
+      let input : BinderContract := .many
+      let result : ValueContract := .shared
       let domain ← whnf program fuel domain
       let erased := input.uses == .erased || (match domain with | .sort _ => true | _ => false)
       if !input.uses.covers (if erased then .erased else .linear) then

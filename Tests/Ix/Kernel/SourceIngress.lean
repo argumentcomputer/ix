@@ -223,7 +223,7 @@ def contractFrames : TestSeq :=
     (binderOf (conv (framed allC pi)) ==
       some { pw := .never, contract := .erased, result := .localUnique }) ++
   test "a plain let carries Lean's let contract"
-    (letOf (conv letE) == some { contract := .lean false }) ++
+    (letOf (conv letE) == some { nonDep := false }) ++
   test "a let frame's contract is the let's"
     (letOf (conv (framed letC letE)) ==
       some { contract := { nonDep := false, kind := letC.letKind, binder := .affine } }) ++

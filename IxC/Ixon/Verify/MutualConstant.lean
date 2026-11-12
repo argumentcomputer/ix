@@ -127,7 +127,9 @@ theorem getFieldModes_reads {count : Nat} (modes : Ixon.FieldModes count)
     exact Nat.mod_le _ _
   unfold Ixon.getFieldModes
   apply Reads.checkCount count.toUInt64 1 hcount
-  rw [← ByteArray.append_empty (fieldModeListBytes modes.toArray.toList)]
+  have hsplit : fieldModeListBytes modes.toArray.toList =
+      fieldModeListBytes modes.toArray.toList ++ ByteArray.empty := ByteArray.append_empty.symm
+  rw [hsplit]
   refine Reads.bind hmany ?_
   simp only [Ixon.FieldModes.listed?_toArray modes listed]
   exact Reads.pure modes
@@ -158,18 +160,6 @@ theorem getConstructor_reads (constructor : Ixon.Constructor)
     rw [hflags]; exact hvalid
   have hunsafe' : (Ixon.packConstructorFlags ⟨u, l, ci, p, f, fm, t⟩ &&& 1 == 1) = u := by
     rw [hflags]; exact hunsafe
-  -- the field modes, read when the flag says they are listed
-  have hmodes : Reads
-      (if (Ixon.packConstructorFlags ⟨u, l, ci, p, f, fm, t⟩ &&& 2 == 2) = true then
-        Ixon.getFieldModes f.toNat else pure .inherited)
-      (fieldModeListBytes fm.toArray.toList) fm := by
-    rw [hflags, hlisted]
-    cases hinh : fm.isInherited with
-    | true =>
-      cases fm with
-      | inherited => simpa [Ixon.FieldModes.toArray, fieldModeListBytes] using Reads.pure _
-      | listed vector someShared => cases hinh
-    | false => simpa using getFieldModes_reads fm hinh
   have htyp := Ixon.Verify.Codec.Expr.getExpr_reads_spine t h
   have hbytes : constructorBytes ⟨u, l, ci, p, f, fm, t⟩ =
       [Ixon.packConstructorFlags ⟨u, l, ci, p, f, fm, t⟩].toByteArray ++
@@ -185,9 +175,27 @@ theorem getConstructor_reads (constructor : Ixon.Constructor)
   refine Reads.bind (getTag0_reads ci) ?_
   refine Reads.bind (getTag0_reads p) ?_
   refine Reads.bind (getTag0_reads f) ?_
-  refine Reads.bind hmodes ?_
-  refine Reads.bind htyp ?_
-  exact Reads.pure _
+  -- the field modes, read when the flag says they are listed
+  split
+  · rename_i hc
+    rw [hflags, hlisted] at hc
+    have hinh : fm.isInherited = false := by simpa using hc
+    refine Reads.bind (getFieldModes_reads fm hinh) ?_
+    refine Reads.bind htyp ?_
+    exact Reads.pure _
+  · rename_i hc
+    rw [hflags, hlisted] at hc
+    have hinh : fm.isInherited = true := by simpa using hc
+    cases fm with
+    | listed vector someShared => cases hinh
+    | inherited =>
+      have hpure : Reads (pure Ixon.FieldModes.inherited : Ixon.GetM (Ixon.FieldModes f.toNat))
+          (fieldModeListBytes (Ixon.FieldModes.inherited (n := f.toNat)).toArray.toList)
+          .inherited := by
+        simpa [Ixon.FieldModes.toArray, fieldModeListBytes] using Reads.pure _
+      refine Reads.bind hpure ?_
+      refine Reads.bind htyp ?_
+      exact Reads.pure _
 
 theorem putConstructorArray_writes (constructors : Array Ixon.Constructor)
     (h : ∀ constructor, constructor ∈ constructors.toList →
