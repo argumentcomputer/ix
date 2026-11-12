@@ -25,7 +25,7 @@ def load_verified_constant := aiur_fn⟦
 def definition_hint := aiur_fn⟦
   fn definition_hint(addr: Bytes::AddressRef, d: Ixon::Definition) -> Field {
       match d {
-        Ixon::Definition::Mk(kind, _, _, _, _) => {
+        Ixon::Definition::Mk(kind, _, _, _, _, _) => {
           match kind {
             Ixon::DefKind::Definition => {  load_constant_hint(addr) } ,
             _ => {  0 } ,
@@ -75,7 +75,7 @@ def defn_member_recur_addrs := aiur_fn⟦
   fn defn_member_recur_addrs(d: Ixon::Definition, members: Lists::List<Ixon::MutConst>,
                                     block_addr: Bytes::AddressRef) -> Lists::List<Bytes::AddressRef> {
       match d {
-        Ixon::Definition::Mk(kind, safety, _, _, _) => {
+        Ixon::Definition::Mk(kind, safety, _, _, _, _) => {
           match defn_is_unsafe_ci(kind, safety) {
             0 => {  (&(Lists::Node::Nil)) } ,
             _ => {  build_recur_addrs(members, block_addr) } ,
@@ -94,7 +94,7 @@ def get_ci := aiur_fn⟦
               let hint = definition_hint(addr, defn);
 
               let self_recur = match defn {
-                Ixon::Definition::Mk(kind, safety, _, _, _) => {
+                Ixon::Definition::Mk(kind, safety, _, _, _, _) => {
                   match defn_is_unsafe_ci(kind, safety) {
                     0 => {  (&(Lists::Node::Nil)) } ,
                     _ => {  (&(Lists::Node::Cons(addr, (&(Lists::Node::Nil))))) } ,

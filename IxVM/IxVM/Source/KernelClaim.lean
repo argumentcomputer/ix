@@ -71,8 +71,8 @@ def const_idxs_expr := aiur_fn⟦
         Ixon::Expr::Prj(i, _, inner) => {
           (&(Lists::Node::Cons(UInt64::to_field(i), const_idxs_expr(inner)))) } ,
         Ixon::Expr::App(f, a) => {  Lists::concat(const_idxs_expr(f), const_idxs_expr(a)) } ,
-        Ixon::Expr::Lam(_, t, b) => {  Lists::concat(const_idxs_expr(t), const_idxs_expr(b)) } ,
-        Ixon::Expr::All(_, _, t, b) => {  Lists::concat(const_idxs_expr(t), const_idxs_expr(b)) } ,
+        Ixon::Expr::Lam(t, b) => {  Lists::concat(const_idxs_expr(t), const_idxs_expr(b)) } ,
+        Ixon::Expr::All(t, b) => {  Lists::concat(const_idxs_expr(t), const_idxs_expr(b)) } ,
         Ixon::Expr::Let(_, t, v, b) => {
           Lists::concat(const_idxs_expr(t),
             Lists::concat(const_idxs_expr(v), const_idxs_expr(b))) } ,
@@ -111,7 +111,7 @@ def const_idxs_ctors := aiur_fn⟦
         Lists::Node::Nil => {  (&(Lists::Node::Nil)) } ,
         Lists::Node::Cons(c, rest) => {
           match c {
-            Ixon::Constructor::Mk(_, _, _, _, _, typ) => {
+            Ixon::Constructor::Mk(_, _, _, _, _, _, typ) => {
               Lists::concat(const_idxs_expr(typ), const_idxs_ctors(rest)) } ,
           } } ,
       }
@@ -126,7 +126,7 @@ def const_idxs_muts := aiur_fn⟦
           match m {
             Ixon::MutConst::Defn(d) => {
               match d {
-                Ixon::Definition::Mk(_, _, _, typ, value) => {
+                Ixon::Definition::Mk(_, _, _, _, typ, value) => {
                   Lists::concat(
                     Lists::concat(const_idxs_expr(typ), const_idxs_expr(value)),
                     const_idxs_muts(rest)) } ,
@@ -158,7 +158,7 @@ def const_idxs_of := aiur_fn⟦
           match info {
             Ixon::ConstantInfo::Defn(d) => {
               match d {
-                Ixon::Definition::Mk(_, _, _, typ, value) => {
+                Ixon::Definition::Mk(_, _, _, _, typ, value) => {
                   Lists::concat(shared,
                     Lists::concat(const_idxs_expr(typ), const_idxs_expr(value))) } ,
               } } ,
@@ -462,7 +462,7 @@ def ctors_unsafe := aiur_fn⟦
         Lists::Node::Nil => {  0 } ,
         Lists::Node::Cons(c, rest) => {
           match c {
-            Ixon::Constructor::Mk(is_unsafe, _, _, _, _, _) => {
+            Ixon::Constructor::Mk(is_unsafe, _, _, _, _, _, _) => {
               match is_unsafe {
                 0 => {  ctors_unsafe(rest) } ,
                 _ => {  1 } ,
@@ -480,7 +480,7 @@ def muts_unsafe := aiur_fn⟦
           let u = match m {
             Ixon::MutConst::Defn(d) => {
               match d {
-                Ixon::Definition::Mk(kind, safety, _, _, _) => {
+                Ixon::Definition::Mk(kind, safety, _, _, _, _) => {
                   Ingress::defn_is_unsafe_ci(kind, safety) } ,
               } } ,
             Ixon::MutConst::Indc(ind) => {
@@ -512,7 +512,7 @@ def record_unsafe := aiur_fn⟦
           match info {
             Ixon::ConstantInfo::Defn(d) => {
               match d {
-                Ixon::Definition::Mk(kind, safety, _, _, _) => {
+                Ixon::Definition::Mk(kind, safety, _, _, _, _) => {
                   Ingress::defn_is_unsafe_ci(kind, safety) } ,
               } } ,
             Ixon::ConstantInfo::Recr(r) => {
@@ -1227,7 +1227,7 @@ def check_ctor_entry := aiur_fn⟦
         RevealConstructorInfo::Mk(opt_unsafe, opt_lvls, opt_cidx,
                                   opt_params, opt_fields, opt_typ) => {
           match real_ctor {
-            Ixon::Constructor::Mk(r_unsafe, r_lvls, r_cidx, r_params, r_fields, r_typ) => {
+            Ixon::Constructor::Mk(r_unsafe, r_lvls, r_cidx, r_params, r_fields, _, r_typ) => {
               check_opt_bool(r_unsafe, opt_unsafe);
               check_opt_u64(r_lvls, opt_lvls);
               check_opt_u64(r_cidx, opt_cidx);
@@ -1272,7 +1272,7 @@ def check_mut_const := aiur_fn⟦
             RevealMutConstInfo::Defn(opt_kind, opt_safety, opt_lvls,
                                      opt_typ, opt_value) => {
               match d {
-                Ixon::Definition::Mk(r_kind, r_safety, r_lvls, r_typ, r_value) => {
+                Ixon::Definition::Mk(r_kind, r_safety, _, r_lvls, r_typ, r_value) => {
                   check_opt_def_kind(r_kind, opt_kind);
                   check_opt_def_safety(r_safety, opt_safety);
                   check_opt_u64(r_lvls, opt_lvls);
@@ -1346,7 +1346,7 @@ def run_reveal := aiur_fn⟦
                 RevealConstantInfo::Defn(opt_kind, opt_safety, opt_lvls,
                                          opt_typ, opt_value) => {
                   match d {
-                    Ixon::Definition::Mk(r_kind, r_safety, r_lvls, r_typ, r_value) => {
+                    Ixon::Definition::Mk(r_kind, r_safety, _, r_lvls, r_typ, r_value) => {
                       check_opt_def_kind(r_kind, opt_kind);
                       check_opt_def_safety(r_safety, opt_safety);
                       check_opt_u64(r_lvls, opt_lvls);

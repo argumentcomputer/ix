@@ -187,10 +187,10 @@ def convert_expr := aiur_fn⟦
             _ => {  (kf, 1) } ,
           } } ,
 
-        Ixon::Expr::Lam(_, _, _) => {
+        Ixon::Expr::Lam(_, _) => {
           ((&(KernelTypes::KExprNode::BVar(0))), 1) } ,
 
-        Ixon::Expr::All(_, _, _, _) => {
+        Ixon::Expr::All(_, _) => {
           ((&(KernelTypes::KExprNode::BVar(0))), 1) } ,
 
         Ixon::Expr::Let(_, ty, val, body) => {
@@ -314,11 +314,11 @@ def binder_nodes := aiur_fn⟦
 def binder_level := aiur_fn⟦
   fn binder_level(node: Ixon::BinderNode) -> KernelTypes::KLevel {
       match node {
-        Ixon::BinderNode::Never => {
+        Ixon::BinderNode::Never(_) => {
           (&(KernelTypes::KLevelNode::Succ((&(KernelTypes::KLevelNode::Zero))))) } ,
-        Ixon::BinderNode::Zero => {  (&(KernelTypes::KLevelNode::Zero)) } ,
-        Ixon::BinderNode::IfAllZero(params) => {  params_level(params) } ,
-        Ixon::BinderNode::Undecided => {
+        Ixon::BinderNode::Zero(_) => {  (&(KernelTypes::KLevelNode::Zero)) } ,
+        Ixon::BinderNode::IfAllZero(params, _) => {  params_level(params) } ,
+        Ixon::BinderNode::Undecided(_) => {
           assert_eq!(0, 1, "binder data: an undecided binder");
           (&(KernelTypes::KLevelNode::Zero)) } ,
         Ixon::BinderNode::Share(_) => {
@@ -368,7 +368,7 @@ def convert_annotated := aiur_fn⟦
           };
           ((&(KernelTypes::KExprNode::App(kf2, ka2))), n2) } ,
 
-        Ixon::Expr::Lam(_, ty, body) => {
+        Ixon::Expr::Lam(ty, body) => {
           let Lists::Node::Cons(node, n0) = (*(nodes));
           let l = binder_level(node);
           let (kt, bt) = convert_expr(ty, sharing, bound, refs, recur_addrs, univs);
@@ -383,7 +383,7 @@ def convert_annotated := aiur_fn⟦
           };
           ((&(KernelTypes::KExprNode::Lam(kt2, kb2, l))), n2) } ,
 
-        Ixon::Expr::All(_, _, ty, body) => {
+        Ixon::Expr::All(ty, body) => {
           let Lists::Node::Cons(node, n0) = (*(nodes));
           let l = binder_level(node);
           let (kt, bt) = convert_expr(ty, sharing, bound, refs, recur_addrs, univs);
@@ -514,7 +514,7 @@ def convert_definition := aiur_fn⟦
                               univs: Lists::List<&Ixon::Univ>, hint: Field,
                               tbl: Convert::BinderTree, base: Field) -> KernelTypes::KConstantInfo {
       match d {
-        Ixon::Definition::Mk(kind, safety, lvls, typ, value) => {
+        Ixon::Definition::Mk(kind, safety, _, lvls, typ, value) => {
           let ktyp = convert_root(typ, sharing, refs, recur_addrs, univs, tbl, base);
           let kval = convert_root(value, sharing, refs, recur_addrs, univs, tbl, base + 1);
           let nlvls = UInt64::to_field(lvls);
@@ -599,7 +599,7 @@ def convert_constructor := aiur_fn⟦
                                recur_addrs: Lists::List<Bytes::AddressRef>,
                                univs: Lists::List<&Ixon::Univ>, tbl: Convert::BinderTree, base: Field) -> KernelTypes::KConstantInfo {
       match c {
-        Ixon::Constructor::Mk(is_unsafe, lvls, cidx, params, fields, typ) => {
+        Ixon::Constructor::Mk(is_unsafe, lvls, cidx, params, fields, _, typ) => {
           let ktyp = convert_root(typ, sharing, refs, recur_addrs, univs, tbl, base);
           KernelTypes::KConstantInfo::Ctor(
             UInt64::to_field(lvls), ktyp,

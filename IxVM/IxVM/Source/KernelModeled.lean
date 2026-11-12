@@ -800,7 +800,7 @@ def check_advice_record := aiur_fn⟦
           match info {
             Ixon::ConstantInfo::Defn(d) => {
               match d {
-                Ixon::Definition::Mk(kind, safety, _, _, _) => {
+                Ixon::Definition::Mk(kind, safety, _, _, _, _) => {
                   let kind_ok = match kind {
                     Ixon::DefKind::Definition => {
                       match safety {
