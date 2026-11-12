@@ -15,6 +15,11 @@ namespace IxVM.Refinement.Core.Specs.Subst
 open Aiur Aiur.Generic Aiur.Generic.SourceSemantics IxVM.Refinement.Core IxVM.Refinement.RomBound
 open IxVM.Consistency (Bounded)
 
+/-- A term cell's type is its enum. -/
+theorem kexpr_cell_type (c : String) (args : List (SourceValue F)) :
+    (Value.construct kexprEnum c args : SourceValue F).type = .enum kexprEnum := by
+  simp [Value.type]
+
 /-- **A predicate on indices weakens below the nesting bound**: if every descent from `p` is
 shorter than `B - m`, `IdxAll` of `P` gives `IdxAll` of any `Q` that `P` implies below `B`. -/
 theorem IdxAll.weaken_bounded {h : Heap F} {P Q : Nat → F → Prop} {B : Nat}
@@ -23,30 +28,30 @@ theorem IdxAll.weaken_bounded {h : Heap F} {P Q : Nat → F → Prop} {B : Nat}
     (hd : ∀ n, HeapDescent h (.enum kexprEnum) p n → m + n < B) : IdxAll h Q m p := by
   induction hp with
   | bvar cell hP =>
-    exact .bvar cell (hPQ _ _ (by have := hd 0 (.here cell rfl); omega) hP)
+    exact .bvar cell (hPQ _ _ (by have := hd 0 (.here cell (kexpr_cell_type _ _)); omega) hP)
   | sort cell => exact .sort cell
   | const cell => exact .const cell
   | lit cell => exact .lit cell
   | app cell _ _ ihf iha =>
     refine .app cell (ihf fun n d => ?_) (iha fun n d => ?_)
-    · have := hd (n + 1) (.down cell rfl (by simp [cellArgs]) d); omega
-    · have := hd (n + 1) (.down cell rfl (by simp [cellArgs]) d); omega
+    · have := hd (n + 1) (.down cell (kexpr_cell_type _ _) (by simp [cellArgs]) d); omega
+    · have := hd (n + 1) (.down cell (kexpr_cell_type _ _) (by simp [cellArgs]) d); omega
   | lam cell _ _ iht ihb =>
     refine .lam cell (iht fun n d => ?_) (ihb fun n d => ?_)
-    · have := hd (n + 1) (.down cell rfl (by simp [cellArgs]) d); omega
-    · have := hd (n + 1) (.down cell rfl (by simp [cellArgs]) d); omega
+    · have := hd (n + 1) (.down cell (kexpr_cell_type _ _) (by simp [cellArgs]) d); omega
+    · have := hd (n + 1) (.down cell (kexpr_cell_type _ _) (by simp [cellArgs]) d); omega
   | forallE cell _ _ iht ihb =>
     refine .forallE cell (iht fun n d => ?_) (ihb fun n d => ?_)
-    · have := hd (n + 1) (.down cell rfl (by simp [cellArgs]) d); omega
-    · have := hd (n + 1) (.down cell rfl (by simp [cellArgs]) d); omega
+    · have := hd (n + 1) (.down cell (kexpr_cell_type _ _) (by simp [cellArgs]) d); omega
+    · have := hd (n + 1) (.down cell (kexpr_cell_type _ _) (by simp [cellArgs]) d); omega
   | letE cell _ _ _ iht ihv ihb =>
     refine .letE cell (iht fun n d => ?_) (ihv fun n d => ?_) (ihb fun n d => ?_)
-    · have := hd (n + 1) (.down cell rfl (by simp [cellArgs]) d); omega
-    · have := hd (n + 1) (.down cell rfl (by simp [cellArgs]) d); omega
-    · have := hd (n + 1) (.down cell rfl (by simp [cellArgs]) d); omega
+    · have := hd (n + 1) (.down cell (kexpr_cell_type _ _) (by simp [cellArgs]) d); omega
+    · have := hd (n + 1) (.down cell (kexpr_cell_type _ _) (by simp [cellArgs]) d); omega
+    · have := hd (n + 1) (.down cell (kexpr_cell_type _ _) (by simp [cellArgs]) d); omega
   | proj cell _ ihe =>
     exact .proj cell (ihe fun n d => by
-      have := hd (n + 1) (.down cell rfl (by simp [cellArgs]) d); omega)
+      have := hd (n + 1) (.down cell (kexpr_cell_type _ _) (by simp [cellArgs]) d); omega)
 
 /-- **`NoIdxF` is `NoIdx` below the nesting bound**: when every descent from the term is shorter
 than `B` and `hi + B` is at most the field's size. -/
