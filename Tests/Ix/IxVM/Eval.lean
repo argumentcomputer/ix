@@ -181,7 +181,8 @@ def tests (r : Tests.Ix.IxVM.Runner) : IO Unit := do
       (← witness env input c) (some "output must be a definition")
   for safety in [Ix.DefinitionSafety.unsaf, .part] do
     let c : Ixon.Constant := ⟨.defn ⟨.defn, safety, 0, idType, idValue⟩, #[], #[], #[.zero], #[]⟩
-    let (fixture, a) := storeConstant {} c
+    -- decided data on the subject (a prover's choice), so that the case reaches the safety check
+    let (fixture, a) := storeConstant {} (← IO.ofExcept (Tests.Ix.IxVM.withSafeTwinSection {} c))
     r.build <| execute s!"{repr safety} subject" (← witness fixture a idOutput)
       (some "unsafe or partial")
     r.build <| execute s!"{repr safety} output" (← witness env input c)
@@ -294,7 +295,9 @@ def tests (r : Tests.Ix.IxVM.Runner) : IO Unit := do
       ("output axiom", { idOutput with info := .axio ⟨false, 0, idType⟩ }),
       ("output projection", projection), ("output block", block)] do
     r.build <| execute name (rawWitness env input (Ixon.ser c)) (some "")
-  let outputBytes := Ixon.ser idOutput
+  -- the record with its section, as the compiler writes it, then one byte more: the case is
+  -- about the trailing byte, not the binder data
+  let outputBytes := Ixon.ser (← IO.ofExcept (_root_.IxVM.RecordSections.withSection env idOutput))
   r.build <| execute "trailing output bytes"
     (rawWitness env input (outputBytes.push 0)) (some "Ingress::load_verified_constant")
   for n in [:outputBytes.size] do

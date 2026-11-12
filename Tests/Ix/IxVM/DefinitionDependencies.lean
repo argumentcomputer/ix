@@ -21,9 +21,12 @@ private def definition (kind : Ix.DefKind) (ty value : Ixon.Expr) : Ixon.Definit
   ⟨kind, .safe, 0, ty, value⟩
 
 private def block (definitions : Array Ixon.Definition)
-    (sharing : Array Ixon.Expr := #[]) : Ixon.Env × Address := Id.run do
-  let (source, address) := storeAt {}
-    ⟨.muts (definitions.map .defn), sharing, #[], #[.zero], #[]⟩
+    (sharing : Array Ixon.Expr := #[]) (safeTwinSection : Bool := false) : Ixon.Env × Address := Id.run do
+  let c : Ixon.Constant := ⟨.muts (definitions.map .defn), sharing, #[], #[.zero], #[]⟩
+  -- an unsafe or partial member: the safe twin's data (a prover's choice), so that the case
+  -- reaches the check it is about, not the refusal of an undecided binder
+  let c := if safeTwinSection then ((Tests.Ix.IxVM.withSafeTwinSection {} c).toOption.getD c) else c
+  let (source, address) := storeAt {} c
   let mut source := source
   let mut first := address
   for i in [:definitions.size] do
@@ -92,7 +95,7 @@ private def ixvmSafetyCases : Array ExploitCase :=
     fun (label, kind, safety) =>
       asCase s!"mutual-self-{label}"
         "the wire safety byte must not bypass the safe declaration peer-slot restriction"
-        (block #[{ definition kind everyProp (.recur 0 #[]) with safety }])
+        (block #[{ definition kind everyProp (.recur 0 #[]) with safety }] (safeTwinSection := true))
 
 def run : IO UInt32 := do
   let control := asCase "control-closed-identity"

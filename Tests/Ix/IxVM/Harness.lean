@@ -211,6 +211,22 @@ def withRecordSections (env : Ixon.Env) (claim : Ix.Claim)
   let t (x : Address) : Address := treeMap.getD x x
   return (env', renameClaim a t claim, trees')
 
+/-- `c` with the section of its safe twin (each unsafe or partial definition made safe),
+typed against `env`. The compiler leaves every binder of an unsafe or partial record
+undecided, which IxVM refuses when it reads it; data are untrusted, so a prover may attach
+decided ones instead, and a case about IxVM's safety checks needs them to reach those
+checks. -/
+def withSafeTwinSection (env : Ixon.Env) (c : Ixon.Constant) : Except String Ixon.Constant := do
+  let safe (d : Ixon.Definition) : Ixon.Definition := { d with safety := .safe }
+  let info : Ixon.ConstantInfo := match c.info with
+    | .defn d => .defn (safe d)
+    | .muts ms => .muts (ms.map fun m => match m with
+      | .defn d => .defn (safe d)
+      | m => m)
+    | i => i
+  let twin ← _root_.IxVM.RecordSections.withSection env { c with info }
+  return { c with binders := twin.binders }
+
 /-- `buildClaimWitness` after `withRecordSections`. -/
 def buildSectionedWitness (env : Ixon.Env) (claim : Ix.Claim)
     (trees : Std.HashMap Address Ix.AssumptionTree := {}) : Except String ClaimWitness := do
