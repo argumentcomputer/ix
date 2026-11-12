@@ -785,7 +785,8 @@ theorem extendQuotInd (mp : EnvModelM V μ env)
         subst h1 h2 h3
         rw [← h4] at hr
         rcases List.mem_cons.mp hr with rfl | hr'
-        · exact ⟨Ix.Kernel.RuleCtorOk.of_plain hM rfl (by first | rfl | (cases md <;> decide)), fun hb => Bool.noConfusion hb,
+        · exact ⟨Ix.Kernel.RuleCtorOk.of_plain hM rfl (by first | rfl | (cases md <;> decide))
+            (by first | rfl | (cases md <;> decide)), fun hb => Bool.noConfusion hb,
             fun hb => Bool.noConfusion hb⟩
         · exact nomatch hr'))
     (fun _ _ => rfl) ?_
@@ -2252,7 +2253,8 @@ theorem extendQuotLift (mp : EnvModelM V μ env)
         subst h1 h2 h3
         rw [← h4] at hr
         rcases List.mem_cons.mp hr with rfl | hr'
-        · exact ⟨Ix.Kernel.RuleCtorOk.of_plain hM rfl (by first | rfl | (cases md <;> decide)), fun hb => Bool.noConfusion hb,
+        · exact ⟨Ix.Kernel.RuleCtorOk.of_plain hM rfl (by first | rfl | (cases md <;> decide))
+            (by first | rfl | (cases md <;> decide)), fun hb => Bool.noConfusion hb,
             fun hb => Bool.noConfusion hb⟩
         · exact nomatch hr'))
     (fun _ _ => rfl) ?_

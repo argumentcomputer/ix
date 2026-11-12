@@ -284,6 +284,7 @@ theorem projFn_head {μ : CheckMode} {F : Nat} {env' env₁ : Env md}
     · have hpl' : Expr.recRulePlain pty nP nP nP (ctorLevelParamsOf env'.find? ctorName) = true := by
         rw [ctorLevelParamsOf_ctor hctor]; exact hplP
       exact RuleCtorOk.of_plain hctor (by simp [projFnRule, recRuleBits, hpl']) hplP
+        (by show (cvj.type.stripPis (nP + nF)).isSome = true; rw [hCstrip]; rfl)
     · exact nomatch h
 
 /-! ## Two shared projection-phase constants (task #161 S7)

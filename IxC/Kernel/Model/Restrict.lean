@@ -287,18 +287,20 @@ def Model.restrict {env env' : Env md} (M : Model V env) {K : Key md → Prop}
     have hdomK : dom.RefsIn K := hresR.1
     obtain ⟨hfitC', hresC⟩ := Fits.mono_env hfind' hproj' hlit hfitC
       (Expr.RefsIn.instantiateLevelParams _ _ (htype _ hmC))
-    obtain ⟨H, hH, heq⟩ := M.iota_rule r cv mI rP rules rl (by rw [← hfind r hKr]; exact hf) hrl
+    obtain ⟨H, hH, hgH, hspH, heq⟩ := M.iota_rule r cv mI rP rules rl
+      (by rw [← hfind r hKr]; exact hf) hrl
       cvC nP nF
       (by rw [← hfind _ hKc]; exact hC) us φ ρ σ σC xs ys dom body RC m D ls R K' X
       hus hxs hys (Denotes.mono_env hfind' hproj' hlit hR hKr) hfitR' hdomFn
       (Denotes.mono_env hfind' hproj' hlit hX hdomK)
       (Denotes.mono_env hfind' hproj' hlit hK hKc) hfitC' hmaj
-      (DenotesList.mono_env hfind' hproj' hlit hpar
+      (fun hc => DenotesList.mono_env hfind' hproj' hlit (hpar hc)
         (fun e he => Expr.RefsIn.getAppArgs hdomK e (List.mem_of_mem_take he)))
-      (DenotesList.mono_env hfind' hproj' hlit hidx
+      (fun hm => DenotesList.mono_env hfind' hproj' hlit (hidx hm)
         (fun e he => Expr.RefsIn.getAppArgs hresC e (List.mem_of_mem_drop he)))
-    exact ⟨H, Denotes.mono_env hfind hproj hlit hH
-      (Expr.RefsIn.instantiateLevelParams _ _ (hrhs cv mI rP rules hmR rl hrl)), heq⟩
+    have hrefs := Expr.RefsIn.instantiateLevelParams _ _ (hrhs cv mI rP rules hmR rl hrl)
+    exact ⟨H, Denotes.mono_env hfind hproj hlit hH hrefs,
+      GradedBy.mono_env hfind hproj hlit hgH hrefs, hspH, heq⟩
   unit_like := by
     intro T cvT caps hf hu us φ ρ σ ts R F x y hus hts hF hfit hx hy
     have hfind' : ∀ n, K n → env.find? n = env'.find? n := fun n h => (hfind n h).symm

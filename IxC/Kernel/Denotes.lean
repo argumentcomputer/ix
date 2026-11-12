@@ -261,6 +261,30 @@ inductive Fits (cval : Key md → (LevelParam → Nat) → V) (env : Env md) (φ
       Denotes cval env φ ρ A X → x ∈ˢ X → Fits cval env φ (push x ρ) B xs ρ' R →
       Fits cval env φ ρ (.forallE A B m) (x :: xs) ρ' R
 
+/-- **A graded reading** (`D` a denotation relation, such as `Denotes cval env φ`): every
+application in the term applies a function that denotes a member of a dependent product to an
+argument that denotes a member of the product's domain (Lean's typing of the application, read
+in the sets), through every binder at every member of its domain. `Denotes` reads an
+application at any argument, and β computes only on the domain (`SetModel.app_lamR`), so a
+reduction that fires β with no certificate is sound on graded readings only. -/
+def GradedBy (D : (BVarIdx → V) → Expr md → V → Prop) : (BVarIdx → V) → Expr md → Prop
+  | ρ, .app f a => GradedBy D ρ f ∧ GradedBy D ρ a ∧
+      ∃ (r : Nat) (A F X : V) (B : V → V), D ρ f F ∧ D ρ a X ∧ F ∈ˢ piR r A B ∧ X ∈ˢ A ∧
+        (r = 0 → ∀ x, x ∈ˢ A → B x ∈ˢ univ 0)
+  | ρ, .lam ty b _ =>
+    GradedBy D ρ ty ∧ ∀ A, D ρ ty A → ∀ x, x ∈ˢ A → GradedBy D (push x ρ) b
+  | ρ, .forallE ty b _ =>
+    GradedBy D ρ ty ∧ ∀ A, D ρ ty A → ∀ x, x ∈ˢ A → GradedBy D (push x ρ) b
+  | ρ, .proj _ _ e => GradedBy D ρ e
+  | _, _ => True
+
+/-- **A head applied along values applies functions on their domains**: at each step the
+function so far is a member of some product, and the next value a member of its domain. -/
+def SpineOk : V → List V → Prop
+  | _, [] => True
+  | F, x :: xs =>
+    (∃ (r : Nat) (A : V) (B : V → V), F ∈ˢ piR r A B ∧ x ∈ˢ A) ∧ SpineOk (app F x) xs
+
 /-- **ι, the computation rule of one stored recursor rule.** At a stored recursor `r`
 (`recInfo cv mI rP rules`) and a rule `rl` of it, whose constructor `C` is stored with `nP`
 parameters and `nF` fields:
@@ -287,11 +311,22 @@ The last two premises are exactly what Lean's typing of the redex supplies: the 
 premise `C ys` must have the type the recursor's telescope gives it, `D.{ls} as`, while
 the constructor's type gives it the type `RC`, the same family at the constructor's
 parameters and its own indices; the two agree only if the parameters and the indices
-do.
+do. Two of them are asked only where they can matter:
 
-The right-hand side is part of the conclusion: at such a redex it denotes. Without that,
-a stored right-hand side that denotes nothing (a wrong binder annotation) would make the
-rule say nothing. -/
+* the parameters, only at a rule that compares them (`RecRule.compareParams`). A rule the
+  kernel stores without the comparison (`paramsBlind`: the rules of a block installed
+  directly, and of the basis blocks) computes at any parameters that fit, so the law
+  holds there without the premise;
+* the indices, only at a recursor that has some (`mI ≠ rP`).
+
+Either form is the law of the earlier, unconditional premises too (`IotaRule.of_premises`):
+a reader who has both premises in hand need not know which form applies.
+
+The right-hand side is part of the conclusion: at such a redex it denotes, its reading is
+graded, and the right-hand side's value applies along the prefix and the fields on its
+domains (`SpineOk`), so the reduct of a graded redex is graded. Without the first, a stored
+right-hand side that denotes nothing (a wrong binder annotation) would make the rule say
+nothing. -/
 def IotaRule (cval : Key md → (LevelParam → Nat) → V) (env : Env md) (r : Key md)
     (cv : ConstantVal md) (mI rP : Nat) (rl : RecRule md) : Prop :=
   ∀ (cvC : ConstantVal md) (nP nF : Nat),
@@ -306,10 +341,37 @@ def IotaRule (cval : Key md → (LevelParam → Nat) → V) (env : Env md) (r : 
       Denotes cval env φ ρ (.const rl.ctor ls) K →
       Fits cval env φ ρ (cvC.type.instantiateLevelParams cvC.levelParams ls) ys σC RC →
       ys.foldl app K ∈ˢ X →
-      DenotesList cval env φ σ (dom.getAppArgs.take nP) (ys.take nP) →
-      DenotesList cval env φ σC (RC.getAppArgs.drop nP) (xs.drop rP) →
+      (rl.compareParams = true →
+        DenotesList cval env φ σ (dom.getAppArgs.take nP) (ys.take nP)) →
+      (mI ≠ rP → DenotesList cval env φ σC (RC.getAppArgs.drop nP) (xs.drop rP)) →
       ∃ H, Denotes cval env φ ρ (rl.rhs.instantiateLevelParams cv.levelParams us) H ∧
+        GradedBy (Denotes cval env φ) ρ (rl.rhs.instantiateLevelParams cv.levelParams us) ∧
+        SpineOk H (xs.take rP ++ ys.drop nP) ∧
         (xs ++ [ys.foldl app K]).foldl app R = (xs.take rP ++ ys.drop nP).foldl app H
+
+/-- **ι with both premises given**: whichever form a rule's law takes, it holds at a redex
+whose parameters and indices both agree with the major premise's type. -/
+theorem IotaRule.of_premises {cval : Key md → (LevelParam → Nat) → V} {env : Env md}
+    {r : Key md} {cv : ConstantVal md} {mI rP : Nat} {rl : RecRule md}
+    (h : IotaRule cval env r cv mI rP rl) {cvC : ConstantVal md} {nP nF : Nat}
+    (hC : env.find? rl.ctor = some (.ctorInfo cvC nP nF)) {us : List Level}
+    {φ : LevelParam → Nat} {ρ σ σC : BVarIdx → V} {xs ys : List V} {dom body RC : Expr md}
+    {m : BinderMeta} {D : Key md} {ls : List Level} {R K X : V}
+    (hus : us.length = cv.levelParams.length) (hxs : xs.length = mI)
+    (hys : ys.length = nP + nF) (hR : Denotes cval env φ ρ (.const r us) R)
+    (hfitR : Fits cval env φ ρ (cv.type.instantiateLevelParams cv.levelParams us) xs σ
+      (.forallE dom body m))
+    (hdom : dom.getAppFn = .const D ls) (hX : Denotes cval env φ σ dom X)
+    (hK : Denotes cval env φ ρ (.const rl.ctor ls) K)
+    (hfitC : Fits cval env φ ρ (cvC.type.instantiateLevelParams cvC.levelParams ls) ys σC RC)
+    (hmaj : ys.foldl app K ∈ˢ X)
+    (hpar : DenotesList cval env φ σ (dom.getAppArgs.take nP) (ys.take nP))
+    (hidx : DenotesList cval env φ σC (RC.getAppArgs.drop nP) (xs.drop rP)) :
+    ∃ H, Denotes cval env φ ρ (rl.rhs.instantiateLevelParams cv.levelParams us) H ∧
+      (xs ++ [ys.foldl app K]).foldl app R = (xs.take rP ++ ys.drop nP).foldl app H := by
+  obtain ⟨H, hH, -, -, heq⟩ := h cvC nP nF hC us φ ρ σ σC xs ys dom body RC m D ls R K X hus
+    hxs hys hR hfitR hdom hX hK hfitC hmaj (fun _ => hpar) (fun _ => hidx)
+  exact ⟨H, hH, heq⟩
 
 /-- **ι at every stored recursor rule** (`IotaRule`). -/
 def IotaLaw (cval : Key md → (LevelParam → Nat) → V) (env : Env md) : Prop :=
@@ -439,23 +501,6 @@ def NatAddLaw (cval : Key md → (LevelParam → Nat) → V) (env : Env md) : Pr
       ∀ x y, x ∈ˢ N → y ∈ˢ N →
         app (app A x) Z = x ∧ app (app A x) (app S y) = app S (app (app A x) y)
 
-/-- **A graded reading** (`D` a denotation relation, such as `Denotes cval env φ`): every
-application in the term applies a function that denotes a member of a dependent product to an
-argument that denotes a member of the product's domain (Lean's typing of the application, read
-in the sets), through every binder at every member of its domain. `Denotes` reads an
-application at any argument, and β computes only on the domain (`SetModel.app_lamR`), so a
-reduction that fires β with no certificate is sound on graded readings only. -/
-def GradedBy (D : (BVarIdx → V) → Expr md → V → Prop) : (BVarIdx → V) → Expr md → Prop
-  | ρ, .app f a => GradedBy D ρ f ∧ GradedBy D ρ a ∧
-      ∃ (r : Nat) (A F X : V) (B : V → V), D ρ f F ∧ D ρ a X ∧ F ∈ˢ piR r A B ∧ X ∈ˢ A ∧
-        (r = 0 → ∀ x, x ∈ˢ A → B x ∈ˢ univ 0)
-  | ρ, .lam ty b _ =>
-    GradedBy D ρ ty ∧ ∀ A, D ρ ty A → ∀ x, x ∈ˢ A → GradedBy D (push x ρ) b
-  | ρ, .forallE ty b _ =>
-    GradedBy D ρ ty ∧ ∀ A, D ρ ty A → ∀ x, x ∈ˢ A → GradedBy D (push x ρ) b
-  | ρ, .proj _ _ e => GradedBy D ρ e
-  | _, _ => True
-
 /-- **Stored terms are graded**: every stored constant's type, and every stored definition's
 value, has a graded reading (`GradedBy`) at every level assignment and variable environment.
 The kernel stores only terms it has typed; this is what that typing says in the sets. -/
@@ -464,13 +509,6 @@ def GradedLaw (cval : Key md → (LevelParam → Nat) → V) (env : Env md) : Pr
     GradedBy (Denotes cval env φ) ρ c.toConstantVal.type ∧
     ∀ (cv : ConstantVal md) (value : Expr md) (hint : ReducibilityHint),
       c = .defnInfo cv value hint → GradedBy (Denotes cval env φ) ρ value
-
-/-- **A head applied along values applies functions on their domains**: at each step the
-function so far is a member of some product, and the next value a member of its domain. -/
-def SpineOk : V → List V → Prop
-  | _, [] => True
-  | F, x :: xs =>
-    (∃ (r : Nat) (A : V) (B : V → V), F ∈ˢ piR r A B ∧ x ∈ˢ A) ∧ SpineOk (app F x) xs
 
 /-- The variable environment after binding `xs` in order (the last one innermost), as a
 fit leaves it. -/
@@ -636,7 +674,11 @@ structure Model (V : Type w) [SetTheory V] (env : Env md) where
     ConstantInfo.defnInfo cv value hint ∈ env.consts →
     ∀ (φ : LevelParam → Nat) (ρ : BVarIdx → V),
       Denotes cval env φ ρ value (cval cv.name φ)
-  /-- **ι**: every stored recursor rule computes as Lean's does (`IotaRule`) -/
+  /-- **ι**: every stored recursor rule computes as Lean's does (`IotaRule`). At a rule that
+  does not compare parameters (`RecRule.compareParams`) the law holds without the parameter
+  premise, and at a recursor with no index without the index premise; with both premises it
+  holds at every rule (`IotaRule.of_premises`). The circuit compares the parameters at every ι
+  step, so each step it takes is covered by either form -/
   iota_rule : IotaLaw cval env
   /-- **unit-like η** at every family the kernel flags unit-like (`UnitLikeLaw`) -/
   unit_like : UnitLikeLaw cval env

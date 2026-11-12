@@ -266,6 +266,24 @@ theorem wellDenotedV_mkAppN_parts {ρ : Nat → V} :
     · exact ⟨h1.2.1, h2.2⟩
     · exact hbs a ha
 
+/-- **A graded spine applies its head on the domains**: each partial application's value is
+a member of a product whose domain holds the next argument's value. -/
+theorem spineOk_of_wellDenotedV_mkAppN {ρ : Nat → V} :
+    ∀ (ws : List AnnotTerm) (f : AnnotTerm), WellDenotedV V ρ (AnnotTerm.mkAppN f ws) →
+      Ix.Kernel.SpineOk (interp V ρ f) (ws.map (interp V ρ))
+  | [], _, _ => True.intro
+  | w :: ws, f, h => by
+    have h' := h
+    rw [AnnotTerm.mkAppN_cons] at h'
+    obtain ⟨⟨h1, -⟩, -⟩ := wellDenotedV_mkAppN_parts ws (.app f w) h'
+    rw [WellDenoted_app] at h1
+    obtain ⟨-, -, v, A, B, hF, hx, -⟩ := h1
+    have hrest := spineOk_of_wellDenotedV_mkAppN ws (.app f w) h'
+    rw [interp_app] at hrest
+    show (∃ (r : Nat) (A : V) (B : V → V), interp V ρ f ∈ˢ piR r A B ∧ interp V ρ w ∈ˢ A) ∧
+      Ix.Kernel.SpineOk (SetTheory.app (interp V ρ f) (interp V ρ w)) (ws.map (interp V ρ))
+    exact ⟨⟨v, A, B, hF, hx⟩, hrest⟩
+
 theorem chain_take_lt {ρ : Nat → V} {ws : List AnnotTerm} {n i : Nat} (hn : n ≤ ws.length)
     (hi : i < n) :
     chain V ρ (ws.take n) i = interp V ρ (ws.getD (n - 1 - i) default) := by
@@ -630,9 +648,11 @@ theorem iotaRule_of_fires {μ : Ix.Kernel.CheckMode} {env : Env md} (m : EnvMode
       rw [hlsOf (hdomOf hs0) hfn0]
       simp [Ix.Kernel.recFireComparands, hfr]
   -- a canonical rule's parameters are the recursor's parameter variables
-  have hparams : RecRule.fire rl = .plain → ∀ i, i < rl.ctorParams → i < mI →
+  have hparams : RecRule.paramsBlind rl = false → RecRule.fire rl = .plain →
+      ∀ i, i < rl.ctorParams → i < mI →
       ys.getD i SetTheory.empty = xs.getD i SetTheory.empty := by
-    intro hpl i hi him
+    intro hpb hpl i hi him
+    have hpar := hpar (RecRule.compareParams_plain hpl hpb)
     obtain ⟨pre0, dom0, body0, bm0, D0, hs0, -, hargs0⟩ :=
       recRulePlain_shapeT (hplainShape hpl)
     have hargs : dom.getAppArgs.take rl.ctorParams =
@@ -659,6 +679,7 @@ theorem iotaRule_of_fires {μ : Ix.Kernel.CheckMode} {env : Env md} (m : EnvMode
         interp V ρ' (ysA.getD i default)
           = interp V ρ' (Ix.Kernel.Model.AnnotTerm.instRevChain (xsA.take rP) vpa) := by
     intro lvls pins hn i hi vpa hvpa
+    have hpar := hpar (RecRule.compareParams_nested hn)
     obtain ⟨-, -, hpinsWf, pre0, dom0, body0, bm0, D0, hs0, -, hargs0⟩ :=
       hnestWF lvls pins hn
     have hplen : pins.length = rl.ctorParams := hnestLen lvls pins hn
@@ -755,6 +776,10 @@ theorem iotaRule_of_fires {μ : Ix.Kernel.CheckMode} {env : Env md} (m : EnvMode
   have hpin : IotaIndexPin (V := V) ρ'
       (Ix.Kernel.Model.AnnotTerm.instSeq ysA (ys.length - 1) CC)
       (RecRule.ctorParams rl) mI rP xsA := by
+    by_cases hmr : mI = rP
+    · exact ⟨Ix.Kernel.Model.AnnotTerm.instSeq ysA (ys.length - 1) CC, [], rfl, Or.inl hmr,
+        fun i hi => absurd hi (by omega)⟩
+    have hidx := hidx hmr
     have hRCeq := Expr.mkAppN_getApp RC
     rw [← hRCeq, Expr.instSeq_mkAppN] at hCC
     obtain ⟨fa, vs', -, hsp, rfl⟩ := denoteMeta_mkAppN_inv hCC
@@ -801,13 +826,28 @@ theorem iotaRule_of_fires {μ : Ix.Kernel.CheckMode} {env : Env md} (m : EnvMode
       simp only [List.getD] at this
       rw [this]
   -- the fired law
-  have hlawEq := (hmain cvC rl.ctorParams rl.nfields hC ls ρ' xsA ysA TVa TVja _ _
+  have hmainA := hmain cvC rl.ctorParams rl.nfields hC ls ρ' xsA ysA TVa TVja _ _
     hxsA_len (by rw [hysA_len, hys]) hlsLen hlev
-    (fun _ hpl i hi him => by
+    (fun hpb hpl i hi him => by
       rw [hysA_val i (by omega), hxsA_val i him]
-      exact hparams hpl i hi him)
-    hnestPar hpin hTVa hTVja hteleR hteleC).1
-  -- the right-hand side denotes its reading
+      exact hparams hpb hpl i hi him)
+    hnestPar hpin hTVa hTVja hteleR hteleC
+  have hlawEq := hmainA.1
+  -- the reduct's spine is graded at the bound-variable readings
+  have hbvar : ∀ j, WellDenotedV V ρ' (AnnotTerm.bvar j) :=
+    fun j => ⟨by rw [WellDenoted_bvar]; trivial, by rw [AnnotValid_bvar]; trivial⟩
+  have hokRed := hmainA.2
+    (fun a ha => by
+      obtain ⟨j, -, rfl⟩ : ∃ j, j < mI ∧ AnnotTerm.bvar j = a := by simpa [xsA] using ha
+      exact hbvar j)
+    (fun b hb => by
+      obtain ⟨j, -, rfl⟩ : ∃ j, j < rl.ctorParams + rl.nfields ∧
+          AnnotTerm.bvar (mI + j) = b := by
+        simpa [ysA] using hb
+      exact hbvar _)
+  have hspR := spineOk_of_wellDenotedV_mkAppN _ Ra hokRed
+  rw [List.map_append, List.map_take, List.map_drop, hxsMap, hysMap] at hspR
+  -- the right-hand side denotes its reading, gradedly
   have hnf : (rl.rhs.instantiateLevelParams cv.levelParams us).hasFvar = false := by
     rw [Expr.hasFvar_instantiateLevelParams]; exact hrhsF
   have hlb : (rl.rhs.instantiateLevelParams cv.levelParams us).looseBVarsBounded 0 = true := by
@@ -815,7 +855,10 @@ theorem iotaRule_of_fires {μ : Ix.Kernel.CheckMode} {env : Env md} (m : EnvMode
   have hbr := Denotes_of_denoteMeta (V := V) hcl 0 _ hRa
     (Ix.Kernel.fvarsBelow_zero_of_hasFvar_false hnf) hlb ρ' (hRaok ρ')
   rw [Expr.closeN_of_hasFvar _ 0 0 hnf] at hbr
-  refine ⟨interp V ρ' Ra, hbr.congr_below hlb (fun i hi => absurd hi (by omega)), ?_⟩
+  have hgr := GradedBy_of_denoteMeta (V := V) hcl 0 _ hRa
+    (Ix.Kernel.fvarsBelow_zero_of_hasFvar_false hnf) hlb ρ (hRaok ρ)
+  rw [Expr.closeN_of_hasFvar _ 0 0 hnf] at hgr
+  refine ⟨interp V ρ' Ra, hbr.congr_below hlb (fun i hi => absurd hi (by omega)), hgr, hspR, ?_⟩
   calc (xs ++ [ys.foldl app K]).foldl app R
       = ((xsA ++ [majA]).map (interp V ρ')).foldl app
           (interp V ρ' (m.base2.acval r (Level.substFn φ cv.levelParams us))) := by
@@ -835,7 +878,7 @@ rule fires (`RuleCtorOk`), and a fired rule's computation rule holds. -/
 theorem iotaLaw_of_envModelM {μ : Ix.Kernel.CheckMode} {env : Env md} (m : EnvModelM V μ env) :
     Ix.Kernel.IotaLaw (cvalOf (V := V) m.base2.acval) env := by
   intro r cv mI rP rules rl hf hrl
-  obtain ⟨⟨-, -, -, -, hfire⟩, -, -⟩ := m.base2.rec_ctors r cv mI rP rules hf rl hrl
+  obtain ⟨⟨-, -, -, -, hfire, -⟩, -, -⟩ := m.base2.rec_ctors r cv mI rP rules hf rl hrl
   exact iotaRule_of_fires m hf hrl hfire
 
 /-- **The kernel's unit-like flag is Lean's criterion** at a natively installed block

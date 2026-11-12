@@ -554,7 +554,8 @@ theorem extendPUnitRec (mp : EnvModelM V μ env)
         subst h1 h2 h3
         rw [← h4] at hr
         rcases List.mem_cons.mp hr with rfl | hr'
-        · exact ⟨Ix.Kernel.RuleCtorOk.of_plain hU rfl (by first | rfl | (cases md <;> decide)), fun hb => Bool.noConfusion hb,
+        · exact ⟨Ix.Kernel.RuleCtorOk.of_plain hU rfl (by first | rfl | (cases md <;> decide))
+            (by first | rfl | (cases md <;> decide)), fun hb => Bool.noConfusion hb,
             fun _ => recRuleEtaOf_of hU rfl hP rfl rfl rfl rfl⟩
         · exact nomatch hr'))
     (fun _ _ => rfl) ?_
@@ -1871,10 +1872,12 @@ theorem extendNatRec (mp : EnvModelM V μ env)
         subst h1 h2 h3
         rw [← h4] at hr
         rcases List.mem_cons.mp hr with rfl | hr'
-        · exact ⟨Ix.Kernel.RuleCtorOk.of_plain hZ rfl (by first | rfl | (cases md <;> decide)), fun hb => Bool.noConfusion hb,
+        · exact ⟨Ix.Kernel.RuleCtorOk.of_plain hZ rfl (by first | rfl | (cases md <;> decide))
+            (by first | rfl | (cases md <;> decide)), fun hb => Bool.noConfusion hb,
             fun hb => Bool.noConfusion hb⟩
         rcases List.mem_cons.mp hr' with rfl | hr''
-        · exact ⟨Ix.Kernel.RuleCtorOk.of_plain hS rfl (by first | rfl | (cases md <;> decide)), fun hb => Bool.noConfusion hb,
+        · exact ⟨Ix.Kernel.RuleCtorOk.of_plain hS rfl (by first | rfl | (cases md <;> decide))
+            (by first | rfl | (cases md <;> decide)), fun hb => Bool.noConfusion hb,
             fun hb => Bool.noConfusion hb⟩
         · exact nomatch hr''))
     (fun _ _ => rfl) ?_

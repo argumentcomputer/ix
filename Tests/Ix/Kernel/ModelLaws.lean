@@ -622,12 +622,12 @@ theorem no_model_of_natRec_false_installs {ds : List (Declaration .anon)} {env :
     rw [instSelf1]
     exact .cons hX₁ hMvX₁ (.cons hX₂ hFvX₂ (.cons hX₃ hSvX₃ .nil))
   -- ι for `Nat.zero`
-  obtain ⟨H, hH, heq⟩ := M.iota_rule natRecName _ 3 3 _ rl₀ hfR (by simp)
+  obtain ⟨H, hH, -, -, heq⟩ := M.iota_rule natRecName _ 3 3 _ rl₀ hfR (by simp)
     ⟨natZeroName, [], .const natName []⟩ 0 0 (by rw [hctor₀]; exact hfZ)
     [.param BasisDSL.uN] φ1 (fun _ => empty) _ (fun _ => empty) [Mv, Fv, Sv] []
     (.const natName []) _ _ mR₄' natName [] _ (M.cval natZeroName φ1) (M.cval natName φ1)
     rfl rfl rfl (Denotes.const hfR rfl) hfits rfl (den_const_nil_intro hfN hpsN)
-    (by rw [hctor₀]; exact den_const_nil_intro hfZ rfl) .nil hZ0 .nil .nil
+    (by rw [hctor₀]; exact den_const_nil_intro hfZ rfl) .nil hZ0 (fun _ => .nil) (fun _ => .nil)
   have heq' : app (app (app (app (M.cval natRecName
       (Level.substFn φ1 [BasisDSL.uN] [.param BasisDSL.uN])) Mv) Fv) Sv) (M.cval natZeroName φ1)
       = app (app (app H Mv) Fv) Sv := heq

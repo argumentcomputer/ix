@@ -59,17 +59,21 @@ canonical (`.plain`) rule has the shape its install tested
 (`Expr.recRulePlain`: the recursor's major premise is the family at the
 constructor's own level parameters, applied first to the recursor's
 leading variables); a certified nested rule stores one instantiation
-per constructor parameter.  These are what Lean's reading of the rule
-needs beyond the rule's firing law: that the constructor the law fires
-at is the one the major premise's type names, at its levels and
-parameters. -/
+per constructor parameter; and the constructor's stored type has a
+binder for each of its parameters and fields (the install reads the
+constructor's telescope at that arity before it fires the rule).  These
+are what Lean's reading of the rule needs beyond the rule's firing law:
+that the constructor the law fires at is the one the major premise's
+type names, at its levels and parameters, and that its arguments fit
+its type binder by binder. -/
 @[expose] def RuleCtorOk (find? : Key md → Option (ConstantInfo md)) (cv : ConstantVal md)
     (mI rP : Nat) (r : RecRule md) : Prop :=
   ∃ cvj, find? (RecRule.ctor r) = some (.ctorInfo cvj r.ctorParams r.nfields) ∧
     (RecRule.fire r = .plain →
       Expr.recRulePlain cv.type mI rP r.ctorParams cvj.levelParams = true) ∧
     (∀ lvls pins, RecRule.fire r = .nested lvls pins → pins.length = r.ctorParams) ∧
-    RecRule.fire r ≠ .inert
+    RecRule.fire r ≠ .inert ∧
+    (cvj.type.stripPis (r.ctorParams + r.nfields)).isSome = true
 
 /-- The rule's constructor is stored. -/
 theorem RuleCtorOk.stored {find? : Key md → Option (ConstantInfo md)} {cv : ConstantVal md}
@@ -91,10 +95,11 @@ theorem RuleCtorOk.of_plain {find? : Key md → Option (ConstantInfo md)} {cv : 
     {mI rP : Nat} {r : RecRule md} {cvj : ConstantVal md}
     (hf : find? (RecRule.ctor r) = some (.ctorInfo cvj r.ctorParams r.nfields))
     (hfire : RecRule.fire r = .plain)
-    (hpl : Expr.recRulePlain cv.type mI rP r.ctorParams cvj.levelParams = true) :
+    (hpl : Expr.recRulePlain cv.type mI rP r.ctorParams cvj.levelParams = true)
+    (hstrip : (cvj.type.stripPis (r.ctorParams + r.nfields)).isSome = true) :
     RuleCtorOk find? cv mI rP r :=
   ⟨cvj, hf, fun _ => hpl, fun _ _ h => (by rw [hfire] at h; exact nomatch h),
-    (by rw [hfire]; exact fun h => nomatch h)⟩
+    (by rw [hfire]; exact fun h => nomatch h), hstrip⟩
 
 /-- **A stored recursor's rules against the store**: every rule's
 constructor is itself stored (blocks carry their constructors, and the

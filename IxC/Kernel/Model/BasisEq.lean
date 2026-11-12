@@ -1192,7 +1192,8 @@ theorem extendEqRec (mp : EnvModelM V μ env)
         subst h1 h2 h3
         rw [← h4] at hr
         rcases List.mem_cons.mp hr with rfl | hr'
-        · exact ⟨Ix.Kernel.RuleCtorOk.of_plain hR rfl (by first | rfl | (cases md <;> decide)), fun _ => recRuleKOf_of hR rfl hE rfl,
+        · exact ⟨Ix.Kernel.RuleCtorOk.of_plain hR rfl (by first | rfl | (cases md <;> decide))
+            (by first | rfl | (cases md <;> decide)), fun _ => recRuleKOf_of hR rfl hE rfl,
             fun hb => Bool.noConfusion hb⟩
         · exact nomatch hr'))
     (fun ψ k => AnnotTerm.liftN_eq_self _
