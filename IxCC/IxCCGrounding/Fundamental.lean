@@ -400,7 +400,7 @@ theorem fire_step (H : FundHyps M p κ lpsOf S Ok) {k : Nat}
             rw [hfS] at hfind
             cases hfind
             -- the rules' telescopes
-            obtain ⟨cvr1, mI1, rP1, krules1, tbs, C, hf1, hty, htbs, hrl⟩ := hTele
+            obtain ⟨cvr1, mI1, rP1, krules1, tbs, C, hf1, hty, htbs, hruleT⟩ := hTele
             rw [hfS] at hf1
             injection hf1 with hf1
             injection hf1 with e1 e2 e3 e4
@@ -487,7 +487,7 @@ theorem fire_step (H : FundHyps M p κ lpsOf S Ok) {k : Nat}
                         rw [← hlenS]; exact (List.getElem?_eq_some_iff.mp hrl).1
                       exact ⟨_, List.getElem?_eq_getElem hlt⟩
                     obtain ⟨hkc, hknf, hcorr⟩ := hruleS cidx rl krl hrl hkrl
-                    obtain ⟨bs, b, hrhs, hbsl, hbsd⟩ := hrl krl (List.mem_of_getElem? hkrl)
+                    obtain ⟨bs, b, hrhs, hbsl, hbsd⟩ := hruleT krl (List.mem_of_getElem? hkrl)
                     rw [← hknf, hf0, Nat.add_zero] at hbsl
                     rw [List.take_of_length_le (by omega)] at hbsd
                     rw [hrhs] at hcorr
