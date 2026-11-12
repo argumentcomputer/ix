@@ -479,9 +479,9 @@ def red_rec : SpecFn := fun c args h r h' calls =>
 /-- `quot_certs(rc, is_lift, addr, lvls, rec_args, mk_addr, mk_lvls, mk_args, types)`: for the
 eliminator the table binds at `addr` (`Quot.lift` with six arguments and two levels when
 `is_lift = 1`, `Quot.ind` with five and one when `0`) and `Quot.mk`, bound at `mk_addr`, with
-three arguments (the caller has checked the roles and the counts; where a level is never zero
-a walk is skipped without reading the stored type, so the claim needs them): a nonzero answer
-gives `Red.iota`'s two licensed walks (`CertsR … true`, read as `Certs` by `CertsR.toCerts`),
+three arguments (the caller has checked the roles, in force, and the counts; where a level
+is never zero a walk is skipped without reading the stored type, so the claim needs them): a
+nonzero answer gives `Red.iota`'s two licensed walks (`CertsR … true`, read as `Certs` by `CertsR.toCerts`),
 the eliminator's stored type at `lvls` over its arguments and `Quot.mk`'s stored type at
 `mk_lvls` over its arguments, and, unless
 the eliminator is `Quot.lift` at a never-zero motive level (where every datum of the rule's
@@ -494,11 +494,11 @@ def quot_certs : SpecFn := fun c args h r h' calls =>
     ∀ d Γ, c.types Γ h d types →
       ∀ (a b : Bytes.Address) us mus RA MA, RepAddr h a addr → LvListRep h us lvls →
         c.tml d Γ h RA ra → RepAddr h b mk → LvListRep h mus mklvls → c.tml d Γ h MA ma →
-        ((il = .field 1 ∧ c.t.addressOf? .quotLift = some (ixAddr a) ∧ RA.length = 6 ∧
-            us.length = 2) ∨
-          (il = .field 0 ∧ c.t.addressOf? .quotInd = some (ixAddr a) ∧ RA.length = 5 ∧
-            us.length = 1)) →
-        c.t.addressOf? .quotMk = some (ixAddr b) → MA.length = 3 →
+        ((il = .field 1 ∧ c.t.addressOf? .quotLift = some (ixAddr a) ∧ c.inForce .quotLift ∧
+            RA.length = 6 ∧ us.length = 2) ∨
+          (il = .field 0 ∧ c.t.addressOf? .quotInd = some (ixAddr a) ∧ c.inForce .quotInd ∧
+            RA.length = 5 ∧ us.length = 1)) →
+        c.t.addressOf? .quotMk = some (ixAddr b) → c.inForce .quotMk → MA.length = 3 →
         r ≠ .field 0 →
           (∀ ci, c.env.find? (c.κ (ixAddr a)) = some ci →
             CertsR c.env d true
@@ -512,15 +512,16 @@ def quot_certs : SpecFn := fun c args h r h' calls =>
 
 /-- `red_quot(rc, is_lift, addr, lvls, spine, types)`: the quotient's ι (`Red.iota` at the
 stored `Quot.lift`/`Quot.ind` recursor, whose rule is for `Quot.mk`). For the eliminator the
-table binds at `addr` (`Quot.lift` when `is_lift = 1`, `Quot.ind` when `0`; the caller has
-checked it): tag `1` is `Red` of the applied eliminator to the result. Tag `0`: no claim. -/
+table binds at `addr` (`Quot.lift` when `is_lift = 1`, `Quot.ind` when `0`, in force; the
+caller has checked it with `role_is`): tag `1` is `Red` of the applied eliminator to the
+result. Tag `0`: no claim. -/
 def red_quot : SpecFn := fun c args h r h' calls =>
   ∀ rc il addr lvls sp types, args = [rc, il, addr, lvls, sp, types] → Good c calls →
     c.rc h rc →
     ∀ d Γ, c.types Γ h d types →
       ∀ (a : Bytes.Address) us As,
-        ((il = .field 1 ∧ c.t.addressOf? .quotLift = some (ixAddr a)) ∨
-          (il = .field 0 ∧ c.t.addressOf? .quotInd = some (ixAddr a))) →
+        ((il = .field 1 ∧ c.t.addressOf? .quotLift = some (ixAddr a) ∧ c.inForce .quotLift) ∨
+          (il = .field 0 ∧ c.t.addressOf? .quotInd = some (ixAddr a) ∧ c.inForce .quotInd)) →
         RepAddr h a addr → LvListRep h us lvls → c.tml d Γ h As sp →
         ∀ x, r = .tuple [.field 1, x] →
           ∃ E, c.tm d Γ h' E x ∧ Red c.env d (mkAppN (.const (c.κ (ixAddr a)) us) As) E
@@ -549,7 +550,8 @@ def prim_family : SpecFn := fun c args h r h' calls =>
           c.t.addressOf? role = some (ixAddr a) ∧ c.inForce role)
 
 /-- `try_nat_dispatch_prewhnf(rc, head_addr, op, spine, types)`: the `Nat` natives after
-head-normalizing the spine. At a constant the table binds to the operation `natOpOf op`,
+head-normalizing the spine. At a constant the table binds to the operation `natOpOf op`, in
+force (`prim_family`'s group test),
 applied to `As` with an empty level list: tags `1` (the result) and `2` (a stuck form with
 reduced arguments) are `Red` of the application to the result. Tag `0`: no claim. -/
 def try_nat_dispatch_prewhnf : SpecFn := fun c args h r h' calls =>
@@ -557,7 +559,7 @@ def try_nat_dispatch_prewhnf : SpecFn := fun c args h r h' calls =>
     ∀ d Γ, c.types Γ h d types →
       ∀ (a : Bytes.Address) (o : F) role As, RepAddr h a ha → op = .field o →
         natOpOf (ZMod.val o) = some role → c.t.addressOf? role = some (ixAddr a) →
-        c.tml d Γ h As sp →
+        c.inForce role → c.tml d Γ h As sp →
         ∀ (t : F) x, r = .tuple [.field t, x] → (t = 1 ∨ t = 2) →
           ∃ E, c.tm d Γ h' E x ∧ Red c.env d (mkAppN (.const (c.κ (ixAddr a)) []) As) E
 

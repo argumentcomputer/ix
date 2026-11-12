@@ -60,10 +60,11 @@ def natPrimOp : Ix.Kernel.Role → Option Nat
   | .natBle => some 16
   | _ => none
 
-/-- **The address `a` is bound to the `Nat` operation with code `o`** by the run's table (what
-`KernelWhnf::prim_family` reads before it dispatches). -/
+/-- **The address `a` is bound to the `Nat` operation with code `o`, a role in force**, by the
+run's table (what `KernelWhnf::prim_family` reads before it dispatches: `role_index_of`'s binding
+and `role_of`'s group test). -/
 def NatOpAt (c : Ctx) (a : Bytes.Address) (o : Nat) : Prop :=
-  ∃ r, natPrimOp r = some o ∧ c.t.addressOf? r = some (ixAddr a)
+  ∃ r, natPrimOp r = some o ∧ c.t.addressOf? r = some (ixAddr a) ∧ c.inForce r
 
 /-- **The character list a string literal expands to**, over the expansion's `List.nil Char`
 (`N`), `List.cons Char` (`C`) and `Char.ofNat` (`K`): `strLitToConstructor`'s fold. -/
