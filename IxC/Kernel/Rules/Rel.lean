@@ -271,6 +271,11 @@ inductive Red (env : Env md) : Nat → Expr md → Expr md → Prop where
   | natLit {d : Nat} {n : Nat} :
       natLitSupported env = true →
       Red env d (.lit (.natVal n)) (natLitToConstructor n)
+  /-- **`Nat.zero` as the literal `0`**, `natLit`'s converse at `0`: IxVM's stuck
+  `Nat` operations keep an argument they read as a literal in literal form. -/
+  | natZeroLit {d : Nat} :
+      natLitSupported env = true →
+      Red env d (.const natZeroName []) (.lit (.natVal 0))
   /-- A `String` literal expands to its constructor form
   (`litMajorToCtor`, `Core.lean:736-738`; `projLitToCtor`, `:752-754`;
   `defeqStep`'s string arms, `:1610-1617` — one rule for the three

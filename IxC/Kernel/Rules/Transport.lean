@@ -231,6 +231,7 @@ theorem red_tr {env env' : Env md} {ρ δ : Nat → Nat} {ok : Nat → Prop}
   | _, _, _, .natLit h, _ => by
     rw [renFV_natLitToConstructor]
     exact .natLit (hT.ext.natLitSupported_mono h)
+  | _, _, _, .natZeroLit h, _ => .natZeroLit (hT.ext.natLitSupported_mono h)
   | _, _, _, .strLit h, _ => by
     rw [renFV_strLitToConstructor]
     exact .strLit (hT.ext.strLitSupported_mono h)

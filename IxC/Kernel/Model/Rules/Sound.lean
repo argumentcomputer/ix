@@ -66,6 +66,7 @@ theorem red_sound (hin : ∀ ψ, RulesInputs V m ψ) {φ : LevelParam → Nat} :
       (defeq_sound hin hda) (infer_sound hin hb) (defeq_sound hin hdb) (infer_sound hin hT)
       (red_sound hin hred) hv
   | _, _, _, .natLit h => Red.natLit_sound h
+  | _, _, _, .natZeroLit h => Red.natZeroLit_sound h
   | _, _, _, .strLit h => Red.strLit_sound h
   | _, _, _, .natSucc hsup hw hn =>
     Red.natSucc_sound (hin φ) hsup (red_sound hin hw) hn
