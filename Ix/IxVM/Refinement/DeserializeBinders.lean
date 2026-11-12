@@ -25,10 +25,12 @@ the same bytes, and returns the data the Aiur values represent
 * `getBinderBlockList_refines_at`: `Ixon.getArray Ixon.getBinderBlock count`;
 * `getBinders_refines_at`, `getBinders_refines`: `Ixon.getBinders`.
 
-IxVM's reader also asserts the section's local canonical form (a known
-`ekind`, a block's index and variant below 2^32, a root block at variant 0, no
-empty block or parameter list, parameters strictly ascending and below the level
-count, blocks strictly ascending). Those assertions only narrow what IxVM accepts, so the proofs pass
+IxVM's reader also asserts the record's and the section's local canonical form
+(the record's level count below 2^32, range-checked by `max_lvls` before the
+section is read and passed here as `lvls`; a known `ekind`, a block's index and
+variant below 2^32, a root block at variant 0, no empty block or parameter list,
+parameters strictly ascending and below the level count, blocks strictly
+ascending). Those assertions only narrow what IxVM accepts, so the proofs pass
 over them: they need only that an assertion leaves the heap extended. -/
 
 set_option maxRecDepth 100000

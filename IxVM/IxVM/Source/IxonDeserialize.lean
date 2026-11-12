@@ -702,9 +702,9 @@ def get_constant_info := aiur_fn⟦
   -- 0 to 4; an `ifAllZero` parameter list (tag 2) nonempty, strictly ascending and below the
   -- record's level count (`max_lvls`, the largest of its members'); the section of a record with
   -- no root (a projection, an empty mutual block) empty. The undecided node (tag 4) is read; a
-  -- conversion that reaches it rejects. A block's index and variant are below 2^32;
-  -- parameters and level counts are compared as fields by `UInt32::less_than_fields`, which
-  -- refuses a value of 2^32 or more.
+  -- conversion that reaches it rejects. The record's level count, a block's index and variant
+  -- are below 2^32; parameters and level counts are compared as fields by
+  -- `UInt32::less_than_fields`, which refuses a value of 2^32 or more.
 
 def mut_const_lvls := aiur_fn⟦
   fn mut_const_lvls(m: Ixon::MutConst) -> Field {
@@ -736,9 +736,13 @@ def muts_max_lvls := aiur_fn⟦
     }
 ⟧
 
+  -- The record's level count is below 2^32 (`Ixon.maxLevelCount`), as every reader's canonical
+  -- check requires: one `UInt32::less_than_fields` range-checks it, a standalone record's as a
+  -- block's (whose members' counts `muts_max_lvls` compares).
+
 def max_lvls := aiur_fn⟦
   fn max_lvls(info: Ixon::ConstantInfo) -> Field {
-      match info {
+      let lvls = match info {
         Ixon::ConstantInfo::Defn(d) => {
           let Ixon::Definition::Mk(_, _, lvls, _, _) = d;
           UInt64::to_field(lvls) } ,
@@ -753,7 +757,9 @@ def max_lvls := aiur_fn⟦
           UInt64::to_field(lvls) } ,
         Ixon::ConstantInfo::Muts(members) => {  muts_max_lvls(members, 0) } ,
         _ => {  0 } ,
-      }
+      };
+      UInt32::less_than_fields(0, lvls);
+      lvls
     }
 ⟧
 
