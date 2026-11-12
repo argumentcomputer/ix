@@ -6,7 +6,8 @@ One spec per function of `IxVM/IxVM/Source/KernelWhnf.lean` (58). The normalizer
 spine forms conclude `Red`; the step functions (`red_*`, `try_*`) conclude `Red` for the tags
 that mean "moved"; the telescope walks conclude the certificate relations; the structure-η
 scans state their meaning on the heap terms. A yes/no answer claims at every answer other than `0`
-(the scans, whose useful answer is "none found", at every answer other than `1`); nothing is
+(the scans, whose useful answer is "none found", at every answer other than `1`, on
+represented terms); nothing is
 claimed for tag `0` / answer `0` unless the docstring says so.
 
 **Telescope certificates.** `certs_all` head-normalizes a telescope that is not syntactically a
@@ -761,7 +762,8 @@ def CtorsClean (c : Ctx) (h : Heap F) (ci : Ix.Kernel.ConstantInfo .anon)
     RepAddr h b blk ∧ idx = .field i ∧ nc = .field n ∧ np = .field p ∧ (m : F) = n ∧
     ∀ t < m, ∃ (cicon : Ix.Kernel.ConstantInfo .anon) (w nl' ty' : SourceValue F)
         (rest : List (SourceValue F)),
-      c.env.find? (c.κ (cprjAddr (ixAddr b) (ZMod.val i) t)) = some cicon ∧ c.ci h w cicon ∧
+      c.env.find? (c.κ (cprjAddr (ixAddr b) (ZMod.val i) (ZMod.val (t : F)))) = some cicon ∧
+        c.ci h w cicon ∧
       w = .construct kciEnum "Ctor" (nl' :: ty' :: rest) ∧ FieldsClean h (ZMod.val p) membs ty'
 
 /-- Every inductive among the addresses `ms` has clean constructors (`CtorsClean`). -/
@@ -773,7 +775,8 @@ def MembersClean (c : Ctx) (h : Heap F) (ms membs : List Bytes.Address) : Prop :
 address of `members` (`HeapClean`). Answer `1`: no claim. -/
 def se_mentions : SpecFn := fun c args h r h' calls =>
   ∀ e xs, args = [e, xs] → Good c calls →
-    ∀ ms, RepList addrListEnum RepAddr h ms xs → r ≠ .field 1 → HeapClean (· ∈ ms) h e
+    ∀ ms, RepList addrListEnum RepAddr h ms xs → (∃ d Γ k E, c.tmk d Γ k h E e) →
+      r ≠ .field 1 → HeapClean (· ∈ ms) h e
 
 /-- `se_peel_tol(ty, n)`: the term after up to `n` leading `∀` nodes (fewer where the chain ends
 at another node); nothing is allocated. -/
@@ -786,7 +789,8 @@ def se_peel_tol : SpecFn := fun c args h r h' calls =>
 heap term has only domains that mention no address of `members`. Answer `1`: no claim. -/
 def se_scan_fields : SpecFn := fun c args h r h' calls =>
   ∀ ty xs, args = [ty, xs] → Good c calls →
-    ∀ ms, RepList addrListEnum RepAddr h ms xs → r ≠ .field 1 →
+    ∀ ms, RepList addrListEnum RepAddr h ms xs → (∃ d Γ k T, c.tmk d Γ k h T ty) →
+      r ≠ .field 1 →
       ∃ ds q, ForallChain h ty ds q ∧ NotForallNode h q ∧ ∀ dp ∈ ds, HeapClean (· ∈ ms) h dp
 
 /-- `struct_block_member_addrs(parent, block)`: for a record at `block` in the records `c.E`,
