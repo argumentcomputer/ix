@@ -696,7 +696,7 @@ malformed). -/
 def allDefault (s : Subject) : Except String Bool := do
   for a in closureOf s.store (s.seeds ++ s.runTable.toList ++ s.externs) do
     let some c := s.store a | continue
-    unless ← recordDefault c do return false
+    unless (← recordDefault c) do return false
   return s.runTable.isNone
 
 /-- **The mode checker** (uncertified): the subject's closure, its records' modes,
@@ -759,6 +759,12 @@ def check (lim : Limits) (env : Ix.Kernel.Env .anon) (s : Subject) : Verdict := 
         | .ctor ind .. => todo := todo ++ [ind]
         | _ => pure ()
       | .error e => return readFailure (refName r) e
+  -- an annotated constant with no run body makes promises nothing can check
+  for r in toCheck do
+    if let some (.stuck ps res _ _) := (defs.find? (·.1 == r)).map (·.2) then
+      unless ps.all (·.mode == .many) && res == .shared do
+        return .refuse (refName r) "an annotated constant with no run body is not in the extern set: \
+          its modes are promises nothing checks"
   let P : Prog := { defs, nat := roleRef? s .nat }
   checkBodies lim P toCheck.toList
 

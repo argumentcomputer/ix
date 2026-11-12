@@ -2,6 +2,7 @@ module
 
 public import LSpec
 public import Ix.CompileCertified
+public import Ix.ModeCheck
 public import Ix.Meta
 
 /-!
@@ -20,7 +21,7 @@ private def plainSource : ConstantInfo := .axiomInfo {
   isUnsafe := false }
 
 private def annotation : BinderAnnotation := {
-  origin := 0, binder := `x, uses := .affine, value := .localUnique }
+  origin := 0, binder := `x, uses := .many, value := .unique }
 
 private def markedSource : ConstantInfo := .axiomInfo {
   name := plainSource.name, levelParams := []
@@ -34,20 +35,22 @@ private def ioTest (description : String) (check : IO Bool) : TestSeq :=
 
 private def unsupported (result : Except String α) : Bool :=
   match result with
-  | .error message => (message.splitOn "external resource interface is absent").length > 1
+  | .error message => (message.splitOn "is not in the extern set").length > 1
   | .ok _ => false
 
 private def compileConsts (consts : List (Lean.Name × ConstantInfo)) :
     IO (Except String Ix.CompileM.CertifiedOut) := do
   match prepareSourceConstants consts >>= fun p => (checkPreparedSource p).map (p, ·) with
   | .error e => return .error e
-  | .ok (prepared, annotated) => compileCertifiedPrepared prepared annotated 1
+  | .ok (prepared, annotated) =>
+    compileCertifiedPrepared prepared annotated 1 (modeCheck := Ix.ModeCheck.checkArtifact)
 
 private def compileInput (input : CompileInput) :
     IO (Except String Ix.CompileM.CertifiedOut) := do
   match input.prepare >>= fun p => (checkPreparedSource p).map (p, ·) with
   | .error e => return .error e
-  | .ok (prepared, annotated) => compileCertifiedPrepared prepared annotated 1
+  | .ok (prepared, annotated) =>
+    compileCertifiedPrepared prepared annotated 1 (modeCheck := Ix.ModeCheck.checkArtifact)
 
 private def placement : IO Bool := do
   let env ← getFileEnv "Tests/Ix/SourceContract/PlacementFixture.lean"
@@ -125,7 +128,7 @@ def suite : List TestSeq := [
     | .ok _ => return false,
   ioTest "explicit Lean input requires an assumption for an annotated axiom" do
     let .ok contract := SourceContract.ofTelescope plainSource #[
-      { binder := .position 0, uses := .linear }]
+      { binder := .position 0, uses := .many, value := .unique }]
       | return false
     let input : CompileInput := { constants := constants plainSource, contracts := #[contract] }
     return unsupported (← compileInput input),
