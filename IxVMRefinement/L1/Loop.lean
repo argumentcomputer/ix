@@ -1422,7 +1422,7 @@ theorem hb_core (bytes : List UInt8)
       have hc15 : ¬ ((n : F) - 15 = 0) := by
         rw [sub15_eq_zero (by omega : n < 1024)]
         exact hne
-      rw [if_neg hc15] at h15
+      simp only [hc15, ↓reduceIte] at h15
       exact one_ne_zero (Value.field.inj h15)
     obtain ⟨rfl, hm216⟩ := fields_isZero' ev228
     subst m216
@@ -1441,9 +1441,12 @@ theorem hb_core (bytes : List UInt8)
     obtain rfl := ok_inj (hcv.symm.trans ld388)
     obtain rfl := ok_inj (hcc.symm.trans ld405)
     have hfl : v307 = .field (((Aiur.Library.Blake3.blockFlags false true false).toNat : Nat) : F) := by
+      have h0 : ¬ ((n : F) = 0) := by
+        rw [cast_eq_zero (by omega : n < 1024)]
+        omega
       rw [hv307, flags_general]
       congr 1
-      simp only [cast_eq_zero (by omega : n < 1024), hn15]
+      simp only [h0, ↓reduceIte]
       norm_num
     subst hfl
     rw [show (64 : F) = ((64 : Nat) : F) by simp] at ev374
