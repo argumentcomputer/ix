@@ -5,6 +5,7 @@ import IxC.Kernel.Ixon.RoleTable
 import IxC.Kernel.Roles
 import IxC.Kernel.RoleEquations
 import Ix.IxVM.Refinement.Claim
+import Ix.SpecDigest.Schedule
 
 /-! # The context seam: the role context, the context list, and the environment the core reads
 
@@ -15,7 +16,8 @@ The core's functions run under a role context `rc` (`KernelRoles::RoleCtx`) and 
   relative to them), the environment `env`, and the role table `t` the run read. The keying of
   addresses is the table's (`keyOf`): an address the table binds to a role `r` is `.role r`,
   any other address `a` is `.id a`, as the kernel reader keys records (`Reader.keyOfAddress`).
-* `RCRep t h rc`: `rc` reads the table `t`. Every entry of its three maps (role → address,
+* `RCRep t lim h rc`: `rc` reads the table `t` at the group limit `lim` (`Ctx.inForce`: the
+  roles of the groups below it). Every entry of its three maps (role → address,
   address → role, role → evidence) is `t`'s; a lookup that finds an entry is therefore sound.
   The search order is not constrained (nothing claims a failed lookup).
 * `TypesRep κ Γ h d types`: `types` is a segment of the ghost context ending at depth `d`: its
@@ -31,9 +33,10 @@ The core's functions run under a role context `rc` (`KernelRoles::RoleCtx`) and 
 | `tableWf` | role keys are a function of addresses (no address bound twice) | L6 (the run admitted `t`), L7 (`t` is `ReadIn`'s) |
 | `storeClosed` | moving a derivation between depths (`Rules.Transport`), for the context-lowering rebases | L5 (every installed term is closed), L7 |
 | `thmTyped` | `Red.deltaThm`'s premises: a stored theorem's value, closed and typed at its own levels | L5 (each theorem's own check, carried along the fold by `Transport.weaken`) |
-| `natLit`, `strLit`, `natOps`, `natAdd` | the native rules' stored-shape guards (`natLitSupported`, `strLitSupported`, `natOpStored`, `natAddTyOk`) | L5 (role constants installed as their specifications), L6 (the table binds them) |
+| `natLit`, `strLit`, `natOps`, `natAdd` | the native rules' stored-shape guards (`natLitSupported`, `strLitSupported`, `natOpStored`, `natAddTyOk`) | L5 (the constants of the roles in force installed as their specifications), L6 (a group is admitted before its roles are in force) |
 | `eqStored`, `evidence` | `Red.eqProof`: `Eq` is stored; each evidence theorem the table names is stored at its key, its type definitionally equal to the role equation's statement | L5 (evidence theorems checked like any theorem), L6 (the table's evidence matches its roles) |
-| `recRules` | `Red.iota`'s rule lookup: a stored recursor's `j`-th rule is for the `j`-th constructor of its major inductive, keyed by that constructor's projection record | L5 (recursor install), L7 (keys from `ReadIn`) |
+| `recRules` | `Red.iota`'s rule lookup: distinct keys, firing rules at stored constructors with their parameter counts, the `j`-th rule for the `j`-th constructor of the member the major's `iPrj` record names | L5 (recursor install), L7 (keys from `ReadIn`) |
+| `recPlain` | a plain rule's comparands are the major premise's domain | L5 (recursor install) |
 
 The loads (`Ingress::get_ci` and the projection loaders) are related to `env` by `LoadFacts`
 (`Good.lean`): the L1 ↔ L7 interface. -/
@@ -58,11 +61,14 @@ def keyOf (t : Ix.Kernel.RoleTable) (a : _root_.Address) : KKey :=
 /-! ## The context -/
 
 /-- **The context of a run of the core**: the records the environment was read from, the
-environment, and the role table the run read. -/
+environment, the role table the run read, and the role context's group limit (`lim`: the roles
+of the groups before it are in force, `KernelRoles::role_of`; `none` for an assuming context,
+under which every bound role is). -/
 structure Ctx where
   E : Ixon.Env
   env : Ix.Kernel.Env .anon
   t : Ix.Kernel.RoleTable
+  lim : Option Nat := none
 
 /-- The keying of addresses: the table's. -/
 abbrev Ctx.κ (c : Ctx) : _root_.Address → KKey := keyOf c.t
@@ -131,13 +137,15 @@ def TableRep (t : Ix.Kernel.RoleTable) (h : Heap F) (tbl : SourceValue F) : Prop
     AddrMapAll addrMapEnum (IndexEntry t) h byAddr ∧
     RoleMapAll roleEvMapEnum (EvidenceEntry t) h ev
 
-/-- **The role context `rc` reads the table `t`** (`KernelRoles::RoleCtx`: a validating context
-`Mk(table, group limit, axioms)` or an assuming one `Assumed(table, axioms)`). The group limit
-only restricts which roles are in force (`KernelRoles::role_of`), so it is not constrained. -/
-def RCRep (t : Ix.Kernel.RoleTable) (h : Heap F) (rc : SourceValue F) : Prop :=
+/-- **The role context `rc` reads the table `t` at the group limit `lim`**
+(`KernelRoles::RoleCtx`: a validating context `Mk(table, group limit, axioms)`, whose limit is
+`lim` and below `2^32`, or an assuming one `Assumed(table, axioms)`, at `lim = none`). The
+limit decides which roles are in force (`Ctx.inForce`). -/
+def RCRep (t : Ix.Kernel.RoleTable) (lim : Option Nat) (h : Heap F) (rc : SourceValue F) : Prop :=
   ∃ tbl ax node, loadValue h rc = .ok node ∧
-    ((∃ lim : F, node = .construct rcEnum "Mk" [tbl, .field lim, ax]) ∨
-      node = .construct rcEnum "Assumed" [tbl, ax]) ∧
+    ((∃ n : Nat, lim = some n ∧ n < 4294967296 ∧
+        node = .construct rcEnum "Mk" [tbl, .field (n : F), ax]) ∨
+      (lim = none ∧ node = .construct rcEnum "Assumed" [tbl, ax])) ∧
     TableRep t h tbl
 
 /-! ## The context list -/
@@ -179,6 +187,13 @@ def roleStatement (r : Ix.Kernel.Role) (i : Nat) : Option KExpr :=
 /-- The table binds the role. -/
 abbrev Ctx.binds (c : Ctx) (r : Ix.Kernel.Role) : Prop := (c.t.addressOf? r).isSome
 
+/-- **The role is in force**: the table binds it and its group (`Ix.SpecDigest.groupOf`, the
+validation schedule the circuit's `role_group` renders) is below the context's limit. A role
+lookup of the circuit succeeds only for a role in force; during the validation of a group the
+roles of that group and later ones are bound but not in force (nor installed). -/
+def Ctx.inForce (c : Ctx) (r : Ix.Kernel.Role) : Prop :=
+  c.binds r ∧ ∀ n, c.lim = some n → Ix.SpecDigest.groupOf r < n
+
 /-- **The environment invariant the core reads** (module docstring's table, with the layer that
 establishes each field). -/
 structure EnvFacts (c : Ctx) : Prop where
@@ -195,32 +210,47 @@ structure EnvFacts (c : Ctx) : Prop where
     ∃ vt s u, Infer c.env .full 0 value vt ∧ DefEq c.env 0 vt cv.type ∧
       Infer c.env .full 0 cv.type s ∧ Red c.env 0 s (.sort u) ∧
       ∀ φ, Ix.Kernel.Level.eval φ u = 0
-  /-- (L5, L6) The `Nat` literal support, when the table binds `Nat`, `Nat.zero`, `Nat.succ`. -/
-  natLit : c.binds .nat → c.binds .natZero → c.binds .natSucc →
+  /-- (L5, L6) The `Nat` literal support, when `Nat`, `Nat.zero`, `Nat.succ` are in force. -/
+  natLit : c.inForce .nat → c.inForce .natZero → c.inForce .natSucc →
     Ix.Kernel.natLitSupported c.env = true
-  /-- (L5, L6) The `String` literal support, when the table binds `String` (the default table and
-  an admitted one bind its literal support with it: `LiteralSupportBound`). -/
-  strLit : c.binds .string → Ix.Kernel.strLitSupported c.env = true
-  /-- (L5, L6) Every bound binary `Nat` operation is a stored definition (`natOpStored`). -/
-  natOps : ∀ r, c.binds r → (.role r : KKey) ∈ Ix.Kernel.Rules.natBinOpNames →
+  /-- (L5, L6) The `String` literal support, when `String` is in force (the default table and an
+  admitted one bind its literal support with it, `LiteralSupportBound`, in earlier groups). -/
+  strLit : c.inForce .string → Ix.Kernel.strLitSupported c.env = true
+  /-- (L5, L6) Every binary `Nat` operation in force is a stored definition (`natOpStored`). -/
+  natOps : ∀ r, c.inForce r → (.role r : KKey) ∈ Ix.Kernel.Rules.natBinOpNames →
     Ix.Kernel.natOpStored c.env (.role r) = true
-  /-- (L5, L6) The bound `Nat.add` has the shape the offset rules read (`natAddTyOk`). -/
-  natAdd : c.binds .natAdd → Ix.Kernel.Rules.natAddTyOk (c.env.find? Ix.Kernel.natAddName) = true
-  /-- (L5, L6) `Red.eqProof`: `Eq` is stored when the table binds it. -/
-  eqStored : c.binds .eq → ∃ ci, c.env.find? Ix.Kernel.eqName = some ci
-  /-- (L5, L6) `Red.eqProof`: each evidence theorem the table names for a definition's equation
-  is a stored theorem at its key, whose type is definitionally equal to the equation's
-  statement at the theorem's levels. -/
-  evidence : ∀ r es i a, (r, es) ∈ c.t.evidence.toList → es[i]? = some (.proof a) →
+  /-- (L5, L6) `Nat.add`, in force, has the shape the offset rules read (`natAddTyOk`). -/
+  natAdd : c.inForce .natAdd → Ix.Kernel.Rules.natAddTyOk (c.env.find? Ix.Kernel.natAddName) = true
+  /-- (L5, L6) `Red.eqProof`: `Eq` is stored when it is in force. -/
+  eqStored : c.inForce .eq → ∃ ci, c.env.find? Ix.Kernel.eqName = some ci
+  /-- (L5, L6) `Red.eqProof`: each evidence theorem the table names for the equation of a
+  definition in force is a stored theorem at its key, whose type is definitionally equal to
+  the equation's statement at the theorem's levels. -/
+  evidence : ∀ r es i a, c.inForce r → (r, es) ∈ c.t.evidence.toList → es[i]? = some (.proof a) →
     ∀ stmt, roleStatement r i = some stmt →
       ∃ cv v, c.env.find? (c.κ a) = some (.thmInfo cv v) ∧ DefEq c.env 0 cv.type stmt
-  /-- (L5, L7) `Red.iota`'s rule lookup: the `j`-th rule of a stored recursor is for the `j`-th
-  constructor of its major inductive (member `i` of block `b`: the head of the major premise's
-  type is that member's key), keyed by the constructor's projection record. -/
+  /-- (L5, L7) `Red.iota`'s rule lookup: the rules of a stored recursor have distinct constructor
+  keys; each fires (`.plain` or `.nested`, never `.inert`) at a stored constructor with the rule's
+  parameter count; and when the head of the major premise's domain is the key of an address whose
+  record in `c.E` is the inductive projection `ip`, the `j`-th rule is for the `j`-th constructor
+  of that member, keyed by its projection record (the pair is read off the record, so a
+  mismatch with the pair IxVM hashed is a hashed collision, which `Good` excludes). -/
   recRules : ∀ k cv mI rP rls, c.env.find? k = some (.recInfo cv mI rP rls) →
-    ∃ (b : _root_.Address) (i : Nat) (us : List KLevel),
-      (piDomAt mI cv.type).map (·.getAppFn) = some (.const (c.κ (iprjAddr b i)) us) ∧
-      ∀ j rl, rls[j]? = some rl → rl.ctor = c.κ (cprjAddr b i j)
+    (rls.map (·.ctor)).Nodup ∧
+    (∀ rl ∈ rls, rl.fire ≠ .inert ∧
+      ∃ cvj nF, c.env.find? rl.ctor = some (.ctorInfo cvj rl.ctorParams nF)) ∧
+    ∀ (p : _root_.Address) (cm : Ixon.Constant) (ip : Ixon.InductiveProj) (us : List KLevel),
+      (piDomAt mI cv.type).map (·.getAppFn) = some (.const (c.κ p) us) →
+      Ix.Cert.recordAt c.E p = some cm → cm.info = .iPrj ip →
+      ∀ j rl, rls[j]? = some rl → rl.ctor = c.κ (cprjAddr ip.block ip.idx.toNat j)
+  /-- (L5) A plain rule's comparands (`recFireComparands`) are the major premise's domain: its
+  head is the inductive at the constructor's level parameters and its first `nP` arguments are
+  the recursor's leading bound variables (the canonical shape `Expr.recRulePlain` tests). -/
+  recPlain : ∀ k cv mI rP rls rl cvj nP nF, c.env.find? k = some (.recInfo cv mI rP rls) →
+    rl ∈ rls → rl.fire = .plain → c.env.find? rl.ctor = some (.ctorInfo cvj nP nF) →
+    ∃ D T, piDomAt mI cv.type = some D ∧
+      D.getAppFn = .const T (cvj.levelParams.map .param) ∧
+      D.getAppArgs.take nP = (List.range nP).map fun i => .bvar (mI - 1 - i)
 
 /-! ## Heap monotonicity -/
 
@@ -262,8 +292,9 @@ theorem TableRep.mono {t : Ix.Kernel.RoleTable} {h₁ h₂ : Heap F} {tbl : Sour
     obtain ⟨r, es, hk, hm, hl'⟩ := he
     exact ⟨r, es, hk, hm, repList_heapMono₂ evListEnum evRep_heapMono₂ ext' hl'⟩
 
-theorem RCRep.mono {t : Ix.Kernel.RoleTable} {h₁ h₂ : Heap F} {rc : SourceValue F}
-    (ext : Heap.Extends h₁ h₂) (r : RCRep t h₁ rc) : RCRep t h₂ rc := by
+theorem RCRep.mono {t : Ix.Kernel.RoleTable} {lim : Option Nat} {h₁ h₂ : Heap F}
+    {rc : SourceValue F} (ext : Heap.Extends h₁ h₂) (r : RCRep t lim h₁ rc) :
+    RCRep t lim h₂ rc := by
   obtain ⟨tbl, ax, node, hl, hn, ht⟩ := r
   exact ⟨tbl, ax, node, ext.loadValue_eq hl, hn, ht.mono ext⟩
 

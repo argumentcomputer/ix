@@ -532,9 +532,9 @@ def prim_family : SpecFn := fun c args h r h' calls =>
   ∀ rc ap, args = [rc, ap] → Good c calls → c.rc h rc →
     ∀ (a : Bytes.Address) (f op : F), RepAddr h a ap → r = .tuple [.field f, .field op] →
       f ≠ 0 →
-        (∃ role, c.t.addressOf? role = some (ixAddr a)) ∧
+        (∃ role, c.t.addressOf? role = some (ixAddr a) ∧ c.inForce role) ∧
         (f = 1 → ∃ role, natOpOf (ZMod.val op) = some role ∧
-          c.t.addressOf? role = some (ixAddr a))
+          c.t.addressOf? role = some (ixAddr a) ∧ c.inForce role)
 
 /-- `try_nat_dispatch_prewhnf(rc, head_addr, op, spine, types)`: the `Nat` natives after
 head-normalizing the spine. At a constant the table binds to the operation `natOpOf op`,

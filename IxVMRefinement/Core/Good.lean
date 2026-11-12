@@ -97,10 +97,12 @@ structure LoadFacts (c : Ctx) : Prop where
       (ind : Ixon.Inductive),
     ObsFn W "Ingress::get_ci" [addr] h ptr h' cs → Good c cs → Bytes.RepAddressRef addrTy h a addr →
     Ix.Cert.recordAt c.E (ixAddr a) = some cm → cm.info = .iPrj p →
-    Ix.Cert.recordAt c.E p.block = some cb → cb.info = .muts xs → xs[p.idx.toNat]? = some (.indc ind) →
+    Ix.Cert.recordAt c.E p.block = some cb → cb.info = .muts xs →
+    xs[p.idx.toNat]? = some (.indc ind) →
     ∃ (nl ty u blk : SourceValue F) (b : Bytes.Address),
       loadValue h' ptr = .ok (.construct kciEnum "Induct" [nl, ty, .field (ind.params.toNat : F),
-        .field (ind.indices.toNat : F), .field (ind.ctors.size : F), u, blk, .field (p.idx.toNat : F)]) ∧
+        .field (ind.indices.toNat : F), .field (ind.ctors.size : F), u, blk,
+        .field (p.idx.toNat : F)]) ∧
       Bytes.RepAddressRef addrTy h' b blk ∧ ixAddr b = p.block
 
 /-! ## Specs -/

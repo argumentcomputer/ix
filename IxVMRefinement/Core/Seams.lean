@@ -8,7 +8,7 @@ The components of the one seams instance every layer states its results against
 * `S0.term E env g d k h v t` = `Tm g.κ d g.Γ h k t v` (`Rep.lean`);
 * `S0.ctx E env g d h rc types`: `rc` reads a table `t` whose keying is `g.κ`, `types` is a
   segment of `g.Γ` ending at `d`, and the environment invariant (`EnvFacts`) and the loads
-  (`LoadFacts`) hold of `⟨E, env, t⟩` (`Ctx.lean`, `Good.lean`);
+  (`LoadFacts`) hold of `⟨E, env, t, lim⟩` (`Ctx.lean`, `Good.lean`);
 * `S0.addr h v a`: `v` is a `Bytes::AddressRef` holding `a`;
 * `S0.loaded`, `S0.Walked`, `S0.Checked`: first definitions (below).
 
@@ -38,13 +38,14 @@ def term (_E : Ixon.Env) (_env : Ix.Kernel.Env .anon) (g : Ghost) (d k : Nat) (h
     (v : SourceValue F) (t : KExpr) : Prop :=
   Tm g.κ d g.Γ h k t v
 
-/-- (L4) **The context seam**: the role context reads a table whose keying is the ghost's, the
-context list is a segment of the ghost context, and the environment invariant and the loads
-hold. -/
+/-- (L4) **The context seam**: the role context reads a table whose keying is the ghost's, at a
+group limit, the context list is a segment of the ghost context, and the environment invariant
+(for the roles in force under that limit) and the loads hold. -/
 def ctx (E : Ixon.Env) (env : Ix.Kernel.Env .anon) (g : Ghost) (d : Nat) (h : Heap F)
     (rc types : SourceValue F) : Prop :=
-  ∃ t : Ix.Kernel.RoleTable, g.κ = keyOf t ∧ RCRep t h rc ∧ TypesRep g.κ g.Γ h d types ∧
-    GhostScoped g.Γ d ∧ EnvFacts ⟨E, env, t⟩ ∧ LoadFacts ⟨E, env, t⟩
+  ∃ (t : Ix.Kernel.RoleTable) (lim : Option Nat), g.κ = keyOf t ∧ RCRep t lim h rc ∧
+    TypesRep g.κ g.Γ h d types ∧ GhostScoped g.Γ d ∧ EnvFacts ⟨E, env, t, lim⟩ ∧
+    LoadFacts ⟨E, env, t, lim⟩
 
 /-- (L1, L6) **The address seam**: `v` is a `Bytes::AddressRef` holding `a`. -/
 def addr (h : Heap F) (v : SourceValue F) (a : _root_.Address) : Prop :=
@@ -68,7 +69,7 @@ reading `t`: a call of `KernelCheck::check_const(rc, ci, addr)` on a loaded cons
 address `a`. -/
 def CheckedAt (calls : List (Call F)) (t : Ix.Kernel.RoleTable) (a : _root_.Address) : Prop :=
   ∃ cl ∈ calls, cl.name = "KernelCheck::check_const" ∧
-    ∃ rc v ap, cl.args = [rc, v, ap] ∧ RCRep t cl.heap rc ∧ addr cl.heap ap a
+    ∃ rc v ap lim, cl.args = [rc, v, ap] ∧ RCRep t lim cl.heap rc ∧ addr cl.heap ap a
 
 /-- The reference-table indices an expression names as constants (`KernelClaim::const_idxs_expr`):
 those of `ref` and `prj` nodes; literal indices name blobs and `share` nodes are read through the
@@ -137,10 +138,10 @@ declaration layer's to carry in its invariant (`Decls`) and to supply to `Core` 
 def Checked (calls : List (Call F)) (env : Ix.Kernel.Env .anon)
     (d : Ix.Kernel.Declaration .anon) : Prop :=
   ∃ (E : Ixon.Env) (t : Ix.Kernel.RoleTable),
-    t.wf = true ∧ LoadFacts ⟨E, env, t⟩ ∧ Good ⟨E, env, t⟩ calls ∧
+    t.wf = true ∧ LoadFacts ⟨E, env, t, none⟩ ∧ Good ⟨E, env, t, none⟩ calls ∧
     ∀ ci₀ ∈ IxVM.Consistency.installs d,
       ∃ cl ∈ calls, cl.name = "KernelCheck::check_const" ∧
-        ∃ rc v ap a ci, cl.args = [rc, v, ap] ∧ RCRep t cl.heap rc ∧ addr cl.heap ap a ∧
+        ∃ rc v ap lim a ci, cl.args = [rc, v, ap] ∧ RCRep t lim cl.heap rc ∧ addr cl.heap ap a ∧
           keyOf t a = ci₀.name ∧ CIRep (keyOf t) cl.heap v ci ∧ IxVM.Consistency.StoredAs ci ci₀
 
 /-! ## Heap monotonicity -/
@@ -153,8 +154,8 @@ theorem term_mono {E : Ixon.Env} {env : Ix.Kernel.Env .anon} {g : Ghost} {d k : 
 theorem ctx_mono {E : Ixon.Env} {env : Ix.Kernel.Env .anon} {g : Ghost} {d : Nat}
     {h₁ h₂ : Heap F} {rc types : SourceValue F} (ext : Heap.Extends h₁ h₂)
     (r : ctx E env g d h₁ rc types) : ctx E env g d h₂ rc types := by
-  obtain ⟨t, hκ, hrc, hty, hs, hf, hl⟩ := r
-  exact ⟨t, hκ, hrc.mono ext, hty.mono ext, hs, hf, hl⟩
+  obtain ⟨t, lim, hκ, hrc, hty, hs, hf, hl⟩ := r
+  exact ⟨t, lim, hκ, hrc.mono ext, hty.mono ext, hs, hf, hl⟩
 
 theorem addr_mono {h₁ h₂ : Heap F} {v : SourceValue F} {a : _root_.Address}
     (ext : Heap.Extends h₁ h₂) (r : addr h₁ v a) : addr h₂ v a := by

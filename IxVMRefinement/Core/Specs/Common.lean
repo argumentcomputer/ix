@@ -13,10 +13,10 @@ function.
 
 1. A spec is `fun c args h r h' calls => ∀ <arguments>, args = [<arguments>] → Good c calls →
    <hypotheses on the inputs, at the heap h> → <claim on the result r, at the heap h'>`.
-2. A role context `rc` is related by `c.rc h rc` (`RCRep c.t h rc`); a context list `types` by
-   `c.types Γ h d types` (`TypesRep`), for the same `d Γ` as the terms. A function that takes
-   both is stated for every opening depth `d` and ghost context `Γ` at which its inputs are
-   represented: `∀ d Γ, c.types Γ h d types → ∀ E, c.tm d Γ h E e → …`.
+2. A role context `rc` is related by `c.rc h rc` (`RCRep c.t c.lim h rc`); a context list
+   `types` by `c.types Γ h d types` (`TypesRep`), for the same `d Γ` as the terms. A function
+   that takes both is stated for every opening depth `d` and ghost context `Γ` at which its
+   inputs are represented: `∀ d Γ, c.types Γ h d types → ∀ E, c.tm d Γ h E e → …`.
 3. Terms: `c.tm d Γ h E e` (local depth `0`), `c.tmk d Γ k h E e` under `k` local binders,
    `c.tml d Γ h Es l` for term lists, `c.tmc h E e` for closed terms. Levels: `LvRep h u p`,
    `LvListRep h us p` (up to semantic equality). Addresses: `Bytes.RepAddressRef addrTy h a p`
@@ -70,7 +70,7 @@ abbrev Ctx.tmc (c : Ctx) (h : Heap F) (E : KExpr) (p : SourceValue F) : Prop :=
   TmC c.κ h E p
 
 /-- The role context reads the table. -/
-abbrev Ctx.rc (c : Ctx) (h : Heap F) (rc : SourceValue F) : Prop := RCRep c.t h rc
+abbrev Ctx.rc (c : Ctx) (h : Heap F) (rc : SourceValue F) : Prop := RCRep c.t c.lim h rc
 
 /-- The context list is a segment of `Γ` ending at `d`, and `Γ` is scoped below `d`
 (`GhostScoped`). -/
