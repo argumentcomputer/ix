@@ -389,33 +389,25 @@ theorem red_rename (hR : Renaming P f env env') :
   | _, _, _, .delta hu, he =>
     ⟨unfoldDefinition_good hR.rel he hu,
       .delta (by rw [unfoldDefinition_ren hR.rel he, hu]; rfl)⟩
-  | _, _, _, .deltaThm (n := n) (us := us) (cv := cv) (value := value)
+  | d, _, _, .deltaThm (n := n) (us := us) (cv := cv) (value := value)
       hf hlen hvf hvb hinf hde hinfT hred hz, _ => by
     have hci := hR.good hf
     simp only [ConstantInfo.Good] at hci
     have hvg : (value.instantiateLevelParams cv.levelParams us).Good P :=
       Expr.Good.instantiateLevelParams hci.2 _ _
-    have htg : (cv.type.instantiateLevelParams cv.levelParams us).Good P :=
-      Expr.Good.instantiateLevelParams hci.1.2 _ _
-    obtain ⟨gvt, ivt⟩ := infer_rename hR hinf hvg
-    obtain ⟨gs, its⟩ := infer_rename hR hinfT htg
+    obtain ⟨gvt, ivt⟩ := infer_rename hR hinf hci.2
+    obtain ⟨gs, its⟩ := infer_rename hR hinfT hci.1.2
     obtain ⟨-, rs⟩ := red_rename hR hred gs
-    have dvt := defEq_rename hR hde gvt htg
+    have dvt := defEq_rename hR hde gvt hci.1.2
     refine ⟨hvg, ?_⟩
-    have key := Red.deltaThm (env := env') (n := n.map f) (us := us)
+    have key := Red.deltaThm (env := env') (d := d) (n := n.map f) (us := us)
       (cv := cv.mapKeys f) (value := value.mapKeys f)
       (by rw [hR.find hf]; rfl)
       (by rw [ConstantVal.mapKeys_levelParams]; exact hlen)
       (by rw [Expr.hasFvar_mapKeys]; exact hvf)
       (by rw [Expr.looseBVarsBounded_mapKeys]; exact hvb)
-      (by rw [ConstantVal.mapKeys_levelParams, ← Expr.mapKeys_instantiateLevelParams]
-          exact ivt)
-      (by rw [ConstantVal.mapKeys_levelParams, ConstantVal.mapKeys_type,
-            ← Expr.mapKeys_instantiateLevelParams]
-          exact dvt)
-      (by rw [ConstantVal.mapKeys_levelParams, ConstantVal.mapKeys_type,
-            ← Expr.mapKeys_instantiateLevelParams]
-          exact its)
+      ivt (by rw [ConstantVal.mapKeys_type]; exact dvt)
+      (by rw [ConstantVal.mapKeys_type]; exact its)
       rs hz
     rw [ConstantVal.mapKeys_levelParams, ← Expr.mapKeys_instantiateLevelParams] at key
     exact key
@@ -741,6 +733,48 @@ theorem defEq_rename (hR : Renaming P f env env') :
       (by rw [reservedBasisNames_contains_map]; exact hresT)
       (by rw [Expr.getAppArgs_mapKeys, List.length_map]; exact htlen) hlv i3 r2
       (defEq_rename hR hd g2 g4) (by simpa [Expr.getAppArgs_mapKeys] using hcerts')
+  | _, _, _, .proofIrrelTy hta htta hu hu0 htb hd, ha, hb => by
+    obtain ⟨g1, i1⟩ := infer_rename hR hta ha
+    obtain ⟨g2, i2⟩ := infer_rename hR htta g1
+    obtain ⟨-, r1⟩ := red_rename hR hu g2
+    obtain ⟨g3, i3⟩ := infer_rename hR htb hb
+    exact .proofIrrelTy i1 i2 r1 hu0 i3 (defEq_rename hR hd g1 g3)
+  | _, _, _, .unitLikeTy hta hwta hthead hind hunit htlen hcerts hkind htb hd, ha, hb => by
+    obtain ⟨g1, i1⟩ := infer_rename hR hta ha
+    obtain ⟨g2, r1⟩ := red_rename hR hwta g1
+    obtain ⟨g3, i3⟩ := infer_rename hR htb hb
+    have hcerts' := certs_rename hR hcerts
+      (Expr.Good.instantiateLevelParams (hR.good hind).1.2 _ _) (Expr.Good.getAppArgs g2)
+    exact .unitLikeTy i1 r1 (head_map hthead) (hR.find hind) hunit
+      (by rw [Expr.getAppArgs_mapKeys, List.length_map]; exact htlen)
+      (by simpa [Expr.getAppArgs_mapKeys] using hcerts')
+      (hkind.imp (fun h => by rw [reservedBasisNames_contains_map]; exact h)
+        (fun h => by rw [isUnitLikeTy_ren hR.rel g2]; exact h))
+      i3 (defEq_rename hR hd g1 g3)
+  | _, _, _, .structEtaTy (b := b) (cnF := cnF) (T := T) (caps := caps) hhead hctor hlen hind
+      heta hetaCtor hpos htow hta hwta hcerts htb hd hfields, hgb, hga => by
+    obtain ⟨gta, ita⟩ := infer_rename hR hta hga
+    obtain ⟨-, rw'⟩ := red_rename hR hwta gta
+    obtain ⟨gtb, itb⟩ := infer_rename hR htb hgb
+    have hT : T.Good P := hR.found _ _ hind
+    have haargs := Expr.Good.getAppArgs hga
+    have hcerts' := certs_rename hR hcerts
+      (Expr.Good.instantiateLevelParams (hR.good hind).1.2 _ _) (haargs.take _)
+    have hprojs : Expr.GoodList P ((List.range cnF).map fun i => Expr.proj T i b) := by
+      intro x hx
+      simp only [List.mem_map] at hx
+      obtain ⟨_, _, rfl⟩ := hx
+      exact ⟨hT, hgb⟩
+    have hfields' := defEqList_rename hR hfields hprojs (haargs.drop _)
+    rw [List.map_map, List.map_drop, ← Expr.getAppArgs_mapKeys] at hfields'
+    rw [Expr.mapKeys_mkAppN, List.map_take, ← Expr.getAppArgs_mapKeys] at rw'
+    exact .structEtaTy (head_map hhead) (hR.find hctor)
+      (by rw [Expr.getAppArgs_mapKeys, List.length_map]; exact hlen) (hR.find hind) heta
+      (by show caps.etaCtor.map (Key.map f) = _; rw [hetaCtor]; rfl) hpos
+      (by rw [towerSlotsAll_ren hR.rel hT]; exact htow) ita rw'
+      (by simpa only [Expr.getAppArgs_mapKeys, List.map_take, ConstantVal.mapKeys_type,
+            ConstantVal.mapKeys_levelParams, Expr.mapKeys_instantiateLevelParams] using hcerts')
+      itb (defEq_rename hR hd gtb gta) hfields'
 
 /-- **An inference, renamed**: a good subject has a good type, and the renamed
 subject infers the renamed type. -/

@@ -77,9 +77,9 @@ theorem judgeSound_runJ {μ : CheckMode} (hμ : μ.verifiedChecks = true) {env :
     (mp : EnvModelM V μ env) (F : Nat) : JudgeSound (runJ μ F) mp.base2 where
   toJudgeFrames := judgeFrames_runJ F
   accepted := fun φ _ _ _ h hws hb hL => acceptedReads_of mp.base2 φ h hws hb hL
-  infer := fun φ => (checkSoundAt hμ (Rules.RulesInputs.ofSem mp φ) F).2.2.2
-  defeq := fun φ => (checkSoundAt hμ (Rules.RulesInputs.ofSem mp φ) F).2.2.1
-  reads := fun φ => inferReads_of hμ (Rules.RulesInputs.ofSem mp φ)
+  infer := fun φ => (checkSoundAt (φ := φ) hμ (fun ψ => Rules.RulesInputs.ofSem mp ψ) F).2.2.2
+  defeq := fun φ => (checkSoundAt (φ := φ) hμ (fun ψ => Rules.RulesInputs.ofSem mp ψ) F).2.2.1
+  reads := fun φ => inferReads_of (φ := φ) hμ (fun ψ => Rules.RulesInputs.ofSem mp ψ)
   frame := inferFrame_runJ mp.base2.wf F mp.base2
 
 end Ix.Kernel.Model

@@ -55,8 +55,8 @@ theorem infer_reading (M : Cached.StrongModel V env) (φ : LevelParam → Nat)
     ∃ ea, denoteMeta M.internal.base2.acval env φ 0 e = some ea ∧ Graded V [] ea := by
   obtain ⟨ea, read⟩ := Model.acceptedReads_of M.internal.base2 φ inferred
     frame.1 frame.2.1 frame.2.2
-  have inputs := Model.Rules.RulesInputs.ofSem M.internal φ
-  have typed := Model.Rules.infer_sound inputs (Ix.Kernel.Rules.inferTypeCore_bridge inferred)
+  have inputs := fun ψ => Model.Rules.RulesInputs.ofSem M.internal ψ
+  have typed := Model.Rules.infer_sound inputs (φ := φ) (Ix.Kernel.Rules.inferTypeCore_bridge inferred)
   obtain ⟨_, _, _, _, graded, _, _⟩ := typed frame (frame_context M φ frame) read
   exact ⟨ea, read, graded⟩
 
@@ -85,7 +85,7 @@ theorem defeq_values (M : Cached.StrongModel V env)
     ∃ v, Denotes M.model.cval env φ ρ a v ∧ Denotes M.model.cval env φ ρ b v := by
   obtain ⟨aa, readA, gradeA⟩ := infer_reading M φ frameA inferA
   obtain ⟨ba, readB, gradeB⟩ := infer_reading M φ frameB inferB
-  have eq := Model.Rules.defeq_sound (Model.Rules.RulesInputs.ofSem M.internal φ)
+  have eq := Model.Rules.defeq_sound (fun ψ => Model.Rules.RulesInputs.ofSem M.internal ψ) (φ := φ)
     conversion frameA frameB (frame_context M φ frameA) (frame_context M φ frameB)
     readA readB gradeA gradeB ρ (Sat_nil V ρ)
   refine ⟨interp V ρ aa, reading_denotes M frameA readA gradeA ρ, ?_⟩

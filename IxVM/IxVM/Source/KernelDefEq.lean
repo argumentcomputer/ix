@@ -147,7 +147,8 @@ def is_nat_zero := aiur_fn⟦
             KernelTypes::KLiteral::Nat(limbs) => {  KernelKlimbs::klimbs_is_zero(limbs) } ,
             _ => {  0 } ,
           } } ,
-        KernelTypes::KExprNode::Const(caddr, _) => {  KernelRoles::role_is(rc, caddr, KernelRoleSpec::role_nat_zero()) } ,
+        KernelTypes::KExprNode::Const(caddr, clvls) => {
+          KernelRoles::role_is(rc, caddr, KernelRoleSpec::role_nat_zero()) * KernelNatPrim::lvls_empty(clvls) } ,
         _ => {  0 } ,
       }
     }

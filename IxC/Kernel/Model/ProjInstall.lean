@@ -190,13 +190,13 @@ theorem projFn (hμ : μ.verifiedChecks = true) {F : Nat} {env' env₁ : Env md}
     simpa using h
   -- the four claims and the reads, at every assignment
   have hclaims := fun ψ =>
-    checkSoundAt (V := V) hμ (Rules.RulesInputs.ofSem mp ψ) F
+    checkSoundAt (V := V) (φ := ψ) hμ (fun ψ' => Rules.RulesInputs.ofSem mp ψ') F
   have hdeq : ∀ ψ : LevelParam → Nat, DefEqClaim μ mp.base2 ψ F :=
     fun ψ => (hclaims ψ).2.2.1
   have hinf : ∀ ψ : LevelParam → Nat, InferClaim μ mp.base2 ψ F :=
     fun ψ => (hclaims ψ).2.2.2
   have hreadsP : ∀ ψ : LevelParam → Nat, InferReads mp.base2 μ ψ F :=
-    fun ψ => inferReads_of hμ (Rules.RulesInputs.ofSem mp ψ)
+    fun ψ => inferReads_of (φ := ψ) hμ (fun ψ' => Rules.RulesInputs.ofSem mp ψ')
   -- ===== the rule rhs's front door, at the reading (the H1 exposure,
   -- fourth widening — `iotaRulePlain`'s three-part construction)
   have hrhsLeafNil : ∀ l ∈ rhsA.fvarLeaves, False := by

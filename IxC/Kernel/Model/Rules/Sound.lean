@@ -9,6 +9,7 @@ import IxC.Kernel.Model.Rules.CertsSound
 import IxC.Kernel.Model.Rules.ThmSound
 import IxC.Kernel.Model.Rules.EqSound
 import IxC.Kernel.Model.Rules.NatOffsetSound
+import IxC.Kernel.Model.Rules.IrrelSound
 import IxC.Kernel.Rules.Derived
 
 public section
@@ -39,11 +40,10 @@ open Ix.Kernel.Rules
 universe w
 
 variable {V : Type w} [SetTheory V] {env : Env md} {m : EnvModel V env}
-  {φ : LevelParam → Nat}
 
 mutual
 
-theorem red_sound (hin : RulesInputs V m φ) :
+theorem red_sound (hin : ∀ ψ, RulesInputs V m ψ) {φ : LevelParam → Nat} :
     ∀ {d : Nat} {e e' : Expr md}, Red env d e e' → RedSem m φ d e e'
   | _, _, _, .refl => Red.refl_sound
   | _, _, _, .trans h₁ h₂ =>
@@ -54,51 +54,54 @@ theorem red_sound (hin : RulesInputs V m φ) :
   | _, _, _, .betaGate hnev => Red.betaGate_sound hnev
   | _, _, _, .beta hta hd =>
     Red.beta_sound (infer_sound hin hta) (defeq_sound hin hd)
-  | _, _, _, .delta h => Red.delta_sound hin h
-  | _, _, _, .deltaThm hf hlen hvf hvb hinf hde hinfT hred hz =>
-    Red.deltaThm_sound hin hf hlen hvf hvb hinf (infer_sound hin hinf) (defeq_sound hin hde)
-      (infer_sound hin hinfT) (red_sound hin hred) hz
+  | _, _, _, .delta h => Red.delta_sound (hin φ) h
+  | _, _, _, .deltaThm (us := us) (cv := cv) hf hlen hvf hvb hinf hde hinfT hred hz =>
+    Red.deltaThm_sound (hin φ) hf hlen hvf hvb hinf
+      (infer_sound hin (φ := Level.substFn φ cv.levelParams us) hinf)
+      (defeq_sound hin (φ := Level.substFn φ cv.levelParams us) hde)
+      (infer_sound hin (φ := Level.substFn φ cv.levelParams us) hinfT)
+      (red_sound hin (φ := Level.substFn φ cv.levelParams us) hred) hz
   | _, _, _, .eqProof _ hfE hp hwp hbp hlp ha hda hb hdb hT hred hv =>
-    Red.eqProof_sound hin hfE hp hwp hbp hlp (infer_sound hin hp) (infer_sound hin ha)
+    Red.eqProof_sound (hin φ) hfE hp hwp hbp hlp (infer_sound hin hp) (infer_sound hin ha)
       (defeq_sound hin hda) (infer_sound hin hb) (defeq_sound hin hdb) (infer_sound hin hT)
       (red_sound hin hred) hv
   | _, _, _, .natLit h => Red.natLit_sound h
   | _, _, _, .strLit h => Red.strLit_sound h
   | _, _, _, .natSucc hsup hw hn =>
-    Red.natSucc_sound hin hsup (red_sound hin hw) hn
+    Red.natSucc_sound (hin φ) hsup (red_sound hin hw) hn
   | _, _, _, .natOp hc hst hwa hn₁ hwb hn₂ hr =>
-    Red.natOp_sound hin hc hst (red_sound hin hwa) hn₁ (red_sound hin hwb) hn₂ hr
-  | _, _, _, .natAddSucc hs ht => Red.natAddSucc_sound hin hs ht
+    Red.natOp_sound (hin φ) hc hst (red_sound hin hwa) hn₁ (red_sound hin hwb) hn₂ hr
+  | _, _, _, .natAddSucc hs ht => Red.natAddSucc_sound (hin φ) hs ht
   | _, _, _, .natAddZero hs ht hw hn =>
-    Red.natAddZero_sound hin hs ht (red_sound hin hw) hn
+    Red.natAddZero_sound (hin φ) hs ht (red_sound hin hw) hn
   | _, _, _, .proj hent hhead hi hlen hus hfire hctor hcerts =>
-    Red.proj_sound hin hent hhead hi hlen hus hfire hctor (certs_sound hin hcerts)
+    Red.proj_sound (hin φ) hent hhead hi hlen hus hfire hctor (certs_sound hin hcerts)
   | _, _, _, .iota hhead hrec hlen hus hmajor hmhead hctor hrule hmlen hfire hlv
       hparams hcertR hcertC hres hidx =>
-    Red.iota_sound hin hhead hrec hlen hus (red_sound hin hmajor) hmhead hctor
+    Red.iota_sound (hin φ) hhead hrec hlen hus (red_sound hin hmajor) hmhead hctor
       hrule hmlen hfire hlv (fun hc => defEqList_sound hin (hparams hc))
       (certs_sound hin hcertR) (certs_sound hin hcertC) hres
       (fun hne => defEqList_sound hin (hidx hne))
   | _, _, _, .rescueK hrec hk hctor hres hind htm htmaj hthead hlv hnP hfab hws
       hb hlv' hcerts htf hdt hpi =>
-    Red.rescueK_sound hin hrec hk hctor hres hind (infer_sound hin htm)
+    Red.rescueK_sound (hin φ) hrec hk hctor hres hind (infer_sound hin htm)
       (red_sound hin htmaj) hthead hlv hnP hfab hws hb hlv'
       (certs_sound hin hcerts) (infer_sound hin htf) (defeq_sound hin hdt)
       (defeq_sound hin hpi)
   | _, _, _, .rescueEta hrec heta hctor hres hind htm htmaj hthead hlen hlv hnz
       hfab hws hb hlv' hcerts hproj hpi =>
-    Red.rescueEta_sound hin hrec heta hctor hres hind (infer_sound hin htm)
+    Red.rescueEta_sound (hin φ) hrec heta hctor hres hind (infer_sound hin htm)
       (red_sound hin htmaj) hthead hlen hlv hnz hfab hws hb hlv'
       (certs_sound hin hcerts)
       (fun hno => etaProjCerts_sound hin (hproj hno)) (defeq_sound hin hpi)
   | _, _, _, .rescueAnd hrec hctor hres hind htm htmaj hthead hlen hlv hslots
       hfab hws hb hlv' hcerts htf hdt hpi =>
-    Red.rescueAnd_sound hin hrec hctor hres hind (infer_sound hin htm)
+    Red.rescueAnd_sound (hin φ) hrec hctor hres hind (infer_sound hin htm)
       (red_sound hin htmaj) hthead hlen hlv hslots hfab hws hb hlv'
       (certs_sound hin hcerts) (infer_sound hin htf) (defeq_sound hin hdt)
       (defeq_sound hin hpi)
 
-theorem defeq_sound (hin : RulesInputs V m φ) :
+theorem defeq_sound (hin : ∀ ψ, RulesInputs V m ψ) {φ : LevelParam → Nat} :
     ∀ {d : Nat} {a b : Expr md}, DefEq env d a b → DefEqSem m φ d a b
   | _, _, _, .refl => DefEq.refl_sound
   | _, _, _, .symm h => DefEq.symm_sound (defeq_sound hin h)
@@ -109,7 +112,7 @@ theorem defeq_sound (hin : RulesInputs V m φ) :
   | _, _, _, .natZero => DefEq.natZero_sound
   | _, _, _, .natSucc h => DefEq.natSucc_sound (defeq_sound hin h)
   | _, _, _, .natOffset hs ht ha hb h =>
-    DefEq.natOffset_sound hin hs ht ha hb (defeq_sound hin h)
+    DefEq.natOffset_sound (hin φ) hs ht ha hb (defeq_sound hin h)
   | _, _, _, .forallE hty hbody hpw _ =>
     DefEq.forallE_sound (defeq_sound hin hty) (defeq_sound hin hbody) hpw
   | _, _, _, .lam hty hbody hpw _ =>
@@ -119,7 +122,7 @@ theorem defeq_sound (hin : RulesInputs V m φ) :
   | _, _, _, .eta htb hwtb hty hbody hpw _ =>
     DefEq.eta_sound (infer_sound hin htb) (red_sound hin hwtb)
       (defeq_sound hin hty) (defeq_sound hin hbody) hpw
-  | _, _, _, .proofFast ha hb => DefEq.proofFast_sound hin ha hb
+  | _, _, _, .proofFast ha hb => DefEq.proofFast_sound (hin φ) ha hb
   | _, _, _, .proofIrrel hta htta hu hu0 htb httb hv hv0 =>
     DefEq.proofIrrel_sound (infer_sound hin hta) (infer_sound hin htta)
       (red_sound hin hu) hu0 (infer_sound hin htb) (infer_sound hin httb)
@@ -129,23 +132,35 @@ theorem defeq_sound (hin : RulesInputs V m φ) :
       (infer_sound hin htb) (red_sound hin hwtb) hub
   | _, _, _, .structEta htb hwtb hhead hctor hlen hthead hind heta hetaCtor hresT
       hresc htlen hlv hlps hslots hus hcerts hproj hparams hfields =>
-    DefEq.structEta_sound hin (infer_sound hin htb) (red_sound hin hwtb) hhead
+    DefEq.structEta_sound (hin φ) (infer_sound hin htb) (red_sound hin hwtb) hhead
       hctor hlen hthead hind heta hetaCtor hresT hresc htlen hlv hlps hslots hus
       (certs_sound hin hcerts) (fun hno => etaProjCerts_sound hin (hproj hno))
       (defEqList_sound hin hparams) (defEqList_sound hin hfields)
   | _, _, _, .structUnit hta hwta hthead hind hunit hresT htlen hlv htb hwtb hd
       hcerts =>
-    DefEq.structUnit_sound hin (infer_sound hin hta) (red_sound hin hwta) hthead
+    DefEq.structUnit_sound (hin φ) (infer_sound hin hta) (red_sound hin hwta) hthead
       hind hunit hresT htlen hlv (infer_sound hin htb) (red_sound hin hwtb)
       (defeq_sound hin hd) (certs_sound hin hcerts)
+  | _, _, _, .proofIrrelTy hta htta hu hu0 htb hd =>
+    DefEq.proofIrrelTy_sound (infer_sound hin hta) (infer_sound hin htta)
+      (red_sound hin hu) hu0 (infer_sound hin htb) (defeq_sound hin hd)
+  | _, _, _, .unitLikeTy hta hwta hthead hind hunit htlen hcerts hkind htb hd =>
+    DefEq.unitLikeTy_sound (hin φ) (infer_sound hin hta) (red_sound hin hwta) hthead
+      hind hunit htlen (certs_sound hin hcerts) hkind (infer_sound hin htb)
+      (defeq_sound hin hd)
+  | _, _, _, .structEtaTy hhead hctor hlen hind heta hetaCtor hpos htow hta hwta hcerts htb hd
+      hfields =>
+    DefEq.structEtaTy_sound (hin φ) hhead hctor hlen hind heta hetaCtor hpos htow
+      (infer_sound hin hta) (red_sound hin hwta) (certs_sound hin hcerts) (infer_sound hin htb)
+      (defeq_sound hin hd) (defEqList_sound hin hfields)
 
-theorem infer_sound (hin : RulesInputs V m φ) :
+theorem infer_sound (hin : ∀ ψ, RulesInputs V m ψ) {φ : LevelParam → Nat} :
     ∀ {g : Grade} {d : Nat} {e t : Expr md}, Infer env g d e t → InferSem m φ g d e t
   | _, _, _, _, .sort => Infer.sort_sound
   | _, _, _, _, .fvar h => Infer.fvar_sound h
-  | _, _, _, _, .const hf htower hus => Infer.const_sound hin hf htower hus
-  | _, _, _, _, .natLit h => Infer.natLit_sound hin h
-  | _, _, _, _, .strLit h => Infer.strLit_sound hin h
+  | _, _, _, _, .const hf htower hus => Infer.const_sound (hin φ) hf htower hus
+  | _, _, _, _, .natLit h => Infer.natLit_sound (hin φ) h
+  | _, _, _, _, .strLit h => Infer.strLit_sound (hin φ) h
   | _, _, _, _, .forallE hs hu hbs hv hz =>
     Infer.forallE_sound (infer_sound hin hs) (red_sound hin hu)
       (infer_sound hin hbs) (red_sound hin hv) hz
@@ -161,10 +176,10 @@ theorem infer_sound (hin : RulesInputs V m φ) :
   | _, _, _, _, .appSkip htf hw hnev =>
     Infer.appSkip_sound (infer_sound hin htf) (red_sound hin hw) hnev
   | _, _, _, _, .proj htpe hte hhead hent hlen hus hprop =>
-    Infer.proj_sound hin (infer_sound hin htpe) (red_sound hin hte) hhead hent
+    Infer.proj_sound (hin φ) (infer_sound hin htpe) (red_sound hin hte) hhead hent
       hlen hus hprop
 
-theorem certs_sound (hin : RulesInputs V m φ) :
+theorem certs_sound (hin : ∀ ψ, RulesInputs V m ψ) {φ : LevelParam → Nat} :
     ∀ {d : Nat} {lic : Bool} {ty : Expr md} {args : List (Expr md)},
       Certs env d lic ty args → CertsSem m φ d lic ty args
   | _, _, _, _, .nil => Certs.nil_sound
@@ -174,14 +189,14 @@ theorem certs_sound (hin : RulesInputs V m φ) :
     Certs.cert_sound (infer_sound hin hta) (defeq_sound hin hd)
       (certs_sound hin hrest)
 
-theorem defEqList_sound (hin : RulesInputs V m φ) :
+theorem defEqList_sound (hin : ∀ ψ, RulesInputs V m ψ) {φ : LevelParam → Nat} :
     ∀ {d : Nat} {as bs : List (Expr md)},
       DefEqList env d as bs → DefEqListSem m φ d as bs
   | _, _, _, .nil => DefEqList.nil_sound
   | _, _, _, .cons h hs =>
     DefEqList.cons_sound (defeq_sound hin h) (defEqList_sound hin hs)
 
-theorem etaProjCerts_sound (hin : RulesInputs V m φ) :
+theorem etaProjCerts_sound (hin : ∀ ψ, RulesInputs V m ψ) {φ : LevelParam → Nat} :
     ∀ {d : Nat} {T : Key md} {us' : List Level} {targs : List (Expr md)} {b : Expr md}
       {lpsT : List LevelParam} {idxs : List Nat},
       EtaProjCerts env d T us' targs b lpsT idxs →

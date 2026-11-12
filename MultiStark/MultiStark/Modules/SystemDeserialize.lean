@@ -233,6 +233,8 @@ module SystemDeserialize {
       let (ph, phl, c3) = read_vk_u32_limb(c2);
       let (md, mdl, c4) = read_vk_u16_limb(c3);
       let (k, c4b) = read_vk_tag(c4);
+      assert_eq!(Fields::is_zero(k), 0);
+      assert_eq!(UInt32::less_than_fields(k, 9), 1);
       let (ncount, c5) = read_vk_u16(c4b);
       let (nodes, c6) = read_nodes_n(c5, ncount, 0);
       let (zcount, c7) = read_vk_u16(c6);
@@ -277,15 +279,19 @@ module SystemDeserialize {
       }
     }
 
-  fn read_opt_idx_n(i: Bytes::Stream, n: Field) -> (Lists::List<OptIdx>, Bytes::Stream) {
+  fn read_opt_idx_n(i: Bytes::Stream, n: Field, cnt: Field) -> (Lists::List<OptIdx>, Bytes::Stream) {
       match n {
         0 => {  ((&(Lists::Node::Nil)), i) } ,
         _ => {
           let (v, j) = read_vk_u16(i);
-          let (rest, j2) = read_opt_idx_n(j, n - 1);
           match v {
-            65535 => {  ((&(Lists::Node::Cons(OptIdx::NoIdx, rest))), j2) } ,
-            _ => {  ((&(Lists::Node::Cons(OptIdx::SomeIdx(v), rest))), j2) } ,
+            65535 => {
+              let (rest, j2) = read_opt_idx_n(j, n - 1, cnt);
+              ((&(Lists::Node::Cons(OptIdx::NoIdx, rest))), j2) } ,
+            _ => {
+              assert_eq!(v, cnt);
+              let (rest, j2) = read_opt_idx_n(j, n - 1, cnt + 1);
+              ((&(Lists::Node::Cons(OptIdx::SomeIdx(v), rest))), j2) } ,
           } } ,
       }
     }
@@ -310,7 +316,7 @@ module SystemDeserialize {
       let (n, nlimb, j1) = read_vk_u16_limb(j);
       let (circuits, climbs, j2) = read_sys_circuits_n(j1, n);
       let (commit, j3) = read_opt_commit(j2);
-      let (indices, j4) = read_opt_idx_n(j3, n);
+      let (indices, j4) = read_opt_idx_n(j3, n, 0);
       (Sys::Mk(params,
               Lists::concat(plimbs, (&(Lists::Node::Cons(nlimb, climbs)))),
               circuits, commit, indices),
