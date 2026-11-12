@@ -214,7 +214,6 @@ theorem checked_tail {T : Tables} {P : List Word} {D : Nat → Prop} {sup : Nat}
   have hw := (wide_word hu).1 hle
   refine ⟨ρl₁.insert x (u + u + 1), mem, P, ?_, hheap, List.prefix_refl _, ?_⟩
   · simp only [lir_eval, retag, hr1, retag_val, UInt64.mul_one]
-    rfl
   · exact (envRel_frame hρ hf).insert hx hw
 
 /-- A binary width-64 expansion: its statements compute the untagged result, then the check. -/
