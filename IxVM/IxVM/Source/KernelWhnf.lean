@@ -949,10 +949,12 @@ def try_struct_eta_iota := aiur_fn⟦
   -- exactly its parameters, at the structure's level count; the structure's sort at
   -- the type's levels is never zero (`capsNeverZero`: no structure-η ι at `Sort u`
   -- structures); `fab` is the constructor applied to the type's parameters and the
-  -- major's projections. The rule's final `DefEq fab major` is DefEq.structEta, whose
-  -- comparisons are reflexive here (`fab`'s parameters are the type's, its fields the
-  -- major's projections) and whose unlicensed `Certs` of the type's arguments are
-  -- checked (`certs_all`). ι then fires on `fab` (`red_iota`).
+  -- major's projections, certified against the constructor's telescope (the rule's
+  -- unlicensed `Certs` of `fab`'s arguments, `certs_all`). The rule's final
+  -- `DefEq fab major` is DefEq.structEta, whose comparisons are reflexive here (`fab`'s
+  -- parameters are the type's, its fields the major's projections) and whose unlicensed
+  -- `Certs` of the type's arguments are checked (`certs_all`). ι then fires on `fab`
+  -- (`red_iota`).
 
 def eta_iota_fab := aiur_fn⟦
   fn eta_iota_fab(rc: KernelRoles::RoleCtx, ind_nl: Field, ind_ty: KernelTypes::KExpr, ind_np: Field,
@@ -971,10 +973,18 @@ def eta_iota_fab := aiur_fn⟦
                       match certs_all(rc, KernelLevels::expr_inst_levels(ind_ty, tus), targs, (&(Lists::Node::Nil)), types) {
                         1 => {
                           match (*(Ingress::get_ci_cprj(block, idx, 0))) {
-                            KernelTypes::KConstantInfo::Ctor(_, _, _, _, _, _, nf, _) => {
+                            KernelTypes::KConstantInfo::Ctor(_, cty, _, _, _, _, nf, _) => {
                               let cprj = KernelCheck::projection_addr_ctor(idx, 0, block);
                               let fab0 = apply_spine((&(KernelTypes::KExprNode::Const(cprj, tus))), targs);
-                              (1, apply_n_projs(fab0, parent, major, nf, 0)) } ,
+                              let fab = apply_n_projs(fab0, parent, major, nf, 0);
+                              match KernelTypes::collect_spine(fab) {
+                                (_, fargs) => {
+                                  match certs_all(rc, KernelLevels::expr_inst_levels(cty, tus), fargs,
+                                                  (&(Lists::Node::Nil)), types) {
+                                    1 => {  (1, fab) } ,
+                                    _ => {  (0, major) } ,
+                                  } } ,
+                              } } ,
                             _ => {  (0, major) } ,
                           } } ,
                         _ => {  (0, major) } ,
