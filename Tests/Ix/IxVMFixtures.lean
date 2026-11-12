@@ -267,4 +267,8 @@ end
 public inductive Tri : Type where
   | t0 | t1 | t2
 
+-- Two levels met in the order `u`, `u + 1`, which the compiler's table (sorted by
+-- encoding) holds the other way round.
+@[expose] public def univOrder.{u} (_α : Sort u) (β : Sort (u + 1)) : Sort (u + 1) := β
+
 end IxVMInd

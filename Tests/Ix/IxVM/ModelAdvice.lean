@@ -37,6 +37,11 @@ model is witness data. Two properties are tested here:
   constructors, so in the encoder's order of references the generated recursor
   would equal the compiled one for one order in 24. Checks of `TriA` and of
   `Tri.rec`, with the generated and the compiled records one, are accepted.
+* **A model record has the compiler's univs table** (`univTables`): every
+  definition of a compiled environment, read by the kernel's reader and encoded
+  again by the model's encoder, has the compiled record's univs table (canonical
+  levels sorted by encoding), including `IxVMInd.univOrder`, whose two levels the
+  encoder meets in the other order.
 
 The must-reject cases for advice (wrong member models, wrong iota statements,
 axioms, self-reference, another block's payload, missing payloads, oversized
@@ -145,6 +150,97 @@ def tagNames : Array Lean.Name :=
   #[`Bool, `Bool.rec, `IxVMInd.Even, `IxVMInd.Even.rec, `IxVMInd.Tri, `IxVMInd.Tri.rec,
     `IxVMInd.TriA, `IxVMInd.TriA.rec]
 
+/-- The definitions `univTables` compiles besides `tagNames`: `IxVMInd.univOrder`,
+whose two levels the encoder meets in the order the compiler's table reverses, and
+universe-polymorphic definitions whose closures hold many more. -/
+def univNames : Array Lean.Name :=
+  #[`IxVMInd.univOrder, `Function.comp, `List.map, `Prod.map, `List.foldl]
+
+/-- The levels of a definition in the order the model's encoder meets them. -/
+def levelsMet (nm : IxVM.Model.Names) (cv : Ix.Kernel.ConstantVal .anon)
+    (v : Ix.Kernel.Expr .anon) : Array Ixon.Univ :=
+  let run : IxVM.Model.EncM Unit := do
+    let _ ← IxVM.Model.encExpr nm cv.levelParams (fun _ => none) cv.type
+    let _ ← IxVM.Model.encExpr nm cv.levelParams (fun _ => none) v
+  match run.run {} with
+  | .ok (_, s) => s.univs
+  | .error _ => #[]
+
+/-- Each safe definition and theorem of `env` that the kernel's reader reads as one
+declaration: its address, its compiled record without the binder-data section (the
+model's encoder writes none), the record `IxVM.Model.encDecl` makes of the
+declaration read, and the levels in the order the encoder met them. -/
+def reencoded (env : Ixon.Env) :
+    Except String (Array (Address × Ixon.Constant × Ixon.Constant × Array Ixon.Univ)) := do
+  let some b := env.roleBinding | throw "no role binding"
+  let some table := Ix.Kernel.RoleTable.ofBytes b.bytes | throw "the role table does not decode"
+  let pre : Ix.Kernel.Reader.Prelude .anon ← Ix.Kernel.Reader.preludeFor table
+  let mut records : Array (Address × Ixon.Constant) := #[]
+  for (a, lc) in env.consts do
+    if let some c := lc.get? then records := records.push (a, c)
+  let cx : Ix.Kernel.Reader.Ctx .anon :=
+    Ix.Kernel.Reader.contextOf table records env.blobs.toList (pre.records ++ pre.evidence) pre.blobs
+      (fun _ => none) (Ix.Kernel.Admission.projectionAddress Address.blake3)
+  let store : Std.HashMap Address Ixon.Constant := records.foldl (fun m (a, c) => m.insert a c) {}
+  let nm : IxVM.Model.Names := { roles := table.bound.foldl (fun m (r, a) => m.insert r a) {} }
+  let mut st := pre.state
+  let mut out := #[]
+  for a in Ixon.CheckOrder.wholeEnv table pre records do
+    let some c := store[a]? | continue
+    let .ok r := Ix.Kernel.Reader.readRecord cx st a c | continue
+    st := st.commit r
+    let .defn d := c.info | continue
+    unless d.safety == .safe && d.kind != .opaq do continue
+    let #[decl] := r.decls | continue
+    let met := match decl with
+      | .defnDecl cv v _ => levelsMet nm cv v
+      | .thmDecl cv v => levelsMet nm cv v
+      | _ => #[]
+    let .ok e := IxVM.Model.encDecl nm decl | continue
+    let some (_, c') := e.records[0]? | continue
+    out := out.push (a, { c with binders := #[] }, c', met)
+  return out
+
+/-- **A model record has the compiler's univs table.** Every definition of `env`
+re-encoded by the model's encoder has the compiled record's univs table, and
+`IxVMInd.univOrder`, whose levels the encoder meets out of the table's order, is the
+compiled record. Records that differ in another table are reported. -/
+def univTables (env : Ixon.Env) : IO Bool := do
+  let rows ← IO.ofExcept (reencoded env)
+  let mut same := 0
+  let mut multi := 0
+  let mut reordered := 0
+  let mut univsDiffer : Array Address := #[]
+  let mut otherDiffer : Array String := #[]
+  for (a, c, c', met) in rows do
+    if IxVM.Model.addressOf c == IxVM.Model.addressOf c' then
+      same := same + 1
+      if c.univs.size ≥ 2 then multi := multi + 1
+      if met != c.univs then reordered := reordered + 1
+    else if c.univs != c'.univs then
+      univsDiffer := univsDiffer.push a
+    else
+      let parts := [("info", c.info == c'.info), ("sharing", c.sharing == c'.sharing),
+        ("refs", c.refs == c'.refs)]
+      otherDiffer := otherDiffer.push s!"{a} ({(parts.filter (!·.2)).map (·.1)})"
+  let target := env.getAddr? (Ix.Name.fromLeanName `IxVMInd.univOrder)
+  let targetOk := match rows.find? (some ·.1 == target) with
+    | some (_, c, c', met) =>
+      IxVM.Model.addressOf c == IxVM.Model.addressOf c' && c.univs.size == 2 && met != c.univs
+    | none => false
+  IO.println s!"[ixvm-model-advice] {rows.size} definitions re-encoded by the model's encoder: \
+    {same} are the compiled record ({multi} with two levels or more, {reordered} met in another \
+    order than the table's); {univsDiffer.size} have another univs table, {otherDiffer.size} \
+    differ elsewhere"
+  for a in univsDiffer.toList.take 10 do
+    IO.eprintln s!"[ixvm-model-advice] another univs table than the compiled record's: {a}"
+  for s in otherDiffer.toList.take 10 do
+    IO.println s!"[ixvm-model-advice] differs from the compiled record outside the univs table: {s}"
+  unless targetOk do
+    IO.eprintln "[ixvm-model-advice] IxVMInd.univOrder: the re-encoded record is not the compiled \
+      one, or its levels are not met out of the table's order"
+  return targetOk && univsDiffer.isEmpty
+
 /-- Each enumeration's compiled block and recursor are model records of `env`
 (the generated tag enumeration and its recursor, by address). -/
 def tagsCoincide (env : Ixon.Env) : IO Bool := do
@@ -175,14 +271,15 @@ def tweakProofs : Ix.Kernel.Declaration .anon → Ix.Kernel.Declaration .anon
 
 def run (lenv : Lean.Environment) : IO UInt32 := do
   let names := modeledNames.map nameOfString
-  let missing := (names ++ tagNames.toList).filter (!lenv.constants.contains ·)
+  let missing := (names ++ tagNames.toList ++ univNames.toList).filter (!lenv.constants.contains ·)
   unless missing.isEmpty do
     IO.eprintln s!"[ixvm-model-advice] not in the environment: {missing}"
     return 1
   let env ← loadSharedIxonEnv names.toArray lenv
   let digestOk ← digestUnchanged env names
-  let tagEnv ← loadSharedIxonEnv tagNames lenv
+  let tagEnv ← loadSharedIxonEnv (tagNames ++ univNames) lenv
   let tagsOk ← tagsCoincide tagEnv
+  let univsOk ← univTables tagEnv
   -- why a modeled block has no model, if one has none
   let (_, rep0) ← IO.ofExcept (IxVM.Model.generateReport { withoutModels env with modelsAttached := false })
   for (b, r) in rep0.blocks do
@@ -225,7 +322,7 @@ def run (lenv : Lean.Environment) : IO UInt32 := do
     Case.ofClaim s!"{if accept then "accept" else "refuse"} {n}" fixEnv (.check ctx target none) {} accept
   let cases := cases ++ nestedVerdicts.map fun (n, accept) => verdictCase n accept
   let rc ← runCases "ixvm-model-advice" cases.toArray
-  return if digestOk && differ && tagsOk && rc == 0 then 0 else 1
+  return if digestOk && differ && tagsOk && univsOk && rc == 0 then 0 else 1
 
 /-- The environment of an `.ixe` file under the default role table, without models. -/
 def loadIxe (path : String) : IO Ixon.Env := do
