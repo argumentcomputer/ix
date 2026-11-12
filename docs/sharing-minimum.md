@@ -152,13 +152,14 @@ The small witness has `P = Sort(0)`, `T1 = All(P,P)`, `T2 = All(P,T1)`,
 Its old table is `[T1, All(P,Share(0))]`; the minimum stores only `[T2]`. The bytes
 above and below are the wire in which every binder carried a contract byte. In the
 current wire a binder's mode lives in the record's binder-data section, so a binder costs
-only its type: the same witness is 15 bytes unshared and 14 at the minimum, which still
+only its type, and the record ends with its binder-data section (here its count, 0): the
+same witness is 16 bytes unshared and 15 at the minimum, which still
 stores only `[T2]`.
 
 ```text
 old:     d200009117b1b10291170000911700b0000100  (19 bytes, contract bytes)
 minimum: d200009117b0b001921700170000000100       (17 bytes, contract bytes)
-minimum: d2000091b0b00192000000000100             (14 bytes, current wire)
+minimum: d2000091b0b0019200000000010000           (15 bytes, current wire)
 ```
 
 Another closed fixture has two different minimum 25-byte encodings: let
