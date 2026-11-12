@@ -11,6 +11,9 @@ import IxCCTests.Src.Steps
   own δ-run of the pinned constant's stored reference body under today's rules (no word entry in
   the table) are values SrcEval cannot tell apart: two towers of one width with one number, or one
   literal. Every case of the harness, not a sample.
+* **Out-of-range towers are stuck** (`outOfRange`): F6w reads a tower only when its number is
+  below the width's size, so on a tower at or above it (which only a false proof builds) every
+  primitive operation is stuck, where the reference body would compute.
 * **The table**: with words enabled, the front end makes every primitive operation the root
   reaches a `word` entry (the sidecar's `theorems` list names each stored equation and
   `checkWord` accepts it; `proposals` checks that nothing else makes one); with words off, none.
@@ -81,6 +84,42 @@ def harness (p : Program) (w : Width) (clock : Nat) : Nat × List String := Id.r
           bad := bad ++ [s!"{op.leanName w} {args.map (fun v => (p.asWord? w v, v.shape))}"]
   return (n, bad)
 
+/-- Numbers at or above a width's size (a tower around one is built only by a false proof of
+`Fin.mk`'s bound), and in-range partners. -/
+def outs (w : Width) : List Nat := [w.size, w.size + 1, 2 * w.size - 1, 2 ^ 65 + 3]
+def ins (w : Width) : List Nat := [0, 1, w.size - 1]
+
+/-- **F6w is stuck on an out-of-range tower** (`asWord?` reads a tower only below its width's
+size): every primitive operation but `ofNat` (whose argument is a literal, reduced at any size),
+with an out-of-range tower in any argument position and the other argument in range or not, is
+stuck; `asWord?` reads none of those towers and reads each in-range partner. Returns the number of
+cases, how many of them SrcEval's δ-run of the reference body (no word entry) evaluates to a value
+(the body does not look at the bound, so the rule is stuck where the body computes, never
+different where the rule fires), and the first failures. -/
+def outOfRange (p : Program) (w : Width) (clock : Nat) : Nat × Nat × List String := Id.run do
+  let word := fun n => (p.mkWord? w n).getD (.lit n)
+  let mut n := 0
+  let mut delta := 0
+  let mut bad : List String := []
+  for x in outs w do
+    if p.asWord? w (word x) != none then bad := bad ++ [s!"{w.name}: asWord? reads {x}"]
+  for x in ins w do
+    if p.asWord? w (word x) != some x then bad := bad ++ [s!"{w.name}: asWord? does not read {x}"]
+  for op in (WordOp.primitives w).filter (· != .ofNat) do
+    match Table.wordOpId p w op with
+    | none => bad := bad ++ [s!"{op.leanName w}: not in the closure"]
+    | some c =>
+      let args : List (List Value) :=
+        if op.arity == 1 then (outs w).map fun x => [word x]
+        else (outs w).flatMap fun x =>
+          [[word x, word x]] ++ (ins w).flatMap fun y => [[word x, word y], [word y, word x]]
+      for as in args do
+        n := n + 1
+        if !(p.wordValue w op as matches .stuck) && bad.length < 5 then
+          bad := bad ++ [s!"{op.leanName w} {as.map (·.shape)}: not stuck"]
+        if deltaRun p clock c as matches .ok _ then delta := delta + 1
+  return (n, delta, bad)
+
 /-- A root's value on `(op, a, b)` with words on and off, and the value `eval` gives. -/
 def opNumber : WordOp → Width → Option Nat
   | .add, _ => some 0 | .sub, _ => some 1 | .mul, _ => some 2 | .div, _ => some 3
@@ -150,6 +189,7 @@ def run (a : Assert) (verbose : Bool := false) : IO (List String) := do
       IO.println s!"    [{(← IO.monoMsNow) - t0} ms] {s}"
       (← IO.getStdout).flush
   let mut total := 0
+  let mut totalOut := 0
   -- one load each way: the sidecar names the four roots, so the annotation covers every width
   let off ← loadPack (dir / "words.ixe") (dir / "words.equations.json")
   note "loaded, words off"
@@ -174,6 +214,12 @@ def run (a : Assert) (verbose : Bool := false) : IO (List String) := do
     expect a bad.isEmpty s!"{root}: F6w against the reference bodies: {bad}"
     note s!"{root}: harness"
     total := total + n
+    -- an out-of-range tower: F6w stuck, at every operation and argument position
+    let (no, nd, badOut) := outOfRange off.program w 100000
+    expect a badOut.isEmpty s!"{root}: F6w on out-of-range towers: {badOut}"
+    note s!"{root}: out-of-range towers"
+    totalOut := totalOut + no
+    lines := lines ++ [s!"{root}: {no} out-of-range cases stuck ({nd} evaluated by the reference body)"]
     -- the table with words on: every primitive operation the root reaches
     let entries := (List.range on.program.size).filterMap fun c =>
       match on.program.table.resolveOf c with
@@ -201,6 +247,7 @@ def run (a : Assert) (verbose : Bool := false) : IO (List String) := do
     lines := lines ++ [s!"{root}: {n} harness cases, {entries.length} word entries; " ++
       s!"steps {stepsOn} with words, {stepsOff} with the reference bodies"]
   expectEq a total 21996 "the harness's case count"
+  expectEq a totalOut 1216 "the out-of-range case count"
   return lines
 
 end IxCCTests.Src.WordRules

@@ -149,12 +149,21 @@ def eval (w : Width) : WordOp → Nat → Nat → WordResult
 
 /-- **In range in, in range out**: every word result of an operation on words below `2^w` is
 below its own width's size (what the tagged lowering, and a raw representation later, need).
-`ofNat`'s argument is a `Nat` and needs no bound. -/
-theorem eval_word_lt (w : Width) (op : WordOp) (a b : Nat) (ha : a < w.size) (hb : b < w.size)
-    (w' : Width) (n : Nat) (h : eval w op a b = .word w' n) : n < w'.size := by
+`ofNat`'s argument is a `Nat` and needs no bound. These are exactly the arguments F6w passes
+(`Program.wordValue`): it reads a word only below its width's size (`asWord?`), passes `ofNat`'s
+literal as it is, and passes `0` as a unary operation's second argument; so every tower F6w builds
+is in range. -/
+theorem eval_word_lt (w : Width) (op : WordOp) (a b : Nat) (ha : op = .ofNat ∨ a < w.size)
+    (hb : b < w.size) (w' : Width) (n : Nat) (h : eval w op a b = .word w' n) : n < w'.size := by
   have hs := w.size_pos
   have hpow : ∀ x, x < w.size → x < 2 ^ w.bits := fun _ hx => hx
-  cases op <;> simp only [eval, WordResult.word.injEq, reduceCtorEq] at h
+  cases op
+  case ofNat =>
+    simp only [eval, WordResult.word.injEq] at h
+    obtain ⟨rfl, rfl⟩ := h
+    exact Nat.mod_lt _ hs
+  all_goals replace ha : a < w.size := ha.resolve_left (by simp)
+  all_goals simp only [eval, WordResult.word.injEq, reduceCtorEq] at h
   case convert w'' =>
     by_cases hw : w.bits ≤ w''.bits
     · simp only [hw, ↓reduceIte, WordResult.word.injEq] at h
@@ -175,7 +184,6 @@ theorem eval_word_lt (w : Width) (op : WordOp) (a b : Nat) (ha : a < w.size) (hb
   · exact Nat.mod_lt _ hs
   · exact Nat.lt_of_le_of_lt (Nat.shiftRight_le _ _) ha
   · exact Nat.xor_lt_two_pow (hpow _ (Nat.sub_lt hs Nat.one_pos)) (hpow _ ha)
-  · exact Nat.mod_lt _ hs
   · exact Nat.mod_lt _ hs
 
 end WordOp

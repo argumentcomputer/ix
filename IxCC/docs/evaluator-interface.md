@@ -111,9 +111,12 @@ clock is a depth bound, counting needs a separate counter.
     fixed-width word operations. A `word w op thm` entry of the unfolding table makes the
     constant pinned for operation `op` at width `w` (`UInt8` to `UInt64`) a special head of
     `op`'s arity; saturated, it forces its arguments, reads each as the tower
-    `UIntN.ofBitVec (BitVec.ofFin (Fin.mk n _))` of the pinned constructors (`ofNat`'s as a
-    literal), and returns `WordOp.eval`'s result as such a tower or a literal; otherwise it is
-    stuck. Not charged. `thm` names the stored theorem that fixes the operation's meaning (an
+    `UIntN.ofBitVec (BitVec.ofFin (Fin.mk n _))` of the pinned constructors with `n` below the
+    width's size (`ofNat`'s as a literal), and returns `WordOp.eval`'s result as such a tower or
+    a literal; otherwise it is stuck. A tower whose number is at or above the size (only a
+    false proof of `Fin.mk`'s bound builds one) is stuck, although the reference body would
+    compute on it: the grounding then needs no fact about such towers, and every tower the rule
+    builds is in range (`WordOp.eval_word_lt`). Not charged. `thm` names the stored theorem that fixes the operation's meaning (an
     equation over `Nat`'s operations; `ofNat`'s, the bridge to the tower), checked by statement.
     No other rule changes, and the producer proposes word entries only when the table's `words`
     switch is on (off until the native lowering exists). Whether the rule agrees with SrcEval's

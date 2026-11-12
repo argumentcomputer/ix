@@ -32,9 +32,10 @@ meaning of a program. Rules:
   literals; F7 `Quot.mk`; F8 `Quot.lift` (charged).
 * F6w (stage W1): a fixed-width word operation (a `word` table entry) forces its
   arguments, reads each as the tower `UIntN.ofBitVec (BitVec.ofFin (Fin.mk n _))`
-  of the pinned constructors (`ofNat`'s as a `Nat` literal), and returns
-  `WordOp.eval`'s result as a tower (`mkWord?`) or a literal; anything else is
-  stuck. Not charged, as F6 is not.
+  of the pinned constructors with `n` below the width's size (`ofNat`'s as a
+  `Nat` literal), and returns `WordOp.eval`'s result as a tower (`mkWord?`) or a
+  literal; anything else, an out-of-range tower included, is stuck. Not
+  charged, as F6 is not.
 * E9 string expansion is not in the Phase 1 fragment: a string used as a
   projection subject or major is stuck (`Admit` declines strings).
 
@@ -108,10 +109,14 @@ def boolValue (p : Program) (b : Bool) : Result Value :=
 def wordCtor? (p : Program) (w : Width) : Option CId := p.known.wordCtors.lookup w
 
 /-- A value read as a word of width `w` (F6w): the tower `UIntN.ofBitVec (BitVec.ofFin (Fin.mk n
-_))` of the pinned constructors around a literal. Its parameter slots and proof are not read. -/
+_))` of the pinned constructors around a literal `n` below the width's size. Its parameter slots
+and proof are not read; the number is, and a tower whose number is at or above the size (which
+only a false proof of `Fin.mk`'s bound builds) is not a word here, so F6w is stuck on it rather
+than computing what the reference body would. -/
 def asWord? (p : Program) (w : Width) : Value → Option Nat
   | .con c _ [] [.con c' _ [_] [.con c'' _ [_] [.lit n, _]]] =>
-    if some c == p.wordCtor? w && some c' == p.known.bitVecOfFin && some c'' == p.known.finMk then
+    if some c == p.wordCtor? w && some c' == p.known.bitVecOfFin && some c'' == p.known.finMk &&
+        decide (n < w.size) then
       some n
     else none
   | _ => none

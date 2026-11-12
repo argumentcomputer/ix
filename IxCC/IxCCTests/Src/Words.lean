@@ -144,6 +144,55 @@ example : (WordOp.eval .w64 .sub 0 1).val ≠ 0 - 1 := by decide
 example : (WordOp.eval .w64 .neg 0 0).val ≠ 2 ^ 64 - 0 := by decide
 example : (WordOp.eval .w64 (.convert .w8) 300 0).val ≠ 300 := by decide
 
+/-! ### `eval_word_lt` on instances, and why each hypothesis is there
+
+The theorem's hypotheses are the arguments F6w passes: words below the width's size (`asWord?`
+reads no other), `ofNat`'s literal at any size, `0` as a unary operation's second argument. On
+every operation of every width and every pair of numbers around the sizes, wherever the
+hypotheses hold the word result is below its width's size; dropping either hypothesis has a
+counterexample (a division of an out-of-range word by one, a disjunction with an out-of-range
+second word). -/
+
+/-- Numbers around every width's size, in range and not. -/
+def rangeProbe : List Nat :=
+  [0, 1, 255, 256, 65535, 65536, 4294967295, 4294967296, 18446744073709551615,
+    18446744073709551616, 18446744073709551621, 36893488147419103235]
+
+/-- The cases where `eval_word_lt`'s hypotheses hold, the failures of its conclusion among them,
+and the failures among the cases that meet every hypothesis but `ha`, or every one but `hb`. -/
+def rangeCases : Nat × List (Width × WordOp × Nat × Nat) × Nat × Nat := Id.run do
+  let mut n := 0
+  let mut bad : List (Width × WordOp × Nat × Nat) := []
+  let mut withoutA := 0
+  let mut withoutB := 0
+  for w in Width.all do
+    for op in WordOp.ofWidth w do
+      for a in rangeProbe do
+        for b in rangeProbe do
+          let ha := op == .ofNat || a < w.size
+          let hb := b < w.size
+          let ok := match WordOp.eval w op a b with
+            | .word w' r => r < w'.size
+            | _ => true
+          if ha && hb then
+            n := n + 1
+            if !ok then bad := bad ++ [(w, op, a, b)]
+          if !ha && hb && !ok then withoutA := withoutA + 1
+          if ha && !hb && !ok then withoutB := withoutB + 1
+  return (n, bad, withoutA, withoutB)
+
+#guard rangeCases.2.1.isEmpty && rangeCases.2.2.1 > 0 && rangeCases.2.2.2 > 0
+
+/-- The two counterexamples, decided. -/
+example : WordOp.eval .w64 .div (2 ^ 64) 1 = .word .w64 (2 ^ 64) ∧ ¬ 2 ^ 64 < Width.size .w64 := by
+  decide
+example : WordOp.eval .w8 .lor 0 256 = .word .w8 256 ∧ ¬ 256 < Width.size .w8 := by decide
+/-- `ofNat` at and above every size: in range, no bound needed. -/
+example : [2 ^ 64, 2 ^ 64 + 5, 2 ^ 65 + 3].all (fun a => Width.all.all fun w =>
+    match WordOp.eval w .ofNat a 0 with
+    | .word w' r => w' == w && decide (r < w'.size)
+    | _ => false) = true := by decide
+
 /-! ### The bridge the model fact rests on, on instances (`wordAccel_of_eqns`, stage W1)
 
 The grounding's model fact for words takes what a pinned operation computes from its stored
@@ -201,5 +250,10 @@ def run (a : Assert) : IO Unit := do
   expect a bad.isEmpty s!"words: {bad.length} of {n} comparisons disagree with Lean: {reprStr (bad.take 5)}"
   expect a ofNatOk "words: ofNat around every size"
   expectEq a n 8420 s!"words: {n} comparisons"
+  let (rn, rbad, withoutA, withoutB) := rangeCases
+  expect a rbad.isEmpty s!"words: eval_word_lt's conclusion fails on {reprStr (rbad.take 5)}"
+  expect a (withoutA > 0 && withoutB > 0)
+    s!"words: without either hypothesis of eval_word_lt a counterexample ({withoutA}, {withoutB})"
+  expect a (rn > 0) s!"words: {rn} cases meet eval_word_lt's hypotheses"
 
 end IxCCTests.Src.Words

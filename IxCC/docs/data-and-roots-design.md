@@ -269,7 +269,10 @@ exists, behind `Table.Config.words`, which is off, so no compile changes:
   ([`Src/Word.lean`](../IxCC/Src/Word.lean)), tested against Lean's C implementations and, by the
   kernel's `decide`, against the reference bodies;
 - SrcEval's rule F6w (contract version 2, [evaluator interface](evaluator-interface.md)) and the
-  table entry `word w op thm`: the constant at the operation's pinned address
+  table entry `word w op thm`. The rule reads a word only when its number is below the width's
+  size, so it is stuck on a tower only a false proof builds (the reference body would compute
+  on it), and every tower it builds is in range (`WordOp.eval_word_lt`). The entry names the
+  constant at the operation's pinned address
   (`src-tables.tsv`'s `word` rows), and `thm` a stored theorem whose statement is the operation's
   equation over `Nat`'s operations on `UIntN.ofNat x` (and `y`); `ofNat`'s theorem is the
   *reducing bridge* `∀ x (h : Nat.le (Nat.succ (x % size)) size), ofNat x = tower (x % size) h`
@@ -283,7 +286,7 @@ exists, behind `Table.Config.words`, which is off, so no compile changes:
   still finds each theorem;
 - the harness (`tests-src`): on every boundary case of every primitive operation at every width,
   F6w's result equals SrcEval's own run of the operation's Lean 4.34.1 reference body (21,996
-  cases);
+  cases), and on a tower at or above the size F6w is stuck (1,216 cases);
 - the decisions (`decEq`, `decLt`, `decLe`) stay reference bodies, not primitives: their bodies
   reduce to `Nat`'s decisions and never build `2^64`. A primitive decision would need, in the
   grounding, that every element of `Decidable p` in the model is one of its two constructors'
