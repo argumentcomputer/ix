@@ -206,16 +206,26 @@ theorem vecV_eight (a : Vector UInt32 8) :
     (vecV a : SourceValue F) =
       .tuple [wv a[0], wv a[1], wv a[2], wv a[3], wv a[4], wv a[5], wv a[6], wv a[7]] := rfl
 
+theorem vecV_toList {n : Nat} (v : Vector UInt32 n) :
+    (vecV v : SourceValue F) = .tuple (v.toList.map wv) := by
+  unfold vecV
+  congr 1
+  apply List.ext_getElem (by simp)
+  intro i h1 h2
+  simp
+
 theorem vecV_append8 (a b : Vector UInt32 8) :
     (vecV (a ++ b) : SourceValue F) =
       .tuple [wv a[0], wv a[1], wv a[2], wv a[3], wv a[4], wv a[5], wv a[6], wv a[7],
         wv b[0], wv b[1], wv b[2], wv b[3], wv b[4], wv b[5], wv b[6], wv b[7]] := by
-  rw [show (vecV (a ++ b) : SourceValue F) =
-      .tuple [wv (a ++ b)[0], wv (a ++ b)[1], wv (a ++ b)[2], wv (a ++ b)[3], wv (a ++ b)[4],
-        wv (a ++ b)[5], wv (a ++ b)[6], wv (a ++ b)[7], wv (a ++ b)[8], wv (a ++ b)[9],
-        wv (a ++ b)[10], wv (a ++ b)[11], wv (a ++ b)[12], wv (a ++ b)[13], wv (a ++ b)[14],
-        wv (a ++ b)[15]] from rfl]
-  simp
+  have ea : (a.toList.map wv : List (SourceValue F)) =
+      [wv a[0], wv a[1], wv a[2], wv a[3], wv a[4], wv a[5], wv a[6], wv a[7]] :=
+    Value.tuple.inj ((vecV_toList a).symm.trans (vecV_eight a))
+  have eb : (b.toList.map wv : List (SourceValue F)) =
+      [wv b[0], wv b[1], wv b[2], wv b[3], wv b[4], wv b[5], wv b[6], wv b[7]] :=
+    Value.tuple.inj ((vecV_toList b).symm.trans (vecV_eight b))
+  simp only [vecV_toList, Vector.toList_append, List.map_append, ea, eb, List.cons_append,
+    List.nil_append]
 
 /-! ## Stacks -/
 
