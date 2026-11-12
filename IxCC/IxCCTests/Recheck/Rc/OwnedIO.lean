@@ -354,8 +354,10 @@ def capturedOrder (logs : FilePath) : IO Unit := do
   let input ← budgetSource "fanUnder"
   let cfg := ({ names := ["fanUnder"] } : Recheck.Config).forInput input
   let fr ← IO.ofExcept ((Recheck.RcReplay.produceFir cfg input).mapError (·.render))
-  programs := programs ++ [("fanUnder", { input, cfg, front := fr
-    canonical := (Own.Plain.Program.canonicalForSrc fr.src fr.fir).bodies }, fanCases, fanWant "fanUnder")]
+  let budgetFront : Front :=
+    { input := input, cfg := cfg, front := fr,
+      canonical := (Own.Plain.Program.canonicalForSrc fr.src fr.fir).bodies }
+  programs := programs ++ [("fanUnder", budgetFront, fanCases, fanWant "fanUnder")]
   let mut done := false
   for (root, fr, cases, want) in programs do
     if done then break
