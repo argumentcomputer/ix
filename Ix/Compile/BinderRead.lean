@@ -731,35 +731,13 @@ source alone, by the same rules, fails exactly where the reading of its record
 does, and tells, before the compile, which records will be walked (and what the
 walk's environment must hold). -/
 
-/-- The loose bound variables of each term met (one past the largest index), by address:
-a subterm's is the same wherever it stands. -/
-abbrev Ranges := Std.HashMap Address Nat
+/-- The terms read so far, each under a context (its hash; a closed term's is `0`, since its
+reading does not depend on the context) and an expectation, with its loose bound variables
+(one past the largest index): a subterm shared in the source is read once there. -/
+abbrev Seen := Std.HashMap (UInt64 × Address × Option PropWhen) Nat
 
-/-- The terms read so far, under a context (its hash; a closed term's is `0`, since its
-reading does not depend on the context) and an expectation, so that a subterm shared in
-the source is read once there. -/
-abbrev Seen := Std.HashSet (UInt64 × Address × Option PropWhen)
-
-/-- The source reading's state, each part updated in place. -/
-abbrev SM := StateT Ranges (StateT Seen (Except Unit))
-
-/-- The loose bound variables of `x`, memoized (`Ranges`). -/
-def looseRange (x : Ix.Expr) : SM Nat := do
-  match (← modifyGetThe Ranges fun m => (m[x.getHash]?, m)) with
-  | some r => pure r
-  | none =>
-    let r ← match x with
-      | .bvar i _ => pure (i + 1)
-      | .app f a _ => return max (← looseRange f) (← looseRange a)
-      | .lam _ t b _ _ => return max (← looseRange t) ((← looseRange b) - 1)
-      | .forallE _ t b _ _ => return max (← looseRange t) ((← looseRange b) - 1)
-      | .letE _ t v b _ _ => return max (max (← looseRange t) (← looseRange v)) ((← looseRange b) - 1)
-      | .mdata _ e _ => looseRange e
-      | .proj _ _ e _ => looseRange e
-      | _ => pure 0
-    modifyThe Ranges (·.insert x.getHash r)
-    pure r
-termination_by structural x
+/-- The source reading's state. -/
+abbrev SM := StateT Seen (Except Unit)
 
 /-- Whether the reading of a source term reads its expectation (`readsExpect`'s
 twin). -/
@@ -782,55 +760,66 @@ def srcRun (pi : Bool) : Nat → Ix.Expr → Array Ix.Expr → Array Ix.Expr × 
 
 /-- **The reading of a source term alone** (`read` without the record), under
 `ctx` (its hash `ch`) with the expectation `ex`: fails where a binder's datum is not
-read. -/
+read, and otherwise gives the term's loose bound variables (one past the largest
+index), computed as it is read. -/
 def readSrc (find : Find) (σ : Ix.Name → Nat) : Nat → List (Option Ix.Expr) → UInt64 →
-    Expect → Ix.Expr → SM Unit
+    Expect → Ix.Expr → SM Nat
   | 0, _, _, _, _ => throw ()
   | fuel + 1, ctx, ch, ex, x => do
     let x := unmeta x
     match x with
+    | .bvar i _ => return i + 1
     | .app .. | .lam .. | .forallE .. | .letE .. | .proj .. =>
-      -- a closed term's reading does not depend on the context
-      let closed := (← looseRange x) == 0
-      let key := (if closed then 0 else ch, x.getHash, ex.toOption)
-      let seen ← modifyGetThe Seen fun s => if s.contains key then (true, s) else (false, s.insert key)
-      if seen then return
-    | _ => pure ()
-    match x with
-    | .app .. =>
-      -- the whole spine at once: its head (a β-redex's λ-run takes the application's
-      -- expectation), then each argument with the expectation its head gives it
-      let h := (headArgs x).1
-      let args := (spineArgs x #[]).reverse
-      readSrc find σ fuel ctx ch ex h
-      for h' : i in [:args.size] do
-        let a := args[i]
-        let aex : Expect :=
-          if readsExpectSrc a then argExpect find σ ctx h (args.extract 0 i) i
-          else unknown "an argument that reads no expectation"
-        readSrc find σ fuel ctx ch aex a
-    | .lam .. | .forallE .. =>
-      let pi := x matches .forallE ..
-      let (tys, leaf) := srcRun pi readFuel x #[]
-      let mut inner := ctx
-      let mut ich := ch
-      for ty in tys do
-        readSrc find σ fuel inner ich (asType) ty
-        inner := some ty :: inner
-        ich := mixHash ich (hash ty.getHash)
-      readSrc find σ fuel inner ich (if pi then asType else ex) leaf
-      if pi then
-        if (sortPw find σ id sortFuel inner leaf).isNone then throw ()
-      else if ex.toOption.isNone then throw ()
-    | .letE _ ty val body _ _ =>
-      readSrc find σ fuel ctx ch (asType) ty
-      let vex : Expect := match sortPw find σ id sortFuel ctx ty with
-        | some p => .ok p
-        | none => unknown "a let's value"
-      readSrc find σ fuel ctx ch vex val
-      readSrc find σ fuel (some ty :: ctx) (mixHash ch (hash ty.getHash)) ex body
-    | .proj _ _ xv _ => readSrc find σ fuel ctx ch (unknown "a projection's subject") xv
-    | _ => pure ()
+      let hx := x.getHash
+      let e := ex.toOption
+      -- read already: closed (under any context), or under this one
+      match (← modifyGet fun s => ((s[((0 : UInt64), hx, e)]?).orElse fun _ => s[(ch, hx, e)]?, s)) with
+      | some r => return r
+      | none =>
+        let r ← match x with
+          | .app .. => do
+            -- the whole spine at once: its head (a β-redex's λ-run takes the
+            -- application's expectation), then each argument with the expectation its
+            -- head gives it
+            let h := (headArgs x).1
+            let args := (spineArgs x #[]).reverse
+            let mut r ← readSrc find σ fuel ctx ch ex h
+            for h' : i in [:args.size] do
+              let a := args[i]
+              let aex : Expect :=
+                if readsExpectSrc a then argExpect find σ ctx h (args.extract 0 i) i
+                else unknown "an argument that reads no expectation"
+              r := max r (← readSrc find σ fuel ctx ch aex a)
+            pure r
+          | .lam .. | .forallE .. => do
+            let pi := x matches .forallE ..
+            let (tys, leaf) := srcRun pi readFuel x #[]
+            let mut inner := ctx
+            let mut ich := ch
+            let mut r := 0
+            for h' : j in [:tys.size] do
+              let ty := tys[j]
+              r := max r ((← readSrc find σ fuel inner ich asType ty) - j)
+              inner := some ty :: inner
+              ich := mixHash ich (hash ty.getHash)
+            r := max r ((← readSrc find σ fuel inner ich (if pi then asType else ex) leaf) - tys.size)
+            if pi then
+              if (sortPw find σ id sortFuel inner leaf).isNone then throw ()
+            else if ex.toOption.isNone then throw ()
+            pure r
+          | .letE _ ty val body _ _ => do
+            let rt ← readSrc find σ fuel ctx ch asType ty
+            let vex : Expect := match sortPw find σ id sortFuel ctx ty with
+              | some p => .ok p
+              | none => unknown "a let's value"
+            let rv ← readSrc find σ fuel ctx ch vex val
+            let rb ← readSrc find σ fuel (some ty :: ctx) (mixHash ch (hash ty.getHash)) ex body
+            pure (max (max rt rv) (rb - 1))
+          | .proj _ _ xv _ => readSrc find σ fuel ctx ch (unknown "a projection's subject") xv
+          | _ => pure 0
+        modify fun s => s.insert (if r == 0 then 0 else ch, hx, e) r
+        return r
+    | _ => return 0
 
 /-- Whether a source constant's every root reads (`memberRoots`' roots, each with
 its expectation; an inductive's constructors read as constants of their own). An
@@ -853,7 +842,7 @@ def sourceReads (find : Find) (ci : Ix.ConstantInfo) : Bool :=
     | .recInfo v => recRoots find v
     | ci => #[⟨own, ci.getCnst.type, asType⟩]
   roots.all fun r =>
-    match (((readSrc find r.σ.pos readFuel [] 0 r.ex r.x).run {}).run {}) with
+    match ((readSrc find r.σ.pos readFuel [] 0 r.ex r.x).run {}) with
     | .ok _ => true
     | .error _ => false
 
