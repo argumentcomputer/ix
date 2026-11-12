@@ -560,7 +560,7 @@ theorem CIRep.defn_inv {κ : _root_.Address → KKey} {h : Heap F}
   cases r
   case defn hvr hV =>
     injection hv with _ _ hl
-    simp only [List.cons.injEq, and_true, eq_self_iff_true] at hl
+    simp only [List.cons.injEq, and_true] at hl
     obtain ⟨rfl, rfl, rfl, rfl, rfl⟩ := hl
     exact ⟨_, _, _, rfl, hvr, hV⟩
   all_goals (injection hv with _ hc _; exact absurd hc (by decide))
@@ -647,7 +647,7 @@ theorem whnf_const_head_step (c : Ctx) {args : List (SourceValue F)} {h h' : Hea
       (good.sub fun x hx => by simp [hx]) _ us hci2 (LvListRep.mono (ext.trans e2) hus) 1 x_body
       rfl one_ne_zero
     rcases hu with ⟨-, cv', V', hn', hci', hlen, hbody⟩ | ⟨h12, -⟩
-    · injection hci' with hcv hV' -
+    · injection hci' with hcv hV' hhn
       subst hcv hV'
       have ext' := ext.trans (e2.trans e3)
       obtain ⟨E', hE', hred'⟩ := ih.get (.whnf .whnf_with_spine) (by lt_calls) ev370 rc x_body sp
