@@ -24,7 +24,9 @@ in Source mode (`Ix.LeanIngress`: every constant keyed by its Lean name, or its
 role's key) and installs it with phase A of its fold
 (`annotDeclStepWithUserAxioms`, at the committed bundle's evidence), once, in
 dependency order (`install`). Unsafe and partial groups go through the typing
-tier; a declaration that fails is retried after them. The installed
+tier; a declaration that fails is retried after them, and one refused again
+(a compiler-trust axiom, say) enters without its checks, with its
+annotated type (`lenient`). The installed
 environment and IxC's core over it are marked persistent: every worker reads
 them, none writes them.
 
@@ -32,7 +34,9 @@ them, none writes them.
 Source term (the Lean source converted as the ingress converts it): the
 record's tree gives the numbering (its `lam`, `all` and `share` nodes in
 pre-order, a share's entry a block of its own, one variant per distinct node
-list), the Source term gives the leaves. The walk is IxC's pass over the pair:
+list), the Source term gives the leaves, and a datum's parameters are written
+in the record's numbering (a large eliminator's source numbers its motive
+universe last, its record first). The walk is IxC's pass over the pair:
 a run of binders of one kind is opened in bulk, its leaf annotated, the datum
 computed once at the leaf (every binder of the run has it, since the
 zero-ness of `imax u v` is that of `v`) and the run closed with one
@@ -72,6 +76,12 @@ structure Installed where
   installed : Nat := 0
   /-- the groups or declarations the ingress or the install refused, and why -/
   failures : Array (String × String) := #[]
+  /-- the refused declarations entered without their checks (`lenient`) -/
+  lenient : Nat := 0
+  /-- the declarations phase A pushed from a wave's ahead-of-time annotation (`separable`) -/
+  ahead : Nat := 0
+  /-- phase A's waves -/
+  waves : Nat := 0
   /-- the phases' times (ms) -/
   times : Array (String × Nat) := #[]
 
@@ -96,6 +106,55 @@ def step (ev : Ix.Kernel.Evidences .source) (fe : FEnv .source) (pos : Nat)
   | .ok ((pos', fe', _), _) => (fe', pos', none)
   | .error (e, _) => (reindex before, pos + 1, some e)
 
+/-- A declaration the kernel refuses, entered without its checks: its constant
+with its annotated type (and a definition's annotated value, so that it
+unfolds; a theorem keeps its value, which nothing reduces), as phase A would
+have pushed it. The annotation is IxC's (`annotConstantValC`, `annotValueC`);
+only the step's policy and checks are skipped. `none` where the annotation
+itself fails. The data are not checked here: the annotator is not trusted. -/
+def lenient (fe : FEnv .source) (d : Ix.Kernel.Declaration .source) : Option (FEnv .source) :=
+  let run {α : Type} (act : CM α) : Option α := match act.run {} with
+    | .ok (a, _) => some a
+    | .error _ => none
+  match d with
+  | .axiomDecl cv =>
+    (run (Ix.Kernel.Cached.annotConstantValC .verified fe cv)).map fun r => fe.push (.axiomInfo r.1)
+  | .opaqueDecl cv _ =>
+    (run (Ix.Kernel.Cached.annotConstantValC .verified fe cv)).map fun r => fe.push (.axiomInfo r.1)
+  | .thmDecl cv v =>
+    (run (Ix.Kernel.Cached.annotConstantValC .verified fe cv)).map fun r => fe.push (.thmInfo r.1 v)
+  | .defnDecl cv v h =>
+    (run (Ix.Kernel.Cached.annotValueC .verified fe cv v)).map fun r =>
+      fe.push (.defnInfo r.1 r.2.2 h)
+  | _ => none
+
+/-- What phase A pushes for a separable declaration (a definition other than a
+pinned `Nat` operation, a theorem, an opaque), computed against `fe`:
+`annotStepC`'s install halves (`annotValueC`, `annotConstantValC`) from the
+empty memo state, which every step starts from. `none` for any other
+declaration, or where the annotation fails.
+
+Phase A runs this ahead, on a wave of declarations at once, against the
+environment before the wave, and pushes each result in order unless the
+environment has meanwhile gained its name (the step's duplicate check). An
+environment that holds more constants answers every lookup the annotation made
+the same way, and a datum is unique, so the push is the step's. Anything else
+takes the ordinary step. -/
+def separable (fe : FEnv .source) (d : CDecl .source) : Option (Ix.Kernel.ConstantInfo .source) :=
+  let run {α : Type} (act : CM α) : Option α := match act.run {} with
+    | .ok (a, _) => some a
+    | .error _ => none
+  if d.anchorMismatch?.isSome then none else
+  match d with
+  | .defnDecl cv v h =>
+    if Ix.Kernel.natOpNames.contains cv.name || Ix.Kernel.natDivModNames.contains cv.name then none
+    else (run (Ix.Kernel.Cached.annotValueC .verified fe cv v)).map fun r => .defnInfo r.1 r.2.2 h
+  | .thmDecl cv v =>
+    (run (Ix.Kernel.Cached.annotConstantValC .verified fe cv)).map fun r => .thmInfo r.1 v
+  | .opaqueDecl cv v =>
+    (run (Ix.Kernel.Cached.annotValueC .verified fe cv v)).map fun r => .axiomInfo r.1
+  | _ => none
+
 def readErrorString : ReadError → String
   | .malformed m => s!"malformed: {m}"
   | .declined m => s!"declined: {m}"
@@ -113,8 +172,8 @@ private instance : Nonempty (Ix.Kernel.Cached.CoreFnsI .source) :=
 
 /-- **Install the compile's input** in Source mode, phase A only, and mark the
 environment and IxC's core over it persistent. -/
-def install (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (workers : Nat := 32) :
-    IO (Except String Installed) := do
+def install (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (workers : Nat := 32)
+    (parallel : Bool := true) : IO (Except String Installed) := do
   let t0 ← IO.monoMsNow
   let pre ← match (Ix.Kernel.Reader.builtinPrelude : Except String (Ix.Kernel.Reader.Prelude .source)) with
     | .ok p => pure p
@@ -131,8 +190,14 @@ def install (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (workers : Nat 
   let groupName (gi : Nat) : String := match (groups[gi]!.names)[0]? with
     | some n => n.pretty
     | none => "?"
+  -- each group's depth in the reference graph (`sched` is in dependency order)
+  let mut glevel : Array Nat := Array.replicate groups.size 0
+  for (gi, _) in sched do
+    let l := (gT.hard[gi]! ++ gT.literal[gi]!).foldl (fun m j => max m (glevel[j]! + 1)) 0
+    glevel := glevel.set! gi l
   let mut st : State .source := pre.state
   let mut lowered : Array (CDecl .source) := #[]
+  let mut levelOf : Std.HashMap (Ix.Kernel.Key .source) Nat := {}
   let mut tiers : Array (Nat × Ix.Kernel.Tier.TierDecl .source) := #[]
   let mut failures : Array (String × String) := #[]
   for (gi, c) in sched do
@@ -144,22 +209,53 @@ def install (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (workers : Nat 
     match c >>= fun c => lower st c with
     | .ok r =>
       st := st.commit r
-      lowered := lowered ++ r.decls.map canonDecl
+      lowered := lowered ++ r.decls
+      for d in r.decls do
+        if let some k := d.names.head? then levelOf := levelOf.insert k glevel[gi]!
     | .error e => failures := failures.push (groupName gi, readErrorString e)
+  let t2 ← IO.monoMsNow
+  let lowered ← IO.lazyPure fun _ => Ix.Compile.Parallel.map (4 * max workers 1) canonDecl lowered
   let prepared := Ix.Kernel.Frontend.preparePrelude pre.ix lowered
   let ev := Ix.RoleEvidence.bundleEvidence ()
-  let t2 ← IO.monoMsNow
+  let t3 ← IO.monoMsNow
+  -- phase A in waves: the prelude's declarations first (wave 0), then each
+  -- declaration at its group's depth plus one
+  let front := pre.ix.decls.size
+  let mut waves : Array (Array Nat) := #[]
+  for h : i in [:prepared.size] do
+    let l := if i < front then 0 else
+      1 + ((prepared[i].names.head?.bind (levelOf[·]?)).getD 0)
+    while waves.size ≤ l do waves := waves.push #[]
+    waves := waves.modify l (·.push i)
   let mut fe : FEnv .source := Ix.Kernel.mkFEnv Ix.Kernel.Env.empty
   let mut pos := 0
   let mut ok := 0
+  let mut ahead := 0
   let mut retry : Array (CDecl .source) := #[]
-  for d in prepared do
-    let (fe', pos', err) := step ev fe pos d
-    fe := fe'
-    pos := pos'
-    match err with
-    | none => ok := ok + 1
-    | some _ => retry := retry.push d
+  for wave in waves do
+    -- the wave's separable declarations, annotated against the environment as
+    -- it stands before the wave (`separable`)
+    let base := fe
+    let pushes : Array (Option (Ix.Kernel.ConstantInfo .source)) :=
+      if !parallel || wave.size < 8 then wave.map fun _ => none
+      else Ix.Compile.Parallel.map (4 * max workers 1) (fun i => separable base prepared[i]!) wave
+    for (i, r) in wave.zip pushes do
+      if let some ci := r then
+        if (fe.find? ci.name).isNone then
+          let ci ← (unsafe Runtime.markPersistent ci : BaseIO (Ix.Kernel.ConstantInfo .source))
+          fe := fe.push ci
+          pos := pos + 1
+          ok := ok + 1
+          ahead := ahead + 1
+          continue
+      let d := prepared[i]!
+      let (fe', pos', err) := step ev fe pos d
+      fe := fe'
+      pos := pos'
+      match err with
+      | none => ok := ok + 1
+      | some _ => retry := retry.push d
+  let t4 ← IO.monoMsNow
   -- the typing tier, then the declarations that failed before it (those that
   -- reference a tier constant)
   let logical := fe
@@ -171,6 +267,9 @@ def install (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (workers : Nat 
     | some e =>
       let why := (Benchmarks.Kernel.CheckIxeStep.tierOutcome d.safety e).2
       failures := failures.push (groupName gi, why)
+  -- a declaration refused again enters leniently (`lenient`), so that the
+  -- records referencing it are annotated
+  let mut lenientCount := 0
   for d in retry do
     let (fe', pos', err) := step ev fe pos d
     fe := fe'
@@ -180,19 +279,30 @@ def install (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (workers : Nat 
     | some e =>
       let why := (Benchmarks.Kernel.CheckIxeStep.checkOutcome e).2
       failures := failures.push (declName d, why)
-  let t3 ← IO.monoMsNow
+      if let some fe' := lenient fe d then
+        fe := fe'
+        lenientCount := lenientCount + 1
+  let t5 ← IO.monoMsNow
   let shared ← (unsafe Runtime.markPersistent fe : BaseIO (FEnv .source))
   let core ← (unsafe Runtime.markPersistent
     (Ix.Kernel.Cached.coreKnotI .verified shared Ix.Kernel.checkFuel) :
       BaseIO (Ix.Kernel.Cached.CoreFnsI .source))
-  return .ok { fe := shared, core, env, installed := ok, failures,
-               times := #[("convert", t1 - t0), ("lower", t2 - t1), ("install", t3 - t2)] }
+  let t6 ← IO.monoMsNow
+  return .ok { fe := shared, core, env, installed := ok, failures, lenient := lenientCount,
+               ahead, waves := waves.size,
+               times := #[("convert", t1 - t0), ("lower", t2 - t1), ("canon", t3 - t2),
+                 ("phaseA", t4 - t3), ("tier+retry", t5 - t4), ("persist", t6 - t5)] }
 
 /-- **Install a compile's input**: its condensation (`Ix.CondenseM`, as the
-compile's front end builds it), then `install`. -/
+compile's front end builds it), then `install`. With `IX_BD_SEQUENTIAL` set,
+phase A takes every step in turn (for measurement: the environment is the same). -/
 def installInput (env : Ix.Environment) (workers : Nat := 32) : IO (Except String Installed) := do
+  let t0 ← IO.monoMsNow
   let blocks ← IO.lazyPure fun _ => Ix.CondenseM.run (Ix.Compile.FrontEnd.graph env)
-  install env blocks workers
+  let t1 ← IO.monoMsNow
+  let parallel := (← IO.getEnv "IX_BD_SEQUENTIAL").isNone
+  return (← install env blocks workers parallel).map fun k =>
+    { k with times := #[("condense", t1 - t0)] ++ k.times }
 
 /-! ## The walk -/
 
@@ -202,20 +312,35 @@ structure CtxEntry where
   id : Nat
   val : KExpr
 
-/-- What a record's walk reads. -/
+/-- What a record's walk reads. `large` and `params` are the root's numbering
+of level parameters (`Ix.LeanIngress.Numbering`): a large eliminator's source
+numbers its motive universe last, the record numbers it first. -/
 structure Cx where
   fe : FEnv .source
   core : Ix.Kernel.Cached.CoreFnsI .source
   sharing : Array Ixon.Expr
   bounds : Array Nat
+  large : Bool := false
+  params : Nat := 0
+
+/-- A source level parameter's index in the record's numbering (the inverse of
+`Ix.LeanIngress.Numbering.pos`). -/
+def Cx.recordParam (cx : Cx) (p : Nat) : Nat :=
+  if cx.large then (if p + 1 == cx.params then 0 else p + 1) else p
+
+/-- The node of a decided datum, its parameters in the record's numbering. -/
+def Cx.nodeOf (cx : Cx) (pw : PropWhen) : Node :=
+  match pw.toList? with
+  | none => .binder none
+  | some ps => .binder (some ((ps.map cx.recordParam).toArray.qsort (· < ·)))
 
 /-- A record's walk state: the sharing entries' variants (by node list) and
-blocks, and the memo of share sites under the same context. -/
+blocks, and the memo of share sites under the same numbering and context. -/
 structure WState where
   nextId : Nat := 0
   variants : Std.HashMap Nat (Std.HashMap (Array Node) Nat) := {}
   blocks : Array Block := #[]
-  memo : Std.HashMap (Nat × List Nat) (KExpr × Nat × Bool) := {}
+  memo : Std.HashMap (Nat × Bool × List Nat) (KExpr × Nat × Bool) := {}
 
 abbrev WM := StateT WState CM
 /-- An entry's walk: its nodes' data, by ordinal. -/
@@ -305,7 +430,7 @@ def walk : Nat → Cx → List CtxEntry → Nat → Ixon.Expr → KExpr → EM (
       let (leaf', bl) ← walk fuel cx inner (depth + k) leafE leafX
       let pw? ← datum cx pi (depth + k) leaf'
       let undecided := bad || bl || pw?.isNone
-      let node : Node := if undecided then .undecided else Node.ofPw (pw?.getD .never)
+      let node : Node := if undecided then .undecided else cx.nodeOf (pw?.getD .never)
       for ord in ords do setNode ord node
       let mk : KExpr → KExpr → BinderMeta → KExpr :=
         if pi then fun ty b mb => .forallE ty b mb else fun ty b mb => .lam ty b mb
@@ -326,7 +451,7 @@ def walk : Nat → Cx → List CtxEntry → Nat → Ixon.Expr → KExpr → EM (
     | .share n, _ => do
       let ord ← reserve
       let n := n.toNat
-      let key := (n, (ctx.take (cx.bounds[n]?.getD 0)).map (·.id))
+      let key := (n, cx.large, (ctx.take (cx.bounds[n]?.getD 0)).map (·.id))
       let (e', variant, bad) ← match (← getThe WState).memo[key]? with
         | some hit => pure hit
         | none => do
@@ -403,9 +528,9 @@ def sourceItems (find : Ix.Name → Option Ix.ConstantInfo) (ci : Ix.ConstantInf
   | _ => none
 
 /-- The Source roots of a record, from its members' sources (`extra` first,
-then the compile's input). -/
+then the compile's input), each with the numbering of its level parameters. -/
 def sourceRoots (env : Ix.Environment) (extra : Array (Ix.Name × Ix.ConstantInfo))
-    (names : Array Ix.Name) (c : Ixon.Constant) : Option (Array KExpr) := do
+    (names : Array Ix.Name) (c : Ixon.Constant) : Option (Array (KExpr × Numbering)) := do
   let ms := members c
   guard (ms.size == names.size)
   let find (n : Ix.Name) : Option Ix.ConstantInfo :=
@@ -416,8 +541,8 @@ def sourceRoots (env : Ix.Environment) (extra : Array (Ix.Name × Ix.ConstantInf
     items := items ++ (← sourceItems find ci m)
   let roots := (exprsOf items).toOption
   let roots ← roots
-  guard (roots.size == (IxVM.PwHints.roots c).size)
-  return roots
+  guard (roots.size == (IxVM.PwHints.roots c).size && roots.size == items.size)
+  return roots.zip (items.map (·.1))
 
 /-! ## The annotator -/
 
@@ -431,12 +556,13 @@ def annotate (k : Installed) (extra : Array (Ix.Name × Ix.ConstantInfo)) (names
   match sourceRoots k.env extra names c with
   | none => Ix.CompileM.undecidedSection c
   | some xs =>
-    let cx : Cx := { fe := k.fe, core := k.core, sharing := c.sharing,
-                     bounds := IxVM.PwHints.bounds c.sharing }
+    let cx0 : Cx := { fe := k.fe, core := k.core, sharing := c.sharing,
+                      bounds := IxVM.PwHints.bounds c.sharing }
     let act : WM (Array Block) := do
       let mut out := #[]
       for h : i in [:rs.size] do
-        let some x := xs[i]? | throw (.internal "binder data: a root without a source")
+        let some (x, σ) := xs[i]? | throw (.internal "binder data: a root without a source")
+        let cx := { cx0 with large := σ.large, params := σ.names.size }
         let (_, nodes) ← (walk walkFuel cx [] 0 rs[i] x).run #[]
         out := out.push ⟨0, i, 0, nodes⟩
       return out

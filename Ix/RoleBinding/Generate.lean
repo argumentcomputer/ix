@@ -5,6 +5,7 @@ public import Ix.RoleBinding.Evidence
 public import Ix.RoleBinding.RecordDecoding
 public import Ix.RoleEvidence
 public import Ix.KernelCheck.Step
+public import Ix.IxVM.RecordSections
 
 /-! # Artifact-specific binding and proof-evidence generation
 
@@ -137,10 +138,18 @@ structure Generated where
 certificate module's bound operations must have the artifact's addresses.
 Missing proofs, unreadable closure records and noncanonical output refuse.
 `store?` carries a checked store for this artifact and these limits when the
-caller has already built it. -/
+caller has already built it.
+
+The theorem records have no Lean source a compiler could annotate. With
+`binderData`, their binder-data sections come from IxC's pass over the records
+(`IxVM.RecordSections.sectionsOf`), typed against the certificate store under
+the bound-only table and its prelude, before their addresses are taken; a
+binder whose datum the pass cannot decide is the undecided node. Without
+`binderData`, every binder is undecided. -/
 def generate (limits : Ix.Kernel.Admission.Limits) (env certificates : Ixon.Env)
     (required : List Role) (groups : List (List Role))
-    (store? : Option (CheckedStore limits env) := none) : Except String Generated := do
+    (store? : Option (CheckedStore limits env) := none) (binderData : Bool := true) :
+    Except String Generated := do
   let store ← match store? with
     | some store => pure store.records
     | none => recordStore limits env
@@ -230,31 +239,48 @@ def generate (limits : Ix.Kernel.Admission.Limits) (env certificates : Ixon.Env)
               | _ => none)
             | throw s!"role generation: no theorem statement for {key}"
           let (record, extraBlobs) ← Evidence.theoremRecord (addrOfName[·]?) type proof
-          let bytes := Ixon.serConstant record
-          let decoded ← Ixon.Canonical.deConstant limits.maxRecordBytes limits.maxRecordUnivNodes bytes
-          unless Ixon.serConstant decoded == bytes do throw "role generation: noncanonical proof record"
-          let address := Address.admissionHash bytes
-          pure (address, record, proof, extraBlobs) :
-            Except String (Address × Ixon.Constant × CExpr .anon × Array (Address × ByteArray)))
-      let mut entries : Array (Ix.Kernel.Evidence Address) := #[]
-      let mut thmOut : Array (Address × Ixon.Constant × CExpr .anon × Array (Address × ByteArray)) := #[]
+          pure (record, proof, extraBlobs) :
+            Except String (Ixon.Constant × CExpr .anon × Array (Address × ByteArray)))
+      let mut thmOut : Array (Ixon.Constant × CExpr .anon × Array (Address × ByteArray)) := #[]
       for t in thmTasks do
-        let res ← t.get
-        entries := entries.push (.proof res.1)
-        thmOut := thmOut.push res
-      pure (role, Ix.RoleEvidence.evidenceEntries role entries, thmOut) :
-        Except String (Role × Array (Ix.Kernel.Evidence Address) ×
-          Array (Address × Ixon.Constant × CExpr .anon × Array (Address × ByteArray))))
+        thmOut := thmOut.push (← t.get)
+      pure (role, thmOut) :
+        Except String (Role × Array (Ixon.Constant × CExpr .anon × Array (Address × ByteArray))))
+  let mut written : Array (Role × Array (Ixon.Constant × CExpr .anon)) := #[]
   for rt in roleTasks do
-    let (role, roleEv, thmOut) ← rt.get
-    for (address, record, proof, extraBlobs) in thmOut do
-      records := records.push (address, record)
-      closed := closed.insert address proof
+    let (role, thmOut) ← rt.get
+    for (_, _, extraBlobs) in thmOut do
       for (a, b) in extraBlobs do
         if let some (_, old) := blobs.find? (·.1 == a) then
           unless old == b do throw s!"role generation: conflicting generated blob at {a}"
         else blobs := blobs.push (a, b)
-    evidence := evidence.push (role, roleEv)
+    written := written.push (role, thmOut.map fun (record, proof, _) => (record, proof))
+  -- the theorem records' binder data: IxC's pass over all of them at once,
+  -- keyed by each record's address without its section
+  let bare : Array (Address × Ixon.Constant) := written.foldl (init := #[]) fun acc (_, ts) =>
+    acc ++ ts.map fun (record, _) => (Address.admissionHash (Ixon.serConstant record), record)
+  let sections : Std.HashMap Address (Array Ixon.BinderBlock) ←
+    if binderData then do
+      let secBlobs := blobs.foldl (fun m (a, b) => m.insert a b)
+        (certificates.blobs.fold (fun m a b => m.insert a b) env.blobs)
+      let secHints := certificates.anonHints.fold (fun m a h => m.insert a h) env.anonHints
+      (IxVM.RecordSections.sectionsOf bare certStore.toArray secBlobs secHints (boundOnly, pre)).mapError
+        fun e => s!"role generation: binder data: {e}"
+    else
+      pure (bare.foldl (fun m (a, c) => m.insert a (Ix.CompileM.undecidedSection c)) {})
+  for (role, ts) in written do
+    let mut entries : Array (Ix.Kernel.Evidence Address) := #[]
+    for (record, proof) in ts do
+      let record := { record with
+        binders := sections.getD (Address.admissionHash (Ixon.serConstant record)) #[] }
+      let bytes := Ixon.serConstant record
+      let decoded ← Ixon.Canonical.deConstant limits.maxRecordBytes limits.maxRecordUnivNodes bytes
+      unless Ixon.serConstant decoded == bytes do throw "role generation: noncanonical proof record"
+      let address := Address.admissionHash bytes
+      entries := entries.push (.proof address)
+      records := records.push (address, record)
+      closed := closed.insert address proof
+    evidence := evidence.push (role, Ix.RoleEvidence.evidenceEntries role entries)
   let table := RoleTable.ofEntries Ix.Kernel.specVersion published.bound.toList evidence.toList
   table.check
   unless table.wireWF do throw "role generation: table exceeds the canonical wire domain"
