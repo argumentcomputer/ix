@@ -35,9 +35,9 @@ The core's functions run under a role context `rc` (`KernelRoles::RoleCtx`) and 
 | `thmTyped` | `Red.deltaThm`'s premises: a stored theorem's value, closed and typed at its own levels | L5 (each theorem's own check, carried along the fold by `Transport.weaken`) |
 | `natLit`, `strLit`, `natOps`, `natAdd` | the native rules' stored-shape guards (`natLitSupported`, `strLitSupported`, `natOpStored`, `natAddTyOk`) | L5 (the constants of the roles in force installed as their specifications), L6 (a group is admitted before its roles are in force) |
 | `eqStored`, `evidence` | `Red.eqProof`: `Eq` is stored; each evidence theorem the table names is stored at its key, its type definitionally equal to the role equation's statement | L5 (evidence theorems checked like any theorem), L6 (the table's evidence matches its roles) |
-| `recRules` | `Red.iota`'s rule lookup: distinct keys, firing rules at stored constructors with their parameter counts, the `j`-th rule for the `j`-th constructor of the member the major's `iPrj` record names | L5 (recursor install), L7 (keys from `ReadIn`) |
+| `recRules` | `Red.iota`'s rule lookup (the firing conjunct is `Ix.Kernel.Open.recRules_fire`): distinct keys, firing rules at stored constructors with their parameter counts, the `j`-th rule for the `j`-th constructor of the member the major's `iPrj` record names | L5 (recursor install), L7 (keys from `ReadIn`) |
 | `recPlain` | a plain rule's comparands are the major premise's domain | L5 (recursor install) |
-| `recArity`, `ctorArity` | a stored recursor's or constructor's type has a binder for every argument its walks read (`CertsR.toCerts`) | L5 (lemmas over installed constants) |
+| `recArity`, `ruleCtorArity`, `tableCtorArity`, `familyArity` | the stored telescopes the walks read have a binder for every argument (`CertsR.toCerts`): a recursor with a rule, a rule's or a projection table entry's constructor, a unit-like or η-capable family | L5 (the fold's invariants `EnvWF`, `RecCtorsStored`, `ProjOkT`; `Ix.Kernel.Open.StoredFacts`) |
 
 The loads (`Ingress::get_ci` and the projection loaders) are related to `env` by `LoadFacts`
 (`Good.lean`): the L1 ↔ L7 interface. -/
@@ -252,14 +252,29 @@ structure EnvFacts (c : Ctx) : Prop where
     ∃ D T, piDomAt mI cv.type = some D ∧
       D.getAppFn = .const T (cvj.levelParams.map .param) ∧
       D.getAppArgs.take nP = (List.range nP).map fun i => .bvar (mI - 1 - i)
-  /-- (L5) **A stored recursor's type has a binder for each argument up to the major premise**
-  (the walk `Red.iota` reads, `CertsR.toCerts`). -/
-  recArity : ∀ k cv mI rP rls, c.env.find? k = some (.recInfo cv mI rP rls) →
+  /-- (L5) **A stored recursor with a rule has a binder for each argument up to the major
+  premise** (the walk `Red.iota` reads, `CertsR.toCerts`; a recursor with no rule never fires).
+  `Ix.Kernel.Open.recArity_of`. A projection function is such a recursor, so this is also the
+  arity premise of `EtaProjCerts.cons`. -/
+  recArity : ∀ k cv mI rP rls, c.env.find? k = some (.recInfo cv mI rP rls) → ∀ rl ∈ rls,
     (cv.type.stripPis (mI + 1)).isSome = true
-  /-- (L5) **A stored constructor's type has a binder for each parameter and field** (the walks
-  of `Red.iota`, `Red.rescueK`, `Red.rescueEta` over a constructor's arguments). -/
-  ctorArity : ∀ k cv nP nF, c.env.find? k = some (.ctorInfo cv nP nF) →
-    (cv.type.stripPis (nP + nF)).isSome = true
+  /-- (L5) **A rule's constructor has a binder for each parameter and field**, at the rule's
+  counts (the walks of `Red.iota`, `Red.rescueK`, `Red.rescueEta` over a constructor's
+  arguments). `Ix.Kernel.Open.ruleCtor_arity`. -/
+  ruleCtorArity : ∀ k cv mI rP rls, c.env.find? k = some (.recInfo cv mI rP rls) → ∀ rl ∈ rls,
+    ∀ cvj nP nF, c.env.find? rl.ctor = some (.ctorInfo cvj nP nF) →
+      nP = rl.ctorParams ∧ nF = rl.nfields ∧ (cvj.type.stripPis (nP + nF)).isSome = true
+  /-- (L5) **The constructor of a stored projection table's entry has a binder for each parameter
+  and field**, at the entry's counts (`Red.proj`). `Ix.Kernel.Open.tableCtor_arity`. -/
+  tableCtorArity : ∀ sn i entry, c.env.findProj? sn i = some entry →
+    ∀ cvC nP nF, c.env.find? entry.ctor = some (.ctorInfo cvC nP nF) →
+      nP = entry.numParams ∧ nF = entry.numFields ∧ (cvC.type.stripPis (nP + nF)).isSome = true
+  /-- (L5) **A unit-like or η-capable family has a binder for each parameter its flag counts**
+  (the walks of the unit-like and η rescues over the family's arguments).
+  `Ix.Kernel.Open.storedArities_of`'s first half (`EnvWF.indCaps`). -/
+  familyArity : ∀ T cvT caps, c.env.find? T = some (.indInfo cvT caps) →
+    (caps.unitlike = true → (cvT.type.stripPis caps.unitParams).isSome = true) ∧
+      (caps.eta = true → (cvT.type.stripPis caps.etaParams).isSome = true)
 
 /-! ## Heap monotonicity -/
 

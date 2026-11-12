@@ -54,7 +54,9 @@ theorem envFacts₀ : EnvFacts c₀ where
   recRules := by intro k cv mI rP rls h; simp [c₀, env₀_find] at h
   recPlain := by intro k cv mI rP rls rl cvj nP nF h; simp [c₀, env₀_find] at h
   recArity := by intro k cv mI rP rls h; simp [c₀, env₀_find] at h
-  ctorArity := by intro k cv nP nF h; simp [c₀, env₀_find] at h
+  ruleCtorArity := by intro k cv mI rP rls h; simp [c₀, env₀_find] at h
+  tableCtorArity := by intro sn i entry h; simp [c₀, env₀_findProj] at h
+  familyArity := by intro T cvT caps h; simp [c₀, env₀_find] at h
 
 /-- The table cell: an empty binding section and three empty maps. -/
 def tableCell : SourceValue F :=
