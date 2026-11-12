@@ -714,7 +714,7 @@ checked against the admitted closure.
 | `csimp f g thm` | Use `g` for `f` through a kernel-accepted `thm : @f = @g`. |
 | `case T` | `T.casesOn` becomes a primitive case. |
 | `inline f` | Unfold matchers and `@[inline]`/`@[macro_inline]` definitions. |
-| `lazy f` | Pass arguments by name (`ite`, `dite`, `cond`, `Bool.or`, …). |
+| `lazy f n` | Pass the first `n` arguments by name. Only for a pinned row (`ite`, `dite`, `cond`, `Bool.or`, …: an address and an arity, `Src.Pinned.lazyPins`) or a sparse casesOn (`T…._sparseCasesOn_N`, which Lean generates for a `match` with a catch-all and its code generator compiles as a `cases`), recognised by its shape, every binder used at most once, at its binder count (`Table.checkSparseCases`), and without a `resolve` entry, which would replace the value that shape was checked on (`Table.lazyResolveOk`). The producer, `Table.validate` and `Table.ofCert` check a row with the same functions (`Table.checkLazy`, `Table.lazyResolveOk`), so a sidecar hint or a certificate row for any other definition is refused. |
 | `prim f op` | Compute `f` with a primitive. The checker pins `f` by address and type; that the primitive's meaning equals the pinned kernel body is tested, not yet proved (a lemma of the spine's SP-0, [certification design](certification-design.md#sp-0-same-bytes-and-the-conditional-statement)). |
 
 In the model, an accepted equation theorem forces its two sides to denote the

@@ -19,6 +19,11 @@ they relate that checked source semantically to the ingested program: the front
 end (`Table.ofCert`, the relevance annotation and its checks, `Lazify.run`)
 builds it, and the theorems state that the front end ran and how, not what it
 preserves (open item S6 in the [certification design](certification-design.md)).
+Which arguments the checked source passes by name is part of what it ran: the
+table's `lazy` rows, which `Table.ofCert` accepts only for a pinned row or a
+sparse casesOn at its binder count without a `resolve` entry (`Table.checkLazy`,
+`Table.lazyResolveOk`), so a certificate cannot
+make another definition's arguments by name.
 
 The implementation composes `compile = ingress; produce; run`. Every address
 IxCC computes is pure BLAKE3: `Address.blake3` is defined as `Address.blake3Pure`

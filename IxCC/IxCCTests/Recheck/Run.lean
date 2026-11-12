@@ -271,6 +271,8 @@ def main (args : List String) : IO UInt32 := do
         ← Hostile.reachDedupe a]
     part a "the --rc auto immortal fallback and check-cert --rc (B1-6, B1-8)" do
       return #[← Hostile.autoFallback a]
+    part a "a certificate's lazy rows: a pinned row or a sparse casesOn, nothing else" do
+      return #[← Hostile.sparseLazy a]
     part a "middle-end budgets (REPORT item 2)" do
       return #[← Hostile.budgets a, ← Hostile.betaMoves a, ← Hostile.pendingJoin a,
         ← Hostile.pendChoice a, ← Hostile.retryFallbackMechanism a,

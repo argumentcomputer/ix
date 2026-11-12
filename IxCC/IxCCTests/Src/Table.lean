@@ -1,4 +1,5 @@
 import IxCCTests.Src.Support
+import IxCC.Src.Table.Cert
 
 /-! The unfolding table on the K1 packs: every
 `eqn` proposal of `k1.ixe` and of each bench-k1 closure is accepted, the
@@ -171,12 +172,156 @@ def regressions (a : Assert) (l : Loaded) : IO Unit := do
   expect a (!isOk (Hints.checkJsonText badDepth)) "N10: JSON nesting depth 513 rejected"
   expect a (isOk (Hints.checkJsonText quotedBrackets)) "N10: quoted brackets do not increase JSON depth"
 
+/-! ## Sparse casesOn: `lazy` rows by shape (`Table.checkSparseCases`)
+
+On the committed fixture `phase2-closures/sparse`, whose roots match with a
+catch-all on a list, an option, an enumeration and a nested pattern. -/
+
+def sparseDir : System.FilePath := "fixtures/corpus/phase2-closures"
+
+def loadSparse : IO Loaded :=
+  loadPack (sparseDir / "sparse.ixe") (sparseDir / "sparse.equations.json")
+
+/-- The constant of the root the sidecar names `name`. -/
+def rootId (l : Loaded) (name : String) : IO CId := do
+  let some (addr, _) := l.hints.roots.find? (·.2 == some name)
+    | throw (IO.userError s!"no root {name}")
+  let some c := l.program.lookup addr | throw (IO.userError s!"{name} absent")
+  return c
+
+/-- The head constant of a definition's body under its λs. -/
+def headOf (p : Program) (c : CId) : IO CId := do
+  let some (.defn _ _ _ _ v) := p.decl? c | throw (IO.userError s!"c{c} is not a definition")
+  let .const h _ := v.lams.2.spine.1 | throw (IO.userError s!"c{c}'s body has no constant head")
+  return h
+
+/-- The field counts of the rules of the recursor heading `c`'s body. -/
+def ruleFields (p : Program) (c : CId) : List Nat :=
+  match p.decl? c with
+  | some (.defn _ _ _ _ v) =>
+    match v.lams.2.spine.1 with
+    | .const r _ =>
+      match p.decl? r with
+      | some (.recr _ _ _ _ _ _ _ _ rules _) => rules.map (·.fields)
+      | _ => []
+    | _ => []
+  | _ => []
+
+/-- `c` with its body's spine arguments rewritten by `f`. -/
+def mutateArgs (p : Program) (c : CId) (f : List Term.Arg → List Term.Arg) : Program :=
+  match p.decl? c with
+  | some (.defn k s n t v) =>
+    let (bs, body) := v.lams
+    let (head, args) := body.spine
+    withDecl p c (.defn k s n t
+      (bs.foldr (fun (b, d) acc => Term.lam b d acc) (Term.mkApps head (f args))))
+  | _ => p
+
+/-- Argument `i` of a spine replaced by `t`. -/
+def setArg (i : Nat) (t : Term) (args : List Term.Arg) : List Term.Arg :=
+  args.modify i fun (_, m, r) => (t, m, r)
+
+/-- A minor `λ ws. _` with its body replaced by `t`. -/
+def reMinor (minor t : Term) : Term :=
+  minor.lams.1.foldr (fun (b, d) acc => Term.lam b d acc) t
+
+def refusedWith {α : Type} (r : Except String α) (prefix_ : String) : Bool :=
+  match r with
+  | .error m => m.startsWith prefix_
+  | .ok _ => false
+
+/-- The sparse casesOn of the fixture get `lazy` rows at their binder count,
+which every route that checks a row accepts; their mutations, an ordinary
+definition with a sparse casesOn's name, and a hinted row for an ordinary
+definition are refused. -/
+def sparseCases (a : Assert) (count : Nat) : IO Unit := do
+  let l ← loadSparse
+  let p := l.program
+  let sparse := l.tableStats.sparseAccepted
+  expectEq a sparse.size count "sparse.ixe: sparse casesOn given a lazy row"
+  expect a l.tableDiags.isEmpty s!"sparse.ixe: table diagnostics {l.tableDiags.map toString}"
+  for c in sparse do
+    let arity := (p.table.lazyOf c).getD 0
+    expect a (match Table.checkSparseCases p c with | .ok b => b == arity | .error _ => false)
+      s!"sparse c{c}: the row's arity {arity} is the binder count"
+    expect a (isOk (Table.checkLazy p c arity)) s!"sparse c{c}: checkLazy accepts its row"
+    expect a (refusedWith (Table.checkLazy p c (arity - 1))
+      s!"lazy: not a pinned row, and a sparse casesOn of {arity} binders, not {arity - 1}")
+      s!"sparse c{c}: refused at a smaller arity"
+  -- `l.program` is after `Lazify` (its `eqn` bodies carry by-name modes), so the
+  -- table is rebuilt from the sidecar and checked on the program, as the
+  -- producer does before the annotation.
+  let (t0, _, _) := Table.build {} p l.hints.proposals
+  let p0 := { p with table := t0 }
+  expect a (t0.lazy.toList == p.table.lazy.toList) "sparse.ixe: the rebuilt table has the same lazy rows"
+  match Table.validate {} p0, Table.ofCert {} p0 (Table.TableCert.ofTable t0) with
+  | .ok (), .ok _ => expect a true "sparse.ixe: Table.validate and Table.ofCert accept the built table"
+  | .error m, _ | _, .error m => expect a false s!"sparse.ixe: the built table refused: {m}"
+  -- The roots' matchers reach the sparse casesOn of List, Option and Color.
+  for (name, fields) in [("Sparse.minS", [0, 2]), ("Sparse.minO", [0, 1]), ("Sparse.minE", [0, 0, 0])] do
+    expect a (sparse.any fun c => ruleFields p c == fields) s!"{name}: a sparse casesOn over rules {fields}"
+  -- An ordinary function named as a sparse casesOn is (`Sparse.mimic._sparseCasesOn_1`,
+  -- the head of `Sparse.minM`): no row, and a row for it is refused.
+  let mimic ← headOf p (← rootId l "Sparse.minM")
+  expect a (p.table.lazyOf mimic).isNone "mimic._sparseCasesOn_1: no lazy row"
+  expect a (refusedWith (Table.checkLazy p mimic 2) "lazy: not a pinned row, and not a sparse casesOn")
+    "mimic._sparseCasesOn_1: a lazy row refused"
+  -- A hinted row for an ordinary definition is refused, with a diagnostic.
+  let minS ← rootId l "Sparse.minS"
+  let (t, diags, _) := Table.build {} p
+    #[{ kind := .lazy, subject := p.addr minS, arity? := some 2, name? := some "Sparse.minS" }]
+  expect a ((t.lazyOf minS).isNone && diags.any fun d => d.addr == some (p.addr minS) &&
+      d.message.startsWith "lazy: not a pinned row, and not a sparse casesOn")
+    "a hinted lazy row for Sparse.minS refused"
+  -- Mutations of the enumeration's sparse casesOn (`λ motive major arm`, three
+  -- minors, the first the arm's): the arm applied by two minors.
+  let some colour := sparse.find? (ruleFields p · == [0, 0, 0]) | throw (IO.userError "no Color casesOn")
+  let cArity := (p.table.lazyOf colour).getD 0
+  let twice := mutateArgs p colour fun args => setArg 2 ((args[1]?.map (·.1)).getD (.natLit 0)) args
+  expect a (refusedWith (Table.checkSparseCases twice colour)
+    "sparse: the named constructors' minors do not apply each arm once") "mutation: one arm in two minors"
+  expect a (!isOk (Table.checkLazy twice colour cArity)) "mutation: one arm in two minors, its row refused"
+  -- Mutations of the list's (`λ α motive t nil`: binder 2 the major; minors 2
+  -- (nil, the arm's) and 3 (cons, the catch-all)).
+  let some list := sparse.find? (ruleFields p · == [0, 2]) | throw (IO.userError "no List casesOn")
+  let lArity := (p.table.lazyOf list).getD 0
+  expectEq a lArity 4 "List's sparse casesOn: four binders"
+  -- Its row beside a `resolve` entry that replaces its value (`csimp list g thm`,
+  -- valid on its own) is refused by `validate` and `ofCert`; the entry alone is not.
+  let some (pc, g, thm) := withCsimpTwin p0 list | throw (IO.userError "no csimp twin")
+  let us := match pc.decl? list with
+    | some (.defn _ _ n _ _) => Table.paramUnivs n
+    | _ => []
+  let pairedMsg := s!"table entry of constant {list}: lazy: a sparse casesOn's row beside a resolve entry"
+  let paired := { pc with table := { t0 with resolve := t0.resolve.insert list (.csimp g us thm) } }
+  expect a (refusedWith (Table.validate {} paired) pairedMsg) "validate: a sparse row beside a csimp entry refused"
+  let cert0 := Table.TableCert.ofTable t0
+  let certPaired := { cert0 with resolve := (list, .csimp g thm) :: cert0.resolve }
+  expect a (refusedWith (Table.ofCert {} pc certPaired) pairedMsg) "ofCert: a sparse row beside a csimp entry refused"
+  expect a (isOk (Table.ofCert {} pc { certPaired with lazy := cert0.lazy.filter (·.1 != list) }))
+    "ofCert: the csimp entry without the row accepted"
+  -- the major also in a value position of the motive (`λ t'. t`): used twice
+  let majorTwice := mutateArgs p list (setArg 1 (.lam {} (.sort .zero) (.var 2)))
+  expect a (refusedWith (Table.checkSparseCases majorTwice list) "sparse: binder 2 is used more than once")
+    "mutation: the major used twice"
+  expect a (!isOk (Table.checkLazy majorTwice list lArity)) "mutation: the major used twice, its row refused"
+  let consMinor := fun (args : List Term.Arg) => (args[3]?.map (·.1)).getD (.natLit 0)
+  -- the catch-all's minor returning `else` itself, and applying it to the major
+  let noProof := mutateArgs p list fun args => setArg 3 (reMinor (consMinor args) (.var 0)) args
+  let openProof := mutateArgs p list fun args =>
+    setArg 3 (reMinor (consMinor args) (.app (.var 0) (.var 5) .strict .rel)) args
+  for (label, q) in [("the catch-all without its proof", noProof),
+      ("the catch-all applied to the major", openProof)] do
+    expect a (refusedWith (Table.checkSparseCases q list)
+      "sparse: minor 1 is neither an arm on its fields nor the catch-all on a proof") s!"mutation: {label}"
+    expect a (!isOk (Table.checkLazy q list lArity)) s!"mutation: {label}, its row refused"
+
 /-- The counts the expectations below state, as observed (printed before they
 are checked, so a regeneration that moves them shows every new value at once:
 the expectations are reviewed literals, updated by hand). -/
 def observed (label : String) (l : Loaded) : String :=
   let s := l.tableStats
-  s!"{label}: eqn {s.eqnAccepted.size}, case {s.caseAccepted.size}, prim {s.primAccepted.size}, lazy {s.lazyAccepted.size}"
+  s!"{label}: eqn {s.eqnAccepted.size}, case {s.caseAccepted.size}, prim {s.primAccepted.size}, lazy {s.lazyAccepted.size}, sparse casesOn {s.sparseAccepted.size}"
 
 def run (a : Assert) : IO Unit := do
   let k1 ← loadK1
@@ -187,8 +332,11 @@ def run (a : Assert) : IO Unit := do
   expectEq a k1.tableStats.caseAccepted.size 94 "k1.ixe: case entries"
   expectEq a k1.tableStats.primAccepted.size 14 "k1.ixe: prim entries"
   expectEq a k1.tableStats.lazyAccepted.size 15 "k1.ixe: lazy entries"
+  expectEq a k1.tableStats.sparseAccepted.size 3 "k1.ixe: sparse casesOn"
   mutations a k1
   regressions a k1
+  IO.println (observed "sparse" (← loadSparse))
+  sparseCases a 3
   for (name, eqns, cases) in [("fib", 3, 16), ("sum-loop", 40, 93), ("ackermann", 40, 91),
       ("tak", 7, 21), ("gcd", 10, 23)] do
     let l ← loadBench name

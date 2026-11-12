@@ -16,6 +16,28 @@ sidecar, the census, the cases and the interpreter's values.
 | `Closures.storedApply` | partial and over-application through closures stored in a record that is rebuilt every iteration |
 | `Closures.knot` | a fuel-indexed record of closures, each level's closures capturing the record one level down (the shape of IxCK's `coreKnot`) |
 
+The fixture `sparse` ([`src/Sparse.lean`](src/Sparse.lean)) holds matches with
+a catch-all, which Lean elaborates through a *sparse casesOn*
+(`T…._sparseCasesOn_N`) whose arms are ordinary arguments; Lean's code
+generator compiles it as a `cases`, and IxCC gives it a `lazy` row
+(`Table.checkSparseCases`), so only the chosen arm runs. Each root takes a
+selector `b` (`0`: the named constructor's arm is chosen) and the arm's cost
+`n`:
+
+| Root | Match |
+| --- | --- |
+| `Sparse.minS`, `minO`, `minE` | `[]`, `none`, an enumeration's first constructor, then a catch-all |
+| `Sparse.minN` | a nested pattern, `⟨[], k⟩`, as K2 `queue`'s `checkf` |
+| `Sparse.minD`, `minH` | an arm that needs `n` frames of stack or allocates `n` cells; at `b = 1` the cases run at the default executable layout (8 MiB stack, 64 MiB region), where the unchosen arm ran out of stack or region while it ran first |
+| `Sparse.sumS` | the sum over `i < n` of `minS b i`: quadratic while the unchosen arm ran |
+| `Sparse.minF`, `sumF` | the same matches with every constructor named (`List.casesOn`): controls |
+| `Sparse.minM` | an ordinary function named as a sparse casesOn is: no `lazy` row, its arguments first, as Lean |
+
+`minS`'s case at `n = 2^62` returns at once, and would not return if the arm
+ran. `tests-src` pins SrcEval's steps of the unchosen arms and checks the
+table on this closure; `tests-recheck` and `tests-pipeline-rc counters` use it
+too.
+
 **A registered family** (`Corpus.families`): `corpus check` checks it and
 `tests-corpus` compiles every root with the production compiler, whose
 closures step (the roots' entries and P8) runs after the middle end, and runs
