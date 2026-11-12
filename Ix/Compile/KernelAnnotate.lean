@@ -193,7 +193,7 @@ def pushesAhead (ev : Ix.Kernel.Evidences .source) (fe : FEnv .source) (d : CDec
 
 /-- A kernel error on one line, for `IX_BD_TRACE`. -/
 def traceError (e : Ix.Kernel.CheckError .source) : String :=
-  ((Benchmarks.Kernel.CheckIxeStep.checkOutcome e).2.replace "\n" " ").take 400
+  ((Benchmarks.Kernel.CheckIxeStep.checkOutcome e).2.replace "\n" " ").take 400 |>.toString
 
 def readErrorString : ReadError → String
   | .malformed m => s!"malformed: {m}"
