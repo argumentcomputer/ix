@@ -135,12 +135,15 @@ theorem memoCall_iff_retained {G : Type} [Field G] [DecidableEq G] {s : Aiur.Gen
   rw [hfound] at hc
   cases hsym : Aiur.Generic.Instance.ofSymbol name with
   | error e =>
-    simp [Aiur.Generic.Source.compilerFunction?, hsym, Except.toOption, bind, Except.bind] at hc
+    simp [Aiur.Generic.Source.compilerFunction?, hsym, Except.toOption, Except.bind] at hc
   | ok key =>
     have hprep : Aiur.Generic.Preparation.function s.program key = .ok f := by
-      cases run : Aiur.Generic.Preparation.function s.program key <;>
-        simpa [Aiur.Generic.Source.compilerFunction?, hsym, run, Except.toOption, bind,
-          Except.bind] using hc
+      cases run : Aiur.Generic.Preparation.function s.program key with
+      | error e' =>
+        simp [Aiur.Generic.Source.compilerFunction?, hsym, run, Except.toOption, Except.bind] at hc
+      | ok f' =>
+        simp [Aiur.Generic.Source.compilerFunction?, hsym, run, Except.toOption, Except.bind] at hc
+        rw [hc]
     obtain ⟨g, -, -, -, hg, -⟩ := Aiur.Generic.Preparation.function_ok hprep
     have hmem : name ∈ specialized.inlineNames ↔ g.isInline = true := by
       unfold Aiur.Generic.Specialized.inlineNames
@@ -162,16 +165,21 @@ theorem memoCall_iff_retained {G : Type} [Field G] [DecidableEq G] {s : Aiur.Gen
         refine ⟨f, List.mem_of_find?_eq_some hfound, ?_⟩
         rw [Aiur.Inlining.function_name hfound, hsym]
         simp [hg, hi]
-    unfold memoCall
-    rw [hsym]
+    have hmc : memoCall s name = !g.isInline := by
+      unfold memoCall
+      rw [hsym]
+      simp [hg]
+    rw [hmc]
     show ((compiled.inlined.bodies.program specialized.program
         specialized.inlineNames).findFunction? name).isSome = _
     rw [Aiur.Inlining.Bodies.findFunction]
-    by_cases hi : g.isInline = true
-    · rw [if_pos (hmem.mpr hi)]
-      simp [hg, hi]
-    · rw [if_neg (fun h => hi (hmem.mp h))]
-      simp [hg, hi, hfound]
+    by_cases hin : name ∈ specialized.inlineNames
+    · simp [hin, hmem.mp hin]
+    · have hi : g.isInline = false := by
+        cases h : g.isInline
+        · rfl
+        · exact absurd (hmem.mpr h) hin
+      simp [hin, hi, hfound]
 
 /-- **At most `n` distinct calls of each memoized callee**, up to representation in the
 ROM: for each memoized callee, at most `n` argument lists cover its calls, each one

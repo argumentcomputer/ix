@@ -118,7 +118,10 @@ theorem Good.sub {c : Ctx} {calls₁ calls₂ : List (Call F)} (g : Good c calls
     Good c calls₁ :=
   ⟨fun h => g.1 (collision_mono hsub h), fun cl hcl => g.2.1 cl (hsub cl hcl),
     fun cl hcl => g.2.2.1 cl (hsub cl hcl),
-    let ⟨rom, hv, keys, hk, cover⟩ := g.2.2.2; ⟨rom, hv, keys, hk, fun cl hcl => cover cl (hsub cl hcl)⟩⟩
+    let ⟨rom, hv, bound⟩ := g.2.2.2
+    ⟨rom, hv, fun name hm =>
+      let ⟨keys, hk, cover⟩ := bound name hm
+      ⟨keys, hk, fun cl hcl => cover cl (hsub cl hcl)⟩⟩⟩
 
 /-- **The record-load escape** (the mechanics of the statement's escape at one
 load): with no hashed collision, every byte string the run hashed to a stored
