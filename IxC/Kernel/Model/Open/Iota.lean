@@ -265,6 +265,7 @@ theorem GradedBy.mkAppN_args' {σ : Nat → V} {ρ : BVarIdx → V} :
 
 /-! ## Lifting past bound variables, at open readings -/
 
+omit [SetTheory V] in
 theorem push_agree_lift {c k : Nat} {ρ0 ρ1 : BVarIdx → V} (x : V)
     (h1 : ∀ i, i < c → ρ1 i = ρ0 i) (h2 : ∀ i, c ≤ i → ρ1 (i + k) = ρ0 i) :
     (∀ i, i < c + 1 → push x ρ1 i = push x ρ0 i) ∧
@@ -800,8 +801,8 @@ theorem Red.iota_sound (hse : StoredEnv env) {d : Nat} {e : Expr md} {c : Key md
         intro i hi
         have hi2 : i < pins.length := by omega
         rw [Expr.getAppArgs_instantiateLevelParams, hargs0]
-        simp [List.getD, List.getElem?_append_left, List.getElem?_map, List.getElem?_eq_getElem hi2,
-          hi2, Ix.Kernel.Model.instantiateLevelParams_liftLooseBVars]
+        simp [List.getD, List.getElem?_append_left, hi2,
+          Ix.Kernel.Model.instantiateLevelParams_liftLooseBVars]
       -- each comparand reads, gradedly, what the domain's argument reads
       have hcmpRead : ∀ i, i < rl.ctorParams →
           Den M φ σ ((pins.map (fun p => Expr.instSpine (e.getAppArgs.take rP) (rP - 1)
