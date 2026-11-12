@@ -46,7 +46,11 @@ fn setup_identity(config: &SetupConfig) -> [u8; 32] {
 #[cfg(feature = "plonk")]
 fn anchors(config: &SetupConfig, domain: usize) -> Result<crate::kzg::Srs> {
   let size = parameter_size(config, domain)?;
-  config.for_stage(FINAL_SRS_SEED, size.loaded_powers())?.srs(2, true)
+  let height = match config {
+    SetupConfig::Ignition { .. } => domain,
+    SetupConfig::Development { .. } => size.loaded_powers().next_power_of_two(),
+  };
+  config.for_stage(FINAL_SRS_SEED, height)?.srs(2, true)
 }
 
 #[cfg(feature = "plonk")]
@@ -245,18 +249,48 @@ pub fn export_parameters(
     )?;
   }
   let count = size.opening_powers();
-  let prefix = size.loaded_powers();
   let manifest = setup_identity(config);
-  let source = config.for_stage(FINAL_SRS_SEED, prefix)?;
-  let srs = source.srs(prefix, false)?;
+  let (srs, public_setup) = match config {
+    SetupConfig::Ignition { srs } => {
+      let parameters = verifying_keys::ignition_parameters()?;
+      let powers = crate::kzg::srs::gnark::load_exact(
+        srs,
+        count,
+        parameters.public_setup,
+      )?;
+      if powers.g1[..2] != parameters.g1
+        || powers.g2 != parameters.g2
+        || powers.tau_g2 != parameters.tau_g2
+      {
+        return Err(
+          "PLONK powers differ from the released Ignition anchors".into(),
+        );
+      }
+      (powers, parameters.public_setup)
+    },
+    SetupConfig::Development { .. } => {
+      let prefix = count.next_power_of_two();
+      let source = config.for_stage(FINAL_SRS_SEED, prefix)?;
+      let mut srs = source.srs(prefix, false)?;
+      srs.g1.truncate(count);
+      (
+        crate::kzg::srs::gnark::Powers {
+          g1: srs.g1,
+          g2: srs.g2,
+          tau_g2: srs.tau_g2,
+        },
+        srs.public_setup,
+      )
+    },
+  };
   let temporary = storage::temporary_path(path);
   if let Some(parent) = path.parent() {
     fs::create_dir_all(parent)?;
   }
   let mut out = std::io::BufWriter::new(fs::File::create(&temporary)?);
   out.write_all(b"IXBPSR01")?;
-  out.write_all(&srs.public_setup.id)?;
-  out.write_all(&(srs.public_setup.max_degree as u64).to_le_bytes())?;
+  out.write_all(&public_setup.id)?;
+  out.write_all(&(public_setup.max_degree as u64).to_le_bytes())?;
   out.write_all(&manifest)?;
   out.write_all(&(count as u64).to_le_bytes())?;
   out.write_all(&encode_g2(srs.g2))?;
@@ -272,8 +306,8 @@ pub fn export_parameters(
   hash.update_mmap_rayon(path)?;
   let receipt = serde_json::json!({
     "format": "ix-bn254-plonk-srs-export-v2", "blake3": hash.finalize().to_hex().as_str(),
-    "setupId": blake3::Hash::from_bytes(srs.public_setup.id).to_hex().as_str(),
-    "publicMaxDegree": srs.public_setup.max_degree, "powers": count,
+    "setupId": blake3::Hash::from_bytes(public_setup.id).to_hex().as_str(),
+    "publicMaxDegree": public_setup.max_degree, "powers": count,
     "setupClass": config.class().label(),
     "setupIdentity": blake3::Hash::from_bytes(manifest).to_hex().as_str(),
   });

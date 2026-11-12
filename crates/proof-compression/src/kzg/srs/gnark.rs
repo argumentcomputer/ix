@@ -60,9 +60,27 @@ pub fn load(
   prefix_len: usize,
   public_setup: PublicSetup,
 ) -> io::Result<Srs> {
-  if prefix_len < 2
-    || !prefix_len.is_power_of_two()
-    || prefix_len > MAX_POINTS
+  if !prefix_len.is_power_of_two() {
+    return Err(invalid("native KZG SRS prefix must be a power of two"));
+  }
+  let powers = load_exact(path, prefix_len, public_setup)?;
+  Ok(Srs { g1: powers.g1, g2: powers.g2, tau_g2: powers.tau_g2, public_setup })
+}
+
+/// Exact prefixes for parameter interchange, separate from the native KZG
+/// SRS type whose FFT-facing APIs require a power-of-two length.
+pub(crate) struct Powers {
+  pub(crate) g1: Vec<G1Affine>,
+  pub(crate) g2: G2Affine,
+  pub(crate) tau_g2: G2Affine,
+}
+
+pub(crate) fn load_exact(
+  path: &Path,
+  prefix_len: usize,
+  public_setup: PublicSetup,
+) -> io::Result<Powers> {
+  if !(2..=MAX_POINTS).contains(&prefix_len)
     || prefix_len - 1 > public_setup.max_degree
   {
     return Err(invalid("invalid SRS prefix length"));
@@ -95,11 +113,10 @@ pub fn load(
   if g1(&anchors[256..])? != powers[0] {
     return Err(invalid("gnark SRS G1 anchor differs from its powers"));
   }
-  Ok(Srs {
+  Ok(Powers {
     g1: powers,
     g2: g2(&anchors[..128])?,
     tau_g2: g2(&anchors[128..256])?,
-    public_setup,
   })
 }
 
@@ -145,6 +162,22 @@ mod tests {
     assert_eq!(prefix.g1, srs.g1[..4]);
     assert_eq!(prefix.g2, srs.g2);
     assert_eq!(prefix.tau_g2, srs.tau_g2);
+    for count in [3, 5, 7] {
+      let exact = load_exact(&path, count, srs.public_setup)?;
+      assert_eq!(exact.g1, srs.g1[..count]);
+      assert_eq!(exact.g2, srs.g2);
+      assert_eq!(exact.tau_g2, srs.tau_g2);
+      assert!(load(&path, count, srs.public_setup).is_err());
+    }
+    assert!(load_exact(&path, 9, srs.public_setup).is_err());
+    let mut short_allowance = srs.public_setup;
+    short_allowance.max_degree = 3;
+    assert!(load_exact(&path, 5, short_allowance).is_err());
+    let mut damaged_tail = bytes.clone();
+    damaged_tail[4 + 6 * 64] ^= 0xff;
+    std::fs::write(&path, damaged_tail)?;
+    assert!(load(&path, 4, srs.public_setup).is_ok());
+    assert!(load_exact(&path, 7, srs.public_setup).is_err());
     assert!(load(&path, 16, srs.public_setup).is_err());
     for offset in [0, 4, 4 + 8 * 64, 4 + 8 * 64 + 256] {
       let mut damaged = bytes.clone();

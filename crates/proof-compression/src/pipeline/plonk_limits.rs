@@ -20,7 +20,7 @@ impl ParameterSize {
     self.opening_powers
   }
 
-  /// The current Rust SRS loader accepts only power-of-two prefixes.
+  /// Exact number of powers required by the PLONK interchange loader.
   pub const fn loaded_powers(self) -> usize {
     self.loaded_powers
   }
@@ -46,9 +46,7 @@ impl ParameterSize {
       ));
     }
     let opening_powers = domain.checked_add(3).ok_or("PLONK SRS overflow")?;
-    let loaded_powers = opening_powers
-      .checked_next_power_of_two()
-      .ok_or("PLONK SRS prefix overflow")?;
+    let loaded_powers = opening_powers;
     Ok(Self { domain, opening_powers, loaded_powers })
   }
 
@@ -63,7 +61,7 @@ impl ParameterSize {
     self.check_public_degree(public_max_degree)?;
     if self.loaded_powers > available_powers {
       return Err(format!(
-        "PLONK domain {} needs {} opening powers and a {}-power prefix with the current loader, but the SRS retains {} powers",
+        "PLONK domain {} needs {} opening powers and a {}-power prefix, but the SRS retains {} powers",
         self.domain, self.opening_powers, self.loaded_powers, available_powers
       ));
     }
@@ -76,7 +74,7 @@ impl ParameterSize {
   ) -> Result<(), String> {
     if self.loaded_powers - 1 > public_max_degree {
       return Err(format!(
-        "PLONK domain {} needs {} opening powers and a {}-power prefix with the current loader, exceeding admitted maximum degree {}",
+        "PLONK domain {} needs {} opening powers and a {}-power prefix, exceeding admitted maximum degree {}",
         self.domain, self.opening_powers, self.loaded_powers, public_max_degree
       ));
     }
@@ -84,8 +82,7 @@ impl ParameterSize {
   }
 }
 
-/// Largest domain the current power-of-two prefix loader can serve. This can
-/// be smaller than the domain allowed by the protocol's `N + 3` requirement.
+/// Largest domain served by both the retained prefix and the admitted degree.
 pub fn maximum_domain(
   available_powers: usize,
   public_max_degree: usize,
@@ -109,7 +106,7 @@ mod tests {
   use super::*;
 
   #[test]
-  fn current_ignition_prefix_caps_constraints_below_two_to_25() {
+  fn retained_power_of_two_prefix_still_needs_three_more_powers() {
     let retained = 1 << 26;
     let ceremony_degree = 100_800_000 - 1;
     let maximum = maximum_domain(retained, ceremony_degree).unwrap();
@@ -120,28 +117,31 @@ mod tests {
     let next = ParameterSize::for_circuit(maximum - 1, 2).unwrap();
     assert_eq!(next.domain, 1 << 26);
     assert_eq!(next.opening_powers, (1 << 26) + 3);
-    assert_eq!(next.loaded_powers, 1 << 27);
+    assert_eq!(next.loaded_powers, (1 << 26) + 3);
     assert!(next.check_capacity(retained, ceremony_degree).is_err());
   }
 
   #[test]
-  fn full_ceremony_does_not_remove_loader_rounding_limit() {
+  fn exact_prefix_serves_the_larger_domain_within_the_ceremony() {
     let powers = 100_800_000;
     let size = ParameterSize::for_domain(1 << 26).unwrap();
     assert!(size.opening_powers <= powers);
-    assert!(size.check_capacity(powers, powers - 1).is_err());
-    assert_eq!(maximum_domain(powers, powers - 1), Some(1 << 25));
+    assert!(size.check_capacity(powers, powers - 1).is_ok());
+    assert_eq!(maximum_domain(powers, powers - 1), Some(1 << 26));
+    assert!(size.check_capacity((1 << 26) + 3, powers - 1).is_ok());
+    assert!(size.check_capacity((1 << 26) + 2, powers - 1).is_err());
   }
 
   #[test]
   fn retained_and_admitted_limits_are_checked_independently() {
     let size = ParameterSize::for_domain(16).unwrap();
     assert_eq!(size.opening_powers, 19);
-    assert_eq!(size.loaded_powers, 32);
-    assert!(size.check_capacity(32, 31).is_ok());
-    assert!(size.check_capacity(31, 100).is_err());
-    assert!(size.check_capacity(100, 30).is_err());
-    assert_eq!(maximum_domain(7, usize::MAX), None);
+    assert_eq!(size.loaded_powers, 19);
+    assert!(size.check_capacity(19, 18).is_ok());
+    assert!(size.check_capacity(18, 100).is_err());
+    assert!(size.check_capacity(100, 17).is_err());
+    assert_eq!(maximum_domain(4, usize::MAX), None);
+    assert_eq!(maximum_domain(7, usize::MAX), Some(4));
     assert_eq!(maximum_domain(8, 7), Some(4));
   }
 

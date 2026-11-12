@@ -254,16 +254,17 @@ between Aiur stages. Its key depends on `CompressFinal`, the compiler and
 exporter, capacity, authenticated constants and setup parameters.
 
 That capacity has a concrete upper bound. The admitted Ignition ceremony
-has 100,800,000 G1 powers, but the current importer retains at most `2^26`.
-Gnark chooses `N = next_power_of_two(constraints + public_inputs)` and needs
-`N + 3` powers. The Rust exporter currently rounds that request up again to
-a power-of-two prefix. Its largest usable domain is therefore `2^25`, or
-33,554,430 constraints with the existing two public inputs. One additional
-constraint requires `N = 2^26` and a `2^27`-power loaded prefix, exceeding
-both the retained file and the full ceremony. A loader that retained and
-served `2^26 + 3` powers could support the larger domain without a new
-ceremony; that is a separate parameter-format/loader change. The pure
-`pipeline::plonk_limits` helper checks these bounds before allocation.
+has 100,800,000 G1 powers. Gnark chooses
+`N = next_power_of_two(constraints + public_inputs)` and needs `N + 3`
+powers. The PLONK exporter loads that exact prefix; the native KZG loader
+retains its separate power-of-two invariant. The release-preparation importer
+can retain arbitrary valid prefixes and defaults to `2^26 + 3` powers.
+An existing file with only `2^26` powers still supports at most a `2^25`
+PLONK domain and is rejected for a larger request. With at least `2^26 + 3`
+retained powers, the parameter path can serve a `2^26` domain without a new
+ceremony. The pure `pipeline::plonk_limits` helper checks retained length and
+the independently admitted degree before allocation. Aiur's frontend limit
+remains conservative until its measured circuit is shown to fit.
 
 `CompressFinal` reuses `CompressBN`'s KZG verification logic and accumulator
 fold, then checks the folded pairing. A fully Aiur implementation needs a
