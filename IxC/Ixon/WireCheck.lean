@@ -1,7 +1,5 @@
 module
 public import IxC.Ixon.Wire
-public import Std.Data.HashMap
-public import Std.Data.HashSet
 import all IxC.Ixon.Wire
 import all IxC.Ixon.Codec
 
@@ -256,17 +254,37 @@ def Expr.numberedNodes (full : Array Bool) : Expr → Array (Option Nat) → Arr
   | .share n, acc => if full[n.toNat]?.getD false then acc.push (some n.toNat) else acc
   | _, acc => acc
 
-/-- The traversal state of the structure check: the blocks visited, and per
-sharing entry the number of its variants met so far. -/
+/-- The position of the block `(shared, index, variant)` in `blocks`, which
+`blocksAscending` has found strictly sorted by `BinderBlock.keyLt`: a binary
+search (65 halvings cover every array size). -/
+def findBlock (blocks : Array BinderBlock) (shared : Bool) (index variant : UInt64) :
+    Option Nat := Id.run do
+  let key : BinderBlock := ⟨shared, index, variant, #[]⟩
+  let mut lo := 0
+  let mut hi := blocks.size
+  for _ in [:65] do
+    if lo < hi then
+      let mid := (lo + hi) / 2
+      match blocks[mid]? with
+      | none => return none
+      | some b =>
+        if b.shared == shared && b.index == index && b.variant == variant then return some mid
+        if b.keyLt key then lo := mid + 1 else hi := mid
+  return none
+
+/-- The traversal state of the structure check: per block (by its position)
+whether the traversal visited it, how many it visited, and per sharing entry the
+number of its variants met so far. -/
 structure BinderWalk where
-  visited : Std.HashSet (Bool × UInt64 × UInt64) := {}
-  variants : Std.HashMap Nat Nat := {}
+  visited : Array Bool
+  count : Nat := 0
+  variants : Array Nat
 
 /-- Check `nodes` against the numbered nodes `shape` of their expression,
 visiting each share node's variant at its first occurrence (`fuel` bounds the
 nesting by the number of blocks). -/
 def checkBinderNodes (lvls : Nat) (undecidedOnly : Bool) (full : Array Bool) (sharing : Array Expr)
-    (blocks : Std.HashMap (Bool × UInt64 × UInt64) (Array BinderNode)) :
+    (blocks : Array BinderBlock) :
     Nat → Array (Option Nat) → Array BinderNode → BinderWalk → Option BinderWalk
   | 0, _, _, _ => none
   | fuel + 1, shape, nodes, walk => do
@@ -281,15 +299,15 @@ def checkBinderNodes (lvls : Nat) (undecidedOnly : Bool) (full : Array Bool) (sh
         else if !node.canonical lvls then none
       | some _, .never | some _, .zero | some _, .ifAllZero _ | some _, .undecided => none
       | some n, .share v =>
-        let key := (true, n.toUInt64, v)
-        if walk.visited.contains key then continue
+        let some i := findBlock blocks true n.toUInt64 v | none
+        if walk.visited[i]?.getD false then continue
         -- a new variant is the next one: variants are numbered in order of first occurrence
-        if v.toNat != walk.variants.getD n 0 then none
+        if v.toNat != walk.variants[n]?.getD 0 then none
         let some entry := sharing[n]? | none
-        let some sub := blocks[key]? | none
-        walk := { visited := walk.visited.insert key,
-                  variants := walk.variants.insert n (v.toNat + 1) }
-        walk ← checkBinderNodes lvls undecidedOnly full sharing blocks fuel (entry.numberedNodes full #[]) sub walk
+        let some sub := blocks[i]? | none
+        walk := { visited := walk.visited.set! i true, count := walk.count + 1,
+                  variants := walk.variants.set! n (v.toNat + 1) }
+        walk ← checkBinderNodes lvls undecidedOnly full sharing blocks fuel (entry.numberedNodes full #[]) sub.nodes walk
     return walk
 
 /-- The section of `c` is complete: blocks strictly sorted, exactly one per
@@ -300,21 +318,21 @@ def Constant.bindersCompleteRooted (c : Constant) : Bool := Id.run do
   unless blocksAscending c.binders.toList do return false
   let lvls := c.info.maxLvls
   let full := binderfulEntries c.sharing
-  let blocks : Std.HashMap (Bool × UInt64 × UInt64) (Array BinderNode) :=
-    c.binders.foldl (fun m b => m.insert (b.shared, b.index, b.variant) b.nodes) {}
   let roots := c.info.binderRoots
-  let mut walk : BinderWalk := {}
+  let mut walk : BinderWalk :=
+    { visited := Array.replicate c.binders.size false, variants := Array.replicate c.sharing.size 0 }
   for h : r in [:roots.size] do
     let shape := roots[r].numberedNodes full #[]
     if shape.isEmpty then continue
-    let key := (false, r.toUInt64, (0 : UInt64))
-    let some nodes := blocks[key]? | return false
-    walk := { walk with visited := walk.visited.insert key }
-    match checkBinderNodes lvls c.info.uncheckedSafety full c.sharing blocks (c.binders.size + 1) shape nodes walk with
+    let some i := findBlock c.binders false r.toUInt64 0 | return false
+    let some root := c.binders[i]? | return false
+    walk := { walk with visited := walk.visited.set! i true, count := walk.count + 1 }
+    match checkBinderNodes lvls c.info.uncheckedSafety full c.sharing c.binders (c.binders.size + 1)
+        shape root.nodes walk with
     | some w => walk := w
     | none => return false
   -- no block outside the traversal
-  unless walk.visited.size == c.binders.size do return false
+  unless walk.count == c.binders.size do return false
   -- an entry's variants are distinct node lists
   for b in c.binders do
     if b.shared then
