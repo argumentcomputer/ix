@@ -4,6 +4,7 @@ public import IxC.Kernel.Model.Inductives.StructBits
 public import IxC.Kernel.Model.Inductives.StructRows
 public import IxC.Kernel.Model.JudgeSound
 public import IxC.Kernel.Verify.ProjSlots
+public import IxC.Kernel.Semantics.Inductives.DeclNativeJ
 import IxC.Kernel.Verify.InferLemmas
 import IxC.Kernel.Verify.Mono
 import IxC.Kernel.Verify.BinderLoop
@@ -88,6 +89,16 @@ structure JudgeInv (J : Judgements md) : Prop where
     CtxOk m φ d Δa e → denoteMeta m.acval env φ d e = some ea →
     ∀ ρ : Nat → V, Sat V Δa ρ →
       WellDenotedV V ρ ea ∧ interp V ρ ea ∈ˢ (univ (u.eval φ) : V)
+
+/-- A checked constant's type is closed, bounded, resolving and within its level
+parameters, at a package whose annotations keep scoping. -/
+theorem ConstantValCheckJ.typeWF {J : Judgements md} {env : Env md} {cv cv' : ConstantVal md}
+    (hfr : JudgeFrames J env) (h : ConstantValCheckJ J env cv cv') :
+    cv'.type.hasFvar = false ∧ cv'.type.allLevelParamsDefined cv'.levelParams = true ∧
+      cv'.type.constsResolve env = true ∧ cv'.type.looseBVarsBounded 0 = true := by
+  obtain ⟨type', ⟨-, -, -, -, hlbt, hitf, hann, htp, htr, -⟩, rfl⟩ := h
+  obtain ⟨htf, hbt⟩ := hfr.annot_syntax hann hitf hlbt
+  exact ⟨htf, htp, htr, hbt⟩
 
 /-! ## The rows, over a package -/
 
