@@ -577,6 +577,16 @@ def walk : Nat → Cx → List CtxEntry → Nat → Option KExpr → Ixon.Expr �
       pure (b', bt || bv || bb)
     | .prj _ _ v, .proj k i xv => do
       let (v', bv) ← walk fuel cx ctx depth none v xv
+      if cx.trace then
+        let probe : CM String := do
+          let tpe ← cx.core.infer depth v'
+          let te ← cx.core.whnf depth tpe
+          let head := match Ix.Kernel.Expr.getAppFn te with
+            | .const T _ => s!"const {T} (table: {(cx.fe.findProj? T i).isSome})"
+            | _ => "not a constant"
+          pure s!"the projection {k}.{i}: its subject's type is headed by {head}"
+        let msg ← (tryCatch probe (fun e => pure s!"the projection {k}.{i}: {traceError e}") : CM String)
+        dbgTrace s!"binder data trace: {msg}" fun _ => pure ()
       pure (.proj k i v', bv)
     | .share n, _ => do
       let ord ← reserve
