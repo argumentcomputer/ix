@@ -80,14 +80,14 @@ theorem rebuild_wire {F : Family} {n : Node} (hfam : n.head.family = F) {acc sid
     simp only [famCount, Head.family] at room ⊢
     refine ⟨(a + 1, 0, 0), ?_, rfl, fun e => absurd rfl e, fun _ => rfl, fun _ => rfl, Nat.le_refl _⟩
     simp only [wireCounts, hacc, hside, room, ↓reduceIte]
-  | lam bc =>
+  | lam =>
     rw [hh] at h hfam
     cases h
     subst hfam
     simp only [famCount, Head.family] at room ⊢
     refine ⟨(0, l + 1, 0), ?_, rfl, fun _ => rfl, fun e => absurd rfl e, fun _ => rfl, Nat.le_refl _⟩
     simp only [wireCounts, hacc, hside, room, ↓reduceIte]
-  | all bc r =>
+  | all =>
     rw [hh] at h hfam
     cases h
     subst hfam
@@ -175,7 +175,7 @@ theorem PrepWF.build_wire {p : Prep} (hp : PrepWF p)
                 hp.dag.childAt_lt ht (by simp [hh, Head.arity])
               obtain ⟨cv, hcv, _⟩ := ih false _ v (by omega) hv
               exact ⟨(0, 0, 0), by simp [wireCounts, hcv], topOK_zero _ _⟩
-            case letE lc =>
+            case letE nonDep mode =>
               obtain ⟨ty, hty, h2⟩ := Ix.Sharing.Verify.SharingExact.bind_eq_ok h
               obtain ⟨v, hv, h3⟩ := Ix.Sharing.Verify.SharingExact.bind_eq_ok h2
               obtain ⟨bd, hbd, hpure⟩ := Ix.Sharing.Verify.SharingExact.bind_eq_ok h3

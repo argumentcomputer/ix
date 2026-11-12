@@ -20,9 +20,9 @@ theorem substShares_congr_on (source : Ixon.Expr) {P : Nat → Prop}
   | share index => exact agree index.toNat bounded
   | prj type field value ih => simp only [substShares, ih bounded]
   | app fn arg ihf iha => simp only [substShares, ihf bounded.1, iha bounded.2]
-  | lam contract type body iht ihb => simp only [substShares, iht bounded.1, ihb bounded.2]
-  | all contract result type body iht ihb => simp only [substShares, iht bounded.1, ihb bounded.2]
-  | letE contract type value body iht ihv ihb =>
+  | lam type body iht ihb => simp only [substShares, iht bounded.1, ihb bounded.2]
+  | all type body iht ihb => simp only [substShares, iht bounded.1, ihb bounded.2]
+  | letE nonDep mode type value body iht ihv ihb =>
     simp only [substShares, iht bounded.1, ihv bounded.2.1, ihb bounded.2.2]
   | _ => rfl
 
