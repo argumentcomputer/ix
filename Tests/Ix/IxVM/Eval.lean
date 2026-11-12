@@ -52,7 +52,8 @@ private def witness (env : Ixon.Env) (input : Address) (out : Ixon.Constant)
   let trees := match tree with
     | none => {}
     | some t => ({} : Std.HashMap Address Ix.AssumptionTree).insert t.root t
-  IO.ofExcept (buildClaimWitness env (.eval evalCtx input output (tree.map (·.root))) trees)
+  -- the hand-built records get their binder-data sections first, as the compiler writes them
+  IO.ofExcept (Tests.Ix.IxVM.buildSectionedWitness env (.eval evalCtx input output (tree.map (·.root))) trees)
 
 /-- Exact whole-claim FFT costs for successful evaluations. -/
 private def evalFftCosts : List (String × Nat) := [
