@@ -45,6 +45,12 @@ use std::{fs, path::Path};
 pub const PROOF_TAG: &[u8; 8] = b"IXBN\0\0\0\x01";
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
+/// The released Ignition identity and pairing anchors, without proving powers.
+/// These are independent of the local SRS cache or a supplied proof.
+pub fn ignition_parameters() -> Result<crate::kzg::VerifierParams> {
+  verifying_keys::ignition_parameters()
+}
+
 /// The statement a compressed proof of `claim` exposes, as the caller
 /// derived it from its aggregation backend, checked to end in the packed
 /// digest of the claim itself.

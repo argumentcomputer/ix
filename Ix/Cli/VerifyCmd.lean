@@ -44,6 +44,10 @@ private def verifyDevelopmentInputs (p : Cli.Parsed) : IO UInt32 := do
     return 1
 
 def runVerifyCmd (p : Cli.Parsed) : IO UInt32 := do
+  if AiurCompression.selected p && !p.hasFlag "aggregate" then
+    throw (IO.userError "Aiur compression verification requires --aggregate")
+  if AiurCompression.selected p && p.hasFlag "ixc" then
+    throw (IO.userError "Aiur compression currently accepts CheckEnv proofs, not --ixc catalog proofs")
   if p.hasFlag "verifier-bundle" || p.hasFlag "verifier-bundle-blake3" then
     return ← verifyDevelopmentInputs p
   if p.hasFlag "aggregate" then
@@ -60,6 +64,12 @@ def verifyCmd : Cli.Cmd := `[Cli|
   "Verify proof(s) against their bundled claims, or a `.ixes` shard partition"
 
   FLAGS:
+    "aiur-gl" : String; "Use the Aiur CompressGL KZG stage with this independently trusted compiler artifact."
+    "aiur-gl-blake3" : String; "Independent BLAKE3 pin for --aiur-gl."
+    "aiur-kzg-key" : String; "Independently trusted CompressGL KZG verifier key."
+    "aiur-kzg-key-blake3" : String; "Independent BLAKE3 pin for --aiur-kzg-key."
+    "aiur-max-log-height" : Nat; "Fixed public Aiur trace-height bound (default 24)."
+    "aiur-quotient-degree" : Nat; "Fixed public Aiur quotient-degree budget (default 2)."
     "aiur-artifact" : String; "Trusted exported formal IxVM artifact; otherwise compile/cache local sources."
     "aiur-artifact-digest" : String; "Refuse an IxVM artifact whose BLAKE3 digest is not this one."
     "aggr-artifact" : String; "Trusted formal aggregation artifact; otherwise compile/cache local sources."

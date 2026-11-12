@@ -55,7 +55,9 @@ pub struct CircuitSize {
   pub height: usize,
   pub main_width: usize,
   pub fixed_width: usize,
+  /// Stage-two accumulator columns, distinct from concrete lookup tuples.
   pub lookup_width: usize,
+  pub concrete_lookup_width: usize,
   pub quotient_degree: usize,
 }
 
@@ -71,7 +73,13 @@ pub struct Profile {
   pub total_rows: usize,
   pub main_cells: usize,
   pub fixed_cells: usize,
+  /// Stage-two accumulator cells, excluding concrete lookup tuple payloads.
   pub lookup_cells: usize,
+  pub stage2_accumulator_cells: usize,
+  pub stage2_accumulator_bytes: usize,
+  /// The tuple payload a fully materialized lookup witness would allocate.
+  pub concrete_lookup_cells: usize,
+  pub concrete_lookup_bytes: usize,
   pub main_fixed_lookup_bytes: usize,
   pub quotient_degree: usize,
   pub execution_seconds: f64,
@@ -244,6 +252,7 @@ impl Wrapper {
       (0usize, 0usize, 0usize, 0usize);
     let mut max_height = 2;
     let mut quotient_degree = 1;
+    let mut concrete_lookup_cells = 0usize;
     for ((input, name), height) in
       compiler.inputs().iter().zip(compiler.names()).zip(heights)
     {
@@ -260,9 +269,12 @@ impl Wrapper {
         input.preprocessed.as_ref().map_or(0, |matrix| matrix.width);
       let lookup_width =
         input.lookups.len().div_ceil(input.lookup_group_size) * params.degree;
+      let concrete_lookup_width =
+        graph.lookups.iter().map(|lookup| lookup.args.len() + 1).sum();
       add_cells(&mut main_cells, height, input.main_width)?;
       add_cells(&mut fixed_cells, height, fixed_width)?;
       add_cells(&mut lookup_cells, height, lookup_width)?;
+      add_cells(&mut concrete_lookup_cells, height, concrete_lookup_width)?;
       total_rows =
         total_rows.checked_add(height).ok_or("row count overflow")?;
       max_height = max_height.max(height);
@@ -273,6 +285,7 @@ impl Wrapper {
         main_width: input.main_width,
         fixed_width,
         lookup_width,
+        concrete_lookup_width,
         quotient_degree: quotient,
       });
     }
@@ -303,6 +316,14 @@ impl Wrapper {
       main_cells,
       fixed_cells,
       lookup_cells,
+      stage2_accumulator_cells: lookup_cells,
+      stage2_accumulator_bytes: lookup_cells
+        .checked_mul(size_of::<Scalar>())
+        .ok_or("stage-two byte count overflow")?,
+      concrete_lookup_cells,
+      concrete_lookup_bytes: concrete_lookup_cells
+        .checked_mul(size_of::<Scalar>())
+        .ok_or("lookup tuple byte count overflow")?,
       main_fixed_lookup_bytes: bytes,
       quotient_degree,
       execution_seconds: execution.execution_seconds,
