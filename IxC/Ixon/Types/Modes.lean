@@ -303,11 +303,7 @@ theorem listed?_toArray (modes : FieldModes n) (h : modes.isInherited = false) :
   | listed v hs =>
     show listed? v.toArray = some (.listed v hs)
     unfold listed?
-    split
-    · split
-      · rfl
-      · rename_i hs'; exact absurd hs hs'
-    · rename_i h; exact absurd v.size_toArray h
+    rw [dite_eq_left v.size_toArray, dite_eq_left hs]
 
 instance : BEq (FieldModes n) where
   beq a b := a.toArray == b.toArray
