@@ -51,14 +51,15 @@ that closures (P8), arrays and bignums need.
   bounds); allocation by layout, the general release and the uniqueness
   test ([`Rt/Rc/Gen/Procs.lean`](../IxCC/Rt/Rc/Gen/Procs.lean),
   [compiler design, "Runtime"](compiler-design.md#runtime)); and their
-  proofs over a general heap invariant (`Rt/Rc/Gen/Proof/`, 94 modules):
+  proofs over a general heap invariant (`Rt/Rc/Gen/Proof/`, 97 modules):
   `AllocatorReady.reserve_total`, `release_caller_complete(_frame)`,
   `increment_caller_complete`, `Init.cxInit_ready` (all 71 free-list heads
   recorded), `isUnique_spec` (the test answers `Own.Rc.uniqueOf` and writes
   nothing), `Procs.LiveCell.toGen`, `Procs.HeapLive.toGen` (the bounded
   route's cells are cells of the general invariant), and the facts of the
   fully scanned cells the pipeline allocates (`Gen/Proof/Scanned.lean`:
-  `fieldsClass n`, classes 2–44). 251 exact axiom fences
+  `fieldsClass n`, classes 2–44), and the in-place reuse lemmas
+  ([below](#in-place-reuse)). 301 exact axiom fences
   (`IxCCTests/Fences/RtRcGen/`). The pipeline emits `Gen.alloc` and
   `Gen.dec` for every plain-RC program; the proof bridge's `HeapState`
   carries `Gen.AllocatorReady maxClass`
@@ -87,7 +88,9 @@ that closures (P8), arrays and bignums need.
 - *Not implemented.* Scalar fields in compiled programs (the runtime above
   has them; the constructor table has none, and `Cfg.Rc.Native` and
   `Rt.Lower` refuse a constructor with scalar fields until DR2 produces
-  them); reset/reuse (the runtime uniqueness test exists, unused); static
+  them); reset/reuse and in-place update (the uniqueness test and the
+  in-place reuse lemmas are proved, but no pass emits a reuse: heap stage 4,
+  after stage 2's placement makes cells unique at their last use); static
   reuse from `unique` contracts; borrowed parameters beyond the zero-RC
   policy selection; inline fast paths (each RC operation calls a runtime
   procedure today, `rt_rc_inc` of `Rt.Rc.Procs` or `rt_rc_dec` of
@@ -138,6 +141,49 @@ Beyond the plan's statements, the invariant carries what the proofs needed:
   `pending_not_free`, `recycle_distinct`, `recycle_free_placed`) for any
   slot that is not free, so the recycling of a scalar-only cell (a live
   slot) reuses them.
+
+#### In-place reuse
+
+Proved (heap stage 1, part 3), used by nothing yet: the facts a reuse pass
+(heap stage 4, Lean's `reset`/`reuse`) and DR3's in-place update will rest
+on. Abstractly a reuse is a release of one cell followed by an allocation:
+`Own.Rc.reuseCell H l b'` kills the unique cell `l` and appends `b'` with
+one reference ([`Own/Rc/Reuse.lean`](../IxCC/Own/Rc/Reuse.lean)).
+`reuseCell_balance` (exact counts: the old cell's field tokens return to
+the caller, the new cell's are taken from it), `reuseCell_heapOk` (order)
+and `reuseCell_readback` (every token the caller held and every old field
+reads back as before; the new location reads back as `b'` over the old
+values) hold when the caller's token for `l` is among balanced tokens, `l`
+has one reference, and the old fields and the caller's other tokens equal,
+location by location, the new fields and the tokens it keeps (`hmass`;
+literals are free). Physically
+([`Gen/Proof/InPlace.lean`](../IxCC/Rt/Rc/Gen/Proof/InPlace.lean)),
+`inPlace_ready`: rewriting the cell's storage (`Gen.writeCell`: a
+one-reference header at the old class, then the new words) on an
+`AllocatorReady` heap gives `AllocatorReady` again, for the reused heap,
+with the fresh location mapped to the old address, the slot relabelled, and
+no free list, bump pointer or other cell changed.
+
+A reuse site must establish: the cell unique with the caller's token among
+the balanced ones (what `isUnique_spec` answers), `hmass`, a valid layout
+of the old cell's class (`hlayout`, `hclass`), and a word for every new
+field (`hwords`: a value word at a scanned position, a literal below 2⁶⁴ at
+a scalar one). The plan asked for a word at the scalar positions only
+(`hscalars`); that statement was false (a scanned string literal or `Nat`
+≥ 2⁶³ is stored as 0, which the release then takes for a cell), and the
+general premise is the one the allocation path already has. The invariant
+gained nothing.
+
+Two limits, recorded and not pursued: a cell cannot be reused at a layout
+of a smaller class, because the invariant ties a cell's header class to its
+layout's (`LiveCell.header`, `ArenaPartition.live`; physically harmless, it
+would need a slot class separate from the layout class); and static
+children are outside the invariant (`HeapLive` admits only dynamic cells
+and `Balance` gives a static location no token), so reuse says nothing
+about them until static objects exist (stage 6). Controls:
+`IxCCTests.Rt.Rc.GenReuseControls` (`tests-rt-rc controls`: the instances,
+and as negative controls a scanned field without a word, a shared cell and
+a larger class) and `GenNativeControls.reuse` (`tests-rt-rc native`).
 
 #### The general release's cost
 
