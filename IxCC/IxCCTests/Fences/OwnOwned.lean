@@ -53,16 +53,16 @@ accepts, the Own-level induction over a typing context, canonical acceptance (ev
 /-- info: 'IxCC.Own.Plain.ownedState_entry' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Own.Plain.ownedState_entry
 
-/-- info: 'IxCC.Own.Plain.checkContractOwned_parts' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'IxCC.Own.Plain.checkContractOwned_parts' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Own.Plain.checkContractOwned_parts
 
-/-- info: 'IxCC.Own.Plain.checkOwned_contract' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'IxCC.Own.Plain.checkOwned_contract' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Own.Plain.checkOwned_contract
 
-/-- info: 'IxCC.Own.Plain.checkMapE_ok' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'IxCC.Own.Plain.checkMapE_ok' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Own.Plain.checkMapE_ok
 
-/-- info: 'IxCC.Own.Plain.erases_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'IxCC.Own.Plain.erases_sound' depends on axioms: [propext] -/
 #guard_msgs in #print axioms IxCC.Own.Plain.erases_sound
 
 /-- info: 'IxCC.Own.Plain.checkPlainMap_checkOwned' depends on axioms: [propext, Classical.choice, Quot.sound] -/
@@ -83,7 +83,7 @@ accepts, the Own-level induction over a typing context, canonical acceptance (ev
 /-- info: 'IxCC.Own.Plain.canon_entry' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Own.Plain.canon_entry
 
-/-- info: 'IxCC.Own.Plain.erases_self' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'IxCC.Own.Plain.erases_self' depends on axioms: [propext] -/
 #guard_msgs in #print axioms IxCC.Own.Plain.erases_self
 
 /-- info: 'IxCC.Own.Plain.checked_program_refines'' depends on axioms: [propext, Classical.choice, Quot.sound] -/
