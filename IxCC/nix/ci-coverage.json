@@ -1823,6 +1823,7 @@
   "IxCCGrounding.Direct.Subst",
   "IxCCGrounding.EqRec",
   "IxCCGrounding.Eqn",
+  "IxCCGrounding.Facts",
   "IxCCGrounding.Fence",
   "IxCCGrounding.Fundamental",
   "IxCCGrounding.Ground",
@@ -1833,6 +1834,7 @@
   "IxCCGrounding.Model",
   "IxCCGrounding.Ok",
   "IxCCGrounding.RecFlat",
+  "IxCCGrounding.RecRun",
   "IxCCGrounding.Relation",
   "IxCCGrounding.Root",
   "IxCCGrounding.RootCheck",
@@ -1842,10 +1844,10 @@
   "IxCCGrounding.Syntax",
   "IxCCGrounding.Tele"],
  "grounding_axiom_sha256":
- "b5456c729984fc0b2a87a4011cfb011f916eebe9a30d7e4157299c64cf5e3006",
- "grounding_axiom_count": 139,
+ "74f7cb9d0657e80e780d5c545287a2af197a92b5ab4ad2ae8bc7ba3974916be0",
+ "grounding_axiom_count": 161,
  "baseline":
- "W1 first piece: fixed-width words behind a switch (eval_word_lt and the words lemmas fenced); merged with a8c77ba8d",
+ "G3 part E: the class noParams admitted; F2 there proved (IxCCGrounding.RecRun, IxCCGrounding.Facts); grounding fence 161 with noWord_of; merged with c2943efb7",
  "axiom_sha256":
  "c0ed774830aff9db7ba0a6af6b4ebbe6a036ce9911d984bdddea3f268d723354",
  "axiom_count": 6587}
