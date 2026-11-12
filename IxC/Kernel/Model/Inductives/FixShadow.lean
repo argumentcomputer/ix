@@ -213,18 +213,18 @@ context is graded at every frame satisfying the shadow context below
 it (a non-recursive field entry moreover in the family's universe when
 that is not `Prop`), and so is the residual at the full shadow
 context. -/
-theorem fixShadowGrading (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
-    {F : Nat} {T : Key md} {lps : List LevelParam} {nP nF nIdx : Nat} {resSort : Level}
+theorem fixShadowGradingJ {J : Judgements md} {m : EnvModel V env} (hJ : JudgeSound J m)
+    (hI : JudgeInv J) (hS : ∀ ψ, SortClaimJ J m ψ)
+    {T : Key md} {lps : List LevelParam} {nP nF nIdx : Nat} {resSort : Level}
     {isProp large : Bool} {cvC cvTa cvCa : ConstantVal md} {env₀ env₁ : Env md}
     {sorts : List Level}
-    (hCtor : Ix.Kernel.checkSumCtor (Ix.Kernel.fueledOps μ F) env₁ env T lps nP nIdx resSort
-      isProp large cvC nF cvTa = .ok (cvCa, sorts))
+    (hCtor : SumCtorRunJ J env₁ env T lps nP nIdx resSort isProp large cvC nF cvTa cvCa sorts)
     (hProp : isProp = true → (Level.isEquiv resSort .zero == some true) = true)
     {idxArgs : List (Expr md)} {ds : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
     {Es : (LevelParam → Nat) → List AnnotTerm} {srcs : List (Option Nat)} {ks : List RecFieldKind}
     {fvsP xFvs : List (Expr md)} {xrest : Expr md} {Eiss : (LevelParam → Nat) → List (List AnnotTerm)}
     {tss : (LevelParam → Nat) → List (List (Nat × Nat × AnnotTerm))}
-    (hD : FixCtorDataI mp.base2 env₀ T lps cvCa nP nF nIdx resSort isProp large idxArgs ds Es
+    (hD : FixCtorDataI m env₀ T lps cvCa nP nF nIdx resSort isProp large idxArgs ds Es
       srcs ks fvsP xFvs xrest Eiss tss)
     (ψ : LevelParam → Nat) :
     (∀ b, b < nP + nF → ∀ ρ : Nat → V,
@@ -234,30 +234,30 @@ theorem fixShadowGrading (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ e
         interp V ρ ((((ds ψ).map (·.2.2)).reverse).getD (nP + nF - 1 - b) default)
           ∈ˢ (univ (resSort.eval ψ) : V))) ∧
     (∀ ρ : Nat → V, Sat V (shadowCtx nP ks (nP + nF) (((ds ψ).map (·.2.2)).reverse)) ρ →
-      WellDenotedV V ρ (ctorBodyAVI mp.base2 T nP nF ψ (Es ψ))) := by
+      WellDenotedV V ρ (ctorBodyAVI m T nP nF ψ (Es ψ))) := by
   -- the run's pieces
-  obtain ⟨⟨_, hccv⟩, -, fvsP', crest', tfvs, trest, xFvs', idxArgs', hopC, -, -, hopX, -, -, -,
-    hsorts⟩ := Ix.Kernel.checkSumCtor_shape hCtor
+  obtain ⟨_, hccv⟩ := hCtor.check
+  obtain ⟨-, -, fvsP', crest', tfvs, trest, xFvs', idxArgs', hopC, -, -, hopX, -, -, -,
+    hsorts⟩ := hCtor
   obtain ⟨crest, hopP, hopXX⟩ := hD.opens
   obtain ⟨rfl, rfl⟩ := Prod.mk.inj (Option.some.inj (hopP.symm.trans hopC))
   obtain ⟨rfl, hxrest⟩ := Prod.mk.inj (Option.some.inj (hopXX.symm.trans hopX))
-  obtain ⟨-, -, -, -, hlbt, hitf, type', stype, u, hann', -, -, hst, hens, hcv⟩ :=
-    Ix.Kernel.checkConstantVal_inv hccv
-  obtain ⟨hlenS, hfields⟩ := Ix.Kernel.checkStructFieldSortsI_inv hsorts
+  obtain ⟨type', ⟨-, -, -, -, hlbt, hitf, hann', -, -, stype, u, hst, hens⟩, hcv⟩ :=
+    hccv
+  obtain ⟨hlenS, hfields⟩ := hsorts
   have htyEq : cvCa.type = type' := by rw [hcv]
-  obtain ⟨htf', hbt'⟩ := annotate_syntax hann' hitf hlbt
+  obtain ⟨htf', hbt'⟩ := hJ.annot_syntax hann' hitf hlbt
   rw [← htyEq] at htf' hbt' hst
   have hopAll : openPisAtFvars (nP + nF) cvCa.type 0 = some (fvsP ++ xFvs, xrest) :=
     openPisAtFvars_add nP hopP (by rw [Nat.zero_add]; exact hopXX)
-  obtain ⟨F', tb, vb, hib, hensb, -, -⟩ := piBits_of_infer hμ (nP + nF) hopAll hst hens
+  obtain ⟨tb, vb, hib, hensb, -, -⟩ := piBitsJ hI (nP + nF) hopAll hst hens
   rw [Nat.zero_add] at hib hensb
-  have hO : Opened mp.base2 ψ (nP + nF) cvCa.type (fvsP ++ xFvs) xrest
-      (((ds ψ).map (·.2.2)).reverse) (ctorBodyAVI mp.base2 T nP nF ψ (Es ψ)) :=
+  have hO : Opened m ψ (nP + nF) cvCa.type (fvsP ++ xFvs) xrest
+      (((ds ψ).map (·.2.2)).reverse) (ctorBodyAVI m T nP nF ψ (Es ψ)) :=
     opened_of_peel hopAll htf' hbt' (hD.read ψ) (hD.len ψ) (hD.okTy ψ)
   have hlenAll : (fvsP ++ xFvs).length = nP + nF := by
     rw [List.length_append, hD.pLen, hD.xLen]
   have hΓlen : (((ds ψ).map (·.2.2)).reverse).length = nP + nF := by simp [hD.len ψ]
-  have hc := claimsAt_of hμ mp ψ F
   -- a recursive variable is a leaf of no later domain nor of the residual
   have hrecGet : ∀ i, recAt nP ks (nP + i) → i < nF → ∃ x, xFvs[i]? = some x ∧
       (∀ y ∈ xFvs.drop (i + 1), y.fvarTypeD.mentionsFvar (nP + i) = false) ∧
@@ -307,13 +307,13 @@ theorem fixShadowGrading (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ e
       have hC := shadowCtxOk hO hlenAll (nP := nP) (ks := ks) (by omega) hws hleaf hnorec
         (fun i hi' hr ρ' hρ' => (ih i hi' (by omega) ρ' hρ').1)
       have hread := hO.doms b fv hfvA
-      have hrow := hc.sortRow hi hens' hws hbnd hL hC hread ρ hρ
+      have hrow := sortRowJ (hS ψ) hi hens' hws hbnd hL hC hread ρ hρ
       refine ⟨hrow.1, fun _ _ hw => ?_⟩
       by_cases hnp : isProp = true
       · exfalso
         have h0 := Level.isEquiv_sound (beq_iff_eq.mp (hProp hnp)) ψ
         exact hw (by simpa [Level.eval] using h0)
-      · have hle := Level.leq_sound (hleq (by simpa using hnp)) ψ
+      · have hle := hleq (by simpa using hnp) ψ
         exact univ_mono hle _ hrow.2
   refine ⟨key, ?_⟩
   -- the residual
@@ -328,8 +328,35 @@ theorem fixShadowGrading (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ e
   have hCR := shadowCtxOk hO hlenAll (nP := nP) (ks := ks) (Nat.le_refl _) hO.bodyScoped.1
     hO.bodyScoped.2.2.2 hnorecR (fun i hi' hr ρ' hρ' => (key i hi' ρ' hρ').1)
   rw [Nat.sub_self, List.drop_zero] at hCR
-  have hrow := (claimsAt_of hμ mp ψ F').sortRow hib hensb hO.bodyScoped.1 hO.bodyScoped.2.1
+  have hrow := sortRowJ (hS ψ) hib hensb hO.bodyScoped.1 hO.bodyScoped.2.1
     hO.bodyScoped.2.2.1 hCR hO.body ρ hρ
   exact hrow.1
+
+
+/-- The shadow gradings from the constructor's stage run: `fixShadowGradingJ` at the kernel's runs. -/
+theorem fixShadowGrading (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
+    {F : Nat} {T : Key md} {lps : List LevelParam} {nP nF nIdx : Nat} {resSort : Level}
+    {isProp large : Bool} {cvC cvTa cvCa : ConstantVal md} {env₀ env₁ : Env md}
+    {sorts : List Level}
+    (hCtor : Ix.Kernel.checkSumCtor (Ix.Kernel.fueledOps μ F) env₁ env T lps nP nIdx resSort
+      isProp large cvC nF cvTa = .ok (cvCa, sorts))
+    (hProp : isProp = true → (Level.isEquiv resSort .zero == some true) = true)
+    {idxArgs : List (Expr md)} {ds : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
+    {Es : (LevelParam → Nat) → List AnnotTerm} {srcs : List (Option Nat)} {ks : List RecFieldKind}
+    {fvsP xFvs : List (Expr md)} {xrest : Expr md} {Eiss : (LevelParam → Nat) → List (List AnnotTerm)}
+    {tss : (LevelParam → Nat) → List (List (Nat × Nat × AnnotTerm))}
+    (hD : FixCtorDataI mp.base2 env₀ T lps cvCa nP nF nIdx resSort isProp large idxArgs ds Es
+      srcs ks fvsP xFvs xrest Eiss tss)
+    (ψ : LevelParam → Nat) :
+    (∀ b, b < nP + nF → ∀ ρ : Nat → V,
+      Sat V ((shadowCtx nP ks (nP + nF) (((ds ψ).map (·.2.2)).reverse)).drop (nP + nF - b)) ρ →
+      WellDenotedV V ρ ((((ds ψ).map (·.2.2)).reverse).getD (nP + nF - 1 - b) default) ∧
+      (nP ≤ b → ¬ recAt nP ks b → resSort.eval ψ ≠ 0 →
+        interp V ρ ((((ds ψ).map (·.2.2)).reverse).getD (nP + nF - 1 - b) default)
+          ∈ˢ (univ (resSort.eval ψ) : V))) ∧
+    (∀ ρ : Nat → V, Sat V (shadowCtx nP ks (nP + nF) (((ds ψ).map (·.2.2)).reverse)) ρ →
+      WellDenotedV V ρ (ctorBodyAVI mp.base2 T nP nF ψ (Es ψ))) :=
+  fixShadowGradingJ (judgeSound_runJ hμ mp F) (judgeInv_runJ hμ F) (sortClaim_runJ hμ mp F)
+    (Ix.Kernel.Semantics.sumCtorRunJ_of_run hCtor) hProp hD ψ
 
 end Ix.Kernel.Model
