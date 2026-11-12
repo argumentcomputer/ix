@@ -68,11 +68,12 @@ theorem getFieldModes_bound (count : Nat) : ReaderBound (getFieldModes count) (f
   have checkSpan := checkCount_bound _ _ _ _ _ valid checkRead
   obtain ⟨modes, middle, modesRead, read⟩ := bind_ok.mp read
   have modesSpan := getArray_bound _ _ getFieldMode_bound _ _ _ _ checkSpan.valid modesRead
-  split at read
-  · change EStateM.Result.ok _ _ = .ok value finish at read
+  cases listed : FieldModes.listed? modes with
+  | none => simp only [listed] at read; cases read
+  | some m =>
+    simp only [listed] at read
     cases read
     exact (checkSpan.trans modesSpan).weaken (Nat.zero_le _)
-  · cases read
 
 theorem getConstructor_bound : ReaderBound getConstructor Constructor.resourceSize := by
   unfold getConstructor
@@ -87,9 +88,9 @@ theorem getConstructor_bound : ReaderBound getConstructor Constructor.resourceSi
   intro params
   apply (getTagN_bound 0).skip
   intro fields
-  have modes : ReaderBound
-      (if flags &&& 2 == 2 then getFieldModes fields.value.toNat else pure .inherited)
+  have modes : ReaderBound (getConstructorFieldModes (flags &&& 2 == 2) fields.value.toNat)
       (fun _ => 0) := by
+    unfold getConstructorFieldModes
     split
     · exact getFieldModes_bound _
     · exact pure_bound _

@@ -407,8 +407,10 @@ inductive Head where
 /-- `Ixon.getDefinition`, keeping nothing. -/
 @[expose] def skipDefinition : GetM Unit := do
   let flags ← getU8
-  if flags >>> 2 > 2 || (flags &&& 3) > 2 then
+  if (flags >>> 2) &&& 3 > 2 || (flags &&& 3) > 2 then
     throw "invalid definition kind/safety"
+  let some _ := DefAsserts.ofCode? (flags >>> 4)
+    | throw s!"invalid definition assertions {flags >>> 4}"
   let _ ← getTagN 0
   skipExpr
   skipExpr
@@ -449,11 +451,13 @@ inductive Head where
 
 /-- `Ixon.getConstructor`, keeping nothing. -/
 @[expose] def skipConstructor : GetM Unit := do
-  let _ ← (Serialize.get : GetM Bool)
+  let flags ← getU8
+  if flags > 3 then throw s!"invalid constructor flags {flags}"
   let _ ← getTagN 0
   let _ ← getTagN 0
   let _ ← getTagN 0
-  let _ ← getTagN 0
+  let fields := (← getTagN 0).value
+  let _ ← getConstructorFieldModes (flags &&& 2 == 2) fields.toNat
   skipExpr
 
 /-- `Ixon.getInductive`, keeping nothing. -/

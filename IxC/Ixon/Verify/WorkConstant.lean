@@ -75,6 +75,10 @@ def fieldModes (count : Nat) : M (FieldModes count) := do
   | some listed => pure listed
   | none => fail "constructor: listed field modes with no shared field"
 
+/-- `getConstructorFieldModes`. -/
+def ctorFieldModes (listed : Bool) (count : Nat) : M (FieldModes count) :=
+  if listed then fieldModes count else pure .inherited
+
 def ctor : M Constructor := do
   let flags ← u8
   reject (flags > 3) s!"invalid constructor flags {flags}"
@@ -83,7 +87,7 @@ def ctor : M Constructor := do
   let cidx ← tagN 0
   let params ← tagN 0
   let fields ← tagN 0
-  let modes ← if flags &&& 2 == 2 then fieldModes fields.value.toNat else pure .inherited
+  let modes ← ctorFieldModes (flags &&& 2 == 2) fields.value.toNat
   let typ ← expr
   charged 1 (pure ⟨isUnsafe, lvls.value, cidx.value, params.value, fields.value, modes, typ⟩)
 
@@ -289,9 +293,9 @@ theorem ctor_erases : Erases ctor getConstructor := by
   intro params
   apply (tagN_erases 0).bind
   intro fields
-  have modes : Erases
-      (if flags &&& 2 == 2 then fieldModes fields.value.toNat else pure .inherited)
-      (if flags &&& 2 == 2 then getFieldModes fields.value.toNat else pure .inherited) := by
+  have modes : Erases (ctorFieldModes (flags &&& 2 == 2) fields.value.toNat)
+      (getConstructorFieldModes (flags &&& 2 == 2) fields.value.toNat) := by
+    unfold ctorFieldModes getConstructorFieldModes
     split
     · exact fieldModes_erases _
     · exact pure_erases _
@@ -379,6 +383,7 @@ theorem binderNode_erases : Erases binderNode getBinderNode := by
   · cases AllMode.ofCode? (byte >>> 3) with
     | none => exact fail_erases _
     | some mode =>
+      dsimp only
       split <;> simp_all only
       · exact (pure_erases _).charged 1
       · exact (pure_erases _).charged 1
@@ -520,9 +525,8 @@ theorem ctor_bound : Bound ctor 16 0 (fun _ => 2) := by
   intro params
   apply (tagN_bound 0 16 (by decide)).bind_zero
   intro fields
-  have modes : Bound
-      (if flags &&& 2 == 2 then fieldModes fields.value.toNat else pure .inherited)
-      16 0 (fun _ => 0) := by
+  have modes : Bound (ctorFieldModes (flags &&& 2 == 2) fields.value.toNat) 16 0 (fun _ => 0) := by
+    unfold ctorFieldModes
     split
     · exact fieldModes_bound _
     · exact pure_bound _ _ _ _ (Nat.le_refl _)
@@ -620,6 +624,7 @@ theorem binderNode_bound : Bound binderNode 16 0 (fun _ => 2) := by
   · cases AllMode.ofCode? (byte >>> 3) with
     | none => exact fail_bound _ _ _ _
     | some mode =>
+      dsimp only
       split
       · exact charged_pure_bound _ _ _ _ _ (by decide)
       · exact charged_pure_bound _ _ _ _ _ (by decide)

@@ -205,8 +205,13 @@ theorem skipDefinition_eq : skipDefinition = (fun _ => ()) <$> getDefinition := 
   unfold skipDefinition getDefinition
   simp only [skipExpr_eq, map_bind, bind_map_left, bind_pure_comp]
   congr 1; funext flags
-  split <;> simp only [map_throw, throw_bind, map_bind,
-    Functor.map_map]
+  split
+  · simp only [map_throw, throw_bind]
+  · cases DefAsserts.ofCode? (flags >>> 4) with
+    | none => simp only [map_throw]
+    | some asserts =>
+      cases unpackDefKindSafety (flags &&& 15)
+      simp only [map_bind, bind_map_left, bind_pure_comp, Functor.map_map]
 
 theorem skipRecursorRule_eq : skipRecursorRule = (fun _ => ()) <$> getRecursorRule := by
   unfold skipRecursorRule getRecursorRule
@@ -233,7 +238,10 @@ theorem skipQuotient_eq : skipQuotient = (fun _ => ()) <$> getQuotient := by
 
 theorem skipConstructor_eq : skipConstructor = (fun _ => ()) <$> getConstructor := by
   unfold skipConstructor getConstructor
-  simp only [skipExpr_eq, map_bind, bind_pure_comp, Functor.map_map]
+  simp only [skipExpr_eq, map_bind, bind_map_left, bind_pure_comp]
+  congr 1; funext flags
+  split <;> simp only [map_throw, throw_bind, map_bind, bind_map_left, bind_pure_comp,
+    Functor.map_map]
 
 theorem skipInductive_eq : skipInductive = (fun _ => ()) <$> getInductive := by
   unfold skipInductive getInductive

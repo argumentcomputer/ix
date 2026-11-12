@@ -1011,6 +1011,10 @@ def getFieldModes (n : Nat) : GetM (FieldModes n) := do
   | some m => return m
   | none => throw "constructor: listed field modes with no shared field"
 
+/-- A constructor's field modes: listed when its flags say so, else inherited. -/
+def getConstructorFieldModes (listed : Bool) (count : Nat) : GetM (FieldModes count) :=
+  if listed then getFieldModes count else pure .inherited
+
 def getConstructor : GetM Constructor := do
   let flags ← getU8
   if flags > 3 then throw s!"invalid constructor flags {flags}"
@@ -1019,7 +1023,7 @@ def getConstructor : GetM Constructor := do
   let cidx := (← getTagN 0).value
   let params := (← getTagN 0).value
   let fields := (← getTagN 0).value
-  let fieldModes ← if flags &&& 2 == 2 then getFieldModes fields.toNat else pure .inherited
+  let fieldModes ← getConstructorFieldModes (flags &&& 2 == 2) fields.toNat
   let typ ← getExpr
   return ⟨isUnsafe, lvls, cidx, params, fields, fieldModes, typ⟩
 
