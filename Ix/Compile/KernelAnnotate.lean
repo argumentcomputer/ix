@@ -178,9 +178,13 @@ def install (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (workers : Nat 
   let pre ← match (Ix.Kernel.Reader.builtinPrelude : Except String (Ix.Kernel.Reader.Prelude .source)) with
     | .ok p => pure p
     | .error e => return .error s!"binder data: the prelude does not read: {e}"
+  let tPre ← IO.monoMsNow
   let groups ← IO.lazyPure fun _ => groupsOf env blocks
-  let converted ← IO.lazyPure fun _ => Ix.Compile.Parallel.map (max workers 1) convert groups
+  let tGroups ← IO.monoMsNow
+  let converted ← IO.lazyPure fun _ => Ix.Compile.Parallel.map (4 * max workers 1) convert groups
+  let tConv ← IO.monoMsNow
   let g ← IO.lazyPure fun _ => graphOf blocks groups converted
+  let tGraph ← IO.monoMsNow
   let tierConv : Array (Option (Except ReadError (Ix.Kernel.Tier.TierDecl .source))) ←
     IO.lazyPure fun _ => groups.map fun grp => if isTierGroup grp then some (convertTier grp) else none
   let gT : Graph := { g with converted := g.converted.zipIdx.map fun (c, i) =>
@@ -214,8 +218,8 @@ def install (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (workers : Nat 
         if let some k := d.names.head? then levelOf := levelOf.insert k glevel[gi]!
     | .error e => failures := failures.push (groupName gi, readErrorString e)
   let t2 ← IO.monoMsNow
-  let lowered ← IO.lazyPure fun _ => Ix.Compile.Parallel.map (4 * max workers 1) canonDecl lowered
-  let prepared := Ix.Kernel.Frontend.preparePrelude pre.ix lowered
+  let canon ← IO.lazyPure fun _ => Ix.Compile.Parallel.map (4 * max workers 1) canonDecl lowered
+  let prepared := Ix.Kernel.Frontend.preparePrelude pre.ix canon
   let ev := Ix.RoleEvidence.bundleEvidence ()
   let t3 ← IO.monoMsNow
   -- phase A in waves: the prelude's declarations first (wave 0), then each
@@ -290,7 +294,8 @@ def install (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (workers : Nat 
   let t6 ← IO.monoMsNow
   return .ok { fe := shared, core, env, installed := ok, failures, lenient := lenientCount,
                ahead, waves := waves.size,
-               times := #[("convert", t1 - t0), ("lower", t2 - t1), ("canon", t3 - t2),
+               times := #[("prelude", tPre - t0), ("groups", tGroups - tPre), ("convert", tConv - tGroups),
+                 ("graph", tGraph - tConv), ("schedule", t1 - tGraph), ("lower", t2 - t1), ("canon", t3 - t2),
                  ("phaseA", t4 - t3), ("tier+retry", t5 - t4), ("persist", t6 - t5)] }
 
 /-- **Install a compile's input**: its condensation (`Ix.CondenseM`, as the
