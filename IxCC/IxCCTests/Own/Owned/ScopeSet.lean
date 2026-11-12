@@ -171,10 +171,11 @@ def tree (x : Var) (leaf : Nat → Fir.Code) : Nat → Nat → Nat → Fir.Code
       .case x [.mk default (tree x leaf fuel base h), .mk default (tree x leaf fuel (base + h) (k - h))] none
 
 /-- `G` functions of `P + 1` parameters, each a join capturing them jumped to from `K` leaves of
-a `case` tree on the last; then one function making `K` calls of the last numbered function. -/
+a `case` tree on the last; then one function making `K` calls of the last numbered function
+(`G + 1`, no parameter). -/
 def synthProgram (P K G : Nat) : Fir.Program :=
   let fan : Fir.Code := .jp 0 [] false .trap (tree P (fun _ => .jmp 0 []) 64 0 K)
-  let calls := (List.range K).foldr (fun i k => Fir.Code.bind (P + 1 + i) (.call G []) k) (.ret (.var P))
+  let calls := (List.range K).foldr (fun i k => Fir.Code.bind (P + 1 + i) (.call (G + 1) []) k) (.ret (.var P))
   prog (List.replicate G (fun1 (List.range (P + 1)) fan (P + 1)) ++
     [fun1 (List.range (P + 1)) calls (P + 1 + K), fun1 [] (.ret (.lit (.nat 0))) 0])
 
