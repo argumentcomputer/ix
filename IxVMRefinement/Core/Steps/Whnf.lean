@@ -2,6 +2,8 @@ import IxVMRefinement.Core.Registry
 import IxVMRefinement.Core.Open
 import IxVMRefinement.Obs.KernelWhnf
 import IxVMRefinement.Obs.KernelTypes
+import IxVMRefinement.Obs.KernelLevels
+import IxC.Kernel.Verify.InstLevels
 import IxVMRefinement.Lib.Lists
 import IxC.Kernel.Verify.InstList
 
@@ -482,5 +484,37 @@ theorem collect_spine_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap 
   · subst he115 hm132 he136
     have ext : Heap.Extends h (h ++ [.construct kexprListEnum "Nil" []]) := Heap.Extends.snoc _ _
     exact ⟨_, _, E, [], rfl, Tm.mono ext hE, .nil (by simp), rfl⟩
+
+/-! ## Level instantiation -/
+
+/-- `KernelLevels::expr_inst_levels`: the identity at the empty level list, the walk
+otherwise. -/
+theorem expr_inst_levels_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+    {r : SourceValue F} {calls : List (Call F)}
+    (ev : ObsFn W "KernelLevels::expr_inst_levels" args h r h' calls) (ih : IH c calls) :
+    Specs.Subst.expr_inst_levels c args h r h' calls := by
+  intro e params hargs good Γ k E us hE hus
+  subst hargs
+  rcases Obs.«KernelLevels::expr_inst_levels».obs ev with
+    ⟨ld12, he21, he22, hc23⟩ | ⟨v1, cs31, ld12, hne24, ev33, hc50⟩
+  · subst he21 he22
+    obtain ⟨ls, hls, hEq⟩ := hus
+    have ld' : loadValue h params =
+        .ok (.construct IxVM.Refinement.KernelLevels.klevelListEnum "Nil" []) := by
+      rw [← klevelListEnum_eq]; exact ld12
+    obtain rfl := RepList.nil_of_load hls ld'
+    obtain rfl : us = [] := by
+      cases us with
+      | nil => rfl
+      | cons u us =>
+        have h0 := hEq (fun _ => 0)
+        simp [Ix.Kernel.Level.EvalEqList] at h0
+    have hself := Ix.Kernel.Expr.instantiateLevelParams_self [] E
+    simp only [List.map_nil] at hself
+    simp only [List.length_nil, List.range_zero, hself]
+    exact hE
+  · subst hc50
+    exact ih.get (.subst .expr_inst_levels_walk) (by lt_calls) ev33 e params rfl
+      (good.sub fun x hx => by simp [hx]) Γ k E us hE hus
 
 end IxVM.Refinement.Core
