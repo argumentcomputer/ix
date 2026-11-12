@@ -70,7 +70,9 @@ theorem load_escape {E : Ixon.Env} {calls : List (Call F)} {x : _root_.Address}
 /-- **The loads read the environment** (module docstring): every good derivation of
 `Ingress::get_ci` at an address `a` returns a constant representing `env`'s constant at
 `κ a`; and so do the projection loaders the core calls directly, `get_ci_cprj(block, i, j)` and
-`get_ci_iprj(block, i)`, at the key of the projection record they stand for. -/
+`get_ci_iprj(block, i)`, at the key of the projection record they stand for. An inductive
+projection record loads as its block member, with the member's counts (`indRecord`).
+Owed by the record conversion and the assembly. -/
 structure LoadFacts (c : Ctx) : Prop where
   getCI : ∀ (addr ptr : SourceValue F) (h h' : Heap F) (cs : List (Call F)) (a : Bytes.Address),
     ObsFn W "Ingress::get_ci" [addr] h ptr h' cs → Good c cs →
@@ -87,6 +89,19 @@ structure LoadFacts (c : Ctx) : Prop where
     ObsFn W "Ingress::get_ci_iprj" [bp, .field i] h ptr h' cs → Good c cs →
     Bytes.RepAddressRef addrTy h b bp →
       ∃ ci, c.env.find? (c.κ (iprjAddr (ixAddr b) (ZMod.val i))) = some ci ∧ CIPtrRep c.κ h' ptr ci
+  /-- **An inductive projection record loads as its member**: `get_ci` at an address whose
+  record in `c.E` is the inductive projection `p` of a block member `ind` returns an inductive
+  whose counts are `ind`'s and whose block and index fields are `p`'s. -/
+  indRecord : ∀ (addr ptr : SourceValue F) (h h' : Heap F) (cs : List (Call F)) (a : Bytes.Address)
+      (cm cb : Ixon.Constant) (p : Ixon.InductiveProj) (xs : Array Ixon.MutConst)
+      (ind : Ixon.Inductive),
+    ObsFn W "Ingress::get_ci" [addr] h ptr h' cs → Good c cs → Bytes.RepAddressRef addrTy h a addr →
+    Ix.Cert.recordAt c.E (ixAddr a) = some cm → cm.info = .iPrj p →
+    Ix.Cert.recordAt c.E p.block = some cb → cb.info = .muts xs → xs[p.idx.toNat]? = some (.indc ind) →
+    ∃ (nl ty u blk : SourceValue F) (b : Bytes.Address),
+      loadValue h' ptr = .ok (.construct kciEnum "Induct" [nl, ty, .field (ind.params.toNat : F),
+        .field (ind.indices.toNat : F), .field (ind.ctors.size : F), u, blk, .field (p.idx.toNat : F)]) ∧
+      Bytes.RepAddressRef addrTy h' b blk ∧ ixAddr b = p.block
 
 /-! ## Specs -/
 

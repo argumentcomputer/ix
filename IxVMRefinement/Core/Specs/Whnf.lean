@@ -731,15 +731,17 @@ def FieldsClean (c : Ctx) (p : Nat) (membs : List Bytes.Address) (T : KExpr) : P
   ∀ q B dom body mb, stripForalls (p + q) T = some B → B = .forallE dom body mb →
     ¬ mentionsKey (fun key => ∃ a ∈ membs, key = c.κ (ixAddr a)) dom
 
-/-- Every inductive among the addresses `ms` has, for some block `b`, member index `i`,
-parameter count `np` and constructor count `nc` (the fields IxVM loaded for it), constructors
-`0, …, nc - 1` (keyed by their projection records) whose field domains mention no member of
-`membs`. The link between those fields and the inductive's own address is not claimed. -/
+/-- For every address of `ms` whose record in `c.E` is the inductive projection `p` of a block
+member `ind`, every constructor of `ind` (`0, …, ctors.size - 1`, keyed by their projection
+records) has field domains, after `ind`'s parameters, that mention no member of `membs`. -/
 def MembersClean (c : Ctx) (ms membs : List Bytes.Address) : Prop :=
-  ∀ m ∈ ms, (∃ cv caps, c.env.find? (c.κ (ixAddr m)) = some (.indInfo cv caps)) →
-    ∃ (b : _root_.Address) (i np nc : Nat), ∀ t < nc, ∃ cicon,
-      c.env.find? (c.κ (cprjAddr b i t)) = some cicon ∧
-      FieldsClean c np membs cicon.toConstantVal.type
+  ∀ m ∈ ms, ∀ (cm cb : Ixon.Constant) (p : Ixon.InductiveProj) (xs : Array Ixon.MutConst)
+      (ind : Ixon.Inductive),
+    Ix.Cert.recordAt c.E (ixAddr m) = some cm → cm.info = .iPrj p →
+    Ix.Cert.recordAt c.E p.block = some cb → cb.info = .muts xs → xs[p.idx.toNat]? = some (.indc ind) →
+    ∀ t < ind.ctors.size, ∃ cicon,
+      c.env.find? (c.κ (cprjAddr p.block p.idx.toNat t)) = some cicon ∧
+      FieldsClean c ind.params.toNat membs cicon.toConstantVal.type
 
 /-- `struct_block_member_addrs(parent, block)`: for a record at `block` in the records `c.E`,
 the addresses of its members' projection records (`Ingress::build_recur_addrs`), every
@@ -776,12 +778,18 @@ def struct_scan_members : SpecFn := fun c args h r h' calls =>
 /-- `struct_is_rec(parent)`: Lean's block-level `is_rec`. An answer other than `1` means: for the
 block `b` IxVM loaded for the parent (when `block_is_multi` answers `0`), the member list it computed
 (`struct_block_member_addrs`: every inductive member's projection record when the record at
-`b` is a block, `[parent]` otherwise) is clean against itself (`MembersClean`). The link
-between `b` and the parent's address is not claimed. Answer `1`: no claim. -/
+`b` is a block, `[parent]` otherwise) is clean against itself (`MembersClean`); when the parent's
+record is the inductive projection of a member of a block, `b` is that block. Answer `1`: no
+claim. -/
 def struct_is_rec : SpecFn := fun c args h r h' calls =>
   ∀ par, args = [par] → Good c calls →
     ∀ (p : Bytes.Address), RepAddr h p par → r ≠ .field 1 →
       ∃ (b : Bytes.Address) (ms : List Bytes.Address), MembersClean c ms ms ∧
+        (∀ (cm cb : Ixon.Constant) (pp : Ixon.InductiveProj) (xs : Array Ixon.MutConst)
+            (ind : Ixon.Inductive),
+          Ix.Cert.recordAt c.E (ixAddr p) = some cm → cm.info = .iPrj pp →
+          Ix.Cert.recordAt c.E pp.block = some cb → cb.info = .muts xs →
+          xs[pp.idx.toNat]? = some (.indc ind) → ixAddr b = pp.block) ∧
         ∀ cb, Ix.Cert.recordAt c.E (ixAddr b) = some cb →
           (∀ xs, cb.info = .muts xs → ∀ i ind, xs[i]? = some (.indc ind) →
             ∃ a ∈ ms, ixAddr a = iprjAddr (ixAddr b) i) ∧

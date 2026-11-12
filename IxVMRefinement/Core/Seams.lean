@@ -70,17 +70,59 @@ def CheckedAt (calls : List (Call F)) (t : Ix.Kernel.RoleTable) (a : _root_.Addr
   ∃ cl ∈ calls, cl.name = "KernelCheck::check_const" ∧
     ∃ rc v ap, cl.args = [rc, v, ap] ∧ RCRep t cl.heap rc ∧ addr cl.heap ap a
 
-/-- (L6 → L7) **The walked closure, first definition**: every record of the closure the kernel's
-reader reads for the seeds under `t` (`Ix.Cert.CompiledReachAt`, from the seeds and the theorems
-the table's evidence names, as `ReadIn`) is stored in `E₀`, in Lean's logic, and checked by the
-derivation (a block through its members' projection records, which are in the closure too). This
-is what the assembly needs for `ReadIn`; the claim phase must show its walk covers that closure. -/
+/-- The reference-table indices an expression names as constants (`KernelClaim::const_idxs_expr`):
+those of `ref` and `prj` nodes; literal indices name blobs and `share` nodes are read through the
+sharing table. -/
+def exprRefIdxs : Ixon.Expr → List Nat
+  | .ref i _ => [i.toNat]
+  | .prj i _ e => i.toNat :: exprRefIdxs e
+  | .app f a => exprRefIdxs f ++ exprRefIdxs a
+  | .lam _ t b => exprRefIdxs t ++ exprRefIdxs b
+  | .all _ _ t b => exprRefIdxs t ++ exprRefIdxs b
+  | .letE _ t v b => exprRefIdxs t ++ exprRefIdxs v ++ exprRefIdxs b
+  | _ => []
+
+/-- The reference-table indices a block member names (`KernelClaim::const_idxs_muts`). -/
+def mutRefIdxs : Ixon.MutConst → List Nat
+  | .defn d => exprRefIdxs d.typ ++ exprRefIdxs d.value
+  | .indc i => exprRefIdxs i.typ ++ (i.ctors.toList.flatMap fun c => exprRefIdxs c.typ)
+  | .recr r => exprRefIdxs r.typ ++ (r.rules.toList.flatMap fun rl => exprRefIdxs rl.rhs)
+
+/-- **The reference-table indices a record uses** (`KernelClaim::const_idxs_of`): those of its
+sharing table and of the expressions of its payload. -/
+def usedRefIdxs (c : Ixon.Constant) : List Nat :=
+  (c.sharing.toList.flatMap exprRefIdxs) ++
+    match c.info with
+    | .defn d => exprRefIdxs d.typ ++ exprRefIdxs d.value
+    | .recr r => exprRefIdxs r.typ ++ (r.rules.toList.flatMap fun rl => exprRefIdxs rl.rhs)
+    | .axio a => exprRefIdxs a.typ
+    | .quot q => exprRefIdxs q.typ
+    | .muts ms => ms.toList.flatMap mutRefIdxs
+    | _ => []
+
+/-- **An edge of the claim walk** (`KernelClaim::run_check_transitive`, `env_walk`): from a
+projection record to its block, and from a record to a reference its expressions use. A
+reference listed in the table and used nowhere is not followed (the reader never resolves it
+either). -/
+def WalkEdge (E₀ : Ixon.Env) (a b : _root_.Address) : Prop :=
+  ∃ c, Ix.Cert.recordAt E₀ a = some c ∧
+    ((Ix.Cert.ownerOf a c = b ∧ b ≠ a) ∨ ∃ i ∈ usedRefIdxs c, c.refs[i]? = some b)
+
+/-- (L6 → L7) **The walked closure**: a set of addresses holding the seeds and the theorems the
+table's evidence names, closed under the claim walk's edges and the reading's ground edges
+(`Ix.Cert.GroundEdgeAt`: a `Nat` operation's ground roles, the literal-support roles), each
+stored in `E₀`, in Lean's logic, and checked by the derivation (a block through its members'
+projection records). The assembly reads the records of such a set (with the recursors it
+draws): every reference a record of it uses lands in it, and a reference it lists without
+using is never resolved. -/
 def Walked (calls : List (Call F)) (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env)
     (seeds : List _root_.Address) : Prop :=
-  ∀ a, Ix.Cert.CompiledReachAt t E₀
-      (fun a => a ∈ seeds ∨ ∃ e ∈ t.evidence.toList, Ix.Kernel.Evidence.proof a ∈ e.2.toList) a →
-    ∃ c, Ix.Cert.recordAt E₀ a = some c ∧ IxVM.Consistency.InLogic c ∧
+  ∃ Wk : _root_.Address → Prop,
+    (∀ a, (a ∈ seeds ∨ ∃ e ∈ t.evidence.toList, Ix.Kernel.Evidence.proof a ∈ e.2.toList) → Wk a) ∧
+    (∀ a b, Wk a → (WalkEdge E₀ a b ∨ Ix.Cert.GroundEdgeAt t E₀ a b) → Wk b) ∧
+    ∀ a, Wk a → ∃ c, Ix.Cert.recordAt E₀ a = some c ∧ IxVM.Consistency.InLogic c ∧
       ((∃ ms, c.info = .muts ms) ∨ CheckedAt calls t a)
+
 
 /-- (L7 → L5) **The derivation checked every constant a declaration installs, first
 definition**: for records `E` and a well-formed table `t` (the run's) whose loads read `env`
