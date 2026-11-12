@@ -64,9 +64,9 @@ theorem freshSet_eq {s : Src.NatSet} {live : List Var}
   | cons x xs ih =>
     simp only [freshSet, fresh, h x, ih (contains_insert_append h x)]
 
-private theorem lookup_signatures_range' (P : Fir.Program) (f : FunId) : ∀ (m s : Nat),
+private theorem lookup_signatures_range' (P : Fir.Program) (f : Nat) : ∀ (m s : Nat),
     (((List.range' s m).filterMap fun g => (P.fun? g).map (g, ·)).map
-        fun (p : FunId × Fir.Fun) => (p.1, p.2.arity)).lookup f =
+        fun (p : Nat × Fir.Fun) => (p.1, p.2.arity)).lookup f =
       if s ≤ f ∧ f < s + m then (P.fun? f).map (·.arity) else none
   | 0, s => by
     simp only [List.range'_zero, List.filterMap_nil, List.map_nil, List.lookup_nil]
@@ -98,9 +98,11 @@ private theorem lookup_signatures_range' (P : Fir.Program) (f : FunId) : ∀ (m 
 
 theorem signatureArity_eq (P : Fir.Program) (f : FunId) :
     signatureArity P f = (signatures P).lookup f := by
-  unfold signatureArity signatures Fir.Program.funList
-  rw [List.range_eq_range', lookup_signatures_range']
-  simp only [Nat.zero_le, true_and, Nat.zero_add]
+  have h := lookup_signatures_range' P f P.size 0
+  rw [← List.range_eq_range'] at h
+  simp only [Nat.zero_le, true_and, Nat.zero_add] at h
+  unfold signatureArity
+  exact h.symm
 
 theorem rhsInSet_eq (P : Fir.Program) {s : Src.NatSet} {live : List Var}
     (h : ∀ x, s.contains x = live.contains x) (r : Rhs) :
