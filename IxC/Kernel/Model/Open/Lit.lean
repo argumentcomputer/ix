@@ -132,6 +132,15 @@ theorem Red.natLit_sound {d n : Nat} (hs : natLitSupported env = true) :
   cases hv with
   | natLit h => exact ⟨h, hg⟩
 
+/-- **`Nat.zero` reads as the literal `0`** (`Red.natZeroLit`): the literal denotes what its
+constructor form `Nat.zero` denotes, and a literal's grading is trivial. -/
+theorem Red.natZeroLit_sound {d : Nat} :
+    RedS M φ d (.const natZeroName []) (.lit (.natVal 0)) := by
+  intro _
+  have hnf : (Expr.lit (.natVal 0) : Expr md).hasFvar = false := rfl
+  exact ⟨Frame.of_closed hnf rfl, LeavesSub.of_closed hnf,
+    fun _ _ _ hv _ => ⟨.natLit hv, True.intro⟩⟩
+
 /-- **A `Nat` literal is typed `Nat`** (`Infer.natLit`). -/
 theorem Infer.natLit_sound {g : Grade} {d n : Nat} (hs : natLitSupported env = true) :
     InferS M φ g d (.lit (.natVal n)) (.const natName []) := by
