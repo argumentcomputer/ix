@@ -354,7 +354,7 @@ def RelLStk : List (Level × PropWhen) → List (Level × PropWhen) → Prop
   | _, _ => False
 
 /-- Task #272: the cached fold THREADS the codomain sort's zero-ness
-datum (`zeronessOf (mkIMax u v) = zeronessOf v`), where the mirror
+datum (`zeronessOf (imax u v) = zeronessOf v`), where the mirror
 recomputes it at every node; `hpv` is the threading invariant. -/
 theorem inferPisOutC_sim :
     ∀ {stk : List (Level × PropWhen)} {stkx : List (Level × PropWhen)}
@@ -387,21 +387,20 @@ theorem inferPisOutC_sim :
           if mode.verifiedChecks && !(Level.zeronessOf v == pw) then
             throw (.notImplemented
               "sort-annotation mismatch (forall-cod)")
-          pure (Level.mkIMax u v) >>= fun v' =>
+          internLM (.imax u v) >>= fun v' =>
             inferPisOutI mode rest v' (Level.zeronessOf v))
         (do
           if mode.verifiedChecks && !(Level.zeronessOf v == pw) then
             throw (.notImplemented
               "sort-annotation mismatch (forall-cod)")
-          inferPisOut (m := FueledM md) mode rx (Level.mkIMax u v))
+          inferPisOut (m := FueledM md) mode rx (.imax u v))
       dsimp only
       split
       · exact SimC.throw_bind
-      refine SimC.bind_left (pureEq_eff hs (Level.mkIMax u v))
+      refine SimC.bind_left (internLM_eff hs (Level.imax u v))
         (fun s₁ v' hs₁ hv' => ?_)
       subst hv'
-      exact ih (stkx := rx) (lv := Level.mkIMax u v) hs₁ hrest rfl
-        (Level.zeronessOf_mkIMax u v).symm
+      exact ih (stkx := rx) (lv := .imax u v) hs₁ hrest rfl rfl
 
 theorem inferPisLeafC_sim (ih : SSimC mode env f) {d : Nat}
     {t : Expr md} {tx : Expr md} {k : Nat} {fvs : Array (Expr md)} {ws : List (Expr md)}
@@ -765,7 +764,7 @@ private theorem inferPiTail_atF {env : Env md} (d : Nat)
       if mode.verifiedChecks then
         unless Level.zeronessOf v == pw do
           throw (.notImplemented "sort-annotation mismatch (forall-cod)")
-      pure (Expr.sort (Level.mkIMax lu v))) : FueledM md (Expr md)).val F
+      pure (Expr.sort (.imax lu v))) : FueledM md (Expr md)).val F
     = (inferTypeCore mode env F (d + 1) (bodyx.instantiate1 (.fvar d tyx))
         >>= fun bt => ensureSortCore mode env F (d + 1) bt >>= fun v =>
         (do
@@ -773,7 +772,7 @@ private theorem inferPiTail_atF {env : Env md} (d : Nat)
             unless Level.zeronessOf v == pw do
               throw (.notImplemented
                 "sort-annotation mismatch (forall-cod)")
-          pure (Expr.sort (Level.mkIMax lu v)))) := by
+          pure (Expr.sort (.imax lu v)))) := by
   rw [FueledM.atF_bind]
   congr 1
   funext bt
@@ -808,7 +807,7 @@ theorem inferPisC_tail_sim (ih : SSimC mode env f)
           unless Level.zeronessOf v == pw do
             throw (.notImplemented
               "sort-annotation mismatch (forall-cod)")
-        pure (Expr.sort (Level.mkIMax lu v))) := by
+        pure (Expr.sort (.imax lu v))) := by
   have hwopen : Expr.WScoped (d + 1)
       (bodyx.instantiateList [Expr.fvar d tyx]) := by
     rw [instList_single]

@@ -205,7 +205,7 @@ def isNeverZero : Level → Bool
 
 /-- `isNeverZero`, memoised per call on the `max` nodes it has read (the
 only nodes where it branches; an `imax` spine is followed as the plain walk
-follows it). The ∀ rule asks it of the codomain's sort (`mkIMax`). -/
+follows it). -/
 def isNeverZeroGo (m : Std.HashMap Level Bool) : Level → Bool × Std.HashMap Level Bool
   | .zero => (false, m)
   | .param _ => (false, m)
@@ -265,66 +265,6 @@ def isNeverZeroFast (l : Level) : Bool :=
   split
   · exact (isNeverZeroPlain_eq l).symm
   · exact (isNeverZeroGo_spec l {} MemoInv.empty).1.symm
-
-/-! ### The ∀ rule's level: `imax` with the official kernel's folds
-
-The ∀ rule builds its level with `mkIMax`, not the plain `imax`: a ∀
-whose domain and codomain are one shared type would otherwise build
-`imax L (imax L' …)`, a level shared as a DAG whose tree doubles per
-binder, and the level library walks levels as trees.  `mkIMax` folds the
-cases of the C++ kernel's `mk_imax` and `mk_max` (`src/kernel/level.cpp`,
-which its `infer_pi` builds the level with) that need no normalization:
-numerals, equal or zero arguments, absorption by a `max`, a common
-`succ` base.  Where `mk_max` would build a `max` node (a never-zero
-right side with no fold) it keeps `imax l1 l2`, which is the same level:
-so `mkIMax l1 l2` is always `l1`, `l2` or `imax l1 l2`
-(`mkIMax_cases`), and the rule builds no node the plain rule would not.
-(A `max` node would make the walks that read a level's zero-ness, the
-∀ rule's own `zeronessOf` among them, visit both sides of a shared
-level where the `imax` they replace has them follow its right spine.)
-`Verify/Level.lean` proves it equal to `imax l1 l2` in every assignment
-(`eval_mkIMax`). -/
-
-/-- Is the level a numeral `succ^n zero` (`is_explicit`)? -/
-def isExplicit : Level → Bool
-  | .zero => true
-  | .succ l => isExplicit l
-  | _ => false
-
-/-- The level as `succ^n base` with `base` not a `succ`: `(base, n)`
-(`to_offset`). -/
-def toOffset : Level → Level × Nat
-  | .succ l => let p := toOffset l; (p.1, p.2 + 1)
-  | l => (l, 0)
-
-/-- Is `l2` a `max` with `l1` as an argument (then `max l1 l2` is
-`l2`)? -/
-def maxHas (l1 : Level) : Level → Bool
-  | .max a b => a == l1 || b == l1
-  | _ => false
-
-/-- `mk_max`'s folds: the argument `max l1 l2` is equal to, where
-`mk_max` returns one of its arguments; `none` where it builds a `max`
-node. -/
-def maxFold (l1 l2 : Level) : Option Level :=
-  if isExplicit l1 && isExplicit l2 then
-    some (if (toOffset l2).2 ≤ (toOffset l1).2 then l1 else l2)
-  else if l1 == l2 then some l1
-  else if l1 == .zero then some l2
-  else if l2 == .zero then some l1
-  else if maxHas l1 l2 then some l2
-  else if (toOffset l1).1 == (toOffset l2).1 then
-    some (if (toOffset l2).2 < (toOffset l1).2 then l1 else l2)
-  else none
-
-/-- `imax l1 l2` with `mk_imax`'s folds (`mk_max`'s where `l2` is never
-zero), and `imax l1 l2` itself where none applies. -/
-def mkIMax (l1 l2 : Level) : Level :=
-  if isNeverZero l2 then (maxFold l1 l2).getD (.imax l1 l2)
-  else if l2 == .zero then l2
-  else if l1 == .zero then l2
-  else if l1 == l2 then l1
-  else .imax l1 l2
 
 /-- `max` of two simplified levels, pulling out common `succ`s. -/
 def combining : Level → Level → Level

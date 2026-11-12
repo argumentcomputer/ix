@@ -513,16 +513,14 @@ inductive Infer (env : Env md) : Grade → Nat → Expr md → Expr md → Prop 
   /-- **∀-formation** (`Core.lean:1147-1163` / `:1317-1326`): the domain's
   type reduces to a sort, the opened body's type reduces to a sort, and
   the node's datum is the codomain sort's zero-ness (validated at
-  `.verified`).  The level is `imax u v` with the official kernel's
-  `mk_imax` folds (`Level.mkIMax`), equal to `imax u v` in every
-  assignment (`Level.eval_mkIMax`). -/
+  `.verified`). -/
   | forallE {g : Grade} {d : Nat} {ty body s bs : Expr md} {u v : Level}
       {mb : BinderMeta} :
       Infer env g d ty s → Red env d s (.sort u) →
       Infer env g (d + 1) (body.instantiate1 (.fvar d ty)) bs →
       Red env (d + 1) bs (.sort v) →
       Level.zeronessOf v = mb.pw →
-      Infer env g d (.forallE ty body mb) (.sort (Level.mkIMax u v))
+      Infer env g d (.forallE ty body mb) (.sort (.imax u v))
   /-- **λ** (`Core.lean:1164-1214` / `:1327-1348`).  At the full grade the
   domain's type reduces to a sort (`g = .full →`: official's
   `infer_lambda` skips it at `infer_only`, and so does the io body);

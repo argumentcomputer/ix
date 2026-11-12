@@ -1,19 +1,23 @@
 import IxCK.Kernel.Admission
 import IxCK.Kernel.Cached.CoreC
 import Ix.Address.Pure
+import Ix.KernelDisplay.Render
 
 /-! # Levels the ∀ rule shares (`lake test -- kernel-level-sharing`)
 
 A ∀ whose domain and codomain are one shared type (`T (j+1) = T j → T j` in a
 sharing table, or `let a(j+1) : Type := aj → aj`, which the annotation pass
-substitutes) used to make the ∀ rule build `imax L_j (imax L_{j-1} …)`: a
-level shared as a DAG of linear size and a tree of size `2^j`, which the level
-library walks as a tree (`Level.simplify` from the sort comparison,
-`levelHasParam` from every `.sort` node built). The kernel now builds the level
-with `mk_imax`'s folds (`Level.mkIMax`) and reads the has-parameter bit from a
-cached field (`Level.hasParamData`). Each case below is at a length that ends
-only with both in place (`2^200` node visits without them); the assertions are
-structural, the times printed are for reading.
+substitutes) makes the ∀ rule build `imax L_j (imax L_{j-1} …)`: a level
+shared as a DAG of linear size and a tree of size `2^j`. The rule's level is
+upstream's `imax u v`, unfolded; what keeps the kernel polynomial is in the
+executed tier: the has-parameter bit is a cached field
+(`Level.hasParamData`), the level walks are memoised on shared levels
+(`Level.simplify`, `leqCore`, `zeronessOf`, `isNeverZero`, `==`), and the
+cached core hash-conses the ∀ rule's levels (`Cached.internLM`), so that the
+level the binder loop builds again for a telescope's tail is the object built
+before (without it the `let` chain is cubic: 9 s at 2,000 `let`s). Each case
+below is at a length that ends only with these in place; the times printed
+are for reading, except the two bounded ones.
 
 * **acceptance**: the families measured when the cause was found, each a
   constant of a few hundred bytes checked by the certified entry over decoded
@@ -21,17 +25,29 @@ structural, the times printed are for reading.
   arrow shared (`shared`), under a binder (`open`), at a universe parameter
   (`param`); and with no `let`, a chain of sharing entries (`dag`) and the same
   at a parameter (`paramdag`);
+* **the long chains, bounded**: `plain` and `param` at 2,000 `let`s (a 14 KB
+  constant) each accepted within `longBoundMs`. Quadratic, as here, they take
+  about 1 s and 1.4 s on the build box under load; without the hash-consing
+  they are cubic and take 9 s and 13 s, and the case fails;
 * **the level**: the executed core (`Ix.Kernel.Cached.coreKnotI .verified`)
-  infers the chain `T 200` at both grades, and its sort is the two-node level
-  `Prop`'s or `Sort u`'s chain started from;
+  infers the chain `T 200` at both grades; its sort's level is the ∀ rule's
+  `imax` chain, a tree of more than 1,000 nodes, and is decided equivalent to
+  `succ u` (`Level.isEquiv`);
+* **the failure, rendered**: the core's failure on `(fun x : Prop => x) (T 500)`
+  (an application type mismatch, whose display holds the argument's sort, a
+  level whose tree has `2^500` leaves) in each mode, `.anon`, `.meta` and
+  `.source`, is printed (`Ix.KernelDisplay.renderFailure`) and its sort printed
+  as the display prints a term (`renderTerm`), within `renderBoundMs` and
+  `renderBoundChars`: the printer shows at most `maxLevelNodes` `imax` nodes and
+  `⋯` past them;
 * **the cached bit**: a `.sort` node over a level of depth 200 shared as a DAG
   (no parameter, so the walk could not stop early) is built and reads `false`;
 * **the equality**: two equal levels of depth 200, each shared as a DAG and
   built apart (two chains at two parameters, `imax A_j B_j` and `imax B_j A_j`,
   which no fold merges), compare equal through the executed `==`
   (`Level.beqPtr`'s memoised descent, `Level.decMemo`), through `Expr.beq`'s
-  level leaf, and through `Level.mkIMax`'s own test (which returns its first
-  argument); without the memo each is `2^200` node visits;
+  level leaf, and through `Level.isEquiv`'s first test; without the memo each
+  is `2^200` node visits;
 * **levels that do not fold, compared only with equal ones**: over those chains,
   `def L.{u v} : A k → A k := fun x => x` (`mixedid`) and
   `def L.{u v} : (A k → A' k) → (A k → A' k) := fun f => f` (`mixeddouble`, with
@@ -42,7 +58,7 @@ structural, the times printed are for reading.
 * **levels compared with unequal ones** (the memoised level walks:
   `Level.simplify`, `leqCore`, `subst`, `zeronessOf`, `isNeverZero`, each run
   with a per-call memo on large levels): two chains at two parameters whose
-  levels `mk_max` cannot fold (`A (j+1) = A j → B j`, `B (j+1) = B j → A j`,
+  levels the official kernel's `mk_max` cannot fold (`A (j+1) = A j → B j`, `B (j+1) = B j → A j`,
   `mixeddag`), declared `Sort (max (u+1) (v+1))`, equal to the inferred sort
   only after normalisation, whose inferred level at length 10 is still a DAG
   with a tree of more than 1,000 nodes; and `imaxswap` (a chain of `imax` over
@@ -208,8 +224,8 @@ def deltamax (k : Nat) : List _root_.Ixon.Constant :=
   deltaChain k 2 fun prev => defnR 1 (.ref 0 #[0]) (.sort 0) #[] #[prev] #[.var 0]
 
 /-- `deltazero k`: `top = 1`, then `Y.{v} : Sort (imax (v+1) v) := ∀ x : Dk.{v}, x`:
-the ∀ rule meets the codomain sort `L_k` (`zeronessOf`, `isNeverZero` in
-`mkIMax`), and the sort comparison splits on `v`, substituting into `L_k`. -/
+the ∀ rule meets the codomain sort `L_k` (its `zeronessOf`), and the sort
+comparison splits on `v`, substituting into `L_k`. -/
 def deltazero (k : Nat) : List _root_.Ixon.Constant :=
   deltaChain k 1 fun prev =>
     defnR 1 (.sort 1) (_root_.Ixon.Expr.leanAll (.ref 0 #[0]) (.var 0)) #[] #[prev]
@@ -347,6 +363,48 @@ def mixedLevelsApart : Nat → Level × Level
   | 0 => (.param 0, .param 1)
   | n + 1 => let (a, b) := mixedLevelsApart n; (.imax a b, .imax b a)
 
+/-! ## The long chains and the rendered failure: bounds -/
+
+/-- The bound on `plain` and `param` at 2,000 `let`s through the certified
+entry. Measured on the build box at load 30 to 45: about 1,000 and 1,400 ms
+with the hash-consing, 8,900 and 13,400 ms without it (cubic); the bound sits
+between, with a factor of about 3.5 for a slower or busier runner. -/
+def longBoundMs : Nat := 5000
+
+/-- The bound on printing the failure about a level whose tree has `2^500`
+leaves, and on its length: the printer shows at most `maxLevelNodes` (64)
+`imax` nodes of a level and at most `maxSteps` (5,000) nodes of a term. -/
+def renderBoundMs : Nat := 2000
+def renderBoundChars : Nat := 100000
+
+/-- `T 0 = Prop`, `T (j+1) = T j → T j` at any mode. -/
+def dagTermAt (md : Ix.Kernel.Mode) : Nat → Expr md
+  | 0 => .sort .zero
+  | n + 1 => let t := dagTermAt md n; .forallE t t never
+
+/-- The executed core on `(fun x : Prop => x) (T k)` at mode `md`: an
+application type mismatch whose display (outside `.anon`) holds the
+argument's inferred sort `Sort L`, `L` the ∀ rule's level of `T k` (`k` shared
+`imax` nodes, a tree of `2^k` leaves); with that sort, inferred alone. -/
+def mismatchAt (md : Ix.Kernel.Mode) (k : Nat) :
+    Except String (Ix.Kernel.CheckError md × Expr md) :=
+  let core := Ix.Kernel.Cached.coreKnotI .verified
+    (Ix.Kernel.mkFEnv (⟨[]⟩ : Ix.Kernel.Env md)) Ix.Kernel.checkFuel
+  let t := dagTermAt md k
+  let e : Expr md := .app (.lam (.sort .zero) (.bvar 0) never) t
+  match StateT.run (core.infer 0 e) {}, StateT.run (core.infer 0 t) {} with
+  | .error err, .ok (ty, _) => .ok (err, ty)
+  | .ok _, _ => .error "the core accepted the mismatch"
+  | _, .error _ => .error "the core refused T k"
+
+/-- The failure as `renderFailure` prints it (its head: the display's terms
+are read only with the display-only `unsafe` read,
+`Ix.KernelDisplay.peekAll`, which this safe test does not take) and the sort
+as `renderTerm` prints it, which is how `renderFailure` prints each of the
+display's terms. -/
+def renderBoth {md : Ix.Kernel.Mode} (err : Ix.Kernel.CheckError md) (ty : Expr md) : String × String :=
+  (Ix.KernelDisplay.renderFailure {} err, Ix.KernelDisplay.renderTerm {} ty)
+
 def run : IO UInt32 := do
   IO.println "kernel-level-sharing: levels the ∀ rule shares"
   let mut failed := 0
@@ -359,13 +417,43 @@ def run : IO UInt32 := do
     | .error e =>
       IO.println s!"  {name} k={k}: REFUSED: {e}"
       failed := failed + 1
+  -- the long chains: quadratic with the hash-consing, cubic without it
+  let kl := 2000
+  for (name, c) in (family kl).filter (fun p => p.1 == "plain" || p.1 == "param") do
+    let (r, ms) ← check c
+    let ok := (match r with | .ok _ => true | .error _ => false) && ms ≤ longBoundMs
+    IO.println s!"  {name} k={kl}: {match r with | .ok n => s!"accepted ({n} constants)" | .error e => s!"REFUSED: {e}"}, {(_root_.Ixon.serConstant c).size} bytes, {ms} ms (bound {longBoundMs} ms){if ok then "" else "  FAILED"}"
+    unless ok do failed := failed + 1
+  -- the failure about such a level, rendered in each mode (only the printing
+  -- is timed)
+  let kr := 500
+  for md in [Ix.Kernel.Mode.anon, .meta, .source] do
+    let (ok, shown) ← match ← IO.lazyPure fun _ => mismatchAt md kr with
+      | .ok (err, ty) => do
+        let t0 ← IO.monoMsNow
+        let (head, sort) ← IO.lazyPure fun _ => renderBoth err ty
+        let t1 ← IO.monoMsNow
+        let n := head.length + sort.length
+        let isMismatch := (head.splitOn "application type mismatch").length > 1
+        let elided := (sort.splitOn "⋯").length > 1
+        pure (isMismatch && elided && t1 - t0 ≤ renderBoundMs && n ≤ renderBoundChars,
+          s!"printed in {t1 - t0} ms, {n} characters; the sort: {(sort.take 100).toString}…")
+      | .error e => pure (false, e)
+    IO.println s!"  the failure about T {kr}'s sort, mode {repr md}: {shown}{if ok then "" else "  FAILED"}"
+    unless ok do failed := failed + 1
   for (label, u) in [("Prop", Level.zero), ("Sort u", Level.param 0)] do
     for io in [false, true] do
       let grade := if io then "io" else "full"
       match infer io (dagTerm u k) with
       | .ok (.sort l) =>
-        let ok := l == .succ u && sizeAtMost 2 l
-        IO.println s!"  T {k} over {label}, {grade} grade: the sort's level has {if sizeAtMost 2 l then "at most 2" else "MORE THAN 2"} nodes{if ok then "" else "  FAILED"}"
+        -- the rule's level `imax L L` at every step: a tree of `2^k` nodes,
+        -- equal to `succ u` in every assignment, which the memoised walks decide
+        let t0 ← IO.monoMsNow
+        let eqv := Level.isEquiv l (.succ u)
+        let t1 ← IO.monoMsNow
+        let big := !sizeAtMost 1000 l
+        let ok := big && eqv == some true
+        IO.println s!"  T {k} over {label}, {grade} grade: the sort's level has {if big then "more than 1,000" else "AT MOST 1,000"} tree nodes and is equivalent to succ u: {repr eqv} in {t1 - t0} ms{if ok then "" else "  FAILED"}"
         unless ok do failed := failed + 1
       | .ok _ =>
         IO.println s!"  T {k} over {label}, {grade} grade: not a sort  FAILED"
@@ -385,7 +473,7 @@ def run : IO UInt32 := do
      ("B == B' (built apart)", b == b', true),
      ("A == B'", a == b', false),
      ("Sort A == Sort A' (Expr.beq)", (Expr.sort a : Expr .anon) == Expr.sort a', true),
-     ("mkIMax A A' == A (the fold's test)", Level.mkIMax a a' == a, true)]
+     ("isEquiv A A' (the sort comparison's first test)", Level.isEquiv a a' == some true, true)]
   for (label, got, want) in eqCases do
     IO.println s!"  depth {k}, {label}: {got}{if got == want then "" else "  FAILED"}"
     unless got == want do failed := failed + 1

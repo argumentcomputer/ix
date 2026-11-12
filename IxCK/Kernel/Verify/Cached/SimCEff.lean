@@ -93,6 +93,14 @@ theorem CSOK.withLsimpEqv {s : CState md} (hs : CSOK mode env s)
   ⟨hs.constTy, hs.constVal, hs.ruleRhs, hs.whnfCoreC, hs.whnfC,
     hs.inferC, hs.inferIOC, hs.annotC, hs.defeqC, hm, he, hs.instC⟩
 
+/-- Replace the hash-consing table of the ∀ rule's levels: no clause reads
+it (`internLM` validates a hit itself). -/
+theorem CSOK.withIntern {s : CState md} (hs : CSOK mode env s)
+    (t : Std.HashMap Level Level) :
+    CSOK mode env { s with lvlIntern := t } :=
+  ⟨hs.constTy, hs.constVal, hs.ruleRhs, hs.whnfCoreC, hs.whnfC,
+    hs.inferC, hs.inferIOC, hs.annotC, hs.defeqC, hs.lsimp, hs.eqv, hs.instC⟩
+
 /-! ### The memo-insert closures -/
 
 /-- Inserting the spec value at a key keeps the `lsimpC` clause. -/
@@ -328,6 +336,37 @@ private theorem isEquiv_cascade (l r : Level)
           (Level.simplify l) 0 with
       | none => rfl
       | some b2 => rfl
+
+private theorem internLM_run (l : Level) (s : CState md) :
+    internLM l s = .ok
+      (match s.lvlIntern[l]? with
+       | some l' => if l' == l then (l', s) else (l, s)
+       | none => (l, { s with lvlIntern := s.lvlIntern.insert l l })) := rfl
+
+/-- **Hash-consing returns its argument**: a hit is returned only when `==`
+(lawful) has confirmed it equal to the query, and only the table, which no
+`CSOK` clause reads, changes. -/
+theorem internLM_eff (hs : CSOK mode env s₀) (l : Level) :
+    CEff mode env s₀ (fun v => v = l) (internLM l) := by
+  intro v' s' hrun
+  rw [internLM_run] at hrun
+  injection hrun with h1
+  cases hc : s₀.lvlIntern[l]? with
+  | some l' =>
+    rw [hc] at h1
+    dsimp only at h1
+    by_cases hb : (l' == l) = true
+    · rw [if_pos hb] at h1
+      obtain ⟨rfl, rfl⟩ := Prod.mk.injEq .. ▸ h1
+      exact ⟨hs, eq_of_beq hb⟩
+    · rw [if_neg hb] at h1
+      obtain ⟨rfl, rfl⟩ := Prod.mk.injEq .. ▸ h1
+      exact ⟨hs, rfl⟩
+  | none =>
+    rw [hc] at h1
+    dsimp only at h1
+    obtain ⟨rfl, rfl⟩ := Prod.mk.injEq .. ▸ h1
+    exact ⟨hs.withIntern _, rfl⟩
 
 /-- The `isEquiv` result cache: a hit is certified by the `eqvC`
 clause, a miss runs the same `simplify`/`leqCore` cascade the interned

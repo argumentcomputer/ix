@@ -117,7 +117,8 @@ def etaCtorShapeC (fe : FEnv md) (e : Expr md) : Bool :=
 
 /-- Per-declaration state: the memo caches for the five entry points,
 the lazy caches for level-instantiated stored constants, the
-level-operation memos, and the bulk-instantiation memo (task #145).
+level-operation memos, the bulk-instantiation memo (task #145) and the
+hash-consing table of the ∀ rule's levels.
 Each step of the declaration fold starts from the empty state
 (`resetC`), and phase B starts every record from it, so the state lives
 for one declaration.
@@ -150,6 +151,10 @@ structure CState (md : Mode) where
   lsimpC : Std.HashMap Level Level := {}
   eqvC : Std.HashMap (Level × Level) Bool := {}
   instC : Std.HashMap (Expr md × List (Expr md) × Nat) (Expr md) := {}
+  /-- **The ∀ rule's levels, hash-consed** (`internLM`): each level the
+  rule has built, mapped to itself. No invariant is kept or needed: a hit
+  is used only after `==` has confirmed it equal to the query. -/
+  lvlIntern : Std.HashMap Level Level := {}
 
 instance : Inhabited (CState md) := ⟨{}⟩
 
@@ -308,6 +313,30 @@ def isEquivListLM : List Level → List Level → (CheckCM md) (Option Bool)
     | some false => pure (some false)
     | some true => isEquivListLM ls rs
   | _, _ => pure (some false)
+
+/-- **The level `l`, hash-consed**: the object of the table equal to `l`
+when there is one, else `l`, now recorded. In the logic it is `l` on
+every branch (a hit is returned only after `==`, which is lawful, has
+confirmed it), so no statement sees it (`internLM_eff`).
+
+Why: the ∀ rule builds `imax u v` per binder, and the binder loop
+rebuilds the level of a telescope's tail each time it peels the
+telescope, as a new object equal to the one built before. A `let` chain
+over one shared type `T (j+1) = T j → T j` then makes the level of
+`T j` a DAG of about `j²/2` objects for `j` distinct values, and every
+level walk meets equal-but-distinct pairs, which `==` must descend (the
+sort comparison of each `let` cost `O(j²)`, the chain `O(k³)`).
+Interned at the two ∀ sites (`inferPisOutI`, `inferBodyIOI`), a level's
+children are already the table's objects, so the `==` that validates a
+hit is a pointer test on the children, and `T j`'s level is
+`imax L L` with one `L`: the chain is quadratic again, as with the
+official kernel's folds (`mk_imax`), without changing the rule's
+level. -/
+@[inline] def internLM (l : Level) : (CheckCM md) Level :=
+  modifyGet fun s =>
+    match s.lvlIntern[l]? with
+    | some l' => if l' == l then (l', s) else (l, s)
+    | none => (l, { s with lvlIntern := s.lvlIntern.insert l l })
 
 /-! ## Lazy stored-constant instantiations -/
 

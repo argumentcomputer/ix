@@ -80,10 +80,11 @@ proved equal with its proof (`Level.EqPair`), a hit is validated by
 identity on both stored objects, every branch returns `Decidable (a = b)`
 for its own `a`, `b` behind a quotient, and only a pair of two shared,
 recursive nodes is probed or recorded.  Two equal levels each shared as
-a DAG (the ∀ rule's levels are, `Level.mkIMax`) then compare in time
-linear in their DAGs, where the derived `DecidableEq` walks their trees:
-`Level.mkIMax`'s and `Level.maxFold`'s equality tests, the keys of the
-level memo maps and `Expr.beq`'s level leaves all go through it. -/
+a DAG (the ∀ rule's levels are: `imax L (imax L' …)` over shared
+types) then compare in time linear in their DAGs, where the derived
+`DecidableEq` walks their trees: the sort comparison's first test
+(`Level.isEquiv`'s `l == r`), the keys of the level memo maps and
+`Expr.beq`'s level leaves all go through it. -/
 
 /-- `true` for the levels whose comparison recurses (`Expr.beqRecursive`):
 a `zero` or `param` pair is decided at once, so it is never probed. -/

@@ -60,18 +60,16 @@ Modifications
   * Levels the ∀ rule shares (2026-11): Expr.lean gives Level a second
     computed field, its has-parameter bit (hasParamData), and levelHasParam
     runs as that field (a proved @[csimp]); Cached/ExprNodes.lean's census
-    names it. Level.lean adds mkIMax, imax with the folds of the official
-    kernel's mk_imax and mk_max that return one of the arguments, and the
-    ∀ rule builds its level with it: Core.lean, Cached/CoreC.lean,
-    Rules/Rel.lean (Infer.forallE concludes .sort (mkIMax u v)) and
-    Model/Rules/InferSound.lean. Verify/Level.lean and Verify/PropWhen.lean
-    prove it equal to imax in every assignment, with the same zero-ness
-    datum; Verify/BinderLoop.lean, Verify/Cached/{BinderLoopC,DiscC4}.lean,
-    Verify/{InferLemmas,InferIOLemmas}.lean and
-    Model/{AxiomBits,Inductives/FixTeleBound,Inductives/StructBits}.lean
-    follow. With the plain imax, a ∀ chain over one shared type built a
-    level whose tree doubles per binder, and the level functions walk
-    levels as trees. Expr.lean's Level.beqPtr (the executed Level.beq,
+    names it. The ∀ rule keeps the original's level, imax u v (an earlier
+    change that folded it, Level.mkIMax, was withdrawn); Cached/StateC.lean
+    adds a table to the cached core's state and internLM, which returns
+    its argument (a hit only after == confirms it), and Cached/CoreC.lean
+    hash-conses the rule's level with it at its two sites (inferPisOutI,
+    inferBodyIOI); Verify/Cached/SimCEff.lean proves internLM_eff and
+    Verify/Cached/{BinderLoopC,DiscC4}.lean use it. With the plain imax, a
+    ∀ chain over one shared type builds a level whose tree doubles per
+    binder, the level functions walk levels as trees, and the binder loop
+    rebuilds equal levels as new objects. Expr.lean's Level.beqPtr (the executed Level.beq,
     by a proved @[csimp]) decides its structural case by a descent
     memoised on the pairs it proves equal (Level.decMemo, Expr.beqMemo's
     arrangement), so that equal levels built apart as DAGs, which the

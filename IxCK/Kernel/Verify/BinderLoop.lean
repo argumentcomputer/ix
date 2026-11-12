@@ -159,7 +159,7 @@ sort check, at the verified modes, on a non-λ residual). -/
   | (u, pw) :: rest, v => do
     if mode.verifiedChecks && !(Level.zeronessOf v == pw) then
       throw (.notImplemented "sort-annotation mismatch (forall-cod)")
-    inferPisOut mode rest (Level.mkIMax u v)
+    inferPisOut mode rest (.imax u v)
 
 /-- Pure mirror of `inferPisLeafI` (task #161: the fold validates each
 node's prop-ness annotation against its codomain sort). -/
@@ -321,7 +321,7 @@ level, the chained rule's `ensureSort` of the freshly built inner sort
     if mode.verifiedChecks then
       unless Level.zeronessOf v == pw do
         throw (.notImplemented "sort-annotation mismatch (forall-cod)")
-    inferPisWrap mode r env d rest (j - 1) (.sort (Level.mkIMax u v))
+    inferPisWrap mode r env d rest (j - 1) (.sort (.imax u v))
 
 /-- The chained `annotateBody` ∀-tail folded over the peeled binders.
 Task #161 P5: each level runs the pass's own write (`annotPwPi`), which
@@ -469,7 +469,7 @@ theorem inferTypeCore_forallE_eq (env : Env md) (F d : Nat)
                  unless Level.zeronessOf v == mb.pw do
                    throw (.notImplemented
                      "sort-annotation mismatch (forall-cod)")
-               pure (Expr.sort (Level.mkIMax u v))
+               pure (Expr.sort (.imax u v))
          | _ => throw (.invalid "expected a sort")) := rfl
 
 theorem inferTypeCore_lam_eq (env : Env md) (F d : Nat)
@@ -646,7 +646,7 @@ theorem inferPisOut_atF :
     · simp only [if_pos hg]
       rfl
     · simp only [if_neg hg]
-      exact inferPisOut_atF rest (Level.mkIMax u v) F
+      exact inferPisOut_atF rest (.imax u v) F
 
 theorem inferPisLeaf_atF (d : Nat) (t : Expr md) (k : Nat)
     (fvs : List (Expr md)) (stk : List (Level × PropWhen)) (F : Nat) :
@@ -1101,7 +1101,7 @@ theorem inferPisWrap_sort {d : Nat} :
           unless Level.zeronessOf v' == pw do
             throw (.notImplemented "sort-annotation mismatch (forall-cod)")
         inferPisWrap mode (pureFns mode env F) env d rest (j - 1)
-          (.sort (Level.mkIMax u v')))) = _
+          (.sort (.imax u v')))) = _
     rw [ensureSort_def, ensureSortCore_eq]
     have hw : whnf mode env F (d + j + 1) (.sort v) = .ok (.sort v) := by
       obtain ⟨F₂, rfl⟩ : ∃ F₂, F = F₂ + 2 := ⟨F - 2, by omega⟩
@@ -1128,9 +1128,9 @@ theorem inferPisWrap_sort {d : Nat} :
           · exact hc
           · exact absurd (by simp [hver, hc]) hg
         rw [if_pos hver, if_pos hz]
-        exact ih (j - 1) (Level.mkIMax u v) hF
+        exact ih (j - 1) (.imax u v) hF
       · rw [if_neg hver]
-        exact ih (j - 1) (Level.mkIMax u v) hF
+        exact ih (j - 1) (.imax u v) hF
 
 /-- Leaf-phase soundness for the ∀-loop. -/
 theorem inferPisLeaf_sound {d : Nat} {t : Expr md}
@@ -1176,7 +1176,7 @@ theorem inferPisLeaf_sound {d : Nat} {t : Expr md}
         unless Level.zeronessOf v' == pw do
           throw (.notImplemented "sort-annotation mismatch (forall-cod)")
       inferPisWrap mode (pureFns mode env (max F 2)) env d rest
-        ((k - 1) - 1) (.sort (Level.mkIMax u v')))) = _
+        ((k - 1) - 1) (.sort (.imax u v')))) = _
     rw [ensureSort_def, ensureSortCore_eq, hkeq]
     rw [whnf_mono (Nat.le_max_left F 2) hww, okB_bind]
     dsimp only
@@ -1189,9 +1189,9 @@ theorem inferPisLeaf_sound {d : Nat} {t : Expr md}
       exact nomatch hout
     rw [if_neg hg] at hout
     have hrest : inferPisWrap mode (pureFns mode env (max F 2)) env d
-        rest ((k - 1) - 1) (.sort (Level.mkIMax u v))
+        rest ((k - 1) - 1) (.sort (.imax u v))
         = .ok res := by
-      rw [inferPisWrap_sort rest ((k - 1) - 1) (Level.mkIMax u v)
+      rw [inferPisWrap_sort rest ((k - 1) - 1) (.imax u v)
         (Nat.le_max_right F 2), hout]
       rw [← hres]
       rfl
