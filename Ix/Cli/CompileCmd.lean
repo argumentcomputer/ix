@@ -10,7 +10,6 @@ public import Ix.Benchmark.Results
 public import Ix.Cli.ConstsFile
 public import Ix.Cli.ValidateCmd
 public import Ix.Compile.Equations
-public import Ix.Compile.Unbound
 import Std.Internal.UV.System
 
 /-! `ix compile`: compile a Lean source file to an Ixon `.ixe` artifact using
@@ -218,12 +217,8 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
   -- atomically below.
   let strip (artifact : Ixon.Env) : Ixon.Env := if strictAnon then { artifact with
     named := {}, names := {}, comms := {}, addrToName := {} } else artifact
-  -- `--unbound` publishes the certified compile without `finalize`
-  -- (`Ix.CompileM.compileUnbound`).
-  let (out, finalization) ← match ← (if p.hasFlag "unbound" then
-      Ix.CompileM.compileUnbound leanEnv constList workers allowPartial log (strip := strip)
-    else Ix.CompileM.compileAndFinalize leanEnv constList workers
-      allowPartial log (strip := strip) (prefetch := wholeEnv)) with
+  let (out, finalization) ← match ← Ix.CompileM.compileAndFinalize leanEnv constList workers
+      allowPartial log (strip := strip) (prefetch := wholeEnv) with
     | .ok r => pure r
     | .error e => throw (IO.userError s!"compile refused: {e}")
   let status := statusOf out.env out.failures.toMap
@@ -337,7 +332,6 @@ def compileCmd : Cli.Cmd := `[Cli|
     report         : String; "Write a machine-readable JSON compile report (versions, seed spec, requested/named/unique-anon/ungrounded counts, full ungrounded list, canonical consts merkle root, bytes, elapsed ms) to this path — written on success, fail-closed abort, and partial publish alike."
     equations      ;         "Realize the unfolding theorem (`f.eq_def`) of every recursive definition the selected closure reaches, library definitions included; compile each theorem with its dependencies, to a fixed point, and write the definition/theorem associations to --equations-out."
     "equations-out" : String; "Path for the --equations associations (JSON, format `ix/compile-equations/1`: `equations` [{definition, equation}] sorted by definition, `failures` [{definition, message}]); defaults to <out>.equations.json."
-    unbound        ;         "Publish the certified compile without the role support, certificates and role binding that finalization adds: exactly the selected closure, in the version-4 envelope (0xE4), for consumers that do not read role bindings (IxCC's corpus fixtures). Consumers that admit through a role binding refuse it."
 
   ARGS:
     path : String; "Path to the Lean source file to compile."
