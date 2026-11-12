@@ -14,6 +14,8 @@ import IxCC.Rt.Proof.OpsAlloc
 import IxCC.Rt.Proof.OpsProj
 import IxCC.Rt.Proof.OpsCall
 import IxCC.Rt.Proof.Instr
+import IxCC.Rt.Proof.WordArith
+import IxCC.Rt.Proof.OpsWord
 import IxCC.Rt.Proof.Edge
 import IxCC.Rt.Proof.Chain
 import IxCC.Rt.Proof.Switch
@@ -1482,3 +1484,218 @@ preserved verbatim. -/
 
 /-- info: 'IxCC.Rt.init_correct' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Rt.init_correct
+
+
+/-! Stage W1: the fixed-width words' expansions (`Rt.Proof.WordArith`, `Rt.Proof.OpsWord`, `Mono.word'`). -/
+
+/-- info: 'IxCC.Rt.Proof.narrow_cases' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.narrow_cases
+
+/-- info: 'IxCC.Rt.Proof.narrow_bits' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.narrow_bits
+
+/-- info: 'IxCC.Rt.Proof.narrow_size' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.narrow_size
+
+/-- info: 'IxCC.Rt.Proof.two_size' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.two_size
+
+/-- info: 'IxCC.Rt.Proof.size_w64' does not depend on any axioms -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.size_w64
+
+/-- info: 'IxCC.Rt.Proof.two_mul_add_one_mod' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.two_mul_add_one_mod
+
+/-- info: 'IxCC.Rt.Proof.or_one_even' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.or_one_even
+
+/-- info: 'IxCC.Rt.Proof.tag_xor_even' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.tag_xor_even
+
+/-- info: 'IxCC.Rt.Proof.tagMask_toNat' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.tagMask_toNat
+
+/-- info: 'IxCC.Rt.Proof.and_tagMask' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.and_tagMask
+
+/-- info: 'IxCC.Rt.Proof.narrow_word' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.narrow_word
+
+/-- info: 'IxCC.Rt.Proof.count_toNat' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.count_toNat
+
+/-- info: 'IxCC.Rt.Proof.narrowAdd_word' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.narrowAdd_word
+
+/-- info: 'IxCC.Rt.Proof.narrowSub_word' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.narrowSub_word
+
+/-- info: 'IxCC.Rt.Proof.narrowMul_word' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.narrowMul_word
+
+/-- info: 'IxCC.Rt.Proof.narrowShl_word' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.narrowShl_word
+
+/-- info: 'IxCC.Rt.Proof.narrowComplement_word' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.narrowComplement_word
+
+/-- info: 'IxCC.Rt.Proof.narrowNeg_word' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.narrowNeg_word
+
+/-- info: 'IxCC.Rt.Proof.narrowOfNat_word' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.narrowOfNat_word
+
+/-- info: 'IxCC.Rt.Proof.convertNarrow_word' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.convertNarrow_word
+
+/-- info: 'IxCC.Rt.Proof.convertWide_word' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.convertWide_word
+
+/-- info: 'IxCC.Rt.Proof.toNat_word' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.toNat_word
+
+/-- info: 'IxCC.Rt.Proof.wordShr_word' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.wordShr_word
+
+/-- info: 'IxCC.Rt.Proof.wide_word' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.wide_word
+
+/-- info: 'IxCC.Rt.Proof.wideAdd_toNat' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.wideAdd_toNat
+
+/-- info: 'IxCC.Rt.Proof.wideSub_toNat' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.wideSub_toNat
+
+/-- info: 'IxCC.Rt.Proof.wideMul_toNat' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.wideMul_toNat
+
+/-- info: 'IxCC.Rt.Proof.wideShl_toNat' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.wideShl_toNat
+
+/-- info: 'IxCC.Rt.Proof.wideComplement_toNat' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.wideComplement_toNat
+
+/-- info: 'IxCC.Rt.Proof.wideNeg_toNat' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.wideNeg_toNat
+
+/-- info: 'IxCC.Rt.Proof.wideOfNat_word' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.wideOfNat_word
+
+/-- info: 'IxCC.Rt.Proof.envRel_insert_frame' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.envRel_insert_frame
+
+/-- info: 'IxCC.Rt.Proof.retag_val' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.retag_val
+
+/-- info: 'IxCC.Rt.Proof.rhsSim_of_nat' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.rhsSim_of_nat
+
+/-- info: 'IxCC.Rt.Proof.natArgs_words' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.natArgs_words
+
+/-- info: 'IxCC.Rt.Proof.rhsSim_of_core' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.rhsSim_of_core
+
+/-- info: 'IxCC.Rt.Proof.core_two' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.core_two
+
+/-- info: 'IxCC.Rt.Proof.core_one' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.core_one
+
+/-- info: 'IxCC.Rt.Proof.word2_core' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.word2_core
+
+/-- info: 'IxCC.Rt.Proof.word1_core' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.word1_core
+
+/-- info: 'IxCC.Rt.Proof.checked_core' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.checked_core
+
+/-- info: 'IxCC.Rt.Proof.word2_checked_core' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.word2_checked_core
+
+/-- info: 'IxCC.Rt.Proof.word1_checked_core' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.word1_checked_core
+
+/-- info: 'IxCC.Rt.Proof.wordSem_nat_of' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.wordSem_nat_of
+
+/-- info: 'IxCC.Rt.Proof.prim_wordDiv' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.prim_wordDiv
+
+/-- info: 'IxCC.Rt.Proof.prim_wordMod' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.prim_wordMod
+
+/-- info: 'IxCC.Rt.Proof.prim_wordLand' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.prim_wordLand
+
+/-- info: 'IxCC.Rt.Proof.prim_wordLor' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.prim_wordLor
+
+/-- info: 'IxCC.Rt.Proof.prim_wordXor' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.prim_wordXor
+
+/-- info: 'IxCC.Rt.Proof.core_wordShr' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.core_wordShr
+
+/-- info: 'IxCC.Rt.Proof.core_wordToNat' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.core_wordToNat
+
+/-- info: 'IxCC.Rt.Proof.core_wordConvert' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.core_wordConvert
+
+/-- info: 'IxCC.Rt.Proof.core_wordAddN' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.core_wordAddN
+
+/-- info: 'IxCC.Rt.Proof.core_wordSubN' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.core_wordSubN
+
+/-- info: 'IxCC.Rt.Proof.core_wordMulN' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.core_wordMulN
+
+/-- info: 'IxCC.Rt.Proof.core_wordShlN' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.core_wordShlN
+
+/-- info: 'IxCC.Rt.Proof.core_wordComplementN' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.core_wordComplementN
+
+/-- info: 'IxCC.Rt.Proof.core_wordNegN' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.core_wordNegN
+
+/-- info: 'IxCC.Rt.Proof.core_wordOfNatN' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.core_wordOfNatN
+
+/-- info: 'IxCC.Rt.Proof.core_wordOfNat64' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.core_wordOfNat64
+
+/-- info: 'IxCC.Rt.Proof.core_wordAdd64' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.core_wordAdd64
+
+/-- info: 'IxCC.Rt.Proof.core_wordSub64' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.core_wordSub64
+
+/-- info: 'IxCC.Rt.Proof.core_wordMul64' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.core_wordMul64
+
+/-- info: 'IxCC.Rt.Proof.core_wordShl64' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.core_wordShl64
+
+/-- info: 'IxCC.Rt.Proof.core_wordComplement64' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.core_wordComplement64
+
+/-- info: 'IxCC.Rt.Proof.core_wordNeg64' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.core_wordNeg64
+
+/-- info: 'IxCC.Rt.Proof.word_not_bool' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.word_not_bool
+
+/-- info: 'IxCC.Rt.Proof.word_core' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.word_core
+
+/-- info: 'IxCC.Rt.Proof.prim_word' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.prim_word
+
+/-- info: 'IxCC.Rt.Proof.Mono.word'' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.Mono.word'
+
+

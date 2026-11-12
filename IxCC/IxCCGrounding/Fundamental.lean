@@ -161,7 +161,7 @@ theorem head_tele (H : FundHyps M p κ lpsOf S Ok) {h : IxCC.Src.Head} {ls : Lev
   | prim _ _ har => exact har
 
 /-- `As` related to literal values are the literals' sets. -/
-theorem relVs_lits (hL : Laws M) (hS : NatBasis env) (φ : LevelParam → Nat) :
+theorem relVs_lits (hL : LawsCore M) (hS : NatBasis env) (φ : LevelParam → Nat) :
     ∀ {ns : List Nat} {Xs : List V}, RelVs M κ lpsOf S Ok (ns.map .lit) Xs →
       Xs = ns.map (litSet M φ)
   | [], _, h => by rw [List.map_nil] at h; cases h; rfl
@@ -549,7 +549,10 @@ theorem fire_noParams (H : FundHyps M p κ lpsOf S Ok) {k' : Nat}
               cases hci
               have := H.faith.nodup c hSc'
               rwa [← hlps] at this
-            obtain ⟨K, hK, heqK, σ', R', hFfit⟩ := ctorFields_canon M H.laws hfcv hnd hcl hdef
+            -- (the law; or no constructor with level parameters, `FundHyps.canon`)
+            have hcc : CtorCanon M := H.canon.resolve_right fun hno =>
+              hlp (recNoLevels_ctor (hno r hSr (.inr (by assumption))) hfS hkm hcC)
+            obtain ⟨K, hK, heqK, σ', R', hFfit⟩ := ctorFields_canon M H.laws hcc hfcv hnd hcl hdef
               (by simpa [hnfk] using hhead) (neverProp_of_check hnp) hlsC hfitc' hFl hdomE hX
               (by simpa using hTmX)
             exact tail cidx (fs.map .val) rl krl cv K Fs σ' R' hrl hkrl hcC
@@ -875,11 +878,14 @@ theorem fire_step (H : FundHyps M p κ lpsOf S Ok) {k : Nat}
                           cases hci
                           have := H.faith.nodup c hSc'
                           rwa [← hlps] at this
+                        have hcc : CtorCanon M := H.canon.resolve_right fun hno =>
+                          hlp (recNoLevels_ctor (hno r hSr (.inl hcl)) hfS
+                            (List.mem_of_getElem? hkrl) hcC)
                         exact flatIota M H.laws.iota_rule hfS hty htbs (List.mem_of_getElem? hkrl)
                           hcC hcod hrhs hbsd hi hfit (by rw [hAsl]) hpb hdomE
                           (fun _ _ hX hm => by
                             rw [hkc'] at hm ⊢
-                            exact ctorImage_canon M H.laws hfcv hnd hhead
+                            exact ctorImage_canon M H.laws hcc hfcv hnd hhead
                               (neverProp_of_check hnp) hlsC hdomE hX hm)
                           hmaj'
                     -- SrcEval: the body, `.var i`, in the slots of the first arguments reversed

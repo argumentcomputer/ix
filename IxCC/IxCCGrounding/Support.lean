@@ -230,13 +230,19 @@ theorem relVs_single_right {vs : List Value} {X : V} (h : RelVs M κ lpsOf S Ok 
 
 /-! ## Literals -/
 
-/-- A literal value relates to the literal's set, at any assignment. -/
-theorem relV_lit_eq (hL : Laws M) (hS : NatBasis env) (φ : LevelParam → Nat)
+/-- A literal value relates to the literal's set, at any assignment (level-parameter irrelevance
+only). -/
+theorem relV_lit_eq_cv (hcv : CvalParams M) (hS : NatBasis env) (φ : LevelParam → Nat)
     {n : Nat} {X : V} (h : RelV M κ lpsOf S Ok (.lit n) X) : X = litSet M φ n := by
   cases h with
   | @lit _ _ φ' ρ' hd =>
     rw [(lit_den M (natFacts M hS φ') ρ' n X).mp hd]
-    exact litSet_indep M hL hS φ' φ n
+    exact litSet_indep_cv M hcv hS φ' φ n
+
+/-- A literal value relates to the literal's set, at any assignment. -/
+theorem relV_lit_eq (hL : LawsCore M) (hS : NatBasis env) (φ : LevelParam → Nat)
+    {n : Nat} {X : V} (h : RelV M κ lpsOf S Ok (.lit n) X) : X = litSet M φ n :=
+  relV_lit_eq_cv hL.cval_params hS φ h
 
 theorem relV_lit_intro (hS : NatBasis env) (φ : LevelParam → Nat) (n : Nat) :
     RelV M κ lpsOf S Ok (.lit n) (litSet M φ n) :=

@@ -17,6 +17,7 @@ import IxCCGrounding.Subst
 import IxCCGrounding.Tele
 import IxCCGrounding.Case
 import IxCCGrounding.CaseFire
+import IxCCGrounding.CaseBlind
 import IxCCGrounding.Runs
 import IxCCGrounding.CaseCheck
 import IxCCGrounding.Check

@@ -5,6 +5,7 @@ import IxCCTests.Rt.Levels
 import IxCCTests.Rt.Kernel
 import IxCCTests.Rt.KernelEval
 import IxCCTests.Rt.DecoderChecks
+import IxCCTests.Rt.Words
 
 /-! The `tests-rt` suite: the primitive
 sequences at their boundaries; hand-written programs, declines and
@@ -97,6 +98,7 @@ def suite (a : Assert) (o : Options) (tools : Option Native.Tools) : IO Unit := 
     part a "primitive sequences at their boundaries" (Cases.prims a)
     part a "hand-written programs, declines and cx_init" (Cases.handWritten a)
     part a "planted mutations" (Mutants.run a)
+    part a "fixed-width words (stage W1): boundaries, planted mutations, the backend" (Words.run a)
     part a "k1.ixe and bench-k1: Cfg → Lir" (Differential.packs a)
     part a "bench-k1 entries at their test sizes, at Lir" (Differential.entries a)
     part a "generated first-order programs" (Differential.generated a o.generated)

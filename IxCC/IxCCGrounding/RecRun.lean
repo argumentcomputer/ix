@@ -187,7 +187,7 @@ variable {V : Type w} [Ix.Kernel.SetTheory V] {env : KEnv}
 binder is in the graph regime and the right-hand side denotes: the direct route refuses none at the
 profiles `RecSites` names (`termRefused_sound`), read at `ls` cut or padded to the level count
 (`evalSites_congr`). Laws: those the direct route's soundness takes (`Laws`, `NatBasis`). -/
-theorem ruleSites_ok {M : Model V env} (hL : Laws M) (hN : NatBasis env) {lps : List Nat}
+theorem ruleSites_ok {M : Model V env} (hL : LawsCore M) (hN : NatBasis env) {lps : List Nat}
     {ls : Levels} {φ : LevelParam → Nat} (hlv : LvAt φ lps ls) {t : Term} {e : KExpr}
     (hrels : relsBelow lps.length t = true) {pw : PropWhen} (hd : pw.paramsDefined lps = true)
     (hreg : regime φ pw ≠ 0) (hD : DenotesIn M φ [] e)
@@ -384,7 +384,7 @@ theorem noParamsIota (M : Model V env) (hι : IotaLaw M.cval env) {kr : KKey}
 /-- **A constructor without level parameters**: built at any assignment `ψ` and environment, its
 image is the constant's set at the recursor's assignment, and its fields fit its (closed) type
 there. Laws: level-parameter irrelevance only (`Laws.cval_params`; `fits_inst` reads no other). -/
-theorem ctorFields_noLevels (M : Model V env) (hL : Laws M) {c : KKey} {cvC : ConstantVal .anon}
+theorem ctorFields_noLevels (M : Model V env) (hL : LawsCore M) {c : KKey} {cvC : ConstantVal .anon}
     {nF : Nat} (hcC : env.find? c = some (.ctorInfo cvC 0 nF)) (hlp : cvC.levelParams = [])
     (hcl : bvarsLt 0 cvC.type = true) (hdef : cvC.type.allLevelParamsDefined [] = true)
     {φ ψ : LevelParam → Nat} {ρ ρc σc : BVarIdx → V} {Rc : KExpr} {Fs : List V}
@@ -405,7 +405,7 @@ theorem ctorFields_noLevels (M : Model V env) (hL : Laws M) {c : KKey} {cvC : Co
 to be never a proposition: its image built at `ψ`, lying in the major domain's set, is the image at
 the levels the major domain names, and its fields fit there. Laws: `Laws.ctor_canon` (restricted),
 `Laws.cval_params`. No measured closure reaches it. -/
-theorem ctorFields_canon (M : Model V env) (hL : Laws M) {c D : KKey} {cvC : ConstantVal .anon}
+theorem ctorFields_canon (M : Model V env) (hL : LawsCore M) (hcc : CtorCanon M) {c D : KKey} {cvC : ConstantVal .anon}
     {nF : Nat} (hcC : env.find? c = some (.ctorInfo cvC 0 nF)) (hnd : cvC.levelParams.Nodup)
     (hcl : bvarsLt 0 cvC.type = true)
     (hdef : cvC.type.allLevelParamsDefined cvC.levelParams = true)
@@ -442,7 +442,7 @@ theorem ctorFields_canon (M : Model V env) (hL : Laws M) {c D : KKey} {cvC : Con
     rw [subst_params hnd (by rw [hls'', List.length_map])]
   -- canonicity at `D`, which is never a proposition
   obtain ⟨cvD, capsD, sD, hfD, hsD, hnvD⟩ := hN
-  obtain ⟨heqK, σ3, R3, hFC⟩ := hL.ctor_canon c cvC 0 nF hcC D cvD capsD sD ls ls'' φ ρ τ σ2 dom
+  obtain ⟨heqK, σ3, R3, hFC⟩ := hcc c cvC 0 nF hcC D cvD capsD sD ls ls'' φ ρ τ σ2 dom
     _ [] [] Fs _ _ X hfD hsD (eval_ne_zero_of_never hnvD _) (eval_ne_zero_of_never hnvD _) rfl rfl
     hFl hK hK' (by simpa using hfit3) hR'head hdom hX (by simp; exact .nil) (by simpa using hm)
   exact ⟨_, hK, by simpa using heqK, σ3, R3, by simpa using hFC⟩

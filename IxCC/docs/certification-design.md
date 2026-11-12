@@ -534,7 +534,8 @@ step), and the class of the other recursors without parameters, `noParams`
 (`T16.rec`, whose last rule applies its minor premise to its field), admitted
 with F2's meaning there proved where the rule bodies name no constant (G3, part
 E; the classes admitted so far are `empty`, `False.rec`, which traps, `eqRec`,
-`flat` and `noParams`).**
+`flat` and `noParams`); then a second family of root theorems that names no
+canonicity law (G3, after part E: `rootSound_noCanon` and its corollaries, below).**
 The library `IxCCGrounding`
 (`IxCC/IxCCGrounding/`, a Lake library of IxCC's package beside the production
 library, built and run by the required check `ixcc-grounding`) is the real
@@ -543,8 +544,44 @@ imports the kernel's model (`IxCK.Kernel.Denotes`, the statement half, in
 `IxCCGrounding.Laws`); `check-build-graph` refuses an import of it, or of the
 model, from the production library or from any program of the shared build.
 
+**The canonicity-free family (since 2026-11-12).** On a program, reading and annotation where the
+check (`groundCheck`) and `noCanonB` hold, agreement of SrcEval with the kernel's model rests on five
+laws, three of them fields #678's public `Model` proves and two awaiting adapters, and on no
+canonicity law: `allP_of_check_noCanon`, `const_of_check_noCanon`, `rootSound_noCanon`,
+`fibRoot_noCanon`, `decideRoot_noCanon` conclude word for word what `allP_of_check`,
+`const_of_check`, `rootSound`, `fibRoot`, `decideRoot` do (pinned by `example`s in the fence), over
+`LawsNoCanon` in place of `Laws` and with the decided fact `NoCanon` (`noCanonB`). `noCanonB` holds on
+32 of the 34 corpus closures the check accepts; the two that do not qualify, `phase1-decline/erase`
+and `OS16-plain`, each have one `case` entry over a family with a level parameter (its recursor's
+rules do not compare parameters; the family is used at one level tuple throughout, so level
+agreement would admit them). The landed family is unchanged in text and meaning.
+
+| `LawsNoCanon` field | #678's public `Model` (`jcb/ixvmc-int` at `d4c079de2`) |
+| --- | --- |
+| `defn_value` (δ) | its field `defn_value`, the same statement |
+| `iota_rule` (`IotaLawG`) | its field `iota_rule`, less the graded conjunct (copied, to be compared again at the ingest) |
+| `cval_params` | its field `cval_params`, the same statement |
+| `proj_ctor` | **not yet derived**: from its field `proj_law` by an adapter, not written |
+| `nat_accel` | **not yet derived**: its field `lit_ops` gives it where each role's constant is stored as a definition, a premise not yet checked |
+
+`ctor_canon` is read at exactly three places: `caseFires_of_shape` (every `case` entry),
+`ctorImage_canon` and `ctorFields_canon` (a `flat` or `noParams` rule over a constructor with level
+parameters). `NoCanon` excludes all three: every `case` entry's recursor stores rules that do not
+compare parameters (`RecRule.compareParams`) over constructors without level parameters
+(`CaseNoCanon`), and every `flat` or `noParams` recursor's constructors have none (`RecNoLevels`).
+At such a `case`, #678's guarded ι law fires at the constructor's own parameters and its `SpineOk`
+conclusion puts the fields in the rule's field domains at the `case`'s parameters (the rule's field
+λs are in the graph regime; a graph that is a member of a product has the product's domain,
+`lamR_dom_of_mem`, proved from the set theory's definitions): `caseIotaG`, `caseFires_of_blind`, over
+`DefnValue`, `IotaLawG`, `CvalParams` only. To share the proofs, every lemma that reads no canonicity
+takes `LawsCore` (the five laws other than canonicity, ι in the landed form; `lawsCore_of_laws`,
+`LawsNoCanon.core`), and `FundHyps` reads canonicity only through its field `canon` (the law, or no
+constructor with level parameters at a `flat` or `noParams` recursor). `noCanonB` is one pass over
+`Sl` with lookups in the reading's index (`KTab.of`): 11 ms on `tags125`, the largest accepted
+closure (compiled, in `tests-grounding`; 128 ms interpreted before the index).
+
 **What is proved, fenced on `propext`, `Classical.choice` and `Quot.sound` or
-fewer (`IxCCGrounding/Fence.lean`, 161 exact assertions):**
+fewer (`IxCCGrounding/Fence.lean`, 189 exact assertions):**
 
 - *Soundness at a root* (`rootSound`, in `IxCCGrounding.Root`). For every
   program, kernel reading `env`, key map, level parameters, certificate

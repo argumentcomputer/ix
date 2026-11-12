@@ -35,12 +35,27 @@ inductive Lit where
   | str (s : String)
   deriving DecidableEq, Repr, Inhabited
 
+/-- A word primitive's meaning on literals (stage W1): `eval`'s number on words below the
+width's size (`ofNat`'s argument any `Nat`); `none` on a decision, an arity mismatch or a word
+out of range, where F6w is stuck. -/
+def wordSem (w : Src.Width) (op : Src.WordOp) : List Nat → Option Src.PrimResult
+  | [a] =>
+    if op.arity != 1 || op.isDecision then none
+    else if op == .ofNat || decide (a < w.size) then some (.nat (op.eval w a 0).val) else none
+  | [a, b] =>
+    if op.arity != 2 || op.isDecision then none
+    else if decide (a < w.size) && decide (b < w.size) then some (.nat (op.eval w a b).val)
+    else none
+  | _ => none
+
 /-- Src's `PrimOp`, one to one, plus operations only proved rewrites
-introduce (`natBlt`, from `Nat.decLt` by case-of-case). -/
+introduce (`natBlt`, from `Nat.decLt` by case-of-case), plus the fixed-width
+word operations (`word`, stage W1). -/
 inductive Prim where
   | natAdd | natSub | natMul | natDiv | natMod | natPow | natGcd | natBeq | natBle
   | natLand | natLor | natXor | natShl | natShr | natPred
   | natBlt
+  | word (w : Src.Width) (op : Src.WordOp)
   deriving DecidableEq, Repr, Inhabited
 
 namespace Prim
@@ -53,6 +68,7 @@ def ofSrc : Src.PrimOp → Prim
 
 def arity : Prim → Nat
   | .natPred => 1
+  | .word _ op => op.arity
   | _ => 2
 
 def name : Prim → String
@@ -60,12 +76,14 @@ def name : Prim → String
   | .natMod => "natMod" | .natPow => "natPow" | .natGcd => "natGcd" | .natBeq => "natBeq"
   | .natBle => "natBle" | .natLand => "natLand" | .natLor => "natLor" | .natXor => "natXor"
   | .natShl => "natShl" | .natShr => "natShr" | .natPred => "natPred" | .natBlt => "natBlt"
+  | .word w op => op.leanName w
 
 /-- The exact meaning on literals (Src's `PrimOp.eval2` for the shared
-operations, so both levels agree by definition); `none` on an arity
-mismatch. -/
+operations, so both levels agree by definition; `wordSem` for a word);
+`none` on an arity mismatch. -/
 def sem (p : Prim) (ns : List Nat) : Option Src.PrimResult :=
   match p, ns with
+  | .word w op, ns => wordSem w op ns
   | .natBlt, [a, b] => some (.bool (decide (a < b)))
   | .natBlt, _ => none
   | .natPred, [a] => some (Src.PrimOp.pred.eval2 a 0)
@@ -77,7 +95,12 @@ where
     | .natAdd => .add | .natSub => .sub | .natMul => .mul | .natDiv => .div | .natMod => .mod
     | .natPow => .pow | .natGcd => .gcd | .natBeq => .beq | .natBle => .ble | .natLand => .land
     | .natLor => .lor | .natXor => .xor | .natShl => .shiftLeft | .natShr => .shiftRight
-    | .natPred | .natBlt => .add
+    | .natPred | .natBlt | .word .. => .add
+
+/-- Whether the primitive is a fixed-width word operation. -/
+def isWord : Prim → Bool
+  | .word .. => true
+  | _ => false
 
 end Prim
 

@@ -69,15 +69,20 @@ theorem lit_mem (M : Model V env) {φ : LevelParam → Nat} (hF : NatFacts M φ)
   | 0 => hF.zeroMem
   | n + 1 => hF.succMem _ (lit_mem M hF n)
 
-theorem litSet_indep (M : Model V env) (hL : Laws M) (hS : NatBasis env)
+theorem litSet_indep_cv (M : Model V env) (hcv : CvalParams M) (hS : NatBasis env)
     (φ φ' : LevelParam → Nat) : ∀ n, litSet M φ n = litSet M φ' n
   | 0 => by
     obtain ⟨cvZ, hfZ, _, _, hlZ⟩ := hS.zero
-    exact hL.cval_params _ _ hfZ φ φ' (by simp [ConstantInfo.toConstantVal, hlZ])
+    exact hcv _ _ hfZ φ φ' (by simp [ConstantInfo.toConstantVal, hlZ])
   | n + 1 => by
     obtain ⟨cvS, hfS, _, _, hlS⟩ := hS.succ
     simp only [litSet]
-    rw [hL.cval_params _ _ hfS φ φ' (by simp [ConstantInfo.toConstantVal, hlS]),
-      litSet_indep M hL hS φ φ' n]
+    rw [hcv _ _ hfS φ φ' (by simp [ConstantInfo.toConstantVal, hlS]),
+      litSet_indep_cv M hcv hS φ φ' n]
+
+/-- `litSet_indep_cv` over the laws (`Laws.cval_params` only). -/
+theorem litSet_indep (M : Model V env) (hL : LawsCore M) (hS : NatBasis env)
+    (φ φ' : LevelParam → Nat) : ∀ n, litSet M φ n = litSet M φ' n :=
+  litSet_indep_cv M hL.cval_params hS φ φ'
 
 end IxCC.Grounding
