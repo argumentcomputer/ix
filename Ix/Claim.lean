@@ -199,8 +199,9 @@ Eight variants in five families:
   the merkle tree rooted at `tree`. Used by aggregation to discharge
   leaves from a conditional claim's assumption set. Carries no
   assumptions.
-- **`resource`**: combined erased typing and resource admission, validated
-  natively.
+- **`resource`**: retired. It claimed combined erased typing and resource
+  admission; every reader refuses its tag (`E8 01`) and its proof's (`F6`),
+  and nothing makes one.
 - **`binding`**: the role table with hash `binding` binds every role, and
   each bound constant meets its specification in `spec`. It discharges the
   condition of the typing claims that assume their binding
@@ -224,8 +225,9 @@ inductive Claim where
   /-- Every claim whose digest is a leaf of the canonical merkle tree `members`
   holds: each an unconditional `checkEnv`. -/
   | catalog  (members : Address)
-  /-- Combined erased typing and resource admission of the complete addressed
-  environment under the profile committed by `profile`. -/
+  /-- Retired: combined erased typing and resource admission of the complete
+  addressed environment under the profile committed by `profile`. Every
+  reader refuses it. -/
   | resource (root profile : Address)
   /-- The role table with hash `binding` binds every role, and each bound
   constant meets its specification in the set with digest `spec`. -/
@@ -543,10 +545,11 @@ namespace Claim
 -- TagN (`f = 4`) value dispatch (mirrors crates/ixon/src/proof.rs).
 -- Flag 0xE holds Comm, AssumptionTree, and claims. Variants 0–7 are in
 -- rung 1, the single bytes 0xE0–0xE7; from 8 on the header is two bytes,
--- so catalog is `E8 00`, resource `E8 01` and binding `E8 02` on the
--- wire. The `.ixe` header also uses flag 0xE, with the format version as the value
+-- so catalog is `E8 00` and binding `E8 02` on the wire (`E8 01`, the
+-- resource claim, is retired: refused). The `.ixe` header also uses flag 0xE, with the format version as the value
 -- (`0xE4` for version 4, the same byte as the check claim tag).
--- Flag 0xF holds proofs (single-byte tags 0xF0–0xF7).
+-- Flag 0xF holds proofs (single-byte tags 0xF0–0xF7; 0xF6, the resource
+-- proof, is retired: refused).
 
 def FLAG_CLAIM : UInt8 := 0xE
 def FLAG_PROOF : UInt8 := 0xF
@@ -559,7 +562,7 @@ def VARIANT_CHECK_ENV_CLAIM  : UInt64 := 5
 def VARIANT_REVEAL_CLAIM     : UInt64 := 6
 def VARIANT_CONTAINS_CLAIM   : UInt64 := 7
 def VARIANT_CATALOG_CLAIM    : UInt64 := 8
-def VARIANT_RESOURCE_CLAIM   : UInt64 := 9
+def VARIANT_RESOURCE_CLAIM_RETIRED : UInt64 := 9
 def VARIANT_BINDING_CLAIM    : UInt64 := 10
 
 def VARIANT_EVAL_PROOF       : UInt64 := 0
@@ -568,7 +571,7 @@ def VARIANT_CHECK_ENV_PROOF  : UInt64 := 2
 def VARIANT_REVEAL_PROOF     : UInt64 := 3
 def VARIANT_CONTAINS_PROOF   : UInt64 := 4
 def VARIANT_CATALOG_PROOF    : UInt64 := 5
-def VARIANT_RESOURCE_PROOF   : UInt64 := 6
+def VARIANT_RESOURCE_PROOF_RETIRED : UInt64 := 6
 def VARIANT_BINDING_PROOF    : UInt64 := 7
 
 /-- Encode an `Option Address` as `[0x00]` (none) or `[0x01][addr:32]`
@@ -589,7 +592,7 @@ def getOptAddr : GetM (Option Address) := do
 - `1`, erased-lean-v1: retired. It named typing claims whose primitives were
   recognized by fixed addresses and which admitted any axiom; new readers
   refuse it rather than read such a claim as a newer one;
-- `2`, resource-v1: `resource`;
+- `2`, resource-v1: retired with the resource claim; refused;
 - `3`, erased-lean-v2: the typing claims, relative to their `ClaimContext`
   (Lean's theory over the standard axioms, primitives read through the
   committed role binding and validated against the committed
@@ -600,10 +603,14 @@ def getOptAddr : GetM (Option Address) := do
   for its context does;
 - `5`, erased-lean-v2-class: a `checkEnv` claim relative to a literal class
   instead of one binding (`ClaimContext.literalClass`): its typing holds
-  under every binding of that class that meets the specifications. -/
+  under every binding of that class that meets the specifications;
+- `6`, `7`: reserved for IxCC's compile-v1 (retired there) and compile-v2;
+  refused;
+- `8`, erased-lean-v2-modes: reserved for claims about a record's modes;
+  refused until a validator for it exists. -/
 def VALIDATOR_STRUCTURAL : UInt8 := 0
 def VALIDATOR_ERASED_LEAN_RETIRED : UInt8 := 1
-def VALIDATOR_RESOURCE : UInt8 := 2
+def VALIDATOR_RESOURCE_RETIRED : UInt8 := 2
 def VALIDATOR_ERASED_LEAN : UInt8 := 3
 def VALIDATOR_ERASED_LEAN_ASSUMED : UInt8 := 4
 def VALIDATOR_ERASED_LEAN_CLASS : UInt8 := 5
@@ -611,7 +618,6 @@ def VALIDATOR_ERASED_LEAN_CLASS : UInt8 := 5
 def validatorForVariant (variant : UInt64) : UInt8 :=
   if variant == VARIANT_REVEAL_CLAIM || variant == VARIANT_CONTAINS_CLAIM then
     VALIDATOR_STRUCTURAL
-  else if variant == VARIANT_RESOURCE_CLAIM then VALIDATOR_RESOURCE
   else VALIDATOR_ERASED_LEAN
 
 /-- Whether claims of variant `variant` may assume their binding: `check`
@@ -626,7 +632,7 @@ def variantOf : Claim → UInt64
   | .reveal .. => VARIANT_REVEAL_CLAIM
   | .contains .. => VARIANT_CONTAINS_CLAIM
   | .catalog .. => VARIANT_CATALOG_CLAIM
-  | .resource .. => VARIANT_RESOURCE_CLAIM
+  | .resource .. => VARIANT_RESOURCE_CLAIM_RETIRED
   | .binding .. => VARIANT_BINDING_CLAIM
 
 /-- The validator a claim's scope names: its variant's,
@@ -640,6 +646,7 @@ def validatorOf : Claim → UInt8
     else if ctx.bindingAssumed then VALIDATOR_ERASED_LEAN_ASSUMED else VALIDATOR_ERASED_LEAN
   | .check ctx .. =>
     if ctx.bindingAssumed then VALIDATOR_ERASED_LEAN_ASSUMED else VALIDATOR_ERASED_LEAN
+  | .resource .. => VALIDATOR_RESOURCE_RETIRED
   | c => validatorForVariant (variantOf c)
 
 def putScope (validator : UInt8) : PutM Unit := do
@@ -733,8 +740,6 @@ def getPayload (variant : UInt64) (validator : UInt8) : GetM Claim := do
     return .contains (← Serialize.get) (← Serialize.get)
   else if variant == VARIANT_CATALOG_CLAIM then
     return .catalog (← Serialize.get)
-  else if variant == VARIANT_RESOURCE_CLAIM then
-    return .resource (← Serialize.get) (← Serialize.get)
   else if variant == VARIANT_BINDING_CLAIM then
     return .binding (← Serialize.get) (← Serialize.get)
   else
@@ -749,6 +754,8 @@ def get : GetM Claim := do
   let tag ← getTagN 4
   if tag.flag != FLAG_CLAIM then
     throw s!"Claim.get: expected flag 0xE, got {tag.flag}"
+  if tag.value == VARIANT_RESOURCE_CLAIM_RETIRED then
+    throw s!"claim: variant {tag.value} (the resource claim) is retired"
   let validator ← getScope tag.value
   getPayload tag.value validator
 
@@ -925,7 +932,7 @@ def variantOf : Ix.Claim → UInt64
   | .reveal ..   => Ix.Claim.VARIANT_REVEAL_PROOF
   | .contains .. => Ix.Claim.VARIANT_CONTAINS_PROOF
   | .catalog ..  => Ix.Claim.VARIANT_CATALOG_PROOF
-  | .resource .. => Ix.Claim.VARIANT_RESOURCE_PROOF
+  | .resource .. => Ix.Claim.VARIANT_RESOURCE_PROOF_RETIRED
   | .binding ..  => Ix.Claim.VARIANT_BINDING_PROOF
 
 def put (p : Proof) : PutM Unit := do
@@ -941,6 +948,8 @@ def get : GetM Proof := do
     throw s!"Ixon.Proof.get: expected flag 0xF, got {tag.flag}"
   if tag.value > Ix.Claim.VARIANT_BINDING_PROOF then
     throw s!"Ixon.Proof.get: invalid proof variant {tag.value}"
+  if tag.value == Ix.Claim.VARIANT_RESOURCE_PROOF_RETIRED then
+    throw s!"proof: variant {tag.value} (the resource proof) is retired"
   let validator ← Ix.Claim.getScope (tag.value + 3)
   let claim ← Ix.Claim.getPayload (tag.value + 3) validator
   let lenTag ← getTagN 0

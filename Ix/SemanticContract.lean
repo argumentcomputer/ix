@@ -154,19 +154,6 @@ def inspect (top : Ix.Expr) : Except String Bool := do
     | _ => pure ()
   return annotated
 
-/-- Reconstruct only committed binder fields; optional metadata cannot
-supply or replace semantic contracts. -/
-def ofIxon? : Ixon.Expr → Option Contract
-  | .lam binder _ _ =>
-    if binder == .many then none else some { kind := .lam, binder }
-  | .all binder result _ _ =>
-    if binder == .many && result == .shared then none
-    else some { kind := .all, binder, result }
-  | .letE c _ _ _ =>
-    if c.binder == .many && c.kind == .value then none
-    else some { kind := .letE, binder := c.binder, letKind := c.kind }
-  | _ => none
-
 def Contract.ixMetadata (contract : Contract) : Array (Ix.Name × Ix.DataValue) :=
   let key := Ix.Name.mkStr (Ix.Name.mkStr Ix.Name.mkAnon "ix") "contract"
   #[ (key, .ofNat 3),

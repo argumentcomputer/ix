@@ -105,11 +105,11 @@ where
       let some a := addrOf n | throw s!"no record for constant {n}"
       pure (.ref (← refOf a) (← us.toArray.mapM univOf))
     | .app f a => pure (.app (← egress uses addrOf f) (← egress uses addrOf a))
-    | .lam t b m => pure (.lam m.contract (← egress uses addrOf t) (← egress uses addrOf b))
-    | .forallE t b m =>
-      pure (.all m.contract m.result (← egress uses addrOf t) (← egress uses addrOf b))
+    | .lam t b _ => pure (.lam (← egress uses addrOf t) (← egress uses addrOf b))
+    | .forallE t b _ =>
+      pure (.all (← egress uses addrOf t) (← egress uses addrOf b))
     | .letE t v b l =>
-      pure (.letE l.contract (← egress uses addrOf t) (← egress uses addrOf v) (← egress uses addrOf b))
+      pure (.letE l.nonDep l.contract (← egress uses addrOf t) (← egress uses addrOf v) (← egress uses addrOf b))
     | .lit (.natVal n) => pure (.nat (← blobOf (natBytes n)))
     | .lit (.strVal s) => pure (.str (← blobOf s.toUTF8))
     | .proj s i x =>

@@ -486,9 +486,6 @@ partial def decompileExprIn (scope : ShareScope) (e : Ixon.Expr) (arenaIdx : UIn
 
   let node ← getArenaNode currentIdx
 
-  if let some contract := Ix.SemanticContract.ofIxon? e then
-    mdataLayers := mdataLayers.push contract.ixMetadata
-
   -- 3. Match (arenaNode, ixonExpr) → Ix.Expr
   let result ← match node, e with
   | _, .var idx =>
