@@ -270,15 +270,19 @@ def tampered (a : Assert) : IO Unit := do
   expect a sameAddr "tamper control: the re-stored record keeps its address"
   let control := load env0 hints0
   match control with
-  | .ok l => expectEq a (wordEntries l.program l.program.table).length 68
+  | .ok l =>
+    expectEq a (wordEntries l.program l.program.table).length 68
       "tamper control: the re-encoded closure has 68 word entries"
   | .error d => expect a false s!"tamper control: refused ({d.code}: {d.message})"
-  for (label, t) in [("an ill-typed proof", illTypedProof), ("a non-standard axiom as proof", axiomProof),
-      ("the statement's sides swapped", swappedStatement)] do
+  let cases : List (String × Tamper) := [("an ill-typed proof", illTypedProof),
+    ("a non-standard axiom as proof", axiomProof), ("the statement's sides swapped", swappedStatement)]
+  for (label, t) in cases do
     let (env', hints', _) ← tamper env hints "UInt64.add" t
     match load env' hints' with
     | .ok _ => expect a false s!"tamper ({label}): accepted"
-    | .error d => expect a (d.code == "kernel") s!"tamper ({label}): refused at {d.code}, not at the kernel: {d.message}"
+    | .error d =>
+      expect a (d.code == "kernel")
+        s!"tamper ({label}): refused at {d.code}, not at the kernel: {d.message}"
   -- past the kernel, at the Src level: `UInt64.add`'s statement, proved by a non-standard axiom
   match control with
   | .error _ => pure ()
