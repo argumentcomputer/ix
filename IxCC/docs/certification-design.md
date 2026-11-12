@@ -719,8 +719,10 @@ whose sides are 15-node chains collapses in 179 µs, and over 24 parameters (47
 nodes) it declines in 7 µs (interpreted, not compiled; `GR-2b-fU`). There is no
 memo of repeated δ-unfolding, so beyond these bounds the check's cost on a
 hostile closure is not otherwise bounded. Interpreted, on the corpus,
-`sitesDirectB` takes up to 14.5 s where it is true and up to 28.8 s where it is
-false (`strings`; the Boolean stops at its first refused site); compiled, it is
+`sitesDirectB` takes up to 14.5 s where it is true (`scalar`; before the
+widening, at most 1.2 s where it was true) and up to 28.8 s where it is false (`strings`; the Boolean stops at
+its first refused site), except on `tags125`, where it takes 624 s (3.9 s before;
+below); compiled, it is
 not measured apart from the suite, which runs it with the kernel oracle on the
 two subjects and the three widening closures in 5.6 s.
 
@@ -755,7 +757,12 @@ inside an argument applied to variables (`x + 1` against `Nat.succ x` in
 `OS02-plain`, a list's length against a literal in `strings` and `diag`, a
 `Char` validity proof in `panic`), and 11 projections out of a bound variable
 (`diag`). `tags125` (the matcher of a 125-constructor enumeration, a spine of 127
-sites; 418 sites, 164 discharged as landed): TAGS125.
+sites; `GR-2b-fE`): of its 418 sites the landed route discharges 164 and the widened one 171,
+the kernel agreeing at all 185 accepted instances; the 247 it refuses were not classified (they
+include sites that look like `tags16`'s literal-arithmetic sites, which it accepts there; not
+diagnosed). On it `sitesDirectB` takes 624 s interpreted, against 3.9 s for the landed route: the
+widened conversion is much slower on this closure (not profiled; the ι step re-checks the
+recursor's arguments, 125 minor premises here, at each head reduction it tries).
 
 **What the direct route cannot do.** On the corpus, every site the widened route
 refuses is cleared by δ and ι inside an argument (laws `Laws` already has;
