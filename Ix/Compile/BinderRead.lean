@@ -297,8 +297,12 @@ def sortPw (find : Find) (σ : Ix.Name → Nat) (sub : Ix.Kernel.Level → Ix.Ke
           let ty ← (ctx[i]?).join
           match peelN find n ty with
           | some r =>
-            let .sort l _ := unwrap find 8 r | none
-            (ingressLevel σ l).toOption
+            match unwrap find 8 r with
+            | .sort l _ => (ingressLevel σ l).toOption
+            | r =>
+              -- a definition that unfolds to a sort
+              let .sort l _ := unwrap find 8 (← unfold1 find r) | none
+              (ingressLevel σ l).toOption
           | none =>
             let .sort l _ := unwrap find 8 (← beyondType find ty (spineArgs t #[]).reverse n) | none
             (ingressLevel σ l).toOption
@@ -310,7 +314,16 @@ def sortPw (find : Find) (σ : Ix.Name → Nat) (sub : Ix.Kernel.Level → Ix.Ke
           let us' ← (us.toList.mapM (ingressLevel σ)).toOption
           pure (Ix.Kernel.Level.subst (List.range lps.size) us' lc)
         | _ => none
-      lvl?.map fun l => Ix.Kernel.Level.zeronessOf (sub l)
+      match lvl? with
+      | some l => some (Ix.Kernel.Level.zeronessOf (sub l))
+      | none =>
+        -- a β-redex at the head, its λs consumed exactly: the body's sort (a level
+        -- names no term variable)
+        match h with
+        | .lam .. => do
+          let (ys, body) ← lamsExact n h []
+          sortPw find σ sub fuel (ys ++ ctx) body
+        | _ => none
 
 /-- **The domain of the argument at `idx` beyond its head's ∀s**: the head's type
 `ty` has `m ≤ idx` ∀s and ends in one of the head's own variables applied to `k`
