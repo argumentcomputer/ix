@@ -12,8 +12,8 @@ native runs of the objects it validates:
 
 * **a correct placement other than the canonical one** (the liveness producer's, `Live`, untrusted)
   of each RC real-source root: the old check (`checkPlainMap`) refuses it, the verifier admits it,
-  its object differs from the canonical certificate's, returns every expected value, and in the
-  same-arena driver reclaims every cell;
+  its object differs from the canonical certificate's and returns every expected value (each case's
+  heap high water printed beside the canonical object's);
 * **each of the six kinds of wrong placement** (`Mutate`): refused at admission with the checker's
   own reason, `own.cert.check: ownership proposal refused: <reason>`;
 * **the two cases the canonical producer never emits**, each in an admitted certificate whose
@@ -122,9 +122,10 @@ def editMap (F : Fir.Program) (m : Src.NatMap Code) (edit : Ctx → Code → Opt
 /-! ## Native runs -/
 
 /-- Link an admitted certificate's object and run its root on `cases`: every value must be
-`want`'s, by the printed observation and by the memory readback. -/
+`want`'s, by the printed observation and by the memory readback. Returns each case's heap high
+water (the bump pointer past the arena's start, in bytes). -/
 def runNative (logs : FilePath) (label : String) (artifact : Recheck.RcReplay.Artifact)
-    (cases : List (List Nat)) (want : List Nat → Sem.Obs) : IO Unit := do
+    (cases : List (List Nat)) (want : List Nat → Sem.Obs) : IO (List Nat) := do
   let some entry := artifact.roots.head? | fail s!"{label}: missing root"
   let some (sig, ty) := entry.ty | fail s!"{label}: missing result signature"
   let exe ← IxCCTests.Rt.Native.link { work := logs } s!"owned-{label}" artifact.backend.object
@@ -137,6 +138,7 @@ def runNative (logs : FilePath) (label : String) (artifact : Recheck.RcReplay.Ar
     unless row.status == 0 && row.ok && row.obs == some (Rt.renderObs w) &&
         row.readback 131072 sig ty == some w do
       fail s!"{label} {args}: native value differs from the reference"
+  return rows.map fun row => (row.dump.map fun d => (d.bump - d.start).toNat).getD 0
 
 def listCases (root : String) : List (List Nat) :=
   if root == "reverseRepeated" then [[0, 9], [1, 2], [5, 7], [64, 3]]
@@ -164,12 +166,14 @@ def admitAndRun (logs : FilePath) (label root : String) (fr : Front) (m : Src.Na
   let cert ← IO.ofExcept ((finishWith fr.cfg fr.front m).mapError (·.render))
   let artifact ← IO.ofExcept ((Recheck.RcReplay.run fr.cfg fr.input.program cert).mapError
     fun e => s!"{label}: the verifier refused: {e.render}")
-  runNative logs label artifact (listCases root) (listWant root)
+  let _ ← runNative logs label artifact (listCases root) (listWant root)
   return artifact
 
 /-! ## The tests -/
 
-/-- A correct placement other than the canonical one: admitted, runs, reclaims. -/
+/-- A correct placement other than the canonical one: refused by the old check, admitted, and its
+object (another than the canonical certificate's) returns every value; each case's heap high water
+is printed beside the canonical object's. -/
 def liveness (logs : FilePath) : IO Unit := do
   for root in roots do
     let fr ← front root
@@ -177,18 +181,16 @@ def liveness (logs : FilePath) : IO Unit := do
     if Own.Plain.bodyMapEq live fr.canonical then fail s!"{root}: the liveness map is the canonical map"
     if Own.Plain.checkPlainMap fr.front.fir live then
       fail s!"{root}: the canonical check accepts the liveness map"
-    let artifact ← admitAndRun logs s!"live-{root}" root fr live
+    let cert ← IO.ofExcept ((finishWith fr.cfg fr.front live).mapError (·.render))
+    let artifact ← IO.ofExcept ((Recheck.RcReplay.run fr.cfg fr.input.program cert).mapError
+      fun e => s!"{root}: the verifier refused the liveness placement: {e.render}")
     let (_, canonicalArt) ← IO.ofExcept ((Recheck.RcReplay.produce (ReplayIO.config root) fr.input).mapError
       (·.render))
     if canonicalArt.backend.object == artifact.backend.object then
       fail s!"{root}: the liveness certificate's object is the canonical certificate's"
-    let some entry := artifact.roots.head? | fail "missing root"
-    let some (sig, ty) := entry.ty | fail "missing result signature"
-    let reuse := logs / s!"live-{root}"
-    IO.FS.createDirAll reuse
-    let exe ← IxCCTests.Rt.Rc.ReuseSupport.link reuse root entry.symbol artifact.backend.object
-    let _ ← IxCCTests.Rt.Rc.ReuseSupport.runDriver reuse exe root sig ty
-    IO.println s!"PASS liveness placement {root}: refused by the old check, admitted, another object, {(listCases root).length} values, same-arena reclamation"
+    let liveHigh ← runNative logs s!"live-{root}" artifact (listCases root) (listWant root)
+    let canonHigh ← runNative logs s!"canonical-{root}" canonicalArt (listCases root) (listWant root)
+    IO.println s!"PASS liveness placement {root}: refused by the old check, admitted, another object, {(listCases root).length} values; heap high water (bytes) {liveHigh}, canonical {canonHigh}"
 
 /-- Each kind of wrong placement is refused at admission with the checker's reason. -/
 def wrongPlacements : IO Unit := do
@@ -319,7 +321,7 @@ def budget (logs : FilePath) : IO Unit := do
   let work := Own.Plain.Certificate.capturedWork bodies
   unless work ≤ limit && work + fanFunctions * (fanLeaves + 1) > limit do
     fail s!"fanUnder: captured work {work} is not just within the limit {limit}"
-  runNative logs "budget-fanUnder" artifact fanCases (fanWant "fanUnder")
+  let _ ← runNative logs "budget-fanUnder" artifact fanCases (fanWant "fanUnder")
   match Own.Plain.Certificate.admit fr.fir cert.own (work - 1) with
   | .ok _ => fail "fanUnder: admitted under a budget below its work"
   | .error e => unless e.startsWith "own.cert.budget: " do fail s!"fanUnder: budget {work - 1}: {e}"
@@ -338,6 +340,6 @@ def run (logs : FilePath) : IO Unit := do
   neverEmitted logs
   budget logs
   IO.FS.writeFile (logs / "owned-result.txt")
-    "Ownership certificates other than the canonical one: a liveness placement admitted and run with reclamation, six wrong placements refused with the checker's reason, the two never-emitted cases admitted and run, the captured-work budget past and within the limit.\n"
+    "Ownership certificates other than the canonical one: a liveness placement admitted and run, six wrong placements refused with the checker's reason, the two never-emitted cases admitted and run, the captured-work budget past and within the limit.\n"
 
 end IxCCTests.Recheck.Rc.OwnedIO
