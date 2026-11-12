@@ -209,6 +209,14 @@ theorem FitsO.to_fits {σ : Nat → V} {ρ ρ' : BVarIdx → V} {T R : Expr md} 
     simp only [Expr.hasFvar, Bool.or_eq_false_iff] at hT
     exact .cons (hA.to_denotes hT.1) hx (ih hT.2)
 
+/-- A fit of no values leaves the telescope and the variable environment as they are. -/
+theorem FitsO.nil_inv {σ : Nat → V} {ρ ρ' : BVarIdx → V} {T R : Expr md}
+    (h : FitsO M φ σ ρ T [] ρ' R) : ρ' = ρ ∧ R = T := by
+  generalize hxs : ([] : List V) = xs at h
+  cases h with
+  | nil => exact ⟨rfl, rfl⟩
+  | cons _ _ _ => exact nomatch hxs
+
 /-- **A fit of an instantiated telescope is a fit of the telescope with the value inserted**,
 at a telescope with a binder for every value; the residuals correspond. -/
 theorem FitsO.instantiate1 {σ : Nat → V} {a : Expr md} {x : V}
@@ -222,7 +230,7 @@ theorem FitsO.instantiate1 {σ : Nat → V} {a : Expr md} {x : V}
   induction xs with
   | nil =>
     intro T k ρ ρ' R' _ h
-    cases h
+    obtain ⟨rfl, rfl⟩ := FitsO.nil_inv h
     exact ⟨T, .nil, rfl⟩
   | cons y ys ih =>
     intro T k ρ ρ' R' hs h
@@ -323,8 +331,9 @@ theorem Gr.mkAppN_args {σ : Nat → V} :
   | [], _, _ => fun _ hx => nomatch hx
   | b :: bs, g, h => by
     intro x hx
-    rcases List.mem_cons.mp hx with rfl | hx
-    · exact (Gr.app_iff.1 (Gr.mkAppN_head (as := bs) (g := .app g b) h)).2.1
+    rcases List.mem_cons.mp hx with hxb | hx
+    · rw [hxb]
+      exact (Gr.app_iff.1 (Gr.mkAppN_head (as := bs) (g := .app g b) h)).2.1
     · exact Gr.mkAppN_args (as := bs) (g := .app g b) h x hx
 
 theorem Frame.getAppArgs {d : Nat} {e : Expr md} (h : Frame d e) :

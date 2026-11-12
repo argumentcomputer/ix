@@ -29,7 +29,9 @@ theorem Frame.succ {d : Nat} {e : Expr md} (h : Frame d e) : Frame (d + 1) e :=
 /-- **A fresh variable is framed** one binder in, at a framed type. -/
 theorem Frame.fvar_fresh {d : Nat} {ty : Expr md} (h : Frame d ty) :
     Frame (d + 1) (.fvar d ty) := by
-  refine ⟨⟨Nat.lt_succ_self d, h.1⟩, rfl, ?_⟩
+  refine ⟨?_, rfl, ?_⟩
+  · simp only [Expr.WScoped]
+    exact ⟨Nat.lt_succ_self d, h.1⟩
   intro l hl
   simp only [Expr.fvarLeaves, List.mem_cons] at hl
   rcases hl with rfl | hl
