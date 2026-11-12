@@ -74,14 +74,14 @@ def stream_equal := aiur_fn⟦
 
 def default_binding_addr := aiur_fn⟦
   fn default_binding_addr() -> Bytes::AddressRef {
-      (&([UInt8::BYTE_122, UInt8::BYTE_221, UInt8::BYTE_43, UInt8::BYTE_39,
-             UInt8::BYTE_154, UInt8::BYTE_206, UInt8::BYTE_206, UInt8::BYTE_196,
-             UInt8::BYTE_162, UInt8::BYTE_43, UInt8::BYTE_45, UInt8::BYTE_150,
-             UInt8::BYTE_155, UInt8::BYTE_31, UInt8::BYTE_103, UInt8::BYTE_36,
-             UInt8::BYTE_248, UInt8::BYTE_74, UInt8::BYTE_156, UInt8::BYTE_234,
-             UInt8::BYTE_177, UInt8::BYTE_169, UInt8::BYTE_53, UInt8::BYTE_78,
-             UInt8::BYTE_143, UInt8::BYTE_29, UInt8::BYTE_119, UInt8::BYTE_230,
-             UInt8::BYTE_147, UInt8::BYTE_240, UInt8::BYTE_106, UInt8::BYTE_152]))
+      (&([UInt8::BYTE_118, UInt8::BYTE_70, UInt8::BYTE_87, UInt8::BYTE_194,
+             UInt8::BYTE_24, UInt8::BYTE_5, UInt8::BYTE_227, UInt8::BYTE_188,
+             UInt8::BYTE_13, UInt8::BYTE_246, UInt8::BYTE_122, UInt8::BYTE_1,
+             UInt8::BYTE_229, UInt8::BYTE_201, UInt8::BYTE_5, UInt8::BYTE_10,
+             UInt8::BYTE_191, UInt8::BYTE_89, UInt8::BYTE_223, UInt8::BYTE_72,
+             UInt8::BYTE_114, UInt8::BYTE_61, UInt8::BYTE_51, UInt8::BYTE_145,
+             UInt8::BYTE_85, UInt8::BYTE_201, UInt8::BYTE_221, UInt8::BYTE_47,
+             UInt8::BYTE_39, UInt8::BYTE_191, UInt8::BYTE_120, UInt8::BYTE_182]))
   }
 ⟧
 
