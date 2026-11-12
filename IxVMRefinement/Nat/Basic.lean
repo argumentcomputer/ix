@@ -43,8 +43,6 @@ scoped notation "B64" => (18446744073709551616 : Nat)
 macro "nat_lt_calls" : tactic =>
   `(tactic| (simp only [List.length_cons, List.length_append]; omega))
 
-/-- Arithmetic on limb values, with the value of the empty list known. -/
-macro "lv_omega" : tactic => `(tactic| (have := IxVM.Refinement.Core.NatAux.limbsVal_nil; omega))
 
 /-! ## Fields -/
 
@@ -274,6 +272,9 @@ abbrev LRep (h : Heap F) (ls : List UInt64) (p : SourceValue F) : Prop :=
 def Canon (ls : List UInt64) : Prop := ls.getLast? ≠ some 0
 
 theorem limbsVal_nil : limbsVal [] = 0 := rfl
+
+/-- Arithmetic on limb values, with the value of the empty list known. -/
+macro "lv_omega" : tactic => `(tactic| (have := limbsVal_nil; omega))
 
 theorem limbsVal_cons (l : UInt64) (ls : List UInt64) :
     limbsVal (l :: ls) = l.toNat + B64 * limbsVal ls := rfl

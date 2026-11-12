@@ -93,7 +93,7 @@ theorem klimbs_add_carry_step (c : Ctx) {args : List (SourceValue F)} {h h' : He
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelKlimbs::klimbs_add_carry" args h r h' calls) (ih : IH c calls) :
     Specs.Nat.klimbs_add_carry c args h r h' calls := by
-  intro a b k hargs good hk n m ⟨la, hla, rfl⟩ ⟨lb, hlb, rfl⟩
+  rintro a b k hargs good hk n m ⟨la, hla, rfl⟩ ⟨lb, hlb, rfl⟩
   subst hargs
   rcases Obs.«KernelKlimbs::klimbs_add_carry».obs ev with
     ⟨ld, hv, hr, hh, -⟩ |
@@ -176,7 +176,7 @@ theorem klimbs_sub_borrow_step (c : Ctx) {args : List (SourceValue F)} {h h' : H
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelKlimbs::klimbs_sub_borrow" args h r h' calls) (ih : IH c calls) :
     Specs.Nat.klimbs_sub_borrow c args h r h' calls := by
-  intro a b β hargs good hβ n m ⟨la, hla, rfl⟩ ⟨lb, hlb, rfl⟩
+  rintro a b β hargs good hβ n m ⟨la, hla, rfl⟩ ⟨lb, hlb, rfl⟩
   subst hargs
   rcases Obs.«KernelKlimbs::klimbs_sub_borrow».obs ev with
     ⟨m45, ld, ld2, rfl, rfl, rfl, -⟩ |
@@ -201,7 +201,7 @@ theorem klimbs_sub_borrow_step (c : Ctx) {args : List (SourceValue F)} {h h' : H
       (good.sub fun x hx => by simp [hx]) (limbsVal lb) ⟨lb, hlb, rfl⟩
     have hm0 : limbsVal lb = 0 := by
       by_contra hne
-      rw [if_neg hne] at hz
+      rw [ite_eq_right hne] at hz
       exact field_one_ne_zero hz
     rcases bit_cases hβ with ⟨rfl, h0⟩ | ⟨rfl, h1⟩
     · exact ⟨_, 0, rfl, .inl ⟨rfl, by lv_omega, ⟨[], lrep_store_nil m86, by lv_omega⟩⟩⟩
@@ -213,7 +213,7 @@ theorem klimbs_sub_borrow_step (c : Ctx) {args : List (SourceValue F)} {h h' : H
       (good.sub fun x hx => by simp [hx]) (limbsVal lb) ⟨lb, hlb, rfl⟩
     have hm0 : limbsVal lb ≠ 0 := by
       intro h0
-      rw [if_pos h0] at hz
+      rw [ite_eq_left h0] at hz
       exact hne hz
     exact ⟨_, 1, rfl, .inr ⟨rfl, by lv_omega⟩⟩
   · -- `b` empty, no borrow: `a`
@@ -282,7 +282,7 @@ theorem klimbs_normalize_step (c : Ctx) {args : List (SourceValue F)} {h h' : He
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelKlimbs::klimbs_normalize" args h r h' calls) (ih : IH c calls) :
     Specs.Nat.klimbs_normalize c args h r h' calls := by
-  intro a hargs good n ⟨ls, hl, rfl⟩
+  rintro a hargs good n ⟨ls, hl, rfl⟩
   subst hargs
   rcases Obs.«KernelKlimbs::klimbs_normalize».obs ev with
     ⟨ld, rfl, rfl, -⟩ |
@@ -301,7 +301,7 @@ theorem klimbs_normalize_step (c : Ctx) {args : List (SourceValue F)} {h h' : He
     obtain ⟨hz, rfl⟩ := is_zero_word hl0 ev2
     have hl0z : l.toNat = 0 := by
       by_contra hne
-      rw [if_neg hne] at hz
+      rw [ite_eq_right hne] at hz
       exact field_one_ne_zero hz
     refine ⟨[], lrep_store_nil _, ?_, canon_nil⟩
     rw [limbsVal_cons]
@@ -315,7 +315,7 @@ theorem klimbs_normalize_step (c : Ctx) {args : List (SourceValue F)} {h h' : He
     obtain ⟨hz, rfl⟩ := is_zero_word hl0 ev2
     have hl0z : l.toNat ≠ 0 := by
       intro h0
-      rw [if_pos h0] at hz
+      rw [ite_eq_left h0] at hz
       exact field_one_ne_zero hz.symm
     refine ⟨[l], lrep_store_cons hl0 (lrep_store_nil _), ?_, ?_⟩
     · rw [limbsVal_cons, limbsVal_cons]; lv_omega
@@ -379,12 +379,12 @@ theorem klimbs_le_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
       (good.sub fun x hx => by simp [hx]) n m ha hb
     obtain rfl := lrep_nil_of_load hl ld
     rw [limbsVal_nil] at hv
-    rw [if_pos (by omega)]
+    rw [ite_eq_left (by omega)]
   · subst hc
     obtain ⟨ls, hl, hv, hcn⟩ := ih.get (.nat .klimbs_sub) (by nat_lt_calls) ev1 a b rfl
       (good.sub fun x hx => by simp [hx]) n m ha hb
     have hpos := limbsVal_pos_of_ne_nil hcn (rep_cons_of_not_nil hl ld hne)
-    rw [if_neg (by omega)]
+    rw [ite_eq_right (by omega)]
 
 /-- `klimbs_dec(a)`: `a - 1`, canonical. -/
 theorem klimbs_dec_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
@@ -416,12 +416,12 @@ theorem klimbs_is_zero_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap
       (good.sub fun x hx => by simp [hx]) n ha
     obtain rfl := lrep_nil_of_load hl ld
     rw [limbsVal_nil] at hv
-    rw [if_pos hv.symm]
+    rw [ite_eq_left hv.symm]
   · subst hc
     obtain ⟨ls, hl, hv, hcn⟩ := ih.get (.nat .klimbs_normalize) (by nat_lt_calls) ev1 a rfl
       (good.sub fun x hx => by simp [hx]) n ha
     have hpos := limbsVal_pos_of_ne_nil hcn (rep_cons_of_not_nil hl ld hne)
-    rw [if_neg (by omega)]
+    rw [ite_eq_right (by omega)]
 
 /-! ## `divmod_256`, `klimbs_shl_limbs` -/
 
@@ -541,7 +541,7 @@ theorem klimbs_land_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelKlimbs::klimbs_land" args h r h' calls) (ih : IH c calls) :
     Specs.Nat.klimbs_land c args h r h' calls := by
-  intro a b hargs good n m ⟨la, hla, rfl⟩ ⟨lb, hlb, rfl⟩
+  rintro a b hargs good n m ⟨la, hla, rfl⟩ ⟨lb, hlb, rfl⟩
   subst hargs
   rcases Obs.«KernelKlimbs::klimbs_land».obs ev with
     ⟨ld, rfl, rfl, -⟩ |
@@ -567,7 +567,7 @@ theorem klimbs_lor_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelKlimbs::klimbs_lor" args h r h' calls) (ih : IH c calls) :
     Specs.Nat.klimbs_lor c args h r h' calls := by
-  intro a b hargs good n m ⟨la, hla, rfl⟩ ⟨lb, hlb, rfl⟩
+  rintro a b hargs good n m ⟨la, hla, rfl⟩ ⟨lb, hlb, rfl⟩
   subst hargs
   rcases Obs.«KernelKlimbs::klimbs_lor».obs ev with
     ⟨ld, hr, hh, -⟩ |
@@ -595,7 +595,7 @@ theorem klimbs_xor_op_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap 
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelKlimbs::klimbs_xor_op" args h r h' calls) (ih : IH c calls) :
     Specs.Nat.klimbs_xor_op c args h r h' calls := by
-  intro a b hargs good n m ⟨la, hla, rfl⟩ ⟨lb, hlb, rfl⟩
+  rintro a b hargs good n m ⟨la, hla, rfl⟩ ⟨lb, hlb, rfl⟩
   subst hargs
   rcases Obs.«KernelKlimbs::klimbs_xor_op».obs ev with
     ⟨ld, hr, hh, -⟩ |
