@@ -505,7 +505,8 @@ def install (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (workers : Nat 
         fe := fe'
         lenientCount := lenientCount + 1
   -- projection tables for the structures left without one
-  let (fe, tablesAdded, tablesProp) := if fixes.proj then addTables env fe else (fe, 0, 0)
+  let (feT, tablesAdded, tablesProp) := if fixes.proj then addTables env fe else (fe, 0, 0)
+  fe := feT
   let t5 ← IO.monoMsNow
   -- marked persistent: every worker reads them, none writes them, and their reference
   -- counts are never touched (`IX_BD_NOPERSIST` leaves them ordinary shared objects, for
@@ -938,7 +939,8 @@ def walk : Nat → Cx → List CtxEntry → Nat → Expect → Ixon.Expr → KEx
                                 syn := if cx.tier1 then ex.syn else none }
       let src? : Option KExpr := if cx.fixes.memo then some x else none
       let key := (n, cx.large, (ctx.take (cx.bounds[n]?.getD 0)).map (·.id), shareEx.pw, src?)
-      let hit? := if cx.memo then (← getThe WState).memo[key]? else none
+      let st0 ← getThe WState
+      let hit? := if cx.memo then st0.memo[key]? else none
       let (e', variant, bad) ← match hit? with
         | some (e', variant, bad, src) => do
           if cx.trace then
