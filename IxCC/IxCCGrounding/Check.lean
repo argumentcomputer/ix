@@ -18,7 +18,7 @@ mutation targeting one makes exactly that one false.
 | `lvls` | the program's level count is the stored one |
 | `nodup` | the level parameters are distinct |
 | `noCsimp`, `declOk`, `notOpaque` | the fragment: no `csimp` entry, quotient constant, or opaque by value; a recursor only in an admitted class (`recClassB`, `admittedClasses`) |
-| `recShape` | a recursor is stored with the program's counts, level parameters and rules, its type a binder for every argument SrcEval takes (`RecStored`); at `Eq.rec`, `Eq.refl` stored as F3 reads it (`EqReflBasis`) |
+| `recShape` | a recursor is stored with the program's counts, level parameters and rules, its type a binder for every argument SrcEval takes (`RecStored`); at `Eq.rec`, `Eq.refl` and `Eq.rec` stored as F3 reads them (`EqReflBasis`, `EqRecBasis`: `Eq.rec`'s type and its one rule compared with `eqRecType` and `eqRecRhs`) |
 | `prim` | a `prim` entry is the operation's role, stored with no level parameters, telescope long enough |
 | `ctor` | a constructor is stored with the program's counts, telescope long enough |
 | `caseRec` | a `case` entry's recursor is ordinary, the key's telescope long enough |
@@ -303,13 +303,22 @@ def eqReflBasisB : Bool :=
   | some (.ctorInfo cv 2 0) => cv.levelParams == [0] && decide (cv.type = eqReflType)
   | _ => false
 
-/-- A recursor has the checked shape (`RecStored`), and where it is `Eq.rec` the `Eq.refl` basis
-holds. -/
+/-- `EqRecBasis`, decided (the type and the rule compared structurally with `eqRecType` and
+`eqRecRhs`). -/
+def eqRecBasisB : Bool :=
+  match env.find? eqRecName with
+  | some (.recInfo cvr mI rP [krl]) =>
+    mI == 5 && rP == 4 && decide (cvr.type = eqRecType) && decide (krl.ctor = eqReflName) &&
+      decide (krl.rhs = eqRecRhs)
+  | _ => false
+
+/-- A recursor has the checked shape (`RecStored`), and where it is `Eq.rec` the `Eq.refl` and
+`Eq.rec` bases hold. -/
 def recShapeB (c : CId) : Bool :=
   match p.decl? c with
   | some (.recr ..) =>
     recStoredB p env κ lpsOf c &&
-      (recClassB p env κ c != some .eqRec || eqReflBasisB env)
+      (recClassB p env κ c != some .eqRec || (eqReflBasisB env && eqRecBasisB env))
   | _ => true
 
 def primB (c : CId) : Bool :=
@@ -631,19 +640,36 @@ theorem eqReflBasisB_of (h : EqReflBasis env) : eqReflBasisB env = true := by
   obtain ⟨cv, hf, hl, ht⟩ := h
   simp [eqReflBasisB, hf, hl, ht]
 
-/-- The `recShape` conjunct gives the checked shape, and the `Eq.refl` basis at `Eq.rec`. -/
+theorem eqRecBasis_of_check (h : eqRecBasisB env = true) : EqRecBasis env := by
+  unfold eqRecBasisB at h
+  split at h
+  · rename_i cvr mI rP krl hf
+    simp only [Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at h
+    obtain ⟨⟨⟨⟨hmI, hrP⟩, hty⟩, hc⟩, hrhs⟩ := h
+    subst hmI hrP
+    exact ⟨cvr, krl, hf, hty, hc, hrhs⟩
+  · exact absurd h (by simp)
+
+/-- The decider is complete: where the basis holds, it says so. -/
+theorem eqRecBasisB_of (h : EqRecBasis env) : eqRecBasisB env = true := by
+  obtain ⟨cvr, krl, hf, hty, hc, hrhs⟩ := h
+  simp [eqRecBasisB, hf, hty, hc, hrhs]
+
+/-- The `recShape` conjunct gives the checked shape, and the `Eq.refl` and `Eq.rec` bases at
+`Eq.rec`. -/
 theorem recShape_of {c : CId} (h : recShapeB p env κ lpsOf c = true) :
     ∀ sf kk lvls np nmot nmin ni ind rules ty,
       p.decl? c = some (.recr sf kk lvls np nmot nmin ni ind rules ty) →
-      RecStored p env κ lpsOf c ∧ (recClassB p env κ c = some .eqRec → EqReflBasis env) := by
+      RecStored p env κ lpsOf c ∧
+        (recClassB p env κ c = some .eqRec → EqReflBasis env ∧ EqRecBasis env) := by
   intro sf kk lvls np nmot nmin ni ind rules ty hd
   unfold recShapeB at h
   rw [hd] at h
   simp only [Bool.and_eq_true, Bool.or_eq_true, bne_iff_ne, ne_eq] at h
   refine ⟨recStored_of_check h.1, fun hk => ?_⟩
-  rcases h.2 with h2 | h2
+  rcases h.2 with h2 | ⟨h2, h3⟩
   · exact absurd hk h2
-  · exact eqReflBasis_of_check h2
+  · exact ⟨eqReflBasis_of_check h2, eqRecBasis_of_check h3⟩
 
 theorem prim_of {c : CId} (h : primB p env κ c = true) :
     ∀ op, p.table.resolveOf c = some (.prim op) → κ c = primKey op ∧
@@ -782,9 +808,14 @@ theorem groundFacts_of_check {ann : IxCC.Src.Relevance.Ann}
             (by simp [checkParts, checkPartsWith]) r hr) sf kk lvls np nmot nmin ni ind rules ty hd).1
         eqRefl := fun r hr hk => by
           obtain ⟨sf, kk, lvls, np, nmot, nmin, ni, ind, rules, ty, hd⟩ := recClassB_recr hk
-          exact (recShape_of (all (f := recShapeB p env κ lpsOf) "recShape"
+          exact ((recShape_of (all (f := recShapeB p env κ lpsOf) "recShape"
             (by simp [checkParts, checkPartsWith]) r hr) sf kk lvls np nmot nmin ni ind rules ty hd).2
-            hk },
+            hk).1
+        eqRec := fun r hr hk => by
+          obtain ⟨sf, kk, lvls, np, nmot, nmin, ni, ind, rules, ty, hd⟩ := recClassB_recr hk
+          exact ⟨hE, ((recShape_of (all (f := recShapeB p env κ lpsOf) "recShape"
+            (by simp [checkParts, checkPartsWith]) r hr) sf kk lvls np nmot nmin ni ind rules ty hd).2
+            hk).2⟩ },
       fun c hc => noQuot_of (all (f := declOkB p env κ admittedClasses) "declOk"
         (by simp [checkParts, checkPartsWith]) c hc),
       fun c hc => by
