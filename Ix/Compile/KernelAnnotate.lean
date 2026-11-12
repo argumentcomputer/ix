@@ -228,8 +228,10 @@ def install (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (workers : Nat 
     | .error e => failures := failures.push (groupName gi, readErrorString e)
   let t2 ← IO.monoMsNow
   let canon ← IO.lazyPure fun _ => Ix.Compile.Parallel.map (4 * max workers 1) canonDecl lowered
-  let prepared := Ix.Kernel.Frontend.preparePrelude pre.ix canon
-  let ev := Ix.RoleEvidence.bundleEvidence ()
+  let tCanon ← IO.monoMsNow
+  let prepared ← IO.lazyPure fun _ => Ix.Kernel.Frontend.preparePrelude pre.ix canon
+  let tPrep ← IO.monoMsNow
+  let ev ← IO.lazyPure fun _ => Ix.RoleEvidence.bundleEvidence ()
   let t3 ← IO.monoMsNow
   -- phase A in waves: the prelude's declarations first (wave 0), then each
   -- declaration at its group's depth plus one
@@ -245,24 +247,36 @@ def install (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (workers : Nat 
   let mut ok := 0
   let mut ahead := 0
   let mut retry : Array (CDecl .source) := #[]
+  -- phase A's time (ns): the waves' ahead-of-time annotation, the pushes of its
+  -- results, the ordinary steps
+  let mut nsAhead := 0
+  let mut nsPush := 0
+  let mut nsStep := 0
   for wave in waves do
     -- the wave's separable declarations, annotated against the environment as
     -- it stands before the wave (`separable`)
     let base := fe
-    let pushes : Array (Option (Ix.Kernel.ConstantInfo .source)) :=
+    let n0 ← IO.monoNanosNow
+    let pushes : Array (Option (Ix.Kernel.ConstantInfo .source)) ← IO.lazyPure fun _ =>
       if !parallel || wave.size < 8 then wave.map fun _ => none
       else Ix.Compile.Parallel.map (4 * max workers 1) (fun i => separable base prepared[i]!) wave
+    let n1 ← IO.monoNanosNow
+    nsAhead := nsAhead + (n1 - n0)
     for (i, r) in wave.zip pushes do
       if let some ci := r then
         if (fe.find? ci.name).isNone then
+          let m0 ← IO.monoNanosNow
           let ci ← (unsafe Runtime.markPersistent ci : BaseIO (Ix.Kernel.ConstantInfo .source))
           fe := fe.push ci
+          nsPush := nsPush + ((← IO.monoNanosNow) - m0)
           pos := pos + 1
           ok := ok + 1
           ahead := ahead + 1
           continue
       let d := prepared[i]!
-      let (fe', pos', err) := step ev fe pos d
+      let m0 ← IO.monoNanosNow
+      let (fe', pos', err) ← IO.lazyPure fun _ => step ev fe pos d
+      nsStep := nsStep + ((← IO.monoNanosNow) - m0)
       fe := fe'
       pos := pos'
       match err with
@@ -304,8 +318,9 @@ def install (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (workers : Nat 
   return .ok { fe := shared, core, env, installed := ok, failures, lenient := lenientCount,
                ahead, waves := waves.size,
                times := #[("prelude", tPre - t0), ("groups", tGroups - tPre), ("convert", tConv - tGroups),
-                 ("graph", tGraph - tConv), ("schedule", t1 - tGraph), ("lower", t2 - t1), ("canon", t3 - t2),
-                 ("phaseA", t4 - t3), ("tier+retry", t5 - t4), ("persist", t6 - t5)] }
+                 ("graph", tGraph - tConv), ("schedule", t1 - tGraph), ("lower", t2 - t1), ("canon", tCanon - t2), ("prepare", tPrep - tCanon), ("evidence", t3 - tPrep),
+                 ("phaseA", t4 - t3), ("A:ahead", nsAhead / 1000000), ("A:push", nsPush / 1000000),
+                 ("A:step", nsStep / 1000000), ("tier+retry", t5 - t4), ("persist", t6 - t5)] }
 
 /-- **Install a compile's input**: its condensation (`Ix.CondenseM`, as the
 compile's front end builds it), then `install`. For measurement (the data are
@@ -413,21 +428,33 @@ def binderRun (pi : Bool) : Ixon.Expr → KExpr → Array (Ixon.Expr × KExpr ×
     if pi then binderRun pi b body (acc.push (t, ty, BinderMeta.ofContracts c r)) else (e, x, acc)
   | e, x, acc => (e, x, acc)
 
+/-- The datum of the `n`-th binder of a ∀-chain. -/
+def forallDatumAt : Nat → KExpr → Option PropWhen
+  | 0, .forallE _ _ mb => some mb.pw
+  | n + 1, .forallE _ b _ => forallDatumAt n b
+  | _, _ => none
+
 /-- The walk of one entry's tree `e` beside its source `x`, under `ctx`
 (innermost first) at binder depth `depth`: the annotated opened term, and
 whether anything in it is undecided. Every numbered node of `e` gets its datum
-at its ordinal. -/
-def walk : Nat → Cx → List CtxEntry → Nat → Ixon.Expr → KExpr → EM (KExpr × Bool)
-  | 0, _, _, _, _, _ => mismatch "the walk's depth bound"
-  | fuel + 1, cx, ctx, depth, e, x =>
+at its ordinal.
+
+`exp` is a definition value's annotated, decided type, given at the value's top
+λ-chain: where IxC's datum function fails at a λ of that chain, the λ takes the
+datum of the type's ∀ at the same place (binder congruence: a λ's codomain is
+the type's codomain there, so its sort is that ∀'s), as IxC's pass over the
+record does. -/
+def walk : Nat → Cx → List CtxEntry → Nat → Option KExpr → Ixon.Expr → KExpr → EM (KExpr × Bool)
+  | 0, _, _, _, _, _, _ => mismatch "the walk's depth bound"
+  | fuel + 1, cx, ctx, depth, exp, e, x =>
     match e, x with
     | .var i, _ =>
       match ctx[i.toNat]? with
       | some c => pure (c.val, false)
       | none => mismatch "a loose variable"
     | .app f a, .app xf xa => do
-      let (f', bf) ← walk fuel cx ctx depth f xf
-      let (a', ba) ← walk fuel cx ctx depth a xa
+      let (f', bf) ← walk fuel cx ctx depth none f xf
+      let (a', ba) ← walk fuel cx ctx depth none a xa
       pure (.app f' a', bf || ba)
     | .lam .., .lam .. | .all .., .forallE .. => do
       let pi := e matches .all ..
@@ -439,14 +466,15 @@ def walk : Nat → Cx → List CtxEntry → Nat → Ixon.Expr → KExpr → EM (
       for h : j in [:bs.size] do
         let (t, ty, mb) := bs[j]
         ords := ords.push (← reserve)
-        let (t', bt) ← walk fuel cx inner (depth + j) t ty
+        let (t', bt) ← walk fuel cx inner (depth + j) none t ty
         bad := bad || bt
         let id ← freshId
         inner := ⟨id, .fvar (depth + j) t'⟩ :: inner
         stk := (t', mb) :: stk
       let k := bs.size
-      let (leaf', bl) ← walk fuel cx inner (depth + k) leafE leafX
+      let (leaf', bl) ← walk fuel cx inner (depth + k) none leafE leafX
       let pw? ← datum cx pi (depth + k) leaf'
+      let pw? := if pw?.isSome || pi then pw? else exp.bind (forallDatumAt (k - 1))
       let undecided := bad || bl || pw?.isNone
       let node : Node := if undecided then .undecided else cx.nodeOf (pw?.getD .never)
       for ord in ords do setNode ord node
@@ -458,13 +486,13 @@ def walk : Nat → Cx → List CtxEntry → Nat → Ixon.Expr → KExpr → EM (
     | .letE _ t v b, .letE ty val body _ => do
       -- IxC annotates the type and the value, then the body with the value
       -- transparent (its ζ-reduct)
-      let (_, bt) ← walk fuel cx ctx depth t ty
-      let (v', bv) ← walk fuel cx ctx depth v val
+      let (_, bt) ← walk fuel cx ctx depth none t ty
+      let (v', bv) ← walk fuel cx ctx depth none v val
       let id ← freshId
-      let (b', bb) ← walk fuel cx (⟨id, v'⟩ :: ctx) depth b body
+      let (b', bb) ← walk fuel cx (⟨id, v'⟩ :: ctx) depth exp b body
       pure (b', bt || bv || bb)
     | .prj _ _ v, .proj k i xv => do
-      let (v', bv) ← walk fuel cx ctx depth v xv
+      let (v', bv) ← walk fuel cx ctx depth none v xv
       pure (.proj k i v', bv)
     | .share n, _ => do
       let ord ← reserve
@@ -474,7 +502,7 @@ def walk : Nat → Cx → List CtxEntry → Nat → Ixon.Expr → KExpr → EM (
         | some hit => pure hit
         | none => do
           let some entry := cx.sharing[n]? | mismatch "a share"
-          let ((e', bad), nodes) ← ((walk fuel cx ctx depth entry x).run #[] :
+          let ((e', bad), nodes) ← ((walk fuel cx ctx depth none entry x).run #[] :
             WM ((KExpr × Bool) × Array Node))
           let variant ← variantOf n nodes
           modifyThe WState fun st => { st with memo := st.memo.insert key (e', variant, bad) }
@@ -640,8 +668,11 @@ def annotate (k : Installed) (extra : Array (Ix.Name × Ix.ConstantInfo)) (names
                       bounds := IxVM.PwHints.bounds c.sharing }
     let stored : Array (Option KExpr) := if !k.stored then #[] else
       ((members c).zip names).foldl (fun acc (m, n) => acc ++ storedItems k.fe n m) #[]
+    let tys := IxVM.PwHints.valueTypes c
     let act : WM (Array Block) := do
       let mut out := #[]
+      -- each root's annotated term, where nothing in it is undecided
+      let mut annotated : Array (Option KExpr) := #[]
       for h : i in [:rs.size] do
         let some (x, σ) := xs[i]? | throw (.internal "binder data: a root without a source")
         let cx := { cx0 with large := σ.large, params := σ.names.size }
@@ -653,11 +684,15 @@ def annotate (k : Installed) (extra : Array (Ix.Name × Ix.ConstantInfo)) (names
                 pure (some nodes))
               (fun _ => pure none)
           | _ => pure none
-        let nodes ← match read with
-          | some nodes => pure nodes
-          | none => do
-            let (_, nodes) ← (walk walkFuel cx [] 0 rs[i] x).run #[]
-            pure nodes
+        let exp : Option KExpr := match tys[i]? with
+          | some (some j) => annotated[j]?.join
+          | _ => none
+        let (nodes, kx?) ← match read, stored[i]? with
+          | some nodes, some kx => pure (nodes, kx)
+          | _, _ => do
+            let ((kx, bad), nodes) ← (walk walkFuel cx [] 0 exp rs[i] x).run #[]
+            pure (nodes, if bad then none else some kx)
+        annotated := annotated.push kx?
         out := out.push ⟨0, i, 0, nodes⟩
       return out
     match (act.run {}).run {} with
