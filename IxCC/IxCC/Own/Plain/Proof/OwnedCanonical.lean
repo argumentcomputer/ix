@@ -128,4 +128,148 @@ theorem shape_setImm {Γ : Ctx} {I : Var → Bool} {t : Var → Nat} {P : Var �
     simp only [Bool.and_eq_true] at hy
     exact h.own y hy.2
 
+/-! ## Action lists -/
+
+theorem actionPrefix_append (as bs : List Action) (k : Code) :
+    actionPrefix (as ++ bs) k = actionPrefix as (actionPrefix bs k) := by
+  induction as with
+  | nil => rfl
+  | cons a as ih => simp [actionPrefix, ih]
+
+/-- Increments of each listed variable, then `k`. -/
+theorem check_incs {Δ : JCtx} {I : Var → Bool} {P : Var → Prop} {k : Code} :
+    ∀ (xs : List Var) {Γ : Ctx} {t : Var → Nat}, Shape Γ I t P →
+      (∀ x, x ∈ xs → (I x = true ∨ 0 < t x) ∧ P x) →
+      (∀ Γ', Shape Γ' I (fun y => t y + (if I y then 0 else xs.count y)) P →
+        checkCode Δ Γ' k = .ok ()) →
+      checkCode Δ Γ (actionPrefix (xs.map (fun x => .inc x 1)) k) = .ok ()
+  | [], Γ, t, h, _, hk => hk Γ (h.congr (fun y => by simp))
+  | x :: xs, Γ, t, h, hpre, hk => by
+    obtain ⟨hx, hp⟩ := hpre x List.mem_cons_self
+    obtain ⟨Γ₁, hinc, h₁⟩ := shape_inc h hx hp
+    show (Γ.inc x 1 >>= fun Γ' => checkCode Δ Γ' _) = .ok ()
+    rw [hinc]
+    refine check_incs xs h₁ (fun y hy => ?_) (fun Γ' h' => hk Γ' (h'.congr (fun y => ?_)))
+    · obtain ⟨hy', hp'⟩ := hpre y (List.mem_cons_of_mem _ hy)
+      refine ⟨?_, hp'⟩
+      rcases hy' with hy' | hy'
+      · exact Or.inl hy'
+      · right; split <;> omega
+    · by_cases he : y = x
+      · subst he
+        cases hi : I y <;> simp [hi, List.count_cons]
+        omega
+      · have hxy : (x == y) = false := beq_eq_false_iff_ne.mpr (fun h => he h.symm)
+        simp [he, List.count_cons, hxy]
+
+/-- Decrements of each listed (distinct) variable, then `k`. -/
+theorem check_decs {Δ : JCtx} {I : Var → Bool} {P : Var → Prop} {k : Code} :
+    ∀ (xs : List Var) {Γ : Ctx} {t : Var → Nat}, xs.Nodup → Shape Γ I t P →
+      (∀ x, x ∈ xs → (I x = true ∨ 0 < t x) ∧ P x) →
+      (∀ Γ', Shape Γ' I (fun y => t y - (if I y then 0 else xs.count y)) P →
+        checkCode Δ Γ' k = .ok ()) →
+      checkCode Δ Γ (actionPrefix (xs.map (fun x => .dec x)) k) = .ok ()
+  | [], Γ, t, _, h, _, hk => hk Γ (h.congr (fun y => by simp))
+  | x :: xs, Γ, t, hn, h, hpre, hk => by
+    rw [List.nodup_cons] at hn
+    obtain ⟨hx, hp⟩ := hpre x List.mem_cons_self
+    obtain ⟨Γ₁, htake, _, h₁⟩ := shape_take h hx hp
+    have hdec : Γ.dec x = .ok Γ₁.release := by simp [Ctx.dec, htake]
+    show (Γ.dec x >>= fun Γ' => checkCode Δ Γ' _) = .ok ()
+    rw [hdec]
+    refine check_decs xs hn.2 h₁.release (fun y hy => ?_) (fun Γ' h' => hk Γ' (h'.congr (fun y => ?_)))
+    · obtain ⟨hy', hp'⟩ := hpre y (List.mem_cons_of_mem _ hy)
+      have hne : y ≠ x := by intro he; subst he; exact hn.1 hy
+      refine ⟨?_, hp'⟩
+      simpa [hne] using hy'
+    · by_cases he : y = x
+      · subst he
+        have hc : xs.count y = 0 := List.count_eq_zero.mpr hn.1
+        cases hi : I y <;> simp [hi, List.count_cons, hc]
+      · have hxy : (x == y) = false := beq_eq_false_iff_ne.mpr (fun h => he h.symm)
+        simp [he, List.count_cons, hxy]
+
+/-- Taking a token per occurrence of each variable argument. -/
+theorem check_takeArgs {I : Var → Bool} {P : Var → Prop} :
+    ∀ (args : List Arg) {Γ : Ctx} {t : Var → Nat}, Shape Γ I t P →
+      (∀ x, I x = false → (argVars args).count x ≤ t x) →
+      (∀ x, x ∈ argVars args → P x) →
+      ∃ Γ', Γ.takeArgs args = .ok Γ' ∧ Γ'.epoch = Γ.epoch ∧
+        Shape Γ' I (fun y => t y - (if I y then 0 else (argVars args).count y)) P
+  | [], Γ, t, h, _, _ => ⟨Γ, rfl, rfl, h.congr (fun y => by simp [argVars])⟩
+  | .lit l :: as, Γ, t, h, hc, hp => by
+    obtain ⟨Γ', h1, h2, h3⟩ := check_takeArgs as h (fun x hx => by simpa [argVars] using hc x hx)
+      (fun x hx => hp x (by simpa [argVars] using hx))
+    exact ⟨Γ', by simpa [Ctx.takeArgs, Ctx.takeArg] using h1, h2,
+      h3.congr (fun y => by simp [argVars])⟩
+  | .erased :: as, Γ, t, h, hc, hp => by
+    obtain ⟨Γ', h1, h2, h3⟩ := check_takeArgs as h (fun x hx => by simpa [argVars] using hc x hx)
+      (fun x hx => hp x (by simpa [argVars] using hx))
+    exact ⟨Γ', by simpa [Ctx.takeArgs, Ctx.takeArg] using h1, h2,
+      h3.congr (fun y => by simp [argVars])⟩
+  | .var x :: as, Γ, t, h, hc, hp => by
+    have hx : I x = true ∨ 0 < t x := by
+      cases hi : I x with
+      | true => exact Or.inl rfl
+      | false =>
+        right
+        have := hc x hi
+        simp [argVars, List.count_cons] at this
+        omega
+    obtain ⟨Γ₁, htake, he₁, h₁⟩ := shape_take h hx (hp x (by simp [argVars]))
+    obtain ⟨Γ', h1, h2, h3⟩ := check_takeArgs as h₁ (fun y hy => ?_)
+      (fun y hy => hp y (by simp [argVars, hy]))
+    · refine ⟨Γ', ?_, h2.trans he₁, h3.congr (fun y => ?_)⟩
+      · simp only [Ctx.takeArgs, Ctx.takeArg, htake]; exact h1
+      · by_cases he : y = x
+        · subst he
+          cases hi : I y <;> simp [hi, argVars, List.count_cons]
+          omega
+        · have hxy : (x == y) = false := beq_eq_false_iff_ne.mpr (fun h => he h.symm)
+          simp [he, argVars, List.count_cons, hxy]
+    · have := hc y hy
+      by_cases he : y = x
+      · subst he; simp [hy, argVars, List.count_cons] at this ⊢; omega
+      · have hxy : (x == y) = false := beq_eq_false_iff_ne.mpr (fun h => he h.symm)
+        simp [he, argVars, List.count_cons, hxy] at this ⊢; exact this
+
+/-- Taking one token of each (distinct) variable. -/
+theorem check_takeVars {I : Var → Bool} {P : Var → Prop} :
+    ∀ (xs : List Var) {Γ : Ctx} {t : Var → Nat}, xs.Nodup → Shape Γ I t P →
+      (∀ x, x ∈ xs → (I x = true ∨ 0 < t x) ∧ P x) →
+      ∃ Γ', Γ.takeVars xs = .ok Γ' ∧
+        Shape Γ' I (fun y => t y - (if I y then 0 else xs.count y)) P
+  | [], Γ, t, _, h, _ => ⟨Γ, rfl, h.congr (fun y => by simp)⟩
+  | x :: xs, Γ, t, hn, h, hpre => by
+    rw [List.nodup_cons] at hn
+    obtain ⟨hx, hp⟩ := hpre x List.mem_cons_self
+    obtain ⟨Γ₁, htake, _, h₁⟩ := shape_take h hx hp
+    obtain ⟨Γ', h1, h3⟩ := check_takeVars xs hn.2 h₁ (fun y hy => by
+      obtain ⟨hy', hp'⟩ := hpre y (List.mem_cons_of_mem _ hy)
+      have hne : y ≠ x := by intro he; subst he; exact hn.1 hy
+      exact ⟨by simpa [hne] using hy', hp'⟩)
+    refine ⟨Γ', ?_, h3.congr (fun y => ?_)⟩
+    · simp only [Ctx.takeVars, htake]; exact h1
+    · by_cases he : y = x
+      · subst he
+        have hc : xs.count y = 0 := List.count_eq_zero.mpr hn.1
+        cases hi : I y <;> simp [hi, List.count_cons, hc]
+      · have hxy : (x == y) = false := beq_eq_false_iff_ne.mpr (fun h => he h.symm)
+        simp [he, List.count_cons, hxy]
+
+/-- A context holding no token is closed. -/
+theorem shape_closed {Γ : Ctx} {I : Var → Bool} {t : Var → Nat} {P : Var → Prop}
+    (h : Shape Γ I t P) (hz : ∀ x, t x = 0) (what : String) : Γ.closed what = .ok () := by
+  obtain ⟨toks, htok⟩ := h.toks
+  have hnil : toks = [] := by
+    cases toks with
+    | nil => rfl
+    | cons y ys =>
+      have := htok.count y
+      rw [h.tokens, hz] at this
+      simp [List.count_cons] at this
+  subst hnil
+  have : Γ.total = 0 := by rw [htok.total]; rfl
+  simp [Ctx.closed, this]
+
 end IxCC.Own.Plain
