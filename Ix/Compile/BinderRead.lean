@@ -731,10 +731,21 @@ source alone, by the same rules, fails exactly where the reading of its record
 does, and tells, before the compile, which records will be walked (and what the
 walk's environment must hold). -/
 
-/-- The loose bound variables of `x` (one past the largest index), memoized by address: a
-subterm's is the same wherever it stands. -/
-def looseRange (x : Ix.Expr) : StateM (Std.HashMap Address Nat) Nat := do
-  match (← modifyGet fun m => (m[x.getHash]?, m)) with
+/-- The loose bound variables of each term met (one past the largest index), by address:
+a subterm's is the same wherever it stands. -/
+abbrev Ranges := Std.HashMap Address Nat
+
+/-- The terms read so far, under a context (its hash; a closed term's is `0`, since its
+reading does not depend on the context) and an expectation, so that a subterm shared in
+the source is read once there. -/
+abbrev Seen := Std.HashSet (UInt64 × Address × Option PropWhen)
+
+/-- The source reading's state, each part updated in place. -/
+abbrev SM := StateT Ranges (StateT Seen (Except Unit))
+
+/-- The loose bound variables of `x`, memoized (`Ranges`). -/
+def looseRange (x : Ix.Expr) : SM Nat := do
+  match (← modifyGetThe Ranges fun m => (m[x.getHash]?, m)) with
   | some r => pure r
   | none =>
     let r ← match x with
@@ -746,15 +757,9 @@ def looseRange (x : Ix.Expr) : StateM (Std.HashMap Address Nat) Nat := do
       | .mdata _ e _ => looseRange e
       | .proj _ _ e _ => looseRange e
       | _ => pure 0
-    modify (·.insert x.getHash r)
+    modifyThe Ranges (·.insert x.getHash r)
     pure r
 termination_by structural x
-
-/-- The terms read so far, under a context (its hash; a closed term's is `0`, since its
-reading does not depend on the context) and an expectation, so that a subterm shared in
-the source is read once there; and each term's loose bound variables (`looseRange`). -/
-abbrev SM := StateT (Std.HashSet (UInt64 × Address × Option PropWhen) × Std.HashMap Address Nat)
-  (Except Unit)
 
 /-- Whether the reading of a source term reads its expectation (`readsExpect`'s
 twin). -/
@@ -786,12 +791,9 @@ def readSrc (find : Find) (σ : Ix.Name → Nat) : Nat → List (Option Ix.Expr)
     match x with
     | .app .. | .lam .. | .forallE .. | .letE .. | .proj .. =>
       -- a closed term's reading does not depend on the context
-      let closed ← modifyGet fun (s, m) =>
-        let (r, m) := ((looseRange x).run m).run
-        (r == 0, (s, m))
+      let closed := (← looseRange x) == 0
       let key := (if closed then 0 else ch, x.getHash, ex.toOption)
-      -- one update of the memo, so that it grows in place
-      let seen ← modifyGet fun (s, m) => if s.contains key then (true, (s, m)) else (false, (s.insert key, m))
+      let seen ← modifyGetThe Seen fun s => if s.contains key then (true, s) else (false, s.insert key)
       if seen then return
     | _ => pure ()
     match x with
@@ -851,7 +853,7 @@ def sourceReads (find : Find) (ci : Ix.ConstantInfo) : Bool :=
     | .recInfo v => recRoots find v
     | ci => #[⟨own, ci.getCnst.type, asType⟩]
   roots.all fun r =>
-    match ((readSrc find r.σ.pos readFuel [] 0 r.ex r.x).run ({}, {})) with
+    match (((readSrc find r.σ.pos readFuel [] 0 r.ex r.x).run {}).run {}) with
     | .ok _ => true
     | .error _ => false
 
