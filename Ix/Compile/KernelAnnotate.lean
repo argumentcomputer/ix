@@ -329,11 +329,11 @@ def phaseAWorkers (mode : Ix.Kernel.CheckMode) (ev : Ix.Kernel.Evidences .source
     (prepared : Array (CDecl .source)) (groupOf : Array Nat) (waves : Array (Array Nat))
     (workers : Nat) : IO (FEnv .source × Array Nat) := do
   let W := max 1 workers
-  let mut outs : Array (Array (IO.Promise (Array (Nat × Made)))) := #[]
-  for _ in waves do
-    let mut row := #[]
-    for _ in [:W] do row := row.push (← IO.Promise.new)
-    outs := outs.push row
+  -- worker `w`'s results at wave `k`, at `k * W + w`
+  let mut outs : Array (IO.Promise (Array (Nat × Made))) := #[]
+  for _ in [:waves.size * W] do
+    outs := outs.push (← IO.Promise.new)
+  let outs := outs
   let run (w : Nat) : IO (FEnv .source × Array Nat) := do
     let mut fe : FEnv .source := Ix.Kernel.mkFEnv Ix.Kernel.Env.empty
     let mut retry : Array Nat := #[]
@@ -359,9 +359,12 @@ def phaseAWorkers (mode : Ix.Kernel.CheckMode) (ev : Ix.Kernel.Evidences .source
           mine := mine.push (i, .retry)
           if k == 0 && w == 0 then retry := retry.push i
       if k == 0 then continue
-      outs[k]![w]!.resolve mine
+      if let some p := outs[k * W + w]? then p.resolve mine
       for w' in [:W] do
-        let rs ← (if w' == w then pure mine else IO.wait outs[k]![w']!.result! : BaseIO _)
+        let rs : Array (Nat × Made) ← if w' == w then pure mine else
+          match outs[k * W + w']? with
+          | some p => (monadLift (IO.wait p.result!) : IO (Array (Nat × Made)))
+          | none => pure #[]
         for (i, m) in rs do
           match m with
           | .pushes cis =>
