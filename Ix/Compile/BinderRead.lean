@@ -28,7 +28,7 @@ in their source without any inference, and this reader takes exactly those:
   has the zero-ness of the sort of `B`, the sort of the application's type), a
   type (a constant's type, a binder's domain, a ∀-body: its type is a sort, whose
   sort is never zero; a λ-run is there only as a β-redex's head), an argument of a
-  β-redex (its λ's domain).
+  β-redex (its λ's domain; past its λs, an argument of the λs' body's spine).
   It passes unchanged into the run's body, a `let`'s body and a share.
 
 A head's declared type is peeled through the definitions that return one of their
@@ -370,11 +370,9 @@ def lamDomainAt : Nat → Ix.Expr → List (Option Ix.Expr) → Option (Ix.Expr 
     | _, _ => none
 
 
-/-- The zero-ness of the sort of the domain at `idx` of the type of the spine
-head `h` (a constant, a bound variable under `ctx`, or a field of a bound structure
-variable; `args` the spine's arguments before `idx`, outermost first): what an
-argument there has as its type's sort. -/
-def argPw (find : Find) (σ : Ix.Name → Nat) (ctx : List (Option Ix.Expr)) (h : Ix.Expr)
+/-- `argPw` at a spine head that is a constant, a bound variable under `ctx`, or a
+field of a bound structure variable. -/
+def argPwHead (find : Find) (σ : Ix.Name → Nat) (ctx : List (Option Ix.Expr)) (h : Ix.Expr)
     (args : Array Ix.Expr) (idx : Nat) : Option PropWhen :=
   match h with
   | .const c us _ => do
@@ -401,11 +399,31 @@ def argPw (find : Find) (σ : Ix.Name → Nat) (ctx : List (Option Ix.Expr)) (h 
     let us' ← (us.toList.mapM (ingressLevel σ)).toOption
     sortPw find (posIn lps) (Ix.Kernel.Level.subst (List.range lps.size) us') sortFuel
       (before ++ fctx) d
-  | .lam .. => do
-    -- a β-redex's head: the argument at `idx` has the domain of its `idx`-th λ
-    let (d, before) ← lamDomainAt idx h []
-    sortPw find σ id sortFuel (before ++ ctx) d
   | _ => none
+
+/-- The zero-ness of the sort of the domain at `idx` of the type of the spine
+head `h` (a constant, a bound variable under `ctx`, a field of a bound structure
+variable, or a β-redex's λs; `args` the spine's arguments before `idx`, outermost
+first): what an argument there has as its type's sort.
+
+At a β-redex's head `λ y₁…yₖ, b`, an argument at `idx < k` has the domain of the
+`idx`-th λ. One past the λs is an argument of `b`'s spine `g b⃗` (the redex's type
+after its first `k` arguments is `b`'s with those arguments for `y⃗`), at
+`|b⃗| + idx - k`, read under the λs' domains: a level names no term variable, so the
+sort of the domain there has the same zero-ness with the arguments for `y⃗`. -/
+def argPw (find : Find) (σ : Ix.Name → Nat) (ctx : List (Option Ix.Expr)) (h : Ix.Expr)
+    (args : Array Ix.Expr) (idx : Nat) : Option PropWhen :=
+  match h with
+  | .lam .. =>
+    match lamDomainAt idx h [] with
+    | some (d, before) => sortPw find σ id sortFuel (before ++ ctx) d
+    | none => do
+      let k := (lamBody 0 h).1
+      guard (k ≤ idx)
+      let (ys, body) ← lamsExact k h []
+      let (g, m) := headArgs body
+      argPwHead find σ (ys ++ ctx) g (spineArgs body #[]).reverse (m + (idx - k))
+  | h => argPwHead find σ ctx h args idx
 
 /-! ## The reading of a record -/
 
