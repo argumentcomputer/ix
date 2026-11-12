@@ -95,7 +95,7 @@ inductive CIRep (κ : _root_.Address → KKey) (h : Heap F) :
   | axio {nl ty u : SourceValue F} {cv : Ix.Kernel.ConstantVal .anon}
       (hv : ValRep κ h nl ty cv) :
       CIRep κ h (.construct kciEnum "Axiom" [nl, ty, u]) (.axiomInfo cv)
-  | opaque {nl ty val u : SourceValue F} {cv : Ix.Kernel.ConstantVal .anon}
+  | opaq {nl ty val u : SourceValue F} {cv : Ix.Kernel.ConstantVal .anon}
       (hv : ValRep κ h nl ty cv) :
       CIRep κ h (.construct kciEnum "Opaque" [nl, ty, val, u]) (.axiomInfo cv)
   | defn {nl ty val sf hint : SourceValue F} {cv : Ix.Kernel.ConstantVal .anon} {V : KExpr}
@@ -152,7 +152,7 @@ theorem CIRep.mono {κ : _root_.Address → KKey} {h₁ h₂ : Heap F} {v : Sour
     CIRep κ h₂ v ci := by
   cases r with
   | axio hv => exact .axio (hv.mono ext)
-  | opaque hv => exact .opaque (hv.mono ext)
+  | opaq hv => exact .opaq (hv.mono ext)
   | defn hv hV => exact .defn (hv.mono ext) (TmC.mono ext hV)
   | thm hv hV => exact .thm (hv.mono ext) (TmC.mono ext hV)
   | quot hv hk => exact .quot (hv.mono ext) hk

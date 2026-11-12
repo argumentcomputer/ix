@@ -241,11 +241,15 @@ theorem TableRep.mono {t : Ix.Kernel.RoleTable} {h₁ h₂ : Heap F} {tbl : Sour
     (ext : Heap.Extends h₁ h₂) (r : TableRep t h₁ tbl) : TableRep t h₂ tbl := by
   obtain ⟨bp, byRole, byAddr, ev, hl, h1, h2, h3⟩ := r
   refine ⟨bp, byRole, byAddr, ev, ext.loadValue_eq hl, ?_, ?_, ?_⟩
-  · exact RoleMapAll.mono (fun _ _ _ _ ext' ⟨r, a, hk, ha, hb⟩ =>
-      ⟨r, a, hk, Bytes.repAddressRef_heapMono₂ addrTy ext' ha, hb⟩) ext h1
+  · refine RoleMapAll.mono ?_ ext h1
+    intro _ _ _ _ ext' hb
+    obtain ⟨r, a, hk, ha, hb⟩ := hb
+    exact ⟨r, a, hk, Bytes.repAddressRef_heapMono₂ addrTy ext' ha, hb⟩
   · exact AddrMapAll.mono (fun _ _ _ _ _ hx => hx) ext h2
-  · exact RoleMapAll.mono (fun _ _ _ _ ext' ⟨r, es, hk, hm, hl'⟩ =>
-      ⟨r, es, hk, hm, repList_heapMono₂ evListEnum evRep_heapMono₂ ext' hl'⟩) ext h3
+  · refine RoleMapAll.mono ?_ ext h3
+    intro _ _ _ _ ext' he
+    obtain ⟨r, es, hk, hm, hl'⟩ := he
+    exact ⟨r, es, hk, hm, repList_heapMono₂ evListEnum evRep_heapMono₂ ext' hl'⟩
 
 theorem RCRep.mono {t : Ix.Kernel.RoleTable} {h₁ h₂ : Heap F} {rc : SourceValue F}
     (ext : Heap.Extends h₁ h₂) (r : RCRep t h₁ rc) : RCRep t h₂ rc := by

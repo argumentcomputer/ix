@@ -71,18 +71,16 @@ def CheckedAt (calls : List (Call F)) (t : Ix.Kernel.RoleTable) (a : _root_.Addr
   ∃ cl ∈ calls, cl.name = "KernelCheck::check_const" ∧
     ∃ rc v ap, cl.args = [rc, v, ap] ∧ RCRep t cl.heap rc ∧ addr cl.heap ap a
 
-/-- (L6 → L7) **The walked closure, first definition**: a set `C` of addresses holding the seeds
-and the table's bound constants, closed under references (a record's `refs`, a projection's
-block), every one of whose records is stored in `E₀`, in Lean's logic, and checked by the
-derivation (a block through each of its members' projection records, which the derivation
-checks under their own addresses). -/
+/-- (L6 → L7) **The walked closure, first definition**: every record of the closure the kernel's
+reader reads for the seeds under `t` (`Ix.Cert.CompiledReachAt`, from the seeds and the theorems
+the table's evidence names, as `ReadIn`) is stored in `E₀`, in Lean's logic, and checked by the
+derivation (a block through its members' projection records, which are in the closure too). This
+is what the assembly needs for `ReadIn`; the claim phase must show its walk covers that closure. -/
 def Walked (calls : List (Call F)) (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env)
     (seeds : List _root_.Address) : Prop :=
-  ∃ C : _root_.Address → Prop,
-    (∀ a ∈ seeds, C a) ∧
-    (∀ r a, t.addressOf? r = some a → C a) ∧
-    ∀ a, C a → ∃ c, Ix.Cert.recordAt E₀ a = some c ∧ IxVM.Consistency.InLogic c ∧
-      (∀ r ∈ c.refs.toList, C r) ∧ C (Ix.Cert.ownerOf a c) ∧
+  ∀ a, Ix.Cert.CompiledReachAt t E₀
+      (fun a => a ∈ seeds ∨ ∃ e ∈ t.evidence.toList, Ix.Kernel.Evidence.proof a ∈ e.2.toList) a →
+    ∃ c, Ix.Cert.recordAt E₀ a = some c ∧ IxVM.Consistency.InLogic c ∧
       ((∃ ms, c.info = .muts ms) ∨ CheckedAt calls t a)
 
 /-- (L7 → L5) **The derivation checked every constant a declaration installs, first
@@ -108,19 +106,19 @@ theorem term_mono {E : Ixon.Env} {env : Ix.Kernel.Env .anon} {g : Ghost} {d k : 
 
 theorem ctx_mono {E : Ixon.Env} {env : Ix.Kernel.Env .anon} {g : Ghost} {d : Nat}
     {h₁ h₂ : Heap F} {rc types : SourceValue F} (ext : Heap.Extends h₁ h₂)
-    (r : ctx E env g d h₁ rc types) : ctx E env g d h₂ rc types :=
-  let ⟨t, hκ, hrc, hty, hf, hl⟩ := r
-  ⟨t, hκ, hrc.mono ext, hty.mono ext, hf, hl⟩
+    (r : ctx E env g d h₁ rc types) : ctx E env g d h₂ rc types := by
+  obtain ⟨t, hκ, hrc, hty, hf, hl⟩ := r
+  exact ⟨t, hκ, hrc.mono ext, hty.mono ext, hf, hl⟩
 
 theorem addr_mono {h₁ h₂ : Heap F} {v : SourceValue F} {a : _root_.Address}
-    (ext : Heap.Extends h₁ h₂) (r : addr h₁ v a) : addr h₂ v a :=
-  let ⟨a', ha, he⟩ := r
-  ⟨a', Bytes.repAddressRef_heapMono₂ addrTy ext ha, he⟩
+    (ext : Heap.Extends h₁ h₂) (r : addr h₁ v a) : addr h₂ v a := by
+  obtain ⟨a', ha, he⟩ := r
+  exact ⟨a', Bytes.repAddressRef_heapMono₂ addrTy ext ha, he⟩
 
 theorem loaded_mono {E₀ : Ixon.Env} {h₁ h₂ : Heap F} {ptr : SourceValue F} {bytes : ByteArray}
-    (ext : Heap.Extends h₁ h₂) (r : loaded E₀ h₁ ptr bytes) : loaded E₀ h₂ ptr bytes :=
-  let ⟨c, t, ci, hd, ht, hr⟩ := r
-  ⟨c, t, ci, hd, ht, hr.mono ext⟩
+    (ext : Heap.Extends h₁ h₂) (r : loaded E₀ h₁ ptr bytes) : loaded E₀ h₂ ptr bytes := by
+  obtain ⟨c, t, ci, hd, ht, hr⟩ := r
+  exact ⟨c, t, ci, hd, ht, hr.mono ext⟩
 
 end S0
 

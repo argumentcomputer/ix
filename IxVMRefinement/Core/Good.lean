@@ -45,11 +45,11 @@ theorem collision_mono {V : View} {calls₁ calls₂ : List (Call F)}
     · exact .inr (hashed_mono hsub hp)
 
 theorem bounded_sub {calls₁ calls₂ : List (Call F)} (hsub : ∀ x ∈ calls₁, x ∈ calls₂)
-    (b : IxVM.Consistency.Bounded calls₂) : IxVM.Consistency.Bounded calls₁ :=
-  let ⟨rom, hv, bound⟩ := b
-  ⟨rom, hv, fun name hm =>
-    let ⟨keys, hk, cover⟩ := bound name hm
-    ⟨keys, hk, fun cl hcl => cover cl (hsub cl hcl)⟩⟩
+    (b : IxVM.Consistency.Bounded calls₂) : IxVM.Consistency.Bounded calls₁ := by
+  obtain ⟨rom, hv, bound⟩ := b
+  refine ⟨rom, hv, fun name hm => ?_⟩
+  obtain ⟨keys, hk, cover⟩ := bound name hm
+  exact ⟨keys, hk, fun cl hcl => cover cl (hsub cl hcl)⟩
 
 /-- **Good passes to sub-derivations.** -/
 theorem Good.sub {c : Ctx} {calls₁ calls₂ : List (Call F)} (g : Good c calls₂)
