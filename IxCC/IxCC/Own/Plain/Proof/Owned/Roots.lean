@@ -71,7 +71,7 @@ theorem EnvRoots.cons_iff {ρ : Own.Env} {x : Var} {xs : List Var} {vs : List RV
       | none => rw [hx, hs] at h; cases h
       | some vs' =>
         rw [hx, hs] at h
-        exact ⟨v, vs', rfl, hs, (Option.some.inj h).symm⟩
+        exact ⟨v, vs', rfl, rfl, (Option.some.inj h).symm⟩
   · rintro ⟨v, vs', hx, hs, rfl⟩
     rw [hx, hs]
 
