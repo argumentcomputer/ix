@@ -27,7 +27,11 @@ pub(super) fn register<B: FieldBackend>(
     {
       return Err("invalid IO byte hint signature".into());
     }
-    if !entry.key.iter().chain(&entry.output).all(|&word| field.contains(word))
+    if !entry
+      .key
+      .iter()
+      .chain(&entry.output)
+      .all(|&word| field.contains(word.into()))
     {
       return Err("noncanonical IO byte hint field element".into());
     }
@@ -64,14 +68,14 @@ pub(super) fn register<B: FieldBackend>(
     key_type,
     Type::Field,
     move |key, output| {
-      let arena = match field.to_u64(key[0]) {
+      let arena = match field.try_to_u64(key[0])? {
         2 => &constants,
         4 => &blobs,
         6 => &roles,
         7 => &models,
         _ => return Err("missing hint data: unknown IO channel".into()),
       };
-      let offset = usize::try_from(field.to_u64(key[1]))
+      let offset = usize::try_from(field.try_to_u64(key[1])?)
         .ok()
         .ok_or("IO byte offset exceeds host index range")?;
       output[0] = *arena

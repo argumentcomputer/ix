@@ -13,7 +13,8 @@ use crate::{
 use std::path::Path;
 
 /// A package whose moduli and field constants can occupy up to four limbs.
-/// The existing interpreter still accepts only the narrow [`super::Package`].
+/// Prepare `program` with a matching `FieldBackend<Word = FieldWord>` to execute
+/// native field elements. The companion trace remains transport data.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct WidePackage {
   pub program: Program<FieldWord>,

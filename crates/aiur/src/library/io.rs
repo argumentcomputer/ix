@@ -100,7 +100,7 @@ pub(super) fn metadata_entry(
   stream_key: &[u64],
   offset: usize,
   len: usize,
-  single_value: impl FnOnce() -> u64,
+  single_value: impl FnOnce() -> Result<u64, String>,
 ) -> Result<Option<HintEntry>, String> {
   let mut key = if let Some(fixed) = fixed_channel {
     if channel != fixed {
@@ -115,7 +115,7 @@ pub(super) fn metadata_entry(
     if len != 1 {
       return Err("IO value hint must contain one field".into());
     }
-    vec![single_value()]
+    vec![single_value()?]
   } else {
     vec![offset as u64, len as u64]
   };
@@ -165,12 +165,16 @@ impl<B: FieldBackend> StreamAdvice<B> for Arenas<'_, B> {
         Type::Tuple { items: vec![Type::Field; N] }
       },
       move |[channel, offset]| {
-        let channel = usize::try_from(field.to_u64(channel))
-          .ok()
-          .ok_or("IO channel overflow")?;
-        let offset = usize::try_from(field.to_u64(offset))
-          .ok()
-          .ok_or("IO offset overflow")?;
+        let channel = usize::try_from(
+          field.try_to_u64(channel).map_err(|_error| "IO channel overflow")?,
+        )
+        .ok()
+        .ok_or("IO channel overflow")?;
+        let offset = usize::try_from(
+          field.try_to_u64(offset).map_err(|_error| "IO offset overflow")?,
+        )
+        .ok()
+        .ok_or("IO offset overflow")?;
         let end = offset.checked_add(N).ok_or("IO offset overflow")?;
         let row = values
           .get(channel)
@@ -205,7 +209,7 @@ impl<B: FieldBackend> StreamAdvice<B> for Arenas<'_, B> {
         &stream.key,
         *offset,
         stream.values.len(),
-        || stream.values[0],
+        || Ok(stream.values[0]),
       )?);
     }
     Ok(result)

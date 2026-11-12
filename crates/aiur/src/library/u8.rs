@@ -1,6 +1,8 @@
 //! Accelerators for the shared checked byte tables.
 use crate::{
-  bytecode::CheckedProgram, field::FieldBackend, maps::MapOverrides,
+  bytecode::CheckedProgram,
+  field::{FieldBackend, Word},
+  maps::MapOverrides,
 };
 
 #[cfg(test)]
@@ -100,11 +102,17 @@ pub fn register_maps<B: FieldBackend>(
   Ok(())
 }
 
-fn standard_order(rows: &[Vec<u64>], width: usize, count: usize) -> bool {
+fn standard_order<W: Word>(
+  rows: &[Vec<W>],
+  width: usize,
+  count: usize,
+) -> bool {
   rows.len() == count
     && rows.iter().enumerate().all(|(i, row)| match width {
-      1 => row.as_slice() == [i as u64],
-      2 => row.as_slice() == [(i >> 8) as u64, (i & 255) as u64],
+      1 => row.as_slice() == [W::from(i as u64)],
+      2 => {
+        row.as_slice() == [W::from((i >> 8) as u64), W::from((i & 255) as u64)]
+      },
       _ => false,
     })
 }
@@ -115,7 +123,9 @@ fn unary<const LIMIT: u64, B: FieldBackend>(
   field: B,
   input: &[B::Element],
 ) -> Result<usize, String> {
-  let value = field.to_u64(input[0]);
+  let value = field
+    .try_to_u64(input[0])
+    .map_err(|_error| "no table entry for map input".to_owned())?;
   if value >= LIMIT {
     return Err("no table entry for map input".into());
   }
@@ -128,8 +138,12 @@ fn pair<B: FieldBackend>(
   field: B,
   input: &[B::Element],
 ) -> Result<(u64, u64, usize), String> {
-  let a = field.to_u64(input[0]);
-  let b = field.to_u64(input[1]);
+  let a = field
+    .try_to_u64(input[0])
+    .map_err(|_error| "no table entry for map input".to_owned())?;
+  let b = field
+    .try_to_u64(input[1])
+    .map_err(|_error| "no table entry for map input".to_owned())?;
   if (a | b) > 255 {
     return Err("no table entry for map input".into());
   }

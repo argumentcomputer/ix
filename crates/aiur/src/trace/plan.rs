@@ -86,7 +86,7 @@ struct Write<F> {
   value: Value<F>,
 }
 
-pub(super) struct FillPlan<B: FieldBackend> {
+pub(super) struct FillPlan<B: FieldBackend<Word = u64>> {
   function: usize,
   field: B,
   inputs: usize,
@@ -96,7 +96,7 @@ pub(super) struct FillPlan<B: FieldBackend> {
   writes: Vec<Write<B::Element>>,
 }
 
-struct Builder<B: FieldBackend> {
+struct Builder<B: FieldBackend<Word = u64>> {
   logical: Vec<Value<B::Element>>,
   immutable: FxHashSet<usize>,
   shared: FxHashMap<Arithmetic<B::Element>, Value<B::Element>>,
@@ -104,7 +104,7 @@ struct Builder<B: FieldBackend> {
   field: B,
 }
 
-impl<B: FieldBackend> Builder<B> {
+impl<B: FieldBackend<Word = u64>> Builder<B> {
   fn emit(
     &mut self,
     guard: Value<B::Element>,
@@ -175,7 +175,7 @@ impl<B: FieldBackend> Builder<B> {
   }
 }
 
-impl<B: FieldBackend> FillPlan<B> {
+impl<B: FieldBackend<Word = u64>> FillPlan<B> {
   pub(super) fn compile(
     plan: &FunctionPlan,
     callables: &FxHashMap<String, usize>,
@@ -402,7 +402,7 @@ impl<B: FieldBackend> FillPlan<B> {
   }
 }
 
-impl<B: FieldBackend> FillPlan<B> {
+impl<B: FieldBackend<Word = u64>> FillPlan<B> {
   /// This plan in the stable description schema; `plan` is the function's
   /// artifact plan, which names its hint sites.
   pub(super) fn describe(
@@ -563,7 +563,7 @@ pub(super) mod device {
     pub outputs: u32,
   }
 
-  impl<B: FieldBackend> FillPlan<B> {
+  impl<B: FieldBackend<Word = u64>> FillPlan<B> {
     /// The plan's kernels and column writes, writing physical `column`s, or
     /// `None` when a kernel needs host-only state: memory, or a callable or
     /// hint site without a device implementation.

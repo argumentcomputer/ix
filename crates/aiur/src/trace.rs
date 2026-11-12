@@ -41,7 +41,7 @@ impl Polynomial {
       },
     }
   }
-  fn validate<B: FieldBackend>(
+  fn validate<B: FieldBackend<Word = u64>>(
     &self,
     width: usize,
     field: B,
@@ -60,7 +60,7 @@ impl Polynomial {
       _ => Ok(()),
     }
   }
-  pub(crate) fn eval<B: FieldBackend>(
+  pub(crate) fn eval<B: FieldBackend<Word = u64>>(
     &self,
     row: &[B::Element],
     field: B,
@@ -352,7 +352,7 @@ pub struct PopulationTimings {
 }
 
 /// A checked plan is tied to the immutable checked execution program.
-pub struct TracePlan<'a, B: FieldBackend = PrimeField> {
+pub struct TracePlan<'a, B: FieldBackend<Word = u64> = PrimeField> {
   program: crate::shared::Shared<'a, CheckedProgram<B>>,
   artifact: TraceArtifact,
   callables: FxHashMap<String, usize>,
@@ -369,7 +369,7 @@ fn indices(xs: &[usize], width: usize) -> Result<(), String> {
   }
 }
 
-impl<'a, B: FieldBackend> TracePlan<'a, B> {
+impl<'a, B: FieldBackend<Word = u64>> TracePlan<'a, B> {
   pub fn new(
     program: impl Into<crate::shared::Shared<'a, CheckedProgram<B>>>,
     mut artifact: TraceArtifact,

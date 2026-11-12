@@ -162,7 +162,7 @@ pub(crate) fn function_sccs(
 impl DepthPlan {
   /// Validate the depth metadata of `artifact` against its circuits and
   /// compile it. `members[f]` is function `f`'s circuit.
-  pub(super) fn compile<B: FieldBackend>(
+  pub(super) fn compile<B: FieldBackend<Word = u64>>(
     artifact: &TraceArtifact,
     chips: &FxHashMap<String, usize>,
     callables: &FxHashMap<String, usize>,
@@ -286,7 +286,7 @@ impl DepthPlan {
   /// Fill circuit `chip`'s depth columns in `row`, a populated row of the
   /// query whose height is `depth`, and count its range-table uses.
   #[allow(clippy::too_many_arguments)]
-  pub(super) fn fill<B: FieldBackend>(
+  pub(super) fn fill<B: FieldBackend<Word = u64>>(
     &self,
     chip: usize,
     record: &Execution<B>,
@@ -352,7 +352,7 @@ impl DepthPlan {
 
 /// The recorded height of the callee query `args` of a slot, from whichever
 /// of the callee circuit's functions recorded it.
-fn callee_depth<B: FieldBackend>(
+fn callee_depth<B: FieldBackend<Word = u64>>(
   record: &Execution<B>,
   callees: &[usize],
   args: &[B::Element],
@@ -391,7 +391,7 @@ pub struct DepthStatistics {
   pub gap_slot_uses: u64,
 }
 
-impl<B: FieldBackend> TracePlan<'_, B> {
+impl<B: FieldBackend<Word = u64>> TracePlan<'_, B> {
   /// Heights per SCC in `record` and the largest gap limbs `ranges` counted.
   pub fn depth_statistics(
     &self,

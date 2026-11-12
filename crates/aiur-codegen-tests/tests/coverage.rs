@@ -52,7 +52,7 @@ fn same_error(a: &ExecutionError, b: &ExecutionError) -> bool {
     && a.message == b.message
 }
 
-fn check<B: FieldBackend>(
+fn check<B: FieldBackend<Word = u64>>(
   program: &aiur::bytecode::CheckedProgram<B>,
   field: B,
 ) {

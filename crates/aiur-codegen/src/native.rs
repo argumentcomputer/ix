@@ -40,7 +40,7 @@ pub(crate) fn kernel(k: &Kernel<'_>) -> String {
   let _ = writeln!(s, "impl Kernel for {name} {{");
   let _ = writeln!(s, "const FINGERPRINT: &'static str = {:?};", k.fingerprint);
   s.push_str(
-    "fn run<B: FieldBackend>(rt: &mut Runtime<'_, B>, function: usize, row: usize, \
+    "fn run<B: FieldBackend<Word = u64>>(rt: &mut Runtime<'_, B>, function: usize, row: usize, \
      args: &[B::Element], output: &mut Vec<B::Element>) -> Result<(), Failed> {\n\
      match function {\n",
   );
@@ -67,7 +67,7 @@ fn call_wrapper(s: &mut String, id: usize, f: &NativeFunction) {
   let _ = writeln!(
     s,
     "#[inline(never)]\n#[allow(non_snake_case, clippy::all)]\n\
-     fn c_{id}<B: FieldBackend>(rt: &mut Runtime<'_, B>, caller: usize, pc: usize, \
+     fn c_{id}<B: FieldBackend<Word = u64>>(rt: &mut Runtime<'_, B>, caller: usize, pc: usize, \
      a: [B::Element; {n}]) -> Result<[B::Element; {m}], Failed> {{\n\
      match rt.begin::<{n}, {m}>(caller, pc, {id}, &a)? {{\n\
      Begin::Cached(row) => {{ let mut o = [rt.field().zero(); {m}]; \
@@ -214,7 +214,7 @@ fn body(
     "#[inline(never)]\n\
      #[allow(non_snake_case, unused_mut, unused_variables, unused_assignments, \
      unreachable_code, clippy::all)]\n\
-     fn f_{id}<B: FieldBackend>(rt: &mut Runtime<'_, B>, row: usize, a: [B::Element; {n}]) \
+     fn f_{id}<B: FieldBackend<Word = u64>>(rt: &mut Runtime<'_, B>, row: usize, a: [B::Element; {n}]) \
      -> Result<[B::Element; {m}], Failed> {{\n\
      let fd = rt.field();\n\
      let mut r = [fd.zero(); {regs}];\n\

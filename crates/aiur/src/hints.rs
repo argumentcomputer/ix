@@ -7,6 +7,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 
+/// Data-only advice with `u64` field values. `HintChannels` accepts the native
+/// element type when keys or answers require a larger field representation.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HintEntry {
   #[serde(default)]
@@ -144,12 +146,12 @@ impl<F: Copy> HintSite<F> {
 
 /// Shared once per prepared session, including the immutable data captured by
 /// data-backed providers. Records keep this alive for later or parallel replay.
-pub(crate) struct BoundHints<F> {
-  pub(crate) program: Arc<Program>,
+pub(crate) struct BoundHints<F, W = u64> {
+  pub(crate) program: Arc<Program<W>>,
   pub(crate) sites: Vec<Vec<Option<HintSite<F>>>>,
 }
 
-impl<F> std::fmt::Debug for BoundHints<F> {
+impl<F, W> std::fmt::Debug for BoundHints<F, W> {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     f.debug_struct("BoundHints")
       .field("functions", &self.sites.len())
@@ -161,7 +163,7 @@ impl<F> std::fmt::Debug for BoundHints<F> {
 /// caches or ROM pointers. It owns the closures and their captured environment.
 pub struct PreparedHints<'a, B: FieldBackend = PrimeField> {
   pub(crate) program: &'a CheckedProgram<B>,
-  pub(crate) bindings: Arc<BoundHints<B::Element>>,
+  pub(crate) bindings: Arc<BoundHints<B::Element, B::Word>>,
   pub(crate) maps: Vec<Arc<crate::maps::PreparedMap<B>>>,
   pub(crate) dispatch: Vec<Vec<crate::execute::dispatch::Dispatch<B::Element>>>,
 }

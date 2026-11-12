@@ -122,7 +122,7 @@ pub struct AdviceBuilder<B: FieldBackend> {
 
 impl<B: FieldBackend> AdviceBuilder<B> {
   pub fn new(field: B) -> Result<Self, String> {
-    if !field.contains(u64::from(u8::MAX)) {
+    if !field.contains(u64::from(u8::MAX).into()) {
       return Err("field cannot represent every byte".into());
     }
     Ok(Self { field, arenas: vec![], streams: vec![], keys: HashSet::new() })
@@ -137,7 +137,7 @@ impl<B: FieldBackend> AdviceBuilder<B> {
     if channel >= CHANNEL_LIMIT {
       return Err("IO arena channel must be below 256".into());
     }
-    if !key.iter().all(|&word| self.field.contains(word)) {
+    if !key.iter().all(|&word| self.field.contains(word.into())) {
       return Err("noncanonical field element".into());
     }
     if !self.keys.insert((channel, key.into())) {
@@ -270,10 +270,14 @@ impl<B: FieldBackend> Advice<B> {
   }
 
   #[allow(clippy::cast_possible_truncation)] // Streams index arenas built from their channels.
-  fn value(&self, stream: &StreamInfo) -> u64 {
+  fn value(&self, stream: &StreamInfo) -> Result<u64, String> {
     match &self.arenas[stream.channel as usize] {
-      Arena::Bytes(bytes) => u64::from(bytes[stream.offset]),
-      Arena::Words(words) => self.field.to_u64(words[stream.offset]),
+      Arena::Bytes(bytes) => Ok(u64::from(bytes[stream.offset])),
+      Arena::Words(words) => {
+        self.field.try_to_u64(words[stream.offset]).map_err(|error| {
+          format!("IO value exceeds legacy u64 hint data: {error}")
+        })
+      },
     }
   }
 }
@@ -299,12 +303,16 @@ impl<B: FieldBackend> StreamAdvice<B> for Advice<B> {
         Type::Tuple { items: vec![Type::Field; N] }
       },
       move |[channel, offset]| {
-        let channel = usize::try_from(field.to_u64(channel))
-          .ok()
-          .ok_or("IO channel overflow")?;
-        let offset = usize::try_from(field.to_u64(offset))
-          .ok()
-          .ok_or("IO offset overflow")?;
+        let channel = usize::try_from(
+          field.try_to_u64(channel).map_err(|_error| "IO channel overflow")?,
+        )
+        .ok()
+        .ok_or("IO channel overflow")?;
+        let offset = usize::try_from(
+          field.try_to_u64(offset).map_err(|_error| "IO offset overflow")?,
+        )
+        .ok()
+        .ok_or("IO offset overflow")?;
         offset.checked_add(N).ok_or("IO offset overflow")?;
         arenas
           .get(channel)

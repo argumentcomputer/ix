@@ -206,7 +206,8 @@ impl<B: FieldBackend> QueryTable<B> {
     let hash = hash_words(args);
     if let [key] = args
       && self.input_width == 1
-      && let Ok(key) = usize::try_from(self.field.to_u64(*key))
+      && let Ok(key) = self.field.try_to_u64(*key)
+      && let Ok(key) = usize::try_from(key)
       && let Some(&row) = self.dense_index.get(key)
       && row != usize::MAX
     {
@@ -272,7 +273,8 @@ impl<B: FieldBackend> QueryTable<B> {
     self.index.insert_unique(entry.rehash(), entry, Entry::rehash);
     drop(replaced);
     if let [key] = args
-      && let Ok(key) = usize::try_from(self.field.to_u64(*key))
+      && let Ok(key) = self.field.try_to_u64(*key)
+      && let Ok(key) = usize::try_from(key)
     {
       // Bound space by observed table size, with a small startup allowance
       // and an absolute 8 MiB ceiling on 64-bit hosts. Never allocate in

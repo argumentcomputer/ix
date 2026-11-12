@@ -6,7 +6,32 @@
 //! empty prefix. Modulus and field-value bounds are checked separately.
 use crate::ixon::{Reader, Writer};
 use serde::{Deserialize, Serialize};
-use std::{cmp::Ordering, fmt};
+use std::{cmp::Ordering, fmt, hash::Hash};
+
+/// An unsigned canonical integer used at a field's transport boundary.
+/// Numeric ordering and checked narrowing keep metadata conversions separate
+/// from arithmetic reduction in the field backend.
+pub trait Word:
+  Copy
+  + Eq
+  + Hash
+  + Ord
+  + fmt::Debug
+  + fmt::Display
+  + Serialize
+  + Send
+  + Sync
+  + From<u64>
+  + 'static
+{
+  fn try_to_u64(self) -> Result<u64, String>;
+}
+
+impl Word for u64 {
+  fn try_to_u64(self) -> Result<u64, String> {
+    Ok(self)
+  }
+}
 
 #[derive(
   Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize,
@@ -116,6 +141,12 @@ impl FieldWord {
 impl From<u64> for FieldWord {
   fn from(value: u64) -> Self {
     Self([value, 0, 0, 0])
+  }
+}
+
+impl Word for FieldWord {
+  fn try_to_u64(self) -> Result<u64, String> {
+    self.to_u64()
   }
 }
 

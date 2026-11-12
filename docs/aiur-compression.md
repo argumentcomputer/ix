@@ -359,14 +359,14 @@ moves inside the formalized compiler's scope.
 
 ## 6. Work required
 
-**Rust (`crates/aiur`).** Current field and serialization boundaries are 64-bit:
+**Rust (`crates/aiur`).** The interpreter supports wide fields; proving and
+several interchange boundaries still need generalization:
 
-- `FieldBackend` (`modulus() -> u64`, `from_u64`), `NativeField<F: PrimeField64>`
-  (`field.rs`) and `bytecode::Program.modulus: u64`: generalize to a
-  multi-limb field, or add a BN254 backend beside the Goldilocks one.
-  Separate checked conversions for bounded counters/indices from full field
-  serialization. Truncating to the low limb is not a valid implementation
-  of `to_u64` for arbitrary Fr values.
+- `FieldBackend` separates its canonical `Word` from its native `Element`;
+  `Program<Word>` carries the matching modulus and constants. Goldilocks
+  retains `Word = u64`; the BN254 adapter uses four-limb `FieldWord` (§13).
+  Bounded counters and indices use checked narrowing, while full field
+  serialization preserves every limb.
 - The trace adapter fixes `System<GoldilocksBlake3Config>` and rejects other
   moduli (`trace/stark.rs`); `WitnessField::words()` assumes a transparent
   `u64`. A `System<KzgConfig>` adapter proves the same `CircuitInputs`
@@ -378,8 +378,9 @@ moves inside the formalized compiler's scope.
   rejects such naturals before writing its UInt64 TagN. Trace constants have
   the same bound. The opt-in version-three package codec now carries wide
   field values while keeping counts and indices bounded (§12). Execution
-  inputs, hint values, runtime integration and generated native executors
-  (`formal-generated`) still need the corresponding support.
+  inputs, data-hint values, trace population and generated native executors
+  (`formal-generated`) still need the corresponding wide support. Native
+  execution arguments and host callbacks already carry the full field.
 
 **Lean.** Parameterize the verifier modules over a `GL` interface (§3.1); write
 `GL`, `Fq`, `G1`, `Kzg` and `Pairing` libraries, including the pairing's
@@ -402,21 +403,20 @@ still need implementation:
 - BN254 Fr in multi-stark's field traits already exists as
   `proof-compression`'s `kzg::field::Scalar` (`ark_bn254::Fr` behind
   multi-stark's `Field`/`TwoAdicField`), the type `KzgConfig` proves with.
-  It is not an implementation of the `p3::PrimeField64` bound used by today's
-  `NativeField`. Its canonical limbs and checked `canonical_u64` conversion
-  are useful boundary APIs. It moves to a shared crate for `crates/aiur`.
+  It is not an implementation of the `p3::PrimeField64` bound used by
+  `NativeField`. `proof-compression::aiur_backend::Bn254` adapts it to the
+  generic interpreter without adding an arkworks dependency to `crates/aiur`.
+  Canonical limbs and `FieldBackend::try_to_u64` provide separate full-field
+  and bounded-index conversions.
   BN254 arithmetic comes from
   arkworks only: Plonky3's `p3-bn254`, a wrapper of the same arkworks type,
   is deprecated from Plonky3 0.9.0, and the pinned Plonky3 is not bumped for
-  this work. Later Plonky3 releases serve as a guide to where its field and
-  PCS traits are heading, so the shared crate tracks their shape without
-  depending on them.
+  this work. The adapter uses the existing dependencies and field traits.
 - Fq, G1/G2, pairings, MSM and FFTs over Fr come from `ark-bn254`, `ark-ec`
   and `ark-poly`, with `sppark` for the GPU MSM; all are dependencies today.
   They compute the hints the emulation libraries check.
-- What libraries cannot remove is `crates/aiur`'s assumption of 64-bit
-  fields. The first BN254 path supports the interpreter and host trace
-  population only; native executors and CUDA population stay
+- The interpreter's wide-field support must extend to host trace population
+  before BN254 proving is available. Native executors and CUDA population stay
   Goldilocks-only until measurements call for them. Measure execution and
   proving separately before choosing further acceleration; verifying one
   proof can still involve substantial work.
@@ -686,7 +686,37 @@ checked cross-language fixture with the BN254 scalar modulus and wide values
 in instructions, tables and trace polynomials. It compiles integral Rat
 structure for transport testing; it is not a BN254 execution or proof.
 
-The current execution API deliberately rejects wide packages. Native Fr
-arithmetic, checked host-index conversions, wide invocation/hint values and a
-KZG trace adapter remain subsequent milestones. This checkpoint changes what
-the artifact can represent, not which field the existing interpreter runs.
+The legacy `Package` API deliberately rejects wide packages. Version-three
+transport is opt-in through `WidePackage`; the native execution adapter is
+described below.
+
+## 13. Native BN254 execution checkpoint
+
+`Program<FieldWord>::check_with(Bn254)` prepares a wide package for the existing
+Aiur interpreter. The adapter is `ix_proof_compression::aiur_backend::Bn254`
+and stores the KZG backend's native `Scalar` in registers, query records,
+memory and host callbacks. Constants, branches, table lookups and constant
+folding use the selected field. The modulus must match the backend, and wire
+values must be canonical before conversion.
+
+`Aiur.Library.Field.BN254` instantiates `ZMod r` with a kernel-checked Lucas
+primality certificate and proves the shared U32/U64 characteristic bounds.
+`Aiur/Examples/BN254Execution.lean` evaluates and compiles eight entry points
+over that field, exporting a 905-byte fixture. Rust executes the same fixture
+with native Fr values, including addition at `r - 1`, inversion, wide
+constants, branches, tables and memory. Focused regression checks also cover
+malformed constants and failures at the integer boundaries below.
+
+Field words and host indices are separate boundaries. A BN254 value that does
+not fit in UInt64 cannot become a pointer, enum tag, stream offset or byte
+decomposition input by dropping its high limbs. Dense table/query indexing
+falls back to hashing when keys are too large for its small-index shortcut.
+
+Native-element arguments and callbacks can carry the full field. The existing
+UInt64 invocation, data-hint, structured-value and Lean FFI formats remain
+narrow; structured output fails when a field value cannot be represented.
+Trace population, native code generation and the existing Goldilocks proving
+adapter also retain their UInt64 boundary. A BN254 trace/KZG adapter, wide
+invocation/data-hint formats and the compression programs themselves remain
+later work. This checkpoint executes programs; it does not produce BN254
+Aiur proofs.

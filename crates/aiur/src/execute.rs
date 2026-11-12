@@ -36,7 +36,7 @@ pub struct MemoryEntry<F = u64> {
 #[derive(Clone, Debug)]
 pub struct Execution<B: FieldBackend = PrimeField> {
   pub output: Vec<B::Element>,
-  pub(crate) hints: std::sync::Arc<BoundHints<B::Element>>,
+  pub(crate) hints: std::sync::Arc<BoundHints<B::Element, B::Word>>,
   pub queries: QueryMap<B>,
   /// Pointers are local to each payload width; record indices are separate.
   pub memory: Memory<B::Element>,
@@ -423,10 +423,9 @@ impl<'a, B: FieldBackend> Machine<'a, '_, B> {
       for frame in self.frames.iter().rev() {
         let name = self.program.callable_name(frame.function).unwrap_or("?");
         let inputs = self.program.inputs[frame.function].width();
-        let args: Vec<u64> = frame.registers
-          [..inputs.min(frame.registers.len())]
+        let args: Vec<_> = frame.registers[..inputs.min(frame.registers.len())]
           .iter()
-          .map(|v| self.program.field.to_u64(*v))
+          .map(|v| self.program.field.to_word(*v))
           .collect();
         eprintln!(
           "  at {name} pc {} query {} args {args:?}",
@@ -777,10 +776,13 @@ impl<'a, B: FieldBackend> Machine<'a, '_, B> {
             program.field.from_u64(address);
         },
         Load { pointer, dest, .. } => {
-          let address =
-            usize::try_from(program.field.to_u64(frame.registers[*pointer]))
-              .ok()
-              .ok_or_else(|| self.error("ROM address overflow"))?;
+          let address = usize::try_from(
+            program.field.try_to_u64(frame.registers[*pointer]).map_err(
+              |error| self.error(format!("ROM address overflow: {error}")),
+            )?,
+          )
+          .ok()
+          .ok_or_else(|| self.error("ROM address overflow"))?;
           let Some(index) =
             self.record.memory.index_for_type(memory_type, address)
           else {

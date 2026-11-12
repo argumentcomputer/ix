@@ -11,16 +11,21 @@ use std::{
 // Use the same field contract as our maintained proving library. No concrete
 // field is selected by the interpreter, and no direct Plonky3 dependency is
 // needed here.
+pub use crate::field_word::Word;
 pub use multi_stark::p3_field::{Field, PrimeCharacteristicRing, PrimeField64};
 
 /// Arithmetic and integer-boundary conversions. The associated element is the
 /// actual value stored by the VM, not an encoding chosen by the VM. This small
 /// adapter also lets the Lean FFI retain its runtime-selected prime backend.
-/// Implementations must preserve arithmetic modulo `modulus()`, use field-value
-/// equality/hash, and make `from_u64` reduce integers while `to_u64` returns the
-/// canonical representative. `decode` rejects noncanonical wire integers before
-/// conversion. All valid native representations may be accepted by `valid`.
+/// Implementations must select a prime modulus, preserve arithmetic modulo
+/// `modulus()`, use field-value
+/// equality/hash, and make `from_word` and `from_u64` reduce integers while
+/// `to_word` returns the canonical representative. `decode_words` and `decode`
+/// reject noncanonical wire integers before conversion. Metadata conversions
+/// use `try_to_u64`; wide representatives are never truncated. All valid native
+/// representations may be accepted by `valid`.
 pub trait FieldBackend: Copy + Debug + Send + Sync + 'static {
+  type Word: Word;
   type Element: Copy
     + Eq
     + Hash
@@ -33,13 +38,29 @@ pub trait FieldBackend: Copy + Debug + Send + Sync + 'static {
   /// Every value of Element passes `valid`. This permits omitting redundant
   /// host-output checks for native field types, but never enum/tag checks.
   const ALL_ELEMENTS_VALID: bool = false;
-  fn modulus(self) -> u64;
+  fn modulus(self) -> Self::Word;
   #[allow(
     clippy::wrong_self_convention,
     reason = "conversion needs the selected runtime backend"
   )]
-  fn from_u64(self, value: u64) -> Self::Element;
-  fn to_u64(self, value: Self::Element) -> u64;
+  fn from_word(self, value: Self::Word) -> Self::Element;
+  fn to_word(self, value: Self::Element) -> Self::Word;
+  #[allow(
+    clippy::wrong_self_convention,
+    reason = "conversion needs the selected runtime backend"
+  )]
+  fn from_u64(self, value: u64) -> Self::Element {
+    self.from_word(Self::Word::from(value))
+  }
+  fn try_to_u64(self, value: Self::Element) -> Result<u64, String> {
+    self.to_word(value).try_to_u64()
+  }
+  fn to_u64(self, value: Self::Element) -> u64
+  where
+    Self: FieldBackend<Word = u64>,
+  {
+    self.to_word(value)
+  }
   fn add(self, a: Self::Element, b: Self::Element) -> Self::Element;
   fn sub(self, a: Self::Element, b: Self::Element) -> Self::Element;
   fn neg(self, a: Self::Element) -> Self::Element;
@@ -54,14 +75,29 @@ pub trait FieldBackend: Copy + Debug + Send + Sync + 'static {
   fn one(self) -> Self::Element {
     self.from_u64(1)
   }
-  fn contains(self, word: u64) -> bool {
+  fn contains(self, word: Self::Word) -> bool {
     word < self.modulus()
+  }
+  fn decode_words(
+    self,
+    words: &[Self::Word],
+  ) -> Result<Vec<Self::Element>, String> {
+    words
+      .iter()
+      .map(|&word| {
+        if self.contains(word) {
+          Ok(self.from_word(word))
+        } else {
+          Err("noncanonical field element".into())
+        }
+      })
+      .collect()
   }
   fn decode(self, words: &[u64]) -> Result<Vec<Self::Element>, String> {
     words
       .iter()
       .map(|&word| {
-        if self.contains(word) {
+        if self.contains(Self::Word::from(word)) {
           Ok(self.from_u64(word))
         } else {
           Err("noncanonical field element".into())
@@ -73,7 +109,7 @@ pub trait FieldBackend: Copy + Debug + Send + Sync + 'static {
 
 /// Zero-sized, statically dispatched adapter for any field implementing
 /// multi-stark's prime-field traits. Its values are F itself, including in host
-/// hint/table closures. The wire format currently supports 64-bit prime fields.
+/// hint/table closures. This adapter uses `u64` transport words.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct NativeField<F>(PhantomData<F>);
 impl<F> NativeField<F> {
@@ -82,6 +118,7 @@ impl<F> NativeField<F> {
   }
 }
 impl<F: PrimeField64> FieldBackend for NativeField<F> {
+  type Word = u64;
   type Element = F;
   const ALL_ELEMENTS_VALID: bool = true;
   #[inline]
@@ -93,7 +130,11 @@ impl<F: PrimeField64> FieldBackend for NativeField<F> {
     F::from_u64(value)
   }
   #[inline]
-  fn to_u64(self, value: F) -> u64 {
+  fn from_word(self, value: u64) -> F {
+    F::from_u64(value)
+  }
+  #[inline]
+  fn to_word(self, value: F) -> u64 {
     value.as_canonical_u64()
   }
   #[inline]
@@ -170,6 +211,7 @@ impl PrimeField {
 }
 
 impl FieldBackend for PrimeField {
+  type Word = u64;
   type Element = u64;
   fn modulus(self) -> u64 {
     self.modulus
@@ -177,7 +219,10 @@ impl FieldBackend for PrimeField {
   fn from_u64(self, value: u64) -> u64 {
     value % self.modulus
   }
-  fn to_u64(self, value: u64) -> u64 {
+  fn from_word(self, value: u64) -> u64 {
+    value % self.modulus
+  }
+  fn to_word(self, value: u64) -> u64 {
     value
   }
   fn add(self, a: u64, b: u64) -> u64 {

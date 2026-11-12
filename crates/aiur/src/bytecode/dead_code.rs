@@ -31,11 +31,14 @@ fn writes(live: &mut [u64], registers: &[usize]) {
   }
 }
 
-fn nop() -> Instruction {
+fn nop<W>() -> Instruction<W> {
   Instruction::Copy { dest: vec![], source: vec![] }
 }
 
-pub(super) fn eliminate<F>(function: &mut Function, inverses: &[Option<F>]) {
+pub(super) fn eliminate<W, F>(
+  function: &mut Function<W>,
+  inverses: &[Option<F>],
+) {
   let empty = vec![0u64; function.registers.div_ceil(64)];
   let mut before = vec![empty.clone(); function.code.len() + 1];
   // Validated intra-function control flow is forward-only. Union successor

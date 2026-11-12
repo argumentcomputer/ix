@@ -2,6 +2,7 @@
 //! pointers are indices within a width bucket. A representative store type is
 //! retained only for host diagnostics, never for interning or circuit lookups.
 use crate::bytecode::Type;
+use crate::field::Word;
 use crate::query::Entry;
 use hashbrown::HashTable;
 use serde::{Serialize, Serializer};
@@ -188,11 +189,11 @@ impl<F: Copy + Eq + Hash + Send + Sync> Memory<F> {
   /// The only insertion path: equal encodings share one cell, regardless of
   /// nominal type, and each width's addresses form a consecutive prefix.
   #[inline]
-  pub(crate) fn intern(
+  pub(crate) fn intern<W: Word>(
     &mut self,
     type_id: usize,
     words: &[F],
-    modulus: u64,
+    modulus: W,
   ) -> Result<usize, crate::budget::StorageError> {
     debug_assert_eq!(words.len(), self.types[type_id].1);
     let (hash, found) = self.lookup(words);
@@ -215,9 +216,9 @@ impl<F: Copy + Eq + Hash + Send + Sync> Memory<F> {
     self.budget.vector(bucket, 1)?;
     let address =
       self.base.checked_add(bucket.len()).ok_or("ROM address overflow")?;
-    if u64::try_from(address).ok().ok_or("ROM address overflow")?
-      >= modulus.min(self.end)
-    {
+    let address_word =
+      u64::try_from(address).ok().ok_or("ROM address overflow")?;
+    if address_word >= self.end || W::from(address_word) >= modulus {
       return Err("ROM exceeds field capacity".into());
     }
     self.index.insert_unique(entry.rehash(), entry, Entry::rehash);
@@ -258,15 +259,15 @@ mod tests {
       .into_iter(),
     );
     for value in 0..1024 {
-      memory.intern(2, &[value, 0], 65537).unwrap();
-      memory.intern(3, &[], 65537).unwrap();
-      let index = memory.intern(0, &[1023 - value], 65537).unwrap();
-      assert_eq!(memory.intern(1, &[1023 - value], 65537).unwrap(), index);
+      memory.intern(2, &[value, 0], 65537u64).unwrap();
+      memory.intern(3, &[], 65537u64).unwrap();
+      let index = memory.intern(0, &[1023 - value], 65537u64).unwrap();
+      assert_eq!(memory.intern(1, &[1023 - value], 65537u64).unwrap(), index);
     }
     assert_eq!(memory.len(), 2049);
     let mut copy = memory.clone();
     for value in 1024..4096 {
-      copy.intern(0, &[value], 65537).unwrap();
+      copy.intern(0, &[value], 65537u64).unwrap();
     }
     // Independently scan the record: indices refer to cells, not allocations
     // or the other width's local address, even after clone/arena/hash growth.
@@ -288,8 +289,8 @@ mod tests {
     let unit = Type::Tuple { items: vec![] };
     let mut memory =
       Memory::new([(Type::Field, 1), (unit.clone(), 0)].into_iter());
-    memory.intern(0, &[7], 17).unwrap();
-    memory.intern(1, &[], 17).unwrap();
+    memory.intern(0, &[7], 17u64).unwrap();
+    memory.intern(1, &[], 17u64).unwrap();
     *memory.multiplicity_mut(0) = 3;
     *memory.multiplicity_mut(1) = 1;
     assert!(memory.get(2).is_none());
@@ -316,5 +317,30 @@ mod tests {
     let mut copy = memory.clone();
     *copy.multiplicity_mut(0) = 8;
     assert_eq!(memory.get(0).unwrap().multiplicity, 3);
+  }
+
+  #[test]
+  fn wide_modulus_and_payloads_preserve_addresses_and_identity() {
+    use crate::FieldWord;
+
+    let modulus = FieldWord::from_limbs_le([0, 2, 0, 0]);
+    let low = FieldWord::from(7);
+    let high = FieldWord::from_limbs_le([7, 1, 0, 0]);
+    let mut memory = Memory::new([(Type::Field, 1)].into_iter());
+    let low_index = memory.intern(0, &[low], modulus).unwrap();
+    let high_index = memory.intern(0, &[high], modulus).unwrap();
+    assert_ne!(low_index, high_index);
+    assert_eq!(memory.intern(0, &[high], modulus).unwrap(), high_index);
+    assert_eq!(memory.address_of(&[low]), Some(0));
+    assert_eq!(memory.address_of(&[high]), Some(1));
+    assert_eq!(memory.get(high_index).unwrap().cell.value, &[high]);
+
+    let mut limited = Memory::new([(Type::Field, 1)].into_iter());
+    for value in 0..2 {
+      limited.intern(0, &[value], FieldWord::from(2)).unwrap();
+    }
+    assert!(limited.intern(0, &[2], FieldWord::from(2)).is_err());
+    assert_eq!(limited.len(), 2);
+    assert_eq!(limited.intern(0, &[1], FieldWord::from(2)).unwrap(), 1);
   }
 }

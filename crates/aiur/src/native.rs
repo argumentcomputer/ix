@@ -135,7 +135,7 @@ pub enum NativeOp {
   },
 }
 
-impl<B: FieldBackend> CheckedProgram<B> {
+impl<B: FieldBackend<Word = u64>> CheckedProgram<B> {
   /// The normalized execution representation, in the form generators consume.
   pub fn native_plan(&self) -> NativePlan {
     let field = self.field;
@@ -484,7 +484,7 @@ pub trait Kernel {
   /// [`CheckedProgram::native_fingerprint`] of the program it was emitted from.
   const FINGERPRINT: &'static str;
   /// Run `function`'s body for the pending query `row`, writing its result.
-  fn run<B: FieldBackend>(
+  fn run<B: FieldBackend<Word = u64>>(
     rt: &mut Runtime<'_, B>,
     function: usize,
     row: usize,
@@ -564,7 +564,7 @@ pub struct Failed;
 /// The execution state generated code operates on. Hot entry points are
 /// small; everything else is out of line, because generated bodies are
 /// straight-line code whose size, not instruction count, limits their speed.
-pub struct Runtime<'a, B: FieldBackend> {
+pub struct Runtime<'a, B: FieldBackend<Word = u64>> {
   program: &'a CheckedProgram<B>,
   sites: &'a [Vec<Option<HintSite<B::Element>>>],
   record: Execution<B>,
@@ -577,7 +577,7 @@ pub struct Runtime<'a, B: FieldBackend> {
   heights: Vec<(u32, u64)>,
 }
 
-impl<'a, B: FieldBackend> Runtime<'a, B> {
+impl<'a, B: FieldBackend<Word = u64>> Runtime<'a, B> {
   #[inline(always)]
   pub fn field(&self) -> B {
     self.program.field
@@ -930,12 +930,12 @@ impl<'a, B: FieldBackend> Runtime<'a, B> {
 }
 
 /// Prepared hints bound to a generated kernel whose fingerprint matches.
-pub struct NativeExecutor<'p, 'a, B: FieldBackend, K: Kernel> {
+pub struct NativeExecutor<'p, 'a, B: FieldBackend<Word = u64>, K: Kernel> {
   hints: &'p PreparedHints<'a, B>,
   kernel: std::marker::PhantomData<fn() -> K>,
 }
 
-impl<'a, B: FieldBackend> PreparedHints<'a, B> {
+impl<'a, B: FieldBackend<Word = u64>> PreparedHints<'a, B> {
   /// Bind a generated kernel. Fails unless it was generated from exactly this
   /// program and plan under the current runtime ABI, and unless every bound
   /// map override answers exactly as its table does: generated code may
@@ -958,7 +958,7 @@ impl<'a, B: FieldBackend> PreparedHints<'a, B> {
   }
 }
 
-impl<B: FieldBackend, K: Kernel> NativeExecutor<'_, '_, B, K> {
+impl<B: FieldBackend<Word = u64>, K: Kernel> NativeExecutor<'_, '_, B, K> {
   // Takes the arguments as `PreparedHints::execute` does, so the two are
   // interchangeable.
   #[allow(clippy::needless_pass_by_value)]
@@ -1072,7 +1072,7 @@ impl<B: FieldBackend, K: Kernel> NativeExecutor<'_, '_, B, K> {
 
 /// [`record_diff`] for two executions that may fail: `Ok` means identical
 /// records, or failures at the same function, instruction and message.
-pub fn outcome_diff<B: FieldBackend>(
+pub fn outcome_diff<B: FieldBackend<Word = u64>>(
   a: &Result<Execution<B>, ExecutionError>,
   b: &Result<Execution<B>, ExecutionError>,
 ) -> Result<(), String> {
@@ -1094,7 +1094,7 @@ pub fn outcome_diff<B: FieldBackend>(
 
 /// The first difference between two records, comparing everything a trace
 /// or proof can depend on, including row order. `Ok` means identical.
-pub fn record_diff<B: FieldBackend>(
+pub fn record_diff<B: FieldBackend<Word = u64>>(
   a: &Execution<B>,
   b: &Execution<B>,
 ) -> Result<(), String> {

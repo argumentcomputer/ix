@@ -1,6 +1,6 @@
 //! Execution-only interchange format and its one-time validation/linking pass.
 use crate::{
-  field::{FieldBackend, NativeField, PrimeField, PrimeField64},
+  field::{FieldBackend, NativeField, PrimeField, PrimeField64, Word},
   value::IoType,
 };
 use serde::{Deserialize, Serialize};
@@ -113,8 +113,8 @@ pub enum Instruction<F = u64> {
   },
 }
 
-impl Instruction {
-  fn map_constants<F>(self, f: impl Fn(u64) -> F) -> Instruction<F> {
+impl<W> Instruction<W> {
+  fn map_constants<F>(self, f: impl Fn(W) -> F) -> Instruction<F> {
     match self {
       Self::Literal { dest, value } => {
         Instruction::Literal { dest, value: f(value) }
@@ -266,8 +266,10 @@ impl Layout {
       Self::Enum { constructors, .. } => {
         let (tag, payload) = if constructors.len() > 1 {
           (
-            usize::try_from(field.to_u64(words[0]))
+            field
+              .try_to_u64(words[0])
               .ok()
+              .and_then(|word| usize::try_from(word).ok())
               .ok_or("enum tag too large")?,
             &words[1..],
           )
@@ -403,7 +405,7 @@ mod layout_tests {
 /// Validated bytecode plus prebuilt indexes shared by all maps using a table.
 #[derive(Debug)]
 pub struct CheckedProgram<B: FieldBackend = PrimeField> {
-  pub(crate) program: std::sync::Arc<Program>,
+  pub(crate) program: std::sync::Arc<Program<B::Word>>,
   pub(crate) field: B,
   pub(crate) inputs: Vec<Layout>,
   pub(crate) outputs: Vec<Layout>,
@@ -427,11 +429,11 @@ pub struct CheckedProgram<B: FieldBackend = PrimeField> {
 // Only globally immutable registers may be aliased. Inputs count as writes;
 // overwritten parameters, branch joins and simultaneous swaps stay explicit.
 // PCs and operation counts are retained in the linked interpreter bytecode.
-fn link_registers(
-  function: &Function,
+fn link_registers<B: FieldBackend>(
+  function: &Function<B::Word>,
   input: usize,
-  field: PrimeField,
-) -> (Function, Vec<(usize, u64)>) {
+  field: B,
+) -> (Function<B::Word>, Vec<(usize, B::Word)>) {
   let mut writes = vec![0usize; function.registers];
   writes[..input].fill(1);
   for op in &function.code {
@@ -527,7 +529,7 @@ pub(crate) struct ReturnPlan {
 // A copy/jump-only suffix has no observable work except its returned values.
 // Compose simultaneous copies backwards, retaining the original return PC and
 // logical instruction count. The serialized bytecode and hint PCs stay intact.
-fn return_plans(function: &Function) -> Vec<Option<ReturnPlan>> {
+fn return_plans<W>(function: &Function<W>) -> Vec<Option<ReturnPlan>> {
   let mut plans: Vec<Option<ReturnPlan>> = vec![None; function.code.len()];
   for (pc, op) in function.code.iter().enumerate().rev() {
     let next = match op {
@@ -572,10 +574,10 @@ pub(crate) struct Step {
   pub(crate) memory_type: usize,
 }
 
-fn execution_steps(
-  function: &Function,
+fn execution_steps<W: Word>(
+  function: &Function<W>,
   memory_ids: &HashMap<Type, usize>,
-  initial: &[(usize, u64)],
+  initial: &[(usize, W)],
 ) -> Vec<Step> {
   let mut steps: Vec<_> = (0..function.code.len())
     .map(|pc| Step {
@@ -620,7 +622,7 @@ fn execution_steps(
   steps
 }
 impl<B: FieldBackend> CheckedProgram<B> {
-  pub fn program(&self) -> &Program {
+  pub fn program(&self) -> &Program<B::Word> {
     &self.program
   }
   /// Record honest call heights for `trace`'s depth circuits (Track A, H1).
@@ -631,7 +633,10 @@ impl<B: FieldBackend> CheckedProgram<B> {
   pub fn track_depth(
     &mut self,
     trace: &crate::trace::TraceArtifact,
-  ) -> Result<(), String> {
+  ) -> Result<(), String>
+  where
+    B: FieldBackend<Word = u64>,
+  {
     let sccs = crate::trace::depth::function_sccs(trace)?;
     if sccs.len() != self.program.functions.len() {
       return Err("trace function count mismatch".into());
@@ -688,7 +693,7 @@ fn unique<'a>(names: impl Iterator<Item = &'a str>) -> Result<(), String> {
   }
   Ok(())
 }
-impl Program {
+impl<W> Program<W> {
   /// Make execution check every equality assertion, including those exported
   /// with `runtime_check: false` (`constrain_eq!`). The circuit and the
   /// semantics enforce those assertions; ordinary execution omits them
@@ -710,7 +715,9 @@ impl Program {
     }
     enabled
   }
+}
 
+impl Program {
   pub fn check(self) -> Result<CheckedProgram, String> {
     let field = PrimeField::new(self.modulus)?;
     self.check_with(field)
@@ -723,8 +730,10 @@ impl Program {
   ) -> Result<CheckedProgram<NativeField<F>>, String> {
     self.check_with(NativeField::<F>::new())
   }
+}
 
-  pub fn check_with<B: FieldBackend>(
+impl<W: Word> Program<W> {
+  pub fn check_with<B: FieldBackend<Word = W>>(
     self,
     backend: B,
   ) -> Result<CheckedProgram<B>, String> {
@@ -739,7 +748,9 @@ impl Program {
         self.version
       ));
     }
-    let field = PrimeField::new(self.modulus)?;
+    if self.modulus < W::from(2) {
+      return Err("execution field modulus must be at least two".into());
+    }
     unique(
       self
         .functions
@@ -752,7 +763,9 @@ impl Program {
     unique(self.entries.iter().map(|e| e.name.as_str()))?;
     for decl in &self.enums {
       unique(decl.constructors.iter().map(|c| c.name.as_str()))?;
-      if decl.constructors.len() as u128 > u128::from(field.modulus()) {
+      let constructors = u64::try_from(decl.constructors.len())
+        .map_err(|error| format!("enum constructor count: {error}"))?;
+      if W::from(constructors) > backend.modulus() {
         return Err("enum tags do not fit in the field".into());
       }
       Type::Enum { name: decl.name.clone() }
@@ -795,27 +808,33 @@ impl Program {
         return Err("entry output description mismatch".into());
       }
     }
-    for table in &self.tables {
-      let layout = table.r#type.layout(&self.enums, &mut vec![])?;
-      if !layout.pointer_free() {
-        return Err("table contains pointers".into());
-      }
-      for row in &table.rows {
-        layout.validate(row, field)?;
-      }
-    }
     let tables = std::sync::Arc::new(
       self
         .tables
         .iter()
         .map(|table| {
+          let layout = table.r#type.layout(&self.enums, &mut vec![])?;
+          if !layout.pointer_free() {
+            return Err("table contains pointers".into());
+          }
           table
             .rows
             .iter()
-            .map(|row| backend.decode(row))
-            .collect::<Result<Vec<_>, _>>()
+            .map(|row| {
+              if row.len() != layout.width() {
+                return Err(
+                  "incorrect value width or noncanonical field element".into(),
+                );
+              }
+              let values = backend.decode_words(row).map_err(|_error| {
+                "incorrect value width or noncanonical field element".to_owned()
+              })?;
+              layout.validate(&values, backend)?;
+              Ok(values)
+            })
+            .collect::<Result<Vec<_>, String>>()
         })
-        .collect::<Result<Vec<_>, _>>()?,
+        .collect::<Result<Vec<_>, String>>()?,
     );
     let mut map_indexes = vec![None; self.tables.len()];
     for map in &self.maps {
@@ -843,7 +862,7 @@ impl Program {
         &inputs,
         &outputs,
         &self.enums,
-        field,
+        backend,
         &mut memory_layouts,
       )
       .map_err(|e| format!("{}: {e}", function.name))?;
@@ -869,7 +888,7 @@ impl Program {
       .map(|((f, input), inverses)| {
         let mut f = f.clone();
         dead_code::eliminate(&mut f, inverses);
-        link_registers(&f, input.width(), field)
+        link_registers(&f, input.width(), backend)
       })
       .unzip();
     let steps = execution_functions
@@ -883,7 +902,7 @@ impl Program {
       .map(|row| {
         row
           .into_iter()
-          .map(|(reg, value)| (reg, backend.from_u64(value)))
+          .map(|(reg, value)| (reg, backend.from_word(value)))
           .collect()
       })
       .collect();
@@ -897,7 +916,7 @@ impl Program {
         code: f
           .code
           .into_iter()
-          .map(|op| op.map_constants(|v| backend.from_u64(v)))
+          .map(|op| op.map_constants(|v| backend.from_word(v)))
           .collect(),
       })
       .collect();
@@ -926,7 +945,7 @@ impl Program {
 /// bytecode and instruction sites intact for diagnostics and saved hint answers.
 /// Forget facts at every join; a zero denominator still fails only if executed.
 fn constant_divisions<B: FieldBackend>(
-  function: &Function,
+  function: &Function<B::Word>,
   field: B,
 ) -> Vec<Option<B::Element>> {
   let mut targets = vec![false; function.code.len()];
@@ -965,7 +984,7 @@ fn constant_divisions<B: FieldBackend>(
             .copied()
             .flatten()
             .filter(|&x| field.contains(x))
-            .and_then(|x| field.inverse(field.from_u64(x)));
+            .and_then(|x| field.inverse(field.from_word(x)));
         }
         writes.push((*dest, None));
       },
@@ -994,14 +1013,14 @@ fn constant_divisions<B: FieldBackend>(
 // Intra-function control flow is forward-only; recursion uses an explicit VM
 // call stack. A forward dataflow pass checks initialization on every path.
 #[allow(clippy::too_many_arguments)]
-fn check_function(
-  f: &Function,
+fn check_function<B: FieldBackend>(
+  f: &Function<B::Word>,
   input: usize,
   output: usize,
   inputs: &[Layout],
   outputs: &[Layout],
   enums: &[Enum],
-  field: PrimeField,
+  field: B,
   layouts: &mut HashMap<Type, Layout>,
 ) -> Result<(), String> {
   if input > f.registers || f.code.is_empty() {

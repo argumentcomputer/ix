@@ -16,7 +16,7 @@ mod native;
 /// Rust source for the native executor of `program`, as the public unit
 /// type `name`. The first line records the executor's fingerprint
 /// ([`aiur::native::native_fingerprint`]).
-pub fn native_executor<B: FieldBackend>(
+pub fn native_executor<B: FieldBackend<Word = u64>>(
   program: &CheckedProgram<B>,
   name: &str,
 ) -> Result<String, String> {

@@ -1,5 +1,5 @@
-//! Wide artifact transport and cross-language fixtures. No test executes or
-//! proves a BN254 program; the arithmetic backend remains a separate milestone.
+//! Wide artifact transport and cross-language fixtures, independent of
+//! execution and proving.
 use aiur::{
   FieldWord,
   artifact::{

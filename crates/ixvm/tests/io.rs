@@ -51,7 +51,7 @@ fn program(modulus: u64) -> Program {
   }
 }
 
-fn dense_matches_data<B: FieldBackend>(field: B) {
+fn dense_matches_data<B: FieldBackend<Word = u64>>(field: B) {
   let p = program(field.modulus()).check_with(field).unwrap();
   // Unsorted input, overlapping offsets across channels, an identical
   // duplicate and a zero byte must all retain the original data semantics.

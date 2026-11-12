@@ -52,7 +52,7 @@ pub use statistics::{CircuitMeasurements, ExecutionStatistics};
 
 /// Conversion at this concrete proving adapter only. The native configuration
 /// writes its existing field values directly into multi-stark's matrices.
-pub trait WitnessField: FieldBackend {
+pub trait WitnessField: FieldBackend<Word = u64> {
   fn into_stark(value: Self::Element) -> Val;
   /// The elements as Goldilocks words, not necessarily canonical; borrowed
   /// when the representation already is one.

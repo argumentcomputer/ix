@@ -347,7 +347,7 @@ impl PopulationDescription {
   }
 }
 
-impl<B: FieldBackend> TracePlan<'_, B> {
+impl<B: FieldBackend<Word = u64>> TracePlan<'_, B> {
   /// The population description of this plan and its certified layout.
   pub fn describe(&self) -> Result<PopulationDescription, String> {
     let layout = self.layout()?;

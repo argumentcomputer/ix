@@ -47,6 +47,7 @@ import AiurTests.U64
 import AiurTests.U32
 import AiurTests.Goldilocks
 import AiurTests.WideFieldEncoding
+import AiurTests.BN254
 import AiurTests.LibraryInterfaces
 import Mathlib.Algebra.Field.Rat
 import Mathlib.Algebra.Field.ZMod

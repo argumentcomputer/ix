@@ -45,7 +45,7 @@ pub struct Described {
 /// Describes the population plans of `program` under `trace`. A trace with
 /// depth circuits needs a program that records call heights
 /// ([`CheckedProgram::track_depth`]).
-pub fn describe<B: FieldBackend>(
+pub fn describe<B: FieldBackend<Word = u64>>(
   program: &CheckedProgram<B>,
   trace: TraceArtifact,
 ) -> Result<Described, String> {

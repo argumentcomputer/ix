@@ -14,7 +14,7 @@ pub fn register<B: FieldBackend>(
     move |input| {
       Ok(
         field
-          .to_u64(input[0])
+          .try_to_u64(input[0])?
           .to_le_bytes()
           .map(|byte| field.from_u64(u64::from(byte))),
       )
