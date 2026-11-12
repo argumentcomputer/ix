@@ -1526,11 +1526,14 @@ input environment, annotator included. -/
 
 /-- Whether `binders` is a section the record `c` may carry: every count in the
 wire domain, the canonical form a reader checks (`Ixon.Constant.bindersCanonical`)
-and the complete one the compiler writes (`Ixon.Constant.bindersComplete`). -/
+and the complete one the compiler writes (`Ixon.Constant.bindersComplete`), on a
+record whose modes outside the section are canonical too
+(`Ixon.Constant.modesCanonical`: no theorem asserts anything). -/
 @[expose] def sectionAdmissible (c : Ixon.Constant) (binders : Array Ixon.BinderBlock) : Bool :=
   Ixon.WireCheck.validArray binders Ixon.WireCheck.validBinderBlock &&
     Ixon.Constant.bindersCanonical { c with binders } &&
-    Ixon.Constant.bindersComplete { c with binders }
+    Ixon.Constant.bindersComplete { c with binders } &&
+    Ixon.Constant.modesCanonical { c with binders }
 
 /-! ### The undecided section
 
@@ -1672,18 +1675,24 @@ theorem withBinderSection_error {annotator? : Option BinderAnnotator} {names : A
 theorem sectionAdmissible_wire {c : Ixon.Constant} {binders : Array Ixon.BinderBlock}
     (h : sectionAdmissible c binders = true) :
     Ixon.WireCheck.validArray binders Ixon.WireCheck.validBinderBlock = true :=
-  ((Bool.and_eq_true _ _).mp ((Bool.and_eq_true _ _).mp h).1).1
+  ((Bool.and_eq_true _ _).mp ((Bool.and_eq_true _ _).mp ((Bool.and_eq_true _ _).mp h).1).1).1
 
 /-- An admissible section is canonical for its record. -/
 theorem sectionAdmissible_canonical {c : Ixon.Constant} {binders : Array Ixon.BinderBlock}
     (h : sectionAdmissible c binders = true) :
     Ixon.Constant.bindersCanonical { c with binders } = true :=
-  ((Bool.and_eq_true _ _).mp ((Bool.and_eq_true _ _).mp h).1).2
+  ((Bool.and_eq_true _ _).mp ((Bool.and_eq_true _ _).mp ((Bool.and_eq_true _ _).mp h).1).1).2
 
 /-- An admissible section is complete for its record. -/
 theorem sectionAdmissible_complete {c : Ixon.Constant} {binders : Array Ixon.BinderBlock}
     (h : sectionAdmissible c binders = true) :
     Ixon.Constant.bindersComplete { c with binders } = true :=
+  ((Bool.and_eq_true _ _).mp ((Bool.and_eq_true _ _).mp h).1).2
+
+/-- A record with an admissible section has canonical modes. -/
+theorem sectionAdmissible_modes {c : Ixon.Constant} {binders : Array Ixon.BinderBlock}
+    (h : sectionAdmissible c binders = true) :
+    Ixon.Constant.modesCanonical { c with binders } = true :=
   ((Bool.and_eq_true _ _).mp h).2
 
 /-- Build a block Constant with the compiler's canonical sharing under

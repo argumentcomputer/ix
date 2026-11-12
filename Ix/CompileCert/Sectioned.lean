@@ -44,6 +44,10 @@ theorem complete {c₀ c : Ixon.Constant} (h : Sectioned c₀ c) : c.bindersComp
   obtain ⟨binders, ok, rfl⟩ := h
   exact sectionAdmissible_complete ok
 
+theorem modes {c₀ c : Ixon.Constant} (h : Sectioned c₀ c) : c.modesCanonical = true := by
+  obtain ⟨binders, ok, rfl⟩ := h
+  exact sectionAdmissible_modes ok
+
 /-- A record with a root whose section is canonical has fewer than
 `Ixon.maxLevelCount` (`2^32`) universe parameters. -/
 theorem levels_of_canonical {c : Ixon.Constant} (h : c.bindersCanonical = true)
