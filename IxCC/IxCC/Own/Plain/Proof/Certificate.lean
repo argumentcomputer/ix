@@ -62,7 +62,7 @@ theorem admit_budget {F : Fir.Program} {j : Json} {budget params : Nat} {P : Pro
   exact hw
 
 /-- An admitted program is within the parameter limit it was admitted under. -/
-theorem admit_params {F : Fir.Program} {j : Json} {budget params : Nat} {P : Program}
+theorem admit_paramTotal {F : Fir.Program} {j : Json} {budget params : Nat} {P : Program}
     (accepted : admit F j budget params = .ok P) : paramTotal F ≤ params := by
   obtain ⟨_, hp, _⟩ := admit_ok accepted
   exact hp
@@ -114,7 +114,7 @@ theorem admitContract_params_mono {F : Fir.Program} {j : Json} {budget params pa
 
 /-- An admitted program is within the parameter limit it was admitted under (contract-aware
 admission). -/
-theorem admitContract_params {F : Fir.Program} {j : Json} {budget params : Nat} {P : Program}
+theorem admitContract_paramTotal {F : Fir.Program} {j : Json} {budget params : Nat} {P : Program}
     (accepted : admitContract F j budget params = .ok P) : paramTotal F ≤ params := by
   obtain ⟨_, hp, _⟩ := admitContract_ok accepted
   exact hp

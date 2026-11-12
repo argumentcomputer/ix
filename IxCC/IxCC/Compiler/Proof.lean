@@ -239,7 +239,7 @@ theorem runWithContracts_parts {cfg : Config} {P : Src.Program} {c : Cert} {arti
 /-- **The zero-RC route's domain check runs on a bounded program**: an artifact `runWithContracts`
 accepts has at most `params` parameters over its functions and join points
 (`Own.Plain.Certificate.paramTotal`), refused before the check walked them. -/
-theorem runWithContracts_params {cfg : Config} {P : Src.Program} {c : Cert} {params : Nat}
+theorem runWithContracts_paramTotal {cfg : Config} {P : Src.Program} {c : Cert} {params : Nat}
     {artifact : Artifact} (accepted : runWithContracts cfg P c params = .ok artifact) :
     Own.Plain.Certificate.paramTotal artifact.fir ≤ params :=
   (runWithContracts_ok accepted).2.1
