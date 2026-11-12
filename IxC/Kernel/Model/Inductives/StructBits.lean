@@ -119,7 +119,7 @@ theorem inferTypeCore_mkAppN_sort {env : Env md} {F d : Nat} :
 
 /-- The first `n` binders of `e`, opened from depth `d` with the
 inference's own `fvar`s, each codomain bit zero exactly when `z`. -/
-def PiBitsOpen (φ : LevelParam → Nat) (z : Prop) : Nat → Nat → Expr md → Prop
+@[expose] def PiBitsOpen (φ : LevelParam → Nat) (z : Prop) : Nat → Nat → Expr md → Prop
   | 0, _, _ => True
   | n + 1, d, .forallE dom body mb =>
     (pwBit φ mb.pw = 0 ↔ z) ∧
