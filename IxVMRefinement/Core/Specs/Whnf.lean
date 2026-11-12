@@ -5,13 +5,15 @@ import IxVMRefinement.Core.Specs.Common
 One spec per function of `IxVM/IxVM/Source/KernelWhnf.lean` (58). The normalizers and the
 spine forms conclude `Red`; the step functions (`red_*`, `try_*`) conclude `Red` for the tags
 that mean "moved"; the telescope walks conclude the certificate relations; the structure-η
-scans state their meaning on the image. Nothing is claimed for tag `0` / answer `0` unless the
-docstring says so.
+scans state their meaning on the image. A yes/no answer claims at every answer other than `0`
+(the scans, whose useful answer is "none found", at every answer other than `1`); nothing is
+claimed for tag `0` / answer `0` unless the docstring says so.
 
 **Telescope certificates.** `certs_all` head-normalizes a telescope that is not syntactically a
 `∀` and goes on. The rules' `Certs` has no such step, so the walks are stated with `CertsR`
-(below): `Certs` with a `Red` step on the telescope. `Certs` gives `CertsR` (by induction); the converse needs the telescope to be a `∀` at every argument. Where a rule needs
-`Certs` (`Red.iota`, `Red.rescueK`, `Red.rescueEta`) the step lemma must close that gap. -/
+(below): `Certs` with a `Red` step on the telescope. `Certs` gives `CertsR` (by induction);
+the converse needs the telescope to be a `∀` at every argument. Where a rule needs `Certs`
+(`Red.iota`, `Red.rescueK`, `Red.rescueEta`) the step lemma must close that gap. -/
 
 namespace IxVM.Refinement.Core.Specs.Whnf
 
@@ -229,12 +231,12 @@ def projection_definition_info : SpecFn := fun c args h r h' calls =>
           stripLams m V = some (.proj (c.κ (ixAddr s)) (ZMod.val f)
             (.bvar (ZMod.val n - 1 - ZMod.val j)))
 
-/-- `lams_never(v, n, lvls)`: answer `1` means the first `n` binders of the value are `λ`s whose
-datum, at the levels `lvls` (positional parameters), is `never`. Answer `0`: no claim. -/
+/-- `lams_never(v, n, lvls)`: a nonzero answer means the first `n` binders of the value are
+`λ`s whose datum, at the levels `lvls` (positional parameters), is `never`. Answer `0`: no claim. -/
 def lams_never : SpecFn := fun c args h r h' calls =>
   ∀ v n lvls, args = [v, n, lvls] → Good c calls →
     ∀ d Γ k V (m : F) us, c.tmk d Γ k h V v → n = .field m → LvListRep h us lvls →
-      r = .field 1 → lamsNeverAt (List.range us.length) us (ZMod.val m) V
+      r ≠ .field 0 → lamsNeverAt (List.range us.length) us (ZMod.val m) V
 
 /-- `try_reduce_projection_definition(value, nl, lvls, spine)`: the projection-function
 shortcut. For the definition stored at `k` with this value and level count, tag `1` is `Red`
@@ -251,33 +253,33 @@ def try_reduce_projection_definition : SpecFn := fun c args h r h' calls =>
 
 /-! ## Unfolding and stored-shape tests -/
 
-/-- `red_unfold(ci, lvls)`: tag `1` means the loaded constant is a definition and the result
-represents its value at the levels `lvls` (`instantiateLevelParams` at its parameters; the
-level count matches): `Red.delta`'s reduct. Tag `2` means the same for a theorem: the reduct of
-`Red.deltaThm`, whose premises come from `EnvFacts.thmTyped`. Tag `0`: no claim. -/
+/-- `red_unfold(ci, lvls)`: **every tag other than `0` is `1` or `2`.** Tag `1`: the loaded
+constant is a definition and the result represents its value at the levels `lvls`
+(`instantiateLevelParams` at its parameters; the level count matches): `Red.delta`'s reduct.
+Tag `2`: the same for a theorem: the reduct of `Red.deltaThm`, whose premises come from
+`EnvFacts.thmTyped`. Tag `0`: no claim. -/
 def red_unfold : SpecFn := fun c args h r h' calls =>
   ∀ v lvls, args = [v, lvls] → Good c calls → ∀ ci us, c.ci h v ci → LvListRep h us lvls →
-    (∀ x, r = .tuple [.field 1, x] →
-      ∃ cv V hn, ci = .defnInfo cv V hn ∧ us.length = cv.levelParams.length ∧
-        c.tmc h' (V.instantiateLevelParams cv.levelParams us) x) ∧
-    (∀ x, r = .tuple [.field 2, x] →
-      ∃ cv V, ci = .thmInfo cv V ∧ us.length = cv.levelParams.length ∧
+    ∀ (t : F) x, r = .tuple [.field t, x] → t ≠ 0 →
+      (t = 1 ∧ ∃ cv V hn, ci = .defnInfo cv V hn ∧ us.length = cv.levelParams.length ∧
+        c.tmc h' (V.instantiateLevelParams cv.levelParams us) x) ∨
+      (t = 2 ∧ ∃ cv V, ci = .thmInfo cv V ∧ us.length = cv.levelParams.length ∧
         c.tmc h' (V.instantiateLevelParams cv.levelParams us) x)
 
-/-- `type_sort_never(ty, n, lvls)`: answer `1` means the type is syntactically `n` `∀`s ending
-in a sort `l` that is never zero at the levels `lvls` (`Level.isNeverZero` of the
+/-- `type_sort_never(ty, n, lvls)`: a nonzero answer means the type is syntactically `n` `∀`s
+ending in a sort `l` that is never zero at the levels `lvls` (`Level.isNeverZero` of the
 substitution). Answer `0`: no claim. -/
 def type_sort_never : SpecFn := fun c args h r h' calls =>
   ∀ ty n lvls, args = [ty, n, lvls] → Good c calls →
     ∀ d Γ k T (m : F) us, c.tmk d Γ k h T ty → n = .field m → LvListRep h us lvls →
-      r = .field 1 → ∃ l, piSortAt (ZMod.val m) T = some l ∧
+      r ≠ .field 0 → ∃ l, piSortAt (ZMod.val m) T = some l ∧
         (Ix.Kernel.Level.subst (List.range us.length) us l).isNeverZero = true
 
-/-- `slots_never(t, n)`: answer `1` means the first `n` binders of the telescope are `∀`s with
-the datum `never` (`Certs.skip`'s premise at each slot). Answer `0`: no claim. -/
+/-- `slots_never(t, n)`: a nonzero answer means the first `n` binders of the telescope are
+`∀`s with the datum `never` (`Certs.skip`'s premise at each slot). Answer `0`: no claim. -/
 def slots_never : SpecFn := fun c args h r h' calls =>
   ∀ t n, args = [t, n] → Good c calls →
-    ∀ d Γ k T (m : F), c.tmk d Γ k h T t → n = .field m → r = .field 1 →
+    ∀ d Γ k T (m : F), c.tmk d Γ k h T t → n = .field m → r ≠ .field 0 →
       forallsNever (ZMod.val m) T
 
 /-- `pi_peel(t, args, subs_rev, n)`: tag `1` gives the domain of binder `n` of the telescope,
@@ -310,17 +312,17 @@ def find_rule : SpecFn := fun c args h r h' calls =>
 
 /-! ## Telescope certificates -/
 
-/-- `certs_all(rc, t, args, subs_rev, types)`: answer `1` is the unlicensed telescope
+/-- `certs_all(rc, t, args, subs_rev, types)`: a nonzero answer is the unlicensed telescope
 certificate of `args` against the telescope (its bound variables instantiated by `subs_rev`
 first), up to reduction of the telescope (`CertsR … false`). Answer `0`: no claim. -/
 def certs_all : SpecFn := fun c args h r h' calls =>
   ∀ rc t zs subs types, args = [rc, t, zs, subs, types] → Good c calls → c.rc h rc →
     ∀ d Γ, c.types Γ h d types →
       ∀ T Cs As, c.tmk d Γ Cs.length h T t → c.tml d Γ h Cs subs → c.tml d Γ h As zs →
-        r = .field 1 → CertsR c.env d false (T.instantiateList Cs 0) As
+        r ≠ .field 0 → CertsR c.env d false (T.instantiateList Cs 0) As
 
-/-- `iota_certs(rc, rec_ty_i, rec_args, n_rec, cty, clvls, margs, n_ctor, types)`: answer `1`
-gives `Red.iota`'s two licensed telescope walks, up to reduction of the telescope: the
+/-- `iota_certs(rc, rec_ty_i, rec_args, n_rec, cty, clvls, margs, n_ctor, types)`: a nonzero
+answer gives `Red.iota`'s two licensed telescope walks, up to reduction of the telescope: the
 recursor's (level-instantiated) type over its arguments, and the constructor's type at the
 levels `clvls` over the major's arguments. `n_rec`, `n_ctor` are the walks' lengths. Answer
 `0`: no claim. -/
@@ -330,14 +332,14 @@ def iota_certs : SpecFn := fun c args h r h' calls =>
     ∀ d Γ, c.types Γ h d types →
       ∀ RT RA CT cus MA, c.tmc h RT rt → c.tml d Γ h RA ra → nr = .field (RA.length : F) →
         c.tmc h CT cty → LvListRep h cus clvls → c.tml d Γ h MA ma →
-        nc = .field (MA.length : F) → r = .field 1 →
+        nc = .field (MA.length : F) → r ≠ .field 0 →
           CertsR c.env d true RT RA ∧
             CertsR c.env d true (CT.instantiateLevelParams (List.range cus.length) cus) MA
 
 /-- `iota_cmp(rc, rec_ty_i, pre, major_idx, cty, clvls, cnp, margs, nindices, types)`:
-answer `1` gives `Red.iota`'s comparisons, read off the major's domain `MD` in the recursor's
-(level-instantiated) type instantiated by the arguments before the major: the constructor's
-levels equal `MD`'s head's levels, the constructor's parameters are pairwise definitionally
+a nonzero answer gives `Red.iota`'s comparisons, read off the major's domain `MD` in the
+recursor's (level-instantiated) type instantiated by the arguments before the major: the
+constructor's levels equal `MD`'s head's levels, the constructor's parameters are pairwise definitionally
 equal to `MD`'s, and for an indexed family the residual indices of the constructor's type at
 the major's arguments are pairwise definitionally equal to `MD`'s indices. Answer `0`: no
 claim. -/
@@ -347,7 +349,7 @@ def iota_cmp : SpecFn := fun c args h r h' calls =>
     ∀ d Γ, c.types Γ h d types →
       ∀ RT PRE (m : F) CT cus (np : F) MA (nix : F), c.tmc h RT rt → c.tml d Γ h PRE pre →
         mi = .field m → c.tmc h CT cty → LvListRep h cus clvls → cnp = .field np →
-        c.tml d Γ h MA ma → ni = .field nix → r = .field 1 →
+        c.tml d Γ h MA ma → ni = .field nix → r ≠ .field 0 →
         ∃ (MD : KExpr) (k : KKey) (mus : List KLevel), piDomInst RT PRE (ZMod.val m) = some MD ∧
           MD.getAppFn = .const k mus ∧ LvEqList cus mus ∧
           DefEqList c.env d (MA.take (ZMod.val np)) (MD.getAppArgs.take (ZMod.val np)) ∧
@@ -485,9 +487,9 @@ def red_rec : SpecFn := fun c args h r h' calls =>
 eliminator the table binds at `addr` (`Quot.lift` with six arguments when `is_lift = 1`,
 `Quot.ind` with five when `0`) and `Quot.mk`, bound at `mk_addr`, with three arguments (the
 caller has checked the roles and the counts; where a level is never zero the walk is skipped
-without reading the stored type, so the claim needs them): answer `1` gives `Red.iota`'s two
-licensed walks, up to reduction of the telescope: the eliminator's stored type at `lvls` over
-its arguments and `Quot.mk`'s stored type at `mk_lvls` over its arguments. Answer `0`: no
+without reading the stored type, so the claim needs them): a nonzero answer gives
+`Red.iota`'s two licensed walks, up to reduction of the telescope: the eliminator's stored
+type at `lvls` over its arguments and `Quot.mk`'s stored type at `mk_lvls` over its arguments. Answer `0`: no
 claim. -/
 def quot_certs : SpecFn := fun c args h r h' calls =>
   ∀ rc il addr lvls ra mk mklvls ma types,
@@ -498,7 +500,7 @@ def quot_certs : SpecFn := fun c args h r h' calls =>
         ((il = .field 1 ∧ c.t.addressOf? .quotLift = some (ixAddr a) ∧ RA.length = 6) ∨
           (il = .field 0 ∧ c.t.addressOf? .quotInd = some (ixAddr a) ∧ RA.length = 5)) →
         c.t.addressOf? .quotMk = some (ixAddr b) → MA.length = 3 →
-        r = .field 1 →
+        r ≠ .field 0 →
           (∀ ci, c.env.find? (c.κ (ixAddr a)) = some ci →
             CertsR c.env d true
               (ci.toConstantVal.type.instantiateLevelParams ci.toConstantVal.levelParams us) RA) ∧
@@ -674,13 +676,13 @@ def whnf_spine : SpecFn := fun c args h r h' calls =>
 
 /-! ## Structure η: the shape scans -/
 
-/-- `se_parent_addr(rec_ty, skip)`: tag `1` gives the address of the head constant of the
-domain of binder `skip` of the telescope (`MajorHead` at the major premise). Tag `0`: no
-claim. -/
+/-- `se_parent_addr(rec_ty, skip)`: every tag other than `0` gives the address of the head
+constant of the domain of binder `skip` of the telescope (`MajorHead` at the major premise).
+Tag `0`: no claim. -/
 def se_parent_addr : SpecFn := fun c args h r h' calls =>
   ∀ rt skip, args = [rt, skip] → Good c calls →
     ∀ d Γ k RT (n : F), c.tmk d Γ k h RT rt → skip = .field n →
-      ∀ pa, r = .tuple [.field 1, pa] →
+      ∀ (t : F) pa, r = .tuple [.field t, pa] → t ≠ 0 →
         ∃ (p : Bytes.Address) (us : List KLevel), RepAddr h' p pa ∧
           (piDomAt (ZMod.val n) RT).map (·.getAppFn) = some (.const (c.κ (ixAddr p)) us)
 
@@ -700,12 +702,13 @@ def se_addr_in : SpecFn := fun c args h r h' calls =>
     ∀ (a : Bytes.Address) ms, RepAddr h a ap → RepList addrListEnum RepAddr h ms xs →
       r = .field (if a ∈ ms then 1 else 0) ∧ h' = h
 
-/-- `se_mentions(e, members)`: answer `0` means the term mentions no constant at an address
-of `members` (its image, `mentionsKey`, outside `fvar` annotations). Answer `1`: no claim. -/
+/-- `se_mentions(e, members)`: an answer other than `1` means the term mentions no constant at an
+address of `members` (its image, `mentionsKey`, outside `fvar` annotations). Answer `1`: no
+claim. -/
 def se_mentions : SpecFn := fun c args h r h' calls =>
   ∀ e xs, args = [e, xs] → Good c calls →
     ∀ d Γ k E ms, c.tmk d Γ k h E e → RepList addrListEnum RepAddr h ms xs →
-      r = .field 0 → ¬ mentionsKey (fun key => ∃ m ∈ ms, key = c.κ (ixAddr m)) E
+      r ≠ .field 1 → ¬ mentionsKey (fun key => ∃ m ∈ ms, key = c.κ (ixAddr m)) E
 
 /-- `se_peel_tol(ty, n)`: the telescope with up to `n` leading `∀`s removed (fewer where it
 stops being a `∀`), the body under as many more local binders. -/
@@ -714,11 +717,11 @@ def se_peel_tol : SpecFn := fun c args h r h' calls =>
     ∀ d Γ k T (m : F), c.tmk d Γ k h T ty → n = .field m →
       ∃ j B, j ≤ ZMod.val m ∧ stripForalls j T = some B ∧ c.tmk d Γ (k + j) h' B r
 
-/-- `se_scan_fields(ty, members)`: answer `0` means no binder domain along the telescope
-mentions a constant at an address of `members`. Answer `1`: no claim. -/
+/-- `se_scan_fields(ty, members)`: an answer other than `1` means no binder domain along the
+telescope mentions a constant at an address of `members`. Answer `1`: no claim. -/
 def se_scan_fields : SpecFn := fun c args h r h' calls =>
   ∀ ty xs, args = [ty, xs] → Good c calls →
-    ∀ d Γ k T ms, c.tmk d Γ k h T ty → RepList addrListEnum RepAddr h ms xs → r = .field 0 →
+    ∀ d Γ k T ms, c.tmk d Γ k h T ty → RepList addrListEnum RepAddr h ms xs → r ≠ .field 1 →
       ∀ j B dom body m, stripForalls j T = some B → B = .forallE dom body m →
         ¬ mentionsKey (fun key => ∃ a ∈ ms, key = c.κ (ixAddr a)) dom
 
@@ -750,33 +753,34 @@ def struct_block_member_addrs : SpecFn := fun c args h r h' calls =>
             ∃ a ∈ xs, ixAddr a = iprjAddr (ixAddr b) i) ∧
           ((∀ ms, cb.info ≠ .muts ms) → xs = [p])
 
-/-- `struct_scan_ctors(block, idx, num_ctors, n_params, members, c)`: answer `0` means the
+/-- `struct_scan_ctors(block, idx, num_ctors, n_params, members, c)`: an answer other than `1`
+means the
 constructors `c, …, num_ctors - 1` of member `idx` of the block (keyed by their projection
 records) have stored types whose field domains, after `n_params` binders, mention no member of
 `members`. Answer `1`: no claim. -/
 def struct_scan_ctors : SpecFn := fun c args h r h' calls =>
   ∀ blk idx nc np xs ci, args = [blk, idx, nc, np, xs, ci] → Good c calls →
     ∀ (b : Bytes.Address) (i n p j : F) ms, RepAddr h b blk → idx = .field i → nc = .field n →
-      np = .field p → RepList addrListEnum RepAddr h ms xs → ci = .field j → r = .field 0 →
+      np = .field p → RepList addrListEnum RepAddr h ms xs → ci = .field j → r ≠ .field 1 →
       ∃ m : Nat, j + (m : F) = n ∧ ∀ t < m, ∃ cicon,
         c.env.find? (c.κ (cprjAddr (ixAddr b) (ZMod.val i) (ZMod.val (j + (t : F))))) =
           some cicon ∧ FieldsClean c (ZMod.val p) ms cicon.toConstantVal.type
 
-/-- `struct_scan_members(ms, members)`: answer `0` is `MembersClean ms members`. Answer `1`: no
-claim. -/
+/-- `struct_scan_members(ms, members)`: an answer other than `1` is `MembersClean ms members`.
+Answer `1`: no claim. -/
 def struct_scan_members : SpecFn := fun c args h r h' calls =>
   ∀ msp xs, args = [msp, xs] → Good c calls →
     ∀ ms membs, RepList addrListEnum RepAddr h ms msp → RepList addrListEnum RepAddr h membs xs →
-      r = .field 0 → MembersClean c ms membs
+      r ≠ .field 1 → MembersClean c ms membs
 
-/-- `struct_is_rec(parent)`: Lean's block-level `is_rec`. Answer `0` means: for the block `b`
-IxVM loaded for the parent (when `block_is_multi` answers `0`), the member list it computed
+/-- `struct_is_rec(parent)`: Lean's block-level `is_rec`. An answer other than `1` means: for the
+block `b` IxVM loaded for the parent (when `block_is_multi` answers `0`), the member list it computed
 (`struct_block_member_addrs`: every inductive member's projection record when the record at
 `b` is a block, `[parent]` otherwise) is clean against itself (`MembersClean`). The link
 between `b` and the parent's address is not claimed. Answer `1`: no claim. -/
 def struct_is_rec : SpecFn := fun c args h r h' calls =>
   ∀ par, args = [par] → Good c calls →
-    ∀ (p : Bytes.Address), RepAddr h p par → r = .field 0 →
+    ∀ (p : Bytes.Address), RepAddr h p par → r ≠ .field 1 →
       ∃ (b : Bytes.Address) (ms : List Bytes.Address), MembersClean c ms ms ∧
         ∀ cb, Ix.Cert.recordAt c.E (ixAddr b) = some cb →
           (∀ xs, cb.info = .muts xs → ∀ i ind, xs[i]? = some (.indc ind) →
