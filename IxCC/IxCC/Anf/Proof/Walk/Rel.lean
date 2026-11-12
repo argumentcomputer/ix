@@ -26,7 +26,9 @@ relations between a source program `P` and a target program `Q`:
 * `JEnv`: the source join closures against their walk entries: emitted at
   a target level (`JoinR`: jumping to both, then the continuation, simulates
   for every continuation that matches the target meaning `T` of the walk's
-  continuation), inlined at their single jump, or dead.
+  continuation), inlined at their single jump, pending (every jump takes the
+  alternative its constructor selects; no jump to the target join point is
+  emitted, so nothing is asked of it), or dead.
 * `VOk C ρ ρ'`: walk configuration `C` may walk a term whose source
   environment is `ρ` and target environment `ρ'`: the pass's predicate
   `Valid C ρ ρ' prs` holds with pairs `prs` of related values (P4 relates a
@@ -147,7 +149,7 @@ def JoinR (n : Nat) (T : Val → Nat → Result Val) (jc jc' : JClo) : Prop :=
 inductive JEnv (C : Cfg) (n : Nat) (T : Option (Val → Nat → Result Val)) (ρ' : List Val) (J' : List JClo) :
     List Bool → List JEnt → List JClo → Prop
   | nil : JEnv C n T ρ' J' [] [] []
-  | emitted {l ar : Nat} {r : Bool} {b : Exp} {σj : List Ent} {jσj : List JEnt} {livej jlj : List Bool}
+  | emitted {l ar id : Nat} {r : Bool} {b : Exp} {σj : List Ent} {jσj : List JEnt} {livej jlj : List Bool}
       {ρj : List Val} {Jj : List JClo} {jc' : JClo} {Tk : Val → Nat → Result Val} {jl : List Bool}
       {jσ : List JEnt} {J : List JClo} :
       l < J'.length → J'[J'.length - 1 - l]? = some jc' → T = some Tk →
@@ -156,14 +158,24 @@ inductive JEnv (C : Cfg) (n : Nat) (T : Option (Val → Nat → Result Val)) (ρ
       NoDead (List.replicate ar true ++ livej) (if r then true :: jlj else jlj) b →
       (∀ ρ'', ρ' <:+ ρ'' → VOk Q Valid Xc C ρj ρ'') →
       JEnv C n T ρ' J' jl jσ J →
-      JEnv C n T ρ' J' (true :: jl) (.mk (some l) σj jσj ar r b :: jσ) (.mk ρj Jj ar b r :: J)
-  | once {ar : Nat} {b : Exp} {σj : List Ent} {jσj : List JEnt} {livej jlj : List Bool}
+      JEnv C n T ρ' J' (true :: jl) (.mk (some l) σj jσj ar r b id :: jσ) (.mk ρj Jj ar b r :: J)
+  | once {ar id : Nat} {b : Exp} {σj : List Ent} {jσj : List JEnt} {livej jlj : List Bool}
       {ρj : List Val} {Jj : List JClo} {jl : List Bool} {jσ : List JEnt} {J : List JClo} :
       WEnv Q Valid Xc C livej σj ρj ρ' → JEnv C n T ρ' J' jlj jσj Jj →
       NoDead (List.replicate ar true ++ livej) jlj b →
       (∀ ρ'', ρ' <:+ ρ'' → VOk Q Valid Xc C ρj ρ'') →
       JEnv C n T ρ' J' jl jσ J →
-      JEnv C n T ρ' J' (true :: jl) (.mk none σj jσj ar false b :: jσ) (.mk ρj Jj ar b false :: J)
+      JEnv C n T ρ' J' (true :: jl) (.mk none σj jσj ar false b id :: jσ) (.mk ρj Jj ar b false :: J)
+  /-- A pending join point (`JEnt.pend`): the once entry's obligations at arity
+  one. The walk never emits a jump to its target join point, so nothing is
+  asked of that. -/
+  | pend {l : Nat} {b : Exp} {σj : List Ent} {jσj : List JEnt} {livej jlj : List Bool}
+      {ρj : List Val} {Jj : List JClo} {jl : List Bool} {jσ : List JEnt} {J : List JClo} :
+      WEnv Q Valid Xc C livej σj ρj ρ' → JEnv C n T ρ' J' jlj jσj Jj →
+      NoDead (List.replicate 1 true ++ livej) jlj b →
+      (∀ ρ'', ρ' <:+ ρ'' → VOk Q Valid Xc C ρj ρ'') →
+      JEnv C n T ρ' J' jl jσ J →
+      JEnv C n T ρ' J' (true :: jl) (.pend l σj jσj b :: jσ) (.mk ρj Jj 1 b false :: J)
   | dead {je : JEnt} {jc : JClo} {jl : List Bool} {jσ : List JEnt} {J : List JClo} :
       JEnv C n T ρ' J' jl jσ J → JEnv C n T ρ' J' (false :: jl) (je :: jσ) (jc :: J)
 

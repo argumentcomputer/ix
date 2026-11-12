@@ -637,6 +637,7 @@
     "IxCC.Recheck.Linked",
     "IxCC.Cli",
     "IxCC.X86.Layout.Basic",
+    "IxCC.Anf.Semantics",
     "IxCCTests.Support.Bound",
     "IxCCTests.Src.Support"]},
   "IxCCTests.Recheck.Deep":
@@ -3355,7 +3356,8 @@
     "IxCC.Anf.Print",
     "IxCC.Lir.Print",
     "IxCC.Xv.Print",
-    "IxCCTests.Exe.Support"]},
+    "IxCCTests.Exe.Support",
+    "IxCC.CompileClaim"]},
   "IxCCTests.Corpus.ResourceChecks":
   {"path": "IxCCTests/Corpus/ResourceChecks.lean",
    "imports":

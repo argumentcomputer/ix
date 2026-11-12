@@ -611,12 +611,12 @@ and compiles it with `ix compile --consts Machines.fibMain --equations` and
 order form is the one recommended (no dispatch, and today a much smaller
 object, below).
 
-**The source's shape** matters to today's middle end (*measured*). Every shape
-compiles correctly, but when the tests of one function nest deeply after
-inlining, the producer leaves branches of `if` and `bif` as `Unit` thunks (and
+**The source's shape** mattered to the middle end (*measured*). Every shape
+compiles correctly, but when the tests of one function nested deeply after
+inlining, the producer left branches of `if` and `bif` as `Unit` thunks (and
 a known function passed to `instBEqOfDecidableEq` as a closure), which the
-closures pass compiles as closure allocations applied through a dispatcher,
-and the program moves to the plain-RC route. A first library written with
+closures pass compiled as closure allocations applied through a dispatcher,
+and the program moved to the plain-RC route. A first library written with
 `if`, `==` and `&&` gave `fibMain` 132,155 bytes of text on the plain-RC route,
 for `fib` alone 1,168. The library therefore names the primitives
 (`Nat.beq`, `Nat.blt`, `Nat.add`…) and branches with `bif`, looks values up in
@@ -627,9 +627,13 @@ text on the zero-RC route. The closure form was 165,137 bytes (plain RC) until
 the middle end charged a once-used local function's β-reduction as a move
 (2026-11-11, `Anf/Walk.lean`): its last shrink round, refused on the
 walk's copy budget before, now reduces it to first order, 5,781 bytes of text
-on the zero-RC route. The reproducer and its measurements were handed to the
-middle end; what is left of them is in `docs/closures-design.md`, "Measured
-limits".
+on the zero-RC route. With the middle end's inline-round retry and its
+pending join entry (case-of-case as a move, 2026-11-11) the first library
+compiles first order too: its `fibMain` is 7,621 bytes of text on the zero-RC
+route, and `phase1-machines` registers it as the `natural` fixture ([The
+library under the middle end](#the-library-under-the-middle-end-measured));
+what remains of the middle end's limits is in `docs/closures-design.md`,
+"Measured limits".
 
 ### The generic shell
 
@@ -682,15 +686,20 @@ encoded (`--exe`'s: 956 to 977 bytes). Executables of the
 
 - `tests-corpus`: the `phase1-machines` family, 75 states and events chosen to
   cover every phase and transition of its five roots, at every level, natively
-  and as `--exe` executables of the step roots (4,098 assertions).
-- `tests-exe`, its numeric state machines' part (5,076 assertions): the
+  and as `--exe` executables of the step roots (4,140 assertions), and 25 for
+  the two roots of its `natural` fixture (1,452), whose middle-end result the
+  suite also asserts (95; measured 2026-11-11).
+- `tests-exe`, its numeric state machines' part (5,092 assertions, measured
+  2026-11-11, the long sessions below among them): the
   library equal to the head of the family's source; the interface; the
   layout's table; the shell's encoding; three machines' files under the check
   with 4,402 mutations refused; the shell check (`Shell.check`, which
   `writeChecked` runs) passing the same files and refusing an opcode, a block
   displacement, the step call's target and the system-call bytes, each
   changed, and the first byte of each of the shell's 181 instructions and
-  terminators, changed; `fib`'s executable at the smallest and a large layout;
+  terminators, changed; in each of the three files, at its `cx_init` and step
+  calls, the call-site facts the call lemma takes from the file ("X0-P so
+  far"); `fib`'s executable at the smallest and a large layout;
   the writer refusing a shell with an unwind or a branch falling through; the
   refusals; and natively: `fib` against
   `--exe`'s `fib` on twenty argument lists (the counts, ten non-numerals,
@@ -702,8 +711,8 @@ encoded (`--exe`'s: 956 to 977 bytes). Executables of the
   74); three `echo` sessions equal to the transcripts Lean's interpreter
   prints; the confinement read from `/proc`; the system calls under `strace`;
   and `ixcc compile --exe --machine` in-process.
-- **Sessions of more than 1,000 calls** (`tests-exe`; the part's assertions
-  are 5,083 with them): two `echo` sessions, over argument blocks of at least
+- **Sessions of more than 1,000 calls** (`tests-exe`; 7 of the part's
+  assertions): two `echo` sessions, over argument blocks of at least
   600 bytes drawn by a fixed generator from printable ASCII and multibyte
   UTF-8, of 1,535 and 1,432 calls. Each agrees three ways: the transcript
   Lean's interpreter prints (standard output, standard error, status and
@@ -734,14 +743,29 @@ closures step's survey (`tests-corpus --survey`):
 | the first library's `fibMainHO` | 353, 2 → 232, 2 | plain RC | 181,529 → 139,504 |
 
 Before the change `fibMainHO`'s dispatchers took 57 % of the closures step's
-dispatch budget; after it the step has nothing to do. What still leaves
-closures in the first library is in `docs/closures-design.md`, "Measured
-limits": case-of-case copies on its `==` chains (the message step) and, in
-its `fibMain` and `fibMainHO`, inline rounds that one caller's walk exceeds.
-The producer now retries such a round without that caller, which takes
-`fibMain` from 159 keys to 127 and `fibMainHO` from 232 to 146 (with 13 %
-more text for `fibMain`, 9 % less for `fibMainHO`); what is left are callers
-whose inlined callees alone exceed one walk's copy budget.
+dispatch budget; after it the step has nothing to do. What still left
+closures in the first library (`docs/closures-design.md`, "Measured limits")
+were case-of-case copies on its `==` chains (the message step) and, in its
+`fibMain` and `fibMainHO`, inline rounds that one caller's walk exceeds. The
+producer now retries such a round without that caller, and the shrink walk
+takes a join point every jump to which passes a known constructor as pending,
+each alternative's first selection a move (case-of-case as a move). Measured
+on one tree with `ixcc compile --rc auto`, the configurations differing only
+in those two producer changes (closure keys, policy, text bytes):
+
+| root | neither | the retry alone | the pending entry alone | both |
+| --- | --- | --- | --- | --- |
+| the first library's message step (`Natural.onMessage`) | 6, plain RC, 27,628 | as neither | none, zero RC, 2,743 | as the pending entry alone |
+| the first library's `fibMain` (`Natural.fibMain`) | 159, plain RC, 109,837 | 127, plain RC, 123,846 | as neither | none, zero RC, 7,621 |
+| the first library's `fibMainHO` | 232, plain RC, 139,504 | 146, plain RC, 127,462 | as neither | none, zero RC, 7,551 |
+| the shipped library's `fibMain`, `fibMainHO` | none, zero RC, 5,852, 5,781 | as neither | as neither | as neither |
+
+With both, the library compiles first order without its workarounds: the
+`natural` fixture of [`phase1-machines`](../fixtures/corpus/phase1-machines/README.md)
+registers its `fibMain` and message step, and `tests-corpus` asserts that
+they compile zero RC with no closure key. The shipped library keeps its
+workarounds; it is still the smaller (5,852 bytes of text against 7,621 for
+`fib`), and it is what `tests-exe` runs as machine executables.
 
 ### What is assumed and not proved for an X2 executable
 

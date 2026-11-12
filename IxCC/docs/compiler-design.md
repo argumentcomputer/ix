@@ -406,38 +406,51 @@ soon as it passes one of these fixed budgets
 | --- | --- | --- | --- | --- |
 | `Src.maxTermDepth` | the depth of a source term: per expression at ingress (`Ingress.depthBudget`, share expansions included and a reused share's height checked against the depth left, `Ingress.convH`), and erasure's nesting (`Lam.Erase.termFuel`) | 2,048 | 299 | 6.8× |
 | `Recheck.maxSrcVisits` | with `Src.maxTermDepth`, `Recheck.checkSrc`'s check of a program built without ingress: its term nodes counted as trees (a shared term at each use) | 268,435,456 | 33,211,435 | 8.0× |
-| `Anf.maxLamNodes` | each Lam global, before ANF conversion (P1) | 16,384 | 767 | 21× |
+| `Anf.maxLamNodes` | each Lam global, before ANF conversion (P1) | 16,384 | 1,145 | 14× |
 | `Anf.maxLamDepth` | each Lam global's depth, before P1 | 2,048 | 134 | 15× |
 | `Anf.maxGlobalNodes` | each Anf global, after P1, after every step and after every shrink round | 16,384 | 9,083 | 1.8× |
-| `Anf.maxDepth` | each Anf global's depth, at the same points | 2,048 | 457 | 4.4× |
+| `Anf.maxDepth` | each Anf global's depth, at the same points | 2,048 | 1,543 | 1.3× |
 | `Anf.maxProgramNodes` | the whole program at the same points, and the running total while an inline or shrink step rewrites its globals | 1,048,576 | 25,749 | 41× |
 | `Anf.maxBackWork` | the back end's work (`Anf.backWork`: each global's nodes squared, plus its nodes and its `case`s' squared alternative counts times the constructor table's length), at the same points | 268,435,456 | 158,498,608 | 1.7× |
-| `Walk.maxCopy` | the nodes one walk walks again: inlined callees, inlined join points, case-of-case alternatives and a local function's second and later β-expansions (its first is a move, `Walk.betaFires`) | 8,192 | 6,955 (inline), 1,375 (shrink) | 1.2×, 6.0× |
-| `Walk.maxWalkDepth` | the walk steps on the native stack at once (`Here.lvl`, which a continuation inherits from the point that calls it) | 3,072 | 478 | 6.4× |
+| `Walk.maxCopy` | the nodes one walk walks again: inlined callees, inlined join points, case-of-case alternatives (but the first selection of each alternative of a pending join point, a move) and a local function's second and later β-expansions (its first is a move, `Walk.betaFires`) | 8,192 | 6,955 (inline), 1,375 (shrink) | 1.2×, 6.0× |
+| `Walk.maxWalkDepth` | the walk steps on the native stack at once (`Here.lvl`, which a continuation inherits from the point that calls it) | 3,072 | 1,571 | 1.9× |
 | `Walk.maxFires` | rule firings in one walk | 8,192 | 801 | 10× |
-| `Walk.maxWalkWork` | the work one walk does (`Fires.work`, charged before every step of the walk) | 10,000,000 | 1,445,345 | 6.9× |
-| `Anf.maxStepWork` | the walk work of one inline or shrink step, over all its walks | 45,000,000 | 8,208,022 | 5.5× |
+| `Walk.maxWalkWork` | the work one walk does (`Fires.work`, charged before every step of the walk) | 10,000,000 | 3,706,721 | 2.6× |
+| `Anf.maxStepWork` | the walk work of one inline or shrink step, over all its walks | 45,000,000 | 28,843,161 | 1.5× |
 | `Specialize.maxWork` | the work charged for the call sites a specialisation step examines | 67,108,864 | 3,179,143 | 21× |
 | `Specialize.maxNodes` | the nodes of the specialisations those sites may build | 1,048,576 | 3,209 | 326× |
 
 The committed values are `tests-corpus`'s survey of every committed program
-(170 measured, 2026-11-11, after the fixtures were refrozen), which also checks every walk against the visit
-bound of the copy count (`steps ≤ nodes + copied`: 4,982 walks).
+(172 measured, 2026-11-11), which also checks every walk against the visit
+bound of the copy count (`steps ≤ nodes + copied`: 5,409 walks).
 
-**Headroom.** Three budgets are within twice the largest committed value. The
+**Headroom.** Six budgets are within twice the largest committed value. The
 survey prints, beside each maximum, the first program that reaches it:
 
 | Budget | Value | Largest committed value | Headroom | Reached by |
 | --- | --- | --- | --- | --- |
 | `Walk.maxCopy`, in an inline walk | 8,192 | 6,955 | 1.18× | `phase1-machines`, `Machines.fibMain` |
+| `Anf.maxDepth` | 2,048 | 1,543 | 1.33× | `phase1-machines`, `Natural.fibMain` |
+| `Anf.maxStepWork` | 45,000,000 | 28,843,161 | 1.56× | `phase1-machines`, `Natural.fibMain` |
 | `Anf.maxBackWork` | 268,435,456 | 158,498,608 | 1.69× | `phase1-machines`, `Machines.fibMainHO` |
 | `Anf.maxGlobalNodes` | 16,384 | 9,083 | 1.80× | `phase1-machines`, `Machines.fibMain` |
+| `Walk.maxWalkDepth` | 3,072 | 1,571 | 1.96× | `phase1-machines`, `Natural.fibMain` |
 
-All three are reached by the numeric state-machine family, the largest
+All six are reached by the numeric state-machine family, the largest
 committed programs, so a program somewhat larger meets them first: a walk
 past `maxCopy` is refused (the producer then retries the inline round without
-that caller, see "The producer" below), and a program past the node or
-back-end work budget is refused.
+that caller, see "The producer" below), a shrink round that would take a
+global past `maxDepth`, a walk past `maxWalkDepth` or a step past
+`maxStepWork` is not taken (the global keeps the rounds before it, less
+shrunk), an inline round past any of them is not taken, and a program past
+the node or back-end work budget after a shrink step, or deeper than
+`maxDepth` after P1, is refused. The three that
+`Natural.fibMain` reaches come with the middle end's inline-round retry and
+its pending join entry, which make that program first order: with neither,
+on the same tree, its deepest global is 596 deep, its deepest walk 754 steps
+and its largest step's walk work 7,063,134; with the pending entry forced
+off (the retry kept) 1,187, 1,220 and 15,358,362 (the retry inlines more, and the pending entry moves each
+selected alternative into the `case` arm that jumped to it).
 
 That visit bound (a walk takes at most its global's nodes plus `maxCopy`
 steps) is argued in `Anf/Walk.lean`'s module note and checked by the step
@@ -468,7 +481,7 @@ budget and is safe on any depth. The largest values are measured by
 `tests-corpus`, which replays the honest certificate of every committed program
 step by step (every root of every corpus family, and `k1.ixe`, `src-sortpoly`,
 `src-diag`, the ownership fixtures and the RC real-source closure with all their
-roots: 170 programs reach the middle end, 20 more are declined before it) and
+roots: 172 programs reach the middle end, 20 more are declined before it) and
 fails if any value reaches its budget.
 
 **Native stack.** A Lean program runs `main` on a thread whose stack is
@@ -489,7 +502,7 @@ nesting constructor:
 | Fir to x86 | single-alternative `case` / two-alternative `case` / `tick (case …)` / join points / bindings / `tick` | above 16,383 / 8,192 / 8,192 / 8,192 / 8,191 / 16,383 (all that was tried) | `maxDepth` 2,048 (4×) |
 
 The walk is the tightest: four times below its threshold leaves `maxDepth`
-4.4 times the deepest committed Anf global and `maxWalkDepth` 6.4 times the
+1.3 times the deepest committed Anf global and `maxWalkDepth` 1.9 times the
 deepest committed walk, the room an 8 MiB stack allows. Ingress converts a share once
 and reuses the term; it keeps the term's height and checks it against the
 depth left wherever the share is reused, so no ingested term is deeper than
@@ -648,7 +661,14 @@ shrink rounds stop where the re-run would refuse the next one
 (`Shrink.fixpointWithin`: a walk past its budgets, a global past
 `maxGlobalNodes` or `maxDepth`, the step past `maxStepWork`); and it keeps to
 the certificate's caps on steps (`Pipeline.maxSteps`), callees per caller and
-specialisation decisions. Its oracles are near-linear in the program: the
+specialisation decisions. The shrink walk's pending join entry (case-of-case
+as a move) is not a producer decision: the walk chooses it from the source
+and its own state, the certificate does not record it, and the re-run
+chooses again; a producer that deviated (a test-only switch,
+`Shrink.Budgets.pendForce`, makes one) is refused wherever the re-run's walk
+derives another program from its certificate, and accepted, less optimised,
+where it derives the same (`tests-corpus` asserts both). Its oracles are
+near-linear in the program: the
 recursive-global search is Tarjan's algorithm (it was a reachability walk from
 every global); the block order is near-linear in a group's blocks
 (`Order.produce`: it was quadratic, and exponential in the two-way branches

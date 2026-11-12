@@ -605,6 +605,10 @@ per arity of an unknown application), and the dispatchers' back-end work
 | X2 `fibMain` (first-order source; the probe library) | 6,230 (6,811 before the walk's move accounting) | 159 (237) | 2 | 3 % (10 %) |
 | X2 `fibMainHO` (the probe library) | 7,953 (8,896) | 232 (353) | 2 | 9 % (33 %) |
 
+The two X2 rows are the compiler without the inline-round retry and the
+pending join entry of limit 1 below; with both, those programs are first
+order and the closures step has nothing to do.
+
 Three limits, in the order ordinary code meets them:
 
 1. **The walk's copy budget** (`Walk.maxCopy`, 8,192 nodes walked again per
@@ -618,61 +622,121 @@ Three limits, in the order ordinary code meets them:
    (`Walk.betaFires`), and the 24-test `bif` chain and the 30-line message
    step with its primitives named reduce to one first-order function (text
    1,410 and 2,656 bytes, from 122 and 92 functions and 120 and 90 closure
-   keys). Two stops remain. (a) *Case-of-case copies*: the join point that
-   turns a `Decidable` into a `Bool` is jumped to with a known constructor
-   from each arm, and case-of-case copies the selected alternative there, the
-   else-alternative holding the rest of the chain, so these copies still grow
-   with the square of the chain: on `if x == k` chains from 8 tests, and on
-   the message step with `==`, the root's last shrink round fails (with
-   case-of-case off it copies 28 to 32 nodes), so the `==` method, passed in a
-   dictionary, stays a known global applied as a value (2 keys, 2
-   dispatchers; `chain24` from 80 keys to 2). (b) *Inline rounds refused
-   for one caller*: an inline round that one caller's walk exceeds (its
-   inlined callees copy more than the budget) was refused for the whole
-   program and ended the phase's rounds. The producer now retries such a
-   round once without the callers whose walk the re-run refuses alone
-   (`Anf.Pipeline.produce`, `Budgets.retryInline`). It is a producer change:
-   the re-run checks every round as before, and no rule, budget or
-   certificate format changes. A retried round gives the steps after it a
-   larger program, which can fail a budget checked later where the run
-   without the retry passes (the next shrink step can take the whole
+   keys). Two more stops followed; both are lifted on the programs measured
+   below, with the limits said there.
+
+   (a) *Case-of-case copies.* The join point that turns a `Decidable` into a
+   `Bool` is jumped to with a known constructor from each arm. Case-of-case
+   copied the selected alternative at each jump (and walked the join point's
+   body where it stands), the else-alternative holding the rest of the chain,
+   so these copies grew with the square of the chain: on `if x == k` chains
+   from 8 tests, and on the message step with `==`, the root's last shrink
+   round failed, so the `==` method, passed in a dictionary, stayed a known
+   global applied as a value (2 keys, 2 dispatchers; `chain24` from 80 keys
+   to 2). Now, under shrink, a non-recursive join point of one parameter whose
+   body is a `case` on it is walked as *pending* (`Walk.JEnt.pend`) when every
+   jump to it passes a constructor known there that the `case` selects
+   (`Walk.pendOk`, a pre-check of the scope seeded with the constructors the
+   walk knows at the join point, and following the `case`s on them the walk
+   resolves): each jump takes its alternative, the first selection of each
+   alternative a move (not charged) and a later one charged; the join point's
+   body is never walked, and it is emitted dead (body `trap`), which the next
+   round removes. A join point inlined at its single jump is moved likewise
+   (`Walk.onceFires`). The walk's proofs cover both; `walk_step`'s statement
+   is unchanged. The choice is a function of the source and the walk's state,
+   and it is not in the certificate (a shrink step records round counts): the
+   checker makes it again. A producer that deviates from it is refused where
+   the checker's walk derives another program from its certificate, and
+   accepted, less optimised, where it derives the same one (it only counts
+   fewer rounds); `tests-corpus` asserts both on the `phase1-machines` roots
+   below.
+
+   What stays conservative: the pre-check sees the constructors bound by a
+   `con` in the scope, those the walk knows at the join point, and the
+   scrutinee of an enclosing alternative. A constructor known only through a
+   rewrite inside the scope (copy propagation, a folded primitive, a
+   projection) is not seen, and such a join point keeps the copying
+   case-of-case; so does one with more than eight jumps, one jumped to from a
+   nested join point's body, one whose scope has a case identity or a `case`
+   with the same arms on a scrutinee of unknown constructor, and one with an
+   alternative over the case-of-case bound (512 nodes) selected by two
+   jumps. A second selection of any alternative is charged. That the pending
+   walk is never worse than the walk without it, never refused where that one
+   succeeds and never copying more, is checked, not proved: `tests-corpus`'s
+   budget survey walks every shrink round of every committed program both
+   ways (18,097 rounds: none worse, 9 better).
+
+   (b) *Inline rounds refused for one caller*: an inline round that one
+   caller's walk exceeds (its inlined callees copy more than the budget) was
+   refused for the whole program and ended the phase's rounds. The producer
+   now retries such a round once without the callers whose walk the re-run
+   refuses alone (`Anf.Pipeline.produce`, `Budgets.retryInline`). It is a
+   producer change: the re-run checks every round as before, and no rule,
+   budget or certificate format changes. A retried round gives the steps
+   after it a larger program, which can fail a budget checked later where the
+   run without the retry passes (the next shrink step can take the whole
    program past the back end's work budget; the closures step and the back
    end have budgets of their own); the producer then falls back to the run
-   without the retry (`Anf.Pipeline.withRetryFallback`): `produce` itself
-   for a failure in the middle end, and `ixcc compile` and
+   without the retry (`Anf.Pipeline.withRetryFallback`): `produce` itself for
+   a failure in the middle end, and `ixcc compile` and
    `Recheck.compileInputRetry` (which `tests-corpus` uses) for a failure at
    any stage (the other producers, such as `Recheck.produce` and the claim
    producer, only for one in the middle end). Each run is the proved
-   composition at its own configuration, so no statement changes. The
-   probe library meets it: on `fibSplit` (`fibMain` with the step split into
-   a function per phase) the run with the retry takes the program past the back end's
-   work budget after a shrink step, and the fallback compiles it as before. On the probe library, without the retry → with
-   it (measured on the same compiler):
+   composition at its own configuration, so no statement changes. The probe
+   library meets it: on `fibSplit` (`fibMain` with the step split into a
+   function per phase) the run with the retry takes the program past the
+   back end's work budget after a shrink step, and the fallback compiles it.
+   Without the pending join entry the retry alone gives 20 to 37 % fewer keys
+   on the probe library, which is what the dispatch budget counts (limit 3),
+   but more text and allocation sites on two of its three machines: inlining
+   copies the branch thunks into more callers (table below).
 
-   | root | closure keys | closure allocation sites | text bytes |
-   | --- | ---: | ---: | ---: |
-   | `stepOnly` | 150 → 117 | 274 → 309 | 101,252 → 112,973 |
-   | `fibMain` | 159 → 127 | 297 → 350 | 109,837 → 123,846 |
-   | `fibMainHO` | 232 → 146 | 405 → 366 | 139,504 → 127,462 |
+   Measured on one tree with `ixcc compile --rc auto`, the configurations
+   differing only in the producer's two changes (policy, Fir functions,
+   closure keys, closure allocation sites, text bytes):
 
-   So the retry gives 20 to 37 % fewer keys, which is what the dispatch
-   budget counts (limit 3). On `stepOnly` and `fibMain` it costs about 12 %
-   more text and 13 and 18 % more allocation sites: inlining copies the
-   branch thunks into more callers, where each is built and applied in the
-   same global. On `fibMainHO` text and allocation sites fall as well (9 and
-   10 %). The known-dispatch rule with steps after P8
-   ([Known calls after P8](#known-calls-after-p8)) is expected to remove the
-   extra allocation sites (a closure built and applied in one global becomes
-   a direct call); it is not done. What the retry leaves is the callers
-   whose inlined callees alone exceed one walk's copy budget. No registered
-   root meets either stop (a), (b), and no registered root's object changes
-   with the retry (none has a refused round, even with the inliner's callee
-   size raised from 128 to 8,192 nodes). `tests-recheck` covers the retry
-   (a round refused for one caller and retried without it) and its fallback
-   (a program from bytes whose retried round's shrink step passes the back
-   end's work budget, compiled without the retry). `tests-corpus --survey`
-   prints each compiled root's keys, allocation sites and dispatch call
-   sites.
+   | root | neither | the retry alone | the pending entry alone | both |
+   | --- | --- | --- | --- | --- |
+   | `chain8` / `12` / `16` (`if x == k`) | plain RC, 4, 2, 9 / 13 / 17; 5,541 / 8,557 / 12,405 | as neither | zero RC, 1, 0, 0; 1,154 / 1,218 / 1,282 | as the pending entry alone |
+   | `chain24` | plain RC, 4, 2, 25; 22,597 | as neither | zero RC, 1, 0, 0; 1,410 | as the pending entry alone |
+   | `split24` | plain RC, 4, 2, 25; 13,870 | as neither | zero RC, 1, 0, 0; 1,503 | as the pending entry alone |
+   | the message step with `==` | plain RC, 6, 6, 31; 27,628 | as neither | zero RC, 1, 0, 0; 2,743 | as the pending entry alone |
+   | `stepOnly` | plain RC, 173, 150, 274; 101,252 | plain RC, 121, 117, 309; 112,973 | as neither | zero RC, 3, 0, 0; 5,950 |
+   | X2 `fibMain` | plain RC, 183, 159, 297; 109,837 | plain RC, 133, 127, 350; 123,846 | as neither | zero RC, 4, 0, 0; 7,621 |
+   | X2 `fibMainHO` | plain RC, 248, 232, 405; 139,504 | plain RC, 138, 146, 366; 127,462 | as neither | zero RC, 4, 0, 0; 7,551 |
+
+   So the pending entry alone makes every `==` chain and the message step
+   first order; the machines need the retry as well, and with both they are
+   first order with no closure key, the text 14 to 18 times smaller than with
+   neither.
+   `phase1-machines` registers the message step and `fibMain` as its
+   `natural` fixture (`Natural.onMessage`, `Natural.fibMain`), and
+   `tests-corpus` asserts what the middle end makes of them (zero RC, a
+   verified claim, no closure key); no other registered root's object or
+   certificate changes with either change.
+
+   What the copy budget still stops: a caller whose inlined callees alone
+   exceed one walk's copy budget (the retry leaves it), and the join points
+   the pre-check refuses (above). The programs these changes make are larger
+   and deeper, so the program-wide budgets are nearer: on `Natural.fibMain`
+   the deepest Anf global is 1,543 nodes deep (`Anf.maxDepth` 2,048), one
+   shrink step's walks do 28.8 million units of work (`Anf.maxStepWork` 45
+   million) and its deepest walk has 1,571 steps on the native stack at once
+   (`Walk.maxWalkDepth` 3,072; `docs/compiler-design.md`, "Middle-end
+   budgets"). A round that would pass one of them is not taken, so a later
+   change that leaves the `natural` fixture with closures again may only have
+   pushed it over a budget (`fixtures/corpus/phase1-machines/README.md`). The
+   known-dispatch rule with steps after P8 ([Known calls after
+   P8](#known-calls-after-p8)), which would turn a closure built and applied
+   in one global into a direct call, is not done. `tests-recheck` covers the
+   retry (a round refused for one caller and retried without it), its
+   fallback (a program from bytes whose retried round's shrink step passes
+   the back end's work budget, compiled without the retry) and the pending
+   entry (its output against its source at every clock; forced on through
+   its fallback that inlines the join point's body at a jump no constructor
+   resolves; a large alternative selected twice not taken).
+   `tests-corpus --survey` prints each compiled root's keys, allocation sites
+   and dispatch call sites.
 2. **The tail-call limit**: an internal tail call passes at most seven
    arguments ([roadmap](roadmap.md), "Internal tail calls"), and a dispatcher
    tail-calls each closure's function with its captures and arguments, so a

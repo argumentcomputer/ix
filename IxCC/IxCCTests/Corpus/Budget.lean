@@ -21,7 +21,17 @@ certificate step by step and records, over all of them, the largest
 
 It fails if any reaches its budget, and prints the maxima with the headroom
 factor and the first program that reaches each; `docs/compiler-design.md`
-("Middle-end budgets") records them. The
+("Middle-end budgets") records them.
+
+It also checks the shrink walk's pending join entry (case-of-case as a move)
+against the walk without it, on every shrink round the certificate counts and
+the round after them (where the producer stopped): each is walked a second time
+on the same input with the pending choice forced off (`Walk.Cfg.pendForce :=
+some false`). No round may be refused with the choice the walk makes where the
+walk without it succeeds and fires a rule, none may copy more with it, and no
+jump to a pending join point may be left without a known constructor
+(`Fires.pendInline`). This is how "never worse than the walk without the
+pending entry" is held: checked on the committed programs, not proved. The
 programs are every root of every registered corpus family (compiled with the
 roots it is compiled together with, as `tests-corpus` does) and, with all
 their sidecar roots, `k1.ixe`, `src-sortpoly`, `src-diag`, the ownership
@@ -52,6 +62,17 @@ structure Stats where
   none), and the walks checked. -/
   stepsOver : Nat := 0
   walks : Nat := 0
+  /-- Shrink rounds walked twice on the same input, with the pending choice
+  as the walk makes it and forced off; among them those refused with the
+  choice where forced off the walk succeeds and fires a rule (`pendWorse`), those
+  copying more with it (`pendMoreCopies`), both must be none, and those refused
+  forced off and walked with the choice (`pendGains`); and the jumps to a
+  pending join point no known constructor resolved (`pendInline`, must be none). -/
+  pendRounds : Nat := 0
+  pendWorse : Nat := 0
+  pendMoreCopies : Nat := 0
+  pendGains : Nat := 0
+  pendInline : Nat := 0
   maxBackWork : Nat := 0
   maxEditsAt : Nat := 0
   maxEditPermille : Nat := 0
@@ -74,7 +95,22 @@ def Stats.merge (s t : Stats) : Stats :=
     maxEditPermille := max s.maxEditPermille t.maxEditPermille
     maxFactPermille := max s.maxFactPermille t.maxFactPermille, maxSlotsOver := max s.maxSlotsOver t.maxSlotsOver
     stepsOver := s.stepsOver + t.stepsOver, walks := s.walks + t.walks
+    pendRounds := s.pendRounds + t.pendRounds, pendWorse := s.pendWorse + t.pendWorse
+    pendMoreCopies := s.pendMoreCopies + t.pendMoreCopies, pendGains := s.pendGains + t.pendGains
+    pendInline := s.pendInline + t.pendInline
     programs := s.programs + t.programs, declined := s.declined + t.declined }
+
+/-- Count one shrink round walked with the pending choice the walk makes
+(`dec`) and with it forced off (`off`), on the same input. -/
+def Stats.pend (s : Stats) (dec off : Except String (Anf.GDef × Anf.Walk.Fires)) : Stats :=
+  let s := { s with pendRounds := s.pendRounds + 1 }
+  match dec, off with
+  | .error _, .ok (_, fo) => if fo.total > 0 then { s with pendWorse := s.pendWorse + 1 } else s
+  | .error _, .error _ => s
+  | .ok (_, f), .ok (_, fo) =>
+    { s with pendMoreCopies := s.pendMoreCopies + (if f.copied > fo.copied then 1 else 0)
+             pendInline := s.pendInline + f.pendInline }
+  | .ok (_, f), .error _ => { s with pendGains := s.pendGains + 1, pendInline := s.pendInline + f.pendInline }
 
 /-- Count one walk of a global of body `b` against the step bound. -/
 def Stats.walk (s : Stats) (b : Anf.Exp) (f : Anf.Walk.Fires) : Stats :=
@@ -154,10 +190,17 @@ def measure (lam : Lam.Program) (cert : Anf.Pipeline.Cert) : Except String Stats
     match step with
     | .shrink c =>
       let mut stepWork := 0
+      let C := Anf.Shrink.cfg P cert.shrink
       for (g, gd) in P.globalList do
         let mut cur := gd
-        for _ in [0:c.getD g 0] do
-          let (gd', f) ← Anf.Shrink.round P cert.shrink cur
+        let n := c.getD g 0
+        -- the certificate's rounds and the round after them, each also walked
+        -- with the pending choice forced off
+        for i in [0:n + 1] do
+          let r := Anf.Shrink.round P cert.shrink cur
+          s := s.pend r ((Anf.Walk.global { C with pendForce := some false } cur).run {})
+          if i == n then break
+          let (gd', f) ← r
           s := s.walk cur.body f
           s := { s with maxCopyShrink := max s.maxCopyShrink f.copied, maxFires := max s.maxFires f.total }
           s := { s with maxWalkWork := max s.maxWalkWork f.work, maxCopyDepth := max s.maxCopyDepth f.depth }
@@ -307,6 +350,23 @@ def survey (a : Assert) : IO (Array String) := do
   expect a (s.stepsOver == 0 && s.walks > 0)
     s!"{s.stepsOver} of {s.walks} walks took more steps than their global's nodes plus their copies"
   out := out.push s!"walks within their step bound (steps at most the global's nodes plus the copies): {s.walks} of {s.walks}"
+  -- the pending join entry against the walk without it, round by round
+  let firstWith := fun (get : Stats → Nat) =>
+    ((each.find? fun (_, t) => get t > 0).map (·.1)).getD "none"
+  expect a (s.pendRounds > 0) "no shrink round was walked with the pending choice forced off"
+  expect a (s.pendWorse == 0)
+    s!"{s.pendWorse} shrink rounds refused with the pending choice where the walk without it fires \
+      (first: {firstWith (·.pendWorse)})"
+  expect a (s.pendMoreCopies == 0)
+    s!"{s.pendMoreCopies} shrink rounds copy more with the pending choice than without it \
+      (first: {firstWith (·.pendMoreCopies)})"
+  expect a (s.pendInline == 0)
+    s!"{s.pendInline} jumps to a pending join point found no known constructor (the pre-check \
+      `Walk.pendOk` admitted a scope it should not; first: {firstWith (·.pendInline)})"
+  out := out.push s!"the pending join entry against the walk without it, on {s.pendRounds} shrink rounds: \
+    refused where the walk without it fires {s.pendWorse}, copying more {s.pendMoreCopies} (both must be \
+    none); refused without it and walked with it {s.pendGains}; jumps to a pending join point without a \
+    known constructor {s.pendInline} (must be none)"
   for (label, get, budget) in rows do
     let got := get s
     expect a (got < budget) s!"{label}: {got} reaches its budget {budget}"

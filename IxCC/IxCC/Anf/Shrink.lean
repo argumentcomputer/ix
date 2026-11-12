@@ -53,6 +53,13 @@ structure Budgets where
   /-- Rounds per global per invocation. -/
   rounds : Nat := 64
   params : Params := {}
+  /-- For tests only: the pending choice of the producer's walks
+  (`Walk.Cfg.pendForce`) forced (`some`), or the walk's own (`none`, the
+  default). The producer alone reads it (`produce`, through `produceRound`);
+  the re-run's walks (`cfg`, `round`, `rounds`, `run`) never do, and no
+  certificate carries it (it is not one of the `Params`), so the re-run checks
+  a certificate produced with it set against the walk's own choice. -/
+  pendForce : Option Bool := none
   deriving Repr, Inhabited
 
 def cfg (P : Program) (p : Params) : Walk.Cfg :=
@@ -139,23 +146,30 @@ def fixpoint (P : Program) (p : Params) (gd : GDef) :
     if f.total == 0 then pure (gd, n, acc)
     else fixpoint P p gd' budget (n + 1) (acc.add f)
 
+/-- The producer's round: `round`, with the walk's pending choice forced as
+`force` says (`Budgets.pendForce`, for tests; with `none`, the default, it is
+exactly `round`). -/
+def produceRound (force : Option Bool) (P : Program) (p : Params) (gd : GDef) :
+    Except String (GDef × Walk.Fires) :=
+  (Walk.global { cfg P p with pendForce := force } gd).run {}
+
 /-- `fixpoint` within what the re-run (`rounds`) accepts, `work` being the
 step's work so far: the rounds stop, the last one uncounted, at a round that
 fires no rule, fails (a walk past its own budgets), leaves the global over
 `maxGlobalNodes` or deeper than `maxDepth`, or brings the step's work over
 `maxStepWork`. The global, its round count, the step's work and the rule
-counts. -/
-def fixpointWithin (P : Program) (p : Params) (gd : GDef) :
+counts. Its rounds are `produceRound force`. -/
+def fixpointWithin (force : Option Bool) (P : Program) (p : Params) (gd : GDef) :
     Nat → Nat → Nat → Walk.Fires → GDef × Nat × Nat × Walk.Fires
   | 0, n, work, acc => (gd, n, work, acc)
   | budget + 1, n, work, acc =>
-    match round P p gd with
+    match produceRound force P p gd with
     | .error _ => (gd, n, work, acc)
     | .ok (gd', f) =>
       if f.total == 0 then (gd, n, work, acc)
       else if gd'.body.nodesLe maxGlobalNodes && gd'.body.depthUpTo maxDepth maxGlobalNodes ≤ maxDepth &&
           work + f.work ≤ maxStepWork then
-        fixpointWithin P p gd' budget (n + 1) (work + f.work) (acc.add f)
+        fixpointWithin force P p gd' budget (n + 1) (work + f.work) (acc.add f)
       else (gd, n, work, acc)
 
 /-- `produce`: each global to its fixpoint, in id order, within what the
@@ -167,7 +181,7 @@ allow (its program nodes are checked after the step, by
 `Pipeline.checkGlobalNodes`). -/
 def produce (B : Budgets) (P : Program) : Except String (Cert × Program × Walk.Fires) := do
   let (rs, _) := P.globalList.foldl (init := (#[], 0)) fun (rs, work) (g, gd) =>
-    let (gd', n, work, f) := fixpointWithin P B.params gd B.rounds 0 work {}
+    let (gd', n, work, f) := fixpointWithin B.pendForce P B.params gd B.rounds 0 work {}
     (rs.push (g, gd', n, f), work)
   let rs := rs.toList
   let P' := { P with globals := Src.NatMap.ofList (rs.map fun (g, gd, _) => (g, gd)) }

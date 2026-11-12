@@ -190,7 +190,7 @@ theorem walkJump_step (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fu
   have hosl : os.length = vs.length := by rw [← mapM_length hws, hvws.length]
   split at h
   · -- inlined at its single jump
-    next _ σj jσj ar r0 b hj =>
+    next _ σj jσj ar r0 b id hj =>
     split at h
     · next har =>
       have har' : os.length = ar := by simpa using har
@@ -208,7 +208,7 @@ theorem walkJump_step (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fu
         Bool.false_eq_true, if_false]
     · exact absurd h (fun h => Walk.run_throw_ok h)
   · -- an emitted join point
-    next _ l σj jσj ar r0 b hj =>
+    next _ l σj jσj ar r0 b id hj =>
     obtain ⟨ρj, Jj, livej, jlj, jc', Tk, hJj, hl, hjc', hT, hR, henvj, hJjj, hndj, hVj⟩ :=
       hJ.get_emitted hj (hlive hj)
     have hSK := hk.meaning hT
@@ -284,6 +284,62 @@ theorem walkJump_step (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fu
         · rw [eval_jump, hJj]; simp [Result.ofOption, hvs]
         · rw [eval_jump, hd, hdj, hjc']
           simp [Result.ofOption, Walk.atoms, opds_eval hws]
+  · -- a pending join point
+    next _ l σj jσj b hj =>
+    obtain ⟨ρj, Jj, livej, jlj, hJj, henvj, hJjj, hndj, hVj⟩ := hJ.get_pend hj (hlive hj)
+    split at h
+    · next har =>
+      have har' : os.length = 1 := by simpa using har
+      obtain ⟨m, inner, hsb⟩ : ∃ m inner, Walk.stripTicks b = (m, inner) := ⟨_, _, rfl⟩
+      have hb := stripTicks_eq hsb
+      simp only [hsb] at h
+      split at h
+      · -- the alternative its constructor selects: case-of-case, the body not walked
+        next σ' alt i hhit =>
+        have h' := run_fire_then h
+        obtain ⟨o', s2, h2, h3⟩ := Walk.run_bind_ok h'
+        obtain ⟨rfl, rfl⟩ := Walk.run_pure_ok h3
+        split at hhit
+        · rename_i _ _ alts dflt o
+          subst hb
+          split at hhit
+          · next c fs hkn =>
+            obtain ⟨⟨isAlt, alt0⟩, hsel, hmap⟩ := Option.map_eq_some_iff.1 hhit
+            simp only [Prod.mk.injEq] at hmap
+            obtain ⟨rfl, rfl, -⟩ := hmap
+            obtain ⟨w, rfl⟩ : ∃ w, ws = [w] := by
+              simp only [List.mapM_cons, List.mapM_nil, Option.bind_eq_bind,
+                Option.bind_eq_some_iff, Option.pure_def, Option.some.injEq] at hws
+              obtain ⟨w, _, _, rfl, rfl⟩ := hws
+              exact ⟨w, rfl⟩
+            obtain ⟨v, rfl⟩ : ∃ v, vs = [v] := by
+              cases hvws with
+              | cons hv hrest => cases hrest; exact ⟨_, rfl⟩
+            have hvw : WV Q Valid Xc v w := by cases hvws with | cons hv _ => exact hv
+            have how : o.val ρ' = some w := by
+              simp only [List.mapM_cons, List.mapM_nil, Option.bind_eq_bind,
+                Option.bind_eq_some_iff, Option.pure_def, Option.some.injEq] at hws
+              obtain ⟨w', hw', _, rfl, h''⟩ := hws
+              cases h''; exact hw'
+            simp only [List.replicate_one, List.singleton_append] at hndj
+            exact caseOfCase_sim hctx hW hV hd hdj hf hk hJj henvj hJjj hVj hndj hvs how hvw hkn hsel h2
+          · cases hhit
+        · cases hhit
+      · -- no constructor resolves it (not expected under `pendOk`): the body
+        -- inlined at the jump, as a join point inlined at its single jump
+        have h' := run_fire_then h
+        obtain ⟨o, s2, h2, h3⟩ := Walk.run_bind_ok h'
+        obtain ⟨rfl, rfl⟩ := Walk.run_pure_ok h3
+        have henvb := WEnv.pushOpds (mapM_reverse hws) hvws.reverse henvj
+        rw [List.length_reverse, har'] at henvb
+        have := hW.walk h2 (vs.reverse ++ ρj) Jj ρ' J' _ jlj SK (hctx.pre hVj vs.reverse) henvb hJjj hd hdj hf
+          hndj hk
+        refine (SimUpTo.tick (eval_mono P _ Jj b) (eval_mono Q ρ' J' o) this).congr (fun k => ?_)
+          (fun k => by rw [eval_tick])
+        rw [eval_jump, hJj]
+        simp only [Result.ofOption, Result.bind_ok, hvs, jumpTo, show vs.length = 1 by omega, if_true,
+          Bool.false_eq_true, if_false]
+    · exact absurd h (fun h => Walk.run_throw_ok h)
   · exact absurd h (fun h => Walk.run_throw_ok h)
 
 end IxCC.Anf.WalkProof
