@@ -263,6 +263,41 @@ over `Nat`. No committed fixture exercises any of these types.
    (needs only DR1). Then a signed small representation and primitives;
    large values use the bignum library (Phase 4).
 
+**Stage W1** (words as primitives, tagged at run time; the data-types plan's first stage). What
+exists, behind `Table.Config.words`, which is off, so no compile changes:
+- the exact meaning `WordOp.eval` of every operation of `UInt8` to `UInt64`
+  ([`Src/Word.lean`](../IxCC/Src/Word.lean)), tested against Lean's C implementations and, by the
+  kernel's `decide`, against the reference bodies;
+- SrcEval's rule F6w (contract version 2, [evaluator interface](evaluator-interface.md)) and the
+  table entry `word w op thm`: the constant at the operation's pinned address
+  (`src-tables.tsv`'s `word` rows), and `thm` a stored theorem whose statement is the operation's
+  equation over `Nat`'s operations on `UIntN.ofNat x` (and `y`); `ofNat`'s theorem is the
+  *reducing bridge* `∀ x (h : Nat.le (Nat.succ (x % size)) size), ofNat x = tower (x % size) h`
+  ([`Src/Table/Word.lean`](../IxCC/Src/Table/Word.lean)). An earlier draft's bridge, below the
+  size only, constrained nothing above it (a key returning `5` there satisfied it);
+  `IxCCTests/Src/Words.lean` refutes that key with the reducing bridge;
+- the theorems, which `ix compile --equations` adds for every word operation a closure reaches
+  (`Ix/Compile/WordEquations.lean`) and names, with the operation, in its output's `theorems`
+  list; the sidecar carries the list with addresses ([corpus](corpus.md), "The sidecar"), and the
+  producer proposes a word entry from it only, so a reader that reads only what a program reaches
+  still finds each theorem;
+- the harness (`tests-src`): on every boundary case of every primitive operation at every width,
+  F6w's result equals SrcEval's own run of the operation's Lean 4.34.1 reference body (21,996
+  cases);
+- the decisions (`decEq`, `decLt`, `decLe`) stay reference bodies, not primitives: their bodies
+  reduce to `Nat`'s decisions and never build `2^64`. A primitive decision would need, in the
+  grounding, that every element of `Decidable p` in the model is one of its two constructors'
+  images, which no law states.
+
+Not yet: the native lowering (erasure declines a word entry, `erase-word`), and the grounding.
+The grounding check refuses a word entry (`Faith.noWord`, conjunct `noWord`, temporary): the word
+case of the fundamental lemma is not proved. Besides what the stored equations say (`mem` and
+`eq_equality` make each hold in every model; `nat_accel` evaluates its right side), that case needs
+the result tower typed in the model: its constructors' stored types mention
+`OfNat.ofNat Nat 64 _`, `2 ^ w` through `HPow` and `LT.lt Nat instLTNat`, which no stored
+equation speaks of. When that case is proved, `noWord` gives way to a check that every word
+entry's facts are stored.
+
 SrcEval needs one rule for raw words to be sound: a bounded construction
 whose erased proof is false (for example `UInt64.ofNatLT n h` with
 `n ≥ 2^64`) is stuck rather than evaluated, so a compiled range guard fails

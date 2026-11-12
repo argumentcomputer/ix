@@ -188,8 +188,9 @@ def rootsFixture (fx : RootsFixture) (ix : String) (work dir : System.FilePath)
   let rest ← if fx.equations then sidecarEquations ix named (work / s!"{fx.stem}.named.ix-equations.json")
     else pure [("equations", Json.arr #[]), ("failures", Json.arr #[])]
   let sidecar := dir / s!"{fx.stem}.equations.json"
-  IO.FS.writeFile sidecar ((Json.mkObj ([("format", "ixcc/k1-equations/1"),
-    ("source", fx.source), ("roots", Json.arr roots)] ++ rest)).pretty ++ "\n")
+  let head : List (String × Json) :=
+    [("format", "ixcc/k1-equations/1"), ("source", fx.source), ("roots", Json.arr roots)]
+  IO.FS.writeFile sidecar ((Json.mkObj (head ++ rest)).pretty ++ "\n")
   IO.FS.writeFile (dir / s!"{fx.stem}.provenance.json") ((Json.mkObj [
     ("producer_version", String.intercalate " " (words (← run ix #["--version"]))),
     ("producer", IxCCTests.Corpus.producerIx),

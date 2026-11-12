@@ -23,7 +23,14 @@ Which arguments the checked source passes by name is part of what it ran: the
 table's `lazy` rows, which `Table.ofCert` accepts only for a pinned row or a
 sparse casesOn at its binder count without a `resolve` entry (`Table.checkLazy`,
 `Table.lazyResolveOk`), so a certificate cannot
-make another definition's arguments by name.
+make another definition's arguments by name. So is which constants run as
+fixed-width word primitives (SrcEval's rule F6w, stage W1 of
+[DR2](data-and-roots-design.md#dr2-fixed-width-integers-and-int)): a
+certificate's `word` entry is accepted only when the configuration enables
+words, which no compile or recheck path does yet (`Table.Config.words` is off
+until the native lowering exists), and then only at the operation's pinned
+address with a stored theorem whose statement is the operation's equation
+(`Table.checkWord`).
 
 The implementation composes `compile = ingress; produce; run`. Every address
 IxCC computes is pure BLAKE3: `Address.blake3` is defined as `Address.blake3Pure`
