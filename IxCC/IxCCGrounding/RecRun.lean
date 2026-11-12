@@ -177,20 +177,6 @@ theorem piBody_inst (ks : List LevelParam) (us : List Level) : ∀ (n : Nat) (e 
       exact piBody_inst ks us n b
     | _ => rfl
 
-/-- Peeling λs keeps only constants the term names. -/
-theorem mentions_peel : ∀ (n : Nat) (t t' : Term) {c : CId}, IxCC.Src.peelLams n t = some t' →
-    t'.mentions c = true → t.mentions c = true
-  | 0, t, t', c, h, hm => by
-    simp only [IxCC.Src.peelLams, Option.some.injEq] at h
-    rw [h]
-    exact hm
-  | n + 1, t, t', c, h, hm => by
-    cases t with
-    | lam b d body =>
-      simp only [IxCC.Src.peelLams] at h
-      simp [Term.mentions, mentions_peel n body t' h hm]
-    | _ => simp [IxCC.Src.peelLams] at h
-
 section Sem
 
 variable {V : Type w} [Ix.Kernel.SetTheory V] {env : KEnv}
@@ -223,7 +209,8 @@ theorem ruleSites_ok {M : Model V env} (hL : Laws M) (hN : NatBasis env) {lps : 
     · simp [regime, hh] at hreg
   have hpw : pwAt lps (IxCC.Src.profileOf ls') pw = some false := by
     unfold pwAt
-    rw [if_pos hd, ← holds_congr_zero hd (φOf_zero hφ), hfalse]
+    simp only [hd, ↓reduceIte]
+    rw [← holds_congr_zero hd (φOf_zero hφ), hfalse]
   have hP : IxCC.Src.profileOf ls' ∈ recProfiles lps pw := by
     simp only [recProfiles, List.mem_filter]
     exact ⟨mem_profiles _ _ (by simp [IxCC.Src.profileOf, hlen]), by rw [hpw]; rfl⟩
