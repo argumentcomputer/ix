@@ -1,6 +1,6 @@
 import Ix.IxVM.Consistency.Statement
 import IxC.Kernel.Model.Restrict
-import IxC.Kernel.Model.Open.Certs
+import IxC.Kernel.Model.Open.Tables
 import IxC.Kernel.Semantics.EnvFacts
 import IxC.Kernel.Verify.Rename.Installs
 
@@ -25,9 +25,10 @@ laws are then the claimed constants' own: none of them reads a model-family cons
 
 The kernel's rules are sound over a model of an environment whose stored terms are
 closed (`Ix.Kernel.Open.StoredClosed`) and whose stored telescopes have the binders the
-laws read (`Ix.Kernel.Open.StoredArities`). The fold's invariant gives both for the
+laws read (`Ix.Kernel.Open.StoredArities`), and whose projection tables are their
+structures' (`Ix.Kernel.Open.StoredTables`). The fold's invariant gives all three for the
 installed environment, and the claimed sub-environment keeps them:
-`storedClosed_of_envModelOk`, `storedArities_of_envModelOk`.
+`storedClosed_of_envModelOk`, `storedArities_of_envModelOk`, `storedEnv_of_envModelOk`.
 -/
 
 namespace IxVM.Consistency
@@ -240,6 +241,18 @@ theorem storedArities_of_envModelOk {V : Type u} [SetTheory V] {μ : CheckMode}
   obtain ⟨⟨m⟩, -⟩ := h
   exact (Ix.Kernel.Open.EnvModel.storedArities m.base2).of_find
     fun _ _ hf => claimedEnv_find?_some hnd hf
+
+/-- **The fold's invariant gives the claimed sub-environment every stored-environment fact
+the rules read** (`Ix.Kernel.Open.StoredEnv`): the invariant holds them of the installed
+environment, and with distinct names the sub-environment's constants, lookups and
+projection tables are its. -/
+theorem storedEnv_of_envModelOk {V : Type u} [SetTheory V] {μ : CheckMode}
+    {env : Env .anon} (h : Ix.Kernel.Model.EnvModelOk V μ env)
+    (hnd : (env.consts.map (·.name)).Nodup) :
+    Ix.Kernel.Open.StoredEnv (claimedEnv env) := by
+  obtain ⟨⟨m⟩, -⟩ := h
+  exact (Ix.Kernel.Open.EnvModelM.storedEnv m).of_find (fun _ hc => (List.mem_filter.mp hc).1)
+    (fun _ _ hf => claimedEnv_find?_some hnd hf) (claimedEnv_findProj? hnd)
 
 /-- The model conjunct's form. -/
 theorem nonempty_claimedModel {env : Env .anon}
