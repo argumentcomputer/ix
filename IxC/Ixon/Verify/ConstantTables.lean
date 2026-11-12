@@ -260,13 +260,13 @@ theorem reads_bind_pure {getm : Ixon.GetM α} {bytes : ByteArray} {value : α}
   rfl
 
 def binderNodeBytes : Ixon.BinderNode → ByteArray
-  | .never => [0].toByteArray
-  | .zero => [1].toByteArray
-  | .ifAllZero params => [2].toByteArray ++
+  | .never mode => [Ixon.binderNodeByte 0 mode].toByteArray
+  | .zero mode => [Ixon.binderNodeByte 1 mode].toByteArray
+  | .ifAllZero params mode => [Ixon.binderNodeByte 2 mode].toByteArray ++
       (tag0Bytes params.size.toUInt64 ++
         Ixon.Verify.Codec.Expr.tag0ListBytes params.toList)
   | .share variant => [3].toByteArray ++ tag0Bytes variant
-  | .undecided => [4].toByteArray
+  | .undecided mode => [Ixon.binderNodeByte 4 mode].toByteArray
 
 def binderBlockBytes (block : Ixon.BinderBlock) : ByteArray :=
   [if block.shared then 1 else 0].toByteArray ++ tag0Bytes block.index ++
@@ -279,76 +279,83 @@ def bindersBytes (blocks : Array Ixon.BinderBlock) : ByteArray :=
 theorem putBinderNode_writes (node : Ixon.BinderNode) :
     Writes (Ixon.putBinderNode node) (binderNodeBytes node) := by
   cases node with
-  | never => exact putU8_writes 0
-  | zero => exact putU8_writes 1
-  | ifAllZero params =>
-    have hwrite := (putU8_writes 2).bind
+  | never mode => exact putU8_writes _
+  | zero mode => exact putU8_writes _
+  | ifAllZero params mode =>
+    have hwrite := (putU8_writes (Ixon.binderNodeByte 2 mode)).bind
       ((putTag0_writes params.size.toUInt64).bind
         (Ixon.Verify.Codec.Expr.arrayPutTag0_writes params))
     simpa [Ixon.putBinderNode, binderNodeBytes] using hwrite
   | share variant =>
     have hwrite := (putU8_writes 3).bind (putTag0_writes variant)
     simpa [Ixon.putBinderNode, binderNodeBytes] using hwrite
-  | undecided => exact putU8_writes 4
+  | undecided mode => exact putU8_writes _
 
 theorem getBinderNode_reads (node : Ixon.BinderNode) (h : node.wireWF) :
     Reads Ixon.getBinderNode (binderNodeBytes node) node := by
   cases node with
-  | never =>
-    show Reads Ixon.getBinderNode [0].toByteArray .never
-    intro before after
-    change (EStateM.bind Ixon.getU8 _) _ = _
-    rw [EStateM.bind, getU8_reads 0 before after]
-    rfl
-  | zero =>
-    show Reads Ixon.getBinderNode [1].toByteArray .zero
-    intro before after
-    change (EStateM.bind Ixon.getU8 _) _ = _
-    rw [EStateM.bind, getU8_reads 1 before after]
-    rfl
-  | undecided =>
-    show Reads Ixon.getBinderNode [4].toByteArray .undecided
-    intro before after
-    change (EStateM.bind Ixon.getU8 _) _ = _
-    rw [EStateM.bind, getU8_reads 4 before after]
-    rfl
+  | never mode =>
+    show Reads Ixon.getBinderNode [Ixon.binderNodeByte 0 mode].toByteArray (.never mode)
+    rcases mode with ⟨input, result⟩
+    cases input <;> cases result <;>
+    · intro before after
+      change (EStateM.bind Ixon.getU8 _) _ = _
+      rw [EStateM.bind, getU8_reads _ before after]
+      rfl
+  | zero mode =>
+    show Reads Ixon.getBinderNode [Ixon.binderNodeByte 1 mode].toByteArray (.zero mode)
+    rcases mode with ⟨input, result⟩
+    cases input <;> cases result <;>
+    · intro before after
+      change (EStateM.bind Ixon.getU8 _) _ = _
+      rw [EStateM.bind, getU8_reads _ before after]
+      rfl
+  | undecided mode =>
+    show Reads Ixon.getBinderNode [Ixon.binderNodeByte 4 mode].toByteArray (.undecided mode)
+    rcases mode with ⟨input, result⟩
+    cases input <;> cases result <;>
+    · intro before after
+      change (EStateM.bind Ixon.getU8 _) _ = _
+      rw [EStateM.bind, getU8_reads _ before after]
+      rfl
   | share variant =>
     show Reads Ixon.getBinderNode ([3].toByteArray ++ tag0Bytes variant) (.share variant)
     unfold Ixon.getBinderNode
     exact Reads.bind (getU8_reads 3)
       (reads_bind_pure (fun t : Ixon.TagN => Ixon.BinderNode.share t.value)
         (getTag0_reads variant))
-  | ifAllZero params =>
+  | ifAllZero params mode =>
     have hcount : params.size.toUInt64.toNat = params.size := by
       change (UInt64.ofNat params.size).toNat = params.size
       exact UInt64.toNat_ofNat_of_lt h
     have hreturn : Reads
-        (pure (Ixon.BinderNode.ifAllZero params.toList.toArray) :
+        (pure (Ixon.BinderNode.ifAllZero params.toList.toArray mode) :
           Ixon.GetM Ixon.BinderNode)
-        ByteArray.empty (.ifAllZero params) := by
-      simpa using Reads.pure (Ixon.BinderNode.ifAllZero params)
+        ByteArray.empty (.ifAllZero params mode) := by
+      simpa using Reads.pure (Ixon.BinderNode.ifAllZero params mode)
     have hvalues := Reads.bind
       (next := fun decoded : List UInt64 =>
-        (pure (Ixon.BinderNode.ifAllZero decoded.toArray) :
+        (pure (Ixon.BinderNode.ifAllZero decoded.toArray mode) :
           Ixon.GetM Ixon.BinderNode))
       (Ixon.Verify.Codec.Expr.getTagN0Values_reads params.toList) hreturn
     have hparams : Reads
         (do
           let decoded ← Ixon.getTagN0Values params.size.toUInt64.toNat
-          return Ixon.BinderNode.ifAllZero decoded.toArray)
-        (Ixon.Verify.Codec.Expr.tag0ListBytes params.toList) (.ifAllZero params) := by
+          return Ixon.BinderNode.ifAllZero decoded.toArray mode)
+        (Ixon.Verify.Codec.Expr.tag0ListBytes params.toList) (.ifAllZero params mode) := by
       rw [hcount]
       simpa using hvalues
     have hcountRead := Reads.bind
       (next := fun count : Ixon.TagN => do
         let decoded ← Ixon.getTagN0Values count.value.toNat
-        return Ixon.BinderNode.ifAllZero decoded.toArray)
+        return Ixon.BinderNode.ifAllZero decoded.toArray mode)
       (getTag0_reads params.size.toUInt64) hparams
     show Reads Ixon.getBinderNode
-      ([2].toByteArray ++ (tag0Bytes params.size.toUInt64 ++
-        Ixon.Verify.Codec.Expr.tag0ListBytes params.toList)) (.ifAllZero params)
+      ([Ixon.binderNodeByte 2 mode].toByteArray ++ (tag0Bytes params.size.toUInt64 ++
+        Ixon.Verify.Codec.Expr.tag0ListBytes params.toList)) (.ifAllZero params mode)
     unfold Ixon.getBinderNode
-    exact Reads.bind (getU8_reads 2) hcountRead
+    rcases mode with ⟨input, result⟩
+    cases input <;> cases result <;> exact Reads.bind (getU8_reads _) hcountRead
 
 theorem putBinderBlock_writes (block : Ixon.BinderBlock) :
     Writes (Ixon.putBinderBlock block) (binderBlockBytes block) := by

@@ -317,24 +317,28 @@ def successorBomb : ByteArray :=
     (List.range bytes.size).all (fun n =>
       !(Ixon.Bounded.deUniv bytes.size value.nodeCount (bytes.extract 0 n)).isOk)
 
-/-- All sixteen Ixon binder contracts, four value contracts, and the four let
-flag spellings over a binder. -/
-def binderContracts : List Ixon.BinderContract :=
-  (List.range 16).filterMap fun bits => Ixon.BinderContract.ofBits? bits.toUInt8
-def valueContracts : List Ixon.ValueContract :=
-  (List.range 4).filterMap fun bits => Ixon.ValueContract.ofBits? bits.toUInt8
-def letContracts (binder : Ixon.BinderContract) : List Ixon.LetContract :=
-  (List.range 4).filterMap fun flags => Ixon.LetContract.ofFlags? flags.toUInt64 binder
-#guard binderContracts.length == 16 && valueContracts.length == 4 &&
-  (letContracts .many).length == 4
+/-- Every mode of each kind: the codes below 256 that decode, which are
+exactly the legal sets (7 binder, 28 binder-node, 8 let, 2 field, 6
+assertion modes), each read back from its own code. -/
+def allModes : List Ixon.AllMode :=
+  (List.range 256).filterMap fun c => Ixon.AllMode.ofCode? c.toUInt8
+def letModes : List Ixon.LetMode :=
+  (List.range 256).filterMap fun c => Ixon.LetMode.ofCode? c.toUInt8
+def assertModes : List Ixon.DefAsserts :=
+  (List.range 256).filterMap fun c => Ixon.DefAsserts.ofCode? c.toUInt8
+#guard ((List.range 256).filterMap fun c => Ixon.BinderMode.ofCode? c.toUInt8).length == 7
+#guard allModes.length == 28 && letModes.length == 8 && assertModes.length == 6
+#guard ((List.range 256).filterMap fun c => Ixon.FieldMode.ofCode? c.toUInt8).length == 2
+#guard allModes.all fun m => Ixon.AllMode.ofCode? m.toCode == some m
+#guard letModes.all fun m => [false, true].all fun nonDep =>
+  Ixon.LetMode.header nonDep m < 16 && Ixon.LetMode.ofHeader? (Ixon.LetMode.header nonDep m) == some (nonDep, m)
+#guard (List.range 64).all fun h =>
+  (Ixon.LetMode.ofHeader? h.toUInt64).isSome == decide (h < 16)
 
--- Every Ixon binder contract, forall result contract, and let flag spelling.
-#guard binderContracts.all fun binder =>
-  valueContracts.all fun result =>
-    letContracts binder |>.all fun letContract =>
-      exactExpr (.all binder result (.sort 0)
-        (.lam binder (.var 0) (.letE letContract (.var 1) (.var 0) (.var 0))))
-#guard exactExpr (.letE (.lean false) (.sort 0) (.app (.var 0) (.var 1)) (.var 2))
+-- Every let mode and dependency flag in a let header; binders carry no mode.
+#guard letModes.all fun m => [false, true].all fun nonDep =>
+  exactExpr (.all (.sort 0) (.lam (.var 0) (.letE nonDep m (.var 1) (.var 0) (.var 0))))
+#guard exactExpr (.letE false (.value .many) (.sort 0) (.app (.var 0) (.var 1)) (.var 2))
 #guard [1, 7, 8, 31, 32, 128].all fun n =>
   exactExpr ((List.range n).foldl (fun e i => .app e (.var i.toUInt64)) (.ref 0 #[]))
 
@@ -411,21 +415,18 @@ def resourceConstant (value : Ixon.Constant) : Bool :=
 #guard wordBoundaries.all fun n =>
   [Ixon.Expr.var n, .sort n, .str n, .nat n, .share n,
     .ref n #[n], .recur n #[n], .prj n n (.var 0)].all resourceExpr
--- Every Ixon binder contract, forall result contract, and let flag spelling.
-#guard binderContracts.all fun binder =>
-  valueContracts.all fun result =>
-    letContracts binder |>.all fun letContract =>
-      resourceExpr (.all binder result (.sort 0)
-        (.lam binder (.var 0) (.letE letContract (.var 1) (.var 0) (.var 0))))
-#guard resourceExpr (.letE (.lean false) (.sort 0) (.app (.var 0) (.var 1)) (.var 2))
+-- Every let mode and dependency flag.
+#guard letModes.all fun m => [false, true].all fun nonDep =>
+  resourceExpr (.all (.sort 0) (.lam (.var 0) (.letE nonDep m (.var 1) (.var 0) (.var 0))))
+#guard resourceExpr (.letE false (.value .many) (.sort 0) (.app (.var 0) (.var 1)) (.var 2))
 #guard [0, 1, 7, 8, 31, 32, 128, 1024].all fun n =>
   let levels := Array.replicate n 0
   (Ixon.Expr.ref 0 levels).resourceSize == n + 1 &&
     resourceExpr (.ref 0 levels) && resourceExpr (.recur 0 levels)
 #guard [1, 7, 8, 31, 32, 128].all fun n =>
   resourceExpr ((List.range n).foldl (fun e _ => .app e (.var 0)) (.var 0)) &&
-    resourceExpr ((List.range n).foldl (fun e _ => .lam .many (.sort 0) e) (.var 0)) &&
-    resourceExpr ((List.range n).foldl (fun e _ => .all .many .shared (.sort 0) e) (.var 0))
+    resourceExpr ((List.range n).foldl (fun e _ => .lam (.sort 0) e) (.var 0)) &&
+    resourceExpr ((List.range n).foldl (fun e _ => .all (.sort 0) e) (.var 0))
 
 -- Compressed application spines can contain more constructors than bytes;
 -- a one-unit-per-byte claim would be false even on canonical input.
@@ -567,7 +568,7 @@ def upstreamV4Values : List (String × Ixon.Expr) :=
 def singleUseSharing : Ixon.Constant :=
   { identity with
     sharing := #[.var 0]
-    info := .defn ⟨.defn, .safe, 1, idType, .leanLam (.sort 0) (.leanLam (.var 0) (.share 0))⟩ }
+    info := .defn ⟨.defn, .safe, {}, 1, idType, .leanLam (.sort 0) (.leanLam (.var 0) (.share 0))⟩ }
 
 #guard match Ixon.Canonical.deConstant 256 64 (Ixon.serConstant singleUseSharing) with
   | .ok value => value == singleUseSharing

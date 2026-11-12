@@ -27,11 +27,33 @@ open Ixon.Verify.Codec.ConstantTables
 open Ixon.Verify.Codec.NonrecursiveConstant
 open Ixon.Verify.Codec.RecursorConstant
 
+/-- A constructor's listed field modes, one byte each. -/
+def fieldModeListBytes : List Ixon.FieldMode → ByteArray
+  | [] => ByteArray.empty
+  | mode :: modes => [mode.toCode].toByteArray ++ fieldModeListBytes modes
+
+theorem fieldModeListBytes_size (modes : List Ixon.FieldMode) :
+    (fieldModeListBytes modes).size = modes.length := by
+  induction modes with
+  | nil => rfl
+  | cons mode modes ih =>
+    simp only [fieldModeListBytes, ByteArray.size_append, List.size_toByteArray,
+      List.length_cons, List.length_nil, ih]
+    omega
+
+theorem listBytes_fieldModes (modes : List Ixon.FieldMode) :
+    listBytes (fun mode : Ixon.FieldMode => [mode.toCode].toByteArray) modes =
+      fieldModeListBytes modes := by
+  induction modes with
+  | nil => rfl
+  | cons mode modes ih => simp only [listBytes, fieldModeListBytes, ih]
+
 def constructorBytes (constructor : Ixon.Constructor) : ByteArray :=
-  [if constructor.isUnsafe then 1 else 0].toByteArray ++
+  [Ixon.packConstructorFlags constructor].toByteArray ++
     tag0Bytes constructor.lvls ++ tag0Bytes constructor.cidx ++
       tag0Bytes constructor.params ++ tag0Bytes constructor.fields ++
-        Ixon.Verify.Codec.Expr.spineWireEncode constructor.typ
+        fieldModeListBytes constructor.fieldModes.toArray.toList ++
+          Ixon.Verify.Codec.Expr.spineWireEncode constructor.typ
 
 theorem constructorBytes_size_ge (constructor : Ixon.Constructor) :
     6 ≤ (constructorBytes constructor).size := by
@@ -47,78 +69,192 @@ theorem constructorBytes_size_ge (constructor : Ixon.Constructor) :
 def ConstructorWireWF (constructor : Ixon.Constructor) : Prop :=
   Ixon.Expr.wireWF constructor.typ
 
+def putFieldModeList (modes : List Ixon.FieldMode) : Ixon.PutM Unit :=
+  modes.foldlM (fun _ mode => Ixon.putU8 mode.toCode) ()
+
+theorem putFieldModeList_writes (modes : List Ixon.FieldMode) :
+    Writes (putFieldModeList modes) (fieldModeListBytes modes) := by
+  induction modes with
+  | nil =>
+    intro before
+    simp only [putFieldModeList, List.foldlM_nil, fieldModeListBytes,
+      ByteArray.append_empty]
+    rfl
+  | cons mode modes ih =>
+    simpa only [putFieldModeList, List.foldlM_cons, fieldModeListBytes] using
+      (putU8_writes mode.toCode).bind ih
+
+theorem arrayPutFieldModes_writes (modes : Array Ixon.FieldMode) :
+    Writes (do for mode in modes do Ixon.putU8 mode.toCode)
+      (fieldModeListBytes modes.toList) := by
+  have h : (do for mode in modes do Ixon.putU8 mode.toCode) =
+      putFieldModeList modes.toList := by
+    rw [← Array.forIn_toList]
+    simp [putFieldModeList]
+  rw [h]
+  exact putFieldModeList_writes modes.toList
+
+/-- A constructor's first byte from its `isUnsafe` bit `u` and whether its
+field modes are all inherited (`i`) passes the flag check and gives both back. -/
+theorem constructorFlags_decode (u i : Bool) :
+    ¬ (((if u then 1 else 0) ||| (if i then 0 else 2) : UInt8) > 3) ∧
+      (((if u then 1 else 0) ||| (if i then 0 else 2) : UInt8) &&& 1 == 1) = u ∧
+      (((if u then 1 else 0) ||| (if i then 0 else 2) : UInt8) &&& 2 == 2) = !i := by
+  cases u <;> cases i <;> decide
+
+theorem getFieldMode_reads (mode : Ixon.FieldMode) :
+    Reads Ixon.getFieldMode [mode.toCode].toByteArray mode := by
+  cases mode <;> intro before after <;>
+    change (EStateM.bind Ixon.getU8 _) _ = _
+  all_goals rw [EStateM.bind, getU8_reads _ before after]
+  all_goals rfl
+
+/-- Listed field modes read back from their bytes. -/
+theorem getFieldModes_reads {count : Nat} (modes : Ixon.FieldModes count)
+    (listed : modes.isInherited = false) :
+    Reads (Ixon.getFieldModes count) (fieldModeListBytes modes.toArray.toList) modes := by
+  have hsize : modes.toArray.size = count := by
+    cases modes with
+    | inherited => cases listed
+    | listed vector _ => exact vector.size_toArray
+  have hmany := getMany_reads Ixon.getFieldMode (fun mode => [mode.toCode].toByteArray)
+    modes.toArray.toList (fun mode _ => getFieldMode_reads mode)
+  rw [listBytes_fieldModes, Array.length_toList, hsize, getMany_eq_getArray,
+    Array.toArray_toList] at hmany
+  have hreturn : Reads
+      (match (Ixon.FieldModes.listed? modes.toArray : Option (Ixon.FieldModes count)) with
+        | some m => pure m
+        | none => throw "constructor: listed field modes with no shared field")
+      ByteArray.empty modes := by
+    rw [Ixon.FieldModes.listed?_toArray modes listed]
+    exact Reads.pure modes
+  have hafter := Reads.bind
+    (next := fun decoded : Array Ixon.FieldMode =>
+      (match (Ixon.FieldModes.listed? decoded : Option (Ixon.FieldModes count)) with
+        | some m => pure m
+        | none => throw "constructor: listed field modes with no shared field" :
+        Ixon.GetM (Ixon.FieldModes count)))
+    hmany hreturn
+  have hchecked := Reads.checkCount count.toUInt64 1
+    (by
+      rw [ByteArray.append_empty, fieldModeListBytes_size, Array.length_toList, hsize,
+        Nat.mul_one]
+      simp only [Nat.toUInt64_eq, UInt64.toNat_ofNat']
+      exact Nat.mod_le _ _) hafter
+  simpa [Ixon.getFieldModes] using hchecked
+
 theorem putConstructor_writes (constructor : Ixon.Constructor)
     (h : ConstructorWireWF constructor) :
     Writes (Ixon.putConstructor constructor) (constructorBytes constructor) := by
   have hwrite :=
-    (putU8_writes (if constructor.isUnsafe then 1 else 0)).bind
+    (putU8_writes (Ixon.packConstructorFlags constructor)).bind
       ((putTag0_writes constructor.lvls).bind
         ((putTag0_writes constructor.cidx).bind
           ((putTag0_writes constructor.params).bind
             ((putTag0_writes constructor.fields).bind
-              (Ixon.Verify.Codec.Expr.putExpr_writes_spine
-                constructor.typ h)))))
+              ((arrayPutFieldModes_writes constructor.fieldModes.toArray).bind
+                (Ixon.Verify.Codec.Expr.putExpr_writes_spine
+                  constructor.typ h))))))
   simpa [Ixon.putConstructor, constructorBytes,
     ByteArray.append_assoc] using hwrite
 
 theorem getConstructor_reads (constructor : Ixon.Constructor)
     (h : ConstructorWireWF constructor) :
     Reads Ixon.getConstructor (constructorBytes constructor) constructor := by
-  have hbool := getBool_reads constructor.isUnsafe
-  have hlvls := getTag0_reads constructor.lvls
-  have hcidx := getTag0_reads constructor.cidx
-  have hparams := getTag0_reads constructor.params
-  have hfields := getTag0_reads constructor.fields
-  have htyp := Ixon.Verify.Codec.Expr.getExpr_reads_spine
-    constructor.typ h
-  have hreturn := Reads.pure constructor
+  obtain ⟨u, l, ci, p, f, fm, t⟩ := constructor
+  obtain ⟨hvalid, hunsafe, hlisted⟩ := constructorFlags_decode u fm.isInherited
+  have hflags : Ixon.packConstructorFlags ⟨u, l, ci, p, f, fm, t⟩ =
+      ((if u then 1 else 0) ||| (if fm.isInherited then 0 else 2) : UInt8) := rfl
+  -- the field modes, read when the flag says they are listed
+  have hmodes : Reads
+      (if (Ixon.packConstructorFlags ⟨u, l, ci, p, f, fm, t⟩ &&& 2 == 2) = true then
+        Ixon.getFieldModes f.toNat else pure .inherited)
+      (fieldModeListBytes fm.toArray.toList) fm := by
+    rw [hflags, hlisted]
+    cases hinh : fm.isInherited with
+    | true =>
+      cases fm with
+      | inherited => simpa [Ixon.FieldModes.toArray, fieldModeListBytes] using Reads.pure _
+      | listed vector someShared => cases hinh
+    | false => simpa using getFieldModes_reads fm hinh
+  have htyp := Ixon.Verify.Codec.Expr.getExpr_reads_spine t h
   have hafterTyp := Reads.bind
     (next := fun typ : Ixon.Expr =>
-      (pure ({ constructor with typ } : Ixon.Constructor) :
-        Ixon.GetM Ixon.Constructor))
-    htyp hreturn
+      (pure (⟨u, l, ci, p, f, fm, typ⟩ : Ixon.Constructor) : Ixon.GetM Ixon.Constructor))
+    htyp (Reads.pure _)
+  have hafterModes := Reads.bind
+    (next := fun modes : Ixon.FieldModes f.toNat => do
+      let typ ← Ixon.getExpr
+      return (⟨u, l, ci, p, f, modes, typ⟩ : Ixon.Constructor))
+    hmodes hafterTyp
   have hafterFields := Reads.bind
     (next := fun fields : Ixon.TagN => do
+      let modes ← (if (Ixon.packConstructorFlags ⟨u, l, ci, p, f, fm, t⟩ &&& 2 == 2) = true then
+        Ixon.getFieldModes fields.value.toNat else pure .inherited)
       let typ ← Ixon.getExpr
-      return ({ constructor with fields := fields.value, typ } :
-        Ixon.Constructor))
-    hfields hafterTyp
+      return (⟨u, l, ci, p, fields.value, modes, typ⟩ : Ixon.Constructor))
+    (getTag0_reads f) hafterModes
   have hafterParams := Reads.bind
     (next := fun params : Ixon.TagN => do
       let fields := (← Ixon.getTagN 0).value
+      let modes ← (if (Ixon.packConstructorFlags ⟨u, l, ci, p, f, fm, t⟩ &&& 2 == 2) = true then
+        Ixon.getFieldModes fields.toNat else pure .inherited)
       let typ ← Ixon.getExpr
-      return ({ constructor with params := params.value, fields, typ } :
-        Ixon.Constructor))
-    hparams hafterFields
+      return (⟨u, l, ci, params.value, fields, modes, typ⟩ : Ixon.Constructor))
+    (getTag0_reads p) hafterFields
   have hafterCidx := Reads.bind
     (next := fun cidx : Ixon.TagN => do
       let params := (← Ixon.getTagN 0).value
       let fields := (← Ixon.getTagN 0).value
+      let modes ← (if (Ixon.packConstructorFlags ⟨u, l, ci, p, f, fm, t⟩ &&& 2 == 2) = true then
+        Ixon.getFieldModes fields.toNat else pure .inherited)
       let typ ← Ixon.getExpr
-      return ({ constructor with cidx := cidx.value, params, fields, typ } :
-        Ixon.Constructor))
-    hcidx hafterParams
+      return (⟨u, l, cidx.value, params, fields, modes, typ⟩ : Ixon.Constructor))
+    (getTag0_reads ci) hafterParams
   have hafterLvls := Reads.bind
     (next := fun lvls : Ixon.TagN => do
       let cidx := (← Ixon.getTagN 0).value
       let params := (← Ixon.getTagN 0).value
       let fields := (← Ixon.getTagN 0).value
+      let modes ← (if (Ixon.packConstructorFlags ⟨u, l, ci, p, f, fm, t⟩ &&& 2 == 2) = true then
+        Ixon.getFieldModes fields.toNat else pure .inherited)
       let typ ← Ixon.getExpr
-      return (⟨constructor.isUnsafe, lvls.value, cidx, params, fields, typ⟩ :
-        Ixon.Constructor))
-    hlvls hafterCidx
+      return (⟨u, lvls.value, cidx, params, fields, modes, typ⟩ : Ixon.Constructor))
+    (getTag0_reads l) hafterCidx
+  have hchecked : Reads
+      (do
+        let flags := Ixon.packConstructorFlags ⟨u, l, ci, p, f, fm, t⟩
+        if flags > 3 then throw s!"invalid constructor flags {flags}"
+        let isUnsafe := flags &&& 1 == 1
+        let lvls := (← Ixon.getTagN 0).value
+        let cidx := (← Ixon.getTagN 0).value
+        let params := (← Ixon.getTagN 0).value
+        let fields := (← Ixon.getTagN 0).value
+        let modes ← if flags &&& 2 == 2 then Ixon.getFieldModes fields.toNat else pure .inherited
+        let typ ← Ixon.getExpr
+        return (⟨isUnsafe, lvls, cidx, params, fields, modes, typ⟩ : Ixon.Constructor))
+      (tag0Bytes l ++ tag0Bytes ci ++ tag0Bytes p ++ tag0Bytes f ++
+        fieldModeListBytes fm.toArray.toList ++ Ixon.Verify.Codec.Expr.spineWireEncode t)
+      ⟨u, l, ci, p, f, fm, t⟩ := by
+    have hunsafe' : (Ixon.packConstructorFlags ⟨u, l, ci, p, f, fm, t⟩ &&& 1 == 1) = u := by
+      rw [hflags]; exact hunsafe
+    have hvalid' : ¬ (Ixon.packConstructorFlags ⟨u, l, ci, p, f, fm, t⟩ > 3) := by
+      rw [hflags]; exact hvalid
+    simp only [hvalid', ite_false, hunsafe']
+    simpa [ByteArray.append_assoc] using hafterLvls
   have hall := Reads.bind
-    (next := fun isUnsafe : Bool => do
+    (next := fun flags : UInt8 => do
+      if flags > 3 then throw s!"invalid constructor flags {flags}"
+      let isUnsafe := flags &&& 1 == 1
       let lvls := (← Ixon.getTagN 0).value
       let cidx := (← Ixon.getTagN 0).value
       let params := (← Ixon.getTagN 0).value
       let fields := (← Ixon.getTagN 0).value
+      let modes ← if flags &&& 2 == 2 then Ixon.getFieldModes fields.toNat else pure .inherited
       let typ ← Ixon.getExpr
-      return (⟨isUnsafe, lvls, cidx, params, fields, typ⟩ :
-        Ixon.Constructor))
-    hbool hafterLvls
-  simpa [Ixon.getConstructor, constructorBytes,
-    ByteArray.append_assoc] using hall
+      return (⟨isUnsafe, lvls, cidx, params, fields, modes, typ⟩ : Ixon.Constructor))
+    (getU8_reads (Ixon.packConstructorFlags ⟨u, l, ci, p, f, fm, t⟩)) hchecked
+  simpa [Ixon.getConstructor, constructorBytes, ByteArray.append_assoc] using hall
 
 theorem putConstructorArray_writes (constructors : Array Ixon.Constructor)
     (h : ∀ constructor, constructor ∈ constructors.toList →

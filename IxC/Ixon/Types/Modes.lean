@@ -295,6 +295,16 @@ def listed? (modes : Array FieldMode) : Option (FieldModes n) :=
 def ofArray (modes : Array FieldMode) : FieldModes n :=
   (listed? modes).getD .inherited
 
+/-- Listed modes read back from their array. -/
+theorem listed?_toArray (modes : FieldModes n) (h : modes.isInherited = false) :
+    listed? modes.toArray = some modes := by
+  cases modes with
+  | inherited => cases h
+  | listed v hs =>
+    show listed? v.toArray = some (.listed v hs)
+    unfold listed?
+    rw [dif_pos v.size_toArray, dif_pos hs]
+
 instance : BEq (FieldModes n) where
   beq a b := a.toArray == b.toArray
 

@@ -25,10 +25,13 @@ theorem getDefinition_bound : ReaderBound getDefinition Definition.resourceSize 
   apply getU8_bound.skip
   intro mode
   refine guard_bound _ ?_
-  apply (getTagN_bound 0).skip
-  intro levels
-  exact getExpr_bound.bind_map (fun _ => getExpr_bound) _ _
-    (fun type value => by simp [Definition.resourceSize]; omega)
+  cases DefAsserts.ofCode? (mode >>> 4) with
+  | none => exact throw_bound _ _
+  | some asserts =>
+    apply (getTagN_bound 0).skip
+    intro levels
+    exact getExpr_bound.bind_map (fun _ => getExpr_bound) _ _
+      (fun type value => by simp [Definition.resourceSize]; omega)
 
 theorem getRecursorRule_bound : ReaderBound getRecursorRule RecursorRule.resourceSize := by
   unfold getRecursorRule
@@ -44,10 +47,38 @@ theorem getAxiom_bound : ReaderBound getAxiom Axiom.resourceSize := by
   intro levels
   exact getExpr_bound.map _ _ (fun type => by simp [Axiom.resourceSize, Nat.add_comm])
 
+/-- A field mode byte. -/
+theorem getFieldMode_bound : ReaderBound getFieldMode (fun _ => 0) := by
+  intro start finish value valid read
+  unfold getFieldMode at read
+  obtain ⟨byte, middle, byteRead, read⟩ := bind_ok.mp read
+  have byteSpan := getU8_bound _ _ _ valid byteRead
+  cases decoded : FieldMode.ofCode? byte with
+  | none => simp only [decoded] at read; cases read
+  | some mode =>
+    simp only [decoded] at read
+    cases read
+    exact byteSpan.weaken (Nat.zero_le _)
+
+/-- A constructor's listed field modes: a count check, then one byte each. -/
+theorem getFieldModes_bound (count : Nat) : ReaderBound (getFieldModes count) (fun _ => 0) := by
+  intro start finish value valid read
+  unfold getFieldModes at read
+  obtain ⟨_, checked, checkRead, read⟩ := bind_ok.mp read
+  have checkSpan := checkCount_bound _ _ _ _ _ valid checkRead
+  obtain ⟨modes, middle, modesRead, read⟩ := bind_ok.mp read
+  have modesSpan := getArray_bound _ _ getFieldMode_bound _ _ _ _ checkSpan.valid modesRead
+  split at read
+  · change EStateM.Result.ok _ _ = .ok value finish at read
+    cases read
+    exact (checkSpan.trans modesSpan).weaken (Nat.zero_le _)
+  · cases read
+
 theorem getConstructor_bound : ReaderBound getConstructor Constructor.resourceSize := by
   unfold getConstructor
-  apply getBool_bound.skip
-  intro unsafeFlag
+  apply getU8_bound.skip
+  intro flags
+  refine guard_bound _ ?_
   apply (getTagN_bound 0).skip
   intro levels
   apply (getTagN_bound 0).skip
@@ -56,6 +87,14 @@ theorem getConstructor_bound : ReaderBound getConstructor Constructor.resourceSi
   intro params
   apply (getTagN_bound 0).skip
   intro fields
+  have modes : ReaderBound
+      (if flags &&& 2 == 2 then getFieldModes fields.value.toNat else pure .inherited)
+      (fun _ => 0) := by
+    split
+    · exact getFieldModes_bound _
+    · exact pure_bound _
+  apply modes.skip
+  intro fieldModes
   exact getExpr_bound.map _ _ (fun type => by simp [Constructor.resourceSize, Nat.add_comm])
 
 theorem getQuotient_bound : ReaderBound getQuotient Quotient.resourceSize := by
@@ -231,36 +270,42 @@ theorem getUniv_progress : ReaderBound getUniv (fun _ => 2) := by
   change getUnivFuel (start.bytes.size - start.idx + 1) start = .ok value finish at read
   exact getUnivFuel_progress _ _ _ _ valid read
 
-/-- A binder-data node: a tag byte, then at most a count and its parameters. -/
+/-- A binder-data node: a byte (its tag and mode), then at most a count and its
+parameters, or a variant. -/
 theorem getBinderNode_bound : ReaderBound getBinderNode BinderNode.resourceSize := by
   intro start finish value valid read
   unfold getBinderNode at read
   obtain ⟨tag, middle, tagRead, read⟩ := bind_ok.mp read
   have tagSpan := getU8_bound _ _ _ valid tagRead
   split at read
-  · change EStateM.Result.ok _ _ = .ok value finish at read
-    cases read
-    exact tagSpan.weaken (by simp [BinderNode.resourceSize])
-  · change EStateM.Result.ok _ _ = .ok value finish at read
-    cases read
-    exact tagSpan.weaken (by simp [BinderNode.resourceSize])
-  · obtain ⟨count, countState, countRead, read⟩ := bind_ok.mp read
-    have countSpan := (getTagN_bound 0) _ _ _ tagSpan.valid countRead
-    obtain ⟨params, final, paramsRead, result⟩ := bind_ok.mp read
-    obtain ⟨length, paramsSpan⟩ := getTagN0Values_spec _ _ _ _ countSpan.valid paramsRead
-    change EStateM.Result.ok _ _ = .ok value finish at result
-    cases result
-    exact ((tagSpan.trans countSpan).trans paramsSpan).weaken
-      (by simp only [BinderNode.resourceSize, List.size_toArray, length]; omega)
   · obtain ⟨variant, final, variantRead, result⟩ := bind_ok.mp read
     have variantSpan := (getTagN_bound 0) _ _ _ tagSpan.valid variantRead
     change EStateM.Result.ok _ _ = .ok value finish at result
     cases result
     exact (tagSpan.trans variantSpan).weaken (by simp [BinderNode.resourceSize])
-  · change EStateM.Result.ok _ _ = .ok value finish at read
-    cases read
-    exact tagSpan.weaken (by simp [BinderNode.resourceSize])
-  · cases read
+  · cases decoded : AllMode.ofCode? (tag >>> 3) with
+    | none => simp only [decoded] at read; cases read
+    | some mode =>
+      simp only [decoded] at read
+      split at read
+      · change EStateM.Result.ok _ _ = .ok value finish at read
+        cases read
+        exact tagSpan.weaken (by simp [BinderNode.resourceSize])
+      · change EStateM.Result.ok _ _ = .ok value finish at read
+        cases read
+        exact tagSpan.weaken (by simp [BinderNode.resourceSize])
+      · obtain ⟨count, countState, countRead, read⟩ := bind_ok.mp read
+        have countSpan := (getTagN_bound 0) _ _ _ tagSpan.valid countRead
+        obtain ⟨params, final, paramsRead, result⟩ := bind_ok.mp read
+        obtain ⟨length, paramsSpan⟩ := getTagN0Values_spec _ _ _ _ countSpan.valid paramsRead
+        change EStateM.Result.ok _ _ = .ok value finish at result
+        cases result
+        exact ((tagSpan.trans countSpan).trans paramsSpan).weaken
+          (by simp only [BinderNode.resourceSize, List.size_toArray, length]; omega)
+      · change EStateM.Result.ok _ _ = .ok value finish at read
+        cases read
+        exact tagSpan.weaken (by simp [BinderNode.resourceSize])
+      · cases read
 
 theorem getBinderBlock_bound : ReaderBound getBinderBlock BinderBlock.resourceSize := by
   intro start finish value valid read

@@ -17,16 +17,16 @@ def idType : Ixon.Expr := .leanAll (.sort 0) (.leanAll (.var 0) (.var 1))
 def idBody : Ixon.Expr := .leanLam (.sort 0) (.leanLam (.var 0) (.var 0))
 
 def identity : Ixon.Constant :=
-  ⟨.defn ⟨.defn, .safe, 1, idType, idBody⟩, #[], #[], #[.var 0], #[]⟩
+  ⟨.defn ⟨.defn, .safe, {}, 1, idType, idBody⟩, #[], #[], #[.var 0], #[]⟩
 
 def sharedIdentity : Ixon.Constant :=
   { identity with
-    info := .defn ⟨.defn, .safe, 1, .share 0, .share 2⟩
+    info := .defn ⟨.defn, .safe, {}, 1, .share 0, .share 2⟩
     sharing := #[idType, idBody, .share 1] }
 
 def aliasIdentity : Ixon.Constant :=
   { identity with
-    info := .defn ⟨.defn, .safe, 1, idType, .ref 0 #[0]⟩
+    info := .defn ⟨.defn, .safe, {}, 1, idType, .ref 0 #[0]⟩
     refs := #[address 1] }
 
 /-- A no-constructor inductive and its large eliminator in one block. -/
@@ -63,9 +63,9 @@ def separatedFalse (recursor : Ixon.Recursor := falseRecursor) : List (Address �
 non-default contracts (serialization fixture; not well typed). -/
 def variedBlock : Ixon.Constant :=
   ⟨.muts #[
-    .defn ⟨.opaq, .part, 2, .sort 2,
-      .letE (.lean true) (.sort 0) (.ref 1 #[2, 1]) (.var 0)⟩,
-    .indc ⟨true, 3, 4, 5, .sort 0, #[⟨true, 6, 0, 7, 8, .recur 1 #[]⟩]⟩,
+    .defn ⟨.opaq, .part, {}, 2, .sort 2,
+      .letE true (.value .many) (.sort 0) (.ref 1 #[2, 1]) (.var 0)⟩,
+    .indc ⟨true, 3, 4, 5, .sort 0, #[⟨true, 6, 0, 7, 8, .inherited, .recur 1 #[]⟩]⟩,
     .recr ⟨true, true, 9, 10, 11, 12, 13, .sort 1,
       #[⟨14, .share 1⟩, ⟨15, .var 0⟩]⟩],
     #[.var 2, .share 0, .var 99], #[address 1, address 1, address 99],

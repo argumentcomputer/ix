@@ -14,8 +14,8 @@ def Expr.resourceSize : Expr → Nat
   | .ref _ levels | .recur _ levels => 1 + levels.size
   | .prj _ _ value => value.resourceSize + 1
   | .app fn arg => fn.resourceSize + arg.resourceSize + 1
-  | .lam _ type body | .all _ _ type body => type.resourceSize + body.resourceSize + 1
-  | .letE _ type value body => type.resourceSize + value.resourceSize + body.resourceSize + 1
+  | .lam type body | .all type body => type.resourceSize + body.resourceSize + 1
+  | .letE _ _ type value body => type.resourceSize + value.resourceSize + body.resourceSize + 1
 
 def Definition.resourceSize (value : Definition) : Nat :=
   1 + value.typ.resourceSize + value.value.resourceSize
@@ -46,7 +46,7 @@ def ConstantInfo.resourceSize : ConstantInfo → Nat
   | .muts members => 1 + (members.toList.map MutConst.resourceSize).sum
 
 def BinderNode.resourceSize : BinderNode → Nat
-  | .ifAllZero params => 1 + params.size
+  | .ifAllZero params _ => 1 + params.size
   | _ => 1
 
 def BinderBlock.resourceSize (value : BinderBlock) : Nat :=
