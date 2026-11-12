@@ -346,7 +346,10 @@ reordered is admitted. End to end, on the first program with such a join (the RC
 then the budget input's `fanUnder`): with the canonical certificate's backend decisions the verifier
 either validates an object or refuses at a backend stage (the decisions were made for the other
 order); with decisions made for the reordered map it validates an object; every validated object
-returns every expected value. Which of these happens is printed. -/
+returns every expected value. Which of these happens is printed; observed (2026-11-12): the RC
+real-source roots have no join capturing two variables, and on `fanUnder` the reordered certificate is
+validated with the canonical decisions and with its own, the object identical to the canonical one's
+each time (the captured order does not reach the lowered code), every value right. -/
 def capturedOrder (logs : FilePath) : IO Unit := do
   let mut programs : List (String × Front × List (List Nat) × (List Nat → Sem.Obs)) := []
   for root in roots do

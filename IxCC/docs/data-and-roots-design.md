@@ -293,9 +293,12 @@ they compared the proposed map with the canonical one (`checkPlainMap`). The
 verifier therefore accepts what it refused before: any placement the checker
 types, for example one that drops a variable right after its last use, moves
 a value into its last consuming use, lets a join capture only what its body
-uses, increments a projected (borrowed) variable later than at once, or acts
-on an immediate (`tests-rc-certificate` runs each through the verifier and
-natively). A refusal names the checker's first reason (`own.cert.check:
+uses, increments a projected (borrowed) variable later than at once, acts on an
+immediate, or lists a join's captured variables in another order
+(`tests-rc-certificate` runs each through the verifier and natively; a
+reordered captured list is validated even with the canonical certificate's
+backend decisions, and its object is the canonical one's byte for byte: the
+captured order does not reach the lowered code). A refusal names the checker's first reason (`own.cert.check:
 ownership proposal refused: <reason>`). What makes it sound is
 `Recheck.RcReplay.sound`, with its statement unchanged: the Cfg activation
 layer it rests on (`Activation`, `PhysicalAtClock`, `eval_physical`,
