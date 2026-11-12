@@ -111,7 +111,10 @@ deliberately ill-typed record is still rejected where it was), re-addresses it a
 every record that names it, and renames the environment's names, hints, role
 binding, assumptions, the claim and its trees to follow. Every other record keeps
 its bytes (as does a record whose bytes are not its canonical encoding), so a hand-crafted
-encoding stays as it was, and the old records stay for whatever still names them. -/
+encoding stays as it was. A re-addressed record's old version is dropped, as the
+compiler would never have written it, unless a hand-crafted record still names it: left
+in, an old axiom that the renamed role table no longer binds would become one of the
+environment's user axioms (`Ix.ClaimContext.userAxioms`), without its section. -/
 
 /-- Whether `c` lacks the section it needs: none, and a binder in a root. -/
 def needsSection (c : Ixon.Constant) : Bool :=
@@ -127,10 +130,16 @@ def renameClaim (a t : Address → Address) : Ix.Claim → Ix.Claim
   | .eval ctx i o asm => .eval (renameCtx a t ctx) (a i) (a o) (asm.map t)
   | .check ctx c asm => .check (renameCtx a t ctx) (a c) (asm.map t)
   | .checkEnv ctx r asm => .checkEnv (renameCtx a t ctx) (t r) (asm.map t)
+  | .reveal c info => .reveal (a c) (match info with
+    | .cPrj i k b => .cPrj i k (b.map a)
+    | .rPrj i b => .rPrj i (b.map a)
+    | .iPrj i b => .iPrj i (b.map a)
+    | .dPrj i b => .dPrj i (b.map a)
+    | other => other)
   | .contains tree c => .contains (t tree) (a c)
+  | .catalog members => .catalog (t members)
   | .resource r p => .resource (t r) p
   | .binding spec b => .binding spec (a b)
-  | other => other
 
 /-- `env`, `claim` and `trees` with every hand-built record that needs one given
 its section. Nothing changes when no record needs one. -/
@@ -169,9 +178,16 @@ def withRecordSections (env : Ixon.Env) (claim : Ix.Claim)
     let c' := Ix.Compile.BinderData.rewriteRecord rename c binders
     let bytes := Ixon.serConstant c'
     let a' := Address.blake3 bytes
-    -- the old record stays, for a hand-crafted record that still names it
     consts := consts.insert a' { buf := bytes, len := bytes.size, cache := some c' }
     renamed := renamed.insert a a'
+  -- the old records go, except those a hand-crafted record (left as it is) still names
+  let mut stillNamed : Std.HashSet Address := {}
+  for (a, lc) in env.consts do
+    unless store.contains a do
+      if let some c := lc.get? then
+        for x in Ix.Compile.BinderData.targets c do stillNamed := stillNamed.insert x
+  for (a, a') in renamed do
+    unless a == a' || stillNamed.contains a do consts := consts.erase a
   let rename (x : Address) : Address := renamed.getD x x
   let named := env.named.fold (init := ({} : Std.HashMap Ix.Name Ixon.Named)) fun m n entry =>
     m.insert n { entry with addr := rename entry.addr

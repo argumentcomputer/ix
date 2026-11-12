@@ -24,7 +24,10 @@ accepted as built and as rewritten unchanged, and refused with a trailing byte,
 truncated, under another object format or validator, and (the typing claims)
 with the retired validator, another specification or further axioms; a
 catalog claim has no arm; a resource claim is refused explicitly; and an
-erased-typing claim accepts a resource-invalid body.
+erased-typing claim accepts a resource-invalid body. The fixture's hand-built
+records get their binder-data sections first, as the compiler writes them
+(`withRecordSections`), so a claim is decided by its bytes, not by a missing
+section.
 -/
 
 namespace Tests.Ix.IxVM.Codec
@@ -106,12 +109,13 @@ def claimCases (r : Runner) : IO Unit := do
   let add (label : String) (witness : IxVM.ClaimHarness.ClaimWitness) (accept : Bool)
       (rejectsWith : Option String := none) : IO Unit :=
     r.add { label := s!"claim boundary {label}", accept, rejectsWith, witness }
-  for (name, claim) in [
+  for (name, original) in [
       ("check", Ix.Claim.check ctx validTarget none),
       ("check-env", .checkEnv ctx tree.root none),
       ("reveal", .reveal validTarget (.defn none none none (some revealedType) none)),
       ("contains", .contains tree.root validTarget)] do
-    let witness ← IO.ofExcept (IxVM.ClaimHarness.buildClaimWitness env claim trees)
+    let (cenv, claim, ctrees) ← IO.ofExcept (withRecordSections env original trees)
+    let witness ← IO.ofExcept (IxVM.ClaimHarness.buildClaimWitness cenv claim ctrees)
     add name witness true
     let bytes := Ix.Claim.ser claim
     -- Positive control: the unchanged bytes, through the same replacement as
@@ -138,12 +142,14 @@ def claimCases (r : Runner) : IO Unit := do
       -- so the refusal is the axiom policy's rather than a missing tree.
       let some axioms := Ix.AssumptionTree.canonical #[validTarget]
         | throw <| IO.userError "the axiom fixture has no tree"
-      let further := match claim with
+      let further := match original with
         | .check c t a => .check { c with axioms := some axioms.root } t a
         | .checkEnv c root a => .checkEnv { c with axioms := some axioms.root } root a
         | other => other
-      add s!"{name}-further-axioms" (← IO.ofExcept (IxVM.ClaimHarness.buildClaimWitness env
-        further (trees.insert axioms.root axioms))) false "axioms tree entry is not an axiom"
+      let (fenv, further, ftrees) ← IO.ofExcept
+        (withRecordSections env further (trees.insert axioms.root axioms))
+      add s!"{name}-further-axioms" (← IO.ofExcept (IxVM.ClaimHarness.buildClaimWitness fenv
+        further ftrees)) false "axioms tree entry is not an axiom"
     -- A catalog claim has no circuit arm: catalogs are verified by host or
     -- aggregate composition, never by `run_claim`.
     if name == "check" then
@@ -156,7 +162,7 @@ def claimCases (r : Runner) : IO Unit := do
   let escaping := { escaping with anonHints := escaping.anonHints.insert escapingTarget .opaque }
   unless (Ix.Resource.validate escaping {}).toOption.isNone do
     throw <| IO.userError "the escaping fixture passed native resource validation"
-  add "explicit erased typing" (← IO.ofExcept (IxVM.ClaimHarness.buildClaimWitness escaping
+  add "explicit erased typing" (← IO.ofExcept (Tests.Ix.IxVM.buildSectionedWitness escaping
     (.check ctx escapingTarget none))) true
   -- A resource claim has a native validator, and fails explicitly at the
   -- circuit boundary rather than accepting a host validation result.
