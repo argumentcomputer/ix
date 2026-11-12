@@ -482,7 +482,7 @@ def IsProjFnAt (c : Ixon.Constant) : Nat → Ixon.Expr → Prop
     ∃ i f v, Ix.Kernel.Reader.unshare c e = .prj i f v ∧
       Ix.Kernel.Reader.unshare c v = .var 0
   | n + 1, e =>
-    ∃ ct t b, Ix.Kernel.Reader.unshare c e = .lam ct t b ∧ IsProjFnAt c n b
+    ∃ t b, Ix.Kernel.Reader.unshare c e = .lam t b ∧ IsProjFnAt c n b
 
 /-- Whether `e` has no `.recur` inside an application argument (`inArg = true`). -/
 def noArgRecur (inArg : Bool) : Ixon.Expr → Bool

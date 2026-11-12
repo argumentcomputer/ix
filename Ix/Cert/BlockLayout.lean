@@ -46,9 +46,10 @@ def Built (c : Ixon.Constant) : Prop :=
   ∃ limits info refs univs,
     buildConstantWithSharing limits info refs univs = .ok { c with binders := #[] } ∧ NotPrj info
 
-/-- A record's binder data are canonical and complete. -/
+/-- A record's binder data are canonical and complete, and its modes outside
+them canonical. -/
 def SectionOK (c : Ixon.Constant) : Prop :=
-  c.bindersCanonical = true ∧ c.bindersComplete = true
+  c.bindersCanonical = true ∧ c.bindersComplete = true ∧ c.modesCanonical = true
 
 /-- A projection of the block at `owner`, in the wire domain, with no references. -/
 def ProjectsTo (owner : Address) (c : Ixon.Constant) : Prop :=
@@ -79,8 +80,8 @@ theorem Built.owner {c : Ixon.Constant} (h : Built c) (a : Address) : ownerOf a 
 
 /-- A projection record without binder data has a canonical and complete section. -/
 theorem projection_section {c : Ixon.Constant} (roots : c.info.binderRoots = #[])
-    (empty : c.binders = #[]) : SectionOK c :=
-  Sectioned.empty_of_rootless roots empty
+    (empty : c.binders = #[]) (modes : c.modesCanonical = true) : SectionOK c :=
+  ⟨(Sectioned.empty_of_rootless roots empty).1, (Sectioned.empty_of_rootless roots empty).2, modes⟩
 
 /-- The block `buildBlockConstant` returns is the sharing's output with a section the
 compiler admits. -/
@@ -122,7 +123,7 @@ theorem buildBlockConstant_section {info : Ixon.ConstantInfo} {refs : Array Addr
     {ctx : CompileEnv × BlockEnv} {s s' : BlockState} {c : Ixon.Constant}
     (h : rawRun (buildBlockConstant info refs univs names) ctx s = (.ok c, s')) : SectionOK c := by
   obtain ⟨c₀, -, sec⟩ := buildBlockConstant_sectioned h
-  exact ⟨Sectioned.canonical sec, Sectioned.complete sec⟩
+  exact ⟨Sectioned.canonical sec, Sectioned.complete sec, Sectioned.modes sec⟩
 
 theorem Returns.withBlockEnv {α : Type} {P : α → Prop} {f : BlockEnv → BlockEnv} {m : CompileM α}
     (h : Returns P m) : Returns P (withBlockEnv f m) := by
@@ -178,6 +179,18 @@ theorem inductiveProjections_roots (i : Ix.InductiveVal) (indMeta : Ixon.Constan
   · obtain ⟨k, hk, rfl⟩ := Array.mem_mapIdx.mp hp
     rfl
 
+theorem inductiveProjections_modes (i : Ix.InductiveVal) (indMeta : Ixon.ConstantMeta)
+    (pairs : Array (Ix.Name × Ixon.ConstantMeta)) (addr : Address) :
+    ∀ p ∈ buildInductiveProjections i indMeta pairs addr, p.2.1.modesCanonical = true := by
+  intro p hp
+  unfold buildInductiveProjections at hp
+  rcases Array.mem_append.mp hp with hp | hp
+  · simp only [List.mem_toArray, List.mem_singleton] at hp
+    subst hp
+    rfl
+  · obtain ⟨k, hk, rfl⟩ := Array.mem_mapIdx.mp hp
+    rfl
+
 theorem finishInductive_shape (i : Ix.InductiveVal) (ind : Ixon.Inductive) (indMeta : Ixon.ConstantMeta)
     (pairs : Array (Ix.Name × Ixon.ConstantMeta)) :
     Returns ResultShape (finishInductiveFamilyBlock i ind indMeta pairs) := by
@@ -192,7 +205,8 @@ theorem finishInductive_shape (i : Ix.InductiveVal) (ind : Ixon.Inductive) (indM
   refine ⟨rfl, rfl, ⟨_, _, _, _, buildBlockConstant_ok hb, trivial⟩, fun p hp => .inr ?_,
     buildBlockConstant_section hb,
     fun p hp => projection_section (inductiveProjections_roots i indMeta pairs _ p hp)
-      (inductiveProjections_binders i indMeta pairs _ p hp)⟩
+      (inductiveProjections_binders i indMeta pairs _ p hp)
+      (inductiveProjections_modes i indMeta pairs _ p hp)⟩
   exact inductiveProjections_rows i indMeta pairs _ (Ixon.Authenticated.admissionHash_width _) p hp
 
 theorem mutualProjections_rows (classes : List MutConst) (owner : Address) (width : owner.hash.size = 32)
@@ -253,6 +267,25 @@ theorem mutualProjections_roots (classes : List MutConst) (owner : Address)
     rw [this]
     rfl
 
+theorem mutualProjections_modes (classes : List MutConst) (owner : Address)
+    (metas : Array (Ix.Name × Ixon.ConstantMeta)) :
+    ∀ p ∈ buildMutualProjections classes owner metas, p.2.1.modesCanonical = true := by
+  intro p hp
+  have logical : (p.1, p.2.1) ∈ MutualProjections.logicalRows (buildMutualProjections classes owner metas) :=
+    List.mem_map.mpr ⟨p, Array.mem_toList_iff.mpr hp, rfl⟩
+  rw [MutualProjections.build_rows, MutualProjections.expectedRows] at logical
+  obtain ⟨⟨source, index⟩, _, generated⟩ := List.mem_flatMap.mp logical
+  unfold MutualProjections.sourceRows at generated
+  rcases List.mem_cons.mp generated with e | rest
+  · have : p.2.1 = MutualProjections.memberProjection owner index.toUInt64 source := (Prod.mk.inj e).2
+    rw [this]
+    cases source <;> rfl
+  · obtain ⟨⟨ctor, ctorIndex⟩, _, e⟩ := List.mem_map.mp rest
+    have : p.2.1 = MutualProjections.constructorProjection owner index.toUInt64 ctorIndex.toUInt64 :=
+      (Prod.mk.inj e).2.symm
+    rw [this]
+    rfl
+
 theorem standalone_notPrj (payloads : Array Ixon.MutConst) {info : Ixon.ConstantInfo}
     (h : standaloneMutConstInfo? payloads = some info) : NotPrj info := by
   rcases payloads with ⟨l⟩
@@ -279,7 +312,7 @@ theorem buildMutual_shape {limits : Ix.Sharing.Exact.Limits} {classes : List Mut
     have hinfo : NotPrj info := standalone_notPrj payloads hs
     have sec := Sectioned.of_withBinderSection hsec
     have hb := Sectioned.built_strip hb₀ sec
-    have canon : SectionOK block := ⟨Sectioned.canonical sec, Sectioned.complete sec⟩
+    have canon : SectionOK block := ⟨Sectioned.canonical sec, Sectioned.complete sec, Sectioned.modes sec⟩
     have same : ∀ p ∈ buildStandaloneMutualProjections classes block metas, p.2.1 = block := by
       intro p hp
       have logical : (p.1, p.2.1) ∈ MutualProjections.logicalRows
@@ -298,9 +331,9 @@ theorem buildMutual_shape {limits : Ix.Sharing.Exact.Limits} {classes : List Mut
     have sec := Sectioned.of_withBinderSection hsec
     exact ⟨rfl, rfl, ⟨_, _, _, _, Sectioned.built_strip hb₀ sec, trivial⟩, fun p hp => .inr
       (mutualProjections_rows classes _ (Ixon.Authenticated.admissionHash_width _) metas p hp),
-      ⟨Sectioned.canonical sec, Sectioned.complete sec⟩,
+      ⟨Sectioned.canonical sec, Sectioned.complete sec, Sectioned.modes sec⟩,
       fun p hp => projection_section (mutualProjections_roots classes _ metas p hp)
-        (mutualProjections_binders classes _ metas p hp)⟩
+        (mutualProjections_binders classes _ metas p hp) (mutualProjections_modes classes _ metas p hp)⟩
 
 /-- **A mutual block compile returns a block of this shape.** -/
 theorem compileMutualBlock_shape (classes : List MutConst) :

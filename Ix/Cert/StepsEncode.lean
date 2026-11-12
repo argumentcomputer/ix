@@ -26,13 +26,13 @@ theorem encoded_insert {store : Std.HashMap Address ByteArray} (h : Encoded stor
     {c : Ixon.Constant} (wire : c.wireWF)
     (fits : Ixon.Bounded.univNodes c.univs ≤ Ixon.loadMaxUnivNodes)
     (canon : c.bindersCanonical = true) (complete : c.bindersComplete = true)
-    {b : ByteArray} (hb : Ixon.serConstant c = b) :
+    (modes : c.modesCanonical = true) {b : ByteArray} (hb : Ixon.serConstant c = b) :
     Encoded (store.insert a b) := by
   intro k v hk
   rw [Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_insert] at hk
   split at hk
   · cases hk
-    exact ⟨c, wire, fits, canon, complete, hb⟩
+    exact ⟨c, wire, fits, canon, complete, modes, hb⟩
   · exact h k v (by rw [Std.HashMap.get?_eq_getElem?]; exact hk)
 
 set_option hygiene false in
@@ -109,13 +109,15 @@ theorem merge_encoded {cenv : CompileEnv} {all : Ix.Set Ix.Name} {lo : Ix.Name} 
   have wire := BlockWire.blocksWire _ _ _ _ _ hr
   have fits := BlockRecords.runBlock_bounded hr
   refine mergeCompiledBlock_constants Encoded
-    (encoded_insert h _ wire fits.1 shape.blockSection.1 shape.blockSection.2 shape.bytes.symm) ?_
+    (encoded_insert h _ wire fits.1 shape.blockSection.1 shape.blockSection.2.1
+      shape.blockSection.2.2 shape.bytes.symm) ?_
   intro p hp s hs
   have pwire : p.2.1.wireWF := by
     rcases shape.rows p hp with same | ⟨pw, -, -⟩
     · rw [same]; exact wire
     · exact pw
-  exact encoded_insert hs _ pwire (fits.2 p hp) (shape.rowsSection p hp).1 (shape.rowsSection p hp).2 rfl
+  exact encoded_insert hs _ pwire (fits.2 p hp) (shape.rowsSection p hp).1
+    (shape.rowsSection p hp).2.1 (shape.rowsSection p hp).2.2 rfl
 
 /-- **Every outcome the fold applies keeps the store encoded** (`StoredEncoding.StepsEncode`),
 for every condensation and start. -/
