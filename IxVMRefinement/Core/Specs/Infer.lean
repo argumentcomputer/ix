@@ -233,10 +233,13 @@ def check_no_dep_data_field_if_prop : SpecFn := fun c args h r h' calls =>
 /-- `peel_field_loop(rc, ty, target, current, struct_addr, val, is_prop, types)`: **a projected
 field's type** (`fieldTypeAt`): `target - current` binders into the field telescope `ty`, the
 fields passed instantiated by their projections of `val`; with the `Prop`-structure guards
-(`PropGuards`) when `is_prop` is not `0`. -/
+(`PropGuards`) when `is_prop` is not `0`. The counters are compared as field elements, so the
+claim is for `current ≤ target` (the callers start at `0`; past the target the loop would only
+stop after wrapping around the field). -/
 def peel_field_loop : SpecFn := fun c args h r h' calls =>
   ∀ rc ty tg cu sa val ip types, args = [rc, ty, tg, cu, sa, val, ip, types] → Good c calls →
     c.rc h rc → ∀ t0 c0 : F, tg = .field t0 → cu = .field c0 →
+      ZMod.val c0 ≤ ZMod.val t0 →
       ∀ d Γ, c.types Γ h d types → ∀ (T : KExpr) (a : Bytes.Address) (PE : KExpr),
         c.tm d Γ h T ty → RepAddr h a sa → c.tm d Γ h PE val →
           ∃ (n : Nat) (FT : KExpr), ZMod.val c0 + n = ZMod.val t0 ∧ c.tm d Γ h' FT r ∧
@@ -337,10 +340,11 @@ def io_prop_field_guard : SpecFn := fun c args h r h' calls =>
 def io_peel_params_subst : SpecFn := peel_params_subst
 
 /-- `io_peel_field_loop(ty, target, current, struct_addr, val)`: **a projected field's type**
-(`fieldTypeAt`), without guards. -/
+(`fieldTypeAt`), without guards; for `current ≤ target`, as `peel_field_loop`. -/
 def io_peel_field_loop : SpecFn := fun c args h r h' calls =>
   ∀ ty tg cu sa val, args = [ty, tg, cu, sa, val] → Good c calls →
     ∀ t0 c0 : F, tg = .field t0 → cu = .field c0 →
+      ZMod.val c0 ≤ ZMod.val t0 →
       ∀ d Γ (T : KExpr) (a : Bytes.Address) (PE : KExpr),
         c.tm d Γ h T ty → RepAddr h a sa → c.tm d Γ h PE val →
           ∃ (n : Nat) (FT : KExpr), ZMod.val c0 + n = ZMod.val t0 ∧ c.tm d Γ h' FT r ∧
