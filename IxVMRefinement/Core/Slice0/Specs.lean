@@ -1,4 +1,4 @@
-import IxVMRefinement.Core.Rep
+import IxVMRefinement.Core.Slice0.Rep
 import Ix.IxVM.Refinement.Statement
 import Ix.IxVM.Consistency.Statement
 import IxVM.Lookup
@@ -29,7 +29,7 @@ consumed arguments structurally, the slice itself branches on no count; the
 bound stays in `Good` for the rest of the core (`red_iota`'s field split,
 `red_proj`'s index). -/
 
-namespace IxVM.Refinement.Core
+namespace IxVM.Refinement.Core.Slice0
 
 open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 open Aiur.Library Aiur.Library.IxVMRep Aiur.Library.List
@@ -397,4 +397,4 @@ theorem litTuple_bs {heap : Heap F} {types : Types} {x : F} {name : String} {v :
       exact ⟨y2, rfl, hml.symm⟩
     · simp [hy, bind, Except.bind, pure, Except.pure] at hml
 
-end IxVM.Refinement.Core
+end IxVM.Refinement.Core.Slice0

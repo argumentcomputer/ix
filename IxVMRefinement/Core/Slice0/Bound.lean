@@ -1,4 +1,4 @@
-import IxVMRefinement.Core.Specs
+import IxVMRefinement.Core.Slice0.Specs
 import IxVMRefinement.Obs.Lists
 import Ix.IxVM.Consistency.Statement
 import Mathlib.Data.List.Forall2
@@ -20,7 +20,7 @@ ROM, at one address of which two lists of different lengths could both be repres
 the compiled circuit's trace ROM it follows from the consistency statement's hypothesis `rom.Valid` on the width
 ROM (`traceROM_valid`). -/
 
-namespace IxVM.Refinement.Core
+namespace IxVM.Refinement.Core.Slice0
 
 open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 open IxVM.Consistency (MemoCallsAtMost memoCall)
@@ -257,4 +257,4 @@ theorem length_lt {rom : ROM F} (valid : rom.Valid) {calls : List (Call F)}
   simp only [List.length_map] at this
   exact Nat.lt_of_succ_le this
 
-end IxVM.Refinement.Core
+end IxVM.Refinement.Core.Slice0

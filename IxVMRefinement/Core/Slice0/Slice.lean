@@ -1,4 +1,4 @@
-import IxVMRefinement.Core.DefEq
+import IxVMRefinement.Core.Slice0.DefEq
 import IxC.Kernel.Model.Rules.Sound
 import IxC.Kernel.Audit.Axioms
 
@@ -19,7 +19,7 @@ slice's fragment), and `Infer.toIO`, the kernel-side lemma that turns
 the certificate IxVM's full-grade inference would compute into the io-grade
 certificate the rule asks for. -/
 
-namespace IxVM.Refinement.Core
+namespace IxVM.Refinement.Core.Slice0
 
 open Aiur Aiur.Generic Aiur.Generic.SourceSemantics Aiur.Library
 open Ix.Kernel.Rules (Red DefEq Infer Grade)
@@ -151,8 +151,8 @@ theorem Infer.toIO {env : Ix.Kernel.Env .anon} :
   | _, _, _, _, .proj htpe hte hhead hent hlen hus hprop, hg =>
     .proj (Infer.toIO htpe hg) hte hhead hent hlen hus hprop
 
-end IxVM.Refinement.Core
+end IxVM.Refinement.Core.Slice0
 
-#guard_module_axioms IxVMRefinement.Core.Obs IxVMRefinement.Core.Rep
-  IxVMRefinement.Core.Specs IxVMRefinement.Core.Bound IxVMRefinement.Core.Whnf
-  IxVMRefinement.Core.DefEq
+#guard_module_axioms IxVMRefinement.Core.Obs IxVMRefinement.Core.Slice0.Rep
+  IxVMRefinement.Core.Slice0.Specs IxVMRefinement.Core.Slice0.Bound IxVMRefinement.Core.Slice0.Whnf
+  IxVMRefinement.Core.Slice0.DefEq

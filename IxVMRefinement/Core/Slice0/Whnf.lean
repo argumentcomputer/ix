@@ -1,5 +1,5 @@
-import IxVMRefinement.Core.Specs
-import IxVMRefinement.Core.Bound
+import IxVMRefinement.Core.Slice0.Specs
+import IxVMRefinement.Core.Slice0.Bound
 import IxVMRefinement.Obs.KernelWhnf
 import IxVMRefinement.Obs.KernelTypes
 import IxVMRefinement.Obs.KernelLevels
@@ -15,7 +15,7 @@ variable replaced by its value) and applies the callees' specs (the part that
 is reasoning). `core_sound` is the induction: every observed derivation of a
 function of the slice satisfies its spec. -/
 
-namespace IxVM.Refinement.Core
+namespace IxVM.Refinement.Core.Slice0
 
 open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 open Aiur.Library Aiur.Library.IxVMRep Aiur.Library.List
@@ -557,4 +557,4 @@ theorem constHead_step (c : Ctx) (hA : Assumed c) {args : List (SourceValue F)} 
       | exact (hci.quot _ ‹loadValue _ _ = .ok (.construct _ "Quot" _)›).elim
       | exact (hci.recr _ ‹loadValue _ _ = .ok (.construct _ "Rec" _)›).elim
 
-end IxVM.Refinement.Core
+end IxVM.Refinement.Core.Slice0
