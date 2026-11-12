@@ -127,7 +127,7 @@ theorem expr_refs (keys : ∀ a k, cx.keyAt a = .ok k → k = .id a) (aux : ∀ 
     subst h
     simp only [Frontend.occursConst, Bool.or_eq_true] at ho
     exact ho.elim (ihf f' hf a) (ihx x' hx a)
-  | lam bc ty b iht ihb =>
+  | lam ty b iht ihb =>
     intro t h a ho
     simp only [convExpr] at h
     obtain ⟨ty', hty, h⟩ := RecordTransfer.bind_ok h
@@ -136,7 +136,7 @@ theorem expr_refs (keys : ∀ a k, cx.keyAt a = .ok k → k = .id a) (aux : ∀ 
     subst h
     simp only [Frontend.occursConst, Bool.or_eq_true] at ho
     exact ho.elim (iht ty' hty a) (ihb b' hb a)
-  | all bc vc ty b iht ihb =>
+  | all ty b iht ihb =>
     intro t h a ho
     simp only [convExpr] at h
     obtain ⟨ty', hty, h⟩ := RecordTransfer.bind_ok h
@@ -145,7 +145,7 @@ theorem expr_refs (keys : ∀ a k, cx.keyAt a = .ok k → k = .id a) (aux : ∀ 
     subst h
     simp only [Frontend.occursConst, Bool.or_eq_true] at ho
     exact ho.elim (iht ty' hty a) (ihb b' hb a)
-  | letE lc ty v b iht ihv ihb =>
+  | letE nd lm ty v b iht ihv ihb =>
     intro t h a ho
     simp only [convExpr] at h
     obtain ⟨ty', hty, h⟩ := RecordTransfer.bind_ok h

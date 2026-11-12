@@ -108,19 +108,19 @@ theorem read_outer (reader : ECx md) (expression : Ixon.Expr) (target : CExpr md
     obtain ⟨targetArgument, second, returned⟩ := Ix.Sharing.Verify.except_bind_eq_ok rest
     cases Except.ok.inj returned
     exact ⟨first, second⟩
-  | lam contract type body =>
+  | lam type body =>
     simp only [convExpr] at read
     obtain ⟨targetType, _, rest⟩ := Ix.Sharing.Verify.except_bind_eq_ok read
     obtain ⟨targetBody, _, returned⟩ := Ix.Sharing.Verify.except_bind_eq_ok rest
     cases Except.ok.inj returned
     trivial
-  | all contract result type body =>
+  | all type body =>
     simp only [convExpr] at read
     obtain ⟨targetType, first, rest⟩ := Ix.Sharing.Verify.except_bind_eq_ok read
     obtain ⟨targetBody, second, returned⟩ := Ix.Sharing.Verify.except_bind_eq_ok rest
     cases Except.ok.inj returned
     exact ⟨first, second⟩
-  | letE contract type value body =>
+  | letE nonDep mode type value body =>
     simp only [convExpr] at read
     obtain ⟨targetType, _, rest⟩ := Ix.Sharing.Verify.except_bind_eq_ok read
     obtain ⟨targetValue, _, rest⟩ := Ix.Sharing.Verify.except_bind_eq_ok rest
@@ -131,11 +131,11 @@ theorem read_outer (reader : ECx md) (expression : Ixon.Expr) (target : CExpr md
 
 theorem read_forall (reader : ECx md) (expression : Ixon.Expr) (type body : CExpr md)
     (binder : Ix.Kernel.BinderMeta) (read : convExpr reader #[] expression = .ok (.forallE type body binder)) :
-    ∃ contract result rawType rawBody, expression = .all contract result rawType rawBody ∧
+    ∃ rawType rawBody, expression = .all rawType rawBody ∧
       convExpr reader #[] rawType = .ok type ∧ convExpr reader #[] rawBody = .ok body := by
   have shape := read_outer reader expression _ read
   cases expression <;> simp only [Outer] at shape
-  exact ⟨_, _, _, _, rfl, shape⟩
+  exact ⟨_, _, rfl, shape⟩
 
 theorem read_bvar (reader : ECx md) (expression : Ixon.Expr) (index : Nat)
     (read : convExpr reader #[] expression = .ok (.bvar index)) :
@@ -175,7 +175,7 @@ theorem read_stripAll (reader : ECx md) (empty : reader.src.sharing = #[]) (coun
   | succ count ih =>
     cases target with
     | forallE type tail binder =>
-      obtain ⟨contract, result, rawType, rawBody, rawEq, typeRead, bodyRead⟩ :=
+      obtain ⟨rawType, rawBody, rawEq, typeRead, bodyRead⟩ :=
         read_forall reader expression type tail binder read
       subst rawEq
       rw [piTypes_forall] at parsed
@@ -584,7 +584,7 @@ theorem full_of_strip (constant : Ixon.Constant) (empty : constant.sharing = #[]
   | succ count ih =>
     obtain ⟨fuel, rfl⟩ : ∃ smaller, fuel = smaller + 1 := ⟨fuel - 1, by omega⟩
     cases expression with
-    | all contract binder type tail =>
+    | all type tail =>
       cases tailParsed : stripAll constant count tail with
       | none => simp [stripAll, ReaderSpines.unshare_empty constant empty, tailParsed] at parsed
       | some result =>

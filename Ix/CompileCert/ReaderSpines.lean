@@ -36,8 +36,8 @@ theorem shares_mono (P Q : Nat → Prop) (implies : ∀ index, P index → Q ind
   induction expression with
   | share index => exact implies index.toNat bounded
   | prj _ _ _ ih => exact ih bounded
-  | app _ _ ihf iha | lam _ _ _ ihf iha | all _ _ _ _ ihf iha => exact ⟨ihf bounded.1, iha bounded.2⟩
-  | letE _ _ _ _ iht ihv ihb => exact ⟨iht bounded.1, ihv bounded.2.1, ihb bounded.2.2⟩
+  | app _ _ ihf iha | lam _ _ ihf iha | all _ _ ihf iha => exact ⟨ihf bounded.1, iha bounded.2⟩
+  | letE _ _ _ _ _ iht ihv ihb => exact ⟨iht bounded.1, ihv bounded.2.1, ihb bounded.2.2⟩
   | _ => trivial
 
 /-- Backward table references make the reader's actual share-following bound
@@ -94,7 +94,7 @@ theorem stripAll_expand (constant flat : Ixon.Constant) (empty : flat.sharing = 
     simp only [stripAll, unshare_empty flat empty, ← exposed.2.2]
     cases head : unshare constant expression with
     | share index => simp only [head, InlineHead, false_and] at exposed
-    | all contract binder type body =>
+    | all type body =>
       have bound : SharesIn (fun slot => slot < constant.sharing.size) body := by
         have pair := exposed.2.1
         rw [head] at pair
@@ -122,7 +122,7 @@ theorem stripAll_bounded (constant : Ixon.Constant) (expand : Nat → Ixon.Expr)
     have exposed := unshare_expansion constant expand entries expression bounded
     rw [stripAll] at ran
     cases head : unshare constant expression with
-    | all contract binder type body =>
+    | all type body =>
       have pair := exposed.2.1
       rw [head] at pair
       simp only [head] at ran
@@ -150,7 +150,7 @@ theorem stripAllFull_expand (constant flat : Ixon.Constant) (empty : flat.sharin
     simp only [stripAllFull, unshare_empty flat empty, ← exposed.2.2]
     cases head : unshare constant expression with
     | share index => simp only [head, InlineHead, false_and] at exposed
-    | all contract binder type body =>
+    | all type body =>
       have pair := exposed.2.1
       rw [head] at pair
       have rest := ih body pair.2
@@ -174,7 +174,7 @@ theorem stripAllFull_bounded (constant : Ixon.Constant) (expand : Nat → Ixon.E
     have exposed := unshare_expansion constant expand entries expression bounded
     rw [stripAllFull]
     cases head : unshare constant expression with
-    | all contract binder type body =>
+    | all type body =>
       have pair := exposed.2.1
       rw [head] at pair
       have rest := ih body pair.2
