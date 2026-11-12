@@ -32,6 +32,7 @@ namespace IxVM.Refinement.Core
 open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 open Aiur.Library Aiur.Library.List
 open IxVM.Refinement.KernelLevels (RepKLevel RepKLevelList)
+open Ix.Kernel.Rules (Red)
 open NatAux
 
 set_option linter.unusedVariables false
