@@ -784,8 +784,9 @@ route its run behaviour reaches the compiler:
 the two differ. A word entry (stage W1) is a head that reads every
 argument: erasure's `Input.headOf`, the checker's `specialHead?` and
 `headReads` agree on it, and the build-failing example still pins the copy.
-A parameter irrelevant only by its sort (a type, a proof) needs no cover: the caller's class and the callee's own header's come from
-the same sort facts, so neither side can be told something the other is not.
+A parameter irrelevant only by its sort (a type, a proof) needs no cover:
+the caller's class and the callee's own header's come from the same sort facts,
+so neither side can be told something the other is not.
 At a covered position of a minor, a kept field may be bound by an erased λ:
 what a minor receives is decided by the constructor's side, not the
 minor's (SrcEval applies the minor to every field slot of the constructor
