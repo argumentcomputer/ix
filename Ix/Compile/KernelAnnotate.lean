@@ -95,7 +95,7 @@ structure Fixes where
 
 /-- `IX_BD_OFF`'s reading. -/
 def Fixes.parse (off : String) : Fixes :=
-  let xs := (off.splitOn ",").map String.trim
+  let xs := off.splitOn ","
   let has (n : String) := xs.contains n || xs.contains "all"
   { trusted := !has "trusted", proj := !has "proj", exppw := !has "exppw", memo := !has "memo",
     lenient := !has "lenient" }
