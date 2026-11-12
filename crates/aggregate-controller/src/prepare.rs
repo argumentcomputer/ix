@@ -4,8 +4,9 @@ use crate::statement::{CanonicalTree, ShardSet, Statement, SubjectTree};
 use ix_common::address::Address;
 use ixon::shard::{AggNode, ShardManifest};
 use ixon::{
-  ClaimContext, Constant, ConstantInfo, merkle::merkle_root_canonical_sorted,
-  shard_claim::walk_edges,
+  ClaimContext, Constant, ConstantInfo,
+  merkle::merkle_root_canonical_sorted,
+  shard_claim::{outside_logic_at, record_outside_logic, walk_edges},
 };
 use rayon::prelude::*;
 use rustc_hash::{FxHashMap, FxHashSet};
@@ -74,7 +75,14 @@ pub fn prepare_run(
   // lazy constants intentionally do not cache that representation. Classify
   // ownership and extract the kernel walk edges in the same parallel pass so
   // frontier construction does not parse all constants a second time.
-  let classified_results: Vec<Result<(usize, Vec<Address>), String>> =
+  //
+  // Constants outside Lean's logic (unsafe or partial, or projected from such
+  // a block) are owned by their shard but are no claim's subjects: IxVM
+  // refuses them as seeds, and the Rust witness and Lean's
+  // `IxVM.ClaimHarness.claimableOwned` leave them out of every shard claim.
+  // No constant in Lean's logic references one, so their walk edges are not
+  // part of any frontier either.
+  let classified_results: Vec<Result<(usize, bool, Vec<Address>), String>> =
     all_addresses
       .par_iter()
       .map(|addr| {
@@ -94,21 +102,34 @@ pub fn prepare_run(
             block.hex()
           )
         })?;
+        let outside = if block == *addr {
+          record_outside_logic(&constant)
+        } else {
+          outside_logic_at(env, addr)
+        };
         let mut edges = Vec::new();
-        walk_edges(&constant, &mut edges);
-        Ok((owner, edges))
+        if !outside {
+          walk_edges(&constant, &mut edges);
+        }
+        Ok((owner, outside, edges))
       })
       .collect();
   // Resolve failures in canonical-address order rather than whichever Rayon
   // worker happens to finish first.
-  let classified: Vec<(usize, Vec<Address>)> =
+  let classified: Vec<(usize, bool, Vec<Address>)> =
     classified_results.into_iter().collect::<Result<_, _>>()?;
 
   let mut owned = vec![Vec::new(); manifest.shards.len()];
+  let mut owned_count = vec![0usize; manifest.shards.len()];
   let mut walk_edges_by_shard = vec![Vec::new(); manifest.shards.len()];
   let mut owners_old = Vec::with_capacity(all_addresses.len());
-  for (addr, (owner, edges)) in all_addresses.iter().zip(classified) {
-    owned[owner].push(addr.clone());
+  let mut claimable_addresses = Vec::with_capacity(all_addresses.len());
+  for (addr, (owner, outside, edges)) in all_addresses.iter().zip(classified) {
+    owned_count[owner] += 1;
+    if !outside {
+      owned[owner].push(addr.clone());
+      claimable_addresses.push(addr.clone());
+    }
     walk_edges_by_shard[owner].extend(edges);
     owners_old.push(owner);
   }
@@ -118,13 +139,23 @@ pub fn prepare_run(
     );
   }
 
-  let retained_old: Vec<usize> = owned
+  // Pruning follows ownership, as Lean's `IxesManifestView.pruneEmpty` does;
+  // a retained shard that owns only constants outside Lean's logic has no
+  // claim to make.
+  let retained_old: Vec<usize> = owned_count
     .iter()
     .enumerate()
-    .filter_map(|(index, addresses)| (!addresses.is_empty()).then_some(index))
+    .filter_map(|(index, count)| (*count != 0).then_some(index))
     .collect();
   if retained_old.is_empty() {
     return Err("manifest has no shard owning an environment constant".into());
+  }
+  if let Some(&old) = retained_old.iter().find(|old| owned[**old].is_empty()) {
+    return Err(format!(
+      "shard {}: all {} owned constant(s) are unsafe or partial, outside \
+       Lean's logic; IxVM certifies none of them",
+      manifest.shards[old].id, owned_count[old]
+    ));
   }
   let retained_ids: FxHashSet<u32> =
     retained_old.iter().map(|index| manifest.shards[*index].id).collect();
@@ -192,7 +223,9 @@ pub fn prepare_run(
   // resolve any errors in that same order for deterministic diagnostics.
   let shards = shard_results.into_iter().collect::<Result<Vec<_>, _>>()?;
 
-  let env_root = merkle_root_canonical_sorted(&all_addresses)
+  // The root certifies exactly the constants in Lean's logic, as Lean's
+  // `auditAggregateConstants` checks.
+  let env_root = merkle_root_canonical_sorted(&claimable_addresses)
     .ok_or("cannot aggregate an empty environment")?;
   let expected_shards = ShardSet(
     (0..retained_old.len().div_ceil(64))
@@ -208,7 +241,7 @@ pub fn prepare_run(
     owner_by_address,
     tree,
     env_root,
-    env_count: all_addresses.len(),
+    env_count: claimable_addresses.len(),
     expected_shards,
   })
 }
