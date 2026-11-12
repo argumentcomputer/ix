@@ -22,22 +22,14 @@ def env₀ : Ix.Kernel.Env .anon := Ix.Kernel.Env.empty
 /-- The context: no records, the empty environment, the empty table, no group limit. -/
 def c₀ : Ctx := ⟨{}, env₀, t₀, none⟩
 
-theorem t₀_wf : t₀.wf = true := by
-  first
-  | decide
-  | rfl
-  | simp [t₀, Ix.Kernel.RoleTable.wf, Ix.Kernel.RoleTable.check, Ix.Kernel.RoleTable.firstRepeat,
-      Except.isOk, Except.toBool]
+theorem t₀_wf : t₀.wf = true := by decide
 
 theorem env₀_find (k : KKey) : env₀.find? k = none := rfl
 
 theorem env₀_findProj (T : KKey) (i : Nat) : env₀.findProj? T i = none := by
   simp [Ix.Kernel.Env.findProj?, env₀_find]
 
-theorem t₀_addressOf (r : Ix.Kernel.Role) : t₀.addressOf? r = none := by
-  first
-  | rfl
-  | simp [t₀, Ix.Kernel.RoleTable.addressOf?]
+theorem t₀_addressOf (r : Ix.Kernel.Role) : t₀.addressOf? r = none := rfl
 
 theorem not_inForce (r : Ix.Kernel.Role) : ¬ c₀.inForce r := by
   intro h
