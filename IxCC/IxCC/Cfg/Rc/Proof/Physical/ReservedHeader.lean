@@ -1,8 +1,10 @@
 import IxCC.Cfg.Rc.Proof.Physical.Reserved
-import IxCC.Rt.Rc.Proof.CountPreserve
+import IxCC.Rt.Rc.Gen.Proof.CountPreserve
+import IxCC.Rt.Rc.Gen.Proof.Scanned
 
 set_option autoImplicit false
 namespace IxCC.Cfg.Rc.Native
+open IxCC.Rt.Rc.Gen (fieldsClass)
 open IxCC.Lir
 open IxCC.Rt IxCC.Rt.Rc IxCC.Rt.Proof IxCC.Rt.Rc.Procs
 
@@ -32,18 +34,19 @@ theorem wordAt_read32_high_zero {mem : X86.Memory} {address word : Word}
 count is zero. This bridges the existing 64-bit allocator store to the runtime's
 separate concrete low-header/count read interface. -/
 theorem unique_header_reads {mem : X86.Memory} {address : Word} {fields tag : Nat}
-    (small : fields < 32) (tagBound : tag ≤ maxTag)
-    (represented : WordAt mem address (dynamicHeader fields (smallClass fields) tag 1)) :
-    mem.read .w32 address = UInt64.ofNat (headerLow fields (smallClass fields) tag) ∧
+    (small : fields ≤ maxFields) (tagBound : tag ≤ maxTag)
+    (represented : WordAt mem address (dynamicHeader fields (fieldsClass fields) tag 1)) :
+    mem.read .w32 address = UInt64.ofNat (headerLow fields (fieldsClass fields) tag) ∧
       mem.read .w32 (address+4) = 0 := by
-  have headerEq : dynamicHeader fields (smallClass fields) tag 1 =
-      UInt64.ofNat (headerLow fields (smallClass fields) tag) := by
+  have headerEq : dynamicHeader fields (fieldsClass fields) tag 1 =
+      UInt64.ofNat (headerLow fields (fieldsClass fields) tag) := by
     simp [dynamicHeader, header]
   rw [headerEq] at represented
-  have bound : headerLow fields (smallClass fields) tag < 2^32 := by
-    simp only [headerLow, smallClass, maxTag] at *
+  have hc := Gen.fieldsClass_le fields (Nat.lt_succ_of_le small)
+  have bound : headerLow fields (fieldsClass fields) tag < 2^32 := by
+    simp only [headerLow, maxTag, maxFields] at *
     omega
-  have wordBound : (UInt64.ofNat (headerLow fields (smallClass fields) tag)).toNat < 2^32 := by
+  have wordBound : (UInt64.ofNat (headerLow fields (fieldsClass fields) tag)).toNat < 2^32 := by
     rw [UInt64.toNat_ofNat', Nat.mod_eq_of_lt (by omega)]
     exact bound
   exact ⟨(wordAt_read32_low represented).trans (truncate32_small wordBound),

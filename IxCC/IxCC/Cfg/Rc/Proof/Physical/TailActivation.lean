@@ -10,6 +10,7 @@ import IxCC.Own.Plain.Proof.Results
 
 set_option autoImplicit false
 namespace IxCC.Cfg.Rc.Native.Spec
+open IxCC.Rt.Rc
 open IxCC.Cfg.Rc.Proof.Physical.Bridge IxCC.Own IxCC.Own.Rc
 open IxCC.Rt.Rc.Procs
 
@@ -79,7 +80,7 @@ theorem tail_activation {config : Rt.Config} {F : Fir.Program}
   have nativeRange : source.fn < P.base.size := by simpa only [programSize] using sourceRange
   have initialTokens := Tokens.extend
     (Tokens.ofState (external := external) (held := []) before.canonical) lexical
-  have initialReady : AllocatorReady H addresses mem (holdRoots external (roots ++ []))
+  have initialReady : Gen.AllocatorReady maxClass H addresses mem (holdRoots external (roots ++ []))
       context base bump limit slots lists := by simpa only [List.append_nil] using heap.ready
   rcases transfer_prefix (Public.Spec.rawSource config P pairs) main args imm [] live before.frame.cursor
       head before.frame.lookup initialTokens (ImmEnv.sub before.canonical.immOk lexical)

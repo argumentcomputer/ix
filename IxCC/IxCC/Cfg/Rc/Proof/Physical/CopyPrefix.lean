@@ -4,6 +4,7 @@ import IxCC.Own.Plain.Proof.Scope
 
 set_option autoImplicit false
 namespace IxCC.Cfg.Rc.Native
+open IxCC.Rt.Rc
 open Spec IxCC.Cfg.Rc.Proof.Physical.Bridge
 open IxCC.Own IxCC.Own.Rc
 open IxCC.Rt.Rc.Procs
@@ -20,10 +21,10 @@ theorem Tokens.held_congr {H : Heap} {external : Nat → Nat}
 theorem ready_held_congr {H : Heap} {external : Nat → Nat} {held other roots : List RVal}
     {addresses : AddressMap} {mem : X86.Memory} {context base bump limit : Lir.Word}
     {slots : List Slot} {lists : Nat → List Lir.Word}
-    (before : AllocatorReady H addresses mem (holdRoots external (roots ++ held))
+    (before : Gen.AllocatorReady maxClass H addresses mem (holdRoots external (roots ++ held))
       context base bump limit slots lists)
     (counts : ∀ location, refsIn location held = refsIn location other) :
-    AllocatorReady H addresses mem (holdRoots external (roots ++ other))
+    Gen.AllocatorReady maxClass H addresses mem (holdRoots external (roots ++ other))
       context base bump limit slots lists := by
   have same : holdRoots external (roots ++ held) = holdRoots external (roots ++ other) := by
     funext location
@@ -49,7 +50,7 @@ theorem copy_prefix
     (scope : args.all (Own.Plain.argIn live) = true)
     {addresses : AddressMap} {mem : X86.Memory} {context base bump limit : Lir.Word}
     {slots : List Slot} {lists : Nat → List Lir.Word}
-    (ready : AllocatorReady H addresses mem (holdRoots external (roots ++ held))
+    (ready : Gen.AllocatorReady maxClass H addresses mem (holdRoots external (roots ++ held))
       context base bump limit slots lists)
     {bound : Nat}
     (registers : FusedWords addresses (Rt.Proof.Fused (tablesOf P pairs) function) bound ρo target.env)
@@ -59,7 +60,7 @@ theorem copy_prefix
       Own.evalArgs ρo args = some fields ∧
       Own.Plain.evalActions ρo H (Own.Plain.copies args) = .ok H' ∧
       Tokens H' external (fields ++ held) live ρf ρo roots ∧
-      AllocatorReady H' addresses mem' (holdRoots external (roots ++ (fields ++ held)))
+      Gen.AllocatorReady maxClass H' addresses mem' (holdRoots external (roots ++ (fields ++ held)))
         context base bump limit slots lists ∧
       Sem.Star (Lir.semStep (Public.Spec.sourceStage P functions main))
         {mem, ctx := context, stack := target :: callers} (2 * (Own.Plain.copies args).length)
@@ -150,7 +151,7 @@ theorem copy_heapArgs_prefix
     (scope : args.all (Own.Plain.argIn live) = true)
     {addresses : AddressMap} {mem : X86.Memory} {context base bump limit : Lir.Word}
     {slots : List Slot} {lists : Nat → List Lir.Word}
-    (ready : AllocatorReady H addresses mem (holdRoots external (roots ++ held))
+    (ready : Gen.AllocatorReady maxClass H addresses mem (holdRoots external (roots ++ held))
       context base bump limit slots lists)
     {bound : Nat}
     (registers : FusedWords addresses (Rt.Proof.Fused (tablesOf P pairs) function) bound ρo target.env)
@@ -160,7 +161,7 @@ theorem copy_heapArgs_prefix
       Own.evalArgs ρo args = some fields ∧
       Own.Plain.evalActions ρo H (Own.Plain.copies (Own.Plain.heapArgs imm args)) = .ok H' ∧
       Tokens H' external (fields ++ held) live ρf ρo roots ∧
-      AllocatorReady H' addresses mem' (holdRoots external (roots ++ (fields ++ held)))
+      Gen.AllocatorReady maxClass H' addresses mem' (holdRoots external (roots ++ (fields ++ held)))
         context base bump limit slots lists ∧
       Sem.Star (Lir.semStep (Public.Spec.sourceStage P functions main))
         {mem, ctx := context, stack := target :: callers} (2 * (Own.Plain.copies (Own.Plain.heapArgs imm args)).length)

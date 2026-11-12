@@ -31,7 +31,8 @@ theorem Returned.observe
     (viewed : Readback.treeView A.ctors signature type source = some target) :
     Rt.readback signature (regionBytes / 8) returned.memory type returned.word = some target :=
   Readback.viewed_readback_region related observed viewed
-    returned.state.ready.idle.live returned.state.ready.idle.partition
+    returned.state.ready.idle.live (fun l r m b h => (returned.state.compatible l r m b h).1.scanned)
+    returned.state.ready.idle.partition
     returned.state.ordered returned.state.extent returned.den returned.represented
 
 

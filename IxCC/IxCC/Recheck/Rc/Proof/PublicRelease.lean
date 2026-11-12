@@ -4,6 +4,7 @@ import IxCC.Cfg.Rc.Proof.Physical.PublicRoot
 
 set_option autoImplicit false
 namespace IxCC.Cfg.Rc.Native.Spec
+open IxCC.Rt.Rc
 open IxCC.Cfg.Rc.Proof.Physical.Bridge IxCC.Own IxCC.Own.Rc IxCC.Rt.Rc.Procs
 
 private theorem suffix_at {α : Type} (before after : List α) (i : Nat) :
@@ -54,7 +55,7 @@ theorem Returned.release_public {F : Fir.Program} {bodies : Src.NatMap Own.Plain
       dropAll returned.heap [returned.value] = some H' ∧
       HeapState P pairs H' returned.addresses memory' external []
         context base returned.bump limit regionBytes slots' lists' ∧
-      ProtectedFrame returned.memory memory' context base returned.bump ∧
+      Gen.ProtectedFrame returned.memory memory' context base returned.bump ∧
       Lir.eval {lowered.runtime.program with main := lowered.drop} clock
         [returned.word] returned.memory context = .ok ([1], memory') := by
   let raw := Public.Spec.sourceStage P (Public.Spec.rawSource config P pairs) lowered.drop
@@ -62,7 +63,7 @@ theorem Returned.release_public {F : Fir.Program} {bodies : Src.NatMap Own.Plain
   have wrapper : raw.funcs[lowered.drop]? = some (Public.dropWrapper (layoutOf P).decProc) := by
     rw [index]
     exact source_stage_drop P _ lowered.drop
-  have runtime : raw.funcs[(layoutOf P).decProc]? = some dec :=
+  have runtime : raw.funcs[(layoutOf P).decProc]? = some Gen.dec :=
     (source_stage_decrement_runtime P _ lowered.drop).2
   obtain ⟨H', memory', slots', lists', clock, released, ready, frame, execution⟩ :=
     drop_top returned.state returned.represented wrapper runtime rfl

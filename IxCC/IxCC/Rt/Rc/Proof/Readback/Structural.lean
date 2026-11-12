@@ -20,7 +20,7 @@ theorem ctor0_rep {addresses : AddressMap} {c : Fir.CtorInfo} {w : Word}
 dynamic heap representation. Dead and recycled historical locations need no
 placement obligation. -/
 theorem readback_toFir {H : Own.Heap} {addresses : AddressMap} {mem : X86.Memory}
-    {sig : Sig} (heap : HeapLive H addresses mem) :
+    {sig : Sig} (heap : Gen.HeapLive H addresses mem) (scanned : Scanned H) :
     ∀ fuel {ty : FoTy} {v : Own.RVal} {w : Word},
       Typed sig H ty v → valueWord addresses v = some w →
       Rt.readback sig fuel mem ty w = (Own.toFir H fuel v).bind Fir.readback := by
@@ -52,14 +52,15 @@ theorem readback_toFir {H : Own.Heap} {addresses : AddressMap} {mem : X86.Memory
       obtain ⟨_, address, placement, physical⟩ := heap.cell location refs mode body cell
       have equal : address = w := Option.some.inj (placement.symm.trans represented)
       subst address
-      have hn := physical.fields_small
-      have ht := physical.tag
+      have hs := scanned location refs mode body cell
+      obtain ⟨hcls, hn, ht⟩ := Gen.classOf_lt physical.layout
       have hr := physical.bounded
-      unfold maxTag at ht
       unfold maxCount at hr
+      have hlen : body.fields.length = body.ctor.nobj := by have := physical.arity; omega
+      have hpos : 0 < body.ctor.nobj := by have := (Gen.layoutOf_bounds physical.layout).1; omega
       rw [Rc.readback_cell_header (cell_even physical.aligned) (live_header physical)
-        (by omega) (by unfold smallClass; omega) (by omega) (by omega)
-        signature length physical.fields_positive]
+        (by omega) (by omega) (by omega) (by omega)
+        signature (length.trans hlen) hpos]
       rw [fields_readback tys body.fields 0 length fun j t v ht hv => ?_]
       · simp only [Own.toFir, Own.Heap.cell?, cell]
         cases hfs : Own.toFirList H fuel body.fields with
@@ -67,9 +68,10 @@ theorem readback_toFir {H : Own.Heap} {addresses : AddressMap} {mem : X86.Memory
         | some fs =>
           have len := toFirList_length hfs
           have arity : body.ctor.arity = body.fields.length := by
-            simp [Fir.CtorInfo.arity, physical.nobj, physical.nscalar]
+            simp only [Fir.CtorInfo.arity]; omega
           simp [Fir.readback, len, arity]
-      · obtain ⟨word, value, memory⟩ := physical.fields j v hv
+      · obtain ⟨word, value, memory⟩ := physical.scanned hv
+          (by have := (List.getElem?_eq_some_iff.mp hv).1; omega)
         simp only [Nat.zero_add]
         have loaded : mem.read64? (w + UInt64.ofNat (8+8*j)) = .ok word := memory.read64
         rw [loaded]

@@ -1,8 +1,9 @@
 import IxCC.Cfg.Rc.Proof.Physical.Bridge.IncrementTokens
-import IxCC.Rt.Rc.Proof.ReadyOperations
+import IxCC.Rt.Rc.Gen.Proof.ReadyOperations
 
 set_option autoImplicit false
 namespace IxCC.Cfg.Rc.Proof.Physical.Bridge
+open IxCC.Rt.Rc
 open IxCC IxCC.Own IxCC.Own.Rc
 open IxCC.Rt.Rc.Procs
 
@@ -28,13 +29,13 @@ theorem increment_ready_tokens
     (lookup : ρo.get? x = some value) (permission : CanDup H value)
     {addresses : AddressMap} {mem : X86.Memory} {context base bump limit : Lir.Word}
     {slots : List Slot} {lists : Nat → List Lir.Word}
-    (ready : AllocatorReady H addresses mem (holdRoots external (roots ++ held))
+    (ready : Gen.AllocatorReady maxClass H addresses mem (holdRoots external (roots ++ held))
       context base bump limit slots lists)
     {word : Lir.Word} (represented : valueWord addresses value = some word) :
     ∃ H', Own.Plain.evalAction ρo H (.inc x 1) = .ok H' ∧
       Tokens H' external (value :: held) live ρf ρo roots ∧
       (∀ root, H.value? root = H'.value? root) ∧
-      ((∃ mem', AllocatorReady H' addresses mem'
+      ((∃ mem', Gen.AllocatorReady maxClass H' addresses mem'
           (holdRoots external (roots ++ value :: held))
           context base bump limit slots lists ∧
           Lir.eval incProgram 0 [word] mem context = .ok ([], mem')) ∨
@@ -66,10 +67,10 @@ theorem increment_ready_tokens
       exact .inl ⟨_, restored, result⟩
     · have maxed : refs = Rt.Rc.maxCount := by have bounded := physical.bounded; omega
       subst refs
-      exact .inr (increment_max_failure ready.idle cell placement)
+      exact .inr (Gen.increment_max_failure ready.idle cell placement)
   · have immediate : ∀ location, value ≠ .loc location := fun location equal =>
       isLocation ⟨location, equal⟩
-    obtain ⟨effect, _, result⟩ := increment_immediate_entry ready.idle immediate word represented
+    obtain ⟨effect, _, result⟩ := Gen.increment_immediate_entry ready.idle immediate word represented
     have equal : H = H' := Option.some.inj (effect.symm.trans incremented)
     have unchanged : holdRoots external (roots ++ value :: held) = holdRoots external (roots ++ held) := by
       funext location

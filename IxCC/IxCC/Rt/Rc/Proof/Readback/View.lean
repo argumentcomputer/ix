@@ -92,13 +92,13 @@ theorem viewed_readback_region {A : Anf.Program} {sig : Sig} {ty : FoTy}
     (viewed : treeView A.ctors sig ty source = some target)
     {H : Own.Heap} {addresses : AddressMap} {mem : X86.Memory}
     {base bump limit : Lir.Word} {slots : List Slot} {regionBytes : Nat}
-    (heap : HeapLive H addresses mem)
-    (partition : ArenaPartition H addresses base bump limit slots)
+    (heap : Gen.HeapLive H addresses mem) (scanned : Scanned H)
+    (partition : Gen.ArenaPartition maxClass H addresses base bump limit slots)
     (ordered : Own.Rc.HeapOk H) (region : limit.toNat-base.toNat ≤ regionBytes)
     {v : Own.RVal} {word : Lir.Word} (den : Own.Proof.Den H v logical)
     (represented : valueWord addresses v = some word) :
     Rt.readback sig (regionBytes/8) mem ty word = some target :=
   (source_readback_region (treeView_of_vr related observed viewed)
-    heap partition ordered region den represented).2
+    heap scanned partition ordered region den represented).2
 
 end IxCC.Rt.Rc.Procs.Readback

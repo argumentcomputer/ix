@@ -1,9 +1,11 @@
 import IxCC.Cfg.Rc.Proof.Physical.PublicationFree
 import IxCC.Cfg.Rc.Proof.Physical.PublicationKinds
 import IxCC.Cfg.Rc.Proof.Physical.PublicationLive
+import IxCC.Rt.Rc.Gen.Proof.Scanned
 
 set_option autoImplicit false
 namespace IxCC.Cfg.Rc.Native
+open IxCC.Rt.Rc.Gen (fieldsClass)
 open IxCC.Lir
 open IxCC.Own IxCC.Own.Rc
 open IxCC.Rt IxCC.Rt.Rc IxCC.Rt.Rc.Procs
@@ -14,26 +16,30 @@ edges and return one fresh logical root, including when the slot is recycled. -/
 theorem publication_idle {heap : Heap} {addresses : AddressMap} {mem : X86.Memory}
     {external : Nat → Nat} {body : Own.Body} {context base bump limit : Word}
     {slots : List Slot} {lists : Nat → List Word}
-    (idle : ReleaseInvariant heap addresses mem
+    (idle : Gen.ReleaseInvariant maxClass heap addresses mem
       (fun location => external location + refsIn location body.fields) none []
       context base bump limit slots lists)
     {chosen : Slot} (member : chosen ∈ slots) (reserved : chosen.kind = .reserved)
-    (sizeClass : chosen.cls = smallClass body.fields.length)
+    (sizeClass : chosen.cls = fieldsClass body.fields.length)
     (storage : ReservedCell mem chosen.address body) (words : Nat → Word)
     (values : ∀ j value, body.fields[j]? = some value → valueWord addresses value = some (words j)) :
-    ReleaseInvariant (heap.alloc .rc body).2 (placeFresh addresses heap.size chosen.address)
+    Gen.ReleaseInvariant maxClass (heap.alloc .rc body).2 (placeFresh addresses heap.size chosen.address)
       (publishFields mem chosen.address words (List.range body.fields.length))
       (fun location => external location + refsIn location [(heap.alloc .rc body).1]) none []
       context base bump limit (publishSlots heap.size chosen.address slots) lists := by
   refine {
     balance := ?_
     live := publication_heapLive idle member reserved sizeClass storage words values
-    partition := partition_publish idle.partition member reserved body sizeClass
+    partition := partition_publish idle.partition member reserved body (by
+      rw [sizeClass, Gen.classOf_fields storage.nscalar (by rw [storage.nobj]; exact storage.fields_small),
+        storage.nobj])
     cursors := trivial
     cursor_distinct := by simp
     cursor_nonzero := by simp
+    cursor_layout := by simp
     cursor_access := by simp
     cursor_class := by simp
+    cursor_scan := by simp
     cursors_placed := ?_
     pending_exact := ?_
     free_exact := publication_free_exact idle member reserved heap.size

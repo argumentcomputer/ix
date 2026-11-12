@@ -1,15 +1,16 @@
-import IxCC.Rt.Rc.Proof.ReleaseInvariant
+import IxCC.Rt.Rc.Gen.Proof.ReleaseInvariant
 import IxCC.Own.Rc.Proof.Allocation
 
 set_option autoImplicit false
 namespace IxCC.Cfg.Rc.Native
+open IxCC.Rt.Rc
 open IxCC.Own IxCC.Own.Rc
 open IxCC.Rt.Rc.Procs
 
 theorem idle_field_tokens {heap : Heap} {addresses : AddressMap} {mem : X86.Memory}
     {external : Nat → Nat} {body : Own.Body} {context base bump limit : Lir.Word}
     {slots : List Slot} {lists : Nat → List Lir.Word}
-    (idle : ReleaseInvariant heap addresses mem
+    (idle : Gen.ReleaseInvariant maxClass heap addresses mem
       (fun location => external location + refsIn location body.fields) none []
       context base bump limit slots lists) : Balance heap external body.fields := by
   intro location

@@ -3,6 +3,7 @@ import IxCC.Own.Plain.Proof.Selected
 
 set_option autoImplicit false
 namespace IxCC.Cfg.Rc.Native
+open IxCC.Rt.Rc
 open Spec IxCC.Cfg.Rc.Proof.Physical.Bridge
 open IxCC.Own IxCC.Own.Rc
 open IxCC.Rt.Rc.Procs
@@ -29,7 +30,7 @@ theorem jump_transfer_prefix
     {function : Cfg.Fun} (sourceLookup : (consumed P pairs).fun? source.fn = some function)
     {addresses : AddressMap} {mem : X86.Memory} {context base bump limit : Lir.Word}
     {slots : List Slot} {lists : Nat → List Lir.Word}
-    (ready : AllocatorReady H addresses mem (holdRoots external (roots ++ held))
+    (ready : Gen.AllocatorReady maxClass H addresses mem (holdRoots external (roots ++ held))
       context base bump limit slots lists)
     {bound : Nat}
     (registers : FusedWords addresses (Rt.Proof.Fused (tablesOf P pairs) function) bound ρo target.env)
@@ -49,7 +50,7 @@ theorem jump_transfer_prefix
         (if ef.isRec then (ef.id, captured) :: older else older) (ef.after restf) (eo.after resto) ∧
       Own.Plain.scopeOk signatures (captured ++ ef.params)
         (Own.Plain.stackArities (ef.after restf)) ef.body = true ∧
-      AllocatorReady H' addresses mem' (holdRoots external ((kept ++ fields) ++ held))
+      Gen.AllocatorReady maxClass H' addresses mem' (holdRoots external ((kept ++ fields) ++ held))
         context base bump limit slots' lists' ∧
       Sem.Star (Lir.semStep (Public.Spec.sourceStage P functions main))
         {mem, ctx := context, stack := target :: callers} cost

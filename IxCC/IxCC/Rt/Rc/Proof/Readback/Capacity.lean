@@ -1,4 +1,5 @@
 import IxCC.Rt.Rc.Proof.Readback.Fuel
+import IxCC.Rt.Rc.Gen.Proof.Scanned
 
 set_option autoImplicit false
 namespace IxCC.Rt.Rc.Procs.Readback
@@ -7,7 +8,7 @@ open IxCC.Own
 
 theorem live_address_bounds {H : Heap} {addresses : AddressMap}
     {base bump limit : Word} {slots : List Slot}
-    (partition : ArenaPartition H addresses base bump limit slots)
+    (partition : Gen.ArenaPartition maxClass H addresses base bump limit slots)
     {location refs : Nat} {body : Body}
     (cell : H.cell? location = some (.live refs .dyn body)) :
     ∃ address, addresses location = some address ∧
@@ -23,8 +24,8 @@ def addressIndex (addresses : AddressMap) (base : Word) (location : Nat) : Nat :
 
 theorem live_index_bound {H : Heap} {addresses : AddressMap} {mem : X86.Memory}
     {base bump limit : Word} {slots : List Slot} {regionBytes : Nat}
-    (heap : HeapLive H addresses mem)
-    (partition : ArenaPartition H addresses base bump limit slots)
+    (heap : Gen.HeapLive H addresses mem)
+    (partition : Gen.ArenaPartition maxClass H addresses base bump limit slots)
     (region : limit.toNat-base.toNat ≤ regionBytes)
     {location : Nat} (member : location ∈ liveLocations H H.size) :
     addressIndex addresses base location < regionBytes/8 := by
@@ -37,20 +38,21 @@ theorem live_index_bound {H : Heap} {addresses : AddressMap} {mem : X86.Memory}
 
 theorem live_index_injective {H : Heap} {addresses : AddressMap} {mem : X86.Memory}
     {base bump limit : Word} {slots : List Slot}
-    (heap : HeapLive H addresses mem)
-    (partition : ArenaPartition H addresses base bump limit slots)
+    (heap : Gen.HeapLive H addresses mem)
+    (partition : Gen.ArenaPartition maxClass H addresses base bump limit slots)
     {left right : Nat} (hl : left ∈ liveLocations H H.size)
     (hr : right ∈ liveLocations H H.size) (hne : left ≠ right) :
     addressIndex addresses base left ≠ addressIndex addresses base right := by
   obtain ⟨rl, ml, bl, cl⟩ := liveAt_iff.mp (List.mem_filter.mp hl).2
   obtain ⟨rr, mr, br, cr⟩ := liveAt_iff.mp (List.mem_filter.mp hr).2
-  obtain ⟨rfl, _, _, _⟩ := heap.cell left rl ml bl cl
-  obtain ⟨rfl, _, _, _⟩ := heap.cell right rr mr br cr
+  obtain ⟨rfl, _, _, physl⟩ := heap.cell left rl ml bl cl
+  obtain ⟨rfl, _, _, physr⟩ := heap.cell right rr mr br cr
+  have bytesl := (Gen.layoutOf_class physl.layout).2.2
+  have bytesr := (Gen.layoutOf_class physr.layout).2.2
   obtain ⟨al, mapl, lowerl, _⟩ := live_address_bounds partition cl
   obtain ⟨ar, mapr, lowerr, _⟩ := live_address_bounds partition cr
   have separated := heap.disjoint left right rl rr bl br al ar cl cr mapl mapr hne
   simp only [addressIndex, mapl, mapr, Option.getD_some]
-  unfold cellBytes at separated
   omega
 
 /-- Each live logical location occupies a distinct physical word interval.
@@ -58,8 +60,8 @@ This cardinality bound ignores dead history and counts neither field aliases
 nor repeated paths twice. -/
 theorem liveBefore_capacity {H : Heap} {addresses : AddressMap} {mem : X86.Memory}
     {base bump limit : Word} {slots : List Slot} {regionBytes : Nat}
-    (heap : HeapLive H addresses mem)
-    (partition : ArenaPartition H addresses base bump limit slots)
+    (heap : Gen.HeapLive H addresses mem)
+    (partition : Gen.ArenaPartition maxClass H addresses base bump limit slots)
     (region : limit.toNat-base.toNat ≤ regionBytes) :
     liveBefore H H.size ≤ regionBytes/8 := by
   have distinct : ((liveLocations H H.size).map (addressIndex addresses base)).Nodup := by

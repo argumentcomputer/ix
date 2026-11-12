@@ -4,6 +4,7 @@ import IxCC.Cfg.Rc.Proof.Physical.IncWrapper
 
 set_option autoImplicit false
 namespace IxCC.Cfg.Rc.Proof.Physical.Bridge
+open IxCC.Rt.Rc
 open IxCC IxCC.Own IxCC.Own.Rc
 open IxCC.Rt.Rc.Procs IxCC.Cfg.Rc.Native
 
@@ -81,7 +82,7 @@ theorem increment_wrapper_tokens
     (before : Tokens H external (carry ++ held) live ρf ρo roots) (member : x ∈ live)
     {addresses : AddressMap} {mem : X86.Memory} {context base bump limit : Lir.Word}
     {slots : List Slot} {lists : Nat → List Lir.Word}
-    (idle : ReleaseInvariant H addresses mem (holdRoots external (roots ++ carry ++ held)) none []
+    (idle : Gen.ReleaseInvariant maxClass H addresses mem (holdRoots external (roots ++ carry ++ held)) none []
       context base bump limit slots lists)
     {P : Lir.Program} {wrapper procedure dummy bound : Nat} {env : Lir.Env}
     (wrapperLookup : P.funcs[wrapper]? = some (incrementWrapper procedure))
@@ -93,7 +94,7 @@ theorem increment_wrapper_tokens
     ∃ value H', ρo.get? x = some value ∧
       Own.Plain.evalAction ρo H (.inc x 1) = .ok H' ∧
       Tokens H' external ((value :: carry) ++ held) live ρf ρo roots ∧
-      ((∃ mem', ReleaseInvariant H' addresses mem'
+      ((∃ mem', Gen.ReleaseInvariant maxClass H' addresses mem'
           (holdRoots external (roots ++ (value :: carry) ++ held)) none []
           context base bump limit slots lists ∧
           Sem.Star (Lir.semStep P)

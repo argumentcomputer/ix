@@ -1,8 +1,9 @@
 import IxCC.Cfg.Rc.Proof.Physical.NativeMarkers
-import IxCC.Rt.Rc.Proof.IncrementCaller
+import IxCC.Rt.Rc.Gen.Proof.IncrementCaller
 
 set_option autoImplicit false
 namespace IxCC.Cfg.Rc.Native
+open IxCC.Rt.Rc
 open IxCC.Lir
 open IxCC.Own IxCC.Own.Rc
 open IxCC.Rt.Rc.Procs
@@ -14,7 +15,7 @@ the marker's literal one; the body invokes the one-increment procedure. -/
 theorem increment_body_complete
     {heap : Heap} {addresses : AddressMap} {mem : X86.Memory} {external : Nat → Nat}
     {context base bump limit : Word} {slots : List Slot} {lists : Nat → List Word}
-    (idle : ReleaseInvariant heap addresses mem external none [] context base bump limit slots lists)
+    (idle : Gen.ReleaseInvariant maxClass heap addresses mem external none [] context base bump limit slots lists)
     {location refs : Nat} {body : Own.Body} {address : Word}
     (cell : heap.cell? location = some (.live refs .dyn body))
     (placement : addresses location = some address) (room : refs < Rt.Rc.maxCount)
@@ -26,7 +27,7 @@ theorem increment_body_complete
     (argument : env[0]? = some address)
     (caller : Lir.Frame) (callers : List Lir.Frame) (destination : caller.dsts = [dummy]) :
     Own.Rc.inc heap (.loc location) 1 = some (setCell heap location (.live (refs+1) .dyn body)) ∧
-    ReleaseInvariant (setCell heap location (.live (refs+1) .dyn body)) addresses
+    Gen.ReleaseInvariant maxClass (setCell heap location (.live (refs+1) .dyn body)) addresses
       (storeCount mem address (UInt64.ofNat refs))
       (fun k => external k + refsIn k [.loc location]) none [] context base bump limit slots lists ∧
     Sem.Star (Lir.semStep P)
@@ -39,7 +40,7 @@ theorem increment_body_complete
     simp [Lir.enter, procedureLookup, Rt.Rc.Procs.inc, Lir.bindParams, incEnv]
   have callStep := marker_call (g := wrapper) (env := env)
     (rest := caller :: callers) (mem := mem) (ctx := context) wrapperLookup wrapperBody argument enter
-  obtain ⟨incremented, restored, procedureTrace⟩ := increment_caller_complete idle cell placement room
+  obtain ⟨incremented, restored, procedureTrace⟩ := Gen.increment_caller_complete idle cell placement room
     P procedure procedureLookup continuation (caller :: callers) rfl
   have returnStep := marker_return (callee := procedure) (env := env) (caller := caller)
     (rest := callers) (mem := storeCount mem address (UInt64.ofNat refs)) (ctx := context)

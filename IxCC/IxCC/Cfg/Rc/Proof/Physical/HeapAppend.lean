@@ -2,6 +2,7 @@ import IxCC.Cfg.Rc.Proof.Physical.HeapPlacement
 
 set_option autoImplicit false
 namespace IxCC.Cfg.Rc.Native
+open IxCC.Rt.Rc
 open IxCC.Rt.Rc.Procs
 
 theorem allocated_cell (heap : Own.Heap) (body : Own.Body) (location : Nat) :
@@ -21,16 +22,16 @@ storage, new payload words and physical interval separation are independent
 premises proved by the allocator/publication frame lemmas. Dead mappings need
 not be injective and are not inspected. -/
 theorem heapLive_append {heap : Own.Heap} {addresses : AddressMap} {mem : X86.Memory}
-    (old : HeapLive heap addresses mem) {body : Own.Body} {address : Lir.Word}
+    (old : Gen.HeapLive heap addresses mem) {body : Own.Body} {address : Lir.Word}
     (mapped : addresses heap.size = some address)
-    (published : LiveCell addresses mem address 1 body)
+    (published : Gen.LiveCell addresses mem address 1 body)
     (children : ∀ child, Own.RVal.loc child ∈ body.fields →
       ∃ refs other, heap.cell? child = some (.live refs .dyn other))
     (separate : ∀ location refs other placed,
       heap.cell? location = some (.live refs .dyn other) → addresses location = some placed →
-      address.toNat + Rt.cellBytes body.fields.length ≤ placed.toNat ∨
-        placed.toNat + Rt.cellBytes other.fields.length ≤ address.toNat) :
-    HeapLive (heap.alloc .rc body).2 addresses mem := by
+      address.toNat + Gen.cellBytesOf body.ctor ≤ placed.toNat ∨
+        placed.toNat + Gen.cellBytesOf other.ctor ≤ address.toNat) :
+    Gen.HeapLive (heap.alloc .rc body).2 addresses mem := by
   refine {cell := ?_, fields_live := ?_, disjoint := ?_}
   · intro location refs mode other cell
     by_cases fresh : location = heap.size

@@ -10,6 +10,7 @@ import IxCC.Own.Plain.Proof.TailCall
 
 set_option autoImplicit false
 namespace IxCC.Cfg.Rc.Native.Spec
+open IxCC.Rt.Rc
 open IxCC.Cfg.Rc.Proof.Physical.Bridge IxCC.Own IxCC.Own.Rc
 open IxCC.Rt.Rc.Procs
 
@@ -130,7 +131,7 @@ theorem call_activation {config : Rt.Config} {F : Fir.Program}
       have counted := framedState.counts location
       simp only [holdRoots, refsIn_append] at counted ⊢
       omega
-    have ready' : AllocatorReady copied addresses mem' (holdRoots external (fields ++ (roots ++ held)))
+    have ready' : Gen.AllocatorReady maxClass copied addresses mem' (holdRoots external (fields ++ (roots ++ held)))
         context base bump limit slots lists := by
       have rearrange : holdRoots external (roots ++ (fields ++ held)) =
           holdRoots external (fields ++ (roots ++ held)) := by

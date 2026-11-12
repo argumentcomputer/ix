@@ -2,6 +2,9 @@ import IxCC.Cfg.Rc.Proof.Physical.Bridge.CtorInvariant
 
 /-! Exact accepted RC axiom inventory. -/
 
+/-- info: 'IxCC.Rt.Proof.CtorOk.scanned' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.CtorOk.scanned
+
 /-- info: 'IxCC.Cfg.Rc.Proof.Physical.Bridge.HeapCtorOk.alloc' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Cfg.Rc.Proof.Physical.Bridge.HeapCtorOk.alloc
 

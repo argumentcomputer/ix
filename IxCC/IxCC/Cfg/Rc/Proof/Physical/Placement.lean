@@ -1,4 +1,4 @@
-import IxCC.Rt.Rc.Proof.LiveMemory
+import IxCC.Rt.Rc.Gen.Proof.LiveMemory
 import IxCC.Own.Plain.Proof.Bounds
 import IxCC.Lir.Proof.Steps
 
@@ -7,6 +7,7 @@ Old mappings remain available for stale registers; physical injectivity is a
 live-cell property of HeapLive, not a property of this entire address map. -/
 set_option autoImplicit false
 namespace IxCC.Cfg.Rc.Native
+open IxCC.Rt.Rc
 open IxCC.Rt.Rc.Procs
 
 def placeFresh (addresses : AddressMap) (fresh : Nat) (address : Lir.Word) : AddressMap :=

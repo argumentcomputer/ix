@@ -1,4 +1,4 @@
-import IxCC.Rt.Rc.Proof.LiveMemory
+import IxCC.Rt.Rc.Gen.Proof.LiveMemory
 import IxCC.Own.Rc.Proof.Shape
 import IxCC.Own.Plain.Proof.Values
 

@@ -29,42 +29,55 @@ that closures (P8), arrays and bignums need.
 **Current state.**
 - *Implemented.* Immortal cells, bump-allocated and never freed
   ([`Rt/Layout.lean`](../IxCC/Rt/Layout.lean)).
-- *Implemented.* The bounded plain-RC route: shared constructors with 1 to
-  31 fully scanned fields and tags up to `Rt.maxTag`
-  ([`Cfg/Rc/Native.lean:62`, `:81`](../IxCC/Cfg/Rc/Native.lean)); size-class
-  free lists with one-cell bump refill and iterative release
-  ([`Rt/Rc/Procs.lean`](../IxCC/Rt/Rc/Procs.lean)); a checker that requires
-  the proposed ownership map to equal the canonical producer's
-  (`checkPlainMap`, [`Own/Plain/Check.lean:225`](../IxCC/Own/Plain/Check.lean));
+- *Implemented.* The plain-RC route: shared constructors with 1 to 254
+  fully scanned fields and tags up to `Rt.maxTag`, every one whose layout
+  the counted heap allocates (`CellLayout.ok` of `CellLayout.ofFields`,
+  [`Cfg/Rc/Native.lean:62`, `:81`](../IxCC/Cfg/Rc/Native.lean)); 71
+  size classes with free lists, one-cell bump refill, allocation by layout
+  and the general iterative release
+  ([`Rt/Rc/Gen/Procs.lean`](../IxCC/Rt/Rc/Gen/Procs.lean), below); a
+  checker that requires the proposed ownership map to equal the canonical
+  producer's (`checkPlainMap`, [`Own/Plain/Check.lean:225`](../IxCC/Own/Plain/Check.lean));
   `Plain.checked_program_refines`
   ([`Own/Plain/Proof/Candidate.lean:12`](../IxCC/Own/Plain/Proof/Candidate.lean))
   and the object theorem `Recheck.RcReplay.sound`
   ([`Recheck/Rc/Proof/ObjectSound.lean:37`](../IxCC/Recheck/Rc/Proof/ObjectSound.lean)).
   `List.reverse` from Lean's library compiles and runs through it
   ([`fixtures/rc/real-source`](../fixtures/rc/real-source/README.md)).
-- *Implemented, library only (heap stage 1, first landing).* The runtime of
-  general cell layouts, which nothing in the pipeline emits yet:
-  71 size classes and cell layouts ([`Rt/Rc/Classes.lean`](../IxCC/Rt/Rc/Classes.lean):
-  `classWords`, the least fitting class `classFor` with `classFor_spec`
-  and its waste bounds); allocation by layout, the general release and the
-  uniqueness test ([`Rt/Rc/Gen/Procs.lean`](../IxCC/Rt/Rc/Gen/Procs.lean),
-  [compiler design, "Runtime"](compiler-design.md#runtime)); and their proofs
-  over a general heap invariant (`Rt/Rc/Gen/Proof/`, 93 modules, beside the
-  bounded route's `Rt/Rc/Proof/`, which is unchanged): `AllocatorReady.reserve_total`,
-  `release_caller_complete(_frame)`, `increment_caller_complete`,
-  `Init.cxInit_ready` (all 71 free-list heads recorded), `isUnique_spec`
-  (the test answers `Own.Rc.uniqueOf` and writes nothing), and
-  `Procs.LiveCell.toGen`, `Procs.HeapLive.toGen` (today's cells are cells of
-  the general invariant). 236 exact axiom fences
-  (`IxCCTests/Fences/RtRcGen/`). The general release costs a little more
-  than today's on cells of fewer than three scanned fields
-  ([below](#the-general-releases-cost)).
-- *Not implemented.* Scalar fields and constructors with more than 31 fields
-  in compiled programs (the runtime library above has them; the pipeline's
-  switch to it is the next landing); reset/reuse (the runtime uniqueness test
-  exists, unused); static reuse from `unique` contracts; borrowed parameters beyond the
-  zero-RC policy selection; inline fast paths (each RC operation calls a runtime
-  procedure today, `rt_rc_inc` or `rt_rc_dec` in `Rt.Rc.Procs`); static constant objects (closed
+- *Implemented (heap stage 1).* The runtime of general cell layouts and
+  the pipeline's switch to it: 71 size classes and cell layouts
+  ([`Rt/Rc/Classes.lean`](../IxCC/Rt/Rc/Classes.lean): `classWords`, the
+  least fitting class `classFor` with `classFor_spec` and its waste
+  bounds); allocation by layout, the general release and the uniqueness
+  test ([`Rt/Rc/Gen/Procs.lean`](../IxCC/Rt/Rc/Gen/Procs.lean),
+  [compiler design, "Runtime"](compiler-design.md#runtime)); and their
+  proofs over a general heap invariant (`Rt/Rc/Gen/Proof/`, 94 modules):
+  `AllocatorReady.reserve_total`, `release_caller_complete(_frame)`,
+  `increment_caller_complete`, `Init.cxInit_ready` (all 71 free-list heads
+  recorded), `isUnique_spec` (the test answers `Own.Rc.uniqueOf` and writes
+  nothing), `Procs.LiveCell.toGen`, `Procs.HeapLive.toGen` (the bounded
+  route's cells are cells of the general invariant), and the facts of the
+  fully scanned cells the pipeline allocates (`Gen/Proof/Scanned.lean`:
+  `fieldsClass n`, classes 2–44). 251 exact axiom fences
+  (`IxCCTests/Fences/RtRcGen/`). The pipeline emits `Gen.alloc` and
+  `Gen.dec` for every plain-RC program; the proof bridge's `HeapState`
+  carries `Gen.AllocatorReady maxClass`
+  ([`Cfg/Rc/Proof/Native/Activation.lean`](../IxCC/Cfg/Rc/Proof/Native/Activation.lean)),
+  and the readback and projection facts take the heap's cells to be fully
+  scanned (`Readback.Scanned`, `CtorOk.scanned`: the constructor table has
+  no scalar field yet). The bounded route's release `Rt.Rc.Procs.dec` and
+  its proofs (`Rt/Rc/Proof/`) stay as a library nothing emits; its
+  increment `Procs.inc` is still the one the pipeline calls. The general
+  release costs a little more than the bounded one on cells of fewer than
+  three scanned fields ([below](#the-general-releases-cost)).
+- *Not implemented.* Scalar fields in compiled programs (the runtime above
+  has them; the constructor table has none, and `Cfg.Rc.Native` and
+  `Rt.Lower` refuse a constructor with scalar fields until DR2 produces
+  them); reset/reuse (the runtime uniqueness test exists, unused); static
+  reuse from `unique` contracts; borrowed parameters beyond the zero-RC
+  policy selection; inline fast paths (each RC operation calls a runtime
+  procedure today, `rt_rc_inc` of `Rt.Rc.Procs` or `rt_rc_dec` of
+  `Rt.Rc.Gen`); static constant objects (closed
   constructor trees as immortal read-only cells, `Rhs.const` in the Fir
   design, [`Fir/Syntax.lean:29-31`](../IxCC/Fir/Syntax.lean)). The Own IR
   has no `reset`, `reuse` or credit forms
@@ -103,9 +116,9 @@ Beyond the plan's statements, the invariant carries what the proofs needed:
   pending), in `Cursor`, `CursorPreserve` and `CursorLoads`;
 - `ArenaPartition.valid` with `1 ≤ classWords cls ≤ 2²⁶` (the arithmetic
   of slot bounds) and `ArenaPartition.bounded`, every slot's class at most a
-  parameter `cmax` (allocation's `reserve_total` takes `cls ≤ cmax`). The
-  pipeline will instantiate `cmax` at 71, where `bounded` follows from
-  `valid`; it stays because removing the parameter would restate every
+  parameter `cmax` (allocation's `reserve_total` takes `cls ≤ cmax`).  The
+  pipeline instantiates `cmax` at 71 (`maxClass`), where `bounded` follows
+  from `valid`; it stays because removing the parameter would restate every
   theorem of the 93 modules for no gain;
 - the five recycle lemmas (`pending_free_separation`, `recycle_chain(s)`,
   `pending_not_free`, `recycle_distinct`, `recycle_free_placed`) for any
@@ -141,8 +154,16 @@ counts are pinned by `tests-rt-rc controls`.
 | a shared cell (one decrement) | 10 → 10 | 47 → 47 |
 | a list of 1,000 (x86: 100), then a shared tail | +3.2 % | +4.8 % |
 
-Accepted for stage 1, with one release procedure rather than two; the
-pipeline's switch is gated on whole-program executed-instruction counts.
+Accepted for stage 1, with one release procedure rather than two, on a gate
+of whole-program executed instructions (at most 2 % worse anywhere), which
+the switch passed. x86 instructions executed by whole programs, counted by
+valgrind (cachegrind) on executables IxCC writes, at the bounded release and
+at the general one (2026-11-12, HC; the benchmark programs at the tip
+`37871be1e`): rbmap (1,000 to 100,000) −0.23 %, binarytrees (depth 10 to
+18) +0.48 %, const_fold (15, 17) +0.26 %, list-qsort (500 to 10,000) +0.54
+to +0.86 %, queue (1,000 to 5,000,000) +0.59 %; every registered root under plain RC that an executable
+runs (177 roots, 1,724 cases): 157 unchanged, 20 between +0.03 % and
++1.59 % (`Resource.twoVars`), every result the same.
 **Open for heap stage 3** (inline fast paths): two variants, measured on the
 same graphs but not proved. `asc`, the count word holding the next field's
 index with the end test `j = scan` (field order kept): `3 − 2n` steps and

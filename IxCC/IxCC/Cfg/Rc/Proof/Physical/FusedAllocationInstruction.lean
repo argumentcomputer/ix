@@ -18,16 +18,16 @@ theorem fused_allocation_instruction
     (tables : Own.Tables) (ctor : Fir.CtorInfo) (args : List Fir.Arg) (x : Fir.Var)
     (fresh : x ∉ live) (scope : args.all (Own.Plain.argIn live) = true)
     (arguments : Own.evalArgs ρo args = some fields) (arity : fields.length = ctor.arity)
-    (positive : 0 < ctor.arity) (small : ctor.arity < 32)
+    (positive : 0 < ctor.arity) (small : ctor.arity ≤ maxFields)
     (tagBound : ctor.tag ≤ maxTag) (nobj : ctor.nobj = ctor.arity)
     (nscalar : ctor.nscalar = 0) (shared : ctor.fieldKinds = List.replicate ctor.arity .shared)
     {addresses : AddressMap} {mem : X86.Memory} {context base bump limit : Lir.Word}
     {slots : List Slot} {lists : Nat → List Lir.Word}
-    (ready : AllocatorReady H addresses mem
+    (ready : Gen.AllocatorReady maxClass H addresses mem
       (holdRoots external (roots ++ fields ++ held)) context base bump limit slots lists)
     {P : Lir.Program} {wrapper procedure bound : Nat}
     (wrapperLookup : P.funcs[wrapper]? = some (allocationWrapper procedure ctor.arity))
-    (procedureLookup : P.funcs[procedure]? = some (alloc ctor.arity ctor.tag))
+    (procedureLookup : P.funcs[procedure]? = some (Gen.alloc (CellLayout.ofFields ctor.arity ctor.tag)))
     (caller : Lir.Frame) (callers : List Lir.Frame)
     {function : Lir.Func} {block : Lir.Block} {operands : List Lir.Arg}
     (functionLookup : P.funcs[caller.fn]? = some function)
@@ -49,7 +49,7 @@ theorem fused_allocation_instruction
       Tokens allocated.2 external held (live ++ [x])
         (ρf.insert x (.ctor ctor sourceValues)) (ρo.insert x allocated.1) (roots ++ [allocated.1]) ∧
       ((∃ address next finalMem finalSlots finalLists,
-        AllocatorReady allocated.2 (placeFresh addresses H.size address) finalMem
+        Gen.AllocatorReady maxClass allocated.2 (placeFresh addresses H.size address) finalMem
           (holdRoots external ((roots ++ [allocated.1]) ++ held))
           context base next limit finalSlots finalLists ∧
         Sem.Star (Lir.semStep P)

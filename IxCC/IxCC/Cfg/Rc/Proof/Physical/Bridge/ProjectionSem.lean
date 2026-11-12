@@ -4,6 +4,7 @@ import IxCC.Cfg.Rc.Proof.Physical.Bridge.Projection
 
 set_option autoImplicit false
 namespace IxCC.Cfg.Rc.Proof.Physical.Bridge.Scalar
+open IxCC.Rt.Rc
 open IxCC IxCC.Rt IxCC.Rt.Proof IxCC.Rt.Lower
 open IxCC.Rt.Rc.Procs
 open IxCC.Lir (Word)
@@ -19,7 +20,7 @@ theorem projection_sim {T : Tables} {f : Fir.FunId} {lp : Lir.Program} {ctx : Wo
     (hx : x < sup) (hy : ¬ D y)
     {P : AddressMap} {H H' : Own.Heap} {ρ : Own.Env} {ρl : Lir.Env} {mem : X86.Memory}
     (rest : List Lir.Frame) {v : Own.RVal}
-    (physical : HeapLive H P mem) (compatible : HeapCtorOk T H)
+    (physical : Gen.HeapLive H P mem) (compatible : HeapCtorOk T H)
     (hρ : EnvRel T P D sup ρ ρl)
     (hr : Own.evalRhs .rc (ownTables T) ρ H (.proj y c i) = .ok (v, H')) :
     H' = H ∧ ∃ after, Sem.Star (Lir.semStep lp)
@@ -104,7 +105,12 @@ theorem projection_sim {T : Tables} {f : Fir.FunId} {lp : Lir.Program} {ctx : Wo
     obtain ⟨_, address, mapped, hc⟩ := physical.cell ℓ rc mode b hcl
     have equal : w = address := Option.some.inj (hrel.symm.trans mapped)
     subst address
-    obtain ⟨w', represented, bytes⟩ := hc.fields i v hv
+    have scannedField : i < b.ctor.nobj := by
+      have := hc.arity
+      have := (compatible ℓ rc mode b hcl).1.scanned
+      have := (List.getElem?_eq_some_iff.mp hv).1
+      omega
+    obtain ⟨w', represented, bytes⟩ := hc.scanned hv scannedField
     have hv' : ValRel T P v w' := ValRel.of_words represented
       ((compatible ℓ rc mode b hcl).2.2 v (List.mem_of_getElem? hv))
     have hload : Lir.Rhs.eval ρl mem ctx (.load .w64 .zero (Lower.mem y (fieldOffset i))) = some w' := by

@@ -168,15 +168,15 @@ theorem source_readback_region {table : List Lam.CtorInfo} {sig : Sig}
     (tree : SourceTree table sig ty logical source target)
     {H : Heap} {addresses : AddressMap} {mem : X86.Memory}
     {base bump limit : Lir.Word} {slots : List Slot} {regionBytes : Nat}
-    (heap : HeapLive H addresses mem)
-    (partition : ArenaPartition H addresses base bump limit slots)
+    (heap : Gen.HeapLive H addresses mem) (scanned : Scanned H)
+    (partition : Gen.ArenaPartition maxClass H addresses base bump limit slots)
     (ordered : Own.Rc.HeapOk H) (region : limit.toNat-base.toNat ≤ regionBytes)
     {v : RVal} {word : Lir.Word} (den : Own.Proof.Den H v logical)
     (represented : valueWord addresses v = some word) :
     Fir.obsV logical = some source ∧ Rt.readback sig (regionBytes/8) mem ty word = some target := by
   have observations := tree.observations
   refine ⟨observations.1, ?_⟩
-  rw [readback_region heap partition ordered region den (typed_of_tree _ den tree) represented]
+  rw [readback_region heap scanned partition ordered region den (typed_of_tree _ den tree) represented]
   exact observations.2
 
 

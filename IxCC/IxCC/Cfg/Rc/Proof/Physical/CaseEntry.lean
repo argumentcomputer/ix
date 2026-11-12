@@ -3,6 +3,7 @@ import IxCC.Cfg.Rc.Proof.Physical.ConsumedSwitch
 
 set_option autoImplicit false
 namespace IxCC.Cfg.Rc.Native
+open IxCC.Rt.Rc
 open Spec IxCC.Cfg.Rc.Proof.Physical.Bridge IxCC.Rt.Proof
 open IxCC.Rt.Rc.Procs
 
@@ -20,7 +21,7 @@ theorem case_entry {F : Fir.Program} {P : Program} {pairs : List (Nat × Cfg.Fun
       FusedDone (tablesOf P pairs) function block source)
     {value : Own.RVal} (lookup : ρ.get? x = some value) {fields : List Own.RVal}
     (constructor : value.asCtor (tablesOf P pairs).known heap = some (key, fields))
-    {mem : X86.Memory} (liveHeap : HeapLive heap addresses mem)
+    {mem : X86.Memory} (liveHeap : Gen.HeapLive heap addresses mem)
     (compatibleHeap : HeapCtorOk (tablesOf P pairs) heap)
     (running : target.dsts = []) (context : Lir.Word) (callers : List Lir.Frame) :
     (∃ after final cost,

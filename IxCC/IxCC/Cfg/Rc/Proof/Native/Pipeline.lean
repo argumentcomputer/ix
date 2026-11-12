@@ -34,8 +34,8 @@ def wrappers (l : Layout) : List Lir.Func :=
     l.ctors.zipIdx.map (fun (c, i) => allocationWrapper (l.allocProc i) c.arity)
 
 def procedures (l : Layout) : List Lir.Func :=
-  [Rt.Rc.Procs.inc, Rt.Rc.Procs.dec] ++
-    l.ctors.map (fun c => Rt.Rc.Procs.alloc c.arity c.tag)
+  [Rt.Rc.Procs.inc, Rt.Rc.Gen.dec] ++
+    l.ctors.map (fun c => Rt.Rc.Gen.alloc (Rt.Rc.CellLayout.ofFields c.arity c.tag))
 
 def rawProgram (l : Layout) (funcs : List Lir.Func) (main : Nat) : Lir.Program :=
   { funcs := (funcs ++ wrappers l ++ procedures l ++
@@ -49,7 +49,7 @@ theorem lower_parts {config : Rt.Config} {F : Fir.Program}
       checkProgram F bodies P = true ∧
       Rt.checkSwitches P.base = .ok () ∧
       P.base.exports.head? = some main ∧
-      (layoutOf P).ctors.all (fun c => decide (c.arity ≤ 31 ∧ c.tag ≤ Rt.maxTag)) = true ∧
+      (layoutOf P).ctors.all (fun c => (Rt.Rc.CellLayout.ofFields c.arity c.tag).ok) = true ∧
       consumeAll P = .ok pairs ∧
       Rt.Lower.functions (tablesOf P pairs) (consumed P pairs) (rootsOf config P)
         (List.range P.base.size) = .ok funcs ∧
@@ -63,8 +63,8 @@ theorem lower_parts {config : Rt.Config} {F : Fir.Program}
     unless checkProgram F bodies P do throw "unchecked RC Cfg candidate"
     (Rt.checkSwitches P.base).mapError Rt.SwitchError.render
     let some main := P.base.exports.head? | throw "no exports"
-    unless (layoutOf P).ctors.all (fun c => decide (c.arity ≤ 31 ∧ c.tag ≤ Rt.maxTag)) do
-      throw "constructor table exceeds first RC layout fragment"
+    unless (layoutOf P).ctors.all (fun c => (Rt.Rc.CellLayout.ofFields c.arity c.tag).ok) do
+      throw "constructor table has a layout the counted heap does not allocate"
     let pairs ← consumeAll P
     let funcs ← (Rt.Lower.functions (tablesOf P pairs) (consumed P pairs)
       (rootsOf config P) (List.range P.base.size)).mapError Rt.Error.render
@@ -89,7 +89,7 @@ theorem lower_parts {config : Rt.Config} {F : Fir.Program}
       | none => rw [hm] at accepted; cases accepted
       | some main =>
         simp only [hm] at accepted
-        cases hl : (layoutOf P).ctors.all (fun c => decide (c.arity ≤ 31 ∧ c.tag ≤ Rt.maxTag)) with
+        cases hl : (layoutOf P).ctors.all (fun c => (Rt.Rc.CellLayout.ofFields c.arity c.tag).ok) with
         | false =>
           simp only [hl, Bool.false_eq_true, ↓reduceIte, throw, throwThe,
             MonadExceptOf.throw, bind, Except.bind] at accepted

@@ -30,13 +30,12 @@ theorem unique_immediate (mem : X86.Memory) (context word : Word) (clock : Nat)
     (htag : word &&& 1 = 1) :
     eval uniqueProgram clock [word] mem context = .ok ([0], mem) := by
   let e0 : Env := ({} : Env).insert 0 word
-  have h0 : e0[0]? = some word := by simp [e0]
   have hb : Cond.holds .tnz .w64 word 1 = true := by simp [Cond.holds, htag]
   apply (runs_eval (unique_initial mem context word)).eq
   apply Sem.Reaches.free (s' := uniqueState mem context e0 3 0)
   · apply semStep_next.mpr
     simp [step, uniqueProgram, uniqueState, isUnique, v, i, to, Arg.eval, evalArgs, takeEdge,
-      bindParams, h0, hb, e0]
+      bindParams, hb, e0]
   apply Sem.Reaches.final
   have done : semStep uniqueProgram (uniqueState mem context e0 3 0) = .done ([0], mem) := by
     apply semStep_done.mpr
@@ -58,7 +57,7 @@ theorem unique_cell {addresses : AddressMap} {mem : X86.Memory} {address : Word}
   apply Sem.Reaches.free (s' := uniqueState mem context e0 1 0)
   · apply semStep_next.mpr
     simp [step, uniqueProgram, uniqueState, isUnique, v, i, to, Arg.eval, evalArgs, takeEdge,
-      bindParams, h0, cell.pointer_branch, e0]
+      bindParams, cell.pointer_branch, e0]
   apply Sem.Reaches.free (s' := uniqueState mem context e1 1 1)
   · apply semStep_next.mpr
     simp [step, uniqueProgram, uniqueState, isUnique, cellAddr, Stmt.exec, Rhs.eval, Addr.eval,
@@ -74,7 +73,7 @@ theorem unique_cell {addresses : AddressMap} {mem : X86.Memory} {address : Word}
     have done : semStep uniqueProgram (uniqueState mem context e1 2 0) = .done ([1], mem) := by
       apply semStep_done.mpr
       simp [step, uniqueProgram, uniqueState, isUnique, i, evalArgs, Arg.eval]
-    rw [done, if_pos hr]
+    rw [done, show (if refs = 1 then (1 : Word) else 0) = 1 from by simp [hr]]
     exact .done
   · have hs : 1 < refs := by have := cell.positive; omega
     have hz := cell.shared_branch hs
@@ -86,7 +85,7 @@ theorem unique_cell {addresses : AddressMap} {mem : X86.Memory} {address : Word}
     have done : semStep uniqueProgram (uniqueState mem context e1 3 0) = .done ([0], mem) := by
       apply semStep_done.mpr
       simp [step, uniqueProgram, uniqueState, isUnique, i, evalArgs, Arg.eval]
-    rw [done, if_neg hr]
+    rw [done, show (if refs = 1 then (1 : Word) else 0) = 0 from by simp [hr]]
     exact .done
 
 /-- The uniqueness test at a release cutpoint with no current value and no suspended cursor:

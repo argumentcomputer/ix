@@ -3,6 +3,7 @@ import IxCC.Cfg.Rc.Proof.Physical.Bridge.FusedWords
 
 set_option autoImplicit false
 namespace IxCC.Cfg.Rc.Proof.Physical.Bridge
+open IxCC.Rt.Rc
 open IxCC IxCC.Own IxCC.Own.Rc
 open IxCC.Rt.Rc.Procs IxCC.Cfg.Rc.Native
 
@@ -14,8 +15,8 @@ theorem fused_projection_step
     (before : Tokens H external held live ρf ρo roots)
     {y location refs : Nat} {body : Own.Body}
     (lookup : ρo.get? y = some (.loc location))
-    (cell : H.cell? location = some (.live refs .dyn body))
-    {addresses : AddressMap} {mem : X86.Memory} (heapLive : HeapLive H addresses mem)
+    (cell : H.cell? location = some (.live refs .dyn body)) (scanned : body.ctor.nscalar = 0)
+    {addresses : AddressMap} {mem : X86.Memory} (heapLive : Gen.HeapLive H addresses mem)
     {P : Lir.Program} {caller : Lir.Frame} {callers : List Lir.Frame}
     {function : Lir.Func} {block : Lir.Block} {bound : Nat} {D : Nat → Prop}
     (registers : FusedWords addresses D bound ρo caller.env) (liveParent : ¬ D y)
@@ -39,7 +40,11 @@ theorem fused_projection_step
   obtain ⟨parentWord, parentRep, parentRegister⟩ := registers.word lookup liveParent
   have equal : parentWord = address := Option.some.inj (parentRep.symm.trans placed)
   subst parentWord
-  obtain ⟨word, represented, bytes⟩ := physical.fields i value field
+  have scannedField : i < body.ctor.nobj := by
+    have := physical.arity
+    have := (List.getElem?_eq_some_iff.mp field).1
+    omega
+  obtain ⟨word, represented, bytes⟩ := physical.scanned field scannedField
   have load : Lir.Rhs.eval caller.env mem context
       (.load .w64 .zero (Rt.Lower.mem y ((8+8*i : Nat) : Int))) = some word := by
     have addressEval : Lir.Addr.eval caller.env context (Rt.Lower.mem y ((8+8*i : Nat) : Int)) =

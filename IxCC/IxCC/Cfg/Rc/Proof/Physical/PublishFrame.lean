@@ -1,8 +1,9 @@
 import IxCC.Cfg.Rc.Proof.Physical.PublishMemory
-import IxCC.Rt.Rc.Proof.ObjectFrame
+import IxCC.Rt.Rc.Gen.Proof.ObjectFrame
 
 set_option autoImplicit false
 namespace IxCC.Cfg.Rc.Native
+open IxCC.Rt.Rc
 open IxCC.Lir
 open IxCC.Rt.Proof
 open IxCC.Rt.Rc.Procs

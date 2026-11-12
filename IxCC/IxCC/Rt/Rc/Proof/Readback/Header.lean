@@ -1,4 +1,4 @@
-import IxCC.Rt.Rc.Proof.LiveMemory
+import IxCC.Rt.Rc.Gen.Proof.LiveMemory
 import IxCC.Rt.Rc.Readback
 
 set_option autoImplicit false
@@ -34,28 +34,31 @@ theorem halves_word {lo hi : Word} (hlo : lo.toNat < 2^32) (hhi : hi.toNat < 2^3
     Nat.mul_comm hi.toNat (2^32), ← Nat.two_pow_add_eq_or_of_lt hlo]
   omega
 
+/-- Every live cell of the heap is fully scanned (no scalar word). Compiled programs hold only such
+cells until scalar fields are produced (DR2); the bounded route's invariant carried this per cell. -/
+def Scanned (H : Own.Heap) : Prop :=
+  ∀ location refs mode body, H.cell? location = some (.live refs mode body) → body.ctor.nscalar = 0
+
 theorem live_header {addresses : AddressMap} {mem : X86.Memory} {address : Word}
-    {refs : Nat} {body : Own.Body} (h : LiveCell addresses mem address refs body) :
-    mem.read64? address = .ok (dynamicHeader body.fields.length
-      (smallClass body.fields.length) body.ctor.tag refs) := by
-  have hn := h.fields_small
-  have ht := h.tag
+    {refs : Nat} {body : Own.Body} (h : Gen.LiveCell addresses mem address refs body) :
+    mem.read64? address = .ok (dynamicHeader body.ctor.nobj
+      (Gen.classOf body.ctor) body.ctor.tag refs) := by
+  obtain ⟨hcls, hn, ht⟩ := Gen.classOf_lt h.layout
   have hc := h.bounded
-  unfold maxTag at ht
   unfold maxCount at hc
-  have hlo : headerLow body.fields.length (smallClass body.fields.length) body.ctor.tag < 2^32 := by
-    unfold headerLow smallClass
+  have hlo : headerLow body.ctor.nobj (Gen.classOf body.ctor) body.ctor.tag < 2^32 := by
+    unfold headerLow
     omega
   have hhi : refs-1 < 2^32 := by omega
-  have loNat : (UInt64.ofNat (headerLow body.fields.length
-      (smallClass body.fields.length) body.ctor.tag)).toNat =
-      headerLow body.fields.length (smallClass body.fields.length) body.ctor.tag := by
+  have loNat : (UInt64.ofNat (headerLow body.ctor.nobj
+      (Gen.classOf body.ctor) body.ctor.tag)).toNat =
+      headerLow body.ctor.nobj (Gen.classOf body.ctor) body.ctor.tag := by
     rw [UInt64.toNat_ofNat', Nat.mod_eq_of_lt (by omega)]
   have hiNat : (UInt64.ofNat (refs-1)).toNat = refs-1 := by
     rw [UInt64.toNat_ofNat', Nat.mod_eq_of_lt (by omega)]
   change mem.read? .w64 address = _
   rw [read?_ok (fun j hj => h.readable j (by
-    change j < 8 at hj; unfold cellBytes; omega)), read64_halves, h.header, h.count]
+    change j < 8 at hj; have := h.bytes; omega)), read64_halves, h.header, h.count]
   rw [halves_word (by rw [loNat]; exact hlo) (by rw [hiNat]; exact hhi), loNat, hiNat]
   rfl
 

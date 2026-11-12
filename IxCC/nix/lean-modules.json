@@ -431,6 +431,7 @@
    "imports":
    ["IxCC.Rt.Rc.Procs",
     "IxCC.Rt.Rc.Gen.Procs",
+    "IxCCTests.Rt.Rc.GenControls",
     "IxCC.Rt.Procs.Entry",
     "IxCC.Lir.SplitEdges",
     "IxCC.Lir.WellFormed",
@@ -751,6 +752,9 @@
     "IxCCTests.Pipeline.Levels",
     "IxCCTests.Pipeline.Twin",
     "IxCCTests.Pipeline.Defun"]},
+  "IxCCTests.Pipeline.Rc.Wide":
+  {"path": "IxCCTests/Pipeline/Rc/Wide.lean",
+   "imports": ["IxCCTests.Pipeline.Rc.Support", "IxCCTests.Exe.Support"]},
   "IxCCTests.Pipeline.Rc.Support":
   {"path": "IxCCTests/Pipeline/Rc/Support.lean",
    "imports":
@@ -764,7 +768,8 @@
    "imports":
    ["IxCCTests.Pipeline.Rc.Levels",
     "IxCCTests.Pipeline.Rc.Counters",
-    "IxCCTests.Pipeline.Rc.NegativeIO"]},
+    "IxCCTests.Pipeline.Rc.NegativeIO",
+    "IxCCTests.Pipeline.Rc.Wide"]},
   "IxCCTests.Pipeline.Rc.NegativeIO":
   {"path": "IxCCTests/Pipeline/Rc/NegativeIO.lean",
    "imports":
@@ -1230,6 +1235,9 @@
   "IxCCTests.Fences.RtRcGen.IxCC_Rt_Rc_Gen_Proof_SharedInvariant":
   {"path": "IxCCTests/Fences/RtRcGen/IxCC_Rt_Rc_Gen_Proof_SharedInvariant.lean",
    "imports": ["IxCC.Rt.Rc.Gen.Proof.SharedInvariant"]},
+  "IxCCTests.Fences.RtRcGen.IxCC_Rt_Rc_Gen_Proof_Scanned":
+  {"path": "IxCCTests/Fences/RtRcGen/IxCC_Rt_Rc_Gen_Proof_Scanned.lean",
+   "imports": ["IxCC.Rt.Rc.Gen.Proof.Scanned"]},
   "IxCCTests.Fences.RtRcGen.IxCC_Rt_Rc_Gen_Proof_ResumeStep":
   {"path": "IxCCTests/Fences/RtRcGen/IxCC_Rt_Rc_Gen_Proof_ResumeStep.lean",
    "imports": ["IxCC.Rt.Rc.Gen.Proof.ResumeStep"]},
@@ -1614,6 +1622,7 @@
     "IxCCTests.Fences.RtRcGen.IxCC_Rt_Rc_Gen_Proof_ReservePartition",
     "IxCCTests.Fences.RtRcGen.IxCC_Rt_Rc_Gen_Proof_Resume",
     "IxCCTests.Fences.RtRcGen.IxCC_Rt_Rc_Gen_Proof_ResumeStep",
+    "IxCCTests.Fences.RtRcGen.IxCC_Rt_Rc_Gen_Proof_Scanned",
     "IxCCTests.Fences.RtRcGen.IxCC_Rt_Rc_Gen_Proof_SharedInvariant",
     "IxCCTests.Fences.RtRcGen.IxCC_Rt_Rc_Gen_Proof_SharedStep",
     "IxCCTests.Fences.RtRcGen.IxCC_Rt_Rc_Gen_Proof_UniqueDispatch",
@@ -5323,19 +5332,20 @@
     "IxCC.Rt.Rc.Proof.Readback.Structural"]},
   "IxCC.Rt.Rc.Proof.Readback.Initial":
   {"path": "IxCC/Rt/Rc/Proof/Readback/Initial.lean",
-   "imports": ["IxCC.Rt.Rc.Proof.InitReady"]},
+   "imports": ["IxCC.Rt.Rc.Gen.Proof.InitReady"]},
   "IxCC.Rt.Rc.Proof.Readback.Header":
   {"path": "IxCC/Rt/Rc/Proof/Readback/Header.lean",
-   "imports": ["IxCC.Rt.Rc.Proof.LiveMemory", "IxCC.Rt.Rc.Readback"]},
+   "imports": ["IxCC.Rt.Rc.Gen.Proof.LiveMemory", "IxCC.Rt.Rc.Readback"]},
   "IxCC.Rt.Rc.Proof.Readback.Fuel":
   {"path": "IxCC/Rt/Rc/Proof/Readback/Fuel.lean",
    "imports":
-   ["IxCC.Rt.Rc.Proof.LiveMemory",
+   ["IxCC.Rt.Rc.Gen.Proof.LiveMemory",
     "IxCC.Own.Rc.Proof.Shape",
     "IxCC.Own.Plain.Proof.Values"]},
   "IxCC.Rt.Rc.Proof.Readback.Capacity":
   {"path": "IxCC/Rt/Rc/Proof/Readback/Capacity.lean",
-   "imports": ["IxCC.Rt.Rc.Proof.Readback.Fuel"]},
+   "imports":
+   ["IxCC.Rt.Rc.Proof.Readback.Fuel", "IxCC.Rt.Rc.Gen.Proof.Scanned"]},
   "IxCC.Rt.Rc.Proof.ProtectedOps":
   {"path": "IxCC/Rt/Rc/Proof/ProtectedOps.lean",
    "imports": ["IxCC.Rt.Rc.Proof.ProtectedFrame"]},
@@ -5735,6 +5745,9 @@
     "IxCC.Rt.Rc.Gen.Proof.PartitionCount",
     "IxCC.Rt.Rc.Gen.Proof.CountFree",
     "IxCC.Rt.Rc.Gen.Proof.RecycleFrames"]},
+  "IxCC.Rt.Rc.Gen.Proof.Scanned":
+  {"path": "IxCC/Rt/Rc/Gen/Proof/Scanned.lean",
+   "imports": ["IxCC.Rt.Rc.Gen.Proof.LiveMemory"]},
   "IxCC.Rt.Rc.Gen.Proof.ResumeStep":
   {"path": "IxCC/Rt/Rc/Gen/Proof/ResumeStep.lean",
    "imports":
@@ -6395,8 +6408,8 @@
    "imports":
    ["IxCC.Cfg.Rc.Proof.Native.Activation",
     "IxCC.Cfg.Rc.Proof.Physical.NativeMarkers",
-    "IxCC.Rt.Rc.Proof.FrameReleaseCaller",
-    "IxCC.Rt.Rc.Proof.AllocatorMetadata",
+    "IxCC.Rt.Rc.Gen.Proof.FrameReleaseCaller",
+    "IxCC.Rt.Rc.Gen.Proof.AllocatorMetadata",
     "IxCC.Own.Rc.Proof.LeakFreedom",
     "IxCC.Lir.Proof.Run"]},
   "IxCC.Recheck.Rc.Proof.ReleaseBackend":
@@ -7417,17 +7430,23 @@
   {"path": "IxCC/Cfg/Rc/Proof/Physical/ReservedReady.lean",
    "imports":
    ["IxCC.Cfg.Rc.Proof.Physical.ReservedHeader",
-    "IxCC.Rt.Rc.Proof.AllocatorAccess"]},
+    "IxCC.Rt.Rc.Gen.Proof.AllocatorAccess",
+    "IxCC.Rt.Rc.Gen.Proof.Scanned"]},
   "IxCC.Cfg.Rc.Proof.Physical.ReservedHeader":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/ReservedHeader.lean",
    "imports":
-   ["IxCC.Cfg.Rc.Proof.Physical.Reserved", "IxCC.Rt.Rc.Proof.CountPreserve"]},
+   ["IxCC.Cfg.Rc.Proof.Physical.Reserved",
+    "IxCC.Rt.Rc.Gen.Proof.CountPreserve",
+    "IxCC.Rt.Rc.Gen.Proof.Scanned"]},
   "IxCC.Cfg.Rc.Proof.Physical.Reserved":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/Reserved.lean",
-   "imports": ["IxCC.Cfg.Rc.Proof.Physical.PublishFrame"]},
+   "imports":
+   ["IxCC.Cfg.Rc.Proof.Physical.PublishFrame", "IxCC.Rt.Rc.Gen.Proof.Scanned"]},
   "IxCC.Cfg.Rc.Proof.Physical.ReserveStorage":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/ReserveStorage.lean",
-   "imports": ["IxCC.Cfg.Rc.Proof.Physical.ReservedHeader"]},
+   "imports":
+   ["IxCC.Cfg.Rc.Proof.Physical.ReservedHeader",
+    "IxCC.Rt.Rc.Gen.Proof.Scanned"]},
   "IxCC.Cfg.Rc.Proof.Physical.PublishMemory":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/PublishMemory.lean",
    "imports": ["IxCC.Cfg.Rc.Proof.Physical.Publish"]},
@@ -7435,7 +7454,7 @@
   {"path": "IxCC/Cfg/Rc/Proof/Physical/PublishFrame.lean",
    "imports":
    ["IxCC.Cfg.Rc.Proof.Physical.PublishMemory",
-    "IxCC.Rt.Rc.Proof.ObjectFrame"]},
+    "IxCC.Rt.Rc.Gen.Proof.ObjectFrame"]},
   "IxCC.Cfg.Rc.Proof.Physical.Publish":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/Publish.lean",
    "imports":
@@ -7446,7 +7465,7 @@
   "IxCC.Cfg.Rc.Proof.Physical.PublicationTokens":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/PublicationTokens.lean",
    "imports":
-   ["IxCC.Rt.Rc.Proof.ReleaseInvariant", "IxCC.Own.Rc.Proof.Allocation"]},
+   ["IxCC.Rt.Rc.Gen.Proof.ReleaseInvariant", "IxCC.Own.Rc.Proof.Allocation"]},
   "IxCC.Cfg.Rc.Proof.Physical.PublicationRegisters":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/PublicationRegisters.lean",
    "imports":
@@ -7456,38 +7475,45 @@
    "imports":
    ["IxCC.Cfg.Rc.Proof.Physical.PublicationInvariant",
     "IxCC.Cfg.Rc.Proof.Physical.PublicationMetadata",
-    "IxCC.Rt.Rc.Proof.AllocatorMetadata"]},
+    "IxCC.Rt.Rc.Gen.Proof.AllocatorMetadata",
+    "IxCC.Rt.Rc.Gen.Proof.Scanned"]},
   "IxCC.Cfg.Rc.Proof.Physical.PublicationMetadata":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/PublicationMetadata.lean",
    "imports":
    ["IxCC.Cfg.Rc.Proof.Physical.PublicationFrames",
-    "IxCC.Rt.Rc.Proof.ProtectedMetadata"]},
+    "IxCC.Rt.Rc.Gen.Proof.ProtectedMetadata",
+    "IxCC.Rt.Rc.Gen.Proof.Scanned"]},
   "IxCC.Cfg.Rc.Proof.Physical.PublicationLive":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/PublicationLive.lean",
    "imports":
    ["IxCC.Cfg.Rc.Proof.Physical.PublicationFrames",
     "IxCC.Cfg.Rc.Proof.Physical.PublicationTokens",
-    "IxCC.Cfg.Rc.Proof.Physical.Reserved"]},
+    "IxCC.Cfg.Rc.Proof.Physical.Reserved",
+    "IxCC.Rt.Rc.Gen.Proof.Scanned"]},
   "IxCC.Cfg.Rc.Proof.Physical.PublicationKinds":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/PublicationKinds.lean",
    "imports":
    ["IxCC.Cfg.Rc.Proof.Physical.SlotPromotion",
-    "IxCC.Rt.Rc.Proof.ReleaseInvariant"]},
+    "IxCC.Rt.Rc.Gen.Proof.ReleaseInvariant"]},
   "IxCC.Cfg.Rc.Proof.Physical.PublicationInvariant":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/PublicationInvariant.lean",
    "imports":
    ["IxCC.Cfg.Rc.Proof.Physical.PublicationFree",
     "IxCC.Cfg.Rc.Proof.Physical.PublicationKinds",
-    "IxCC.Cfg.Rc.Proof.Physical.PublicationLive"]},
+    "IxCC.Cfg.Rc.Proof.Physical.PublicationLive",
+    "IxCC.Rt.Rc.Gen.Proof.Scanned"]},
   "IxCC.Cfg.Rc.Proof.Physical.PublicationFree":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/PublicationFree.lean",
-   "imports": ["IxCC.Cfg.Rc.Proof.Physical.PublicationFrames"]},
+   "imports":
+   ["IxCC.Cfg.Rc.Proof.Physical.PublicationFrames",
+    "IxCC.Rt.Rc.Gen.Proof.Scanned"]},
   "IxCC.Cfg.Rc.Proof.Physical.PublicationFrames":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/PublicationFrames.lean",
    "imports":
    ["IxCC.Cfg.Rc.Proof.Physical.SlotPromotion",
     "IxCC.Cfg.Rc.Proof.Physical.PublishFrame",
-    "IxCC.Rt.Rc.Proof.ReleaseInvariant"]},
+    "IxCC.Rt.Rc.Gen.Proof.ReleaseInvariant",
+    "IxCC.Rt.Rc.Gen.Proof.Scanned"]},
   "IxCC.Cfg.Rc.Proof.Physical.PublicRoot":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/PublicRoot.lean",
    "imports": ["IxCC.Cfg.Rc.Proof.Physical.PublicEval"]},
@@ -7511,7 +7537,7 @@
   "IxCC.Cfg.Rc.Proof.Physical.Placement":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/Placement.lean",
    "imports":
-   ["IxCC.Rt.Rc.Proof.LiveMemory",
+   ["IxCC.Rt.Rc.Gen.Proof.LiveMemory",
     "IxCC.Own.Plain.Proof.Bounds",
     "IxCC.Lir.Proof.Steps"]},
   "IxCC.Cfg.Rc.Proof.Physical.NumericInputs":
@@ -7562,7 +7588,7 @@
   {"path": "IxCC/Cfg/Rc/Proof/Physical/IncWrapper.lean",
    "imports":
    ["IxCC.Cfg.Rc.Proof.Physical.NativeMarkers",
-    "IxCC.Rt.Rc.Proof.IncrementCaller"]},
+    "IxCC.Rt.Rc.Gen.Proof.IncrementCaller"]},
   "IxCC.Cfg.Rc.Proof.Physical.HeapPlacement":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/HeapPlacement.lean",
    "imports": ["IxCC.Cfg.Rc.Proof.Physical.Placement"]},
@@ -7646,7 +7672,7 @@
   {"path": "IxCC/Cfg/Rc/Proof/Physical/DecWrapper.lean",
    "imports":
    ["IxCC.Cfg.Rc.Proof.Physical.NativeMarkers",
-    "IxCC.Rt.Rc.Proof.ReleaseCaller"]},
+    "IxCC.Rt.Rc.Gen.Proof.FrameReleaseCaller"]},
   "IxCC.Cfg.Rc.Proof.Physical.CtorActions":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/CtorActions.lean",
    "imports":
@@ -7736,7 +7762,9 @@
   "IxCC.Cfg.Rc.Proof.Physical.BumpWrapper":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/BumpWrapper.lean",
    "imports":
-   ["IxCC.Cfg.Rc.Proof.Physical.AllocWrapper", "IxCC.Rt.Rc.Proof.AllocBump"]},
+   ["IxCC.Cfg.Rc.Proof.Physical.AllocWrapper",
+    "IxCC.Rt.Rc.Gen.Proof.AllocBump",
+    "IxCC.Rt.Rc.Gen.Proof.Scanned"]},
   "IxCC.Cfg.Rc.Proof.Physical.Bridge.Tokens":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/Bridge/Tokens.lean",
    "imports":
@@ -7844,7 +7872,7 @@
   {"path": "IxCC/Cfg/Rc/Proof/Physical/Bridge/ReadyTokens.lean",
    "imports":
    ["IxCC.Cfg.Rc.Proof.Physical.Bridge.IncrementTokens",
-    "IxCC.Rt.Rc.Proof.ReadyOperations"]},
+    "IxCC.Rt.Rc.Gen.Proof.ReadyOperations"]},
   "IxCC.Cfg.Rc.Proof.Physical.Bridge.ReadyInstructions":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/Bridge/ReadyInstructions.lean",
    "imports":
@@ -7905,7 +7933,7 @@
   {"path": "IxCC/Cfg/Rc/Proof/Physical/Bridge/Projection.lean",
    "imports":
    ["IxCC.Cfg.Rc.Proof.Physical.Bridge.Tokens",
-    "IxCC.Rt.Rc.Proof.ReleaseInvariant",
+    "IxCC.Rt.Rc.Gen.Proof.ReleaseInvariant",
     "IxCC.Cfg.Rc.Proof.Physical.PublicationRegisters",
     "IxCC.Rt.Lower"]},
   "IxCC.Cfg.Rc.Proof.Physical.Bridge.Instruction":
@@ -7921,7 +7949,7 @@
   {"path": "IxCC/Cfg/Rc/Proof/Physical/Bridge/IncrementTokens.lean",
    "imports":
    ["IxCC.Cfg.Rc.Proof.Physical.Bridge.Tokens",
-    "IxCC.Rt.Rc.Proof.IncrementCases"]},
+    "IxCC.Rt.Rc.Gen.Proof.IncrementCases"]},
   "IxCC.Cfg.Rc.Proof.Physical.Bridge.IncrementInstruction":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/Bridge/IncrementInstruction.lean",
    "imports": ["IxCC.Cfg.Rc.Proof.Physical.Bridge.IncrementCursor"]},
@@ -7985,7 +8013,7 @@
    "imports":
    ["IxCC.Cfg.Rc.Proof.Physical.Bridge.Decrement",
     "IxCC.Cfg.Rc.Proof.Physical.DecWrapper",
-    "IxCC.Rt.Rc.Proof.FrameReleaseCaller"]},
+    "IxCC.Rt.Rc.Gen.Proof.FrameReleaseCaller"]},
   "IxCC.Cfg.Rc.Proof.Physical.Bridge.FieldlessActivation":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/Bridge/FieldlessActivation.lean",
    "imports": ["IxCC.Cfg.Rc.Proof.Physical.Bridge.ScalarActivation"]},
@@ -7994,7 +8022,8 @@
    "imports": ["IxCC.Rt.Rc.Proof.TraceTransport"]},
   "IxCC.Cfg.Rc.Proof.Physical.Bridge.DynamicTag":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/Bridge/DynamicTag.lean",
-   "imports": ["IxCC.Rt.Rc.Proof.LiveHeader"]},
+   "imports":
+   ["IxCC.Rt.Rc.Gen.Proof.LiveHeader", "IxCC.Rt.Rc.Gen.Proof.Scanned"]},
   "IxCC.Cfg.Rc.Proof.Physical.Bridge.DynamicSwitch":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/Bridge/DynamicSwitch.lean",
    "imports":
@@ -8035,8 +8064,8 @@
   {"path": "IxCC/Cfg/Rc/Proof/Physical/Bridge/BorrowedIncrement.lean",
    "imports":
    ["IxCC.Cfg.Rc.Proof.Physical.Bridge.Projection",
-    "IxCC.Rt.Rc.Proof.ReadyOperations",
-    "IxCC.Rt.Rc.Proof.IncrementCases"]},
+    "IxCC.Rt.Rc.Gen.Proof.ReadyOperations",
+    "IxCC.Rt.Rc.Gen.Proof.IncrementCases"]},
   "IxCC.Cfg.Rc.Proof.Physical.Bridge.BorrowedCursor":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/Bridge/BorrowedCursor.lean",
    "imports":
@@ -8093,7 +8122,8 @@
   {"path": "IxCC/Cfg/Rc/Proof/Physical/AllocationOutcome.lean",
    "imports":
    ["IxCC.Cfg.Rc.Proof.Physical.AllocationAvailable",
-    "IxCC.Cfg.Rc.Proof.Physical.AllocationFailure"]},
+    "IxCC.Cfg.Rc.Proof.Physical.AllocationFailure",
+    "IxCC.Rt.Rc.Gen.Proof.Scanned"]},
   "IxCC.Cfg.Rc.Proof.Physical.AllocationInstruction":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/AllocationInstruction.lean",
    "imports":
@@ -8104,19 +8134,22 @@
    "imports":
    ["IxCC.Cfg.Rc.Proof.Physical.PublicationReady",
     "IxCC.Cfg.Rc.Proof.Physical.ReservedReady",
-    "IxCC.Rt.Rc.Proof.ReserveFree"]},
+    "IxCC.Rt.Rc.Gen.Proof.ReserveFree",
+    "IxCC.Rt.Rc.Gen.Proof.Scanned"]},
   "IxCC.Cfg.Rc.Proof.Physical.AllocationFreeComplete":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/AllocationFreeComplete.lean",
    "imports":
    ["IxCC.Cfg.Rc.Proof.Physical.AllocationFreeReady",
-    "IxCC.Cfg.Rc.Proof.Physical.AllocWrapper"]},
+    "IxCC.Cfg.Rc.Proof.Physical.AllocWrapper",
+    "IxCC.Rt.Rc.Gen.Proof.Scanned"]},
   "IxCC.Cfg.Rc.Proof.Physical.AllocationFailure":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/AllocationFailure.lean",
    "imports":
    ["IxCC.Cfg.Rc.Proof.Physical.AllocSteps",
     "IxCC.Cfg.Rc.Proof.Physical.AllocCaller",
     "IxCC.Cfg.Rc.Proof.Physical.Bridge.FailureTransport",
-    "IxCC.Rt.Rc.Proof.AllocFailure"]},
+    "IxCC.Rt.Rc.Gen.Proof.AllocFailure",
+    "IxCC.Rt.Rc.Gen.Proof.Scanned"]},
   "IxCC.Cfg.Rc.Proof.Physical.AllocationCursor":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/AllocationCursor.lean",
    "imports":
@@ -8134,17 +8167,20 @@
    "imports":
    ["IxCC.Cfg.Rc.Proof.Physical.PublicationReady",
     "IxCC.Cfg.Rc.Proof.Physical.ReservedReady",
-    "IxCC.Rt.Rc.Proof.ReserveBump"]},
+    "IxCC.Rt.Rc.Gen.Proof.ReserveBump",
+    "IxCC.Rt.Rc.Gen.Proof.Scanned"]},
   "IxCC.Cfg.Rc.Proof.Physical.AllocationBumpComplete":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/AllocationBumpComplete.lean",
    "imports":
    ["IxCC.Cfg.Rc.Proof.Physical.AllocationBumpReady",
-    "IxCC.Cfg.Rc.Proof.Physical.AllocWrapper"]},
+    "IxCC.Cfg.Rc.Proof.Physical.AllocWrapper",
+    "IxCC.Rt.Rc.Gen.Proof.Scanned"]},
   "IxCC.Cfg.Rc.Proof.Physical.AllocationAvailable":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/AllocationAvailable.lean",
    "imports":
    ["IxCC.Cfg.Rc.Proof.Physical.AllocationFreeComplete",
-    "IxCC.Cfg.Rc.Proof.Physical.AllocationBumpComplete"]},
+    "IxCC.Cfg.Rc.Proof.Physical.AllocationBumpComplete",
+    "IxCC.Rt.Rc.Gen.Proof.Scanned"]},
   "IxCC.Cfg.Rc.Proof.Physical.AllocationArguments":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/AllocationArguments.lean",
    "imports":
@@ -8163,14 +8199,17 @@
   {"path": "IxCC/Cfg/Rc/Proof/Physical/AllocWrapper.lean",
    "imports":
    ["IxCC.Cfg.Rc.Proof.Physical.AllocSteps",
-    "IxCC.Cfg.Rc.Proof.Physical.AllocCaller"]},
+    "IxCC.Cfg.Rc.Proof.Physical.AllocCaller",
+    "IxCC.Rt.Rc.Gen.Proof.Scanned"]},
   "IxCC.Cfg.Rc.Proof.Physical.AllocSteps":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/AllocSteps.lean",
    "imports": ["IxCC.Cfg.Rc.Proof.Physical.Publish"]},
   "IxCC.Cfg.Rc.Proof.Physical.AllocCaller":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/AllocCaller.lean",
    "imports":
-   ["IxCC.Rt.Rc.Proof.AllocFree", "IxCC.Rt.Rc.Proof.SuccessTransport"]},
+   ["IxCC.Rt.Rc.Gen.Proof.AllocFree",
+    "IxCC.Rt.Rc.Gen.Proof.Scanned",
+    "IxCC.Rt.Rc.Proof.SuccessTransport"]},
   "IxCC.Cfg.Rc.Proof.Physical.Admission":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/Admission.lean",
    "imports":
@@ -8285,7 +8324,7 @@
    "imports":
    ["IxCC.Cfg.Rc.Proof.Native.Allocation",
     "IxCC.Cfg.Rc.Proof.Physical.PublicationRegisters",
-    "IxCC.Rt.Rc.Proof.AllocatorReady",
+    "IxCC.Rt.Rc.Gen.Proof.AllocatorReady",
     "IxCC.Own.Plain.Semantics"]},
   "IxCC.Cfg.Rc.Proof.Native.EntryWords":
   {"path": "IxCC/Cfg/Rc/Proof/Native/EntryWords.lean",
@@ -8414,7 +8453,7 @@
   {"path": "IxCC/Cfg/Rc/Native.lean",
    "imports":
    ["IxCC.Cfg.Rc.Check",
-    "IxCC.Rt.Rc.Procs",
+    "IxCC.Rt.Rc.Gen.Procs",
     "IxCC.Rt.Lower",
     "IxCC.Rt.Switches",
     "IxCC.Lir.WellFormed"]},

@@ -1,13 +1,14 @@
 import IxCC.Cfg.Rc.Proof.Physical.SlotPromotion
-import IxCC.Rt.Rc.Proof.ReleaseInvariant
+import IxCC.Rt.Rc.Gen.Proof.ReleaseInvariant
 
 set_option autoImplicit false
 namespace IxCC.Cfg.Rc.Native
+open IxCC.Rt.Rc
 open IxCC.Lir
 open IxCC.Rt.Rc.Procs
 
 theorem publishSlot_free {heap : Own.Heap} {addresses : AddressMap} {base bump limit : Word}
-    {slots : List Slot} (partition : ArenaPartition heap addresses base bump limit slots)
+    {slots : List Slot} (partition : Gen.ArenaPartition maxClass heap addresses base bump limit slots)
     {chosen slot : Slot} (chosenMember : chosen ∈ slots) (reserved : chosen.kind = .reserved)
     (slotMember : slot ∈ slots) (fresh : Nat) :
     (publishSlot fresh chosen.address slot).kind = .free ↔ slot.kind = .free := by
@@ -18,7 +19,7 @@ theorem publishSlot_free {heap : Own.Heap} {addresses : AddressMap} {base bump l
   · simp [publishSlot, selected]
 
 theorem publishSlot_pending {heap : Own.Heap} {addresses : AddressMap} {base bump limit : Word}
-    {slots : List Slot} (partition : ArenaPartition heap addresses base bump limit slots)
+    {slots : List Slot} (partition : Gen.ArenaPartition maxClass heap addresses base bump limit slots)
     {chosen slot : Slot} (chosenMember : chosen ∈ slots) (reserved : chosen.kind = .reserved)
     (slotMember : slot ∈ slots) (fresh location : Nat) (suffix : List Own.RVal) (predecessor : Word) :
     (publishSlot fresh chosen.address slot).kind = .pending location suffix predecessor ↔
@@ -31,7 +32,7 @@ theorem publishSlot_pending {heap : Own.Heap} {addresses : AddressMap} {base bum
 
 theorem publication_free_exact {heap : Own.Heap} {addresses : AddressMap} {mem : X86.Memory}
     {external : Nat → Nat} {context base bump limit : Word} {slots : List Slot} {lists : Nat → List Word}
-    (idle : ReleaseInvariant heap addresses mem external none [] context base bump limit slots lists)
+    (idle : Gen.ReleaseInvariant maxClass heap addresses mem external none [] context base bump limit slots lists)
     {chosen : Slot} (member : chosen ∈ slots) (reserved : chosen.kind = .reserved) (fresh : Nat) :
     ∀ slot ∈ publishSlots fresh chosen.address slots,
       slot.kind = .free ↔ slot.address ∈ lists slot.cls := by
@@ -42,7 +43,7 @@ theorem publication_free_exact {heap : Own.Heap} {addresses : AddressMap} {mem :
 
 theorem publication_free_placed {heap : Own.Heap} {addresses : AddressMap} {mem : X86.Memory}
     {external : Nat → Nat} {context base bump limit : Word} {slots : List Slot} {lists : Nat → List Word}
-    (idle : ReleaseInvariant heap addresses mem external none [] context base bump limit slots lists)
+    (idle : Gen.ReleaseInvariant maxClass heap addresses mem external none [] context base bump limit slots lists)
     {chosen : Slot} (member : chosen ∈ slots) (reserved : chosen.kind = .reserved) (fresh : Nat) :
     ∀ cls address, address ∈ lists cls →
       ∃ slot ∈ publishSlots fresh chosen.address slots,

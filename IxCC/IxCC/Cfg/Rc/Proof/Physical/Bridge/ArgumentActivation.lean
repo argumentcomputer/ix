@@ -5,6 +5,7 @@ import IxCC.Cfg.Rc.Proof.Physical.PrefixHeap
 
 set_option autoImplicit false
 namespace IxCC.Cfg.Rc.Proof.Physical.Bridge.Scalar
+open IxCC.Rt.Rc
 open IxCC IxCC.Cfg.Rc IxCC.Cfg.Rc.Native
 open IxCC.Cfg.Rc.Native.Spec IxCC.Rt.Rc.Procs
 
@@ -63,7 +64,7 @@ theorem argument_activation {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Cod
           (Own.Plain.nextImm imm x (.arg arg))))) := before.layout
   obtain ⟨first, bindingTail, prefixHead, atBind, absent⟩ :=
     checked_prefix_cursor checked prefixAt sourceLookup before.frame.words
-  have ready : AllocatorReady H addresses mem (Own.Rc.holdRoots external (roots ++ []))
+  have ready : Gen.AllocatorReady maxClass H addresses mem (Own.Rc.holdRoots external (roots ++ []))
       context base bump limit slots lists := by simpa using heap.ready
   rcases copy_heapArgs_prefix functions main [arg] before.frame.cursor prefixHead before.frame.lookup tokens
       (ImmEnv.sub before.canonical.immOk sub) argsScope ready before.frame.words absent

@@ -6,6 +6,7 @@ import IxCC.Recheck.Rc.View
 
 set_option autoImplicit false
 namespace IxCC.Recheck.RcReplay
+open IxCC.Rt.Rc
 open IxCC.Sem (Lang Sim)
 open IxCC.Rt.Rc.Procs
 open IxCC.Rt.Rc.Procs.Readback
@@ -75,15 +76,15 @@ theorem SourceWitness.readback {A : Anf.Program} {source target : Sem.Obs}
     (viewed : treeView A.ctors sig ty source = some target)
     {addresses : AddressMap} {mem : X86.Memory} {base bump limit : Lir.Word}
     {slots : List Slot} {regionBytes : Nat}
-    (heap : HeapLive H addresses mem)
-    (partition : ArenaPartition H addresses base bump limit slots)
+    (heap : Gen.HeapLive H addresses mem) (scanned : Readback.Scanned H)
+    (partition : Gen.ArenaPartition maxClass H addresses base bump limit slots)
     (ordered : Own.Rc.HeapOk H) (extent : limit.toNat-base.toNat ≤ regionBytes)
     {word : Lir.Word} (represented : valueWord addresses v = some word) :
     Rt.readback sig (regionBytes/8) mem ty word = some target := by
   obtain ⟨value, observed, logical, related, den⟩ := witness
   rcases related with related | ⟨unobserved, _⟩
   · exact viewed_readback_region related ((Fir.Proof.vr_obs related).symm.trans observed)
-      viewed heap partition ordered extent den represented
+      viewed heap scanned partition ordered extent den represented
   · rw [observed] at unobserved
     cases unobserved
 

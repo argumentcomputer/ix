@@ -1,6 +1,6 @@
 import IxCC.Cfg.Rc.Proof.Native.Allocation
 import IxCC.Cfg.Rc.Proof.Physical.PublicationRegisters
-import IxCC.Rt.Rc.Proof.AllocatorReady
+import IxCC.Rt.Rc.Gen.Proof.AllocatorReady
 import IxCC.Own.Plain.Semantics
 
 /-! The zero-field branch is an immediate value in both source and physical
@@ -8,6 +8,7 @@ semantics. It performs no allocation, changes no memory and consumes no heap
 reference count. Admission and the actual emitted assignment are explicit. -/
 set_option autoImplicit false
 namespace IxCC.Cfg.Rc.Native.Spec
+open IxCC.Rt.Rc
 open IxCC.Rt.Rc.Procs
 
 theorem consume_fieldless {P : Program} {l : Layout} {x : Nat}
@@ -84,9 +85,9 @@ theorem fieldless_registers {addresses : AddressMap} {bound x : Nat}
 theorem fieldless_ready {H : Own.Heap} {addresses : AddressMap} {mem : X86.Memory}
     {external : Nat → Nat} {context base bump limit : Lir.Word}
     {slots : List Slot} {lists : Nat → List Lir.Word}
-    (ready : AllocatorReady H addresses mem external context base bump limit slots lists)
+    (ready : Gen.AllocatorReady maxClass H addresses mem external context base bump limit slots lists)
     (c : Fir.CtorInfo) :
-    AllocatorReady H addresses mem (fun loc => external loc + Own.Rc.refsIn loc [.ctor0 c])
+    Gen.AllocatorReady maxClass H addresses mem (fun loc => external loc + Own.Rc.refsIn loc [.ctor0 c])
       context base bump limit slots lists := by
   simpa [Own.Rc.refsIn] using ready
 

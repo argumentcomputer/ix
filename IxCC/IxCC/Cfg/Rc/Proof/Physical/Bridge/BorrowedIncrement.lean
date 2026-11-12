@@ -1,9 +1,10 @@
 import IxCC.Cfg.Rc.Proof.Physical.Bridge.Projection
-import IxCC.Rt.Rc.Proof.ReadyOperations
-import IxCC.Rt.Rc.Proof.IncrementCases
+import IxCC.Rt.Rc.Gen.Proof.ReadyOperations
+import IxCC.Rt.Rc.Gen.Proof.IncrementCases
 
 set_option autoImplicit false
 namespace IxCC.Cfg.Rc.Proof.Physical.Bridge
+open IxCC.Rt.Rc
 open IxCC IxCC.Own IxCC.Own.Rc
 open IxCC.Rt.Rc.Procs
 
@@ -18,12 +19,12 @@ theorem borrowed_increment
     (cell : H.cell? parent = some (.live refs .dyn body)) (field : value ∈ body.fields)
     {addresses : AddressMap} {mem : X86.Memory} {context base bump limit : Lir.Word}
     {slots : List Slot} {lists : Nat → List Lir.Word}
-    (ready : AllocatorReady H addresses mem (holdRoots external roots)
+    (ready : Gen.AllocatorReady maxClass H addresses mem (holdRoots external roots)
       context base bump limit slots lists)
     {word : Lir.Word} (represented : valueWord addresses value = some word) :
     ∃ H', Own.Rc.inc H value 1 = some H' ∧ Balance H' external (value :: roots) ∧
       (∀ root, H.value? root = H'.value? root) ∧
-      ((∃ mem', AllocatorReady H' addresses mem' (holdRoots external (value :: roots))
+      ((∃ mem', Gen.AllocatorReady maxClass H' addresses mem' (holdRoots external (value :: roots))
           context base bump limit slots lists ∧
           Lir.eval incProgram 0 [word] mem context = .ok ([], mem')) ∨
         Lir.eval incProgram 0 [word] mem context = .resource .heap) := by
@@ -46,10 +47,10 @@ theorem borrowed_increment
       exact .inl ⟨_, restored, result⟩
     · have maxed : childRefs = Rt.Rc.maxCount := by have bounded := physical.bounded; omega
       subst childRefs
-      exact .inr (increment_max_failure ready.idle child placement)
+      exact .inr (Gen.increment_max_failure ready.idle child placement)
   · have immediate : ∀ location, value ≠ .loc location := fun location equal =>
       isLocation ⟨location, equal⟩
-    obtain ⟨effect, _, result⟩ := increment_immediate_entry ready.idle immediate word represented
+    obtain ⟨effect, _, result⟩ := Gen.increment_immediate_entry ready.idle immediate word represented
     have equal : H = H' := Option.some.inj (effect.symm.trans incremented)
     have unchanged : holdRoots external (value :: roots) = holdRoots external roots := by
       funext location
