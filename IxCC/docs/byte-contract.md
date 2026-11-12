@@ -40,9 +40,10 @@ An `.ixe` environment, as `ix compile` writes it (`Ixon.Env.putEnv`,
 | §4–§6 metadata | names, named entries, commitments | present | present |
 
 The role-bound envelope is the unbound one with the binding inserted after
-the assumptions; nothing else differs. `ix compile` writes it by default;
-`ix compile --unbound` writes the unbound one, which no committed fixture
-uses any more (a bridge, to be removed).
+the assumptions; nothing else differs. `ix compile` writes it, and only it,
+as on `main`. The only committed unbound closures are the resource-validation
+API's two handoff vectors, copies of ix's fixture package written by ix's own
+generator ([corpus guide](corpus.md#refreezing)).
 
 ### What identifies it
 
@@ -257,8 +258,8 @@ soundness theorems state both (`verifyBytes_immortal_sound`,
   artifact under its own table and prelude; premise (i) is about the closure
   of the seeds under the IxVM claim's table and the committed prelude
   ([kernel front end](kernel-front-end-design.md#acceptance)).
-- **The unbound bridge.** `ix compile --unbound` stays until it is removed
-  (it has no IxCC user since the role-bound refreeze). IxCC's decoder still reads the
+- **The unbound envelope.** `ix compile` no longer writes it (its bridge flag
+  bridge was removed after the role-bound refreeze). IxCC's decoder still reads the
   unbound envelope (the resource-validation API's handoff vectors are
   unbound), and every compile path refuses it at ingress; its tests write it
   from a role-bound closure (`IxCCTests/Support/Envelope.lean`).
