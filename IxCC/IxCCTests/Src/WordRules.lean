@@ -12,9 +12,9 @@ import IxCCTests.Src.Steps
   the table) are values SrcEval cannot tell apart: two towers of one width with one number, or one
   literal. Every case of the harness, not a sample.
 * **The table**: with words enabled, the front end makes every primitive operation the root
-  reaches a `word` entry (the producer finds each stored equation and `checkWord` accepts it);
-  with words off, none. Erasure declines a word entry (`erase-word`) until the lowering
-  exists.
+  reaches a `word` entry (the sidecar's `theorems` list names each stored equation and
+  `checkWord` accepts it; `proposals` checks that nothing else makes one); with words off, none.
+  Erasure declines a word entry (`erase-word`) until the lowering exists.
 * **Runs**: every root on every operation and boundary pair returns the same value with words on
   and off, that value is `WordOp.eval`'s (which `Words` compares with Lean's C implementations),
   and the run with words on makes fewer SrcEval steps than the reference bodies. -/
@@ -92,6 +92,56 @@ def opNumber : WordOp → Width → Option Nat
     (others.idxOf? t).map (15 + ·)
   | _, _ => none
 
+/-- The word entries of a table. -/
+def wordEntries (p : Program) (t : Table) : List (CId × Width × WordOp × CId) :=
+  (List.range p.size).filterMap fun c =>
+    match t.resolveOf c with
+    | some (.word w op thm) => some (c, w, op, thm)
+    | _ => none
+
+/-- **Where a word entry comes from: the sidecar's `theorems` list** (kind `word`), never a search
+of the closure. The fixture's sidecar names every primitive operation of every width with its
+theorem (68); with them the table has 68 word entries, without them none (and a diagnostic per
+pinned operation); a proposal whose theorem is another operation's, or whose subject is not a
+pinned word operation, is refused with a diagnostic; the reader refuses an unknown kind. -/
+def proposals (a : Assert) (p : Program) (props : Array Proposal) : IO Unit := do
+  let words := props.filter (·.kind == .word)
+  expectEq a words.size 68 "the sidecar names 68 word theorems"
+  let cfg : Table.Config := { words := true }
+  let (t, _, _) := Table.build cfg p props
+  expectEq a (wordEntries p t).length 68 "with the sidecar's proposals, 68 word entries"
+  let others := props.filter (·.kind != .word)
+  let (t0, d0, _) := Table.build cfg p others
+  expectEq a (wordEntries p t0).length 0 "without word proposals, no word entry"
+  expectEq a (d0.filter (·.message.startsWith "word: no accepted equation")).size 68
+    "without word proposals, a diagnostic per pinned operation"
+  -- the theorem of UInt64.add proposed for UInt64.sub, and the root proposed as a word operation
+  let byName := fun (n : String) => words.find? (·.name? == some n)
+  match byName "UInt64.add", byName "UInt64.sub" with
+  | some add, some sub =>
+    let swapped := others.push { sub with theorem? := add.theorem? } |>.push add
+    let (t1, d1, _) := Table.build cfg p swapped
+    let subId := (Table.addrIndex p)[sub.subject]?
+    expect a (subId.isSome && (wordEntries p t1).all (some ·.1 != subId))
+      "another operation's theorem is refused"
+    expect a (d1.any (·.message.startsWith "word: the theorem does not state")) "with a diagnostic"
+    let bogus := others.push { add with subject := add.theorem?.getD add.subject }
+    let (t2, d2, _) := Table.build cfg p bogus
+    expectEq a (wordEntries p t2).length 0 "a subject that is not a pinned word operation is refused"
+    expect a (d2.any (·.message == "word: the subject is not a pinned word operation"))
+      "with a diagnostic"
+  | _, _ => expect a false "the sidecar names UInt64.add and UInt64.sub"
+  let entry := fun (k : String) => Lean.Json.mkObj [("kind", k), ("subject", "x"),
+    ("subject_address", toString add0), ("theorem", "y"), ("theorem_address", toString add0)]
+  let sidecar := fun (k : String) => Lean.Json.mkObj [("format", "ixcc/k1-equations/1"),
+    ("roots", Lean.Json.arr #[]), ("equations", Lean.Json.arr #[]),
+    ("theorems", Lean.Json.arr #[entry k]), ("failures", Lean.Json.arr #[])]
+  expect a ((Hints.ofK1Json (sidecar "word")).toOption.map (·.proposals.size) == some 1)
+    "the reader takes a word theorem"
+  expect a (Hints.ofK1Json (sidecar "csimp")).toOption.isNone "the reader refuses an unknown kind"
+where
+  add0 : Ixon.Address := Ixon.Address.replicate 7
+
 def run (a : Assert) (verbose : Bool := false) : IO (List String) := do
   let mut lines : List String := []
   let t0 ← IO.monoMsNow
@@ -111,6 +161,8 @@ def run (a : Assert) (verbose : Bool := false) : IO (List String) := do
       | .ok _ => false) "erasure declines a word entry"
   expect a (IxCC.Lam.erase off.program off.checked).toOption.isSome
     "erasure accepts the program without word entries"
+  proposals a off.program off.hints.proposals
+  note "the sidecar's word proposals"
   for (root, w) in roots do
     let rootOff ← rootNamed off root
     let rootOn ← rootNamed on root

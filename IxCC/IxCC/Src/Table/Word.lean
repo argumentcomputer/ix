@@ -19,7 +19,10 @@ builds from the program's pinned constants:
 where `spec` is `WordOp.eval`'s number as a term over `Nat`'s pinned operations, on the arguments
 reduced first (`Nat.mod x size`), and reduced again where `eval` reduces (`add`, `sub`, `mul`,
 `shiftLeft`, `neg`). `ix compile --equations` adds exactly these theorems
-(`Ix.Compile.WordEquations`). The theorem fixes what the pinned constant computes, so a wrong
+(`Ix.Compile.WordEquations`) and names each in its output's `theorems` list (kind `word`, subject
+the operation), which the sidecar carries with addresses; the producer proposes the entry from
+there (`Table.wordProposal`), never by searching the closure for a statement. The theorem fixes
+what the pinned constant computes, so a wrong
 pin cannot make a statement about the model false; the pin is what makes SrcEval's rule agree with
 the constant's own body, which `tests-src` tests on Lean 4.34.1's bodies. -/
 
@@ -123,20 +126,5 @@ def checkWord (cfg : Config) (p : Program) (f : CId) (w : Width) (op : WordOp) (
   unless ty.nodesLe maxTermNodes do throw "word: the statement exceeds the node budget"
   unless ty.eqv expected do throw s!"word: the theorem does not state {op.leanName w}'s equation"
   checkAxiomClosure p thm
-
-/-- The safe level-monomorphic theorems of a program (the producer's candidates for word
-equations). -/
-def monoTheorems (p : Program) : List (CId × Term) :=
-  (List.range p.size).filterMap fun c =>
-    match p.decl? c with
-    | some (.defn .thm .safe 0 ty _) => some (c, ty)
-    | _ => none
-
-/-- The producer's proposal for a pinned word operation: the first theorem whose statement is the
-operation's equation (an untrusted search; `checkWord` decides). -/
-def wordTheorem? (p : Program) (thms : List (CId × Term)) (w : Width) (op : WordOp) :
-    Option CId := do
-  let expected ← wordEqnType p w op
-  (thms.find? fun (_, ty) => ty.eqv expected).map (·.1)
 
 end IxCC.Src.Table

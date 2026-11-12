@@ -15,10 +15,10 @@ import IxCCTests.Src.Words
 /-! The `tests-src` suite: rules, the K1 table, K1 runs
 on the eqn route, the native differential, pins, diagnostics, sort-polymorphic
 code at `Sort 0` (level-exact relevance, D18), and the
-bench-k1 entries, pinned step counts, and the fixed-width words' meaning against Lean's
-(`Words`). `tests-src --words` runs `Words` and `WordRules` (F6w against the reference bodies on
-the words fixture), each phase timed; `WordRules` is not yet in the default run: loading the
-fixture through the front end takes more than ten minutes (under diagnosis). `tests-src-slow` adds `ack 3 10` and `fib 30` without
+bench-k1 entries, pinned step counts, the fixed-width words' meaning against Lean's
+(`Words`), and F6w against the reference bodies on the words fixture (`WordRules`, two loads of
+the fixture and 21,996 harness cases, about 5 s). `tests-src --words` runs `Words` and
+`WordRules` alone, each phase timed. `tests-src-slow` adds `ack 3 10` and `fib 30` without
 primitives. -/
 
 namespace IxCCTests.Src.Run
@@ -64,6 +64,8 @@ def main (args : List String) : IO UInt32 := do
     part a "differential against native Lean" (Differential.run a)
     part a "pins" (Pins.run a)
     part a "fixed-width words against Lean" (Words.run a)
+    part a "fixed-width word rule (F6w) on the words fixture" do
+      for line in ← WordRules.run a do IO.println s!"    {line}"
     part a "diagnostics" do
       Diagnostics.run a
       for line in ← Diagnostics.ixFixture a do IO.println s!"    {line}"

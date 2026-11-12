@@ -12,7 +12,10 @@
 
   It also adds, as seeds, the stored equations of the fixed-width word
   operations the closure reaches (`Ix.Compile.WordEquations`), which a consumer
-  that evaluates them as primitives takes their meaning from.
+  that evaluates them as primitives takes their meaning from, and names each in
+  the output's `theorems` list with its operation (`theorems`, `toJson`): nothing
+  in a program refers to such a theorem, so a consumer that reads only what a
+  program reaches finds it there.
 -/
 module
 public import Lean.Meta.Eqns
@@ -91,16 +94,40 @@ where
     let equations := newFound.toList.map (·.equation)
     loop env (seeds ++ equations) visited (found ++ newFound) (failed ++ newFailed)
 
-/-- The associations as JSON (`ix/compile-equations/1`): the format name, the
-associations sorted by the definition's name, and the failures in the order
-they were met. -/
-def toJson (found : Array Association) (failed : Array (Lean.Name × String)) : Lean.Json :=
+/-- A theorem the closure carries for a consumer, named with its subject and a
+kind. One kind so far, `word`: a fixed-width word operation (the subject,
+`UInt64.add`) and its stored equation (`Ix.Compile.WordEquations`). A consumer
+that reads only what a program reaches finds such a theorem through this list,
+since nothing in the program names it. -/
+structure TheoremProposal where
+  kind : String
+  subject : Lean.Name
+  «theorem» : Lean.Name
+  deriving Inhabited, Repr, BEq
+
+/-- The theorem proposals of a closed constant list: every word equation it
+holds, with its operation. -/
+def theorems (closed : List Lean.Name) : Array TheoremProposal :=
+  let present : Lean.NameSet := closed.foldl (·.insert ·) {}
+  (Ix.Compile.WordEquations.all.filter (present.contains ·.theoremName)).toArray.map fun e =>
+    { kind := "word", subject := e.operation, «theorem» := e.theoremName }
+
+/-- The associations as JSON (`ix/compile-equations/2`): the format name, the
+associations sorted by the definition's name, the theorem proposals sorted by
+subject, and the failures in the order they were met. -/
+def toJson (found : Array Association) (theorems : Array TheoremProposal)
+    (failed : Array (Lean.Name × String)) : Lean.Json :=
   let found := found.qsort (fun a b => a.definition.toString < b.definition.toString)
+  let theorems := theorems.qsort (fun a b => a.subject.toString < b.subject.toString)
   Lean.Json.mkObj [
-    ("format", Lean.Json.str "ix/compile-equations/1"),
+    ("format", Lean.Json.str "ix/compile-equations/2"),
     ("equations", Lean.Json.arr <| found.map fun a => Lean.Json.mkObj [
       ("definition", Lean.Json.str a.definition.toString),
       ("equation", Lean.Json.str a.equation.toString)]),
+    ("theorems", Lean.Json.arr <| theorems.map fun t => Lean.Json.mkObj [
+      ("kind", Lean.Json.str t.kind),
+      ("subject", Lean.Json.str t.subject.toString),
+      ("theorem", Lean.Json.str t.theorem.toString)]),
     ("failures", Lean.Json.arr <| failed.map fun (name, message) => Lean.Json.mkObj [
       ("definition", Lean.Json.str name.toString), ("message", Lean.Json.str message)])]
 

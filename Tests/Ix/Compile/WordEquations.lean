@@ -11,8 +11,9 @@ import LSpec
   library; and on a source whose root adds two `UInt64`s and converts the sum
   to a `UInt8`, `close` adds exactly the theorems of the operations the
   closure reaches (with `UInt64`'s and `UInt8`'s `ofNat`, whose theorem is the bridge),
-  each to the closure, and none of a width or an operation it does not reach.
-  A source without words gets none.
+  each to the closure, and none of a width or an operation it does not reach,
+  and the output's `theorems` list (`ix/compile-equations/2`) names each with
+  its operation. A source without words gets none.
 -/
 
 open Lean LSpec
@@ -62,6 +63,18 @@ def suite : IO (List LSpec.TestSeq) := do
     -- At the fixed point an equation is in the closure exactly when its operation is.
     let exact := Ix.Compile.WordEquations.all.all fun e =>
       names.contains e.theoremName == names.contains e.operation
+    -- The output names every word equation of the closure with its operation, kind `word`.
+    let proposals := Ix.Compile.Equations.theorems (closed.map (·.1))
+    let json := Ix.Compile.Equations.toJson #[] proposals #[]
+    let listed : List (String × String × String) :=
+      match json.getObjValAs? (Array Json) "theorems" with
+      | .ok rows => rows.toList.filterMap fun row =>
+          match row.getObjValAs? String "kind", row.getObjValAs? String "subject",
+              row.getObjValAs? String "theorem" with
+          | .ok k, .ok s, .ok t => some (k, s, t)
+          | _, _, _ => none
+      | .error _ => []
+    let named := Ix.Compile.WordEquations.all.filter (added.contains ·.theoremName)
     return [
       test "68 equations: per width one per primitive operation (17; `ofNat`'s is the bridge)"
         (all.length == 68),
@@ -71,6 +84,13 @@ def suite : IO (List LSpec.TestSeq) := do
       test "no unfolding-theorem failure on the word source" failed.isEmpty,
       test s!"the word source's closure holds the theorems of its operations: {added}"
         (expected.all added.contains),
-      test "an equation is in the closure exactly when its operation is" exact]
+      test "an equation is in the closure exactly when its operation is" exact,
+      test s!"the output's theorems name each equation of the closure with its operation: {listed}"
+        (listed.length == added.length && named.all fun e =>
+          listed.contains ("word", e.operation.toString, e.theoremName.toString)),
+      test "the output's theorems are sorted by subject"
+        (let s := listed.map (·.2.1); s == s.mergeSort (· ≤ ·)),
+      test "a closure without words gets no theorem proposal"
+        (Ix.Compile.Equations.theorems (plainClosed.map (·.1))).isEmpty]
 
 end Tests.Ix.Compile.WordEquations

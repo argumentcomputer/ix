@@ -4,9 +4,10 @@ import Std.Data.HashMap
 
 /-! # Building the unfolding table
 
-Collects proposals (pinned primitives, the pinned word operations whose stored
-equation the closure holds when words are enabled, `lazy` and opaque-by-value rows;
-sidecar `eqn`/`csimp`/`inline` hints; `case` candidates found by scanning
+Collects proposals (pinned primitives, `lazy` and opaque-by-value rows;
+sidecar `eqn`/`csimp`/`inline` hints, and, when words are enabled, the sidecar's
+`word` proposals naming a pinned word operation's stored equation; `case`
+candidates found by scanning
 for recursor-headed definitions, and `lazy` rows for the sparse casesOn among
 them), checks each one, and resolves by priority
 `prim, word > csimp > eqn > case > body`. Every refused explicit
@@ -58,6 +59,18 @@ def eqnProposal (p : Program) (index : Std.HashMap Ixon.Address CId) (prop : Pro
   let thm ← resolveHint index ta "theorem"
   return (f, ← checkEqn p f thm)
 
+/-- A `word` proposal (stage W1): its subject is a pinned word operation, its theorem the
+operation's stored equation (`checkWord`). -/
+def wordProposal (cfg : Config) (p : Program) (index : Std.HashMap Ixon.Address CId)
+    (prop : Proposal) : Except String (CId × Resolve) := do
+  let f ← resolveHint index prop.subject "subject"
+  let some ta := prop.theorem? | throw "word: missing theorem"
+  let thm ← resolveHint index ta "theorem"
+  let some (w, op) := Pinned.wordAt? p.known.pins (p.addr f)
+    | throw "word: the subject is not a pinned word operation"
+  checkWord cfg p f w op thm
+  return (f, .word w op thm)
+
 /-- Candidate `case` keys: safe definitions whose body, under its λs, is a
 spine headed by a single-motive recursor. -/
 def caseCandidates (p : Program) : Array CId := Id.run do
@@ -88,23 +101,22 @@ def build (cfg : Config) (p : Program) (hints : Array Proposal) :
       | .error msg =>
         if cfg.prims.contains op then
           diags := diags.push { code := "hint", addr := some (p.addr c), message := msg }
-  -- word: every pinned word operation present whose equation the closure holds (stage W1).
+  -- word: the sidecar's word proposals (stage W1), each naming a pinned word operation and
+  -- its stored equation; the first that passes `checkWord` for an operation is its entry.
   if cfg.words then
-    let thms := monoTheorems p
+    for prop in hints do
+      if prop.kind != .word then continue
+      match wordProposal cfg p index prop with
+      | .ok (f, entry) =>
+        if (resolve.get? f).isNone then
+          resolve := resolve.insert f entry
+          stats := { stats with wordAccepted := stats.wordAccepted.push f }
+      | .error msg => diags := diags.push (hintDiag prop msg)
     for c in [0:n] do
       if let some (w, op) := Pinned.wordAt? p.known.pins (p.addr c) then
-        if (resolve.get? c).isSome || !op.isPrimitive then continue
-        match wordTheorem? p thms w op with
-        | some thm =>
-          match checkWord cfg p c w op thm with
-          | .ok () =>
-            resolve := resolve.insert c (.word w op thm)
-            stats := { stats with wordAccepted := stats.wordAccepted.push c }
-          | .error msg =>
-            diags := diags.push { code := "hint", addr := some (p.addr c), message := msg }
-        | none =>
+        if op.isPrimitive && (resolve.get? c).isNone then
           diags := diags.push { code := "hint", addr := some (p.addr c)
-                                message := s!"word: no stored equation of {op.leanName w}" }
+                                message := s!"word: no accepted equation of {op.leanName w}" }
   -- csimp hints.
   for prop in hints do
     if prop.kind != .csimp then continue

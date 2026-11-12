@@ -132,9 +132,43 @@ def kernelHintsFixture : RootsFixture where
   seeds := [`KernelHints.allOnesXor, `KernelHints.complement16, `KernelHints.complement32,
     `KernelHints.complement64, `KernelHints.ping, `KernelHints.pong]
 
+/-- Resolve `name` against the named twin `named` (`ix addr-of`). -/
+def addrOf (ix : String) (named : System.FilePath) (name : String) : IO String := do
+  let output ← run ix #["addr-of", "--ixe", named.toString, name]
+  let address := (words output).getLastD ""
+  need (isHex 64 address) s!"{name}: ix addr-of gave {repr output}"
+  return address
+
+/-- The sidecar's `equations`, `theorems` and `failures` from `ix compile --equations`'s output
+(`ix/compile-equations/2`), every name resolved against the named twin, as the corpus tool writes
+them (`IxCCTests.Corpus.Build`): `theorems` only when there is one. -/
+def sidecarEquations (ix : String) (named out : System.FilePath) : IO (List (String × Json)) := do
+  let j ← IO.ofExcept (Json.parse (← IO.FS.readFile out))
+  let format ← IO.ofExcept (j.getObjValAs? String "format")
+  need (format == "ix/compile-equations/2") s!"{out}: format {format}"
+  let str := fun (o : Json) (k : String) => IO.ofExcept (o.getObjValAs? String k)
+  let mut eqs : Array Json := #[]
+  for e in ← IO.ofExcept ((← IO.ofExcept (j.getObjVal? "equations")).getArr?) do
+    let d ← str e "definition"
+    let t ← str e "equation"
+    eqs := eqs.push (Json.mkObj [("definition", d), ("definition_address", ← addrOf ix named d),
+      ("equation", t), ("equation_address", ← addrOf ix named t)])
+  let mut thms : Array Json := #[]
+  for e in ← IO.ofExcept ((← IO.ofExcept (j.getObjVal? "theorems")).getArr?) do
+    let s ← str e "subject"
+    let t ← str e "theorem"
+    thms := thms.push (Json.mkObj [("kind", ← str e "kind"), ("subject", s),
+      ("subject_address", ← addrOf ix named s), ("theorem", t),
+      ("theorem_address", ← addrOf ix named t)])
+  let failures ← IO.ofExcept (j.getObjVal? "failures")
+  return [("equations", Json.arr eqs)] ++
+    (if thms.isEmpty then [] else [("theorems", Json.arr thms)]) ++ [("failures", failures)]
+
 /-- Compile a roots-only fixture (anonymous and named), resolve its roots and
-write the closure, its `ixcc/k1-equations/1` sidecar (roots only) and
-a provenance record (`STEM.provenance.json`). -/
+write the closure, its `ixcc/k1-equations/1` sidecar and a provenance record
+(`STEM.provenance.json`). The sidecar names the roots; compiled with
+`--equations`, it also carries `ix`'s equation associations and theorem
+proposals with their addresses (`sidecarEquations`), otherwise none. -/
 def rootsFixture (fx : RootsFixture) (ix : String) (work dir : System.FilePath)
     : IO Unit := do
   IO.FS.createDirAll work
@@ -149,21 +183,20 @@ def rootsFixture (fx : RootsFixture) (ix : String) (work dir : System.FilePath)
     ++ eqns (work / s!"{fx.stem}.named.ix-equations.json").toString ++ #[source.toString])
   let mut roots : Array Json := #[]
   for name in fx.roots do
-    let output ← run ix #["addr-of", "--ixe", named.toString, name.toString]
-    let address := (words output).getLastD ""
-    need (isHex 64 address) s!"{name}: ix addr-of gave {repr output}"
-    roots := roots.push (Json.mkObj [("name", name.toString), ("address", address)])
+    roots := roots.push (Json.mkObj [("name", name.toString),
+      ("address", ← addrOf ix named name.toString)])
+  let rest ← if fx.equations then sidecarEquations ix named (work / s!"{fx.stem}.named.ix-equations.json")
+    else pure [("equations", Json.arr #[]), ("failures", Json.arr #[])]
   let sidecar := dir / s!"{fx.stem}.equations.json"
-  IO.FS.writeFile sidecar ((Json.mkObj [("format", "ixcc/k1-equations/1"),
-    ("source", fx.source), ("roots", Json.arr roots), ("equations", Json.arr #[]),
-    ("failures", Json.arr #[])]).pretty ++ "\n")
+  IO.FS.writeFile sidecar ((Json.mkObj ([("format", "ixcc/k1-equations/1"),
+    ("source", fx.source), ("roots", Json.arr roots)] ++ rest)).pretty ++ "\n")
   IO.FS.writeFile (dir / s!"{fx.stem}.provenance.json") ((Json.mkObj [
     ("producer_version", String.intercalate " " (words (← run ix #["--version"]))),
     ("producer", IxCCTests.Corpus.producerIx),
     ("commands", toJson [
       s!"ix compile --no-build --consts <roots{if fx.seeds.isEmpty then "" else " and seeds"}>{if fx.equations then " --equations" else ""} --anon --out {fx.stem}.ixe {fx.source}",
       s!"ix compile --no-build --consts <roots{if fx.seeds.isEmpty then "" else " and seeds"}>{if fx.equations then " --equations" else ""} --out {fx.stem}.named.ixe {fx.source}",
-      s!"ix addr-of --ixe {fx.stem}.named.ixe NAME, for every root"]),
+      s!"ix addr-of --ixe {fx.stem}.named.ixe NAME, for every root{if fx.equations then " and every name of the equations output" else ""}"]),
     ("source_sha256", ← sha256 source),
     ("named_env_sha256", ← sha256 named),
     ("files", Json.mkObj [(s!"{fx.stem}.ixe", toJson (← sha256 closure)),
