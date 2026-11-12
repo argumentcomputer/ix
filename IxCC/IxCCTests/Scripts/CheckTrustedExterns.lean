@@ -11,8 +11,21 @@ project) and the `flake.lock` in it.
 [--flake-lock FILE]` prints the ledger's mechanical pins as the tree stands
 (`recordPins`) instead of auditing; `tools/record-ledger-pins.jq` merges them
 into the ledger for review (docs/trusted-extern-ledger.md, "Routine
-updates"). -/
+updates").
+
+`check-trusted-externs --linked [--nm NM] PATH…` is the link audit
+(`auditLinkedFiles`): no executable among `PATH…` (each an executable, or a
+directory whose ELF files are audited) links a native backend of the Blake3
+package; `NM` (default `nm` on the `PATH`) reads their symbol tables. -/
 def main (args : List String) : IO UInt32 := cli "trusted-extern ledger check failed" do
+  if args.head? == some "--linked" then
+    let (nm, paths) := match args.tail with
+      | "--nm" :: tool :: paths => (tool, paths)
+      | paths => ("nm", paths)
+    need (!paths.isEmpty && !paths.any (·.startsWith "--"))
+      "usage: check-trusted-externs --linked [--nm NM] PATH..."
+    auditLinkedFiles nm (paths.map System.FilePath.mk)
+    return
   if args.head? == some "--record" then
     let args ← checked (parseArgs ["--root", "--repository-root", "--flake-lock"] args.tail)
     let pins ← recordPins (option args "--root" ".")
