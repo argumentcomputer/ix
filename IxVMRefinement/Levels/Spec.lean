@@ -1,4 +1,4 @@
-import IxVMRefinement.Levels.Bound
+import IxVMRefinement.Levels.Smart
 
 /-! # The level layer: the consistency statement's `Levels`, and the level functions' specs
 
@@ -12,7 +12,8 @@ comparisons bound what they compare themselves.
 The second part states, for each level function the core calls, its spec over observed
 derivations in the form the core's induction consumes (`*Spec`, one per function, with its
 step lemma `*_step`). The level functions call no core function, so the steps need no
-induction hypothesis. -/
+induction hypothesis, and no spec has a hypothesis on the heights of the levels: the
+smart constructors get theirs from the circuit's bound (`Levels.Rom`, `Levels.Smart`). -/
 
 namespace IxVM.Refinement.Levels
 
@@ -54,8 +55,9 @@ theorem l2 : IxVM.Consistency.L2 := levels
 Each spec is over the function's observed derivation (`args`, heap before `h`, result `r`,
 heap after `h'`, calls `calls`). Levels are represented by `RepKLevel` (a pointer to the
 `KernelTypes::KLevelNode` tree of the kernel level; `RepKLevel.toRepIxVMKUniv` maps it to
-the slice's `RepIxVMKUniv`). The answer of a comparison is stated exactly (the pure function
-of `Ix.IxVM.Refinement.KernelLevels`), with its meaning for `Level.eval` as a corollary. -/
+the slice's `RepIxVMKUniv`), level lists by `RepKLevelList`. A comparison's answer is stated
+exactly (the pure function of `Ix.IxVM.Refinement.KernelLevels`), with its meaning for
+`Level.eval` as a lemma there; a constructed level is stated exactly too, with its value. -/
 
 section Specs
 
@@ -86,33 +88,36 @@ def LevelStructEqSpec : Prop :=
   ∀ a b, args = [a, b] → ∀ la lb, RepKLevel h la a → RepKLevel h lb b →
     r = .field (if la == lb then 1 else 0) ∧ h' = h
 
-/-- `level_reduce(a)` returns a level with the same value at every assignment. The height
-bound is the field's characteristic (see `levelReduce_refines`). -/
-def LevelReduceSpec : Prop :=
-  ∀ a, args = [a] → ∀ l, RepKLevel h l a → levelDepth l < fieldSize →
-    ∃ l', RepKLevel h' l' r ∧ Heap.Extends h h' ∧
-      ∀ φ, Ix.Kernel.Level.eval φ l' = Ix.Kernel.Level.eval φ l
+/-- `level_max(a, b)` returns `levelMax a b`, whose value is `max`'s at every assignment
+(`eval_levelMax`). -/
+def LevelMaxSpec : Prop :=
+  ∀ a b, args = [a, b] → Bounded calls → ∀ la lb, RepKLevel h la a → RepKLevel h lb b →
+    RepKLevel h' (levelMax la lb) r ∧ Heap.Extends h h'
 
 /-- `level_imax(a, b)` returns `levelIMax a b`, whose value is `imax`'s at every assignment
 (`eval_levelIMax`). -/
 def LevelIMaxSpec : Prop :=
-  ∀ a b, args = [a, b] → ∀ la lb, RepKLevel h la a → RepKLevel h lb b →
-    levelDepth la < fieldSize → levelDepth lb < fieldSize →
+  ∀ a b, args = [a, b] → Bounded calls → ∀ la lb, RepKLevel h la a → RepKLevel h lb b →
     RepKLevel h' (levelIMax la lb) r ∧ Heap.Extends h h'
+
+/-- `level_reduce(a)` returns `levelReduce l`, whose value is `l`'s at every assignment
+(`eval_levelReduce`). -/
+def LevelReduceSpec : Prop :=
+  ∀ a, args = [a] → Bounded calls → ∀ l, RepKLevel h l a →
+    RepKLevel h' (levelReduce l) r ∧ Heap.Extends h h'
 
 /-- `level_inst_params(a, ps)` returns the substitution of the parameters `0, 1, …` by the
 list's levels (`substLevel`; its value is the kernel's `Level.subst` at every assignment,
-`eval_substLevel_eq_subst`). -/
+`eval_substLevel_eq_subst`), and every parameter of the level is in the list. -/
 def LevelInstParamsSpec : Prop :=
-  ∀ a ps, args = [a, ps] → ∀ l params, RepKLevel h l a → RepKLevelList h params ps →
-    levelDepth l + maxLevelDepth params < fieldSize →
+  ∀ a ps, args = [a, ps] → Bounded calls → ∀ l params, RepKLevel h l a →
+    RepKLevelList h params ps →
     ParamsLt params.length l ∧ RepKLevel h' (substLevel l params) r ∧ Heap.Extends h h'
 
 /-- `level_list_inst(ls, ps)`: `level_inst_params` on every level of the list. -/
 def LevelListInstSpec : Prop :=
-  ∀ ls ps, args = [ls, ps] → ∀ lvls params, RepKLevelList h lvls ls →
+  ∀ ls ps, args = [ls, ps] → Bounded calls → ∀ lvls params, RepKLevelList h lvls ls →
     RepKLevelList h params ps →
-    (∀ l ∈ lvls, levelDepth l + maxLevelDepth params < fieldSize) →
     (∀ l ∈ lvls, ParamsLt params.length l) ∧ RepKLevelList h' (substLevelList lvls params) r ∧
       Heap.Extends h h'
 
@@ -149,32 +154,39 @@ theorem levelStructEq_step
   subst hargs
   exact levelStructEq_refines repA repB ev.erase
 
-theorem levelReduce_step
-    (ev : ObsFn IxVM.source.world "KernelLevels::level_reduce" args h r h' calls) :
-    LevelReduceSpec args h r h' := by
-  intro a hargs l rep hd
+theorem levelMax_step
+    (ev : ObsFn IxVM.source.world "KernelLevels::level_max" args h r h' calls) :
+    LevelMaxSpec args h r h' calls := by
+  intro a b hargs hb la lb repA repB
   subst hargs
-  exact levelReduce_eval_sound rep hd ev.erase
+  exact levelMax_obs ev hb repA repB
 
 theorem levelIMax_step
     (ev : ObsFn IxVM.source.world "KernelLevels::level_imax" args h r h' calls) :
-    LevelIMaxSpec args h r h' := by
-  intro a b hargs la lb repA repB ha hb
+    LevelIMaxSpec args h r h' calls := by
+  intro a b hargs hb la lb repA repB
   subst hargs
-  exact levelIMax_refines repA repB ha hb ev.erase
+  exact levelIMax_obs ev hb repA repB
+
+theorem levelReduce_step
+    (ev : ObsFn IxVM.source.world "KernelLevels::level_reduce" args h r h' calls) :
+    LevelReduceSpec args h r h' calls := by
+  intro a hargs hb l rep
+  subst hargs
+  exact levelReduce_obs ev hb rep
 
 theorem levelInstParams_step
     (ev : ObsFn IxVM.source.world "KernelLevels::level_inst_params" args h r h' calls) :
-    LevelInstParamsSpec args h r h' := by
-  intro a ps hargs l params repL repPs hd
+    LevelInstParamsSpec args h r h' calls := by
+  intro a ps hargs hb l params repL repPs
   subst hargs
-  exact levelInstParams_refines repL repPs hd ev.erase
+  exact levelInstParams_obs ev hb repL repPs
 
 theorem levelListInst_step
     (ev : ObsFn IxVM.source.world "KernelLevels::level_list_inst" args h r h' calls) :
-    LevelListInstSpec args h r h' := by
-  intro ls ps hargs lvls params repLs repPs hd
+    LevelListInstSpec args h r h' calls := by
+  intro ls ps hargs hb lvls params repLs repPs
   subst hargs
-  exact levelListInst_refines repLs repPs hd ev.erase
+  exact levelListInst_obs ev hb repLs repPs
 
 end IxVM.Refinement.Levels
