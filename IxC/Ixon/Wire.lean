@@ -34,11 +34,11 @@ def appCount : Ixon.Expr → Nat
   | _ => 0
 
 def lamCount : Ixon.Expr → Nat
-  | .lam _ _ body => body.lamCount + 1
+  | .lam _ body => body.lamCount + 1
   | _ => 0
 
 def allCount : Ixon.Expr → Nat
-  | .all _ _ _ body => body.allCount + 1
+  | .all _ body => body.allCount + 1
   | _ => 0
 
 /-- Every structural count emitted through a `UInt64` is representable. -/
@@ -48,11 +48,11 @@ def wireWF : Ixon.Expr → Prop
   | .prj _ _ value => value.wireWF
   | .app fn arg =>
     fn.wireWF ∧ arg.wireWF ∧ fn.appCount + 1 < UInt64.size
-  | .lam _ ty body =>
+  | .lam ty body =>
     ty.wireWF ∧ body.wireWF ∧ body.lamCount + 1 < UInt64.size
-  | .all _ _ ty body =>
+  | .all ty body =>
     ty.wireWF ∧ body.wireWF ∧ body.allCount + 1 < UInt64.size
-  | .letE _ ty value body => ty.wireWF ∧ value.wireWF ∧ body.wireWF
+  | .letE _ _ ty value body => ty.wireWF ∧ value.wireWF ∧ body.wireWF
 
 end Expr
 
@@ -126,7 +126,7 @@ def ConstantInfo.wireWF : ConstantInfo → Prop
 
 /-- A binder-data node's parameter count is representable. -/
 def BinderNode.wireWF : BinderNode → Prop
-  | .ifAllZero params => params.size < UInt64.size
+  | .ifAllZero params _ => params.size < UInt64.size
   | _ => True
 
 /-- A binder-data block's node count and nodes are representable. -/

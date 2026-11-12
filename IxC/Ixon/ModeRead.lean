@@ -11,12 +11,11 @@ A checker reads a record's modes where the record holds them:
   expression's `lam`, `all` and binderful `share` nodes in pre-order, as the
   section numbers them). A share node has no mode; it names the variant its
   entry is read at;
-* a constructor's field modes: `Constructor.fieldModes`;
+* a constructor's field modes: `Constructor.fieldModes` (`fieldMode`);
 * a definition's assertions: `Definition.asserts`;
-* a `let`'s: its header, in the expression.
+* a `let`'s: its header, in the expression (`Expr.letE`'s mode).
 
-These are the accessors the mode checker reads through. The records of this
-format version give every binder, field and definition the default mode.
+These are the accessors the mode checker reads through.
 -/
 
 @[expose] public section
@@ -33,11 +32,6 @@ structure BinderPos where
   ordinal : Nat
   deriving BEq, DecidableEq, Repr, Inhabited, Hashable
 
-/-- A binder node's mode: `none` at a share node. -/
-def BinderNode.mode? : BinderNode → Option AllMode
-  | .share _ => none
-  | _ => some {}
-
 /-- The nodes of block `(shared, index, variant)` of `c`'s section. -/
 def Constant.blockNodes? (c : Constant) (shared : Bool) (index variant : UInt64) :
     Option (Array BinderNode) :=
@@ -51,14 +45,8 @@ def Constant.binderModeAt? (c : Constant) (p : BinderPos) : Option AllMode := do
   let node ← nodes[p.ordinal]?
   node.mode?
 
-/-- A constructor's field modes. -/
-def Constructor.fieldModes (ctor : Constructor) : FieldModes ctor.fields.toNat := .inherited
-
 /-- The mode of field `i` of a constructor (`inherited` past its last field). -/
 def Constructor.fieldMode (ctor : Constructor) (i : Nat) : FieldMode := ctor.fieldModes.get i
-
-/-- A definition's assertions. -/
-def Definition.asserts (_ : Definition) : DefAsserts := {}
 
 end Ixon
 

@@ -64,21 +64,21 @@ def checkExpr : (e : Expr) → Option (ExprSummary e)
       return ⟨fn.apps + 1, 0, 0, by simp [Expr.appCount, fn.apps_eq], rfl, rfl,
         fn.valid, arg.valid, by simpa [fn.apps_eq] using h⟩
     else none
-  | .lam _ ty body => do
+  | .lam ty body => do
     let ty ← checkExpr ty
     let body ← checkExpr body
     if h : body.lams + 1 < UInt64.size then
       return ⟨0, body.lams + 1, 0, rfl, by simp [Expr.lamCount, body.lams_eq], rfl,
         ty.valid, body.valid, by simpa [body.lams_eq] using h⟩
     else none
-  | .all _ _ ty body => do
+  | .all ty body => do
     let ty ← checkExpr ty
     let body ← checkExpr body
     if h : body.alls + 1 < UInt64.size then
       return ⟨0, 0, body.alls + 1, rfl, rfl, by simp [Expr.allCount, body.alls_eq],
         ty.valid, body.valid, by simpa [body.alls_eq] using h⟩
     else none
-  | .letE _ ty value body => do
+  | .letE _ _ ty value body => do
     let ty ← checkExpr ty
     let value ← checkExpr value
     let body ← checkExpr body
@@ -115,7 +115,7 @@ def validInfo : ConstantInfo → Bool
   | .muts members => validArray members validMutConst
 
 def validBinderNode : BinderNode → Bool
-  | .ifAllZero params => decide (params.size < UInt64.size)
+  | .ifAllZero params _ => decide (params.size < UInt64.size)
   | _ => true
 
 def validBinderBlock (block : BinderBlock) : Bool :=
@@ -175,7 +175,7 @@ def paramsAscending : List UInt64 → Bool
 /-- A node's canonical form: an `ifAllZero` parameter list is nonempty,
 strictly ascending and below `lvls`. -/
 def BinderNode.canonical (lvls : Nat) : BinderNode → Bool
-  | .ifAllZero params =>
+  | .ifAllZero params _ =>
     !params.isEmpty && paramsAscending params.toList && params.all (·.toNat < lvls)
   | _ => true
 
@@ -238,7 +238,7 @@ it (`full`, one flag per earlier entry). -/
 def Expr.hasBinderUnder (full : Array Bool) : Expr → Bool
   | .lam .. | .all .. => true
   | .app f a => f.hasBinderUnder full || a.hasBinderUnder full
-  | .letE _ t v b => t.hasBinderUnder full || v.hasBinderUnder full || b.hasBinderUnder full
+  | .letE _ _ t v b => t.hasBinderUnder full || v.hasBinderUnder full || b.hasBinderUnder full
   | .prj _ _ v => v.hasBinderUnder full
   | .share n => full[n.toNat]?.getD false
   | _ => false
@@ -253,10 +253,10 @@ argument, a `let`'s type, value, then body), appended to `acc`: `none` for a
 `lam` or `all`, `some n` for a `share` of an entry `n` with a binder. A share
 is not entered. -/
 def Expr.numberedNodes (full : Array Bool) : Expr → Array (Option Nat) → Array (Option Nat)
-  | .lam _ t b, acc => b.numberedNodes full (t.numberedNodes full (acc.push none))
-  | .all _ _ t b, acc => b.numberedNodes full (t.numberedNodes full (acc.push none))
+  | .lam t b, acc => b.numberedNodes full (t.numberedNodes full (acc.push none))
+  | .all t b, acc => b.numberedNodes full (t.numberedNodes full (acc.push none))
   | .app f a, acc => a.numberedNodes full (f.numberedNodes full acc)
-  | .letE _ t v b, acc => b.numberedNodes full (v.numberedNodes full (t.numberedNodes full acc))
+  | .letE _ _ t v b, acc => b.numberedNodes full (v.numberedNodes full (t.numberedNodes full acc))
   | .prj _ _ v, acc => v.numberedNodes full acc
   | .share n, acc => if full[n.toNat]?.getD false then acc.push (some n.toNat) else acc
   | _, acc => acc
@@ -302,9 +302,9 @@ def checkBinderNodes (lvls : Nat) (undecidedOnly : Bool) (full : Array Bool) (sh
       | none, .share _ => none
       | none, node =>
         if undecidedOnly then
-          unless node == .undecided do none
+          unless (node matches .undecided _) do none
         else if !node.canonical lvls then none
-      | some _, .never | some _, .zero | some _, .ifAllZero _ | some _, .undecided => none
+      | some _, .never _ | some _, .zero _ | some _, .ifAllZero _ _ | some _, .undecided _ => none
       | some n, .share v =>
         let some i := findBlock blocks true n.toUInt64 v | none
         if walk.visited[i]?.getD false then continue
@@ -366,3 +366,29 @@ def Constant.bindersCanonical (c : Constant) : Bool :=
           block.nodes.all (BinderNode.canonical c.info.maxLvls)
 
 end Ixon
+
+namespace Ixon
+
+/-! ## Modes outside the section
+
+Every mode type is exactly its legal set, so the codec refuses every mode byte
+that is no mode. One rule is about a record rather than a byte: a theorem
+asserts nothing (`DefAsserts`). Every reader checks it beside the binder data's
+canonical form. -/
+
+/-- A definition's assertions are canonical: none on a theorem. -/
+def Definition.assertsCanonical (d : Definition) : Bool :=
+  d.kind != .thm || d.asserts == {}
+
+/-- The record's modes outside its section are canonical: no theorem, standalone
+or in a block, asserts anything. -/
+def Constant.modesCanonical (c : Constant) : Bool :=
+  match c.info with
+  | .defn d => d.assertsCanonical
+  | .muts ms => ms.all fun
+    | .defn d => d.assertsCanonical
+    | _ => true
+  | _ => true
+
+end Ixon
+

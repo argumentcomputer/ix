@@ -464,10 +464,11 @@ example (value : Ixon.Constant) (h : value.wireWF) :
       (Ixon.Bounded.univNodes value.univs) (Ixon.serConstant value) = .ok value :=
   Ixon.Verify.BoundedConstant.deConstant_serConstant value h _ _ (by omega) (by omega)
 
-example (value : Ixon.Constant) (h : value.wireWF) (binders : value.bindersCanonical = true) :
+example (value : Ixon.Constant) (h : value.wireWF) (binders : value.bindersCanonical = true)
+    (modes : value.modesCanonical = true) :
     Ixon.Canonical.deConstant (Ixon.serConstant value).size
       (Ixon.Bounded.univNodes value.univs) (Ixon.serConstant value) = .ok value :=
-  Ixon.Verify.Canonical.deConstant_serConstant value h binders _ _ (by omega) (by omega)
+  Ixon.Verify.Canonical.deConstant_serConstant value h binders modes _ _ (by omega) (by omega)
 
 example (start finish : Ixon.GetState) (value : Ixon.Expr)
     (valid : start.idx ≤ start.bytes.size) (read : Ixon.getExpr start = .ok value finish) :

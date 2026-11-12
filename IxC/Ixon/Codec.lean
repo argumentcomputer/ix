@@ -394,7 +394,7 @@ otherwise. -/
   · next h => subst h; rfl
   rfl
 
-/-! ## Contract serialization -/
+/-! ## Counts -/
 
 /-- Counts must fit the remaining input before a reader allocates or iterates. -/
 def checkCount (count : UInt64) (minBytes : Nat := 1) : GetM Unit := do
@@ -402,24 +402,12 @@ def checkCount (count : UInt64) (minBytes : Nat := 1) : GetM Unit := do
   if count.toNat * minBytes > st.bytes.size - st.idx then
     throw "count exceeds remaining bytes"
 
-def putValueContract (v : ValueContract) : PutM Unit := putU8 v.toBits
-
-def getValueContract : GetM ValueContract := do
-  let bits ← getU8
-  let some contract := ValueContract.ofBits? bits
-    | throw s!"invalid value contract {bits}"
-  return contract
-
-def putBinderContract (b : BinderContract) : PutM Unit := putU8 b.toBits
-
-def getBinderContract : GetM BinderContract := do
-  let bits ← getU8
-  let some contract := BinderContract.ofBits? bits
-    | throw s!"invalid binder contract {bits}"
-  return contract
-
-instance : Serialize ValueContract := ⟨putValueContract, getValueContract⟩
-instance : Serialize BinderContract := ⟨putBinderContract, getBinderContract⟩
+/-- Read a counted array by consuming each entry before appending it. -/
+def getArray (getm : GetM α) (count : Nat) : GetM (Array α) := do
+  let mut values := #[]
+  for _ in [0:count] do
+    values := values.push (← getm)
+  return values
 
 /-! ## Univ Serialization -/
 
@@ -520,18 +508,18 @@ instance : Serialize Univ where
 
 /-! ## Expr Serialization -/
 
-/-- Collect all mode/type pairs in a lambda telescope. -/
-def Expr.collectLamBinders : Expr → List (BinderContract × Expr) × Expr
-  | .lam uses ty body =>
+/-- Collect the binder types of a lambda telescope. -/
+def Expr.collectLamBinders : Expr → List Expr × Expr
+  | .lam ty body =>
     let (binders, base) := body.collectLamBinders
-    ((uses, ty) :: binders, base)
+    (ty :: binders, base)
   | e => ([], e)
 
-/-- Collect all mode/type triples in a forall telescope. -/
-def Expr.collectAllBinders : Expr → List (BinderContract × ValueContract × Expr) × Expr
-  | .all uses owned ty body =>
+/-- Collect the binder types of a forall telescope. -/
+def Expr.collectAllBinders : Expr → List Expr × Expr
+  | .all ty body =>
     let (binders, base) := body.collectAllBinders
-    ((uses, owned, ty) :: binders, base)
+    (ty :: binders, base)
   | e => ([], e)
 
 /-- Collect all arguments in an application telescope (in application order). -/
@@ -548,9 +536,9 @@ def Expr.nodeCount : Expr → Nat
   | .sort _ | .var _ | .ref _ _ | .recur _ _ | .str _ | .nat _ |
       .share _ => 1
   | .prj _ _ val => val.nodeCount + 1
-  | .app fn arg | .lam _ fn arg | .all _ _ fn arg =>
+  | .app fn arg | .lam fn arg | .all fn arg =>
       fn.nodeCount + arg.nodeCount + 1
-  | .letE _ ty val body =>
+  | .letE _ _ ty val body =>
       ty.nodeCount + val.nodeCount + body.nodeCount + 1
 
 /-- The base of a collected lambda telescope has no more nodes than its
@@ -558,7 +546,7 @@ def Expr.nodeCount : Expr → Nat
 theorem Expr.collectLamBinders_base_nodeCount_le (e : Expr) :
     e.collectLamBinders.2.nodeCount ≤ e.nodeCount := by
   induction e with
-  | lam uses binder body ihBinder ihBody =>
+  | lam binder body ihBinder ihBody =>
     simp only [Expr.collectLamBinders, Expr.nodeCount]
     exact Nat.le_trans ihBody <|
       Nat.le_trans (Nat.le_add_left _ _) (Nat.le_succ _)
@@ -566,10 +554,9 @@ theorem Expr.collectLamBinders_base_nodeCount_le (e : Expr) :
     exact Nat.le_refl _
 
 /-- A lambda telescope's base has fewer nodes than a lambda node. -/
-theorem Expr.collectLamBinders_base_nodeCount_lt (uses : BinderContract)
-    (binder body : Expr) :
-    (Expr.lam uses binder body).collectLamBinders.2.nodeCount <
-      (Expr.lam uses binder body).nodeCount := by
+theorem Expr.collectLamBinders_base_nodeCount_lt (binder body : Expr) :
+    (Expr.lam binder body).collectLamBinders.2.nodeCount <
+      (Expr.lam binder body).nodeCount := by
   simp only [Expr.collectLamBinders]
   have hle := Expr.collectLamBinders_base_nodeCount_le body
   exact Nat.lt_of_le_of_lt hle <|
@@ -578,29 +565,26 @@ theorem Expr.collectLamBinders_base_nodeCount_lt (uses : BinderContract)
 /-- Every type collected from a lambda telescope has fewer nodes than the
     input. -/
 theorem Expr.collectLamBinders_mem_nodeCount_lt (e ty : Expr)
-    (h : ∃ uses, (uses, ty) ∈ e.collectLamBinders.1) :
+    (h : ty ∈ e.collectLamBinders.1) :
     ty.nodeCount < e.nodeCount := by
   induction e with
-  | lam uses binder body ihBinder ihBody =>
+  | lam binder body ihBinder ihBody =>
     simp only [Expr.collectLamBinders] at h
-    rcases h with ⟨u, h⟩
     rcases List.mem_cons.mp h with hhead | htail
-    · have hty : ty = binder := congrArg Prod.snd hhead
-      subst ty
+    · subst ty
       exact Nat.lt_of_le_of_lt (Nat.le_add_right _ _) (Nat.lt_succ_self _)
-    · have hlt := ihBody ⟨u, htail⟩
+    · have hlt := ihBody htail
       exact Nat.lt_of_lt_of_le hlt <|
         Nat.le_trans (Nat.le_add_left _ _) (Nat.le_succ _)
   | sort | var | ref | recur | prj | str | nat | app | all | letE | share =>
-    rcases h with ⟨_, hmem⟩
-    exact nomatch hmem
+    exact nomatch h
 
 /-- The base of a collected forall telescope has no more nodes than its
     input. -/
 theorem Expr.collectAllBinders_base_nodeCount_le (e : Expr) :
     e.collectAllBinders.2.nodeCount ≤ e.nodeCount := by
   induction e with
-  | all uses owned binder body ihBinder ihBody =>
+  | all binder body ihBinder ihBody =>
     simp only [Expr.collectAllBinders, Expr.nodeCount]
     exact Nat.le_trans ihBody <|
       Nat.le_trans (Nat.le_add_left _ _) (Nat.le_succ _)
@@ -608,10 +592,9 @@ theorem Expr.collectAllBinders_base_nodeCount_le (e : Expr) :
     exact Nat.le_refl _
 
 /-- A forall telescope's base has fewer nodes than a forall node. -/
-theorem Expr.collectAllBinders_base_nodeCount_lt (uses : BinderContract) (owned : ValueContract)
-    (binder body : Expr) :
-    (Expr.all uses owned binder body).collectAllBinders.2.nodeCount <
-      (Expr.all uses owned binder body).nodeCount := by
+theorem Expr.collectAllBinders_base_nodeCount_lt (binder body : Expr) :
+    (Expr.all binder body).collectAllBinders.2.nodeCount <
+      (Expr.all binder body).nodeCount := by
   simp only [Expr.collectAllBinders]
   have hle := Expr.collectAllBinders_base_nodeCount_le body
   exact Nat.lt_of_le_of_lt hle <|
@@ -620,22 +603,19 @@ theorem Expr.collectAllBinders_base_nodeCount_lt (uses : BinderContract) (owned 
 /-- Every type collected from a forall telescope has fewer nodes than the
     input. -/
 theorem Expr.collectAllBinders_mem_nodeCount_lt (e ty : Expr)
-    (h : ∃ uses owned, (uses, owned, ty) ∈ e.collectAllBinders.1) :
+    (h : ty ∈ e.collectAllBinders.1) :
     ty.nodeCount < e.nodeCount := by
   induction e with
-  | all uses owned binder body ihBinder ihBody =>
+  | all binder body ihBinder ihBody =>
     simp only [Expr.collectAllBinders] at h
-    rcases h with ⟨u, o, h⟩
     rcases List.mem_cons.mp h with hhead | htail
-    · have hty : ty = binder := congrArg (fun x => x.2.2) hhead
-      subst ty
+    · subst ty
       exact Nat.lt_of_le_of_lt (Nat.le_add_right _ _) (Nat.lt_succ_self _)
-    · have hlt := ihBody ⟨u, o, htail⟩
+    · have hlt := ihBody htail
       exact Nat.lt_of_lt_of_le hlt <|
         Nat.le_trans (Nat.le_add_left _ _) (Nat.le_succ _)
   | sort | var | ref | recur | prj | str | nat | app | lam | letE | share =>
-    rcases h with ⟨_, _, hmem⟩
-    exact nomatch hmem
+    exact nomatch h
 
 /-- The head of a collected application telescope has no more nodes than its
     input. -/
@@ -721,21 +701,18 @@ def putExpr : Expr → PutM Unit
     putTagN 4 Expr.FLAG_APP e.collectAppArgs.1.length.toUInt64
     putExpr e.collectAppArgs.2
     for arg in e.collectAppArgs.1 do putExpr arg
-  | e@(.lam _ _ _) => do
+  | e@(.lam _ _) => do
     putTagN 4 Expr.FLAG_LAM e.collectLamBinders.1.length.toUInt64
     for binder in e.collectLamBinders.1 do
-      putU8 binder.1.toBits
-      putExpr binder.2
+      putExpr binder
     putExpr e.collectLamBinders.2
-  | e@(.all _ _ _ _) => do
+  | e@(.all _ _) => do
     putTagN 4 Expr.FLAG_ALL e.collectAllBinders.1.length.toUInt64
     for binder in e.collectAllBinders.1 do
-      putU8 (packAllContract binder.1 binder.2.1)
-      putExpr binder.2.2
+      putExpr binder
     putExpr e.collectAllBinders.2
-  | .letE contract ty val body => do
-    putTagN 4 Expr.FLAG_LET contract.flags
-    putBinderContract contract.binder
+  | .letE nonDep mode ty val body => do
+    putTagN 4 Expr.FLAG_LET (LetMode.header nonDep mode)
     putExpr ty
     putExpr val
     putExpr body
@@ -756,20 +733,19 @@ decreasing_by
     simpa only [Expr.nodeCount] using Expr.collectAppArgs_mem_nodeCount_lt
       (.app fn actual) arg hmem
   · subst e
-    rename_i uses ty body hmem
+    rename_i ty body hmem
     simpa only [Expr.nodeCount] using Expr.collectLamBinders_mem_nodeCount_lt
-      (.lam uses ty body) binder.2 ⟨binder.1, hmem⟩
+      (.lam ty body) binder hmem
   · subst e
     simpa only [Expr.nodeCount] using
-      Expr.collectLamBinders_base_nodeCount_lt _ _ _
+      Expr.collectLamBinders_base_nodeCount_lt _ _
   · subst e
-    rename_i uses owned ty body hmem
+    rename_i ty body hmem
     simpa only [Expr.nodeCount] using Expr.collectAllBinders_mem_nodeCount_lt
-      (.all uses owned ty body) binder.2.2
-      ⟨binder.1, binder.2.1, hmem⟩
+      (.all ty body) binder hmem
   · subst e
     simpa only [Expr.nodeCount] using
-      Expr.collectAllBinders_base_nodeCount_lt _ _ _ _
+      Expr.collectAllBinders_base_nodeCount_lt _ _
 
 /-- Read `count` TagN (`f = 0`) values in wire order. -/
 def getTagN0Values : Nat → GetM (List UInt64)
@@ -786,26 +762,21 @@ def getExprAppArgs (recur : GetM Expr) : Nat → Expr → GetM Expr
     let arg ← recur
     getExprAppArgs recur count (.app result arg)
 
-/-- Read a lambda telescope in outer-to-inner wire order. -/
-def getExprLamBinders (recur : GetM Expr) : Nat → GetM (List (BinderContract × Expr))
+/-- Read a lambda telescope's binder types in outer-to-inner wire order. -/
+def getExprLamBinders (recur : GetM Expr) : Nat → GetM (List Expr)
   | 0 => pure []
   | count + 1 => do
-    let contract ← getBinderContract
     let ty ← recur
     let tail ← getExprLamBinders recur count
-    return (contract, ty) :: tail
+    return ty :: tail
 
-/-- Read a forall telescope in outer-to-inner wire order. -/
-def getExprAllBinders (recur : GetM Expr) :
-    Nat → GetM (List (BinderContract × ValueContract × Expr))
+/-- Read a forall telescope's binder types in outer-to-inner wire order. -/
+def getExprAllBinders (recur : GetM Expr) : Nat → GetM (List Expr)
   | 0 => pure []
   | count + 1 => do
-    let bits ← getU8
-    let some (contract, result) := unpackAllContract? bits
-      | throw s!"getExpr: invalid forall contract {bits}"
     let ty ← recur
     let tail ← getExprAllBinders recur count
-    return (contract, result, ty) :: tail
+    return ty :: tail
 
 /-- Parse an expression after its leading TagN (`f = 4`) header. Recursive reads are
     supplied explicitly so `getExprFuel` below remains structurally total. -/
@@ -841,34 +812,30 @@ def getExprFromTag (recur : GetM Expr) (tag : TagN) : GetM Expr := do
   | 0x8 => do  -- LAM (telescope)
     if tag.value == 0 then
       throw "getExpr: Lam with zero binders"
-    checkCount tag.value 2
+    checkCount tag.value
     let binders ← getExprLamBinders recur tag.value.toNat
     let body ← recur
     match body with
     | .lam .. => throw "getExpr: non-canonical lam telescope"
     | _ => pure ()
-    return binders.foldr (fun (uses, ty) result => .lam uses ty result) body
+    return binders.foldr (fun ty result => .lam ty result) body
   | 0x9 => do  -- ALL (telescope)
     if tag.value == 0 then
       throw "getExpr: All with zero binders"
-    checkCount tag.value 2
+    checkCount tag.value
     let binders ← getExprAllBinders recur tag.value.toNat
     let body ← recur
     match body with
     | .all .. => throw "getExpr: non-canonical all telescope"
     | _ => pure ()
-    return binders.foldr
-      (fun (uses, owned, ty) result => .all uses owned ty result) body
-  | 0xA => do  -- LET
-    if tag.value > 3 then
-      throw s!"getExpr: invalid let flags {tag.value}"
-    let binder ← getBinderContract
-    let some contract := LetContract.ofFlags? tag.value binder
-      | throw "getExpr: invalid let flags"
+    return binders.foldr (fun ty result => .all ty result) body
+  | 0xA => do  -- LET: tag.value is nonDep + 2 · the let's mode code
+    let some (nonDep, mode) := LetMode.ofHeader? tag.value
+      | throw s!"getExpr: invalid let header {tag.value}"
     let ty ← recur
     let val ← recur
     let body ← recur
-    return .letE contract ty val body
+    return .letE nonDep mode ty val body
   | 0xB => return .share tag.value
   | f => throw s!"getExpr: invalid flag {f}"
 
@@ -908,21 +875,29 @@ def unpackDefKindSafety (b : UInt8) : DefKind × DefinitionSafety :=
   let safety := match b &&& 0x3 with | 0 => .unsaf | 1 => .safe | _ => .part
   (kind, safety)
 
+/-- A definition's first byte: its kind and safety in the low nibble
+(`packDefKindSafety`), its assertions' code in the high one. -/
+def packDefinitionFlags (d : Definition) : UInt8 :=
+  packDefKindSafety d.kind d.safety ||| (d.asserts.toCode <<< 4)
+
 def putDefinition (d : Definition) : PutM Unit := do
-  putU8 (packDefKindSafety d.kind d.safety)
+  putU8 (packDefinitionFlags d)
   putTagN 0 0 d.lvls
   putExpr d.typ
   putExpr d.value
 
 def getDefinition : GetM Definition := do
   let flags ← getU8
-  if flags >>> 2 > 2 || (flags &&& 3) > 2 then
+  let low := flags &&& 15
+  if low >>> 2 > 2 || (low &&& 3) > 2 then
     throw "invalid definition kind/safety"
-  let (kind, safety) := unpackDefKindSafety flags
+  let some asserts := DefAsserts.ofCode? (flags >>> 4)
+    | throw s!"invalid definition assertions {flags >>> 4}"
+  let (kind, safety) := unpackDefKindSafety low
   let lvls := (← getTagN 0).value
   let typ ← getExpr
   let value ← getExpr
-  return ⟨kind, safety, lvls, typ, value⟩
+  return ⟨kind, safety, asserts, lvls, typ, value⟩
 
 instance : Serialize Definition where
   put := putDefinition
@@ -1009,22 +984,45 @@ instance : Serialize Quotient where
   put := putQuotient
   get := getQuotient
 
+/-- A constructor's first byte: bit 0 `isUnsafe`, bit 1 set when its field
+modes are listed. -/
+def packConstructorFlags (c : Constructor) : UInt8 :=
+  (if c.isUnsafe then 1 else 0) ||| (if c.fieldModes.isInherited then 0 else 2)
+
 def putConstructor (c : Constructor) : PutM Unit := do
-  putU8 (if c.isUnsafe then 1 else 0)
+  putU8 (packConstructorFlags c)
   putTagN 0 0 c.lvls
   putTagN 0 0 c.cidx
   putTagN 0 0 c.params
   putTagN 0 0 c.fields
+  for m in c.fieldModes.toArray do putU8 m.toCode
   putExpr c.typ
 
+/-- One field mode byte. -/
+def getFieldMode : GetM FieldMode := do
+  let b ← getU8
+  let some m := FieldMode.ofCode? b | throw s!"invalid field mode {b}"
+  return m
+
+/-- A constructor's listed field modes, `n` of them, at least one `shared`. -/
+def getFieldModes (n : Nat) : GetM (FieldModes n) := do
+  checkCount n.toUInt64
+  let modes ← getArray getFieldMode n
+  match FieldModes.listed? modes with
+  | some m => return m
+  | none => throw "constructor: listed field modes with no shared field"
+
 def getConstructor : GetM Constructor := do
-  let isUnsafe ← Serialize.get
+  let flags ← getU8
+  if flags > 3 then throw s!"invalid constructor flags {flags}"
+  let isUnsafe := flags &&& 1 == 1
   let lvls := (← getTagN 0).value
   let cidx := (← getTagN 0).value
   let params := (← getTagN 0).value
   let fields := (← getTagN 0).value
+  let fieldModes ← if flags &&& 2 == 2 then getFieldModes fields.toNat else pure .inherited
   let typ ← getExpr
-  return ⟨isUnsafe, lvls, cidx, params, fields, typ⟩
+  return ⟨isUnsafe, lvls, cidx, params, fields, fieldModes, typ⟩
 
 instance : Serialize Constructor where
   put := putConstructor
@@ -1164,49 +1162,51 @@ instance : Serialize ConstantInfo where
   put := putConstantInfo
   get := getConstantInfo
 
-/-- Read a counted array by consuming each entry before appending it. -/
-def getArray (getm : GetM α) (count : Nat) : GetM (Array α) := do
-  let mut values := #[]
-  for _ in [0:count] do
-    values := values.push (← getm)
-  return values
-
 /-! ## The binder-data section
 
 ```
 section := nblocks:TagN0 block[nblocks]
 block   := ekind:u8 eidx:TagN0 variant:TagN0 nnodes:TagN0 node[nnodes]
-node    := 0x00 | 0x01 | 0x02 k:TagN0 p[k]:TagN0 | 0x03 v:TagN0 | 0x04
+node    := tag|mode<<3 (tag 0, 1, 4) | tag|mode<<3 (tag 2) k:TagN0 p[k]:TagN0 | 0x03 v:TagN0
 ```
 
-The codec maps each node tag to one constructor; the canonical-form
+A binder node's byte holds its tag (0 never, 1 zero, 2 ifAllZero, 4
+undecided) in its low three bits and its mode's code (`AllMode.toCode`) in its
+high five, so a node at the default mode is its tag alone; a share node's byte
+is `0x03`. The codec maps each byte to one constructor and refuses the others
+(tags 5 to 7, a share byte with mode bits, a mode code that is no mode); the canonical-form
 conditions (the level count below `Ixon.maxLevelCount`, blocks strictly sorted,
 `ifAllZero` parameters nonempty, strictly ascending and below the level count)
 are `Ixon.Constant.bindersCanonical`, which the certified reader checks. -/
 
+/-- A binder node's byte: its tag, and its mode's code above it. -/
+def binderNodeByte (tag : UInt8) (mode : AllMode) : UInt8 := tag ||| (mode.toCode <<< 3)
+
 def putBinderNode : BinderNode → PutM Unit
-  | .never => putU8 0
-  | .zero => putU8 1
-  | .ifAllZero params => do
-    putU8 2
+  | .never m => putU8 (binderNodeByte 0 m)
+  | .zero m => putU8 (binderNodeByte 1 m)
+  | .ifAllZero params m => do
+    putU8 (binderNodeByte 2 m)
     putTagN 0 0 params.size.toUInt64
     for p in params do putTagN 0 0 p
   | .share variant => do
     putU8 3
     putTagN 0 0 variant
-  | .undecided => putU8 4
+  | .undecided m => putU8 (binderNodeByte 4 m)
 
 def getBinderNode : GetM BinderNode := do
-  match ← getU8 with
-  | 0 => return .never
-  | 1 => return .zero
+  let b ← getU8
+  if b == 3 then return .share (← getTagN 0).value
+  let some m := AllMode.ofCode? (b >>> 3) | throw s!"getBinderNode: invalid mode in {b}"
+  match b &&& 7 with
+  | 0 => return .never m
+  | 1 => return .zero m
   | 2 => do
     let count := (← getTagN 0).value
     let params ← getTagN0Values count.toNat
-    return .ifAllZero params.toArray
-  | 3 => return .share (← getTagN 0).value
-  | 4 => return .undecided
-  | t => throw s!"getBinderNode: invalid tag {t}"
+    return .ifAllZero params.toArray m
+  | 4 => return .undecided m
+  | t => throw s!"getBinderNode: invalid tag {t} in {b}"
 
 def putBinderBlock (b : BinderBlock) : PutM Unit := do
   putU8 (if b.shared then 1 else 0)
