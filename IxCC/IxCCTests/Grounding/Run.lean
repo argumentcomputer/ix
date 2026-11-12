@@ -504,8 +504,8 @@ def mapRecRules (i : Input) (r : CId)
     | some e =>
       match e.decl with
       | .recr sf kk lv np nmot nmin ni ind rules ty =>
-        { i.src with consts := i.src.consts.insert r
-            { e with decl := .recr sf kk lv np nmot nmin ni ind (g rules) ty } }
+        let e' := { e with decl := .recr sf kk lv np nmot nmin ni ind (g rules) ty }
+        { i.src with consts := i.src.consts.insert r e' }
       | _ => i.src
     | none => i.src
   { i with env, src }

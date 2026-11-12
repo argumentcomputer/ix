@@ -394,19 +394,19 @@ recursor clause and its implication from the landed one. -/
 /-- info: 'IxCC.Grounding.recFacts_of_eqRecOnly' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Grounding.recFacts_of_eqRecOnly
 
-/-- info: 'IxCC.Grounding.lamSplit_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'IxCC.Grounding.lamSplit_spec' depends on axioms: [propext] -/
 #guard_msgs in #print axioms IxCC.Grounding.lamSplit_spec
 
-/-- info: 'IxCC.Grounding.piSplit_length' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'IxCC.Grounding.piSplit_length' depends on axioms: [propext] -/
 #guard_msgs in #print axioms IxCC.Grounding.piSplit_length
 
-/-- info: 'IxCC.Grounding.recTele_of_check' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'IxCC.Grounding.recTele_of_check' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Grounding.recTele_of_check
 
 /-- info: 'IxCC.Grounding.recProg_of_check' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Grounding.recProg_of_check
 
-/-- info: 'IxCC.Grounding.recCtorsRaw_of_check' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'IxCC.Grounding.recCtorsRaw_of_check' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Grounding.recCtorsRaw_of_check
 
 /-- info: 'IxCC.Grounding.getAppArgs_inst' depends on axioms: [propext, Classical.choice, Quot.sound] -/
