@@ -112,6 +112,108 @@
     "after_main_cells": 10915562,
     "max_height": 524288,
     "public_fields": 2,
-    "scope": "Development terminal regression. Main-cell counts do not establish a fitting PLONK domain or a full pipeline proof."
+    "scope": "Development terminal regression with extrapolated PLONK cost. No full-size PLONK compile or proof; the required 2^27 domain still exceeds all Ignition powers.",
+    "before_estimated_constraints": 87970978,
+    "after_estimated_constraints": 74684546,
+    "estimated_domain": 134217728,
+    "sample_count": 203,
+    "largest_estimated_contributions": [
+      {
+        "actual_rows": 524288,
+        "baseline_constraints": 4949507,
+        "full_contribution": "24641348",
+        "name": "BN254Fq::range80",
+        "sample_difference": "188",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 32768,
+        "baseline_constraints": 4949507,
+        "full_contribution": "8322056",
+        "name": "BN254FqProducts::reduce",
+        "sample_difference": "1016",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 65536,
+        "baseline_constraints": 4949507,
+        "full_contribution": "5832348",
+        "name": "BN254Fq::from_limbs",
+        "sample_difference": "356",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 1024,
+        "baseline_constraints": 4949507,
+        "full_contribution": "3759720",
+        "name": "Blake3::compress",
+        "sample_difference": "14744",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 65536,
+        "baseline_constraints": 4949507,
+        "full_contribution": "3669792",
+        "name": "BN254FqProducts::range86",
+        "sample_difference": "224",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 32768,
+        "baseline_constraints": 4949507,
+        "full_contribution": "3505748",
+        "name": "BN254Fq::add",
+        "sample_difference": "428",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 16384,
+        "baseline_constraints": 4949507,
+        "full_contribution": "2227680",
+        "name": "BN254Fp2::add",
+        "sample_difference": "544",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 16384,
+        "baseline_constraints": 4949507,
+        "full_contribution": "1900080",
+        "name": "BN254Fq::sub",
+        "sample_difference": "464",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 8192,
+        "baseline_constraints": 4949507,
+        "full_contribution": "1277328",
+        "name": "BN254Fp2::mul",
+        "sample_difference": "624",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 1024,
+        "baseline_constraints": 4949507,
+        "full_contribution": "1212780",
+        "name": "BN254G1::add",
+        "sample_difference": "4756",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 8192,
+        "baseline_constraints": 4949507,
+        "full_contribution": "1113568",
+        "name": "BN254Fp2::sub",
+        "sample_difference": "544",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 16384,
+        "baseline_constraints": 4949507,
+        "full_contribution": "917280",
+        "name": "BN254FqRelation::range89",
+        "sample_difference": "224",
+        "sample_rows": 8
+      }
+    ]
   }
 }

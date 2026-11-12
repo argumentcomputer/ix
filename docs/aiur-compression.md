@@ -1034,10 +1034,13 @@ column commitments from 9,037 to 9,251, so this change does not solve the
 commitment-count problem by itself.
 
 The terminal development fixture falls from 12,565,164 to 10,915,562 main
-cells. A fitting final PLONK circuit and the full Init compression chain still
-need validation. Focused curve, encoding, source-verifier, tower and pairing
-tests pass, including actual forged KZG witnesses, and all dependent compiler
-fixtures are regenerated.
+cells and from 87,970,978 to 74,684,546 estimated PLONK constraints. All 203
+capacity samples completed; the estimate still requires a `2^27` domain,
+exceeding Ignition's available powers. This is not a full-size PLONK compile
+or proof. Focused curve, encoding, source-verifier, tower and pairing tests
+pass, including actual forged KZG witnesses. The complete terminal execution
+also proves through the existing KZG backend and rejects a changed statement;
+all dependent compiler fixtures are regenerated.
 
 ## 21. BN host execution and admission
 
