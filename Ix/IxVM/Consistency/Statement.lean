@@ -574,17 +574,24 @@ structure Seams where
   kernel reader's reading of them in the records `E`: a projection record's block
   and a literal's blob are read from `E`. -/
   loaded : Ixon.Env → Aiur.Heap IxVM.F → Aiur.SourceValue IxVM.F → ByteArray → Prop
+  /-- (L3, L4) The ghost state the term and context seams share: what representing a
+  term fixes beyond the environment and the depths (chosen by the instance; for `S₀`,
+  the keying of addresses by the role table the run read and the types of the opened
+  variables). Without it a bound variable's inferred type, IxVM's context entry, is
+  not tied to the kernel `fvar`'s annotation. -/
+  Ghost : Type
   /-- (L3, L4) In the kernel environment `env` read from the Ixon records `E`, at
   opening depth `depth` and under `binders` local binders, the IxVM value `v` (a
   `KernelTypes::KExpr`) represents the kernel term `t` (whose loose bound
   variables are the local binders). It pairs each binder with its validated `pw`
   datum, and relates levels up to semantic equality. -/
-  term : Ixon.Env → Ix.Kernel.Env .anon → (depth binders : Nat) →
+  term : Ixon.Env → Ix.Kernel.Env .anon → Ghost → (depth binders : Nat) →
     Aiur.Heap IxVM.F → Aiur.SourceValue IxVM.F → Ix.Kernel.Expr .anon → Prop
   /-- (L4) The role context `rc` (`KernelRoles::RoleCtx`) and the context list
   `types` represent the environment `env` read from `E` and the opening depth
-  `depth`, with the types of the opened variables. -/
-  ctx : Ixon.Env → Ix.Kernel.Env .anon → Nat → Aiur.Heap IxVM.F →
+  `depth`, with the types of the opened variables, under the same ghost state as
+  the terms. -/
+  ctx : Ixon.Env → Ix.Kernel.Env .anon → Ghost → Nat → Aiur.Heap IxVM.F →
     (rc types : Aiur.SourceValue IxVM.F) → Prop
   /-- (L6 → L7) The derivation's claim phase, under the role table `t`, walked
   the closure of `seeds` in the loaded records `E` and checked every constant of
@@ -661,15 +668,17 @@ kernel term one depth deeper (the kernel's opened variables are absolute). The
 level instantiation `expr_inst_levels` is related up to the level equivalence the
 term seam uses, and is not stated here. -/
 def Terms : Prop :=
-  (∀ (E : Ixon.Env) (env : Ix.Kernel.Env .anon) (n : Nat) (e arg r : Aiur.SourceValue IxVM.F)
+  (∀ (E : Ixon.Env) (env : Ix.Kernel.Env .anon) (g : S.Ghost) (n : Nat)
+      (e arg r : Aiur.SourceValue IxVM.F)
       (heap after : Aiur.Heap IxVM.F) (cs : List (Call IxVM.F)) (tb ta : Ix.Kernel.Expr .anon),
     ObsFn IxVM.source.world "KernelSubst::expr_inst1" [e, arg, .field 0] heap r after cs →
-    Bounded cs → S.term E env n 1 heap e tb → S.term E env n 0 heap arg ta →
-      S.term E env n 0 after r (tb.instantiate1 ta)) ∧
-  (∀ (E : Ixon.Env) (env : Ix.Kernel.Env .anon) (n : Nat) (e r : Aiur.SourceValue IxVM.F)
+    Bounded cs → S.term E env g n 1 heap e tb → S.term E env g n 0 heap arg ta →
+      S.term E env g n 0 after r (tb.instantiate1 ta)) ∧
+  (∀ (E : Ixon.Env) (env : Ix.Kernel.Env .anon) (g : S.Ghost) (n : Nat)
+      (e r : Aiur.SourceValue IxVM.F)
       (heap after : Aiur.Heap IxVM.F) (cs : List (Call IxVM.F)) (t : Ix.Kernel.Expr .anon),
     ObsFn IxVM.source.world "KernelSubst::expr_lift" [e, .field 1, .field 0] heap r after cs →
-    Bounded cs → S.term E env n 0 heap e t → S.term E env (n + 1) 0 after r t)
+    Bounded cs → S.term E env g n 0 heap e t → S.term E env g (n + 1) 0 after r t)
 
 /-- **Obligation L3** (term operations), given L2. -/
 def L3 : Prop := Levels → Terms S
@@ -691,23 +700,23 @@ the program as it ships: IxVM checks a typing certificate for the argument at
 binders whose datum may be `Prop`, as `Red.beta` requires, and `Core` is proved of
 that program. -/
 def Core : Prop :=
-  ∀ (E : Ixon.Env) (env : Ix.Kernel.Env .anon) (d : Nat) (rc types : Aiur.SourceValue IxVM.F)
-    (heap after : Aiur.Heap IxVM.F) (cs : List (Call IxVM.F)),
-    S.ctx E env d heap rc types → Bounded cs →
+  ∀ (E : Ixon.Env) (env : Ix.Kernel.Env .anon) (g : S.Ghost) (d : Nat)
+    (rc types : Aiur.SourceValue IxVM.F) (heap after : Aiur.Heap IxVM.F) (cs : List (Call IxVM.F)),
+    S.ctx E env g d heap rc types → Bounded cs →
     (∀ (e r : Aiur.SourceValue IxVM.F) (te : Ix.Kernel.Expr .anon),
       ObsFn IxVM.source.world "KernelWhnf::whnf" [rc, e, types] heap r after cs →
-      S.term E env d 0 heap e te →
+      S.term E env g d 0 heap e te →
         View.HashedCollision { env := E } [] cs ∨
-        ∃ te', S.term E env d 0 after r te' ∧ Ix.Kernel.Rules.Red env d te te') ∧
+        ∃ te', S.term E env g d 0 after r te' ∧ Ix.Kernel.Rules.Red env d te te') ∧
     (∀ (a b : Aiur.SourceValue IxVM.F) (ta tb : Ix.Kernel.Expr .anon),
       ObsFn IxVM.source.world "KernelDefEq::k_is_def_eq" [rc, a, b, types] heap (.field 1) after cs →
-      S.term E env d 0 heap a ta → S.term E env d 0 heap b tb →
+      S.term E env g d 0 heap a ta → S.term E env g d 0 heap b tb →
         View.HashedCollision { env := E } [] cs ∨ Ix.Kernel.Rules.DefEq env d ta tb) ∧
     (∀ (e r : Aiur.SourceValue IxVM.F) (te : Ix.Kernel.Expr .anon),
       ObsFn IxVM.source.world "KernelInfer::k_infer" [rc, e, types] heap r after cs →
-      S.term E env d 0 heap e te →
+      S.term E env g d 0 heap e te →
         View.HashedCollision { env := E } [] cs ∨
-        ∃ tt, S.term E env d 0 after r tt ∧ Ix.Kernel.Rules.Infer env .full d te tt)
+        ∃ tt, S.term E env g d 0 after r tt ∧ Ix.Kernel.Rules.Infer env .full d te tt)
 
 /-- **Obligation L4** (core), given L1 to L3. -/
 def L4 : Prop := Records S → Levels → Terms S → Core S
