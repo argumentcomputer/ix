@@ -697,15 +697,19 @@ evaluated, so it refuses every site of a constant with more than 8 level
 parameters (256 profiles). Measured on the corpus (below), the most level
 parameters of a constant in a checked set `Sl` is 4 (the `for`-loop closures,
 `scalar`, `resource`) and of any constant of a closure's reading 7, so the bound
-refuses nothing there. It walks each maximal application spine once, so a
-spine's width costs no fuel, and neither does a telescope's (the arguments
-fitted against a `∀`-telescope, as ι and the projection of a constructor ask,
-and β through a λ-telescope: each argument is checked at the same fuel); the
-fuel (64) bounds the nesting depth of a check,
-each nested argument costing two levels (its check and its type's inference;
-three before G2b, when a list literal of `src-diag/diag` nested deeper than
-that was refused): 31 nested `Nat.succ`s are typed, 32 are not
-(`tests-grounding`). It compares levels by syntactic equality, or, for levels of
+refuses nothing there. It walks each maximal application spine once. The fuel
+(64) bounds depth only: the nesting of checks, each nested argument costing two
+levels (its check and its type's inference; three before G2b, when a list
+literal of `src-diag/diag` nested deeper than that was refused), so 31 nested
+`Nat.succ`s are typed and 32 are not (`tests-grounding`), and the number of
+head-reduction steps taken one after another (a δ, ι, primitive or projection
+step, or β through a whole λ-telescope: one level each). Width is free: a
+spine's arguments and a telescope's (the arguments fitted against a
+`∀`-telescope, as ι and the projection of a constructor ask, and β through a
+λ-telescope) are each checked at the same fuel. So the fuel does not bound the
+total work, which grows with the width of what is checked and with the paths a
+failing conversion tries. It compares levels by syntactic equality, or, for
+levels of
 at most 32 nodes, by syntactic equality after `Level.simplify` and the collapse
 of every `imax a a` to `a` (equal at every assignment), or by their max-plus
 forms (a constant and parameter offsets, each at most the other), never by the
@@ -726,8 +730,16 @@ memo of repeated reduction or conversion, so beyond these bounds the check's
 cost on a hostile closure is not otherwise bounded; a conversion that fails is
 the expensive case, since it tries every path before refusing. Interpreted, on
 the corpus, `sitesDirectB` takes at most 1.24 s (`strings`, where it is false;
-`scalar` 0.84 s, where it is true), except on `tags125`, 48.7 s; compiled, it
-is not measured apart from the suite.
+`scalar` 0.84 s, where it is true), except on `tags125`, the matcher of a
+125-constructor inductive: 48.7 s, the measured worst case. There (counted by an
+instrumented copy of the checker) the work is dominated by the reductions of
+`T125.ctorIdx c` that its wildcard alternatives' proofs need, each a β-telescope
+over `T125.casesOn`'s 127 binders, a fit of 127 arguments at ι on `T125.rec` and
+a β-telescope through the rule: 252 ι steps (31,020 fitted arguments, 123 on
+average), 159,441 β-steps, 213,388 checks, the same small checks repeated (one
+head reduction's input recurs 181,536 times) since nothing is memoized.
+Compiled, `sitesDirectB` is not measured apart from the suite (1.26 to 1.39 s,
+which loads `tags16` and `panic` but not `tags125`).
 
 **The direct route's cost, profiled and fixed (G3).** The widening (G2b) made the
 check much slower on some closures: `sitesDirectB` on `tags125` took 624 s (3.9 s
@@ -815,6 +827,10 @@ closures (26 of 48 before the renaming-tolerant `case` shape: `erase` and
    `False.rec`, run by `False.elim`, on 3; `Nat.rec` on 2 and `List.rec` on 1,
    in `diag` from structural recursion compiled through `brecOn` (`Nat.below`,
    `Nat.brecOn.go`, `List.below` run them).
+   A concrete case: `phase1-machines/natural` (natural-style machines) fails
+   `declOk` on exactly two recursors, `Eq.rec` and `Bool.rec`, and otherwise
+   only `valueCorr`: admitting `Eq.rec` (G3, part C) and then `Bool.rec` (part
+   D, without parameters) removes its first obstacle.
 2. *A `let` in a run term* (`valueCorr`, `eqnCorr`, `eqnShape`), 13 closures:
    the body of every `for` loop (`Std.Legacy.Range.forIn'.loop`, 6), and
    values such as `Scalar.powMod`'s; the only obstacle on `fields49`.
