@@ -179,7 +179,7 @@ theorem rhs_step {F : Fir.Program} (pins : BoolPinsOk F)
             balance_hold.mp (hs.balance st.counts)
           obtain ⟨hr, hb, hresult, hpreserve⟩ :=
             evalRhs_alloc_owned (T := { ctors := F.ctors, known := F.known }) hvs hvlen hpos held hds
-          refine ⟨_, _, _, hr, ?_, fun root w' _ hd' => hpreserve root w' hd'⟩
+          refine ⟨_, _, _ :: owned₁, hr, ?_, fun root w' _ hd' => hpreserve root w' hd'⟩
           have pre₁ := ((st.pre.weaker hwk inv₁.roots).transport hpreserve
             (fun v hv => canDup_alloc hv _))
           exact pre₁.bindOwned hx hresult
