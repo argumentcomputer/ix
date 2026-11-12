@@ -9,10 +9,15 @@
   must realize them before it computes its closure: once realized, each
   theorem is in the environment and its dependencies (matchers, splitters, the
   definitions its statement mentions) join the selected closure.
+
+  It also adds, as seeds, the stored equations of the fixed-width word
+  operations the closure reaches (`Ix.Compile.WordEquations`), which a consumer
+  that evaluates them as primitives takes their meaning from.
 -/
 module
 public import Lean.Meta.Eqns
 public import Ix.EnvScope
+public import Ix.Compile.WordEquations
 -- The structural, well-founded and `partial_fixpoint` equation generators
 -- register themselves with `Lean.Meta.getUnfoldEqnFor?` when this module's
 -- initializers run; without them it finds no unfolding theorem.
@@ -57,9 +62,11 @@ def realize (env : Lean.Environment) (names : List Lean.Name) :
 closure `ix compile --consts` compiles) and over the unfolding theorems of every
 recursive definition it reaches, until no new theorem appears. The theorems'
 own dependencies join the closure, and the recursive definitions among them
-are processed in turn. Returns the environment with the realized theorems, the
-closed constant list, the associations and the failures, each definition
-visited once. -/
+are processed in turn. Every fixed-width word operation reached adds its
+stored equation (`Ix.Compile.WordEquations`) as a seed, with its width's
+`ofNat` equation and bridge. Returns the environment with the realized
+theorems, the closed constant list, the associations and the failures, each
+definition visited once. -/
 partial def close (env : Lean.Environment) (seeds : List Lean.Name) :
     IO (Lean.Environment × List (Lean.Name × Lean.ConstantInfo) × Array Association ×
       Array (Lean.Name × String)) :=
@@ -70,6 +77,12 @@ where
       IO (Lean.Environment × List (Lean.Name × Lean.ConstantInfo) × Array Association ×
         Array (Lean.Name × String)) := do
     let closed := Ix.EnvScope.collectSelectedDeps env seeds
+    -- The stored equations of the fixed-width word operations the closure reaches
+    -- (`Ix.Compile.WordEquations`), added once each, as seeds.
+    let words := Ix.Compile.WordEquations.needed env (closed.map (·.1))
+    if !words.isEmpty then
+      let env ← Ix.Compile.WordEquations.add env words
+      return ← loop env (seeds ++ words.map (·.theoremName)) visited found failed
     let pending := closed.filterMap fun (name, _) =>
       if visited.contains name then none else some name
     if pending.isEmpty then
