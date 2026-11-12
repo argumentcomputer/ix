@@ -270,7 +270,7 @@ def renderBackend (spec : Ix.Cli.BenchCmd.BackendSpec) (cells : Array Cell)
     for (name, isEnv) in c.rows do
       if !(rowNames c.base ++ rowNames c.pr).contains name then continue
       rows := rows + 1
-      let metrics := if isEnv then spec.envMetrics
+      let metrics := if isEnv then spec.envMetrics ++ (spec.envStages.map (·.2)).flatten
         else spec.constantMetrics ++ (spec.stages.map (·.2)).flatten
       let flags := metrics.map fun m => (metricCells c.base c.pr name m threshold).2
       if flags.any (·.1) then regressed := regressed + 1
@@ -307,6 +307,12 @@ def renderBackend (spec : Ix.Cli.BenchCmd.BackendSpec) (cells : Array Cell)
     if !ran.isEmpty then
       out := out ++ #["", s!"#### `{spec.name}` · {stage}", ""]
         ++ table ran "constant" (s!"`{·}`") (columnsOf metrics ran) stage
+  for (stage, metrics) in spec.envStages do
+    let ran := envRows.filter fun (c, name) =>
+      metrics.any fun m => (rowNum c.base name m).isSome || (rowNum c.pr name m).isSome
+    if !ran.isEmpty then
+      out := out ++ #["", s!"#### `{spec.name}` · env {stage}", ""]
+        ++ table ran "env" id (columnsOf metrics ran) stage
   return "\n".intercalate out.toList
 
 def runCompareCmd (p : Cli.Parsed) : IO UInt32 := do

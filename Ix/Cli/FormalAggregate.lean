@@ -223,6 +223,7 @@ def runController (p : Cli.Parsed) (onRoot : Address → IO Unit := fun _ => pur
     if let some flag := p.flag? "report" then
       IO.FS.writeFile (flag.as! String) (Json.mkObj [("schema", toJson "ix-formal-pipeline/1"),
         ("root", toJson root), ("jobs", toJson lanes), ("proved_leaves", toJson true),
+        ("constants", toJson count),
         ("verified", toJson true)]).pretty
     IO.println root
     onRoot address

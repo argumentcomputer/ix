@@ -39,11 +39,12 @@ def testRows : TestSeq :=
     (["ixvm", "ixvm-ooc"].all fun n => ((findBackend n).map (·.hasConstants)).getD false)
   ++ test "compile and decompile have only env rows"
     (["compile", "decompile"].all fun n => ((findBackend n).map (!·.hasConstants)).getD false)
-  ++ test "a stage measure plots only the shared constants"
+  ++ test "stage measures plot the row kinds that support them"
     (backendSpecs.all fun b => b.stages.all fun (_, ms) => ms.all fun m =>
-      b.benchmarkNames m == constantNames)
+      b.benchmarkNames m == constantNames ++
+        (if b.envStages.any (·.2.contains m) then envNames else #[]))
   ++ test "stage measures are tracked"
-    (backendSpecs.all fun b => b.stages.all fun (_, ms) => ms.all b.trackedMetrics.contains)
+    (backendSpecs.all fun b => (b.stages ++ b.envStages).all fun (_, ms) => ms.all b.trackedMetrics.contains)
   ++ test "backend testbeds are distinct"
     ((backendSpecs.map (·.testbed)).eraseDups.length == backendSpecs.length)
 
@@ -116,6 +117,9 @@ def testReport : TestSeq := .individualIO "ixvm report: an env table, then a con
   let proved := rowsOf [("Nat.add_comm", [("execute-time", 1), ("prove-time", 30)])]
   let staged ← renderBackend spec
     #[{ backend := "ixvm", env := "InitStd", base := proved, pr := proved }] 3.0 "main"
+  let whole := rowsOf [("Init", [("prove-time", 30), ("e2e-time", 40)])]
+  let envStages ← renderBackend spec
+    #[{ backend := "ixvm", env := "Init", base := whole, pr := whole }] 3.0 "main"
   let ok := plain.startsWith "### `ixvm`"
     && (match envHead, envAt, constHead, constAt with
       | some eh, some e, some ch, some c => eh < e && e < ch && ch < c
@@ -126,6 +130,9 @@ def testReport : TestSeq := .individualIO "ixvm report: an env table, then a con
     && (staged.splitOn "#### `ixvm` · prove").length == 2
     && (staged.splitOn "| constant | prove-time (main) | prove-time (PR) | Δ% |\n").length == 2
     && (plain.splitOn "check-time").length == 1
+    && (envStages.splitOn "#### `ixvm` · env prove").length == 2
+    && (envStages.splitOn "#### `ixvm` · env e2e").length == 2
+    && (envStages.splitOn "| env | prove-time (main)").length == 2
   return (ok, 0, 0, if ok then none else some plain)) .done
 
 open Ix.Cli.BenchReport in
@@ -260,12 +267,38 @@ def testRunMode : TestSeq := .individualIO "invalid run modes fail before starti
   let mut ok := true
   for args in [["--backend", "ixvm", "--mode", "unknown"],
                ["--backend", "ixvm-ooc", "--mode", "prove"],
-               ["--backend", "ixvm", "--mode", "compress", "--constants", "none"]] do
+               ["--backend", "ixvm", "--mode", "compress", "--constants", "none"],
+               ["--backend", "ixvm", "--env-mode", "unknown"],
+               ["--backend", "compile", "--env-mode", "prove"],
+               ["--backend", "ixvm", "--env-mode", "prove", "--no-env-row"],
+               ["--backend", "ixvm", "--gpu-device", "0"],
+               ["--backend", "ixvm", "--env-mode", "prove", "--env-dev-srs"],
+               ["--backend", "ixvm", "--env-mode", "compress", "--env-compression", "unknown"]] do
     let (_, code) ← IO.FS.withIsolatedStreams (benchRunCmd.validate args)
     ok := ok && code == 2
   return (ok, 0, 0, none)) .done
 
+def testEnvProofOptions : TestSeq :=
+  let options := fun (args : List String) => do
+    let (_, parsed) ← (benchRunCmd.parse ("--backend" :: "ixvm" :: args)).toOption
+    (envProofOptions parsed "ixvm" true).toOption
+  test "whole-env proving is explicitly selected without constant rows"
+    ((options ["--env", "Init", "--constants", "none", "--env-mode", "prove"]).any fun opts =>
+      opts.mode == .prove && opts.hostArgs.isEmpty && !opts.development)
+  ++ test "whole-env compression defaults to production PLONK"
+    ((options ["--env-mode", "compress"]).any fun opts =>
+      opts.compressArgs == #["--plonk"])
+  ++ test "development PLONK selects both development setups"
+    ((options ["--env-mode", "compress", "--env-dev-srs"]).any fun opts =>
+      opts.compressArgs == #["--plonk", "--dev-kzg-srs", "--dev-final-srs"])
+  ++ test "KZG and GPU configuration reach the measured tools"
+    ((options ["--env-mode", "compress", "--env-compression", "kzg", "--env-dev-srs",
+      "--gpu-device", "0", "--max-ram", "200"]).any fun opts =>
+      opts.compressArgs == #["--dev-kzg-srs"] &&
+      opts.hostArgs == #["--gpu-device", "0", "--max-ram", "200"])
+
 def suite : List TestSeq :=
-  [testRows, testCells, testReport, testFftCost, testThroughput, testRowKinds, testCommands, testRunMode]
+  [testRows, testCells, testReport, testFftCost, testThroughput, testRowKinds, testCommands,
+    testRunMode, testEnvProofOptions]
 
 end Tests.Ix.BenchMeasures

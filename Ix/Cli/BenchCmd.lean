@@ -7,6 +7,7 @@ public import Ix.Cli.ConstsFile
 public import Ix.Shard.Manifest
 public import Ix.TracingTexray
 public import Ix.Store
+public import Ix.Cli.Compression
 
 /-!
   `ix bench run`: the benchmark orchestrator — one command that
@@ -71,6 +72,7 @@ structure EnvSpec where
   module : String
 
 def envSpecs : List EnvSpec := [
+  { name := "Init", module := "Benchmarks/Compile/CompileInit.lean" },
   { name := "InitStd", module := "Benchmarks/Compile/CompileInitStd.lean" },
   -- Init+Std+Lean+Batteries as one env (the union deduplicates: Lean
   -- already carries Init and Std).
@@ -129,6 +131,8 @@ structure BackendSpec where
       measures (`prove-time`, …): uploaded as their own bencher measures,
       plotted one graph per measure, and tabled one table per stage. -/
   stages : List (String × List String) := []
+  /-- Stages available through the explicit whole-environment proving mode. -/
+  envStages : List (String × List String) := []
 
 def backendSpecs : List BackendSpec := [
   -- ixvm: execution of the certified IxVM claim verifier, no proving. A
@@ -147,8 +151,8 @@ def backendSpecs : List BackendSpec := [
   -- `bench-ixvm` process also proves the constant on the aggregate
   -- controller and verifies the root; `prove-trace-shards` counts the trace
   -- shards of its claim proofs. In compress mode `ix compress` then
-  -- compresses that root to KZG. Env rows stay execution-only, since
-  -- whole-env proving is too slow for CI.
+  -- compresses that root to KZG. Env rows default to execution; --env-mode
+  -- explicitly enables whole-environment proving and compression.
   { name := "ixvm", testbed := "ixvm",
     constantMetrics := ["execute-time", "throughput", "peak-rss", "fft-cost"],
     envMetrics := ["execute-time", "throughput", "peak-rss", "shards", "fft-cost"],
@@ -156,7 +160,11 @@ def backendSpecs : List BackendSpec := [
       ("prove", ["prove-time", "prove-throughput", "prove-peak-rss", "prove-proof-size",
                  "verify-time", "prove-trace-shards"]),
       ("compress", ["compress-time", "compress-peak-rss", "compress-proof-size",
-                    "compress-verify-time"])] },
+                    "compress-verify-time"])],
+    envStages := [
+      ("prove", ["prove-time", "prove-throughput", "prove-peak-rss", "prove-proof-size", "verify-time"]),
+      ("compress", ["compress-time", "compress-peak-rss", "compress-proof-size", "compress-verify-time"]),
+      ("e2e", ["e2e-time", "e2e-peak-rss"])] },
   -- ixvm-ooc: the out-of-circuit IxC kernel (`ix check-lean --anon`). The
   -- constant rows check each constant's full closure in one process per
   -- env; the env row checks the whole env. The constant rows share
@@ -189,7 +197,7 @@ def BackendSpec.metrics (b : BackendSpec) : List String :=
 /-- Every measure the backend uploads: its columns and its stages'
     measures. -/
 def BackendSpec.trackedMetrics (b : BackendSpec) : List String :=
-  (b.metrics ++ (b.stages.map (·.2)).flatten).eraseDups
+  (b.metrics ++ ((b.stages ++ b.envStages).map (·.2)).flatten).eraseDups
 
 /-- The benchmark row names this backend uploads for a measure — the
     bencher slugs the dashboard plots key on: the shared constants when the
@@ -199,7 +207,7 @@ def BackendSpec.trackedMetrics (b : BackendSpec) : List String :=
 def BackendSpec.benchmarkNames (b : BackendSpec) (measure : String) : Array String :=
   (if b.constantMetrics.contains measure || b.stages.any (·.2.contains measure)
     then benchConstants.map (·.name) else #[])
-  ++ (if b.envMetrics.contains measure
+  ++ (if b.envMetrics.contains measure || b.envStages.any (·.2.contains measure)
     then (envSpecs.map (·.name)).toArray else #[])
 
 /-- Resolve a tool binary: prefer the in-tree build under `repo` (so a base
@@ -428,6 +436,108 @@ def IxvmMode.name : IxvmMode → String
   | .prove => "prove"
   | .compress => "compress"
 
+structure EnvProofOptions where
+  mode : IxvmMode := .execute
+  compression : String := "plonk"
+  development : Bool := false
+  manifest : Option String := none
+  device : Option Nat := none
+  maxRam : Option Nat := none
+
+def EnvProofOptions.hostArgs (opts : EnvProofOptions) : Array String :=
+  (opts.device.map (fun n => #["--gpu-device", toString n])).getD #[] ++
+  (opts.maxRam.map (fun n => #["--max-ram", toString n])).getD #[]
+
+def EnvProofOptions.compressArgs (opts : EnvProofOptions) : Array String :=
+  (if opts.compression == "plonk" then #["--plonk"] else #[]) ++
+  (if opts.development then #["--dev-kzg-srs"] ++
+    (if opts.compression == "plonk" then #["--dev-final-srs"] else #[]) else #[])
+
+def envProofOptions (p : Cli.Parsed) (backend : String) (envRow : Bool) : Except String EnvProofOptions := do
+  let name := ((p.flag? "env-mode").map (·.as! String)).getD "execute"
+  let some mode := IxvmMode.parse? name
+    | throw s!"unknown env mode `{name}` (expected execute, prove, or compress)"
+  let extra := #["env-compression", "env-dev-srs", "ixes", "gpu-device", "max-ram"]
+  if mode == .execute && extra.any p.hasFlag then
+    throw "whole-environment proof options require --env-mode prove or compress"
+  if mode != .execute && (backend != "ixvm" || !envRow) then
+    throw "--env-mode prove/compress requires the ixvm backend and its env row"
+  if mode != .compress && (p.hasFlag "env-compression" || p.hasFlag "env-dev-srs") then
+    throw "--env-compression and --env-dev-srs require --env-mode compress"
+  let compression := ((p.flag? "env-compression").map (·.as! String)).getD "plonk"
+  unless compression == "kzg" || compression == "plonk" do
+    throw "--env-compression must be kzg or plonk"
+  return {
+    mode := mode
+    compression := compression
+    development := p.hasFlag "env-dev-srs"
+    manifest := (p.flag? "ixes").map (·.as! String)
+    device := (p.flag? "gpu-device").map (·.as! Nat)
+    maxRam := (p.flag? "max-ram").map (·.as! Nat) }
+
+/-- Prove the entire environment with fresh witnesses, verify the root against
+its refined manifest, and optionally compress and verify that same claim.
+Compilation and initial partitioning are setup; `e2e-time` spans proving through
+the final verification, including artifact loading and root normalization. -/
+def runIxvmEnvProof (ix ixe out env : String) (opts : EnvProofOptions) : IO Bool := do
+  let dir := out ++ ".env"
+  IO.FS.createDirAll dir
+  let initial := opts.manifest.getD (dir ++ "/input.ixes")
+  let refined := dir ++ "/proven.ixes"
+  let report := dir ++ "/prove.json"
+  let failed := fun (stage : String) (exit : UInt32) => do
+    markKilled out env (if isKill exit then killStatus exit else "crash")
+    IO.eprintln s!"[bench] env {stage} failed (exit {exit})"
+    return false
+  if opts.mode == .compress then
+    let finalProof : UInt8 := if opts.compression == "plonk" then 1 else 0
+    IO.eprintln s!"[bench] env compression setup: {← Compression.describeSetup opts.development opts.development finalProof}"
+  if opts.manifest.isNone then
+    let ram := opts.maxRam.filter (· != 0) |>.getD 100
+    let exit ← runTool ix #["shard", ixe, "--max-ram", toString ram, "--out", initial]
+    if exit != 0 then return ← failed "partition" exit
+  for path in [refined, report] do
+    if ← FilePath.pathExists path then IO.FS.removeFile path
+  writeRow out env "partial" []
+  let start ← IO.monoNanosNow
+  let (exit, seconds, peak, _) ← runCaptured ix <|
+    #["prove", "--ixe", ixe, "--ixes", initial, "--aggregate", "--fresh",
+      "--out-ixes", refined, "--report", report] ++ opts.hostArgs
+  if exit != 0 then return ← failed "prove" exit
+  let result ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile report))
+  let root ← IO.ofExcept (result.getObjValAs? String "root")
+  let constants ← IO.ofExcept (result.getObjValAs? Nat "constants")
+  unless (← IO.ofExcept (result.getObjValAs? Bool "verified")) do
+    return ← failed "unverified root" 1
+  let manifest ← IO.ofExcept (Ix.Shard.parseIxesManifest (← IO.FS.readBinFile refined))
+  addFields out env <| [("prove-time", jsonRound 6 seconds), ("prove-peak-rss", Lean.toJson peak),
+    ("prove-throughput", jsonRound 2 (constants.toFloat / seconds)),
+    ("constants", Lean.toJson constants), ("shards", Lean.toJson manifest.shards.size)] ++
+    ((← proofSize root).map fun n => ("prove-proof-size", Lean.toJson n)).toList
+  let verifyArgs := #["verify", "--aggregate", "--ixe", ixe, "--ixes", refined]
+  let (exit, seconds, verifyPeak, _) ← runCaptured ix (verifyArgs.push root)
+  if exit != 0 then return ← failed "verify root" exit
+  addFields out env [("verify-time", jsonRound 6 seconds)]
+  let mut e2ePeak := max peak verifyPeak
+  if opts.mode == .compress then
+    let (exit, seconds, peak, stdout) ← runCaptured ix <|
+      #["compress", root, "--fresh", "--out", dir ++ "/compression"] ++
+        opts.hostArgs ++ opts.compressArgs
+    if exit != 0 then return ← failed "compress" exit
+    let some compressed := lastAddress stdout | return ← failed "missing compressed proof" 1
+    addFields out env <| [("compress-time", jsonRound 6 seconds), ("compress-peak-rss", Lean.toJson peak)] ++
+      ((← proofSize compressed).map fun n => ("compress-proof-size", Lean.toJson n)).toList
+    e2ePeak := max e2ePeak peak
+    let (exit, seconds, peak, _) ← runCaptured ix <|
+      verifyArgs ++ (if opts.development then #["--dev-srs"] else #[]) ++ #[compressed]
+    if exit != 0 then return ← failed "verify compressed" exit
+    addFields out env [("compress-verify-time", jsonRound 6 seconds)]
+    e2ePeak := max e2ePeak peak
+  let seconds := ((← IO.monoNanosNow) - start).toFloat / 1e9
+  addFields out env [("e2e-time", jsonRound 6 seconds), ("e2e-peak-rss", Lean.toJson e2ePeak),
+    ("status", .str "ok")]
+  return true
+
 /-- The shards a proven constant's env is split into: aggregation needs a
     join, so one shard has no root. -/
 def proveShards : Nat := 2
@@ -489,6 +599,9 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
   let names := if spec.hasConstants
     then parseConstants env ((p.flag? "constants").map (·.as! String)) else #[]
   let envRow := !p.hasFlag "no-env-row"
+  let envOptions ← match envProofOptions p backend envRow with
+    | .ok opts => pure opts
+    | .error error => p.printError s!"error: {error}"; return exitUsage
   let modeName := ((p.flag? "mode").map (·.as! String)).getD "execute"
   let some mode := IxvmMode.parse? modeName
     | p.printError s!"error: unknown mode `{modeName}` (expected execute, prove, or compress)"
@@ -555,7 +668,7 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
   | "ixvm" =>
     let ixe ← ensureIxe repo info ((p.flag? "ixe").map (·.as! String))
     let benchIxvm ← resolveBin repo "bench-ixvm"
-    if mode != .execute && envRow then
+    if mode != .execute && envRow && envOptions.mode == .execute then
       IO.eprintln s!"[bench] proving covers constant rows only; the {env} env row stays execution-only"
     for name in names do
       let slug := String.ofList (name.toList.map fun c => if c.isAlphanum then c else '_')
@@ -575,7 +688,16 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
         break
       if mode == .compress && !(← runIxvmCompress ix out name root dir) then
         proveFailures := proveFailures + 1
-    if envRow then runIxvmEnv ix ixe out env
+    if envRow then
+      if envOptions.mode == .execute then runIxvmEnv ix ixe out env
+      else
+        try
+          if !(← runIxvmEnvProof ix ixe out env envOptions) then
+            proveFailures := proveFailures + 1
+        catch error =>
+          markKilled out env "crash"
+          IO.eprintln s!"[bench] whole-env pipeline failed: {error}"
+          proveFailures := proveFailures + 1
   | other =>
     p.printError s!"error: backend '{other}' has no runner"
     return exitUsage
@@ -601,7 +723,13 @@ def benchRunCmd : Cli.Cmd := `[Cli|
     env          : String; "Benchmark env from the registry (default: InitStd)"
     constants    : String; "Constant rows: `all` (default: the env's shared constants), `none`, or comma-separated names (same grammar as the tools' --consts). Ignored by backends without constant rows."
     "no-env-row";          "Skip the env row (the whole-env measurement)"
-    mode         : String; "ixvm: execute (default), prove (execution, proving, aggregation and verification), or compress (also KZG compression with development parameters and verification). Env rows stay execution-only."
+    mode         : String; "ixvm constant rows: execute (default), prove (execution, proving, aggregation and verification), or compress (also KZG compression with development parameters and verification). --env-mode selects whole-environment stages independently."
+    "env-mode"   : String; "Whole ixvm environment: execute (default), prove (fresh aggregate proof and manifest-bound verification), or compress (also compression and verification). Independent of constant-row --mode."
+    "env-compression" : String; "With --env-mode compress: plonk (default) or kzg."
+    "env-dev-srs"; "With --env-mode compress: use development parameters; otherwise require the configured production setup."
+    ixes         : String; "With --env-mode prove/compress: initial shard manifest; otherwise partition the environment automatically."
+    "gpu-device" : Nat; "With --env-mode prove/compress: CUDA device for proving and normalization."
+    "max-ram"    : Nat; "With --env-mode prove/compress: prover RAM budget in GiB (default: host automatic policy)."
     out          : String; "Benchmark results JSON output path (default: bench.json)"
     repo         : String; "Checkout to benchmark: tools resolve from <repo>/.lake/build/bin first, then PATH (default: .)"
     ixe          : String; "Path to an existing .ixe env to use (default: compile <env> fresh; ignored by the compile backend)"
