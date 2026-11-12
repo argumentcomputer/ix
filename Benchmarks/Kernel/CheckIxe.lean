@@ -228,7 +228,7 @@ def run (args : List String) : IO UInt32 := do
       IO.eprintln s!"check-ixe: --allow-user-axioms: {e}"
       return 2
     parsed := some env
-  -- the user axioms the run read (with their names) and the records it accepted
+  -- the user axioms the run read (with their names) and those of them it accepted
   let userAxioms ← IO.mkRef ({} : Std.HashMap Address (Array String))
   let accepted ← IO.mkRef ({} : Std.HashSet Address)
   let rootsEnv ← IO.getEnv "CHECK_IXE_ROOTS"
@@ -266,7 +266,12 @@ def run (args : List String) : IO UInt32 := do
   -- watchdog's dedicated task, before it prints an uncaught error
   try
     let emit := fun (row : Row) => do
-      if options.allowUserAxioms && row.outcome == "accept" then accepted.modify (·.insert row.address)
+      -- only the user axioms' rows (a record is read before its row): the
+      -- refs are shared with the loop's thread, and a value shared between
+      -- threads is never updated in place, so a set of every accepted record
+      -- would be copied on every insert
+      if options.allowUserAxioms && row.outcome == "accept" then
+        if (← userAxioms.get).contains row.address then accepted.modify (·.insert row.address)
       let line := row.jsonLine ++ "\n"
       let flushNow? ← emitBuf.modifyGet fun (buf, n) =>
         let buf' := buf ++ line
