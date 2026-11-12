@@ -15,6 +15,7 @@ emit the `Nat` primitives' code, so their simulations transfer from this route's
 set_option autoImplicit false
 namespace IxCC.Cfg.Rc.Proof.Physical.Bridge.Scalar
 open IxCC IxCC.Rt IxCC.Rt.Proof IxCC.Rt.Lower
+open IxCC.Rt.Rc.Procs
 open IxCC.Lir (Word)
 open IxCC.Src (NatMap Width WordOp)
 
@@ -145,7 +146,7 @@ theorem prim_word {T : Tables} {f : Fir.FunId} {lp : Lir.Program} {ctx : Word} {
           rw [sem_nat2 .natXor (by decide)]; rfl)
           (prim_natXor hF hH hrun hC ho hsup hx hops hlive)
       | (exfalso; word_bad)
-  all_goals exact rhsSim_of_core hops hlive hx (Rt.Proof.word_not_bool _ _)
-    (Rt.Proof.word_core hF hH hrun hC hl ho hsup rfl)
+  all_goals
+    exact rhsSim_of_core hops hlive hx (Rt.Proof.word_not_bool _ _) (Rt.Proof.word_core hF hH hrun hC hl ho hsup rfl)
 
 end IxCC.Cfg.Rc.Proof.Physical.Bridge.Scalar
