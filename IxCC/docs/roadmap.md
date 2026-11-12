@@ -304,9 +304,20 @@ hosted-CI or cold-store timing is claimed.
   since its reference body computes modulo the `Nat` 2^64 (measured,
   [DR2](data-and-roots-design.md#dr2-fixed-width-integers-and-int)). Stage W1
   makes the word operations primitives; so far SrcEval's rule F6w, its table
-  entry and check, and the stored equations `ix compile --equations --word-equations` adds and
-  names exist behind a switch that is off (`Table.Config.words`), so nothing
-  compiles differently yet. There are no arrays, byte arrays or strings.
+  entry and check, the stored equations `ix compile --equations --word-equations` adds and
+  names, Lam's word primitive and Rt's proved tagged lowering of it exist behind a
+  switch that is off (`Table.Config.words`; erasure still declines a word entry), so
+  nothing compiles differently yet. Two limits stay after W1, by design:
+  a `UInt64` is native only below 2^63 (a word is a tagged immediate, so a width-64
+  result at or above 2^63 fails with `natOverflow`, as a `Nat` does); stage W2 is planned
+  to lift it by keeping words unboxed, raw 64-bit words in registers and frames (a word
+  that meets a uniform position boxed as a cell of one scalar word), so a width-64 result
+  needs no tag bit; and the comparisons (`decEq`, `decLt`,
+  `decLe`) stay reference bodies, so `x < y` at `x = 2^63 − 1` fails with
+  `natOverflow` (`Nat.lt` is `x + 1 ≤ y`). Making the decisions primitives needs,
+  per decision, a stored theorem fixing what it denotes as a `Decidable` value
+  (as each operation's equation does; see DR2, "Stage W1"). There are no arrays,
+  byte arrays or strings.
 - **Higher-order code**: bounded inlining and specialisation (P3, P4)
   remove what they can; the closures step (P8, Phase 2) turns any remaining
   closure into a constructor cell and every unknown call into a call of a
@@ -646,6 +657,20 @@ data:
   implementation of arrays and strings can rest as the x86 heap implementation
   does. Without them an evaluator runs the reference bodies, which are
   quadratic.
+- *For the x86 back end:* a new primitive's expansion is proved once, against
+  the heap-free core `Rt.Proof.PrimCore`, and each route's simulation follows
+  from the core by one lemma (`Rt.Proof.rhsSim_of_core`, the plain-RC bridge's
+  `rhsSim_of_core`), as the fixed-width words are
+  ([DR2, "Stage W1"](data-and-roots-design.md#dr2-fixed-width-integers-and-int)).
+  **Clean-up (open):** the 16 `Nat` primitives are still proved twice, once per
+  route (`Rt/Proof/Ops*.lean` and the bridge's `Scalar{Basic,Checked,Div,Call}.lean`,
+  the latter about 1,080 lines); restating Rt's per-primitive lemmas as core facts
+  would let the bridge's copies go (estimate: 300–500 lines restated, about 1,000
+  deleted; a landing of its own). Two points to design: the comparisons
+  (`natBeq`, `natBle`, `natBlt`) return a `Bool`, so the core needs a variant whose
+  result is one of the `Bool` words (`Tables.bools`); and `natPow` and `natGcd` call
+  runtime procedures, whose runs the core's `Star` must cover (a call that returns
+  to the same frame, as `procCall_sim` shows).
 - *Depends on:* Phase 2's scalar fields, large objects and uniqueness test;
   P8 for library code over dictionaries.
 - *Exit:* K4 compiles, certifies and is measured; BLAKE3 passes its

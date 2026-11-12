@@ -388,6 +388,9 @@
     "IxCC.Tools.AiurRankCheck"]},
   "IxCCTests.Scripts.Census":
   {"path": "IxCCTests/Scripts/Census.lean", "imports": ["IxCC.Tools.Census"]},
+  "IxCCTests.Rt.Words":
+  {"path": "IxCCTests/Rt/Words.lean",
+   "imports": ["IxCCTests.Rt.Mutants", "IxCCTests.Rt.Machine"]},
   "IxCCTests.Rt.Support":
   {"path": "IxCCTests/Rt/Support.lean",
    "imports":
@@ -406,7 +409,8 @@
     "IxCCTests.Rt.Levels",
     "IxCCTests.Rt.Kernel",
     "IxCCTests.Rt.KernelEval",
-    "IxCCTests.Rt.DecoderChecks"]},
+    "IxCCTests.Rt.DecoderChecks",
+    "IxCCTests.Rt.Words"]},
   "IxCCTests.Rt.Rc.Run":
   {"path": "IxCCTests/Rt/Rc/Run.lean",
    "imports":
@@ -1725,6 +1729,8 @@
     "IxCC.Rt.Proof.OpsProj",
     "IxCC.Rt.Proof.OpsCall",
     "IxCC.Rt.Proof.Instr",
+    "IxCC.Rt.Proof.WordArith",
+    "IxCC.Rt.Proof.OpsWord",
     "IxCC.Rt.Proof.Edge",
     "IxCC.Rt.Proof.Chain",
     "IxCC.Rt.Proof.Switch",
@@ -2506,6 +2512,10 @@
   {"path":
    "IxCCTests/Fences/RcPromotion/IxCC_Cfg_Rc_Proof_Physical_Bridge_SwitchAdmission.lean",
    "imports": ["IxCC.Cfg.Rc.Proof.Physical.Bridge.SwitchAdmission"]},
+  "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_Bridge_ScalarWord":
+  {"path":
+   "IxCCTests/Fences/RcPromotion/IxCC_Cfg_Rc_Proof_Physical_Bridge_ScalarWord.lean",
+   "imports": ["IxCC.Cfg.Rc.Proof.Physical.Bridge.ScalarWord"]},
   "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_Bridge_ScalarSwitch":
   {"path":
    "IxCCTests/Fences/RcPromotion/IxCC_Cfg_Rc_Proof_Physical_Bridge_ScalarSwitch.lean",
@@ -3105,6 +3115,7 @@
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_Bridge_ScalarInstr",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_Bridge_ScalarOutcomes",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_Bridge_ScalarPrimitives",
+    "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_Bridge_ScalarWord",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_Bridge_ScalarPure",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_Bridge_ScalarRuntime",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_Bridge_ScalarSem",
@@ -3464,7 +3475,8 @@
   "IxCCTests.Fences.Erase":
   {"path": "IxCCTests/Fences/Erase.lean",
    "imports":
-   ["IxCC.Src.Proof.Mono",
+   ["IxCC.Lam.WordSem",
+    "IxCC.Src.Proof.Mono",
     "IxCC.Src.Word",
     "IxCC.Lam.Proof.Mono",
     "IxCC.Lam.Erase.Proof.Correct",
@@ -6157,6 +6169,9 @@
   "IxCC.Rt.Proof.Words":
   {"path": "IxCC/Rt/Proof/Words.lean",
    "imports": ["IxCC.Rt.Layout", "IxCC.Lir.Semantics", "IxCC.Src.Prim"]},
+  "IxCC.Rt.Proof.WordArith":
+  {"path": "IxCC/Rt/Proof/WordArith.lean",
+   "imports": ["IxCC.Rt.Proof.Words", "IxCC.Rt.Lower"]},
   "IxCC.Rt.Proof.Term":
   {"path": "IxCC/Rt/Proof/Term.lean", "imports": ["IxCC.Rt.Proof.SwitchSim"]},
   "IxCC.Rt.Proof.Switches":
@@ -6222,6 +6237,13 @@
    ["IxCC.Rt.Procs.Nat", "IxCC.Rt.Proof.Words", "IxCC.Lir.Proof.Eval"]},
   "IxCC.Rt.Proof.Pow":
   {"path": "IxCC/Rt/Proof/Pow.lean", "imports": ["IxCC.Rt.Proof.Procs"]},
+  "IxCC.Rt.Proof.OpsWord":
+  {"path": "IxCC/Rt/Proof/OpsWord.lean",
+   "imports":
+   ["IxCC.Rt.Proof.Check",
+    "IxCC.Rt.Proof.OpsDiv",
+    "IxCC.Rt.Proof.WordArith",
+    "IxCC.Lam.WordSem"]},
   "IxCC.Rt.Proof.OpsProj":
   {"path": "IxCC/Rt/Proof/OpsProj.lean", "imports": ["IxCC.Rt.Proof.OpsAlloc"]},
   "IxCC.Rt.Proof.OpsDiv":
@@ -6236,7 +6258,10 @@
   "IxCC.Rt.Proof.Ops":
   {"path": "IxCC/Rt/Proof/Ops.lean",
    "imports":
-   ["IxCC.Rt.Proof.Env", "IxCC.Rt.Proof.Alloc", "IxCC.Rt.Proof.Pow"]},
+   ["IxCC.Rt.Proof.Env",
+    "IxCC.Rt.Proof.Alloc",
+    "IxCC.Rt.Proof.Pow",
+    "IxCC.Lam.WordSem"]},
   "IxCC.Rt.Proof.Mono":
   {"path": "IxCC/Rt/Proof/Mono.lean", "imports": ["IxCC.Rt.Proof.Term"]},
   "IxCC.Rt.Proof.Mem":
@@ -6256,7 +6281,8 @@
    ["IxCC.Rt.Proof.OpsDiv",
     "IxCC.Rt.Proof.OpsCheck",
     "IxCC.Rt.Proof.OpsProj",
-    "IxCC.Rt.Proof.OpsCall"]},
+    "IxCC.Rt.Proof.OpsCall",
+    "IxCC.Rt.Proof.OpsWord"]},
   "IxCC.Rt.Proof.Heap":
   {"path": "IxCC/Rt/Proof/Heap.lean",
    "imports":
@@ -6916,6 +6942,8 @@
   {"path": "IxCC/Lir/Operands.lean", "imports": ["IxCC.Lir.Semantics"]},
   "IxCC.Lir.Graph":
   {"path": "IxCC/Lir/Graph.lean", "imports": ["IxCC.Lir.Syntax"]},
+  "IxCC.Lam.WordSem":
+  {"path": "IxCC/Lam/WordSem.lean", "imports": ["IxCC.Lam.Syntax"]},
   "IxCC.Lam.WellFormed":
   {"path": "IxCC/Lam/WellFormed.lean", "imports": ["IxCC.Lam.Syntax"]},
   "IxCC.Lam.Syntax":
@@ -7172,7 +7200,8 @@
    ["IxCC.Fir.Proof.Mono",
     "IxCC.Fir.Lower",
     "IxCC.Anf.Proof.Mono",
-    "IxCC.Sem.Forall2"]},
+    "IxCC.Sem.Forall2",
+    "IxCC.Lam.WordSem"]},
   "IxCC.Fir.Proof.Mono":
   {"path": "IxCC/Fir/Proof/Mono.lean",
    "imports": ["IxCC.Fir.Proof.Unfold", "IxCC.Sem.SimUpTo"]},
@@ -7693,6 +7722,12 @@
    "imports":
    ["IxCC.Cfg.Rc.Proof.Physical.Bridge.CtorDispatch",
     "IxCC.Cfg.Rc.Proof.Native.Pipeline"]},
+  "IxCC.Cfg.Rc.Proof.Physical.Bridge.ScalarWord":
+  {"path": "IxCC/Cfg/Rc/Proof/Physical/Bridge/ScalarWord.lean",
+   "imports":
+   ["IxCC.Cfg.Rc.Proof.Physical.Bridge.ScalarBasic",
+    "IxCC.Cfg.Rc.Proof.Physical.Bridge.ScalarDiv",
+    "IxCC.Rt.Proof.OpsWord"]},
   "IxCC.Cfg.Rc.Proof.Physical.Bridge.ScalarSwitch":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/Bridge/ScalarSwitch.lean",
    "imports":
@@ -7720,7 +7755,8 @@
    ["IxCC.Cfg.Rc.Proof.Physical.Bridge.ScalarChecked",
     "IxCC.Cfg.Rc.Proof.Physical.Bridge.ScalarDiv",
     "IxCC.Cfg.Rc.Proof.Physical.Bridge.ScalarCall",
-    "IxCC.Rt.Proof.Instr"]},
+    "IxCC.Rt.Proof.Instr",
+    "IxCC.Cfg.Rc.Proof.Physical.Bridge.ScalarWord"]},
   "IxCC.Cfg.Rc.Proof.Physical.Bridge.ScalarOutcomes":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/Bridge/ScalarOutcomes.lean",
    "imports":

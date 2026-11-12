@@ -113,16 +113,18 @@ def immArgs : Ctx → List Bool → List Arg → Ctx
 end Ctx
 
 /-- **A primitive's signature: which arguments are immediates by construction once it has
-returned.** Every primitive today (`Lam.Prim`, all on `Nat`) takes only tagged immediates: Own's
+returned.** Every primitive today (`Lam.Prim`: the `Nat` primitives and stage W1's fixed-width words, whose
+words are tagged immediates as a `Nat` is) takes only tagged immediates: Own's
 `primResult` is stuck unless `natArgs` reads every argument as `.lit (.nat n)` (and Fir's
 evaluation likewise), so after a successful primitive each argument's value is `ImmVal` — the
 lemma the proof uses (from `natArgs`, not from a typing fact). A primitive that takes a boxed
-word or any heap value (the fixed-width words to come) must mark that position `false`: there it
+word or any heap value (stage W2's raw or boxed words) must mark that position `false`: there it
 is only a read, its tokens stay, and it must still be released. -/
 def primImmArgs (op : Lam.Prim) (arity : Nat) : List Bool :=
   match op with
   | .natAdd | .natSub | .natMul | .natDiv | .natMod | .natPow | .natGcd | .natBeq | .natBle
   | .natLand | .natLor | .natXor | .natShl | .natShr | .natPred | .natBlt => List.replicate arity true
+  | .word .. => List.replicate arity true
 
 namespace Ctx
 
