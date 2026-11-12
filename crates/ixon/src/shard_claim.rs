@@ -61,11 +61,11 @@ fn const_idxs_expr(e: &Expr, out: &mut FxHashSet<u64>) {
       out.insert(*i);
       const_idxs_expr(inner, out);
     },
-    Expr::App(a, b) | Expr::Lam(_, a, b) | Expr::All(_, _, a, b) => {
+    Expr::App(a, b) | Expr::Lam(a, b) | Expr::All(a, b) => {
       const_idxs_expr(a, out);
       const_idxs_expr(b, out);
     },
-    Expr::Let(_, t, v, b) => {
+    Expr::Let(_, _, t, v, b) => {
       const_idxs_expr(t, out);
       const_idxs_expr(v, out);
       const_idxs_expr(b, out);
@@ -517,6 +517,7 @@ mod tests {
     let member = Definition {
       kind: DefKind::Definition,
       safety: DefinitionSafety::Partial,
+      asserts: Default::default(),
       lvls: 0,
       typ: Arc::new(Expr::Sort(0)),
       value: Arc::new(Expr::Sort(0)),
