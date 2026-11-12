@@ -26,5 +26,7 @@ lean_exe compress_gl_export where
   root := `Examples.CompressGL
 lean_exe compress_bn_export where
   root := `Examples.CompressBN
+lean_exe bn_grouping where
+  root := `Examples.BNGrouping
 lean_exe compress_final_export where
   root := `Examples.CompressFinal

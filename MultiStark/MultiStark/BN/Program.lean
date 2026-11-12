@@ -46,12 +46,13 @@ def program : Modules.Program F :=
     |>.append (Library.Field.BN254.G1Encoding.declarations.toField F)
     |>.append (source.toField F)
 
-def compilePackage (trace : Bool := true) (entries : List String := [compressionEntry]) : IO ByteArray := do
+def compilePackage (trace : Bool := true) (entries : List String := [compressionEntry])
+    (groups : List (String × List String) := []) : IO ByteArray := do
   let prepared ← IO.ofExcept (Modules.prepare program entries)
   let exported ← IO.ofExcept prepared.exportExecution
   let (exported, circuits) ← if trace then do
       let (exported, circuits) ← Trace.exportPlanParallelWide modulus ZMod.val
-        prepared.environment.source prepared.entries exported
+        prepared.environment.source prepared.entries exported groups
       pure (exported, some circuits)
     else pure (exported, none)
   IO.ofExcept (Artifact.packageWide exported modulus ZMod.val circuits)

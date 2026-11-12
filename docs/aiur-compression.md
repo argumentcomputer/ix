@@ -935,3 +935,41 @@ committed columns while preserving dynamic intermediate execution shapes,
 authenticated program constraints, calls, memory and depth checks. Its
 acceptance criteria are matched cell counts, commitment counts and actual
 recursive proof cost; a capacity increase alone does not meet them.
+
+The initial implementation retains the existing per-column KZG PCS and final
+PLONK protocol. Packed-column protocol experiments are preserved separately on
+`aiur-compression-packed-experiment` and are excluded from this implementation.
+The next comparisons use the compiler's existing certified function grouping
+and more efficient Aiur arithmetic. Grouping policies select function names;
+the compiler checks the resulting layouts against the original source. They
+do not prescribe intermediate execution heights or introduce a new proof protocol.
+
+## 18. Certified grouping checkpoint
+
+The [matched grouping experiment](measurements/aiur-kzg-grouping.json) applies
+the existing proved grouping pass to the BN254 verifier, using the unchanged
+column KZG backend. The policy is compiled against the actual source; it is
+not a list of replacement constraints. Both executions verify the same input
+key, claims and proof and return the same deferred accumulator.
+
+| Quantity | Ungrouped | Grouped |
+|---|---:|---:|
+| Active circuits | 166 | 53 |
+| Main column commitments | 6,963 | 3,063 |
+| Lookup column commitments | 1,845 | 860 |
+| Quotient commitments | 236 | 82 |
+| Padded main cells | 11,929,538 | 11,318,606 |
+| Maximum trace height | `2^19` | `2^19` |
+
+An actual grouped verifier proof passes portable verification and rejects a
+changed output. It contains 4,021 variable G1 points including opening witnesses,
+in 299,070 bytes, under explicit development parameters. This is a fixture
+validation, not an Init timing or complete recursive pipeline result.
+
+`bn_grouping` exports compiler snapshots, layout metrics and certified packages.
+The grouping search can model native Fr with `--extension-degree 1` and the
+current adapter's lookup grouping with `--max-lookup-group 1`; its existing
+Goldilocks defaults are retained. This candidate's function-cell and FFT
+estimates stayed within the ungrouped budgets and matched the exported
+dimensions. The [policy](measurements/aiur-kzg-grouping-policy.json) is not yet
+a default: larger predecessor workloads still need validation before adoption.

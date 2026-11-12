@@ -50,9 +50,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("{}", serde_json::to_string_pretty(&report)?);
     return Ok(());
   }
-  if args.len() != 2 {
+  if args.len() != 2 && !(args.len() == 4 && args[2] == "--prove-kzg") {
     return Err(
-      "usage: aiur_verifier_comparison AIUR_VERIFIER_ARTIFACT NEW_OUTPUT"
+      "usage: aiur_verifier_comparison AIUR_VERIFIER_ARTIFACT NEW_OUTPUT [--prove-kzg MAX_LOG_HEIGHT]"
         .into(),
     );
   }
@@ -164,7 +164,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     .program()
     .prepare_hint_channels(&[], &hints)?
     .with_map_overrides(&maps)?
-    .execute("KzgVerifier::verify_deferred", public)?;
+    .execute("KzgVerifier::verify_deferred", public.clone())?;
   assert_eq!(
     record.output,
     native_assignment.public_values()[public_locations.len()..]
@@ -214,14 +214,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     .map(Vec::len)
     .sum::<usize>()
     + proof.opening_proof.0.len();
-  let report = serde_json::json!({
+  let mut report = serde_json::json!({
     "format":"ix-matched-kzg-verifier-layout-v1",
     "scope":concat!(
       "Same natively verified development KZG proof and equal deferred pairing outputs. ",
       "Native key/shape and claim structure are compiler constants, with claim payloads public; ",
       "Aiur authenticates key and claims digests as public inputs. ",
       "Native lowering uses the production two-trace layout and lookup tuning with quotient budget 2. ",
-      "No proof-generation timings or full Init claim."
+      "Optional proving is a development regression, not an Init benchmark."
     ),
     "input":{
       "key_blake3":blake3::hash(&key_bytes).to_hex().as_str(),
@@ -249,6 +249,56 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     "outputs_equal":true,
   });
   fs::write(out.join("comparison.json"), serde_json::to_vec_pretty(&report)?)?;
+  if args.len() == 4 {
+    use ix_proof_compression::aiur_backend::kzg::Backend;
+    let log: u32 = args[3].parse()?;
+    let cap = 1usize.checked_shl(log).ok_or("KZG capacity overflow")?;
+    let srs =
+      Arc::new(Srs::unsafe_dev_setup(cap, b"matched-grouped-kzg-development"));
+    let backend = Backend::new(&plan, KzgConfig::new(srs, 8))?;
+    let public_args =
+      plan.public_args(&record, "KzgVerifier::verify_deferred", &public)?;
+    let witness =
+      backend.generate(&record, "KzgVerifier::verify_deferred", &public)?;
+    let proof = backend.prove(
+      "KzgVerifier::verify_deferred",
+      &public_args,
+      &record.output,
+      witness,
+    )?;
+    let key_bytes = backend.verifying_key()?.to_bytes()?;
+    let key_pin = blake3::hash(&key_bytes);
+    let key = VerifyingKey::from_bytes(&key_bytes, key_pin.as_bytes())?;
+    let claim = backend.claim(
+      "KzgVerifier::verify_deferred",
+      &public_args,
+      &record.output,
+    )?;
+    let bytes = key.encode_proof(&proof)?;
+    key.verify_bytes(&claim, &bytes)?;
+    let mut changed = claim;
+    *changed.last_mut().ok_or("empty claim")? += Bn254.one();
+    if key.verify_bytes(&changed, &bytes).is_ok() {
+      return Err("KZG proof accepted changed output".into());
+    }
+    let points = proof
+      .commitments
+      .stage_1_trace
+      .0
+      .iter()
+      .chain(&proof.commitments.stage_2_trace.0)
+      .chain(&proof.commitments.quotient_chunks.0)
+      .map(Vec::len)
+      .sum::<usize>()
+      + proof.opening_proof.0.len();
+    fs::write(out.join("outer-key.bin"), &key_bytes)?;
+    fs::write(out.join("outer-proof.bin"), &bytes)?;
+    report["outer_proof"] = serde_json::json!({"scope":"Actual proof of this Aiur verifier execution using the existing column KZG PCS and explicit development setup; not Init","max_trace_height":cap,"key_blake3":key_pin.to_hex().as_str(),"proof_blake3":blake3::hash(&bytes).to_hex().as_str(),"proof_bytes":bytes.len(),"variable_g1_points":points,"portable_verification":true,"changed_output_rejected":true});
+    fs::write(
+      out.join("comparison.json"),
+      serde_json::to_vec_pretty(&report)?,
+    )?;
+  }
   println!("matched verifier report: {}", out.display());
   Ok(())
 }

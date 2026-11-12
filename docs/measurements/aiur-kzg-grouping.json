@@ -1,0 +1,1609 @@
+{
+  "format": "ix-aiur-kzg-grouping-v1",
+  "date_utc": "2026-11-12",
+  "scope": "Matched verifier execution and actual grouped-circuit proof under the existing column KZG protocol. Profile-guided candidate for one workload, not an Init or full recursive pipeline benchmark.",
+  "protocol_changed": false,
+  "input": {
+    "claims_blake3": "692cfcee6e75aa8e44850a4d9140a157d770cd2ce680633d2eb0d2bc698cd0cd",
+    "key_blake3": "c75a8dcc1a238e1b3870afa0fad164d47e4e3ff4bc6fdd8b7362926b32232341",
+    "proof_blake3": "be84132464f4fa608ffe485b20ace5bc8118befa82a6bac9869515d367bfedae",
+    "proof_bytes": 3339,
+    "proof_curve_points": 26
+  },
+  "baseline": {
+    "artifact_blake3": "802454f8d93f202cb720f52e76b79d18efee4348687e7061237e2fa0ee0e4bf7",
+    "totals": {
+      "active_circuits": 166,
+      "fixed_cells": 1054976,
+      "lookup_commitments": 1845,
+      "main_commitments": 6963,
+      "maximum_main_height": 524288,
+      "padded_lookup_cells": 7173852,
+      "padded_main_cells": 11929538,
+      "padded_quotient_cells": 1116680,
+      "quotient_commitments": 236,
+      "unpadded_main_cells": 8226625
+    }
+  },
+  "grouped": {
+    "artifact_blake3": "b5cdb1b9039cc35225301fc1717f91aaee0074b00fedc05485c781c7289e77ea",
+    "totals": {
+      "active_circuits": 53,
+      "fixed_cells": 1054976,
+      "lookup_commitments": 860,
+      "main_commitments": 3063,
+      "maximum_main_height": 524288,
+      "padded_lookup_cells": 6876681,
+      "padded_main_cells": 11318606,
+      "padded_quotient_cells": 1131797,
+      "quotient_commitments": 82,
+      "unpadded_main_cells": 9362825
+    },
+    "circuits": [
+      {
+        "execution_rows": 1,
+        "fixed_cells": 0,
+        "fixed_width": 0,
+        "height": 1,
+        "lookup_columns": 53,
+        "lookup_group_size": 1,
+        "lookups": 53,
+        "main_width": 198,
+        "name": "KzgVerifier::verify_deferred",
+        "padded_lookup_cells": 53,
+        "padded_main_cells": 198,
+        "padded_quotient_cells": 1,
+        "quotient_columns": 1,
+        "unpadded_main_cells": 198
+      },
+      {
+        "execution_rows": 32,
+        "fixed_cells": 0,
+        "fixed_width": 0,
+        "height": 32,
+        "lookup_columns": 4,
+        "lookup_group_size": 1,
+        "lookups": 4,
+        "main_width": 34,
+        "name": "KzgGroup_00",
+        "padded_lookup_cells": 128,
+        "padded_main_cells": 1088,
+        "padded_quotient_cells": 64,
+        "quotient_columns": 2,
+        "unpadded_main_cells": 1088
+      },
+      {
+        "execution_rows": 256,
+        "fixed_cells": 0,
+        "fixed_width": 0,
+        "height": 256,
+        "lookup_columns": 14,
+        "lookup_group_size": 1,
+        "lookups": 14,
+        "main_width": 219,
+        "name": "KzgGroup_01",
+        "padded_lookup_cells": 3584,
+        "padded_main_cells": 56064,
+        "padded_quotient_cells": 512,
+        "quotient_columns": 2,
+        "unpadded_main_cells": 56064
+      },
+      {
+        "execution_rows": 7011,
+        "fixed_cells": 0,
+        "fixed_width": 0,
+        "height": 8192,
+        "lookup_columns": 4,
+        "lookup_group_size": 1,
+        "lookups": 4,
+        "main_width": 12,
+        "name": "KzgIO::read_stream",
+        "padded_lookup_cells": 32768,
+        "padded_main_cells": 98304,
+        "padded_quotient_cells": 16384,
+        "quotient_columns": 2,
+        "unpadded_main_cells": 84132
+      },
+      {
+        "execution_rows": 2006,
+        "fixed_cells": 0,
+        "fixed_width": 0,
+        "height": 2048,
+        "lookup_columns": 226,
+        "lookup_group_size": 1,
+        "lookups": 226,
+        "main_width": 513,
+        "name": "KzgGroup_02",
+        "padded_lookup_cells": 462848,
+        "padded_main_cells": 1050624,
+        "padded_quotient_cells": 4096,
+        "quotient_columns": 2,
+        "unpadded_main_cells": 1029078
+      },
+      {
+        "execution_rows": 3671,
+        "fixed_cells": 0,
+        "fixed_width": 0,
+        "height": 4096,
+        "lookup_columns": 6,
+        "lookup_group_size": 1,
+        "lookups": 6,
+        "main_width": 18,
+        "name": "Blake3::compress_chunks",
+        "padded_lookup_cells": 24576,
+        "padded_main_cells": 73728,
+        "padded_quotient_cells": 8192,
+        "quotient_columns": 2,
+        "unpadded_main_cells": 66078
+      },
+      {
+        "execution_rows": 64,
+        "fixed_cells": 0,
+        "fixed_width": 0,
+        "height": 64,
+        "lookup_columns": 35,
+        "lookup_group_size": 1,
+        "lookups": 35,
+        "main_width": 111,
+        "name": "KzgGroup_03",
+        "padded_lookup_cells": 2240,
+        "padded_main_cells": 7104,
+        "padded_quotient_cells": 128,
+        "quotient_columns": 2,
+        "unpadded_main_cells": 7104
+      },
+      {
+        "execution_rows": 504,
+        "fixed_cells": 0,
+        "fixed_width": 0,
+        "height": 512,
+        "lookup_columns": 4,
+        "lookup_group_size": 1,
+        "lookups": 4,
+        "main_width": 14,
+        "name": "KzgGroup_04",
+        "padded_lookup_cells": 2048,
+        "padded_main_cells": 7168,
+        "padded_quotient_cells": 1024,
+        "quotient_columns": 2,
+        "unpadded_main_cells": 7056
+      },
+      {
+        "execution_rows": 62,
+        "fixed_cells": 0,
+        "fixed_width": 0,
+        "height": 64,
+        "lookup_columns": 67,
+        "lookup_group_size": 1,
+        "lookups": 67,
+        "main_width": 163,
+        "name": "KzgGroup_05",
+        "padded_lookup_cells": 4288,
+        "padded_main_cells": 10432,
+        "padded_quotient_cells": 128,
+        "quotient_columns": 2,
+        "unpadded_main_cells": 10106
+      },
+      {
+        "execution_rows": 64,
+        "fixed_cells": 0,
+        "fixed_width": 0,
+        "height": 64,
+        "lookup_columns": 10,
+        "lookup_group_size": 1,
+        "lookups": 10,
+        "main_width": 54,
+        "name": "KzgGroup_06",
+        "padded_lookup_cells": 640,
+        "padded_main_cells": 3456,
+        "padded_quotient_cells": 128,
+        "quotient_columns": 2,
+        "unpadded_main_cells": 3456
+      },
+      {
+        "execution_rows": 251,
+        "fixed_cells": 0,
+        "fixed_width": 0,
+        "height": 256,
+        "lookup_columns": 5,
+        "lookup_group_size": 1,
+        "lookups": 5,
+        "main_width": 43,
+        "name": "KzgGroup_07",
+        "padded_lookup_cells": 1280,
+        "padded_main_cells": 11008,
+        "padded_quotient_cells": 512,
+        "quotient_columns": 2,
+        "unpadded_main_cells": 10793
+      },
+      {
+        "execution_rows": 119,
+        "fixed_cells": 0,
+        "fixed_width": 0,
+        "height": 128,
+        "lookup_columns": 4,
+        "lookup_group_size": 1,
+        "lookups": 4,
+        "main_width": 18,
+        "name": "KzgGroup_08",
+        "padded_lookup_cells": 512,
+        "padded_main_cells": 2304,
+        "padded_quotient_cells": 256,
+        "quotient_columns": 2,
+        "unpadded_main_cells": 2142
+      },
+      {
+        "execution_rows": 227,
+        "fixed_cells": 0,
+        "fixed_width": 0,
+        "height": 256,
+        "lookup_columns": 4,
+        "lookup_group_size": 1,
+        "lookups": 4,
+        "main_width": 16,
+        "name": "KzgGroup_09",
+        "padded_lookup_cells": 1024,
+        "padded_main_cells": 4096,
+        "padded_quotient_cells": 512,
+        "quotient_columns": 2,
+        "unpadded_main_cells": 3632
+      },
+      {
+        "execution_rows": 486,
+        "fixed_cells": 0,
+        "fixed_width": 0,
+        "height": 512,
+        "lookup_columns": 6,
+        "lookup_group_size": 1,
+        "lookups": 6,
+        "main_width": 55,
+        "name": "KzgGroup_10",
+        "padded_lookup_cells": 3072,
+        "padded_main_cells": 28160,
+        "padded_quotient_cells": 1024,
+        "quotient_columns": 2,
+        "unpadded_main_cells": 26730
+      },
+      {
+        "execution_rows": 63788,
+        "fixed_cells": 0,
+        "fixed_width": 0,
+        "height": 65536,
+        "lookup_columns": 9,
+        "lookup_group_size": 1,
+        "lookups": 9,
+        "main_width": 12,
+        "name": "KzgGroup_11",
+        "padded_lookup_cells": 589824,
+        "padded_main_cells": 786432,
+        "padded_quotient_cells": 131072,
+        "quotient_columns": 2,
+        "unpadded_main_cells": 765456
+      },
+      {
+        "execution_rows": 247,
+        "fixed_cells": 0,
+        "fixed_width": 0,
+        "height": 256,
+        "lookup_columns": 41,
+        "lookup_group_size": 1,
+        "lookups": 41,
+        "main_width": 54,
+        "name": "KzgGroup_12",
+        "padded_lookup_cells": 10496,
+        "padded_main_cells": 13824,
+        "padded_quotient_cells": 512,
+        "quotient_columns": 2,
+        "unpadded_main_cells": 13338
+      },
+      {
+        "execution_rows": 351451,
+        "fixed_cells": 0,
+        "fixed_width": 0,
+        "height": 524288,
+        "lookup_columns": 6,
+        "lookup_group_size": 1,
+        "lookups": 6,
+        "main_width": 7,
+        "name": "BN254Fq::range80",
+        "padded_lookup_cells": 3145728,
+        "padded_main_cells": 3670016,
+        "padded_quotient_cells": 524288,
+        "quotient_columns": 1,
+        "unpadded_main_cells": 2460157
+      },
+      {
+        "execution_rows": 241,
+        "fixed_cells": 0,
+        "fixed_width": 0,
+        "height": 256,
+        "lookup_columns": 5,
+        "lookup_group_size": 1,
+        "lookups": 5,
+        "main_width": 31,
+        "name": "KzgGroup_13",
+        "padded_lookup_cells": 1280,
+        "padded_main_cells": 7936,
+        "padded_quotient_cells": 512,
+        "quotient_columns": 2,
+        "unpadded_main_cells": 7471
+      },
+      {
+        "execution_rows": 8117,
+        "fixed_cells": 0,
+        "fixed_width": 0,
+        "height": 8192,
+        "lookup_columns": 13,
+        "lookup_group_size": 1,
+        "lookups": 13,
+        "main_width": 102,
+        "name": "KzgGroup_14",
+        "padded_lookup_cells": 106496,
+        "padded_main_cells": 835584,
+        "padded_quotient_cells": 16384,
+        "quotient_columns": 2,
+        "unpadded_main_cells": 827934
+      },
+      {
+        "execution_rows": 128,
+        "fixed_cells": 0,
+        "fixed_width": 0,
+        "height": 128,
+        "lookup_columns": 12,
+        "lookup_group_size": 1,
+        "lookups": 12,
+        "main_width": 41,
+        "name": "KzgGroup_15",
+        "padded_lookup_cells": 1536,
+        "padded_main_cells": 5248,
+        "padded_quotient_cells": 256,
+        "quotient_columns": 2,
+        "unpadded_main_cells": 5248
+      },
+      {
+        "execution_rows": 242,
+        "fixed_cells": 0,
+        "fixed_width": 0,
+        "height": 256,
+        "lookup_columns": 33,
+        "lookup_group_size": 1,
+        "lookups": 33,
+        "main_width": 81,
+        "name": "KzgGroup_16",
+        "padded_lookup_cells": 8448,
+        "padded_main_cells": 20736,
+        "padded_quotient_cells": 512,
+        "quotient_columns": 2,
+        "unpadded_main_cells": 19602
+      },
+      {
+        "execution_rows": 248,
+        "fixed_cells": 0,
+        "fixed_width": 0,
+        "height": 256,
+        "lookup_columns": 9,
+        "lookup_group_size": 1,
+        "lookups": 9,
+        "main_width": 17,
+        "name": "KzgGroup_17",
+        "padded_lookup_cells": 2304,
+        "padded_main_cells": 4352,
+        "padded_quotient_cells": 512,
+        "quotient_columns": 2,
+        "unpadded_main_cells": 4216
+      },
+      {
+        "execution_rows": 7479,
+        "fixed_cells": 0,
+        "fixed_width": 0,
+        "height": 8192,
+        "lookup_columns": 8,
+        "lookup_group_size": 1,
+        "lookups": 8,
+        "main_width": 28,
+        "name": "KzgGroup_18",
+        "padded_lookup_cells": 65536,
+        "padded_main_cells": 229376,
+        "padded_quotient_cells": 16384,
+        "quotient_columns": 2,
+        "unpadded_main_cells": 209412
+      },
+      {
+        "execution_rows": 122,
+        "fixed_cells": 0,
+        "fixed_width": 0,
+        "height": 128,
+        "lookup_columns": 7,
+        "lookup_group_size": 1,
+        "lookups": 7,
+        "main_width": 36,
+        "name": "KzgGroup_19",
+        "padded_lookup_cells": 896,
+        "padded_main_cells": 4608,
+        "padded_quotient_cells": 256,
+        "quotient_columns": 2,
+        "unpadded_main_cells": 4392
+      },
+      {
+        "execution_rows": 128,
+        "fixed_cells": 0,
+        "fixed_width": 0,
+        "height": 128,
+        "lookup_columns": 194,
+        "lookup_group_size": 1,
+        "lookups": 194,
+        "main_width": 608,
+        "name": "KzgGroup_20",
+        "padded_lookup_cells": 24832,
+        "padded_main_cells": 77824,
+        "padded_quotient_cells": 256,
+        "quotient_columns": 2,
+        "unpadded_main_cells": 77824
+      },
+      {
+        "execution_rows": 32171,
+        "fixed_cells": 0,
+        "fixed_width": 0,
+        "height": 32768,
+        "lookup_columns": 13,
+        "lookup_group_size": 1,
+        "lookups": 13,
+        "main_width": 32,
+        "name": "KzgGroup_21",
+        "padded_lookup_cells": 425984,
+        "padded_main_cells": 1048576,
+        "padded_quotient_cells": 65536,
+        "quotient_columns": 2,
+        "unpadded_main_cells": 1029472
+      },
+      {
+        "execution_rows": 126,
+        "fixed_cells": 0,
+        "fixed_width": 0,
+        "height": 128,
+        "lookup_columns": 5,
+        "lookup_group_size": 1,
+        "lookups": 5,
+        "main_width": 30,
+        "name": "KzgGroup_22",
+        "padded_lookup_cells": 640,
+        "padded_main_cells": 3840,
+        "padded_quotient_cells": 256,
+        "quotient_columns": 2,
+        "unpadded_main_cells": 3780
+      },
+      {
+        "execution_rows": 476,
+        "fixed_cells": 0,
+        "fixed_width": 0,
+        "height": 512,
+        "lookup_columns": 4,
+        "lookup_group_size": 1,
+        "lookups": 4,
+        "main_width": 23,
+        "name": "KzgGroup_23",
+        "padded_lookup_cells": 2048,
+        "padded_main_cells": 11776,
+        "padded_quotient_cells": 1024,
+        "quotient_columns": 2,
+        "unpadded_main_cells": 10948
+      },
+      {
+        "execution_rows": 472,
+        "fixed_cells": 0,
+        "fixed_width": 0,
+        "height": 512,
+        "lookup_columns": 4,
+        "lookup_group_size": 1,
+        "lookups": 4,
+        "main_width": 13,
+        "name": "KzgGroup_24",
+        "padded_lookup_cells": 2048,
+        "padded_main_cells": 6656,
+        "padded_quotient_cells": 1024,
+        "quotient_columns": 2,
+        "unpadded_main_cells": 6136
+      },
+      {
+        "execution_rows": 105187,
+        "fixed_cells": 0,
+        "fixed_width": 0,
+        "height": 131072,
+        "lookup_columns": 8,
+        "lookup_group_size": 1,
+        "lookups": 8,
+        "main_width": 8,
+        "name": "BN254Fq::range84",
+        "padded_lookup_cells": 1048576,
+        "padded_main_cells": 1048576,
+        "padded_quotient_cells": 131072,
+        "quotient_columns": 1,
+        "unpadded_main_cells": 841496
+      },
+      {
+        "execution_rows": 6935,
+        "fixed_cells": 0,
+        "fixed_width": 0,
+        "height": 8192,
+        "lookup_columns": 5,
+        "lookup_group_size": 1,
+        "lookups": 5,
+        "main_width": 44,
+        "name": "KzgGroup_25",
+        "padded_lookup_cells": 40960,
+        "padded_main_cells": 360448,
+        "padded_quotient_cells": 16384,
+        "quotient_columns": 2,
+        "unpadded_main_cells": 305140
+      },
+      {
+        "execution_rows": 25825,
+        "fixed_cells": 0,
+        "fixed_width": 0,
+        "height": 32768,
+        "lookup_columns": 5,
+        "lookup_group_size": 1,
+        "lookups": 5,
+        "main_width": 18,
+        "name": "BN254Fq::sub",
+        "padded_lookup_cells": 163840,
+        "padded_main_cells": 589824,
+        "padded_quotient_cells": 32768,
+        "quotient_columns": 1,
+        "unpadded_main_cells": 464850
+      },
+      {
+        "execution_rows": 969,
+        "fixed_cells": 0,
+        "fixed_width": 0,
+        "height": 1024,
+        "lookup_columns": 5,
+        "lookup_group_size": 1,
+        "lookups": 5,
+        "main_width": 19,
+        "name": "KzgGroup_26",
+        "padded_lookup_cells": 5120,
+        "padded_main_cells": 19456,
+        "padded_quotient_cells": 2048,
+        "quotient_columns": 2,
+        "unpadded_main_cells": 18411
+      },
+      {
+        "execution_rows": 6977,
+        "fixed_cells": 0,
+        "fixed_width": 0,
+        "height": 8192,
+        "lookup_columns": 2,
+        "lookup_group_size": 1,
+        "lookups": 2,
+        "main_width": 5,
+        "name": "KzgIO::byte",
+        "padded_lookup_cells": 16384,
+        "padded_main_cells": 40960,
+        "padded_quotient_cells": 8192,
+        "quotient_columns": 1,
+        "unpadded_main_cells": 34885
+      },
+      {
+        "execution_rows": 256,
+        "fixed_cells": 3328,
+        "fixed_width": 13,
+        "height": 256,
+        "lookup_columns": 4,
+        "lookup_group_size": 1,
+        "lookups": 4,
+        "main_width": 4,
+        "name": "<table:UInt8::byte_inputs>",
+        "padded_lookup_cells": 1024,
+        "padded_main_cells": 1024,
+        "padded_quotient_cells": 256,
+        "quotient_columns": 1,
+        "unpadded_main_cells": 1024
+      },
+      {
+        "execution_rows": 65536,
+        "fixed_cells": 1048576,
+        "fixed_width": 16,
+        "height": 65536,
+        "lookup_columns": 9,
+        "lookup_group_size": 1,
+        "lookups": 9,
+        "main_width": 9,
+        "name": "<table:UInt8::pair_inputs>",
+        "padded_lookup_cells": 589824,
+        "padded_main_cells": 589824,
+        "padded_quotient_cells": 65536,
+        "quotient_columns": 1,
+        "unpadded_main_cells": 589824
+      },
+      {
+        "execution_rows": 1024,
+        "fixed_cells": 3072,
+        "fixed_width": 3,
+        "height": 1024,
+        "lookup_columns": 1,
+        "lookup_group_size": 1,
+        "lookups": 1,
+        "main_width": 1,
+        "name": "<table:UInt8::sum_inputs>",
+        "padded_lookup_cells": 1024,
+        "padded_main_cells": 1024,
+        "padded_quotient_cells": 1024,
+        "quotient_columns": 1,
+        "unpadded_main_cells": 1024
+      },
+      {
+        "execution_rows": 38332,
+        "fixed_cells": 0,
+        "fixed_width": 0,
+        "height": 65536,
+        "lookup_columns": 1,
+        "lookup_group_size": 1,
+        "lookups": 1,
+        "main_width": 6,
+        "name": "<ROM:3>",
+        "padded_lookup_cells": 65536,
+        "padded_main_cells": 393216,
+        "padded_quotient_cells": 65536,
+        "quotient_columns": 1,
+        "unpadded_main_cells": 229992
+      },
+      {
+        "execution_rows": 5040,
+        "fixed_cells": 0,
+        "fixed_width": 0,
+        "height": 8192,
+        "lookup_columns": 1,
+        "lookup_group_size": 1,
+        "lookups": 1,
+        "main_width": 7,
+        "name": "<ROM:4>",
+        "padded_lookup_cells": 8192,
+        "padded_main_cells": 57344,
+        "padded_quotient_cells": 8192,
+        "quotient_columns": 1,
+        "unpadded_main_cells": 35280
+      },
+      {
+        "execution_rows": 13,
+        "fixed_cells": 0,
+        "fixed_width": 0,
+        "height": 16,
+        "lookup_columns": 1,
+        "lookup_group_size": 1,
+        "lookups": 1,
+        "main_width": 8,
+        "name": "<ROM:5>",
+        "padded_lookup_cells": 16,
+        "padded_main_cells": 128,
+        "padded_quotient_cells": 16,
+        "quotient_columns": 1,
+        "unpadded_main_cells": 104
+      },
+      {
+        "execution_rows": 45,
+        "fixed_cells": 0,
+        "fixed_width": 0,
+        "height": 64,
+        "lookup_columns": 1,
+        "lookup_group_size": 1,
+        "lookups": 1,
+        "main_width": 9,
+        "name": "<ROM:6>",
+        "padded_lookup_cells": 64,
+        "padded_main_cells": 576,
+        "padded_quotient_cells": 64,
+        "quotient_columns": 1,
+        "unpadded_main_cells": 405
+      },
+      {
+        "execution_rows": 79,
+        "fixed_cells": 0,
+        "fixed_width": 0,
+        "height": 128,
+        "lookup_columns": 1,
+        "lookup_group_size": 1,
+        "lookups": 1,
+        "main_width": 10,
+        "name": "<ROM:7>",
+        "padded_lookup_cells": 128,
+        "padded_main_cells": 1280,
+        "padded_quotient_cells": 128,
+        "quotient_columns": 1,
+        "unpadded_main_cells": 790
+      },
+      {
+        "execution_rows": 4,
+        "fixed_cells": 0,
+        "fixed_width": 0,
+        "height": 4,
+        "lookup_columns": 1,
+        "lookup_group_size": 1,
+        "lookups": 1,
+        "main_width": 11,
+        "name": "<ROM:8>",
+        "padded_lookup_cells": 4,
+        "padded_main_cells": 44,
+        "padded_quotient_cells": 4,
+        "quotient_columns": 1,
+        "unpadded_main_cells": 44
+      },
+      {
+        "execution_rows": 4,
+        "fixed_cells": 0,
+        "fixed_width": 0,
+        "height": 4,
+        "lookup_columns": 1,
+        "lookup_group_size": 1,
+        "lookups": 1,
+        "main_width": 13,
+        "name": "<ROM:10>",
+        "padded_lookup_cells": 4,
+        "padded_main_cells": 52,
+        "padded_quotient_cells": 4,
+        "quotient_columns": 1,
+        "unpadded_main_cells": 52
+      },
+      {
+        "execution_rows": 5225,
+        "fixed_cells": 0,
+        "fixed_width": 0,
+        "height": 8192,
+        "lookup_columns": 1,
+        "lookup_group_size": 1,
+        "lookups": 1,
+        "main_width": 14,
+        "name": "<ROM:11>",
+        "padded_lookup_cells": 8192,
+        "padded_main_cells": 114688,
+        "padded_quotient_cells": 8192,
+        "quotient_columns": 1,
+        "unpadded_main_cells": 73150
+      },
+      {
+        "execution_rows": 216,
+        "fixed_cells": 0,
+        "fixed_width": 0,
+        "height": 256,
+        "lookup_columns": 1,
+        "lookup_group_size": 1,
+        "lookups": 1,
+        "main_width": 15,
+        "name": "<ROM:12>",
+        "padded_lookup_cells": 256,
+        "padded_main_cells": 3840,
+        "padded_quotient_cells": 256,
+        "quotient_columns": 1,
+        "unpadded_main_cells": 3240
+      },
+      {
+        "execution_rows": 3,
+        "fixed_cells": 0,
+        "fixed_width": 0,
+        "height": 4,
+        "lookup_columns": 1,
+        "lookup_group_size": 1,
+        "lookups": 1,
+        "main_width": 16,
+        "name": "<ROM:13>",
+        "padded_lookup_cells": 4,
+        "padded_main_cells": 64,
+        "padded_quotient_cells": 4,
+        "quotient_columns": 1,
+        "unpadded_main_cells": 48
+      },
+      {
+        "execution_rows": 4,
+        "fixed_cells": 0,
+        "fixed_width": 0,
+        "height": 4,
+        "lookup_columns": 1,
+        "lookup_group_size": 1,
+        "lookups": 1,
+        "main_width": 18,
+        "name": "<ROM:15>",
+        "padded_lookup_cells": 4,
+        "padded_main_cells": 72,
+        "padded_quotient_cells": 4,
+        "quotient_columns": 1,
+        "unpadded_main_cells": 72
+      },
+      {
+        "execution_rows": 4,
+        "fixed_cells": 0,
+        "fixed_width": 0,
+        "height": 4,
+        "lookup_columns": 1,
+        "lookup_group_size": 1,
+        "lookups": 1,
+        "main_width": 28,
+        "name": "<ROM:25>",
+        "padded_lookup_cells": 4,
+        "padded_main_cells": 112,
+        "padded_quotient_cells": 4,
+        "quotient_columns": 1,
+        "unpadded_main_cells": 112
+      },
+      {
+        "execution_rows": 54,
+        "fixed_cells": 0,
+        "fixed_width": 0,
+        "height": 64,
+        "lookup_columns": 1,
+        "lookup_group_size": 1,
+        "lookups": 1,
+        "main_width": 35,
+        "name": "<ROM:32>",
+        "padded_lookup_cells": 64,
+        "padded_main_cells": 2240,
+        "padded_quotient_cells": 64,
+        "quotient_columns": 1,
+        "unpadded_main_cells": 1890
+      },
+      {
+        "execution_rows": 151,
+        "fixed_cells": 0,
+        "fixed_width": 0,
+        "height": 256,
+        "lookup_columns": 1,
+        "lookup_group_size": 1,
+        "lookups": 1,
+        "main_width": 36,
+        "name": "<ROM:33>",
+        "padded_lookup_cells": 256,
+        "padded_main_cells": 9216,
+        "padded_quotient_cells": 256,
+        "quotient_columns": 1,
+        "unpadded_main_cells": 5436
+      },
+      {
+        "execution_rows": 9,
+        "fixed_cells": 0,
+        "fixed_width": 0,
+        "height": 16,
+        "lookup_columns": 1,
+        "lookup_group_size": 1,
+        "lookups": 1,
+        "main_width": 37,
+        "name": "<ROM:34>",
+        "padded_lookup_cells": 16,
+        "padded_main_cells": 592,
+        "padded_quotient_cells": 16,
+        "quotient_columns": 1,
+        "unpadded_main_cells": 333
+      },
+      {
+        "execution_rows": 20,
+        "fixed_cells": 0,
+        "fixed_width": 0,
+        "height": 32,
+        "lookup_columns": 1,
+        "lookup_group_size": 1,
+        "lookups": 1,
+        "main_width": 109,
+        "name": "<ROM:106>",
+        "padded_lookup_cells": 32,
+        "padded_main_cells": 3488,
+        "padded_quotient_cells": 32,
+        "quotient_columns": 1,
+        "unpadded_main_cells": 2180
+      }
+    ]
+  },
+  "same_native_verifier_output": true,
+  "outer_proof": {
+    "changed_output_rejected": true,
+    "key_blake3": "9c06bed6d9337ac342714c168725c1f47206ef05b5e6ba69657f31873aaa57dd",
+    "max_trace_height": 1048576,
+    "portable_verification": true,
+    "proof_blake3": "430b9f23ed4748ffd1d85898dfab8db35ce2733d95d34b928d37b5a3c678f27f",
+    "proof_bytes": 299070,
+    "scope": "Actual proof of this Aiur verifier execution using the existing column KZG PCS and explicit development setup; not Init",
+    "variable_g1_points": 4021
+  },
+  "policy": "aiur-kzg-grouping-policy.json",
+  "search": {
+    "profiles": [
+      [
+        "target/grouping/counts.json",
+        "target/grouping/shapes.json"
+      ]
+    ],
+    "optimized": [
+      2677,
+      34,
+      10139782,
+      901822391
+    ],
+    "initial": [
+      6577,
+      147,
+      10750714,
+      931794938
+    ],
+    "dimensions": [
+      "stage1_columns",
+      "function_circuits",
+      "cells_0",
+      "fft_0"
+    ],
+    "circuits": [
+      {
+        "shape": [
+          198,
+          53,
+          1
+        ],
+        "members": [
+          "KzgVerifier::verify_deferred"
+        ],
+        "cost": [
+          198,
+          1,
+          198,
+          759
+        ]
+      },
+      {
+        "shape": [
+          34,
+          4,
+          2
+        ],
+        "members": [
+          "KzgIO::channel",
+          "UInt64::wrapping_succ",
+          "KzgShape::power_log",
+          "KzgShape::power2",
+          "KzgTranscript::start",
+          "KzgTranscript::observe_commitment",
+          "KzgAlgebra::exp_power2"
+        ],
+        "cost": [
+          34,
+          1,
+          1088,
+          20544
+        ]
+      },
+      {
+        "shape": [
+          219,
+          14,
+          2
+        ],
+        "members": [
+          "UInt32::less_than_fields",
+          "Blake3::compress_layer",
+          "Blake3::next_layer",
+          "Blake3::finish",
+          "KzgBlake3::chaining",
+          "KzgBlake3::chunk",
+          "KzgPcs::collect"
+        ],
+        "cost": [
+          219,
+          1,
+          56064,
+          1459200
+        ]
+      },
+      {
+        "shape": [
+          12,
+          4,
+          2
+        ],
+        "members": [
+          "KzgIO::read_stream"
+        ],
+        "cost": [
+          12,
+          1,
+          98304,
+          6488064
+        ]
+      },
+      {
+        "shape": [
+          513,
+          226,
+          2
+        ],
+        "members": [
+          "Blake3::compress",
+          "Blake3::bytes_to_block",
+          "Blake3::compress_block",
+          "KzgTranscript::observe_field",
+          "BN254G1::point_list_bytes",
+          "KzgBlake3::xof96",
+          "KzgBlake3::compress_full"
+        ],
+        "cost": [
+          513,
+          1,
+          1050624,
+          50239488
+        ]
+      },
+      {
+        "shape": [
+          18,
+          6,
+          2
+        ],
+        "members": [
+          "Blake3::compress_chunks"
+        ],
+        "cost": [
+          18,
+          1,
+          73728,
+          4177920
+        ]
+      },
+      {
+        "shape": [
+          111,
+          35,
+          2
+        ],
+        "members": [
+          "UInt64::is_zero",
+          "KzgVerifier::observe_shape",
+          "BN254G1::commitment_bytes",
+          "KzgPcs::reduce",
+          "KzgMsm::msm",
+          "BN254G1::from_bytes",
+          "KzgDeserialize::circuits",
+          "KzgIO::finish",
+          "KzgDeserialize::proof"
+        ],
+        "cost": [
+          111,
+          1,
+          7104,
+          173568
+        ]
+      },
+      {
+        "shape": [
+          14,
+          4,
+          2
+        ],
+        "members": [
+          "Blake3::pad_block",
+          "${\"name\":\"Lists::is_empty\",\"types\":[\"field\"]}",
+          "KzgTranscript::observe_fields"
+        ],
+        "cost": [
+          14,
+          1,
+          7168,
+          310272
+        ]
+      },
+      {
+        "shape": [
+          163,
+          67,
+          2
+        ],
+        "members": [
+          "KzgVerifier::verify",
+          "KzgShape::frames",
+          "KzgShape::walk",
+          "UInt64::from_field",
+          "UInt64::to_field",
+          "KzgShape::consume",
+          "${\"name\":\"Lists::length\",\"types\":[{\"named\":{\"args\":[],\"name\":\"KzgDeserialize::Lookup\"}}]}",
+          "KzgTranscript::observe_claims",
+          "KzgAlgebra::verify_frames",
+          "KzgAlgebra::next_row",
+          "KzgPcs::rounds",
+          "KzgDeserialize::key",
+          "KzgIO::blob",
+          "KzgDeserialize::claims",
+          "BN254G1Encoding::to_chunks"
+        ],
+        "cost": [
+          163,
+          1,
+          10432,
+          270336
+        ]
+      },
+      {
+        "shape": [
+          54,
+          10,
+          2
+        ],
+        "members": [
+          "UInt64::sub_with_borrow",
+          "KzgBlake3::root",
+          "KzgBlake3::next_layer",
+          "KzgAlgebra::fold_roots",
+          "KzgAlgebra::fold_lookups",
+          "KzgPcs::observe_rounds",
+          "KzgPcs::observe_openings",
+          "KzgDeserialize::supported_power",
+          "KzgDeserialize::group_count",
+          "KzgDeserialize::commitment",
+          "KzgDeserialize::openings"
+        ],
+        "cost": [
+          54,
+          1,
+          3456,
+          79104
+        ]
+      },
+      {
+        "shape": [
+          43,
+          5,
+          2
+        ],
+        "members": [
+          "${\"name\":\"Lists::length\",\"types\":[{\"tuple\":{\"items\":[{\"array\":{\"element\":\"field\",\"length\":4}},{\"array\":{\"element\":\"field\",\"length\":4}},\"field\"]}}]}",
+          "KzgIO::scalar_from_bytes",
+          "KzgAlgebra::group_summary",
+          "KzgIO::scalar"
+        ],
+        "cost": [
+          43,
+          1,
+          11008,
+          322560
+        ]
+      },
+      {
+        "shape": [
+          18,
+          4,
+          2
+        ],
+        "members": [
+          "KzgShape::rows_width",
+          "${\"name\":\"Lists::drop\",\"types\":[{\"named\":{\"args\":[],\"name\":\"KzgDeserialize::Node\"}}]}",
+          "${\"name\":\"Lists::drop\",\"types\":[\"field\"]}"
+        ],
+        "cost": [
+          18,
+          1,
+          2304,
+          71424
+        ]
+      },
+      {
+        "shape": [
+          16,
+          4,
+          2
+        ],
+        "members": [
+          "${\"name\":\"Lists::length\",\"types\":[\"field\"]}",
+          "KzgAlgebra::two_adic_gen",
+          "KzgDeserialize::scalars"
+        ],
+        "cost": [
+          16,
+          1,
+          4096,
+          150528
+        ]
+      },
+      {
+        "shape": [
+          55,
+          6,
+          2
+        ],
+        "members": [
+          "KzgTranscript::observe_bytes",
+          "BN254G1::to_bytes",
+          "KzgPcs::fold_pairs",
+          "KzgMsm::prepare",
+          "KzgIO::point",
+          "KzgDeserialize::nodes"
+        ],
+        "cost": [
+          55,
+          1,
+          28160,
+          904704
+        ]
+      },
+      {
+        "shape": [
+          12,
+          9,
+          2
+        ],
+        "members": [
+          "KzgTranscript::reverse_onto",
+          "BN254Fq::from_limbs"
+        ],
+        "cost": [
+          12,
+          1,
+          786432,
+          79429632
+        ]
+      },
+      {
+        "shape": [
+          54,
+          41,
+          2
+        ],
+        "members": [
+          "KzgIO::scalar_bytes",
+          "BN254G1::fq_bytes",
+          "KzgAlgebra::eval_at",
+          "KzgTranscript::observe_u64",
+          "KzgDeserialize::check_child"
+        ],
+        "cost": [
+          54,
+          1,
+          13824,
+          611328
+        ]
+      },
+      {
+        "shape": [
+          7,
+          6,
+          1
+        ],
+        "members": [
+          "BN254Fq::range80"
+        ],
+        "cost": [
+          7,
+          1,
+          3670016,
+          450363392
+        ]
+      },
+      {
+        "shape": [
+          31,
+          5,
+          2
+        ],
+        "members": [
+          "${\"name\":\"Lists::length\",\"types\":[{\"named\":{\"args\":[],\"name\":\"KzgDeserialize::Circuit\"}}]}",
+          "KzgPcs::prepend_pairs",
+          "KzgMsm::finish",
+          "KzgDeserialize::points"
+        ],
+        "cost": [
+          31,
+          1,
+          7936,
+          248832
+        ]
+      },
+      {
+        "shape": [
+          102,
+          13,
+          2
+        ],
+        "members": [
+          "KzgIO::fields_to_bytes",
+          "KzgMsm::table_rows",
+          "BN254G1::add",
+          "BN254G1::double",
+          "KzgMsm::windows"
+        ],
+        "cost": [
+          102,
+          1,
+          835584,
+          38117376
+        ]
+      },
+      {
+        "shape": [
+          41,
+          12,
+          2
+        ],
+        "members": [
+          "BN254G1::bytes64",
+          "${\"name\":\"Lists::is_empty\",\"types\":[{\"named\":{\"args\":[],\"name\":\"KzgDeserialize::Lookup\"}}]}",
+          "KzgPcs::commitments",
+          "KzgPcs::add_batch",
+          "KzgDeserialize::node"
+        ],
+        "cost": [
+          41,
+          1,
+          5248,
+          154752
+        ]
+      },
+      {
+        "shape": [
+          81,
+          33,
+          2
+        ],
+        "members": [
+          "BN254G1::row_list_bytes",
+          "KzgBlake3::parent",
+          "KzgBlake3::chunks",
+          "KzgIO::magic",
+          "KzgIO::read32",
+          "BN254G1::from_raw"
+        ],
+        "cost": [
+          81,
+          1,
+          20736,
+          728064
+        ]
+      },
+      {
+        "shape": [
+          17,
+          9,
+          2
+        ],
+        "members": [
+          "BN254G1::sign",
+          "KzgAlgebra::fingerprint",
+          "BN254G1::scalar_limbs",
+          "KzgDeserialize::ids"
+        ],
+        "cost": [
+          17,
+          1,
+          4352,
+          187392
+        ]
+      },
+      {
+        "shape": [
+          28,
+          8,
+          2
+        ],
+        "members": [
+          "${\"name\":\"Lists::concat\",\"types\":[\"field\"]}",
+          "KzgMsm::split",
+          "${\"name\":\"Lists::lookup\",\"types\":[{\"tuple\":{\"items\":[{\"array\":{\"element\":\"field\",\"length\":4}},{\"array\":{\"element\":\"field\",\"length\":4}},\"field\"]}}]}"
+        ],
+        "cost": [
+          28,
+          1,
+          229376,
+          12877824
+        ]
+      },
+      {
+        "shape": [
+          36,
+          7,
+          2
+        ],
+        "members": [
+          "KzgTranscript::observe_claim_rows",
+          "KzgAlgebra::first_row",
+          "KzgPcs::observe_logs",
+          "KzgDeserialize::lookups",
+          "KzgDeserialize::point_rows",
+          "KzgDeserialize::opening_matrices",
+          "KzgDeserialize::scalar_rows"
+        ],
+        "cost": [
+          36,
+          1,
+          4608,
+          127872
+        ]
+      },
+      {
+        "shape": [
+          608,
+          194,
+          2
+        ],
+        "members": [
+          "KzgTranscript::sample",
+          "KzgBlake3::rounds",
+          "KzgTranscript::reduce64",
+          "KzgPcs::matrices",
+          "KzgPcs::observe_witnesses"
+        ],
+        "cost": [
+          608,
+          1,
+          77824,
+          2168064
+        ]
+      },
+      {
+        "shape": [
+          32,
+          13,
+          2
+        ],
+        "members": [
+          "KzgBlake3::read_block",
+          "BN254Fq::mul",
+          "BN254Fq::inverse"
+        ],
+        "cost": [
+          32,
+          1,
+          1048576,
+          72646656
+        ]
+      },
+      {
+        "shape": [
+          30,
+          5,
+          2
+        ],
+        "members": [
+          "KzgAlgebra::claims_accumulator",
+          "KzgPcs::observe_matrices",
+          "KzgPcs::observe_rows",
+          "${\"name\":\"Lists::reverse\",\"types\":[{\"tuple\":{\"items\":[{\"tuple\":{\"items\":[{\"array\":{\"element\":\"field\",\"length\":4}},{\"array\":{\"element\":\"field\",\"length\":4}},\"field\"]}},\"field\"]}}]}",
+          "${\"name\":\"Lists::reverse_acc\",\"types\":[{\"tuple\":{\"items\":[{\"tuple\":{\"items\":[{\"array\":{\"element\":\"field\",\"length\":4}},{\"array\":{\"element\":\"field\",\"length\":4}},\"field\"]}},\"field\"]}}]}",
+          "KzgDeserialize::quotient_degree"
+        ],
+        "cost": [
+          30,
+          1,
+          3840,
+          106368
+        ]
+      },
+      {
+        "shape": [
+          23,
+          4,
+          2
+        ],
+        "members": [
+          "${\"name\":\"Lists::lookup\",\"types\":[{\"named\":{\"args\":[],\"name\":\"KzgDeserialize::Node\"}}]}",
+          "KzgAlgebra::lookup_fingerprint",
+          "KzgMsm::table",
+          "KzgMsm::limb"
+        ],
+        "cost": [
+          23,
+          1,
+          11776,
+          434688
+        ]
+      },
+      {
+        "shape": [
+          13,
+          4,
+          2
+        ],
+        "members": [
+          "${\"name\":\"Lists::lookup\",\"types\":[\"field\"]}",
+          "KzgIO::read_bytes"
+        ],
+        "cost": [
+          13,
+          1,
+          6656,
+          296448
+        ]
+      },
+      {
+        "shape": [
+          8,
+          8,
+          1
+        ],
+        "members": [
+          "BN254Fq::range84"
+        ],
+        "cost": [
+          8,
+          1,
+          1048576,
+          120848384
+        ]
+      },
+      {
+        "shape": [
+          44,
+          5,
+          2
+        ],
+        "members": [
+          "BN254Fq::add",
+          "KzgMsm::add_points"
+        ],
+        "cost": [
+          44,
+          1,
+          360448,
+          17031168
+        ]
+      },
+      {
+        "shape": [
+          18,
+          5,
+          1
+        ],
+        "members": [
+          "BN254Fq::sub"
+        ],
+        "cost": [
+          18,
+          1,
+          589824,
+          36995072
+        ]
+      },
+      {
+        "shape": [
+          19,
+          5,
+          2
+        ],
+        "members": [
+          "${\"name\":\"Lists::drop\",\"types\":[{\"tuple\":{\"items\":[{\"array\":{\"element\":\"field\",\"length\":4}},{\"array\":{\"element\":\"field\",\"length\":4}},\"field\"]}}]}",
+          "KzgIO::u32"
+        ],
+        "cost": [
+          19,
+          1,
+          19456,
+          872448
+        ]
+      },
+      {
+        "shape": [
+          5,
+          2,
+          1
+        ],
+        "members": [
+          "KzgIO::byte"
+        ],
+        "cost": [
+          5,
+          1,
+          40960,
+          2908160
+        ]
+      }
+    ]
+  },
+  "configuration": {
+    "extension_degree": 1,
+    "max_lookup_group": 1,
+    "max_members": 16,
+    "sweeps": 8,
+    "entry": "KzgVerifier::verify_deferred"
+  },
+  "limits": [
+    "No core cryptographic change, no row-cap increase.",
+    "The policy is not a default; larger predecessor workloads must be checked before adopting it.",
+    "No runtime or peak-memory improvement is claimed from these dimensions."
+  ],
+  "reproduce": [
+    "lake build multiStark/bn_grouping aiur/grouping_search",
+    "lake env MultiStark/.lake/build/bin/bn_grouping prepare SNAPSHOT_JSON METRICS_JSON UNGROUPED_IXA",
+    "lake env MultiStark/.lake/build/bin/bn_grouping export GROUPED_IXA docs/measurements/aiur-kzg-grouping-policy.json",
+    "cargo run --release --locked -p ix-proof-compression --example aiur_verifier_comparison -- UNGROUPED_IXA BASELINE_OUTPUT",
+    "cargo run --release --locked -p ix-proof-compression --example aiur_verifier_comparison -- GROUPED_IXA GROUPED_OUTPUT --prove-kzg 20"
+  ]
+}

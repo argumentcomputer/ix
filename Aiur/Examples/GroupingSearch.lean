@@ -14,6 +14,7 @@ is a smaller secondary objective.
 ```sh
 grouping_search METRICS OUTPUT --prefix P --profile COUNTS SHAPES [--profile ...]
   [--max-members N] [--sweeps N] [--report-only]
+  [--extension-degree N] [--max-lookup-group N]
 ```
 
 `COUNTS` holds `function_rows` and `SHAPES` the singleton circuit shapes, both
@@ -100,6 +101,8 @@ structure Search where
   counts : Array (Array Nat)
   shapes : IO.Ref (Std.HashMap (Array Nat) Shape)
   costs : IO.Ref (Std.HashMap (Array Nat) (Array Int))
+  extensionDegree : Nat := 2
+  maxLookupGroup : Nat := 8
 
 def Search.shape (s : Search) (members : Array Nat) : IO Shape := do
   if let some cached := (← s.shapes.get)[members]? then return cached
@@ -118,13 +121,13 @@ def Search.shape (s : Search) (members : Array Nat) : IO Shape := do
       let constraints := selected.foldl (fun n c => max n c.constraintDegree) 2
       let quotient := padded (max 2 (max constraints (lookupDegree lookups 1)) - 1)
       let mut size := 1
-      let mut candidate := min 8 lookups.size
+      let mut candidate := min s.maxLookupGroup lookups.size
       while candidate > 1 do
         if padded (max 2 (max constraints (lookupDegree lookups candidate)) - 1) ≤ quotient then
           size := candidate
           break
         candidate := candidate - 1
-      pure (width, 2 * ceilDiv lookups.size size, quotient)
+      pure (width, s.extensionDegree * ceilDiv lookups.size size, quotient)
   s.shapes.modify (·.insert members result)
   return result
 
@@ -176,6 +179,8 @@ structure Options where
   maxMembers : Nat := 16
   sweeps : Nat := 4
   reportOnly : Bool := false
+  extensionDegree : Nat := 2
+  maxLookupGroup : Nat := 8
 
 def parseArgs : List String → Options → Except String Options
   | [], o => if o.profiles.isEmpty || o.prefix_.isEmpty
@@ -190,6 +195,14 @@ def parseArgs : List String → Options → Except String Options
     | some n => parseArgs rest { o with sweeps := n }
     | none => .error "--sweeps expects a number"
   | "--report-only" :: rest, o => parseArgs rest { o with reportOnly := true }
+  | "--extension-degree" :: n :: rest, o => match n.toNat? with
+    | some n => if n > 0 then parseArgs rest { o with extensionDegree := n }
+      else .error "--extension-degree must be positive"
+    | none => .error "--extension-degree expects a number"
+  | "--max-lookup-group" :: n :: rest, o => match n.toNat? with
+    | some n => if n > 0 && n ≤ 8 then parseArgs rest { o with maxLookupGroup := n }
+      else .error "--max-lookup-group must be in 1..=8"
+    | none => .error "--max-lookup-group expects a number"
   | arg :: _, _ => .error s!"unexpected argument {arg}"
 
 def pad2 (i : Nat) : String := if i < 10 then s!"0{i}" else toString i
@@ -227,7 +240,9 @@ def run (o : Options) : IO Unit := do
     counts := counts
     singleton := statistics[0]!
     shapes := ← IO.mkRef {}
-    costs := ← IO.mkRef {} }
+    costs := ← IO.mkRef {}
+    extensionDegree := o.extensionDegree
+    maxLookupGroup := o.maxLookupGroup }
   let mut groups : Groups := #[]
   let mut used : Array Nat := #[]
   for g in ← IO.ofExcept (metrics.getObjValAs? (Array (String × Array String)) "groups") do
