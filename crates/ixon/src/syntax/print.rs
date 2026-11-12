@@ -8,8 +8,9 @@
 //! pinned `Name#hash` references are laid out — exists to reparse to
 //! the same tree.
 
-use crate::contract::{BinderContract, LetKind, Locality, ValueContract};
-use crate::expr::{Owned, Uses};
+use crate::contract::{
+  BinderContract, LetKind, Locality, Owned, Uses, ValueContract,
+};
 use ix_common::env::{BinderInfo, NameComponent};
 
 use crate::syntax::ast::{

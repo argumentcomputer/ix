@@ -62,15 +62,10 @@ fn constant(bytes: &[u8]) -> Result<Constant, String> {
   Ok(constant)
 }
 
-/// A constant whose bytes are its canonical encoding.
+/// A constant whose bytes are its canonical encoding, read by the canonical
+/// decoder (`Constant::get_canonical`, Lean's `Canonical.deConstant`).
 fn canonical(bytes: &[u8]) -> Result<Constant, String> {
-  let constant = constant(bytes)?;
-  let mut encoded = Vec::new();
-  constant.put(&mut encoded);
-  if encoded != bytes {
-    return Err("noncanonical encoding".into());
-  }
-  Ok(constant)
+  Constant::get_canonical(bytes)
 }
 
 fn environment(bytes: &[u8]) -> [(&'static str, Result<(), String>); 2] {

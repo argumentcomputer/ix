@@ -16,6 +16,7 @@ use ix_common::address::Address;
 use ix_common::env::{DefinitionSafety, QuotKind};
 
 use super::expr::Expr;
+use super::modes::{AllMode, DefAsserts, FieldModes};
 use super::univ::Univ;
 
 /// Definition kind (definition, opaque, or theorem).
@@ -26,11 +27,15 @@ pub enum DefKind {
   Theorem,
 }
 
-/// A definition constant.
+/// A definition constant: a definition, an opaque or a theorem. `asserts` is
+/// the high nibble of its kind and safety byte; a theorem asserts nothing
+/// (`Constant::modes_canonical`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Definition {
   pub kind: DefKind,
   pub safety: DefinitionSafety,
+  /// What the definition asserts about its allocation and stack
+  pub asserts: DefAsserts,
   /// Number of universe parameters
   pub lvls: u64,
   /// Type expression
@@ -102,6 +107,9 @@ pub struct Constructor {
   pub params: u64,
   /// Number of fields
   pub fields: u64,
+  /// The fields' modes: all inherited (the flag bit of the first byte
+  /// clear), or `fields` modes with one shared (one byte per field)
+  pub field_modes: FieldModes,
   /// Type expression
   pub typ: Arc<Expr>,
 }
@@ -219,23 +227,26 @@ impl ConstantInfo {
 /// One numbered node of a binder-data block (`Constant::binders`).
 ///
 /// A binder's datum is the zero-ness of its codomain sort: never zero, or
-/// zero exactly when every universe parameter of a set is zero.
+/// zero exactly when every universe parameter of a set is zero. A binder's
+/// node also carries the binder's mode ([`AllMode`], the high five bits of
+/// the node byte; the byte is the tag alone at the default mode); a share
+/// node has none.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum BinderNode {
   /// A binder whose codomain sort is never zero (wire tag 0).
-  Never,
+  Never(AllMode),
   /// A binder whose codomain sort is always zero (wire tag 1).
-  Zero,
+  Zero(AllMode),
   /// A binder whose codomain sort is zero exactly when every listed
   /// universe parameter is (wire tag 2). Canonical: nonempty, strictly
   /// ascending, below the record's level count.
-  IfAllZero(Vec<u64>),
+  IfAllZero(Vec<u64>, AllMode),
   /// A share site whose entry has a binder: that entry at this variant
   /// (wire tag 3).
   Share(u64),
   /// A binder whose datum the compiler could not decide (wire tag 4).
   /// Readers accept it; a checker that needs the datum rejects it.
-  Undecided,
+  Undecided(AllMode),
 }
 
 impl BinderNode {
@@ -244,6 +255,23 @@ impl BinderNode {
   pub const TAG_IF_ALL_ZERO: u8 = 2;
   pub const TAG_SHARE: u8 = 3;
   pub const TAG_UNDECIDED: u8 = 4;
+
+  /// The node's mode: `None` at a share node.
+  pub fn mode(&self) -> Option<AllMode> {
+    match self {
+      Self::Never(m)
+      | Self::Zero(m)
+      | Self::IfAllZero(_, m)
+      | Self::Undecided(m) => Some(*m),
+      Self::Share(_) => None,
+    }
+  }
+
+  /// A binder node's byte: its tag in the low three bits, its mode's code
+  /// in the high five (`Ixon.binderNodeByte`).
+  pub fn binder_byte(tag: u8, mode: AllMode) -> u8 {
+    tag | (mode.to_code() << 3)
+  }
 }
 
 /// The binder data of one expression of a record: a root (`shared` false,
@@ -424,7 +452,7 @@ impl Constant {
         (b.shared || b.variant == 0)
           && !b.nodes.is_empty()
           && b.nodes.iter().all(|n| match n {
-            BinderNode::IfAllZero(ps) => {
+            BinderNode::IfAllZero(ps, _) => {
               !ps.is_empty()
                 && ps.windows(2).all(|w| w[0] < w[1])
                 && ps.iter().all(|p| *p < lvls)
@@ -442,7 +470,8 @@ impl Constant {
   /// `IfAllZero` list nonempty, strictly ascending and below `max_lvls`, the
   /// variants of an entry numbered in order of first occurrence (roots in
   /// order, each in pre-order, a share node visiting its variant there) and
-  /// pairwise distinct.
+  /// pairwise distinct as whole node lists (data and modes). A binder of an
+  /// unsafe or partial record carries the undecided node, at any mode.
   pub fn binders_complete(&self) -> bool {
     if self.binder_roots().is_empty() {
       return self.binders.is_empty();
@@ -491,6 +520,24 @@ impl Constant {
     }
     true
   }
+
+  /// The record's modes outside its section are canonical
+  /// (`Ixon.Constant.modesCanonical`): no theorem, standalone or in a block,
+  /// asserts anything. Every other mode byte that is no mode is refused by
+  /// the codec itself.
+  pub fn modes_canonical(&self) -> bool {
+    fn asserts_canonical(d: &Definition) -> bool {
+      d.kind != DefKind::Theorem || d.asserts == DefAsserts::default()
+    }
+    match &self.info {
+      ConstantInfo::Defn(d) => asserts_canonical(d),
+      ConstantInfo::Muts(ms) => ms.iter().all(|m| match m {
+        MutConst::Defn(d) => asserts_canonical(d),
+        MutConst::Indc(_) | MutConst::Recr(_) => true,
+      }),
+      _ => true,
+    }
+  }
 }
 
 /// Whether each sharing entry has a binder, directly or through the entries
@@ -500,7 +547,7 @@ fn binderful_entries(sharing: &[Arc<Expr>]) -> Vec<bool> {
     match e {
       Expr::Lam(..) | Expr::All(..) => true,
       Expr::App(f, a) => has_binder(full, f) || has_binder(full, a),
-      Expr::Let(_, t, v, b) => {
+      Expr::Let(_, _, t, v, b) => {
         has_binder(full, t) || has_binder(full, v) || has_binder(full, b)
       },
       Expr::Prj(_, _, v) => has_binder(full, v),
@@ -523,7 +570,7 @@ fn binderful_entries(sharing: &[Arc<Expr>]) -> Vec<bool> {
 /// for a `Lam` or `All`, `Some(n)` for a `Share` of an entry with a binder.
 fn numbered_nodes(full: &[bool], e: &Expr, acc: &mut Vec<Option<usize>>) {
   match e {
-    Expr::Lam(_, t, b) | Expr::All(_, _, t, b) => {
+    Expr::Lam(t, b) | Expr::All(t, b) => {
       acc.push(None);
       numbered_nodes(full, t, acc);
       numbered_nodes(full, b, acc);
@@ -532,7 +579,7 @@ fn numbered_nodes(full: &[bool], e: &Expr, acc: &mut Vec<Option<usize>>) {
       numbered_nodes(full, f, acc);
       numbered_nodes(full, a, acc);
     },
-    Expr::Let(_, t, v, b) => {
+    Expr::Let(_, _, t, v, b) => {
       numbered_nodes(full, t, acc);
       numbered_nodes(full, v, acc);
       numbered_nodes(full, b, acc);
@@ -578,11 +625,11 @@ impl BinderCheck<'_> {
       match (kind, node) {
         (None, BinderNode::Share(_)) => return false,
         (None, n) if self.undecided_only => {
-          if *n != BinderNode::Undecided {
+          if !matches!(n, BinderNode::Undecided(_)) {
             return false;
           }
         },
-        (None, BinderNode::IfAllZero(ps)) => {
+        (None, BinderNode::IfAllZero(ps, _)) => {
           if ps.is_empty()
             || !ps.windows(2).all(|w| w[0] < w[1])
             || !ps.iter().all(|p| *p < self.lvls)
@@ -676,6 +723,7 @@ pub fn ctor_proj_constant(idx: u64, cidx: u64, block: Address) -> Constant {
 pub mod tests {
   use super::*;
   use crate::expr::tests::arbitrary_expr;
+  use crate::modes::tests::gen_field_modes;
   use crate::tests::gen_range;
   use ix_common::env::{DefinitionSafety, QuotKind};
   use quickcheck::{Arbitrary, Gen};
@@ -708,6 +756,7 @@ pub mod tests {
     Definition {
       kind: DefKind::arbitrary(g),
       safety: DefinitionSafety::arbitrary(g),
+      asserts: DefAsserts::arbitrary(g),
       lvls: u64::arbitrary(g) % 10,
       typ: arbitrary_expr(g),
       value: arbitrary_expr(g),
@@ -749,12 +798,14 @@ pub mod tests {
   }
 
   fn gen_constructor(g: &mut Gen) -> Constructor {
+    let fields = u64::arbitrary(g) % 10;
     Constructor {
       is_unsafe: bool::arbitrary(g),
       lvls: u64::arbitrary(g) % 10,
       cidx: u64::arbitrary(g) % 10,
       params: u64::arbitrary(g) % 10,
-      fields: u64::arbitrary(g) % 10,
+      fields,
+      field_modes: gen_field_modes(g, fields),
       typ: arbitrary_expr(g),
     }
   }
@@ -809,13 +860,14 @@ pub mod tests {
 
   pub fn gen_binder_node(g: &mut Gen) -> BinderNode {
     match u8::arbitrary(g) % 5 {
-      0 => BinderNode::Never,
-      1 => BinderNode::Zero,
+      0 => BinderNode::Never(AllMode::arbitrary(g)),
+      1 => BinderNode::Zero(AllMode::arbitrary(g)),
       2 => BinderNode::IfAllZero(
         (0..gen_range(g, 0..4)).map(|_| u64::arbitrary(g)).collect(),
+        AllMode::arbitrary(g),
       ),
       3 => BinderNode::Share(u64::arbitrary(g)),
-      _ => BinderNode::Undecided,
+      _ => BinderNode::Undecided(AllMode::arbitrary(g)),
     }
   }
 
@@ -878,6 +930,20 @@ pub mod tests {
     assert!(constant_roundtrip(&cnst));
   }
 
+  /// Binder nodes at the default mode.
+  fn never() -> BinderNode {
+    BinderNode::Never(AllMode::default())
+  }
+  fn zero() -> BinderNode {
+    BinderNode::Zero(AllMode::default())
+  }
+  fn undecided() -> BinderNode {
+    BinderNode::Undecided(AllMode::default())
+  }
+  fn if_all_zero(params: Vec<u64>) -> BinderNode {
+    BinderNode::IfAllZero(params, AllMode::default())
+  }
+
   /// A universe-polymorphic definition `fun (x : Sort u) => x` with a
   /// sharing entry, carrying a section with every node kind: a root block,
   /// two variants of a sharing entry, a share node and the sentinel.
@@ -887,6 +953,7 @@ pub mod tests {
     let defn = Definition {
       kind: DefKind::Definition,
       safety: DefinitionSafety::Safe,
+      asserts: DefAsserts::default(),
       lvls: 3,
       typ,
       value,
@@ -902,25 +969,20 @@ pub mod tests {
         shared: false,
         index: 0,
         variant: 0,
-        nodes: vec![BinderNode::IfAllZero(vec![0, 2]), BinderNode::Share(0)],
+        nodes: vec![if_all_zero(vec![0, 2]), BinderNode::Share(0)],
       },
       BinderBlock {
         shared: false,
         index: 1,
         variant: 0,
-        nodes: vec![BinderNode::Never, BinderNode::Share(1)],
+        nodes: vec![never(), BinderNode::Share(1)],
       },
-      BinderBlock {
-        shared: true,
-        index: 0,
-        variant: 0,
-        nodes: vec![BinderNode::Zero],
-      },
+      BinderBlock { shared: true, index: 0, variant: 0, nodes: vec![zero()] },
       BinderBlock {
         shared: true,
         index: 0,
         variant: 1,
-        nodes: vec![BinderNode::Undecided],
+        nodes: vec![undecided()],
       },
     ])
   }
@@ -981,10 +1043,10 @@ pub mod tests {
       with(&|b| b.swap(0, 1)),         // blocks out of order
       with(&|b| b.push(b[3].clone())), // a repeated key
       with(&|b| b[1].variant = 1),     // a root block at variant 1
-      with(&|b| b[0].nodes[0] = BinderNode::IfAllZero(vec![])), // empty list
-      with(&|b| b[0].nodes[0] = BinderNode::IfAllZero(vec![2, 0])), // descending
-      with(&|b| b[0].nodes[0] = BinderNode::IfAllZero(vec![1, 1])), // repeated
-      with(&|b| b[0].nodes[0] = BinderNode::IfAllZero(vec![3])), // not below lvls
+      with(&|b| b[0].nodes[0] = if_all_zero(vec![])), // empty list
+      with(&|b| b[0].nodes[0] = if_all_zero(vec![2, 0])), // descending
+      with(&|b| b[0].nodes[0] = if_all_zero(vec![1, 1])), // repeated
+      with(&|b| b[0].nodes[0] = if_all_zero(vec![3])), // not below lvls
       with(&|b| b.push(block(true, 0, 2, vec![]))), // an empty block
     ];
     for c in &cases {
@@ -993,22 +1055,22 @@ pub mod tests {
     }
     // Canonical (local) and round-tripping; only the complete form rejects them.
     let incomplete = [
-      with(&|b| b.push(block(true, 0, 2, vec![BinderNode::Never]))), // a dead variant
+      with(&|b| b.push(block(true, 0, 2, vec![never()]))), // a dead variant
       with(&|b| {
         b.remove(1);
-      }),                       // a missing root block
+      }),             // a missing root block
       with(&|b| {
         b.remove(3);
-      }),                       // a missing variant
+      }),             // a missing variant
       with(&|b| {
         b[0].nodes[1] = BinderNode::Share(1);
         b[1].nodes[1] = BinderNode::Share(0);
       }), // variants out of first-occurrence order
-      with(&|b| b[3].nodes = vec![BinderNode::Zero]), // two equal variants
+      with(&|b| b[3].nodes = vec![zero()]),                // two equal variants
       with(&|b| b[2].nodes = vec![BinderNode::Share(0)]), // a share node at a binder
-      with(&|b| b[0].nodes[1] = BinderNode::Never), // a binder node at a share
-      with(&|b| b[2].nodes = vec![BinderNode::Zero, BinderNode::Zero]), // a node too many
-      with(&|b| b.push(block(true, 1, 0, vec![BinderNode::Never]))), // no such entry
+      with(&|b| b[0].nodes[1] = never()), // a binder node at a share
+      with(&|b| b[2].nodes = vec![zero(), zero()]), // a node too many
+      with(&|b| b.push(block(true, 1, 0, vec![never()]))), // no such entry
       with(&|b| b.clear()), // a record with binders and no section
     ];
     for c in &incomplete {
@@ -1018,7 +1080,7 @@ pub mod tests {
     }
     assert!(base.binders_complete());
     // A projection carries no binder data: any section is noncanonical.
-    for node in [BinderNode::IfAllZero(vec![0]), BinderNode::Never] {
+    for node in [if_all_zero(vec![0]), never()] {
       let prj = Constant::new(ConstantInfo::DPrj(DefinitionProj {
         idx: 0,
         block: Address::hash(b"block"),
@@ -1056,6 +1118,7 @@ pub mod tests {
       let member = Definition {
         kind: DefKind::Definition,
         safety: DefinitionSafety::Safe,
+        asserts: DefAsserts::default(),
         lvls,
         typ: Expr::sort(0),
         value: Expr::sort(0),
@@ -1096,5 +1159,106 @@ pub mod tests {
     let mut v5 = Vec::new();
     empty.put(&mut v5);
     assert!(Constant::get(&mut &v5[..v5.len() - 1]).is_err());
+  }
+
+  /// The fixture's section with a mode on every binder node: each mode is
+  /// the node byte's high five bits, the share nodes are unchanged, and the
+  /// section stays canonical and complete.
+  #[test]
+  fn binder_modes_in_the_section() {
+    use crate::modes::{BinderMode, ResultMode};
+    let mode = |input, result| AllMode::new(input, result);
+    let mut c = binder_fixture();
+    c.binders[0].nodes[0] = BinderNode::IfAllZero(
+      vec![0, 2],
+      mode(BinderMode::Unique, ResultMode::Borrowed),
+    );
+    c.binders[1].nodes[0] =
+      BinderNode::Never(mode(BinderMode::Erased, ResultMode::UniqueBorrowed));
+    c.binders[2].nodes[0] =
+      BinderNode::Zero(mode(BinderMode::Once, ResultMode::Shared));
+    c.binders[3].nodes[0] =
+      BinderNode::Undecided(mode(BinderMode::Many, ResultMode::Unique));
+    let mut section = Vec::new();
+    crate::serialize::put_binders(&c.binders, &mut section);
+    assert_eq!(
+      section,
+      vec![
+        4, // four blocks
+        0, 0, 0, 2, 0x52, 2, 0, 2, 3, 0, // ifAllZero, input 2, result 1
+        0, 1, 0, 2, 0xF0, 3, 1, // never, input 6, result 3
+        1, 0, 0, 1, 0x21, // zero, input 4, result 0
+        1, 0, 1, 1, 0x84, // undecided, input 0, result 2
+      ]
+    );
+    assert!(constant_roundtrip(&c));
+    assert!(c.binders_canonical());
+    assert!(c.binders_complete());
+    let modes: Vec<_> = c
+      .binders
+      .iter()
+      .flat_map(|b| b.nodes.iter().map(BinderNode::mode))
+      .collect();
+    assert_eq!(modes.iter().filter(|m| m.is_none()).count(), 2);
+  }
+
+  /// Two variants of an entry are distinct when their node lists differ,
+  /// modes included; the binders of an unsafe or partial record carry the
+  /// undecided node at any mode.
+  #[test]
+  fn binder_modes_in_the_complete_form() {
+    use crate::modes::{BinderMode, ResultMode};
+    let borrowed = AllMode::new(BinderMode::Borrowed, ResultMode::Shared);
+    let base = binder_fixture();
+    // The two variants differ in their mode alone.
+    let mut c = base.clone();
+    c.binders[3].nodes = vec![BinderNode::Zero(borrowed)];
+    assert!(c.binders_canonical() && c.binders_complete());
+    // Equal as whole nodes: the second variant is a duplicate.
+    c.binders[2].nodes = vec![BinderNode::Zero(borrowed)];
+    assert!(c.binders_canonical() && !c.binders_complete());
+    // An unsafe record: every binder undecided, at any mode.
+    let mut c = base.clone();
+    let ConstantInfo::Defn(d) = &mut c.info else { unreachable!() };
+    d.safety = DefinitionSafety::Unsafe;
+    c.binders[0].nodes[0] = BinderNode::Undecided(borrowed);
+    c.binders[1].nodes[0] = undecided();
+    c.binders[2].nodes[0] = BinderNode::Undecided(borrowed);
+    assert!(c.binders_complete());
+    c.binders[1].nodes[0] = BinderNode::Never(borrowed);
+    assert!(!c.binders_complete());
+  }
+
+  /// A theorem asserts nothing, standalone or in a block; a definition or
+  /// an opaque may.
+  #[test]
+  fn modes_canonical_refuses_asserts_on_theorems() {
+    use crate::modes::AllocAssert;
+    let asserts =
+      DefAsserts { alloc: AllocAssert::NoAlloc, bounded_stack: true };
+    let defn = |kind, asserts| Definition {
+      kind,
+      safety: DefinitionSafety::Safe,
+      asserts,
+      lvls: 0,
+      typ: Expr::sort(0),
+      value: Expr::sort(0),
+    };
+    for (kind, ok) in [
+      (DefKind::Definition, true),
+      (DefKind::Opaque, true),
+      (DefKind::Theorem, false),
+    ] {
+      let standalone = Constant::new(ConstantInfo::Defn(defn(kind, asserts)));
+      assert_eq!(standalone.modes_canonical(), ok, "{kind:?}");
+      let plain =
+        Constant::new(ConstantInfo::Defn(defn(kind, DefAsserts::default())));
+      assert!(plain.modes_canonical());
+      let block = Constant::new(ConstantInfo::Muts(vec![
+        MutConst::Defn(defn(DefKind::Definition, asserts)),
+        MutConst::Defn(defn(kind, asserts)),
+      ]));
+      assert_eq!(block.modes_canonical(), ok, "{kind:?} in a block");
+    }
   }
 }
