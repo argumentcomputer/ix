@@ -167,6 +167,7 @@ structure LaneConfig where
   useIndex : Bool
   claimsOnly : Bool
   assumeBinding : Bool
+  fresh : Bool := false
 
 /-- What a lane run proved: the verified root's store address and the trace
 shards of the claim proofs the run made (reused claims count none), or with

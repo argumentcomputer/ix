@@ -26,7 +26,10 @@ use crate::{
   plan::PlanOp,
   protocol::ChildKind,
   statement::{ShardSet, Statement, SubjectTree},
-  store::{claim_wrapper_bytes, load_cached, persist_cached},
+  store::{
+    claim_wrapper_bytes, decode_wrapper, load_cached, persist_cached,
+    read_store, write_store,
+  },
 };
 
 static NEXT_DIR: AtomicU64 = AtomicU64::new(0);
@@ -69,6 +72,7 @@ enum Staged {
 /// loses a memory contest.
 struct Fake {
   log: Mutex<Vec<String>>,
+  decoded: Mutex<Vec<Vec<u8>>>,
   contend: Mutex<FxHashSet<Address>>,
   oversized: usize,
   root_shards: usize,
@@ -78,6 +82,7 @@ impl Fake {
   fn new() -> Self {
     Self {
       log: Mutex::new(Vec::new()),
+      decoded: Mutex::new(Vec::new()),
       contend: Mutex::new(FxHashSet::default()),
       oversized: usize::MAX,
       root_shards: 1,
@@ -94,6 +99,7 @@ impl Fake {
 
   fn clear(&self) {
     self.log.lock().unwrap().clear();
+    self.decoded.lock().unwrap().clear();
   }
 }
 
@@ -191,14 +197,16 @@ impl Backend for Fake {
         );
       }
     }
-    if let Some((proof, address)) = load_cached(
-      run.store_dir,
-      run.cache_dir,
-      slot,
-      spec,
-      |bytes| self.decode_proof(bytes),
-      |outer, proof| self.verify_on(lane, ChildKind::Aggr, outer, proof),
-    ) {
+    if run.reuse_cache
+      && let Some((proof, address)) = load_cached(
+        run.store_dir,
+        run.cache_dir,
+        slot,
+        spec,
+        |bytes| self.decode_proof(bytes),
+        |outer, proof| self.verify_on(lane, ChildKind::Aggr, outer, proof),
+      )
+    {
       return Ok(Staged::Cached(proof, address));
     }
     self.record(format!("aggregate {slot} shape {}", spec.shape.unwrap()));
@@ -318,6 +326,7 @@ impl Backend for Fake {
   }
 
   fn decode_proof(&self, bytes: &[u8]) -> Result<FakeProof, String> {
+    self.decoded.lock().unwrap().push(bytes.to_vec());
     let (words, rest) = bytes.as_chunks::<8>();
     if !rest.is_empty() || words.is_empty() {
       return Err("malformed fake proof".into());
@@ -413,6 +422,103 @@ fn direct_plan_proves_resumes_and_honours_the_switches() {
   assert_eq!(lanes::run(&cold, &backend, &env, &manifest).unwrap(), root);
   assert_eq!(backend.entries("claim"), 4);
   assert_eq!(backend.entries("aggregate"), 3);
+}
+
+#[test]
+fn fresh_proofs_bypass_reads_and_remain_available_for_resume() {
+  let dir = TempDir::new();
+  let (env, manifest) = environment(&[1, 1, 1, 1], &dir.0);
+  let backend = Fake::new();
+  let fresh = Config { fresh: true, ..config(&dir.0) };
+  let root = lanes::run(&fresh, &backend, &env, &manifest).unwrap();
+  assert_eq!(backend.entries("claim"), 4);
+  assert_eq!(backend.entries("aggregate"), 3);
+  assert!(dir.0.join("cache").join("aggregate").exists());
+  assert!(dir.0.join("cache").join("formal-shard-proofs").exists());
+
+  backend.clear();
+  assert_eq!(
+    lanes::run(&config(&dir.0), &backend, &env, &manifest).unwrap(),
+    root
+  );
+  assert_eq!(backend.entries("claim"), 0);
+  assert_eq!(backend.entries("aggregate"), 0);
+
+  backend.clear();
+  assert_eq!(lanes::run(&fresh, &backend, &env, &manifest).unwrap(), root);
+  assert_eq!(backend.entries("claim"), 4);
+  assert_eq!(backend.entries("aggregate"), 3);
+}
+
+#[test]
+fn fresh_claims_only_runs_bypass_the_shard_index() {
+  let dir = TempDir::new();
+  let (env, manifest) = environment(&[1, 1, 1], &dir.0);
+  let backend = Fake::new();
+  let cfg = Config { claims_only: true, ..config(&dir.0) };
+  lanes::run(&cfg, &backend, &env, &manifest).unwrap();
+  backend.clear();
+  lanes::run(&cfg, &backend, &env, &manifest).unwrap();
+  assert_eq!(backend.entries("claim"), 0);
+  backend.clear();
+  lanes::run(&Config { fresh: true, ..cfg }, &backend, &env, &manifest)
+    .unwrap();
+  assert_eq!(backend.entries("claim"), 3);
+  assert_eq!(backend.entries("aggregate"), 0);
+}
+
+#[test]
+fn fresh_proofs_do_not_decode_invalid_or_stale_cached_proofs() {
+  let dir = TempDir::new();
+  let (env, manifest) = environment(&[1, 1, 1, 1], &dir.0);
+  let backend = Fake::new();
+  let cfg = config(&dir.0);
+  let root = lanes::run(&cfg, &backend, &env, &manifest).unwrap();
+  let invalid = b"invalid".to_vec();
+  let stale =
+    backend.encode_proof(&FakeProof { outer: vec![99; 5], shards: 1 }).unwrap();
+  let mut entries = 0usize;
+  for namespace in ["aggregate", "formal-shard-proofs"] {
+    for path in fs::read_dir(dir.0.join("cache").join(namespace)).unwrap() {
+      let path = path.unwrap().path();
+      let address =
+        Address::from_hex(fs::read_to_string(&path).unwrap().trim()).unwrap();
+      let wrapper =
+        decode_wrapper(&read_store(&dir.0.join("store"), &address).unwrap())
+          .unwrap();
+      let poison = if entries.is_multiple_of(2) { &invalid } else { &stale };
+      let bytes =
+        claim_wrapper_bytes(&wrapper.claim, Ok(poison.clone())).unwrap();
+      let address = write_store(&dir.0.join("store"), &bytes).unwrap();
+      fs::write(path, address.hex()).unwrap();
+      entries += 1;
+    }
+  }
+  assert!(entries >= 7);
+  backend.clear();
+  assert_eq!(
+    lanes::run(&Config { fresh: true, ..cfg }, &backend, &env, &manifest)
+      .unwrap(),
+    root
+  );
+  assert_eq!(backend.entries("claim"), 4);
+  assert_eq!(backend.entries("aggregate"), 3);
+  assert!(
+    backend
+      .decoded
+      .lock()
+      .unwrap()
+      .iter()
+      .all(|bytes| bytes != &invalid && bytes != &stale)
+  );
+
+  backend.clear();
+  assert_eq!(
+    lanes::run(&config(&dir.0), &backend, &env, &manifest).unwrap(),
+    root
+  );
+  assert_eq!(backend.entries("claim"), 0);
+  assert_eq!(backend.entries("aggregate"), 0);
 }
 
 #[test]
@@ -598,6 +704,38 @@ fn files_under(dir: &Path) -> Vec<PathBuf> {
   }
   out.sort();
   out
+}
+
+#[test]
+fn fresh_proofs_regenerate_binding_discharge() {
+  let dir = TempDir::new();
+  let (env, manifest) = environment(&[1, 1], &dir.0);
+  let backend = Fake::new();
+  let claim = binding_claim(&env).unwrap();
+  let mut claim_bytes = Vec::new();
+  claim.put(&mut claim_bytes);
+  let proof = FakeProof {
+    outer: backend.outer_claim(ChildKind::Ixvm, &claim_bytes),
+    shards: 1,
+  };
+  let wrapper =
+    claim_wrapper_bytes(&claim, backend.encode_proof(&proof)).unwrap();
+  let address = write_store(&dir.0.join("store"), &wrapper).unwrap();
+  let cfg = Config { binding_proof: Some(address), ..config(&dir.0) };
+  let root = lanes::run(&cfg, &backend, &env, &manifest).unwrap();
+  assert_eq!(backend.entries("extra"), 1);
+  backend.clear();
+  assert_eq!(lanes::run(&cfg, &backend, &env, &manifest).unwrap(), root);
+  assert_eq!(backend.entries("extra"), 0);
+  backend.clear();
+  assert_eq!(
+    lanes::run(&Config { fresh: true, ..cfg }, &backend, &env, &manifest)
+      .unwrap(),
+    root
+  );
+  assert_eq!(backend.entries("claim"), 2);
+  assert_eq!(backend.entries("aggregate"), 1);
+  assert_eq!(backend.entries("extra"), 1);
 }
 
 #[test]

@@ -213,6 +213,7 @@ def runController (p : Cli.Parsed) (onRoot : Address → IO Unit := fun _ => pur
       structuralAbove := above, outManifest := some out, select := none
       bindingProof := binding.map (·.1.hash), options := options.job
       useCache := !(p.hasFlag "no-cache"), useIndex := !(p.hasFlag "no-index")
+      fresh := p.hasFlag "fresh"
       claimsOnly := false, assumeBinding := false }
     let .root bytes _ ← FormalProver.proveLanes ctx.ixvmSystem ctx.aggrSystem handle config
       | throw (IO.userError "the controller returned claims instead of a root")

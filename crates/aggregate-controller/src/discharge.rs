@@ -111,7 +111,7 @@ pub fn discharge<B: Backend>(
   let key = backend.cache_key(&outer);
   let cached = load_cached_claim(
     run.store_dir,
-    run.cache_dir,
+    if run.reuse_cache { run.cache_dir } else { None },
     LABEL,
     &key,
     &output.claim,

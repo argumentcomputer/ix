@@ -92,6 +92,7 @@ pub struct LaneConfig {
   pub structural_above: usize,
   pub use_cache: bool,
   pub use_index: bool,
+  pub fresh: bool,
   pub out_manifest: Option<PathBuf>,
   /// Prove the claims only, without joins or a root.
   pub claims_only: bool,
@@ -482,7 +483,8 @@ impl Backend for Formal {
     reservation: &RecordReservation,
   ) -> Result<Staged, PrepareFailure> {
     let spec = run.specs.get(slot).ok_or("missing aggregate slot spec")?;
-    if run.reprove_slot != Some(slot)
+    if run.reuse_cache
+      && run.reprove_slot != Some(slot)
       && let Some((proof, address)) = load_cached(
         run.store_dir,
         run.cache_dir,
@@ -812,6 +814,7 @@ pub fn prove_lanes(
   );
   controller.use_cache = config.use_cache;
   controller.use_index = config.use_index;
+  controller.fresh = config.fresh;
   controller.out_manifest = config.out_manifest.clone();
   controller.claims_only = config.claims_only;
   controller.select = config.select.clone();

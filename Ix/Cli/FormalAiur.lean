@@ -671,6 +671,7 @@ private def proveManifest (p : Cli.Parsed) (ixvm : Selected) (options : HostOpti
     structuralAbove := 0, outManifest := (p.flag? "out-ixes").map (·.as! String)
     select := ids, bindingProof := none, options := options.job
     useCache := true, useIndex := !(p.hasFlag "no-index"), claimsOnly := true
+    fresh := p.hasFlag "fresh"
     assumeBinding := p.hasFlag "assume-binding" }
   let .claims proven ← FormalProver.proveLanes (← ixvm.system) aggr handle config
     | throw (IO.userError "the controller returned a root for a claims-only run")
