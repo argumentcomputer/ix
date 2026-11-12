@@ -1,4 +1,6 @@
 import IxVMRefinement.Core.Registry
+import IxVMRefinement.Core.Open
+import IxVMRefinement.Core.Window
 import IxVMRefinement.Lib.Lists
 import IxVMRefinement.Obs.KernelSubst0
 import IxVMRefinement.Obs.KernelSubst1
@@ -19,9 +21,10 @@ The facts the substitution package's step lemmas share.
   `idxAll_*_of_load`) and weakened with an offset (`idxAll_imp`). A represented term's indices
   are below `2^63` and below `k + n + d` under `n` binders (`tm_idxAll`); its image's loose
   bound variables are below any `lo` no heap index lies in `[lo, k)` of (`tm_lbb`); and a heap
-  bound `b ≤ k` gives `LbrLe` (`lbrLe_of_idxLt`).
-* **Kernel algebra.** A `Let` node's image is `instShift`, the kernel's `instantiate1Lift`
-  (`instShift_eq`); its bounds (`lbb_instShift`, `hasFvar_instShift`) and its commutation with
+  bound `b ≤ k` gives `LbrLe` (`lbrLe_of_idxLt`). `NoIdxF` is `NoIdx` for a represented term
+  whose window ends at least `2^63` below the field's size (`noIdx_of_noIdxF_tm`).
+* **Kernel algebra.** A `Let` node's image is `instShift` (the kernel's `instantiate1Lift`):
+  its bounds (`lbb_instShift0`, `hasFvar_instShift`) and its commutation with
   `instantiate1`, `instantiateList` (closed values) and level instantiation.
 * **Stores.** A new node of represented components is represented (`tm_store_*`), and a leaf
   node copied to a new cell is represented at every reading (`tm_copy_*`). -/
@@ -122,14 +125,14 @@ theorem ltf {a b r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
   exact ⟨x, y, rfl, rfl, hx, hy, hr, hh⟩
 
 /-- The comparison answered `1`. -/
-theorem ltf_one {x y : F} (hr : (SourceValue.field (if ZMod.val x < ZMod.val y then 1 else 0) :
+theorem ltf_one {x y : F} (hr : (Value.field (if ZMod.val x < ZMod.val y then 1 else 0) :
     SourceValue F) = .field 1) : ZMod.val x < ZMod.val y := by
   split at hr
   · assumption
   · injection hr with hr; exact absurd hr (by decide)
 
 /-- The comparison answered `0`. -/
-theorem ltf_zero {x y : F} (hr : (SourceValue.field (if ZMod.val x < ZMod.val y then 1 else 0) :
+theorem ltf_zero {x y : F} (hr : (Value.field (if ZMod.val x < ZMod.val y then 1 else 0) :
     SourceValue F) = .field 0) : ¬ ZMod.val x < ZMod.val y := by
   split at hr
   · injection hr with hr; exact absurd hr (by decide)
@@ -153,7 +156,7 @@ theorem load_ptr {heap : Heap F} {p : SourceValue F} {en c : String} {xs : List 
         subst hs
         simp only [Value.type] at ht
         subst ht
-        exact ⟨addr, rfl, rfl⟩
+        exact ⟨addr, rfl, found⟩
       · simp [loadValue, found, ht] at hl
 
 /-! ## Heap indices -/
@@ -400,70 +403,14 @@ theorem idxAll_unbody {h : Heap F} {P : Nat → F → Prop} {p : SourceValue F}
 section Kernel
 open Ix.Kernel
 
-/-- **The image of a `Let` is the kernel's capture-avoiding substitution.** -/
-theorem instShift_eq (v : KExpr) : ∀ (e : KExpr) (j : Nat), instShift v j e = e.instantiate1Lift v j := by
-  intro e
-  induction e with
-  | bvar i => intro j; simp [instShift, Expr.instantiate1Lift]
-  | fvar i ty _ => intro j; simp [instShift, Expr.instantiate1Lift]
-  | sort u => intro j; simp [instShift, Expr.instantiate1Lift]
-  | const n us => intro j; simp [instShift, Expr.instantiate1Lift]
-  | app f a ihf iha => intro j; simp [instShift, Expr.instantiate1Lift, ihf, iha]
-  | lam ty b m iht ihb => intro j; simp [instShift, Expr.instantiate1Lift, iht, ihb]
-  | forallE ty b m iht ihb => intro j; simp [instShift, Expr.instantiate1Lift, iht, ihb]
-  | letE ty v' b m iht ihv ihb => intro j; simp [instShift, Expr.instantiate1Lift, iht, ihv, ihb]
-  | lit l => intro j; simp [instShift, Expr.instantiate1Lift]
-  | proj s i e ihe => intro j; simp [instShift, Expr.instantiate1Lift, ihe]
-
 theorem lbb_mono {k k' : Nat} (hk : k ≤ k') {e : KExpr} (he : e.looseBVarsBounded k = true) :
     e.looseBVarsBounded k' = true :=
   Expr.looseBVarsBounded_mono hk he
 
-/-- A lift raises the bound by its amount. -/
-theorem lbb_lift (s : Nat) : ∀ (e : KExpr) (b c : Nat), e.looseBVarsBounded b = true →
-    (e.liftLooseBVars s c).looseBVarsBounded (b + s) = true := by
-  intro e
-  induction e with
-  | bvar i =>
-    intro b c hb
-    simp only [Expr.looseBVarsBounded, decide_eq_true_eq] at hb
-    simp only [Expr.liftLooseBVars]
-    split <;> simp only [Expr.looseBVarsBounded, decide_eq_true_eq] <;> omega
-  | fvar i ty _ => intro b c _; simp [Expr.liftLooseBVars, Expr.looseBVarsBounded]
-  | sort u => intro b c _; simp [Expr.liftLooseBVars, Expr.looseBVarsBounded]
-  | const n us => intro b c _; simp [Expr.liftLooseBVars, Expr.looseBVarsBounded]
-  | app f a ihf iha =>
-    intro b c hb
-    simp only [Expr.looseBVarsBounded, Bool.and_eq_true] at hb
-    simp only [Expr.liftLooseBVars, Expr.looseBVarsBounded, Bool.and_eq_true]
-    exact ⟨ihf b c hb.1, iha b c hb.2⟩
-  | lam ty body m iht ihb =>
-    intro b c hb
-    simp only [Expr.looseBVarsBounded, Bool.and_eq_true] at hb
-    simp only [Expr.liftLooseBVars, Expr.looseBVarsBounded, Bool.and_eq_true]
-    refine ⟨iht b c hb.1, ?_⟩
-    have := ihb (b + 1) (c + 1) hb.2
-    rwa [Nat.add_right_comm] at this
-  | forallE ty body m iht ihb =>
-    intro b c hb
-    simp only [Expr.looseBVarsBounded, Bool.and_eq_true] at hb
-    simp only [Expr.liftLooseBVars, Expr.looseBVarsBounded, Bool.and_eq_true]
-    refine ⟨iht b c hb.1, ?_⟩
-    have := ihb (b + 1) (c + 1) hb.2
-    rwa [Nat.add_right_comm] at this
-  | letE ty val body m iht ihv ihb =>
-    intro b c hb
-    simp only [Expr.looseBVarsBounded, Bool.and_eq_true] at hb
-    simp only [Expr.liftLooseBVars, Expr.looseBVarsBounded, Bool.and_eq_true]
-    refine ⟨⟨iht b c hb.1.1, ihv b c hb.1.2⟩, ?_⟩
-    have := ihb (b + 1) (c + 1) hb.2
-    rwa [Nat.add_right_comm] at this
-  | lit l => intro b c _; simp [Expr.liftLooseBVars, Expr.looseBVarsBounded]
-  | proj s i e ihe =>
-    intro b c hb
-    simp only [Expr.looseBVarsBounded] at hb
-    simp only [Expr.liftLooseBVars, Expr.looseBVarsBounded]
-    exact ihe b c hb
+/-- **A `Let`'s image keeps a bound**: with the value below `b` and the body below `b + 1`. -/
+theorem lbb_instShift0 {v e : KExpr} {b : Nat} (hv : v.looseBVarsBounded b = true)
+    (he : e.looseBVarsBounded (b + 1) = true) : (instShift v 0 e).looseBVarsBounded b = true :=
+  looseBVarsBounded_instantiate1Lift (Nat.zero_le b) he (by simpa using hv)
 
 theorem hasFvar_lift (s : Nat) : ∀ (e : KExpr) (c : Nat), (e.liftLooseBVars s c).hasFvar = e.hasFvar := by
   intro e
@@ -480,60 +427,14 @@ theorem hasFvar_lift (s : Nat) : ∀ (e : KExpr) (c : Nat), (e.liftLooseBVars s 
   | lit l => intro c; rfl
   | proj s i e ihe => intro c; simp [Expr.liftLooseBVars, Expr.hasFvar, ihe]
 
-/-- **`instShift` keeps a bound**: with `v` below `b` and the body below `b + j + 1`. -/
-theorem lbb_instShift {v : KExpr} {b : Nat} (hv : v.looseBVarsBounded b = true) :
-    ∀ (e : KExpr) (j : Nat), e.looseBVarsBounded (b + j + 1) = true →
-      (instShift v j e).looseBVarsBounded (b + j) = true := by
-  intro e
-  induction e with
-  | bvar i =>
-    intro j he
-    simp only [Expr.looseBVarsBounded, decide_eq_true_eq] at he
-    simp only [instShift]
-    split
-    · exact lbb_lift j v b 0 hv
-    · split <;> simp only [Expr.looseBVarsBounded, decide_eq_true_eq] <;> omega
-  | fvar i ty _ => intro j _; simp [instShift, Expr.looseBVarsBounded]
-  | sort u => intro j _; simp [instShift, Expr.looseBVarsBounded]
-  | const n us => intro j _; simp [instShift, Expr.looseBVarsBounded]
-  | app f a ihf iha =>
-    intro j he
-    simp only [Expr.looseBVarsBounded, Bool.and_eq_true] at he
-    simp only [instShift, Expr.looseBVarsBounded, Bool.and_eq_true]
-    exact ⟨ihf j he.1, iha j he.2⟩
-  | lam ty body m iht ihb =>
-    intro j he
-    simp only [Expr.looseBVarsBounded, Bool.and_eq_true] at he
-    simp only [instShift, Expr.looseBVarsBounded, Bool.and_eq_true]
-    exact ⟨iht j he.1, ihb (j + 1) (by rw [← Nat.add_assoc]; exact he.2)⟩
-  | forallE ty body m iht ihb =>
-    intro j he
-    simp only [Expr.looseBVarsBounded, Bool.and_eq_true] at he
-    simp only [instShift, Expr.looseBVarsBounded, Bool.and_eq_true]
-    exact ⟨iht j he.1, ihb (j + 1) (by rw [← Nat.add_assoc]; exact he.2)⟩
-  | letE ty val body m iht ihv ihb =>
-    intro j he
-    simp only [Expr.looseBVarsBounded, Bool.and_eq_true] at he
-    simp only [instShift, Expr.looseBVarsBounded, Bool.and_eq_true]
-    exact ⟨⟨iht j he.1.1, ihv j he.1.2⟩, ihb (j + 1) (by rw [← Nat.add_assoc]; exact he.2)⟩
-  | lit l => intro j _; simp [instShift, Expr.looseBVarsBounded]
-  | proj s i e ihe =>
-    intro j he
-    simp only [Expr.looseBVarsBounded] at he
-    simp only [instShift, Expr.looseBVarsBounded]
-    exact ihe j he
-
-theorem lbb_instShift0 {v e : KExpr} {b : Nat} (hv : v.looseBVarsBounded b = true)
-    (he : e.looseBVarsBounded (b + 1) = true) : (instShift v 0 e).looseBVarsBounded b = true :=
-  lbb_instShift hv e 0 he
-
+/-- **A `Let`'s image has no opened variable** when its value and body have none. -/
 theorem hasFvar_instShift {v : KExpr} (hv : v.hasFvar = false) :
     ∀ (e : KExpr) (j : Nat), e.hasFvar = false → (instShift v j e).hasFvar = false := by
   intro e
   induction e with
   | bvar i =>
     intro j _
-    simp only [instShift]
+    simp only [instShift, Expr.instantiate1Lift]
     split
     · rw [hasFvar_lift]; exact hv
     · split <;> rfl
@@ -543,28 +444,28 @@ theorem hasFvar_instShift {v : KExpr} (hv : v.hasFvar = false) :
   | app f a ihf iha =>
     intro j he
     simp only [Expr.hasFvar, Bool.or_eq_false_iff] at he
-    simp only [instShift, Expr.hasFvar, Bool.or_eq_false_iff]
+    simp only [instShift, Expr.instantiate1Lift, Expr.hasFvar, Bool.or_eq_false_iff]
     exact ⟨ihf j he.1, iha j he.2⟩
   | lam ty body m iht ihb =>
     intro j he
     simp only [Expr.hasFvar, Bool.or_eq_false_iff] at he
-    simp only [instShift, Expr.hasFvar, Bool.or_eq_false_iff]
+    simp only [instShift, Expr.instantiate1Lift, Expr.hasFvar, Bool.or_eq_false_iff]
     exact ⟨iht j he.1, ihb (j + 1) he.2⟩
   | forallE ty body m iht ihb =>
     intro j he
     simp only [Expr.hasFvar, Bool.or_eq_false_iff] at he
-    simp only [instShift, Expr.hasFvar, Bool.or_eq_false_iff]
+    simp only [instShift, Expr.instantiate1Lift, Expr.hasFvar, Bool.or_eq_false_iff]
     exact ⟨iht j he.1, ihb (j + 1) he.2⟩
   | letE ty val body m iht ihv ihb =>
     intro j he
     simp only [Expr.hasFvar, Bool.or_eq_false_iff] at he
-    simp only [instShift, Expr.hasFvar, Bool.or_eq_false_iff]
+    simp only [instShift, Expr.instantiate1Lift, Expr.hasFvar, Bool.or_eq_false_iff]
     exact ⟨⟨iht j he.1.1, ihv j he.1.2⟩, ihb (j + 1) he.2⟩
   | lit l => intro j _; rfl
   | proj s i e ihe =>
     intro j he
     simp only [Expr.hasFvar] at he
-    simp only [instShift, Expr.hasFvar]
+    simp only [instShift, Expr.instantiate1Lift, Expr.hasFvar]
     exact ihe j he
 
 /-- **Instantiating a `Let`'s image at a closed value**: the value and the body are
@@ -572,7 +473,6 @@ instantiated, the body one binder deeper. -/
 theorem instShift_instantiate1 {A : KExpr} (hA : A.looseBVarsBounded 0 = true) (V B : KExpr)
     (j : Nat) : (instShift V 0 B).instantiate1 A j =
       instShift (V.instantiate1 A j) 0 (B.instantiate1 A (j + 1)) := by
-  rw [instShift_eq, instShift_eq]
   have := Expr.instantiate1Lift_instantiate1 (a := V) hA B 0 j
   rw [show (0 : Nat) + j = j from Nat.zero_add j, show (0 : Nat) + 1 + j = j + 1 by omega] at this
   exact this
@@ -617,20 +517,20 @@ theorem ilp_instShift (ks : List LevelParam) (us : List Level) (v : KExpr) :
   | bvar i =>
     intro j
     by_cases hij : i = j
-    · subst hij; simp [instShift, Expr.instantiateLevelParams, ilp_lift]
+    · subst hij; simp [instShift, Expr.instantiate1Lift, Expr.instantiateLevelParams, ilp_lift]
     · by_cases hlt : j < i
-      · simp [instShift, Expr.instantiateLevelParams, hij, hlt]
-      · simp [instShift, Expr.instantiateLevelParams, hij, hlt]
-  | fvar i ty _ => intro j; simp [instShift, Expr.instantiateLevelParams]
-  | sort u => intro j; simp [instShift, Expr.instantiateLevelParams]
-  | const n us' => intro j; simp [instShift, Expr.instantiateLevelParams]
-  | app f a ihf iha => intro j; simp [instShift, Expr.instantiateLevelParams, ihf, iha]
-  | lam ty body m iht ihb => intro j; simp [instShift, Expr.instantiateLevelParams, iht, ihb]
-  | forallE ty body m iht ihb => intro j; simp [instShift, Expr.instantiateLevelParams, iht, ihb]
+      · simp [instShift, Expr.instantiate1Lift, Expr.instantiateLevelParams, hij, hlt]
+      · simp [instShift, Expr.instantiate1Lift, Expr.instantiateLevelParams, hij, hlt]
+  | fvar i ty _ => intro j; simp [instShift, Expr.instantiate1Lift, Expr.instantiateLevelParams]
+  | sort u => intro j; simp [instShift, Expr.instantiate1Lift, Expr.instantiateLevelParams]
+  | const n us' => intro j; simp [instShift, Expr.instantiate1Lift, Expr.instantiateLevelParams]
+  | app f a ihf iha => intro j; simp [instShift, Expr.instantiate1Lift, Expr.instantiateLevelParams, ihf, iha]
+  | lam ty body m iht ihb => intro j; simp [instShift, Expr.instantiate1Lift, Expr.instantiateLevelParams, iht, ihb]
+  | forallE ty body m iht ihb => intro j; simp [instShift, Expr.instantiate1Lift, Expr.instantiateLevelParams, iht, ihb]
   | letE ty val body m iht ihv ihb =>
-    intro j; simp [instShift, Expr.instantiateLevelParams, iht, ihv, ihb]
-  | lit l => intro j; simp [instShift, Expr.instantiateLevelParams]
-  | proj s i e ihe => intro j; simp [instShift, Expr.instantiateLevelParams, ihe]
+    intro j; simp [instShift, Expr.instantiate1Lift, Expr.instantiateLevelParams, iht, ihv, ihb]
+  | lit l => intro j; simp [instShift, Expr.instantiate1Lift, Expr.instantiateLevelParams]
+  | proj s i e ihe => intro j; simp [instShift, Expr.instantiate1Lift, Expr.instantiateLevelParams, ihe]
 
 theorem mkAppN_snoc : ∀ (As : List KExpr) (H A : KExpr),
     Expr.mkAppN H (As ++ [A]) = .app (Expr.mkAppN H As) A
@@ -707,11 +607,6 @@ theorem tm_lbb {k : Nat} {E : KExpr} {p : SourceValue F} (rep : Tm κ d Γ h k E
     simp only [Ix.Kernel.Expr.looseBVarsBounded]
     exact ihe hlo (idxAll_proj_inv hn (loadValue_enum_cell cell))
 
-/-- The image of a term at local depth `k` has its loose bound variables below `k`. -/
-theorem tm_lbb_self {k : Nat} {E : KExpr} {p : SourceValue F} (rep : Tm κ d Γ h k E p) :
-    E.looseBVarsBounded k = true :=
-  tm_lbb rep (Nat.le_refl k) (idxAll_mono (tm_idxAll rep) (fun n i _ => by omega))
-
 /-- **A heap bound gives `LbrLe`**: at most `k`, the image has its loose bound variables below
 the bound and no opened variable, and is read the same at every depth and context and every
 local depth at or above the bound. -/
@@ -780,7 +675,7 @@ theorem tm_idxLt {k : Nat} {E : KExpr} {p : SourceValue F} (rep : Tm κ d Γ h k
 /-- **`NoIdxF` is `NoIdx` for a represented term** when the window ends at most `2^63` below
 the field's size: an index is below `2^63`, so where the window's end has passed the field's
 size the index is below the window's start. -/
-theorem noIdx_of_noIdxF {k : Nat} {E : KExpr} {p : SourceValue F} (rep : Tm κ d Γ h k E p)
+theorem noIdx_of_noIdxF_tm {k : Nat} {E : KExpr} {p : SourceValue F} (rep : Tm κ d Γ h k E p)
     {lo hi : Nat} (hhi : hi + 9223372036854775808 ≤ Aiur.Library.U32.Goldilocks.modulus)
     (hf : NoIdxF h lo hi p) : NoIdx h lo hi p := by
   have both := idxAll_and (tm_idxAll rep) hf
