@@ -3,7 +3,7 @@ use serde_json::json;
 use stark_verifier::compress_wrap::{Input, Layout, Statement, Wrapper};
 use std::{error::Error, fs, path::Path, time::Instant};
 
-const USAGE: &str = "research wrapper commands:\n  stark-verifier wrap-input ROOT_KEY ROOT_CLAIMS ROOT_PROOF EXPECTED_KEY_BLAKE3 OUTPUT\n  stark-verifier wrap-plan PACKAGE ROOT_KEY ROOT_CLAIMS ROOT_PROOF EXPECTED_KEY_BLAKE3 OUTPUT [HEADROOM]\n  stark-verifier wrap-prove PACKAGE ROOT_KEY ROOT_CLAIMS ROOT_PROOF EXPECTED_KEY_BLAKE3 LAYOUT OUTPUT [DEVICE]\n  stark-verifier wrap-verify PACKAGE EXPECTED_ROOT_KEY_BLAKE3 EXPECTED_ROOT_CLAIMS WRAPPER_PROOF [LAYOUT]";
+const USAGE: &str = "research wrapper commands:\n  stark-verifier wrap-input ROOT_KEY ROOT_CLAIMS ROOT_PROOF EXPECTED_KEY_BLAKE3 OUTPUT\n  stark-verifier wrap-plan PACKAGE ROOT_KEY ROOT_CLAIMS ROOT_PROOF EXPECTED_KEY_BLAKE3 OUTPUT [HEADROOM]\n  stark-verifier wrap-prove PACKAGE ROOT_KEY ROOT_CLAIMS ROOT_PROOF EXPECTED_KEY_BLAKE3 LAYOUT OUTPUT [DEVICE]\n  stark-verifier wrap-verify PACKAGE PACKAGE_BLAKE3 WRAPPER_KEY_BLAKE3 EXPECTED_ROOT_KEY_BLAKE3 EXPECTED_ROOT_CLAIMS WRAPPER_PROOF [LAYOUT]";
 
 fn pin(value: &str) -> Result<[u8; 32], Box<dyn Error>> {
   Ok(*blake3::Hash::from_hex(value)?.as_bytes())
@@ -58,16 +58,21 @@ pub(crate) fn run(cli: &[String]) -> Result<(), Box<dyn Error>> {
       Ok(())
     },
     "wrap-verify" => {
-      if !(4..=5).contains(&args.len()) {
+      if !(6..=7).contains(&args.len()) {
         return Err(USAGE.into());
       }
-      let (package, _) = Package::load(args[0].as_ref())?;
-      let wrapper = Wrapper::new(package, Parameters::default(), None)?;
+      let wrapper = Wrapper::from_bytes(
+        &fs::read(&args[0])?,
+        &pin(&args[1])?,
+        &pin(&args[2])?,
+        Parameters::default(),
+        None,
+      )?;
       let claims =
-        stark_verifier::compress_wrap::decode_claims(&fs::read(&args[2])?)?;
-      let expected = Statement::new(pin(&args[1])?, &claims);
-      let proof = fs::read(&args[3])?;
-      if let Some(path) = args.get(4) {
+        stark_verifier::compress_wrap::decode_claims(&fs::read(&args[4])?)?;
+      let expected = Statement::new(pin(&args[3])?, &claims);
+      let proof = fs::read(&args[5])?;
+      if let Some(path) = args.get(6) {
         let layout = serde_json::from_slice(&fs::read(path)?)?;
         wrapper.verify_normalized(&expected, &proof, &layout)?;
       } else {

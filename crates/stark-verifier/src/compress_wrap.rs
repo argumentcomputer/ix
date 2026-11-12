@@ -241,6 +241,29 @@ pub struct Proven {
 }
 
 impl Wrapper {
+  /// Authenticate the compiler package and derived backend key against
+  /// independently selected pins before accepting a wrapper proof.
+  pub fn from_bytes(
+    bytes: &[u8],
+    artifact_pin: &[u8; 32],
+    key_pin: &[u8; 32],
+    parameters: Parameters,
+    device: Option<i32>,
+  ) -> Result<Self, String> {
+    if blake3::hash(bytes).as_bytes() != artifact_pin {
+      return Err(
+        "compression wrapper artifact differs from the trusted pin".into(),
+      );
+    }
+    let wrapper = Self::new(Package::decode(bytes)?, parameters, device)?;
+    if wrapper.key_digest() != key_pin {
+      return Err(
+        "compression wrapper key differs from the trusted pin".into(),
+      );
+    }
+    Ok(wrapper)
+  }
+
   /// `package` must be trusted compiler output for the generic recursive
   /// verifier. This constructor checks structure, not the program's meaning.
   pub fn new(
@@ -642,6 +665,37 @@ mod tests {
     let other = Wrapper::new(variant, Parameters::default(), None).unwrap();
     assert_eq!(wrapper.key_bytes(), other.key_bytes());
     assert_ne!(wrapper.artifact_digest(), other.artifact_digest());
+    let bytes = std::fs::read(&path).unwrap();
+    assert!(
+      Wrapper::from_bytes(
+        &bytes,
+        blake3::hash(&bytes).as_bytes(),
+        wrapper.key_digest(),
+        Parameters::default(),
+        None
+      )
+      .is_ok()
+    );
+    assert!(
+      Wrapper::from_bytes(
+        &bytes,
+        &[0; 32],
+        wrapper.key_digest(),
+        Parameters::default(),
+        None
+      )
+      .is_err()
+    );
+    assert!(
+      Wrapper::from_bytes(
+        &bytes,
+        blake3::hash(&bytes).as_bytes(),
+        &[0; 32],
+        Parameters::default(),
+        None
+      )
+      .is_err()
+    );
     let f = fixture();
     let input =
       Input::new(&f.key, *blake3::hash(&f.key).as_bytes(), &f.claims, &f.proof)

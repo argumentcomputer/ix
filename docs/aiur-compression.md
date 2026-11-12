@@ -570,7 +570,7 @@ target/release/stark-verifier wrap-prove compress-wrap.ixa \
   root/root-vk.bin root/root-claims.bin root/root-proof.bin \
   "$ROOT_KEY_BLAKE3" wrap-plan/layout.json wrap-proof
 target/release/stark-verifier wrap-verify compress-wrap.ixa \
-  "$ROOT_KEY_BLAKE3" root/root-claims.bin wrap-proof/proof.bin wrap-plan/layout.json
+  "$WRAPPER_ARTIFACT_BLAKE3" "$WRAPPER_KEY_BLAKE3" "$ROOT_KEY_BLAKE3" root/root-claims.bin wrap-proof/proof.bin wrap-plan/layout.json
 ```
 
 The `ix-prover` example `export_root` derives expected Ix claim bytes from an
