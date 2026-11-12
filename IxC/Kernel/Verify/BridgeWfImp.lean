@@ -919,7 +919,7 @@ theorem checkIotaThm_wfimp {env' envSelf : Env md} (henv' : EnvWF env')
         (fvs.take cnP ++ fvs.drop rP)) = true
   case neg => rw [if_neg h7] at h; exact absurd h atF_throw_bind
   rw [if_pos h7] at h ⊢
-  by_cases h8 : (cvj.type.stripPis (cnP + cnF)).isSome = true
+  by_cases h8 : Expr.ctorTeleOk cvj.type (cnP + cnF) = true
   case neg => rw [if_neg h8] at h; exact absurd h atF_throw_bind
   rw [if_pos h8] at h ⊢
   obtain ⟨q2, hcinst, h⟩ := atF_bind_ok h

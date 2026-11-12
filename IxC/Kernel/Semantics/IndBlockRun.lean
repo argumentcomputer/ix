@@ -697,7 +697,7 @@ theorem iotaRulesFactsRun {J : Judgements md}
           rw [hr'cp, hr'nf]
           rcases hbranch with ⟨-, -, hthm⟩ | ⟨-, lvls₀, pins₀, -, hthmN⟩
           · obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, hsC, -⟩ := hthm
-            exact hsC
+            exact Ix.Kernel.Expr.ctorTeleOk_isSome hsC
           · obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, -, ⟨cb, cb0, hsC, -⟩, -⟩ := hthmN
             rw [hsC]; rfl
       · -- a fired rule: the parameter bound and the rhs's reading

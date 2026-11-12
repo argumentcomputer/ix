@@ -59,7 +59,7 @@ rule-less recursors (the definitional-equality checks ran there). -/
     lhsS.getAppArgs.getLastD (.bvar 0) =
       Expr.mkAppN (.const (f (RecRule.ctor r)) (cvj.levelParams.map .param))
         (fvs.take cnP ++ fvs.drop rP) ∧
-    (cvj.type.stripPis (cnP + cnF)).isSome = true ∧
+    Expr.ctorTeleOk cvj.type (cnP + cnF) = true ∧
     Expr.instPisAt (fvs.take cnP ++ fvs.drop rP)
       (cvj.type.renameConsts f) = some (cdoms, cres) ∧
     cres.getAppArgs.length = cnP + (mI - rP) ∧
@@ -244,7 +244,7 @@ theorem checkIotaThm_inv {env' env₀ : Env md} {f : Key md → Key md}
   case neg => rw [if_neg hmaj] at h; exact nomatch h
   rw [if_pos hmaj] at h
   try dsimp only at h
-  by_cases hcstrip : (cvj.type.stripPis (cnP + cnF)).isSome = true
+  by_cases hcstrip : Expr.ctorTeleOk cvj.type (cnP + cnF) = true
   case neg => rw [if_neg hcstrip] at h; exact nomatch h
   rw [if_pos hcstrip] at h
   try dsimp only at h

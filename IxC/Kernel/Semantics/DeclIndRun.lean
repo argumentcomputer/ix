@@ -138,7 +138,7 @@ def IotaThmRun (μ : CheckMode) (F : Nat) (env' envSelf : Env md)
      (largs.getLastD (.bvar 0) == Expr.mkAppN
         (.const (f r.ctor) (cvj.levelParams.map .param))
         (fvs.take cnP ++ xFvs)) = true ∧
-     (cvj.type.stripPis (cnP + cnF)).isSome = true ∧
+     Expr.ctorTeleOk cvj.type (cnP + cnF) = true ∧
      ∃ cdoms cres rdoms fvsP cdomsP crestP xFvsP crest2 ldoms lrest,
        Expr.instPisAt (fvs.take cnP ++ xFvs) (cvj.type.renameConsts f)
          = some (cdoms, cres) ∧

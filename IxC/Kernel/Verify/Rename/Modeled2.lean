@@ -87,7 +87,7 @@ theorem checkIotaThm_sim (mode : CheckMode) (hops : OpsSim P f L ops ops')
     · exact hfvs.drop rP x hx
   rw [Expr.mapKeys_beq hf (hlargs.getLastD 0) hspine]
   refine SimE.ite Iff.rfl (fun _ => ?_) (fun _ => SimE.throw_bind)
-  simp only [ConstantVal.mapKeys_type, Expr.stripPis_mapKeys, Option.isSome_map]
+  simp only [ConstantVal.mapKeys_type, Expr.ctorTeleOk_mapKeys]
   refine SimE.ite Iff.rfl (fun _ => ?_) (fun _ => SimE.throw_bind)
   have hargs : Expr.GoodList P (fvs.take cnP ++ fvs.drop rP) := by
     intro x hx

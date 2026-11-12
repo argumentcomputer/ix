@@ -492,7 +492,7 @@ def checkIotaThmF (ops : (CheckerOps md) m) (fe' feSelf : FEnv md)
         (.const (f r.ctor) (cvj.levelParams.map .param))
         (fvs.take cnP ++ xFvs) do
       throw (.notImplemented msg!"iota statement major mismatch for {cvName}")
-    unless (cvj.type.stripPis (cnP + cnF)).isSome do
+    unless Expr.ctorTeleOk cvj.type (cnP + cnF) do
       throw (.notImplemented msg!"iota constructor telescope for {cvName}")
     let (cdoms, cres) ← unwrapOr
         (Expr.instPisAt (fvs.take cnP ++ xFvs) (cvj.type.renameConsts f))
