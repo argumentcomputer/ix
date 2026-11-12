@@ -267,7 +267,7 @@ def stripAll (c : Ixon.Constant) : Nat → Ixon.Expr → Option (List Ixon.Expr 
   | 0, e => some ([], e)
   | n + 1, e =>
     match unshare c e with
-    | .all _ _ t b => do
+    | .all t b => do
       let (ts, r) ← stripAll c n b
       pure (t :: ts, r)
     | _ => none
@@ -277,7 +277,7 @@ def stripAllFull (c : Ixon.Constant) : Nat → Ixon.Expr → List Ixon.Expr × I
   | 0, e => ([], e)
   | n + 1, e =>
     match unshare c e with
-    | .all _ _ t b =>
+    | .all t b =>
       let (ts, r) := stripAllFull c n b
       (t :: ts, r)
     | e => ([], e)
@@ -610,8 +610,8 @@ def convExpr (e : ECx md) (tbl : Array (ReadM (CExpr md))) : Ixon.Expr → ReadM
     pure (.lam (← convExpr e tbl t) (← convExpr e tbl b) (BinderMeta.ofContracts .many .shared))
   | .all t b => do
     pure (.forallE (← convExpr e tbl t) (← convExpr e tbl b) (BinderMeta.ofContracts .many .shared))
-  | .letE _ _ t v b => do
-    pure (.letE (← convExpr e tbl t) (← convExpr e tbl v) (← convExpr e tbl b) {})
+  | .letE nonDep _ t v b => do
+    pure (.letE (← convExpr e tbl t) (← convExpr e tbl v) (← convExpr e tbl b) { nonDep })
   | .share i =>
     match tbl[i.toNat]? with
     | some r => r
@@ -858,9 +858,9 @@ where
     | .recur i _ => acc.insert i.toNat
     | .prj _ _ v => go shared acc v
     | .app f a => go shared (go shared acc f) a
-    | .lam _ t b => go shared (go shared acc t) b
-    | .all _ _ t b => go shared (go shared acc t) b
-    | .letE _ t v b => go shared (go shared (go shared acc t) v) b
+    | .lam t b => go shared (go shared acc t) b
+    | .all t b => go shared (go shared acc t) b
+    | .letE _ _ t v b => go shared (go shared (go shared acc t) v) b
     | .share i => (shared[i.toNat]?.getD {}).fold (·.insert ·) acc
     | _ => acc
 
@@ -1184,9 +1184,9 @@ where
     | .str _ => (acc.1, true)
     | .prj _ _ v => go acc v
     | .app f a => go (go acc f) a
-    | .lam _ t b => go (go acc t) b
-    | .all _ _ t b => go (go acc t) b
-    | .letE _ t v b => go (go (go acc t) v) b
+    | .lam t b => go (go acc t) b
+    | .all t b => go (go acc t) b
+    | .letE _ _ t v b => go (go (go acc t) v) b
     | _ => acc
 
 /-- The constants a `Nat` literal references (`Expr.constsResolve`). -/

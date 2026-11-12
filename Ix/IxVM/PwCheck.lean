@@ -150,18 +150,18 @@ def checkTree (a : Address) (sharing : Array Ixon.Expr) (table : Table) (label :
         | some (.proj _ _ kv) => some kv
         | _ => none
       checkTree a sharing table label nodes fuel v kv ord
-    | .letE _ t v b => do
+    | .letE _ _ t v b => do
       let ord ← checkTree a sharing table label nodes fuel t none ord
       let ord ← checkTree a sharing table label nodes fuel v none ord
       checkTree a sharing table label nodes fuel b k ord
-    | .lam _ t b => do
+    | .lam t b => do
       let (kt, kb, kpw) := match k with
         | some (.lam kt kb m) => (some kt, some kb, some m.pw)
         | _ => (none, none, none)
       binderAt label nodes ord kpw
       let ord ← checkTree a sharing table label nodes fuel t kt (ord + 1)
       checkTree a sharing table label nodes fuel b kb ord
-    | .all _ _ t b => do
+    | .all t b => do
       let (kt, kb, kpw) := match k with
         | some (.forallE kt kb m) => (some kt, some kb, some m.pw)
         | _ => (none, none, none)

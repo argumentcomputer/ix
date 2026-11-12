@@ -222,9 +222,9 @@ private def qLetMode : Ixon.LetMode → Lean.Expr
   | .value m => mkApp (mkConst ``Ixon.LetMode.value) (qBinderMode m)
   | .borrow => mkConst ``Ixon.LetMode.borrow
 
-/-- A let's metadata: its mode. -/
+/-- A let's metadata: its `nonDep` flag and its mode. -/
 private def qLetMeta (l : Ix.Kernel.LetMeta) : Lean.Expr :=
-  mkApp2 (mkConst ``Ix.Kernel.LetMeta.mk) (qLetMode l.contract)
+  mkApp3 (mkConst ``Ix.Kernel.LetMeta.mk) (qBool l.nonDep) (qLetMode l.contract)
     (mkConst ``Ix.Kernel.LetDisplay.anon)
 
 /-- A pin's binders carry no name (the default, `BinderDisplay.anon`). -/

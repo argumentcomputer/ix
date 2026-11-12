@@ -101,13 +101,16 @@ def read (data : Array (Ix.Name × Ix.DataValue)) : Except String Contract := do
   let some codeValue := code | throw "missing semantic contract code"
   decode kindValue codeValue
 
+/-- Lower a contract frame onto the binder it annotates. An Ixon record holds
+its binders' modes in its binder-data section, which the compiler writes
+with the default mode for every binder, so only the ordinary contract lowers;
+annotated source is refused until source modes reach the section. -/
 def Contract.lower (contract : Contract) (source : Ix.Expr) (compiled : Ixon.Expr) :
     Except String Ixon.Expr := do
   match contract.kind, source, compiled with
-  | .lam, .lam .., .lam _ type body => return .lam contract.binder type body
-  | .all, .forallE .., .all _ _ type body => return .all contract.binder contract.result type body
-  | .letE, .letE .., .letE c type value body =>
-    return .letE { c with binder := contract.binder, kind := contract.letKind } type value body
+  | .lam, .lam .., .lam .. | .all, .forallE .., .all .. | .letE, .letE .., .letE .. =>
+    if contract.isOrdinary then return compiled
+    else throw "annotated source is refused: the compiler writes only default binder modes"
   | _, _, _ => throw "semantic contract is not attached to its original binder"
 
 /-- Inspect an entire source expression before rewrites can remove subterms. -/

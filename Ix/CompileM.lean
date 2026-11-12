@@ -1542,20 +1542,20 @@ admissible: a record with binders always carries a complete section. -/
 /-- `e`'s numbered nodes, every binder undecided and every share of an entry
 with a binder that entry's one variant. -/
 @[expose] def undecidedNodes (full : Array Bool) : Ixon.Expr → Array Ixon.BinderNode → Array Ixon.BinderNode
-  | .lam _ t b, out => undecidedNodes full b (undecidedNodes full t (out.push .undecided))
-  | .all _ _ t b, out => undecidedNodes full b (undecidedNodes full t (out.push .undecided))
+  | .lam t b, out => undecidedNodes full b (undecidedNodes full t (out.push (.undecided {})))
+  | .all t b, out => undecidedNodes full b (undecidedNodes full t (out.push (.undecided {})))
   | .app f a, out => undecidedNodes full a (undecidedNodes full f out)
-  | .letE _ t v b, out => undecidedNodes full b (undecidedNodes full v (undecidedNodes full t out))
+  | .letE _ _ t v b, out => undecidedNodes full b (undecidedNodes full v (undecidedNodes full t out))
   | .prj _ _ v, out => undecidedNodes full v out
   | .share n, out => if full[n.toNat]?.getD false then out.push (.share 0) else out
   | _, out => out
 
 /-- The entries with a binder that `e`'s share nodes name, appended to `acc`. -/
 @[expose] def directShares (full : Array Bool) : Ixon.Expr → Array Nat → Array Nat
-  | .lam _ t b, acc => directShares full b (directShares full t acc)
-  | .all _ _ t b, acc => directShares full b (directShares full t acc)
+  | .lam t b, acc => directShares full b (directShares full t acc)
+  | .all t b, acc => directShares full b (directShares full t acc)
   | .app f a, acc => directShares full a (directShares full f acc)
-  | .letE _ t v b, acc => directShares full b (directShares full v (directShares full t acc))
+  | .letE _ _ t v b, acc => directShares full b (directShares full v (directShares full t acc))
   | .prj _ _ v, acc => directShares full v acc
   | .share n, acc => if full[n.toNat]?.getD false then acc.push n.toNat else acc
   | _, acc => acc

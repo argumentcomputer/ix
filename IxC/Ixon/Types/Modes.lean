@@ -303,7 +303,7 @@ theorem listed?_toArray (modes : FieldModes n) (h : modes.isInherited = false) :
   | listed v hs =>
     show listed? v.toArray = some (.listed v hs)
     unfold listed?
-    rw [dif_pos v.size_toArray, dif_pos hs]
+    rw [dite_cond_eq_true (eq_true v.size_toArray), dite_cond_eq_true (eq_true hs)]
 
 instance : BEq (FieldModes n) where
   beq a b := a.toArray == b.toArray

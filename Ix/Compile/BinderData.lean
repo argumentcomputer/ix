@@ -49,10 +49,10 @@ open IxVM.PwHints
 `share` in pre-order, a `share` not entered), appended to `out`: `none` at a
 binder, `some n` at a share of entry `n`. -/
 def kinds (out : Array (Option Nat)) : Ixon.Expr → Array (Option Nat)
-  | .lam _ t b => kinds (kinds (out.push none) t) b
-  | .all _ _ t b => kinds (kinds (out.push none) t) b
+  | .lam t b => kinds (kinds (out.push none) t) b
+  | .all t b => kinds (kinds (out.push none) t) b
   | .app f a => kinds (kinds out f) a
-  | .letE _ t v b => kinds (kinds (kinds out t) v) b
+  | .letE _ _ t v b => kinds (kinds (kinds out t) v) b
   | .prj _ _ v => kinds out v
   | .share n => out.push (some n.toNat)
   | _ => out

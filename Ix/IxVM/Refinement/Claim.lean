@@ -488,8 +488,8 @@ def IsProjFnAt (c : Ixon.Constant) : Nat → Ixon.Expr → Prop
 def noArgRecur (inArg : Bool) : Ixon.Expr → Bool
   | .recur _ _ => !inArg
   | .app fn arg => noArgRecur inArg fn && noArgRecur true arg
-  | .lam _ ty body | .all _ _ ty body => noArgRecur inArg ty && noArgRecur inArg body
-  | .letE _ ty val body => noArgRecur inArg ty && noArgRecur inArg val && noArgRecur inArg body
+  | .lam ty body | .all ty body => noArgRecur inArg ty && noArgRecur inArg body
+  | .letE _ _ ty val body => noArgRecur inArg ty && noArgRecur inArg val && noArgRecur inArg body
   | .prj _ _ val => noArgRecur inArg val
   | _ => true
 
@@ -519,9 +519,9 @@ def ExprRefsClosed (ixe : Ixon.Env) (c : Ixon.Constant) (directProj : Bool) :
       ExprRefsClosed ixe c directProj val
   | .str idx | .nat idx => ∃ r, c.refs[idx.toNat]? = some r ∧ ixe.blobs.contains r = true
   | .app fn arg => ExprRefsClosed ixe c directProj fn ∧ ExprRefsClosed ixe c directProj arg
-  | .lam _ ty body | .all _ _ ty body =>
+  | .lam ty body | .all ty body =>
     ExprRefsClosed ixe c directProj ty ∧ ExprRefsClosed ixe c directProj body
-  | .letE _ ty val body =>
+  | .letE _ _ ty val body =>
     ExprRefsClosed ixe c directProj ty ∧ ExprRefsClosed ixe c directProj val ∧
       ExprRefsClosed ixe c directProj body
   | _ => True

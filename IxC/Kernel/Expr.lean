@@ -299,9 +299,10 @@ hashes by `pw` alone. -/
   if m.contract == .many && m.result == .shared then Hashable.hash m.pw
   else mixHash (Hashable.hash m.pw) (mixHash (hash m.contract) (hash m.result))
 
-/-- Metadata carried by a `letE`: room for a let's resource mode
-(`Ixon.LetMode`). The reader writes the default (`value many`), whatever the
-record's let header says: kernel terms carry no modes. Conversion never
+/-- Metadata carried by a `letE`: Lean's `nonDep` flag, and room for a let's
+resource mode (`Ixon.LetMode`). The reader keeps the flag and writes the
+default mode (`value many`), whatever the record's let header says: kernel
+terms carry no modes. Conversion never
 compares it: the annotation pass substitutes every let away before a term is
 inferred or compared, and the model reads none of it. The packed hash mixes
 it in only off the default, so a default let hashes as before.
@@ -309,6 +310,7 @@ it in only off the default, so a default let hashes as before.
 `display` is the let's display annotation, its Lean name (step 6b): a
 subsingleton, so none of the above sees it. -/
 structure LetMeta where
+  nonDep : Bool := false
   contract : Ixon.LetMode := .value .many
   display : Squash Name := LetDisplay.anon
   deriving DecidableEq, Repr
