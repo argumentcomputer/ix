@@ -664,6 +664,16 @@ theorem recClassB_recr {p : Program} {env : KEnv} {κ : CId → KKey} {r : CId} 
       exact ⟨sf, kk, lvls, np, nmot, nmin, ni, ind, rules, ty, rfl⟩
     | _ => cases hk : p.table.recKindOf r <;> simp [recClassB, hd, hk] at h
 
+/-- At class `empty` the table's kind is `empty` (at every level). -/
+theorem recClassB_empty {p : Program} {env : KEnv} {κ : CId → KKey} {r : CId}
+    (h : recClassB p env κ r = some .empty) : p.table.recKindOf r = some .empty := by
+  unfold recClassB at h
+  split at h
+  · assumption
+  · split at h <;> cases h
+  · split at h <;> cases h
+  · cases h
+
 /-- **The landed clause implies the new one**: with no recursor in `S`, `RecFacts` holds. -/
 theorem recFacts_of_noRecr {p : Program} {env : KEnv} {κ : CId → KKey} {lpsOf : CId → List Nat}
     {S : CId → Prop} (h : NoRecr p S) : RecFacts p env κ lpsOf S where
