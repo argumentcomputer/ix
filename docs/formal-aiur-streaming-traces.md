@@ -174,7 +174,9 @@ commutative sum, and the shard index only forks the transcript.
 The cell budget comes from `planning::Options::max_cells`; CUDA builds
 default to `AIUR_TRACE_SHARD_MAX_CELLS`, then 1.5 billion
 (`DEFAULT_DEVICE_CELLS`). CPU builds bound cells only when asked. The row cap
-is `--shard-rows` (`max_rows`); zero lets the planner choose.
+is `--shard-rows` (`max_rows`); zero means 2^23 rows for a cell-bounded plan
+(`DEFAULT_DEVICE_ROWS`), since of two layouts with equal cells the taller
+proves slower, and no cap otherwise.
 
 ## Planning
 

@@ -66,12 +66,16 @@ enum Staged {
 /// Proves by naming the outer claim. Every execution is logged; a claim's
 /// execution over `oversized` or more constants exceeds the record ceiling,
 /// and the first execution of a claim whose first constant is in `contend`
-/// loses a memory contest.
+/// loses a memory contest. An ordinary root wrap halves the shard count,
+/// except that with `stuck_at_two` a two-shard root wraps to two shards
+/// again; `single_shard` gives the backend a one-shard final wrap.
 struct Fake {
   log: Mutex<Vec<String>>,
   contend: Mutex<FxHashSet<Address>>,
   oversized: usize,
   root_shards: usize,
+  stuck_at_two: bool,
+  single_shard: bool,
 }
 
 impl Fake {
@@ -81,6 +85,8 @@ impl Fake {
       contend: Mutex::new(FxHashSet::default()),
       oversized: usize::MAX,
       root_shards: 1,
+      stuck_at_two: false,
+      single_shard: false,
     }
   }
 
@@ -262,7 +268,24 @@ impl Backend for Fake {
     _reservation: &RecordReservation,
   ) -> Result<FakeProof, String> {
     self.record(format!("wrap {}", proof.shards));
-    Ok(FakeProof { outer: root.outer_claim.clone(), shards: proof.shards / 2 })
+    let shards =
+      if self.stuck_at_two && proof.shards == 2 { 2 } else { proof.shards / 2 };
+    Ok(FakeProof { outer: root.outer_claim.clone(), shards })
+  }
+
+  fn wrap_root_single(
+    &self,
+    _lane: &usize,
+    _run: Run<'_, Vec<u64>>,
+    root: &BackendSlot<Self>,
+    proof: &FakeProof,
+    _reservation: &RecordReservation,
+  ) -> Result<Option<FakeProof>, String> {
+    if !self.single_shard {
+      return Ok(None);
+    }
+    self.record(format!("single {}", proof.shards));
+    Ok(Some(FakeProof { outer: root.outer_claim.clone(), shards: 1 }))
   }
 
   fn prove_extra(
@@ -377,6 +400,32 @@ fn config(dir: &Path) -> Config {
     cache_root: Some(dir.join("cache")),
     ..Config::new(1, 1 << 30, 2, 0)
   }
+}
+
+#[test]
+fn the_root_ends_in_one_shard_when_the_ordinary_wrap_stalls() {
+  // Four root shards wrap to two, where the ordinary wrap stalls; the
+  // single-shard wrap then ends the root in one shard.
+  let dir = TempDir::new();
+  let (env, manifest) = environment(&[1, 1, 1, 1], &dir.0);
+  let mut backend = Fake::new();
+  backend.root_shards = 4;
+  backend.stuck_at_two = true;
+  backend.single_shard = true;
+  lanes::run(&config(&dir.0), &backend, &env, &manifest).unwrap();
+  assert_eq!(backend.entries("wrap"), 1);
+  assert_eq!(backend.entries("single 2"), 1);
+
+  // Without a single-shard wrap the stalled root keeps its two shards and
+  // the run still completes.
+  let dir = TempDir::new();
+  let (env, manifest) = environment(&[1, 1, 1, 1], &dir.0);
+  let mut backend = Fake::new();
+  backend.root_shards = 4;
+  backend.stuck_at_two = true;
+  lanes::run(&config(&dir.0), &backend, &env, &manifest).unwrap();
+  assert_eq!(backend.entries("wrap"), 2);
+  assert_eq!(backend.entries("single"), 0);
 }
 
 #[test]

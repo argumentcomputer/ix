@@ -1032,7 +1032,7 @@ impl<B: WitnessField> Backend<'_, '_, B> {
       .max(1);
     let mut limit =
       u128::from(device_cells.unwrap_or(u64::MAX)).min(whole_cells);
-    let mut height_limit = options.max_rows;
+    let mut height_limit = options.height_limit()?;
     let mut previous = None;
     let mut candidates = Vec::new();
     loop {

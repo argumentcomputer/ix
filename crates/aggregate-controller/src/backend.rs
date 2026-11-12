@@ -242,6 +242,20 @@ pub trait Backend: Identity + Sync {
     reservation: &RecordReservation,
   ) -> Result<Self::Proof, String>;
 
+  /// [`Self::wrap_root`] planned as exactly one trace shard: the root's
+  /// final wrap, once it has at most two shards or stops shrinking. `None`
+  /// when the backend has no such plan.
+  fn wrap_root_single(
+    &self,
+    _lane: &Self::Lane,
+    _run: Run<'_, Self::Claim>,
+    _root: &BackendSlot<Self>,
+    _proof: &Self::Proof,
+    _reservation: &RecordReservation,
+  ) -> Result<Option<Self::Proof>, String> {
+    Ok(None)
+  }
+
   /// Executes and proves `node` on `lane`, charged to `reservation`: an
   /// aggregate proof of `node.output()`.
   fn prove_extra(

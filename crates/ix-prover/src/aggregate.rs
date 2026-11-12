@@ -279,13 +279,37 @@ impl Formal {
     entry: &str,
     args: &[Element],
   ) -> Result<FormalProof, String> {
+    self.prove_within(lane, kind, record, entry, args, false, self.workspace)
+  }
+
+  /// [`Self::prove`] within a `workspace`-byte host budget, as one trace
+  /// shard when `single_shard` (see `planning::Options::single_shard`).
+  #[allow(clippy::too_many_arguments)]
+  fn prove_within(
+    &self,
+    lane: &Lane,
+    kind: ChildKind,
+    record: &Execution<Field>,
+    entry: &str,
+    args: &[Element],
+    single_shard: bool,
+    workspace: usize,
+  ) -> Result<FormalProof, String> {
     let prover = &lane.provers[index(kind)];
     let mut options = self.options.clone();
     options.device = lane.device;
-    let budget = self.workspace as u64;
+    options.single_shard = single_shard;
+    let budget = workspace as u64;
     options.max_ram_bytes =
       Some(options.max_ram_bytes.unwrap_or(budget).min(budget));
     let batch = prover.plan_record(record, &options, 0)?;
+    if single_shard {
+      eprintln!(
+        "[lanes] final root wrap: one trace shard of {} cells, predicted \
+         device peak {} B, host peak {} of {budget} B",
+        batch.shard_cells, batch.device_peak_bytes, batch.proving_peak_bytes
+      );
+    }
     if !batch.fits {
       return Err(format!(
         "no trace-shard plan fits the {budget}-byte lane workspace \
@@ -315,7 +339,7 @@ impl Formal {
         .fetch_add(run.proof.proofs.len(), Ordering::Relaxed);
     }
     eprintln!(
-      "[lanes] {} proof: {} trace shards, trace {:.1}s, proving {:.1}s, population stall {:.1}s{}",
+      "[lanes] {} proof: {} trace shards, trace {:.1}s, proving {:.1}s, population stall {:.1}s{}, planned {} cells and {} rows/shard, device peak {} B",
       match kind {
         ChildKind::Ixvm => "claim",
         ChildKind::Aggr => "aggregate",
@@ -325,6 +349,9 @@ impl Formal {
       run.proving_seconds,
       run.population.stall_seconds,
       if run.population.pipelined { ", pipelined" } else { "" },
+      batch.shard_cells,
+      batch.max_rows,
+      batch.device_peak_bytes,
     );
     FormalProof::new(kind, &run.proof)
   }
@@ -596,6 +623,42 @@ impl Backend for Formal {
       .execute_streams(&streams, &args, reservation)
       .map_err(String::from)?;
     self.prove(lane, ChildKind::Aggr, &record, AGGR_ENTRY, &args)
+  }
+
+  fn wrap_root_single(
+    &self,
+    lane: &Lane,
+    _run: Run<'_, Vec<u64>>,
+    root: &BackendSlot<Self>,
+    proof: &FormalProof,
+    reservation: &RecordReservation,
+  ) -> Result<Option<FormalProof>, String> {
+    let streams = streams::wrap(
+      self.keys(),
+      aggregate_controller::protocol::shape_code(ChildKind::Aggr, None),
+      Transport {
+        kind: ChildKind::Aggr,
+        proof: &proof.raw,
+        claims: &root.claims_bytes,
+      },
+    );
+    let args = self.public_input(&root.statement.claim_bytes);
+    let (args, record) = self
+      .execute_streams(&streams, &args, reservation)
+      .map_err(String::from)?;
+    // The last wrap runs alone, after every other record is released, so it
+    // may use twice the lane workspace for its one shard.
+    self
+      .prove_within(
+        lane,
+        ChildKind::Aggr,
+        &record,
+        AGGR_ENTRY,
+        &args,
+        true,
+        self.workspace.saturating_mul(2),
+      )
+      .map(Some)
   }
 
   fn prove_extra(

@@ -385,7 +385,13 @@ fn prove_loop<B: Backend>(
             },
             None => root,
           };
-          // Wrap until the final proof is a single trace shard.
+          // Wrap until the final proof is a single trace shard: ordinary
+          // wraps while the root has more than two shards and keeps
+          // shrinking, then one wrap planned as a single shard. The cell
+          // bound alone can leave the ordinary wrap of a two-shard root at
+          // two shards indefinitely; ending every root in one shard makes
+          // its shape, and the compression layout derived from it, depend on
+          // the aggregation program only.
           let mut wrapped: Option<B::Proof> = None;
           loop {
             let current = wrapped.as_ref().unwrap_or(&root.proof);
@@ -398,14 +404,43 @@ fn prove_loop<B: Backend>(
               .map_err(|error| format!("root wrap admission: {error:?}"))?
               .ok_or("root wrap cannot acquire record capacity")?;
             let binding = backend.bind(&reservation);
-            let next =
-              backend.wrap_root(lane, run, &root, current, &reservation)?;
+            if shards > 2 {
+              let next =
+                backend.wrap_root(lane, run, &root, current, &reservation)?;
+              if backend.trace_shards(&next) < shards {
+                drop(binding);
+                drop(reservation);
+                wrapped = Some(next);
+                continue;
+              }
+            }
+            let single =
+              backend.wrap_root_single(lane, run, &root, current, &reservation);
+            let next = match single {
+              Ok(Some(proof)) => Some(proof),
+              // No single-shard plan: an ordinary wrap may still shrink a
+              // two-shard root.
+              Ok(None) if shards <= 2 => Some(
+                backend.wrap_root(lane, run, &root, current, &reservation)?,
+              ),
+              Ok(None) => None,
+              Err(error) => {
+                eprintln!("[lanes] root stays at {shards} trace shards: {error}");
+                None
+              },
+            };
             drop(binding);
             drop(reservation);
-            if backend.trace_shards(&next) >= shards {
-              break;
+            match next {
+              Some(proof) if backend.trace_shards(&proof) < shards => {
+                wrapped = Some(proof);
+              },
+              _ => eprintln!(
+                "[lanes] root stays at {shards} trace shards: no wrap \
+                 reduces it"
+              ),
             }
-            wrapped = Some(next);
+            break;
           }
           let proof = wrapped.as_ref().unwrap_or(&root.proof);
           backend

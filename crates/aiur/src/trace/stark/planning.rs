@@ -17,9 +17,15 @@ pub enum RetentionPolicy {
 
 /// Committed cells (stage-one, stage-two and quotient columns over padded
 /// rows) per trace shard that a CUDA prover plans to unless told otherwise.
-/// This is the legacy lanes' `AIUR_TRACE_SHARD_MAX_CELLS` default, sized for
-/// a 96 GB device: one such shard of the recursive verifier peaks near 33 GB.
+/// Larger shards are admitted by a 96 GiB device but prove slower: their
+/// taller rows grow the opening and FRI buffers.
 pub const DEFAULT_DEVICE_CELLS: u64 = 1_500_000_000;
+
+/// Rows per circuit per trace shard that a cell-bounded plan stays within
+/// unless `max_rows` says otherwise. Of two layouts with the same committed
+/// cells, the taller one proves slower: on an RTX PRO 6000, Init claim shards
+/// of 1.5e9 cells took 30–32 s at 2^23 rows and 34.5–36 s at 2^24.
+pub const DEFAULT_DEVICE_ROWS: usize = 1 << 23;
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
@@ -52,6 +58,12 @@ pub struct Options {
   /// Every record that fits proves in the same shape, which is what a
   /// verifier circuit fixed in advance needs.
   pub fixed_log_heights: Option<Vec<u8>>,
+  /// Plan exactly one trace shard. The committed-cell bound and the device
+  /// budget do not apply: multi-stark admits device memory per phase and
+  /// spills LDEs to the host when a phase does not fit, so a shard above
+  /// the device model costs time, not correctness. The RAM budget still
+  /// applies, and a record that cannot be one shard within it is refused.
+  pub single_shard: bool,
 }
 impl Options {
   pub fn read(
@@ -115,6 +127,13 @@ impl Options {
     {
       return Err("give either a layout or fixed log-heights".into());
     }
+    if self.single_shard
+      && (self.layout.is_some()
+        || self.layout_file.is_some()
+        || self.fixed_log_heights.is_some())
+    {
+      return Err("a single-shard plan cannot also take a fixed layout".into());
+    }
     Ok(())
   }
 
@@ -131,12 +150,25 @@ impl Options {
 
   /// The committed-cell bound each shard is planned to, if any. A CUDA
   /// prover always runs on a device, so it is bounded even without an
-  /// explicit device index; CPU proving is bounded only on request.
+  /// explicit device index; CPU proving is bounded only on request. A
+  /// single-shard plan is not bounded by cells.
   pub fn device_cells(&self) -> Result<Option<u64>, String> {
+    if self.single_shard {
+      return Ok(None);
+    }
     if self.max_cells.is_some() || !cfg!(feature = "cuda") {
       return Ok(self.max_cells);
     }
     configured_cells().map(Some)
+  }
+
+  /// The row cap each shard is planned to: `max_rows` when given, otherwise
+  /// [`DEFAULT_DEVICE_ROWS`] for a cell-bounded plan, and none otherwise.
+  pub fn height_limit(&self) -> Result<Option<usize>, String> {
+    if self.max_rows.is_some() {
+      return Ok(self.max_rows);
+    }
+    Ok(self.device_cells()?.map(|_| DEFAULT_DEVICE_ROWS))
   }
 }
 
@@ -492,7 +524,11 @@ impl<B: WitnessField> Backend<'_, '_, B> {
     options: &Options,
     resident: u64,
   ) -> Result<BatchPlan, String> {
-    self.plan_incremental(record, options, resident)
+    let mut batch = self.plan_incremental(record, options, resident)?;
+    if options.single_shard && batch.shards != 1 {
+      batch.fits = false;
+    }
+    Ok(batch)
   }
 
   #[cfg(feature = "cuda")]
@@ -684,7 +720,7 @@ impl<B: WitnessField> Backend<'_, '_, B> {
       margin(u128::from(resident) + host_cells * 8 + descriptors + upload);
     let device_cells = options.device_cells()?;
     let device_budget = self.device_budget(options)?;
-    let mut rows = options.max_rows.unwrap_or(tallest).min(tallest);
+    let mut rows = options.height_limit()?.unwrap_or(tallest).min(tallest);
     let mut candidates = Vec::new();
     loop {
       let shards = tallest.div_ceil(rows);
@@ -790,6 +826,9 @@ impl<B: WitnessField> Backend<'_, '_, B> {
     &self,
     options: &Options,
   ) -> Result<Option<u64>, String> {
+    if options.single_shard {
+      return Ok(None);
+    }
     if let Some(bytes) = options.max_device_bytes {
       return Ok(Some(bytes));
     }
@@ -851,10 +890,17 @@ impl<B: WitnessField> Backend<'_, '_, B> {
       // when a narrow circuit consumes few committed cells.
       let opening = height as u128 * blowup * (192 + 160 + 88);
       let lde = |cells: u128| cells * 8 * (blowup + 1);
+      // The fixed, opening and LDE terms carry no margin: on an RTX PRO 6000
+      // they bounded the measured device high-water mark of host-populated
+      // shards from above (Init claim shards of 1.5e9 cells: 74.8 GB modelled,
+      // at most 66.7 GB in use; a 2.1e9-cell root wrap: 88.1 GB modelled, at
+      // most 71.1 GB in use, with no spill or failed admission). The device
+      // record and its launch workspaces are not measured yet and keep it.
+      let population = margin(population);
       let generation = population + fixed + opening + lde(population_cells);
       let pinned = if gpu::release_enabled() { 0 } else { population };
       let proving = pinned + fixed + opening + lde(cells);
-      margin(generation.max(proving))
+      generation.max(proving)
     }
     #[cfg(not(feature = "cuda"))]
     {
