@@ -27,7 +27,8 @@ declaration, and nothing borrowed. Branches of a `case` are checked from the sam
 has no merge point (a branch ends in a terminal), so no context is ever joined.
 
 Cost: one pass over the candidate, each map operation a `NatMap` walk; a jump costs its target's
-captured list, so the worst case is quadratic in the body (`plans/heap/stage2/PLAN.md` §2). -/
+captured list, so the worst case is quadratic in the body (`docs/data-and-roots-design.md`, "The
+ownership checker"). -/
 
 set_option autoImplicit false
 

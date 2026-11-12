@@ -2,17 +2,14 @@ import IxCC.Own.Plain.Proof.Owned.Program
 import IxCC.Own.Plain.Proof.Candidate
 import IxCC.Own.Plain.Proof.CheckedShape
 
-/-! # The ownership checker accepts the canonical producer's map
+/-! # Counting tokens against the canonical producer's map
 
-`checkPlainMap_checkOwned`: a syntactic induction on the Fir code proving that the checker accepts
-`lowerCode live joins c imm` from a context in which every live variable that is not an immediate
-holds exactly one token (`Canon`). Token counts are tracked pointwise (`Shape`): a copy prefix adds
-one token per occurrence, the consuming use takes them back, and at a terminal `moveCopies` and
-`drops` leave every live variable at zero once the captured tokens are taken. No heap.
-
-From it and `checkOwned_refines`, the landed `checked_program_refines`,
-`checked_contract_program_refines` and `checked_program_reclaims` are re-derived with their
-statements unchanged (`checked_program_refines'` …, pinned by `rfl` below). -/
+The machinery of canonical acceptance (`checkPlainMap_checkOwned`, in `OwnedAccepts.lean`): the
+induction there shows that the checker accepts `lowerCode live joins c imm` from a context in
+which every live variable that is not an immediate holds exactly one token (`Canon`, here).
+Token counts are tracked pointwise (`Shape`): a copy prefix adds one token per occurrence, the
+consuming use takes them back, and at a terminal `moveCopies` and `drops` leave every live
+variable at zero once the captured tokens are taken (`canonical_transfer`). No heap. -/
 
 set_option autoImplicit false
 

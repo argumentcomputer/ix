@@ -26,7 +26,7 @@ a second placement of every root made by the liveness producer (`Live`, untruste
   decrement missing on a path that ends in `trap`, which may leak) must pass the oracle; and each
   kind must be refused for its stated reason somewhere;
 * **the site-directed campaign** (`Sites`, `COUNT` attempts per root and map, seed 29, as the
-  probe's `H3-sites2`): every accepted mutant must pass the oracle on every input with a
+  heap stage 2 campaign of step 0): every accepted mutant must pass the oracle on every input with a
   reference; and some accepted mutant must change the cell reference-count traffic;
 * three fixed maps: a repeated captured variable is refused; a map that leaks before `trap` is
   accepted (a trap ends the run); an increment by two is refused.
@@ -40,7 +40,7 @@ namespace IxCCTests.Own.Owned.Main
 
 open IxCC IxCC.Own.Plain IxCCTests.Own.Owned
 
-/-- The inputs: every argument `n`, for each `n` (as the probe's corpus campaign). -/
+/-- The inputs: every argument `n`, for each `n` (as the step-0 campaign on the corpus). -/
 def inputValues : List Nat := [0, 1, 3, 7]
 
 structure Totals where
@@ -123,7 +123,7 @@ def controls (t : Totals) (label name : String) (F : Fir.Program) (m : Src.NatMa
       if k == kind.name then (k, a + tried, b + stated, c + other, d + accepted) else (k, a, b, c, d) }
   return t
 
-/-- The site-directed campaign on one map (seeded as the probe's `sites` command). -/
+/-- The site-directed campaign on one map (seeded as the step-0 campaign). -/
 def campaign (t : Totals) (label name : String) (F : Fir.Program) (m : Src.NatMap Code) (f : Nat)
     (refs : List Ref) (count seed : Nat) : Totals := Id.run do
   let mut t := t

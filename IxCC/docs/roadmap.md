@@ -516,7 +516,13 @@ data:
   (general cell layouts and the uniqueness test) in progress: its runtime
   and proofs are a library (`Rt.Rc.Gen`); the pipeline's switch to it, with
   `Gen.dec` as the one release, is next, gated on whole-program
-  executed-instruction counts. **Open for stage 3** (inline fast paths): the
+  executed-instruction counts. Stage 2 (the proved Own checker), first
+  landing: the checker `Own.Plain.checkOwned` over today's syntax with
+  refinement, reclamation and canonical acceptance proved, as a library that
+  nothing in production calls
+  ([DR1, "The ownership checker"](data-and-roots-design.md#the-ownership-checker));
+  next, the Cfg activation layer restated over its typing context and the
+  recheck switched to it, then a liveness placement. **Open for stage 3** (inline fast paths): the
   general release executes up to 3 Lir steps (4 x86 instructions) more per
   freed cell than the bounded route's for cells of fewer than three scanned
   fields, fewer for four or more (lists +3.2 % steps, +4.8 % instructions;

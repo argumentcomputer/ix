@@ -3,8 +3,8 @@ import IxCCTests.Own.Owned.Mutate
 
 /-! # The ownership checker's suite: site-directed mutants (the theorem's direction, tested)
 
-Random edits of a placement mostly act on immediates or on paths no input runs (the probe's
-random campaign, `plans/heap/stage2/PLAN.md` §3.3). Here every edit is chosen with the checker's own context at
+Random edits of a placement mostly act on immediates or on paths no input runs. Here every edit
+is chosen with the checker's own context at
 the site, as the negative controls are: its subject is a variable that is not an immediate and
 holds a token (or is borrowed) there, and the edit is one a placement could legitimately make, so
 that the checker accepts many of them and an accepted one changes the reference-count traffic on
