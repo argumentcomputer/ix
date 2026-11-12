@@ -19,7 +19,10 @@ and saying nothing where a term does not denote), and one lemma per rule the che
   argument in the domain (`app_den_lam`, `den_inst1Lift`), δ (`Laws.defn_value`; in a
   proof-irrelevant set model a definition's set is its value's), the projection of a constructor
   (`Laws.proj_ctor`, at a structure that is never a proposition: in a proof-irrelevant set model its
-  constructor is read in the graph regime and its image is the field tuple);
+  constructor is read in the graph regime and its image is the field tuple), ι (`Laws.iota_rule`,
+  `iotaStep_sound`; the rule fires on a constructor image whose arguments fit, as the recursor's own
+  rules compute), a `Nat` primitive on literals (`Laws.nat_accel`, `primStep_sound`), a `String`
+  literal to its constructor form (`Denotes.strLit`, no law);
 * conversion: equal denotations through reductions, binders and spines.
 -/
 
@@ -471,8 +474,9 @@ theorem den_majorForm {ρ : BVarIdx → V} {e : KExpr} {Y : V} (h : Denotes M.cv
   · exact h
 
 theorem primOfKey?_spec {k : KKey} {op : IxCC.Src.PrimOp} (h : primOfKey? k = some op) :
-    primKey op = k :=
-  beq_iff_eq.mp (List.find?_some h)
+    primKey op = k := by
+  have h' := List.find?_some h
+  simpa using h'
 
 /-- **A `Nat` primitive on literals reduces to its value** (`Laws.nat_accel`; in a
 proof-irrelevant set model `Nat` and `Bool` are not propositions, the role-pinned operations
@@ -498,7 +502,7 @@ theorem primStep_sound (hL : Laws M) {Γ : List KExpr} {w : KExpr → Option KEx
           have hla := hw a _ hwa ρ hρ Xa hXa
           rw [← hk] at hK
           have hP : Denotes M.cval env φ ρ (primApp op va 0) (app K Xa) := by
-            rw [primApp, if_pos h1']
+            simp only [primApp, h1', ↓reduceIte]
             exact .app hK hla
           exact (den_mkAppN rest).mpr ⟨_, Zs, hL.nat_accel op va 0 φ ρ _ (fun _ => rfl) hP, hZs, rfl⟩
       · cases h
@@ -519,7 +523,7 @@ theorem primStep_sound (hL : Laws M) {Γ : List KExpr} {w : KExpr → Option KEx
               have hlb := hw b _ hwb ρ hρ Xb hXb
               rw [← hk] at hK
               have hP : Denotes M.cval env φ ρ (primApp op va vb) (app (app K Xa) Xb) := by
-                rw [primApp, if_neg h1']
+                simp only [primApp, h1', ↓reduceIte]
                 exact .app (.app hK hla) hlb
               exact (den_mkAppN rest').mpr
                 ⟨_, Zs, hL.nat_accel op va vb φ ρ _ (fun h => absurd h h1') hP, hZs, rfl⟩
@@ -564,7 +568,9 @@ theorem iotaStep_sound (hL : Laws M) {Γ : List KExpr} {w : KExpr → Option KEx
               simp only [Option.some.injEq, ConstantInfo.ctorInfo.injEq] at e0
               have hckC : env.find? ck = some (.ctorInfo cvC np nf) := by rw [hck0, e0.1]
               have hrlm : rl ∈ rules := List.mem_of_find?_eq_some hrl
-              have hrlc : rl.ctor = ck := beq_iff_eq.mp (List.find?_some hrl)
+              have hrlc : rl.ctor = ck := by
+                have h' := List.find?_some hrl
+                simpa using h'
               intro ρ hρ Y hY
               obtain ⟨K0, Ys, hK0, hYs, rfl⟩ := (den_mkAppN args).mp hY
               -- the arguments split at the major

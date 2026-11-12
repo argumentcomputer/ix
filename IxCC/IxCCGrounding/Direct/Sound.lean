@@ -5,9 +5,10 @@ import IxCCGrounding.Direct.Rules
 
 **Part F.** `direct_sound`: in every model with the laws, at every assignment one of the
 profiles stands for, every function of the checker establishes its judgement, by one induction
-on the fuel. Laws used: `defn_value` (δ), `cval_params` (through `den_inst`: a constant at its
-levels, δ at levels), `proj_ctor` (the projection of a constructor, at a structure that is never a
-proposition). Not used: `iota_rule`, `nat_accel`, `ctor_canon`.
+on the fuel. Laws used: `defn_value` (δ), `cval_params` (through `den_inst` and `den_inst_exact`: a
+constant at its levels, δ and ι at levels), `proj_ctor` (the projection of a constructor, at a
+structure that is never a proposition), `iota_rule` (ι at a recursor of an inductive
+without indices) and `nat_accel` (a `Nat` primitive on literals). Not used: `ctor_canon`.
 -/
 
 namespace IxCC.Grounding

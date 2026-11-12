@@ -13,13 +13,20 @@ theorems, discharged where this check accepts (`IxCCGrounding.Direct.Sites`). De
   level assignment (a binder datum, a level's zero-ness) is required at each of them.
 * **Spines.** Each maximal evaluated application spine is walked once, left to right, from its
   head's type (`dStep` per argument); the sites of its prefixes are accepted in order until the
-  first refusal. A spine's width costs no fuel.
+  first refusal. A spine's width costs no fuel; a nested argument costs two levels (its check and
+  its type's inference).
 * **Conversion** (`convD`): syntactic equality; equality up to what the denotation does not read
   (`eqUpTo`: levels by `lvlEq`, binder data at the profiles, a literal against its constructor
   form); β with the argument checked; δ (`Laws.defn_value`); the projection of a constructor whose
-  arguments fit its type, at a structure that is never a proposition (`Laws.proj_ctor`).
+  arguments fit its type, at a structure that is never a proposition (`Laws.proj_ctor`); ι at a
+  recursor of an inductive without indices whose major premise reduces to a constructor or a
+  literal (`Laws.iota_rule`, `iotaStep`); a `Nat` primitive on literals (`Laws.nat_accel`,
+  `primStep`).
+* **Literals.** A `Nat` literal has type `Nat`; a `String` literal the type of its constructor form
+  (`Denotes.strLit`).
 * **Bounds.** A constant with more than `maxDirectParams` (8) level parameters has all its sites
-  refused; levels of more than `maxLevelSize` (32) nodes are compared only syntactically. The cost
+  refused; levels of more than `maxLevelSize` (32) nodes are compared only syntactically (otherwise
+  after `Level.simplify` and the `imax a a` collapse, or by max-plus forms: polynomial). The cost
   on a hostile closure is not otherwise bounded: every function is total, by a fuel
   (`directFuel`, a nesting depth).
 -/
