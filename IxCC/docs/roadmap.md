@@ -787,11 +787,11 @@ ownership checker's own, which the captured-work budget bounds
   but `ixcc check-cert` refuses the emitted certificate with `cert:
   cert.parse: JSON nesting depth exceeds maximum`; under `--rc off` the
   zero-RC certificate (nesting 8) is accepted. The registered corpus's
-  certificates nest at most ⟦CERTDEPTH⟧ levels. A flat encoding of an action
-  sequence (one level for a run of actions) or a liveness placement (fewer
-  drops at a return) lifts the case of many drops; a chain of bindings and
-  `case`s would need the control tree itself encoded flatter. The format is
-  not changed yet.
+  certificates nest at most 121 levels (`Natural.fibMain` under `--rc on`).
+  A flat encoding of an action sequence (one level for a run of actions) or
+  a liveness placement (fewer drops at a return) lifts the case of many
+  drops; a chain of bindings and `case`s would need the control tree itself
+  encoded flatter. The format is not changed yet.
 - `RcReplay.runFront` runs the ownership check three times on the same map:
   at admission (`Own.Plain.Certificate.admit`), in the program gate
   (`checkScopedProgram`'s `checkProgram`) and in the lowering
