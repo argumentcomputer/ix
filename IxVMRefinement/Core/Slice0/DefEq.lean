@@ -1,4 +1,4 @@
-import IxVMRefinement.Core.Whnf
+import IxVMRefinement.Core.Slice0.Whnf
 import IxVMRefinement.Obs.KernelDefEq
 
 /-! # The step lemmas of the `is_def_eq` fast path
@@ -10,7 +10,7 @@ import IxVMRefinement.Obs.KernelDefEq
 (`Good`'s list of functions the fragment does not call). Each proof takes the
 derivation's path from the generated path lemma (`IxVMRefinement.Obs`). -/
 
-namespace IxVM.Refinement.Core
+namespace IxVM.Refinement.Core.Slice0
 
 open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 open Aiur.Library Aiur.Library.IxVMRep Aiur.Library.List
@@ -219,4 +219,4 @@ theorem defEq_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
     exact (outside_absurd (n := "KernelDefEq::k_def_eq_rebase") (args := [rc, a, b, types, v1])
       (heap := m2) good (by simp) (by simp [nativeNames])).elim
 
-end IxVM.Refinement.Core
+end IxVM.Refinement.Core.Slice0
