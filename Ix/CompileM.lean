@@ -1595,13 +1595,18 @@ with a binder that entry's one variant. -/
 
 /-- The section the compiler gives a block record `c`: the annotator's when it
 is admissible, otherwise the undecided section (`undecidedSection`). A record
-for which neither is admissible does not compile. -/
+for which neither is admissible does not compile; among them, every record with
+`Ixon.maxLevelCount` (`2^32`) universe parameters or more, whose level count no
+reader admits (`Ixon.Constant.bindersCanonical`). -/
 @[expose] def sectionFor (annotator? : Option BinderAnnotator) (names : Array Name)
     (c : Ixon.Constant) : Except CompileError (Array Ixon.BinderBlock) :=
   if sectionAdmissible c (annotatorSection annotator? names c) then
     .ok (annotatorSection annotator? names c)
   else if sectionAdmissible c (undecidedSection c) then .ok (undecidedSection c)
-  else .error (.binderData "no admissible binder-data section")
+  else if c.info.maxLvls < Ixon.maxLevelCount then
+    .error (.binderData "no admissible binder-data section")
+  else
+    .error (.binderData "2^32 universe parameters or more, which no reader admits")
 
 /-- `c` with the section the compiler gives it (`sectionFor`). Every other
 field is `c`'s, definitionally. -/
@@ -1624,7 +1629,7 @@ theorem sectionFor_ok {annotator? : Option BinderAnnotator} {names : Array Name}
     · rename_i hu
       cases h
       exact hu
-    · cases h
+    · split at h <;> cases h
 
 /-- **The compiler's section is admissible**: a record built with a section
 is `c` with an admissible one. -/
@@ -1652,8 +1657,11 @@ theorem withBinderSection_error {annotator? : Option BinderAnnotator} {names : A
     · cases hs
     · split at hs
       · cases hs
-      · cases hs
-        exact ⟨_, rfl⟩
+      · split at hs
+        · cases hs
+          exact ⟨_, rfl⟩
+        · cases hs
+          exact ⟨_, rfl⟩
 
 /-- An admissible section is in the wire domain. -/
 theorem sectionAdmissible_wire {c : Ixon.Constant} {binders : Array Ixon.BinderBlock}

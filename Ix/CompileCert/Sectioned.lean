@@ -44,6 +44,25 @@ theorem complete {c₀ c : Ixon.Constant} (h : Sectioned c₀ c) : c.bindersComp
   obtain ⟨binders, ok, rfl⟩ := h
   exact sectionAdmissible_complete ok
 
+/-- A record with a root whose section is canonical has fewer than
+`Ixon.maxLevelCount` (`2^32`) universe parameters. -/
+theorem levels_of_canonical {c : Ixon.Constant} (h : c.bindersCanonical = true)
+    (rooted : c.info.binderRoots.isEmpty = false) : c.info.maxLvls < Ixon.maxLevelCount := by
+  unfold Ixon.Constant.bindersCanonical at h
+  rw [rooted] at h
+  cases hd : decide (c.info.maxLvls < Ixon.maxLevelCount)
+  · rw [hd] at h
+    simp at h
+  · exact of_decide_eq_true hd
+
+/-- **The compiler's records are below the level-count bound**: a record built
+with an admitted section, with a root, has fewer than `Ixon.maxLevelCount`
+universe parameters, so the compiler refuses a declaration with more
+(`Ix.CompileM.sectionFor` admits no section for it). -/
+theorem levels {c₀ c : Ixon.Constant} (h : Sectioned c₀ c)
+    (rooted : c.info.binderRoots.isEmpty = false) : c.info.maxLvls < Ixon.maxLevelCount :=
+  levels_of_canonical (canonical h) rooted
+
 /-- Without its section, the record is the built one (which has none). -/
 theorem strip {c₀ c : Ixon.Constant} (h : Sectioned c₀ c) (empty : c₀.binders = #[]) :
     { c with binders := #[] } = c₀ := by
