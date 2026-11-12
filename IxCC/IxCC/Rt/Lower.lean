@@ -48,6 +48,9 @@ allows dead join points; Lir does not) are dropped, keeping the order, and
   above 63 gives 0); `natShl` shifts `2p` and checks that shifting back
   restores it; `natPow` and `natGcd` call the runtime procedures
   `rt_nat_pow` and `rt_nat_gcd` (`Rt.Procs.Nat`).
+* The fixed-width word primitives (stage W1) on tagged words: below width
+  64 a word congruent to the tagged result, masked; at width 64 the untagged
+  wrapped result, `natOverflow` at or above 2^63 (`word`, below).
 * A comparison whose only use is the block's `switch` on `Bool` becomes
   the branch itself.
 
@@ -319,6 +322,113 @@ def divMod (x : VReg) (o : Lir.BinOp) (zero : Lir.Arg → Lir.Arg) (a b : Lir.Ar
     let r ← temp (retag q)
     assign x (.select .eq .w64 b (.imm 1) (zero a) r)
 
+/-! ## Fixed-width words on tagged words (stage W1)
+
+A word of width `w` is the tagged immediate `2n + 1` of its number `n < 2^w`, as a `Nat` is
+(the primitive is stuck on a number at or above `2^w`, as SrcEval's rule F6w is, so nothing is
+owed there). `div`, `mod`, `land`, `lor` and `xor` are the `Nat` codes at every width (their
+results stay in range). Below width 64 every other operation computes, in 64-bit arithmetic, a
+word congruent to the tagged result modulo `2^(w+1)` (which divides `2^64`, so a 64-bit wrap
+changes nothing) and reduces it with the *tagged mask* `2^(w+1) − 1`; it never fails. At width 64
+such an operation computes the untagged 64-bit result `r` (wrapping, the width's own reduction)
+and fails with `natOverflow` unless `r < 2^63`: a `UInt64` has a tagged word only below `2^63`.
+Shift amounts are reduced with `bits − 1`. Operands are untagged by a shift even when
+immediate, so the code has one shape whatever the operands are. -/
+
+/-- The tagged mask of a width below 64: `(2n + 1) &&& tagMask w = 2 (n mod 2^w) + 1`. -/
+def tagMask (w : Src.Width) : Word := UInt64.ofNat (2 * w.size - 1)
+
+/-- The shift amount of width `w` from a tagged count: `(b >>> 1) &&& (bits − 1)`. -/
+def wordCount (w : Src.Width) (b : Lir.Arg) : M Lir.Arg := do
+  let y ← bin .shr b (.imm 1)
+  bin .and y (.imm (UInt64.ofNat (w.bits - 1)))
+
+/-- Width 64's result `r` (untagged): `natOverflow` unless `r < 2^63`, then `x := 2r + 1`. -/
+def checked64 (x : VReg) (r : Lir.Arg) : M Unit := do
+  check .natOverflow fun ok bad => .br .ugt r (.imm 0x7fffffffffffffff) bad ok
+  assign x (retag r)
+
+/-- A width-64 operation that can leave `[0, 2^63)`, on tagged operands. -/
+def word64 (f : FunId) (x : VReg) (op : Src.WordOp) (as : List Lir.Arg) : M Unit :=
+  match op, as with
+  | .add, [a, b] => do
+    let u ← bin .shr a (.imm 1)
+    let v ← bin .shr b (.imm 1)
+    checked64 x (← bin .add u v)
+  | .sub, [a, b] => do
+    let u ← bin .shr a (.imm 1)
+    let v ← bin .shr b (.imm 1)
+    checked64 x (← bin .sub u v)
+  | .mul, [a, b] => do
+    let u ← bin .shr a (.imm 1)
+    let v ← bin .shr b (.imm 1)
+    checked64 x (← bin .mul u v)
+  | .shiftLeft, [a, b] => do
+    let s ← wordCount .w64 b
+    let u ← bin .shr a (.imm 1)
+    checked64 x (← bin .shl u s)
+  | .complement, [a] => do
+    let u ← bin .shr a (.imm 1)
+    checked64 x (← bin .xor u (.imm 0xFFFFFFFFFFFFFFFF))
+  | .neg, [a] => do
+    let u ← bin .shr a (.imm 1)
+    checked64 x (← bin .sub (.imm 0) u)
+  | .ofNat, [a] => assign x (.arg a)
+  | op, _ => throw (.prim f (.word .w64 op))
+
+/-- The same operations below width 64, on tagged operands: a word congruent to the tagged
+result, then the tagged mask. -/
+def wordNarrow (f : FunId) (x : VReg) (w : Src.Width) (op : Src.WordOp) (as : List Lir.Arg) : M Unit :=
+  match op, as with
+  | .add, [a, b] => do
+    let s ← bin .add a b
+    let t ← bin .sub s (.imm 1)
+    assign x (.bin .and .w64 t (.imm (tagMask w)))
+  | .sub, [a, b] => do
+    let d ← bin .sub a b
+    let t ← bin .or d (.imm 1)
+    assign x (.bin .and .w64 t (.imm (tagMask w)))
+  | .mul, [a, b] => do
+    let u ← bin .shr a (.imm 1)
+    let c ← bin .sub b (.imm 1)
+    let m ← bin .mul u c
+    let t ← bin .or m (.imm 1)
+    assign x (.bin .and .w64 t (.imm (tagMask w)))
+  | .shiftLeft, [a, b] => do
+    let s ← wordCount w b
+    let c ← bin .sub a (.imm 1)
+    let m ← bin .shl c s
+    let t ← bin .or m (.imm 1)
+    assign x (.bin .and .w64 t (.imm (tagMask w)))
+  | .complement, [a] => do
+    let t ← bin .xor a (.imm (tagMask w - 1))
+    assign x (.bin .and .w64 t (.imm (tagMask w)))
+  | .neg, [a] => do
+    let t ← bin .sub (.imm 2) a
+    assign x (.bin .and .w64 t (.imm (tagMask w)))
+  | .ofNat, [a] => assign x (.bin .and .w64 a (.imm (tagMask w)))
+  | op, _ => throw (.prim f (.word w op))
+
+/-- A fixed-width word operation on tagged operands (stage W1); the decisions have no
+expansion (they are not primitives). -/
+def word (f : FunId) (x : VReg) (w : Src.Width) (op : Src.WordOp) (as : List Lir.Arg) : M Unit :=
+  match op, as with
+  | .div, [a, b] => divMod x .udiv (fun _ => .imm 1) a b
+  | .mod, [a, b] => divMod x .urem id a b
+  | .land, [a, b] => assign x (.bin .and .w64 a b)
+  | .lor, [a, b] => assign x (.bin .or .w64 a b)
+  | .xor, [a, b] => do
+    let d ← bin .xor a b
+    assign x (.bin .or .w64 d (.imm 1))
+  | .shiftRight, [a, b] => do
+    let s ← wordCount w b
+    let r ← bin .shr a s
+    assign x (.bin .or .w64 r (.imm 1))
+  | .toNat, [a] => assign x (.arg a)
+  | .convert w', [a] =>
+    if w.bits ≤ w'.bits then assign x (.arg a) else assign x (.bin .and .w64 a (.imm (tagMask w')))
+  | op, as => if w = .w64 then word64 f x op as else wordNarrow f x w op as
+
 def primitive (f : FunId) (T : Tables) (x : VReg) (op : Lam.Prim) (as : List Lir.Arg) : M Unit := do
   let bool := fun (c : Lir.Cond) (a b : Lir.Arg) => do
     let some (t, e) := T.bools | throw (.noBool f)
@@ -405,6 +515,7 @@ def primitive (f : FunId) (T : Tables) (x : VReg) (op : Lam.Prim) (as : List Lir
     assign x (.bin .or .w64 s (.imm 1))
   | .natPow, [a, b] => emit (.call [x] T.natPow [a, b])
   | .natGcd, [a, b] => emit (.call [x] T.natGcd [a, b])
+  | .word w o, as => word f x w o as
   | op, _ => throw (.prim f op)
 
 /-- The comparison a fused `Bool` switch branches on. -/

@@ -2,6 +2,7 @@ import IxCC.Fir.Proof.Mono
 import IxCC.Fir.Lower
 import IxCC.Anf.Proof.Mono
 import IxCC.Sem.Forall2
+import IxCC.Lam.WordSem
 
 /-! # Anf and Fir values related
 
@@ -144,8 +145,10 @@ theorem natArgs_rel {vs : List Anf.Val} {ws : List Val} (h : VRs A vs ws) :
 /-- Only the comparison primitives return a Boolean. -/
 theorem sem_bool {p : Lam.Prim} {ns : List Nat} {b : Bool} (h : p.sem ns = some (.bool b)) :
     Lower.boolPrim p = true := by
-  cases p <;> (try rfl) <;> (unfold Lam.Prim.sem at h; split at h <;>
-    simp_all [Src.PrimOp.eval2, Lam.Prim.sem.srcOp])
+  cases p
+  case word w o => exact absurd h (Lam.wordSem_ne_bool w o ns b)
+  all_goals ((try rfl) <;> (unfold Lam.Prim.sem at h; split at h <;>
+    simp_all [Src.PrimOp.eval2, Lam.Prim.sem.srcOp]))
 
 /-- A primitive on related arguments: a related value, or Anf is stuck. -/
 theorem primResult_rel {F : Program} (hk : F.known = A.known) (hc : F.ctors = A.ctors)

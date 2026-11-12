@@ -111,6 +111,25 @@ theorem Mono.divMod' (x : Nat) (o : Lir.BinOp) (zero : Lir.Arg → Lir.Arg) (a b
     | unfold temp
     | unfold bin)
 
+/-- A fixed-width word primitive's expansion (stage W1). -/
+theorem Mono.word' (f : Fir.FunId) (x : Nat) (w : Src.Width) (op : Src.WordOp) (las : List Lir.Arg) :
+    Mono (Lower.word f x w op las) := by
+  unfold Lower.word word64 wordNarrow wordCount checked64
+  repeat (first
+    | with_reducible exact Mono.divMod' _ _ _ _ _
+    | with_reducible exact Mono.pure' _
+    | with_reducible exact Mono.emit' _
+    | with_reducible exact Mono.freshReg'
+    | with_reducible exact Mono.check' _ _
+    | with_reducible exact Mono.throw' _
+    | with_reducible exact Mono.untag' _
+    | with_reducible apply Mono.bind'
+    | with_reducible intro _
+    | split
+    | unfold assign
+    | unfold temp
+    | unfold bin)
+
 theorem primitive_mono (f : Fir.FunId) (T : Tables) (x : Nat) (op : Lam.Prim) (las : List Lir.Arg) :
     Mono (primitive f T x op las) := by
   unfold primitive
@@ -118,6 +137,7 @@ theorem primitive_mono (f : Fir.FunId) (T : Tables) (x : Nat) (op : Lam.Prim) (l
   split
   all_goals first
     | with_reducible exact Mono.divMod' _ _ _ _ _
+    | with_reducible exact Mono.word' _ _ _ _ _
     | (repeat (first
         | with_reducible exact Mono.pure' _
         | with_reducible exact Mono.emit' _

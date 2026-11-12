@@ -473,9 +473,51 @@ exists, behind `Table.Config.words`, which is off, so no compile changes:
 - the decisions (`decEq`, `decLt`, `decLe`) stay reference bodies, not primitives: their bodies
   reduce to `Nat`'s decisions and never build `2^64`. A primitive decision would need, in the
   grounding, that every element of `Decidable p` in the model is one of its two constructors'
-  images, which no law states.
+  images, which no law states;
+- below Lam ([`Lam.Prim.word`](../IxCC/Lam/Syntax.lean)): the word primitive `word w op`, whose
+  meaning `Lam.wordSem` is `eval`'s number on words below the width's size (`ofNat`'s argument
+  any `Nat`) and is stuck elsewhere, as F6w is, so every pass below Lam owes agreement only in
+  range. Anf, Fir, Own and Cfg carry it as they carry the `Nat` primitives (generic in
+  `Prim.sem`; constant folding included). Rt lowers it on tagged words
+  ([`Rt.Lower.word`](../IxCC/Rt/Lower.lean)): `div`, `mod`, `land`, `lor`, `xor` are the `Nat`
+  codes; below width 64 every other operation computes a word congruent to the tagged result
+  modulo `2^(w+1)` and masks it, and never fails; at width 64 it computes the untagged wrapped
+  result and fails with `natOverflow` unless it is below `2^63`. The expansion is proved once,
+  against a heap-free core (`Rt.Proof.PrimCore`, `word_core`; the arithmetic in
+  `Rt.Proof.WordArith`), and each route's simulation follows from the core by one lemma (the
+  immortal route's `Rt.Proof.prim_word`, the plain-RC bridge's `Bridge.Scalar.prim_word`); the
+  code uses only Lir forms selection already has, so selection, allocation and the validators
+  need no new case. `tests-rt` runs every operation at every width on its boundary numbers
+  against `eval` at Lir and at every backend level, with planted mutations of the code as
+  controls.
 
-Not yet: the native lowering (erasure declines a word entry, `erase-word`), and the grounding.
+**The pattern for new primitives.** A primitive's expansion is a scalar computation: it reads its
+operands' words, binds its result, and touches no memory and no heap. So it is proved once, against
+the heap-free core `Rt.Proof.PrimCore` (from registers holding the operands' tagged words, Lir runs
+from the expansion's start to its end with the memory unchanged, binds the result's word and keeps
+every other register below the supply, or fails with a resource), and each route's simulation
+relation follows from the core by one lemma (`Rt.Proof.rhsSim_of_core` for the immortal route's
+`RhsSim`, which assumes the immortal heap invariant; the plain-RC bridge's `rhsSim_of_core` for its
+own, which has none and keeps the memory). A direct transfer between the two relations does not
+exist as they are stated (each assumes what the other cannot supply), which is why the core is
+stated without either. The arrays', strings' and later primitives' expansions follow this pattern;
+the 16 `Nat` primitives still have one proof per route, and their restatement over the core is a
+clean-up item on the [roadmap](roadmap.md) (Phase 3, "For the x86 back end").
+
+Two limits stay after W1, by design, and are open items: (a) a `UInt64` is native only below
+`2^63`: a word is a tagged immediate, so a width-64 result at or above `2^63` fails with
+`natOverflow`, as a `Nat` does; stage W2 is planned to lift it by keeping words unboxed (raw
+64-bit words in registers and frames, a cell of one scalar word where a word meets a uniform
+position), so that a width-64 result needs no tag bit; (b) the decisions stay reference bodies, so
+`x < y` at `x = 2^63 − 1` fails with `natOverflow` (`Nat.lt` is `x + 1 ≤ y`, and the `Nat`
+`x + 1` reaches `2^63`). The fix for (b) is primitive decisions: per decision and width a table
+entry justified, like the operations, by a stored theorem, here one fixing what the decision
+denotes as a `Decidable` value (for example `∀ x y (h : x < y), decLt (ofNat x) (ofNat y) =
+isTrue h` and its `isFalse` twin, with `x < y`'s inhabitation from a `Bool` equation), the
+grounding case that uses them, a `Bool`-valued Lam word primitive and its lowering (a comparison
+of tagged words, as `natBlt`'s); it is a design of its own.
+
+Not yet: erasure's case (erasure declines a word entry, `erase-word`), and the grounding.
 The grounding check refuses a word entry (`Faith.noWord`, conjunct `noWord`, temporary): the word
 case of the fundamental lemma is not proved. Besides what the stored equations say (`mem` and
 `eq_equality` make each hold in every model; `nat_accel` evaluates its right side), that case needs

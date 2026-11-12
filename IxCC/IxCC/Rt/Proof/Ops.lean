@@ -1,6 +1,7 @@
 import IxCC.Rt.Proof.Env
 import IxCC.Rt.Proof.Alloc
 import IxCC.Rt.Proof.Pow
+import IxCC.Lam.WordSem
 
 /-!
 # One lemma per instruction expansion
@@ -214,27 +215,34 @@ theorem prim_natSub {T : Tables} {f : Fir.FunId} {lp : Lir.Program} {ctx : Word}
       show natWord (p - q) = some _
       rw [natSub_word hwa hwb])
 
-/-- The `Nat`-valued binary primitives' meanings. -/
-theorem sem_nat2 (op : Lam.Prim) (hop : op ≠ .natBeq ∧ op ≠ .natBle ∧ op ≠ .natBlt ∧ op ≠ .natPred) (p q : Nat) :
+/-- The `Nat`-valued binary primitives' meanings (a word primitive's is `Lam.wordSem`'s, partial,
+so `op.isWord = false`; every caller names a constructor and discharges it `by decide`). -/
+theorem sem_nat2 (op : Lam.Prim)
+    (hop : op ≠ .natBeq ∧ op ≠ .natBle ∧ op ≠ .natBlt ∧ op ≠ .natPred ∧ op.isWord = false) (p q : Nat) :
     op.sem [p, q] = some (.nat (match op with
       | .natAdd => p + q | .natSub => p - q | .natMul => p * q
       | .natDiv => if q = 0 then 0 else p / q | .natMod => if q = 0 then p else p % q
       | .natPow => p ^ q | .natGcd => Nat.gcd p q | .natLand => p &&& q | .natLor => p ||| q
       | .natXor => p ^^^ q | .natShl => p * 2 ^ q | .natShr => p / 2 ^ q
       | _ => 0)) := by
-  obtain ⟨h1, h2, h3, h4⟩ := hop
-  cases op <;> first | exact absurd rfl h1 | exact absurd rfl h2 | exact absurd rfl h3 | exact absurd rfl h4 |
+  obtain ⟨h1, h2, h3, h4, h5⟩ := hop
+  cases op
+  case word => simp [Lam.Prim.isWord] at h5
+  all_goals first | exact absurd rfl h1 | exact absurd rfl h2 | exact absurd rfl h3 | exact absurd rfl h4 |
     simp [Lam.Prim.sem, Lam.Prim.sem.srcOp, Src.PrimOp.eval2, shiftRight_eval]
 
 theorem sem_not_bool (op : Lam.Prim) (hop : op ≠ .natBeq ∧ op ≠ .natBle ∧ op ≠ .natBlt) (ns : List Nat)
     (b : Bool) : op.sem ns ≠ some (.bool b) := by
   obtain ⟨h1, h2, h3⟩ := hop
   intro h
-  match ns with
-  | [] => cases op <;> simp [Lam.Prim.sem] at h
-  | [_] => cases op <;> simp [Lam.Prim.sem, Src.PrimOp.eval2] at h
-  | [_, _] => cases op <;> simp_all [Lam.Prim.sem, Lam.Prim.sem.srcOp, Src.PrimOp.eval2]
-  | _ :: _ :: _ :: _ => cases op <;> simp [Lam.Prim.sem] at h
+  cases op
+  case word w o => exact Lam.wordSem_ne_bool w o ns b h
+  all_goals
+    match ns with
+    | [] => simp [Lam.Prim.sem] at h
+    | [_] => simp [Lam.Prim.sem, Src.PrimOp.eval2] at h
+    | [_, _] => simp_all [Lam.Prim.sem, Lam.Prim.sem.srcOp, Src.PrimOp.eval2]
+    | _ :: _ :: _ :: _ => simp [Lam.Prim.sem] at h
 
 /-- The common shape of a binary primitive's simulation: given the
 expansion's statements and final register file, `RhsSim` follows from the

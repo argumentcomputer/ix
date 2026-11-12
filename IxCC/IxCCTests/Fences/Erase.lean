@@ -1,3 +1,4 @@
+import IxCC.Lam.WordSem
 import IxCC.Src.Proof.Mono
 import IxCC.Src.Word
 import IxCC.Lam.Proof.Mono
@@ -202,3 +203,18 @@ checked against it. -/
 
 /-- info: 'IxCC.Lam.Erase.Proof.erase_modesOkSpec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Lam.Erase.Proof.erase_modesOkSpec
+
+/-! Stage W1: the word primitives' meaning on literals (`IxCC.Lam.WordSem`). -/
+
+/-- info: 'IxCC.Lam.Prim.sem_word' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Lam.Prim.sem_word
+
+/-- info: 'IxCC.Lam.wordSem_ne_bool' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Lam.wordSem_ne_bool
+
+/-- info: 'IxCC.Lam.wordSem_two' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Lam.wordSem_two
+
+/-- info: 'IxCC.Lam.wordSem_one' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Lam.wordSem_one
+
