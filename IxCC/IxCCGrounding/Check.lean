@@ -1,5 +1,6 @@
 import IxCCGrounding.Ok
 import IxCCGrounding.CaseCheck
+import IxCCGrounding.Facts
 
 /-!
 # The check (`IxCCGrounding.Check`)
@@ -159,17 +160,6 @@ theorem termCorr_of_check {κ : CId → KKey} {lps : List Nat} :
 
 /-! ## The shape of an `eqn` entry -/
 
-/-- A `∀`-telescope's binders, all of them, and what remains. -/
-def splitAll : KExpr → List (KExpr × BinderMeta) × KExpr
-  | .forallE d b m => ((d, m) :: (splitAll b).1, (splitAll b).2)
-  | e => ([], e)
-
-/-- Exactly `n` leading binders of a `∀`-telescope, and what remains. -/
-def splitPi : Nat → KExpr → Option (List (KExpr × BinderMeta) × KExpr)
-  | 0, e => some ([], e)
-  | n + 1, .forallE d b m => (splitPi n b).map fun r => ((d, m) :: r.1, r.2)
-  | _ + 1, _ => none
-
 /-- Exactly `n` leading binders of a `λ`-telescope, and its body. -/
 def lamSplit : Nat → KExpr → Option (List (KExpr × BinderMeta) × KExpr)
   | 0, e => some ([], e)
@@ -220,18 +210,6 @@ theorem piSplit_length (n : Nat) : ∀ (T : KExpr) (bs : List (KExpr × BinderMe
         obtain ⟨rfl, rfl⟩ := h
         simp [ih b r.1 r.2 (by rw [h'])]
     | _ => simp [piSplit] at h
-
-/-- An `eqn` entry's data, read off the stored theorem and function (the check then verifies
-the shape against it, so this reading needs no proof). -/
-def eqnData? (env : KEnv) (kc kt : KKey) : Option EqnData :=
-  match env.find? kt, env.find? kc with
-  | some (.thmInfo cvT _), some ciF =>
-    match splitAll cvT.type with
-    | (Ds, .app (.app (.app (.const _ [u]) T) _) rhs) =>
-      (splitPi Ds.length ciF.toConstantVal.type).map fun r =>
-        { Ds, ms := r.1.map (·.2), u, T, rhs, R := r.2 }
-    | _ => none
-  | _, _ => none
 
 def eqBasisB (env : KEnv) : Bool :=
   match env.find? eqName with
