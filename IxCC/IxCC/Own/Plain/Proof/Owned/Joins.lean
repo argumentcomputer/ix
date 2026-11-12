@@ -132,8 +132,8 @@ theorem OwnedEntry.after_stack {Δ Δd : JCtx} {Γd : Ctx} {lexd captured : List
     exact tail'.rebind ef.params vs ws hf
   | true =>
     have hro : eo.isRec = true := by rw [entry.isRec]; exact hr
-    simp only [Fir.JEntry.after, JEntry.after, hr, hro, ↓reduceIte]
-    simp only [hr, ↓reduceIte] at tail'
+    simp only [Fir.JEntry.after, JEntry.after, if_pos hr, if_pos hro]
+    simp only [if_pos hr] at tail'
     have entry' : OwnedEntry (Δd.insert ef.id captured) Δd Γd lexd captured restf
         { ef with charged := true } { eo with charged := true } :=
       ⟨entry.id, rfl, entry.params, entry.isRec, entry.erases, entry.typed, entry.imm,
