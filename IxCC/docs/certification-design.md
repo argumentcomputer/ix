@@ -709,9 +709,8 @@ spine's arguments and a telescope's (the arguments fitted against a
 λ-telescope) are each checked at the same fuel. So the fuel does not bound the
 total work, which grows with the width of what is checked and with the paths a
 failing conversion tries. It compares levels by syntactic equality, or, for
-levels of
-at most 32 nodes, by syntactic equality after `Level.simplify` and the collapse
-of every `imax a a` to `a` (equal at every assignment), or by their max-plus
+levels of at most 32 nodes, by syntactic equality after `Level.simplify` and the
+collapse of every `imax a a` to `a` (equal at every assignment), or by their max-plus
 forms (a constant and parameter offsets, each at most the other), never by the
 kernel's `Level.isEquiv`, which is exponential on a known family; the max-plus
 comparison is there because syntactic equality after `Level.simplify` alone
