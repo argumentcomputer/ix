@@ -319,11 +319,13 @@ def boolRec? (env : KEnv) : Option KKey :=
       else none
     | _ => none
 
-/-- A recursor's first two rules' right-hand sides swapped. -/
+/-- A recursor's second rule given its first rule's right-hand side (for `Bool.rec`: `true` reduces
+as `false` does). Swapping the two right-hand sides is no control here: the sites ι clears read
+`Bool.noConfusionType` at two different constructors, which is the same under the swap. -/
 def mutateRecRules (i : Input) (k : KKey) : Input :=
   { i with env := mapConst i.env k fun
       | .recInfo cv mI rP (r0 :: r1 :: rest) =>
-        .recInfo cv mI rP ({ r0 with rhs := r1.rhs } :: { r1 with rhs := r0.rhs } :: rest)
+        .recInfo cv mI rP (r0 :: { r1 with rhs := r0.rhs } :: rest)
       | ci => ci }
 
 /-- `String.ofList`'s stored type with its codomain made `Nat`. -/
@@ -531,9 +533,9 @@ def run : IO Bool := do
       s!"tags16: oracle counts {(tt.sites, tt.instances, tt.datumHolds)}, expected (200, 214, 76)"
     let some br := boolRec? ti.env | throw (IO.userError "tags16: no Bool.rec in the reading")
     let tm := mutateRecRules ti br
-    expect a (!directOk tm) "tags16: Bool.rec's rules swapped, and sitesDirect is still true"
+    expect a (!directOk tm) "tags16: Bool.rec's `true` rule given the `false` rule's right-hand side, and sitesDirect is still true"
     IO.println s!"tags16: sitesDirect true, the kernel agrees at all {tt.acceptedInstances} accepted \
-      site-profile instances; Bool.rec's rules swapped: sitesDirect false ({(refusedSites tm).length} \
+      site-profile instances; Bool.rec's `true` rule given `false`'s right-hand side: sitesDirect false ({(refusedSites tm).length} \
       sites refused)"
     -- string literals, on `panic`: the landed route refused 34 of its 762 sites (25 at string
     -- literals), the widened one 1
