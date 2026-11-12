@@ -390,7 +390,7 @@ def ruleFixed (rl : Ixon.RecursorRule) : Nat := tag0Size rl.fields.toNat
 
 def ctorFixed (c : Ixon.Constructor) : Nat :=
   1 + tag0Size c.lvls.toNat + tag0Size c.cidx.toNat + tag0Size c.params.toNat +
-    tag0Size c.fields.toNat
+    tag0Size c.fields.toNat + c.fieldModes.toArray.size
 
 def recFixed (r : Ixon.Recursor) : Nat :=
   1 + tag0Size r.lvls.toNat + tag0Size r.params.toNat + tag0Size r.indices.toNat +
@@ -428,7 +428,7 @@ theorem ctors_bytes (f : Ixon.Expr → Ixon.Expr) (ctors : Array Ixon.Constructo
       (ctors.toList.map ctorFixed).sum + ((ctors.toList.map (·.typ)).map fun r => S (f r)).sum := by
   rw [listBytes_size, Array.toList_map, List.map_map, List.map_map]
   simp only [Function.comp_def, constructorBytes, ByteArray.size_append, tag0Bytes_size,
-    List.size_toByteArray, List.length_singleton]
+    List.size_toByteArray, List.length_singleton, fieldModeListBytes_size, Array.length_toList]
   rw [← sum_map_add]
   congr 1
 

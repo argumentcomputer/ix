@@ -542,6 +542,43 @@ end RevealConstantInfo
 
 namespace Claim
 
+/-! ## Tag registry
+
+This table is the registry of record (`crates/ixon/src/proof.rs` mirrors it). It
+lists every number in use under the claim flag `0xE`, the proof flag `0xF` and
+the validator byte of a claim's scope, in this tree and in the IxCC and frontend
+trees, with this tree's allocation. Under `0xE` and `0xF` a value below 8 is the
+one byte `E0`–`E7` (`F0`–`F7`); from 8 on the TagN header is two bytes (`E8 00`
+is 8).
+
+| Space | Value (bytes) | Allocation |
+|---|---|---|
+| 0xE | 0 (`E0`) | reserved |
+| 0xE | 1 (`E1`) | commitment (`Ixon.Comm`) |
+| 0xE | 2–7 (`E2`–`E7`) | assumption tree, eval, check, checkEnv, reveal, contains |
+| 0xE | 4, 5 (`E4`, `E5`) also | `.ixe` header: envelope version 4 / 5 (the same bytes as check / checkEnv, told apart by position; a version reset of the header moves them) |
+| 0xE | 8 (`E8 00`) | catalog claim |
+| 0xE | 9 (`E8 01`) | **retired** (resource claim): refused |
+| 0xE | 10 (`E8 02`) | binding claim |
+| 0xE | 11 (`E8 03`) | role-table section preimage |
+| 0xE | 12 (`E8 04`) | literal-class preimage (`Ix.ClaimContext`) |
+| 0xE | 13 (`E8 05`) | reserved: IxCC compile claim (not implemented here) |
+| 0xE | 14 (`E8 06`) | reserved: frontend `.ixsp` header |
+| 0xE | 15–18 (`E8 07`–`E8 0A`) | reserved: frontend `.ixc`, `.ixes`, `.ixprof` and host-admission tags (this tree's files of those kinds use ASCII magic) |
+| 0xE | 19 (`E8 0B`) | reserved: frontend elaboration claim |
+| 0xE | 20 (`E8 0C`) | reserved: frontend `.ixs` header |
+| 0xF | 0–5, 7 (`F0`–`F5`, `F7`) | eval, check, checkEnv, reveal, contains, catalog, binding proofs |
+| 0xF | 6 (`F6`) | **retired** (resource proof): refused |
+| 0xF | 8 (`F8 00`) | reserved: IxCC compile proof |
+| validator | 0, 3, 4, 5 | structural-v1, erased-lean-v2, erased-lean-v2-assumed, erased-lean-v2-class |
+| validator | 1 | retired (erased-lean-v1): refused |
+| validator | 2 | **retired** (resource-v1): refused |
+| validator | 6 | reserved: IxCC compile-v1 (retired there): refused |
+| validator | 7 | reserved: IxCC compile-v2: refused |
+| validator | 8 | reserved: erased-lean-v2-modes (claims about modes): refused until a validator for it exists |
+
+`E9` is not a tag value: under TagN `E9` opens a two-byte header. -/
+
 -- TagN (`f = 4`) value dispatch (mirrors crates/ixon/src/proof.rs).
 -- Flag 0xE holds Comm, AssumptionTree, and claims. Variants 0–7 are in
 -- rung 1, the single bytes 0xE0–0xE7; from 8 on the header is two bytes,

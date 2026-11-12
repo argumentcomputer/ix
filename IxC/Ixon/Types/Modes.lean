@@ -269,6 +269,15 @@ variable {n : Nat}
 
 instance : Inhabited (FieldModes n) := ⟨.inherited⟩
 
+instance : DecidableEq (FieldModes n) := fun a b =>
+  match a, b with
+  | .inherited, .inherited => isTrue rfl
+  | .inherited, .listed .. => isFalse (fun h => FieldModes.noConfusion h)
+  | .listed .., .inherited => isFalse (fun h => FieldModes.noConfusion h)
+  | .listed v _, .listed w _ =>
+    if h : v = w then isTrue (by subst h; rfl)
+    else isFalse (fun e => h (by cases e; rfl))
+
 /-- The listed modes; none for `inherited`. -/
 def toArray : FieldModes n → Array FieldMode
   | .inherited => #[]
@@ -303,11 +312,7 @@ theorem listed?_toArray (modes : FieldModes n) (h : modes.isInherited = false) :
   | listed v hs =>
     show listed? v.toArray = some (.listed v hs)
     unfold listed?
-    split
-    · split
-      · rfl
-      · rename_i hs'; exact absurd hs hs'
-    · rename_i h; exact absurd v.size_toArray h
+    rw [dite_eq_left v.size_toArray, dite_eq_left hs]
 
 instance : BEq (FieldModes n) where
   beq a b := a.toArray == b.toArray

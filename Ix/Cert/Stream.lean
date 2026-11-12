@@ -151,7 +151,7 @@ canonical and complete: the per-record codec over the compiled store. -/
 def StoredCanonical (ixe : Ixon.Env) (order : List Address) : Prop :=
   ∀ a ∈ order, ∀ lc, ixe.consts.get? a = some lc →
     ∃ c, lc.get? = some c ∧ c.wireWF ∧ Ixon.serConstant c = lc.rawBytes ∧ c.bindersCanonical = true ∧
-      c.bindersComplete = true
+      c.bindersComplete = true ∧ c.modesCanonical = true
 
 /-- The decoded records at `order`. -/
 def decodedOf (ixe : Ixon.Env) (order : List Address) : List (Address × Ixon.Constant) :=
@@ -274,10 +274,10 @@ theorem closure_reads (ixe : Ixon.Env) (limits : Limits) :
       have : recordAt ixe a = none := by unfold recordAt; rw [hl]; rfl
       simpa [this] using tail
     | some lc =>
-      obtain ⟨c, hc, wire, encoded, binders, -⟩ := canonical a (List.mem_cons_self ..) lc hl
+      obtain ⟨c, hc, wire, encoded, binders, -, modes⟩ := canonical a (List.mem_cons_self ..) lc hl
       have hr : recordAt ixe a = some c := by unfold recordAt; rw [hl]; exact hc
       simp only [Option.map_some, Option.toList_some, hr, List.singleton_append]
-      refine .cons ⟨wire, encoded, ?_, ?_, binders⟩ tail
+      refine .cons ⟨wire, encoded, ?_, ?_, binders, modes⟩ tail
       · exact bytesFit (a, lc.rawBytes) (by rw [recordsOf_cons, hl]; simp)
       · exact nodesFit (a, c) (by rw [decodedOf_cons, hr]; simp)
 

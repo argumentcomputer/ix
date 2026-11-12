@@ -178,7 +178,7 @@ theorem conv_read {ρ : Ix.LeanIngress.FiberMap} {f : Ix.Kernel.Mode.Id .source 
         rw [hd] at h
         cases h
         simp [convExpr, iha pa ha, ihd pd hd, bind, Except.bind, pure, Except.pure]
-  | lam ct t bd iht ihb =>
+  | lam t bd iht ihb =>
     intro p h
     simp only [Bundle.conv, bind, Except.bind, pure, Except.pure] at h
     cases ht : b.conv c univs tblB t with
@@ -191,7 +191,7 @@ theorem conv_read {ρ : Ix.LeanIngress.FiberMap} {f : Ix.Kernel.Mode.Id .source 
         rw [hb] at h
         cases h
         simp [convExpr, iht pt ht, ihb pb hb, bind, Except.bind, pure, Except.pure]
-  | all ct r t bd iht ihb =>
+  | all t bd iht ihb =>
     intro p h
     simp only [Bundle.conv, bind, Except.bind, pure, Except.pure] at h
     cases ht : b.conv c univs tblB t with
@@ -204,7 +204,7 @@ theorem conv_read {ρ : Ix.LeanIngress.FiberMap} {f : Ix.Kernel.Mode.Id .source 
         rw [hb] at h
         cases h
         simp [convExpr, iht pt ht, ihb pb hb, bind, Except.bind, pure, Except.pure]
-  | letE ct t v bd iht ihv ihb =>
+  | letE nd m t v bd iht ihv ihb =>
     intro p h
     simp only [Bundle.conv, bind, Except.bind, pure, Except.pure] at h
     cases ht : b.conv c univs tblB t with

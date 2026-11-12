@@ -172,14 +172,14 @@ def wrapRoots (roots : Array Ixon.Expr) (sel : Nat) : Constant :=
   let info : ConstantInfo := match roots.size with
     | 0 => .iPrj ⟨0, testRefs[0]!⟩
     | 1 => if sel % 2 == 0 then .axio ⟨false, 0, roots[0]!⟩ else .quot ⟨.type, 0, roots[0]!⟩
-    | 2 => .defn ⟨.defn, .safe, 0, roots[0]!, roots[1]!⟩
+    | 2 => .defn ⟨.defn, .safe, {}, 0, roots[0]!, roots[1]!⟩
     | _ =>
       if sel % 2 == 0 then
         .recr ⟨false, false, 0, 0, 0, 0, 0, roots[0]!,
           (roots.extract 1 roots.size).map fun rhs => ⟨0, rhs⟩⟩
       else
-        let ctors := (roots.extract 3 roots.size).map fun t => ⟨false, 0, 0, 0, 0, t⟩
-        .muts #[.defn ⟨.defn, .safe, 0, roots[0]!, roots[1]!⟩,
+        let ctors := (roots.extract 3 roots.size).map fun t => ⟨false, 0, 0, 0, 0, .inherited, t⟩
+        .muts #[.defn ⟨.defn, .safe, {}, 0, roots[0]!, roots[1]!⟩,
           .indc ⟨false, 0, 0, 0, roots[2]!, ctors⟩]
   { info, sharing := #[], refs := testRefs, univs := testUnivs }
 
@@ -347,13 +347,13 @@ def decompositionTests (_ : Unit) : TestSeq :=
   let mkRoots (k : Nat) (n : Nat) : Array Ixon.Expr :=
     (Array.range n).map fun i => .app (.share (k - 1 - i % (max k 1)).toUInt64) (.var i.toUInt64)
   let infos (rs : Array Ixon.Expr) : List ConstantInfo :=
-    [ .defn ⟨.defn, .safe, 0, rs[0]!, rs[1]!⟩, .axio ⟨false, 1, rs[0]!⟩,
+    [ .defn ⟨.defn, .safe, {}, 0, rs[0]!, rs[1]!⟩, .axio ⟨false, 1, rs[0]!⟩,
       .quot ⟨.lift, 2, rs[0]!⟩,
       .recr ⟨true, false, 1, 2, 3, 4, 5, rs[0]!, #[⟨1, rs[1]!⟩, ⟨300, rs[2]!⟩]⟩,
       .cPrj ⟨1, 2, testRefs[0]!⟩, .rPrj ⟨3, testRefs[1]!⟩, .iPrj ⟨200, testRefs[0]!⟩,
       .dPrj ⟨0, testRefs[1]!⟩,
-      .muts #[.defn ⟨.thm, .part, 0, rs[0]!, rs[1]!⟩,
-              .indc ⟨true, 1, 1, 0, rs[2]!, #[⟨false, 1, 0, 1, 2, rs[3]!⟩, ⟨false, 1, 1, 1, 0, rs[0]!⟩]⟩,
+      .muts #[.defn ⟨.thm, .part, {}, 0, rs[0]!, rs[1]!⟩,
+              .indc ⟨true, 1, 1, 0, rs[2]!, #[⟨false, 1, 0, 1, 2, .inherited, rs[3]!⟩, ⟨false, 1, 1, 1, 0, .inherited, rs[0]!⟩]⟩,
               .recr ⟨false, true, 0, 0, 0, 0, 0, rs[1]!, #[⟨2, rs[2]!⟩]⟩] ]
   let cases := [0, 1, 8, 9, 127, 128, 255, 256, 257, 1032, 1033].flatMap fun k =>
     (infos (mkRoots k 4)).map fun info => tableConstant info k
@@ -485,7 +485,7 @@ def expansionTests (_ : Unit) : TestSeq :=
           if i > 0 && (← rand 2) == 0 then pure (.share (← rand i).toUInt64) else genLeaf
         table := table.push (← genNode #[← pick, ← pick, ← pick])
       let roots := #[Ixon.Expr.app (.share (k - 1).toUInt64) (.share 0), .share (← rand k).toUInt64]
-      let info : ConstantInfo := .defn ⟨.defn, .safe, 0, roots[0]!, roots[1]!⟩
+      let info : ConstantInfo := .defn ⟨.defn, .safe, {}, 0, roots[0]!, roots[1]!⟩
       let c : Constant := { info, sharing := table, refs := #[], univs := #[] }
       match expandConstantSharing c with
       | .ok c' => ok := ok && constantInfoRoots c'.info == roots.map (naiveExpand table)
@@ -531,13 +531,13 @@ def expansionTests (_ : Unit) : TestSeq :=
 
 def sampleInfos : List ConstantInfo :=
   let e (i : Nat) : Ixon.Expr := .var i.toUInt64
-  [ .defn ⟨.defn, .safe, 0, e 0, e 1⟩, .axio ⟨false, 0, e 2⟩, .quot ⟨.ind, 0, e 3⟩,
+  [ .defn ⟨.defn, .safe, {}, 0, e 0, e 1⟩, .axio ⟨false, 0, e 2⟩, .quot ⟨.ind, 0, e 3⟩,
     .recr ⟨false, false, 0, 0, 0, 0, 0, e 4, #[⟨0, e 5⟩, ⟨1, e 6⟩]⟩,
     .recr ⟨false, false, 0, 0, 0, 0, 0, e 4, #[]⟩,
     .cPrj ⟨0, 0, testRefs[0]!⟩, .rPrj ⟨0, testRefs[0]!⟩, .iPrj ⟨0, testRefs[0]!⟩,
     .dPrj ⟨0, testRefs[0]!⟩,
-    .muts #[.defn ⟨.defn, .safe, 0, e 7, e 8⟩,
-            .indc ⟨false, 0, 0, 0, e 9, #[⟨false, 0, 0, 0, 0, e 10⟩, ⟨false, 0, 1, 0, 0, e 11⟩]⟩,
+    .muts #[.defn ⟨.defn, .safe, {}, 0, e 7, e 8⟩,
+            .indc ⟨false, 0, 0, 0, e 9, #[⟨false, 0, 0, 0, 0, .inherited, e 10⟩, ⟨false, 0, 1, 0, 0, .inherited, e 11⟩]⟩,
             .indc ⟨false, 0, 0, 0, e 12, #[]⟩,
             .recr ⟨false, false, 0, 0, 0, 0, 0, e 13, #[⟨0, e 14⟩]⟩],
     .muts #[] ]

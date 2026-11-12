@@ -740,7 +740,7 @@ theorem lowerContract_read (contract : Ix.SemanticContract.Contract) (source : I
   split at success
   · rename_i admits
     cases success
-    exact ⟨target, by rw [withContract, if_pos admits], read⟩
+    exact ⟨target, by rw [withContract, ite_eq_left admits], read⟩
   · split at success <;> cases success
 
 theorem metadata_step_checked (compile : Ix.Expr → CompileM (Ixon.Expr × UInt64))

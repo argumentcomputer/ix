@@ -3704,7 +3704,8 @@ fun ixe order =>
         ixe.consts.get? a = some lc →
           ∃ c,
             lc.get? = some c ∧
-              c.wireWF ∧ Ixon.serConstant c = lc.rawBytes ∧ c.bindersCanonical = true ∧ c.bindersComplete = true -/
+              c.wireWF ∧ Ixon.serConstant c = lc.rawBytes ∧ c.bindersCanonical = true ∧ c.bindersComplete = true ∧
+                c.modesCanonical = true -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.Stream.StoredCanonical
 
