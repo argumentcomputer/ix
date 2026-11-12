@@ -779,7 +779,10 @@ def sourceRoots (env : Ix.Environment) (extra : Array (Ix.Name × Ix.ConstantInf
   let roots := (exprsOf items).toOption
   let roots ← roots
   guard (roots.size == (IxVM.PwHints.roots c).size && roots.size == items.size)
-  return roots.zip (items.map (·.1))
+  -- each root's levels in the compiler's canonical form, as the install's
+  -- declarations carry them (`Ix.LeanIngress.canonDecl`), over its constant's own
+  -- level parameters
+  return (roots.zip (items.map (·.1))).map fun (x, σ) => ((canonExprM σ.params x).run' {}, σ)
 
 /-! ## The annotator -/
 
