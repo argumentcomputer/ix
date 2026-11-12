@@ -151,15 +151,6 @@ certificate mutations (rejected, or code that agrees on every tested input). -/
 lean_exe «tests-pipeline» where
   root := `IxCCTests.Pipeline.Main
 
-/- Heap stage 2, step 0 (planning probe, behind no production path): the prototype ownership
-checker and liveness producer on corpus roots, benchmarks and hostile maps. -/
-lean_exe «probe-own-stage2» where
-  root := `IxCCTests.Own.Stage2.Main
-
-/- Heap stage 2, milestone 1 (probe): the library checker against the prototype. -/
-lean_exe «probe-own-diff» where
-  root := `IxCCTests.Own.Stage2.Diff
-
 /- Deterministic x86 step counts: each bench-k1 program's
 `cx_init` and root on the typed x86 machine and on `ByteEval`, compared
 exactly with the reviewed baseline `fixtures/ixon-v4/bench-k1/steps.json`
