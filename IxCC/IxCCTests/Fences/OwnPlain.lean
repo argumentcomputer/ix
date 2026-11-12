@@ -344,6 +344,9 @@ import IxCC.Own.Plain.Syntax
 /-- info: 'IxCC.Own.Plain.CaptureView.roots' depends on axioms: [propext] -/
 #guard_msgs in #print axioms IxCC.Own.Plain.CaptureView.roots
 
+/-- info: 'IxCC.Own.Plain.CaptureView.trans' does not depend on any axioms -/
+#guard_msgs in #print axioms IxCC.Own.Plain.CaptureView.trans
+
 /-- info: 'IxCC.Own.Plain.Code.size_pos' depends on axioms: [propext] -/
 #guard_msgs in #print axioms IxCC.Own.Plain.Code.size_pos
 

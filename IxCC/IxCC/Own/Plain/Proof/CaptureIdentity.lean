@@ -83,4 +83,10 @@ theorem CaptureView.rebind {saved current : Own.Env} {captured live : List Fir.V
   exact h.agree x hx
 
 
+theorem CaptureView.trans {ρ₀ ρ₁ ρ₂ : Own.Env} {xs ys zs : List Fir.Var}
+    (h₀ : CaptureView ρ₀ ρ₁ xs ys) (h₁ : CaptureView ρ₁ ρ₂ ys zs) : CaptureView ρ₀ ρ₂ xs zs :=
+  ⟨h₀.order.trans h₁.order, h₁.distinct,
+    fun x hx => (h₀.agree x hx).trans (h₁.agree x (h₀.order.subset hx))⟩
+
+
 end IxCC.Own.Plain
