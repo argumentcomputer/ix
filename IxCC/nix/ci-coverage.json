@@ -1807,6 +1807,7 @@
   "IxCCGrounding.Lits",
   "IxCCGrounding.Model",
   "IxCCGrounding.Ok",
+  "IxCCGrounding.RecFlat",
   "IxCCGrounding.Relation",
   "IxCCGrounding.Root",
   "IxCCGrounding.RootCheck",
@@ -1816,10 +1817,10 @@
   "IxCCGrounding.Syntax",
   "IxCCGrounding.Tele"],
  "grounding_axiom_sha256":
- "1491b49b801096fd4908aefe24a1fdb595c4a309ba7740b34ff297da879f69eb",
- "grounding_axiom_count": 125,
+ "b5456c729984fc0b2a87a4011cfb011f916eebe9a30d7e4157299c64cf5e3006",
+ "grounding_axiom_count": 139,
  "baseline":
- "heap stage 1, part 2: the pipeline on the general-layout runtime; the scanned-cell facts and CtorOk.scanned, 16 exact fences; the wide roots test; merged with a0a744f60",
+ "G3 part D first step: the class flat (field-less recursors without parameters) admitted; F2 there proved (IxCCGrounding.RecFlat); grounding fence 139; merged with 4b6dc13f1",
  "axiom_sha256":
  "3a0650413fe3002cb0f07f18a28874d85b2cde59a5f2a88965ba28eb7c63dc24",
  "axiom_count": 6507}

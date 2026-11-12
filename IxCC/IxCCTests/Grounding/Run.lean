@@ -390,7 +390,7 @@ def failingWith (adm : List RecClass) (i : Input) : List String :=
     if b then none else some n
 
 /-- Every recursor class. -/
-def allClasses : List RecClass := [.empty, .eqRec, .ordinary]
+def allClasses : List RecClass := [.empty, .eqRec, .flat, .ordinary]
 
 /-- The recursor of `Sl` the kernel stores under `Eq.rec`'s key. -/
 def eqRecOf? (i : Input) : Option CId :=
@@ -467,6 +467,88 @@ def mutateEqRecLevels (i : Input) : Input :=
     | some ci => ci.toConstantVal.levelParams
     | none => []
   { i with env, lpsOf }
+
+/-! ## G3, part D: flat recursors -/
+
+/-- The first flat recursor of `Sl`. -/
+def flatRecOf? (i : Input) : Option CId :=
+  i.Sl.find? fun c => recClassB i.src i.env i.κ c == some .flat
+
+/-- A kernel term with the domain of its `n`-th leading λ replaced by `new`. -/
+def setLamDomK : Nat → KExpr → KExpr → KExpr
+  | 0, .lam _ b m, new => .lam new b m
+  | n + 1, .lam d b m, new => .lam d (setLamDomK n b new) m
+  | _, e, _ => e
+
+/-- A Src term with the domain of its `n`-th leading λ replaced by `new`. -/
+def setLamDomS : Nat → Term → Term → Term
+  | 0, .lam b _ t, new => .lam b new t
+  | n + 1, .lam b d t, new => .lam b d (setLamDomS n t new)
+  | _, t, _ => t
+
+/-- A kernel term's body under `n` λs replaced by `new`. -/
+def setLamBodyK : Nat → KExpr → KExpr → KExpr
+  | 0, _, new => new
+  | k + 1, .lam d b m, new => .lam d (setLamBodyK k b new) m
+  | _ + 1, e, _ => e
+
+/-- A recursor's stored rules and its Src rules mapped alike (`f` on the kernel's list, `g` on the
+program's). -/
+def mapRecRules (i : Input) (r : CId)
+    (f : List (Ix.Kernel.RecRule .anon) → List (Ix.Kernel.RecRule .anon))
+    (g : List Src.Rule → List Src.Rule) : Input :=
+  let env := mapConst i.env (i.κ r) fun
+    | .recInfo cv mI rP rules => .recInfo cv mI rP (f rules)
+    | ci => ci
+  let src := match i.src.entry? r with
+    | some e =>
+      match e.decl with
+      | .recr sf kk lv np nmot nmin ni ind rules ty =>
+        let e' := { e with decl := .recr sf kk lv np nmot nmin ni ind (g rules) ty }
+        { i.src with consts := i.src.consts.insert r e' }
+      | _ => i.src
+    | none => i.src
+  { i with env, src }
+
+/-- The first rule's second λ-domain (the first minor premise's) made the variable `0`, in the
+kernel's reading and the program alike: the rule still corresponds (`RecStored`), its domains are
+no longer the type's (`RecTele`). -/
+def mutateRecTele (i : Input) (r : CId) : Input :=
+  mapRecRules i r
+    (fun | r0 :: rest => { r0 with rhs := setLamDomK 1 r0.rhs (.bvar 0) } :: rest | rs => rs)
+    (fun | r0 :: rest => { r0 with rhs := setLamDomS 1 r0.rhs (.var 0) } :: rest | rs => rs)
+
+/-- The first two rules swapped, in the kernel's reading and the program alike: they still
+correspond position by position (`RecStored`), but the rule at a constructor's index is no longer
+its own (`RecProg`). -/
+def mutateRecProg (i : Input) (r : CId) : Input :=
+  mapRecRules i r (fun | r0 :: r1 :: rest => r1 :: r0 :: rest | rs => rs)
+    (fun | r0 :: r1 :: rest => r1 :: r0 :: rest | rs => rs)
+
+/-- The major premise's domain (after `n` binders) at one more level. -/
+def majorMoreLevels : Nat → KExpr → KExpr
+  | 0, .forallE d b m =>
+    match d.getAppFn with
+    | .const k ls => .forallE (Ix.Kernel.Expr.mkAppN (.const k (ls ++ [.zero])) d.getAppArgs) b m
+    | _ => .forallE d b m
+  | n + 1, .forallE d b m => .forallE d (majorMoreLevels n b) m
+  | _, e => e
+
+/-- The recursor's stored type with its major premise's domain at one more level: no longer at as
+many levels as the rules' constructors have level parameters (`RecCtorsRaw`). -/
+def mutateRecMajor (i : Input) (r : CId) : Input :=
+  { i with env := mapConst i.env (i.κ r) fun
+      | .recInfo cv mI rP rules => .recInfo { cv with type := majorMoreLevels mI cv.type } mI rP rules
+      | ci => ci }
+
+/-- The first rule's body (under `n` λs) made the literal `0`, in the kernel's reading and the
+program alike: it still corresponds (`RecStored`), but the body is not a variable, so the
+recursor is not flat. -/
+def mutateRecBody (i : Input) (r : CId) (n : Nat) : Input :=
+  mapRecRules i r
+    (fun | r0 :: rest => { r0 with rhs := setLamBodyK n r0.rhs (.lit (.natVal 0)) } :: rest
+         | rs => rs)
+    (fun | r0 :: rest => { r0 with rhs := setLamBody n r0.rhs (.natLit 0) } :: rest | rs => rs)
 
 /-- `n` nested `Nat.succ`s around `Nat.zero`. -/
 def succs (n : Nat) : KExpr := (List.range n).foldl (fun e _ => .app succK e) zeroK
@@ -707,6 +789,45 @@ def run : IO Bool := do
       class empty admitted, declOk false); Eq.rec's rule rhs made 0, its type cut by one binder, \
       Eq.refl's first binder datum changed, its rule made λ α a motive refl. a (EqRecBasis), its \
       major domain swapped (EqRecBasis), its level parameters reversed (RecStored): exactly recShape false"
+    -- G3, part D: flat recursors (no parameter, no field, rule bodies variables). `strictAndOr`:
+    -- its recursor `Bool.rec` (run by `Bool.and`, `Bool.or`) is flat, admitted since part D, and
+    -- every conjunct is true; with the classes part C admitted, `declOk` alone is false
+    let (si, _) ← loadClosure "strictAndOr" "fixtures/corpus/phase1-scalar/strictAndOr"
+      ["entryStrictOr", "entryStrictAnd"]
+    let some fr := flatRecOf? si | throw (IO.userError "strictAndOr: no flat recursor in Sl")
+    expect a ((failing si).isEmpty && admittedClasses.contains .flat)
+      s!"strictAndOr: false conjuncts {failing si}, expected none"
+    expect a (failingWith [.empty, .eqRec] si == ["declOk"])
+      s!"strictAndOr: with the classes of part C, false conjuncts {failingWith [.empty, .eqRec] si}, expected [declOk]"
+    -- controls, on `Sl` cut to the flat recursor and `Bool`'s constructors: the closure's
+    -- `Bool.casesOn` reads the same stored recursor, so on the whole `Sl` a control on it also
+    -- falsifies `caseShape`. Each makes exactly `recShape` false (or, for the class, `declOk`),
+    -- and the suite asserts which part refuses
+    let ri := { si with Sl := fr :: [si.src.known.boolFalse, si.src.known.boolTrue].filterMap id }
+    expect a (failing ri).isEmpty
+      s!"strictAndOr cut to c{fr} and Bool's constructors: false conjuncts {failing ri}, expected none"
+    let parts (j : Input) : List Bool :=
+      [recStoredB j.src j.env j.κ j.lpsOf fr, recTeleB j.env (j.κ fr), recProgB j.src j.κ j.Sl fr,
+        recCtorsRawB j.src j.env j.κ fr]
+    let mT := mutateRecTele ri fr
+    expect a (failing mT == ["recShape"] && parts mT == [true, false, true, true])
+      s!"strictAndOr: Bool.rec's first rule's second λ-domain made #0 (kernel and program): false conjuncts {failing mT}, parts (RecStored, RecTele, RecProg, RecCtorsRaw) {parts mT}"
+    let mP := mutateRecProg ri fr
+    expect a (failing mP == ["recShape"] && parts mP == [true, true, false, true])
+      s!"strictAndOr: Bool.rec's two rules swapped (kernel and program): false conjuncts {failing mP}, parts {parts mP}"
+    let mC := mutateRecMajor ri fr
+    expect a (failing mC == ["recShape"] && parts mC == [true, true, true, false])
+      s!"strictAndOr: Bool.rec's major domain at one more level: false conjuncts {failing mC}, parts {parts mC}"
+    let nPre := match si.src.decl? fr with
+      | some (.recr _ _ _ np nmot nmin _ _ _ _) => np + nmot + nmin
+      | _ => 0
+    let mB := mutateRecBody ri fr nPre
+    expect a (failing mB == ["declOk"] && recClassB mB.src mB.env mB.κ fr == some .ordinary)
+      s!"strictAndOr: Bool.rec's first rule's body made 0 (kernel and program): false conjuncts {failing mB}, class {repr (recClassB mB.src mB.env mB.κ fr)}"
+    IO.println s!"strictAndOr: Bool.rec c{fr} of class flat, admitted; every conjunct true (with the \
+      classes of part C, declOk false); cut to c{fr} and Bool's constructors: a rule's λ-domain \
+      changed (RecTele), its rules swapped (RecProg), its major domain at one more level \
+      (RecCtorsRaw): exactly recShape false; a rule's body made 0: not flat, exactly declOk false"
     IO.println s!"tests-grounding: {← a.get} assertions passed"
     return true
   catch error =>
