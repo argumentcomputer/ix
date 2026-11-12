@@ -30,7 +30,9 @@ records are read and never walked. The rest are walked as below.
 in Source mode (`Ix.LeanIngress`: every constant keyed by its Lean name, or its
 role's key) and installs it with phase A of its fold
 (`annotDeclStepWithUserAxioms`, at the committed bundle's evidence), once, in
-dependency order (`install`). Unsafe and partial groups go through the typing
+dependency order (`install`), a wave of the dependency levels at a time on workers
+that each build an environment of their own (`phaseAWorkers`). Unsafe and partial
+groups go through the typing
 tier; a declaration that fails is retried after them, and one refused again
 (a compiler-trust axiom, say) enters without its checks, with its
 annotated type (`lenient`); a structure the install leaves without a projection
@@ -277,6 +279,106 @@ def resolves (fe : FEnv .source) (d : CDecl .source) : Bool :=
   | .axiomDecl cv => Ix.Kernel.Cached.constsResolveFC fe cv.type
   | _ => true
 
+/-- Whether `separable` applies to a declaration's kind: a definition other than a
+pinned `Nat` operation, a theorem, an opaque. -/
+def separableKind : CDecl .source → Bool
+  | .defnDecl cv _ _ => !(Ix.Kernel.natOpNames.contains cv.name || Ix.Kernel.natDivModNames.contains cv.name)
+  | .thmDecl .. | .opaqueDecl .. => true
+  | _ => false
+
+/-- What a worker made of a declaration of a wave, against its own environment:
+the constants to push (a separable declaration's, annotated against it; an ordinary
+step's pushes, already in that worker's environment), or a retry after the waves (it
+names a constant not installed, or its annotation or step fails). -/
+inductive Made where
+  | pushes (cis : Array (Ix.Kernel.ConstantInfo .source))
+  | retry
+  deriving Inhabited
+
+/-- One declaration on a worker's environment `fe` (`pos`, its fold position): the
+environment after it (an ordinary step's, which pushes; `fe` itself otherwise) and
+what was made. -/
+def makeOne (mode : Ix.Kernel.CheckMode) (ev : Ix.Kernel.Evidences .source) (fe : FEnv .source)
+    (pos : Nat) (d : CDecl .source) : FEnv .source × Made :=
+  if !resolves fe d then (fe, .retry)
+  else if separableKind d then
+    match separable mode fe d with
+    | some ci => (fe, .pushes #[ci])
+    | none => (fe, .retry)
+  else
+    let vis := fe.visibleBelow
+    let (fe', _, err) := step mode ev fe pos d
+    match err with
+    | none => (fe', .pushes (fe'.env.consts.take (fe'.visibleBelow - vis)).reverse.toArray)
+    | some _ => (fe', .retry)
+
+/-- **Phase A on workers**, each with an environment of its own built by `push`
+(never shared, so every push is in place). The prelude's wave (wave 0, whose
+declarations name each other) is made whole by every worker, in order. At every
+other wave, worker `w` makes the declarations of the groups `g` with `g % W = w`
+(`groupOf`, by position in `prepared`; a group's declarations, which may name each
+other, in order on one worker), each against its own environment (`makeOne`) and
+pushed there at once, publishes them, and pushes every other worker's (in worker
+order, a constant already there skipped). The groups of a wave do not name each
+other, so each declaration is made against an environment that answers its lookups
+as the one-by-one fold's does. The first worker's environment, and the
+declarations to retry (in wave order, then worker order). -/
+def phaseAWorkers (mode : Ix.Kernel.CheckMode) (ev : Ix.Kernel.Evidences .source)
+    (prepared : Array (CDecl .source)) (groupOf : Array Nat) (waves : Array (Array Nat))
+    (workers : Nat) : IO (FEnv .source × Array Nat) := do
+  let W := max 1 workers
+  let mut outs : Array (Array (IO.Promise (Array (Nat × Made)))) := #[]
+  for _ in waves do
+    let mut row := #[]
+    for _ in [:W] do row := row.push (← IO.Promise.new)
+    outs := outs.push row
+  let run (w : Nat) : IO (FEnv .source × Array Nat) := do
+    let mut fe : FEnv .source := Ix.Kernel.mkFEnv Ix.Kernel.Env.empty
+    let mut retry : Array Nat := #[]
+    for h : k in [:waves.size] do
+      let wave := waves[k]
+      let mut mine : Array (Nat × Made) := #[]
+      for i in wave do
+        unless k == 0 || (groupOf[i]?.getD i) % W == w do continue
+        let (fe', m) := makeOne mode ev fe i prepared[i]!
+        fe := fe'
+        match m with
+        | .pushes cis =>
+          -- read by every worker, written by none: no reference counts
+          let mut ps : Array (Ix.Kernel.ConstantInfo .source) := #[]
+          for ci in cis do
+            let mut ci := ci
+            if k != 0 then
+              ci ← (unsafe Runtime.markPersistent ci : BaseIO (Ix.Kernel.ConstantInfo .source))
+            if (fe.find? ci.name).isNone then fe := fe.push ci
+            ps := ps.push ci
+          mine := mine.push (i, .pushes ps)
+        | .retry =>
+          mine := mine.push (i, .retry)
+          if k == 0 && w == 0 then retry := retry.push i
+      if k == 0 then continue
+      outs[k]![w]!.resolve mine
+      for w' in [:W] do
+        let rs ← if w' == w then pure mine else IO.wait outs[k]![w']!.result!
+        for (i, m) in rs do
+          match m with
+          | .pushes cis =>
+            if w' != w then
+              for ci in cis do
+                if (fe.find? ci.name).isNone then fe := fe.push ci
+          | .retry => if w == 0 then retry := retry.push i
+    return (fe, retry)
+  let mut tasks := #[]
+  for w in [:W] do
+    tasks := tasks.push (← IO.asTask (run w) (prio := .dedicated))
+  let mut first : Option (FEnv .source × Array Nat) := none
+  for t in tasks do
+    let r ← IO.ofExcept (← IO.wait t)
+    if first.isNone then first := some r
+  match first with
+  | some r => return r
+  | none => return (Ix.Kernel.mkFEnv Ix.Kernel.Env.empty, #[])
+
 /-- A kernel error on one line, for `IX_BD_TRACE`. -/
 def traceError (e : Ix.Kernel.CheckError .source) : String :=
   ((Benchmarks.Kernel.CheckIxeStep.checkOutcome e).2.replace "\n" " ").take 400 |>.toString
@@ -362,7 +464,8 @@ def graphOfPar (width : Nat) (blocks : Ix.CondensedBlocks) (groups : Array Group
 /-- **Install the compile's input** in Source mode, phase A only, and mark the
 environment and IxC's core over it persistent. -/
 def install (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (workers : Nat := 32)
-    (parallel : Bool := true) (trace : Bool := false) (persist : Bool := true) :
+    (parallel : Bool := true) (trace : Bool := false) (persist : Bool := true)
+    (onWorkers : Bool := true) :
     IO (Except String Installed) := do
   let mode := annotatorMode
   let t0 ← IO.monoMsNow
@@ -393,6 +496,7 @@ def install (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (workers : Nat 
   let mut st : State .source := pre.state
   let mut lowered : Array (CDecl .source) := #[]
   let mut levelOf : Std.HashMap (Ix.Kernel.Key .source) Nat := {}
+  let mut groupKey : Std.HashMap (Ix.Kernel.Key .source) Nat := {}
   let mut tiers : Array (Nat × Ix.Kernel.Tier.TierDecl .source) := #[]
   let mut failures : Array (String × String) := #[]
   for (gi, c) in sched do
@@ -406,7 +510,9 @@ def install (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (workers : Nat 
       st := st.commit r
       lowered := lowered ++ r.decls
       for d in r.decls do
-        if let some k := d.names.head? then levelOf := levelOf.insert k glevel[gi]!
+        if let some k := d.names.head? then
+          levelOf := levelOf.insert k glevel[gi]!
+          groupKey := groupKey.insert k gi
     | .error e => failures := failures.push (groupName gi, readErrorString e)
   let t2 ← IO.monoMsNow
   let canon ← IO.lazyPure fun _ => Ix.Compile.Parallel.map (4 * max workers 1) canonDecl lowered
@@ -434,7 +540,21 @@ def install (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (workers : Nat 
   let mut nsAhead := 0
   let mut nsPush := 0
   let mut nsStep := 0
-  for wave in waves do
+  if onWorkers then
+    let n0 ← IO.monoNanosNow
+    -- each declaration's group, by position in `prepared`
+    let mut groupOf : Array Nat := Array.mkEmpty prepared.size
+    for h : i in [:prepared.size] do
+      groupOf := groupOf.push ((prepared[i].names.head?.bind (groupKey[·]?)).getD i)
+    let (feW, again) ← phaseAWorkers mode ev prepared groupOf waves workers
+    nsStep := (← IO.monoNanosNow) - n0
+    fe := feW
+    pos := prepared.size
+    ok := prepared.size - again.size
+    retry := again.map (prepared[·]!)
+  -- (`IX_BD_WAVES`, for measurement: phase A on one environment, its waves' separable
+  -- declarations annotated ahead)
+  for wave in (if onWorkers then #[] else waves) do
     -- the wave's separable declarations, annotated against the environment as
     -- it stands before the wave (`separable`)
     let base := fe
@@ -558,7 +678,8 @@ whole terms name, then what installing each constant reached needs: a theorem's
 type (nothing reduces its value), a definition's or an opaque's type and value,
 any other constant's type and terms, and an inductive group whole (its types,
 constructors and recursors). -/
-def restrictClosure (env : Ix.Environment) (seeds : Array Ix.Name) : Std.HashSet Ix.Name := Id.run do
+def restrictClosure (env : Ix.Environment) (seeds : Array Ix.Name) (workers : Nat := 32) :
+    Std.HashSet Ix.Name := Id.run do
   let mut recsOf : Std.HashMap Ix.Name (Array Ix.Name) := {}
   for (n, ci) in env.consts do
     if let .recInfo r := ci then
@@ -588,26 +709,30 @@ def restrictClosure (env : Ix.Environment) (seeds : Array Ix.Name) : Std.HashSet
     match firstOf ci with
     | some first => (groupNames first).foldl (·.insert ·) refs
     | none => refs
+  -- breadth first, each level's needs on `workers` tasks: the same closure
+  let needsOf (whole : Bool) (n : Ix.Name) : Std.HashSet Ix.Name :=
+    match env.consts.get? n with
+    | some ci => needs whole ci
+    | none => {}
   let mut seen : Std.HashSet Ix.Name := {}
-  let mut work : Array Ix.Name := #[]
-  for s in seeds do
-    if let some ci := env.consts.get? s then
-      seen := seen.insert s
-      for r in needs true ci do work := work.push r
-  while h : work.size > 0 do
-    let n := work[work.size - 1]
-    work := work.pop
-    if seen.contains n then continue
-    seen := seen.insert n
-    if let some ci := env.consts.get? n then
-      for r in needs false ci do
-        unless seen.contains r do work := work.push r
+  let roots := seeds.filter (env.consts.contains ·)
+  for s in roots do seen := seen.insert s
+  let mut level : Array (Std.HashSet Ix.Name) := Ix.Compile.Parallel.map workers (needsOf true) roots
+  while !level.isEmpty do
+    let mut next : Array Ix.Name := #[]
+    for refs in level do
+      for r in refs do
+        unless seen.contains r do
+          seen := seen.insert r
+          next := next.push r
+    level := Ix.Compile.Parallel.map workers (needsOf false) next
   return seen
 
 /-- **Install a compile's input**: its condensation (`Ix.CondenseM`, as the
 compile's front end builds it), then `install`. For measurement (the data are
 the same): with `IX_BD_SEQUENTIAL` set phase A takes every step in turn, with
-`IX_BD_WALK_ALL` every root is walked. -/
+`IX_BD_WALK_ALL` every root is walked, with `IX_BD_WAVES` phase A runs on one
+environment (its waves' separable declarations annotated ahead). -/
 def installInput (env : Ix.Environment) (workers : Nat := 32) : IO (Except String Installed) := do
   -- `IX_BD_RESTRICT` (measurement): install only the install closure
   -- (`restrictClosure`) of the records a file names, one per line, theorems with a
@@ -617,7 +742,7 @@ def installInput (env : Ix.Environment) (workers : Nat := 32) : IO (Except Strin
     | some path => do
       let keep : Std.HashSet String := (← IO.FS.lines path).foldl (·.insert ·) {}
       let seeds := env.consts.fold (init := #[]) fun acc n _ => if keep.contains n.pretty then acc.push n else acc
-      let closure ← IO.lazyPure fun _ => restrictClosure env seeds
+      let closure ← IO.lazyPure fun _ => restrictClosure env seeds (4 * max workers 1)
       let blank : Ix.ConstantInfo → Ix.ConstantInfo
         | .thmInfo t => .thmInfo { t with value := Ix.Expr.mkSort Ix.Level.mkZero }
         | ci => ci
@@ -637,7 +762,8 @@ def installInput (env : Ix.Environment) (workers : Nat := 32) : IO (Except Strin
   let noread := (← IO.getEnv "IX_BD_NOREAD").isSome
   let readonly := (← IO.getEnv "IX_BD_READONLY").isSome
   let persist := (← IO.getEnv "IX_BD_NOPERSIST").isNone
-  return (← install envI blocks workers parallel (!trace.isEmpty) persist).map fun k =>
+  let onWorkers := (← IO.getEnv "IX_BD_WAVES").isNone
+  return (← install envI blocks workers parallel (!trace.isEmpty) persist onWorkers).map fun k =>
     { k with env, stored, memo, trace, tier1, t1stat, noread, readonly,
              times := #[("installed constants (count)", envI.consts.size), ("restriction", tc1 - tc0),
                ("condense", t1 - t0)] ++ k.times }
