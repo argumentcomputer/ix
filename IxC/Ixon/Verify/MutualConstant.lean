@@ -254,7 +254,13 @@ theorem getConstructor_reads (constructor : Ixon.Constructor)
       let typ ← Ixon.getExpr
       return (⟨isUnsafe, lvls, cidx, params, fields, modes, typ⟩ : Ixon.Constructor))
     (getU8_reads (Ixon.packConstructorFlags ⟨u, l, ci, p, f, fm, t⟩)) hchecked
-  simpa [Ixon.getConstructor, constructorBytes, ByteArray.append_assoc] using hall
+  have hbytes : constructorBytes ⟨u, l, ci, p, f, fm, t⟩ =
+      [Ixon.packConstructorFlags ⟨u, l, ci, p, f, fm, t⟩].toByteArray ++
+        (tag0Bytes l ++ tag0Bytes ci ++ tag0Bytes p ++ tag0Bytes f ++
+          fieldModeListBytes fm.toArray.toList ++ Ixon.Verify.Codec.Expr.spineWireEncode t) := by
+    simp only [constructorBytes, ByteArray.append_assoc]
+  rw [hbytes]
+  exact hall
 
 theorem putConstructorArray_writes (constructors : Array Ixon.Constructor)
     (h : ∀ constructor, constructor ∈ constructors.toList →

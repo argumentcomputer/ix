@@ -46,17 +46,26 @@ theorem packDefKindSafety_valid (kind : DefKind) (safety : DefinitionSafety) :
 /-- A definition's first byte decodes back to its kind, safety and assertions:
 the kind/safety check passes, the high nibble is its assertions' code, and the
 low nibble unpacks to its kind and safety. -/
+theorem definitionFlags_decode' (kind : DefKind) (safety : DefinitionSafety)
+    (asserts : Ixon.DefAsserts) :
+    ((((Ixon.packDefKindSafety kind safety ||| (asserts.toCode <<< 4)) >>> 2) &&& 3 > 2) ||
+        ((Ixon.packDefKindSafety kind safety ||| (asserts.toCode <<< 4)) &&& 3 > 2)) = false ∧
+      Ixon.DefAsserts.ofCode? ((Ixon.packDefKindSafety kind safety ||| (asserts.toCode <<< 4)) >>> 4) =
+        some asserts ∧
+      Ixon.unpackDefKindSafety ((Ixon.packDefKindSafety kind safety ||| (asserts.toCode <<< 4)) &&& 15) =
+        (kind, safety) := by
+  rcases asserts with ⟨alloc, boundedStack⟩
+  cases kind <;> cases safety <;> cases alloc <;> cases boundedStack <;>
+    exact ⟨by decide, rfl, rfl⟩
+
 theorem definitionFlags_decode (definition : Ixon.Definition) :
     (((Ixon.packDefinitionFlags definition >>> 2) &&& 3 > 2) ||
         (Ixon.packDefinitionFlags definition &&& 3 > 2)) = false ∧
       Ixon.DefAsserts.ofCode? (Ixon.packDefinitionFlags definition >>> 4) =
         some definition.asserts ∧
       Ixon.unpackDefKindSafety (Ixon.packDefinitionFlags definition &&& 15) =
-        (definition.kind, definition.safety) := by
-  rcases definition with ⟨kind, safety, ⟨alloc, boundedStack⟩, lvls, typ, value⟩
-  simp only [Ixon.packDefinitionFlags]
-  cases kind <;> cases safety <;> cases alloc <;> cases boundedStack <;>
-    exact ⟨by decide, rfl, rfl⟩
+        (definition.kind, definition.safety) :=
+  definitionFlags_decode' definition.kind definition.safety definition.asserts
 
 theorem getBool_reads (value : Bool) :
     Reads (Ixon.Serialize.get (α := Bool))
@@ -154,7 +163,13 @@ theorem getDefinition_reads (definition : Ixon.Definition)
       let value ← Ixon.getExpr
       return (⟨kind, safety, asserts, lvls, typ, value⟩ : Ixon.Definition))
     hkind hchecked
-  simpa [Ixon.getDefinition, definitionBytes, ByteArray.append_assoc] using hall
+  have hbytes : definitionBytes definition =
+      [Ixon.packDefinitionFlags definition].toByteArray ++
+        (tag0Bytes definition.lvls ++ Expr.spineWireEncode definition.typ ++
+          Expr.spineWireEncode definition.value) := by
+    simp only [definitionBytes, ByteArray.append_assoc]
+  rw [hbytes]
+  exact hall
 
 theorem getAxiom_reads (axiomInfo : Ixon.Axiom)
     (htyp : Ixon.Expr.wireWF axiomInfo.typ) :
