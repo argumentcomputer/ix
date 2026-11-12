@@ -137,7 +137,8 @@ namespace Ixon
 /-! ## The binder data's canonical form
 
 Two forms. The **canonical** form (`Constant.bindersCanonical`) is local, and is
-what every reader checks: blocks strictly sorted by `(shared, index, variant)`, a
+what every reader checks: the record's level count below `maxLevelCount`
+(`2^32`), blocks strictly sorted by `(shared, index, variant)`, a
 root block at variant 0, no empty block, every `ifAllZero` parameter list
 nonempty, strictly ascending and below the record's level count, and the empty
 section for a record with no root (a projection). The **complete** form
@@ -146,6 +147,12 @@ with exactly the blocks and nodes the record's expressions call for. The
 compiler's records are complete, so their addresses are a function of the data;
 a record with an incomplete section is another record, at another address, and a
 checker validates every datum it reads. -/
+
+/-- The bound on a record's level count: every reader refuses a record with
+`2^32` universe parameters or more (`Constant.bindersCanonical`), and the
+compiler writes none. Mirrors Rust `MAX_LEVEL_COUNT` and IxVM's range check in
+`IxonDeserialize::max_lvls`. -/
+def maxLevelCount : Nat := 2 ^ 32
 
 /-- The level count bounding a record's binder data: the largest level count
 of its members (0 for a projection). -/
@@ -345,12 +352,14 @@ def Constant.bindersCompleteRooted (c : Constant) : Bool := Id.run do
 def Constant.bindersComplete (c : Constant) : Bool :=
   if c.info.binderRoots.isEmpty then c.binders.isEmpty else c.bindersCompleteRooted
 
-/-- The binder data of `c` are in canonical form (local): blocks strictly
-sorted, a root block at variant 0, no empty block, canonical nodes, and the empty
-section for a record with no root. -/
+/-- The binder data of `c` are in canonical form (local): the empty section
+for a record with no root (whose level count is 0); otherwise the level count
+below `maxLevelCount`, blocks strictly sorted, a root block at variant 0, no
+empty block, and canonical nodes. -/
 def Constant.bindersCanonical (c : Constant) : Bool :=
   if c.info.binderRoots.isEmpty then c.binders.isEmpty
   else
+    decide (c.info.maxLvls < maxLevelCount) &&
     blocksAscending c.binders.toList &&
       c.binders.all fun block =>
         (block.shared || block.variant == 0) && !block.nodes.isEmpty &&

@@ -287,6 +287,11 @@ impl Constant {
   pub const FLAG: u8 = 0xD;
   /// TagN flag used for Muts constants (the entry count is the value)
   pub const FLAG_MUTS: u8 = 0xC;
+  /// The bound on a record's level count (`Ixon.maxLevelCount`): the
+  /// canonical check (`binders_canonical`) refuses a record with `2^32`
+  /// universe parameters or more, as Lean's canonical decoder and IxVM's
+  /// parser do.
+  pub const MAX_LEVEL_COUNT: u64 = 1 << 32;
 
   /// Create a new constant with no sharing, refs, univs or binder data
   pub fn new(info: ConstantInfo) -> Self {
@@ -406,13 +411,15 @@ impl Constant {
   }
 
   /// The binder data are in canonical form (`Ixon.Constant.bindersCanonical`),
-  /// the local form every reader checks: blocks strictly sorted by key, a root
-  /// block at variant 0, no empty block, every `IfAllZero` parameter list
-  /// nonempty, strictly ascending and below `max_lvls`, and the empty section
-  /// for a record with no root (a projection).
+  /// the local form every reader checks: the level count (`max_lvls`) below
+  /// `MAX_LEVEL_COUNT`, blocks strictly sorted by key, a root block at
+  /// variant 0, no empty block, every `IfAllZero` parameter list nonempty,
+  /// strictly ascending and below `max_lvls`, and the empty section for a
+  /// record with no root (a projection).
   pub fn binders_canonical(&self) -> bool {
     let lvls = self.max_lvls();
-    self.binders.windows(2).all(|w| w[0].key() < w[1].key())
+    lvls < Self::MAX_LEVEL_COUNT
+      && self.binders.windows(2).all(|w| w[0].key() < w[1].key())
       && self.binders.iter().all(|b| {
         (b.shared || b.variant == 0)
           && !b.nodes.is_empty()
@@ -1008,6 +1015,53 @@ pub mod tests {
       }))
       .with_binders(vec![block(false, 0, 0, vec![node])]);
       assert!(!prj.binders_canonical());
+    }
+  }
+
+  #[test]
+  fn level_count_bound() {
+    // The wire carries any u64 level count; the canonical check refuses
+    // 2^32 or more, for a record and for a block member alike.
+    for (lvls, canonical) in [
+      (0u64, true),
+      (1, true),
+      (Constant::MAX_LEVEL_COUNT - 1, true),
+      (Constant::MAX_LEVEL_COUNT, false),
+      ((1 << 56) - 1, false),
+      (1 << 56, false),
+      (u64::MAX, false),
+    ] {
+      let axiom = Constant::with_tables(
+        ConstantInfo::Axio(Axiom { is_unsafe: true, lvls, typ: Expr::sort(0) }),
+        vec![],
+        vec![],
+        vec![Arc::new(Univ::Zero)],
+      );
+      assert!(constant_roundtrip(&axiom));
+      assert_eq!(
+        axiom.binders_canonical(),
+        canonical,
+        "axiom with {lvls} levels"
+      );
+      let member = Definition {
+        kind: DefKind::Definition,
+        safety: DefinitionSafety::Safe,
+        lvls,
+        typ: Expr::sort(0),
+        value: Expr::sort(0),
+      };
+      let block = Constant::with_tables(
+        ConstantInfo::Muts(vec![MutConst::Defn(member)]),
+        vec![],
+        vec![],
+        vec![Arc::new(Univ::Zero)],
+      );
+      assert!(constant_roundtrip(&block));
+      assert_eq!(
+        block.binders_canonical(),
+        canonical,
+        "block member with {lvls} levels"
+      );
     }
   }
 

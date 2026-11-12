@@ -22,8 +22,10 @@ namespace Ixon
 open Ix (DefKind DefinitionSafety QuotKind)
 
 /-- Stable identifier for the Ixon wire format: version 5 (v4's TagN
-integers, plus each record's binder-data section). Mirrors Rust
-`WIRE_FORMAT_ID`. -/
+integers, plus each record's binder-data section). A record's level count is
+below `Ixon.maxLevelCount` (`2^32`): the wire carries any `UInt64`, and every
+reader's canonical check refuses a count of `2^32` or more
+(`Ixon.Constant.bindersCanonical`). Mirrors Rust `WIRE_FORMAT_ID`. -/
 def wireFormatId : String := "ixon-v5"
 
 /-! ## Serialization Monad and Typeclass -/
@@ -1178,9 +1180,9 @@ node    := 0x00 | 0x01 | 0x02 k:TagN0 p[k]:TagN0 | 0x03 v:TagN0 | 0x04
 ```
 
 The codec maps each node tag to one constructor; the canonical-form
-conditions (blocks strictly sorted, `ifAllZero` parameters nonempty, strictly
-ascending and below the level count) are `Ixon.Constant.bindersCanonical`, which
-the certified reader checks. -/
+conditions (the level count below `Ixon.maxLevelCount`, blocks strictly sorted,
+`ifAllZero` parameters nonempty, strictly ascending and below the level count)
+are `Ixon.Constant.bindersCanonical`, which the certified reader checks. -/
 
 def putBinderNode : BinderNode → PutM Unit
   | .never => putU8 0

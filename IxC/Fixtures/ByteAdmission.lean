@@ -95,7 +95,11 @@ def decodeFailureOf (records : Records) (position : Nat) (bounds : Limits := lim
   | some (address, _) => decodeFailureAt records position address bounds
   | none => false
 
-#guard roundtrip variants
+#guard roundtrip canonicalVariants
+-- decoding refuses the axiom with `2^64 - 1` universe parameters, the last variant, there
+#guard match decodeRecords limits (encode variants) with
+  | .error (.decode position key _) => position + 1 == variants.length && key == address 17
+  | _ => false
 #guard roundtrip falseStore
 #guard roundtrip separatedFalse
 #guard roundtrip [(address 1, sharedIdentity)]

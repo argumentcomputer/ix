@@ -806,6 +806,12 @@ def binderSectionUnits : TestSeq :=
       (!canonicalRead (projectionWithSection (.ifAllZero #[0])))
   ++ test "a projection with any section is not canonical"
       (!canonicalRead (projectionWithSection .never))
+  ++ test "a level count below 2^32 is canonical; 2^32 round-trips and is not"
+      (let withLvls (n : Nat) : Constant :=
+        { info := .defn (Definition.mk .defn .safe n.toUInt64 (.sort 0) (.sort 0)),
+          sharing := #[], refs := #[], univs := #[.zero], binders := #[] }
+       canonicalRead (withLvls (maxLevelCount - 1)) && constantSerde (withLvls maxLevelCount) &&
+         !(withLvls maxLevelCount).bindersCanonical && !canonicalRead (withLvls maxLevelCount))
   ++ test "an unknown node tag is rejected" ((deConstant badTag).toOption.isNone)
   ++ test "a block kind other than 0 or 1 is rejected" ((deConstant badKind).toOption.isNone)
   ++ test "a truncated section is rejected"

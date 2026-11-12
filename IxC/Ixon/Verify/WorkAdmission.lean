@@ -28,7 +28,7 @@ def canonicalRecord (limits : Limits) (input : ByteArray) : Except String Consta
       if WireCheck.validConstant value then
         if serConstant value = input then
           if value.bindersCanonical then .ok value
-          else .error "getConstantCanonical: binder data not in canonical form"
+          else .error "getConstantCanonical: level count or binder data not in canonical form"
         else .error "getConstantCanonical: noncanonical wire encoding"
       else .error "getConstantCanonical: value outside the wire domain"
   (result, parsed.2)

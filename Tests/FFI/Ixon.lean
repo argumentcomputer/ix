@@ -229,6 +229,11 @@ opaque rsEqExprSerialization : @& Expr → @& ByteArray → Bool
 @[extern "rs_eq_constant_serialization"]
 opaque rsEqConstantSerialization : @& Constant → @& ByteArray → Bool
 
+/-- Whether Rust reads the bytes as one canonical record (`Constant::get`, the
+same bytes again, `Constant::binders_canonical`). -/
+@[extern "rs_constant_canonical"]
+opaque rsConstantCanonical : @& ByteArray → Bool
+
 @[extern "rs_eq_env_serialization"]
 opaque rsEqEnvSerialization : @& RawEnv → @& ByteArray → Bool
 

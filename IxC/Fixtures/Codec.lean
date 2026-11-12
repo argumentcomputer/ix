@@ -37,6 +37,12 @@ def exactCanonicalConstant (value : Ixon.Constant) : Bool :=
   | .ok decoded => decoded == value
   | .error _ => false
 
+/-- The variants every canonical reader reads: all but the axiom with `2^64 - 1`
+universe parameters, a level count the wire carries and no reader admits
+(`Ixon.maxLevelCount`). -/
+def canonicalVariants : List (Address × Ixon.Constant) :=
+  variants.filter fun (_, value) => value.info.maxLvls < Ixon.maxLevelCount
+
 #guard variants.all fun (_, value) => exactConstant value
 #guard falseStore.all fun (_, value) => exactConstant value
 #guard separatedFalse.all fun (_, value) => exactConstant value
@@ -48,7 +54,10 @@ def exactCanonicalConstant (value : Ixon.Constant) : Bool :=
 #guard exactBoundedConstant sharedIdentity
 #guard exactBoundedConstant ⟨.muts #[], #[], #[], #[], #[]⟩
 #guard exactBoundedConstant ⟨.muts #[], #[], #[], Array.replicate 4096 .zero, #[]⟩
-#guard variants.all fun (_, value) => exactCanonicalConstant value
+#guard canonicalVariants.all fun (_, value) => exactCanonicalConstant value
+-- the codec reads the axiom with `2^64 - 1` universe parameters (above); the canonical
+-- decoder refuses it, and only it
+#guard (variants.filter fun (_, value) => !exactCanonicalConstant value).map (·.1) == [address 17]
 #guard falseStore.all fun (_, value) => exactCanonicalConstant value
 #guard separatedFalse.all fun (_, value) => exactCanonicalConstant value
 #guard exactCanonicalConstant sharedIdentity

@@ -54,8 +54,11 @@ helpers or their specializations; every execution allowance is unchanged. -/
 -- counts are unchanged.
 -- Declining the rules the kernel cannot certify, instead of storing them inert, adds 17
 -- compiled functions here (`IxC/Kernel/Audit/Roots.lean`).
+-- The level-count bound (`Ixon.maxLevelCount`, the canonical check's and the compiler's)
+-- adds 38 compiled functions. Externs, implemented_by, unsafe, csimp and every ruling are
+-- unchanged.
 /-- info: runtime closure of [Ix.HostAdmission.certify,
- Ix.HostAdmission.verifyAddressed]: 7657 compiled functions; inherited externs 125, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
+ Ix.HostAdmission.verifyAddressed]: 7695 compiled functions; inherited externs 125, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
 #guard_msgs (whitespace := lax) in
 run_cmd do
   Ix.Kernel.Audit.checkRuntimeWith #[``Ix.HostAdmission.certify, ``Ix.HostAdmission.verifyAddressed]
