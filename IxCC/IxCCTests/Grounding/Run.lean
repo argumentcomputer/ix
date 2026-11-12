@@ -545,11 +545,12 @@ def run : IO Bool := do
       site-profile instances; Bool.rec's `true` rule given `false`'s right-hand side: sitesDirect false ({(refusedSites tm).length} \
       sites refused)"
     -- string literals, on `panic`: the landed route refused 34 of its 762 sites (25 at string
-    -- literals), the widened one 1
+    -- literals), the widened one 1 (a `Char` validity proof), none since G3's cost fix (a
+    -- telescope's width costs no fuel), the kernel agreeing
     let (pa, pcore) ← loadClosure "panic" "fixtures/corpus/phase1-decline/panic" ["Decline.withPanic"]
     let pt ← oracleOn a "panic" pcore pa
-    expect a ((pt.sites, pt.accepted) == (762, 761))
-      s!"panic: {pt.accepted} of {pt.sites} sites accepted, expected 761 of 762"
+    expect a ((pt.sites, pt.accepted) == (762, 762))
+      s!"panic: {pt.accepted} of {pt.sites} sites accepted, expected 762 of 762"
     let pm := mutateStringOfList pa
     let npm := (refusedSites pm).length
     expect a (npm > (refusedSites pa).length)
