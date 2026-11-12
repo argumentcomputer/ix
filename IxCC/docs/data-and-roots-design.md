@@ -485,10 +485,24 @@ exists, behind `Table.Config.words`, which is off, so no compile changes:
   result and fails with `natOverflow` unless it is below `2^63`. The expansion is proved once,
   against a heap-free core (`Rt.Proof.PrimCore`, `word_core`; the arithmetic in
   `Rt.Proof.WordArith`), and each route's simulation follows from the core by one lemma (the
-  immortal route's `Rt.Proof.prim_word`, the plain-RC bridge's `Bridge.Scalar.prim_word`); the code uses only Lir forms selection already has, so selection,
-  allocation and the validators need no new case. `tests-rt` runs every operation at every
-  width on its boundary numbers against `eval` at Lir and at every backend level, with planted
-  mutations of the code as controls.
+  immortal route's `Rt.Proof.prim_word`, the plain-RC bridge's `Bridge.Scalar.prim_word`); the
+  code uses only Lir forms selection already has, so selection, allocation and the validators
+  need no new case. `tests-rt` runs every operation at every width on its boundary numbers
+  against `eval` at Lir and at every backend level, with planted mutations of the code as
+  controls.
+
+**The pattern for new primitives.** A primitive's expansion is a scalar computation: it reads its
+operands' words, binds its result, and touches no memory and no heap. So it is proved once, against
+the heap-free core `Rt.Proof.PrimCore` (from registers holding the operands' tagged words, Lir runs
+from the expansion's start to its end with the memory unchanged, binds the result's word and keeps
+every other register below the supply, or fails with a resource), and each route's simulation
+relation follows from the core by one lemma (`Rt.Proof.rhsSim_of_core` for the immortal route's
+`RhsSim`, which assumes the immortal heap invariant; the plain-RC bridge's `rhsSim_of_core` for its
+own, which has none and keeps the memory). A direct transfer between the two relations does not
+exist as they are stated (each assumes what the other cannot supply), which is why the core is
+stated without either. The arrays', strings' and later primitives' expansions follow this pattern;
+the 16 `Nat` primitives still have one proof per route, and their restatement over the core is a
+clean-up item on the [roadmap](roadmap.md) (Phase 3, "For the x86 back end").
 
 Two limits stay after W1, by design, and are open items: (a) a `UInt64` is native only below
 `2^63`: a word is a tagged immediate, so a width-64 result at or above `2^63` fails with

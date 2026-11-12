@@ -657,6 +657,20 @@ data:
   implementation of arrays and strings can rest as the x86 heap implementation
   does. Without them an evaluator runs the reference bodies, which are
   quadratic.
+- *For the x86 back end:* a new primitive's expansion is proved once, against
+  the heap-free core `Rt.Proof.PrimCore`, and each route's simulation follows
+  from the core by one lemma (`Rt.Proof.rhsSim_of_core`, the plain-RC bridge's
+  `rhsSim_of_core`), as the fixed-width words are
+  ([DR2, "Stage W1"](data-and-roots-design.md#dr2-fixed-width-integers-and-int)).
+  **Clean-up (open):** the 16 `Nat` primitives are still proved twice, once per
+  route (`Rt/Proof/Ops*.lean` and the bridge's `Scalar{Basic,Checked,Div,Call}.lean`,
+  the latter about 1,080 lines); restating Rt's per-primitive lemmas as core facts
+  would let the bridge's copies go (estimate: 300–500 lines restated, about 1,000
+  deleted; a landing of its own). Two points to design: the comparisons
+  (`natBeq`, `natBle`, `natBlt`) return a `Bool`, so the core needs a variant whose
+  result is one of the `Bool` words (`Tables.bools`); and `natPow` and `natGcd` call
+  runtime procedures, whose runs the core's `Star` must cover (a call that returns
+  to the same frame, as `procCall_sim` shows).
 - *Depends on:* Phase 2's scalar fields, large objects and uniqueness test;
   P8 for library code over dictionaries.
 - *Exit:* K4 compiles, certifies and is measured; BLAKE3 passes its
