@@ -346,7 +346,7 @@ theorem g_expr_lower (κ : _root_.Address → KKey) {args : List (SourceValue F)
     obtain ⟨b, hb, b1, -, b3, -, -⟩ := sl d Γ (ZMod.val c) E hE
     rw [hb] at hy; injection hy with hy; subst hy
     rw [val_natCast (lt_mod_of_le_idx b1)] at hge
-    have hI : IdxLt _ (ZMod.val c - s₁) e :=
+    have hI : IdxLt _ (ZMod.val c - s₁) _ :=
       idxAll_mono (idxAll_and b3 hn) (fun n i hi => by obtain ⟨h1, h2⟩ := hi; omega)
     exact (lbrLe_of_idxLt hE hI (by omega)).2.2 (d - s₂) Γ (ZMod.val c - s₁) (Nat.le_refl _)
   | .other_n1 (ev36 := e1) (ev59 := e2) (ev94 := e3) (hc119 := hc) .. =>
