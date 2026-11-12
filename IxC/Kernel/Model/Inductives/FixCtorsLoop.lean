@@ -223,17 +223,19 @@ theorem ctorsLoopGenJ {J : Judgements md}
       rwa [show k + (i + 1) = k + 1 + i from by omega] at this
     have hinv' : Inv mpC.base2 :=
       hInv mp.base2 cA _ mpC.base2 (List.mem_of_getElem? hcAk) hfresh hacC hinv
-    obtain ⟨mp', h1, h2, h3, h4, h5, h6, hext'⟩ := ctorsLoopGenJ hfr hCtors hnd hlpsT hlpsA hFssParams hFssBelow hiff hFssOkP hIdx Inv hInv
+    obtain ⟨mp', h1, h2, h3, h4, h5, h6, hext'⟩ := ctorsLoopGenJ hfr hCtors hnd hlpsT hlpsA
+      hFssParams hFssBelow hiff hFssOkP hIdx Inv hInv
       caps leafT hTlawsOf hfold rest (k + 1) _ mpC hrest' (by simp at hk; omega) hE' hfT' hFD'
       hleafT' hcons' hpend' hinv'
-    exact ⟨mp', h1, h2, h3, h4, h5, h6, (ModelExt.step ModelExt.refl hfresh
-      (fun _ _ _ => ConsCrossAt.ofNtc (fun _ h => nomatch h)) (fun _ _ h => nomatch h) hacC).trans
-      hext'⟩
+    exact ⟨mp', h1, h2, h3, h4, h5, h6,
+      (ModelExt.step (c₀ := .ctorInfo cA.1 p.nP cA.2) ModelExt.refl hfresh
+        (fun _ _ _ => ConsCrossAt.ofNtc (fun _ h => nomatch h)) (fun _ _ h => nomatch h)
+        hacC).trans hext'⟩
 
 
 
 /-- The constructors' conses from their stage runs: `ctorsLoopGenJ` at the kernel's runs. -/
-theorem ctorsLoopGen (hμ : μ.verifiedChecks = true)
+theorem ctorsLoopGen (_hμ : μ.verifiedChecks = true)
     {F : Nat} {p : InductiveShape md} {env₀ envI : Env md} {cvTa : ConstantVal md}
     {ctors ctorsA : List (ConstantVal md × Nat)} {sortss : List (List Level)}
     (hCtors : Ix.Kernel.checkSumCtors (Ix.Kernel.fueledOps μ F) env₀ envI p.cvT.name

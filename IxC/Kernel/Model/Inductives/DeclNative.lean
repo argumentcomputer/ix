@@ -1054,7 +1054,7 @@ theorem declNative (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env 
     (fun j cA hj => (hframes j cA hj).1) hframesR
     (fun hl => (hwl hl).imp_right fun h => by rw [hlenA]; exact h)
   -- the projection table at a structure-like block (task #210 Parts A, B)
-  exact declNativeTable rfl rfl hTbl mpC mp₃ hac₃ hProp hClps hresT
+  exact declNativeTable hμ rfl rfl hTbl mpC mp₃ hac₃ hProp hClps hresT
     (by rw [← hTname₀]; exact hpshapeT)
     mp.base2.wf hlenA hnFc hrunOf hfT_C hlpsT hTfresh'
     (by rw [hTtype]; exact htrT) hFD_C ⟨_, hstripT⟩ hcf_C hleafT_C' hleafC_C hframes hsortsOf

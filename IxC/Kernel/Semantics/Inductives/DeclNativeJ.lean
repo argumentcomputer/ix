@@ -7,6 +7,10 @@ public import IxC.Kernel.Verify.Inductives.FixInv
 public import IxC.Kernel.Verify.Inductives.SumRec
 import IxC.Kernel.Verify.Extend.Inversions
 import IxC.Kernel.Verify.Level
+import IxC.Kernel.Verify.Inductives.SumWF
+import IxC.Kernel.Verify.Inductives.FixWF
+import IxC.Kernel.Verify.Inductives.StructWF
+public import IxC.Kernel.Verify.EnvWF
 
 @[expose] public section
 
@@ -307,8 +311,64 @@ theorem NativeRecRunJ.recursor {J : Judgements md} {env : Env md} {p : NativePar
     {rhss : List (Expr md)} (h : NativeRecRunJ J env p cvTa ctorsA cvRa rhss) :
     cvRa.name = p.cvR.name ∧ cvRa.levelParams = p.cvR.levelParams ∧
       env.find? p.cvR.name = none ∧ p.cvR.name.isProjFnShape = false := by
-  obtain ⟨-, -, cvRi, recTy, sty, u, hcv, -, -, -, -, -, -, -, -, -, rfl⟩ := h
+  obtain ⟨-, -, cvRi, recTy, sty, u, hcv, -, -, -, -, -, -, -, -, -, hstR⟩ := h
+  obtain rfl : cvRa = ⟨p.cvR.name, p.cvR.levelParams, recTy⟩ := hstR
   exact ⟨rfl, rfl, hcv.fresh, hcv.shape⟩
+
+/-- **The recursor stage's facts** (`checkNativeRec_facts` over a package): the
+stored recursor's name and level parameters, its type's scoping, and the rules'
+count and scoping at the environment holding the recursor. -/
+theorem NativeRecRunJ.facts {J : Judgements md} {env : Env md} {p : NativeParts md}
+    {cvTa cvRa : ConstantVal md} {ctorsA : List (ConstantVal md × Nat)} {rhss : List (Expr md)}
+    (h : NativeRecRunJ J env p cvTa ctorsA cvRa rhss) :
+    cvRa.name = p.cvR.name ∧ cvRa.levelParams = p.cvR.levelParams ∧
+    (cvRa.type.hasFvar = false ∧
+      cvRa.type.allLevelParamsDefined cvRa.levelParams = true ∧
+      cvRa.type.constsResolve env = true ∧
+      cvRa.type.looseBVarsBounded 0 = true) ∧
+    rhss.length = (Ix.Kernel.nativeCtors4 ctorsA p.kinds).length ∧
+    ∀ rhs ∈ rhss, rhs.hasFvar = false ∧
+      rhs.allLevelParamsDefined cvRa.levelParams = true ∧
+      rhs.constsResolve ⟨.recInfo cvRa p.majorIdx p.rulePrefix [] :: env.consts⟩ = true ∧
+      rhs.looseBVarsBounded 0 = true := by
+  obtain ⟨-, -, cvRi, recTy, sty, u, -, -, hlp, hres, hbv, hfv, -, -, -, hrules, hstR⟩ := h
+  obtain rfl : cvRa = ⟨p.cvR.name, p.cvR.levelParams, recTy⟩ := hstR
+  obtain ⟨hlen, hall⟩ := Ix.Kernel.checkNativeRules_inv hrules
+  refine ⟨rfl, rfl, ⟨hfv, hlp, hres, hbv⟩, hlen, ?_⟩
+  intro rhs hrhs
+  obtain ⟨i, hi⟩ := List.getElem?_of_mem hrhs
+  have hi' : i < (Ix.Kernel.nativeCtors4 ctorsA p.kinds).length := by
+    have := (List.getElem?_eq_some_iff.mp hi).1
+    omega
+  obtain ⟨rhs', hget, -, hlp', hres', hbv', hfv'⟩ := hall i hi'
+  obtain rfl := Option.some.inj (hi.symm.trans hget)
+  exact ⟨hfv', hlp', hres', hbv'⟩
+
+/-- **The recursor's cons keeps the environment well-formed** (`direct_fix_rec_wf`
+over a package). -/
+theorem NativeRecRunJ.recWF {J : Judgements md} {env : Env md} (henv : Ix.Kernel.EnvWF env)
+    {p : NativeParts md} {cvTa cvRa : ConstantVal md} {ctorsA : List (ConstantVal md × Nat)}
+    {rhss : List (Expr md)} (h : NativeRecRunJ J env p cvTa ctorsA cvRa rhss) :
+    Ix.Kernel.EnvWF ⟨.recInfo cvRa p.majorIdx p.rulePrefix
+      (sumRules env.find? cvRa.name p.nP p.majorIdx p.rulePrefix cvRa.type ctorsA rhss)
+        :: env.consts⟩ := by
+  obtain ⟨-, -, ⟨htf, htp, htr, htb⟩, -, hall⟩ := h.facts
+  refine Ix.Kernel.EnvWF.cons henv (Ix.Kernel.structConstWF htf htp
+    (Ix.Kernel.Expr.constsResolve_mono htr) htb
+    (fun _ _ _ heq => nomatch heq) ?_)
+  intro cvR' mI' rP' rules' heq r hr
+  injection heq with e1 e2 e3 e4
+  subst e1
+  subst e4
+  obtain ⟨hmem, hfire⟩ := Ix.Kernel.sumRules_mem hr
+  obtain ⟨hrfv, hrlp, hrres, hrbv⟩ := hall r.rhs hmem
+  refine ⟨hrfv, hrlp, Ix.Kernel.Expr.constsResolve_of_find
+    (Ix.Kernel.find?_isSome_cons_same (c := .recInfo cvRa p.majorIdx p.rulePrefix [])
+      (c' := .recInfo cvRa p.majorIdx p.rulePrefix
+        (sumRules env.find? cvRa.name p.nP p.majorIdx p.rulePrefix cvRa.type ctorsA rhss)) rfl)
+      hrres, hrbv, ?_⟩
+  intro lvls pins hf
+  exact absurd hf (hfire lvls pins)
 
 /-! ## The kernel's records are the run instance -/
 

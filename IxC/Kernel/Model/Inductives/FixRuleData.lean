@@ -1,5 +1,6 @@
 module
 
+public import IxC.Kernel.Model.Inductives.NativeJudge
 public import IxC.Kernel.Model.Inductives.FixRecData
 public section
 
@@ -136,9 +137,9 @@ theorem CtorReadsR.cross {m : EnvModel V env} {ψ : LevelParam → Nat} {T : Key
 /-- **Rule `j`'s reading** at the recursor's cons: the rule's λ-data
 over the rule's core with the stored recursor leaf. -/
 theorem fixRuleData_of (mp : EnvModelM V μ env)
-    {F : Nat} {p : NativeParts md} {cvTa cvRa : ConstantVal md} {ctorsA : List (ConstantVal md × Nat)}
+    {J : Judgements md} {p : NativeParts md} {cvTa cvRa : ConstantVal md} {ctorsA : List (ConstantVal md × Nat)}
     {rhss : List (Expr md)} {caps : IndCaps md}
-    (hRec : Ix.Kernel.checkNativeRec (Ix.Kernel.fueledOps μ F) env p cvTa ctorsA = .ok (cvRa, rhss))
+    (hRec : NativeRecRunJ J env p cvTa ctorsA cvRa rhss)
     (hfT : env.find? p.cvT.name = some (.indInfo cvTa caps))
     (hlpsT : cvTa.levelParams = p.cvT.levelParams)
     {bsT : List (Expr md × BinderMeta)}
@@ -172,8 +173,9 @@ theorem fixRuleData_of (mp : EnvModelM V μ env)
             (fixCtorDataList dsF esF ksF eissF tssF ψ ctorsA 0) (dsF j ψ))
           (fixRuleCoreAV (pwBit ψ (Level.zeronessOf (Ix.Kernel.structElimLevel p.elim p.large))) (A ψ)
             p.nP cA.2 ctorsA.length j (Ix.Kernel.recIdxOf (ksF j)) (tssF j ψ) (eissF j ψ))) := by
-  obtain ⟨cvRi, recTy, sty, u, -, -, -, -, -, -, -, -, -, hrules, rfl⟩ :=
-    Ix.Kernel.checkNativeRec_shape hRec
+  obtain ⟨-, -, cvRi, recTy, sty, u, -, -, -, -, -, -, -, -, -, hrules, hstR⟩ :=
+    hRec
+  obtain rfl : cvRa = ⟨p.cvR.name, p.cvR.levelParams, recTy⟩ := hstR
   obtain ⟨hTf, -, -, -, -⟩ := mp.base2.wf _ (Ix.Kernel.Semantics.Env.find?_mem hfT)
   simp only [ConstantInfo.toConstantVal] at hTf
   have hjn : j < ctorsA.length := (List.getElem?_eq_some_iff.mp hj).1

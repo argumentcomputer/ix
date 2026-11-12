@@ -1,5 +1,6 @@
 module
 
+public import IxC.Kernel.Model.Inductives.NativeJudge
 public import IxC.Kernel.Model.Inductives.FixRecRead
 public import IxC.Kernel.Model.Inductives.FixCtorReads
 import IxC.Kernel.Verify.Inductives.FixInv
@@ -98,10 +99,11 @@ end Congr
 
 /-- **The recursor's data**, read off the generated type, and its
 universe: the kernel's sort inference, through the claims' sort row. -/
-theorem fixRecData_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
-    {F : Nat} {p : NativeParts md} {cvTa cvRa : ConstantVal md} {ctorsA : List (ConstantVal md × Nat)}
+theorem fixRecDataJ {J : Judgements md} {m : EnvModel V env} (hJ : JudgeSound J m)
+    (hS : ∀ ψ, SortClaimJ J m ψ)
+    {p : NativeParts md} {cvTa cvRa : ConstantVal md} {ctorsA : List (ConstantVal md × Nat)}
     {rhss : List (Expr md)} {caps : IndCaps md}
-    (hRec : Ix.Kernel.checkNativeRec (Ix.Kernel.fueledOps μ F) env p cvTa ctorsA = .ok (cvRa, rhss))
+    (hRec : NativeRecRunJ J env p cvTa ctorsA cvRa rhss)
     (hfT : env.find? p.cvT.name = some (.indInfo cvTa caps))
     (hlpsT : cvTa.levelParams = p.cvT.levelParams)
     {bsT : List (Expr md × BinderMeta)}
@@ -109,7 +111,7 @@ theorem fixRecData_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
     {tfvs : List (Expr md)} {trest : Expr md}
     (hopT : openPisAtFvars p.nP cvTa.type 0 = some (tfvs, trest))
     {ppsAll : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
-    (hFD : FormerData mp.base2 cvTa (p.nP + p.nIdx) p.resSort ppsAll)
+    (hFD : FormerData m cvTa (p.nP + p.nIdx) p.resSort ppsAll)
     {env₀ : Env md} {idxF : Nat → List (Expr md)} {dsF : Nat → (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
     {esF : Nat → (LevelParam → Nat) → List AnnotTerm} {srcsF : Nat → List (Option Nat)}
     {ksF : Nat → List RecFieldKind} {fvsPF xFvsF : Nat → List (Expr md)} {xrestF : Nat → Expr md}
@@ -118,22 +120,23 @@ theorem fixRecData_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
     (hlenK : p.kinds.length = ctorsA.length)
     (hks : ∀ i, i < ctorsA.length → p.kinds[i]? = some (ksF i))
     (hcf : ∀ i cA, ctorsA[i]? = some cA →
-      FixCtorFactsAt mp.base2 env₀ p.cvT.name p.cvT.levelParams p.nP p.nIdx p.resSort p.isProp
+      FixCtorFactsAt m env₀ p.cvT.name p.cvT.levelParams p.nP p.nIdx p.resSort p.isProp
         p.large idxF dsF esF srcsF ksF fvsPF xFvsF xrestF eissF tssF i cA) :
-    SumRecData mp.base2 cvRa p.nP ctorsA.length p.nIdx (Ix.Kernel.structElimLevel p.elim p.large)
-        (fixRdsAV mp.base2 p ppsAll dsF esF ksF eissF tssF ctorsA) ∧
+    SumRecData m cvRa p.nP ctorsA.length p.nIdx (Ix.Kernel.structElimLevel p.elim p.large)
+        (fixRdsAV m p ppsAll dsF esF ksF eissF tssF ctorsA) ∧
       ∃ u : Level, ∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
-        interp V ρ (mkPisAV (fixRdsAV mp.base2 p ppsAll dsF esF ksF eissF tssF ctorsA ψ)
+        interp V ρ (mkPisAV (fixRdsAV m p ppsAll dsF esF ksF eissF tssF ctorsA ψ)
           (recConcAV ctorsA.length p.nIdx)) ∈ˢ (univ (u.eval ψ) : V) := by
-  obtain ⟨cvRi, recTy, sty, u, -, hgen, htp, -, hbt, hRf, hsty, hens, -, -, rfl⟩ :=
-    Ix.Kernel.checkNativeRec_shape hRec
-  obtain ⟨hTf, -, -, hTb, -⟩ := mp.base2.wf _ (Ix.Kernel.Semantics.Env.find?_mem hfT)
+  obtain ⟨-, -, cvRi, recTy, sty, u, -, hgen, htp, -, hbt, hRf, hsty, hens, -, -, hstR⟩ :=
+    hRec
+  obtain rfl : cvRa = ⟨p.cvR.name, p.cvR.levelParams, recTy⟩ := hstR
+  obtain ⟨hTf, -, -, hTb, -⟩ := m.wf _ (Ix.Kernel.Semantics.Env.find?_mem hfT)
   simp only [ConstantInfo.toConstantVal] at hTf hTb
-  have hcr : ∀ ψ, CtorReadsR mp.base2 ψ p.cvT.name p.cvT.levelParams p.nP p.nIdx
+  have hcr : ∀ ψ, CtorReadsR m ψ p.cvT.name p.cvT.levelParams p.nP p.nIdx
       (Ix.Kernel.nativeCtors4 ctorsA p.kinds) (fixCtorDataList dsF esF ksF eissF tssF ψ ctorsA 0) :=
     fun ψ => fixCtorReadsR_of ψ hlenK hks hcf
-  have hread : ∀ ψ : LevelParam → Nat, denoteMeta mp.base2.acval env ψ 0 recTy
-      = some (mkPisAV (fixRdsAV mp.base2 p ppsAll dsF esF ksF eissF tssF ctorsA ψ)
+  have hread : ∀ ψ : LevelParam → Nat, denoteMeta m.acval env ψ 0 recTy
+      = some (mkPisAV (fixRdsAV m p ppsAll dsF esF ksF eissF tssF ctorsA ψ)
           (recConcAV ctorsA.length p.nIdx)) := fun ψ => by
     have := denoteMeta_structRecTyR hfT (show (ConstantInfo.indInfo cvTa caps).toConstantVal.levelParams
         = p.cvT.levelParams from hlpsT) (hcr ψ) hgen hTf hTb
@@ -147,33 +150,31 @@ theorem fixRecData_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
     unfold fixRdsAV at hd
     rw [mem_fixRecDataAV hd, pwBit_eq_zero_iff, Ix.Kernel.PropWhen.zeronessOf_sound, beq_iff_eq]
   · intro ψ ρ
-    have hc := claimsAt_of hμ mp ψ F
-    obtain ⟨-, -, hokT, -, -⟩ := hc.inferRow hsty hw hbt hL (CtxOk.nil hnil) (hread ψ)
+    obtain ⟨-, -, hokT, -, -⟩ := inferRowJ hJ hsty hw hbt hL (CtxOk.nil hnil) (hread ψ)
     exact hokT ρ (Sat_nil V ρ)
   · intro ψ
-    have hst := stripPisAV_mkPisAV (fixRdsAV mp.base2 p ppsAll dsF esF ksF eissF tssF ctorsA ψ)
+    have hst := stripPisAV_mkPisAV (fixRdsAV m p ppsAll dsF esF ksF eissF tssF ctorsA ψ)
       (recConcAV ctorsA.length p.nIdx)
     exact (stripPisAV_below hst (bvarsBelow_of_reading hw hbt (hread ψ))).1
   · intro ψ₁ ψ₂ hφ
     have h2 := hread ψ₂
-    have h1 : denoteMeta mp.base2.acval env ψ₂ 0 recTy
-        = some (mkPisAV (fixRdsAV mp.base2 p ppsAll dsF esF ksF eissF tssF ctorsA ψ₁)
+    have h1 : denoteMeta m.acval env ψ₂ 0 recTy
+        = some (mkPisAV (fixRdsAV m p ppsAll dsF esF ksF eissF tssF ctorsA ψ₁)
             (recConcAV ctorsA.length p.nIdx)) := by
-      rw [← denoteMeta_params_ext mp.base2 hφ 0 recTy htp]
+      rw [← denoteMeta_params_ext m hφ 0 recTy htp]
       exact hread ψ₁
     exact (mkPisAV_inj (by rw [fixRdsAV_length hFD ψ₁, fixRdsAV_length hFD ψ₂])
       (Option.some.inj (h1.symm.trans h2))).1
-  · have hc := claimsAt_of hμ mp ψ F
-    exact (hc.sortRow hsty hens hw hbt hL (CtxOk.nil hnil) (hread ψ) ρ (Sat_nil V ρ)).2
+  · exact (sortRowJ (hS ψ) hsty hens hw hbt hL (CtxOk.nil hnil) (hread ψ) ρ (Sat_nil V ρ)).2
 
 /-! ## The opening -/
 
 /-- The generated recursive recursor type's opening, at every
 assignment. -/
 theorem fixRecOpenedAll (mp : EnvModelM V μ env)
-    {F : Nat} {p : NativeParts md} {cvTa cvRa : ConstantVal md} {ctorsA : List (ConstantVal md × Nat)}
+    {J : Judgements md} {p : NativeParts md} {cvTa cvRa : ConstantVal md} {ctorsA : List (ConstantVal md × Nat)}
     {rhss : List (Expr md)}
-    (hRec : Ix.Kernel.checkNativeRec (Ix.Kernel.fueledOps μ F) env p cvTa ctorsA = .ok (cvRa, rhss))
+    (hRec : NativeRecRunJ J env p cvTa ctorsA cvRa rhss)
     {bsT : List (Expr md × BinderMeta)}
     (hstripT : cvTa.type.stripPis (p.nP + p.nIdx) = some (bsT, .sort p.resSort))
     (hlenK : p.kinds.length = ctorsA.length)
@@ -183,8 +184,9 @@ theorem fixRecOpenedAll (mp : EnvModelM V μ env)
     ∃ (fvsR : List (Expr md)) (oR : Expr md), ∀ ψ : LevelParam → Nat,
       Opened mp.base2 ψ (p.nP + ctorsA.length + p.nIdx + 2) cvRa.type fvsR oR
         (((rds ψ).map (·.2.2)).reverse) (recConcAV ctorsA.length p.nIdx) := by
-  obtain ⟨cvRi, recTy, sty, u, -, hgen, -, -, hbt, hRf, -, -, -, -, rfl⟩ :=
-    Ix.Kernel.checkNativeRec_shape hRec
+  obtain ⟨-, -, cvRi, recTy, sty, u, -, hgen, -, -, hbt, hRf, -, -, -, -, hstR⟩ :=
+    hRec
+  obtain rfl : cvRa = ⟨p.cvR.name, p.cvR.levelParams, recTy⟩ := hstR
   obtain ⟨tbs, itele, motiveTy, major, minors, hsT, -, hmaj, hmin, hrec⟩ :=
     Ix.Kernel.structRecTyR_unfold hgen
   generalize hctors : Ix.Kernel.nativeCtors4 ctorsA p.kinds = ctors at hmaj hmin
