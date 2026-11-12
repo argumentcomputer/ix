@@ -254,6 +254,8 @@ def run (a : Assert) : IO Unit := do
   expect a rbad.isEmpty s!"words: eval_word_lt's conclusion fails on {reprStr (rbad.take 5)}"
   expect a (withoutA > 0 && withoutB > 0)
     s!"words: without either hypothesis of eval_word_lt a counterexample ({withoutA}, {withoutB})"
-  expect a (rn > 0) s!"words: {rn} cases meet eval_word_lt's hypotheses"
+  -- per width, 19 operations on in-range pairs and `ofNat` on every probe with an in-range second
+  -- argument: 3, 5, 7 and 9 of the 12 probes are below the sizes of widths 8 to 64
+  expectEq a rn 3404 "words: the cases that meet eval_word_lt's hypotheses"
 
 end IxCCTests.Src.Words
