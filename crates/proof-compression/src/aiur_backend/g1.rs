@@ -13,6 +13,7 @@ use aiur::{
   FieldWord, bytecode::Type, field::FieldBackend, hints::HintChannels,
 };
 use ark_ff::{BigInteger, PrimeField};
+use ark_serialize::CanonicalSerialize;
 use num_bigint::{BigInt, BigUint, Sign};
 
 fn scalar(value: &BigUint) -> Result<Scalar, String> {
@@ -145,6 +146,17 @@ pub fn advice(channel: &str, input: &[Scalar]) -> Result<Vec<Scalar>, String> {
         .map_err(|error| format!("invalid compressed G1 point: {error}"))?;
       Ok(encode(point).to_vec())
     },
+    "bn254.g1.u128_bytes" => {
+      let [value] = input else {
+        return Err("G1 chunk advice needs one field".into());
+      };
+      Ok(
+        chunk_bytes(*value)?
+          .into_iter()
+          .map(|byte| Bn254.from_u64(u64::from(byte)))
+          .collect(),
+      )
+    },
     "bn254.g1.bytes64" => {
       let [value] = input else {
         return Err("G1 length advice needs one field".into());
@@ -176,6 +188,7 @@ pub fn register(channels: &mut HintChannels<Scalar>) -> Result<(), String> {
     ("bn254.g1.sign", fields(4), Type::Tuple { items: vec![fields(4); 2] }),
     ("bn254.g1.decode", fields(32), fields(9)),
     ("bn254.g1.bytes64", Type::Field, fields(8)),
+    ("bn254.g1.u128_bytes", Type::Field, fields(16)),
   ] {
     channels.insert(name, input, output, move |input, output| {
       let values = advice(name, input)?;
@@ -187,4 +200,48 @@ pub fn register(channels: &mut HintChannels<Scalar>) -> Result<(), String> {
     })?;
   }
   Ok(())
+}
+
+fn chunk_bytes(value: Scalar) -> Result<[u8; 16], String> {
+  let value = integer(value);
+  if value.bits() > 128 {
+    return Err("G1 chunk exceeds 128 bits".into());
+  }
+  let bytes = value.to_bytes_le();
+  let mut output = [0; 16];
+  output[..bytes.len()].copy_from_slice(&bytes);
+  Ok(output)
+}
+
+/// Two canonical compressed G1 points as four little-endian u128 scalars.
+pub fn encode_chunks(points: [G1Affine; 2]) -> Result<[Scalar; 4], String> {
+  let mut chunks = [Bn254.zero(); 4];
+  for (index, point) in points.into_iter().enumerate() {
+    if !point.is_on_curve() {
+      return Err("G1 point is not on the curve".into());
+    }
+    let mut bytes = [0u8; 32];
+    point
+      .serialize_compressed(bytes.as_mut_slice())
+      .map_err(|error| error.to_string())?;
+    for (half, block) in bytes.as_chunks::<16>().0.iter().enumerate() {
+      chunks[2 * index + half] = Scalar(Fr::from(u128::from_le_bytes(*block)));
+    }
+  }
+  Ok(chunks)
+}
+
+pub fn decode_chunks(chunks: &[Scalar]) -> Result<[G1Affine; 2], String> {
+  if chunks.len() != 4 {
+    return Err("G1 pair needs four u128 chunks".into());
+  }
+  let mut points = [G1Affine::identity(); 2];
+  for (index, words) in chunks.as_chunks::<2>().0.iter().enumerate() {
+    let mut bytes = [0; 32];
+    bytes[..16].copy_from_slice(&chunk_bytes(words[0])?);
+    bytes[16..].copy_from_slice(&chunk_bytes(words[1])?);
+    points[index] = read_g1_compressed(&mut bytes.as_slice())
+      .map_err(|error| format!("invalid compressed G1 point: {error}"))?;
+  }
+  Ok(points)
 }

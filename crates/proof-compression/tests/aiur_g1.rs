@@ -353,9 +353,31 @@ fn actual_compiler_kzg_proves_complete_addition_scalar_multiplication_and_msm()
     )
     .unwrap();
     let witness = backend.witness(&record, &trace, entry, &args).unwrap();
+    let forged_traces = if entry == "G1Test::add" {
+      let mut traces = witness.traces.clone();
+      let chip =
+        plan.function_chips()[plan.program().entry(entry).unwrap().function];
+      let layout = plan.layout().unwrap();
+      let placement = &layout.placements[chip];
+      let column = placement.columns[plan.artifact().chips[chip].inputs[0]];
+      traces[placement.circuit].values[column] += Bn254.one();
+      Some(traces)
+    } else {
+      None
+    };
     let proof = backend.prove(entry, &args, &record.output, witness).unwrap();
     backend.verify(entry, &args, &g1::encode(expected), &proof).unwrap();
     let wrong = if expected.infinity { g } else { G1Affine::identity() };
     assert!(backend.verify(entry, &args, &g1::encode(wrong), &proof).is_err());
+    if let Some(traces) = forged_traces {
+      let forged = multi_stark::system::SystemWitness::from_stage_1(
+        traces,
+        backend.system(),
+      );
+      let proof = backend.prove(entry, &args, &record.output, forged).unwrap();
+      assert!(
+        backend.verify(entry, &args, &g1::encode(expected), &proof).is_err()
+      );
+    }
   }
 }

@@ -13,6 +13,7 @@ pub mod compress_gl;
 pub mod fq;
 pub mod g1;
 pub mod kzg;
+pub mod pairing;
 pub mod plonk;
 
 #[derive(Clone, Copy, Debug, Default)]
