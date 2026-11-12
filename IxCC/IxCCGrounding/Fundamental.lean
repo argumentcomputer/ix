@@ -328,24 +328,9 @@ theorem fire_step (H : FundHyps M p κ lpsOf S Ok) {k : Nat}
             H.faith.recs.cls r hSr sf kk' lvls np nmot nmin ni ind rules ty hd
           simp only [admittedClasses, List.mem_singleton] at hadm
           subst hadm
-          -- `empty`: the table's kind is `empty`, at every level
-          have hkind : p.table.recKindOf r = some .empty := by
-            unfold recClassB at hcl
-            rw [hd] at hcl
-            cases hk : p.table.recKindOf r with
-            | none => simp [hk] at hcl
-            | some kd =>
-              cases kd with
-              | empty => rfl
-              | ordinary =>
-                rw [hk] at hcl
-                simp only at hcl
-                split at hcl <;> simp_all
-              | subsingleton w fs =>
-                rw [hk] at hcl
-                simp only at hcl
-                split at hcl <;> simp_all
-          simp [hd, hkind, IxCC.Src.RecKind.atLevels, IxCC.Src.recChosen] at hrun
+          -- `empty`: the table's kind is `empty`, at every level, and F4 traps
+          have hkind := recClassB_empty hcl
+          simp [hd, hkind, IxCC.Src.RecKind.atLevels, IxCC.Src.recChosen, Result.bind] at hrun
         | _ => simp [hd] at hrun
   | @prim op _ _ ci hfind hlp _ =>
     -- F6

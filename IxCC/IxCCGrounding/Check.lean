@@ -613,7 +613,7 @@ theorem recStored_of_check {r : CId} (h : recStoredB p env κ lpsOf r = true) :
     have hmem : (rl, krl) ∈ rules.zip krules :=
       List.mem_of_getElem? (List.getElem?_zip_eq_some.mpr ⟨hrl, hkrl⟩)
     have := hall (rl, krl) hmem
-    simp only [Bool.and_eq_true, decide_eq_true_eq, beq_iff_eq] at this
+    simp only at this
     exact ⟨this.1.1, this.1.2, termCorr_of_check _ _ this.2⟩
   · exact absurd h (by simp)
 
