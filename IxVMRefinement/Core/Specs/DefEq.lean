@@ -8,6 +8,15 @@ a rule whose premises the circuit establishes, chaining "reduce, then continue" 
 and its derived right-hand variants (`IxC/Kernel/Rules/Derived.lean`). Nothing is claimed for an
 answer `0`.
 
+**A yes is any answer other than `0`.** The circuit tests several of these answers against `0`
+(`match f(…) { 0 => 0, _ => … }`: `de_args`, `compare_struct_fields`, `try_eta_struct`,
+`try_proof_irrel`, the application case of `k_is_def_eq_struct_go`) and multiplies others
+(`is_nat_zero`), so every claim below is stated for every answer other than `0` (`r ≠ .field 0`),
+which is what "answer `1`" means in the docstrings; a claim at `1` alone could not be carried
+through those tests. Every such answer is `0` or `1` in fact. A step lemma therefore needs the
+same form (or the exact value) from each yes/no callee whose answer it returns, tests against `0`
+or multiplies.
+
 Shapes:
 
 * **Comparisons** `f(rc, a, b, types) -> Field` (`DeClaim`): at every opening depth `d` and ghost
@@ -43,7 +52,7 @@ def DeClaim (c : Ctx) (args : List (SourceValue F)) (h : Heap F) (r : SourceValu
     (calls : List (Call F)) : Prop :=
   ∀ rc a b types, args = [rc, a, b, types] → Good c calls → c.rc h rc →
     ∀ d Γ, c.types Γ h d types → ∀ A B, c.tm d Γ h A a → c.tm d Γ h B b →
-      r = .field 1 → Ix.Kernel.Rules.DefEq c.env d A B
+      r ≠ .field 0 → Ix.Kernel.Rules.DefEq c.env d A B
 
 /-- **A comparison continuing from reducts** (`f(rc, orig_a, orig_b, a, b, types) -> Field`): for
 `a`, `b` representing reducts of the originals' images, answer `1` is `DefEq` of the originals. -/
@@ -52,15 +61,15 @@ def DeFromReductsClaim (c : Ctx) (args : List (SourceValue F)) (h : Heap F) (r :
   ∀ rc oa ob a b types, args = [rc, oa, ob, a, b, types] → Good c calls → c.rc h rc →
     ∀ d Γ, c.types Γ h d types → ∀ A0 B0 A B, c.tm d Γ h A0 oa → c.tm d Γ h B0 ob →
       c.tm d Γ h A a → c.tm d Γ h B b → Red c.env d A0 A → Red c.env d B0 B →
-        r = .field 1 → Ix.Kernel.Rules.DefEq c.env d A0 B0
+        r ≠ .field 0 → Ix.Kernel.Rules.DefEq c.env d A0 B0
 
 /-- **The result of a lazy-δ step** `(tag, fa, fb)` on terms whose images are `A`, `B`: `fa`, `fb`
-represent reducts of `A`, `B` (for every tag), and tag `1` is `DefEq A B`. -/
+represent reducts of `A`, `B` (for every tag), and a tag other than `0` is `DefEq A B`. -/
 def LoopResult (c : Ctx) (d : Nat) (Γ : Nat → KExpr) (h' : Heap F) (r : SourceValue F)
     (A B : KExpr) : Prop :=
   ∀ tag fa fb, r = .tuple [tag, fa, fb] →
     ∃ FA FB, c.tm d Γ h' FA fa ∧ c.tm d Γ h' FB fb ∧ Red c.env d A FA ∧ Red c.env d B FB ∧
-      (tag = .field 1 → Ix.Kernel.Rules.DefEq c.env d A B)
+      (tag ≠ .field 0 → Ix.Kernel.Rules.DefEq c.env d A B)
 
 /-- **A `Nat` offset split as IxVM reads one** (`nat_offset_of`): `E` is `B` plus `k`, read
 through a `Nat` literal (base the literal `0`), `Nat.succ x` (one step of `1`) and
@@ -96,12 +105,14 @@ def k_is_def_eq : SpecFn := fun c args h r _ calls => DeClaim c args h r calls
 /-- `k_def_eq_rebase(rc, a, b, types, base)`: **answer `1` is `DefEq` at the caller's depth.**
 The inner run compares the inputs lowered past their unused innermost `g` opened variables, at
 depth `d - g` under the trimmed context; its `DefEq` is moved back to depth `d` by
-`Transport.lift` (`IxC/Kernel/Rules/Transport.lean`). `base` is unconstrained (`ctx_trim` keeps a
-segment with the same top end whatever it is). -/
+`DefEq.lift` (`IxC/Kernel/Rules/Transport.lean`), which reads that the stored terms are closed
+(`EnvFacts.storeClosed`) and fixes the images because the ghost context is scoped
+(`GhostScoped`, in `c.types`). `base` is unconstrained (`ctx_trim` keeps a segment with the same
+top end whatever it is). -/
 def k_def_eq_rebase : SpecFn := fun c args h r _ calls =>
   ∀ rc a b types base, args = [rc, a, b, types, base] → Good c calls → c.rc h rc →
     ∀ d Γ, c.types Γ h d types → ∀ A B, c.tm d Γ h A a → c.tm d Γ h B b →
-      r = .field 1 → Ix.Kernel.Rules.DefEq c.env d A B
+      r ≠ .field 0 → Ix.Kernel.Rules.DefEq c.env d A B
 
 /-- `k_is_def_eq_core(rc, a, b, types)`: answer `1` is `DefEq` (`DeClaim`). -/
 def k_is_def_eq_core : SpecFn := fun c args h r _ calls => DeClaim c args h r calls
@@ -121,13 +132,13 @@ lengths, pairwise `DefEq`). -/
 def de_args : SpecFn := fun c args h r _ calls =>
   ∀ rc aa bb types, args = [rc, aa, bb, types] → Good c calls → c.rc h rc →
     ∀ d Γ, c.types Γ h d types → ∀ As Bs, c.tml d Γ h As aa → c.tml d Γ h Bs bb →
-      r = .field 1 → DefEqList c.env d As Bs
+      r ≠ .field 0 → DefEqList c.env d As Bs
 
 /-- `level_list_eq(a, b)`: **answer `1` is pointwise semantic equality** (`LvEqList`) of the two
 level lists, the premise of `DefEq.const` (the lengths agree). -/
 def level_list_eq : SpecFn := fun c args h r _ calls =>
   ∀ a b, args = [a, b] → Good c calls →
-    ∀ us vs, LvListRep h us a → LvListRep h vs b → r = .field 1 → LvEqList us vs
+    ∀ us vs, LvListRep h us a → LvListRep h vs b → r ≠ .field 0 → LvEqList us vs
 
 /-! ## `Nat` literals and offsets -/
 
@@ -135,27 +146,32 @@ def level_list_eq : SpecFn := fun c args h r _ calls =>
 literal whose limbs are zero, or a level-free constant at an address the table binds to
 `Nat.zero`). -/
 def is_nat_zero : SpecFn := fun c args h r _ calls =>
-  ∀ rc e, args = [rc, e] → Good c calls → c.rc h rc → r = .field 1 →
+  ∀ rc e, args = [rc, e] → Good c calls → c.rc h rc → r ≠ .field 0 →
     ∀ d Γ E, c.tm d Γ h E e → E = .lit (.natVal 0) ∨ E = .const Ix.Kernel.natZeroName []
 
-/-- `nat_offset_of(rc, e) -> (tag, base, limbs)`: **tag `1` is an offset split** (`OffsetSplit`):
-the image is the base's image plus the limbs' value. Tag `0` returns the input and the empty
-limbs (decided by the code; IxVM's own recursion reads the base of a tag-`0` result). -/
+/-- `nat_offset_of(rc, e) -> (tag, base, limbs)`: **a tag other than `0` is an offset split**
+(`OffsetSplit`): the image is the base's image plus the limbs' value. Tag `0` returns the input
+and the empty limbs (decided by the code; IxVM's own recursion reads the base of a tag-`0`
+result). The split is IxVM's: it stops at a `Nat.succ` or `Nat.add` head its role lookup does
+not recognize, where the kernel's `natOffsetOf` (a function of the term, the reading
+`DefEq.natOffset` asks for) goes on; the two agree where the lookup recognizes every head the
+table binds to those roles. -/
 def nat_offset_of : SpecFn := fun c args h r h' calls =>
   ∀ rc e, args = [rc, e] → Good c calls → c.rc h rc →
     (∀ x y, r = .tuple [.field 0, x, y] → x = e ∧ RepLimbs h' 0 y) ∧
-    (∀ x y, r = .tuple [.field 1, x, y] → ∀ d Γ E, c.tm d Γ h E e →
+    (∀ tag x y, r = .tuple [tag, x, y] → tag ≠ .field 0 → ∀ d Γ E, c.tm d Γ h E e →
       ∃ B k, OffsetSplit E B k ∧ c.tm d Γ h' B x ∧ RepLimbs h' k y)
 
-/-- `try_def_eq_nat(rc, a, b, types) -> (decided, answer)`: **`(1, 1)` is `DefEq`**: both images
-are zero readings (`DefEq.refl`, `DefEq.natZero`), or both split at the same offset with
-definitionally equal bases (`DefEq.natOffset` when the splits are the kernel's; otherwise through
-`Red.natLit`/`Red.natAddSucc` to `Nat.succ` towers and congruence). `(1, 0)` and `(0, _)` claim
-nothing. -/
+/-- `try_def_eq_nat(rc, a, b, types) -> (decided, answer)`: **`(1, x)` with `x` other than `0`
+is `DefEq`**: both images are zero readings (`DefEq.refl`, `DefEq.natZero`), or both split at
+the same offset with definitionally equal bases: `DefEq.natOffset` where IxVM's splits are the
+kernel's `natOffsetOf`; where IxVM stopped earlier, through `Red.natAddSucc`, `Red.natAddZero`,
+`Red.natSucc`, `DefEq.natSucc` and congruence, which read the `Nat.succ` heads at the empty
+level list. `(1, 0)` and `(0, _)` claim nothing. -/
 def try_def_eq_nat : SpecFn := fun c args h r _ calls =>
   ∀ rc a b types, args = [rc, a, b, types] → Good c calls → c.rc h rc →
     ∀ d Γ, c.types Γ h d types → ∀ A B, c.tm d Γ h A a → c.tm d Γ h B b →
-      r = .tuple [.field 1, .field 1] → Ix.Kernel.Rules.DefEq c.env d A B
+      ∀ x, r = .tuple [.field 1, x] → x ≠ .field 0 → Ix.Kernel.Rules.DefEq c.env d A B
 
 /-! ## `String` literals -/
 
@@ -196,11 +212,12 @@ then `slow2_after_delta` on the loop's reducts. **Answer `1` is `DefEq` of the o
 def k_is_def_eq_slow2 : SpecFn := fun c args h r _ calls => DeFromReductsClaim c args h r calls
 
 /-- `de_rescue_tier(rc, aw, bw, types) -> (decided, answer)`: proof irrelevance, unit-like types,
-structure η both ways, `Nat` offsets. **`(1, 1)` is `DefEq`**; nothing else is claimed. -/
+structure η both ways, `Nat` offsets. **`(1, x)` with `x` other than `0` is `DefEq`**; nothing
+else is claimed. -/
 def de_rescue_tier : SpecFn := fun c args h r _ calls =>
   ∀ rc a b types, args = [rc, a, b, types] → Good c calls → c.rc h rc →
     ∀ d Γ, c.types Γ h d types → ∀ A B, c.tm d Γ h A a → c.tm d Γ h B b →
-      r = .tuple [.field 1, .field 1] → Ix.Kernel.Rules.DefEq c.env d A B
+      ∀ x, r = .tuple [.field 1, x] → x ≠ .field 0 → Ix.Kernel.Rules.DefEq c.env d A B
 
 /-- `slow2_after_delta(rc, orig_a, orig_b, fa, fb, types)`: the bounded structural tier and the
 structure tree on the lazy-δ reducts `fa`, `fb`, then the eager fallback on the originals.
@@ -222,21 +239,21 @@ def k_is_def_eq_structure_tree_app : SpecFn := fun c args h r _ calls =>
   DeClaim c args h r calls
 
 /-- `k_is_def_eq_struct_bounded(rc, a, b, credit, types) -> (answer, credit')`: the structural
-comparison with a credit of head normalizations (`k_is_def_eq_struct_spend`). **`(1, _)` is
-`DefEq`**; only the answer `1` is claimed, so the credit is harmless. Binder bodies are compared
-under the left domain (`DefEq.lam`/`forallE` by symmetry). -/
+comparison with a credit of head normalizations (`k_is_def_eq_struct_spend`). **An answer other
+than `0` is `DefEq`**; nothing is claimed for `0`, so the credit is harmless. Binder bodies are
+compared under the left domain (`DefEq.lam`/`forallE` by symmetry). -/
 def k_is_def_eq_struct_bounded : SpecFn := fun c args h r _ calls =>
   ∀ rc a b credit types, args = [rc, a, b, credit, types] → Good c calls → c.rc h rc →
     ∀ d Γ, c.types Γ h d types → ∀ A B, c.tm d Γ h A a → c.tm d Γ h B b →
-      ∀ x, r = .tuple [.field 1, x] → Ix.Kernel.Rules.DefEq c.env d A B
+      ∀ ans rest, r = .tuple [ans, rest] → ans ≠ .field 0 → Ix.Kernel.Rules.DefEq c.env d A B
 
 /-- `k_is_def_eq_struct_spend(rc, a, b, credit, types) -> (answer, credit')`: one credit spent on
 head-normalizing both sides (`whnf_nd`), then `Nat` offsets, the lazy-δ loop, or the bounded
-structural comparison of the loop's reducts. **`(1, _)` is `DefEq`**. -/
+structural comparison of the loop's reducts. **An answer other than `0` is `DefEq`**. -/
 def k_is_def_eq_struct_spend : SpecFn := fun c args h r _ calls =>
   ∀ rc a b credit types, args = [rc, a, b, credit, types] → Good c calls → c.rc h rc →
     ∀ d Γ, c.types Γ h d types → ∀ A B, c.tm d Γ h A a → c.tm d Γ h B b →
-      ∀ x, r = .tuple [.field 1, x] → Ix.Kernel.Rules.DefEq c.env d A B
+      ∀ ans rest, r = .tuple [ans, rest] → ans ≠ .field 0 → Ix.Kernel.Rules.DefEq c.env d A B
 
 /-- `slow2_eager_fallback(rc, a, b, types)`: both sides head-normalized (`whnf`), the rescue
 tier, η both ways, then the structural comparison; answer `1` is `DefEq` (`DeClaim`). -/
@@ -254,7 +271,7 @@ reduces to a sort at a level zero at every assignment** (the middle premises of
 `DefEq.proofIrrelTy`). -/
 def is_prop_type : SpecFn := fun c args h r _ calls =>
   ∀ rc ty types, args = [rc, ty, types] → Good c calls → c.rc h rc →
-    ∀ d Γ, c.types Γ h d types → ∀ T, c.tm d Γ h T ty → r = .field 1 →
+    ∀ d Γ, c.types Γ h d types → ∀ T, c.tm d Γ h T ty → r ≠ .field 0 →
       ∃ S u, Infer c.env .io d T S ∧ Red c.env d S (.sort u) ∧
         ∀ φ, Ix.Kernel.Level.eval φ u = 0
 
@@ -268,11 +285,14 @@ def try_unit_like : SpecFn := fun c args h r _ calls => DeClaim c args h r calls
 exactly its unit-like parameter count, with the family's telescope certified against the
 arguments (licensed), and, at a reserved basis name, the basis unit (`isUnitLikeTy`). IxVM reads
 the shape off the loaded records (no indices, one block member, one constructor without fields,
-not recursive) and certifies the parameters (`family_params`); the capability flags are the
-kernel's install computation (an environment fact). -/
+not recursive) and certifies the parameters (`family_params`). The capability record is the
+kernel's install computation, so a proof needs an environment fact: a stored inductive whose
+loaded record has no index and one constructor without fields has `caps.unitlike = true` and
+`caps.unitParams` its parameter count (the native install's `nativeCapsAt`; the pinned `PUnit`,
+whose key is reserved, with `isUnitLikeTy`). -/
 def is_unit_like_type : SpecFn := fun c args h r _ calls =>
   ∀ rc ty types, args = [rc, ty, types] → Good c calls → c.rc h rc →
-    ∀ d Γ, c.types Γ h d types → ∀ T, c.tm d Γ h T ty → r = .field 1 →
+    ∀ d Γ, c.types Γ h d types → ∀ T, c.tm d Γ h T ty → r ≠ .field 0 →
       ∃ (K : KKey) (us : List KLevel) (cvT : Ix.Kernel.ConstantVal .anon)
         (caps : Ix.Kernel.IndCaps .anon),
         T.getAppFn = .const K us ∧ c.env.find? K = some (.indInfo cvT caps) ∧
@@ -289,14 +309,14 @@ def family_params : SpecFn := fun c args h r _ calls =>
   ∀ rc nl ty np lvls xs types, args = [rc, nl, ty, np, lvls, xs, types] → Good c calls →
     c.rc h rc → ∀ (n p : F), nl = .field n → np = .field p →
     ∀ d Γ, c.types Γ h d types → ∀ T us As, c.tmc h T ty → LvListRep h us lvls →
-      c.tml d Γ h As xs → r = .field 1 →
+      c.tml d Γ h As xs → r ≠ .field 0 →
         As.length = ZMod.val p ∧ us.length = ZMod.val n ∧
-        Certs c.env d true (T.instantiateLevelParams (List.range (ZMod.val n)) us) As
+        Certs c.env d true (T.instantiateLevelParams (List.range us.length) us) As
 
 /-- `leading_foralls(t, n)`: **answer `1` means `t`'s image begins with `n` syntactic `∀`s**
 (at any local depth). -/
 def leading_foralls : SpecFn := fun c args h r _ calls =>
-  ∀ t (n : F), args = [t, .field n] → Good c calls → r = .field 1 →
+  ∀ t (n : F), args = [t, .field n] → Good c calls → r ≠ .field 0 →
     ∀ d Γ k T, c.tmk d Γ k h T t → HasPis (ZMod.val n) T
 
 /-- `try_eta_struct(rc, t, s, types)`: `s` is a fully applied constructor of a non-recursive,
@@ -305,8 +325,14 @@ fields read as projections), whose sort is never zero; its parameters are certif
 (`family_params`); the io-inferred types of `t` and `s` are definitionally equal; and each
 projection of `t` is definitionally equal to the corresponding field of `s`
 (`compare_struct_fields`). **Answer `1` is `DefEq T S`** by `DefEq.structEtaTy` (its `b` is `t`,
-its `a` is `s`). Its capability premises (`caps.eta`, `caps.etaCtor`, `towerSlotsAll`) and the
-constructor's result type are environment facts. -/
+its `a` is `s`). A proof needs environment facts for the premises IxVM does not compute: for a
+stored inductive whose loaded record has no index, one constructor, a sort never zero and no
+recursive field, in a native block, `caps.eta = true`, `caps.etaCtor` the key of its constructor
+record and `towerSlotsAll` at the constructor's field count (the native install's
+`nativeCapsAt` and projection tables); and the stored constructor's type is a telescope of its
+parameters and fields ending in the structure at the constructor's level parameters applied to
+the parameters, which gives `Red ta (mkAppN (.const T us) (a.getAppArgs.take cnP))` for the
+io-inferred type of the constructor application. -/
 def try_eta_struct : SpecFn := fun c args h r _ calls => DeClaim c args h r calls
 
 /-- `compare_struct_fields(rc, struct_addr, nparams, nfields, t, s_args, i, types)`: **answer `1`
@@ -318,7 +344,7 @@ def compare_struct_fields : SpecFn := fun c args h r _ calls =>
   ∀ rc sp np nf t sargs ip types, args = [rc, sp, np, nf, t, sargs, ip, types] → Good c calls →
     c.rc h rc → ∀ (sa : Bytes.Address) (p n i : F), RepAddr h sa sp → np = .field p →
     nf = .field n → ip = .field i → ZMod.val i ≤ ZMod.val n →
-    ∀ d Γ, c.types Γ h d types → ∀ T Ss, c.tm d Γ h T t → c.tml d Γ h Ss sargs → r = .field 1 →
+    ∀ d Γ, c.types Γ h d types → ∀ T Ss, c.tm d Γ h T t → c.tml d Γ h Ss sargs → r ≠ .field 0 →
       ∀ j, ZMod.val i ≤ j → j < ZMod.val n →
         ∃ S, Ss[ZMod.val (p + (j : F))]? = some S ∧
           Ix.Kernel.Rules.DefEq c.env d (.proj (c.κ (ixAddr sa)) j T) S
@@ -344,7 +370,7 @@ default on both sides). -/
 def try_eta_expand : SpecFn := fun c args h r _ calls =>
   ∀ rc ta ba la b types, args = [rc, ta, ba, la, b, types] → Good c calls → c.rc h rc →
     ∀ d Γ, c.types Γ h d types → ∀ TA BA (ℓ : KLevel) B, c.tm d Γ h TA ta →
-      c.tmk d Γ 1 h BA ba → RepKLevel h ℓ la → c.tm d Γ h B b → r = .field 1 →
+      c.tmk d Γ 1 h BA ba → RepKLevel h ℓ la → c.tm d Γ h B b → r ≠ .field 0 →
         Ix.Kernel.Rules.DefEq c.env d (.lam TA BA (bmeta ℓ)) B
 
 /-! ## The structural tier and the congruences -/
@@ -369,7 +395,7 @@ def de_binder : SpecFn := fun c args h r _ calls =>
     c.rc h rc → ∀ d Γ, c.types Γ h d types →
     ∀ TA BA (ℓa : KLevel) TB BB (ℓb : KLevel), c.tm d Γ h TA ta → c.tmk d Γ 1 h BA ba →
       RepKLevel h ℓa la → c.tm d Γ h TB tb → c.tmk d Γ 1 h BB bb → RepKLevel h ℓb lb →
-      r = .field 1 →
+      r ≠ .field 0 →
         Ix.Kernel.Rules.DefEq c.env d (.lam TA BA (bmeta ℓa)) (.lam TB BB (bmeta ℓb)) ∧
         Ix.Kernel.Rules.DefEq c.env d (.forallE TA BA (bmeta ℓa)) (.forallE TB BB (bmeta ℓb))
 
@@ -379,7 +405,7 @@ def de_proj : SpecFn := fun c args h r _ calls =>
   ∀ rc sa ia ea sb ib eb types, args = [rc, sa, ia, ea, sb, ib, eb, types] → Good c calls →
     c.rc h rc → ∀ (a b : Bytes.Address) (i j : F), RepAddr h a sa → RepAddr h b sb →
     ia = .field i → ib = .field j →
-    ∀ d Γ, c.types Γ h d types → ∀ EA EB, c.tm d Γ h EA ea → c.tm d Γ h EB eb → r = .field 1 →
+    ∀ d Γ, c.types Γ h d types → ∀ EA EB, c.tm d Γ h EA ea → c.tm d Γ h EB eb → r ≠ .field 0 →
       Ix.Kernel.Rules.DefEq c.env d (.proj (c.κ (ixAddr a)) (ZMod.val i) EA)
         (.proj (c.κ (ixAddr b)) (ZMod.val j) EB)
 
@@ -453,7 +479,7 @@ def lazy_delta_both_proj : SpecFn := fun c args h r h' calls =>
 (of the constants `CIRep` relates it to). It allocates nothing. -/
 def is_defn_or_thm : SpecFn := fun c args h r h' _ =>
   ∀ v, args = [v] → h' = h ∧
-    (r = .field 1 → ∀ ci, c.ci h v ci →
+    (r ≠ .field 0 → ∀ ci, c.ci h v ci →
       (∃ cv V hn, ci = .defnInfo cv V hn) ∨ ∃ cv V, ci = .thmInfo cv V)
 
 /-- `try_unfold_proj_app(rc, e, types) -> (tag, e')`: at a projection-headed spine, the reduct
@@ -466,9 +492,9 @@ def try_unfold_proj_app : SpecFn := fun c args h r h' calls =>
       ∀ x, r = .tuple [.field 1, x] → ∃ E', c.tm d Γ h' E' x ∧ Red c.env d E E'
 
 /-- `delta_unfold(e) -> (tag, e')`: at a constant-headed spine, the head's definition or theorem
-value at the head's levels, applied to the spine (`KernelWhnf::red_unfold`'s tags `1`, `2`).
-**Tag `1` is a reduct** (`Red.delta`, `Red.deltaThm` with `EnvFacts.thmTyped`, then
-`Red.appFn`). -/
+value at the head's levels, applied to the spine (every tag of `KernelWhnf::red_unfold` other
+than `0`: `1` a definition, `2` a theorem). **Tag `1` is a reduct** (`Red.delta`,
+`Red.deltaThm` with `EnvFacts.thmTyped`, then `Red.appFn`). -/
 def delta_unfold : SpecFn := fun c args h r h' calls =>
   ∀ e, args = [e] → Good c calls → ∀ d Γ E, c.tm d Γ h E e →
     ∀ x, r = .tuple [.field 1, x] → ∃ E', c.tm d Γ h' E' x ∧ Red c.env d E E'
@@ -478,11 +504,11 @@ definition or theorem (`try_unfold_head`), and compare what was unfolded with th
 **Answer `1` is `DefEq`** (`redL` and its right-hand variant). -/
 def try_lazy_delta_app : SpecFn := fun c args h r _ calls => DeClaim c args h r calls
 
-/-- `head_addr(e) -> (addr, tag)`: **tag `1` means `e`'s spine head is a constant at `addr`**:
-the image is that constant applied to a spine. Tag `0` returns the zero address (nothing
-claimed). -/
+/-- `head_addr(e) -> (addr, tag)`: **a tag other than `0` means `e`'s spine head is a constant
+at `addr`**: the image is that constant applied to a spine. Tag `0` returns the zero address
+(nothing claimed). -/
 def head_addr : SpecFn := fun c args h r h' calls =>
-  ∀ e, args = [e] → Good c calls → ∀ p, r = .tuple [p, .field 1] →
+  ∀ e, args = [e] → Good c calls → ∀ p tag, r = .tuple [p, tag] → tag ≠ .field 0 →
     ∀ d Γ E, c.tm d Γ h E e →
       ∃ (ad : Bytes.Address) (us : List KLevel) (As : List KExpr), RepAddr h' ad p ∧
         E = Ix.Kernel.Expr.mkAppN (.const (c.κ (ixAddr ad)) us) As
