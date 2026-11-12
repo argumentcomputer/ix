@@ -261,11 +261,25 @@ def hostcert (clo eqs : System.FilePath) (root : String) (out : System.FilePath)
   -- the uncounted route: `Recheck.run`, then `runWithContracts`' check
   IO.println s!"== {root}: zero-RC certificate, the verifier's stages (Recheck.run, runWithContracts)"
   let zc ← stage "Cert.ofText" fun _ => Recheck.Cert.ofText ztext
+  let rel ← stage "checkCanonicalRelevance (the CLI's certificate read)" fun _ =>
+    .ok (Recheck.checkCanonicalRelevance cfg inp zc.table zc.relevance)
+  IO.println s!"  (canonical relevance {rel})"
   let (_, zfir) ← frontStages cfg inp.program zc
   let C ← stage "Own.immortal, Cfg.lower" fun _ => .ok (Cfg.lower (Own.immortal zfir))
   stage "root parameters" fun _ => Recheck.checkParams cfg C (C.exports.zipIdx.map fun (f, i) => (i, f))
   stage "Rt.checkSwitches" fun _ => (Rt.checkSwitches C).mapError Recheck.Err.ofSwitch
-  let _ ← stage "Rt.lower" fun _ => (Rt.lower { names := cfg.names } C).mapError Recheck.Err.ofRt
+  let lowered ← stage "Rt.lower" fun _ => (Rt.lower { names := cfg.names } C).mapError Recheck.Err.ofRt
+  let zroot := (inp.program.roots.head?.map (·.1)).getD default
+  let zxv ← stage "Xv.Select.select" fun _ => (Xv.Select.select lowered.program).mapError Recheck.Err.ofSelect
+  stage "Xv.Validate.program (the allocation certificate)" fun _ =>
+    (Xv.Validate.program cfg.env zxv zc.alloc).mapError Recheck.Err.ofValidate
+  let zxl ← stage "Xv.Alloc.applyProgram" fun _ => (Xv.Alloc.applyProgram zxv zc.alloc).mapError
+    fun message => { stage := .alloc, code := "alloc.apply", message }
+  let (zst, zprog, zexp) ← stage "Backend.lay (stacking, layout)" fun _ =>
+    (Backend.lay zxl (Recheck.backendConfig cfg lowered zroot zc)).mapError Recheck.Err.ofBackend
+  let _ ← stage "Backend.finish (x86 check, encodings, ELF)" fun _ =>
+    (Backend.finish zxl.main zst zprog zexp (cfg.provenance.getD (Recheck.defaultProvenance zroot))).mapError
+      Recheck.Err.ofBackend
   let a ← stage "Recheck.run, whole (again)" fun _ => Recheck.run cfg inp.program zc
   IO.println s!"  (object {a.object.size} bytes)"
   let (d, td) ← timeMs fun _ => contractProgramDomain zfir
@@ -289,8 +303,21 @@ def hostcert (clo eqs : System.FilePath) (root : String) (out : System.FilePath)
   IO.println s!"  (checkScopedProgram {ok})"
   let _ ← stage "Cfg.Rc.Public.lower" fun _ => (Cfg.Rc.Public.lower { names := cfg.names } rfir own.bodies cand).mapError
     fun message => { stage := .rt, code := "rc.lower", message }
-  let ra ← stage "RcReplay.run, whole (again)" fun _ => Recheck.RcReplay.run cfg inp.program rc
-  IO.println s!"  (object {ra.backend.object.size} bytes)"
+  let f ← stage "RcReplay.runFront, whole (again)" fun _ => Recheck.RcReplay.runFront cfg inp.program rc
+  let proot := (f.src.roots.head?.map (·.1)).getD default
+  let prov := cfg.provenance.getD (.ixir1Policy proot 3 1)
+  let pcfg := { cfg with provenance := some prov }
+  let pxv ← stage "Xv.Select.select" fun _ => (Xv.Select.select f.lowered.program).mapError Recheck.Err.ofSelect
+  stage "Xv.Validate.program (the allocation certificate)" fun _ =>
+    (Xv.Validate.program (f.env pcfg.env) pxv rc.base.alloc).mapError Recheck.Err.ofValidate
+  let pxl ← stage "Xv.Alloc.applyProgram" fun _ => (Xv.Alloc.applyProgram pxv rc.base.alloc).mapError
+    fun message => { stage := .alloc, code := "alloc.apply", message }
+  let bcfg := { Recheck.backendConfig pcfg f.lowered proot rc.base with reps := f.reps, env := f.env pcfg.env }
+  let (pst, pprog, pexp) ← stage "Backend.lay (stacking, layout)" fun _ =>
+    (Backend.lay pxl bcfg).mapError Recheck.Err.ofBackend
+  let pb ← stage "Backend.finish (x86 check, encodings, ELF)" fun _ =>
+    (Backend.finish pxl.main pst pprog pexp prov).mapError Recheck.Err.ofBackend
+  IO.println s!"  (object {pb.object.size} bytes)"
   return 0
 
 /-- `policy G P`: `selectRcPolicyForSrc` on `G` functions of `P` parameters (`trap` bodies, distinct
