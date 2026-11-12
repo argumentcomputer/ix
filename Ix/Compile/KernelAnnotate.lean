@@ -361,7 +361,7 @@ def phaseAWorkers (mode : Ix.Kernel.CheckMode) (ev : Ix.Kernel.Evidences .source
       if k == 0 then continue
       outs[k]![w]!.resolve mine
       for w' in [:W] do
-        let rs ← if w' == w then pure mine else IO.wait outs[k]![w']!.result!
+        let rs ← (if w' == w then pure mine else IO.wait outs[k]![w']!.result! : BaseIO _)
         for (i, m) in rs do
           match m with
           | .pushes cis =>
