@@ -1,0 +1,43 @@
+import IxCC.Rt.Rc.Gen.Proof.FramePointImmediate
+import IxCC.Rt.Rc.Gen.Proof.FramePointShared
+import IxCC.Rt.Rc.Gen.Proof.FramePointUnique
+import IxCC.Rt.Rc.Gen.Proof.FramePointScalar
+
+namespace IxCC.Rt.Rc.Gen
+open IxCC.Rt.Rc.Procs
+open IxCC.Rt.Proof
+open Lir
+open IxCC.Own IxCC.Own.Rc
+
+/-- Progress for every represented current token, with no assumed operation
+simulation. Balance rules out dead/static/zero-count locations, while the
+actual value encoding classifies every other accepted token as immediate. -/
+theorem ReleasePoint.current_move_frame {p : ReleasePoint} {addresses external context base bump limit}
+    (hp : p.Valid cmax addresses external context base bump limit) {value}
+    (hc : p.current = some value) :
+    ∃ next, p.Move cmax addresses external context base bump limit next ∧
+      ProtectedFrame p.mem next.mem context base bump := by
+  classical
+  by_cases hl : ∃ location, value = .loc location
+  · obtain ⟨location, rfl⟩ := hl
+    have hi := hp.1
+    have hb : Balance p.heap external (.loc location :: cursorTokens p.frames) := by
+      simpa only [hc, Option.toList_some, List.cons_append, List.nil_append] using hi.balance
+    obtain ⟨refs, body, hcell, hpositive⟩ := balance_pending_live (location := location) hb (by simp)
+    cases refs with
+    | zero => omega
+    | succ n =>
+      cases n with
+      | zero =>
+        obtain ⟨_, address, ha, cell⟩ := hi.live.cell location 1 .dyn body hcell
+        by_cases hz : body.ctor.nobj = 0
+        · exact ReleasePoint.scalar_move_frame hp hc hcell hz
+        · have harity := cell.arity
+          cases he : body.fields with
+          | nil => rw [he] at harity; simp at harity; omega
+          | cons child suffix => exact ReleasePoint.unique_move_frame hp hc hcell (by omega) he
+      | succ rc => exact ReleasePoint.shared_move_frame hp hc hcell
+  · exact ReleasePoint.immediate_move_frame hp hc (by intro location eq; exact hl ⟨location, eq⟩)
+
+
+end IxCC.Rt.Rc.Gen

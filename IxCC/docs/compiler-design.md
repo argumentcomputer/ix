@@ -861,8 +861,13 @@ soundness](resource-soundness-design.md)).
   enums and other field-free constructors, `Bool`, `Char`, `UInt8/16/32`,
   and □.
 - Objects carry one 8-byte header (scan count, size class, 16-bit tag,
-  32-bit RC), followed by scanned fields, then scalar fields. Scalar fields
-  are planned; every implemented layout is fully scanned.
+  32-bit RC), followed by scanned fields, then scalar fields (raw 64-bit
+  words). A cell is in one of 71 size classes
+  ([`Rt.Rc.Classes`](../IxCC/Rt/Rc/Classes.lean)): classes 1–32 hold that many
+  words, 33–56 four per doubling from 40 to 2,048 words, 57–71 one per
+  doubling up to 2²⁶ words; a header scans at most 254 fields. Compiled
+  programs use fully scanned layouts of 1–31 fields only; the general
+  layouts' runtime is proved but not yet emitted (below).
 - `UInt64` is raw in registers and scalar fields once a checked
   representation annotation exists (planned,
   [DR2](data-and-roots-design.md#dr2-fixed-width-integers-and-int)); until then
@@ -872,8 +877,9 @@ soundness](resource-soundness-design.md)).
 - Allocation uses size-class free lists refilled by bump pointer from a heap
   region the caller supplies.
 - Inline fast paths for allocation, `inc`, `dec` and the uniqueness test are
-  planned. Today each RC operation calls a runtime procedure, and there is no
-  uniqueness test because there is no reuse yet.
+  planned. Today each RC operation calls a runtime procedure; the uniqueness
+  test is a proved procedure (`Rt.Rc.Gen.isUnique`) that nothing calls yet,
+  since there is no reuse.
 - Freeing is iterative.
 - `Nat` overflow is an explicit failure until certified limb bignums land
   ([bignum design](bignum-design.md)).
@@ -891,6 +897,29 @@ and malformed ownership/control maps are explicit declines. Allocation and
 iterative release preserve the size-class free lists and bounded arena.
 General scalar-field layouts, reset/reuse optimizations and stronger written
 ownership contracts are outside this first route.
+
+**General cell layouts** (heap stage 1; library only, the pipeline does not
+emit them yet). [`Rt.Rc.Gen`](../IxCC/Rt/Rc/Gen/Procs.lean) has allocation
+by layout (`alloc`: on the bounded route's layouts it is `Procs.alloc`
+itself, `alloc_ofFields`), a release `dec` for every layout, and the
+uniqueness test `isUnique` (1 exactly for a dynamic cell whose count word is
+0; it reads one word and writes nothing). The release keeps the countdown of
+fields still to visit in the dead cell's 32-bit count word, free once the
+count reached zero, and the scan count in the header, so the next field is
+`scan − remaining` whatever the class; a cell without scanned fields (scalar
+words only) is recycled at once, its first word never read as a child; a
+finished cell goes on its own class's free list. Its proofs, over a general
+heap invariant, are `Rt/Rc/Gen/Proof/`
+([DR1](data-and-roots-design.md#dr1-heap-completion)). When the pipeline
+switches, `Gen.dec` becomes the one release. On the bounded route's layouts
+it executes `3 − n` more Lir steps (`4 − n` more x86 instructions) per
+freed cell of `n` scanned fields than `Procs.dec`: up to 3 (4) more for
+cells of fewer than three scanned fields, fewer for four or more; the extra
+are a branch on the scan byte for scalar-only cells and a reload of the
+class byte at recycling, against one subtraction fewer per field after the
+first. The measurements, and two cheaper variants left open for the inline
+fast paths, are in
+[DR1, "The general release's cost"](data-and-roots-design.md#the-general-releases-cost).
 
 A successful physical source completion carries one owned output token.
 `Returned.release_public` in

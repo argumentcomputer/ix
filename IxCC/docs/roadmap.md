@@ -512,7 +512,18 @@ data:
   scalar fields, constructors beyond 31 fields and large objects, static
   objects, reset/reuse with a uniqueness test, static reuse from `unique`
   contracts, borrowed parameters, inline RC fast paths, and the proved Own
-  checker with the canonical plain producer as its fallback.
+  checker with the canonical plain producer as its fallback. Stage 1
+  (general cell layouts and the uniqueness test) in progress: its runtime
+  and proofs are a library (`Rt.Rc.Gen`); the pipeline's switch to it, with
+  `Gen.dec` as the one release, is next, gated on whole-program
+  executed-instruction counts. **Open for stage 3** (inline fast paths): the
+  general release executes up to 3 Lir steps (4 x86 instructions) more per
+  freed cell than the bounded route's for cells of fewer than three scanned
+  fields, fewer for four or more (lists +3.2 % steps, +4.8 % instructions;
+  chains of one-field cells +10.5 %, +10.9 %), from a branch for scalar-only
+  cells and a reload of the class byte; two cheaper variants (`asc`,
+  `desc`) are measured but not proved
+  ([DR1, "The general release's cost"](data-and-roots-design.md#the-general-releases-cost)).
 - **P8** ([closures design](closures-design.md)): defunctionalisation,
   dispatchers, the known-dispatch shrink rule, `Anf.Defun.correct`. Started
   at the owner's request (2026-11-10) for the native route's generality,
