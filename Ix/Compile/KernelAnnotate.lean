@@ -678,7 +678,16 @@ def walkStored : Nat → Cx → List Nat → Ixon.Expr → KExpr → EM Unit
       setNode ord (.share variant)
     | .sort _, .sort _ | .ref .., .const .. | .recur .., .const .. | .str _, .lit _
     | .nat _, .lit _ => pure ()
-    | _, _ => mismatch "a node of the stored term"
+    | _, _ =>
+      let tag (e : Ixon.Expr) : String := match e with
+        | .var _ => "var" | .app .. => "app" | .lam .. => "lam" | .all .. => "all"
+        | .letE .. => "let" | .prj .. => "prj" | .share _ => "share" | .sort _ => "sort"
+        | .ref .. => "ref" | .recur .. => "recur" | .str _ => "str" | .nat _ => "nat"
+      let ktag : String := match k with
+        | .bvar _ => "bvar" | .fvar .. => "fvar" | .app .. => "app" | .lam .. => "lam"
+        | .forallE .. => "forall" | .letE .. => "let" | .proj .. => "proj" | .sort _ => "sort"
+        | .const .. => "const" | .lit _ => "lit"
+      mismatch s!"a node of the stored term (record {tag e}, stored {ktag})"
 
 /-! ## A record's sources -/
 
@@ -815,7 +824,10 @@ def annotate (k : Installed) (extra : Array (Ix.Name × Ix.ConstantInfo)) (names
             tryCatch (do
                 let ((), nodes) ← (walkStored walkFuel cx [] rs[i] kx).run #[]
                 pure (some nodes))
-              (fun _ => pure none)
+              (fun e => if cx.trace then
+                  dbgTrace s!"binder data trace: root {i}: the stored walk fails: {traceError e}"
+                    fun _ => pure none
+                else pure none)
           | _ => pure none
         let exp : Option KExpr := match tys[i]? with
           | some (some j) => annotated[j]?.join
