@@ -739,7 +739,15 @@ theorem recClassB_eqRec {p : Program} {env : KEnv} {κ : CId → KKey} {r : CId}
     · rename_i hc
       simp only [Bool.and_eq_true, beq_iff_eq] at hc
       obtain ⟨hc1, hc2⟩ := hc
-      subst hc2
+      have hw : ∀ w : IxCC.Src.PropWhen, (w == .allZero []) = true → w = .allZero [] := by
+        intro w hw
+        cases w with
+        | never => cases hw
+        | allZero ps =>
+          cases ps with
+          | nil => rfl
+          | cons _ _ => cases hw
+      obtain rfl := hw _ hc2
       exact ⟨hc1, by assumption, _, _, _, _, _, _, by assumption⟩
     · cases h
   · split at h <;> cases h
