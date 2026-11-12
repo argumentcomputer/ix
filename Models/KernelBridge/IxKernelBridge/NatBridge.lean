@@ -1880,7 +1880,7 @@ theorem checkDecls_verifyBytes_immortal_denotes_nat {μ : CheckMode} {ev : Evide
       IxCC.Src.KernelFront.AcceptedFrom inp.env IxCC.Src.KernelFront.defaultLimits inp.kernel.acc ∧
       Ix.Kernel.Admission.checkBytesTieredUsing (IxCC.Src.KernelFront.preludeSource inp.kernel.acc.pre)
         IxCC.Src.KernelFront.hash inp.kernel.acc.binding inp.kernel.acc.limits inp.kernel.acc.records
-        inp.kernel.acc.blobs = .ok (inp.kernel.acc.env, inp.kernel.acc.tier) ∧
+        inp.kernel.acc.blobs inp.kernel.acc.hints.lookup = .ok (inp.kernel.acc.env, inp.kernel.acc.tier) ∧
       inp.env.root = claim.env ∧
       inp.env.bindingAddress = claim.roleTable ∧
       inp.program.roots.head? = some (claim.target, rootId) ∧
