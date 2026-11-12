@@ -7,11 +7,11 @@ a balanced tree of `Bool.casesOn (Nat.blt s m)` with 127 leaves, and returns its
 of the `xᵢ`. The code after the tree is a join that captures the `C` parameters and that every leaf
 jumps to; the canonical placement captures two more variables in scope, so a canonical
 certificate makes the checker take `C + 2` captured tokens at each jump and at the declaration.
-The roots `IxCCTests.Own.Budget.fanUnder` and `fanOver` each call forty-one of them (in four parts, for the node budget) with every `xᵢ` their `n`, and return the sum and `s`
-as a pair (so that the automatic policy selects plain RC): canonically 41 · 199 · 128 = 1,044,352
-captured tokens, within `Anf.maxCapturedWork` (2²⁰ = 1,048,576), and 41 · 200 · 128 =
-1,049,600, past it. A liveness placement captures only the parameters: 1,033,856 and 1,039,104,
-both within it.
+The roots `IxCCTests.Own.Budget.fanUnder` and `fanOver` each call forty-one of them (in four
+parts, for the node budget) with every `xᵢ` their `n`, and return the sum and `s` as a pair (so
+that the automatic policy selects plain RC): canonically 41 · 199 · 128 = 1,044,352 captured
+tokens, within `Anf.maxCapturedWork` (2²⁰ = 1,048,576), and 41 · 200 · 128 = 1,049,600, past it.
+A liveness placement captures only the parameters: 1,033,856 and 1,039,104, both within it.
 
 The shape is forced by the limits that come first. The consumer reads expressions at most 256
 deep, and parameters and `let`s nest, so one function captures at most about 230 values; the

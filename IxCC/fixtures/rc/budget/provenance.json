@@ -1,10 +1,10 @@
 {"source_sha256":
  {"consumer.equations.json":
-  "c06b2c93d6ec96d4a55c7f1bc6f045a26401da59ba2dc636fc1747a8ef0b90f1",
+  "f43d4d475e8fa6977231519edf4b38ad060384fe2f49b0e7dd138d5c7a63f97d",
   "anonymous.ixe":
-  "e56539de232f08e54327bab6adf8371e86d2834ffc837c8649d4259e24ca0edb",
+  "6da4c83d4e9b515e6e4f619681f73693edc42f0fe5fea3c8f25697aa9e8ddfcd",
   "Fan.lean":
-  "d4f2e07e64ebcfb8bbedff7927788833e98f781e84c390166dc48efa7d690de7"},
+  "89aad7ddc79c41d70662ed523358d656d3fd8a68017d404ae30b0e6012af9c62"},
  "source_path": "fixtures/rc/budget",
  "regenerate":
  "lake exe refreeze-ixon rc-budget --ix IX --ix-path FAKE (docs/corpus.md, Refreezing)",
@@ -12,7 +12,7 @@
  "producer":
  "the ix of this repository: lake build ix at the repository root, in its dev shell (not a Nix build)",
  "named_env_sha256":
- "99204b7c72c3e017a66b42b99266200ee1e6a637f24b3f8e9d9b80fb0c4de2ff",
+ "582574b886452a109011715de69cee5f6af0d5c309a9152b7cb0b5762655830a",
  "lean_version":
  "Lean (version 4.34.1, x86_64-unknown-linux-gnu, commit 5045d0056413266e57c625dcd7c365b10e377c52, Release)\n",
  "commands":
