@@ -298,7 +298,8 @@ def Model.restrict {env env' : Env md} (M : Model V env) {K : Key md → Prop}
         (fun e he => Expr.RefsIn.getAppArgs hdomK e (List.mem_of_mem_take he)))
       (fun hm => DenotesList.mono_env hfind' hproj' hlit (hidx hm)
         (fun e he => Expr.RefsIn.getAppArgs hresC e (List.mem_of_mem_drop he)))
-    have hrefs := Expr.RefsIn.instantiateLevelParams _ _ (hrhs cv mI rP rules hmR rl hrl)
+    have hrefs := Expr.RefsIn.instantiateLevelParams cv.levelParams us
+      (hrhs cv mI rP rules hmR rl hrl)
     exact ⟨H, Denotes.mono_env hfind hproj hlit hH hrefs,
       GradedBy.mono_env hfind hproj hlit hgH hrefs, hspH, heq⟩
   unit_like := by
