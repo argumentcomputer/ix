@@ -181,7 +181,7 @@ def aheadStep (ev : Ix.Kernel.Evidences .source) (fe : FEnv .source) (d : CDecl 
 
 /-- A declaration's pushes computed ahead against `fe`: `separable`'s, else
 `aheadStep`'s. -/
-def ahead (ev : Ix.Kernel.Evidences .source) (fe : FEnv .source) (d : CDecl .source) :
+def pushesAhead (ev : Ix.Kernel.Evidences .source) (fe : FEnv .source) (d : CDecl .source) :
     Option (Array (Ix.Kernel.ConstantInfo .source)) :=
   match d with
   | .defnDecl cv .. =>
@@ -335,7 +335,7 @@ def install (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (workers : Nat 
     let n0 ← IO.monoNanosNow
     let pushes : Array (Option (Array (Ix.Kernel.ConstantInfo .source))) ← IO.lazyPure fun _ =>
       if !parallel || wave.size < 8 then wave.map fun _ => none
-      else Ix.Compile.Parallel.map (4 * max workers 1) (fun i => ahead ev base prepared[i]!) wave
+      else Ix.Compile.Parallel.map (4 * max workers 1) (fun i => pushesAhead ev base prepared[i]!) wave
     let n1 ← IO.monoNanosNow
     nsAhead := nsAhead + (n1 - n0)
     for (i, r) in wave.zip pushes do
