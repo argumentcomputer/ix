@@ -198,10 +198,14 @@ structure RState where
   blocks : Array Block := #[]
   memo : Std.HashMap (Nat × List (Option Address) × Option PropWhen × Address) Nat := {}
 
-/-- A reading fails (`none`) at the first binder it cannot read. -/
-abbrev RM := StateT RState Option
+/-- A reading fails at the first binder it cannot read, saying what stands there. -/
+abbrev RM := StateT RState (Except String)
 /-- An entry's reading: its nodes' data, by ordinal. -/
 abbrev NM := StateT (Array Node) RM
+
+/-- What the reading expects of a term's type: the zero-ness of its sort, or why
+it does not know it. -/
+abbrev Expect := Except String PropWhen
 
 private def reserve : NM Nat :=
   modifyGet fun nodes => (nodes.size, nodes.push (.binder none))
@@ -232,6 +236,52 @@ def binderRun (pi : Bool) : Ixon.Expr → Ix.Expr → Array (Ixon.Expr × Ix.Exp
     | _ => (e, x, acc)
   | e, x, acc => (e, x, acc)
 
+/-- A source node's kind, for the reasons. -/
+def tag : Ix.Expr → String
+  | .bvar .. => "a variable" | .fvar .. => "a free variable" | .mvar .. => "a metavariable"
+  | .sort .. => "a sort" | .const .. => "a constant" | .app .. => "an application"
+  | .lam .. => "a λ" | .forallE .. => "a ∀" | .letE .. => "a let" | .lit .. => "a literal"
+  | .mdata _ e _ => tag e | .proj .. => "a projection"
+
+/-- Why the sort of the type `t` (under `ctx`) is not read: its head's shape. -/
+def shapeOf (find : Find) (ctx : List (Option Ix.Expr)) (t : Ix.Expr) : String :=
+  let rec leaf : Nat → Ix.Expr → Ix.Expr
+    | 0, t => t
+    | n + 1, t => match unwrap find 8 t with
+      | .forallE _ _ b _ _ => leaf n b
+      | t => t
+  let t := leaf 64 t
+  let (h, n) := headArgs t
+  match h with
+  | .const c _ _ => match find c with
+    | some ci => match peelN n ci.getCnst.type with
+      | some r => s!"{c.pretty} applied to {n}, whose type there is {tag (unwrap find 8 r)}"
+      | none => s!"{c.pretty} applied to {n}, more than its type's ∀s"
+    | none => s!"{c.pretty}, not found"
+  | .bvar i _ => match (ctx[i]?).join with
+    | some ty => match peelN n ty with
+      | some r => s!"a variable applied to {n}, whose type there is {tag (unwrap find 8 r)}"
+      | none => s!"a variable applied to {n}, more than its type's ∀s"
+    | none => "a let-bound variable"
+  | h => s!"{tag h} applied to {n}"
+
+/-- The expectation of an argument at `idx` of a spine headed by `h`. -/
+def argExpect (find : Find) (σ : Ix.Name → Nat) (ctx : List (Option Ix.Expr)) (h : Ix.Expr)
+    (idx : Nat) : Expect :=
+  match argPw find σ ctx h idx with
+  | some p => .ok p
+  | none =>
+    let head := match h with
+      | .const c _ _ => c.pretty
+      | h => tag h
+    let dom : Option (Ix.Expr × List (Option Ix.Expr)) := match h with
+      | .const c _ _ => (find c).bind fun ci => domainAt idx ci.getCnst.type []
+      | .bvar i _ => (ctx[i]?).join.bind fun ty => domainAt idx ty []
+      | _ => none
+    match dom with
+    | some (d, before) => .error s!"argument {idx} of {head}, its domain headed by {shapeOf find before d}"
+    | none => .error s!"argument {idx} of {head}, beyond its type's ∀s"
+
 /-- Bounds the reading's depth. -/
 def readFuel : Nat := 1 <<< 24
 
@@ -239,16 +289,16 @@ def readFuel : Nat := 1 <<< 24
 (the types of the bound variables, innermost first; `none` for a `let`'s), with
 `ex` the zero-ness of the sort of `x`'s type where it is known. Every numbered
 node of `e` gets its datum at its ordinal; the reading fails where a datum is not
-read. -/
-def read : Nat → Cx → List (Option Ix.Expr) → Option PropWhen → Ixon.Expr → Ix.Expr → NM Unit
-  | 0, _, _, _, _, _ => failure
+read, saying what stands there. -/
+def read : Nat → Cx → List (Option Ix.Expr) → Expect → Ixon.Expr → Ix.Expr → NM Unit
+  | 0, _, _, _, _, _ => throw "the reading's depth bound"
   | fuel + 1, cx, ctx, ex, e, x =>
     match e, unmeta x with
     | .var _, .bvar .. => pure ()
     | .app f a, .app xf xa _ => do
-      read fuel cx ctx none f xf
+      read fuel cx ctx (.error "the function of an application") f xf
       let (h, n) := headArgs xf
-      read fuel cx ctx (argPw cx.find cx.σ.pos ctx h n) a xa
+      read fuel cx ctx (argExpect cx.find cx.σ.pos ctx h n) a xa
     | .lam .., .lam .. | .all .., .forallE .. => do
       let pi := e matches .all ..
       let (leafE, leafX, bs) := binderRun pi e x #[]
@@ -257,26 +307,35 @@ def read : Nat → Cx → List (Option Ix.Expr) → Option PropWhen → Ixon.Exp
       for h : j in [:bs.size] do
         let (t, ty) := bs[j]
         ords := ords.push (← reserve)
-        read fuel cx inner none t ty
+        read fuel cx inner (.error "a binder's domain") t ty
         inner := some ty :: inner
-      read fuel cx inner (if pi then none else ex) leafE leafX
-      let pw? := if pi then sortPw cx.find cx.σ.pos id 64 inner leafX else ex
-      let some pw := pw? | failure
+      read fuel cx inner (if pi then .error "a ∀-body" else ex) leafE leafX
+      let pw ← if pi then
+          match sortPw cx.find cx.σ.pos id 64 inner leafX with
+          | some p => pure p
+          | none => throw s!"a ∀-body headed by {shapeOf cx.find inner leafX}"
+        else match ex with
+          | .ok p => pure p
+          | .error why => throw s!"a λ-run as {why}"
       let node := cx.nodeOf pw
       for ord in ords do setNode ord node
     | .letE _ t v b, .letE _ ty val body _ _ => do
-      read fuel cx ctx none t ty
-      read fuel cx ctx (sortPw cx.find cx.σ.pos id 64 ctx ty) v val
+      read fuel cx ctx (.error "a let's type") t ty
+      let vex : Expect := match sortPw cx.find cx.σ.pos id 64 ctx ty with
+        | some p => .ok p
+        | none => .error s!"a let's value, its type headed by {shapeOf cx.find ctx ty}"
+      read fuel cx ctx vex v val
       read fuel cx (some ty :: ctx) ex b body
-    | .prj _ _ v, .proj _ _ xv _ => read fuel cx ctx none v xv
+    | .prj _ _ v, .proj _ _ xv _ => read fuel cx ctx (.error "a projection's subject") v xv
     | .share n, _ => do
       let ord ← reserve
       let n := n.toNat
-      let key := (n, (ctx.take (cx.bounds[n]?.getD 0)).map (·.map Ix.Expr.getHash), ex, x.getHash)
+      let key := (n, (ctx.take (cx.bounds[n]?.getD 0)).map (·.map Ix.Expr.getHash), ex.toOption,
+        x.getHash)
       let variant ← match (← getThe RState).memo[key]? with
         | some v => pure v
         | none => do
-          let some entry := cx.sharing[n]? | failure
+          let some entry := cx.sharing[n]? | throw "a share without its entry"
           let ((), nodes) ← ((read fuel cx ctx ex entry x).run #[] : RM (Unit × Array Node))
           let v ← variantOf n nodes
           modifyThe RState fun st => { st with memo := st.memo.insert key v }
@@ -284,7 +343,7 @@ def read : Nat → Cx → List (Option Ix.Expr) → Option PropWhen → Ixon.Exp
       setNode ord (.share variant)
     | .sort _, .sort .. | .ref .., .const .. | .recur .., .const .. | .str _, .lit .. | .nat _, .lit .. =>
       pure ()
-    | _, _ => failure
+    | _, x => throw s!"a record node that is not its source's ({tag x})"
 
 /-! ## A record's roots and their expectations -/
 
@@ -293,11 +352,13 @@ the reading needs it (a value's, a rule right-hand side's). -/
 structure Root where
   σ : Numbering
   x : Ix.Expr
-  ex : Option PropWhen := none
+  ex : Expect := .error "a type"
 
 /-- The zero-ness of the sort of a definition's type `ty`, numbered by `σ`. -/
-def typePw (find : Find) (σ : Numbering) (ty : Ix.Expr) : Option PropWhen :=
-  sortPw find σ.pos id 64 [] ty
+def typeExpect (find : Find) (σ : Numbering) (ty : Ix.Expr) : Expect :=
+  match sortPw find σ.pos id 64 [] ty with
+  | some p => .ok p
+  | none => .error s!"a definition's value, its type headed by {shapeOf find [] ty}"
 
 /-- A member's roots, in section order, when its kind is the record member's
 (`IxVM.PwHints.roots`): a definition's type and value, an axiom's or a
@@ -308,15 +369,15 @@ def memberRoots (find : Find) (ci : Ix.ConstantInfo) :
   | .inl (.defn _) | .inr (.defn _) =>
     let σ : Numbering := ⟨ci.getCnst.levelParams, false⟩
     match ci with
-    | .defnInfo d => some #[⟨σ, d.cnst.type, none⟩, ⟨σ, d.value, typePw find σ d.cnst.type⟩]
-    | .thmInfo t => some #[⟨σ, t.cnst.type, none⟩, ⟨σ, t.value, some (PropWhen.ifAllZero [])⟩]
-    | .opaqueInfo o => some #[⟨σ, o.cnst.type, none⟩, ⟨σ, o.value, typePw find σ o.cnst.type⟩]
+    | .defnInfo d => some #[⟨σ, d.cnst.type, .error "a type"⟩, ⟨σ, d.value, typeExpect find σ d.cnst.type⟩]
+    | .thmInfo t => some #[⟨σ, t.cnst.type, .error "a type"⟩, ⟨σ, t.value, .ok (PropWhen.ifAllZero [])⟩]
+    | .opaqueInfo o => some #[⟨σ, o.cnst.type, .error "a type"⟩, ⟨σ, o.value, typeExpect find σ o.cnst.type⟩]
     | _ => none
   | .inr (.axio _) => match ci with
-    | .axiomInfo a => some #[⟨⟨a.cnst.levelParams, false⟩, a.cnst.type, none⟩]
+    | .axiomInfo a => some #[⟨⟨a.cnst.levelParams, false⟩, a.cnst.type, .error "a type"⟩]
     | _ => none
   | .inr (.quot _) => match ci with
-    | .quotInfo q => some #[⟨⟨q.cnst.levelParams, false⟩, q.cnst.type, none⟩]
+    | .quotInfo q => some #[⟨⟨q.cnst.levelParams, false⟩, q.cnst.type, .error "a type"⟩]
     | _ => none
   | .inl (.recr r) | .inr (.recr r) => match ci with
     | .recInfo v => do
@@ -327,20 +388,23 @@ def memberRoots (find : Find) (ci : Ix.ConstantInfo) :
       let σ : Numbering := ⟨v.cnst.levelParams, v.cnst.levelParams.size == indLevels + 1⟩
       -- a rule's right-hand side has the sort of its motive's codomain: the
       -- elimination level
-      let elim : Option PropWhen := do
-        let (motive, _) ← domainAt v.numParams v.cnst.type []
-        let l ← leafSort motive
-        let l' ← (ingressLevel σ.pos l).toOption
-        pure (Ix.Kernel.Level.zeronessOf l')
-      some ((#[⟨σ, v.cnst.type, none⟩] : Array Root) ++ v.rules.map fun rule => (⟨σ, rule.rhs, elim⟩ : Root))
+      let elim : Expect := match (do
+          let (motive, _) ← domainAt v.numParams v.cnst.type []
+          let l ← leafSort motive
+          let l' ← (ingressLevel σ.pos l).toOption
+          pure (Ix.Kernel.Level.zeronessOf l') : Option PropWhen) with
+        | some p => .ok p
+        | none => .error "a rule's right-hand side, its motive's sort not read"
+      some ((#[⟨σ, v.cnst.type, .error "a type"⟩] : Array Root) ++
+        v.rules.map fun rule => (⟨σ, rule.rhs, elim⟩ : Root))
     | _ => none
   | .inl (.indc i) => match ci with
     | .inductInfo v => do
       let ctors ← v.ctors.mapM fun n => match find n with
-        | some (.ctorInfo k) => some (⟨⟨k.cnst.levelParams, false⟩, k.cnst.type, none⟩ : Root)
+        | some (.ctorInfo k) => some (⟨⟨k.cnst.levelParams, false⟩, k.cnst.type, .error "a type"⟩ : Root)
         | _ => none
       guard (ctors.size == i.ctors.size)
-      some ((#[⟨⟨v.cnst.levelParams, false⟩, v.cnst.type, none⟩] : Array Root) ++ ctors)
+      some ((#[⟨⟨v.cnst.levelParams, false⟩, v.cnst.type, .error "a type"⟩] : Array Root) ++ ctors)
     | _ => none
   | _ => none
 
@@ -351,28 +415,34 @@ def members (c : Ixon.Constant) : Array (Ixon.MutConst ⊕ Ixon.ConstantInfo) :=
   | info => #[.inr info]
 
 /-- **The section of a block record, read off its members' sources** (`names`,
-in the record's member order), or `none` where some binder is not read. -/
-def section? (find : Find) (names : Array Ix.Name) (c : Ixon.Constant) :
-    Option (Array Ixon.BinderBlock) := do
+in the record's member order), or why some binder is not read. -/
+def sectionWhy (find : Find) (names : Array Ix.Name) (c : Ixon.Constant) :
+    Except String (Array Ixon.BinderBlock) := do
   let ms := members c
-  guard (ms.size == names.size)
+  unless ms.size == names.size do throw "members and names differ"
   let mut roots : Array Root := #[]
   for (m, n) in ms.zip names do
-    let ci ← find n
-    roots := roots ++ (← memberRoots find ci m)
+    let some ci := find n | throw s!"{n.pretty} has no source"
+    let some rs := memberRoots find ci m | throw s!"{n.pretty}'s source is not its record's kind"
+    roots := roots ++ rs
   let rs := IxVM.PwHints.roots c
-  guard (roots.size == rs.size)
+  unless roots.size == rs.size do throw "roots and sources differ"
   let bounds := IxVM.PwHints.bounds c.sharing
   let act : RM (Array Block) := do
     let mut out := #[]
     for h : i in [:rs.size] do
-      let some r := roots[i]? | failure
+      let some r := roots[i]? | throw "a root without its source"
       let cx : Cx := { find, σ := r.σ, sharing := c.sharing, bounds }
       let ((), nodes) ← (read readFuel cx [] r.ex rs[i] r.x).run #[]
       out := out.push ⟨0, i, 0, nodes⟩
     return out
   let (blocks, st) ← act.run {}
-  (Ix.Compile.BinderData.sectionOf c (blocks ++ st.blocks)).toOption
+  Ix.Compile.BinderData.sectionOf c (blocks ++ st.blocks)
+
+/-- `sectionWhy` without its reason. -/
+def section? (find : Find) (names : Array Ix.Name) (c : Ixon.Constant) :
+    Option (Array Ixon.BinderBlock) :=
+  (sectionWhy find names c).toOption
 
 end Ix.Compile.BinderRead
 

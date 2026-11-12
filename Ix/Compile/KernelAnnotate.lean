@@ -1313,14 +1313,17 @@ def annotate (k : Installed) (extra : Array (Ix.Name × Ix.ConstantInfo)) (names
   if unsafeOrPartial c then Ix.CompileM.undecidedSection c else
   let find : Ix.Compile.BinderRead.Find := fun n =>
     ((extra.find? (·.1 == n)).map (·.2)).orElse fun _ => k.env.consts.get? n
-  let stat (route : String) (s : Array Ixon.BinderBlock) : Array Ixon.BinderBlock :=
+  let stat (route why : String) (s : Array Ixon.BinderBlock) : Array Ixon.BinderBlock :=
     if k.t1stat then
       let name := (names[0]?.map (·.pretty)).getD "?"
-      dbgTrace s!"BDT1R {route} {name}" fun _ => s
+      dbgTrace s!"BDT1R {route} {name} {why}" fun _ => s
     else s
-  match (if k.noread then none else Ix.Compile.BinderRead.section? find names c) with
-  | some s => stat "read" s
-  | none => stat "walk" (if k.readonly then Ix.CompileM.undecidedSection c else annotateWalk k extra names c)
+  let read : Except String (Array Ixon.BinderBlock) :=
+    if k.noread then .error "the reading is off" else Ix.Compile.BinderRead.sectionWhy find names c
+  match read with
+  | .ok s => stat "read" "" s
+  | .error why =>
+    stat "walk" why (if k.readonly then Ix.CompileM.undecidedSection c else annotateWalk k extra names c)
 
 /-- **The annotator of a compile** over its installed input. -/
 def annotator (k : Installed) : Ix.BinderAnnotator :=
