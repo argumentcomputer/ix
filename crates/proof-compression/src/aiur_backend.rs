@@ -11,6 +11,7 @@ use ark_ff::{Field, PrimeField};
 
 pub mod compress_gl;
 pub mod fq;
+pub mod fq_relation;
 pub mod g1;
 pub mod kzg;
 pub mod kzg_advice;

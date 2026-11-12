@@ -16,7 +16,7 @@ fi
 targets=(
   aiur/bn254_execution_fixture aiur/bn254_trace_fixture
   aiur/bn254_grouped_fixture aiur/bn254_gap_fixture aiur/bn254_inactive_fixture
-  aiur/bn254_fq_fixture aiur/bn254_g1_fixture aiur/bn254_g1_encoding_fixture
+  aiur/bn254_fq_fixture aiur/bn254_fq_relation_fixture aiur/bn254_g1_fixture aiur/bn254_g1_encoding_fixture
   aiur/bn254_fq_products_fixture aiur/bn254_pairing_fixture
   aiur/bn254_preparation_check aiur/emulated_goldilocks_fixture aiur/wide_artifact_fixture
   aiur/table_uniqueness_checks
@@ -35,6 +35,7 @@ bn254_grouped_fixture bn254-grouped
 bn254_gap_fixture bn254-gap
 bn254_inactive_fixture bn254-inactive
 bn254_fq_fixture bn254-fq
+bn254_fq_relation_fixture bn254-fq-relation
 bn254_g1_fixture bn254-g1
 bn254_g1_encoding_fixture bn254-g1-encoding
 bn254_fq_products_fixture bn254-fq-products

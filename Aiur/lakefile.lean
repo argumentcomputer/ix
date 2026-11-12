@@ -107,6 +107,8 @@ lean_exe bn254_inactive_fixture where
   root := `Examples.BN254Inactive
 lean_exe bn254_fq_fixture where
   root := `Examples.BN254Fq
+lean_exe bn254_fq_relation_fixture where
+  root := `Examples.BN254FqRelation
 lean_exe bn254_g1_fixture where
   root := `Examples.BN254G1
 lean_exe bn254_g1_encoding_fixture where

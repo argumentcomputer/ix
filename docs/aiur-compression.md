@@ -1006,3 +1006,12 @@ forged KZG witnesses pass focused checks. Dependent curve, pairing, encoding
 and verifier tests also pass, and their compiler fixtures are regenerated.
 This is an arithmetic-library optimization under the existing protocols;
 these counts do not establish Init runtime or full-pipeline completion.
+
+The bounded `BN254FqRelation` library provides signed quadratic and linear
+relations for fusing curve operations. Its opaque expression constructors
+constrain separate positive and negative term weights; hints provide only a
+biased quotient and three carries. Four paired equations and explicit integer
+bounds enforce the modular relation. Boundary, weight-budget, forged-advice
+and actual KZG trace-mutation tests pass. This library is not yet used by the
+G1 implementation; its purpose is to replace repeated intermediate reductions
+with the same algebraic relations used by the handwritten curve code.
