@@ -580,7 +580,7 @@ theorem iotaStep_sound (hL : Laws M) {Γ : List KExpr} {w : KExpr → Option KEx
                 rw [List.drop_eq_getElem_cons hlt, hget] at h1
                 simpa using h1.symm
               have htake1 : args.take (mI + 1) = args.take mI ++ [maj] := by
-                simp [List.take_succ, hmaj]
+                simp [List.take_add_one, hmaj]
               rw [hsplit] at hYs
               obtain ⟨Y12, Zs, rfl, h12, hZs⟩ := denotesList_append_inv hYs
               obtain ⟨Xs, Ym, rfl, hXs, hYm⟩ := denotesList_append_inv h12
