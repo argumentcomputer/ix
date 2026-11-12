@@ -9,6 +9,7 @@ publish = false
 aiur = { path = "../aiur", default-features = false, features = ["stark"] }
 multi-stark = { workspace = true }
 stark-key = { path = "../stark-key" }
+stark-verifier = { path = "../stark-verifier" }
 ark-bn254 = { version = "0.5", features = ["curve"] }
 ark-ec = "0.5"
 ark-ff = { version = "0.5", features = ["asm"] }
@@ -42,7 +43,6 @@ blake3 = { workspace = true }
 
 [dev-dependencies]
 rayon = { workspace = true }
-stark-verifier = { path = "../stark-verifier" }
 
 # The CUDA transform engine for the KZG backend. The fork supplies column
 # batching, borrowed streams, the device-selecting synchronization and the

@@ -139,6 +139,30 @@ module G1   { add, double, scalar_mul, msm }   -- over Fq
 module Kzg  { fn verify_opening(…) -> PairingCheck }  -- defers the pairing
 ```
 
+#### Key authorization and layer claims
+
+Each BN layer authenticates its predecessor's key and entry under a versioned
+policy. The policy binds the setup anchors, the authorized `CompressGL` and
+`CompressBN` key projections, and their exact entry schemas. The BN program
+takes the policy digest as public data, so its key can be compiled before the
+policy names that key. `CompressFinal` pins the resulting policy and BN key.
+
+The planned BN call has 17 input fields: eight canonical UInt32 policy-digest
+words, a positive UInt32 stage number, and eight UInt32 statement-digest words.
+Its four output fields pack two canonical compressed G1 points into UInt128
+chunks, giving a 23-word call including the CALL namespace and entry index.
+Stage one accepts the authorized 18-word GL call; subsequent stages require
+the same policy and statement and an exact predecessor stage of `stage - 1`.
+Entry indices come from the compiler's physical public-call mapping, including
+deduplication, rather than raw bytecode function positions.
+
+The canonical key/proof projection used by the Aiur verifier is separate from
+storage transport. It uses bounded structural counts, canonical Fr values and
+strict compressed G1 encodings. Key authentication includes the transcript
+seed and all dimensions, graphs, fixed commitments and setup identity. The
+declared trace cap stays fixed even when a smaller proving-power prefix is
+loaded for a particular execution.
+
 #### Deferred pairings across layers
 
 A KZG opening check reduces to one pairing equation. `CompressBN` defers
@@ -151,7 +175,8 @@ checks both (`pipeline/wrap/recursive.rs`, `verify`); a chain of layers
 folds them instead.
 
 Every KZG proof in the chain uses the same SRS, so each pending equation has
-the form `e(P, [1]₂) = e(Q, [τ]₂)` with the same G2 elements. Each
+the form `e(P, [1]₂) · e(Q, [τ]₂) = 1` with the same G2 elements. Here `Q`
+already includes the opening witness's negative sign. Each
 `CompressBN` statement carries one accumulator `(P, Q) ∈ G1²`:
 
 1. Verify the child proof up to its opening check, reducing the opening to
@@ -159,8 +184,9 @@ the form `e(P, [1]₂) = e(Q, [τ]₂)` with the same G2 elements. Each
 2. Read the child's accumulator `(P_c, Q_c)` from the child's statement,
    bound to the child proof checked in step 1. The first `CompressBN` layer,
    verifying `CompressGL`, starts from the identity.
-3. Derive `ρ` from the transcript after absorbing the child proof, its
-   accumulator and `(P_new, Q_new)`.
+3. Derive a nonzero `ρ` with domain-separated BLAKE3 after absorbing the
+   policy, statement, stage, child key/proof digests, child accumulator and
+   `(P_new, Q_new)`.
 4. Output `(P_new + ρ·P_c, Q_new + ρ·Q_c)` as this proof's accumulator.
 
 For fixed pairs and an independent uniform `ρ`, if either equation fails
@@ -768,3 +794,31 @@ pipeline's Init performance is comparable. Benchmark results must identify
 which pipeline implementation was selected; the benchmark entry point itself
 does not replace the current compression stages or establish the final
 two-hour Mathlib target.
+
+## 16. Arithmetic and final-backend prototypes
+
+The BN254 Fq library constrains canonical four-limb values, bounded quotient
+and carry equations, arithmetic and inverse. G1 adds complete curve operations,
+full-width scalar multiplication, MSM and the pinned arkworks point/commitment
+encoding. Tests exercise forged advice and actual compiler-generated KZG proofs.
+Their source-level functional correctness theorems remain separate work.
+
+The [generic PLONK frontend](../tools/gnark/AIUR.md) has proved an actual
+recursion/table/ROM compiler fixture using Ignition, with both gnark and local
+Solidity verification. The initial conservative prototype has 32,393 sparse
+constraints, a `2^15` domain, three typed public fields, one auxiliary
+commitment and an 864-byte Solidity proof. This validates the compiler backend;
+it is not the final two-field compression verifier or an Init performance result.
+
+`CompressGL` now exports and small aggregate roots prove through its BN254 KZG
+adapter. An Init execution and count-only profile measured about 45.6 seconds,
+14.0 GB process peak RSS, and 61.7 GB of base main/fixed/lookup matrices. Proving
+workspaces are additional. The first full Init run through `ix bench run` is
+separate validation. A native baseline attempt proved and independently verified
+Init but its compression preflight rejected the mismatch between the current
+authorized aggregation key and the older release compression key. No release
+check was relaxed, and that attempt is not a completed compression baseline.
+
+Fresh benchmark runs explicitly disable proof-cache reads through the existing
+`--no-cache --no-index` options. An attempted Aiur run that reused cached proofs
+despite `--fresh` is excluded from performance comparisons.

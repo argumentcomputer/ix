@@ -43,16 +43,51 @@ fn bind_streams<'a, B: FieldBackend>(
   program: &'a CheckedProgram<B>,
   arenas: &impl StreamAdvice<B>,
 ) -> Result<PreparedHints<'a, B>, String> {
+  bind_streams_with(program, arenas, |channels, field| {
+    channels.insert_fixed::<1, 1>(
+      "goldilocks.inverse",
+      Type::Field,
+      Type::Field,
+      move |[x]| Ok([field.inverse(x).unwrap_or_else(|| field.zero())]),
+    )
+  })
+}
+
+/// Bind a Goldilocks verifier compiled over a wide ambient field. Arithmetic
+/// advice uses the Goldilocks modulus, independently of the ambient inverse.
+pub fn prepare_compress_gl<'a, B: FieldBackend<Word = aiur::FieldWord>>(
+  program: &'a CheckedProgram<B>,
+  streams: &Streams,
+) -> Result<PreparedHints<'a, B>, String> {
+  prepare_compress_gl_advice(
+    program,
+    &Advice::from_streams(program.field(), streams)?,
+  )
+}
+
+pub fn prepare_compress_gl_advice<
+  'a,
+  B: FieldBackend<Word = aiur::FieldWord>,
+>(
+  program: &'a CheckedProgram<B>,
+  advice: &Advice<B>,
+) -> Result<PreparedHints<'a, B>, String> {
+  bind_streams_with(program, advice, aiur::library::goldilocks::register)
+}
+
+fn bind_streams_with<'a, B: FieldBackend>(
+  program: &'a CheckedProgram<B>,
+  arenas: &impl StreamAdvice<B>,
+  register_field: impl FnOnce(
+    &mut HintChannels<B::Element>,
+    B,
+  ) -> Result<(), String>,
+) -> Result<PreparedHints<'a, B>, String> {
   let field = program.field();
   let mut channels = HintChannels::new();
   aiur::library::u32::register(&mut channels, field)?;
   aiur::library::u64::register(&mut channels, field)?;
-  channels.insert_fixed::<1, 1>(
-    "goldilocks.inverse",
-    Type::Field,
-    Type::Field,
-    move |[x]| Ok([field.inverse(x).unwrap_or_else(|| field.zero())]),
-  )?;
+  register_field(&mut channels, field)?;
   arenas.register_read::<1>("stark.io.read1", false, &mut channels)?;
   arenas.register_read::<8>("stark.io.read8", false, &mut channels)?;
   arenas.register_read::<64>("stark.io.read64", false, &mut channels)?;
