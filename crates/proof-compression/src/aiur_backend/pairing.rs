@@ -205,7 +205,8 @@ pub fn advice(channel: &str, input: &[Scalar]) -> Result<Vec<Scalar>, String> {
       bytes.into_iter().map(|byte| Bn254.from_u64(u64::from(byte))).collect(),
     );
   }
-  if channel != "bn254.pairing.fq_products" || input.len() != 17 {
+  let paired = channel == "bn254.pairing.fq_products_pairs";
+  if (channel != "bn254.pairing.fq_products" && !paired) || input.len() != 17 {
     return Err("unknown pairing advice or invalid input width".into());
   }
   let mut operands = vec![];
@@ -268,6 +269,11 @@ pub fn advice(channel: &str, input: &[Scalar]) -> Result<Vec<Scalar>, String> {
       output.push(scalar_integer(&encoded)?);
     }
   }
+  if paired {
+    let retained = [output[9], output[11], output[13]];
+    output.truncate(8);
+    output.extend(retained);
+  }
   Ok(output)
 }
 
@@ -286,6 +292,13 @@ pub fn register(
         items: vec![fields(4), fields(4), fields(4), fields(4), Type::Field],
       },
       Type::Tuple { items: vec![fields(4), fields(4), fields(7)] },
+    ),
+    (
+      "bn254.pairing.fq_products_pairs",
+      Type::Tuple {
+        items: vec![fields(4), fields(4), fields(4), fields(4), Type::Field],
+      },
+      Type::Tuple { items: vec![fields(4), fields(4), fields(3)] },
     ),
   ] {
     channels.insert(name, input, output, move |input, output| {

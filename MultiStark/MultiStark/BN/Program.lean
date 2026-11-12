@@ -35,6 +35,7 @@ def source : Modules.Program Nat :=
 
 def libraries : Modules.Program Nat :=
   Library.Blake3.templates.append Library.Field.BN254.Fq.declarations
+    |>.append Library.Field.BN254.FqRelation.declarations
     |>.append Library.Field.BN254.G1.declarations
     |>.append Library.Field.BN254.G1Encoding.declarations
 
@@ -42,6 +43,7 @@ def libraries : Modules.Program Nat :=
 
 def program : Modules.Program F :=
   Library.Blake3.BN254.program.append (Library.Field.BN254.Fq.declarations.toField F)
+    |>.append (Library.Field.BN254.FqRelation.declarations.toField F)
     |>.append (Library.Field.BN254.G1.declarations.toField F)
     |>.append (Library.Field.BN254.G1Encoding.declarations.toField F)
     |>.append (source.toField F)

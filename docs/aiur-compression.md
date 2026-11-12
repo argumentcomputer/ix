@@ -1012,6 +1012,29 @@ relations for fusing curve operations. Its opaque expression constructors
 constrain separate positive and negative term weights; hints provide only a
 biased quotient and three carries. Four paired equations and explicit integer
 bounds enforce the modular relation. Boundary, weight-budget, forged-advice
-and actual KZG trace-mutation tests pass. This library is not yet used by the
-G1 implementation; its purpose is to replace repeated intermediate reductions
-with the same algebraic relations used by the handwritten curve code.
+and actual KZG trace-mutation tests pass. The G1 implementation uses these
+relations to avoid repeated intermediate reductions, following the algebraic
+relations used by the handwritten curve code.
+
+## 20. Fused curve arithmetic
+
+The [fused arithmetic comparison](measurements/aiur-fused-bn-arithmetic.json)
+keeps the existing KZG and PLONK protocols. G1 addition and doubling constrain
+canonical hinted slopes and output coordinates with three modular relations.
+The source checks the nonzero-denominator branches and retains complete
+handling of equal points, opposite points and infinity. Pairing's two-product
+reducer also combines adjacent equations to reduce seven carry checks to three.
+
+On the same small predecessor, main cells fall from 11,306,946 to 8,229,518.
+On the larger saved predecessor, they fall from 707,767,334 to 499,342,386,
+and maximum height halves from `2^25` to `2^24`. Both deferred outputs are
+unchanged. These are exact count profiles without function or lookup grouping,
+not proving-time measurements. The wider affine chips increase total active
+column commitments from 9,037 to 9,251, so this change does not solve the
+commitment-count problem by itself.
+
+The terminal development fixture falls from 12,565,164 to 10,915,562 main
+cells. A fitting final PLONK circuit and the full Init compression chain still
+need validation. Focused curve, encoding, source-verifier, tower and pairing
+tests pass, including actual forged KZG witnesses, and all dependent compiler
+fixtures are regenerated.

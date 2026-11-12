@@ -1,7 +1,7 @@
-//! Candidate transport advice for the Aiur G1 program. Curve arithmetic is
-//! expressed by the source program using constrained Fq operations.
+//! Candidate transport and affine arithmetic advice for the Aiur G1 program.
+//! Canonical coordinates and bounded Fq relations constrain every candidate.
 
-use super::{Bn254, fq};
+use super::{Bn254, fq, fq_relation};
 use crate::{
   kzg::{
     Scalar,
@@ -12,7 +12,7 @@ use crate::{
 use aiur::{
   FieldWord, bytecode::Type, field::FieldBackend, hints::HintChannels,
 };
-use ark_ff::{BigInteger, PrimeField};
+use ark_ff::{BigInteger, Field, PrimeField};
 use ark_serialize::CanonicalSerialize;
 use num_bigint::{BigInt, BigUint, Sign};
 
@@ -96,10 +96,33 @@ pub fn decode(values: &[Scalar]) -> Result<G1Affine, String> {
   }
 }
 
+fn affine(input: &[Scalar], doubling: bool) -> Result<Vec<Scalar>, String> {
+  let expected = if doubling { 8 } else { 16 };
+  if input.len() != expected {
+    return Err(format!("G1 affine advice needs {expected} coordinate limbs"));
+  }
+  let xa = fq::decode(&input[..4])?;
+  let ya = fq::decode(&input[4..8])?;
+  let (xb, numerator, denominator) = if doubling {
+    (xa, Fq::from(3u8) * xa.square(), ya + ya)
+  } else {
+    let xb = fq::decode(&input[8..12])?;
+    let yb = fq::decode(&input[12..16])?;
+    (xb, yb - ya, xb - xa)
+  };
+  let slope =
+    numerator * denominator.inverse().ok_or("zero G1 affine denominator")?;
+  let x = slope.square() - xa - xb;
+  let y = slope * (xa - x) - ya;
+  Ok([slope, x, y].into_iter().flat_map(fq::encode).collect())
+}
+
 /// Evaluate the source library's candidate hint protocol without truncating
 /// native scalar inputs. Fq channels retain their own constrained protocol.
 pub fn advice(channel: &str, input: &[Scalar]) -> Result<Vec<Scalar>, String> {
   match channel {
+    "bn254.g1.affine_double" => affine(input, true),
+    "bn254.g1.affine_add" => affine(input, false),
     "bn254.g1.scalar" => {
       let [value] = input else {
         return Err("G1 scalar advice needs one field".into());
@@ -171,6 +194,9 @@ pub fn advice(channel: &str, input: &[Scalar]) -> Result<Vec<Scalar>, String> {
       )
     },
     name if name.starts_with("bn254.fq.") => fq::advice(channel, input),
+    name if name.starts_with("bn254.fq_relation.") => {
+      fq_relation::advice(channel, input)
+    },
     _ => Err(format!("unknown G1 advice channel {channel}")),
   }
 }
@@ -179,10 +205,21 @@ fn fields(length: usize) -> Type {
   Type::Tuple { items: vec![Type::Field; length] }
 }
 
-/// Register G1 transport channels. Register `fq::register` as well when the
-/// program includes the G1 source library's Fq operations.
+/// Register G1 and Fq-relation channels. Register `fq::register` as well for
+/// the canonical base-field constructors and arithmetic operations.
 pub fn register(channels: &mut HintChannels<Scalar>) -> Result<(), String> {
+  fq_relation::register(channels)?;
   for (name, input, output) in [
+    (
+      "bn254.g1.affine_double",
+      Type::Tuple { items: vec![fields(4); 2] },
+      Type::Tuple { items: vec![fields(4); 3] },
+    ),
+    (
+      "bn254.g1.affine_add",
+      Type::Tuple { items: vec![fields(4); 4] },
+      Type::Tuple { items: vec![fields(4); 3] },
+    ),
     ("bn254.g1.scalar", Type::Field, Type::Tuple { items: vec![fields(4); 3] }),
     ("bn254.g1.halve", Type::Field, fields(2)),
     ("bn254.g1.sign", fields(4), Type::Tuple { items: vec![fields(4); 2] }),

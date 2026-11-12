@@ -1,12 +1,16 @@
 use std::{collections::HashSet, sync::Arc};
 
 use aiur::{
-  FieldWord, artifact::WidePackage, bytecode::Instruction, field::FieldBackend,
-  hints::HintChannels, trace::TracePlan,
+  FieldWord,
+  artifact::WidePackage,
+  bytecode::Instruction,
+  field::FieldBackend,
+  hints::HintChannels,
+  trace::{Action, TracePlan},
 };
 use ark_bn254::{Fq, Fr, G1Affine};
 use ark_ec::{AffineRepr, CurveGroup};
-use ark_ff::{BigInteger, PrimeField};
+use ark_ff::{BigInteger, Field, PrimeField};
 use ark_serialize::CanonicalSerialize;
 use ix_proof_compression::{
   aiur_backend::{Bn254, fq, g1, kzg::Backend},
@@ -16,10 +20,12 @@ use ix_proof_compression::{
 use num_bigint::BigUint;
 
 fn plan() -> TracePlan<'static, Bn254> {
-  let package = WidePackage::decode(include_bytes!(
-    "../../aiur/tests/fixtures/bn254-g1.ixa"
-  ))
-  .unwrap();
+  let override_bytes = std::env::var_os("AIUR_G1_FIXTURE")
+    .map(|path| std::fs::read(path).unwrap());
+  let bytes = override_bytes
+    .as_deref()
+    .unwrap_or(include_bytes!("../../aiur/tests/fixtures/bn254-g1.ixa"));
+  let package = WidePackage::decode(bytes).unwrap();
   let trace = package.trace.unwrap();
   let mut checked = package.program.check_with(Bn254).unwrap();
   checked.track_depth(&trace).unwrap();
@@ -76,7 +82,11 @@ fn poisoned(
           key_type.clone(),
           r#type.clone(),
           move |input, output| {
-            let mut values = g1::advice(&name, input)?;
+            // Arbitrary fallback advice keeps rejection attributable to
+            // the source constraints when a forged operand invalidates a
+            // later native callback's arithmetic preconditions.
+            let mut values = g1::advice(&name, input)
+              .unwrap_or_else(|_| vec![Bn254.zero(); output.len()]);
             if name == target {
               change(input, &mut values);
             }
@@ -88,6 +98,133 @@ fn poisoned(
     }
   }
   channels
+}
+
+#[test]
+fn affine_advice_is_canonical_and_rejects_invalid_denominators() {
+  let g = G1Affine::generator();
+  for multiplier in [1u64, 2, 7, 123456789, u64::MAX] {
+    let a = (g * Fr::from(multiplier)).into_affine();
+    let b = (a + g).into_affine();
+    let double_input = g1::encode(a)[..8].to_vec();
+    let add_input: Vec<_> = double_input
+      .iter()
+      .copied()
+      .chain(g1::encode(b)[..8].iter().copied())
+      .collect();
+    for (channel, input, slope, expected) in [
+      (
+        "bn254.g1.affine_double",
+        double_input,
+        Fq::from(3u8) * a.x.square() / (a.y + a.y),
+        (a + a).into_affine(),
+      ),
+      (
+        "bn254.g1.affine_add",
+        add_input,
+        (b.y - a.y) / (b.x - a.x),
+        (a + b).into_affine(),
+      ),
+    ] {
+      let candidate = g1::advice(channel, &input).unwrap();
+      assert_eq!(candidate.len(), 12);
+      assert_eq!(fq::decode(&candidate[..4]).unwrap(), slope);
+      assert_eq!(candidate[4..], g1::encode(expected)[..8]);
+      assert!(fq::decode(&candidate[4..8]).is_ok());
+      assert!(fq::decode(&candidate[8..]).is_ok());
+    }
+  }
+  assert!(g1::advice("bn254.g1.affine_double", &[]).is_err());
+  assert!(g1::advice("bn254.g1.affine_add", &[]).is_err());
+  assert!(g1::advice("bn254.g1.affine_double", &[Bn254.zero(); 8]).is_err());
+  let equal_x: Vec<_> = g1::encode(g)[..8]
+    .iter()
+    .copied()
+    .chain(g1::encode(-g)[..8].iter().copied())
+    .collect();
+  assert!(g1::advice("bn254.g1.affine_add", &equal_x).is_err());
+  let mut invalid = g1::encode(g)[..8].to_vec();
+  invalid[..4].copy_from_slice(&limbs(&(modulus() + 1u8)));
+  assert!(g1::advice("bn254.g1.affine_double", &invalid).is_err());
+}
+
+#[test]
+fn source_relations_reject_forged_slopes_coordinates_and_aliases() {
+  let plan = plan();
+  let g = G1Affine::generator();
+  let two = (g + g).into_affine();
+  for (channel, entry, args) in [
+    ("bn254.g1.affine_double", "G1Test::double", g1::encode(g).to_vec()),
+    (
+      "bn254.g1.affine_add",
+      "G1Test::add",
+      g1::encode(g).into_iter().chain(g1::encode(two)).collect(),
+    ),
+  ] {
+    for index in 0..12 {
+      let channels = poisoned(&plan, channel, move |_, output| {
+        output[index] += Bn254.one();
+      });
+      let executor =
+        plan.program().prepare_hint_channels(&[], &channels).unwrap();
+      assert!(
+        executor.execute(entry, args.clone()).is_err(),
+        "accepted {channel}[{index}]"
+      );
+    }
+    for offset in [0, 4, 8] {
+      let channels = poisoned(&plan, channel, move |_, output| {
+        let value = fq::decode(&output[offset..offset + 4]).unwrap();
+        let alias = modulus()
+          + BigUint::from_bytes_le(&value.into_bigint().to_bytes_le());
+        output[offset..offset + 4].copy_from_slice(&limbs(&alias));
+      });
+      assert!(
+        plan
+          .program()
+          .prepare_hint_channels(&[], &channels)
+          .unwrap()
+          .execute(entry, args.clone())
+          .is_err()
+      );
+      let channels = poisoned(&plan, channel, move |_, output| {
+        output[offset] = scalar(&(BigUint::from(1u8) << fq::LIMB_BITS));
+      });
+      assert!(
+        plan
+          .program()
+          .prepare_hint_channels(&[], &channels)
+          .unwrap()
+          .execute(entry, args.clone())
+          .is_err()
+      );
+    }
+    let channels = poisoned(&plan, channel, move |_, output| {
+      output[4..].copy_from_slice(&g1::encode(g)[..8]);
+    });
+    assert!(
+      plan
+        .program()
+        .prepare_hint_channels(&[], &channels)
+        .unwrap()
+        .execute(entry, args)
+        .is_err()
+    );
+  }
+  for index in 0..7 {
+    let channels =
+      poisoned(&plan, "bn254.fq_relation.zero", move |_, output| {
+        output[index] += Bn254.one();
+      });
+    assert!(
+      plan
+        .program()
+        .prepare_hint_channels(&[], &channels)
+        .unwrap()
+        .execute("G1Test::valid", g1::encode(g).to_vec())
+        .is_err()
+    );
+  }
 }
 
 #[test]
@@ -378,6 +515,94 @@ fn actual_compiler_kzg_proves_complete_addition_scalar_multiplication_and_msm()
       assert!(
         backend.verify(entry, &args, &g1::encode(expected), &proof).is_err()
       );
+    }
+  }
+}
+
+#[test]
+fn kzg_rejects_forged_affine_slope_and_coordinate_columns() {
+  let plan = plan();
+  let channels = channels();
+  let executor = plan.program().prepare_hint_channels(&[], &channels).unwrap();
+  let capacity = plan
+    .program()
+    .program()
+    .tables
+    .iter()
+    .map(|table| table.rows.len())
+    .max()
+    .unwrap_or(1)
+    .max(1024)
+    .next_power_of_two();
+  let backend = Backend::new(
+    &plan,
+    KzgConfig::new(
+      Arc::new(Srs::unsafe_dev_setup(capacity, b"aiur-g1-affine-test")),
+      8,
+    ),
+  )
+  .unwrap();
+  let g = G1Affine::generator();
+  let two = (g + g).into_affine();
+  for (entry, function_name, channel, args, expected) in [
+    (
+      "G1Test::double",
+      "BN254G1::double",
+      "bn254.g1.affine_double",
+      g1::encode(g).to_vec(),
+      two,
+    ),
+    (
+      "G1Test::add",
+      "BN254G1::add",
+      "bn254.g1.affine_add",
+      g1::encode(g).into_iter().chain(g1::encode(two)).collect(),
+      (g + two).into_affine(),
+    ),
+  ] {
+    let record = executor.execute(entry, args.clone()).unwrap();
+    assert_eq!(record.output, g1::encode(expected));
+    let witness = backend.generate(&record, entry, &args).unwrap();
+    let proof =
+      backend.prove(entry, &args, &record.output, witness.clone()).unwrap();
+    backend.verify(entry, &args, &record.output, &proof).unwrap();
+    let (function, fill) = plan
+      .artifact()
+      .functions
+      .iter()
+      .enumerate()
+      .find(|(_, fill)| fill.name == function_name)
+      .unwrap();
+    let dest = fill
+      .steps
+      .iter()
+      .find_map(|step| match &step.action {
+        Action::Hint { channel: name, dest, .. } if name == channel => {
+          Some(dest)
+        },
+        _ => None,
+      })
+      .unwrap();
+    let chip = plan.function_chips()[function];
+    let layout = plan.layout().unwrap();
+    let placement = &layout.placements[chip];
+    assert!(!placement.grouped);
+    for advice_index in [0, 4, 8] {
+      let column = fill
+        .writes
+        .iter()
+        .find(|write| write.source == dest[advice_index])
+        .unwrap_or_else(|| panic!("missing {channel}[{advice_index}] column"))
+        .column;
+      let mut traces = witness.traces.clone();
+      traces[placement.circuit].values[placement.columns[column]] +=
+        Bn254.one();
+      let forged = multi_stark::system::SystemWitness::from_stage_1(
+        traces,
+        backend.system(),
+      );
+      let proof = backend.prove(entry, &args, &record.output, forged).unwrap();
+      assert!(backend.verify(entry, &args, &record.output, &proof).is_err());
     }
   }
 }

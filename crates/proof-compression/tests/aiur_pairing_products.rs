@@ -3,7 +3,7 @@ use aiur::{
   hints::HintChannels, trace::TracePlan,
 };
 use ark_bn254::Fq;
-use ark_ff::PrimeField;
+use ark_ff::{BigInteger, PrimeField};
 use ix_proof_compression::{
   aiur_backend::{Bn254, fq, pairing},
   kzg::Scalar,
@@ -13,8 +13,13 @@ use num_bigint::BigUint;
 use std::{collections::HashSet, path::PathBuf, sync::Arc};
 
 fn plan() -> TracePlan<'static, Bn254> {
-  let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-    .join("../aiur/tests/fixtures/bn254-fq-products.ixa");
+  let path = std::env::var_os("AIUR_FQ_PRODUCTS_FIXTURE").map_or_else(
+    || {
+      PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../aiur/tests/fixtures/bn254-fq-products.ixa")
+    },
+    PathBuf::from,
+  );
   let package = WidePackage::decode(&std::fs::read(path).unwrap()).unwrap();
   let trace = package.trace.unwrap();
   let mut program = package.program.check_with(Bn254).unwrap();
@@ -69,8 +74,8 @@ fn combined_product_advice_and_source_match_integer_reduction() {
       for subtract in [false, true] {
         let args = arguments(values, subtract);
         let candidate =
-          pairing::advice("bn254.pairing.fq_products", &args).unwrap();
-        assert_eq!(candidate.len(), 15);
+          pairing::advice("bn254.pairing.fq_products_pairs", &args).unwrap();
+        assert_eq!(candidate.len(), 11);
         let quotient = candidate[4..8]
           .iter()
           .rev()
@@ -81,7 +86,6 @@ fn combined_product_advice_and_source_match_integer_reduction() {
         assert!(
           candidate[8..].iter().all(|&carry| integer(carry).bits() <= 86)
         );
-        assert_eq!(integer(candidate[14]), 32u8 * &radix);
         let second = values[2] * values[3];
         let expected =
           values[0] * values[1] + if subtract { -second } else { second };
@@ -93,6 +97,26 @@ fn combined_product_advice_and_source_match_integer_reduction() {
       }
     }
   }
+  let a = Fq::from_le_bytes_mod_order(&(radix.pow(2) - 1u8).to_bytes_le());
+  let b = Fq::from_le_bytes_mod_order(&(&radix - 1u8).to_bytes_le());
+  let positive = pairing::advice(
+    "bn254.pairing.fq_products_pairs",
+    &arguments([a, b, Fq::from(0), Fq::from(0)], false),
+  )
+  .unwrap();
+  let negative = pairing::advice(
+    "bn254.pairing.fq_products_pairs",
+    &arguments([Fq::from(0), Fq::from(0), a, b], true),
+  )
+  .unwrap();
+  assert_eq!(integer(positive[8]), 33u8 * &radix - 2u8);
+  assert_eq!(integer(negative[8]), 31u8 * &radix + 1u8);
+  let scalar_modulus =
+    BigUint::from_bytes_le(&ark_bn254::Fr::MODULUS.to_bytes_le());
+  assert!(
+    128u8 * radix.pow(3) + 128u8 * radix.pow(2) + 128u8 * &radix
+      < scalar_modulus
+  );
   for value in [BigUint::from(0u8), (BigUint::from(1u8) << 86usize) - 1u8] {
     executor.execute("FqProductsTest::range86", vec![encoded(&value)]).unwrap();
   }
@@ -141,7 +165,7 @@ fn poisoned(
               } else {
                 fq::advice(&name, input)?
               };
-            if name == "bn254.pairing.fq_products" {
+            if name == "bn254.pairing.fq_products_pairs" {
               change(&mut candidate);
             }
             output.copy_from_slice(&candidate);
@@ -159,7 +183,7 @@ fn source_rejects_forged_signed_quotients_carries_and_endpoints() {
   let plan = plan();
   let args =
     arguments([-Fq::from(1), -Fq::from(2), Fq::from(3), Fq::from(7)], true);
-  for index in [0usize, 4, 7, 8, 14] {
+  for index in [0usize, 4, 7, 8, 9, 10] {
     let hints = poisoned(&plan, move |values| values[index] += Bn254.one());
     let executor = plan.program().prepare_hint_channels(&[], &hints).unwrap();
     assert!(
@@ -181,4 +205,90 @@ fn source_rejects_forged_signed_quotients_carries_and_endpoints() {
   });
   let executor = plan.program().prepare_hint_channels(&[], &hints).unwrap();
   assert!(executor.execute("FqProductsTest::products", args).is_err());
+}
+
+#[test]
+fn compiler_product_proofs_reject_retained_advice_mutations() {
+  use aiur::trace::Action;
+  use ix_proof_compression::{
+    aiur_backend::kzg::Backend,
+    kzg::{KzgConfig, Srs},
+  };
+  use multi_stark::system::SystemWitness;
+  let plan = plan();
+  let hints = channels();
+  let executor = plan.program().prepare_hint_channels(&[], &hints).unwrap();
+  let backend = Backend::new(
+    &plan,
+    KzgConfig::new(
+      Arc::new(Srs::unsafe_dev_setup(1 << 16, b"paired-products")),
+      8,
+    ),
+  )
+  .unwrap();
+  for subtract in [false, true] {
+    let args = arguments(
+      [-Fq::from(1), -Fq::from(2), Fq::from(3), Fq::from(7)],
+      subtract,
+    );
+    let record =
+      executor.execute("FqProductsTest::products", args.clone()).unwrap();
+    let witness =
+      backend.generate(&record, "FqProductsTest::products", &args).unwrap();
+    let proof = backend
+      .prove("FqProductsTest::products", &args, &record.output, witness.clone())
+      .unwrap();
+    backend
+      .verify("FqProductsTest::products", &args, &record.output, &proof)
+      .unwrap();
+    let (function, fill) = plan
+      .artifact()
+      .functions
+      .iter()
+      .enumerate()
+      .find(|(_, f)| f.name == "BN254FqProducts::reduce")
+      .unwrap();
+    let dest = fill
+      .steps
+      .iter()
+      .find_map(|step| match &step.action {
+        Action::Hint { channel, dest, .. }
+          if channel == "bn254.pairing.fq_products_pairs" =>
+        {
+          Some(dest)
+        },
+        _ => None,
+      })
+      .unwrap();
+    let layout = plan.layout().unwrap();
+    let placement = &layout.placements[plan.function_chips()[function]];
+    let columns: Vec<_> = [4, 7, 8, 9, 10]
+      .into_iter()
+      .filter_map(|i| {
+        fill
+          .writes
+          .iter()
+          .find(|write| write.source == dest[i])
+          .map(|write| placement.columns[write.column])
+      })
+      .collect();
+    assert!(columns.len() >= 3, "retained carry columns must be covered");
+    for column in columns {
+      let mut traces = witness.traces.clone();
+      traces[placement.circuit].values[column] += Bn254.one();
+      let forged = backend
+        .prove(
+          "FqProductsTest::products",
+          &args,
+          &record.output,
+          SystemWitness::from_stage_1(traces, backend.system()),
+        )
+        .unwrap();
+      assert!(
+        backend
+          .verify("FqProductsTest::products", &args, &record.output, &forged)
+          .is_err()
+      );
+    }
+  }
 }

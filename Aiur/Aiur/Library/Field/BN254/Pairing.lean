@@ -8,7 +8,8 @@ namespace Aiur.Library.Field.BN254.Pairing
 open Aiur
 
 def dependencies : Modules.Program Nat :=
-  Fp12.dependencies.append Fp12.declarations |>.append Library.List.declarations |>.append G1.declarations |>.append G1Encoding.declarations
+  Fp12.dependencies.append Fp12.declarations |>.append Library.List.declarations
+    |>.append FqRelation.declarations |>.append G1.declarations |>.append G1Encoding.declarations
 
 private def implementation : Modules.Program Nat := aiur_library% dependencies ⟦
 module BN254Pairing {

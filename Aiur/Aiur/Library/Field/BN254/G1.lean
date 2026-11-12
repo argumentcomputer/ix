@@ -1,4 +1,4 @@
-import Aiur.Library.Field.BN254.Fq
+import Aiur.Library.Field.BN254.FqRelation
 import Aiur.Library.List
 
 /-! Complete affine BN254 G1 operations over canonical Fq coordinates.
@@ -6,7 +6,9 @@ G1 has cofactor one, so the curve equation establishes subgroup membership.
 Infinity has the unique internal encoding `(0, 0, 1)`. Scalars are decomposed
 canonically below Fr before binary multiplication; the radix recurrences have
 fixed lengths and a zero endpoint. Compressed points use arkworks SWFlags,
-with a lexicographic y sign rather than a parity bit. -/
+with a lexicographic y sign rather than a parity bit. Canonical coordinate
+comparisons exclude zero slope denominators before the affine branches;
+canonical hinted slopes and outputs satisfy three bounded Fq relations. -/
 namespace Aiur.Library.Field.BN254.G1
 open Aiur
 
@@ -14,7 +16,7 @@ theorem scalar_limb_bound : 2^80 < BN254.modulus := by decide
 theorem scalar_width_bound : BN254.modulus < 2^254 := by decide
 
 def dependencies : Modules.Program Nat :=
-  Fq.dependencies.append Fq.declarations |>.append Library.List.declarations
+  FqRelation.dependencies.append FqRelation.declarations |>.append Library.List.declarations
 
 def declarations : Modules.Program Nat := aiur_library% dependencies ⟦
 module BN254G1 {
@@ -40,9 +42,8 @@ module BN254G1 {
       },
       0 => {
         let xx = BN254Fq::mul(x, x);
-        let xxx = BN254Fq::mul(xx, x);
-        let rhs = BN254Fq::add(xxx, BN254Fq::from_limbs([3, 0, 0, 0]));
-        assert_eq!(fq_equal(BN254Fq::mul(y, y), rhs), 1, "G1 curve equation");
+        let curve = BN254FqRelation::sub(BN254FqRelation::product(xx, x), BN254FqRelation::product(y, y));
+        BN254FqRelation::assert_zero(BN254FqRelation::add(curve, BN254FqRelation::constant(3)));
         (x, y, 0)
       },
     }
@@ -64,12 +65,18 @@ module BN254G1 {
       0 => match BN254Fq::is_zero(point.1) {
         1 => INFINITY,
         0 => {
-          let xx = BN254Fq::mul(point.0, point.0);
-          let numerator = BN254Fq::add(BN254Fq::add(xx, xx), xx);
-          let denominator = BN254Fq::add(point.1, point.1);
-          let slope = BN254Fq::div(numerator, denominator);
-          let x = BN254Fq::sub(BN254Fq::mul(slope, slope), BN254Fq::add(point.0, point.0));
-          let y = BN254Fq::sub(BN254Fq::mul(slope, BN254Fq::sub(point.0, x)), point.1);
+          let (raw_slope, raw_x, raw_y) = hint::<([Field; 4], [Field; 4], [Field; 4])>("bn254.g1.affine_double", (BN254Fq::to_limbs(point.0), BN254Fq::to_limbs(point.1)));
+          let slope = BN254Fq::from_limbs(raw_slope);
+          let x = BN254Fq::from_limbs(raw_x);
+          let y = BN254Fq::from_limbs(raw_y);
+          let tangent = BN254FqRelation::twice(BN254FqRelation::product(point.1, slope));
+          let numerator = BN254FqRelation::thrice(BN254FqRelation::product(point.0, point.0));
+          BN254FqRelation::assert_zero(BN254FqRelation::sub(tangent, numerator));
+          let x_terms = BN254FqRelation::add(BN254FqRelation::twice(BN254FqRelation::linear(point.0)), BN254FqRelation::linear(x));
+          BN254FqRelation::assert_zero(BN254FqRelation::sub(BN254FqRelation::product(slope, slope), x_terms));
+          let y_products = BN254FqRelation::sub(BN254FqRelation::product(slope, point.0), BN254FqRelation::product(slope, x));
+          let y_terms = BN254FqRelation::add(BN254FqRelation::linear(point.1), BN254FqRelation::linear(y));
+          BN254FqRelation::assert_zero(BN254FqRelation::sub(y_products, y_terms));
           (x, y, 0)
         },
       },
@@ -85,14 +92,24 @@ module BN254G1 {
           1 => match fq_equal(a.1, b.1) {
             1 => double(a),
             0 => {
-              assert_eq!(BN254Fq::is_zero(BN254Fq::add(a.1, b.1)), 1, "G1 opposite points");
+              BN254FqRelation::assert_zero(BN254FqRelation::add(BN254FqRelation::linear(a.1), BN254FqRelation::linear(b.1)));
               INFINITY
             },
           },
           0 => {
-            let slope = BN254Fq::div(BN254Fq::sub(b.1, a.1), BN254Fq::sub(b.0, a.0));
-            let x = BN254Fq::sub(BN254Fq::sub(BN254Fq::mul(slope, slope), a.0), b.0);
-            let y = BN254Fq::sub(BN254Fq::mul(slope, BN254Fq::sub(a.0, x)), a.1);
+            let (raw_slope, raw_x, raw_y) = hint::<([Field; 4], [Field; 4], [Field; 4])>("bn254.g1.affine_add", (BN254Fq::to_limbs(a.0), BN254Fq::to_limbs(a.1), BN254Fq::to_limbs(b.0), BN254Fq::to_limbs(b.1)));
+            let slope = BN254Fq::from_limbs(raw_slope);
+            let x = BN254Fq::from_limbs(raw_x);
+            let y = BN254Fq::from_limbs(raw_y);
+            let slope_xa = BN254FqRelation::product(slope, a.0);
+            let slope_products = BN254FqRelation::sub(BN254FqRelation::product(slope, b.0), slope_xa);
+            let slope_terms = BN254FqRelation::sub(BN254FqRelation::linear(a.1), BN254FqRelation::linear(b.1));
+            BN254FqRelation::assert_zero(BN254FqRelation::add(slope_products, slope_terms));
+            let x_terms = BN254FqRelation::add(BN254FqRelation::add(BN254FqRelation::linear(a.0), BN254FqRelation::linear(b.0)), BN254FqRelation::linear(x));
+            BN254FqRelation::assert_zero(BN254FqRelation::sub(BN254FqRelation::product(slope, slope), x_terms));
+            let y_products = BN254FqRelation::sub(slope_xa, BN254FqRelation::product(slope, x));
+            let y_terms = BN254FqRelation::add(BN254FqRelation::linear(a.1), BN254FqRelation::linear(y));
+            BN254FqRelation::assert_zero(BN254FqRelation::sub(y_products, y_terms));
             (x, y, 0)
           },
         },
