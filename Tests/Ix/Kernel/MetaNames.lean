@@ -1,6 +1,7 @@
 import Ix.Meta
 import Ix.CompileM
 import Ix.CompileCertified
+import Ix.IxVM.ClaimHarness
 import Tests.Ix.Kernel.SourceIngressStep
 import Benchmarks.Kernel.CheckIxeMeta
 import Ix.KernelDisplay.MetaNames
@@ -16,9 +17,10 @@ here (they cannot be elaborated) are checked three ways:
 * **Lean**: the kernel (`Environment.addDeclCore`) rejects each ill-typed
   declaration with an exception holding terms; Lean's `ppExpr` prints them in
   the exception's local context, under the renderer's options (`ppOpts`);
-* **`.meta`**: the closure is compiled by Ix's compiler (Rust, through FFI;
-  it does not type-check) with its metadata, read at `.meta`, named from the
-  metadata (`Ix.KernelDisplay.nameRead`) and checked, as
+* **`.meta`**: the closure is compiled by Ix's compiler with its metadata and
+  the kernel annotator's binder data (`IxVM.ClaimHarness.withKernelAnnotator`),
+  as the default table's records are, so a constant the table binds is at its
+  bound address; read at `.meta`, named from the metadata (`Ix.KernelDisplay.nameRead`) and checked, as
   `kernel-check-ixe --meta` does;
 * **`.source`**: the same constants through the Source ingress, which names
   binders from the Lean terms (`Ix.LeanIngress.nameExprs`), and checked group
@@ -297,7 +299,11 @@ unsafe def main (_args : List String) : IO UInt32 := do
   -- `.meta`: compiled with the metadata, read, named, checked
   let dir ← IO.FS.createTempDir
   let path := dir / "meta-names.ixe"
-  let (ixe0, failures) ← IO.ofExcept (Ix.Cert.compileReport (Ix.CompileM.canonInput consts 32))
+  -- with the compile's binder-data annotator, as the default table's records were compiled:
+  -- each record carries its decided section, so a constant the table binds (`Nat`, …) is at its
+  -- bound address
+  let input ← IxVM.ClaimHarness.withKernelAnnotator (Ix.CompileM.canonInput consts 32)
+  let (ixe0, failures) ← IO.ofExcept (Ix.Cert.compileReport input)
   IO.FS.writeBinFile path (← IO.ofExcept (Ixon.serEnv ixe0))
   unless failures.isEmpty do
     IO.println s!"kernel-meta-names: {failures.toMap.size} constants not compiled: \
