@@ -9420,6 +9420,11 @@ def closureChunk66 : Array (String × String) := #[
 
 def closure : Array (String × String) := (#[closureChunk0, closureChunk1, closureChunk2, closureChunk3, closureChunk4, closureChunk5, closureChunk6, closureChunk7, closureChunk8, closureChunk9, closureChunk10, closureChunk11, closureChunk12, closureChunk13, closureChunk14, closureChunk15, closureChunk16, closureChunk17, closureChunk18, closureChunk19, closureChunk20, closureChunk21, closureChunk22, closureChunk23, closureChunk24, closureChunk25, closureChunk26, closureChunk27, closureChunk28, closureChunk29, closureChunk30, closureChunk31, closureChunk32, closureChunk33, closureChunk34, closureChunk35, closureChunk36, closureChunk37, closureChunk38, closureChunk39, closureChunk40, closureChunk41, closureChunk42, closureChunk43, closureChunk44, closureChunk45, closureChunk46, closureChunk47, closureChunk48, closureChunk49, closureChunk50, closureChunk51, closureChunk52, closureChunk53, closureChunk54, closureChunk55, closureChunk56, closureChunk57, closureChunk58, closureChunk59, closureChunk60, closureChunk61, closureChunk62, closureChunk63, closureChunk64, closureChunk65, closureChunk66]).flatten
 
+-- The inert compiler-trust roles' records and what they reach outside the closure: bound,
+-- never checked; the claim harness supplies them with the table.
+def inert : Array (String × String) := #[
+]
+
 def closureBlobs : Array (String × String) := #[
   ("2d3adedff11b61f14c886e35afa036736dcd87a74d27b5c1510225d0f592e213",
    "00"),

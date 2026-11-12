@@ -54,6 +54,7 @@ def defaultTableSupport : Except String (Array (Address × Ixon.Constant) ×
   let closure := Ix.Kernel.Reader.RoleData.closure
   let records := (← Ix.Kernel.Reader.preludeRecords) ++ (← Ix.Kernel.Reader.evidenceRecords)
     ++ (← Ix.Kernel.Reader.decodeCommitted "closure" closure)
+    ++ (← Ix.Kernel.Reader.decodeCommitted "inert" Ix.Kernel.Reader.RoleData.inert)
   let blobs ← (Ix.Kernel.Reader.RoleData.blobs ++ Ix.Kernel.Reader.RoleData.closureBlobs).mapM
     fun (hex, bytes) => do
       let some a := Ix.Kernel.Reader.addressOfHex hex

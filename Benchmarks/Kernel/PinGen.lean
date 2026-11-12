@@ -693,6 +693,19 @@ def run (args : List String) : IO UInt32 := do
     match Ixon.Canonical.deConstant preludeMaxBytes preludeMaxUnivNodes bytes with
     | .ok c' => unless c' == c do fail s!"closure record {a} does not round-trip"
     | .error e => fail s!"closure record {a}: {e}"
+  -- The inert compiler-trust roles (`uncheckedRoles`) and the records they reach that no array
+  -- above holds: the table binds them, so a witness of the table carries them
+  -- (`IxVM.ClaimHarness.defaultTableSupport`), and nothing checks them.
+  let written : Std.HashSet Address := closureRecords.foldl (fun m (a, _) => m.insert a) preludeSet
+  let inertRoots := bound.filterMap fun (r, _) =>
+    if uncheckedRoles.contains r then (refOfRole[r]?).map (·.block) else none
+  let inertRecords : Array (Address × Ixon.Constant) :=
+    ((closure s.store s.extra inertRoots).filter (!written.contains ·)).filterMap fun a =>
+      (s.store[a]?).map (a, ·)
+  for a in inertRoots do
+    unless written.contains a || inertRecords.any (·.1 == a) do
+      fail s!"an inert role's record {a} is not in the store"
+  IO.eprintln s!"pin-gen: inert roles: {inertRecords.size} records outside the checked closure"
   let mut closureBlobs : Array (Address × ByteArray) := #[]
   for (_, c) in closureRecords do
     for x in c.refs do
@@ -875,6 +888,10 @@ def quotientNames : Array (String × Lean.Name) := #[
 {nameRows qNames}]
 
 {fixtureDefinition "closure" (rowTerms (closureRecords.map fun (a, c) => (a, Ixon.serConstant c)))}
+
+-- The inert compiler-trust roles' records and what they reach outside the closure: bound,
+-- never checked; the claim harness supplies them with the table.
+{fixtureDefinition "inert" (rowTerms (inertRecords.map fun (a, c) => (a, Ixon.serConstant c)))}
 
 def closureBlobs : Array (String × String) := #[
 {rowsOf closureBlobs}]
