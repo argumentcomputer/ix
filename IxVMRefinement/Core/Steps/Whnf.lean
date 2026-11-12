@@ -13,6 +13,8 @@ open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 open Aiur.Library Aiur.Library.List
 open Ix.Kernel.Rules (Red)
 
+set_option linter.unusedVariables false
+
 /-! ## Helpers -/
 
 /-- A callee's derivation has fewer calls than its caller's. -/
@@ -30,12 +32,12 @@ theorem tml_mono {c : Ctx} {d : Nat} {Γ : Nat → KExpr} {h₁ h₂ : Heap F} {
 /-- A level the never-zero test accepts has the datum `never`. -/
 theorem bmeta_of_isNeverZero {ℓ : KLevel} (h : ℓ.isNeverZero = true) :
     bmeta ℓ = Specs.Whnf.nbMeta := by
-  have e := Ix.Kernel.Verify.PropWhen.isNeverZero_eq_isNever ℓ
+  have e := Ix.Kernel.Level.isNeverZero_eq_isNever ℓ
   rw [h] at e
   have := Ix.Kernel.PropWhen.isNever_iff.mp e.symm
   simp [bmeta, Specs.Whnf.nbMeta, this]
 
-theorem field_one_ne_zero : (SourceValue.field (1 : F) : SourceValue F) ≠ .field 0 := by
+theorem field_one_ne_zero : (Value.field (1 : F) : SourceValue F) ≠ .field 0 := by
   intro h
   injection h with h
   exact one_ne_zero h
@@ -60,19 +62,18 @@ theorem peel_beta_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
   · -- a `λ` with an argument, the level never zero: consume it
     obtain ⟨T, B, ℓ, rfl, hT, hB, hℓ⟩ := hL.lam_of_load ld12
     obtain ⟨A, As', rfl, hA, hAs'⟩ := RepList.cons_of_load hAs ld47
-    subst hc144
-    have hlv := ih.get (.levelOps .level_is_not_zero) (by lt_calls) ev79 x_bl rfl ℓ hℓ
-    obtain ⟨hr1, hm66⟩ := hlv
-    subst m66
+    subst hc144 hm124
+    obtain ⟨hr1, -⟩ := ih.get (.levelOps .level_is_not_zero) (by lt_calls) ev79 x_bl rfl ℓ hℓ
     have hnz : ℓ.isNeverZero = true := by
       by_contra hn
-      have h10 : (SourceValue.field (1 : F)) = .field 0 := by rw [hr1, ite_eq_right hn]
+      have h10 : (Value.field (1 : F) : SourceValue F) = .field 0 := by rw [hr1, ite_eq_right hn]
       exact field_one_ne_zero h10
-    subst hm124
-    have ext : Heap.Extends h (h ++ [.construct kexprListEnum "Cons" [x_a, acc]]) :=
-      Heap.Extends.snoc _ _
-    have hacc : c.tml d Γ (h ++ [.construct kexprListEnum "Cons" [x_a, acc]]) (A :: Cs)
-        (.ptr (.enum kexprListEnum) h.length) := TmL.store_cons hA hCs
+    have e1 := ObsFn.heap_extends ev79
+    have ext : Heap.Extends h (m66 ++ [.construct kexprListEnum "Cons" [x_a, acc]]) :=
+      e1.trans (Heap.Extends.snoc _ _)
+    have hacc : c.tml d Γ (m66 ++ [.construct kexprListEnum "Cons" [x_a, acc]]) (A :: Cs)
+        (.ptr (.enum kexprListEnum) m66.length) :=
+      TmL.store_cons (Tm.mono e1 hA) (TmL.mono e1 hCs)
     obtain ⟨deep, cons, rest, Ts, D, hr, hBD, hlen, hD, hcons, hrest⟩ :=
       ih.get (.whnf .peel_beta) (by lt_calls) ev97 x_body x_rest _ rfl
         (good.sub fun x hx => by simp [hx]) d Γ (k + 1) B As' (A :: Cs)
@@ -87,11 +88,10 @@ theorem peel_beta_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
   · -- the level may be zero: stop
     obtain ⟨T, B, ℓ, rfl, -, -, hℓ⟩ := hL.lam_of_load ld12
     subst hc177
-    obtain ⟨-, hm66⟩ := ih.get (.levelOps .level_is_not_zero)
-      (by lt_calls) ev79 x_bl rfl ℓ hℓ
-    subst m66
+    have e1 := ObsFn.heap_extends ev79
     subst he154 he176
-    exact ⟨lam, acc, sp, [], _, rfl, rfl, by simp, hL, by simpa using hCs, by simpa using hAs⟩
+    exact ⟨lam, acc, sp, [], _, rfl, rfl, by simp, Tm.mono e1 hL, by simpa using TmL.mono e1 hCs,
+      by simpa using TmL.mono e1 hAs⟩
   · -- no argument left: stop
     subst he190 he212
     exact ⟨lam, acc, sp, [], _, rfl, rfl, by simp, hL, by simpa using hCs, by simpa using hAs⟩
