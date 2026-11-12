@@ -357,8 +357,18 @@ line `rc policy: immortal (plain RC refused: cert: own.plain: own.cert.budget:
 since a join then captures only what its body uses: 1,039,104 for the same
 program, within the limit. The limit is not settable at invocation yet (a
 mechanism to raise the verifier's limits as `IXCC_<LIMIT>` is being built).
-The verifier's other costs on hostile input (the source-domain check
-`programDomain`, quadratic, and the check run three times per certificate)
+The source-domain check the checker runs first (`programDomain`,
+`contractProgramDomain`: fresh parameters, every body's lexical scope and
+every call's arity) is linear in the program it reads up to a logarithm: it
+keeps the scope as a `Src.NatSet` and reads a callee's arity through
+`Fir.Program.fun?` ([`Own/Plain/ScopeSet.lean`](../IxCC/Own/Plain/ScopeSet.lean)),
+proved equal to the former list forms (`programDomain_eq_list`); the list
+forms cost about the square of a function's parameters (85.4 s on 4,096
+functions of 2,049 parameters, 6.6 s with the sets; the verifier's steps from
+Fir on such a program 267 s and 33 s). Parameters cost no Anf node, so no
+budget yet bounds a program's total parameter count; that, the check run
+three times per certificate and the certificate text's JSON depth (512, which
+a function's canonical ownership code passes at about 510 levels of nesting)
 are listed in the [roadmap](roadmap.md#hardening).
 The verifier is not slower for the change: over every root of the 12 registered manifests under
 `--rc on` (202 certificates, the CLI's `run` time, eight at once on the shared build box), 4.15 s in

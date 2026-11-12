@@ -1,5 +1,6 @@
 import IxCCTests.Own.Owned.Live
 import IxCCTests.Own.Owned.Sites
+import IxCCTests.Own.Owned.ScopeSet
 import IxCCTests.Corpus.Manifest
 import IxCC.Own.Plain.Certificate
 import IxCC.Recheck.Rc.Produce
@@ -29,7 +30,10 @@ a second placement of every root made by the liveness producer (`Live`, untruste
   heap stage 2 campaign of step 0): every accepted mutant must pass the oracle on every input with a
   reference; and some accepted mutant must change the cell reference-count traffic;
 * three fixed maps: a repeated captured variable is refused; a map that leaks before `trap` is
-  accepted (a trap ends the run); an increment by two is refused.
+  accepted (a trap ends the run); an increment by two is refused;
+* **the source scope check** (`ScopeSet`): on every root, then on synthetic programs and a call of
+  an entry past `size`, `programDomain`'s set forms against its former list forms, and one
+  ill-scoped edit per kind per function refused by both.
 
 Arguments: `[COUNT [CAP]]` (defaults 100 and 12). Run from the `IxCC` directory (the manifests'
 paths are relative to it). -/
@@ -54,6 +58,7 @@ structure Totals where
   accepted : Nat := 0
   oracleRuns : Nat := 0
   heapChanging : Nat := 0
+  scope : ScopeSet.Tally := {}
   failures : Array String := #[]
 
 def Totals.fail (t : Totals) (msg : String) : Totals :=
@@ -158,7 +163,7 @@ def campaign (t : Totals) (label name : String) (F : Fir.Program) (m : Src.NatMa
 /-- Every check on one root. -/
 def root (t : Totals) (label : String) (F : Fir.Program) (canonical : Src.NatMap Code)
     (count cap : Nat) : Totals := Id.run do
-  let mut t := { t with roots := t.roots + 1 }
+  let mut t := { t with roots := t.roots + 1, scope := ScopeSet.checkProgram t.scope label F }
   let plain := checkPlainMap F canonical
   let owned := checkOwned F canonical
   if plain then t := { t with plainAccepted := t.plainAccepted + 1 }
@@ -245,6 +250,9 @@ def run (count cap : Nat) : IO UInt32 := do
     if b == 0 then t := t.fail s!"control {k}: never refused for its stated reason"
   if t.heapChanging == 0 then t := t.fail "the campaign accepted no mutant that changes the cell RC traffic"
   if t.roots == 0 then t := t.fail "no roots"
+  let (scopeLines, scope) := ScopeSet.report (ScopeSet.synthetic t.scope)
+  for l in scopeLines do IO.println l
+  t := { t with failures := t.failures ++ scope.failures }
   for e in t.failures.toList.take 50 do IO.println s!"FAIL {e}"
   IO.println s!"{t.failures.size} failure(s), front-end errors {errors}"
   return if t.failures.isEmpty then 0 else 1

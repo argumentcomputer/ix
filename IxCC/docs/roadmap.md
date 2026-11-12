@@ -745,16 +745,66 @@ upstream's main too; reproducers in the kernel-robustness notes, `plans/kernel-r
 Known costs on hostile input in the plain-RC verifier (2026-11-12), beyond the
 ownership checker's own, which the captured-work budget bounds
 ([DR1, "The ownership checker"](data-and-roots-design.md#the-ownership-checker)):
-- `Own.Plain.programDomain`, the source-domain check both ownership checks
-  run before the checker, is quadratic: its freshness and scope checks keep
-  the scopes and the function signatures as lists, so each variable is
-  looked up linearly. On a program at the middle end's limits (4,096
-  functions of 255 nodes, each with 2,048 parameters) it takes 88.2 s on the
-  build box. Planned fix: set-based twins of `programDomain` and
-  `contractProgramDomain` (membership through `Src.NatSet`, arities through
-  `Fir.Program.fun?`), proved equal to the list versions, which then become
-  definitions through the twins (about 150 to 250 lines), measured before and
-  after.
+- `Own.Plain.programDomain` and `contractProgramDomain`, the source-domain
+  check both ownership checks run before the checker, were quadratic: their
+  freshness and scope checks kept the scope and the function signatures as
+  lists. Fixed (2026-11-12): they run the same checks over sets
+  ([`Own/Plain/ScopeSet.lean`](../IxCC/Own/Plain/ScopeSet.lean): the scope a
+  `Src.NatSet`, a callee's arity read through `Fir.Program.fun?`), proved
+  equal to the list forms (`programDomain_eq_list`,
+  `contractProgramDomain_eq_list`), so the check is linear in the program it
+  reads up to a logarithm, about 0.75 µs per parameter on the build box.
+  Measured with functions of 2,049 parameters each, one process per run:
+  `programDomain` alone 8.4 ms before and 1.5 ms after for one function,
+  2.6 s and 0.38 s for 256, 14.7 s and 1.6 s for 1,024, 85.4 s and 6.6 s
+  for 4,096 (255 nodes each, 2²⁰ program nodes; 79 MB); the verifier's steps
+  from Fir (admission, `checkScopedProgram` and the lowering, each of which
+  runs the check) on 4,096 such functions whose bodies are `trap`, with a
+  certificate of no action, 267 s before and 33 s after (2.1 GB).
+- Open: nothing bounds a Fir program's total parameter count directly.
+  Parameters cost no Anf node, so the node budgets (`Anf.maxGlobalNodes`,
+  `maxProgramNodes`, `maxBackWork`) do not bound them. A function's
+  parameters are the λ-binders of one source term, so `Src.maxTermDepth` and
+  `Anf.maxLamDepth` (2,048) hold one function to about 2,048 (from `ix`'s
+  output of a Lean source the consumer's expression depth, 256, holds it to
+  about 230; an artifact written by hand can nest deeper through shares),
+  and `Anf.Defun` holds a global used as a closure value to 255 parameters
+  and captured values together. With one-node functions (a body `trap`) the
+  node budget allows 2²⁰ functions, about 2³¹ parameters in all: some
+  27 minutes for one run of `programDomain` at 0.75 µs each, three runs per
+  verification, for a program of about 100 GB in memory. The registered
+  corpus reaches 240 parameters in one program (`Closures.stateLoop`: 78
+  functions, 11,536 Anf nodes, 0.021 per node; 8 at most in one function)
+  and 876 over its 194 roots against 52,742 Anf nodes (0.017); the benchmark
+  closures 386 (`const_fold`, 0.039 per node; 18 at most in one function,
+  `rbmap`) and 966 in all against 35,353 nodes (0.027); no program of 100
+  nodes or more passes 0.14 parameters per node (`Arity.main8p`). Whether the
+  front end can be made to emit a program near that total from an artifact
+  within its own budgets is not established: the producer's schedule prunes
+  unreachable globals, a direct call pays its arguments in Anf nodes and a
+  closure value is held to 255, but a certificate may omit the prune step
+  (`Recheck.checkMidCert` does not require it), and how many functions a
+  closure's reached constants can yield has not been worked out. A budget
+  on the parameter work is a decision still to take.
+- Known limit, not a cost: the certificate text is refused past 512 levels
+  of JSON nesting (`Src.Hints.maxJsonDepth`, `checkJsonText`), and a plain-RC
+  certificate's ownership code nests one level per binding, action and join
+  and two per `case`, below the middle end's own depth limit
+  (`Anf.maxDepth`, 2,048). A function whose canonical code nests past about
+  510 levels (one that must drop more than about 500 values at one return,
+  or a chain of a few hundred tests) gets a certificate the text path
+  refuses. On a probe input (240 nested `Bool.casesOn (Nat.blt k s)` tests
+  on two parameters, within the consumer's expression depth; certificate
+  nesting 726), `--rc on` and `--rc auto` compile under plain RC and write the
+  object (the producer admits its certificate as a JSON value, not as text),
+  but `ixcc check-cert` refuses the emitted certificate with `cert:
+  cert.parse: JSON nesting depth exceeds maximum`; under `--rc off` the
+  zero-RC certificate (nesting 8) is accepted. The registered corpus's
+  certificates nest at most 121 levels (`Natural.fibMain` under `--rc on`).
+  A flat encoding of an action sequence (one level for a run of actions) or
+  a liveness placement (fewer drops at a return) lifts the case of many
+  drops; a chain of bindings and `case`s would need the control tree itself
+  encoded flatter. The format is not changed yet.
 - `RcReplay.runFront` runs the ownership check three times on the same map:
   at admission (`Own.Plain.Certificate.admit`), in the program gate
   (`checkScopedProgram`'s `checkProgram`) and in the lowering
