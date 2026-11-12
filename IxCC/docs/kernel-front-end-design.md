@@ -673,10 +673,14 @@ landed; what stays exposed is under [resource bounds](#resource-bounds).
    renamed `IxCCTests/IxonV3/Builder.lean`. Removed in all: about 15,400 lines
    of Lean and 16,500 lines in all, including the dated historical ownership
    records the kernel front end refuses (unbound) and `ix` can no longer write.
-5. **The ledger last**: the closure and the exception are already recorded;
-   the native-interface entry goes, with an audit that IxCC's binaries do not
-   link the foreign hasher; the integrity pins re-recorded by the documented
-   procedure. The runs of `tests-kernel-front`, `corpus check` and
+5. **The ledger last** (done): the kernel closure and its exception were
+   already recorded; the native-interface entry is gone, Blake3 is recorded as
+   a git-pinned pure dependency (the two files IxCC takes from it, with three
+   admitted `native_decide` default-argument proofs), and the ledger audits
+   that IxCC imports only `Blake3.Pure` and that no executable the checks
+   build links either of the package's native backends
+   ([trust ledger](trusted-extern-ledger.md), "No native interface"); the
+   integrity pins re-recorded by the documented procedure. The runs of `tests-kernel-front`, `corpus check` and
    `tests-corpus` over the refrozen corpus (every one through the kernel's
    acceptance and annotator) are the required differential's successor.
 
