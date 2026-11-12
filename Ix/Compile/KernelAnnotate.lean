@@ -126,6 +126,8 @@ structure Installed where
   /-- whether the walk memoizes share sites (`IX_BD_NOMEMO` turns it off, for diagnosis) -/
   memo : Bool := true
   fixes : Fixes := {}
+  /-- whether the syntactic reading is measured beside the walk (`IX_BD_TIER1`) -/
+  tier1 : Bool := false
   /-- projection tables added for structures the install left without one, and
   those skipped because the structure is a proposition -/
   tablesAdded : Nat := 0
@@ -548,8 +550,9 @@ def installInput (env : Ix.Environment) (workers : Nat := 32) : IO (Except Strin
   let memo := (← IO.getEnv "IX_BD_NOMEMO").isNone
   let trace := ((← IO.getEnv "IX_BD_TRACE").map fun s => (s.splitOn ",").toArray).getD #[]
   let fixes := Fixes.parse ((← IO.getEnv "IX_BD_OFF").getD "")
+  let tier1 := (← IO.getEnv "IX_BD_TIER1").isSome
   return (← install env blocks workers parallel (!trace.isEmpty) fixes).map fun k =>
-    { k with stored, memo, trace, times := #[("condense", t1 - t0)] ++ k.times }
+    { k with stored, memo, trace, tier1, times := #[("condense", t1 - t0)] ++ k.times }
 
 /-! ## The walk -/
 
@@ -558,6 +561,9 @@ an identity for the sharing memo. -/
 structure CtxEntry where
   id : Nat
   val : KExpr
+  /-- its type (a binder's annotated domain, a `let`'s annotated type), for the syntactic
+  reading (`IX_BD_TIER1`) -/
+  ty : Option KExpr := none
 
 /-- What a record's walk reads. `large` and `params` are the root's numbering
 of level parameters (`Ix.LeanIngress.Numbering`): a large eliminator's source
@@ -575,6 +581,8 @@ structure Cx where
   turns it off, for diagnosis) -/
   memo : Bool := true
   fixes : Fixes := {}
+  /-- whether the syntactic reading is measured beside the walk (`IX_BD_TIER1`) -/
+  tier1 : Bool := false
 
 /-- A source level parameter's index in the record's numbering (the inverse of
 `Ix.LeanIngress.Numbering.pos`). -/
@@ -597,6 +605,10 @@ structure WState where
     (KExpr × Nat × Bool × KExpr) := {}
   /-- the stored walk's memo (`walkStored`): the variant of a share site -/
   memoS : Std.HashMap (Nat × Bool × List Nat) Nat := {}
+  /-- the syntactic reading's binder counts (`IX_BD_TIER1`): agreeing with the walk's datum,
+  disagreeing, not read where the walk decides, read where the walk does not, neither -/
+  t1 : Array Nat := #[0, 0, 0, 0, 0]
+  t1First : Option String := none
 
 abbrev WM := StateT WState CM
 /-- An entry's walk: its nodes' data, by ordinal. -/
@@ -754,12 +766,87 @@ def forallDatumAt : Nat → KExpr → Option PropWhen
 structure Expect where
   ty : Option KExpr := none
   pw : Option PropWhen := none
+  /-- `pw` as the syntactic reading finds it (`synSort`; measurement only) -/
+  syn : Option PropWhen := none
   deriving Inhabited
 
 /-- The zero-ness of the sort of `t`, an annotated type at `depth` (IxC's
 `annotPwPiI`); `none` where IxC's function fails. -/
 def sortPwC (cx : Cx) (depth : Nat) (t : KExpr) : CM (Option PropWhen) :=
   tryCatch (some <$> Ix.Kernel.Cached.annotPwPiI cx.core cx.fe depth t) (fun _ => pure none)
+
+/-! ### A syntactic reading of the data (measurement, `IX_BD_TIER1`)
+
+Nothing below decides a datum the annotator writes: the walk counts where this
+reading agrees with the datum it decided. -/
+
+/-- `t` past exactly `n` leading ∀s. -/
+def peelN : Nat → KExpr → Option KExpr
+  | 0, t => some t
+  | n + 1, .forallE _ b _ => peelN n b
+  | _, _ => none
+
+/-- The `n`-th ∀-domain of `t`, with the domains before it (innermost first). -/
+def domainAt : Nat → KExpr → List (Option KExpr) → Option (KExpr × List (Option KExpr))
+  | 0, .forallE d _ _, acc => some (d, acc)
+  | n + 1, .forallE d b _, acc => domainAt n b (some d :: acc)
+  | _, _, _ => none
+
+/-- **The zero-ness of the sort of a type `t`, read syntactically**: its ∀-leaf is
+a sort, or an application headed by a constant or a variable whose type, past
+exactly the argument count of ∀s, is a sort. `ctx` holds the types of `t`'s loose
+variables, innermost first; `sub` maps the levels found to the reader's
+numbering. `none` where the reading does not apply (no whnf, no inference). -/
+def synSort (fe : FEnv .source) (sub : Ix.Kernel.Level → Ix.Kernel.Level) :
+    Nat → List (Option KExpr) → KExpr → Option PropWhen
+  | 0, _, _ => none
+  | fuel + 1, ctx, t =>
+    match t with
+    | .sort _ => some .never
+    | .forallE dom body _ => synSort fe sub fuel (some dom :: ctx) body
+    | _ =>
+      let n := t.getAppArgsC.length
+      let res : Option Ix.Kernel.Level := match t.getAppFn with
+        | .const c us => (fe.find? c).bind fun ci =>
+          match peelN n ci.toConstantVal.type with
+          | some (.sort s) => some (Ix.Kernel.Level.subst ci.toConstantVal.levelParams us s)
+          | _ => none
+        | .bvar i => (ctx[i]?).join.bind fun ty => match peelN n ty with
+          | some (.sort s) => some s
+          | _ => none
+        | .fvar _ ty => match peelN n ty with
+          | some (.sort s) => some s
+          | _ => none
+        | _ => none
+      res.map fun s => Ix.Kernel.Level.zeronessOf (sub s)
+
+/-- The syntactic expectation of the argument at `idx` of a spine headed by `h`
+(a source head under `ctx`): the zero-ness of the sort of the head type's
+`idx`-th domain. -/
+def synArg (fe : FEnv .source) (ctx : List CtxEntry) (h : KExpr) (idx : Nat) : Option PropWhen :=
+  match h with
+  | .const c us => (fe.find? c).bind fun ci =>
+    (domainAt idx ci.toConstantVal.type []).bind fun (d, before) =>
+      synSort fe (Ix.Kernel.Level.subst ci.toConstantVal.levelParams us) 64 before d
+  | .bvar i => (ctx[i]?.bind (·.ty)).bind fun ty =>
+    (domainAt idx ty []).bind fun (d, before) => synSort fe id 64 before d
+  | _ => none
+
+/-- Count `k` binders whose walked node is `node` against the syntactic reading
+`syn` (`WState.t1`). -/
+def countT1 (cx : Cx) (pi : Bool) (depth k : Nat) (node : Node) (syn : Option PropWhen) :
+    WM Unit := do
+  if !cx.tier1 then return
+  let slot := match node, syn with
+    | .undecided, some _ => 3
+    | .undecided, none => 4
+    | _, none => 2
+    | _, some p => if cx.nodeOf p == node then 0 else 1
+  modify fun st =>
+    let first := if slot == 1 && st.t1First.isNone then
+        some s!"{if pi then "∀" else "λ"} run at depth {depth}: read {repr syn}, walked {repr node}"
+      else st.t1First
+    { st with t1 := st.t1.modify slot (· + k), t1First := first }
 
 /-- The walk of one entry's tree `e` beside its source `x`, under `ctx`
 (innermost first) at binder depth `depth`, knowing `ex` of its type: the
@@ -775,7 +862,8 @@ def walk : Nat → Cx → List CtxEntry → Nat → Expect → Ixon.Expr → KEx
       | none => mismatch "a loose variable"
     | .app f a, .app xf xa => do
       let (f', bf) ← walk fuel cx ctx depth {} f xf
-      let (a', ba) ← walk fuel cx ctx depth {} a xa
+      let aex : Expect := if cx.tier1 then { syn := synArg cx.fe ctx x.getAppFn xf.getAppArgsC.length } else {}
+      let (a', ba) ← walk fuel cx ctx depth aex a xa
       pure (.app f' a', bf || ba)
     | .lam .., .lam .. | .all .., .forallE .. => do
       let pi := e matches .all ..
@@ -790,10 +878,11 @@ def walk : Nat → Cx → List CtxEntry → Nat → Expect → Ixon.Expr → KEx
         let (t', bt) ← walk fuel cx inner (depth + j) {} t ty
         bad := bad || bt
         let id ← freshId
-        inner := ⟨id, .fvar (depth + j) t'⟩ :: inner
+        inner := ⟨id, .fvar (depth + j) t', some t'⟩ :: inner
         stk := (t', mb) :: stk
       let k := bs.size
-      let leafEx : Expect := if !pi && cx.fixes.exppw then { pw := ex.pw } else {}
+      let leafEx : Expect := { pw := if !pi && cx.fixes.exppw then ex.pw else none,
+                               syn := if !pi && cx.tier1 then ex.syn else none }
       let (leaf', bl) ← walk fuel cx inner (depth + k) leafEx leafE leafX
       let pw? ← datum cx pi (depth + k) leaf'
       let pw? := if pw?.isSome || pi then pw?
@@ -801,6 +890,11 @@ def walk : Nat → Cx → List CtxEntry → Nat → Expect → Ixon.Expr → KEx
       let undecided := bad || bl || pw?.isNone
       let node : Node := if undecided then .undecided else cx.nodeOf (pw?.getD .never)
       for ord in ords do setNode ord node
+      if cx.tier1 then
+        let synD : Option PropWhen := if pi then
+            synSort cx.fe id 64 ((bs.toList.map fun (_, ty, _) => some ty).reverse ++ ctx.map (·.ty)) leafX
+          else ex.syn
+        countT1 cx pi depth k node synD
       let mk : KExpr → KExpr → BinderMeta → KExpr :=
         if pi then fun ty b mb => .forallE ty b mb else fun ty b mb => .lam ty b mb
       let out ← (Ix.Kernel.Cached.annotateBindersOutI mk depth (some (pw?.getD .never)) stk (k - 1)
@@ -812,11 +906,11 @@ def walk : Nat → Cx → List CtxEntry → Nat → Expect → Ixon.Expr → KEx
       let (t', bt) ← walk fuel cx ctx depth {} t ty
       let vex : Expect ← if cx.fixes.exppw && !bt then do
           let p ← (sortPwC cx depth t' : CM (Option PropWhen))
-          pure { pw := p }
-        else pure {}
+          pure { pw := p, syn := if cx.tier1 then synSort cx.fe id 64 (ctx.map (·.ty)) ty else none }
+        else pure { syn := if cx.tier1 then synSort cx.fe id 64 (ctx.map (·.ty)) ty else none }
       let (v', bv) ← walk fuel cx ctx depth vex v val
       let id ← freshId
-      let (b', bb) ← walk fuel cx (⟨id, v'⟩ :: ctx) depth ex b body
+      let (b', bb) ← walk fuel cx (⟨id, v', some t'⟩ :: ctx) depth ex b body
       pure (b', bt || bv || bb)
     | .prj _ _ v, .proj k i xv => do
       let (v', bv) ← walk fuel cx ctx depth {} v xv
@@ -836,7 +930,8 @@ def walk : Nat → Cx → List CtxEntry → Nat → Expect → Ixon.Expr → KEx
     | .share n, _ => do
       let ord ← reserve
       let n := n.toNat
-      let shareEx : Expect := if cx.fixes.exppw then { pw := ex.pw } else {}
+      let shareEx : Expect := { pw := if cx.fixes.exppw then ex.pw else none,
+                                syn := if cx.tier1 then ex.syn else none }
       let src? : Option KExpr := if cx.fixes.memo then some x else none
       let key := (n, cx.large, (ctx.take (cx.bounds[n]?.getD 0)).map (·.id), shareEx.pw, src?)
       let hit? := if cx.memo then (← getThe WState).memo[key]? else none
@@ -1042,7 +1137,7 @@ def annotate (k : Installed) (extra : Array (Ix.Name × Ix.ConstantInfo)) (names
     let traced := !k.trace.isEmpty && names.any fun n => k.trace.contains n.pretty
     let cx0 : Cx := { fe := k.fe, core := k.core, sharing := c.sharing,
                       bounds := IxVM.PwHints.bounds c.sharing, trace := traced, memo := k.memo,
-                      fixes := k.fixes }
+                      fixes := k.fixes, tier1 := k.tier1 }
     let stored : Array (Option KExpr) := if !k.stored then #[] else
       ((members c).zip names).foldl (fun acc (m, n) => acc ++ storedItems k.fe n m) #[]
     let tys := IxVM.PwHints.valueTypes c
@@ -1068,13 +1163,17 @@ def annotate (k : Installed) (extra : Array (Ix.Name × Ix.ConstantInfo)) (names
         let ex : Expect ← match tys[i]? with
           | some (some j) => do
             let ty := annotated[j]?.join
-            if !cx.fixes.exppw then pure { ty }
-            else if thms[i]?.getD false then pure { ty, pw := some (PropWhen.ifAllZero []) }
+            -- the syntactic reading's expectation (measurement only)
+            let syn : Option PropWhen := if !cx.tier1 then none
+              else if thms[i]?.getD false then some (PropWhen.ifAllZero [])
+              else (xs[j]?).bind fun (tx, _) => synSort cx.fe id 64 [] tx
+            if !cx.fixes.exppw then pure { ty, syn }
+            else if thms[i]?.getD false then pure { ty, pw := some (PropWhen.ifAllZero []), syn }
             else match ty with
               | some t => do
                 let p ← (sortPwC cx 0 t : CM (Option PropWhen))
-                pure { ty, pw := p }
-              | none => pure { ty }
+                pure { ty, pw := p, syn }
+              | none => pure { ty, syn }
           | _ => pure {}
         let (nodes, kx?) ← match read, stored[i]? with
           | some nodes, some kx => pure (nodes, kx)
@@ -1086,9 +1185,15 @@ def annotate (k : Installed) (extra : Array (Ix.Name × Ix.ConstantInfo)) (names
       return out
     match (act.run {}).run {} with
     | .ok ((roots, st), _) =>
-      match Ix.Compile.BinderData.sectionOf c (roots ++ st.blocks) with
-      | .ok s => s
-      | .error _ => Ix.CompileM.undecidedSection c
+      let sec := match Ix.Compile.BinderData.sectionOf c (roots ++ st.blocks) with
+        | .ok s => s
+        | .error _ => Ix.CompileM.undecidedSection c
+      if k.tier1 then
+        let counts := String.intercalate " " (st.t1.toList.map toString)
+        let name := (names[0]?.map (·.pretty)).getD "?"
+        let first := st.t1First.getD ""
+        dbgTrace s!"BDT1 {counts} {name} {first}" fun _ => sec
+      else sec
     | .error e =>
       if traced then
         dbgTrace s!"binder data trace: {names.map (·.pretty)}: the walk fails: {traceError e}"
