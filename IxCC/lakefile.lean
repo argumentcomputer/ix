@@ -11,7 +11,9 @@ package «ix-cc» where
         "-lleanshared_2", "-lleanshared_1", "-lInit_shared"]
     | none => #[]
 
-/- Blake3 FFI. Keep this revision in lockstep with ix's (`../lakefile.lean`),
+/- Blake3. IxCC imports only its pure Lean `Blake3.Pure` (every address IxCC
+computes is pure BLAKE3); the trust ledger refuses an import of the package's
+Rust or C backend. Keep this revision in lockstep with ix's (`../lakefile.lean`),
 the repository flake's `blake3-lean` input and `lake-manifest.json`. -/
 require Blake3 from git
   "https://github.com/argumentcomputer/Blake3.lean" @
@@ -21,13 +23,14 @@ require Blake3 from git
 pure Ixon v4 codec (`IxCK.Ixon.Canonical`) is imported by the ingress wire
 layer (`IxCC.Ixon.V4.Convert`, `IxCC.Ixon.V3.Wire`) and the resource profile
 reader (`IxCC.Src.Resource.Profile`); its role vocabulary (`IxCK.Kernel.Key`)
-by the reader of a role-bound environment's binding (`IxCC.Ixon.V3.Binding`);
+by the mapping of the kernel's roles to IxCC's pinned identities
+(`IxCC.Src.Pinned`);
 and its tiered admission entry, prelude and executed typing core
 (`IxCK.Kernel.Admission.Tier`, `IxCK.Kernel.Ixon.Prelude`,
 `IxCK.Kernel.Cached.CoreC`) by the front end over the kernel
 (`IxCC.Src.KernelFront`, `docs/kernel-front-end-design.md`). It is the
 package beside this one in the ix workspace; the trust ledger records the
-SHA-256 of every file of the imported closure (82 files, not the kernel's
+SHA-256 of every file of the imported closure (98 files, not the kernel's
 proof tree), so a change to it is reviewed here. -/
 require «ix-ck» from "../IxCK"
 
@@ -235,13 +238,9 @@ lean_exe «tests-grounding» where
 
 lean_exe «tests-ixon-v3» where
   root := `IxCCTests.IxonV3.Main
-  needs := #[.mk (.packageTarget .anonymous `«check-ixon-v3-catalog»)]
 
 lean_exe «check-ixon-v3» where
   root := `IxCCTests.Scripts.CheckIxonV3
-
-lean_exe «check-ixon-v3-catalog» where
-  root := `IxCCTests.Scripts.CheckIxonV3Catalog
 
 lean_exe «tests-aiur» where
   root := `IxCCTests.Aiur.Main
@@ -316,7 +315,7 @@ lean_exe «pin-src-tables» where
   supportInterpreter := true
 
 /- Manual refreeze steps beside `corpus rebuild` and `pin-src-tables`: the
-producer pins, ix's fixture package, the erased checker's primitive table,
-the typing bundles and the catalogs (runs ix; `docs/corpus.md`). -/
+producer pins, ix's fixture package, the primitive table and the RC
+real-source input (runs ix; `docs/corpus.md`). -/
 lean_exe «refreeze-ixon» where
   root := `IxCCTests.Scripts.RefreezeIxon

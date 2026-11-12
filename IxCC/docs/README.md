@@ -44,7 +44,8 @@ unless a line says so.
   dishonest input.
 - [The front end over the certified kernel](kernel-front-end-design.md): acceptance
   and the relevance annotation from IxCK instead of IxCC's erased type checker
-  (the native discharge of the premises); since the switch, the only front end.
+  (the native discharge of the premises); since the switch, the only front
+  end, and the erased checker is deleted.
 - [Resource soundness](resource-soundness-design.md): what usage, ownership
   and locality annotations guarantee, the ownership checker that verifies them
   and the instrumented-evaluator theorem.
@@ -62,8 +63,7 @@ unless a line says so.
   binding and the pins it gives, the records, the hash), term for term with a
   kernel claim about the same artifact.
 - [Ixon v4](ixon-v4.md): the ix pins (the v4 codec and the producer), contract encoding, strict
-  decoding, catalog-v2 admission, erased typing, resource admission and
-  claims.
+  decoding, resource admission and claims.
 
 ## x86 target
 

@@ -8,8 +8,7 @@ Ixon v4 changed the wire (TagN integers, canonical sharing) and kept the
 data model that Ixon v3 introduced: the same universes, expressions,
 contracts and constants. The bytes are read and written by ix's pure codec
 (`IxCK.Ixon.Codec`, ix's `IxCK` package at the pinned revision);
-everything downstream of ingress (`V3.Tc`, `Src.Ingress`, the resource
-checker) keeps our own copy of the data types, so no ix type reaches `Src`
+everything downstream of ingress (`Src.Ingress`, the resource checker) keeps our own copy of the data types, so no ix type reaches `Src`
 or the recheck path.
 
 This module is the total structural correspondence between the two copies.

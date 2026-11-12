@@ -25,9 +25,16 @@ tree still contains monolithic test and proof modules that need migration.
 - IxCC is the `IxCC/` package of ix (`«ix-cc»`). Run Lake from `IxCC/` in
   ix's development shell (`nix develop` finds ix's flake from here). IxCC
   depends on `../IxCK` (its Ixon codec, the role vocabulary `IxCK.Kernel.Key`
-  with which it reads role-bound environments, and the kernel's tiered
+  with which it maps the kernel's roles to its pinned identities, and the kernel's tiered
   admission entry and executed typing core, which the front end over the
-  kernel uses; not the kernel's proof tree) and Blake3; its grounding
+  kernel uses; not the kernel's proof tree) and Blake3 (its pure Lean module
+  `Blake3.Pure` only, and of it only `Blake3.Pure.hash`, with which IxCC
+  computes every address; the module's closure is two files of the package,
+  `Blake3/Pure.lean` and the root module `Blake3.lean`, whose three
+  `native_decide` default-argument proofs the trust ledger admits by name;
+  the ledger refuses any other import or name under `Blake3`, so no IxCC
+  module may import the package's Rust or C backend, and its link audit
+  refuses either backend's symbols in every executable the checks build); its grounding
   library (`IxCCGrounding`, beside the production library) also imports the
   kernel's model, `IxCK.Kernel.Denotes` (the statement half), which nothing
   in the production library or the shared program build may import
@@ -47,10 +54,11 @@ tree still contains monolithic test and proof modules that need migration.
   is updated and reviewed in the same change: every IxCC file its integrity
   rule covers (Lake files, `IxCC/`, `IxCCTests/`, `fixtures/`, `nix/`,
   `tools/` and a few named specifications; not the rest of `docs/`, the
-  READMEs, this file or `benchmarks/`), the 82 files of the `IxCK` closure
+  READMEs, this file or `benchmarks/`), the 98 files of the `IxCK` closure
   IxCC imports (the codec, the role vocabulary, the admission entry and the
   typing core, with the kernel's `implemented_by` rulings enumerated), the
-  revisions of ix's `flake.lock`, the full text of
+  two files IxCC takes from the Blake3 package and its revision (against
+  `lake-manifest.json` and `flake.lock`), the revisions of ix's `flake.lock`, the full text of
   `.github/workflows/ixcc.yml` and the remote actions it uses, and the set of
   required checks (`required_checks`, which must equal the attributes of
   `nix/checks.nix`). ix's `flake.nix` is not pinned; `ixcc.yml` instead

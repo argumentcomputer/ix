@@ -152,6 +152,50 @@ and the request interface. -/
 /-- info: 'IxCC.X86.Exe.Process.Run.ofByteRun' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.X86.Exe.Process.Run.ofByteRun
 
+/-! Where `Process.Step` promises nothing (`Unspecified`), every continuation
+is a trace; a trace followed by a system call the shell never makes is one
+`Shows` and `Outcome` allow only past a stuck call or past the point where the
+source goes wrong. -/
+
+/-- info: 'IxCC.X86.Exe.Process.Unspecified.outside' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.X86.Exe.Process.Unspecified.outside
+
+/-- info: 'IxCC.X86.Exe.Process.Run.of_unspecified' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.X86.Exe.Process.Run.of_unspecified
+
+/-- info: 'IxCC.X86.Exe.Process.Trace.of_unspecified' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.X86.Exe.Process.Trace.of_unspecified
+
+/-- info: 'IxCC.X86.Exe.Process.Run.other_of_unspecified' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.X86.Exe.Process.Run.other_of_unspecified
+
+/-- info: 'IxCC.X86.Exe.Process.Report.not_other' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.X86.Exe.Process.Report.not_other
+
+/-- info: 'IxCC.X86.Exe.Process.Denotes.not_other' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.X86.Exe.Process.Denotes.not_other
+
+/-- info: 'IxCC.X86.Exe.Process.DenotesAll.not_other' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.X86.Exe.Process.DenotesAll.not_other
+
+/-- info: 'IxCC.X86.Exe.Process.started_not_other' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.X86.Exe.Process.started_not_other
+
+/-- info: 'IxCC.X86.Exe.Process.prefix_of_not_other' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.X86.Exe.Process.prefix_of_not_other
+
+/-- info: 'IxCC.X86.Exe.Process.not_prefix_other' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.X86.Exe.Process.not_prefix_other
+
+/-- info: 'IxCC.X86.Exe.Process.Refused.not_other' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.X86.Exe.Process.Refused.not_other
+
+/-- info: 'IxCC.X86.Exe.Process.Shows.stuck_of_other' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.X86.Exe.Process.Shows.stuck_of_other
+
+/-- info: 'IxCC.X86.Exe.Process.Outcome.wrong_of_other' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.X86.Exe.Process.Outcome.wrong_of_other
+
 /-! The shell proof's second part (X0-P): a call into the object on the process
 (`call_lifts`), the two calls of an iteration (`two_calls`), and a fault ending
 the trace (`Trace.nil_of_faults`, `Trace.through`), with their lemmas. -/
@@ -182,6 +226,15 @@ the trace (`Trace.nil_of_faults`, `Trace.through`), with their lemmas. -/
 
 /-- info: 'IxCC.X86.Exe.Process.decodes_of_fault' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.X86.Exe.Process.decodes_of_fault
+
+/-- info: 'IxCC.X86.Exe.Process.decodes_of_undefined' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.X86.Exe.Process.decodes_of_undefined
+
+/-- info: 'IxCC.X86.Exe.Process.defined_of_step_ok' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.X86.Exe.Process.defined_of_step_ok
+
+/-- info: 'IxCC.X86.Exe.Process.defined_of_fault' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.X86.Exe.Process.defined_of_fault
 
 /-- info: 'IxCC.X86.Exe.Process.run_add' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.X86.Exe.Process.run_add

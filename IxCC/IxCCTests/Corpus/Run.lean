@@ -6,6 +6,7 @@ import IxCC.Anf.Print
 import IxCC.Lir.Print
 import IxCC.Xv.Print
 import IxCCTests.Exe.Support
+import IxCC.CompileClaim
 
 /-! The corpus suite: every root of every registered corpus family,
 against its frozen cases (`ixcc/corpus/1`).
@@ -43,6 +44,12 @@ manifest by `corpus rebuild`) and, where given, an independent constant:
 * a case with an argument of at least `2⁶³` has no word: only the entry
   wrapper runs (typed x86 and ByteEval when the argument fits a register,
   native code always) and must return status 3.
+
+A full run (no manifest, fixture or root named) then measures the middle
+end's budgets against every committed program (`Corpus.Budget.survey`), and
+holds what the middle end makes of `phase1-machines`' natural-style machines
+(`natural`: zero RC, no closure keys, and correct with the pending join entry
+forced off).
 
 The big-step evaluators nest native frames per recursive call, so the
 suite re-runs itself once with a large Lean stack (`LEAN_STACK_SIZE_KB`, as
@@ -315,68 +322,6 @@ def root (a : Assert) (o : Options) (native : Option Rt.Native.Tools) (work : Fi
     t.modify fun t => { t with compiled := t.compiled + 1 }
     runRoot a o native work label r c t
 
-def suite (a : Assert) (o : Options) (work : FilePath) : IO Unit := do
-  let native : Option Rt.Native.Tools := if o.runNative then some { work } else none
-  let t ← IO.mkRef ({} : Tally)
-  IO.println "tests-corpus"
-  let manifests := if o.manifests.isEmpty then families else o.manifests
-  for path in manifests do
-    let m ← Family.read path
-    for f in m.fixtures do
-      if !o.only.isEmpty && !o.only.contains f.name then continue
-      for r in f.roots do
-        if !o.roots.isEmpty && !o.roots.contains r.name then continue
-        let before ← a.get
-        let (lines, ms) ← timed (root a o native work m f r t)
-        IO.println s!"  {m.family}/{f.name}/{r.name}: {(← a.get) - before} assertions, {ms} ms"
-        for l in lines do IO.println s!"    {l}"
-        (← IO.getStdout).flush
-  let t ← t.get
-  IO.println s!"  {t.compiled} roots compiled, {t.declined} declined as expected; {t.cases} cases, \
-    {t.runs} level runs{if native.isSome then s!", {t.native} native runs" else ""}\
-    {if o.exe then s!", {t.exe} executable runs ({t.exeRefused} roots outside the executables' fragment)" else ""}; \
-    {t.allowed} allowed resource failures"
-  -- the middle end's budgets against every committed program (a full run only)
-  if o.manifests.isEmpty && o.only.isEmpty && o.roots.isEmpty then
-    let before ← a.get
-    let (lines, ms) ← timed (Budget.survey a)
-    IO.println s!"  middle-end budgets: {(← a.get) - before} assertions, {ms} ms"
-    for l in lines do IO.println s!"    {l}"
-    -- roots returning each constructor of their result type, compiled alone
-    if let some nt := native then
-      let before ← a.get
-      let (lines, ms) ← timed (IxCCTests.Recheck.RootShape.nativeAlone a nt)
-      IO.println s!"  result constructors of roots compiled alone, natively: {(← a.get) - before} \
-        assertions, {ms} ms"
-      for l in lines do IO.println s!"    {l}"
-
-/-- The middle end's and the backend's input for a root `produce` declines:
-Anf after the middle end and the closures step, Lir and Xv (as `ixcc
---dump-ir` prints them),
-recomputed by `produce`'s own steps up to selection. For diagnosing a decline
-at allocation or later. -/
-def dumpIR (inp : Input) : Except String String := do
-  let cfg := ({} : Config).forInput inp
-  let P := inp.program
-  let (table, _, _) := IxCC.Src.Table.build cfg.table P inp.hints.proposals
-  let p0 := { P with table }
-  let ann ← inp.kernel.annotateChecked p0
-  let (src, checked) ← match IxCC.Src.Recheck.annotation p0 ann with
-    | .ok r => pure r
-    | .error _ => throw "relevance rejects it"
-  let (lam, _) ← match (IxCC.Lam.erase src checked).mapError Err.ofErase with
-    | .ok r => pure r
-    | .error e => throw e.render
-  let trace ← IxCC.Anf.Pipeline.produce cfg.budgets lam
-  let pre := ((trace.stages.getLast?).map (·.2)).getD default
-  -- the closures step, as the producer runs it after the middle end
-  let anf ← (closuresOf src pre).mapError (·.render)
-  let fir ← (IxCC.Fir.lower anf).mapError fun e => (Err.ofFir e).render
-  let C := IxCC.Cfg.lower (IxCC.Own.immortal fir)
-  let lowered ← (IxCC.Rt.lower { names := cfg.names } C).mapError fun e => (Err.ofRt e).render
-  let (xv, _) ← (IxCC.Xv.Select.run lowered.program).mapError fun e => (Err.ofSelect e).render
-  return s!"== anf\n{anf.render}\n== lir\n{lowered.program.text}\n== xv\n{xv.text}"
-
 mutual
 /-- The closure allocation sites of a term: its `con` bindings of P8's closure
 constructors. -/
@@ -424,6 +369,223 @@ def closuresLine (cert : Cert) (art : Artifact) : String :=
       s!"closures step: {entries} entries, {K} closure keys, {M} dispatchers, dispatch work {w} \
         ({w * 100 / Anf.maxBackWork}% of {Anf.maxBackWork}; at most {kmax} keys at {M} dispatchers); \
         {allocs} closure allocation sites, {dcalls} dispatch call sites"
+
+/-- Whether the checker's replay of a producer's middle-end certificate
+(`Anf.Pipeline.run`) gives the program that producer made, at configuration
+`c`. -/
+def replaysAlike (c : Config) (inp : Input) : Except String Bool := do
+  let ps ← (produceSource c inp).mapError (·.render)
+  let (lam, _) ← (IxCC.Lam.erase ps.src ps.checked).mapError fun _ => "erasure declined"
+  let t ← Anf.Pipeline.produce c.budgets lam
+  let P ← Anf.Pipeline.run t.cert lam
+  pure (P.beq ((t.stages.getLast?.map (·.2)).getD default))
+
+/-- The `natural` fixture of `phase1-machines`: numeric state machines whose
+library is written in the natural style, which the middle end makes first
+order (the shrink walk's pending join entry and the producer's inline-round
+retry; `docs/closures-design.md`, "Measured limits"). Per root: under `--rc
+auto` (`CompileClaim.produce`) the claim is zero RC and `verifyProgram` accepts
+it; the closures step leaves the program unchanged (no closure keys) and it is
+first order; and with the pending choice forced off (`Shrink.Budgets.pendForce
+:= some false`, a test-only switch of the producer) the root still compiles
+(`compileInputRetry`: the producer, then the checker; `Natural.fibMain` through
+the run without the inline-round retry, the checker refusing the run with it,
+below) and gives the manifest's value on every case after the middle end, at
+Cfg and (with `--native`) natively: the gain is an optimisation, not something
+correctness depends on. The main run covers the decided compile at every
+level.
+
+The choice is not in the certificate (its shrink steps record round counts
+only), so the checker makes its own, and a producer that deviates from it is
+judged by what the checker's walk derives from its certificate:
+
+* **Refused** where that is another program: on `Natural.fibMain` the producer
+  with the choice forced off makes a certificate whose middle end, replayed by
+  the checker, is not the producer's program; the checker refuses it at
+  allocation (`alloc: alloc.shape`: the allocation certificate made for the
+  producer's program does not fit the checker's), and `verifyProgram` refuses
+  a claim carrying it, while the honest claim verifies.
+* **Accepted, less optimised**, where it is the same program: on
+  `Natural.onMessage` the walk without the pending entry refuses the rounds the
+  entry gains, so that producer only counts fewer rounds, which the checker
+  replays alike; its claim verifies, plain RC with 6 closure keys, and (with
+  `--native`) its object as an executable gives the manifest's values. So a
+  producer gets nothing accepted that the checker does not derive itself, and
+  remains free to do less. -/
+def natural (a : Assert) (native : Option Rt.Native.Tools) : IO (Array String) := do
+  let m ← Family.read "fixtures/corpus/phase1-machines/corpus.json"
+  let some f := m.fixtures.find? (·.name == "natural")
+    | do expect a false "phase1-machines: no fixture natural"; return #[]
+  let dir : FilePath := m.directory
+  let bytes ← IO.FS.readBinFile (dir / f.closure.path)
+  let json ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile (dir / f.equations.path)))
+  let off : Config := { budgets := { shrink := { pendForce := some false } } }
+  let mut out := #[]
+  for r in f.roots do
+    let label := s!"natural/{r.name}"
+    let inp ← IO.ofExcept ((ingress bytes json [r.name]).mapError (·.render))
+    let cfg : Config := { names := [r.name] }
+    match CompileClaim.produce cfg inp with
+    | .error e => expect a false s!"{label}: no claim under --rc auto: {e.render}"
+    | .ok (claim, cert, _) =>
+      expect a (claim.policy matches .zeroRc) s!"{label}: the claim's policy is not zero RC"
+      expect a (CompileClaim.verifyProgram cfg inp.program claim cert) s!"{label}: verifyProgram refuses the claim"
+    match compileInputRetry {} inp with
+    | .error e => expect a false s!"{label}: declined: {e.render}"
+    | .ok (cert, art) =>
+      let unchanged := (Anf.Pipeline.run cert.mid art.lam).toOption.any (·.beq art.anf)
+      expect a (unchanged && Anf.firstOrder art.anf)
+        s!"{label}: {closuresLine cert art}; expected the program unchanged and first order"
+    -- the pending choice forced off: compiled, and the manifest's values
+    match compileInputRetry off inp with
+    | .error e => expect a false s!"{label}, pending forced off: declined: {e.render}"
+    | .ok (cert, art) =>
+      let c ← Levels.assemble s!"{label} (pending off)" cert art
+      let levels := ((Levels.levelNames c).filter (·.startsWith "anf")).getLast?.toList ++ ["cfg"]
+      for cs in r.cases do
+        let some want := cs.sourceObs r | continue
+        for level in levels do
+          let (outcome, obs) ← Levels.runLevel c level cs.args (caseRegion cs) (caseBudget cs)
+          expect a (outcome == "ok" && obs.map Rt.renderObs == some want)
+            s!"{label} {cs.args}, pending forced off, at {level}: {outcome} {obs.map Rt.renderObs}, expected {want}"
+      let mut nat := 0
+      if let some nt := native then
+        let some root := c.art.roots.head? | throw (IO.userError s!"{label}: no root")
+        let exe ← link nt s!"natural_off_{r.name.replace "." "_"}" c.art.object root.symbol
+        let lines ← Rt.Native.run exe { stack := 1 <<< 28, ty := root.ty } (r.cases.map (·.args))
+        expect a (lines.length == r.cases.length) s!"{label}, pending forced off: {lines.length} native lines"
+        for (cs, l) in r.cases.zip lines do
+          expect a (l.status == 0 && l.obs == cs.sourceObs r)
+            s!"{label} {cs.args}, pending forced off, natively: status {l.status}, {l.obs}, expected {cs.sourceObs r}"
+        nat := lines.length
+      out := out.push s!"{label}: zero RC, claim verified, the closures step has nothing to do; pending forced off: \
+        {closuresLine cert art}, {r.cases.length} cases agree at {", ".intercalate levels}\
+        {if nat > 0 then s!" and natively" else ""}"
+  -- the pending choice is re-derived by the checker (it is not in the certificate): a producer
+  -- deviating from it (the choice forced off) is refused where the checker's own walk reaches
+  -- another program, and accepted, less optimised, where it reaches the same one
+  let dev (n : String) : Config := { names := [n], budgets := { shrink := { pendForce := some false } } }
+  if let some r := f.roots.find? (·.name == "Natural.fibMain") then
+    let label := s!"natural/{r.name}, a producer with the pending choice forced off"
+    let inp ← IO.ofExcept ((ingress bytes json [r.name]).mapError (·.render))
+    let cfg : Config := { names := [r.name] }
+    expect a (replaysAlike (dev r.name) inp matches .ok false)
+      s!"{label}: the checker's replay of its middle end gives its program"
+    match CompileClaim.produce cfg inp, produceWith (dev r.name) inp with
+    | .ok (claim, cert, _), .ok p =>
+      expect a (CompileClaim.verifyProgram cfg inp.program claim cert) s!"{label}: the honest claim is refused"
+      match IxCC.Recheck.run cfg inp.program p.cert with
+      | .ok _ => expect a false s!"{label}: the checker accepts its certificate"
+      | .error e =>
+        expect a (e.stage.name == "alloc" && e.code == "alloc.shape")
+          s!"{label}: refused at {e.stage.name}: {e.code}, expected alloc: alloc.shape"
+      expect a (!CompileClaim.verifyProgram cfg inp.program { claim with policy := .immortal } p.cert.toText)
+        s!"{label}: verifyProgram accepts a claim carrying its certificate"
+      out := out.push s!"{label}: its middle end, replayed by the checker, is another program; refused \
+        (alloc: alloc.shape), and the claim carrying it too; the honest claim verified"
+    | .error e, _ | _, .error e => expect a false s!"{label}: {e.render}"
+  if let some r := f.roots.find? (·.name == "Natural.onMessage") then
+    let label := s!"natural/{r.name}, a producer with the pending choice forced off"
+    let inp ← IO.ofExcept ((ingress bytes json [r.name]).mapError (·.render))
+    let cfg : Config := { names := [r.name] }
+    expect a (replaysAlike (dev r.name) inp matches .ok true)
+      s!"{label}: the checker's replay of its middle end is not its program"
+    match CompileClaim.produce (dev r.name) inp, RcReplay.produceFir (dev r.name) inp with
+    | .ok (claim, cert, _), .ok front =>
+      expect a (claim.policy matches .plainRc && CompileClaim.verifyProgram cfg inp.program claim cert)
+        s!"{label}: its claim is not a verified plain-RC claim"
+      let keys := front.anf.ctors.length -
+        ((Anf.Pipeline.run front.mid front.lam).toOption.map (·.ctors.length)).getD front.anf.ctors.length
+      expect a (keys == 6) s!"{label}: {keys} closure keys, expected 6"
+      match RcReplay.producePlain (dev r.name) inp front with
+      | .error e => expect a false s!"{label}: {e.render}"
+      | .ok (p, rc) =>
+        expect a (Ixon.Address.blake3Pure rc.backend.object == claim.elfHash) s!"{label}: another object than its claim's"
+        let mut n := 0
+        if let some nt := native then
+          match RcReplay.Artifact.toRecheckArtifact p.cert rc with
+          | .error e => expect a false s!"{label}: {e.render}"
+          | .ok art =>
+            let exe := nt.work / "natural_off_onMessage_rc"
+            match ← IxCCTests.Exe.build exe art {} with
+            | .error e => expect a false s!"{label}: no executable: {e.render}"
+            | .ok () =>
+              for cs in r.cases do
+                let ex ← IxCCTests.Exe.run exe (cs.args.map toString)
+                expect a (ex.outcome == "ok" && some ex.obs == cs.sourceObs r)
+                  s!"{label} {cs.args}: {ex.outcome} {ex.obs}, expected {cs.sourceObs r}"
+                n := n + 1
+        out := out.push s!"{label}: the checker derives its middle end too; its plain-RC claim verified ({keys} \
+          closure keys){if n > 0 then s!", its object as an executable gives the {n} cases' values" else ""}"
+    | .error e, _ | _, .error e => expect a false s!"{label}: {e.render}"
+  return out
+
+def suite (a : Assert) (o : Options) (work : FilePath) : IO Unit := do
+  let native : Option Rt.Native.Tools := if o.runNative then some { work } else none
+  let t ← IO.mkRef ({} : Tally)
+  IO.println "tests-corpus"
+  let manifests := if o.manifests.isEmpty then families else o.manifests
+  for path in manifests do
+    let m ← Family.read path
+    for f in m.fixtures do
+      if !o.only.isEmpty && !o.only.contains f.name then continue
+      for r in f.roots do
+        if !o.roots.isEmpty && !o.roots.contains r.name then continue
+        let before ← a.get
+        let (lines, ms) ← timed (root a o native work m f r t)
+        IO.println s!"  {m.family}/{f.name}/{r.name}: {(← a.get) - before} assertions, {ms} ms"
+        for l in lines do IO.println s!"    {l}"
+        (← IO.getStdout).flush
+  let t ← t.get
+  IO.println s!"  {t.compiled} roots compiled, {t.declined} declined as expected; {t.cases} cases, \
+    {t.runs} level runs{if native.isSome then s!", {t.native} native runs" else ""}\
+    {if o.exe then s!", {t.exe} executable runs ({t.exeRefused} roots outside the executables' fragment)" else ""}; \
+    {t.allowed} allowed resource failures"
+  -- the middle end's budgets against every committed program (a full run only)
+  if o.manifests.isEmpty && o.only.isEmpty && o.roots.isEmpty then
+    let before ← a.get
+    let (lines, ms) ← timed (Budget.survey a)
+    IO.println s!"  middle-end budgets: {(← a.get) - before} assertions, {ms} ms"
+    for l in lines do IO.println s!"    {l}"
+    -- the state machines in the natural style: what the middle end makes of them
+    let before ← a.get
+    let (lines, ms) ← timed (natural a native)
+    IO.println s!"  the natural-style machines: {(← a.get) - before} assertions, {ms} ms"
+    for l in lines do IO.println s!"    {l}"
+    -- roots returning each constructor of their result type, compiled alone
+    if let some nt := native then
+      let before ← a.get
+      let (lines, ms) ← timed (IxCCTests.Recheck.RootShape.nativeAlone a nt)
+      IO.println s!"  result constructors of roots compiled alone, natively: {(← a.get) - before} \
+        assertions, {ms} ms"
+      for l in lines do IO.println s!"    {l}"
+
+/-- The middle end's and the backend's input for a root `produce` declines:
+Anf after the middle end and the closures step, Lir and Xv (as `ixcc
+--dump-ir` prints them),
+recomputed by `produce`'s own steps up to selection. For diagnosing a decline
+at allocation or later. -/
+def dumpIR (inp : Input) : Except String String := do
+  let cfg := ({} : Config).forInput inp
+  let P := inp.program
+  let (table, _, _) := IxCC.Src.Table.build cfg.table P inp.hints.proposals
+  let p0 := { P with table }
+  let ann ← inp.kernel.annotateChecked p0
+  let (src, checked) ← match IxCC.Src.Recheck.annotation p0 ann with
+    | .ok r => pure r
+    | .error _ => throw "relevance rejects it"
+  let (lam, _) ← match (IxCC.Lam.erase src checked).mapError Err.ofErase with
+    | .ok r => pure r
+    | .error e => throw e.render
+  let trace ← IxCC.Anf.Pipeline.produce cfg.budgets lam
+  let pre := ((trace.stages.getLast?).map (·.2)).getD default
+  -- the closures step, as the producer runs it after the middle end
+  let anf ← (closuresOf src pre).mapError (·.render)
+  let fir ← (IxCC.Fir.lower anf).mapError fun e => (Err.ofFir e).render
+  let C := IxCC.Cfg.lower (IxCC.Own.immortal fir)
+  let lowered ← (IxCC.Rt.lower { names := cfg.names } C).mapError fun e => (Err.ofRt e).render
+  let (xv, _) ← (IxCC.Xv.Select.run lowered.program).mapError fun e => (Err.ofSelect e).render
+  return s!"== anf\n{anf.render}\n== lir\n{lowered.program.text}\n== xv\n{xv.text}"
 
 /-- Survey mode: compile every root and print `compiled` or its
 `stage: code`, with what the manifest expects, and for a compiled root what

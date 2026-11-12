@@ -12,9 +12,7 @@
 # commits and paths outside the repository; it exits 0 only if nothing differs and nothing is
 # cited ("current and self-contained").
 #
-# Not covered (frozen by decision or not written by ix): fixtures/ixon-v4/typing and catalog (the
-# erased checker's unbound typing bundles and the catalogs over them), the dated
-# fixtures/ownership/historical records, the vendored Aiur snapshot and its reference exports,
+# Not covered (not written by ix): the vendored Aiur snapshot and its reference exports,
 # fixtures/ixon-v4/bench-k1/steps.json (a measurement of the compiled code: check-steps), docs/.
 # The families are every `corpus.json` under fixtures/ (the registered ones, `corpus families`,
 # and the unregistered k1, ownership and phase2-arity), so a new family needs no change here.
@@ -42,7 +40,7 @@ die() { echo "regenerate: $*" >&2; exit 1; }
 #    sources import `Ix.Compile.SourceContract.Elab`, which no default target of the root builds)
 #    are built with `ix`, so that a cold checkout regenerates: `ix compile` elaborates the sources
 #    against the root workspace's libraries, and fails on a module whose build output is absent.
-ROOTMODS=$(cd "$ROOT" && git ls-files 'IxCC/fixtures/*.lean' | grep -v '/historical/' |
+ROOTMODS=$(cd "$ROOT" && git ls-files 'IxCC/fixtures/*.lean' |
   xargs grep -h '^import ' | awk '{print $2}' | sort -u |
   while read -r m; do [ -f "$ROOT/$(echo "$m" | tr . /).lean" ] && echo "$m"; done | tr '\n' ' ')
 echo "== the root modules the fixtures' sources import: ${ROOTMODS:-none}"
@@ -97,7 +95,7 @@ fi
 # 2. every family, in parallel; then the ownership verdicts, the RC input and the roots-only
 #    fixtures (LEAN_PATH: the root workspace's, for the interpreter runs of the ownership sources)
 export LEAN_PATH="$LP"
-git -C "$ROOT" ls-files 'IxCC/fixtures/**/corpus.json' | sed 's|^IxCC/||' | grep -v '/historical/' > "$WORK/manifests"
+git -C "$ROOT" ls-files 'IxCC/fixtures/**/corpus.json' | sed 's|^IxCC/||' > "$WORK/manifests"
 echo "== $(wc -l < "$WORK/manifests") families: $(tr '\n' ' ' < "$WORK/manifests")"
 s=$SECONDS
 xargs -P "$JOBS" -I{} sh -c 'm={}; n=$(echo $m | tr / _); "$0" rebuild "$m" --ix "$1" --ix-path "$2" --work "$3/rebuild/$n" > "$3/logs/rebuild-$n.log" 2>&1 && echo "   $m ok" || echo "   $m FAILED (see $3/logs/rebuild-$n.log)"' \

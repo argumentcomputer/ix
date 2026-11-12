@@ -97,7 +97,7 @@ theorem after_step (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fuel)
   · obtain ⟨j, rfl⟩ := hjmp
     rw [Walk.after] at h
     split at h
-    · next l σj jσj ar r b hj =>
+    · next l σj jσj ar r b id hj =>
       obtain ⟨rfl, rfl⟩ := Walk.run_pure_ok h
       have hlen := hJ.length
       have hjl := jlive_of_occ (hlen.1.trans hlen.2.symm) hj fun j' hj' e => by
@@ -124,7 +124,7 @@ theorem joinR_emit (hctx : Ctx P Q Valid Xc n) (hlow : ∀ m < n, WalkAt P Q Val
     {env : Walk.Env} {here0 : Here} {ar : Nat} {r : Bool} {b b' : Exp} {k0 : Kont} {s s' : Fires}
     (hb : (Walk.walk C fuel
       { σ := Walk.entsOf (paramOpds here0.d ar) ++ env.σ,
-        jσ := if r then JEnt.mk (some here0.dj) env.σ env.jσ ar r b :: env.jσ else env.jσ }
+        jσ := if r then JEnt.mk (some here0.dj) env.σ env.jσ ar r b 0 :: env.jσ else env.jσ }
       { d := here0.d + ar, dj := if r then here0.dj + 1 else here0.dj, facts := here0.facts, lvl := here0.lvl } b k0).run s =
         .ok (b', s'))
     {ρ ρ' : List Val} {J J'0 : List JClo} {live jlive : List Bool} {Tk : Val → Nat → Result Val}
@@ -162,7 +162,7 @@ theorem joinR_emit (hctx : Ctx P Q Valid Xc n) (hlow : ∀ m < n, WalkAt P Q Val
       have hJb : JEnv P Q Valid Xc C m' (KT Q k0 (if r then JClo.mk ρ' J'0 ar b' r :: J'0 else J'0))
           (ws.reverse ++ ρ') (if r then JClo.mk ρ' J'0 ar b' r :: J'0 else J'0)
           (if r then true :: jlive else jlive)
-          (if r then JEnt.mk (some here0.dj) env.σ env.jσ ar r b :: env.jσ else env.jσ)
+          (if r then JEnt.mk (some here0.dj) env.σ env.jσ ar r b 0 :: env.jσ else env.jσ)
           (if r then JClo.mk ρ J ar b r :: J else J) := by
         cases r with
         | false => exact hJm
@@ -184,6 +184,35 @@ theorem joinR_emit (hctx : Ctx P Q Valid Xc n) (hlow : ∀ m < n, WalkAt P Q Val
   · refine (SimUpTo.stuck (fun k => jumpTo Q k (.mk ρ' J'0 ar b' r) ws)).congr (fun k => ?_) (fun _ => rfl)
     simp only [jumpTo, har, if_false]; rfl
 
+/-- An emitted join point: its body walked under the entry at target level
+`here0.dj` (and itself when recursive), then its scope. -/
+theorem joinEmit_sim (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fuel)
+    (hlow : ∀ m < n, WalkAt P Q Valid Xc m fuel) {C : Cfg} {env : Walk.Env} {here0 : Here} {ar : Nat}
+    {r : Bool} {b body b' e' : Exp} {k0 : Kont} {s1 s2 s3 : Fires}
+    (h1 : (Walk.walk C fuel
+      { σ := Walk.entsOf (paramOpds here0.d ar) ++ env.σ,
+        jσ := if r then JEnt.mk (some here0.dj) env.σ env.jσ ar r b 0 :: env.jσ else env.jσ }
+      { d := here0.d + ar, dj := if r then here0.dj + 1 else here0.dj, facts := here0.facts, lvl := here0.lvl } b k0).run s1 =
+        .ok (b', s2))
+    (h2 : (Walk.walk C fuel { σ := env.σ, jσ := JEnt.mk (some here0.dj) env.σ env.jσ ar r b 0 :: env.jσ }
+      { d := here0.d, dj := here0.dj + 1, facts := here0.facts, lvl := here0.lvl } body k0).run s2 = .ok (e', s3))
+    {ρ ρ' : List Val} {J J'0 : List JClo} {live jlive : List Bool} {SK : Val → Nat → Result Val}
+    {Tk : Val → Nat → Result Val}
+    (hV : VOk Q Valid Xc C ρ ρ') (henv : WEnv Q Valid Xc C live env.σ ρ ρ')
+    (hJ0 : JEnv P Q Valid Xc C n (KT Q k0 J'0) ρ' J'0 jlive env.jσ J)
+    (hd0 : here0.d = ρ'.length) (hdj0 : here0.dj = J'0.length) (hf0 : FactsOk Q Valid here0.facts ρ')
+    (hnd : NoDead live jlive (.join ar r b body)) (hTk : KT Q k0 J'0 = some Tk)
+    (hk0 : KontW Q Valid Xc n k0 SK ρ' J'0) :
+    SimUpTo (WV Q Valid Xc) n (fun k => (eval P k ρ J (.join ar r b body)).bind (SK · k))
+      (fun k => eval Q k ρ' J'0 (.join ar r b' e')) := by
+  have hR := joinR_emit hctx hlow h1 hV henv hJ0 hd0 hdj0 hf0 hnd.join_body hTk
+  have hsuf : J'0 <:+ JClo.mk ρ' J'0 ar b' r :: J'0 := List.suffix_cons _ _
+  have hJe := hJ0.suffixK (List.suffix_refl _) hsuf
+  exact (hW.walk h2 ρ (.mk ρ J ar b r :: J) ρ' (.mk ρ' J'0 ar b' r :: J'0) live (true :: jlive) SK hV
+    henv (.emitted (by simp [hdj0]) (by simp [hdj0]) (KT_suffix hsuf hTk) hR henv hJe hnd.join_body (hctx.ext hV) hJe)
+    hd0 (by simp [hdj0]) hf0 (hnd.join_rest true fun e => nomatch e) (hk0.suffix (List.suffix_refl _) hsuf)).congr
+    (fun k => by rw [eval_join']) (fun k => by rw [eval_join'])
+
 theorem walkJoin_step (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fuel)
     (hlow : ∀ m < n, WalkAt P Q Valid Xc m fuel) {C : Cfg} {env : Walk.Env} {here : Here} {ar : Nat}
     {r : Bool} {b body : Exp} {k : Kont} {out : Exp} {s s' : Fires}
@@ -199,20 +228,18 @@ theorem walkJoin_step (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fu
     exact (hW.walk h' ρ (.mk ρ J ar b r :: J) ρ' J' live (false :: jlive) SK hV henv (.dead hJ) hd hdj hf
       (hnd.join_rest false fun _ => hc.2) hk).congr (fun k => by rw [eval_join']) (fun _ => rfl)
   · split at h
-    · -- inlined at its single jump
+    · -- inlined at its single jump, under a fresh entry number
       next _ hc =>
       simp only [Bool.and_eq_true, Bool.not_eq_true', beq_iff_eq] at hc
       obtain ⟨⟨-, rfl⟩, -⟩ := hc
+      obtain ⟨_, _, -, h⟩ := Walk.run_bind_ok h
       have hb := hnd.join_body
       simp only [Bool.false_eq_true, if_false] at hb
       exact (hW.walk h ρ (.mk ρ J ar b false :: J) ρ' J' live (true :: jlive) SK hV henv
         (.once henv hJ hb (hctx.ext hV) hJ) hd hdj hf (hnd.join_rest true fun e => nomatch e) hk).congr
         (fun k => by rw [eval_join']) (fun _ => rfl)
-    · -- emitted
+    · -- pending, or emitted
       refine branch_sim h hd hdj hf hk fun here0 k0 out0 s0 s0' J'0 hrun hd0 hf0 hdj0 hJsuf hT0 hKT hk0 => ?_
-      obtain ⟨b', s1, h1, hrun⟩ := Walk.run_bind_ok hrun
-      obtain ⟨e', s2, h2, hrun⟩ := Walk.run_bind_ok hrun
-      obtain ⟨rfl, rfl⟩ := Walk.run_pure_ok hrun
       obtain ⟨Tk, hTk⟩ := hT0
       have hJ0 : JEnv P Q Valid Xc C n (KT Q k0 J'0) ρ' J'0 jlive env.jσ J := by
         rcases hKT with hKT | hKT
@@ -220,12 +247,61 @@ theorem walkJoin_step (hctx : Ctx P Q Valid Xc n) (hW : WalkAt P Q Valid Xc n fu
         · rw [hKT]; exact hJ.suffix (List.suffix_refl _) hJsuf
       have hd0' : here0.d = ρ'.length := by rw [hd0, hd]
       have hf0' : FactsOk Q Valid here0.facts ρ' := by rw [hf0]; exact hf
-      have hR := joinR_emit hctx hlow h1 hV henv hJ0 hd0' hdj0 hf0' hnd.join_body hTk
-      have hsuf : J'0 <:+ JClo.mk ρ' J'0 ar b' r :: J'0 := List.suffix_cons _ _
-      have hJe := hJ0.suffixK (List.suffix_refl _) hsuf
-      refine (hW.walk h2 ρ (.mk ρ J ar b r :: J) ρ' (.mk ρ' J'0 ar b' r :: J'0) live (true :: jlive) SK hV
-        henv (.emitted (by simp [hdj0]) (by simp [hdj0]) (KT_suffix hsuf hTk) hR henv hJe hnd.join_body (hctx.ext hV) hJe)
-        hd0' (by simp [hdj0]) hf0' (hnd.join_rest true fun e => nomatch e) (hk0.suffix (List.suffix_refl _) hsuf)).congr
-        (fun k => by rw [eval_join']) (fun k => by rw [eval_join'])
+      -- the emitted join point, from the runs of its body and its scope
+      have emitted : ∀ {s1 : Fires} {b' e' : Exp} {s2 : Fires},
+          (Walk.walk C fuel
+            { σ := Walk.entsOf (paramOpds here0.d ar) ++ env.σ,
+              jσ := if r then JEnt.mk (some here0.dj) env.σ env.jσ ar r b 0 :: env.jσ else env.jσ }
+            { d := here0.d + ar, dj := if r then here0.dj + 1 else here0.dj, facts := here0.facts,
+              lvl := here0.lvl } b k0).run s1 = .ok (b', s2) →
+          (Walk.walk C fuel { σ := env.σ, jσ := JEnt.mk (some here0.dj) env.σ env.jσ ar r b 0 :: env.jσ }
+            { d := here0.d, dj := here0.dj + 1, facts := here0.facts, lvl := here0.lvl } body k0).run s2 =
+              .ok (e', s0') →
+          SimUpTo (WV Q Valid Xc) n (fun k => (eval P k ρ J (.join ar r b body)).bind (SK · k))
+            (fun k => eval Q k ρ' J'0 (.join ar r b' e')) := fun h1 h2 =>
+        joinEmit_sim hctx hW hlow h1 h2 hV henv hJ0 hd0' hdj0 hf0' hnd hTk hk0
+      dsimp only at hrun
+      split at hrun
+      · -- the pre-check may choose the pending mode: a non-recursive join point of one parameter
+        next hc =>
+        simp only [Bool.and_eq_true, Bool.not_eq_true', beq_iff_eq, decide_eq_true_eq] at hc
+        obtain ⟨⟨⟨-, rfl⟩, rfl⟩, -⟩ := hc
+        -- pending: the body is not walked, the join point is emitted with body
+        -- `trap`, and the scope, walked under the pending entry, never jumps to it
+        have pending : ∀ {s2 s3 : Fires} {e' : Exp},
+            (Walk.walk C fuel { σ := env.σ, jσ := JEnt.pend here0.dj env.σ env.jσ b :: env.jσ }
+              { d := here0.d, dj := here0.dj + 1, facts := here0.facts, lvl := here0.lvl } body k0).run s2 =
+                .ok (e', s3) →
+            SimUpTo (WV Q Valid Xc) n (fun k => (eval P k ρ J (.join 1 false b body)).bind (SK · k))
+              (fun k => eval Q k ρ' J'0 (.join 1 false .trap e')) := fun h2 => by
+          have hsuf : J'0 <:+ JClo.mk ρ' J'0 1 .trap false :: J'0 := List.suffix_cons _ _
+          have hJe := hJ0.suffixK (List.suffix_refl _) hsuf
+          have hb := hnd.join_body
+          simp only [Bool.false_eq_true, if_false] at hb
+          exact (hW.walk h2 ρ (.mk ρ J 1 b false :: J) ρ' (.mk ρ' J'0 1 .trap false :: J'0) live (true :: jlive)
+            SK hV henv (.pend henv hJe hb (hctx.ext hV) hJe) hd0' (by simp [hdj0]) hf0'
+            (hnd.join_rest true fun e => nomatch e) (hk0.suffix (List.suffix_refl _) hsuf)).congr
+            (fun k => by rw [eval_join']) (fun k => by rw [eval_join'])
+        obtain ⟨_, _, -, hrun⟩ := Walk.run_bind_ok hrun
+        -- the choice, forced (`Cfg.pendForce`) or made by the pre-check, either way
+        obtain ⟨pend, _, -, hrun⟩ := Walk.run_bind_ok hrun
+        split at hrun
+        · obtain ⟨_, _, -, hrun⟩ := Walk.run_bind_ok hrun
+          obtain ⟨e', _, h2, hrun⟩ := Walk.run_bind_ok hrun
+          obtain ⟨_, _, -, hrun⟩ := Walk.run_bind_ok hrun
+          obtain ⟨rfl, rfl⟩ := Walk.run_pure_ok hrun
+          exact pending h2
+        · obtain ⟨b', _, h1, hrun⟩ := Walk.run_bind_ok hrun
+          obtain ⟨e', _, h2, hrun⟩ := Walk.run_bind_ok hrun
+          obtain ⟨rfl, rfl⟩ := Walk.run_pure_ok hrun
+          exact emitted h1 h2
+      · obtain ⟨pend, _, hp, hrun⟩ := Walk.run_bind_ok hrun
+        obtain ⟨rfl, -⟩ := Walk.run_pure_ok hp
+        split at hrun
+        · next hc => cases hc
+        · obtain ⟨b', _, h1, hrun⟩ := Walk.run_bind_ok hrun
+          obtain ⟨e', _, h2, hrun⟩ := Walk.run_bind_ok hrun
+          obtain ⟨rfl, rfl⟩ := Walk.run_pure_ok hrun
+          exact emitted h1 h2
 
 end IxCC.Anf.WalkProof

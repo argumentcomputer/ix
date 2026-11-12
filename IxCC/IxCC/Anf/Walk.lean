@@ -77,6 +77,21 @@ count bounds what the walk visits in terms of its source:
   second or later expansion of the same entry (a function applied at
   several saturated sites, or at a site that a join point inlined at several
   jumps or a case-of-case copy walks again) is charged in full (`betaFires`).
+  A join point inlined at its single jump (`JEnt.mk none`) is numbered and
+  moved the same way (`onceFires`).
+* Under shrink, a join point walked as *pending* (`JEnt.pend`: case-of-case
+  as a move) has its body, a `case` on its parameter, never walked where it
+  stands: each jump to it walks the alternative its known constructor
+  selects, the first selection of each alternative uncharged (that
+  alternative's nodes are walked there once) and a later one charged
+  (`pendFires`); a jump no known constructor resolves walks the whole body,
+  charged (`Fires.pendInline`, none expected). The choice (`pendOk`, a
+  pre-check of the join point and its scope, seeded with the constructors the
+  walk knows there) is a function of the source and of the walk's state, so
+  the re-run makes it alike. Its scan visits each node of the join point's
+  scope at most once, which the walk's step at the join point already charges
+  (`stepCost` counts the join point's nodes under shrink); its alternative
+  lookups and its seed are charged as work (`chargeWork`).
 * So, counting as an *instance* the global's body and each body a charged
   firing walks: every step of the walk is on a node of one instance (a moved
   body's nodes are those of the instance whose walk reached its binding), no
@@ -87,6 +102,15 @@ count bounds what the walk visits in terms of its source:
   successful or refused, therefore takes at most its source's nodes plus
   `maxCopy` steps (`Fires.steps`; `tests-corpus` checks
   `steps ≤ nodes + copied` on every walk of every committed program).
+
+That bound is argued here and checked, not proved: no Lean statement
+mentions `Fires.steps` or `Fires.copied` (the walk's theorems are about the
+program a successful walk returns), and what bounds the verifier whatever the
+argument are the budgets the walk enforces. Nor is it proved that the pending
+entry never makes a round worse than the walk without it: `tests-corpus`'s
+budget survey checks, on every shrink round of every committed program, that
+the walk with the pending choice is never refused where the walk without it
+fires a rule and never copies more.
 
 Before 2026-11-11 every β-reduction was charged, a once-used function's too,
 so nested once-used functions (the else-branches of an `if` chain, as `Unit`
@@ -110,12 +134,19 @@ inductive Ent where
 instance : Inhabited Ent := ⟨.opd .box⟩
 
 /-- What a source join point is in the target: emitted at a target join
-level (`some l`) or inlined at its single jump (`none`), with its source
+level (`some l`) or inlined at its single jump (`none`, with its number `id`,
+by which the walk tells its first expansion, a move, from later ones), with its source
 environments, arity, recursion flag and body. -/
 inductive JEnt where
   | mk (lvl : Option Nat) (σ : List Ent) (jσ : List JEnt) (arity : Nat) (rec : Bool) (body : Exp)
+      (id : Nat)
+  /-- A non-recursive join point of one parameter whose body is a `case` on
+  it, every jump to which passes a constructor that `case` selects
+  (`pendOk`): emitted dead at target join level `lvl` (body `trap`), each
+  jump taking the alternative its constructor selects. -/
+  | pend (lvl : Nat) (σ : List Ent) (jσ : List JEnt) (body : Exp)
 
-instance : Inhabited JEnt := ⟨.mk none [] [] 0 false .trap⟩
+instance : Inhabited JEnt := ⟨.mk none [] [] 0 false .trap 0⟩
 
 /-- Facts about a target level. -/
 inductive Fact where
@@ -176,6 +207,15 @@ structure Fires where
   /-- The local function entries already expanded once: a later expansion is
   a copy (`betaFires`). The walk's own state, not a census: `add` drops it. -/
   expanded : Src.NatMap Unit := .leaf
+  /-- Jumps to a pending join point (`JEnt.pend`) that no known constructor
+  resolved, so its body was inlined there: none is expected under `pendOk`
+  (`tests-corpus`'s survey asserts zero). -/
+  pendInline : Nat := 0
+  /-- Per target join level of a pending join point, the alternatives (by
+  position, the default last) selected at its jumps so far: the first
+  selection of each moves it, a later one copies it. The walk's own state, not
+  a census: `add` drops it. -/
+  pending : Src.NatMap (Src.NatMap Unit) := .leaf
   deriving Repr, Inhabited
 
 namespace Fires
@@ -183,7 +223,7 @@ namespace Fires
 def total (f : Fires) : Nat :=
   f.copy + f.dead + f.projKnown + f.fold + f.knownCall + f.deadPap + f.beta + f.joinOnce +
   f.joinSmall + f.deadJoin + f.caseKnown + f.caseOfCase + f.caseId + f.sameArms + f.inline +
-  f.inlineCaf + f.redirect
+  f.inlineCaf + f.redirect + f.pendInline
 
 def add (f g : Fires) : Fires :=
   { copy := f.copy + g.copy, dead := f.dead + g.dead, projKnown := f.projKnown + g.projKnown
@@ -194,7 +234,7 @@ def add (f g : Fires) : Fires :=
     caseOfCase := f.caseOfCase + g.caseOfCase, caseId := f.caseId + g.caseId
     sameArms := f.sameArms + g.sameArms, inline := f.inline + g.inline
     inlineCaf := f.inlineCaf + g.inlineCaf, redirect := f.redirect + g.redirect
-    copied := f.copied + g.copied, depth := max f.depth g.depth,
+    pendInline := f.pendInline + g.pendInline, copied := f.copied + g.copied, depth := max f.depth g.depth,
     work := f.work + g.work, steps := f.steps + g.steps, ents := f.ents + g.ents }
 
 def render (f : Fires) : String :=
@@ -203,7 +243,7 @@ def render (f : Fires) : String :=
     ("joinOnce", f.joinOnce), ("joinSmall", f.joinSmall), ("deadJoin", f.deadJoin),
     ("caseKnown", f.caseKnown), ("caseOfCase", f.caseOfCase), ("caseId", f.caseId),
     ("sameArms", f.sameArms), ("inline", f.inline), ("inlineCaf", f.inlineCaf),
-    ("redirect", f.redirect)]
+    ("redirect", f.redirect), ("pendInline", f.pendInline)]
   " ".intercalate ((xs.filter (·.2 > 0)).map fun (n, k) => s!"{n} {k}")
 
 end Fires
@@ -235,6 +275,12 @@ structure Cfg where
   their jumps. -/
   smallJoin : Nat := 24
   redirect : Option Redirect := none
+  /-- Tests only: force the choice of the pending mode for every join point that
+  may take it (`none`, the default: `pendOk` decides). The producer's shrink
+  rounds take it from `Shrink.Budgets.pendForce` (`none` unless a test sets
+  it); the re-run's walks (`Shrink.cfg`, the inline step's) never set it, and no
+  certificate carries it. -/
+  pendForce : Option Bool := none
 
 abbrev M := StateT Fires (Except String)
 
@@ -252,13 +298,15 @@ inductive Kont where
 
 instance : Inhabited Kont := ⟨.ret⟩
 
-/-- Rule firings allowed in one walk of one global: three times the highest total
-any whole corpus program reaches (2,674). -/
+/-- Rule firings allowed in one walk of one global (the most a walk of a
+committed program fires: `tests-corpus`'s budget survey, `docs/compiler-design.md`,
+"Middle-end budgets"). -/
 def maxFires : Nat := 8192
 
 /-- Nodes one walk may walk again (`Fires.copied`): inlined callees, inlined
-join points, case-of-case alternatives and the second and later expansions
-of a local function, together (a local function's first expansion is a move,
+join points, case-of-case alternatives (but the first selection of each
+alternative of a pending join point) and the second and later expansions of
+a local function, together (a local function's first expansion is a move,
 see the module note). With the source's nodes it bounds the walk's steps. The
 committed programs' largest copies, in an inline walk and in a shrink round,
 are `tests-corpus`'s survey's, recorded in `docs/compiler-design.md`
@@ -285,11 +333,21 @@ def betaFires (id : Nat) (fb : Exp) (f : Fires) : Fires :=
            copied := if f.expanded.contains id then f.copied + copyCost fb else f.copied
            expanded := f.expanded.insert id () }
 
+/-- A join point inlined at its single jump (entry `id`, body `b`): as for a
+local function (`betaFires`), the entry's first expansion moves the body (the
+walk that reached the join point skipped it) and is not charged; a later one
+(the jump walked again, in a copy) is charged its nodes. -/
+def onceFires (id : Nat) (b : Exp) (f : Fires) : Fires :=
+  { f with joinOnce := f.joinOnce + 1
+           copied := if f.expanded.contains id then f.copied + copyCost b else f.copied
+           expanded := f.expanded.insert id () }
+
 /-- A new local function entry's number. -/
 def fresh : M Nat := fun s => .ok (s.ents, { s with ents := s.ents + 1 })
 
-/-- Work one walk may do (`Fires.work`, charged by `stepCost` at every step):
-seventeen times the most one walk of a committed program does (572,520). -/
+/-- Work one walk may do (`Fires.work`, charged by `stepCost` at every step, and by
+`chargeWork` for the pending pre-check; the most one walk of a committed program
+does: `tests-corpus`'s budget survey). -/
 def maxWalkWork : Nat := 10000000
 
 /-- What resolving `as` reads: variable `i` is the `i`-th entry of the
@@ -330,7 +388,7 @@ def stepCost (C : Cfg) (env : Env) (here : Here) (e : Exp) (cap : Nat) : Nat :=
   let census := if C.shrink then
       e.nodesUpTo cap + here.d + (match e with
         | .jump j _ => match env.jσ[j]? with
-          | some (.mk _ _ _ _ _ b) => b.nodesUpTo cap
+          | some (.mk _ _ _ _ _ b _) | some (.pend _ _ _ b) => b.nodesUpTo cap
           | none => 0
         | _ => 0)
     else 0
@@ -344,6 +402,12 @@ refusing the walk once its work passes `maxWalkWork`. -/
 def charge (cost : Nat → Nat) : M Unit := fun s =>
   if s.work + cost (maxWalkWork - s.work) > maxWalkWork then .error "walk: work budget exhausted"
   else .ok ((), { s with work := s.work + cost (maxWalkWork - s.work), steps := s.steps + 1 })
+
+/-- Charge work that is not a walk step (reading the output of a scope walked
+first, `walkJoin`): `cost` of the budget left, refusing past `maxWalkWork`. -/
+def chargeWork (cost : Nat → Nat) : M Unit := fun s =>
+  if s.work + cost (maxWalkWork - s.work) > maxWalkWork then .error "walk: work budget exhausted"
+  else .ok ((), { s with work := s.work + cost (maxWalkWork - s.work) })
 
 /-- Walk steps one walk may have on the native stack at once: four times below
 the fewest at which a walk overflows an 8 MiB stack (nested single-alternative
@@ -438,6 +502,21 @@ def stripTicks : Exp → Nat × Exp
   | .tick e => let (n, r) := stripTicks e; (n + 1, r)
   | e => (0, e)
 
+/-- The position of the alternative a known constructor selects (`select`),
+the default's being `alts.length`. -/
+def selectIdx (alts : List Alt) (c : Key.CtorKey) (n : Nat) : Nat :=
+  (alts.findIdx? fun a => decide (a.key = c) && a.arity == n).getD alts.length
+
+/-- A case-of-case selection of alternative `i`, of body `alt`, at a jump to
+the pending join point at target level `l` (`JEnt.pend`): its body is never
+walked, so the first selection of each alternative moves it and is not
+charged; a later one walks it again and is charged its nodes. -/
+def pendFires (l i : Nat) (alt : Exp) (f : Fires) : Fires :=
+  let f := { f with caseOfCase := f.caseOfCase + 1 }
+  let sel := f.pending.getD l .leaf
+  if sel.contains i then { f with copied := f.copied + copyCost alt }
+  else { f with pending := f.pending.insert l (sel.insert i ()) }
+
 /-- The common tail of a case identity: every alternative is field-free and
 returns (or jumps with) its own constructor. -/
 def identityTail (K : Lam.Known) (alts : List Alt) : Option (Nat × Option Nat) :=
@@ -466,6 +545,108 @@ def sameArms (alts : List Alt) (dflt : Option Exp) : Option Exp :=
        rest.length + (if dflt.isSome then 1 else 0) ≥ 1
     then some b else none
   | _ => none
+
+mutual
+/-- The constructors (key and field count) the jumps to join point `jd` pass
+in a scope, if every such jump passes a variable of known constructor, none is
+in a nested join point's body (walked once, where it is), and no `case` there
+whose scrutinee's constructor is unknown is a case identity (which turns into
+a jump with its scrutinee); `none` otherwise. `cons` maps the source levels
+below `d` of known constructor to it: on entry those the walk's facts give for
+the variables in scope at the join point, then each `con` binding of the scope
+and, in an alternative, the scrutinee. A `case` on a variable of known
+constructor contributes only the alternative it selects, as the walk takes only
+that one (`caseKnown`). A `fn`'s body is not scanned: its jumps cannot reach
+the scope's join points. -/
+def pendScan (K : Lam.Known) (cons : Src.NatMap (Key.CtorKey × Nat)) (d jd : Nat) :
+    Exp → Option (List (Key.CtorKey × Nat))
+  | .bind _ b e =>
+    let cons := match b with
+      | .con c as => cons.insert d (c, as.length)
+      | _ => cons
+    pendScan K cons (d + 1) jd e
+  | .join _ r b e =>
+    if b.jocc (if r then jd + 1 else jd) == 0 then pendScan K cons d (jd + 1) e else none
+  | .case x alts dflt =>
+    let lx := match x with
+      | .var i => if i < d then some (d - 1 - i) else none
+      | _ => none
+    -- a scrutinee of known constructor: the walk takes the alternative it
+    -- selects and nothing else (`caseKnown`, before the other `case` rules)
+    let kx := lx.bind cons.get?
+    let sel := match kx with
+      | some (c, n) => if alts.any (fun a => decide (a.key = c) && a.arity == n) then some (c, n) else none
+      | none => none
+    match sel with
+    | some (c, n) => pendScanSel K cons c n d jd alts
+    | none =>
+    if kx.isSome && dflt.isSome then pendScanOpt K cons d jd dflt
+    else if (dflt.isNone && (identityTail K alts).isSome) || (sameArms alts dflt).isSome then none
+    else do
+      -- in an alternative, a scrutinee variable is that alternative's
+      -- constructor (`walkAlts` records it)
+      let xs ← pendScanAlts K cons lx d jd alts
+      let ys ← pendScanOpt K cons d jd dflt
+      pure (xs ++ ys)
+  | .tick e => pendScan K cons d jd e
+  | .jump j as =>
+    if j != jd then some []
+    else match as with
+      | [.var i] => if i < d then (cons.get? (d - 1 - i)).map ([·]) else none
+      | _ => none
+  | .ret _ | .trap => some []
+def pendScanAlts (K : Lam.Known) (cons : Src.NatMap (Key.CtorKey × Nat)) (lx : Option Nat)
+    (d jd : Nat) : List Alt → Option (List (Key.CtorKey × Nat))
+  | [] => some []
+  | .mk c n b :: as => do
+    let cons' := match lx with
+      | some l => cons.insert l (c, n)
+      | none => cons
+    let xs ← pendScan K cons' (d + n) jd b
+    let ys ← pendScanAlts K cons lx d jd as
+    pure (xs ++ ys)
+/-- The alternative of constructor `c` with `n` fields, the first that matches (as
+`select`), scanned with its fields bound. -/
+def pendScanSel (K : Lam.Known) (cons : Src.NatMap (Key.CtorKey × Nat)) (c : Key.CtorKey) (n d jd : Nat) :
+    List Alt → Option (List (Key.CtorKey × Nat))
+  | [] => some []
+  | .mk c' n' b :: as =>
+    if decide (c' = c) && n' == n then pendScan K cons (d + n') jd b
+    else pendScanSel K cons c n d jd as
+def pendScanOpt (K : Lam.Known) (cons : Src.NatMap (Key.CtorKey × Nat)) (d jd : Nat) :
+    Option Exp → Option (List (Key.CtorKey × Nat))
+  | some e => pendScan K cons d jd e
+  | none => some []
+end
+
+/-- Whether a non-recursive join point of one parameter, of body `b` and
+scope `body` at source depth `d`, is walked as pending (`JEnt.pend`): its body is a `case` on its
+parameter, every jump to it passes a known constructor that `case` selects
+(`pendScan`), and an alternative over `caseOfCaseBound` nodes is selected by
+at most one jump. `seed`: the constructors the walk knows for the variables in
+scope (`pendScan`). A deterministic function of the source join point and the
+walk's state there, so the producer and the re-run choose alike. Under it every jump resolves by
+case-of-case (the walk's facts hold each `con` it emitted), so the body is
+never walked; the walk counts a jump that does not (`Fires.pendInline`, none
+expected). -/
+def pendOk (C : Cfg) (d : Nat) (seed : Src.NatMap (Key.CtorKey × Nat)) (b body : Exp) : Bool :=
+  match (stripTicks b).2 with
+  | .case (.var 0) alts dflt =>
+    match pendScan C.prog.known seed d 0 body with
+    | none => false
+    | some keys =>
+      let sel : List (Option Exp × Nat) := keys.map fun (c, n) =>
+        ((select alts dflt c n).map (fun (p : Bool × Exp) => p.2), selectIdx alts c n)
+      let counts : Src.NatMap Nat := sel.foldl (fun m (_, i) => m.insert i (m.getD i 0 + 1)) .leaf
+      sel.all fun ((alt : Option Exp), (i : Nat)) => match alt with
+        | some a => a.nodesLe C.caseOfCaseBound || decide (counts.getD i 0 ≤ 1)
+        | none => false
+  | _ => false
+
+/-- The most jumps a pending join point may have (`pendOk` looks each one's
+alternative up, so its work is at most this many times the join point's body,
+which `walkJoin` charges). -/
+def maxPendJumps : Nat := 8
 
 /-- Continue with an operand. -/
 def pass (here : Here) (o : Opd) : Kont → M Exp
@@ -689,10 +870,36 @@ def walkJoin (C : Cfg) : Nat → Env → Here → Nat → Bool → Exp → Exp �
     if C.shrink && !r && body.jocc 0 == 0 then do
       fire fun f => { f with deadJoin := f.deadJoin + 1 }
       walk C fuel { env with jσ := default :: env.jσ } here body k
-    else if C.shrink && !r && body.jocc 0 == 1 then
-      walk C fuel { env with jσ := .mk none env.σ env.jσ n false b :: env.jσ } here body k
+    else if C.shrink && !r && body.jocc 0 == 1 then do
+      let id ← fresh
+      walk C fuel { env with jσ := .mk none env.σ env.jσ n false b id :: env.jσ } here body k
     else branch here k fun here k => do
-      let self := JEnt.mk (some here.dj) env.σ env.jσ n r b
+      let pend ← if C.shrink && !r && n == 1 && body.jocc 0 ≤ maxPendJumps then do
+          chargeWork fun cap => maxPendJumps * b.nodesUpTo cap + env.σ.length
+          -- the constructors the walk knows for the variables in scope (its
+          -- facts): the scope's `case`s on them are resolved (`caseKnown`)
+          -- and the jumps passing them take their alternatives
+          let d := env.σ.length
+          let seed : Src.NatMap (Key.CtorKey × Nat) := env.σ.zipIdx.foldl (fun m (ent, i) =>
+            match ent with
+            | .opd o =>
+              match known C.prog.known here o with
+              | some (c, fs) => m.insert (d - 1 - i) (c, fs.length)
+              | none => m
+            | .fn .. => m) .leaf
+          pure (C.pendForce.getD (pendOk C d seed b body))
+        else pure false
+      if pend then
+        -- case-of-case as a move: every jump takes its alternative, the first
+        -- selection of each a move; the body is never walked, and the join
+        -- point is emitted dead (the next round removes it)
+        let l := here.dj
+        modify fun f => { f with pending := f.pending.insert l .leaf }
+        let e' ← walk C fuel { env with jσ := .pend l env.σ env.jσ b :: env.jσ }
+          { here with dj := l + 1 } body k
+        modify fun f => { f with pending := f.pending.erase l }
+        return .join n r .trap e'
+      let self := JEnt.mk (some here.dj) env.σ env.jσ n r b 0
       let b' ← walk C fuel
         { σ := entsOf (paramOpds here.d n) ++ env.σ, jσ := if r then self :: env.jσ else env.jσ }
         { here with d := here.d + n, dj := if r then here.dj + 1 else here.dj } b k
@@ -704,12 +911,12 @@ def walkJump (C : Cfg) : Nat → Env → Here → Nat → List Atom → Kont →
   | fuel + 1, env, here, j, as, k => do
     let os ← resolveList env as
     match env.jσ[j]? with
-    | some (.mk none σj jσj n _ b) =>
+    | some (.mk none σj jσj n _ b id) =>
       if os.length == n then do
-        fire fun f => { f with joinOnce := f.joinOnce + 1, copied := f.copied + copyCost b }
+        fire (onceFires id b)
         return .tick (← walk C fuel { σ := entsOf os.reverse ++ σj, jσ := jσj } here b k)
       else throw s!"walk: jump to join point #{j} with {os.length} arguments"
-    | some (.mk (some l) σj jσj n r b) =>
+    | some (.mk (some l) σj jσj n r b _) =>
       let (m, inner) := stripTicks b
       if C.shrink && !r && os.length == n &&
           (b.nodesLe C.smallJoin || (n == 1 && b.headOcc 0 1 > 0)) then do
@@ -734,6 +941,26 @@ def walkJump (C : Cfg) : Nat → Env → Here → Nat → List Atom → Kont →
         fire fun f => { f with caseOfCase := f.caseOfCase + 1, copied := f.copied + copyCost alt }
         return ticks (m + 1) (← walk C fuel { σ := σ', jσ := jσj } here alt k)
       | none => pure (.jump (here.dj - 1 - l) (atoms here.d os))
+    | some (.pend l σj jσj b) =>
+      if os.length == 1 then
+        let (m, inner) := stripTicks b
+        let hit := match inner, os with
+          | .case (.var 0) alts dflt, [o] =>
+            match known C.prog.known here o with
+            | some (c, fs) => (select alts dflt c fs.length).map fun (isAlt, alt) =>
+                ((if isAlt then entsOf fs.reverse else []) ++ .opd o :: σj, alt,
+                  selectIdx alts c fs.length)
+            | none => none
+          | _, _ => none
+        match hit with
+        | some (σ', alt, i) => do
+          fire (pendFires l i alt)
+          return ticks (m + 1) (← walk C fuel { σ := σ', jσ := jσj } here alt k)
+        | none => do
+          -- not expected under `pendOk`: the body, inlined at this jump
+          fire fun f => { f with pendInline := f.pendInline + 1, copied := f.copied + copyCost b }
+          return .tick (← walk C fuel { σ := entsOf os.reverse ++ σj, jσ := jσj } here b k)
+      else throw s!"walk: jump to join point #{j} with {os.length} arguments"
     | none => throw s!"walk: join point #{j} out of scope"
 
 def walkCase (C : Cfg) : Nat → Env → Here → Atom → List Alt → Option Exp → Kont → M Exp

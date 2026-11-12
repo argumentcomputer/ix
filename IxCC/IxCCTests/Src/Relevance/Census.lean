@@ -1,11 +1,13 @@
 import IxCCTests.Src.Support
-import IxCC.Src.Relevance.Annotate
 import IxCC.Tools.Check
 
-/-! The relevance census on `k1.ixe`: annotate and
-check the runtime closure of the five K1 roots, report each reached
-constant, and assert the expected classifications. Constant names come from the
-untrusted, test-only `src-names.tsv` (the same ix run as `src-tables.tsv`). -/
+/-! The relevance census on `k1.ixe`: annotate (the kernel annotator,
+`KernelFront.Kernel.annotateChecked`, through the loader) and check the runtime
+closure of the five K1 roots, report each reached constant, and assert the
+expected classifications. The constructor classes the `unbox?` assertions read
+are the kernel annotator's (`KernelFront.ctorRel` over the accepted
+environment). Constant names come from the untrusted, test-only
+`src-names.tsv` (the same ix run as `src-tables.tsv`). -/
 
 namespace IxCCTests.Src.Relevance.Census
 
@@ -22,6 +24,18 @@ def names : IO (List (String × IxCC.Ixon.Address)) := do
       | some a => pure (name, a)
       | none => throw (IO.userError s!"src-names.tsv: bad address for {name}")
     | _ => throw (IO.userError s!"src-names.tsv: bad row {row}")
+
+/-- The kernel annotator's field classes of the constructors `cs`
+(`KernelFront.ctorRel`, the function the annotator applies to every
+constructor it reaches), over the loaded closure's accepted environment. -/
+def kernelCtorRels (k : KernelFront.Kernel) (cs : Array CId) :
+    Except String (Array (CId × CtorRel)) :=
+  let core := KernelFront.coreOf k.fe
+  let go : KernelFront.AM (Array (CId × CtorRel)) := cs.mapM fun c => do
+    let some (.ctor cv np nf) := k.rd.info? c
+      | throw s!"census: constant {c} is not a constructor in the kernel's reading"
+    return (c, ← KernelFront.ctorRel { core, back := KernelFront.backOf cv.levelParams } np nf cv.type)
+  (go.run {}).map (·.1)
 
 def relName : Rel → String
   | .rel => "rel"
@@ -80,7 +94,7 @@ def run (a : Assert) (reportPath : Option System.FilePath) : IO (Array String) :
     s!"census: structures present {present.map (·.1)}"
   out := out.push s!"unbox? checked on {present.map (·.1)}; absent from k1.ixe: {structs.filter fun n => !present.any (·.1 == n)}"
   let ctors := present.toArray.filterMap fun (_, t) => ctorOf t
-  let rels ← IO.ofExcept (ctorRels l.env p ctors)
+  let rels ← IO.ofExcept (kernelCtorRels l.kernel ctors)
   let relOf := fun (k : CId) => (rels.find? (·.1 == k)).map (·.2)
   for (n, t) in present do
     let atType := (List.range (((p.decl? t).map Decl.lvls).getD 0)).map fun _ => false
@@ -90,19 +104,10 @@ def run (a : Assert) (reportPath : Option System.FilePath) : IO (Array String) :
   match p.decl? dec with
   | some (.induct _ _ _ _ _ dctors) =>
     expectEq a dctors.length 2 "census: Decidable has two constructors"
-    let drels ← IO.ofExcept (ctorRels l.env p dctors.toArray)
+    let drels ← IO.ofExcept (kernelCtorRels l.kernel dctors.toArray)
     for (_, rel) in drels do
       expect a (!rel.fields.contains .keep) "census: Decidable constructors keep no field"
   | _ => expect a false "census: Decidable is not an inductive"
-  -- Every propWhen agrees with a re-inference from the λ's own type.
-  let viaLam ← IO.ofExcept (annotateVia .lambda l.env p)
-  let viaBody ← IO.ofExcept (annotate l.env p)
-  expectEq a viaLam.nodes.length viaBody.nodes.length "census: same annotated terms"
-  let mut lams := 0
-  for ((k1, t1), (k2, t2)) in viaBody.nodes.zip viaLam.nodes do
-    expect a (k1 == k2 && t1 == t2) s!"census: propWhen re-inference differs on {repr k1}"
-    lams := lams + (t1.filter fun | .lam .. => true | _ => false).length
-  out := out.push s!"propWhen agrees on {lams} λs"
   return out
 
 end IxCCTests.Src.Relevance.Census

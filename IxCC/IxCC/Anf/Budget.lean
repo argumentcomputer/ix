@@ -39,22 +39,24 @@ the passes' correctness theorems are unchanged: a budget only adds refusals. -/
 
 namespace IxCC.Anf
 
-/-- Nodes one global may hold after P1 and after every middle-end step:
-six times the largest global a committed program reaches at any stage
-(2,507). The walks recurse natively once per binding they walk, through the
-global and the copies they make (`Walk.maxCopy`); on an 8 MiB stack one walk
-survives about 18,800 bindings (37,600 nodes) and overflows at 19,100, so this
-and `Walk.maxCopy` together keep a walk to 12,288 bindings. Every later level
-(Fir to x86) has been run on 37,000-node globals on an 8 MiB stack. -/
+/-- Nodes one global may hold after P1 and after every middle-end step. The
+walks recurse natively once per binding they walk, through the global and the
+copies they make (`Walk.maxCopy`); on an 8 MiB stack one walk survives about
+18,800 bindings (37,600 nodes) and overflows at 19,100, so this and
+`Walk.maxCopy` together keep a walk to 12,288 bindings. Every later level (Fir
+to x86) has been run on 37,000-node globals on an 8 MiB stack. The largest
+global a committed program reaches, and so the headroom, is measured by
+`tests-corpus`'s budget survey (`docs/compiler-design.md`, "Middle-end
+budgets"), as for every budget of this module. -/
 def maxGlobalNodes : Nat := 16384
 
-/-- Nodes the whole program may hold after P1 and after every middle-end step:
-two hundred times the largest committed program (4,935). -/
+/-- Nodes the whole program may hold after P1 and after every middle-end step
+(the largest committed program: `tests-corpus`'s budget survey). -/
 def maxProgramNodes : Nat := 1048576
 
 /-- The work one inline or shrink step may do over all its walks (each walk's
-work, charged step by step, is also bounded by `Walk.maxWalkWork`): seventeen
-times the most a committed program's step does (2,642,755). -/
+work, charged step by step, is also bounded by `Walk.maxWalkWork`; the most a
+committed program's step does: `tests-corpus`'s budget survey). -/
 def maxStepWork : Nat := 45000000
 
 /-- `acc` plus the nodes of the expressions in `todo`, stopping as soon as the
@@ -90,8 +92,8 @@ def Exp.nodesLe (e : Exp) (cap : Nat) : Bool := e.nodesUpTo cap ≤ cap
 Conversion recurses natively once per binding it emits, and a Lam term's
 nodes, unlike its depth, are not bounded by ingress (a `share` DAG expands), so
 this bounds the conversion's native stack: on an 8 MiB stack it converts a
-32,767-node Lam global and overflows on a 65,535-node one. Seven times the
-largest committed Lam global (2,256). -/
+32,767-node Lam global and overflows on a 65,535-node one (the largest
+committed Lam global: `tests-corpus`'s budget survey). -/
 def maxLamNodes : Nat := 16384
 
 /-- `acc` plus the nodes of the Lam terms in `todo`, stopping as soon as the
@@ -226,8 +228,8 @@ def backWork (P : Program) : Nat :=
     acc + n * n + (n + Exp.caseWorkGo (n + 1) [gd.body] 0) * (P.ctors.length + 1)) 0
 
 /-- `backWork` a program may reach after P1 and after every middle-end step:
-about eighteen times the most a committed program reaches (14,976,810), and enough
-for one global at `maxGlobalNodes`. See
+enough for one global at `maxGlobalNodes` (the most a committed program
+reaches: `tests-corpus`'s budget survey). See
 `docs/compiler-design.md`, "Middle-end budgets", for the back end's time at
 it. -/
 def maxBackWork : Nat := 1 <<< 28

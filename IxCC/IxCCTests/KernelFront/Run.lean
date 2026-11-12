@@ -1,4 +1,4 @@
-import IxCCTests.KernelFront.Diff
+import IxCCTests.KernelFront.Report
 import IxCCTests.KernelFront.Bound
 import IxCCTests.Src.Support
 import IxCCTests.Support.Envelope
@@ -8,10 +8,9 @@ import IxCCTests.Support.Envelope
 Since the switch, ingress (`Recheck.ingress`) is the kernel's acceptance and
 the producer's annotator and Stage A are the kernel's. On two committed
 closures (`phase1-scalar`'s `tuple` and `bench-k1`'s `fib`; every committed
-closure is role-bound, as `ix compile` writes it): the kernel accepts it; the
-earlier reading and annotator (`Diff.diff`: IxCC's binding decoder's pins, the
-erased checker's annotator, until they are deleted) give the same program and
-the same annotation, and Stage A accepts the producer's certificate. Then the
+closure is role-bound, as `ix compile` writes it): the kernel accepts it,
+ingress reads it, and Stage A accepts the producer's certificate of every root
+(`Report.report`). Then the
 refusals:
 
 * an unbound envelope (the same records without the binding,
@@ -31,16 +30,14 @@ Then, on every committed role-bound closure: the kernel accepts it, but for
 the three refused for their own reasons (`phase1-boundary`'s `fields50` and
 `tags126`, which IxCC's decoder refuses first, at its depth budget, and
 `src-diag`'s `sorry.ixe`, which the kernel declines for its `sorry`); and on
-those under 512 KiB the earlier reading and annotator agree with ingress's,
-root by root, and every root that compiles has its certificate accepted by
-Stage A; on `sorry.ixe` ingress declines (the erased checker's acceptance
-admitted it: its `sorry` diagnostics came after ingress).
+those under 512 KiB ingress reads every root and every root that compiles has
+its certificate accepted by Stage A; on `sorry.ixe` ingress declines.
 
 Then the role-bound test builder (`IxCCTests.Support.Bound`), with the hostile
 family's enumeration case ported to it (`Bound`).
 
-The comparison on other role-bound closures, written into scratch by the
-tree's `ix`, is `tests-kernel-front diff …` (`Main`). -/
+The same report on other role-bound closures, written into scratch by the
+tree's `ix`, is `tests-kernel-front report …` (`Main`). -/
 
 namespace IxCCTests.KernelFront
 
@@ -52,11 +49,11 @@ def fixtures : List (String × String × String) :=
   [("tuple", "fixtures/corpus/phase1-scalar/tuple", "entry"),
    ("fib", "fixtures/ixon-v4/bench-k1/fib", "entry")]
 
-/-- Every committed role-bound closure under `fixtures/`: not the typing bundles,
-the catalogs, the handoff vectors or the dated historical records (unbound, frozen). -/
+/-- Every committed role-bound closure under `fixtures/`: not the resource
+handoff vectors (unbound, ix's fixture package). -/
 def committedClosures : IO (Array System.FilePath) := do
   let all ← System.FilePath.walkDir "fixtures"
-  let skip := ["/typing/", "/catalog/", "/handoff/", "/historical/"]
+  let skip := ["/handoff/"]
   let ixe := all.filter fun p => p.extension == some "ixe" && !skip.any fun s => (p.toString.splitOn s).length > 1
   return ixe.qsort (·.toString < ·.toString)
 
@@ -67,9 +64,10 @@ def decodeRefused : List String :=
 /-- The closures the kernel declines (`sorryAx`, on purpose). -/
 def kernelDeclined : List String := ["src-diag/sorry.ixe"]
 
-/-- Closures below this size also run the differential (both front ends; the
-erased checker types a 2.5 MB closure in about 200 s). -/
-def differentialBytes : Nat := 512 * 1024
+/-- Closures below this size are also run root by root through ingress, the
+producer and Stage A (`report`); the larger ones have many roots, which the
+corpus checks compile. -/
+def reportBytes : Nat := 512 * 1024
 
 /-- A closure's sidecar: `NAME.equations.json` beside it, or the RC input's. -/
 def sidecarOf (path : System.FilePath) : IO (Option System.FilePath) := do
@@ -134,10 +132,10 @@ def run : IO Bool := do
         s!"{label}: the kernel's entry did not receive every record"
       expect a (isRefusal (KernelFront.accept uenv) .envelope)
         s!"{label}: the unbound twin was not refused as unbound"
-      -- the differential
-      let rep ← diff label bb bj
-      expect a (rep.findings.isEmpty && rep.program.isEmpty && rep.roots.size ≥ 1)
-        s!"{label}: the front ends differ: {rep.program} {rep.findings}"
+      -- ingress, every root produced, Stage A on each certificate
+      let rep ← report label bb bj
+      expect a (rep.findings.isEmpty && rep.roots.size ≥ 1)
+        s!"{label}: ingress refused it or Stage A refused a certificate: {rep.findings}"
       -- refusals of the bytes
       let some b := benv.binding | throw (IO.userError s!"{label}: not role-bound")
       let tampered := { benv with binding := some { b with bytes := b.bytes.push 0 } }
@@ -193,8 +191,7 @@ def run : IO Bool := do
       expect a ((KernelFront.Reading.build acc wrongAddr).toOption.isNone)
         s!"{label}: a constant keyed by another address was read as the kernel's"
       IO.println s!"{label}: accepted, {acc.records.length} records, {acc.decls.size} declarations; \
-        ingress {rep.newIngressMs} ms (kernel {rep.newAcceptMs} ms; the erased checker's typing alone \
-        {rep.oldTypingMs} ms); the two annotators agree, Stage A accepts"
+        ingress {rep.ingressMs} ms (kernel {rep.acceptMs} ms); Stage A accepts every certificate"
     -- a role-bound closure carrying a constant whose ∀ chain shares one type: the
     -- kernel's entry checks every record, and the chain's levels stay small
     let (tb, _) ← read "fixtures/corpus/phase1-scalar/tuple"
@@ -214,7 +211,7 @@ def run : IO Bool := do
       | .error e =>
         throw (IO.userError s!"tuple with the {name} chain at length 200: refused: {e}")
     -- every committed closure: the kernel accepts it, but for the three that
-    -- are refused for their own reasons; and the differential on the small ones
+    -- are refused for their own reasons; and the report on the small ones
     let mut accepted := 0
     let mut compared := 0
     for path in ← committedClosures do
@@ -245,23 +242,23 @@ def run : IO Bool := do
                   | .error e => e.stage == .ingress && e.code == "kernel" && e.message == expected
                   | .ok _ => false)
                 s!"{label}: ingress did not report the kernel's line and the explanation"
-        if bytes.size < differentialBytes then
+        if bytes.size < reportBytes then
           if let some sidecar ← sidecarOf path then
             let bj ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile sidecar))
-            let rep ← diff label bytes bj
+            let rep ← report label bytes bj
             if kernelDeclined.any (label.endsWith ·) then
-              -- the one expected difference: the erased checker's ingress admits
-              -- `sorry` (its admission diagnostics come later), the kernel's declines it
-              expect a (rep.bound && rep.program.isEmpty && rep.findings.size == 1 &&
-                  rep.findings.all fun f => f.startsWith "new ingress: " &&
+              -- the diagnostics fixture: ingress declines it (the kernel, `sorry`)
+              expect a (rep.bound && rep.findings.size == 1 &&
+                  rep.findings.all fun f => f.startsWith "ingress: " &&
                     (f.splitOn "declined").length > 1 && (f.splitOn "sorryAx").length > 1)
-                s!"{label}: expected only the kernel's ingress to decline (sorryAx): {rep.program} {rep.findings}"
+                s!"{label}: expected only ingress to decline (sorryAx): {rep.findings}"
             else
-              expect a (rep.bound && rep.findings.isEmpty && rep.program.isEmpty)
-                s!"{label}: the front ends differ: {rep.program} {rep.findings}"
+              expect a (rep.bound && rep.findings.isEmpty)
+                s!"{label}: ingress refused it or Stage A refused a certificate: {rep.findings}"
             compared := compared + 1
     IO.println s!"every committed closure: {accepted} accepted by the kernel, the decoder's and the \
-      kernel's refusals as expected; {compared} under {differentialBytes} bytes compared by both front ends"
+      kernel's refusals as expected; {compared} under {reportBytes} bytes run through ingress, \
+      the producer and Stage A, root by root"
     -- the role-bound test builder, and the hostile enumeration case ported to it
     for line in ← Bound.run a do IO.println line
     IO.println s!"tests-kernel-front: {← a.get} assertions passed"

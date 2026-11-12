@@ -1,5 +1,4 @@
 import IxCC.Ixon.V3
-import IxCC.Ixon.V3.Typed
 import IxCC.Sem.Result
 import IxCC.Sem.Clock
 import IxCC.Sem.Clocked
@@ -113,7 +112,6 @@ import IxCC.Src.Table.Check
 import IxCC.Src.Table.Build
 import IxCC.Src.Runtime
 import IxCC.Src.Relevance.Syntax
-import IxCC.Src.Relevance.Annotate
 import IxCC.Src.NatMap
 import IxCC.Src.Relevance.Check
 import IxCC.Src.Relevance.Proof.Terms

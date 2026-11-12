@@ -21,12 +21,15 @@ assumed of the process's permissions, faults on a memory access first.
 its own, as `X86.LinkedAt.call` does, given the instructions between them
 (`hglue`, which the shell's blocks discharge).
 
-**A fault ends the trace.** `Trace.nil_of_faults`: from a state the byte
-machine reaches a memory fault from, the process makes no system call
-(`Process.Step` has no step at a fault); `Trace.through`: a trace from the
-start of a run of the byte machine stops inside it, with no system call, or
-passes through its end. So a fault inside a call leaves the trace a prefix
-of one the session model allows.
+**A memory fault ends the trace.** `Trace.nil_of_faults`: from a state the
+byte machine reaches a memory fault from, the process makes no system call
+(`Process.Step` has no step at a memory fault); `Trace.through`: a trace from
+the start of a run of the byte machine stops inside it, with no system call,
+or passes through its end. So a memory fault inside a call leaves the trace a
+prefix of one the session model allows. Both rest on `Step.of_decodes`: where
+the byte machine steps or faults on memory, `Process.Step`'s other two rules
+(the `syscall` and `unknown`, where it promises nothing) do not apply. No
+proof here uses the absence of a step anywhere but at a memory fault.
 
 The two hypotheses a caller supplies beyond the call's state: `CallsTo`
 (without it a `call` whose displacement does not fit in 32 signed bits lands
@@ -488,13 +491,40 @@ theorem decodes_of_fault {image : ByteArray} {b : Word} {s : ByteEval.State} {f 
   rw [hd] at h
   cases h
 
-/-- Where the byte decoder decodes, the process's only step is the byte machine's. -/
+theorem decodes_of_undefined {image : ByteArray} {b : Word} {s : ByteEval.State} {c : Condition}
+    (h : ByteEval.step image b s = .error (.undefinedCondition c)) :
+    Decode.decodeAt image (s.rip - b).toNat ≠ none := by
+  intro hd
+  unfold ByteEval.step at h
+  rw [hd] at h
+  cases h
+
+/-- Where the byte machine steps, it does not stop on an undefined condition. -/
+theorem defined_of_step_ok {image : ByteArray} {b : Word} {s u : ByteEval.State}
+    (h : ByteEval.step image b s = .ok u) : ∀ c, ByteEval.step image b s ≠ .error (.undefinedCondition c) :=
+  fun _ hc => by rw [h] at hc; cases hc
+
+/-- Where the byte machine faults on memory, it does not stop on an undefined condition. -/
+theorem defined_of_fault {image : ByteArray} {b : Word} {s : ByteEval.State} {f : MemoryFault}
+    (h : ByteEval.step image b s = .error (.memory f)) :
+    ∀ c, ByteEval.step image b s ≠ .error (.undefinedCondition c) :=
+  fun _ hc => by rw [h] at hc; cases hc
+
+/-- Where the byte decoder decodes and the byte machine does not stop on an
+undefined condition, the process's only step is the byte machine's (neither
+the `syscall` rule nor `Process.Step`'s `unknown` applies; at a memory fault or
+a divide error there is none). -/
 theorem Step.of_decodes {image : ByteArray} {s : ByteEval.State} {e : Option Sys} {t : Option ByteEval.State}
-    (hd : Decode.decodeAt image (s.rip - fetchBase).toNat ≠ none) (h : Step image s e t) :
+    (hd : Decode.decodeAt image (s.rip - fetchBase).toNat ≠ none)
+    (hc : ∀ c, ByteEval.step image fetchBase s ≠ .error (.undefinedCondition c)) (h : Step image s e t) :
     e = none ∧ ∃ u, ByteEval.step image fetchBase s = .ok u ∧ t = some u := by
   cases h with
   | byte h => exact ⟨rfl, _, h, rfl⟩
   | sys hd' _ _ => exact absurd hd' hd
+  | unknown hu =>
+    rcases hu with ⟨hd', -⟩ | ⟨c, hc'⟩
+    · exact absurd hd' hd
+    · exact absurd hc' (hc c)
 
 /-- **A run of the process from the start of a run of the byte machine** stops
 inside it, with no system call and at a state the byte machine steps from, or
@@ -508,7 +538,7 @@ theorem Run.through {image : ByteArray} :
     cases hr with
     | refl => exact .inl ⟨rfl, s₁, h₁⟩
     | step hs r =>
-      obtain ⟨rfl, u, hu, hsu⟩ := Step.of_decodes (decodes_of_step_ok h₁) hs
+      obtain ⟨rfl, u, hu, hsu⟩ := Step.of_decodes (decodes_of_step_ok h₁) (defined_of_step_ok h₁) hs
       rw [h₁] at hu
       cases hu
       cases hsu
@@ -523,29 +553,30 @@ theorem Trace.through {image : ByteArray} {n : Nat} {s s' : ByteEval.State} {σ 
     · exact .inl rfl
     · exact .inr (.inl ⟨t, hr'⟩)
   · rcases Run.through n h hr with ⟨rfl, u, hu⟩ | hr'
-    · exact absurd (Step.of_decodes (decodes_of_step_ok hu) hs).1 (by simp)
+    · exact absurd (Step.of_decodes (decodes_of_step_ok hu) (defined_of_step_ok hu) hs).1 (by simp)
     · exact .inr (.inr ⟨σ₀, t, ev, rfl, hr', hs⟩)
 
-/-- **A fault ends the trace**: from a state the byte machine reaches a memory
-fault from, every trace of the process is empty (`Process.Step` has no step
-at the fault). -/
+/-- **A memory fault ends the trace**: from a state the byte machine reaches a
+memory fault from, every trace of the process is empty (`Process.Step` has no
+step at a memory fault). -/
 theorem Trace.nil_of_faults {image : ByteArray} {s : ByteEval.State} {n : Nat} {σ : List Sys}
     (h : FaultsWithin image s n) (ht : Trace image s σ) : σ = [] := by
   obtain ⟨m, -, s', f, hr, hf⟩ := h
   rcases Trace.through hr ht with hnil | hts
   · exact hnil
   · have hd := decodes_of_fault hf
+    have hc := defined_of_fault hf
     rcases hts with ⟨t, hr'⟩ | ⟨σ₀, t, ev, rfl, hr', hs⟩
     · cases hr' with
       | refl => rfl
       | step hs _ =>
-        obtain ⟨-, u, hu, -⟩ := Step.of_decodes hd hs
+        obtain ⟨-, u, hu, -⟩ := Step.of_decodes hd hc hs
         rw [hf] at hu
         cases hu
     · cases hr' with
-      | refl => exact absurd (Step.of_decodes hd hs).1 (by simp)
+      | refl => exact absurd (Step.of_decodes hd hc hs).1 (by simp)
       | step hs' _ =>
-        obtain ⟨-, u, hu, -⟩ := Step.of_decodes hd hs'
+        obtain ⟨-, u, hu, -⟩ := Step.of_decodes hd hc hs'
         rw [hf] at hu
         cases hu
 

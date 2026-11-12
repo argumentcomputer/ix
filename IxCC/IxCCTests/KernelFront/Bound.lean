@@ -37,7 +37,7 @@ namespace IxCCTests.KernelFront.Bound
 open IxCC IxCC.Ixon IxCC.Ixon.V3
 open IxCCTests.Src (Assert expect)
 open IxCCTests.Support.Bound (loadBase addEnum addTree addList simpleBlock Ind)
-open IxCCTests.IxonV3.TypingFixtures (store block arrow lambda axiomType)
+open IxCCTests.IxonV3.Builder (store block arrow lambda axiomType)
 open IxCCTests.Recheck.Hostile (defn enumC sidecar mkCert driver ofErr)
 
 abbrev X := IxCC.Ixon.V3.Expr

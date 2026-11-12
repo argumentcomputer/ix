@@ -47,6 +47,9 @@ theorem JEnv.suffix {n : Nat} {T : Option (Val → Nat → Result Val)} {ρ' ρ�
   | _, _, _, .once henv hJj hnd hv h =>
     .once (henv.suffix hρ) (JEnv.suffix hρ hJ hJj) hnd (fun ρ'' h'' => hv ρ'' (hρ.trans h''))
       (JEnv.suffix hρ hJ h)
+  | _, _, _, .pend henv hJj hnd hv h =>
+    .pend (henv.suffix hρ) (JEnv.suffix hρ hJ hJj) hnd (fun ρ'' h'' => hv ρ'' (hρ.trans h''))
+      (JEnv.suffix hρ hJ h)
   | _, _, _, .dead h => .dead (JEnv.suffix hρ hJ h)
 
 theorem JoinR.mono {n m : Nat} {T : Val → Nat → Result Val} {jc jc' : JClo}
@@ -61,6 +64,7 @@ theorem JEnv.mono {n m : Nat} (hm : m ≤ n) {T : Option (Val → Nat → Result
   | _, _, _, .emitted hl hjc hT hR henv hJj hnd hv h =>
     .emitted hl hjc hT (hR.mono hm) henv (JEnv.mono hm hJj) hnd hv (JEnv.mono hm h)
   | _, _, _, .once henv hJj hnd hv h => .once henv (JEnv.mono hm hJj) hnd hv (JEnv.mono hm h)
+  | _, _, _, .pend henv hJj hnd hv h => .pend henv (JEnv.mono hm hJj) hnd hv (JEnv.mono hm h)
   | _, _, _, .dead h => .dead (JEnv.mono hm h)
 
 /-- Without a target meaning there are no emitted join points, so the
@@ -72,6 +76,7 @@ theorem JEnv.retarget {n : Nat} {ρ' : List Val} {J' J₂ : List JClo}
   | _, _, _, .nil => .nil
   | _, _, _, .emitted _ _ hT _ _ _ _ _ _ => nomatch hT
   | _, _, _, .once henv hJj hnd hv h => .once henv (JEnv.retarget hJj) hnd hv (JEnv.retarget h)
+  | _, _, _, .pend henv hJj hnd hv h => .pend henv (JEnv.retarget hJj) hnd hv (JEnv.retarget h)
   | _, _, _, .dead h => .dead (JEnv.retarget h)
 
 theorem JEnv.length {n : Nat} {T : Option (Val → Nat → Result Val)} {ρ' : List Val}
@@ -80,6 +85,7 @@ theorem JEnv.length {n : Nat} {T : Option (Val → Nat → Result Val)} {ρ' : L
   | _, _, _, .nil => ⟨rfl, rfl⟩
   | _, _, _, .emitted _ _ _ _ _ _ _ _ h => by have := h.length; simp [this.1, this.2]
   | _, _, _, .once _ _ _ _ h => by have := h.length; simp [this.1, this.2]
+  | _, _, _, .pend _ _ _ _ h => by have := h.length; simp [this.1, this.2]
   | _, _, _, .dead h => by have := h.length; simp [this.1, this.2]
 
 theorem KT_suffix {k : Kont} {J' J₂ : List JClo} (hJ : J' <:+ J₂) {T : Val → Nat → Result Val}

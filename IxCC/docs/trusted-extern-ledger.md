@@ -43,38 +43,48 @@ native-execution claim may not silently omit them.
 
 The checker deliberately fails closed on changes to:
 
-- Lake dependencies and revisions;
+- Lake dependencies and revisions (a git-pinned pure dependency's revision
+  against `lake-manifest.json` and its `flake.lock` node);
 - the Lean source inventory itself, derived from the controlled
   `lakefile.lean` `lean_lib`/`lean_exe` declarations (unsupported syntax, a
   missing root, or an empty root set is a hard failure, so a new top-level
   module cannot escape the scan);
-- external import roots and qualified native entry points used in project
-  sources;
-- the complete extern inventory of every `.lean` file in each pinned package
+- external import roots, the project's imports and names under a git-pinned
+  pure dependency's root, and the qualified native entry points used in
+  project sources (none while no native interface is recorded); every
+  spelling of the import command is read (`import`, `public import`,
+  `meta import`, `public meta import`, `import all`, guillemet-quoted
+  components), and a keyword `import` without a module name fails;
+- for a native dependency (none is recorded; a fixture entry exercises it),
+  the complete extern inventory of every `.lean` file in its pinned package
   source tree, covering `@[extern ...] opaque`/`def` declarations and
   post-hoc `attribute [extern ...]` commands, plus each symbol's
   imported/unimported reachability claim (checked against actual imports);
 - the exact project-local Lean extern inventory, each Lake-referenced C source,
-  its pinned SHA-256, and its exact `LEAN_EXPORT` inventory;
+  its pinned SHA-256, and its exact `LEAN_EXPORT` inventory (all empty: no
+  project extern and no C source);
 - declaration-level `axiom`, standalone `sorry`, and every spelling of native
-  evaluation the lexer can see in the checked project sources and the pure
+  evaluation the lexer can see in the checked project sources and each pure
   Lean dependency's closure: `native_decide`, `decide +native` (also after
   other flags, as in `decide +kernel +native`), a configuration field
   `native := true` (`decide (config := { native := true })`), and the names
   `ofReduceBool`, `ofReduceNat`, `trustCompiler` (bare or under `Lean.`) and
   `Lean.reduceBool`/`Lean.reduceNat`. A conservative lexer excludes comments
   and literals and retains line locations. The bare names `reduceBool` and
-  `reduceNat` are accepted, because the erased checker's primitive table uses
+  `reduceNat` are accepted, because the primitive table (`V3.PrimAddrs`) uses
   them as field names, and so is a variable or field named `native` in any
-  other position. The one native axiom the fences permit, Blake3's
-  `native_decide`, is inside the Blake3 package, which this scan does not
-  read (its externs are inventoried instead);
+  other position. The one exception is a dependency's reviewed
+  `native_decide_sites`: the three default-argument `native_decide` proofs of
+  the Blake3 package's root module (below), admitted occurrence by occurrence;
 - every `@[csimp]` theorem (and `attribute [csimp]` command) in the project's
   audited sources and in each pure Lean dependency's closure: each must be
   stated as `: @f = @g :=` and listed with its file and replacement pair
   (`csimp_theorems`, top level and per dependency), since it changes the code
   compiled for every call of `f`;
-- every package/version and the complete checksum-bearing Cargo lockfile;
+- for a native dependency, every package/version and the complete
+  checksum-bearing Cargo lockfile;
+- the symbol tables of the executables the checks ship or run (the link
+  audit, "No native interface" below);
 - the integrity pins (below): the SHA-256 of every file the integrity rule
   covers, among them IxCC's build-selection files (`lakefile.lean`,
   `lake-manifest.json`, `lean-toolchain`, `nix/*`), its checkers, scripts and
@@ -93,8 +103,8 @@ The checker deliberately fails closed on changes to:
 
 ix's `flake.nix` is not pinned. It selects the toolchain (the repository's
 `lean-toolchain`, checked above), passes ix's Blake3 build (its `blake3` and
-`blake3-lean` nodes are pinned in `flake.lock`, and the Blake3 entry below
-ties them to the Lake pin) and exposes `nix/checks.nix`'s checks as
+`blake3-lean` nodes are pinned in `flake.lock`, and the `blake3-pure` entry
+below ties `blake3-lean` to the Lake pin) and exposes `nix/checks.nix`'s checks as
 `ixcc-*`. What it exposes is checked by `ixcc.yml` (below), not by this
 audit.
 
@@ -117,7 +127,7 @@ against:
 - every file under `IxCC/` (the production library, the repository checkers
   in `IxCC/Tools` and the vendored Aiur reference), `IxCCTests/` (tests,
   fences, executable scripts such as `Scripts/X86ObjectFixture.lean` and
-  `Scripts/Census.lean`), `fixtures/` (closures, catalogs, goldens, and the C test
+  `Scripts/Census.lean`), `fixtures/` (closures, goldens, and the C test
   harnesses such as `fixtures/x86/exports_harness.c` and
   `unwind_harness.c`), `nix/` and `tools/`;
 - the benchmark runner's C entry points (`benchmarks/runner/entry/*.c`) and
@@ -197,6 +207,7 @@ request:
 | --- | --- | --- |
 | `update-rust.yml` (weekly Rust toolchain; runs `nix flake update`) | `flake.lock` revisions; ix's `flake.nix` (not pinned) | `integrity.flake_nodes`; `seed_and_build_trust` `gmp-seed.version` by hand if nixpkgs' GMP moved (the Nix check passes Nix's GMP version) |
 | `update.yml` (Lean release; moves `lean4-nix`) | the `lean-toolchain` files, `flake.lock`, possibly `lake-manifest.json` | `integrity.flake_nodes`; the hashes of `lean-toolchain` and of any changed `lake-manifest.json`; `seed_and_build_trust` `lean-seed-runtime.version` by hand |
+| A Blake3.lean revision (`lakefile.lean`, `lake-manifest.json` and the flake's `blake3-lean` input moved together) | the package's revision and possibly its two closure files | `lean_dependencies` `blake3-pure`: `pins.lake_rev`, the closure hashes and `native_decide_sites` by hand, after reviewing the two files' diff (`integrity.flake_nodes` and the hash of `lake-manifest.json` by `--record`) |
 | Dependabot `github-actions` bump of `ixcc.yml` | an action commit in `ixcc.yml` | `ci_actions[].commit` (and `.version` by hand, from the `# vX` comment); `integrity.repository_files` for `ixcc.yml` |
 | Any edit of a covered IxCC file or of `ixcc.yml` | its hash | `integrity.tracked_files` or `integrity.repository_files` |
 
@@ -218,13 +229,15 @@ git diff docs/trusted-externs.json   # review every changed pin against the diff
 ```
 
 Then edit by hand what the audit still names (a seed version, a new action
-repository, a symbol, a closure hash of the IxCK codec, a csimp theorem), set
-`last_reviewed`, and commit the ledger with the change. `--record` leaves the
-IxCK closure's hashes (`lean_dependencies[].closure`) alone: a change to
-those 98 files is a dependency review, edited by hand, not a routine update.
+repository, a closure hash of a pure dependency, a csimp theorem), set `last_reviewed`, and
+commit the ledger with the change. `--record` leaves the pure dependencies'
+closure hashes (`lean_dependencies[].closure`: the 98 files of the kernel's
+closure and the two of Blake3's) alone: a change to them is a dependency
+review, edited by hand, not a routine update.
 
 All repository check scripts are Lean executables. The trust auditor uses
-the pinned Lake TOML parser and GNU `sha256sum`; the independent encoder
+the pinned Lake TOML parser, GNU `sha256sum` and, for the link audit, GNU
+`nm`; the independent encoder
 and object checks invoke GNU binutils
 and, on x86-64 Linux, the C test harnesses of `fixtures/x86` and the system
 linker (`x86-elf-object`, `x86-hardware` only). These remain seed/build
@@ -244,175 +257,190 @@ dependencies of the root flake checks.
 `lake exe check-tools-tests` exercises the auditor on isolated temporary
 copies. It checks source literals/comments, every spelling of native
 evaluation above (and that kernel decision and fields named `native` pass),
-unrecognized extern attributes, new executable roots, project/dependency
-extern drift, imports and native entry points, integrity changes, the
-integrity rule (a covered file without a pin, a pin outside the rule, its
-globs), pinned repository files (an edited or unpinned `ixcc.yml`, and a
-narrowed check filter in it), the required-check inventory (a check renamed in
-`nix/checks.nix`, a listed check it lacks, and the Nix lexer's strings,
-antiquotations and refusals), the repository's toolchain, malformed/duplicate
-Cargo metadata, CI action drift (including scoped repository workflows and
-their local actions), an overriding `flake.lock`, path-pinned pure Lean
-dependencies, and unlisted, dropped, malformed or attribute-only `@[csimp]`
-theorems. The Nix trust-ledger check runs these regressions too.
+every spelling of the import command, the attribution of `native_decide`s to
+their declarations, unrecognized extern attributes, new executable roots,
+project/dependency extern drift, a C source in the Lake file, imports and
+native entry points, integrity changes, the integrity rule (a covered file
+without a pin, a pin outside the rule, its globs), pinned repository files (an
+edited or unpinned `ixcc.yml`, and a narrowed check filter in it), the
+required-check inventory (a check renamed in `nix/checks.nix`, a listed check
+it lacks, and the Nix lexer's strings, antiquotations and refusals), the
+repository's toolchain, CI action drift (including scoped repository workflows
+and their local actions), an overriding `flake.lock`, the workspace-pinned and
+the git-pinned pure Lean dependency (revisions, closure files, imports and
+names under the root, `native_decide` sites unlisted, stale or outside a
+declaration), the native-dependency audit on its planted fixture entry
+(sibling externs, reachability, entry points, malformed/duplicate Cargo
+metadata, upstream pins), the link audit on planted symbol tables, and
+unlisted, dropped, malformed or attribute-only `@[csimp]` theorems. The Nix
+trust-ledger check runs these regressions too, and the link audit on the
+built executables.
 
 The `IxCCTests` Lake root keeps every test and fence inside the
 audited source inventory, and the proof aggregate `IxCCTests.Proofs`
 imports every fence. The [CI guide](ci.md) records the current check surface
 and its coverage changes.
 
-## Active native interface: BLAKE3 Rust
+## No native interface
 
-| Field | Ledger value |
+The ledger records no native interface (`native_interfaces` is empty): no
+IxCC module declares an `@[extern]` or names a C source, and IxCC takes
+nothing native from a dependency. Every address IxCC computes is pure BLAKE3,
+`Blake3.Pure.hash` (the git-pinned pure dependency `blake3-pure`, under "Pure
+Lean dependencies" below), compiled natively like the rest of IxCC, so the
+compiler's composition theorems in `Recheck/Proof/Compile.lean` and every
+byte-level theorem rest on the three standard axioms; the fences that once
+listed `Blake3.HasherOps.hash._native.native_decide.ax_1` list only those, and
+`IxCC.Ixon.Address.blake3Pure` itself is fenced at `[propext, Quot.sound]`.
+The Blake3 package's Rust backend (`Blake3.Rust`, six `rs_blake3_*`
+exports) was last imported by the erased type checker, deleted in the switch
+to the kernel front end, for its internal hash-consing keys; its C backend
+(`Blake3.C`, six `c_blake3_*` exports) never was. The entry that recorded the
+Rust backend was removed when the checks below replaced it.
+
+An empty list cannot hide a native interface. Each way one could enter is
+refused by a check of its own:
+
+| How native code could enter | What refuses it |
 | --- | --- |
-| Owner | IxCC maintainers |
-| Project entry points | `Blake3.Rust.hash` in `IxCC/Ixon/Hash.lean`; `Blake3.Rust.Hasher` in the v3 typechecker's node/context hashing |
-| Assumed semantics | Standard BLAKE3 XOF over exactly the input bytes; a 32-byte request is the standard 256-bit digest |
-| Logical/proof status | Assumption: no Lean refinement theorem connects returned bytes to a pure BLAKE3 specification. Canonical-address identity is conditional on an explicit pairwise `Address.Blake3NoCollision` premise; no global hash-injectivity axiom is asserted. Theorems whose premise is a successful addressed check (Ixon v3 ingress, catalog admission, typing and claim binding) expose the exact native hash dependency, pinned in the `IxCCTests/Fences/IxonV3*.lean` fences. |
-| Evidence | Official empty-input vector, output length, determinism and input-sensitivity checks, and the frozen Ixon v3 constant, environment, catalog and claim fixtures with independently recorded addresses |
-| Primary pin | Blake3.lean `3f8b805614a0bae1c033469ff893a8f0ee85f601` |
-| Rust implementation | `blake3` 1.8.7; `lean-ffi` `163a661847d8171a685570ed12b4c03bfa092778` |
-| Retirement | Pure Lean BLAKE3 plus a refinement theorem and official corpus compatibility, compiled by our backend |
+| an `@[extern]` in an IxCC module | the project extern inventory (`validateNative`): every extern must be a recorded interface's symbol |
+| a C source named in `lakefile.lean` | the project foreign-source inventory (`validateNative`) |
+| a new Lake dependency or import root | the Lake dependency inventory and the external import roots (`validateImports`): every package of `lake-manifest.json` and every import root is a recorded dependency's |
+| a native module of a recorded pure dependency (`Blake3.Rust`, `Blake3.C`), imported by any IxCC module in any spelling of the import command | the dependency's exact imports (`validateLeanDependencies`): IxCC's imports under `Blake3` are exactly `Blake3.Pure` |
+| an extern, or an import of a backend, inside a pure dependency's closure | the closure scan: each file's hash, no native declaration, imports only of closure and toolchain modules |
+| a link of either backend, however it got there | the link audit (`check-trusted-externs --linked`, run by `ixcc-trusted-extern-ledger`): the symbol table of every executable the checks ship or run (the shared program build and the grounding suite, read with GNU `nm`) has no `rs_blake3_`, `c_blake3_` or upstream `blake3_` symbol, no compiled declaration of `Blake3.Rust` or `Blake3.C` (`lp_Blake3_Blake3_Rust_…`, `lp_Blake3_Blake3_C_…`) and neither module's initializer, and lists `main` (so a table that could not be read fails) |
 
-IxCC's addresses do not use this backend: `IxCC.Ixon.Address.blake3` is pure
-BLAKE3 (`Address.blake3Pure`), so the actual compiler composition results in
-`Recheck/Proof/Compile.lean` and every byte-level theorem rest on the three
-standard axioms; the 46 fences that used to list
-`Blake3.HasherOps.hash._native.native_decide.ax_1` (a `native_decide` proof of
-`32 < 2 ^ System.Platform.numBits` inside `HasherOps.hash`) now list only those.
-The backend's one remaining user is the erased checker's incremental hasher
-(`Blake3.Rust.Hasher`) for its internal hash-consing keys, with explicit length
-proofs. `Recheck.run` and `Recheck.sound` retain
-their original exact fences. The compiler bridge is SrcEval-relative and does
-not discharge the source-model or resource-profile compatibility obligations.
+`check-tools-tests` plants a violation of each: a project extern, a C source
+in the Lake file, an unrecorded import root (also as `public import`), imports
+of `Blake3.Rust`, `Blake3.C` and `Blake3` in every spelling of the import
+command, an extern and a backend import in `Blake3/Pure.lean` with its hash
+re-recorded, and each kind of forbidden symbol in a symbol table, beside a
+table of the pure implementation's own symbols (`lp_Blake3_Blake3_Pure_…`,
+the root module's `lp_Blake3_Blake3_HasherOps_…`), which passes.
 
-The Nix build shares the root Lean 4.34.1 toolchain with Blake3's Lean modules
-and Rust FFI header generation. It rejects differing root and dependency
-`lean-toolchain` pins. The Lean 4.34.0 update moved Blake3.lean from
-`c9b2273f` to `c32002ee`. That revision updates the `blake3` crate and C
-sources to 1.8.7 and lean-ffi to `163a6618`, and refreshes the Cargo lock.
-The lock now resolves two `shlex` releases, which the ledger records as a
-version list. The package precompiles its Lean libraries, so importing
-elaborators load the same native objects as shared libraries. It also adds a
-pure Lean `Blake3.Pure` module with no extern declarations, which IxCC
-does not import. The native symbol set and the Rust entry points are unchanged
-apart from the reported version string. The Lean 4.34.1 update moves
-Blake3.lean from `c32002ee` to `3f8b8056`, the revision ix's certified line
-pins. It changes only the package's `lean-toolchain`, its `lean4-nix` lock and
-its CI workflows; the Lean sources, Rust sources and Cargo lock are
-unchanged.
+The audit of a native dependency (the extern inventory of the whole package
+tree, each symbol's reachability against the project's imports, the qualified
+entry points, the Cargo lock with its crate inventory, and the flake and
+upstream pins) stays in the checker for the next native interface. So that it
+stays exercised, `check-tools-tests` plants a fixture entry in its copy of the
+ledger, the Rust backend as it was last recorded
+(`fixtures/ledger/blake3-native-entry.json`, every symbol unimported), sees the
+audit accept it, and refuses a sibling module's extern, a qualified use of
+`Blake3.Rust`, an import that contradicts a reachability claim, three changes
+of the Cargo lock, and changed upstream BLAKE3 and lean-ffi pins.
 
-The v3 checker uses incremental `Hasher.init`, `update` and
-`finalizeWithLength` for tagged node and context preimages. These call the
-same three active native symbols as the existing hash entry point. The
-32-byte output bound is discharged by a kernel proof; no additional native
-reflection axiom is introduced. Keyed and derive-key operations remain unused.
+The Nix build still compiles the Blake3 package's Rust code: ix's flake builds
+the package from its `blake3-lean` node with the Rust static library (the
+upstream BLAKE3 sources are its `blake3` node; both are pinned in
+`flake.lock`), and Lake links that library only into an executable that
+imports `Blake3.Rust`, which no IxCC module does. Building only the package's
+pure part is a follow-up for the owners of ix's root package, whose flake
+defines that build.
 
-The audit enumerates extern declarations across the entire pinned package
-source tree — every `.lean` file, in `@[extern ...] opaque`/`def` and
-post-hoc `attribute [extern ...]` form — not just the imported entry module.
-The tree ships twelve C-ABI symbols across two backend modules. IxCC
-imports only `Blake3.Rust`; the active hash path calls `rs_blake3_init`,
-`rs_blake3_hasher_update`, and `rs_blake3_hasher_finalize`, and the version,
-keyed-init, and derive-key exports remain listed because downstream code can
-reach the imported public API. The sibling `Blake3.C` module binds the
-vendored C implementation behind six `c_blake3_*` symbols; it is not imported
-(the checker verifies this against actual imports), so none of them are
-linkable from this project today, but enabling them is one lakefile line
-away, so they are listed and any drift fails the check:
-
-| Lean declaration | Foreign symbol | Current reachability |
-| --- | --- | --- |
-| `Blake3.Rust.internalVersion` | `rs_blake3_version` | imported, uncalled |
-| `Blake3.Rust.hasherInit` | `rs_blake3_init` | active hash path |
-| `Blake3.Rust.hasherInitKeyed` | `rs_blake3_init_keyed` | imported, uncalled |
-| `Blake3.Rust.hasherInitDeriveKey` | `rs_blake3_init_derive_key` | imported, uncalled |
-| `Blake3.Rust.hasherUpdate` | `rs_blake3_hasher_update` | active hash path |
-| `Blake3.Rust.hasherFinalize` | `rs_blake3_hasher_finalize` | active hash path |
-| `Blake3.C.internalVersion` | `c_blake3_version` | present, unimported |
-| `Blake3.C.hasherInit` | `c_blake3_init` | present, unimported |
-| `Blake3.C.hasherInitKeyed` | `c_blake3_init_keyed` | present, unimported |
-| `Blake3.C.hasherInitDeriveKey` | `c_blake3_init_derive_key` | present, unimported |
-| `Blake3.C.hasherUpdate` | `c_blake3_hasher_update` | present, unimported |
-| `Blake3.C.hasherFinalize` | `c_blake3_hasher_finalize` | present, unimported |
-
-The complete 39-package Cargo inventory (including bindgen/build-time crates)
-is stored by name and exact version in the JSON ledger. Its exact Cargo.lock
-SHA-256 is also pinned, so source URLs, checksums, and dependency edges cannot
-change while leaving the name/version inventory unchanged.
-
-Retirement is complete only when no native Blake3 module is imported, existing
-address fixtures either remain byte-identical or undergo an explicit versioned
-address roll, the official vector corpus passes, and the Rust static library
-is absent from the runtime closure.
-
+Of the retired entry's exit criteria, three are met: no native Blake3 module is
+imported (the import audit), every address fixture is byte-identical (the
+frozen handoff files, addressed constants and claim fixtures hash with
+`Blake3.Pure` to the addresses ix's producer recorded with the native hasher,
+in `tests-ixon-v3`), and no executable links the Rust static library (the link
+audit). The fourth, the official vector corpus, is the package's own test
+(`Tests/PureVectors.lean` in its tree), which IxCC's checks do not run; a
+refinement theorem relating `Blake3.Pure.hash` to a BLAKE3 specification is
+the `blake3-pure` entry's retirement condition.
 ## Ix frontend / Ixon v4 source boundary
 
 The [source adapter](ixon-v4.md) reads Ixon v4 through ix's pure codec (the
-pure Lean dependency below) and keeps the data model, resource algorithms and
-erased checker adapted from an earlier ix (Ixon v3, a revision outside this
-repository's history), with the checker's primitive table following this
-repository's `Ix/PrimAddrs.lean` and the resource profile and claim framing
-following ix's Ixon v4. It
+pure Lean dependency below) and keeps the data model and resource algorithms
+adapted from an earlier ix (Ixon v3, a revision outside this repository's
+history), with the primitive table following this repository's
+`Ix/PrimAddrs.lean` and the resource profile and claim framing following ix's
+Ixon v4. It
 preserves independent usage, ownership, relative locality, arrow results, and
 borrow lets. Canonical bytes, source roots, profile identities and native
 resource claim framing are checked against ix's frozen v4 fixture package.
 Ingress authenticates every object and the constant root with pure BLAKE3
-(`Blake3.Pure`); the erased checker's internal hashing and the resource
-commitments keep the Rust BLAKE3 interface above. The combined validator
-executes the pinned anonymous erased typechecker on the same raw bytes, fixes
-literal primitives, and checks every source key. Explicit hash-length proofs
-avoid reflection axioms. Eight exact fences retain the existing BLAKE3 axiom
-basis. Four frozen primitive closures, canonical recursors and adversarial
-cases run in the required suite. A whole-checker semantic soundness theorem,
-backend simulation and IxVM resource proofs remain outside this boundary.
+(`Blake3.Pure`), as do the resource commitments. The resource-validation API
+(`V3.validate`) runs resource admission and fixes literal primitives on the
+same raw bytes; it types nothing (the erased checker it once ran is deleted;
+on every compile path the certified kernel's acceptance comes first). Its
+seven exact fences (`IxCCTests/Fences/IxonV3Typing.lean`) and the 27 of the
+contracts and the resource checker (`IxonV3.lean`) retain the standard axiom basis. Backend simulation and IxVM
+resource proofs remain outside this boundary.
 
-Catalog-v2 admission additionally binds manifest version 2, object format 4
-and erased-lean-v1 (validator 1) to original manifest/piece bytes. It verifies
-roots, file hashes, counts, aggregate bounds, closed union assumptions and
-actual union typing. Chunked membership requires complete sorted address
-witnesses checked against each committed member root and count; first-owner
-assignment and full union coverage are checked explicitly. Producer labels,
-pins and preimage hashes are metadata, not proof. Four further exact fences
-preserve the same axiom basis. The 445 catalog assertions include producer
-fat and independently Rust-verified chunk fixtures, corruptions, exact bounds
-and filesystem/CLI tests. Validator 1 does not select a resource profile.
-
-The required ownership consumer regression retains authentic historical
-annotated/plain recursion bytes (a dated record of an earlier ix, outside
-this repository's history, kept as data: DO-18) under
-`fixtures/ownership/historical/annotated-recursion-cb68/`. Its pinned inventory
-includes the source twins, raw named/anonymous bytes and sidecars, original
-profile, address receipts and independent literal reference results. Tests
-verify those hashes before ingress and compare 36 complete Src/Fir/Own
-observations. A test-only adapter accepts the historical plain sidecar's
-absent or empty checked list only when no profile is present; malformed and
-nonempty orphan claims are refused. Production paired-key parsing is unchanged.
-The annotated erased contract retains its explicit plain-RC domain refusal.
-These fixtures and the valid-neighbor resource/csimp controls add no native
-interface, symbol, dependency, build seed, specification assumption or axiom.
-Historical producer acceptance remains separate from the final producer review
-and fixture refreeze.
+The valid-neighbor resource and `csimp` controls of the source suite add no
+native interface, symbol, dependency, build seed, specification assumption or
+axiom.
 
 ## Pure Lean dependencies
 
 `lean_dependencies` records Lake dependencies that contain no native code, so
 they are not trusted externs, but whose behaviour IxCC relies on. Each
 entry names the Lake package, the modules our sources import from it, and the
-SHA-256 of every file of their import closure. Each is a package of the
-enclosing workspace (`source_kind: workspace_path`), at `pins.workspace_path`
-relative to the project (`../IxCK` inside ix): the manifest must record it by
-that path, and the directory must hold that package's `lakefile.lean`. The
-closure hashes, not a revision, fix the audited source; a git-pinned
-dependency is refused. The checker requires
-every import of the project's sources that names neither a project module nor
-a toolchain module to be such a recorded module; checks each closure file's
-hash; rejects a closure file that declares a native symbol or an axiom (a
-constructor named `axiom` is not one), uses `sorry` or `native_decide`, or
-imports a module outside the closure or the toolchain; and requires its `@[csimp]` theorems to be exactly the entry's
-`csimp_theorems` and its `implemented_by` substitutions exactly the entry's
-`implemented_by_sites` (absent: none), each recorded with the ruling that admits
-it.
+SHA-256 of every file of their import closure, which fix the audited source
+whatever the pin. A dependency is pinned in one of two ways (`source_kind`):
+
+- `workspace_path`: a package of the enclosing workspace, at
+  `pins.workspace_path` relative to the project (`../IxCK` inside ix); the
+  manifest must record it by that path, and the pin records nothing else.
+- `git`: a package Lake checks out at a revision (`pins.lake_rev`, a full
+  commit) and Nix builds from a node of the repository's `flake.lock`
+  (`pins.flake_node`); the manifest must record that revision (type `git`),
+  the node must be locked at it, and the pin records nothing else. Its modules
+  are those under one module root (`import_root`): the project's imports under
+  that root must be exactly the entry's `imported_modules`, and the names under
+  it that the project's sources spell (qualified uses and `open`s, outside
+  import commands) exactly its `project_entrypoints`.
+
+Either way the dependency's root must hold that package's `lakefile.lean` (a
+`--dependency-root` override replaces the root). The checker requires every
+import of the project's sources that names neither a project module nor a
+toolchain module to be such a recorded module; reads the import command in
+every spelling the module system has (`import`, `public import`,
+`meta import`, `public meta import`, `import all`, and module names with
+guillemet-quoted components; a keyword `import` followed by no module name
+fails the audit); checks each closure file's hash; rejects a closure file that
+declares a native symbol or an axiom (a constructor named `axiom` is not one),
+uses `sorry` or a native-evaluation spelling (`decide +native`,
+`native := true`, `Lean.ofReduceBool` and the others above), or imports a
+module outside the closure or the toolchain; requires its `native_decide`s to
+be exactly the entry's `native_decide_sites` (absent: none), occurrence by
+occurrence, each attributed to the declaration whose text holds it and
+recorded with the ruling that admits it (an unlisted one, a listed one the
+closure no longer holds, and one outside a named declaration are refused); and
+requires its `@[csimp]` theorems to be exactly the entry's `csimp_theorems`
+and its `implemented_by` substitutions exactly the entry's
+`implemented_by_sites` (absent: none), each recorded with the ruling that
+admits it. `--record` leaves the closure hashes alone: a change to a
+dependency's closure is a dependency review, edited by hand.
+
+There are two entries. `blake3-pure` is the Blake3 package
+(`argumentcomputer/Blake3.lean`, Lake package `Blake3`), pinned at
+`3f8b805614a0bae1c033469ff893a8f0ee85f601` in `lakefile.lean`,
+`lake-manifest.json` and the `blake3-lean` node of ix's `flake.lock`. IxCC
+imports `Blake3.Pure` only and uses `Blake3.Pure.hash` only, for every address
+it computes. The closure is two files: `Blake3/Pure.lean` (the total, unkeyed,
+32-byte BLAKE3 over a checked canonical tree; it imports the package's root
+module and `Std`) and `Blake3.lean`, the root module, which holds the result
+type `Blake3Hash` and `BLAKE3_OUT_LEN`, and also the interface the package's
+native backends implement (`HasherOps`, `Sponge`), which IxCC does not use.
+`Blake3.lean` has three `native_decide`s, each a default-argument proof in a
+signature (`HasherOps.finalizeWithLength`'s length bound, `Sponge.init`'s
+non-empty label, `Sponge.squeeze`'s length bound), the entry's three
+`native_decide_sites`. Such a proof runs only where a caller omits the
+argument, and adds a native-evaluation axiom (`Lean.ofReduceBool`) to that
+caller alone; in that file the callers are `HasherOps.hash`, `hashKeyed`,
+`hashDeriveKey` and `Sponge.ratchet`, none of which `Blake3.Pure` calls. That
+IxCC does not call them either rests on two checks, each with its part:
+
+- `project_entrypoints`: IxCC's names under `Blake3` are exactly
+  `Blake3.Pure.hash`, so a qualified use of the interface, of a backend or an
+  `open Blake3` is refused. This reads the text: a name reached without
+  spelling `Blake3` (by generalized field notation on a value of a Blake3 type,
+  or through an instance) escapes it.
+- The exact axiom fences across IxCC are what show that no fenced IxCC theorem
+  depends on a native-evaluation axiom: each lists its axioms exactly, the
+  standard three at most, among them `IxCC.Ixon.Address.blake3Pure` at
+  `[propext, Quot.sound]`. A theorem that is not fenced is not covered by
+  them.
 
 The one entry, `ix-ck-kernel`, is ix's `IxCK/` package (`«ix-ck»`), beside
 IxCC in the workspace, of which IxCC imports `IxCK.Ixon.Canonical`,
@@ -825,46 +853,70 @@ state and an event whose result packs the next state and a request
 ([`IxCC/Exe/Machine.lean`](../IxCC/Exe/Machine.lean)), run by a generic shell
 ([`X86/Exe/Machine.lean`](../IxCC/X86/Exe/Machine.lean); 1,059 bytes, the same
 for every machine). It parses and renders nothing: a program does that in
-Lean compiled with it (`lib/IxccExe.lean`), so the decimal parsing and
-rendering of `--exe`'s shell are not trusted code here. The entry is separate
-from `x86-linux-exe-shell` so that each can be retired on its own; the shell
-proof takes this one first. It assumes what the module note says the shell
-does: confine the process with `--exe`'s filter; keep the state, the event,
-an argument cursor and an output byte in its own 256 bytes above the call
-stack's top; per call, store the budget at `region + 16`, call `cx_init`
-and the step by direct calls on the static stack, check `rsp`, map a status
-to 65 to 68 or 70; require an odd word (71); split it into the state and the
-request field and perform the request (one argument byte, or 256 or 257; one
-byte written to 1 or 2 and the answer 0 or 1; the program's exit status; 72
-for anything else); and write a fixed message for each of its own failures.
-It also assumes the kernel loads the file as its five program headers say
-(the region in a segment of its own, one unmapped page above the stack
-segment) and enters it with the System V initial stack. What is proved:
-`X86.Exe.Machine.Layout.driver_canonicalOk`, every clause of
-`Driver.CanonicalOk` at each call site for every initial bytes (a call starts
-from whatever the previous one left), carried by `X86.Exe.Machine.writeChecked`;
-and `X86.Exe.checkFor_sound`, the file's structure read back independently.
-The session theorem is proved over the linked-object model
-(`IxCC.Exe.Machine.session_sound`, `Rc.session_sound`, `machine_session_sound`):
-every finite trace of a session is the source step's iteration on the same
-answers, up to a final resource failure, unless the step goes wrong on the way.
-It is also proved over the calls as the shell makes them, `cx_init` and the
-step from two call sites (`machine_session_sound_at`, `Rc.session_sound_at`,
-over `X86.LinkedAt`), with the third outcome at a call the source reaches along
-a prefix of the trace. That a run the model shows non-faulting is the
-process's run or stops on a fault, and writes nothing outside the model's
-mapping (the shell's bytes included), is `X86.ByteAgree`'s theorem. The
-writer refuses a file whose shell bytes the independent decoder does not read
-back as the shell program (`X86.Exe.Shell.check`, carried in
-`CertifiedFor.shell`), and the process the shell theorem is about is specified
-in `X86/Exe/Process.lean` over `Process.Loaded`, `Process.Syscall` and
-`Process.Step` (X0-P's second part). `X86.Exe.Process.call_lifts` and
-`two_calls` lift each call the model runs to the process (it runs, returns as
-the model says, or faults first), and a fault ends the trace
-(`Trace.nil_of_faults`): the platform fact recorded with `Process.Step` is that
-a fault's signal takes its default action, no handler being installed. That the
-shell realises the session model is not proved (X0-P's third part); with this assumption the
-theorem is a statement about the executable.
+Lean compiled with it (`lib/IxccExe.lean`). The entry is separate from
+`x86-linux-exe-shell` so that each can be retired on its own.
+
+**The shell's code is proved** (X0-P): for every executable
+`X86.Exe.Machine.writeChecked` accepts, `X86.Exe.Process.shell_sound` shows
+that every finite trace of the process's system calls from the loader's
+post-state is a prefix of the system calls of a trace the session model
+performs over the object's calls (`cx_init` and the step, each from its own
+call site, each keeping the driver contract), preceded by the confinement;
+or has passed those of a trace reaching a call the model shows stuck; or is
+the confinement's refusal. `machine_exe_sound` (and `Rc.machine_exe_sound`,
+for plain-RC objects) compose it with the per-call theorems: every such trace
+is a prefix of what the source step's iteration does on the same answers, or
+of that followed by a resource failure's report, or has passed the point
+where the source goes wrong, or is the refusal. The shell's text in the
+written file is checked when it is written (`X86.Exe.Shell.check`, carried in
+`CertifiedFor.shell`), and the shell is run symbolically on the byte machine
+from it ([`X86/Exe/Machine/Proof/`](../IxCC/X86/Exe/Machine/Proof/)).
+
+**What the entry still assumes** is the platform, exactly the three
+specification modules the theorems take as hypotheses, each transcribing the
+document it cites, one platform fact, and the environment they describe:
+- `Process.Loaded` ([`X86/Exe/Process/Loaded.lean`](../IxCC/X86/Exe/Process/Loaded.lean)):
+  the loader's post-state, from the System V gABI's program loading and the
+  x86-64 psABI's initial stack: `rip` the entry, the file's bytes at
+  `fileBase`, the argument block at `rsp` outside the zero-filled segments;
+- `Process.Syscall` ([`X86/Exe/Process/Syscall.lean`](../IxCC/X86/Exe/Process/Syscall.lean)):
+  the `syscall(2)` convention and what `prctl`, `seccomp`, `write` and `exit`
+  document for the arguments the shell passes (any other call may do
+  anything);
+- `Process.Step` ([`X86/Exe/Process/Step.lean`](../IxCC/X86/Exe/Process/Step.lean)):
+  the processor is the byte machine (`x86-v0-local-semantics`) fetching from
+  the file (which the loader maps read-and-execute), with `syscall` where
+  nothing decodes and the bytes are `0F 05`; where the byte machine does not
+  say what the processor does (bytes it does not decode that are not `0F 05`,
+  `rip` outside the file, a condition on a flag it leaves undefined, none of
+  them a fault of the processor) it promises nothing: the process may do
+  anything, including any system call;
+- a memory fault or a divide error ends the process with no further system
+  call: the processor raises an exception, the kernel sends `SIGSEGV`,
+  `SIGBUS` or `SIGFPE`, and its default action applies, no handler being
+  installed (`execve` resets handlers, the kernel forces the default action
+  of a fault's signal that is ignored or blocked, and the shell installs
+  none, its only system calls before a call the model shows stuck being the
+  four above, which the theorem proves);
+- the environment: no tracer is attached (a tracer can change results,
+  registers and memory and suppress a fault's signal); no seccomp filter or
+  supervisor installed by an ancestor changes what `write`, `exit`, `prctl`
+  or `seccomp` do or return (an `exit` made to return makes the shell's exit
+  block repeat the call; a `write` answered with more than its count makes
+  the report loop write bytes no theorem allows); no other process writes the
+  process's memory or its file; the process has one thread (so system call
+  60, which ends the calling thread, ends the process).
+
+Nothing else is assumed by this entry. Nothing is assumed of permissions or
+zero fill, so the theorems allow a fault at any memory access, which ends the
+trace; they are safety only (nothing says a trace goes on: a process that
+faults at once, hangs in its first call or reports a resource failure
+satisfies them, so "the shell's code is proved" means it does nothing it
+should not). The process reaches a state where `Process.Step` promises
+nothing only past the point where the source goes wrong
+(`machine_exe_unspecified`, a corollary of the theorems' statements). The
+entry stays an active specification until models of the Linux kernel and of
+the x86-64 processor are shown to behave only as these specifications allow.
 
 The [indexed stream checker](stream-checking.md) preserves this boundary:
 bounded decoding and cached canonical positions are proved exactly equal
@@ -878,7 +930,7 @@ Four additional public fences retain the ordinary logical axiom basis.
 | Encoder stream/layout | Discharged for successful certified production emission. Raw `Encode.encode`/`Program.encode` clients must validate their output or prove the same facts. | `Stream.check_sound` checks every boundary, canonical position, target and relocation. Complete-stream proofs cover call-free execution and internal calls under concrete `SafeTrace` conditions, including residual return-slot bytes. `ELFLink` proves checked PC32 application and runtime CALL transfer. External procedure bodies still require their semantic/ABI contracts. |
 | Runtime driver model | `X86.Driver`/`X86.Linked` model initialization and the root call for accepted scalar and bounded RC objects. The same entry describes `DriverSession`'s separate owned raw-word drop protocol; it does not upgrade the one-call theorem to arbitrary-session adequacy. | Existing pipeline gates plus `tests-rt-rc`, `tests-rc-certificate` and `tests-driver-session` check complete values, ABI, reclamation and same-region reuse. The callers are executables IxCC writes (the production and the test shell); the loader's mapping, the shells' code, source adequacy and general whole-call session framing remain explicit. |
 | Standalone executable shell | `x86-linux-exe-shell`: the shell of `ixcc compile --exe` and the kernel's loading of the static executable, as `X86/Exe/Code.lean` describes them | `Layout.driver_canonicalOk` (the layout keeps the driver contract), `X86.Exe.check_sound` (the file's structure); `tests-corpus --exe` and `tests-exe`. The shell's behaviour from the loader's post-state is not proved; it stays ledgered until byte executables (X3) can replace it |
-| Numeric state machines' shell | `x86-linux-machine-shell`: the generic request shell of `ixcc compile --exe --machine` and the kernel's loading of its executable, as `X86/Exe/Machine.lean` describes them | `X86.Exe.Machine.Layout.driver_canonicalOk` (the contract at every call, from any bytes), `X86.Exe.checkFor_sound`, the session theorem over the linked-object model (`Exe.Machine.session_sound`) and over the shell's two call sites (`machine_session_sound_at`), `X86.ByteAgree` (a non-faulting model run is the process's and writes only the model's mapping), `X86.Exe.Shell.check_sound` (the shell's text in the written file, checked by the writer), `X86.Exe.Process.call_lifts` and `two_calls` (each call on the process); `tests-exe` (the `phase1-machines` roots, `fib` against `--exe`, `echo` against Lean's interpreter and the model on the byte evaluator) and `tests-corpus`. The shell's realisation of the session model is not proved; the shell proof takes it first |
+| Numeric state machines' shell | `x86-linux-machine-shell`: the platform under the generic request shell of `ixcc compile --exe --machine`, exactly `Process.Loaded` (the loader's post-state), `Process.Syscall` (the four system calls) and `Process.Step` (the processor, fetching from the file, promising nothing where the byte machine does not say what the processor does), a memory fault or divide error ending the process, and the environment (no tracer, no inherited seccomp filter or supervisor changing the four calls, no outside writer, one thread); the shell's code is proved | `X86.Exe.Machine.Layout.driver_canonicalOk` (the contract at every call, from any bytes), `X86.Exe.checkFor_sound`, the session theorem over the linked-object model (`Exe.Machine.session_sound`) and over the shell's two call sites (`machine_session_sound_at`), `X86.ByteAgree` (a non-faulting model run is the process's and writes only the model's mapping), `X86.Exe.Shell.check_sound` (the shell's text in the written file, checked by the writer), `X86.Exe.Process.call_lifts` and `two_calls` (each call on the process); **`X86.Exe.Process.shell_sound`** (the shell realises the session model) and **`machine_exe_sound`**, **`Rc.machine_exe_sound`** (the executable theorems), with their corollaries `shell_unspecified` and `machine_exe_unspecified` (a state where `Process.Step` promises nothing is reached only past the point where the source goes wrong); `tests-exe` (the `phase1-machines` roots, `fib` against `--exe`, `echo` against Lean's interpreter and the model on the byte evaluator, the process simulated as the specifications allow against the session model) and `tests-corpus` |
 | ELF serialization and system loading | Independent interpretation is discharged for successful `ELF.writeChecked` output. Raw `ELF.write` clients lack that certificate. Actual system linker/loader behavior remains assumed. | `ELFRead` independently parses actual fields; `ELF.check_sound` certifies text, bounded/aligned/nonoverlapping sections, export placement, symbols, relocations, non-executable stack and exact provenance. `ObjectEval` begins from the parsed export and text. A real loader must implement the proved PC32 rule, map immutable executable text, resolve named procedures and enter with the stated ABI. |
 
 The reviewed format references are the [generic ABI ELF specification](https://gabi.xinuos.com/elf.pdf)

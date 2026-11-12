@@ -3,8 +3,8 @@ import IxCCTests.IxonV3.Fixtures
 /-!
 # Contracts cannot be changed by transporting along an unchecked equality
 
-The erased typing (`Tc`) compares no contracts, and ix's kernel compares
-input but not result contracts, so both accept
+The certified kernel (the front end's acceptance) compares binders' input
+contracts but not result contracts, so it accepts
 `rfl : ((~ x : Nat) → ~ Nat) = ((~ x : Nat) → Nat)`. A transport such as `cast`
 along that equality would turn a local result into an unrestricted one. The
 resource checker therefore checks, with contracts, every proof it relies on:

@@ -32,7 +32,7 @@ boundaries are:
 | `Src.Ingress.readConsts` with `KernelFront.pinsOfTable`; `KernelFront.Reading.build` | `Address.blake3` (pure; the block-member keys `V3.*ProjAddr`, `Ixon/V3/Keys.lean`) | Keying block members and constructors by their projection addresses (a projection record must be the alias of a member it keys); the pinned identities from the kernel's admitted role table; the program read against the kernel's reading (keys, addresses, declaration headers; refused with code `faithful`) |
 | `Recheck.produceWith` relevance annotation; `Recheck.checkCanonicalRelevance` | the certified kernel's executed core over the accepted environment (`KernelFront.Kernel.annotateChecked`: inference, conversion, weak head normalisation and the annotation pass, each asked of the kernel's own term at the position IxCC's term occupies, with IxCC's term checked to correspond) | In `produce`, a proposal the relevance checks then decide. On the byte-level verifiers (`CompileClaim.verifyBytes`, `Ring0Sip.verifyBytes`, `ixcc check-cert`) `checkCanonicalRelevance` re-runs the kernel annotator on `(inp.kernel, cert.table)` and requires the certificate's annotation to equal its output (Stage A). Each class it gives is the kernel core's answer at that position and conversely (`KernelFront.Ctx.classify*_proof`, `_of_runs`); the composition of those runs into typing derivations at the evaluated positions is planned ([kernel front end](kernel-front-end-design.md)) |
 | `Src.Resource.validateContext` | `Address.blake3Pure` plus the codec's pure framing operations | Binding raw effective profile bytes and checked equation selections to actual Src declarations; no resource-safety claim |
-| Separate `V3.validate` / resource-claim API | Resource profile, object and claim commitments (pure), plus the erased checker's typing until it is deleted | Diagnostic addressed admission; not called by `Recheck.compile` or assumed by `Recheck.sound` |
+| Separate `V3.validate` / resource-claim API | Resource profile, object and claim commitments (pure); no typing (on every compile path the kernel's acceptance runs before resource admission) | Diagnostic addressed admission; not called by `Recheck.compile` or assumed by `Recheck.sound` |
 
 **What ingress refuses, and how.** The certified kernel's acceptance is of the
 whole artifact, so a record the kernel does not accept refuses every root of
@@ -72,12 +72,9 @@ definition (the kernel types it and keeps it opaque, outside the logical
 environment), an opaque outside the allowlist, a relevant type, a string
 literal, a budget.
 
-IxCC's erased type checker is no longer on any compile or verifier path; until
-it is deleted, its remaining native call sites (its incremental hasher for
-internal keys) are in `Ixon/V3/Tc/{Expr,Level,Metadata,Monad,Inductive,Support}.lean`;
-`Support.finishHash` constructs its length proof explicitly, so no theorem
-depends on the Blake3 package's `native_decide` length proof. A collision among
-those keys can only change the checker's verdict, which no theorem uses. The
+IxCC's erased type checker, with the native hasher it used for its internal
+keys, was deleted by the switch to the kernel front end (step 4); no IxCC
+module imports the Blake3 package's Rust interface. The
 resource API hashes profiles and addressed objects in
 `Ixon/V3/Resource/Addressed.lean` with the same pure function. Importing such a module is different from
 calling that API: neither should be reported as a resource gate in `compile`.
@@ -136,6 +133,6 @@ accepts the environment with the claim's root address and that the checked
 source program is faithful to IxCK's reading of it, both discharged outside
 IxCC (by IxVM proofs or a native kernel run), and adds the unfolding table's
 validity in the model and SrcEval's adequacy with progress
-([certification design](certification-design.md)). IxCC's erased type checker
-contributes nothing to it. This boundary does not assert that theorem or
+([certification design](certification-design.md)). IxCC's erased type
+checker, which the switch deleted, contributed nothing to it. This boundary does not assert that theorem or
 weaken any existing fence to accommodate it.

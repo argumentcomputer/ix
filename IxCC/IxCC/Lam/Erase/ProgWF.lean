@@ -10,7 +10,7 @@ constructor's field classes, where annotated, are as many as its fields; a
 recursor has a rule per constructor and at most one per minor, and a
 subsingleton recursor has its minor and index fields within its indices;
 the pinned `Nat`, `Bool` and `Decidable` constructors have their shapes.
-Tc typing and the relevance check ensure all of it; erasure checks it
+The kernel's acceptance at ingress and the relevance check ensure all of it; erasure checks it
 (`erase-progwf`). It reads every declaration once, through the persistent
 map (D17). -/
 

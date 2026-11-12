@@ -18,13 +18,20 @@ beside it:
 - `Process.Syscall` (`Process/Syscall.lean`): the system calls, from
   `syscall(2)` and the manual pages of the four calls the shell makes;
 - `Process.Step` (`Process/Step.lean`): the processor, the byte machine
-  fetching from the file with the `syscall` rule.
+  fetching from the file with the `syscall` rule, and no promise where the
+  byte machine does not say what the processor does (`Unspecified`).
 
 **Runs and traces.** `Run image s σ s'`: from `s` the process steps to `s'`,
 making the system calls `σ` (with the platform's answers). `Trace image s σ`:
 `σ` is the system calls of a run so far, or of a run whose last call ended
-the process. A fault is no step, so it ends a trace; every prefix of a trace
-is a trace.
+the process. A memory fault or a divide error is no step, so it ends a trace;
+every prefix of a trace is a trace. From a state `Unspecified` covers, every
+list of system calls is a trace (`Trace.of_unspecified`), so a trace that
+reaches one may go on with a system call the shell never makes
+(`Run.other_of_unspecified`); `Shows.stuck_of_other` and
+`Outcome.wrong_of_other` say what the theorems' statements then give: the
+trace has passed a call the model shows stuck, or the point where the source
+goes wrong.
 
 **What a session event is, in system calls** (`Denotes`, for the session model
 of `IxCC/Exe/Machine.lean`): `arg` is none (the shell answers it from the
@@ -88,6 +95,38 @@ theorem Run.ofByteRun {image : ByteArray} :
     · cases h
     · rename_i s₁ h₁
       exact .step (.byte h₁) (Run.ofByteRun n h)
+
+/-! ## Where the processor's specification promises nothing -/
+
+/-- A `rip` outside the file is a state where `Process.Step` promises
+nothing: the decoder decodes nothing there, and the bytes are not `0F 05`. -/
+theorem Unspecified.outside {image : ByteArray} {s : ByteEval.State}
+    (h : image.size ≤ (s.rip - fetchBase).toNat) : Unspecified image s := by
+  refine .inl ⟨?_, fun hb => ?_⟩
+  · unfold Decode.decodeAt
+    simp [h]
+  · have h0 := hb.1
+    rw [getElem?_neg image _ (by omega)] at h0
+    cases h0
+
+/-- **From a state where `Process.Step` promises nothing, every list of
+system calls is a run**: each `unknown` step may make any system call and stay
+where it is. -/
+theorem Run.of_unspecified {image : ByteArray} {s : ByteEval.State} (h : Unspecified image s) :
+    ∀ σ : List Sys, Run image s σ s
+  | [] => .refl s
+  | ev :: σ => .step (e := some ev) (.unknown h) (Run.of_unspecified h σ)
+
+/-- The same for traces. -/
+theorem Trace.of_unspecified {image : ByteArray} {s : ByteEval.State} (h : Unspecified image s)
+    (σ : List Sys) : Trace image s σ :=
+  .inl ⟨s, Run.of_unspecified h σ⟩
+
+/-- A run that reaches a state where `Process.Step` promises nothing goes on
+with any system call, in particular one outside the shell's four. -/
+theorem Run.other_of_unspecified {image : ByteArray} {s₀ s : ByteEval.State} {σ : List Sys}
+    (hr : Run image s₀ σ s) (hu : Unspecified image s) (n : Word) : Trace image s₀ (σ ++ [.other n]) :=
+  .inl ⟨s, hr.trans (Run.of_unspecified hu [.other n])⟩
 
 /-! ## What a session event is, in system calls -/
 
@@ -209,5 +248,88 @@ theorem Shows.refines {obj src : SessionCall} {bad : Nat → Nat → Prop} (h : 
     · obtain ⟨ρ₁, hρ, hd₁⟩ := hd.prefix hpre
       exact .inr (.inr (.inl ⟨t₁, c₁, ρ₁, hr₁, hb, hd₁, ((List.prefix_append_right_inj _).2 hρ).trans hσ⟩))
   · exact .inr (.inr (.inr hrefused))
+
+/-! ## A trace with a system call the shell never makes
+
+What the theorems' statements give for a trace that goes on with a system
+call outside the shell's four (`Sys.other`), as one may from a state where
+`Process.Step` promises nothing (`Run.other_of_unspecified`): none of the
+system calls the session model's events denote, the confinement or its
+refusal is `other`, so only the case "past a stuck call" (`Shows`) or "past
+the point where the source goes wrong" (`Outcome`) is left. -/
+
+/-- A failure report makes no system call but `write` and `exit`. -/
+theorem Report.not_other {status : Nat} {m : List UInt8} {b : Bool} {σ : List Sys}
+    (h : Report status m b σ) (n : Word) : Sys.other n ∉ σ := by
+  induction h with
+  | done => simp
+  | part _ _ _ ih => simpa using ih
+  | refused => simp
+
+/-- What a session event denotes is no `other` system call. -/
+theorem Denotes.not_other {e : Event} {σ : List Sys} (h : Denotes e σ) (n : Word) : Sys.other n ∉ σ := by
+  cases h with
+  | arg => simp
+  | write => simp
+  | exit => simp
+  | fail h => exact h.not_other n
+
+theorem DenotesAll.not_other {t : List Event} {σ : List Sys} (h : DenotesAll t σ) (n : Word) :
+    Sys.other n ∉ σ := by
+  induction h with
+  | nil => simp
+  | cons he _ ih =>
+    rw [List.mem_append]
+    exact fun hm => hm.elim (he.not_other n) ih
+
+theorem started_not_other (data : Nat) (n : Word) : Sys.other n ∉ started data := by
+  simp [started]
+
+/-- A list with no `other n` that is a prefix of `σ` followed by `other n` is
+a prefix of `σ`. -/
+theorem prefix_of_not_other {l σ : List Sys} {n : Word} (hl : Sys.other n ∉ l) (h : l <+: σ ++ [.other n]) :
+    l <+: σ := by
+  rcases List.prefix_concat_iff.1 h with rfl | hp
+  · exact absurd (by simp) hl
+  · exact hp
+
+/-- `σ` followed by `other n` is no prefix of a list with no `other n`. -/
+theorem not_prefix_other {l σ : List Sys} {n : Word} (hl : Sys.other n ∉ l) : ¬ σ ++ [.other n] <+: l :=
+  fun h => hl (h.mem (by simp))
+
+/-- The confinement's refusal makes no `other` system call. -/
+theorem Refused.not_other {data : Nat} {σ : List Sys} {n : Word} (h : Refused data (σ ++ [.other n])) : False := by
+  obtain ⟨ρ, b, hrep, ⟨r, -, hp⟩ | ⟨r, -, hp⟩⟩ := h
+  · exact not_prefix_other (by simpa using hrep.not_other n) hp
+  · exact not_prefix_other (by simpa using hrep.not_other n) hp
+
+/-- **`Shows` of a trace followed by a system call the shell never makes**:
+the trace has passed the system calls of a trace reaching a call the model
+shows stuck. -/
+theorem Shows.stuck_of_other {call : SessionCall} {data : Nat} {args : List (List Nat)} {σ : List Sys}
+    {n : Word} (h : Shows call data args (σ ++ [.other n])) :
+    ∃ t₀ c' ρ₀, Reaches call (Config.initial args) t₀ c' ∧ call c'.state c'.event .stuck ∧
+      DenotesAll t₀ ρ₀ ∧ started data ++ ρ₀ <+: σ := by
+  have hno : ∀ {ρ : List Sys}, Sys.other n ∉ ρ → Sys.other n ∉ started data ++ ρ := fun hρ hm =>
+    (List.mem_append.1 hm).elim (started_not_other data n) hρ
+  rcases h with ⟨t, ρ, -, hd, hσ⟩ | ⟨t₀, c', ρ₀, hr, hs, hd, hσ⟩ | hrefused
+  · exact absurd hσ (not_prefix_other (hno (hd.not_other n)))
+  · exact ⟨t₀, c', ρ₀, hr, hs, hd, prefix_of_not_other (hno (hd.not_other n)) hσ⟩
+  · exact hrefused.not_other.elim
+
+/-- **`Outcome` of a trace followed by a system call the shell never makes**:
+the trace has passed the system calls of a trace along which the source's
+iteration reaches a call where it goes wrong. -/
+theorem Outcome.wrong_of_other {src : SessionCall} {bad : Nat → Nat → Prop} {data : Nat}
+    {args : List (List Nat)} {σ : List Sys} {n : Word} (h : Outcome src bad data args (σ ++ [.other n])) :
+    ∃ t₀ c' ρ₀, Reaches src (Config.initial args) t₀ c' ∧ bad c'.state c'.event ∧
+      DenotesAll t₀ ρ₀ ∧ started data ++ ρ₀ <+: σ := by
+  have hno : ∀ {ρ : List Sys}, Sys.other n ∉ ρ → Sys.other n ∉ started data ++ ρ := fun hρ hm =>
+    (List.mem_append.1 hm).elim (started_not_other data n) hρ
+  rcases h with ⟨t, ρ, -, hd, hσ⟩ | ⟨t₀, c', f, b, ρ, -, hd, hσ⟩ | ⟨t₀, c', ρ₀, hr, hb, hd, hσ⟩ | hrefused
+  · exact absurd hσ (not_prefix_other (hno (hd.not_other n)))
+  · exact absurd hσ (not_prefix_other (hno (hd.not_other n)))
+  · exact ⟨t₀, c', ρ₀, hr, hb, hd, prefix_of_not_other (hno (hd.not_other n)) hσ⟩
+  · exact hrefused.not_other.elim
 
 end IxCC.X86.Exe.Process

@@ -1,5 +1,6 @@
 import IxCCTests.Exe.Run
 import IxCCTests.Exe.MachineSessions
+import IxCCTests.Exe.MachineProcess
 
 /-! The numeric state machines' part of `tests-exe`: what `ixcc compile --exe
 FILE --machine` writes (`IxCC/X86/Exe/Machine.lean`), for the roots of the
@@ -35,7 +36,19 @@ FILE --machine` writes (`IxCC/X86/Exe/Machine.lean`), for the roots of the
   (72); a write the platform refuses (stdout closed: the program exits 74);
   three `echo` sessions against the transcripts Lean's interpreter printed;
   the confinement read from `/proc`; the system calls under `strace`; and
-  `ixcc compile --exe --machine` in-process. -/
+  `ixcc compile --exe --machine` in-process.
+* **The shell against the session model** (`shellAgainstModel`; the content of the shell
+  theorem, X0-P): the process as the platform's specification modules allow it, simulated on the
+  written files, against the session model on the same answers, in 15 cases (22 with
+  `--all-machine-cases`, which adds the two longest runs and the two roots the suite does not
+  otherwise compile): no arguments, `argc = 0`, empty arguments, refused writes, the smallest
+  and a `movabs` layout, the argument block at the top of memory, a non-numeral, the step's
+  resource failure, the confinement refused, the report written short and refused; along each run,
+  the cursor outside the segments and unchanged at every arrival at `loop` and every write inside
+  them, and no state where `Process.Step` promises nothing reached before a call the model shows
+  stuck; the process just after each call returns; a negative control; and a case past a stuck call
+  (`echo` with its step's first bytes made undecodable: the model's step call is stuck, the process
+  stops where the specification promises nothing, and the comparison then claims nothing). -/
 
 namespace IxCCTests.Exe.Machine
 
@@ -74,6 +87,146 @@ def echoSessions : List (List String × String × String × Nat × Nat) :=
    ([], "353338310a", "", 5, 7),
    (["é~"], "c6816f323039333636393737350a", "0a", 143, 21)]
 
+/-- **The shell against the session model** (`IxCCTests.Exe.MachineProcess`; the shell theorem's
+content, tested): on real executables, the process as the platform's specification modules allow
+it against the session model on the same answers; along each run, the loop invariant's location
+clause; the process just after each call returns with each status; and, as a negative control, a
+state at `loop` whose argument slot lies in the region (the invariant without its location clause,
+which the shell proof's first statement of `from_loop` allowed) giving a trace the model does not
+allow. `arts` are the artifacts the part compiled; `--all-machine-cases` adds the cases of
+`Machines.fibMainHO` and `Machines.badRequest`. -/
+def shellAgainstModel (a : Assert) (o : IxCCTests.Exe.Suite.Options) (arts : Array (String × Artifact)) :
+    IO (Array String) := do
+  let mut out : Array String := #[]
+  let mut arts := arts
+  if o.allCases then
+    for root in ["Machines.fibMainHO", "Machines.badRequest"] do
+      let (_, _, art) ← compileNamed machines "machines" root
+      arts := arts.push (root, art)
+  let t0 ← IO.monoMsNow
+  let mut ran := 0
+  let mut skipped : List String := []
+  let mut steps := 0
+  let mut arrivals := 0
+  let mut writes := 0
+  for cs in MachineProcess.cases do
+    match (if cs.extra && !o.allCases then none else arts.find? (·.1 == cs.root)) with
+    | none => skipped := skipped ++ [cs.name]
+    | some (_, art) =>
+      let .ok r := IxCC.Exe.machine art | expect a false s!"{cs.root}: not a machine"
+      match X86.Exe.Machine.writeChecked cs.layout r.symbol art.object with
+      | .error e => expect a false s!"{cs.name}: writeChecked refused: {repr e}"
+      | .ok ce =>
+        let image := ce.checked.bytes
+        let pl := ce.checked.plan.placement
+        let (s₀, tbl) := MachineProcess.loaded image pl.shellOffset cs.sp cs.strAt cs.args cs.noName
+        let orig : X86.Word → UInt8 := fun x => tbl.getD x (MachineProcess.fileBytes image x)
+        let loopAt := UInt64.ofNat (X86.Exe.Process.shellAddr cs.layout r.symbol ce.checked X86.Exe.Machine.B.loop 0)
+        let run := MachineProcess.simulate image cs.ans 3000000 s₀ (MachineProcess.fileBytes image) tbl
+          (some (cs.layout.segments, loopAt, UInt64.ofNat cs.layout.callTop, orig))
+        let callF := MachineProcess.callsOf cs.layout ce.checked art.linkedRoots
+        let args := cs.args.map fun s => s.toUTF8.toList.map (·.toNat)
+        let (ρ, ended) := MachineProcess.model callF (X86.Exe.fileBase + pl.dataOffset) args cs.ans
+        expect a (MachineProcess.unspecifiedOk run ρ ended)
+          s!"{cs.name}: the process reached a state where Process.Step promises nothing (stopped after \
+            {run.steps} steps, {run.trace.length} system calls) before any call the model shows stuck"
+        expect a (run.stop == .exited && ended == .event && run.trace == ρ)
+          s!"{cs.name}: the process's {run.trace.length} system calls are not the model's {ρ.length}"
+        expectEq a (MachineProcess.exitOf run.trace) (some cs.status) s!"{cs.name}: the exit status"
+        expect a (run.badCursor == 0) s!"{cs.name}: at {run.badCursor} arrivals at loop the cursor is inside \
+          the segments or changed"
+        expect a (run.badWrites == 0) s!"{cs.name}: {run.badWrites} bytes written outside the segments"
+        expect a (cs.ans.prctl != 0 || cs.ans.seccomp != 0 || run.arrivals > 0) s!"{cs.name}: never at loop"
+        ran := ran + 1
+        steps := steps + run.steps
+        arrivals := arrivals + run.arrivals
+        writes := writes + run.writes
+  out := out.push s!"the shell against the session model: {ran} cases, each trace the model's with its exit \
+    status ({steps} steps); at {arrivals} arrivals at loop the cursor outside the segments and unchanged, and \
+    {writes} writes all inside the segments; {skipped.length} cases not run (--all-machine-cases); {(← IO.monoMsNow) - t0} ms"
+  -- just after each call returns (echo, the default layout): each status, a moved rsp, an even word
+  let some (_, echoArt) := arts.find? (·.1 == "Machines.echo") | throw (IO.userError "no echo artifact")
+  let .ok echoRoot := IxCC.Exe.machine echoArt | throw (IO.userError "echo is not a machine")
+  let L : Layout := {}
+  let .ok ce := X86.Exe.Machine.writeChecked L echoRoot.symbol echoArt.object
+    | throw (IO.userError "echo's executable is not written")
+  let image := ce.checked.bytes
+  let base := MachineProcess.fileBytes image
+  let C : X86.Word := UInt64.ofNat L.callTop
+  let tbl := MachineProcess.put64 (MachineProcess.put64 {} C 0) (C + 8) 0
+  let retOf (call : Nat) : Nat :=
+    if call == 0 then X86.Exe.Process.shellAddr L echoRoot.symbol ce.checked X86.Exe.Machine.B.loop 12
+    else X86.Exe.Process.shellAddr L echoRoot.symbol ce.checked X86.Exe.Machine.B.callStep 10
+  let mut returns := 0
+  for call in [0, 1] do
+    for (st, rdx, moved, status) in [((1 : X86.Word), (0 : X86.Word), false, 65), (2, 0, false, 66),
+        (3, 0, false, 67), (4, 0, false, 68), (5, 0, false, 70), (0, 7, true, 70), (1, 0, true, 70)] do
+      let regs := (((MachineProcess.garbage 2).set .rsp (if moved then C - 16 else C)).set .rax st).set .rdx rdx
+      let s : X86.ByteEval.State := { core := ⟨regs, MachineProcess.tableMem tbl base⟩, rip := UInt64.ofNat (retOf call) }
+      let run := MachineProcess.simulate image {} 100000 s base tbl
+      expect a (run.stop == .exited &&
+          run.trace == MachineProcess.report {} status (X86.Exe.Process.messageOf status) 0 1000)
+        s!"after call {call} with status {st.toNat}{if moved then ", rsp moved" else ""}: not the report of {status}"
+      returns := returns + 1
+  for (rdx, want) in [((6 : X86.Word), MachineProcess.report {} IxCC.Exe.Machine.statusNotValue
+        (X86.Exe.Process.messageOf IxCC.Exe.Machine.statusNotValue) 0 1000), (7 + 8 * 2048, [.exit 0])] do
+    let regs := (((MachineProcess.garbage 2).set .rsp C).set .rax 0).set .rdx rdx
+    let s : X86.ByteEval.State := { core := ⟨regs, MachineProcess.tableMem tbl base⟩, rip := UInt64.ofNat (retOf 1) }
+    let run := MachineProcess.simulate image {} 100000 s base tbl
+    expect a (run.stop == .exited && run.trace == want) s!"after the step returns {rdx.toNat}: not what the model says"
+    returns := returns + 1
+  out := out.push s!"the shell just after a call returns: {returns} cases (statuses 1 to 5, a moved rsp, an even \
+    and an odd word) as the model says"
+  -- the negative control: an argument slot in the region (`region + 16`, which the loop block itself
+  -- overwrites); the control: the same state with the slot outside the segments
+  let callF := MachineProcess.callsOf L ce.checked echoArt.linkedRoots
+  let (ρ, _) := MachineProcess.modelLoop callF {} 10000 (IxCC.Exe.Machine.Config.initial []) 0
+  let loopAt := UInt64.ofNat (X86.Exe.Process.shellAddr L echoRoot.symbol ce.checked X86.Exe.Machine.B.loop 0)
+  for (slot, allowed) in [((UInt64.ofNat (L.regionStart + 16) : X86.Word), false), (0x5000, true)] do
+    let t := MachineProcess.put64 (MachineProcess.put64 (MachineProcess.put64 tbl (C + 16) slot) (C + 24) 0x3000) slot 0
+    let t := (t.insert 0x3000 90).insert 0x3001 0
+    let s : X86.ByteEval.State := { core := ⟨MachineProcess.garbage 9, MachineProcess.tableMem t base⟩, rip := loopAt }
+    let σ := (MachineProcess.simulate image {} 3000000 s base t).trace
+    expect a ((σ.length ≤ ρ.length && σ == ρ.take σ.length) == allowed)
+      s!"the argument slot at {slot.toNat}: the trace is {if allowed then "not " else ""}one the model allows"
+  out := out.push "the negative control: an argument slot in the region gives a trace the model does not allow; \
+    outside the segments, the model's"
+  -- past a call the model shows stuck the comparison claims nothing: echo's object with the first
+  -- eight bytes of its step made `06` (no instruction in 64-bit mode; the byte decoder decodes
+  -- nothing there), and its executable; the model's first step call is stuck, and the process,
+  -- entering the step, reaches a state where `Process.Step` promises nothing
+  let some view := X86.ELFRead.parse echoArt.object | throw (IO.userError "echo's object does not parse")
+  let some textSection := view.sections[1]? | throw (IO.userError "echo's object has no text section")
+  let some stepAt := X86.ELF.symbol? echoArt.object echoRoot.symbol | throw (IO.userError "echo has no step export")
+  let broken := (List.range 8).foldl (fun o i => o.set! (textSection.header.offset + stepAt + i) 0x06) echoArt.object
+  match X86.Exe.Machine.writeChecked L echoRoot.symbol broken with
+  | .error e => expect a false s!"echo with an undecodable step: writeChecked refused: {repr e}"
+  | .ok cb =>
+    let img := cb.checked.bytes
+    let bpl := cb.checked.plan.placement
+    let off := bpl.textOffset + stepAt
+    expect a ((X86.Decode.decodeAt img off).isNone && img[off]? == some 0x06)
+      "echo with an undecodable step: the step's first bytes decode"
+    let (b₀, bt) := MachineProcess.loaded img bpl.shellOffset 0x7ffffffde000 0x7ffffffd0000 [] false
+    let run := MachineProcess.simulate img {} 3000000 b₀ (MachineProcess.fileBytes img) bt
+    let data := X86.Exe.fileBase + bpl.dataOffset
+    let (ρ, e) := MachineProcess.model (MachineProcess.callsOf L cb.checked echoArt.linkedRoots) data [] {}
+    let more : List X86.Exe.Process.Sys := [.write 1 [65] 1, .other 59, .exit 0]
+    expect a (e == .stuck && ρ == X86.Exe.Process.started data)
+      s!"echo with an undecodable step: the model does not stop at a stuck first call ({repr e}, \
+        {ρ.length} system calls)"
+    expect a (run.stop == .unspecified && run.trace == ρ)
+      s!"echo with an undecodable step: the process does not stop where Process.Step promises nothing \
+        ({repr run.stop}, {run.trace.length} system calls)"
+    expect a (MachineProcess.unspecifiedOk run ρ e && MachineProcess.allows ρ e run.trace &&
+        MachineProcess.allows ρ e (run.trace ++ more))
+      "echo with an undecodable step: the comparison claims something past the stuck call"
+    expect a (!MachineProcess.allows ρ .event (run.trace ++ more))
+      "echo with an undecodable step: the comparison allows anything even where the model's run ends with an event"
+  out := out.push "past a stuck call: echo with an undecodable step stops where Process.Step promises nothing, \
+    having made the model's system calls up to its stuck call; the comparison then allows any continuation"
+  return out
+
 def part (a : Assert) (o : IxCCTests.Exe.Suite.Options) (work : FilePath) : IO (Array String) := do
   let mut out := #[]
   -- the library is the family's
@@ -109,9 +262,11 @@ def part (a : Assert) (o : IxCCTests.Exe.Suite.Options) (work : FilePath) : IO (
   expect a (data.toList.take X86.Exe.filter.length == X86.Exe.filter) "the shell's filter is --exe's"
   -- the writer and its check, on the family's roots
   let mut fibArt? : Option Artifact := none
+  let mut arts : Array (String × Artifact) := #[]
   for root in ["Machines.fibMain", "Machines.idMain", "Machines.echo"] do
     let (_, _, art) ← compileNamed machines "machines" root
     if root == "Machines.fibMain" then fibArt? := some art
+    arts := arts.push (root, art)
     match IxCC.Exe.buildMachine art with
     | .error e => expect a false s!"{root}: {e.render}"
     | .ok ⟨r, c⟩ =>
@@ -189,6 +344,23 @@ def part (a : Assert) (o : IxCCTests.Exe.Suite.Options) (work : FilePath) : IO (
             D.checkOk p.textSize)
           s!"{root}: the call of {c.symbol} at byte {pos} is not a call site the call lemma describes"
       out := out.push s!"{root}: the file decides the call lemma's call-site facts at its {pl.calls.length} calls"
+      -- the shell proof's drivers take their return addresses from the shell's block offsets
+      -- (`X86.Exe.Process.shellAddr`, `initDriverOf`, `stepSite`): they are the plan's recorded ones
+      let computed := [X86.Exe.Process.shellAddr {} r.symbol c.checked X86.Exe.Machine.B.loop 12,
+        X86.Exe.Process.shellAddr {} r.symbol c.checked X86.Exe.Machine.B.callStep 10]
+      expect a (pl.calls.map (·.ret) == computed)
+        s!"{root}: the calls' return addresses {pl.calls.map (·.ret)} are not the shell's {computed}"
+      -- `textSize_eq` and `machine_linkedRoot` (the executable theorems' production facts) on this
+      -- artifact: the file's text is the encoded text, and the linked object's root 0 is the root
+      -- `Exe.machine` accepts, with two parameters and a `Nat` result
+      expectEq a p.textSize art.backend.encoded.text.size s!"{root}: the file's text size"
+      let rootOk := match art.linkedRoots[0]? with
+        | some x => x.symbol == r.symbol && x.params == 2 && (match x.ty with | some (_, .nat) => true | _ => false)
+        | none => false
+      expect a rootOk s!"{root}: the linked object's root 0 is not the machine's step"
+      out := out.push s!"{root}: the drivers' return addresses are the plan's; the text size and root 0 are \
+        what the executable theorems say"
+  out := out ++ (← shellAgainstModel a o arts)
   let some fibArt := fibArt? | throw (IO.userError "Machines.fibMain did not compile")
   -- refusals
   let some fibRoot := fibArt.roots.head? | throw (IO.userError "Machines.fibMain: no root")

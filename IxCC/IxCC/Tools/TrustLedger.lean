@@ -51,11 +51,10 @@ private def cargoPairs (value : Json) : IO (List (String × String)) := do
 
 /-- Pure Lean Lake dependencies (`lean_dependencies`, absent: none). They carry
 no native code, so they have no `native_interfaces` entry; each records its
-Lake package, the source directory of its modules relative to the package
-root, the modules IxCC imports from it, and the SHA-256 of every file of their
-import closure. Each is a package of the enclosing workspace
-(`source_kind: workspace_path`), at `pins.workspace_path` relative to the
-project root (`../IxCK` inside ix), so the closure hashes are its pin. -/
+Lake package, how it is pinned (`leanSource`), the source directory of its
+modules relative to the package root, the modules IxCC imports from it, and the
+SHA-256 of every file of their import closure, which fixes the audited source
+whatever the pin. -/
 def leanDependencies (ledger : Json) : IO (Array Json) :=
   match ledger.getObjVal? "lean_dependencies" with
   | .ok value => array value
@@ -75,15 +74,52 @@ private def manifestPin (entry : Json) : IO (String × Pin) := do
   | "path" => return (name, .path (← strField entry "dir"))
   | other => throw (IO.userError s!"Lake dependency {name}: unsupported manifest type {other}")
 
-/-- The workspace path the ledger records for a pure Lean dependency. -/
-def workspacePath (entry : Json) : IO String := do
+/-- How a pure Lean dependency is pinned (`source_kind`).
+
+- `workspace_path`: a package of the enclosing workspace, at `pins.workspace_path`
+  relative to the project root (`../IxCK` inside ix); the pins hold nothing else.
+- `git`: a package Lake checks out at the revision `pins.lake_rev` (a full
+  commit, which `lake-manifest.json` must record) and that Nix builds from the
+  node `pins.flake_node` of the repository's `flake.lock` (locked at the same
+  revision); the pins hold nothing else. Its modules are those under the
+  module root `import_root`, and the project's uses of names under that root
+  are exactly `project_entrypoints`. -/
+inductive LeanSource where
+  | workspace (dir : String)
+  | git (rev node importRoot : String)
+  deriving BEq, Repr
+
+/-- A pure Lean dependency's pin, with its shape checked. -/
+def leanSource (entry : Json) : IO LeanSource := do
   let package ← strField entry "lake_package"
-  let kind ← strField entry "source_kind"
-  need (kind == "workspace_path") s!"{package}: unknown lean dependency source_kind {kind}"
-  let dir ← strField (← field entry "pins") "workspace_path"
-  need (!dir.isEmpty && !(FilePath.mk dir).isAbsolute)
-    s!"{package}: workspace_path must be relative to the project root"
-  return dir
+  let pins ← field entry "pins"
+  let keys := (← pairs pins).map (·.1)
+  match ← strField entry "source_kind" with
+  | "workspace_path" =>
+    need (keys == ["workspace_path"]) s!"{package}: a workspace_path dependency pins only its path"
+    let dir ← strField pins "workspace_path"
+    need (!dir.isEmpty && !(FilePath.mk dir).isAbsolute)
+      s!"{package}: workspace_path must be relative to the project root"
+    return .workspace dir
+  | "git" =>
+    need (keys.length == 2 && keys.contains "lake_rev" && keys.contains "flake_node")
+      s!"{package}: a git dependency pins only lake_rev and flake_node"
+    let rev ← strField pins "lake_rev"
+    need (isHex 40 rev) s!"{package}: lake_rev must be a full commit (40 lowercase hex digits)"
+    let node ← strField pins "flake_node"
+    need (!node.isEmpty) s!"{package}: empty flake_node"
+    let importRoot ← strField entry "import_root"
+    need (!importRoot.isEmpty && !importRoot.contains '.')
+      s!"{package}: import_root must be a single module name component"
+    let _ ← jsonStrings (← field entry "project_entrypoints")
+    return .git rev node importRoot
+  | kind => throw (IO.userError s!"{package}: unknown lean dependency source_kind {kind}")
+
+/-- A pure Lean dependency's pin as `lake-manifest.json` records it. -/
+def leanPin (entry : Json) : IO Pin := do
+  match ← leanSource entry with
+  | .workspace dir => return .path dir
+  | .git rev _ _ => return .git rev
 
 /-- The repository around the project: where its `flake.lock` and CI
 workflows are. Standalone the project is the repository. Inside a larger one,
@@ -144,12 +180,31 @@ def implementedByRecords (entry : Json) : IO (List (String × String × String))
       need (!(← strField site "ruling").isEmpty) "an implemented_by site names no ruling"
       return (← strField site "file", ← strField site "declaration", ← strField site "implementation")
 
+/-- A dependency entry's `native_decide_sites` (absent: none) as `(file,
+declaration)`, one record per occurrence of the tactic in the closure: the
+reviewed `native_decide`s, each with the reason it is admitted (`ruling`,
+required and non-empty). Any other occurrence, and a listed one that is not in
+the closure, fails the audit (`validateLeanDependencies`). -/
+def nativeDecideRecords (entry : Json) : IO (List (String × String)) := do
+  match entry.getObjVal? "native_decide_sites" with
+  | .error _ => pure []
+  | .ok value =>
+    (← array value).toList.mapM fun site => do
+      need (!(← strField site "ruling").isEmpty) "a native_decide site names no ruling"
+      return (← strField site "file", ← strField site "declaration")
+
+/-- The ledger's shape. The native-interface list may be empty (IxCC links no
+native interface); what an empty list cannot hide is checked by the
+inventories it would otherwise have to account for: the project's own externs
+and C sources (`validateNative`), the external import roots (`validateImports`),
+each pure dependency's closure (`validateLeanDependencies`), and the symbols of
+the built executables (`auditLinkedFiles`). -/
 def validateShape (ledger : Json) : IO (Array Json × Array Json × Array Json) := do
   need ((← nat (← field ledger "schema_version")) == 2) "unsupported ledger schema_version"
   let interfaces ← arrField ledger "native_interfaces"
   let seeds ← arrField ledger "seed_and_build_trust"
   let specifications ← arrField ledger "specification_assumptions"
-  need (!interfaces.isEmpty && !seeds.isEmpty && !specifications.isEmpty) "empty trust inventory"
+  need (!seeds.isEmpty && !specifications.isEmpty) "empty trust inventory"
   let mut ids := []
   for entry in interfaces do
     fields entry ["id", "status", "owner", "source_kind", "lean_module", "semantics_assumed",
@@ -175,9 +230,9 @@ def validateShape (ledger : Json) : IO (Array Json × Array Json × Array Json) 
       "pins", "semantics_assumed", "proof_effect", "trust_basis", "tests", "retirement"]
     let _ ← jsonStrings (← field entry "imported_modules")
     let _ ← csimpRecords (← field entry "csimp_theorems")
-    let _ ← workspacePath entry
-    need ((← pairs (← field entry "pins")).length == 1)
-      s!"{(← strField entry "lake_package")}: a workspace_path dependency pins only its path"
+    let _ ← implementedByRecords entry
+    let _ ← nativeDecideRecords entry
+    let _ ← leanSource entry
     retirement entry
     ids := (← strField entry "id") :: ids
   unique ids "ledger ids"
@@ -413,13 +468,23 @@ def validateImports (root : FilePath) (ledger : Json) (interfaces : Array Json)
   let native ← deps.toList.mapM fun entry => do
     return (← strField entry "lake_package", Pin.git (← strField (← field entry "pins") "lake_rev"))
   let leanPins ← (← leanDependencies ledger).toList.mapM fun entry => do
-    return (← strField entry "lake_package", Pin.path (← workspacePath entry))
+    return (← strField entry "lake_package", ← leanPin entry)
+  -- a git-pinned pure dependency's revision, named, before the inventory as a whole
+  for (package, pin) in leanPins do
+    if let .git rev := pin then
+      let recorded := actual.filter (·.1 == package) |>.map (·.2)
+      need (recorded == [pin])
+        s!"{package}: lake-manifest.json records {repr recorded}, the ledger pins the git revision {rev}"
   sameSet actual (native ++ leanPins) "Lake dependency inventory"
   let locals ← jsonStrings (← field (← field ledger "policy") "local_import_roots")
   need (!locals.isEmpty) "empty local_import_roots"
   let actualImports := sources.flatMap (fun source => imports source.2)
   let actualExternal := actualImports.map (fun mod => (mod.splitOn ".").headD "") |>.filter (!locals.contains ·)
-  let expectedExternal ← deps.toList.mapM (strField · "import_root")
+  let gitRoots ← (← leanDependencies ledger).toList.filterMapM fun entry => do
+    match ← leanSource entry with
+    | .git _ _ importRoot => return some importRoot
+    | .workspace _ => return none
+  let expectedExternal := (← deps.toList.mapM (strField · "import_root")) ++ gitRoots
   sameSet actualExternal expectedExternal "external Lean import roots"
   for entry in interfaces do
     let mod ← strField entry "lean_module"
@@ -564,15 +629,23 @@ nor a toolchain module is a recorded module of a pure Lean dependency; every
 file of each dependency's recorded import closure has its recorded hash, no
 native declaration, no `implemented_by` other than the entry's
 `implemented_by_sites`, no `axiom` declaration (`hygieneDependency`), no
-`sorry`/`native_decide`, and imports only
-closure or toolchain modules; its `@[csimp]` theorems are exactly the
-entry's. Each dependency's workspace directory holds that package's
-`lakefile.lean` (a `--dependency-root` override replaces the directory).
-Returns the number of closure files checked. -/
+`sorry`, no native evaluation but the `native_decide`s the entry's
+`native_decide_sites` list (exactly, occurrence by occurrence), and imports
+only closure or toolchain modules; its `@[csimp]` theorems are exactly the
+entry's. Each dependency's root holds that package's `lakefile.lean` (a
+`--dependency-root` override replaces the root). A git-pinned dependency
+(`LeanSource.git`) is the one its `flake.lock` node locks at the same
+revision, and the project's imports under its `import_root` are exactly its
+`imported_modules` and its uses of names under that root exactly its
+`project_entrypoints`: this is the audit that refuses an import of another
+module of the package (`Blake3.Rust`, `Blake3.C`, the root module `Blake3`).
+Returns the number of closure files checked and of `native_decide`s admitted. -/
 def validateLeanDependencies (root : FilePath) (ledger : Json) (lake : Array Token)
-    (sources : List (FilePath × Array Token)) (overrides : List (String × String)) : IO Nat := do
+    (sources : List (FilePath × Array Token)) (overrides : List (String × String))
+    (flakeLock : FilePath) : IO (Nat × Nat) := do
   let manifest ← readJson (root / "lake-manifest.json")
   let packages ← arrField manifest "packages"
+  let packagesDir := (manifest.getObjValAs? String "packagesDir").toOption.getD ".lake/packages"
   let locals ← jsonStrings (← field (← field ledger "policy") "local_import_roots")
   let mut unresolved := []
   for mod in (sources.flatMap fun source => imports source.2).eraseDups do
@@ -582,16 +655,27 @@ def validateLeanDependencies (root : FilePath) (ledger : Json) (lake : Array Tok
     unresolved := mod :: unresolved
   let mut declared := []
   let mut checkedFiles := 0
+  let mut admitted := 0
   for entry in ← leanDependencies ledger do
     let package ← strField entry "lake_package"
     let mut found := false
     for candidate in packages do
       if (← strField candidate "name") == package then found := true
     need found s!"lean dependency {package} is not in lake-manifest.json"
-    let dir ← workspacePath entry
-    let packageRoot : FilePath := ((optional overrides package).map FilePath.mk).getD (root / dir)
+    let source ← leanSource entry
+    let packageRoot : FilePath ← match source with
+      | .workspace dir => pure (((optional overrides package).map FilePath.mk).getD (root / dir))
+      | .git rev node _ => do
+        -- the revision Nix builds is the one Lake checks out (the manifest's
+        -- revision is checked against the same pin by `validateImports`)
+        let nodes ← field (← readJson flakeLock) "nodes"
+        let some flakeNode := (nodes.getObjVal? node).toOption
+          | throw (IO.userError s!"{package}: flake.lock has no node {node}")
+        let locked ← strField (← field flakeNode "locked") "rev"
+        need (locked == rev) s!"{package}: flake.lock node {node} is at {locked}, the ledger pins {rev}"
+        pure (FilePath.mk (option overrides package (root / packagesDir / package).toString))
     need (← declaresPackage (packageRoot / "lakefile.lean") package)
-      s!"{package}: {dir} does not hold its lakefile.lean"
+      s!"{package}: {packageRoot} does not hold its lakefile.lean"
     let sourceRoot ← IO.FS.realPath (packageRoot / (← strField entry "source_dir"))
     let closure ← stringPairs (← field entry "closure")
     need (!closure.isEmpty) s!"{package}: empty closure"
@@ -599,11 +683,14 @@ def validateLeanDependencies (root : FilePath) (ledger : Json) (lake : Array Tok
       ((FilePath.mk relative).withExtension "").toString.replace "/" "."
     let mut replacements : List (String × String × String × String) := []
     let mut substitutions : List (String × String × String) := []
+    let mut nativeDecides : List (String × String × Nat) := []
     for (relative, expected) in closure do
       let path := sourceRoot / relative
       need ((← sha256 path) == expected) s!"{package}: {relative} changed"
       let tokens ← scanFile path
-      checked ((hygieneDependency tokens).mapError (fun error => s!"{package}: {relative}: {error}"))
+      for (declaration, line) in ← checked ((dependencyHygiene tokens).mapError
+          (fun error => s!"{package}: {relative}: {error}")) do
+        nativeDecides := nativeDecides ++ [(relative, declaration, line)]
       let natives ← checked ((externs tokens).mapError (fun error => s!"{package}: {relative}: {error}"))
       need natives.isEmpty s!"{package}: {relative} declares native symbols"
       for (declaration, implementation) in ← checked ((implementedBys tokens).mapError
@@ -617,11 +704,34 @@ def validateLeanDependencies (root : FilePath) (ledger : Json) (lake : Array Tok
       checkedFiles := checkedFiles + 1
     sameSet replacements (← csimpRecords (← field entry "csimp_theorems")) s!"{package} csimp inventory"
     sameSet substitutions (← implementedByRecords entry) s!"{package} implemented_by inventory"
+    -- the closure's native_decides are exactly the listed sites, occurrence by occurrence
+    let mut listed ← nativeDecideRecords entry
+    for (relative, declaration, line) in nativeDecides do
+      need (listed.contains (relative, declaration))
+        s!"{package}: {relative}:{line}: native_decide in {declaration} is not a listed native_decide site"
+      listed := listed.erase (relative, declaration)
+    if let (relative, declaration) :: _ := listed then
+      throw (IO.userError
+        s!"{package}: stale native_decide site: {declaration} in {relative} has no native_decide left to admit")
+    admitted := admitted + nativeDecides.length
     let imported ← jsonStrings (← field entry "imported_modules")
     need (imported.all closureModules.contains) s!"{package}: an imported module is outside its closure"
-    declared := declared ++ imported
+    match source with
+    | .workspace _ => declared := declared ++ imported
+    | .git _ _ importRoot =>
+      -- the project's imports under the dependency's root are exactly its recorded modules
+      for (path, tokens) in sources do
+        for mod in imports tokens do
+          if (mod.splitOn ".").headD "" == importRoot then
+            need (imported.contains mod)
+              s!"{package}: {path} imports {mod}; the project may import only {imported} under {importRoot}"
+      let projectImports := sources.flatMap fun source => imports source.2
+      for mod in imported do
+        need (projectImports.contains mod) s!"{package}: recorded module {mod} is not imported by the project"
+      sameSet (sources.flatMap fun source => namesUnder source.2 importRoot)
+        (← jsonStrings (← field entry "project_entrypoints")) s!"qualified uses of {importRoot}"
   sameSet unresolved declared "imports of pure Lean dependencies"
-  return checkedFiles
+  return (checkedFiles, admitted)
 
 /-- The Lean seed is the project's `lean-toolchain`, and inside a larger
 repository the repository's `lean-toolchain` (whose Lean ix's flake builds IxCC
@@ -774,14 +884,79 @@ def audit (root : FilePath) (overrides : List (String × String)) (gmp : Option 
   validateImports root ledger interfaces sources
   validateProjectCSimps root ledger sources
   let cargoCount ← validateNative root interfaces sources lake overrides repo.flakeLock
-  let leanFiles ← validateLeanDependencies root ledger lake sources overrides
+  let (leanFiles, nativeDecides) ← validateLeanDependencies root ledger lake sources overrides repo.flakeLock
   validateSeeds root repo seeds gmp
   validateCI repo ledger
   validateRequiredChecks root ledger
   validateIntegrityRule root ledger
   let mut symbols := 0
   for entry in interfaces do symbols := symbols + (← arrField entry "foreign_symbols").size
-  IO.println s!"trusted-extern ledger ok: {interfaces.size} native interface, {symbols} symbols, {cargoCount} Cargo packages, {(← leanDependencies ledger).size} pure Lean dependency ({leanFiles} files), {seeds.size} seed/build entries, {specifications.size} specification assumptions"
+  IO.println s!"trusted-extern ledger ok: {interfaces.size} native interfaces, {symbols} foreign symbols, {cargoCount} Cargo packages, {(← leanDependencies ledger).size} pure Lean dependencies ({leanFiles} files, {nativeDecides} admitted native_decide sites), {seeds.size} seed/build entries, {specifications.size} specification assumptions"
+
+/-! ## The link audit
+
+No executable the checks ship or run may link a native backend of the Blake3
+package: IxCC hashes with the pure `Blake3.Pure`. The audit reads each
+executable's symbol table as `nm -P` prints it (one symbol per line, its name
+first) and refuses the backends' symbols by name. -/
+
+/-- Symbol-name prefixes of the Blake3 package's native backends: the Rust FFI's
+exports (`rs_blake3_`), the C FFI's (`c_blake3_`), the upstream BLAKE3 C
+library's (`blake3_`, which either backend links), and the compiled Lean
+declarations of the backend modules `Blake3.Rust` and `Blake3.C` (Lean names
+them `lp_<package>_<declaration>`, the pure module's declarations
+`lp_Blake3_Blake3_Pure_…`). -/
+def forbiddenSymbolPrefixes : List String :=
+  ["rs_blake3_", "c_blake3_", "blake3_", "lp_Blake3_Blake3_Rust_", "lp_Blake3_Blake3_C_"]
+
+/-- Symbol-name suffixes: the module initializers of `Blake3.Rust` and
+`Blake3.C` (`initialize_…` and Lean's `runtime_initialize_…` and
+`meta_initialize_…`). -/
+def forbiddenSymbolSuffixes : List String :=
+  ["initialize_Blake3_Blake3_Rust", "initialize_Blake3_Blake3_C"]
+
+def forbiddenSymbol (name : String) : Bool :=
+  forbiddenSymbolPrefixes.any (fun pre => name.startsWith pre) ||
+    forbiddenSymbolSuffixes.any (fun suffix => name.endsWith suffix)
+
+/-- The symbol names of `nm -P` output: the first field of each line. -/
+def nmSymbols (output : String) : List String :=
+  (output.splitOn "\n").filterMap fun line => (words line).head?
+
+/-- The link audit of one executable, from its `nm -P` output: its symbol table
+was read (it lists `main`) and it names no symbol of a Blake3 native backend.
+Returns the number of symbols read. -/
+def auditLinked (label output : String) : Except String Nat := do
+  let symbols := nmSymbols output
+  unless symbols.contains "main" do
+    throw s!"{label}: nm lists no main symbol, so its symbol table was not read"
+  match symbols.filter forbiddenSymbol with
+  | [] => return symbols.length
+  | found => throw s!"{label} links a native backend of the Blake3 package: {found.eraseDups.take 12}"
+
+/-- Whether `path` is an ELF file (its first four bytes are `0x7f E L F`). -/
+private def elf (path : FilePath) : IO Bool := do
+  let handle ← IO.FS.Handle.mk path .read
+  return (← handle.read 4).data == #[0x7f, 0x45, 0x4c, 0x46]
+
+/-- `check-trusted-externs --linked`: the link audit of every ELF file of each
+directory of `paths` (not recursively; Lake's other outputs beside the
+executables are skipped) and of each file of `paths`, which must be ELF,
+running `nm` (`nm -P FILE`). At least one executable is audited. -/
+def auditLinkedFiles (nm : String) (paths : List FilePath) : IO Unit := do
+  let mut binaries : List FilePath := []
+  for path in paths do
+    if ← path.isDir then
+      for entry in ← path.readDir do
+        if !(← entry.path.isDir) && (← elf entry.path) then binaries := binaries ++ [entry.path]
+    else
+      need (← elf path) s!"{path} is not an ELF file"
+      binaries := binaries ++ [path]
+  need (!binaries.isEmpty) s!"link audit: no executable among {paths}"
+  let mut symbols := 0
+  for binary in binaries.mergeSort (fun a b => a.toString ≤ b.toString) do
+    symbols := symbols + (← checked (auditLinked binary.toString (← run nm #["-P", binary.toString])))
+  IO.println s!"link audit ok: {binaries.length} executables, {symbols} symbols, none of a Blake3 native backend"
 
 /-- The ledger's mechanical pins as the tree now stands, for review before
 they replace the recorded ones (`tools/record-ledger-pins.jq`): the hash of

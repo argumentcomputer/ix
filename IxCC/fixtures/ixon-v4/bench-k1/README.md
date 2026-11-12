@@ -37,8 +37,8 @@ Files per fixture:
   diagnostic only; addresses are authoritative, resolved with `ix addr-of`
   against the named twin of the same closure (not retained; its SHA-256 is in
   the manifest);
-- `<name>.census.json`: the reviewed admission census. Every constant of
-  every closure passes decoding and erased typing; the D12 policy stage
+- `<name>.census.json`: the reviewed admission census. Every closure
+  passes decoding and the certified kernel's acceptance; the D12 policy stage
   refuses the `partial` and `unsafe` members of the logical units the
   selection brings in, which no root reaches;
 - `steps.json` (`ixcc/x86-steps/1`): the reviewed typed-x86 and
@@ -60,7 +60,7 @@ and natively.
 
 **Gates.** `tests-ixon-v3` decodes each closure through strict v4 ingress,
 checks that every recorded address is present and the equation count is
-unchanged, and runs erased typing over the whole closure. The `census` check
+unchanged, and runs the certified kernel's acceptance of the whole closure. The `census` check
 requires the tool to reproduce each census file exactly.
 
 ## Primitive and special-form membership

@@ -81,8 +81,8 @@ IxCC's erased type checker leaves the guarantee path. It is retired, not
 kept as a filter (DC-4, decided): the [kernel front
 end](kernel-front-end-design.md) replaces it in the producer and on the
 native verifier path, and the switch has made it the only front end (the
-owner's decision of 2026-11-11; the checker's code is deleted in a following
-step). The erased checker's cost leaves IxCC's verifier; the kernel's
+owner's decision of 2026-11-11); the checker's code is deleted (the switch's
+step 4). The erased checker's cost leaves IxCC's verifier; the kernel's
 typing core takes its place there, exponential on universe levels it cannot
 fold until its planned work budget lands (its blow-up on chains of `let` is
 fixed, [below](#external-dependencies)).

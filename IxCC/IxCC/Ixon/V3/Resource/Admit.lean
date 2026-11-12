@@ -5,9 +5,10 @@ import IxCC.Ixon.V3.Resource.Check
 As in ix's copy, a safe theorem's proof is not scanned for relevance and has
 no usage, ownership or locality obligations (it is never run), but a marked
 theorem's proof is checked against its statement with contracts (`checkTheorem`):
-the statement is trusted wherever the theorem is used, and the erased typing
-compares no contracts. This resource check retains the upstream erased-typing
-prerequisite. -/
+the statement is trusted wherever the theorem is used, and typing (the
+certified kernel's acceptance) does not compare result contracts. This
+resource check presupposes that typing: on every compile path the kernel's
+acceptance runs first (`Recheck.ingress`). -/
 
 namespace IxCC.Ixon.V3.Resource
 

@@ -4,9 +4,10 @@ import IxCK.Kernel.Cached.CoreC
 
 /-! # The relevance annotation from the certified kernel's inference
 
-The kernel front end's annotator: the same annotation as IxCC's earlier
-annotator (`Src.Relevance.annotate`, which asked IxCC's own erased type
-checker), computed from the certified kernel's type inference, weak head
+The kernel front end's annotator, IxCC's only one: the annotation IxCC's
+earlier annotator gave (it asked IxCC's own erased type checker; both were
+deleted by the switch to the kernel front end once the two annotators agreed on
+every committed closure), computed from the certified kernel's type inference, weak head
 normalisation and annotation pass over the environment the kernel accepted
 (`Accepted.env`), each question asked of the kernel's own reading of the term
 at the position IxCC's term occupies.
@@ -75,8 +76,8 @@ def kcall (what : String) (x : Ix.Kernel.Cached.CheckCM .anon α) : AM α := fun
 
 /-- The zero condition of a level, over its parameters: `none` when never
 zero, `some ps` when zero exactly when every parameter in `ps` is. Exact for
-every form, so no normalisation is needed; the list is in the order the
-earlier annotator gave it (`Src.zeroCond` on `Univ` is the same recursion). -/
+every form, so no normalisation is needed; the list is in the order
+`Src.zeroCond` on `Univ` gives it (the same recursion). -/
 def zeroCond : KLevel → Option (List Nat)
   | .zero => some []
   | .succ _ => none

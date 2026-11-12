@@ -14,8 +14,8 @@ canonicality of the converted value as evidence (`constantBytes value =
 bytes`), as the v3 decoder did.
 
 The names (`exprBytes`, `constantBytes`, `decodeExpr`, `decodeConstant`) are
-those of the retired v3 codec, so every consumer (erased typing, ingress,
-resource admission, projection addresses) reads and commits to v4 bytes.
+those of the retired v3 codec, so every consumer (ingress, resource
+admission, projection addresses) reads and commits to v4 bytes.
 -/
 
 namespace IxCC.Ixon.V3

@@ -29,7 +29,7 @@ Files per closure: `<name>.ixe` (the anonymous closure of the roots, `ix
 compile --consts ROOTS --equations --anon`), `<name>.equations.json` (the
 sidecar, `ixcc/k1-equations/1`, addresses resolved against the named
 twin) and `<name>.census.json` (the admission census: every constant passes
-decoding, erased typing and the policy stage). `lake exe corpus check`
+decoding, the certified kernel's acceptance and the policy stage). `lake exe corpus check`
 verifies them; `lake exe corpus rebuild` remakes them with the pinned ix
 (byte-identical on a second build); `lake exe tests-corpus` runs every root.
 

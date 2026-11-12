@@ -3,9 +3,9 @@
 Written 2026-11-10. **Status:** IxCC reads both envelopes below, takes its
 pinned identities from the role table of a role-bound one, computes every
 address with pure BLAKE3, and its compile claim names the role table beside
-the root (all implemented). Every committed fixture is role-bound, written by
-this repository's `ix` ([corpus](corpus.md)); only the erased checker's typing
-bundles and the catalogs over them are frozen unbound data.
+the root (all implemented). Every committed closure is role-bound, written by
+this repository's `ix` ([corpus](corpus.md)), but ix's resource handoff
+vectors, unbound, which the resource-validation API reads.
 
 A statement of the [end-to-end plan](end-to-end.md) has two premises about
 content addresses: that the kernel's reading of the closure of the *seeds* (the
@@ -72,8 +72,10 @@ leaves and nodes, the binding section, the projection keys of block members.
 Every address IxCC computes uses the pure Lean implementation
 (`Blake3.Pure.hash`; `Address.blake3` is `Address.blake3Pure`), so no address on
 the verifier path comes from foreign code and every byte-level theorem rests on
-the three standard axioms. (The erased checker keeps the Rust hasher for its
-internal hash-consing keys, which are not addresses anything names.) The kernel's admission takes the
+the three standard axioms. (No IxCC module imports the Rust hasher: its one
+user in IxCC, the erased checker's internal hash-consing, was deleted with the
+checker; the trust ledger refuses an import of either native backend of the
+package and their symbols in every executable the checks build.) The kernel's admission takes the
 hash as a parameter (`IxCK/Kernel/Admission.lean`), and every theorem holds at
 every hash; ix instantiates it with `Address.admissionHash`, which is pure
 BLAKE3 by definition and is executed by the Rust implementation on a recorded
@@ -144,28 +146,30 @@ The binding section's grammar is the kernel's (`IxCK/Kernel/Ixon/RoleTable.lean`
 its address, indices strictly increasing), then the evidence entries (a
 role's index, a count and that many pieces of evidence, each `00` or `01` and
 a theorem's address). A role's index is its position in the kernel's
-`Ix.Kernel.Role.all` (`IxCK/Kernel/Key.lean`). IxCC reads it with its own
-decoder of the same grammar (`IxCC/IxCC/Ixon/V3/Binding.lean`), against the
-kernel's role vocabulary imported from that module, so a change to the
-vocabulary changes IxCC's reading in the same build. It refuses:
-
-- a section whose bytes do not hash to its address;
-- a section that is not exactly one canonical binding section (the kernel's
-  `RoleTable.ofBytes` refuses the same inputs);
-- a table that binds one address to two roles.
-
-It does not check the table against the specifications (the version, closure
-under blocks and dependencies, the evidence): that is the kernel's admission
-(`admitBinding`), which premise (i) covers. The specification version is read
-and reported, never compared with a value IxCC holds.
+`Ix.Kernel.Role.all` (`IxCK/Kernel/Key.lean`). IxCC's envelope reader keeps
+the section's address and bytes (`V3.Binding`, `IxCC/IxCC/Ixon/V3/Env.lean`) and
+refuses a section whose bytes do not hash to its address or that is longer
+than the format allows. It does not decode the section: the certified
+kernel decodes and admits it in its acceptance (`RoleTable.ofBytes`,
+`admitBinding`, through `KernelFront.accept` on every compile path), which
+refuses a section that is not exactly one canonical binding section, a table
+that binds one address to two roles, and a table that fails the
+specifications (the version, closure under blocks and dependencies, the
+evidence). IxCC reads the table the kernel admitted (`Accepted.table`); the
+specification version is reported (`ixcc compile --stats`), never compared
+with a value IxCC holds. (Until the switch to the kernel front end IxCC had a
+decoder of its own of the same grammar.)
 
 ### Pinned identities
 
-For a role-bound artifact, every identity IxCC treats specially is the
-constant the table binds to the identity's role (`Src.Pinned.ofRoles`). An
-identity whose role the table does not bind has no pin and is absent, as an
-identity whose constant is missing from the closure is. For an unbound
-artifact the fixed table stays (`Pins.fixed`, `IxCC/IxCC/Src/Syntax.lean`).
+Every identity IxCC treats specially is the constant that the role table the
+certified kernel admitted binds to the identity's role
+(`KernelFront.pinsOfTable`, through the mapping in `Src.Pinned`). An identity
+whose role the table does not bind has no pin and is absent, as an identity
+whose constant is missing from the closure is. An unbound artifact is refused
+at ingress; the fixed table (`Pins.fixed`, `IxCC/IxCC/Src/Syntax.lean`) is the
+default pins of a program built without ingress and gives the allowlist's
+address.
 
 | IxCC identity | Kernel role |
 | --- | --- |
@@ -181,8 +185,8 @@ The pins travel with the program (`Known.pins`), and every check of a pinned
 identity on the recheck path compares with them: `Pinned.knownOk`, the `prim`
 entries' address check (`Table.checkPrim`), the standard-axiom closure of
 `eqn` and `csimp` theorems (`Table.isStandardAxiom`) and the allowlist
-(`Table.validateOpaque`). `Src.Ingress.ofEnv_pins` states that ingress gives
-the program the pins of the environment it read (`Pinned.pinsOf`).
+(`Table.validateOpaque`). `Recheck.ingress_parts` states that ingress gives
+the program the pins of the table the kernel admitted (`pinsOfTable acc.table`).
 
 Not identities, and so not taken from the table: the `lazy` rows
 (`Pinned.lazyRows`), which are the producer's proposals (the table check
@@ -254,16 +258,16 @@ soundness theorems state both (`verifyBytes_immortal_sound`,
   of the seeds under the IxVM claim's table and the committed prelude
   ([kernel front end](kernel-front-end-design.md#acceptance)).
 - **The unbound bridge.** `ix compile --unbound` stays until it is removed
-  (it has no IxCC user since the role-bound refreeze; the typing bundles and
-  catalogs are frozen data, not regenerated). IxCC still reads the unbound
-  envelope, with the fixed pins; its tests write it from a role-bound closure
-  (`IxCCTests/Support/Envelope.lean`).
+  (it has no IxCC user since the role-bound refreeze). IxCC's decoder still reads the
+  unbound envelope (the resource-validation API's handoff vectors are
+  unbound), and every compile path refuses it at ingress; its tests write it
+  from a role-bound closure (`IxCCTests/Support/Envelope.lean`).
 - **Two readings.** IxCC's decoder and the kernel's reader each read the
-  bytes; they share the record decoder and, for the binding, the role
-  vocabulary, not the framing or the reading into declarations. The plan
-  replaces a proof that they agree by the faithfulness premise. The front end
-  over the kernel ([kernel front end](kernel-front-end-design.md), the
-  native-discharge milestone SP-N in the [roadmap](roadmap.md)) checks IxCC's
-  reading against the kernel's at every key, declaration header, evaluated term
-  and read type, and asks the kernel about its own reading; it is implemented
-  beside the default front end.
+  bytes; they share the record decoder, and IxCC takes the role table from the
+  kernel's decoding, but not the framing or the reading into declarations. The
+  plan replaces a proof that they agree by the faithfulness premise. The front
+  end over the kernel ([kernel front end](kernel-front-end-design.md), the
+  native-discharge milestone SP-N in the [roadmap](roadmap.md)), IxCC's only
+  front end, checks IxCC's reading against the kernel's at every key,
+  declaration header, evaluated term and read type, and asks the kernel about
+  its own reading.
