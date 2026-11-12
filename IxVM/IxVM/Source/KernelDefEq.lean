@@ -164,8 +164,8 @@ def nat_offset_of := aiur_fn⟦
           } } ,
         KernelTypes::KExprNode::App(f, a) => {
           match (*(f)) {
-            KernelTypes::KExprNode::Const(caddr, _) => {
-              match KernelRoles::role_is(rc, caddr, KernelRoleSpec::role_nat_succ()) {
+            KernelTypes::KExprNode::Const(caddr, clvls) => {
+              match KernelRoles::role_is(rc, caddr, KernelRoleSpec::role_nat_succ()) * KernelNatPrim::lvls_empty(clvls) {
                 1 => {
                   match nat_offset_of(rc, a) {
                     (_, base, o) => {  (1, base, KernelKlimbs::klimbs_succ(o)) } ,
