@@ -56,7 +56,8 @@ theorem g_collect_spine (κ : _root_.Address → KKey) {args : List (SourceValue
       ih.get .collect_spine lt_calls e1 _ rfl (bounded_sub sub_calls bd) d Γ k Ef hf
     injection htup with hl; injection hl with h1 hl; injection hl with h2; subst h1 h2
     exact ⟨_, _, H, As ++ [Ea], rfl, hH.mono e2.heap_extends,
-      ksnoc (fun _ _ _ _ ext r => Tm.mono ext r) e2 hAs (ha.mono e1.heap_extends),
+      ksnoc (R := fun h E p => Tm κ d Γ h k E p) (fun _ _ _ _ ext r => Tm.mono ext r) e2 hAs
+        (ha.mono e1.heap_extends),
       (mkAppN_snoc As H Ea).symm⟩
   | .other (he115 := hr) (hm132 := hm) (he136 := he) .. =>
     subst hr hm he
