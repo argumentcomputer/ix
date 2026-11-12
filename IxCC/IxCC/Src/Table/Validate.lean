@@ -14,7 +14,8 @@ stage-S reading of the table needs:
 * `eqn thm body`: `checkEqn` gives exactly this body;
 * `case r`: `checkCase` gives exactly this recursor;
 * `recKind`: every entry is the derived kind (`deriveRecKind`);
-* `lazy`, `inline`: `checkLazy`, `checkInline`;
+* `lazy`: `checkLazy` (a pinned row, or a sparse casesOn at its binder
+  count, without a `resolve` entry: `lazyResolveOk`); `inline`: `checkInline`;
 * `opaqueByValue`: a safe opaque at a pinned allowlist address (D12);
 * `known`: every constant it names is the pinned one (`Pinned.knownOk`).
 
@@ -62,6 +63,21 @@ def validateOpaque (p : Program) (c : CId) (_ : Unit) : Except String Unit :=
     else throw "opaque-by-value: not an allowlisted address"
   | _ => throw "opaque-by-value: not a safe definition"
 
+/-- A `lazy` row that is not a pinned row (so a sparse casesOn's, `checkLazy`)
+stands only where the definition's value is what runs: no `resolve` entry for
+its constant, since every kind replaces that value, and `checkSparseCases`
+established "each by-name binder used at most once" for the value (structural
+on the rows). `Table.build` never writes the pairing; pinned rows are not
+affected. -/
+def lazyResolveOk (p : Program) (resolve : NatMap Resolve) :
+    List (CId × Nat) → Except String Unit
+  | [] => pure ()
+  | (f, a) :: rest =>
+    if !pinnedLazy p f a && (resolve.get? f).isSome then
+      .error s!"table entry of constant {f}: lazy: a sparse casesOn's row beside a resolve entry, \
+        which replaces the value the row was checked on"
+    else lazyResolveOk p resolve rest
+
 /-- Revalidate the whole table of `p` (and its pinned identities). -/
 def validate (cfg : Config) (p : Program) : Except String Unit := do
   unless Pinned.knownOk p do throw "known: a pinned constant is misidentified"
@@ -69,6 +85,7 @@ def validate (cfg : Config) (p : Program) : Except String Unit := do
   validateEach (validateResolve cfg p) p.table.resolve.toList
   validateEach (validateRecKind p) p.table.recKind.toList
   validateEach (checkLazy p) p.table.lazy.toList
+  lazyResolveOk p p.table.resolve p.table.lazy.toList
   validateEach (fun c (_ : Unit) => checkInline p c cfg.inlineCap) p.table.inline.toList
   validateEach (validateOpaque p) p.table.opaqueByValue.toList
 

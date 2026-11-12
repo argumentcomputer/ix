@@ -13,7 +13,8 @@ its key, and a recursor kind only the recursor.
 (`checkPrim`, `checkCsimp`, `checkEqn`, `checkCase`, `deriveRecKind`,
 `checkLazy`, `checkInline`, the opaque-by-value allowlist), and the global
 conditions of `Table.validate` are checked on the result (pinned identities,
-`csimp` targets admissible and redirects acyclic). So it accepts exactly the
+`csimp` targets admissible and redirects acyclic, no sparse casesOn's `lazy`
+row beside a `resolve` entry: `lazyResolveOk`). So it accepts exactly the
 tables `Table.validate` accepts, up to the entries a check derives, and
 never evaluates a check twice. A missing entry only degrades to the kernel
 body; a wrong one is rejected with the constant it concerns.
@@ -124,6 +125,7 @@ def ofCert (cfg : Config) (p : Program) (c : TableCert) : Except String Table :=
   csimpTargetsOk p resolve resolve.toList
   let recKind ← recKindOfCert p c.recKind .leaf
   let lazy ← columnOfCert (checkLazy p) id c.lazy .leaf
+  lazyResolveOk p resolve c.lazy
   let inline ← columnOfCert (fun f (_ : Unit) => checkInline p f cfg.inlineCap) id
     (c.inline.map (·, ())) .leaf
   let opaqueByValue ← columnOfCert (validateOpaque p) id (c.opaqueByValue.map (·, ())) .leaf
@@ -435,66 +437,72 @@ theorem ofCert_ok_props {cfg : Config} {p : Program} {cert : TableCert} {t : Tab
           | ok lazy =>
             rw [hlz] at h
             dsimp only at h
-            cases hinl : columnOfCert (fun f (_ : Unit) => checkInline p f cfg.inlineCap) id
-                (cert.inline.map (·, ())) .leaf with
-            | error _ => rw [hinl] at h; cases h
-            | ok inline =>
-              rw [hinl] at h
+            cases hlr : lazyResolveOk p resolve cert.lazy with
+            | error _ => rw [hlr] at h; cases h
+            | ok u =>
+              cases u
+              rw [hlr] at h
               dsimp only at h
-              cases hopq : columnOfCert (validateOpaque p) id (cert.opaqueByValue.map (·, ())) .leaf with
-              | error _ => rw [hopq] at h; cases h
-              | ok opaqueByValue =>
-                rw [hopq] at h
+              cases hinl : columnOfCert (fun f (_ : Unit) => checkInline p f cfg.inlineCap) id
+                  (cert.inline.map (·, ())) .leaf with
+              | error _ => rw [hinl] at h; cases h
+              | ok inline =>
+                rw [hinl] at h
                 dsimp only at h
-                cases hsel : Resource.selected p { resolve, recKind, lazy, inline, opaqueByValue } with
-                | error _ => rw [hsel] at h; cases h
-                | ok u =>
-                  cases u
-                  rw [hsel] at h
-                  injection h with ht
-                  subst ht
-                  refine ⟨rfl, hsel,
-                    resolveOfCert_mem_ok cert.resolve .leaf resolve hres,
-                    fun c r hget => ?_,
-                    recKindOfCert_mem_ok cert.recKind .leaf recKind hrk,
-                    fun c rk hget => ?_,
-                    fun pl hpl => columnOfCert_mem_ok cert.lazy .leaf lazy hlz pl.1 pl.2 hpl,
-                    fun c a hget => ?_,
-                    fun c hc => ?_,
-                    fun c hget => ?_,
-                    fun c hc => ?_,
-                    fun c hget => ?_⟩
-                  · rcases resolveOfCert_get?_ok cert.resolve .leaf resolve hres c r hget with hm | hex
-                    · simp [NatMap.get?] at hm
-                    · exact hex
-                  · rcases recKindOfCert_get?_ok cert.recKind .leaf recKind hrk c rk hget with hm | hex
-                    · simp [NatMap.get?] at hm
-                    · exact hex
-                  · rcases columnOfCert_get?_ok cert.lazy .leaf lazy hlz c a hget with hm | ⟨x, hmem, hchk, rfl⟩
-                    · simp [NatMap.get?] at hm
-                    · exact ⟨hmem, hchk⟩
-                  · have hmem : (c, ()) ∈ cert.inline.map (·, ()) := List.mem_map.2 ⟨c, hc, rfl⟩
-                    obtain ⟨h1, h2⟩ := columnOfCert_unit_mem_ok _ .leaf inline hinl c hmem
-                    exact ⟨h1, by simp [Table.isInline, NatMap.contains, h2]⟩
-                  · simp only [Table.isInline, NatMap.contains, Option.isSome_iff_exists] at hget
-                    obtain ⟨u, hu⟩ := hget
+                cases hopq : columnOfCert (validateOpaque p) id (cert.opaqueByValue.map (·, ())) .leaf with
+                | error _ => rw [hopq] at h; cases h
+                | ok opaqueByValue =>
+                  rw [hopq] at h
+                  dsimp only at h
+                  cases hsel : Resource.selected p { resolve, recKind, lazy, inline, opaqueByValue } with
+                  | error _ => rw [hsel] at h; cases h
+                  | ok u =>
                     cases u
-                    rcases columnOfCert_get?_ok _ .leaf inline hinl c () hu with hm | ⟨_, hmem, hchk, _⟩
-                    · simp [NatMap.get?] at hm
-                    · obtain ⟨c', hc', heq⟩ := List.mem_map.1 hmem
-                      cases heq
-                      exact ⟨hc', hchk⟩
-                  · have hmem : (c, ()) ∈ cert.opaqueByValue.map (·, ()) := List.mem_map.2 ⟨c, hc, rfl⟩
-                    obtain ⟨h1, h2⟩ := columnOfCert_unit_mem_ok _ .leaf opaqueByValue hopq c hmem
-                    exact ⟨h1, by simp [Table.isOpaqueByValue, NatMap.contains, h2]⟩
-                  · simp only [Table.isOpaqueByValue, NatMap.contains, Option.isSome_iff_exists] at hget
-                    obtain ⟨u, hu⟩ := hget
-                    cases u
-                    rcases columnOfCert_get?_ok _ .leaf opaqueByValue hopq c () hu with hm | ⟨_, hmem, hchk, _⟩
-                    · simp [NatMap.get?] at hm
-                    · obtain ⟨c', hc', heq⟩ := List.mem_map.1 hmem
-                      cases heq
-                      exact ⟨hc', hchk⟩
+                    rw [hsel] at h
+                    injection h with ht
+                    subst ht
+                    refine ⟨rfl, hsel,
+                      resolveOfCert_mem_ok cert.resolve .leaf resolve hres,
+                      fun c r hget => ?_,
+                      recKindOfCert_mem_ok cert.recKind .leaf recKind hrk,
+                      fun c rk hget => ?_,
+                      fun pl hpl => columnOfCert_mem_ok cert.lazy .leaf lazy hlz pl.1 pl.2 hpl,
+                      fun c a hget => ?_,
+                      fun c hc => ?_,
+                      fun c hget => ?_,
+                      fun c hc => ?_,
+                      fun c hget => ?_⟩
+                    · rcases resolveOfCert_get?_ok cert.resolve .leaf resolve hres c r hget with hm | hex
+                      · simp [NatMap.get?] at hm
+                      · exact hex
+                    · rcases recKindOfCert_get?_ok cert.recKind .leaf recKind hrk c rk hget with hm | hex
+                      · simp [NatMap.get?] at hm
+                      · exact hex
+                    · rcases columnOfCert_get?_ok cert.lazy .leaf lazy hlz c a hget with hm | ⟨x, hmem, hchk, rfl⟩
+                      · simp [NatMap.get?] at hm
+                      · exact ⟨hmem, hchk⟩
+                    · have hmem : (c, ()) ∈ cert.inline.map (·, ()) := List.mem_map.2 ⟨c, hc, rfl⟩
+                      obtain ⟨h1, h2⟩ := columnOfCert_unit_mem_ok _ .leaf inline hinl c hmem
+                      exact ⟨h1, by simp [Table.isInline, NatMap.contains, h2]⟩
+                    · simp only [Table.isInline, NatMap.contains, Option.isSome_iff_exists] at hget
+                      obtain ⟨u, hu⟩ := hget
+                      cases u
+                      rcases columnOfCert_get?_ok _ .leaf inline hinl c () hu with hm | ⟨_, hmem, hchk, _⟩
+                      · simp [NatMap.get?] at hm
+                      · obtain ⟨c', hc', heq⟩ := List.mem_map.1 hmem
+                        cases heq
+                        exact ⟨hc', hchk⟩
+                    · have hmem : (c, ()) ∈ cert.opaqueByValue.map (·, ()) := List.mem_map.2 ⟨c, hc, rfl⟩
+                      obtain ⟨h1, h2⟩ := columnOfCert_unit_mem_ok _ .leaf opaqueByValue hopq c hmem
+                      exact ⟨h1, by simp [Table.isOpaqueByValue, NatMap.contains, h2]⟩
+                    · simp only [Table.isOpaqueByValue, NatMap.contains, Option.isSome_iff_exists] at hget
+                      obtain ⟨u, hu⟩ := hget
+                      cases u
+                      rcases columnOfCert_get?_ok _ .leaf opaqueByValue hopq c () hu with hm | ⟨_, hmem, hchk, _⟩
+                      · simp [NatMap.get?] at hm
+                      · obtain ⟨c', hc', heq⟩ := List.mem_map.1 hmem
+                        cases heq
+                        exact ⟨hc', hchk⟩
 
 theorem buildResolve_sound {cfg : Config} {p : Program} {cert : TableCert} {t : Table}
     (h : ofCert cfg p cert = .ok t) :

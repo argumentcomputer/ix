@@ -33,6 +33,10 @@ below is the verifier's own, at the stage and code the test names.
   frontier dedupe of the layout's reachability walk**.
 * **The `--rc auto` immortal fallback** on the hostile annotated
   program, and `check-cert` refusing `--rc`.
+* **A certificate's `lazy` rows** (on the committed fixture
+  `phase2-closures/sparse`, not the builder): a row for an ordinary
+  definition, a sparse casesOn's row at another arity, or its row beside a
+  `resolve` entry that replaces its value, refused at the table.
 * **Middle-end budgets**. A single hostile `inline` step, at the
   size that crashed `ixcc check-cert` with a stack overflow, through every
   verifier; an inline round over many callers; a walk that copies past its
@@ -1224,5 +1228,53 @@ def shrinkWork (a : Assert) : IO String := do
     64 rounds on a {gb.body.nodes}-node tower (about {m * 10000} reads; walk budget {Anf.Walk.maxWalkWork}), \
     one round each of {k} {d}-binding towers ({ww} work each, {k * ww} together; step budget \
     {Anf.maxStepWork})"
+
+/-! ## A certificate's `lazy` rows
+
+A `lazy` row passes a definition's arguments by name, which changes what the
+program evaluates, so the checked path accepts one only for a pinned row or a
+sparse casesOn at its binder count (`Src.Table.checkLazy`, in `Table.ofCert`). -/
+
+/-- `Recheck.run` refuses `c` at the table, with a message that starts with `msg`. -/
+def refusedAtTable (a : Assert) (label : String) (cfg : Recheck.Config) (P : Src.Program)
+    (c : Recheck.Cert) (msg : String) : IO Unit :=
+  match Recheck.run cfg P c with
+  | .ok _ => expect a false s!"{label}: accepted"
+  | .error e => expect a (e.stage matches .table && e.code == "table.entry" && e.message.startsWith msg)
+      s!"{label}: {e.render}"
+
+/-- On the committed fixture `phase2-closures/sparse` (root `Sparse.minS`, whose
+match reaches a sparse casesOn): its certificate is accepted; with a `lazy` row
+added for an ordinary definition (the root, of two λs), or its sparse casesOn's
+row at another arity, it is refused at the table (`table: table.entry`). -/
+def sparseLazy (a : Assert) : IO String := do
+  let dir : System.FilePath := "fixtures/corpus/phase2-closures"
+  let bs ← IO.FS.readBinFile (dir / "sparse.ixe")
+  let json ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile (dir / "sparse.equations.json")))
+  let inp ← ofErr "sparse: ingress" (Recheck.ingress bs json ["Sparse.minS"])
+  let P := inp.program
+  let cfg := Recheck.Config.forInput {} inp
+  let cert ← ofErr "sparse: produce" (Recheck.produce cfg inp)
+  let _ ← ofErr "sparse: the produced certificate" (Recheck.run cfg P cert)
+  let some (_, root) := P.roots.head? | throw (IO.userError "sparse: no root")
+  let sparse := cert.table.lazy.filter fun (c, _) => (Src.Table.checkSparseCases P c).isOk
+  let some (s, arity) := sparse.head? | throw (IO.userError "sparse: no sparse casesOn row in the certificate")
+  let withLazy := fun (rows : List (Src.CId × Nat)) => { cert with table := { cert.table with lazy := rows } }
+  refusedAtTable a "a lazy row for the root" cfg P (withLazy ((root, 2) :: cert.table.lazy))
+    s!"table entry of constant {root}: lazy: not a pinned row, and not a sparse casesOn"
+  refusedAtTable a "the sparse casesOn's row at a smaller arity" cfg P
+    (withLazy (cert.table.lazy.map fun (c, n) => if c == s then (c, n - 1) else (c, n)))
+    s!"table entry of constant {s}: lazy: not a pinned row, and a sparse casesOn of {arity} binders, not {arity - 1}"
+  -- The sparse casesOn's row beside a `resolve` entry that replaces its value: a
+  -- `csimp s g thm`, valid on its own, on the program with a copy `g` and `thm : @s = @g`.
+  let some (P', g, thm) := IxCCTests.Src.withCsimpTwin P s | throw (IO.userError "sparse: no csimp twin")
+  let paired := { cert with table := { cert.table with resolve := (s, .csimp g thm) :: cert.table.resolve } }
+  refusedAtTable a "the sparse casesOn's row beside a csimp entry" cfg P' paired
+    s!"table entry of constant {s}: lazy: a sparse casesOn's row beside a resolve entry"
+  expect a ((Src.Table.ofCert cfg.table P' { paired.table with
+      lazy := paired.table.lazy.filter (·.1 != s) }) matches .ok _)
+    "the csimp entry without the sparse row: the table accepted"
+  return s!"sparse casesOn: {sparse.length} row(s) in Sparse.minS's certificate; a row for an ordinary \
+    definition, a row at another arity and a row beside a csimp entry refused at table: table.entry"
 
 end IxCCTests.Recheck.Hostile

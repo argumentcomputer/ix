@@ -140,9 +140,40 @@ def controls : IO Unit := do
   check "counter rejects count increase" (decCell (.live 1 .dyn body) (.live 2 .dyn body) == none)
   check "counter rejects static free" (decCell (.live 1 .static body) .dead == none)
 
+/-- A match arm whose constructor is not chosen costs nothing in the compiled
+code: on the committed fixture `phase2-closures/sparse`, under plain RC, the
+Cfg machine's steps of each root at `b = 1` (its arm, `n` steps of work, not
+taken; Lean's sparse casesOn, a `lazy` row) are the same at `n = 10` and
+`n = 100000`, while at `b = 0` (taken) they grow with `n`. -/
+def sparseSteps : IO Unit := do
+  let dir : System.FilePath := "fixtures/corpus/phase2-closures"
+  let bytes ← IO.FS.readBinFile (dir / "sparse.ixe")
+  let eqs ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile (dir / "sparse.equations.json")))
+  for root in ["Sparse.minS", "Sparse.minO", "Sparse.minE", "Sparse.minN"] do
+    let input ← IO.ofExcept ((Recheck.ingress bytes eqs [root]).mapError (·.message))
+    let cfg : Recheck.Config := { names := [root] }
+    let (written, _) ← IO.ofExcept ((Recheck.RcReplay.produce cfg input).mapError (·.message))
+    let cert ← IO.ofExcept (Recheck.RcReplay.Cert.ofText written.toText)
+    let artifact ← IO.ofExcept ((Recheck.RcReplay.run cfg input.program cert).mapError (·.message))
+    let P := artifact.front.cfg
+    let some r := P.base.exports.head? | throw (IO.userError s!"{root}: no export")
+    let mut steps : List Nat := []
+    for (b, n, value) in [(1, 10, 1), (1, 100000, 1), (0, 10, 10), (0, 1000, 1000)] do
+      let args := [Own.RVal.lit (.nat b), .lit (.nat n)]
+      let (result, c) ← IO.ofExcept (← IO.lazyPure fun _ => runCounted P clock r args)
+      let obs ← observation s!"{root} {b} {n}" (fun (v, H) => H.readback v) result
+      check s!"{root} {b} {n}: the value {value}" (obs == .nat value)
+      steps := steps ++ [c.steps]
+    check s!"{root}: the untaken arm costs nothing (steps at n = 10 and 100000: {steps.take 2})"
+      (steps[0]? == steps[1]?)
+    check s!"{root}: the taken arm costs its work (steps at n = 10 and 1000: {steps.drop 2})"
+      (steps[2]?.getD 0 < steps[3]?.getD 0)
+    IO.println s!"PASS counters {root} sparse casesOn: steps {steps} at (b, n) = (1, 10), (1, 100000), (0, 10), (0, 1000)"
+
 def run (logs : System.FilePath) : IO Unit := do
   IxCCTests.Recheck.Rc.Fixtures.verify
   controls
+  sparseSteps
   let mut report := ["root\tn\tseed\tsteps\tcharges\talloc_attempts\talloc_calls\tallocated_cells\tinc_attempts\tinc_calls\tinc_units\tdynamic_inc_units\tdec_attempts\tdec_calls\tfreed_cells\tlive\tpeak_live"]
   let counterCases := cases ++ [(8, 2)]
   for name in IxCCTests.Recheck.Rc.Fixtures.roots do

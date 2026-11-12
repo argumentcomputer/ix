@@ -188,7 +188,8 @@
   {"path": "IxCCTests/Support/Bound.lean",
    "imports": ["IxCCTests.IxonV3.Builder", "IxCCTests.Support.Envelope"]},
   "IxCCTests.Src.Table":
-  {"path": "IxCCTests/Src/Table.lean", "imports": ["IxCCTests.Src.Support"]},
+  {"path": "IxCCTests/Src/Table.lean",
+   "imports": ["IxCCTests.Src.Support", "IxCC.Src.Table.Cert"]},
   "IxCCTests.Src.Support":
   {"path": "IxCCTests/Src/Support.lean", "imports": ["IxCC.Src.Load"]},
   "IxCCTests.Src.StuckEval":

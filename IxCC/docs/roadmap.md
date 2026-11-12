@@ -312,6 +312,32 @@ hosted-CI or cold-store timing is claimed.
   must hold the callee's: a convention change in Xl's semantics, the
   validator and stacking, with their proofs), or dropping the erased
   parameters (P5), which brings `StateT.bind` to four.
+- **Evaluation order of a match.** Lean elaborates a `match` with a catch-all
+  through a sparse casesOn (`T…._sparseCasesOn_N`) whose arms are ordinary
+  arguments, and compiles it as a `cases`. Since 2026-11-12 the table gives
+  each one a `lazy` row, found by its shape (`Table.checkSparseCases`), so
+  only the chosen arm runs, as in Lean's code; before, every arm ran first,
+  which made K2 `queue` quadratic (598 s at 100,000 elements under plain RC;
+  now 0.10 s, and 4.65 s at 5,000,000 against Lean's 0.22 s, the rest a
+  constant factor of `List.rec` with closures) and made an unchosen arm's stack
+  or heap failure the program's (`fixtures/corpus/phase2-closures`, fixture
+  `sparse`; [performance/sparse-cases-2026-11-12](performance/sparse-cases-2026-11-12/README.md)).
+  **A known difference from Lean's cost model remains:** Lean's code
+  generator also inlines `@[inline]` definitions (such as `Option.elim`,
+  whose `none` value is an ordinary argument) and floats a pure `let` into
+  the one branch that uses it (LCNF's `floatLetIn`); IxCC does neither, and
+  its middle end cannot move a call that may not return into a branch, so
+  such a value is computed on every path (not measured). **A known cost of
+  the step model:** an argument of a sparse casesOn that is already a value (a
+  λ arm, a variable major) is passed by name too, and costs SrcEval one forced
+  slot per use (K3 `const_fold` +4.9 % charged steps at `n = 10`; its compiled
+  code is byte-identical). The remedy is the value-shaped exemption: pass such
+  arguments strictly, in `Lazify` (not marking them by name) and in erasure
+  (accepting a strict value at a `lazy` position) together. **Unchecked:** a
+  pinned `lazy` row may still stand beside an entry that replaces the
+  definition's body (`eqn`, `csimp`, `case`, `prim`); only a sparse casesOn's
+  row is refused there (`Table.lazyResolveOk`). No committed table has such a
+  pairing.
 - **Proved.** For an accepted certificate, the object refines SrcEval on the
   checked source `a.src`, with the `GoesWrong` escape, under the x86, loader
   and driver assumptions of the [trust ledger](trusted-extern-ledger.md); at

@@ -6,7 +6,8 @@ import Std.Data.HashMap
 
 Collects proposals (pinned primitives, `lazy` and opaque-by-value rows;
 sidecar `eqn`/`csimp`/`inline` hints; `case` candidates found by scanning
-for recursor-headed definitions), checks each one, and resolves by priority
+for recursor-headed definitions, and `lazy` rows for the sparse casesOn among
+them), checks each one, and resolves by priority
 `prim > csimp > eqn > case > body`. Every refused explicit
 proposal leaves a `hint` diagnostic. Recursor kinds are derived for every
 recursor. -/
@@ -23,6 +24,8 @@ structure Stats where
   csimpAccepted : Array CId := #[]
   caseAccepted : Array CId := #[]
   lazyAccepted : Array CId := #[]
+  /-- Sparse casesOn given a `lazy` row by shape (`checkSparseCases`). -/
+  sparseAccepted : Array CId := #[]
   opaqueByValue : Array CId := #[]
   deriving Inhabited
 
@@ -116,7 +119,8 @@ def build (cfg : Config) (p : Program) (hints : Array Proposal) :
   -- case: scanned candidates and explicit hints.
   let explicitCases := hints.filterMap fun prop =>
     if prop.kind == .case then lookup prop.subject else none
-  for c in caseCandidates p ++ explicitCases do
+  let candidates := caseCandidates p
+  for c in candidates ++ explicitCases do
     if (resolve.get? c).isSome then continue
     match checkCase p c with
     | .ok entry =>
@@ -125,7 +129,8 @@ def build (cfg : Config) (p : Program) (hints : Array Proposal) :
     | .error msg =>
       if explicitCases.contains c then
         diags := diags.push { code := "hint", addr := some (p.addr c), message := msg }
-  -- lazy: pinned rows and hints.
+  -- lazy: pinned rows and hints (a hinted row is refused unless it is pinned
+  -- or a sparse casesOn: `checkLazy`).
   let mut lazy : NatMap Nat := .leaf
   let pinnedLazy := Pinned.lazyRows.filterMap fun (name, hex, arity) =>
     (lookup (Pinned.addr hex)).map (·, arity, name)
@@ -137,14 +142,28 @@ def build (cfg : Config) (p : Program) (hints : Array Proposal) :
     else none
   for (c, arity, name) in pinnedLazy ++ hintedLazy do
     if (lazy.get? c).isSome then continue
-    match checkLazy p c arity with
-    | .ok () =>
+    -- a sparse casesOn's row beside a `resolve` entry is refused (`lazyResolveOk`)
+    let paired := !Table.pinnedLazy p c arity && (resolve.get? c).isSome
+    match checkLazy p c arity, paired with
+    | .ok (), false =>
       lazy := lazy.insert c arity
       stats := { stats with lazyAccepted := stats.lazyAccepted.push c }
-    | .error msg =>
+    | .ok (), true =>
+      let d : Diag := { code := "hint", addr := some (p.addr c), name := some name
+                        message := "lazy: a sparse casesOn's row beside a resolve entry" }
+      diags := diags.push d
+    | .error msg, _ =>
       let d : Diag := { code := "hint", addr := some (p.addr c), name := some name
                         message := msg }
       diags := diags.push d
+  -- lazy: the sparse casesOn among the case candidates, at their binder count,
+  -- unless the constant already has a row or a `resolve` entry.
+  for c in candidates do
+    if (lazy.get? c).isSome || (resolve.get? c).isSome then continue
+    if let .ok arity := checkSparseCases p c then
+      if let .ok () := checkLazy p c arity then
+        lazy := lazy.insert c arity
+        stats := { stats with sparseAccepted := stats.sparseAccepted.push c }
   -- opaque-by-value allowlist.
   let mut opaqueByValue : NatSet := .leaf
   for n in p.known.pins.opaqueByValue do

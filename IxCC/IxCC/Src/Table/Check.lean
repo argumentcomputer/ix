@@ -650,13 +650,142 @@ def checkCase (p : Program) (key : CId) : Except String Resolve := do
   checkCaseMinors np ni m total argAt 0 rules
   return .case r
 
+/-! ## Sparse `casesOn`
+
+Lean elaborates a `match` that names some constructors and ends in a catch-all
+through a definition it generates per program, `T…._sparseCasesOn_N`
+(`Lean.Meta.mkSparseCasesOn`): one argument per named constructor (an *arm*),
+then the catch-all's continuation. Lean's code generator compiles it as a
+`cases`, so an arm runs only when its constructor is chosen; read as an
+ordinary definition, its arms are arguments SrcEval evaluates first. A `lazy`
+row passes them by name. The closure is anonymous, so the definition is
+recognised by its shape, as a `case` entry is. -/
+
+/-- The occurrences of the variable `i` in the value positions of `t`: all but
+a binder's domain, a Π and a `let`'s type, which are types and never evaluated
+(structural). -/
+def valueUses : Term → Nat → Nat
+  | .var j, i => if j == i then 1 else 0
+  | .app f a _ _, i => valueUses f i + valueUses a i
+  | .lam _ _ t, i => valueUses t (i + 1)
+  | .letE _ _ _ v b, i => valueUses v i + valueUses b (i + 1)
+  | .proj _ _ e, i => valueUses e i
+  | _, _ => 0
+
+/-- Every variable of `t` is bound inside it, `d` binders in (structural). -/
+def closedUnder : Term → Nat → Bool
+  | .var j, d => j < d
+  | .app f a _ _, d => closedUnder f d && closedUnder a d
+  | .lam _ dom t, d | .pi _ _ dom t, d => closedUnder dom d && closedUnder t (d + 1)
+  | .letE _ _ ty v b, d => closedUnder ty d && closedUnder v d && closedUnder b (d + 1)
+  | .proj _ _ e, d => closedUnder e d
+  | _, _ => true
+
+/-- One minor of a sparse casesOn, for a constructor of `f` fields and `ihs`
+IHs, under the definition's `B` binders, the arms being those from `arms` on:
+`some (some q)` for `λ fields ihs else. arm fields` (the arm binder `q` applied
+to the fields in order), `some none` for `λ fields ihs else. else h` with `h`
+closed (the catch-all applied to Lean's proof that the constructor is not a
+named one), `none` for anything else. -/
+def sparseMinor (B arms f ihs : Nat) (minor : Term) : Option (Option Nat) :=
+  let (ws, body) := minor.lams
+  let m := f + ihs + 1
+  if ws.length != m then none else
+  match body.spine with
+  | (.var 0, [(h, _, _)]) => if closedUnder h 0 then some none else none
+  | (.var v, args) =>
+    if m ≤ v && v - m < B - arms && args.length == f &&
+        args.zipIdx.all (fun ((a, _, _), i) => a.eqv (.var (f + ihs - i))) then
+      some (some (B - 1 - (v - m)))
+    else none
+  | _ => none
+
+/-- The minors of rules `j, j+1, …` (structural on the rules): the arm binder
+each named constructor's minor applies, in rule order. -/
+def sparseMinors (np nmin B arms : Nat) (argAt : Nat → Term) :
+    Nat → List Rule → Except String (List Nat)
+  | _, [] => pure []
+  | j, rule :: rules => do
+    let some ihs := ruleIhs np 1 nmin j rule
+      | throw s!"sparse: rule {j} has no minor-application shape"
+    let here ← match sparseMinor B arms rule.fields ihs (argAt (np + 1 + j)) with
+      | some q => pure q
+      | none => throw s!"sparse: minor {j} is neither an arm on its fields nor the catch-all on a proof"
+    let rest ← sparseMinors np nmin B arms argAt (j + 1) rules
+    pure (match here with | some q => q :: rest | none => rest)
+
+/-- Check that `f` is a sparse casesOn as `Lean.Meta.mkSparseCasesOn` writes
+it, and return its binder count, the arity of its `lazy` row:
+
+    λ params motive indices major arm₁ … armₖ.            (k ≥ 1)
+      T.rec params motive' minor₀ … minorₙ₋₁ indices major
+
+`T.rec` a single-motive recursor at the definition's levels; the parameters,
+indices and major the definition's own binders, in place; every minor of one of
+`sparseMinor`'s two forms, the named constructors' minors applying each arm
+binder once. And every binder but the motive occurs at most once in a value
+position of the body (`valueUses`; in this shape, exactly once), so a by-name
+argument is evaluated at most once, and an arm whose constructor is not chosen
+not at all. Recomputed from the definition wherever a `lazy` row is checked. -/
+def checkSparseCases (p : Program) (f : CId) : Except String Nat := do
+  let some (n, ty, value) := safeDefn? p f | throw "sparse: not a safe definition"
+  unless ty.nodesLe maxTermNodes && value.nodesLe maxTermNodes do
+    throw "sparse: term exceeds node budget"
+  let (binders, body) := value.lams
+  let (head, args) := body.spine
+  let .const r us := head | throw "sparse: the body is not a recursor spine"
+  let some (.recr _ _ rl np nmot nmin ni _ rules rty) := p.decl? r
+    | throw "sparse: the head is not a recursor"
+  unless rty.nodesLe maxTermNodes && rules.all (fun rule => rule.rhs.nodesLe maxTermNodes) do
+    throw "sparse: recursor exceeds node budget"
+  unless nmot == 1 do throw "sparse: not a single-motive recursor"
+  unless rl == n && us == paramUnivs n do throw "sparse: recursor levels are not the definition's"
+  unless rules.length == nmin do throw "sparse: rules and minors differ"
+  let B := binders.length
+  let arms := np + 1 + ni + 1
+  unless arms < B do throw "sparse: no arm binder after the major"
+  unless args.length == np + 1 + nmin + ni + 1 do throw "sparse: wrong argument count"
+  let bvar := fun (q : Nat) => Term.var (B - 1 - q)
+  let argAt := fun (i : Nat) => (args[i]?.map (·.1)).getD (.natLit 0)
+  if let some i := firstFailing (List.range np) fun i => (argAt i).eqv (bvar i) then
+    throw s!"sparse: parameter {i} out of place"
+  if let some i := firstFailing (List.range ni) fun i =>
+      (argAt (np + 1 + nmin + i)).eqv (bvar (np + 1 + i)) then
+    throw s!"sparse: index {i} out of place"
+  unless (argAt (np + 1 + nmin + ni)).eqv (bvar (np + 1 + ni)) do
+    throw "sparse: major out of place"
+  let used ← sparseMinors np nmin B arms argAt 0 rules
+  unless used.length == B - arms &&
+      (List.range (B - arms)).all (fun i => used.contains (arms + i)) do
+    throw "sparse: the named constructors' minors do not apply each arm once"
+  if let some q := firstFailing (List.range B) fun q =>
+      q == np || decide (valueUses body (B - 1 - q) ≤ 1) then
+    throw s!"sparse: binder {q} is used more than once"
+  return B
+
 /-! ## `lazy`, `inline`, `prim` -/
 
+/-- A pinned `lazy` row (`Pinned.lazyPins`): the constant's address with this
+arity. Addresses are content hashes, checked when the closure is read. -/
+def pinnedLazy (p : Program) (f : CId) (arity : Nat) : Bool :=
+  Pinned.lazyPins.contains (Pinned.addrNat (p.addr f), arity)
+
+/-- A `lazy` entry: a safe definition with at least `arity` leading λs that is
+a pinned row (`pinnedLazy`) or a sparse casesOn of `arity` binders
+(`checkSparseCases`), and nothing else. `Table.build`, `Table.validate` and
+`Table.ofCert` all check a `lazy` row with this function, so no proposal or
+certificate passes another definition's arguments by name. -/
 def checkLazy (p : Program) (f : CId) (arity : Nat) : Except String Unit := do
   let some (_, ty, value) := safeDefn? p f | throw "lazy: not a safe definition"
   unless ty.nodesLe maxTermNodes && value.nodesLe maxTermNodes do
     throw "lazy: term exceeds node budget"
   unless arity ≥ 1 && value.lamCount ≥ arity do throw "lazy: too few leading λs"
+  unless pinnedLazy p f arity do
+    match checkSparseCases p f with
+    | .ok b =>
+      unless b == arity do
+        throw s!"lazy: not a pinned row, and a sparse casesOn of {b} binders, not {arity}"
+    | .error msg => throw s!"lazy: not a pinned row, and not a sparse casesOn ({msg})"
 
 def checkInline (p : Program) (f : CId) (cap : Nat) : Except String Unit := do
   let some (_, ty, value) := safeDefn? p f | throw "inline: not a safe definition"
