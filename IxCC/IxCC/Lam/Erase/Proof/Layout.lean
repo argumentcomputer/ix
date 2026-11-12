@@ -61,6 +61,7 @@ theorem headArity_eq (h : Head) : headArity (Input.ofProgram p ch) h = p.headAri
         | some d => cases d <;> rfl
       | _ => rfl
   | prim _ => rfl
+  | word _ _ => rfl
 
 theorem evalConst_delta {c : CId} {b : Src.Term} (hb : (Input.ofProgram p ch).deltaBody c = some b)
     (k : Nat) (ls : Levels) :
@@ -75,6 +76,7 @@ theorem evalConst_delta {c : CId} {b : Src.Term} (hb : (Input.ofProgram p ch).de
     | eqn _ body => simp only [Option.some.injEq] at hb; subst hb; rfl
     | prim _ => simp at hb
     | case _ => simp at hb
+    | word _ _ _ => simp at hb
   | none =>
     rw [hr] at hb
     dsimp only at hb ⊢
@@ -103,6 +105,7 @@ theorem evalConst_head {c : CId} {h : Head} (hh : (Input.ofProgram p ch).headOf 
     | case _ => simp only [Option.some.injEq] at hh; subst hh; rfl
     | csimp _ _ _ => simp at hh
     | eqn _ _ => simp at hh
+    | word _ _ _ => simp at hh
   | none =>
     rw [hr] at hh
     dsimp only at hh ⊢

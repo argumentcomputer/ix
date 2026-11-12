@@ -230,7 +230,8 @@ private def verdictResults (a : Assert) (work : FilePath) : IO Unit := do
   IO.FS.writeBinFile closure (← IO.FS.readBinFile "fixtures/ownership/OS01-plain.ixe")
   IO.FS.writeFile sidecar "{"
   rejects a "exit zero with incomplete sidecar" (Own.Verdicts.compileResult 0 "" closure sidecar)
-  IO.FS.writeFile sidecar "{\"format\":\"ix/compile-equations/1\",\"equations\":[],\"failures\":[]}"
+  IO.FS.writeFile sidecar
+    "{\"format\":\"ix/compile-equations/2\",\"equations\":[],\"theorems\":[],\"failures\":[]}"
   expect a ((← Own.Verdicts.compileResult 0 "" closure sidecar).verdict == "ok")
     "resource-records: complete exit-zero outputs accepted"
   -- A real child may print a complete rejection and still crash or time out.

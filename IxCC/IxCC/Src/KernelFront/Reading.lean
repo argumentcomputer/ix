@@ -316,9 +316,10 @@ def Reading.typeCheck (rd : Reading) (p : Program) (c : CId) : Except String Uni
 def addrNatK (a : KAddr) : Nat := a.hash.data.toList.foldl (fun n b => n * 256 + b.toNat) 0
 
 /-- The pins the kernel's admitted role table gives: the mapping of
-`Src.Pinned` (`knownRoles`, `primRoles`, `stdAxiomRoles`) over the kernel's own
-decoding of the binding section; the D12 allowlist, which no role names, at
-its fixed address. -/
+`Src.Pinned` (`knownRoles`, `primRoles`, `stdAxiomRoles`, and `Nat.le` for the
+words' bridges) over the kernel's own decoding of the binding section; the D12
+allowlist and the fixed-width words' constants, which no role names, at their
+fixed addresses. -/
 def pinsOfTable (t : Ix.Kernel.RoleTable) : Pins :=
   let pin := fun (r : Ix.Kernel.Role) => (t.addressOf? r).map addrNatK
   { nat := pin .nat, natZero := pin .natZero, natSucc := pin .natSucc, natRec := pin .natRec
@@ -326,6 +327,10 @@ def pinsOfTable (t : Ix.Kernel.RoleTable) : Pins :=
     decIsFalse := pin .decidableIsFalse, decIsTrue := pin .decidableIsTrue
     prims := Pinned.primRoles.filterMap fun (op, r) => (pin r).map (op, ·)
     stdAxioms := Pinned.stdAxiomRoles.filterMap fun (_, r) => pin r
-    opaqueByValue := Pins.fixed.opaqueByValue }
+    opaqueByValue := Pins.fixed.opaqueByValue
+    natLe := pin .natLe
+    wordTypes := Pins.fixed.wordTypes, wordCtors := Pins.fixed.wordCtors
+    bitVecOfFin := Pins.fixed.bitVecOfFin, finMk := Pins.fixed.finMk
+    wordOps := Pins.fixed.wordOps }
 
 end IxCC.Src.KernelFront

@@ -1,4 +1,4 @@
-import IxCC.Src.Table.Check
+import IxCC.Src.Table.Word
 
 /-! # Revalidating the unfolding table
 
@@ -9,6 +9,8 @@ validator only asks that each entry present be justified, which is what the
 stage-S reading of the table needs:
 
 * `prim op`: `checkPrim` (the configured set, the pinned address, the type);
+* `word w op thm`: `checkWord` (enabled, a primitive operation, the pinned address, the
+  theorem's statement);
 * `csimp g us thm`: `checkCsimp` gives exactly this entry, its target has a
   δ body or an entry, and the redirect chain is acyclic;
 * `eqn thm body`: `checkEqn` gives exactly this body;
@@ -28,6 +30,7 @@ namespace IxCC.Src.Table
 /-- Check one `resolve` entry of constant `f`. -/
 def validateResolve (cfg : Config) (p : Program) (f : CId) : Resolve → Except String Unit
   | .prim op => checkPrim p f op cfg.prims
+  | .word w op thm => checkWord cfg p f w op thm
   | .csimp g us thm => do
     let e ← checkCsimp p f g thm
     unless e == .csimp g us thm do throw "csimp: not the checked entry"

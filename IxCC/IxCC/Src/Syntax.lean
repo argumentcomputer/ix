@@ -2,6 +2,7 @@ import IxCC.Ixon.V3.Const
 import IxCC.Src.Level
 import IxCC.Src.NatMap
 import IxCC.Src.Resource.Syntax
+import IxCC.Src.Word
 
 /-! # Src syntax
 
@@ -203,6 +204,10 @@ inductive Resolve where
   | eqn (thm : CId) (body : Term)
   /-- Key `T.casesOn`; `rec` is `T.rec`. -/
   | case (rec : CId)
+  /-- A fixed-width word operation (stage W1, F6w): `op` at width `w`, its meaning the stored
+  theorem `thm`, which states the operation on `UIntN.ofNat` words as `UIntN.ofNat` of a
+  formula over `Nat`'s operations (`ofNat`'s: the bridge to the constructor tower). -/
+  | word (w : Width) (op : WordOp) (thm : CId)
   deriving BEq, Repr, Inhabited
 
 /-- Where a subsingleton recursor field comes from. -/
@@ -288,6 +293,16 @@ structure Pins where
   stdAxioms : List Nat := []
   /-- The D12 allowlist: opaques evaluated through their value (`Lean.opaqueId`). -/
   opaqueByValue : List Nat := []
+  /-- `Nat.le` (the kernel's role `natLe`): the bound of a word's bridge (stage W1). -/
+  natLe : Option Nat := none
+  /-- Fixed-width words (stage W1), which no kernel role names, so always the fixed table's: per
+  width the type `UIntN` and its constructor `UIntN.ofBitVec`, the inner constructors of a
+  word's tower `BitVec.ofFin` and `Fin.mk`, and the primitive operations with their pins. -/
+  wordTypes : List (Width × Nat) := []
+  wordCtors : List (Width × Nat) := []
+  bitVecOfFin : Option Nat := none
+  finMk : Option Nat := none
+  wordOps : List ((Width × WordOp) × Nat) := []
   deriving Repr, Inhabited
 
 namespace Pins
@@ -327,10 +342,96 @@ def fixed : Pins :=
       [ 0x209c96511648d09459019701f6e1005409320a710a3cfd1895e5672134161e34,
         0x9b2874e754d995db8d27868f8100eb4d99c07cc2c8bfd099bb1e2986d0a6784a,
         0xcfa39364a87c7561ae41e5093915e97ccced20c5907ef7f67c02ac7029423c40 ]
-    opaqueByValue := [0xd0e998ecf33a57f1fcf98311611d1402b361f426d81d6a8ade77123e2e7b8046] }
+    opaqueByValue := [0xd0e998ecf33a57f1fcf98311611d1402b361f426d81d6a8ade77123e2e7b8046]
+    natLe := some 0x8f70b4a0ae9874c133f4b3d32433111988ab4b3dc1a47a6be6f6c341a7dbb0af
+    wordTypes :=
+      [ (.w8, 0x62b2c2eb4fe8c78580bf778bfe94c6ec2ccb25d308369fc00d87b885eebe5348),
+        (.w16, 0x9edaf9711f855f08bda9033b989550733f71572480654964275f9ee43f895e37),
+        (.w32, 0xb4a8c4b8cce7b73f86b254f5a321827aea9caf280835f2c1e6385454eea8c7e9),
+        (.w64, 0xbda2030d38bdc5a5c26e2572628f70f15284002136a26d9ac801f40b9008d8c5) ]
+    wordCtors :=
+      [ (.w8, 0xb61039bdd845d76ef19d9da023ac923b63e91a1b77df25ed7ff088e08d5109bf),
+        (.w16, 0x5875e015c1238d90f45a642961c1859d660ef982d32a7c697898d1f8504beae0),
+        (.w32, 0xb46dbf91b4fa8ef044fec7ebe92dee20a1a8165320dfc8e2b26dc96838f19eaf),
+        (.w64, 0x5ac912f189d3253ffd43cb9c457c166544e52ddeadf68e7c190addeb794c4624) ]
+    bitVecOfFin := some 0x0da4ec378fa26cb51e5ca8c58fbd279446868a921e2f14fb16754a4411886b58
+    finMk := some 0x5ad910465035b6a70a6485e4ed6bac66184270cc39a2c1ee33aef0db9b7fcc42
+    wordOps :=
+      [ ((.w8, .add), 0x48edc6f45381431fc8275e09b74553c545340fc7ca54b8be3b2770fed4a62168),
+        ((.w8, .sub), 0xd94f3f405c25efe73af2fe0abf9e927364aa9e9e258f1d01bc493473df8692e3),
+        ((.w8, .mul), 0x12ce08b13ad025af87c5438906ce5525854a964f4d0ac404525b09f6f3c41753),
+        ((.w8, .div), 0x5cb0791461bcce4af11f0b06b0518529107093b1c2630dc19c2e4200630492c0),
+        ((.w8, .mod), 0x4f5e0cad829d77d6907ae7045fa4249ad05e0a72bc39ad1441a3c02401b9c682),
+        ((.w8, .land), 0x6f7dd9c646effd8d4321f14fbeb8350862e8ce818caeb98c771d935b4ca9b88d),
+        ((.w8, .lor), 0xb98e0cdf92233c59a9442afe7ed8798271a4940d9909e125f97d3ae8b423efe5),
+        ((.w8, .xor), 0xe5e30dacda5133de3017eaf80750339191a346607fd6649a2c6a88138f514937),
+        ((.w8, .shiftLeft), 0x7a934932aff49725fcfee9bf5c24b0db12157f062112222bfbdc2c32d5f0392a),
+        ((.w8, .shiftRight), 0x7cad2cfe37d3be267a14abe3ac42162edcb142b42261bd21263bce8dcc9b29c6),
+        ((.w8, .complement), 0x00e8026c75aad06c02528b58c6aa9db101d2905b981c3458853ede1692e1fb06),
+        ((.w8, .neg), 0xbbe247f20ac1ec6db6ab9e2e193e4131c15f2698480f7bbf4adffaa7760cc359),
+        ((.w8, .ofNat), 0xb75e8ba5273021b9e05be4cf12a6a84306ec45e56cea662e2827ffae2877c3ee),
+        ((.w8, .toNat), 0xbd08efcda40ec22666e466fd8f721243f612ffa6ffd10dc2e6d37ac9339b38c8),
+        ((.w8, .convert .w16), 0x18fae9008ee39328c7cec31413dd710ae3921e85533e03ecab123accca2ed614),
+        ((.w8, .convert .w32), 0x458d21951d68df8d39a5892e05ec2bd39d4e6a5856813a70e63b87c6da6f1f2b),
+        ((.w8, .convert .w64), 0x496fc50009583a4ba57c4088870dcfbd39f1977120277d7cb59fabc889d188c7),
+        ((.w16, .add), 0xc089e9ca8b484f336e05a7ccbb7b38dcf3d7a662931e14fec2539c399aae8db6),
+        ((.w16, .sub), 0x84ad8ab16179024cd2502886f5b05f6ed481f6b6f7bee53d14dcd56db395d440),
+        ((.w16, .mul), 0xe08db23d73394207ab2e5dd8150e2805f68e954aad28876234c6f0a58990aeed),
+        ((.w16, .div), 0x303f4aeee4cc94b1b8289644b331a5ca68dbb59428b34ea2d37ed4fa49dd5906),
+        ((.w16, .mod), 0x188ef4e2d722bb90e32917882ed24be0d67553864cdbd435e985a52f63b43be4),
+        ((.w16, .land), 0x1c638f93cd5ea9c69cbd08c0c3a249f0c3bfc4d4dd8c473e8faf514b885ef29d),
+        ((.w16, .lor), 0xd4dbf54a5e6f8a233df512bd2f8292b184f76a144fe189faba0e7f00f83e8b55),
+        ((.w16, .xor), 0x776a0917c960f730d8e9bf7609aa1cb3d85467b6340d1c918623ba4ea0f87a33),
+        ((.w16, .shiftLeft), 0x3259327270435033d7c6923642f98fa106566e7ba9d581856ab0142c6c402a7b),
+        ((.w16, .shiftRight), 0xc424769b47cb5bd5e36b5fb8705d294e173b9bba594f23f2c495151dff0e4bba),
+        ((.w16, .complement), 0xd1549abbf1fe5285e1d86c23b9246f35041143ef535c79b444363bbab943ad1b),
+        ((.w16, .neg), 0x11a7ab2ae2be81cd5e854557dfd0da29e69a10e8a8b25ad3e046d05a1f0b1d9f),
+        ((.w16, .ofNat), 0x3584c8d254f8af46d15544b79656ec5fa605ef2e456e9c5361b672cca56a0537),
+        ((.w16, .toNat), 0x01521667d2d5da64f88c9d5bb03ae1af9d50ee1f67489d94c85404b8738a98b6),
+        ((.w16, .convert .w8), 0x6e00f4abbc93a160ceed1b64bb58cb2f7c67d44bec117507c4167efcd61d1fc2),
+        ((.w16, .convert .w32), 0x36fe72aa0f295fe627eef379cf4495c933093b7797712b62c8174d0561462241),
+        ((.w16, .convert .w64), 0x1e1ebca5d269152e4638e9ac4e6a33896fcce78b3c8803ef5642662d70016ccc),
+        ((.w32, .add), 0xcb990e9d2754b991d92c58ca7b146536547a408a0aed8c8aace5516617b1ca2b),
+        ((.w32, .sub), 0x7b865c4d96eaa8aba773686365a6dd98fdbb5c2658d72145119ad0044d7b9609),
+        ((.w32, .mul), 0x25aecdaf3d7959f92783083aa201c6212b2ed10410fa4f3a8e6a4348978b9ec9),
+        ((.w32, .div), 0x591870d2f660c861b872e5e3fde9edb81fa39c1302255f47226891e7410b356a),
+        ((.w32, .mod), 0x905a5f42245d0f27847bc4cfd2c535199cfaaff8a0e5925538dfef061158b072),
+        ((.w32, .land), 0x3b1b4e64da05710bc2f4e1593c663c704ddf91e1f99a0464813486b7e0ac7056),
+        ((.w32, .lor), 0x5d9eae6e8ebb660d11244e97a693913c03897caa4b0647be62587a5e532ab488),
+        ((.w32, .xor), 0x94397ae27a241722768e15808f6ac370bb73a8edb122d95125c1e456036507dc),
+        ((.w32, .shiftLeft), 0x4274fabf5e96ffdcf418545d58acde7b8733df4268b73758825c2e281f853c89),
+        ((.w32, .shiftRight), 0x69e5d36ee272871b882e737b3b9d02124bcb9240c782952273cc69ea2812cd0e),
+        ((.w32, .complement), 0x675e739c25ccd78070f555c5fe667bb1630858cef07062c94e9b65d07de0190f),
+        ((.w32, .neg), 0x6abaaf1ee675f15fe589cc7f872e9209e12a32495c2a80f14c09965280d79bf4),
+        ((.w32, .ofNat), 0xa3c473c618d4e1c54ef83fdc87e0775a6897a6f341ded5d76b9943fed6b0da07),
+        ((.w32, .toNat), 0x39e2b134273ce4ba230b50e6ab1fa434965198707788279dd271dbbe13c046a4),
+        ((.w32, .convert .w8), 0xe573640b31a131e4a31bc68375f111f8ac3cf47b2c2aeb71d419f1fbd938b900),
+        ((.w32, .convert .w16), 0x6d3395f5534d4840e5059bd82ae28ee298ebdcf14df5a6b89b42203a5fb5b41c),
+        ((.w32, .convert .w64), 0x02ade99a41ebcd9b71f080401e37c1e6a5e17ac5ab7b985493c04888ca0b6e4e),
+        ((.w64, .add), 0xc7fcffb6565f3c08960bcd52f0f47f62bc293bc6608af56f09d79a99bc374f8b),
+        ((.w64, .sub), 0xad5dfc44fd3c4198f7e5720cc3779d87e0a22c2ed851675728c433376c8c3464),
+        ((.w64, .mul), 0xccd9d62c4bd3fe479ec31aae048aecccbc4f152ef133aa7ddd9baa1e79fb4d52),
+        ((.w64, .div), 0x9e669a0c38d3edb5b7846f7aef1e37b51f23b733aa670fdc0fe031508dbc6348),
+        ((.w64, .mod), 0x4af1ab3a0ebc54ea600726e51e24f49d2f7f7dd2adab1293c57f281cdd2f7380),
+        ((.w64, .land), 0x321030178298019832173dffcfc7590943e4640c045b0d60ee599ece42fe67b0),
+        ((.w64, .lor), 0xceebd1a2935febc3ac02ee01d78959e0afc2d07c3e390e7f781f380489ee5ab7),
+        ((.w64, .xor), 0x28b0c33f818fd475cb26011d10553aa7c54f37a41af5f7f51129216558fa373c),
+        ((.w64, .shiftLeft), 0x9c7fcdcf233eda35dd92dd9bf885f58741ade0410433b0b943a942a80fecfb0d),
+        ((.w64, .shiftRight), 0xe70dc990e850e1cf7f8a939f3e5b75bf9c227ba8feffd3c25af35fc6db597675),
+        ((.w64, .complement), 0xf99ba8ace4552b0829b1955783f5f39a7158bedfc226a2edd8774f3c30002691),
+        ((.w64, .neg), 0xfb9ed5f996a2fceb3b6d1463a76854a67a97fceb314e11b750e9728fcc90ad8f),
+        ((.w64, .ofNat), 0x1528f3db357a69db747482babd2a0253f9c2eb59aed8ac4bf1ca9f6b732df779),
+        ((.w64, .toNat), 0x16c69034212fa247f551a9508827b21651ae686ab9e3021b2a4dc81ac2176e46),
+        ((.w64, .convert .w8), 0x7299c0fec972cc77295b52475032139f3d98bbfef2018c0fdd31145358ad3f32),
+        ((.w64, .convert .w16), 0x721ba830f58f50b65a3e6908dd9ace2076b6e99e2875f419f77ae8be7482bf8f),
+        ((.w64, .convert .w32), 0xd0909059dd930a1b057cb4af11bd8c63c30948308d683cf7961238f56a968a85) ] }
+
 
 /-- The pin of a primitive operation, if it has one. -/
 def prim? (p : Pins) (op : PrimOp) : Option Nat := p.prims.lookup op
+
+/-- The pin of a word operation, if it has one. -/
+def wordOp? (p : Pins) (w : Width) (op : WordOp) : Option Nat := p.wordOps.lookup (w, op)
 
 end Pins
 
@@ -349,6 +450,11 @@ structure Known where
   (D19). -/
   decIsFalse : Option CId := none
   decIsTrue : Option CId := none
+  /-- Fixed-width words (stage W1): per width the constructor `UIntN.ofBitVec`, and the inner
+  constructors `BitVec.ofFin` and `Fin.mk` of a word's tower, which F6w reads and builds. -/
+  wordCtors : List (Width × CId) := []
+  bitVecOfFin : Option CId := none
+  finMk : Option CId := none
   /-- The pins: ingress's choice for the environment the program was read
   from; every check of a pinned identity compares with these. -/
   pins : Pins := Pins.fixed

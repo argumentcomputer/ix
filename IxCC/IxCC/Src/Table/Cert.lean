@@ -10,7 +10,7 @@ its key, and a recursor kind only the recursor.
 
 `Table.ofCert` rebuilds the table from such a certificate on the recheck path
 (style V): every entry is produced by the entry check that justifies it
-(`checkPrim`, `checkCsimp`, `checkEqn`, `checkCase`, `deriveRecKind`,
+(`checkPrim`, `checkWord`, `checkCsimp`, `checkEqn`, `checkCase`, `deriveRecKind`,
 `checkLazy`, `checkInline`, the opaque-by-value allowlist), and the global
 conditions of `Table.validate` are checked on the result (pinned identities,
 `csimp` targets admissible and redirects acyclic, no sparse casesOn's `lazy`
@@ -27,6 +27,7 @@ namespace IxCC.Src.Table
 inductive Entry where
   | prim (op : PrimOp)
   | csimp (g thm : CId)
+  | word (w : Width) (op : WordOp) (thm : CId)
   | eqn (thm : CId)
   | case
   deriving BEq, DecidableEq, Repr, Inhabited
@@ -44,6 +45,7 @@ structure TableCert where
 /-- The certificate form of a `resolve` entry. -/
 def Entry.ofResolve : Resolve → Entry
   | .prim op => .prim op
+  | .word w op thm => .word w op thm
   | .csimp g _ thm => .csimp g thm
   | .eqn thm _ => .eqn thm
   | .case _ => .case
@@ -73,6 +75,7 @@ def TableCert.keysOk (size : Nat) (t : TableCert) : Bool :=
 /-- The entry a certificate line names, produced by its check. -/
 def entryOf (cfg : Config) (p : Program) (f : CId) : Entry → Except String Resolve
   | .prim op => do checkPrim p f op cfg.prims; pure (.prim op)
+  | .word w op thm => do checkWord cfg p f w op thm; pure (.word w op thm)
   | .csimp g thm => checkCsimp p f g thm
   | .eqn thm => checkEqn p f thm
   | .case => checkCase p f

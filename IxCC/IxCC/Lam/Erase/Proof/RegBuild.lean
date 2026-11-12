@@ -303,6 +303,7 @@ theorem reg_saturated (wf : ProgWF I) (cx : Cx) (h : Head) (q : Profile)
   unfold saturated
   cases h with
   | prim op => exact reg_primForm hrec wf cx op args
+  | word w op => exact CSound.decline
   | ctor c => exact reg_ctorForm hrec cx c q args
   | quotMk c => exact reg_quotMkForm hrec cx args
   | quotLift c => exact reg_quotLiftForm hrec cx args
@@ -363,6 +364,7 @@ theorem reg_constSpine (wf : ProgWF I) (cx : Cx) (c : CId) (us : List Ixon.Univ)
   refine CSound.ite (fun _ => CSound.decline_bind) fun _ => ?_
   split
   · exact reg_special hrec wf cx _ _ args
+  · exact CSound.decline
   · exact reg_special hrec wf cx _ _ args
   · exact reg_plainConst hrec cx c _ args
   · exact reg_plainConst hrec cx c _ args

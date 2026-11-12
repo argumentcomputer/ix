@@ -51,14 +51,15 @@ that closures (P8), arrays and bignums need.
   bounds); allocation by layout, the general release and the uniqueness
   test ([`Rt/Rc/Gen/Procs.lean`](../IxCC/Rt/Rc/Gen/Procs.lean),
   [compiler design, "Runtime"](compiler-design.md#runtime)); and their
-  proofs over a general heap invariant (`Rt/Rc/Gen/Proof/`, 94 modules):
+  proofs over a general heap invariant (`Rt/Rc/Gen/Proof/`, 97 modules):
   `AllocatorReady.reserve_total`, `release_caller_complete(_frame)`,
   `increment_caller_complete`, `Init.cxInit_ready` (all 71 free-list heads
   recorded), `isUnique_spec` (the test answers `Own.Rc.uniqueOf` and writes
   nothing), `Procs.LiveCell.toGen`, `Procs.HeapLive.toGen` (the bounded
   route's cells are cells of the general invariant), and the facts of the
   fully scanned cells the pipeline allocates (`Gen/Proof/Scanned.lean`:
-  `fieldsClass n`, classes 2–44). 251 exact axiom fences
+  `fieldsClass n`, classes 2–44), and the in-place reuse lemmas
+  ([below](#in-place-reuse)). 301 exact axiom fences
   (`IxCCTests/Fences/RtRcGen/`). The pipeline emits `Gen.alloc` and
   `Gen.dec` for every plain-RC program; the proof bridge's `HeapState`
   carries `Gen.AllocatorReady maxClass`
@@ -87,7 +88,9 @@ that closures (P8), arrays and bignums need.
 - *Not implemented.* Scalar fields in compiled programs (the runtime above
   has them; the constructor table has none, and `Cfg.Rc.Native` and
   `Rt.Lower` refuse a constructor with scalar fields until DR2 produces
-  them); reset/reuse (the runtime uniqueness test exists, unused); static
+  them); reset/reuse and in-place update (the uniqueness test and the
+  in-place reuse lemmas are proved, but no pass emits a reuse: heap stage 4,
+  after stage 2's placement makes cells unique at their last use); static
   reuse from `unique` contracts; borrowed parameters beyond the zero-RC
   policy selection; inline fast paths (each RC operation calls a runtime
   procedure today, `rt_rc_inc` of `Rt.Rc.Procs` or `rt_rc_dec` of
@@ -138,6 +141,49 @@ Beyond the plan's statements, the invariant carries what the proofs needed:
   `pending_not_free`, `recycle_distinct`, `recycle_free_placed`) for any
   slot that is not free, so the recycling of a scalar-only cell (a live
   slot) reuses them.
+
+#### In-place reuse
+
+Proved (heap stage 1, part 3), used by nothing yet: the facts a reuse pass
+(heap stage 4, Lean's `reset`/`reuse`) and DR3's in-place update will rest
+on. Abstractly a reuse is a release of one cell followed by an allocation:
+`Own.Rc.reuseCell H l b'` kills the unique cell `l` and appends `b'` with
+one reference ([`Own/Rc/Reuse.lean`](../IxCC/Own/Rc/Reuse.lean)).
+`reuseCell_balance` (exact counts: the old cell's field tokens return to
+the caller, the new cell's are taken from it), `reuseCell_heapOk` (order)
+and `reuseCell_readback` (every token the caller held and every old field
+reads back as before; the new location reads back as `b'` over the old
+values) hold when the caller's token for `l` is among balanced tokens, `l`
+has one reference, and the old fields and the caller's other tokens equal,
+location by location, the new fields and the tokens it keeps (`hmass`;
+literals are free). Physically
+([`Gen/Proof/InPlace.lean`](../IxCC/Rt/Rc/Gen/Proof/InPlace.lean)),
+`inPlace_ready`: rewriting the cell's storage (`Gen.writeCell`: a
+one-reference header at the old class, then the new words) on an
+`AllocatorReady` heap gives `AllocatorReady` again, for the reused heap,
+with the fresh location mapped to the old address, the slot relabelled, and
+no free list, bump pointer or other cell changed.
+
+A reuse site must establish: the cell unique with the caller's token among
+the balanced ones (what `isUnique_spec` answers), `hmass`, a valid layout
+of the old cell's class (`hlayout`, `hclass`), and a word for every new
+field (`hwords`: a value word at a scanned position, a literal below 2⁶⁴ at
+a scalar one). The plan asked for a word at the scalar positions only
+(`hscalars`); that statement was false (a scanned string literal or `Nat`
+≥ 2⁶³ is stored as 0, which the release then takes for a cell), and the
+general premise is the one the allocation path already has. The invariant
+gained nothing.
+
+Two limits, recorded and not pursued: a cell cannot be reused at a layout
+of a smaller class, because the invariant ties a cell's header class to its
+layout's (`LiveCell.header`, `ArenaPartition.live`; physically harmless, it
+would need a slot class separate from the layout class); and static
+children are outside the invariant (`HeapLive` admits only dynamic cells
+and `Balance` gives a static location no token), so reuse says nothing
+about them until static objects exist (stage 6). Controls:
+`IxCCTests.Rt.Rc.GenReuseControls` (`tests-rt-rc controls`: the instances,
+and as negative controls a scanned field without a word, a shared cell and
+a larger class) and `GenNativeControls.reuse` (`tests-rt-rc native`).
 
 #### The general release's cost
 
@@ -276,7 +322,9 @@ annotated twin measured against the plain one.
 
 ## DR2. Fixed-width integers and `Int`
 
-**Status: planned** (Phase 3).
+**Status: in progress** (Phase 3, stage W1: the word operations as primitives, tagged at run
+time). Implemented so far: the operations' exact meaning, SrcEval's rule, the pins, the stored
+equations and their table check, behind a switch that is off (below, "Stage W1").
 
 **Motivation.** BLAKE3 and `qsort` (K4); the bignum library's limbs; IxCK,
 whose executable closure uses `UInt64`, `UInt8`, `USize` and `Int`
@@ -285,11 +333,16 @@ throughout (occurrences in the 79 modules of the import closure of
 `UInt64` 219, `UInt8` 137, `Int` 70, `USize` 7); IxOS, where addresses and page-table
 entries are 64-bit words.
 
-**Current state.** There are no fixed-width primitives. Erasure unboxes
+**Current state.** No compiled program uses a fixed-width primitive yet. Erasure unboxes
 single-field structures ([Relevance and
 erasure](compiler-design.md#relevance-and-erasure)), so `UInt64` (a structure
-over `BitVec 64`, over `Fin (2^64)`) arrives at Lir as a tagged `Nat`; a value
-at or above 2^63 then fails with `natOverflow` ([`Rt/Layout.lean:35`](../IxCC/Rt/Layout.lean)).
+over `BitVec 64`, over `Fin (2^64)`) arrives at Lir as a tagged `Nat`, and its operations compile
+from their reference bodies. **Every** `UInt64` operation then fails natively with `natOverflow`
+([`Rt/Layout.lean:35`](../IxCC/Rt/Layout.lean)), on every input, `3 + 4` included: each body
+computes `x % 2^64` with `2^64` a `Nat` (`BitVec.ofNat`, `Fin.Internal.ofNat`), which has no tagged
+word. (An earlier version of this paragraph said only values at or above `2^63` fail.) `UInt8`,
+`UInt16` and `UInt32` work, their sizes fitting; compiled, the middle end inlines their bodies and
+folds the constants.
 Fir has a `word` representation that nothing selects
 ([`Fir/Syntax.lean:70-77`](../IxCC/Fir/Syntax.lean)). `USize`'s width comes
 from `System.Platform.getNumBits`, an `@[extern]` opaque in Lean's
@@ -315,6 +368,54 @@ over `Nat`. No committed fixture exercises any of these types.
 3. `Int` first compiles as ordinary data through its reference bodies
    (needs only DR1). Then a signed small representation and primitives;
    large values use the bignum library (Phase 4).
+
+**Stage W1** (words as primitives, tagged at run time; the data-types plan's first stage). What
+exists, behind `Table.Config.words`, which is off, so no compile changes:
+- the exact meaning `WordOp.eval` of every operation of `UInt8` to `UInt64`
+  ([`Src/Word.lean`](../IxCC/Src/Word.lean)), tested against Lean's C implementations and, by the
+  kernel's `decide`, against the reference bodies;
+- SrcEval's rule F6w (contract version 2, [evaluator interface](evaluator-interface.md)) and the
+  table entry `word w op thm`. The rule reads a word only when its number is below the width's
+  size, so it is stuck on a tower only a false proof builds (the reference body would compute
+  on it), and every tower it builds is in range (`WordOp.eval_word_lt`). The entry names the
+  constant at the operation's pinned address
+  (`src-tables.tsv`'s `word` rows), and `thm` a stored theorem whose statement is the operation's
+  equation over `Nat`'s operations on `UIntN.ofNat x` (and `y`); `ofNat`'s theorem is the
+  *reducing bridge* `∀ x (h : Nat.le (Nat.succ (x % size)) size), ofNat x = tower (x % size) h`
+  ([`Src/Table/Word.lean`](../IxCC/Src/Table/Word.lean)). An earlier draft's bridge, below the
+  size only, constrained nothing above it (a key returning `5` there satisfied it);
+  `IxCCTests/Src/Words.lean` refutes that key with the reducing bridge;
+- the theorems, which `ix compile --equations --word-equations` adds for every word operation a closure reaches
+  (`Ix/Compile/WordEquations.lean`) and names, with the operation, in its output's `theorems`
+  list; the sidecar carries the list with addresses ([corpus](corpus.md), "The sidecar"), and the
+  producer proposes a word entry from it only, so ingress, which reads only what a program
+  reaches, finds each theorem and reads it with its proof once its operation is reached (a
+  proposal's theorem is a proof seed); `checkWord` refuses a theorem read by its statement, as
+  `checkEqn` does, and its axiom-closure walk sees the proof; a tampered theorem is refused by
+  the kernel's acceptance at ingress (`tests-src`, `WordRules.tampered`);
+- the harness (`tests-src`): on every boundary case of every primitive operation at every width,
+  F6w's result equals SrcEval's own run of the operation's Lean 4.34.1 reference body (21,996
+  cases), and on a tower at or above the size F6w is stuck (1,216 cases);
+- the decisions (`decEq`, `decLt`, `decLe`) stay reference bodies, not primitives: their bodies
+  reduce to `Nat`'s decisions and never build `2^64`. A primitive decision would need, in the
+  grounding, that every element of `Decidable p` in the model is one of its two constructors'
+  images, which no law states.
+
+Not yet: the native lowering (erasure declines a word entry, `erase-word`), and the grounding.
+The grounding check refuses a word entry (`Faith.noWord`, conjunct `noWord`, temporary): the word
+case of the fundamental lemma is not proved. Besides what the stored equations say (`mem` and
+`eq_equality` make each hold in every model; `nat_accel` evaluates its right side), that case needs
+the result tower typed in the model: its constructors' stored types mention
+`OfNat.ofNat Nat 64 _`, `2 ^ w` through `HPow` and `LT.lt Nat instLTNat`, which no stored
+equation speaks of. The grounding's direct route decides them by its conversion (δ, `proj_ctor`,
+`nat_accel`; measured on the words closure), so no law or further stored theorem is expected.
+The input towers' range needs no fact: F6w reads only towers below the size. When that case is
+proved, `noWord` gives way to a check that every word entry's facts hold. Open for turning the
+switch on: `ix compile --word-equations` is opt-in (a closure reaches word operations through
+proofs alone, an `omega` termination proof for one, so adding the equations by default would
+change closures that never run a word operation); whether `ix` should add them by itself for the
+word operations a closure reaches in positions that run is not decided, and until it is, the
+families that need word entries pass the flag.
 
 SrcEval needs one rule for raw words to be sound: a bounded construction
 whose erased proof is false (for example `UInt64.ofNatLT n h` with

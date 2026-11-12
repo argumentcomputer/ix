@@ -122,6 +122,7 @@ import IxCC.Src.Recheck
 import IxCC.Src.Admit
 import IxCC.Src.Value
 import IxCC.Src.Prim
+import IxCC.Src.Word
 import IxCC.Src.Semantics
 import IxCC.Src.Readback
 import IxCC.Src.Load

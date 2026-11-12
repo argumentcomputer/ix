@@ -204,6 +204,13 @@ theorem Head.eq_of_beq {a b : Head} (h : (a == b) = true) : a = b := by
     cases b with
     | prim d => exact congrArg _ (PrimOp.eq_of_beq (show (c == d) = true from h))
     | _ => cases h
+  | word w op =>
+    cases b with
+    | word w' op' =>
+      have h' : (w == w' && op == op') = true := h
+      simp only [Bool.and_eq_true, beq_iff_eq] at h'
+      rw [h'.1, h'.2]
+    | _ => cases h
 
 omit I in
 theorem Head.opt_eq_of_beq {a b : Option Head} (h : (a == b) = true) : a = b := by
@@ -218,6 +225,7 @@ theorem sound_wrapperBody (h : Head) (q : Profile) :
   unfold wrapperBody
   cases h with
   | prim op => exact Sound.pure fun _ => .prim rfl
+  | word w op => exact Sound.decline
   | ctor c =>
     dsimp only
     refine Sound.ite (fun hh => ?_) fun _ => Sound.decline_bind

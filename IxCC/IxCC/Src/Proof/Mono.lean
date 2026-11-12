@@ -158,6 +158,9 @@ theorem fire_agrees_of {k' : Nat} (hk : k ≤ k') (h : Head) (ls : Levels) (args
   | prim op =>
     rw [fire_prim, fire_prim]
     exact .bind (forceAll_agrees_of ih hk args) fun _ _ => .refl _
+  | word w op =>
+    rw [fire_word, fire_word]
+    exact .bind (forceAll_agrees_of ih hk args) fun _ _ => .refl _
 
 theorem apply_agrees_of {k' : Nat} (hk : k ≤ k') (f : Value) (s : Slot) :
     Agrees (apply p k' f s) (apply p k f s) := by
@@ -201,6 +204,7 @@ theorem evalConst_agrees_of {k' : Nat} (hk : k ≤ k') (ls : Levels) (c : CId) :
   | some res =>
     cases res with
     | prim op => exact headValue_agrees_of ih hk ls _
+    | word w op _ => exact headValue_agrees_of ih hk ls _
     | csimp g vs _ => exact hl _
     | eqn _ body => exact hl _
     | case _ => exact headValue_agrees_of ih hk ls _
