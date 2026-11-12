@@ -108,11 +108,11 @@ theorem checkFuns_ok {F : Fir.Program} {candidate : Src.NatMap Code} :
       cases hb : candidate.get? g with
       | none => rw [hg, hb] at h; cases h
       | some body =>
-        rw [hg, hb] at h
+        simp only [hg, hb] at h
         cases hc : checkBodyE gd body with
-        | error e => rw [hc] at h; cases h
+        | error e => simp only [hc] at h; cases h
         | ok u =>
-          rw [hc] at h
+          simp only [hc] at h
           rcases List.mem_cons.mp hf with rfl | hf
           · have : gd = fd := Option.some.inj (hg.symm.trans hfd)
             subst this
