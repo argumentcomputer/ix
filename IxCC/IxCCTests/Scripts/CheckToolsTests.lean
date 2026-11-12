@@ -13,7 +13,8 @@ open IxCC.Tools.TrustLedger
 private def rejectsAll (label : String) (fragments : List String) (action : IO Unit) : IO Unit := do
   let error ← try action; pure none catch error => pure (some error.toString)
   let some error := error | throw (IO.userError s!"{label}: unexpectedly accepted")
-  need (fragments.all error.contains) s!"{label}: rejected for the wrong reason: {error}"
+  need (fragments.all fun fragment => error.contains fragment)
+    s!"{label}: rejected for the wrong reason: {error}"
 
 private def rejects (label fragment : String) (action : IO Unit) : IO Unit :=
   rejectsAll label [fragment] action
