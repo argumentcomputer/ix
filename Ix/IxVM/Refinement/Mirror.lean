@@ -25,6 +25,9 @@ module is the helper library those proofs use:
 * patterns: `matchPattern_bind`, `matchPattern_wildcard`, and the `simp` set
   `matchPattern_simps` for tuple, array and constructor patterns. -/
 
+/-- Execution reduction for generated mirror proofs, independent of the global simp set. -/
+register_simp_attr mirror_eval
+
 namespace Aiur.Generic.SourceSemantics
 
 variable {F : Type} [Field F] [DecidableEq F] {world : World F} {types : Types}

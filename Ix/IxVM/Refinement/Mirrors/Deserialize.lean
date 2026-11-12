@@ -27,10 +27,10 @@ def bindPair {α β γ : Type} (x : Option (α × β)) (f : α → β → Option
   | some (a, b) => f a b
   | none => none
 
-@[simp] theorem bindPair_some {α β γ : Type} (a : α) (b : β) (f : α → β → Option γ) :
+@[simp, mirror_eval] theorem bindPair_some {α β γ : Type} (a : α) (b : β) (f : α → β → Option γ) :
     bindPair (some (a, b)) f = f a b := rfl
 
-@[simp] theorem bindPair_none {α β γ : Type} (f : α → β → Option γ) :
+@[simp, mirror_eval] theorem bindPair_none {α β γ : Type} (f : α → β → Option γ) :
     bindPair (none : Option (α × β)) f = none := rfl
 
 @[congr] theorem bindPair_congr {α β γ : Type} {x x' : Option (α × β)}
@@ -154,7 +154,7 @@ theorem «UInt32::compact».of_eval : «UInt32::compact».Complete := by
   obtain ⟨k94, hk95⟩ := «UInt8::to_field».of_eval callee84
   refine ⟨k31 + k52 + k73 + k94 + 1, fun k hk => ?_⟩
   obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-  simp (config := { decide := true, maxSteps := 10000000 }) [«UInt32::compact», pr29, hk32 k' (by omega), op17, op38, pr50, hk53 k' (by omega), op11, op59, pr71, hk74 k' (by omega), op5, op80, pr92, hk95 k' (by omega)]
+  simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «UInt32::compact», pr29, hk32 k' (by omega), op17, op38, pr50, hk53 k' (by omega), op11, op59, pr71, hk74 k' (by omega), op5, op80, pr92, hk95 k' (by omega)]
 
 /-- The mirror of `UInt8::from_fields`. -/
 def «UInt8::from_fields» : Nat → Heap F → SourceValue F → SourceValue F → Option (SourceValue F × Heap F)
@@ -202,7 +202,7 @@ theorem «UInt8::from_fields».of_eval : «UInt8::from_fields».Complete := by
   obtain ⟨rfl, rfl⟩ := args35.nil_inv
   refine ⟨1, fun k hk => ?_⟩
   obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-  simp (config := { decide := true, maxSteps := 10000000 }) [«UInt8::from_fields», hm22]
+  simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «UInt8::from_fields», hm22]
 
 /-- The mirror of `UInt32::from_fields`. -/
 def «UInt32::from_fields» : Nat → Heap F → SourceValue F → Option (SourceValue F × Heap F)
@@ -304,7 +304,7 @@ theorem «UInt32::from_fields».of_eval : «UInt32::from_fields».Complete := by
   obtain ⟨rfl, rfl⟩ := args96.nil_inv
   refine ⟨k28 + k64 + 1, fun k hk => ?_⟩
   obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-  simp (config := { decide := true, maxSteps := 10000000 }) [«UInt32::from_fields», pr17, pr26, hk29 k' (by omega), hp31, pr53, pr62, hk65 k' (by omega), hp67]
+  simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «UInt32::from_fields», pr17, pr26, hk29 k' (by omega), hp31, pr53, pr62, hk65 k' (by omega), hp67]
 
 /-- The mirror of `UInt32::less_than_fields`. -/
 def «UInt32::less_than_fields» : Nat → Heap F → SourceValue F → SourceValue F → Option (SourceValue F × Heap F)
@@ -507,7 +507,7 @@ theorem «IxonDeserialize::assert_prj_empty_tables».of_eval : «IxonDeserialize
     obtain ⟨rfl, rfl⟩ := args58.nil_inv
     refine ⟨1, fun k hk => ?_⟩
     obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-    simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::assert_prj_empty_tables», hp9, ld23, hp26, ld37, hp40, ld51, hp54]
+    simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «IxonDeserialize::assert_prj_empty_tables», hp9, ld23, hp26, ld37, hp40, ld51, hp54]
   · dsimp only [List.length] at hc12
     rcases selectArm_construct_inv (by trivial) sel13 with ⟨ys59, hp60, hl61, ml62, rfl⟩ | ⟨hc63, sel64⟩
     · rcases ys59 with _ | ⟨y65, _ | ⟨_, _⟩⟩ <;> simp at hl61
@@ -548,7 +548,7 @@ theorem «IxonDeserialize::assert_prj_empty_tables».of_eval : «IxonDeserialize
       obtain ⟨rfl, rfl⟩ := args109.nil_inv
       refine ⟨1, fun k hk => ?_⟩
       obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-      simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::assert_prj_empty_tables», hc12, hp60, ld74, hp77, ld88, hp91, ld102, hp105]
+      simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «IxonDeserialize::assert_prj_empty_tables», hc12, hp60, ld74, hp77, ld88, hp91, ld102, hp105]
     · dsimp only [List.length] at hc63
       rcases selectArm_construct_inv (by trivial) sel64 with ⟨ys110, hp111, hl112, ml113, rfl⟩ | ⟨hc114, sel115⟩
       · rcases ys110 with _ | ⟨y116, _ | ⟨_, _⟩⟩ <;> simp at hl112
@@ -589,7 +589,7 @@ theorem «IxonDeserialize::assert_prj_empty_tables».of_eval : «IxonDeserialize
         obtain ⟨rfl, rfl⟩ := args160.nil_inv
         refine ⟨1, fun k hk => ?_⟩
         obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-        simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::assert_prj_empty_tables», hc12, hc63, hp111, ld125, hp128, ld139, hp142, ld153, hp156]
+        simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «IxonDeserialize::assert_prj_empty_tables», hc12, hc63, hp111, ld125, hp128, ld139, hp142, ld153, hp156]
       · dsimp only [List.length] at hc114
         rcases selectArm_construct_inv (by trivial) sel115 with ⟨ys161, hp162, hl163, ml164, rfl⟩ | ⟨hc165, sel166⟩
         · rcases ys161 with _ | ⟨y167, _ | ⟨_, _⟩⟩ <;> simp at hl163
@@ -630,14 +630,14 @@ theorem «IxonDeserialize::assert_prj_empty_tables».of_eval : «IxonDeserialize
           obtain ⟨rfl, rfl⟩ := args211.nil_inv
           refine ⟨1, fun k hk => ?_⟩
           obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-          simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::assert_prj_empty_tables», hc12, hc63, hc114, hp162, ld176, hp179, ld190, hp193, ld204, hp207]
+          simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «IxonDeserialize::assert_prj_empty_tables», hc12, hc63, hc114, hp162, ld176, hp179, ld190, hp193, ld204, hp207]
         · dsimp only [List.length] at hc165
           obtain ⟨rfl, rfl⟩ := selectArm_wildcard_inv sel166
           obtain ⟨vs212, args213, rfl⟩ := d6.tuple_inv
           obtain ⟨rfl, rfl⟩ := args213.nil_inv
           refine ⟨1, fun k hk => ?_⟩
           obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-          simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::assert_prj_empty_tables», hc12, hc63, hc114, hc165]
+          simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «IxonDeserialize::assert_prj_empty_tables», hc12, hc63, hc114, hc165]
 
 /-- The mirror of `UInt64::saturating_pred`. -/
 def «UInt64::saturating_pred» : Nat → Heap F → SourceValue F → Option (SourceValue F × Heap F)
@@ -872,7 +872,7 @@ theorem «UInt64::saturating_pred».of_eval : «UInt64::saturating_pred».Comple
                   obtain ⟨rfl, rfl⟩ := args228.nil_inv
                   refine ⟨k36 + k57 + k78 + k99 + k120 + k141 + k162 + k183 + 1, fun k hk => ?_⟩
                   obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-                  simp (config := { decide := true, maxSteps := 10000000 }) [«UInt64::saturating_pred», hp8, hk37 k' (by omega), hc38, hk58 k' (by omega), hc59, hk79 k' (by omega), hc80, hk100 k' (by omega), hc101, hk121 k' (by omega), hc122, hk142 k' (by omega), hc143, hk163 k' (by omega), hc164, hk184 k' (by omega), hc185]
+                  simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «UInt64::saturating_pred», hp8, hk37 k' (by omega), hc38, hk58 k' (by omega), hc59, hk79 k' (by omega), hc80, hk100 k' (by omega), hc101, hk121 k' (by omega), hc122, hk142 k' (by omega), hc143, hk163 k' (by omega), hc164, hk184 k' (by omega), hc185]
                 · obtain ⟨rfl, rfl⟩ := selectArm_wildcard_inv sel186
                   obtain ⟨vs229, args230, rfl⟩ := d172.array_inv
                   obtain ⟨v231, vs232, m233, rfl, d234, args235⟩ := args230.cons_inv
@@ -908,7 +908,7 @@ theorem «UInt64::saturating_pred».of_eval : «UInt64::saturating_pred».Comple
                   obtain ⟨rfl, rfl⟩ := args270.nil_inv
                   refine ⟨k36 + k57 + k78 + k99 + k120 + k141 + k162 + k183 + k296 + 1, fun k hk => ?_⟩
                   obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-                  simp (config := { decide := true, maxSteps := 10000000 }) [«UInt64::saturating_pred», hp8, hk37 k' (by omega), hc38, hk58 k' (by omega), hc59, hk79 k' (by omega), hc80, hk100 k' (by omega), hc101, hk121 k' (by omega), hc122, hk142 k' (by omega), hc143, hk163 k' (by omega), hc164, hk184 k' (by omega), hc185, hk297 k' (by omega), op285, hm298]
+                  simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «UInt64::saturating_pred», hp8, hk37 k' (by omega), hc38, hk58 k' (by omega), hc59, hk79 k' (by omega), hc80, hk100 k' (by omega), hc101, hk121 k' (by omega), hc122, hk142 k' (by omega), hc143, hk163 k' (by omega), hc164, hk184 k' (by omega), hc185, hk297 k' (by omega), op285, hm298]
               · obtain ⟨rfl, rfl⟩ := selectArm_wildcard_inv sel165
                 obtain ⟨vs299, args300, rfl⟩ := d151.array_inv
                 obtain ⟨v301, vs302, m303, rfl, d304, args305⟩ := args300.cons_inv
@@ -946,7 +946,7 @@ theorem «UInt64::saturating_pred».of_eval : «UInt64::saturating_pred».Comple
                 obtain ⟨rfl, rfl⟩ := args368.nil_inv
                 refine ⟨k36 + k57 + k78 + k99 + k120 + k141 + k162 + k361 + 1, fun k hk => ?_⟩
                 obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-                simp (config := { decide := true, maxSteps := 10000000 }) [«UInt64::saturating_pred», hp8, hk37 k' (by omega), hc38, hk58 k' (by omega), hc59, hk79 k' (by omega), hc80, hk100 k' (by omega), hc101, hk121 k' (by omega), hc122, hk142 k' (by omega), hc143, hk163 k' (by omega), hc164, hk362 k' (by omega), op350, hm363]
+                simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «UInt64::saturating_pred», hp8, hk37 k' (by omega), hc38, hk58 k' (by omega), hc59, hk79 k' (by omega), hc80, hk100 k' (by omega), hc101, hk121 k' (by omega), hc122, hk142 k' (by omega), hc143, hk163 k' (by omega), hc164, hk362 k' (by omega), op350, hm363]
             · obtain ⟨rfl, rfl⟩ := selectArm_wildcard_inv sel144
               obtain ⟨vs370, args371, rfl⟩ := d130.array_inv
               obtain ⟨v372, vs373, m374, rfl, d375, args376⟩ := args371.cons_inv
@@ -986,7 +986,7 @@ theorem «UInt64::saturating_pred».of_eval : «UInt64::saturating_pred».Comple
               obtain ⟨rfl, rfl⟩ := args440.nil_inv
               refine ⟨k36 + k57 + k78 + k99 + k120 + k141 + k427 + 1, fun k hk => ?_⟩
               obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-              simp (config := { decide := true, maxSteps := 10000000 }) [«UInt64::saturating_pred», hp8, hk37 k' (by omega), hc38, hk58 k' (by omega), hc59, hk79 k' (by omega), hc80, hk100 k' (by omega), hc101, hk121 k' (by omega), hc122, hk142 k' (by omega), hc143, hk428 k' (by omega), op416, hm429]
+              simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «UInt64::saturating_pred», hp8, hk37 k' (by omega), hc38, hk58 k' (by omega), hc59, hk79 k' (by omega), hc80, hk100 k' (by omega), hc101, hk121 k' (by omega), hc122, hk142 k' (by omega), hc143, hk428 k' (by omega), op416, hm429]
           · obtain ⟨rfl, rfl⟩ := selectArm_wildcard_inv sel123
             obtain ⟨vs442, args443, rfl⟩ := d109.array_inv
             obtain ⟨v444, vs445, m446, rfl, d447, args448⟩ := args443.cons_inv
@@ -1028,7 +1028,7 @@ theorem «UInt64::saturating_pred».of_eval : «UInt64::saturating_pred».Comple
             obtain ⟨rfl, rfl⟩ := args513.nil_inv
             refine ⟨k36 + k57 + k78 + k99 + k120 + k494 + 1, fun k hk => ?_⟩
             obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-            simp (config := { decide := true, maxSteps := 10000000 }) [«UInt64::saturating_pred», hp8, hk37 k' (by omega), hc38, hk58 k' (by omega), hc59, hk79 k' (by omega), hc80, hk100 k' (by omega), hc101, hk121 k' (by omega), hc122, hk495 k' (by omega), op483, hm496]
+            simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «UInt64::saturating_pred», hp8, hk37 k' (by omega), hc38, hk58 k' (by omega), hc59, hk79 k' (by omega), hc80, hk100 k' (by omega), hc101, hk121 k' (by omega), hc122, hk495 k' (by omega), op483, hm496]
         · obtain ⟨rfl, rfl⟩ := selectArm_wildcard_inv sel102
           obtain ⟨vs515, args516, rfl⟩ := d88.array_inv
           obtain ⟨v517, vs518, m519, rfl, d520, args521⟩ := args516.cons_inv
@@ -1072,7 +1072,7 @@ theorem «UInt64::saturating_pred».of_eval : «UInt64::saturating_pred».Comple
           obtain ⟨rfl, rfl⟩ := args587.nil_inv
           refine ⟨k36 + k57 + k78 + k99 + k562 + 1, fun k hk => ?_⟩
           obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-          simp (config := { decide := true, maxSteps := 10000000 }) [«UInt64::saturating_pred», hp8, hk37 k' (by omega), hc38, hk58 k' (by omega), hc59, hk79 k' (by omega), hc80, hk100 k' (by omega), hc101, hk563 k' (by omega), op551, hm564]
+          simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «UInt64::saturating_pred», hp8, hk37 k' (by omega), hc38, hk58 k' (by omega), hc59, hk79 k' (by omega), hc80, hk100 k' (by omega), hc101, hk563 k' (by omega), op551, hm564]
       · obtain ⟨rfl, rfl⟩ := selectArm_wildcard_inv sel81
         obtain ⟨vs589, args590, rfl⟩ := d67.array_inv
         obtain ⟨v591, vs592, m593, rfl, d594, args595⟩ := args590.cons_inv
@@ -1118,7 +1118,7 @@ theorem «UInt64::saturating_pred».of_eval : «UInt64::saturating_pred».Comple
         obtain ⟨rfl, rfl⟩ := args662.nil_inv
         refine ⟨k36 + k57 + k78 + k631 + 1, fun k hk => ?_⟩
         obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-        simp (config := { decide := true, maxSteps := 10000000 }) [«UInt64::saturating_pred», hp8, hk37 k' (by omega), hc38, hk58 k' (by omega), hc59, hk79 k' (by omega), hc80, hk632 k' (by omega), op620, hm633]
+        simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «UInt64::saturating_pred», hp8, hk37 k' (by omega), hc38, hk58 k' (by omega), hc59, hk79 k' (by omega), hc80, hk632 k' (by omega), op620, hm633]
     · obtain ⟨rfl, rfl⟩ := selectArm_wildcard_inv sel60
       obtain ⟨vs664, args665, rfl⟩ := d46.array_inv
       obtain ⟨v666, vs667, m668, rfl, d669, args670⟩ := args665.cons_inv
@@ -1166,7 +1166,7 @@ theorem «UInt64::saturating_pred».of_eval : «UInt64::saturating_pred».Comple
       obtain ⟨rfl, rfl⟩ := args738.nil_inv
       refine ⟨k36 + k57 + k701 + 1, fun k hk => ?_⟩
       obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-      simp (config := { decide := true, maxSteps := 10000000 }) [«UInt64::saturating_pred», hp8, hk37 k' (by omega), hc38, hk58 k' (by omega), hc59, hk702 k' (by omega), op690, hm703]
+      simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «UInt64::saturating_pred», hp8, hk37 k' (by omega), hc38, hk58 k' (by omega), hc59, hk702 k' (by omega), op690, hm703]
   · obtain ⟨rfl, rfl⟩ := selectArm_wildcard_inv sel39
     obtain ⟨vs740, args741, rfl⟩ := d25.array_inv
     obtain ⟨v742, vs743, m744, rfl, d745, args746⟩ := args741.cons_inv
@@ -1216,7 +1216,7 @@ theorem «UInt64::saturating_pred».of_eval : «UInt64::saturating_pred».Comple
     obtain ⟨rfl, rfl⟩ := args815.nil_inv
     refine ⟨k36 + k772 + 1, fun k hk => ?_⟩
     obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-    simp (config := { decide := true, maxSteps := 10000000 }) [«UInt64::saturating_pred», hp8, hk37 k' (by omega), hc38, hk773 k' (by omega), op761, hm774]
+    simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «UInt64::saturating_pred», hp8, hk37 k' (by omega), hc38, hk773 k' (by omega), op761, hm774]
 
 /-- The mirror of `UInt64::is_zero`. -/
 def «UInt64::is_zero» : Nat → Heap F → SourceValue F → Option (SourceValue F × Heap F)
@@ -1245,12 +1245,12 @@ theorem «UInt64::is_zero».of_eval : «UInt64::is_zero».Complete := by
   · obtain ⟨rfl, rfl⟩ := d6.literal_inv
     refine ⟨1, fun k hk => ?_⟩
     obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-    simp (config := { decide := true, maxSteps := 10000000 }) [«UInt64::is_zero», hc8]
+    simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «UInt64::is_zero», hc8]
   · obtain ⟨rfl, rfl⟩ := selectArm_wildcard_inv sel9
     obtain ⟨rfl, rfl⟩ := d6.literal_inv
     refine ⟨1, fun k hk => ?_⟩
     obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-    simp (config := { decide := true, maxSteps := 10000000 }) [«UInt64::is_zero», hc8]
+    simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «UInt64::is_zero», hc8]
 
 /-- The mirror of `IxonDeserialize::build_succ_chain`. -/
 def «IxonDeserialize::build_succ_chain» : Nat → Heap F → SourceValue F → SourceValue F → Option (SourceValue F × Heap F)
@@ -1451,7 +1451,7 @@ theorem «IxonDeserialize::get_univs».of_eval (ih0 : «IxonDeserialize::get_u64
   obtain ⟨k40, hk41⟩ := ih4 callee27
   refine ⟨k16 + k40 + 1, fun k hk => ?_⟩
   obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-  simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::get_univs», hk17 k' (by omega), hp19, hk41 k' (by omega)]
+  simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «IxonDeserialize::get_univs», hk17 k' (by omega), hp19, hk41 k' (by omega)]
 
 /-- The mirror of `IxonDeserialize::get_address`. -/
 def «IxonDeserialize::get_address» : Nat → Heap F → SourceValue F → Option (SourceValue F × Heap F)
@@ -1931,7 +1931,7 @@ theorem «IxonDeserialize::get_address».of_eval : «IxonDeserialize::get_addres
   obtain ⟨rfl, rfl⟩ := args720.nil_inv
   refine ⟨1, fun k hk => ?_⟩
   obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-  simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::get_address», readStreamBytes, ld8, hp11, ld24, hp27, ld40, hp43, ld56, hp59, ld72, hp75, ld88, hp91, ld104, hp107, ld120, hp123, ld136, hp139, ld152, hp155, ld168, hp171, ld184, hp187, ld200, hp203, ld216, hp219, ld232, hp235, ld248, hp251, ld264, hp267, ld280, hp283, ld296, hp299, ld312, hp315, ld328, hp331, ld344, hp347, ld360, hp363, ld376, hp379, ld392, hp395, ld408, hp411, ld424, hp427, ld440, hp443, ld456, hp459, ld472, hp475, ld488, hp491, ld504, hp507]
+  simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «IxonDeserialize::get_address», readStreamBytes, ld8, hp11, ld24, hp27, ld40, hp43, ld56, hp59, ld72, hp75, ld88, hp91, ld104, hp107, ld120, hp123, ld136, hp139, ld152, hp155, ld168, hp171, ld184, hp187, ld200, hp203, ld216, hp219, ld232, hp235, ld248, hp251, ld264, hp267, ld280, hp283, ld296, hp299, ld312, hp315, ld328, hp331, ld344, hp347, ld360, hp363, ld376, hp379, ld392, hp395, ld408, hp411, ld424, hp427, ld440, hp443, ld456, hp459, ld472, hp475, ld488, hp491, ld504, hp507]
 
 /-- The mirror of `IxonDeserialize::get_address_list`. -/
 def «IxonDeserialize::get_address_list» : Nat → Heap F → SourceValue F → SourceValue F → Option (SourceValue F × Heap F)
@@ -2022,7 +2022,7 @@ theorem «IxonDeserialize::get_refs».of_eval (ih0 : «IxonDeserialize::get_u64_
   obtain ⟨k40, hk41⟩ := ih5 callee27
   refine ⟨k16 + k40 + 1, fun k hk => ?_⟩
   obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-  simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::get_refs», hk17 k' (by omega), hp19, hk41 k' (by omega)]
+  simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «IxonDeserialize::get_refs», hk17 k' (by omega), hp19, hk41 k' (by omega)]
 
 /-- The mirror of `IxonDeserialize::value_contract_from_bits`. -/
 def «IxonDeserialize::value_contract_from_bits» : Nat → Heap F → SourceValue F → SourceValue F → Option (SourceValue F × Heap F)
@@ -2092,7 +2092,7 @@ theorem «IxonDeserialize::value_contract_from_bits».of_eval : «IxonDeserializ
       obtain ⟨rfl, rfl⟩ := args48.nil_inv
       refine ⟨1, fun k hk => ?_⟩
       obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-      simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::value_contract_from_bits», hc14, hc32]
+      simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «IxonDeserialize::value_contract_from_bits», hc14, hc32]
     · rcases selectArm_literal_inv sel33 with ⟨hc50, rfl, rfl⟩ | ⟨hc50, sel51⟩
       · obtain ⟨vs52, args53, rfl⟩ := d30.construct_inv
         obtain ⟨rfl, rfl⟩ := args53.nil_inv
@@ -2111,7 +2111,7 @@ theorem «IxonDeserialize::value_contract_from_bits».of_eval : «IxonDeserializ
         obtain ⟨rfl, rfl⟩ := args66.nil_inv
         refine ⟨1, fun k hk => ?_⟩
         obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-        simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::value_contract_from_bits», hc14, hc32, hc50]
+        simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «IxonDeserialize::value_contract_from_bits», hc14, hc32, hc50]
       · simp [SourceSemantics.selectArm] at sel51
   · rcases selectArm_literal_inv sel15 with ⟨hc68, rfl, rfl⟩ | ⟨hc68, sel69⟩
     · obtain ⟨vs70, args71, rfl⟩ := d12.construct_inv
@@ -2142,7 +2142,7 @@ theorem «IxonDeserialize::value_contract_from_bits».of_eval : «IxonDeserializ
         obtain ⟨rfl, rfl⟩ := args102.nil_inv
         refine ⟨1, fun k hk => ?_⟩
         obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-        simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::value_contract_from_bits», hc14, hc68, hc86]
+        simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «IxonDeserialize::value_contract_from_bits», hc14, hc68, hc86]
       · rcases selectArm_literal_inv sel87 with ⟨hc104, rfl, rfl⟩ | ⟨hc104, sel105⟩
         · obtain ⟨vs106, args107, rfl⟩ := d84.construct_inv
           obtain ⟨rfl, rfl⟩ := args107.nil_inv
@@ -2161,7 +2161,7 @@ theorem «IxonDeserialize::value_contract_from_bits».of_eval : «IxonDeserializ
           obtain ⟨rfl, rfl⟩ := args120.nil_inv
           refine ⟨1, fun k hk => ?_⟩
           obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-          simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::value_contract_from_bits», hc14, hc68, hc86, hc104]
+          simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «IxonDeserialize::value_contract_from_bits», hc14, hc68, hc86, hc104]
         · simp [SourceSemantics.selectArm] at sel105
     · simp [SourceSemantics.selectArm] at sel69
 
@@ -2244,7 +2244,7 @@ theorem «IxonDeserialize::binder_contract_from_bits».of_eval : «IxonDeseriali
     obtain ⟨rfl, rfl⟩ := args43.nil_inv
     refine ⟨k60 + 1, fun k hk => ?_⟩
     obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-    simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::binder_contract_from_bits», op18, op25, hc27, hk61 k' (by omega)]
+    simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «IxonDeserialize::binder_contract_from_bits», op18, op25, hc27, hk61 k' (by omega)]
   · rcases selectArm_literal_inv sel28 with ⟨hc62, rfl, rfl⟩ | ⟨hc62, sel63⟩
     · obtain ⟨vs64, args65, rfl⟩ := d12.construct_inv
       obtain ⟨rfl, rfl⟩ := args65.nil_inv
@@ -2272,7 +2272,7 @@ theorem «IxonDeserialize::binder_contract_from_bits».of_eval : «IxonDeseriali
       obtain ⟨rfl, rfl⟩ := args78.nil_inv
       refine ⟨k95 + 1, fun k hk => ?_⟩
       obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-      simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::binder_contract_from_bits», op18, op25, hc27, hc62, hk96 k' (by omega)]
+      simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «IxonDeserialize::binder_contract_from_bits», op18, op25, hc27, hc62, hk96 k' (by omega)]
     · rcases selectArm_literal_inv sel63 with ⟨hc97, rfl, rfl⟩ | ⟨hc97, sel98⟩
       · obtain ⟨vs99, args100, rfl⟩ := d12.construct_inv
         obtain ⟨rfl, rfl⟩ := args100.nil_inv
@@ -2300,7 +2300,7 @@ theorem «IxonDeserialize::binder_contract_from_bits».of_eval : «IxonDeseriali
         obtain ⟨rfl, rfl⟩ := args113.nil_inv
         refine ⟨k130 + 1, fun k hk => ?_⟩
         obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-        simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::binder_contract_from_bits», op18, op25, hc27, hc62, hc97, hk131 k' (by omega)]
+        simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «IxonDeserialize::binder_contract_from_bits», op18, op25, hc27, hc62, hc97, hk131 k' (by omega)]
       · rcases selectArm_literal_inv sel98 with ⟨hc132, rfl, rfl⟩ | ⟨hc132, sel133⟩
         · obtain ⟨vs134, args135, rfl⟩ := d12.construct_inv
           obtain ⟨rfl, rfl⟩ := args135.nil_inv
@@ -2328,7 +2328,7 @@ theorem «IxonDeserialize::binder_contract_from_bits».of_eval : «IxonDeseriali
           obtain ⟨rfl, rfl⟩ := args148.nil_inv
           refine ⟨k165 + 1, fun k hk => ?_⟩
           obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-          simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::binder_contract_from_bits», op18, op25, hc27, hc62, hc97, hc132, hk166 k' (by omega)]
+          simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «IxonDeserialize::binder_contract_from_bits», op18, op25, hc27, hc62, hc97, hc132, hk166 k' (by omega)]
         · simp [SourceSemantics.selectArm] at sel133
 
 /-- The mirror of `IxonDeserialize::read_byte`. -/
@@ -2378,7 +2378,7 @@ theorem «IxonDeserialize::read_byte».of_eval : «IxonDeserialize::read_byte».
   obtain ⟨rfl, rfl⟩ := args28.nil_inv
   refine ⟨1, fun k hk => ?_⟩
   obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-  simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::read_byte», ld8, hp11]
+  simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «IxonDeserialize::read_byte», ld8, hp11]
 
 /-- The mirror of `IxonDeserialize::get_lam_mode`. -/
 def «IxonDeserialize::get_lam_mode» : Nat → Heap F → SourceValue F → Option (SourceValue F × Heap F)
@@ -2505,7 +2505,7 @@ theorem «IxonDeserialize::get_lam_mode».of_eval : «IxonDeserialize::get_lam_m
   obtain ⟨rfl, rfl⟩ := args136.nil_inv
   refine ⟨k16 + k40 + k130 + 1, fun k hk => ?_⟩
   obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-  simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::get_lam_mode», hk17 k' (by omega), hp19, hk41 k' (by omega), hp43, ap62, op85, op79, op73, hk131 k' (by omega)]
+  simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «IxonDeserialize::get_lam_mode», hk17 k' (by omega), hp19, hk41 k' (by omega), hp43, ap62, op85, op79, op73, hk131 k' (by omega)]
 
 /-- The mirror of `IxonDeserialize::get_all_mode`. -/
 def «IxonDeserialize::get_all_mode» : Nat → Heap F → SourceValue F → Option (SourceValue F × Heap F)
@@ -2635,7 +2635,7 @@ theorem «IxonDeserialize::get_all_mode».of_eval : «IxonDeserialize::get_all_m
   obtain ⟨rfl, rfl⟩ := args152.nil_inv
   refine ⟨k16 + k40 + k123 + k146 + 1, fun k hk => ?_⟩
   obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-  simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::get_all_mode», hk17 k' (by omega), hp19, hk41 k' (by omega), hp43, ap62, op73, hk124 k' (by omega), hk147 k' (by omega)]
+  simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «IxonDeserialize::get_all_mode», hk17 k' (by omega), hp19, hk41 k' (by omega), hp43, ap62, op73, hk124 k' (by omega), hk147 k' (by omega)]
 
 /-- The mirror of `IxonDeserialize::get_u64_list`. -/
 def «IxonDeserialize::get_u64_list» : Nat → Heap F → SourceValue F → SourceValue F → Option (SourceValue F × Heap F)
@@ -3181,7 +3181,7 @@ theorem «IxonDeserialize::get_sharing».of_eval (ih0 : «IxonDeserialize::get_u
   obtain ⟨k40, hk41⟩ := ih12 callee27
   refine ⟨k16 + k40 + 1, fun k hk => ?_⟩
   obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-  simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::get_sharing», hk17 k' (by omega), hp19, hk41 k' (by omega)]
+  simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «IxonDeserialize::get_sharing», hk17 k' (by omega), hp19, hk41 k' (by omega)]
 
 /-- The mirror of `IxonDeserialize::get_definition_proj`. -/
 def «IxonDeserialize::get_definition_proj» : Nat → Heap F → SourceValue F → Option (SourceValue F × Heap F)
@@ -3258,7 +3258,7 @@ theorem «IxonDeserialize::get_definition_proj».of_eval (ih0 : «IxonDeserializ
   obtain ⟨rfl, rfl⟩ := args73.nil_inv
   refine ⟨k16 + k40 + 1, fun k hk => ?_⟩
   obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-  simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::get_definition_proj», hk17 k' (by omega), hp19, hk41 k' (by omega), hp43]
+  simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «IxonDeserialize::get_definition_proj», hk17 k' (by omega), hp19, hk41 k' (by omega), hp43]
 
 /-- The mirror of `IxonDeserialize::get_inductive_proj`. -/
 def «IxonDeserialize::get_inductive_proj» : Nat → Heap F → SourceValue F → Option (SourceValue F × Heap F)
@@ -3335,7 +3335,7 @@ theorem «IxonDeserialize::get_inductive_proj».of_eval (ih0 : «IxonDeserialize
   obtain ⟨rfl, rfl⟩ := args73.nil_inv
   refine ⟨k16 + k40 + 1, fun k hk => ?_⟩
   obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-  simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::get_inductive_proj», hk17 k' (by omega), hp19, hk41 k' (by omega), hp43]
+  simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «IxonDeserialize::get_inductive_proj», hk17 k' (by omega), hp19, hk41 k' (by omega), hp43]
 
 /-- The mirror of `IxonDeserialize::get_recursor_proj`. -/
 def «IxonDeserialize::get_recursor_proj» : Nat → Heap F → SourceValue F → Option (SourceValue F × Heap F)
@@ -3412,7 +3412,7 @@ theorem «IxonDeserialize::get_recursor_proj».of_eval (ih0 : «IxonDeserialize:
   obtain ⟨rfl, rfl⟩ := args73.nil_inv
   refine ⟨k16 + k40 + 1, fun k hk => ?_⟩
   obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-  simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::get_recursor_proj», hk17 k' (by omega), hp19, hk41 k' (by omega), hp43]
+  simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «IxonDeserialize::get_recursor_proj», hk17 k' (by omega), hp19, hk41 k' (by omega), hp43]
 
 /-- The mirror of `IxonDeserialize::get_constructor_proj`. -/
 def «IxonDeserialize::get_constructor_proj» : Nat → Heap F → SourceValue F → Option (SourceValue F × Heap F)
@@ -3512,7 +3512,7 @@ theorem «IxonDeserialize::get_constructor_proj».of_eval (ih0 : «IxonDeseriali
   obtain ⟨rfl, rfl⟩ := args103.nil_inv
   refine ⟨k16 + k40 + k64 + 1, fun k hk => ?_⟩
   obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-  simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::get_constructor_proj», hk17 k' (by omega), hp19, hk41 k' (by omega), hp43, hk65 k' (by omega), hp67]
+  simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «IxonDeserialize::get_constructor_proj», hk17 k' (by omega), hp19, hk41 k' (by omega), hp43, hk65 k' (by omega), hp67]
 
 /-- The mirror of `IxonDeserialize::get_quot_kind`. -/
 def «IxonDeserialize::get_quot_kind» : Nat → Heap F → SourceValue F → Option (SourceValue F × Heap F)
@@ -3558,25 +3558,25 @@ theorem «IxonDeserialize::get_quot_kind».of_eval : «IxonDeserialize::get_quot
     obtain ⟨rfl, rfl⟩ := args22.nil_inv
     refine ⟨k17 + 1, fun k hk => ?_⟩
     obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-    simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::get_quot_kind», hk18 k' (by omega), hc19]
+    simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «IxonDeserialize::get_quot_kind», hk18 k' (by omega), hc19]
   · rcases selectArm_literal_inv sel20 with ⟨hc23, rfl, rfl⟩ | ⟨hc23, sel24⟩
     · obtain ⟨vs25, args26, rfl⟩ := d6.construct_inv
       obtain ⟨rfl, rfl⟩ := args26.nil_inv
       refine ⟨k17 + 1, fun k hk => ?_⟩
       obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-      simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::get_quot_kind», hk18 k' (by omega), hc19, hc23]
+      simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «IxonDeserialize::get_quot_kind», hk18 k' (by omega), hc19, hc23]
     · rcases selectArm_literal_inv sel24 with ⟨hc27, rfl, rfl⟩ | ⟨hc27, sel28⟩
       · obtain ⟨vs29, args30, rfl⟩ := d6.construct_inv
         obtain ⟨rfl, rfl⟩ := args30.nil_inv
         refine ⟨k17 + 1, fun k hk => ?_⟩
         obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-        simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::get_quot_kind», hk18 k' (by omega), hc19, hc23, hc27]
+        simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «IxonDeserialize::get_quot_kind», hk18 k' (by omega), hc19, hc23, hc27]
       · rcases selectArm_literal_inv sel28 with ⟨hc31, rfl, rfl⟩ | ⟨hc31, sel32⟩
         · obtain ⟨vs33, args34, rfl⟩ := d6.construct_inv
           obtain ⟨rfl, rfl⟩ := args34.nil_inv
           refine ⟨k17 + 1, fun k hk => ?_⟩
           obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-          simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::get_quot_kind», hk18 k' (by omega), hc19, hc23, hc27, hc31]
+          simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «IxonDeserialize::get_quot_kind», hk18 k' (by omega), hc19, hc23, hc27, hc31]
         · simp [SourceSemantics.selectArm] at sel32
 
 /-- The mirror of `IxonDeserialize::get_quotient`. -/
@@ -3692,7 +3692,7 @@ theorem «IxonDeserialize::get_quotient».of_eval (ih0 : «IxonDeserialize::get_
   obtain ⟨rfl, rfl⟩ := args121.nil_inv
   refine ⟨k16 + k40 + k58 + k82 + 1, fun k hk => ?_⟩
   obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-  simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::get_quotient», hk17 k' (by omega), hp19, hk41 k' (by omega), hk59 k' (by omega), hp61, hk83 k' (by omega), hp85]
+  simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «IxonDeserialize::get_quotient», hk17 k' (by omega), hp19, hk41 k' (by omega), hk59 k' (by omega), hp61, hk83 k' (by omega), hp85]
 
 /-- The mirror of `IxonDeserialize::assert_wire_bool`. -/
 def «IxonDeserialize::assert_wire_bool» : Nat → Heap F → SourceValue F → Option (SourceValue F × Heap F)
@@ -3739,7 +3739,7 @@ theorem «IxonDeserialize::assert_wire_bool».of_eval : «IxonDeserialize::asser
   obtain ⟨rfl, rfl⟩ := args37.nil_inv
   refine ⟨k29 + 1, fun k hk => ?_⟩
   obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-  simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::assert_wire_bool», ap8, hk30 k' (by omega)]
+  simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «IxonDeserialize::assert_wire_bool», ap8, hk30 k' (by omega)]
 
 /-- The mirror of `IxonDeserialize::get_axiom`. -/
 def «IxonDeserialize::get_axiom» : Nat → Heap F → SourceValue F → Option (SourceValue F × Heap F)
@@ -3860,7 +3860,7 @@ theorem «IxonDeserialize::get_axiom».of_eval (ih0 : «IxonDeserialize::get_u64
   obtain ⟨rfl, rfl⟩ := args132.nil_inv
   refine ⟨k16 + k40 + k58 + k82 + k114 + 1, fun k hk => ?_⟩
   obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-  simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::get_axiom», hk17 k' (by omega), hp19, hk41 k' (by omega), hk59 k' (by omega), hp61, hk83 k' (by omega), hp85, hk115 k' (by omega)]
+  simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «IxonDeserialize::get_axiom», hk17 k' (by omega), hp19, hk41 k' (by omega), hk59 k' (by omega), hp61, hk83 k' (by omega), hp85, hk115 k' (by omega)]
 
 /-- The mirror of `IxonDeserialize::get_recursor_rule`. -/
 def «IxonDeserialize::get_recursor_rule» : Nat → Heap F → SourceValue F → Option (SourceValue F × Heap F)
@@ -3937,7 +3937,7 @@ theorem «IxonDeserialize::get_recursor_rule».of_eval (ih0 : «IxonDeserialize:
   obtain ⟨rfl, rfl⟩ := args73.nil_inv
   refine ⟨k16 + k40 + 1, fun k hk => ?_⟩
   obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-  simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::get_recursor_rule», hk17 k' (by omega), hp19, hk41 k' (by omega), hp43]
+  simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «IxonDeserialize::get_recursor_rule», hk17 k' (by omega), hp19, hk41 k' (by omega), hp43]
 
 /-- The mirror of `IxonDeserialize::get_recursor_rule_list`. -/
 def «IxonDeserialize::get_recursor_rule_list» : Nat → Heap F → SourceValue F → SourceValue F → Option (SourceValue F × Heap F)
@@ -4285,7 +4285,7 @@ theorem «IxonDeserialize::get_recursor».of_eval (ih0 : «IxonDeserialize::get_
   obtain ⟨rfl, rfl⟩ := args363.nil_inv
   refine ⟨k16 + k53 + k76 + k114 + k138 + k162 + k186 + k210 + k234 + k258 + k288 + 1, fun k hk => ?_⟩
   obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-  simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::get_recursor», hk17 k' (by omega), hp19, ap32, hk54 k' (by omega), hk77 k' (by omega), pr86, pr96, hk115 k' (by omega), hp117, hk139 k' (by omega), hp141, hk163 k' (by omega), hp165, hk187 k' (by omega), hp189, hk211 k' (by omega), hp213, hk235 k' (by omega), hp237, hk259 k' (by omega), hp261, hk289 k' (by omega), hp291]
+  simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «IxonDeserialize::get_recursor», hk17 k' (by omega), hp19, ap32, hk54 k' (by omega), hk77 k' (by omega), pr86, pr96, hk115 k' (by omega), hp117, hk139 k' (by omega), hp141, hk163 k' (by omega), hp165, hk187 k' (by omega), hp189, hk211 k' (by omega), hp213, hk235 k' (by omega), hp237, hk259 k' (by omega), hp261, hk289 k' (by omega), hp291]
 
 /-- The mirror of `IxonDeserialize::unpack_def_kind_safety`. -/
 def «IxonDeserialize::unpack_def_kind_safety» : Nat → Heap F → SourceValue F → Option (SourceValue F × Heap F)
@@ -4379,7 +4379,7 @@ theorem «IxonDeserialize::unpack_def_kind_safety».of_eval : «IxonDeserialize:
     obtain ⟨rfl, rfl⟩ := args34.nil_inv
     refine ⟨k17 + 1, fun k hk => ?_⟩
     obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-    simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::unpack_def_kind_safety», hk18 k' (by omega), hc19]
+    simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «IxonDeserialize::unpack_def_kind_safety», hk18 k' (by omega), hc19]
   · rcases selectArm_literal_inv sel20 with ⟨hc37, rfl, rfl⟩ | ⟨hc37, sel38⟩
     · obtain ⟨vs39, args40, rfl⟩ := d6.tuple_inv
       obtain ⟨v41, vs42, m43, rfl, d44, args45⟩ := args40.cons_inv
@@ -4391,7 +4391,7 @@ theorem «IxonDeserialize::unpack_def_kind_safety».of_eval : «IxonDeserialize:
       obtain ⟨rfl, rfl⟩ := args52.nil_inv
       refine ⟨k17 + 1, fun k hk => ?_⟩
       obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-      simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::unpack_def_kind_safety», hk18 k' (by omega), hc19, hc37]
+      simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «IxonDeserialize::unpack_def_kind_safety», hk18 k' (by omega), hc19, hc37]
     · rcases selectArm_literal_inv sel38 with ⟨hc55, rfl, rfl⟩ | ⟨hc55, sel56⟩
       · obtain ⟨vs57, args58, rfl⟩ := d6.tuple_inv
         obtain ⟨v59, vs60, m61, rfl, d62, args63⟩ := args58.cons_inv
@@ -4403,7 +4403,7 @@ theorem «IxonDeserialize::unpack_def_kind_safety».of_eval : «IxonDeserialize:
         obtain ⟨rfl, rfl⟩ := args70.nil_inv
         refine ⟨k17 + 1, fun k hk => ?_⟩
         obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-        simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::unpack_def_kind_safety», hk18 k' (by omega), hc19, hc37, hc55]
+        simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «IxonDeserialize::unpack_def_kind_safety», hk18 k' (by omega), hc19, hc37, hc55]
       · rcases selectArm_literal_inv sel56 with ⟨hc73, rfl, rfl⟩ | ⟨hc73, sel74⟩
         · obtain ⟨vs75, args76, rfl⟩ := d6.tuple_inv
           obtain ⟨v77, vs78, m79, rfl, d80, args81⟩ := args76.cons_inv
@@ -4415,7 +4415,7 @@ theorem «IxonDeserialize::unpack_def_kind_safety».of_eval : «IxonDeserialize:
           obtain ⟨rfl, rfl⟩ := args88.nil_inv
           refine ⟨k17 + 1, fun k hk => ?_⟩
           obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-          simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::unpack_def_kind_safety», hk18 k' (by omega), hc19, hc37, hc55, hc73]
+          simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «IxonDeserialize::unpack_def_kind_safety», hk18 k' (by omega), hc19, hc37, hc55, hc73]
         · rcases selectArm_literal_inv sel74 with ⟨hc91, rfl, rfl⟩ | ⟨hc91, sel92⟩
           · obtain ⟨vs93, args94, rfl⟩ := d6.tuple_inv
             obtain ⟨v95, vs96, m97, rfl, d98, args99⟩ := args94.cons_inv
@@ -4427,7 +4427,7 @@ theorem «IxonDeserialize::unpack_def_kind_safety».of_eval : «IxonDeserialize:
             obtain ⟨rfl, rfl⟩ := args106.nil_inv
             refine ⟨k17 + 1, fun k hk => ?_⟩
             obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-            simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::unpack_def_kind_safety», hk18 k' (by omega), hc19, hc37, hc55, hc73, hc91]
+            simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «IxonDeserialize::unpack_def_kind_safety», hk18 k' (by omega), hc19, hc37, hc55, hc73, hc91]
           · rcases selectArm_literal_inv sel92 with ⟨hc109, rfl, rfl⟩ | ⟨hc109, sel110⟩
             · obtain ⟨vs111, args112, rfl⟩ := d6.tuple_inv
               obtain ⟨v113, vs114, m115, rfl, d116, args117⟩ := args112.cons_inv
@@ -4439,7 +4439,7 @@ theorem «IxonDeserialize::unpack_def_kind_safety».of_eval : «IxonDeserialize:
               obtain ⟨rfl, rfl⟩ := args124.nil_inv
               refine ⟨k17 + 1, fun k hk => ?_⟩
               obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-              simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::unpack_def_kind_safety», hk18 k' (by omega), hc19, hc37, hc55, hc73, hc91, hc109]
+              simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «IxonDeserialize::unpack_def_kind_safety», hk18 k' (by omega), hc19, hc37, hc55, hc73, hc91, hc109]
             · rcases selectArm_literal_inv sel110 with ⟨hc127, rfl, rfl⟩ | ⟨hc127, sel128⟩
               · obtain ⟨vs129, args130, rfl⟩ := d6.tuple_inv
                 obtain ⟨v131, vs132, m133, rfl, d134, args135⟩ := args130.cons_inv
@@ -4451,7 +4451,7 @@ theorem «IxonDeserialize::unpack_def_kind_safety».of_eval : «IxonDeserialize:
                 obtain ⟨rfl, rfl⟩ := args142.nil_inv
                 refine ⟨k17 + 1, fun k hk => ?_⟩
                 obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-                simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::unpack_def_kind_safety», hk18 k' (by omega), hc19, hc37, hc55, hc73, hc91, hc109, hc127]
+                simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «IxonDeserialize::unpack_def_kind_safety», hk18 k' (by omega), hc19, hc37, hc55, hc73, hc91, hc109, hc127]
               · rcases selectArm_literal_inv sel128 with ⟨hc145, rfl, rfl⟩ | ⟨hc145, sel146⟩
                 · obtain ⟨vs147, args148, rfl⟩ := d6.tuple_inv
                   obtain ⟨v149, vs150, m151, rfl, d152, args153⟩ := args148.cons_inv
@@ -4463,7 +4463,7 @@ theorem «IxonDeserialize::unpack_def_kind_safety».of_eval : «IxonDeserialize:
                   obtain ⟨rfl, rfl⟩ := args160.nil_inv
                   refine ⟨k17 + 1, fun k hk => ?_⟩
                   obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-                  simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::unpack_def_kind_safety», hk18 k' (by omega), hc19, hc37, hc55, hc73, hc91, hc109, hc127, hc145]
+                  simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «IxonDeserialize::unpack_def_kind_safety», hk18 k' (by omega), hc19, hc37, hc55, hc73, hc91, hc109, hc127, hc145]
                 · rcases selectArm_literal_inv sel146 with ⟨hc163, rfl, rfl⟩ | ⟨hc163, sel164⟩
                   · obtain ⟨vs165, args166, rfl⟩ := d6.tuple_inv
                     obtain ⟨v167, vs168, m169, rfl, d170, args171⟩ := args166.cons_inv
@@ -4475,7 +4475,7 @@ theorem «IxonDeserialize::unpack_def_kind_safety».of_eval : «IxonDeserialize:
                     obtain ⟨rfl, rfl⟩ := args178.nil_inv
                     refine ⟨k17 + 1, fun k hk => ?_⟩
                     obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-                    simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::unpack_def_kind_safety», hk18 k' (by omega), hc19, hc37, hc55, hc73, hc91, hc109, hc127, hc145, hc163]
+                    simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «IxonDeserialize::unpack_def_kind_safety», hk18 k' (by omega), hc19, hc37, hc55, hc73, hc91, hc109, hc127, hc145, hc163]
                   · simp [SourceSemantics.selectArm] at sel164
 
 /-- The mirror of `IxonDeserialize::get_definition`. -/
@@ -4622,7 +4622,7 @@ theorem «IxonDeserialize::get_definition».of_eval (ih0 : «IxonDeserialize::ge
   obtain ⟨rfl, rfl⟩ := args163.nil_inv
   refine ⟨k16 + k40 + k64 + k88 + k112 + 1, fun k hk => ?_⟩
   obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-  simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::get_definition», hk17 k' (by omega), hp19, hk41 k' (by omega), hp43, hk65 k' (by omega), hp67, hk89 k' (by omega), hp91, hk113 k' (by omega), hp115]
+  simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «IxonDeserialize::get_definition», hk17 k' (by omega), hp19, hk41 k' (by omega), hp43, hk65 k' (by omega), hp67, hk89 k' (by omega), hp91, hk113 k' (by omega), hp115]
 
 /-- The mirror of `IxonDeserialize::get_constant_info_by_variant`. -/
 def «IxonDeserialize::get_constant_info_by_variant» : Nat → Heap F → SourceValue F → SourceValue F → Option (SourceValue F × Heap F)
@@ -4754,7 +4754,7 @@ theorem «IxonDeserialize::get_constant_info_by_variant».of_eval (ih0 : «IxonD
     obtain ⟨rfl, rfl⟩ := args53.nil_inv
     refine ⟨k26 + 1, fun k hk => ?_⟩
     obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-    simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::get_constant_info_by_variant», hc8, hk27 k' (by omega), hp29]
+    simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «IxonDeserialize::get_constant_info_by_variant», hc8, hk27 k' (by omega), hp29]
   · rcases selectArm_literal_inv sel9 with ⟨hc55, rfl, rfl⟩ | ⟨hc55, sel56⟩
     · obtain ⟨v57, m58, bs59, d60, mt61, d62⟩ := d6.letValue_inv
       obtain ⟨vs63, m64, args65, callee66⟩ := d60.call_inv
@@ -4785,7 +4785,7 @@ theorem «IxonDeserialize::get_constant_info_by_variant».of_eval (ih0 : «IxonD
       obtain ⟨rfl, rfl⟩ := args100.nil_inv
       refine ⟨k73 + 1, fun k hk => ?_⟩
       obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-      simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::get_constant_info_by_variant», hc8, hc55, hk74 k' (by omega), hp76]
+      simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «IxonDeserialize::get_constant_info_by_variant», hc8, hc55, hk74 k' (by omega), hp76]
     · rcases selectArm_literal_inv sel56 with ⟨hc102, rfl, rfl⟩ | ⟨hc102, sel103⟩
       · obtain ⟨v104, m105, bs106, d107, mt108, d109⟩ := d6.letValue_inv
         obtain ⟨vs110, m111, args112, callee113⟩ := d107.call_inv
@@ -4816,7 +4816,7 @@ theorem «IxonDeserialize::get_constant_info_by_variant».of_eval (ih0 : «IxonD
         obtain ⟨rfl, rfl⟩ := args147.nil_inv
         refine ⟨k120 + 1, fun k hk => ?_⟩
         obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-        simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::get_constant_info_by_variant», hc8, hc55, hc102, hk121 k' (by omega), hp123]
+        simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «IxonDeserialize::get_constant_info_by_variant», hc8, hc55, hc102, hk121 k' (by omega), hp123]
       · rcases selectArm_literal_inv sel103 with ⟨hc149, rfl, rfl⟩ | ⟨hc149, sel150⟩
         · obtain ⟨v151, m152, bs153, d154, mt155, d156⟩ := d6.letValue_inv
           obtain ⟨vs157, m158, args159, callee160⟩ := d154.call_inv
@@ -4847,7 +4847,7 @@ theorem «IxonDeserialize::get_constant_info_by_variant».of_eval (ih0 : «IxonD
           obtain ⟨rfl, rfl⟩ := args194.nil_inv
           refine ⟨k167 + 1, fun k hk => ?_⟩
           obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-          simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::get_constant_info_by_variant», hc8, hc55, hc102, hc149, hk168 k' (by omega), hp170]
+          simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «IxonDeserialize::get_constant_info_by_variant», hc8, hc55, hc102, hc149, hk168 k' (by omega), hp170]
         · rcases selectArm_literal_inv sel150 with ⟨hc196, rfl, rfl⟩ | ⟨hc196, sel197⟩
           · obtain ⟨v198, m199, bs200, d201, mt202, d203⟩ := d6.letValue_inv
             obtain ⟨vs204, m205, args206, callee207⟩ := d201.call_inv
@@ -4878,7 +4878,7 @@ theorem «IxonDeserialize::get_constant_info_by_variant».of_eval (ih0 : «IxonD
             obtain ⟨rfl, rfl⟩ := args241.nil_inv
             refine ⟨k214 + 1, fun k hk => ?_⟩
             obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-            simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::get_constant_info_by_variant», hc8, hc55, hc102, hc149, hc196, hk215 k' (by omega), hp217]
+            simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «IxonDeserialize::get_constant_info_by_variant», hc8, hc55, hc102, hc149, hc196, hk215 k' (by omega), hp217]
           · rcases selectArm_literal_inv sel197 with ⟨hc243, rfl, rfl⟩ | ⟨hc243, sel244⟩
             · obtain ⟨v245, m246, bs247, d248, mt249, d250⟩ := d6.letValue_inv
               obtain ⟨vs251, m252, args253, callee254⟩ := d248.call_inv
@@ -4909,7 +4909,7 @@ theorem «IxonDeserialize::get_constant_info_by_variant».of_eval (ih0 : «IxonD
               obtain ⟨rfl, rfl⟩ := args288.nil_inv
               refine ⟨k261 + 1, fun k hk => ?_⟩
               obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-              simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::get_constant_info_by_variant», hc8, hc55, hc102, hc149, hc196, hc243, hk262 k' (by omega), hp264]
+              simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «IxonDeserialize::get_constant_info_by_variant», hc8, hc55, hc102, hc149, hc196, hc243, hk262 k' (by omega), hp264]
             · rcases selectArm_literal_inv sel244 with ⟨hc290, rfl, rfl⟩ | ⟨hc290, sel291⟩
               · obtain ⟨v292, m293, bs294, d295, mt296, d297⟩ := d6.letValue_inv
                 obtain ⟨vs298, m299, args300, callee301⟩ := d295.call_inv
@@ -4940,7 +4940,7 @@ theorem «IxonDeserialize::get_constant_info_by_variant».of_eval (ih0 : «IxonD
                 obtain ⟨rfl, rfl⟩ := args335.nil_inv
                 refine ⟨k308 + 1, fun k hk => ?_⟩
                 obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-                simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::get_constant_info_by_variant», hc8, hc55, hc102, hc149, hc196, hc243, hc290, hk309 k' (by omega), hp311]
+                simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «IxonDeserialize::get_constant_info_by_variant», hc8, hc55, hc102, hc149, hc196, hc243, hc290, hk309 k' (by omega), hp311]
               · rcases selectArm_literal_inv sel291 with ⟨hc337, rfl, rfl⟩ | ⟨hc337, sel338⟩
                 · obtain ⟨v339, m340, bs341, d342, mt343, d344⟩ := d6.letValue_inv
                   obtain ⟨vs345, m346, args347, callee348⟩ := d342.call_inv
@@ -4971,7 +4971,7 @@ theorem «IxonDeserialize::get_constant_info_by_variant».of_eval (ih0 : «IxonD
                   obtain ⟨rfl, rfl⟩ := args382.nil_inv
                   refine ⟨k355 + 1, fun k hk => ?_⟩
                   obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-                  simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::get_constant_info_by_variant», hc8, hc55, hc102, hc149, hc196, hc243, hc290, hc337, hk356 k' (by omega), hp358]
+                  simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «IxonDeserialize::get_constant_info_by_variant», hc8, hc55, hc102, hc149, hc196, hc243, hc290, hc337, hk356 k' (by omega), hp358]
                 · simp [SourceSemantics.selectArm] at sel338
 
 /-- The mirror of `IxonDeserialize::get_constructor`. -/
@@ -5162,7 +5162,7 @@ theorem «IxonDeserialize::get_constructor».of_eval (ih0 : «IxonDeserialize::g
   obtain ⟨rfl, rfl⟩ := args222.nil_inv
   refine ⟨k16 + k40 + k58 + k82 + k106 + k130 + k154 + k186 + 1, fun k hk => ?_⟩
   obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-  simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::get_constructor», hk17 k' (by omega), hp19, hk41 k' (by omega), hk59 k' (by omega), hp61, hk83 k' (by omega), hp85, hk107 k' (by omega), hp109, hk131 k' (by omega), hp133, hk155 k' (by omega), hp157, hk187 k' (by omega)]
+  simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «IxonDeserialize::get_constructor», hk17 k' (by omega), hp19, hk41 k' (by omega), hk59 k' (by omega), hp61, hk83 k' (by omega), hp85, hk107 k' (by omega), hp109, hk131 k' (by omega), hp133, hk155 k' (by omega), hp157, hk187 k' (by omega)]
 
 /-- The mirror of `IxonDeserialize::get_constructor_list`. -/
 def «IxonDeserialize::get_constructor_list» : Nat → Heap F → SourceValue F → SourceValue F → Option (SourceValue F × Heap F)
@@ -5436,7 +5436,7 @@ theorem «IxonDeserialize::get_inductive».of_eval (ih0 : «IxonDeserialize::get
   obtain ⟨rfl, rfl⟩ := args269.nil_inv
   refine ⟨k16 + k40 + k58 + k86 + k110 + k134 + k158 + k182 + k212 + 1, fun k hk => ?_⟩
   obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-  simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::get_inductive», hk17 k' (by omega), hp19, hk41 k' (by omega), hk59 k' (by omega), pr68, hk87 k' (by omega), hp89, hk111 k' (by omega), hp113, hk135 k' (by omega), hp137, hk159 k' (by omega), hp161, hk183 k' (by omega), hp185, hk213 k' (by omega), hp215]
+  simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «IxonDeserialize::get_inductive», hk17 k' (by omega), hp19, hk41 k' (by omega), hk59 k' (by omega), pr68, hk87 k' (by omega), hp89, hk111 k' (by omega), hp113, hk135 k' (by omega), hp137, hk159 k' (by omega), hp161, hk183 k' (by omega), hp185, hk213 k' (by omega), hp215]
 
 /-- The mirror of `IxonDeserialize::get_mut_const`. -/
 def «IxonDeserialize::get_mut_const» : Nat → Heap F → SourceValue F → Option (SourceValue F × Heap F)
@@ -5544,7 +5544,7 @@ theorem «IxonDeserialize::get_mut_const».of_eval (ih0 : «IxonDeserialize::get
     obtain ⟨rfl, rfl⟩ := args88.nil_inv
     refine ⟨k16 + k41 + k61 + 1, fun k hk => ?_⟩
     obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-    simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::get_mut_const», hk17 k' (by omega), hp19, hk42 k' (by omega), hc43, hk62 k' (by omega), hp64]
+    simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «IxonDeserialize::get_mut_const», hk17 k' (by omega), hp19, hk42 k' (by omega), hc43, hk62 k' (by omega), hp64]
   · rcases selectArm_literal_inv sel44 with ⟨hc90, rfl, rfl⟩ | ⟨hc90, sel91⟩
     · obtain ⟨v92, m93, bs94, d95, mt96, d97⟩ := d30.letValue_inv
       obtain ⟨vs98, m99, args100, callee101⟩ := d95.call_inv
@@ -5575,7 +5575,7 @@ theorem «IxonDeserialize::get_mut_const».of_eval (ih0 : «IxonDeserialize::get
       obtain ⟨rfl, rfl⟩ := args135.nil_inv
       refine ⟨k16 + k41 + k108 + 1, fun k hk => ?_⟩
       obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-      simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::get_mut_const», hk17 k' (by omega), hp19, hk42 k' (by omega), hc43, hc90, hk109 k' (by omega), hp111]
+      simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «IxonDeserialize::get_mut_const», hk17 k' (by omega), hp19, hk42 k' (by omega), hc43, hc90, hk109 k' (by omega), hp111]
     · rcases selectArm_literal_inv sel91 with ⟨hc137, rfl, rfl⟩ | ⟨hc137, sel138⟩
       · obtain ⟨v139, m140, bs141, d142, mt143, d144⟩ := d30.letValue_inv
         obtain ⟨vs145, m146, args147, callee148⟩ := d142.call_inv
@@ -5606,7 +5606,7 @@ theorem «IxonDeserialize::get_mut_const».of_eval (ih0 : «IxonDeserialize::get
         obtain ⟨rfl, rfl⟩ := args182.nil_inv
         refine ⟨k16 + k41 + k155 + 1, fun k hk => ?_⟩
         obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-        simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::get_mut_const», hk17 k' (by omega), hp19, hk42 k' (by omega), hc43, hc90, hc137, hk156 k' (by omega), hp158]
+        simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «IxonDeserialize::get_mut_const», hk17 k' (by omega), hp19, hk42 k' (by omega), hc43, hc90, hc137, hk156 k' (by omega), hp158]
       · simp [SourceSemantics.selectArm] at sel138
 
 /-- The mirror of `IxonDeserialize::get_mut_const_list`. -/
@@ -5761,7 +5761,7 @@ theorem «IxonDeserialize::get_constant_info».of_eval (ih0 : «IxonDeserialize:
     obtain ⟨rfl, rfl⟩ := args59.nil_inv
     refine ⟨k32 + 1, fun k hk => ?_⟩
     obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-    simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::get_constant_info», hc8, hk33 k' (by omega), hp35]
+    simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «IxonDeserialize::get_constant_info», hc8, hk33 k' (by omega), hp35]
   · rcases selectArm_literal_inv sel9 with ⟨hc61, rfl, rfl⟩ | ⟨hc61, sel62⟩
     · obtain ⟨v63, m64, bs65, d66, mt67, d68⟩ := d6.letValue_inv
       obtain ⟨l69, rfl⟩ := d66.var_inv
@@ -5864,7 +5864,7 @@ theorem «IxonDeserialize::get_constant_info».of_eval (ih0 : «IxonDeserialize:
       obtain ⟨k251, hk252⟩ := «IxonDeserialize::get_constant_info_by_variant».of_eval ih0 ih6 ih7 ih8 ih9 ih10 ih11 ih13 callee224
       refine ⟨k142 + k154 + k166 + k178 + k190 + k202 + k214 + k243 + k251 + 1, fun k hk => ?_⟩
       obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-      simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::get_constant_info», hc8, hc61, hp71, ap90, hk143 k' (by omega), op131, hk155 k' (by omega), op125, hk167 k' (by omega), op119, hk179 k' (by omega), op113, hk191 k' (by omega), op107, hk203 k' (by omega), op101, hk215 k' (by omega), pr241, hk244 k' (by omega), hk252 k' (by omega)]
+      simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «IxonDeserialize::get_constant_info», hc8, hc61, hp71, ap90, hk143 k' (by omega), op131, hk155 k' (by omega), op125, hk167 k' (by omega), op119, hk179 k' (by omega), op113, hk191 k' (by omega), op107, hk203 k' (by omega), op101, hk215 k' (by omega), pr241, hk244 k' (by omega), hk252 k' (by omega)]
     · simp [SourceSemantics.selectArm] at sel62
 
 /-- The mirror of `IxonDeserialize::get_constant`. -/
@@ -6054,7 +6054,7 @@ theorem «IxonDeserialize::get_constant».of_eval (ih0 : «IxonDeserialize::get_
   obtain ⟨rfl, rfl⟩ := args218.nil_inv
   refine ⟨k16 + k65 + k89 + k113 + k137 + k179 + 1, fun k hk => ?_⟩
   obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-  simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::get_constant», hk17 k' (by omega), hp19, hp32, hk66 k' (by omega), hp68, hk90 k' (by omega), hp92, hk114 k' (by omega), hp116, hk138 k' (by omega), hp140, hk180 k' (by omega)]
+  simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «IxonDeserialize::get_constant», hk17 k' (by omega), hp19, hp32, hk66 k' (by omega), hp68, hk90 k' (by omega), hp92, hk114 k' (by omega), hp116, hk138 k' (by omega), hp140, hk180 k' (by omega)]
 
 /-- The mirror of `UInt8::xor`. -/
 def «UInt8::xor» : Nat → Heap F → SourceValue F → SourceValue F → Option (SourceValue F × Heap F)
@@ -6086,7 +6086,7 @@ theorem «UInt8::xor».of_eval : «UInt8::xor».Complete := by
   have hm16 := callee3.map_row «UInt8::raw_xor».none
   refine ⟨1, fun k hk => ?_⟩
   obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-  simp (config := { decide := true, maxSteps := 10000000 }) [«UInt8::xor», hm16]
+  simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «UInt8::xor», hm16]
 
 /-- The mirror of `UInt64::xor`. -/
 def «UInt64::xor» : Nat → Heap F → SourceValue F → SourceValue F → Option (SourceValue F × Heap F)
@@ -6247,7 +6247,7 @@ theorem «UInt64::xor».of_eval : «UInt64::xor».Complete := by
   obtain ⟨rfl, rfl⟩ := args205.nil_inv
   refine ⟨k61 + k84 + k107 + k130 + k153 + k176 + k199 + k222 + 1, fun k hk => ?_⟩
   obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-  simp (config := { decide := true, maxSteps := 10000000 }) [«UInt64::xor», hp8, hp27, hk62 k' (by omega), hk85 k' (by omega), hk108 k' (by omega), hk131 k' (by omega), hk154 k' (by omega), hk177 k' (by omega), hk200 k' (by omega), hk223 k' (by omega)]
+  simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «UInt64::xor», hp8, hp27, hk62 k' (by omega), hk85 k' (by omega), hk108 k' (by omega), hk131 k' (by omega), hk154 k' (by omega), hk177 k' (by omega), hk200 k' (by omega), hk223 k' (by omega)]
 
 /-- The mirror of `UInt8::raw_or`. -/
 def «UInt8::raw_or» : Nat → Heap F → SourceValue F → SourceValue F → Option (SourceValue F × Heap F)
@@ -6309,7 +6309,7 @@ theorem «UInt8::raw_or».of_eval : «UInt8::raw_or».Complete := by
   obtain ⟨rfl, rfl⟩ := d27.literal_inv
   refine ⟨1, fun k hk => ?_⟩
   obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-  simp (config := { decide := true, maxSteps := 10000000 }) [«UInt8::raw_or», hm22, op40, op34, op28]
+  simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «UInt8::raw_or», hm22, op40, op34, op28]
 
 /-- The mirror of `UInt8::or`. -/
 def «UInt8::or» : Nat → Heap F → SourceValue F → SourceValue F → Option (SourceValue F × Heap F)
@@ -6341,7 +6341,7 @@ theorem «UInt8::or».of_eval : «UInt8::or».Complete := by
   obtain ⟨k16, hk17⟩ := «UInt8::raw_or».of_eval callee3
   refine ⟨k16 + 1, fun k hk => ?_⟩
   obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-  simp (config := { decide := true, maxSteps := 10000000 }) [«UInt8::or», hk17 k' (by omega)]
+  simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «UInt8::or», hk17 k' (by omega)]
 
 /-- The mirror of `UInt64::or`. -/
 def «UInt64::or» : Nat → Heap F → SourceValue F → SourceValue F → Option (SourceValue F × Heap F)
@@ -6502,7 +6502,7 @@ theorem «UInt64::or».of_eval : «UInt64::or».Complete := by
   obtain ⟨rfl, rfl⟩ := args205.nil_inv
   refine ⟨k61 + k84 + k107 + k130 + k153 + k176 + k199 + k222 + 1, fun k hk => ?_⟩
   obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-  simp (config := { decide := true, maxSteps := 10000000 }) [«UInt64::or», hp8, hp27, hk62 k' (by omega), hk85 k' (by omega), hk108 k' (by omega), hk131 k' (by omega), hk154 k' (by omega), hk177 k' (by omega), hk200 k' (by omega), hk223 k' (by omega)]
+  simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «UInt64::or», hp8, hp27, hk62 k' (by omega), hk85 k' (by omega), hk108 k' (by omega), hk131 k' (by omega), hk154 k' (by omega), hk177 k' (by omega), hk200 k' (by omega), hk223 k' (by omega)]
 
 /-- The mirror of `UInt8::raw_and`. -/
 def «UInt8::raw_and» : Nat → Heap F → SourceValue F → SourceValue F → Option (SourceValue F × Heap F)
@@ -6564,7 +6564,7 @@ theorem «UInt8::raw_and».of_eval : «UInt8::raw_and».Complete := by
   obtain ⟨rfl, rfl⟩ := d27.literal_inv
   refine ⟨1, fun k hk => ?_⟩
   obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-  simp (config := { decide := true, maxSteps := 10000000 }) [«UInt8::raw_and», hm22, op40, op34, op28]
+  simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «UInt8::raw_and», hm22, op40, op34, op28]
 
 /-- The mirror of `UInt8::and`. -/
 def «UInt8::and» : Nat → Heap F → SourceValue F → SourceValue F → Option (SourceValue F × Heap F)
@@ -6596,7 +6596,7 @@ theorem «UInt8::and».of_eval : «UInt8::and».Complete := by
   obtain ⟨k16, hk17⟩ := «UInt8::raw_and».of_eval callee3
   refine ⟨k16 + 1, fun k hk => ?_⟩
   obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-  simp (config := { decide := true, maxSteps := 10000000 }) [«UInt8::and», hk17 k' (by omega)]
+  simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «UInt8::and», hk17 k' (by omega)]
 
 /-- The mirror of `UInt64::and`. -/
 def «UInt64::and» : Nat → Heap F → SourceValue F → SourceValue F → Option (SourceValue F × Heap F)
@@ -6757,7 +6757,7 @@ theorem «UInt64::and».of_eval : «UInt64::and».Complete := by
   obtain ⟨rfl, rfl⟩ := args205.nil_inv
   refine ⟨k61 + k84 + k107 + k130 + k153 + k176 + k199 + k222 + 1, fun k hk => ?_⟩
   obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-  simp (config := { decide := true, maxSteps := 10000000 }) [«UInt64::and», hp8, hp27, hk62 k' (by omega), hk85 k' (by omega), hk108 k' (by omega), hk131 k' (by omega), hk154 k' (by omega), hk177 k' (by omega), hk200 k' (by omega), hk223 k' (by omega)]
+  simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «UInt64::and», hp8, hp27, hk62 k' (by omega), hk85 k' (by omega), hk108 k' (by omega), hk131 k' (by omega), hk154 k' (by omega), hk177 k' (by omega), hk200 k' (by omega), hk223 k' (by omega)]
 
 /-- The mirror of `UInt64::sub_with_borrow`. -/
 def «UInt64::sub_with_borrow» : Nat → Heap F → SourceValue F → SourceValue F → Option (SourceValue F × Heap F)
@@ -7378,7 +7378,7 @@ theorem «UInt64::sub_with_borrow».of_eval : «UInt64::sub_with_borrow».Comple
   obtain ⟨rfl, rfl⟩ := args707.nil_inv
   refine ⟨k40 + k55 + k57 + k111 + k126 + k138 + k140 + k194 + k209 + k221 + k223 + k277 + k292 + k304 + k306 + k360 + k375 + k387 + k389 + k443 + k458 + k470 + k472 + k526 + k541 + k553 + k555 + k609 + k624 + k636 + k638 + k724 + 1, fun k hk => ?_⟩
   obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-  simp (config := { decide := true, maxSteps := 10000000 }) [«UInt64::sub_with_borrow», pr38, hk41 k' (by omega), op26, op20, pr53, hk56 k' (by omega), hk58 k' (by omega), hp60, pr109, hk112 k' (by omega), op97, op91, pr124, hk127 k' (by omega), op85, hk139 k' (by omega), hk141 k' (by omega), hp143, pr192, hk195 k' (by omega), op180, op174, pr207, hk210 k' (by omega), op168, hk222 k' (by omega), hk224 k' (by omega), hp226, pr275, hk278 k' (by omega), op263, op257, pr290, hk293 k' (by omega), op251, hk305 k' (by omega), hk307 k' (by omega), hp309, pr358, hk361 k' (by omega), op346, op340, pr373, hk376 k' (by omega), op334, hk388 k' (by omega), hk390 k' (by omega), hp392, pr441, hk444 k' (by omega), op429, op423, pr456, hk459 k' (by omega), op417, hk471 k' (by omega), hk473 k' (by omega), hp475, pr524, hk527 k' (by omega), op512, op506, pr539, hk542 k' (by omega), op500, hk554 k' (by omega), hk556 k' (by omega), hp558, pr607, hk610 k' (by omega), op595, op589, pr622, hk625 k' (by omega), op583, hk637 k' (by omega), hk639 k' (by omega), hp641, op713, hk725 k' (by omega)]
+  simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «UInt64::sub_with_borrow», pr38, hk41 k' (by omega), op26, op20, pr53, hk56 k' (by omega), hk58 k' (by omega), hp60, pr109, hk112 k' (by omega), op97, op91, pr124, hk127 k' (by omega), op85, hk139 k' (by omega), hk141 k' (by omega), hp143, pr192, hk195 k' (by omega), op180, op174, pr207, hk210 k' (by omega), op168, hk222 k' (by omega), hk224 k' (by omega), hp226, pr275, hk278 k' (by omega), op263, op257, pr290, hk293 k' (by omega), op251, hk305 k' (by omega), hk307 k' (by omega), hp309, pr358, hk361 k' (by omega), op346, op340, pr373, hk376 k' (by omega), op334, hk388 k' (by omega), hk390 k' (by omega), hp392, pr441, hk444 k' (by omega), op429, op423, pr456, hk459 k' (by omega), op417, hk471 k' (by omega), hk473 k' (by omega), hp475, pr524, hk527 k' (by omega), op512, op506, pr539, hk542 k' (by omega), op500, hk554 k' (by omega), hk556 k' (by omega), hp558, pr607, hk610 k' (by omega), op595, op589, pr622, hk625 k' (by omega), op583, hk637 k' (by omega), hk639 k' (by omega), hp641, op713, hk725 k' (by omega)]
 
 /-- The mirror of `UInt64::to_field`. -/
 def «UInt64::to_field» : Nat → Heap F → SourceValue F → Option (SourceValue F × Heap F)
@@ -7562,7 +7562,7 @@ theorem «UInt64::to_field».of_eval : «UInt64::to_field».Complete := by
   obtain ⟨k204, hk205⟩ := «UInt8::to_field».of_eval callee197
   refine ⟨k43 + k96 + k114 + k132 + k150 + k168 + k186 + k204 + 1, fun k hk => ?_⟩
   obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-  simp (config := { decide := true, maxSteps := 10000000 }) [«UInt64::to_field», hp8, ap27, hk44 k' (by omega), hk97 k' (by omega), op85, op103, hk115 k' (by omega), op79, op121, hk133 k' (by omega), op73, op139, hk151 k' (by omega), op67, op157, hk169 k' (by omega), op61, op175, hk187 k' (by omega), op55, op193, hk205 k' (by omega)]
+  simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «UInt64::to_field», hp8, ap27, hk44 k' (by omega), hk97 k' (by omega), op85, op103, hk115 k' (by omega), op79, op121, hk133 k' (by omega), op73, op139, hk151 k' (by omega), op67, op157, hk169 k' (by omega), op61, op175, hk187 k' (by omega), op55, op193, hk205 k' (by omega)]
 
 /-- The mirror of `UInt64::wrapping_succ`. -/
 def «UInt64::wrapping_succ» : Nat → Heap F → SourceValue F → Option (SourceValue F × Heap F)
@@ -7797,7 +7797,7 @@ theorem «UInt64::wrapping_succ».of_eval : «UInt64::wrapping_succ».Complete :
                   obtain ⟨rfl, rfl⟩ := args228.nil_inv
                   refine ⟨k36 + k57 + k78 + k99 + k120 + k141 + k162 + k183 + 1, fun k hk => ?_⟩
                   obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-                  simp (config := { decide := true, maxSteps := 10000000 }) [«UInt64::wrapping_succ», hp8, hk37 k' (by omega), hc38, hk58 k' (by omega), hc59, hk79 k' (by omega), hc80, hk100 k' (by omega), hc101, hk121 k' (by omega), hc122, hk142 k' (by omega), hc143, hk163 k' (by omega), hc164, hk184 k' (by omega), hc185]
+                  simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «UInt64::wrapping_succ», hp8, hk37 k' (by omega), hc38, hk58 k' (by omega), hc59, hk79 k' (by omega), hc80, hk100 k' (by omega), hc101, hk121 k' (by omega), hc122, hk142 k' (by omega), hc143, hk163 k' (by omega), hc164, hk184 k' (by omega), hc185]
                 · obtain ⟨rfl, rfl⟩ := selectArm_wildcard_inv sel186
                   obtain ⟨vs229, args230, rfl⟩ := d172.array_inv
                   obtain ⟨v231, vs232, m233, rfl, d234, args235⟩ := args230.cons_inv
@@ -7833,7 +7833,7 @@ theorem «UInt64::wrapping_succ».of_eval : «UInt64::wrapping_succ».Complete :
                   obtain ⟨rfl, rfl⟩ := args270.nil_inv
                   refine ⟨k36 + k57 + k78 + k99 + k120 + k141 + k162 + k183 + k296 + 1, fun k hk => ?_⟩
                   obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-                  simp (config := { decide := true, maxSteps := 10000000 }) [«UInt64::wrapping_succ», hp8, hk37 k' (by omega), hc38, hk58 k' (by omega), hc59, hk79 k' (by omega), hc80, hk100 k' (by omega), hc101, hk121 k' (by omega), hc122, hk142 k' (by omega), hc143, hk163 k' (by omega), hc164, hk184 k' (by omega), hc185, hk297 k' (by omega), op285, hm298]
+                  simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «UInt64::wrapping_succ», hp8, hk37 k' (by omega), hc38, hk58 k' (by omega), hc59, hk79 k' (by omega), hc80, hk100 k' (by omega), hc101, hk121 k' (by omega), hc122, hk142 k' (by omega), hc143, hk163 k' (by omega), hc164, hk184 k' (by omega), hc185, hk297 k' (by omega), op285, hm298]
               · obtain ⟨rfl, rfl⟩ := selectArm_wildcard_inv sel165
                 obtain ⟨vs299, args300, rfl⟩ := d151.array_inv
                 obtain ⟨v301, vs302, m303, rfl, d304, args305⟩ := args300.cons_inv
@@ -7871,7 +7871,7 @@ theorem «UInt64::wrapping_succ».of_eval : «UInt64::wrapping_succ».Complete :
                 obtain ⟨rfl, rfl⟩ := args368.nil_inv
                 refine ⟨k36 + k57 + k78 + k99 + k120 + k141 + k162 + k361 + 1, fun k hk => ?_⟩
                 obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-                simp (config := { decide := true, maxSteps := 10000000 }) [«UInt64::wrapping_succ», hp8, hk37 k' (by omega), hc38, hk58 k' (by omega), hc59, hk79 k' (by omega), hc80, hk100 k' (by omega), hc101, hk121 k' (by omega), hc122, hk142 k' (by omega), hc143, hk163 k' (by omega), hc164, hk362 k' (by omega), op350, hm363]
+                simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «UInt64::wrapping_succ», hp8, hk37 k' (by omega), hc38, hk58 k' (by omega), hc59, hk79 k' (by omega), hc80, hk100 k' (by omega), hc101, hk121 k' (by omega), hc122, hk142 k' (by omega), hc143, hk163 k' (by omega), hc164, hk362 k' (by omega), op350, hm363]
             · obtain ⟨rfl, rfl⟩ := selectArm_wildcard_inv sel144
               obtain ⟨vs370, args371, rfl⟩ := d130.array_inv
               obtain ⟨v372, vs373, m374, rfl, d375, args376⟩ := args371.cons_inv
@@ -7911,7 +7911,7 @@ theorem «UInt64::wrapping_succ».of_eval : «UInt64::wrapping_succ».Complete :
               obtain ⟨rfl, rfl⟩ := args440.nil_inv
               refine ⟨k36 + k57 + k78 + k99 + k120 + k141 + k427 + 1, fun k hk => ?_⟩
               obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-              simp (config := { decide := true, maxSteps := 10000000 }) [«UInt64::wrapping_succ», hp8, hk37 k' (by omega), hc38, hk58 k' (by omega), hc59, hk79 k' (by omega), hc80, hk100 k' (by omega), hc101, hk121 k' (by omega), hc122, hk142 k' (by omega), hc143, hk428 k' (by omega), op416, hm429]
+              simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «UInt64::wrapping_succ», hp8, hk37 k' (by omega), hc38, hk58 k' (by omega), hc59, hk79 k' (by omega), hc80, hk100 k' (by omega), hc101, hk121 k' (by omega), hc122, hk142 k' (by omega), hc143, hk428 k' (by omega), op416, hm429]
           · obtain ⟨rfl, rfl⟩ := selectArm_wildcard_inv sel123
             obtain ⟨vs442, args443, rfl⟩ := d109.array_inv
             obtain ⟨v444, vs445, m446, rfl, d447, args448⟩ := args443.cons_inv
@@ -7953,7 +7953,7 @@ theorem «UInt64::wrapping_succ».of_eval : «UInt64::wrapping_succ».Complete :
             obtain ⟨rfl, rfl⟩ := args513.nil_inv
             refine ⟨k36 + k57 + k78 + k99 + k120 + k494 + 1, fun k hk => ?_⟩
             obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-            simp (config := { decide := true, maxSteps := 10000000 }) [«UInt64::wrapping_succ», hp8, hk37 k' (by omega), hc38, hk58 k' (by omega), hc59, hk79 k' (by omega), hc80, hk100 k' (by omega), hc101, hk121 k' (by omega), hc122, hk495 k' (by omega), op483, hm496]
+            simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «UInt64::wrapping_succ», hp8, hk37 k' (by omega), hc38, hk58 k' (by omega), hc59, hk79 k' (by omega), hc80, hk100 k' (by omega), hc101, hk121 k' (by omega), hc122, hk495 k' (by omega), op483, hm496]
         · obtain ⟨rfl, rfl⟩ := selectArm_wildcard_inv sel102
           obtain ⟨vs515, args516, rfl⟩ := d88.array_inv
           obtain ⟨v517, vs518, m519, rfl, d520, args521⟩ := args516.cons_inv
@@ -7997,7 +7997,7 @@ theorem «UInt64::wrapping_succ».of_eval : «UInt64::wrapping_succ».Complete :
           obtain ⟨rfl, rfl⟩ := args587.nil_inv
           refine ⟨k36 + k57 + k78 + k99 + k562 + 1, fun k hk => ?_⟩
           obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-          simp (config := { decide := true, maxSteps := 10000000 }) [«UInt64::wrapping_succ», hp8, hk37 k' (by omega), hc38, hk58 k' (by omega), hc59, hk79 k' (by omega), hc80, hk100 k' (by omega), hc101, hk563 k' (by omega), op551, hm564]
+          simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «UInt64::wrapping_succ», hp8, hk37 k' (by omega), hc38, hk58 k' (by omega), hc59, hk79 k' (by omega), hc80, hk100 k' (by omega), hc101, hk563 k' (by omega), op551, hm564]
       · obtain ⟨rfl, rfl⟩ := selectArm_wildcard_inv sel81
         obtain ⟨vs589, args590, rfl⟩ := d67.array_inv
         obtain ⟨v591, vs592, m593, rfl, d594, args595⟩ := args590.cons_inv
@@ -8043,7 +8043,7 @@ theorem «UInt64::wrapping_succ».of_eval : «UInt64::wrapping_succ».Complete :
         obtain ⟨rfl, rfl⟩ := args662.nil_inv
         refine ⟨k36 + k57 + k78 + k631 + 1, fun k hk => ?_⟩
         obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-        simp (config := { decide := true, maxSteps := 10000000 }) [«UInt64::wrapping_succ», hp8, hk37 k' (by omega), hc38, hk58 k' (by omega), hc59, hk79 k' (by omega), hc80, hk632 k' (by omega), op620, hm633]
+        simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «UInt64::wrapping_succ», hp8, hk37 k' (by omega), hc38, hk58 k' (by omega), hc59, hk79 k' (by omega), hc80, hk632 k' (by omega), op620, hm633]
     · obtain ⟨rfl, rfl⟩ := selectArm_wildcard_inv sel60
       obtain ⟨vs664, args665, rfl⟩ := d46.array_inv
       obtain ⟨v666, vs667, m668, rfl, d669, args670⟩ := args665.cons_inv
@@ -8091,7 +8091,7 @@ theorem «UInt64::wrapping_succ».of_eval : «UInt64::wrapping_succ».Complete :
       obtain ⟨rfl, rfl⟩ := args738.nil_inv
       refine ⟨k36 + k57 + k701 + 1, fun k hk => ?_⟩
       obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-      simp (config := { decide := true, maxSteps := 10000000 }) [«UInt64::wrapping_succ», hp8, hk37 k' (by omega), hc38, hk58 k' (by omega), hc59, hk702 k' (by omega), op690, hm703]
+      simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «UInt64::wrapping_succ», hp8, hk37 k' (by omega), hc38, hk58 k' (by omega), hc59, hk702 k' (by omega), op690, hm703]
   · obtain ⟨rfl, rfl⟩ := selectArm_wildcard_inv sel39
     obtain ⟨vs740, args741, rfl⟩ := d25.array_inv
     obtain ⟨v742, vs743, m744, rfl, d745, args746⟩ := args741.cons_inv
@@ -8141,7 +8141,7 @@ theorem «UInt64::wrapping_succ».of_eval : «UInt64::wrapping_succ».Complete :
     obtain ⟨rfl, rfl⟩ := args815.nil_inv
     refine ⟨k36 + k772 + 1, fun k hk => ?_⟩
     obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-    simp (config := { decide := true, maxSteps := 10000000 }) [«UInt64::wrapping_succ», hp8, hk37 k' (by omega), hc38, hk773 k' (by omega), op761, hm774]
+    simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «UInt64::wrapping_succ», hp8, hk37 k' (by omega), hc38, hk773 k' (by omega), op761, hm774]
 
 /-- The mirror of `UInt64::eq`. -/
 def «UInt64::eq» : Nat → Heap F → SourceValue F → SourceValue F → Option (SourceValue F × Heap F)
@@ -8390,12 +8390,12 @@ theorem «UInt64::eq».of_eval : «UInt64::eq».Complete := by
   · obtain ⟨rfl, rfl⟩ := d44.literal_inv
     refine ⟨k68 + k80 + k103 + k115 + k138 + k150 + k173 + k185 + k208 + k220 + k243 + k255 + k278 + k290 + k313 + k325 + 1, fun k hk => ?_⟩
     obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-    simp (config := { decide := true, maxSteps := 10000000 }) [«UInt64::eq», hp8, hp27, hk69 k' (by omega), op57, hk81 k' (by omega), hk104 k' (by omega), op92, hk116 k' (by omega), hk139 k' (by omega), op127, hk151 k' (by omega), hk174 k' (by omega), op162, hk186 k' (by omega), hk209 k' (by omega), op197, hk221 k' (by omega), hk244 k' (by omega), op232, hk256 k' (by omega), hk279 k' (by omega), op267, hk291 k' (by omega), hk314 k' (by omega), op302, hk326 k' (by omega), hc327]
+    simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «UInt64::eq», hp8, hp27, hk69 k' (by omega), op57, hk81 k' (by omega), hk104 k' (by omega), op92, hk116 k' (by omega), hk139 k' (by omega), op127, hk151 k' (by omega), hk174 k' (by omega), op162, hk186 k' (by omega), hk209 k' (by omega), op197, hk221 k' (by omega), hk244 k' (by omega), op232, hk256 k' (by omega), hk279 k' (by omega), op267, hk291 k' (by omega), hk314 k' (by omega), op302, hk326 k' (by omega), hc327]
   · obtain ⟨rfl, rfl⟩ := selectArm_wildcard_inv sel328
     obtain ⟨rfl, rfl⟩ := d44.literal_inv
     refine ⟨k68 + k80 + k103 + k115 + k138 + k150 + k173 + k185 + k208 + k220 + k243 + k255 + k278 + k290 + k313 + k325 + 1, fun k hk => ?_⟩
     obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-    simp (config := { decide := true, maxSteps := 10000000 }) [«UInt64::eq», hp8, hp27, hk69 k' (by omega), op57, hk81 k' (by omega), hk104 k' (by omega), op92, hk116 k' (by omega), hk139 k' (by omega), op127, hk151 k' (by omega), hk174 k' (by omega), op162, hk186 k' (by omega), hk209 k' (by omega), op197, hk221 k' (by omega), hk244 k' (by omega), op232, hk256 k' (by omega), hk279 k' (by omega), op267, hk291 k' (by omega), hk314 k' (by omega), op302, hk326 k' (by omega), hc327]
+    simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «UInt64::eq», hp8, hp27, hk69 k' (by omega), op57, hk81 k' (by omega), hk104 k' (by omega), op92, hk116 k' (by omega), hk139 k' (by omega), op127, hk151 k' (by omega), hk174 k' (by omega), op162, hk186 k' (by omega), hk209 k' (by omega), op197, hk221 k' (by omega), hk244 k' (by omega), op232, hk256 k' (by omega), hk279 k' (by omega), op267, hk291 k' (by omega), hk314 k' (by omega), op302, hk326 k' (by omega), hc327]
 
 /-- The mirror of `UInt64::from_fields`. -/
 def «UInt64::from_fields» : Nat → Heap F → SourceValue F → Option (SourceValue F × Heap F)
@@ -8577,7 +8577,7 @@ theorem «UInt64::from_fields».of_eval : «UInt64::from_fields».Complete := by
   obtain ⟨rfl, rfl⟩ := args192.nil_inv
   refine ⟨k28 + k64 + k100 + k136 + 1, fun k hk => ?_⟩
   obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-  simp (config := { decide := true, maxSteps := 10000000 }) [«UInt64::from_fields», pr17, pr26, hk29 k' (by omega), hp31, pr53, pr62, hk65 k' (by omega), hp67, pr89, pr98, hk101 k' (by omega), hp103, pr125, pr134, hk137 k' (by omega), hp139]
+  simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «UInt64::from_fields», pr17, pr26, hk29 k' (by omega), hp31, pr53, pr62, hk65 k' (by omega), hp67, pr89, pr98, hk101 k' (by omega), hp103, pr125, pr134, hk137 k' (by omega), hp139]
 
 /-- The mirror of `UInt64::to_bytes`. -/
 def «UInt64::to_bytes» : Nat → Heap F → SourceValue F → Option (SourceValue F × Heap F)
@@ -8600,7 +8600,7 @@ theorem «UInt64::to_bytes».of_eval : «UInt64::to_bytes».Complete := by
   subst l0
   refine ⟨1, fun k hk => ?_⟩
   obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-  simp (config := { decide := true, maxSteps := 10000000 }) [«UInt64::to_bytes»]
+  simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «UInt64::to_bytes»]
 
 /-- The mirror of `UInt64::from_bytes`. -/
 def «UInt64::from_bytes» : Nat → Heap F → SourceValue F → Option (SourceValue F × Heap F)
@@ -8623,7 +8623,7 @@ theorem «UInt64::from_bytes».of_eval : «UInt64::from_bytes».Complete := by
   subst l0
   refine ⟨1, fun k hk => ?_⟩
   obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-  simp (config := { decide := true, maxSteps := 10000000 }) [«UInt64::from_bytes»]
+  simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «UInt64::from_bytes»]
 
 /-! Generator report:
 

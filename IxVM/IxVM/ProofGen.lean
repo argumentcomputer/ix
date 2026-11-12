@@ -636,7 +636,7 @@ def finalStep (f : String) (fs : Facts) : List String :=
   let extra := if f == "IxonDeserialize::get_address" then ", readStreamBytes" else ""
   [s!"refine ⟨{fuel}, fun k hk => ?_⟩",
    "obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩",
-   s!"simp (config := \{ decide := true, maxSteps := 10000000 }) [«{f}»{extra}{String.join (fs.rw.map (", " ++ ·))}]"]
+   s!"simp (config := \{ decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «{f}»{extra}{String.join (fs.rw.map (", " ++ ·))}]"]
 
 /-- Whether a body contains `.hint`. -/
 partial def hasHint : Expr F → Bool
@@ -813,13 +813,22 @@ def mirrors (prog : Program F) (src : Aiur.Generic.Source F)
     | none => false
   let needs (n : String) : List String :=
     recursive.filter fun g => g != n && (reach n).contains g
-  let worldDecl := if emitWorld then "/-- The prepared source's world. -/\nabbrev W : World F := IxVM.source.world\n\n"
+  let worldDecl := if emitWorld then
+      "/-- The prepared source's world. -/\nabbrev W : World F := IxVM.source.world\n\n" ++
+      "attribute [mirror_eval]\n" ++
+      "  ite_true ite_false eq_self and_true true_and and_false false_and\n" ++
+      "  Value.field.injEq Value.tuple.injEq List.cons.injEq\n" ++
+      "  List.length_cons List.length_nil List.length_append Nat.add_zero\n" ++
+      "  List.append_assoc List.cons_append List.nil_append List.append_nil\n" ++
+      "  matchConstruct_construct matchTuple_tuple matchLitTuple_tuple_field\n" ++
+      "  bindOk_ok bindOk_error bindCons_cons bindCons_nil Option.map_some\n" ++
+      "  instanceName_plain_some instanceName_plain_none\n\n"
     else if priorRoots.length == 3 then
       "def bindPair {α β γ : Type} (x : Option (α × β)) (f : α → β → Option γ) : Option γ :=\n" ++
       "  match x with\n  | some (a, b) => f a b\n  | none => none\n\n" ++
-      "@[simp] theorem bindPair_some {α β γ : Type} (a : α) (b : β) (f : α → β → Option γ) :\n" ++
+      "@[simp, mirror_eval] theorem bindPair_some {α β γ : Type} (a : α) (b : β) (f : α → β → Option γ) :\n" ++
       "    bindPair (some (a, b)) f = f a b := rfl\n\n" ++
-      "@[simp] theorem bindPair_none {α β γ : Type} (f : α → β → Option γ) :\n" ++
+      "@[simp, mirror_eval] theorem bindPair_none {α β γ : Type} (f : α → β → Option γ) :\n" ++
       "    bindPair (none : Option (α × β)) f = none := rfl\n\n" ++
       "@[congr] theorem bindPair_congr {α β γ : Type} {x x' : Option (α × β)}\n" ++
       "    (f : α → β → Option γ) (hx : x = x') :\n" ++

@@ -179,7 +179,7 @@ theorem «KernelKlimbs::klimbs_add».of_eval (ih16 : «KernelKlimbs::klimbs_succ
   try simp only [List.append_assoc, List.cons_append, List.nil_append] at hk22
   refine ⟨k21 + 1, fun k hk => ?_⟩
   obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-  simp (config := { decide := true, maxSteps := 10000000 }) [«KernelKlimbs::klimbs_add», hk22 k' (by omega)]
+  simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «KernelKlimbs::klimbs_add», hk22 k' (by omega)]
 
 /-- The mirror of `KernelKlimbs::klimbs_shl_limbs`. -/
 def «KernelKlimbs::klimbs_shl_limbs» : Nat → Heap F → SourceValue F → SourceValue F → Option (SourceValue F × Heap F)
@@ -1399,7 +1399,7 @@ theorem «UInt64::mul».of_eval (ih19 : «UInt64::mul_column».Complete) : «UIn
   obtain ⟨rfl, rfl⟩ := args1296.nil_inv
   refine ⟨k25 + k46 + k73 + k94 + k121 + k142 + k169 + k190 + k217 + k238 + k265 + k286 + k313 + k334 + k361 + k382 + k407 + k483 + k504 + k525 + k527 + k617 + k638 + k659 + k661 + k765 + k786 + k807 + k809 + k899 + k920 + k941 + k943 + k1019 + k1040 + k1061 + k1063 + k1125 + k1146 + k1167 + k1169 + k1204 + 1, fun k hk => ?_⟩
   obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-  simp (config := { decide := true, maxSteps := 10000000 }) [«UInt64::mul», pr23, hk26 k' (by omega), op11, op32, pr44, hk47 k' (by omega), pr71, hk74 k' (by omega), op59, op80, pr92, hk95 k' (by omega), pr119, hk122 k' (by omega), op107, op128, pr140, hk143 k' (by omega), pr167, hk170 k' (by omega), op155, op176, pr188, hk191 k' (by omega), pr215, hk218 k' (by omega), op203, op224, pr236, hk239 k' (by omega), pr263, hk266 k' (by omega), op251, op272, pr284, hk287 k' (by omega), pr311, hk314 k' (by omega), op299, op320, pr332, hk335 k' (by omega), pr359, hk362 k' (by omega), op347, op368, pr380, hk383 k' (by omega), op404, hk408 k' (by omega), hp410, op459, op453, op467, op447, pr481, hk484 k' (by omega), op441, op490, pr502, hk505 k' (by omega), op435, op511, pr523, hk526 k' (by omega), hk528 k' (by omega), hp530, op585, op579, op593, op573, op601, op567, pr615, hk618 k' (by omega), op561, op624, pr636, hk639 k' (by omega), op555, op645, pr657, hk660 k' (by omega), hk662 k' (by omega), hp664, op725, op719, op733, op713, op741, op707, op749, op701, pr763, hk766 k' (by omega), op695, op772, pr784, hk787 k' (by omega), op689, op793, pr805, hk808 k' (by omega), hk810 k' (by omega), hp812, op867, op861, op875, op855, op883, op849, pr897, hk900 k' (by omega), op843, op906, pr918, hk921 k' (by omega), op837, op927, pr939, hk942 k' (by omega), hk944 k' (by omega), hp946, op995, op989, op1003, op983, pr1017, hk1020 k' (by omega), op977, op1026, pr1038, hk1041 k' (by omega), op971, op1047, pr1059, hk1062 k' (by omega), hk1064 k' (by omega), hp1066, op1109, op1103, pr1123, hk1126 k' (by omega), op1097, op1132, pr1144, hk1147 k' (by omega), op1091, op1153, pr1165, hk1168 k' (by omega), hk1170 k' (by omega), hp1172, ap1185, pr1202, hk1205 k' (by omega), pr1227, pr1236, pr1245, pr1254, pr1263, pr1272, pr1281, pr1290, pr1306, pr1315, pr1324, pr1333, pr1342, pr1351, pr1360, pr1369]
+  simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «UInt64::mul», pr23, hk26 k' (by omega), op11, op32, pr44, hk47 k' (by omega), pr71, hk74 k' (by omega), op59, op80, pr92, hk95 k' (by omega), pr119, hk122 k' (by omega), op107, op128, pr140, hk143 k' (by omega), pr167, hk170 k' (by omega), op155, op176, pr188, hk191 k' (by omega), pr215, hk218 k' (by omega), op203, op224, pr236, hk239 k' (by omega), pr263, hk266 k' (by omega), op251, op272, pr284, hk287 k' (by omega), pr311, hk314 k' (by omega), op299, op320, pr332, hk335 k' (by omega), pr359, hk362 k' (by omega), op347, op368, pr380, hk383 k' (by omega), op404, hk408 k' (by omega), hp410, op459, op453, op467, op447, pr481, hk484 k' (by omega), op441, op490, pr502, hk505 k' (by omega), op435, op511, pr523, hk526 k' (by omega), hk528 k' (by omega), hp530, op585, op579, op593, op573, op601, op567, pr615, hk618 k' (by omega), op561, op624, pr636, hk639 k' (by omega), op555, op645, pr657, hk660 k' (by omega), hk662 k' (by omega), hp664, op725, op719, op733, op713, op741, op707, op749, op701, pr763, hk766 k' (by omega), op695, op772, pr784, hk787 k' (by omega), op689, op793, pr805, hk808 k' (by omega), hk810 k' (by omega), hp812, op867, op861, op875, op855, op883, op849, pr897, hk900 k' (by omega), op843, op906, pr918, hk921 k' (by omega), op837, op927, pr939, hk942 k' (by omega), hk944 k' (by omega), hp946, op995, op989, op1003, op983, pr1017, hk1020 k' (by omega), op977, op1026, pr1038, hk1041 k' (by omega), op971, op1047, pr1059, hk1062 k' (by omega), hk1064 k' (by omega), hp1066, op1109, op1103, pr1123, hk1126 k' (by omega), op1097, op1132, pr1144, hk1147 k' (by omega), op1091, op1153, pr1165, hk1168 k' (by omega), hk1170 k' (by omega), hp1172, ap1185, pr1202, hk1205 k' (by omega), pr1227, pr1236, pr1245, pr1254, pr1263, pr1272, pr1281, pr1290, pr1306, pr1315, pr1324, pr1333, pr1342, pr1351, pr1360, pr1369]
 
 /-- The mirror of `KernelKlimbs::klimbs_mul_single`. -/
 def «KernelKlimbs::klimbs_mul_single» : Nat → Heap F → SourceValue F → SourceValue F → SourceValue F → Option (SourceValue F × Heap F)
@@ -1548,7 +1548,7 @@ theorem «KernelKlimbs::klimbs_mul».of_eval (ih16 : «KernelKlimbs::klimbs_succ
   try simp only [List.append_assoc, List.cons_append, List.nil_append] at hk32
   refine ⟨k31 + 1, fun k hk => ?_⟩
   obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-  simp (config := { decide := true, maxSteps := 10000000 }) [«KernelKlimbs::klimbs_mul», hk32 k' (by omega)]
+  simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «KernelKlimbs::klimbs_mul», hk32 k' (by omega)]
 
 /-- The mirror of `KernelKlimbs::klimbs_normalize`. -/
 def «KernelKlimbs::klimbs_normalize» : Nat → Heap F → SourceValue F → Option (SourceValue F × Heap F)
@@ -1647,13 +1647,13 @@ theorem «KernelKlimbs::klimbs_is_zero».of_eval (ih22 : «KernelKlimbs::klimbs_
     obtain ⟨rfl, rfl⟩ := d6.literal_inv
     refine ⟨k20 + 1, fun k hk => ?_⟩
     obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-    simp (config := { decide := true, maxSteps := 10000000 }) [«KernelKlimbs::klimbs_is_zero», ld9, hk21 k' (by omega), hp23]
+    simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «KernelKlimbs::klimbs_is_zero», ld9, hk21 k' (by omega), hp23]
   · dsimp only [List.length] at hc26
     obtain ⟨rfl, rfl⟩ := selectArm_wildcard_inv sel27
     obtain ⟨rfl, rfl⟩ := d6.literal_inv
     refine ⟨k20 + 1, fun k hk => ?_⟩
     obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-    simp (config := { decide := true, maxSteps := 10000000 }) [«KernelKlimbs::klimbs_is_zero», ld9, hk21 k' (by omega), hc26]
+    simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «KernelKlimbs::klimbs_is_zero», ld9, hk21 k' (by omega), hc26]
 
 /-- The mirror of `KernelKlimbs::klimbs_sub_borrow`. -/
 def «KernelKlimbs::klimbs_sub_borrow» : Nat → Heap F → SourceValue F → SourceValue F → SourceValue F → Option (SourceValue F × Heap F)
@@ -1856,7 +1856,7 @@ theorem «KernelKlimbs::klimbs_sub».of_eval (ih22 : «KernelKlimbs::klimbs_norm
       obtain ⟨rfl, rfl⟩ := args59.nil_inv
       refine ⟨k27 + 1, fun k hk => ?_⟩
       obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-      simp (config := { decide := true, maxSteps := 10000000 }) [«KernelKlimbs::klimbs_sub», hk28 k' (by omega), hp38, hc53]
+      simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «KernelKlimbs::klimbs_sub», hk28 k' (by omega), hp38, hc53]
     · rcases selectArm_literal_inv sel54 with ⟨hc60, rfl, rfl⟩ | ⟨hc60, sel61⟩
       · obtain ⟨vs62, m63, args64, callee65⟩ := d51.call_inv
         obtain ⟨v66, vs67, m68, rfl, d69, args70⟩ := args64.cons_inv
@@ -1869,7 +1869,7 @@ theorem «KernelKlimbs::klimbs_sub».of_eval (ih22 : «KernelKlimbs::klimbs_norm
         try simp only [List.append_assoc, List.cons_append, List.nil_append] at hk73
         refine ⟨k27 + k72 + 1, fun k hk => ?_⟩
         obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-        simp (config := { decide := true, maxSteps := 10000000 }) [«KernelKlimbs::klimbs_sub», hk28 k' (by omega), hp38, hc53, hc60, hk73 k' (by omega)]
+        simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «KernelKlimbs::klimbs_sub», hk28 k' (by omega), hp38, hc53, hc60, hk73 k' (by omega)]
       · simp [SourceSemantics.selectArm] at sel61
   · dsimp only [List.length] at hc41
     simp [SourceSemantics.selectArm] at sel42
@@ -1930,13 +1930,13 @@ theorem «KernelKlimbs::klimbs_le».of_eval (ih22 : «KernelKlimbs::klimbs_norma
     obtain ⟨rfl, rfl⟩ := d30.literal_inv
     refine ⟨k22 + 1, fun k hk => ?_⟩
     obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-    simp (config := { decide := true, maxSteps := 10000000 }) [«KernelKlimbs::klimbs_le», hk23 k' (by omega), ld33, hp36]
+    simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «KernelKlimbs::klimbs_le», hk23 k' (by omega), ld33, hp36]
   · dsimp only [List.length] at hc39
     obtain ⟨rfl, rfl⟩ := selectArm_wildcard_inv sel40
     obtain ⟨rfl, rfl⟩ := d30.literal_inv
     refine ⟨k22 + 1, fun k hk => ?_⟩
     obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-    simp (config := { decide := true, maxSteps := 10000000 }) [«KernelKlimbs::klimbs_le», hk23 k' (by omega), ld33, hc39]
+    simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «KernelKlimbs::klimbs_le», hk23 k' (by omega), ld33, hc39]
 
 /-- The mirror of `KernelLevels::klimbs_eq`. -/
 def «KernelLevels::klimbs_eq» : Nat → Heap F → SourceValue F → SourceValue F → Option (SourceValue F × Heap F)
@@ -2104,7 +2104,7 @@ theorem «IxVMCompat::ordinary_div_mod».of_eval (ih16 : «KernelKlimbs::klimbs_
     obtain ⟨rfl, rfl⟩ := args73.nil_inv
     refine ⟨k16 + k34 + k53 + 1, fun k hk => ?_⟩
     obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-    simp (config := { decide := true, maxSteps := 10000000 }) [«IxVMCompat::ordinary_div_mod», hk17 k' (by omega), hk35 k' (by omega), hk54 k' (by omega), hc55]
+    simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «IxVMCompat::ordinary_div_mod», hk17 k' (by omega), hk35 k' (by omega), hk54 k' (by omega), hc55]
   · obtain ⟨rfl, rfl⟩ := selectArm_wildcard_inv sel56
     obtain ⟨vs75, m76, args77, callee78⟩ := d42.call_inv
     obtain ⟨v79, vs80, m81, rfl, d82, args83⟩ := args77.cons_inv
@@ -2120,7 +2120,7 @@ theorem «IxVMCompat::ordinary_div_mod».of_eval (ih16 : «KernelKlimbs::klimbs_
     obtain ⟨k91, hk92⟩ := ih25 callee78
     refine ⟨k16 + k34 + k53 + k91 + 1, fun k hk => ?_⟩
     obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-    simp (config := { decide := true, maxSteps := 10000000 }) [«IxVMCompat::ordinary_div_mod», hk17 k' (by omega), hk35 k' (by omega), hk54 k' (by omega), hc55, hk92 k' (by omega)]
+    simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «IxVMCompat::ordinary_div_mod», hk17 k' (by omega), hk35 k' (by omega), hk54 k' (by omega), hc55, hk92 k' (by omega)]
 
 /-- The mirror of `KernelKlimbs::klimbs_div_mod`. -/
 def «KernelKlimbs::klimbs_div_mod» : Nat → Heap F → SourceValue F → SourceValue F → Option (SourceValue F × Heap F)
@@ -2349,7 +2349,7 @@ theorem «KernelKlimbs::klimbs_div_mod».of_eval (ih16 : «KernelKlimbs::klimbs_
     obtain ⟨rfl, rfl⟩ := args244.nil_inv
     refine ⟨k22 + k46 + k64 + k88 + k121 + k123 + k141 + k173 + k197 + k225 + 1, fun k hk => ?_⟩
     obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-    simp (config := { decide := true, maxSteps := 10000000 }) [«KernelKlimbs::klimbs_div_mod», hk23 k' (by omega), hp25, hk47 k' (by omega), hk65 k' (by omega), hk89 k' (by omega), hk122 k' (by omega), hk124 k' (by omega), hk142 k' (by omega), ap151, hk174 k' (by omega), hk198 k' (by omega), hc199, ap209, hk226 k' (by omega)]
+    simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «KernelKlimbs::klimbs_div_mod», hk23 k' (by omega), hp25, hk47 k' (by omega), hk65 k' (by omega), hk89 k' (by omega), hk122 k' (by omega), hk124 k' (by omega), hk142 k' (by omega), ap151, hk174 k' (by omega), hk198 k' (by omega), hc199, ap209, hk226 k' (by omega)]
   · rcases selectArm_literal_inv sel200 with ⟨hc246, rfl, rfl⟩ | ⟨hc246, sel247⟩
     · obtain ⟨v248, m249, bs250, d251, mt252, d253⟩ := d186.letValue_inv
       obtain ⟨vs254, args255, ap256⟩ := d251.builtin_inv
@@ -2391,7 +2391,7 @@ theorem «KernelKlimbs::klimbs_div_mod».of_eval (ih16 : «KernelKlimbs::klimbs_
       obtain ⟨rfl, rfl⟩ := args308.nil_inv
       refine ⟨k22 + k46 + k64 + k88 + k121 + k123 + k141 + k173 + k197 + k281 + k289 + 1, fun k hk => ?_⟩
       obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-      simp (config := { decide := true, maxSteps := 10000000 }) [«KernelKlimbs::klimbs_div_mod», hk23 k' (by omega), hp25, hk47 k' (by omega), hk65 k' (by omega), hk89 k' (by omega), hk122 k' (by omega), hk124 k' (by omega), hk142 k' (by omega), ap151, hk174 k' (by omega), hk198 k' (by omega), hc199, hc246, ap256, hk282 k' (by omega), hk290 k' (by omega)]
+      simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «KernelKlimbs::klimbs_div_mod», hk23 k' (by omega), hp25, hk47 k' (by omega), hk65 k' (by omega), hk89 k' (by omega), hk122 k' (by omega), hk124 k' (by omega), hk142 k' (by omega), ap151, hk174 k' (by omega), hk198 k' (by omega), hc199, hc246, ap256, hk282 k' (by omega), hk290 k' (by omega)]
     · simp [SourceSemantics.selectArm] at sel247
 
 /-- The mirror of `KernelKlimbs::klimbs_pow`. -/
@@ -2499,7 +2499,7 @@ theorem «KernelKlimbs::klimbs_div».of_eval (ih16 : «KernelKlimbs::klimbs_succ
     subst l33
     refine ⟨k23 + 1, fun k hk => ?_⟩
     obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-    simp (config := { decide := true, maxSteps := 10000000 }) [«KernelKlimbs::klimbs_div», hk24 k' (by omega), hp26]
+    simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «KernelKlimbs::klimbs_div», hk24 k' (by omega), hp26]
   · dsimp only [List.length] at hc29
     simp [SourceSemantics.selectArm] at sel30
 
@@ -2586,7 +2586,7 @@ theorem «KernelKlimbs::klimbs_shr».of_eval (ih16 : «KernelKlimbs::klimbs_succ
   try simp only [List.append_assoc, List.cons_append, List.nil_append] at hk102
   refine ⟨k99 + k101 + 1, fun k hk => ?_⟩
   obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-  simp (config := { decide := true, maxSteps := 10000000 }) [«KernelKlimbs::klimbs_shr», hk100 k' (by omega), hk102 k' (by omega)]
+  simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «KernelKlimbs::klimbs_shr», hk100 k' (by omega), hk102 k' (by omega)]
 
 /-- The mirror of `KernelKlimbs::klimbs_shl`. -/
 def «KernelKlimbs::klimbs_shl» : Nat → Heap F → SourceValue F → SourceValue F → Option (SourceValue F × Heap F)
@@ -2671,7 +2671,7 @@ theorem «KernelKlimbs::klimbs_shl».of_eval (ih16 : «KernelKlimbs::klimbs_succ
   try simp only [List.append_assoc, List.cons_append, List.nil_append] at hk102
   refine ⟨k99 + k101 + 1, fun k hk => ?_⟩
   obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-  simp (config := { decide := true, maxSteps := 10000000 }) [«KernelKlimbs::klimbs_shl», hk100 k' (by omega), hk102 k' (by omega)]
+  simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «KernelKlimbs::klimbs_shl», hk100 k' (by omega), hk102 k' (by omega)]
 
 /-- The mirror of `KernelKlimbs::klimbs_xor_op`. -/
 def «KernelKlimbs::klimbs_xor_op» : Nat → Heap F → SourceValue F → SourceValue F → Option (SourceValue F × Heap F)
@@ -2845,7 +2845,7 @@ theorem «KernelKlimbs::klimbs_mod».of_eval (ih16 : «KernelKlimbs::klimbs_succ
     subst l33
     refine ⟨k23 + 1, fun k hk => ?_⟩
     obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-    simp (config := { decide := true, maxSteps := 10000000 }) [«KernelKlimbs::klimbs_mod», hk24 k' (by omega), hp26]
+    simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «KernelKlimbs::klimbs_mod», hk24 k' (by omega), hp26]
   · dsimp only [List.length] at hc29
     simp [SourceSemantics.selectArm] at sel30
 
@@ -2967,7 +2967,7 @@ theorem «KernelKlimbs::klimbs_dec».of_eval (ih22 : «KernelKlimbs::klimbs_norm
   try simp only [List.append_assoc, List.cons_append, List.nil_append] at hk85
   refine ⟨k84 + 1, fun k hk => ?_⟩
   obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-  simp (config := { decide := true, maxSteps := 10000000 }) [«KernelKlimbs::klimbs_dec», hk85 k' (by omega)]
+  simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «KernelKlimbs::klimbs_dec», hk85 k' (by omega)]
 
 /-- The mirror of `KernelSubst::lbr_dec`. -/
 def «KernelSubst::lbr_dec» : Nat → Heap F → SourceValue F → Option (SourceValue F × Heap F)
@@ -2998,7 +2998,7 @@ theorem «KernelSubst::lbr_dec».of_eval : «KernelSubst::lbr_dec».Complete := 
   · obtain ⟨rfl, rfl⟩ := d6.literal_inv
     refine ⟨1, fun k hk => ?_⟩
     obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-    simp (config := { decide := true, maxSteps := 10000000 }) [«KernelSubst::lbr_dec», hc8]
+    simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «KernelSubst::lbr_dec», hc8]
   · obtain ⟨rfl, rfl⟩ := selectArm_wildcard_inv sel9
     obtain ⟨x10, y11, m12, d13, d14, op15⟩ := d6.binary_inv
     obtain ⟨l16, rfl⟩ := d13.var_inv
@@ -3007,7 +3007,7 @@ theorem «KernelSubst::lbr_dec».of_eval : «KernelSubst::lbr_dec».Complete := 
     obtain ⟨rfl, rfl⟩ := d14.literal_inv
     refine ⟨1, fun k hk => ?_⟩
     obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-    simp (config := { decide := true, maxSteps := 10000000 }) [«KernelSubst::lbr_dec», hc8, op15]
+    simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «KernelSubst::lbr_dec», hc8, op15]
 
 /-- The mirror of `KernelSubst::lbr_max`. -/
 def «KernelSubst::lbr_max» : Nat → Heap F → SourceValue F → SourceValue F → Option (SourceValue F × Heap F)
@@ -3052,14 +3052,14 @@ theorem «KernelSubst::lbr_max».of_eval (ih0 : «UInt32::less_than_fields».Com
     subst l27
     refine ⟨k23 + 1, fun k hk => ?_⟩
     obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-    simp (config := { decide := true, maxSteps := 10000000 }) [«KernelSubst::lbr_max», hk24 k' (by omega), hc25]
+    simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «KernelSubst::lbr_max», hk24 k' (by omega), hc25]
   · rcases selectArm_literal_inv sel26 with ⟨hc28, rfl, rfl⟩ | ⟨hc28, sel29⟩
     · obtain ⟨l30, rfl⟩ := d6.var_inv
       simp at l30
       subst l30
       refine ⟨k23 + 1, fun k hk => ?_⟩
       obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-      simp (config := { decide := true, maxSteps := 10000000 }) [«KernelSubst::lbr_max», hk24 k' (by omega), hc25, hc28]
+      simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «KernelSubst::lbr_max», hk24 k' (by omega), hc25, hc28]
     · simp [SourceSemantics.selectArm] at sel29
 
 mutual
@@ -3410,7 +3410,7 @@ theorem «Lists::lookup».of_eval (ih38 : «Lists::drop».Complete) : «Lists::l
   subst l33
   refine ⟨k25 + 1, fun k hk => ?_⟩
   obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-  simp (config := { decide := true, maxSteps := 10000000 }) [«Lists::lookup», ld8, hk26 k' (by omega), hp28]
+  simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «Lists::lookup», ld8, hk26 k' (by omega), hp28]
 
 /-- The mirror of `KernelSubst::expr_lift_bvar`. -/
 def «KernelSubst::expr_lift_bvar» : Nat → Heap F → SourceValue F → SourceValue F → SourceValue F → Option (SourceValue F × Heap F)
@@ -3467,7 +3467,7 @@ theorem «KernelSubst::expr_lift_bvar».of_eval (ih0 : «UInt32::less_than_field
     obtain ⟨rfl, rfl⟩ := args36.nil_inv
     refine ⟨k23 + 1, fun k hk => ?_⟩
     obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-    simp (config := { decide := true, maxSteps := 10000000 }) [«KernelSubst::expr_lift_bvar», hk24 k' (by omega), hc25]
+    simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «KernelSubst::expr_lift_bvar», hk24 k' (by omega), hc25]
   · rcases selectArm_literal_inv sel26 with ⟨hc38, rfl, rfl⟩ | ⟨hc38, sel39⟩
     · obtain ⟨v40, m41, d42, rfl, rfl⟩ := d6.store_inv
       obtain ⟨vs43, args44, rfl⟩ := d42.construct_inv
@@ -3482,7 +3482,7 @@ theorem «KernelSubst::expr_lift_bvar».of_eval (ih0 : «UInt32::less_than_field
       obtain ⟨rfl, rfl⟩ := args49.nil_inv
       refine ⟨k23 + 1, fun k hk => ?_⟩
       obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-      simp (config := { decide := true, maxSteps := 10000000 }) [«KernelSubst::expr_lift_bvar», hk24 k' (by omega), hc25, hc38, op55]
+      simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «KernelSubst::expr_lift_bvar», hk24 k' (by omega), hc25, hc38, op55]
     · simp [SourceSemantics.selectArm] at sel39
 
 mutual
@@ -3768,7 +3768,7 @@ theorem «KernelSubst::expr_inst_many_bvar».of_eval (ih0 : «UInt32::less_than_
     obtain ⟨k97, hk98⟩ := ih41 callee62
     refine ⟨k16 + k55 + k84 + k97 + 1, fun k hk => ?_⟩
     obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-    simp (config := { decide := true, maxSteps := 10000000 }) [«KernelSubst::expr_inst_many_bvar», hk17 k' (by omega), op29, hk56 k' (by omega), hc57, hk85 k' (by omega), hk98 k' (by omega)]
+    simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «KernelSubst::expr_inst_many_bvar», hk17 k' (by omega), op29, hk56 k' (by omega), hc57, hk85 k' (by omega), hk98 k' (by omega)]
   · rcases selectArm_literal_inv sel58 with ⟨hc99, rfl, rfl⟩ | ⟨hc99, sel100⟩
     · obtain ⟨v101, m102, d103, rfl, rfl⟩ := d38.store_inv
       obtain ⟨vs104, args105, rfl⟩ := d103.construct_inv
@@ -3783,7 +3783,7 @@ theorem «KernelSubst::expr_inst_many_bvar».of_eval (ih0 : «UInt32::less_than_
       obtain ⟨rfl, rfl⟩ := args110.nil_inv
       refine ⟨k16 + k55 + 1, fun k hk => ?_⟩
       obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-      simp (config := { decide := true, maxSteps := 10000000 }) [«KernelSubst::expr_inst_many_bvar», hk17 k' (by omega), op29, hk56 k' (by omega), hc57, hc99, op116]
+      simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «KernelSubst::expr_inst_many_bvar», hk17 k' (by omega), op29, hk56 k' (by omega), hc57, hc99, op116]
     · simp [SourceSemantics.selectArm] at sel100
 
 /-- The mirror of `KernelSubst::has_bvar_in_range_bvar`. -/
@@ -3827,7 +3827,7 @@ theorem «KernelSubst::has_bvar_in_range_bvar».of_eval (ih0 : «UInt32::less_th
   · obtain ⟨rfl, rfl⟩ := d6.literal_inv
     refine ⟨k23 + 1, fun k hk => ?_⟩
     obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-    simp (config := { decide := true, maxSteps := 10000000 }) [«KernelSubst::has_bvar_in_range_bvar», hk24 k' (by omega), hc25]
+    simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «KernelSubst::has_bvar_in_range_bvar», hk24 k' (by omega), hc25]
   · rcases selectArm_literal_inv sel26 with ⟨hc27, rfl, rfl⟩ | ⟨hc27, sel28⟩
     · obtain ⟨vs29, m30, args31, callee32⟩ := d6.call_inv
       obtain ⟨v33, vs34, m35, rfl, d36, args37⟩ := args31.cons_inv
@@ -3843,7 +3843,7 @@ theorem «KernelSubst::has_bvar_in_range_bvar».of_eval (ih0 : «UInt32::less_th
       obtain ⟨k45, hk46⟩ := ih0 callee32
       refine ⟨k23 + k45 + 1, fun k hk => ?_⟩
       obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-      simp (config := { decide := true, maxSteps := 10000000 }) [«KernelSubst::has_bvar_in_range_bvar», hk24 k' (by omega), hc25, hc27, hk46 k' (by omega)]
+      simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «KernelSubst::has_bvar_in_range_bvar», hk24 k' (by omega), hc25, hc27, hk46 k' (by omega)]
     · simp [SourceSemantics.selectArm] at sel28
 
 mutual
@@ -4205,7 +4205,7 @@ theorem «KernelSubst::expr_inst1_bvar».of_eval (ih0 : «UInt32::less_than_fiel
     obtain ⟨rfl, rfl⟩ := args36.nil_inv
     refine ⟨k23 + 1, fun k hk => ?_⟩
     obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-    simp (config := { decide := true, maxSteps := 10000000 }) [«KernelSubst::expr_inst1_bvar», hk24 k' (by omega), hc25]
+    simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «KernelSubst::expr_inst1_bvar», hk24 k' (by omega), hc25]
   · rcases selectArm_literal_inv sel26 with ⟨hc38, rfl, rfl⟩ | ⟨hc38, sel39⟩
     · obtain ⟨v40, m41, bs42, body43, d44, sel45, d46⟩ := d6.matchValue_inv
       obtain ⟨x47, y48, m49, d50, d51, op52⟩ := d44.binary_inv
@@ -4232,7 +4232,7 @@ theorem «KernelSubst::expr_inst1_bvar».of_eval (ih0 : «UInt32::less_than_fiel
         obtain ⟨k78, hk79⟩ := ih41 callee60
         refine ⟨k23 + k78 + 1, fun k hk => ?_⟩
         obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-        simp (config := { decide := true, maxSteps := 10000000 }) [«KernelSubst::expr_inst1_bvar», hk24 k' (by omega), hc25, hc38, op52, hc55, hk79 k' (by omega)]
+        simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «KernelSubst::expr_inst1_bvar», hk24 k' (by omega), hc25, hc38, op52, hc55, hk79 k' (by omega)]
       · obtain ⟨rfl, rfl⟩ := selectArm_wildcard_inv sel56
         obtain ⟨v80, m81, d82, rfl, rfl⟩ := d46.store_inv
         obtain ⟨vs83, args84, rfl⟩ := d82.construct_inv
@@ -4245,7 +4245,7 @@ theorem «KernelSubst::expr_inst1_bvar».of_eval (ih0 : «UInt32::less_than_fiel
         obtain ⟨rfl, rfl⟩ := args89.nil_inv
         refine ⟨k23 + 1, fun k hk => ?_⟩
         obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-        simp (config := { decide := true, maxSteps := 10000000 }) [«KernelSubst::expr_inst1_bvar», hk24 k' (by omega), hc25, hc38, op52, hc55, op95]
+        simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «KernelSubst::expr_inst1_bvar», hk24 k' (by omega), hc25, hc38, op52, hc55, op95]
     · simp [SourceSemantics.selectArm] at sel39
 
 mutual
@@ -4552,14 +4552,14 @@ theorem «KernelSubst::lbr_min».of_eval (ih0 : «UInt32::less_than_fields».Com
     subst l27
     refine ⟨k23 + 1, fun k hk => ?_⟩
     obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-    simp (config := { decide := true, maxSteps := 10000000 }) [«KernelSubst::lbr_min», hk24 k' (by omega), hc25]
+    simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «KernelSubst::lbr_min», hk24 k' (by omega), hc25]
   · rcases selectArm_literal_inv sel26 with ⟨hc28, rfl, rfl⟩ | ⟨hc28, sel29⟩
     · obtain ⟨l30, rfl⟩ := d6.var_inv
       simp at l30
       subst l30
       refine ⟨k23 + 1, fun k hk => ?_⟩
       obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-      simp (config := { decide := true, maxSteps := 10000000 }) [«KernelSubst::lbr_min», hk24 k' (by omega), hc25, hc28]
+      simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «KernelSubst::lbr_min», hk24 k' (by omega), hc25, hc28]
     · simp [SourceSemantics.selectArm] at sel29
 
 mutual
@@ -4887,7 +4887,7 @@ theorem «KernelSubst::ctx_reachable».of_eval (ih0 : «UInt32::less_than_fields
   obtain ⟨k51, hk52⟩ := ih60 callee21
   refine ⟨k16 + k49 + k51 + 1, fun k hk => ?_⟩
   obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-  simp (config := { decide := true, maxSteps := 10000000 }) [«KernelSubst::ctx_reachable», hk17 k' (by omega), hk50 k' (by omega), hk52 k' (by omega)]
+  simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «KernelSubst::ctx_reachable», hk17 k' (by omega), hk50 k' (by omega), hk52 k' (by omega)]
 
 theorem «Lists::take».lookup (t_T : Generic.Ty) :
     IxVM.source.program.sourceFunction? (Instance.mk "Lists::take" [t_T]).symbol =
@@ -4973,7 +4973,7 @@ theorem «KernelSubst::ctx_trim».of_eval (ih0 : «UInt32::less_than_fields».Co
     obtain ⟨rfl, rfl⟩ := args14.nil_inv
     refine ⟨1, fun k hk => ?_⟩
     obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-    simp (config := { decide := true, maxSteps := 10000000 }) [«KernelSubst::ctx_trim», hc8]
+    simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «KernelSubst::ctx_trim», hc8]
   · obtain ⟨rfl, rfl⟩ := selectArm_wildcard_inv sel9
     obtain ⟨v15, m16, bs17, body18, d19, sel20, d21⟩ := d6.matchValue_inv
     obtain ⟨vs22, m23, args24, callee25⟩ := d19.call_inv
@@ -4999,7 +4999,7 @@ theorem «KernelSubst::ctx_trim».of_eval (ih0 : «UInt32::less_than_fields».Co
       subst l53
       refine ⟨k47 + k49 + 1, fun k hk => ?_⟩
       obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-      simp (config := { decide := true, maxSteps := 10000000 }) [«KernelSubst::ctx_trim», hc8, hk48 k' (by omega), hk50 k' (by omega), hc51]
+      simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «KernelSubst::ctx_trim», hc8, hk48 k' (by omega), hk50 k' (by omega), hc51]
     · rcases selectArm_literal_inv sel52 with ⟨hc54, rfl, rfl⟩ | ⟨hc54, sel55⟩
       · obtain ⟨vs56, m57, args58, callee59⟩ := d21.call_inv
         obtain ⟨v60, vs61, m62, rfl, d63, args64⟩ := args58.cons_inv
@@ -5024,7 +5024,7 @@ theorem «KernelSubst::ctx_trim».of_eval (ih0 : «UInt32::less_than_fields».Co
         obtain ⟨k89, hk90⟩ := ih61 callee59
         refine ⟨k47 + k49 + k87 + k89 + 1, fun k hk => ?_⟩
         obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-        simp (config := { decide := true, maxSteps := 10000000 }) [«KernelSubst::ctx_trim», hc8, hk48 k' (by omega), hk50 k' (by omega), hc51, hc54, hk88 k' (by omega), hk90 k' (by omega)]
+        simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «KernelSubst::ctx_trim», hc8, hk48 k' (by omega), hk50 k' (by omega), hc51, hc54, hk88 k' (by omega), hk90 k' (by omega)]
       · simp [SourceSemantics.selectArm] at sel55
 
 /-- The mirror of `KernelLevels::bytestream_eq`. -/
@@ -5147,13 +5147,13 @@ theorem «KernelLevels::literal_eq».of_eval (ih24 : «KernelLevels::klimbs_eq»
       obtain ⟨k46, hk47⟩ := ih24 callee33
       refine ⟨k46 + 1, fun k hk => ?_⟩
       obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-      simp (config := { decide := true, maxSteps := 10000000 }) [«KernelLevels::literal_eq», hp9, hp24, hk47 k' (by omega)]
+      simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «KernelLevels::literal_eq», hp9, hp24, hk47 k' (by omega)]
     · dsimp only [List.length] at hc27
       obtain ⟨rfl, rfl⟩ := selectArm_wildcard_inv sel28
       obtain ⟨rfl, rfl⟩ := d21.literal_inv
       refine ⟨1, fun k hk => ?_⟩
       obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-      simp (config := { decide := true, maxSteps := 10000000 }) [«KernelLevels::literal_eq», hp9, hc27]
+      simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «KernelLevels::literal_eq», hp9, hc27]
   · dsimp only [List.length] at hc12
     rcases selectArm_construct_inv (by trivial) sel13 with ⟨ys48, hp49, hl50, ml51, rfl⟩ | ⟨hc52, sel53⟩
     · rcases ys48 with _ | ⟨y54, _ | ⟨_, _⟩⟩ <;> simp at hl50
@@ -5183,13 +5183,13 @@ theorem «KernelLevels::literal_eq».of_eval (ih24 : «KernelLevels::klimbs_eq»
         obtain ⟨k86, hk87⟩ := ih62 callee73
         refine ⟨k86 + 1, fun k hk => ?_⟩
         obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-        simp (config := { decide := true, maxSteps := 10000000 }) [«KernelLevels::literal_eq», hc12, hp49, hp64, hk87 k' (by omega)]
+        simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «KernelLevels::literal_eq», hc12, hp49, hp64, hk87 k' (by omega)]
       · dsimp only [List.length] at hc67
         obtain ⟨rfl, rfl⟩ := selectArm_wildcard_inv sel68
         obtain ⟨rfl, rfl⟩ := d61.literal_inv
         refine ⟨1, fun k hk => ?_⟩
         obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-        simp (config := { decide := true, maxSteps := 10000000 }) [«KernelLevels::literal_eq», hc12, hp49, hc67]
+        simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «KernelLevels::literal_eq», hc12, hp49, hc67]
     · dsimp only [List.length] at hc52
       simp [SourceSemantics.selectArm] at sel53
 
@@ -5220,12 +5220,12 @@ theorem «Fields::is_zero».of_eval : «Fields::is_zero».Complete := by
   · obtain ⟨rfl, rfl⟩ := d6.literal_inv
     refine ⟨1, fun k hk => ?_⟩
     obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-    simp (config := { decide := true, maxSteps := 10000000 }) [«Fields::is_zero», hc8]
+    simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «Fields::is_zero», hc8]
   · obtain ⟨rfl, rfl⟩ := selectArm_wildcard_inv sel9
     obtain ⟨rfl, rfl⟩ := d6.literal_inv
     refine ⟨1, fun k hk => ?_⟩
     obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-    simp (config := { decide := true, maxSteps := 10000000 }) [«Fields::is_zero», hc8]
+    simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «Fields::is_zero», hc8]
 
 /-- The mirror of `KernelLevels::level_eq`. -/
 def «KernelLevels::level_eq» : Nat → Heap F → SourceValue F → SourceValue F → Option (SourceValue F × Heap F)
@@ -5605,14 +5605,14 @@ theorem «KernelLevels::level_max_offsets».of_eval (ih0 : «UInt32::less_than_f
           subst l118
           refine ⟨k22 + k54 + k87 + k114 + 1, fun k hk => ?_⟩
           obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-          simp (config := { decide := true, maxSteps := 10000000 }) [«KernelLevels::level_max_offsets», hk23 k' (by omega), hp25, hk55 k' (by omega), hp57, hk88 k' (by omega), hc89, hk115 k' (by omega), hc116]
+          simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «KernelLevels::level_max_offsets», hk23 k' (by omega), hp25, hk55 k' (by omega), hp57, hk88 k' (by omega), hc89, hk115 k' (by omega), hc116]
         · rcases selectArm_literal_inv sel117 with ⟨hc119, rfl, rfl⟩ | ⟨hc119, sel120⟩
           · obtain ⟨l121, rfl⟩ := d97.var_inv
             simp at l121
             subst l121
             refine ⟨k22 + k54 + k87 + k114 + 1, fun k hk => ?_⟩
             obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-            simp (config := { decide := true, maxSteps := 10000000 }) [«KernelLevels::level_max_offsets», hk23 k' (by omega), hp25, hk55 k' (by omega), hp57, hk88 k' (by omega), hc89, hk115 k' (by omega), hc116, hc119]
+            simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «KernelLevels::level_max_offsets», hk23 k' (by omega), hp25, hk55 k' (by omega), hp57, hk88 k' (by omega), hc89, hk115 k' (by omega), hc116, hc119]
           · simp [SourceSemantics.selectArm] at sel120
       · rcases selectArm_literal_inv sel90 with ⟨hc122, rfl, rfl⟩ | ⟨hc122, sel123⟩
         · obtain ⟨v124, m125, d126, rfl, rfl⟩ := d70.store_inv
@@ -5628,7 +5628,7 @@ theorem «KernelLevels::level_max_offsets».of_eval (ih0 : «UInt32::less_than_f
           obtain ⟨rfl, rfl⟩ := args139.nil_inv
           refine ⟨k22 + k54 + k87 + 1, fun k hk => ?_⟩
           obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-          simp (config := { decide := true, maxSteps := 10000000 }) [«KernelLevels::level_max_offsets», hk23 k' (by omega), hp25, hk55 k' (by omega), hp57, hk88 k' (by omega), hc89, hc122]
+          simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «KernelLevels::level_max_offsets», hk23 k' (by omega), hp25, hk55 k' (by omega), hp57, hk88 k' (by omega), hc89, hc122]
         · simp [SourceSemantics.selectArm] at sel123
     · dsimp only [List.length] at hc60
       simp [SourceSemantics.selectArm] at sel61
@@ -5695,7 +5695,7 @@ theorem «KernelLevels::level_max_subsumes».of_eval (ih65 : «KernelLevels::lev
     · obtain ⟨rfl, rfl⟩ := d25.literal_inv
       refine ⟨k42 + 1, fun k hk => ?_⟩
       obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-      simp (config := { decide := true, maxSteps := 10000000 }) [«KernelLevels::level_max_subsumes», ld9, hp12, hk43 k' (by omega), hc44]
+      simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «KernelLevels::level_max_subsumes», ld9, hp12, hk43 k' (by omega), hc44]
     · rcases selectArm_literal_inv sel45 with ⟨hc46, rfl, rfl⟩ | ⟨hc46, sel47⟩
       · obtain ⟨vs48, m49, args50, callee51⟩ := d25.call_inv
         obtain ⟨v52, vs53, m54, rfl, d55, args56⟩ := args50.cons_inv
@@ -5711,14 +5711,14 @@ theorem «KernelLevels::level_max_subsumes».of_eval (ih65 : «KernelLevels::lev
         obtain ⟨k64, hk65⟩ := ih65 callee51
         refine ⟨k42 + k64 + 1, fun k hk => ?_⟩
         obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-        simp (config := { decide := true, maxSteps := 10000000 }) [«KernelLevels::level_max_subsumes», ld9, hp12, hk43 k' (by omega), hc44, hc46, hk65 k' (by omega)]
+        simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «KernelLevels::level_max_subsumes», ld9, hp12, hk43 k' (by omega), hc44, hc46, hk65 k' (by omega)]
       · simp [SourceSemantics.selectArm] at sel47
   · dsimp only [List.length] at hc15
     obtain ⟨rfl, rfl⟩ := selectArm_wildcard_inv sel16
     obtain ⟨rfl, rfl⟩ := d6.literal_inv
     refine ⟨1, fun k hk => ?_⟩
     obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-    simp (config := { decide := true, maxSteps := 10000000 }) [«KernelLevels::level_max_subsumes», ld9, hc15]
+    simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «KernelLevels::level_max_subsumes», ld9, hc15]
 
 /-- The mirror of `KernelLevels::level_max_go`. -/
 def «KernelLevels::level_max_go» : Nat → Heap F → SourceValue F → SourceValue F → Option (SourceValue F × Heap F)
@@ -5793,7 +5793,7 @@ theorem «KernelLevels::level_max_go».of_eval (ih0 : «UInt32::less_than_fields
     subst l27
     refine ⟨k23 + 1, fun k hk => ?_⟩
     obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-    simp (config := { decide := true, maxSteps := 10000000 }) [«KernelLevels::level_max_go», hk24 k' (by omega), hc25]
+    simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «KernelLevels::level_max_go», hk24 k' (by omega), hc25]
   · rcases selectArm_literal_inv sel26 with ⟨hc28, rfl, rfl⟩ | ⟨hc28, sel29⟩
     · obtain ⟨v30, m31, bs32, body33, d34, sel35, d36⟩ := d6.matchValue_inv
       obtain ⟨p37, d38, ld39⟩ := d34.load_inv
@@ -5810,7 +5810,7 @@ theorem «KernelLevels::level_max_go».of_eval (ih0 : «UInt32::less_than_fields
         subst l47
         refine ⟨k23 + 1, fun k hk => ?_⟩
         obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-        simp (config := { decide := true, maxSteps := 10000000 }) [«KernelLevels::level_max_go», hk24 k' (by omega), hc25, hc28, ld39, hp42]
+        simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «KernelLevels::level_max_go», hk24 k' (by omega), hc25, hc28, ld39, hp42]
       · dsimp only [List.length] at hc45
         obtain ⟨rfl, rfl⟩ := selectArm_wildcard_inv sel46
         obtain ⟨v48, m49, bs50, body51, d52, sel53, d54⟩ := d36.matchValue_inv
@@ -5828,7 +5828,7 @@ theorem «KernelLevels::level_max_go».of_eval (ih0 : «UInt32::less_than_fields
           subst l65
           refine ⟨k23 + 1, fun k hk => ?_⟩
           obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-          simp (config := { decide := true, maxSteps := 10000000 }) [«KernelLevels::level_max_go», hk24 k' (by omega), hc25, hc28, ld39, hc45, ld57, hp60]
+          simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «KernelLevels::level_max_go», hk24 k' (by omega), hc25, hc28, ld39, hc45, ld57, hp60]
         · dsimp only [List.length] at hc63
           obtain ⟨rfl, rfl⟩ := selectArm_wildcard_inv sel64
           obtain ⟨v66, m67, bs68, body69, d70, sel71, d72⟩ := d54.matchValue_inv
@@ -5850,7 +5850,7 @@ theorem «KernelLevels::level_max_go».of_eval (ih0 : «UInt32::less_than_fields
             subst l93
             refine ⟨k23 + k89 + 1, fun k hk => ?_⟩
             obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-            simp (config := { decide := true, maxSteps := 10000000 }) [«KernelLevels::level_max_go», hk24 k' (by omega), hc25, hc28, ld39, hc45, ld57, hc63, hk90 k' (by omega), hc91]
+            simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «KernelLevels::level_max_go», hk24 k' (by omega), hc25, hc28, ld39, hc45, ld57, hc63, hk90 k' (by omega), hc91]
           · rcases selectArm_literal_inv sel92 with ⟨hc94, rfl, rfl⟩ | ⟨hc94, sel95⟩
             · obtain ⟨v96, m97, bs98, body99, d100, sel101, d102⟩ := d72.matchValue_inv
               obtain ⟨vs103, m104, args105, callee106⟩ := d100.call_inv
@@ -5871,7 +5871,7 @@ theorem «KernelLevels::level_max_go».of_eval (ih0 : «UInt32::less_than_fields
                 subst l123
                 refine ⟨k23 + k89 + k119 + 1, fun k hk => ?_⟩
                 obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-                simp (config := { decide := true, maxSteps := 10000000 }) [«KernelLevels::level_max_go», hk24 k' (by omega), hc25, hc28, ld39, hc45, ld57, hc63, hk90 k' (by omega), hc91, hc94, hk120 k' (by omega), hc121]
+                simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «KernelLevels::level_max_go», hk24 k' (by omega), hc25, hc28, ld39, hc45, ld57, hc63, hk90 k' (by omega), hc91, hc94, hk120 k' (by omega), hc121]
               · rcases selectArm_literal_inv sel122 with ⟨hc124, rfl, rfl⟩ | ⟨hc124, sel125⟩
                 · obtain ⟨vs126, m127, args128, callee129⟩ := d102.call_inv
                   obtain ⟨v130, vs131, m132, rfl, d133, args134⟩ := args128.cons_inv
@@ -5887,7 +5887,7 @@ theorem «KernelLevels::level_max_go».of_eval (ih0 : «UInt32::less_than_fields
                   obtain ⟨k142, hk143⟩ := «KernelLevels::level_max_offsets».of_eval ih0 ih65 ih66 callee129
                   refine ⟨k23 + k89 + k119 + k142 + 1, fun k hk => ?_⟩
                   obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-                  simp (config := { decide := true, maxSteps := 10000000 }) [«KernelLevels::level_max_go», hk24 k' (by omega), hc25, hc28, ld39, hc45, ld57, hc63, hk90 k' (by omega), hc91, hc94, hk120 k' (by omega), hc121, hc124, hk143 k' (by omega)]
+                  simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «KernelLevels::level_max_go», hk24 k' (by omega), hc25, hc28, ld39, hc45, ld57, hc63, hk90 k' (by omega), hc91, hc94, hk120 k' (by omega), hc121, hc124, hk143 k' (by omega)]
                 · simp [SourceSemantics.selectArm] at sel125
             · simp [SourceSemantics.selectArm] at sel95
     · simp [SourceSemantics.selectArm] at sel29
@@ -6013,14 +6013,14 @@ theorem «KernelLevels::level_max».of_eval (ih0 : «UInt32::less_than_fields».
         subst l79
         refine ⟨k17 + k43 + k75 + 1, fun k hk => ?_⟩
         obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-        simp (config := { decide := true, maxSteps := 10000000 }) [«KernelLevels::level_max», hk18 k' (by omega), hp20, hk44 k' (by omega), hp46, hk76 k' (by omega), hc77]
+        simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «KernelLevels::level_max», hk18 k' (by omega), hp20, hk44 k' (by omega), hp46, hk76 k' (by omega), hc77]
       · rcases selectArm_literal_inv sel78 with ⟨hc80, rfl, rfl⟩ | ⟨hc80, sel81⟩
         · obtain ⟨l82, rfl⟩ := d58.var_inv
           simp at l82
           subst l82
           refine ⟨k17 + k43 + k75 + 1, fun k hk => ?_⟩
           obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-          simp (config := { decide := true, maxSteps := 10000000 }) [«KernelLevels::level_max», hk18 k' (by omega), hp20, hk44 k' (by omega), hp46, hk76 k' (by omega), hc77, hc80]
+          simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «KernelLevels::level_max», hk18 k' (by omega), hp20, hk44 k' (by omega), hp46, hk76 k' (by omega), hc77, hc80]
         · simp [SourceSemantics.selectArm] at sel81
     · dsimp only [List.length] at hc49
       obtain ⟨rfl, rfl⟩ := selectArm_wildcard_inv sel50
@@ -6038,7 +6038,7 @@ theorem «KernelLevels::level_max».of_eval (ih0 : «UInt32::less_than_fields».
       obtain ⟨k99, hk100⟩ := «KernelLevels::level_max_go».of_eval ih0 ih65 ih66 callee86
       refine ⟨k17 + k43 + k99 + 1, fun k hk => ?_⟩
       obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-      simp (config := { decide := true, maxSteps := 10000000 }) [«KernelLevels::level_max», hk18 k' (by omega), hp20, hk44 k' (by omega), hc49, hk100 k' (by omega)]
+      simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «KernelLevels::level_max», hk18 k' (by omega), hp20, hk44 k' (by omega), hc49, hk100 k' (by omega)]
   · dsimp only [List.length] at hc23
     obtain ⟨rfl, rfl⟩ := selectArm_wildcard_inv sel24
     obtain ⟨vs101, m102, args103, callee104⟩ := d6.call_inv
@@ -6055,7 +6055,7 @@ theorem «KernelLevels::level_max».of_eval (ih0 : «UInt32::less_than_fields».
     obtain ⟨k117, hk118⟩ := «KernelLevels::level_max_go».of_eval ih0 ih65 ih66 callee104
     refine ⟨k17 + k117 + 1, fun k hk => ?_⟩
     obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-    simp (config := { decide := true, maxSteps := 10000000 }) [«KernelLevels::level_max», hk18 k' (by omega), hc23, hk118 k' (by omega)]
+    simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «KernelLevels::level_max», hk18 k' (by omega), hc23, hk118 k' (by omega)]
 
 /-- The mirror of `KernelLevels::level_imax`. -/
 def «KernelLevels::level_imax» : Nat → Heap F → SourceValue F → SourceValue F → Option (SourceValue F × Heap F)
@@ -6129,7 +6129,7 @@ theorem «KernelLevels::level_imax».of_eval (ih0 : «UInt32::less_than_fields»
     obtain ⟨rfl, rfl⟩ := args21.nil_inv
     refine ⟨1, fun k hk => ?_⟩
     obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-    simp (config := { decide := true, maxSteps := 10000000 }) [«KernelLevels::level_imax», ld9, hp12]
+    simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «KernelLevels::level_imax», ld9, hp12]
   · dsimp only [List.length] at hc15
     rcases selectArm_construct_inv (by trivial) sel16 with ⟨ys22, hp23, hl24, ml25, rfl⟩ | ⟨hc26, sel27⟩
     · rcases ys22 with _ | ⟨y28, _ | ⟨_, _⟩⟩ <;> simp at hl24
@@ -6150,7 +6150,7 @@ theorem «KernelLevels::level_imax».of_eval (ih0 : «UInt32::less_than_fields»
       obtain ⟨k45, hk46⟩ := «KernelLevels::level_max».of_eval ih0 ih65 ih66 ih67 callee32
       refine ⟨k45 + 1, fun k hk => ?_⟩
       obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-      simp (config := { decide := true, maxSteps := 10000000 }) [«KernelLevels::level_imax», ld9, hc15, hp23, hk46 k' (by omega)]
+      simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «KernelLevels::level_imax», ld9, hc15, hp23, hk46 k' (by omega)]
     · dsimp only [List.length] at hc26
       obtain ⟨rfl, rfl⟩ := selectArm_wildcard_inv sel27
       obtain ⟨v47, m48, bs49, d50, mt51, d52⟩ := d6.letValue_inv
@@ -6184,7 +6184,7 @@ theorem «KernelLevels::level_imax».of_eval (ih0 : «UInt32::less_than_fields»
         obtain ⟨k91, hk92⟩ := «KernelLevels::level_max».of_eval ih0 ih65 ih66 ih67 callee78
         refine ⟨k63 + k91 + 1, fun k hk => ?_⟩
         obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-        simp (config := { decide := true, maxSteps := 10000000 }) [«KernelLevels::level_imax», ld9, hc15, hc26, hk64 k' (by omega), hc73, hk92 k' (by omega)]
+        simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «KernelLevels::level_imax», ld9, hc15, hc26, hk64 k' (by omega), hc73, hk92 k' (by omega)]
       · rcases selectArm_literal_inv sel74 with ⟨hc93, rfl, rfl⟩ | ⟨hc93, sel94⟩
         · obtain ⟨v95, m96, bs97, body98, d99, sel100, d101⟩ := d71.matchValue_inv
           obtain ⟨p102, d103, ld104⟩ := d99.load_inv
@@ -6201,7 +6201,7 @@ theorem «KernelLevels::level_imax».of_eval (ih0 : «UInt32::less_than_fields»
             subst l112
             refine ⟨k63 + 1, fun k hk => ?_⟩
             obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-            simp (config := { decide := true, maxSteps := 10000000 }) [«KernelLevels::level_imax», ld9, hc15, hc26, hk64 k' (by omega), hc73, hc93, ld104, hp107]
+            simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «KernelLevels::level_imax», ld9, hc15, hc26, hk64 k' (by omega), hc73, hc93, ld104, hp107]
           · dsimp only [List.length] at hc110
             obtain ⟨rfl, rfl⟩ := selectArm_wildcard_inv sel111
             obtain ⟨v113, m114, bs115, d116, mt117, d118⟩ := d101.letValue_inv
@@ -6230,7 +6230,7 @@ theorem «KernelLevels::level_imax».of_eval (ih0 : «UInt32::less_than_fields»
               subst l147
               refine ⟨k63 + k135 + 1, fun k hk => ?_⟩
               obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-              simp (config := { decide := true, maxSteps := 10000000 }) [«KernelLevels::level_imax», ld9, hc15, hc26, hk64 k' (by omega), hc73, hc93, ld104, hc110, hk136 k' (by omega), hc145]
+              simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «KernelLevels::level_imax», ld9, hc15, hc26, hk64 k' (by omega), hc73, hc93, ld104, hc110, hk136 k' (by omega), hc145]
             · rcases selectArm_literal_inv sel146 with ⟨hc148, rfl, rfl⟩ | ⟨hc148, sel149⟩
               · obtain ⟨v150, m151, d152, rfl, rfl⟩ := d143.store_inv
                 obtain ⟨vs153, args154, rfl⟩ := d152.construct_inv
@@ -6245,7 +6245,7 @@ theorem «KernelLevels::level_imax».of_eval (ih0 : «UInt32::less_than_fields»
                 obtain ⟨rfl, rfl⟩ := args165.nil_inv
                 refine ⟨k63 + k135 + 1, fun k hk => ?_⟩
                 obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-                simp (config := { decide := true, maxSteps := 10000000 }) [«KernelLevels::level_imax», ld9, hc15, hc26, hk64 k' (by omega), hc73, hc93, ld104, hc110, hk136 k' (by omega), hc145, hc148]
+                simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «KernelLevels::level_imax», ld9, hc15, hc26, hk64 k' (by omega), hc73, hc93, ld104, hc110, hk136 k' (by omega), hc145, hc148]
               · simp [SourceSemantics.selectArm] at sel149
         · simp [SourceSemantics.selectArm] at sel94
 
@@ -6574,7 +6574,7 @@ theorem «WordLists::checked_depth_succ».of_eval (ih0 : «UInt32::less_than_fie
   obtain ⟨rfl, rfl⟩ := d40.literal_inv
   refine ⟨k29 + 1, fun k hk => ?_⟩
   obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-  simp (config := { decide := true, maxSteps := 10000000 }) [«WordLists::checked_depth_succ», ap8, hk30 k' (by omega), op41]
+  simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «WordLists::checked_depth_succ», ap8, hk30 k' (by omega), op41]
 
 theorem «WordLists::depth_checked».lookup (t_T : Generic.Ty) :
     IxVM.source.program.sourceFunction? (Instance.mk "WordLists::depth_checked" [t_T]).symbol =
@@ -6713,7 +6713,7 @@ theorem «Lists::lookup_or_default».of_eval (ih38 : «Lists::drop».Complete) :
     subst l34
     refine ⟨k26 + 1, fun k hk => ?_⟩
     obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-    simp (config := { decide := true, maxSteps := 10000000 }) [«Lists::lookup_or_default», ld9, hk27 k' (by omega), hp29]
+    simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «Lists::lookup_or_default», ld9, hk27 k' (by omega), hp29]
   · dsimp only [List.length] at hc32
     rcases selectArm_construct_inv (by trivial) sel33 with ⟨ys35, hp36, hl37, ml38, rfl⟩ | ⟨hc39, sel40⟩
     · rcases ys35 with _ | ⟨y41, _ | ⟨y42, _ | ⟨_, _⟩⟩⟩ <;> simp at hl37
@@ -6725,7 +6725,7 @@ theorem «Lists::lookup_or_default».of_eval (ih38 : «Lists::drop».Complete) :
       subst l43
       refine ⟨k26 + 1, fun k hk => ?_⟩
       obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-      simp (config := { decide := true, maxSteps := 10000000 }) [«Lists::lookup_or_default», ld9, hk27 k' (by omega), hc32, hp36]
+      simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «Lists::lookup_or_default», ld9, hk27 k' (by omega), hc32, hp36]
     · dsimp only [List.length] at hc39
       simp [SourceSemantics.selectArm] at sel40
 
@@ -6813,7 +6813,7 @@ theorem «Lists::is_empty».of_eval : «Lists::is_empty».Complete := by
     obtain ⟨rfl, rfl⟩ := d6.literal_inv
     refine ⟨1, fun k hk => ?_⟩
     obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-    simp (config := { decide := true, maxSteps := 10000000 }) [«Lists::is_empty», ld9, hp12]
+    simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «Lists::is_empty», ld9, hp12]
   · dsimp only [List.length] at hc15
     rcases selectArm_construct_inv (by trivial) sel16 with ⟨ys17, hp18, hl19, ml20, rfl⟩ | ⟨hc21, sel22⟩
     · rcases ys17 with _ | ⟨y23, _ | ⟨y24, _ | ⟨_, _⟩⟩⟩ <;> simp at hl19
@@ -6823,7 +6823,7 @@ theorem «Lists::is_empty».of_eval : «Lists::is_empty».Complete := by
       obtain ⟨rfl, rfl⟩ := d6.literal_inv
       refine ⟨1, fun k hk => ?_⟩
       obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-      simp (config := { decide := true, maxSteps := 10000000 }) [«Lists::is_empty», ld9, hc15, hp18]
+      simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «Lists::is_empty», ld9, hc15, hp18]
     · dsimp only [List.length] at hc21
       simp [SourceSemantics.selectArm] at sel22
 
