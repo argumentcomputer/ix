@@ -20,6 +20,7 @@ set_option linter.unusedTactic false
 set_option linter.unreachableTactic false
 set_option linter.unusedSimpArgs false
 set_option linter.unusedVariables false
+set_option linter.unnecessarySimpa false
 
 open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 
@@ -58,12 +59,14 @@ theorem loadValue_extend {h h' : Heap F} (ext : Heap.Extends h h') {p v : Source
     (hl : loadValue h p = .ok v) : loadValue h' p = .ok v := by
   cases p with
   | ptr t a =>
-    unfold loadValue at hl ⊢
     cases hc : h[a]? with
-    | none => simp [hc, bind, Except.bind] at hl
+    | none =>
+      simp only [loadValue, hc] at hl
+      cases hl
     | some w =>
-      rw [cell_extend ext hc]
-      rw [hc] at hl
+      have hw' := cell_extend ext hc
+      simp only [loadValue, hc] at hl
+      simp only [loadValue, hw']
       exact hl
   | _ => simp [loadValue] at hl
 
@@ -292,20 +295,20 @@ theorem fbCalls_inv {locals : Environment F Nat} : ∀ (names : List String) (xs
   | [_], xs, hb, before, after, vs, cs, ev => by
     obtain ⟨rfl, rfl, rfl⟩ := ev.nil_inv
     rcases hb with _ | ⟨_, hb⟩
-    rcases hb with _
+    rcases hb with ⟨⟩
     exact ⟨rfl, rfl⟩
   | [_, _], xs, hb, before, after, vs, cs, ev => by
     obtain ⟨rfl, rfl, rfl⟩ := ev.nil_inv
     rcases hb with _ | ⟨_, hb⟩
     rcases hb with _ | ⟨_, hb⟩
-    rcases hb with _
+    rcases hb with ⟨⟩
     exact ⟨rfl, rfl⟩
   | [_, _, _], xs, hb, before, after, vs, cs, ev => by
     obtain ⟨rfl, rfl, rfl⟩ := ev.nil_inv
     rcases hb with _ | ⟨_, hb⟩
     rcases hb with _ | ⟨_, hb⟩
     rcases hb with _ | ⟨_, hb⟩
-    rcases hb with _
+    rcases hb with ⟨⟩
     exact ⟨rfl, rfl⟩
   | a :: b :: c :: d :: rest, xs, hb, before, after, vs, cs, ev => by
     rcases hb with _ | ⟨h0, hb⟩
@@ -317,45 +320,44 @@ theorem fbCalls_inv {locals : Environment F Nat} : ∀ (names : List String) (xs
     obtain ⟨rfl, rfl⟩ := fbCalls_inv rest _ hb av
     exact ⟨rfl, rfl⟩
 
-theorem words4_length_getElem : ∀ (xs : List UInt8) (k : Nat), 4 * k + 3 < xs.length →
-    ∃ hk : k < (words4 xs : List (SourceValue F)).length,
-      (words4 xs)[k] = w4 xs[4 * k] xs[4 * k + 1] xs[4 * k + 2] xs[4 * k + 3]
+theorem words4_length_getElem : ∀ (xs : List UInt8) (k : Nat) (h : k * 4 + 3 < xs.length),
+    ∃ hk : k < (words4 xs).length,
+      (words4 xs)[k] = w4 xs[k * 4] xs[k * 4 + 1] xs[k * 4 + 2] xs[k * 4 + 3]
   | a :: b :: c :: d :: rest, 0, h => ⟨by simp [words4], rfl⟩
   | a :: b :: c :: d :: rest, k + 1, h => by
     obtain ⟨hk, e⟩ := words4_length_getElem rest k (by simp at h; omega)
     refine ⟨by simp [words4]; omega, ?_⟩
     simp only [words4, List.getElem_cons_succ]
     rw [e]
-    have e0 : 4 * (k + 1) = 4 * k + 4 := by omega
-    simp only [e0, show 4 * k + 4 + 1 = (4 * k + 1) + 4 by omega,
-      show 4 * k + 4 + 2 = (4 * k + 2) + 4 by omega, show 4 * k + 4 + 3 = (4 * k + 3) + 4 by omega,
-      List.getElem_cons_succ]
+    have i0 : (k + 1) * 4 = k * 4 + 3 + 1 := by omega
+    have i1 : (k + 1) * 4 + 1 = (k * 4 + 1) + 3 + 1 := by omega
+    have i2 : (k + 1) * 4 + 2 = (k * 4 + 2) + 3 + 1 := by omega
+    have i3 : (k + 1) * 4 + 3 = (k * 4 + 3) + 3 + 1 := by omega
+    simp only [i0, i1, i2, i3, List.getElem_cons_succ]
   | [], k, h => by simp at h
-  | [_], k, h => by simp at h; omega
-  | [_, _], k, h => by simp at h; omega
-  | [_, _, _], k, h => by simp at h; omega
+  | [_], k, h => by simp at h <;> omega
+  | [_, _], k, h => by simp at h <;> omega
+  | [_, _, _], k, h => by simp at h <;> omega
 
-theorem words4_length : ∀ (xs : List UInt8), (words4 xs : List (SourceValue F)).length = xs.length / 4
+theorem words4_length : ∀ (xs : List UInt8), (words4 xs).length = xs.length / 4
   | a :: b :: c :: d :: rest => by simp [words4, words4_length rest]; omega
-  | [] => rfl
-  | [_] => rfl
-  | [_, _] => rfl
-  | [_, _, _] => rfl
+  | [] => by simp [words4]
+  | [_] => by simp [words4]
+  | [_, _] => by simp [words4]
+  | [_, _, _] => by simp [words4]
 
-theorem bytesWord_four (xs : List UInt8) (k : Nat) (hk : 4 * k + 3 < xs.length) :
+theorem bytesWord_four (xs : List UInt8) (k : Nat) (hk : k * 4 + 3 < xs.length) :
     Blake3.Pure.bytesWord (Vector.ofFn fun b : Fin 4 => xs.toArray[k * 4 + b.val]?.getD 0) =
-      wordOfBytes xs[4 * k] xs[4 * k + 1] xs[4 * k + 2] xs[4 * k + 3] := by
+      wordOfBytes xs[k * 4] xs[k * 4 + 1] xs[k * 4 + 2] xs[k * 4 + 3] := by
   rw [← Aiur.Library.Blake3.bytesWord_eq_wordOfBytes]
   congr 1
   ext b hb
   simp only [Vector.getElem_ofFn]
   rcases (by omega : b = 0 ∨ b = 1 ∨ b = 2 ∨ b = 3) with rfl | rfl | rfl | rfl
-  all_goals
-    first
-    | (simp [List.getElem?_eq_getElem (by omega : _ < xs.length), Nat.mul_comm]; done)
-    | (simp [Array.getElem?_toArray, List.getElem?_eq_getElem (by omega : _ < xs.length),
-        Nat.mul_comm]; done)
-    | (simp [Nat.mul_comm]; done)
+  · simp [List.getElem?_eq_getElem (show k * 4 < xs.length by omega)]
+  · simp [List.getElem?_eq_getElem (show k * 4 + 1 < xs.length by omega)]
+  · simp [List.getElem?_eq_getElem (show k * 4 + 2 < xs.length by omega)]
+  · simp [List.getElem?_eq_getElem (show k * 4 + 3 < xs.length by omega)]
 
 /-- **Sixty-four bytes read four at a time are `blockWords` of them.** -/
 theorem words4_eq (xs : List UInt8) (hx : xs.length = 64) :
@@ -364,10 +366,10 @@ theorem words4_eq (xs : List UInt8) (hx : xs.length = 64) :
   congr 1
   apply List.ext_getElem (by simp [words4_length, hx])
   intro k h1 h2
-  have hk : 4 * k + 3 < xs.length := by
+  have hk : k * 4 + 3 < xs.length := by
     rw [words4_length, hx] at h1
     omega
-  obtain ⟨-, e⟩ := words4_length_getElem (F := F) xs k hk
+  obtain ⟨-, e⟩ := words4_length_getElem xs k hk
   rw [e, List.getElem_ofFn]
   simp only [Blake3.Pure.blockWords, Vector.getElem_ofFn, Fin.getElem_fin]
   rw [bytesWord_four xs k hk, wv_wordOfBytes]
@@ -474,8 +476,12 @@ theorem tbFrom_inv : ∀ (bs pre : List String) (ys : List UInt8) {locals : Envi
         intro n hn e he
         simp only [List.mem_cons, List.not_mem_nil, or_false] at he
         rcases he with rfl | rfl
-        · exact fun e' => hbpre (e' ▸ hn)
-        · exact fun e' => hlpre (e' ▸ hn)
+        · intro e'
+          simp only at e'
+          exact hbpre (e' ▸ hn)
+        · intro e'
+          simp only at e'
+          exact hlpre (e' ▸ hn)
       obtain ⟨rfl, hres⟩ := tbFrom_inv bs (b :: pre) (x :: ys) (by simpa using hpre)
         (fun _ => rfl) hb2 (by simp [List.find?_cons, hbl]) htail db
       refine ⟨rfl, ?_⟩
@@ -560,7 +566,9 @@ theorem bbFrom_inv : ∀ (bs pre : List String) (ys : List UInt8) {locals : Envi
         intro n hn e he
         simp only [List.mem_cons, List.not_mem_nil, or_false] at he
         subst he
-        exact fun e' => hbpre (e' ▸ hn)
+        intro e'
+        simp only at e'
+        exact hbpre (e' ▸ hn)
       obtain ⟨ws, aw, rfl⟩ := db.array_inv
       obtain ⟨rfl, rfl⟩ := fbCalls_inv bNames (x :: ys) hb2 aw
       exact ⟨rfl, by simp, by simp⟩
@@ -593,8 +601,12 @@ theorem bbFrom_inv : ∀ (bs pre : List String) (ys : List UInt8) {locals : Envi
         intro n hn e he
         simp only [List.mem_cons, List.not_mem_nil, or_false] at he
         rcases he with rfl | rfl
-        · exact fun e' => hbpre (e' ▸ hn)
-        · exact fun e' => hlpre (e' ▸ hn)
+        · intro e'
+          simp only at e'
+          exact hbpre (e' ▸ hn)
+        · intro e'
+          simp only at e'
+          exact hlpre (e' ▸ hn)
       obtain ⟨rfl, hle, rfl⟩ := bbFrom_inv (c :: bs) (b :: pre) (x :: ys) (by simp)
         (by simpa using hpre) hb2 (by simp [List.find?_cons, hbl]) htail db
       refine ⟨rfl, by simp at hle ⊢; omega, ?_⟩
@@ -632,7 +644,8 @@ theorem pad_block_spec : ∀ (n : Nat) {acc r : SourceValue F} {bytes : List UIn
     · exact absurd (by simp) hne
   | n + 1, acc, r, bytes, h, h', cs, hn, hs, ev => by
     rcases «Blake3::pad_block».obs ev with ⟨hv, -⟩ | ⟨cs26, v30, m32, hne, rfl, op72, ev28, -⟩
-    · exact absurd (IxVM.natCast_inj hn (by omega) (by simpa using Value.field.inj hv)) (by omega)
+    · exact absurd (IxVM.natCast_inj (b := 0) hn (by omega) (by simpa using Value.field.inj hv))
+        (by omega)
     · obtain rfl := binop_sub op72
       have hs1 : Stream (h ++ [.construct byteStreamEnum "Cons" [.field 0, acc]]) (0 :: bytes)
           (.ptr (.enum byteStreamEnum) h.length) := by
