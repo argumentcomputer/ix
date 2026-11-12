@@ -427,8 +427,8 @@ def leaf (ind : String) (segs : List Seg) : M (List String) := do
   -- the constructor's name: the arm tokens, made unique
   let base := sanitize ("_".intercalate p.tokens.toList)
   let name := uniqueName (s.ctors.map (·.name)) base
-  let fields := p.facts.toList.map fun (n, f, _, _) => s!"({n} : {renderPieces p.subst f})"
-    ++ p.late.toList.map fun (n, f, _) => s!"({n} : {renderPieces p.subst f})"
+  let fields := (p.facts.toList.map fun (n, f, _, _) => s!"({n} : {renderPieces p.subst f})")
+    ++ (p.late.toList.map fun (n, f, _) => s!"({n} : {renderPieces p.subst f})")
   let bs := binders.map fun (n, t) => s!"({n} : {t})"
   let text := s!"  | {name}" ++
     (if bs.isEmpty then "" else "\n      " ++ " ".intercalate bs) ++
