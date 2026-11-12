@@ -157,8 +157,9 @@ With `binderData`, IxC installs the canonical environment in Source mode
 the annotator over it (`Ix.Compile.KernelAnnotate.annotator`): the compile writes
 every record's binder data from it (`Ix.CompileM.withBinderSection`), and the
 certified result is the compile of that environment. Without it, every record
-with a binder carries the undecided section. The default role table's check is made only while that
-table is current (`defaultRoleTableCurrent`). -/
+with a binder carries the undecided section. The default role table binds records carrying
+their binder data, so its check is made only with `binderData`, and only while that table is
+current (`defaultRoleTableCurrent`). -/
 def compileCertifiedPrepared (prepared : List (Lean.Name × Lean.ConstantInfo))
     (annotated : Bool) (workers : Nat := 32) (log : String → IO Unit := fun _ => pure ())
     (defaultRoles : Bool := true) (binderData : Bool := false) :
@@ -178,7 +179,7 @@ def compileCertifiedPrepared (prepared : List (Lean.Name × Lean.ConstantInfo))
         carries the undecided section"
     | .ok installed =>
       log s!"binder data: installed {installed.installed} declarations, {installed.failures.size} \
-        refused; phases (ms) {installed.times}; {(← IO.monoMsNow) - t1}ms, rss \
+        refused ({installed.lenient} of them entered without their checks), {installed.ahead} pushed ahead in {installed.waves} waves; phases (ms) {installed.times}; {(← IO.monoMsNow) - t1}ms, rss \
         {← Ix.Cli.residentSetSize}"
       for (name, why) in installed.failures.extract 0 20 do
         log s!"binder data: the kernel refused {name}: {(why.replace "\n" " ").take 200}"
@@ -196,7 +197,7 @@ def compileCertifiedPrepared (prepared : List (Lean.Name × Lean.ConstantInfo))
   let existing ← match Ix.RoleBinding.sourceAddresses ixe with
     | .ok m => pure m
     | .error e => return .error e
-  if defaultRoles && defaultRoleTableCurrent then
+  if defaultRoles && binderData && defaultRoleTableCurrent then
     if let some (n, r, addr) := unboundPublishedRole ixe (some existing) then
       return .error s!"role check failed: the published role {n.pretty} ({repr r}) is at {addr}, \
         not its bound address in the default role table"
@@ -319,11 +320,20 @@ refusal or a failure, or when `finalize` needed other certificates: a task
 still running when `main` returns would wait for subtasks that the runtime's
 shutdown no longer runs.
 
-The finalized artifact's records get their binder data
-(`Ix.Compile.BinderData.apply`: every record's section, the artifact
-re-addressed) before `validateFinalized`; `onBinders` receives the report and
-the artifact. A binder whose datum the annotator cannot decide carries the
-undecided node; with `strictBinderData` it fails the compile instead. -/
+Binder data (`binderData`): `inline` writes every record's section while the
+record is built, and `finalize`'s generated theorem records get theirs from
+IxC's pass over the records before they are addressed. `post` finalizes
+without data, then gives every record its section
+(`Ix.Compile.BinderData.apply`, the artifact re-addressed) before
+`validateFinalized`; `onBinders` receives the report and the artifact. A binder
+whose datum the annotator cannot decide carries the undecided node, and each
+safe record with one is reported; with `strictBinderData` it fails the compile
+instead.
+
+With `defaultRoles`, `inline` and a current default table, a finalized artifact
+whose table binds every role (a compile of the whole toolchain library) must be
+bound at the default table's address: the default table is the one such a
+compile generates. -/
 def compileAndFinalize (source : Lean.Environment)
     (constants : List (Lean.Name × Lean.ConstantInfo)) (workers : Nat) (allowPartial : Bool)
     (log : String → IO Unit := fun _ => pure ())
@@ -348,7 +358,7 @@ def compileAndFinalize (source : Lean.Environment)
       let t0 ← IO.monoMsNow
       let artifact ← Ix.RoleBinding.Compile.finalize backend source certSource
         (.plain constants) out.env Ix.Resource.typingLimits (existing? := out.existing?)
-        (prefetched? := certificates?)
+        (prefetched? := certificates?) (binderData := inline)
       let tb ← IO.monoMsNow
       log s!"finalize: {tb - t0}ms, rss {← Ix.Cli.residentSetSize}"
       let artifact ← match binderData with
@@ -362,7 +372,23 @@ def compileAndFinalize (source : Lean.Environment)
               (--strict-binder-data)")
           pure artifact
         | .inline =>
-          let undecided := out.undecided
+          -- the records `finalize` added (support, certificates, evidence) too
+          let added : Array (Address × Ixon.LazyConstant) := artifact.consts.fold (init := #[])
+            fun acc a lc => if out.env.consts.contains a then acc else acc.push (a, lc)
+          let addedUndecided := added.filterMap fun (a, lc) => match lc.get? with
+            | some c =>
+              if !Ix.Compile.KernelAnnotate.unsafeOrPartial c &&
+                  c.binders.any (·.nodes.any (· == .undecided)) then some (toString a) else none
+            | none => none
+          let undecided := out.undecided ++ addedUndecided
+          if defaultRoles && defaultRoleTableCurrent then
+            if let some b := artifact.roleBinding then
+              if let some t := Ix.Kernel.RoleTable.ofBytes b.bytes then
+                if t.bound.size == Ix.Kernel.Role.all.length then
+                  let d ← IO.ofExcept Ix.Kernel.Reader.defaultTableAddress
+                  unless b.address == d do
+                    throw (IO.userError s!"role check failed: the compile binds every role in the \
+                      table at {b.address}, not at the default table's address {d}")
           log s!"binder data: {undecided.size} safe record(s) with an undecided binder"
           for names in undecided.extract 0 20 do
             log s!"binder data: undecided binder in safe {names}"

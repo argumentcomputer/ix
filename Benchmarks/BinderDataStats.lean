@@ -1,6 +1,7 @@
 import Ix.Ixon
 import Ix.Ixon.CheckOrder
 import IxC.Ixon.WireCheck
+import Ix.Compile.BinderData
 
 /-!
 # Binder-data sections of a compiled environment (manual measurement)
@@ -237,13 +238,80 @@ missing in B={missing.size}"
   for m in missing.extract 0 20 do IO.println s!"BDDIAG missing in B: {m}"
   return 0
 
+/-! ## Two artifacts' records, by address -/
+
+/-- The records two artifacts hold, by address (an address is the hash of the
+record's bytes, so a record whose bytes differ is in one only): how many each
+holds that the other does not, how many names sit at different addresses, the
+first few records of `A` that `B` lacks (with the names `A` gives them, if
+any), and each artifact's role-binding address. -/
+def addrs (pathA pathB : String) : IO UInt32 := do
+  let a ← load pathA
+  let b ← load pathB
+  let onlyA := a.consts.fold (init := #[]) fun out addr _ =>
+    if b.consts.contains addr then out else out.push addr
+  let onlyB := b.consts.fold (init := 0) fun n addr _ => if a.consts.contains addr then n else n + 1
+  let mut namesAt : Std.HashMap Address (Array String) := {}
+  let mut moved := 0
+  for (n, named) in a.named do
+    namesAt := namesAt.insert named.addr ((namesAt.getD named.addr #[]).push n.pretty)
+    match b.named.get? n with
+    | some nb => if nb.addr != named.addr then moved := moved + 1
+    | none => pure ()
+  let shown := (onlyA.qsort (fun x y => x.cmpBytes y == .lt)).extract 0 12
+  for addr in shown do
+    let names := (namesAt.getD addr #[]).extract 0 3
+    IO.println s!"BDADDR only in A: {addr} names={names}"
+  let bind (e : Ixon.Env) : String := match e.roleBinding with
+    | some r => toString r.address
+    | none => "none"
+  IO.println s!"BDADDR {pathA} vs {pathB}: records A={a.consts.size} B={b.consts.size} \
+only_A={onlyA.size} only_B={onlyB} names_at_other_addresses={moved} binding_A={bind a} \
+binding_B={bind b}"
+  return if onlyA.isEmpty && onlyB == 0 then 0 else 1
+
+/-- Whether a member of `c` is unsafe or partial (such records carry the undecided section). -/
+def unsafeOrPartial (c : Ixon.Constant) : Bool :=
+  let defn (d : Ixon.Definition) : Bool := match d.safety with
+    | .safe => false
+    | _ => true
+  match c.info with
+  | .defn d => defn d
+  | .recr r => r.isUnsafe
+  | .axio a => a.isUnsafe
+  | .muts ms => ms.any fun
+    | .defn d => defn d
+    | .indc i => i.isUnsafe || i.ctors.any (·.isUnsafe)
+    | .recr r => r.isUnsafe
+  | _ => false
+
+/-- **The safe records of an artifact with an undecided binder**, named. -/
+def undecided (path : String) : IO UInt32 := do
+  let e ← load path
+  let mut addrs : Array Address := #[]
+  for (a, lc) in e.consts do
+    if let some c := lc.get? then
+      if !unsafeOrPartial c && c.binders.any (·.nodes.any (· == .undecided)) then
+        addrs := addrs.push a
+  let names := Ix.Compile.BinderData.namesOf e (addrs.foldl (·.insert ·) {})
+  IO.println s!"BDUND {path}: safe_undecided={addrs.size}"
+  for a in addrs do IO.println s!"BDUND {names.getD a "?"} {a}"
+  return 0
+
 end Benchmarks.BinderDataStats
 
 def main (args : List String) : IO UInt32 := do
   match args with
   | ["stats", path] => Benchmarks.BinderDataStats.stats path
+  | ["undecided", path] => Benchmarks.BinderDataStats.undecided path
   | ["compare", a, b] => Benchmarks.BinderDataStats.compare a b
   | ["diag", a, b] => Benchmarks.BinderDataStats.diag a b
+  | ["addrs", a, b] => Benchmarks.BinderDataStats.addrs a b
+  | ["binding", a] => do
+    let e ← Benchmarks.BinderDataStats.load a
+    IO.println s!"BDBIND {a}: records={e.consts.size} binding={(e.roleBinding.map (toString ·.address)).getD "none"}"
+    return 0
   | _ =>
-    IO.eprintln "usage: binder-data-stats stats A.ixe | compare A.ixe B.ixe"
+    IO.eprintln "usage: binder-data-stats stats A.ixe | undecided A.ixe | compare A.ixe B.ixe | diag A.ixe B.ixe | \
+addrs A.ixe B.ixe | binding A.ixe"
     return 2
