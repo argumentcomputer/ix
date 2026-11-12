@@ -64,7 +64,10 @@ theorem OwnedPre.release (pre : OwnedPre functions H live Γ ρf ρo owned lex �
     fun y e hy => ?_, pre.stack, pre.scope⟩
   · simp only [Ctx.avail_eq, Ctx.isImm_release, Ctx.tokens_release, hnb, Bool.or_false,
       Bool.or_eq_true] at hy
-    simp [Ctx.avail_eq, hy]
+    simp only [Ctx.avail_eq, Bool.or_eq_true, decide_eq_true_eq]
+    rcases hy with hy | hy
+    · exact Or.inl (Or.inl hy)
+    · exact Or.inl (Or.inr (of_decide_eq_true hy))
   · simp only [Ctx.brw_release, Ctx.epoch_release] at hy ⊢
     have := pre.epochs y e hy; omega
 
