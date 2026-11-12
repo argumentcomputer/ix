@@ -231,7 +231,7 @@ the three standard axioms. Building the library checks it (`#guard_msgs`). -/
 string literal by its constructor form, the step at its own fuel, the renaming-tolerant `case`
 recursor clause and its implication from the landed one. -/
 
-/-- info: 'IxCC.Grounding.eval_imaxCollapse' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'IxCC.Grounding.eval_imaxCollapse' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Grounding.eval_imaxCollapse
 
 /-- info: 'IxCC.Grounding.eval_lvlNorm' depends on axioms: [propext, Classical.choice, Quot.sound] -/
