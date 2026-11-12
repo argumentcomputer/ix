@@ -26,9 +26,11 @@ source without inference (`Ix.Compile.BinderRead`: a ∀-body's sort from its
 head's declared type, a λ-run's from the sort of the type it stands at); those
 records are read and never walked. The rest are walked as below.
 
-**The environment.** Before the compile, IxC ingests the compile's own input
-in Source mode (`Ix.LeanIngress`: every constant keyed by its Lean name, or its
-role's key) and installs it with phase A of its fold
+**The environment.** Before the compile, the constants whose source does not
+read are found (`Ix.Compile.BinderRead.sourceReads`: the records the walk will
+see), and IxC ingests their install closure (`restrictClosure`) from the
+compile's own input in Source mode (`Ix.LeanIngress`: every constant keyed by its
+Lean name, or its role's key) and installs it with phase A of its fold
 (`annotDeclStepWithUserAxioms`, at the committed bundle's evidence), once, in
 dependency order (`install`), a wave of the dependency levels at a time on workers
 that each build an environment of their own (`phaseAWorkers`). Unsafe and partial
@@ -734,21 +736,37 @@ the same): with `IX_BD_SEQUENTIAL` set phase A takes every step in turn, with
 `IX_BD_WALK_ALL` every root is walked, with `IX_BD_WAVES` phase A runs on one
 environment (its waves' separable declarations annotated ahead). -/
 def installInput (env : Ix.Environment) (workers : Nat := 32) : IO (Except String Installed) := do
-  -- `IX_BD_RESTRICT` (measurement): install only the install closure
-  -- (`restrictClosure`) of the records a file names, one per line, theorems with a
-  -- placeholder value (nothing reads a theorem's value); the sources stay the input's
+  -- only the install closure (`restrictClosure`) of the constants whose source does
+  -- not read (`Ix.Compile.BinderRead.sourceReads`: the records the walk will see) is
+  -- installed, theorems with a placeholder value (nothing reads a theorem's value);
+  -- the sources stay the input's. For measurement: `IX_BD_RESTRICT` names the
+  -- records in a file instead, one per line; `IX_BD_FULL` (and `IX_BD_NOREAD`, which
+  -- walks every record) installs the whole input
+  let width := 4 * max workers 1
   let tc0 ← IO.monoMsNow
-  let envI ← match (← IO.getEnv "IX_BD_RESTRICT") with
+  let full := (← IO.getEnv "IX_BD_FULL").isSome || (← IO.getEnv "IX_BD_NOREAD").isSome
+  let seeds? : Option (Array Ix.Name) ← match (← IO.getEnv "IX_BD_RESTRICT") with
     | some path => do
       let keep : Std.HashSet String := (← IO.FS.lines path).foldl (·.insert ·) {}
-      let seeds := env.consts.fold (init := #[]) fun acc n _ => if keep.contains n.pretty then acc.push n else acc
-      let closure ← IO.lazyPure fun _ => restrictClosure env seeds (4 * max workers 1)
+      pure (some (env.consts.fold (init := #[]) fun acc n _ => if keep.contains n.pretty then acc.push n else acc))
+    | none =>
+      if full then pure none else do
+        let find : Ix.Compile.BinderRead.Find := fun n => env.consts.get? n
+        let unread ← IO.lazyPure fun _ => Ix.Compile.Parallel.map width
+          (fun (nc : Ix.Name × Ix.ConstantInfo) =>
+            if Ix.Compile.BinderRead.sourceReads find nc.2 then none else some nc.1) env.consts.toArray
+        pure (some (unread.filterMap id))
+  let tcP ← IO.monoMsNow
+  let envI ← match seeds? with
+    | some seeds => do
+      let closure ← IO.lazyPure fun _ => restrictClosure env seeds width
       let blank : Ix.ConstantInfo → Ix.ConstantInfo
         | .thmInfo t => .thmInfo { t with value := Ix.Expr.mkSort Ix.Level.mkZero }
         | ci => ci
       pure { env with consts := env.consts.fold (init := {}) fun m n ci =>
         if closure.contains n then m.insert n (blank ci) else m }
     | none => pure env
+  let seedCount := (seeds?.map (·.size)).getD env.consts.size
   let tc1 ← IO.monoMsNow
   let t0 ← IO.monoMsNow
   let blocks ← IO.lazyPure fun _ => Ix.CondenseM.run (Ix.Compile.FrontEnd.graph envI)
@@ -765,7 +783,8 @@ def installInput (env : Ix.Environment) (workers : Nat := 32) : IO (Except Strin
   let onWorkers := (← IO.getEnv "IX_BD_WAVES").isNone
   return (← install envI blocks workers parallel (!trace.isEmpty) persist onWorkers).map fun k =>
     { k with env, stored, memo, trace, tier1, t1stat, noread, readonly,
-             times := #[("installed constants (count)", envI.consts.size), ("restriction", tc1 - tc0),
+             times := #[("seeds (count)", seedCount), ("installed constants (count)", envI.consts.size),
+               ("prediction", tcP - tc0), ("restriction", tc1 - tcP),
                ("condense", t1 - t0)] ++ k.times }
 
 /-! ## The walk -/

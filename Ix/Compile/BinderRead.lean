@@ -499,6 +499,24 @@ def typeExpect (find : Find) (σ : Numbering) (ty : Ix.Expr) : Expect :=
   | some p => .ok p
   | none => .error fun _ => s!"a definition's value, its type headed by {shapeOf find [] ty}"
 
+/-- A recursor's roots: its type and its rules' right-hand sides, numbered as its
+record numbers them (a large eliminator's motive universe first). A rule's
+right-hand side has the sort of its motive's codomain: the elimination level. -/
+def recRoots (find : Find) (v : Ix.RecursorVal) : Array Root :=
+  let indLevels := match v.all[0]?.bind find with
+    | some (.inductInfo i) => i.cnst.levelParams.size
+    | _ => v.cnst.levelParams.size
+  let σ : Numbering := ⟨v.cnst.levelParams, v.cnst.levelParams.size == indLevels + 1⟩
+  let elim : Expect := match (do
+      let (motive, _) ← domainAt find v.numParams v.cnst.type []
+      let l ← leafSort motive
+      let l' ← (ingressLevel σ.pos l).toOption
+      pure (Ix.Kernel.Level.zeronessOf l') : Option PropWhen) with
+    | some p => .ok p
+    | none => unknown "a rule's right-hand side, its motive's sort not read"
+  (#[⟨σ, v.cnst.type, unknown "a type"⟩] : Array Root) ++
+    v.rules.map fun rule => (⟨σ, rule.rhs, elim⟩ : Root)
+
 /-- A member's roots, in section order, when its kind is the record member's
 (`IxVM.PwHints.roots`): a definition's type and value, an axiom's or a
 quotient's type, an inductive's type and its constructors' types, a recursor's
@@ -521,21 +539,7 @@ def memberRoots (find : Find) (ci : Ix.ConstantInfo) :
   | .inl (.recr r) | .inr (.recr r) => match ci with
     | .recInfo v => do
       guard (v.rules.size == r.rules.size)
-      let indLevels := match v.all[0]?.bind find with
-        | some (.inductInfo i) => i.cnst.levelParams.size
-        | _ => v.cnst.levelParams.size
-      let σ : Numbering := ⟨v.cnst.levelParams, v.cnst.levelParams.size == indLevels + 1⟩
-      -- a rule's right-hand side has the sort of its motive's codomain: the
-      -- elimination level
-      let elim : Expect := match (do
-          let (motive, _) ← domainAt find v.numParams v.cnst.type []
-          let l ← leafSort motive
-          let l' ← (ingressLevel σ.pos l).toOption
-          pure (Ix.Kernel.Level.zeronessOf l') : Option PropWhen) with
-        | some p => .ok p
-        | none => unknown "a rule's right-hand side, its motive's sort not read"
-      some ((#[⟨σ, v.cnst.type, unknown "a type"⟩] : Array Root) ++
-        v.rules.map fun rule => (⟨σ, rule.rhs, elim⟩ : Root))
+      some (recRoots find v)
     | _ => none
   | .inl (.indc i) => match ci with
     | .inductInfo v => do
@@ -582,6 +586,106 @@ def sectionWhy (find : Find) (names : Array Ix.Name) (c : Ixon.Constant) :
 def section? (find : Find) (names : Array Ix.Name) (c : Ixon.Constant) :
     Option (Array Ixon.BinderBlock) :=
   (sectionWhy find names c).toOption
+
+/-! ## Whether a constant's source reads, without its record
+
+A record's tree is its members' sources, compiled: its shares are entries of
+them, and a share is read with the expectation at its site. So the reading of a
+source alone, by the same rules, fails exactly where the reading of its record
+does, and tells, before the compile, which records will be walked (and what the
+walk's environment must hold). -/
+
+/-- The terms read so far, under a context (its hash) and an expectation: a
+subterm shared in the source is read once there. -/
+abbrev SM := StateT (Std.HashSet (UInt64 × Address × Option PropWhen)) (Except Unit)
+
+/-- Whether the reading of a source term reads its expectation (`readsExpect`'s
+twin). -/
+def readsExpectSrc : Ix.Expr → Bool
+  | .lam .. | .letE .. => true
+  | .app f _ _ => readsExpectSrc f
+  | .mdata _ e _ => readsExpectSrc e
+  | _ => false
+
+/-- A run of binders of one kind in a source term (`pi`: ∀s): their domains,
+outermost first, and the body. -/
+def srcRun (pi : Bool) : Nat → Ix.Expr → Array Ix.Expr → Array Ix.Expr × Ix.Expr
+  | 0, x, acc => (acc, unmeta x)
+  | fuel + 1, x, acc =>
+    let y := unmeta x
+    match y with
+    | .lam _ ty b _ _ => if pi then (acc, y) else srcRun pi fuel b (acc.push ty)
+    | .forallE _ ty b _ _ => if pi then srcRun pi fuel b (acc.push ty) else (acc, y)
+    | _ => (acc, y)
+
+/-- **The reading of a source term alone** (`read` without the record), under
+`ctx` (its hash `ch`) with the expectation `ex`: fails where a binder's datum is not
+read. -/
+def readSrc (find : Find) (σ : Ix.Name → Nat) : Nat → List (Option Ix.Expr) → UInt64 →
+    Expect → Ix.Expr → SM Unit
+  | 0, _, _, _, _ => throw ()
+  | fuel + 1, ctx, ch, ex, x => do
+    let x := unmeta x
+    match x with
+    | .app .. | .lam .. | .forallE .. | .letE .. | .proj .. =>
+      let key := (ch, x.getHash, ex.toOption)
+      if (← get).contains key then return
+      modify (·.insert key)
+    | _ => pure ()
+    match x with
+    | .app xf xa _ =>
+      readSrc find σ fuel ctx ch ex xf
+      let aex : Expect :=
+        if readsExpectSrc xa then argExpectOf find σ ctx xf
+        else unknown "an argument that reads no expectation"
+      readSrc find σ fuel ctx ch aex xa
+    | .lam .. | .forallE .. =>
+      let pi := x matches .forallE ..
+      let (tys, leaf) := srcRun pi readFuel x #[]
+      let mut inner := ctx
+      let mut ich := ch
+      for ty in tys do
+        readSrc find σ fuel inner ich (unknown "a binder's domain") ty
+        inner := some ty :: inner
+        ich := mixHash ich (hash ty.getHash)
+      readSrc find σ fuel inner ich (if pi then unknown "a ∀-body" else ex) leaf
+      if pi then
+        if (sortPw find σ id sortFuel inner leaf).isNone then throw ()
+      else if ex.toOption.isNone then throw ()
+    | .letE _ ty val body _ _ =>
+      readSrc find σ fuel ctx ch (unknown "a let's type") ty
+      let vex : Expect := match sortPw find σ id sortFuel ctx ty with
+        | some p => .ok p
+        | none => unknown "a let's value"
+      readSrc find σ fuel ctx ch vex val
+      readSrc find σ fuel (some ty :: ctx) (mixHash ch (hash ty.getHash)) ex body
+    | .proj _ _ xv _ => readSrc find σ fuel ctx ch (unknown "a projection's subject") xv
+    | _ => pure ()
+
+/-- Whether a source constant's every root reads (`memberRoots`' roots, each with
+its expectation; an inductive's constructors read as constants of their own). An
+unsafe or partial constant reads: its record is not read but undecided. -/
+def sourceReads (find : Find) (ci : Ix.ConstantInfo) : Bool :=
+  let unsafeOrPartial : Bool := match ci with
+    | .defnInfo d => !(d.safety matches .safe)
+    | .opaqueInfo o => o.isUnsafe
+    | .axiomInfo a => a.isUnsafe
+    | .inductInfo i => i.isUnsafe
+    | .ctorInfo c => c.isUnsafe
+    | .recInfo r => r.isUnsafe
+    | _ => false
+  if unsafeOrPartial then true else
+  let own : Numbering := ⟨ci.getCnst.levelParams, false⟩
+  let roots : Array Root := match ci with
+    | .defnInfo d => #[⟨own, d.cnst.type, unknown "a type"⟩, ⟨own, d.value, typeExpect find own d.cnst.type⟩]
+    | .thmInfo t => #[⟨own, t.cnst.type, unknown "a type"⟩, ⟨own, t.value, .ok (PropWhen.ifAllZero [])⟩]
+    | .opaqueInfo o => #[⟨own, o.cnst.type, unknown "a type"⟩, ⟨own, o.value, typeExpect find own o.cnst.type⟩]
+    | .recInfo v => recRoots find v
+    | ci => #[⟨own, ci.getCnst.type, unknown "a type"⟩]
+  roots.all fun r =>
+    match ((readSrc find r.σ.pos readFuel [] 0 r.ex r.x).run {}) with
+    | .ok _ => true
+    | .error _ => false
 
 end Ix.Compile.BinderRead
 
