@@ -3,7 +3,7 @@ module
 public import IxC.Kernel.Key
 public import IxC.Kernel.PropWhen
 public import IxC.Kernel.Exclusive
-public import IxC.Ixon.Types.Contract
+public import IxC.Ixon.Types.Modes
 /- `withPtrEq` is `public` but not `@[expose]`, and its whole point here
 is that it is *definitionally* `k ()` — which is what
 `Level.beqPtr_eq` and `Expr.beqMemo_eq` prove.  `import all` makes that
@@ -159,31 +159,26 @@ sit beside it is gone (task #205): the official kernel's equality and
 hash ignore it, so it was never data the checker held — the frontend
 validates a stream's spelling and drops it (`parseBinderInfo`).
 
-The binder also carries Ixon's binder contracts
-(`IxC/Ixon/Types/Contract.lean`). They are committed content (they move
-a constant's address), so they are identity data, not display data:
-* `contract`: the bound variable's usage, ownership and locality (Ixon's
-  `lam` and `all` input contract);
-* `result`: the value contract of a `forallE`'s result (Ixon's `all`
-  result contract). A `lam` has none and carries `shared`.
+The binder also has room for a resource mode (`IxC/Ixon/Types/Modes.lean`):
+* `contract`: the bound variable's mode;
+* `result`: the mode of the binder's arrow's result.
 
-Lean has no contracts: Lean-fragment binders carry the defaults, `many`,
-`shared`, `unrestricted` in and `shared`, `unrestricted` out, which is
-what `{ pw := … }` builds. Conversion compares input contracts: the
-binder congruences and η require equal `contract`s besides equal `pw`s
-(`Rules/Rel.lean`; `defeqStep` and `etaCert` in `Core.lean`). It never
-compares `result`s: a `lam` has none, so the type inferred for one carries
-the default. The model reads only `pw`. Structural `=` and the packed
-hash (`BinderMeta.hashData`) see all the contracts, so terms that differ
-only in contracts are different terms, as their Ixon addresses are; basis
-and pin matching (`canonExprEqFast`, `Expr.erasePwEq`) compare them too.
+An Ixon record holds its binders' modes in its binder-data section, which
+the reader (`Ixon/Reader.lean`) does not read, so every term the reader
+builds carries the defaults, `many` in and `shared` out, which is what
+`{ pw := … }` builds: kernel terms carry no modes, and the checker is
+mode-blind on what it reads. Conversion compares `contract`s (the binder
+congruences and η, `Rules/Rel.lean`; `defeqStep` and `etaCert` in
+`Core.lean`), which on the reader's terms are always equal. It never
+compares `result`s. The model reads only `pw`. Structural `=` and the
+packed hash (`BinderMeta.hashData`) see both fields.
 
 `display` is the binder's display annotation (step 6b, above): a
 subsingleton, so none of the above sees it. -/
 structure BinderMeta where
   pw : PropWhen
-  contract : Ixon.BinderContract := .many
-  result : Ixon.ValueContract := .shared
+  contract : Ixon.BinderMode := .many
+  result : Ixon.ResultMode := .shared
   display : Squash BinderDisplay := BinderDisplay.anon
   deriving DecidableEq, Repr
 
@@ -210,12 +205,12 @@ def BinderMeta.leanAlways : BinderMeta := { pw := .ifAllZero [] }
 /-- An input binder's metadata, `{ pw := .never, contract := c, result := r }`:
 the shared `leanNever` for the Lean fragment's contracts
 (`BinderMeta.ofContracts_eq`). -/
-@[inline] def BinderMeta.ofContracts (c : Ixon.BinderContract) (r : Ixon.ValueContract) :
+@[inline] def BinderMeta.ofContracts (c : Ixon.BinderMode) (r : Ixon.ResultMode) :
     BinderMeta :=
   if c = .many ∧ r = .shared then BinderMeta.leanNever
   else { pw := .never, contract := c, result := r }
 
-theorem BinderMeta.ofContracts_eq (c : Ixon.BinderContract) (r : Ixon.ValueContract) :
+theorem BinderMeta.ofContracts_eq (c : Ixon.BinderMode) (r : Ixon.ResultMode) :
     BinderMeta.ofContracts c r = { pw := .never, contract := c, result := r } := by
   unfold BinderMeta.ofContracts
   split
@@ -304,29 +299,26 @@ hashes by `pw` alone. -/
   if m.contract == .many && m.result == .shared then Hashable.hash m.pw
   else mixHash (Hashable.hash m.pw) (mixHash (hash m.contract) (hash m.result))
 
-/-- Metadata carried by a `letE`: Ixon's let contract (`Ixon.LetContract`,
-`IxC/Ixon/Types/Contract.lean`): the `nonDep` flag, whether the let binds a
-value or a shared borrow, and the bound variable's contract. Like a binder's
-contracts it is committed content (it moves a constant's address), so it is
-identity data: structural `=` sees it. Lean's lets carry `LetContract.lean
-nonDep`. Conversion never compares it: the annotation pass substitutes every
-let away before a term is inferred or compared, and the model reads none of
-it. The packed hash mixes it in only off the Lean fragment (a value let at the
-default binder contract), so a Lean let hashes as before.
+/-- Metadata carried by a `letE`: room for a let's resource mode
+(`Ixon.LetMode`). The reader writes the default (`value many`), whatever the
+record's let header says: kernel terms carry no modes. Conversion never
+compares it: the annotation pass substitutes every let away before a term is
+inferred or compared, and the model reads none of it. The packed hash mixes
+it in only off the default, so a default let hashes as before.
 
 `display` is the let's display annotation, its Lean name (step 6b): a
 subsingleton, so none of the above sees it. -/
 structure LetMeta where
-  contract : Ixon.LetContract := .lean false
+  contract : Ixon.LetMode := .value .many
   display : Squash Name := LetDisplay.anon
   deriving DecidableEq, Repr
 
 instance : Inhabited LetMeta := ⟨{}⟩
 
-/-- A let's share of its node's hash: none on the Lean fragment, else the
-contract's hash. -/
+/-- A let's share of its node's hash: none at the default mode, else the
+mode's hash. -/
 @[inline] def LetMeta.hashData (l : LetMeta) : UInt64 :=
-  if l.contract.kind == .value && l.contract.binder == .many then 0
+  if l.contract == .value .many then 0
   else hash l.contract
 
 /-- Literals. -/
