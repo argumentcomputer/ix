@@ -60,7 +60,7 @@ theorem OwnedPre.release (pre : OwnedPre functions H live Γ ρf ρo owned lex �
   obtain ⟨toks, htok, hr⟩ := pre.roots
   refine ⟨fun y hy => pre.den y ?_, ⟨toks, htok.same rfl rfl, hr⟩,
     fun y hy => pre.known y (by simpa [Ctx.known_eq] using hy), pre.distinct,
-    fun y hy => pre.immOk y (by simpa using hy), fun y hy => by rw [hnb y] at hy; cases hy,
+    fun y hy => pre.immOk y (by simpa using hy), fun y hy => absurd hy (by simp [hnb y]),
     fun y e hy => ?_, pre.stack, pre.scope⟩
   · simp only [Ctx.avail_eq, Ctx.isImm_release, Ctx.tokens_release, hnb, Bool.or_false,
       Bool.or_eq_true] at hy
@@ -89,7 +89,7 @@ theorem OwnedPre.call (pre : OwnedPre functions H live Γ ρf ρo owned lex Δ J
   obtain ⟨toks, htok, hr⟩ := pre.roots
   refine { pre with
     den := fun x hx => ?_
-    borrowed := fun x hx => by rw [hnb x] at hx; cases hx }
+    borrowed := fun x hx => absurd hx (by simp [hnb x]) }
   obtain ⟨v, w, h1, h2, h3⟩ := pre.den x hx
   refine ⟨v, w, h1, h2, ?_⟩
   simp only [Ctx.avail_eq, hnb, Bool.or_false, Bool.or_eq_true, decide_eq_true_eq] at hx
