@@ -632,14 +632,17 @@ fun c =>
 #print IxVM.Refinement.IsRecursorRecord
 
 /--
-info: def IxVM.Refinement.BindingSpecs : Ix.Kernel.Admission.Binding →
-  Ix.Kernel.Env Ix.Kernel.Mode.anon → List (Ix.Kernel.Declaration Ix.Kernel.Mode.anon) → Prop :=
-fun x envA ds =>
+info: def IxVM.Refinement.BindingSpecs : Ix.Kernel.RoleTable →
+  Ix.Kernel.Admission.Binding →
+    Ix.Kernel.Env Ix.Kernel.Mode.anon → List (Ix.Kernel.Declaration Ix.Kernel.Mode.anon) → Prop :=
+fun t x envA ds =>
   (∀ d ∈ ds, d.anchorMismatch? = none) ∧
-    ∃ ev,
-      ∀ r ∈ Ix.Kernel.Role.all,
-        r.spec.kind = Ix.Kernel.SpecKind.eqns →
-          ∃ F, Ix.Kernel.eqnsCheck (Ix.Kernel.fueledOps Ix.Kernel.CheckMode.verified F) envA r ev = Except.ok ()
+    IxVM.Refinement.AnchorsTyped ds ∧
+      ∃ ev,
+        ∀ (r : Ix.Kernel.Role),
+          t.addressOf? r ≠ none →
+            r.spec.kind = Ix.Kernel.SpecKind.eqns →
+              ∃ F, Ix.Kernel.eqnsCheck (Ix.Kernel.fueledOps Ix.Kernel.CheckMode.verified F) envA r ev = Except.ok ()
 -/
 #guard_msgs in
 #print IxVM.Refinement.BindingSpecs
@@ -653,14 +656,16 @@ fun V spec b =>
         Ix.Kernel.Admission.admitBinding Address.admissionHash bnd = Except.ok t ∧
           (∀ r ∈ Ix.Kernel.Role.all, (t.addressOf? r).isSome = true) ∧
             IxVM.Refinement.AcceptsIn V (IxVM.Refinement.Scope.strict bnd) (IxVM.Refinement.BindingSeeds t)
-              IxVM.Refinement.BindingSpecs
+              (IxVM.Refinement.BindingSpecs t)
 -/
 #guard_msgs in
 #print IxVM.Refinement.BindingIn
 
 /--
 info: def IxVM.Refinement.BindingSeeds : Ix.Kernel.RoleTable → Address → Prop :=
-fun t a => (∃ r, t.addressOf? r = some a) ∨ ∃ e ∈ t.evidence.toList, Ix.Kernel.Evidence.proof a ∈ e.2.toList
+fun t a =>
+  (∃ r, IxVM.Refinement.compilerTrust r = false ∧ t.addressOf? r = some a) ∨
+    ∃ e ∈ t.evidence.toList, Ix.Kernel.Evidence.proof a ∈ e.2.toList
 -/
 #guard_msgs in
 #print IxVM.Refinement.BindingSeeds
