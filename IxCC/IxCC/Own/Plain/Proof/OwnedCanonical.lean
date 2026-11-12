@@ -285,9 +285,9 @@ theorem drops_eq (cap : List Var) : ∀ live : List Var,
     drops cap live = (live.filter (fun x => !cap.contains x)).map (fun x => .dec x)
   | [] => rfl
   | x :: xs => by
-    by_cases h : cap.contains x = true
-    · simp [drops, h, drops_eq cap xs]
-    · simp [drops, h, drops_eq cap xs]
+    by_cases h : x ∈ cap
+    · simp [drops, h, drops_eq cap xs, List.filter_cons]
+    · simp [drops, h, drops_eq cap xs, List.filter_cons]
 
 /-- The variables `moveCopies` increments. -/
 def moveVars (seen : List Var) : List Arg → List Var
@@ -299,7 +299,7 @@ theorem moveCopies_eq : ∀ (seen : List Var) (as : List Arg),
     moveCopies seen as = (moveVars seen as).map (fun x => .inc x 1)
   | _, [] => rfl
   | seen, .var x :: as => by
-    by_cases h : seen.contains x = true
+    by_cases h : x ∈ seen
     · simp [moveCopies, moveVars, h, moveCopies_eq seen as]
     · simp [moveCopies, moveVars, h, moveCopies_eq (x :: seen) as]
   | seen, .lit _ :: as => by simp [moveCopies, moveVars, moveCopies_eq seen as]
@@ -348,8 +348,8 @@ theorem moveVars_count : ∀ (seen : List Var) (as : List Arg) (y : Var),
         by_cases hy : y ∈ seen
         · simp [hy] at ih₂ ⊢; omega
         · simp [hy, Ne.symm he] at ih₂ ⊢; omega
-  | seen, .lit _ :: as, y => by simpa [moveVars, argVars] using moveVars_count seen as y
-  | seen, .erased :: as, y => by simpa [moveVars, argVars] using moveVars_count seen as y
+  | seen, .lit _ :: as, y => moveVars_count seen as y
+  | seen, .erased :: as, y => moveVars_count seen as y
 
 theorem heapArgs_sub (imm : List Var) : ∀ (as : List Arg) (y : Var),
     y ∈ argVars (heapArgs imm as) → y ∈ argVars as
@@ -444,7 +444,7 @@ theorem canonical_transfer {Γ : Ctx} {Δ : JCtx} {live : List Var} {joins : Joi
     have hl : x ∈ live := (List.mem_filter.mp hx).1
     refine ⟨?_, hl⟩
     cases hi : Γ.isImm x
-    · right; simp [hl, hi]
+    · right; simp [hl, hi] <;> omega
     · left; rfl
   intro Γ₂ h₂
   apply hk Γ₂ _ h₂
