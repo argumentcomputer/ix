@@ -1165,6 +1165,8 @@ def se_scan_fields := aiur_fn⟦
             1 => {  1 } ,
             _ => {  se_scan_fields(body, members) } ,
           } } ,
+        -- a field behind a `let` is not read here: the block counts as recursive
+        KernelTypes::KExprNode::Let(_, _, _) => {  1 } ,
         _ => {  0 } ,
       }
     }
