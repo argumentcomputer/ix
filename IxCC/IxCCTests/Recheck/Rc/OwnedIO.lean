@@ -333,13 +333,60 @@ def budget (logs : FilePath) : IO Unit := do
     fail "fanUnder: admitted as different programs at two budgets"
   IO.println s!"PASS budget within the limit (fanUnder, work {work} ≤ {limit}): compiles, verifies, {fanCases.length} values; refused at budget {work - 1}, the same program admitted at {work} and {limit}"
 
+/-! ## A join's captured list reordered -/
+
+/-- The first join whose captured list has two or more variables, with that list reversed. -/
+def capturedReversed (_ : Ctx) : Code → Option Code
+  | .jp j ps captured rec body k =>
+    if captured.length ≥ 2 then some (.jp j ps captured.reverse rec body k) else none
+  | _ => none
+
+/-- The checker treats a join's captured list as a set, so a certificate whose captured list is
+reordered is admitted. End to end, on the first program with such a join (the RC real-source roots,
+then the budget input's `fanUnder`): with the canonical certificate's backend decisions the verifier
+either validates an object or refuses at a backend stage (the decisions were made for the other
+order); with decisions made for the reordered map it validates an object; every validated object
+returns every expected value. Which of these happens is printed. -/
+def capturedOrder (logs : FilePath) : IO Unit := do
+  let mut programs : List (String × Front × List (List Nat) × (List Nat → Sem.Obs)) := []
+  for root in roots do
+    programs := programs ++ [(root, ← front root, listCases root, listWant root)]
+  let input ← budgetSource "fanUnder"
+  let cfg := ({ names := ["fanUnder"] } : Recheck.Config).forInput input
+  let fr ← IO.ofExcept ((Recheck.RcReplay.produceFir cfg input).mapError (·.render))
+  programs := programs ++ [("fanUnder", { input, cfg, front := fr
+    canonical := (Own.Plain.Program.canonicalForSrc fr.src fr.fir).bodies }, fanCases, fanWant "fanUnder")]
+  let mut done := false
+  for (root, fr, cases, want) in programs do
+    if done then break
+    let some m' := editMap fr.front.fir fr.canonical capturedReversed | continue
+    unless Own.Plain.checkOwned fr.front.fir m' do
+      fail s!"{root}: a reordered captured list is refused by the checker"
+    let cfg0 : Recheck.Config := { names := fr.cfg.names }
+    let (canonicalCert, canonicalArt) ← IO.ofExcept ((Recheck.RcReplay.produce cfg0 fr.input).mapError
+      (·.render))
+    let swapped := { canonicalCert with own := Own.Plain.Certificate.encode m' }
+    let withCanonicalDecisions ← match Recheck.RcReplay.run fr.cfg fr.input.program swapped with
+      | .ok art => do
+        let _ ← runNative logs s!"order-canonical-decisions-{root}" art cases want
+        pure s!"validated, object {if art.backend.object == canonicalArt.backend.object then "identical to" else "different from"} the canonical one, values right"
+      | .error e => pure s!"refused at {e.stage.name}/{e.code}"
+    let fresh ← IO.ofExcept ((finishWith fr.cfg fr.front m').mapError (·.render))
+    let art ← IO.ofExcept ((Recheck.RcReplay.run fr.cfg fr.input.program fresh).mapError
+      fun e => s!"{root}: the reordered map with its own decisions was refused: {e.render}")
+    let _ ← runNative logs s!"order-fresh-decisions-{root}" art cases want
+    IO.println s!"PASS reordered captured list ({root}): admitted; with the canonical backend decisions {withCanonicalDecisions}; with its own decisions validated, object {if art.backend.object == canonicalArt.backend.object then "identical to" else "different from"} the canonical one, {cases.length} values right"
+    done := true
+  unless done do fail "no program with a join capturing two or more variables"
+
 def run (logs : FilePath) : IO Unit := do
   IO.FS.createDirAll logs
   liveness logs
   wrongPlacements
   neverEmitted logs
   budget logs
+  capturedOrder logs
   IO.FS.writeFile (logs / "owned-result.txt")
-    "Ownership certificates other than the canonical one: a liveness placement admitted and run, six wrong placements refused with the checker's reason, the two never-emitted cases admitted and run, the captured-work budget past and within the limit.\n"
+    "Ownership certificates other than the canonical one: a liveness placement admitted and run, six wrong placements refused with the checker's reason, the two never-emitted cases admitted and run, the captured-work budget past and within the limit, a reordered captured list admitted and run.\n"
 
 end IxCCTests.Recheck.Rc.OwnedIO

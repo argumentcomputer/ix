@@ -91,7 +91,8 @@ def syntheticControls : IO Unit := do
     refused F kind corrupted
   -- The ownership checker treats a join's captured list as a set of variables, so the reversed
   -- list is another placement it types, and admission accepts it (heap stage 2; before, admission
-  -- refused every map but the canonical one).
+  -- refused every map but the canonical one). `OwnedIO.capturedOrder` takes such a certificate
+  -- through the whole verifier and runs its object.
   let some reordered := mutateFirst (rewrite "capture-order") 4096 j |
     throw (IO.userError "synthetic control capture-order did not mutate")
   unless reordered != j do throw (IO.userError "synthetic control capture-order was a no-op")
