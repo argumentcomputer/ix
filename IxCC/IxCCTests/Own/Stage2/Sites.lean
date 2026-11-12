@@ -130,10 +130,10 @@ partial def decBeforeJumps (j : JoinId) (x : Var) : Code → Code
 /-- On every chain that ends in `jmp j`, delete its last top-level `dec x`. -/
 partial def undecBeforeJumps (j : JoinId) (x : Var) (c : Code) : Code :=
   let (ss, t) := spine c
-  let ss := ss.map fun
-    | .jp j' ps cs rec b => .jp j' ps cs rec (undecBeforeJumps j x b)
+  let ss := ss.map fun (s : Stmt) => match s with
+    | .jp j' ps cs rec b => Stmt.jp j' ps cs rec (undecBeforeJumps j x b)
     | s => s
-  let t := match t with
+  let t : Code := match t with
     | .case y alts d =>
       .case y (alts.map fun (.mk key b) => .mk key (undecBeforeJumps j x b)) (d.map (undecBeforeJumps j x))
     | t => t
