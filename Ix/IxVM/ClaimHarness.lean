@@ -135,7 +135,12 @@ private def dedupConstList (entries : List (Lean.Name × Lean.ConstantInfo)) :
       out := out.push entry
   return out.toList
 
-private def collectCertifiedClosure (roots : Array Lean.Name)
+/-- The dependency closure of `roots` with the recursors of every inductive in it (and
+of the inductives those bring in): the compile input on which the binder-data
+annotator can install every inductive block, which IxC installs only with its
+recursor. A definition typed over a block the annotator could not install gets
+undecided data. -/
+def collectCertifiedClosure (roots : Array Lean.Name)
     (leanEnv : Lean.Environment) : List (Lean.Name × Lean.ConstantInfo) := Id.run do
   let mut seeds := roots.filter leanEnv.constants.contains
   let mut deps := dedupConstList (Lean.collectDependenciesMany seeds leanEnv.constants)
