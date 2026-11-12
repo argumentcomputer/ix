@@ -17,6 +17,197 @@ namespace IxVM.Refinement.Obs
 open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 open IxVM (F)
 
+/-- The evaluation paths of `Convert::binder_nodes`: one constructor per combination of selected arms. -/
+inductive «Convert::binder_nodes».Path (x_tree x_ekind x_eidx x_variant : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
+    (calls : List (Call F)) : Prop where
+  | Leaf
+      (x_e : SourceValue F) (x_i : SourceValue F) (x_v : SourceValue F) (x_nodes : SourceValue F)
+      (ld12 : loadValue h x_tree = .ok (.construct "Convert::BinderTreeNode" "Leaf" [x_e, x_i, x_v, x_nodes]))
+      (heq67 : (x_e : SourceValue F) = x_ekind)
+      (heq95 : (x_i : SourceValue F) = x_eidx)
+      (heq123 : (x_v : SourceValue F) = x_variant)
+      (he125 : r = x_nodes)
+      (he126 : h' = h)
+      (hc127 : calls = [])
+  | Node_n1
+      (x_e : SourceValue F) (x_i : SourceValue F) (x_v : SourceValue F) (x_left : SourceValue F) (x_right : SourceValue F) (m161 : Heap F) (cs172 : List (Call F)) (cs230 : List (Call F))
+      (ld12 : loadValue h x_tree = .ok (.construct "Convert::BinderTreeNode" "Node" [x_e, x_i, x_v, x_left, x_right]))
+      (ev174 : ObsFn W "Convert::binder_key_lt" [x_ekind, x_eidx, x_variant, x_e, x_i, x_v] h (.field 1) m161 cs172)
+      (ev232 : ObsFn W "Convert::binder_nodes" [x_left, x_ekind, x_eidx, x_variant] m161 r h' cs230)
+      (hc265 : calls = ((⟨"Convert::binder_key_lt", [x_ekind, x_eidx, x_variant, x_e, x_i, x_v], h⟩ : Call F) :: (cs172 ++ ((⟨"Convert::binder_nodes", [x_left, x_ekind, x_eidx, x_variant], m161⟩ : Call F) :: cs230))))
+  | Node_n0
+      (x_e : SourceValue F) (x_i : SourceValue F) (x_v : SourceValue F) (x_left : SourceValue F) (x_right : SourceValue F) (m161 : Heap F) (cs172 : List (Call F)) (cs274 : List (Call F))
+      (ld12 : loadValue h x_tree = .ok (.construct "Convert::BinderTreeNode" "Node" [x_e, x_i, x_v, x_left, x_right]))
+      (ev174 : ObsFn W "Convert::binder_key_lt" [x_ekind, x_eidx, x_variant, x_e, x_i, x_v] h (.field 0) m161 cs172)
+      (ev276 : ObsFn W "Convert::binder_nodes" [x_right, x_ekind, x_eidx, x_variant] m161 r h' cs274)
+      (hc309 : calls = ((⟨"Convert::binder_key_lt", [x_ekind, x_eidx, x_variant, x_e, x_i, x_v], h⟩ : Call F) :: (cs172 ++ ((⟨"Convert::binder_nodes", [x_right, x_ekind, x_eidx, x_variant], m161⟩ : Call F) :: cs274))))
+
+/-- **Every observed derivation of `Convert::binder_nodes` takes one of its paths.** -/
+theorem «Convert::binder_nodes».obs {x_tree x_ekind x_eidx x_variant : SourceValue F} {h h' : Heap F} {r : SourceValue F}
+    {calls : List (Call F)} (ev : ObsFn W "Convert::binder_nodes" [x_tree, x_ekind, x_eidx, x_variant] h r h' calls) :
+    «Convert::binder_nodes».Path x_tree x_ekind x_eidx x_variant h r h' calls := by
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.Convert.binder_nodes.lookup
+    (by simp [IxVM.Convert.binder_nodes, ControlLower.hasControl]) ev
+  simp only [IxVM.Convert.binder_nodes] at d0
+  obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
+  obtain ⟨p10, d11, ld12⟩ := d7.load_inv
+  obtain ⟨l13, rfl, rfl⟩ := d11.var_inv
+  simp at l13
+  subst l13
+  rcases selectArm_cons_inv sel8 with ⟨mt14, rfl⟩ | ⟨nm15, sel16⟩
+  · obtain ⟨vs17, hv18, -, ml19⟩ := matchPattern_construct_inv mt14
+    rw [Names.n5789200644662782200] at hv18
+    subst hv18
+    obtain ⟨x_e, vs20, b21, b22, rfl, mt23, ml24, rfl⟩ := matchListWith_cons_inv ml19
+    obtain rfl := matchPattern_bind_inv mt23
+    obtain ⟨x_i, vs25, b26, b27, rfl, mt28, ml29, rfl⟩ := matchListWith_cons_inv ml24
+    obtain rfl := matchPattern_bind_inv mt28
+    obtain ⟨x_v, vs30, b31, b32, rfl, mt33, ml34, rfl⟩ := matchListWith_cons_inv ml29
+    obtain rfl := matchPattern_bind_inv mt33
+    obtain ⟨x_nodes, vs35, b36, b37, rfl, mt38, ml39, rfl⟩ := matchListWith_cons_inv ml34
+    obtain rfl := matchPattern_bind_inv mt38
+    obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml39
+    obtain ⟨v40, m41, bs42, c43, c44, d45, mt46, d47, rfl⟩ := d9.letValue_inv
+    obtain ⟨vs48, a49, ap50⟩ := d45.builtin_inv
+    obtain ⟨v51, vs53, m54, c55, c56, rfl, d57, a58, rfl⟩ := a49.cons_inv
+    obtain ⟨l59, rfl, rfl⟩ := d57.var_inv
+    simp at l59
+    subst l59
+    obtain ⟨v52, vs60, m61, c62, c63, rfl, d64, a65, rfl⟩ := a58.cons_inv
+    obtain ⟨l66, rfl, rfl⟩ := d64.var_inv
+    simp at l66
+    subst l66
+    obtain ⟨rfl, rfl, rfl⟩ := a65.nil_inv
+    obtain ⟨heq67, rfl⟩ := Builtin.assertEq_inv ap50
+    obtain rfl := matchPattern_wildcard_inv mt46
+    obtain ⟨v68, m69, bs70, c71, c72, d73, mt74, d75, rfl⟩ := d47.letValue_inv
+    obtain ⟨vs76, a77, ap78⟩ := d73.builtin_inv
+    obtain ⟨v79, vs81, m82, c83, c84, rfl, d85, a86, rfl⟩ := a77.cons_inv
+    obtain ⟨l87, rfl, rfl⟩ := d85.var_inv
+    simp at l87
+    subst l87
+    obtain ⟨v80, vs88, m89, c90, c91, rfl, d92, a93, rfl⟩ := a86.cons_inv
+    obtain ⟨l94, rfl, rfl⟩ := d92.var_inv
+    simp at l94
+    subst l94
+    obtain ⟨rfl, rfl, rfl⟩ := a93.nil_inv
+    obtain ⟨heq95, rfl⟩ := Builtin.assertEq_inv ap78
+    obtain rfl := matchPattern_wildcard_inv mt74
+    obtain ⟨v96, m97, bs98, c99, c100, d101, mt102, d103, rfl⟩ := d75.letValue_inv
+    obtain ⟨vs104, a105, ap106⟩ := d101.builtin_inv
+    obtain ⟨v107, vs109, m110, c111, c112, rfl, d113, a114, rfl⟩ := a105.cons_inv
+    obtain ⟨l115, rfl, rfl⟩ := d113.var_inv
+    simp at l115
+    subst l115
+    obtain ⟨v108, vs116, m117, c118, c119, rfl, d120, a121, rfl⟩ := a114.cons_inv
+    obtain ⟨l122, rfl, rfl⟩ := d120.var_inv
+    simp at l122
+    subst l122
+    obtain ⟨rfl, rfl, rfl⟩ := a121.nil_inv
+    obtain ⟨heq123, rfl⟩ := Builtin.assertEq_inv ap106
+    obtain rfl := matchPattern_wildcard_inv mt102
+    obtain ⟨l124, rfl, rfl⟩ := d103.var_inv
+    simp at l124
+    subst l124
+    exact «Convert::binder_nodes».Path.Leaf _ _ _ _ ld12 heq67 heq95 heq123 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+  · have hne128 := matchPattern_construct_none (by trivial) nm15
+    simp only [Names.n5789200644662782200] at hne128
+    rcases selectArm_cons_inv sel16 with ⟨mt129, rfl⟩ | ⟨nm130, sel131⟩
+    · obtain ⟨vs132, hv133, -, ml134⟩ := matchPattern_construct_inv mt129
+      rw [Names.n5789200644662782200] at hv133
+      subst hv133
+      obtain ⟨x_e, vs135, b136, b137, rfl, mt138, ml139, rfl⟩ := matchListWith_cons_inv ml134
+      obtain rfl := matchPattern_bind_inv mt138
+      obtain ⟨x_i, vs140, b141, b142, rfl, mt143, ml144, rfl⟩ := matchListWith_cons_inv ml139
+      obtain rfl := matchPattern_bind_inv mt143
+      obtain ⟨x_v, vs145, b146, b147, rfl, mt148, ml149, rfl⟩ := matchListWith_cons_inv ml144
+      obtain rfl := matchPattern_bind_inv mt148
+      obtain ⟨x_left, vs150, b151, b152, rfl, mt153, ml154, rfl⟩ := matchListWith_cons_inv ml149
+      obtain rfl := matchPattern_bind_inv mt153
+      obtain ⟨x_right, vs155, b156, b157, rfl, mt158, ml159, rfl⟩ := matchListWith_cons_inv ml154
+      obtain rfl := matchPattern_bind_inv mt158
+      obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml159
+      obtain ⟨v160, m161, bs162, body163, c164, c165, d166, sel167, d168, rfl⟩ := d9.matchValue_inv
+      obtain ⟨vs169, m170, c171, cs172, a173, ev174, rfl⟩ := d166.call_inv
+      rw [instanceName_plain_some] at ev174
+      obtain ⟨v175, vs181, m182, c183, c184, rfl, d185, a186, rfl⟩ := a173.cons_inv
+      obtain ⟨l187, rfl, rfl⟩ := d185.var_inv
+      simp at l187
+      subst l187
+      obtain ⟨v176, vs188, m189, c190, c191, rfl, d192, a193, rfl⟩ := a186.cons_inv
+      obtain ⟨l194, rfl, rfl⟩ := d192.var_inv
+      simp at l194
+      subst l194
+      obtain ⟨v177, vs195, m196, c197, c198, rfl, d199, a200, rfl⟩ := a193.cons_inv
+      obtain ⟨l201, rfl, rfl⟩ := d199.var_inv
+      simp at l201
+      subst l201
+      obtain ⟨v178, vs202, m203, c204, c205, rfl, d206, a207, rfl⟩ := a200.cons_inv
+      obtain ⟨l208, rfl, rfl⟩ := d206.var_inv
+      simp at l208
+      subst l208
+      obtain ⟨v179, vs209, m210, c211, c212, rfl, d213, a214, rfl⟩ := a207.cons_inv
+      obtain ⟨l215, rfl, rfl⟩ := d213.var_inv
+      simp at l215
+      subst l215
+      obtain ⟨v180, vs216, m217, c218, c219, rfl, d220, a221, rfl⟩ := a214.cons_inv
+      obtain ⟨l222, rfl, rfl⟩ := d220.var_inv
+      simp at l222
+      subst l222
+      obtain ⟨rfl, rfl, rfl⟩ := a221.nil_inv
+      rcases selectArm_cons_inv sel167 with ⟨mt223, rfl⟩ | ⟨nm224, sel225⟩
+      · obtain ⟨hv226, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 1) mt223
+        subst hv226
+        obtain ⟨vs227, m228, c229, cs230, a231, ev232, rfl⟩ := d168.call_inv
+        rw [instanceName_plain_some] at ev232
+        obtain ⟨v233, vs237, m238, c239, c240, rfl, d241, a242, rfl⟩ := a231.cons_inv
+        obtain ⟨l243, rfl, rfl⟩ := d241.var_inv
+        simp at l243
+        subst l243
+        obtain ⟨v234, vs244, m245, c246, c247, rfl, d248, a249, rfl⟩ := a242.cons_inv
+        obtain ⟨l250, rfl, rfl⟩ := d248.var_inv
+        simp at l250
+        subst l250
+        obtain ⟨v235, vs251, m252, c253, c254, rfl, d255, a256, rfl⟩ := a249.cons_inv
+        obtain ⟨l257, rfl, rfl⟩ := d255.var_inv
+        simp at l257
+        subst l257
+        obtain ⟨v236, vs258, m259, c260, c261, rfl, d262, a263, rfl⟩ := a256.cons_inv
+        obtain ⟨l264, rfl, rfl⟩ := d262.var_inv
+        simp at l264
+        subst l264
+        obtain ⟨rfl, rfl, rfl⟩ := a263.nil_inv
+        exact «Convert::binder_nodes».Path.Node_n1 _ _ _ _ _ _ _ _ ld12 ev174 ev232 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+      · have hne266 := MatchesConst.none_inv (MatchesConst.literal 1) nm224
+        rcases selectArm_cons_inv sel225 with ⟨mt267, rfl⟩ | ⟨nm268, sel269⟩
+        · obtain ⟨hv270, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 0) mt267
+          subst hv270
+          obtain ⟨vs271, m272, c273, cs274, a275, ev276, rfl⟩ := d168.call_inv
+          rw [instanceName_plain_some] at ev276
+          obtain ⟨v277, vs281, m282, c283, c284, rfl, d285, a286, rfl⟩ := a275.cons_inv
+          obtain ⟨l287, rfl, rfl⟩ := d285.var_inv
+          simp at l287
+          subst l287
+          obtain ⟨v278, vs288, m289, c290, c291, rfl, d292, a293, rfl⟩ := a286.cons_inv
+          obtain ⟨l294, rfl, rfl⟩ := d292.var_inv
+          simp at l294
+          subst l294
+          obtain ⟨v279, vs295, m296, c297, c298, rfl, d299, a300, rfl⟩ := a293.cons_inv
+          obtain ⟨l301, rfl, rfl⟩ := d299.var_inv
+          simp at l301
+          subst l301
+          obtain ⟨v280, vs302, m303, c304, c305, rfl, d306, a307, rfl⟩ := a300.cons_inv
+          obtain ⟨l308, rfl, rfl⟩ := d306.var_inv
+          simp at l308
+          subst l308
+          obtain ⟨rfl, rfl, rfl⟩ := a307.nil_inv
+          exact «Convert::binder_nodes».Path.Node_n0 _ _ _ _ _ _ _ _ ld12 ev174 ev276 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+        · have hne310 := MatchesConst.none_inv (MatchesConst.literal 0) nm268
+          exact (selectArm_nil_inv sel269).elim
+    · have hne311 := matchPattern_construct_none (by trivial) nm130
+      simp only [Names.n5789200644662782200] at hne311
+      exact (selectArm_nil_inv sel131).elim
+
 /-- The evaluation paths of `Convert::binder_level`: one constructor per combination of selected arms. -/
 inductive «Convert::binder_level».Path (x_node : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
     (calls : List (Call F)) : Prop where
