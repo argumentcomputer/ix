@@ -114,7 +114,7 @@ theorem ExprLvEq.lift {e₁ e₂ : KExpr} (h : ExprLvEq e₁ e₂) (n : Nat) :
   | proj _ ih => intro c; simp only [Ix.Kernel.Expr.liftLooseBVars]; exact .proj (ih c)
 
 /-- Capture-avoiding instantiation respects level equivalence. -/
-theorem ExprLvEq.instShift {v₁ v₂ : KExpr} (hv : ExprLvEq v₁ v₂) {e₁ e₂ : KExpr}
+theorem ExprLvEq.shift {v₁ v₂ : KExpr} (hv : ExprLvEq v₁ v₂) {e₁ e₂ : KExpr}
     (h : ExprLvEq e₁ e₂) : ∀ j, ExprLvEq (instShift v₁ j e₁) (instShift v₂ j e₂) := by
   induction h with
   | @bvar i =>
@@ -239,7 +239,7 @@ theorem Tm.det {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr} {h 
     | letE cell' rt' rv' rb' =>
       have := cell_eq cell cell'; simp only [Value.construct.injEq, List.cons.injEq, and_true,
         true_and] at this; obtain ⟨rfl, rfl, rfl⟩ := this
-      exact (ihv rv').instShift (ihb rb') 0
+      exact (ihv rv').shift (ihb rb') 0
     | bvarLocal cell' _ _ | bvarFree cell' _ _ _ | sort cell' _ _ | const cell' _ _ _ | app cell' _ _
     | lam cell' _ _ _ | forallE cell' _ _ _ | litNat cell' _ | litStr cell' _ _ | proj cell' _ _ =>
       have := cell_eq cell cell'; simp at this
