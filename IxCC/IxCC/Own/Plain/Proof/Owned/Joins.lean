@@ -69,7 +69,7 @@ theorem Fir.lookupJ_of_arity {j : Fir.JoinId} {n : Nat} : ∀ {J : List Fir.JEnt
     · have hb : (j == e₀.id) = true := by simp [he]
       simp only [stackArities, List.map_cons, List.lookup, hb, Option.some.injEq] at h
       exact ⟨e₀, J, by simp [Fir.lookupJ, he], h⟩
-    · have hb : (j == e₀.id) = false := by simpa [eq_comm] using he
+    · have hb : (j == e₀.id) = false := beq_eq_false_iff_ne.mpr (fun h => he h.symm)
       have h' : (stackArities J).lookup j = some n := by
         simpa [stackArities, List.lookup, hb] using h
       obtain ⟨e, rest, hl, hn⟩ := Fir.lookupJ_of_arity h'
@@ -111,7 +111,7 @@ theorem OwnedEntry.after_stack {Δ Δd : JCtx} {Γd : Ctx} {lexd captured : List
     {older : Joins} {restf : List Fir.JEntry} {resto : List JEntry} {ef : Fir.JEntry}
     {eo : JEntry} (entry : OwnedEntry Δ Δd Γd lexd captured restf ef eo)
     (tail : OwnedStack Δ ef.env eo.env lexd older restf resto) (hn : lexd.Nodup)
-    (hf : fresh lexd ef.params = true) (vs : List RVal) (ws : List Fir.Val) :
+    (hf : Plain.fresh lexd ef.params = true) (vs : List RVal) (ws : List Fir.Val) :
     OwnedStack (if ef.isRec then Δd.insert ef.id captured else Δd)
       (Fir.bindAll ef.env ef.params ws) (Own.bindAll eo.env eo.params vs) (lexd ++ ef.params)
       (if ef.isRec then (ef.id, lexd) :: older else older) (ef.after restf) (eo.after resto) := by
@@ -179,7 +179,9 @@ theorem OwnedState.declare (st : OwnedState functions H external live Γ ρf ρo
   exact { st with
     stack := .cons entry (CaptureView.declare ρo live st.distinct) (fun _ _ => rfl)
       (st.stack.transfer (fun e he => Src.NatMap.get?_insert_ne _ _ (hfresh e he)))
-    scope := .cons (List.Sublist.refl _) ⟨hf, hb⟩ st.scope }
+    scope := .cons
+      (e := { id := j, charged := false, env := ρf, params := ps, body := eraseCode body, isRec := rec })
+      (List.Sublist.refl _) ⟨hf, hb⟩ st.scope }
 
 /-- **A checked jump**: the target found on both stacks, the arguments, and the state its body
 starts from — the arguments' tokens and those of the captured variables that are not immediates
@@ -205,7 +207,7 @@ theorem jump_body (st : OwnedState functions H external live Γ ρf ρo owned le
   have hid := Fir.lookupJ_id hl
   have hc : captured' = captured := by
     have := entry.here; rw [hid, hΔ] at this; exact (Option.some.inj this).symm
-  subst hc
+  subst captured'
   obtain ⟨vs, ws, owned₁, hvs, hws, hds, inv₁, hs₁, hw₁⟩ := takeArgs_sem st.takeInv h1
   obtain ⟨cvs, owned₂, hcvs, havail, inv₂, hs₂, _⟩ := takeVars_sem inv₁ h2
   obtain ⟨toks₂, htok₂, hr₂⟩ := inv₂.roots
