@@ -24,9 +24,15 @@ import Ix.FileDigest
   --report`, gated on the report: every phase (the compile with its role
   binding, the serde gate, projection and block-order fidelity, the reader
   against the Lean source, decompilation) passed and none failed.
+* `initstd-stack`: the record-by-record check (`kernel-check-ixe`, the step
+  `ix check-lean` also runs) on the artifact `initstd-reference` keeps, with
+  every thread's stack at 8 MiB (`LEAN_STACK_SIZE_KB`), gives the verdicts it
+  gives on the runtime's default stack. Before the kernel's reduction loops,
+  its index build and the host's record loop iterated, it aborted with a stack
+  overflow on every stack up to 16 MiB (`docs/kernel.md`, "Native stack").
 
-Both run the `ix` binary (`.lake/build/bin/ix`, which `IxTests` builds), as a
-user would, in a subprocess. -/
+They run the `ix` binary (`.lake/build/bin/ix`, which `IxTests` builds) or
+`kernel-check-ixe`, as a user would, in a subprocess. -/
 
 namespace Tests.Ix.InitStd
 
@@ -254,6 +260,55 @@ def fidelity : IO UInt32 := do
       ("ix validate-lean on Init+Std exits 0", out.exitCode == 0),
       ("its report has the five phases, every one passed",
         match verdict with | .ok n => n ≥ 5 | .error _ => false)]
+  finally
+    IO.FS.removeDirAll dir
+
+def kernelCheckIxe : System.FilePath := ".lake" / "build" / "bin" / "kernel-check-ixe"
+
+def pairsOf : List String → List (String × String)
+  | a :: b :: t => (a, b) :: pairsOf t
+  | _ => []
+
+/-- The counts of `kernel-check-ixe`'s `check-ixe: done in … ms; [(OUTCOME, N), …]`
+line, sorted by outcome (`none`: no such line). -/
+def doneCounts (stderr : String) : Option (List (String × String)) := do
+  let line ← (stderr.splitOn "\n").find? (·.startsWith "check-ixe: done in ")
+  let rest ← (line.splitOn " ms; ")[1]?
+  let clean := rest.foldl (fun acc c => if "[]()".contains c then acc else acc.push c) ""
+  pure ((pairsOf (clean.splitOn ", ")).toArray.qsort (fun x y => x.1 < y.1)).toList
+
+#guard doneCounts "x\ncheck-ixe: done in 5 ms; [(decline, 2), (accept, 9)]\ny" ==
+  some [("accept", "9"), ("decline", "2")]
+
+/-- `initstd-stack`: `kernel-check-ixe` on Init+Std with every thread's stack
+at 8 MiB, and on the runtime's default, with the same counts. The artifact is
+the one `initstd-reference` keeps, or `$IX_INITSTD_IXE`. -/
+def stack : IO UInt32 := do
+  let artifact := ((← IO.getEnv "IX_INITSTD_IXE").map System.FilePath.mk).getD keptArtifact
+  unless ← artifact.pathExists do
+    IO.eprintln s!"[initstd] {artifact} is missing: run initstd-reference first"
+    return 1
+  let dir ← IO.FS.createTempDir
+  try
+    let check (label : String) (stackKb : Option Nat) :
+        IO (UInt32 × Option (List (String × String))) := do
+      let t0 ← IO.monoMsNow
+      -- no core file if it aborts
+      let out ← IO.Process.output {
+        cmd := "sh", args := #["-c", "ulimit -c 0; exec \"$0\" \"$@\"", kernelCheckIxe.toString,
+          "--jobs", "4", artifact.toString, (dir / s!"{label}.jsonl").toString],
+        env := #[("LEAN_STACK_SIZE_KB", stackKb.map toString)] }
+      let counts := doneCounts out.stderr
+      IO.println s!"[initstd] kernel-check-ixe, {label}: exit {out.exitCode} in \
+        {(← IO.monoMsNow) - t0} ms; {(counts.map fun cs => cs.map fun (k, v) => s!"{k} {v}").getD ["no summary"]}\
+        {if out.stderr.contains "Stack overflow" then "; STACK OVERFLOW" else ""}"
+      return (out.exitCode, counts)
+    let (rcDefault, countsDefault) ← check "default stack" none
+    let (rc8, counts8) ← check "8 MiB stacks" (some 8192)
+    reportChecks "initstd-stack" #[
+      ("kernel-check-ixe on Init+Std exits 0 on the default stack", rcDefault == 0),
+      ("kernel-check-ixe on Init+Std exits 0 with every thread at 8 MiB", rc8 == 0),
+      ("with the same counts", countsDefault.isSome && counts8 == countsDefault)]
   finally
     IO.FS.removeDirAll dir
 

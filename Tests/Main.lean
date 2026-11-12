@@ -52,6 +52,7 @@ import Tests.Ix.Kernel.PreludeFidelity
 import Tests.Ix.Kernel.SourceIngress
 import Tests.Ix.Kernel.TierInd
 import Tests.Ix.Kernel.LevelSharing
+import Tests.Ix.Kernel.Depth
 import Tests.Ix.Kernel.BundleEvidence
 import Tests.Ix.Cert.Statement
 import Tests.Ix.InitStd
@@ -161,6 +162,9 @@ def registry : List Entry := [
   .suite "kernel-tier-ind" .primary Tests.Ix.Kernel.TierInd.suite,
   -- the ∀ rule's levels stay small on shared types, and a level's has-parameter bit is cached
   .runner "kernel-level-sharing" .primary Tests.LevelSharing.run,
+  -- reduction steps and record counts take no native stack: each case on a
+  -- 2 MiB stack, in a process of its own (`kernel-depth-case`)
+  .runner "kernel-depth" .primary Tests.Ix.Kernel.Depth.run,
   -- the resource validator's typing half on the compiled fixtures
   .suite "resource-hints" .primary Tests.ResourceHints.suite,
   -- the resource half's step budget bounds its work on sharing and let chains
@@ -281,6 +285,9 @@ def registry : List Entry := [
   -- Address.blake3, Address.blake3Pure and Address.admissionHash on every
   -- record, blob and the binding of the artifact `initstd-reference` leaves
   .runner "admission-hash-diff-initstd" (.ci .landingInitStdCli) Tests.Ix.Kernel.AdmissionHashDiff.runInitStd,
+  -- the record-by-record check of that artifact on 8 MiB thread stacks
+  -- (`kernel-check-ixe` with `LEAN_STACK_SIZE_KB`), with the default stack's verdicts
+  .runner "initstd-stack" (.ci .landingInitStdCli) Tests.Ix.InitStd.stack,
   -- `ix validate-lean` on Init+Std: compile, serde, projection, reader and
   -- decompile fidelity
   .runner "fidelity-initstd" (.ci .landingInitStdCli) Tests.Ix.InitStd.fidelity,
@@ -426,6 +433,7 @@ def required : List (String × String) := [
   ("resource-hints", "primary"),
   ("resource-budget", "primary"),
   ("kernel-level-sharing", "primary"),
+  ("kernel-depth", "primary"),
   ("resource-transport", "primary"),
   ("compiler-reports", "primary"),
   ("ground-unit", "primary"),
@@ -453,6 +461,7 @@ def required : List (String × String) := [
   ("ixvm", "ci:misc"),
   ("kernel-tutorial", "ci:misc"),
   ("initstd-reference", "ci:landing-initstd-cli"),
+  ("initstd-stack", "ci:landing-initstd-cli"),
   ("admission-hash-diff-initstd", "ci:landing-initstd-cli"),
   ("fidelity-initstd", "ci:landing-initstd-cli")]
 
