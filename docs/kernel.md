@@ -433,14 +433,25 @@ shared as a DAG of linear size whose tree doubles per binder, which the
 level functions walk as trees (`Level.simplify`, from the comparison of the
 inferred sort with the declared one, and `levelHasParam`, at every `.sort`
 node built): a 225-byte constant took 52 s, twice as long per further step.
-The rule now builds `Level.mkIMax u v`, `imax` with the official kernel's
-`mk_imax` and `mk_max` folds, which is always `u`, `v` or `imax u v`
-(`Level.mkIMax_cases`), and `Level` caches its has-parameter bit; such chains
-check in milliseconds at a thousand steps (the `kernel-level-sharing` test
-checks six of them at 200). Levels the folds cannot merge stay shared as DAGs
-whose trees double per step: two chains at two parameters, each step
-mentioning the other's (`A (j+1) = A j → B j`, `B (j+1) = B j → A j`), and
-the levels unfolding builds when each of a chain of definitions instantiates
+The rule's level stays upstream's `imax u v` (`Infer.forallE`); the executed
+tier is what changed. `Level` caches its has-parameter bit; the cached core
+hash-conses the ∀ rule's levels (`Cached.internLM`, the identity in the
+logic: a hit is returned only after `==` confirms it), so that the level the
+binder loop builds again for a telescope's tail is the object built before
+(without it a `let` chain is cubic, 9 s at 2,000 steps); and the level walks
+below are memoised. The hash-consing is an executed-tier device: `internLM l`
+is `l` in the logic (a hit is returned only after `==`, which is lawful, has
+confirmed it; `internLM_eff`, with `CSOK.withIntern`: no clause of the cached
+core's state invariant reads the table), and the only proofs it changes are
+the cached core's two simulation steps at the ∀ sites, `inferPisOutC_sim` and
+`inferBodyIOC_sim`. `IxCK/Kernel/Rules/`, `IxCK/Kernel/Model/`,
+`IxCK/Kernel/Core.lean` and
+`IxCK/Kernel/Verify/{BinderLoop,InferLemmas,InferIOLemmas,Level,PropWhen}.lean`
+are byte-identical to the rename commit `41b2eeac6` (upstream at `bdd4304fa`,
+renamed), checked by `git diff`. Levels stay shared as DAGs whose trees double per step:
+the ∀ chains above, two chains at two parameters, each step mentioning the
+other's (`A (j+1) = A j → B j`, `B (j+1) = B j → A j`), and the levels
+unfolding builds when each of a chain of definitions instantiates
 the previous at `max u u` (`Level.subst` puts one object at both sides).
 Level equality (`==`) is memoised below its pointer and hash tests on the
 pairs it proves equal (`Level.decMemo`), and the executed forms of
@@ -453,7 +464,9 @@ Each executed form is proved equal to its specification and swapped in by
 of the plain recursion runs instead, so ordinary levels cost what they did.
 So every level walk is linear in the level's DAG, and such constants check
 in milliseconds at hundreds of steps (the `kernel-level-sharing` test checks
-four families at 200).
+the families at 200, the `let` chain and its parameter variant at 2,000
+within a bound, and the printing of a failure about such a level: the
+display shows at most 64 `max`/`imax` nodes of a level, `⋯` past them).
 
 What remains is the comparison itself. `Level.leqCore` decides
 `eval l ≤ eval r + diff` at every assignment by nanoda's case analysis:
@@ -1274,7 +1287,7 @@ files carry further changes:
 | `IxCK/Kernel/Frontend/InModel/Nested.lean` | container groups formed largest family first | Larger container families claim their members first, preventing overlapping nested-model groups from emitting a member twice |
 | `IxCK/Kernel/Level.lean`, `IxCK/Kernel/Verify/Level.lean` | the `(param, max)` case falls back on Géran's sublevels, with its soundness case | nanoda's comparison is incomplete there, and Ixon's canonical levels reach the gap (Mathlib's `RatFunc.liftOn_def`) |
 | `IxCK/Kernel/Expr.lean`, `IxCK/Kernel/Cached/ExprNodes.lean` | `Level` caches its has-parameter bit (`hasParamData`), and `levelHasParam` runs as it (`levelHasParam_eq_csimp`) | the walk visited a level shared as a DAG once per path, at every `.sort` node built |
-| `IxCK/Kernel/{Level,Core}.lean`, `IxCK/Kernel/Cached/CoreC.lean`, `IxCK/Kernel/Rules/Rel.lean`, `IxCK/Kernel/Model/Rules/InferSound.lean`, `IxCK/Kernel/Verify/{Level,PropWhen,BinderLoop,InferLemmas,InferIOLemmas}.lean`, `IxCK/Kernel/Verify/Cached/{BinderLoopC,DiscC4}.lean`, `IxCK/Kernel/Model/{AxiomBits,Inductives/FixTeleBound,Inductives/StructBits}.lean` | the ∀ rule's level is `Level.mkIMax u v` (`imax` with `mk_imax`'s and `mk_max`'s folds), in the specification, the executed core and `Infer.forallE`; it equals `imax u v` in every assignment (`eval_mkIMax`) with the same zero-ness datum (`zeronessOf_mkIMax`) | with `imax`, a ∀ chain over one shared type built a level whose tree doubles per binder ("Running time") |
+| `IxCK/Kernel/Cached/{StateC,CoreC}.lean`, `IxCK/Kernel/Verify/Cached/{SimCEff,BinderLoopC,DiscC4}.lean` | the cached core hash-conses the ∀ rule's levels: a table `lvlIntern` in `CState`, and `internLM (.imax u v)` in place of `pure (.imax u v)` in `inferPisOutI` and `inferBodyIOI`; `internLM` returns its argument on every branch (a hit is returned after `==` confirms it), proved by `internLM_eff` (with `CSOK.withIntern`: no clause reads the table), which the two simulation steps take in place of `pureEq_eff`. The rule, the model and the reference core are upstream's | without it the binder loop rebuilds the level of a telescope's tail as a new object equal to the one built before, and a `let` chain over one shared type is cubic ("Running time"). Earlier (`c076298dc`) the rule's level was folded (`Level.mkIMax`); withdrawn so that the rules tier is upstream's |
 | `IxCK/Kernel/Expr.lean`, `IxCK/Kernel/Cached/ExprNodes.lean` | the executed level equality (`Level.beqPtr`, through `Level.beq_eq_beqPtr`) decides its structural case by a descent memoised on the pairs it proves equal (`Level.decMemo`, `Expr.beqMemo`'s arrangement); `Level.beqPtr_eq` is unchanged in statement | the folds compare two levels, and on equal levels built apart as DAGs the structural walk visited their trees ("Running time") |
 | `IxCK/Kernel/Level.lean` | the executed `simplify`, `leqCore`, `zeronessOf` and `isNeverZero` are memoised per call on the nodes (for `leqCore`, the subproblems) they finish (`simplifyFast`, `leqCoreFast`, `zeronessOfFast`, `isNeverZeroFast`, each swapped in by a `@[csimp]` theorem proving it equal to the unchanged specification), and the memoised `leqCore`'s case split substitutes with a memoised `subst` (`substMemo`); below a small tree size each runs an exact copy of the plain recursion | the walks visited a level shared as a DAG once per path, and `leqCore` re-solved the subproblems its distributions meet again ("Running time") |
 | `IxCK/Kernel/Cached/CoreC.lean`, `IxCK/Kernel/FEnv.lean`, `IxCK/Kernel/Units.lean` | the executed `whnfCoreLoopI`, `whnfLoopI` and `defeqLoopI` are loops over a twin of the step that returns its tail call of the continuation (`whnfCoreLoopFast`, `whnfLoopFast`, `defeqLoopFast`), and the executed `mkFEnvGo` and `unitsGo` a fold and an accumulator loop (`mkFEnvGoFast`, `unitsGoFast`), each swapped in by a `@[csimp]` theorem proving it equal to the unchanged function | the loops called their continuation through a closure, which kept native frames per reduction step, and the two recursions one per constant ("Native stack") |

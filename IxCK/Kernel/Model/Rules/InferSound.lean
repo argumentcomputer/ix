@@ -265,24 +265,22 @@ theorem Infer.strLit_sound (hin : RulesInputs V m φ) {g : Grade} {d : Nat}
     fun ρ _ => (strLitFacts hin.const_ty hin.leaf_valid hin.nat_heads h hea ρ).2⟩
 
 /-- `infer_forallE_claim(IO)` (`Steps/Infer.lean:254`, `InferIO.lean:339`):
-the two sort facts (`sortSemAt_of_claims`'s content) and the bit law.
-The rule's level `mkIMax u v` denotes the numeral of `imax u v`
-(`Level.eval_mkIMax`). -/
+the two sort facts (`sortSemAt_of_claims`'s content) and the bit law. -/
 theorem Infer.forallE_sound {g : Grade} {d : Nat}
     {ty body s bs : Expr md} {u v : Level} {mb : BinderMeta}
     (hs : InferSem m φ g d ty s) (hu : RedSem m φ d s (.sort u))
     (hbs : InferSem m φ g (d + 1) (body.instantiate1 (.fvar d ty)) bs)
     (hv : RedSem m φ (d + 1) bs (.sort v))
     (hz : Level.zeronessOf v = mb.pw) :
-    InferSem m φ g d (.forallE ty body mb) (.sort (Level.mkIMax u v)) := by
+    InferSem m φ g d (.forallE ty body mb) (.sort (.imax u v)) := by
   have main : ∀ {Δa : List AnnotTerm} {ea : AnnotTerm},
       Frame d (.forallE ty body mb) →
       CtxOk m φ d Δa (.forallE ty body mb) →
       denoteMeta m.acval env φ d (.forallE ty body mb) = some ea →
       (g = .io → Graded V Δa ea) →
-      Frame (md := md) d (.sort (Level.mkIMax u v)) ∧
-        LeavesSub (.sort (Level.mkIMax u v)) (.forallE ty body mb) ∧
-        ∃ ta, denoteMeta m.acval env φ d (.sort (Level.mkIMax u v)) = some ta ∧
+      Frame (md := md) d (.sort (.imax u v)) ∧
+        LeavesSub (.sort (.imax u v)) (.forallE ty body mb) ∧
+        ∃ ta, denoteMeta m.acval env φ d (.sort (.imax u v)) = some ta ∧
           Graded V Δa ea ∧ Graded V Δa ta ∧
           ∀ ρ : Nat → V, Sat V Δa ρ → interp V ρ ea ∈ˢ interp V ρ ta := by
     intro Δa ea hfr hC hea hgr
@@ -344,7 +342,7 @@ theorem Infer.forallE_sound {g : Grade} {d : Nat}
           = interp V ρ (.pi (u.eval φ) (v.eval φ) tyA baA) := by
       rw [interp_pi, interp_pi]
       exact piR_zero_agree hzag fun x _ => rfl
-    rw [hbridge, Level.eval_mkIMax]
+    rw [hbridge]
     exact hrow.2
   cases g with
   | full =>

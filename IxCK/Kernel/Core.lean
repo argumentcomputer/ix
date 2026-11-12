@@ -1343,10 +1343,6 @@ def inferBody (r : (CoreFns md) m) (env : Env md) : Nat → Expr md → m (Expr 
       -- canonical, so `==` decides zero-ness agreement, and a mismatch is a decline
       -- (a positively detected annotation the checker cannot certify),
       -- never a reject.  The annotation is never read by reduction.
-      -- The level is `imax u v` with the folds of the official kernel's
-      -- `mk_imax` (`Level.mkIMax`, which its `infer_pi` builds with):
-      -- equal to `imax u v` in every assignment, and as small as its
-      -- inputs where `imax` would nest (a ∀ chain over one shared type).
       match ← r.whnf depth (← r.infer depth ty) with
       | .sort u => do
         let v ← ensureSort r env (depth + 1)
@@ -1354,7 +1350,7 @@ def inferBody (r : (CoreFns md) m) (env : Env md) : Nat → Expr md → m (Expr 
         if mode.verifiedChecks then
           unless Level.zeronessOf v == mb.pw do
             throw (.notImplemented "sort-annotation mismatch (forall-cod)")
-        pure (.sort (Level.mkIMax u v))
+        pure (.sort (.imax u v))
       | _ => throw (.invalid "expected a sort")
     | .lam ty body mb => do
       -- The domain must be a type (and the model needs its
@@ -1517,7 +1513,7 @@ def inferBodyIO (r : (CoreFns md) m) (env : Env md) : Nat → Expr md → m (Exp
         if mode.verifiedChecks then
           unless Level.zeronessOf v == mb.pw do
             throw (.notImplemented "sort-annotation mismatch (forall-cod)")
-        pure (.sort (Level.mkIMax u v))
+        pure (.sort (.imax u v))
       | _ => throw (.invalid "expected a sort")
     | .lam ty body mb => do
       -- Task #168 stage 2: no domain-sort run at the io grade —
