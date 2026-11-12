@@ -24,7 +24,7 @@ kernel builds a table from one block: the structure's own constructor). The mode
 laws are then the claimed constants' own: none of them reads a model-family constant.
 
 The kernel's rules are sound over a model of an environment whose stored terms are
-closed (`Ix.Kernel.Open.StoredClosed`) and whose stored telescopes have the binders the
+closed (`Ix.Kernel.Open.StoredClosed`), whose stored telescopes have the binders the
 laws read (`Ix.Kernel.Open.StoredArities`), whose projection tables are their structures'
 (`Ix.Kernel.Open.StoredTables`), and whose η rules' constructors carry their families' level
 parameters (`Ix.Kernel.Open.StoredEtaRules`). The fold's invariant gives all four for the
