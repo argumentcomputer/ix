@@ -242,7 +242,7 @@ def InputCell (P : Prog) : Cell → Prop
 /-- An input heap: its cells are input cells; every value in it is a live,
 unconfined reference or an immediate; it is acyclic. -/
 def HeapOk (P : Prog) (h : Heap) : Prop :=
-  ∀ loc o, h.objs[loc]? = some o → InputCell P o.cell ∧ o.cap < h.nextCap ∧
+  ∀ (loc : Nat) (o : Obj), h.objs[loc]? = some o → InputCell P o.cell ∧ o.cap < h.nextCap ∧
     ∀ v ∈ o.cell.vals, ValOk h v ∧ ¬ Reach h v loc
 
 /-- An argument a partial application in an input may hold: an immediate or a
@@ -258,7 +258,7 @@ def ClosureAt (P : Prog) (h : Heap) (s : Skel) (v : Val) : Prop :=
 
 /-- Every partial application reachable from `v` has a default remaining interface. -/
 def DefaultPaps (P : Prog) (h : Heap) (v : Val) : Prop :=
-  ∀ l o r args, Reach h v l → h.objs[l]? = some o → o.cell = .pap r args →
+  ∀ (l : Nat) (o : Obj) (r : Ref) (args : Array Val), Reach h v l → h.objs[l]? = some o → o.cell = .pap r args →
     (∀ a ∈ args.toList, PapArgOk h a) ∧ ∃ sk, papSkel P r args.size = some sk ∧ sk.isDefault = true
 
 /-- An argument meeting a parameter: erased and irrelevant ones `irr`, the class
@@ -279,9 +279,9 @@ meeting it, in an input heap; an argument at a unique parameter owns a tree
 that no other argument reaches. -/
 def InputsOk (P : Prog) (h : Heap) (params : Array Param) (args : List Val) : Prop :=
   args.length = params.size ∧ HeapOk P h ∧
-  (∀ i p a, params[i]? = some p → args[i]? = some a → ArgOk P h p a) ∧
-  (∀ i p a, params[i]? = some p → args[i]? = some a → p.mode.isUnique = true →
-    OwnTree P h a ∧ ∀ j b l, j ≠ i → args[j]? = some b → OwnReach P h a l → ¬ Reach h b l)
+  (∀ (i : Nat) (p : Param) (a : Val), params[i]? = some p → args[i]? = some a → ArgOk P h p a) ∧
+  (∀ (i : Nat) (p : Param) (a : Val), params[i]? = some p → args[i]? = some a → p.mode.isUnique = true →
+    OwnTree P h a ∧ ∀ (j : Nat) (b : Val) (l : Nat), j ≠ i → args[j]? = some b → OwnReach P h a l → ¬ Reach h b l)
 
 /-! ## Externs -/
 
@@ -293,7 +293,7 @@ def HeldBy (h : Heap) (a v : Val) : Prop :=
 or a value held by an argument at a parameter that neither lends nor transfers. -/
 def ExternVal (ps : Array Param) (args : List Val) (h : Heap) (v : Val) : Prop :=
   (∃ i, v = .imm i) ∨ (∃ loc cap, v = .ref loc cap [] ∧ h.objs.size ≤ loc) ∨
-  ∃ i p a, ps[i]? = some p ∧ args[i]? = some a ∧ p.mode.isBorrowed = false ∧
+  ∃ (i : Nat) (p : Param) (a : Val), ps[i]? = some p ∧ args[i]? = some a ∧ p.mode.isBorrowed = false ∧
     p.mode.isUnique = false ∧ HeldBy h a v
 
 /-- **Externs behave as their declared modes allow**: an extern changes no cell
@@ -302,14 +302,15 @@ parameter; it builds only input cells of values it may produce; its result is
 such a value, of its class, and fresh and unshared at a unique result; it calls
 no closure (higher-order externs are not covered). -/
 def ExternOk (P : Prog) (ext : ExternOracle) : Prop :=
-  ∀ r ps res rc rs args h h' v, P.find? r = some (.extern ps res rc rs) →
+  ∀ (r : Ref) (ps : Array Param) (res : ResultMode) (rc : Cls) (rs : Skel) (args : List Val)
+    (h h' : Heap) (v : Val), P.find? r = some (.extern ps res rc rs) →
     ext r args h = some (h', v) →
     h.objs.size ≤ h'.objs.size ∧ h.nextCap ≤ h'.nextCap ∧
-    (∀ l o, h.objs[l]? = some o → ∃ o', h'.objs[l]? = some o' ∧
+    (∀ (l : Nat) (o : Obj), h.objs[l]? = some o → ∃ o' : Obj, h'.objs[l]? = some o' ∧
       (o'.cell = o.cell ∧ o'.cap = o.cap ∨
-        h.nextCap ≤ o'.cap ∧ ∃ i p a, ps[i]? = some p ∧ args[i]? = some a ∧
+        h.nextCap ≤ o'.cap ∧ ∃ (i : Nat) (p : Param) (a : Val), ps[i]? = some p ∧ args[i]? = some a ∧
           p.mode.isUnique = true ∧ OwnReach P h a l)) ∧
-    (∀ l o, h.objs.size ≤ l → h'.objs[l]? = some o →
+    (∀ (l : Nat) (o : Obj), h.objs.size ≤ l → h'.objs[l]? = some o →
       InputCell P o.cell ∧ ∀ w ∈ o.cell.vals, ExternVal ps args h w) ∧
     ExternVal ps args h v ∧
     (rc = .irr → v = .imm .irr) ∧ (rc = .imm → ∃ i, v = .imm i) ∧

@@ -6,6 +6,7 @@ public import IxC.Resource.Eval
 public import IxC.Resource.Read
 public import IxC.Resource.Statement
 public import IxC.Resource.Oracle
+public import IxC.Resource.Check
 
 /-!
 # IxC.Resource
@@ -23,6 +24,8 @@ The resource-mode model and the mode checker.
   `ModeSafe`, and the statements left to prove, as definitions.
 * `IxC.Resource.Oracle`: the checker's class oracle, the kernel's fueled
   answers.
+* `IxC.Resource.Check`: the uncertified mode checker `check`, its verdicts,
+  and its soundness statement `CheckSound` (a definition).
 
 Nothing in this library is imported by the kernel (`IxC.Kernel`) or by the
 claim verifier, and nothing here is proved about the checker: `ModeSafe` is a

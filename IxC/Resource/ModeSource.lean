@@ -190,6 +190,15 @@ def recordModes (c : Ixon.Constant) : Except String RecordModes := do
 format: every field is `inherited`). -/
 def fieldMode (_c : Ixon.Constant) (_member _ctor _field : Nat) : FieldMode := .inherited
 
+/-- Whether every constructor field of the record is `inherited`. -/
+def fieldModesDefault (c : Ixon.Constant) : Bool :=
+  match c.info with
+  | .muts ms => ms.zipIdx.all fun (m, i) => match m with
+    | .indc ind => ind.ctors.zipIdx.all fun (ctor, ci) =>
+      (List.range ctor.fields.toNat).all fun f => fieldMode c i ci f == .inherited
+    | _ => true
+  | _ => true
+
 end IxC.Resource
 
 end

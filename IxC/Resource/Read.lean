@@ -418,7 +418,7 @@ def readBody (x : RCx) (caseOf : Ref → Option CaseInfo) (fuel : Nat) (ty val :
     if i < j then
       let (tm, tsk, _) := alls[i]!
       unless lm == tm do throw "a λ's mode differs from its type's ∀"
-      unless lp.skel == tsk do throw "a λ's domain skeleton differs from its type's ∀"
+      unless tsk.admits lp.skel do throw "a λ's domain skeleton differs from its type's ∀"
     else
       unless lm.isDefault && lp.skel.isDefault do throw "a moded λ beyond its type's ∀s"
     if i + 1 < k then
