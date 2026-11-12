@@ -4,6 +4,7 @@ import IxCCGrounding.Check
 import IxCCGrounding.CaseFire
 import IxCCGrounding.Direct.Sites
 import IxCCGrounding.CaseBlind
+import IxCCGrounding.Adapt678
 
 /-!
 # The fundamental lemma from the check (`IxCCGrounding.Ground`)
@@ -114,5 +115,35 @@ theorem const_of_check_noCanon (hL : LawsNoCanon M) {p : Program} {κ : CId → 
     (hlv : LvAt φ (lpsOf c) ls) :
     RelV M κ lpsOf (· ∈ Sl) (Ok p ann) v (M.cval (κ c) φ) :=
   (allP_of_check_noCanon hL hchk hnc hT k).evalConst ls c v φ hrun hc hOk hlv
+
+/-! ## The canonicity-free family over #678's fields
+
+The same conclusions over `Laws678` (verbatim copies of the five fields of #678's public `Model`
+the family uses, `IxCCGrounding.Laws`) in place of `LawsNoCanon`, for a reading whose stored `Nat`
+roles are definitions (`litDefsB`): `lawsNoCanon_of_678` (`IxCCGrounding.Adapt678`) gives the five
+laws. -/
+
+/-- **The fundamental lemma, from the check, over #678's fields** (`allP_of_check_noCanon` with
+`Laws678` for `LawsNoCanon`, for a reading that also passes `litDefsB`). -/
+theorem allP_of_check_678 (hL : Laws678 M) {p : Program} {κ : CId → KKey}
+    {lpsOf : CId → List Nat} {ann : IxCC.Src.Relevance.Ann} {Sl : List CId}
+    (hchk : groundCheck p env κ lpsOf ann Sl = true) (hnc : noCanonB p env κ Sl = true)
+    (hld : litDefsB env = true)
+    (hT : SitesOkRes M p κ lpsOf ann (· ∈ Sl)) :
+    ∀ k, AllP M p κ lpsOf (· ∈ Sl) (Ok p ann) k :=
+  allP_of_check_noCanon (lawsNoCanon_of_678 hL (litDefs_of_check hld)) hchk hnc hT
+
+/-- `const_of_check` over #678's fields. -/
+theorem const_of_check_678 (hL : Laws678 M) {p : Program} {κ : CId → KKey}
+    {lpsOf : CId → List Nat} {ann : IxCC.Src.Relevance.Ann} {Sl : List CId}
+    (hchk : groundCheck p env κ lpsOf ann Sl = true) (hnc : noCanonB p env κ Sl = true)
+    (hld : litDefsB env = true)
+    (hT : SitesOkRes M p κ lpsOf ann (· ∈ Sl))
+    {k : Nat} {ls : Levels} {c : CId} {v : Value} {φ : LevelParam → Nat}
+    (hrun : IxCC.Src.evalConst p k ls c = .ok v) (hc : c ∈ Sl) (hOk : Ok p ann c ls)
+    (hlv : LvAt φ (lpsOf c) ls) :
+    RelV M κ lpsOf (· ∈ Sl) (Ok p ann) v (M.cval (κ c) φ) :=
+  const_of_check_noCanon (lawsNoCanon_of_678 hL (litDefs_of_check hld)) hchk hnc hT hrun hc hOk
+    hlv
 
 end IxCC.Grounding

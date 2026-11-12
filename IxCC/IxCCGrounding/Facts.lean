@@ -8,7 +8,9 @@ clauses over `RecFacts`) and `GroundFacts` (every decidable fact the root theore
 the lemmas that the facts as earlier parts landed them imply today's. Everything they are built
 from (`RecClass`, `recClassB`, `RecStored`, the bases, `FaithWith`, `GroundFactsWith`, `NatBasis`,
 `CaseFacts`) is in `IxCCGrounding.Syntax`; this module comes after the decided direct route
-(`IxCCGrounding.Direct.Check`), so a recursor fact may read it. Denotes-free, like both.
+(`IxCCGrounding.Direct.Check`), so a recursor fact may read it. Denotes-free, like both. Also the
+decided facts of the canonicity-free family: `NoCanon` (`noCanonB`), and `LitDefs` (`litDefsB`), the
+premise under which #678's `lit_ops` gives the `Nat` accelerations (`IxCCGrounding.Adapt678`).
 -/
 
 namespace IxCC.Grounding
@@ -288,5 +290,32 @@ theorem recNoLevels_ctor {env : KEnv} {kr : KKey} (h : RecNoLevels env kr)
   simp only [Option.some.injEq, ConstantInfo.ctorInfo.injEq] at hc'
   obtain ⟨rfl, -, -⟩ := hc'
   exact hl
+
+/-! ## The `Nat` roles stored as definitions (the premise of the `NatAccel` adapter) -/
+
+/-- **Every `Nat` role SrcEval accelerates is, where stored, stored as a definition**: #678's
+`lit_ops` (`NatLitLaw`) says nothing of a role unless the reading stores it as a definition. A role
+the reading does not store needs nothing: no term naming it denotes (`Denotes.const` asks the key
+stored), so `NatAccel` is vacuous there (`natAccel_of_litOps` reads the stored constant off the
+denotation it is given). -/
+def LitDefs (env : KEnv) : Prop :=
+  ∀ (op : IxCC.Src.PrimOp) (ci : ConstantInfo .anon), env.find? (primKey op) = some ci →
+    ∃ cv v hint, ci = .defnInfo cv v hint
+
+/-- **`LitDefs`, decided**: one lookup per role, fifteen in all. -/
+def litDefsB (env : KEnv) : Bool :=
+  IxCC.Src.PrimOp.all.all fun op => match env.find? (primKey op) with
+    | none => true
+    | some (.defnInfo ..) => true
+    | some _ => false
+
+theorem litDefs_of_check {env : KEnv} (h : litDefsB env = true) : LitDefs env := by
+  intro op ci hf
+  have hop : op ∈ IxCC.Src.PrimOp.all := by cases op <;> simp [IxCC.Src.PrimOp.all]
+  have h1 := List.all_eq_true.mp h op hop
+  rw [hf] at h1
+  cases ci with
+  | defnInfo cv v hint => exact ⟨cv, v, hint, rfl⟩
+  | _ => simp at h1
 
 end IxCC.Grounding
