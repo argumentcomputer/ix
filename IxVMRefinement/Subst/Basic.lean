@@ -34,7 +34,7 @@ namespace IxVM.Refinement.Core.SubstAux
 open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 open Aiur.Library Aiur.Library.List
 open IxVM.Refinement.KernelLevels (RepKLevel RepKLevelList)
-open Specs.Subst (IdxAll IdxLt NoIdx NoIdxF LbrLe BVarIm idxBound)
+open Specs.Subst (IdxAll IdxLt NoIdx NoIdxF BVarIm idxBound)
 
 set_option linter.unusedVariables false
 
@@ -541,6 +541,12 @@ end Kernel
 
 /-! ## Represented terms: index facts -/
 
+/-- `Specs.Subst.LbrLe` at the keying `κ` (`LbrLe c` is `LbrLeK c.κ`). -/
+def LbrLeK (κ : _root_.Address → KKey) (h : Heap F) (p : SourceValue F) (k : Nat) (E : KExpr)
+    (b : Nat) : Prop :=
+  b ≤ k → E.looseBVarsBounded b = true ∧ E.hasFvar = false ∧
+    ∀ d' Γ' k', b ≤ k' → Tm κ d' Γ' h k' E p
+
 section TmFacts
 variable {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr} {h : Heap F}
 
@@ -607,11 +613,12 @@ theorem tm_lbb {k : Nat} {E : KExpr} {p : SourceValue F} (rep : Tm κ d Γ h k E
     simp only [Ix.Kernel.Expr.looseBVarsBounded]
     exact ihe hlo (idxAll_proj_inv hn (loadValue_enum_cell cell))
 
-/-- **A heap bound gives `LbrLe`**: at most `k`, the image has its loose bound variables below
-the bound and no opened variable, and is read the same at every depth and context and every
-local depth at or above the bound. -/
-theorem lbrLe_of_idxLt {c : Ctx} {k : Nat} {E : KExpr} {p : SourceValue F}
-    (rep : Tm c.κ d Γ h k E p) : ∀ {b : Nat}, IdxLt h b p → LbrLe c h p k E b := by
+/-- **A heap bound gives `LbrLe`** (`LbrLeK`, at the keying `κ`; `Specs.Subst.LbrLe c` is
+`LbrLeK c.κ`): at most `k`, the image has its loose bound variables below the bound and no
+opened variable, and is read the same at every depth and context and every local depth at or
+above the bound. -/
+theorem lbrLe_of_idxLt {k : Nat} {E : KExpr} {p : SourceValue F}
+    (rep : Tm κ d Γ h k E p) : ∀ {b : Nat}, IdxLt h b p → LbrLeK κ h p k E b := by
   induction rep with
   | bvarLocal cell hs hi =>
     intro b hb hbk
