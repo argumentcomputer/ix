@@ -1,5 +1,6 @@
 import IxCCTests.Own.Owned.Live
 import IxCC.Own.Plain.Certificate
+import IxCC.Own.Plain.Owned
 import IxCC.Recheck.Rc.Produce
 import IxCC.Src.Hints
 
@@ -34,7 +35,7 @@ def tree (x : Var) (leaf : Nat → Fir.Code) : Nat → Nat → Nat → Fir.Code
       let h := k / 2
       .case x [.mk default (tree x leaf fuel base h), .mk default (tree x leaf fuel (base + h) (k - h))] none
 
-/-- The Own code with no action and the given captured list per join. -/
+/- The Own code with no action and the given captured list per join. -/
 mutual
 def toOwn (cap : Nat → List Var) : Fir.Code → Code
   | .bind x r k => .bind x r (toOwn cap k)
