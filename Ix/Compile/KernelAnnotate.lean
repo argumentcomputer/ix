@@ -210,6 +210,24 @@ private instance : Nonempty (FEnv .source) := ⟨Ix.Kernel.mkFEnv Ix.Kernel.Env.
 private instance : Nonempty (Ix.Kernel.Cached.CoreFnsI .source) :=
   ⟨Ix.Kernel.Cached.coreKnotI .verified (Ix.Kernel.mkFEnv Ix.Kernel.Env.empty) 0⟩
 
+/-- The structures a term projects from (`IX_BD_TRACE`'s diagnosis). -/
+def projKeys (e : KExpr) : Array (Ix.Kernel.Key .source) := Id.run do
+  let mut seen : Std.HashSet KExpr := {}
+  let mut todo := #[e]
+  let mut out := #[]
+  while h : todo.size > 0 do
+    let e := todo[todo.size - 1]
+    todo := todo.pop
+    if seen.contains e then continue
+    seen := seen.insert e
+    match e with
+    | .proj k _ x => out := out.push k; todo := todo.push x
+    | .app f a => todo := todo.push f |>.push a
+    | .lam t b _ | .forallE t b _ => todo := todo.push t |>.push b
+    | .letE t v b _ => todo := todo.push t |>.push v |>.push b
+    | _ => pure ()
+  return out
+
 /-- `Ix.LeanIngress.graphOf`, with each group's literal kinds (`literalKinds`,
 a walk of all its terms) computed on `width` tasks: the same graph. -/
 def graphOfPar (width : Nat) (blocks : Ix.CondensedBlocks) (groups : Array Group)
@@ -258,7 +276,7 @@ def graphOfPar (width : Nat) (blocks : Ix.CondensedBlocks) (groups : Array Group
 /-- **Install the compile's input** in Source mode, phase A only, and mark the
 environment and IxC's core over it persistent. -/
 def install (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (workers : Nat := 32)
-    (parallel : Bool := true) : IO (Except String Installed) := do
+    (parallel : Bool := true) (trace : Bool := false) : IO (Except String Installed) := do
   let t0 ← IO.monoMsNow
   let pre ← match (Ix.Kernel.Reader.builtinPrelude : Except String (Ix.Kernel.Reader.Prelude .source)) with
     | .ok p => pure p
@@ -392,6 +410,23 @@ def install (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (workers : Nat 
     (Ix.Kernel.Cached.coreKnotI .verified shared Ix.Kernel.checkFuel) :
       BaseIO (Ix.Kernel.Cached.CoreFnsI .source))
   let t6 ← IO.monoMsNow
+  if trace then
+    -- the structures some installed term projects from that have no projection table
+    let mut seen : Std.HashSet (Ix.Kernel.Key .source) := {}
+    let mut shown := 0
+    for ci in shared.env.consts do
+      let terms : List KExpr := match ci with
+        | .defnInfo cv v _ => [cv.type, v]
+        | .thmInfo cv v => [cv.type, v]
+        | ci => [ci.toConstantVal.type]
+      for t in terms do
+        for k in projKeys t do
+          if !seen.contains k then
+            seen := seen.insert k
+            if (shared.findProj? k 0).isNone && shown < 40 then
+              shown := shown + 1
+              IO.eprintln s!"binder data trace: {ci.toConstantVal.name} projects from {k}, which has no projection table"
+
   return .ok { fe := shared, core, env, installed := ok, failures, lenient := lenientCount,
                ahead, waves := waves.size,
                times := #[("prelude", tPre - t0), ("groups", tGroups - tPre), ("convert", tConv - tGroups),
@@ -410,7 +445,7 @@ def installInput (env : Ix.Environment) (workers : Nat := 32) : IO (Except Strin
   let parallel := (← IO.getEnv "IX_BD_SEQUENTIAL").isNone
   let stored := (← IO.getEnv "IX_BD_WALK_ALL").isNone
   let trace := ((← IO.getEnv "IX_BD_TRACE").map fun s => (s.splitOn ",").toArray).getD #[]
-  return (← install env blocks workers parallel).map fun k =>
+  return (← install env blocks workers parallel (!trace.isEmpty)).map fun k =>
     { k with stored, trace, times := #[("condense", t1 - t0)] ++ k.times }
 
 /-! ## The walk -/
