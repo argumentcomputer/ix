@@ -309,7 +309,7 @@ theorem step_lits (compile : Ix.Expr → CompileM (Ixon.Expr × UInt64)) (source
       Triple.andThen (each body (by simp; omega)) fun b hb =>
       Triple.seqHolds (cacheFrame (frame_alloc _)) fun _ => Triple.returns fun _ _ _ _ => ?_
     exact litsFrom_two (litsFrom_mono ht (fun h => by simp [hasNatLit, h]) (fun h => by simp [hasStrLit, h]))
-      (litsFrom_mono hb (fun h => by simp [hasNatLit, h]) (fun h => by simp [hasStrLit, h])) (ixLits_lam _ _ _)
+      (litsFrom_mono hb (fun h => by simp [hasNatLit, h]) (fun h => by simp [hasStrLit, h])) (ixLits_lam _ _)
   | forallE name type body info hash =>
     rw [show ExpressionState.step compile (.forallE name type body info hash) = _ from
       ExpressionState.binder_step_eq true compile name type body info hash]
@@ -319,7 +319,7 @@ theorem step_lits (compile : Ix.Expr → CompileM (Ixon.Expr × UInt64)) (source
       Triple.andThen (each body (by simp; omega)) fun b hb =>
       Triple.seqHolds (cacheFrame (frame_alloc _)) fun _ => Triple.returns fun _ _ _ _ => ?_
     exact litsFrom_two (litsFrom_mono ht (fun h => by simp [hasNatLit, h]) (fun h => by simp [hasStrLit, h]))
-      (litsFrom_mono hb (fun h => by simp [hasNatLit, h]) (fun h => by simp [hasStrLit, h])) (ixLits_all _ _ _ _)
+      (litsFrom_mono hb (fun h => by simp [hasNatLit, h]) (fun h => by simp [hasStrLit, h])) (ixLits_all _ _)
   | letE name type value body nonDep hash =>
     rw [ExpressionState.let_step_eq]
     unfold ExpressionState.finishLet

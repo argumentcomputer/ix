@@ -66,7 +66,7 @@ theorem withContract_matches {c : Ix.SemanticContract.Contract} {e : Ix.Expr}
   split at lowered
   · rename_i admits
     cases lowered
-    exact ⟨source, by rw [Ix.LeanIngress.withContract, ite_eq_left admits] <;> rfl, agree⟩
+    exact ⟨source, by rw [Ix.LeanIngress.withContract, ite_eq_left admits]; rfl, agree⟩
   · cases lowered
 
 end Ingress

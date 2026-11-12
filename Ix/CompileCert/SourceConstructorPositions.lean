@@ -622,17 +622,14 @@ theorem strip_of_ingress (σ : Ix.Name → Ix.Kernel.LevelParam) :
       unfold Ix.LeanIngress.withContract at ran
       split at ran
       · cases ran
-        subst count
-        exact ⟨[], _, sourceStrip_zero _, trivial⟩
-      · cases ran
-        obtain ⟨types, residual, strip, last⟩ := ih _ n inner (by simpa [piTeleLen] using count)
+        obtain ⟨types, residual, strip, last⟩ := ih _ n inner count
         cases n with
-        | zero => simp [piTeleLen] at count
+        | zero =>
+          rw [sourceStrip_zero] at strip
+          cases strip
+          exact ⟨[], _, sourceStrip_zero _, last⟩
         | succ m => exact ⟨types, residual, strip, last⟩
-      · cases ran
-        subst count
-        exact ⟨[], _, sourceStrip_zero _, trivial⟩
-      · cases ran
+      · split at ran <;> cases ran
     · obtain ⟨types, residual, strip, last⟩ := ih k n ran count
       cases n with
       | zero =>
