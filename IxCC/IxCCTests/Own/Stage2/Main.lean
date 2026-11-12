@@ -121,6 +121,8 @@ def corpus (list : String) : IO UInt32 := do
     catch e => IO.println s!"{label}\tERROR {e}"
   return 0
 
+def short (s : String) : String := String.mk (s.toList.take 60)
+
 def renderResult (r : Sem.Result (Own.RVal × Own.Heap)) : String :=
   match r with
   | .ok (v, H) => (H.readback v).map Rt.renderObs |>.getD "?"
@@ -160,9 +162,9 @@ def bench (closure eqs root label : String) (ns : List Nat) (prodMax : Nat) : IO
         else pure "-"
       let res := renderI r
       results := results ++ [res]
-      let res' := if res.length > 60 then res.take 60 ++ "…" else res
-      let prod' := if prod == "-" then "-" else if prod == res then "same" else s!"DIFFERS {prod.take 60}"
-      let cfg' := if cfgR == "-" then "-" else if cfgR == res then "same" else s!"DIFFERS {cfgR.take 60}"
+      let res' := if res.length > 60 then short res ++ "…" else res
+      let prod' := if prod == "-" then "-" else if prod == res then "same" else s!"DIFFERS {short prod}"
+      let cfg' := if cfgR == "-" then "-" else if cfgR == res then "same" else s!"DIFFERS {short cfgR}"
       IO.println s!"{label}\t{n}\t{name}\t{res'}\t{prod'}\t{cfg'}\t{c.steps}\t{c.calls}\t{c.allocs}\t{c.incs}\t{c.incImm}\t{c.decs}\t{c.decImm}\t{c.frees}\t{c.live}\t{c.peak}\t{t1 - t0}"
       (← IO.getStdout).flush
     match results with
