@@ -52,16 +52,18 @@ def recFieldOf (nF : Nat) (arg : KExpr) : Nat :=
   | some (.bvar k) => nF - 1 - k
   | _ => 0
 
-/-- **The shape of a `case` constant `kc` over its recursor `kr`, read off the stored terms.** -/
+/-- **The shape of a `case` constant `kc` over its recursor `kr`, read off the stored terms**, the
+recursor's type read at the levels `casesOn`'s body calls it at. -/
 def caseShape? (env : KEnv) (kc kr : KKey) : Option CaseShape := do
-  let .defnInfo cvc _ _ ← env.find? kc | none
+  let .defnInfo cvc val _ ← env.find? kc | none
   let .recInfo cvr _ _ rules ← env.find? kr | none
   let binders := (teleSplit cvc.type).1
   let nM := rules.length
   let nP := binders.length - 2 - nM
+  let .const _ recLevels := (lamBody binders.length val).getAppFn | none
   let (majDom, _) ← binders[nP + 1]?
   let .const ind indLevels := majDom.getAppFn | none
-  let recBs := (teleSplit cvr.type).1
+  let recBs := (teleSplit (cvr.type.instantiateLevelParams cvr.levelParams recLevels)).1
   let (_, majorMeta) ← recBs[nP + 1 + nM]?
   let ctors ← (List.range nM).mapM fun j => do
     let rl ← rules[j]?
@@ -72,7 +74,7 @@ def caseShape? (env : KEnv) (kc kr : KKey) : Option CaseShape := do
     pure { key := rl.ctor, nF, fields := fihs.take nF, ihs,
            recFields := ((lamBody (nP + 1 + nM + nF) rl.rhs).getAppArgs.drop nF).map (recFieldOf nF),
            codom := lowerBVars ihs.length 0 body, minorMeta }
-  pure { lps := cvc.levelParams, ind, indLevels, nP, binders, ctors, majorMeta }
+  pure { lps := cvc.levelParams, ind, indLevels, nP, binders, ctors, majorMeta, recLevels }
 
 /-! ## The deciders -/
 
@@ -140,11 +142,14 @@ def caseStoredB (env : KEnv) (kc kr : KKey) (sh : CaseShape) : Bool :=
     | none => false) &&
   (match env.find? kr with
     | some (.recInfo cvr mI rP rules) =>
-      mI == sh.nP + 1 + sh.nM && rP == sh.nP + 1 + sh.nM && cvr.levelParams == sh.lps &&
-        decide (cvr.type = sh.recType) && rules.length == sh.nM &&
+      mI == sh.nP + 1 + sh.nM && rP == sh.nP + 1 + sh.nM &&
+        cvr.levelParams.length == sh.recLevels.length &&
+        decide (cvr.type.instantiateLevelParams cvr.levelParams sh.recLevels = sh.recType) &&
+        rules.length == sh.nM &&
         allCtors sh (fun j cs =>
           match rules[j]? with
-          | some rl => decide (rl.ctor = cs.key) && decide (rl.rhs = sh.ruleRhs kr j cs)
+          | some rl => decide (rl.ctor = cs.key) &&
+              decide (rl.rhs.instantiateLevelParams cvr.levelParams sh.recLevels = sh.ruleRhs kr j cs)
           | none => true)
     | _ => false) &&
   allCtors sh (ctorTypeB env sh) &&
@@ -284,7 +289,8 @@ theorem caseStored_of_check {env : KEnv} {kc kr : KKey} {sh : CaseShape}
       simp only [decide_eq_true_eq] at hmaj
       exact ⟨m, by rw [hb, hmaj]⟩
     · cases hmaj
-  · split at hrec
+  · unfold CaseRec
+    split at hrec
     · rename_i cvr mI rP rules hf
       simp only [Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at hrec
       obtain ⟨⟨⟨⟨⟨rfl, rfl⟩, hlp⟩, hty⟩, hrl⟩, hrs⟩ := hrec

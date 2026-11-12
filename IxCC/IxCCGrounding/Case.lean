@@ -570,23 +570,31 @@ theorem caseIota (M : Model V env) (hL : Laws M) {kc kr : KKey} {sh : CaseShape}
     rw [List.getElem?_eq_getElem hj'] at hv
     rwa [Option.some.inj hv]
   -- the recursor
-  have hR0ρ : Denotes M.cval env φ ρ (.const kr (sh.lps.map Level.param)) R0 := den_const_env hR0
-  have hR0e : R0 = M.cval kr φ := by
+  have hR0ρ : Denotes M.cval env φ ρ (.const kr sh.recLevels) R0 := den_const_env hR0
+  have hR0e : R0 = M.cval kr (Level.substFn φ cvr.levelParams sh.recLevels) := by
     cases hR0 with
     | const hf' _ =>
       rw [hfr] at hf'; cases hf'
-      simp only [ConstantInfo.toConstantVal, hlr, Level.substFn_param_self]
+      simp only [ConstantInfo.toConstantVal]
+  -- the recursor lies in its stored type, read at the levels `casesOn`'s body calls it at
+  have hTRm : ∀ ρ' : BVarIdx → V, ∃ TR, Denotes M.cval env φ ρ'
+      (cvr.type.instantiateLevelParams cvr.levelParams sh.recLevels) TR ∧ R0 ∈ˢ TR := by
+    intro ρ'
+    obtain ⟨TR, hTR, hrm⟩ := mem_key M hfr (Level.substFn φ cvr.levelParams sh.recLevels) ρ'
+    simp only [ConstantInfo.toConstantVal] at hTR
+    exact ⟨TR, den_inst_exact M hL hTR, hR0e ▸ hrm⟩
   subst hbm
   have e1 : sh.binders.take (sh.nP + 1) = bP ++ [bMo] := by rw [hbs, ← hbP, take_ctx1]
   have e2 : sh.binders[sh.nP + 1]? = some (Expr.mkAppN (.const sh.ind sh.indLevels)
       (bvarsFrom 1 sh.nP), mmaj) := hbmaj
-  have hrt : cvr.type = piTele (bP ++ [bMo]) (piTele ((sh.ctors.map fun c => (c.recMinor, c.minorMeta))
+  have hrt : cvr.type.instantiateLevelParams cvr.levelParams sh.recLevels = piTele (bP ++ [bMo]) (piTele ((sh.ctors.map fun c => (c.recMinor, c.minorMeta))
       ++ [((Expr.mkAppN (.const sh.ind sh.indLevels) (bvarsFrom 1 sh.nP)).liftLooseBVars sh.nM 0,
         sh.majorMeta)]) (.app (.bvar (sh.nM + 1)) (.bvar 0))) := by
     rw [htr, ← piTele_append]
     simp only [CaseShape.recType, e1, e2, Option.toList_some, List.map_cons, List.map_nil,
       List.append_assoc]
-  have hQ : ∀ j', j' ≤ sh.nM → Fits M.cval env φ ρ cvr.type (ps ++ [mo] ++ Ws.take j')
+  have hQ : ∀ j', j' ≤ sh.nM → Fits M.cval env φ ρ
+      (cvr.type.instantiateLevelParams cvr.levelParams sh.recLevels) (ps ++ [mo] ++ Ws.take j')
       (pushAll (ps ++ [mo] ++ Ws.take j') ρ)
       (piTele ((sh.ctors.map fun c => (c.recMinor, c.minorMeta)).drop j' ++
         [((Expr.mkAppN (.const sh.ind sh.indLevels) (bvarsFrom 1 sh.nP)).liftLooseBVars sh.nM 0,
@@ -606,7 +614,7 @@ theorem caseIota (M : Model V env) (hL : Laws M) {kc kr : KKey} {sh : CaseShape}
         rw [List.drop_eq_getElem_cons (by simp; omega)]
         simp [hcs']
       rw [hdrop] at ih'
-      obtain ⟨TR, hTR, hrm⟩ := mem_key M hfr φ ρ
+      obtain ⟨TR, hTR, hrm⟩ := hTRm ρ
       obtain ⟨RR, hRR, _⟩ := fits_app_mem ih' hTR hrm
       obtain ⟨PP, _, hPP, _, _, _⟩ := den_pi.mp hRR
       obtain ⟨_, hih', hfl'⟩ := hminors j' cs' hc'
@@ -655,12 +663,12 @@ theorem caseIota (M : Model V env) (hL : Laws M) {kc kr : KKey} {sh : CaseShape}
     ⟨_, List.getElem?_eq_getElem (by omega : j < rules.length)⟩
   obtain ⟨hrlc, hrlr⟩ := hrules j cs rl hj hrl'
   obtain ⟨H, hH, heq⟩ := hL.iota_rule kr cvr _ _ rules rl hfr (List.mem_of_getElem? hrl') cvC
-    sh.nP cs.nF (by rw [hrlc]; exact hcC) (sh.lps.map Level.param) φ ρ (pushAll (ps ++ [mo] ++ Ws) ρ)
+    sh.nP cs.nF (by rw [hrlc]; exact hcC) sh.recLevels φ ρ (pushAll (ps ++ [mo] ++ Ws) ρ)
     σC (ps ++ [mo] ++ Ws) (ps ++ Fs)
     ((Expr.mkAppN (.const sh.ind sh.indLevels) (bvarsFrom 1 sh.nP)).liftLooseBVars sh.nM 0)
     (.app (.bvar (sh.nM + 1)) (.bvar 0)) RC sh.majorMeta sh.ind sh.indLevels R0 K Xmaj
-    (by simp [hlr]) (by simp; omega) (by simp; omega) hR0ρ
-    (by rw [hlr, inst_self]; exact hQM)
+    hlr.symm (by simp; omega) (by simp; omega) hR0ρ
+    hQM
     (by simp only [lift_mkAppN, getAppFn_mkAppN, Expr.liftLooseBVars, Expr.getAppFn])
     hXmajR (by rw [hrlc]; exact hK) hFC0 (by rw [← ht]; exact htm)
     (by
@@ -678,12 +686,12 @@ theorem caseIota (M : Model V env) (hL : Laws M) {kc kr : KKey} {sh : CaseShape}
         simp [bvarsFrom_length]), List.drop_eq_nil_of_le (show (ps ++ [mo] ++ Ws).length ≤
           sh.nP + 1 + sh.nM by simp; omega)]
       exact .nil)
-  rw [hlr, inst_self, hrlr] at hH
+  rw [hrlr] at hH
   -- β through the rule: the wrapper at the fields and the induction hypotheses
   have hH2 : Denotes M.cval env φ ρ (lamTele ((bP ++ [bMo]) ++ (sh.ctors.map fun c => (c.recMinor, c.minorMeta)))
       (lamTele (liftTele (sh.nM - j) j cs.fields)
         (Expr.mkAppN (.bvar (cs.nF + sh.nM - 1 - j)) (bvarsFrom 0 cs.nF ++ cs.recFields.map fun r =>
-          Expr.mkAppN (.const kr (sh.lps.map Level.param)) (bvarsFrom (cs.nF + sh.nM + 1) sh.nP ++
+          Expr.mkAppN (.const kr sh.recLevels) (bvarsFrom (cs.nF + sh.nM + 1) sh.nP ++
             [.bvar (cs.nF + sh.nM)] ++ bvarsFrom cs.nF sh.nM ++ [.bvar (cs.nF - 1 - r)]))))) H := by
     rw [← lamTele_append, ← e1]; exact hH
   have hQM' : Fits M.cval env φ ρ (piTele ((bP ++ [bMo]) ++ (sh.ctors.map fun c => (c.recMinor, c.minorMeta)))
@@ -744,7 +752,7 @@ theorem caseIota (M : Model V env) (hL : Laws M) {kc kr : KKey} {sh : CaseShape}
     obtain rfl := Denotes_functional (den_const_env hIND) hIND'
     have hfX : Fs[rf] ∈ˢ ps.foldl app IND := hm'
     have hsn := fits_snoc hQM rfl hXmajR hfX
-    obtain ⟨TR, hTR, hrm⟩ := mem_key M hfr φ ρ
+    obtain ⟨TR, hTR, hrm⟩ := hTRm ρ
     obtain ⟨RR, hRR, hmRR⟩ := fits_app_mem hsn hTR hrm
     have hRR' : Denotes M.cval env φ (push Fs[rf] (pushAll (ps ++ [mo] ++ Ws) ρ))
         (.app (.bvar (sh.nM + 1)) (.bvar 0)) RR := hRR
@@ -753,7 +761,7 @@ theorem caseIota (M : Model V env) (hL : Laws M) {kc kr : KKey} {sh : CaseShape}
       show pushAll (ps ++ [mo] ++ Ws) ρ sh.nM = mo
       rw [← hWl, show ps ++ [mo] ++ Ws = ps ++ mo :: Ws by simp, pushAll_at]
     rw [hmo] at hRR'
-    rw [hR0e, show app mo Fs[rf] = RR from hRR'.symm]
+    rw [show app mo Fs[rf] = RR from hRR'.symm]
     exact hmRR
   -- the recursor's rule body: the wrapper at the fields and the induction hypotheses
   obtain ⟨IHs, hIHs⟩ : ∃ IHs : List V, IHs = cs.recFields.map fun rf =>
@@ -762,7 +770,7 @@ theorem caseIota (M : Model V env) (hL : Laws M) {kc kr : KKey} {sh : CaseShape}
   have hE : pushAll Fs (pushAll (ps ++ [mo] ++ Ws) ρ) = pushAll (ps ++ [mo] ++ Ws ++ Fs) ρ :=
     (pushAll_append _ _ _).symm
   have hIHterm : ∀ rf, rf < cs.nF → Denotes M.cval env φ (pushAll (ps ++ [mo] ++ Ws ++ Fs) ρ)
-      (Expr.mkAppN (.const kr (sh.lps.map Level.param)) (bvarsFrom (cs.nF + sh.nM + 1) sh.nP ++
+      (Expr.mkAppN (.const kr sh.recLevels) (bvarsFrom (cs.nF + sh.nM + 1) sh.nP ++
         [.bvar (cs.nF + sh.nM)] ++ bvarsFrom cs.nF sh.nM ++ [.bvar (cs.nF - 1 - rf)]))
       ((ps ++ [mo] ++ Ws ++ [pushAll Fs ρ (cs.nF - 1 - rf)]).foldl app R0) := by
     intro rf hrf
@@ -786,7 +794,7 @@ theorem caseIota (M : Model V env) (hL : Laws M) {kc kr : KKey} {sh : CaseShape}
       exact .bvar
   have hbodyR : Denotes M.cval env φ (pushAll Fs (pushAll (ps ++ [mo] ++ Ws) ρ))
       (Expr.mkAppN (.bvar (cs.nF + sh.nM - 1 - j)) (bvarsFrom 0 cs.nF ++ cs.recFields.map fun r =>
-        Expr.mkAppN (.const kr (sh.lps.map Level.param)) (bvarsFrom (cs.nF + sh.nM + 1) sh.nP ++
+        Expr.mkAppN (.const kr sh.recLevels) (bvarsFrom (cs.nF + sh.nM + 1) sh.nP ++
           [.bvar (cs.nF + sh.nM)] ++ bvarsFrom cs.nF sh.nM ++ [.bvar (cs.nF - 1 - r)])))
       ((Fs ++ IHs).foldl app (Ws[j]'(by omega))) := by
     rw [hE]
@@ -809,7 +817,7 @@ theorem caseIota (M : Model V env) (hL : Laws M) {kc kr : KKey} {sh : CaseShape}
       · rw [hIHs]
         have hall : ∀ l : List Nat, (∀ rf ∈ l, rf < cs.nF) →
             DenotesList M.cval env φ (pushAll (ps ++ [mo] ++ Ws ++ Fs) ρ)
-              (l.map fun r => Expr.mkAppN (.const kr (sh.lps.map Level.param))
+              (l.map fun r => Expr.mkAppN (.const kr sh.recLevels)
                 (bvarsFrom (cs.nF + sh.nM + 1) sh.nP ++ [.bvar (cs.nF + sh.nM)] ++
                   bvarsFrom cs.nF sh.nM ++ [.bvar (cs.nF - 1 - r)]))
               (l.map fun rf => (ps ++ [mo] ++ Ws ++ [pushAll Fs ρ (cs.nF - 1 - rf)]).foldl app R0) := by
@@ -896,5 +904,22 @@ theorem caseIota (M : Model V env) (hL : Laws M) {kc kr : KKey} {sh : CaseShape}
   rw [ht, heq, List.take_of_length_le (show (ps ++ [mo] ++ Ws).length ≤ sh.nP + 1 + sh.nM by
     simp; omega), show (ps ++ Fs).drop sh.nP = Fs by rw [← hps]; simp, List.foldl_append, eY1, eY2,
     eY2', eY3, eY3']
+
+/-! ## The renaming-tolerant recursor clause generalises the landed one -/
+
+/-- **`CaseRec` holds wherever the landed recursor clause did**: at `casesOn`'s own level
+parameters, instantiation is the identity (`inst_self`). -/
+theorem caseRec_of_named {kr : KKey} {sh : CaseShape} (h : CaseRecNamed env kr sh) :
+    CaseRec env kr sh := by
+  obtain ⟨hrl, cvr, rules, hf, hlp, hty, hlen, hr⟩ := h
+  refine ⟨cvr, rules, hf, by rw [hrl, hlp, List.length_map], ?_, hlen, fun j cs rl hj hrj => ?_⟩
+  · rw [hrl, ← hlp, inst_self, hty]
+  · obtain ⟨h1, h2⟩ := hr j cs rl hj hrj
+    exact ⟨h1, by rw [hrl, ← hlp, inst_self, h2]⟩
+
+/-- **The landed `CaseStored` implies the renaming-tolerant one.** -/
+theorem caseStored_of_named {kc kr : KKey} {sh : CaseShape} (h : CaseStoredNamed env kc kr sh) :
+    CaseStored env kc kr sh :=
+  ⟨h.arity, h.casesOnStored, h.minors, h.major, caseRec_of_named h.recursor, h.ctors, h.wf⟩
 
 end IxCC.Grounding

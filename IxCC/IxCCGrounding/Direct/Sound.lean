@@ -5,9 +5,10 @@ import IxCCGrounding.Direct.Rules
 
 **Part F.** `direct_sound`: in every model with the laws, at every assignment one of the
 profiles stands for, every function of the checker establishes its judgement, by one induction
-on the fuel. Laws used: `defn_value` (δ), `cval_params` (through `den_inst`: a constant at its
-levels, δ at levels), `proj_ctor` (the projection of a constructor, at a structure that is never a
-proposition). Not used: `iota_rule`, `nat_accel`, `ctor_canon`.
+on the fuel. Laws used: `defn_value` (δ), `cval_params` (through `den_inst` and `den_inst_exact`: a
+constant at its levels, δ and ι at levels), `proj_ctor` (the projection of a constructor, at a
+structure that is never a proposition), `iota_rule` (ι at a recursor of an inductive
+without indices) and `nat_accel` (a `Nat` primitive on literals). Not used: `ctor_canon`.
 -/
 
 namespace IxCC.Grounding
@@ -26,8 +27,6 @@ variable {V : Type w} [Ix.Kernel.SetTheory V] {env : KEnv} {M : Model V env}
 /-- **The checker's soundness, at one fuel.** -/
 structure DirectSound (M : Model V env) (φ : LevelParam → Nat) (x : DCtx) (n : Nat) : Prop where
   infer : ∀ Γ e T, dInfer x n Γ e = some T → HasTy M φ Γ e T
-  step : ∀ site Γ T a T', dStep x n site Γ T a = some T' → ∀ F, HasTy M φ Γ F T →
-    HasTy M φ Γ (.app F a) T' ∧ (site = true → DenotesIn M φ Γ (.app F a) → SiteOk M φ Γ F a)
   sort : ∀ Γ T u, dSort x n Γ T = some u → HasTy M φ Γ T (.sort u)
   check : ∀ Γ a A, dCheck x n Γ a A = true → ChecksAt M φ Γ a A
   fits : ∀ Γ T as, dFits x n Γ T as = true → FitsAt M φ Γ T as
@@ -80,7 +79,6 @@ theorem walkCount_sites {Γ : List KExpr} {step : KExpr → KExpr → Option KEx
 
 theorem directSound_zero {x : DCtx} : DirectSound M φ x 0 where
   infer := by intro _ _ _ h; simp [dInfer] at h
-  step := by intro _ _ _ _ _ h; simp [dStep] at h
   sort := by intro _ _ _ h; simp [dSort] at h
   check := by intro _ _ _ h; simp [dCheck] at h
   fits := by intro _ _ _ h; simp [dFits] at h
@@ -96,6 +94,30 @@ section Succ
 variable (hL : Laws M) (hN : NatBasis env) {x : DCtx} (hx : x.env = env) (hφ : AtProf φ x)
   {n : Nat} (IH : DirectSound M φ x n)
 include IH
+
+include hφ in
+/-- **One application along a spine, at this fuel** (`dStep x n` reduces and checks at `n`). -/
+theorem step_of : ∀ site Γ T a T', dStep x n site Γ T a = some T' → ∀ F,
+    HasTy M φ Γ F T →
+    HasTy M φ Γ (.app F a) T' ∧ (site = true → DenotesIn M φ Γ (.app F a) → SiteOk M φ Γ F a) := by
+  intro site Γ T a T' h F hF
+  unfold dStep stepWith at h
+  split at h
+  · rename_i A B m hpi
+    have hr := headPi_reduces (fun T'' hw => IH.whnf true Γ T T'' hw) hpi
+    have hF' := hasTy_of_reduces hF hr
+    split at h
+    · rename_i hc
+      cases h
+      simp only [Bool.and_eq_true, Bool.or_eq_true, Bool.not_eq_true'] at hc
+      have ha := IH.check Γ a A hc.2
+      refine ⟨hasTy_app hF' ha, fun hs hD => ?_⟩
+      subst hs
+      rcases hc.1 with h0 | h1
+      · cases h0
+      · exact siteOk_of_pi hF' ha (regime_of_pwFalse hφ h1) hD
+    · cases h
+  · cases h
 
 include hL hN hx hφ in
 theorem infer_succ : ∀ Γ e T, dInfer x (n + 1) Γ e = some T → HasTy M φ Γ e T := by
@@ -130,13 +152,15 @@ theorem infer_succ : ∀ Γ e T, dInfer x (n + 1) Γ e = some T → HasTy M φ �
     · split at h
       · rename_i T0 hT0
         rw [← he]
-        exact walkArgs_hasTy (fun T a T' hs F hF => (IH.step false Γ T a T' hs F hF).1)
+        exact walkArgs_hasTy (fun T a T' hs F hF => (step_of hφ IH false Γ T a T' hs F hF).1)
           _ _ T0 T h (IH.infer Γ _ T0 hT0)
       · cases h
   | lit l =>
     cases l with
     | natVal k => simp only [dInfer, Option.some.injEq] at h; subst h; exact hasTy_lit hN
-    | strVal s => simp [dInfer] at h
+    | strVal s =>
+      simp only [dInfer] at h
+      exact hasTy_of_reduct (IH.infer Γ _ T h) reduces_strLit
   | sort u => simp only [dInfer, Option.some.injEq] at h; subst h; exact hasTy_sort
   | forallE A B m =>
     simp only [dInfer] at h
@@ -173,15 +197,31 @@ theorem whnf_succ : ∀ δ Γ e e', whnfD x (n + 1) δ Γ e = some e' → Reduce
     · cases h; exact reduces_refl
   · rename_i k us hfn
     split at h
-    · rename_i cv val hint hf
-      split at h
-      · rename_i hc
-        simp only [Bool.and_eq_true, beq_iff_eq] at hc
+    · -- a `Nat` primitive on literals
+      rename_i e2 hp
+      rw [hfn] at he
+      rw [← he]
+      exact reduces_trans (primStep_sound hL (fun a a' hw => IH.whnf true Γ a a' hw) hp)
+        (IH.whnf δ Γ _ _ h)
+    · split at h
+      · -- ι
+        rename_i _ e2 hi
+        rw [hx] at hi
         rw [hfn] at he
         rw [← he]
-        exact reduces_trans (reduces_delta hL (hx ▸ hf) hc.2 _) (IH.whnf δ Γ _ _ h)
-      · cases h; exact reduces_refl
-    · cases h; exact reduces_refl
+        exact reduces_trans (iotaStep_sound hL (fun a a' hw => IH.whnf true Γ a a' hw)
+          (fun T as hf => IH.fits Γ T as hf) (fun ps qs hc => IH.args Γ ps qs hc) hi)
+          (IH.whnf δ Γ _ _ h)
+      · split at h
+        · rename_i _ _ cv val hint hf
+          split at h
+          · rename_i hc
+            simp only [Bool.and_eq_true, beq_iff_eq] at hc
+            rw [hfn] at he
+            rw [← he]
+            exact reduces_trans (reduces_delta hL (hx ▸ hf) hc.2 _) (IH.whnf δ Γ _ _ h)
+          · cases h; exact reduces_refl
+        · cases h; exact reduces_refl
   · rename_i s i p hfn
     split at h
     · rename_i p' hp
@@ -207,30 +247,6 @@ theorem whnf_succ : ∀ δ Γ e e', whnfD x (n + 1) δ Γ e = some e' → Reduce
       · cases h; exact reduces_refl
     · cases h
   · cases h; exact reduces_refl
-
-
-include hφ in
-theorem step_succ : ∀ site Γ T a T', dStep x (n + 1) site Γ T a = some T' → ∀ F,
-    HasTy M φ Γ F T →
-    HasTy M φ Γ (.app F a) T' ∧ (site = true → DenotesIn M φ Γ (.app F a) → SiteOk M φ Γ F a) := by
-  intro site Γ T a T' h F hF
-  unfold dStep at h
-  split at h
-  · rename_i A B m hpi
-    have hr := headPi_reduces (fun T'' hw => IH.whnf true Γ T T'' hw) hpi
-    have hF' := hasTy_of_reduces hF hr
-    split at h
-    · rename_i hc
-      cases h
-      simp only [Bool.and_eq_true, Bool.or_eq_true, Bool.not_eq_true'] at hc
-      have ha := IH.check Γ a A hc.2
-      refine ⟨hasTy_app hF' ha, fun hs hD => ?_⟩
-      subst hs
-      rcases hc.1 with h0 | h1
-      · cases h0
-      · exact siteOk_of_pi hF' ha (regime_of_pwFalse hφ h1) hD
-    · cases h
-  · cases h
 
 theorem sort_succ : ∀ Γ T u, dSort x (n + 1) Γ T = some u → HasTy M φ Γ T (.sort u) := by
   intro Γ T u h
@@ -350,7 +366,6 @@ theorem direct_sound (hL : Laws M) (hN : NatBasis env) {x : DCtx} (hx : x.env = 
   | n + 1 =>
     have IH := direct_sound hL hN hx hφ n
     { infer := infer_succ hL hN hx hφ IH
-      step := step_succ hφ IH
       sort := sort_succ IH
       check := check_succ hφ IH
       fits := fits_succ IH

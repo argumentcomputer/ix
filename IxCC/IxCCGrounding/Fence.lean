@@ -227,6 +227,43 @@ the three standard axioms. Building the library checks it (`#guard_msgs`). -/
 /-- info: 'IxCC.Grounding.direct_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Grounding.direct_sound
 
+/-! G2b: the level comparison's `imax a a` collapse, ι and the `Nat` primitives in the conversion, a
+string literal by its constructor form, the step at its own fuel, the renaming-tolerant `case`
+recursor clause and its implication from the landed one. -/
+
+/-- info: 'IxCC.Grounding.eval_imaxCollapse' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.eval_imaxCollapse
+
+/-- info: 'IxCC.Grounding.eval_lvlNorm' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.eval_lvlNorm
+
+/-- info: 'IxCC.Grounding.den_inst_exact' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.den_inst_exact
+
+/-- info: 'IxCC.Grounding.reduces_strLit' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.reduces_strLit
+
+/-- info: 'IxCC.Grounding.fits_rest' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.fits_rest
+
+/-- info: 'IxCC.Grounding.den_majorForm' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.den_majorForm
+
+/-- info: 'IxCC.Grounding.primStep_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.primStep_sound
+
+/-- info: 'IxCC.Grounding.iotaStep_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.iotaStep_sound
+
+/-- info: 'IxCC.Grounding.step_of' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.step_of
+
+/-- info: 'IxCC.Grounding.caseRec_of_named' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.caseRec_of_named
+
+/-- info: 'IxCC.Grounding.caseStored_of_named' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.caseStored_of_named
+
 /-- info: 'IxCC.Grounding.spine_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Grounding.spine_sound
 

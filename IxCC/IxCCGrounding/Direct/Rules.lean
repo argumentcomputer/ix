@@ -19,7 +19,10 @@ and saying nothing where a term does not denote), and one lemma per rule the che
   argument in the domain (`app_den_lam`, `den_inst1Lift`), δ (`Laws.defn_value`; in a
   proof-irrelevant set model a definition's set is its value's), the projection of a constructor
   (`Laws.proj_ctor`, at a structure that is never a proposition: in a proof-irrelevant set model its
-  constructor is read in the graph regime and its image is the field tuple);
+  constructor is read in the graph regime and its image is the field tuple), ι (`Laws.iota_rule`,
+  `iotaStep_sound`; the rule fires on a constructor image whose arguments fit, as the recursor's own
+  rules compute), a `Nat` primitive on literals (`Laws.nat_accel`, `primStep_sound`), a `String`
+  literal to its constructor form (`Denotes.strLit`, no law);
 * conversion: equal denotations through reductions, binders and spines.
 -/
 
@@ -435,6 +438,208 @@ theorem reduces_proj (hL : Laws M) {Γ : List KExpr} {s : KKey} {i : Nat} {p p' 
     rw [List.take_append_drop, hctor] at hpc
     rw [hpc]
     exact (den_mkAppN args).mpr ⟨Z, As, hfiZ, hAs, rfl⟩
+
+/-! ## String literals, `Nat` primitives and ι (G2b) -/
+
+/-- **A `String` literal reduces to its constructor form** (`Denotes.strLit`; no law). -/
+theorem reduces_strLit {Γ : List KExpr} {s : String} :
+    Reduces M φ Γ (.lit (.strVal s)) (strLitToConstructor s) :=
+  fun _ _ _ h => by cases h with | strLit h => exact h
+
+/-- What `Fits` leaves: the telescope after as many binders as values, under the values. -/
+theorem fits_rest {ρ σ : BVarIdx → V} {T R : KExpr} {xs : List V}
+    (h : Fits M.cval env φ ρ T xs σ R) : R = piBody xs.length T ∧ σ = pushAll xs ρ := by
+  induction h with
+  | @nil ρ T => exact ⟨by cases T <;> rfl, (pushAll_nil ρ).symm⟩
+  | cons _ _ _ ih => exact ⟨by simpa [piBody] using ih.1, by rw [pushAll_cons]; exact ih.2⟩
+
+theorem denotesList_take_drop {ρ : BVarIdx → V} : ∀ (n : Nat) {es : List KExpr} {vs : List V},
+    DenotesList M.cval env φ ρ es vs →
+      DenotesList M.cval env φ ρ (es.take n) (vs.take n) ∧
+        DenotesList M.cval env φ ρ (es.drop n) (vs.drop n)
+  | 0, _, _, h => by simp only [List.take_zero, List.drop_zero]; exact ⟨.nil, h⟩
+  | _ + 1, [], _, h => by cases h; exact ⟨.nil, .nil⟩
+  | n + 1, _ :: _, _, h => by
+    cases h with
+    | cons h1 h2 =>
+      obtain ⟨a, b⟩ := denotesList_take_drop n h2
+      exact ⟨.cons h1 a, b⟩
+
+/-- A literal major premise denotes what its constructor form denotes. -/
+theorem den_majorForm {ρ : BVarIdx → V} {e : KExpr} {Y : V} (h : Denotes M.cval env φ ρ e Y) :
+    Denotes M.cval env φ ρ (majorForm e) Y := by
+  unfold majorForm
+  split
+  · exact den_natLit.mp h
+  · exact h
+
+theorem primOfKey?_spec {k : KKey} {op : IxCC.Src.PrimOp} (h : primOfKey? k = some op) :
+    primKey op = k := by
+  have h' := List.find?_some h
+  simpa using h'
+
+/-- **A `Nat` primitive on literals reduces to its value** (`Laws.nat_accel`; in a
+proof-irrelevant set model `Nat` and `Bool` are not propositions, the role-pinned operations
+compute these values on numerals, and `PrimOp.eval2` agrees with Lean's `Nat` operations). -/
+theorem primStep_sound (hL : Laws M) {Γ : List KExpr} {w : KExpr → Option KExpr}
+    (hw : ∀ a a', w a = some a' → Reduces M φ Γ a a') {k : KKey} {us : List Level}
+    {args : List KExpr} {e' : KExpr} (h : primStep w k us args = some e') :
+    Reduces M φ Γ (Expr.mkAppN (.const k us) args) e' := by
+  unfold primStep at h
+  split at h
+  · rename_i op a rest hop
+    have hk := primOfKey?_spec hop
+    split at h
+    · rename_i h1
+      have h1' : op.arity = 1 := by simpa using h1
+      split at h
+      · rename_i va hwa
+        cases h
+        intro ρ hρ Y hY
+        obtain ⟨K, Ys, hK, hYs, rfl⟩ := (den_mkAppN (a :: rest)).mp hY
+        cases hYs with
+        | @cons _ _ Xa Zs hXa hZs =>
+          have hla := hw a _ hwa ρ hρ Xa hXa
+          rw [← hk] at hK
+          have hP : Denotes M.cval env φ ρ (primApp op va 0) (app K Xa) := by
+            simp only [primApp, h1', ↓reduceIte]
+            exact .app hK hla
+          exact (den_mkAppN rest).mpr ⟨_, Zs, hL.nat_accel op va 0 φ ρ _ (fun _ => rfl) hP, hZs, rfl⟩
+      · cases h
+    · rename_i h1
+      have h1' : op.arity ≠ 1 := by simpa using h1
+      split at h
+      · rename_i b rest'
+        split at h
+        · rename_i va vb hwa hwb
+          cases h
+          intro ρ hρ Y hY
+          obtain ⟨K, Ys, hK, hYs, rfl⟩ := (den_mkAppN (a :: b :: rest')).mp hY
+          cases hYs with
+          | @cons _ _ Xa Ys' hXa hYs' =>
+            cases hYs' with
+            | @cons _ _ Xb Zs hXb hZs =>
+              have hla := hw a _ hwa ρ hρ Xa hXa
+              have hlb := hw b _ hwb ρ hρ Xb hXb
+              rw [← hk] at hK
+              have hP : Denotes M.cval env φ ρ (primApp op va vb) (app (app K Xa) Xb) := by
+                simp only [primApp, h1', ↓reduceIte]
+                exact .app (.app hK hla) hlb
+              exact (den_mkAppN rest').mpr
+                ⟨_, Zs, hL.nat_accel op va vb φ ρ _ (fun h => absurd h h1') hP, hZs, rfl⟩
+        · cases h
+      · cases h
+  · cases h
+
+/-- **ι at a recursor of an inductive without indices reduces to the rule's right-hand side**
+(`Laws.iota_rule`, at the recursor's levels; its premises are the checked facts: the recursor's
+arguments up to the major fit its type, ending in a `∀` over the inductive at the recursor's own
+parameters; the major is the constructor at those levels on arguments that fit its type, the
+same parameters, and a codomain without indices). -/
+theorem iotaStep_sound (hL : Laws M) {Γ : List KExpr} {w : KExpr → Option KExpr}
+    {fits : KExpr → List KExpr → Bool} {conv : List KExpr → List KExpr → Bool}
+    (hw : ∀ a a', w a = some a' → Reduces M φ Γ a a')
+    (hfits : ∀ T as, fits T as = true → FitsAt M φ Γ T as)
+    (hconv : ∀ ps qs, conv ps qs = true → ∀ ρ, CtxSat M φ Γ ρ → ∀ Ys Ys',
+      DenotesList M.cval env φ ρ ps Ys → DenotesList M.cval env φ ρ qs Ys' → Ys = Ys')
+    {k : KKey} {us : List Level} {args : List KExpr} {e' : KExpr}
+    (h : iotaStep env w fits conv k us args = some e') :
+    Reduces M φ Γ (Expr.mkAppN (.const k us) args) e' := by
+  unfold iotaStep at h
+  split at h
+  · rename_i cv mI rP rules hk
+    split at h
+    · rename_i maj hmaj
+      split at h
+      · rename_i maj' hw'
+        split at h
+        · rename_i ck cus np nf cargs dom B m hca hpi
+          split at h
+          · rename_i rl cvC np' nf' D ls hrl hck' hdom
+            split at h
+            · rename_i hc
+              cases h
+              simp only [Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at hc
+              obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨hmr, hul⟩, hls⟩, hdargs⟩, hnp⟩, hcl⟩, hRC⟩, hf1⟩, hf2⟩, hcv⟩ := hc
+              subst rP
+              rw [hls] at hdom
+              obtain ⟨hcfn, ⟨cv0, hck0⟩, hcargs⟩ := ctorApp?_spec hca
+              have e0 := hck0.symm.trans hck'
+              simp only [Option.some.injEq, ConstantInfo.ctorInfo.injEq] at e0
+              have hckC : env.find? ck = some (.ctorInfo cvC np nf) := by rw [hck0, e0.1]
+              have hrlm : rl ∈ rules := List.mem_of_find?_eq_some hrl
+              have hrlc : rl.ctor = ck := by
+                have h' := List.find?_some hrl
+                simpa using h'
+              intro ρ hρ Y hY
+              obtain ⟨K0, Ys, hK0, hYs, rfl⟩ := (den_mkAppN args).mp hY
+              -- the arguments split at the major
+              obtain ⟨hlt, hget⟩ := List.getElem?_eq_some_iff.mp hmaj
+              have hsplit : args = args.take mI ++ [maj] ++ args.drop (mI + 1) := by
+                have h1 := List.take_append_drop mI args
+                rw [List.drop_eq_getElem_cons hlt, hget] at h1
+                simpa using h1.symm
+              have htake1 : args.take (mI + 1) = args.take mI ++ [maj] := by
+                simp [List.take_add_one, hmaj]
+              rw [hsplit] at hYs
+              obtain ⟨Y12, Zs, rfl, h12, hZs⟩ := denotesList_append_inv hYs
+              obtain ⟨Xs, Ym, rfl, hXs, hYm⟩ := denotesList_append_inv h12
+              obtain ⟨ymaj, hYmaj, rfl⟩ : ∃ y, Denotes M.cval env φ ρ maj y ∧ Ym = [y] := by
+                cases hYm with | cons h1 h2 => cases h2; exact ⟨_, h1, rfl⟩
+              have hXl : Xs.length = mI := by
+                rw [denotesList_length hXs, List.length_take]; omega
+              -- the major is the constructor application
+              have hm := den_majorForm (hw maj maj' hw' ρ hρ ymaj hYmaj)
+              rw [← mkAppN_getApp (majorForm maj'), hcfn, hcargs] at hm
+              obtain ⟨K, Cs, hK, hCs, hymaj⟩ := (den_mkAppN cargs).mp hm
+              have hCl : Cs.length = np + nf := by rw [denotesList_length hCs, hcl]
+              -- the recursor's arguments up to the major fit its type
+              obtain ⟨TT, hTT, _⟩ := mem_key M hk (Level.substFn φ cv.levelParams us) ρ
+              simp only [ConstantInfo.toConstantVal] at hTT
+              obtain ⟨σ', R', hF⟩ := hfits _ _ hf1 ρ hρ TT (Xs ++ [ymaj]) (den_inst_exact M hL hTT)
+                (by rw [htake1]; exact denotesList_append hXs (.cons hYmaj .nil))
+              obtain ⟨σ1, R1, hF1, hF2⟩ := fits_append hF
+              obtain ⟨hR1, hσ1⟩ := fits_rest hF1
+              rw [hXl, hpi] at hR1
+              subst hR1
+              obtain ⟨Xd, hdomX, hymX⟩ : ∃ X, Denotes M.cval env φ σ1 dom X ∧ ymaj ∈ˢ X := by
+                cases hF2 with | cons hA hx _ => exact ⟨_, hA, hx⟩
+              -- the constructor's arguments fit its type
+              obtain ⟨TC, hTC, _⟩ := mem_key M hckC (Level.substFn φ cvC.levelParams cus) ρ
+              simp only [ConstantInfo.toConstantVal] at hTC
+              obtain ⟨σC, RC, hFC⟩ := hfits _ _ hf2 ρ hρ TC Cs (den_inst_exact M hL hTC) hCs
+              have hRCe := (fits_rest hFC).1
+              rw [hCl] at hRCe
+              -- the same parameters
+              have hpar : Xs.take np = Cs.take np := by
+                have h1 := (denotesList_take_drop np hXs).1
+                rw [List.take_take, Nat.min_eq_left hnp] at h1
+                exact hconv _ _ hcv ρ hρ _ _ h1 (denotesList_take_drop np hCs).1
+              obtain ⟨H, hH, heq⟩ := hL.iota_rule k cv mI mI rules rl hk hrlm cvC np nf
+                (by rw [hrlc]; exact hckC) us φ ρ σ1 σC Xs Cs dom B RC m D cus K0 K Xd
+                hul hXl hCl hK0 hF1 hdom hdomX (by rw [hrlc]; exact hK) hFC (hymaj ▸ hymX)
+                (by
+                  rw [hdargs, List.take_of_length_le (show (bvarsFrom (mI - np) np).length ≤ np by
+                    simp [bvarsFrom_length]), hσ1, ← hpar]
+                  have := den_bvarsFrom (cval := M.cval) (env := env) (φ := φ) ρ (Xs.drop np)
+                    (Xs.take np) []
+                  rwa [List.nil_append, List.take_append_drop, List.length_drop, List.length_take,
+                    hXl, Nat.min_eq_left hnp] at this)
+                (by
+                  rw [List.drop_eq_nil_of_le (show Xs.length ≤ mI by omega), hRCe,
+                    List.drop_eq_nil_of_le hRC]
+                  exact .nil)
+              refine (den_mkAppN _).mpr ⟨H, Xs ++ Cs.drop np ++ Zs, hH,
+                denotesList_append (denotesList_append hXs (denotesList_take_drop np hCs).2) hZs, ?_⟩
+              rw [hymaj]
+              simp only [List.foldl_append] at heq ⊢
+              rw [heq, List.take_of_length_le (show Xs.length ≤ mI by omega)]
+            · cases h
+          · cases h
+        · cases h
+      · cases h
+    · cases h
+  · cases h
 
 end Sem
 

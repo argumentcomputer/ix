@@ -1621,10 +1621,10 @@
   "IxCCGrounding.Syntax",
   "IxCCGrounding.Tele"],
  "grounding_axiom_sha256":
- "8505a077a210e2929dc6588d6499a9dd7ac3caea57c4c44647db98dc7fc7bd07",
- "grounding_axiom_count": 86,
+ "5fe3fc2c5e5b691e840f7c6a33b4ba99864c00ee018dbdafdea149db5ce42550",
+ "grounding_axiom_count": 97,
  "baseline":
- "KS: the switch to the kernel front end, steps 4 and 5, merged with the tip 9f849c1d9",
+ "the grounding library: G2b, the direct route widened (iota, Nat primitives, string literals, imax a a, two fuel levels per nested argument) and the renaming-tolerant case shape, merged with the kernel switch steps 4 and 5",
  "axiom_sha256":
  "9b76c26ed62a0ec4ff6b6972939d916aac2fbeef77968bb0ec4cd8402f28407c",
  "axiom_count": 6255}

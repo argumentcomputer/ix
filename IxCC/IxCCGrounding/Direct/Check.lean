@@ -13,13 +13,20 @@ theorems, discharged where this check accepts (`IxCCGrounding.Direct.Sites`). De
   level assignment (a binder datum, a level's zero-ness) is required at each of them.
 * **Spines.** Each maximal evaluated application spine is walked once, left to right, from its
   head's type (`dStep` per argument); the sites of its prefixes are accepted in order until the
-  first refusal. A spine's width costs no fuel.
+  first refusal. A spine's width costs no fuel; a nested argument costs two levels (its check and
+  its type's inference).
 * **Conversion** (`convD`): syntactic equality; equality up to what the denotation does not read
   (`eqUpTo`: levels by `lvlEq`, binder data at the profiles, a literal against its constructor
   form); β with the argument checked; δ (`Laws.defn_value`); the projection of a constructor whose
-  arguments fit its type, at a structure that is never a proposition (`Laws.proj_ctor`).
+  arguments fit its type, at a structure that is never a proposition (`Laws.proj_ctor`); ι at a
+  recursor of an inductive without indices whose major premise reduces to a constructor or a
+  literal (`Laws.iota_rule`, `iotaStep`); a `Nat` primitive on literals (`Laws.nat_accel`,
+  `primStep`).
+* **Literals.** A `Nat` literal has type `Nat`; a `String` literal the type of its constructor form
+  (`Denotes.strLit`).
 * **Bounds.** A constant with more than `maxDirectParams` (8) level parameters has all its sites
-  refused; levels of more than `maxLevelSize` (32) nodes are compared only syntactically. The cost
+  refused; levels of more than `maxLevelSize` (32) nodes are compared only syntactically (otherwise
+  after `Level.simplify` and the `imax a a` collapse, or by max-plus forms: polynomial). The cost
   on a hostile closure is not otherwise bounded: every function is total, by a fuel
   (`directFuel`, a nesting depth).
 -/
@@ -114,13 +121,29 @@ def maxPlusLe : Nat × List (Nat × Nat) → Nat × List (Nat × Nat) → Bool
     decide (c ≤ us.foldr (fun pk m => max pk.2 m) d) &&
       ts.all fun (p, k) => us.any fun (q, l) => q == p && decide (k ≤ l)
 
+/-- **`imax a a` is `a`**, bottom up: an `imax` whose two sides are syntactically equal (once
+collapsed) is its side. Equal at every assignment (`Level.eval`'s `imax` is `0` at a zero right
+side, else the maximum). Each node compares its two collapsed sides once, so the cost is at most
+quadratic in the level's size. -/
+def imaxCollapse : Level → Level
+  | .succ l => .succ (imaxCollapse l)
+  | .max a b => .max (imaxCollapse a) (imaxCollapse b)
+  | .imax a b =>
+    if imaxCollapse a == imaxCollapse b then imaxCollapse a
+    else .imax (imaxCollapse a) (imaxCollapse b)
+  | l => l
+
+/-- The form `lvlEq` compares: `Level.simplify`, then `imax a a` collapsed to `a`. -/
+def lvlNorm (u : Level) : Level := imaxCollapse (Level.simplify u)
+
 /-- **Two levels evaluate alike everywhere**: syntactically equal, or, for levels of at most
-`maxLevelSize` nodes, equal after `Level.simplify` (sound by `eval_simplify`) or after it with
-equal max-plus forms (each at most the other; polynomial, unlike `Level.isEquiv`). -/
+`maxLevelSize` nodes, equal after `Level.simplify` and the `imax a a` collapse (`lvlNorm`; sound
+by `eval_simplify` and `eval_imaxCollapse`) or after them with equal max-plus forms (each at most
+the other; polynomial, unlike `Level.isEquiv`). -/
 def lvlEq (u v : Level) : Bool :=
   u == v || (decide (lvlSize u ≤ maxLevelSize) && decide (lvlSize v ≤ maxLevelSize) &&
-    (Level.simplify u == Level.simplify v ||
-      match maxPlus (Level.simplify u), maxPlus (Level.simplify v) with
+    (lvlNorm u == lvlNorm v ||
+      match maxPlus (lvlNorm u), maxPlus (lvlNorm v) with
       | some a, some b => maxPlusLe a b && maxPlusLe b a
       | _, _ => false))
 
@@ -182,13 +205,98 @@ def headPi (w : KExpr → Option KExpr) (T : KExpr) : Option KExpr :=
   | .forallE .. => some T
   | _ => w T
 
+/-- **One application along a spine**, given head reduction `w` and checking `c` at one fuel: the
+function's type `T`, reduced at its head to a `∀` when it is not one; the argument checks against
+the domain, and with `site` the binder's datum holds at none of the profiles (`pf`, the graph
+regime). The codomain at the argument. -/
+def stepWith (pf : PropWhen → Bool) (w : KExpr → Option KExpr) (c : KExpr → KExpr → Bool)
+    (site : Bool) (T a : KExpr) : Option KExpr :=
+  match headPi w T with
+  | some (.forallE A B m) => if (!site || pf m.pw) && c a A then some (B.instantiate1Lift a 0) else none
+  | _ => none
+
+/-- The `Nat` primitive whose role key `k` is, if any. -/
+def primOfKey? (k : KKey) : Option IxCC.Src.PrimOp :=
+  IxCC.Src.PrimOp.all.find? fun op => primKey op == k
+
+/-- A literal major premise in its constructor form (`Nat.zero`, `Nat.succ (lit n)`), what
+`Denotes` reads it as; any other term as it is. -/
+def majorForm : KExpr → KExpr
+  | .lit (.natVal v) => natLitToConstructor v
+  | e => e
+
+/-- **A `Nat` primitive on literals** (`Laws.nat_accel`): the role key of one of SrcEval's
+fifteen operations, at no levels, applied to as many arguments as it takes, each of which `w`
+(head reduction) makes a literal: the literal or `Bool` constructor of `PrimOp.eval2`'s value,
+applied to the remaining arguments. `none` when the step does not apply. -/
+def primStep (w : KExpr → Option KExpr) (k : KKey) (us : List Level) (args : List KExpr) :
+    Option KExpr :=
+  match primOfKey? k, us, args with
+  | some op, [], a :: rest =>
+    if op.arity == 1 then
+      match w a with
+      | some (.lit (.natVal va)) => some (Expr.mkAppN (primResultE (op.eval2 va 0)) rest)
+      | _ => none
+    else
+      match rest with
+      | b :: rest' =>
+        match w a, w b with
+        | some (.lit (.natVal va)), some (.lit (.natVal vb)) =>
+          some (Expr.mkAppN (primResultE (op.eval2 va vb)) rest')
+        | _, _ => none
+      | [] => none
+  | _, _, _ => none
+
+/-- **ι at a recursor of an inductive without indices** (`Laws.iota_rule`): the recursor `k` at
+levels `us` (as many as it has parameters), its major premise (argument `mI`, its rule prefix
+`rP = mI`: no indices) made by `w` (head reduction) a constructor application or a literal (read
+as its constructor form); the recursor's type, at `us`, has after `mI` binders a `∀` whose domain
+is an inductive at the constructor's levels applied to the recursor's own parameters (the first
+`np` binders); the arguments up to the major fit that type and the constructor's arguments its
+own (`fits`); the major's parameters are the recursor's (`conv`); the constructor's codomain has
+no index. The reduct: the matching rule's right-hand side at `us`, applied to the arguments before
+the major, the constructor's fields and the arguments after the major. `none` when the step does
+not apply. -/
+def iotaStep (env : KEnv) (w : KExpr → Option KExpr) (fits : KExpr → List KExpr → Bool)
+    (conv : List KExpr → List KExpr → Bool) (k : KKey) (us : List Level) (args : List KExpr) :
+    Option KExpr :=
+  match env.find? k with
+  | some (.recInfo cv mI rP rules) =>
+    match args[mI]? with
+    | some maj =>
+      match w maj with
+      | some maj' =>
+        match ctorApp? env (majorForm maj'),
+            piBody mI (cv.type.instantiateLevelParams cv.levelParams us) with
+        | some (ck, cus, np, nf, cargs), .forallE dom _ _ =>
+          match rules.find? (fun rl => rl.ctor == ck), env.find? ck, dom.getAppFn with
+          | some rl, some (.ctorInfo cvC _ _), .const _ ls =>
+            if mI == rP && us.length == cv.levelParams.length && ls == cus &&
+                dom.getAppArgs == bvarsFrom (mI - np) np && decide (np ≤ mI) &&
+                cargs.length == np + nf &&
+                decide ((piBody (np + nf)
+                  (cvC.type.instantiateLevelParams cvC.levelParams cus)).getAppArgs.length ≤ np) &&
+                fits (cv.type.instantiateLevelParams cv.levelParams us) (args.take (mI + 1)) &&
+                fits (cvC.type.instantiateLevelParams cvC.levelParams cus) cargs &&
+                conv (args.take np) (cargs.take np) then
+              some (Expr.mkAppN (rl.rhs.instantiateLevelParams cv.levelParams us)
+                (args.take rP ++ cargs.drop np ++ args.drop (mI + 1)))
+            else none
+          | _, _, _ => none
+        | _, _ => none
+      | none => none
+    | none => none
+  | _ => none
+
 mutual
 
 /-- **A type of `e` in the context `Γ`** (innermost first): a variable's context type, a stored
 constant's type at its levels, a β-redex's reduct's (the argument checked against the domain), an
-application's by one walk along its spine (`dStep`), a literal's `Nat`, a sort's successor sort, a
-`∀`'s `imax` sort when its datum is its codomain sort's zero condition at the profiles, a λ whose
-datum holds at none of the profiles its own `∀` over its body's type. -/
+application's by one walk along its spine (`dStep`, at this fuel less one: a nested argument costs
+two levels, this one and its check's), a `Nat` literal's `Nat`, a `String` literal's its
+constructor form's (`Denotes.strLit`), a sort's successor sort, a `∀`'s `imax` sort when its datum
+is its codomain sort's zero condition at the profiles, a λ whose datum holds at none of the
+profiles its own `∀` over its body's type. -/
 def dInfer (x : DCtx) : Nat → List KExpr → KExpr → Option KExpr
   | 0, _, _ => none
   | _ + 1, Γ, .bvar i => (Γ[i]?).map (·.liftLooseBVars (i + 1) 0)
@@ -206,9 +314,12 @@ def dInfer (x : DCtx) : Nat → List KExpr → KExpr → Option KExpr
       if dCheck x n Γ a1 D then dInfer x n Γ (Expr.mkAppN (b.instantiate1Lift a1 0) rest) else none
     | h, args =>
       match dInfer x n Γ h with
-      | some T => walkArgs (fun T a => dStep x n false Γ T a) T args
+      | some T =>
+        walkArgs (stepWith x.pwFalse (fun T => whnfD x n true Γ T) (fun a A => dCheck x n Γ a A)
+          false) T args
       | none => none
   | _ + 1, _, .lit (.natVal _) => some (.const natName [])
+  | n + 1, Γ, .lit (.strVal s) => dInfer x n Γ (strLitToConstructor s)
   | _ + 1, _, .sort u => some (.sort (.succ u))
   | n + 1, Γ, .forallE A B m =>
     match dSort x n Γ A, dSort x n (A :: Γ) B with
@@ -218,17 +329,6 @@ def dInfer (x : DCtx) : Nat → List KExpr → KExpr → Option KExpr
     -- a λ whose datum holds at none of the profiles has its own `∀` as a type (`lamR_mem`)
     if x.pwFalse m.pw then (dInfer x n (D :: Γ) b).map fun T => .forallE D T m else none
   | _ + 1, _, _ => none
-
-/-- **One application along a spine**: the function's type `T`, reduced at its head (with δ) to
-a `∀` when it is not one; the argument checks against the domain, and with `site` the binder's
-datum holds at none of the profiles (the graph regime). The codomain at the argument. -/
-def dStep (x : DCtx) : Nat → Bool → List KExpr → KExpr → KExpr → Option KExpr
-  | 0, _, _, _, _ => none
-  | n + 1, site, Γ, T, a =>
-    match headPi (fun T => whnfD x n true Γ T) T with
-    | some (.forallE A B m) =>
-      if (!site || x.pwFalse m.pw) && dCheck x n Γ a A then some (B.instantiate1Lift a 0) else none
-    | _ => none
 
 /-- `T`'s sort: its type, reduced at its head when it is not a sort. -/
 def dSort (x : DCtx) : Nat → List KExpr → KExpr → Option Level
@@ -267,10 +367,13 @@ def dFits (x : DCtx) : Nat → List KExpr → KExpr → List KExpr → Bool
     decide (as.length ≤ kPis B) && dCheck x n Γ a A && dFits x n Γ (B.instantiate1Lift a 0) as
   | _ + 1, _, _, _ :: _ => false
 
-/-- **Head reduction**: β (the argument checked against the λ's domain), the projection of a
-constructor whose arguments fit its type, at the projection table's constructor, and with
-`delta`, δ (a definition at its levels). Returns the term itself when stuck; `none` only when the
-fuel runs out. -/
+/-- **Head reduction**: β (the argument checked against the λ's domain), a `Nat` primitive on
+arguments that reduce to literals (`Laws.nat_accel`), ι at a recursor of an inductive without
+indices whose major premise reduces to a constructor or a literal (`Laws.iota_rule`; the
+recursor's arguments up to the major fit its type, the constructor's arguments fit its own, the
+major's parameters are the recursor's), the projection of a constructor whose arguments fit its
+type, at the projection table's constructor, and with `delta`, δ (a definition at its levels).
+Returns the term itself when stuck; `none` only when the fuel runs out. -/
 def whnfD (x : DCtx) : Nat → Bool → List KExpr → KExpr → Option KExpr
   | 0, _, _, _ => none
   | n + 1, delta, Γ, e =>
@@ -279,6 +382,13 @@ def whnfD (x : DCtx) : Nat → Bool → List KExpr → KExpr → Option KExpr
       if dCheck x n Γ a1 D then whnfD x n delta Γ (Expr.mkAppN (b.instantiate1Lift a1 0) rest)
       else some e
     | .const k us, args =>
+      match primStep (fun a => whnfD x n true Γ a) k us args with
+      | some e' => whnfD x n delta Γ e'
+      | none =>
+      match iotaStep x.env (fun a => whnfD x n true Γ a) (fun T as => dFits x n Γ T as)
+          (fun ps qs => convArgs x n Γ ps qs) k us args with
+      | some e' => whnfD x n delta Γ e'
+      | none =>
       match x.env.find? k with
       | some (.defnInfo cv val _) =>
         if delta && us.length == cv.levelParams.length &&
@@ -338,6 +448,14 @@ def convArgs (x : DCtx) : Nat → List KExpr → List KExpr → List KExpr → B
   | _ + 1, _, _, _ => false
 
 end
+
+/-- **One application along a spine** at fuel `n` (`stepWith` with head reduction and checking at
+`n`): the function's type `T`, reduced at its head (with δ) to a `∀` when it is not one; the
+argument checks against the domain, and with `site` the binder's datum holds at none of the
+profiles (the graph regime). The codomain at the argument. `dInfer` at `n + 1` walks an
+application's spine with `dStep` at `n`. -/
+def dStep (x : DCtx) (n : Nat) (site : Bool) (Γ : List KExpr) (T a : KExpr) : Option KExpr :=
+  stepWith x.pwFalse (fun T => whnfD x n true Γ T) (fun a A => dCheck x n Γ a A) site T a
 
 /-- The fuel the check gives every spine (a recursion depth; a spine's width costs none). -/
 def directFuel : Nat := 64
