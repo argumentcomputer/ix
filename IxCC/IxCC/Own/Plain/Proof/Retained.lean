@@ -1,11 +1,13 @@
 import IxCC.Fir.Proof.Retained
+import IxCC.Own.Plain.Proof.Language
 
 set_option autoImplicit false
 namespace IxCC.Own.Plain
 open IxCC.Sem (Result ClockMono Obs Lang Sim Forall2)
 
-theorem checked_retained {F : Fir.Program} {candidate : Src.NatMap Code}
-    (checked : checkPlainMap F candidate = true)
+/-- Retained observations for any map the ownership checker accepts. -/
+theorem owned_retained {F : Fir.Program} {candidate : Src.NatMap Code}
+    (checked : checkOwned F candidate = true)
     (exports : ∀ f, f ∈ F.exports → f < F.size) :
     ∀ i, Sim (fun w p => Proof.Den p.2 p.1 w) id
       (Fir.firRun F i) (plainRun {source := F, bodies := candidate} i) := by
@@ -26,7 +28,7 @@ theorem checked_retained {F : Fir.Program} {candidate : Src.NatMap Code}
       simp only
       by_cases he : ns.length = fd.params.length
       · simp only [Sem.entryRun, he, ↓reduceIte]
-        exact checked_call_sim checked hf ns
+        exact owned_call_sim checked hf ns
       · by_cases hlt : ns.length < fd.params.length
         · simp only [Sem.entryRun, he, hlt, ↓reduceIte]
           by_cases hn : ns = []
@@ -37,9 +39,15 @@ theorem checked_retained {F : Fir.Program} {candidate : Src.NatMap Code}
             exact Sim.laterConst (R := fun w (p : Own.RVal × Own.Heap) => Proof.Den p.2 p.1 w)
               (Proof.den_erased {}) (fun k h => h)
         · simp only [Sem.entryRun, he, hlt, ↓reduceIte]
-          exact Sim.bindStuck (checked_call_sim checked hf (ns.take fd.params.length))
+          exact Sim.bindStuck (owned_call_sim checked hf (ns.take fd.params.length))
             fun _ _ _ => rfl
 
 
+theorem checked_retained {F : Fir.Program} {candidate : Src.NatMap Code}
+    (checked : checkPlainMap F candidate = true)
+    (exports : ∀ f, f ∈ F.exports → f < F.size) :
+    ∀ i, Sim (fun w p => Proof.Den p.2 p.1 w) id
+      (Fir.firRun F i) (plainRun {source := F, bodies := candidate} i) :=
+  owned_retained (checkPlainMap_checkOwned checked) exports
 
 end IxCC.Own.Plain

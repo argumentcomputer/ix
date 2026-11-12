@@ -124,7 +124,7 @@ before for those programs ([closures design](closures-design.md#proof-obligation
 | Component | Scope |
 | --- | --- |
 | Scalar & top-level compiler | Src-to-ELF recheck path (`Recheck.sound`), top-level `Compiler.compile` (`--rc auto\|on\|off`, `Compiler.compile_sound`), `CompileClaim` (`verifyProgram_*_sound`, `verifyBytes_*_sound`, `*_rootShape`), `Ring0` (`verifyRing0Sip_sound`), certificate/artifact checks and native pipeline suites |
-| Bounded plain RC | `Recheck.RcReplay` API (`RcReplay.run`, `RcReplay.sound`, `recycled_session`); exact ownership/certificate replay (`checkPlainMap` / `checkContractPlainMap`), ordinary Lir recycling runtime, SrcEval-relative object theorem, complete per-stage/native values, executed RC event counts and heap-failure/corruption controls; final producer integration remains open |
+| Bounded plain RC | `Recheck.RcReplay` API (`RcReplay.run`, `RcReplay.sound`, `recycled_session`); ownership certificates admitted by the proved checker (`checkOwned` / `checkContractOwned`, within `Anf.maxCapturedWork`) and replayed exactly, ordinary Lir recycling runtime, SrcEval-relative object theorem, complete per-stage/native values, executed RC event counts and heap-failure/corruption controls; final producer integration remains open |
 | [Ixon v4 ingress](ixon-v4.md) | ix's v4 codec with canonicity evidence and pure-BLAKE3 authentication, resource admission, claim binding; both envelopes, the role-bound one with its role table authenticated and its pinned identities read from it ([byte contract](byte-contract.md)) |
 | [x86 target model](x86-encoded-instructions.md) | Typed x86 AST and machine, E1 per-form encoder/decoder and execution laws, E2 [streams and ELF objects](x86-stream-objects.md), [stream checking](stream-checking.md), the [reference-model record](x86-reference-model.md) |
 | [Legacy Aiur model](aiur-backend.md) | A verifier-side model of an earlier Aiur bytecode: vocabulary, wire format, semantics, static checks, counter analysis, memory and rank AIRs. Neither Aiur route uses it ([repository and landing](#repository-and-landing)) |
@@ -578,12 +578,27 @@ data:
   is proved to keep the heap invariant (`inPlace_ready`,
   [DR1](data-and-roots-design.md#in-place-reuse)), but no pass emits a
   reuse yet (stage 4, after stage 2's placement). Stage 2 (the proved Own
-  checker), first landing: the checker `Own.Plain.checkOwned` over today's
-  syntax with refinement, reclamation and canonical acceptance proved, as a
-  library that nothing in production calls
+  checker), two landings of three: the checker `Own.Plain.checkOwned` over
+  today's syntax with refinement, reclamation and canonical acceptance
+  proved; and the verifier switched to it: plain-RC certificate admission and
+  the program gate run the checker behind a captured-work budget
+  (`Anf.maxCapturedWork`), the Cfg activation layer is restated over its
+  typing context, and `Recheck.RcReplay.sound` keeps its statement, so the
+  verifier admits any placement the checker accepts
   ([DR1, "The ownership checker"](data-and-roots-design.md#the-ownership-checker));
-  next, the Cfg activation layer restated over its typing context and the
-  recheck switched to it, then a liveness placement. **Open for stage 3**
+  the producer still writes the canonical placement, and every registered
+  object and certificate is unchanged. Next: a liveness placement in the
+  producer. **Clean-up, one separate change:** proof modules reached only by
+  their fences, beside the bounded route's release proofs (`Rt/Rc/Proof/`,
+  a library nothing emits): the allocation-cursor chain of `Cfg/Rc/Proof/Physical`
+  (`AllocationCursor`, `AllocationConsumed`, `AllocationInstruction`,
+  `AllocationSource`, `AllocationTokens`; 10 fence assertions), `BumpWrapper`
+  (1), `FusedSavedFrames` (3), `ReserveStorage` (1), `Return` (2),
+  `SavedCallers` with `SavedFrames` (5), and in `Physical/Bridge`
+  `BorrowedIncrement` (1), `FusedInstructions` (2), `FusedProjection` (1),
+  `ProjectionCfg` with `ProjectionIncrement`, `ProjectionStep` and
+  `ReadyInstructions` (6): 18 modules, 32 assertions, to retire together.
+  **Open for stage 3**
   (inline fast paths): the general release executes up to 3 Lir steps (4
   x86 instructions) more per freed cell than the bounded route's for
   cells of fewer than three scanned fields, fewer for four or more (lists
@@ -689,6 +704,25 @@ for nesting depth before decoding); neither is made yet. The envelope's depth
 bound (`V3.withinKernelDepth`) limits the records as stored, after that
 decoder, and not the terms the kernel builds while typing them.
 
+Known costs on hostile input in the plain-RC verifier (2026-11-12), beyond the
+ownership checker's own, which the captured-work budget bounds
+([DR1, "The ownership checker"](data-and-roots-design.md#the-ownership-checker)):
+- `Own.Plain.programDomain`, the source-domain check both ownership checks
+  run before the checker, is quadratic: its freshness and scope checks keep
+  the scopes and the function signatures as lists, so each variable is
+  looked up linearly. On a program at the middle end's limits (4,096
+  functions of 255 nodes, each with 2,048 parameters) it takes 88.2 s on the
+  build box. Planned fix: set-based twins of `programDomain` and
+  `contractProgramDomain` (membership through `Src.NatSet`, arities through
+  `Fir.Program.fun?`), proved equal to the list versions, which then become
+  definitions through the twins (about 150 to 250 lines), measured before and
+  after.
+- `RcReplay.runFront` runs the ownership check three times on the same map:
+  at admission (`Own.Plain.Certificate.admit`), in the program gate
+  (`checkScopedProgram`'s `checkProgram`) and in the lowering
+  (`Native.lower`'s `checkProgram`); the budget bounds each run, and the
+  proofs use each, but two of the runs could be read from the first.
+
 ### Resource soundness
 
 Usage (`0 1 &`), ownership (`!`) and locality (`~`, `let borrow`)
@@ -717,6 +751,41 @@ contracts already are: a decision for the kernel's owners (DO-24). *For the
 native route:* in-place update, elided reference counting and stack allocation
 only where RE-1 verified. *For the evaluator route:* write-once memory has
 nothing to optimise; the annotations mean something there only through RE-2.
+
+**Erased parameters: what a caller drops, the callee never reads (2026-11-12).**
+IxCC drops the argument of every parameter the callee's type writes erased
+(`0`), which is right only if the callee's run behaviour never reads it. Three
+routes broke this, each compiling to an object that returned a wrong
+constructor while SrcEval returned an irrelevant value (or got stuck):
+a definition's own value η-short under an erased parameter
+(`checkCanonical` compared the value's λs with the header by a truncating
+zip); a `csimp` redirect to a target whose type does not erase the parameter;
+and a special head whose type writes erased a position it reads (a `case`
+entry's minor, a recursor's minor, `Quot.mk`'s element) or a minor premise
+η-short over a constructor field written erased (C3 compared the minor's λs
+with the fields by a truncating zip). The first two, and the recursor, `Quot`
+and minor cases, were refused only by the certified kernel, because its
+conversion compares binder contracts (or a stored recursor's type must be the
+generated one); the format change (modes leave the term bytes) removes that,
+and an honest compile would then have been a miscompile. The `case` route
+needed no change to the kernel: a hand-made artifact whose casesOn-shaped
+definition writes `0` on a minor, in its type and its λ, is accepted by the
+certified kernel, gets a `case` entry from the table's scan, passes the
+byte-level verifiers' Stage A, and compiled to a wrong value. Now
+`checkCanonical` refuses the first two (the run body, or the redirect, must
+bind every parameter written erased with its class) and the special heads
+(no position a head reads, `Lam.Erase.headReads`, may be written erased), and
+C3 requires a minor to bind every field written erased; none of these relies on
+the kernel's contract comparison. Every registered root's status, object and
+certificate are unchanged. The invariant and its enforcement point per route
+are in [compiler design](compiler-design.md#relevance-and-erasure); the tests
+are in `tests-relevance` and `tests-recheck`. What remains unproved: these are
+checks with tests. The relevance proof (`Relevance.Proof.check_sound`) gives
+the tier-S facts erasure needs relative to SrcEval and nothing about the
+invariant; no theorem relates the annotation to the kernel's meaning (S6, S8
+in the [certification design](certification-design.md)); and the correctness
+statement does not bound a source that goes wrong (`Front.GoesWrong`, which
+includes a value no view reads), which is what each violation produced.
 
 **No end-to-end test of contract-annotated recursive programs (since
 2026-11-11).** IxCC's path for them is: contracts written in the source, a
@@ -1161,7 +1230,7 @@ day.
 | DO-23 (decided 2026-11-14: the entry is generated at the declared arity) | Are roots η-expanded to their declared type's arity? Under exploration | η-expand; keep roots as written, with the compiled arity pinned to the declared parameter count (2026-11-13) | Keep the pin until the exploration reports | The arity decision of 2026-11-13 already fixes what the theorems quantify over | Low |
 | DO-24 | Result contracts in a type's identity, so that a source-level resource statement survives the kernel's conversion (a decision for the kernel's owners, in IxCK and the IxVM kernel) | compare result contracts in conversion; forbid non-default result contracts wherever conversion can see them | Compare them in conversion, as input contracts already are | It closes the class of hole the resource checker's confirmed hole belongs to, as Idris 2 did for multiplicities; RE-1 does not need it | Medium for the kernels: a result contract on λ nodes, or λs checked against their expected ∀ |
 | DO-25 | When IxCC's ownership checker cannot verify a written contract on an internal function | refuse the program; compile as if the contract were absent | Refuse, with a diagnostic naming the contract (D16: contracts honoured exactly) | Dropping is sound for memory in a closed-world compile but silently discards what the source asked for | Low |
-| DO-26 | Which arguments an erased parameter erases (ix's checker erases wherever the head's type exposes an erased binder; IxCC only at constant and β-redex heads) | IxCC decides relevance from the head's type at every application; ix's checker grades erased only where IxCC erases | IxCC widens, with its relevance checker's rule extended | Erasing more evaluates less, and the kernel already forces a λ reaching an erased variable to have an erased binder | Low |
+| DO-26 | Which arguments an erased parameter erases (ix's checker erases wherever the head's type exposes an erased binder; IxCC only at constant and β-redex heads) | IxCC decides relevance from the head's type at every application; ix's checker grades erased only where IxCC erases | IxCC widens, with its relevance checker's rule extended | Erasing more evaluates less. Where IxCC erases today (constant and β-redex heads), that the callee never reads what the caller drops is IxCC's own check, not the kernel's: `checkCanonical`'s header agreement (a run body or a `csimp` redirect binds every parameter written erased) and its special-head rule (no position a head reads written erased), C3 (a minor binds every field written erased), and C2 at a β-redex, whose λs are the binders erasure reads ([resource soundness](#resource-soundness), 2026-11-12). The kernel compares binder contracts only until the format change, when it stops; widening to variable heads then needs its own check that a λ flowing into a parameter whose type writes `0` on an arrow binds it erased (decision 6 of the modes plan refuses such a `0` at first) | Low |
 | DO-27 | When the source-level resource theorem (RE-2) is scheduled | after EV-1, in parallel with RE-1; on demand, when a claim on the evaluator route first states a resource property | On demand, with RE-1 first | The native route's memory safety needs RE-1 only; on the evaluator route annotations optimise nothing | Low |
 | DO-28 (decided 2026-11-14: the default) | Does "self-host that logic" mean a pure certified program plus a small proved machine-level layer that IxCC generates from Lean, never C, with the system-call residue never compiled from Lean source? | yes; require the residue in Lean source too | Yes | The system-call instruction in compiled text would break Ring-0 admission; the residue is a few instructions per call, proved | Low |
 | DO-29 (decided 2026-11-14: the default) | Stack and region: a static zero-filled segment sized when the executable is written, or mapped at start-up | static; mapped | Static | No system call, strict confinement possible, the driver contract decidable on constants | Low: the mapped variant is three more calls and their model |
@@ -1177,6 +1246,7 @@ day.
 | DO-39 (decided 2026-11-11: (a); the law is scheduled on the IxVM side, over all literals) | The `Nat` operations' meaning on literals | (a) a public law on the kernel side; (b) IxCC derives it from δ, ι and the role specifications, by induction | (a), with (b) as the fallback if the law is not scheduled before SP-1 | The kernel's internal invariant already carries the recurrences; a law is a small step there and serves IxVM's own discharge path; (b) costs IxCC 2–4k lines | Low |
 | DO-40 (decided 2026-11-11: (b), the working view on both sides) | Where the typing derivations of premise (ii) come from on the IxVM route | (a) the IxVM claim exposes its records over the kernel's rules for the claimed environment; (b) the lowering claim proves typing for the image's positions | (b), with (a) asked as well | The lowering claim already checks the relevance clause with the circuit's own inference, which is typing; (a) changes the consistency statement | Medium: it fixes what the lowering claim states |
 | DO-41 (decided 2026-11-11: (a)) | Do the compile claim's fields change? | (a) no change now; the image digest joins with SP-0 and with the target determines the seeds; (b) add the seeds' tree root or the kernel table's address now | (a) | `env` and `roleTable` keep a true meaning (what IxCC read); the seeds are a function of the target and `D`; a field added before the image exists would be unfilled | Medium: the claim codec is shared with ix |
+| DO-42 (open, 2026-11-12) | Should the compile output say whether a root is in the fragment where the certified statement names a value? A compiled object returns, and an `--exe` executable prints, whatever the object computes, with nothing saying so; the correctness statement's value clause allows any result when the source goes wrong (`Front.GoesWrong`, which includes SrcEval returning a value no view reads, as the miscompiles of the resource-soundness entry of 2026-11-12 did); today the grounding check is the only tool that says a program is in that fragment, and `ixcc compile` does not report it | report nothing (today); `ixcc compile` reports the grounding check's verdict per root; refuse outside the fragment | Open | The compile output could report the grounding check's verdict for each root, so a printed result says whether the statement names it | Low: a report, not a change to what is compiled |
 
 ## Coordination
 

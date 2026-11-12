@@ -83,12 +83,22 @@ def syntheticControls : IO Unit := do
   let candidate := Own.Plain.Program.canonical F
   let j := Own.Plain.Certificate.encode candidate.bodies
   let _ ← IO.ofExcept (Own.Plain.Certificate.admit F j)
-  for kind in ["capture-remove", "capture-duplicate", "capture-order", "branch-remove",
+  for kind in ["capture-remove", "capture-duplicate", "branch-remove",
       "branch-extra", "default-remove", "occupied-entry-null", "empty-entry-code"] do
     let some corrupted := mutateFirst (rewrite kind) 4096 j |
       throw (IO.userError s!"synthetic control {kind} did not mutate")
     unless corrupted != j do throw (IO.userError s!"synthetic control {kind} was a no-op")
     refused F kind corrupted
+  -- The ownership checker treats a join's captured list as a set of variables, so the reversed
+  -- list is another placement it types, and admission accepts it (heap stage 2; before, admission
+  -- refused every map but the canonical one). `OwnedIO.capturedOrder` takes such a certificate
+  -- through the whole verifier and runs its object.
+  let some reordered := mutateFirst (rewrite "capture-order") 4096 j |
+    throw (IO.userError "synthetic control capture-order did not mutate")
+  unless reordered != j do throw (IO.userError "synthetic control capture-order was a no-op")
+  match Own.Plain.Certificate.admit F reordered with
+  | .ok _ => IO.println "PASS acceptance capture-order (another placement the checker types)"
+  | .error e => throw (IO.userError s!"reordered captured list refused: {e}")
   let encoded := Own.Plain.Certificate.code (Own.Plain.lowerCode [0, 1] [] body)
   match Own.Plain.Certificate.code? 0 encoded body with
   | .error _ => IO.println "PASS refusal action-depth"

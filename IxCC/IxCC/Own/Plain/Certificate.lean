@@ -1,6 +1,8 @@
 import IxCC.Own.Plain.Check
+import IxCC.Own.Plain.Owned
 import IxCC.Recheck.Json
 import IxCC.Src.Hints
+import IxCC.Anf.Budget
 
 set_option autoImplicit false
 namespace IxCC.Own.Plain.Certificate
@@ -92,25 +94,89 @@ def decode (F : Fir.Program) (j : Json) : Except String (Src.NatMap Code) := do
     else throw "own.cert.version: unsupported wire format"
   | _ => throw "own.cert.envelope: expected version and complete body map"
 
-def admit (F : Fir.Program) (j : Json) : Except String Program := do
+/-! ## The captured-work budget
+
+The ownership checker takes, at each jump, one token of every variable the target join captures,
+and at each declaration walks the captured list; a join may capture its whole lexical scope and be
+jumped to from every branch, so its work is not linear in the certificate. Admission first sums
+that work over the decoded map (a linear walk; `capturedCode` resolves a jump's target as the
+checker's `Δ` does) and refuses a certificate past `budget` (by default `Anf.maxCapturedWork`)
+before the checker runs. A refusal is policy, not soundness: acceptance is monotone in the budget
+(`admit_mono`). `RcReplay.runFront` runs the checker twice more on the admitted map
+(`checkScopedProgram`, `Public.lower`); their bound rests on `admit` having run first on the same
+certificate (`RcReplay.runFront_budget`). -/
+
+mutual
+/-- Captured work of one body, accumulated in `acc`; `Δ` maps the joins in scope to the length of
+their captured lists. -/
+def capturedCode (Δ : Src.NatMap Nat) (acc : Nat) : Code → Nat
+  | .act _ k => capturedCode Δ acc k
+  | .bind _ _ k => capturedCode Δ acc k
+  | .jp j _ captured rec body k =>
+    let n := captured.length
+    capturedCode (Δ.insert j n) (capturedCode (if rec then Δ.insert j n else Δ) (acc + n) body) k
+  | .jmp j _ => acc + Δ.getD j 0
+  | .case _ alts dflt => capturedOpt Δ (capturedAlts Δ acc alts) dflt
+  | .ret _ => acc
+  | .tcall .. => acc
+  | .trap => acc
+def capturedAlts (Δ : Src.NatMap Nat) (acc : Nat) : List Alt → Nat
+  | [] => acc
+  | .mk _ body :: rest => capturedAlts Δ (capturedCode Δ acc body) rest
+def capturedOpt (Δ : Src.NatMap Nat) (acc : Nat) : Option Code → Nat
+  | none => acc
+  | some c => capturedCode Δ acc c
+end
+
+/-- The captured work of a whole body map: the sum over its bodies. -/
+def capturedWork (bodies : Src.NatMap Code) : Nat :=
+  bodies.toList.foldl (fun acc (_, body) => capturedCode .leaf acc body) 0
+
+def checkBudget (budget : Nat) (bodies : Src.NatMap Code) : Except String Unit :=
+  let work := capturedWork bodies
+  if work ≤ budget then .ok ()
+  else .error s!"own.cert.budget: the ownership certificate makes the checker take {work} captured tokens (jumps and join declarations), past the limit {budget} (Anf.maxCapturedWork)"
+
+theorem checkBudget_ok {budget : Nat} {bodies : Src.NatMap Code} :
+    checkBudget budget bodies = .ok () ↔ capturedWork bodies ≤ budget := by
+  simp only [checkBudget]
+  split <;> simp_all
+
+/-- The refusal of a map the checker does not accept: the checker's first reason when the source
+is in the domain and its pins are sound, the domain refusal otherwise. Computed only on refusal. -/
+def checkRefusal (domain : Bool) (F : Fir.Program) (bodies : Src.NatMap Code) : String :=
+  match domain && checkBoolPins F, checkMapE F bodies with
+  | true, .error e => s!"own.cert.check: ownership proposal refused: {e}"
+  | _, _ => "own.cert.check: ownership proposal or source domain refused"
+
+/-- **Certificate admission.** The decoded map must be within the captured-work budget (checked
+first, linear) and accepted by the ownership checker, which judges any placement of `inc`/`dec`
+(`Own.Plain.checkOwned`). -/
+def admit (F : Fir.Program) (j : Json) (budget : Nat := Anf.maxCapturedWork) :
+    Except String Program := do
   let bodies ← decode F j
-  if checkPlainMap F bodies then return { source := F, bodies }
-  else throw "own.cert.check: ownership proposal or source domain refused"
+  checkBudget budget bodies
+  if checkOwned F bodies then return { source := F, bodies }
+  else throw (checkRefusal (programDomain F) F bodies)
 
-def ofText (F : Fir.Program) (text : String) : Except String Program := do
+def ofText (F : Fir.Program) (text : String) (budget : Nat := Anf.maxCapturedWork) :
+    Except String Program := do
   Src.Hints.checkJsonText text
-  admit F (← Json.parse text)
+  admit F (← Json.parse text) budget
 
-/-- Contract-aware certificate admission: decodes the candidate body map against
-`F` and checks `checkContractPlainMap F bodies`, admitting all frontend binder
-and let contract annotations (`0`, `1`, `&`, `*`, `!`, `~`, `let borrow`). -/
-def admitContract (F : Fir.Program) (j : Json) : Except String Program := do
+/-- Contract-aware certificate admission: the same, with the checker's contract-aware domain
+(`checkContractOwned`), admitting all frontend binder and let contract annotations (`0`, `1`,
+`&`, `*`, `!`, `~`, `let borrow`). -/
+def admitContract (F : Fir.Program) (j : Json) (budget : Nat := Anf.maxCapturedWork) :
+    Except String Program := do
   let bodies ← decode F j
-  if checkContractPlainMap F bodies then return { source := F, bodies }
-  else throw "own.cert.check: ownership proposal or source domain refused"
+  checkBudget budget bodies
+  if checkContractOwned F bodies then return { source := F, bodies }
+  else throw (checkRefusal (contractProgramDomain F) F bodies)
 
-def ofTextContract (F : Fir.Program) (text : String) : Except String Program := do
+def ofTextContract (F : Fir.Program) (text : String) (budget : Nat := Anf.maxCapturedWork) :
+    Except String Program := do
   Src.Hints.checkJsonText text
-  admitContract F (← Json.parse text)
+  admitContract F (← Json.parse text) budget
 
 end IxCC.Own.Plain.Certificate

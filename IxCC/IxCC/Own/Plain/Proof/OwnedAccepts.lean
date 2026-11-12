@@ -10,8 +10,8 @@ producer's immediates are immediates, the join context is the producer's join li
 
 From them and `checkOwned_refines` / `checkOwned_reclaims`, the landed `checked_program_refines`,
 `checked_contract_program_refines` and `checked_program_reclaims` are re-derived
-(`checked_program_refines'`, …); the `example`s at the end check, by `rfl`, that each re-derived
-statement is the landed one. -/
+(`checked_program_refines'`, …); `Candidate.lean` and `CheckedShape.lean` state the landed
+names from these (checked there, by `rfl`, to be the same statements). -/
 
 set_option autoImplicit false
 
@@ -741,11 +741,5 @@ theorem checked_program_reclaims' {F : Fir.Program} {candidate : Src.NatMap Code
       Proof.Den after v w ∧ dropAll after [v] = some released ∧
       ∀ l, l < released.size → released.cell? l = some .dead :=
   checkOwned_reclaims (checkPlainMap_checkOwned checked) k hf hd hb hh source
-
--- The re-derived statements are the landed ones (the equation typechecks only if the two
--- propositions agree; proof irrelevance then closes it by `rfl`).
-example : @checked_program_refines' = @checked_program_refines := rfl
-example : @checked_contract_program_refines' = @checked_contract_program_refines := rfl
-example : @checked_program_reclaims' = @checked_program_reclaims := rfl
 
 end IxCC.Own.Plain

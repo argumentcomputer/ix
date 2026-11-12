@@ -52,7 +52,7 @@ def generate (F : Fir.Program) (bodies : Src.NatMap Own.Plain.Code) : Option Pro
     actions := Src.NatMap.ofList (es.map fun e => (e.1, e.2.2)) }
 
 def checkProgram (F : Fir.Program) (bodies : Src.NatMap Own.Plain.Code) (candidate : Program) : Bool :=
-  Own.Plain.checkPlainMap F bodies &&
+  Own.Plain.checkOwned F bodies &&
     match generate F bodies with
     | none => false
     | some expected => programEq expected candidate

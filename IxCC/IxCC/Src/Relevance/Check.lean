@@ -1,5 +1,6 @@
 import IxCC.Src.Relevance.Syntax
 import IxCC.Src.NatMap
+import IxCC.Src.Value
 
 /-! # The relevance checker
 
@@ -45,7 +46,8 @@ so the closure walked here is the one SrcEval can reach.
   applies it. The same holds between a β-redex's arguments and its λ
   binders (`have` and `let_fun` elaborate to such redexes).
 * C3 fields dropped at the constructor's profile are bound by irrelevant
-  minor binders; a projection in a relevant position does not read a field
+  minor binders, and a minor's λs cover every field written erased (the
+  dispatch passes □ for it); a projection in a relevant position does not read a field
   dropped at every instance (a projection carries no universe arguments, so
   the structure's profile is not known there).
 * C4 a saturated eliminator whose major is irrelevant is a subsingleton or
@@ -264,7 +266,18 @@ def fieldArgs (ctx : Ctx) (c : CId) (q : Profile) :
     fieldArgs ctx c q (j + 1) args fields errs
   | _, _, _, errs => errs
 
-/-- C3 over a minor's binders at the constructor's profile `qc`. -/
+/-- Whether field `i` of constructor `k` is written erased in its type. -/
+def fieldWrittenErased (p : Program) (k : CId) (i : Nat) : Bool :=
+  match p.decl? k with
+  | some (.ctor _ _ _ _ np _ ty) => (ty.pis.1[np + i]?).any (·.1.contract.uses == .erased)
+  | _ => false
+
+/-- C3 over a minor's binders at the constructor's profile `qc`. The minor's
+leading λs must also cover every field written erased: the dispatch passes □
+for it (a field written erased is dropped at every instance), so a minor with
+fewer λs, an η-short one, would be applied to □ where it may need a value. A
+field irrelevant only by its sort needs no λ: the minor's own header classifies
+it from the same sort facts. -/
 def minorBinders (ctx : Ctx) (k : CId) (j : Nat) (qc : Profile) :
     Nat → List Rel → List FieldClass → List RelError → List RelError
   | i, b :: bs, cls :: fields, errs =>
@@ -273,6 +286,11 @@ def minorBinders (ctx : Ctx) (k : CId) (j : Nat) (qc : Profile) :
         err ctx "C3" s!"minor {j} binds dropped field {i} relevantly" (some k) :: errs
       else errs
     minorBinders ctx k j qc (i + 1) bs fields errs
+  | i, [], _ :: fields, errs =>
+    if fieldWrittenErased ctx.p k i then
+      err ctx "C3" s!"minor {j} does not bind field {i}, which is written erased (an η-short \
+        minor): it must bind every field up to the last one written erased" (some k) :: errs
+    else minorBinders ctx k j qc (i + 1) [] fields errs
   | _, _, _, errs => errs
 
 /-- Rules at a constant head: C2, S2, and C3/C4 at saturated eliminators. -/
@@ -885,12 +903,127 @@ def checkTermBinders (p : Program) (ann : Ann) (ctx : List (Term × Option Univ)
     okArgs && checkTermBinders p ann ctx e []
   | _, args => argsRelevant args
 
+/-- The run bodies `c` is compiled by: its equation's body, or its value (a
+safe definition, or an opaque on the allowlist); none for another special head. -/
+def runBodies (p : Program) (c : CId) : List (TermKey × Term) :=
+  match p.table.resolveOf c with
+  | some (.eqn _ body) => [(.eqn c, body)]
+  | none =>
+    match p.decl? c with
+    | some (.defn .defn .safe _ _ v) => [(.value c, v)]
+    | some (.defn .opaq .safe _ _ v) => if p.table.isOpaqueByValue c then [(.value c, v)] else []
+    | _ => []
+  | _ => []
+
+/-- The positions of a type's leading Π telescope written erased (`0`): the
+arguments every caller drops (`KernelFront.erasedAt`, C2 against the
+constant's parameter classes). -/
+def erasedParams (ty : Term) : List Nat :=
+  (ty.pis.1.zipIdx.filter fun ((b, _), _) => b.contract.uses == .erased).map (·.2)
+
+/-- Whether firing special head `h` reads its argument `i`: `Lam.Erase.headReads`
+over the declarations `decl?` and the resolution `resolve?`, copied here because
+the relevance check comes before Lam; `IxCCTests.Src.Relevance.Checker` does not
+build if the two differ. -/
+def headReadsWith (decl? : CId → Option Decl) (resolve? : CId → Option Resolve) :
+    Head → Nat → Bool
+  | .ctor c, i =>
+    match decl? c with
+    | some (.ctor _ _ _ _ np _ _) => np ≤ i
+    | _ => true
+  | .quotMk _, i => i == 2
+  | .quotLift _, i => i == 3 || i == 5
+  | .recr _, _ => true
+  | .cases c, i =>
+    match resolve? c with
+    | some (.case r) =>
+      match decl? r with
+      | some (.recr _ _ _ np _ _ _ _ _ _) => np + 1 ≤ i
+      | _ => true
+    | _ => true
+  | .prim _, _ => true
+  | .word .., _ => true
+
+/-- The special head `c` is, as SrcEval's δ dispatches it (`evalConst`, E8): a
+`prim`, `word` or `case` entry, else a constructor, recursor or quotient
+declaration. -/
+def specialHead? (p : Program) (c : CId) : Option Head :=
+  match p.table.resolveOf c with
+  | some (.prim op) => some (.prim op)
+  | some (.word w op _) => some (.word w op)
+  | some (.case _) => some (.cases c)
+  | some _ => none
+  | none =>
+    match p.decl? c with
+    | some (.ctor ..) => some (.ctor c)
+    | some (.recr ..) => some (.recr c)
+    | some (.quot .ctor ..) => some (.quotMk c)
+    | some (.quot .lift ..) => some (.quotLift c)
+    | _ => none
+
+/-- What special head `h` (the run behaviour of `c`) reads at argument `i`:
+`headReadsWith`, except a constructor field dropped at every instance, which a
+constructor does not store (`Lam.Erase.ctorForm`; SrcEval stores the `irr` it is
+given), and with the pinned `Nat.succ`, which reads its field always. -/
+def readsAt (p : Program) (ann : Ann) (c : CId) (h : Head) (i : Nat) : Bool :=
+  headReadsWith p.decl? p.table.resolveOf h i &&
+    match h, p.decl? c with
+    | .ctor _, some (.ctor _ _ _ _ np _ _) =>
+      some c == p.known.natSucc ||
+        !((((ann.ctorRel? c).bind (·.fields[i - np]?)).map FieldClass.alwaysDropped).getD false)
+    | _, _ => true
+
+def headName : Head → String
+  | .ctor _ => "the constructor"
+  | .quotMk _ => "Quot.mk"
+  | .quotLift _ => "Quot.lift"
+  | .recr _ => "the recursor (its rules receive every argument)"
+  | .cases _ => "its case entry (the recursor's dispatch)"
+  | .prim op => s!"the primitive Nat.{op.name}"
+  | .word w op => s!"the word operation {op.leanName w}"
+
+/-- A constant whose run behaviour is a special head: the positions its type
+writes erased are disjoint from those the head reads. `none` when they are;
+otherwise the first position both erased and read. -/
+def readsErased? (p : Program) (ann : Ann) (c : CId) : Option String := do
+  let h ← specialHead? p c
+  let d ← p.decl? c
+  let i ← (erasedParams d.type).find? (readsAt p ann c h)
+  some s!"parameter {i} is written erased, but {headName h} reads it"
+
+/-- A run body `t` (`what`, for the message) against the header of its
+constant, whose type is `ty` and whose parameter classes are `params`. Its
+leading λ telescope must cover every parameter written erased in `ty`, and
+each covered λ must have its parameter's class. A caller drops the argument of
+a parameter written erased (C2 holds it to `params`), so a body with fewer
+leading λs, an η-short value, would be applied to □ where it may need a value.
+Until the format change the certified kernel refused such a body, because its
+conversion compared binder contracts; this check does not rely on that. A
+parameter irrelevant only by its sort needs no λ: the callee's own header
+classifies it from the same sort facts as the caller's. `none` when the body
+agrees; otherwise the first disagreement. -/
+def headerAgreement (ty t : Term) (params : List Rel) (what : String := "the body") :
+    Option String :=
+  let lams := lamRels t
+  match (erasedParams ty).find? (lams.length ≤ ·) with
+  | some i => some s!"parameter {i} is written erased, but {what} has {lams.length} leading λs \
+      (η-short): {what} must bind every parameter up to the last one written erased"
+  | none =>
+    match (lams.zip params).zipIdx.find? (fun ((b, r), _) => b != r) with
+    | some ((b, r), i) => some s!"the body's λ {i} is {relName b}, its parameter {relName r}"
+    | none => none
+
 end Check.Canonical
 
 open Check Check.Canonical in
 /-- Verify that the relevance certificate's parameter counts, constant/constructor
 records, and runtime binder/argument classifications match the canonical
-re-derivation from the declaration types in `p`. -/
+re-derivation from the declaration types in `p`, and that at every reached
+constant the arguments a caller drops (the parameters its type writes erased)
+are ones its run behaviour never reads: its run bodies and a csimp redirect
+cover them with λs of their classes (`headerAgreement`), and a special head
+does not read them (`readsErased?`). Minor premises are held to the same rule by
+C3 (`Check.minorBinders`). -/
 def checkCanonical (p : Program) (ann : Ann) (ch : Checked) : List RelError :=
   let okConsts := ann.consts.toList.all fun (c, cr) =>
     match p.decl? c with
@@ -922,28 +1055,36 @@ def checkCanonical (p : Program) (ann : Ann) (ch : Checked) : List RelError :=
           if b.contract.uses == .erased then actual.alwaysDropped
           else match exp with | some e => actual == FieldClass.ofRel e | none => actual == .keep)
     | _ => false
+  -- A `csimp` redirect's run body is its target `g`, a body of no λ: refused
+  -- when `c` writes a parameter erased (the strict form of "the two headers
+  -- agree on every mode", which needs modes read from records).
+  let headerErrs : List RelError := ch.reached.flatMap fun c =>
+    match ann.constRel? c, p.decl? c with
+    | some cr, some d =>
+      let redirect := match p.table.resolveOf c with
+        | some (.csimp g us _) =>
+          (headerAgreement d.type (.const g us) cr.params s!"the csimp redirect to {p.short g}").toList.map
+            fun msg => RelError.of "S1" msg (some c)
+        | _ => []
+      redirect ++ (runBodies p c).filterMap fun (key, t) =>
+        (headerAgreement d.type t cr.params).map fun msg => RelError.of "S1" msg none (some key)
+    | _, _ => []
+  -- A special head (a `case`, `prim` or `word` entry, a constructor, recursor
+  -- or quotient) reads no argument its type writes erased.
+  let readErrs : List RelError := ch.reached.filterMap fun c =>
+    (readsErased? p ann c).map fun msg => RelError.of "S1" msg (some c)
   let okReached := ch.reached.all fun c =>
     match ann.constRel? c with
     | none => false
-    | some cr =>
-      let valTerms : List Term :=
-        match p.table.resolveOf c with
-        | some (.eqn _ body) => [body]
-        | none =>
-          match p.decl? c with
-          | some (.defn .defn .safe _ _ v) => [v]
-          | some (.defn .opaq .safe _ _ v) => if p.table.isOpaqueByValue c then [v] else []
-          | _ => []
-        | _ => []
+    | some _ =>
       let ruleTerms : List Term :=
         match p.decl? c with
         | some (.recr _ _ _ _ _ _ _ _ rules _) => rules.map (·.rhs)
         | _ => []
-      (valTerms.all fun t =>
-        ((lamRels t).zip cr.params).all (fun (b, r) => b == r) &&
-        checkTermBinders p ann [] t []) &&
+      ((runBodies p c).all fun (_, t) => checkTermBinders p ann [] t []) &&
       (ruleTerms.all fun t => checkTermBinders p ann [] t [])
-  if okConsts && okCtors && okReached then []
-  else [RelError.of "S1" "non-canonical relevance annotation"]
+  readErrs ++ headerErrs ++
+    if okConsts && okCtors && okReached then []
+    else [RelError.of "S1" "non-canonical relevance annotation"]
 
 end IxCC.Src.Relevance

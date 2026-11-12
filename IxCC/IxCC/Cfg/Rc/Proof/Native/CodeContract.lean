@@ -1,4 +1,5 @@
-import IxCC.Cfg.Rc.Proof.Native.TerminalOutcomes
+import IxCC.Cfg.Rc.Proof.Native.Activation
+import IxCC.Cfg.Rc.Proof.Native.Outcome
 import IxCC.Cfg.Rc.Proof.Native.InitialStages
 
 /-! Static admission and the precise recursive claim for whole-code
@@ -27,29 +28,29 @@ theorem CodeAdmission.of_public {config : Rt.Config} {F : Fir.Program}
   obtain ⟨main, pairs, functions, _, switches, entry, _, consuming, lowering, _⟩ := lower_parts native
   exact ⟨main, pairs, functions, ⟨checked, consuming, lowering, switches⟩, entry⟩
 
-/-- Recursive code simulation at a source clock. Every physical continuation
-starts at the exact current Cfg/native cursor, with all source and caller
-ownership represented in the given heap. Older native caller frames remain
-literal until an actual return instruction resumes one. -/
+/-- Recursive code simulation at a source clock, over the Own code and the typing context. Every
+physical continuation starts at the exact current Cfg/native cursor, with all source and caller
+ownership represented in the given heap; the source side runs the code's erasure. Older native
+caller frames remain literal until an actual return instruction resumes one. -/
 def PhysicalAtClock (F : Fir.Program) (P : Program) (config : Rt.Config)
     (pairs : List (Nat × Cfg.Fun)) (main clock : Nat) : Prop :=
-  ∀ (H : Own.Heap) (addresses : AddressMap) (external : Nat → Nat)
-    (live : List Fir.Var) (sourceEnv : Fir.Env) (ownedEnv : Own.Env) (roots : List Own.RVal)
-    (joins : Own.Plain.Joins) (sourceJoins : List Fir.JEntry) (ownedJoins : List Own.Plain.JEntry)
-    (code : Fir.Code) (sourceFunction : Fir.Fun) (function : Cfg.Fun)
+  ∀ (sourceJoins : List Fir.JEntry) (code : Own.Plain.Code)
+    (H : Own.Heap) (addresses : AddressMap) (external : Nat → Nat)
+    (live : List Fir.Var) (Γ : Own.Plain.Ctx) (Δ : Own.Plain.JCtx) (sourceEnv : Fir.Env)
+    (ownedEnv : Own.Env) (roots : List Own.RVal) (lex : Own.Plain.Joins)
+    (ownedJoins : List Own.Plain.JEntry)
+    (sourceFunction : Fir.Fun) (function : Cfg.Fun)
     (source : Cfg.Frame) (target : Lir.Frame) (memory : X86.Memory)
     (context base bump limit : Lir.Word) (regionBytes : Nat)
-    (slots : List Slot) (lists : Nat → List Lir.Word) (callers : List Lir.Frame)
-    {imm : List Fir.Var},
+    (slots : List Slot) (lists : Nat → List Lir.Word) (callers : List Lir.Frame),
     F.fun? source.fn = some sourceFunction →
     Activation F P pairs (Public.Spec.sourceStage P (Public.Spec.rawSource config P pairs) main)
-      H addresses external live sourceEnv ownedEnv roots joins sourceJoins ownedJoins
-      code sourceFunction.vars function source target imm →
+      H addresses external live Γ Δ sourceEnv ownedEnv roots lex sourceJoins ownedJoins
+      code sourceFunction.vars function source target →
     HeapState P pairs H addresses memory external roots context base bump limit regionBytes slots lists →
     ResultAt P pairs (Public.Spec.sourceStage P (Public.Spec.rawSource config P pairs) main)
       H addresses external context base limit regionBytes clock
       {mem := memory, ctx := context, stack := target :: callers} callers
-      (Fir.eval F clock sourceEnv sourceJoins code)
-
+      (Fir.eval F clock sourceEnv sourceJoins (Own.Plain.eraseCode code))
 
 end IxCC.Cfg.Rc.Native.Spec

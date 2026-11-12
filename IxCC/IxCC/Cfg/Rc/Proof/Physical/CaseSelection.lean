@@ -12,17 +12,6 @@ def ownCase (key : Key.CtorKey) : List Own.Plain.Alt â†’ Option Own.Plain.Code â
   | [], default => default
   | .mk tag body :: rest, default => if tag = key then some body else ownCase key rest default
 
-theorem firCase_lower (key : Key.CtorKey) (live : List Fir.Var) (joins : Own.Plain.Joins)
-    (alts : List Fir.Alt) (default : Option Fir.Code) (imm : List Fir.Var) :
-    ownCase key (Own.Plain.lowerAlts live joins alts imm) (Own.Plain.lowerOpt live joins default imm) =
-      (firCase key alts default).map (fun c => Own.Plain.lowerCode live joins c imm) := by
-  induction alts with
-  | nil => cases default <;> rfl
-  | cons alt rest ih =>
-    cases alt
-    simp only [Own.Plain.lowerAlts, ownCase, firCase]
-    split <;> simp_all
-
 theorem firCase_scope {key : Key.CtorKey} {functions : Own.Plain.Signatures}
     {live : List Fir.Var} {joins : Own.Plain.JoinArities}
     {alts : List Fir.Alt} {default : Option Fir.Code} {body : Fir.Code}

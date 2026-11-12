@@ -1,14 +1,38 @@
-import IxCC.Cfg.Rc.Proof.Physical.Admission
 import IxCC.Cfg.Rc.Proof.Native.Activation
+import IxCC.Cfg.Rc.Proof.Owned.Admission
+import IxCC.Cfg.Rc.Proof.Physical.Admission
 import IxCC.Own.Plain.Proof.Admission
+import IxCC.Own.Plain.Proof.Owned.Simulation
 
+/-! Function entry over the typing context: a called function starts from its parameters, each
+holding one token (`Ctx.entry`), with the body the map holds for it, which the checker accepted
+from that context and which erases to the source body. -/
 set_option autoImplicit false
 namespace IxCC.Cfg.Rc.Native.Spec
-open IxCC.Cfg.Rc.Proof.Physical.Bridge IxCC.Rt.Rc.Procs
+open IxCC.Cfg.Rc.Proof.Physical.Bridge IxCC.Own IxCC.Own.Rc
+open IxCC.Rt.Rc.Procs IxCC.Rt.Proof
+open IxCC.Own.Plain (Ctx JCtx checkCode)
 
-/-- Actual checked entry constructs the complete source/native activation.
-All register-name bounds, canonical code, scope, and entry layout come from
-admission. Argument denotation/counts/words are the caller's concrete state. -/
+/-- The body the map holds for a numbered function, checked from its parameters. -/
+theorem checked_owned_body {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code} {P : Program}
+    (checked : checkScopedProgram F bodies P = true) {f : Nat} {source : Fir.Fun}
+    (sourceLookup : F.fun? f = some source) :
+    ∃ body, f < F.size ∧ bodies.get? f = some body ∧ Own.Plain.eraseCode body = source.body ∧
+      checkCode .leaf (Ctx.entry (source.params.map Prod.fst)) body = .ok () ∧
+      Own.Plain.fresh [] (source.params.map Prod.fst) = true ∧
+      Own.Plain.scopeOk (Own.Plain.signatures F) (source.params.map Prod.fst)
+        (Own.Plain.stackArities []) (Own.Plain.eraseCode body) = true := by
+  have range := checked_source_dense checked sourceLookup
+  obtain ⟨domain, _, checkedBodies⟩ := checkScopedProgram_ownedParts checked
+  obtain ⟨body, bodyLookup, erased, typed⟩ := checkedBodies f source range sourceLookup
+  obtain ⟨_, fresh, scope⟩ := Own.Plain.programDomain_function domain range sourceLookup
+  refine ⟨body, range, bodyLookup, erased, typed, fresh, ?_⟩
+  rw [erased]
+  exact scope
+
+/-- Actual checked entry constructs the complete source/native activation over the typing
+context. All register-name bounds, the body, its scope and the entry layout come from admission;
+the arguments' denotation, counts and words are the caller's concrete state. -/
 theorem entry_activation {config : Rt.Config} {F : Fir.Program}
     {bodies : Src.NatMap Own.Plain.Code} {P : Program}
     (checked : checkScopedProgram F bodies P = true)
@@ -28,8 +52,9 @@ theorem entry_activation {config : Rt.Config} {F : Fir.Program}
     (callers : List Lir.Frame) :
     let lp := Public.Spec.sourceStage P (Public.Spec.rawSource config P pairs) main
     let params := source.params.map Prod.fst
-    ∃ fd block consumedFd callee targetEnv offset,
+    ∃ fd block consumedFd callee targetEnv offset body,
       P.base.fun? f = some fd ∧ fd.blocks[0]? = some block ∧
+      Own.Plain.eraseCode body = source.body ∧
       Lir.enter lp f words = some callee ∧
       Sem.Star (Lir.semStep lp) {mem, ctx := context, stack := callee :: callers} 0
         (Lir.atState mem context f offset 0 targetEnv callers) ∧
@@ -39,23 +64,16 @@ theorem entry_activation {config : Rt.Config} {F : Fir.Program}
           blk := 0
           rest := block.body
           env := Own.bindAll .leaf params values } sourceCallers H) true ∧
-      Activation F P pairs lp H addresses external params (Fir.bindAll .leaf params logical)
-        (Own.bindAll .leaf params values) values [] [] [] source.body source.vars consumedFd
+      Activation F P pairs lp H addresses external params (Ctx.entry params) .leaf
+        (Fir.bindAll .leaf params logical) (Own.bindAll .leaf params values) values [] [] []
+        body source.vars consumedFd
         {fn := f, blk := 0, rest := block.body, env := Own.bindAll .leaf params values}
         {fn := f, label := offset, pos := 0, env := targetEnv} := by
   dsimp only
-  have range := checked_source_dense checked sourceLookup
+  obtain ⟨body, range, bodyLookup, erased, typed, fresh, scope⟩ :=
+    checked_owned_body checked sourceLookup
   have generation := (checkProgram_parts (checkScopedProgram_parts checked).1).2
   have rangeP : f < P.base.size := by rw [generate_size generation]; exact range
-  have plain := (checkProgram_parts (checkScopedProgram_parts checked).1).1
-  obtain ⟨domain, _, canonical⟩ := Own.Plain.checkPlainMap_parts plain
-  have bodyMap : bodies = (Own.Plain.Program.canonical F).bodies :=
-    congrArg Own.Plain.Program.bodies canonical
-  have bodyLookup : bodies.get? f =
-      some (Own.Plain.lowerCode (source.params.map Prod.fst) [] source.body) := by
-    rw [bodyMap]
-    exact Own.Plain.canonical_body_of sourceLookup
-  obtain ⟨_, fresh, scope⟩ := Own.Plain.programDomain_function domain range sourceLookup
   obtain ⟨fd, block, lookup, blockLookup, params, length, _, bounds⟩ :=
     checked_entry_block checked range sourceLookup bodyLookup
   have real := functionBounds_params bounds blockLookup
@@ -65,11 +83,11 @@ theorem entry_activation {config : Rt.Config} {F : Fir.Program}
   rw [params] at cursor registers
   obtain ⟨sourceStep, atEntry⟩ := checked_entry_at checked range sourceLookup bodyLookup
     lookup blockLookup values arity sourceCallers H
-  refine ⟨fd, block, consumedFd, callee, targetEnv, offset, lookup, blockLookup,
+  refine ⟨fd, block, consumedFd, callee, targetEnv, offset, body, lookup, blockLookup, erased,
     entered, trace, sourceStep, ?_⟩
-  refine ⟨Own.Plain.state_entry (Own.Plain.signatures F) H external _ values logical den
+  refine ⟨Own.Plain.ownedState_entry_exact (Own.Plain.signatures F) H external _ values logical den
       (by simpa using arity) fresh balance,
-    atEntry, ⟨consumedLookup, cursor, registers,
+    typed, atEntry, ⟨consumedLookup, cursor, registers,
       (Own.Plain.envBounded_empty H.size).bindAll _ (Own.Plain.dens_bounded den),
       FusedCtorOk.empty.bindAll _ _ compatible⟩,
     scope, rfl, ?_⟩
@@ -79,15 +97,15 @@ theorem entry_activation {config : Rt.Config} {F : Fir.Program}
   subst original
   have sameActual : actual = consumedFd := Option.some.inj (actualLookup.symm.trans consumedLookup)
   subst actual
-  obtain ⟨body, bodyRun, entryBlock⟩ := (consumeFunction_parts receipt).2.2.2.2.2 blockLookup
-  have sameBlock : actualBlock = {block with body} :=
+  obtain ⟨body', bodyRun, entryBlock⟩ := (consumeFunction_parts receipt).2.2.2.2.2 blockLookup
+  have sameBlock : actualBlock = {block with body := body'} :=
     Option.some.inj (actualBlockLookup.symm.trans entryBlock)
   subst actualBlock
   intro init condition left right fused empty
   have emptyBody : block.body = [] := empty
   rw [emptyBody] at bodyRun
   simp only [List.mapM_nil, pure, Except.pure, Except.ok.injEq] at bodyRun
-  have bodyNil : body = [] := bodyRun.symm
+  have bodyNil : body' = [] := bodyRun.symm
   obtain ⟨x, op, alts, default, actualBody, _⟩ := Rt.Proof.fusable_some fused
   simp only [bodyNil, List.length_append, List.length_cons, List.length_nil] at actualBody
   have lengths := congrArg List.length actualBody
