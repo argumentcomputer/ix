@@ -266,8 +266,8 @@ theorem getLast?_snoc (bytes : List UInt8) (last : UInt8) :
     | nil => rfl
     | cons next rest => exact ih
 
-/-- A natural-number literal's blob is the reader's canonical one. -/
 set_option linter.unusedSimpArgs false in
+/-- A natural-number literal's blob is the reader's canonical one. -/
 theorem canonicalNatural_toBytes (value : Nat) :
     Kernel.Reader.canonicalNatural (ByteArray.mk (Nat.toBytesLE value)) = true := by
   unfold Kernel.Reader.canonicalNatural Nat.toBytesLE
