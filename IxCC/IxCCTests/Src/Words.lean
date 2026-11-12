@@ -144,6 +144,54 @@ example : (WordOp.eval .w64 .sub 0 1).val ≠ 0 - 1 := by decide
 example : (WordOp.eval .w64 .neg 0 0).val ≠ 2 ^ 64 - 0 := by decide
 example : (WordOp.eval .w64 (.convert .w8) 300 0).val ≠ 300 := by decide
 
+/-! ### The bridge the model fact rests on, on instances (`wordAccel_of_eqns`, stage W1)
+
+The grounding's model fact for words takes what a pinned operation computes from its stored
+theorems, `ofNat`'s being the bridge to the tower. The data-types plan's bridge,
+`∀ x (h : x < size), ofNat x = tower x h`, constrains nothing at or above the size, so its
+`WordAccel` (`ofNat (lit a)` is the tower of `a % size` for every literal `a`) was false: a key
+`bogus` that agrees with `UInt64.ofNat` below the size and returns `5` above satisfies that bridge,
+and `bogus (2^64)` is not the tower of `0`. The corrected premise is the *reducing* bridge (the
+statement `Ix.Compile.WordEquations` stores and `Table.wordEqnType` checks),
+`∀ x (h : Nat.le (Nat.succ (x % size)) size), ofNat x = tower (x % size) h`: `bogus` fails it at
+`2^64`, and Lean's `UInt64.ofNat` satisfies it (by `rfl`), at every literal the corrected
+`WordAccel` speaks of. -/
+
+/-- The plan's counter-instance. -/
+def bogus (x : Nat) : UInt64 := if x < 2 ^ 64 then UInt64.ofNat x else 5
+
+/-- The tower of `n`, the proof a hypothesis. -/
+abbrev tower64 (n : Nat) (h : Nat.le (Nat.succ n) 18446744073709551616) : UInt64 :=
+  UInt64.ofBitVec (@BitVec.ofFin 64 (@Fin.mk 18446744073709551616 n h))
+
+/-- `bogus` satisfies the plan's bridge (below the size it is `UInt64.ofNat`)… -/
+example (x : Nat) (h : x < 2 ^ 64) : bogus x = tower64 x h := by
+  unfold bogus; rw [if_pos h]
+  exact UInt64.toNat_inj.mp (by rw [UInt64.toNat_ofNat, Nat.mod_eq_of_lt h]; rfl)
+
+/-- …and the plan's `WordAccel` fails for it at `2^64`: not the tower of `2^64 % 2^64 = 0`. -/
+example : bogus (2 ^ 64) ≠ tower64 0 (by decide) := by decide
+
+/-- The reducing bridge refutes `bogus` as an `ofNat` key: it fails at `2^64`. -/
+example : ¬ ∀ x (h : Nat.le (Nat.succ (Nat.mod x 18446744073709551616)) 18446744073709551616),
+    bogus x = tower64 (Nat.mod x 18446744073709551616) h :=
+  fun hb => absurd (hb (2 ^ 64) (by decide)) (by decide)
+
+/-- Lean's `UInt64.ofNat` satisfies the reducing bridge, definitionally (as the stored theorem
+`IxWordEquations.UInt64_ofNat` is proved), and so do the other widths' (here `UInt8`). -/
+example (x : Nat) (h : Nat.le (Nat.succ (Nat.mod x 18446744073709551616)) 18446744073709551616) :
+    UInt64.ofNat x = tower64 (Nat.mod x 18446744073709551616) h := rfl
+example (x : Nat) (h : Nat.le (Nat.succ (Nat.mod x 256)) 256) :
+    UInt8.ofNat x = UInt8.ofBitVec (@BitVec.ofFin 8 (@Fin.mk 256 (Nat.mod x 256) h)) := rfl
+
+/-- The corrected `WordAccel`'s `ofNat` clause at literals at and above the size, where the plan's
+failed: `ofNat a` is the tower of `a % size`. -/
+example : (UInt64.ofNat (2 ^ 64)) = tower64 0 (by decide) := by decide
+example : (UInt64.ofNat (2 ^ 64 + 5)) = tower64 5 (by decide) := by decide
+example : (UInt64.ofNat (2 ^ 65 + 3)) = tower64 3 (by decide) := by decide
+example : (UInt8.ofNat 300) = UInt8.ofBitVec (@BitVec.ofFin 8 (@Fin.mk 256 44 (by decide))) := by
+  decide
+
 /-- `tests-src`: the same comparisons in the compiled test program, with Lean's C
 implementations, so a runtime that disagreed with the elaborator's evaluation is caught too. -/
 def run (a : Assert) : IO Unit := do
