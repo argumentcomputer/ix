@@ -106,7 +106,16 @@ correct placements (a projection only a primitive reads; a decrement missing bef
 passing the oracle, each kind refused for its stated reason somewhere; a site-directed mutation
 campaign (`COUNT` attempts per root and map, seed 29) whose every accepted mutant must pass the
 oracle, some of them changing the cell reference-count traffic; and three fixed maps. Its
-fence, `IxCCTests/Fences/OwnOwned.lean` (25 exact assertions), is in the shared aggregate.
+fence, `IxCCTests/Fences/OwnOwned.lean` (25 exact assertions), is in the shared aggregate. The
+same suite checks the source scope check `programDomain` runs (the set forms of
+`Own/Plain/ScopeSet.lean`) against its former list forms, written out in the test, on every root,
+on five synthetic programs (up to 2,049 parameters) and on a call of a numbered entry past the
+program's size: both domains, every function, and one edit per kind per function (use before
+binding, rebinding, a duplicate or rebound parameter, an unbound variable in a return, a `case`,
+a projection or an argument, a call of the wrong arity or of an unknown function, a jump of the
+wrong arity or to an unknown join, a redeclared join, join parameters clashing or repeated, a
+non-recursive self-jump: each refused by both; a well-formed added call and a recursive self-jump:
+accepted by both); every verdict must agree (`IxCCTests/Own/Owned/ScopeSet.lean`, a few seconds).
 
 The bounded RC promotion adds 923 base fences, eight owned-release/reentry
 fences and 48 assertions from 23 earlier accepted proof gates, for a required
