@@ -415,6 +415,12 @@ def Bundle.blobAt (b : Bundle) (c : Ixon.Constant) (i : UInt64) : Except String 
   let some bytes := b.blobs[a]? | throw s!"literal blob {a} is missing"
   pure bytes
 
+/-- `Reader.ECx.natAt`: the natural number at `refs[i]`, its blob canonical. -/
+def Bundle.natAt (b : Bundle) (c : Ixon.Constant) (i : UInt64) : Except String Nat := do
+  let bytes ← b.blobAt c i
+  if Ix.Kernel.Reader.canonicalNatural bytes then pure (Ix.Kernel.Reader.natural bytes)
+  else throw "natural literal blob is not canonical"
+
 /-- One expression of record `c` (its universes `univs`), against the sharing
 entries read before it: `Reader.convExpr`'s cases, with names for references. -/
 def Bundle.conv (b : Bundle) (c : Ixon.Constant) (univs : Array CLevel)
@@ -427,7 +433,7 @@ def Bundle.conv (b : Bundle) (c : Ixon.Constant) (univs : Array CLevel)
   | .str i => do
     let some s := String.fromUTF8? (← b.blobAt c i) | throw "string literal is not valid UTF-8"
     pure (.lit (.strVal s))
-  | .nat i => do pure (.lit (.natVal (Ix.Kernel.Reader.natural (← b.blobAt c i))))
+  | .nat i => do pure (.lit (.natVal (← b.natAt c i)))
   | .app f a => do pure (.app (← b.conv c univs tbl f) (← b.conv c univs tbl a))
   | .lam t bd => do
     pure (.lam (← b.conv c univs tbl t) (← b.conv c univs tbl bd)

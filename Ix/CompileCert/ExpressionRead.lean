@@ -91,7 +91,7 @@ theorem convExpr_preserves {md : Mode} {before after : ECx md} (growth : Extends
   | prj index field value ih =>
     exact (growth.key index).bind fun _ => ih.bind fun _ => .refl _
   | str index => exact (growth.blob index).bind fun _ => .refl _
-  | nat index => exact (growth.blob index).bind fun _ => .refl _
+  | nat index => exact ((growth.blob index).bind fun _ => .refl _).bind fun _ => .refl _
   | app fn arg ihf iha => exact ihf.bind fun _ => iha.bind fun _ => .refl _
   | lam ty body iht ihb => exact iht.bind fun _ => ihb.bind fun _ => .refl _
   | all ty body iht ihb => exact iht.bind fun _ => ihb.bind fun _ => .refl _
