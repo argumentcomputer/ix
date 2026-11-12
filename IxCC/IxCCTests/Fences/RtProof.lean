@@ -1685,4 +1685,5 @@ preserved verbatim. -/
 /-- info: 'IxCC.Rt.Proof.prim_word' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Rt.Proof.prim_word
 
-'IxCC.Rt.Proof.Mono.word'' depends on axioms: [propext, Classical.choice, Quot.sound]
+/-- info: 'IxCC.Rt.Proof.Mono.word'' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Rt.Proof.Mono.word'
