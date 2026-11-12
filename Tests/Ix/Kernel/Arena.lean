@@ -126,8 +126,9 @@ def arenaCases (env : Lean.Environment) : IO (Array Tests.Ix.IxVM.Builder) := do
   let (_, closed) := collectDepsWithExtras env rawMap
     ((checks.map (·.name)).toList ++ (rawConsts.toList.map (·.name)))
   let allConsts := closed ++ rawConsts.toList.map fun ci => (ci.name, ci)
-  let (rawEnv, _, _) ← IO.ofExcept <|
-    Ix.Cert.compileUnchecked (Ix.CompileM.canonInput allConsts.toArray 32)
+  -- with the compile's binder-data annotator, so that each record carries its data
+  let input ← IxVM.ClaimHarness.withKernelAnnotator (Ix.CompileM.canonInput allConsts.toArray 32)
+  let (rawEnv, _, _) ← IO.ofExcept <| Ix.Cert.compileUnchecked input
   let ixonEnv ← IO.ofExcept (withDefaultRoleBinding rawEnv)
   -- The fixtures' own axioms are assumed like any other dependency, so the
   -- claims carry no user axioms; and the claims assume their role binding

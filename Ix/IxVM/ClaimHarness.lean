@@ -183,6 +183,16 @@ def withModeledRecursors (roots : Array Lean.Name) (leanEnv : Lean.Environment) 
     roots := roots ++ more
   return roots
 
+/-- `env`, a canonicalized compile input (`Ix.CompileM.canonInput`), with the compile's
+binder-data annotator over it, installed as `Ix.CompileM.compileCertifiedPrepared` installs
+it: a compile of `env` (`Ix.Cert.compileUnchecked`, `compileReport`) then writes each
+record's binder data, as `ix compile` does. Fails if IxC's environment does not install. -/
+def withKernelAnnotator (env : Ix.Environment) (workers : Nat := 32) : IO Ix.Environment := do
+  match ← Ix.Compile.KernelAnnotate.installInput env workers with
+  | .ok installed =>
+    pure { env with binderAnnotator? := some (Ix.Compile.KernelAnnotate.annotator installed) }
+  | .error e => throw (IO.userError s!"binder data: IxC's environment is not installed: {e}")
+
 /-- Variant of loadIxonEnv: also seeds the constants the kernel
     fabricates during reduction (Bool.true/false + Nat.zero/succ), so
     their bytes are always in ch 2 even when the target's proof body
