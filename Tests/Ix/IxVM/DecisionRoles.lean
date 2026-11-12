@@ -4,25 +4,27 @@ public import Ix.CompileCertified
 public import Ix.EnvScope
 public import Tests.Ix.IxVM.Harness
 
-/-! # Decision results under a compiled binding
+/-! # Decisions under a compiled binding
 
-A native `Nat` or `Int` decision answers `Decidable.isTrue p (of_decide_eq_true
-p d rfl)` or `Decidable.isFalse p (of_decide_eq_false p d rfl)` (IxVM's
-`dec_result`), and IxVM refuses the claim unless the role binding binds the
-role it uses. A compiled artifact binds the roles its closure reaches, closed
-under `Role.deps` (`Ix.RoleBinding.Compile.supportInput`), so a decision's
-dependencies name both `of_decide_eq_*` roles (`IxC/Kernel/Roles.lean`).
-
-Before they did, the binding of `agg-med`, the closure of `Array.extract_append`
-and `Nat.add_comm` over `Init`, bound 92 of the 103 roles, without
+A compiled artifact binds the roles its closure reaches, closed under
+`Role.deps` (`Ix.RoleBinding.Compile.supportInput`). When IxVM answered a native
+`Nat` or `Int` decision with `Decidable.isTrue p (of_decide_eq_true p d rfl)` or
+`Decidable.isFalse p (of_decide_eq_false p d rfl)`, it refused a claim whose
+binding did not bind the role it used, and a binding without those roles lost
+shards: the binding of `agg-med`, the closure of `Array.extract_append` and
+`Nat.add_comm` over `Init`, bound 92 of the 103 roles, without
 `of_decide_eq_false`, and 10 of its 32 shards were refused. The smallest held
 `Array.extract_append._proof_1_1`.
 
+No native rule answers a decision any longer, so specification version 6 drops
+the decisions' dependencies on the `of_decide_eq_*` roles (`IxC/Kernel/Roles.lean`),
+and a binding may bind a decision without them.
+
 The case compiles that constant's closure as `ix compile --consts` does
-(`Ix.CompileM.compileAndFinalize`). It checks that the binding binds `Nat.decEq`
-with both `of_decide_eq_*` roles, then submits the constant as a one-constant
-shard (`buildShardCheckEnvWitness`), validating the binding as `ix prove
---aggregate` does.
+(`Ix.CompileM.compileAndFinalize`). It checks that the binding binds `Nat.decEq`,
+reports whether it binds the `of_decide_eq_*` roles, and submits the constant as
+a one-constant shard (`buildShardCheckEnvWitness`), validating the binding as
+`ix prove --aggregate` does: the shard must be accepted either way.
 -/
 
 public section
@@ -37,7 +39,10 @@ def leaf : Lean.Name :=
   .str (.str (.str (.num `_private.Init.Data.Array.Extract 0) "Array") "extract_append") "_proof_1_1"
 
 /-- The roles the leaf's check uses, which its binding must bind. -/
-def required : List Role := [.natDecEq, .ofDecideEqTrue, .ofDecideEqFalse]
+def required : List Role := [.natDecEq]
+
+/-- The roles a decision depended on before specification version 6; reported, not required. -/
+def formerDeps : List Role := [.ofDecideEqTrue, .ofDecideEqFalse]
 
 def run (env : Lean.Environment) : IO UInt32 := do
   unless env.constants.contains leaf do
@@ -63,6 +68,9 @@ def run (env : Lean.Environment) : IO UInt32 := do
     unless bound.contains r do
       IO.eprintln s!"[ixvm-decision-roles] FAIL: the binding does not bind {repr r}"
       failures := failures + 1
+  for r in formerDeps do
+    IO.println s!"[ixvm-decision-roles] the binding {if bound.contains r then "binds" else "does not bind"} \
+      {repr r}"
   let target ← lookupAddr artifact leaf
   let code ← Tests.Ix.IxVM.runCases "ixvm-decision-roles" #[fun _ => do
     let (_, witness) ← buildShardCheckEnvWitness artifact #[target]
