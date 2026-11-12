@@ -42,7 +42,10 @@ and relaxes the `customBinding` test of `refusal` only when it succeeds.
 
 `statement` says what an admitted claim states, for the verifier's report: its
 kind, its subject and its conditions, each with what discharges it or the flag
-that accepted it open. -/
+that accepted it open. An `eval` claim is accepted by default under the same
+conditions as `check`, but the consistency theorem does not state it (that the
+output is the input's normal form is proved by no theorem), and its report says
+so. -/
 
 public section
 
@@ -196,7 +199,8 @@ def statement (claim : Ix.Claim) (bindingDischarged : Bool := false)
     typingConditions spec default ctx asm bindingDischarged assumptionsDischarged tableAdmitted
   let parts : String × String × List String := match claim with
     | .eval ctx i o asm =>
-      ("a constant is well-typed and evaluates to another",
+      ("the input and output constants are well-typed, and the output is the input's \
+          normal form as IxVM's evaluator computes it",
         s!"the constant {i}, evaluating to the constant {o}", typing ctx asm)
     | .check ctx c asm => ("a constant is well-typed", s!"the constant {c}", typing ctx asm)
     | .checkEnv ctx r asm =>
@@ -220,7 +224,12 @@ def statement (claim : Ix.Claim) (bindingDischarged : Bool := false)
       ("a role table binds every role, each bound constant meeting its specification",
         s!"the role table {table}", [specLine spec named])
   let (what, subject, conditions) := parts
-  let head := [s!"kind: {kind claim} ({what})", s!"subject: {subject}", "conditions:"]
+  -- An eval claim is accepted by default, but the consistency theorem does not state it.
+  let scope := match claim with
+    | .eval .. => ["scope: not covered by the IxVM consistency theorem, which states check and \
+        checkEnv claims only; no theorem states that the output is the input's normal form"]
+    | _ => []
+  let head := [s!"kind: {kind claim} ({what})", s!"subject: {subject}"] ++ scope ++ ["conditions:"]
   return "\n".intercalate (head.map ("  " ++ ·) ++ conditions.map ("    " ++ ·))
 
 /-- Refuse `claim` (an error) unless the command line's policy admits it, and

@@ -119,6 +119,12 @@ def statementTests : TestSeq :=
   ++ test "an eval names its input and output"
       (statementSays (.eval ctx (addr "in") (addr "out") none)
         ["kind: eval", s!"the constant {addr "in"}, evaluating to the constant {addr "out"}"])
+  ++ test "an eval says what it asserts and that the consistency theorem does not state it"
+      (statementSays (.eval ctx (addr "in") (addr "out") none)
+        ["the output is the input's normal form as IxVM's evaluator computes it",
+         "scope: not covered by the IxVM consistency theorem"])
+  ++ test "no other kind carries the eval scope line"
+      (!statementSays (.check ctx (addr "c") none) ["scope: not covered"])
   ++ test "each open condition names the flag that accepted it"
       (statementSays (.checkEnv
           { ctx with binding := addr "table", axioms := some (addr "ax"), bindingAssumed := true }
