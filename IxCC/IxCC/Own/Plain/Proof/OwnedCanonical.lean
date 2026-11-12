@@ -477,4 +477,126 @@ theorem canonical_transfer {Γ : Ctx} {Δ : JCtx} {live : List Var} {joins : Joi
     have hm0 : (moveVars (C ++ imm) (heapArgs imm args)).count y = 0 := by omega
     simp [hl, hc, hm0, ha]
 
+/-! ## Small facts about the checker's steps -/
+
+theorem except_bind_of_ok {ε α β : Type} {m : Except ε α} {f : α → Except ε β} {a : α} {b : β}
+    (hm : m = .ok a) (hf : f a = .ok b) : (m >>= f) = .ok b := by
+  rw [hm]; exact hf
+
+theorem need_ok {Γ : Ctx} {x : Var} (h : Γ.avail x = true) (w : String) : Γ.need x w = .ok () := by
+  simp [Ctx.need, h]
+
+theorem needArgs_ok {Γ : Ctx} : ∀ {args : List Arg}, (∀ x, Arg.var x ∈ args → Γ.avail x = true) →
+    Γ.needArgs args = .ok ()
+  | [], _ => rfl
+  | .var x :: as, h => by
+    simp only [Ctx.needArgs]
+    exact except_bind_of_ok (need_ok (h x List.mem_cons_self) _)
+      (needArgs_ok (fun y hy => h y (List.mem_cons_of_mem _ hy)))
+  | .lit _ :: as, h => needArgs_ok (fun y hy => h y (List.mem_cons_of_mem _ hy))
+  | .erased :: as, h => needArgs_ok (fun y hy => h y (List.mem_cons_of_mem _ hy))
+
+theorem needCaptured_ok {Γ : Ctx} {j : Fir.JoinId} : ∀ {cs : List Var},
+    (∀ c, c ∈ cs → Γ.avail c = true) → Γ.needCaptured j cs = .ok ()
+  | [], _ => rfl
+  | c :: cs, h => by
+    simp only [Ctx.needCaptured]
+    exact except_bind_of_ok (need_ok (h c List.mem_cons_self) _)
+      (needCaptured_ok (fun y hy => h y (List.mem_cons_of_mem _ hy)))
+
+theorem nodupFrom_of : ∀ {seen : Src.NatSet} {xs : List Var}, xs.Nodup →
+    (∀ y, y ∈ xs → seen.contains y = false) → nodupFrom seen xs = true
+  | _, [], _, _ => rfl
+  | seen, x :: xs, hn, hs => by
+    rw [List.nodup_cons] at hn
+    simp only [nodupFrom, hs x List.mem_cons_self, Bool.not_false, Bool.true_and]
+    apply nodupFrom_of hn.2
+    intro y hy
+    have hne : y ≠ x := fun he => hn.1 (he ▸ hy)
+    simp only [Src.NatSet.insert, Src.NatMap.contains, Src.NatMap.get?_insert, hne, ↓reduceIte]
+    simpa [Src.NatMap.contains] using hs y (List.mem_cons_of_mem _ hy)
+
+theorem primImmArgs_eq (op : Lam.Prim) (n : Nat) : primImmArgs op n = List.replicate n true := by
+  cases op <;> rfl
+
+theorem shape_addOwn {Γ : Ctx} {I : Var → Bool} {t : Var → Nat} {P : Var → Prop}
+    (h : Shape Γ I t P) {x : Var} (hx : I x = false) :
+    Shape (Γ.addOwn x 1) I (fun y => if y = x then t y + 1 else t y) (fun y => P y ∨ y = x) := by
+  obtain ⟨toks, htok⟩ := h.toks
+  refine ⟨fun y => by simpa using h.imm y, fun y => ?_, fun y => by simpa using h.brw y,
+    ⟨_, htok.addOwn x⟩, fun y hy => ?_, fun y hy => ?_⟩
+  · rw [Ctx.tokens_addOwn]; split <;> (rename_i he; first | (subst he; rw [h.tokens]) | rw [h.tokens])
+  · have hne : y ≠ x := by intro he; subst he; rw [hx] at hy; cases hy
+    simp [hne, h.immZero y hy]
+  · rw [Ctx.ownHas_addOwn] at hy
+    simp only [Bool.or_eq_true, decide_eq_true_eq] at hy
+    rcases hy with hy | hy
+    · exact Or.inr hy
+    · exact Or.inl (h.own y hy)
+
+theorem shape_avail {Γ : Ctx} {I : Var → Bool} {t : Var → Nat} {P : Var → Prop}
+    (h : Shape Γ I t P) {x : Var} (hx : I x = true ∨ 0 < t x) : Γ.avail x = true := by
+  rcases hx with hx | hx
+  · simp [Ctx.avail_eq, h.imm, hx]
+  · simp [Ctx.avail_eq, h.tokens, hx]
+
+theorem shape_unknown {Γ : Ctx} {I : Var → Bool} {t : Var → Nat} {live : List Var}
+    (h : Shape Γ I t (· ∈ live)) {x : Var} (hx : x ∉ live) (hi : I x = false) :
+    Γ.known x = false := by
+  have ho : Γ.own.contains x = false := by
+    cases hc : Γ.own.contains x
+    · rfl
+    · exact absurd (h.own x hc) hx
+  simp [Ctx.known_eq, h.imm, hi, ho, h.brw]
+
+/-! ## Binding a fresh variable, in the canonical shape -/
+
+section
+variable {Γ Γ₂ : Ctx} {Δ : JCtx} {live : List Var} {joins : Joins} {imm : List Var}
+  {arities : JoinArities} {x : Var} {I₂ : Var → Bool}
+
+theorem canon_bindImm (h : Canon Γ Δ live joins imm arities) (hx : x ∉ live)
+    (h₂ : Shape Γ₂ I₂ (fun z => if z ∈ live ∧ I₂ z = false then 1 else 0) (· ∈ live))
+    (hI : ∀ z, I₂ z = true → z ∈ live) (imm' : List Var)
+    (himm : ∀ z, z ∈ imm' → I₂ z = true ∨ z = x) :
+    Canon (Γ₂.setImm x) Δ (live ++ [x]) joins imm' arities := by
+  have hs := shape_setImm h₂ x
+  have hi : ∀ z, (Γ₂.setImm x).isImm z = (decide (z = x) || I₂ z) := hs.imm
+  refine ⟨hs.canon (fun z => ?_) (fun z hz => List.mem_append_left _ hz), fun z hz => ?_,
+    fun z hz => ?_, h.jctx, fun j C hj => (h.capIn j C hj).trans (List.sublist_append_left _ _),
+    h.arity, fresh_nodup_append h.nodup (by simp [fresh, hx])⟩
+  · by_cases he : z = x
+    · subst he; simp
+    · simp [he]
+  · rw [hi]; rcases himm z hz with h' | h' <;> simp [h']
+  · rw [hi] at hz
+    by_cases he : z = x
+    · subst he; exact List.mem_append_right _ (List.mem_singleton_self _)
+    · simp only [he, decide_false, Bool.false_or] at hz
+      exact List.mem_append_left _ (hI z hz)
+
+theorem canon_bindOwn (h : Canon Γ Δ live joins imm arities) (hx : x ∉ live)
+    (h₂ : Shape Γ₂ I₂ (fun z => if z ∈ live ∧ I₂ z = false then 1 else 0) (· ∈ live))
+    (hI : ∀ z, I₂ z = true → z ∈ live) (imm' : List Var) (himm : ∀ z, z ∈ imm' → I₂ z = true) :
+    Canon (Γ₂.addOwn x 1) Δ (live ++ [x]) joins imm' arities := by
+  have hx₂ : I₂ x = false := by
+    cases hc : I₂ x
+    · rfl
+    · exact absurd (hI x hc) hx
+  have hs := shape_addOwn h₂ hx₂
+  have hi : ∀ z, (Γ₂.addOwn x 1).isImm z = I₂ z := hs.imm
+  refine ⟨hs.canon (fun z => ?_) (fun z hz => ?_), fun z hz => ?_, fun z hz => ?_, h.jctx,
+    fun j C hj => (h.capIn j C hj).trans (List.sublist_append_left _ _), h.arity,
+    fresh_nodup_append h.nodup (by simp [fresh, hx])⟩
+  · by_cases he : z = x
+    · subst he; simp [hx, hx₂]
+    · simp [he]
+  · rcases hz with hz | hz
+    · exact List.mem_append_left _ hz
+    · subst hz; exact List.mem_append_right _ (List.mem_singleton_self _)
+  · rw [hi]; exact himm z hz
+  · rw [hi] at hz; exact List.mem_append_left _ (hI z hz)
+
+end
+
 end IxCC.Own.Plain
