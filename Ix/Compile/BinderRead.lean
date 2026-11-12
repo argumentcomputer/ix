@@ -2,6 +2,7 @@ module
 
 public import Ix.Compile.BinderData
 public import Ix.LeanIngress.Expr
+public import Ix.IndFlags
 
 public section
 
@@ -28,12 +29,15 @@ in their source without any inference, and this reader takes exactly those:
   It passes unchanged into the run's body, a `let`'s body and a share.
 
 A head's declared type is peeled through the definitions that return one of their
-arguments (`outParam T` is `T`). A head is a constant, a bound variable (its
+arguments (`outParam T` is `T`) and, where no ∀ is there, through the definition at
+its head (δβ: `MorphismProperty C` is `∀ ⦃X Y⦄, (X ⟶ Y) → Prop`). A head is a
+constant, a bound variable (its
 declared type), or a field of a bound variable whose declared type is a structure
 (the field's declared type). An argument beyond its head's ∀s, where the head's
 type ends in one of the head's own variables (a `casesOn`'s `motive t`), takes its
 domain from the actual argument there, `λ y⃗, R` with as many λs as that variable
-has arguments: the domain is `R`'s. A `let` at the head of a type is read through
+has arguments: the domain is `R`'s, and the type after all the arguments is `R`'s
+past the rest. A `let` at the head of a type is read through
 (its body has the sort of its ζ-reduct).
 
 Anything else (a body headed by a projection of anything but a bound variable, a
@@ -112,22 +116,63 @@ def unwrap (find : Find) : Nat → Ix.Expr → Ix.Expr
       | none => t
     | _ => t
 
+/-- A definition's value as the count of its leading λs and the body under them. -/
+def lamBody : Nat → Ix.Expr → Nat × Ix.Expr
+  | k, .lam _ _ b _ _ => lamBody (k + 1) b
+  | k, .mdata _ e _ => lamBody k e
+  | k, e => (k, e)
+
+/-- **One δβ step at the head of `t`** (exact: a definition is its value): a safe
+definition `D.{us} a⃗` whose value is `λ x₁…xₖ, b`, `k ≤ |a⃗|`, as `b` at `us` and
+`a₁…aₖ`, applied to the rest. Taken only where the syntactic reading of a type
+would otherwise fail (`MorphismProperty C`, `Presieve X`: a type-valued
+definition). -/
+def unfold1 (find : Find) (t : Ix.Expr) : Option Ix.Expr := do
+  let t := unmeta t
+  let (h, n) := headArgs t
+  let .const c us _ := h | none
+  let .defnInfo d ← find c | none
+  guard (d.safety matches .safe)
+  guard (us.size == d.cnst.levelParams.size)
+  let (k, body) := lamBody 0 d.value
+  guard (k ≤ n)
+  let args := (spineArgs t #[]).reverse
+  let body := Ix.IndFlags.substLevels body d.cnst.levelParams us
+  let body := Ix.IndFlags.instantiateRev body (args.extract 0 k).reverse
+  pure ((args.extract k args.size).foldl Ix.Expr.mkApp body)
+
+/-- The unfoldings a type is read through (`unfold1`), at most. -/
+def unfoldFuel : Nat := 16
+
 /-- `t` past exactly `n` leading ∀s, each found after unfolding argument-returning
-definitions at the head (`unwrap`: a class's `outParam (α → β → Sort u)`). -/
-def peelN (find : Find) : Nat → Ix.Expr → Option Ix.Expr
-  | 0, t => some (unmeta t)
-  | n + 1, t => match unwrap find 8 t with
-    | .forallE _ _ b _ _ => peelN find n b
-    | _ => none
+definitions at the head (`unwrap`: a class's `outParam (α → β → Sort u)`) and,
+where none is there, a definition (`unfold1`, at most `unfoldFuel` times). -/
+def peelN (find : Find) (n : Nat) (t : Ix.Expr) : Option Ix.Expr :=
+  go (n + unfoldFuel + 1) n t
+where
+  go : Nat → Nat → Ix.Expr → Option Ix.Expr
+    | 0, _, _ => none
+    | _ + 1, 0, t => some (unmeta t)
+    | fuel + 1, n + 1, t => match unwrap find 8 t with
+      | .forallE _ _ b _ _ => go fuel n b
+      | t => match unfold1 find t with
+        | some u => go fuel (n + 1) u
+        | none => none
 
 /-- The `n`-th ∀-domain of `t`, with the domains before it, innermost first; each ∀
 found as `peelN` finds it. -/
-def domainAt (find : Find) : Nat → Ix.Expr → List (Option Ix.Expr) →
-    Option (Ix.Expr × List (Option Ix.Expr))
-  | n, t, acc => match unwrap find 8 t, n with
-    | .forallE _ d _ _ _, 0 => some (d, acc)
-    | .forallE _ d b _ _, n + 1 => domainAt find n b (some d :: acc)
-    | _, _ => none
+def domainAt (find : Find) (n : Nat) (t : Ix.Expr) (acc : List (Option Ix.Expr)) :
+    Option (Ix.Expr × List (Option Ix.Expr)) :=
+  go (n + unfoldFuel + 1) n t acc
+where
+  go : Nat → Nat → Ix.Expr → List (Option Ix.Expr) → Option (Ix.Expr × List (Option Ix.Expr))
+    | 0, _, _, _ => none
+    | fuel + 1, n, t, acc => match unwrap find 8 t, n with
+      | .forallE _ d _ _ _, 0 => some (d, acc)
+      | .forallE _ d b _ _, n + 1 => go fuel n b (some d :: acc)
+      | t, n => match unfold1 find t with
+        | some u => go fuel n u acc
+        | none => none
 
 /-- The final sort of a ∀-telescope `t`, if it is syntactically a sort. -/
 def leafSort : Ix.Expr → Option Ix.Level
@@ -182,6 +227,23 @@ def projField (find : Find) (ctx : List (Option Ix.Expr)) (sName : Ix.Name) (i :
   let (d, before) ← domainAt find (ind.numParams + i) ctor.cnst.type []
   pure (d, before, ctor.cnst.levelParams, us)
 
+/-- **The type after `n` arguments, beyond the head's ∀s**: the head's type `ty`
+has `m < n` ∀s and ends in one of the head's own variables applied to `k`
+arguments (`DFunLike.coe`'s `β a`, `Eq.mp`'s `β`); the actual argument there
+(`args`, the spine's, outermost first) is `λ y⃗, R` with exactly `k` λs, so the
+type there is `R` with the arguments for `y⃗`, and the type after the `n`
+arguments is `R` past `n - m` ∀s. Its levels are in the spine's numbering. -/
+def beyondType (find : Find) (ty : Ix.Expr) (args : Array Ix.Expr) (n : Nat) : Option Ix.Expr := do
+  let m := piCount find sortFuel ty
+  guard (m < n)
+  let r ← peelN find m ty
+  let (rh, k) := headArgs (unwrap find 8 r)
+  let .bvar j _ := rh | none
+  guard (j < m)
+  let a ← args[m - 1 - j]?
+  let (_, body) ← lamsExact k a []
+  peelN find (n - m) body
+
 /-- **The zero-ness of the sort of the type `t`, read syntactically.** `σ`
 numbers the level parameters `t` and `ctx` (the types of `t`'s loose variables,
 innermost first) are written over, and `sub` maps levels in that numbering to
@@ -201,26 +263,45 @@ def sortPw (find : Find) (σ : Ix.Name → Nat) (sub : Ix.Kernel.Level → Ix.Ke
         | .const c us _ => do
           let ci ← find c
           let cv := ci.getCnst
-          match unwrap find 8 (← peelN find n cv.type) with
-          | .sort l _ =>
+          -- a level of the head's type, in the spine's numbering
+          let headLevel (l : Ix.Level) : Option Ix.Kernel.Level := do
             let lc ← (ingressLevel (posIn cv.levelParams) l).toOption
             let us' ← (us.toList.mapM (ingressLevel σ)).toOption
             pure (Ix.Kernel.Level.subst (List.range cv.levelParams.size) us' lc)
-          | r =>
-            -- the type there is one of the head's own variables applied to `k`
-            -- arguments (a matcher's `motive x`, `ite`'s `α`): the actual argument
-            -- there, a sort under exactly `k` λs, is the sort (a level names no term
-            -- variable, so the arguments do not matter)
-            let (rh, k) := headArgs r
-            let .bvar j _ := rh | none
-            guard (j < n)
-            let a ← (spineArgs t #[]).reverse[n - 1 - j]?
-            let l ← lamSort k a
+          let args := (spineArgs t #[]).reverse
+          match peelN find n cv.type with
+          | some r =>
+            match unwrap find 8 r with
+            | .sort l _ => headLevel l
+            | r =>
+              -- the type there is one of the head's own variables applied to `k`
+              -- arguments (a matcher's `motive x`, `ite`'s `α`): the actual argument
+              -- there, a sort under exactly `k` λs, is the sort (a level names no term
+              -- variable, so the arguments do not matter)
+              let (rh, k) := headArgs r
+              match rh with
+              | .bvar j _ =>
+                guard (j < n)
+                let a ← args[n - 1 - j]?
+                let l ← lamSort k a
+                (ingressLevel σ l).toOption
+              | _ =>
+                -- a definition that unfolds to a sort
+                let .sort l _ := unwrap find 8 (← unfold1 find r) | none
+                headLevel l
+          | none =>
+            -- beyond the head's ∀s, through the actual argument the type ends in
+            let .sort l _ := unwrap find 8 (← beyondType find cv.type args n) | none
             (ingressLevel σ l).toOption
         | .bvar i _ => do
           let ty ← (ctx[i]?).join
-          let .sort l _ := unwrap find 8 (← peelN find n ty) | none
-          (ingressLevel σ l).toOption
+          match peelN find n ty with
+          | some r =>
+            let .sort l _ := unwrap find 8 r | none
+            (ingressLevel σ l).toOption
+          | none =>
+            let .sort l _ := unwrap find 8 (← beyondType find ty (spineArgs t #[]).reverse n) | none
+            (ingressLevel σ l).toOption
         | .proj sName i v _ => do
           -- a field of a bound structure variable: the field's declared type
           let (fty, _, lps, us) ← projField find ctx sName i v
