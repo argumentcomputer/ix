@@ -749,7 +749,53 @@ evaluation lazier, and the structural checks prevent erased code from
 needing a value that was never computed. A wrong but consistent annotation
 can make compilation fail or the source evaluator get stuck; it cannot make
 the evaluator produce a wrong result. A stuck run falls under the
-safe-source condition of the correctness statement.
+safe-source condition of the correctness statement. For a parameter written
+erased (`0`), the condition is the invariant below; until 2026-11-12 it was
+not checked on every route, and a program could compile to an object
+returning a wrong value while SrcEval returned an irrelevant value no view
+reads.
+
+**What a caller drops, the callee never reads.** At every call, the
+argument positions the caller drops are positions the callee's run
+behaviour never reads. A caller drops the argument of every parameter the
+callee's *type* writes erased (the annotator's `KernelFront.erasedAt`; C2
+holds the argument's class to the callee's parameter classes, which
+`checkCanonical` requires to be irrelevant there). The callee's side, by the
+route its run behaviour reaches the compiler:
+
+| Route | What makes the callee agree | Test |
+| --- | --- | --- |
+| Its own value (a safe definition, an allowlisted opaque) | the value's leading λs cover every parameter written erased, with the parameter's class at every covered λ; a shorter (η-short) value is refused (`checkCanonical`, `Check.Canonical.headerAgreement`) | `tests-relevance` (header agreement); `tests-recheck` (erased parameters) |
+| An unfolding equation (`eqn`) | the table builds the body from the subject's header: the type's, the value's and the theorem's binders agree on contracts, too few λs are refused, and a subject with contracts needs the resource context's checked pair (`Table.equationBody`); `headerAgreement` also applies | `tests-recheck` (an `eqn` entry without a resource context refused) |
+| A `csimp` redirect | refused when the subject writes a parameter erased: the redirect, the target, binds no λ (`headerAgreement`). This is the strict form of "the subject's and the target's interfaces agree on every mode", which needs modes read from records | `tests-recheck` (refused; a target that erases a parameter the subject does not: accepted, correct) |
+| A `case` entry (`T.casesOn`) | the dispatch reads the major, the indices and the minors (`Lam.Erase.headReads`): none may be written erased (`Check.Canonical.readsErased?`) | `tests-recheck` (a kernel-accepted artifact refused; its control) |
+| Lazy rows | a row changes only how the constant's own body takes its relevant parameters (by name or strict); an irrelevant one is passed □ strictly (`Lam.Erase.lazyModes`), so the body is held by the first row; the table admits pinned rows and sparse casesOn only | `tests-recheck` (a row for another definition refused) |
+| A recursor | its rules receive every argument (`headReads`): none may be written erased (`readsErased?`) | `tests-recheck` |
+| `Quot.mk`, `Quot.lift` | the element; the function and the quotient (`headReads`): none written erased (`readsErased?`). `Quot.ind` never runs (C5 refuses a relevant reference to it) | `tests-recheck` |
+| A constructor | a field written erased is dropped at every instance (`checkCanonical` on its record), and a constructor stores only kept fields, except the pinned `Nat.succ`, which reads its field and so may not erase it (`readsErased?`) | `tests-recheck` |
+| A primitive or word entry | reads every argument: none written erased (`okPrim`, `readsErased?`); word entries are refused while `Table.Config.words` is off | `tests-relevance` (special heads); `tests-recheck` |
+| A minor premise applied by a case or a recursor | the dispatch passes □ for a field written erased (dropped); the minor's leading λs cover every field written erased, and a dropped field's λ is irrelevant (C3, `Check.minorBinders`) | `tests-recheck` (an η-short minor refused; its twins) |
+
+`headReads` is erasure's; `checkCanonical` uses a copy
+(`Check.Canonical.headReadsWith`), and `tests-relevance` does not build if
+the two differ. A parameter irrelevant only by its sort (a type, a proof)
+needs no cover: the caller's class and the callee's own header's come from
+the same sort facts, so neither side can be told something the other is not.
+At a covered position of a minor, a kept field may be bound by an erased λ:
+what a minor receives is decided by the constructor's side, not the
+minor's (SrcEval applies the minor to every field slot of the constructor
+value; erasure passes every field, □ where the constructor's record drops
+it: `minorApp` for a case, the rule body for a recursor), so the minor
+receives the value and does not use it (C1); `tests-recheck` runs both such
+minors to the right value. These are checks with tests: the relevance proof
+(`Relevance.Proof.check_sound`) gives the tier-S facts erasure needs relative
+to SrcEval and says nothing about this invariant, and `checkCanonical` has no
+theorem. A violation makes SrcEval return an irrelevant value or get stuck,
+which the correctness statement counts as the source going wrong
+(`Front.GoesWrong`) and so does not bound. The certified kernel refused most
+of these programs only because its conversion compares binder contracts
+(the `case` route not even then); the checks do not rely on that, which the
+format change (modes leave the term bytes) requires.
 
 **Erasure** then:
 - replaces irrelevant arguments with □ but keeps every binder slot

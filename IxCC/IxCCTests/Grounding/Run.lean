@@ -67,6 +67,24 @@ rule made `λ α a motive refl. a` in the kernel's reading and the program alike
 premise's domain made `@Eq α b a`; and its level-parameter list reversed (refused by `RecStored`,
 since its rule's levels no longer correspond to the program's; `EqRecBasis` does not read the
 list).
+
+On `strictAndOr` (`Bool.rec`, class `flat`, part D) every conjunct is true; on `Sl` cut to the
+recursor and `Bool`'s constructors, a rule's λ-domain changed, its rules swapped and its major
+domain at one more level each make exactly `recShape` false (by `RecTele`, `RecProg`,
+`RecCtorsRaw`). A rule's body made `0` in the reading and the program alike is no longer flat: since
+part E it is of class `noParams` and **admitted** (refused at `declOk` as parts C and D landed it):
+the mutation is consistent between the kernel's reading and the program (ι in the mutated reading
+gives `0`, which SrcEval's evaluation of the literal body gives too), and the theorems are relative
+to the environment as stored. The body made the constant `Bool.true` alike is refused, exactly at
+`recShape`, by `RecBodies` (a rule body may name no constant).
+
+On `tags16` (`T16.rec`, class `noParams`, part E: 16 rules, the last with a field, its body
+`m₁₅ f`) every conjunct is true, and with the classes of part D's first step exactly `declOk` is
+false. On `Sl` cut to the recursor, its constructors and `Bool`'s, four controls each make exactly
+`recShape` false, the part that refuses asserted: the field-carrying constructor's stored field type
+made `Nat → Nat` (`RecFields`), that rule's body made `Bool.true` (`RecBodies`), made `m₁₅ m₁₅`
+(`RecSites`: the direct route refuses the site) and the major premise's binder datum given a level
+parameter the recursor does not have (`RecSites`).
 -/
 
 namespace IxCCTests.Grounding
@@ -390,7 +408,7 @@ def failingWith (adm : List RecClass) (i : Input) : List String :=
     if b then none else some n
 
 /-- Every recursor class. -/
-def allClasses : List RecClass := [.empty, .eqRec, .flat, .ordinary]
+def allClasses : List RecClass := [.empty, .eqRec, .flat, .noParams, .ordinary]
 
 /-- The recursor of `Sl` the kernel stores under `Eq.rec`'s key. -/
 def eqRecOf? (i : Input) : Option CId :=
@@ -549,6 +567,50 @@ def mutateRecBody (i : Input) (r : CId) (n : Nat) : Input :=
     (fun | r0 :: rest => { r0 with rhs := setLamBodyK n r0.rhs (.lit (.natVal 0)) } :: rest
          | rs => rs)
     (fun | r0 :: rest => { r0 with rhs := setLamBody n r0.rhs (.natLit 0) } :: rest | rs => rs)
+
+/-! ## G3, part E: recursors without parameters whose rule bodies run -/
+
+/-- The first recursor of `Sl` of class `noParams`. -/
+def noParamsRecOf? (i : Input) : Option CId :=
+  i.Sl.find? fun c => recClassB i.src i.env i.κ c == some .noParams
+
+/-- Rule `j`'s body (under `n` λs) made `newK` in the kernel's reading and `newS` in the program. -/
+def mutateRuleBodyAt (i : Input) (r : CId) (j n : Nat) (newK : KExpr) (newS : Term) : Input :=
+  mapRecRules i r
+    (fun rs => rs.mapIdx fun k rl => if k == j then { rl with rhs := setLamBodyK n rl.rhs newK } else rl)
+    (fun rs => rs.mapIdx fun k rl => if k == j then { rl with rhs := setLamBody n rl.rhs newS } else rl)
+
+/-- A constructor's stored type with its first binder's domain made `Nat → Nat` (its telescope's
+length unchanged). -/
+def mutateCtorField (i : Input) (k : KKey) : Input :=
+  let retype : KExpr → KExpr
+    | .forallE _ b m => .forallE (.forallE natK natK bmN) b m
+    | T => T
+  { i with env := mapConst i.env k fun
+      | .ctorInfo cv np nf => .ctorInfo { cv with type := retype cv.type } np nf
+      | ci => ci }
+
+/-- A kernel `∀`-telescope with the datum of its binder after `n` binders made `m'`. -/
+def setPiMetaK : Nat → KExpr → Ix.Kernel.BinderMeta → KExpr
+  | 0, .forallE d b _, m' => .forallE d b m'
+  | n + 1, .forallE d b m, m' => .forallE d (setPiMetaK n b m') m
+  | _, e, _ => e
+
+/-- The recursor's major premise's binder datum made "a proposition where the level parameter `99`
+is zero", a parameter it does not have. -/
+def mutateMajorDatum (i : Input) (r : CId) : Input :=
+  { i with env := mapConst i.env (i.κ r) fun
+      | .recInfo cv mI rP rules =>
+        .recInfo { cv with type := setPiMetaK mI cv.type { pw := Ix.Kernel.PropWhen.ifAllZero [99] } }
+          mI rP rules
+      | ci => ci }
+
+/-- What `recShape` asks at a recursor of class `noParams`, part by part: `RecStored`, `RecTele`,
+`RecProg`, `RecCtorsRaw`, `RecFields`, `RecBodies`, `RecSites`. -/
+def partsE (i : Input) (r : CId) : List Bool :=
+  [recStoredB i.src i.env i.κ i.lpsOf r, recTeleB i.env (i.κ r), recProgB i.src i.κ i.Sl r,
+    recCtorsRawB i.src i.env i.κ r, recFieldsB i.env (i.κ r), recBodiesB i.src i.env i.κ i.lpsOf r,
+    recSitesB i.src i.env i.κ i.lpsOf r]
 
 /-- `n` nested `Nat.succ`s around `Nat.zero`. -/
 def succs (n : Nat) : KExpr := (List.range n).foldl (fun e _ => .app succK e) zeroK
@@ -821,13 +883,72 @@ def run : IO Bool := do
     let nPre := match si.src.decl? fr with
       | some (.recr _ _ _ np nmot nmin _ _ _ _) => np + nmot + nmin
       | _ => 0
+    -- a rule's body made `0` alike: not flat, so (since part E) of class `noParams`, and admitted:
+    -- the mutation is consistent between the kernel's reading and the program (ι in the mutated
+    -- reading gives `0` too, and SrcEval evaluates the literal), and the theorems are relative to the
+    -- environment as stored. As parts C and D landed it, this control was refused at `declOk`
     let mB := mutateRecBody ri fr nPre
-    expect a (failing mB == ["declOk"] && recClassB mB.src mB.env mB.κ fr == some .ordinary)
-      s!"strictAndOr: Bool.rec's first rule's body made 0 (kernel and program): false conjuncts {failing mB}, class {repr (recClassB mB.src mB.env mB.κ fr)}"
+    expect a ((failing mB).isEmpty && recClassB mB.src mB.env mB.κ fr == some .noParams)
+      s!"strictAndOr: Bool.rec's first rule's body made 0 (kernel and program): false conjuncts {failing mB}, class {repr (recClassB mB.src mB.env mB.κ fr)}, expected none and noParams"
+    -- the refusing variant: the body made a constant alike (`Bool.true`), which a rule body may not
+    -- name (`RecBodies`): exactly `recShape`
+    let some stru := si.src.known.boolTrue | throw (IO.userError "strictAndOr: no pinned Bool.true")
+    let mBc := mutateRuleBodyAt ri fr 0 nPre (.const Ix.Kernel.boolTrueName []) (.const stru [])
+    expect a (failing mBc == ["recShape"] && recClassB mBc.src mBc.env mBc.κ fr == some .noParams &&
+        partsE mBc fr == [true, true, true, true, true, false, true])
+      s!"strictAndOr: Bool.rec's first rule's body made Bool.true (kernel and program): false conjuncts {failing mBc}, parts {partsE mBc fr}"
     IO.println s!"strictAndOr: Bool.rec c{fr} of class flat, admitted; every conjunct true (with the \
       classes of part C, declOk false); cut to c{fr} and Bool's constructors: a rule's λ-domain \
       changed (RecTele), its rules swapped (RecProg), its major domain at one more level \
-      (RecCtorsRaw): exactly recShape false; a rule's body made 0: not flat, exactly declOk false"
+      (RecCtorsRaw): exactly recShape false; a rule's body made 0: not flat, of class noParams, \
+      admitted; made Bool.true: exactly recShape false (RecBodies)"
+    -- G3, part E: recursors without parameters whose rule bodies run (`noParams`). `tags16`: its
+    -- recursor `T16.rec` (16 rules, the last with a field, its body `m₁₅ f`) is of class
+    -- `noParams`, admitted since part E, and every conjunct is true; with the classes of part D's
+    -- first step, `declOk` alone is false
+    let some tr := noParamsRecOf? ti
+      | throw (IO.userError "tags16: no recursor of class noParams in Sl")
+    expect a ((failing ti).isEmpty && admittedClasses.contains .noParams)
+      s!"tags16: false conjuncts {failing ti}, expected none"
+    expect a (failingWith [.empty, .eqRec, .flat] ti == ["declOk"])
+      s!"tags16: with the classes of part D's first step, false conjuncts {failingWith [.empty, .eqRec, .flat] ti}, expected [declOk]"
+    let some (.recr _ _ _ _ tnmot tnmin _ _ trules _) := ti.src.decl? tr
+      | throw (IO.userError s!"tags16: c{tr} is not a recursor")
+    let jF := trules.length - 1
+    let some rlF := trules[jF]? | throw (IO.userError "tags16: the recursor has no rules")
+    expect a (rlF.fields == 1) s!"tags16: the last rule has {rlF.fields} fields, expected 1"
+    -- controls, on `Sl` cut to the recursor, its constructors and `Bool`'s (the pins); each makes
+    -- exactly `recShape` false, and the suite asserts which part refuses
+    let tc := { ti with Sl := tr :: (trules.map (·.ctor) ++
+      [ti.src.known.boolFalse, ti.src.known.boolTrue].filterMap id) }
+    expect a ((failing tc).isEmpty && partsE tc tr == [true, true, true, true, true, true, true])
+      s!"tags16 cut to c{tr} and the constructors: false conjuncts {failing tc}, parts {partsE tc tr}"
+    let nPreT := tnmot + tnmin
+    -- `RecFields`: the field-carrying constructor's stored field type made `Nat → Nat`
+    let mFd := mutateCtorField tc (tc.κ rlF.ctor)
+    expect a (failing mFd == ["recShape"] && partsE mFd tr == [true, true, true, true, false, true, true])
+      s!"tags16: c{rlF.ctor}'s field type made Nat → Nat: false conjuncts {failing mFd}, parts {partsE mFd tr}"
+    -- `RecBodies`: that rule's body made `Bool.true` (kernel and program alike)
+    let some ttru := tc.src.known.boolTrue | throw (IO.userError "tags16: no pinned Bool.true")
+    let mBd := mutateRuleBodyAt tc tr jF (nPreT + 1) (.const Ix.Kernel.boolTrueName []) (.const ttru [])
+    expect a (failing mBd == ["recShape"] && partsE mBd tr == [true, true, true, true, true, false, true])
+      s!"tags16: the last rule's body made Bool.true (kernel and program): false conjuncts {failing mBd}, parts {partsE mBd tr}"
+    -- `RecSites`: that rule's body made `m₁₅ m₁₅` alike (the minor premise applied to itself: the
+    -- direct route refuses the site, the argument is not a `Nat`)
+    let mSt := mutateRuleBodyAt tc tr jF (nPreT + 1) (.app (.bvar 1) (.bvar 1))
+      (.app (.var 1) (.var 1) .strict .rel)
+    expect a (failing mSt == ["recShape"] && partsE mSt tr == [true, true, true, true, true, true, false])
+      s!"tags16: the last rule's body made m₁₅ m₁₅ (kernel and program): false conjuncts {failing mSt}, parts {partsE mSt tr}"
+    -- `RecSites`: the major premise's binder datum made "a proposition where the parameter 99 is
+    -- zero", a parameter the recursor does not have (the profiles where it fails are not decided)
+    let mDt := mutateMajorDatum tc tr
+    expect a (failing mDt == ["recShape"] && partsE mDt tr == [true, true, true, true, true, true, false])
+      s!"tags16: the major premise's datum made ifAllZero [99]: false conjuncts {failing mDt}, parts {partsE mDt tr}"
+    IO.println s!"tags16: T16.rec c{tr} of class noParams, admitted; every conjunct true (with the \
+      classes of part D's first step, declOk false); cut to c{tr} and the constructors: a \
+      constructor's field type changed (RecFields), the field rule's body made Bool.true \
+      (RecBodies), made m m (RecSites), the major premise's datum given an undefined parameter \
+      (RecSites): exactly recShape false"
     IO.println s!"tests-grounding: {← a.get} assertions passed"
     return true
   catch error =>

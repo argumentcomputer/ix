@@ -174,7 +174,13 @@ theorem adds_minorBinders (k : CId) (j : Nat) (qc : Profile) :
     split
     · exact ⟨_, List.append_cons _ _ _⟩
     · exact ⟨l, rfl⟩
-  | _, [], _ => fun errs => ⟨[], by simp [minorBinders]⟩
+  | i, [], _ :: fields => by
+    intro errs
+    simp only [minorBinders]
+    split
+    · exact ⟨[_], rfl⟩
+    · exact adds_minorBinders k j qc (i + 1) [] fields errs
+  | _, [], [] => fun errs => ⟨[], by simp [minorBinders]⟩
   | _, _ :: _, [] => fun errs => ⟨[], by simp [minorBinders]⟩
 
 theorem varRule_nil (bs : List Rel) (errs : List RelError) (i : Nat)
