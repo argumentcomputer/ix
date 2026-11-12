@@ -94,6 +94,7 @@ import Tests.Ix.EnvBody
 import Tests.Ix.MetaEnv
 import Tests.Ix.Catalog
 import Tests.Ix.ClaimPolicy
+import Tests.Ix.ClaimPolicyCli
 import Tests.Ix.TableAdmissionCli
 import Tests.Ix.CatalogDedup
 import Tests.Ix.ImportIxe
@@ -208,6 +209,9 @@ def registry : List Entry := [
   .suite "kernel-check-lean-cli" (.ci .cli) Tests.Ix.Kernel.CheckLeanCli.suite,
   .suite "artifact-compile-cli" (.ci .cli) Tests.Ix.RoleCompile.suite,
   .suite "host-admission-cli" (.ci .cli) Tests.Ix.HostAdmissionCli.suite,
+  -- `ix verify` and `ix compress` refuse, through the `ix` binary, each claim the claim
+  -- policy refuses by default (`Ix.Cli.ClaimPolicy`), and accept it under its flag
+  .runner "claim-policy-cli" (.ci .cli) Tests.ClaimPolicyCli.run,
 
   -- Claims through the formal IxVM program (`ixvm-proof test` on the claim
   -- artifact; `Tests.Ix.IxVM.Harness`), each verdict pinned: the only
@@ -362,6 +366,8 @@ def required : List (String × String) := [
   ("artifact-compile-cli", "ci:cli"),
   ("host-admission-cli", "ci:cli"),
   ("compression-cli", "ci:cli"),
+  ("claim-policy", "primary"),
+  ("claim-policy-cli", "ci:cli"),
   ("ixvm-kernel-checks", "ci:ixvm"),
   ("ixvm-reader-coverage", "ci:ixvm"),
   ("ixvm-exploits", "ci:ixvm"),

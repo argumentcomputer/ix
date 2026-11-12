@@ -50,7 +50,8 @@ def releaseAccepts (home : System.FilePath) : IO Unit := do
   unless layout.extract 0 8 == "IXROOTL\x00".toUTF8 do
     throw <| IO.userError "the release root layout is not an .ixl file"
   let testHash := Address.blake3 "release".toUTF8
-  let claimCtx : Ix.ClaimContext := { spec := testHash, binding := testHash, axioms := none }
+  -- a claim the claim policy admits, so that `ix verify` refuses it in the verifier
+  let claimCtx ← IO.ofExcept Ix.ClaimContext.ofDefaultTable
   let claim := Ix.Claim.checkEnv claimCtx testHash none
   Ix.Cli.Compression.checkReleaseStatement (Ix.Claim.ser claim)
     (Ix.Cli.FormalAggregate.statementBytes ctx claim)
@@ -74,8 +75,9 @@ def releaseAccepts (home : System.FilePath) : IO Unit := do
     throw <| IO.userError s!"the bundled compressed proof did not verify:\n{out.stdout}\n{out.stderr}"
   let moved ← putProof home (Ixon.Proof.ser { fixture with claim := claim })
   let out ← invoke home #["verify", toString moved]
-  unless out.exitCode != 0 do
-    throw <| IO.userError s!"the bundled compressed proof verified another claim:\n{out.stdout}"
+  unless out.exitCode != 0 && (out.stderr.splitOn "refused:").length == 1 do
+    throw <| IO.userError s!"the bundled compressed proof verified another claim, or the claim \
+      policy refused it before the verifier ran:\n{out.stdout}\n{out.stderr}"
   IO.println "compression CLI: the release keys accept the formal backends"
 
 public def run : IO Unit := do
@@ -91,7 +93,8 @@ public def run : IO Unit := do
     unless help.exitCode == 0 && (help.stdout.splitOn "--root-vk").length > 1 do
       throw <| IO.userError s!"compress help failed: {help.stdout} {help.stderr}"
     let testHash := Address.blake3 "test".toUTF8
-    let ctx : Ix.ClaimContext := { spec := testHash, binding := testHash, axioms := none }
+    -- claims the claim policy admits, so that each rejection below is the one tested
+    let ctx ← IO.ofExcept Ix.ClaimContext.ofDefaultTable
     let claim := Ix.Claim.checkEnv ctx testHash none
     let native : Ixon.Proof := { claim, proof := "native".toUTF8 }
     let compressed : Ixon.Proof := { claim, proof := "IXCMP".toUTF8 }

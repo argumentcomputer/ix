@@ -34,12 +34,13 @@ private def verifyDevelopmentInputs (p : Cli.Parsed) : IO UInt32 := do
     let bundle ← IO.FS.readBinFile path
     for input in inputs do
       let (addr, wrapper) ← Compression.readProofInput input
-      ClaimPolicy.admit p wrapper.claim
+      let statement ← ClaimPolicy.admit p wrapper.claim
       let claim := Ix.Claim.ser wrapper.claim
       let setup ← Compression.verifyDevelopment wrapper.proof claim bundle pin true
       unless setup == "development" do
         throw <| IO.userError s!"unexpected development verification setup: {setup}"
       IO.println s!"ok: development proof {addr} verifies claim {Address.blake3 claim} under the pinned verifier (not production-secure)"
+      IO.println statement
     return 0
   catch error =>
     IO.eprintln s!"verify: {error}"
@@ -59,7 +60,7 @@ end Ix.Cli.VerifyCmd
 open Ix.Cli.VerifyCmd in
 def verifyCmd : Cli.Cmd := `[Cli|
   verify VIA runVerifyCmd;
-  "Verify proof(s) against their bundled claims, or a `.ixes` shard partition"
+  "Verify proof(s) against their bundled claims, or a `.ixes` shard partition, and print each claim's kind, subject and conditions. By default only unconditional typing claims (eval, check, check-env) under this build's specifications and the default role table, or a table the kernel admits, are accepted; the --allow-* flags accept more. A catalog claim needs --aggregate --ixc."
 
   FLAGS:
     "aiur-artifact" : String; "Trusted exported formal IxVM artifact; otherwise compile/cache local sources."
@@ -83,6 +84,10 @@ def verifyCmd : Cli.Cmd := `[Cli|
     "allow-axioms"; "Accept a claim that depends on axioms beyond the standard three."
     "allow-assumed-binding"; "Accept a claim that assumes its role binding meets the specifications, with no binding proof."
     "allow-assumptions"; "Accept a claim conditional on typing assumptions (assumed leaves) that no verified proof discharges."
+    "allow-reveal-claim"; "Accept a reveal claim (fields of a committed constant), which states no typing."
+    "allow-contains-claim"; "Accept a contains claim (a leaf of a merkle tree), which states no typing."
+    "allow-resource-claim"; "Accept a resource claim, which the IxVM consistency theorem does not cover."
+    "allow-binding-claim"; "Accept a binding claim (a role table meets this build's specifications) verified on its own; --binding-proof needs no flag."
 
   ARGS:
     ...proofs : String; "32-byte hex addresses of persisted Ixon.Proof wrappers. With --verifier-bundle, proof-wrapper file paths are also accepted. Omit for --ixe + --ixes partition auditing."

@@ -34,13 +34,17 @@ def preflight (_p : Cli.Parsed) (opts : Options) : IO String := do
       throw <| IO.userError s!"fixed root layout {path} does not exist"
   Compression.describeSetup opts.devKzgSrs opts.devFinalSrs opts.finalProof
 
+/-- Refuse an input other than an uncompressed proof of a `CheckEnv` claim. -/
+private def checkInput (wrapper : Ixon.Proof) : IO Unit := do
+  if Compression.isCompressed wrapper.proof then
+    throw <| IO.userError "proof is already compressed"
+  let .checkEnv .. := wrapper.claim | throw <| IO.userError "compression requires an aggregate CheckEnv proof"
+
 /-- Compress the aggregate root `addr`, persist the compressed proof under the
 same claim and return its address. -/
 private def compressProof (p : Cli.Parsed) (addr : Address) (wrapper : Ixon.Proof)
     (opts : Options) (setup : String) : IO Address := do
-  if Compression.isCompressed wrapper.proof then
-    throw <| IO.userError "proof is already compressed"
-  let .checkEnv .. := wrapper.claim | throw <| IO.userError "compression requires an aggregate CheckEnv proof"
+  checkInput wrapper
   -- The statement comes from the same backend `ix verify --aggregate` uses;
   -- a trusted root key only replaces the verifying key the FRI stage checks.
   let ctx ← FormalAggregate.context p
@@ -95,7 +99,11 @@ def runCompressCmd (p : Cli.Parsed) : IO UInt32 := do
     let setup ← preflight p opts
     let input := p.positionalArg! "proof" |>.as! String
     let (addr, wrapper) ← Compression.readProofInput input
-    ClaimPolicy.admit p wrapper.claim
+    -- the input's shape before the policy, which then sees only `CheckEnv` claims
+    checkInput wrapper
+    let statement ← ClaimPolicy.admit p wrapper.claim
+    IO.eprintln s!"Compressing a proof of claim {Address.blake3 (Ix.Claim.ser wrapper.claim)}:\n\
+      {statement}"
     let result ← compressProof p addr wrapper opts setup
     IO.println (toString result)
     return 0

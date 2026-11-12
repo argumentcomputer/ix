@@ -619,11 +619,11 @@ def verify (p : Cli.Parsed) : IO UInt32 := do
     let some addr := Address.fromString hex | throw (IO.userError "invalid aggregate address")
     let wrapper ← Compression.readProof addr
     unless expected.all (· == wrapper.claim) do throw (IO.userError "aggregate does not match the requested environment/manifest")
-    ClaimPolicy.admit p wrapper.claim (envs := pure tableEnvs)
+    let statement ← ClaimPolicy.admit p wrapper.claim (envs := pure tableEnvs)
     if Compression.isCompressed wrapper.proof then
       let .checkEnv .. := wrapper.claim
         | throw (IO.userError s!"aggregate proof {addr} does not bundle a CheckEnv claim")
-      let rc ← Compression.verifyProof addr wrapper (p.hasFlag "dev-srs")
+      let rc ← Compression.verifyProof addr wrapper (p.hasFlag "dev-srs") statement
       if rc != 0 then return rc
     else
       let ctx ← match ctx? with
@@ -633,7 +633,8 @@ def verify (p : Cli.Parsed) : IO UInt32 := do
           ctx? := some c
           pure c
       verifyWrapper ctx .aggr wrapper
-      IO.println s!"ok: aggregate {addr} verifies {wrapper.claim}"
+      IO.println s!"ok: aggregate {addr} verifies claim {Address.blake3 (Ix.Claim.ser wrapper.claim)}"
+      IO.println statement
   return 0
 
 end Ix.Cli.FormalAggregate

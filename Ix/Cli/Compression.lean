@@ -103,7 +103,11 @@ def readProofInput (input : String) : IO (Address × Ixon.Proof) := do
   let wrapper ← IO.ofExcept (Aggr.decodeAggregateWrapperAt addr bytes)
   return (addr, wrapper)
 
-def verifyProof (addr : Address) (wrapper : Ixon.Proof) (devSrs : Bool) : IO UInt32 := do
+/-- Verify the compressed proof `wrapper`, stored at `addr`, and print what its
+claim states: `statement`, the claim's kind, subject and conditions
+(`Ix.Cli.ClaimPolicy.statement`). -/
+def verifyProof (addr : Address) (wrapper : Ixon.Proof) (devSrs : Bool) (statement : String) :
+    IO UInt32 := do
   let claim := Ix.Claim.ser wrapper.claim
   let setup ← verify wrapper.proof claim devSrs
   match setup with
@@ -115,6 +119,7 @@ def verifyProof (addr : Address) (wrapper : Ixon.Proof) (devSrs : Bool) : IO UIn
     IO.println s!"ok: Groth16 proof {addr} verifies claim {Address.blake3 claim} under the admitted circuit-specific setup"
   | _ =>
     throw <| IO.userError s!"unsupported compression setup: {setup}"
+  IO.println statement
   return 0
 
 end Ix.Cli.Compression

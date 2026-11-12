@@ -388,6 +388,12 @@ def one (p : Cli.Parsed) (artifactPath binary : String) (options : HostOptions)
           IO.ofExcept (Json.parse (← IO.FS.readFile reportPath)) else pure Json.null
       if code == 0 && (report.getObjVal? "execution_statistics").toOption.isNone then
         throw (IO.userError "successful execution returned no circuit statistics")
+      -- A failing host writes its error only to the report (a resident prover has no
+      -- terminal of its own), so the report's error is printed here; 75 (the plan
+      -- does not fit) is the callers' to report.
+      if code != 0 && code != 75 then
+        let why := (report.getObjValAs? String "error").toOption.getD "the host reported no error"
+        IO.eprintln s!"{label}: the prover exited with status {code}: {why}"
       let report ← IO.ofExcept (Aiur.enrichExecutionReport report)
       if let some flag := p.flag? "stats-out" then
         IO.FS.writeFile (flag.as! String) report.pretty
@@ -578,6 +584,7 @@ private def runManifest (p : Cli.Parsed) (artifactPath binary : String) (options
          ("throughput", Ix.Benchmark.Results.jsonRound 2 throughput),
          ("peak-rss", toJson (← TracingTexray.peakTreeRssBytes))])
       if failures != 0 then return Ix.Benchmark.Results.exitRejected
+    if failures != 0 then IO.eprintln s!"[aiur] {failures} shard part(s) failed"
     return if failures == 0 then 0 else 1
   if mode == "prove" then withController p #[(artifactPath, "ixvm")] options jobs drive
   else drive options
@@ -683,6 +690,9 @@ def verify (p : Cli.Parsed) : IO UInt32 := do
     catch e =>
       IO.eprintln s!"{bPath}: {e}"
       return 1
+    IO.println s!"ok: binding proof {bPath} verifies claim \
+      {Address.blake3 (Ix.Claim.ser bWrapper.claim)}"
+    IO.println (← IO.ofExcept (ClaimPolicy.statement bWrapper.claim))
   let mut result := 0
   let mut covered : Array Ix.Claim := #[]
   for hex in proofs do
@@ -694,11 +704,11 @@ def verify (p : Cli.Parsed) : IO UInt32 := do
       if covered.contains wrapper.claim then throw (IO.userError "duplicate shard proof")
       -- a whole partition discharges its shards' assumed leaves; a verified binding
       -- proof, their assumed binding
-      ClaimPolicy.admit p wrapper.claim (bindingDischarged := assumeBinding)
+      let statement ← ClaimPolicy.admit p wrapper.claim (bindingDischarged := assumeBinding)
         (assumptionsDischarged := !expected.isEmpty && shard.isNone) (envs := pure tableEnvs)
       let digest := Address.blake3 (Ix.Claim.ser wrapper.claim)
       if Compression.isCompressed wrapper.proof then
-        let rc ← Compression.verifyProof addr wrapper (p.hasFlag "dev-srs")
+        let rc ← Compression.verifyProof addr wrapper (p.hasFlag "dev-srs") statement
         if rc != 0 then result := 1
         else covered := covered.push wrapper.claim
       else
@@ -708,11 +718,8 @@ def verify (p : Cli.Parsed) : IO UInt32 := do
         verifyWrapper path wrapper
         covered := covered.push wrapper.claim
         if p.hasFlag "record" then ShardProofIndex.writeAddress (← shardIndex) digest addr
-        IO.println s!"ok: proof {addr} verifies claim {digest}: {wrapper.claim}"
-        if expected.isEmpty then
-          if let some ctx := Ix.Claim.context? wrapper.claim then
-            if ctx.bindingAssumed then
-              IO.println s!"  note: claim assumes its role binding ({ctx.binding}) meets spec {ctx.spec}"
+        IO.println s!"ok: proof {addr} verifies claim {digest}"
+        IO.println statement
     catch e => IO.eprintln s!"{hex}: {e}"; result := 1
   unless expected.all covered.contains do
     IO.eprintln "proofs do not cover every requested nonempty shard"
