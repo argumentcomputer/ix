@@ -64,13 +64,14 @@ theorem freshSet_eq {s : Src.NatSet} {live : List Var}
   | cons x xs ih =>
     simp only [freshSet, fresh, h x, ih (contains_insert_append h x)]
 
-private theorem lookup_signatures_range' (P : Fir.Program) (f : Nat) : ∀ (m s : Nat),
+theorem lookup_signatures_range' (P : Fir.Program) (f : Nat) : ∀ (m s : Nat),
     (((List.range' s m).filterMap fun g => (P.fun? g).map (g, ·)).map
         fun (p : Nat × Fir.Fun) => (p.1, p.2.arity)).lookup f =
       if s ≤ f ∧ f < s + m then (P.fun? f).map (·.arity) else none
   | 0, s => by
     simp only [List.range'_zero, List.filterMap_nil, List.map_nil, List.lookup_nil]
-    rw [if_neg (fun hc => absurd hc.2 (by have := hc.1; omega))]
+    have hc : ¬ (s ≤ f ∧ f < s + 0) := fun hc => absurd hc.2 (by have := hc.1; omega)
+    simp [hc]
   | m + 1, s => by
     rw [List.range'_succ, List.filterMap_cons]
     have ih := lookup_signatures_range' P f m (s + 1)
