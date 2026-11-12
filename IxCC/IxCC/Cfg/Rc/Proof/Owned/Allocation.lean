@@ -21,7 +21,7 @@ an `inc` the certificate placed before. The native step is the allocation wrappe
 
 set_option autoImplicit false
 namespace IxCC.Cfg.Rc.Native.Spec
-open IxCC.Cfg.Rc.Native
+open IxCC.Cfg.Rc.Native IxCC.Rt.Rc
 open IxCC.Cfg.Rc.Proof.Physical.Bridge IxCC.Rt.Rc.Procs IxCC.Own.Rc
 open IxCC.Own.Plain (Ctx JCtx checkCode)
 
