@@ -465,6 +465,63 @@ def GradedLaw (cval : Key md → (LevelParam → Nat) → V) (env : Env md) : Pr
     ∀ (cv : ConstantVal md) (value : Expr md) (hint : ReducibilityHint),
       c = .defnInfo cv value hint → GradedBy (Denotes cval env φ) ρ value
 
+/-- **A head applied along values applies functions on their domains**: at each step the
+function so far is a member of some product, and the next value a member of its domain. -/
+def SpineOk : V → List V → Prop
+  | _, [] => True
+  | F, x :: xs =>
+    (∃ (r : Nat) (A : V) (B : V → V), F ∈ˢ piR r A B ∧ x ∈ˢ A) ∧ SpineOk (app F x) xs
+
+/-- The variable environment after binding `xs` in order (the last one innermost), as a
+fit leaves it. -/
+def pushVals (ρ : BVarIdx → V) : List V → BVarIdx → V
+  | [] => ρ
+  | x :: xs => pushVals (push x ρ) xs
+
+/-- **The type of a projection** (Lean's `infer_proj`). Field `i`'s entry of a stored
+structure's projection table stores the field's type as a body over the structure's
+parameters and the subject: the subject is bound variable `0`, and the parameters the next
+`numParams`, the last innermost. At universe arguments `us`, at parameters `ts` that the
+structure's denotation `F` applies along on their domains (`SpineOk`), and at a member `x` of
+`T.{us} ts`, under the table's `Prop` guard, the body read with `ts` and then `x` bound denotes,
+with a graded reading, a set that holds field `i` of `x`. The parameters are not asked to fit
+`T`'s type: the kernel types a projection from the subject's type alone. -/
+def ProjTypeLaw (cval : Key md → (LevelParam → Nat) → V) (env : Env md) : Prop :=
+  ∀ (T : Key md) (i : Nat) (entry : ProjEntry md), env.findProj? T i = some entry →
+    ∀ (us : List Level) (φ : LevelParam → Nat) (ρ : BVarIdx → V) (F : V) (ts : List V) (x : V),
+      us.length = entry.levelParams.length → Denotes cval env φ ρ (.const T us) F →
+      (Level.eval (Level.substFn φ entry.levelParams us) entry.structSort = 0 →
+        Level.eval (Level.substFn φ entry.levelParams us) entry.fieldSort = 0) →
+      ts.length = entry.numParams → SpineOk F ts → x ∈ˢ ts.foldl app F →
+      ∃ B, Denotes cval env φ (push x (pushVals ρ ts))
+          (entry.body.instantiateLevelParams entry.levelParams us) B ∧
+        GradedBy (Denotes cval env φ) (push x (pushVals ρ ts))
+          (entry.body.instantiateLevelParams entry.levelParams us) ∧
+        field (i + entry.off) x ∈ˢ B
+
+/-- **Structure η at a family the kernel models without a projection table.** At a stored
+family `T` that claims η (`IndCaps.eta`) through a stored constructor `C`, with neither a
+reserved key, whose projections are stored functions (`projFnName T j` for each field `j`,
+stored as recursors): at levels `us` and parameters `ts` that fit `T`'s type, every member `x`
+of `T.{us} ts` is `C` applied to `ts` and to the projection functions' values at `ts` and `x`.
+The constructor and the projection functions are read at `T`'s level parameters. -/
+def EtaFnLaw (cval : Key md → (LevelParam → Nat) → V) (env : Env md) : Prop :=
+  ∀ (T : Key md) (cvT : ConstantVal md) (caps : IndCaps md) (C : Key md),
+    env.find? T = some (.indInfo cvT caps) → caps.eta = true →
+    reservedBasisNames.contains T = false → caps.etaCtor = some C →
+    reservedBasisNames.contains C = false →
+    (∃ (cvC : ConstantVal md) (nP nF : Nat), env.find? C = some (.ctorInfo cvC nP nF)) →
+    (∀ j, j < caps.etaFields → ∃ (cv : ConstantVal md) (mI rP : Nat) (rules : List (RecRule md)),
+      env.find? (projFnName T j) = some (.recInfo cv mI rP rules)) →
+    ∀ (us : List Level) (φ : LevelParam → Nat) (ρ σ : BVarIdx → V) (R : Expr md) (ts : List V)
+      (x : V),
+      us.length = cvT.levelParams.length → ts.length = caps.etaParams →
+      Fits cval env φ ρ (cvT.type.instantiateLevelParams cvT.levelParams us) ts σ R →
+      x ∈ˢ ts.foldl app (cval T (Level.substFn φ cvT.levelParams us)) →
+      x = (ts ++ (List.range caps.etaFields).map fun j =>
+          (ts ++ [x]).foldl app (cval (projFnName T j) (Level.substFn φ cvT.levelParams us))).foldl
+        app (cval C (Level.substFn φ cvT.levelParams us))
+
 /-- **A model of the environment `env` in the set theory `V`**: one
 assignment `cval` of a set to every constant at every level
 assignment — fixed once, for the whole environment — under which every
@@ -513,7 +570,10 @@ where they are laws of stored constants:
 * **projections and structure η** (`proj_law`): a stored structure's
   projection table is the structure's own, a projection of its
   constructor is the field, and every member of an instance is the
-  constructor at its own fields (`ProjLaw`).
+  constructor at its own fields (`ProjLaw`). A projection has the type its
+  table entry stores (`proj_type`, `ProjTypeLaw`). At a family modeled with
+  projection functions instead of a table, every member of an instance is the
+  constructor at the functions' values (`eta_fn`, `EtaFnLaw`).
 * **`Nat` literals** (`lit_ops`): `Nat.pred` and the fourteen binary
   operations the kernel computes on literals do so as Lean's functions
   (`NatLitLaw`), and `Nat.add` satisfies its recurrences at every natural
@@ -583,6 +643,11 @@ structure Model (V : Type w) [SetTheory V] (env : Env md) where
   /-- **projections and structure η** at every stored structure's projection table, which
   is the structure's own (`ProjLaw`) -/
   proj_law : ProjLaw cval env
+  /-- **the type of a projection** is its table entry's (`ProjTypeLaw`) -/
+  proj_type : ProjTypeLaw cval env
+  /-- **structure η through projection functions** at every family modeled without a
+  projection table (`EtaFnLaw`) -/
+  eta_fn : EtaFnLaw cval env
   /-- **the `Nat` operations on literals** compute as Lean's do (`NatLitLaw`) -/
   lit_ops : NatLitLaw cval env
   /-- **`Nat.add`'s recurrences** at every natural (`NatAddLaw`) -/

@@ -8,7 +8,7 @@ public import IxC.Kernel.Model.Open.Irrel
 /-!
 # The rules' soundness over the public `Model`: the stored environment
 
-The rules read three facts about the stored environment that `Model` does not state, each
+The rules read these facts about the stored environment that `Model` does not state, each
 checked by the kernel when it stores a declaration and held by the fold's invariant:
 
 * `StoredClosed`: the stored terms are closed (`Open/Core.lean`);
@@ -21,6 +21,8 @@ checked by the kernel when it stores a declaration and held by the fold's invari
   sub-environment whose lookups are the environment's keeps it.
 * `StoredEtaRules`: an η-flagged recursor rule's constructor carries its family's level
   parameters.
+* `StoredBodies`: a stored projection table's field types have no free variable and are
+  scoped at the parameters and the subject.
 
 `StoredEnv` bundles them (`StoredEnv.of_find`, `EnvModelM.storedEnv`).
 -/
@@ -81,6 +83,20 @@ theorem StoredEtaRules.of_find {env env' : Env md} (h : StoredEtaRules env)
     h recName cv mI rP rules rl (hf _ _ hr) hrl he cvj cnP cnF (hf _ _ hc) T us₀ cvT caps hp
       (hf _ _ hT)
 
+/-- **A stored projection table's field types are scoped**: at every field, the stored type
+body has no free variable, and its loose bound variables are the parameters and the subject. -/
+def StoredBodies (env : Env md) : Prop :=
+  ∀ (T : Key md) (i : Nat) (entry : ProjEntry md), env.findProj? T i = some entry →
+    entry.body.hasFvar = false ∧ entry.body.looseBVarsBounded (entry.numParams + 1) = true
+
+theorem StoredBodies.of_find {env env' : Env md} (h : StoredBodies env)
+    (hp : ∀ T i, env'.findProj? T i = env.findProj? T i) : StoredBodies env' :=
+  fun T i entry hP => h T i entry (by rw [← hp]; exact hP)
+
+/-- **The environment's well-formedness scopes the tables' field types.** -/
+theorem EnvWF.storedBodies {env : Env md} (h : EnvWF env) : StoredBodies env :=
+  fun _ _ _ hP => ⟨(Ix.Kernel.projEntry_body_wf h hP).1, (Ix.Kernel.projEntry_body_wf h hP).2.2.2⟩
+
 variable {V : Type w} [SetTheory V]
 
 /-- **The fold's invariant holds the tables' facts**: the tower law's head data
@@ -112,6 +128,7 @@ structure StoredEnv (env : Env md) : Prop where
   arities : StoredArities env
   tables : StoredTables env
   etaRules : StoredEtaRules env
+  bodies : StoredBodies env
 
 /-- **A sub-environment keeps the bundle**: its constants are the environment's, and its
 lookups and tables are too. -/
@@ -119,12 +136,13 @@ theorem StoredEnv.of_find {env env' : Env md} (h : StoredEnv env)
     (hsub : ∀ c ∈ env'.consts, c ∈ env.consts)
     (hf : ∀ n ci, env'.find? n = some ci → env.find? n = some ci)
     (hp : ∀ T i, env'.findProj? T i = env.findProj? T i) : StoredEnv env' :=
-  ⟨h.closed.of_sub hsub, h.arities.of_find hf, h.tables.of_find hf hp, h.etaRules.of_find hf⟩
+  ⟨h.closed.of_sub hsub, h.arities.of_find hf, h.tables.of_find hf hp, h.etaRules.of_find hf,
+    h.bodies.of_find hp⟩
 
 /-- **The fold's invariant holds the bundle.** -/
 theorem EnvModelM.storedEnv {μ : CheckMode} {env : Env md}
     (m : Ix.Kernel.Model.EnvModelM V μ env) : StoredEnv env :=
   ⟨EnvWF.storedClosed m.base2.wf, EnvModel.storedArities m.base2, EnvModelM.storedTables m,
-    EnvModelM.storedEtaRules m⟩
+    EnvModelM.storedEtaRules m, EnvWF.storedBodies m.base2.wf⟩
 
 end Ix.Kernel.Open

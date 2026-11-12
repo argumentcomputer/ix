@@ -50,13 +50,6 @@ theorem DenList.length_eq {σ : Nat → V} {es : List (Expr md)} {vs : List V}
 
 /-! ## The walk and its licence -/
 
-/-- **A head applied along values applies functions on their domains**: at each step the
-function so far is a member of some product, and the next value a member of its domain. -/
-def SpineOk : V → List V → Prop
-  | _, [] => True
-  | F, x :: xs =>
-    (∃ (r : Nat) (A : V) (B : V → V), F ∈ˢ piR r A B ∧ x ∈ˢ A) ∧ SpineOk (app F x) xs
-
 theorem SpineOk.cons_iff {F x : V} {xs : List V} :
     SpineOk F (x :: xs) ↔
       (∃ (r : Nat) (A : V) (B : V → V), F ∈ˢ piR r A B ∧ x ∈ˢ A) ∧ SpineOk (app F x) xs :=

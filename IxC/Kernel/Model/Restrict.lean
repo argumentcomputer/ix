@@ -223,8 +223,8 @@ theorem Expr.RefsIn.getAppArgs {K : Key md → Prop} :
 /-- **A model restricts** to a sub-environment that agrees with the environment
 on the keys its stored constants' names and types, its definitions' values and its
 recursor rules' right-hand sides mention (and on `False`, `Eq` and the two `Bool`
-constructors), on projection tables, and on the constructor a kept structure's table
-names. -/
+constructors), on projection tables, and on the constructor and the keys of the field types
+a kept structure's table names. -/
 def Model.restrict {env env' : Env md} (M : Model V env) {K : Key md → Prop}
     (hfind : ∀ n, K n → env'.find? n = env.find? n)
     (hproj : ∀ T i, env'.findProj? T i = env.findProj? T i)
@@ -238,7 +238,8 @@ def Model.restrict {env env' : Env md} (M : Model V env) {K : Key md → Prop}
       ∀ rl ∈ rules, rl.rhs.RefsIn K)
     (hF : K falseName) (hE : K eqName)
     (hbool : K boolTrueName ∧ K boolFalseName)
-    (hctor : ∀ T i entry, env'.findProj? T i = some entry → K T → K entry.ctor) :
+    (hctor : ∀ T i entry, env'.findProj? T i = some entry → K T → K entry.ctor)
+    (hbody : ∀ T i entry, env'.findProj? T i = some entry → K T → entry.body.RefsIn K) :
     Model V env' where
   cval := M.cval
   mem := fun c hc φ ρ =>
@@ -336,6 +337,36 @@ def Model.restrict {env env' : Env md} (M : Model V env) {K : Key md → Prop}
         (Expr.RefsIn.instantiateLevelParams _ _ (htype _ hmC))).1
     · exact (Fits.mono_env hfind' hproj' hlit hfit
         (Expr.RefsIn.instantiateLevelParams _ _ (htype _ hmT))).1
+  proj_type := by
+    intro T i entry hfP us φ ρ F ts x hus hF hg hts hok hx
+    obtain ⟨ci, hfT⟩ := hF.const_stored
+    have hKT : K T := by
+      have h := hname _ (List.mem_of_find?_eq_some hfT)
+      rwa [show ci.name = T from
+        by simpa using List.find?_some (p := fun c : ConstantInfo md => c.name == T) hfT] at h
+    obtain ⟨B, hB, hgB, hmB⟩ := M.proj_type T i entry (by rw [← hproj]; exact hfP) us φ ρ F ts x
+      hus (Denotes.const_back (hfind _ hKT) hF) hg hts hok hx
+    have hK := Expr.RefsIn.instantiateLevelParams entry.levelParams us (hbody T i entry hfP hKT)
+    exact ⟨B, Denotes.mono_env hfind hproj hlit hB hK, GradedBy.mono_env hfind hproj hlit hgB hK,
+      hmB⟩
+  eta_fn := by
+    intro T cvT caps C hf heta hres hC hresC hCst hslots us φ ρ σ R ts x hus hts hfit hx
+    have hfind' : ∀ n, K n → env.find? n = env'.find? n := fun n h => (hfind n h).symm
+    have hproj' : ∀ T i, env.findProj? T i = env'.findProj? T i := fun T i => (hproj T i).symm
+    have hKof : ∀ {n : Key md} {ci : ConstantInfo md}, env'.find? n = some ci → K n := by
+      intro n ci hf
+      have h := hname _ (List.mem_of_find?_eq_some hf)
+      rwa [show ci.name = n from
+        by simpa using List.find?_some (p := fun c : ConstantInfo md => c.name == n) hf] at h
+    obtain ⟨cvC, nP, nF, hfC⟩ := hCst
+    obtain ⟨hfit', -⟩ := Fits.mono_env hfind' hproj' hlit hfit
+      (Expr.RefsIn.instantiateLevelParams _ _ (htype _ (List.mem_of_find?_eq_some hf)))
+    exact M.eta_fn T cvT caps C (by rw [← hfind _ (hKof hf)]; exact hf) heta hres hC hresC
+      ⟨cvC, nP, nF, by rw [← hfind _ (hKof hfC)]; exact hfC⟩
+      (fun j hj => by
+        obtain ⟨cv, mI, rP, rules, hj'⟩ := hslots j hj
+        exact ⟨cv, mI, rP, rules, by rw [← hfind _ (hKof hj')]; exact hj'⟩)
+      us φ ρ σ R ts x hus hts hfit' hx
   lit_ops := by
     have hfind' : ∀ n, K n → env.find? n = env'.find? n := fun n h => (hfind n h).symm
     have hproj' : ∀ T i, env.findProj? T i = env'.findProj? T i := fun T i => (hproj T i).symm

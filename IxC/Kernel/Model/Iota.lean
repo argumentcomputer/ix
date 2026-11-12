@@ -124,12 +124,6 @@ theorem DenotesList.getD {cval : Key md → (LevelParam → Nat) → V} {env : E
     | zero => simpa using hd
     | succ i => simpa using ih i (by simp at hi; omega)
 
-/-- The variable environment after binding `xs` in order (the last one innermost), as a
-fit leaves it. -/
-def pushVals (ρ : BVarIdx → V) : List V → BVarIdx → V
-  | [] => ρ
-  | x :: xs => pushVals (push x ρ) xs
-
 omit [SetTheory V] in
 theorem pushVals_ge : ∀ (xs : List V) (ρ : BVarIdx → V) (i : Nat), xs.length ≤ i →
     pushVals ρ xs i = ρ (i - xs.length)
@@ -1061,6 +1055,191 @@ theorem projLaw_of_envModelM {μ : Ix.Kernel.CheckMode} {env : Env md} (m : EnvM
     simp only [field_eq_projS]
     exact h
 
+/-! ### A projection's type, and structure η through projection functions -/
+
+/-- The opening variables of `k + 1` binders are those of `k`, then the next one. -/
+theorem openFvars_succ_append : ∀ (d k : Nat),
+    (openFvars (md := md) d (k + 1)) = openFvars d k ++ [Expr.fvar (d + k) (.sort .zero)]
+  | d, 0 => by simp [openFvars]
+  | d, k + 1 => by
+    show Expr.fvar d (.sort .zero) :: openFvars (d + 1) (k + 1) =
+      (Expr.fvar d (.sort .zero) :: openFvars (d + 1) k) ++
+        [Expr.fvar (d + (k + 1)) (.sort .zero)]
+    rw [openFvars_succ_append (d + 1) k, List.cons_append,
+      show d + 1 + k = d + (k + 1) by omega]
+
+/-- **A spine applied on its domains reads gradedly**: a graded head applied along graded
+arguments, whose values the head's value applies along on their domains (`SpineOk`). A
+proposition's product is read with a truth value as each fibre. -/
+theorem wellDenotedV_mkAppN_of_spineOk {ρ : Nat → V} :
+    ∀ (ws : List AnnotTerm) (f : AnnotTerm), WellDenotedV V ρ f →
+      (∀ w ∈ ws, WellDenotedV V ρ w) →
+      Ix.Kernel.SpineOk (interp V ρ f) (ws.map (interp V ρ)) →
+      WellDenotedV V ρ (AnnotTerm.mkAppN f ws)
+  | [], _, hf, _, _ => hf
+  | w :: ws, f, hf, hws, hok => by
+    rw [AnnotTerm.mkAppN_cons]
+    have hok' : (∃ (r : Nat) (A : V) (B : V → V), interp V ρ f ∈ˢ piR r A B ∧
+        interp V ρ w ∈ˢ A) ∧
+        Ix.Kernel.SpineOk (SetTheory.app (interp V ρ f) (interp V ρ w)) (ws.map (interp V ρ)) :=
+      hok
+    obtain ⟨⟨r, A, B, hF, hx⟩, hrest⟩ := hok'
+    have hw := hws w List.mem_cons_self
+    refine wellDenotedV_mkAppN_of_spineOk ws (.app f w) ⟨?_, ?_⟩
+      (fun z hz => hws z (List.mem_cons_of_mem _ hz)) (by rw [interp_app]; exact hrest)
+    · rw [WellDenoted_app]
+      refine ⟨hf.1, hw.1, ?_⟩
+      by_cases hr : r = 0
+      · subst hr
+        refine ⟨0, A, fun _ => truthVal True, ?_, hx, fun _ _ => truthVal_mem_univZero True⟩
+        rw [eq_pt_of_mem_piR_zero hF]
+        exact pt_mem_piR_zero_of fun _ _ => pt_mem_truthVal trivial
+      · exact ⟨r, A, B, hF, hx, fun h => absurd h hr⟩
+    · rw [AnnotValid_app]
+      exact ⟨hf.2, hw.2⟩
+
+/-- **A projection's type from the invariant**: the tower law's typing clause
+(`TowerEntryLaw`, clause (A)), with the parameters and the subject opened as free variables
+at depth `numParams + 1` and read at the values (the parameters, then the subject), and the
+type read back through the bridges (`Denotes_of_denoteMeta`, `GradedBy_of_denoteMeta`). The
+licence of the parameters (`SpineOk`) grades the family's application. -/
+theorem projTypeLaw_of_envModelM {μ : Ix.Kernel.CheckMode} {env : Env md}
+    (m : EnvModelM V μ env) : Ix.Kernel.ProjTypeLaw (cvalOf (V := V) m.base2.acval) env := by
+  intro T i entry hfP us φ ρ F ts x hus hF hg hts hok hx
+  have hcl := m.base2.cval_closedL
+  obtain ⟨-, -, -, ⟨cvT, capsT, hfT, hlpsT, -⟩, -, -, -, -, hlaw, -⟩ :=
+    m.tower_ok φ T i entry hfP
+  obtain ⟨⟨Ta, hTa, hA⟩, -⟩ := hlaw us hus
+  have hFv : F = cvalOf m.base2.acval T (Level.substFn φ cvT.levelParams us) := by
+    cases hF with
+    | const hfr _ => rw [hfT] at hfr; cases hfr; rfl
+  rw [hlpsT] at hFv
+  have hbf := Ix.Kernel.projEntry_body_hasFvar m.base2.wf hfP us
+  have hbb := Ix.Kernel.projEntry_body_looseBVars m.base2.wf hfP us
+  -- the parameters' readings at depth `numParams + 1`: `bvar (numParams - k)`
+  let ws : List AnnotTerm :=
+    (List.range entry.numParams).map fun k => AnnotTerm.bvar (entry.numParams - k)
+  have hws_len : ws.length = entry.numParams := by simp [ws]
+  have hwsMap : ws.map (interp V (push x (pushVals ρ ts))) = ts := by
+    apply List.ext_getElem (by simp [ws, hts])
+    intro k h1 h2
+    have hk : k < entry.numParams := by simpa [ws] using h1
+    obtain ⟨j, hj⟩ : ∃ j, entry.numParams - k = j + 1 := ⟨entry.numParams - k - 1, by omega⟩
+    simp only [ws, List.getElem_map, List.getElem_range, interp_bvar, hj]
+    show pushVals ρ ts j = ts[k]
+    rw [pushVals_lt ts ρ j SetTheory.empty (by omega),
+      show ts.length - 1 - j = k by omega]
+    simp only [List.getD, List.getElem?_eq_getElem h2, Option.getD_some]
+  have hsplit : openFvars (md := md) 0 (entry.numParams + 1) =
+      openFvars 0 entry.numParams ++ [Expr.fvar entry.numParams (.sort .zero)] := by
+    rw [openFvars_succ_append, Nat.zero_add]
+  have hwsplit : (List.range (entry.numParams + 1)).map
+      (fun k => AnnotTerm.bvar (entry.numParams - k)) = ws ++ [.bvar 0] := by
+    rw [List.range_succ, List.map_append]
+    simp [ws]
+  have hspine : DenoteMetaSpine m.base2.acval env φ (entry.numParams + 1)
+      (openFvars 0 entry.numParams ++ [Expr.fvar entry.numParams (.sort .zero)])
+      (ws ++ [.bvar 0]) := by
+    rw [← hsplit, ← hwsplit]
+    refine DenoteMetaSpine.of_getD _ _ (by simp) fun q hq => ?_
+    have hq' : q < entry.numParams + 1 := by simpa using hq
+    have h1 : (openFvars (md := md) 0 (entry.numParams + 1)).getD q default
+        = Expr.fvar q (.sort .zero) := by
+      simp only [List.getD, openFvars_getElem? (md := md) (d := 0) hq', Nat.zero_add,
+        Option.getD_some]
+    rw [h1, denoteMeta_fvar]
+    simp only [List.getD, List.getElem?_map, List.getElem?_range hq', Option.map_some,
+      Option.getD_some]
+    congr 2
+    omega
+  have hframes : ∀ a ∈ openFvars (md := md) 0 entry.numParams ++
+      [Expr.fvar entry.numParams (.sort .zero)],
+      Expr.WScoped (entry.numParams + 1) a ∧ a.looseBVarsBounded 0 = true := by
+    rw [← hsplit]
+    intro a ha
+    obtain ⟨q, hq⟩ := List.mem_iff_getElem?.mp ha
+    exact ⟨openFvars_WScoped (by omega) q a hq, openFvars_bounded 0 _ a ha⟩
+  obtain ⟨restA, hrestA, hpeel⟩ := Rules.denoteMeta_typeAt_peel (m := m.base2) hfP hTa
+    (targs := openFvars 0 entry.numParams) (pe := .fvar entry.numParams (.sort .zero))
+    (by simp) hframes hspine
+  -- the law at the values
+  have hokT : WellDenotedV V (push x (pushVals ρ ts))
+      (AnnotTerm.mkAppN (m.base2.acval T (Level.substFn φ entry.levelParams us)) ws) :=
+    wellDenotedV_mkAppN_of_spineOk ws _
+      ⟨m.base2.acval_wellDenoted _ _ _, m.acval_validV _ _ _⟩
+      (fun w hw => by
+        obtain ⟨k, -, rfl⟩ := List.mem_map.mp hw
+        exact ⟨by rw [WellDenoted_bvar]; trivial, by rw [AnnotValid_bvar]; trivial⟩)
+      (by rw [interp_cvalOf hcl, ← hFv, hwsMap]; exact hok)
+  have hmem0 : interp V (push x (pushVals ρ ts)) (.bvar 0) ∈ˢ interp V (push x (pushVals ρ ts))
+      (AnnotTerm.mkAppN (m.base2.acval T (Level.substFn φ entry.levelParams us)) ws) := by
+    rw [interp_mkAppN_map, hwsMap, interp_cvalOf hcl, ← hFv]
+    exact hx
+  obtain ⟨-, hokR, hmemR⟩ := hA hg _ ws (.bvar 0) restA hws_len hokT
+    ⟨by rw [WellDenoted_bvar]; trivial, by rw [AnnotValid_bvar]; trivial⟩ hmem0 hpeel
+  -- the opened type, closed again, is the body
+  have heqT : entry.typeAt us (openFvars 0 entry.numParams) (.fvar entry.numParams (.sort .zero))
+      = Expr.instSeq (openFvars 0 (entry.numParams + 1)) entry.numParams
+          (entry.body.instantiateLevelParams entry.levelParams us) := by
+    rw [Ix.Kernel.ProjEntry.typeAt_eq_instSpine entry us (by simp), ← hsplit,
+      Ix.Kernel.Expr.instSpine_eq_instSeq]
+  rw [heqT] at hrestA
+  have hsc := Ix.Kernel.instSeq_openFvars_scoped (entry.numParams + 1) 0 _ hbb
+    (Ix.Kernel.fvarsBelow_zero_of_hasFvar_false hbf)
+  have hcl' := Ix.Kernel.closeN_instSeq_openFvars (entry.numParams + 1) 0 _ hbb
+    (Ix.Kernel.fvarsBelow_zero_of_hasFvar_false hbf)
+  simp only [Nat.zero_add, Nat.add_sub_cancel] at hsc hcl'
+  rw [Expr.closeN_of_hasFvar _ 0 _ hbf] at hcl'
+  have hden := Denotes_of_denoteMeta (V := V) hcl (entry.numParams + 1) _ hrestA hsc.1 hsc.2
+    (push x (pushVals ρ ts)) hokR
+  have hgr := GradedBy_of_denoteMeta (V := V) hcl (entry.numParams + 1) _ hrestA hsc.1 hsc.2
+    (push x (pushVals ρ ts)) hokR
+  rw [hcl'] at hden hgr
+  refine ⟨_, hden, hgr, ?_⟩
+  rw [projAV_interp, interp_bvar] at hmemR
+  rw [field_eq_projS]
+  exact hmemR
+
+/-- **Structure η through projection functions, from the invariant**: the η law (`CapsOk`'s
+η half, at a family whose projections are stored functions), read at the bound-variable
+readings of the parameters through the fit, as `unitLikeLaw_of_envModelM` reads the unit
+law. -/
+theorem etaFnLaw_of_envModelM {μ : Ix.Kernel.CheckMode} {env : Env md} (m : EnvModelM V μ env) :
+    Ix.Kernel.EtaFnLaw (cvalOf (V := V) m.base2.acval) env := by
+  intro T cvT caps C hf heta hres hC hresC hCst hslots us φ ρ σ R ts x hus hts hfit hx
+  have hcl := m.base2.cval_closedL
+  have hwf := m.base2.wf _ (Ix.Kernel.Semantics.Env.find?_mem hf)
+  have hTf : (cvT.type.instantiateLevelParams cvT.levelParams us).hasFvar = false := by
+    rw [Expr.hasFvar_instantiateLevelParams]; exact hwf.1
+  have hTb : (cvT.type.instantiateLevelParams cvT.levelParams us).looseBVarsBounded 0 = true := by
+    rw [Expr.looseBVarsBounded_instantiateLevelParams]; exact hwf.2.2.2.1
+  obtain ⟨TVa, hTVa, hTVaok, hlaw⟩ :=
+    m.caps_ok.1 T cvT caps hf heta hres ⟨C, hC, hresC, hCst, hslots⟩ φ C hC us hus
+  -- the parameters as bound-variable readings
+  let ρ' : Nat → V := fun i => ts.getD i SetTheory.empty
+  let ws : List AnnotTerm := (List.range ts.length).map AnnotTerm.bvar
+  have hws_len : ws.length = ts.length := by simp [ws]
+  have hws_val : ∀ n, n < ts.length →
+      interp V ρ' (ws.getD n default) = ts.getD n SetTheory.empty := by
+    intro n hn
+    rw [show ws.getD n default = AnnotTerm.bvar n by
+      simp [ws, List.getD, List.getElem?_range hn], interp_bvar]
+  have hwsMap : ws.map (interp V ρ') = ts := by
+    have h := map_range_eq_of_getD (ρ' := ρ') (c := 0) ts
+      (fun j _ => by rw [Nat.zero_add])
+    rw [← h]
+    simp [ws, Function.comp_def]
+  obtain ⟨_, _, _, hstrip, -, -, htele, -, -, -, -⟩ :=
+    fits_teleFitPA (V := V) hcl hTf hTb hTVa hTVaok hfit hws_len hws_val
+  have hpc : Rules.PiChain ws.length TVa := by
+    rw [hws_len]
+    exact Rules.piChain_of_stripPis ts.length (by rw [hstrip]; rfl) hTVa
+  have hfitT := Rules.teleFit_of_teleFitPA hpc htele
+  rw [hwsMap] at hfitT
+  have h := hlaw ρ' ts _ x hts hfitT (by rw [interp_cvalOf hcl]; exact hx)
+  simp only [etaFabArgsV, projSpines, interp_cvalOf hcl] at h
+  exact h
+
 /-! ### The model -/
 
 /-- **The model, read off the invariant**: `Model V env` from
@@ -1126,6 +1305,8 @@ noncomputable def Model.ofEnvModelM {μ : Ix.Kernel.CheckMode} {env : Env md}
   iota_rule := iotaLaw_of_envModelM m
   unit_like := unitLikeLaw_of_envModelM m
   proj_law := projLaw_of_envModelM m
+  proj_type := projTypeLaw_of_envModelM m
+  eta_fn := etaFnLaw_of_envModelM m
   lit_ops := natLitLaw_of_envModelM m
   nat_add := natAddLaw_of_envModelM m
   graded := by
