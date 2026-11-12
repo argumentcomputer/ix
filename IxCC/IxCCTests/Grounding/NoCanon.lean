@@ -11,7 +11,14 @@ parameter (its recursor's rules do not compare parameters). Controls on `decide`
 level parameter makes `noCanonB` false, and the check's `stored` and `caseShape` with it: the landed
 check already refuses a constructor whose level count differs from its family's (`CaseWF.ctorRaw`,
 and `stored` against the program's levels), which is why no mutation of that kind leaves the check
-true. -/
+true.
+
+`litDefsB` (`IxCCGrounding.Facts`, the premise under which #678's `lit_ops` gives `NatAccel`: every
+`Nat` role the reading stores is stored as a definition) on the same 34: true on all, by name. Of
+the fifteen roles a closure stores those its program reaches, each a definition without level
+parameters, and nothing else (measured on all 50 loaded closures). Controls on `decide`: `Nat.add`
+stored as an axiom makes it false; `Nat.beq` not stored at all leaves it true (a role that is not
+stored needs nothing: no term naming it denotes). -/
 
 namespace IxCCTests.Grounding.NoCanon
 
@@ -62,6 +69,7 @@ def run : IO Bool := do
     let mut yes : Nat := 0
     let mut no : List String := []
     let mut tagsMs : Nat := 0
+    let mut ldUs : Nat := 0
     for (label, stem, roots) in js do
       let (i, _) ← loadClosure label stem roots
       let t0 ← IO.monoNanosNow
@@ -71,6 +79,12 @@ def run : IO Bool := do
       expect a (b == !notQualifying.contains label)
         s!"noCanon: {label}: noCanonB {b}, expected {!notQualifying.contains label}"
       if b then yes := yes + 1 else no := no ++ [label]
+      -- the `NatAccel` adapter's premise: every `Nat` role stored is stored as a definition
+      let t2 ← IO.monoNanosNow
+      let ld ← IO.lazyPure fun _ => litDefsB i.env
+      let t3 ← IO.monoNanosNow
+      if label == "phase1-boundary/tags125" then ldUs := (t3 - t2) / 1000
+      expect a ld s!"litDefs: {label}: litDefsB false"
     expect a (yes == 32 && no == notQualifying)
       s!"noCanon: noCanonB true on {yes}, false on {no}"
     -- controls, on `decide`: its `case` entry over `Decidable` (rules not comparing parameters,
@@ -100,6 +114,23 @@ def run : IO Bool := do
       (a case entry over a family with a level parameter); tags125 {tagsMs} ms; decide (case \
       c{c}): its recursor's rules comparing parameters: noCanonB false, every conjunct true; a \
       constructor given a level parameter: noCanonB false, the check's {failing mL} false too"
+    -- `litDefsB` controls, on `decide` (it stores `Nat.add` and `Nat.beq` as definitions): `Nat.add`
+    -- stored as an axiom is refused (#678's `lit_ops` says nothing of it); `Nat.beq` not stored at
+    -- all is accepted (no term naming it denotes, so the law is not needed there)
+    let addK : KKey := primKey .add
+    let beqK : KKey := primKey .beq
+    expect a ((match di.env.find? addK with | some (.defnInfo ..) => true | _ => false) &&
+        (match di.env.find? beqK with | some (.defnInfo ..) => true | _ => false))
+      "decide: Nat.add and Nat.beq are not both stored as definitions"
+    let envAx := mapConst di.env addK fun
+      | .defnInfo cv _ _ => .axiomInfo cv
+      | ci => ci
+    expect a (!litDefsB envAx) "decide: Nat.add stored as an axiom: litDefsB true"
+    let envNo : KEnv := { di.env with consts := di.env.consts.filter fun ci => ci.name != beqK }
+    expect a ((envNo.find? beqK).isNone && litDefsB envNo)
+      "decide: Nat.beq not stored: litDefsB false"
+    IO.println s!"litDefs: litDefsB true on the 34 accepted closures; tags125 {ldUs} µs; decide: \
+      Nat.add stored as an axiom: litDefsB false; Nat.beq not stored: litDefsB true"
     IO.println s!"tests-grounding (noCanon): {← a.get} assertions passed"
     return true
   catch error =>
