@@ -28,6 +28,7 @@ local macro "sub_calls" : term => `(fun _ hx => by simp [hx])
 
 theorem lt_mod_of_le_idx {b : Nat} (hb : b ≤ idxBound) : b < Aiur.Library.U32.Goldilocks.modulus := by
   have : idxBound = 9223372036854775808 := rfl
+  have : Aiur.Library.U32.Goldilocks.modulus = 18446744069414584321 := rfl
   omega
 
 /-- `lbr_max`'s answer on two naturals below the field's size. -/
@@ -176,7 +177,7 @@ theorem g_expr_lbr (κ : _root_.Address → KKey) {args : List (SourceValue F)} 
     subst he
     refine ⟨rfl, fun d Γ k E hE => ?_⟩
     obtain ⟨i, rfl, hs, hcase⟩ := Tm.bvar_of_load hE ld
-    have hI : IdxLt h (ZMod.val i + 1) e := idxAll_bvar_of_load ld (by simp)
+    have hI : IdxLt _ (ZMod.val i + 1) e := idxAll_bvar_of_load ld (by simp)
     refine ⟨ZMod.val i + 1, ?_, ?_, ?_, hI, ?_, lbrLe_of_idxLt hE hI⟩
     · rw [add_ok op, Nat.cast_add, natCast_val, Nat.cast_one]
     · show ZMod.val i + 1 ≤ 9223372036854775808; omega
@@ -189,19 +190,19 @@ theorem g_expr_lbr (κ : _root_.Address → KKey) {args : List (SourceValue F)} 
   | .Srt (ld12 := ld) (he49 := hr) (he50 := he) .. =>
     subst hr he
     refine ⟨rfl, fun d Γ k E hE => ?_⟩
-    have hI : IdxLt h 0 e := idxAll_sort_of_load ld
+    have hI : IdxLt _ 0 e := idxAll_sort_of_load ld
     exact ⟨0, by simp, Nat.zero_le _, Nat.zero_le _, hI, fun b' hb' => absurd hb' (Nat.not_lt_zero _),
       lbrLe_of_idxLt hE hI⟩
   | .Const (ld12 := ld) (he71 := hr) (he72 := he) .. =>
     subst hr he
     refine ⟨rfl, fun d Γ k E hE => ?_⟩
-    have hI : IdxLt h 0 e := idxAll_const_of_load ld
+    have hI : IdxLt _ 0 e := idxAll_const_of_load ld
     exact ⟨0, by simp, Nat.zero_le _, Nat.zero_le _, hI, fun b' hb' => absurd hb' (Nat.not_lt_zero _),
       lbrLe_of_idxLt hE hI⟩
   | .Lit (ld12 := ld) (he87 := hr) (he88 := he) .. =>
     subst hr he
     refine ⟨rfl, fun d Γ k E hE => ?_⟩
-    have hI : IdxLt h 0 e := idxAll_lit_of_load ld
+    have hI : IdxLt _ 0 e := idxAll_lit_of_load ld
     exact ⟨0, by simp, Nat.zero_le _, Nat.zero_le _, hI, fun b' hb' => absurd hb' (Nat.not_lt_zero _),
       lbrLe_of_idxLt hE hI⟩
   | .App (ld12 := ld) (ev126 := e1) (ev146 := e2) (ev112 := e3) (hc155 := hc) .. =>
@@ -216,7 +217,7 @@ theorem g_expr_lbr (κ : _root_.Address → KKey) {args : List (SourceValue F)} 
     injection hbf with hbf; injection hba with hba; subst hbf hba
     obtain ⟨b, hb', b1, b2, b3⟩ := max_spec (lt_mod_of_le_idx bf1) (lt_mod_of_le_idx ba1)
     rw [hb'] at hr
-    have hI : IdxLt h b e := idxAll_app_of_load ld (idxAll_mono bf3 (fun n i hi => by omega))
+    have hI : IdxLt _ b e := idxAll_app_of_load ld (idxAll_mono bf3 (fun n i hi => by omega))
       (idxAll_mono ba3 (fun n i hi => by omega))
     refine ⟨b, hr, by omega, by omega, hI, ?_, lbrLe_of_idxLt hE hI⟩
     intro b' hb' hlt
@@ -240,7 +241,7 @@ theorem g_expr_lbr (κ : _root_.Address → KKey) {args : List (SourceValue F)} 
     obtain ⟨b, hb', b1, b2, b3⟩ := max_spec (a := bt) (b := bb - 1) (lt_mod_of_le_idx bt1)
       (by have := lt_mod_of_le_idx bb1; omega)
     rw [hb'] at hr
-    have hI : IdxLt h b e := idxAll_lam_of_load ld (idxAll_mono bt3 (fun n i hi => by omega))
+    have hI : IdxLt _ b e := idxAll_lam_of_load ld (idxAll_mono bt3 (fun n i hi => by omega))
       (idxAll_imp bb3 (fun n i hi => by omega))
     refine ⟨b, hr, by omega, by omega, hI, ?_, lbrLe_of_idxLt hE hI⟩
     intro b' hb' hlt
@@ -264,7 +265,7 @@ theorem g_expr_lbr (κ : _root_.Address → KKey) {args : List (SourceValue F)} 
     obtain ⟨b, hb', b1, b2, b3⟩ := max_spec (a := bt) (b := bb - 1) (lt_mod_of_le_idx bt1)
       (by have := lt_mod_of_le_idx bb1; omega)
     rw [hb'] at hr
-    have hI : IdxLt h b e := idxAll_forallE_of_load ld (idxAll_mono bt3 (fun n i hi => by omega))
+    have hI : IdxLt _ b e := idxAll_forallE_of_load ld (idxAll_mono bt3 (fun n i hi => by omega))
       (idxAll_imp bb3 (fun n i hi => by omega))
     refine ⟨b, hr, by omega, by omega, hI, ?_, lbrLe_of_idxLt hE hI⟩
     intro b' hb' hlt
@@ -278,7 +279,7 @@ theorem g_expr_lbr (κ : _root_.Address → KKey) {args : List (SourceValue F)} 
     refine ⟨rfl, fun d Γ k E hE => ?_⟩
     obtain ⟨T, V, B, rfl, ht, hv, hb⟩ := Tm.letE_of_load hE ld
     obtain ⟨b, hr, b1, b2, i1, i2, i3, bmin⟩ := sl d Γ k T V B ht hv hb
-    have hI : IdxLt h b e := idxAll_letE_of_load ld i1 i2 (idxAll_imp i3 (fun n i hi => by omega))
+    have hI : IdxLt _ b e := idxAll_letE_of_load ld i1 i2 (idxAll_imp i3 (fun n i hi => by omega))
     refine ⟨b, hr, b1, b2, hI, ?_, lbrLe_of_idxLt hE hI⟩
     intro b' hb' hlt
     obtain ⟨t', v', bd'⟩ := idxAll_letE_inv hlt ld
@@ -289,7 +290,7 @@ theorem g_expr_lbr (κ : _root_.Address → KKey) {args : List (SourceValue F)} 
     refine ⟨rfl, fun d Γ k E hE => ?_⟩
     obtain ⟨a, i, Es, -, rfl, -, hes⟩ := Tm.proj_of_load hE ld
     obtain ⟨b, hr, b1, b2, b3, b4, -⟩ := s1 d Γ k Es hes
-    have hI : IdxLt h b e := idxAll_proj_of_load ld b3
+    have hI : IdxLt _ b e := idxAll_proj_of_load ld b3
     exact ⟨b, hr, b1, b2, hI, fun b' hb' hlt => b4 b' hb' (idxAll_proj_inv hlt ld),
       lbrLe_of_idxLt hE hI⟩
 
