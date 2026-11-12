@@ -105,6 +105,7 @@ partial def evalI (P : Program) (budget : Nat) (ρ : Env) (J : List JEntry) (H :
     match evalRhs P.tables ρ H r with
     | .ok (v, H') =>
       if H'.size > before then
+        heapEvent 5 (.loc before)
         modify fun s => let live := s.live + 1
           { s with allocs := s.allocs + 1, live, peak := max s.peak live }
       evalI P budget (ρ.insert x v) J H' c

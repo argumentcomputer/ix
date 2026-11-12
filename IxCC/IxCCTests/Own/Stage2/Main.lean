@@ -366,7 +366,7 @@ def sites (closure eqs root label : String) (count seed : Nat) (ns : List Nat) :
       if ok then
         let P : Program := { source := F, bodies := m.insert g body' }
         let vs := refs.map fun ref => (ref, oracleV P f ref.args ref.value g)
-        let heap := vs.any fun (ref, v) => v.heapHash != ref.heapHash
+        let heap := vs.any fun (ref, v) => v.heapHash != ref.heapHash || v.sig != ref.sig
         let counts := vs.any fun (ref, v) => v.sig != ref.sig
         let ran := vs.any fun (ref, v) => v.fullHash != ref.fullHash
         let fails := vs.filterMap fun (_, v) => v.failure
