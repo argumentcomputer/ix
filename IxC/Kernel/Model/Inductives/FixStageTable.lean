@@ -857,6 +857,263 @@ theorem declNativeTableJ {env env₁ envC env₂ : Env md} {p : NativeParts md}
     exact ⟨mp₃, fun _ => .refl⟩
 
 
+set_option maxHeartbeats 3200000 in
+/-- **The table stage of a direct install without a recursor record**: at a
+structure-like block the P carrier survives the table's cons over the
+constructors' environment (`stageFixTable`); at any other block the stage conses
+nothing. -/
+theorem declNativeTableNoRecJ {env env₁ envC env₂ : Env md} {p : NativeParts md}
+    {cvTa : ConstantVal md} {ctorsA : List (ConstantVal md × Nat)} {sortss : List (List Level)}
+    {J : Judgements md} (hI : JudgeInv J)
+    (h₁ : env₁ = ⟨.indInfo cvTa (Ix.Kernel.nativeCaps p) :: env.consts⟩)
+    (hC : envC = Ix.Kernel.consSumCtors p.nP ctorsA env₁)
+    (hTbl : Ix.Kernel.checkNativeTable (m := Ix.Kernel.CheckM md) p ctorsA sortss envC = .ok env₂)
+    (mpC : EnvModelM V μ envC)
+    {ppsAll : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
+    {idxF : Nat → List (Expr md)} {dsF : Nat → (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
+    {esF : Nat → (LevelParam → Nat) → List AnnotTerm} {srcsF : Nat → List (Option Nat)}
+    {ksF : Nat → List RecFieldKind} {fvsPF xFvsF : Nat → List (Expr md)} {xrestF : Nat → Expr md}
+    {eissF : Nat → (LevelParam → Nat) → List (List AnnotTerm)}
+    {tssF : Nat → (LevelParam → Nat) → List (List (Nat × Nat × AnnotTerm))}
+    (hProp : p.isProp = (Level.isEquiv p.resSort .zero == some true))
+    (hCres : ∀ c ∈ p.ctors, c.1.levelParams = p.cvT.levelParams ∧
+      Ix.Kernel.reservedBasisNames.contains c.1.name = false)
+    (hresT : Ix.Kernel.reservedBasisNames.contains p.cvT.name = false)
+    (hTshape : p.cvT.name.isProjFnShape = false)
+    (hwfEnv : Ix.Kernel.EnvWF env)
+    (hlenA : ctorsA.length = p.ctors.length)
+    (hnFc : ∀ (j : Nat) (cA c : ConstantVal md × Nat), ctorsA[j]? = some cA → p.ctors[j]? = some c →
+      cA.2 = c.2)
+    (hrunOf : ∀ (j : Nat) (cA : ConstantVal md × Nat), ctorsA[j]? = some cA →
+      ∃ c : ConstantVal md × Nat, p.ctors[j]? = some c ∧
+      cA.1.name = c.1.name ∧ cA.1.levelParams = p.cvT.levelParams ∧
+      env₁.find? cA.1.name = none ∧
+      cA.1.type.constsResolve env₁ = true ∧
+      cA.1.name.isProjFnShape = false ∧
+      ∃ sorts : List Level, sortss[j]? = some sorts ∧
+      SumCtorRunJ J env₁ env₁
+        p.cvT.name p.cvT.levelParams p.nP p.nIdx p.resSort p.isProp p.large c.1 cA.2 cvTa cA.1 sorts)
+    (hfT_C : envC.find? p.cvT.name = some (.indInfo cvTa (Ix.Kernel.nativeCaps p)))
+    (hlpsT : cvTa.levelParams = p.cvT.levelParams)
+    (hTfresh : env.find? p.cvT.name = none)
+    (htrT : cvTa.type.constsResolve env = true)
+    (hFD_C : FormerData mpC.base2 cvTa (p.nP + p.nIdx) p.resSort ppsAll)
+    (hstripT : ∃ bs, cvTa.type.stripPis (p.nP + p.nIdx) = some (bs, .sort p.resSort))
+    (hcf_C : ∀ (j : Nat) (cA : ConstantVal md × Nat), ctorsA[j]? = some cA →
+      FixCtorFactsAt mpC.base2 env p.cvT.name p.cvT.levelParams p.nP p.nIdx p.resSort p.isProp
+        p.large idxF dsF esF srcsF ksF fvsPF xFvsF xrestF eissF tssF j cA)
+    {uAV : (LevelParam → Nat) → Nat} {fssZ : (LevelParam → Nat) → List (List AnnotTerm)}
+    (hleafT : ∀ ψ, mpC.base2.acval p.cvT.name ψ
+      = nativeTyAVI (uAV ψ) (p.resSort.eval ψ) (ppsAll ψ) (((ppsAll ψ).drop p.nP).map (·.2.2))
+          (rssOfK ksF ctorsA.length) (tlssOfR (fixCtorDataList dsF esF ksF eissF tssF ψ ctorsA 0))
+          (eissOfR (fixCtorDataList dsF esF ksF eissF tssF ψ ctorsA 0)) (fssZ ψ)
+          (essOfR (fixCtorDataList dsF esF ksF eissF tssF ψ ctorsA 0)))
+    (hleafC : ∀ j cA, ctorsA[j]? = some cA → ∀ ψ, mpC.base2.acval cA.1.name ψ
+      = sumMkAV (p.resSort.eval ψ) j (dsF j ψ) (((dsF j ψ).drop p.nP).map (·.2.2))
+          (uChains (fssOfR p.nP (fixCtorDataList dsF esF ksF eissF tssF ψ ctorsA 0))))
+    (hframes : ∀ (j : Nat) (cA : ConstantVal md × Nat), ctorsA[j]? = some cA →
+      (∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
+        Sat V (((ppsAll ψ).take p.nP).map (·.2.2)).reverse ρ ↔
+          Sat V (((dsF j ψ).take p.nP).map (·.2.2)).reverse ρ) ∧
+      (∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
+        Sat V (((dsF j ψ).take p.nP).map (·.2.2)).reverse ρ →
+          FieldsOkB (p.resSort.eval ψ) ρ (((dsF j ψ).drop p.nP).map (·.2.2)) ∧
+          FieldsValid ρ (((dsF j ψ).drop p.nP).map (·.2.2)) ∧
+          (∀ bs : List V, SpineFit ρ (((dsF j ψ).drop p.nP).map (·.2.2)) bs →
+            (∀ E ∈ esF j ψ, WellDenotedV V (consList bs ρ) E) ∧
+            SpineFit ρ (((ppsAll ψ).drop p.nP).map (·.2.2)) (idxValsAt ρ (esF j ψ) bs))))
+    (hsortsOf : ∀ (j : Nat) (cA : ConstantVal md × Nat), ctorsA[j]? = some cA →
+      ∃ sorts : List Level, sortss[j]? = some sorts ∧ sorts.length = cA.2 ∧
+      (∀ k, k < cA.2 → p.isProp = false → ∀ φ : LevelParam → Nat,
+        Level.eval φ (sorts.getD k .zero) ≤ Level.eval φ p.resSort) ∧
+      (∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
+        Sat V (((dsF j ψ).take p.nP).map (·.2.2)).reverse ρ →
+        (p.isProp = false →
+          FieldsBound (p.resSort.eval ψ) ρ (((dsF j ψ).drop p.nP).map (·.2.2))) ∧
+        ∀ k, k < cA.2 → ∀ as : List V,
+          SpineFit ρ ((((dsF j ψ).drop p.nP).map (·.2.2)).take k) as →
+          interp V (consList as ρ) ((((dsF j ψ).drop p.nP).map (·.2.2)).getD k default)
+            ∈ˢ (univ ((sorts.getD k .zero).eval ψ) : V)))
+    (hXR : ∀ (ψ : LevelParam → Nat) (ρp : Nat → V),
+      Sat V (((ppsAll ψ).take p.nP).map (·.2.2)).reverse ρp →
+      XChainsOk (uAV ψ) (p.resSort.eval ψ) ρp (((ppsAll ψ).drop p.nP).map (·.2.2))
+        (rssOfK ksF ctorsA.length) (tlssOfR (fixCtorDataList dsF esF ksF eissF tssF ψ ctorsA 0))
+        (eissOfR (fixCtorDataList dsF esF ksF eissF tssF ψ ctorsA 0)) (fssZ ψ)
+        (essOfR (fixCtorDataList dsF esF ksF eissF tssF ψ ctorsA 0)) ∧
+      ChainsRealI (fixFamI (uAV ψ) (p.resSort.eval ψ) ρp (((ppsAll ψ).drop p.nP).map (·.2.2)) p.nIdx
+          (rssOfK ksF ctorsA.length) (tlssOfR (fixCtorDataList dsF esF ksF eissF tssF ψ ctorsA 0))
+          (eissOfR (fixCtorDataList dsF esF ksF eissF tssF ψ ctorsA 0)) (fssZ ψ)
+          (essOfR (fixCtorDataList dsF esF ksF eissF tssF ψ ctorsA 0)))
+        (uAV ψ) (p.resSort.eval ψ) ρp (((ppsAll ψ).drop p.nP).map (·.2.2)) (rssOfK ksF ctorsA.length)
+        (tlssOfR (fixCtorDataList dsF esF ksF eissF tssF ψ ctorsA 0))
+        (eissOfR (fixCtorDataList dsF esF ksF eissF tssF ψ ctorsA 0)) (fssZ ψ)
+        (fssOfR p.nP (fixCtorDataList dsF esF ksF eissF tssF ψ ctorsA 0))
+        (essOfR (fixCtorDataList dsF esF ksF eissF tssF ψ ctorsA 0))) :
+    ∃ mp₂ : EnvModelM V μ env₂,
+      (∀ (cv : ConstantVal md) (v : Expr md), ConstantInfo.thmInfo cv v ∈ envC.consts →
+        ∀ i, Expr.NoProjAt p.cvT.name i v) → ModelExt mpC mp₂ := by
+  -- the case split: only a structure-like block conses a table
+  unfold Ix.Kernel.checkNativeTable at hTbl
+  split at hTbl
+  · next cA sorts =>
+    split at hTbl
+    · next hnIdx =>
+      have hnIdx' : p.nIdx = 0 := beq_iff_eq.mp hnIdx
+      obtain ⟨c, hc, hCname, hlpsC, -, -, hCshape, sorts', hsj, hCtor⟩ := hrunOf 0 cA rfl
+      obtain rfl : sorts = sorts' := Option.some.inj hsj
+      have hc' : p.ctors = [c] := by
+        rw [List.length_singleton] at hlenA
+        obtain ⟨c', hc''⟩ := List.length_eq_one_iff.mp hlenA.symm
+        rw [hc''] at hc ⊢
+        obtain rfl := Option.some.inj hc
+        rfl
+      have hnFc' : cA.2 = c.2 := hnFc 0 cA c rfl hc
+      have hresC : Ix.Kernel.reservedBasisNames.contains cA.1.name = false := by
+        rw [hCname]; exact (hCres c (by rw [hc']; exact List.mem_singleton_self _)).2
+      -- the capability record at a structure-like block
+      have hcapsR := Ix.Kernel.nativeCaps_single (p := p) hc'
+      have hcaps : (Ix.Kernel.nativeCaps p).eta = true →
+          (Level.isEquiv p.resSort .zero == some true) = false ∧
+          (Ix.Kernel.nativeCaps p).etaCtor = some cA.1.name ∧
+          (Ix.Kernel.nativeCaps p).etaParams = p.nP ∧
+          (Ix.Kernel.nativeCaps p).etaFields = cA.2 := by
+        intro he
+        rw [hcapsR] at he ⊢
+        simp only [Bool.and_eq_true, Bool.not_eq_eq_eq_not, Bool.not_true] at he
+        refine ⟨by rw [← hProp]; exact he.1.2, by rw [hCname], rfl, hnFc'.symm⟩
+      have hfC_C : envC.find? cA.1.name = some (.ctorInfo cA.1 p.nP cA.2) := (hcf_C 0 cA rfl).1
+      -- the constructor type's shape
+      obtain ⟨_, hccvC⟩ := Ix.Kernel.Semantics.SumCtorRunJ.check hCtor
+      obtain ⟨-, ⟨cbs, es, hstrip, hes⟩, -⟩ := id hCtor
+      have hstripC : (cA.1.type.stripPis (p.nP + cA.2)).isSome = true := by
+        rw [hstrip]; rfl
+      -- the constructor returns the structure at its own parameters, with no index
+      have hes0 : es = [] := List.eq_nil_of_length_eq_zero (by rw [hes, hnIdx'])
+      have hresultC : ∃ bs, cA.1.type.stripPis (p.nP + cA.2) = some (bs,
+          Expr.mkAppN (.const p.cvT.name (p.cvT.levelParams.map .param))
+            ((List.range p.nP).map fun k => .bvar (cA.2 + p.nP - 1 - k))) :=
+        ⟨cbs, by rw [hstrip, hes0, List.append_nil]; rfl⟩
+      have hsortT : ∃ bs, cvTa.type.stripPis p.nP = some (bs, .sort p.resSort) := by
+        obtain ⟨bs, h⟩ := hstripT
+        rw [hnIdx', Nat.add_zero] at h
+        exact ⟨bs, h⟩
+      -- the structure's slots are mentioned by no stored piece: no table
+      -- is stored below the table stage
+      obtain ⟨-, -, -, -, hfreshTbl₃, -⟩ := Ix.Kernel.checkStructProjTable_inv hTbl
+      have hfreshTbl₁ : env₁.find? (projTableName p.cvT.name) = none := by
+        have h1 := hfreshTbl₃
+        rw [hC] at h1
+        exact Ix.Kernel.consSumCtors_find?_none h1
+      -- `NoProjEnv` across the block's conses
+      obtain ⟨typeC, ⟨-, -, -, -, -, hnfC, hannC, -, -, stypeC, -, hinfC, -⟩, htyC⟩ :=
+        id hccvC
+      have hnpT : ∀ j, Expr.NoProjAt p.cvT.name j cvTa.type :=
+        fun j => Ix.Kernel.Expr.noProjAt_of_constsResolve hTfresh _ htrT
+      have hnpC : ∀ j, Expr.NoProjAt p.cvT.name j cA.1.type := by
+        intro j
+        have : cA.1.type = typeC := by rw [htyC]
+        rw [this]
+        exact hI.annot_noProjAt hannC ⟨stypeC, hinfC⟩ hnfC
+          (Ix.Kernel.Env.findProj?_none_of_fresh hfreshTbl₁ j)
+      have hnpC_C : ∀ j, NoProjEnv envC p.cvT.name j := by
+        intro j
+        have h0 : NoProjEnv env p.cvT.name j := noProjEnv_of_fresh hwfEnv hTfresh j
+        have h1 : NoProjEnv env₁ p.cvT.name j := by
+          rw [h₁]
+          exact h0.cons (c₀ := .indInfo cvTa (Ix.Kernel.nativeCaps p))
+            (NoProjHead.ofType (hnpT j) (fun _ _ _ h => nomatch h)
+              (fun _ _ _ _ h => nomatch h) (fun _ h => nomatch h))
+        rw [hC]
+        exact noProjEnv_consSumCtors h1 (fun c' hc' => by
+          obtain rfl := List.mem_singleton.mp hc'
+          exact hnpC j)
+      -- the former's and the constructor's data at the constructors' carrier
+      have hFD₃ : FormerData mpC.base2 cvTa p.nP p.resSort ppsAll := by
+        have := hFD_C
+        rwa [hnIdx', Nat.add_zero] at this
+      have hCD_C := (hcf_C 0 cA rfl).2.2
+      have hCD₃ := hCD_C.toCtorDataI
+      have hEsNil : ∀ ψ, esF 0 ψ = [] := by
+        intro ψ
+        apply List.eq_nil_of_length_eq_zero
+        rw [hCD_C.lenE, hnIdx']
+      -- the parameter telescope is the whole former telescope
+      have hlenP : ∀ ψ, (ppsAll ψ).length = p.nP := by
+        intro ψ; rw [hFD_C.len ψ, hnIdx', Nat.add_zero]
+      have hIds : ∀ ψ, ((ppsAll ψ).drop p.nP).map (·.2.2) = [] := by
+        intro ψ; rw [List.drop_of_length_le (Nat.le_of_eq (hlenP ψ))]; rfl
+      have hTake : ∀ ψ, (ppsAll ψ).take p.nP = ppsAll ψ :=
+        fun ψ => List.take_of_length_le (Nat.le_of_eq (hlenP ψ))
+      -- the one constructor's chains
+      have hFssEq : ∀ ψ, fssOfR p.nP (fixCtorDataList dsF esF ksF eissF tssF ψ [cA] 0)
+          = [((dsF 0 ψ).drop p.nP).map (·.2.2)] := fun _ => rfl
+      have hEssEq : ∀ ψ, essOfR (fixCtorDataList dsF esF ksF eissF tssF ψ [cA] 0) = [[]] := by
+        intro ψ
+        show [esF 0 ψ] = [[]]
+        rw [hEsNil]
+      -- the leaves at the constructors' carrier
+      have hleafT₃ : ∀ ψ, mpC.base2.acval p.cvT.name ψ
+          = nativeTyAVI (uAV ψ) (p.resSort.eval ψ) (ppsAll ψ) [] (rssOfK ksF [cA].length)
+              (tlssOfR (fixCtorDataList dsF esF ksF eissF tssF ψ [cA] 0))
+              (eissOfR (fixCtorDataList dsF esF ksF eissF tssF ψ [cA] 0)) (fssZ ψ)
+              (essOfR (fixCtorDataList dsF esF ksF eissF tssF ψ [cA] 0)) := by
+        intro ψ
+        rw [hleafT ψ, hIds ψ]
+      have hleafC₃ : ∀ ψ, mpC.base2.acval cA.1.name ψ
+          = sumMkAV (p.resSort.eval ψ) 0 (dsF 0 ψ) (((dsF 0 ψ).drop p.nP).map (·.2.2))
+              (uChains [((dsF 0 ψ).drop p.nP).map (·.2.2)]) := by
+        intro ψ
+        rw [hleafC 0 cA rfl ψ, hFssEq ψ]
+      -- the family at the parameters is the one-constructor fibre
+      have hfoldAt : ∀ (ψ : LevelParam → Nat) (ρ : Nat → V) (ts : List V),
+          SpineFit ρ ((ppsAll ψ).map (·.2.2)) ts →
+          ts.foldl SetTheory.app (interp V ρ
+              (nativeTyAVI (uAV ψ) (p.resSort.eval ψ) (ppsAll ψ) [] (rssOfK ksF [cA].length)
+                (tlssOfR (fixCtorDataList dsF esF ksF eissF tssF ψ [cA] 0))
+                (eissOfR (fixCtorDataList dsF esF ksF eissF tssF ψ [cA] 0)) (fssZ ψ)
+                (essOfR (fixCtorDataList dsF esF ksF eissF tssF ψ [cA] 0))))
+            = sumSet (p.resSort.eval ψ) (sumFibre (p.resSort.eval ψ) (consList ts ρ)
+                [((dsF 0 ψ).drop p.nP).map (·.2.2) ++ [idxEqAV []]]) := by
+        intro ψ ρ ts hsp
+        have hρ' : Sat V (((ppsAll ψ).take p.nP).map (·.2.2)).reverse (consList ts ρ) := by
+          rw [hTake]
+          have := sat_of_spineFit (Δ₀ := []) (Sat_nil V ρ) hsp
+          rwa [List.append_nil] at this
+        obtain ⟨hX, hreal⟩ := hXR ψ (consList ts ρ) hρ'
+        rw [hIds ψ] at hX hreal
+        rw [hnIdx'] at hreal
+        have hsh : shiftE ([] : List AnnotTerm).length 0 (consList ts ρ) = consList ts ρ :=
+          shiftE_zero_zero _
+        have hfr : Ix.Kernel.Semantics.frameIdx ([] : List AnnotTerm).length (consList ts ρ) = [] := rfl
+        have hbase : FixBaseI (uAV ψ) (p.resSort.eval ψ) (consList ts ρ) [] (rssOfK ksF [cA].length)
+            (tlssOfR (fixCtorDataList dsF esF ksF eissF tssF ψ [cA] 0))
+            (eissOfR (fixCtorDataList dsF esF ksF eissF tssF ψ [cA] 0)) (fssZ ψ)
+            (essOfR (fixCtorDataList dsF esF ksF eissF tssF ψ [cA] 0)) := by
+          refine ⟨?_, ?_, ?_⟩
+          · rw [hsh]; exact hX.hI
+          · rw [hsh]; exact hX.hok
+          · rw [hsh, hfr]; trivial
+        rw [nativeTyAVI_fold hsp hbase, hsh, hfr, fixFamI_app_eq_sum hX hreal (is := []) trivial,
+          consList_nil, hFssEq ψ, hEssEq ψ]
+        show sumSet _ (sumFibre _ _ (rChains 0 0 [_] [[]])) = _
+        rw [rChains_single_nil]
+      -- the constructor's frames
+      have hframes₀ := hframes 0 cA rfl
+      obtain ⟨sorts'', hsj', -, hleq, hsortsAll⟩ := hsortsOf 0 cA rfl
+      obtain rfl : sorts = sorts'' := Option.some.inj hsj'
+      exact stageFixTable mpC hTbl hfT_C hcaps hlpsT hfC_C hlpsC hstripC hresultC
+        hsortT hProp hTshape hCshape hresT hresC hnpC_C hFD₃ hCD₃.read hCD₃.len hCD₃.below hleq
+        hleafT₃ hleafC₃ hfoldAt
+        (fun ψ ρ => by have := hframes₀.1 ψ ρ; rwa [hTake] at this)
+        (fun ψ ρ hρ => ⟨(hframes₀.2 ψ ρ hρ).1, (hframes₀.2 ψ ρ hρ).2.1⟩)
+        (fun ψ ρ hρ hp => (hsortsAll ψ ρ hρ).1 hp) (fun ψ ρ hρ => (hsortsAll ψ ρ hρ).2)
+    · next =>
+      obtain rfl := Except.ok.inj hTbl
+      exact ⟨mpC, fun _ => .refl⟩
+  · next =>
+    obtain rfl := Except.ok.inj hTbl
+    exact ⟨mpC, fun _ => .refl⟩
+
 /-- The table stage from the stage runs: `declNativeTableJ` at the kernel's runs. -/
 theorem declNativeTable {F : Nat} {env env₁ envC env₂ : Env md} {p : NativeParts md}
     {cvTa cvRa : ConstantVal md} {ctorsA : List (ConstantVal md × Nat)} {sortss : List (List Level)}

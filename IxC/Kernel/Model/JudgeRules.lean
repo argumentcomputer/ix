@@ -42,8 +42,9 @@ derivation). `axiomBits_rulesJ` gives the pinned axioms' bits over derivations
 (by inversion, `Rules/Inversion.lean`), and `foldRules` is `foldJ` at this package,
 which then asks only for the inductive kind's step; `foldRulesModeled` discharges
 it when every inductive block takes the modeled route (`Model/DeclIndJ.lean`), and
-`foldRulesRoutes` over both routes (`IndRoutesJ`), the native one by
-`nativeStep_rulesJ` (`declNativeJ`, `Model/Inductives/DeclNative.lean`).
+`foldRulesRoutes` over every route of `IndRoutesJ`: the native one by
+`nativeStep_rulesJ` (`declNativeJ`, `Model/Inductives/DeclNative.lean`) and the
+native one without a recursor record by `nativeNoRecStep_rulesJ` (`declNativeNoRecJ`).
 -/
 
 namespace Ix.Kernel.Model
@@ -573,15 +574,30 @@ theorem nativeStep_rulesJ {env env₂ : Env md} {block : List (ConstantInfo md)}
     judgeInv_rulesJ (fun m φ => sortClaim_rulesJ_of m φ) mp hE hdp h
   exact ⟨mp₂, hext hT⟩
 
-/-- **The fold at the derivation package over both routes** (`IndRoutesJ`): every
-inductive block takes the native route at the parts the recogniser reads off it
-(`nativeStep_rulesJ`) or the modeled route (`modeledStep_rulesJ`). -/
+/-- **A native block without its recursor record, over derivations**: the
+recursor-less record at `rulesJ` gives the two facts `foldRules` asks of the
+inductive kind, at a model whose stored theorem values are read. -/
+theorem nativeNoRecStep_rulesJ {env env₂ : Env md} {block : List (ConstantInfo md)} {nP : Nat}
+    {p₀ : Ix.Kernel.NativeParts md} (mp : EnvModelM V μ env) (hT : ThmValOk mp)
+    (hE : EtaFamiliesClosed env) (hdp : nativePartsNoRec? nP block = some p₀)
+    (h : DeclNativeNoRecRunJ rulesJ env p₀ env₂) :
+    EtaFamiliesClosed env₂ ∧ ∃ mp₂ : EnvModelM V μ env₂, ModelExt mp mp₂ := by
+  refine ⟨declNativeNoRecRunJ_etaClosed hE h, ?_⟩
+  obtain ⟨mp₂, hext⟩ := declNativeNoRecJ judgeFrames_rulesJ (fun m => judgeSound_rulesJ_of m)
+    judgeInv_rulesJ (fun m φ => sortClaim_rulesJ_of m φ) mp hE hdp h
+  exact ⟨mp₂, hext hT⟩
+
+/-- **The fold at the derivation package over the inductive routes** (`IndRoutesJ`):
+every inductive block takes the native route at the parts the recogniser reads off
+it (`nativeStep_rulesJ`), the modeled route (`modeledStep_rulesJ`), or the native
+route without a recursor record (`nativeNoRecStep_rulesJ`). -/
 theorem foldRulesRoutes {env env' : Env md} {ds : List (Declaration md)} :
     DeclsRunJ rulesJ (IndRoutesJ rulesJ) env ds env' →
     EnvModelT V μ env → EnvModelT V μ env' :=
   foldRules fun {_} mp hT hE {_ _ _} h => by
-    rcases h with ⟨p₀, hdp, hN⟩ | hM
+    rcases h with ⟨p₀, hdp, hN⟩ | hM | ⟨p₀, hdp, hN⟩
     · exact nativeStep_rulesJ mp hT hE hdp hN
     · exact modeledStep_rulesJ mp hE hM
+    · exact nativeNoRecStep_rulesJ mp hT hE hdp hN
 
 end Ix.Kernel.Model
