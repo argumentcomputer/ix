@@ -357,7 +357,10 @@ mechanism to raise the verifier's limits as `IXCC_<LIMIT>` is being built).
 The verifier's other costs on hostile input (the source-domain check
 `programDomain`, quadratic, and the check run three times per certificate)
 are listed in the [roadmap](roadmap.md#hardening).
-⟦VERIFIERTIME⟧
+The verifier is not slower for the change: over every root of the 12 registered manifests under
+`--rc on` (202 certificates, the CLI's `run` time, eight at once on the shared build box), 4.1 s in
+all and 1.3 s for the slowest (`Closures.stateLoop`), against 5.0 s and 2.0 s with the canonical
+comparison.
 
 **Statics.** Closed constructor trees (and, after P8, field-less closure
 constructors) become immortal cells in the object's read-only data instead
