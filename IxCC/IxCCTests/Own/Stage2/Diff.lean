@@ -123,7 +123,7 @@ def onMap (F : Fir.Program) (m : Src.NatMap Code) (sites random cap siteSeed ran
     tr := cmpMutant tr s!"random {i} f{g}: {what}" F m g fd body' (i % 10 == 0)
   -- the site-directed campaign's mutants
   let mut ts : Tally := {}
-  let mut r : Rng := ⟨UInt64.ofNat (siteSeed * 7919 + name.length)⟩
+  r := ⟨UInt64.ofNat (siteSeed * 7919 + name.length)⟩
   for i in List.range sites do
     let (g, r1) := r.pick funs
     let (kind, r2) := r1.pick SiteKind.all
