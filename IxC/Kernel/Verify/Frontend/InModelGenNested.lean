@@ -1,6 +1,7 @@
 module
 
 public import IxC.Kernel.Verify.Frontend.InModelNestedRename
+public import IxC.Kernel.Verify.Frontend.InModelNestedAux
 
 @[expose] public section
 
@@ -910,6 +911,9 @@ theorem genNested_mapKeys (hP : P.Pre) (hf : InjOn f P) {ctx : Ctx md} {ctx' : C
   refine ExRel.bind (readMems_mapKeys hf _ _ hty (Expr.goodList_map fun b hb => hP2.1 b hb))
     fun mems mems' hm => ?_
   obtain ⟨rfl, hmG⟩ := hm
+  -- the auxiliary-member check answers alike (`nestedAuxOk_mapKeys`)
+  have hchk := nestedAuxOk_mapKeys hf hctx t0.nP (types := t0 :: rest) hty hct hrc hmG
+  refine ExRel.cond hchk.symm (fun _ => ?_) (fun _ => ExRel.throw')
   refine ExRel.bind (S := fun _ _ => True)
     (ExRel.forIn_list (ListRel.of_map hmG) trivial fun mem mem' _ _ hmem _ => ?_) fun _ _ _ => ?_
   · obtain ⟨rfl, hmemG⟩ := hmem

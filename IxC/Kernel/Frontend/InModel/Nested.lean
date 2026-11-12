@@ -554,6 +554,152 @@ where
     have := (List.getElem?_eq_some_iff.mp h).1
     omega
 
+/-! ## The auxiliary members, derived from the constructors
+
+The auxiliary members of a nested block's recursor family, as Lean's kernel derives them
+when it reduces a nested block to a mutual one (`elim_nested_inductive`): in a constructor's
+type after its parameters, an occurrence `I As …` of an inductive type `I` outside the block
+whose parameters `As` mention the block, read outermost first and not inside an occurrence,
+adds every type of `I`'s block at `As` and at the occurrence's levels; their constructors, at
+`As`, are read in turn. The mimics read off the recursor family (`readMems`) must be these, as
+a set (`nestedAuxOk`): the family has no motive for an occurrence the constructors do not
+have, and none is missing. An occurrence whose parameters mention a binder of the
+constructor's type is refused, as Lean's kernel refuses it. -/
+
+/-- An auxiliary member as the constructors give it: the type, its parameters at the block's
+parameter frame, and its levels. -/
+abbrev AuxEntry (md : Mode) := Key md × List (Expr md) × List Level
+
+/-- The same auxiliary member: the same type, structurally the same parameters and levels. -/
+def auxEntryEq (x y : AuxEntry md) : Bool :=
+  x.1 == y.1 && x.2.1 == y.2.1 && x.2.2 == y.2.2
+
+/-- The nested occurrence a term's spine makes, if any: `I As …` with `I` a type of a block
+whose constants are not among `ns`, at least `nP_I` arguments, and its first `nP_I` arguments
+mentioning one of `ns`; its levels, those arguments and `I`'s block. -/
+def nestedOcc? (ctx : Ctx md) (ns : List (Key md)) (e : Expr md) :
+    Option (List Level × List (Expr md) × BlockRec md) :=
+  match e.getAppFn with
+  | .const c us =>
+    if ns.contains c then none else
+    match ctx.blocks c with
+    | none => none
+    | some cb =>
+      match cb.types.find? (·.cv.name == c) with
+      | none => none
+      | some t =>
+        if t.nP ≤ e.getAppArgs.length && (e.getAppArgs.take t.nP).any (mentionsAny ns) then
+          some (us, e.getAppArgs.take t.nP, cb)
+        else none
+  | _ => none
+
+/-- Every type of a list (a block's) at the parameters `ps` and the levels `us`, unless already an
+entry. -/
+def addAuxMembers (ps : List (Expr md)) (us : List Level) :
+    List (IndTypeRec md) → List (AuxEntry md) → List (AuxEntry md)
+  | [], acc => acc
+  | t :: ts, acc =>
+    addAuxMembers ps us ts
+      (if acc.any (auxEntryEq (t.cv.name, ps, us)) then acc else acc ++ [(t.cv.name, ps, us)])
+
+/-- The nested occurrences in `e`, under `d` binders of a constructor's type, added to the
+entries; `none` when an occurrence's parameters mention one of those binders. -/
+def nestedScan (ctx : Ctx md) (ns : List (Key md)) :
+    Expr md → Nat → Option (List (AuxEntry md)) → Option (List (AuxEntry md))
+  | _, _, none => none
+  | .app g a, d, some acc =>
+    if mentionsAny ns (.app g a) then
+      match nestedOcc? ctx ns (.app g a) with
+      | some (us, ps, cb) =>
+        if (ps.map (Expr.lowerBVars d 0)).map (Expr.liftLooseBVars d 0) == ps then
+          some (addAuxMembers (ps.map (Expr.lowerBVars d 0)) us cb.types acc)
+        else none
+      | none => nestedScan ctx ns a d (nestedScan ctx ns g d (some acc))
+    else some acc
+  | .lam t b m, d, some acc =>
+    if mentionsAny ns (.lam t b m) then
+      nestedScan ctx ns b (d + 1) (nestedScan ctx ns t d (some acc))
+    else some acc
+  | .forallE t b m, d, some acc =>
+    if mentionsAny ns (.forallE t b m) then
+      nestedScan ctx ns b (d + 1) (nestedScan ctx ns t d (some acc))
+    else some acc
+  | .letE t v b m, d, some acc =>
+    if mentionsAny ns (.letE t v b m) then
+      nestedScan ctx ns b (d + 1) (nestedScan ctx ns v d (nestedScan ctx ns t d (some acc)))
+    else some acc
+  | .proj s i x, d, some acc =>
+    if mentionsAny ns (.proj s i x) then nestedScan ctx ns x d (some acc) else some acc
+  | .bvar _, _, some acc => some acc
+  | .fvar _ _, _, some acc => some acc
+  | .sort _, _, some acc => some acc
+  | .const _ _, _, some acc => some acc
+  | .lit _, _, some acc => some acc
+
+/-- The nested occurrences of a list of constructor bodies, each at the parameter frame. -/
+def nestedScanAll (ctx : Ctx md) (ns : List (Key md)) :
+    List (Expr md) → Option (List (AuxEntry md)) → Option (List (AuxEntry md))
+  | [], o => o
+  | body :: bodies, o => nestedScanAll ctx ns bodies (nestedScan ctx ns body 0 o)
+
+/-- One constructor's type at an auxiliary member's levels, its parameters instantiated by the
+member's: a body at the block's parameter frame. -/
+def auxCtorBody (cb : BlockRec md) (t : IndTypeRec md) (ps : List (Expr md)) (us : List Level)
+    (cn : Key md) : Option (Expr md) :=
+  match cb.ctors.find? (·.cv.name == cn) with
+  | none => none
+  | some c =>
+    match (c.cv.type.instantiateLevelParams t.cv.levelParams us).stripPis t.nP with
+    | none => none
+    | some (_, body) => some (substParams 0 t.nP ps body)
+
+/-- An auxiliary member's constructors' bodies. -/
+def auxCtorBodies (ctx : Ctx md) (e : AuxEntry md) : Option (List (Expr md)) :=
+  match ctx.blocks e.1 with
+  | none => none
+  | some cb =>
+    match cb.types.find? (·.cv.name == e.1) with
+    | none => none
+    | some t => t.ctors.mapM (auxCtorBody cb t e.2.1 e.2.2)
+
+/-- The worklist: the constructors of entry `i` onwards, each new entry appended; `none` past
+`fuel` entries. -/
+def nestedWalk (ctx : Ctx md) (ns : List (Key md)) :
+    Nat → Nat → List (AuxEntry md) → Option (List (AuxEntry md))
+  | 0, _, _ => none
+  | fuel + 1, i, acc =>
+    match acc[i]? with
+    | none => some acc
+    | some e =>
+      match auxCtorBodies ctx e with
+      | none => none
+      | some bodies =>
+        match nestedScanAll ctx ns bodies (some acc) with
+        | none => none
+        | some acc' => nestedWalk ctx ns fuel (i + 1) acc'
+
+/-- The worklist's bound: more auxiliary members than this decline. -/
+def nestedFuel : Nat := 4096
+
+/-- **The mimics are the constructors' nested occurrences**, as a set: the auxiliary members
+derived from the block's own constructors (each type's, after the parameters `nP`) are
+distinct, as many as the family's mimics, and each is one of them. -/
+def nestedAuxOk (ctx : Ctx md) (nP : Nat) (types : List (IndTypeRec md))
+    (ctors : List (IndCtorRec md)) (recs : List (IndRecRec md)) (mems : List (Mem md)) : Bool :=
+  let ns := types.map (·.cv.name) ++ ctors.map (·.cv.name) ++ recs.map (·.cv.name)
+  match ctors.mapM (fun c => (c.cv.type.stripPis nP).map (·.2)) with
+  | none => false
+  | some bodies =>
+    match nestedScanAll ctx ns bodies (some []) with
+    | none => false
+    | some acc =>
+      match nestedWalk ctx ns nestedFuel 0 acc with
+      | none => false
+      | some derived =>
+        let aux : List (AuxEntry md) :=
+          (mems.filter (·.real?.isNone)).map fun m => (m.I, m.pins, m.lv)
+        derived.length == aux.length && derived.all (fun x => aux.any (auxEntryEq x))
+
 /-! ## The nested rung -/
 
 /-- The generic in-process rung: mutual, nested, both.  (The mutual rung
@@ -592,6 +738,10 @@ def genNested (ctx : Ctx md) (b : BlockRec md) : Except String (List (Declaratio
   let some (minorBs, _) := afterM.stripPis n | throw "recursor: minor telescope"
   -- the members: real ones and mimics
   let mems ← readMems lps nP b.types (motiveBs.map (·.1))
+  -- the mimics are the nested occurrences the block's constructors require, no more and
+  -- no fewer (Lean's kernel derives them so: `nestedAuxOk`)
+  unless nestedAuxOk ctx nP b.types b.ctors b.recs mems do
+    throw "the recursor family's auxiliary members are not the constructors' nested occurrences"
   let large? : Option LevelParam :=
     match r0.cv.levelParams with
     | e :: rest => if rest == lps && !lps.contains e then some e else none
