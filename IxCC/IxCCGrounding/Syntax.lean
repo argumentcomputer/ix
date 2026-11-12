@@ -573,6 +573,9 @@ structure Faith (p : Program) (env : KEnv) (κ : CId → KKey) (lpsOf : CId → 
   lvls : ∀ c, S c → lvlsOf p c = (lpsOf c).length
   nodup : ∀ c, S c → (lpsOf c).Nodup
   noCsimp : ∀ c g us thm, S c → p.table.resolveOf c ≠ some (.csimp g us thm)
+  /-- No fixed-width word entry (stage W1): their model fact (`wordAccel_of_eqns`) is not yet in
+  the library, so a program whose relevant closure reaches one is outside the grounded fragment. -/
+  noWord : ∀ c w op thm, S c → p.table.resolveOf c ≠ some (.word w op thm)
   noRecr : ∀ c, S c → ∀ sf kk lvls np nmot nmin ni ind rules ty,
     p.decl? c ≠ some (.recr sf kk lvls np nmot nmin ni ind rules ty)
   noQuot : ∀ c, S c → ∀ qk lvls ty, p.decl? c ≠ some (.quot qk lvls ty)

@@ -9,6 +9,7 @@ import IxCCTests.Src.Bench
 import IxCCTests.Src.SortPoly
 import IxCCTests.Src.ResourceCsimp
 import IxCCTests.Src.StepCounts
+import IxCCTests.Src.WordRules
 import IxCCTests.Src.Words
 
 /-! The `tests-src` suite: rules, the K1 table, K1 runs
@@ -54,6 +55,8 @@ def main (args : List String) : IO UInt32 := do
     part a "differential against native Lean" (Differential.run a)
     part a "pins" (Pins.run a)
     part a "fixed-width words against Lean" (Words.run a)
+    part a "fixed-width words: F6w against the reference bodies" do
+      for line in ← WordRules.run a do IO.println s!"    {line}"
     part a "diagnostics" do
       Diagnostics.run a
       for line in ← Diagnostics.ixFixture a do IO.println s!"    {line}"

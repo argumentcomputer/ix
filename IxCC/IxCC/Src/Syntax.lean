@@ -2,6 +2,7 @@ import IxCC.Ixon.V3.Const
 import IxCC.Src.Level
 import IxCC.Src.NatMap
 import IxCC.Src.Resource.Syntax
+import IxCC.Src.Word
 
 /-! # Src syntax
 
@@ -195,6 +196,10 @@ inductive Resolve where
   | eqn (thm : CId) (body : Term)
   /-- Key `T.casesOn`; `rec` is `T.rec`. -/
   | case (rec : CId)
+  /-- A fixed-width word operation (stage W1, F6w): `op` at width `w`, its meaning the stored
+  theorem `thm`, which states the operation on `UIntN.ofNat` words as `UIntN.ofNat` of a
+  formula over `Nat`'s operations (`ofNat`'s: the bridge to the constructor tower). -/
+  | word (w : Width) (op : WordOp) (thm : CId)
   deriving BEq, Repr, Inhabited
 
 /-- Where a subsingleton recursor field comes from. -/
@@ -280,6 +285,16 @@ structure Pins where
   stdAxioms : List Nat := []
   /-- The D12 allowlist: opaques evaluated through their value (`Lean.opaqueId`). -/
   opaqueByValue : List Nat := []
+  /-- `Nat.le` (the kernel's role `natLe`): the bound of a word's bridge (stage W1). -/
+  natLe : Option Nat := none
+  /-- Fixed-width words (stage W1), which no kernel role names, so always the fixed table's: per
+  width the type `UIntN` and its constructor `UIntN.ofBitVec`, the inner constructors of a
+  word's tower `BitVec.ofFin` and `Fin.mk`, and the primitive operations with their pins. -/
+  wordTypes : List (Width × Nat) := []
+  wordCtors : List (Width × Nat) := []
+  bitVecOfFin : Option Nat := none
+  finMk : Option Nat := none
+  wordOps : List ((Width × WordOp) × Nat) := []
   deriving Repr, Inhabited
 
 namespace Pins
@@ -324,6 +339,9 @@ def fixed : Pins :=
 /-- The pin of a primitive operation, if it has one. -/
 def prim? (p : Pins) (op : PrimOp) : Option Nat := p.prims.lookup op
 
+/-- The pin of a word operation, if it has one. -/
+def wordOp? (p : Pins) (w : Width) (op : WordOp) : Option Nat := p.wordOps.lookup (w, op)
+
 end Pins
 
 /-- `CId`s of the pinned constants present in the program, and the pins they
@@ -341,6 +359,11 @@ structure Known where
   (D19). -/
   decIsFalse : Option CId := none
   decIsTrue : Option CId := none
+  /-- Fixed-width words (stage W1): per width the constructor `UIntN.ofBitVec`, and the inner
+  constructors `BitVec.ofFin` and `Fin.mk` of a word's tower, which F6w reads and builds. -/
+  wordCtors : List (Width × CId) := []
+  bitVecOfFin : Option CId := none
+  finMk : Option CId := none
   /-- The pins: ingress's choice for the environment the program was read
   from; every check of a pinned identity compares with these. -/
   pins : Pins := Pins.fixed

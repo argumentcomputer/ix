@@ -433,6 +433,7 @@ def headArity : Head → Nat
       | _ => 0
     | _ => 0
   | .prim op => op.arity
+  | .word _ op => op.arity
 
 /-- Whether firing a special head reads argument `i` (SrcEval F1–F8): the
 fields of a constructor, `Quot.mk`'s element, `Quot.lift`'s function and
@@ -456,11 +457,13 @@ def headReads : Head → Nat → Bool
       | _ => true
     | _ => true
   | .prim _, _ => true
+  | .word .., _ => true
 
 /-- A special head applied to exactly its arity. -/
 def saturated (cx : Cx) (h : Head) (q : Profile) (args : List Src.Term.Arg) : M Term :=
   match h with
   | .prim op => primForm I rec cx op args
+  | .word w op => decline "erase-word" s!"{op.leanName w}: fixed-width words are not lowered yet"
   | .ctor c => ctorForm I rec cx c q args
   | .quotMk _ => quotMkForm rec cx args
   | .quotLift _ => quotLiftForm rec cx args
@@ -515,6 +518,8 @@ def constSpine (cx : Cx) (c : CId) (us : List Ixon.Univ) (args : List Src.Term.A
   let q := I.profileOf c cx.prof us
   match I.resolve.get? c with
   | some (.prim op) => special I rec cx (.prim op) q args
+  | some (.word w op _) =>
+    decline "erase-word" s!"{op.leanName w}: fixed-width words are not lowered yet" c
   | some (.case _) => special I rec cx (.cases c) q args
   | some (.csimp ..) | some (.eqn ..) => plainConst I rec cx c q args
   | none =>

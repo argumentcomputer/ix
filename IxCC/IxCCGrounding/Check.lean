@@ -17,7 +17,7 @@ mutation targeting one makes exactly that one false.
 | `stored` | every constant of `Sl` is stored under its key, with its level parameters |
 | `lvls` | the program's level count is the stored one |
 | `nodup` | the level parameters are distinct |
-| `noCsimp`, `declOk`, `notOpaque` | the fragment: no `csimp` entry, recursor or quotient constant, opaque by value |
+| `noCsimp`, `noWord`, `declOk`, `notOpaque` | the fragment: no `csimp` entry, fixed-width word entry (stage W1), recursor or quotient constant, opaque by value |
 | `prim` | a `prim` entry is the operation's role, stored with no level parameters, telescope long enough |
 | `ctor` | a constructor is stored with the program's counts, telescope long enough |
 | `caseRec` | a `case` entry's recursor is ordinary, the key's telescope long enough |
@@ -273,6 +273,11 @@ def noCsimpB (c : CId) : Bool :=
   | some (.csimp ..) => false
   | _ => true
 
+def noWordB (c : CId) : Bool :=
+  match p.table.resolveOf c with
+  | some (.word ..) => false
+  | _ => true
+
 def declOkB (c : CId) : Bool :=
   match p.decl? c with
   | some (.recr ..) => false
@@ -435,6 +440,7 @@ def checkParts (p : Program) (env : KEnv) (κ : CId → KKey) (lpsOf : CId → L
    ("lvls", Sl.all (lvlsB p lpsOf)),
    ("nodup", Sl.all (nodupB lpsOf)),
    ("noCsimp", Sl.all (noCsimpB p)),
+   ("noWord", Sl.all (noWordB p)),
    ("declOk", Sl.all (declOkB p)),
    ("notOpaque", Sl.all fun c => p.table.isOpaqueByValue c == false),
    ("prim", Sl.all (primB p env κ)),
@@ -483,6 +489,11 @@ theorem noCsimp_of {c : CId} (h : noCsimpB p c = true) :
     ∀ g us thm, p.table.resolveOf c ≠ some (.csimp g us thm) := by
   intro g us thm hr
   simp [noCsimpB, hr] at h
+
+theorem noWord_of {c : CId} (h : noWordB p c = true) :
+    ∀ w op thm, p.table.resolveOf c ≠ some (.word w op thm) := by
+  intro w op thm hr
+  simp [noWordB, hr] at h
 
 theorem noRecr_of {c : CId} (h : declOkB p c = true) :
     ∀ sf kk lvls np nmot nmin ni ind rules ty,
@@ -624,6 +635,7 @@ theorem groundFacts_of_check {ann : IxCC.Src.Relevance.Ann}
       fun c hc => beq_iff_eq.mp (all (f := lvlsB p lpsOf) "lvls" (by simp [checkParts]) c hc),
       fun c hc => of_decide_eq_true (all (f := nodupB lpsOf) "nodup" (by simp [checkParts]) c hc),
       fun c g us thm hc => noCsimp_of (all "noCsimp" (by simp [checkParts]) c hc) g us thm,
+      fun c w op thm hc => noWord_of (all "noWord" (by simp [checkParts]) c hc) w op thm,
       fun c hc => noRecr_of (all "declOk" (by simp [checkParts]) c hc),
       fun c hc => noQuot_of (all "declOk" (by simp [checkParts]) c hc),
       fun c hc => by

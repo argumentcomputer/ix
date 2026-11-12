@@ -378,6 +378,7 @@ def checkReachedTypes (rd : Reading) (p : Program) (a : Ann) : Except String Uni
     match p.table.resolveOf c with
     | some (.eqn thm _) => [thm]
     | some (.csimp g _ thm) => [g, thm]
+    | some (.word _ _ thm) => [thm]
     | some (.case r) => [r]
     | _ => []
   for c in (annReached a p.size ++ tableThms).eraseDups do

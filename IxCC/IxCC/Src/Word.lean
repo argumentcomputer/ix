@@ -94,6 +94,20 @@ def isDecision : WordOp → Bool
   | .decEq | .decLt | .decLe => true
   | _ => false
 
+/-- Whether the operation is a primitive at every level (stage W1): every operation but the
+decisions, whose reference bodies reduce to `Nat`'s own decisions on the two numbers (they never
+build the width's size, so they compile as they are) and whose model fact would need what a
+`Decidable` value is, not only what `decide` of it is. -/
+def isPrimitive (op : WordOp) : Bool := !op.isDecision
+
+/-- The primitive operations of a width. -/
+def primitives (w : Width) : List WordOp := (ofWidth w).filter isPrimitive
+
+/-- The width of an operation's word result (a conversion's target, otherwise its own). -/
+def resultWidth (w : Width) : WordOp → Width
+  | .convert w' => w'
+  | _ => w
+
 end WordOp
 
 /-- A word operation's result: a word of a width, a `Nat`, or a decision. -/

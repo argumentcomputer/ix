@@ -185,6 +185,11 @@ def primAt? (pins : Pins) (a : Ixon.Address) : Option PrimOp :=
   let n := addrNat a
   (pins.prims.find? (·.2 == n)).map (·.1)
 
+/-- The word operation pinned at `a`, if any (stage W1). -/
+def wordAt? (pins : Pins) (a : Ixon.Address) : Option (Width × WordOp) :=
+  let n := addrNat a
+  (pins.wordOps.find? (·.2 == n)).map (·.1)
+
 /-! ## Resolving and checking the pinned identities -/
 
 /-- Resolve the pinned constants present in a program, against its pins
@@ -195,7 +200,9 @@ def known (p : Program) : Known :=
   { nat := at_ pins.nat, natZero := at_ pins.natZero, natSucc := at_ pins.natSucc
     natRec := at_ pins.natRec, bool := at_ pins.bool, boolTrue := at_ pins.boolTrue
     boolFalse := at_ pins.boolFalse, eq := at_ pins.eq, decIsFalse := at_ pins.decIsFalse
-    decIsTrue := at_ pins.decIsTrue, pins }
+    decIsTrue := at_ pins.decIsTrue
+    wordCtors := pins.wordCtors.filterMap fun (w, n) => (p.lookup (addrOfNat n)).map (w, ·)
+    bitVecOfFin := at_ pins.bitVecOfFin, finMk := at_ pins.finMk, pins }
 
 theorem known_pins (p : Program) : (known p).pins = p.known.pins := rfl
 
@@ -217,6 +224,8 @@ def knownOk (p : Program) : Bool :=
   knownAt p pins.natSucc k.natSucc && knownAt p pins.natRec k.natRec &&
   knownAt p pins.bool k.bool && knownAt p pins.boolTrue k.boolTrue &&
   knownAt p pins.boolFalse k.boolFalse && knownAt p pins.eq k.eq &&
-  knownAt p pins.decIsFalse k.decIsFalse && knownAt p pins.decIsTrue k.decIsTrue
+  knownAt p pins.decIsFalse k.decIsFalse && knownAt p pins.decIsTrue k.decIsTrue &&
+  knownAt p pins.bitVecOfFin k.bitVecOfFin && knownAt p pins.finMk k.finMk &&
+  k.wordCtors.all (fun (w, c) => knownAt p (pins.wordCtors.lookup w) (some c))
 
 end IxCC.Src.Pinned

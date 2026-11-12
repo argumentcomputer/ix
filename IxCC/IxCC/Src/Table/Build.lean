@@ -1,13 +1,14 @@
-import IxCC.Src.Table.Check
+import IxCC.Src.Table.Word
 import IxCC.Src.Hints
 import Std.Data.HashMap
 
 /-! # Building the unfolding table
 
-Collects proposals (pinned primitives, `lazy` and opaque-by-value rows;
+Collects proposals (pinned primitives, the pinned word operations whose stored
+equation the closure holds when words are enabled, `lazy` and opaque-by-value rows;
 sidecar `eqn`/`csimp`/`inline` hints; `case` candidates found by scanning
 for recursor-headed definitions), checks each one, and resolves by priority
-`prim > csimp > eqn > case > body`. Every refused explicit
+`prim, word > csimp > eqn > case > body`. Every refused explicit
 proposal leaves a `hint` diagnostic. Recursor kinds are derived for every
 recursor. -/
 
@@ -18,6 +19,7 @@ open IxCC.Ixon
 /-- What the build accepted, for tests and the census. -/
 structure Stats where
   primAccepted : Array CId := #[]
+  wordAccepted : Array CId := #[]
   eqnAccepted : Array CId := #[]
   eqnRefused : Array (CId × String) := #[]
   csimpAccepted : Array CId := #[]
@@ -83,6 +85,23 @@ def build (cfg : Config) (p : Program) (hints : Array Proposal) :
       | .error msg =>
         if cfg.prims.contains op then
           diags := diags.push { code := "hint", addr := some (p.addr c), message := msg }
+  -- word: every pinned word operation present whose equation the closure holds (stage W1).
+  if cfg.words then
+    let thms := monoTheorems p
+    for c in [0:n] do
+      if let some (w, op) := Pinned.wordAt? p.known.pins (p.addr c) then
+        if (resolve.get? c).isSome || !op.isPrimitive then continue
+        match wordTheorem? p thms w op with
+        | some thm =>
+          match checkWord cfg p c w op thm with
+          | .ok () =>
+            resolve := resolve.insert c (.word w op thm)
+            stats := { stats with wordAccepted := stats.wordAccepted.push c }
+          | .error msg =>
+            diags := diags.push { code := "hint", addr := some (p.addr c), message := msg }
+        | none =>
+          diags := diags.push { code := "hint", addr := some (p.addr c)
+                                message := s!"word: no stored equation of {op.leanName w}" }
   -- csimp hints.
   for prop in hints do
     if prop.kind != .csimp then continue
