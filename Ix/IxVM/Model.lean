@@ -183,7 +183,7 @@ def canonicalUnivs (univs : Array Ixon.Univ) : Array Ixon.Univ × (UInt64 → UI
 sorted by address bytes and the levels canonical and sorted by encoding, as the
 compiler preseeds them, every index into either table moved with it, then
 `Ix.CompileM.buildConstantWithSharing`. A generated record that is alpha-equivalent
-to a compiled one (a tag enumeration, `Bool`) is then the same record whatever order
+to a compiled one (a block's tag enumeration and a Lean enumeration of its size) is then the same record whatever order
 the encoder met its references and levels in. Its binder data come later, per block
 (`BlockAdvice.withSections`). -/
 def sharedRecord (info : Ixon.ConstantInfo) (refs : Array Address) (univs : Array Ixon.Univ) :
