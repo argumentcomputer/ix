@@ -1,5 +1,7 @@
 import IxVMRefinement.Subst.Ctx
 import IxVMRefinement.Levels.Smart
+import IxVMRefinement.Obs.KernelTypes0
+import IxVMRefinement.Obs.KernelLevels2
 
 /-! # Spines and level instantiation: `collect_spine`, `expr_inst_levels(_walk)`
 
@@ -118,7 +120,7 @@ theorem bmeta_subst {ℓ : KLevel} {us ls : List KLevel} (hul : LvEqList us ls) 
     exact (zeronessOf_congr (lvEq_subst (LvEq.refl ℓ) hul)).symm
   show ({ bmeta ℓ with pw := Ix.Kernel.Level.substPW (List.range us.length) us ℓ.zeronessOf } :
       Ix.Kernel.BinderMeta) = { pw := (substLevel ℓ ls).zeronessOf }
-  rw [hz] <;> rfl
+  rw [hz]; rfl
 
 theorem bmeta_subst_nil {ℓ : KLevel} :
     ({ bmeta ℓ with pw := Ix.Kernel.Level.substPW [] [] (bmeta ℓ).pw } : Ix.Kernel.BinderMeta) =
@@ -127,7 +129,7 @@ theorem bmeta_subst_nil {ℓ : KLevel} :
     rw [← Ix.Kernel.Level.zeronessOf_subst, level_subst_nil]
   show ({ bmeta ℓ with pw := Ix.Kernel.Level.substPW [] [] ℓ.zeronessOf } :
       Ix.Kernel.BinderMeta) = { pw := ℓ.zeronessOf }
-  rw [hz] <;> rfl
+  rw [hz]; rfl
 
 /-- **Instantiating no parameter changes no image at opening depth `0`.** -/
 theorem tm_ilp_nil {κ : _root_.Address → KKey} {Γ : Nat → KExpr} {h : Heap F} {k : Nat}
