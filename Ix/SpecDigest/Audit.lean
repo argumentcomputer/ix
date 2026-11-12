@@ -32,7 +32,7 @@ adds 1700 bytes. -/
   | .ok b => s!"{b.size} bytes"
   | .error e => s!"error: {e}"
 
-/-- info: "e6f717602b5c3d293803bcc6165dddcbf2c6163b49bc4e5704505cf286856fa9" -/
+/-- info: "04794ebf18e57a04d6e2239b97b0ca28139e6c4c7e2acb0a068b47ccaac67111" -/
 #guard_msgs in
 #eval match Ix.SpecDigest.specDigest with
   | .ok a => toString a

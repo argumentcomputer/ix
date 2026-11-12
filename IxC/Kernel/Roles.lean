@@ -992,14 +992,11 @@ def Role.block : Role → List Role
 outside its own block. A role table that binds `r` binds these (and their
 blocks).
 
-They include the roles a native rule on `r` puts into its result. A decision's
-rule (IxVM's `dec_result`) answers `Decidable.isTrue p (of_decide_eq_true p d
-rfl)` or `Decidable.isFalse p (of_decide_eq_false p d rfl)`, so `Nat.decEq`,
-`Nat.decLe`, `Int.decEq` and `Int.decLe` need both `of_decide_eq_*` roles, and
-`String.decEq`, whose rule fires only on equal literals, needs
-`of_decide_eq_true`. `Decidable.isTrue` and `Decidable.isFalse` come with
-`Decidable`'s block; `Nat.decLt` and `Int.decLt` rewrite to `Nat.decLe` and
-`Int.decLe`, which carry the rest. -/
+They include the roles a native rule on `r` puts into its result. No native
+rule answers a decision procedure (`Nat.decEq`, `Nat.decLe`, `Int.decEq`,
+`Int.decLe`, `String.decEq`) with a constructor of `Decidable`, so a decision
+needs only the roles its equations are spelled over; `Nat.decLt` and
+`Int.decLt` rewrite to `Nat.decLe` and `Int.decLe`, which carry the rest. -/
 def Role.deps : Role → List Role
   | .quot | .quotMk | .quotLift | .quotInd | .quotSound => [.eq]
   | .stringOfList => [.list, .char, .string]
@@ -1027,10 +1024,8 @@ def Role.deps : Role → List Role
   | .ofDecideEqFalse => [.decidable, .decidableDecide, .notProp, .bool, .eq]
   | .decidableDecide => [.decidable, .notProp, .bool, .eq]
   | .natLe => [.nat]
-  | .natDecEq => [.nat, .bool, .eq, .decidable, .decidableDecide, .ofDecideEqTrue, .ofDecideEqFalse,
-      .natBeq]
-  | .natDecLe => [.nat, .bool, .eq, .decidable, .decidableDecide, .ofDecideEqTrue, .ofDecideEqFalse,
-      .natLe, .natBle]
+  | .natDecEq => [.nat, .bool, .eq, .decidable, .decidableDecide, .natBeq]
+  | .natDecLe => [.nat, .bool, .eq, .decidable, .decidableDecide, .natLe, .natBle]
   | .natDecLt => [.nat, .eq, .decidable, .natLe, .natDecLe]
   | .intOfNat | .intNegSucc => [.nat]
   | .intNegOfNat => [.nat, .int, .eq]
@@ -1046,16 +1041,14 @@ def Role.deps : Role → List Role
   | .bitVec | .bitVecOfNat => [.nat]
   | .bitVecToNat => [.nat, .eq, .bitVec, .natMod, .natPow]
   | .bitVecUlt => [.nat, .bool, .eq, .bitVec, .natMod, .natPow, .natBle]
-  | .stringDecEq => [.string, .bool, .eq, .decidable, .decidableDecide, .ofDecideEqTrue]
+  | .stringDecEq => [.string, .bool, .eq, .decidable, .decidableDecide]
   | .stringToByteArray => [.string, .list, .char, .stringOfList, .eq, .byteArray]
   | .listAppend => [.list, .eq]
   | .stringAppend => [.string, .list, .char, .stringOfList, .eq, .listAppend]
   | .ifThenElse => [.decidable, .notProp, .eq]
   | .intLe => [.int]
-  | .intDecEq => [.nat, .int, .bool, .eq, .decidable, .decidableDecide, .ofDecideEqTrue,
-      .ofDecideEqFalse, .natBeq]
-  | .intDecLe => [.nat, .int, .bool, .eq, .decidable, .decidableDecide, .ofDecideEqTrue,
-      .ofDecideEqFalse, .intLe, .natBle]
+  | .intDecEq => [.nat, .int, .bool, .eq, .decidable, .decidableDecide, .natBeq]
+  | .intDecLe => [.nat, .int, .bool, .eq, .decidable, .decidableDecide, .intLe, .natBle]
   | .intDecLt => [.nat, .int, .eq, .decidable, .intLe, .intAdd, .intDecLe]
   | .intBmod => [.nat, .int, .eq, .ifThenElse, .intLe, .intAdd, .intSub, .intEdiv, .intEmod, .intDecLt]
   | .intBdiv => [.nat, .int, .eq, .ifThenElse, .intLe, .intAdd, .intEdiv, .intEmod, .intDecLt,
@@ -1093,8 +1086,11 @@ adds Lean's compiler-trust axioms (`Lean.trustCompiler`, `Lean.ofReduceBool`,
 the opaques their types mention (`Lean.reduceBool`, `Lean.reduceNat`) as
 type-only anchors. Native evaluation stays outside the certified theory; the
 roles let a binding name the three axioms, so that a claim over Lean's `Init`
-need not list them as user axioms. -/
-def specVersion : Nat := 5
+need not list them as user axioms. Version 6 drops version 4's dependencies:
+no native rule answers a decision procedure any longer, so the decisions depend
+on the `of_decide_eq_*` roles no more (`Role.deps`), and a table may bind a
+decision without them. -/
+def specVersion : Nat := 6
 
 /-- **The roles the checker uses implicitly**: those it introduces into a term
 with no referenced constant that determines them. They are the literals' types
