@@ -84,6 +84,14 @@ def AtClockOwned (F : Fir.Program) (candidate : Src.NatMap Code) (k : Nat) : Pro
 
 /-! ## The stack under bindings, declarations and jumps -/
 
+theorem StackScope.cons_inv {functions : Signatures} {live : List Var}
+    {p : Fir.JoinId × List Var} {older : Joins} {e : Fir.JEntry} {rest : List Fir.JEntry}
+    (h : StackScope functions live (p :: older) (e :: rest)) :
+    p = (e.id, p.2) ∧ p.2.Sublist live ∧ EntryScope functions p.2 rest e ∧
+      StackScope functions p.2 older rest := by
+  cases h with
+  | cons order entry tail => exact ⟨rfl, order, entry, tail⟩
+
 namespace OwnedStack
 
 theorem bind {Δ : JCtx} {ρf : Fir.Env} {ρo : Own.Env} {live : List Var} {lex : Joins}
@@ -106,7 +114,7 @@ theorem rebind {Δ : JCtx} {ρf : Fir.Env} {ρo : Own.Env} {live : List Var} {le
   | nil => exact .nil _ _ _
   | cons entry oview fview tail =>
     refine .cons entry (oview.rebind params vs hf) (fun y hy => ?_) tail
-    rw [Fir.bindAll_get_notin (fresh_avoids hf (oview.order.subset hy))]
+    rw [Fir.Proof.bindAll_get_notin (fresh_avoids hf (oview.order.subset hy))]
     exact fview y hy
 
 /-- Another join context that agrees on every join of the stack. -/
@@ -117,7 +125,8 @@ theorem transfer {Δ Δ' : JCtx} {ρf : Fir.Env} {ρo : Own.Env} {live : List Va
   induction h with
   | nil => exact .nil _ _ _
   | @cons ρf ρo live lexd captured older Δd Γd ef eo jf jo entry oview fview tail ih =>
-    refine .cons ?_ oview fview (ih (fun e he => ha e (List.mem_cons_of_mem _ he)))
+    refine .cons (Δd := Δd) (Γd := Γd) (captured := captured) ?_ oview fview
+      (ih (fun e he => ha e (List.mem_cons_of_mem _ he)))
     exact { entry with
       here := (ha ef List.mem_cons_self).trans entry.here
       agree := fun e he => (entry.agree e he).trans (ha e (List.mem_cons_of_mem _ he)).symm }
@@ -139,22 +148,21 @@ theorem lookup {functions : Signatures} {Δ : JCtx} {ρf : Fir.Env} {ρo : Own.E
   | nil => intro _ hl; simp [Fir.lookupJ] at hl
   | @cons ρf ρo live lexd captured older Δd Γd ef₀ eo₀ jf jo entry oview fview tail ih =>
     intro hs hl
-    cases hs with
-    | cons order escope tscope =>
-      by_cases hid : ef₀.id = j
-      · have hh : ef₀ = ef ∧ jf = restf := by simpa [Fir.lookupJ, hid] using hl
-        obtain ⟨rfl, rfl⟩ := hh
-        refine ⟨lexd, captured, older, Δd, Γd, eo₀, jo, ?_, entry, oview, fview, tail, escope,
-          tscope⟩
-        simp [lookupJ, entry.id, hid]
-      · have hl' : Fir.lookupJ j jf = some (ef, restf) := by simpa [Fir.lookupJ, hid] using hl
-        obtain ⟨lexd', captured', older', Δd', Γd', eo, resto, hlo, entry', oview', fview', tail',
-          escope', tscope'⟩ := ih tscope hl'
-        refine ⟨lexd', captured', older', Δd', Γd', eo, resto, ?_, entry', oview'.trans oview,
-          fun x hx => (fview' x hx).trans (fview x (oview'.order.subset hx)), tail', escope',
-          tscope'⟩
-        have hid' : eo₀.id ≠ j := by rw [entry.id]; exact hid
-        simp [lookupJ, hid', hlo]
+    obtain ⟨_, _, escope, tscope⟩ := StackScope.cons_inv hs
+    by_cases hid : ef₀.id = j
+    · have hh : ef₀ = ef ∧ jf = restf := by simpa [Fir.lookupJ, hid] using hl
+      obtain ⟨rfl, rfl⟩ := hh
+      refine ⟨lexd, captured, older, Δd, Γd, eo₀, jo, ?_, entry, oview, fview, tail, escope,
+        tscope⟩
+      simp [lookupJ, entry.id, hid]
+    · have hl' : Fir.lookupJ j jf = some (ef, restf) := by simpa [Fir.lookupJ, hid] using hl
+      obtain ⟨lexd', captured', older', Δd', Γd', eo, resto, hlo, entry', oview', fview', tail',
+        escope', tscope'⟩ := ih tscope hl'
+      refine ⟨lexd', captured', older', Δd', Γd', eo, resto, ?_, entry', oview'.trans oview,
+        fun x hx => (fview' x hx).trans (fview x (oview'.order.subset hx)), tail', escope',
+        tscope'⟩
+      have hid' : eo₀.id ≠ j := by rw [entry.id]; exact hid
+      simp [lookupJ, hid', hlo]
 
 end OwnedStack
 
