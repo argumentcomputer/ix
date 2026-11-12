@@ -115,7 +115,7 @@ theorem flatIota (M : Model V env) (hL : Laws M) {kr : KKey} {cvr : ConstantVal 
   have hidx : DenotesList M.cval env φ ρ
       ((cvC.type.instantiateLevelParams cvC.levelParams ls).getAppArgs.drop 0)
       ((As.take mI).drop mI) := by
-    rw [getAppArgs_inst, hcod, List.drop_eq_nil_of_le (l := As.take mI) (by omega)]
+    rw [getAppArgs_inst, hcod, List.drop_eq_nil_of_le (as := As.take mI) (by omega)]
     exact .nil
   obtain ⟨H, hH, heq⟩ := hL.iota_rule kr cvr mI mI krules krl hf hkrl cvC 0 0 hcC
     (cvr.levelParams.map .param) φ ρ σ1 ρ (As.take mI) [] dom body
