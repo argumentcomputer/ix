@@ -939,6 +939,8 @@ recursive proof cost; a capacity increase alone does not meet them.
 The initial implementation retains the existing per-column KZG PCS and final
 PLONK protocol. Packed-column protocol experiments are preserved separately on
 `aiur-compression-packed-experiment` and are excluded from this implementation.
+The [Jolt and HyperKZG research note](aiur-jolt-hyperkzg.md) separates compiler
+and storage ideas from possible future cryptographic backend changes.
 The next comparisons use the compiler's existing certified function grouping
 and more efficient Aiur arithmetic. Grouping policies select function names;
 the compiler checks the resulting layouts against the original source. They
