@@ -61,6 +61,30 @@ def skip_bytes := aiur_fn⟦
     }
 ⟧
 
+  -- Nat literal blobs. A blob is canonical when it is Lean's `Nat.toBytesLE n` (`[0]` for 0,
+  -- otherwise no trailing zero byte); this conversion does not check it, and a non-canonical
+  -- blob gives the same kernel term as the canonical one:
+  -- * a Nat literal's blob is read in one place, the `Nat` arm of `convert_expr`
+  --   (Convert.lean:200-204; `Ingress::load_verified_blob`, Ingress.lean:46-54, has no other
+  --   caller but the `Str` arm, Convert.lean:193-198), and is converted there at once by
+  --   `bytes_to_limbs` (Convert.lean:88-105):
+  --   each limb is read from up to eight bytes with zero padding (`bytes_to_u64_limb`,
+  --   Convert.lean:27-49), and a zero limb with no limb above it is dropped, so the limbs are the
+  --   value's minimal little-endian list whatever the trailing zero bytes ([], [0] and [0, 0] all
+  --   give the empty list, zero);
+  -- * the kernel's literal holds only the limbs (`KLiteral::Nat`, KernelTypes.lean:27-30): no
+  --   kernel term keeps the blob or its address;
+  -- * every comparison and native operation reads normalized limbs: literal equality is
+  --   `KernelLevels::klimbs_eq` (KernelLevels.lean:943-962, 986-990), zero tests normalize first
+  --   (`KernelKlimbs::klimbs_is_zero`, KernelKlimbs.lean:235-242; KernelDefEq.lean:147,
+  --   KernelWhnf.lean:542-548), literals enter native arithmetic as their limbs
+  --   (KernelNatPrim.lean:245-251) and its results are normalized
+  --   (`KernelKlimbs::klimbs_normalize`, KernelKlimbs.lean:122-138; KernelNatPrim.lean:310-327);
+  -- * the blob's address is only an entry of the record's refs table: the claim walk collects the
+  --   indices of `Ref` and `Prj` nodes alone (KernelClaim.lean:65-83), so a blob is never loaded or
+  --   compared as a constant.
+  -- Only the record's bytes and address tell two spellings of one literal apart.
+
 def bytes_to_limbs := aiur_fn⟦
   fn bytes_to_limbs(bytes: Bytes::Stream) -> KernelTypes::KLimbs {
       let limb = bytes_to_u64_limb(bytes, [UInt8::BYTE_0; 8], 0);
