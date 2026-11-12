@@ -138,6 +138,7 @@ partial def eval (p : Program) (k : Nat) (ls : Levels) (ρ : Env) : Term → Out
 partial def evalConst (p : Program) (k : Nat) (ls : Levels) (c : CId) : Out Value :=
   match p.table.resolveOf c with
   | some (.prim op) => headValue p k ls (.prim op)
+  | some (.word w op _) => headValue p k ls (.word w op)
   | some (.csimp g vs _) =>
     match k with
     | 0 => .error .timeout
@@ -281,6 +282,11 @@ partial def fire (p : Program) (k : Nat) (h : Head) (ls : Levels) (args : List S
       match vs.find? (fun v => !(v matches .lit _)) with
       | some v => stuck (demandCause .irrPrimArg "primitive argument" v)
       | none => stuck (.malformed "primitive arguments")
+  | .word w op => do
+    let vs ← forceAll p k args
+    match p.wordValue w op vs with
+    | .ok v => .ok v
+    | _ => stuck (.malformed "word operation on arguments that are not words")
 
 partial def force (p : Program) (k : Nat) : Slot → Out Value
   | .val v => .ok v

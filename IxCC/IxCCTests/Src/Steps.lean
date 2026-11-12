@@ -12,7 +12,7 @@ it computes. The unit it measures is defined in `docs/source-steps.md`:
   allowlisted opaque (E8); β (A1); a recursor firing (F2, F3, F4); a `case`
   firing (F5); forcing a by-name slot (E1); `Quot.lift` (F8);
 * the uncharged rule applications are counted beside them: constructors (F1),
-  primitives (F6), `Quot.mk` (F7), projections (E6) and partial applications
+  primitives (F6, and F6w, the fixed-width word operations), `Quot.mk` (F7), projections (E6) and partial applications
   accumulated (A2); irrelevant positions are never evaluated and cost
   nothing; a by-name slot costs one charged step and its term's steps each
   time it is forced (SrcEval does not memoise).
@@ -53,7 +53,7 @@ structure Tally where
   ctor : Nat := 0
   /-- F7: `Quot.mk`. -/
   quotMk : Nat := 0
-  /-- F6: primitive applications. -/
+  /-- F6 and F6w: primitive applications. -/
   prim : Nat := 0
   /-- E6: projections. -/
   proj : Nat := 0
@@ -138,6 +138,7 @@ partial def delta (p : Program) (k : Nat) (ls : Levels) (t : Term) : M (Result V
 partial def evalConst (p : Program) (k : Nat) (ls : Levels) (c : CId) : M (Result Value) := do
   match p.table.resolveOf c with
   | some (.prim op) => headValue p k ls (.prim op)
+  | some (.word w op _) => headValue p k ls (.word w op)
   | some (.csimp g vs _) => delta p k ls (.const g vs)
   | some (.eqn _ body) => delta p k ls body
   | some (.case _) => headValue p k ls (.cases c)
@@ -293,6 +294,12 @@ partial def fire (p : Program) (k : Nat) (h : Head) (ls : Levels) (args : List S
         | some (.bool b) => return p.boolValue b
         | none => return .stuck
       | none => return .stuck
+    | o => return bail o
+  | .word w op =>
+    match ← forceAll p k args with
+    | .ok vs =>
+      modify fun t => { t with prim := t.prim + 1 }
+      return p.wordValue w op vs
     | o => return bail o
 
 partial def force (p : Program) (k : Nat) (s : Slot) : M (Result Value) := do

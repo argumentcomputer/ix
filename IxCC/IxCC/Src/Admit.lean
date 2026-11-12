@@ -49,6 +49,8 @@ structure Admitted where
   /-- The runtime terms of the closure. -/
   keys : Array TermKey
   prims : Array (CId × PrimOp)
+  /-- The word operations reached (stage W1). -/
+  words : Array (CId × Width × WordOp) := #[]
   cases : Array CId
   /-- Each reached recursor instance with its kind at that profile. -/
   recursors : Array (CId × RecKind)
@@ -169,6 +171,7 @@ def admit (p : Program) (names : Address → Option String := fun _ => none)
     if (p.table.lazyOf c).isSome then out := { out with lazy := out.lazy.push c }
     match p.table.resolveOf c with
     | some (.prim op) => out := { out with prims := out.prims.push (c, op) }
+    | some (.word w op _) => out := { out with words := out.words.push (c, w, op) }
     | some (.case _) => out := { out with cases := out.cases.push c }
     | some (.eqn ..) => out := { out with eqns := out.eqns.push c }
     | some (.csimp ..) => out := { out with csimps := out.csimps.push c }

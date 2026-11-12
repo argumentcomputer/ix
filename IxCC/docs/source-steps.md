@@ -46,7 +46,7 @@ applications are counted beside it, not in it:
 | Rule | Counted as |
 | --- | --- |
 | F1 constructors (`Nat.zero`, `Nat.succ` give literals) | `ctor` |
-| F6 primitive applications | `prim` |
+| F6 primitive applications, and F6w fixed-width word operations (contract version 2) | `prim` |
 | F7 `Quot.mk` | `quotMk` |
 | E6 projections | `proj` |
 | A2 an argument accumulated into a partial application | `pap` |

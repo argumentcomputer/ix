@@ -20,10 +20,13 @@ inductive ProposalKind where
   | lazy
   | inline
   | case
+  /-- A fixed-width word operation and its stored equation (stage W1, the sidecar's `theorems`
+  list, kind `word`). -/
+  | word
   deriving BEq, DecidableEq, Repr, Inhabited
 
 /-- One untrusted table proposal: `eqn f thm`, `csimp f g thm`, `lazy f a`,
-`inline f` or `case f`. -/
+`inline f`, `case f` or `word f thm`. -/
 structure Proposal where
   kind : ProposalKind
   subject : Ixon.Address
@@ -103,8 +106,16 @@ def resourceOfJson (j : Json) : Except String (Option Resource.Context) := do
     return some { address := profileAddress, bytes, pairs }
   | _, _ => throw "hints: resource profile and checked pairs must occur together"
 
-/-- Read an `ixcc/k1-equations/1` file: the roots and one `eqn`
-proposal per `(definition_address, equation_address)` pair. -/
+/-- The kinds of the sidecar's `theorems` list (a theorem named with its subject and a kind; only
+`word` so far). -/
+def theoremKind : String → Except String ProposalKind
+  | "word" => pure .word
+  | k => throw s!"hints: unknown theorem kind {k}"
+
+/-- Read an `ixcc/k1-equations/1` file: the roots, one `eqn`
+proposal per `(definition_address, equation_address)` pair, and, from the optional
+`theorems` list, one proposal of the entry's kind per
+`(subject_address, theorem_address)` pair. -/
 def ofK1Json (j : Json) : Except String Hints := do
   let format ← str j "format"
   unless format == "ixcc/k1-equations/1" do
@@ -118,6 +129,14 @@ def ofK1Json (j : Json) : Except String Hints := do
       kind := .eqn, subject := ← address e "definition_address"
       theorem? := some (← address e "equation_address")
       name? := (str e "definition").toOption }
+  let theorems ← match j.getObjVal? "theorems" with
+    | .ok t => t.getArr?
+    | .error _ => pure #[]
+  for e in theorems do
+    proposals := proposals.push {
+      kind := ← theoremKind (← str e "kind"), subject := ← address e "subject_address"
+      theorem? := some (← address e "theorem_address")
+      name? := (str e "subject").toOption }
   return { roots, proposals, resource := ← resourceOfJson j }
 
 /-- Maximum JSON text size in UTF-8 bytes (64 MiB). -/

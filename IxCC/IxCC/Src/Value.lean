@@ -18,6 +18,8 @@ inductive Head where
   /-- A `case` entry: the key `T.casesOn`. -/
   | cases (c : CId)
   | prim (op : PrimOp)
+  /-- A fixed-width word operation (stage W1, F6w). -/
+  | word (w : Width) (op : WordOp)
   deriving BEq, DecidableEq, Repr, Inhabited
 
 mutual

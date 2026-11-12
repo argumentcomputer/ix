@@ -183,6 +183,7 @@ def bucket : GKey → Nat
     match h with
     | .ctor c | .quotMk c | .quotLift c | .recr c | .cases c => c
     | .prim _ => 0
+    | .word .. => 0
   | .spec g _ | .worker g _ | .lam g _ | .entry g _ => g.bucket
   | .dispatch _ => 0
 
@@ -195,6 +196,7 @@ def render : GKey → String
     let h := match h with
       | .ctor c => s!"ctor {c}" | .quotMk c => s!"Quot.mk {c}" | .quotLift c => s!"Quot.lift {c}"
       | .recr c => s!"rec {c}" | .cases c => s!"cases {c}" | .prim op => s!"prim {op.name}"
+      | .word w op => s!"word {op.leanName w}"
     s!"wrapper ({h}){Src.Profile.render p}"
   | .spec g _ => s!"spec ({g.render})"
   | .worker g _ => s!"worker ({g.render})"

@@ -93,7 +93,8 @@ def suite : IO (List LSpec.TestSeq) := do
       match env.find? a.equation with
       | some (.thmInfo t) => unfoldsItself a.definition t.type
       | _ => false
-    let json := Ix.Compile.Equations.toJson found failed
+    let json := Ix.Compile.Equations.toJson found
+      (Ix.Compile.Equations.theorems (closed.map (·.1))) failed
     let listed : List (String × String) := match json.getObjValAs? (Array Json) "equations" with
       | .ok rows => rows.toList.filterMap fun row =>
           match row.getObjValAs? String "definition", row.getObjValAs? String "equation" with
@@ -117,7 +118,10 @@ def suite : IO (List LSpec.TestSeq) := do
       test "each realized theorem has the statement Lean's elaborator gives it" sameAsLean,
       test "each associated theorem states `f xs = …` for its definition" selfUnfolding,
       test "the JSON names its format"
-        ((json.getObjValAs? String "format").toOption == some "ix/compile-equations/1"),
+        ((json.getObjValAs? String "format").toOption == some "ix/compile-equations/2"),
+      test "without --word-equations no word equation joins the closure (its omega proof reaches word operations)"
+        ((json.getObjValAs? (Array Json) "theorems").toOption.map (·.size) == some 0 &&
+          !closed.any fun (n, _) => n.getPrefix == `IxWordEquations),
       test "the JSON lists every association, sorted by definition"
         (listed.length == found.size && sorted == sorted.mergeSort (· ≤ ·) &&
           recursive.all fun (d, e) => listed.contains (d.toString, e.toString)),
