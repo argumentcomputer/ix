@@ -69,6 +69,8 @@ def take (Γ : Ctx) (x : Var) : Except String Ctx :=
   | some (n + 1) => .ok { Γ with own := Γ.own.insert x n, total := Γ.total - 1 }
   | _ =>
     if Γ.borrowed x then .error s!"v{x} is borrowed and consumed without an increment"
+    else if Γ.brw.contains x then
+      .error s!"v{x} was borrowed (never incremented) and is consumed after a release ended the borrow"
     else .error s!"v{x} consumed with no token left"
 
 def takeArg (Γ : Ctx) : Arg → Except String Ctx
@@ -84,7 +86,9 @@ def takeVars : Ctx → List Var → Except String Ctx
   | Γ, x :: xs => do takeVars (← Γ.take x) xs
 
 def need (Γ : Ctx) (x : Var) (what : String) : Except String Unit :=
-  if Γ.avail x then .ok () else .error s!"v{x} {what} but neither owned, borrowed nor immediate"
+  if Γ.avail x then .ok ()
+  else if Γ.brw.contains x then .error s!"v{x} {what} after a release ended its borrow"
+  else .error s!"v{x} {what} but neither owned, borrowed nor immediate"
 
 def needArgs (Γ : Ctx) : List Arg → Except String Unit
   | [] => .ok ()
@@ -102,6 +106,7 @@ def inc (Γ : Ctx) (x : Var) (n : Nat) : Except String Ctx :=
   if Γ.isImm x then .ok Γ
   else if 0 < Γ.tokens x then .ok (Γ.addOwn x 1)
   else if Γ.borrowed x then .ok ({ Γ with brw := Γ.brw.erase x }.addOwn x 1)
+  else if Γ.brw.contains x then .error s!"inc v{x}: a release ended its borrow"
   else .error s!"inc v{x}: v{x} is dead"
 
 def dec (Γ : Ctx) (x : Var) : Except String Ctx :=

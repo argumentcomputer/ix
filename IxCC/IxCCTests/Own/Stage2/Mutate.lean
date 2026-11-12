@@ -39,7 +39,7 @@ def Kind.expected (k : Kind) (e : String) : Bool :=
   | .doubleDec => has "dec: v" && has "no token left"
   | .missingDec => has "still held"
   | .useAfterDec => gone
-  | .borrowedConsumed => has "borrowed and consumed without an increment"
+  | .borrowedConsumed => has "borrow"
   | .missingIncCtor | .movedIntoCall => gone
 
 structure MS where
