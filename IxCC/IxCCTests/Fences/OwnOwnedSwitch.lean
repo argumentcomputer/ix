@@ -6,8 +6,8 @@ import IxCC.Recheck.Rc.Proof.Replay
 
 /-! Exact axiom inventory of heap stage 2's second landing: the verifier over the ownership
 checker (the activation layer's new steps, the allocation step for a multiset of tokens, admission
-with the captured-work budget, the checker's language and retained forms, and the milestone-1
-lemmas strengthened for it). -/
+with the captured-work budget, the checker's language and retained forms, the milestone-1
+lemmas strengthened for it, and that nothing admitted before the switch is refused after it). -/
 
 /-- info: 'IxCC.Cfg.Rc.Native.Spec.physical_inc' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Cfg.Rc.Native.Spec.physical_inc
@@ -39,6 +39,9 @@ lemmas strengthened for it). -/
 /-- info: 'IxCC.Cfg.Rc.checkScopedProgram_checkOwned' depends on axioms: [propext] -/
 #guard_msgs in #print axioms IxCC.Cfg.Rc.checkScopedProgram_checkOwned
 
+/-- info: 'IxCC.Cfg.Rc.checkScopedProgram_owned' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Cfg.Rc.checkScopedProgram_owned
+
 /-- info: 'IxCC.Cfg.Rc.checkScopedProgram_ownedParts' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Cfg.Rc.checkScopedProgram_ownedParts
 
@@ -60,6 +63,9 @@ lemmas strengthened for it). -/
 /-- info: 'IxCC.Own.Plain.Certificate.admit_of' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Own.Plain.Certificate.admit_of
 
+/-- info: 'IxCC.Own.Plain.Certificate.admit_of_checkPlainMap' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Own.Plain.Certificate.admit_of_checkPlainMap
+
 /-- info: 'IxCC.Own.Plain.Certificate.admit_mono' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Own.Plain.Certificate.admit_mono
 
@@ -71,6 +77,9 @@ lemmas strengthened for it). -/
 
 /-- info: 'IxCC.Own.Plain.Certificate.admitContract_of' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Own.Plain.Certificate.admitContract_of
+
+/-- info: 'IxCC.Own.Plain.Certificate.admitContract_of_checkContractPlainMap' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Own.Plain.Certificate.admitContract_of_checkContractPlainMap
 
 /-- info: 'IxCC.Own.Plain.Certificate.admitContract_mono' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Own.Plain.Certificate.admitContract_mono
