@@ -303,10 +303,10 @@ def pi_residual : SpecFn := fun c args h r h' calls =>
 first rule's) is `cidx`: its field count and closed right-hand side. Tag `0`: no claim. -/
 def find_rule : SpecFn := fun c args h r h' calls =>
   ∀ rules cidx, args = [rules, cidx] → Good c calls →
-    ∀ j rls, RulesRep c.κ h j rules rls →
+    ∀ ps j rls, RulesRep c.κ h ps j rules rls →
       ∀ nf rhs, r = .tuple [.field 1, nf, rhs] →
         ∃ i rl, rls[i]? = some rl ∧ cidx = .field ((j + i : Nat) : F) ∧
-          nf = .field (rl.nfields : F) ∧ c.tmc h' rl.rhs rhs
+          nf = .field (rl.nfields : F) ∧ c.tmc h' (posOf ps rl.rhs) rhs
 
 /-! ## Telescope certificates -/
 
