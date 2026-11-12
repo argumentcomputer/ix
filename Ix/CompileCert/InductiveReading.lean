@@ -131,7 +131,7 @@ def readRecursors (cx : Ctx md) (blockLps : List LevelParam) (refs : Array (Cons
 /-- `readInductive` with its loops as named steps. -/
 def readInductiveSpec (cx : Ctx md) (st : State md) (owner : Address) (c : Ixon.Constant)
     (ms : Array Ixon.MutConst) : ReadM (Read md) := do
-  let some shape := cx.index.blocks[owner]?
+  let some shape := blockShapeOf cx.index owner ms
     | declined "inductive block without a recursor in the input"
   let indcs : Array (Nat × Ixon.Inductive) := shape.order.filterMap (indcAt ms)
   unless indcs.size == shape.order.size do malformed "recursor motive is not a member of its block"
@@ -240,6 +240,37 @@ theorem ctorClassLoop (cx : Ctx md) (owner : Address) (mr : MemberReader md) (ta
     ctorLoop_ok cx owner mr target.params.toNat ctorKey target.ctors.toList 0 types (#[], []) facts]
   simp [bind, Except.bind, pure, Except.pure]
 
+/-- **The reader on a standalone inductive block, at the shape it reads at**
+(`blockShapeOf`): at member 0, safe, its key and type reading, and its
+constructor loop's checks passing, the record reads as `lowerInductive` of the
+block's types, its constructors, and the recursors its own loop reads. -/
+theorem readRecord_singleton_at (cx : Ctx md) (st : State md) (owner : Address)
+    (c : Ixon.Constant) (target : Ixon.Inductive) (info : c.info = .muts #[.indc target])
+    {shape : BlockShape} (shaped : blockShapeOf cx.index owner #[.indc target] = some shape)
+    (order : shape.order = #[0]) (safe : target.isUnsafe = false)
+    {key : CName md} (keyed : cx.memberKey (.member owner 0) = .ok key) {type : CExpr md}
+    (typeRead : (MemberReader.mk' cx c id (blockSelf cx owner #[.indc target])).read target.typ = .ok type)
+    (ctorKey : Nat → CName md) (ctorTypes : List (CExpr md))
+    (ctors : CtorFacts cx owner (MemberReader.mk' cx c id (blockSelf cx owner #[.indc target]))
+      target.params.toNat ctorKey 0 target.ctors.toList ctorTypes) :
+    readRecord cx st owner c =
+      readRecursors cx (List.range target.lvls.toNat) shape.recs >>= fun recs =>
+        lowerInductive st ⟨target.params.toNat,
+          #[(⟨key, List.range target.lvls.toNat, type⟩, target.params.toNat, target.indices.toNat)],
+          (ctorReads ctorKey 0 target.ctors.toList ctorTypes).toArray,
+          #[(ctorReads ctorKey 0 target.ctors.toList ctorTypes).map (·.1.name)], recs⟩ := by
+  rw [readRecord_inductive cx st owner c target info, readInductive_eq]
+  unfold readInductiveSpec
+  rw [shaped]
+  dsimp only
+  rw [order, indcs_singleton]
+  simp only [List.size_toArray, List.length_cons, List.length_nil, Nat.zero_add, beq_self_eq_true,
+    Bool.false_eq_true, ↓reduceIte, List.getElem?_toArray, List.getElem?_cons_zero,
+    List.any_toArray', List.all_toArray', List.any_cons, List.any_nil, List.all_cons, List.all_nil, safe,
+    Bool.or_false, Bool.and_true]
+  rw [typeLoop cx owner _ target keyed typeRead, ctorClassLoop cx owner _ target ctorKey ctorTypes ctors]
+  rfl
+
 /-- **The reader on a standalone inductive block**: indexed at member 0,
 safe, its key and type reading, and its constructor loop's checks passing,
 the record reads as `lowerInductive` of the block's types, its
@@ -257,18 +288,29 @@ theorem readRecord_singleton (cx : Ctx md) (st : State md) (owner : Address) (c 
         lowerInductive st ⟨target.params.toNat,
           #[(⟨key, List.range target.lvls.toNat, type⟩, target.params.toNat, target.indices.toNat)],
           (ctorReads ctorKey 0 target.ctors.toList ctorTypes).toArray,
-          #[(ctorReads ctorKey 0 target.ctors.toList ctorTypes).map (·.1.name)], recs⟩ := by
-  rw [readRecord_inductive cx st owner c target info, readInductive_eq]
-  unfold readInductiveSpec
-  rw [indexed]
-  dsimp only
-  rw [order, indcs_singleton]
-  simp only [List.size_toArray, List.length_cons, List.length_nil, Nat.zero_add, beq_self_eq_true,
-    Bool.false_eq_true, ↓reduceIte, List.getElem?_toArray, List.getElem?_cons_zero,
-    List.any_toArray', List.all_toArray', List.any_cons, List.any_nil, List.all_cons, List.all_nil, safe,
-    Bool.or_false, Bool.and_true]
-  rw [typeLoop cx owner _ target keyed typeRead, ctorClassLoop cx owner _ target ctorKey ctorTypes ctors]
-  rfl
+          #[(ctorReads ctorKey 0 target.ctors.toList ctorTypes).map (·.1.name)], recs⟩ :=
+  readRecord_singleton_at cx st owner c target info (by simp only [blockShapeOf, indexed]) order safe
+    keyed typeRead ctorKey ctorTypes ctors
+
+/-- **The reader on a standalone inductive block no recursor of the input
+eliminates**: the record reads as `lowerInductive` of the block's types and
+constructors, with no recursor. -/
+theorem readRecord_singleton_unindexed (cx : Ctx md) (st : State md) (owner : Address)
+    (c : Ixon.Constant) (target : Ixon.Inductive) (info : c.info = .muts #[.indc target])
+    (unindexed : cx.index.blocks[owner]? = none) (safe : target.isUnsafe = false)
+    {key : CName md} (keyed : cx.memberKey (.member owner 0) = .ok key) {type : CExpr md}
+    (typeRead : (MemberReader.mk' cx c id (blockSelf cx owner #[.indc target])).read target.typ = .ok type)
+    (ctorKey : Nat → CName md) (ctorTypes : List (CExpr md))
+    (ctors : CtorFacts cx owner (MemberReader.mk' cx c id (blockSelf cx owner #[.indc target]))
+      target.params.toNat ctorKey 0 target.ctors.toList ctorTypes) :
+    readRecord cx st owner c =
+      readRecursors cx (List.range target.lvls.toNat) #[] >>= fun recs =>
+        lowerInductive st ⟨target.params.toNat,
+          #[(⟨key, List.range target.lvls.toNat, type⟩, target.params.toNat, target.indices.toNat)],
+          (ctorReads ctorKey 0 target.ctors.toList ctorTypes).toArray,
+          #[(ctorReads ctorKey 0 target.ctors.toList ctorTypes).map (·.1.name)], recs⟩ :=
+  readRecord_singleton_at (shape := ⟨#[0], #[]⟩) cx st owner c target info
+    (by simp [blockShapeOf, unindexed, unindexedShape]) rfl safe keyed typeRead ctorKey ctorTypes ctors
 
 /-! ## What the compiled family keeps of the source -/
 
@@ -796,18 +838,17 @@ theorem inductive_reads_indexed (context : CompileEnv × BlockEnv)
   exact inductive_reads cx names σ bindings context aligned external source constructors found state indexed
     order keyed ctorKey ctorKeyed selfKey typeNoCtor ctorNoCtor safe ctorSafe positions arity clean wire ran
 
-/-- **A compiled inductive with no recursor in the input declines.** -/
-theorem inductive_declines_unindexed (context : CompileEnv × BlockEnv)
-    (source : InductiveVal) {before after : BlockState} {output : BlockResult} (state : State md)
+/-- **A compiled inductive with no recursor in the input reads at the default
+shape**: its record is a one-member block, which the reader reads with that
+member and no recursor (`unindexedShape`). -/
+theorem inductive_unindexed_shape (context : CompileEnv × BlockEnv)
+    (source : InductiveVal) {before after : BlockState} {output : BlockResult}
     (unindexed : cx.index.blocks[output.blockAddr]? = none)
     (ran : rawRun (compileConstantInfo (.inductInfo source)) context before = (.ok output, after)) :
-    readRecord (ExpressionRead.withBlockBlobs cx after) state output.blockAddr output.block =
-      .error (.declined "inductive block without a recursor in the input") := by
+    ∃ target, output.block.info = .muts #[.indc target] ∧
+      blockShapeOf cx.index output.blockAddr #[.indc target] = some ⟨#[0], #[]⟩ := by
   obtain ⟨_, _, target, _, _, info, _⟩ := ProjectionLayout.dispatch_layout context source ran
-  rw [readRecord_inductive _ state output.blockAddr output.block target info, readInductive_eq]
-  unfold readInductiveSpec
-  rw [show (ExpressionRead.withBlockBlobs cx after).index.blocks[output.blockAddr]? = none from unindexed]
-  rfl
+  exact ⟨target, info, by simp [blockShapeOf, unindexed, unindexedShape]⟩
 
 end Reading
 
