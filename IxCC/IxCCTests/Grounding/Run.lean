@@ -400,10 +400,14 @@ def mutateEqRecArity (i : Input) : Input :=
       | .recInfo cv mI rP rules => .recInfo { cv with type := piBody 1 cv.type } mI rP rules
       | ci => ci }
 
-/-- `Eq.refl`'s stored type made `Nat`. -/
+/-- `Eq.refl`'s stored type with its first binder datum made `never` (its telescope unchanged, so
+the `ctor` conjunct, which reads its length, is not affected). -/
 def mutateEqRefl (i : Input) : Input :=
+  let redatum : KExpr → KExpr
+    | .forallE d b _ => .forallE d b { pw := .never }
+    | T => T
   { i with env := mapConst i.env Ix.Kernel.eqReflName fun
-      | .ctorInfo cv np nf => .ctorInfo { cv with type := natK } np nf
+      | .ctorInfo cv np nf => .ctorInfo { cv with type := redatum cv.type } np nf
       | ci => ci }
 
 /-- `n` nested `Nat.succ`s around `Nat.zero`. -/
@@ -625,10 +629,10 @@ def run : IO Bool := do
     let ka := failingWith allClasses (mutateEqRecArity ki)
     expect a (ka == ["recShape"]) s!"tak: Eq.rec's type cut by one binder: false conjuncts {ka}, expected [recShape]"
     let kf := failingWith allClasses (mutateEqRefl ki)
-    expect a (kf == ["recShape"]) s!"tak: Eq.refl's type made Nat: false conjuncts {kf}, expected [recShape]"
+    expect a (kf == ["recShape"]) s!"tak: Eq.refl's first binder datum made never: false conjuncts {kf}, expected [recShape]"
     IO.println s!"tak: Eq.rec c{er} of class eqRec, with the checked shape; the check refuses it at \
       declOk alone (class not admitted); with every class admitted it is true, and Eq.rec's rule \
-      rhs mutated, its type cut by one binder, Eq.refl's type changed: exactly recShape false"
+      rhs mutated, its type cut by one binder, Eq.refl's first binder datum changed: exactly recShape false"
     IO.println s!"tests-grounding: {← a.get} assertions passed"
     return true
   catch error =>
