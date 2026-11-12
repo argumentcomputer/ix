@@ -152,7 +152,7 @@ theorem caseFires_of_shape (hL : Laws M) {p : Program} {c r : CId} {sh : CaseSha
     split at hsel
     · rename_i hnatc
       obtain ⟨hnP0, hkeys⟩ := hnat (by simpa using hnatc)
-      have hTe := relV_lit_eq hL hN φ hrelM
+      have hTe := relV_lit_eq (lawsCore_of_laws hL) hN φ hrelM
       obtain ⟨cvZ, hfZ, _, htZ, hlZ⟩ := hN.zero
       obtain ⟨cvS, hfS, _, htS, hlS⟩ := hN.succ
       have hF0 := natFacts M hN φ
@@ -178,7 +178,7 @@ theorem caseFires_of_shape (hL : Laws M) {p : Program} {c r : CId} {sh : CaseSha
           rw [hnP0, List.take_zero]; exact .nil
         have hmaj : As[sh.nP + 1]? = some ((As.take sh.nP ++ []).foldl app (M.cval natZeroName φ)) := by
           rw [hTm', hTe, hnP0, List.take_zero]; rfl
-        obtain ⟨Mn, hMn, heq, hch⟩ := caseIota M hL hst cvc _ hint hfc φ ρ σ R As hfit' hlen hlast
+        obtain ⟨Mn, hMn, heq, hch⟩ := caseIota M (lawsCore_of_laws hL) hst cvc _ hint hfc φ ρ σ R As hfit' hlen hlast
           0 cs0 cvZ _ [] ρ _ hcs0 hcC hK hFC (by rw [hn0]; rfl) hmaj
         exact ⟨Mn, [], hMn, .nil, heq, hch⟩
       | succ n =>
@@ -200,7 +200,7 @@ theorem caseFires_of_shape (hL : Laws M) {p : Program} {c r : CId} {sh : CaseSha
         have hmaj : As[sh.nP + 1]? =
             some ((As.take sh.nP ++ [litSet M φ n]).foldl app (M.cval natSuccName φ)) := by
           rw [hTm', hTe, hnP0, List.take_zero]; rfl
-        obtain ⟨Mn, hMn, heq, hch⟩ := caseIota M hL hst cvc _ hint hfc φ ρ σ R As hfit' hlen hlast
+        obtain ⟨Mn, hMn, heq, hch⟩ := caseIota M (lawsCore_of_laws hL) hst cvc _ hint hfc φ ρ σ R As hfit' hlen hlast
           1 cs1 cvS _ [litSet M φ n] _ _ hcs1 hcC hK hFC (by rw [hn1]; rfl) hmaj
         exact ⟨Mn, [litSet M φ n], hMn, .cons (.val (relV_lit_intro hN φ n)) .nil, heq, hch⟩
     · simp at hsel
@@ -253,7 +253,7 @@ theorem caseFires_of_shape (hL : Laws M) {p : Program} {c r : CId} {sh : CaseSha
           -- the constructor's fit, moved to the `case`'s environment and assignment
           obtain ⟨σ2, hfit2⟩ := fits_agree hfitc (ρ' := ρ) fun i hi =>
             absurd (lt_of_bvarsLt hcl hi) (Nat.not_lt_zero i)
-          have hfit3 := fits_inst M hL hψ hfit2 hdef
+          have hfit3 := fits_inst M (lawsCore_of_laws hL) hψ hfit2 hdef
           have hR'head : (Rc.instantiateLevelParams cv.levelParams ls'').getAppFn =
               .const sh.ind ls'' := by
             rw [getAppFn_inst, fits_piBody hfit2, show (Ps ++ Fs).length = sh.nP + cs.nF by
@@ -282,7 +282,7 @@ theorem caseFires_of_shape (hL : Laws M) {p : Program} {c r : CId} {sh : CaseSha
                 simp [bvarsFrom_length])]
               exact hDL)
             hTmX
-          obtain ⟨Mn, hMn, heq, hch⟩ := caseIota M hL hst cvc _ hint hfc φ ρ σ R As hfit' hlen hlast
+          obtain ⟨Mn, hMn, heq, hch⟩ := caseIota M (lawsCore_of_laws hL) hst cvc _ hint hfc φ ρ σ R As hfit' hlen hlast
             cidx cs cv _ Fs σ3 R3 hcs hfCk hK hFC hFl (by rw [hTm', heqK])
           exact ⟨Mn, Fs, hMn, relSlots_of_relVs hfs', heq, hch⟩
         · simp at hsel

@@ -1104,9 +1104,12 @@
   "IxCCTests.Grounding.Oracle":
   {"path": "IxCCTests/Grounding/Oracle.lean",
    "imports": ["IxCC.Src.KernelFront.Annotate", "IxCCGrounding.Direct.Check"]},
+  "IxCCTests.Grounding.NoCanon":
+  {"path": "IxCCTests/Grounding/NoCanon.lean",
+   "imports": ["IxCCTests.Grounding.Run", "IxCCTests.Corpus.Manifest"]},
   "IxCCTests.Grounding.Main":
   {"path": "IxCCTests/Grounding/Main.lean",
-   "imports": ["IxCCTests.Grounding.Run"]},
+   "imports": ["IxCCTests.Grounding.Run", "IxCCTests.Grounding.NoCanon"]},
   "IxCCTests.Fixtures.SortPoly":
   {"path": "IxCCTests/Fixtures/SortPoly.lean", "imports": []},
   "IxCCTests.Fixtures.K1":
@@ -4087,7 +4090,8 @@
     "IxCCGrounding.Runs",
     "IxCCGrounding.Check",
     "IxCCGrounding.CaseFire",
-    "IxCCGrounding.Direct.Sites"]},
+    "IxCCGrounding.Direct.Sites",
+    "IxCCGrounding.CaseBlind"]},
   "IxCCGrounding.Fundamental":
   {"path": "IxCCGrounding/Fundamental.lean",
    "imports":
@@ -4101,7 +4105,8 @@
    "imports":
    ["IxCCGrounding.Ground",
     "IxCCGrounding.Root",
-    "IxCCGrounding.Direct.Sites"]},
+    "IxCCGrounding.Direct.Sites",
+    "IxCCGrounding.CaseBlind"]},
   "IxCCGrounding.Facts":
   {"path": "IxCCGrounding/Facts.lean",
    "imports": ["IxCCGrounding.Direct.Check"]},
@@ -4144,6 +4149,12 @@
    "imports": ["IxCCGrounding.Case", "IxCCGrounding.Hyps"]},
   "IxCCGrounding.CaseCheck":
   {"path": "IxCCGrounding/CaseCheck.lean", "imports": ["IxCCGrounding.Syntax"]},
+  "IxCCGrounding.CaseBlind":
+  {"path": "IxCCGrounding/CaseBlind.lean",
+   "imports":
+   ["IxCCGrounding.CaseFire",
+    "IxCCGrounding.CaseCheck",
+    "IxCCGrounding.Direct.Eq"]},
   "IxCCGrounding.Case":
   {"path": "IxCCGrounding/Case.lean",
    "imports": ["IxCCGrounding.Tele", "IxCCGrounding.Heads"]},
@@ -4171,6 +4182,7 @@
     "IxCCGrounding.Tele",
     "IxCCGrounding.Case",
     "IxCCGrounding.CaseFire",
+    "IxCCGrounding.CaseBlind",
     "IxCCGrounding.Runs",
     "IxCCGrounding.CaseCheck",
     "IxCCGrounding.Check",

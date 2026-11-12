@@ -155,7 +155,7 @@ end Den
 /-- **`Fits` back to the assignment the levels induce**: a telescope whose level parameters are
 among `ks`, which denotes at `ψ`, fits there whatever its instantiation by `us` fits at `φ`, when
 `ψ` agrees on `ks` with the assignment `us` induces at `φ`. -/
-theorem fits_uninst (M : Model V env) (hL : Laws M) {ks : List LevelParam} {us : List Level}
+theorem fits_uninst (M : Model V env) (hL : LawsCore M) {ks : List LevelParam} {us : List Level}
     {φ ψ : LevelParam → Nat} (hψ : ∀ p ∈ ks, Level.substFn φ ks us p = ψ p) :
     ∀ (xs : List V) (T : KExpr) (ρ σ : BVarIdx → V) (R : KExpr) (TT : V),
       T.allLevelParamsDefined ks = true → Denotes M.cval env ψ ρ T TT →

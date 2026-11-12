@@ -99,7 +99,7 @@ fit its stored type, is the fourth, the minor premise. By `eq_of_inhabited_pt` (
 proof point and the index is the parameter), `eqRefl_pt` (so the major is `Eq.refl`'s image), ι
 at the one rule, and β through its right-hand side. Uses `Laws.iota_rule`, `Model.mem` and
 `Model.eq_equality`; no regime is read, so no typing of the last argument's site is needed. -/
-theorem eqRec_iota (M : Model V env) (hL : Laws M) (hE : EqBasis env) (hR : EqReflBasis env)
+theorem eqRec_iota (M : Model V env) (hL : LawsCore M) (hE : EqBasis env) (hR : EqReflBasis env)
     (hB : EqRecBasis env) {φ : LevelParam → Nat} {ρ σ : BVarIdx → V} {Rt : KExpr} {As : List V}
     (hfit : Fits M.cval env φ ρ eqRecType As σ Rt) (hlen : As.length = 6) :
     ∃ Mn, As[3]? = some Mn ∧ As.foldl app (M.cval eqRecName φ) = Mn := by

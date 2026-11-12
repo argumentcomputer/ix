@@ -219,4 +219,74 @@ theorem groundFacts_of_noRecr {p : Program} {env : KEnv} {κ : CId → KKey}
     (hG : GroundFactsNoRecr p env κ lpsOf ann S) : GroundFacts p env κ lpsOf ann S :=
   hG.mono recFacts_of_noRecr
 
+/-! ## Canonicity not needed (the canonicity-free family) -/
+
+/-- **A `case` recursor that needs no canonicity**: every rule the reading stores for it does not
+compare parameters (`RecRule.compareParams`), and its constructor is stored without level
+parameters. -/
+def CaseNoCanon (env : KEnv) (kr : KKey) : Prop :=
+  ∃ (cvr : ConstantVal .anon) (mI rP : Nat) (rules : List (RecRule .anon)),
+    env.find? kr = some (.recInfo cvr mI rP rules) ∧ ∀ rl ∈ rules, rl.compareParams = false ∧
+      ∃ (cvC : ConstantVal .anon) (nP nF : Nat), env.find? rl.ctor = some (.ctorInfo cvC nP nF) ∧
+        cvC.levelParams = []
+
+/-- **A recursor whose rules' constructors are stored without level parameters.** -/
+def RecNoLevels (env : KEnv) (kr : KKey) : Prop :=
+  ∃ (cvr : ConstantVal .anon) (mI rP : Nat) (rules : List (RecRule .anon)),
+    env.find? kr = some (.recInfo cvr mI rP rules) ∧ ∀ rl ∈ rules,
+      ∃ (cvC : ConstantVal .anon) (nP nF : Nat), env.find? rl.ctor = some (.ctorInfo cvC nP nF) ∧
+        cvC.levelParams = []
+
+/-- **Canonicity is not needed on `S`** (the decided fact of the canonicity-free family):
+`ctor_canon` is read at exactly three places (`caseFires_of_shape`, at every `case` entry;
+`ctorImage_canon` and `ctorFields_canon`, at a `flat` or `noParams` rule over a constructor with level
+parameters), and this excludes all three. Classes `empty` and `eqRec` read no canonicity; `ordinary`
+is not admitted. -/
+structure NoCanon (p : Program) (env : KEnv) (κ : CId → KKey) (S : CId → Prop) : Prop where
+  cases : ∀ c r, S c → p.table.resolveOf c = some (.case r) → CaseNoCanon env (κ r)
+  recs : ∀ r, S r → (recClassB p env κ r = some .flat ∨ recClassB p env κ r = some .noParams) →
+    RecNoLevels env (κ r)
+
+/-- Every rule's constructor stored without level parameters (looked up in the indexed reading). -/
+def ctorsNoLevelsB (tab : KTab) (rules : List (RecRule .anon)) : Bool :=
+  rules.all fun rl => match tab[rl.ctor]? with
+    | some (.ctorInfo cvC _ _) => cvC.levelParams.isEmpty
+    | _ => false
+
+/-- **`NoCanon`, decided**: one pass over `Sl`; per constant its table entry and its class, per
+rule of a recursor it names one lookup in the reading's index (`KTab.of`, built once). No walk, no
+reduction. -/
+def noCanonB (p : Program) (env : KEnv) (κ : CId → KKey) (Sl : List CId) : Bool :=
+  let tab := KTab.of env
+  Sl.all fun c =>
+    (match p.table.resolveOf c with
+      | some (.case r) =>
+        match tab[κ r]? with
+        | some (.recInfo _ _ _ rules) =>
+          rules.all (fun rl => !rl.compareParams) && ctorsNoLevelsB tab rules
+        | _ => false
+      | _ => true) &&
+    (match recClassB p env κ c with
+      | some .flat | some .noParams =>
+        match tab[κ c]? with
+        | some (.recInfo _ _ _ rules) => ctorsNoLevelsB tab rules
+        | _ => false
+      | _ => true)
+
+/-- Under `RecNoLevels`, a rule's constructor has no level parameters. -/
+theorem recNoLevels_ctor {env : KEnv} {kr : KKey} (h : RecNoLevels env kr)
+    {cvr : ConstantVal .anon} {mI rP : Nat} {rules : List (RecRule .anon)}
+    (hf : env.find? kr = some (.recInfo cvr mI rP rules)) {rl : RecRule .anon} (hrl : rl ∈ rules)
+    {cvC : ConstantVal .anon} {nP nF : Nat} (hc : env.find? rl.ctor = some (.ctorInfo cvC nP nF)) :
+    cvC.levelParams = [] := by
+  obtain ⟨cvr', mI', rP', rules', hf', hall⟩ := h
+  rw [hf] at hf'
+  simp only [Option.some.injEq, ConstantInfo.recInfo.injEq] at hf'
+  obtain ⟨-, -, -, rfl⟩ := hf'
+  obtain ⟨cvC', nP', nF', hc', hl⟩ := hall rl hrl
+  rw [hc] at hc'
+  simp only [Option.some.injEq, ConstantInfo.ctorInfo.injEq] at hc'
+  obtain ⟨rfl, -, -⟩ := hc'
+  exact hl
+
 end IxCC.Grounding

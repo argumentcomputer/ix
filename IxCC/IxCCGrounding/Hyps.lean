@@ -53,8 +53,15 @@ def CaseFires (M : Model V env) (p : Program) (κ : CId → KKey) (lpsOf : CId �
 /-- **Everything the fundamental lemma assumes.** -/
 structure FundHyps (M : Model V env) (p : Program) (κ : CId → KKey) (lpsOf : CId → List Nat)
     (S : CId → Prop) (Ok : CId → Levels → Prop) : Prop where
-  /-- the laws (δ, ι, level-parameter irrelevance, the projection law, the `Nat` accelerations) -/
-  laws : Laws M
+  /-- the laws other than canonicity (δ, ι, level-parameter irrelevance, the projection law, the
+  `Nat` accelerations) -/
+  laws : LawsCore M
+  /-- canonicity, where a `flat` or `noParams` recursor of `S` has a rule over a constructor with
+  level parameters (`ctorImage_canon`, `ctorFields_canon`): the law, or no such constructor
+  (`RecNoLevels`). The `case` entries' canonicity is inside `cases`. -/
+  canon : CtorCanon M ∨ ∀ r, S r →
+    (recClassB p env κ r = some .flat ∨ recClassB p env κ r = some .noParams) →
+      RecNoLevels env (κ r)
   /-- the `Nat` basis the literal reading uses is stored as the kernel's reading stores it -/
   natBasis : NatBasis env
   /-- the stored-shape and program facts -/

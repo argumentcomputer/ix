@@ -147,7 +147,7 @@ theorem hasTy_bvar {Γ : List KExpr} {i : Nat} {A : KExpr} (h : Γ[i]? = some A)
   rw [skipEnv_zero]
   exact hY
 
-theorem hasTy_const (hL : Laws M) {Γ : List KExpr} {k : KKey} {us : List Level}
+theorem hasTy_const (hL : LawsCore M) {Γ : List KExpr} {k : KKey} {us : List Level}
     {ci : ConstantInfo .anon} (hf : env.find? k = some ci)
     (hd : ci.toConstantVal.type.allLevelParamsDefined ci.toConstantVal.levelParams = true) :
     HasTy M φ Γ (.const k us)
@@ -288,7 +288,7 @@ theorem betaStar_reduces {Γ : List KExpr} {c : KExpr → KExpr → Bool}
     | _ => exact reduces_refl
 
 /-- **δ** (`Laws.defn_value`, through `den_inst` for the levels). -/
-theorem reduces_delta (hL : Laws M) {Γ : List KExpr} {k : KKey} {us : List Level}
+theorem reduces_delta (hL : LawsCore M) {Γ : List KExpr} {k : KKey} {us : List Level}
     {cv : ConstantVal .anon} {val : KExpr} {hint : ReducibilityHint}
     (hf : env.find? k = some (.defnInfo cv val hint)) (hd : val.allLevelParamsDefined cv.levelParams = true)
     (args : List KExpr) :
@@ -430,7 +430,7 @@ theorem ctorApp?_spec {look : KKey → Option (ConstantInfo .anon)} {e : KExpr} 
 /-- **The projection of a constructor**, forward: at a structure that is never a proposition
 (`proj_ctor`; in a proof-irrelevant set model its constructor is read in the graph regime and its
 image is the field tuple, read at position `i + off`). -/
-theorem reduces_proj (hL : Laws M) {Γ : List KExpr} {s : KKey} {i : Nat} {p p' fi : KExpr}
+theorem reduces_proj (hL : LawsCore M) {Γ : List KExpr} {s : KKey} {i : Nat} {p p' fi : KExpr}
     (args : List KExpr) {ck : KKey} {cus : List Level} {np nf : Nat} {cargs : List KExpr}
     {entry : ProjEntry .anon} {cvC : ConstantVal .anon}
     (hp : Reduces M φ Γ p p') (hfn : p'.getAppFn = .const ck cus) (hargs : p'.getAppArgs = cargs)
@@ -516,7 +516,7 @@ theorem primOfKey?_spec {k : KKey} {op : IxCC.Src.PrimOp} (h : primOfKey? k = so
 /-- **A `Nat` primitive on literals reduces to its value** (`Laws.nat_accel`; in a
 proof-irrelevant set model `Nat` and `Bool` are not propositions, the role-pinned operations
 compute these values on numerals, and `PrimOp.eval2` agrees with Lean's `Nat` operations). -/
-theorem primStep_sound (hL : Laws M) {Γ : List KExpr} {w : KExpr → Option KExpr}
+theorem primStep_sound (hL : LawsCore M) {Γ : List KExpr} {w : KExpr → Option KExpr}
     (hw : ∀ a a', w a = some a' → Reduces M φ Γ a a') {k : KKey} {us : List Level}
     {args : List KExpr} {e' : KExpr} (h : primStep w k us args = some e') :
     Reduces M φ Γ (Expr.mkAppN (.const k us) args) e' := by
@@ -571,7 +571,7 @@ theorem primStep_sound (hL : Laws M) {Γ : List KExpr} {w : KExpr → Option KEx
 arguments up to the major fit its type, ending in a `∀` over the inductive at the recursor's own
 parameters; the major is the constructor at those levels on arguments that fit its type, the
 same parameters, and a codomain without indices). -/
-theorem iotaStep_sound (hL : Laws M) {look : KKey → Option (ConstantInfo .anon)}
+theorem iotaStep_sound (hL : LawsCore M) {look : KKey → Option (ConstantInfo .anon)}
     (hlook : ∀ k, look k = env.find? k) {Γ : List KExpr} {w : KExpr → Option KExpr}
     {fits : KExpr → List KExpr → Bool} {conv : List KExpr → List KExpr → Bool}
     (hw : ∀ a a', w a = some a' → Reduces M φ Γ a a')

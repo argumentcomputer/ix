@@ -480,7 +480,7 @@ theorem ctor_fields_fit {cval : KKey → (LevelParam → Nat) → V} {pbs fbs : 
 that fit its type, the last at a graph-regime site, with the major the image of constructor `j`
 at the `case`'s own parameters and levels applied to as many fields as the constructor has, is
 minor `j` applied to the fields, along a graph-regime chain. -/
-theorem caseIota (M : Model V env) (hL : Laws M) {kc kr : KKey} {sh : CaseShape}
+theorem caseIota (M : Model V env) (hL : LawsCore M) {kc kr : KKey} {sh : CaseShape}
     (hS : CaseStored env kc kr sh) (cvc : ConstantVal .anon) (val : KExpr)
     (hint : ReducibilityHint) (hfc : env.find? kc = some (.defnInfo cvc val hint))
     (φ : LevelParam → Nat) (ρ σ : BVarIdx → V) (R : KExpr) (As : List V)

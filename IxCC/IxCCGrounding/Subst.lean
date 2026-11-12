@@ -417,7 +417,8 @@ theorem regime_congr {φ ψ : LevelParam → Nat} {pw pw' : PropWhen} (h : pw.ho
 denotes `X` at `φ` once instantiated by `us`, when `ψ` agrees on `ks` with the assignment the
 instantiation induces. The constants inside are read at assignments that agree on their own
 parameters (`cval_params`). -/
-theorem den_inst (M : Model V env) (hL : Laws M) {ks : List LevelParam} {us : List Level}
+theorem den_inst_cv (M : Model V env) (hcv : CvalParams M) {ks : List LevelParam}
+    {us : List Level}
     {φ ψ : LevelParam → Nat} (hψ : ∀ p ∈ ks, Level.substFn φ ks us p = ψ p)
     {ρ : BVarIdx → V} {e : KExpr} {X : V} (h : Denotes M.cval env ψ ρ e X) :
     e.allLevelParamsDefined ks = true →
@@ -437,7 +438,7 @@ theorem den_inst (M : Model V env) (hL : Laws M) {ks : List LevelParam} {us : Li
       (by rw [List.length_map, hlen])
     have heq : M.cval n (Level.substFn φ ci.toConstantVal.levelParams (vs.map (Level.subst ks us))) =
         M.cval n (Level.substFn ψ ci.toConstantVal.levelParams vs) :=
-      hL.cval_params n ci hf _ _ fun p hp => by
+      hcv n ci hf _ _ fun p hp => by
         rw [Level.substFn_map_subst hlen hp]
         exact Level.substFn_ext hψ (fun u hu => hd u hu) hlen p hp
     rwa [heq] at h1
@@ -489,7 +490,8 @@ assignment an instantiation induces denotes `X` at `φ` once instantiated, whate
 parameters it names (no `allLevelParamsDefined`: a parameter outside `ks` is read at `φ` on both
 sides). The constants inside are read at assignments that agree on their own parameters
 (`cval_params`). -/
-theorem den_inst_exact (M : Model V env) (hL : Laws M) {ks : List LevelParam} {us : List Level}
+theorem den_inst_exact_cv (M : Model V env) (hcv : CvalParams M) {ks : List LevelParam}
+    {us : List Level}
     {φ : LevelParam → Nat} {ρ : BVarIdx → V} {e : KExpr} {X : V}
     (h : Denotes M.cval env (Level.substFn φ ks us) ρ e X) :
     Denotes M.cval env φ ρ (e.instantiateLevelParams ks us) X := by
@@ -505,7 +507,7 @@ theorem den_inst_exact (M : Model V env) (hL : Laws M) {ks : List LevelParam} {u
       (by rw [List.length_map, hlen])
     have heq : M.cval n (Level.substFn φ ci.toConstantVal.levelParams (vs.map (Level.subst ks us))) =
         M.cval n (Level.substFn ψ ci.toConstantVal.levelParams vs) :=
-      hL.cval_params n ci hf _ _ fun p hp => by
+      hcv n ci hf _ _ fun p hp => by
         rw [Level.substFn_map_subst hlen hp, hψ]
     rwa [heq] at h1
   | app _ _ ihf iha => exact .app ihf iha
@@ -540,7 +542,8 @@ theorem den_inst_exact (M : Model V env) (hL : Laws M) {ks : List LevelParam} {u
     exact .strLit h1
 
 /-- `Fits` under level instantiation (`den_inst` at each domain). -/
-theorem fits_inst (M : Model V env) (hL : Laws M) {ks : List LevelParam} {us : List Level}
+theorem fits_inst_cv (M : Model V env) (hcv : CvalParams M) {ks : List LevelParam}
+    {us : List Level}
     {φ ψ : LevelParam → Nat} (hψ : ∀ p ∈ ks, Level.substFn φ ks us p = ψ p)
     {ρ σ : BVarIdx → V} {T R : KExpr} {xs : List V} (h : Fits M.cval env ψ ρ T xs σ R) :
     T.allLevelParamsDefined ks = true →
@@ -551,6 +554,29 @@ theorem fits_inst (M : Model V env) (hL : Laws M) {ks : List LevelParam} {us : L
     intro hd
     simp only [Expr.allLevelParamsDefined, Bool.and_eq_true] at hd
     simp only [Expr.instantiateLevelParams]
-    exact .cons (den_inst M hL hψ hA hd.1.1) hx (ih hd.1.2)
+    exact .cons (den_inst_cv M hcv hψ hA hd.1.1) hx (ih hd.1.2)
+
+/-- `den_inst_cv` over the laws (`Laws.cval_params` only). -/
+theorem den_inst (M : Model V env) (hL : LawsCore M) {ks : List LevelParam} {us : List Level}
+    {φ ψ : LevelParam → Nat} (hψ : ∀ p ∈ ks, Level.substFn φ ks us p = ψ p)
+    {ρ : BVarIdx → V} {e : KExpr} {X : V} (h : Denotes M.cval env ψ ρ e X) :
+    e.allLevelParamsDefined ks = true →
+      Denotes M.cval env φ ρ (e.instantiateLevelParams ks us) X :=
+  den_inst_cv M hL.cval_params hψ h
+
+/-- `den_inst_exact_cv` over the laws (`Laws.cval_params` only). -/
+theorem den_inst_exact (M : Model V env) (hL : LawsCore M) {ks : List LevelParam} {us : List Level}
+    {φ : LevelParam → Nat} {ρ : BVarIdx → V} {e : KExpr} {X : V}
+    (h : Denotes M.cval env (Level.substFn φ ks us) ρ e X) :
+    Denotes M.cval env φ ρ (e.instantiateLevelParams ks us) X :=
+  den_inst_exact_cv M hL.cval_params h
+
+/-- `fits_inst_cv` over the laws (`Laws.cval_params` only). -/
+theorem fits_inst (M : Model V env) (hL : LawsCore M) {ks : List LevelParam} {us : List Level}
+    {φ ψ : LevelParam → Nat} (hψ : ∀ p ∈ ks, Level.substFn φ ks us p = ψ p)
+    {ρ σ : BVarIdx → V} {T R : KExpr} {xs : List V} (h : Fits M.cval env ψ ρ T xs σ R) :
+    T.allLevelParamsDefined ks = true →
+      Fits M.cval env φ ρ (T.instantiateLevelParams ks us) xs σ (R.instantiateLevelParams ks us) :=
+  fits_inst_cv M hL.cval_params hψ h
 
 end IxCC.Grounding

@@ -36,7 +36,14 @@ IxVM side where a law exists there:
 
 `DenotesList`, `Fits`, `IotaRule` and `IotaLaw` are copied verbatim from theirs
 (`IxC/Kernel/Denotes.lean` at `659ca9130`; the ι law's right-hand side denotes in its
-conclusion).
+conclusion). `DenotesList`, `Fits` and `Denotes` itself are still textually #678's
+(`jcb/ixvmc-int` at `d4c079de2`, compared modulo the `IxC`/`IxCK` rename).
+
+**Beside the laws, not a field**: `IotaLawG`, ι in #678's guarded form (two guards, `SpineOk` in
+the conclusion, its graded conjunct dropped), copied from `jcb/ixvmc-int` at `d4c079de2`. It
+implies `IotaLaw` (`IotaLawG.toIotaLaw`), so `Laws.iota_rule` is dischargeable from #678's field;
+the theorems that read the guards or `SpineOk` (the `case` lemma without canonicity,
+`IxCCGrounding.CaseBlind`) take it, with `DefnValue` and `CvalParams`, as separate hypotheses.
 
 ## What was wrong, and what is assumed now
 
@@ -119,6 +126,76 @@ def IotaLaw (cval : Key md → (LevelParam → Nat) → V) (env : Env md) : Prop
   ∀ (r : Key md) (cv : ConstantVal md) (mI rP : Nat) (rules : List (RecRule md))
     (rl : RecRule md),
     env.find? r = some (.recInfo cv mI rP rules) → rl ∈ rules → IotaRule cval env r cv mI rP rl
+
+/-! ### ι in #678's guarded form, beside the landed one
+
+#678's kernel states ι with two guards and a graded conclusion (`IotaRule`,
+`IxC/Kernel/Denotes.lean:330-352` on `jcb/ixvmc-int` at `d4c079de2`): the parameter premise only
+at a rule that compares parameters (`RecRule.compareParams`), the index premise only at a
+recursor with indices (`mI ≠ rP`), and the conclusion also says that the right-hand side's
+reading is graded (`GradedBy`) and that its value applies along the prefix and the fields on its
+domains (`SpineOk`). `IotaRuleG` is that law less its graded conjunct, its text otherwise copied
+(and `SpineOk` verbatim, `:283-287` there). It is **not** a field of `Laws`, which keeps the
+landed `IotaLaw`: `IotaRuleG.of_premises` derives the landed form from it, so `Laws.iota_rule`
+is dischargeable from #678's field as well. Theorems that read the guards or `SpineOk` take
+`IotaLawG` explicitly. **At the ingest these definitions must be compared again with #678's**
+(and deleted in favour of theirs, `GradedBy` dropped by a one-line lemma). -/
+
+/-- **A head applied along values applies functions on their domains** (theirs, #678, verbatim):
+at each step the function so far is a member of some product, and the next value a member of
+its domain. -/
+def SpineOk : V → List V → Prop
+  | _, [] => True
+  | F, x :: xs =>
+    (∃ (r : Nat) (A : V) (B : V → V), F ∈ˢ piR r A B ∧ x ∈ˢ A) ∧ SpineOk (app F x) xs
+
+/-- **ι at one stored rule, guarded** (#678's `IotaRule` less its graded conjunct): the parameter
+premise is asked only at a rule that compares parameters, the index premise only at a recursor
+with indices; the conclusion keeps `SpineOk`, which at a rule that does not compare parameters is
+what puts the constructor's fields in the right-hand side's field domains at the recursor's
+parameters (`caseIotaG`). -/
+def IotaRuleG (cval : Key md → (LevelParam → Nat) → V) (env : Env md) (r : Key md)
+    (cv : ConstantVal md) (mI rP : Nat) (rl : RecRule md) : Prop :=
+  ∀ (cvC : ConstantVal md) (nP nF : Nat),
+    env.find? rl.ctor = some (.ctorInfo cvC nP nF) →
+    ∀ (us : List Level) (φ : LevelParam → Nat) (ρ σ σC : BVarIdx → V) (xs ys : List V)
+      (dom body RC : Expr md) (m : BinderMeta) (D : Key md) (ls : List Level) (R K X : V),
+      us.length = cv.levelParams.length → xs.length = mI → ys.length = nP + nF →
+      Denotes cval env φ ρ (.const r us) R →
+      Fits cval env φ ρ (cv.type.instantiateLevelParams cv.levelParams us) xs σ
+        (.forallE dom body m) →
+      dom.getAppFn = .const D ls → Denotes cval env φ σ dom X →
+      Denotes cval env φ ρ (.const rl.ctor ls) K →
+      Fits cval env φ ρ (cvC.type.instantiateLevelParams cvC.levelParams ls) ys σC RC →
+      ys.foldl app K ∈ˢ X →
+      (rl.compareParams = true →
+        DenotesList cval env φ σ (dom.getAppArgs.take nP) (ys.take nP)) →
+      (mI ≠ rP → DenotesList cval env φ σC (RC.getAppArgs.drop nP) (xs.drop rP)) →
+      ∃ H, Denotes cval env φ ρ (rl.rhs.instantiateLevelParams cv.levelParams us) H ∧
+        SpineOk H (xs.take rP ++ ys.drop nP) ∧
+        (xs ++ [ys.foldl app K]).foldl app R = (xs.take rP ++ ys.drop nP).foldl app H
+
+/-- **ι at every stored rule, guarded** (#678's `Model.iota_rule`, less its graded conjunct). -/
+def IotaLawG (cval : Key md → (LevelParam → Nat) → V) (env : Env md) : Prop :=
+  ∀ (r : Key md) (cv : ConstantVal md) (mI rP : Nat) (rules : List (RecRule md))
+    (rl : RecRule md),
+    env.find? r = some (.recInfo cv mI rP rules) → rl ∈ rules → IotaRuleG cval env r cv mI rP rl
+
+/-- **The guarded law gives the landed one** (ours, as #678's `IotaRule.of_premises`): with both
+premises in hand, the guards are discharged and `SpineOk` is dropped. -/
+theorem IotaRuleG.of_premises {cval : Key md → (LevelParam → Nat) → V} {env : Env md}
+    {r : Key md} {cv : ConstantVal md} {mI rP : Nat} {rl : RecRule md}
+    (h : IotaRuleG cval env r cv mI rP rl) : IotaRule cval env r cv mI rP rl := by
+  intro cvC nP nF hC us φ ρ σ σC xs ys dom body RC m D ls R K X h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 h11
+    h12
+  obtain ⟨H, hH, -, heq⟩ := h cvC nP nF hC us φ ρ σ σC xs ys dom body RC m D ls R K X h1 h2 h3 h4
+    h5 h6 h7 h8 h9 h10 (fun _ => h11) (fun _ => h12)
+  exact ⟨H, hH, heq⟩
+
+/-- `IotaLawG` gives `IotaLaw` (so it discharges `Laws.iota_rule`). -/
+theorem IotaLawG.toIotaLaw {cval : Key md → (LevelParam → Nat) → V} {env : Env md}
+    (h : IotaLawG cval env) : IotaLaw cval env :=
+  fun r cv mI rP rules rl hf hm => (h r cv mI rP rules rl hf hm).of_premises
 
 /-- **δ** (theirs: the field `Model.defn_value`, stated as here).
 
@@ -223,6 +300,43 @@ structure Laws {env : Env md} (M : Model V env) : Prop where
   nat_accel : NatAccel M
   /-- constructor canonicity at families that are not propositions. Not scheduled by anyone. -/
   ctor_canon : CtorCanon M
+
+/-- **The laws other than canonicity, ι in the landed form**: what every lemma of the library that
+does not read `ctor_canon` takes (the direct route's soundness, the heads, δ, the `Eq.rec` and
+`case` model lemmas, level instantiation, the literals). Both law structures give it
+(`lawsCore_of_laws`, `LawsNoCanon.core`). -/
+structure LawsCore {env : Env md} (M : Model V env) : Prop where
+  defn_value : DefnValue M
+  iota_rule : IotaLaw M.cval env
+  cval_params : CvalParams M
+  proj_ctor : ProjCtor M
+  nat_accel : NatAccel M
+
+/-- `Laws` without its canonicity. -/
+theorem lawsCore_of_laws {env : Env md} {M : Model V env} (hL : Laws M) : LawsCore M :=
+  ⟨hL.defn_value, hL.iota_rule, hL.cval_params, hL.proj_ctor, hL.nat_accel⟩
+
+/-- **The laws of the canonicity-free family** (`rootSound_noCanon` and its corollaries): no
+`ctor_canon`, and ι in #678's guarded form.
+
+| Field | #678's public `Model` (`jcb/ixvmc-int` at `d4c079de2`) |
+| --- | --- |
+| `defn_value` | its field `defn_value`, the same statement |
+| `iota_rule` | its field `iota_rule`, less the graded conjunct (`IotaLawG`) |
+| `cval_params` | its field `cval_params`, the same statement |
+| `proj_ctor` | **not yet derived**: a theorem from its field `proj_law` by an adapter, not written |
+| `nat_accel` | **not yet derived**: its field `lit_ops` gives it where each role's constant is stored as a definition, a premise not yet checked |
+-/
+structure LawsNoCanon {env : Env md} (M : Model V env) : Prop where
+  defn_value : DefnValue M
+  iota_rule : IotaLawG M.cval env
+  cval_params : CvalParams M
+  proj_ctor : ProjCtor M
+  nat_accel : NatAccel M
+
+/-- The canonicity-free laws give the core (ι in the landed form, `IotaLawG.toIotaLaw`). -/
+theorem LawsNoCanon.core {env : Env md} {M : Model V env} (hL : LawsNoCanon M) : LawsCore M :=
+  ⟨hL.defn_value, hL.iota_rule.toIotaLaw, hL.cval_params, hL.proj_ctor, hL.nat_accel⟩
 
 end Laws
 

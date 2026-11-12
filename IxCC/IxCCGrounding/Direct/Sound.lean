@@ -91,7 +91,7 @@ theorem directSound_zero {x : DCtx} : DirectSound M φ x 0 where
 
 section Succ
 
-variable (hL : Laws M) (hN : NatBasis env) {x : DCtx} (hx : x.Reads env) (hφ : AtProf φ x)
+variable (hL : LawsCore M) (hN : NatBasis env) {x : DCtx} (hx : x.Reads env) (hφ : AtProf φ x)
   {n : Nat} (IH : DirectSound M φ x n)
 include IH
 
@@ -356,7 +356,7 @@ end Succ
 
 /-- **The direct route is sound**, in every model with the laws, at every assignment one of the
 profiles stands for. -/
-theorem direct_sound (hL : Laws M) (hN : NatBasis env) {x : DCtx} (hx : x.Reads env)
+theorem direct_sound (hL : LawsCore M) (hN : NatBasis env) {x : DCtx} (hx : x.Reads env)
     (hφ : AtProf φ x) : ∀ n, DirectSound M φ x n
   | 0 => directSound_zero
   | n + 1 =>

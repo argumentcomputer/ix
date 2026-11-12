@@ -41,7 +41,7 @@ theorem last_regime {cval : KKey → (LevelParam → Nat) → V} {φ : LevelPara
 field, by `proj_ctor`, when the structure's table entry names the constructor and the
 constructor's parameters and fields fit its stored type, at a structure that is never a
 proposition (`NeverProp`, checked by the `proj` conjunct). -/
-theorem proj_con (M : Model V env) (hL : Laws M) {Ts : KKey} {i : Nat}
+theorem proj_con (M : Model V env) (hL : LawsCore M) {Ts : KKey} {i : Nat}
     {entry : ProjEntry .anon} (hent : env.findProj? Ts i = some entry)
     {cvC : ConstantVal .anon} {np nf : Nat} (hc : env.find? entry.ctor = some (.ctorInfo cvC np nf))
     (hTs : NeverProp env Ts)
@@ -60,7 +60,7 @@ theorem proj_con (M : Model V env) (hL : Laws M) {Ts : KKey} {i : Nat}
 
 /-- **F6, a binary `Nat` primitive with a `Nat` result**, on literal arguments: the operation's
 denotation applied to the literals' is the result literal's, by `nat_accel`. -/
-theorem prim_fire_nat (M : Model V env) (hL : Laws M) (hS : NatBasis env)
+theorem prim_fire_nat (M : Model V env) (hL : LawsCore M) (hS : NatBasis env)
     {op : IxCC.Src.PrimOp} (hop : op.arity = 2) {ci : ConstantInfo .anon}
     (hf : env.find? (primKey op) = some ci) (hl : ci.toConstantVal.levelParams = [])
     (φ : LevelParam → Nat) {a b n : Nat} (hev : op.eval2 a b = .nat n) :
