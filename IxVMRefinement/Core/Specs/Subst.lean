@@ -56,6 +56,22 @@ def noBVarIn (lo hi : Nat) : KExpr → Bool
   | .letE ty v b _ => noBVarIn lo hi ty && noBVarIn lo hi v && noBVarIn (lo + 1) (hi + 1) b
   | .proj _ _ e => noBVarIn lo hi e
 
+/-- **No opened variable of `E` with an index in `[lo, hi)`** (an `fvar`'s type annotation is
+not entered). -/
+def noFvarIn (lo hi : Nat) : KExpr → Bool
+  | .fvar j _ => !(decide (lo ≤ j) && decide (j < hi))
+  | .bvar _ | .sort _ | .const _ _ | .lit _ => true
+  | .app f a => noFvarIn lo hi f && noFvarIn lo hi a
+  | .lam ty b _ | .forallE ty b _ => noFvarIn lo hi ty && noFvarIn lo hi b
+  | .letE ty v b _ => noFvarIn lo hi ty && noFvarIn lo hi v && noFvarIn lo hi b
+  | .proj _ _ e => noFvarIn lo hi e
+
+/-- **No index in `[lo, hi)` occurs** in the image `E` of a heap term read at local depth `k`
+and opening depth `d`: neither a local one as a loose `bvar`, nor a free one as the opened
+variable it stands for (index `i ≥ k` is the opened variable `d + k - 1 - i`). -/
+def Avoids (d k lo hi : Nat) (E : KExpr) : Prop :=
+  noBVarIn lo hi E = true ∧ noFvarIn (d + k - hi) (d + k - max lo k) E = true
+
 /-- **`b` bounds the indices of the heap term `p`** read at local depth `k` as `E`: when
 `b ≤ k`, the image has no loose `bvar` at or above `b`, no opened variable, and the heap term
 reads as the same `E` at every opening depth and context and every local depth `≥ b`. -/
@@ -101,14 +117,14 @@ def lbr_min : SpecFn := fun c args h r h' calls =>
 
 /-! ## Occurrence tests -/
 
-/-- `KernelSubst::has_bvar_in_range(e, lo, hi)`: answers `0` or `1`; **`0` claims that no
-local `bvar` in `[lo, hi)` occurs** (read at a local depth `k ≥ hi`); `1` claims nothing.
-`expr_inst_many` lowers instead of substituting on `0`. -/
+/-- `KernelSubst::has_bvar_in_range(e, lo, hi)`: answers `0` or `1`; **`0` claims that no index
+in `[lo, hi)` occurs** (`Avoids`: neither a local one nor the opened variable a free one stands
+for); `1` claims nothing. `expr_inst_many` lowers instead of substituting on `0`; the
+declaration checks assert `0` of parameters that must not mention the first indices. -/
 def has_bvar_in_range : SpecFn := fun c args h r h' calls =>
   ∀ e (lo hi : F), args = [e, .field lo, .field hi] → Good c calls → h' = h ∧
     (r = .field 0 ∨ r = .field 1) ∧
-    (r = .field 0 → ∀ d Γ k E, c.tmk d Γ k h E e → ZMod.val hi ≤ k →
-      noBVarIn (ZMod.val lo) (ZMod.val hi) E = true)
+    (r = .field 0 → ∀ d Γ k E, c.tmk d Γ k h E e → Avoids d k (ZMod.val lo) (ZMod.val hi) E)
 
 /-- `KernelSubst::has_bvar_in_range_bvar(i, lo, hi)`: `0` claims `i ∉ [lo, hi)`. -/
 def has_bvar_in_range_bvar : SpecFn := fun c args h r h' calls =>
@@ -117,52 +133,47 @@ def has_bvar_in_range_bvar : SpecFn := fun c args h r h' calls =>
     (r = .field 0 → ZMod.val i < ZMod.val lo ∨ ZMod.val hi ≤ ZMod.val i)
 
 /-- `KernelSubst::has_bvar_in_range_binder(ty, body, lo, hi)`: `has_bvar_in_range` of a binder
-node from its components (the body at `[lo + 1, hi + 1)`). -/
+node from its components (the body one binder deeper, at `[lo + 1, hi + 1)`). -/
 def has_bvar_in_range_binder : SpecFn := fun c args h r h' calls =>
   ∀ ty body (lo hi : F), args = [ty, body, .field lo, .field hi] → Good c calls → h' = h ∧
     (r = .field 0 ∨ r = .field 1) ∧
     (r = .field 0 → ∀ d Γ k T B, c.tmk d Γ k h T ty → c.tmk d Γ (k + 1) h B body →
-      ZMod.val hi ≤ k →
-        noBVarIn (ZMod.val lo) (ZMod.val hi) T = true ∧
-        noBVarIn (ZMod.val lo + 1) (ZMod.val hi + 1) B = true)
+      Avoids d k (ZMod.val lo) (ZMod.val hi) T ∧
+      Avoids d (k + 1) (ZMod.val lo + 1) (ZMod.val hi + 1) B)
 
 /-- `KernelSubst::has_bvar_in_range_let(ty, val, body, lo, hi)`: from the let's components. -/
 def has_bvar_in_range_let : SpecFn := fun c args h r h' calls =>
   ∀ ty val body (lo hi : F), args = [ty, val, body, .field lo, .field hi] → Good c calls →
     h' = h ∧ (r = .field 0 ∨ r = .field 1) ∧
     (r = .field 0 → ∀ d Γ k T V B, c.tmk d Γ k h T ty → c.tmk d Γ k h V val →
-      c.tmk d Γ (k + 1) h B body → ZMod.val hi ≤ k →
-        noBVarIn (ZMod.val lo) (ZMod.val hi) T = true ∧
-        noBVarIn (ZMod.val lo) (ZMod.val hi) V = true ∧
-        noBVarIn (ZMod.val lo + 1) (ZMod.val hi + 1) B = true)
+      c.tmk d Γ (k + 1) h B body →
+      Avoids d k (ZMod.val lo) (ZMod.val hi) T ∧ Avoids d k (ZMod.val lo) (ZMod.val hi) V ∧
+      Avoids d (k + 1) (ZMod.val lo + 1) (ZMod.val hi + 1) B)
 
-/-- `KernelSubst::expr_has_bvar_at(e, depth)`: answers `0` or `1`; **`0` claims that the local
-`bvar depth` does not occur** (read at a local depth `k > depth`). `expr_inst1` lowers instead of
+/-- `KernelSubst::expr_has_bvar_at(e, depth)`: answers `0` or `1`; **`0` claims that the index
+`depth` does not occur** (`Avoids` at `[depth, depth + 1)`). `expr_inst1` lowers instead of
 substituting on `0`. -/
 def expr_has_bvar_at : SpecFn := fun c args h r h' calls =>
   ∀ e (j : F), args = [e, .field j] → Good c calls → h' = h ∧
     (r = .field 0 ∨ r = .field 1) ∧
-    (r = .field 0 → ∀ d Γ k E, c.tmk d Γ k h E e → ZMod.val j < k →
-      noBVarIn (ZMod.val j) (ZMod.val j + 1) E = true)
+    (r = .field 0 → ∀ d Γ k E, c.tmk d Γ k h E e → Avoids d k (ZMod.val j) (ZMod.val j + 1) E)
 
 /-- `KernelSubst::expr_has_bvar_at_binder(ty, body, depth)`: from a binder's components. -/
 def expr_has_bvar_at_binder : SpecFn := fun c args h r h' calls =>
   ∀ ty body (j : F), args = [ty, body, .field j] → Good c calls → h' = h ∧
     (r = .field 0 ∨ r = .field 1) ∧
     (r = .field 0 → ∀ d Γ k T B, c.tmk d Γ k h T ty → c.tmk d Γ (k + 1) h B body →
-      ZMod.val j < k →
-        noBVarIn (ZMod.val j) (ZMod.val j + 1) T = true ∧
-        noBVarIn (ZMod.val j + 1) (ZMod.val j + 2) B = true)
+      Avoids d k (ZMod.val j) (ZMod.val j + 1) T ∧
+      Avoids d (k + 1) (ZMod.val j + 1) (ZMod.val j + 2) B)
 
 /-- `KernelSubst::expr_has_bvar_at_let(ty, val, body, depth)`: from a let's components. -/
 def expr_has_bvar_at_let : SpecFn := fun c args h r h' calls =>
   ∀ ty val body (j : F), args = [ty, val, body, .field j] → Good c calls → h' = h ∧
     (r = .field 0 ∨ r = .field 1) ∧
     (r = .field 0 → ∀ d Γ k T V B, c.tmk d Γ k h T ty → c.tmk d Γ k h V val →
-      c.tmk d Γ (k + 1) h B body → ZMod.val j < k →
-        noBVarIn (ZMod.val j) (ZMod.val j + 1) T = true ∧
-        noBVarIn (ZMod.val j) (ZMod.val j + 1) V = true ∧
-        noBVarIn (ZMod.val j + 1) (ZMod.val j + 2) B = true)
+      c.tmk d Γ (k + 1) h B body →
+      Avoids d k (ZMod.val j) (ZMod.val j + 1) T ∧ Avoids d k (ZMod.val j) (ZMod.val j + 1) V ∧
+      Avoids d (k + 1) (ZMod.val j + 1) (ZMod.val j + 2) B)
 
 /-! ## The smallest free index -/
 
