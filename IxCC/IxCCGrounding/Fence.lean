@@ -1,6 +1,7 @@
 import IxCCGrounding.Ground
 import IxCCGrounding.Root
 import IxCCGrounding.Direct.Sites
+import IxCCGrounding.CaseBlind
 
 /-! # The grounding library's axiom fence: every theorem presented as proved uses at most
 the three standard axioms. Building the library checks it (`#guard_msgs`). -/
@@ -499,3 +500,44 @@ recursor clause and its implication from the landed one. -/
 
 /-- info: 'IxCC.Grounding.fire_noParams' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Grounding.fire_noParams
+
+/-! GR12: ι in #678's guarded form beside the landed law; the `case` lemma without canonicity. -/
+
+/-- info: 'IxCC.Grounding.IotaRuleG.of_premises' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.IotaRuleG.of_premises
+
+/-- info: 'IxCC.Grounding.IotaLawG.toIotaLaw' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.IotaLawG.toIotaLaw
+
+/-- info: 'IxCC.Grounding.caseRulesBlind_of_check' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.caseRulesBlind_of_check
+
+/-- info: 'IxCC.Grounding.den_inst_cv' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.den_inst_cv
+
+/-- info: 'IxCC.Grounding.den_inst_exact_cv' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.den_inst_exact_cv
+
+/-- info: 'IxCC.Grounding.fits_inst_cv' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.fits_inst_cv
+
+/-- info: 'IxCC.Grounding.litSet_indep_cv' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.litSet_indep_cv
+
+/-- info: 'IxCC.Grounding.relV_lit_eq_cv' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.relV_lit_eq_cv
+
+/-- info: 'IxCC.Grounding.lamR_dom_of_mem' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.lamR_dom_of_mem
+
+/-- info: 'IxCC.Grounding.spineOk_append' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.spineOk_append
+
+/-- info: 'IxCC.Grounding.fits_of_spineOk' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.fits_of_spineOk
+
+/-- info: 'IxCC.Grounding.caseIotaG' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.caseIotaG
+
+/-- info: 'IxCC.Grounding.caseFires_of_blind' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.caseFires_of_blind
