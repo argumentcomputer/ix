@@ -328,6 +328,16 @@ def rebuildFixture (t : Tools) (m : Family) (f : Fixture) (log : IO.Ref (Array S
       pure [("resource_profile", OJson.obj #[("address", .str r.profile), ("bytes", .str bytes)]),
         ("resource_checked", OJson.arr checkedOut.toArray)]
     | _, _ => pure []
+  -- the theorem proposals (kind `word`: a word operation and its stored equation), only when
+  -- `ix` named one, so that a closure without them keeps its sidecar
+  let theoremRows ← theorems.mapM fun t => do
+    let s ← strField t "subject"
+    let n ← strField t "theorem"
+    return OJson.obj #[("kind", .str (← strField t "kind")), ("subject", .str s),
+      ("subject_address", .str (lookup s)), ("theorem", .str n),
+      ("theorem_address", .str (lookup n))]
+  let theoremsKey : Array (String × OJson) :=
+    if theoremRows.isEmpty then #[] else #[("theorems", .arr theoremRows)]
   let sidecar : OJson := .obj (#[("format", .str "ixcc/k1-equations/1"), ("source", .str src),
     ("roots", .arr (f.consts.map fun n => OJson.obj #[("name", .str n), ("address", .str (lookup n))]).toArray),
     ("equations", .arr (← pairs.mapM fun p => do
@@ -335,15 +345,7 @@ def rebuildFixture (t : Tools) (m : Family) (f : Fixture) (log : IO.Ref (Array S
       let e ← strField p "equation"
       return OJson.obj #[("definition", .str d), ("definition_address", .str (lookup d)),
         ("equation", .str e), ("equation_address", .str (lookup e))]))] ++
-    -- the theorem proposals (kind `word`: a word operation and its stored equation), only when
-    -- `ix` named one, so that a closure without them keeps its sidecar
-    (if theorems.isEmpty then #[] else #[("theorems", .arr (← theorems.mapM fun t => do
-      let s ← strField t "subject"
-      let n ← strField t "theorem"
-      return OJson.obj #[("kind", .str (← strField t "kind")), ("subject", .str s),
-        ("subject_address", .str (lookup s)), ("theorem", .str n),
-        ("theorem_address", .str (lookup n))]))]) ++
-    #[("failures", failures)] ++ resourceKeys.toArray)
+    theoremsKey ++ #[("failures", failures)] ++ resourceKeys.toArray)
   IO.FS.createDirAll dir
   let eqText := sidecar.render
   let ixeBytes ← IO.FS.readBinFile anonIxe
