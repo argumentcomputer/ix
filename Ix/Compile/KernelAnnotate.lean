@@ -44,6 +44,12 @@ zero-ness of `imax u v` is that of `v`) and the run closed with one
 share is walked once per context of the variables it can name. Each record's
 caches start empty and are dropped with it.
 
+Where phase A annotated a root and stored it (a definition's type and value, a
+theorem's, an opaque's or an axiom's type), the root's data are read off the
+stored term beside the record's tree (`walkStored`), and nothing is inferred
+again. A theorem's or an opaque's value, a block's or a quotient's roots, and a
+root whose stored term and record differ are walked.
+
 **Unsafe and partial records** carry the undecided section
 (`Ix.CompileM.undecidedSection`). So does a record whose sources the annotator
 cannot find or align, and every binder whose datum IxC's function cannot
@@ -82,6 +88,9 @@ structure Installed where
   ahead : Nat := 0
   /-- phase A's waves -/
   waves : Nat := 0
+  /-- whether a root phase A annotated is read off its stored term (`walkStored`)
+  rather than walked -/
+  stored : Bool := true
   /-- the phases' times (ms) -/
   times : Array (String × Nat) := #[]
 
@@ -299,15 +308,17 @@ def install (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (workers : Nat 
                  ("phaseA", t4 - t3), ("tier+retry", t5 - t4), ("persist", t6 - t5)] }
 
 /-- **Install a compile's input**: its condensation (`Ix.CondenseM`, as the
-compile's front end builds it), then `install`. With `IX_BD_SEQUENTIAL` set,
-phase A takes every step in turn (for measurement: the environment is the same). -/
+compile's front end builds it), then `install`. For measurement (the data are
+the same): with `IX_BD_SEQUENTIAL` set phase A takes every step in turn, with
+`IX_BD_WALK_ALL` every root is walked. -/
 def installInput (env : Ix.Environment) (workers : Nat := 32) : IO (Except String Installed) := do
   let t0 ← IO.monoMsNow
   let blocks ← IO.lazyPure fun _ => Ix.CondenseM.run (Ix.Compile.FrontEnd.graph env)
   let t1 ← IO.monoMsNow
   let parallel := (← IO.getEnv "IX_BD_SEQUENTIAL").isNone
+  let stored := (← IO.getEnv "IX_BD_WALK_ALL").isNone
   return (← install env blocks workers parallel).map fun k =>
-    { k with times := #[("condense", t1 - t0)] ++ k.times }
+    { k with stored, times := #[("condense", t1 - t0)] ++ k.times }
 
 /-! ## The walk -/
 
@@ -346,6 +357,8 @@ structure WState where
   variants : Std.HashMap Nat (Std.HashMap (Array Node) Nat) := {}
   blocks : Array Block := #[]
   memo : Std.HashMap (Nat × Bool × List Nat) (KExpr × Nat × Bool) := {}
+  /-- the stored walk's memo (`walkStored`): the variant of a share site -/
+  memoS : Std.HashMap (Nat × Bool × List Nat) Nat := {}
 
 abbrev WM := StateT WState CM
 /-- An entry's walk: its nodes' data, by ordinal. -/
@@ -472,6 +485,44 @@ def walk : Nat → Cx → List CtxEntry → Nat → Ixon.Expr → KExpr → EM (
     | .nat _, .lit _ => pure (x, false)
     | _, _ => mismatch "a node"
 
+/-- The walk of one entry's tree `e` beside `k`, a term phase A annotated and
+stored (IxC's annotation of the same source): every numbered node of `e` gets
+the datum `k` carries at its place, and nothing is inferred. A node where the
+trees differ is a mismatch, and so is a `let` (the annotation ζ-reduces it, so
+its type's and value's data are not in `k`): the root is then walked by
+`walk`. -/
+def walkStored : Nat → Cx → List Nat → Ixon.Expr → KExpr → EM Unit
+  | 0, _, _, _, _ => mismatch "the stored walk's depth bound"
+  | fuel + 1, cx, ctx, e, k =>
+    match e, k with
+    | .var _, .bvar _ => pure ()
+    | .app f a, .app kf ka => do
+      walkStored fuel cx ctx f kf
+      walkStored fuel cx ctx a ka
+    | .lam _ t b, .lam ty body mb | .all _ _ t b, .forallE ty body mb => do
+      let ord ← reserve
+      setNode ord (cx.nodeOf mb.pw)
+      walkStored fuel cx ctx t ty
+      let id ← freshId
+      walkStored fuel cx (id :: ctx) b body
+    | .prj _ _ v, .proj _ _ kv => walkStored fuel cx ctx v kv
+    | .share n, _ => do
+      let ord ← reserve
+      let n := n.toNat
+      let key := (n, cx.large, ctx.take (cx.bounds[n]?.getD 0))
+      let variant ← match (← getThe WState).memoS[key]? with
+        | some v => pure v
+        | none => do
+          let some entry := cx.sharing[n]? | mismatch "a share"
+          let ((), nodes) ← ((walkStored fuel cx ctx entry k).run #[] : WM (Unit × Array Node))
+          let v ← variantOf n nodes
+          modifyThe WState fun st => { st with memoS := st.memoS.insert key v }
+          pure v
+      setNode ord (.share variant)
+    | .sort _, .sort _ | .ref .., .const .. | .recur .., .const .. | .str _, .lit _
+    | .nat _, .lit _ => pure ()
+    | _, _ => mismatch "a node of the stored term"
+
 /-! ## A record's sources -/
 
 /-- Whether a member of `c` is unsafe or partial. -/
@@ -532,6 +583,30 @@ def sourceItems (find : Ix.Name → Option Ix.ConstantInfo) (ci : Ix.ConstantInf
     | _ => none
   | _ => none
 
+/-- The terms phase A annotated and stored for a record member's roots, in
+section order, where it certainly annotated them: a definition's type and value
+(not a pinned `Nat` operation's, which the ordinary step installs), a theorem's
+and an opaque's type, an axiom's type. `none` elsewhere: a theorem's value is
+stored raw, and blocks and quotients are walked. -/
+def storedItems (fe : FEnv .source) (n : Ix.Name) :
+    Ixon.MutConst ⊕ Ixon.ConstantInfo → Array (Option KExpr)
+  | .inl (.defn _) | .inr (.defn _) =>
+    let key := ingressKey n
+    match fe.find? key with
+    | some (.defnInfo cv v _) =>
+      if Ix.Kernel.natOpNames.contains key || Ix.Kernel.natDivModNames.contains key then #[none, none]
+      else #[some cv.type, some v]
+    | some (.thmInfo cv _) => #[some cv.type, none]
+    | some (.axiomInfo cv) => #[some cv.type, none]
+    | _ => #[none, none]
+  | .inr (.axio _) => match fe.find? (ingressKey n) with
+    | some (.axiomInfo cv) => #[some cv.type]
+    | _ => #[none]
+  | .inl (.recr r) | .inr (.recr r) => Array.replicate (1 + r.rules.size) none
+  | .inl (.indc i) => Array.replicate (1 + i.ctors.size) none
+  | .inr (.quot _) => #[none]
+  | .inr _ => #[]
+
 /-- The Source roots of a record, from its members' sources (`extra` first,
 then the compile's input), each with the numbering of its level parameters. -/
 def sourceRoots (env : Ix.Environment) (extra : Array (Ix.Name × Ix.ConstantInfo))
@@ -563,12 +638,26 @@ def annotate (k : Installed) (extra : Array (Ix.Name × Ix.ConstantInfo)) (names
   | some xs =>
     let cx0 : Cx := { fe := k.fe, core := k.core, sharing := c.sharing,
                       bounds := IxVM.PwHints.bounds c.sharing }
+    let stored : Array (Option KExpr) := if !k.stored then #[] else
+      ((members c).zip names).foldl (fun acc (m, n) => acc ++ storedItems k.fe n m) #[]
     let act : WM (Array Block) := do
       let mut out := #[]
       for h : i in [:rs.size] do
         let some (x, σ) := xs[i]? | throw (.internal "binder data: a root without a source")
         let cx := { cx0 with large := σ.large, params := σ.names.size }
-        let (_, nodes) ← (walk walkFuel cx [] 0 rs[i] x).run #[]
+        -- the stored term's data where phase A annotated the root, else the walk
+        let read : Option (Array Node) ← match stored[i]? with
+          | some (some kx) =>
+            tryCatch (do
+                let ((), nodes) ← (walkStored walkFuel cx [] rs[i] kx).run #[]
+                pure (some nodes))
+              (fun _ => pure none)
+          | _ => pure none
+        let nodes ← match read with
+          | some nodes => pure nodes
+          | none => do
+            let (_, nodes) ← (walk walkFuel cx [] 0 rs[i] x).run #[]
+            pure nodes
         out := out.push ⟨0, i, 0, nodes⟩
       return out
     match (act.run {}).run {} with
