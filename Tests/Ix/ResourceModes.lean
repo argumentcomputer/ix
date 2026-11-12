@@ -103,7 +103,7 @@ def lib : Array (Ref × RunDef) := #[
   (useR, body [par .many .val (arrowSk), par .many] (add (app (v 1) [v 0] .leaf) (lenOf (v 0)))
     .shared .leaf),
   -- a static: `tbl : List := [1]`
-  (tblR, body [] (app (.const consR) [.irr, .natLit 1, app (.const nilR) [.irr] .imm]) .shared .val)
+  (tblR, body [] (app (.const consR .val) [.irr, .natLit 1, app (.const nilR .val) [.irr] .imm]) .shared .val)
 ]
 
 def prog (defs : List (Ref × RunDef)) : Prog := { defs := lib ++ defs.toArray, nat := some natR }
@@ -212,14 +212,14 @@ def twiceN := mem 119
 def uniqueCases : List LSpec.TestSeq := [
   -- `twice (@unique xs) := consume xs + consume xs`
   runCase "unique: a binding transferred twice" [(twice, body [par .unique]
-    (add (app (.const consumeR) [v 0] .leaf) (app (.const consumeR) [v 0] .leaf)) .shared .leaf)]
+    (add (app (.const consumeR .val) [v 0] .leaf) (app (.const consumeR .val) [v 0] .leaf)) .shared .leaf)]
     twice oneList (some .revokedUse) false,
   runCase "unique: a binding transferred once" [(once1, body [par .unique]
-    (app (.const consumeR) [v 0] .leaf) .shared .leaf)] once1 oneList none true,
+    (app (.const consumeR .val) [v 0] .leaf) .shared .leaf)] once1 oneList none true,
   -- `share1 (xs : List) := consume xs`; `caller (xs) := share1 xs + len xs`
   runCase "unique: a shared parameter given away, then read by its caller"
-    [(share1, body [par] (app (.const consumeR) [v 0] .leaf) .shared .leaf),
-     (caller, body [par] (add (app (.const share1) [v 0] .leaf) (lenOf (v 0))) .shared .leaf)]
+    [(share1, body [par] (app (.const consumeR .val) [v 0] .leaf) .shared .leaf),
+     (caller, body [par] (add (app (.const share1 .val) [v 0] .leaf) (lenOf (v 0))) .shared .leaf)]
     caller oneList (some .revokedUse) false [share1, caller],
   -- `headU (@unique xs) := match xs with | [] => 0 | _ :: t => len t`
   runCase "unique: a consuming match, the fields used" [(headU, body [par .unique]
@@ -231,20 +231,20 @@ def uniqueCases : List LSpec.TestSeq := [
   -- `deep (@unique xs) := match xs with | [] => 0 | h :: t => consume (h :: t) + len t`
   runCase "unique: deep transfer revokes the fields" [(deep, body [par .unique]
     (onList (v 0) (.natLit 0)
-      (add (app (.const consumeR) [app (.const consR) [.irr, v 1, v 0]] .leaf) (lenOf (v 0))) .val .leaf)
+      (add (app (.const consumeR .val) [app (.const consR .val) [.irr, v 1, v 0]] .leaf) (lenOf (v 0))) .val .leaf)
     .shared .leaf)] deep oneList (some .revokedUse) false,
   -- `boxS (x : List) := let s := ⟨x⟩ : S; consumeS s + len x` (a `@shared` field)
   runCase "unique: a @shared field stops deep uniqueness" [(boxS, body [par]
-    (.letE (.value .many) .val (app (.const sboxR) [v 0])
-      (add (app (.const consumeSR) [v 0] .leaf) (lenOf (v 1)))) .shared .leaf)] boxS oneList none true,
+    (.letE (.value .many) .val (app (.const sboxR .val) [v 0])
+      (add (app (.const consumeSR .val) [v 0] .leaf) (lenOf (v 1)))) .shared .leaf)] boxS oneList none true,
   -- `boxI (x : List) := let s := ⟨x⟩ : B; consumeB s + len x` (an inherited field)
   runCase "unique: an inherited field is transferred with its box" [(boxI, body [par]
-    (.letE (.value .many) .val (app (.const boxR) [v 0])
-      (add (app (.const consumeBR) [v 0] .leaf) (lenOf (v 1)))) .shared .leaf)] boxI oneList
+    (.letE (.value .many) .val (app (.const boxR .val) [v 0])
+      (add (app (.const consumeBR .val) [v 0] .leaf) (lenOf (v 1)))) .shared .leaf)] boxI oneList
     (some .revokedUse) false,
   -- `twiceN (@unique n : Nat) := consumeN n + consumeN n` (a leaf is never unique)
   runCase "unique: a leaf transferred twice" [(twiceN, body [par .unique .leaf]
-    (add (app (.const consumeNR) [v 0 .leaf] .leaf) (app (.const consumeNR) [v 0 .leaf] .leaf))
+    (add (app (.const consumeNR .val) [v 0 .leaf] .leaf) (app (.const consumeNR .val) [v 0 .leaf] .leaf))
     .shared .leaf)] twiceN oneNat none true
 ]
 
@@ -270,10 +270,10 @@ def borrowCases : List LSpec.TestSeq := [
     same oneList none true,
   -- `stash (@borrowed b : List) : List := [b]`
   runCase "borrow: a borrowed parameter stored in a cell" [(stash, body [par .borrowed]
-    (app (.const consR) [.irr, v 0, app (.const nilR) [.irr] .imm]))] stash oneList
+    (app (.const consR .val) [.irr, v 0, app (.const nilR .val) [.irr] .imm]))] stash oneList
     (some .borrowEscape) false,
   runCase "borrow: a borrowed parameter given away" [(give, body [par .borrowed]
-    (app (.const consumeR) [v 0] .leaf) .shared .leaf)] give oneList (some .borrowEscape) false,
+    (app (.const consumeR .val) [v 0] .leaf) .shared .leaf)] give oneList (some .borrowEscape) false,
   runCase "borrow: a let's loan returned" [(letEsc, body [par] (.letE .borrow .val (v 0) (v 0)))]
     letEsc oneList (some .borrowEscape) false,
   runCase "borrow: a let's loan read" [(letOk, body [par] (.letE .borrow .val (v 0) (lenOf (v 0)))
@@ -310,7 +310,7 @@ def papT := mem 143
 def captureCases : List LSpec.TestSeq := [
   -- `capOnce (@unique xs) := let g := fun u => consume xs; g 0 + g 1`
   runCase "capture: a closure consuming its capture called twice" [(capOnce, body [par .unique]
-    (.letE (.value .many) .val (lam (par .many .leaf) (app (.const consumeR) [v 1] .leaf) .shared .leaf)
+    (.letE (.value .many) .val (lam (par .many .leaf) (app (.const consumeR .val) [v 1] .leaf) .shared .leaf)
       (add (app (v 0) [.natLit 0] .leaf) (app (v 0) [.natLit 1] .leaf))) .shared .leaf)] capOnce oneList
     (some .revokedUse) false,
   -- `capOuter (@unique xs) := let g := fun u => len xs; len xs`
@@ -323,7 +323,7 @@ def captureCases : List LSpec.TestSeq := [
       (add (app (v 0) [.natLit 0] .leaf) (lenOf (v 1)))) .shared .leaf)] capPlain oneList none true,
   -- `papT (@unique xs) := let g := consume2 xs; len xs`
   runCase "capture: a partial application transfers its unique argument" [(papT, body [par .unique]
-    (.letE (.value .many) .val (app (.const consume2R) [v 0]) (lenOf (v 1))) .shared .leaf)] papT oneList
+    (.letE (.value .many) .val (app (.const consume2R .val) [v 0]) (lenOf (v 1))) .shared .leaf)] papT oneList
     (some .revokedUse) false
 ]
 
@@ -337,17 +337,17 @@ def okStatic := mem 153
 def skeletonCases : List LSpec.TestSeq := [
   -- `callUse (xs) := use (fun (@unique y) => consume y) xs`
   runCase "skeleton: a closure with a unique binder at a plain arrow" [(callUse, body [par]
-    (app (.const useR) [lam (par .unique) (app (.const consumeR) [v 0] .leaf) .shared .leaf, v 0] .leaf)
+    (app (.const useR .val) [lam (par .unique) (app (.const consumeR .val) [v 0] .leaf) .shared .leaf, v 0] .leaf)
     .shared .leaf)] callUse oneList (some .revokedUse) false,
   runCase "skeleton: a closure with a plain binder at a plain arrow" [(callUseOk, body [par]
-    (app (.const useR) [lam (par .many) (lenOf (v 0)) .shared .leaf, v 0] .leaf) .shared .leaf)]
+    (app (.const useR .val) [lam (par .many) (lenOf (v 0)) .shared .leaf, v 0] .leaf) .shared .leaf)]
     callUseOk oneList none true,
   -- `badStatic := consume tbl + len tbl`
   runCase "static: a static given away, then read" [(badStatic, body []
-    (add (app (.const consumeR) [.const tblR] .leaf) (lenOf (.const tblR))) .shared .leaf)] badStatic
+    (add (app (.const consumeR .val) [.const tblR .val] .leaf) (lenOf (.const tblR .val))) .shared .leaf)] badStatic
     noArgs (some .revokedUse) false,
   runCase "static: a static read twice" [(okStatic, body []
-    (add (lenOf (.const tblR)) (lenOf (.const tblR))) .shared .leaf)] okStatic noArgs none true
+    (add (lenOf (.const tblR .val)) (lenOf (.const tblR .val))) .shared .leaf)] okStatic noArgs none true
 ]
 
 /-! ### Limits and the fast path -/
