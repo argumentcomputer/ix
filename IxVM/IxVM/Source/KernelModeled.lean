@@ -1349,6 +1349,12 @@ def check_iota_rule := aiur_fn⟦
               -- the constructor's telescope at the comparands (renamed): its fields and the
               -- canonical index tuple
               let cty_l = KernelLevels::expr_inst_levels(cty, ilvls);
+              -- the residual head before instantiation is a constant (the family former), as
+              -- IxC tests it: a variable head could be captured by a pin instantiation
+              let (chead0, _) = KernelTypes::collect_spine(KernelCheck::peel_n_foralls(cty_l, cnp + cnf));
+              match (*(chead0)) {
+                KernelTypes::KExprNode::Const(_, _) => {  () } ,
+              };
               let crest = inst_params(rename(cty_l, src, dst), pins_ren);
               let (cres, _) = peel_collect(crest, cnf, (&(Lists::Node::Nil)));
               let (chead, cargs) = KernelTypes::collect_spine(cres);
