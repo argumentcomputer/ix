@@ -13,7 +13,7 @@ use multi_stark::{
 };
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
-const KEY_MAGIC: &[u8; 8] = b"IXAUBK01";
+const KEY_MAGIC: &[u8; 8] = b"IXAUBK02";
 const PROOF_MAGIC: &[u8; 8] = b"IXAUBP01";
 const MAX_BYTES: usize = 64 << 20;
 
@@ -25,6 +25,7 @@ struct EncodedKey<C = Vec<Circuit<Scalar>>> {
   circuits: C,
   preprocessing: Option<KzgCommitment>,
   indices: Vec<Option<usize>>,
+  key_bound: bool,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -50,12 +51,14 @@ impl VerifyingKey {
   pub fn from_system(source: &System<KzgConfig>) -> Result<Self, String> {
     let parameters = source.config.pcs().verifier_params().clone();
     let circuits = source.circuits.iter().map(copy_circuit).collect();
+    let mut config =
+      KzgConfig::verifier_only(parameters, source.config.max_quotient_degree())
+        .with_transcript(source.config.transcript_kind());
+    if let Some(digest) = source.config.key_digest() {
+      config = config.with_key_digest(*digest);
+    }
     let system = System {
-      config: KzgConfig::verifier_only(
-        parameters,
-        source.config.max_quotient_degree(),
-      )
-      .with_transcript(source.config.transcript_kind()),
+      config,
       circuits,
       preprocessed_commit: source.preprocessed_commit.clone(),
       preprocessed_indices: source.preprocessed_indices.clone(),
@@ -70,6 +73,14 @@ impl VerifyingKey {
   }
 
   pub fn to_bytes(&self) -> Result<Vec<u8>, String> {
+    self.encode_key(self.is_key_bound())
+  }
+
+  pub fn is_key_bound(&self) -> bool {
+    self.system.config.key_digest().is_some()
+  }
+
+  fn encode_key(&self, key_bound: bool) -> Result<Vec<u8>, String> {
     encode(
       KEY_MAGIC,
       &EncodedKey {
@@ -88,6 +99,7 @@ impl VerifyingKey {
         circuits: &self.system.circuits,
         preprocessing: self.system.preprocessed_commit.clone(),
         indices: self.system.preprocessed_indices.clone(),
+        key_bound,
       },
     )
   }
@@ -114,10 +126,15 @@ impl VerifyingKey {
       1 => TranscriptKind::Keccak256,
       _ => return Err("unsupported KZG transcript".into()),
     };
+    let mut config =
+      KzgConfig::verifier_only(parameters, encoded.quotient_budget)
+        .with_transcript(transcript);
+    if encoded.key_bound {
+      config = config.with_key_digest(*blake3::hash(bytes).as_bytes());
+    }
     let key = Self {
       system: System {
-        config: KzgConfig::verifier_only(parameters, encoded.quotient_budget)
-          .with_transcript(transcript),
+        config,
         circuits: encoded.circuits,
         preprocessed_commit: encoded.preprocessing,
         preprocessed_indices: encoded.indices,
@@ -176,6 +193,11 @@ impl VerifyingKey {
 
   fn validate(&self) -> Result<(), String> {
     let system = &self.system;
+    if let Some(digest) = system.config.key_digest()
+      && blake3::hash(&self.encode_key(true)?).as_bytes() != digest
+    {
+      return Err("Aiur KZG transcript is bound to a different key".into());
+    }
     if system.circuits.is_empty()
       || system.preprocessed_indices.len() != system.circuits.len()
     {
@@ -224,6 +246,15 @@ impl VerifyingKey {
     }
     Ok(())
   }
+}
+
+pub(super) fn bind_system(
+  system: &mut System<KzgConfig>,
+) -> Result<(), String> {
+  let key = VerifyingKey::from_system(system)?;
+  let digest = *blake3::hash(&key.encode_key(true)?).as_bytes();
+  system.config = system.config.clone().with_key_digest(digest);
+  Ok(())
 }
 
 fn copy_circuit(source: &Circuit<Scalar>) -> Circuit<Scalar> {
@@ -330,6 +361,50 @@ mod tests {
       let bad = encode(KEY_MAGIC, &bad).unwrap();
       assert!(
         VerifyingKey::from_bytes(&bad, blake3::hash(&bad).as_bytes()).is_err()
+      );
+    }
+  }
+
+  #[test]
+  fn equal_shapes_with_different_constraints_have_distinct_transcripts() {
+    let make = |value| {
+      let config =
+        KzgConfig::new(Arc::new(Srs::unsafe_dev_setup(32, b"key-binding")), 8);
+      let (mut system, _) = System::new(
+        config,
+        [CircuitInputs {
+          main_width: 1,
+          constraints: vec![
+            Expr::main(0) - Expr::constant(Bn254.from_u64(value)),
+          ],
+          ..Default::default()
+        }],
+      );
+      bind_system(&mut system).unwrap();
+      system
+    };
+    let first = make(7);
+    let second = make(8);
+    assert_eq!(first.circuits[0].main_width, second.circuits[0].main_width);
+    assert_eq!(
+      first.circuits[0].constraint_count,
+      second.circuits[0].constraint_count
+    );
+    assert_ne!(first.config.transcript_seed(), second.config.transcript_seed());
+    for system in [&first, &second] {
+      let key = VerifyingKey::from_system(system).unwrap();
+      let bytes = key.to_bytes().unwrap();
+      assert!(key.is_key_bound());
+      assert_eq!(
+        system.config.key_digest().unwrap(),
+        blake3::hash(&bytes).as_bytes()
+      );
+      let decoded =
+        VerifyingKey::from_bytes(&bytes, blake3::hash(&bytes).as_bytes())
+          .unwrap();
+      assert_eq!(
+        decoded.system().config.transcript_seed(),
+        system.config.transcript_seed()
       );
     }
   }

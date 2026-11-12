@@ -31,6 +31,7 @@ fn portable_key_verifies_distinct_trace_shapes_without_proving_powers() {
   let key =
     VerifyingKey::from_bytes(&encoded, blake3::hash(&encoded).as_bytes())
       .unwrap();
+  assert!(key.is_key_bound());
   assert_eq!(key.to_bytes().unwrap(), encoded);
   assert!(
     key.system().circuits.iter().all(|circuit| circuit.preprocessed.is_none())

@@ -93,7 +93,8 @@ impl<'p, 'a> Backend<'p, 'a> {
         }
       }
     }
-    let (system, key) = System::new(config, lowered.inputs);
+    let (mut system, key) = System::new(config, lowered.inputs);
+    verifier::bind_system(&mut system)?;
     Ok(Self {
       plan,
       system,

@@ -25,6 +25,7 @@ pub struct KzgConfig {
   /// (see the transcript contract on [`ProofConfig::initialise_challenger`]).
   transcript_seed: Vec<u8>,
   transcript_kind: TranscriptKind,
+  key_digest: Option<[u8; 32]>,
   max_log_degree: usize,
   stream_lookups: bool,
   stream_quotient: bool,
@@ -74,6 +75,7 @@ impl KzgConfig {
       pcs: KzgPcs::verifier_only(params, max_quotient_degree),
       transcript_seed,
       transcript_kind,
+      key_digest: None,
       max_log_degree,
       stream_lookups: false,
       stream_quotient: false,
@@ -88,7 +90,22 @@ impl KzgConfig {
       kind,
     );
     self.transcript_kind = kind;
+    if let Some(digest) = self.key_digest {
+      self.transcript_seed.extend_from_slice(b"ix/aiur/kzg-key/v1\0");
+      self.transcript_seed.extend_from_slice(&digest);
+    }
     self
+  }
+
+  /// Bind all proof challenges to an independently defined complete key.
+  pub fn with_key_digest(mut self, digest: [u8; 32]) -> Self {
+    self.key_digest = Some(digest);
+    let kind = self.transcript_kind;
+    self.with_transcript(kind)
+  }
+
+  pub fn key_digest(&self) -> Option<&[u8; 32]> {
+    self.key_digest.as_ref()
   }
 
   pub fn transcript_kind(&self) -> TranscriptKind {
