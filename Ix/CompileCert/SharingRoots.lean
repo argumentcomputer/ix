@@ -188,6 +188,11 @@ theorem convExpr_same_tables (context : Ctx md) (before after : Ixon.Constant) (
       (expressionContext context after param self).blobAt := by
     funext index
     simp only [ECx.blobAt, expressionContext, refs]
+  have nat : (expressionContext context before param self).natAt =
+      (expressionContext context after param self).natAt := by
+    funext index
+    unfold ECx.natAt
+    rw [blob]
   induction source
   all_goals simp only [convExpr, *]
   all_goals rfl
