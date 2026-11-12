@@ -26,7 +26,8 @@ source without inference (`Ix.Compile.BinderRead`: a ∀-body's sort from its
 head's declared type, a λ-run's from the sort of the type it stands at); those
 records are read and never walked. The rest are walked as below.
 
-**The environment.** Before the compile, the constants whose source does not
+**The environment.** Beside the compile, on a task of its own (`installTask`),
+the constants whose source does not
 read are found (`Ix.Compile.BinderRead.sourceReads`: the records the walk will
 see), and IxC ingests their install closure (`restrictClosure`) from the
 compile's own input in Source mode (`Ix.LeanIngress`: every constant keyed by its
@@ -40,7 +41,10 @@ tier; a declaration that fails is retried after them, and one refused again
 annotated type (`lenient`); a structure the install leaves without a projection
 table gets one (`addTables`). The installed
 environment and IxC's core over it are marked persistent: every worker reads
-them, none writes them.
+them, none writes them. Only a record the reading leaves waits for the install;
+a compile whose records all read never does. The install's parallel work runs on
+threads of its own (`parMap`), so a compile whose workers all wait for it cannot
+starve it; an install no record reads is abandoned.
 
 **The walk.** For a block record, each root is walked beside its member's
 Source term (the Lean source converted as the ingress converts it): the
@@ -72,7 +76,8 @@ cannot find or align, and every binder whose datum IxC's function cannot
 compute, or under which something is undecided, is the undecided node.
 
 The annotator is a pure function of its input (the installed environment, the
-record and its sources). It is not trusted: the compiler keeps its section only
+record and its sources): a record waits for the install's task and reads its
+value. It is not trusted: the compiler keeps its section only
 in canonical form (`Ix.CompileM.sectionAdmissible`), and a checker validates
 every datum it reads.
 -/
@@ -86,6 +91,43 @@ open IxVM.PwHints (Node Block)
 
 abbrev KExpr := Ix.Kernel.Expr .source
 abbrev CM := Ix.Kernel.Cached.CheckCM .source
+
+/-! ## The install's own threads
+
+The install runs beside the compile (`installTask`), whose workers may all be
+waiting for it: its parallel work runs on threads of its own (`.dedicated`),
+never on the runtime's pool, and it ends at its next step once `stop` holds (it
+is abandoned: no record will read it). -/
+
+/-- `xs.map f` on at most `threads` dedicated threads, each taking the next
+`grain` elements until none are left; `none` where `stop` held. -/
+def parMap {α β : Type} (threads : Nat) (stop : IO Bool) (f : α → β) (xs : Array α)
+    (grain : Nat := 64) : IO (Option (Array β)) := do
+  let grain := max 1 grain
+  let slices := (xs.size + grain - 1) / grain
+  if slices == 0 then return some #[]
+  let next ← IO.mkRef 0
+  let run : IO (Option (Array (Nat × Array β))) := do
+    let mut made := #[]
+    for _ in [:slices] do
+      let s ← next.modifyGet fun s => (s, s + 1)
+      if s ≥ slices then break
+      if ← stop then return none
+      made := made.push (s, (xs.extract (s * grain) ((s + 1) * grain)).map f)
+    return some made
+  let mut tasks := #[]
+  for _ in [:max 1 (min threads slices)] do
+    tasks := tasks.push (← IO.asTask run (prio := .dedicated))
+  let mut parts : Array (Array β) := Array.replicate slices #[]
+  let mut halted := false
+  for t in tasks do
+    match ← IO.ofExcept (← IO.wait t) with
+    | some made => for (s, ys) in made do parts := parts.set! s ys
+    | none => halted := true
+  return if halted then none else some parts.flatten
+
+/-- What an abandoned install returns. -/
+def abandoned : String := "binder data: the install was abandoned"
 
 /-! ## The installed environment -/
 
@@ -114,6 +156,9 @@ structure Installed where
   tablesProp : Nat := 0
   /-- the phases' times (ms) -/
   times : Array (String × Nat) := #[]
+  /-- when the install started and ended (`IO.monoMsNow`) -/
+  startMs : Nat := 0
+  endMs : Nat := 0
 
 /-- The index of `env` (the newest constant of a key wins), by a loop. -/
 def reindex (env : Ix.Kernel.Env .source) : FEnv .source := Id.run do
@@ -295,10 +340,12 @@ pushed there at once, publishes them, and pushes every other worker's (in worker
 order, a constant already there skipped). The groups of a wave do not name each
 other, so each declaration is made against an environment that answers its lookups
 as the one-by-one fold's does. The first worker's environment, and the
-declarations to retry (in wave order, then worker order). -/
+declarations to retry (in wave order, then worker order). A worker that finds
+`stop` set at a wave publishes nothing for it and the waves after it, and ends:
+the install is abandoned, and no worker waits for it. -/
 def phaseAWorkers (mode : Ix.Kernel.CheckMode) (ev : Ix.Kernel.Evidences .source)
     (prepared : Array (CDecl .source)) (groupOf : Array Nat) (waves : Array (Array Nat))
-    (workers : Nat) : IO (FEnv .source × Array Nat) := do
+    (workers : Nat) (stop : IO Bool) : IO (FEnv .source × Array Nat) := do
   let W := max 1 workers
   -- worker `w`'s results at wave `k`, at `k * W + w`
   let mut made : Array (IO.Promise (Array (Nat × Made))) := #[]
@@ -309,6 +356,10 @@ def phaseAWorkers (mode : Ix.Kernel.CheckMode) (ev : Ix.Kernel.Evidences .source
     let mut fe : FEnv .source := Ix.Kernel.mkFEnv Ix.Kernel.Env.empty
     let mut retry : Array Nat := #[]
     for h : k in [:waves.size] do
+      if ← stop then
+        for k' in [k:waves.size] do
+          if let some p := outs[k' * W + w]? then p.resolve #[]
+        return (fe, retry)
       let wave := waves[k]
       let mut mine : Array (Nat × Made) := #[]
       for i in wave do
@@ -371,8 +422,9 @@ private instance : Nonempty (Ix.Kernel.Cached.CoreFnsI .source) :=
   ⟨Ix.Kernel.Cached.coreKnotI .verified (Ix.Kernel.mkFEnv Ix.Kernel.Env.empty) 0⟩
 
 /-- `Ix.LeanIngress.graphOf`, with each group's literal kinds (`literalKinds`,
-a walk of all its terms) computed on `width` tasks: the same graph. -/
-def graphOfPar (width : Nat) (blocks : Ix.CondensedBlocks) (groups : Array Group)
+a walk of all its terms, `none` for a group that does not convert) computed
+beforehand, in parallel (`kinds`): the same graph. -/
+def graphOfPar (kinds : Array (Option (Bool × Bool))) (blocks : Ix.CondensedBlocks) (groups : Array Group)
     (converted : Array (Except ReadError Converted)) : Graph := Id.run do
   let supportNames := Ix.Kernel.Reader.strLitSupportNames
   let mut groupOf : Ix.Map TableName Nat := {}
@@ -407,30 +459,38 @@ def graphOfPar (width : Nat) (blocks : Ix.CondensedBlocks) (groups : Array Group
       | none => acc) #[]
   let natTargets := support Ix.Kernel.Reader.natLitSupportNames
   let strTargets := support supportNames
-  let kinds := Ix.Compile.Parallel.map width (fun (c : Except ReadError Converted) => match c with
-    | .ok c => some (literalKinds c)
-    | .error _ => none) converted
   let literal := kinds.zipIdx.map fun (k, i) => match k with
     | some (nat, str) => (if str then strTargets else if nat then natTargets else #[]).filter (· != i)
     | none => #[]
   return ⟨groups, converted, hard, literal, unplaced⟩
 
-/-- **Install the compile's input** in Source mode, phase A only, and mark the
-environment and IxC's core over it persistent. -/
-def install (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (workers : Nat := 32) :
+/-- IxC's prelude in Source mode. -/
+def prelude? : Except String (Ix.Kernel.Reader.Prelude .source) :=
+  match (Ix.Kernel.Reader.builtinPrelude : Except String (Ix.Kernel.Reader.Prelude .source)) with
+  | .ok p => .ok p
+  | .error e => .error s!"binder data: the prelude does not read: {e}"
+
+/-- **Install the compile's input** in Source mode over the prelude `pre`,
+phase A only, and mark the environment and IxC's core over it persistent; its
+parallel work on `2 * workers` threads of its own (`parMap`, `phaseAWorkers`).
+`abandoned` once `stop` holds. -/
+def install (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
+    (pre : Ix.Kernel.Reader.Prelude .source) (workers : Nat := 32) (stop : IO Bool := pure false) :
     IO (Except String Installed) := do
   let mode := annotatorMode
+  let threads := 2 * max workers 1
   let t0 ← IO.monoMsNow
-  let pre ← match (Ix.Kernel.Reader.builtinPrelude : Except String (Ix.Kernel.Reader.Prelude .source)) with
-    | .ok p => pure p
-    | .error e => return .error s!"binder data: the prelude does not read: {e}"
-  let tPre ← IO.monoMsNow
   let groups ← IO.lazyPure fun _ => groupsOf env blocks
   let tGroups ← IO.monoMsNow
-  let converted ← IO.lazyPure fun _ => Ix.Compile.Parallel.map (4 * max workers 1) convert groups
+  let some converted ← parMap threads stop convert groups (grain := 16) | return .error abandoned
   let tConv ← IO.monoMsNow
-  let g ← IO.lazyPure fun _ => graphOfPar (4 * max workers 1) blocks groups converted
+  let some kinds ← parMap threads stop (fun (c : Except ReadError Converted) => match c with
+      | .ok c => some (literalKinds c)
+      | .error _ => none) converted (grain := 16)
+    | return .error abandoned
+  let g ← IO.lazyPure fun _ => graphOfPar kinds blocks groups converted
   let tGraph ← IO.monoMsNow
+  if ← stop then return .error abandoned
   let tierConv : Array (Option (Except ReadError (Ix.Kernel.Tier.TierDecl .source))) ←
     IO.lazyPure fun _ => groups.map fun grp => if isTierGroup grp then some (convertTier grp) else none
   let gT : Graph := { g with converted := g.converted.zipIdx.map fun (c, i) =>
@@ -467,7 +527,8 @@ def install (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (workers : Nat 
           groupKey := groupKey.insert k gi
     | .error e => failures := failures.push (groupName gi, readErrorString e)
   let t2 ← IO.monoMsNow
-  let canon ← IO.lazyPure fun _ => Ix.Compile.Parallel.map (4 * max workers 1) canonDecl lowered
+  if ← stop then return .error abandoned
+  let some canon ← parMap threads stop canonDecl lowered (grain := 16) | return .error abandoned
   let tCanon ← IO.monoMsNow
   let prepared ← IO.lazyPure fun _ => Ix.Kernel.Frontend.preparePrelude pre.ix canon
   let tPrep ← IO.monoMsNow
@@ -487,7 +548,8 @@ def install (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (workers : Nat 
   let mut groupOf : Array Nat := Array.mkEmpty prepared.size
   for h : i in [:prepared.size] do
     groupOf := groupOf.push ((prepared[i].names.head?.bind (groupKey[·]?)).getD i)
-  let (feW, again) ← phaseAWorkers mode ev prepared groupOf waves workers
+  let (feW, again) ← phaseAWorkers mode ev prepared groupOf waves workers stop
+  if ← stop then return .error abandoned
   let mut fe := feW
   let mut pos := prepared.size
   let mut ok := prepared.size - again.size
@@ -510,6 +572,7 @@ def install (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (workers : Nat 
   -- records referencing it are annotated
   let mut lenientCount := 0
   for d in retry do
+    if ← stop then return .error abandoned
     if !resolves fe d then
       failures := failures.push (declName d, "names a constant that is not installed")
       pos := pos + 1
@@ -550,8 +613,8 @@ def install (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (workers : Nat 
     BaseIO (Ix.Kernel.Cached.CoreFnsI .source))
   let t6 ← IO.monoMsNow
   return .ok { fe := shared, core, env, installed := ok, failures, lenient := lenientCount,
-               waves := waves.size, tablesAdded, tablesProp,
-               times := #[("prelude", tPre - t0), ("groups", tGroups - tPre), ("convert", tConv - tGroups),
+               waves := waves.size, tablesAdded, tablesProp, startMs := t0, endMs := t6,
+               times := #[("groups", tGroups - t0), ("convert", tConv - tGroups),
                  ("graph", tGraph - tConv), ("schedule", t1 - tGraph), ("lower", t2 - t1), ("canon", tCanon - t2), ("prepare", tPrep - tCanon), ("evidence", t3 - tPrep),
                  ("phaseA", t4 - t3), ("retried (count)", retried), ("tier (count)", tiered),
                  ("tier+retry", t5 - t4), ("persist", t6 - t5),
@@ -583,9 +646,10 @@ constructors and recursors). The role constants' closure (`Ix.Kernel.Key.ofName`
 the anchors and the pinned operations) is kept whole, theorems' proofs included:
 installing a pinned operation reads the reference closure of its value and its
 dependencies' roles, which its certificate ground must lie in
-(`Ix.Kernel.evidenceLocal`). The closure, and that whole part of it. -/
-def restrictClosure (env : Ix.Environment) (seeds : Array Ix.Name) (workers : Nat := 32) :
-    Std.HashSet Ix.Name × Std.HashSet Ix.Name := Id.run do
+(`Ix.Kernel.evidenceLocal`). The closure, and that whole part of it, found on
+`threads` threads of its own (`parMap`); `none` once `stop` holds. -/
+def restrictClosure (env : Ix.Environment) (seeds : Array Ix.Name) (threads : Nat)
+    (stop : IO Bool) : IO (Option (Std.HashSet Ix.Name × Std.HashSet Ix.Name)) := do
   let mut recsOf : Std.HashMap Ix.Name (Array Ix.Name) := {}
   for (n, ci) in env.consts do
     if let .recInfo r := ci then
@@ -615,7 +679,7 @@ def restrictClosure (env : Ix.Environment) (seeds : Array Ix.Name) (workers : Na
     match firstOf ci with
     | some first => (groupNames first).foldl (·.insert ·) refs
     | none => refs
-  -- breadth first, each level's needs on `workers` tasks
+  -- breadth first, each level's needs in parallel
   let needsOf (whole : Bool) (n : Ix.Name) : Std.HashSet Ix.Name :=
     match env.consts.get? n with
     | some ci => needs whole ci
@@ -626,7 +690,8 @@ def restrictClosure (env : Ix.Environment) (seeds : Array Ix.Name) (workers : Na
     | _ => acc
   let mut whole : Std.HashSet Ix.Name := {}
   for s in roles do whole := whole.insert s
-  let mut level : Array (Std.HashSet Ix.Name) := Ix.Compile.Parallel.map workers (needsOf true) roles
+  let some rolesNeed ← parMap threads stop (needsOf true) roles (grain := 16) | return none
+  let mut level : Array (Std.HashSet Ix.Name) := rolesNeed
   while !level.isEmpty do
     let mut next : Array Ix.Name := #[]
     for refs in level do
@@ -634,12 +699,14 @@ def restrictClosure (env : Ix.Environment) (seeds : Array Ix.Name) (workers : Na
         unless whole.contains r do
           whole := whole.insert r
           next := next.push r
-    level := Ix.Compile.Parallel.map workers (needsOf true) next
+    let some l ← parMap threads stop (needsOf true) next (grain := 16) | return none
+    level := l
   -- the walked records' closure beside it
   let mut seen : Std.HashSet Ix.Name := whole
   let roots := seeds.filter fun s => env.consts.contains s && !whole.contains s
   for s in roots do seen := seen.insert s
-  level := Ix.Compile.Parallel.map workers (needsOf true) roots
+  let some rootsNeed ← parMap threads stop (needsOf true) roots (grain := 16) | return none
+  level := rootsNeed
   while !level.isEmpty do
     let mut next : Array Ix.Name := #[]
     for refs in level do
@@ -647,8 +714,9 @@ def restrictClosure (env : Ix.Environment) (seeds : Array Ix.Name) (workers : Na
         unless seen.contains r do
           seen := seen.insert r
           next := next.push r
-    level := Ix.Compile.Parallel.map workers (needsOf false) next
-  return (seen, whole)
+    let some l ← parMap threads stop (needsOf false) next (grain := 16) | return none
+    level := l
+  return some (seen, whole)
 
 /-- `env` restricted to the constants `inClosure` holds, a theorem `keepValue` does not
 hold with a placeholder value (nothing reads a theorem's value). -/
@@ -666,26 +734,49 @@ def restrictEnv (env : Ix.Environment) (inClosure keepValue : Std.HashSet Ix.Nam
 only their install closure (`restrictClosure`) is installed, theorems outside its
 whole part with a placeholder value (nothing reads a theorem's value); its
 condensation (`Ix.CondenseM`, as the compile's front end builds it), then
-`install`. The sources stay the input's. -/
-def installInput (env : Ix.Environment) (workers : Nat := 32) : IO (Except String Installed) := do
-  let width := 4 * max workers 1
+`install` over the prelude `pre`. The sources stay the input's. Its parallel work
+runs on `2 * workers` threads of its own (`parMap`); `abandoned` once `stop`
+holds. -/
+def installInput (env : Ix.Environment) (pre : Ix.Kernel.Reader.Prelude .source)
+    (workers : Nat := 32) (stop : IO Bool := pure false) : IO (Except String Installed) := do
+  let threads := 2 * max workers 1
   let tc0 ← IO.monoMsNow
   let find : Ix.Compile.BinderRead.Find := fun n => env.consts.get? n
-  let unread ← IO.lazyPure fun _ => Ix.Compile.Parallel.map width
-    (fun (nc : Ix.Name × Ix.ConstantInfo) =>
-      if Ix.Compile.BinderRead.sourceReads find nc.2 then none else some nc.1) env.consts.toArray
+  let some unread ← parMap threads stop
+      (fun (nc : Ix.Name × Ix.ConstantInfo) =>
+        if Ix.Compile.BinderRead.sourceReads find nc.2 then none else some nc.1) env.consts.toArray
+    | return .error abandoned
   let seeds := unread.filterMap id
   let tcP ← IO.monoMsNow
-  let (inClosure, keepValue) ← IO.lazyPure fun _ => restrictClosure env seeds width
+  let some (inClosure, keepValue) ← restrictClosure env seeds threads stop | return .error abandoned
   let envI := restrictEnv env inClosure keepValue
   let tc1 ← IO.monoMsNow
-  let blocks ← IO.lazyPure fun _ => Ix.CondenseM.run (Ix.Compile.FrontEnd.graph envI)
+  -- the reference graph as `Ix.Compile.FrontEnd.graph` builds it, then its condensation
+  let some refs ← parMap threads stop (fun (nc : Ix.Name × Ix.ConstantInfo) =>
+      (nc.1, (Ix.GraphM.run envI .init (Ix.graphConst nc.2)).1)) envI.consts.toList.toArray
+    | return .error abandoned
+  let graph : Ix.Map Ix.Name (Ix.Set Ix.Name) := refs.foldl (fun out (n, rs) => out.insert n rs) {}
+  let blocks ← IO.lazyPure fun _ => Ix.CondenseM.run graph
   let t1 ← IO.monoMsNow
-  return (← install envI blocks workers).map fun k =>
-    { k with env,
+  if ← stop then return .error abandoned
+  return (← install envI blocks pre workers stop).map fun k =>
+    { k with env, startMs := tc0,
              times := #[("seeds (count)", seeds.size), ("installed constants (count)", envI.consts.size),
                ("prediction", tcP - tc0), ("restriction", tc1 - tcP),
                ("condense", t1 - tc1)] ++ k.times }
+
+/-- **The install as a task beside the compile**: `installInput` on a thread of its
+own, started at once; only a record the reading leaves to the walk waits for it
+(`annotate`). It is abandoned at its next step once `stop` is set, its task is
+cancelled or dropped, or the process ends, so that nothing waits for an install
+no record reads: `stop` is set only where no record can read it again. -/
+def installTask (env : Ix.Environment) (pre : Ix.Kernel.Reader.Prelude .source) (workers : Nat)
+    (stop : IO.Ref Bool) : BaseIO (Task (Except String Installed)) :=
+  let halt : IO Bool := do return (← stop.get) || (← IO.checkCanceled)
+  BaseIO.asTask (prio := .dedicated) do
+    match ← (installInput env pre workers halt).toBaseIO with
+    | .ok r => pure r
+    | .error e => pure (.error s!"binder data: the install failed: {e}")
 
 /-! ## The walk -/
 
@@ -1106,22 +1197,31 @@ def annotateWalk (k : Installed) (extra : Array (Ix.Name × Ix.ConstantInfo)) (n
       | .error _ => Ix.CompileM.undecidedSection c
     | .error _ => Ix.CompileM.undecidedSection c
 
-/-- **The section of a block record**: read off its members' sources where every
-binder shows its datum (`Ix.Compile.BinderRead`), else IxC's pass over each root
-beside its source (`annotateWalk`). -/
-def annotate (k : Installed) (extra : Array (Ix.Name × Ix.ConstantInfo)) (names : Array Ix.Name)
+/-- **The section of a block record**: read off its members' sources (from
+`extra`, then the compile's input `env`) where every binder shows its datum
+(`Ix.Compile.BinderRead`), else IxC's pass over each root beside its source
+(`annotateWalk`) against the installed input, which only such a record waits
+for (`installed`, `installTask`). Where the install failed, such a record
+carries the undecided section. -/
+def annotate (env : Ix.Environment) (installed : Task (Except String Installed))
+    (extra : Array (Ix.Name × Ix.ConstantInfo)) (names : Array Ix.Name)
     (c : Ixon.Constant) : Array Ixon.BinderBlock :=
   if (IxVM.PwHints.roots c).isEmpty then #[] else
   if unsafeOrPartial c then Ix.CompileM.undecidedSection c else
   let find : Ix.Compile.BinderRead.Find := fun n =>
-    ((extra.find? (·.1 == n)).map (·.2)).orElse fun _ => k.env.consts.get? n
+    ((extra.find? (·.1 == n)).map (·.2)).orElse fun _ => env.consts.get? n
   match Ix.Compile.BinderRead.section? find names c with
   | some s => s
-  | none => annotateWalk k extra names c
+  | none =>
+    match installed.get with
+    | .ok k => annotateWalk k extra names c
+    | .error _ => Ix.CompileM.undecidedSection c
 
-/-- **The annotator of a compile** over its installed input. -/
-def annotator (k : Installed) : Ix.BinderAnnotator :=
-  { run := annotate k }
+/-- **The annotator of a compile** over its input `env` and the install of it
+(`installTask`). -/
+def annotator (env : Ix.Environment) (installed : Task (Except String Installed)) :
+    Ix.BinderAnnotator :=
+  { run := annotate env installed }
 
 /-- The safe records of `env` whose section has an undecided binder, by address. -/
 def undecidedSafe (env : Ixon.Env) (workers : Nat := 32) : Array Address :=

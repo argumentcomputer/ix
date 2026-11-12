@@ -155,11 +155,14 @@ generated from the export, and `checkFinalized` checks every published role
 name against that table (`Ix.Cert.PublishedRolesBound` at the artifact's own
 binding).
 
-With `binderData`, IxC installs the canonical environment in Source mode
-(`Ix.Compile.KernelAnnotate.installInput`) and the canonical environment carries
-the annotator over it (`Ix.Compile.KernelAnnotate.annotator`): the compile writes
-every record's binder data from it (`Ix.CompileM.withBinderSection`), and the
-certified result is the compile of that environment. Without it, every record
+With `binderData`, IxC installs the canonical environment in Source mode on a
+task beside the compile (`Ix.Compile.KernelAnnotate.installTask`) and the
+canonical environment carries the annotator over its input and that task
+(`Ix.Compile.KernelAnnotate.annotator`): the compile writes every record's binder
+data from it (`Ix.CompileM.withBinderSection`), only a record the reading leaves
+waits for the install, and the certified result is the compile of that
+environment. Once no record can read the install (after the compile, unless the
+annotator is kept), an unfinished install is abandoned. Without `binderData`, every record
 with a binder carries the undecided section. The default role table binds records carrying
 their binder data, so its check is made only with `binderData`, and only while that table is
 current (`defaultRoleTableCurrent`). -/
@@ -175,22 +178,42 @@ def compileCertifiedPrepared (prepared : List (Lean.Name × Lean.ConstantInfo))
   let t1 ← IO.monoMsNow
   log s!"canon ({inputs} constants): {t1 - t0}ms"
   let mut env := env
+  let abandon ← IO.mkRef false
+  let mut install? : Option (Task (Except String Ix.Compile.KernelAnnotate.Installed)) := none
   if binderData then
-    match ← Ix.Compile.KernelAnnotate.installInput env workers with
+    match Ix.Compile.KernelAnnotate.prelude? with
     | .error e =>
       log s!"binder data: IxC's environment is not installed ({e}): every record with a binder \
         carries the undecided section"
-    | .ok installed =>
-      log s!"binder data: installed {installed.installed} declarations, {installed.failures.size} \
-        refused ({installed.lenient} of them entered without their checks), phase A in {installed.waves} waves; phases (ms) {installed.times}; {(← IO.monoMsNow) - t1}ms, rss \
-        {← Ix.Cli.residentSetSize}"
-      for (name, why) in installed.failures.extract 0 20 do
-        log s!"binder data: the kernel refused {name}: {(why.replace "\n" " ").take 200}"
-      env := { env with binderAnnotator? := some (Ix.Compile.KernelAnnotate.annotator installed) }
+    | .ok pre =>
+      let task ← Ix.Compile.KernelAnnotate.installTask env pre workers abandon
+      install? := some task
+      env := { env with binderAnnotator? := some (Ix.Compile.KernelAnnotate.annotator env task) }
   let t1 ← IO.monoMsNow
-  let (report, _) ← Ix.Compile.ReadyCompile.reportIO { workers, lookahead := 8192 } env
+  let report ← try
+    (·.1) <$> Ix.Compile.ReadyCompile.reportIO { workers, lookahead := 8192 } env
+  catch e =>
+    abandon.set true
+    throw e
   let t2 ← IO.monoMsNow
   log s!"compileReport: {t2 - t1}ms"
+  -- no record reads the install after the compile, unless the annotator is kept
+  unless keepAnnotator do abandon.set true
+  if let some task := install? then
+    if ← IO.hasFinished task then
+      match task.get with
+      | .ok installed =>
+        log s!"binder data: installed {installed.installed} declarations, {installed.failures.size} \
+          refused ({installed.lenient} of them entered without their checks), phase A in \
+          {installed.waves} waves; phases (ms) {installed.times}; \
+          {installed.endMs - installed.startMs}ms, ready {installed.endMs - t1}ms into the compile"
+        for (name, why) in installed.failures.extract 0 20 do
+          log s!"binder data: the kernel refused {name}: {(why.replace "\n" " ").take 200}"
+      | .error e =>
+        log s!"binder data: IxC's environment is not installed ({e}): the records the reading \
+          leaves carry the undecided section"
+    else
+      log "binder data: no record was left to the walk; the install was not waited for"
   let (ixe, failures) ← match report.val with
     | .ok out => pure out
     | .error e => return .error e
