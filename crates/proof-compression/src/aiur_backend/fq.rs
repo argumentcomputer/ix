@@ -180,7 +180,8 @@ fn arithmetic(kind: &str, values: &[Scalar]) -> Result<Vec<Scalar>, String> {
 /// The result is a candidate and must be checked by the Aiur source program.
 pub fn advice(channel: &str, input: &[Scalar]) -> Result<Vec<Scalar>, String> {
   match channel {
-    "bn254.fq.bytes80" | "bn254.fq.bytes84" => {
+    "bn254.fq.bytes80" | "bn254.fq.bytes84" | "bn254.fq.u16_80"
+    | "bn254.fq.u16_84" => {
       let [value] = input else {
         return Err("Fq byte advice needs one value".into());
       };
@@ -190,6 +191,19 @@ pub fn advice(channel: &str, input: &[Scalar]) -> Result<Vec<Scalar>, String> {
         return Err("Fq byte advice value exceeds range".into());
       }
       let mut bytes = value.to_bytes_le();
+      if channel.contains(".u16_") {
+        bytes.resize(2 * bits.div_ceil(16), 0);
+        return Ok(
+          bytes
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|pair| {
+              Bn254.from_u64(u64::from(u16::from_le_bytes([pair[0], pair[1]])))
+            })
+            .collect(),
+        );
+      }
       bytes.resize(bits.div_ceil(8), 0);
       Ok(
         bytes.into_iter().map(|byte| Bn254.from_u64(u64::from(byte))).collect(),
@@ -216,6 +230,8 @@ pub fn register(channels: &mut HintChannels<Scalar>) -> Result<(), String> {
   for (name, input, output) in [
     ("bn254.fq.bytes80", Type::Field, fields(10)),
     ("bn254.fq.bytes84", Type::Field, fields(11)),
+    ("bn254.fq.u16_80", Type::Field, fields(5)),
+    ("bn254.fq.u16_84", Type::Field, fields(6)),
     (
       "bn254.fq.canonical",
       fields(4),

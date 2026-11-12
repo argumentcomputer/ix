@@ -1,0 +1,1638 @@
+{
+  "artifact_blake3": "2360347a784b3869674122afc3ca113270aff79dbdebe67fa467af566718bf8d",
+  "execution_seconds": 2.018978172,
+  "format": "ix-aiur-final-fixture-cost-v1",
+  "main_cells": 12851884,
+  "max_height": 524288,
+  "plonk_estimate": {
+    "baseline_constraints": 4945707,
+    "baseline_dynamic_rows": 4,
+    "constraints_extrapolated": 90043556,
+    "domain_extrapolated": 134217728,
+    "fits_retained_ignition": false,
+    "format": "ix-aiur-plonk-extrapolated-cost-v1",
+    "increments": [
+      {
+        "actual_rows": 1,
+        "baseline_constraints": 4945707,
+        "full_contribution": "-2484",
+        "name": "CompressFinal::verify_v1",
+        "sample_difference": "-2484",
+        "sample_rows": 1
+      },
+      {
+        "actual_rows": 1,
+        "baseline_constraints": 4945707,
+        "full_contribution": "-495",
+        "name": "CompressFinal::statement",
+        "sample_difference": "-495",
+        "sample_rows": 1
+      },
+      {
+        "actual_rows": 8,
+        "baseline_constraints": 4945707,
+        "full_contribution": "580",
+        "name": "BN254G1Encoding::chunk_bytes",
+        "sample_difference": "580",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 64,
+        "baseline_constraints": 4945707,
+        "full_contribution": "5040",
+        "name": "UInt32::less_than_fields",
+        "sample_difference": "336",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 1,
+        "baseline_constraints": 4945707,
+        "full_contribution": "-4902",
+        "name": "CompressBN::step_v1",
+        "sample_difference": "-4902",
+        "sample_rows": 1
+      },
+      {
+        "actual_rows": 4096,
+        "baseline_constraints": 4945707,
+        "full_contribution": "356004",
+        "name": "KzgIO::read_stream",
+        "sample_difference": "348",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 2,
+        "baseline_constraints": 4945707,
+        "full_contribution": "-3212",
+        "name": "Blake3::next_layer",
+        "sample_difference": "-3212",
+        "sample_rows": 2
+      },
+      {
+        "actual_rows": 1024,
+        "baseline_constraints": 4945707,
+        "full_contribution": "3759720",
+        "name": "Blake3::compress",
+        "sample_difference": "14744",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 2048,
+        "baseline_constraints": 4945707,
+        "full_contribution": "324996",
+        "name": "Blake3::compress_chunks",
+        "sample_difference": "636",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 2,
+        "baseline_constraints": 4945707,
+        "full_contribution": "-178",
+        "name": "UInt64::is_zero",
+        "sample_difference": "-178",
+        "sample_rows": 2
+      },
+      {
+        "actual_rows": 128,
+        "baseline_constraints": 4945707,
+        "full_contribution": "97340",
+        "name": "Blake3::bytes_to_block",
+        "sample_difference": "3140",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 512,
+        "baseline_constraints": 4945707,
+        "full_contribution": "31496",
+        "name": "Blake3::pad_block",
+        "sample_difference": "248",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 32,
+        "baseline_constraints": 4945707,
+        "full_contribution": "44744",
+        "name": "Blake3::compress_block",
+        "sample_difference": "6392",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 128,
+        "baseline_constraints": 4945707,
+        "full_contribution": "6076",
+        "name": "${\"name\":\"Lists::is_empty\",\"types\":[\"field\"]}",
+        "sample_difference": "196",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 1,
+        "baseline_constraints": 4945707,
+        "full_contribution": "-1338",
+        "name": "UInt64::wrapping_succ",
+        "sample_difference": "-1338",
+        "sample_rows": 1
+      },
+      {
+        "actual_rows": 1,
+        "baseline_constraints": 4945707,
+        "full_contribution": "-486",
+        "name": "KzgDeserialize::policy",
+        "sample_difference": "-486",
+        "sample_rows": 1
+      },
+      {
+        "actual_rows": 4096,
+        "baseline_constraints": 4945707,
+        "full_contribution": "130944",
+        "name": "KzgIO::byte",
+        "sample_difference": "128",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 1024,
+        "baseline_constraints": 4945707,
+        "full_contribution": "106080",
+        "name": "KzgIO::read_bytes",
+        "sample_difference": "416",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 2,
+        "baseline_constraints": 4945707,
+        "full_contribution": "-326",
+        "name": "KzgIO::digest",
+        "sample_difference": "-326",
+        "sample_rows": 2
+      },
+      {
+        "actual_rows": 64,
+        "baseline_constraints": 4945707,
+        "full_contribution": "24180",
+        "name": "KzgIO::read32",
+        "sample_difference": "1612",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 128,
+        "baseline_constraints": 4945707,
+        "full_contribution": "7936",
+        "name": "KzgIO::u32",
+        "sample_difference": "256",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 1,
+        "baseline_constraints": 4945707,
+        "full_contribution": "-84",
+        "name": "KzgIO::finish",
+        "sample_difference": "-84",
+        "sample_rows": 1
+      },
+      {
+        "actual_rows": 1,
+        "baseline_constraints": 4945707,
+        "full_contribution": "-1080",
+        "name": "KzgDeserialize::key",
+        "sample_difference": "-1080",
+        "sample_rows": 1
+      },
+      {
+        "actual_rows": 1,
+        "baseline_constraints": 4945707,
+        "full_contribution": "-138",
+        "name": "KzgIO::blob",
+        "sample_difference": "-138",
+        "sample_rows": 1
+      },
+      {
+        "actual_rows": 16,
+        "baseline_constraints": 4945707,
+        "full_contribution": "2808",
+        "name": "KzgIO::point",
+        "sample_difference": "936",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 16,
+        "baseline_constraints": 4945707,
+        "full_contribution": "5916",
+        "name": "BN254G1::from_bytes",
+        "sample_difference": "1972",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 16,
+        "baseline_constraints": 4945707,
+        "full_contribution": "4908",
+        "name": "BN254G1::from_raw",
+        "sample_difference": "1636",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 131072,
+        "baseline_constraints": 4945707,
+        "full_contribution": "11665052",
+        "name": "BN254Fq::from_limbs",
+        "sample_difference": "356",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 524288,
+        "baseline_constraints": 4945707,
+        "full_contribution": "24641348",
+        "name": "BN254Fq::range80",
+        "sample_difference": "188",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 8192,
+        "baseline_constraints": 4945707,
+        "full_contribution": "1686728",
+        "name": "BN254Fq::mul",
+        "sample_difference": "824",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 65536,
+        "baseline_constraints": 4945707,
+        "full_contribution": "3669792",
+        "name": "BN254Fq::range84",
+        "sample_difference": "224",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 32768,
+        "baseline_constraints": 4945707,
+        "full_contribution": "3505748",
+        "name": "BN254Fq::add",
+        "sample_difference": "428",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 16,
+        "baseline_constraints": 4945707,
+        "full_contribution": "2736",
+        "name": "BN254G1::to_bytes",
+        "sample_difference": "912",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 16,
+        "baseline_constraints": 4945707,
+        "full_contribution": "3504",
+        "name": "BN254G1::fq_bytes",
+        "sample_difference": "1168",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 16,
+        "baseline_constraints": 4945707,
+        "full_contribution": "876",
+        "name": "BN254G1::sign",
+        "sample_difference": "292",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 2,
+        "baseline_constraints": 4945707,
+        "full_contribution": "-882",
+        "name": "KzgDeserialize::circuits",
+        "sample_difference": "-882",
+        "sample_rows": 2
+      },
+      {
+        "actual_rows": 1,
+        "baseline_constraints": 4945707,
+        "full_contribution": "-195",
+        "name": "KzgDeserialize::quotient_degree",
+        "sample_difference": "-195",
+        "sample_rows": 1
+      },
+      {
+        "actual_rows": 32,
+        "baseline_constraints": 4945707,
+        "full_contribution": "5992",
+        "name": "KzgDeserialize::nodes",
+        "sample_difference": "856",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 32,
+        "baseline_constraints": 4945707,
+        "full_contribution": "18508",
+        "name": "KzgDeserialize::node",
+        "sample_difference": "2644",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 64,
+        "baseline_constraints": 4945707,
+        "full_contribution": "11640",
+        "name": "KzgIO::scalar",
+        "sample_difference": "776",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 32,
+        "baseline_constraints": 4945707,
+        "full_contribution": "5908",
+        "name": "KzgIO::scalar_from_bytes",
+        "sample_difference": "844",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 32,
+        "baseline_constraints": 4945707,
+        "full_contribution": "896",
+        "name": "KzgDeserialize::check_child",
+        "sample_difference": "128",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 32,
+        "baseline_constraints": 4945707,
+        "full_contribution": "3192",
+        "name": "KzgDeserialize::ids",
+        "sample_difference": "456",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 2,
+        "baseline_constraints": 4945707,
+        "full_contribution": "-284",
+        "name": "KzgDeserialize::lookups",
+        "sample_difference": "-284",
+        "sample_rows": 2
+      },
+      {
+        "actual_rows": 2,
+        "baseline_constraints": 4945707,
+        "full_contribution": "-180",
+        "name": "KzgDeserialize::group_count",
+        "sample_difference": "-180",
+        "sample_rows": 2
+      },
+      {
+        "actual_rows": 8,
+        "baseline_constraints": 4945707,
+        "full_contribution": "472",
+        "name": "KzgDeserialize::point_rows",
+        "sample_difference": "472",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 16,
+        "baseline_constraints": 4945707,
+        "full_contribution": "1824",
+        "name": "KzgDeserialize::points",
+        "sample_difference": "608",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 256,
+        "baseline_constraints": 4945707,
+        "full_contribution": "21672",
+        "name": "KzgIO::equal_bytes",
+        "sample_difference": "344",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 1,
+        "baseline_constraints": 4945707,
+        "full_contribution": "-165",
+        "name": "KzgDeserialize::claims",
+        "sample_difference": "-165",
+        "sample_rows": 1
+      },
+      {
+        "actual_rows": 16,
+        "baseline_constraints": 4945707,
+        "full_contribution": "1416",
+        "name": "KzgDeserialize::scalar_rows",
+        "sample_difference": "472",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 32,
+        "baseline_constraints": 4945707,
+        "full_contribution": "2912",
+        "name": "KzgDeserialize::scalars",
+        "sample_difference": "416",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 1,
+        "baseline_constraints": 4945707,
+        "full_contribution": "-1791",
+        "name": "CompressBN::previous",
+        "sample_difference": "-1791",
+        "sample_rows": 1
+      },
+      {
+        "actual_rows": 2,
+        "baseline_constraints": 4945707,
+        "full_contribution": "-230",
+        "name": "CompressBN::take8",
+        "sample_difference": "-230",
+        "sample_rows": 2
+      },
+      {
+        "actual_rows": 1,
+        "baseline_constraints": 4945707,
+        "full_contribution": "-1371",
+        "name": "BN254G1Encoding::from_chunks",
+        "sample_difference": "-1371",
+        "sample_rows": 1
+      },
+      {
+        "actual_rows": 1,
+        "baseline_constraints": 4945707,
+        "full_contribution": "-1455",
+        "name": "KzgVerifier::verify",
+        "sample_difference": "-1455",
+        "sample_rows": 1
+      },
+      {
+        "actual_rows": 1,
+        "baseline_constraints": 4945707,
+        "full_contribution": "-654",
+        "name": "KzgShape::frames",
+        "sample_difference": "-654",
+        "sample_rows": 1
+      },
+      {
+        "actual_rows": 2,
+        "baseline_constraints": 4945707,
+        "full_contribution": "-1484",
+        "name": "KzgShape::walk",
+        "sample_difference": "-1484",
+        "sample_rows": 2
+      },
+      {
+        "actual_rows": 1,
+        "baseline_constraints": 4945707,
+        "full_contribution": "-783",
+        "name": "UInt64::sub_with_borrow",
+        "sample_difference": "-783",
+        "sample_rows": 1
+      },
+      {
+        "actual_rows": 1,
+        "baseline_constraints": 4945707,
+        "full_contribution": "-1980",
+        "name": "KzgShape::consume",
+        "sample_difference": "-1980",
+        "sample_rows": 1
+      },
+      {
+        "actual_rows": 1,
+        "baseline_constraints": 4945707,
+        "full_contribution": "-168",
+        "name": "KzgShape::power_log",
+        "sample_difference": "-168",
+        "sample_rows": 1
+      },
+      {
+        "actual_rows": 8,
+        "baseline_constraints": 4945707,
+        "full_contribution": "380",
+        "name": "${\"name\":\"Lists::length\",\"types\":[{\"tuple\":{\"items\":[{\"array\":{\"element\":\"field\",\"length\":4}},{\"array\":{\"element\":\"field\",\"length\":4}},\"field\"]}}]}",
+        "sample_difference": "380",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 8,
+        "baseline_constraints": 4945707,
+        "full_contribution": "368",
+        "name": "KzgShape::rows_width",
+        "sample_difference": "368",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 32,
+        "baseline_constraints": 4945707,
+        "full_contribution": "1988",
+        "name": "${\"name\":\"Lists::length\",\"types\":[\"field\"]}",
+        "sample_difference": "284",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 2,
+        "baseline_constraints": 4945707,
+        "full_contribution": "-114",
+        "name": "KzgShape::power2",
+        "sample_difference": "-114",
+        "sample_rows": 2
+      },
+      {
+        "actual_rows": 8,
+        "baseline_constraints": 4945707,
+        "full_contribution": "296",
+        "name": "${\"name\":\"Lists::length\",\"types\":[{\"named\":{\"args\":[],\"name\":\"KzgDeserialize::Lookup\"}}]}",
+        "sample_difference": "296",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 64,
+        "baseline_constraints": 4945707,
+        "full_contribution": "25380",
+        "name": "KzgTranscript::observe_field",
+        "sample_difference": "1692",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 64,
+        "baseline_constraints": 4945707,
+        "full_contribution": "10620",
+        "name": "KzgTranscript::observe_bytes",
+        "sample_difference": "708",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 8192,
+        "baseline_constraints": 4945707,
+        "full_contribution": "646852",
+        "name": "KzgTranscript::reverse_onto",
+        "sample_difference": "316",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 32,
+        "baseline_constraints": 4945707,
+        "full_contribution": "7840",
+        "name": "KzgIO::scalar_bytes",
+        "sample_difference": "1120",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 1,
+        "baseline_constraints": 4945707,
+        "full_contribution": "-132",
+        "name": "KzgTranscript::start",
+        "sample_difference": "-132",
+        "sample_rows": 1
+      },
+      {
+        "actual_rows": 2,
+        "baseline_constraints": 4945707,
+        "full_contribution": "-214",
+        "name": "${\"name\":\"Lists::length\",\"types\":[{\"named\":{\"args\":[],\"name\":\"KzgDeserialize::Circuit\"}}]}",
+        "sample_difference": "-214",
+        "sample_rows": 2
+      },
+      {
+        "actual_rows": 2,
+        "baseline_constraints": 4945707,
+        "full_contribution": "-340",
+        "name": "KzgVerifier::observe_shape",
+        "sample_difference": "-340",
+        "sample_rows": 2
+      },
+      {
+        "actual_rows": 64,
+        "baseline_constraints": 4945707,
+        "full_contribution": "4800",
+        "name": "KzgTranscript::observe_fields",
+        "sample_difference": "320",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 8,
+        "baseline_constraints": 4945707,
+        "full_contribution": "192",
+        "name": "KzgTranscript::observe_commitment",
+        "sample_difference": "192",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 256,
+        "baseline_constraints": 4945707,
+        "full_contribution": "21924",
+        "name": "KzgIO::fields_to_bytes",
+        "sample_difference": "348",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 2,
+        "baseline_constraints": 4945707,
+        "full_contribution": "-162",
+        "name": "BN254G1::bytes64",
+        "sample_difference": "-162",
+        "sample_rows": 2
+      },
+      {
+        "actual_rows": 8,
+        "baseline_constraints": 4945707,
+        "full_contribution": "2012",
+        "name": "BN254G1::point_list_bytes",
+        "sample_difference": "2012",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 256,
+        "baseline_constraints": 4945707,
+        "full_contribution": "19656",
+        "name": "${\"name\":\"Lists::concat\",\"types\":[\"field\"]}",
+        "sample_difference": "312",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 1,
+        "baseline_constraints": 4945707,
+        "full_contribution": "-159",
+        "name": "KzgTranscript::observe_claims",
+        "sample_difference": "-159",
+        "sample_rows": 1
+      },
+      {
+        "actual_rows": 2,
+        "baseline_constraints": 4945707,
+        "full_contribution": "-204",
+        "name": "KzgTranscript::observe_claim_rows",
+        "sample_difference": "-204",
+        "sample_rows": 2
+      },
+      {
+        "actual_rows": 8,
+        "baseline_constraints": 4945707,
+        "full_contribution": "3712",
+        "name": "KzgTranscript::sample",
+        "sample_difference": "3712",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 8,
+        "baseline_constraints": 4945707,
+        "full_contribution": "4940",
+        "name": "KzgBlake3::xof96",
+        "sample_difference": "4940",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 8,
+        "baseline_constraints": 4945707,
+        "full_contribution": "352",
+        "name": "KzgBlake3::root",
+        "sample_difference": "352",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 2,
+        "baseline_constraints": 4945707,
+        "full_contribution": "-236",
+        "name": "KzgBlake3::next_layer",
+        "sample_difference": "-236",
+        "sample_rows": 2
+      },
+      {
+        "actual_rows": 1,
+        "baseline_constraints": 4945707,
+        "full_contribution": "-1068",
+        "name": "KzgBlake3::parent",
+        "sample_difference": "-1068",
+        "sample_rows": 1
+      },
+      {
+        "actual_rows": 2,
+        "baseline_constraints": 4945707,
+        "full_contribution": "-1398",
+        "name": "KzgBlake3::chaining",
+        "sample_difference": "-1398",
+        "sample_rows": 2
+      },
+      {
+        "actual_rows": 8,
+        "baseline_constraints": 4945707,
+        "full_contribution": "792",
+        "name": "KzgBlake3::chunks",
+        "sample_difference": "792",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 64,
+        "baseline_constraints": 4945707,
+        "full_contribution": "64320",
+        "name": "KzgBlake3::chunk",
+        "sample_difference": "4288",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 4096,
+        "baseline_constraints": 4945707,
+        "full_contribution": "499224",
+        "name": "KzgBlake3::read_block",
+        "sample_difference": "488",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 16,
+        "baseline_constraints": 4945707,
+        "full_contribution": "19812",
+        "name": "KzgBlake3::compress_full",
+        "sample_difference": "6604",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 128,
+        "baseline_constraints": 4945707,
+        "full_contribution": "511500",
+        "name": "KzgBlake3::rounds",
+        "sample_difference": "16500",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 8,
+        "baseline_constraints": 4945707,
+        "full_contribution": "1072",
+        "name": "KzgTranscript::reduce64",
+        "sample_difference": "1072",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 2,
+        "baseline_constraints": 4945707,
+        "full_contribution": "-194",
+        "name": "KzgAlgebra::claims_accumulator",
+        "sample_difference": "-194",
+        "sample_rows": 2
+      },
+      {
+        "actual_rows": 32,
+        "baseline_constraints": 4945707,
+        "full_contribution": "2128",
+        "name": "KzgAlgebra::fingerprint",
+        "sample_difference": "304",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 2,
+        "baseline_constraints": 4945707,
+        "full_contribution": "-742",
+        "name": "KzgAlgebra::verify_frames",
+        "sample_difference": "-742",
+        "sample_rows": 2
+      },
+      {
+        "actual_rows": 2,
+        "baseline_constraints": 4945707,
+        "full_contribution": "-122",
+        "name": "KzgAlgebra::exp_power2",
+        "sample_difference": "-122",
+        "sample_rows": 2
+      },
+      {
+        "actual_rows": 32,
+        "baseline_constraints": 4945707,
+        "full_contribution": "1680",
+        "name": "KzgAlgebra::two_adic_gen",
+        "sample_difference": "240",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 8,
+        "baseline_constraints": 4945707,
+        "full_contribution": "240",
+        "name": "KzgAlgebra::first_row",
+        "sample_difference": "240",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 2,
+        "baseline_constraints": 4945707,
+        "full_contribution": "-132",
+        "name": "KzgAlgebra::next_row",
+        "sample_difference": "-132",
+        "sample_rows": 2
+      },
+      {
+        "actual_rows": 32,
+        "baseline_constraints": 4945707,
+        "full_contribution": "16492",
+        "name": "KzgAlgebra::eval_at",
+        "sample_difference": "2356",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 32,
+        "baseline_constraints": 4945707,
+        "full_contribution": "1540",
+        "name": "${\"name\":\"Lists::lookup\",\"types\":[{\"named\":{\"args\":[],\"name\":\"KzgDeserialize::Node\"}}]}",
+        "sample_difference": "220",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 32,
+        "baseline_constraints": 4945707,
+        "full_contribution": "2240",
+        "name": "${\"name\":\"Lists::drop\",\"types\":[{\"named\":{\"args\":[],\"name\":\"KzgDeserialize::Node\"}}]}",
+        "sample_difference": "320",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 1,
+        "baseline_constraints": 4945707,
+        "full_contribution": "-756",
+        "name": "KzgAlgebra::fold_lookups",
+        "sample_difference": "-756",
+        "sample_rows": 1
+      },
+      {
+        "actual_rows": 2,
+        "baseline_constraints": 4945707,
+        "full_contribution": "-364",
+        "name": "KzgAlgebra::group_summary",
+        "sample_difference": "-364",
+        "sample_rows": 2
+      },
+      {
+        "actual_rows": 32,
+        "baseline_constraints": 4945707,
+        "full_contribution": "2716",
+        "name": "KzgAlgebra::lookup_fingerprint",
+        "sample_difference": "388",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 1,
+        "baseline_constraints": 4945707,
+        "full_contribution": "-156",
+        "name": "${\"name\":\"Lists::is_empty\",\"types\":[{\"named\":{\"args\":[],\"name\":\"KzgDeserialize::Lookup\"}}]}",
+        "sample_difference": "-156",
+        "sample_rows": 1
+      },
+      {
+        "actual_rows": 1,
+        "baseline_constraints": 4945707,
+        "full_contribution": "-894",
+        "name": "KzgPcs::reduce",
+        "sample_difference": "-894",
+        "sample_rows": 1
+      },
+      {
+        "actual_rows": 1,
+        "baseline_constraints": 4945707,
+        "full_contribution": "-372",
+        "name": "KzgPcs::rounds",
+        "sample_difference": "-372",
+        "sample_rows": 1
+      },
+      {
+        "actual_rows": 8,
+        "baseline_constraints": 4945707,
+        "full_contribution": "1012",
+        "name": "KzgPcs::matrices",
+        "sample_difference": "1012",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 8,
+        "baseline_constraints": 4945707,
+        "full_contribution": "408",
+        "name": "KzgPcs::observe_rounds",
+        "sample_difference": "408",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 8,
+        "baseline_constraints": 4945707,
+        "full_contribution": "344",
+        "name": "KzgPcs::observe_logs",
+        "sample_difference": "344",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 8,
+        "baseline_constraints": 4945707,
+        "full_contribution": "392",
+        "name": "KzgPcs::observe_openings",
+        "sample_difference": "392",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 8,
+        "baseline_constraints": 4945707,
+        "full_contribution": "472",
+        "name": "KzgPcs::observe_matrices",
+        "sample_difference": "472",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 16,
+        "baseline_constraints": 4945707,
+        "full_contribution": "1764",
+        "name": "KzgPcs::observe_rows",
+        "sample_difference": "588",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 8,
+        "baseline_constraints": 4945707,
+        "full_contribution": "752",
+        "name": "KzgPcs::add_batch",
+        "sample_difference": "752",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 16,
+        "baseline_constraints": 4945707,
+        "full_contribution": "1644",
+        "name": "KzgPcs::prepend_pairs",
+        "sample_difference": "548",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 16,
+        "baseline_constraints": 4945707,
+        "full_contribution": "1884",
+        "name": "KzgPcs::fold_pairs",
+        "sample_difference": "628",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 2,
+        "baseline_constraints": 4945707,
+        "full_contribution": "-74",
+        "name": "${\"name\":\"Lists::reverse\",\"types\":[{\"tuple\":{\"items\":[{\"tuple\":{\"items\":[{\"array\":{\"element\":\"field\",\"length\":4}},{\"array\":{\"element\":\"field\",\"length\":4}},\"field\"]}},\"field\"]}}]}",
+        "sample_difference": "-74",
+        "sample_rows": 2
+      },
+      {
+        "actual_rows": 16,
+        "baseline_constraints": 4945707,
+        "full_contribution": "1380",
+        "name": "${\"name\":\"Lists::reverse_acc\",\"types\":[{\"tuple\":{\"items\":[{\"tuple\":{\"items\":[{\"array\":{\"element\":\"field\",\"length\":4}},{\"array\":{\"element\":\"field\",\"length\":4}},\"field\"]}},\"field\"]}}]}",
+        "sample_difference": "460",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 16,
+        "baseline_constraints": 4945707,
+        "full_contribution": "1896",
+        "name": "KzgMsm::prepare",
+        "sample_difference": "632",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 8,
+        "baseline_constraints": 4945707,
+        "full_contribution": "248",
+        "name": "KzgMsm::table",
+        "sample_difference": "248",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 128,
+        "baseline_constraints": 4945707,
+        "full_contribution": "32364",
+        "name": "KzgMsm::table_rows",
+        "sample_difference": "1044",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 1024,
+        "baseline_constraints": 4945707,
+        "full_contribution": "840480",
+        "name": "BN254G1::add",
+        "sample_difference": "3296",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 512,
+        "baseline_constraints": 4945707,
+        "full_contribution": "251968",
+        "name": "BN254G1::double",
+        "sample_difference": "1984",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 2048,
+        "baseline_constraints": 4945707,
+        "full_contribution": "175784",
+        "name": "BN254Fq::inverse",
+        "sample_difference": "344",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 32768,
+        "baseline_constraints": 4945707,
+        "full_contribution": "3800624",
+        "name": "BN254Fq::sub",
+        "sample_difference": "464",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 16,
+        "baseline_constraints": 4945707,
+        "full_contribution": "1092",
+        "name": "BN254G1::scalar_limbs",
+        "sample_difference": "364",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 256,
+        "baseline_constraints": 4945707,
+        "full_contribution": "105840",
+        "name": "KzgMsm::windows",
+        "sample_difference": "1680",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 16,
+        "baseline_constraints": 4945707,
+        "full_contribution": "768",
+        "name": "KzgMsm::finish",
+        "sample_difference": "256",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 1024,
+        "baseline_constraints": 4945707,
+        "full_contribution": "227460",
+        "name": "KzgMsm::split",
+        "sample_difference": "892",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 128,
+        "baseline_constraints": 4945707,
+        "full_contribution": "9300",
+        "name": "${\"name\":\"Lists::lookup\",\"types\":[{\"tuple\":{\"items\":[{\"array\":{\"element\":\"field\",\"length\":4}},{\"array\":{\"element\":\"field\",\"length\":4}},\"field\"]}}]}",
+        "sample_difference": "300",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 128,
+        "baseline_constraints": 4945707,
+        "full_contribution": "11780",
+        "name": "${\"name\":\"Lists::drop\",\"types\":[{\"tuple\":{\"items\":[{\"array\":{\"element\":\"field\",\"length\":4}},{\"array\":{\"element\":\"field\",\"length\":4}},\"field\"]}}]}",
+        "sample_difference": "380",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 1024,
+        "baseline_constraints": 4945707,
+        "full_contribution": "261120",
+        "name": "KzgMsm::add_points",
+        "sample_difference": "1024",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 64,
+        "baseline_constraints": 4945707,
+        "full_contribution": "9180",
+        "name": "KzgMsm::limb",
+        "sample_difference": "612",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 1,
+        "baseline_constraints": 4945707,
+        "full_contribution": "-1026",
+        "name": "KzgDeserialize::proof",
+        "sample_difference": "-1026",
+        "sample_rows": 1
+      },
+      {
+        "actual_rows": 8,
+        "baseline_constraints": 4945707,
+        "full_contribution": "472",
+        "name": "KzgDeserialize::opening_matrices",
+        "sample_difference": "472",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 1,
+        "baseline_constraints": 4945707,
+        "full_contribution": "-13296",
+        "name": "CompressBN::fold",
+        "sample_difference": "-13296",
+        "sample_rows": 1
+      },
+      {
+        "actual_rows": 1,
+        "baseline_constraints": 4945707,
+        "full_contribution": "-1335",
+        "name": "KzgTranscript::derive",
+        "sample_difference": "-1335",
+        "sample_rows": 1
+      },
+      {
+        "actual_rows": 1,
+        "baseline_constraints": 4945707,
+        "full_contribution": "-1851",
+        "name": "BN254G1Encoding::to_chunks",
+        "sample_difference": "-1851",
+        "sample_rows": 1
+      },
+      {
+        "actual_rows": 1,
+        "baseline_constraints": 4945707,
+        "full_contribution": "-5820",
+        "name": "CompressFinal::anchor_stream",
+        "sample_difference": "-5820",
+        "sample_rows": 1
+      },
+      {
+        "actual_rows": 1,
+        "baseline_constraints": 4945707,
+        "full_contribution": "-378",
+        "name": "BN254Pairing::check_chunks",
+        "sample_difference": "-378",
+        "sample_rows": 1
+      },
+      {
+        "actual_rows": 1,
+        "baseline_constraints": 4945707,
+        "full_contribution": "-1722",
+        "name": "BN254Pairing::check",
+        "sample_difference": "-1722",
+        "sample_rows": 1
+      },
+      {
+        "actual_rows": 1,
+        "baseline_constraints": 4945707,
+        "full_contribution": "-615",
+        "name": "BN254Fp12::assert_one",
+        "sample_difference": "-615",
+        "sample_rows": 1
+      },
+      {
+        "actual_rows": 1,
+        "baseline_constraints": 4945707,
+        "full_contribution": "-1932",
+        "name": "BN254Fp12::final_exponentiation",
+        "sample_difference": "-1932",
+        "sample_rows": 1
+      },
+      {
+        "actual_rows": 1,
+        "baseline_constraints": 4945707,
+        "full_contribution": "-18036",
+        "name": "BN254Fp12::hard_final",
+        "sample_difference": "-18036",
+        "sample_rows": 1
+      },
+      {
+        "actual_rows": 8,
+        "baseline_constraints": 4945707,
+        "full_contribution": "1512",
+        "name": "BN254Fp12::conjugate",
+        "sample_difference": "1512",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 8,
+        "baseline_constraints": 4945707,
+        "full_contribution": "1016",
+        "name": "BN254Fp6::neg",
+        "sample_difference": "1016",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 32,
+        "baseline_constraints": 4945707,
+        "full_contribution": "2576",
+        "name": "BN254Fp2::neg",
+        "sample_difference": "368",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 256,
+        "baseline_constraints": 4945707,
+        "full_contribution": "382032",
+        "name": "BN254Fp12::exp_x_loop",
+        "sample_difference": "6064",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 256,
+        "baseline_constraints": 4945707,
+        "full_contribution": "214704",
+        "name": "BN254Fp12::cyclotomic_square",
+        "sample_difference": "3408",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 1024,
+        "baseline_constraints": 4945707,
+        "full_contribution": "507960",
+        "name": "BN254Fp12::cyclotomic_pair",
+        "sample_difference": "1992",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 8192,
+        "baseline_constraints": 4945707,
+        "full_contribution": "1277328",
+        "name": "BN254Fp2::mul",
+        "sample_difference": "624",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 32768,
+        "baseline_constraints": 4945707,
+        "full_contribution": "9272212",
+        "name": "BN254FqProducts::reduce",
+        "sample_difference": "1132",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 131072,
+        "baseline_constraints": 4945707,
+        "full_contribution": "7339808",
+        "name": "BN254FqProducts::range86",
+        "sample_difference": "224",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 8192,
+        "baseline_constraints": 4945707,
+        "full_contribution": "1113568",
+        "name": "BN254Fp2::sub",
+        "sample_difference": "544",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 16384,
+        "baseline_constraints": 4945707,
+        "full_contribution": "2227680",
+        "name": "BN254Fp2::add",
+        "sample_difference": "544",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 4096,
+        "baseline_constraints": 4945707,
+        "full_contribution": "548328",
+        "name": "BN254Fp2::mul_xi",
+        "sample_difference": "536",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 1024,
+        "baseline_constraints": 4945707,
+        "full_contribution": "234600",
+        "name": "BN254Fp12::adjust_minus",
+        "sample_difference": "920",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 1024,
+        "baseline_constraints": 4945707,
+        "full_contribution": "234600",
+        "name": "BN254Fp12::adjust_plus",
+        "sample_difference": "920",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 128,
+        "baseline_constraints": 4945707,
+        "full_contribution": "218488",
+        "name": "BN254Fp12::mul",
+        "sample_difference": "7048",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 512,
+        "baseline_constraints": 4945707,
+        "full_contribution": "693928",
+        "name": "BN254Fp6::mul",
+        "sample_difference": "5464",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 1024,
+        "baseline_constraints": 4945707,
+        "full_contribution": "381480",
+        "name": "BN254Fp6::add",
+        "sample_difference": "1496",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 512,
+        "baseline_constraints": 4945707,
+        "full_contribution": "90424",
+        "name": "BN254Fp6::mul_v",
+        "sample_difference": "712",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 1024,
+        "baseline_constraints": 4945707,
+        "full_contribution": "381480",
+        "name": "BN254Fp6::sub",
+        "sample_difference": "1496",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 1,
+        "baseline_constraints": 4945707,
+        "full_contribution": "-1920",
+        "name": "BN254Fp12::frobenius1",
+        "sample_difference": "-1920",
+        "sample_rows": 1
+      },
+      {
+        "actual_rows": 1024,
+        "baseline_constraints": 4945707,
+        "full_contribution": "97920",
+        "name": "BN254Fp2::from_raw",
+        "sample_difference": "384",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 2,
+        "baseline_constraints": 4945707,
+        "full_contribution": "-812",
+        "name": "BN254Fp6::frobenius1",
+        "sample_difference": "-812",
+        "sample_rows": 2
+      },
+      {
+        "actual_rows": 16,
+        "baseline_constraints": 4945707,
+        "full_contribution": "888",
+        "name": "BN254Fp2::conjugate",
+        "sample_difference": "296",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 256,
+        "baseline_constraints": 4945707,
+        "full_contribution": "78120",
+        "name": "BN254Fp6::mul_fp2",
+        "sample_difference": "1240",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 2,
+        "baseline_constraints": 4945707,
+        "full_contribution": "-1280",
+        "name": "BN254Fp12::frobenius2",
+        "sample_difference": "-1280",
+        "sample_rows": 2
+      },
+      {
+        "actual_rows": 1,
+        "baseline_constraints": 4945707,
+        "full_contribution": "-1920",
+        "name": "BN254Fp12::frobenius3",
+        "sample_difference": "-1920",
+        "sample_rows": 1
+      },
+      {
+        "actual_rows": 2,
+        "baseline_constraints": 4945707,
+        "full_contribution": "-812",
+        "name": "BN254Fp6::frobenius3",
+        "sample_difference": "-812",
+        "sample_rows": 2
+      },
+      {
+        "actual_rows": 1,
+        "baseline_constraints": 4945707,
+        "full_contribution": "-4542",
+        "name": "BN254Fp12::easy_final",
+        "sample_difference": "-4542",
+        "sample_rows": 1
+      },
+      {
+        "actual_rows": 1,
+        "baseline_constraints": 4945707,
+        "full_contribution": "-3624",
+        "name": "BN254Fp12::inverse",
+        "sample_difference": "-3624",
+        "sample_rows": 1
+      },
+      {
+        "actual_rows": 2,
+        "baseline_constraints": 4945707,
+        "full_contribution": "-1876",
+        "name": "BN254Fp6::square",
+        "sample_difference": "-1876",
+        "sample_rows": 2
+      },
+      {
+        "actual_rows": 16,
+        "baseline_constraints": 4945707,
+        "full_contribution": "1584",
+        "name": "BN254Fp2::square",
+        "sample_difference": "528",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 1,
+        "baseline_constraints": 4945707,
+        "full_contribution": "-3318",
+        "name": "BN254Fp6::inverse",
+        "sample_difference": "-3318",
+        "sample_rows": 1
+      },
+      {
+        "actual_rows": 1,
+        "baseline_constraints": 4945707,
+        "full_contribution": "-558",
+        "name": "BN254Fp2::inverse",
+        "sample_difference": "-558",
+        "sample_rows": 1
+      },
+      {
+        "actual_rows": 1,
+        "baseline_constraints": 4945707,
+        "full_contribution": "-1053",
+        "name": "BN254Pairing::miller",
+        "sample_difference": "-1053",
+        "sample_rows": 1
+      },
+      {
+        "actual_rows": 128,
+        "baseline_constraints": 4945707,
+        "full_contribution": "232500",
+        "name": "BN254Pairing::miller_step",
+        "sample_difference": "7500",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 64,
+        "baseline_constraints": 4945707,
+        "full_contribution": "85560",
+        "name": "BN254Fp12::square",
+        "sample_difference": "5704",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 256,
+        "baseline_constraints": 4945707,
+        "full_contribution": "275436",
+        "name": "BN254Pairing::ell",
+        "sample_difference": "4372",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 256,
+        "baseline_constraints": 4945707,
+        "full_contribution": "385560",
+        "name": "BN254Fp12::mul_034",
+        "sample_difference": "6120",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 512,
+        "baseline_constraints": 4945707,
+        "full_contribution": "503936",
+        "name": "BN254Fp6::mul_01",
+        "sample_difference": "3968",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 512,
+        "baseline_constraints": 4945707,
+        "full_contribution": "60960",
+        "name": "BN254Fp2::mul_fp",
+        "sample_difference": "480",
+        "sample_rows": 8
+      },
+      {
+        "actual_rows": 16384,
+        "baseline_constraints": 4945707,
+        "full_contribution": "475020",
+        "name": "<ROM:3>",
+        "sample_difference": "116",
+        "sample_rows": 8,
+        "second_sample_constraints": 4946055
+      },
+      {
+        "actual_rows": 1024,
+        "baseline_constraints": 4945707,
+        "full_contribution": "32640",
+        "name": "<ROM:4>",
+        "sample_difference": "128",
+        "sample_rows": 8,
+        "second_sample_constraints": 4946091
+      },
+      {
+        "actual_rows": 32,
+        "baseline_constraints": 4945707,
+        "full_contribution": "1064",
+        "name": "<ROM:6>",
+        "sample_difference": "152",
+        "sample_rows": 8,
+        "second_sample_constraints": 4946163
+      },
+      {
+        "actual_rows": 16,
+        "baseline_constraints": 4945707,
+        "full_contribution": "492",
+        "name": "<ROM:7>",
+        "sample_difference": "164",
+        "sample_rows": 8,
+        "second_sample_constraints": 4946199
+      },
+      {
+        "actual_rows": 2,
+        "baseline_constraints": 4945707,
+        "full_contribution": "-89",
+        "name": "<ROM:8>",
+        "sample_difference": "-89",
+        "sample_rows": 2
+      },
+      {
+        "actual_rows": 2,
+        "baseline_constraints": 4945707,
+        "full_contribution": "-101",
+        "name": "<ROM:10>",
+        "sample_difference": "-101",
+        "sample_rows": 2
+      },
+      {
+        "actual_rows": 1024,
+        "baseline_constraints": 4945707,
+        "full_contribution": "54060",
+        "name": "<ROM:11>",
+        "sample_difference": "212",
+        "sample_rows": 8,
+        "second_sample_constraints": 4946343
+      },
+      {
+        "actual_rows": 32,
+        "baseline_constraints": 4945707,
+        "full_contribution": "1568",
+        "name": "<ROM:12>",
+        "sample_difference": "224",
+        "sample_rows": 8,
+        "second_sample_constraints": 4946379
+      },
+      {
+        "actual_rows": 1,
+        "baseline_constraints": 4945707,
+        "full_contribution": "-179",
+        "name": "<ROM:13>",
+        "sample_difference": "-179",
+        "sample_rows": 1
+      },
+      {
+        "actual_rows": 2,
+        "baseline_constraints": 4945707,
+        "full_contribution": "-131",
+        "name": "<ROM:15>",
+        "sample_difference": "-131",
+        "sample_rows": 2
+      },
+      {
+        "actual_rows": 2,
+        "baseline_constraints": 4945707,
+        "full_contribution": "-191",
+        "name": "<ROM:25>",
+        "sample_difference": "-191",
+        "sample_rows": 2
+      },
+      {
+        "actual_rows": 32,
+        "baseline_constraints": 4945707,
+        "full_contribution": "3248",
+        "name": "<ROM:32>",
+        "sample_difference": "464",
+        "sample_rows": 8,
+        "second_sample_constraints": 4947099
+      },
+      {
+        "actual_rows": 64,
+        "baseline_constraints": 4945707,
+        "full_contribution": "7140",
+        "name": "<ROM:33>",
+        "sample_difference": "476",
+        "sample_rows": 8,
+        "second_sample_constraints": 4947135
+      },
+      {
+        "actual_rows": 8,
+        "baseline_constraints": 4945707,
+        "full_contribution": "488",
+        "name": "<ROM:34>",
+        "sample_difference": "488",
+        "sample_rows": 8,
+        "second_sample_constraints": 4947171
+      },
+      {
+        "actual_rows": 16,
+        "baseline_constraints": 4945707,
+        "full_contribution": "4056",
+        "name": "<ROM:106>",
+        "sample_difference": "1352",
+        "sample_rows": 8,
+        "second_sample_constraints": 4949763
+      }
+    ],
+    "public_inputs": 2
+  },
+  "public_fields": 2,
+  "schema_bytes": 8701497,
+  "scope": "development regression, not Init compression",
+  "validation": {
+    "dependent_tests_passed": 21,
+    "full_fixture_regeneration": "passed",
+    "formal_key_gate": "passed",
+    "verify_path_gate": "passed",
+    "cost_scope": "extrapolated constraints; no full-size PLONK compilation or proof"
+  }
+}

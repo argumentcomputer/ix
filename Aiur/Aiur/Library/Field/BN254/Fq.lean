@@ -4,7 +4,7 @@ import Aiur.Library.Frontend
 
 /-! Canonical BN254 base-field elements in four radix-2^80 limbs over Fr.
 Advice supplies candidate bytes, remainders, quotients and signed carries.
-Byte lookups, boolean borrows and integer limb equations constrain them.
+Fixed 8- and 16-bit lookups, boolean borrows and integer limb equations constrain them.
 The bounds below justify interpreting every limb equation over the integers;
 they do not constitute a source-level correctness proof of the library. -/
 namespace Aiur.Library.Field.BN254.Fq
@@ -24,6 +24,9 @@ module BN254Fq {
   table byte_inputs: (Field,) {}
   table byte_units: () {}
   map byte(value: Field) -> () = byte_inputs => byte_units;
+  table limb16_inputs: (Field,) {}
+  table limb16_units: () {}
+  map limb16(value: Field) -> () = limb16_inputs => limb16_units;
   opaque type Fq = [Field; 4];
   const RADIX: Field = 1208925819614629174706176;
   const BIAS: Field = 9671406556917033397649408;
@@ -45,18 +48,23 @@ module BN254Fq {
     1 * raw[0] + 256 * raw[1] + 65536 * raw[2] + 16777216 * raw[3] + 4294967296 * raw[4] + 1099511627776 * raw[5] + 281474976710656 * raw[6] + 72057594037927936 * raw[7] + 18446744073709551616 * raw[8] + 4722366482869645213696 * raw[9]
   }
 
+  inline fn checked_pack80_u16(raw: [Field; 5]) -> Field {
+    limb16(raw[0]); limb16(raw[1]); limb16(raw[2]); limb16(raw[3]); limb16(raw[4]);
+    raw[0] + 65536 * raw[1] + 4294967296 * raw[2] + 281474976710656 * raw[3] + 18446744073709551616 * raw[4]
+  }
+
   fn range80(value: Field) -> () {
-    let raw = hint::<[Field; 10]>("bn254.fq.bytes80", value);
-    assert_eq!(checked_pack80(raw), value, "Fq 80-bit decomposition");
+    let raw = hint::<[Field; 5]>("bn254.fq.u16_80", value);
+    assert_eq!(checked_pack80_u16(raw), value, "Fq 80-bit decomposition");
     ()
   }
 
   fn range84(value: Field) -> () {
-    let raw = hint::<[Field; 11]>("bn254.fq.bytes84", value);
-    let low = checked_pack80([raw[0], raw[1], raw[2], raw[3], raw[4], raw[5], raw[6], raw[7], raw[8], raw[9]]);
-    byte(raw[10]);
-    byte(16 * raw[10]);
-    assert_eq!(low + RADIX * raw[10], value, "Fq 84-bit decomposition");
+    let raw = hint::<[Field; 6]>("bn254.fq.u16_84", value);
+    let low = checked_pack80_u16([raw[0], raw[1], raw[2], raw[3], raw[4]]);
+    byte(raw[5]);
+    byte(16 * raw[5]);
+    assert_eq!(low + RADIX * raw[5], value, "Fq 84-bit decomposition");
     ()
   }
 
@@ -151,13 +159,15 @@ module BN254Fq {
 }
 ⟧
 
-/-- Complete byte membership data, independent of advice or the workload. -/
+/-- Complete range tables, independent of advice or the workload. -/
 def declarations : Modules.Program Nat :=
   { implementation with modules := implementation.modules.map fun m =>
       {m with body := match m.body with
         | .definitions d => .definitions {d with program.tables := [
             ⟨"byte_inputs", .tuple [.field], (List.range 256).map fun n => .tuple [.literal n]⟩,
-            ⟨"byte_units", .tuple [], (List.range 256).map fun _ => .tuple []⟩]}
+            ⟨"byte_units", .tuple [], (List.range 256).map fun _ => .tuple []⟩,
+            ⟨"limb16_inputs", .tuple [.field], (List.range 65536).map fun n => .tuple [.literal n]⟩,
+            ⟨"limb16_units", .tuple [], (List.range 65536).map fun _ => .tuple []⟩]}
         | body => body} }
 
 def program : Modules.Program BN254.F :=

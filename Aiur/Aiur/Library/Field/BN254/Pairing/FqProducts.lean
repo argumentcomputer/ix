@@ -21,10 +21,10 @@ module BN254FqProducts {
   const BIAS:Field=38685626227668133590597632;
   const CORRECTION:Field=46768052394588893382517875961294828960856250777600;
   fn range86(value:Field)->() {
-    let raw=hint::<[Field;11]>("bn254.pairing.bytes86",value);
-    let low=BN254Fq::checked_pack80([raw[0],raw[1],raw[2],raw[3],raw[4],raw[5],raw[6],raw[7],raw[8],raw[9]]);
-    BN254Fq::byte(raw[10]);BN254Fq::byte(4*raw[10]);
-    assert_eq!(low+RADIX*raw[10],value,"Fq product carry range");
+    let raw=hint::<[Field;6]>("bn254.pairing.u16_86",value);
+    let low=BN254Fq::checked_pack80_u16([raw[0],raw[1],raw[2],raw[3],raw[4]]);
+    BN254Fq::byte(raw[5]);BN254Fq::byte(4*raw[5]);
+    assert_eq!(low+RADIX*raw[5],value,"Fq product carry range");
     ()
   }
   fn reduce(a:Fq,b:Fq,c:Fq,d:Fq,subtract:Field)->Fq {

@@ -178,7 +178,7 @@ pub fn advice(channel: &str, input: &[Scalar]) -> Result<Vec<Scalar>, String> {
   use crate::recursive::native_field::{integer, modulus};
   use ark_ff::{BigInteger, PrimeField};
   use num_bigint::{BigInt, BigUint};
-  if channel == "bn254.pairing.bytes86" {
+  if channel == "bn254.pairing.bytes86" || channel == "bn254.pairing.u16_86" {
     let [value] = input else {
       return Err("86-bit advice requires one field".into());
     };
@@ -187,6 +187,19 @@ pub fn advice(channel: &str, input: &[Scalar]) -> Result<Vec<Scalar>, String> {
       return Err("pairing carry exceeds 86 bits".into());
     }
     let mut bytes = value.to_bytes_le();
+    if channel == "bn254.pairing.u16_86" {
+      bytes.resize(12, 0);
+      return Ok(
+        bytes
+          .as_chunks::<2>()
+          .0
+          .iter()
+          .map(|pair| {
+            Bn254.from_u64(u64::from(u16::from_le_bytes([pair[0], pair[1]])))
+          })
+          .collect(),
+      );
+    }
     bytes.resize(11, 0);
     return Ok(
       bytes.into_iter().map(|byte| Bn254.from_u64(u64::from(byte))).collect(),
@@ -266,6 +279,7 @@ pub fn register(
   let fields = |length| Type::Tuple { items: vec![Type::Field; length] };
   for (name, input, output) in [
     ("bn254.pairing.bytes86", Type::Field, fields(11)),
+    ("bn254.pairing.u16_86", Type::Field, fields(6)),
     (
       "bn254.pairing.fq_products",
       Type::Tuple {

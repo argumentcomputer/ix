@@ -860,6 +860,12 @@ The estimator checks a second increment for boundary-sensitive circuits and
 agrees with a complete small ROM/recursion fixture compilation. Substantial
 arithmetic and layout reductions are required before terminal PLONK is viable.
 
+Using a complete 16-bit lookup table for Fq limb and carry decompositions
+[reduces this fixture](measurements/aiur-final-range16.json) to 12,851,884 main
+cells and an extrapolated 90,043,556 constraints. The required domain remains
+`2^27`; this improvement does not yet make the terminal proof fit Ignition.
+The arithmetic boundaries, forged-witness tests and formal pin gates pass.
+
 A [two-stage KZG recursion preflight](measurements/aiur-kzg-recursion-preflight.json)
 proved a small first-stage execution, then executed the verifier on that proof.
 The second execution required 2,111,189,304 main cells and a maximum height of

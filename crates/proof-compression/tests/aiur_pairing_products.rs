@@ -134,8 +134,8 @@ fn poisoned(
           r#type.clone(),
           move |input, output| {
             let mut candidate =
-              if name == "bn254.fq.bytes80" && integer(input[0]).bits() > 80 {
-                vec![Bn254.zero(); 10]
+              if name == "bn254.fq.u16_80" && integer(input[0]).bits() > 80 {
+                vec![Bn254.zero(); 5]
               } else if name.starts_with("bn254.pairing.") {
                 pairing::advice(&name, input)?
               } else {

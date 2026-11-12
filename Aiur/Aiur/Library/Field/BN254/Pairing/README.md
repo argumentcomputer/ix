@@ -8,6 +8,8 @@ programs. There is no native pairing hint or unchecked tower inverse.
 `FqProducts` reduces `ab ± cd + p² = q*p + r` in one constrained step.
 The remainder is canonical, quotient limbs have 80-bit bounds, and seven
 signed carries use a `32*2^80` bias with 86-bit ranges and fixed endpoints.
+Range decompositions use five 16-bit chunks plus the remaining high bits,
+checked against complete fixed tables.
 The `128*radix² + 128*radix < Fr` lemma bounds the difference between each
 integer coefficient equation's two sides, excluding scalar-field wraparound.
 Adding p² makes subtraction nonnegative; the honest quotient is below 3p.

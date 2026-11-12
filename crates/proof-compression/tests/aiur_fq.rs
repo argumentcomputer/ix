@@ -114,6 +114,19 @@ fn native_advice_preserves_eighty_bit_limbs_and_integer_bounds() {
   let bytes = fq::advice("bn254.fq.bytes80", &[scalar(&high)]).unwrap();
   assert_eq!(bytes.len(), 10);
   assert!(bytes.iter().all(|&byte| byte == Bn254.from_u64(255)));
+  let words = fq::advice("bn254.fq.u16_80", &[scalar(&high)]).unwrap();
+  assert_eq!(words, vec![Bn254.from_u64(65535); 5]);
+  for bits in [80usize, 84] {
+    let limit = BigUint::from(1u8) << bits;
+    let channel = format!("bn254.fq.u16_{bits}");
+    let words = fq::advice(&channel, &[scalar(&(&limit - 1u8))]).unwrap();
+    let recomposed =
+      words.iter().enumerate().fold(BigUint::from(0u8), |sum, (i, value)| {
+        sum + (BigUint::from(Bn254.try_to_u64(*value).unwrap()) << (16 * i))
+      });
+    assert_eq!(recomposed, &limit - 1u8);
+    assert!(fq::advice(&channel, &[scalar(&limit)]).is_err());
+  }
   assert!(Bn254.try_to_u64(scalar(&high)).is_err());
   assert!(fq::advice("bn254.fq.bytes80", &[scalar(&radix)]).is_err());
   assert!(
@@ -200,8 +213,8 @@ fn source_constraints_reject_forged_quotients_carries_ranges_and_zero_inverse()
     ("bn254.fq.add", "FqTest::add", 4),
     ("bn254.fq.sub", "FqTest::sub", 4),
     ("bn254.fq.canonical", "FqTest::mul", 7),
-    ("bn254.fq.bytes80", "FqTest::mul", 9),
-    ("bn254.fq.bytes84", "FqTest::mul", 10),
+    ("bn254.fq.u16_80", "FqTest::mul", 4),
+    ("bn254.fq.u16_84", "FqTest::mul", 5),
   ] {
     let channels =
       poisoned(&plan, target, move |_, output| output[index] += Bn254.one());
@@ -212,8 +225,8 @@ fn source_constraints_reject_forged_quotients_carries_ranges_and_zero_inverse()
       "accepted forged {target}[{index}]"
     );
   }
-  let channels = poisoned(&plan, "bn254.fq.bytes80", |_, output| {
-    output[0] = Bn254.from_u64(256)
+  let channels = poisoned(&plan, "bn254.fq.u16_80", |_, output| {
+    output[0] = Bn254.from_u64(65536)
   });
   assert!(
     plan
@@ -221,6 +234,18 @@ fn source_constraints_reject_forged_quotients_carries_ranges_and_zero_inverse()
       .prepare_hint_channels(&[], &channels)
       .unwrap()
       .execute("FqTest::mul", args)
+      .is_err()
+  );
+  let channels = poisoned(&plan, "bn254.fq.u16_80", |_, output| {
+    output[0] += Bn254.from_u64(65536);
+    output[1] -= Bn254.one();
+  });
+  assert!(
+    plan
+      .program()
+      .prepare_hint_channels(&[], &channels)
+      .unwrap()
+      .execute("FqTest::range80", vec![Bn254.from_u64(65536)])
       .is_err()
   );
   let channels =
@@ -240,9 +265,22 @@ fn compiled_fq_kzg_proofs_reject_altered_quotient_and_carry_columns() {
   let plan = plan();
   let channels = channels();
   let executor = plan.program().prepare_hint_channels(&[], &channels).unwrap();
+  let capacity = plan
+    .program()
+    .program()
+    .tables
+    .iter()
+    .map(|table| table.rows.len())
+    .max()
+    .unwrap_or(1)
+    .max(1024)
+    .next_power_of_two();
   let backend = Backend::new(
     &plan,
-    KzgConfig::new(Arc::new(Srs::unsafe_dev_setup(1024, b"aiur-fq-test")), 8),
+    KzgConfig::new(
+      Arc::new(Srs::unsafe_dev_setup(capacity, b"aiur-fq-test")),
+      8,
+    ),
   )
   .unwrap();
   let a = Fq::from_le_bytes_mod_order(&(modulus() / 2u8).to_bytes_le());
