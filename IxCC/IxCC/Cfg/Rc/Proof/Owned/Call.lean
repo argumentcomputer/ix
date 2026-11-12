@@ -200,9 +200,9 @@ theorem call_result_owned (admission : CodeAdmission F bodies P config pairs fun
         · exact .inr (fails_prefix trace failed)
       | stuck => trivial
   · have same : Lir.atState memory context target.fn target.label target.pos target.env callers =
-        ({mem := memory, ctx := context, stack := target :: callers} : Lir.State) := by
-      cases target
-      simp_all [Lir.atState]
+        ({mem := memory, ctx := context, stack := target :: callers} : Lir.State) :=
+      (Rt.Proof.state_eq (s := {mem := memory, ctx := context, stack := target :: callers}) rfl
+        before.running).symm
     rw [same] at failure
     exact ResultAt.of_fails failure
 
