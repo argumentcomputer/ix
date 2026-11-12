@@ -673,6 +673,30 @@ inductive DefEq (env : Env md) : Nat → Expr md → Expr md → Prop where
       (reservedBasisNames.contains T = false ∨ isUnitLikeTy env wta = true) →
       Infer env .io d b tb → DefEq env d ta tb →
       DefEq env d a b
+  /-- **Structure η at a compared type** (IxVM's structure-η test), at a structure
+  whose fields are projection-table entries: `a` is a fully applied constructor of an
+  η-capable stored structure with at least one field; `a`'s io-inferred type reduces to
+  the structure at `a`'s levels and parameters, which the structure's telescope
+  certifies (licensed: a `.never` slot skips); `b`'s io-inferred type is definitionally
+  equal to `a`'s; and each `.proj` of `b` is definitionally equal to the corresponding
+  field of `a`. Unlike `structEta`, the two types are compared and the parameters are
+  `a`'s own. -/
+  | structEtaTy {d : Nat} {a b ta tb : Expr md} {c : Key md} {us : List Level}
+      {cvc : ConstantVal md} {cnP cnF : Nat} {T : Key md} {cvT : ConstantVal md}
+      {caps : IndCaps md} :
+      a.getAppFn = .const c us →
+      env.find? c = some (.ctorInfo cvc cnP cnF) →
+      a.getAppArgs.length = cnP + cnF →
+      env.find? T = some (.indInfo cvT caps) →
+      caps.eta = true → caps.etaCtor = some c →
+      0 < cnF → towerSlotsAll env T cnF = true →
+      Infer env .io d a ta →
+      Red env d ta (Expr.mkAppN (.const T us) (a.getAppArgs.take cnP)) →
+      Certs env d true (cvT.type.instantiateLevelParams cvT.levelParams us)
+        (a.getAppArgs.take cnP) →
+      Infer env .io d b tb → DefEq env d tb ta →
+      DefEqList env d ((List.range cnF).map fun i => .proj T i b) (a.getAppArgs.drop cnP) →
+      DefEq env d b a
 
 /-- **Type inference** at a grade. -/
 inductive Infer (env : Env md) : Grade → Nat → Expr md → Expr md → Prop where

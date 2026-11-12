@@ -429,6 +429,18 @@ theorem defEq_tr {env env' : Env md} {ρ δ : Nat → Nat} {ok : Nat → Prop}
       (hT.ext.find hind) hunit (by rw [getAppArgs_renFV, List.length_map]; exact htlen) hcs
       (hkind.imp id (fun h => by rw [isUnitLikeTy_renFV]; exact hT.ext.isUnitLikeTy_mono h))
       (infer_tr hT htb hd) (defEq_tr hT hd' hd)
+  | _, _, _, .structEtaTy (cvT := cvT) hhead hctor hlen hind heta hetaCtor hpos htow hta hwta
+      hcerts htb hd' hfields, hd => by
+    have hr := red_tr hT hwta hd
+    rw [renFV_mkAppN, List.map_take, ← getAppArgs_renFV] at hr
+    have hcs := certs_tr hT hcerts hd
+    rw [hT.fixType (cv := cvT) hind rfl, List.map_take, ← getAppArgs_renFV] at hcs
+    have hf := defEqList_tr hT hfields hd
+    rw [List.map_map, List.map_drop, ← getAppArgs_renFV] at hf
+    exact .structEtaTy (getAppFn_renFV_const hhead) (hT.ext.find hctor)
+      (by rw [getAppArgs_renFV, List.length_map]; exact hlen) (hT.ext.find hind) heta hetaCtor
+      hpos (by rw [hT.ext.towerSlotsAll_eq hind]; exact htow) (infer_tr hT hta hd) hr hcs
+      (infer_tr hT htb hd) (defEq_tr hT hd' hd) hf
 
 /-- **An inference, transported.** -/
 theorem infer_tr {env env' : Env md} {ρ δ : Nat → Nat} {ok : Nat → Prop}

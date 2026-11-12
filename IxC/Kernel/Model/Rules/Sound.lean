@@ -148,6 +148,11 @@ theorem defeq_sound (hin : ∀ ψ, RulesInputs V m ψ) {φ : LevelParam → Nat}
     DefEq.unitLikeTy_sound (hin φ) (infer_sound hin hta) (red_sound hin hwta) hthead
       hind hunit htlen (certs_sound hin hcerts) hkind (infer_sound hin htb)
       (defeq_sound hin hd)
+  | _, _, _, .structEtaTy hhead hctor hlen hind heta hetaCtor hpos htow hta hwta hcerts htb hd
+      hfields =>
+    DefEq.structEtaTy_sound (hin φ) hhead hctor hlen hind heta hetaCtor hpos htow
+      (infer_sound hin hta) (red_sound hin hwta) (certs_sound hin hcerts) (infer_sound hin htb)
+      (defeq_sound hin hd) (defEqList_sound hin hfields)
 
 theorem infer_sound (hin : ∀ ψ, RulesInputs V m ψ) {φ : LevelParam → Nat} :
     ∀ {g : Grade} {d : Nat} {e t : Expr md}, Infer env g d e t → InferSem m φ g d e t
