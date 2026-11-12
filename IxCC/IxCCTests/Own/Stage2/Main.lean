@@ -381,7 +381,7 @@ def sites (closure eqs root label : String) (count seed : Nat) (ns : List Nat) :
     IO.println "label\tmap\tkind\tgenerated\taccepted\toracle runs\taccepted, cell RC sequence changed\tof which counts or peak changed\taccepted, ran, cell RC sequence unchanged\taccepted, not run\tmisbehaving"
     for (k, t) in stats do
       IO.println s!"{label}\t{name}\t{k.name}\t{t.row}"
-    let tot := stats.foldl (fun a (_, t) => a.add t) {}
+    let tot : SiteStats := stats.foldl (fun (a : SiteStats) (_, t) => a.add t) {}
     IO.println s!"{label}\t{name}\tTOTAL\t{tot.row}"
     for e in failures.take 20 do IO.println s!"COUNTEREXAMPLE {label} {name}: {e}"
     (← IO.getStdout).flush
