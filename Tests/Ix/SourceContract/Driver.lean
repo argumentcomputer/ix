@@ -32,11 +32,16 @@ private def constants (source : ConstantInfo) := [(source.name, source)]
 private def ioTest (description : String) (check : IO Bool) : TestSeq :=
   .individualIO description none (do return (← check, 0, 0, none)) .done
 
-/-- The compile refused annotated source. -/
-private def refusedAnnotated (result : Except String α) : Bool :=
-  match result with
-  | .error message => (message.splitOn "annotated source is refused").length > 1
-  | .ok _ => false
+/-- An IO test that reports what the compile said when it did not refuse
+ annotated source. -/
+private def refusalTest (description : String) (result : IO (Except String Ix.CompileM.CertifiedOut)) :
+    TestSeq :=
+  .individualIO description none (do
+    match ← result with
+    | .ok _ => return (false, 0, 0, some "compiled")
+    | .error message =>
+      let ok := (message.splitOn "annotated source is refused").length > 1
+      return (ok, 0, 0, if ok then none else some message)) .done
 
 private def compileConsts (consts : List (Lean.Name × ConstantInfo)) :
     IO (Except String Ix.CompileM.CertifiedOut) := do
@@ -118,18 +123,17 @@ def suite : List TestSeq := [
           (name, source)
       if (checkOrdinaryConstants marked (fun _ => false)).toOption != some false then return false
     return true,
-  ioTest "Lean constant-list driver refuses an annotated axiom" do
-    return refusedAnnotated (← compileConsts (constants markedSource)),
+  refusalTest "Lean constant-list driver refuses an annotated axiom"
+    (compileConsts (constants markedSource)),
   ioTest "explicit Lean input rejects a missing annotation registry" do
     match ← compileInput (.plain (constants markedSource)) with
     | .error message => return (message.splitOn "missingContract").length > 1
     | .ok _ => return false,
-  ioTest "explicit Lean input refuses an annotated axiom" do
+  refusalTest "explicit Lean input refuses an annotated axiom" (do
     let .ok contract := SourceContract.ofTelescope plainSource #[
       { binder := .position 0, uses := .linear }]
-      | return false
-    let input : CompileInput := { constants := constants plainSource, contracts := #[contract] }
-    return refusedAnnotated (← compileInput input),
+      | return .error "the telescope contract does not resolve"
+    compileInput { constants := constants plainSource, contracts := #[contract] }),
   ioTest "measure-only input preserves ordinary production bytes" do
     let input := CompileInput.plain (constants plainSource)
     let .ok plain ← compileInput input | return false
