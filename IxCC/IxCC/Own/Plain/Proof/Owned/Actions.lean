@@ -77,14 +77,15 @@ theorem inc_step (st : OwnedState functions H external live Γ ρf ρo owned lex
   have pre := st.pre.transport (H' := H')
     (fun u w' h => by change H'.value? u = some w'; rw [← hvals u]; exact h)
     (fun u hu => canDup_inc hu hinc)
-  refine ⟨H', _, hact, ?_, hpres⟩
   rcases hcase with ⟨hi, rfl⟩ | ⟨hi, hp, rfl⟩ | ⟨hi, h0, hb, rfl⟩
   · -- An immediate: a no-op; its vacuous token is not kept.
+    refine ⟨H', owned, hact, ?_, hpres⟩
     obtain ⟨v', hv', himm⟩ := st.immOk x hi
     have : v' = v := Option.some.inj (hv'.symm.trans hv)
     subst this
     exact pre.toState ((SameRefs.imm_cons himm owned).balance hb')
-  · have hroots' : EnvRoots ρo (x :: toks) (v :: owned) := EnvRoots.cons hv hroots
+  · refine ⟨H', v :: owned, hact, ?_, hpres⟩
+    have hroots' : EnvRoots ρo (x :: toks) (v :: owned) := EnvRoots.cons hv hroots
     refine ⟨fun y hy => pre.den y ?_, ⟨x :: toks, htok.addOwn x, hroots'⟩, hb',
       fun y hy => pre.known y ?_, pre.distinct, fun y hy => pre.immOk y hy,
       fun y hy => pre.borrowed y hy, pre.epochs, pre.stack, pre.scope⟩
@@ -99,6 +100,7 @@ theorem inc_step (st : OwnedState functions H external live Γ ρf ρo owned lex
           decide_false, Bool.false_or] at hy ⊢
         exact hy
   · -- A borrowed variable becomes owned with one token.
+    refine ⟨H', v :: owned, hact, ?_, hpres⟩
     have htok' : Ctx.Tokens ({ Γ with brw := Γ.brw.erase x } : Ctx) toks := htok.same rfl rfl
     have hroots' : EnvRoots ρo (x :: toks) (v :: owned) := EnvRoots.cons hv hroots
     refine ⟨fun y hy => pre.den y ?_, ⟨x :: toks, htok'.addOwn x, hroots'⟩, hb',

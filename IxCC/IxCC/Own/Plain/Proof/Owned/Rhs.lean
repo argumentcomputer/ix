@@ -14,7 +14,7 @@ namespace IxCC.Own.Plain
 
 open Rc
 open IxCC.Sem (Result)
-open IxCC.Fir (Var Arg Rhs)
+open IxCC.Fir (Var Arg)
 
 theorem except_bind_ok {ε α β : Type} {m : Except ε α} {f : α → Except ε β} {b : β}
     (h : (m >>= f) = .ok b) : ∃ a, m = .ok a ∧ f a = .ok b := by
@@ -91,7 +91,7 @@ variable {functions : Signatures} {H : Heap} {external : Nat → Nat} {live : Li
 
 theorem rhs_step {F : Fir.Program} (pins : BoolPinsOk F)
     (st : OwnedState functions H external live Γ ρf ρo owned lex Δ Jf Jo)
-    {x : Var} {r : Rhs} (hx : x ∉ live) (hn : ∀ f args, r ≠ .call f args)
+    {x : Var} {r : Fir.Rhs} (hx : x ∉ live) (hn : ∀ f args, r ≠ .call f args)
     {Γ' : Ctx} (hc : bindCtx Γ x r = .ok Γ') {w : Fir.Val} (hw : Fir.evalRhs F ρf r = .ok w) :
     ∃ v H' owned', evalRhs { ctors := F.ctors, known := F.known } ρo H r = .ok (v, H') ∧
       OwnedState functions H' external (live ++ [x]) Γ' (ρf.insert x w) (ρo.insert x v) owned'
