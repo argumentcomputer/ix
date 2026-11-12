@@ -225,7 +225,11 @@ theorem sound_wrapperBody (h : Head) (q : Profile) :
   unfold wrapperBody
   cases h with
   | prim op => exact Sound.pure fun _ => .prim rfl
-  | word w op => exact Sound.decline
+  | word w op =>
+    dsimp only
+    refine Sound.ite (fun hc => ?_) fun _ => Sound.decline_bind
+    simp only [Bool.and_eq_true] at hc
+    exact Sound.pure fun _ => .word rfl (wordUnboxAt_of_B hc.1) (wordUnboxAt_of_B hc.2)
   | ctor c =>
     dsimp only
     refine Sound.ite (fun hh => ?_) fun _ => Sound.decline_bind

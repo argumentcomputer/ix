@@ -49,6 +49,8 @@ structure Loaded where
   admitted : Admitted
   tableDiags : Array Diag
   tableStats : Table.Stats
+  /-- The word hints of the admitted program (`Table.wordHints`, stage W1). -/
+  wordHints : Array Diag := #[]
 
 namespace Loaded
 
@@ -119,7 +121,8 @@ def loadEnv (cfg : LoadConfig) (env : V3.Env) (hints : Hints)
   let (p, kernel, tableDiags, tableStats) ← prepare cfg env hints
   let ann ← stage "relevance-oracle" (oracle kernel p)
   let (p, checked, admitted) ← finish cfg hints p ann
-  return { env, kernel, hints, program := p, ann, checked, admitted, tableDiags, tableStats }
+  return { env, kernel, hints, program := p, ann, checked, admitted, tableDiags, tableStats
+           wordHints := Table.wordHints p admitted.reached }
 
 /-- The front-end entry point: closure bytes and an `ixcc/k1-equations/1`
 sidecar. -/

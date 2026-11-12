@@ -119,7 +119,8 @@ clock is a depth bound, counting needs a separate counter.
     builds is in range (`WordOp.eval_word_lt`). Not charged. `thm` names the stored theorem that fixes the operation's meaning (an
     equation over `Nat`'s operations; `ofNat`'s, the bridge to the tower), checked by statement.
     No other rule changes, and the producer proposes word entries only when the table's `words`
-    switch is on (off until the native lowering exists). Whether the rule agrees with SrcEval's
+    switch is on (on by default since stage W1's lowering exists) and the sidecar names the
+    theorems (`ix compile --equations --word-equations`). Whether the rule agrees with SrcEval's
     own run of the pinned constant's reference body is tested on every boundary case, not
     proved (`tests-src`, "F6w against the reference bodies").
 - **Exit.** The version constant and changelog; the entries agree with

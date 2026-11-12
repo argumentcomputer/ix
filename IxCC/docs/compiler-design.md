@@ -777,14 +777,17 @@ route its run behaviour reaches the compiler:
 | A recursor | its rules receive every argument (`headReads`): none may be written erased (`readsErased?`) | `tests-recheck` |
 | `Quot.mk`, `Quot.lift` | the element; the function and the quotient (`headReads`): none written erased (`readsErased?`). `Quot.ind` never runs (C5 refuses a relevant reference to it) | `tests-recheck` |
 | A constructor | a field written erased is dropped at every instance (`checkCanonical` on its record), and a constructor stores only kept fields, except the pinned `Nat.succ`, which reads its field and so may not erase it (`readsErased?`) | `tests-recheck` |
-| A primitive or word entry | reads every argument: none written erased (`okPrim`, `readsErased?`); word entries are refused while `Table.Config.words` is off | `tests-relevance` (special heads); `tests-recheck` |
+| A primitive or word entry | reads every argument: none written erased (`okPrim`, `readsErased?`) | `tests-relevance` (special heads); `tests-recheck` |
 | A minor premise applied by a case or a recursor | the dispatch passes □ for a field written erased (dropped); the minor's leading λs cover every field written erased, and a dropped field's λ is irrelevant (C3, `Check.minorBinders`) | `tests-recheck` (an η-short minor refused; its twins) |
 
 `headReads` is erasure's; `checkCanonical` uses a copy
 (`Check.Canonical.headReadsWith`), and `tests-relevance` does not build if
-the two differ. A parameter irrelevant only by its sort (a type, a proof)
-needs no cover: the caller's class and the callee's own header's come from
-the same sort facts, so neither side can be told something the other is not.
+the two differ. A word entry (stage W1) is a head that reads every
+argument: erasure's `Input.headOf`, the checker's `specialHead?` and
+`headReads` agree on it, and the build-failing example still pins the copy.
+A parameter irrelevant only by its sort (a type, a proof) needs no cover:
+the caller's class and the callee's own header's come from the same sort facts,
+so neither side can be told something the other is not.
 At a covered position of a minor, a kept field may be bound by an erased λ:
 what a minor receives is decided by the constructor's side, not the
 minor's (SrcEval applies the minor to every field slot of the constructor

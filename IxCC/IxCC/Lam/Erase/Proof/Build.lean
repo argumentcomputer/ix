@@ -156,7 +156,8 @@ theorem sound_rootId (c : CId) :
       (by simp [Input.deltaBody, hr, hd, hop]) h
   · next op _ hr =>
     exact (sound_globalId _).imp fun g G h => .wrapper (by simp [Input.headOf, hr]) h
-  · exact Sound.decline
+  · next w op _ hr =>
+    exact (sound_globalId _).imp fun g G h => .wrapper (by simp [Input.headOf, hr]) h
   · next r' _ hr =>
     exact (sound_globalId _).imp fun g G h => .wrapper (by simp [Input.headOf, hr]) h
   · next hr hd =>

@@ -253,6 +253,13 @@ theorem satR_wf : ∀ {cx : Cx} {h : Head} {q : Profile} {args : List Src.Term.A
       refine ⟨by simp [h₂, hlen, headArity, prim_arity], (wfList_iff).2 fun a ha' => ?_⟩
       obtain ⟨b, hb, rfl⟩ := List.mem_map.1 ha'
       exact h₁ b hb
+  | _, _, _, _, _, .word _ _ ha, hcx, hlen, hr => by
+    cases hr with
+    | prim hra =>
+      obtain ⟨h₁, h₂⟩ := argsR_wf ha hcx fun a ha' => hra _ (List.mem_map.2 ⟨a, ha', rfl⟩)
+      refine ⟨by simp [h₂, hlen, headArity, Prim.arity], (wfList_iff).2 fun a ha' => ?_⟩
+      obtain ⟨b, hb, rfl⟩ := List.mem_map.1 ha'
+      exact h₁ b hb
   | _, _, _, _, _, .natZero _ _, _, _, _ => trivial
   | _, _, _, _, _, .natSucc hd _ hs hb hf, hcx, hlen, hr => by
     obtain ⟨hrl, hrb⟩ := RegT.wrapLets_inv hr

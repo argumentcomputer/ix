@@ -425,6 +425,15 @@ theorem wrap_sat {h : Head} {c : CId} {q : Profile} {body : Term} (hh : S.I.head
   generalize hcx : wrapCx q xs.length = cx at hsat
   cases hsat with
   | prim _ => exact absurd rfl (hnp _)
+  | @word _ w op _ _ _ hu hu' hargsR =>
+    subst hargs hcx
+    have hvv := wrap_varVals (I := S.I) (h := .word w op) (c := c) (q := q) (xs := xs) (n := 0)
+      (fun i _ _ => by simp [headReads])
+    simp only [List.drop_zero] at hvv
+    obtain ⟨vsF, hevF, hF⟩ := args_vars (P := S.L) hargsR (wrapEnv q hxv) (allVals_rev vs) hvv
+    refine (word_value_sim S hu hu' hF).congr (fun k => ?_) (fun k => ?_)
+    · rw [Src.fire_word, forceAll_vals, Sem.Result.bind_ok]
+    · rw [Lam.eval_prim, hevF k, Sem.Result.bind_ok]
   | @natZero _ c' _ _ _ _ _ _ _ _ _ hd hz =>
     obtain ⟨_, _, _, _, _, hdz⟩ := wf.zeroPin hz
     rw [hd] at hdz
@@ -590,6 +599,14 @@ theorem wrap_fire {h : Head} {q : Profile} {inner : Term}
     have hvl : vs.length = headArity S.I (.prim op) := by rw [← hxv.length, hlen]
     refine (prim_value_sim wf op hxv).congr (fun k => ?_) (fun k => ?_)
     · rw [Src.fire_prim, forceAll_vals, Sem.Result.bind_ok]
+    · rw [Lam.eval_prim, ← hvl, evalList_lvls, Sem.Result.bind_ok]
+  | @word w op hop hu hu' =>
+    subst hop
+    have hi := lams_inj _ e
+    subst hi
+    have hvl : vs.length = headArity S.I (.word w op) := by rw [← hxv.length, hlen]
+    refine (word_value_sim S hu hu' hxv).congr (fun k => ?_) (fun k => ?_)
+    · rw [Src.fire_word, forceAll_vals, Sem.Result.bind_ok]
     · rw [Lam.eval_prim, ← hvl, evalList_lvls, Sem.Result.bind_ok]
   | @other c body hcls hhead hsat =>
     have hi : inner = body := lams_inj _ e

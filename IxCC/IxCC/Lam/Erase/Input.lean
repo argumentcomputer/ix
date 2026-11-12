@@ -131,11 +131,12 @@ def deltaBody (c : CId) : Option Src.Term :=
     | _ => none
 
 /-- The special head a constant is, as SrcEval's δ dispatches (E8): a
-primitive or `case` entry, else a constructor, recursor or quotient
+primitive, word or `case` entry, else a constructor, recursor or quotient
 declaration. -/
 def headOf (c : CId) : Option Head :=
   match I.resolve.get? c with
   | some (.prim op) => some (.prim op)
+  | some (.word w op _) => some (.word w op)
   | some (.case _) => some (.cases c)
   | some _ => none
   | none =>
@@ -210,6 +211,20 @@ def unbox? (t : CId) (prof : Profile) : Option Nat := do
   let fieldTy ← piDomain? (np + j) cty
   if fieldTy.mentions t then none
   return j
+
+/-- Constructor `c` has `nf` fields and its inductive unboxes at field 0 (stage W1). -/
+def unboxesAt0B (c : CId) (nf : Nat) : Bool :=
+  match I.decl? c with
+  | some (.ctor _ _ ind _ _ nf' _) => nf' == nf && I.unbox? ind [] == some 0
+  | _ => false
+
+/-- **What erasure checks before it emits a word primitive at width `w`** (stage W1): the
+pinned `UIntN.ofBitVec` of `w`, `BitVec.ofFin` and `Fin.mk` exist, have 1, 1 and 2 fields, and
+their inductives unbox at field 0, so a tower of `w` erases to its number. Erasure checks it at an
+operation's width and at its result width. -/
+def wordUnboxAtB (w : Src.Width) : Bool :=
+  (I.known.wordCtors.lookup w).any (I.unboxesAt0B · 1) &&
+  I.known.bitVecOfFin.any (I.unboxesAt0B · 1) && I.known.finMk.any (I.unboxesAt0B · 2)
 
 end Input
 

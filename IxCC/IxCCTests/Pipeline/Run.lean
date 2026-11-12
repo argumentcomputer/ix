@@ -3,6 +3,7 @@ import IxCCTests.Pipeline.Mutants
 import IxCCTests.Pipeline.Levels
 import IxCCTests.Pipeline.Twin
 import IxCCTests.Pipeline.Defun
+import IxCCTests.Pipeline.Words
 
 /-! The `tests-pipeline` suite: the compiler end to end.
 
@@ -15,19 +16,22 @@ import IxCCTests.Pipeline.Defun
   inputs, with the `2⁶³` boundary (`Twin`);
 * the closures step (the roots' entries and P8, `Recheck.closuresOf`) under
   chosen middle-end schedules, on the decline corpus's `composeClosure`, the K1
-  fallback route and the `phase2-closures` and `phase2-arity` roots (`Defun`).
+  fallback route and the `phase2-closures` and `phase2-arity` roots (`Defun`);
+* fixed-width words (stage W1): the words fixture, each root compiled alone, at every level and
+  natively, against Lean's own `UIntN` operations (`Words`).
 
 With `--native`, objects run natively, as test executables IxCC writes
 (`IxCCTests.Rt.Native`).
 
 Usage: `tests-pipeline [--native] [--work DIR] [--bin IXCC]
-[--mutants N] [--twin N] [--seed S] [--full] [--only PART]...`
+[--mutants N] [--twin N] [--seed S] [--full] [--words-every K] [--only PART]...`
 (`--mutants`: mutants per class per entry, default 6; `--twin`: generated
-inputs per root, default 60; `--bin`: spawn this `ixcc` binary for
+inputs per root, default 60; `--words-every`: the words part runs the typed and byte
+machines on every K-th case, default 5; `--bin`: spawn this `ixcc` binary for
 the command-line part instead of running it in process; `--full`: every
 level at the test size, including the ones the default runs at a reduced
 size to fit the CI budget; `--only`: `cli`, `same`, `json`, `declines`, `reports`,
-`mutants`, `levels`, `twin`, `defun`). `tests-pipeline --level NAME LEVEL ARGS…` is
+`mutants`, `levels`, `twin`, `defun`, `words`). `tests-pipeline --level NAME LEVEL ARGS…` is
 the child-process mode of `Levels`. -/
 
 namespace IxCCTests.Pipeline.Run
@@ -55,6 +59,8 @@ structure Options where
   /-- The bench entries the levels part runs (default: all five). -/
   benches : List String := []
   progress : Bool := false
+  /-- The words part runs the machines on every `wordsEvery`-th case. -/
+  wordsEvery : Nat := 5
 
 def parseOptions : List String → Except String Options
   | [] => pure {}
@@ -71,6 +77,9 @@ def parseOptions : List String → Except String Options
     let some n := n.toNat? | throw s!"bad --seed {n}"
     return { (← parseOptions rest) with seed := n }
   | "--full" :: rest => do return { (← parseOptions rest) with full := true }
+  | "--words-every" :: n :: rest => do
+    let some n := n.toNat? | throw s!"bad --words-every {n}"
+    return { (← parseOptions rest) with wordsEvery := max n 1 }
   | "--progress" :: rest => do return { (← parseOptions rest) with progress := true }
   | "--bench" :: n :: rest => do
     let o ← parseOptions rest
@@ -121,6 +130,13 @@ def suite (a : Assert) (o : Options) (work : FilePath) : IO Unit := do
   if want "defun" then
     part a s!"the closures step under chosen middle-end schedules{natively}"
       (Defun.run a tools)
+  if want "words" then
+    part a s!"fixed-width words: the unboxing facts, each root compiled alone"
+      (Words.facts a)
+    part a s!"fixed-width words: each root compiled alone at every level{natively} (machines on every \
+      {o.wordsEvery}th case)"
+      (Words.levels a native o.wordsEvery)
+    part a "fixed-width words: the hint on the command line" (Words.cliHints a work)
 
 def main (args : List String) : IO UInt32 := do
   if let "--level" :: name :: level :: xs := args then

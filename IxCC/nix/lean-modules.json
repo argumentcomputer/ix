@@ -194,7 +194,8 @@
    "imports": ["IxCCTests.Src.Support", "IxCC.Src.Word"]},
   "IxCCTests.Src.WordRules":
   {"path": "IxCCTests/Src/WordRules.lean",
-   "imports": ["IxCCTests.Src.Steps", "IxCCTests.Support.Bound"]},
+   "imports":
+   ["IxCCTests.Src.Steps", "IxCCTests.Support.Bound", "IxCC.Lam.Erase.Val"]},
   "IxCCTests.Src.Table":
   {"path": "IxCCTests/Src/Table.lean",
    "imports": ["IxCCTests.Src.Support", "IxCC.Src.Table.Cert"]},
@@ -758,6 +759,9 @@
     "IxCCTests.Fences",
     "IxCCTests.Own.Plain.Suite",
     "IxCCTests.Cfg.Rc.Proofs"]},
+  "IxCCTests.Pipeline.Words":
+  {"path": "IxCCTests/Pipeline/Words.lean",
+   "imports": ["IxCCTests.Pipeline.Levels", "IxCC.Lam.Erase.Input"]},
   "IxCCTests.Pipeline.Twin":
   {"path": "IxCCTests/Pipeline/Twin.lean",
    "imports":
@@ -792,7 +796,8 @@
     "IxCCTests.Pipeline.Mutants",
     "IxCCTests.Pipeline.Levels",
     "IxCCTests.Pipeline.Twin",
-    "IxCCTests.Pipeline.Defun"]},
+    "IxCCTests.Pipeline.Defun",
+    "IxCCTests.Pipeline.Words"]},
   "IxCCTests.Pipeline.Rc.Wide":
   {"path": "IxCCTests/Pipeline/Rc/Wide.lean",
    "imports": ["IxCCTests.Pipeline.Rc.Support", "IxCCTests.Exe.Support"]},
@@ -6996,6 +7001,9 @@
    "imports": ["IxCC.Lam.Erase.Input", "IxCC.Lam.Semantics", "IxCC.Src.Value"]},
   "IxCC.Lam.Erase.Term":
   {"path": "IxCC/Lam/Erase/Term.lean", "imports": ["IxCC.Lam.Erase.Input"]},
+  "IxCC.Lam.Erase.Proof.Word":
+  {"path": "IxCC/Lam/Erase/Proof/Word.lean",
+   "imports": ["IxCC.Lam.Erase.Proof.Forms"]},
   "IxCC.Lam.Erase.Proof.WFTerm":
   {"path": "IxCC/Lam/Erase/Proof/WFTerm.lean",
    "imports": ["IxCC.Lam.Erase.Proof.WFBase", "IxCC.Lam.Erase.Proof.RegBuild"]},
@@ -7026,7 +7034,7 @@
    ["IxCC.Lam.Erase", "IxCC.Src.Proof.NatMap", "IxCC.Lam.Erase.Proof.Rel"]},
   "IxCC.Lam.Erase.Proof.SimTerm":
   {"path": "IxCC/Lam/Erase/Proof/SimTerm.lean",
-   "imports": ["IxCC.Lam.Erase.Proof.Proj"]},
+   "imports": ["IxCC.Lam.Erase.Proof.Proj", "IxCC.Lam.Erase.Proof.Word"]},
   "IxCC.Lam.Erase.Proof.SimBase":
   {"path": "IxCC/Lam/Erase/Proof/SimBase.lean",
    "imports":
@@ -7088,7 +7096,10 @@
    "imports": ["IxCC.Lam.Erase.Proof.BuildForms"]},
   "IxCC.Lam.Erase.Proof.BuildForms":
   {"path": "IxCC/Lam/Erase/Proof/BuildForms.lean",
-   "imports": ["IxCC.Lam.Erase.Proof.BuildArgs", "IxCC.Lam.Erase.Proof.Bind"]},
+   "imports":
+   ["IxCC.Lam.Erase.Proof.BuildArgs",
+    "IxCC.Lam.Erase.Proof.Bind",
+    "IxCC.Lam.Erase.Proof.Word"]},
   "IxCC.Lam.Erase.Proof.BuildBody":
   {"path": "IxCC/Lam/Erase/Proof/BuildBody.lean",
    "imports": ["IxCC.Lam.Erase.Proof.BuildTerm"]},

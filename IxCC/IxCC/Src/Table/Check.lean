@@ -16,9 +16,10 @@ structure Config where
   /-- The primitive operations with native lowering; others resolve
   through their `eqn` entry or kernel body. -/
   prims : List PrimOp := PrimOp.all
-  /-- Whether the fixed-width word operations are primitives (stage W1, `Table.Word`); until
-  their lowering exists, only SrcEval's tests and tools turn this on. -/
-  words : Bool := false
+  /-- Whether the fixed-width word operations are primitives (stage W1, `Table.Word`): a pinned
+  word operation the sidecar proposes with its stored equation becomes a `word` entry. On by
+  default; a closure compiled without `--word-equations` proposes none, so it has no word entry. -/
+  words : Bool := true
   /-- Node cap for `inline` entries. -/
   inlineCap : Nat := 256
   deriving Inhabited

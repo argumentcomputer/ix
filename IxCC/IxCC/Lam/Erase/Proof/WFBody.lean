@@ -148,6 +148,13 @@ theorem wrapR_wf {h : Head} {q : Profile} {t : Term} (hw : WrapR I G h q t) (hr 
     refine ⟨by simp [headArity, prim_arity], (wfList_iff).2 fun a ha => ?_⟩
     obtain ⟨i, hi, rfl⟩ := List.mem_map.1 ha
     exact wf_lvl (cx := wrapCx q _) (List.mem_range.1 hi)
+  | word e _ _ =>
+    subst e
+    refine wf_lams ?_
+    rw [Nat.zero_add, List.length_replicate]
+    refine ⟨by simp [headArity, Prim.arity], (wfList_iff).2 fun a ha => ?_⟩
+    obtain ⟨i, hi, rfl⟩ := List.mem_map.1 ha
+    exact wf_lvl (cx := wrapCx q _) (List.mem_range.1 hi)
   | other _ _ hs =>
     refine wf_lams ?_
     rw [Nat.zero_add, List.length_replicate]

@@ -542,7 +542,7 @@ def refusedFnParam {α : Type} (a : Assert) (label : String) (r : Except Err α)
 so that the recheck path and the verifiers can be shown to deal with it
 whatever a producer does. -/
 def produceUnchecked (cfg : Config) (inp : Input) : Except Err Cert := do
-  let ⟨table, _, _, ann, src, checked⟩ ← produceSource cfg inp
+  let ⟨table, _, _, ann, src, checked, _⟩ ← produceSource cfg inp
   let (lam, _) ← (IxCC.Lam.erase src checked).mapError Err.ofErase
   let trace ← (Anf.Pipeline.produce cfg.budgets lam).mapError fun m =>
     { stage := .anf, code := "anf.produce", message := m }

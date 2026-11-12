@@ -406,9 +406,10 @@ annotated twin measured against the plain one.
 
 ## DR2. Fixed-width integers and `Int`
 
-**Status: in progress** (Phase 3, stage W1: the word operations as primitives, tagged at run
-time). Implemented so far: the operations' exact meaning, SrcEval's rule, the pins, the stored
-equations and their table check, behind a switch that is off (below, "Stage W1").
+**Status: in progress** (Phase 3, stage W1 done: the word operations as primitives, tagged at run
+time; below, "Stage W1"). A closure compiled with `ix compile --equations --word-equations` runs
+its word operations as primitives; the grounding's word case, stage W2 (raw words) and `Int`
+remain.
 
 **Motivation.** BLAKE3 and `qsort` (K4); the bignum library's limbs; IxCK,
 whose executable closure uses `UInt64`, `UInt8`, `USize` and `Int`
@@ -417,7 +418,7 @@ throughout (occurrences in the 79 modules of the import closure of
 `UInt64` 219, `UInt8` 137, `Int` 70, `USize` 7); IxOS, where addresses and page-table
 entries are 64-bit words.
 
-**Current state.** No compiled program uses a fixed-width primitive yet. Erasure unboxes
+**Before stage W1** (and still, for a closure compiled without the word equations). Erasure unboxes
 single-field structures ([Relevance and
 erasure](compiler-design.md#relevance-and-erasure)), so `UInt64` (a structure
 over `BitVec 64`, over `Fin (2^64)`) arrives at Lir as a tagged `Nat`, and its operations compile
@@ -454,7 +455,7 @@ over `Nat`. No committed fixture exercises any of these types.
    large values use the bignum library (Phase 4).
 
 **Stage W1** (words as primitives, tagged at run time; the data-types plan's first stage). What
-exists, behind `Table.Config.words`, which is off, so no compile changes:
+exists (`Table.Config.words`, on by default):
 - the exact meaning `WordOp.eval` of every operation of `UInt8` to `UInt64`
   ([`Src/Word.lean`](../IxCC/Src/Word.lean)), tested against Lean's C implementations and, by the
   kernel's `decide`, against the reference bodies;
@@ -484,6 +485,19 @@ exists, behind `Table.Config.words`, which is off, so no compile changes:
   reduce to `Nat`'s decisions and never build `2^64`. A primitive decision would need, in the
   grounding, that every element of `Decidable p` in the model is one of its two constructors'
   images, which no law states;
+- erasure ([`Lam.Erase.wordForm`](../IxCC/Lam/Erase/Term.lean)): a `word` entry erases to the Lam
+  word primitive on its strict arguments, and its wrapper to the primitive over the wrapper's
+  binders. A tower erases to its number because its three constructors unbox at field 0;
+  erasure checks this per width, at the operation's width and at its result width
+  (`Input.wordUnboxAtB`), and declines (`erase-word`) where it fails. The relevance annotation
+  covers those constructors because a word entry lists them as its runtime references
+  (`Src.Program.runtimeRefs`; before, a root's program annotated only the constructors its
+  decisions match on, and the check failed on every root of the words fixture compiled alone).
+  The proof's relations carry the fact (`SatR.word`, `WrapR.word`), and F6w meets the primitive on
+  the towers' numbers (`Lam.Erase.Proof.word_value_sim`, through `vr_word` and `vr_mkWord`).
+  `tests-src` checks this on every harness case in each root's program compiled alone, and
+  `tests-pipeline` runs each root, compiled alone, at every level and natively against Lean's own
+  operations;
 - below Lam ([`Lam.Prim.word`](../IxCC/Lam/Syntax.lean)): the word primitive `word w op`, whose
   meaning `Lam.wordSem` is `eval`'s number on words below the width's size (`ofNat`'s argument
   any `Nat`) and is stuck elsewhere, as F6w is, so every pass below Lam owes agreement only in
@@ -527,21 +541,31 @@ isTrue h` and its `isFalse` twin, with `x < y`'s inhabitation from a `Bool` equa
 grounding case that uses them, a `Bool`-valued Lam word primitive and its lowering (a comparison
 of tagged words, as `natBlt`'s); it is a design of its own.
 
-Not yet: erasure's case (erasure declines a word entry, `erase-word`), and the grounding.
-The grounding check refuses a word entry (`Faith.noWord`, conjunct `noWord`, temporary): the word
-case of the fundamental lemma is not proved. Besides what the stored equations say (`mem` and
+**What stage W1 means for a user.** A closure compiled with `ix compile --equations
+--word-equations` runs its word operations as primitives (F6w, the Lam word primitive, Rt's tagged
+lowering). A closure compiled without the flag has no word entry: its word operations run their
+reference bodies, as before W1, and `ixcc compile` says so in one `hint:` line on standard error,
+naming the first operations the program reaches at run time (`--stats` prints each); the hint
+changes no object, certificate or exit status. A program with a word entry is outside the grounded
+fragment (`noWord`, below) until the grounding's word case is proved. A `UInt64` is native only
+below `2^63`, and the comparisons are reference bodies (the two limits above, as the
+[roadmap](roadmap.md) records).
+
+Not yet: the grounding. The grounding check refuses a word entry (`Faith.noWord`, conjunct
+`noWord`, temporary): the word case of the fundamental lemma is not proved. Besides what the stored equations say (`mem` and
 `eq_equality` make each hold in every model; `nat_accel` evaluates its right side), that case needs
 the result tower typed in the model: its constructors' stored types mention
 `OfNat.ofNat Nat 64 _`, `2 ^ w` through `HPow` and `LT.lt Nat instLTNat`, which no stored
 equation speaks of. The grounding's direct route decides them by its conversion (δ, `proj_ctor`,
 `nat_accel`; measured on the words closure), so no law or further stored theorem is expected.
 The input towers' range needs no fact: F6w reads only towers below the size. When that case is
-proved, `noWord` gives way to a check that every word entry's facts hold. Open for turning the
-switch on: `ix compile --word-equations` is opt-in (a closure reaches word operations through
+proved, `noWord` gives way to a check that every word entry's facts hold. Open:
+`ix compile --word-equations` is opt-in (a closure reaches word operations through
 proofs alone, an `omega` termination proof for one, so adding the equations by default would
 change closures that never run a word operation); whether `ix` should add them by itself for the
-word operations a closure reaches in positions that run is not decided, and until it is, the
-families that need word entries pass the flag.
+word operations a closure reaches in positions that run is not decided (an open item for the
+next piece), and until it is, the families that need word entries pass the flag. No registered
+family passes it today, so no registered program has a word entry.
 
 SrcEval needs one rule for raw words to be sound: a bounded construction
 whose erased proof is false (for example `UInt64.ofNatLT n h` with

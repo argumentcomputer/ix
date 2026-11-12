@@ -61,7 +61,14 @@ first-order signature discovery does not support the result type).
 `cfg`, `lir`, `xv`, `xl`, or `all`) to standard output; `--stats` prints
 the closure's envelope, constant root and role table address, the certified
 kernel's acceptance (records and tier constants), timings, sizes and the
-allocation outcomes.
+allocation outcomes, then each of the producer's word hints in full.
+
+When the program reaches a pinned primitive word operation at run time without a word entry
+(`Src.Table.wordHints`; it then runs the operation's reference body), `compile` prints one line
+on standard error (`Src.Table.wordHintLine`: how many, the first names, and how to get the
+equations that make them primitives, `Src.Table.wordEquationsAdvice`). It
+changes no object, certificate or exit status; nothing is printed when there is none, or when the
+certificate is read.
 
 Ingress runs the certified kernel's acceptance of the whole closure
 (`Src.KernelFront.accept`, the kernel's tiered entry; not optional): the
@@ -310,22 +317,22 @@ def execute (o : Options) : ExceptT Err IO Unit := do
   -- retry first and, if that fails at any stage, without it (each run is the
   -- proved composition at its own configuration)
   let produceRun := fun (cfg : Config) => show ExceptT Err IO _ from do
-    let ((cliCert, outcomes, policy), tProduce) ← timed do
+    let ((cliCert, outcomes, policy, hints), tProduce) ← timed do
       match o.cert with
       | some f =>
         let cc ← readCliCert f
         unless checkCanonicalRelevance cfg inp cc.base.table cc.base.relevance do
           throw { stage := .relevance, code := "relevance-canonical",
                   message := "certificate relevance annotation does not match canonical annotator output" }
-        pure (cc, none, none)
+        pure (cc, none, none, #[])
       | none =>
         match o.rc with
         | .off =>
           let p ← lift fun _ => produceWith cfg inp
-          pure (.zeroRc p.cert, some p.alloc, none)
+          pure (.zeroRc p.cert, some p.alloc, none, p.wordHints)
         | .on =>
           let p ← lift fun _ => RcReplay.produceWith cfg inp
-          pure (.plainRc p.cert, some p.alloc, none)
+          pure (.plainRc p.cert, some p.alloc, none, p.front.wordHints)
         | .auto =>
           -- `RcReplay.produceAuto`'s choice: plain RC when it is selected and its
           -- certificate is produced and replayed, else the immortal policy
@@ -333,25 +340,27 @@ def execute (o : Options) : ExceptT Err IO Unit := do
           match Own.Plain.selectRcPolicyForSrc front.src front.fir with
           | .zeroRc =>
             let p ← lift fun _ => RcReplay.finishZeroRcCert cfg front
-            pure (.zeroRc p.cert, some p.alloc, some "zero-rc")
+            pure (.zeroRc p.cert, some p.alloc, some "zero-rc", front.wordHints)
           | .plainRc =>
             match ← lift fun _ => .ok (RcReplay.producePlain cfg inp front) with
-            | .ok (p, _) => pure (.plainRc p.cert, some p.alloc, some "plain-rc")
+            | .ok (p, _) => pure (.plainRc p.cert, some p.alloc, some "plain-rc", front.wordHints)
             | .error reason =>
               let p ← lift fun _ => RcReplay.finishZeroRcCert cfg front
               pure (.zeroRc p.cert, some p.alloc,
-                some s!"immortal (plain RC refused: {reason.stage.name}: {reason.code}: {reason.message})")
+                some s!"immortal (plain RC refused: {reason.stage.name}: {reason.code}: {reason.message})",
+                front.wordHints)
     let (a, tRun) ← timed do
       match cliCert with
       | .zeroRc cert => lift fun _ => run cfg inp.program cert
       | .plainRc rcCert =>
         let rcArt ← lift fun _ => RcReplay.run cfg inp.program rcCert
         lift fun _ => rcArt.toRecheckArtifact rcCert
-    pure (cliCert, outcomes, policy, tProduce, a, tRun)
-  let (cliCert, outcomes, policy, tProduce, a, tRun) ←
+    pure (cliCert, outcomes, policy, tProduce, a, tRun, hints)
+  let (cliCert, outcomes, policy, tProduce, a, tRun, hints) ←
     if o.cert.isNone && cfg.budgets.retryInline then
       tryCatch (produceRun cfg) fun _ => produceRun cfg.noRetry
     else produceRun cfg
+  if let some l := Src.Table.wordHintLine hints then IO.eprintln l
   if let some f := o.out then
     write f do
       let tmp : FilePath := s!"{f}.tmp.{← IO.monoNanosNow}"
@@ -399,6 +408,7 @@ def execute (o : Options) : ExceptT Err IO Unit := do
       {cert.relevance.nodes.length} annotated terms, {cert.mid.steps.length} middle-end steps, \
       {cert.alloc.length} allocations, {cert.frames.length} frame layouts"
     for l in statsLines a outcomes do IO.println l
+    for d in hints do IO.println s!"hint: {d.message}"
 
 /-- The command line; the exit code. -/
 def main (args : List String) : IO UInt32 := do
