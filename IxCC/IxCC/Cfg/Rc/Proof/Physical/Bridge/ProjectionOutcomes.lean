@@ -1,6 +1,7 @@
 import IxCC.Cfg.Rc.Proof.Native.CodeRecursion
 import IxCC.Cfg.Rc.Proof.Owned.Admission
 import IxCC.Cfg.Rc.Proof.Physical.Bridge.ProjectionActivation
+import IxCC.Cfg.Rc.Proof.Physical.CallResume
 import IxCC.Cfg.Rc.Proof.Physical.Bridge.ScalarConsumed
 import IxCC.Cfg.Rc.Proof.Physical.Bridge.ScalarAdmission
 import IxCC.Cfg.Rc.Proof.Physical.Bridge.ScalarRuntime

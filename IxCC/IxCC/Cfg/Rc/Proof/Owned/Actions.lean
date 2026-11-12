@@ -1,4 +1,6 @@
 import IxCC.Cfg.Rc.Proof.Native.CodeRecursion
+import IxCC.Own.Plain.Proof.Owned.Actions
+import IxCC.Own.Plain.Proof.Owned.Inversion
 import IxCC.Cfg.Rc.Proof.Physical.CheckedPrefix
 import IxCC.Cfg.Rc.Proof.Physical.CopyStep
 import IxCC.Cfg.Rc.Proof.Physical.DropStep

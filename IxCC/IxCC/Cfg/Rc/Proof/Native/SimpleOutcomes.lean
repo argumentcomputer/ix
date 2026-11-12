@@ -1,5 +1,6 @@
 import IxCC.Cfg.Rc.Proof.Native.CodeRecursion
 import IxCC.Cfg.Rc.Proof.Native.ReturnActivation
+import IxCC.Cfg.Rc.Proof.Native.TrapCursor
 import IxCC.Fir.Proof.Unfold
 
 /-! The terminals and a join declaration over the typing context. `ret a` returns the only root

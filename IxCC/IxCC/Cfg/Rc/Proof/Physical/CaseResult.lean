@@ -1,6 +1,7 @@
 import IxCC.Cfg.Rc.Proof.Native.CodeRecursion
 import IxCC.Cfg.Rc.Proof.Physical.CaseEntry
 import IxCC.Cfg.Rc.Proof.Physical.CaseSelection
+import IxCC.Cfg.Rc.Proof.Ordinary
 import IxCC.Cfg.Rc.Proof.Physical.Admission
 import IxCC.Own.Plain.Proof.Owned.Inversion
 import IxCC.Own.Plain.Proof.Values
