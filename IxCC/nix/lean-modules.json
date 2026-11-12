@@ -904,6 +904,9 @@
   "IxCCTests.Own.Owned.Sites":
   {"path": "IxCCTests/Own/Owned/Sites.lean",
    "imports": ["IxCCTests.Own.Owned.Oracle", "IxCCTests.Own.Owned.Mutate"]},
+  "IxCCTests.Own.Owned.ScopeSet":
+  {"path": "IxCCTests/Own/Owned/ScopeSet.lean",
+   "imports": ["IxCC.Own.Plain.Check"]},
   "IxCCTests.Own.Owned.Oracle":
   {"path": "IxCCTests/Own/Owned/Oracle.lean",
    "imports": ["IxCCTests.Own.Owned.Interp", "IxCC.Rt.Readback"]},
@@ -915,6 +918,7 @@
    "imports":
    ["IxCCTests.Own.Owned.Live",
     "IxCCTests.Own.Owned.Sites",
+    "IxCCTests.Own.Owned.ScopeSet",
     "IxCCTests.Corpus.Manifest",
     "IxCC.Own.Plain.Certificate",
     "IxCC.Recheck.Rc.Produce",
@@ -3390,6 +3394,7 @@
     "IxCC.Own.Plain.Proof.RhsShape",
     "IxCC.Own.Plain.Proof.Scalars",
     "IxCC.Own.Plain.Proof.Scope",
+    "IxCC.Own.Plain.Proof.ScopeSet",
     "IxCC.Own.Plain.Proof.ShapeOps",
     "IxCC.Own.Plain.Proof.ShapeResult",
     "IxCC.Own.Plain.Proof.StackScope",
@@ -6678,6 +6683,8 @@
   {"path": "IxCC/Own/Plain/Semantics.lean",
    "imports":
    ["IxCC.Own.Plain.Program", "IxCC.Own.Rc.Release", "IxCC.Own.Semantics"]},
+  "IxCC.Own.Plain.ScopeSet":
+  {"path": "IxCC/Own/Plain/ScopeSet.lean", "imports": ["IxCC.Fir.Syntax"]},
   "IxCC.Own.Plain.Proof.Values":
   {"path": "IxCC/Own/Plain/Proof/Values.lean",
    "imports": ["IxCC.Own.Proof.Heap", "IxCC.Own.Semantics"]},
@@ -6693,6 +6700,9 @@
   "IxCC.Own.Plain.Proof.ShapeOps":
   {"path": "IxCC/Own/Plain/Proof/ShapeOps.lean",
    "imports": ["IxCC.Own.Plain.Proof.Bounds"]},
+  "IxCC.Own.Plain.Proof.ScopeSet":
+  {"path": "IxCC/Own/Plain/Proof/ScopeSet.lean",
+   "imports": ["IxCC.Own.Plain.Check", "IxCC.Own.Plain.ScopeSet"]},
   "IxCC.Own.Plain.Proof.Scope":
   {"path": "IxCC/Own/Plain/Proof/Scope.lean",
    "imports":
@@ -6878,7 +6888,8 @@
    "imports": ["IxCC.Own.Plain.Proof.CaptureRoots"]},
   "IxCC.Own.Plain.Proof.Admission":
   {"path": "IxCC/Own/Plain/Proof/Admission.lean",
-   "imports": ["IxCC.Own.Plain.Proof.Program"]},
+   "imports":
+   ["IxCC.Own.Plain.Proof.Program", "IxCC.Own.Plain.Proof.ScopeSet"]},
   "IxCC.Own.Plain.Proof.Actions":
   {"path": "IxCC/Own/Plain/Proof/Actions.lean",
    "imports":
@@ -6890,7 +6901,8 @@
   "IxCC.Own.Plain.Owned":
   {"path": "IxCC/Own/Plain/Owned.lean", "imports": ["IxCC.Own.Plain.Check"]},
   "IxCC.Own.Plain.Check":
-  {"path": "IxCC/Own/Plain/Check.lean", "imports": ["IxCC.Own.Plain.Program"]},
+  {"path": "IxCC/Own/Plain/Check.lean",
+   "imports": ["IxCC.Own.Plain.Program", "IxCC.Own.Plain.ScopeSet"]},
   "IxCC.Own.Plain.Certificate":
   {"path": "IxCC/Own/Plain/Certificate.lean",
    "imports":

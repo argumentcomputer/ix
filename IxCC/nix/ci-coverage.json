@@ -570,11 +570,13 @@
   "IxCC.Own.Plain.Proof.RhsShape",
   "IxCC.Own.Plain.Proof.Scalars",
   "IxCC.Own.Plain.Proof.Scope",
+  "IxCC.Own.Plain.Proof.ScopeSet",
   "IxCC.Own.Plain.Proof.ShapeOps",
   "IxCC.Own.Plain.Proof.ShapeResult",
   "IxCC.Own.Plain.Proof.StackScope",
   "IxCC.Own.Plain.Proof.Unfold",
   "IxCC.Own.Plain.Proof.Values",
+  "IxCC.Own.Plain.ScopeSet",
   "IxCC.Own.Plain.Semantics",
   "IxCC.Own.Plain.Syntax",
   "IxCC.Own.Proof.Heap",
@@ -1780,7 +1782,7 @@
  "38cfa81590de80f92178daa16500d44b8c805dbef8e51871635a0e09c1036361",
  "grounding_axiom_count": 189,
  "baseline":
- "jcb/ixcc-data: fixed-width words below Lam, stage W1 piece 2 landing A (the Lam word primitive, the Rt tagged lowering proved once against a heap-free core, both routes)",
+ "jcb/ixcc-heap-own: programDomain and contractProgramDomain over sets (Own/Plain/ScopeSet.lean), proved equal to the list forms",
  "axiom_sha256":
- "cdad40c3d56169fe04b07ac1bd6ada81ab344cef2137483d5654a628901eef78",
- "axiom_count": 6603}
+ "c71d9773a6e0279af4b9fbb8a2e98260ab9ac38114ef2b2345be62ea88e5c78e",
+ "axiom_count": 6619}

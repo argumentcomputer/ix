@@ -1,4 +1,5 @@
 import IxCC.Own.Plain.Proof.Program
+import IxCC.Own.Plain.Proof.ScopeSet
 
 /-! Derive the callee's actual numbered source body and checked scope from
 the canonical checker. A call arity lookup cannot authorize an unchecked
@@ -12,7 +13,7 @@ theorem programDomain_function {P : Fir.Program} (h : programDomain P = true)
     {f : Fir.FunId} {fd : Fir.Fun} (hf : f < P.size) (hd : P.fun? f = some fd) :
     funDomain fd = true ∧ fresh [] (fd.params.map (·.1)) = true ∧
       scopeOk (signatures P) (fd.params.map (·.1)) [] fd.body = true := by
-  unfold programDomain at h
+  rw [programDomain_eq_list] at h
   have he := List.all_eq_true.mp h f (List.mem_range.mpr hf)
   simpa only [hd, Bool.and_eq_true, and_assoc] using he
 
@@ -20,7 +21,7 @@ theorem contractProgramDomain_function {P : Fir.Program} (h : contractProgramDom
     {f : Fir.FunId} {fd : Fir.Fun} (hf : f < P.size) (hd : P.fun? f = some fd) :
     contractFunDomain fd = true ∧ fresh [] (fd.params.map (·.1)) = true ∧
       scopeOk (signatures P) (fd.params.map (·.1)) [] fd.body = true := by
-  unfold contractProgramDomain at h
+  rw [contractProgramDomain_eq_list] at h
   have he := List.all_eq_true.mp h f (List.mem_range.mpr hf)
   simpa only [hd, Bool.and_eq_true, and_assoc] using he
 
@@ -101,7 +102,7 @@ theorem signatures_normalizeProgramContracts (P : Fir.Program) :
 
 theorem programDomain_normalizeProgramContracts (P : Fir.Program) :
     programDomain (normalizeProgramContracts P) = contractProgramDomain P := by
-  unfold programDomain contractProgramDomain
+  rw [programDomain_eq_list, contractProgramDomain_eq_list]
   have hsz : (normalizeProgramContracts P).size = P.size := rfl
   rw [hsz, signatures_normalizeProgramContracts]
   refine congrArg ((List.range P.size).all ·) (funext fun f => ?_)
