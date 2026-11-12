@@ -543,7 +543,13 @@ data:
   emits the general runtime (`Rt.Rc.Gen`: allocation by layout, `Gen.dec`
   as the one release) for constructors of 1 to 254 scanned fields, within
   +1.6 % of the bounded route's executed instructions on every measured
-  program; the in-place reuse lemmas are next. **Open for stage 3** (inline fast paths): the
+  program; the in-place reuse lemmas are next. Stage 2 (the proved Own
+  checker), first landing: the checker `Own.Plain.checkOwned` over today's
+  syntax with refinement, reclamation and canonical acceptance proved, as a
+  library that nothing in production calls
+  ([DR1, "The ownership checker"](data-and-roots-design.md#the-ownership-checker));
+  next, the Cfg activation layer restated over its typing context and the
+  recheck switched to it, then a liveness placement. **Open for stage 3** (inline fast paths): the
   general release executes up to 3 Lir steps (4 x86 instructions) more per
   freed cell than the bounded route's for cells of fewer than three scanned
   fields, fewer for four or more (lists +3.2 % steps, +4.8 % instructions;

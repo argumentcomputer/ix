@@ -195,6 +195,13 @@ lean_exe «tests-own» where
 lean_exe «tests-own-plain» where
   root := `IxCCTests.Own.Plain.Main
 
+/- The ownership checker `Own.Plain.checkOwned` (heap stage 2; nothing in production calls it
+yet): the canonical and a liveness placement of every registered corpus root accepted and run
+under a refinement oracle, the six negative controls, and a site-directed mutation campaign whose
+accepted mutants must pass the oracle. -/
+lean_exe «tests-own-owned» where
+  root := `IxCCTests.Own.Owned.Main
+
 /- Shrinking and first-divergence reports for the generators: recorded
 choice sequences replay to the seeded cases, and a planted bug per generator
 (LamGen, FoGen, the Lir generator, the allocation mutants) is found, named at
