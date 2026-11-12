@@ -138,7 +138,7 @@ def checkBudget (budget : Nat) (bodies : Src.NatMap Code) : Except String Unit :
 
 theorem checkBudget_ok {budget : Nat} {bodies : Src.NatMap Code} :
     checkBudget budget bodies = .ok () ↔ capturedWork bodies ≤ budget := by
-  unfold checkBudget
+  simp only [checkBudget]
   split <;> simp_all
 
 def admit (F : Fir.Program) (j : Json) : Except String Program := do

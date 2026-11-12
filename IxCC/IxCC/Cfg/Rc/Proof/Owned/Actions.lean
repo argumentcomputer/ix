@@ -94,11 +94,15 @@ theorem evalActions_single {ρ : Own.Env} {H H' : Heap} {a : Own.Plain.Action}
   simp [Own.Plain.evalActions, h, Sem.Result.bind]
 
 /-- Same lookup, same action. -/
-theorem evalAction_congr {ρ ρ' : Own.Env} {H : Heap} {x : Fir.Var} {a : Own.Plain.Action}
-    (hx : a.var = x) (same : ρ.get? x = ρ'.get? x) :
-    Own.Plain.evalAction ρ H a = Own.Plain.evalAction ρ' H a := by
-  subst hx
-  cases a <;> simp only [Own.Plain.evalAction, Own.Plain.Action.var, same]
+theorem evalAction_inc_congr {ρ ρ' : Own.Env} {H : Heap} {x : Fir.Var} {n : Nat}
+    (same : ρ.get? x = ρ'.get? x) :
+    Own.Plain.evalAction ρ H (.inc x n) = Own.Plain.evalAction ρ' H (.inc x n) := by
+  simp only [Own.Plain.evalAction, same]
+
+theorem evalAction_dec_congr {ρ ρ' : Own.Env} {H : Heap} {x : Fir.Var}
+    (same : ρ.get? x = ρ'.get? x) :
+    Own.Plain.evalAction ρ H (.dec x) = Own.Plain.evalAction ρ' H (.dec x) := by
+  simp only [Own.Plain.evalAction, same]
 
 section
 variable {F : Fir.Program} {bodies : Src.NatMap Own.Plain.Code} {P : Program}
@@ -125,22 +129,24 @@ theorem physical_inc (admission : CodeAdmission F bodies P config pairs function
   have head' : source.rest = marker P.base.size first (.inc x 1) :: tail := by
     simpa [encodePrefix] using head
   have tokens : Tokens H external roots [] sourceEnv source.env [] :=
-    ⟨fun _ h => by cases h, rfl, Own.Rc.balance_hold.mp (by simpa using before.owned.counts),
+    ⟨(fun _ h => by cases h), rfl,
+      (Own.Rc.balance_hold (active := []) (held := roots)).mp (by simpa using before.owned.counts),
       List.nodup_nil⟩
   have ready : Gen.AllocatorReady maxClass H addresses memory (holdRoots external ([] ++ roots))
       context base bump limit slots lists := by simpa using heap.ready
   rcases copy_marker_step_of (Public.Spec.rawSource config P pairs) main before.frame.cursor head'
       before.frame.lookup tokens frameLookup permission ready before.frame.words
       (absent first (Nat.le_refl _)) before.running callers with stepped | failed
-  · obtain ⟨H'', mem', action, _, ready', trace, cursor', words', values⟩ := stepped
+  · obtain ⟨H₂, mem', action, _, ready', trace, cursor', words', values⟩ := stepped
     have same : Own.Plain.evalAction source.env H (.inc x 1) =
         Own.Plain.evalAction ownedEnv H (.inc x 1) :=
-      evalAction_congr rfl (by rw [frameLookup, ownLookup])
+      evalAction_inc_congr (by rw [frameLookup, ownLookup])
     rw [same, ownAction] at action
-    cases action
+    have eq : H' = H₂ := by injection action
+    subst eq
     have single := evalActions_single ownAction
-    have size : H''.size = H.size := actions_size single
-    have heap' : HeapState P pairs H'' addresses mem' external owned' context base bump limit
+    have size : H'.size = H.size := actions_size single
+    have heap' : HeapState P pairs H' addresses mem' external owned' context base bump limit
         regionBytes slots lists :=
       ⟨by rw [holdRoots_sameRefs refs]; simpa using ready', actions_heapOk heap.ordered single,
         heap.compatible.evalActions single, heap.extent⟩
@@ -148,7 +154,7 @@ theorem physical_inc (admission : CodeAdmission F bodies P config pairs function
         .ok (.bind first (.fir (.call P.base.size [.var x, .lit (.nat 1)]))) :=
       IxCC.Cfg.Rc.Proof.Physical.Bridge.consume_increment P (layoutOf P) first x
     have activation : ActivationOwned F P pairs
-        (Public.Spec.sourceStage P (Public.Spec.rawSource config P pairs) main) H'' addresses external
+        (Public.Spec.sourceStage P (Public.Spec.rawSource config P pairs) main) H' addresses external
         live Γ' Δ sourceEnv ownedEnv owned' lex sourceJoins ownedJoins k sourceFunction.vars function
         {source with rest := tail}
         {target with pos := target.pos+1, env := target.env.insert first 1, dsts := []} :=
@@ -157,9 +163,9 @@ theorem physical_inc (admission : CodeAdmission F bodies P config pairs function
           before.frame.compatible⟩,
         before.scope, rfl,
         consumed_call_done before.frame.lookup before.frame.cursor head' consuming source.env⟩
-    have history : HeapHistory H.size addresses H''.size addresses := ⟨by omega, fun _ _ => rfl⟩
+    have history : HeapHistory H.size addresses H'.size addresses := ⟨by omega, fun _ _ => rfl⟩
     exact ResultAt.prefix trace preserved history (by omega)
-      (next H'' addresses external live Γ' Δ sourceEnv ownedEnv owned' lex ownedJoins sourceFunction
+      (next H' addresses external live Γ' Δ sourceEnv ownedEnv owned' lex ownedJoins sourceFunction
         function {source with rest := tail}
         {target with pos := target.pos+1, env := target.env.insert first 1, dsts := []} mem'
         context base bump limit regionBytes slots lists callers sourceLookup activation heap')
@@ -197,28 +203,30 @@ theorem physical_dec (admission : CodeAdmission F bodies P config pairs function
         simp only [List.mem_singleton] at hy
         subst hy
         exact ⟨value, w, frameLookup, hw, den⟩,
-      by simp [Own.Plain.EnvRoots, frameLookup],
-      Own.Rc.balance_hold.mp ((refs.balance before.owned.counts)),
-      List.nodup_singleton x⟩
+      by simp [Own.Plain.EnvRoots, Own.evalArgs, Own.evalArg, frameLookup],
+      (Own.Rc.balance_hold (active := [value]) (held := owned')).mp
+        (by simpa using refs.balance before.owned.counts),
+      by simp⟩
   have ready : Gen.AllocatorReady maxClass H addresses memory (holdRoots external ([value] ++ owned'))
       context base bump limit slots lists := by
-    rw [← holdRoots_sameRefs refs]; exact heap.ready
+    rw [List.singleton_append, ← holdRoots_sameRefs refs]; exact heap.ready
   rcases drop_marker_step (Public.Spec.rawSource config P pairs) main before.frame.cursor head'
       before.frame.lookup tokens ready before.frame.words
       (absent first (Nat.le_refl _)) before.running callers with stepped | failed
-  · obtain ⟨value', remaining, H'', mem', slots', lists', charges, lookup', equal, action, _,
+  · obtain ⟨value', remaining, H₂, mem', slots', lists', charges, lookup', equal, action, _,
       ready', trace, cursor', words', _⟩ := stepped
     have same : Own.Plain.evalAction source.env H (.dec x) =
         Own.Plain.evalAction ownedEnv H (.dec x) :=
-      evalAction_congr rfl (by rw [frameLookup, ownLookup])
+      evalAction_dec_congr (by rw [frameLookup, ownLookup])
     rw [same, ownAction] at action
-    cases action
+    have eq : H' = H₂ := by injection action
+    subst eq
     obtain ⟨rfl, rfl⟩ : value' = value ∧ remaining = [] := by
       simp only [List.cons.injEq] at equal
       exact ⟨equal.1.symm, equal.2.symm⟩
     have single := evalActions_single ownAction
-    have size : H''.size = H.size := actions_size single
-    have heap' : HeapState P pairs H'' addresses mem' external owned' context base bump limit
+    have size : H'.size = H.size := actions_size single
+    have heap' : HeapState P pairs H' addresses mem' external owned' context base bump limit
         regionBytes slots' lists' :=
       ⟨by simpa using ready', actions_heapOk heap.ordered single,
         heap.compatible.evalActions single, heap.extent⟩
@@ -226,7 +234,7 @@ theorem physical_dec (admission : CodeAdmission F bodies P config pairs function
         .ok (.bind first (.fir (.call (P.base.size+1) [.var x]))) :=
       IxCC.Cfg.Rc.Proof.Physical.Bridge.consume_decrement P (layoutOf P) first x
     have activation : ActivationOwned F P pairs
-        (Public.Spec.sourceStage P (Public.Spec.rawSource config P pairs) main) H'' addresses external
+        (Public.Spec.sourceStage P (Public.Spec.rawSource config P pairs) main) H' addresses external
         live Γ' Δ sourceEnv ownedEnv owned' lex sourceJoins ownedJoins k sourceFunction.vars function
         {source with rest := tail}
         {target with pos := target.pos+1, env := target.env.insert first 1, dsts := []} :=
@@ -235,9 +243,9 @@ theorem physical_dec (admission : CodeAdmission F bodies P config pairs function
           before.frame.compatible⟩,
         before.scope, rfl,
         consumed_call_done before.frame.lookup before.frame.cursor head' consuming source.env⟩
-    have history : HeapHistory H.size addresses H''.size addresses := ⟨by omega, fun _ _ => rfl⟩
+    have history : HeapHistory H.size addresses H'.size addresses := ⟨by omega, fun _ _ => rfl⟩
     exact ResultAt.prefix trace preserved history (by omega)
-      (next H'' addresses external live Γ' Δ sourceEnv ownedEnv owned' lex ownedJoins sourceFunction
+      (next H' addresses external live Γ' Δ sourceEnv ownedEnv owned' lex ownedJoins sourceFunction
         function {source with rest := tail}
         {target with pos := target.pos+1, env := target.env.insert first 1, dsts := []} mem'
         context base bump limit regionBytes slots' lists' callers sourceLookup activation heap')
