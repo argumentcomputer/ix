@@ -86,11 +86,23 @@
 //! table lists its rows inline (`list(nats)`) and a polynomial is a tree,
 //! `poly = 0 nat | 1 nat | 2 poly poly | 3 poly poly | 4 poly poly`.
 //! Re-encoding a version 1 artifact writes version 2.
+//!
+//! [`WidePackage`] also reads opt-in package version 3. Its structure and
+//! semantic versions are unchanged, but each modulus and field constant is a
+//! [`FieldWord`]: a TagN count of zero to four little-endian u64 limbs, each
+//! also TagN. The high encoded limb must be nonzero; zero has no limbs.
+//! Instruction literals/guard values, table cells and polynomial constants
+//! use this encoding. Counts, indices, ranks and lengths remain TagN u64.
+//! Version 3 requires canonical field values below the modulus and matching
+//! program/trace moduli. It does not establish primality or executable program
+//! validity. Other envelopes and the current [`Package`] execution path still
+//! use versions 1 and 2; their default bytes and fingerprints are unchanged.
 use crate::{
   bytecode::{
     Binary, Constructor, Entry, Enum, Function, Instruction, Map, Program,
     Table, Type,
   },
+  field_word::FieldWord,
   hints::HintEntry,
   ixon::{Reader, Writer},
   library::io::{Invocation, Stream, Streams},
@@ -105,6 +117,8 @@ use pool::{Interner, Nodes, RowInterner, Rows};
 use std::{fmt, path::Path};
 
 mod pool;
+mod wide;
+pub use wide::WidePackage;
 
 /// A compiled program and, when circuits were exported, their trace plan.
 pub const PACKAGE_MAGIC: &[u8; 8] = b"IXAIURP\0";
@@ -116,8 +130,10 @@ pub const GROUPS_MAGIC: &[u8; 8] = b"IXAIURG\0";
 pub const INVOCATION_MAGIC: &[u8; 8] = b"IXAIURI\0";
 /// Labelled invocations with their expected verdicts (`test`, `cases`).
 pub const CASES_MAGIC: &[u8; 8] = b"IXAIURT\0";
-/// The artifact grammar's version that writers emit. Every magic shares it.
+/// The narrow artifact grammar emitted by the existing writers.
 pub const FORMAT_VERSION: u64 = 2;
+/// Opt-in package format with canonical field words up to 256 bits.
+pub const WIDE_FORMAT_VERSION: u64 = 3;
 /// The conventional file extension.
 pub const EXTENSION: &str = "ixa";
 
@@ -434,6 +450,75 @@ enum Version {
   V1,
   /// Polynomial nodes and table rows in pools ([`FORMAT_VERSION`]).
   V2,
+  /// Pooled packages with wide moduli and field constants.
+  V3,
+}
+
+/// Field words have their own encoding; structural lengths remain TagN u64.
+trait WireField:
+  Copy + Ord + std::hash::Hash + fmt::Debug + Default + From<u64>
+{
+  fn put(self, writer: &mut Writer);
+  fn read(reader: &mut Reader<'_>, format: Version) -> Result<Self, String>;
+}
+
+impl WireField for u64 {
+  fn put(self, writer: &mut Writer) {
+    writer.nat(self);
+  }
+  fn read(reader: &mut Reader<'_>, format: Version) -> Result<Self, String> {
+    if format == Version::V3 {
+      return Err(reader.error("artifact version 3 requires WidePackage; the execution backend is still 64-bit"));
+    }
+    reader.nat()
+  }
+}
+
+impl WireField for FieldWord {
+  fn put(self, writer: &mut Writer) {
+    self.write(writer);
+  }
+  fn read(reader: &mut Reader<'_>, format: Version) -> Result<Self, String> {
+    match format {
+      Version::V1 | Version::V2 => reader.nat().map(Self::from),
+      Version::V3 => Self::read(reader),
+    }
+  }
+}
+
+fn field_value<F: WireField>(
+  r: &mut Reader<'_>,
+  format: Version,
+  modulus: Option<F>,
+) -> Result<F, String> {
+  let value = F::read(r, format)?;
+  if modulus.is_some_and(|modulus| value >= modulus) {
+    return Err(r.error("field element is not below the modulus"));
+  }
+  Ok(value)
+}
+
+fn field_values<F: WireField>(
+  r: &mut Reader<'_>,
+  format: Version,
+  modulus: Option<F>,
+) -> Result<Vec<F>, String> {
+  r.list(|r| field_value(r, format, modulus))
+}
+
+fn put_field_values<F: WireField>(w: &mut Writer, values: &[F]) {
+  w.list(values, |w, &value| value.put(w));
+}
+
+fn field_modulus<F: WireField>(
+  r: &mut Reader<'_>,
+  format: Version,
+) -> Result<F, String> {
+  let modulus = F::read(r, format)?;
+  if format == Version::V3 && modulus < F::from(2) {
+    return Err(r.error("field modulus must be at least two"));
+  }
+  Ok(modulus)
 }
 
 fn header(r: &mut Reader<'_>, magic: &[u8; 8]) -> Result<Version, String> {
@@ -459,9 +544,17 @@ fn header(r: &mut Reader<'_>, magic: &[u8; 8]) -> Result<Version, String> {
   match r.nat()? {
     1 => Ok(Version::V1),
     FORMAT_VERSION => Ok(Version::V2),
-    version => Err(format!(
-      "unsupported Aiur artifact version {version} (expected 1 or {FORMAT_VERSION})"
-    )),
+    WIDE_FORMAT_VERSION if magic == PACKAGE_MAGIC => Ok(Version::V3),
+    version => {
+      let supported = if magic == PACKAGE_MAGIC {
+        "1, 2 or 3 (wide package)"
+      } else {
+        "1 or 2"
+      };
+      Err(format!(
+        "unsupported Aiur artifact version {version} (expected {supported})"
+      ))
+    },
   }
 }
 
@@ -563,23 +656,27 @@ fn io_type_depth(r: &mut Reader<'_>, depth: usize) -> Result<IoType, String> {
   })
 }
 
-fn put_tests(w: &mut Writer, tests: &[(usize, u64)]) {
+fn put_tests<F: WireField>(w: &mut Writer, tests: &[(usize, F)]) {
   w.list(tests, |w, &(register, value)| {
     w.usize(register);
-    w.nat(value);
+    value.put(w);
   });
 }
 
-fn tests(r: &mut Reader<'_>) -> Result<Vec<(usize, u64)>, String> {
-  r.list(|r| Ok((r.usize()?, r.nat()?)))
+fn tests<F: WireField>(
+  r: &mut Reader<'_>,
+  format: Version,
+  modulus: Option<F>,
+) -> Result<Vec<(usize, F)>, String> {
+  r.list(|r| Ok((r.usize()?, field_value(r, format, modulus)?)))
 }
 
-fn put_instruction(w: &mut Writer, op: &Instruction) {
+fn put_instruction<F: WireField>(w: &mut Writer, op: &Instruction<F>) {
   match op {
     Instruction::Literal { dest, value } => {
       w.u8(0);
       w.usize(*dest);
-      w.nat(*value);
+      (*value).put(w);
     },
     Instruction::Copy { dest, source } => {
       w.u8(1);
@@ -661,9 +758,16 @@ fn put_instruction(w: &mut Writer, op: &Instruction) {
   }
 }
 
-fn instruction(r: &mut Reader<'_>) -> Result<Instruction, String> {
+fn instruction<F: WireField>(
+  r: &mut Reader<'_>,
+  format: Version,
+  modulus: Option<F>,
+) -> Result<Instruction<F>, String> {
   Ok(match r.tag("instruction", 14)? {
-    0 => Instruction::Literal { dest: r.usize()?, value: r.nat()? },
+    0 => Instruction::Literal {
+      dest: r.usize()?,
+      value: field_value(r, format, modulus)?,
+    },
     1 => Instruction::Copy { dest: r.usizes()?, source: r.usizes()? },
     2 => Instruction::Neg { dest: r.usize()?, source: r.usize()? },
     3 => Instruction::Binary {
@@ -677,8 +781,14 @@ fn instruction(r: &mut Reader<'_>) -> Result<Instruction, String> {
       left: r.usize()?,
       right: r.usize()?,
     },
-    4 => Instruction::Guard { tests: tests(r)?, message: r.string()? },
-    5 => Instruction::Branch { tests: tests(r)?, otherwise: r.usize()? },
+    4 => Instruction::Guard {
+      tests: tests(r, format, modulus)?,
+      message: r.string()?,
+    },
+    5 => Instruction::Branch {
+      tests: tests(r, format, modulus)?,
+      otherwise: r.usize()?,
+    },
     6 => Instruction::Jump { target: r.usize()? },
     7 => Instruction::Call {
       function: r.usize()?,
@@ -713,9 +823,9 @@ fn instruction(r: &mut Reader<'_>) -> Result<Instruction, String> {
   })
 }
 
-fn put_program(w: &mut Writer, p: &Program) {
+fn put_program<F: WireField>(w: &mut Writer, p: &Program<F>) {
   w.nat(u64::from(p.version));
-  w.nat(p.modulus);
+  p.modulus.put(w);
   w.list(&p.functions, |w, f| {
     w.str(&f.name);
     w.list(&f.params, put_type);
@@ -800,9 +910,12 @@ pub fn program_bytes(p: &Program) -> Vec<u8> {
   w.into_bytes()
 }
 
-fn program(r: &mut Reader<'_>, format: Version) -> Result<Program, String> {
+fn program<F: WireField>(
+  r: &mut Reader<'_>,
+  format: Version,
+) -> Result<Program<F>, String> {
   let version = r.u32()?;
-  let modulus = r.nat()?;
+  let modulus = field_modulus(r, format)?;
   Ok(Program {
     version,
     modulus,
@@ -812,7 +925,9 @@ fn program(r: &mut Reader<'_>, format: Version) -> Result<Program, String> {
         params: r.list(ty)?,
         result: ty(r)?,
         registers: r.usize()?,
-        code: r.list(instruction)?,
+        code: r.list(|r| {
+          instruction(r, format, (format == Version::V3).then_some(modulus))
+        })?,
       })
     })?,
     enums: r.list(|r| {
@@ -828,11 +943,11 @@ fn program(r: &mut Reader<'_>, format: Version) -> Result<Program, String> {
         Ok(Table {
           name: r.string()?,
           r#type: ty(r)?,
-          rows: r.list(Reader::nats)?,
+          rows: r.list(|r| field_values(r, format, None))?,
         })
       })?,
-      Version::V2 => {
-        let mut rows = Rows::read(r, modulus)?;
+      Version::V2 | Version::V3 => {
+        let mut rows = Rows::read(r, modulus, format)?;
         r.list(|r| {
           Ok(Table { name: r.string()?, r#type: ty(r)?, rows: rows.table(r)? })
         })?
@@ -881,46 +996,49 @@ fn hint(r: &mut Reader<'_>) -> Result<HintEntry, String> {
 
 /// How a section reads its polynomials: as inline trees (version 1), or as
 /// root indices into the file's node pool.
-enum Polys {
+enum Polys<F = u64> {
   Trees,
-  Pool(Nodes),
+  Pool(Nodes<F>),
 }
 
-impl Polys {
+impl<F: WireField> Polys<F> {
   /// The node pool that starts a section of `format`, if it has one. Its
   /// constants must lie below `modulus` when one is given.
   fn read(
     r: &mut Reader<'_>,
     format: Version,
-    modulus: Option<u64>,
+    modulus: Option<F>,
   ) -> Result<Self, String> {
     Ok(match format {
       Version::V1 => Self::Trees,
-      Version::V2 => Self::Pool(Nodes::read(r, modulus)?),
+      Version::V2 | Version::V3 => Self::Pool(Nodes::read(r, modulus, format)?),
     })
   }
 
-  fn poly(&mut self, r: &mut Reader<'_>) -> Result<Polynomial, String> {
+  fn poly(&mut self, r: &mut Reader<'_>) -> Result<Polynomial<F>, String> {
     match self {
       Self::Trees => tree(r),
       Self::Pool(nodes) => nodes.poly(r),
     }
   }
 
-  fn polys(&mut self, r: &mut Reader<'_>) -> Result<Vec<Polynomial>, String> {
+  fn polys(
+    &mut self,
+    r: &mut Reader<'_>,
+  ) -> Result<Vec<Polynomial<F>>, String> {
     r.list(|r| self.poly(r))
   }
 }
 
 /// A version 1 polynomial tree. Polynomials can nest thousands deep (long
 /// sums), so this uses an explicit stack instead of recursion.
-fn tree(r: &mut Reader<'_>) -> Result<Polynomial, String> {
+fn tree<F: WireField>(r: &mut Reader<'_>) -> Result<Polynomial<F>, String> {
   // Each frame is an operator awaiting its operands, with its left operand
   // once that is complete.
-  let mut frames: Vec<(u8, Option<Polynomial>)> = vec![];
+  let mut frames: Vec<(u8, Option<Polynomial<F>>)> = vec![];
   loop {
     let mut done = match r.tag("polynomial", 5)? {
-      0 => Polynomial::Const(r.nat()?),
+      0 => Polynomial::Const(F::read(r, Version::V1)?),
       1 => Polynomial::Var(r.usize()?),
       op => {
         frames.push((op, None));
@@ -949,9 +1067,9 @@ fn tree(r: &mut Reader<'_>) -> Result<Polynomial, String> {
 
 /// Write `body`, whose polynomials are interned into `nodes`, after the
 /// node pool it references.
-fn put_with_nodes(
+fn put_with_nodes<F: WireField>(
   w: &mut Writer,
-  body: impl FnOnce(&mut Writer, &mut Interner),
+  body: impl FnOnce(&mut Writer, &mut Interner<F>),
 ) {
   let mut nodes = Interner::default();
   let mut section = Writer::new();
@@ -960,15 +1078,27 @@ fn put_with_nodes(
   w.raw(&section.into_bytes());
 }
 
-fn put_poly(w: &mut Writer, nodes: &mut Interner, p: &Polynomial) {
+fn put_poly<F: WireField>(
+  w: &mut Writer,
+  nodes: &mut Interner<F>,
+  p: &Polynomial<F>,
+) {
   w.usize(nodes.intern(p));
 }
 
-fn put_polys(w: &mut Writer, nodes: &mut Interner, ps: &[Polynomial]) {
+fn put_polys<F: WireField>(
+  w: &mut Writer,
+  nodes: &mut Interner<F>,
+  ps: &[Polynomial<F>],
+) {
   w.list(ps, |w, p| put_poly(w, nodes, p));
 }
 
-fn put_action(w: &mut Writer, nodes: &mut Interner, action: &Action) {
+fn put_action<F: WireField>(
+  w: &mut Writer,
+  nodes: &mut Interner<F>,
+  action: &Action<F>,
+) {
   match action {
     Action::Assign { dest, values } => {
       w.u8(0);
@@ -1020,7 +1150,10 @@ fn put_action(w: &mut Writer, nodes: &mut Interner, action: &Action) {
   }
 }
 
-fn action(r: &mut Reader<'_>, p: &mut Polys) -> Result<Action, String> {
+fn action<F: WireField>(
+  r: &mut Reader<'_>,
+  p: &mut Polys<F>,
+) -> Result<Action<F>, String> {
   Ok(match r.tag("action", 8)? {
     0 => Action::Assign { dest: r.usizes()?, values: p.polys(r)? },
     1 => Action::Inverse { dest: r.usize()?, value: p.poly(r)? },
@@ -1046,9 +1179,9 @@ fn action(r: &mut Reader<'_>, p: &mut Polys) -> Result<Action, String> {
   })
 }
 
-fn put_trace(w: &mut Writer, t: &TraceArtifact) {
+fn put_trace<F: WireField>(w: &mut Writer, t: &TraceArtifact<F>) {
   w.nat(u64::from(t.version));
-  w.nat(t.modulus);
+  t.modulus.put(w);
   w.usizes(&t.limbs);
   put_with_nodes(w, |w, nodes| {
     w.list(&t.functions, |w, f| {
@@ -1072,7 +1205,11 @@ fn put_trace(w: &mut Writer, t: &TraceArtifact) {
   });
 }
 
-fn put_chip(w: &mut Writer, nodes: &mut Interner, c: &Chip) {
+fn put_chip<F: WireField>(
+  w: &mut Writer,
+  nodes: &mut Interner<F>,
+  c: &Chip<F>,
+) {
   w.str(&c.name);
   w.usize(c.width);
   w.usize(c.activation);
@@ -1107,7 +1244,11 @@ fn put_chip(w: &mut Writer, nodes: &mut Interner, c: &Chip) {
   });
 }
 
-fn put_group(w: &mut Writer, nodes: &mut Interner, g: &FunctionGroup) {
+fn put_group<F: WireField>(
+  w: &mut Writer,
+  nodes: &mut Interner<F>,
+  g: &FunctionGroup<F>,
+) {
   w.str(&g.name);
   w.usize(g.width);
   put_poly(w, nodes, &g.activation);
@@ -1128,9 +1269,12 @@ fn put_group(w: &mut Writer, nodes: &mut Interner, g: &FunctionGroup) {
   });
 }
 
-fn trace(r: &mut Reader<'_>, format: Version) -> Result<TraceArtifact, String> {
+fn trace<F: WireField>(
+  r: &mut Reader<'_>,
+  format: Version,
+) -> Result<TraceArtifact<F>, String> {
   let version = r.u32()?;
-  let modulus = r.nat()?;
+  let modulus = field_modulus(r, format)?;
   let limbs = r.usizes()?;
   let mut p = Polys::read(r, format, Some(modulus))?;
   let functions = r.list(|r| {
@@ -1157,7 +1301,10 @@ fn trace(r: &mut Reader<'_>, format: Version) -> Result<TraceArtifact, String> {
   Ok(TraceArtifact { version, modulus, limbs, functions, chips, groups })
 }
 
-fn chip(r: &mut Reader<'_>, p: &mut Polys) -> Result<Chip, String> {
+fn chip<F: WireField>(
+  r: &mut Reader<'_>,
+  p: &mut Polys<F>,
+) -> Result<Chip<F>, String> {
   Ok(Chip {
     name: r.string()?,
     width: r.usize()?,
@@ -1196,7 +1343,10 @@ fn chip(r: &mut Reader<'_>, p: &mut Polys) -> Result<Chip, String> {
   })
 }
 
-fn group(r: &mut Reader<'_>, p: &mut Polys) -> Result<FunctionGroup, String> {
+fn group<F: WireField>(
+  r: &mut Reader<'_>,
+  p: &mut Polys<F>,
+) -> Result<FunctionGroup<F>, String> {
   Ok(FunctionGroup {
     name: r.string()?,
     width: r.usize()?,

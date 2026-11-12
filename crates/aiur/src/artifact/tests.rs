@@ -159,10 +159,18 @@ fn unknown_tags_and_out_of_range_values_are_rejected() {
   let checks: [(&[u8], Check, &str); 6] = [
     (&[4], |r| ty(r).map(drop), "type tag 4"),
     (&[5], |r| io_type(r).map(drop), "IO type tag 5"),
-    (&[14], |r| instruction(r).map(drop), "instruction tag 14"),
-    (&[3, 0, 4, 0, 0], |r| instruction(r).map(drop), "operator tag 4"),
-    (&[2, 1, 0, 5], |r| tree(r).map(drop), "polynomial tag 5"),
-    (&[8], |r| action(r, &mut Polys::Trees).map(drop), "action tag 8"),
+    (
+      &[14],
+      |r| instruction::<u64>(r, Version::V2, None).map(drop),
+      "instruction tag 14",
+    ),
+    (
+      &[3, 0, 4, 0, 0],
+      |r| instruction::<u64>(r, Version::V2, None).map(drop),
+      "operator tag 4",
+    ),
+    (&[2, 1, 0, 5], |r| tree::<u64>(r).map(drop), "polynomial tag 5"),
+    (&[8], |r| action::<u64>(r, &mut Polys::Trees).map(drop), "action tag 8"),
   ];
   for (bytes, f, message) in checks {
     let error = read(bytes, f).unwrap_err();
@@ -173,10 +181,14 @@ fn unknown_tags_and_out_of_range_values_are_rejected() {
   w.nat(u64::from(u32::MAX) + 1);
   let bytes = w.into_bytes();
   assert!(
-    program(&mut Reader::new(&bytes), Version::V2).unwrap_err().contains("u32")
+    program::<u64>(&mut Reader::new(&bytes), Version::V2)
+      .unwrap_err()
+      .contains("u32")
   );
   // An assertion's runtime check is a strict bool.
-  let error = instruction(&mut Reader::new(&[11, 0, 0, 0, 2])).unwrap_err();
+  let error =
+    instruction::<u64>(&mut Reader::new(&[11, 0, 0, 0, 2]), Version::V2, None)
+      .unwrap_err();
   assert!(error.contains("bool tag 2"), "{error}");
 }
 
@@ -222,7 +234,7 @@ fn mul(a: Polynomial, b: Polynomial) -> Polynomial {
 /// A pool read from complete `bytes`, with constants below 7.
 fn read_nodes(bytes: &[u8]) -> Result<Nodes, String> {
   let mut r = Reader::new(bytes);
-  let nodes = Nodes::read(&mut r, Some(7))?;
+  let nodes = Nodes::<u64>::read(&mut r, Some(7), Version::V2)?;
   r.finish()?;
   Ok(nodes)
 }
@@ -246,7 +258,7 @@ fn deep_polynomials_need_no_recursion() {
   put_tree(&mut w, &p);
   let bytes = w.into_bytes();
   let mut r = Reader::new(&bytes);
-  let from_tree = tree(&mut r).unwrap();
+  let from_tree = tree::<u64>(&mut r).unwrap();
   r.finish().unwrap();
   let mut again = Writer::new();
   put_tree(&mut again, &from_tree);
@@ -256,7 +268,9 @@ fn deep_polynomials_need_no_recursion() {
   let index = interner.intern(&p);
   let mut w = Writer::new();
   interner.put(&mut w);
-  let mut nodes = Nodes::read(&mut Reader::new(&w.into_bytes()), None).unwrap();
+  let mut nodes =
+    Nodes::<u64>::read(&mut Reader::new(&w.into_bytes()), None, Version::V2)
+      .unwrap();
   let from_pool = root(&mut nodes, u64::try_from(index).unwrap()).unwrap();
   let mut again = Writer::new();
   put_tree(&mut again, &from_pool);
@@ -367,9 +381,11 @@ fn pool_references_point_back_into_the_pool() {
   let error = decode_groups(&missing).unwrap_err();
   assert!(error.contains("root 1 is not one of the 1"), "{error}");
   // Table rows: values below the modulus, indices into the pool.
-  let error = Rows::read(&mut Reader::new(&[1, 1, 7]), 7).unwrap_err();
+  let error = Rows::<u64>::read(&mut Reader::new(&[1, 1, 7]), 7, Version::V2)
+    .unwrap_err();
   assert!(error.contains("table value 7"), "{error}");
-  let mut rows = Rows::read(&mut Reader::new(&[1, 1, 6]), 7).unwrap();
+  let mut rows =
+    Rows::<u64>::read(&mut Reader::new(&[1, 1, 6]), 7, Version::V2).unwrap();
   assert_eq!(
     rows.table(&mut Reader::new(&[2, 0, 0])).unwrap(),
     vec![vec![6], vec![6]]

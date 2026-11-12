@@ -376,9 +376,10 @@ moves inside the formalized compiler's scope.
   The Lean `modulus: Nat` signature does not make the encoding wide:
   `Execution/Encode.lean` rejects moduli at or above `2^64`, and `Ixon.lean`
   rejects such naturals before writing its UInt64 TagN. Trace constants have
-  the same bound. A versioned encoding must add wide field values while
-  keeping counts and indices bounded; the Rust reader and generated native
-  executors (`formal-generated`) also need the corresponding support.
+  the same bound. The opt-in version-three package codec now carries wide
+  field values while keeping counts and indices bounded (§12). Execution
+  inputs, hint values, runtime integration and generated native executors
+  (`formal-generated`) still need the corresponding support.
 
 **Lean.** Parameterize the verifier modules over a `GL` interface (§3.1); write
 `GL`, `Fq`, `G1`, `Kzg` and `Pairing` libraries, including the pairing's
@@ -664,3 +665,28 @@ of the new key. Existing default aggregation and recursion verification keys
 remain byte-identical after the native GL interface refactor. Their changed
 artifact identities and the acceptance-path fingerprint have separate review
 candidates, as the repository's pin gates require.
+
+## 12. Wide-field transport checkpoint
+
+The opt-in version-three package format can carry BN254-sized moduli and
+field constants from Lean to Rust. `Aiur.Artifact.packageWide` and the wide
+trace exporters write it; `aiur::artifact::WidePackage` reads and validates
+it. Existing Goldilocks writers still emit version two with identical bytes.
+
+A field word is a TagN limb count from zero to four followed by little-endian
+UInt64 limbs, also TagN encoded. Zero has no limbs, and the high encoded limb
+must be nonzero. Moduli must be in `[2, 2^256)` and field values below their
+modulus. Program and trace moduli must agree. Structural counts, indices,
+ranks and semantic versions retain their bounded UInt64 encoding.
+
+Focused Lean and Rust checks cover boundary values, malformed limbs,
+out-of-range constants, truncated inputs, pool references, metadata overflow
+and legacy byte compatibility. `Aiur/Examples/WideArtifact.lean` generates the
+checked cross-language fixture with the BN254 scalar modulus and wide values
+in instructions, tables and trace polynomials. It compiles integral Rat
+structure for transport testing; it is not a BN254 execution or proof.
+
+The current execution API deliberately rejects wide packages. Native Fr
+arithmetic, checked host-index conversions, wide invocation/hint values and a
+KZG trace adapter remain subsequent milestones. This checkpoint changes what
+the artifact can represent, not which field the existing interpreter runs.

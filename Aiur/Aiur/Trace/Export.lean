@@ -35,6 +35,8 @@ structure NodePool where
   bytes : ByteArray := .empty
   count : Nat := 0
   index : Std.HashMap (Nat × Nat × Nat) Nat := {}
+  fieldEncoding : FieldEncoding := .narrow
+  modulus : Option Nat := none
 
 /-- Writes a section whose polynomials share one `NodePool`. -/
 abbrev PoolM := StateT NodePool PutM
@@ -42,16 +44,30 @@ abbrev PoolM := StateT NodePool PutM
 /-- The index of the node with tag `tag` and fields `a` and `b` (a leaf's `b`
 is 0), added unless already present. -/
 def NodePool.node (tag a b : Nat) : PoolM Nat := do
-  unless a < 2 ^ 64 do throw s!"integer {a} exceeds UInt64"
-  modifyGetThe NodePool fun pool =>
-    match pool.index[(tag, a, b)]? with
-    | some i => (i, pool)
-    | none =>
-      let i := pool.count
-      let bytes := pool.bytes.push tag.toUInt8
-      let bytes := if tag < 2 then tagN0 bytes a.toUInt64
-        else tagN0 (tagN0 bytes (i - a).toUInt64) (i - b).toUInt64
-      (i, { bytes, count := i + 1, index := pool.index.insert (tag, a, b) i })
+  let encoding := (← getThe NodePool).fieldEncoding
+  if tag != 0 || encoding == .narrow then
+    unless a < 2 ^ 64 do throw s!"integer {a} exceeds UInt64"
+  match (← getThe NodePool).index[(tag, a, b)]? with
+  | some i => return i
+  | none =>
+    let i := (← getThe NodePool).count
+    let modulus := (← getThe NodePool).modulus
+    let putNode : PutM Unit := do
+      u8 tag.toUInt8
+      if tag == 0 then
+        match modulus with
+        | some modulus => encoding.putScalar modulus a
+        | none => encoding.put a
+      else if tag == 1 then nat a
+      else do nat (i - a); nat (i - b)
+    -- Validate in a small buffer without retaining a second reference to the
+    -- growing pool bytes; appending can then keep its linear allocation cost.
+    let node ← MonadExcept.ofExcept (Ixon.run putNode 40)
+    modifyThe NodePool fun pool => { pool with
+      bytes := pool.bytes.append node
+      count := i + 1
+      index := pool.index.insert (tag, a, b) i }
+    return i
 
 /-- The index of `p`'s root, adding the nodes not yet in the pool. -/
 def internPolynomial (encode : F → Nat) : Polynomial F → PoolM Nat
@@ -70,16 +86,22 @@ def internPolynomial (encode : F → Nat) : Polynomial F → PoolM Nat
     let ib ← internPolynomial encode b
     NodePool.node 4 ia ib
 
-/-- `body` after the node pool its polynomials reference. -/
-def withNodes (body : PoolM Unit) : PutM Unit := do
+/-- `body` after the node pool its polynomials reference. Only constant
+payloads use the selected field encoding; variables and backreferences stay TagN. -/
+def withNodesWithEncoding (encoding : FieldEncoding) (body : PoolM Unit)
+    (modulus : Option Nat := none) : PutM Unit := do
   let outer ← getThe ByteArray
   modifyThe ByteArray fun _ => ByteArray.emptyWithCapacity (1 <<< 16)
-  let (_, pool) ← body.run {}
+  let (_, pool) ← body.run { fieldEncoding := encoding, modulus }
   let inner ← getThe ByteArray
   modifyThe ByteArray fun _ => outer
   nat pool.count
   raw pool.bytes
   raw inner
+
+/-- Version-two polynomial node encoding. -/
+def withNodes (body : PoolM Unit) : PutM Unit :=
+  withNodesWithEncoding .narrow body
 
 /-- `Ixon.list` over `PoolM`. -/
 @[specialize] def listP (xs : List α) (item : α → PoolM Unit) : PoolM Unit := do
@@ -290,7 +312,8 @@ def putDepth (cfg : Depth.Config) (source : Circuit.Chip F) : PutM Unit := do
 the activated depth circuits (`Depth.system` of the physical circuits), and
 the checked function groups over them. It also returns `exported` with the
 range maps (`depthBytecode`), which the package must carry. -/
-def exportPreparedPlan [Field F] [DecidableEq F] (modulus : Nat) (encode : F → Nat)
+def exportPreparedPlanWithEncoding [Field F] [DecidableEq F] (encoding : FieldEncoding)
+    (modulus : Nat) (encode : F → Nat)
     (program : Program F) (artifact : Optimized.Artifact F) (physical : Physical.Prepared artifact)
     (exported : Execution.Export F) (groups : List (String × List String) := [])
     (replays : Option (List (Except String (Replay F))) := none) :
@@ -324,9 +347,9 @@ def exportPreparedPlan [Field F] [DecidableEq F] (modulus : Nat) (encode : F →
     throw "an ungrouped chip is not well-formed before or after activation (Plan.WellFormedActivation)"
   let trace ← Ixon.run do
     nat planVersion
-    nat modulus
+    encoding.putModulus modulus
     nats cfg.limbs
-    withNodes do
+    withNodesWithEncoding encoding (modulus := some modulus) do
       listP ((program.functions.zip artifact.layouts).zip original.functions).zipIdx
           fun (((fn, layout), code), index) => do
         unless fn.name == code.name do throw "trace bytecode function order mismatch"
@@ -341,18 +364,35 @@ def exportPreparedPlan [Field F] [DecidableEq F] (modulus : Nat) (encode : F →
       listP plan.groups fun p => putGroup encode p.checked.layout
   return ({ exported with bytecode }, trace)
 
+/-- The version-two trace section with UInt64 field values. -/
+def exportPreparedPlan [Field F] [DecidableEq F] (modulus : Nat) (encode : F → Nat)
+    (program : Program F) (artifact : Optimized.Artifact F) (physical : Physical.Prepared artifact)
+    (exported : Execution.Export F) (groups : List (String × List String) := [])
+    (replays : Option (List (Except String (Replay F))) := none) :
+    Except String (Execution.Export F × ByteArray) :=
+  exportPreparedPlanWithEncoding .narrow modulus encode program artifact physical exported groups replays
+
 /-- `exportPreparedPlan` after physical deduplication of `artifact`. -/
 def exportPlan [Field F] [DecidableEq F] (modulus : Nat) (encode : F → Nat)
     (program : Program F) (artifact : Optimized.Artifact F) (exported : Execution.Export F)
     (groups : List (String × List String) := []) : Except String (Execution.Export F × ByteArray) := do
   exportPreparedPlan modulus encode program artifact (← Physical.prepare artifact) exported groups
 
+/-- A trace section for a version-three wide-field package. The caller must
+pair it with `Artifact.packageWide`, which selects the corresponding decoder. -/
+def exportPlanWide [Field F] [DecidableEq F] (modulus : Nat) (encode : F → Nat)
+    (program : Program F) (artifact : Optimized.Artifact F) (exported : Execution.Export F)
+    (groups : List (String × List String) := []) : Except String (Execution.Export F × ByteArray) := do
+  exportPreparedPlanWithEncoding .wide modulus encode program artifact
+    (← Physical.prepare artifact) exported groups
+
 /-- `exportPlan` of the generic program `source` with entries `entries`, as
 `Generic.Specialized.compileOptimized` compiles it, using every core: the
 certified layouts come from `compileParallel` (proven equal to
 `Optimized.compile`), and the population replays run alongside it, one task
 per function. -/
-def exportPlanParallel [Field F] [DecidableEq F] (modulus : Nat) (encode : F → Nat)
+def exportPlanParallelWithEncoding [Field F] [DecidableEq F] (encoding : FieldEncoding)
+    (modulus : Nat) (encode : F → Nat)
     (source : Generic.Source F) (entries : List String) (exported : Execution.Export F)
     (groups : List (String × List String) := []) (config : Config := {}) :
     IO (Execution.Export F × ByteArray) := do
@@ -364,7 +404,21 @@ def exportPlanParallel [Field F] [DecidableEq F] (modulus : Nat) (encode : F →
   let artifact ← IO.ofExcept (compileParallel program entries config)
   let physical ← IO.ofExcept (Physical.prepare artifact)
   let replays ← replays.mapM fun replay => do IO.ofExcept (← IO.wait replay)
-  IO.ofExcept (exportPreparedPlan modulus encode program artifact physical exported groups
+  IO.ofExcept (exportPreparedPlanWithEncoding encoding modulus encode program artifact physical exported groups
     (some replays))
+
+/-- Parallel export with the default version-two field encoding. -/
+def exportPlanParallel [Field F] [DecidableEq F] (modulus : Nat) (encode : F → Nat)
+    (source : Generic.Source F) (entries : List String) (exported : Execution.Export F)
+    (groups : List (String × List String) := []) (config : Config := {}) :
+    IO (Execution.Export F × ByteArray) :=
+  exportPlanParallelWithEncoding .narrow modulus encode source entries exported groups config
+
+/-- Parallel export for an explicitly selected version-three wide package. -/
+def exportPlanParallelWide [Field F] [DecidableEq F] (modulus : Nat) (encode : F → Nat)
+    (source : Generic.Source F) (entries : List String) (exported : Execution.Export F)
+    (groups : List (String × List String) := []) (config : Config := {}) :
+    IO (Execution.Export F × ByteArray) :=
+  exportPlanParallelWithEncoding .wide modulus encode source entries exported groups config
 
 end Aiur.Trace

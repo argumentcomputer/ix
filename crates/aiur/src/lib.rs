@@ -8,6 +8,7 @@ pub mod bytecode;
 pub mod execute;
 mod ffi;
 pub mod field;
+pub mod field_word;
 #[cfg(feature = "function-profile")]
 pub mod function_profile;
 pub mod hints;
@@ -26,3 +27,4 @@ pub mod value;
 
 pub use bytecode::Program;
 pub use execute::{Execution, ExecutionError, QueryInput, QueryOutput};
+pub use field_word::FieldWord;

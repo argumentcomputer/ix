@@ -16,7 +16,9 @@ distinct table rows precede its tables, which name rows by index
 grouping precede it, which names each polynomial by its root node
 (`Trace.withNodes`). Both pools list entries in first-reference order, so an
 artifact has one encoding. The Rust reader also accepts version 1, which
-writes rows and polynomial trees inline.
+writes rows and polynomial trees inline. `packageWide` explicitly selects
+version 3: the same pooled structure, with up to four UInt64 limbs for the
+modulus and field constants. Invocation and hint encodings remain narrow.
 
 An artifact's identity is the BLAKE3 digest of its file. The Aiur package has
 no BLAKE3, so the hosts compute it: Rust on every load, and `ix` when it
@@ -28,22 +30,36 @@ open Aiur.Ixon Execution
 def packageMagic : ByteArray := "IXAIURP\x00".toUTF8
 def executionMagic : ByteArray := "IXAIURX\x00".toUTF8
 def groupsMagic : ByteArray := "IXAIURG\x00".toUTF8
-/-- The artifact grammar's version that the writers emit, shared by every magic. -/
+/-- The default grammar version for the existing artifact writers. -/
 def formatVersion : Nat := 2
+/-- Opt-in package grammar with canonical field integers of at most 256 bits. -/
+def wideFormatVersion : Nat := 3
 /-- The conventional file extension. -/
 def extension : String := "ixa"
 
-def putPackage (exported : Export F) (modulus : Nat) (encode : F → Nat)
+def putPackageWithEncoding (encoding : FieldEncoding) (exported : Export F)
+    (modulus : Nat) (encode : F → Nat)
     (trace : Option ByteArray) : PutM Unit := do
   raw packageMagic
-  nat formatVersion
-  exported.putProgram modulus encode
+  nat (match encoding with | .narrow => formatVersion | .wide => wideFormatVersion)
+  exported.putProgramWithEncoding encoding modulus encode
   option trace raw
+
+def putPackage (exported : Export F) (modulus : Nat) (encode : F → Nat)
+    (trace : Option ByteArray) : PutM Unit :=
+  putPackageWithEncoding .narrow exported modulus encode trace
 
 /-- A compiled package. `trace` is a trace section from `Trace.exportPlan`. -/
 def package (exported : Export F) (modulus : Nat) (encode : F → Nat)
     (trace : Option ByteArray := none) : Except String ByteArray :=
   Ixon.run (putPackage exported modulus encode trace)
+
+/-- A wide-field transport package. `trace`, when present, must come from
+`Trace.exportPlanWide` or `Trace.exportPlanParallelWide`. This format does not
+provide wide invocation, hint or interpreter support. -/
+def packageWide (exported : Export F) (modulus : Nat) (encode : F → Nat)
+    (trace : Option ByteArray := none) : Except String ByteArray :=
+  Ixon.run (putPackageWithEncoding .wide exported modulus encode trace)
 
 /-- A package with one invocation: its arguments, an input the program must
 reject (or none), and prepared data hints. -/

@@ -22,12 +22,12 @@ mod tests;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum Polynomial {
-  Const(u64),
+pub enum Polynomial<F = u64> {
+  Const(F),
   Var(usize),
-  Add(Box<[Polynomial; 2]>),
-  Sub(Box<[Polynomial; 2]>),
-  Mul(Box<[Polynomial; 2]>),
+  Add(Box<[Polynomial<F>; 2]>),
+  Sub(Box<[Polynomial<F>; 2]>),
+  Mul(Box<[Polynomial<F>; 2]>),
 }
 
 impl Polynomial {
@@ -83,36 +83,36 @@ impl Polynomial {
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
-pub enum Action {
+pub enum Action<F = u64> {
   Assign {
     dest: Vec<usize>,
-    values: Vec<Polynomial>,
+    values: Vec<Polynomial<F>>,
   },
   Inverse {
     dest: usize,
-    value: Polynomial,
+    value: Polynomial<F>,
   },
   Choose {
     dest: Vec<usize>,
-    tests: Vec<Vec<Polynomial>>,
+    tests: Vec<Vec<Polynomial<F>>>,
   },
   Failure {
     dest: Vec<usize>,
-    differences: Vec<Polynomial>,
+    differences: Vec<Polynomial<F>>,
   },
   Call {
     name: String,
-    args: Vec<Polynomial>,
+    args: Vec<Polynomial<F>>,
     dest: Vec<usize>,
   },
   Store {
     r#type: Type,
-    values: Vec<Polynomial>,
+    values: Vec<Polynomial<F>>,
     dest: usize,
   },
   Load {
     r#type: Type,
-    address: Polynomial,
+    address: Polynomial<F>,
     dest: Vec<usize>,
   },
   Hint {
@@ -121,7 +121,7 @@ pub enum Action {
     instruction: usize,
     r#type: Type,
     key_type: Type,
-    key: Vec<Polynomial>,
+    key: Vec<Polynomial<F>>,
     dest: Vec<usize>,
   },
 }
@@ -156,51 +156,51 @@ impl Action {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
-pub struct PopulationStep {
-  pub guard: Polynomial,
-  pub action: Action,
+pub struct PopulationStep<F = u64> {
+  pub guard: Polynomial<F>,
+  pub action: Action<F>,
 }
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
-pub struct ColumnWrite {
+pub struct ColumnWrite<F = u64> {
   pub column: usize,
   pub source: usize,
-  pub guard: Polynomial,
+  pub guard: Polynomial<F>,
 }
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
-pub struct FunctionPlan {
+pub struct FunctionPlan<F = u64> {
   pub name: String,
   pub chip: String,
   pub witnesses: usize,
   pub inputs: Vec<usize>,
   pub output: Vec<usize>,
-  pub steps: Vec<PopulationStep>,
-  pub writes: Vec<ColumnWrite>,
+  pub steps: Vec<PopulationStep<F>>,
+  pub writes: Vec<ColumnWrite<F>>,
 }
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
-pub struct Send {
+pub struct Send<F = u64> {
   pub channel: String,
-  pub args: Vec<Polynomial>,
+  pub args: Vec<Polynomial<F>>,
   pub result: Vec<usize>,
-  pub enable: Polynomial,
+  pub enable: Polynomial<F>,
 }
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
-pub struct MemoryLookup {
+pub struct MemoryLookup<F = u64> {
   pub r#type: Type,
-  pub address: Polynomial,
-  pub values: Vec<Polynomial>,
-  pub enable: Polynomial,
+  pub address: Polynomial<F>,
+  pub values: Vec<Polynomial<F>>,
+  pub enable: Polynomial<F>,
 }
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
-pub struct Chip {
+pub struct Chip<F = u64> {
   pub name: String,
   pub width: usize,
   /// The last physical column is the proved row-activation selector.
   pub activation: usize,
   pub inputs: Vec<usize>,
-  pub output: Vec<Polynomial>,
-  pub constraints: Vec<Polynomial>,
-  pub sends: Vec<Send>,
-  pub memory: Vec<MemoryLookup>,
+  pub output: Vec<Polynomial<F>>,
+  pub constraints: Vec<Polynomial<F>>,
+  pub sends: Vec<Send<F>>,
+  pub memory: Vec<MemoryLookup<F>>,
   /// How the depth pass (Track A, H1) extended this circuit. Absent for a
   /// hand-written circuit: no depth column and only plain slots.
   #[serde(default)]
@@ -240,50 +240,50 @@ pub struct ChipDepth {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
-pub struct TraceArtifact {
+pub struct TraceArtifact<F = u64> {
   pub version: u32,
-  pub modulus: u64,
+  pub modulus: F,
   /// Bit widths of the gap limbs, low limb first (`[16, 8]`: gaps below
   /// `2^24`). Each width `w` has the fixed map `Depth::range{w}`.
   #[serde(default)]
   pub limbs: Vec<usize>,
-  pub functions: Vec<FunctionPlan>,
-  pub chips: Vec<Chip>,
+  pub functions: Vec<FunctionPlan<F>>,
+  pub chips: Vec<Chip<F>>,
   /// Physical function groups emitted by the Lean layout pass. Clearing this
   /// list selects the identical logical program with singleton circuits.
   #[serde(default)]
-  pub groups: Vec<FunctionGroup>,
+  pub groups: Vec<FunctionGroup<F>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct GroupWrite {
+pub struct GroupWrite<F = u64> {
   pub column: usize,
-  pub value: Polynomial,
+  pub value: Polynomial<F>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
-pub struct GroupMember {
+pub struct GroupMember<F = u64> {
   pub name: String,
   pub columns: Vec<usize>,
   pub selector: usize,
-  pub writes: Vec<GroupWrite>,
+  pub writes: Vec<GroupWrite<F>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
-pub struct GroupLookup {
-  pub enable: Polynomial,
-  pub args: Vec<Polynomial>,
+pub struct GroupLookup<F = u64> {
+  pub enable: Polynomial<F>,
+  pub args: Vec<Polynomial<F>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
-pub struct FunctionGroup {
+pub struct FunctionGroup<F = u64> {
   pub name: String,
   pub width: usize,
-  pub activation: Polynomial,
-  pub constraints: Vec<Polynomial>,
-  pub receive: Vec<Polynomial>,
-  pub sends: Vec<GroupLookup>,
-  pub members: Vec<GroupMember>,
+  pub activation: Polynomial<F>,
+  pub constraints: Vec<Polynomial<F>>,
+  pub receive: Vec<Polynomial<F>>,
+  pub sends: Vec<GroupLookup<F>>,
+  pub members: Vec<GroupMember<F>>,
 }
 
 /// Where one function's logical columns land in its physical circuit. A

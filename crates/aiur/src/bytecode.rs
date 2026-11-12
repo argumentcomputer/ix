@@ -163,10 +163,10 @@ pub struct Function<F = u64> {
   pub code: Vec<Instruction<F>>,
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Table {
+pub struct Table<F = u64> {
   pub name: String,
   pub r#type: Type,
-  pub rows: Vec<Vec<u64>>,
+  pub rows: Vec<Vec<F>>,
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Map {
@@ -186,12 +186,12 @@ pub struct Entry {
   pub output: Option<IoType>,
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Program {
+pub struct Program<F = u64> {
   pub version: u32,
-  pub modulus: u64,
-  pub functions: Vec<Function>,
+  pub modulus: F,
+  pub functions: Vec<Function<F>>,
   pub enums: Vec<Enum>,
-  pub tables: Vec<Table>,
+  pub tables: Vec<Table<F>>,
   pub maps: Vec<Map>,
   pub entries: Vec<Entry>,
 }

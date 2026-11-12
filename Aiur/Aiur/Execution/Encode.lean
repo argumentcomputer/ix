@@ -1,5 +1,6 @@
 import Aiur.Execution.Hints
 import Aiur.Ixon
+import Aiur.Ixon.Field
 import Std.Data.HashMap
 
 /-! Ixon encodings of execution bytecode and data hints. The grammar is
@@ -37,19 +38,20 @@ partial def putIOType : IOType → PutM Unit
       u8 4; str name
       list constructors fun (constructor, fields) => do str constructor; list fields putIOType
 
-private def putTests (encode : F → Nat) (tests : List (Register × F)) : PutM Unit :=
-  list tests fun (register, value) => do nat register; nat (encode value)
+private def putTestsWith (putScalar : Nat → PutM Unit) (encode : F → Nat)
+    (tests : List (Register × F)) : PutM Unit :=
+  list tests fun (register, value) => do nat register; putScalar (encode value)
 
-def putInstruction (encode : F → Nat) : Instruction F → PutM Unit
-  | .literal dest value => do u8 0; nat dest; nat (encode value)
+def putInstructionWith (putScalar : Nat → PutM Unit) (encode : F → Nat) : Instruction F → PutM Unit
+  | .literal dest value => do u8 0; nat dest; putScalar (encode value)
   | .copy dest source => do u8 1; nats dest; nats source
   | .neg dest source => do u8 2; nat dest; nat source
   | .binary dest op left right => do
       u8 3; nat dest
       u8 (match op with | .add => 0 | .sub => 1 | .mul => 2 | .div => 3)
       nat left; nat right
-  | .guard tests message => do u8 4; putTests encode tests; str message
-  | .branch tests target => do u8 5; putTests encode tests; nat target
+  | .guard tests message => do u8 4; putTestsWith putScalar encode tests; str message
+  | .branch tests target => do u8 5; putTestsWith putScalar encode tests; nat target
   | .jump target => do u8 6; nat target
   | .call function args dest => do u8 7; nat function; nats args; nats dest
   | .store type value dest => do u8 8; putTy type; nats value; nat dest
@@ -62,6 +64,9 @@ def putInstruction (encode : F → Nat) : Instruction F → PutM Unit
       bool assertion.runtimeCheck
   | .ret value => do u8 12; nats value
   | .fail message => do u8 13; str message
+
+def putInstruction (encode : F → Nat) : Instruction F → PutM Unit :=
+  putInstructionWith nat encode
 
 def putHint (encode : F → Nat) (entry : FlatHintEntry F) : PutM Unit := do
   str entry.channel
@@ -93,25 +98,26 @@ def rowPool (tables : List (List (List Nat))) : Array (List Nat) × List (List N
     indices := indices.push refs.toList
   return (rows, indices.toList)
 
-/-- The program section of an artifact. The Rust field backend supports
-primes fitting UInt64; the bytecode compiler itself is field-generic. -/
-def Export.putProgram (exported : Export F) (modulus : Nat) (encode : F → Nat) :
+/-- The program section with an explicit scalar encoding. Counts, references
+and semantics versions retain their ordinary TagN representation. -/
+def Export.putProgramWithEncoding (exported : Export F) (encoding : FieldEncoding)
+    (modulus : Nat) (encode : F → Nat) :
     PutM Unit := do
-  if modulus < 2 || modulus ≥ 2^64 then throw "execution requires a prime modulus fitting UInt64"
   let code := exported.bytecode
   nat bytecodeVersion
-  nat modulus
+  encoding.putModulus modulus
+  let putScalar := encoding.putScalar modulus
   list code.functions fun fn => do
     str fn.name
     list fn.params putTy
     putTy fn.result
     nat fn.registers
-    array fn.code (putInstruction encode)
+    array fn.code (putInstructionWith putScalar encode)
   list code.enums fun decl => do
     str decl.name
     list decl.constructors fun c => do str c.name; list c.fields putTy
   let (rows, indices) := rowPool (code.tables.map fun table => table.rows.map (·.map encode))
-  array rows nats
+  array rows fun row => list row putScalar
   list (code.tables.zip indices) fun (table, indices) => do
     str table.name
     putTy table.type
@@ -129,5 +135,10 @@ def Export.putProgram (exported : Export F) (modulus : Nat) (encode : F → Nat)
     nat function
     list interface.inputs putIOType
     option interface.output putIOType
+
+/-- The version-two program section, with UInt64 field values. -/
+def Export.putProgram (exported : Export F) (modulus : Nat) (encode : F → Nat) :
+    PutM Unit :=
+  exported.putProgramWithEncoding .narrow modulus encode
 
 end Aiur.Execution
