@@ -4,6 +4,7 @@ import IxCCTests.Own.Stage2.Interp
 import IxCCTests.Own.Stage2.Mutate
 import IxCCTests.Own.Stage2.Hostile
 import IxCCTests.Own.Stage2.Oracle
+import IxCCTests.Own.Stage2.Sites
 import IxCC.Own.Plain.Certificate
 import IxCC.Recheck.Rc.Produce
 import IxCC.Cfg.Rc.Run
@@ -295,6 +296,97 @@ def campaign (closure eqs root label : String) (count seed : Nat) (ns : List Nat
     (← IO.getStdout).flush
   return 0
 
+structure SiteRef where
+  args : List Own.RVal
+  value : String
+  sig : Nat × Nat × Nat
+  heapHash : UInt64
+  fullHash : UInt64
+
+def siteRefs (P : Program) (f : Nat) (inputs : List (List Own.RVal)) : List SiteRef :=
+  inputs.filterMap fun args =>
+    let (r, c) := runI P 200000000 f args
+    match r with
+    | .ok _ => some { args, value := readOf r, sig := (c.incs - c.incImm, c.decs - c.decImm, c.peak),
+                      heapHash := c.heapHash, fullHash := c.fullHash }
+    | .error _ => none
+
+/-- Per kind: generated, accepted, oracle runs, accepted that change the cell RC sequence (of
+which: change the counts or the peak), accepted that ran but left the cell RC sequence unchanged,
+accepted on paths no input ran, misbehaving. -/
+structure SiteStats where
+  gen : Nat := 0
+  acc : Nat := 0
+  runs : Nat := 0
+  heap : Nat := 0
+  counts : Nat := 0
+  ranSame : Nat := 0
+  unrun : Nat := 0
+  bad : Nat := 0
+
+def SiteStats.add (a b : SiteStats) : SiteStats :=
+  { gen := a.gen + b.gen, acc := a.acc + b.acc, runs := a.runs + b.runs, heap := a.heap + b.heap,
+    counts := a.counts + b.counts, ranSame := a.ranSame + b.ranSame, unrun := a.unrun + b.unrun,
+    bad := a.bad + b.bad }
+
+def SiteStats.row (s : SiteStats) : String :=
+  s!"{s.gen}\t{s.acc}\t{s.runs}\t{s.heap}\t{s.counts}\t{s.ranSame}\t{s.unrun}\t{s.bad}"
+
+/-- The site-directed campaign on one program, both maps. -/
+def sites (closure eqs root label : String) (count seed : Nat) (ns : List Nat) : IO UInt32 := do
+  let fr ← front closure eqs root
+  let F := fr.fir
+  let some f := F.exports.head? | throw (IO.userError "no export")
+  let inputs := inputsFor F f ns
+  let funs := (List.range F.size).filter fun g => (F.fun? g).isSome
+  for (name, m) in [("canonical", fr.canonical), ("liveness", liveMap F)] do
+    let refs := siteRefs { source := F, bodies := m } f inputs
+    let mut r : Rng := ⟨UInt64.ofNat (seed * 7919 + name.length)⟩
+    let mut stats : List (SiteKind × SiteStats) := SiteKind.all.map (·, {})
+    let mut failures : List String := []
+    for _ in List.range count do
+      let (g, r1) := r.pick funs
+      let (kind, r2) := r1.pick SiteKind.all
+      r := r2
+      let some fd := F.fun? g | continue
+      let some body := m.get? g | continue
+      let params := fd.params.map (·.1)
+      let (res, r3) := siteEdit kind params body r
+      r := r3
+      let some (body1, what1) := res | continue
+      let (coin, r4) := r.next 3
+      let (kind2, r5) := r4.pick SiteKind.all
+      let (res2, r6) := if coin == 0 then siteEdit kind2 params body1 r5 else (none, r5)
+      r := r6
+      let (body', what) := match res2 with
+        | some (b2, w2) => (b2, what1 ++ "; " ++ w2)
+        | none => (body1, what1)
+      let ok := (checkBodyE fd body').isOk
+      let mut s : SiteStats := { gen := 1, acc := if ok then 1 else 0 }
+      if ok then
+        let P : Program := { source := F, bodies := m.insert g body' }
+        let vs := refs.map fun ref => (ref, oracleV P f ref.args ref.value g)
+        let heap := vs.any fun (ref, v) => v.heapHash != ref.heapHash
+        let counts := vs.any fun (ref, v) => v.sig != ref.sig
+        let ran := vs.any fun (ref, v) => v.fullHash != ref.fullHash
+        let fails := vs.filterMap fun (_, v) => v.failure
+        s := { s with runs := vs.length, heap := if heap then 1 else 0,
+                      counts := if counts then 1 else 0,
+                      ranSame := if !heap && ran then 1 else 0,
+                      unrun := if !ran then 1 else 0, bad := if fails.isEmpty then 0 else 1 }
+        unless fails.isEmpty do
+          failures := failures ++ [s!"f{g}: {what}: {fails.head!}\n  MUTANT {repr body'}"]
+      stats := stats.map fun (k, t) => if k == kind then (k, t.add s) else (k, t)
+    IO.println s!"{label}\t{name}\tinputs with a reference {refs.length}/{inputs.length}"
+    IO.println "label\tmap\tkind\tgenerated\taccepted\toracle runs\taccepted, cell RC sequence changed\tof which counts or peak changed\taccepted, ran, cell RC sequence unchanged\taccepted, not run\tmisbehaving"
+    for (k, t) in stats do
+      IO.println s!"{label}\t{name}\t{k.name}\t{t.row}"
+    let tot := stats.foldl (fun a (_, t) => a.add t) {}
+    IO.println s!"{label}\t{name}\tTOTAL\t{tot.row}"
+    for e in failures.take 20 do IO.println s!"COUNTEREXAMPLE {label} {name}: {e}"
+    (← IO.getStdout).flush
+  return 0
+
 end IxCCTests.Own.Stage2.Main
 
 def main (args : List String) : IO UInt32 := do
@@ -306,6 +398,8 @@ def main (args : List String) : IO UInt32 := do
     IxCCTests.Own.Stage2.Main.borrowed closure eqs root label (ns.map String.toNat!)
   | "campaign" :: closure :: eqs :: root :: label :: count :: seed :: ns =>
     IxCCTests.Own.Stage2.Main.campaign closure eqs root label count.toNat! seed.toNat! (ns.map String.toNat!)
+  | "sites" :: closure :: eqs :: root :: label :: count :: seed :: ns =>
+    IxCCTests.Own.Stage2.Main.sites closure eqs root label count.toNat! seed.toNat! (ns.map String.toNat!)
   | ["hostile"] => IxCCTests.Own.Stage2.Main.hostile false
   | ["hostile", "big"] => IxCCTests.Own.Stage2.Main.hostile true
   | _ =>

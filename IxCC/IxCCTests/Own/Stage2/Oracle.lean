@@ -54,9 +54,18 @@ def readOf (r : Except String (RVal × Heap)) : String :=
   | .ok (v, H) => (H.readback v).map Rt.renderObs |>.getD "?"
   | .error e => s!"error: {e}"
 
-/-- `none` when the run is safe and equal to `reference`; otherwise what went wrong. -/
-def oracle (P : Program) (f : Nat) (args : List RVal) (reference : String) (watch : Nat) :
-    Option String × Nat × (Nat × Nat × Nat) :=
+/-- One oracle run: `failure` is `none` when the run is safe and equal to the reference. -/
+structure Verdict where
+  failure : Option String
+  hits : Nat
+  /-- `inc` and `dec` calls on cells, and the peak of live cells. -/
+  sig : Nat × Nat × Nat
+  heapHash : UInt64
+  fullHash : UInt64
+
+/-- `failure = none` when the run is safe and equal to `reference`; otherwise what went wrong. -/
+def oracleV (P : Program) (f : Nat) (args : List RVal) (reference : String) (watch : Nat) :
+    Verdict :=
   let (r, c) := runI P 200000000 f args watch
   let verdict := match r with
     | .error e => some s!"run failed: {e}"
@@ -66,7 +75,13 @@ def oracle (P : Program) (f : Nat) (args : List RVal) (reference : String) (watc
       else if !balancedAt H v then some "counts at return are not exact"
       else if !reclaimed H v then some "not everything reclaimed after dropping the result"
       else none
-  (verdict, c.hits, (c.incs - c.incImm, c.decs - c.decImm, c.peak))
+  { failure := verdict, hits := c.hits, sig := (c.incs - c.incImm, c.decs - c.decImm, c.peak)
+    heapHash := c.heapHash, fullHash := c.fullHash }
+
+def oracle (P : Program) (f : Nat) (args : List RVal) (reference : String) (watch : Nat) :
+    Option String × Nat × (Nat × Nat × Nat) :=
+  let v := oracleV P f args reference watch
+  (v.failure, v.hits, v.sig)
 
 /-! ## Edits of one body, by preorder position -/
 
