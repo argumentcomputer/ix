@@ -466,7 +466,7 @@ theorem fire_step (H : FundHyps M p κ lpsOf S Ok) {k : Nat}
                     obtain ⟨rfl, rfl⟩ := hsel2
                     simp only [Bool.and_eq_true, beq_iff_eq] at hcond
                     obtain ⟨rfl, -⟩ := hcond
-                    cases hrelM with
+                    cases hmajR with
                     | @con _ _ _ _ ψ cvC' np'' nf'' Ps Fs ρc σc Rc hSc' _ hfc' hPl hFl _ hfs' _ =>
                     obtain ⟨hnp0, rl, hrl, hkey, hnF⟩ := hctP c hSc' sfc lvc cidx npc nfc tyc hdc
                     obtain ⟨cv, hfcv, _⟩ := H.faith.ctor c hSc' sfc lvc _ cidx npc nfc tyc hdc
