@@ -1,0 +1,28 @@
+{
+  "commitments": 1,
+  "constraints": 30258,
+  "domain": 32768,
+  "format": "ix-aiur-plonk-optimization-validation-v1",
+  "native_bytes": 584,
+  "solidity_bytes": 864,
+  "scope": "Compiler recursion/map/ROM fixture; not the terminal compression program",
+  "solidity_external_call_gas": 350760,
+  "abi_calldata_bytes": 1092,
+  "solidity_tests": {
+    "passed": 4,
+    "failed": 0
+  },
+  "go_tests_passed": 13,
+  "srs_export_receipt": {
+    "blake3": "98690053f1269d8a86a87eac4effdbdd6081d1af34625d8577db2aba8d876a16",
+    "format": "ix-bn254-plonk-srs-export-v2",
+    "powers": 32771,
+    "publicMaxDegree": 100799999,
+    "setupClass": "ignition",
+    "setupId": "07f80d0dc28ec7865299e8dcb795bf17f53de459d315416fd3c55fed475cd90b",
+    "setupIdentity": "07f80d0dc28ec7865299e8dcb795bf17f53de459d315416fd3c55fed475cd90b"
+  },
+  "verifying_key_sha256": "300a751c9f824534c24b37532c7979d89b4b9313d608c25a56650defee9277a1",
+  "schema_sha256": "8e30e8ed60d36b728bd2f689b0e13ddf4b34e001fcbfcb6b992e52dad81b32a8",
+  "witness_sha256": "df4cddacc21629764fc20e3517557e5d9de0598b11c188187563b67c9b223dc2"
+}

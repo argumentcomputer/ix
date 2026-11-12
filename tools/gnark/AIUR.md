@@ -11,9 +11,10 @@ The gnark frontend constrains all current/next-row arithmetic and boundary
 selectors. One global signed log-derivative argument connects the public call,
 function calls, fixed maps, ROM, and compiler depth checks. The frontend commits
 to every main cell and public value before sampling challenges. Each unsigned
-multiplicity is constrained to 64 bits; the static lookup-slot count is below
-`2^64`, so integer count sums cannot wrap BN254 Fr. Message fingerprints include
-arity. Every denominator has a constrained nonzero inverse, including messages
+request multiplicity is boolean in the validated receiver-count path below.
+Schemas outside that class retain 64-bit ranges for every unsigned multiplicity;
+the static lookup-slot count is below `2^64`, so their integer count sums cannot
+wrap BN254 Fr. Message fingerprints include arity. Every denominator has a constrained nonzero inverse, including messages
 with zero multiplicity.
 
 The lookup fingerprint challenge is gnark's commitment challenge. Its independent
@@ -24,6 +25,12 @@ constraints. It creates no lookup commitments inside the commitment callback
 and introduces no MiMC. The fixed expansion costs 29,913 sparse constraints.
 The stock PLONK protocol and Solidity verifier retain their existing transcript.
 
+The LogUp calculation shares gamma powers and constant message prefixes across
+rows. It groups terms with the same committed multiplicity before multiplying
+by that weight, and uses gnark's constrained batch inversion. Each inverse still
+satisfies `inverse * denominator = 1`; zero denominators are rejected even for
+zero-weight messages. These changes rearrange the same rational identity.
+
 Schema validation checks canonical scalars, expression indices, matrix widths,
 power-of-two capacities and conservative row/cell limits. Compilation checks
 the actual sparse-constraint domain against the currently admitted `2^25`
@@ -33,12 +40,54 @@ the full next-row cycle, including zero-padded rows; authenticated fixed tables
 retain their exact height.
 
 The JSON schema and compiled constraint system are trusted key-generation inputs.
+`boolean_requests` explicitly selects the compiler's boolean-enable contract.
+Schemas with weighted requests leave it false and retain integer multiplicity
+checks, so an honest request count greater than one remains supported.
 Host witness checks are diagnostics; their acceptance is not a proof assumption.
 The compiler-to-PLONK lowering and log-derivative composition still require
 independent review and formal coverage. The current prototype exposes typed
 public fields. Final compression needs the explicit two-limb statement
 projection, a retained proving/verification API, and the `CompressFinal`
 verifier/pairing program before replacing the existing final pipeline.
+
+## Receiver weights and exact occurrence counts
+
+The frontend can omit integer range checks on receiver weights only after its
+structural validator establishes all of these properties:
+
+- Every pull weight is a distinct current-row main column. It never occurs in
+  a message or request weight, and cannot alias another pull weight.
+- Every constraint mentioning a weight is homogeneous and linear in that one
+  weight, with coefficients depending only on program cells. Cross-count,
+  next-row, nonlinear and nonhomogeneous dependencies use the conservative path.
+- Every request weight is constrained boolean. Including the public request,
+  the statically checked potential-request budget fits `u64`, below BN254 Fr.
+- The commitment binds every program cell and receiver weight before either
+  lookup challenge is available.
+
+For a fixed message, let P be its integer number of requests. Except for the
+lookup argument's challenge-collision probability, its residue equality forces
+the sum of matching receiver weights to equal P in Fr. If P>0, then P is nonzero
+in Fr because of the request bound. At least one matching receiver consequently
+has a nonzero weight. Every constraint `weight * coefficient(program) = 0`
+on that receiver forces its coefficient to vanish. Assign that receiver the
+ordinary integer P and assign all other matching receivers zero. Homogeneity
+preserves every constraint; message independence preserves all messages. For a
+message with P=0, assign all of its receiver weights zero. Weight isolation makes
+these replacements independent across messages and rows.
+
+The resulting witness has exact nonnegative `u64` occurrence counts and the
+same program cells, public call and depth constraints. Thus this optimization
+preserves the relation even though auxiliary field weights in a particular
+proof may be negative or large. It does not permit missing or disabled receivers,
+nonboolean requests, changed statements, or depth cycles. This is an argument
+for the implemented invariant checks, not completed formal verification.
+
+The dedicated tests accept valid duplicate receivers weighted -1 and 2, or
+`2^200` and `1-2^200`, and reject missing/disabled receivers and changed public
+calls. They also exercise each unsafe dependency class, the 64-bit fallback,
+and nonboolean requests. The original compiler fixture's depth and ROM mutation
+tests run through this optimized path.
 
 ## Focused regression
 
@@ -84,8 +133,9 @@ then run its tests with the existing pinned local Solidity toolchain. No RPC or
 chain deployment is needed. The contract test derives the expected fields from
 the source program rather than reading them from proof metadata.
 
-The measured fixture uses 32,393 constraints, a `2^15` domain, three public
-fields, and one auxiliary commitment. Its native proof is 584 bytes and its
+The initial conservative fixture used 32,393 constraints. Validated receiver-weight
+elision reduces it to 30,258, with the same `2^15` domain, three public fields,
+and one auxiliary commitment. Its native proof is 584 bytes and its
 Solidity payload is 864 bytes. The local Solidity test measured 350,760 gas
 for the external verifier call and 1,092 bytes of ABI calldata. These figures
 cover this small execution, not a final compression verifier or pairing.

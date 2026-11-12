@@ -60,6 +60,9 @@ pub struct Schema {
   pub format: &'static str,
   pub callable: usize,
   pub public_inputs: usize,
+  /// Aiur call and ROM requests have boolean enables. Weighted schemas must
+  /// leave this false so their integer multiplicities retain their meaning.
+  pub boolean_requests: bool,
   pub circuits: Vec<Circuit>,
 }
 
@@ -255,6 +258,7 @@ impl<'p, 'a> Exporter<'p, 'a> {
       format: FORMAT,
       callable,
       public_inputs: claim.len() - 2,
+      boolean_requests: true,
       circuits,
     };
     Ok(Self { plan, compiler, entry: entry.into(), schema })

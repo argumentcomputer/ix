@@ -38,10 +38,11 @@ type aiurChip struct {
 }
 
 type aiurSchema struct {
-	Format       string     `json:"format"`
-	Callable     int        `json:"callable"`
-	PublicInputs int        `json:"public_inputs"`
-	Circuits     []aiurChip `json:"circuits"`
+	Format          string     `json:"format"`
+	Callable        int        `json:"callable"`
+	PublicInputs    int        `json:"public_inputs"`
+	BooleanRequests bool       `json:"boolean_requests,omitempty"`
+	Circuits        []aiurChip `json:"circuits"`
 }
 
 type aiurWitness struct {
@@ -178,13 +179,10 @@ func assignAiur(schema *aiurSchema, w *aiurWitness) (*aiurCircuit, error) {
 	return c, nil
 }
 
-type aiurMessage struct {
-	count    frontend.Variable
-	negative bool
-	args     []frontend.Variable
-}
-
 func (c *aiurCircuit) Define(api frontend.API) error {
+	if api.Compiler().Field().Cmp(scalarModulus()) != 0 {
+		return fmt.Errorf("Aiur PLONK requires BN254 Fr")
+	}
 	if c.Schema == nil {
 		return fmt.Errorf("missing trusted Aiur schema")
 	}
@@ -194,9 +192,10 @@ func (c *aiurCircuit) Define(api frontend.API) error {
 	if len(c.Public) != c.Schema.PublicInputs || len(c.Main) != len(c.Schema.Circuits) {
 		return fmt.Errorf("Aiur circuit shape differs")
 	}
+	elideCounts := c.Schema.countElisionSafe()
 	var committed []frontend.Variable
 	committed = append(committed, c.Public...)
-	messages := []aiurMessage{{count: 1, args: append([]frontend.Variable{1, c.Schema.Callable}, c.Public...)}}
+	messages := []aiurMessageGroup{{count: 1, args: [][]frontend.Variable{append([]frontend.Variable{1, c.Schema.Callable}, c.Public...)}}}
 	for i, chip := range c.Schema.Circuits {
 		if len(c.Main[i]) != chip.Rows*chip.MainWidth {
 			return fmt.Errorf("Aiur main capacity differs")
@@ -248,41 +247,37 @@ func (c *aiurCircuit) Define(api frontend.API) error {
 			for _, id := range chip.Constraints {
 				api.AssertIsEqual(values[id], 0)
 			}
+			checkedCounts := make(map[int]bool)
+			type groupKey struct {
+				count    int
+				negative bool
+			}
+			groups := make(map[groupKey]int)
 			for _, lookup := range chip.Lookups {
-				// Signed direction is trusted schema data; each underlying count must
-				// be an unsigned integer, preventing cancellation through negative counts.
 				count := values[lookup.Count]
-				api.ToBinary(count, 64)
+				if !elideCounts && !checkedCounts[lookup.Count] {
+					api.ToBinary(count, 64)
+					checkedCounts[lookup.Count] = true
+				} else if elideCounts && !lookup.Negative && !checkedCounts[lookup.Count] {
+					api.AssertIsBoolean(count)
+					checkedCounts[lookup.Count] = true
+				}
 				args := make([]frontend.Variable, len(lookup.Args))
 				for j, id := range lookup.Args {
 					args[j] = values[id]
 				}
-				messages = append(messages, aiurMessage{count: count, negative: lookup.Negative, args: args})
+				key := groupKey{count: lookup.Count, negative: lookup.Negative}
+				if index, ok := groups[key]; ok {
+					messages[index].args = append(messages[index].args, args)
+				} else {
+					groups[key] = len(messages)
+					messages = append(messages, aiurMessageGroup{count: count, negative: lookup.Negative, args: [][]frontend.Variable{args}})
+				}
 			}
 		}
 	}
 	multicommit.WithCommitment(api, func(api frontend.API, gamma frontend.Variable) error {
-		beta := aiurLookupBeta(api, gamma)
-		var sum frontend.Variable = 0
-		for _, message := range messages {
-			// Length is a leading coefficient, so different arities cannot collide
-			// by appending zero-valued fields to a message.
-			var fingerprint frontend.Variable = len(message.args)
-			for j := len(message.args) - 1; j >= 0; j-- {
-				fingerprint = api.Add(api.Mul(fingerprint, gamma), message.args[j])
-			}
-			denominator := api.Add(beta, fingerprint)
-			inverse := api.Inverse(denominator)
-			api.AssertIsEqual(api.Mul(inverse, denominator), 1)
-			term := api.Mul(message.count, inverse)
-			if message.negative {
-				sum = api.Sub(sum, term)
-			} else {
-				sum = api.Add(sum, term)
-			}
-		}
-		api.AssertIsEqual(sum, 0)
-		return nil
+		return aiurLogUp(api, gamma, messages)
 	}, committed...)
 	return nil
 }

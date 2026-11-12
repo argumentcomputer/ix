@@ -2,6 +2,7 @@
   "format": "ix-aiur-plonk-v1",
   "callable": 0,
   "public_inputs": 3,
+  "boolean_requests": true,
   "circuits": [
     {
       "name": "BN254Trace::run",
