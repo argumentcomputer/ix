@@ -258,7 +258,8 @@ def stateAgreeB (stS : State .source) (stA : State .anon) : Bool :=
     fieldAgreeB stS.heights stA.heights (fun _ => true) id &&
     fieldAgreeB stS.indBlocks stA.indBlocks blockOk (BlockRec.mapKeys eraseId) &&
     fieldAgreeB stS.projOwners stA.projOwners ownerOk (ProjRecOwner.mapKeys eraseId) &&
-    fieldAgreeB stS.projLevels stA.projLevels (fun _ => true) id
+    fieldAgreeB stS.projLevels stA.projLevels (fun _ => true) id &&
+    fieldAgreeB stS.defValues stA.defValues (fun v => exprOk v.2) (fun v => (v.1, v.2.mapKeys eraseId))
 
 /-- **The two prelude readings agree, names erased**: the Source reading's declarations name
 no input, the anonymous reading's are them with names erased, and so are the states. -/
@@ -319,13 +320,14 @@ structure StateRen (f : Mode.Id .source → Mode.Id .anon) (stS : State .source)
   ownersOnly : ∀ kA b, stA.projOwners[kA]? = some b → ∃ k : Key .source, kA = k.map f
   levels : ∀ k : Key .source, stA.projLevels[k.map f]? = stS.projLevels[k]?
   levelsOnly : ∀ kA b, stA.projLevels[kA]? = some b → ∃ k : Key .source, kA = k.map f
+  values : ∀ k : Key .source, stA.defValues[k.map f]? = (stS.defValues[k]?).map fun v => (v.1, v.2.mapKeys f)
 
 /-- **The two prelude readings' states are renamings of each other under every renaming.** -/
 theorem preludeAgree_state {preS : Prelude .source} {preA : Prelude .anon}
     (h : preludeAgreeB preS preA = true) (f : Mode.Id .source → Mode.Id .anon) :
     StateRen f preS.state preA.state := by
   simp only [preludeAgreeB, stateAgreeB, Bool.and_eq_true] at h
-  obtain ⟨-, ⟨⟨⟨⟨hT, hH⟩, hB⟩, hO⟩, hL⟩⟩ := h
+  obtain ⟨-, ⟨⟨⟨⟨⟨hT, hH⟩, hB⟩, hO⟩, hL⟩, hV⟩⟩ := h
   obtain ⟨types, typesOnly⟩ := fieldAgree_lift hT (fun f v => (v.1, v.2.mapKeys f))
     (fun f v hv => by rw [expr_mapKeys_congr noIds_vacuous v.2 (exprOk_good hv)]) f
   obtain ⟨heights, heightsOnly⟩ := fieldAgree_lift hH (fun _ v => v) (fun _ _ _ => rfl) f
@@ -334,8 +336,10 @@ theorem preludeAgree_state {preS : Prelude .source} {preA : Prelude .anon}
   obtain ⟨owners, ownersOnly⟩ := fieldAgree_lift hO (fun f o => ProjRecOwner.mapKeys f o)
     (fun f o ho => owner_mapKeys_congr noIds_vacuous (ownerOk_good ho)) f
   obtain ⟨levels, levelsOnly⟩ := fieldAgree_lift hL (fun _ v => v) (fun _ _ _ => rfl) f
+  obtain ⟨values, -⟩ := fieldAgree_lift hV (fun f v => (v.1, v.2.mapKeys f))
+    (fun f v hv => by rw [expr_mapKeys_congr noIds_vacuous v.2 (exprOk_good hv)]) f
   exact ⟨types, typesOnly, fun k => by rw [heights k, Option.map_id'], heightsOnly, blocks, blocksOnly,
-    owners, ownersOnly, fun k => by rw [levels k, Option.map_id'], levelsOnly⟩
+    owners, ownersOnly, fun k => by rw [levels k, Option.map_id'], levelsOnly, values⟩
 
 /-- **The two prelude readings' declarations are renamings of each other under every
 renaming.** -/

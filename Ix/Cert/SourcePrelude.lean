@@ -1078,10 +1078,13 @@ theorem genNested_safe (ctx : Ctx md) (b : BlockRec md) : ExSafe (genNested ctx 
 
 theorem generate_noBasis {ctx : Ctx md} {b : BlockRec md} {ds : List (Declaration md)}
     (h : generate ctx b = .ok ds) : ∀ d ∈ ds, ∀ k, d ≠ .basisDecl k := by
-  unfold generate at h
-  split at h
-  · exact genNested_safe ctx b ds h
-  · exact genMutual_safe ctx b ds h
+  obtain ⟨b', ds0, -, hrun, rfl⟩ := generate_eq_ok h
+  intro d hd k hk
+  obtain ⟨j, d0, hd0, rfl⟩ := restoreFrom_mem hd
+  have h0 := restoreAt_basis hk
+  rcases hrun with hrun | hrun
+  · exact genNested_safe ctx b' ds0 hrun d0 hd0 k h0
+  · exact genMutual_safe ctx b' ds0 hrun d0 hd0 k h0
 
 end Ix.Cert.SourcePrelude.Shape
 

@@ -432,7 +432,8 @@ the reader's state: the declared types, the heights, and the parsed blocks
 with the block's own members visible. -/
 def genCtx (st : State md) (rb : BlockRead md) : Ctx md :=
   ⟨fun n => st.constTypes[n]?, fun n => st.heights.getD n 0,
-   fun n => if (memberNamesOf rb).contains n then some (blockRecOf rb) else st.indBlocks[n]?⟩
+   fun n => if (memberNamesOf rb).contains n then some (blockRecOf rb) else st.indBlocks[n]?,
+   valuesOff fun n => st.defValues[n]?⟩
 
 /-- A block's own declaration. -/
 def indDeclOf (rb : BlockRead md) : CDecl md :=
@@ -500,8 +501,9 @@ section Agree
 variable (f : md.Id → md'.Id) (P : KeyScope md)
 
 /-- **Two reader states agree on a scope** under `f`: at every renamed good key
-the renamed declared type, the same height and the renamed parsed block; and the
-types and blocks at good keys are good. -/
+the renamed declared type, the same height and the renamed parsed block, and at
+every one that is not derived the renamed definition value; and the types,
+blocks and values at good keys are good. -/
 structure StateAgree (st : State md) (st' : State md') : Prop where
   types : ∀ k : Key md, k.Good P →
     st'.constTypes[k.map f]? = (st.constTypes[k]?).map fun p => (p.1, p.2.mapKeys f)
@@ -509,6 +511,9 @@ structure StateAgree (st : State md) (st' : State md') : Prop where
   heights : ∀ k : Key md, k.Good P → st'.heights.getD (k.map f) 0 = st.heights.getD k 0
   blocks : ∀ k : Key md, k.Good P → st'.indBlocks[k.map f]? = (st.indBlocks[k]?).map (BlockRec.mapKeys f)
   blocksGood : ∀ k : Key md, k.Good P → ∀ b, st.indBlocks[k]? = some b → b.Good P
+  values : ∀ k : Key md, k.Good P → k.isAux = false →
+    st'.defValues[k.map f]? = (st.defValues[k]?).map fun p => (p.1, p.2.mapKeys f)
+  valuesGood : ∀ k : Key md, k.Good P → k.isAux = false → ∀ p, st.defValues[k]? = some p → p.2.Good P
 
 variable {f P}
 
@@ -542,6 +547,16 @@ theorem ctxAgree_genCtx (hf : InjOn f P) {stS : State md} {stA : State md'} (hst
     split at hb
     · cases hb; exact blockRecOf_good hg
     · exact hst.blocksGood k hk b hb
+  values := by
+    refine ⟨fun k hk => ?_, fun k hk p hp => ?_⟩
+    · cases k with
+      | aux b d => rfl
+      | id x => exact hst.values _ hk rfl
+      | role r => exact hst.values _ hk rfl
+    · cases k with
+      | aux b d => exact nomatch hp
+      | id x => exact hst.valuesGood _ hk rfl p hp
+      | role r => exact hst.valuesGood _ hk rfl p hp
 
 /-- A block's own declaration, renamed. -/
 theorem indDeclOf_mapKeys (rb : BlockRead md) :
@@ -762,6 +777,38 @@ theorem fold_fields (st0 : State md) (rs : List (Read md)) :
   · rw [blocksIn, foldl_flatMap']
     exact foldl_proj State.indBlocks _ _ (fun s r => commit_indBlocks s r) rs st0
 
+/-- **What a declaration records of its value** (`State.note`): a definition's, under
+its name. -/
+def valEntries : CDecl md → List (CName md × (List LevelParam × CExpr md))
+  | .defnDecl cv v _ => [(cv.name, (cv.levelParams, v))]
+  | _ => []
+
+/-- **The values a stream prefix records**, in order. -/
+def valsOf (rs : List (Read md)) : List (CName md × (List LevelParam × CExpr md)) :=
+  rs.flatMap fun r => r.decls.toList.flatMap valEntries
+
+theorem note_defValues (st : State md) (d : CDecl md) :
+    (st.note d).defValues = (valEntries d).foldl (insOpt some) st.defValues := by
+  cases d <;> (refine foldl_keep State.defValues _ (fun s e => ?_) _ _; rfl)
+
+theorem noteGenerated_defValues (st : State md) (d : CDecl md) :
+    (st.noteGenerated d).defValues = (st.note d).defValues := by
+  unfold State.noteGenerated
+  (split <;> (try split) <;> (try split)) <;> simp only [note_defValues]
+
+theorem commit_defValues (st : State md) (r : Read md) :
+    (st.commit r).defValues = (r.decls.toList.flatMap valEntries).foldl (insOpt some) st.defValues := by
+  rw [commit_eq]
+  simp only
+  rw [commit_decls State.defValues (fun m d => (valEntries d).foldl (insOpt some) m) r _
+      note_defValues noteGenerated_defValues,
+    commit_pre_keep State.defValues r st (fun _ _ => rfl) (fun _ _ => rfl), foldl_flatMap']
+
+theorem fold_defValues (st0 : State md) (rs : List (Read md)) :
+    (rs.foldl State.commit st0).defValues = (valsOf rs).foldl (insOpt some) st0.defValues := by
+  rw [valsOf, foldl_flatMap']
+  exact foldl_proj State.defValues _ _ (fun s r => commit_defValues s r) rs st0
+
 section Sources
 
 variable {α β γ : Type} [BEq α] [Hashable α] [LawfulBEq α] [LawfulHashable α]
@@ -866,6 +913,25 @@ theorem noteEntries_mapKeys {d : CDecl md} (hd : ∀ k, d ≠ .basisDecl k) :
     simp [noteEntries, Declaration.mapKeys, renE, Function.comp_def, ConstantInfo.mapKeys_toConstantVal]
   | _ => rfl
 
+/-- A value entry renamed. -/
+def renV (f : md.Id → md'.Id) (e : CName md × (List LevelParam × CExpr md)) :
+    CName md' × (List LevelParam × CExpr md') :=
+  (e.1.map f, (e.2.1, e.2.2.mapKeys f))
+
+/-- **A declaration's value entries, renamed.** -/
+theorem valEntries_mapKeys (d : CDecl md) : valEntries (d.mapKeys f) = (valEntries d).map (renV f) := by
+  cases d <;> rfl
+
+/-- A value entry names a constant the declaration notes. -/
+theorem valEntries_name {d : CDecl md} {e : CName md × (List LevelParam × CExpr md)} (he : e ∈ valEntries d) :
+    ∃ e' ∈ noteEntries d, e'.1 = e.1 := by
+  cases d with
+  | defnDecl cv v h =>
+    simp only [valEntries, List.mem_singleton] at he
+    subst he
+    exact ⟨_, List.mem_singleton_self _, rfl⟩
+  | _ => simp [valEntries] at he
+
 theorem tyOf_renE (e : Entry md) :
     tyOf (renE f e) = (tyOf e).map fun p => (p.1.map f, (p.2.1, p.2.2.mapKeys f)) := rfl
 
@@ -926,6 +992,9 @@ structure NonAuxAgree (f : md.Id → md'.Id) (P : KeyScope md) (st : State md) (
   heights : ∀ k : Key md, k.Good P → k.isAux = false → st'.heights.getD (k.map f) 0 = st.heights.getD k 0
   blocks : ∀ k : Key md, k.Good P → st'.indBlocks[k.map f]? = (st.indBlocks[k]?).map (BlockRec.mapKeys f)
   blocksGood : ∀ k : Key md, k.Good P → ∀ b, st.indBlocks[k]? = some b → b.Good P
+  values : ∀ k : Key md, k.Good P → k.isAux = false →
+    st'.defValues[k.map f]? = (st.defValues[k]?).map fun p => (p.1, p.2.mapKeys f)
+  valuesGood : ∀ k : Key md, k.Good P → k.isAux = false → ∀ p, st.defValues[k]? = some p → p.2.Good P
 
 /-- A block's names: its declaration's. -/
 def blockNames (rb : BlockRead md) : List (CName md) := (noteEntries (indDeclOf rb)).map (·.1)
@@ -974,6 +1043,10 @@ def HtSrc (st0 : State md) (l : List (Read md)) (k : CName md) (h : Nat) : Prop 
 def BkSrc (st0 : State md) (l : List (Read md)) (k : CName md) (b : BlockRec md) : Prop :=
   (∃ e ∈ blocksIn l, some e = some (k, b)) ∨ st0.indBlocks[k]? = some b
 
+/-- A definition value the prefix `l` from `st0` holds a source of at `k`. -/
+def ValSrc (st0 : State md) (l : List (Read md)) (k : CName md) (v : List LevelParam × CExpr md) : Prop :=
+  (∃ e ∈ valsOf l, some e = some (k, v)) ∨ st0.defValues[k]? = some v
+
 /-- **Both prefixes read renamed-equal declarations at a key**: every two sources
 agree under `f`, and one side has one exactly when the other does. -/
 structure ReadsAgreeAt (f : md.Id → md'.Id) (st0S : State md) (lS : List (Read md)) (st0A : State md')
@@ -984,6 +1057,8 @@ structure ReadsAgreeAt (f : md.Id → md'.Id) (st0S : State md) (lS : List (Read
   htIff : (∃ h, HtSrc st0S lS k h) ↔ ∃ h', HtSrc st0A lA (k.map f) h'
   bk : ∀ b b', BkSrc st0S lS k b → BkSrc st0A lA (k.map f) b' → b' = b.mapKeys f
   bkIff : (∃ b, BkSrc st0S lS k b) ↔ ∃ b', BkSrc st0A lA (k.map f) b'
+  val : ∀ v w, ValSrc st0S lS k v → ValSrc st0A lA (k.map f) w → w = (v.1, v.2.mapKeys f)
+  valIff : (∃ v, ValSrc st0S lS k v) ↔ ∃ w, ValSrc st0A lA (k.map f) w
 
 section Generic
 
@@ -1036,16 +1111,20 @@ theorem ReadsAgreeAt.states {k : Key md} (h : ReadsAgreeAt f st0S lS st0A lA k) 
         ((lS.foldl State.commit st0S).constTypes[k]?).map (fun p => (p.1, p.2.mapKeys f)) ∧
       (lA.foldl State.commit st0A).heights.getD (k.map f) 0 = (lS.foldl State.commit st0S).heights.getD k 0 ∧
       (lA.foldl State.commit st0A).indBlocks[k.map f]? =
-        ((lS.foldl State.commit st0S).indBlocks[k]?).map (BlockRec.mapKeys f) := by
+        ((lS.foldl State.commit st0S).indBlocks[k]?).map (BlockRec.mapKeys f) ∧
+      (lA.foldl State.commit st0A).defValues[k.map f]? =
+        ((lS.foldl State.commit st0S).defValues[k]?).map (fun p => (p.1, p.2.mapKeys f)) := by
   obtain ⟨tS, hS, bS⟩ := fold_fields st0S lS
   obtain ⟨tA, hA, bA⟩ := fold_fields st0A lA
-  refine ⟨?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_⟩
   · rw [tS, tA]
     exact foldl_insOpt_agree tyOf tyOf _ _ _ _ k (k.map f) _ h.ty h.tyIff
   · rw [hS, hA, Std.HashMap.getD_eq_getD_getElem?, Std.HashMap.getD_eq_getD_getElem?,
       foldl_insOpt_agree htOf htOf _ _ _ _ k (k.map f) id h.ht h.htIff, Option.map_id, id_eq]
   · rw [bS, bA]
     exact foldl_insOpt_agree some some _ _ _ _ k (k.map f) _ h.bk h.bkIff
+  · rw [fold_defValues, fold_defValues]
+    exact foldl_insOpt_agree some some _ _ _ _ k (k.map f) _ h.val h.valIff
 
 /-- **`NonAuxAgree` from the per-key relation** at every good key but the derived
 ones (and the blocks at every good key), with the goodness of what the Source
@@ -1056,13 +1135,17 @@ theorem nonAuxAgree_of_reads {P : KeyScope md}
       (lA.foldl State.commit st0A).indBlocks[k.map f]? =
         ((lS.foldl State.commit st0S).indBlocks[k]?).map (BlockRec.mapKeys f))
     (typesGood : ∀ k : Key md, k.Good P → ∀ p, (lS.foldl State.commit st0S).constTypes[k]? = some p → p.2.Good P)
-    (blocksGood : ∀ k : Key md, k.Good P → ∀ b, (lS.foldl State.commit st0S).indBlocks[k]? = some b → b.Good P) :
+    (blocksGood : ∀ k : Key md, k.Good P → ∀ b, (lS.foldl State.commit st0S).indBlocks[k]? = some b → b.Good P)
+    (valuesGood : ∀ k : Key md, k.Good P → k.isAux = false → ∀ p,
+      (lS.foldl State.commit st0S).defValues[k]? = some p → p.2.Good P) :
     NonAuxAgree f P (lS.foldl State.commit st0S) (lA.foldl State.commit st0A) where
   types k hk hx := ((reads k hk hx).states).1
   typesGood := typesGood
   heights k hk hx := ((reads k hk hx).states).2.1
   blocks := readsBlocks
   blocksGood := blocksGood
+  values k hk hx := ((reads k hk hx).states).2.2.2
+  valuesGood := valuesGood
 
 end Reads
 
@@ -1306,7 +1389,9 @@ theorem units : ∀ i rb, blk i = some rb →
           · exact hN.heights k hk hx
           · simp only [Std.HashMap.getD_eq_getD_getElem?, (h.aux_agree hb IH hk hx).2]
         blocks := hN.blocks
-        blocksGood := hN.blocksGood }
+        blocksGood := hN.blocksGood
+        values := hN.values
+        valuesGood := hN.valuesGood }
     exact ⟨rS, rA, hrS, hrA, lowerInductive_mapKeys (h.pre i) (h.injOn i) hst hg hlS hlA⟩
 
 end Streams

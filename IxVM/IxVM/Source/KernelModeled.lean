@@ -511,7 +511,10 @@ def get_addrs := aiur_fn⟦
   -- ## Outside references of the advice
 
   -- The basis roles advice may reference: `Nat` and its constructors and recursor, `Eq`,
-  -- `Eq.refl`, `Eq.rec`, `PUnit`, `PUnit.unit`, `PUnit.rec`, `String`, `Char`. No axiom.
+  -- `Eq.refl`, `Eq.rec`, `PUnit`, `PUnit.unit`, `PUnit.rec`, the quotient (`Quot`,
+  -- `Quot.mk`, `Quot.lift`, `Quot.ind`, `Quot.sound`: function extensionality, along
+  -- which the model of a block with a nested occurrence under a binder transports, is a
+  -- theorem from them), `String`, `Char`. No other axiom.
 
 def basis_role_allowed := aiur_fn⟦
   fn basis_role_allowed(r: Field) -> Field {
@@ -526,6 +529,11 @@ def basis_role_allowed := aiur_fn⟦
         11 => {  1 } ,
         12 => {  1 } ,
         13 => {  1 } ,
+        32 => {  1 } ,
+        33 => {  1 } ,
+        34 => {  1 } ,
+        35 => {  1 } ,
+        36 => {  1 } ,
         37 => {  1 } ,
         39 => {  1 } ,
         _ => {  0 } ,
@@ -556,6 +564,10 @@ def check_witness := aiur_fn⟦
           let r1 = KernelRoles::role_of(rc, x);
           assert_eq!(Fields::is_zero(r1), 0, "model advice: a basis reference is not bound to a role");
           assert_eq!(basis_role_allowed(r1 - 1), 1, "model advice: a reference to a role outside the basis");
+          -- the role's record is checked with its closure, as an implicitly used role's is
+          -- (`KernelRoles::role_used_implicitly`): under a custom table a basis role may be bound
+          -- to any record
+          KernelClaim::run_check_transitive(rc, x);
           s } ,
         1 => {
           let (n, s2) = get_count(s);
@@ -1472,6 +1484,12 @@ def check_iota_rule := aiur_fn⟦
               -- the constructor's telescope at the comparands (renamed): its fields and the
               -- canonical index tuple
               let cty_l = KernelLevels::expr_inst_levels(cty, ilvls);
+              -- the residual head before instantiation is a constant (the family former), as
+              -- IxC tests it: a variable head could be captured by a pin instantiation
+              let (chead0, _) = KernelTypes::collect_spine(KernelCheck::peel_n_foralls(cty_l, cnp + cnf));
+              match (*(chead0)) {
+                KernelTypes::KExprNode::Const(_, _) => {  () } ,
+              };
               let crest = inst_params(rename(cty_l, src, dst), pins_ren);
               let (cres, _) = peel_collect(crest, cnf, (&(Lists::Node::Nil)));
               let (chead, cargs) = KernelTypes::collect_spine(cres);

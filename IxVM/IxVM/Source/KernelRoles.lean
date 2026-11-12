@@ -567,6 +567,9 @@ def validate_anchor := aiur_fn⟦
   fn validate_anchor(rc: RoleCtx, tbl: RoleTable, r: Field, ci: KernelTypes::KConstantInfo) -> () {
       assert_safe_role(ci);
       let ty = KernelInfer::const_type_of(ci);
+      -- the anchor's type is closed and a type, before it is compared with the role's spec
+      KernelCheck::validate_expr_well_scoped(ty, 0, KernelInfer::const_num_lvls(ci));
+      KernelInfer::k_ensure_sort(rc, ty, (&(Lists::Node::Nil)));
       let spec = KernelRoleSpec::role_type(tbl, r);
       match r {
         7 => {  assert_type_pinned(ty, spec) } ,

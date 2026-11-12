@@ -220,6 +220,57 @@ noncomputable def eaVal (t : EA Nat 1) : Nat :=
 
 theorem eaIota : eaVal (EA.mk (5 : Nat) [EA.base]) = 6 := rfl
 
+/-- Blocks whose formers are declared at a definition, which Lean's kernel reads
+after whnf: a nested block's sort (`GA : GType`, `GType := Type`, nested through
+`List`), a nested block's index telescope (`GI : GFam`, `GFam := Nat → Type`) and a
+mutual block's sorts (`GE`, `GO : GType`). Declared through Lean's kernel. (Lean
+counts a block's parameters on the declared type, so a parameter telescope behind a
+definition is not a Lean shape.) -/
+def GType : Type 1 := Type
+
+def GFam : Type 1 := Nat → Type
+
+open Lean in
+run_cmd Elab.Command.liftCoreM do
+  let ns := `Tests.Ix.Kernel.EntryCaseDefs
+  let list (t : Expr) := mkApp (mkConst ``List [Level.zero]) t
+  let ga := mkConst (ns ++ `GA)
+  addDecl (.inductDecl [] 0 [⟨ns ++ `GA, mkConst (ns ++ `GType),
+    [⟨ns ++ `GA.leaf, ga⟩, ⟨ns ++ `GA.mk, mkForall `a .default (list ga) ga⟩]⟩] false)
+  let gi (n : Expr) := mkApp (mkConst (ns ++ `GI)) n
+  let z := mkConst ``Nat.zero
+  addDecl (.inductDecl [] 0 [⟨ns ++ `GI, mkConst (ns ++ `GFam),
+    [⟨ns ++ `GI.leaf, gi z⟩,
+     ⟨ns ++ `GI.mk, mkForall `a .default (list (gi z)) (gi (mkApp (mkConst ``Nat.succ) z))⟩]⟩] false)
+  let ge := mkConst (ns ++ `GE)
+  let go := mkConst (ns ++ `GO)
+  addDecl (.inductDecl [] 0 [
+    ⟨ns ++ `GE, mkConst (ns ++ `GType),
+      [⟨ns ++ `GE.zero, ge⟩, ⟨ns ++ `GE.succ, mkForall `o .default go ge⟩]⟩,
+    ⟨ns ++ `GO, mkConst (ns ++ `GType), [⟨ns ++ `GO.succ, mkForall `e .default ge go⟩]⟩] false)
+
+/-- Values by the blocks' recursors, and ι reductions through them. -/
+noncomputable def gaVal (t : GA) : Nat :=
+  GA.rec (motive_1 := fun _ => Nat) (motive_2 := fun _ => Nat) 1 (fun _ ih => ih + 1) 0
+    (fun _ _ ih1 ih2 => ih1 + ih2) t
+
+noncomputable def giVal (t : GI 1) : Nat :=
+  GI.rec (motive_1 := fun _ _ => Nat) (motive_2 := fun _ => Nat) 1 (fun _ ih => ih + 1) 0
+    (fun _ _ ih1 ih2 => ih1 + ih2) t
+
+noncomputable def geVal (t : GE) : Nat :=
+  GE.rec (motive_1 := fun _ => Nat) (motive_2 := fun _ => Nat) 0 (fun _ ih => ih + 1) (fun _ ih => ih + 1) t
+
+-- Honest-case claims installed unchecked, as `bd1Iota`'s (Lean's elaborator does not
+-- unfold a kernel-declared block's formers or find its auxiliary recursors), and
+-- checked by Ix.
+bad_thm gaIota : gaVal (GA.mk [GA.leaf]) = 2 := unchecked (Eq.refl (gaVal (GA.mk [GA.leaf])))
+
+bad_thm giIota : giVal (GI.mk [GI.leaf]) = 2 := unchecked (Eq.refl (giVal (GI.mk [GI.leaf])))
+
+bad_thm geIota : geVal (GE.succ (GO.succ GE.zero)) = 2 :=
+  unchecked (Eq.refl (geVal (GE.succ (GO.succ GE.zero))))
+
 /-- The face of a `partial` definition: an opaque constant whose value is an
 inhabitant of its type. The recursive body is the `partial` companion
 `loop._unsafe_rec`. -/

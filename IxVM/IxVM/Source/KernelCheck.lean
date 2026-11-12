@@ -266,6 +266,22 @@ def check_param_agreement := aiur_fn⟦
     }
 ⟧
 
+-- Does `e` start with `n` syntactic `forall` binders (Lean counts an inductive's parameters on
+-- its declared type)?
+
+def has_n_leading_foralls := aiur_fn⟦
+  fn has_n_leading_foralls(e: KernelTypes::KExpr, n: Field) -> Field {
+      match n {
+        0 => {  1 } ,
+        _ => {
+          match (*(e)) {
+            KernelTypes::KExprNode::Forall(_, body, _) => {  has_n_leading_foralls(body, n - 1) } ,
+            _ => {  0 } ,
+          } } ,
+      }
+    }
+⟧
+
 def get_result_sort_level := aiur_fn⟦
   fn get_result_sort_level(rc: KernelRoles::RoleCtx, ind_ty: KernelTypes::KExpr, n: Field,
                                   types: Lists::List<KernelTypes::KExpr>) -> KernelTypes::KLevel {
@@ -3040,8 +3056,13 @@ def check_const := aiur_fn⟦
               check_block_peer_param_agreement(rc, ci, addr) } ,
             _ => {
               -- the modeled route: the declared shape, then the family against
-              -- its model (`KernelModeled::check_family`)
-              let KernelTypes::KExprNode::Srt(_) = (*(peel_n_foralls(ty, n_params + n_indices)));
+              -- its model (`KernelModeled::check_family`). The shape is read as Lean's
+              -- kernel reads a former, after whnf before each binder, so a former
+              -- declared at a definition (`T : MyType`, `MyType := Type`) has one. Its parameters,
+              -- as Lean counts them, are syntactic binders.
+              assert_eq!(has_n_leading_foralls(ty, n_params), 1,
+                "a modeled inductive's parameters are not syntactic binders");
+              get_result_sort_level(rc, ty, n_params + n_indices, (&(Lists::Node::Nil)));
               check_modeled_ctors(rc, n_params, n_indices, num_ctors, nlvls,
                                   ind_block, ind_idx, ind_is_unsafe, 0);
               match ind_is_unsafe {
