@@ -430,6 +430,11 @@ recursor clause and its implication from the landed one. -/
 /-- info: 'IxCC.Grounding.flatIota_noLevels' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Grounding.flatIota_noLevels
 
+/-! ## The fragment's clause for fixed-width words (stage W1): no `word` entry in `Sl` -/
+
+/-- info: 'IxCC.Grounding.noWord_of' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Grounding.noWord_of
+
 /-! ## G3, part E: recursors without parameters whose rule bodies run (`noParams`) -/
 
 /-- info: 'IxCC.Grounding.recClassB_noParams' depends on axioms: [propext, Classical.choice, Quot.sound] -/
