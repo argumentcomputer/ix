@@ -29,8 +29,9 @@ impl std::fmt::Display for CompactProofError {
 }
 impl std::error::Error for CompactProofError {}
 
-/// Balanced ordinary proofs with all circuits active. Authenticate the system/verifying key separately and
-/// run normal proof verification after decoding; decoding is not verification.
+/// Balanced ordinary proofs with caller-supplied activation and trace heights.
+/// Authenticate the system/verifying key separately and run normal proof
+/// verification after decoding; decoding is not verification.
 pub struct FixedProofCodec {
   template: Proof<KzgConfig>,
   max_openings: usize,
@@ -42,7 +43,26 @@ impl FixedProofCodec {
     system: &System<KzgConfig>,
     log_degrees: &[u8],
   ) -> Result<Self, CompactProofError> {
-    if log_degrees.len() != system.circuits.len() || log_degrees.is_empty() {
+    Self::new_active(system, &vec![true; system.circuits.len()], log_degrees)
+  }
+
+  /// Derive the encoding from this proof's shape and the trusted circuit
+  /// metadata. Fixed tables must remain active; no matrix dimensions are
+  /// accepted from the encoded body.
+  pub fn new_active(
+    system: &System<KzgConfig>,
+    active: &[bool],
+    log_degrees: &[u8],
+  ) -> Result<Self, CompactProofError> {
+    if active.len() != system.circuits.len()
+      || log_degrees.len() != active.iter().filter(|&&on| on).count()
+      || log_degrees.is_empty()
+      || system
+        .circuits
+        .iter()
+        .zip(active)
+        .any(|(circuit, &on)| !on && circuit.preprocessed_width != 0)
+    {
       return Err(CompactProofError);
     }
     let max_log = system.config.max_log_degree();
@@ -50,7 +70,14 @@ impl FixedProofCodec {
       [KzgCommitment(vec![]), KzgCommitment(vec![]), KzgCommitment(vec![])];
     let mut rounds = [vec![], vec![], vec![], vec![]];
     let mut heights = Vec::new();
-    for (ci, (c, &log)) in system.circuits.iter().zip(log_degrees).enumerate() {
+    for ((ci, c), &log) in system
+      .circuits
+      .iter()
+      .enumerate()
+      .zip(active)
+      .filter_map(|(circuit, &on)| on.then_some(circuit))
+      .zip(log_degrees)
+    {
       let height =
         1usize.checked_shl(u32::from(log)).ok_or(CompactProofError)?;
       if usize::from(log) > max_log
@@ -95,7 +122,7 @@ impl FixedProofCodec {
       prep,
     ] = rounds;
     let template = Proof {
-      active: vec![true; log_degrees.len()],
+      active: active.to_vec(),
       log_degrees: log_degrees.to_vec(),
       commitments: Commitments {
         stage_1_trace,
