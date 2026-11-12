@@ -398,7 +398,7 @@ theorem fire_noParams (H : FundHyps M p κ lpsOf S Ok) {k' : Nat}
     have hrunsB := runs_peel bs hruns hpeel
     -- SrcEval: the body, in the slots of the arguments before the major and the fields
     have hslen : (args.take (nmot + nmin) ++ fields).length = bs.length := by
-      rw [List.length_append, relSlots_length hrelF, hFl]; simp; omega
+      rw [List.length_append, ← relSlots_length hrelF, hFl]; simp; omega
     have hev' := hev t' (by rw [hslen]; exact hpeel)
     have henv : RelEnv M κ lpsOf S Ok (args.take (nmot + nmin) ++ fields).reverse
         (pushAll (As.take (nmot + nmin) ++ Fs) ρ) := by
