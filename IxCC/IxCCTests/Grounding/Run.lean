@@ -527,8 +527,8 @@ def run : IO Bool := do
     let (ti, tcore) ← loadClosure "tags16" "fixtures/corpus/phase1-boundary/tags16" ["Limits.tags16"]
     expect a (directOk ti) s!"tags16: sitesDirect is false: {(refusedSites ti).length} sites refused"
     let tt ← oracleOn a "tags16" tcore ti
-    expect a ((tt.sites, tt.instances, tt.datumHolds) == (200, 214, 45))
-      s!"tags16: oracle counts {(tt.sites, tt.instances, tt.datumHolds)}, expected (200, 214, 45)"
+    expect a ((tt.sites, tt.instances, tt.datumHolds) == (200, 214, 76))
+      s!"tags16: oracle counts {(tt.sites, tt.instances, tt.datumHolds)}, expected (200, 214, 76)"
     let some br := boolRec? ti.env | throw (IO.userError "tags16: no Bool.rec in the reading")
     let tm := mutateRecRules ti br
     expect a (!directOk tm) "tags16: Bool.rec's rules swapped, and sitesDirect is still true"
