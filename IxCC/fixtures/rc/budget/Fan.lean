@@ -5,13 +5,13 @@ compiled program the code after the branch is a join that captures the `C` param
 every leaf jumps to, so an ownership certificate makes the checker take `C` captured tokens at each
 of the `K` jumps and `C` at the join's declaration: `Own.Plain.Certificate.capturedWork`, which
 admission bounds by `Anf.maxCapturedWork` (2²⁰). A root calls forty-one fan functions (distinct by
-their offsets `o`, so that content addressing keeps them apart) with every `xᵢ` its own `n`, sums
-them and returns a pair, so that the program allocates and the automatic policy selects plain RC:
-`fanUnder` (C = 199) is within the limit, `fanOver` (C = 200) past it. The captured values are
-parameters, which cost the middle end no node, and the terms are written without type-class
-instances or `if` (primitives, raw literals, `Bool.casesOn`), so that each fan function stays
-within the consumer's expression depth (256: the parameters nest) and the middle end's node and
-back-end work budgets. `main` checks both roots against an independent formula in Lean's
+their offsets `o`, so that content addressing keeps them apart), in four parts, with every `xᵢ`
+its own `n`, sums them and returns a pair, so that the program allocates and the automatic
+policy selects plain RC: `fanUnder` (C = 199) is within the limit, `fanOver` (C = 200) past it.
+The captured values are parameters, which cost the middle end no node, and the terms are written
+without type-class instances or `if` (primitives, raw literals, `Bool.casesOn`), so that each fan
+function stays within the consumer's expression depth (256: the parameters nest) and the middle
+end's node and back-end work budgets. `main` checks both roots against an independent formula in Lean's
 interpreter. -/
 
 namespace IxCCTests.Own.Budget
@@ -171,9 +171,22 @@ def fanB39 : fanType% 200 := fanFun% 200 127 390000
 def fanB40 : fanType% 200 := fanFun% 200 127 400000
 def fanB41 : fanType% 200 := fanFun% 200 127 410000
 
-def fanUnder (n s : Nat) : Nat × Nat := (fanCalls% fanA n s 199 1 42, s)
+/-- The calls are split in four parts (each a global of its own), so that each global stays within
+the middle end's node budget. -/
+def fanUnder1 (n s : Nat) : Nat := fanCalls% fanA n s 199 1 11
+def fanUnder2 (n s : Nat) : Nat := fanCalls% fanA n s 199 11 21
+def fanUnder3 (n s : Nat) : Nat := fanCalls% fanA n s 199 21 31
+def fanUnder4 (n s : Nat) : Nat := fanCalls% fanA n s 199 31 42
+def fanOver1 (n s : Nat) : Nat := fanCalls% fanB n s 200 1 11
+def fanOver2 (n s : Nat) : Nat := fanCalls% fanB n s 200 11 21
+def fanOver3 (n s : Nat) : Nat := fanCalls% fanB n s 200 21 31
+def fanOver4 (n s : Nat) : Nat := fanCalls% fanB n s 200 31 42
 
-def fanOver (n s : Nat) : Nat × Nat := (fanCalls% fanB n s 200 1 42, s)
+def fanUnder (n s : Nat) : Nat × Nat :=
+  (Nat.add (Nat.add (fanUnder1 n s) (fanUnder2 n s)) (Nat.add (fanUnder3 n s) (fanUnder4 n s)), s)
+
+def fanOver (n s : Nat) : Nat × Nat :=
+  (Nat.add (Nat.add (fanOver1 n s) (fanOver2 n s)) (Nat.add (fanOver3 n s) (fanOver4 n s)), s)
 
 /-- The reference: forty-one leaves `min s (K - 1) + o` and forty-one sums `C·n`. -/
 def reference (c k n s : Nat) : Nat × Nat :=
