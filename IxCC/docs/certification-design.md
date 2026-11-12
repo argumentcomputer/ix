@@ -905,7 +905,7 @@ written beside each law in `IxCCGrounding/Laws.lean` (and beside each use).
   it (`ctor`, `caseRec`, `prim`); without it for recursors, a recursor whose
   stored type has fewer binders than SrcEval's arity would have partial
   applications the relation cannot extend, and the fundamental lemma's
-  application case would not go through. Measured on the 49 closures that load,
+  application case would not go through. Measured on the 49 closures that loaded (on the reading before the ingress change of 2026-11-12),
   every recursor of every program that has the rest of the shape (1,657 of 1,781)
   has the arity fact too, and so do all 39 recursors of the checked sets
   (`GR-3d-a5`, `GR-3d-a6`).
@@ -913,7 +913,7 @@ written beside each law in `IxCCGrounding/Laws.lean` (and beside each use).
   `subsingleton when` recursor only where `when` holds at its levels, and F2
   elsewhere; the class asks `when` to be "always", so at `Eq.rec` F3 is the only
   rule SrcEval applies. Measured: the table gives exactly that kind at `Eq.rec`
-  in all 49 closures (`GR-3d-a5`, `GR-3d-a6`).
+  in all 49 closures that loaded then (`GR-3d-a5`, `GR-3d-a6`).
 - *`EqRecBasis`* (in `recShape`, where a recursor of `Sl` is of class `eqRec`):
   `Eq.rec` is stored with major index `5` and rule prefix `4`, its type exactly
   `eqRecType`, its one rule at `Eq.refl` with right-hand side exactly `eqRecRhs`
@@ -930,7 +930,7 @@ written beside each law in `IxCCGrounding/Laws.lean` (and beside each use).
   its own parameters, where instantiating them is the identity in any order)
   and the rule's field count (ι takes the constructor's, from `EqReflBasis`).
   Measured: true on every closure whose `Sl` holds `Eq.rec` (see the corpus
-  paragraph below); the stored `Eq.rec` is the same term in all 49 closures
+  paragraph below); the stored `Eq.rec` is the same term in all 49 closures that loaded then
   (`GR-3d-q2` to `q4`).
 - *The class `flat`* (decided by `recClassB`): no parameter, every rule without
   fields and its body, peeled of the motives' and minor premises' λs, a
@@ -1193,46 +1193,53 @@ member is its constructor's image, from which that follows). This shape is how
 Lean compiles structural recursion, so it is not a corner of one closure: it
 will meet the widening as soon as recursors enter the checked set.
 
-**What the fragment does not yet cover.** `groundCheck` is false on 19 of the 50
-closures that load (on 18 of the 49 measured before `sparse` was registered; 20
-before G3's part D admitted the field-less recursors without parameters, which
-made `strictAndOr` and `boundary` pass; 25 before G3's part C admitted
-`Eq.rec`, which made `tak`, `even-odd`, `sfib`, `phase1-abi` and `OS02-plain`
-pass; 26 of 48 before the renaming-tolerant `case` shape: `erase` and
-`OS16-plain` passed then); the gaps, ordered by how many closures each blocks (a
-closure can have several; `GR-3f-cA2`, `GR-3f-cB2`):
+**What the fragment does not yet cover.** `groundCheck` is false on 16 of the 50
+closures that load (measured after ingress was changed to read only the records
+its seeds reach, 2026-11-12, `GR-3g-cA2`, `cB2`; the same 16 on the reading
+before that change, `GR-3g-cA`, `cB`, where `fields49` stood for `fields254`;
+19 before G3's part E admitted the recursors without parameters whose rule
+bodies name no constant, which made `tags16`, `tags17` and `tags125` pass; 20
+before part D admitted the field-less ones, which made `strictAndOr` and
+`boundary` pass; 25 before part C admitted `Eq.rec`, which made `tak`,
+`even-odd`, `sfib`, `phase1-abi` and `OS02-plain` pass; 26 of 48 before the
+renaming-tolerant `case` shape: `erase` and `OS16-plain` passed then); the gaps,
+ordered by how many closures each blocks (a closure can have several):
 
-1. *A recursor in `Sl` of a class not yet admitted* (`declOk`; admitted are
-   `empty`, `False.rec`, since G3's parts A and B, `eqRec`, the built-in
-   `Eq.rec` run by `Eq.ndrec`, since part C, and `flat`, `Bool.rec`, since part
-   D), 6 closures, the only obstacle on four (`tags16`, `tags17`, `tags125`,
-   `sparse`). Every one of these recursors is of class `ordinary` and has the
-   checked shape; with every class admitted the check would accept 35 closures.
-   The recursors of `tags16`, `tags17` and `tags125` (whose last constructor has
-   a `Nat` field, `T16.c15 (m : Nat)`: that rule's body applies a minor premise
-   to the field, an application site in a rule body, part E); `Nat.rec` on 2
-   (`strings`, `diag`) and `List.rec` on 2 (`diag`, from structural recursion
-   compiled through `brecOn`; `sparse`); an `Option`-like recursor in `sparse`;
-   another four-rule recursor with fields in `diag`. Of these nine recursors, six
-   have no parameter and constructors without level parameters; `List.rec`
-   (twice) and `sparse`'s `Option`-like recursor have both, and F2 there will
-   rest on canonicity (`GR-3f-q1`, `q3`, `q5`).
-   `phase1-machines/natural` no longer fails `declOk` (its one recursor,
-   `Bool.rec`, is flat), only `valueCorr`.
-2. *A `let` in a run term* (`valueCorr`, `eqnCorr`, `eqnShape`), 13 closures:
-   the body of every `for` loop (`Std.Legacy.Range.forIn'.loop`, 6), and
-   values such as `Scalar.powMod`'s; the only obstacle on `fields49`.
-3. *A `case` entry outside the shape* (`caseShape`), 4 closures (12 before):
-   `Empty.casesOn` (no minor premise) and families that can be propositions or
-   are indexed; no longer the `casesOn` of a universe-polymorphic family whose
-   recursor names its level parameters apart (`ForInStep` in every `for` loop,
-   `List`).
-4. Fewer: a projection out of a `Prop` structure (`And`; `proj`, 3); a `case`
-   entry over `Empty`, an indexed `Eq` or `PUnit` (`caseRec`, 3); string
-   literals (`valueCorr`, 2: `strings`, `panic`); an indexed family's `case`
-   entry (`Eq`, `Nat.le`; `caseProg`, 2); an unsafe definition the kernel's
-   reading does not hold (`stored`, 1: `admit`); an opaque definition
-   (`notOpaque`, 1).
+1. *A `let` in a run term, or a string literal* (`valueCorr`, `eqnCorr`,
+   `eqnShape`), 14 closures: the body of every `for` loop
+   (`Std.Legacy.Range.forIn'.loop`), values such as `Scalar.powMod`'s, and the
+   string literals of `strings` and `panic`; these are the only false conjuncts
+   on nine (`sum-loop`, `collatz`, `prime-count`, `scalar`, `loops`,
+   `fields254`, `machines`, `natural`, `arity`).
+2. *A `case` entry outside the shape* (`caseShape`), 4 closures (12 before the
+   renaming-tolerant shape): `Empty.casesOn` (no minor premise) and families
+   that can be propositions or are indexed; no longer the `casesOn` of a
+   universe-polymorphic family whose recursor names its level parameters apart
+   (`ForInStep` in every `for` loop, `List`).
+3. *A recursor in `Sl` that is not admitted* (`declOk`), 2 closures, the only
+   obstacle on `sparse`, *or whose rule bodies recurse* (`recShape`, by
+   `RecBodies`), 1 (`diag`). Admitted are `empty`, `False.rec` (G3's parts A
+   and B), `eqRec`, the built-in `Eq.rec` run by `Eq.ndrec` (part C), `flat`,
+   `Bool.rec` (part D), and `noParams`, the other recursors without parameters,
+   whose rule bodies must name no constant (part E). `List.rec` (in `diag`, from
+   structural recursion compiled through `brecOn`, and in `sparse`) and
+   `sparse`'s `Option`-like recursor have parameters (class `ordinary`), and
+   constructors with level parameters, so F2 there will rest on canonicity;
+   `Nat.rec` (in `diag`) is of class `noParams`, but its `succ` rule calls
+   `Nat.rec` (recursion, which part E does not admit). With every class admitted
+   the check would accept 35 closures (`sparse` added). On the reading before
+   the ingress change `strings` held `Nat.rec` in its checked set too (refused
+   at `declOk` as part D landed it, at `recShape` after part E); on the reading
+   since, its checked set does not reach `Nat.rec` (the one constant of it whose
+   value names `Nat.rec` is a `case` entry, which F5 runs without its value;
+   which run term named it before is not measured), so `recShape` is no longer
+   among its false conjuncts. Its verdict is unchanged.
+4. Fewer: a projection out of a `Prop` structure (`And`; `proj`, 3: `strings`,
+   `panic`, `diag`); a `case` entry over `Empty`, an indexed `Eq` or `PUnit`
+   (`caseRec`, 3: `resource`, `strings`, `closures`); an indexed family's
+   `case` entry (`Eq`, `Nat.le`; `caseProg`, 2: `strings`, `diag`); an unsafe
+   definition the kernel's reading does not hold (`stored`, 1: `admit`); an
+   opaque definition (`notOpaque`, 1: `diag`).
 
 The most level parameters of a constant in any closure's `Sl` is 4, in any
 closure's reading 7; the largest level, 18 nodes.
