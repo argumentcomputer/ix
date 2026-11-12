@@ -25,10 +25,12 @@ lake exe pin-src-tables --ix PATH/TO/ix --work plans/<task>/src-tables \
 ```
 
 `--diagnostics fixtures/ixon-v4/src-diag`, `--sortpoly
-fixtures/ixon-v4/src-sortpoly` and `--words fixtures/ixon-v4/src-words` instead
-compile a roots-only fixture from the Lean source in that directory (the words
-fixture with `--equations`, so that the word operations' stored equations join
-its closure). -/
+fixtures/ixon-v4/src-sortpoly`, `--words fixtures/ixon-v4/src-words` and
+`--kernel-hints fixtures/ixon-v4/kernel-hints` instead compile a roots-only
+fixture from the Lean source in that directory (the words fixture with
+`--equations`, so that the word operations' stored equations join its closure;
+the kernel-hints fixture with seeds beside its root, which the sidecar does not
+name). -/
 
 open Lean IxCC.Tools.Check
 
@@ -88,6 +90,8 @@ structure RootsFixture where
   roots : List Name
   /-- Compile with `--equations` (the fixed-width words' stored equations join the closure). -/
   equations : Bool := false
+  /-- Constants compiled into the closure beside the roots, which the sidecar does not name. -/
+  seeds : List Name := []
 
 /-- The admission-diagnostics fixtures `fixtures/ixon-v4/src-diag/`, from one
 source: the root that uses `sorry` alone (`sorry.ixe`; the certified kernel
@@ -117,6 +121,17 @@ def wordsFixture : RootsFixture where
   roots := [`Words.u8, `Words.u16, `Words.u32, `Words.u64]
   equations := true
 
+/-- The kernel-hints fixture `fixtures/ixon-v4/kernel-hints/`: a root, and as seeds the proofs the
+certified kernel checks quickly only with the artifact's reducibility hints, and a mutual block of
+definitions whose hints are recorded under its members' projection records
+(`IxCCTests.KernelFront.Hints`). -/
+def kernelHintsFixture : RootsFixture where
+  source := "KernelHints.lean"
+  stem := "hints"
+  roots := [`KernelHints.root]
+  seeds := [`KernelHints.allOnesXor, `KernelHints.complement16, `KernelHints.complement32,
+    `KernelHints.complement64, `KernelHints.ping, `KernelHints.pong]
+
 /-- Compile a roots-only fixture (anonymous and named), resolve its roots and
 write the closure, its `ixcc/k1-equations/1` sidecar (roots only) and
 a provenance record (`STEM.provenance.json`). -/
@@ -126,7 +141,7 @@ def rootsFixture (fx : RootsFixture) (ix : String) (work dir : System.FilePath)
   let source := (fx.sourceRoot.getD dir) / fx.source
   let closure := dir / s!"{fx.stem}.ixe"
   let named := work / s!"{fx.stem}.named.ixe"
-  let consts := String.intercalate "," (fx.roots.map toString)
+  let consts := String.intercalate "," ((fx.roots ++ fx.seeds).map toString)
   let eqns := fun (out : String) => if fx.equations then #["--equations", "--equations-out", out] else #[]
   let _ ← run ix (#["compile", "--no-build", "--consts", consts, "--anon", "--out", closure.toString]
     ++ eqns (work / s!"{fx.stem}.ix-equations.json").toString ++ #[source.toString])
@@ -146,8 +161,8 @@ def rootsFixture (fx : RootsFixture) (ix : String) (work dir : System.FilePath)
     ("producer_version", String.intercalate " " (words (← run ix #["--version"]))),
     ("producer", IxCCTests.Corpus.producerIx),
     ("commands", toJson [
-      s!"ix compile --no-build --consts <roots>{if fx.equations then " --equations" else ""} --anon --out {fx.stem}.ixe {fx.source}",
-      s!"ix compile --no-build --consts <roots>{if fx.equations then " --equations" else ""} --out {fx.stem}.named.ixe {fx.source}",
+      s!"ix compile --no-build --consts <roots{if fx.seeds.isEmpty then "" else " and seeds"}>{if fx.equations then " --equations" else ""} --anon --out {fx.stem}.ixe {fx.source}",
+      s!"ix compile --no-build --consts <roots{if fx.seeds.isEmpty then "" else " and seeds"}>{if fx.equations then " --equations" else ""} --out {fx.stem}.named.ixe {fx.source}",
       s!"ix addr-of --ixe {fx.stem}.named.ixe NAME, for every root"]),
     ("source_sha256", ← sha256 source),
     ("named_env_sha256", ← sha256 named),
@@ -213,14 +228,15 @@ def repin (file oldPrims oldTables : System.FilePath) (newPrims newTables : Syst
 
 def main (args : List String) : IO Unit := do
   let options ← checked (parseArgs ["--ix", "--work", "--out", "--provenance", "--names",
-    "--diagnostics", "--sortpoly", "--words", "--repin", "--old-primitives", "--old-tables"] args)
+    "--diagnostics", "--sortpoly", "--words", "--kernel-hints", "--repin", "--old-primitives",
+    "--old-tables"] args)
   if let some file := optional options "--repin" then
     let some oldPrims := optional options "--old-primitives" | throw (IO.userError "missing --old-primitives")
     let some oldTables := optional options "--old-tables" | throw (IO.userError "missing --old-tables")
     repin file oldPrims oldTables "fixtures/ixon-v4/primitives.tsv" "fixtures/ixon-v4/src-tables.tsv"
     return
   for (flag, fxs) in [("--diagnostics", diagFixtures), ("--sortpoly", [sortPolyFixture]),
-      ("--words", [wordsFixture])] do
+      ("--words", [wordsFixture]), ("--kernel-hints", [kernelHintsFixture])] do
     if let some dir := optional options flag then
       let some ix := optional options "--ix" | throw (IO.userError "missing --ix")
       for fx in fxs do

@@ -58,11 +58,15 @@ fails `foArgsB`; the pinned `Bool` re-pinned at `Nat` fails `boolListedB` and no
 
 Recursors (G3): with no recursor class admitted the check is the landed one, true on `fib`. On
 `tak` (`fixtures/ixon-v4/bench-k1/tak`), whose one recursor in `Sl` is `Eq.rec` (run by
-`Eq.ndrec`), of class `eqRec`, not yet admitted: exactly `declOk` false; with every class
-admitted (`checkPartsWith`) every conjunct true; and three controls, each making exactly
-`recShape` false there: `Eq.rec`'s stored rule given the right-hand side `0`, its stored type cut
-by one binder (fewer than the arguments SrcEval takes), `Eq.refl`'s first binder datum made
-`never`.
+`Eq.ndrec`), of class `eqRec`, admitted since part C: every conjunct true (with only the class
+`empty` admitted, as parts A and B landed, exactly `declOk` false); and six controls, each making
+exactly `recShape` false there: `Eq.rec`'s stored rule given the right-hand side `0`, its stored
+type cut by one binder (fewer than the arguments SrcEval takes), `Eq.refl`'s first binder datum
+made `never`; and for `EqRecBasis` (`RecStored` still true, `EqRecBasis` alone false): `Eq.rec`'s
+rule made `λ α a motive refl. a` in the kernel's reading and the program alike, its major
+premise's domain made `@Eq α b a`; and its level-parameter list reversed (refused by `RecStored`,
+since its rule's levels no longer correspond to the program's; `EqRecBasis` does not read the
+list).
 -/
 
 namespace IxCCTests.Grounding
@@ -418,6 +422,52 @@ def mutateEqRefl (i : Input) : Input :=
       | .ctorInfo cv np nf => .ctorInfo { cv with type := redatum cv.type } np nf
       | ci => ci }
 
+/-- A Src term's body under `n` λs replaced by `new`. -/
+def setLamBody : Nat → Term → Term → Term
+  | 0, _, new => new
+  | n + 1, .lam b d t, new => .lam b d (setLamBody n t new)
+  | _ + 1, t, _ => t
+
+/-- `Eq.rec`'s rule made `λ α a motive refl. a`, in the kernel's reading and in the program alike:
+the Src rule still corresponds to the stored one (`RecStored` holds), and only `EqRecBasis`
+refuses it. -/
+def mutateEqRecRhsA (i : Input) (er : CId) : Input :=
+  let env := mapConst i.env Ix.Kernel.eqRecName fun
+    | .recInfo cv mI rP (r0 :: rest) =>
+      .recInfo cv mI rP ({ r0 with rhs := lamTele eqRecPrefix (.bvar 2) } :: rest)
+    | ci => ci
+  let src := match i.src.entry? er with
+    | some e =>
+      match e.decl with
+      | .recr sf kk lv np nmot nmin ni ind (rl :: rest) ty =>
+        let rl' := { rl with rhs := setLamBody 4 rl.rhs (.var 2) }
+        let e' := { e with decl := .recr sf kk lv np nmot nmin ni ind (rl' :: rest) ty }
+        { i.src with consts := i.src.consts.insert er e' }
+      | _ => i.src
+    | none => i.src
+  { i with env, src }
+
+/-- `Eq.rec`'s stored type with its major premise's domain made `@Eq α b a` (the arity unchanged,
+so `RecStored` holds). -/
+def mutateEqRecType (i : Input) : Input :=
+  let ty := piTele (eqRecPrefix ++ [(.bvar 3, bmR), (eqAppK (.bvar 4) (.bvar 0) (.bvar 3), bmR)])
+    eqRecBody
+  { i with env := mapConst i.env Ix.Kernel.eqRecName fun
+      | .recInfo cv mI rP rules => .recInfo { cv with type := ty } mI rP rules
+      | ci => ci }
+
+/-- `Eq.rec`'s level-parameter list reversed (`[1, 0]` to `[0, 1]`), the names inside its type and
+rule unchanged; the level parameters `lpsOf` read off the mutated reading, as `load` computes them. -/
+def mutateEqRecLevels (i : Input) : Input :=
+  let env := mapConst i.env Ix.Kernel.eqRecName fun
+    | .recInfo cv mI rP rules => .recInfo { cv with levelParams := cv.levelParams.reverse } mI rP rules
+    | ci => ci
+  let lpsOf : CId → List Nat := fun c =>
+    match env.find? (i.κ c) with
+    | some ci => ci.toConstantVal.levelParams
+    | none => []
+  { i with env, lpsOf }
+
 /-- `n` nested `Nat.succ`s around `Nat.zero`. -/
 def succs (n : Nat) : KExpr := (List.range n).foldl (fun e _ => .app succK e) zeroK
 
@@ -622,25 +672,41 @@ def run : IO Bool := do
     -- is the landed one, true on `fib`
     expect a (failingWith [] i).isEmpty
       s!"fib: with no recursor class admitted, false conjuncts {failingWith [] i}"
-    -- `tak`: `Eq.rec` (run by `Eq.ndrec`) is its only recursor and its only obstacle; it has the
-    -- checked shape (`recShape`), and only `declOk`'s class gate refuses it until F3 is proved
+    -- `tak`: `Eq.rec` (run by `Eq.ndrec`) is its only recursor; since G3's part C its class is
+    -- admitted (F3 proved), and every conjunct of the check is true
     let (ki, _) ← loadClosure "tak" "fixtures/ixon-v4/bench-k1/tak" ["entry"]
     let some er := eqRecOf? ki | throw (IO.userError "tak: no Eq.rec in Sl")
-    expect a (recClassB ki.src ki.env ki.κ er == some .eqRec && !admittedClasses.contains .eqRec &&
-        failing ki == ["declOk"])
-      s!"tak: Eq.rec c{er} class {repr (recClassB ki.src ki.env ki.κ er)}, false conjuncts {failing ki}, expected [declOk]"
-    expect a (failingWith allClasses ki).isEmpty
-      s!"tak: every class admitted, false conjuncts {failingWith allClasses ki}"
-    -- controls (every class admitted, so that `declOk` is true): each makes exactly `recShape` false
-    let kr := failingWith allClasses (mutateEqRecRule ki)
+    expect a (recClassB ki.src ki.env ki.κ er == some .eqRec && admittedClasses.contains .eqRec &&
+        eqRecBasisB ki.env && (failing ki).isEmpty)
+      s!"tak: Eq.rec c{er} class {repr (recClassB ki.src ki.env ki.κ er)}, EqRecBasis {eqRecBasisB ki.env}, false conjuncts {failing ki}, expected none"
+    expect a (failingWith [.empty] ki == ["declOk"])
+      s!"tak: with only the class empty admitted (parts A and B), false conjuncts {failingWith [.empty] ki}, expected [declOk]"
+    -- controls: each makes exactly `recShape` false
+    let kr := failing (mutateEqRecRule ki)
     expect a (kr == ["recShape"]) s!"tak: Eq.rec's rule rhs made 0: false conjuncts {kr}, expected [recShape]"
-    let ka := failingWith allClasses (mutateEqRecArity ki)
+    let ka := failing (mutateEqRecArity ki)
     expect a (ka == ["recShape"]) s!"tak: Eq.rec's type cut by one binder: false conjuncts {ka}, expected [recShape]"
-    let kf := failingWith allClasses (mutateEqRefl ki)
+    let kf := failing (mutateEqRefl ki)
     expect a (kf == ["recShape"]) s!"tak: Eq.refl's first binder datum made never: false conjuncts {kf}, expected [recShape]"
-    IO.println s!"tak: Eq.rec c{er} of class eqRec, with the checked shape; the check refuses it at \
-      declOk alone (class not admitted); with every class admitted it is true, and Eq.rec's rule \
-      rhs mutated, its type cut by one binder, Eq.refl's first binder datum changed: exactly recShape false"
+    -- `EqRecBasis`' own controls: `RecStored` still holds, `EqRecBasis` alone is false
+    let mA := mutateEqRecRhsA ki er
+    let kA := failing mA
+    expect a (kA == ["recShape"] && recStoredB mA.src mA.env mA.κ mA.lpsOf er && !eqRecBasisB mA.env)
+      s!"tak: Eq.rec's rule made λ α a motive refl. a (kernel and program): false conjuncts {kA}, RecStored {recStoredB mA.src mA.env mA.κ mA.lpsOf er}, EqRecBasis {eqRecBasisB mA.env}"
+    let mT := mutateEqRecType ki
+    let kT := failing mT
+    expect a (kT == ["recShape"] && recStoredB mT.src mT.env mT.κ mT.lpsOf er && !eqRecBasisB mT.env)
+      s!"tak: Eq.rec's major domain made @Eq α b a: false conjuncts {kT}, RecStored {recStoredB mT.src mT.env mT.κ mT.lpsOf er}, EqRecBasis {eqRecBasisB mT.env}"
+    -- the level parameters permuted: `EqRecBasis` does not read them; `RecStored` refuses it, since
+    -- the rule's levels no longer correspond to the program's
+    let mL := mutateEqRecLevels ki
+    let kL := failing mL
+    expect a (kL == ["recShape"] && !recStoredB mL.src mL.env mL.κ mL.lpsOf er && eqRecBasisB mL.env)
+      s!"tak: Eq.rec's level parameters reversed: false conjuncts {kL}, RecStored {recStoredB mL.src mL.env mL.κ mL.lpsOf er}, EqRecBasis {eqRecBasisB mL.env}"
+    IO.println s!"tak: Eq.rec c{er} of class eqRec, admitted; every conjunct true (with only the \
+      class empty admitted, declOk false); Eq.rec's rule rhs made 0, its type cut by one binder, \
+      Eq.refl's first binder datum changed, its rule made λ α a motive refl. a (EqRecBasis), its \
+      major domain swapped (EqRecBasis), its level parameters reversed (RecStored): exactly recShape false"
     IO.println s!"tests-grounding: {← a.get} assertions passed"
     return true
   catch error =>

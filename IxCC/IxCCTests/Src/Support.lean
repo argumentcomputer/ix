@@ -363,4 +363,22 @@ def base : Builder × Base := Id.run do
                beq, pair, pairMk, empty, emptyRec, isNat, isNatMk, isNatRec, quot, quotMk,
                quotLift, quotInd, unit, unitMk, unitRec, ppair, ppairMk })
 
+/-- `p` with a copy `g` of the safe definition `f` and a theorem
+`thm : @f = @g` whose proof is a placeholder (`checkCsimp` reads the
+statement; the kernel never sees this program): what an entry `csimp f g thm`
+needs. The new constants have fake addresses. -/
+def withCsimpTwin (p : Program) (f : CId) : Option (Program × CId × CId) := do
+  let some (.defn .defn .safe n ty v) := p.decl? f | none
+  let eq ← p.known.eq
+  let g := p.size
+  let ga := Builder.fakeAddr (g + 2000000)
+  let p := p.push { ref := .member ga 0, addr := ga, decl := .defn .defn .safe n ty v }
+  let thm := p.size
+  let ta := Builder.fakeAddr (thm + 2000000)
+  let us := Table.paramUnivs n
+  let stmt := Term.mkApps (.const eq [.succ .zero])
+    [(ty, .strict, .rel), (.const f us, .strict, .rel), (.const g us, .strict, .rel)]
+  let p := p.push { ref := .member ta 0, addr := ta, decl := .defn .thm .safe n stmt (.natLit 0) }
+  return (p, g, thm)
+
 end IxCCTests.Src

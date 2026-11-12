@@ -6,6 +6,7 @@ import IxCCGrounding.Relation
 import IxCCGrounding.Apply
 import IxCCGrounding.Support
 import IxCCGrounding.Heads
+import IxCCGrounding.EqRec
 import IxCCGrounding.Hyps
 import IxCCGrounding.Fundamental
 import IxCCGrounding.Ok

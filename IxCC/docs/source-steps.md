@@ -61,6 +61,21 @@ Conventions that follow from the rules:
   entry's positions, recursor and `case` minors, induction hypotheses) costs
   nothing; each use of the slot costs one step (E1) plus the steps of
   evaluating its term, every time it is used.
+- **A match with a catch-all runs only the chosen arm.** Lean elaborates it
+  through a sparse casesOn, whose arms are arguments; since 2026-11-12 its
+  `lazy` row passes them by name (each is used at most once), so an arm whose
+  constructor is not chosen costs nothing, and the chosen one costs its steps
+  plus the forced slots. This changed the counts of every program that applies
+  one, and its evaluation order: an unchosen arm that would not return, or
+  would run out of stack or heap, no longer runs (K2 `queue`, quadratic before,
+  is linear; `phase1-boundary`'s `tags16` 139 → 133 on its first case; the
+  [2026-11-10 tables](performance/src-steps-2026-11-10/README.md) are from before).
+  An argument that is already a value, a λ arm or a variable major, still
+  costs one forced slot when its helper has a `lazy` row, which it did not
+  cost strictly: K3 `const_fold` (λ arms) counts 11,419 → 11,886 steps at
+  `n = 5` and 430,515 → 451,566 (+4.9 %) at `n = 10`, `tokenise` +0.3 %,
+  while its compiled code is byte-identical
+  ([performance/sparse-cases-2026-11-12](performance/sparse-cases-2026-11-12/README.md)).
 - **Primitives are one application each,** whatever the size of their `Nat`
   arguments (SrcEval's `Nat` is exact).
 - **Literals peel for free.** A `Nat` literal used as a `Nat` recursor's or
@@ -82,7 +97,9 @@ reach it at the counted least clock and to time out one below. A run that
 fails either check is an error, never a reported count. `tests-src` pins
 the step counts and least clocks of three small bench-k1 rows, so a change
 to SrcEval's rules or to the front end that alters this unit fails a
-required suite.
+required suite, and of nine rows of the sparse casesOn fixture
+(`phase2-closures/sparse`), whose unchosen arm costs the same at `n = 1000`
+and `n = 100000`.
 
 ## The tool
 

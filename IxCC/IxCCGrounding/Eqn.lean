@@ -85,11 +85,13 @@ theorem den_mkAppN_bvars {cval : KKey → (LevelParam → Nat) → V} {φ : Leve
 
 /-! ## Inhabited `Eq` -/
 
-/-- **An inhabited `@Eq.{u} T a b` makes `a` and `b` denote the same set.** -/
-theorem eq_of_inhabited (M : Model V env) (hEq : EqBasis env) {φ : LevelParam → Nat}
+/-- **An inhabited `@Eq.{u} T a b` makes `a` and `b` denote the same set, and its member is the
+proof point** (`Model.mem` of `Eq`, read through `EqBasis`, and `Model.eq_equality`: the
+proposition denotes `eqv x x`, a truth value). -/
+theorem eq_of_inhabited_pt (M : Model V env) (hEq : EqBasis env) {φ : LevelParam → Nat}
     {ρ : BVarIdx → V} {u : Level} {T a b : KExpr} {X y : V}
     (hX : Denotes M.cval env φ ρ (Expr.mkAppN (.const eqName [u]) [T, a, b]) X) (hy : y ∈ˢ X) :
-    ∃ x, Denotes M.cval env φ ρ a x ∧ Denotes M.cval env φ ρ b x := by
+    (∃ x, Denotes M.cval env φ ρ a x ∧ Denotes M.cval env φ ρ b x) ∧ y = pt := by
   obtain ⟨ciE, hfE, hlE, htE⟩ := hEq
   simp only [Expr.mkAppN] at hX
   obtain ⟨E3, xb, hE3, hb, rfl⟩ := den_app.mp hX
@@ -135,7 +137,14 @@ theorem eq_of_inhabited (M : Model V env) (hEq : EqBasis env) {φ : LevelParam �
     have heq := M.eq_equality u φ ρ _ A xa xb hE hAu haA hbA
     rw [heq] at hy
     obtain rfl := mem_eqv hy
-    exact ⟨xa, ha, hb⟩
+    exact ⟨⟨xa, ha, hb⟩, mem_univ_zero (eqv_mem_univ xa xa) hy⟩
+
+/-- **An inhabited `@Eq.{u} T a b` makes `a` and `b` denote the same set.** -/
+theorem eq_of_inhabited (M : Model V env) (hEq : EqBasis env) {φ : LevelParam → Nat}
+    {ρ : BVarIdx → V} {u : Level} {T a b : KExpr} {X y : V}
+    (hX : Denotes M.cval env φ ρ (Expr.mkAppN (.const eqName [u]) [T, a, b]) X) (hy : y ∈ˢ X) :
+    ∃ x, Denotes M.cval env φ ρ a x ∧ Denotes M.cval env φ ρ b x :=
+  (eq_of_inhabited_pt M hEq hX hy).1
 
 /-! ## The telescope -/
 

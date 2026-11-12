@@ -7,6 +7,7 @@ Measured on this tree; each report says how to reproduce it.
 | Report | Question and scope |
 | --- | --- |
 | [SrcEval step counts](src-steps-2026-11-10/README.md) | Charged steps (the [unit](../source-steps.md)), their parts and the least clock of every case of the six registered corpus families that the corpus suite runs at the source level, including the benchmark fixtures; raw `ixcc/src-steps/1` lines. |
+| [Sparse casesOn as `lazy` rows](sparse-cases-2026-11-12/README.md) | K2 `queue` and the untaken-arm programs natively before and after the change (time, memory, outcomes), SrcEval steps, and every registered root's object and certificate compared. |
 | [The producer's cost](producer-2026-11-10/README.md) | `ixcc compile`'s untrusted producer on every committed program and on scaling closures, before and after its super-linear steps were rewritten: stage times, allocation counts, output identity; the timing harness and its raw tables. |
 
 ## Historical reports
