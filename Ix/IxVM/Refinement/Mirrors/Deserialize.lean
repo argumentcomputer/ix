@@ -328,34 +328,34 @@ def «IxonDeserialize::assert_prj_empty_tables» : Nat → Heap F → SourceValu
       (fun
         | [_] =>
           (do
-            let (v36, h37) ← match loadValue h x_sharing with
+            let (v41, h42) ← match loadValue h x_sharing with
               | .ok z => some (z, h)
               | .error _ => none
-            match v36 with
-              | .construct e47 "Nil" [] =>
-                if e47 = constructorName [] (.named "Lists::Node" [(.ptr (.named "Ixon::Expr" []))]) then
+            match v41 with
+              | .construct e52 "Nil" [] =>
+                if e52 = constructorName [] (.named "Lists::Node" [(.ptr (.named "Ixon::Expr" []))]) then
                   (do
-                    let (v38, h39) ← match loadValue h37 x_refs with
-                      | .ok z => some (z, h37)
+                    let (v43, h44) ← match loadValue h42 x_refs with
+                      | .ok z => some (z, h42)
                       | .error _ => none
-                    match v38 with
-                      | .construct e46 "Nil" [] =>
-                        if e46 = constructorName [] (.named "Lists::Node" [(.ptr (.array .field 32))]) then
+                    match v43 with
+                      | .construct e51 "Nil" [] =>
+                        if e51 = constructorName [] (.named "Lists::Node" [(.ptr (.array .field 32))]) then
                           (do
-                            let (v40, h41) ← match loadValue h39 x_univs with
-                              | .ok z => some (z, h39)
+                            let (v45, h46) ← match loadValue h44 x_univs with
+                              | .ok z => some (z, h44)
                               | .error _ => none
-                            match v40 with
-                              | .construct e45 "Nil" [] =>
-                                if e45 = constructorName [] (.named "Lists::Node" [(.ptr (.named "Ixon::Univ" []))]) then
+                            match v45 with
+                              | .construct e50 "Nil" [] =>
+                                if e50 = constructorName [] (.named "Lists::Node" [(.ptr (.named "Ixon::Univ" []))]) then
                                   (do
-                                    let (v42, h43) ← match loadValue h41 x_binders with
-                                      | .ok z => some (z, h41)
+                                    let (v47, h48) ← match loadValue h46 x_binders with
+                                      | .ok z => some (z, h46)
                                       | .error _ => none
-                                    match v42 with
-                                      | .construct e44 "Nil" [] =>
-                                        if e44 = constructorName [] (.named "Lists::Node" [(.named "Ixon::BinderBlock" [])]) then
-                                          some ((.tuple [] : SourceValue F), h43)
+                                    match v47 with
+                                      | .construct e49 "Nil" [] =>
+                                        if e49 = constructorName [] (.named "Lists::Node" [(.named "Ixon::BinderBlock" [])]) then
+                                          some ((.tuple [] : SourceValue F), h48)
                                         else none
                                       | _ => none)
                                 else none
@@ -369,34 +369,34 @@ def «IxonDeserialize::assert_prj_empty_tables» : Nat → Heap F → SourceValu
         (fun
           | [_] =>
             (do
-              let (v24, h25) ← match loadValue h x_sharing with
+              let (v29, h30) ← match loadValue h x_sharing with
                 | .ok z => some (z, h)
                 | .error _ => none
-              match v24 with
-                | .construct e35 "Nil" [] =>
-                  if e35 = constructorName [] (.named "Lists::Node" [(.ptr (.named "Ixon::Expr" []))]) then
+              match v29 with
+                | .construct e40 "Nil" [] =>
+                  if e40 = constructorName [] (.named "Lists::Node" [(.ptr (.named "Ixon::Expr" []))]) then
                     (do
-                      let (v26, h27) ← match loadValue h25 x_refs with
-                        | .ok z => some (z, h25)
+                      let (v31, h32) ← match loadValue h30 x_refs with
+                        | .ok z => some (z, h30)
                         | .error _ => none
-                      match v26 with
-                        | .construct e34 "Nil" [] =>
-                          if e34 = constructorName [] (.named "Lists::Node" [(.ptr (.array .field 32))]) then
+                      match v31 with
+                        | .construct e39 "Nil" [] =>
+                          if e39 = constructorName [] (.named "Lists::Node" [(.ptr (.array .field 32))]) then
                             (do
-                              let (v28, h29) ← match loadValue h27 x_univs with
-                                | .ok z => some (z, h27)
+                              let (v33, h34) ← match loadValue h32 x_univs with
+                                | .ok z => some (z, h32)
                                 | .error _ => none
-                              match v28 with
-                                | .construct e33 "Nil" [] =>
-                                  if e33 = constructorName [] (.named "Lists::Node" [(.ptr (.named "Ixon::Univ" []))]) then
+                              match v33 with
+                                | .construct e38 "Nil" [] =>
+                                  if e38 = constructorName [] (.named "Lists::Node" [(.ptr (.named "Ixon::Univ" []))]) then
                                     (do
-                                      let (v30, h31) ← match loadValue h29 x_binders with
-                                        | .ok z => some (z, h29)
+                                      let (v35, h36) ← match loadValue h34 x_binders with
+                                        | .ok z => some (z, h34)
                                         | .error _ => none
-                                      match v30 with
-                                        | .construct e32 "Nil" [] =>
-                                          if e32 = constructorName [] (.named "Lists::Node" [(.named "Ixon::BinderBlock" [])]) then
-                                            some ((.tuple [] : SourceValue F), h31)
+                                      match v35 with
+                                        | .construct e37 "Nil" [] =>
+                                          if e37 = constructorName [] (.named "Lists::Node" [(.named "Ixon::BinderBlock" [])]) then
+                                            some ((.tuple [] : SourceValue F), h36)
                                           else none
                                         | _ => none)
                                   else none
@@ -410,34 +410,34 @@ def «IxonDeserialize::assert_prj_empty_tables» : Nat → Heap F → SourceValu
           (fun
             | [_] =>
               (do
-                let (v12, h13) ← match loadValue h x_sharing with
+                let (v17, h18) ← match loadValue h x_sharing with
                   | .ok z => some (z, h)
                   | .error _ => none
-                match v12 with
-                  | .construct e23 "Nil" [] =>
-                    if e23 = constructorName [] (.named "Lists::Node" [(.ptr (.named "Ixon::Expr" []))]) then
+                match v17 with
+                  | .construct e28 "Nil" [] =>
+                    if e28 = constructorName [] (.named "Lists::Node" [(.ptr (.named "Ixon::Expr" []))]) then
                       (do
-                        let (v14, h15) ← match loadValue h13 x_refs with
-                          | .ok z => some (z, h13)
+                        let (v19, h20) ← match loadValue h18 x_refs with
+                          | .ok z => some (z, h18)
                           | .error _ => none
-                        match v14 with
-                          | .construct e22 "Nil" [] =>
-                            if e22 = constructorName [] (.named "Lists::Node" [(.ptr (.array .field 32))]) then
+                        match v19 with
+                          | .construct e27 "Nil" [] =>
+                            if e27 = constructorName [] (.named "Lists::Node" [(.ptr (.array .field 32))]) then
                               (do
-                                let (v16, h17) ← match loadValue h15 x_univs with
-                                  | .ok z => some (z, h15)
+                                let (v21, h22) ← match loadValue h20 x_univs with
+                                  | .ok z => some (z, h20)
                                   | .error _ => none
-                                match v16 with
-                                  | .construct e21 "Nil" [] =>
-                                    if e21 = constructorName [] (.named "Lists::Node" [(.ptr (.named "Ixon::Univ" []))]) then
+                                match v21 with
+                                  | .construct e26 "Nil" [] =>
+                                    if e26 = constructorName [] (.named "Lists::Node" [(.ptr (.named "Ixon::Univ" []))]) then
                                       (do
-                                        let (v18, h19) ← match loadValue h17 x_binders with
-                                          | .ok z => some (z, h17)
+                                        let (v23, h24) ← match loadValue h22 x_binders with
+                                          | .ok z => some (z, h22)
                                           | .error _ => none
-                                        match v18 with
-                                          | .construct e20 "Nil" [] =>
-                                            if e20 = constructorName [] (.named "Lists::Node" [(.named "Ixon::BinderBlock" [])]) then
-                                              some ((.tuple [] : SourceValue F), h19)
+                                        match v23 with
+                                          | .construct e25 "Nil" [] =>
+                                            if e25 = constructorName [] (.named "Lists::Node" [(.named "Ixon::BinderBlock" [])]) then
+                                              some ((.tuple [] : SourceValue F), h24)
                                             else none
                                           | _ => none)
                                     else none
@@ -451,34 +451,34 @@ def «IxonDeserialize::assert_prj_empty_tables» : Nat → Heap F → SourceValu
             (fun
               | [_] =>
                 (do
-                  let (v0, h1) ← match loadValue h x_sharing with
+                  let (v5, h6) ← match loadValue h x_sharing with
                     | .ok z => some (z, h)
                     | .error _ => none
-                  match v0 with
-                    | .construct e11 "Nil" [] =>
-                      if e11 = constructorName [] (.named "Lists::Node" [(.ptr (.named "Ixon::Expr" []))]) then
+                  match v5 with
+                    | .construct e16 "Nil" [] =>
+                      if e16 = constructorName [] (.named "Lists::Node" [(.ptr (.named "Ixon::Expr" []))]) then
                         (do
-                          let (v2, h3) ← match loadValue h1 x_refs with
-                            | .ok z => some (z, h1)
+                          let (v7, h8) ← match loadValue h6 x_refs with
+                            | .ok z => some (z, h6)
                             | .error _ => none
-                          match v2 with
-                            | .construct e10 "Nil" [] =>
-                              if e10 = constructorName [] (.named "Lists::Node" [(.ptr (.array .field 32))]) then
+                          match v7 with
+                            | .construct e15 "Nil" [] =>
+                              if e15 = constructorName [] (.named "Lists::Node" [(.ptr (.array .field 32))]) then
                                 (do
-                                  let (v4, h5) ← match loadValue h3 x_univs with
-                                    | .ok z => some (z, h3)
+                                  let (v9, h10) ← match loadValue h8 x_univs with
+                                    | .ok z => some (z, h8)
                                     | .error _ => none
-                                  match v4 with
-                                    | .construct e9 "Nil" [] =>
-                                      if e9 = constructorName [] (.named "Lists::Node" [(.ptr (.named "Ixon::Univ" []))]) then
+                                  match v9 with
+                                    | .construct e14 "Nil" [] =>
+                                      if e14 = constructorName [] (.named "Lists::Node" [(.ptr (.named "Ixon::Univ" []))]) then
                                         (do
-                                          let (v6, h7) ← match loadValue h5 x_binders with
-                                            | .ok z => some (z, h5)
+                                          let (v11, h12) ← match loadValue h10 x_binders with
+                                            | .ok z => some (z, h10)
                                             | .error _ => none
-                                          match v6 with
-                                            | .construct e8 "Nil" [] =>
-                                              if e8 = constructorName [] (.named "Lists::Node" [(.named "Ixon::BinderBlock" [])]) then
-                                                some ((.tuple [] : SourceValue F), h7)
+                                          match v11 with
+                                            | .construct e13 "Nil" [] =>
+                                              if e13 = constructorName [] (.named "Lists::Node" [(.named "Ixon::BinderBlock" [])]) then
+                                                some ((.tuple [] : SourceValue F), h12)
                                               else none
                                             | _ => none)
                                       else none
@@ -488,7 +488,33 @@ def «IxonDeserialize::assert_prj_empty_tables» : Nat → Heap F → SourceValu
                       else none
                     | _ => none)
               | _ => none)
-            (some ((.tuple [] : SourceValue F), h)))))
+            (matchConstruct (constructorName [] (.named "Ixon::ConstantInfo" [])) "Muts" 1 x_info
+              (fun
+                | [x_members] =>
+                  (do
+                    let (v0, h1) ← match loadValue h x_members with
+                      | .ok z => some (z, h)
+                      | .error _ => none
+                    matchConstruct (constructorName [] (.named "Lists::Node" [(.named "Ixon::MutConst" [])])) "Nil" 0 v0
+                      (fun _ =>
+                        (do
+                          let (v2, h3) ← match loadValue h1 x_binders with
+                            | .ok z => some (z, h1)
+                            | .error _ => none
+                          match v2 with
+                            | .construct e4 "Nil" [] =>
+                              if e4 = constructorName [] (.named "Lists::Node" [(.named "Ixon::BinderBlock" [])]) then
+                                some ((.tuple [] : SourceValue F), h3)
+                              else none
+                            | _ => none))
+                      (matchConstruct (constructorName [] (.named "Lists::Node" [(.named "Ixon::MutConst" [])])) "Cons" 2 v0
+                        (fun
+                          | [_, _] =>
+                            some ((.tuple [] : SourceValue F), h1)
+                          | _ => none)
+                        (none)))
+                | _ => none)
+              (some ((.tuple [] : SourceValue F), h))))))
 
 /-- Every derivation of `IxonDeserialize::assert_prj_empty_tables` is a run of its mirror. -/
 abbrev «IxonDeserialize::assert_prj_empty_tables».Complete : Prop :=
@@ -708,12 +734,56 @@ theorem «IxonDeserialize::assert_prj_empty_tables».of_eval : «IxonDeserialize
           obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
           simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::assert_prj_empty_tables», hc12, hc77, hc142, hp204, ld218, hp221, ld232, hp235, ld246, hp249, ld260, hp263]
         · dsimp only [List.length] at hc207
-          obtain ⟨rfl, rfl⟩ := selectArm_wildcard_inv sel208
-          obtain ⟨vs268, args269, rfl⟩ := d6.tuple_inv
-          obtain ⟨rfl, rfl⟩ := args269.nil_inv
-          refine ⟨1, fun k hk => ?_⟩
-          obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-          simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::assert_prj_empty_tables», hc12, hc77, hc142, hc207]
+          rcases selectArm_construct_inv (by trivial) sel208 with ⟨ys268, hp269, hl270, ml271, rfl⟩ | ⟨hc272, sel273⟩
+          · rcases ys268 with _ | ⟨y274, _ | ⟨_, _⟩⟩ <;> simp at hl270
+            simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml271
+            subst ml271
+            try rw [hp269] at d6
+            obtain ⟨v275, m276, bs277, body278, d279, sel280, d281⟩ := d6.matchValue_inv
+            obtain ⟨p282, d283, ld284⟩ := d279.load_inv
+            obtain ⟨l285, rfl⟩ := d283.var_inv
+            simp at l285
+            subst l285
+            rcases selectArm_construct_inv (by trivial) sel280 with ⟨ys286, hp287, hl288, ml289, rfl⟩ | ⟨hc290, sel291⟩
+            · rcases ys286 with _ | ⟨_, _⟩ <;> simp at hl288
+              simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml289
+              subst ml289
+              try rw [hp287] at d281
+              obtain ⟨v292, m293, bs294, d295, mt296, d297⟩ := d281.letValue_inv
+              obtain ⟨p298, d299, ld300⟩ := d295.load_inv
+              obtain ⟨l301, rfl⟩ := d299.var_inv
+              simp at l301
+              subst l301
+              obtain ⟨ys302, hp303, hl304, ml305⟩ := matchPattern_construct_inv mt296
+              rcases ys302 with _ | ⟨_, _⟩ <;> simp at hl304
+              try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp303
+              simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml305
+              subst ml305
+              obtain ⟨vs306, args307, rfl⟩ := d297.tuple_inv
+              obtain ⟨rfl, rfl⟩ := args307.nil_inv
+              refine ⟨1, fun k hk => ?_⟩
+              obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
+              simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::assert_prj_empty_tables», hc12, hc77, hc142, hc207, hp269, ld284, hp287, ld300, hp303]
+            · dsimp only [List.length] at hc290
+              rcases selectArm_construct_inv (by trivial) sel291 with ⟨ys308, hp309, hl310, ml311, rfl⟩ | ⟨hc312, sel313⟩
+              · rcases ys308 with _ | ⟨y314, _ | ⟨y315, _ | ⟨_, _⟩⟩⟩ <;> simp at hl310
+                simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml311
+                subst ml311
+                try rw [hp309] at d281
+                obtain ⟨vs316, args317, rfl⟩ := d281.tuple_inv
+                obtain ⟨rfl, rfl⟩ := args317.nil_inv
+                refine ⟨1, fun k hk => ?_⟩
+                obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
+                simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::assert_prj_empty_tables», hc12, hc77, hc142, hc207, hp269, ld284, hc290, hp309]
+              · dsimp only [List.length] at hc312
+                simp [SourceSemantics.selectArm] at sel313
+          · dsimp only [List.length] at hc272
+            obtain ⟨rfl, rfl⟩ := selectArm_wildcard_inv sel273
+            obtain ⟨vs318, args319, rfl⟩ := d6.tuple_inv
+            obtain ⟨rfl, rfl⟩ := args319.nil_inv
+            refine ⟨1, fun k hk => ?_⟩
+            obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
+            simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::assert_prj_empty_tables», hc12, hc77, hc142, hc207, hc272]
 
 /-- The mirror of `UInt64::to_field`. -/
 def «UInt64::to_field» : Nat → Heap F → SourceValue F → Option (SourceValue F × Heap F)
@@ -2577,40 +2647,45 @@ def «IxonDeserialize::get_binder_block» : Nat → Heap F → SourceValue F →
                         | .tuple [x_variant, x_s3] =>
                           (do
                             let (v10, h11) ← (do
-                              let (v12, h13) ← (do
-                                let (v14, h15) ← match evalBinOp .sub (.field 1) x_shared with
-                                  | .ok z => some (z, h9)
-                                  | .error _ => none
-                                let (v16, h17) ← (do
-                                  let (v18, h19) ← «UInt64::is_zero» k h15 x_variant
-                                  match evalBinOp .sub (.field 1) v18 with
-                                    | .ok z => some (z, h19)
-                                    | .error _ => none)
-                                match evalBinOp .mul v14 v16 with
-                                  | .ok z => some (z, h17)
-                                  | .error _ => none)
-                              match Builtin.apply (.assertEq { message := (some "binder data: a root block at a variant other than 0"), runtimeCheck := true }) [v12, (.field 0)] with
-                                | .ok z => some (z, h13)
-                                | .error _ => none)
+                              let (v12, h13) ← «UInt64::to_field» k h9 x_eidx
+                              let (v14, h15) ← «UInt64::to_field» k h13 x_variant
+                              «UInt32::less_than_fields» k h15 v12 v14)
                             (do
-                              let (v20, h21) ← «IxonDeserialize::get_tagn0» k h11 x_s3
-                              match v20 with
-                                | .tuple [x_count, x_s4] =>
-                                  (do
-                                    let (v22, h23) ← (do
-                                      let (v24, h25) ← «UInt64::is_zero» k h21 x_count
-                                      match Builtin.apply (.assertEq { message := (some "binder data: an empty block"), runtimeCheck := true }) [v24, (.field 0)] with
-                                        | .ok z => some (z, h25)
-                                        | .error _ => none)
+                              let (v16, h17) ← (do
+                                let (v18, h19) ← (do
+                                  let (v20, h21) ← match evalBinOp .sub (.field 1) x_shared with
+                                    | .ok z => some (z, h11)
+                                    | .error _ => none
+                                  let (v22, h23) ← (do
+                                    let (v24, h25) ← «UInt64::is_zero» k h21 x_variant
+                                    match evalBinOp .sub (.field 1) v24 with
+                                      | .ok z => some (z, h25)
+                                      | .error _ => none)
+                                  match evalBinOp .mul v20 v22 with
+                                    | .ok z => some (z, h23)
+                                    | .error _ => none)
+                                match Builtin.apply (.assertEq { message := (some "binder data: a root block at a variant other than 0"), runtimeCheck := true }) [v18, (.field 0)] with
+                                  | .ok z => some (z, h19)
+                                  | .error _ => none)
+                              (do
+                                let (v26, h27) ← «IxonDeserialize::get_tagn0» k h17 x_s3
+                                match v26 with
+                                  | .tuple [x_count, x_s4] =>
                                     (do
-                                      let (v26, h27) ← «IxonDeserialize::get_binder_node_list» k h23 x_s4 x_count x_lvls
-                                      match v26 with
-                                        | .tuple [x_nodes, x_s5] =>
-                                          (do
-                                            let (v28, h29) ← some ((.construct (instanceName [] "Ixon::BinderBlock" (some [])) "Mk" [x_shared, x_eidx, x_variant, x_nodes] : SourceValue F), h27)
-                                            some ((.tuple [v28, x_s5] : SourceValue F), h29))
-                                        | _ => none))
-                                | _ => none))
+                                      let (v28, h29) ← (do
+                                        let (v30, h31) ← «UInt64::is_zero» k h27 x_count
+                                        match Builtin.apply (.assertEq { message := (some "binder data: an empty block"), runtimeCheck := true }) [v30, (.field 0)] with
+                                          | .ok z => some (z, h31)
+                                          | .error _ => none)
+                                      (do
+                                        let (v32, h33) ← «IxonDeserialize::get_binder_node_list» k h29 x_s4 x_count x_lvls
+                                        match v32 with
+                                          | .tuple [x_nodes, x_s5] =>
+                                            (do
+                                              let (v34, h35) ← some ((.construct (instanceName [] "Ixon::BinderBlock" (some [])) "Mk" [x_shared, x_eidx, x_variant, x_nodes] : SourceValue F), h33)
+                                              some ((.tuple [v34, x_s5] : SourceValue F), h35))
+                                          | _ => none))
+                                  | _ => none)))
                         | _ => none)
                   | _ => none)))
         | _ => none)
@@ -2692,111 +2767,137 @@ theorem «IxonDeserialize::get_binder_block».of_eval (ih0 : «IxonDeserialize::
   simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml105
   subst ml105
   obtain ⟨v108, m109, bs110, d111, mt112, d113⟩ := d89.letValue_inv
-  obtain ⟨vs114, args115, ap116⟩ := d111.builtin_inv
-  obtain ⟨v117, vs118, m119, rfl, d120, args121⟩ := args115.cons_inv
-  obtain ⟨x122, y123, m124, d125, d126, op127⟩ := d120.binary_inv
-  obtain ⟨x128, y129, m130, d131, d132, op133⟩ := d125.binary_inv
-  obtain ⟨rfl, rfl⟩ := d131.literal_inv
-  obtain ⟨l134, rfl⟩ := d132.var_inv
-  simp at l134
-  subst l134
-  obtain ⟨x135, y136, m137, d138, d139, op140⟩ := d126.binary_inv
-  obtain ⟨rfl, rfl⟩ := d138.literal_inv
-  obtain ⟨vs141, m142, args143, callee144⟩ := d139.call_inv
-  obtain ⟨v145, vs146, m147, rfl, d148, args149⟩ := args143.cons_inv
-  obtain ⟨l150, rfl⟩ := d148.var_inv
-  simp at l150
-  subst l150
-  obtain ⟨rfl, rfl⟩ := args149.nil_inv
-  rw [instanceName_plain_some] at callee144
-  obtain ⟨k151, hk152⟩ := «UInt64::is_zero».of_eval callee144
-  obtain ⟨v153, vs154, m155, rfl, d156, args157⟩ := args121.cons_inv
-  obtain ⟨rfl, rfl⟩ := d156.literal_inv
-  obtain ⟨rfl, rfl⟩ := args157.nil_inv
+  obtain ⟨vs114, m115, args116, callee117⟩ := d111.call_inv
+  obtain ⟨v118, vs119, m120, rfl, d121, args122⟩ := args116.cons_inv
+  obtain ⟨vs123, m124, args125, callee126⟩ := d121.call_inv
+  obtain ⟨v127, vs128, m129, rfl, d130, args131⟩ := args125.cons_inv
+  obtain ⟨l132, rfl⟩ := d130.var_inv
+  simp at l132
+  subst l132
+  obtain ⟨rfl, rfl⟩ := args131.nil_inv
+  rw [instanceName_plain_some] at callee126
+  obtain ⟨k133, hk134⟩ := «UInt64::to_field».of_eval callee126
+  obtain ⟨v135, vs136, m137, rfl, d138, args139⟩ := args122.cons_inv
+  obtain ⟨vs140, m141, args142, callee143⟩ := d138.call_inv
+  obtain ⟨v144, vs145, m146, rfl, d147, args148⟩ := args142.cons_inv
+  obtain ⟨l149, rfl⟩ := d147.var_inv
+  simp at l149
+  subst l149
+  obtain ⟨rfl, rfl⟩ := args148.nil_inv
+  rw [instanceName_plain_some] at callee143
+  obtain ⟨k150, hk151⟩ := «UInt64::to_field».of_eval callee143
+  obtain ⟨rfl, rfl⟩ := args139.nil_inv
+  rw [instanceName_plain_some] at callee117
+  obtain ⟨k152, hk153⟩ := ih1 callee117
   rw [matchPattern_wildcard] at mt112
   simp only [Except.ok.injEq, Option.some.injEq] at mt112
   subst mt112
-  obtain ⟨v158, m159, bs160, d161, mt162, d163⟩ := d113.letValue_inv
-  obtain ⟨vs164, m165, args166, callee167⟩ := d161.call_inv
-  obtain ⟨v168, vs169, m170, rfl, d171, args172⟩ := args166.cons_inv
-  obtain ⟨l173, rfl⟩ := d171.var_inv
-  simp at l173
-  subst l173
-  obtain ⟨rfl, rfl⟩ := args172.nil_inv
-  rw [instanceName_plain_some] at callee167
-  obtain ⟨k174, hk175⟩ := «IxonDeserialize::get_tagn0».of_eval ih0 callee167
-  obtain ⟨ys176, hp177, hl178, ml179⟩ := matchPattern_tuple_inv mt162
-  rcases ys176 with _ | ⟨y180, _ | ⟨y181, _ | ⟨_, _⟩⟩⟩ <;> simp at hl178
-  try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp177
-  simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml179
-  subst ml179
-  obtain ⟨v182, m183, bs184, d185, mt186, d187⟩ := d163.letValue_inv
-  obtain ⟨vs188, args189, ap190⟩ := d185.builtin_inv
+  obtain ⟨v154, m155, bs156, d157, mt158, d159⟩ := d113.letValue_inv
+  obtain ⟨vs160, args161, ap162⟩ := d157.builtin_inv
+  obtain ⟨v163, vs164, m165, rfl, d166, args167⟩ := args161.cons_inv
+  obtain ⟨x168, y169, m170, d171, d172, op173⟩ := d166.binary_inv
+  obtain ⟨x174, y175, m176, d177, d178, op179⟩ := d171.binary_inv
+  obtain ⟨rfl, rfl⟩ := d177.literal_inv
+  obtain ⟨l180, rfl⟩ := d178.var_inv
+  simp at l180
+  subst l180
+  obtain ⟨x181, y182, m183, d184, d185, op186⟩ := d172.binary_inv
+  obtain ⟨rfl, rfl⟩ := d184.literal_inv
+  obtain ⟨vs187, m188, args189, callee190⟩ := d185.call_inv
   obtain ⟨v191, vs192, m193, rfl, d194, args195⟩ := args189.cons_inv
-  obtain ⟨vs196, m197, args198, callee199⟩ := d194.call_inv
-  obtain ⟨v200, vs201, m202, rfl, d203, args204⟩ := args198.cons_inv
-  obtain ⟨l205, rfl⟩ := d203.var_inv
-  simp at l205
-  subst l205
-  obtain ⟨rfl, rfl⟩ := args204.nil_inv
-  rw [instanceName_plain_some] at callee199
-  obtain ⟨k206, hk207⟩ := «UInt64::is_zero».of_eval callee199
-  obtain ⟨v208, vs209, m210, rfl, d211, args212⟩ := args195.cons_inv
-  obtain ⟨rfl, rfl⟩ := d211.literal_inv
-  obtain ⟨rfl, rfl⟩ := args212.nil_inv
-  rw [matchPattern_wildcard] at mt186
-  simp only [Except.ok.injEq, Option.some.injEq] at mt186
-  subst mt186
-  obtain ⟨v213, m214, bs215, d216, mt217, d218⟩ := d187.letValue_inv
-  obtain ⟨vs219, m220, args221, callee222⟩ := d216.call_inv
-  obtain ⟨v223, vs224, m225, rfl, d226, args227⟩ := args221.cons_inv
-  obtain ⟨l228, rfl⟩ := d226.var_inv
-  simp at l228
-  subst l228
-  obtain ⟨v229, vs230, m231, rfl, d232, args233⟩ := args227.cons_inv
-  obtain ⟨l234, rfl⟩ := d232.var_inv
-  simp at l234
-  subst l234
-  obtain ⟨v235, vs236, m237, rfl, d238, args239⟩ := args233.cons_inv
-  obtain ⟨l240, rfl⟩ := d238.var_inv
-  simp at l240
-  subst l240
-  obtain ⟨rfl, rfl⟩ := args239.nil_inv
-  rw [instanceName_plain_some] at callee222
-  obtain ⟨k241, hk242⟩ := ih6 callee222
-  obtain ⟨ys243, hp244, hl245, ml246⟩ := matchPattern_tuple_inv mt217
-  rcases ys243 with _ | ⟨y247, _ | ⟨y248, _ | ⟨_, _⟩⟩⟩ <;> simp at hl245
-  try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp244
-  simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml246
-  subst ml246
-  obtain ⟨vs249, args250, rfl⟩ := d218.tuple_inv
-  obtain ⟨v251, vs252, m253, rfl, d254, args255⟩ := args250.cons_inv
-  obtain ⟨vs256, args257, rfl⟩ := d254.construct_inv
-  obtain ⟨v258, vs259, m260, rfl, d261, args262⟩ := args257.cons_inv
-  obtain ⟨l263, rfl⟩ := d261.var_inv
-  simp at l263
-  subst l263
-  obtain ⟨v264, vs265, m266, rfl, d267, args268⟩ := args262.cons_inv
-  obtain ⟨l269, rfl⟩ := d267.var_inv
-  simp at l269
-  subst l269
-  obtain ⟨v270, vs271, m272, rfl, d273, args274⟩ := args268.cons_inv
-  obtain ⟨l275, rfl⟩ := d273.var_inv
-  simp at l275
-  subst l275
-  obtain ⟨v276, vs277, m278, rfl, d279, args280⟩ := args274.cons_inv
-  obtain ⟨l281, rfl⟩ := d279.var_inv
-  simp at l281
-  subst l281
-  obtain ⟨rfl, rfl⟩ := args280.nil_inv
-  obtain ⟨v282, vs283, m284, rfl, d285, args286⟩ := args255.cons_inv
-  obtain ⟨l287, rfl⟩ := d285.var_inv
-  simp at l287
-  subst l287
-  obtain ⟨rfl, rfl⟩ := args286.nil_inv
-  refine ⟨k16 + k40 + k58 + k76 + k100 + k151 + k174 + k206 + k241 + 1, fun k hk => ?_⟩
+  obtain ⟨l196, rfl⟩ := d194.var_inv
+  simp at l196
+  subst l196
+  obtain ⟨rfl, rfl⟩ := args195.nil_inv
+  rw [instanceName_plain_some] at callee190
+  obtain ⟨k197, hk198⟩ := «UInt64::is_zero».of_eval callee190
+  obtain ⟨v199, vs200, m201, rfl, d202, args203⟩ := args167.cons_inv
+  obtain ⟨rfl, rfl⟩ := d202.literal_inv
+  obtain ⟨rfl, rfl⟩ := args203.nil_inv
+  rw [matchPattern_wildcard] at mt158
+  simp only [Except.ok.injEq, Option.some.injEq] at mt158
+  subst mt158
+  obtain ⟨v204, m205, bs206, d207, mt208, d209⟩ := d159.letValue_inv
+  obtain ⟨vs210, m211, args212, callee213⟩ := d207.call_inv
+  obtain ⟨v214, vs215, m216, rfl, d217, args218⟩ := args212.cons_inv
+  obtain ⟨l219, rfl⟩ := d217.var_inv
+  simp at l219
+  subst l219
+  obtain ⟨rfl, rfl⟩ := args218.nil_inv
+  rw [instanceName_plain_some] at callee213
+  obtain ⟨k220, hk221⟩ := «IxonDeserialize::get_tagn0».of_eval ih0 callee213
+  obtain ⟨ys222, hp223, hl224, ml225⟩ := matchPattern_tuple_inv mt208
+  rcases ys222 with _ | ⟨y226, _ | ⟨y227, _ | ⟨_, _⟩⟩⟩ <;> simp at hl224
+  try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp223
+  simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml225
+  subst ml225
+  obtain ⟨v228, m229, bs230, d231, mt232, d233⟩ := d209.letValue_inv
+  obtain ⟨vs234, args235, ap236⟩ := d231.builtin_inv
+  obtain ⟨v237, vs238, m239, rfl, d240, args241⟩ := args235.cons_inv
+  obtain ⟨vs242, m243, args244, callee245⟩ := d240.call_inv
+  obtain ⟨v246, vs247, m248, rfl, d249, args250⟩ := args244.cons_inv
+  obtain ⟨l251, rfl⟩ := d249.var_inv
+  simp at l251
+  subst l251
+  obtain ⟨rfl, rfl⟩ := args250.nil_inv
+  rw [instanceName_plain_some] at callee245
+  obtain ⟨k252, hk253⟩ := «UInt64::is_zero».of_eval callee245
+  obtain ⟨v254, vs255, m256, rfl, d257, args258⟩ := args241.cons_inv
+  obtain ⟨rfl, rfl⟩ := d257.literal_inv
+  obtain ⟨rfl, rfl⟩ := args258.nil_inv
+  rw [matchPattern_wildcard] at mt232
+  simp only [Except.ok.injEq, Option.some.injEq] at mt232
+  subst mt232
+  obtain ⟨v259, m260, bs261, d262, mt263, d264⟩ := d233.letValue_inv
+  obtain ⟨vs265, m266, args267, callee268⟩ := d262.call_inv
+  obtain ⟨v269, vs270, m271, rfl, d272, args273⟩ := args267.cons_inv
+  obtain ⟨l274, rfl⟩ := d272.var_inv
+  simp at l274
+  subst l274
+  obtain ⟨v275, vs276, m277, rfl, d278, args279⟩ := args273.cons_inv
+  obtain ⟨l280, rfl⟩ := d278.var_inv
+  simp at l280
+  subst l280
+  obtain ⟨v281, vs282, m283, rfl, d284, args285⟩ := args279.cons_inv
+  obtain ⟨l286, rfl⟩ := d284.var_inv
+  simp at l286
+  subst l286
+  obtain ⟨rfl, rfl⟩ := args285.nil_inv
+  rw [instanceName_plain_some] at callee268
+  obtain ⟨k287, hk288⟩ := ih6 callee268
+  obtain ⟨ys289, hp290, hl291, ml292⟩ := matchPattern_tuple_inv mt263
+  rcases ys289 with _ | ⟨y293, _ | ⟨y294, _ | ⟨_, _⟩⟩⟩ <;> simp at hl291
+  try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp290
+  simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml292
+  subst ml292
+  obtain ⟨vs295, args296, rfl⟩ := d264.tuple_inv
+  obtain ⟨v297, vs298, m299, rfl, d300, args301⟩ := args296.cons_inv
+  obtain ⟨vs302, args303, rfl⟩ := d300.construct_inv
+  obtain ⟨v304, vs305, m306, rfl, d307, args308⟩ := args303.cons_inv
+  obtain ⟨l309, rfl⟩ := d307.var_inv
+  simp at l309
+  subst l309
+  obtain ⟨v310, vs311, m312, rfl, d313, args314⟩ := args308.cons_inv
+  obtain ⟨l315, rfl⟩ := d313.var_inv
+  simp at l315
+  subst l315
+  obtain ⟨v316, vs317, m318, rfl, d319, args320⟩ := args314.cons_inv
+  obtain ⟨l321, rfl⟩ := d319.var_inv
+  simp at l321
+  subst l321
+  obtain ⟨v322, vs323, m324, rfl, d325, args326⟩ := args320.cons_inv
+  obtain ⟨l327, rfl⟩ := d325.var_inv
+  simp at l327
+  subst l327
+  obtain ⟨rfl, rfl⟩ := args326.nil_inv
+  obtain ⟨v328, vs329, m330, rfl, d331, args332⟩ := args301.cons_inv
+  obtain ⟨l333, rfl⟩ := d331.var_inv
+  simp at l333
+  subst l333
+  obtain ⟨rfl, rfl⟩ := args332.nil_inv
+  refine ⟨k16 + k40 + k58 + k76 + k100 + k133 + k150 + k152 + k197 + k220 + k252 + k287 + 1, fun k hk => ?_⟩
   obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-  simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::get_binder_block», hk17 k' (by omega), hp19, hk41 k' (by omega), hk59 k' (by omega), hk77 k' (by omega), hp79, hk101 k' (by omega), hp103, ap116, op133, op127, op140, hk152 k' (by omega), hk175 k' (by omega), hp177, ap190, hk207 k' (by omega), hk242 k' (by omega), hp244]
+  simp (config := { decide := true, maxSteps := 10000000 }) [«IxonDeserialize::get_binder_block», hk17 k' (by omega), hp19, hk41 k' (by omega), hk59 k' (by omega), hk77 k' (by omega), hp79, hk101 k' (by omega), hp103, hk134 k' (by omega), hk151 k' (by omega), hk153 k' (by omega), ap162, op179, op173, op186, hk198 k' (by omega), hk221 k' (by omega), hp223, ap236, hk253 k' (by omega), hk288 k' (by omega), hp290]
 
 /-- The mirror of `IxonDeserialize::get_binder_block_list`. -/
 def «IxonDeserialize::get_binder_block_list» : Nat → Heap F → SourceValue F → SourceValue F → SourceValue F → Option (SourceValue F × Heap F)

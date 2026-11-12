@@ -415,14 +415,38 @@ inductive «IxonDeserialize::assert_prj_empty_tables».Path (x_info x_sharing x_
       (he319 : r = (.tuple []))
       (he320 : h' = h)
       (hc321 : calls = [])
+  | Muts_Nil
+      (x_members : SourceValue F)
+      (hne88 : ∀ vs : List (SourceValue F), vs.length = 1 → (x_info : SourceValue F) ≠ .construct "Ixon::ConstantInfo" "DPrj" vs)
+      (hne166 : ∀ vs : List (SourceValue F), vs.length = 1 → (x_info : SourceValue F) ≠ .construct "Ixon::ConstantInfo" "IPrj" vs)
+      (hne244 : ∀ vs : List (SourceValue F), vs.length = 1 → (x_info : SourceValue F) ≠ .construct "Ixon::ConstantInfo" "CPrj" vs)
+      (hne322 : ∀ vs : List (SourceValue F), vs.length = 1 → (x_info : SourceValue F) ≠ .construct "Ixon::ConstantInfo" "RPrj" vs)
+      (hv327 : x_info = (.construct "Ixon::ConstantInfo" "Muts" [x_members]))
+      (ld345 : loadValue h x_members = .ok (.construct Names.«Lists::Node<Ixon::MutConst>» "Nil" []))
+      (ld363 : loadValue h x_binders = .ok (.construct Names.«Lists::Node<Ixon::BinderBlock>» "Nil" []))
+      (he370 : r = (.tuple []))
+      (he371 : h' = h)
+      (hc372 : calls = [])
+  | Muts_Cons
+      (x_members : SourceValue F) (w380 : SourceValue F) (w381 : SourceValue F)
+      (hne88 : ∀ vs : List (SourceValue F), vs.length = 1 → (x_info : SourceValue F) ≠ .construct "Ixon::ConstantInfo" "DPrj" vs)
+      (hne166 : ∀ vs : List (SourceValue F), vs.length = 1 → (x_info : SourceValue F) ≠ .construct "Ixon::ConstantInfo" "IPrj" vs)
+      (hne244 : ∀ vs : List (SourceValue F), vs.length = 1 → (x_info : SourceValue F) ≠ .construct "Ixon::ConstantInfo" "CPrj" vs)
+      (hne322 : ∀ vs : List (SourceValue F), vs.length = 1 → (x_info : SourceValue F) ≠ .construct "Ixon::ConstantInfo" "RPrj" vs)
+      (hv327 : x_info = (.construct "Ixon::ConstantInfo" "Muts" [x_members]))
+      (ld345 : loadValue h x_members = .ok (.construct Names.«Lists::Node<Ixon::MutConst>» "Cons" [w380, w381]))
+      (he394 : r = (.tuple []))
+      (he395 : h' = h)
+      (hc396 : calls = [])
   | other
       (hne88 : ∀ vs : List (SourceValue F), vs.length = 1 → (x_info : SourceValue F) ≠ .construct "Ixon::ConstantInfo" "DPrj" vs)
       (hne166 : ∀ vs : List (SourceValue F), vs.length = 1 → (x_info : SourceValue F) ≠ .construct "Ixon::ConstantInfo" "IPrj" vs)
       (hne244 : ∀ vs : List (SourceValue F), vs.length = 1 → (x_info : SourceValue F) ≠ .construct "Ixon::ConstantInfo" "CPrj" vs)
       (hne322 : ∀ vs : List (SourceValue F), vs.length = 1 → (x_info : SourceValue F) ≠ .construct "Ixon::ConstantInfo" "RPrj" vs)
-      (he328 : r = (.tuple []))
-      (he329 : h' = h)
-      (hc330 : calls = [])
+      (hne398 : ∀ vs : List (SourceValue F), vs.length = 1 → (x_info : SourceValue F) ≠ .construct "Ixon::ConstantInfo" "Muts" vs)
+      (he404 : r = (.tuple []))
+      (he405 : h' = h)
+      (hc406 : calls = [])
 
 /-- **Every observed derivation of `IxonDeserialize::assert_prj_empty_tables` takes one of its paths.** -/
 theorem «IxonDeserialize::assert_prj_empty_tables».obs {x_info x_sharing x_refs x_univs x_binders : SourceValue F} {h h' : Heap F} {r : SourceValue F}
@@ -624,11 +648,58 @@ theorem «IxonDeserialize::assert_prj_empty_tables».obs {x_info x_sharing x_ref
         · have hne322 := matchPattern_construct_none (by trivial) nm246
           simp only [Names.n13917575780398666258] at hne322
           rcases selectArm_cons_inv sel247 with ⟨mt323, rfl⟩ | ⟨nm324, sel325⟩
-          · obtain rfl := matchPattern_wildcard_inv mt323
-            obtain ⟨vs326, a327, rfl⟩ := d9.tuple_inv
-            obtain ⟨rfl, rfl, rfl⟩ := a327.nil_inv
-            exact «IxonDeserialize::assert_prj_empty_tables».Path.other hne88 hne166 hne244 hne322 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
-          · exact (matchPattern_wildcard_none nm324).elim
+          · obtain ⟨vs326, hv327, -, ml328⟩ := matchPattern_construct_inv mt323
+            rw [Names.n13917575780398666258] at hv327
+            obtain ⟨x_members, vs329, b330, b331, rfl, mt332, ml333, rfl⟩ := matchListWith_cons_inv ml328
+            obtain rfl := matchPattern_bind_inv mt332
+            obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml333
+            obtain ⟨v334, m335, bs336, body337, c338, c339, d340, sel341, d342, rfl⟩ := d9.matchValue_inv
+            obtain ⟨p343, d344, ld345⟩ := d340.load_inv
+            obtain ⟨l346, rfl, rfl⟩ := d344.var_inv
+            simp at l346
+            subst l346
+            rcases selectArm_cons_inv sel341 with ⟨mt347, rfl⟩ | ⟨nm348, sel349⟩
+            · obtain ⟨vs350, hv351, -, ml352⟩ := matchPattern_construct_inv mt347
+              rw [Names.n13867139974106667730] at hv351
+              subst hv351
+              obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml352
+              obtain ⟨v353, m354, bs355, c356, c357, d358, mt359, d360, rfl⟩ := d342.letValue_inv
+              obtain ⟨p361, d362, ld363⟩ := d358.load_inv
+              obtain ⟨l364, rfl, rfl⟩ := d362.var_inv
+              simp at l364
+              subst l364
+              obtain ⟨vs365, hv366, -, ml367⟩ := matchPattern_construct_inv mt359
+              rw [Names.n7039976160276323251] at hv366
+              subst hv366
+              obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml367
+              obtain ⟨vs368, a369, rfl⟩ := d360.tuple_inv
+              obtain ⟨rfl, rfl, rfl⟩ := a369.nil_inv
+              exact «IxonDeserialize::assert_prj_empty_tables».Path.Muts_Nil _ hne88 hne166 hne244 hne322 hv327 ld345 ld363 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+            · have hne373 := matchPattern_construct_none (by trivial) nm348
+              simp only [Names.n13867139974106667730] at hne373
+              rcases selectArm_cons_inv sel349 with ⟨mt374, rfl⟩ | ⟨nm375, sel376⟩
+              · obtain ⟨vs377, hv378, -, ml379⟩ := matchPattern_construct_inv mt374
+                rw [Names.n13867139974106667730] at hv378
+                subst hv378
+                obtain ⟨w380, vs382, b383, b384, rfl, mt385, ml386, rfl⟩ := matchListWith_cons_inv ml379
+                obtain rfl := matchPattern_wildcard_inv mt385
+                obtain ⟨w381, vs387, b388, b389, rfl, mt390, ml391, rfl⟩ := matchListWith_cons_inv ml386
+                obtain rfl := matchPattern_wildcard_inv mt390
+                obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml391
+                obtain ⟨vs392, a393, rfl⟩ := d342.tuple_inv
+                obtain ⟨rfl, rfl, rfl⟩ := a393.nil_inv
+                exact «IxonDeserialize::assert_prj_empty_tables».Path.Muts_Cons _ _ _ hne88 hne166 hne244 hne322 hv327 ld345 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+              · have hne397 := matchPattern_construct_none (by trivial) nm375
+                simp only [Names.n13867139974106667730] at hne397
+                exact (selectArm_nil_inv sel376).elim
+          · have hne398 := matchPattern_construct_none (by trivial) nm324
+            simp only [Names.n13917575780398666258] at hne398
+            rcases selectArm_cons_inv sel325 with ⟨mt399, rfl⟩ | ⟨nm400, sel401⟩
+            · obtain rfl := matchPattern_wildcard_inv mt399
+              obtain ⟨vs402, a403, rfl⟩ := d9.tuple_inv
+              obtain ⟨rfl, rfl, rfl⟩ := a403.nil_inv
+              exact «IxonDeserialize::assert_prj_empty_tables».Path.other hne88 hne166 hne244 hne322 hne398 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+            · exact (matchPattern_wildcard_none nm400).elim
 
 /-- The evaluation paths of `IxonDeserialize::get_constant`: one constructor per combination of selected arms. -/
 inductive «IxonDeserialize::get_constant».Path (x_stream : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
