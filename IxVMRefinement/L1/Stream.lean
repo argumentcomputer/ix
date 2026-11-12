@@ -369,7 +369,7 @@ theorem words4_eq (xs : List UInt8) (hx : xs.length = 64) :
   have hk : k * 4 + 3 < xs.length := by
     rw [words4_length, hx] at h1
     omega
-  obtain ⟨-, e⟩ := words4_length_getElem xs k hk
+  obtain ⟨hk', e⟩ := words4_length_getElem xs k hk
   rw [e, List.getElem_ofFn]
   simp only [Blake3.Pure.blockWords, Vector.getElem_ofFn, Fin.getElem_fin]
   rw [bytesWord_four xs k hk, wv_wordOfBytes]
