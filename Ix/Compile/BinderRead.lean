@@ -22,8 +22,13 @@ in their source without any inference, and this reader takes exactly those:
   value (always zero), a definition's value (its type's), a `let`'s value (its
   declared type's), an argument of an application of a constant or a bound
   variable (the zero-ness of the sort of the head's domain at that position,
-  read as above), a recursor's rule right-hand side (its elimination level's).
+  read as above), a recursor's rule right-hand side (its elimination level's),
+  the head of an application (the application's own: the head's type `∀ x⃗, B`
+  has the zero-ness of the sort of `B`, the sort of the application's type).
   It passes unchanged into the run's body, a `let`'s body and a share.
+
+A head's declared type is peeled through the definitions that return one of their
+arguments (`outParam T` is `T`).
 
 Anything else (a body headed by a projection, a redex, a match whose motive
 computes a sort, a constant whose type is not syntactically such a telescope)
@@ -58,20 +63,6 @@ def headArgs : Ix.Expr → Ix.Expr × Nat
   | .app f _ _ => let (h, n) := headArgs f; (h, n + 1)
   | .mdata _ e _ => headArgs e
   | e => (e, 0)
-
-/-- `t` past exactly `n` leading ∀s. -/
-def peelN : Nat → Ix.Expr → Option Ix.Expr
-  | 0, t => some (unmeta t)
-  | n + 1, t => match unmeta t with
-    | .forallE _ _ b _ _ => peelN n b
-    | _ => none
-
-/-- The `n`-th ∀-domain of `t`, with the domains before it, innermost first. -/
-def domainAt : Nat → Ix.Expr → List (Option Ix.Expr) → Option (Ix.Expr × List (Option Ix.Expr))
-  | n, t, acc => match unmeta t, n with
-    | .forallE _ d _ _ _, 0 => some (d, acc)
-    | .forallE _ d b _ _, n + 1 => domainAt n b (some d :: acc)
-    | _, _ => none
 
 /-- A constant's own numbering of its level parameters: their positions. -/
 def posIn (names : Array Ix.Name) (n : Ix.Name) : Nat :=
@@ -114,6 +105,23 @@ def unwrap (find : Find) : Nat → Ix.Expr → Ix.Expr
       | none => t
     | _ => t
 
+/-- `t` past exactly `n` leading ∀s, each found after unfolding argument-returning
+definitions at the head (`unwrap`: a class's `outParam (α → β → Sort u)`). -/
+def peelN (find : Find) : Nat → Ix.Expr → Option Ix.Expr
+  | 0, t => some (unmeta t)
+  | n + 1, t => match unwrap find 8 t with
+    | .forallE _ _ b _ _ => peelN find n b
+    | _ => none
+
+/-- The `n`-th ∀-domain of `t`, with the domains before it, innermost first; each ∀
+found as `peelN` finds it. -/
+def domainAt (find : Find) : Nat → Ix.Expr → List (Option Ix.Expr) →
+    Option (Ix.Expr × List (Option Ix.Expr))
+  | n, t, acc => match unwrap find 8 t, n with
+    | .forallE _ d _ _ _, 0 => some (d, acc)
+    | .forallE _ d b _ _, n + 1 => domainAt find n b (some d :: acc)
+    | _, _ => none
+
 /-- The final sort of a ∀-telescope `t`, if it is syntactically a sort. -/
 def leafSort : Ix.Expr → Option Ix.Level
   | .sort l _ => some l
@@ -147,7 +155,7 @@ def sortPw (find : Find) (σ : Ix.Name → Nat) (sub : Ix.Kernel.Level → Ix.Ke
         | .const c us _ => do
           let ci ← find c
           let cv := ci.getCnst
-          match unwrap find 8 (← peelN n cv.type) with
+          match unwrap find 8 (← peelN find n cv.type) with
           | .sort l _ =>
             let lc ← (ingressLevel (posIn cv.levelParams) l).toOption
             let us' ← (us.toList.mapM (ingressLevel σ)).toOption
@@ -165,7 +173,7 @@ def sortPw (find : Find) (σ : Ix.Name → Nat) (sub : Ix.Kernel.Level → Ix.Ke
             (ingressLevel σ l).toOption
         | .bvar i _ => do
           let ty ← (ctx[i]?).join
-          let .sort l _ := unwrap find 8 (← peelN n ty) | none
+          let .sort l _ := unwrap find 8 (← peelN find n ty) | none
           (ingressLevel σ l).toOption
         | _ => none
       lvl?.map fun l => Ix.Kernel.Level.zeronessOf (sub l)
@@ -179,13 +187,13 @@ def argPw (find : Find) (σ : Ix.Name → Nat) (ctx : List (Option Ix.Expr)) (h 
   | .const c us _ => do
     let ci ← find c
     let cv := ci.getCnst
-    let (d, before) ← domainAt idx cv.type []
+    let (d, before) ← domainAt find idx cv.type []
     let us' ← (us.toList.mapM (ingressLevel σ)).toOption
     sortPw find (posIn cv.levelParams) (Ix.Kernel.Level.subst (List.range cv.levelParams.size) us')
       64 before d
   | .bvar i _ => do
     let ty ← (ctx[i]?).join
-    let (d, before) ← domainAt idx ty []
+    let (d, before) ← domainAt find idx ty []
     sortPw find σ id 64 (before ++ ctx.drop (i + 1)) d
   | _ => none
 
@@ -225,8 +233,11 @@ abbrev RM := StateT RState (Except String)
 abbrev NM := StateT (Array Node) RM
 
 /-- What the reading expects of a term's type: the zero-ness of its sort, or why
-it does not know it. -/
-abbrev Expect := Except String PropWhen
+it does not know it (the reason is built only where a reading fails on it). -/
+abbrev Expect := Except (Unit → String) PropWhen
+
+/-- An expectation not known, for the reason `why`. -/
+def unknown (why : String) : Expect := .error fun _ => why
 
 private def reserve : NM Nat :=
   modifyGet fun nodes => (nodes.size, nodes.push (.binder none))
@@ -275,12 +286,12 @@ def shapeOf (find : Find) (ctx : List (Option Ix.Expr)) (t : Ix.Expr) : String :
   let (h, n) := headArgs t
   match h with
   | .const c _ _ => match find c with
-    | some ci => match peelN n ci.getCnst.type with
+    | some ci => match peelN find n ci.getCnst.type with
       | some r => s!"{c.pretty} applied to {n}, whose type there is {tag (unwrap find 8 r)}"
       | none => s!"{c.pretty} applied to {n}, more than its type's ∀s"
     | none => s!"{c.pretty}, not found"
   | .bvar i _ => match (ctx[i]?).join with
-    | some ty => match peelN n ty with
+    | some ty => match peelN find n ty with
       | some r => s!"a variable applied to {n}, whose type there is {tag (unwrap find 8 r)}"
       | none => s!"a variable applied to {n}, more than its type's ∀s"
     | none => "a let-bound variable"
@@ -291,20 +302,33 @@ def argExpect (find : Find) (σ : Ix.Name → Nat) (ctx : List (Option Ix.Expr))
     (idx : Nat) : Expect :=
   match argPw find σ ctx h idx with
   | some p => .ok p
-  | none =>
+  | none => .error fun _ =>
     let head := match h with
       | .const c _ _ => c.pretty
       | h => tag h
     let dom : Option (Ix.Expr × List (Option Ix.Expr)) := match h with
-      | .const c _ _ => (find c).bind fun ci => domainAt idx ci.getCnst.type []
-      | .bvar i _ => (ctx[i]?).join.bind fun ty => domainAt idx ty []
+      | .const c _ _ => (find c).bind fun ci => domainAt find idx ci.getCnst.type []
+      | .bvar i _ => (ctx[i]?).join.bind fun ty => domainAt find idx ty []
       | _ => none
     match dom with
-    | some (d, before) => .error s!"argument {idx} of {head}, its domain headed by {shapeOf find before d}"
-    | none => .error s!"argument {idx} of {head}, beyond its type's ∀s"
+    | some (d, before) => s!"argument {idx} of {head}, its domain headed by {shapeOf find before d}"
+    | none => s!"argument {idx} of {head}, beyond its type's ∀s"
+
+/-- The expectation of the next argument of the spine `xf`. -/
+def argExpectOf (find : Find) (σ : Ix.Name → Nat) (ctx : List (Option Ix.Expr)) (xf : Ix.Expr) :
+    Expect :=
+  let (h, n) := headArgs xf
+  argExpect find σ ctx h n
 
 /-- Bounds the reading's depth. -/
 def readFuel : Nat := 1 <<< 24
+
+/-- Whether the reading of a record node reads its expectation: a λ-run, a `let`
+(its body), a share (its entry), and an application headed by one of those. -/
+def readsExpect : Ixon.Expr → Bool
+  | .lam .. | .letE .. | .share _ => true
+  | .app f _ => readsExpect f
+  | _ => false
 
 /-- **The reading of one entry's tree `e` beside its source `x`**, under `ctx`
 (the types of the bound variables, innermost first; `none` for a `let`'s), with
@@ -317,9 +341,15 @@ def read : Nat → Cx → List (Option Ix.Expr) → Expect → Ixon.Expr → Ix.
     match e, unmeta x with
     | .var _, .bvar .. => pure ()
     | .app f a, .app xf xa _ => do
-      read fuel cx ctx (.error "the function of an application") f xf
-      let (h, n) := headArgs xf
-      read fuel cx ctx (argExpect cx.find cx.σ.pos ctx h n) a xa
+      -- the function's type `∀ x⃗, B` has the zero-ness of the sort of `B`, which is
+      -- the sort of the application's type `B[a⃗/x⃗]` (a level names no term variable):
+      -- a β-redex's λ-run has the application's expectation
+      read fuel cx ctx ex f xf
+      -- the expectation is computed only for an argument that reads it
+      let aex : Expect :=
+        if readsExpect a then argExpectOf cx.find cx.σ.pos ctx xf
+        else unknown "an argument that reads no expectation"
+      read fuel cx ctx aex a xa
     | .lam .., .lam .. | .all .., .forallE .. => do
       let pi := e matches .all ..
       let (leafE, leafX, bs) := binderRun pi e x #[]
@@ -328,26 +358,26 @@ def read : Nat → Cx → List (Option Ix.Expr) → Expect → Ixon.Expr → Ix.
       for h : j in [:bs.size] do
         let (t, ty) := bs[j]
         ords := ords.push (← reserve)
-        read fuel cx inner (.error "a binder's domain") t ty
+        read fuel cx inner (unknown "a binder's domain") t ty
         inner := some ty :: inner
-      read fuel cx inner (if pi then .error "a ∀-body" else ex) leafE leafX
+      read fuel cx inner (if pi then unknown "a ∀-body" else ex) leafE leafX
       let pw ← if pi then
           match sortPw cx.find cx.σ.pos id 64 inner leafX with
           | some p => pure p
           | none => throw s!"a ∀-body headed by {shapeOf cx.find inner leafX}"
         else match ex with
           | .ok p => pure p
-          | .error why => throw s!"a λ-run as {why}"
+          | .error why => throw s!"a λ-run as {why ()}"
       let node := cx.nodeOf pw
       for ord in ords do setNode ord node
     | .letE _ t v b, .letE _ ty val body _ _ => do
-      read fuel cx ctx (.error "a let's type") t ty
+      read fuel cx ctx (unknown "a let's type") t ty
       let vex : Expect := match sortPw cx.find cx.σ.pos id 64 ctx ty with
         | some p => .ok p
-        | none => .error s!"a let's value, its type headed by {shapeOf cx.find ctx ty}"
+        | none => .error fun _ => s!"a let's value, its type headed by {shapeOf cx.find ctx ty}"
       read fuel cx ctx vex v val
       read fuel cx (some ty :: ctx) ex b body
-    | .prj _ _ v, .proj _ _ xv _ => read fuel cx ctx (.error "a projection's subject") v xv
+    | .prj _ _ v, .proj _ _ xv _ => read fuel cx ctx (unknown "a projection's subject") v xv
     | .share n, _ => do
       let ord ← reserve
       let n := n.toNat
@@ -373,13 +403,13 @@ the reading needs it (a value's, a rule right-hand side's). -/
 structure Root where
   σ : Numbering
   x : Ix.Expr
-  ex : Expect := .error "a type"
+  ex : Expect := unknown "a type"
 
 /-- The zero-ness of the sort of a definition's type `ty`, numbered by `σ`. -/
 def typeExpect (find : Find) (σ : Numbering) (ty : Ix.Expr) : Expect :=
   match sortPw find σ.pos id 64 [] ty with
   | some p => .ok p
-  | none => .error s!"a definition's value, its type headed by {shapeOf find [] ty}"
+  | none => .error fun _ => s!"a definition's value, its type headed by {shapeOf find [] ty}"
 
 /-- A member's roots, in section order, when its kind is the record member's
 (`IxVM.PwHints.roots`): a definition's type and value, an axiom's or a
@@ -390,15 +420,15 @@ def memberRoots (find : Find) (ci : Ix.ConstantInfo) :
   | .inl (.defn _) | .inr (.defn _) =>
     let σ : Numbering := ⟨ci.getCnst.levelParams, false⟩
     match ci with
-    | .defnInfo d => some #[⟨σ, d.cnst.type, .error "a type"⟩, ⟨σ, d.value, typeExpect find σ d.cnst.type⟩]
-    | .thmInfo t => some #[⟨σ, t.cnst.type, .error "a type"⟩, ⟨σ, t.value, .ok (PropWhen.ifAllZero [])⟩]
-    | .opaqueInfo o => some #[⟨σ, o.cnst.type, .error "a type"⟩, ⟨σ, o.value, typeExpect find σ o.cnst.type⟩]
+    | .defnInfo d => some #[⟨σ, d.cnst.type, unknown "a type"⟩, ⟨σ, d.value, typeExpect find σ d.cnst.type⟩]
+    | .thmInfo t => some #[⟨σ, t.cnst.type, unknown "a type"⟩, ⟨σ, t.value, .ok (PropWhen.ifAllZero [])⟩]
+    | .opaqueInfo o => some #[⟨σ, o.cnst.type, unknown "a type"⟩, ⟨σ, o.value, typeExpect find σ o.cnst.type⟩]
     | _ => none
   | .inr (.axio _) => match ci with
-    | .axiomInfo a => some #[⟨⟨a.cnst.levelParams, false⟩, a.cnst.type, .error "a type"⟩]
+    | .axiomInfo a => some #[⟨⟨a.cnst.levelParams, false⟩, a.cnst.type, unknown "a type"⟩]
     | _ => none
   | .inr (.quot _) => match ci with
-    | .quotInfo q => some #[⟨⟨q.cnst.levelParams, false⟩, q.cnst.type, .error "a type"⟩]
+    | .quotInfo q => some #[⟨⟨q.cnst.levelParams, false⟩, q.cnst.type, unknown "a type"⟩]
     | _ => none
   | .inl (.recr r) | .inr (.recr r) => match ci with
     | .recInfo v => do
@@ -410,22 +440,22 @@ def memberRoots (find : Find) (ci : Ix.ConstantInfo) :
       -- a rule's right-hand side has the sort of its motive's codomain: the
       -- elimination level
       let elim : Expect := match (do
-          let (motive, _) ← domainAt v.numParams v.cnst.type []
+          let (motive, _) ← domainAt find v.numParams v.cnst.type []
           let l ← leafSort motive
           let l' ← (ingressLevel σ.pos l).toOption
           pure (Ix.Kernel.Level.zeronessOf l') : Option PropWhen) with
         | some p => .ok p
-        | none => .error "a rule's right-hand side, its motive's sort not read"
-      some ((#[⟨σ, v.cnst.type, .error "a type"⟩] : Array Root) ++
+        | none => unknown "a rule's right-hand side, its motive's sort not read"
+      some ((#[⟨σ, v.cnst.type, unknown "a type"⟩] : Array Root) ++
         v.rules.map fun rule => (⟨σ, rule.rhs, elim⟩ : Root))
     | _ => none
   | .inl (.indc i) => match ci with
     | .inductInfo v => do
       let ctors ← v.ctors.mapM fun n => match find n with
-        | some (.ctorInfo k) => some (⟨⟨k.cnst.levelParams, false⟩, k.cnst.type, .error "a type"⟩ : Root)
+        | some (.ctorInfo k) => some (⟨⟨k.cnst.levelParams, false⟩, k.cnst.type, unknown "a type"⟩ : Root)
         | _ => none
       guard (ctors.size == i.ctors.size)
-      some ((#[⟨⟨v.cnst.levelParams, false⟩, v.cnst.type, .error "a type"⟩] : Array Root) ++ ctors)
+      some ((#[⟨⟨v.cnst.levelParams, false⟩, v.cnst.type, unknown "a type"⟩] : Array Root) ++ ctors)
     | _ => none
   | _ => none
 
