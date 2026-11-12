@@ -1821,6 +1821,7 @@
   "IxCCGrounding.Direct.Subst",
   "IxCCGrounding.EqRec",
   "IxCCGrounding.Eqn",
+  "IxCCGrounding.Facts",
   "IxCCGrounding.Fence",
   "IxCCGrounding.Fundamental",
   "IxCCGrounding.Ground",
@@ -1831,6 +1832,7 @@
   "IxCCGrounding.Model",
   "IxCCGrounding.Ok",
   "IxCCGrounding.RecFlat",
+  "IxCCGrounding.RecRun",
   "IxCCGrounding.Relation",
   "IxCCGrounding.Root",
   "IxCCGrounding.RootCheck",
@@ -1840,10 +1842,10 @@
   "IxCCGrounding.Syntax",
   "IxCCGrounding.Tele"],
  "grounding_axiom_sha256":
- "b5456c729984fc0b2a87a4011cfb011f916eebe9a30d7e4157299c64cf5e3006",
- "grounding_axiom_count": 139,
+ "771c57dea9cc48be9c6dc5e7e9807738478ab4fa88d453ab793fd867a0c4a65f",
+ "grounding_axiom_count": 160,
  "baseline":
- "heap stage 1 part 3: in-place reuse lemmas (50 exact axiom assertions); merged with cf7b0e5c6",
+ "G3 part E: the class noParams admitted; F2 there proved (IxCCGrounding.RecRun, IxCCGrounding.Facts); grounding fence 160; merged with a8c77ba8d",
  "axiom_sha256":
  "656758eedb3c69598c4c5fb452873ce169a9f525819956ee2286707d0889c991",
  "axiom_count": 6582}
