@@ -1,5 +1,6 @@
 import IxCCTests.Own.Stage2.Interp
 import IxCCTests.Own.Stage2.Mutate
+import IxCC.Rt.Readback
 
 /-! # Heap stage 2: a refinement oracle for accepted maps, and random mutants (probe)
 
@@ -81,7 +82,7 @@ partial def insertAt (target : Nat) (a : Action) (c : Code) : StateM Nat Code :=
     | .case x alts d => do
       let alts' ← alts.mapM fun (.mk key b) => do return Alt.mk key (← insertAt target a b)
       let d' ← match d with
-        | some b => do return some (← insertAt target a b)
+        | some b => some <$> insertAt target a b
         | none => pure none
       return .case x alts' d'
     | t => return t
@@ -105,7 +106,7 @@ partial def deleteAct (target : Nat) (c : Code) : StateM (Nat × Option Action) 
   | .case x alts d => do
     let alts' ← alts.mapM fun (.mk key b) => do return Alt.mk key (← deleteAct target b)
     let d' ← match d with
-      | some b => do return some (← deleteAct target b)
+      | some b => some <$> deleteAct target b
       | none => pure none
     return .case x alts' d'
   | t => return t
@@ -131,6 +132,8 @@ partial def primVars : Code → List Var
   | .jp _ _ _ _ b k => primVars b ++ primVars k
   | .case _ alts d => (alts.flatMap fun (.mk _ b) => primVars b) ++ (d.map primVars).getD []
   | _ => []
+
+instance : Inhabited Action := ⟨.dec 0⟩
 
 structure Rng where
   s : UInt64
