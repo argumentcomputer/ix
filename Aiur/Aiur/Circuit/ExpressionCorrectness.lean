@@ -478,7 +478,7 @@ mutual
             · simpa only [selectArm, unmatched] using selected
   termination_by sizeOf arms
   decreasing_by
-    all_goals simp_all only [Prod.mk.sizeOf_spec, List.cons.sizeOf_spec]
+    all_goals simp only [*, Prod.mk.sizeOf_spec, List.cons.sizeOf_spec]
     all_goals omega
 end
 
