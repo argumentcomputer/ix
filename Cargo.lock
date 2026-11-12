@@ -2082,6 +2082,7 @@ dependencies = [
  "sha2 0.10.9",
  "sppark",
  "stark-key",
+ "stark-verifier",
  "tiny-keccak",
  "tracing",
  "tracing-subscriber",

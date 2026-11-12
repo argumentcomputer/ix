@@ -2,6 +2,7 @@ import AiurTests.U8
 import AiurTests.U64
 import AiurTests.Blake3
 import AiurTests.LibraryInterfaces
+import AiurTests.Goldilocks
 import Aiur.Library.Blake3.Goldilocks
 import Aiur.Execution
 import Aiur.Trace.Export
@@ -11,6 +12,7 @@ open Aiur Lean
 def main (args : List String) : IO Unit := do
   AiurU8Tests.run
   AiurU64Tests.run
+  AiurGoldilocksTests.run
   if let some path := args.head? then
     let source := Library.Blake3.Goldilocks.program
       |>.append (AiurU8Tests.client.toField Library.U32.Goldilocks.F)

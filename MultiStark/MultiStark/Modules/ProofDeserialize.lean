@@ -11,7 +11,7 @@ namespace MultiStark.Source
 
 def proofDeserialize : Aiur.Modules.Program Nat := aiur⟦
 module ProofDeserialize {
-  type Ext = [Field; 2];
+  type Ext = Goldilocks::ExtGoldilocks;
 
   type Digest = [UInt64::U64; 4];
 
@@ -99,15 +99,8 @@ module ProofDeserialize {
       (UInt64::to_field(val), s)
     }
 
-  inline fn limb_to_field(b: UInt64::U64) -> Field {
-      UInt8::to_field(b[0])
-        + 256 * UInt8::to_field(b[1])
-        + 65536 * UInt8::to_field(b[2])
-        + 16777216 * UInt8::to_field(b[3])
-        + 4294967296 * UInt8::to_field(b[4])
-        + 1099511627776 * UInt8::to_field(b[5])
-        + 281474976710656 * UInt8::to_field(b[6])
-        + 72057594037927936 * UInt8::to_field(b[7])
+  inline fn limb_to_field(b: UInt64::U64) -> Goldilocks::Goldilocks {
+      Goldilocks::gl_val(b)
     }
 
   fn read_u8_at(i: Field) -> (UInt8::U8, Field) {

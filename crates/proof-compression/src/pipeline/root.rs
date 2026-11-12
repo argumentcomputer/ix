@@ -14,7 +14,7 @@ use aiur::trace::stark::{
   BatchProof as AiurProof, VerifyingKey as AiurVerifyingKey,
 };
 use multi_stark::batch::BatchProof;
-use multi_stark::plonkish::CircuitBuilder;
+use multi_stark::plonkish::{CircuitBuilder, CircuitStats, Value};
 use multi_stark::types::GoldilocksBlake3Config;
 use multi_stark::types::Val;
 use p3_blake3::Blake3;
@@ -61,7 +61,13 @@ pub(super) fn run(dir: &Path, out: &Path, prove: bool) -> Result<()> {
   if proof.to_bytes()? != bytes {
     return Err("noncanonical proof transport".into());
   }
-  let claims = decode_claims(&fs::read(dir.join("root-claims.bin"))?)?;
+  let claim_bytes = fs::read(dir.join("root-claims.bin"))?;
+  let claims = decode_claims(&claim_bytes)?;
+  let input_identity = serde_json::json!({
+    "key_blake3": blake3::hash(&vk_bytes).to_hex().as_str(),
+    "claims_blake3": blake3::hash(&claim_bytes).to_hex().as_str(),
+    "proof_blake3": blake3::hash(&bytes).to_hex().as_str(),
+  });
   if claims.len() != 1 || claims[0].len() != super::statement::WORDS {
     return Err("root claims must hold one statement of 18 words".into());
   }
@@ -99,11 +105,21 @@ pub(super) fn run(dir: &Path, out: &Path, prove: bool) -> Result<()> {
   // only on the backend and layout, never on this proof's geometry.
   let layout_path = dir.join(FIXED_ROOT_LAYOUT);
   let start = Instant::now();
-  let prepared = if layout_path.exists() {
+  let (prepared, fixed_layout_digest, compact_blake3) = if layout_path.exists()
+  {
     let fixed = FixedRoot::from_bytes(&fs::read(&layout_path)?)?;
     fs::write(out.join(FIXED_ROOT_LAYOUT), fixed.to_bytes())?;
     fs::write(out.join("plan-id.bin"), fixed.identity(&native_key))?;
-    fixed.prepare(&native_key, &proof, &claims[0], VerifierLimits::default())?
+    (
+      fixed.prepare(
+        &native_key,
+        &proof,
+        &claims[0],
+        VerifierLimits::default(),
+      )?,
+      Some(blake3::Hash::from(fixed.digest()).to_hex().to_string()),
+      true,
+    )
   } else {
     let plan = RootPlan::new(&verifier_key, &proof, VerifierLimits::default())?;
     let compact = std::env::var_os("IX_ROOT_GENERIC_HASHES").is_none();
@@ -111,10 +127,11 @@ pub(super) fn run(dir: &Path, out: &Path, prove: bool) -> Result<()> {
     fs::write(out.join("plan-id.bin"), plan.identity()?)?;
     fs::write(out.join("build-id.bin"), plan.build_identity(options)?)?;
     fs::write(out.join("statement-schema.txt"), plan.description())?;
-    plan.prepare(&proof, &claims[0], options)?
+    (plan.prepare(&proof, &claims[0], options)?, None, compact)
   };
   let layout =
     prepared.circuit().multi_stark_layout_with_max_height(MAX_TRACE_HEIGHT)?;
+  let preparation_seconds = start.elapsed().as_secs_f64();
   eprintln!(
     "Circuit preparation: {:?}; {:?}",
     start.elapsed(),
@@ -124,6 +141,42 @@ pub(super) fn run(dir: &Path, out: &Path, prove: bool) -> Result<()> {
     out.join("circuit-cost.txt"),
     format!("Stats: {:?}\nLayout: {layout:?}\n", prepared.circuit().stats()),
   )?;
+  let stats = prepared.circuit().stats();
+  let cost = serde_json::json!({
+    "format": "ix-fri-circuit-cost-v2",
+    "input": input_identity,
+    "fixed_root_layout": fixed_layout_digest.is_some(),
+    "fixed_root_layout_blake3": fixed_layout_digest,
+    "compact_blake3": compact_blake3,
+    "field_bytes": size_of::<Val>(),
+    "verifier_preparation_seconds": preparation_seconds,
+    "parameters": {
+      "log_blowup": cp.log_blowup,
+      "cap_height": cp.cap_height,
+      "num_queries": fp.num_queries,
+      "log_final_poly_len": fp.log_final_poly_len,
+      "max_log_arity": fp.max_log_arity,
+      "commit_proof_of_work_bits": fp.commit_proof_of_work_bits,
+      "query_proof_of_work_bits": fp.query_proof_of_work_bits,
+    },
+    "frontend": {
+      "values": stats.values, "inputs": stats.inputs, "gates": stats.gates,
+      "lookups": stats.lookups, "tables": stats.tables, "publics": stats.publics,
+      "hash_calls": stats.hash_calls, "hash_compressions": stats.hash_compressions,
+    },
+    "layout": {
+      "used_rows": layout.used_rows,
+      "main_heights": layout.main_heights,
+      "main_width": layout.main_width,
+      "preprocessed_width": layout.preprocessed_width,
+      "table_heights": layout.table_heights,
+      "custom_traces": layout.custom_traces,
+      "advice_cells": layout.advice_cells,
+      "preprocessed_cells": layout.preprocessed_cells,
+      "trace_field_bytes": layout.trace_field_bytes,
+    },
+  });
+  fs::write(out.join("circuit-cost.json"), serde_json::to_vec_pretty(&cost)?)?;
   fs::write(
     out.join("CHECKED"),
     "all constraints satisfied; expected claims and query indices matched\n",
@@ -202,6 +255,78 @@ pub fn prepare_root(
     expected,
     Default::default(),
   )
+}
+
+/// Count a saved root's exact verifier frontend without allocating its circuit,
+/// witness, physical traces or foreign-field translation. The builder still
+/// visits every operation, so time scales with the frontend size.
+pub fn count_root(dir: &Path) -> Result<serde_json::Value> {
+  let key_bytes = fs::read(dir.join("root-vk.bin"))?;
+  let key = AiurVerifyingKey::from_bytes(&key_bytes)?;
+  let claim_bytes = fs::read(dir.join("root-claims.bin"))?;
+  let claims = decode_claims(&claim_bytes)?;
+  if claims.len() != 1 || claims[0].len() != super::statement::WORDS {
+    return Err("root claims must hold one statement of 18 words".into());
+  }
+  let proof_bytes = fs::read(dir.join("root-proof.bin"))?;
+  let proof = AiurProof::from_bytes(&proof_bytes)?;
+  if proof.to_bytes()? != proof_bytes {
+    return Err("noncanonical proof transport".into());
+  }
+  key
+    .verify(&claims, &proof)
+    .map_err(|error| format!("Aiur policy: {error}"))?;
+  let start = Instant::now();
+  let fixed_path = dir.join(FIXED_ROOT_LAYOUT);
+  let (counts, fixed_layout_digest, compact_blake3) = if fixed_path.exists() {
+    let layout = FixedRoot::from_bytes(&fs::read(fixed_path)?)?;
+    layout.check_instance(&key, &proof, &claims[0])?;
+    (
+      layout.estimate(&key, VerifierLimits::default())?,
+      Some(blake3::Hash::from(layout.digest()).to_hex().to_string()),
+      true,
+    )
+  } else {
+    let options = ImplementationOptions {
+      compact_blake3: std::env::var_os("IX_ROOT_GENERIC_HASHES").is_none(),
+    };
+    let verifier = VerifierKey::from_system(key.system());
+    let plan = RootPlan::new(&verifier, &proof, VerifierLimits::default())?;
+    (
+      plan.estimate(&proof, claims[0].len(), options)?,
+      None,
+      options.compact_blake3,
+    )
+  };
+  let cp = key.commitment_parameters();
+  let fp = key.fri_parameters();
+  Ok(serde_json::json!({
+    "format": "ix-fri-root-count-v1",
+    "input": {
+      "key_blake3": blake3::hash(&key_bytes).to_hex().as_str(),
+      "claims_blake3": blake3::hash(&claim_bytes).to_hex().as_str(),
+      "proof_blake3": blake3::hash(&proof_bytes).to_hex().as_str(),
+    },
+    "fixed_root_layout": fixed_layout_digest.is_some(),
+    "fixed_root_layout_blake3": fixed_layout_digest,
+    "compact_blake3": compact_blake3,
+    "field_bytes": size_of::<Val>(), "proof_bytes": proof_bytes.len(),
+    "circuits": key.num_circuits(), "shards": proof.proofs.len(),
+    "parameters": {
+      "log_blowup": cp.log_blowup, "cap_height": cp.cap_height,
+      "num_queries": fp.num_queries, "log_final_poly_len": fp.log_final_poly_len,
+      "max_log_arity": fp.max_log_arity,
+      "commit_proof_of_work_bits": fp.commit_proof_of_work_bits,
+      "query_proof_of_work_bits": fp.query_proof_of_work_bits,
+    },
+    "frontend": {
+      "values": counts.values, "inputs": counts.inputs, "gates": counts.gates,
+      "lookups": counts.lookups, "tables": counts.tables, "publics": counts.publics,
+      "hash_calls": counts.hash_calls, "hash_compressions": counts.hash_compressions,
+    },
+    "count_seconds": start.elapsed().as_secs_f64(),
+    "scope": "Frontend operation counts only; not physical trace cells, foreign-field expansion or total prover memory.",
+  }))
 }
 
 pub(in crate::pipeline) struct RootPlan<'a> {
@@ -322,21 +447,18 @@ impl<'a> RootPlan<'a> {
     )
   }
 
-  pub(in crate::pipeline) fn prepare(
+  fn constrain(
     &self,
     proof: &AiurProof,
-    expected: &[Val],
+    claim_len: usize,
     options: ImplementationOptions,
-  ) -> Result<Prepared<Val>> {
+    builder: &mut CircuitBuilder<Val>,
+  ) -> Result<(Vec<Value>, Vec<FixedVerifierInputs>)> {
     let shapes: Vec<_> = self.plans.iter().map(|p| p.shape().clone()).collect();
-    let expanded = tracing::info_span!("compression/expand_witness")
-      .in_scope(|| expand_batch_witness(self.key.system(), &shapes, proof))?;
-    let build_span = tracing::info_span!("compression/build_circuit").entered();
-    let mut builder = CircuitBuilder::new();
     if options.compact_blake3 {
       builder.enable_compact_blake3();
     }
-    let public: Vec<_> = (0..expected.len())
+    let public: Vec<_> = (0..claim_len)
       .map(|i| builder.public_input(format!("claim[0][{i}]")))
       .collect();
     let claims = self
@@ -364,15 +486,42 @@ impl<'a> RootPlan<'a> {
         multiplicity: builder.constant(m.multiplicity),
       })
       .collect::<Vec<_>>();
-    let bytes = ByteGadgets::new(&mut builder);
+    let bytes = ByteGadgets::new(builder);
     let inputs = constrain_batch_verifier(
-      &mut builder,
+      builder,
       &bytes,
       self.key.system(),
       &shapes,
       claims,
       &messages,
     );
+    Ok((public, inputs))
+  }
+
+  fn estimate(
+    &self,
+    proof: &AiurProof,
+    claim_len: usize,
+    options: ImplementationOptions,
+  ) -> Result<CircuitStats> {
+    let mut builder = CircuitBuilder::counting();
+    self.constrain(proof, claim_len, options, &mut builder)?;
+    Ok(builder.stats())
+  }
+
+  pub(in crate::pipeline) fn prepare(
+    &self,
+    proof: &AiurProof,
+    expected: &[Val],
+    options: ImplementationOptions,
+  ) -> Result<Prepared<Val>> {
+    let shapes: Vec<_> = self.plans.iter().map(|p| p.shape().clone()).collect();
+    let expanded = tracing::info_span!("compression/expand_witness")
+      .in_scope(|| expand_batch_witness(self.key.system(), &shapes, proof))?;
+    let build_span = tracing::info_span!("compression/build_circuit").entered();
+    let mut builder = CircuitBuilder::new();
+    let (public, inputs) =
+      self.constrain(proof, expected.len(), options, &mut builder)?;
     let circuit = builder.finish();
     drop(build_span);
     let _witness_span = tracing::info_span!("compression/witness").entered();

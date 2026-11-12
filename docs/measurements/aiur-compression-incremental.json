@@ -1,0 +1,116 @@
+{
+  "format": "ix-compression-incremental-validation-v1",
+  "date_utc": "2026-11-12",
+  "base_revision": "1e669d58c9638cefeea83eafcfe38e3900a514bc",
+  "path": "Goldilocks CompressWrap followed by existing hand-written FRI/KZG and gnark PLONK",
+  "scope": "One diagnostic cold-cache run, not a median benchmark. FRI verifies the normalized wrapper proof; the matched original-root cell comparison is recorded separately. No BN254 Aiur backend or generic Aiur-to-PLONK exporter is exercised.",
+  "hardware": {
+    "cpu": "Intel Xeon Platinum 8559C",
+    "logical_cpus_available": 32,
+    "gpu": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+    "gpu_memory_mib": 97887,
+    "driver": "595.91.07",
+    "thread_limits_overridden": false
+  },
+  "root": {
+    "ix_claim_blake3": "451e99430d55c5f081464828b2a58ca3203616bc90de6c6a47f9d450997cd08f",
+    "key_blake3": "55f0b8b04acdc211e249b538adcdab95fec15de6c9504ba875ffb52b1f1f8e86",
+    "claims_blake3": "c67d7ce5ac847836c4962eef2eadc71de89c08577e63d25f1982a145c09a6908",
+    "proof_blake3": "552154c3622f5c737366dbe379a7b7e97560f20865410d142d65fc58bec64399",
+    "shards": 1,
+    "proof_bytes": 5438702
+  },
+  "wrapper": {
+    "artifact_blake3": "1b16c6c3f06e9b1bf80c252dab2c1848cbed5b73baa23340469f761a1ff202c1",
+    "key_blake3": "dc4283d238516d44ab1102780ac65c11cfb82e63f5290f77e6b491fd4f95216f",
+    "execution_seconds": 6.436136734,
+    "proving_seconds": 18.420475244,
+    "peak_rss_bytes": 53987872768,
+    "proof_bytes": 5427662,
+    "verified": true
+  },
+  "fri_stage": {
+    "elapsed_seconds": 93.66585344899795,
+    "peak_rss_bytes": 159374233600,
+    "exit_code": 0
+  },
+  "kzg_and_plonk_cold_resume": {
+    "elapsed_seconds": 1316.7432681530045,
+    "peak_rss_bytes": 91104468992,
+    "exit_code": 0
+  },
+  "plonk": {
+    "backend": "cuda",
+    "innerSetup": "ignition",
+    "loadSeconds": 24.747578593,
+    "proveSeconds": 11.207892684,
+    "setup": "ignition",
+    "solidityBytes": 864,
+    "verifyingKeySHA256": "80f61ac9b1758afcb979f92a3ae263999cc7546f125da30b0aa7759bc08af17a",
+    "constraints": 14689424,
+    "domain": 16777216,
+    "native_bytes": 584,
+    "envelope_bytes": 624,
+    "public_inputs": 2,
+    "expected_composite_digest": "8f2b55dec474487065c6b4937fc129bb58efc1687686c2f00127751b007bb955"
+  },
+  "evm": {
+    "tests_passed": 5,
+    "tests_failed": 0,
+    "external_call_gas_excluding_intrinsic": 292004,
+    "proof_bytes": 864,
+    "abi_calldata_bytes": 964,
+    "candidate_bytecode_differs_from_release": true,
+    "production_files_modified": false,
+    "fork": "Osaka",
+    "compiled_evm_version": "Prague",
+    "solc": "0.8.37",
+    "foundry": "1.9.0",
+    "joint_same_verifier_test": true,
+    "both_root_statements_accepted": true,
+    "cross_swapped_proof_digest_pairs_rejected": true,
+    "same_plonk_verifying_key_bytes": true,
+    "same_generated_solidity_bytes": true
+  },
+  "final_key_reuse": {
+    "status": "verified through complete pipeline and joint local EVM test",
+    "alternate_workload": "square relation with a different original root key",
+    "alternate_root_key_blake3": "8ad787357cb6ceec5c26a9be3b40ad4323f7666f55e4f02b23a282c18f7c852f",
+    "alternate_composite_digest": "d2f07c42a37f2647eff3e8cba65e93b2cbb7fedb948769e1b768606c2ff5b563",
+    "same_wrapper_key": true,
+    "same_normalized_layout": true,
+    "same_fri_key": true,
+    "same_recursive_kzg_key": true,
+    "same_plonk_key": true,
+    "same_solidity_source": true,
+    "plonk_key_sha256": "80f61ac9b1758afcb979f92a3ae263999cc7546f125da30b0aa7759bc08af17a",
+    "warm_cache_alternate_compression_seconds": 403.20311705500353,
+    "warm_cache_alternate_peak_rss_bytes": 159490220032,
+    "scope": "Different root workloads; timings are not a cold-versus-warm speedup comparison."
+  },
+  "trusted_key_updates": {
+    "status": "candidate fingerprints prepared; human approval pending",
+    "verifying_keys_changed": false
+  },
+  "recursive_kzg_packet_bytes": 1909,
+  "recursive_kzg_ix_envelope_bytes": 1917,
+  "checkpoint_claim_binding": {
+    "earlier_stages_reused": [
+      "fri",
+      "first-kzg",
+      "final-kzg"
+    ],
+    "only_plonk_reproved": true,
+    "earlier_files_content_and_mtime_unchanged": true,
+    "original_verified_outputs_unchanged": true,
+    "candidate_key_unchanged": true,
+    "generated_solidity_unchanged": true,
+    "copied_ordinary_bytes": 7516223,
+    "copied_files": 70,
+    "proof_bytes": 864,
+    "max_rss_kib": 21767884,
+    "elapsed_wall": "0:37.54",
+    "repaired_init_proof_evm_tests_passed": 4,
+    "repaired_init_proof_evm_tests_failed": 0
+  }
+}

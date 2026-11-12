@@ -1,0 +1,118 @@
+{
+  "format": "ix-compression-measurement-summary-v1",
+  "measurement_date_utc": "2026-11-11",
+  "metric": "padded Goldilocks stage-one advice plus fixed preprocessing cells",
+  "scope": "Exact array dimensions for the same key, claims and proof bytes under identical outer FRI parameters. Ratios are not total prover-memory, proving-time or BN254-emulation estimates. No benchmark timing is aggregated here.",
+  "measurements": [
+    {
+      "workload": "tiny-square",
+      "input": {
+        "claims_blake3": "2d66649e71f97d49a14cd667006b52bcdacf20a69617a2bd295591cc8e063f9b",
+        "key_blake3": "d0c4c78576deb57b544b5add8828043bf8fa31c3a0061072a6b9af0bf209acc2",
+        "proof_blake3": "330df32454aec983a253af01bf193fcb59da7ac71fb14025e6d8d063aaa9babc"
+      },
+      "parameters": {
+        "cap_height": 0,
+        "commit_proof_of_work_bits": 0,
+        "log_blowup": 2,
+        "log_final_poly_len": 0,
+        "max_log_arity": 1,
+        "num_queries": 100,
+        "query_proof_of_work_bits": 20
+      },
+      "wrapper": {
+        "artifact_blake3": "1b16c6c3f06e9b1bf80c252dab2c1848cbed5b73baa23340469f761a1ff202c1",
+        "entry": "CompressWrap::verify_root",
+        "key_blake3": "dc4283d238516d44ab1102780ac65c11cfb82e63f5290f77e6b491fd4f95216f"
+      },
+      "field_bytes": 8,
+      "aiur_arrays": {
+        "preprocessed_cells": 989184,
+        "stage1_advice_cells": 1456390,
+        "stage1_and_preprocessed_cells": 2445574,
+        "stage1_and_preprocessed_field_bytes": 19564592,
+        "stage1_and_preprocessed_lde_bytes": 78258368
+      },
+      "aiur_stage2_cells": 1053180,
+      "aiur_quotient_cells": 400132,
+      "handwritten_fri_arrays": {
+        "preprocessed_cells": 25037920,
+        "stage1_advice_cells": 22414368,
+        "stage1_and_preprocessed_cells": 47452288,
+        "stage1_and_preprocessed_field_bytes": 379618304,
+        "stage1_and_preprocessed_lde_bytes": 1518473216
+      },
+      "handwritten_fri_construction": {
+        "compact_blake3": true,
+        "fixed_root_layout": false,
+        "fixed_root_layout_blake3": null
+      },
+      "handwritten_fri_frontend": {
+        "gates": 355230,
+        "hash_calls": 1251,
+        "hash_compressions": 1261,
+        "inputs": 26451,
+        "lookups": 143808,
+        "publics": 18,
+        "tables": 3,
+        "values": 482282
+      },
+      "aiur_to_handwritten_stage1_and_preprocessed_ratio": 0.051537535977190393
+    },
+    {
+      "workload": "Init",
+      "input": {
+        "claims_blake3": "c67d7ce5ac847836c4962eef2eadc71de89c08577e63d25f1982a145c09a6908",
+        "key_blake3": "55f0b8b04acdc211e249b538adcdab95fec15de6c9504ba875ffb52b1f1f8e86",
+        "proof_blake3": "552154c3622f5c737366dbe379a7b7e97560f20865410d142d65fc58bec64399"
+      },
+      "parameters": {
+        "cap_height": 0,
+        "commit_proof_of_work_bits": 0,
+        "log_blowup": 2,
+        "log_final_poly_len": 0,
+        "max_log_arity": 1,
+        "num_queries": 100,
+        "query_proof_of_work_bits": 20
+      },
+      "wrapper": {
+        "artifact_blake3": "1b16c6c3f06e9b1bf80c252dab2c1848cbed5b73baa23340469f761a1ff202c1",
+        "entry": "CompressWrap::verify_root",
+        "key_blake3": "dc4283d238516d44ab1102780ac65c11cfb82e63f5290f77e6b491fd4f95216f"
+      },
+      "field_bytes": 8,
+      "aiur_arrays": {
+        "preprocessed_cells": 989184,
+        "stage1_advice_cells": 868054410,
+        "stage1_and_preprocessed_cells": 869043594,
+        "stage1_and_preprocessed_field_bytes": 6952348752,
+        "stage1_and_preprocessed_lde_bytes": 27809395008
+      },
+      "aiur_stage2_cells": 372751008,
+      "aiur_quotient_cells": 47456668,
+      "handwritten_fri_arrays": {
+        "preprocessed_cells": 1699155040,
+        "stage1_advice_cells": 1439499296,
+        "stage1_and_preprocessed_cells": 3138654336,
+        "stage1_and_preprocessed_field_bytes": 25109234688,
+        "stage1_and_preprocessed_lde_bytes": 100436938752
+      },
+      "handwritten_fri_construction": {
+        "compact_blake3": true,
+        "fixed_root_layout": false,
+        "fixed_root_layout_blake3": null
+      },
+      "handwritten_fri_frontend": {
+        "gates": 43758979,
+        "hash_calls": 48356,
+        "hash_compressions": 119894,
+        "inputs": 1671638,
+        "lookups": 14713168,
+        "publics": 18,
+        "tables": 3,
+        "values": 57196301
+      },
+      "aiur_to_handwritten_stage1_and_preprocessed_ratio": 0.27688413599171185
+    }
+  ]
+}

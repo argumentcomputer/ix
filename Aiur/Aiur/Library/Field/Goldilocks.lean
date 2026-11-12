@@ -2,6 +2,7 @@ import Aiur.Library.U8
 import Aiur.Library.Field
 import Aiur.Library.Frontend
 import Aiur.Library.U32.Goldilocks
+import Aiur.Library.Field.Goldilocks.Signature
 
 /-! Canonical Goldilocks encoding, inversion, and the quadratic extension
 with nonresidue 7, shared with the recursive verifier. Advice consists only of
@@ -12,11 +13,25 @@ open Aiur
 
 def dependencies : Modules.Program Nat := U8.templates.append Library.Field.declarations
 
-def declarations : Modules.Program Nat := aiur_library% dependencies ⟦
-module Goldilocks {
+private def implementation : Modules.Program Nat := aiur_library% (dependencies.append signature) ⟦
+module Goldilocks: GoldilocksSignature {
   type Goldilocks = Field;
 
-  type ExtGoldilocks = [Field; 2];
+  type ExtGoldilocks = [Goldilocks; 2];
+
+  inline fn gl_add(a: Goldilocks, b: Goldilocks) -> Goldilocks { a + b }
+
+  inline fn gl_sub(a: Goldilocks, b: Goldilocks) -> Goldilocks { a - b }
+
+  inline fn gl_neg(a: Goldilocks) -> Goldilocks { 0 - a }
+
+  inline fn gl_mul(a: Goldilocks, b: Goldilocks) -> Goldilocks { a * b }
+
+  inline fn gl_is_zero(a: Goldilocks) -> Field { Fields::is_zero(a) }
+
+  inline fn gl_eq(a: Goldilocks, b: Goldilocks) -> Field {
+      Fields::is_zero(a - b)
+    }
 
   inline fn gl_val(x: [UInt8::U8; 8]) -> Field {
       UInt8::to_field(x[0]) + 256 * UInt8::to_field(x[1]) + 65536 * UInt8::to_field(x[2])
@@ -31,6 +46,11 @@ module Goldilocks {
       let lo_zero = Fields::is_zero(
         UInt8::to_field(x[0]) + UInt8::to_field(x[1]) + UInt8::to_field(x[2]) + UInt8::to_field(x[3]));
       1 - (hi_max * (1 - lo_zero))
+    }
+
+  inline fn gl_from_bytes(x: [UInt8::U8; 8]) -> Goldilocks {
+      assert_eq!(gl_lt_p(x), 1);
+      gl_val(x)
     }
 
   inline fn gl_to_bytes(v: Field) -> [UInt8::U8; 8] {
@@ -54,28 +74,26 @@ module Goldilocks {
     }
 
   inline fn eg_add(a: ExtGoldilocks, b: ExtGoldilocks) -> ExtGoldilocks {
-      [a[0] + b[0], a[1] + b[1]]
+      [gl_add(a[0], b[0]), gl_add(a[1], b[1])]
     }
 
   inline fn eg_sub(a: ExtGoldilocks, b: ExtGoldilocks) -> ExtGoldilocks {
-      [a[0] - b[0], a[1] - b[1]]
+      [gl_sub(a[0], b[0]), gl_sub(a[1], b[1])]
     }
 
   inline fn eg_neg(a: ExtGoldilocks) -> ExtGoldilocks {
-      [0 - a[0], 0 - a[1]]
+      [gl_neg(a[0]), gl_neg(a[1])]
     }
 
   inline fn eg_mul(a: ExtGoldilocks, b: ExtGoldilocks) -> ExtGoldilocks {
-      [(a[0] * b[0]) + (7 * (a[1] * b[1])), (a[0] * b[1]) + (a[1] * b[0])]
+      [gl_add(gl_mul(a[0], b[0]), gl_mul(7, gl_mul(a[1], b[1]))),
+       gl_add(gl_mul(a[0], b[1]), gl_mul(a[1], b[0]))]
     }
 
   inline fn eg_inverse(a: ExtGoldilocks) -> ExtGoldilocks {
-      let norm = (a[0] * a[0]) - (7 * (a[1] * a[1]));
-      let ninv = hint::<Field>("goldilocks.inverse", norm);
-      let t = (norm * ninv) - 1;
-      assert_eq!(norm * t, 0);
-      assert_eq!(ninv * t, 0);
-      [a[0] * ninv, (0 - a[1]) * ninv]
+      let norm = gl_sub(gl_mul(a[0], a[0]), gl_mul(7, gl_mul(a[1], a[1])));
+      let ninv = gl_inverse(norm);
+      [gl_mul(a[0], ninv), gl_mul(gl_neg(a[1]), ninv)]
     }
 
   inline fn eg_div(a: ExtGoldilocks, b: ExtGoldilocks) -> ExtGoldilocks {
@@ -83,10 +101,12 @@ module Goldilocks {
     }
 
   inline fn eg_eq(a: ExtGoldilocks, b: ExtGoldilocks) -> Field {
-      Fields::is_zero(a[0] - b[0]) * Fields::is_zero(a[1] - b[1])
+      gl_eq(a[0], b[0]) * gl_eq(a[1], b[1])
     }
 }
 ⟧
+
+def declarations : Modules.Program Nat := signature.append implementation
 
 def program : Modules.Program U32.Goldilocks.F := declarations.toField U32.Goldilocks.F
 

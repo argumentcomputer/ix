@@ -1,5 +1,7 @@
 //! Host advice for the ordinary Aiur recursive verifier. Source and compilation
 //! live in the independent MultiStark Lean package; no generated Rust kernels.
+pub mod compress_wrap;
+
 use aiur::{
   bytecode::{CheckedProgram, Type},
   field::FieldBackend,

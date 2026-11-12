@@ -22,6 +22,8 @@ use std::{
   time::Instant,
 };
 
+mod compress_wrap_cli;
+
 /// Serialize through a buffer. Recursive invocations encode every proof byte
 /// as a JSON number; unbuffered, each token was a separate write syscall.
 fn write_json(
@@ -36,26 +38,54 @@ fn write_json(
 
 /// A small proof under the production parameters, so the recursive verifier
 /// is tested on the query proof of work and the full query count.
-fn fixture(dir: &Path) -> Result<(), Box<dyn Error>> {
+/// Extended claims use a fixed multiplier in `x² = y·m`, allowing distinct
+/// verifying keys with the same matrix dimensions.
+fn fixture(
+  dir: &Path,
+  claim_words: usize,
+  fixed_multiplier: u64,
+) -> Result<(), Box<dyn Error>> {
+  use multi_stark::p3_field::PrimeField64;
+  if !(4..=1024).contains(&claim_words) {
+    return Err("fixture claim length must be between 4 and 1024 words".into());
+  }
+  if fixed_multiplier == 0
+    || fixed_multiplier >= Val::ORDER_U64
+    || (claim_words == 4 && fixed_multiplier != 1)
+  {
+    return Err("a custom fixed multiplier needs an extended claim and must be a nonzero canonical field word".into());
+  }
+  let multiplier = Val::from_u64(fixed_multiplier);
   std::fs::create_dir_all(dir)?;
   let (cp, fp) = (Parameters::DEFAULT.commitment(), Parameters::DEFAULT.fri());
   let x = Expr::main(0);
   let y = Expr::main(1);
   let one = Expr::constant(Val::ONE);
+  let mut message =
+    vec![one.clone(), Expr::constant(Val::ZERO), x.clone(), y.clone()];
+  message.resize(claim_words, Expr::constant(Val::ZERO));
+  let preprocessed =
+    (claim_words > 4).then(|| RowMajorMatrix::new(vec![multiplier], 1));
+  let square = if preprocessed.is_some() {
+    x.clone() * x.clone() - y.clone() * Expr::preprocessed(0)
+  } else {
+    x.clone() * x.clone() - y.clone()
+  };
   let inputs = vec![CircuitInputs {
     main_width: 2,
-    constraints: vec![x.clone() * x.clone() - y.clone()],
-    lookups: vec![Lookup::pull(
-      one.clone(),
-      vec![one, Expr::constant(Val::ZERO), x, y],
-    )],
+    preprocessed,
+    constraints: vec![square],
+    lookups: vec![Lookup::pull(one, message)],
     ..Default::default()
   }];
   let (system, pk) = System::new(GoldilocksBlake3Config::new(cp, fp), inputs);
-  let claims =
-    vec![vec![Val::ONE, Val::ZERO, Val::from_u64(3), Val::from_u64(9)]];
+  let x = Val::from_u64(3) * multiplier;
+  let y = Val::from_u64(9) * multiplier;
+  let mut claim = vec![Val::ONE, Val::ZERO, x, y];
+  claim.resize(claim_words, Val::ZERO);
+  let claims = vec![claim];
   let witness = SystemWitness::from_stage_1(
-    vec![RowMajorMatrix::new(vec![Val::from_u64(3), Val::from_u64(9)], 2)],
+    vec![RowMajorMatrix::new(vec![x, y], 2)],
     &system,
   );
   let proof = system.prove_batch(
@@ -72,6 +102,16 @@ fn fixture(dir: &Path) -> Result<(), Box<dyn Error>> {
   std::fs::write(dir.join("key.bin"), &key)?;
   std::fs::write(dir.join("claims.bin"), &claims)?;
   std::fs::write(dir.join("proof.bin"), &proof)?;
+  write_json(
+    &dir.join("identity.json"),
+    &serde_json::json!({
+      "key_blake3": blake3::hash(&key).to_hex().to_string(),
+      "claims_blake3": blake3::hash(&claims).to_hex().to_string(),
+      "proof_blake3": blake3::hash(&proof).to_hex().to_string(),
+      "claim_words": claim_words,
+      "fixed_multiplier": fixed_multiplier,
+    }),
+  )?;
   stark_verifier::invocation(&key, &claims, &proof)
     .store(&dir.join("input.ixi"))?;
   println!("created natively verified recursion fixture in {}", dir.display());
@@ -80,9 +120,18 @@ fn fixture(dir: &Path) -> Result<(), Box<dyn Error>> {
 
 fn main() -> Result<(), Box<dyn Error>> {
   let cli: Vec<_> = std::env::args().collect();
-  let mode = cli.get(1).ok_or("usage: stark-verifier fixture DIR | key PACKAGE DIR | statistics KEY PROOF | execute|test|prove|verify PACKAGE INPUT [OUTPUT] [SHARD_ROWS] [RETENTION]")?;
+  let mode = cli.get(1).ok_or("usage: stark-verifier fixture DIR [CLAIM_WORDS [FIXED_MULTIPLIER]] | key PACKAGE DIR | statistics KEY PROOF | execute|test|prove|verify PACKAGE INPUT [OUTPUT] [SHARD_ROWS] [RETENTION] | wrap-input|wrap-plan|wrap-prove|wrap-verify ...")?;
   if mode == "fixture" {
-    return fixture(Path::new(cli.get(2).ok_or("missing directory")?));
+    let claim_words = cli.get(3).map(|s| s.parse()).transpose()?.unwrap_or(4);
+    let multiplier = cli.get(4).map(|s| s.parse()).transpose()?.unwrap_or(1);
+    return fixture(
+      Path::new(cli.get(2).ok_or("missing directory")?),
+      claim_words,
+      multiplier,
+    );
+  }
+  if mode.starts_with("wrap-") {
+    return compress_wrap_cli::run(&cli);
   }
   if mode == "ranges" || mode == "inspect" {
     return ranges(&cli);
@@ -164,8 +213,12 @@ fn main() -> Result<(), Box<dyn Error>> {
   let invocation = stark_verifier::Invocation::load(
     cli.get(3).ok_or("missing invocation")?.as_ref(),
   )?;
-  if !["MultiStark::verify_multi_stark_proof", "MultiStark::ix_aggr"]
-    .contains(&invocation.entry.as_str())
+  if ![
+    "MultiStark::verify_multi_stark_proof",
+    "MultiStark::ix_aggr",
+    stark_verifier::compress_wrap::ENTRY,
+  ]
+  .contains(&invocation.entry.as_str())
     || invocation.args.len() != 16
   {
     return Err(
@@ -259,6 +312,23 @@ fn main() -> Result<(), Box<dyn Error>> {
         return Err(format!("accepted truncated stream {channel}").into());
       }
     }
+    if invocation.entry == stark_verifier::compress_wrap::ENTRY {
+      for channel in [1, 2] {
+        let mut wrong = invocation.streams.clone();
+        let stream = wrong.0.iter_mut().find(|s| s.channel == channel).unwrap();
+        let byte =
+          stream.values.last_mut().ok_or("empty wrapper input stream")?;
+        *byte ^= 1;
+        if stark_verifier::prepare(&program, &wrong)?
+          .execute(&invocation.entry, args.clone())
+          .is_ok()
+        {
+          return Err(
+            format!("accepted altered wrapper input stream {channel}").into(),
+          );
+        }
+      }
+    }
     let proof_bytes: Vec<_> = invocation
       .streams
       .0
@@ -313,9 +383,30 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut wrong_streams = invocation.streams.clone();
     wrong_streams.0.iter_mut().find(|s| s.channel == 1).unwrap().values =
       bad_key.iter().map(|&b| u64::from(b)).collect();
-    let mut wrong_args =
-      program.field().decode(&stark_verifier::digest_words(&bad_key))?;
-    wrong_args.extend_from_slice(&args[8..]);
+    let wrong_args = if invocation.entry == stark_verifier::compress_wrap::ENTRY
+    {
+      let claim_bytes = invocation
+        .streams
+        .0
+        .iter()
+        .find(|s| s.channel == 2)
+        .ok_or("missing root claims stream")?
+        .values
+        .iter()
+        .map(|&word| u8::try_from(word))
+        .collect::<Result<Vec<_>, _>>()?;
+      let claims = stark_verifier::compress_wrap::decode_claims(&claim_bytes)?;
+      let statement = stark_verifier::compress_wrap::Statement::new(
+        *blake3::hash(&bad_key).as_bytes(),
+        &claims,
+      );
+      program.field().decode(&statement.arguments())?
+    } else {
+      let mut wrong_args =
+        program.field().decode(&stark_verifier::digest_words(&bad_key))?;
+      wrong_args.extend_from_slice(&args[8..]);
+      wrong_args
+    };
     if stark_verifier::prepare(&program, &wrong_streams)?
       .execute(&invocation.entry, wrong_args)
       .is_ok()
@@ -325,6 +416,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!(
       "honest proof accepted; wrong public digests, truncated streams, corrupted/widened openings, tampered claims, row-bound overflow and fixed-height mismatch rejected"
     );
+    if invocation.entry == stark_verifier::compress_wrap::ENTRY {
+      println!(
+        "nonzero reserved prefix, changed statement digest and altered root key/claims streams rejected by Aiur execution"
+      );
+    }
     return Ok(());
   }
   drop(invocation.streams);

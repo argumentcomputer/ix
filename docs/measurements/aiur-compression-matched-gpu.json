@@ -1,0 +1,215 @@
+{
+  "format": "ix-matched-gpu-proof-benchmark-v1",
+  "started_utc": "2026-11-12T00:33:35Z",
+  "input": {
+    "claims_blake3": "c67d7ce5ac847836c4962eef2eadc71de89c08577e63d25f1982a145c09a6908",
+    "key_blake3": "55f0b8b04acdc211e249b538adcdab95fec15de6c9504ba875ffb52b1f1f8e86",
+    "proof_blake3": "552154c3622f5c737366dbe379a7b7e97560f20865410d142d65fc58bec64399"
+  },
+  "input_export": {
+    "aggr_artifact_blake3": "7d687ca0a7815bb5c4a68b94276fe797bb3a9f909b2da795267ac8ec9184c4d1",
+    "claim_words": [
+      1,
+      0,
+      3308587199,
+      651115644,
+      350308976,
+      881839093,
+      2020502317,
+      1911867442,
+      2516550726,
+      2420721769,
+      1134108229,
+      4039464205,
+      675825281,
+      2743903666,
+      3155572256,
+      1785519760,
+      1356134727,
+      2412805273
+    ],
+    "claims_blake3": "c67d7ce5ac847836c4962eef2eadc71de89c08577e63d25f1982a145c09a6908",
+    "elapsed_seconds": 1.107972784,
+    "format": "ix-raw-root-export-v1",
+    "ix_claim_blake3": "451e99430d55c5f081464828b2a58ca3203616bc90de6c6a47f9d450997cd08f",
+    "ixon_proof_blake3": "2b3ead368ccd105d7ff052c1754e3e550ad7267e7f939be70f25d4bcfa0dce11",
+    "ixvm_artifact_blake3": "5bce5f797cd03bf76f6e70404f046baf7ecb90f7b9a76995b6ee8c62d31a1b08",
+    "key_blake3": "55f0b8b04acdc211e249b538adcdab95fec15de6c9504ba875ffb52b1f1f8e86",
+    "normalization_performed": false,
+    "parameters": {
+      "commit_proof_of_work_bits": 0,
+      "log_blowup": 2,
+      "num_queries": 100,
+      "query_proof_of_work_bits": 20
+    },
+    "proof_blake3": "552154c3622f5c737366dbe379a7b7e97560f20865410d142d65fc58bec64399",
+    "proof_bytes": 5438702,
+    "shards": 1,
+    "verified": true
+  },
+  "wrapper": {
+    "artifact_blake3": "1b16c6c3f06e9b1bf80c252dab2c1848cbed5b73baa23340469f761a1ff202c1",
+    "entry": "CompressWrap::verify_root",
+    "key_blake3": "dc4283d238516d44ab1102780ac65c11cfb82e63f5290f77e6b491fd4f95216f"
+  },
+  "parameters": {
+    "cap_height": 0,
+    "commit_proof_of_work_bits": 0,
+    "log_blowup": 2,
+    "log_final_poly_len": 0,
+    "max_log_arity": 1,
+    "num_queries": 100,
+    "query_proof_of_work_bits": 20
+  },
+  "file_sha256": {
+    "target/compress-wrap/compress-wrap-final.ixa": "b15da221709f9716db7cacd371ebbe7b0e25aea7dceecd05f0f1324c41d6f390",
+    "target/compress-wrap/aiur-init-root/layout.json": "c68c418a7b8e0cd4105498e85cea034a5a3cd1b937807b00b19e06b6fbf43216",
+    "target/cuda/release/stark-verifier": "3be458fb5b26595830315468ba3d2deb83300f1bd0a665dc3847f94e15413ae6",
+    "target/cuda/release/examples/fri_sizing": "4013aedb4ffb2b7520b62454460b40c004af5f8ac0f40a5fec70bdac5e4b93a7",
+    "target/compress-wrap/init-raw-root/root-vk.bin": "a5add6361e97fdec439caee12b368b9d1bffccad781b1cba6727924e425e1d14",
+    "target/compress-wrap/init-raw-root/root-claims.bin": "304f1b0dca06b08d23a92467872584914312944d8f5f5d36aaca5e5049837dbc",
+    "target/compress-wrap/init-raw-root/root-proof.bin": "27180d10b0b752b6639c0eeae62a90e2065bdef486cf5860f9dd12b250836d71"
+  },
+  "hardware": {
+    "gpu": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+    "driver": "595.91.07",
+    "gpu_memory_mib": 97887,
+    "cpu": "Intel Xeon Platinum 8559C",
+    "logical_cpus_available": 32,
+    "gpu_free_mib_before_first_run": 97252
+  },
+  "cpu_affinity_count": 32,
+  "environment": {
+    "LD_PRELOAD": "/usr/lib/x86_64-linux-gnu/libcuda.so.1",
+    "LD_LIBRARY_PATH": "target/cuda/release/build/multi-stark-becb7b956815cc03/out",
+    "MULTI_STARK_CUDA_DEVICE": "0",
+    "MULTI_STARK_CUDA_MEMORY_LOG": "1",
+    "MULTI_STARK_CUDA_MIN_FREE_BYTES": null,
+    "RAYON_NUM_THREADS": null,
+    "OMP_NUM_THREADS": null,
+    "MULTI_STARK_CUDA_STAGE1_THREADS": null,
+    "MULTI_STARK_CUDA_DEFERRED_THREADS": null,
+    "MULTI_STARK_CUDA_LOOKUP_THREADS": null,
+    "AIUR_TRACE_ONLY_LOOKUPS": null,
+    "AIUR_GPU_TRACE": null,
+    "IX_BENCH_RSS_LIMIT_BYTES": "204010946560"
+  },
+  "scope": "Fresh-process sequential paired proofs of the same original Init root. Aiur produces one normalized CompressWrap proof; handwritten FRI uses generic compact verification of that original root, not a proof of its wrapper. End-to-end wall time includes input validation, setup, execution/constraint construction, proving, verification and serialization; the monitor observes completion at 0.5-second intervals. Peak RSS excludes VRAM. No thread caps or overlapping proof jobs.",
+  "finished_utc": "2026-11-12T00:38:44Z",
+  "samples_per_path": 3,
+  "runs": [
+    {
+      "iteration": 1,
+      "kind": "aiur",
+      "elapsed_seconds": 10.00813861899951,
+      "peak_rss_bytes": 8456429568,
+      "user_seconds": 26.322701,
+      "system_seconds": 2.598354,
+      "status": "target/compression-validation/matched-gpu/pair-1/aiur-status.json",
+      "log": "target/compression-validation/matched-gpu/pair-1/aiur.log",
+      "execution_seconds": 6.416526585,
+      "proving_and_output_seconds": 2.341101041,
+      "proof_bytes": 5427662,
+      "report": "target/compression-validation/matched-gpu/pair-1/aiur/report.json"
+    },
+    {
+      "iteration": 1,
+      "kind": "handwritten-fri",
+      "elapsed_seconds": 93.6586744640008,
+      "peak_rss_bytes": 159775850496,
+      "user_seconds": 1124.767684,
+      "system_seconds": 98.071487,
+      "status": "target/compression-validation/matched-gpu/pair-1/handwritten-fri-status.json",
+      "log": "target/compression-validation/matched-gpu/pair-1/handwritten-fri.log",
+      "verifier_preparation_seconds": 5.366658376,
+      "proving_and_verification_seconds": 87.642442818,
+      "proof_bytes": 1367315,
+      "report": "target/compression-validation/matched-gpu/pair-1/handwritten-fri/circuit-cost.json"
+    },
+    {
+      "iteration": 2,
+      "kind": "aiur",
+      "elapsed_seconds": 9.507575883995742,
+      "peak_rss_bytes": 8436588544,
+      "user_seconds": 26.408143,
+      "system_seconds": 2.54937,
+      "status": "target/compression-validation/matched-gpu/pair-2/aiur-status.json",
+      "log": "target/compression-validation/matched-gpu/pair-2/aiur.log",
+      "execution_seconds": 6.333032036,
+      "proving_and_output_seconds": 2.357927401,
+      "proof_bytes": 5427662,
+      "report": "target/compression-validation/matched-gpu/pair-2/aiur/report.json"
+    },
+    {
+      "iteration": 2,
+      "kind": "handwritten-fri",
+      "elapsed_seconds": 93.1617064489983,
+      "peak_rss_bytes": 159776612352,
+      "user_seconds": 1121.480948,
+      "system_seconds": 93.479824,
+      "status": "target/compression-validation/matched-gpu/pair-2/handwritten-fri-status.json",
+      "log": "target/compression-validation/matched-gpu/pair-2/handwritten-fri.log",
+      "verifier_preparation_seconds": 5.38731851,
+      "proving_and_verification_seconds": 86.724759828,
+      "proof_bytes": 1367315,
+      "report": "target/compression-validation/matched-gpu/pair-2/handwritten-fri/circuit-cost.json"
+    },
+    {
+      "iteration": 3,
+      "kind": "aiur",
+      "elapsed_seconds": 9.510609121993184,
+      "peak_rss_bytes": 8465285120,
+      "user_seconds": 26.266212,
+      "system_seconds": 2.514777,
+      "status": "target/compression-validation/matched-gpu/pair-3/aiur-status.json",
+      "log": "target/compression-validation/matched-gpu/pair-3/aiur.log",
+      "execution_seconds": 6.395020266,
+      "proving_and_output_seconds": 2.3532078739999998,
+      "proof_bytes": 5427662,
+      "report": "target/compression-validation/matched-gpu/pair-3/aiur/report.json"
+    },
+    {
+      "iteration": 3,
+      "kind": "handwritten-fri",
+      "elapsed_seconds": 93.65577087300335,
+      "peak_rss_bytes": 159844343808,
+      "user_seconds": 1115.376875,
+      "system_seconds": 92.096691,
+      "status": "target/compression-validation/matched-gpu/pair-3/handwritten-fri-status.json",
+      "log": "target/compression-validation/matched-gpu/pair-3/handwritten-fri.log",
+      "verifier_preparation_seconds": 5.3947865440000005,
+      "proving_and_verification_seconds": 87.269653495,
+      "proof_bytes": 1367315,
+      "report": "target/compression-validation/matched-gpu/pair-3/handwritten-fri/circuit-cost.json"
+    }
+  ],
+  "medians": {
+    "aiur": {
+      "elapsed_seconds": 9.510609121993184,
+      "peak_rss_bytes": 8456429568,
+      "elapsed_range_seconds": [
+        9.507575883995742,
+        10.00813861899951
+      ],
+      "rss_range_bytes": [
+        8436588544,
+        8465285120
+      ]
+    },
+    "handwritten-fri": {
+      "elapsed_seconds": 93.65577087300335,
+      "peak_rss_bytes": 159776612352,
+      "elapsed_range_seconds": [
+        93.1617064489983,
+        93.6586744640008
+      ],
+      "rss_range_bytes": [
+        159775850496,
+        159844343808
+      ]
+    }
+  },
+  "aiur_to_handwritten_elapsed_ratio": 0.10154856484913793,
+  "aiur_to_handwritten_peak_rss_ratio": 0.052926579450626,
+  "path_normalization": "The documentation copy makes worktree and retained benchmark paths relative; raw tool output is retained with the validation artifacts."
+}

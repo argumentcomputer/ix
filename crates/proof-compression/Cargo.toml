@@ -42,6 +42,7 @@ blake3 = { workspace = true }
 
 [dev-dependencies]
 rayon = { workspace = true }
+stark-verifier = { path = "../stark-verifier" }
 
 # The CUDA transform engine for the KZG backend. The fork supplies column
 # batching, borrowed streams, the device-selecting synchronization and the
