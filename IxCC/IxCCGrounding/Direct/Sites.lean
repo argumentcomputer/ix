@@ -32,7 +32,8 @@ theorem spine_sound (hL : Laws M) (hN : NatBasis env) {x : DCtx} (hx : x.env = e
   have DS := direct_sound hL hN hx hφ n
   have hstep : ∀ T a T', dStep x n true Γ T a = some T' → ∀ F, HasTy M φ Γ F T →
       HasTy M φ Γ (.app F a) T' ∧ (DenotesIn M φ Γ (.app F a) → SiteOk M φ Γ F a) :=
-    fun T a T' hs F hF => ⟨(DS.step true Γ T a T' hs F hF).1, (DS.step true Γ T a T' hs F hF).2 rfl⟩
+    fun T a T' hs F hF => ⟨(step_of hφ DS true Γ T a T' hs F hF).1,
+      (step_of hφ DS true Γ T a T' hs F hF).2 rfl⟩
   cases args with
   | nil => intro s hs; simp [spineSites] at hs
   | cons a1 rest =>

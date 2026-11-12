@@ -382,6 +382,10 @@ structure CaseShape where
   ctors : List CtorShape
   /-- the recursor's binder datum for the major premise -/
   majorMeta : BinderMeta
+  /-- the levels, in `casesOn`'s level parameters, at which `casesOn`'s body calls the recursor
+  (the recursor may name its own level parameters apart from `casesOn`'s; its stored type and
+  rules are compared at these levels) -/
+  recLevels : List Level
 
 def CaseShape.nM (sh : CaseShape) : Nat := sh.ctors.length
 
@@ -392,7 +396,7 @@ def CaseShape.wrapper (sh : CaseShape) (j : Nat) (cs : CtorShape) : KExpr :=
 
 /-- `casesOn`'s body. -/
 def CaseShape.body (sh : CaseShape) (kr : KKey) : KExpr :=
-  Expr.mkAppN (.const kr (sh.lps.map Level.param))
+  Expr.mkAppN (.const kr sh.recLevels)
     (bvarsFrom (sh.nM + 2) sh.nP ++ [.bvar (sh.nM + 1)] ++
       ((List.range sh.nM).filterMap fun j => (sh.ctors[j]?).map (sh.wrapper j)) ++ [.bvar sh.nM])
 
@@ -416,7 +420,7 @@ def CaseShape.ruleRhs (sh : CaseShape) (kr : KKey) (j : Nat) (cs : CtorShape) : 
   let fbs := liftTele (sh.nM - j) j cs.fields
   let n := cs.nF
   let ih (r : Nat) : KExpr :=
-    Expr.mkAppN (.const kr (sh.lps.map Level.param))
+    Expr.mkAppN (.const kr sh.recLevels)
       (bvarsFrom (n + sh.nM + 1) sh.nP ++ [.bvar (n + sh.nM)] ++ bvarsFrom n sh.nM ++
         [.bvar (n - 1 - r)])
   lamTele (pre ++ fbs)
@@ -470,6 +474,32 @@ structure CaseWF (env : KEnv) (sh : CaseShape) : Prop where
     (piBody (sh.nP + cs.nF) cvC.type).getAppFn = .const sh.ind (cvC.levelParams.map .param)
   indSort : NeverProp env sh.ind
 
+/-- **The recursor of a `case` shape, compared at the levels `casesOn`'s body calls it at**
+(`sh.recLevels`): its stored type and its rules' right-hand sides, instantiated there, are the
+shape's. The recursor may name its level parameters apart from `casesOn`'s (the kernel's reading
+of a universe-polymorphic inductive does: `ForInStep`'s recursor's are `casesOn`'s in the other
+order); ι (`Laws.iota_rule`) is stated at any instantiation, so nothing else changes. -/
+def CaseRec (env : KEnv) (kr : KKey) (sh : CaseShape) : Prop :=
+  ∃ (cvr : ConstantVal .anon) (rules : List (RecRule .anon)),
+    env.find? kr = some (.recInfo cvr (sh.nP + 1 + sh.nM) (sh.nP + 1 + sh.nM) rules) ∧
+    cvr.levelParams.length = sh.recLevels.length ∧
+    cvr.type.instantiateLevelParams cvr.levelParams sh.recLevels = sh.recType ∧
+    rules.length = sh.nM ∧
+    ∀ j cs rl, sh.ctors[j]? = some cs → rules[j]? = some rl →
+      rl.ctor = cs.key ∧ rl.rhs.instantiateLevelParams cvr.levelParams sh.recLevels = sh.ruleRhs kr j cs
+
+/-- **The recursor clause as first landed** (G1b): `casesOn`'s body calls the recursor at
+`casesOn`'s own level parameters, which the recursor shares, and its stored type and rules are
+the shape's as they stand. `CaseRec` holds whenever this does (`caseRec_of_named`), so the
+renaming-tolerant `CaseStored` holds wherever the landed one did. -/
+def CaseRecNamed (env : KEnv) (kr : KKey) (sh : CaseShape) : Prop :=
+  sh.recLevels = sh.lps.map Level.param ∧
+  ∃ (cvr : ConstantVal .anon) (rules : List (RecRule .anon)),
+    env.find? kr = some (.recInfo cvr (sh.nP + 1 + sh.nM) (sh.nP + 1 + sh.nM) rules) ∧
+    cvr.levelParams = sh.lps ∧ cvr.type = sh.recType ∧ rules.length = sh.nM ∧
+    ∀ j cs rl, sh.ctors[j]? = some cs → rules[j]? = some rl →
+      rl.ctor = cs.key ∧ rl.rhs = sh.ruleRhs kr j cs
+
 /-- **The checked shape of a `case` constant `kc` over its recursor `kr`**, against the kernel's
 reading. Decided by the check. -/
 structure CaseStored (env : KEnv) (kc kr : KKey) (sh : CaseShape) : Prop where
@@ -483,11 +513,9 @@ structure CaseStored (env : KEnv) (kc kr : KKey) (sh : CaseShape) : Prop where
     cs.ihs.length = cs.recFields.length ∧ cs.fields.length = cs.nF
   major : ∃ m, sh.binders[sh.nP + 1]? = some
     (Expr.mkAppN (.const sh.ind sh.indLevels) (bvarsFrom 1 sh.nP), m)
-  recursor : ∃ (cvr : ConstantVal .anon) (rules : List (RecRule .anon)),
-    env.find? kr = some (.recInfo cvr (sh.nP + 1 + sh.nM) (sh.nP + 1 + sh.nM) rules) ∧
-    cvr.levelParams = sh.lps ∧ cvr.type = sh.recType ∧ rules.length = sh.nM ∧
-    ∀ j cs rl, sh.ctors[j]? = some cs → rules[j]? = some rl →
-      rl.ctor = cs.key ∧ rl.rhs = sh.ruleRhs kr j cs
+  /-- the recursor, compared at the levels `casesOn`'s body calls it at (renaming-tolerant;
+  as first landed, `CaseRecNamed`) -/
+  recursor : CaseRec env kr sh
   /-- constructor `j`'s type, at the `case`'s levels: `∀ ps fields, ind ps`, its parameter
   domains `casesOn`'s and its field domains the minor premise's (moved past the motive and the
   earlier minors); binder data may differ -/
@@ -499,6 +527,30 @@ structure CaseStored (env : KEnv) (kc kr : KKey) (sh : CaseShape) : Prop where
     pbs.map (·.1) = (sh.binders.take sh.nP).map (·.1) ∧
     (liftTele (j + 1) 0 fbs).map (·.1) = cs.fields.map (·.1)
   /-- what the generic `case` lemma needs beyond the builders -/
+  wf : CaseWF env sh
+
+/-- **`CaseStored` as first landed** (G1b, before the renaming-tolerant recursor clause): the same
+clauses, the recursor's `CaseRecNamed`. It implies `CaseStored` (`caseStored_of_named`), so every
+theorem taking `CaseStored` (or `CaseFacts`) is at least as strong as its landed form. -/
+structure CaseStoredNamed (env : KEnv) (kc kr : KKey) (sh : CaseShape) : Prop where
+  arity : sh.binders.length = sh.nP + 2 + sh.nM ∧ 0 < sh.nM
+  casesOnStored : ∃ (cvc : ConstantVal .anon) (hint : ReducibilityHint),
+    env.find? kc = some (.defnInfo cvc (lamTele sh.binders (sh.body kr)) hint) ∧
+    cvc.levelParams = sh.lps ∧
+    cvc.type = piTele sh.binders (.app (.bvar (sh.nM + 1)) (.bvar sh.nM))
+  minors : ∀ j cs, sh.ctors[j]? = some cs →
+    (sh.binders[sh.nP + 2 + j]?).map (·.1) = some (CaseShape.casesMinor j cs) ∧
+    cs.ihs.length = cs.recFields.length ∧ cs.fields.length = cs.nF
+  major : ∃ m, sh.binders[sh.nP + 1]? = some
+    (Expr.mkAppN (.const sh.ind sh.indLevels) (bvarsFrom 1 sh.nP), m)
+  recursor : CaseRecNamed env kr sh
+  ctors : ∀ j cs, sh.ctors[j]? = some cs → ∃ (cvC : ConstantVal .anon)
+    (pbs fbs : List (KExpr × BinderMeta)),
+    env.find? cs.key = some (.ctorInfo cvC sh.nP cs.nF) ∧
+    cvC.type.instantiateLevelParams cvC.levelParams sh.indLevels =
+      piTele pbs (piTele fbs (Expr.mkAppN (.const sh.ind sh.indLevels) (bvarsFrom cs.nF sh.nP))) ∧
+    pbs.map (·.1) = (sh.binders.take sh.nP).map (·.1) ∧
+    (liftTele (j + 1) 0 fbs).map (·.1) = cs.fields.map (·.1)
   wf : CaseWF env sh
 
 /-- **The program side of a `case` entry**: the recursor `r`'s Src declaration has the shape's

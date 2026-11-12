@@ -79,6 +79,15 @@ def kernelSite (core : Core) (Γ : List KExpr) (f a : KExpr) : Except String (Bo
   | .ok (b, _) => .ok b
   | .error e => .error s!"{e}"
 
+/-- **The kernel's head normal form** of a closed term. -/
+def kernelWhnf (core : Core) (e : KExpr) : Except String KExpr :=
+  let r := (do
+    let e' ← core.annotate 0 e
+    core.whnf 0 e' : Ix.Kernel.Cached.CheckCM .anon KExpr) ({} : Ix.Kernel.Cached.CState .anon)
+  match r with
+  | .ok (v, _) => .ok v
+  | .error e => .error s!"{e}"
+
 /-- A position's verdict: the profiles at which it is evaluated, the site, whether the walk
 accepts it, and its spine's head, arguments and index along the spine. -/
 abbrev Verdict := List IxCC.Src.Profile × Site × Bool × KExpr × List KExpr × Nat

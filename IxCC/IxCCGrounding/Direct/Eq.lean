@@ -222,6 +222,30 @@ theorem maxPlusLe_sound (φ : LevelParam → Nat) {A B : Nat × List (Nat × Nat
     obtain ⟨y, hy, h1, h2⟩ := hts x hx
     exact ⟨y, hy, h1, h2⟩
 
+/-- **`imax a a` collapsed to `a` keeps the value**: `Level.eval`'s `imax` is `0` at a zero right
+side and the maximum otherwise, so at equal sides it is the side. -/
+theorem eval_imaxCollapse (φ : LevelParam → Nat) :
+    ∀ l : Level, Level.eval φ (imaxCollapse l) = Level.eval φ l
+  | .zero => rfl
+  | .param _ => rfl
+  | .succ l => by simp only [imaxCollapse, Level.eval, eval_imaxCollapse φ l]
+  | .max a b => by simp only [imaxCollapse, Level.eval, eval_imaxCollapse φ a, eval_imaxCollapse φ b]
+  | .imax a b => by
+    have ha := eval_imaxCollapse φ a
+    have hb := eval_imaxCollapse φ b
+    unfold imaxCollapse
+    split
+    · rename_i h
+      have hab : Level.eval φ a = Level.eval φ b := by rw [← ha, ← hb, beq_iff_eq.mp h]
+      show Level.eval φ (imaxCollapse a) =
+        (if Level.eval φ b = 0 then 0 else Max.max (Level.eval φ a) (Level.eval φ b))
+      rw [ha, ← hab]
+      by_cases h0 : Level.eval φ a = 0 <;> simp [h0]
+    · simp only [Level.eval, ha, hb]
+
+theorem eval_lvlNorm (φ : LevelParam → Nat) (u : Level) : Level.eval φ (lvlNorm u) = Level.eval φ u := by
+  rw [lvlNorm, eval_imaxCollapse, Level.eval_simplify]
+
 /-- **`lvlEq` is sound**: the two levels evaluate alike at every assignment. -/
 theorem lvlEq_sound {u v : Level} (h : lvlEq u v = true) (φ : LevelParam → Nat) :
     Level.eval φ u = Level.eval φ v := by
@@ -230,7 +254,7 @@ theorem lvlEq_sound {u v : Level} (h : lvlEq u v = true) (φ : LevelParam → Na
   · rw [beq_iff_eq.mp h]
   · simp only [Bool.and_eq_true] at h
     obtain ⟨_, h⟩ := h
-    rw [← Level.eval_simplify φ u, ← Level.eval_simplify φ v]
+    rw [← eval_lvlNorm φ u, ← eval_lvlNorm φ v]
     rcases Bool.or_eq_true_iff.mp h with h | h
     · rw [beq_iff_eq.mp h]
     · split at h

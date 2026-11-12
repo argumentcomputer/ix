@@ -484,6 +484,61 @@ theorem den_inst (M : Model V env) (hL : Laws M) {ks : List LevelParam} {us : Li
     rw [inst_strLit] at h1
     exact .strLit h1
 
+/-- **Level instantiation at the induced assignment itself**: a term denoting `X` at the
+assignment an instantiation induces denotes `X` at `φ` once instantiated, whatever level
+parameters it names (no `allLevelParamsDefined`: a parameter outside `ks` is read at `φ` on both
+sides). The constants inside are read at assignments that agree on their own parameters
+(`cval_params`). -/
+theorem den_inst_exact (M : Model V env) (hL : Laws M) {ks : List LevelParam} {us : List Level}
+    {φ : LevelParam → Nat} {ρ : BVarIdx → V} {e : KExpr} {X : V}
+    (h : Denotes M.cval env (Level.substFn φ ks us) ρ e X) :
+    Denotes M.cval env φ ρ (e.instantiateLevelParams ks us) X := by
+  generalize hψ : Level.substFn φ ks us = ψ at h
+  induction h with
+  | bvar => exact .bvar
+  | @sort ρ u =>
+    have h1 := Denotes.sort (cval := M.cval) (env := env) (φ := φ) (ρ := ρ) (u := Level.subst ks us u)
+    rwa [Level.eval_subst, hψ] at h1
+  | @const ρ n vs ci hf hlen =>
+    simp only [Expr.instantiateLevelParams]
+    have h1 := Denotes.const (cval := M.cval) (φ := φ) (ρ := ρ) (us := vs.map (Level.subst ks us)) hf
+      (by rw [List.length_map, hlen])
+    have heq : M.cval n (Level.substFn φ ci.toConstantVal.levelParams (vs.map (Level.subst ks us))) =
+        M.cval n (Level.substFn ψ ci.toConstantVal.levelParams vs) :=
+      hL.cval_params n ci hf _ _ fun p hp => by
+        rw [Level.substFn_map_subst hlen hp, hψ]
+    rwa [heq] at h1
+  | app _ _ ihf iha => exact .app ihf iha
+  | @lam ρ ty body m A F _ _ hP ihA ihF =>
+    have hr : regime φ (Level.substPW ks us m.pw) = regime ψ m.pw :=
+      regime_congr (by rw [holds_substPW, hψ])
+    have h1 := Denotes.lam (cval := M.cval) (env := env) (φ := φ) (ρ := ρ)
+      (m := { m with pw := Level.substPW ks us m.pw }) ihA (fun x hx => ihF x hx)
+      (fun h0 => hP (by rw [← hr]; exact h0))
+    rw [show regime ψ m.pw = regime φ ({ m with pw := Level.substPW ks us m.pw } : BinderMeta).pw
+      from hr.symm]
+    exact h1
+  | @pi ρ ty body m A B _ _ hP ihA ihB =>
+    have hr : regime φ (Level.substPW ks us m.pw) = regime ψ m.pw :=
+      regime_congr (by rw [holds_substPW, hψ])
+    have h1 := Denotes.pi (cval := M.cval) (env := env) (φ := φ) (ρ := ρ)
+      (m := { m with pw := Level.substPW ks us m.pw }) ihA (fun x hx => ihB x hx)
+      (fun h0 => hP (by rw [← hr]; exact h0))
+    rw [show regime ψ m.pw = regime φ ({ m with pw := Level.substPW ks us m.pw } : BinderMeta).pw
+      from hr.symm]
+    exact h1
+  | proj_table ht _ ih => exact .proj_table ht ih
+  | proj_fst ht _ ih => exact .proj_fst ht ih
+  | proj_snd ht _ ih => exact .proj_snd ht ih
+  | @natLit ρ n X _ ih =>
+    have h1 := ih
+    rw [inst_natLit] at h1
+    exact .natLit h1
+  | @strLit ρ s X _ ih =>
+    have h1 := ih
+    rw [inst_strLit] at h1
+    exact .strLit h1
+
 /-- `Fits` under level instantiation (`den_inst` at each domain). -/
 theorem fits_inst (M : Model V env) (hL : Laws M) {ks : List LevelParam} {us : List Level}
     {φ ψ : LevelParam → Nat} (hψ : ∀ p ∈ ks, Level.substFn φ ks us p = ψ p)
