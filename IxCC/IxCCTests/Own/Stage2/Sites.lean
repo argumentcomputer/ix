@@ -265,7 +265,10 @@ def editChain (kind : SiteKind) (r : Rng) (Δ : JCtx) (Γ : Ctx) (ss : List Stmt
   | .capture =>
     let joins := (ss.zipIdx).flatMap fun (s, i) => match s with
       | .jp _ _ cs _ _ =>
-        let vs := ((ss.take i).flatMap stmtVars).eraseDups.filter fun c => !cs.contains c && holds (at_ i) c
+        let held := match at_ i with
+          | some (_, Γi) => (Γi.own.toList.filter (·.2 ≥ 1)).map (·.1)
+          | none => []
+        let vs := held.filter fun c => !cs.contains c && holds (at_ i) c
         vs.map (i, ·)
       | _ => []
     if joins.isEmpty then (none, r) else

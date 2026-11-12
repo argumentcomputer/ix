@@ -62,6 +62,7 @@ structure Verdict where
   sig : Nat × Nat × Nat
   heapHash : UInt64
   fullHash : UInt64
+  immHash : UInt64
 
 /-- `failure = none` when the run is safe and equal to `reference`; otherwise what went wrong. -/
 def oracleV (P : Program) (f : Nat) (args : List RVal) (reference : String) (watch : Nat) :
@@ -76,7 +77,7 @@ def oracleV (P : Program) (f : Nat) (args : List RVal) (reference : String) (wat
       else if !reclaimed H v then some "not everything reclaimed after dropping the result"
       else none
   { failure := verdict, hits := c.hits, sig := (c.incs - c.incImm, c.decs - c.decImm, c.peak)
-    heapHash := c.heapHash, fullHash := c.fullHash }
+    heapHash := c.heapHash, fullHash := c.fullHash, immHash := c.immHash }
 
 def oracle (P : Program) (f : Nat) (args : List RVal) (reference : String) (watch : Nat) :
     Option String × Nat × (Nat × Nat × Nat) :=

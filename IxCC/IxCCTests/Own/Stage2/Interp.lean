@@ -35,6 +35,8 @@ structure Counts where
   heapHash : UInt64 := 0
   /-- A hash of every node run, in order (kind and variable). -/
   fullHash : UInt64 := 0
+  /-- A hash of the `inc`/`dec` actions that found an immediate, in order. -/
+  immHash : UInt64 := 0
   deriving Repr, Inhabited
 
 abbrev M := ExceptT String (StateM Counts)
@@ -48,7 +50,13 @@ def event (kind v : Nat) : M Unit :=
 def heapEvent (kind : Nat) (v : RVal) : M Unit :=
   match v with
   | .loc l => modify fun c => { c with heapHash := mixH c.heapHash kind l }
+  | .loc _ => pure ()
   | _ => pure ()
+
+def immEvent (kind x : Nat) (v : RVal) : M Unit :=
+  match v with
+  | .loc _ => pure ()
+  | _ => modify fun c => { c with immHash := mixH c.immHash kind x }
 
 instance {α : Type} : Inhabited (M α) := ⟨throw "uninhabited"⟩
 
@@ -77,6 +85,7 @@ def actionI (ρ : Env) (H : Heap) : Action → M Heap
     modify fun c => { c with incs := c.incs + 1, incImm := c.incImm + (if isLoc then 0 else 1) }
     event 10 x
     heapEvent 1 v
+    immEvent 1 x v
     match Own.Rc.inc H v n with
     | some H' => pure H'
     | none => throw s!"inc v{x} refused"
@@ -86,6 +95,7 @@ def actionI (ρ : Env) (H : Heap) : Action → M Heap
     modify fun c => { c with decs := c.decs + 1, decImm := c.decImm + (if isLoc then 0 else 1) }
     event 11 x
     heapEvent 2 v
+    immEvent 2 x v
     dropCounted H [v]
 
 mutual

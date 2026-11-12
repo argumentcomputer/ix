@@ -302,13 +302,14 @@ structure SiteRef where
   sig : Nat × Nat × Nat
   heapHash : UInt64
   fullHash : UInt64
+  immHash : UInt64
 
 def siteRefs (P : Program) (f : Nat) (inputs : List (List Own.RVal)) : List SiteRef :=
   inputs.filterMap fun args =>
     let (r, c) := runI P 200000000 f args
     match r with
     | .ok _ => some { args, value := readOf r, sig := (c.incs - c.incImm, c.decs - c.decImm, c.peak),
-                      heapHash := c.heapHash, fullHash := c.fullHash }
+                      heapHash := c.heapHash, fullHash := c.fullHash, immHash := c.immHash }
     | .error _ => none
 
 /-- Per kind: generated, accepted, oracle runs, accepted that change the cell RC sequence (of
@@ -321,16 +322,17 @@ structure SiteStats where
   heap : Nat := 0
   counts : Nat := 0
   ranSame : Nat := 0
+  immOnly : Nat := 0
   unrun : Nat := 0
   bad : Nat := 0
 
 def SiteStats.add (a b : SiteStats) : SiteStats :=
   { gen := a.gen + b.gen, acc := a.acc + b.acc, runs := a.runs + b.runs, heap := a.heap + b.heap,
-    counts := a.counts + b.counts, ranSame := a.ranSame + b.ranSame, unrun := a.unrun + b.unrun,
+    counts := a.counts + b.counts, ranSame := a.ranSame + b.ranSame, immOnly := a.immOnly + b.immOnly, unrun := a.unrun + b.unrun,
     bad := a.bad + b.bad }
 
 def SiteStats.row (s : SiteStats) : String :=
-  s!"{s.gen}\t{s.acc}\t{s.runs}\t{s.heap}\t{s.counts}\t{s.ranSame}\t{s.unrun}\t{s.bad}"
+  s!"{s.gen}\t{s.acc}\t{s.runs}\t{s.heap}\t{s.counts}\t{s.immOnly}\t{s.ranSame}\t{s.unrun}\t{s.bad}"
 
 /-- The site-directed campaign on one program, both maps. -/
 def sites (closure eqs root label : String) (count seed : Nat) (ns : List Nat) : IO UInt32 := do
@@ -369,16 +371,18 @@ def sites (closure eqs root label : String) (count seed : Nat) (ns : List Nat) :
         let heap := vs.any fun (ref, v) => v.heapHash != ref.heapHash || v.sig != ref.sig
         let counts := vs.any fun (ref, v) => v.sig != ref.sig
         let ran := vs.any fun (ref, v) => v.fullHash != ref.fullHash
+        let imm := vs.any fun (ref, v) => v.immHash != ref.immHash
         let fails := vs.filterMap fun (_, v) => v.failure
         s := { s with runs := vs.length, heap := if heap then 1 else 0,
                       counts := if counts then 1 else 0,
-                      ranSame := if !heap && ran then 1 else 0,
+                      immOnly := if !heap && imm then 1 else 0,
+                      ranSame := if !heap && !imm && ran then 1 else 0,
                       unrun := if !ran then 1 else 0, bad := if fails.isEmpty then 0 else 1 }
         unless fails.isEmpty do
           failures := failures ++ [s!"f{g}: {what}: {fails.head!}\n  MUTANT {repr body'}"]
       stats := stats.map fun (k, t) => if k == kind then (k, t.add s) else (k, t)
     IO.println s!"{label}\t{name}\tinputs with a reference {refs.length}/{inputs.length}"
-    IO.println "label\tmap\tkind\tgenerated\taccepted\toracle runs\taccepted, cell RC sequence changed\tof which counts or peak changed\taccepted, ran, cell RC sequence unchanged\taccepted, not run\tmisbehaving"
+    IO.println "label\tmap\tkind\tgenerated\taccepted\toracle runs\taccepted, cell RC sequence changed\tof which counts or peak changed\taccepted, cell RC sequence unchanged, acted on immediates at run time\taccepted, ran, only moved past nodes that touch no cell\taccepted, not run\tmisbehaving"
     for (k, t) in stats do
       IO.println s!"{label}\t{name}\t{k.name}\t{t.row}"
     let tot : SiteStats := stats.foldl (fun (a : SiteStats) (_, t) => a.add t) {}
