@@ -28,10 +28,17 @@ in their source without any inference, and this reader takes exactly those:
   It passes unchanged into the run's body, a `let`'s body and a share.
 
 A head's declared type is peeled through the definitions that return one of their
-arguments (`outParam T` is `T`).
+arguments (`outParam T` is `T`). A head is a constant, a bound variable (its
+declared type), or a field of a bound variable whose declared type is a structure
+(the field's declared type). An argument beyond its head's ∀s, where the head's
+type ends in one of the head's own variables (a `casesOn`'s `motive t`), takes its
+domain from the actual argument there, `λ y⃗, R` with as many λs as that variable
+has arguments: the domain is `R`'s. A `let` at the head of a type is read through
+(its body has the sort of its ζ-reduct).
 
-Anything else (a body headed by a projection, a redex, a match whose motive
-computes a sort, a constant whose type is not syntactically such a telescope)
+Anything else (a body headed by a projection of anything but a bound variable, a
+redex, a match whose motive computes a sort, a constant whose type is not
+syntactically such a telescope)
 is not read, and the record falls to IxC's pass (`Ix.Compile.KernelAnnotate`):
 the reader never guesses. Every datum it does read is the one IxC's pass
 computes, because the source is Lean-checked and Lean's conversion has no
@@ -138,10 +145,48 @@ def lamSort : Nat → Ix.Expr → Option Ix.Level
     | .lam _ _ b _ _ => lamSort k b
     | _ => none
 
+/-- `a` as exactly `k` λs: their binder types (innermost first, before `acc`) and
+the body. -/
+def lamsExact : Nat → Ix.Expr → List (Option Ix.Expr) → Option (List (Option Ix.Expr) × Ix.Expr)
+  | 0, a, acc => some (acc, unmeta a)
+  | k + 1, a, acc => match unmeta a with
+    | .lam _ ty b _ _ => lamsExact k b (some ty :: acc)
+    | _ => none
+
+/-- The number of ∀s of `t`, each found as `peelN` finds it. -/
+def piCount (find : Find) : Nat → Ix.Expr → Nat
+  | 0, _ => 0
+  | fuel + 1, t => match unwrap find 8 t with
+    | .forallE _ _ b _ _ => piCount find fuel b + 1
+    | _ => 0
+
+/-- Bounds the ∀s and `let`s a sort is read through. -/
+def sortFuel : Nat := 1 <<< 12
+
+/-- **The field a projection `.proj S i v` reads**, when `v` is a bound variable
+whose declared type (under `ctx`) is `S.{us} p⃗`, `S` a structure (one
+constructor, no indices): the field's type in its constructor's telescope, the
+constructor's domains before it (innermost first), the constructor's level
+parameters, and `us`. -/
+def projField (find : Find) (ctx : List (Option Ix.Expr)) (sName : Ix.Name) (i : Nat)
+    (v : Ix.Expr) : Option (Ix.Expr × List (Option Ix.Expr) × Array Ix.Name × Array Ix.Level) := do
+  let .bvar k _ := unmeta v | none
+  let vty ← (ctx[k]?).join
+  let (vh, np) := headArgs (unwrap find 8 vty)
+  let .const S us _ := vh | none
+  guard (Ix.Name.beqRaw S sName)
+  let .inductInfo ind ← find S | none
+  guard (ind.numIndices == 0 && np == ind.numParams)
+  let #[c] := ind.ctors | none
+  let .ctorInfo ctor ← find c | none
+  let (d, before) ← domainAt find (ind.numParams + i) ctor.cnst.type []
+  pure (d, before, ctor.cnst.levelParams, us)
+
 /-- **The zero-ness of the sort of the type `t`, read syntactically.** `σ`
 numbers the level parameters `t` and `ctx` (the types of `t`'s loose variables,
 innermost first) are written over, and `sub` maps levels in that numbering to
-the reader's. `none` where the reading does not apply. -/
+the reader's. A `let` at the head is read through (its body has the sort of its
+ζ-reduct). `none` where the reading does not apply. -/
 def sortPw (find : Find) (σ : Ix.Name → Nat) (sub : Ix.Kernel.Level → Ix.Kernel.Level) :
     Nat → List (Option Ix.Expr) → Ix.Expr → Option PropWhen
   | 0, _, _ => none
@@ -149,6 +194,7 @@ def sortPw (find : Find) (σ : Ix.Name → Nat) (sub : Ix.Kernel.Level → Ix.Ke
     match unwrap find 8 t with
     | .sort _ _ => some .never
     | .forallE _ d b _ _ => sortPw find σ sub fuel (some d :: ctx) b
+    | .letE _ ty _ b _ _ => sortPw find σ sub fuel (some ty :: ctx) b
     | t =>
       let (h, n) := headArgs t
       let lvl? : Option Ix.Kernel.Level := match h with
@@ -175,26 +221,67 @@ def sortPw (find : Find) (σ : Ix.Name → Nat) (sub : Ix.Kernel.Level → Ix.Ke
           let ty ← (ctx[i]?).join
           let .sort l _ := unwrap find 8 (← peelN find n ty) | none
           (ingressLevel σ l).toOption
+        | .proj sName i v _ => do
+          -- a field of a bound structure variable: the field's declared type
+          let (fty, _, lps, us) ← projField find ctx sName i v
+          let .sort l _ := unwrap find 8 (← peelN find n fty) | none
+          let lc ← (ingressLevel (posIn lps) l).toOption
+          let us' ← (us.toList.mapM (ingressLevel σ)).toOption
+          pure (Ix.Kernel.Level.subst (List.range lps.size) us' lc)
         | _ => none
       lvl?.map fun l => Ix.Kernel.Level.zeronessOf (sub l)
 
+/-- **The domain of the argument at `idx` beyond its head's ∀s**: the head's type
+`ty` has `m ≤ idx` ∀s and ends in one of the head's own variables applied to `k`
+arguments (a `casesOn`'s `motive t`); the actual argument there (`args`, the
+spine's, outermost first) is `λ y⃗, R` with exactly `k` λs, so the type there is
+`R` with the arguments for `y⃗`, and the domain is `R`'s at `idx - m`. The domain
+and the types of its loose variables (innermost first, the spine's `ctx` last),
+its levels in the spine's numbering. -/
+def beyondDomain (find : Find) (ctx : List (Option Ix.Expr)) (ty : Ix.Expr)
+    (args : Array Ix.Expr) (idx : Nat) : Option (Ix.Expr × List (Option Ix.Expr)) := do
+  let m := piCount find sortFuel ty
+  guard (m ≤ idx)
+  let r ← peelN find m ty
+  let (rh, k) := headArgs (unwrap find 8 r)
+  let .bvar j _ := rh | none
+  guard (j < m)
+  let a ← args[m - 1 - j]?
+  let (ys, body) ← lamsExact k a []
+  let (d, before) ← domainAt find (idx - m) body []
+  pure (d, before ++ ys ++ ctx)
+
 /-- The zero-ness of the sort of the domain at `idx` of the type of the spine
-head `h` (a constant, or a bound variable under `ctx`): what an argument there
-has as its type's sort. -/
+head `h` (a constant, a bound variable under `ctx`, or a field of a bound structure
+variable; `args` the spine's arguments before `idx`, outermost first): what an
+argument there has as its type's sort. -/
 def argPw (find : Find) (σ : Ix.Name → Nat) (ctx : List (Option Ix.Expr)) (h : Ix.Expr)
-    (idx : Nat) : Option PropWhen :=
+    (args : Array Ix.Expr) (idx : Nat) : Option PropWhen :=
   match h with
   | .const c us _ => do
     let ci ← find c
     let cv := ci.getCnst
-    let (d, before) ← domainAt find idx cv.type []
-    let us' ← (us.toList.mapM (ingressLevel σ)).toOption
-    sortPw find (posIn cv.levelParams) (Ix.Kernel.Level.subst (List.range cv.levelParams.size) us')
-      64 before d
+    match domainAt find idx cv.type [] with
+    | some (d, before) =>
+      let us' ← (us.toList.mapM (ingressLevel σ)).toOption
+      sortPw find (posIn cv.levelParams)
+        (Ix.Kernel.Level.subst (List.range cv.levelParams.size) us') sortFuel before d
+    | none =>
+      let (d, dctx) ← beyondDomain find ctx cv.type args idx
+      sortPw find σ id sortFuel dctx d
   | .bvar i _ => do
     let ty ← (ctx[i]?).join
-    let (d, before) ← domainAt find idx ty []
-    sortPw find σ id 64 (before ++ ctx.drop (i + 1)) d
+    match domainAt find idx ty [] with
+    | some (d, before) => sortPw find σ id sortFuel (before ++ ctx.drop (i + 1)) d
+    | none =>
+      let (d, dctx) ← beyondDomain find ctx ty args idx
+      sortPw find σ id sortFuel dctx d
+  | .proj sName j v _ => do
+    let (fty, fctx, lps, us) ← projField find ctx sName j v
+    let (d, before) ← domainAt find idx fty []
+    let us' ← (us.toList.mapM (ingressLevel σ)).toOption
+    sortPw find (posIn lps) (Ix.Kernel.Level.subst (List.range lps.size) us') sortFuel
+      (before ++ fctx) d
   | _ => none
 
 /-! ## The reading of a record -/
@@ -297,10 +384,11 @@ def shapeOf (find : Find) (ctx : List (Option Ix.Expr)) (t : Ix.Expr) : String :
     | none => "a let-bound variable"
   | h => s!"{tag h} applied to {n}"
 
-/-- The expectation of an argument at `idx` of a spine headed by `h`. -/
+/-- The expectation of an argument at `idx` of a spine headed by `h` (`args` the
+arguments before it, outermost first). -/
 def argExpect (find : Find) (σ : Ix.Name → Nat) (ctx : List (Option Ix.Expr)) (h : Ix.Expr)
-    (idx : Nat) : Expect :=
-  match argPw find σ ctx h idx with
+    (args : Array Ix.Expr) (idx : Nat) : Expect :=
+  match argPw find σ ctx h args idx with
   | some p => .ok p
   | none => .error fun _ =>
     let head := match h with
@@ -318,7 +406,7 @@ def argExpect (find : Find) (σ : Ix.Name → Nat) (ctx : List (Option Ix.Expr))
 def argExpectOf (find : Find) (σ : Ix.Name → Nat) (ctx : List (Option Ix.Expr)) (xf : Ix.Expr) :
     Expect :=
   let (h, n) := headArgs xf
-  argExpect find σ ctx h n
+  argExpect find σ ctx h (spineArgs xf #[]).reverse n
 
 /-- Bounds the reading's depth. -/
 def readFuel : Nat := 1 <<< 24
@@ -362,7 +450,7 @@ def read : Nat → Cx → List (Option Ix.Expr) → Expect → Ixon.Expr → Ix.
         inner := some ty :: inner
       read fuel cx inner (if pi then unknown "a ∀-body" else ex) leafE leafX
       let pw ← if pi then
-          match sortPw cx.find cx.σ.pos id 64 inner leafX with
+          match sortPw cx.find cx.σ.pos id sortFuel inner leafX with
           | some p => pure p
           | none => throw s!"a ∀-body headed by {shapeOf cx.find inner leafX}"
         else match ex with
@@ -372,7 +460,7 @@ def read : Nat → Cx → List (Option Ix.Expr) → Expect → Ixon.Expr → Ix.
       for ord in ords do setNode ord node
     | .letE _ t v b, .letE _ ty val body _ _ => do
       read fuel cx ctx (unknown "a let's type") t ty
-      let vex : Expect := match sortPw cx.find cx.σ.pos id 64 ctx ty with
+      let vex : Expect := match sortPw cx.find cx.σ.pos id sortFuel ctx ty with
         | some p => .ok p
         | none => .error fun _ => s!"a let's value, its type headed by {shapeOf cx.find ctx ty}"
       read fuel cx ctx vex v val
@@ -407,7 +495,7 @@ structure Root where
 
 /-- The zero-ness of the sort of a definition's type `ty`, numbered by `σ`. -/
 def typeExpect (find : Find) (σ : Numbering) (ty : Ix.Expr) : Expect :=
-  match sortPw find σ.pos id 64 [] ty with
+  match sortPw find σ.pos id sortFuel [] ty with
   | some p => .ok p
   | none => .error fun _ => s!"a definition's value, its type headed by {shapeOf find [] ty}"
 
