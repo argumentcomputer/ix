@@ -8,7 +8,6 @@ import IxC.Kernel.Verify.EnvGuards
 import IxC.Kernel.Rules.Rel
 import Aiur.WireMemory
 import Aiur.Memory.Partition
-import Ix.IxVM.Consistency.MemoCalls
 
 /-! # `IxVM.consistent`: the IxVM circuit accepts only claims with a model
 
