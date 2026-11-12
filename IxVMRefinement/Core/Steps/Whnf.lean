@@ -394,7 +394,7 @@ theorem red_beta_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::red_beta" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.red_beta c args h r h' calls := by
-  intro rc lam sp types hargs good hrc d Γ L As hL hAs x y hr
+  intro rc lam sp types hargs good hrc d Γ htypes L As hL hAs x y hr
   subst hargs
   rcases Obs.«KernelWhnf::red_beta».obs ev with
     ⟨m2, cs13, m34, x_deep, x_cons, x_rest, m68, cs79, x_deep2, x_cons2, x_rest2, hm42, ev15,
@@ -497,7 +497,8 @@ theorem expr_inst_levels_step (c : Ctx) {args : List (SourceValue F)} {h h' : He
   subst hargs
   rcases Obs.«KernelLevels::expr_inst_levels».obs ev with
     ⟨ld12, he21, he22, hc23⟩ | ⟨v1, cs31, ld12, hne24, ev33, hc50⟩
-  · subst he21 he22
+  · subst he21
+    subst h'
     obtain ⟨ls, hls, hEq⟩ := hus
     have ld' : loadValue h params =
         .ok (.construct IxVM.Refinement.KernelLevels.klevelListEnum "Nil" []) := by
