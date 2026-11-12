@@ -187,7 +187,11 @@ def fixtures : IO UInt32 := do
     | IO.eprintln "[table-admission-fixtures] set IX_TABLE_FIXTURES to a directory of .ixe files"
       return 2
   let reversion := (← IO.getEnv "IX_TABLE_FIXTURES_REVERSION").isSome
-  let defaultTable ← IO.ofExcept Ix.Kernel.Reader.defaultTable
+  -- the committed default table's bindings, decoded without its well-formedness check, which
+  -- refuses a committed section made for another specification version
+  let some defaultTable := RoleTable.ofBytes (← IO.ofExcept Ix.Kernel.Reader.defaultTableBytes)
+    | IO.eprintln "[table-admission-fixtures] the committed default table does not decode"
+      return 2
   let files ← ixeFiles root
   let mut entries : Array Entry := #[]
   let mut unbound := 0
