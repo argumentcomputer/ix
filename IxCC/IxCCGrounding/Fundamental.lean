@@ -2,6 +2,7 @@ import IxCCGrounding.Hyps
 import IxCCGrounding.Heads
 import IxCCGrounding.EqRec
 import IxCCGrounding.RecFlat
+import IxCCGrounding.RecRun
 
 /-!
 # The fundamental lemma (`IxCCGrounding.Fundamental`), step (f)
@@ -210,6 +211,354 @@ theorem forceAll_step {k : Nat} (hf : ForceP M p κ lpsOf S Ok k) :
       rw [← ok_inj hfin]
       exact .cons (hf _ _ _ hv hs) (ih _ _ hvs' hss')
 
+/-- **F2 at a recursor of class `noParams`** (G3, part E): the major forced, a literal (at the
+pinned `Nat`) or a constructor value of the recursor's inductive; the rule of its constructor; its
+body (peeled of the prefix's and the fields' λs) evaluated by SrcEval in the slots of the arguments
+before the major and the fields. `eval`'s induction hypothesis (at the smaller clock) relates that
+value to what the body denotes there: the body runs (`runs_of_corr`, `runs_peel`) because it
+corresponds to the stored one, the stored rule is closed and denotes (by ι), it names no constant
+(`RecBodies`), and its sites are typed (`ruleSites_ok`) at the levels SrcEval runs it at, since the
+major premise was applied at a graph-regime site (`LastSiteOk`, `last_regime`). ι and β
+(`noParamsIota`) make the body's set the recursor applied to the arguments; the constructor value's
+image and fields are moved to the recursor's assignment without a law beyond `cval_params` where
+the constructor has no level parameters (`ctorFields_noLevels`), by the restricted canonicity where
+it has some (`ctorFields_canon`). Laws: through the direct route's soundness, `Laws` whole. -/
+theorem fire_noParams (H : FundHyps M p κ lpsOf S Ok) {k' : Nat}
+    (ih : AllP M p κ lpsOf S Ok k') {r : CId} (hcl : recClassB p env κ r = some .noParams)
+    {ls : Levels} {args : List Slot} {v : Value} {φ : LevelParam → Nat} {T : KExpr}
+    {ρ σ : BVarIdx → V} {R : KExpr} {As : List V}
+    (hrun : IxCC.Src.fire p (k' + 1) (.recr r) ls args = .ok v)
+    (hargs : RelSlots M κ lpsOf S Ok args As) (hh : HeadAt M κ lpsOf S (.recr r) ls φ (κ r) T)
+    (hfit : Fits M.cval env φ ρ T As σ R) (hlen : args.length = p.headArity (.recr r))
+    (hlast : LastSiteOk (M.cval (κ r) φ) As) :
+    RelV M κ lpsOf S Ok v (As.foldl app (M.cval (κ r) φ)) := by
+  have hN := H.natBasis
+  cases hh with
+  | @recr _ _ _ ci hSr hlv hfind =>
+  rw [IxCC.Src.fire_recr, later_succ] at hrun
+  obtain ⟨hkind, sf, kk', lvls, nmot, nmin, ind, rules, ty, hd, hnp⟩ := recClassB_noParams hcl
+  obtain ⟨hTele, hProg, hCtors, hFields, hBodies, hSites⟩ := H.faith.recs.noParams r hSr hcl
+  -- the checked shape (`RecStored`)
+  obtain ⟨⟨_, _, _, np', nmot', nmin', ni', _, rules', _, cvr, krules, hdS, hfS, _, _, hlenS,
+    hruleS⟩⟩ := H.faith.recs.stored r hSr _ _ _ _ _ _ _ _ _ _ hd
+  rw [hd] at hdS
+  simp only [Option.some.injEq, IxCC.Src.Decl.recr.injEq] at hdS
+  obtain ⟨-, -, -, rfl, rfl, rfl, rfl, -, rfl, -⟩ := hdS
+  have hmI : 0 + nmot + nmin + 0 = nmot + nmin := by omega
+  have hrP : 0 + nmot + nmin = nmot + nmin := by omega
+  rw [hmI, hrP] at hfS
+  rw [hfS] at hfind
+  cases hfind
+  have hfit : Fits M.cval env φ ρ cvr.type As σ R := hfit
+  -- the rules' telescopes (`RecTele`)
+  obtain ⟨cvr1, mI1, rP1, krules1, tbs, C, hf1, hty, htbs, hruleT⟩ := hTele
+  rw [hfS] at hf1
+  injection hf1 with hf1
+  injection hf1 with e1 e2 e3 e4
+  subst e1 e2 e3 e4
+  -- the rules' constructors (`RecCtorsRaw`)
+  obtain ⟨_, _, _, np2, _, _, _, ind2, _, _, cvr2, mI2, rP2, krules2, dom, body, mb, ls0, hd2, hf2,
+    hpb, hdom, hctors⟩ := hCtors
+  rw [hd] at hd2
+  simp only [Option.some.injEq, IxCC.Src.Decl.recr.injEq] at hd2
+  obtain ⟨-, -, -, rfl, -, -, -, rfl, -, -⟩ := hd2
+  rw [hfS] at hf2
+  injection hf2 with hf2
+  injection hf2 with e1 e2 e3 e4
+  subst e1 e2 e3 e4
+  have hdomE : dom.getAppFn = .const (κ ind) ls0 := by rw [hdom, getAppFn_mkAppN]; rfl
+  -- the rules' fields (`RecFields`)
+  obtain ⟨cvr3, mI3, rP3, krules3, dom3, body3, m3, D3, ls3, hf3, hpb3, hdom3, hflds⟩ := hFields
+  rw [hfS] at hf3
+  injection hf3 with hf3
+  injection hf3 with e1 e2 e3 e4
+  subst e1 e2 e3 e4
+  rw [hpb] at hpb3
+  injection hpb3 with e5 e6 e7
+  subst e5 e6 e7
+  rw [hdomE] at hdom3
+  injection hdom3 with e8 e9
+  subst e8 e9
+  -- the rule bodies (`RecBodies`)
+  obtain ⟨_, _, _, np4, nmot4, nmin4, _, _, rules4, _, cvr4, mI4, rP4, krules4, hd4, hf4, hbodies,
+    hclosed⟩ := hBodies
+  rw [hd] at hd4
+  simp only [Option.some.injEq, IxCC.Src.Decl.recr.injEq] at hd4
+  obtain ⟨-, -, -, rfl, rfl, rfl, -, -, rfl, -⟩ := hd4
+  rw [hfS] at hf4
+  injection hf4 with hf4
+  injection hf4 with e1 e2 e3 e4
+  subst e1 e2 e3 e4
+  -- the rule bodies' sites (`RecSites`)
+  obtain ⟨_, _, _, _, _, _, _, _, rules5, _, cvr5, mI5, rP5, krules5, dom5, body5, m5, hd5, hf5,
+    hpb5, hpwd, hrefs⟩ := hSites
+  rw [hd] at hd5
+  simp only [Option.some.injEq, IxCC.Src.Decl.recr.injEq] at hd5
+  obtain ⟨-, -, -, -, -, -, -, -, rfl, -⟩ := hd5
+  rw [hfS] at hf5
+  injection hf5 with hf5
+  injection hf5 with e1 e2 e3 e4
+  subst e1 e2 e3 e4
+  rw [hpb] at hpb5
+  injection hpb5 with e5 e6 e7
+  subst e5 e6 e7
+  -- the program side (`RecProg`)
+  obtain ⟨_, _, _, np3, _, _, _, ind3, rules3, _, hd3, hctP, hnat⟩ := hProg
+  rw [hd] at hd3
+  simp only [Option.some.injEq, IxCC.Src.Decl.recr.injEq] at hd3
+  obtain ⟨-, -, -, rfl, -, -, -, rfl, rfl, -⟩ := hd3
+  -- SrcEval's F2: the major, forced; the rule of its constructor
+  have harity : args.length = nmot + nmin + 1 := by
+    rw [hlen]; simp [Program.headArity, hd, IxCC.Src.Decl.recArity]
+  have hAsl : As.length = nmot + nmin + 1 := by rw [relSlots_length hargs, harity]
+  simp only [hd, hkind, Option.map_some, atLevels_ordinary, IxCC.Src.recChosen] at hrun
+  obtain ⟨⟨j, fields⟩, hsel, hrest⟩ := Result.bind_eq_ok_iff.mp hrun
+  obtain ⟨major, hmaj, hsel'⟩ := Result.bind_eq_ok_iff.mp hsel
+  obtain ⟨sM, hsM⟩ : ∃ s, args[nmot + nmin]? = some s :=
+    ⟨_, List.getElem?_eq_getElem (by omega)⟩
+  obtain ⟨Tm, hTm, hrelM⟩ := relSlots_get hargs hsM
+  rw [List.getD_eq_getElem?_getD, hmI, hsM, Option.getD_some] at hmaj
+  have hmajR := ih.force _ _ _ hmaj hrelM
+  have hsel2 := ofOption_eq_ok.mp hsel'
+  unfold Program.selectRule at hsel2
+  -- the arguments before the major, and the major's domain
+  have hxl : (As.take (nmot + nmin)).length = nmot + nmin := by simp; omega
+  have hsplitA : As = As.take (nmot + nmin) ++ [Tm] := by
+    have hdrop : As.drop (nmot + nmin) = [Tm] := by
+      rw [List.getElem?_eq_getElem (by omega)] at hTm
+      rw [List.drop_eq_getElem_cons (by omega), Option.some.inj hTm,
+        List.drop_eq_nil_of_le (by omega)]
+    rw [← hdrop, List.take_append_drop]
+  have hfitA := hfit
+  rw [hsplitA] at hfitA
+  obtain ⟨σ1, R1, hfp, hfm⟩ := fits_append hfitA
+  have hR1 : R1 = .forallE dom body mb := by rw [fits_piBody hfp, hxl, hpb]
+  subst hR1
+  obtain ⟨X, hX, hTmX⟩ : ∃ X, Denotes M.cval env φ σ1 dom X ∧ Tm ∈ˢ X := by
+    cases hfm with
+    | cons hA hx _ => exact ⟨_, hA, hx⟩
+  -- the regime at the major premise's binder, from the graph-regime site that saturated the head
+  obtain ⟨vv, AA, BB, hvv, hXm, -⟩ := hlast (As.take (nmot + nmin)) Tm hsplitA
+  obtain ⟨TT, hTT, hHT⟩ := mem_key M hfS φ ρ
+  have hTT' : Denotes M.cval env φ ρ cvr.type TT := hTT
+  have hreg : regime φ mb.pw ≠ 0 := last_regime hfp hTT' hHT hvv hXm
+  -- the common part: ι and β, the body runs, SrcEval's value related
+  have tail : ∀ (j : Nat) (fields : List Slot) (rl : IxCC.Src.Rule) (krl : RecRule .anon)
+      (cvC : ConstantVal .anon) (K : V) (Fs : List V) (σC : BVarIdx → V) (RC : KExpr),
+      rules[j]? = some rl → krules[j]? = some krl →
+      env.find? krl.ctor = some (.ctorInfo cvC 0 krl.nfields) →
+      Denotes M.cval env φ ρ (.const krl.ctor ls0) K →
+      Fits M.cval env φ ρ (cvC.type.instantiateLevelParams cvC.levelParams ls0) Fs σC RC →
+      Fs.length = krl.nfields → Tm = Fs.foldl app K → RelSlots M κ lpsOf S Ok fields Fs →
+      (∀ t', IxCC.Src.peelLams (args.take (nmot + nmin) ++ fields).length rl.rhs = some t' →
+        IxCC.Src.eval p k' ls (args.take (nmot + nmin) ++ fields).reverse t' = .ok v) →
+      RelV M κ lpsOf S Ok v (As.foldl app (M.cval (κ r) φ)) := by
+    intro j fields rl krl cvC K Fs σC RC hrl hkrl hcC hK hFs hFl hTmK hrelF hev
+    have hkm := List.mem_of_getElem? hkrl
+    have hrm := List.mem_of_getElem? hrl
+    -- the stored rule: its telescope, its fields, the constructor's codomain
+    obtain ⟨hkc, hknf, hcorr⟩ := hruleS j rl krl hrl hkrl
+    obtain ⟨bs, b, hrhs, hbsl, hbsd⟩ := hruleT krl hkm
+    obtain ⟨cvC', fbs, bs', Cc, b', hcC', hcl, hdef, hcty, hfbl, hrhs', hbsl', hflds'⟩ :=
+      hflds krl hkm
+    rw [hcC] at hcC'
+    simp only [Option.some.injEq, ConstantInfo.ctorInfo.injEq] at hcC'
+    obtain ⟨rfl, -, -⟩ := hcC'
+    obtain ⟨rfl, rfl⟩ := lamTele_inj bs bs' b b' (by omega) (hrhs.symm.trans hrhs')
+    obtain ⟨cvC'', nF'', hfC'', -, -, hargs0⟩ := hctors krl hkm
+    rw [hcC] at hfC''
+    simp only [Option.some.injEq, ConstantInfo.ctorInfo.injEq] at hfC''
+    obtain ⟨rfl, -, rfl⟩ := hfC''
+    have hpbC : (piBody krl.nfields cvC.type).instantiateLevelParams cvC.levelParams ls0 = Cc := by
+      rw [← piBody_inst, hcty, ← hfbl, piBody_piTele]
+    have hcod : Cc.getAppArgs = [] := by
+      rw [← hpbC, getAppArgs_inst]
+      apply List.eq_nil_of_length_eq_zero
+      rw [List.length_map]
+      simp only [Nat.zero_add] at hargs0
+      omega
+    -- ι and β
+    have hTm' : As[nmot + nmin]? = some (Fs.foldl app K) := by rw [hTm, hTmK]
+    rw [hcty] at hFs
+    obtain ⟨Hs, Y, hH, hY, heqY, hctx⟩ := noParamsIota M H.laws.iota_rule hfS hty htbs hkm hcC
+      hrhs (by omega) hbsd hcty hfbl hcod hflds' hfit hAsl hpb hdomE hK hFs hFl hTm'
+    -- the body runs
+    obtain ⟨⟨t', ht', hnoc⟩, hrels⟩ := hbodies rl hrm
+    have hden : DenotesIn M φ [] krl.rhs := fun ρ' _ => ⟨Hs, den_closed (hclosed krl hkm) hH⟩
+    have hsites := ruleSites_ok H.laws hN hlv hrels hpwd hreg hden (hrefs j rl krl hrl hkrl)
+    have hruns : Runs M κ Ok (lpsOf r) ls φ [] rl.rhs krl.rhs :=
+      runs_of_corr hcorr (by simpa using hclosed krl hkm) hden hsites fun d us hdu => by
+        rw [evalConsts_peel ls _ rl.rhs t' ht'] at hdu
+        have hm := evalConsts_mentions ls t' hdu
+        rw [hnoc d] at hm
+        cases hm
+    rw [hrhs] at hruns
+    have hpeel : IxCC.Src.peelLams bs.length rl.rhs = some t' := by
+      rw [show bs.length = 0 + nmot + nmin + rl.fields by omega]; exact ht'
+    have hrunsB := runs_peel bs hruns hpeel
+    -- SrcEval: the body, in the slots of the arguments before the major and the fields
+    have hslen : (args.take (nmot + nmin) ++ fields).length = bs.length := by
+      rw [List.length_append, ← relSlots_length hrelF, hFl]; simp; omega
+    have hev' := hev t' (by rw [hslen]; exact hpeel)
+    have henv : RelEnv M κ lpsOf S Ok (args.take (nmot + nmin) ++ fields).reverse
+        (pushAll (As.take (nmot + nmin) ++ Fs) ρ) := by
+      have := relEnv_pushAll (E := []) (ρ := ρ)
+        (relSlots_append (relSlots_take (nmot + nmin) hargs) hrelF) .nil
+      simpa using this
+    have hcs : ConstsIn S t' := fun c hc => by rw [hnoc c] at hc; cases hc
+    obtain ⟨X', hX', hrelX⟩ := ih.eval (lpsOf r) ls φ _ t' b hrunsB _ _ v hcs hlv henv
+      (by simpa using hctx) hev'
+    rw [heqY]
+    rwa [Denotes_functional hX' hY] at hrelX
+  cases major with
+  | lit n =>
+    -- a literal major only at the pinned `Nat`: rule `Nat.zero` or `Nat.succ`
+    simp only at hsel2
+    split at hsel2
+    · rename_i hnatc
+      obtain ⟨-, hrow⟩ := hnat (by simpa using hnatc)
+      have hlenR : rules.length = 2 := by
+        have := congrArg List.length hrow
+        simpa using this
+      have hrowAt : ∀ (i : Nat) (rl : IxCC.Src.Rule), rules[i]? = some rl →
+          ([((natZeroName : KKey), 0), ((natSuccName : KKey), 1)])[i]? =
+            some (κ rl.ctor, rl.fields) := by
+        intro i rl hi
+        rw [← hrow, List.getElem?_map, hi]
+        rfl
+      have hkrAt : ∀ (i : Nat) (rl : IxCC.Src.Rule), rules[i]? = some rl →
+          ∃ krl, krules[i]? = some krl ∧ krl.ctor = κ rl.ctor ∧ krl.nfields = rl.fields := by
+        intro i rl hi
+        obtain ⟨krl, hk⟩ : ∃ krl, krules[i]? = some krl :=
+          ⟨_, List.getElem?_eq_getElem (by rw [← hlenS]; exact (List.getElem?_eq_some_iff.mp hi).1)⟩
+        obtain ⟨h1, h2, -⟩ := hruleS i rl krl hi hk
+        exact ⟨krl, hk, h1.symm, h2.symm⟩
+      have hF0 := natFacts M hN φ
+      have hTe := relV_lit_eq H.laws hN φ hmajR
+      obtain ⟨cvZ, hfZ, -, -, hlZ⟩ := hN.zero
+      obtain ⟨cvS, hfSu, -, htS, hlS⟩ := hN.succ
+      -- the major domain's levels: none (`Nat.zero` has no level parameter)
+      obtain ⟨rl0, hrl0⟩ : ∃ rl, rules[0]? = some rl := ⟨_, List.getElem?_eq_getElem (by omega)⟩
+      have h0 := hrowAt 0 rl0 hrl0
+      simp only [List.getElem?_cons_zero, Option.some.injEq, Prod.mk.injEq] at h0
+      obtain ⟨krl0, hkrl0, hk0c, hk0f⟩ := hkrAt 0 rl0 hrl0
+      rw [← h0.1] at hk0c
+      rw [← h0.2] at hk0f
+      have hls0 : ls0 = [] := by
+        obtain ⟨cvC'', nF'', hfC'', hlsC, -, -⟩ := hctors krl0 (List.mem_of_getElem? hkrl0)
+        rw [hk0c, hfZ] at hfC''
+        simp only [Option.some.injEq, ConstantInfo.ctorInfo.injEq] at hfC''
+        obtain ⟨rfl, -, -⟩ := hfC''
+        rw [hlZ] at hlsC
+        exact List.eq_nil_of_length_eq_zero hlsC.symm
+      cases n with
+      | zero =>
+        simp only [Option.some.injEq, Prod.mk.injEq] at hsel2
+        obtain ⟨rfl, rfl⟩ := hsel2
+        rw [hrl0] at hrest
+        simp only [hrP] at hrest
+        exact tail 0 [] rl0 krl0 cvZ (M.cval natZeroName φ) [] ρ
+          (cvZ.type.instantiateLevelParams cvZ.levelParams ls0) hrl0 hkrl0
+          (by rw [hk0c, hk0f]; exact hfZ)
+          (by rw [hk0c, hls0]; exact (den_const0 hfZ hlZ).mpr rfl) .nil (by rw [hk0f]; rfl)
+          (by rw [hTe]; rfl) .nil (fun t' ht => by rw [ht] at hrest; exact hrest)
+      | succ n =>
+        simp only [Option.some.injEq, Prod.mk.injEq] at hsel2
+        obtain ⟨rfl, rfl⟩ := hsel2
+        obtain ⟨rl1, hrl1⟩ : ∃ rl, rules[1]? = some rl :=
+          ⟨_, List.getElem?_eq_getElem (by omega)⟩
+        have h1 := hrowAt 1 rl1 hrl1
+        simp only [List.getElem?_cons_succ, List.getElem?_cons_zero, Option.some.injEq,
+          Prod.mk.injEq] at h1
+        obtain ⟨krl1, hkrl1, hk1c, hk1f⟩ := hkrAt 1 rl1 hrl1
+        rw [← h1.1] at hk1c
+        rw [← h1.2] at hk1f
+        rw [hrl1] at hrest
+        simp only [hrP] at hrest
+        have hi0 := inst_self ([] : List LevelParam) cvS.type
+        simp only [List.map_nil] at hi0
+        exact tail 1 [.val (.lit n)] rl1 krl1 cvS (M.cval natSuccName φ) [litSet M φ n]
+          (push (litSet M φ n) ρ) natK hrl1 hkrl1
+          (by rw [hk1c, hk1f]; exact hfSu)
+          (by rw [hk1c, hls0]; exact (den_const0 hfSu hlS).mpr rfl)
+          (by rw [hls0, hlS, hi0, htS]; exact .cons ((hF0.natD _ _).mpr rfl) (lit_mem M hF0 n) .nil)
+          (by rw [hk1f]; rfl) (by rw [hTe]; rfl) (.cons (.val (relV_lit_intro hN φ n)) .nil)
+          (fun t' ht => by rw [ht] at hrest; exact hrest)
+    · simp at hsel2
+  | con c lsc ps fs =>
+    simp only at hsel2
+    cases hdc : p.decl? c with
+    | none => simp [hdc] at hsel2
+    | some dc =>
+      cases dc with
+      | ctor sfc lvc indc cidx npc nfc tyc =>
+        simp only [hdc] at hsel2
+        split at hsel2
+        · rename_i hcond
+          simp only [Option.some.injEq, Prod.mk.injEq] at hsel2
+          obtain ⟨rfl, rfl⟩ := hsel2
+          simp only [Bool.and_eq_true, beq_iff_eq] at hcond
+          obtain ⟨rfl, -⟩ := hcond
+          cases hmajR with
+          | @con _ _ _ _ ψ cvC' np'' nf'' Ps Fs ρc σc Rc hSc' _ hfc' hPl hFl _ hfs' hfitc =>
+          obtain ⟨hnp0, rl, hrl, hkey, hnF⟩ := hctP c hSc' sfc lvc cidx npc nfc tyc hdc
+          obtain ⟨cv, hfcv, _⟩ := H.faith.ctor c hSc' sfc lvc _ cidx npc nfc tyc hdc
+          rw [hfcv] at hfc'
+          simp only [Option.some.injEq, ConstantInfo.ctorInfo.injEq] at hfc'
+          obtain ⟨rfl, rfl, rfl⟩ := hfc'
+          subst hnp0
+          obtain rfl : Ps = [] := List.eq_nil_of_length_eq_zero hPl
+          -- the stored rule at the constructor's index
+          obtain ⟨krl, hkrl⟩ : ∃ krl, krules[cidx]? = some krl := by
+            have hlt : cidx < krules.length := by
+              rw [← hlenS]; exact (List.getElem?_eq_some_iff.mp hrl).1
+            exact ⟨_, List.getElem?_eq_getElem hlt⟩
+          obtain ⟨hkc, hknf, -⟩ := hruleS cidx rl krl hrl hkrl
+          have hkc' : krl.ctor = κ c := hkc.symm.trans hkey
+          have hkm := List.mem_of_getElem? hkrl
+          -- the constructor: closed and covered (`RecFields`), its codomain's head, its levels
+          obtain ⟨cvF, -, -, -, -, hcF, hcl, hdef, -, -, -, -, -⟩ := hflds krl hkm
+          rw [hkc', hfcv] at hcF
+          simp only [Option.some.injEq, ConstantInfo.ctorInfo.injEq] at hcF
+          obtain ⟨rfl, -, hnfk⟩ := hcF
+          have hcC : env.find? krl.ctor = some (.ctorInfo cv 0 krl.nfields) := by
+            rw [hkc', hfcv, hnfk]
+          obtain ⟨cvH, nFH, hfH, hlsC, hhead, -⟩ := hctors krl hkm
+          rw [hcC] at hfH
+          simp only [Option.some.injEq, ConstantInfo.ctorInfo.injEq] at hfH
+          obtain ⟨rfl, -, rfl⟩ := hfH
+          have hfitc' : Fits M.cval env ψ ρc cv.type Fs σc Rc := by simpa using hfitc
+          have hFlk : Fs.length = krl.nfields := by rw [hFl, hnfk]
+          rw [hrl] at hrest
+          simp only [hrP] at hrest
+          by_cases hlp : cv.levelParams = []
+          · -- no level parameter: the image is one set at every assignment
+            have hls0 : ls0 = [] := by
+              rw [hlp] at hlsC; exact List.eq_nil_of_length_eq_zero hlsC.symm
+            obtain ⟨hK, σ', R', hFfit⟩ :=
+              ctorFields_noLevels M H.laws hfcv hlp hcl (by rw [← hlp]; exact hdef) hfitc'
+            have hi0 := inst_self ([] : List LevelParam) cv.type
+            simp only [List.map_nil] at hi0
+            exact tail cidx (fs.map .val) rl krl cv (M.cval (κ c) ψ) Fs σ' R' hrl hkrl hcC
+              (by rw [hkc', hls0]; exact hK) (by rw [hlp, hls0, hi0]; exact hFfit) hFlk
+              (by simp) (relSlots_of_relVs hfs') (fun t' ht => by rw [ht] at hrest; exact hrest)
+          · -- level parameters: canonicity at the inductive, never a proposition
+            have hnd : cv.levelParams.Nodup := by
+              obtain ⟨ci, hci, hlps⟩ := H.faith.stored c hSc'
+              rw [hfcv] at hci
+              cases hci
+              have := H.faith.nodup c hSc'
+              rwa [← hlps] at this
+            obtain ⟨K, hK, heqK, σ', R', hFfit⟩ := ctorFields_canon M H.laws hfcv hnd hcl hdef
+              (by simpa [hnfk] using hhead) (neverProp_of_check hnp) hlsC hfitc' hFl hdomE hX
+              (by simpa using hTmX)
+            exact tail cidx (fs.map .val) rl krl cv K Fs σ' R' hrl hkrl hcC
+              (by rw [hkc']; exact hK) hFfit hFlk (by simpa using heqK) (relSlots_of_relVs hfs')
+              (fun t' ht => by rw [ht] at hrest; exact hrest)
+        · simp at hsel2
+      | _ => simp [hdc] at hsel2
+  | _ => simp at hsel2
+
 /-- F1, F3 at `Eq.rec`, F4, F5 and F6. -/
 theorem fire_step (H : FundHyps M p κ lpsOf S Ok) {k : Nat}
     (ih : ∀ k' < k, AllP M p κ lpsOf S Ok k') (hfa : ForceAllP M p κ lpsOf S Ok k) :
@@ -320,6 +669,7 @@ theorem fire_step (H : FundHyps M p κ lpsOf S Ok) {k : Nat}
     cases k with
     | zero => rw [IxCC.Src.fire_recr, later_zero] at hrun; exact absurd hrun (by simp)
     | succ k' =>
+      have hrun0 := hrun
       rw [IxCC.Src.fire_recr, later_succ] at hrun
       cases hd : p.decl? r with
       | none => simp [hd] at hrun
@@ -329,7 +679,7 @@ theorem fire_step (H : FundHyps M p κ lpsOf S Ok) {k : Nat}
           obtain ⟨cl, hcl, hadm⟩ :=
             H.faith.recs.cls r hSr sf kk' lvls np nmot nmin ni ind rules ty hd
           simp only [admittedClasses, List.mem_cons, List.not_mem_nil, or_false] at hadm
-          rcases hadm with rfl | rfl | rfl
+          rcases hadm with rfl | rfl | rfl | rfl
           · -- `empty`: the table's kind is `empty`, at every level, and F4 traps
             have hkind := recClassB_empty hcl
             simp [hd, hkind, IxCC.Src.RecKind.atLevels, IxCC.Src.recChosen, Result.bind] at hrun
@@ -556,6 +906,9 @@ theorem fire_step (H : FundHyps M p κ lpsOf S Ok) {k : Nat}
                   · simp at hsel2
                 | _ => simp [hdc] at hsel2
             | _ => simp at hsel2
+          · -- `noParams` (part E): F2, the rule body evaluated; `fire_noParams`
+            exact fire_noParams H (ih k' (Nat.lt_succ_self k')) hcl hrun0 hargs
+              (.recr hSr hlv hfind) hfit hlen hlast
         | _ => simp [hd] at hrun
   | @prim op _ _ ci hfind hlp _ =>
     -- F6

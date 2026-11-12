@@ -4203,6 +4203,9 @@
    "imports": ["IxCCGrounding.Ground", "IxCCGrounding.RootCheck"]},
   "IxCCGrounding.Relation":
   {"path": "IxCCGrounding/Relation.lean", "imports": ["IxCCGrounding.Model"]},
+  "IxCCGrounding.RecRun":
+  {"path": "IxCCGrounding/RecRun.lean",
+   "imports": ["IxCCGrounding.RecFlat", "IxCCGrounding.Direct.Sites"]},
   "IxCCGrounding.RecFlat":
   {"path": "IxCCGrounding/RecFlat.lean", "imports": ["IxCCGrounding.CaseFire"]},
   "IxCCGrounding.Ok":
@@ -4215,7 +4218,8 @@
   {"path": "IxCCGrounding/Laws.lean",
    "imports": ["IxCK.Kernel.Denotes", "IxCCGrounding.Syntax"]},
   "IxCCGrounding.Hyps":
-  {"path": "IxCCGrounding/Hyps.lean", "imports": ["IxCCGrounding.Support"]},
+  {"path": "IxCCGrounding/Hyps.lean",
+   "imports": ["IxCCGrounding.Facts", "IxCCGrounding.Support"]},
   "IxCCGrounding.Heads":
   {"path": "IxCCGrounding/Heads.lean",
    "imports": ["IxCCGrounding.Apply", "IxCCGrounding.Lits"]},
@@ -4233,13 +4237,17 @@
    ["IxCCGrounding.Hyps",
     "IxCCGrounding.Heads",
     "IxCCGrounding.EqRec",
-    "IxCCGrounding.RecFlat"]},
+    "IxCCGrounding.RecFlat",
+    "IxCCGrounding.RecRun"]},
   "IxCCGrounding.Fence":
   {"path": "IxCCGrounding/Fence.lean",
    "imports":
    ["IxCCGrounding.Ground",
     "IxCCGrounding.Root",
     "IxCCGrounding.Direct.Sites"]},
+  "IxCCGrounding.Facts":
+  {"path": "IxCCGrounding/Facts.lean",
+   "imports": ["IxCCGrounding.Direct.Check"]},
   "IxCCGrounding.Eqn":
   {"path": "IxCCGrounding/Eqn.lean", "imports": ["IxCCGrounding.Apply"]},
   "IxCCGrounding.EqRec":
@@ -4269,10 +4277,11 @@
     "Std.Data.HashMap.Lemmas"]},
   "IxCCGrounding.Direct.Check":
   {"path": "IxCCGrounding/Direct/Check.lean",
-   "imports": ["IxCCGrounding.Check", "Std.Data.HashMap"]},
+   "imports": ["IxCCGrounding.Syntax", "Std.Data.HashMap"]},
   "IxCCGrounding.Check":
   {"path": "IxCCGrounding/Check.lean",
-   "imports": ["IxCCGrounding.Ok", "IxCCGrounding.CaseCheck"]},
+   "imports":
+   ["IxCCGrounding.Ok", "IxCCGrounding.CaseCheck", "IxCCGrounding.Facts"]},
   "IxCCGrounding.CaseFire":
   {"path": "IxCCGrounding/CaseFire.lean",
    "imports": ["IxCCGrounding.Case", "IxCCGrounding.Hyps"]},
@@ -4287,6 +4296,7 @@
   {"path": "IxCCGrounding.lean",
    "imports":
    ["IxCCGrounding.Syntax",
+    "IxCCGrounding.Facts",
     "IxCCGrounding.Laws",
     "IxCCGrounding.Model",
     "IxCCGrounding.Lits",
