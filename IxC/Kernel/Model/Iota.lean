@@ -1091,7 +1091,7 @@ theorem wellDenotedV_mkAppN_of_spineOk {ρ : Nat → V} :
       refine ⟨hf.1, hw.1, ?_⟩
       by_cases hr : r = 0
       · subst hr
-        refine ⟨0, A, fun _ => truthVal True, ?_, hx, fun _ _ => truthVal_mem_univZero True⟩
+        refine ⟨0, A, fun _ => truthVal True, ?_, hx, fun _ _ _ => truthVal_mem_univZero True⟩
         rw [eq_pt_of_mem_piR_zero hF]
         exact pt_mem_piR_zero_of fun _ _ => pt_mem_truthVal trivial
       · exact ⟨r, A, B, hF, hx, fun h => absurd h hr⟩
@@ -1107,7 +1107,7 @@ theorem projTypeLaw_of_envModelM {μ : Ix.Kernel.CheckMode} {env : Env md}
     (m : EnvModelM V μ env) : Ix.Kernel.ProjTypeLaw (cvalOf (V := V) m.base2.acval) env := by
   intro T i entry hfP us φ ρ F ts x hus hF hg hts hok hx
   have hcl := m.base2.cval_closedL
-  obtain ⟨-, -, -, ⟨cvT, capsT, hfT, hlpsT, -⟩, -, -, -, -, hlaw, -⟩ :=
+  obtain ⟨-, -, -, ⟨cvT, capsT, hfT, hlpsT, -⟩, -, _cvC, -, -, hlaw, -⟩ :=
     m.tower_ok φ T i entry hfP
   obtain ⟨⟨Ta, hTa, hA⟩, -⟩ := hlaw us hus
   have hFv : F = cvalOf m.base2.acval T (Level.substFn φ cvT.levelParams us) := by
