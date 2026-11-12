@@ -129,7 +129,7 @@ theorem runs_of_corr {κ : CId → KKey} {lps : List Nat} {ls : Levels} {φ : Le
 
 /-- **The run terms run**: every constant of `S` SrcEval unfolds, at every `Ok` instance, runs
 its value (or its equation body), from the laws, the checked facts and `SitesOk`. -/
-theorem runs_of_sites (hL : Laws M) {p : Program} {κ : CId → KKey} {lpsOf : CId → List Nat}
+theorem runs_of_sites (hL : LawsCore M) {p : Program} {κ : CId → KKey} {lpsOf : CId → List Nat}
     {ann : IxCC.Src.Relevance.Ann} {S : CId → Prop} (hG : GroundFacts p env κ lpsOf ann S)
     (hT : SitesOk M p κ lpsOf ann S) {c : CId} {ls : Levels} {t : Term} {e : KExpr} (hS : S c)
     (hOk : Ok p ann c ls) (hrp : RunPair p env κ c t e) {φ : LevelParam → Nat}
@@ -150,15 +150,20 @@ theorem runs_of_sites (hL : Laws M) {p : Program} {κ : CId → KKey} {lpsOf : C
   exact runs_of_corr hcorr (hG.closed c t e hS hrp) hden (hT c ls t e hS hOk hrp φ hlv)
     (fun d us h => hG.okClosed c ls hS hOk t hterm d us h)
 
-/-- **The fundamental lemma's hypotheses**, from the laws, the checked facts, `SitesOk` and F5's
+/-- **The fundamental lemma's hypotheses, from the laws other than canonicity**, the recursors'
+canonicity (the law, or no constructor with level parameters), the checked facts, `SitesOk` and F5's
 meaning at each `case` constant. -/
-theorem fundHyps_of (hL : Laws M) {p : Program} {κ : CId → KKey} {lpsOf : CId → List Nat}
-    {ann : IxCC.Src.Relevance.Ann} {S : CId → Prop} (hG : GroundFacts p env κ lpsOf ann S)
-    (hT : SitesOk M p κ lpsOf ann S)
+theorem fundHyps_of_core (hL : LawsCore M) {p : Program} {κ : CId → KKey}
+    {lpsOf : CId → List Nat} {ann : IxCC.Src.Relevance.Ann} {S : CId → Prop}
+    (hcanon : CtorCanon M ∨ ∀ r, S r →
+      (recClassB p env κ r = some .flat ∨ recClassB p env κ r = some .noParams) →
+        RecNoLevels env (κ r))
+    (hG : GroundFacts p env κ lpsOf ann S) (hT : SitesOk M p κ lpsOf ann S)
     (hcases : ∀ c r, S c → p.table.resolveOf c = some (.case r) →
       CaseFires M p κ lpsOf S (Ok p ann) c) :
     FundHyps M p κ lpsOf S (Ok p ann) where
   laws := hL
+  canon := hcanon
   natBasis := hG.natBasis
   faith := hG.faith
   cases := hcases
@@ -168,6 +173,16 @@ theorem fundHyps_of (hL : Laws M) {p : Program} {κ : CId → KKey} {lpsOf : CId
       fun ls φ hOk hlv => runs_of_sites hL hG hT hS hOk (.eqn hr hsh) hlv⟩
   value := fun c ls _ _ _ _ _ _ hS hOk hr hd hf φ hlv =>
     runs_of_sites hL hG hT hS hOk (.value hr hd hf) hlv
+
+/-- **The fundamental lemma's hypotheses**, from the laws, the checked facts, `SitesOk` and F5's
+meaning at each `case` constant (canonicity from the laws). -/
+theorem fundHyps_of (hL : Laws M) {p : Program} {κ : CId → KKey} {lpsOf : CId → List Nat}
+    {ann : IxCC.Src.Relevance.Ann} {S : CId → Prop} (hG : GroundFacts p env κ lpsOf ann S)
+    (hT : SitesOk M p κ lpsOf ann S)
+    (hcases : ∀ c r, S c → p.table.resolveOf c = some (.case r) →
+      CaseFires M p κ lpsOf S (Ok p ann) c) :
+    FundHyps M p κ lpsOf S (Ok p ann) :=
+  fundHyps_of_core (lawsCore_of_laws hL) (.inl hL.ctor_canon) hG hT hcases
 
 end Sem
 

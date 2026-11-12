@@ -323,4 +323,31 @@ theorem caseProg_of_check {p : Program} {κ : CId → KKey} {Sl : List CId} {r :
       exact hN
   · cases h
 
+/-! ## A `case` entry that needs no canonicity -/
+
+/-- **The `case` recursor's rules do not compare parameters**: every rule the reading stores for
+the recursor `kr` has `compareParams = false` (the install-computed bits: a plain rule marked
+`paramsBlind`). At such a rule #678's guarded ι law (`IotaLawG`) asks no parameter premise, so
+F5 needs no canonicity at parameters (`caseFires_of_blind`). -/
+def CaseRulesBlind (env : KEnv) (kr : KKey) : Prop :=
+  ∃ (cvr : ConstantVal .anon) (mI rP : Nat) (rules : List (RecRule .anon)),
+    env.find? kr = some (.recInfo cvr mI rP rules) ∧ ∀ rl ∈ rules, rl.compareParams = false
+
+/-- `CaseRulesBlind`, decided. -/
+def caseRulesBlindB (env : KEnv) (kr : KKey) : Bool :=
+  match env.find? kr with
+  | some (.recInfo _ _ _ rules) => rules.all fun rl => !rl.compareParams
+  | _ => false
+
+/-- **The decider is sound.** -/
+theorem caseRulesBlind_of_check {env : KEnv} {kr : KKey} (h : caseRulesBlindB env kr = true) :
+    CaseRulesBlind env kr := by
+  unfold caseRulesBlindB at h
+  split at h
+  · rename_i cvr mI rP rules hf
+    refine ⟨cvr, mI, rP, rules, hf, fun rl hrl => ?_⟩
+    have := List.all_eq_true.mp h rl hrl
+    simpa using this
+  · cases h
+
 end IxCC.Grounding

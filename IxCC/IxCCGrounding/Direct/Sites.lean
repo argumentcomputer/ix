@@ -24,7 +24,7 @@ section Sem
 variable {V : Type w} [Ix.Kernel.SetTheory V] {env : KEnv} {M : Model V env}
 
 /-- **The sites of a spine the walk accepts are `SiteOk`**, when the spine denotes. -/
-theorem spine_sound (hL : Laws M) (hN : NatBasis env) {x : DCtx} (hx : x.Reads env)
+theorem spine_sound (hL : LawsCore M) (hN : NatBasis env) {x : DCtx} (hx : x.Reads env)
     {φ : LevelParam → Nat} (hφ : AtProf φ x) {n : Nat} {Γ : List KExpr} {h : KExpr}
     {args : List KExpr} (hD : DenotesIn M φ Γ (Expr.mkAppN h args)) :
     ∀ s ∈ (spineSites Γ h args).take (spineAccepted x n Γ h args),
@@ -75,7 +75,7 @@ theorem spine_sound (hL : Laws M) (hN : NatBasis env) {x : DCtx} (hx : x.Reads e
       · simp at hs
 
 /-- A site the spine walk does not refuse is typed. -/
-theorem spineRefused_sound (hL : Laws M) (hN : NatBasis env) {x : DCtx} (hx : x.Reads env)
+theorem spineRefused_sound (hL : LawsCore M) (hN : NatBasis env) {x : DCtx} (hx : x.Reads env)
     {φ : LevelParam → Nat} (hφ : AtProf φ x) {n : Nat} {Γ : List KExpr} {h : KExpr}
     {args : List KExpr} (hD : DenotesIn M φ Γ (Expr.mkAppN h args)) :
     ∀ s ∈ spineSites Γ h args, s ∉ spineRefused x n Γ h args → SiteOk M φ s.1 s.2.1 s.2.2 := by
@@ -89,7 +89,7 @@ theorem spineRefused_sound (hL : Laws M) (hN : NatBasis env) {x : DCtx} (hx : x.
 /-- **A site of a run term the walk does not refuse is `SiteOk`**: at a level instantiation whose
 profile is in the walk's set, every site `evalSites` lists, and every pending site of the
 enclosing applications (`spineSites Γ e acc`), is refused or typed. -/
-theorem termRefused_sound (hL : Laws M) (hN : NatBasis env) {tab : KTab}
+theorem termRefused_sound (hL : LawsCore M) (hN : NatBasis env) {tab : KTab}
     (htab : ∀ k, tab[k]? = env.find? k) {lps : List Nat} {n : Nat}
     {ls : Levels} {φ : LevelParam → Nat} (hφ : ProfAt φ lps (IxCC.Src.profileOf ls)) :
     ∀ (t : Term) (P : List IxCC.Src.Profile) (Γ : List KExpr) (e : KExpr) (acc : List KExpr),
@@ -239,7 +239,7 @@ theorem sitesOkRes_of_sitesOk {p : Program} {κ : CId → KKey} {lpsOf : CId →
 
 /-- **The residue hypothesis gives `SitesOk`**: at a site the check does not refuse, the walk
 typed it (`termRefused_sound`), the run term denoting by δ or the `eqn` lemma. -/
-theorem sitesOk_of_res (hL : Laws M) {p : Program} {κ : CId → KKey} {lpsOf : CId → List Nat}
+theorem sitesOk_of_res (hL : LawsCore M) {p : Program} {κ : CId → KKey} {lpsOf : CId → List Nat}
     {ann : IxCC.Src.Relevance.Ann} {S : CId → Prop} (hG : GroundFacts p env κ lpsOf ann S)
     (hR : SitesOkRes M p κ lpsOf ann S) : SitesOk M p κ lpsOf ann S := by
   intro c ls t e hS hOk hrp φ hlv s hs

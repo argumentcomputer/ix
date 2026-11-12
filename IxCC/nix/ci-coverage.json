@@ -329,7 +329,6 @@
   "IxCC.Cfg.Rc.Proof.Physical.Bridge.ScalarRuntime",
   "IxCC.Cfg.Rc.Proof.Physical.Bridge.ScalarSem",
   "IxCC.Cfg.Rc.Proof.Physical.Bridge.ScalarSwitch",
-  "IxCC.Cfg.Rc.Proof.Physical.Bridge.ScalarWord",
   "IxCC.Cfg.Rc.Proof.Physical.Bridge.SwitchAdmission",
   "IxCC.Cfg.Rc.Proof.Physical.Bridge.Tokens",
   "IxCC.Cfg.Rc.Proof.Physical.BumpWrapper",
@@ -509,7 +508,6 @@
   "IxCC.Lam.Semantics",
   "IxCC.Lam.Syntax",
   "IxCC.Lam.WellFormed",
-  "IxCC.Lam.WordSem",
   "IxCC.Lir.Graph",
   "IxCC.Lir.Operands",
   "IxCC.Lir.Proof.Eval",
@@ -667,7 +665,6 @@
   "IxCC.Rt.Proof.OpsCheck",
   "IxCC.Rt.Proof.OpsDiv",
   "IxCC.Rt.Proof.OpsProj",
-  "IxCC.Rt.Proof.OpsWord",
   "IxCC.Rt.Proof.Pow",
   "IxCC.Rt.Proof.Procs",
   "IxCC.Rt.Proof.Program",
@@ -687,7 +684,6 @@
   "IxCC.Rt.Proof.SwitchTag",
   "IxCC.Rt.Proof.Switches",
   "IxCC.Rt.Proof.Term",
-  "IxCC.Rt.Proof.WordArith",
   "IxCC.Rt.Proof.Words",
   "IxCC.Rt.Rc.Classes",
   "IxCC.Rt.Rc.Gen.Procs",
@@ -1391,7 +1387,6 @@
   "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_Bridge_ScalarRuntime",
   "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_Bridge_ScalarSem",
   "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_Bridge_ScalarSwitch",
-  "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_Bridge_ScalarWord",
   "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_Bridge_SwitchAdmission",
   "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_Bridge_Tokens",
   "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_BumpWrapper",
@@ -1744,6 +1739,7 @@
  ["IxCCGrounding",
   "IxCCGrounding.Apply",
   "IxCCGrounding.Case",
+  "IxCCGrounding.CaseBlind",
   "IxCCGrounding.CaseCheck",
   "IxCCGrounding.CaseFire",
   "IxCCGrounding.Check",
@@ -1776,10 +1772,10 @@
   "IxCCGrounding.Syntax",
   "IxCCGrounding.Tele"],
  "grounding_axiom_sha256":
- "74f7cb9d0657e80e780d5c545287a2af197a92b5ab4ad2ae8bc7ba3974916be0",
- "grounding_axiom_count": 161,
+ "38cfa81590de80f92178daa16500d44b8c805dbef8e51871635a0e09c1036361",
+ "grounding_axiom_count": 189,
  "baseline":
- "jcb/ixcc-data: fixed-width words below Lam, stage W1 piece 2 landing A (the Lam word primitive, the Rt tagged lowering proved once against a heap-free core, both routes)",
+ "GR12: the canonicity-free family (IxCCGrounding.CaseBlind, noCanonB; LawsCore); grounding fence 189; merged with 52205307d",
  "axiom_sha256":
- "cdad40c3d56169fe04b07ac1bd6ada81ab344cef2137483d5654a628901eef78",
- "axiom_count": 6603}
+ "ea964b557ed54d567b913f9f8ba3d2c78f498d9b3fc4c59cd75eae17dd8aab72",
+ "axiom_count": 6525}

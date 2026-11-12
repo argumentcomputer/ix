@@ -1,6 +1,7 @@
 import IxCCGrounding.Ground
 import IxCCGrounding.Root
 import IxCCGrounding.Direct.Sites
+import IxCCGrounding.CaseBlind
 
 /-! # The grounding library's axiom fence: every theorem presented as proved uses at most
 the three standard axioms. Building the library checks it (`#guard_msgs`). -/
@@ -499,3 +500,162 @@ recursor clause and its implication from the landed one. -/
 
 /-- info: 'IxCC.Grounding.fire_noParams' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Grounding.fire_noParams
+
+/-! GR12: ι in #678's guarded form beside the landed law; the `case` lemma without canonicity. -/
+
+/-- info: 'IxCC.Grounding.IotaRuleG.of_premises' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.IotaRuleG.of_premises
+
+/-- info: 'IxCC.Grounding.IotaLawG.toIotaLaw' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.IotaLawG.toIotaLaw
+
+/-- info: 'IxCC.Grounding.caseRulesBlind_of_check' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.caseRulesBlind_of_check
+
+/-- info: 'IxCC.Grounding.den_inst_cv' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.den_inst_cv
+
+/-- info: 'IxCC.Grounding.den_inst_exact_cv' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.den_inst_exact_cv
+
+/-- info: 'IxCC.Grounding.fits_inst_cv' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.fits_inst_cv
+
+/-- info: 'IxCC.Grounding.litSet_indep_cv' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.litSet_indep_cv
+
+/-- info: 'IxCC.Grounding.relV_lit_eq_cv' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.relV_lit_eq_cv
+
+/-- info: 'IxCC.Grounding.lamR_dom_of_mem' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.lamR_dom_of_mem
+
+/-- info: 'IxCC.Grounding.spineOk_append' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.spineOk_append
+
+/-- info: 'IxCC.Grounding.fits_of_spineOk' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.fits_of_spineOk
+
+/-- info: 'IxCC.Grounding.fields_fit_of_spineOk' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.fields_fit_of_spineOk
+
+/-- info: 'IxCC.Grounding.caseIotaG' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.caseIotaG
+
+/-- info: 'IxCC.Grounding.caseFires_of_blind' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.caseFires_of_blind
+
+/-! GR12: the canonicity-free family (`LawsNoCanon`, `NoCanon`), and the laws other than canonicity (`LawsCore`). -/
+
+/-- info: 'IxCC.Grounding.lawsCore_of_laws' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.lawsCore_of_laws
+
+/-- info: 'IxCC.Grounding.LawsNoCanon.core' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.LawsNoCanon.core
+
+/-- info: 'IxCC.Grounding.recNoLevels_ctor' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.recNoLevels_ctor
+
+/-- info: 'IxCC.Grounding.noCanon_of_check' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.noCanon_of_check
+
+/-- info: 'IxCC.Grounding.caseBlind_of_noCanon' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.caseBlind_of_noCanon
+
+/-- info: 'IxCC.Grounding.caseFires_of_noCanon' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.caseFires_of_noCanon
+
+/-- info: 'IxCC.Grounding.fundHyps_of_core' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.fundHyps_of_core
+
+/-- info: 'IxCC.Grounding.fundHyps_of_noCanon' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.fundHyps_of_noCanon
+
+/-- info: 'IxCC.Grounding.allP_of_check_noCanon' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.allP_of_check_noCanon
+
+/-- info: 'IxCC.Grounding.const_of_check_noCanon' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.const_of_check_noCanon
+
+/-- info: 'IxCC.Grounding.rootSound_core' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.rootSound_core
+
+/-- info: 'IxCC.Grounding.rootSound_noCanon' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.rootSound_noCanon
+
+/-- info: 'IxCC.Grounding.fibRoot_noCanon' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.fibRoot_noCanon
+
+/-- info: 'IxCC.Grounding.decideRoot_noCanon' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.decideRoot_noCanon
+
+/-! **The canonicity-free root theorems conclude exactly what the landed ones do**: each `example`
+states the landed theorem's hypotheses with `LawsNoCanon` for `Laws` and the `NoCanon` fact (or its
+checker) added, and its conclusion copied word for word from the landed theorem, and is proved by
+the new theorem. -/
+
+section NoCanonConclusions
+
+open IxCC.Grounding Ix.Kernel Ix.Kernel.SetTheory
+open IxCC.Src (Value CId Program Levels)
+
+variable {V : Type} [Ix.Kernel.SetTheory V] {env : KEnv} {M : Model V env}
+
+example (hL : LawsNoCanon M) {p : Program} {κ : CId → KKey} {lpsOf : CId → List Nat}
+    {ann : IxCC.Src.Relevance.Ann} {Sl : List CId}
+    (hchk : groundCheck p env κ lpsOf ann Sl = true) (hnc : noCanonB p env κ Sl = true)
+    (hT : SitesOkRes M p κ lpsOf ann (· ∈ Sl)) :
+    ∀ k, AllP M p κ lpsOf (· ∈ Sl) (Ok p ann) k :=
+  allP_of_check_noCanon hL hchk hnc hT
+
+example (hL : LawsNoCanon M) {p : Program} {κ : CId → KKey} {lpsOf : CId → List Nat}
+    {ann : IxCC.Src.Relevance.Ann} {Sl : List CId}
+    (hchk : groundCheck p env κ lpsOf ann Sl = true) (hnc : noCanonB p env κ Sl = true)
+    (hT : SitesOkRes M p κ lpsOf ann (· ∈ Sl))
+    {k : Nat} {ls : Levels} {c : CId} {v : Value} {φ : LevelParam → Nat}
+    (hrun : IxCC.Src.evalConst p k ls c = .ok v) (hc : c ∈ Sl) (hOk : Ok p ann c ls)
+    (hlv : LvAt φ (lpsOf c) ls) :
+    RelV M κ lpsOf (· ∈ Sl) (Ok p ann) v (M.cval (κ c) φ) :=
+  const_of_check_noCanon hL hchk hnc hT hrun hc hOk hlv
+
+example (hL : LawsNoCanon M) {p : Program} {κ : CId → KKey} {lpsOf : CId → List Nat}
+    {ann : IxCC.Src.Relevance.Ann} {Sl : List CId} {root : CId} {args : List FoTy} {res : FoTy}
+    (hG : GroundFacts p env κ lpsOf ann (· ∈ Sl)) (hC : CaseFacts p env κ (· ∈ Sl))
+    (hNC : NoCanon p env κ (· ∈ Sl))
+    (hR : RootFacts p env κ ann (· ∈ Sl) root args res)
+    (hT : SitesOkRes M p κ lpsOf ann (· ∈ Sl))
+    {k : Nat} {xs : List Value} {es : List KExpr} {v : Value} {o : IxCC.Sem.Obs} {eo : KExpr}
+    (hA : FoArgs p κ args xs es) (hrun : IxCC.Src.run p k root xs = .ok v)
+    (hrb : IxCC.Src.readbackAll p v = some o) (hRT : ResultTag p env κ (· ∈ Sl) res o)
+    (hO : FoObs p κ res o eo) (φ : LevelParam → Nat) (ρ : BVarIdx → V) (X : V)
+    (hX : Denotes M.cval env φ ρ (Expr.mkAppN (.const (κ root) []) es) X) :
+    Denotes M.cval env φ ρ eo X :=
+  rootSound_noCanon hL hG hC hNC hR hT hA hrun hrb hRT hO φ ρ X hX
+
+example (hL : LawsNoCanon M) {p : Program} {κ : CId → KKey} {lpsOf : CId → List Nat}
+    {ann : IxCC.Src.Relevance.Ann} {Sl : List CId} {root : CId}
+    (hG : GroundFacts p env κ lpsOf ann (· ∈ Sl)) (hC : CaseFacts p env κ (· ∈ Sl))
+    (hNC : NoCanon p env κ (· ∈ Sl))
+    (hR : RootFacts p env κ ann (· ∈ Sl) root [.nat] .nat)
+    (hD : DirectFacts p env κ lpsOf ann (· ∈ Sl))
+    {k n : Nat} {v : Value} {w : Nat} (hrun : IxCC.Src.run p k root [.lit n] = .ok v)
+    (hrb : IxCC.Src.readbackAll p v = some (.nat w)) (φ : LevelParam → Nat) (ρ : BVarIdx → V)
+    (X : V) (hX : Denotes M.cval env φ ρ (.app (.const (κ root) []) (litE n)) X) :
+    Denotes M.cval env φ ρ (litE w) X :=
+  fibRoot_noCanon hL hG hC hNC hR hD hrun hrb φ ρ X hX
+
+example (hL : LawsNoCanon M) {p : Program} {κ : CId → KKey} {lpsOf : CId → List Nat}
+    {ann : IxCC.Src.Relevance.Ann} {Sl : List CId} {root boolD : CId}
+    (hb : p.known.bool = some boolD) (hBL : BoolListed p boolD)
+    (hG : GroundFacts p env κ lpsOf ann (· ∈ Sl)) (hC : CaseFacts p env κ (· ∈ Sl))
+    (hNC : NoCanon p env κ (· ∈ Sl))
+    (hR : RootFacts p env κ ann (· ∈ Sl) root [] (.enum boolD))
+    (hD : DirectFacts p env κ lpsOf ann (· ∈ Sl))
+    (hRT : ResultTag p env κ (· ∈ Sl) (.enum boolD) (.ctor 1 []))
+    {k : Nat} {v : Value} (hrun : IxCC.Src.run p k root [] = .ok v)
+    (hrb : IxCC.Src.readbackAll p v = some (.ctor 1 [])) (φ : LevelParam → Nat)
+    (ρ : BVarIdx → V) (X : V) (hX : Denotes M.cval env φ ρ (.const (κ root) []) X) :
+    Denotes M.cval env φ ρ (.const boolTrueName []) X :=
+  decideRoot_noCanon hL hb hBL hG hC hNC hR hD hRT hrun hrb φ ρ X hX
+
+end NoCanonConclusions
