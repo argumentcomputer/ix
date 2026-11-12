@@ -91,6 +91,9 @@ jobs:
         run: |
           lake exe ixvm/ixvm-proof-gen --check
           lake build --wfail IxVMRefinement
+      - name: Check Aiur compression compiler fixtures
+        if: github.event_name != 'push'
+        run: bash tools/check-aiur-compression-fixtures.sh
       - name: Check new IxVM execution and proof fixture
         if: github.event_name != 'push'
         run: |

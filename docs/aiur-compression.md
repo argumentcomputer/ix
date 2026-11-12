@@ -805,8 +805,9 @@ Their source-level functional correctness theorems remain separate work.
 
 The [generic PLONK frontend](../tools/gnark/AIUR.md) has proved an actual
 recursion/table/ROM compiler fixture using Ignition, with both gnark and local
-Solidity verification. The initial conservative prototype has 32,393 sparse
-constraints, a `2^15` domain, three typed public fields, one auxiliary
+Solidity verification. The [validated lookup optimization](measurements/aiur-plonk-optimization.json)
+reduces the initial 32,393 sparse constraints to 30,258, with a `2^15` domain,
+three typed public fields, one auxiliary
 commitment and an 864-byte Solidity proof. This validates the compiler backend;
 it is not the final two-field compression verifier or an Init performance result.
 
@@ -822,3 +823,32 @@ check was relaxed, and that attempt is not a completed compression baseline.
 Fresh benchmark runs explicitly disable proof-cache reads through the existing
 `--no-cache --no-index` options. An attempted Aiur run that reused cached proofs
 despite `--fresh` is excluded from performance comparisons.
+`--fresh` also bypasses aggregate cache reads while retaining cache writes.
+Compression regenerates its recognized stage artifacts; it does not delete
+unrelated files in `~/.ix/compression/<root>`.
+
+The [matched first-stage compression diagnostics](measurements/aiur-compression-host-preparation.json)
+verified the same Init root before compression and independently verified the
+result afterward. Parallel trace population and omitting the redundant host
+diagnostic checker reduced trace preparation from 872.9 to 31.1 seconds and
+compression from 972.9 to 130.0 seconds. The resulting proofs are byte-identical.
+This is a compression-only measurement; root proving, the later Aiur KZG stage
+and terminal PLONK are outside its scope. The two external verification commands
+add approximately 199 seconds to the optimized diagnostic's total runtime.
+
+The terminal `CompressFinal` source now composes the KZG verifier, policy and
+stage checks, accumulator handling and constrained pairing. Its exporter
+independently checks the fixed G2 anchors and prepared lines. A reproducible
+development fixture exposes two public 128-bit statement limbs and rejects
+changed statements, policies, stages and a forged KZG opening. Its 16.4 million
+main-trace cells do not establish the final PLONK constraint count or Init cost.
+
+A [two-stage KZG recursion preflight](measurements/aiur-kzg-recursion-preflight.json)
+proved a small first-stage execution, then executed the verifier on that proof.
+The second execution required 2,111,189,304 main cells and a maximum height of
+`2^26`, exceeding the selected `2^24` capacity. It was stopped before second-stage
+trace allocation or proving. Fq limb and carry range checks account for about
+48% of the cells, and BLAKE3 compression another 12.5%; G1 MSM arithmetic drives
+much of the remaining work. This is an unresolved recursive sizing problem,
+separate from the first-stage host preparation speedup. Full Init recursion,
+terminal PLONK and the target Mathlib benchmark remain unvalidated.

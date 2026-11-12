@@ -95,6 +95,33 @@ output and measured row counts (see `Examples/GroupingSearch.lean`). -/
 lean_exe grouping_search where
   root := `Examples.GroupingSearch
 
+lean_exe bn254_execution_fixture where
+  root := `Examples.BN254Execution
+lean_exe bn254_trace_fixture where
+  root := `Examples.BN254Trace
+lean_exe bn254_grouped_fixture where
+  root := `Examples.BN254Grouped
+lean_exe bn254_gap_fixture where
+  root := `Examples.BN254Gap
+lean_exe bn254_inactive_fixture where
+  root := `Examples.BN254Inactive
+lean_exe bn254_fq_fixture where
+  root := `Examples.BN254Fq
+lean_exe bn254_g1_fixture where
+  root := `Examples.BN254G1
+lean_exe bn254_g1_encoding_fixture where
+  root := `Examples.BN254G1Encoding
+lean_exe bn254_fq_products_fixture where
+  root := `Examples.BN254FqProducts
+lean_exe bn254_pairing_fixture where
+  root := `Examples.BN254Pairing
+lean_exe bn254_preparation_check where
+  root := `Examples.BN254Preparation
+lean_exe emulated_goldilocks_fixture where
+  root := `Examples.EmulatedGoldilocks
+lean_exe wide_artifact_fixture where
+  root := `Examples.WideArtifact
+
 /-- Fails if any declaration of the package uses an axiom beyond propext,
 Classical.choice and Quot.sound. Run after `lake build aiur/Aiur`:
 `lake env Aiur/.lake/build/bin/axiom_sweep Aiur`. -/
