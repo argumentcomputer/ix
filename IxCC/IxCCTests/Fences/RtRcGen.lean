@@ -1,3 +1,4 @@
+import IxCCTests.Fences.RtRcGen.IxCC_Own_Rc_Reuse
 import IxCCTests.Fences.RtRcGen.IxCC_Own_Rc_Unique
 import IxCCTests.Fences.RtRcGen.IxCC_Rt_Rc_Classes
 import IxCCTests.Fences.RtRcGen.IxCC_Rt_Rc_Gen_Procs
@@ -48,6 +49,7 @@ import IxCCTests.Fences.RtRcGen.IxCC_Rt_Rc_Gen_Proof_FrameReleaseEntry
 import IxCCTests.Fences.RtRcGen.IxCC_Rt_Rc_Gen_Proof_FrameReleaseLoop
 import IxCCTests.Fences.RtRcGen.IxCC_Rt_Rc_Gen_Proof_FreeTable
 import IxCCTests.Fences.RtRcGen.IxCC_Rt_Rc_Gen_Proof_ImmediateStep
+import IxCCTests.Fences.RtRcGen.IxCC_Rt_Rc_Gen_Proof_InPlace
 import IxCCTests.Fences.RtRcGen.IxCC_Rt_Rc_Gen_Proof_IncrementCaller
 import IxCCTests.Fences.RtRcGen.IxCC_Rt_Rc_Gen_Proof_IncrementCases
 import IxCCTests.Fences.RtRcGen.IxCC_Rt_Rc_Gen_Proof_IncrementEntry
@@ -88,6 +90,7 @@ import IxCCTests.Fences.RtRcGen.IxCC_Rt_Rc_Gen_Proof_ReserveLists
 import IxCCTests.Fences.RtRcGen.IxCC_Rt_Rc_Gen_Proof_ReservePartition
 import IxCCTests.Fences.RtRcGen.IxCC_Rt_Rc_Gen_Proof_Resume
 import IxCCTests.Fences.RtRcGen.IxCC_Rt_Rc_Gen_Proof_ResumeStep
+import IxCCTests.Fences.RtRcGen.IxCC_Rt_Rc_Gen_Proof_Rewrite
 import IxCCTests.Fences.RtRcGen.IxCC_Rt_Rc_Gen_Proof_Scanned
 import IxCCTests.Fences.RtRcGen.IxCC_Rt_Rc_Gen_Proof_SharedInvariant
 import IxCCTests.Fences.RtRcGen.IxCC_Rt_Rc_Gen_Proof_SharedStep

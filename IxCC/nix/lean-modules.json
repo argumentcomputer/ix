@@ -400,6 +400,7 @@
    "imports":
    ["IxCCTests.Rt.Rc.Controls",
     "IxCCTests.Rt.Rc.GenControls",
+    "IxCCTests.Rt.Rc.GenReuseControls",
     "IxCCTests.Rt.Rc.DeepControls",
     "IxCCTests.Rt.Rc.Native"]},
   "IxCCTests.Rt.Rc.ReuseSupport":
@@ -421,6 +422,12 @@
     "Lean"]},
   "IxCCTests.Rt.Rc.Main":
   {"path": "IxCCTests/Rt/Rc/Main.lean", "imports": ["IxCCTests.Rt.Rc.Run"]},
+  "IxCCTests.Rt.Rc.GenReuseControls":
+  {"path": "IxCCTests/Rt/Rc/GenReuseControls.lean",
+   "imports":
+   ["IxCCTests.Rt.Rc.GenControls",
+    "IxCC.Rt.Rc.Gen.Proof.WriteCell",
+    "IxCC.Own.Rc.Reuse"]},
   "IxCCTests.Rt.Rc.GenNativeControls":
   {"path": "IxCCTests/Rt/Rc/GenNativeControls.lean",
    "imports": ["IxCCTests.Exe.Session", "IxCC.Rt.Rc.Layout"]},
@@ -1268,6 +1275,9 @@
   "IxCCTests.Fences.RtRcGen.IxCC_Rt_Rc_Gen_Proof_Scanned":
   {"path": "IxCCTests/Fences/RtRcGen/IxCC_Rt_Rc_Gen_Proof_Scanned.lean",
    "imports": ["IxCC.Rt.Rc.Gen.Proof.Scanned"]},
+  "IxCCTests.Fences.RtRcGen.IxCC_Rt_Rc_Gen_Proof_Rewrite":
+  {"path": "IxCCTests/Fences/RtRcGen/IxCC_Rt_Rc_Gen_Proof_Rewrite.lean",
+   "imports": ["IxCC.Rt.Rc.Gen.Proof.Rewrite"]},
   "IxCCTests.Fences.RtRcGen.IxCC_Rt_Rc_Gen_Proof_ResumeStep":
   {"path": "IxCCTests/Fences/RtRcGen/IxCC_Rt_Rc_Gen_Proof_ResumeStep.lean",
    "imports": ["IxCC.Rt.Rc.Gen.Proof.ResumeStep"]},
@@ -1394,6 +1404,9 @@
   "IxCCTests.Fences.RtRcGen.IxCC_Rt_Rc_Gen_Proof_IncrementCaller":
   {"path": "IxCCTests/Fences/RtRcGen/IxCC_Rt_Rc_Gen_Proof_IncrementCaller.lean",
    "imports": ["IxCC.Rt.Rc.Gen.Proof.IncrementCaller"]},
+  "IxCCTests.Fences.RtRcGen.IxCC_Rt_Rc_Gen_Proof_InPlace":
+  {"path": "IxCCTests/Fences/RtRcGen/IxCC_Rt_Rc_Gen_Proof_InPlace.lean",
+   "imports": ["IxCC.Rt.Rc.Gen.Proof.InPlace"]},
   "IxCCTests.Fences.RtRcGen.IxCC_Rt_Rc_Gen_Proof_ImmediateStep":
   {"path": "IxCCTests/Fences/RtRcGen/IxCC_Rt_Rc_Gen_Proof_ImmediateStep.lean",
    "imports": ["IxCC.Rt.Rc.Gen.Proof.ImmediateStep"]},
@@ -1559,10 +1572,14 @@
   "IxCCTests.Fences.RtRcGen.IxCC_Own_Rc_Unique":
   {"path": "IxCCTests/Fences/RtRcGen/IxCC_Own_Rc_Unique.lean",
    "imports": ["IxCC.Own.Rc.Unique"]},
+  "IxCCTests.Fences.RtRcGen.IxCC_Own_Rc_Reuse":
+  {"path": "IxCCTests/Fences/RtRcGen/IxCC_Own_Rc_Reuse.lean",
+   "imports": ["IxCC.Own.Rc.Reuse"]},
   "IxCCTests.Fences.RtRcGen":
   {"path": "IxCCTests/Fences/RtRcGen.lean",
    "imports":
-   ["IxCCTests.Fences.RtRcGen.IxCC_Own_Rc_Unique",
+   ["IxCCTests.Fences.RtRcGen.IxCC_Own_Rc_Reuse",
+    "IxCCTests.Fences.RtRcGen.IxCC_Own_Rc_Unique",
     "IxCCTests.Fences.RtRcGen.IxCC_Rt_Rc_Classes",
     "IxCCTests.Fences.RtRcGen.IxCC_Rt_Rc_Gen_Procs",
     "IxCCTests.Fences.RtRcGen.IxCC_Rt_Rc_Gen_Proof_AdvanceCursorPlacement",
@@ -1612,6 +1629,7 @@
     "IxCCTests.Fences.RtRcGen.IxCC_Rt_Rc_Gen_Proof_FrameReleaseLoop",
     "IxCCTests.Fences.RtRcGen.IxCC_Rt_Rc_Gen_Proof_FreeTable",
     "IxCCTests.Fences.RtRcGen.IxCC_Rt_Rc_Gen_Proof_ImmediateStep",
+    "IxCCTests.Fences.RtRcGen.IxCC_Rt_Rc_Gen_Proof_InPlace",
     "IxCCTests.Fences.RtRcGen.IxCC_Rt_Rc_Gen_Proof_IncrementCaller",
     "IxCCTests.Fences.RtRcGen.IxCC_Rt_Rc_Gen_Proof_IncrementCases",
     "IxCCTests.Fences.RtRcGen.IxCC_Rt_Rc_Gen_Proof_IncrementEntry",
@@ -1652,6 +1670,7 @@
     "IxCCTests.Fences.RtRcGen.IxCC_Rt_Rc_Gen_Proof_ReservePartition",
     "IxCCTests.Fences.RtRcGen.IxCC_Rt_Rc_Gen_Proof_Resume",
     "IxCCTests.Fences.RtRcGen.IxCC_Rt_Rc_Gen_Proof_ResumeStep",
+    "IxCCTests.Fences.RtRcGen.IxCC_Rt_Rc_Gen_Proof_Rewrite",
     "IxCCTests.Fences.RtRcGen.IxCC_Rt_Rc_Gen_Proof_Scanned",
     "IxCCTests.Fences.RtRcGen.IxCC_Rt_Rc_Gen_Proof_SharedInvariant",
     "IxCCTests.Fences.RtRcGen.IxCC_Rt_Rc_Gen_Proof_SharedStep",
@@ -5772,6 +5791,9 @@
   {"path": "IxCC/Rt/Rc/Procs.lean", "imports": ["IxCC.Rt.Rc.Layout"]},
   "IxCC.Rt.Rc.Layout":
   {"path": "IxCC/Rt/Rc/Layout.lean", "imports": ["IxCC.Rt.Layout"]},
+  "IxCC.Rt.Rc.Gen.Proof.WriteCell":
+  {"path": "IxCC/Rt/Rc/Gen/Proof/WriteCell.lean",
+   "imports": ["IxCC.Rt.Rc.Gen.Proof.LiveMemory"]},
   "IxCC.Rt.Rc.Gen.Proof.UniqueTest":
   {"path": "IxCC/Rt/Rc/Gen/Proof/UniqueTest.lean",
    "imports":
@@ -5806,6 +5828,13 @@
   "IxCC.Rt.Rc.Gen.Proof.Scanned":
   {"path": "IxCC/Rt/Rc/Gen/Proof/Scanned.lean",
    "imports": ["IxCC.Rt.Rc.Gen.Proof.LiveMemory"]},
+  "IxCC.Rt.Rc.Gen.Proof.Rewrite":
+  {"path": "IxCC/Rt/Rc/Gen/Proof/Rewrite.lean",
+   "imports":
+   ["IxCC.Rt.Rc.Gen.Proof.WriteCell",
+    "IxCC.Rt.Rc.Gen.Proof.ObjectFrame",
+    "IxCC.Rt.Rc.Gen.Proof.ProtectedFrame",
+    "IxCC.Rt.Rc.Proof.CountPreserve"]},
   "IxCC.Rt.Rc.Gen.Proof.ResumeStep":
   {"path": "IxCC/Rt/Rc/Gen/Proof/ResumeStep.lean",
    "imports":
@@ -5981,6 +6010,12 @@
    ["IxCC.Rt.Rc.Gen.Proof.IncrementCases",
     "IxCC.Rt.Rc.Proof.SuccessTransport",
     "IxCC.Rt.Rc.Proof.IncrementCaller"]},
+  "IxCC.Rt.Rc.Gen.Proof.InPlace":
+  {"path": "IxCC/Rt/Rc/Gen/Proof/InPlace.lean",
+   "imports":
+   ["IxCC.Rt.Rc.Gen.Proof.Rewrite",
+    "IxCC.Rt.Rc.Gen.Proof.AllocatorMetadata",
+    "IxCC.Own.Rc.Reuse"]},
   "IxCC.Rt.Rc.Gen.Proof.ImmediateStep":
   {"path": "IxCC/Rt/Rc/Gen/Proof/ImmediateStep.lean",
    "imports": ["IxCC.Rt.Rc.Gen.Proof.ReleaseInvariant"]},
@@ -6669,6 +6704,12 @@
    "imports": ["IxCC.Own.Syntax", "IxCC.Own.Heap"]},
   "IxCC.Own.Rc.Unique":
   {"path": "IxCC/Own/Rc/Unique.lean", "imports": ["IxCC.Own.Rc.Release"]},
+  "IxCC.Own.Rc.Reuse":
+  {"path": "IxCC/Own/Rc/Reuse.lean",
+   "imports":
+   ["IxCC.Own.Rc.Unique",
+    "IxCC.Own.Rc.Proof.Allocation",
+    "IxCC.Own.Rc.Proof.Shape"]},
   "IxCC.Own.Rc.Release":
   {"path": "IxCC/Own/Rc/Release.lean", "imports": ["IxCC.Own.Rc.Heap"]},
   "IxCC.Own.Rc.Proof.Transfer":
