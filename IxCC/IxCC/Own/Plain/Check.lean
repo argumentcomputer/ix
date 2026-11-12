@@ -1,4 +1,5 @@
 import IxCC.Own.Plain.Program
+import IxCC.Own.Plain.ScopeSet
 
 /-! Structural checking of the staged canonical plain-RC code. The check
 binds the proposed code to a source body, validates lexical ownership scopes,
@@ -135,13 +136,19 @@ def signatures (P : Fir.Program) : Signatures :=
 /-- Check every numbered function, including unreachable entries. A caller
 cannot admit an equal-arity callee outside the supported contract domain.
 Missing numbered functions are rejected. This does not establish constructor
-table agreement or projection bounds; those remain source-admission facts. -/
+table agreement or projection bounds; those remain source-admission facts.
+The parameters' freshness and the body's scope are checked by the set forms
+of `Own/Plain/ScopeSet.lean` (`freshSet`, `scopeOkSet`; a scope is a
+`Src.NatSet`, a callee's arity is read by `Fir.Program.fun?`), which compute
+`fresh` and `scopeOk` over `signatures P` (`programDomain_eq_list`) in time
+linear in the program up to a logarithm; the list forms cost about `P²` for a
+function with `P` parameters. -/
 def programDomain (P : Fir.Program) : Bool :=
   (List.range P.size).all fun f =>
     match P.fun? f with
     | none => false
-    | some fd => funDomain fd && fresh [] (fd.params.map (·.1)) &&
-        scopeOk (signatures P) (fd.params.map (·.1)) [] fd.body
+    | some fd => funDomain fd && freshSet .leaf (fd.params.map (·.1)) &&
+        scopeOkSet P (insertVars .leaf (fd.params.map (·.1))) [] fd.body
 
 /-- Bind a proposal to a function and call signatures in the actual Fir
 program, including the explicit written-contract domain. Whole-program Fir
@@ -247,12 +254,14 @@ theorem funDomain_implies_contractFunDomain {f : Fir.Fun} (h : funDomain f = tru
   simp only [funDomain, Bool.and_eq_true, and_assoc] at h
   exact h.2.1
 
+/-- `programDomain` with the contract-aware function domain (the same set
+forms; `contractProgramDomain_eq_list`). -/
 def contractProgramDomain (P : Fir.Program) : Bool :=
   (List.range P.size).all fun f =>
     match P.fun? f with
     | none => false
-    | some fd => contractFunDomain fd && fresh [] (fd.params.map (·.1)) &&
-        scopeOk (signatures P) (fd.params.map (·.1)) [] fd.body
+    | some fd => contractFunDomain fd && freshSet .leaf (fd.params.map (·.1)) &&
+        scopeOkSet P (insertVars .leaf (fd.params.map (·.1))) [] fd.body
 
 theorem programDomain_implies_contractProgramDomain {P : Fir.Program} (h : programDomain P = true) :
     contractProgramDomain P = true := by

@@ -387,6 +387,46 @@ def corpus (tsv : System.FilePath) (maxMut : Nat) : IO UInt32 := do
   printTally t
   return 0
 
+/-- Join parameters of a body: their sum and the largest list. -/
+partial def joinStats : Fir.Code → Nat × Nat
+  | .bind _ _ k => joinStats k
+  | .jp _ ps _ b k =>
+    let (s1, m1) := joinStats b
+    let (s2, m2) := joinStats k
+    (ps.length + s1 + s2, max ps.length (max m1 m2))
+  | .case _ alts d =>
+    (alts.map (fun (.mk _ b) => b) ++ d.toList).foldl
+      (fun (s, m) c => let (s', m') := joinStats c; (s + s', max m m')) (0, 0)
+  | _ => (0, 0)
+
+/-- One line per root: Fir functions, the sum and the largest of their parameter counts, the
+same for join parameters, the program's Anf nodes (`programNodesUpTo`), and the ratio of the
+function parameters to the Anf nodes. -/
+def params (tsv : System.FilePath) : IO UInt32 := do
+  let lines := (← IO.FS.readFile tsv).splitOn "\n" |>.filter (· ≠ "")
+  IO.println "label\tfunctions\tparams\tmaxParams\tjoinParams\tmaxJoinParams\tanfNodes\tparams/anf"
+  for line in lines do
+    match line.splitOn "\t" with
+    | [clo, eqs, root, label] =>
+      try
+        let bytes ← IO.FS.readBinFile clo
+        let json ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile eqs))
+        let inp ← IO.ofExcept ((Recheck.ingress bytes json [root]).mapError (·.render))
+        let cfg := Recheck.Config.forInput {} inp
+        let fr ← IO.ofExcept ((Recheck.RcReplay.produceFir cfg inp).mapError (·.render))
+        let anf := Anf.Pipeline.programNodesUpTo fr.anf.globalList 0
+        let F := fr.fir
+        let fds := (List.range F.size).filterMap F.fun?
+        let ps := fds.map (·.params.length)
+        let js := fds.map (fun fd => joinStats fd.body)
+        let sum := ps.foldl (· + ·) 0
+        let r := if anf == 0 then 0.0 else sum.toFloat / anf.toFloat
+        IO.println s!"{label}\t{F.size}\t{sum}\t{ps.foldl max 0}\t{js.foldl (fun a p => a + p.1) 0}\t{js.foldl (fun a p => max a p.2) 0}\t{anf}\t{r}"
+      catch e =>
+        IO.println s!"{label}\tfront-end error: {e}"
+    | _ => pure ()
+  return 0
+
 /-- Small synthetic programs: each family at small sizes, and their edits. -/
 def synthetic : IO UInt32 := do
   let mut t : Tally := {}
@@ -411,6 +451,7 @@ def main (args : List String) : IO UInt32 :=
   match args with
   | ["corpus", tsv, n] => IxCCTests.Own.Owned.ProbeH9.corpus tsv n.toNat!
   | ["synthetic"] => IxCCTests.Own.Owned.ProbeH9.synthetic
+  | ["params", tsv] => IxCCTests.Own.Owned.ProbeH9.params tsv
   | ["hostile", name, P, K, G, mode] =>
     IxCCTests.Own.Owned.ProbeH9.hostile name P.toNat! K.toNat! G.toNat! mode
   | _ => do

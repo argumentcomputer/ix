@@ -669,7 +669,7 @@ theorem canonical_checkMapE {F : Fir.Program} (domain : contractProgramDomain F 
   apply checkFuns_of
   intro f hf
   have hf' := List.mem_range.mp hf
-  unfold contractProgramDomain at domain
+  rw [contractProgramDomain_eq_list] at domain
   have hd := List.all_eq_true.mp domain f hf
   cases hfd : F.fun? f with
   | none => rw [hfd] at hd; cases hd
