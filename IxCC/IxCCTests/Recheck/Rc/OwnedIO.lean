@@ -249,19 +249,19 @@ def neverEmitted (logs : FilePath) : IO Unit := do
 
 def budgetDir : FilePath := "fixtures/rc/budget"
 
-/-- `fanUnder` and `fanOver` (`Fan.lean`): each the sum of sixteen fan functions of 200 bindings live
-across a tree of 326 (`fanUnder`) or 327 (`fanOver`) leaves, leaf `lo` of the `j`-th returning
+/-- `fanUnder` and `fanOver` (`Fan.lean`): each the sum of twenty-three fan functions of 150
+bindings live across a tree of 302 (`fanUnder`) or 303 (`fanOver`) leaves, leaf `lo` of the `j`-th returning
 `lo + 10000·j`; the pair of that sum and `s`. -/
-def fanBindings : Nat := 200
-def fanLeaves (root : String) : Nat := if root == "fanOver" then 327 else 326
+def fanBindings : Nat := 150
+def fanLeaves (root : String) : Nat := if root == "fanOver" then 303 else 302
 
 def fanWant (root : String) : List Nat → Sem.Obs
   | [n, s] =>
     let c := fanBindings
-    .ctor 0 [.nat (16 * (min s (fanLeaves root - 1) + c * n + c * (c - 1) / 2) + 1360000), .nat s]
+    .ctor 0 [.nat (23 * (min s (fanLeaves root - 1) + c * n + c * (c - 1) / 2) + 2760000), .nat s]
   | _ => .ctor 0 []
 
-def fanCases : List (List Nat) := [[0, 0], [1, 5], [7, 200], [100, 325], [3, 5000]]
+def fanCases : List (List Nat) := [[0, 0], [1, 5], [7, 200], [100, 301], [3, 5000]]
 
 def budgetSource (root : String) : IO Recheck.Input := do
   let bytes ← IO.FS.readBinFile (budgetDir / "anonymous.ixe")
@@ -317,7 +317,7 @@ def budget (logs : FilePath) : IO Unit := do
   let fr ← IO.ofExcept ((Recheck.RcReplay.produceFir cfg input).mapError (·.render))
   let bodies ← IO.ofExcept (Own.Plain.Certificate.decode fr.fir cert.own)
   let work := Own.Plain.Certificate.capturedWork bodies
-  unless work ≤ limit && work + 16 * fanBindings > limit do
+  unless work ≤ limit && work + 23 * fanBindings > limit do
     fail s!"fanUnder: captured work {work} is not just within the limit {limit}"
   runNative logs "budget-fanUnder" artifact fanCases (fanWant "fanUnder")
   match Own.Plain.Certificate.admit fr.fir cert.own (work - 1) with
