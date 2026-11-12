@@ -9,14 +9,15 @@ public section
 # Binder-data sections for records that no compile wrote
 
 The compiler writes each record's binder-data section while it builds the
-record, from Lean's elaboration of the record's sources. Some records IxVM reads
-have no Lean source: the model records `IxVM.Model` generates, the closed
-role-evidence theorems `kernel-pin-gen` writes, and hand-built test records.
-Their sections come from IxC's annotation pass over the Ixon tree
-(`IxVM.PwHints.annotateRecord`), typed against the records they reference,
-spelled in the canonical form (`Ix.Compile.BinderData.sectionOf`). A datum is
-the zero-ness of a binder's codomain sort, which is unique, so both routes write
-the same data for the same record.
+record: the Ix kernel's annotation pass over the record's declarations, installed
+from their sources (`Ix.Compile.KernelAnnotate`). Some records IxVM reads have no
+source the compiler installs: the model records `IxVM.Model` generates, the closed
+role-evidence theorems `kernel-pin-gen` writes, and hand-built test records. Their
+sections come from the same kernel's annotation pass run over the Ixon records
+(`IxVM.PwHints.annotateRecord`), typed against the records they reference, spelled
+in the canonical form (`Ix.Compile.BinderData.sectionOf`). A datum is the zero-ness
+of a binder's codomain sort, which is unique, so both routes write the same data
+for the same record.
 
 Nothing here is trusted: IxVM validates every datum it reads.
 -/

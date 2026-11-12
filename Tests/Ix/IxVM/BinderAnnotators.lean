@@ -4,8 +4,8 @@ import Ix.IxVM.RecordSections
 # The two binder-data annotators agree byte for byte
 
 Two routes write a record's binder-data section: the compiler's inline
-annotator, from Lean's elaboration of the record's sources, for every compiled
-record; and IxC's annotation pass over the Ixon record (`IxVM.RecordSections`),
+annotator, the Ix kernel's annotation pass over each declaration installed from
+its source, for every compiled record; and IxC's annotation pass over the Ixon record (`IxVM.RecordSections`),
 for the records no Lean source annotates (model records, closed evidence
 theorems, ad hoc definitions, hand-built test records). A difference between
 them gives one constant two addresses depending on the tool, so they must write
