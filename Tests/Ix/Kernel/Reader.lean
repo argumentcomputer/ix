@@ -22,8 +22,8 @@ structure with a projection function and a projection reduction, the
 quotient's lift reduction, a Nat literal against its constructors, a String
 literal against its `String.ofList` expansion (over test constants bound as
 the string-literal support), a compiled block nested through a container
-that is itself nested, whose auxiliary motives Ix's compiler orders with the
-container family's instance before its head, and a compiled theorem
+that is itself nested, whose auxiliary motives come with the container
+family's instance before its head, and a compiled theorem
 whose universe levels Ix's compiler stored in canonical form, which only the
 Géran fallback of the level comparison equates (the `RatFunc.liftOn_def`
 shape).
@@ -540,12 +540,14 @@ environment check order with the projections last: the records
       | node : List (LNode α) → LNode α
       | leaf : α → LNode α
     inductive LTree where
-      | node : LNode LTree → LTree
+      | node : List (LNode LTree) → LTree
 
-The compiler orders `LTree.rec`'s auxiliary motives canonically, as
-`[List (LNode LTree), LNode LTree]`: an instance of the container family before
-the family's head. The kernel's discovery order, and so every lean4export
-stream, has the head first. Container groups formed in motive order would
+`LTree.rec`'s auxiliary motives are `[List (LNode LTree), LNode LTree]`: an
+instance of the container family before the family's head. The compiler keeps
+Lean's recursor, so this is the order in which Lean's kernel discovers the
+nested occurrences (`LTree.node`'s field, then that auxiliary's `cons`), and it
+does not depend on addresses; a block nested through the head itself
+(`node : LNode LTree → LTree`) has the head first. Container groups formed in motive order would
 both claim motive 1 here (`List`'s singleton group and `LNode`'s family), and
 the block would be rejected with `duplicate declaration
 ix.<LTree>.0._model._impl.pack_0`, as Mathlib's `Lean.Elab.InfoTree` would

@@ -67,18 +67,22 @@ inductive LNode (α : Type) where
   | node : List (LNode α) → LNode α
   | leaf : α → LNode α
 
-/-- A block nested through a container that is itself nested. Ix's compiler
-orders `LTree.rec`'s auxiliary motives canonically, as
-`[List (LNode LTree), LNode LTree]`: the container family's instance before
+/-- A block nested through a container that is itself nested, reached through
+an instance of the container's own container: `LTree.rec`'s auxiliary motives
+are `[List (LNode LTree), LNode LTree]`, the container family's instance before
 its head, an order in which the in-process modeller must still emit each
-`pack_i` once. -/
+`pack_i` once. Ix's compiler keeps Lean's recursor, whose auxiliary motives are
+in the order Lean's kernel discovers the nested occurrences (from `LTree.node`'s
+field `List (LNode LTree)`, then from that auxiliary's constructor `cons`,
+`LNode LTree`), so the order does not depend on addresses. -/
 inductive LTree where
-  | node : LNode LTree → LTree
+  | node : List (LNode LTree) → LTree
 
 /-- The shape of `Lean.Elab.InfoTree`: nested through a structure whose field
 is nested through `Array` (`PersistentArray` → `PersistentArrayNode`). Its
-auxiliary motives are compiled as `[Array ITree, Array (PNode ITree), PArr
-ITree, List (PNode ITree), List ITree, PNode ITree]`, as `InfoTree`'s are. -/
+auxiliary motives are in Lean's discovery order, which the compiler keeps:
+`[PArr ITree, PNode ITree, Array ITree, Array (PNode ITree), List ITree,
+List (PNode ITree)]`. -/
 inductive PNode (α : Type) where
   | node : Array (PNode α) → PNode α
   | leaf : Array α → PNode α

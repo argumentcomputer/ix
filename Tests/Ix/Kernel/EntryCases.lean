@@ -192,8 +192,8 @@ def cases : List Case := [
   { label := "string-literal", seeds := [seed "strLit"], expected := .accept },
   { label := "nested-inductive", seeds := [seed "Tree"], expected := .accept },
   -- nested through a container that is itself nested, with the container
-  -- family's instance compiled before its head (the modeller must not
-  -- declare its `pack_0` twice)
+  -- family's instance before its head in Lean's motive order (the modeller
+  -- must not declare its `pack_0` twice)
   { label := "nested-through-nested", seeds := [seed "LTree"], expected := .accept },
   -- `Lean.Elab.InfoTree`'s shape and auxiliary order (the modeller must not
   -- declare its `pack_1` twice)
