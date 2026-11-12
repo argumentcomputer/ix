@@ -2,6 +2,7 @@ module
 
 public import IxC.Kernel.Model.Open.ProjType
 import IxC.Kernel.Model.Open.Levels
+import IxC.Kernel.Model.Iota
 import IxC.Kernel.Verify.Inductives.StructBody
 import IxC.Kernel.Verify.InstSpine
 import IxC.Kernel.Verify.InstLevels
@@ -490,5 +491,527 @@ theorem DenList.of_getD' {σ : Nat → V} :
         simpa using h (i + 1) (by simp only [List.length_cons]; omega))
   | [], _ :: _, hl, _ => absurd hl (by simp)
   | _ :: _, [], hl, _ => absurd hl (by simp)
+
+
+theorem hasFvar_mkAppN_false : ∀ {as : List (Expr md)} {f : Expr md},
+    (Expr.mkAppN f as).hasFvar = false → f.hasFvar = false ∧ ∀ x ∈ as, x.hasFvar = false
+  | [], _, h => ⟨h, fun _ hx => nomatch hx⟩
+  | b :: bs, f, h => by
+    obtain ⟨h1, h2⟩ := hasFvar_mkAppN_false (as := bs) (f := .app f b) h
+    simp only [Expr.hasFvar, Bool.or_eq_false_iff] at h1
+    refine ⟨h1.1, fun x hx => ?_⟩
+    rcases List.mem_cons.mp hx with rfl | hx
+    · exact h1.2
+    · exact h2 x hx
+
+theorem getD_take_lt {α : Type _} {l : List α} {n i : Nat} (d : α) (h : i < n) :
+    (l.take n).getD i d = l.getD i d := by
+  simp only [List.getD, List.getElem?_take_of_lt h]
+
+/-! ## ι -/
+
+set_option maxHeartbeats 3200000 in
+/-- **ι** (`Red.iota`): a stored recursor applied to its telescope and a constructor
+application, the major premise, reduces to the rule's right-hand side at the prefix and the
+constructor's fields. -/
+theorem Red.iota_sound (hse : StoredEnv env) {d : Nat} {e : Expr md} {c : Key md}
+    {us : List Level} {cv : ConstantVal md} {mI rP : Nat} {rules : List (RecRule md)}
+    {major : Expr md} {cj : Key md} {usj : List Level} {cvj : ConstantVal md}
+    {cnP cnF : Nat} {rl : RecRule md} {residual : Expr md}
+    (hhead : e.getAppFn = .const c us)
+    (hrec : env.find? c = some (.recInfo cv mI rP rules))
+    (hlen : e.getAppArgs.length = mI + 1)
+    (hus : us.length = cv.levelParams.length)
+    (hmajor : RedS M φ d (e.getAppArgs.getD mI (.bvar 0)) major)
+    (hmhead : major.getAppFn = .const cj usj)
+    (hctor : env.find? cj = some (.ctorInfo cvj cnP cnF))
+    (hrule : rules.find? (fun r' => r'.ctor == cj) = some rl)
+    (hmlen : major.getAppArgs.length = rl.ctorParams + rl.nfields)
+    (hfire : rl.fire ≠ .inert)
+    (hlv : ∀ φ, Level.EvalEqList φ usj
+      (recFireComparands rl cv.levelParams us cvj.levelParams e.getAppArgs rP).1)
+    (hparams : rl.compareParams = true →
+      DefEqListS M φ d (major.getAppArgs.take rl.ctorParams)
+        (recFireComparands rl cv.levelParams us cvj.levelParams e.getAppArgs rP).2)
+    (hcertR : CertsS M φ d true (cv.type.instantiateLevelParams cv.levelParams us)
+      (e.getAppArgs.take mI ++ [major]))
+    (hcertC : CertsS M φ d true (cvj.type.instantiateLevelParams cvj.levelParams usj)
+      major.getAppArgs)
+    (hres : mI ≠ rP → piResidual (cvj.type.instantiateLevelParams cvj.levelParams usj)
+      major.getAppArgs = some residual)
+    (hidx : mI ≠ rP → DefEqListS M φ d (residual.getAppArgs.drop rl.ctorParams)
+      ((e.getAppArgs.take mI).drop rP)) :
+    RedS M φ d e (Expr.mkAppN (rl.rhs.instantiateLevelParams cv.levelParams us)
+      (e.getAppArgs.take rP ++ major.getAppArgs.drop rl.ctorParams)) := by
+  have hrmem : rl ∈ rules := List.mem_of_find?_eq_some hrule
+  have hrctor : rl.ctor = cj := by
+    have := List.find?_some hrule
+    simpa using this
+  subst hrctor
+  obtain ⟨hrPmI, hctorF, hnestF⟩ := hse.rules c cv mI rP rules hrec rl hrmem hfire
+  obtain ⟨rfl, rfl, hteleC, hplainF⟩ := hctorF cvj cnP cnF hctor
+  have harity := hse.arities.2 c cv mI rP rules hrec rl hrmem hfire
+  have hmemR := List.mem_of_find?_eq_some hrec
+  have hmemC := List.mem_of_find?_eq_some hctor
+  have hrhsC := (hse.closed _ hmemR).2.2 cv mI rP rules rfl rl hrmem
+  have hrhsF : (rl.rhs.instantiateLevelParams cv.levelParams us).hasFvar = false := by
+    rw [Expr.hasFvar_instantiateLevelParams]; exact hrhsC.1
+  have hrhsB : (rl.rhs.instantiateLevelParams cv.levelParams us).looseBVarsBounded 0 = true := by
+    rw [Expr.looseBVarsBounded_instantiateLevelParams]; exact hrhsC.2
+  intro hf
+  have hfargs := Frame.getAppArgs hf
+  have hmIlt : mI < e.getAppArgs.length := by omega
+  have hmaMem := getD_mem_of_lt (.bvar 0) hmIlt
+  obtain ⟨hfmaj, hsubmaj, kmaj⟩ := hmajor (hfargs _ hmaMem)
+  have hfmargs := Frame.getAppArgs hfmaj
+  have hargsMem : ∀ x ∈ e.getAppArgs.take rP ++ major.getAppArgs.drop rl.ctorParams,
+      x ∈ e.getAppArgs ∨ x ∈ major.getAppArgs := fun x hx =>
+    (List.mem_append.mp hx).imp List.mem_of_mem_take List.mem_of_mem_drop
+  refine ⟨Frame.mkAppN (Frame.of_closed hrhsF hrhsB)
+      (fun x hx => (hargsMem x hx).elim (hfargs x) (hfmargs x)),
+    LeavesSub.mkAppN' (LeavesSub.of_closed hrhsF) (fun x hx => (hargsMem x hx).elim
+      (fun h l hl => fvarLeaves_getAppArgs h l hl)
+      (fun h l hl => fvarLeaves_getAppArgs hmaMem l (hsubmaj l (fvarLeaves_getAppArgs h l hl)))),
+    fun σ hC v hv hg => ?_⟩
+  -- the redex's spine
+  have hsp := eq_mkAppN_of_getAppFn hhead
+  have hv' : Den M φ σ (Expr.mkAppN (.const c us) e.getAppArgs) v := by rw [← hsp]; exact hv
+  have hg' : Gr M φ σ (Expr.mkAppN (.const c us) e.getAppArgs) := by rw [← hsp]; exact hg
+  obtain ⟨R, vs, hR, hvs, rfl⟩ := Den.mkAppN_inv hv'
+  have hgargs := Gr.mkAppN_args hg'
+  have hCargs := hC.getAppArgs
+  have hvslen : vs.length = mI + 1 := by rw [← hvs.length_eq, hlen]
+  have hvsplit := eq_take_append_getD (empty : V) hvslen
+  have hxs : DenList M φ σ (e.getAppArgs.take mI) (vs.take mI) := hvs.take mI
+  have hm0 := DenList.getD hvs hmIlt
+  -- the prepared major premise
+  have hCma : Ctx M φ σ (e.getAppArgs.getD mI (.bvar 0)) := hCargs _ hmaMem
+  obtain ⟨hdmaj, hgmaj⟩ := kmaj σ hCma _ hm0 (hgargs _ hmaMem)
+  have hCmaj : Ctx M φ σ major := hCma.of_subset hsubmaj
+  have hspm := eq_mkAppN_of_getAppFn hmhead
+  have hdmaj' : Den M φ σ (Expr.mkAppN (.const rl.ctor usj) major.getAppArgs)
+      (vs.getD mI empty) := by rw [← hspm]; exact hdmaj
+  have hgmaj' : Gr M φ σ (Expr.mkAppN (.const rl.ctor usj) major.getAppArgs) := by
+    rw [← hspm]; exact hgmaj
+  obtain ⟨K, ys, hK, hys, hm0eq⟩ := Den.mkAppN_inv hdmaj'
+  -- the two constants
+  obtain ⟨TR, hcR, hTR, hgTR, hRmem⟩ := const_typed (M := M) (φ := φ) hse.closed hrec hus σ
+  obtain rfl := DenotesO.functional hR hcR
+  have hlenusj : usj.length = cvj.levelParams.length := by
+    cases hK with
+    | const hf hl => rw [hctor] at hf; cases hf; exact hl
+  obtain ⟨TC, hcC, hTC, hgTC, hKmem⟩ := const_typed (M := M) (φ := φ) hse.closed hctor hlenusj σ
+  obtain rfl := DenotesO.functional hK hcC
+  -- the recursor's walk, a fit split at the major premise
+  have hTRf : (cv.type.instantiateLevelParams cv.levelParams us).hasFvar = false := by
+    rw [Expr.hasFvar_instantiateLevelParams]; exact (hse.closed _ hmemR).1.1
+  have hfTR := (const_type_frame (d := d) (us := us) hse.closed hrec).1
+  have hargsR : ∀ x ∈ e.getAppArgs.take mI ++ [major],
+      Frame d x ∧ Ctx M φ σ x ∧ Gr M φ σ x := by
+    intro x hx
+    rcases List.mem_append.mp hx with hx | hx
+    · have hx' := List.mem_of_mem_take hx
+      exact ⟨hfargs x hx', hCargs x hx', hgargs x hx'⟩
+    · rw [List.mem_singleton] at hx
+      subst hx
+      exact ⟨hfmaj, hCmaj, hgmaj⟩
+  have hdR : DenList M φ σ (e.getAppArgs.take mI ++ [major]) (vs.take mI ++ [vs.getD mI empty]) :=
+    DenList.append hxs (.cons hdmaj .nil)
+  have hspR : SpineOk (M.cval c (Level.substFn φ cv.levelParams us))
+      (vs.take mI ++ [vs.getD mI empty]) := by
+    rw [← hvsplit]; exact spineOk_of_graded hg' hcR hvs
+  have hwalkR := hcertR hfTR (fun x hx => (hargsR x hx).1) σ (Ctx.of_closed hTRf)
+    (fun x hx => (hargsR x hx).2.1) TR hTR hgTR _ hdR (fun x hx => (hargsR x hx).2.2)
+    (fun _ => ⟨_, hRmem, hspR⟩)
+  have hlenR : (e.getAppArgs.take mI ++ [major]).length = mI + 1 := by
+    simp only [List.length_append, List.length_take, List.length_singleton, hlen]; omega
+  obtain ⟨σR1, RR1, hfitO1⟩ := hwalkR.fitsO hdR (fun x hx => (hargsR x hx).1.2.1)
+    (by rw [hlenR]; exact Expr.stripPis_instantiateLevelParams_isSome _ _ _ harity)
+  obtain ⟨σR, dom, body, mdom, X, hfitRO, hXO, hm0X⟩ := FitsO.split_snoc (vs.take mI) hfitO1
+  have hxslen : (vs.take mI).length = mI := by rw [List.length_take]; omega
+  have hfitR := hfitRO.to_fits hTRf
+  obtain ⟨bsR, hsR⟩ := Fits.stripPis_eq hfitR
+  rw [hxslen] at hsR
+  have hσR : σR = pushVals ρ₀ (vs.take mI) := hfitRO.env_eq
+  -- the major premise's domain: the stored type's, at the rule's comparand levels
+  obtain ⟨pre0, dom0, body0, bm0, D0, L0, hs0, hfn0, hL0⟩ : ∃ (pre0 : List (Expr md × BinderMeta))
+      (dom0 body0 : Expr md) (bm0 : BinderMeta) (D0 : Key md) (L0 : List Level),
+      cv.type.stripPis mI = some (pre0, .forallE dom0 body0 bm0) ∧
+      dom0.getAppFn = .const D0 L0 ∧
+      L0.map (Level.subst cv.levelParams us) =
+        (recFireComparands rl cv.levelParams us cvj.levelParams e.getAppArgs rP).1 := by
+    cases hfr : rl.fire with
+    | inert => exact absurd hfr hfire
+    | plain =>
+      obtain ⟨pre0, dom0, body0, bm0, D0, hs0, hfn0, -⟩ := recRulePlain_shapeT (hplainF hfr)
+      refine ⟨pre0, dom0, body0, bm0, D0, _, hs0, hfn0, ?_⟩
+      rw [recFireComparands_plain hfr, List.map_map]
+      rfl
+    | nested lvls pins =>
+      obtain ⟨-, -, pre0, dom0, body0, bm0, D0, hs0, hfn0, -⟩ := hnestF lvls pins hfr
+      exact ⟨pre0, dom0, body0, bm0, D0, _, hs0, hfn0, (recFireComparands_nested hfr).symm⟩
+  obtain ⟨hdomEq, -⟩ := Expr.stripPis_instantiateLevelParams_eq cv.levelParams us mI hs0 hsR
+  simp only [Expr.instantiateLevelParams] at hdomEq
+  obtain ⟨rfl, -, -⟩ := Expr.forallE.inj hdomEq
+  have hdomFn : (dom0.instantiateLevelParams cv.levelParams us).getAppFn =
+      .const D0 (L0.map (Level.subst cv.levelParams us)) := by
+    rw [Expr.getAppFn_instantiateLevelParams, hfn0]; rfl
+  have hlvφ := hlv φ
+  rw [← hL0] at hlvφ
+  have hsubst : Level.substFn φ cvj.levelParams usj =
+      Level.substFn φ cvj.levelParams (L0.map (Level.subst cv.levelParams us)) :=
+    Ix.Kernel.Level.substFn_congr hlvφ
+  have hlsLen : (L0.map (Level.subst cv.levelParams us)).length = cvj.levelParams.length := by
+    rw [← evalEqList_length hlvφ]; exact hlenusj
+  -- the domain's arguments, read and graded at the fit's environment
+  have hdomF : (dom0.instantiateLevelParams cv.levelParams us).hasFvar = false := by
+    have := hfitRO.hasFvar hTRf
+    simp only [Expr.hasFvar, Bool.or_eq_false_iff] at this
+    exact this.1
+  have hgdom : GradedBy (DenotesO M.cval env φ σ) σR (dom0.instantiateLevelParams cv.levelParams us) := by
+    have := hfitRO.graded hgTR
+    simp only [GradedBy] at this
+    exact this.1
+  have hdomSp := eq_mkAppN_of_getAppFn hdomFn
+  have hXO' : DenotesO M.cval env φ σ σR (Expr.mkAppN (.const D0 (L0.map (Level.subst cv.levelParams us)))
+      (dom0.instantiateLevelParams cv.levelParams us).getAppArgs) X := by rw [← hdomSp]; exact hXO
+  have hgdom' : GradedBy (DenotesO M.cval env φ σ) σR
+      (Expr.mkAppN (.const D0 (L0.map (Level.subst cv.levelParams us)))
+        (dom0.instantiateLevelParams cv.levelParams us).getAppArgs) := by rw [← hdomSp]; exact hgdom
+  obtain ⟨FD, wsD, -, hwsD, hwsDlen, -⟩ := DenotesO.mkAppN_inv' hXO'
+  have hgwsD := GradedBy.mkAppN_args' hgdom'
+  have hdomArgsF := (hasFvar_mkAppN_false (by rw [← hdomSp]; exact hdomF)).2
+  -- the constructor's walk, a fit, at the domain's levels
+  have hCtyF : cvj.type.hasFvar = false := (hse.closed _ hmemC).1.1
+  have hTCf : (cvj.type.instantiateLevelParams cvj.levelParams usj).hasFvar = false := by
+    rw [Expr.hasFvar_instantiateLevelParams]; exact hCtyF
+  have hfTC := (const_type_frame (d := d) (us := usj) hse.closed hctor).1
+  have hwalkC := hcertC hfTC hfmargs σ (Ctx.of_closed hTCf) hCmaj.getAppArgs TC hTC hgTC ys hys
+    (Gr.mkAppN_args hgmaj') (fun _ => ⟨_, hKmem, spineOk_of_graded hgmaj' hK hys⟩)
+  have hyslen : ys.length = rl.ctorParams + rl.nfields := by rw [← hys.length_eq, hmlen]
+  obtain ⟨bsT, R0, cH, uH, hsT, hhead0⟩ := Expr.ctorTeleOk_head hteleC
+  obtain ⟨as0, rfl⟩ : ∃ as0, R0 = Expr.mkAppN (.const cH uH) as0 :=
+    ⟨_, eq_mkAppN_of_getAppFn hhead0⟩
+  obtain ⟨σC, RC1, hfitCO⟩ := hwalkC.fitsO hys (fun x hx => (hfmargs x hx).2.1)
+    (by rw [hmlen]; exact Expr.stripPis_instantiateLevelParams_isSome _ _ _ (by rw [hsT]; rfl))
+  have hσC : σC = pushVals ρ₀ ys := hfitCO.env_eq
+  have hRC1 : RC1 = (Expr.mkAppN (.const cH uH) as0).instantiateLevelParams cvj.levelParams usj := by
+    obtain ⟨bs1, hs1⟩ := Fits.stripPis_eq (hfitCO.to_fits hTCf)
+    rw [hyslen] at hs1
+    exact (Expr.stripPis_instantiateLevelParams_eq cvj.levelParams usj _ hsT hs1).1
+  subst hRC1
+  obtain ⟨RC0, -, hfitC⟩ := Fits.congr_instLP M.cval_params hsubst hCtyF (hfitCO.to_fits hTCf)
+  have hRCls : RC0.instantiateLevelParams cvj.levelParams (L0.map (Level.subst cv.levelParams us)) =
+      (Expr.mkAppN (.const cH uH) as0).instantiateLevelParams cvj.levelParams
+        (L0.map (Level.subst cv.levelParams us)) := by
+    obtain ⟨bs2, hs2⟩ := Fits.stripPis_eq hfitC
+    rw [hyslen] at hs2
+    exact (Expr.stripPis_instantiateLevelParams_eq cvj.levelParams _ _ hsT hs2).1
+  rw [hRCls] at hfitC
+  -- the residual's arguments, read and graded at the constructor fit's environment
+  obtain ⟨WC, hWC⟩ := hfitCO.residual hTC
+  have hgRC := hfitCO.graded hgTC
+  rw [instantiateLevelParams_mkAppN] at hWC hgRC
+  simp only [Expr.instantiateLevelParams] at hWC hgRC
+  obtain ⟨FC, wsC, -, hwsC, hwsClen, -⟩ := DenotesO.mkAppN_inv' hWC
+  have hgwsC := GradedBy.mkAppN_args' hgRC
+  have hRCF : ((Expr.mkAppN (.const cH uH) as0).instantiateLevelParams cvj.levelParams usj).hasFvar
+      = false := hfitCO.hasFvar hTCf
+  rw [instantiateLevelParams_mkAppN] at hRCF
+  have has0F := (hasFvar_mkAppN_false hRCF).2
+  -- the law's premises
+  have hKls : Denotes M.cval env φ ρ₀ (.const rl.ctor (L0.map (Level.subst cv.levelParams us)))
+      (M.cval rl.ctor (Level.substFn φ cvj.levelParams usj)) := by
+    rw [hsubst]; exact .const hctor hlsLen
+  have hmaj : ys.foldl app (M.cval rl.ctor (Level.substFn φ cvj.levelParams usj)) ∈ˢ X := by
+    rw [← hm0eq]; exact hm0X
+  have hparD : rl.compareParams = true →
+      DenotesList M.cval env φ σR
+        ((dom0.instantiateLevelParams cv.levelParams us).getAppArgs.take rl.ctorParams)
+        (ys.take rl.ctorParams) := by
+    intro hcmp
+    obtain ⟨hlenP, kP⟩ := hparams hcmp
+    have hlenYs : (major.getAppArgs.take rl.ctorParams).length = rl.ctorParams := by
+      rw [List.length_take, hmlen]; omega
+    cases hfr : rl.fire with
+    | inert => exact absurd hfr hfire
+    | plain =>
+      have hpl := hplainF hfr
+      have hcpR := recRulePlain_leT hpl
+      obtain ⟨-, dom0', -, -, -, hs0', -, hargs0⟩ := recRulePlain_shapeT hpl
+      rw [hs0] at hs0'
+      have hs0'' := Option.some.inj hs0'
+      simp only [Prod.mk.injEq, Expr.forallE.injEq] at hs0''
+      obtain ⟨-, rfl, -, -⟩ := hs0''
+      have hcmpEq : (recFireComparands rl cv.levelParams us cvj.levelParams e.getAppArgs rP).2 =
+          e.getAppArgs.take rl.ctorParams := by
+        unfold recFireComparands; rw [hfr]
+      rw [hcmpEq] at kP hlenP
+      have hval := kP (fun x hx => hfmargs x (List.mem_of_mem_take hx))
+        (fun x hx => hfargs x (List.mem_of_mem_take hx)) σ
+        (fun x hx => hCmaj.getAppArgs x (List.mem_of_mem_take hx))
+        (fun x hx => hCargs x (List.mem_of_mem_take hx)) _ _ (hys.take _) (hvs.take _)
+        (fun x hx => Gr.mkAppN_args hgmaj' x (List.mem_of_mem_take hx))
+        (fun x hx => hgargs x (List.mem_of_mem_take hx))
+      have hargsI : (dom0.instantiateLevelParams cv.levelParams us).getAppArgs.take rl.ctorParams =
+          (List.range rl.ctorParams).map (fun k => Expr.bvar (mI - 1 - k)) := by
+        rw [Expr.getAppArgs_instantiateLevelParams, ← List.map_take, hargs0]
+        simp [Function.comp_def, Expr.instantiateLevelParams]
+      rw [hargsI]
+      refine DenotesList.of_getD' (by
+          simp only [List.length_map, List.length_range, List.length_take, hyslen]; omega)
+        fun i hi => ?_
+      have hi' : i < rl.ctorParams := by simpa using hi
+      have hget : ((List.range rl.ctorParams).map (fun k => Expr.bvar (mI - 1 - k))).getD i
+          (.bvar 0) = (Expr.bvar (mI - 1 - i) : Expr md) := by
+        simp [List.getD, List.getElem?_range hi']
+      have hyv : (ys.take rl.ctorParams).getD i empty = pushVals ρ₀ (vs.take mI) (mI - 1 - i) := by
+        rw [getD_take_lt _ hi', Ix.Kernel.pushVals_lt _ _ _ empty (by rw [hxslen]; omega), hxslen,
+          show mI - 1 - (mI - 1 - i) = i by omega, getD_take_lt _ (by omega)]
+        have := congrArg (fun l => l.getD i (empty : V)) hval
+        simpa only [getD_take_lt _ hi'] using this
+      rw [hget, hyv, ← hσR]
+      exact .bvar
+    | nested lvls pins =>
+      obtain ⟨hpinsLen, hpinsWF, pre0', dom0', -, -, -, hs0', -, hargs0⟩ := hnestF lvls pins hfr
+      rw [hs0] at hs0'
+      have hs0'' := Option.some.inj hs0'
+      simp only [Prod.mk.injEq, Expr.forallE.injEq] at hs0''
+      obtain ⟨-, rfl, -, -⟩ := hs0''
+      have hcmpEq : (recFireComparands rl cv.levelParams us cvj.levelParams e.getAppArgs rP).2 =
+          pins.map (fun p => Expr.instSpine (e.getAppArgs.take rP) (rP - 1)
+            (p.instantiateLevelParams cv.levelParams us)) := by
+        unfold recFireComparands; rw [hfr]
+      rw [hcmpEq] at kP hlenP
+      have hprelen : (e.getAppArgs.take rP).length = rP := by rw [List.length_take]; omega
+      have hpreB : ∀ a ∈ e.getAppArgs.take rP, a.looseBVarsBounded 0 = true :=
+        fun a ha => (hfargs a (List.mem_of_mem_take ha)).2.1
+      have hpreG : ∀ a ∈ e.getAppArgs.take rP, Gr M φ σ a :=
+        fun a ha => hgargs a (List.mem_of_mem_take ha)
+      have hpreD : DenList M φ σ (e.getAppArgs.take rP) (vs.take rP) := hvs.take rP
+      -- the environment of the prefix, and the fit's as it lifted past the indices
+      have hτ : σR = pushVals (pushVals ρ₀ (vs.take rP)) ((vs.take mI).drop rP) := by
+        have htt : (vs.take mI).take rP = vs.take rP := by
+          rw [List.take_take, Nat.min_eq_left hrPmI]
+        rw [hσR, ← htt, ← Ix.Kernel.pushVals_append, List.take_append_drop]
+      have hzlen : ((vs.take mI).drop rP).length = mI - rP := by
+        rw [List.length_drop, hxslen]
+      have hagree : ∀ i, 0 ≤ i → σR (i + (mI - rP)) = pushVals ρ₀ (vs.take rP) i := by
+        intro i _
+        rw [hτ, Ix.Kernel.pushVals_ge _ _ _ (by rw [hzlen]; omega), hzlen, Nat.add_sub_cancel]
+      have hdomArg : ∀ i, i < rl.ctorParams →
+          (dom0.instantiateLevelParams cv.levelParams us).getAppArgs.getD i (.bvar 0) =
+            ((pins.getD i (.bvar 0)).instantiateLevelParams cv.levelParams us).liftLooseBVars
+              (mI - rP) 0 := by
+        intro i hi
+        have hi2 : i < pins.length := by omega
+        rw [Expr.getAppArgs_instantiateLevelParams, hargs0]
+        simp [List.getD, List.getElem?_append_left, List.getElem?_map, List.getElem?_eq_getElem hi2,
+          hi2, Ix.Kernel.Model.instantiateLevelParams_liftLooseBVars]
+      -- each comparand reads, gradedly, what the domain's argument reads
+      have hcmpRead : ∀ i, i < rl.ctorParams →
+          Den M φ σ ((pins.map (fun p => Expr.instSpine (e.getAppArgs.take rP) (rP - 1)
+              (p.instantiateLevelParams cv.levelParams us))).getD i (.bvar 0)) (wsD.getD i empty) ∧
+            Gr M φ σ ((pins.map (fun p => Expr.instSpine (e.getAppArgs.take rP) (rP - 1)
+              (p.instantiateLevelParams cv.levelParams us))).getD i (.bvar 0)) := by
+        intro i hi
+        have hiD : i < (dom0.instantiateLevelParams cv.levelParams us).getAppArgs.length := by
+          rw [Expr.getAppArgs_instantiateLevelParams, hargs0]
+          simp only [List.length_map, List.length_append, List.length_range, hpinsLen]; omega
+        have hd := hwsD i hiD
+        have hgd := hgwsD _ (getD_mem_of_lt (.bvar 0) hiD)
+        rw [hdomArg i hi] at hd hgd
+        have hd' := DenotesO.unlift _ (k := mI - rP) (c := 0)
+          (fun j hj => absurd hj (Nat.not_lt_zero _)) hagree hd
+        have hgd' := GradedBy.unliftO _ (k := mI - rP) (c := 0)
+          (fun j hj => absurd hj (Nat.not_lt_zero _)) hagree hgd
+        have hgetC : (pins.map (fun p => Expr.instSpine (e.getAppArgs.take rP) (rP - 1)
+            (p.instantiateLevelParams cv.levelParams us))).getD i (.bvar 0) =
+            Expr.instSpine (e.getAppArgs.take rP) ((e.getAppArgs.take rP).length - 1)
+              ((pins.getD i (.bvar 0)).instantiateLevelParams cv.levelParams us) := by
+          rw [hprelen]
+          simp [List.getD, List.getElem?_map, List.getElem?_eq_getElem (show i < pins.length by omega)]
+        rw [hgetC]
+        exact ⟨(DenotesO.instSpine hpreD hpreB _ ρ₀ _).2 hd',
+          (GradedBy.instSpineO hpreD hpreB hpreG _ ρ₀).2 hgd'⟩
+      have hcmpLen : (pins.map (fun p => Expr.instSpine (e.getAppArgs.take rP) (rP - 1)
+          (p.instantiateLevelParams cv.levelParams us))).length = rl.ctorParams := by
+        rw [List.length_map, hpinsLen]
+      have hcmpMem : ∀ x ∈ pins.map (fun p => Expr.instSpine (e.getAppArgs.take rP) (rP - 1)
+          (p.instantiateLevelParams cv.levelParams us)), ∃ p ∈ pins,
+            x = Expr.instSpine (e.getAppArgs.take rP) ((e.getAppArgs.take rP).length - 1)
+              (p.instantiateLevelParams cv.levelParams us) := by
+        intro x hx
+        obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hx
+        exact ⟨p, hp, by rw [hprelen]⟩
+      have hpinB : ∀ p ∈ pins, (p.instantiateLevelParams cv.levelParams us).looseBVarsBounded
+          (e.getAppArgs.take rP).length = true := fun p hp => by
+        rw [Expr.looseBVarsBounded_instantiateLevelParams, hprelen]; exact (hpinsWF p hp).2
+      have hpinF : ∀ p ∈ pins, (p.instantiateLevelParams cv.levelParams us).hasFvar = false :=
+        fun p hp => by rw [Expr.hasFvar_instantiateLevelParams]; exact (hpinsWF p hp).1
+      have hval := kP (fun x hx => hfmargs x (List.mem_of_mem_take hx))
+        (fun x hx => by
+          obtain ⟨p, hp, rfl⟩ := hcmpMem x hx
+          exact ⟨Ix.Kernel.instSpine_WScoped _ (Expr.WScoped.of_not_hasFvar (hpinF p hp))
+              (fun y hy => (hfargs y (List.mem_of_mem_take hy)).1),
+            Ix.Kernel.instSpine_closed hpreB (hpinB p hp),
+            fun l hl => by
+              rcases Ix.Kernel.fvarLeaves_instSpine _ hl with hl' | ⟨y, hy, hly⟩
+              · rw [Expr.fvarLeaves_eq_nil_of_not_hasFvar (hpinF p hp)] at hl'; exact nomatch hl'
+              · exact (hfargs y (List.mem_of_mem_take hy)).2.2 l hly⟩)
+        σ (fun x hx => hCmaj.getAppArgs x (List.mem_of_mem_take hx))
+        (fun x hx => by
+          obtain ⟨p, hp, rfl⟩ := hcmpMem x hx
+          intro l hl
+          rcases Ix.Kernel.fvarLeaves_instSpine _ hl with hl' | ⟨y, hy, hly⟩
+          · rw [Expr.fvarLeaves_eq_nil_of_not_hasFvar (hpinF p hp)] at hl'; exact nomatch hl'
+          · exact hCargs y (List.mem_of_mem_take hy) l hly)
+        _ (wsD.take rl.ctorParams) (hys.take _)
+        (DenList.of_getD' (by rw [hcmpLen, List.length_take, hwsDlen,
+            Expr.getAppArgs_instantiateLevelParams, hargs0]
+            simp only [List.length_map, List.length_append, List.length_range, hpinsLen]; omega)
+          fun i hi => by
+            rw [hcmpLen] at hi
+            rw [getD_take_lt _ hi]; exact (hcmpRead i hi).1)
+        (fun x hx => Gr.mkAppN_args hgmaj' x (List.mem_of_mem_take hx))
+        (fun x hx => by
+          obtain ⟨i, hi, hxi⟩ := List.getElem_of_mem hx
+          have hi' : i < rl.ctorParams := by rw [hcmpLen] at hi; exact hi
+          have h := (hcmpRead i hi').2
+          simp only [List.getD, List.getElem?_eq_getElem hi, Option.getD_some, hxi] at h
+          exact h)
+      refine DenotesList.of_getD' (by
+          rw [List.length_take, List.length_take, hyslen, Expr.getAppArgs_instantiateLevelParams,
+            hargs0]
+          simp only [List.length_map, List.length_append, List.length_range, hpinsLen]; omega) fun i hi => ?_
+      have hi' : i < rl.ctorParams := by
+        simp only [List.length_take] at hi; omega
+      rw [getD_take_lt _ hi', getD_take_lt _ hi']
+      have hyv : ys.getD i empty = wsD.getD i empty := by
+        have := congrArg (fun l => l.getD i (empty : V)) hval
+        simpa only [getD_take_lt _ hi'] using this
+      rw [hyv]
+      have hiD : i < (dom0.instantiateLevelParams cv.levelParams us).getAppArgs.length := by
+        rw [Expr.getAppArgs_instantiateLevelParams, hargs0]
+          simp only [List.length_map, List.length_append, List.length_range, hpinsLen]; omega
+      exact (hwsD i hiD).to_denotes (hdomArgsF _ (getD_mem_of_lt (.bvar 0) hiD))
+  have hidxD : mI ≠ rP → DenotesList M.cval env φ σC
+      (((Expr.mkAppN (.const cH uH) as0).instantiateLevelParams cvj.levelParams
+        (L0.map (Level.subst cv.levelParams us))).getAppArgs.drop rl.ctorParams)
+      ((vs.take mI).drop rP) := by
+    intro hmr
+    obtain ⟨hlenI, kI⟩ := hidx hmr
+    obtain ⟨bs1, hs1⟩ := Fits.stripPis_eq (hfitCO.to_fits hTCf)
+    rw [hyslen, ← hmlen] at hs1
+    have hresEq := piResidual_of_stripPis major.getAppArgs hs1
+    rw [hres hmr] at hresEq
+    have hresV := Option.some.inj hresEq
+    rw [instantiateLevelParams_mkAppN] at hresV
+    simp only [Expr.instantiateLevelParams] at hresV
+    rw [instSpine_mkAppN_const] at hresV
+    have hresArgs : residual.getAppArgs = (as0.map (·.instantiateLevelParams cvj.levelParams usj)).map
+        (Expr.instSpine major.getAppArgs (major.getAppArgs.length - 1)) := by
+      rw [hresV, Expr.getAppArgs_mkAppN]; simp [Expr.getAppArgs]
+    have hmB : ∀ a ∈ major.getAppArgs, a.looseBVarsBounded 0 = true := fun a ha => (hfmargs a ha).2.1
+    have hmG : ∀ a ∈ major.getAppArgs, Gr M φ σ a := Gr.mkAppN_args hgmaj'
+    -- the residual: framed and inside the major premise's free variables
+    have hres' := hres hmr
+    have hfres : Frame d residual :=
+      ⟨Ix.Kernel.piResidual_WScoped hres' hfTC.1 (fun x hx => (hfmargs x hx).1),
+        Ix.Kernel.piResidual_looseBVars hres' hfTC.2.1 hmB,
+        fun l hl => (Ix.Kernel.piResidual_fvarLeaves hres' l hl).elim
+          (fun h => by rw [Expr.fvarLeaves_eq_nil_of_not_hasFvar hTCf] at h; exact nomatch h)
+          (fun ⟨x, hx, hlx⟩ => (hfmargs x hx).2.2 l hlx)⟩
+    have hCres : Ctx M φ σ residual := fun l hl =>
+      (Ix.Kernel.piResidual_fvarLeaves hres' l hl).elim
+        (fun h => by rw [Expr.fvarLeaves_eq_nil_of_not_hasFvar hTCf] at h; exact nomatch h)
+        (fun ⟨x, hx, hlx⟩ => hCmaj.getAppArgs x hx l hlx)
+    have hresRead : ∀ i, i < as0.length →
+        Den M φ σ (residual.getAppArgs.getD i (.bvar 0)) (wsC.getD i empty) ∧
+          Gr M φ σ (residual.getAppArgs.getD i (.bvar 0)) := by
+      intro i hi
+      have hiC : i < (as0.map (·.instantiateLevelParams cvj.levelParams usj)).length := by
+        simpa using hi
+      have hget : residual.getAppArgs.getD i (.bvar 0) = Expr.instSpine major.getAppArgs
+          (major.getAppArgs.length - 1)
+          ((as0.map (·.instantiateLevelParams cvj.levelParams usj)).getD i (.bvar 0)) := by
+        rw [hresArgs, List.getD, List.getElem?_map, List.getD, List.getElem?_eq_getElem hiC]
+        rfl
+      rw [hget]
+      have hd := hwsC i hiC
+      have hgd := hgwsC _ (getD_mem_of_lt (.bvar 0) hiC)
+      rw [hσC] at hd hgd
+      exact ⟨(DenotesO.instSpine hys hmB _ ρ₀ _).2 hd, (GradedBy.instSpineO hys hmB hmG _ ρ₀).2 hgd⟩
+    have hresLen : residual.getAppArgs.length = as0.length := by rw [hresArgs]; simp
+    have hval := kI (fun x hx => Frame.getAppArgs hfres x (List.mem_of_mem_drop hx))
+      (fun x hx => hfargs x (List.mem_of_mem_take (List.mem_of_mem_drop hx))) σ
+      (fun x hx => hCres.getAppArgs x (List.mem_of_mem_drop hx))
+      (fun x hx => hCargs x (List.mem_of_mem_take (List.mem_of_mem_drop hx)))
+      (wsC.drop rl.ctorParams) _
+      ((DenList.of_getD' (by rw [hresLen, hwsClen]; simp) fun i hi => by
+          rw [hresLen] at hi; exact (hresRead i hi).1).drop _)
+      (hxs.drop rP)
+      (fun x hx => by
+        obtain ⟨i, hi, hxi⟩ := List.getElem_of_mem (List.mem_of_mem_drop hx)
+        rw [← hxi]
+        have := (hresRead i (by rw [← hresLen]; exact hi)).2
+        simp only [List.getD, List.getElem?_eq_getElem hi, Option.getD_some] at this
+        exact this)
+      (fun x hx => hgargs x (List.mem_of_mem_take (List.mem_of_mem_drop hx)))
+    rw [← hval]
+    rw [instantiateLevelParams_mkAppN, Expr.getAppArgs_mkAppN]
+    simp only [Expr.instantiateLevelParams, Expr.getAppArgs, List.nil_append]
+    refine DenotesList.of_getD' (by simp [hwsClen]) fun i hi => ?_
+    simp only [List.length_drop, List.length_map] at hi
+    have hiC : rl.ctorParams + i < (as0.map (·.instantiateLevelParams cvj.levelParams usj)).length := by
+      simp; omega
+    have hd := hwsC _ hiC
+    rw [show ((as0.map (·.instantiateLevelParams cvj.levelParams
+        (L0.map (Level.subst cv.levelParams us)))).drop rl.ctorParams).getD i (.bvar 0) =
+        (as0.getD (rl.ctorParams + i) (.bvar 0)).instantiateLevelParams cvj.levelParams
+          (L0.map (Level.subst cv.levelParams us)) by
+      simp [List.getD, List.getElem?_drop, List.getElem?_map,
+        List.getElem?_eq_getElem (show rl.ctorParams + i < as0.length by simpa using hiC)]]
+    rw [show (wsC.drop rl.ctorParams).getD i empty = wsC.getD (rl.ctorParams + i) empty by
+      simp [List.getD, List.getElem?_drop]]
+    have hgetU : (as0.map (·.instantiateLevelParams cvj.levelParams usj)).getD (rl.ctorParams + i)
+        (.bvar 0) = (as0.getD (rl.ctorParams + i) (.bvar 0)).instantiateLevelParams
+          cvj.levelParams usj := by
+      simp [List.getD, List.getElem?_map,
+        List.getElem?_eq_getElem (show rl.ctorParams + i < as0.length by simpa using hiC)]
+    rw [hgetU] at hd
+    have haF : (as0.getD (rl.ctorParams + i) (.bvar 0)).hasFvar = false := by
+      have := has0F _ (getD_mem_of_lt (.bvar 0) hiC)
+      rw [hgetU, Expr.hasFvar_instantiateLevelParams] at this
+      exact this
+    have hd' := (DenotesO.instantiateLevelParams M.cval_params _ _ _ _ _).1 hd
+    rw [hsubst] at hd'
+    have hd'' := (DenotesO.instantiateLevelParams M.cval_params _ _ _ _ _).2 hd'
+    exact hd''.to_denotes (by rw [Expr.hasFvar_instantiateLevelParams]; exact haF)
+  -- the law
+  obtain ⟨H, hH, hgH, hspH, heq⟩ := M.iota_rule c cv mI rP rules rl hrec hrmem cvj rl.ctorParams
+    rl.nfields hctor us φ ρ₀ σR σC (vs.take mI) ys (dom0.instantiateLevelParams cv.levelParams us)
+    body _ mdom D0 (L0.map (Level.subst cv.levelParams us))
+    (M.cval c (Level.substFn φ cv.levelParams us))
+    (M.cval rl.ctor (Level.substFn φ cvj.levelParams usj)) X hus hxslen hyslen
+    (hcR.to_denotes rfl) hfitR hdomFn (hXO.to_denotes hdomF) hKls hfitC hmaj hparD hidxD
+  -- the reduct
+  have hred : DenList M φ σ (e.getAppArgs.take rP ++ major.getAppArgs.drop rl.ctorParams)
+      ((vs.take mI).take rP ++ ys.drop rl.ctorParams) := by
+    rw [List.take_take, Nat.min_eq_left hrPmI]
+    exact DenList.append (hvs.take rP) (hys.drop _)
+  have hHO : Den M φ σ (rl.rhs.instantiateLevelParams cv.levelParams us) H :=
+    DenotesO.of_denotes hH
+  have hleft : vs.foldl app (M.cval c (Level.substFn φ cv.levelParams us)) =
+      (vs.take mI ++ [ys.foldl app (M.cval rl.ctor (Level.substFn φ cvj.levelParams usj))]).foldl
+        app (M.cval c (Level.substFn φ cv.levelParams us)) := by
+    have hm0eq' : vs.getD mI empty =
+        ys.foldl app (M.cval rl.ctor (Level.substFn φ cvj.levelParams usj)) := hm0eq
+    rw [← hm0eq', ← hvsplit]
+  refine ⟨?_, Gr.mkAppN_of_spineOk (GradedBy.toOpen hgH hrhsF) hHO
+    (fun x hx => (hargsMem x hx).elim (hgargs x) (Gr.mkAppN_args hgmaj' x)) hred hspH⟩
+  show Den M φ σ _ (vs.foldl app (M.cval c (Level.substFn φ cv.levelParams us)))
+  rw [hleft, heq]
+  exact Den.mkAppN hHO hred
 
 end Ix.Kernel.Open
