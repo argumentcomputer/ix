@@ -214,9 +214,9 @@ theorem runPair_mem_of_check {p : Program} {κ : CId → KKey} {lpsOf : CId → 
   | value hr hd hf => simp [runPairsB, hr, hd, hf]
   | @eqn thm body d hr hsh =>
     have hE := eqBasis_of_check (part_of (name := "eqBasis") (b := eqBasisB env) hchk
-      (by simp [checkParts]))
+      (by simp [checkParts, checkPartsWith]))
     have h1 := List.all_eq_true.mp (part_of (name := "eqnShape") (b := Sl.all (eqnShapeOkB p env κ))
-      hchk (by simp [checkParts])) c hc
+      hchk (by simp [checkParts, checkPartsWith])) c hc
     simp only [eqnShapeOkB, hr] at h1
     split at h1
     · rename_i d' hd'

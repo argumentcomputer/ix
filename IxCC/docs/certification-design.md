@@ -254,7 +254,7 @@ denotation to lie in its domain, which only premise (ii)'s derivations give.
 | F1 constructors; `Nat.zero`, `Nat.succ` to literals | a constructor is its constant; `Nat.succ (lit n)` and `lit (n+1)` denote alike | none: the literal reading | in every model | no | yes |
 | F2 ordinary ι, `Nat` literal majors | every stored rule computes as Lean's | ι (`iota_rule`) | a field, proved, on the same follow-up branch since 2026-11-11 | yes | yes |
 | F3 subsingleton ι without the major | the major denotes the proof point, which is the constructor application, with indices equal | ι, proof irrelevance and the `Eq` derivation above | as ι | yes | yes (`Decidable` does not need it; `Eq.rec` casts do) |
-| F4 empty recursors trap | no member of an empty type | `false_empty`-like emptiness of the inductive's denotation, from ι and `mem` | — | yes | progress only |
+| F4 empty recursors trap | soundness: none (a trap returns no value, and the relation relates returned values only; G3 admits the class `empty`, `False.rec`); progress: no member of an empty type | progress: `false_empty`-like emptiness of the inductive's denotation, from ι and `mem` | — | soundness no; progress yes | yes for soundness (since G3); progress only beyond |
 | F7 `Quot.mk`; F8 `Quot.lift` | `Quot.lift f h (Quot.mk a) = f a` | ι (the quotient's rules are stored as recursor rules) | as ι | yes | later fragment |
 | E9 strings | — | — | — | — | later fragment |
 | `lazy` entries | none: they change evaluation modes only (`Lazify.run_modeEq`) | — | — | — | yes |
@@ -461,8 +461,11 @@ check (G1a), the generic `case` lemma and the root theorem, with `fib` and
 `decide (fib 10 = 55)` as its instances (G1b), and the direct route (G2a), which
 discharges the typing hypothesis on both instances: `fibRoot` and `decideRoot`
 have no typing hypothesis; then the direct route widened and the `case` shape
-made tolerant of a recursor's level-parameter names (G2b), and the direct route's
-cost fixed (G3, its first step).** The library `IxCCGrounding`
+made tolerant of a recursor's level-parameter names (G2b), the direct route's
+cost fixed (G3, its first step), and recursors admitted into the checked set by
+class, with a recursor head in the relation and the fundamental lemma (G3, parts
+A and B; the one class admitted so far is `empty`, `False.rec`, which traps).**
+The library `IxCCGrounding`
 (`IxCC/IxCCGrounding/`, a Lake library of IxCC's package beside the production
 library, built and run by the required check `ixcc-grounding`) is the real
 development the adequacy spike (SP-A) recommended. It is the one library that
@@ -471,7 +474,7 @@ imports the kernel's model (`IxCK.Kernel.Denotes`, the statement half, in
 model, from the production library or from any program of the shared build.
 
 **What is proved, fenced on `propext`, `Classical.choice` and `Quot.sound` or
-fewer (`IxCCGrounding/Fence.lean`, 102 exact assertions):**
+fewer (`IxCCGrounding/Fence.lean`, 116 exact assertions):**
 
 - *Soundness at a root* (`rootSound`, in `IxCCGrounding.Root`). For every
   program, kernel reading `env`, key map, level parameters, certificate
@@ -514,6 +517,33 @@ fewer (`IxCCGrounding/Fence.lean`, 102 exact assertions):**
 - *The run terms run* (`runs_of_sites`, `fundHyps_of`), and *the checks are
   sound* (`groundFacts_of_check`, `caseFacts_of_check`, `rootFacts_of_check`,
   `foArgs_of_check`, `resultTag_of_check`, `boolListed_of_check`).
+- *Recursors in the checked set* (G3, parts A and B). SrcEval fires a recursor
+  head by its kind at the levels it runs it at: F2 (`ordinary`: force the major
+  premise, select the rule by its constructor), F3 (`subsingleton`: the rule's
+  fields from index slots, the major not forced), F4 (`empty`: trap). The check
+  classifies each recursor of `Sl` on the bytes (`recClassB`): `empty` (no rules,
+  kind `empty`), `eqRec` (the built-in `Eq.rec`, with its counts and the kind
+  "subsingleton at every level") and `ordinary` (kind `ordinary`, no indices, its
+  inductive stored as never a proposition); anything else is refused. `declOk`
+  admits a recursor only in a class of `admittedClasses`, a constant of the
+  library that grows as each class's case of the fundamental lemma is proved
+  (today `empty` alone); admitting more only makes the check accept more
+  (`groundCheckWith_mono`), and with no class admitted the check is the landed
+  one (`declOkB_nil`). A new conjunct, `recShape`, asks every recursor of `Sl` to
+  have the checked shape (`RecStored`, `recStored_of_check`): stored as a
+  recursor with the Src declaration's counts and level parameters, with the
+  same rules (constructor keys, field counts, right-hand sides corresponding node
+  for node), and with a stored type that has a binder for every argument SrcEval
+  takes; and, at `Eq.rec`, `Eq.refl` stored as F3 there reads it
+  (`EqReflBasis`). These facts are `RecFacts`, which replaces the landed clause
+  of `Faith` that `Sl` holds no recursor (`NoRecr`); the landed clause implies
+  the new one (`recFacts_of_noRecr`), so every theorem taking `GroundFacts`
+  implies its landed statement (`rootSound_noRecr`, `fibRoot_noRecr`,
+  `decideRoot_noRecr`). The relation's special heads include recursors
+  (`HeadAt.recr`): a recursor's partial applications are related as a
+  constructor's are, its stored telescope long enough by the arity fact, and at
+  an `empty` recursor `fire` traps, so a run through it returns no value and the
+  fundamental lemma has nothing to show (`fire_step`). No law is used.
 - *The direct route* (`IxCCGrounding.Direct.*`, G2a). A Boolean check run on
   the bytes beside `groundCheck`, `sitesDirectB` (not one of its conjuncts, so
   the landed negative controls stay exact), decides that the application sites
@@ -573,7 +603,7 @@ theorem is from the grounded statement of the [spine](end-to-end.md#the-shared-s
 | `Laws.proj_ctor` | the projection of a constructor, in value form (`ProjCtor`), **at a structure that is not a proposition** (its stored sort nonzero at the constructor's assignment). In a proof-irrelevant set model the image is then the field tuple, read at position `i + off` | the IxVM side | scheduled there as a public law (their third note, item 6); the restricted form sent to them 2026-11-11. Supplied at each use by `Faith.projSort` (the `proj` conjunct) |
 | `Laws.nat_accel` | the fifteen `Nat` operations on all literals, `Bool` results included (`NatAccel`) | the IxVM side | scheduled there (item 6; DO-39); consumed by the fundamental lemma's primitives and, since G2b, by the direct route's `Nat` step |
 | `Laws.ctor_canon` | constructor canonicity across parameters and levels (`CtorCanon`), **at a family that is not a proposition at either level instantiation**: a constructor image built at other parameters and levels that lies in the family at these is the image at these, its fields fitting there. In a proof-irrelevant set model the image is then a tagged field tuple, which lies in the family at other parameters only if its fields lie in their types there | not scheduled by anyone: the IxVM side (who estimate it at 1–2k lines from the recursor's membership law and ι) or IxCC from that law; asked 2026-11-11 | consumed by the generic `case` lemma for a constructor-valued major; supplied there by `CaseWF.indSort` (the `caseShape` conjunct) |
-| `groundCheck … = true` | every decidable fact of the closure: `GroundFacts` (the faithfulness clauses, the fragment, the `Nat` and `Eq` bases, each `eqn` entry's shape, the correspondence and closedness of every term SrcEval runs, `Ok`'s closure) and `CaseFacts` (each `case` entry's shape, conjuncts `caseShape` and `caseProg`) | IxCC: the check, run on the closure's bytes | done: true on the `fib` and `decide (fib 10 = 55)` closures (`tests-grounding`, in `ixcc-grounding`), with negative controls that each falsify exactly one conjunct |
+| `groundCheck … = true` | every decidable fact of the closure: `GroundFacts` (the faithfulness clauses, the fragment, the recursors of `Sl` in admitted classes with the checked shape (`RecFacts`, conjuncts `declOk` and `recShape`), the `Nat` and `Eq` bases, each `eqn` entry's shape, the correspondence and closedness of every term SrcEval runs, `Ok`'s closure) and `CaseFacts` (each `case` entry's shape, conjuncts `caseShape` and `caseProg`) | IxCC: the check, run on the closure's bytes | done: true on the `fib` and `decide (fib 10 = 55)` closures (`tests-grounding`, in `ixcc-grounding`), with negative controls that each falsify exactly one conjunct; on `tak` refused at `declOk` alone (its `Eq.rec` has the checked shape, its class not yet admitted), with three controls (`Eq.rec`'s rule, its type's arity, `Eq.refl`'s type) that each make exactly `recShape` false |
 | `RootFacts` | the root is in `Sl`, `Ok` at no levels, stored without level parameters at the first-order type `args → res`, its enumerations stored | IxCC: `rootCheck`, run on the closure | done on both closures |
 | `FoArgs` | the arguments are literals, or an enumeration's listed constructor | IxCC: `foArgsB` | done on both closures, with a control |
 | `ResultTag` | the observed tag names one constructor: every member of `Sl` reading back with that tag whose kernel entry is a field-less constructor has the named constructor's key | IxCC: `resultTagB`, run after the run on the observed result | done on both closures; rejects programs, see below |
@@ -645,6 +675,24 @@ written beside each law in `IxCCGrounding/Laws.lean` (and beside each use).
   constructor at the same index (`Option.none`) is likewise a different set.
 - *`BoolListed`*: nothing else ties the pinned `Bool`'s constructor `1` to the
   kernel's `Bool.true`.
+- *The arity fact in `RecStored`* (the recursor's stored type has a `∀` for each
+  of the `np + nmot + nmin + ni + 1` arguments SrcEval takes before it fires):
+  extending a partial application by one argument at a graph-regime site
+  (`apply_pap`) places the argument in the domain of the next binder of the
+  head's stored type, so the remaining type must be a `∀` while the head is not
+  saturated (`head_tele`). For the other special heads the check already decides
+  it (`ctor`, `caseRec`, `prim`); without it for recursors, a recursor whose
+  stored type has fewer binders than SrcEval's arity would have partial
+  applications the relation cannot extend, and the fundamental lemma's
+  application case would not go through. Measured on the 49 closures that load,
+  every recursor of every program that has the rest of the shape (1,657 of 1,781)
+  has the arity fact too, and so do all 39 recursors of the checked sets
+  (`GR-3d-a5`, `GR-3d-a6`).
+- *The kind's condition in the class `eqRec`*: SrcEval takes F3 at a
+  `subsingleton when` recursor only where `when` holds at its levels, and F2
+  elsewhere; the class asks `when` to be "always", so at `Eq.rec` F3 is the only
+  rule SrcEval applies. Measured: the table gives exactly that kind at `Eq.rec`
+  in all 49 closures (`GR-3d-a5`, `GR-3d-a6`).
 
 **The class of inductives the `case` shape covers.** `caseShape` is designed to
 hold for a `case` constant over an ordinary recursor of an inductive with
@@ -816,8 +864,12 @@ closures (26 of 48 before the renaming-tolerant `case` shape: `erase` and
 `declOk` and `valueCorr`); the gaps, ordered by how many closures each blocks
 (a closure can have several):
 
-1. *A recursor in `Sl`* (`declOk`), 23 closures, the first failing conjunct on
-   each and the only one on ten: `Eq.rec`, run by `Eq.ndrec` (the
+1. *A recursor in `Sl` of a class not yet admitted* (`declOk`; since G3's
+   parts A and B the class `empty`, `False.rec`, is admitted, but each closure
+   that has it also has a recursor that is not), 23 closures, the first failing
+   conjunct on each and the only one on ten. Every one of these recursors has
+   the checked shape (`recShape`) and a class (`GR-3d-a5`, `a6`); with every
+   class admitted the check would accept 34 closures. `Eq.rec`, run by `Eq.ndrec` (the
    non-dependent elimination of equality, used by rewriting), on 22, the only
    recursor on 12 of them and the only obstacle at all on five (`tak`,
    `even-odd`, `sfib`, `phase1-abi`, `OS02-plain`); `Bool.rec` on 7, run by
@@ -862,8 +914,9 @@ gives.
   still refuses 21 sites in three closures) and the laws,
   not yet shown to have a model;
 - `ResultTag`'s rejections above;
-- the fragment: `let`, recursors fired directly, `Quot`, `csimp`, strings, and
-  `case` constants outside the class above are excluded by the check (G4);
+- the fragment: `let`, recursors fired directly outside the admitted classes
+  (today all but `False.rec`'s), `Quot`, `csimp`, strings, and `case` constants
+  outside the class above are excluded by the check (G3, G4);
 - progress (G5), which also consumes premise (i);
 - the statement is over any program and kernel reading that pass the check; that
   the reading is the kernel's reading of the closure of the seeds (premise (i)'s

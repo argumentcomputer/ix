@@ -13,7 +13,7 @@ SrcEval's eight mutual functions returns values related to what their kernel cou
 | --- | --- | --- |
 | `force` | a forced slot's value relates to the slot's set | `RelSlot.name` and `eval` at `k - 1` |
 | `forceAll` | likewise, pointwise | `force` |
-| `fire` | a saturated head's value relates to the head applied to the arguments | F1 by `Fits` and the pins; F5 by `CaseFires`; F6 by `nat_accel` |
+| `fire` | a saturated head's value relates to the head applied to the arguments | F1 by `Fits` and the pins; F5 by `CaseFires`; F6 by `nat_accel`; at a recursor, its class admitted (`RecFacts`): F4 traps, so returns no value |
 | `headValue` | a head's value relates to the head | `fire` on no arguments, or `RelV.pap` |
 | `apply` | at a graph-regime site, the result relates to the application | `apply_clo` and `eval` at `k - 1`; `apply_pap` and `fire` |
 | `applyAll` | along a graph-regime chain, likewise | `apply` |
@@ -139,6 +139,22 @@ theorem head_tele (H : FundHyps M p κ lpsOf S Ok) {h : IxCC.Src.Head} {ls : Lev
         cases hf'
         exact hle
       | _ => simp [Program.headArity, hres]
+  | @recr r _ _ ci hSr _ hfind =>
+    -- the arity fact of the checked shape (`RecStored`)
+    cases hd : p.decl? r with
+    | none => simp [Program.headArity, hd]
+    | some d =>
+      cases d with
+      | recr sf kk lvls np nmot nmin ni ind rules ty =>
+        obtain ⟨⟨sf', kk', lvls', np', nmot', nmin', ni', ind', rules', ty', cvr, krules, hd', hf',
+          _, har, _⟩⟩ := H.faith.recs.stored r hSr sf kk lvls np nmot nmin ni ind rules ty hd
+        rw [hd] at hd'
+        cases hd'
+        rw [hfind] at hf'
+        cases hf'
+        show p.headArity (.recr r) ≤ kPis cvr.type
+        simpa [Program.headArity, hd, IxCC.Src.Decl.recArity] using har
+      | _ => simp [Program.headArity, hd, IxCC.Src.Decl.recArity]
   | prim _ _ har => exact har
 
 /-- `As` related to literal values are the literals' sets. -/
@@ -297,6 +313,25 @@ theorem fire_step (H : FundHyps M p κ lpsOf S Ok) {k : Nat}
               exact (ih k' (Nat.lt_succ_self k')).applyAll _ _ _ _ _ happ hminR hYs hchain
             | _ => simp [hd] at hrun
         | _ => rw [hres] at hrun; exact absurd hrun (by simp)
+  | @recr r _ _ ci hSr hlv hfind =>
+    -- F2–F4: the recursor's class is admitted (`RecFacts`); at `empty`, F4 traps
+    cases k with
+    | zero => rw [IxCC.Src.fire_recr, later_zero] at hrun; exact absurd hrun (by simp)
+    | succ k' =>
+      rw [IxCC.Src.fire_recr, later_succ] at hrun
+      cases hd : p.decl? r with
+      | none => simp [hd] at hrun
+      | some d =>
+        cases d with
+        | recr sf kk' lvls np nmot nmin ni ind rules ty =>
+          obtain ⟨cl, hcl, hadm⟩ :=
+            H.faith.recs.cls r hSr sf kk' lvls np nmot nmin ni ind rules ty hd
+          simp only [admittedClasses, List.mem_singleton] at hadm
+          subst hadm
+          -- `empty`: the table's kind is `empty`, at every level, and F4 traps
+          have hkind := recClassB_empty hcl
+          simp [hd, hkind, IxCC.Src.RecKind.atLevels, IxCC.Src.recChosen, Result.bind] at hrun
+        | _ => simp [hd] at hrun
   | @prim op _ _ ci hfind hlp _ =>
     -- F6
     rw [IxCC.Src.fire_prim] at hrun
@@ -481,7 +516,7 @@ theorem evalConst_step (H : FundHyps M p κ lpsOf S Ok) {k : Nat}
       cases d with
       | ctor sf lvls ind cidx np nf ty => exact hhv _ _ _ φ _ _ hrun (.ctor hSc hlv hfind)
       | recr sf kk lvls np nmot nmin ni ind rules ty =>
-        exact absurd hd (H.faith.noRecr c hSc sf kk lvls np nmot nmin ni ind rules ty)
+        exact hhv _ _ _ φ _ _ hrun (.recr hSc hlv hfind)
       | quot qk lvls ty => exact absurd hd (H.faith.noQuot c hSc qk lvls ty)
       | defn kind safety lvls ty v' =>
         cases kind with

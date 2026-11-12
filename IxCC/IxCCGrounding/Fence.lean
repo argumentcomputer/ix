@@ -314,3 +314,47 @@ recursor clause and its implication from the landed one. -/
 
 /-- info: 'IxCC.Grounding.decideRoot_of_sitesOk' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Grounding.decideRoot_of_sitesOk
+
+/-! G3 parts A and B: recursor classes, the checked recursor shape, a recursor head. -/
+
+/-- info: 'IxCC.Grounding.recClassB_recr' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.recClassB_recr
+
+/-- info: 'IxCC.Grounding.recFacts_of_noRecr' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.recFacts_of_noRecr
+
+/-- info: 'IxCC.Grounding.groundFacts_of_noRecr' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.groundFacts_of_noRecr
+
+/-- info: 'IxCC.Grounding.groundCheckWith_mono' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.groundCheckWith_mono
+
+/-- info: 'IxCC.Grounding.recClass_of' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.recClass_of
+
+/-- info: 'IxCC.Grounding.recStored_of_check' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.recStored_of_check
+
+/-- info: 'IxCC.Grounding.eqReflBasis_of_check' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.eqReflBasis_of_check
+
+/-- info: 'IxCC.Grounding.eqReflBasisB_of' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.eqReflBasisB_of
+
+/-- info: 'IxCC.Grounding.recShape_of' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.recShape_of
+
+/-- info: 'IxCC.Grounding.head_tele' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.head_tele
+
+/-- info: 'IxCC.Grounding.fire_step' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.fire_step
+
+/-- info: 'IxCC.Grounding.rootSound_noRecr' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.rootSound_noRecr
+
+/-- info: 'IxCC.Grounding.fibRoot_noRecr' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.fibRoot_noRecr
+
+/-- info: 'IxCC.Grounding.decideRoot_noRecr' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.decideRoot_noRecr

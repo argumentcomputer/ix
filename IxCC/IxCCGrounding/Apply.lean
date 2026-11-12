@@ -57,6 +57,7 @@ theorem head_mem (M : Model V env) {κ : CId → KKey} {lpsOf : CId → List Nat
   cases hh with
   | ctor _ _ hf => exact mem_key M hf φ ρ
   | cases _ _ hf => exact mem_key M hf φ ρ
+  | recr _ _ hf => exact mem_key M hf φ ρ
   | prim hf _ _ => exact mem_key M hf φ ρ
 
 /-- Arguments that fit a telescope, applied to a member of its denotation, land in the remainder's. -/

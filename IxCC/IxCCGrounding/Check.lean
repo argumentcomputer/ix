@@ -17,7 +17,8 @@ mutation targeting one makes exactly that one false.
 | `stored` | every constant of `Sl` is stored under its key, with its level parameters |
 | `lvls` | the program's level count is the stored one |
 | `nodup` | the level parameters are distinct |
-| `noCsimp`, `declOk`, `notOpaque` | the fragment: no `csimp` entry, recursor or quotient constant, opaque by value |
+| `noCsimp`, `declOk`, `notOpaque` | the fragment: no `csimp` entry, quotient constant, or opaque by value; a recursor only in an admitted class (`recClassB`, `admittedClasses`) |
+| `recShape` | a recursor is stored with the program's counts, level parameters and rules, its type a binder for every argument SrcEval takes (`RecStored`); at `Eq.rec`, `Eq.refl` stored as F3 reads it (`EqReflBasis`) |
 | `prim` | a `prim` entry is the operation's role, stored with no level parameters, telescope long enough |
 | `ctor` | a constructor is stored with the program's counts, telescope long enough |
 | `caseRec` | a `case` entry's recursor is ordinary, the key's telescope long enough |
@@ -273,10 +274,42 @@ def noCsimpB (c : CId) : Bool :=
   | some (.csimp ..) => false
   | _ => true
 
-def declOkB (c : CId) : Bool :=
+/-- No quotient constant; a recursor only in a class of `adm` (the check takes the library's
+`admittedClasses`; as first landed, no class: `declOkB_nil`). -/
+def declOkB (adm : List RecClass) (c : CId) : Bool :=
   match p.decl? c with
-  | some (.recr ..) => false
+  | some (.recr ..) =>
+    match recClassB p env κ c with
+    | some k => adm.contains k
+    | none => false
   | some (.quot ..) => false
+  | _ => true
+
+/-- `RecStored`, decided. -/
+def recStoredB (r : CId) : Bool :=
+  match p.decl? r, env.find? (κ r) with
+  | some (.recr _ _ _ np nmot nmin ni _ rules _), some (.recInfo cvr mI rP krules) =>
+    mI == np + nmot + nmin + ni && rP == np + nmot + nmin && cvr.levelParams == lpsOf r &&
+      decide (np + nmot + nmin + ni + 1 ≤ kPis cvr.type) &&
+      rules.length == krules.length &&
+      (rules.zip krules).all fun (rl, krl) =>
+        decide (κ rl.ctor = krl.ctor) && rl.fields == krl.nfields &&
+          termCorrB κ (lpsOf r) rl.rhs krl.rhs
+  | _, _ => false
+
+/-- `EqReflBasis`, decided. -/
+def eqReflBasisB : Bool :=
+  match env.find? eqReflName with
+  | some (.ctorInfo cv 2 0) => cv.levelParams == [0] && decide (cv.type = eqReflType)
+  | _ => false
+
+/-- A recursor has the checked shape (`RecStored`), and where it is `Eq.rec` the `Eq.refl` basis
+holds. -/
+def recShapeB (c : CId) : Bool :=
+  match p.decl? c with
+  | some (.recr ..) =>
+    recStoredB p env κ lpsOf c &&
+      (recClassB p env κ c != some .eqRec || eqReflBasisB env)
   | _ => true
 
 def primB (c : CId) : Bool :=
@@ -428,14 +461,16 @@ def caseProgOkB (c : CId) : Bool :=
 
 end Checks
 
-/-- **The conjuncts of the check**, by name. -/
-def checkParts (p : Program) (env : KEnv) (κ : CId → KKey) (lpsOf : CId → List Nat)
-    (ann : IxCC.Src.Relevance.Ann) (Sl : List CId) : List (String × Bool) :=
+/-- **The conjuncts of the check, with the recursor classes `adm` admitted**, by name. -/
+def checkPartsWith (adm : List RecClass) (p : Program) (env : KEnv) (κ : CId → KKey)
+    (lpsOf : CId → List Nat) (ann : IxCC.Src.Relevance.Ann) (Sl : List CId) :
+    List (String × Bool) :=
   [("stored", Sl.all (storedB env κ lpsOf)),
    ("lvls", Sl.all (lvlsB p lpsOf)),
    ("nodup", Sl.all (nodupB lpsOf)),
    ("noCsimp", Sl.all (noCsimpB p)),
-   ("declOk", Sl.all (declOkB p)),
+   ("declOk", Sl.all (declOkB p env κ adm)),
+   ("recShape", Sl.all (recShapeB p env κ lpsOf)),
    ("notOpaque", Sl.all fun c => p.table.isOpaqueByValue c == false),
    ("prim", Sl.all (primB p env κ)),
    ("ctor", Sl.all (ctorB p env κ)),
@@ -455,10 +490,72 @@ def checkParts (p : Program) (env : KEnv) (κ : CId → KKey) (lpsOf : CId → L
    ("caseShape", Sl.all (caseShapeB p env κ)),
    ("caseProg", Sl.all (caseProgOkB p env κ Sl))]
 
+/-- **The check with the recursor classes `adm` admitted.** -/
+def groundCheckWith (adm : List RecClass) (p : Program) (env : KEnv) (κ : CId → KKey)
+    (lpsOf : CId → List Nat) (ann : IxCC.Src.Relevance.Ann) (Sl : List CId) : Bool :=
+  (checkPartsWith adm p env κ lpsOf ann Sl).all (·.2)
+
+/-- **The conjuncts of the check**, by name: the classes the library admits
+(`admittedClasses`). -/
+def checkParts (p : Program) (env : KEnv) (κ : CId → KKey) (lpsOf : CId → List Nat)
+    (ann : IxCC.Src.Relevance.Ann) (Sl : List CId) : List (String × Bool) :=
+  checkPartsWith admittedClasses p env κ lpsOf ann Sl
+
 /-- **The check.** -/
 def groundCheck (p : Program) (env : KEnv) (κ : CId → KKey) (lpsOf : CId → List Nat)
     (ann : IxCC.Src.Relevance.Ann) (Sl : List CId) : Bool :=
   (checkParts p env κ lpsOf ann Sl).all (·.2)
+
+theorem groundCheck_eq (p : Program) (env : KEnv) (κ : CId → KKey) (lpsOf : CId → List Nat)
+    (ann : IxCC.Src.Relevance.Ann) (Sl : List CId) :
+    groundCheck p env κ lpsOf ann Sl = groundCheckWith admittedClasses p env κ lpsOf ann Sl := rfl
+
+/-- As first landed, `declOk` refused every recursor: that is `declOkB` with no class admitted. -/
+theorem declOkB_nil (p : Program) (env : KEnv) (κ : CId → KKey) (c : CId) :
+    declOkB p env κ [] c =
+      match p.decl? c with
+      | some (.recr ..) => false
+      | some (.quot ..) => false
+      | _ => true := by
+  unfold declOkB
+  cases p.decl? c with
+  | none => rfl
+  | some d =>
+    cases d with
+    | recr => cases recClassB p env κ c <;> rfl
+    | _ => rfl
+
+/-- **Admitting more recursor classes only makes the check accept more**: `declOk` is the only
+conjunct that reads `adm`, and it is monotone in it. -/
+theorem groundCheckWith_mono {adm adm' : List RecClass} (hsub : ∀ k ∈ adm, k ∈ adm')
+    {p : Program} {env : KEnv} {κ : CId → KKey} {lpsOf : CId → List Nat}
+    {ann : IxCC.Src.Relevance.Ann} {Sl : List CId}
+    (h : groundCheckWith adm p env κ lpsOf ann Sl = true) :
+    groundCheckWith adm' p env κ lpsOf ann Sl = true := by
+  have hd : ∀ c, declOkB p env κ adm c = true → declOkB p env κ adm' c = true := by
+    intro c hc
+    unfold declOkB at hc ⊢
+    cases hdc : p.decl? c with
+    | none => rfl
+    | some d =>
+      rw [hdc] at hc
+      cases d with
+      | recr =>
+        simp only at hc ⊢
+        cases hk : recClassB p env κ c with
+        | none => rw [hk] at hc; exact hc
+        | some k =>
+          rw [hk] at hc
+          simp only [List.contains_iff_mem] at hc ⊢
+          exact hsub k hc
+      | quot => exact hc
+      | _ => rfl
+  unfold groundCheckWith checkPartsWith at h ⊢
+  simp only [List.all_cons, List.all_nil, Bool.and_true, Bool.and_eq_true] at h ⊢
+  obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, h12, h13, h14, h15, h16, h17, h18, h19,
+    h20, h21, h22, h23, h24⟩ := h
+  exact ⟨h1, h2, h3, h4, List.all_eq_true.mpr fun c hc => hd c (List.all_eq_true.mp h5 c hc), h6,
+    h7, h8, h9, h10, h11, h12, h13, h14, h15, h16, h17, h18, h19, h20, h21, h22, h23, h24⟩
 
 /-! ## Soundness -/
 
@@ -484,16 +581,69 @@ theorem noCsimp_of {c : CId} (h : noCsimpB p c = true) :
   intro g us thm hr
   simp [noCsimpB, hr] at h
 
-theorem noRecr_of {c : CId} (h : declOkB p c = true) :
+theorem recClass_of {adm : List RecClass} {c : CId} (h : declOkB p env κ adm c = true) :
     ∀ sf kk lvls np nmot nmin ni ind rules ty,
-      p.decl? c ≠ some (.recr sf kk lvls np nmot nmin ni ind rules ty) := by
+      p.decl? c = some (.recr sf kk lvls np nmot nmin ni ind rules ty) →
+      ∃ k, recClassB p env κ c = some k ∧ k ∈ adm := by
   intro sf kk lvls np nmot nmin ni ind rules ty hd
-  simp [declOkB, hd] at h
+  unfold declOkB at h
+  rw [hd] at h
+  simp only at h
+  cases hk : recClassB p env κ c with
+  | none => rw [hk] at h; exact absurd h (by simp)
+  | some k =>
+    rw [hk] at h
+    exact ⟨k, rfl, List.contains_iff_mem.mp h⟩
 
-theorem noQuot_of {c : CId} (h : declOkB p c = true) :
+theorem noQuot_of {adm : List RecClass} {c : CId} (h : declOkB p env κ adm c = true) :
     ∀ qk lvls ty, p.decl? c ≠ some (.quot qk lvls ty) := by
   intro qk lvls ty hd
   simp [declOkB, hd] at h
+
+theorem recStored_of_check {r : CId} (h : recStoredB p env κ lpsOf r = true) :
+    RecStored p env κ lpsOf r := by
+  unfold recStoredB at h
+  split at h
+  · rename_i sf kk lvls np nmot nmin ni ind rules ty cvr mI rP krules hd hf
+    simp only [Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq, List.all_eq_true] at h
+    obtain ⟨⟨⟨⟨⟨hmI, hrP⟩, hlps⟩, har⟩, hlen⟩, hall⟩ := h
+    subst hmI hrP
+    refine ⟨⟨sf, kk, lvls, np, nmot, nmin, ni, ind, rules, ty, cvr, krules, hd, hf, hlps, har, hlen,
+      fun j rl krl hrl hkrl => ?_⟩⟩
+    have hmem : (rl, krl) ∈ rules.zip krules :=
+      List.mem_of_getElem? (List.getElem?_zip_eq_some.mpr ⟨hrl, hkrl⟩)
+    have := hall (rl, krl) hmem
+    simp only at this
+    exact ⟨this.1.1, this.1.2, termCorr_of_check _ _ this.2⟩
+  · exact absurd h (by simp)
+
+theorem eqReflBasis_of_check (h : eqReflBasisB env = true) : EqReflBasis env := by
+  unfold eqReflBasisB at h
+  split at h
+  · rename_i cv hf
+    simp only [Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at h
+    exact ⟨cv, hf, h.1, h.2⟩
+  · exact absurd h (by simp)
+
+/-- The decider is complete: where the basis holds, it says so (what lets a check that takes the
+basis as a hypothesis be replaced by this one). -/
+theorem eqReflBasisB_of (h : EqReflBasis env) : eqReflBasisB env = true := by
+  obtain ⟨cv, hf, hl, ht⟩ := h
+  simp [eqReflBasisB, hf, hl, ht]
+
+/-- The `recShape` conjunct gives the checked shape, and the `Eq.refl` basis at `Eq.rec`. -/
+theorem recShape_of {c : CId} (h : recShapeB p env κ lpsOf c = true) :
+    ∀ sf kk lvls np nmot nmin ni ind rules ty,
+      p.decl? c = some (.recr sf kk lvls np nmot nmin ni ind rules ty) →
+      RecStored p env κ lpsOf c ∧ (recClassB p env κ c = some .eqRec → EqReflBasis env) := by
+  intro sf kk lvls np nmot nmin ni ind rules ty hd
+  unfold recShapeB at h
+  rw [hd] at h
+  simp only [Bool.and_eq_true, Bool.or_eq_true, bne_iff_ne, ne_eq] at h
+  refine ⟨recStored_of_check h.1, fun hk => ?_⟩
+  rcases h.2 with h2 | h2
+  · exact absurd hk h2
+  · exact eqReflBasis_of_check h2
 
 theorem prim_of {c : CId} (h : primB p env κ c = true) :
     ∀ op, p.table.resolveOf c = some (.prim op) → κ c = primKey op ∧
@@ -615,28 +765,39 @@ theorem groundFacts_of_check {ann : IxCC.Src.Relevance.Ann}
   have all : ∀ {f : CId → Bool} (name : String), (name, Sl.all f) ∈ checkParts p env κ lpsOf ann Sl →
       ∀ c, c ∈ Sl → f c = true :=
     fun name hm c hc => List.all_eq_true.mp (P name _ hm) c hc
-  have hE : EqBasis env := eqBasis_of_check (P "eqBasis" (eqBasisB env) (by simp [checkParts]))
-  have hpins := P "pins" (pinsB p env κ Sl) (by simp [checkParts])
+  have hE : EqBasis env := eqBasis_of_check (P "eqBasis" (eqBasisB env) (by simp [checkParts, checkPartsWith]))
+  have hpins := P "pins" (pinsB p env κ Sl) (by simp [checkParts, checkPartsWith])
   simp only [pinsB, Bool.and_eq_true] at hpins
   obtain ⟨⟨⟨hz, hs⟩, hbt⟩, hbf⟩ := hpins
   have hfaith : Faith p env κ lpsOf (· ∈ Sl) := by
-    refine ⟨fun c hc => stored_of (all "stored" (by simp [checkParts]) c hc),
-      fun c hc => beq_iff_eq.mp (all (f := lvlsB p lpsOf) "lvls" (by simp [checkParts]) c hc),
-      fun c hc => of_decide_eq_true (all (f := nodupB lpsOf) "nodup" (by simp [checkParts]) c hc),
-      fun c g us thm hc => noCsimp_of (all "noCsimp" (by simp [checkParts]) c hc) g us thm,
-      fun c hc => noRecr_of (all "declOk" (by simp [checkParts]) c hc),
-      fun c hc => noQuot_of (all "declOk" (by simp [checkParts]) c hc),
+    refine ⟨fun c hc => stored_of (all "stored" (by simp [checkParts, checkPartsWith]) c hc),
+      fun c hc => beq_iff_eq.mp (all (f := lvlsB p lpsOf) "lvls" (by simp [checkParts, checkPartsWith]) c hc),
+      fun c hc => of_decide_eq_true (all (f := nodupB lpsOf) "nodup" (by simp [checkParts, checkPartsWith]) c hc),
+      fun c g us thm hc => noCsimp_of (all "noCsimp" (by simp [checkParts, checkPartsWith]) c hc) g us thm,
+      { cls := fun r hr sf kk lvls np nmot nmin ni ind rules ty hd =>
+          recClass_of (all (f := declOkB p env κ admittedClasses) "declOk"
+            (by simp [checkParts, checkPartsWith]) r hr) sf kk lvls np nmot nmin ni ind rules ty hd
+        stored := fun r hr sf kk lvls np nmot nmin ni ind rules ty hd =>
+          (recShape_of (all (f := recShapeB p env κ lpsOf) "recShape"
+            (by simp [checkParts, checkPartsWith]) r hr) sf kk lvls np nmot nmin ni ind rules ty hd).1
+        eqRefl := fun r hr hk => by
+          obtain ⟨sf, kk, lvls, np, nmot, nmin, ni, ind, rules, ty, hd⟩ := recClassB_recr hk
+          exact (recShape_of (all (f := recShapeB p env κ lpsOf) "recShape"
+            (by simp [checkParts, checkPartsWith]) r hr) sf kk lvls np nmot nmin ni ind rules ty hd).2
+            hk },
+      fun c hc => noQuot_of (all (f := declOkB p env κ admittedClasses) "declOk"
+        (by simp [checkParts, checkPartsWith]) c hc),
       fun c hc => by
         have := all (f := fun c => p.table.isOpaqueByValue c == false) "notOpaque"
-          (by simp [checkParts]) c hc
+          (by simp [checkParts, checkPartsWith]) c hc
         simpa using this,
-      fun c op hc => prim_of (all "prim" (by simp [checkParts]) c hc) op,
-      fun c hc => ctor_of (all "ctor" (by simp [checkParts]) c hc),
-      fun c r hc hr => caseRec_of (all "caseRec" (by simp [checkParts]) c hc) r hr,
-      fun c hc => defn_of (all "defn" (by simp [checkParts]) c hc),
-      fun c thm body hc hr => eqnNames_of (all "eqnNames" (by simp [checkParts]) c hc) thm body hr,
-      fun s hc => proj_of (all (f := projB p env κ Sl) "proj" (by simp [checkParts]) s hc),
-      fun s hc => projSort_of (all (f := projB p env κ Sl) "proj" (by simp [checkParts]) s hc),
+      fun c op hc => prim_of (all "prim" (by simp [checkParts, checkPartsWith]) c hc) op,
+      fun c hc => ctor_of (all "ctor" (by simp [checkParts, checkPartsWith]) c hc),
+      fun c r hc hr => caseRec_of (all "caseRec" (by simp [checkParts, checkPartsWith]) c hc) r hr,
+      fun c hc => defn_of (all "defn" (by simp [checkParts, checkPartsWith]) c hc),
+      fun c thm body hc hr => eqnNames_of (all "eqnNames" (by simp [checkParts, checkPartsWith]) c hc) thm body hr,
+      fun s hc => proj_of (all (f := projB p env κ Sl) "proj" (by simp [checkParts, checkPartsWith]) s hc),
+      fun s hc => projSort_of (all (f := projB p env κ Sl) "proj" (by simp [checkParts, checkPartsWith]) s hc),
       fun c hc => by simp only [hc, decide_eq_true_eq] at hz; exact hz,
       fun c hc => by simp only [hc, decide_eq_true_eq] at hs; exact hs, ?_⟩
     intro b c hbc
@@ -648,28 +809,28 @@ theorem groundFacts_of_check {ann : IxCC.Src.Relevance.Ann}
       ∃ d, eqnData? env (κ c) (κ thm) = some d ∧ EqnShape env κ c thm d ∧
         TermCorr κ (lpsOf c) body d.body ∧ bvarsLt 0 d.body = true := by
     intro c thm body hc hr
-    have h1 := all (f := eqnShapeOkB p env κ) "eqnShape" (by simp [checkParts]) c hc
-    have h2 := all (f := eqnCorrB p env κ lpsOf) "eqnCorr" (by simp [checkParts]) c hc
-    have h3 := all (f := eqnClosedB p env κ) "eqnClosed" (by simp [checkParts]) c hc
+    have h1 := all (f := eqnShapeOkB p env κ) "eqnShape" (by simp [checkParts, checkPartsWith]) c hc
+    have h2 := all (f := eqnCorrB p env κ lpsOf) "eqnCorr" (by simp [checkParts, checkPartsWith]) c hc
+    have h3 := all (f := eqnClosedB p env κ) "eqnClosed" (by simp [checkParts, checkPartsWith]) c hc
     simp only [eqnShapeOkB, eqnCorrB, eqnClosedB, hr] at h1 h2 h3
     split at h1
     · rename_i d hd
       rw [hd] at h2 h3
       exact ⟨d, hd, eqnShape_of_check hE h1, termCorr_of_check _ _ h2, h3⟩
     · exact absurd h1 (by simp)
-  refine ⟨hfaith, natBasis_of (P "natBasis" (natBasisB env) (by simp [checkParts])), ?_, ?_, ?_,
-    okClosed_of_check (P "okClosed" (okClosedB p ann Sl) (by simp [checkParts]))⟩
+  refine ⟨hfaith, natBasis_of (P "natBasis" (natBasisB env) (by simp [checkParts, checkPartsWith])), ?_, ?_, ?_,
+    okClosed_of_check (P "okClosed" (okClosedB p ann Sl) (by simp [checkParts, checkPartsWith]))⟩
   · intro c thm body hc hr
     obtain ⟨d, _, hsh, hcorr, _⟩ := heqn c thm body hc hr
     exact ⟨⟨d, hsh⟩, fun d' hsh' => eqnShape_body hsh hsh' ▸ hcorr⟩
   · intro c lvls ty v cv val hint hc hr hd hf
-    have h1 := all (f := valueCorrB p env κ lpsOf) "valueCorr" (by simp [checkParts]) c hc
+    have h1 := all (f := valueCorrB p env κ lpsOf) "valueCorr" (by simp [checkParts, checkPartsWith]) c hc
     simp only [valueCorrB, hr, hd, hf] at h1
     exact termCorr_of_check _ _ h1
   · intro c t e hc hrp
     cases hrp with
     | value hr hd hf =>
-      have h1 := all (f := valueClosedB p env κ) "valueClosed" (by simp [checkParts]) c hc
+      have h1 := all (f := valueClosedB p env κ) "valueClosed" (by simp [checkParts, checkPartsWith]) c hc
       simp only [valueClosedB, hr, hd, hf] at h1
       exact h1
     | eqn hr hsh =>
@@ -681,8 +842,8 @@ theorem groundFacts_of_check {ann : IxCC.Src.Relevance.Ann}
 theorem caseFacts_of_check {ann : IxCC.Src.Relevance.Ann}
     (h : groundCheck p env κ lpsOf ann Sl = true) : CaseFacts p env κ (· ∈ Sl) := by
   intro c r hc hr
-  have h1 := List.all_eq_true.mp (part_of (name := "caseShape") (b := Sl.all (caseShapeB p env κ)) h (by simp [checkParts])) c hc
-  have h2 := List.all_eq_true.mp (part_of (name := "caseProg") (b := Sl.all (caseProgOkB p env κ Sl)) h (by simp [checkParts])) c hc
+  have h1 := List.all_eq_true.mp (part_of (name := "caseShape") (b := Sl.all (caseShapeB p env κ)) h (by simp [checkParts, checkPartsWith])) c hc
+  have h2 := List.all_eq_true.mp (part_of (name := "caseProg") (b := Sl.all (caseProgOkB p env κ Sl)) h (by simp [checkParts, checkPartsWith])) c hc
   simp only [caseShapeB, caseProgOkB, hr] at h1 h2
   split at h1
   · rename_i sh hsh

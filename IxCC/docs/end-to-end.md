@@ -116,7 +116,10 @@ width costing no fuel; 48.7 s instead of 624 s on the slowest closure,
 interpreted) it refuses 21 sites in three closures of the 49 in the corpus
 that load (262 in twenty before G2b), and a `case` shape tolerant of a
 recursor's level-parameter names lets the check accept 24 of them (22 before
-it). One checked hypothesis, `ResultTag`, still rejects some roots (a `Bool` root returning `false` on the committed
+it). Recursors now enter the checked set by class, each class once its case of
+the fundamental lemma is proved (G3, parts A and B: a recursor head in the
+relation, the checked recursor shape; so far only the class of `False.rec`,
+which traps, so no closure of the corpus is newly accepted). One checked hypothesis, `ResultTag`, still rejects some roots (a `Bool` root returning `false` on the committed
 closures). What remains: a model of the laws (below), widening the fragment
 and the direct route's conversion, `ResultTag`, and progress; the
 certification design lists every hypothesis with who discharges it.

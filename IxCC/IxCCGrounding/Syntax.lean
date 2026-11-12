@@ -566,15 +566,136 @@ structure CaseProg (p : Program) (κ : CId → KKey) (S : CId → Prop) (r : CId
     (some ind = p.known.nat →
       sh.nP = 0 ∧ sh.ctors.map (fun cs => (cs.key, cs.nF)) = [(natZeroName, 0), (natSuccName, 1)])
 
-/-- **The faithfulness clauses** (the spike's `Faith`, with `lvls` added). -/
-structure Faith (p : Program) (env : KEnv) (κ : CId → KKey) (lpsOf : CId → List Nat)
+/-! ## Recursors in the checked set (G3)
+
+SrcEval fires a recursor head by its kind at the levels it runs it at (`RecKind.atLevels`): F2
+(`ordinary`: force the major premise, select the rule by its constructor), F3 (`subsingleton`:
+do not force the major; the rule's fields from index slots or `irr`), F4 (`empty`: trap). The
+recursors the fundamental lemma handles are classified on the bytes (`recClassB`), and the check
+admits the classes in `admittedClasses`, a constant that grows as each class is proved. -/
+
+/-- The recursor classes. -/
+inductive RecClass where
+  /-- no rules, kind `empty` at every level (`False.rec`, run by `False.elim`): F4, a trap -/
+  | empty
+  /-- the built-in `Eq.rec` (two parameters, one motive, one minor premise, one index, one rule,
+  kind `subsingleton` at every level with no fields): F3, the minor premise returned -/
+  | eqRec
+  /-- kind `ordinary`, no indices, the inductive stored as never a proposition: F2 -/
+  | ordinary
+  deriving DecidableEq, Repr
+
+/-- **The class of a recursor `r`, decided** on the program, its table and the kernel's reading.
+Anything else is not admitted. At `Eq.rec` the kind's condition must be "always" (`allZero []`),
+so SrcEval takes F3 there at every level. -/
+def recClassB (p : Program) (env : KEnv) (κ : CId → KKey) (r : CId) : Option RecClass :=
+  match p.decl? r, p.table.recKindOf r with
+  | some (.recr _ _ _ _ _ _ _ _ [] _), some .empty => some .empty
+  | some (.recr _ _ _ 2 1 1 1 _ [_] _), some (.subsingleton w []) =>
+    if κ r == eqRecName && w == IxCC.Src.PropWhen.allZero [] then some .eqRec else none
+  | some (.recr _ _ _ _ _ _ 0 ind _ _), some .ordinary =>
+    if neverPropB env (κ ind) then some .ordinary else none
+  | _, _ => none
+
+/-- **The recursor classes the check admits**: those the fundamental lemma handles. G3 adds them
+one at a time, each when its case of the fundamental lemma is proved; extending the list only
+makes the check accept more (`groundCheckWith_mono`). -/
+def admittedClasses : List RecClass := [.empty]
+
+/-- **The checked shape of a recursor entry**: the kernel stores `κ r` as a recursor whose major
+index and rule prefix are the Src declaration's counts, at the level parameters `lpsOf r`, whose
+stored type has a binder for every argument SrcEval takes (`np + nmot + nmin + ni + 1`, the head's
+arity), with the Src rules: the same constructors (by key) and field counts, and right-hand sides
+that correspond node for node (`TermCorr`). -/
+structure RecStored (p : Program) (env : KEnv) (κ : CId → KKey) (lpsOf : CId → List Nat) (r : CId) :
+    Prop where
+  stored : ∃ (sf kk : Bool) (lvls np nmot nmin ni : Nat) (ind : CId) (rules : List IxCC.Src.Rule)
+      (ty : Term) (cvr : ConstantVal .anon) (krules : List (RecRule .anon)),
+    p.decl? r = some (.recr sf kk lvls np nmot nmin ni ind rules ty) ∧
+    env.find? (κ r) = some (.recInfo cvr (np + nmot + nmin + ni) (np + nmot + nmin) krules) ∧
+    cvr.levelParams = lpsOf r ∧ np + nmot + nmin + ni + 1 ≤ kPis cvr.type ∧
+    rules.length = krules.length ∧
+    ∀ (j : Nat) (rl : IxCC.Src.Rule) (krl : RecRule .anon), rules[j]? = some rl →
+      krules[j]? = some krl → κ rl.ctor = krl.ctor ∧ rl.fields = krl.nfields ∧
+        TermCorr κ (lpsOf r) rl.rhs krl.rhs
+
+/-- `Eq.refl : ∀ {α : Sort u} (a : α), @Eq α a a`, as the kernel stores it (both binder data
+"always a proposition": `Eq.refl α a` is a proof). -/
+def eqReflType : KExpr :=
+  .forallE (.sort (.param 0))
+    (.forallE (.bvar 0)
+      (Expr.mkAppN (.const eqName [.param 0]) [.bvar 1, .bvar 0, .bvar 0])
+      { pw := PropWhen.ifAllZero [] })
+    { pw := PropWhen.ifAllZero [] }
+
+/-- The built-in `Eq.refl` is stored as a constructor with two parameters, no field, one level
+parameter and that type (what F3 at `Eq.rec` reads). -/
+def EqReflBasis (env : KEnv) : Prop :=
+  ∃ cv : ConstantVal .anon, env.find? eqReflName = some (.ctorInfo cv 2 0) ∧
+    cv.levelParams = [0] ∧ cv.type = eqReflType
+
+/-- **The recursor clause as first landed**: no constant of `S` is a recursor. -/
+def NoRecr (p : Program) (S : CId → Prop) : Prop :=
+  ∀ c, S c → ∀ sf kk lvls np nmot nmin ni ind rules ty,
+    p.decl? c ≠ some (.recr sf kk lvls np nmot nmin ni ind rules ty)
+
+/-- **The recursors of `S`, checked** (replacing `NoRecr`): each is in an admitted class, has the
+checked shape, and where it is `Eq.rec` the `Eq.refl` basis holds. Vacuous when `S` has no
+recursor (`recFacts_of_noRecr`). -/
+structure RecFacts (p : Program) (env : KEnv) (κ : CId → KKey) (lpsOf : CId → List Nat)
     (S : CId → Prop) : Prop where
+  cls : ∀ r, S r → ∀ sf kk lvls np nmot nmin ni ind rules ty,
+    p.decl? r = some (.recr sf kk lvls np nmot nmin ni ind rules ty) →
+    ∃ k, recClassB p env κ r = some k ∧ k ∈ admittedClasses
+  stored : ∀ r, S r → ∀ sf kk lvls np nmot nmin ni ind rules ty,
+    p.decl? r = some (.recr sf kk lvls np nmot nmin ni ind rules ty) → RecStored p env κ lpsOf r
+  eqRefl : ∀ r, S r → recClassB p env κ r = some .eqRec → EqReflBasis env
+
+/-- A recursor's class is read off its declaration. -/
+theorem recClassB_recr {p : Program} {env : KEnv} {κ : CId → KKey} {r : CId} {k : RecClass}
+    (h : recClassB p env κ r = some k) :
+    ∃ sf kk lvls np nmot nmin ni ind rules ty,
+      p.decl? r = some (.recr sf kk lvls np nmot nmin ni ind rules ty) := by
+  cases hd : p.decl? r with
+  | none => cases hk : p.table.recKindOf r <;> simp [recClassB, hd, hk] at h
+  | some d =>
+    cases d with
+    | recr sf kk lvls np nmot nmin ni ind rules ty =>
+      exact ⟨sf, kk, lvls, np, nmot, nmin, ni, ind, rules, ty, rfl⟩
+    | _ => cases hk : p.table.recKindOf r <;> simp [recClassB, hd, hk] at h
+
+/-- At class `empty` the table's kind is `empty` (at every level). -/
+theorem recClassB_empty {p : Program} {env : KEnv} {κ : CId → KKey} {r : CId}
+    (h : recClassB p env κ r = some .empty) : p.table.recKindOf r = some .empty := by
+  unfold recClassB at h
+  split at h
+  · assumption
+  · split at h <;> cases h
+  · split at h <;> cases h
+  · cases h
+
+/-- **The landed clause implies the new one**: with no recursor in `S`, `RecFacts` holds. -/
+theorem recFacts_of_noRecr {p : Program} {env : KEnv} {κ : CId → KKey} {lpsOf : CId → List Nat}
+    {S : CId → Prop} (h : NoRecr p S) : RecFacts p env κ lpsOf S where
+  cls r hr sf kk lvls np nmot nmin ni ind rules ty hd :=
+    absurd hd (h r hr sf kk lvls np nmot nmin ni ind rules ty)
+  stored r hr sf kk lvls np nmot nmin ni ind rules ty hd :=
+    absurd hd (h r hr sf kk lvls np nmot nmin ni ind rules ty)
+  eqRefl r hr hk := by
+    obtain ⟨sf, kk, lvls, np, nmot, nmin, ni, ind, rules, ty, hd⟩ := recClassB_recr hk
+    exact absurd hd (h r hr sf kk lvls np nmot nmin ni ind rules ty)
+
+/-- **The faithfulness clauses** (the spike's `Faith`, with `lvls` added), over a recursor clause
+`Recs`: `Faith` takes `RecFacts`; as first landed it took `NoRecr` (`FaithWith.mono`). -/
+structure FaithWith (Recs : Prop) (p : Program) (env : KEnv) (κ : CId → KKey)
+    (lpsOf : CId → List Nat) (S : CId → Prop) : Prop where
   stored : ∀ c, S c → ∃ ci, env.find? (κ c) = some ci ∧ ci.toConstantVal.levelParams = lpsOf c
   lvls : ∀ c, S c → lvlsOf p c = (lpsOf c).length
   nodup : ∀ c, S c → (lpsOf c).Nodup
   noCsimp : ∀ c g us thm, S c → p.table.resolveOf c ≠ some (.csimp g us thm)
-  noRecr : ∀ c, S c → ∀ sf kk lvls np nmot nmin ni ind rules ty,
-    p.decl? c ≠ some (.recr sf kk lvls np nmot nmin ni ind rules ty)
+  /-- the recursors of `S` (`RecFacts`: each in an admitted class, with the checked shape; as
+  first landed, `NoRecr`: none) -/
+  recs : Recs
   noQuot : ∀ c, S c → ∀ qk lvls ty, p.decl? c ≠ some (.quot qk lvls ty)
   noOpaque : ∀ c, S c → p.table.isOpaqueByValue c = false
   prim : ∀ c op, S c → p.table.resolveOf c = some (.prim op) → κ c = primKey op ∧
@@ -605,6 +726,21 @@ structure Faith (p : Program) (env : KEnv) (κ : CId → KKey) (lpsOf : CId → 
     S c ∧ κ c = (if b then boolTrueName else boolFalseName) ∧
     ∃ cv, env.find? (κ c) = some (.ctorInfo cv 0 0) ∧ cv.levelParams = []
 
+/-- **The faithfulness clauses**, with the recursors of `S` checked (`RecFacts`). -/
+abbrev Faith (p : Program) (env : KEnv) (κ : CId → KKey) (lpsOf : CId → List Nat)
+    (S : CId → Prop) : Prop :=
+  FaithWith (RecFacts p env κ lpsOf S) p env κ lpsOf S
+
+/-- **`Faith` as first landed** (before G3): no constant of `S` is a recursor. -/
+abbrev FaithNoRecr (p : Program) (env : KEnv) (κ : CId → KKey) (lpsOf : CId → List Nat)
+    (S : CId → Prop) : Prop :=
+  FaithWith (NoRecr p S) p env κ lpsOf S
+
+theorem FaithWith.mono {A B : Prop} {p : Program} {env : KEnv} {κ : CId → KKey}
+    {lpsOf : CId → List Nat} {S : CId → Prop} (h : A → B) (hF : FaithWith A p env κ lpsOf S) :
+    FaithWith B p env κ lpsOf S :=
+  { hF with recs := h hF.recs }
+
 /-- `Nat` and its constructors are stored as the literal reading needs. -/
 structure NatBasis (env : KEnv) : Prop where
   nat : ∃ ci : ConstantInfo .anon, env.find? natName = some ci ∧ ci.toConstantVal.levelParams = []
@@ -621,10 +757,11 @@ def CaseFacts (p : Program) (env : KEnv) (κ : CId → KKey) (S : CId → Prop) 
     ∃ sh, CaseStored env (κ c) (κ r) sh ∧ CaseProg p κ S r sh
 
 /-- **Every decidable fact the root theorem consumes** about the program, the kernel's reading
-and the certificate's annotation, on a set `S` of constants. The check decides it. -/
-structure GroundFacts (p : Program) (env : KEnv) (κ : CId → KKey) (lpsOf : CId → List Nat)
-    (ann : IxCC.Src.Relevance.Ann) (S : CId → Prop) : Prop where
-  faith : Faith p env κ lpsOf S
+and the certificate's annotation, on a set `S` of constants, over a recursor clause `Recs`
+(`GroundFacts` takes `RecFacts`, decided by the check; as first landed, `NoRecr`). -/
+structure GroundFactsWith (Recs : Prop) (p : Program) (env : KEnv) (κ : CId → KKey)
+    (lpsOf : CId → List Nat) (ann : IxCC.Src.Relevance.Ann) (S : CId → Prop) : Prop where
+  faith : FaithWith Recs p env κ lpsOf S
   natBasis : NatBasis env
   eqns : ∀ c thm body, S c → p.table.resolveOf c = some (.eqn thm body) →
     (∃ d, EqnShape env κ c thm d) ∧ ∀ d, EqnShape env κ c thm d → TermCorr κ (lpsOf c) body d.body
@@ -634,6 +771,28 @@ structure GroundFacts (p : Program) (env : KEnv) (κ : CId → KKey) (lpsOf : CI
   /-- every run term is closed -/
   closed : ∀ c t e, S c → RunPair p env κ c t e → bvarsLt 0 e = true
   okClosed : OkClosed p ann S
+
+/-- **The checked facts**, the recursors of `S` checked (`RecFacts`). -/
+abbrev GroundFacts (p : Program) (env : KEnv) (κ : CId → KKey) (lpsOf : CId → List Nat)
+    (ann : IxCC.Src.Relevance.Ann) (S : CId → Prop) : Prop :=
+  GroundFactsWith (RecFacts p env κ lpsOf S) p env κ lpsOf ann S
+
+/-- **`GroundFacts` as first landed** (before G3): no constant of `S` is a recursor. -/
+abbrev GroundFactsNoRecr (p : Program) (env : KEnv) (κ : CId → KKey) (lpsOf : CId → List Nat)
+    (ann : IxCC.Src.Relevance.Ann) (S : CId → Prop) : Prop :=
+  GroundFactsWith (NoRecr p S) p env κ lpsOf ann S
+
+theorem GroundFactsWith.mono {A B : Prop} {p : Program} {env : KEnv} {κ : CId → KKey}
+    {lpsOf : CId → List Nat} {ann : IxCC.Src.Relevance.Ann} {S : CId → Prop} (h : A → B)
+    (hG : GroundFactsWith A p env κ lpsOf ann S) : GroundFactsWith B p env κ lpsOf ann S :=
+  { hG with faith := hG.faith.mono h }
+
+/-- **Every landed `GroundFacts` is a `GroundFacts`**: so each theorem taking `GroundFacts`
+implies its landed form (`rootSound_noRecr` and the others in `IxCCGrounding.Root`). -/
+theorem groundFacts_of_noRecr {p : Program} {env : KEnv} {κ : CId → KKey}
+    {lpsOf : CId → List Nat} {ann : IxCC.Src.Relevance.Ann} {S : CId → Prop}
+    (hG : GroundFactsNoRecr p env κ lpsOf ann S) : GroundFacts p env κ lpsOf ann S :=
+  hG.mono recFacts_of_noRecr
 
 
 end IxCC.Grounding

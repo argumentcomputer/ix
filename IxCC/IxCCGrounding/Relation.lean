@@ -80,8 +80,9 @@ inductive Runs (M : Model V env) (κ : CId → KKey) (Ok : CId → Levels → Pr
       Runs M κ Ok lps ls φ Γ e e' → DenotesIn M φ Γ (.proj (κ s) i e') →
       Runs M κ Ok lps ls φ Γ (.proj s i e) (.proj (κ s) i e')
 
-/-- A special head's denotation (the spike's, unchanged; no recursor or quotient head in the
-first fragment). -/
+/-- A special head's denotation (the spike's, with recursor heads since G3; no quotient head in
+the first fragment): the key's set at the assignment, its stored type the telescope a partial
+application's arguments fit. -/
 inductive HeadAt (M : Model V env) (κ : CId → KKey) (lpsOf : CId → List Nat) (S : CId → Prop) :
     IxCC.Src.Head → Levels → (LevelParam → Nat) → KKey → KExpr → Prop
   | ctor {c : CId} {ls : Levels} {φ : LevelParam → Nat} {ci : ConstantInfo .anon} :
@@ -90,6 +91,9 @@ inductive HeadAt (M : Model V env) (κ : CId → KKey) (lpsOf : CId → List Nat
   | cases {c : CId} {ls : Levels} {φ : LevelParam → Nat} {ci : ConstantInfo .anon} :
       S c → LvAt φ (lpsOf c) ls → env.find? (κ c) = some ci →
       HeadAt M κ lpsOf S (.cases c) ls φ (κ c) ci.toConstantVal.type
+  | recr {r : CId} {ls : Levels} {φ : LevelParam → Nat} {ci : ConstantInfo .anon} :
+      S r → LvAt φ (lpsOf r) ls → env.find? (κ r) = some ci →
+      HeadAt M κ lpsOf S (.recr r) ls φ (κ r) ci.toConstantVal.type
   | prim {op : IxCC.Src.PrimOp} {ls : Levels} {φ : LevelParam → Nat} {ci : ConstantInfo .anon} :
       env.find? (primKey op) = some ci → ci.toConstantVal.levelParams = [] →
       op.arity ≤ kPis ci.toConstantVal.type →
