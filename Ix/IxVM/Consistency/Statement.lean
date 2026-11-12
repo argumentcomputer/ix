@@ -72,7 +72,7 @@ Corollary (`ConsistentRead.seeds_not_false`): no claimed constant has type
 | Layer | Obligation | Content |
 |---|---|---|
 | L0 circuit to source | `L0` | the Aiur headline with "at most `2^39` distinct calls of each memoized callee" (`MemoCallsAtMost`) added to its conclusion; an obligation, not proved |
-| L1 bytes to records | `L1` = `Records` | every record load returns the reading of bytes the run hashed under that address |
+| L1 bytes to records | `L1` = `Records` | every record load returns the reading of bytes the run hashed under that address, in records the run hashed |
 | L2 levels | `L2` = `Levels` | `level_leq`/`level_equal` sound for `Level.eval` with no depth hypothesis, and exact at zero |
 | L3 term operations | `L3` | given `Levels`, `Terms`: substitution and lifting refine the kernel's |
 | L4 core | `L4` | given L1 to L3, `Core`: whnf, conversion and inference refine `Rules.Red`, `DefEq`, `Infer` |
@@ -624,8 +624,9 @@ structure Seams where
   addr : Aiur.Heap IxVM.F → Aiur.SourceValue IxVM.F → Address → Prop
   /-- (L1 → L4, L5) The value `ptr` (`&KernelTypes::KConstantInfo`) points to
   IxVM's converted constant of the record bytes `bytes`, which represents the
-  kernel reader's reading of them. -/
-  loaded : Aiur.Heap IxVM.F → Aiur.SourceValue IxVM.F → ByteArray → Prop
+  kernel reader's reading of them in the records `E`: a projection record's block
+  and a literal's blob are read from `E`. -/
+  loaded : Ixon.Env → Aiur.Heap IxVM.F → Aiur.SourceValue IxVM.F → ByteArray → Prop
   /-- (L3, L4) In the kernel environment `env` read from the Ixon records `E`, at
   opening depth `depth` and under `binders` local binders, the IxVM value `v` (a
   `KernelTypes::KExpr`) represents the kernel term `t` (whose loose bound
@@ -661,13 +662,19 @@ variable (S : Seams)
 /-- **L1's content: a record load returns the reading of bytes the run hashed**
 (`Ingress::get_ci` → `load_verified_constant`, `IxonDeserialize`, `Convert`,
 `Blake3`): every bounded derivation of `get_ci` on an address returns a pointer to
-the converted constant of a byte string its calls hashed under that address. -/
+the converted constant of a byte string its calls hashed under that address, read in
+records its calls loaded. Those include the block a projection record names
+(`get_ci_dprj` and its siblings load it) and the blobs its literals name (`Convert`
+loads them by `load_verified_blob`). `LoadedBy cs E₀` admits into `E₀` only byte
+strings some `Blake3::hash` call of `cs` received, each stored under its pure BLAKE3
+address, so the reading cannot rest on a record the run did not hash. -/
 def Records : Prop :=
   ∀ (args : List (Aiur.SourceValue IxVM.F)) (heap after : Aiur.Heap IxVM.F)
     (ptr : Aiur.SourceValue IxVM.F) (cs : List (Call IxVM.F)),
     ObsFn IxVM.source.world "Ingress::get_ci" args heap ptr after cs → Bounded cs →
     ∀ (v : Aiur.SourceValue IxVM.F) (a : Address), args = [v] → S.addr heap v a →
-      ∃ bytes, Hashed cs bytes ∧ Address.blake3Pure bytes = a ∧ S.loaded after ptr bytes
+      ∃ (bytes : ByteArray) (E₀ : Ixon.Env), Hashed cs bytes ∧ Address.blake3Pure bytes = a ∧
+        LoadedBy cs E₀ ∧ S.loaded E₀ after ptr bytes
 
 /-- **Obligation L1** (bytes to records). -/
 def L1 : Prop := Records S
