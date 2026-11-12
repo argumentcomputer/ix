@@ -429,3 +429,73 @@ recursor clause and its implication from the landed one. -/
 
 /-- info: 'IxCC.Grounding.flatIota_noLevels' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Grounding.flatIota_noLevels
+
+/-! ## The fragment's clause for fixed-width words (stage W1): no `word` entry in `Sl` -/
+
+/-- info: 'IxCC.Grounding.noWord_of' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Grounding.noWord_of
+
+/-! ## G3, part E: recursors without parameters whose rule bodies run (`noParams`) -/
+
+/-- info: 'IxCC.Grounding.recClassB_noParams' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.recClassB_noParams
+
+/-- info: 'IxCC.Grounding.recFacts_of_flatOnly' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.recFacts_of_flatOnly
+
+/-- info: 'IxCC.Grounding.recFields_of_check' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.recFields_of_check
+
+/-- info: 'IxCC.Grounding.recBodies_of_check' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.recBodies_of_check
+
+/-- info: 'IxCC.Grounding.recSites_of_check' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.recSites_of_check
+
+/-- info: 'IxCC.Grounding.recShapeNoParams_of' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.recShapeNoParams_of
+
+/-- info: 'IxCC.Grounding.holds_below' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.holds_below
+
+/-- info: 'IxCC.Grounding.evalSites_congr' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.evalSites_congr
+
+/-- info: 'IxCC.Grounding.evalConsts_mentions' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.evalConsts_mentions
+
+/-- info: 'IxCC.Grounding.evalConsts_peel' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Grounding.evalConsts_peel
+
+/-- info: 'IxCC.Grounding.lamTele_inj' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.lamTele_inj
+
+/-- info: 'IxCC.Grounding.piBody_piTele' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Grounding.piBody_piTele
+
+/-- info: 'IxCC.Grounding.piBody_inst' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.piBody_inst
+
+/-- info: 'IxCC.Grounding.ruleSites_ok' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.ruleSites_ok
+
+/-- info: 'IxCC.Grounding.runs_peel' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.runs_peel
+
+/-- info: 'IxCC.Grounding.relEnv_pushAll' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.relEnv_pushAll
+
+/-- info: 'IxCC.Grounding.ctxSat_of_fits' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.ctxSat_of_fits
+
+/-- info: 'IxCC.Grounding.noParamsIota' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.noParamsIota
+
+/-- info: 'IxCC.Grounding.ctorFields_noLevels' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.ctorFields_noLevels
+
+/-- info: 'IxCC.Grounding.ctorFields_canon' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.ctorFields_canon
+
+/-- info: 'IxCC.Grounding.fire_noParams' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.fire_noParams

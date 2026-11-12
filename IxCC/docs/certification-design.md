@@ -304,7 +304,7 @@ denotation to lie in its domain, which only premise (ii)'s derivations give.
 | A1 β on a closure | graph application on the domain; SrcEval's `propWhen` gate agrees with the binder's regime | none | in every model | yes | yes |
 | A2 partial applications; A3 stuck | none | — | — | — | yes |
 | F1 constructors; `Nat.zero`, `Nat.succ` to literals | a constructor is its constant; `Nat.succ (lit n)` and `lit (n+1)` denote alike | none: the literal reading | in every model | no | yes |
-| F2 ordinary ι, `Nat` literal majors | every stored rule computes as Lean's; a constructor value built at one assignment is the constructor's image at the levels the recursor's major domain names | ι (`iota_rule`); for the image, level-parameter irrelevance (`cval_params`) where the constructor has no level parameters, restricted canonicity (`ctor_canon`) where it has some or the family has parameters | ι and `cval_params` fields, proved, on the same follow-up branch since 2026-11-11; `ctor_canon` not scheduled | yes | yes (at field-less recursors without parameters, `Bool.rec`, proved since G3's part D, `flatIota`, from `iota_rule` and `cval_params` alone on every measured closure; rules with fields and parameterised families wait for part E and part D's next step) |
+| F2 ordinary ι, `Nat` literal majors | every stored rule computes as Lean's; a constructor value built at one assignment is the constructor's image at the levels the recursor's major domain names | ι (`iota_rule`); for the image, level-parameter irrelevance (`cval_params`) where the constructor has no level parameters, restricted canonicity (`ctor_canon`) where it has some or the family has parameters | ι and `cval_params` fields, proved, on the same follow-up branch since 2026-11-11; `ctor_canon` not scheduled | yes | yes (at field-less recursors without parameters, `Bool.rec`, proved since G3's part D, `flatIota`, from `iota_rule` and `cval_params` alone on every measured closure; since G3's part E also at the other recursors without parameters whose rule bodies name no constant, `T16.rec`: the model side, `noParamsIota`, from `iota_rule` alone, the image moved by `cval_params` alone on every measured closure, the rule body's sites typed through the direct route's soundness, which takes the laws whole; recursion and parameterised families wait for part D's next step) |
 | F3 subsingleton ι without the major | the major denotes the proof point, which is the constructor application, with indices equal | ι, proof irrelevance and the `Eq` derivation above | as ι | yes | yes (`Decidable` does not need it; `Eq.rec` casts do: at `Eq.rec` proved since G3's part C, `eqRec_iota`, from `iota_rule` and the model's fields `mem` and `eq_equality`) |
 | F4 empty recursors trap | soundness: none (a trap returns no value, and the relation relates returned values only; G3 admits the class `empty`, `False.rec`); progress: no member of an empty type | progress: `false_empty`-like emptiness of the inductive's denotation, from ι and `mem` | — | soundness no; progress yes | yes for soundness (since G3); progress only beyond |
 | F7 `Quot.mk`; F8 `Quot.lift` | `Quot.lift f h (Quot.mk a) = f a` | ι (the quotient's rules are stored as recursor rules) | as ι | yes | later fragment |
@@ -517,10 +517,13 @@ made tolerant of a recursor's level-parameter names (G2b), the direct route's
 cost fixed (G3, its first step), recursors admitted into the checked set by
 class, with a recursor head in the relation and the fundamental lemma (G3, parts
 A and B), the class of the built-in `Eq.rec` admitted with F3's meaning
-proved (G3, part C), and the class of field-less recursors without parameters,
+proved (G3, part C), the class of field-less recursors without parameters,
 `flat` (`Bool.rec`), admitted with F2's meaning there proved (G3, part D, first
-step; the classes admitted so far are `empty`, `False.rec`, which traps,
-`eqRec` and `flat`).**
+step), and the class of the other recursors without parameters, `noParams`
+(`T16.rec`, whose last rule applies its minor premise to its field), admitted
+with F2's meaning there proved where the rule bodies name no constant (G3, part
+E; the classes admitted so far are `empty`, `False.rec`, which traps, `eqRec`,
+`flat` and `noParams`).**
 The library `IxCCGrounding`
 (`IxCC/IxCCGrounding/`, a Lake library of IxCC's package beside the production
 library, built and run by the required check `ixcc-grounding`) is the real
@@ -530,7 +533,7 @@ imports the kernel's model (`IxCK.Kernel.Denotes`, the statement half, in
 model, from the production library or from any program of the shared build.
 
 **What is proved, fenced on `propext`, `Classical.choice` and `Quot.sound` or
-fewer (`IxCCGrounding/Fence.lean`, 139 exact assertions):**
+fewer (`IxCCGrounding/Fence.lean`, 161 exact assertions):**
 
 - *Soundness at a root* (`rootSound`, in `IxCCGrounding.Root`). For every
   program, kernel reading `env`, key map, level parameters, certificate
@@ -581,12 +584,13 @@ fewer (`IxCCGrounding/Fence.lean`, 139 exact assertions):**
   kind `empty`), `eqRec` (the built-in `Eq.rec`, with its counts and the kind
   "subsingleton at every level"), `flat` (since part D: kind `ordinary`, no
   parameter, no index, its inductive stored as never a proposition, every rule
-  without fields and its body a variable) and `ordinary` (the rest of kind
-  `ordinary` without indices whose inductive is stored as never a proposition);
+  without fields and its body a variable), `noParams` (since part E: the rest of
+  those without parameters) and `ordinary` (kind `ordinary` without indices,
+  its inductive stored as never a proposition, with parameters);
   anything else is refused. `declOk`
   admits a recursor only in a class of `admittedClasses`, a constant of the
   library that grows as each class's case of the fundamental lemma is proved
-  (today `empty`, `eqRec` and `flat`); admitting more only makes the check accept more
+  (today `empty`, `eqRec`, `flat` and `noParams`); admitting more only makes the check accept more
   (`groundCheckWith_mono`), and with no class admitted the check is the landed
   one (`declOkB_nil`). A new conjunct, `recShape`, asks every recursor of `Sl` to
   have the checked shape (`RecStored`, `recStored_of_check`): stored as a
@@ -596,18 +600,27 @@ fewer (`IxCCGrounding/Fence.lean`, 139 exact assertions):**
   takes; and, at `Eq.rec`, `Eq.refl` and `Eq.rec` stored as F3 there reads them
   (`EqReflBasis`; `EqRecBasis`, since part C: `Eq.rec`'s counts, its type and its
   one rule's constructor and right-hand side compared structurally with the
-  expected terms); and, at a `flat` recursor (since part D), its rules'
+  expected terms); at a `flat` recursor (since part D), its rules'
   telescopes, the program side and its rules' constructors (`RecTele`,
-  `RecProg`, `RecCtorsRaw`, below). These facts, with `EqBasis` where `Eq.rec` is, are
+  `RecProg`, `RecCtorsRaw`, below); and at a `noParams` recursor (since part E)
+  those three and its rules' fields, its rule bodies and its rule bodies' sites
+  (`RecFields`, `RecBodies`, `RecSites`, below). These facts, with `EqBasis` where `Eq.rec` is, are
   `RecFacts`, which replaces the landed clause of `Faith` that `Sl` holds no
   recursor (`NoRecr`); the landed clause implies the new one
   (`recFacts_of_noRecr`), and so do the facts as parts A and B landed them
   (every recursor of `Sl` of class `empty`, with the checked shape:
-  `recFacts_of_emptyOnly`) and as part C landed them (every recursor of class
+  `recFacts_of_emptyOnly`), as part C landed them (every recursor of class
   `empty` or `eqRec`, with the checked shape and the `Eq` bases:
-  `recFacts_of_eqRecOnly`), so every theorem taking `GroundFacts` implies its
+  `recFacts_of_eqRecOnly`) and as part D's first step landed them (every
+  recursor of class `empty`, `eqRec` or `flat`, with the facts then asked:
+  `recFacts_of_flatOnly`), so every theorem taking `GroundFacts` implies its
   landed statements (`rootSound_noRecr`, `fibRoot_noRecr`, `decideRoot_noRecr`,
-  and `rootSound`, `fibRoot`, `decideRoot` as parts A, B and C stated them). The
+  and `rootSound`, `fibRoot`, `decideRoot`, `allP_of_check`, `const_of_check`
+  as parts A to D stated them; their texts are unchanged, as are `groundCheck`'s
+  signature and its conjuncts: 25 at the tip part E lands on, `noWord` added by the fixed-width words, part E adding none). `RecFacts`, `Faith` and `GroundFacts` are
+  in `IxCCGrounding.Facts`, after the decided direct route, so that a recursor
+  fact may read it (part E moved them there from `IxCCGrounding.Syntax`, with
+  `eqnData?` the other way, in a commit of its own that changed no statement). The
   relation's special heads include recursors (`HeadAt.recr`): a recursor's
   partial applications are related as a constructor's are, its stored telescope
   long enough by the arity fact, and at an `empty` recursor `fire` traps, so a
@@ -674,9 +687,86 @@ fewer (`IxCCGrounding/Fence.lean`, 139 exact assertions):**
   `Nat.rec` and `List.rec`, each rule at its constructor reduces to its minor
   premise (applied to the fields) and not to another minor's, the application
   typed (probes `GR-3f-q1`, `q3`, `k1`, not in the suite).
+- *F2 at recursors without parameters whose rule bodies run* (G3, part E;
+  `IxCCGrounding.RecRun`, the case `fire_noParams` of the fundamental lemma).
+  The class `noParams`: kind `ordinary`, no parameter, no index, the inductive
+  stored as never a proposition, not flat (a rule with fields, or a body that is
+  not a variable). SrcEval's F2 forces the major, selects the rule by its
+  constructor and **evaluates the rule's body** (peeled of the prefix's and the
+  fields' λs) in the slots of the arguments before the major and the fields;
+  the fundamental lemma relates that evaluation to the body's denotation through
+  `eval`'s induction hypothesis, which asks the body to run (`Runs`). Model side
+  (`noParamsIota`): given the major's set as rule `j`'s constructor image at the
+  levels the major domain names, applied to fields that fit the constructor's
+  type there, ι at rule `j` and β through the rule's λs (the prefix's domains
+  the type's, `RecTele`; the fields' the constructor's field types lifted past
+  the prefix, `RecFields`) give the recursor applied to the arguments as the
+  body's set with the prefix and the fields bound, in an environment that
+  satisfies the λs' domains; it takes ι alone (`IotaLaw`). The constructor
+  value's image and fields are moved from the assignment and environment it was
+  built at to the recursor's: where the constructor has no level parameters
+  (every measured case) by level-parameter irrelevance alone
+  (`ctorFields_noLevels`), where it has some by the restricted canonicity at the
+  inductive (`ctorFields_canon`; no measured closure reaches it); the
+  constructor's type closed and covered by its level parameters (`RecFields`)
+  is what lets them move. A literal major (at the pinned `Nat`) is `Nat.zero`
+  or `Nat.succ` applied to the literal below, as the generic `case` lemma reads
+  it. SrcEval side: the body runs (`runs_of_corr` on the whole right-hand
+  side, then `runs_peel`): it corresponds to the stored body (`RecStored`), the
+  stored rule is closed and denotes (by ι), it names no constant (`RecBodies`),
+  and its application sites are typed (`ruleSites_ok`). Two points where this
+  differs from the flat class, each sound for the reason given:
+  1. *Where the sites are typed.* A recursor whose motive lands in `Sort u`
+     stores "a proposition where `u = 0`" on every binder, the major
+     premise's and its minor premises' field binders included (a binder datum
+     says when the *function* is a proof). So at `u = 0` a rule body's site
+     `mⱼ f` is in regime `0`, and the kernel's typing core agrees: at each of
+     the 21 accepted rule-body sites measured, its datum holds at the excluded
+     profile. `fire` has no `Ok` for the recursor, but it is reached only
+     through a graph-regime site at the major premise (`LastSiteOk`), and
+     `last_regime` turns that into "the major premise's binder datum does not
+     hold at `φ`". So the check walks each rule with the direct route at exactly
+     the profiles where that datum does not hold (`RecSites`, `recProfiles`),
+     and `φ`'s profile is one of them.
+  2. *At which levels the body is read.* `fire` knows no length for the levels
+     `ls` SrcEval carries (`HeadAt.recr` gives `LvAt` only), so `profileOf ls`
+     need not be a profile of the recursor's level count. The proof reads the
+     body at `ls` cut or padded to that count, which `φ` agrees with; nothing
+     SrcEval decides in the body changes, because its relevance annotations
+     name only level variables below the count (`relsBelow`, in `RecBodies`;
+     its universes are below it already, by `TermCorr`), so the sites SrcEval
+     may evaluate are the same at both (`evalSites_congr`).
+  Laws: the model-side theorem `noParamsIota` names `IotaLaw` alone,
+  `ctorFields_noLevels` `cval_params` alone (through `fits_inst`, which reads no
+  other law), `ctorFields_canon` the restricted canonicity (no measured case).
+  The SrcEval-side case `fire_noParams` names `Laws` whole: the rule body's
+  sites are typed through the direct route's soundness (`termRefused_sound`),
+  which takes `Laws` and `NatBasis` because its conversion may use δ, ι, the
+  projection law and the `Nat` accelerations; on the measured rule bodies
+  (`mⱼ f…`, variables applied to variables) the walk performs no reduction, so
+  only typing by the context's domains, the binder data's regime and syntactic
+  conversion run. (A version of `termRefused_sound` for the no-reduction
+  fragment that names fewer laws would mean restating the walk's soundness for
+  a smaller walk: more than the hundred lines it would be worth, so it is not
+  done.) So, unlike the flat class, this step does not rest on two laws alone.
+  Recursion is not admitted: a rule body that names a constant (`Nat.rec`'s
+  `succ` rule calls `Nat.rec`) is refused by `RecBodies`, since the constant
+  would have to be at an instance the fundamental lemma's `Ok` admits, which
+  nothing decides for rule bodies; a `Nat.rec` closure is now refused at
+  `recShape` rather than at `declOk`. Tested against the kernel before the
+  proof: ι with minor premises that use their fields at every rule of
+  `T16.rec`, `T17.rec` and `T125.rec` (the expected value, not the value plus
+  one, typed; 474 instances) and of `Nat.rec` (8), and at `diag`'s
+  four-constructor recursor, whose last rule has four fields of different types
+  (`Bool`, `Nat`, `Int` and a proof of `0 < n`, given as a kernel free variable
+  of that type): each rule's value, not the value plus one, not another rule's,
+  typed (63 instances; probes `GR-3g-q1` to `q4`, `k3b`, not in the suite).
 - *The direct route* (`IxCCGrounding.Direct.*`, G2a). A Boolean check run on
   the bytes beside `groundCheck`, `sitesDirectB` (not one of its conjuncts, so
-  the landed negative controls stay exact), decides that the application sites
+  the landed negative controls stay exact; since G3's part E `groundCheck` also
+  runs the same walk on the rule bodies of `noParams` recursors, inside
+  `recShape`, where a refused site refuses the closure: no typing hypothesis is
+  kept for a rule body), decides that the application sites
   SrcEval may evaluate are typed, reading types off stored and context types
   and comparing them by a small conversion: equality up to what the denotation
   does not read (levels by `Level.simplify`, the collapse of `imax a a` to `a`
@@ -728,14 +818,14 @@ theorem is from the grounded statement of the [spine](end-to-end.md#the-shared-s
 | Hypothesis | What it says | Who discharges it | Scheduled |
 | --- | --- | --- | --- |
 | `Laws.defn_value` | δ: a stored definition denotes what its value denotes | the IxVM side: the field `Model.defn_value` (`jcb/ixvmc-std-model`, proved) | done there; becomes a field here when their `Denotes.lean` lands on `main` |
-| `Laws.iota_rule` | ι: every stored recursor rule computes, its right-hand side denoting (their `IotaLaw`, copied verbatim) | the IxVM side: `Model.iota_rule`, proved | as δ; consumed by the generic `case` lemma, since G2b by the direct route's ι step, and since G3's part C by F3 at `Eq.rec` (`eqRec_iota`: at a family that is a proposition, at the recursor's own parameters and with the index equal to the parameter, which the kernel's own model proves for `Eq.rec`, `eqRecLaw`), and since G3's part D by F2 at field-less recursors without parameters (`flatIota`: `Bool.rec`, a family never a proposition, at the recursor's own parameters; the kernel's own model proves the rule law for canonical rules, `iotaRulePlain`, `IxCK/Kernel/Model/IotaRulePlain.lean`) |
-| `Laws.cval_params` | a constant depends on the level assignment only through its own parameters | the IxVM side: `Model.cval_params` | as δ; consumed wherever a stored type or value is read at a use's levels (`den_inst`), and since G3's part D at a flat recursor's constructor without level parameters, whose image is then one set at every assignment (`ctorImage_noLevels`: every measured flat recursor) |
+| `Laws.iota_rule` | ι: every stored recursor rule computes, its right-hand side denoting (their `IotaLaw`, copied verbatim) | the IxVM side: `Model.iota_rule`, proved | as δ; consumed by the generic `case` lemma, since G2b by the direct route's ι step, and since G3's part C by F3 at `Eq.rec` (`eqRec_iota`: at a family that is a proposition, at the recursor's own parameters and with the index equal to the parameter, which the kernel's own model proves for `Eq.rec`, `eqRecLaw`), and since G3's part D by F2 at field-less recursors without parameters (`flatIota`: `Bool.rec`, a family never a proposition, at the recursor's own parameters; the kernel's own model proves the rule law for canonical rules, `iotaRulePlain`, `IxCK/Kernel/Model/IotaRulePlain.lean`), and since part E by F2 at the other recursors without parameters whose rule bodies name no constant (`noParamsIota`: `T16.rec`, `T17.rec`, `T125.rec`, families never propositions, at the recursor's own parameters, a rule with a field; tested in the kernel with minor premises that use their fields, and at a rule with four fields of different types) |
+| `Laws.cval_params` | a constant depends on the level assignment only through its own parameters | the IxVM side: `Model.cval_params` | as δ; consumed wherever a stored type or value is read at a use's levels (`den_inst`), and since G3's part D at a flat recursor's constructor without level parameters, whose image is then one set at every assignment (`ctorImage_noLevels`: every measured flat recursor), and since part E at a `noParams` recursor's constructor without level parameters, whose image and fields' fit then move to the recursor's assignment with no other law (`ctorFields_noLevels`: every measured `noParams` recursor) |
 | `Laws.proj_ctor` | the projection of a constructor, in value form (`ProjCtor`), **at a structure that is not a proposition** (its stored sort nonzero at the constructor's assignment). In a proof-irrelevant set model the image is then the field tuple, read at position `i + off` | the IxVM side | scheduled there as a public law (their third note, item 6); the restricted form sent to them 2026-11-11. Supplied at each use by `Faith.projSort` (the `proj` conjunct) |
 | `Laws.nat_accel` | the fifteen `Nat` operations on all literals, `Bool` results included (`NatAccel`) | the IxVM side | scheduled there (item 6; DO-39); consumed by the fundamental lemma's primitives and, since G2b, by the direct route's `Nat` step |
-| `Laws.ctor_canon` | constructor canonicity across parameters and levels (`CtorCanon`), **at a family that is not a proposition at either level instantiation**: a constructor image built at other parameters and levels that lies in the family at these is the image at these, its fields fitting there. In a proof-irrelevant set model the image is then a tagged field tuple, which lies in the family at other parameters only if its fields lie in their types there | not scheduled by anyone: the IxVM side (who estimate it at 1–2k lines from the recursor's membership law and ι) or IxCC from that law; asked 2026-11-11 | consumed by the generic `case` lemma for a constructor-valued major; supplied there by `CaseWF.indSort` (the `caseShape` conjunct). Since G3's part D also by F2 at a flat recursor whose rule's constructor has level parameters (`ctorImage_canon`; supplied by the class, whose inductive is never a proposition, and `RecCtorsRaw`); no measured closure has one, so on every closure the check accepts F2 rests on ι and `cval_params` alone. Measured over the 17 recursors of class `flat` or `ordinary` in the checked sets of the 50 closures that load (per closure; `GR-3f-q1`, `q3`, `q5`): 14 have no parameter and no constructor with level parameters; `List.rec` (in `src-diag/diag` and `phase2-closures/sparse`) and `sparse`'s `Option`-like recursor have both, and F2 there (part D's next step, none of them accepted yet) will need canonicity |
+| `Laws.ctor_canon` | constructor canonicity across parameters and levels (`CtorCanon`), **at a family that is not a proposition at either level instantiation**: a constructor image built at other parameters and levels that lies in the family at these is the image at these, its fields fitting there. In a proof-irrelevant set model the image is then a tagged field tuple, which lies in the family at other parameters only if its fields lie in their types there | not scheduled by anyone: the IxVM side (who estimate it at 1–2k lines from the recursor's membership law and ι) or IxCC from that law; asked 2026-11-11 | consumed by the generic `case` lemma for a constructor-valued major; supplied there by `CaseWF.indSort` (the `caseShape` conjunct). Since G3's part D also by F2 at a flat recursor whose rule's constructor has level parameters (`ctorImage_canon`; supplied by the class, whose inductive is never a proposition, and `RecCtorsRaw`), and since part E likewise at a `noParams` recursor (`ctorFields_canon`); no measured closure has either, so on every closure the check accepts F2's model side rests on ι and `cval_params` alone (its SrcEval side at a `noParams` recursor names `Laws` whole, through the direct route's soundness). Measured over the 17 recursors of class `flat` or `ordinary` in the checked sets of the 50 closures that load (per closure; `GR-3f-q1`, `q3`, `q5`): 14 have no parameter and no constructor with level parameters; `List.rec` (in `src-diag/diag` and `phase2-closures/sparse`) and `sparse`'s `Option`-like recursor have both, and F2 there (part D's next step, none of them accepted yet) will need canonicity |
 | `Model.mem` (an assumption inherited from the kernel's model, not a law of ours) | every stored constant is a member of what its stored type denotes, at every level assignment | none here: a field of every `Model`; the kernel's model has it from its invariant's `mem_type` (`Model.ofEnvModelM`, `IxCK/Kernel/Model/Denotes.lean`) | done (a `Model` field); consumed by the `eqn` lemma since G1 and, since G3's part C, by F3 at `Eq.rec` (at `Eq` and `Eq.refl`) |
 | `Model.eq_equality` (an assumption inherited from the kernel's model, not a law of ours) | `@Eq.{u} A a b` denotes `eqv a b`, the truth value of `a = b`, for `a`, `b` in `A` | none here: a field of every `Model`; the kernel installs `Eq` from its own pins and its model proves the field from its invariant's `eq_law` (there) | done (a `Model` field); consumed by the `eqn` lemma since G1 and, since G3's part C, by F3 at `Eq.rec` (`eq_of_inhabited_pt`: a member of an equation's proposition makes its sides equal and is the proof point) |
-| `groundCheck … = true` | every decidable fact of the closure: `GroundFacts` (the faithfulness clauses, the fragment, the recursors of `Sl` in admitted classes with the checked shape (`RecFacts`, conjuncts `declOk` and `recShape`), the `Nat` and `Eq` bases, each `eqn` entry's shape, the correspondence and closedness of every term SrcEval runs, `Ok`'s closure) and `CaseFacts` (each `case` entry's shape, conjuncts `caseShape` and `caseProg`) | IxCC: the check, run on the closure's bytes | done: true on the `fib` and `decide (fib 10 = 55)` closures (`tests-grounding`, in `ixcc-grounding`), with negative controls that each falsify exactly one conjunct; on `tak` (whose one recursor is `Eq.rec`) true since G3's part C (refused at `declOk` alone with only the class `empty` admitted), with six controls that each make exactly `recShape` false: `Eq.rec`'s rule, its type's arity, `Eq.refl`'s type; for `EqRecBasis` alone (`RecStored` still true) `Eq.rec`'s rule made `λ α a motive refl. a` in the reading and the program alike and its major premise's domain made `@Eq α b a`; and its level-parameter list reversed (refused by `RecStored`, whose rule correspondence reads the levels; `EqRecBasis` does not read the list); on `strictAndOr` (whose one recursor is `Bool.rec`, class `flat`) true since G3's part D (refused at `declOk` alone with the classes of part C), with controls on `Sl` cut to `Bool.rec` and `Bool`'s constructors (the closure's `Bool.casesOn` reads the same stored recursor, so on the whole `Sl` they also falsify `caseShape`): a rule's λ-domain changed in the reading and the program alike (exactly `recShape`, by `RecTele` alone), its two rules swapped alike (exactly `recShape`, by `RecProg` alone), its major premise's domain at one more level (exactly `recShape`, by `RecCtorsRaw` alone), and a rule's body made `0` alike (no longer `flat`: exactly `declOk`) |
+| `groundCheck … = true` | every decidable fact of the closure: `GroundFacts` (the faithfulness clauses, the fragment, the recursors of `Sl` in admitted classes with the checked shape (`RecFacts`, conjuncts `declOk` and `recShape`), the `Nat` and `Eq` bases, each `eqn` entry's shape, the correspondence and closedness of every term SrcEval runs, `Ok`'s closure) and `CaseFacts` (each `case` entry's shape, conjuncts `caseShape` and `caseProg`) | IxCC: the check, run on the closure's bytes | done: true on the `fib` and `decide (fib 10 = 55)` closures (`tests-grounding`, in `ixcc-grounding`), with negative controls that each falsify exactly one conjunct; on `tak` (whose one recursor is `Eq.rec`) true since G3's part C (refused at `declOk` alone with only the class `empty` admitted), with six controls that each make exactly `recShape` false: `Eq.rec`'s rule, its type's arity, `Eq.refl`'s type; for `EqRecBasis` alone (`RecStored` still true) `Eq.rec`'s rule made `λ α a motive refl. a` in the reading and the program alike and its major premise's domain made `@Eq α b a`; and its level-parameter list reversed (refused by `RecStored`, whose rule correspondence reads the levels; `EqRecBasis` does not read the list); on `strictAndOr` (whose one recursor is `Bool.rec`, class `flat`) true since G3's part D (refused at `declOk` alone with the classes of part C), with controls on `Sl` cut to `Bool.rec` and `Bool`'s constructors (the closure's `Bool.casesOn` reads the same stored recursor, so on the whole `Sl` they also falsify `caseShape`): a rule's λ-domain changed in the reading and the program alike (exactly `recShape`, by `RecTele` alone), its two rules swapped alike (exactly `recShape`, by `RecProg` alone), its major premise's domain at one more level (exactly `recShape`, by `RecCtorsRaw` alone), and a rule's body made `0` alike (no longer `flat`; since part E of class `noParams` and **admitted**: the mutation is consistent between the reading and the program, ι in the mutated reading gives the literal SrcEval returns, and the theorems are relative to the environment as stored; refused at `declOk` as parts C and D landed it), and made the constant `Bool.true` alike (exactly `recShape`, by `RecBodies` alone); on `tags16` (whose recursor `T16.rec` is of class `noParams`) true since part E (refused at `declOk` alone with the classes of part D's first step), with four controls on `Sl` cut to the recursor and the constructors, each exactly `recShape`: the field-carrying constructor's stored field type made `Nat → Nat` (`RecFields` alone), that rule's body made `Bool.true` (`RecBodies` alone), made `m₁₅ m₁₅` (`RecSites` alone: the direct route refuses the site) and the major premise's binder datum given a level parameter the recursor does not have (`RecSites` alone) |
 | `RootFacts` | the root is in `Sl`, `Ok` at no levels, stored without level parameters at the first-order type `args → res`, its enumerations stored | IxCC: `rootCheck`, run on the closure | done on both closures |
 | `FoArgs` | the arguments are literals, or an enumeration's listed constructor | IxCC: `foArgsB` | done on both closures, with a control |
 | `ResultTag` | the observed tag names one constructor: every member of `Sl` reading back with that tag whose kernel entry is a field-less constructor has the named constructor's key | IxCC: `resultTagB`, run after the run on the observed result | done on both closures; rejects programs, see below |
@@ -816,7 +906,7 @@ written beside each law in `IxCCGrounding/Laws.lean` (and beside each use).
   it (`ctor`, `caseRec`, `prim`); without it for recursors, a recursor whose
   stored type has fewer binders than SrcEval's arity would have partial
   applications the relation cannot extend, and the fundamental lemma's
-  application case would not go through. Measured on the 49 closures that load,
+  application case would not go through. Measured on the 49 closures that loaded (on the reading before the ingress change of 2026-11-12),
   every recursor of every program that has the rest of the shape (1,657 of 1,781)
   has the arity fact too, and so do all 39 recursors of the checked sets
   (`GR-3d-a5`, `GR-3d-a6`).
@@ -824,7 +914,7 @@ written beside each law in `IxCCGrounding/Laws.lean` (and beside each use).
   `subsingleton when` recursor only where `when` holds at its levels, and F2
   elsewhere; the class asks `when` to be "always", so at `Eq.rec` F3 is the only
   rule SrcEval applies. Measured: the table gives exactly that kind at `Eq.rec`
-  in all 49 closures (`GR-3d-a5`, `GR-3d-a6`).
+  in all 49 closures that loaded then (`GR-3d-a5`, `GR-3d-a6`).
 - *`EqRecBasis`* (in `recShape`, where a recursor of `Sl` is of class `eqRec`):
   `Eq.rec` is stored with major index `5` and rule prefix `4`, its type exactly
   `eqRecType`, its one rule at `Eq.refl` with right-hand side exactly `eqRecRhs`
@@ -841,7 +931,7 @@ written beside each law in `IxCCGrounding/Laws.lean` (and beside each use).
   its own parameters, where instantiating them is the identity in any order)
   and the rule's field count (ι takes the constructor's, from `EqReflBasis`).
   Measured: true on every closure whose `Sl` holds `Eq.rec` (see the corpus
-  paragraph below); the stored `Eq.rec` is the same term in all 49 closures
+  paragraph below); the stored `Eq.rec` is the same term in all 49 closures that loaded then
   (`GR-3d-q2` to `q4`).
 - *The class `flat`* (decided by `recClassB`): no parameter, every rule without
   fields and its body, peeled of the motives' and minor premises' λs, a
@@ -850,9 +940,9 @@ written beside each law in `IxCCGrounding/Laws.lean` (and beside each use).
   lemma's induction hypothesis on `force`, so the rule body needs no typing of
   its own. A rule with a field has a body that applies a minor premise to the
   field (`T16.c15 (m : Nat)`'s rule in `tags16`), an application site whose
-  typing the relation would need (part E: rule bodies as run terms). Without the
-  class's conditions the case would have to evaluate an arbitrary rule body.
-- *`RecTele`* (in `recShape`, at a `flat` recursor): every stored rule is a
+  typing the relation needs: such recursors are of class `noParams` (part E),
+  where the facts below make the body run.
+- *`RecTele`* (in `recShape`, at a `flat` or `noParams` recursor): every stored rule is a
   λ-telescope of the prefix and its fields whose first `rP` domains are the
   stored type's first `rP` domains. ι returns the rule's right-hand side applied
   to the arguments before the major; β through its λs needs each argument in the
@@ -863,7 +953,7 @@ written beside each law in `IxCCGrounding/Laws.lean` (and beside each use).
   on the 16 recursors of class `ordinary` or `flat` measured in the checked sets (186 rules; `GR-3f-q5` for `sparse`), and, with
   the data, on the 204 rules of the 39 recursors measured in part C
   (`GR-3f-q1`, `q3`; `GR-3d-q3`, `q4`).
-- *`RecProg`* (in `recShape`, at a `flat` recursor; as `CaseProg` for a `case`
+- *`RecProg`* (in `recShape`, at a `flat` or `noParams` recursor; as `CaseProg` for a `case`
   entry): every constructor of `Sl` declared of the recursor's inductive has the
   recursor's parameter count, and the Src rule at its declared index is its own,
   with its field count; at the pinned `Nat` the rules are `Nat.zero`'s and
@@ -871,9 +961,10 @@ written beside each law in `IxCCGrounding/Laws.lean` (and beside each use).
   rule by its constructor's key; `RecStored` matches the Src rules with the
   stored ones by position only, so with `Bool.rec`'s two rules swapped in the
   program and the reading alike SrcEval would return `true`'s minor premise at
-  `false`. The `Nat` row is what excludes a literal major from the flat class.
+  `false`. The `Nat` row is what excludes a literal major from the flat class,
+  and what names the rules a literal major selects at a `noParams` recursor.
   Measured true on all 16 (and wherever `recShape` holds at a flat recursor: on every closure the check accepts).
-- *`RecCtorsRaw`* (in `recShape`, at a `flat` recursor; as the `case` shape's
+- *`RecCtorsRaw`* (in `recShape`, at a `flat` or `noParams` recursor; as the `case` shape's
   `CaseWF.ctorRaw`): the major premise's domain is the declared inductive at
   some levels `ls` applied to the recursor's parameters; every rule's
   constructor has the recursor's parameter count and as many level parameters
@@ -886,8 +977,50 @@ written beside each law in `IxCCGrounding/Laws.lean` (and beside each use).
   level count the constructor could not be read at `ls` at all; without the
   codomain conditions ι's index premise and canonicity's family premise fail.
   The constructor's type closed and covered by its level parameters (part of
-  `CaseWF.ctorRaw`) is not checked yet: it is read only where a constructor has
-  fields (part E onward). Measured true on all 16.
+  `CaseWF.ctorRaw`) is not part of it: it is read only where a constructor has
+  fields, and `RecFields` checks it there (part E). Measured true on all 16.
+- *The class `noParams`* (decided by `recClassB`, part E): kind `ordinary`, no
+  parameter, no index, the inductive never a proposition, not flat. The
+  parameter count matters because ι names the constructor at the major domain's
+  parameters and the relation gives the constructor value at its own: with
+  parameters, canonicity has to move them (part D's next step); without, there
+  is nothing to move.
+- *`RecFields`* (in `recShape`, at a `noParams` recursor; the approved
+  field-domains fact, its rule half): with `ls` the levels the major domain
+  names, every rule's constructor is stored with no parameter and the rule's
+  field count, its type closed and covered by its level parameters, and at `ls`
+  a telescope of that many field binders; the rule's λ-domains after the prefix
+  are those binders lifted past the prefix. β through the rule at the fields
+  needs each field in its λ's domain; the relation gives the fields as fitting
+  the constructor's type at the assignment and environment the value was built
+  at, and the type being closed and covered moves that fit to the recursor's
+  assignment. A rule `λ motive m₀ … (f : Bool). m₁₅ f` over a constructor whose
+  field is a `Nat` would apply β at a set outside the λ's domain. Not the
+  minor premise's field binders (the approved fact's other half): the direct
+  route checks each site of a rule body against the minor premise's own binder;
+  measured true anyway, on all 166 rules of the six recursors without
+  parameters in the 50 checked sets (`GR-3g-q1` to `q4`).
+- *`RecBodies`* (in `recShape`, at a `noParams` recursor): every Src rule's body
+  (peeled of the λs SrcEval peels) names no constant, its relevance annotations
+  name only the recursor's level variables, and every stored rule is closed.
+  The body runs (`Runs`): a constant in it would have to be at an instance the
+  fundamental lemma's `Ok` admits, which nothing decides for rule bodies
+  (recursion, `Nat.rec`'s `succ` rule, is refused here); the closed stored rule
+  is what makes its denotation, which ι gives at one environment, a denotation
+  at every environment; the annotations below the level count are what lets the
+  body be read at `ls` cut or padded (point 2 above). Measured: the annotations
+  and closedness on all 166 rules; constants in two (`Nat.rec`'s `succ` rule, in
+  `strings` and `diag`).
+- *`RecSites`* (in `recShape`, at a `noParams` recursor): the major premise's
+  binder datum names only the recursor's level parameters, and at every profile
+  where it does not hold the direct route refuses no application site of any
+  rule (point 1 above). Without it a rule body's site could be untyped, and the
+  body would not run. The walk is fuel-bounded (`directFuel`); a fuel
+  exhaustion refuses a site (`dInfer`, `dCheck` and head reduction give no
+  answer at fuel `0`, and a spine's sites from the first unanswered one on are
+  refused), never accepts one. Measured: of the 21 sites in the rules of the
+  six recursors without parameters, none refused at those profiles, 13 refused
+  at every profile (`GR-3g-q1` to `q4`).
 
 **The class of inductives the `case` shape covers.** `caseShape` is designed to
 hold for a `case` constant over an ordinary recursor of an inductive with
@@ -937,7 +1070,8 @@ constructor `0` denote the same set.
 **The direct route's bounds and cost.** The check runs each run term once
 against the set of profiles of its constant's level parameters at which it is
 evaluated, so it refuses every site of a constant with more than 8 level
-parameters (256 profiles). Measured on the corpus (below), the most level
+parameters (256 profiles). Measured on the corpus (below; on the reading before ingress read
+only what the seeds reach, not re-measured since), the most level
 parameters of a constant in a checked set `Sl` is 4 (the `for`-loop closures,
 `scalar`, `resource`) and of any constant of a closure's reading 7, so the bound
 refuses nothing there. It walks each maximal application spine once. The fuel
@@ -973,7 +1107,9 @@ cost on a hostile closure is not otherwise bounded; a conversion that fails is
 the expensive case, since it tries every path before refusing. Interpreted, on
 the corpus, `sitesDirectB` takes at most 1.24 s (`strings`, where it is false;
 `scalar` 0.84 s, where it is true), except on `tags125`, the matcher of a
-125-constructor inductive: 48.7 s, the measured worst case. There (counted by an
+125-constructor inductive: 48.7 s, the measured worst case (on the reading
+since ingress reads only what the seeds reach, 2026-11-12: at most 1.06 s,
+`strings`, and 37.4 s on `tags125`, `GR-3g-cA2`, other sessions' jobs running). There (counted by an
 instrumented copy of the checker) the work is dominated by the reductions of
 `T125.ctorIdx c` that its wildcard alternatives' proofs need, each a β-telescope
 over `T125.casesOn`'s 127 binders, a fit of 127 arguments at ι on `T125.rec` and
@@ -1007,29 +1143,34 @@ instances; on `tags16` 0.56 s; `tests-grounding` 1.36 to 1.39 s compiled
 (100 to 105 MB; the time is not broken down). The suite also no longer computes
 the refused sites for an assertion's failure message when the assertion holds.
 
-**The direct route on the corpus.** Measured on the 49 committed closures that
-load (the families `bench-k1`, `grounding`, `phase1-scalar`, `phase1-boundary`,
-`phase1-resource`, `phase1-decline`, `phase1-abi`, `phase2-closures`,
-`phase1-machines` and `phase2-arity`, the fourteen `ownership` closures and
-`src-diag/diag`; five do not load: `typeFormerPolymorphism` and `src-sortpoly`,
-whose annotation is refused, `fields50` and `tags126`, past the decoder's depth
-budget when ingress read every record (since 2026-11-12 ingress reads what the
-root reaches: `fields254`, which replaced `fields50`, loads, and `tags126`'s root
-still reaches a record past the budget), and `src-diag/sorry`, which the kernel
-declines), each with `Sl` built as
-`tests-grounding` builds it. Of 14,990 application sites (20,363 site-profile
-instances) the direct route discharges 14,969 (20,322) and refuses 21. Against
-the route as widened (G2b), position by position: 248 sites gained (247 in
-`tags125`, one in `panic`), none lost. The kernel's typing core types every
-instance the route accepts in the graph regime, and each of the 2,289 pairs of
-an accepted site and a profile where the kernel's binder datum is a proposition
-is refused at that profile; at each of the 21 sites it still refuses the kernel
-types the site too, so each refusal is an incompleteness of the direct route,
-none a site the kernel rejects. It refuses no site on 46 of the 49, among them
-30 of the 31 that `groundCheck` accepts (all 24 it accepted before G3's part C;
-`strictAndOr` and `boundary`, accepted since part D, among them), so on every measured closure the check
-accepts but `OS02-plain` the root theorems need no typing hypothesis (on `OS02-plain` they keep it at one site).
-A fiftieth closure, `phase2-closures/sparse` (registered with the lazy table rows
+**The direct route on the corpus.** Measured on the 50 committed closures that
+load, on the reading since ingress reads only the records its seeds reach
+(2026-11-12; `GR-3g-o3`, `o4`): the families `bench-k1`, `grounding`,
+`phase1-scalar`, `phase1-boundary`, `phase1-resource`, `phase1-decline`,
+`phase1-abi`, `phase2-closures`, `phase1-machines` and `phase2-arity`, the
+fourteen `ownership` closures and `src-diag/diag`; five do not load:
+`typeFormerPolymorphism` and `src-sortpoly`, whose annotation is refused,
+`fields255` and `tags126`, whose roots reach a record past the decoder's depth
+budget, and `src-diag/sorry`, which the kernel declines (`fields254`, which
+replaced `fields50` with that change, loads), each with `Sl` built as
+`tests-grounding` builds it. Of 16,404 application sites (21,778 site-profile
+instances) the direct route discharges 16,383 (21,737) and refuses 21. The
+kernel's typing core types every instance the route accepts in the graph regime
+(21,737 of 21,737), and each of the 2,423 pairs of an accepted site and a
+profile where the kernel's binder datum is a proposition is refused at that
+profile (on the reading before the change, on the 49 closures then measured:
+14,990 sites, 20,363 instances, 14,969 and 20,322 discharged, 2,289 pairs;
+`GR-3c-cA` to `cE`); at each of the 21 sites it still refuses the kernel types
+the site too (measured on the earlier reading), so each refusal is an
+incompleteness of the direct route, none a site the kernel rejects. It refuses
+no site on 47 of the 50, among them 33 of the 34 that `groundCheck` accepts
+(all 24 it accepted before G3's part C; `strictAndOr` and `boundary`, accepted
+since part D, and `tags16`, `tags17` and `tags125`, since part E, among them),
+so on every measured closure the check accepts but `OS02-plain` the root
+theorems need no typing hypothesis (on `OS02-plain` they keep it at one site).
+Against the route as widened (G2b), position by position on the earlier
+reading: 248 sites gained (247 in `tags125`, one in `panic`), none lost. The
+fiftieth closure, `phase2-closures/sparse` (registered with the lazy table rows
 of sparse `casesOn` helpers, 2026-11-12), loads, and the direct route refuses
 none of its sites; merging that change left every verdict on the other 49
 unchanged (`GR-3f-cA2`, `cB2` against `GR-3f-cA`, `cB`). What the widening (G2b)
@@ -1061,49 +1202,57 @@ member is its constructor's image, from which that follows). This shape is how
 Lean compiles structural recursion, so it is not a corner of one closure: it
 will meet the widening as soon as recursors enter the checked set.
 
-**What the fragment does not yet cover.** `groundCheck` is false on 19 of the 50
-closures that load (on 18 of the 49 measured before `sparse` was registered; 20
-before G3's part D admitted the field-less recursors without parameters, which
-made `strictAndOr` and `boundary` pass; 25 before G3's part C admitted
-`Eq.rec`, which made `tak`, `even-odd`, `sfib`, `phase1-abi` and `OS02-plain`
-pass; 26 of 48 before the renaming-tolerant `case` shape: `erase` and
-`OS16-plain` passed then); the gaps, ordered by how many closures each blocks (a
-closure can have several; `GR-3f-cA2`, `GR-3f-cB2`):
+**What the fragment does not yet cover.** `groundCheck` is false on 16 of the 50
+closures that load (measured after ingress was changed to read only the records
+its seeds reach, 2026-11-12, `GR-3g-cA2`, `cB2`; the same 16 on the reading
+before that change, `GR-3g-cA`, `cB`, where `fields49` stood for `fields254`;
+19 before G3's part E admitted the recursors without parameters whose rule
+bodies name no constant, which made `tags16`, `tags17` and `tags125` pass; 20
+before part D admitted the field-less ones, which made `strictAndOr` and
+`boundary` pass; 25 before part C admitted `Eq.rec`, which made `tak`,
+`even-odd`, `sfib`, `phase1-abi` and `OS02-plain` pass; 26 of 48 before the
+renaming-tolerant `case` shape: `erase` and `OS16-plain` passed then); the gaps,
+ordered by how many closures each blocks (a closure can have several):
 
-1. *A recursor in `Sl` of a class not yet admitted* (`declOk`; admitted are
-   `empty`, `False.rec`, since G3's parts A and B, `eqRec`, the built-in
-   `Eq.rec` run by `Eq.ndrec`, since part C, and `flat`, `Bool.rec`, since part
-   D), 6 closures, the only obstacle on four (`tags16`, `tags17`, `tags125`,
-   `sparse`). Every one of these recursors is of class `ordinary` and has the
-   checked shape; with every class admitted the check would accept 35 closures.
-   The recursors of `tags16`, `tags17` and `tags125` (whose last constructor has
-   a `Nat` field, `T16.c15 (m : Nat)`: that rule's body applies a minor premise
-   to the field, an application site in a rule body, part E); `Nat.rec` on 2
-   (`strings`, `diag`) and `List.rec` on 2 (`diag`, from structural recursion
-   compiled through `brecOn`; `sparse`); an `Option`-like recursor in `sparse`;
-   another four-rule recursor with fields in `diag`. Of these nine recursors, six
-   have no parameter and constructors without level parameters; `List.rec`
-   (twice) and `sparse`'s `Option`-like recursor have both, and F2 there will
-   rest on canonicity (`GR-3f-q1`, `q3`, `q5`).
-   `phase1-machines/natural` no longer fails `declOk` (its one recursor,
-   `Bool.rec`, is flat), only `valueCorr`.
-2. *A `let` in a run term* (`valueCorr`, `eqnCorr`, `eqnShape`), 13 closures:
-   the body of every `for` loop (`Std.Legacy.Range.forIn'.loop`, 6), and
-   values such as `Scalar.powMod`'s; the only obstacle on `fields49`.
-3. *A `case` entry outside the shape* (`caseShape`), 4 closures (12 before):
-   `Empty.casesOn` (no minor premise) and families that can be propositions or
-   are indexed; no longer the `casesOn` of a universe-polymorphic family whose
-   recursor names its level parameters apart (`ForInStep` in every `for` loop,
-   `List`).
-4. Fewer: a projection out of a `Prop` structure (`And`; `proj`, 3); a `case`
-   entry over `Empty`, an indexed `Eq` or `PUnit` (`caseRec`, 3); string
-   literals (`valueCorr`, 2: `strings`, `panic`); an indexed family's `case`
-   entry (`Eq`, `Nat.le`; `caseProg`, 2); an unsafe definition the kernel's
-   reading does not hold (`stored`, 1: `admit`); an opaque definition
-   (`notOpaque`, 1).
+1. *A `let` in a run term, or a string literal* (`valueCorr`, `eqnCorr`,
+   `eqnShape`), 14 closures: the body of every `for` loop
+   (`Std.Legacy.Range.forIn'.loop`), values such as `Scalar.powMod`'s, and the
+   string literals of `strings` and `panic`; these are the only false conjuncts
+   on nine (`sum-loop`, `collatz`, `prime-count`, `scalar`, `loops`,
+   `fields254`, `machines`, `natural`, `arity`).
+2. *A `case` entry outside the shape* (`caseShape`), 4 closures (12 before the
+   renaming-tolerant shape): `Empty.casesOn` (no minor premise) and families
+   that can be propositions or are indexed; no longer the `casesOn` of a
+   universe-polymorphic family whose recursor names its level parameters apart
+   (`ForInStep` in every `for` loop, `List`).
+3. *A recursor in `Sl` that is not admitted* (`declOk`), 2 closures, the only
+   obstacle on `sparse`, *or whose rule bodies recurse* (`recShape`, by
+   `RecBodies`), 1 (`diag`). Admitted are `empty`, `False.rec` (G3's parts A
+   and B), `eqRec`, the built-in `Eq.rec` run by `Eq.ndrec` (part C), `flat`,
+   `Bool.rec` (part D), and `noParams`, the other recursors without parameters,
+   whose rule bodies must name no constant (part E). `List.rec` (in `diag`, from
+   structural recursion compiled through `brecOn`, and in `sparse`) and
+   `sparse`'s `Option`-like recursor have parameters (class `ordinary`), and
+   constructors with level parameters, so F2 there will rest on canonicity;
+   `Nat.rec` (in `diag`) is of class `noParams`, but its `succ` rule calls
+   `Nat.rec` (recursion, which part E does not admit). With every class admitted
+   the check would accept 35 closures (`sparse` added). On the reading before
+   the ingress change `strings` held `Nat.rec` in its checked set too (refused
+   at `declOk` as part D landed it, at `recShape` after part E); on the reading
+   since, its checked set does not reach `Nat.rec` (the one constant of it whose
+   value names `Nat.rec` is a `case` entry, which F5 runs without its value;
+   which run term named it before is not measured), so `recShape` is no longer
+   among its false conjuncts. Its verdict is unchanged.
+4. Fewer: a projection out of a `Prop` structure (`And`; `proj`, 3: `strings`,
+   `panic`, `diag`); a `case` entry over `Empty`, an indexed `Eq` or `PUnit`
+   (`caseRec`, 3: `resource`, `strings`, `closures`); an indexed family's
+   `case` entry (`Eq`, `Nat.le`; `caseProg`, 2: `strings`, `diag`); an unsafe
+   definition the kernel's reading does not hold (`stored`, 1: `admit`); an
+   opaque definition (`notOpaque`, 1: `diag`).
 
 The most level parameters of a constant in any closure's `Sl` is 4, in any
-closure's reading 7; the largest level, 18 nodes.
+closure's reading 7; the largest level, 18 nodes (measured before ingress
+read only what the seeds reach; not re-measured since).
 
 `Ok` is the certificate's own datum: the annotation's class of each constant
 (`ConstRel.result`, the zero condition of the sort of its stored type, as the
@@ -1120,8 +1269,9 @@ gives.
   not yet shown to have a model;
 - `ResultTag`'s rejections above;
 - the fragment: `let`, recursors fired directly outside the admitted classes
-  (today all but `False.rec`'s, `Eq.rec`'s and the field-less ones without
-  parameters, `Bool.rec`'s), `Quot`, `csimp`, strings, and `case` constants
+  (today all but `False.rec`'s, `Eq.rec`'s, the field-less ones without
+  parameters, `Bool.rec`'s, and the other ones without parameters whose rule
+  bodies name no constant, `T16.rec`'s: so no recursion, no parameters), `Quot`, `csimp`, strings, and `case` constants
   outside the class above are excluded by the check (G3, G4);
 - progress (G5), which also consumes premise (i);
 - the statement is over any program and kernel reading that pass the check; that

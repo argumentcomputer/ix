@@ -1,3 +1,4 @@
+import IxCCGrounding.Facts
 import IxCCGrounding.Support
 
 /-!

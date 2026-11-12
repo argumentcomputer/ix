@@ -1,4 +1,4 @@
-import IxCCGrounding.Check
+import IxCCGrounding.Syntax
 import Std.Data.HashMap
 
 /-!

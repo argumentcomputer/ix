@@ -1,5 +1,6 @@
 import IxCCGrounding.Ok
 import IxCCGrounding.CaseCheck
+import IxCCGrounding.Facts
 
 /-!
 # The check (`IxCCGrounding.Check`)
@@ -159,17 +160,6 @@ theorem termCorr_of_check {κ : CId → KKey} {lps : List Nat} :
 
 /-! ## The shape of an `eqn` entry -/
 
-/-- A `∀`-telescope's binders, all of them, and what remains. -/
-def splitAll : KExpr → List (KExpr × BinderMeta) × KExpr
-  | .forallE d b m => ((d, m) :: (splitAll b).1, (splitAll b).2)
-  | e => ([], e)
-
-/-- Exactly `n` leading binders of a `∀`-telescope, and what remains. -/
-def splitPi : Nat → KExpr → Option (List (KExpr × BinderMeta) × KExpr)
-  | 0, e => some ([], e)
-  | n + 1, .forallE d b m => (splitPi n b).map fun r => ((d, m) :: r.1, r.2)
-  | _ + 1, _ => none
-
 /-- Exactly `n` leading binders of a `λ`-telescope, and its body. -/
 def lamSplit : Nat → KExpr → Option (List (KExpr × BinderMeta) × KExpr)
   | 0, e => some ([], e)
@@ -220,18 +210,6 @@ theorem piSplit_length (n : Nat) : ∀ (T : KExpr) (bs : List (KExpr × BinderMe
         obtain ⟨rfl, rfl⟩ := h
         simp [ih b r.1 r.2 (by rw [h'])]
     | _ => simp [piSplit] at h
-
-/-- An `eqn` entry's data, read off the stored theorem and function (the check then verifies
-the shape against it, so this reading needs no proof). -/
-def eqnData? (env : KEnv) (kc kt : KKey) : Option EqnData :=
-  match env.find? kt, env.find? kc with
-  | some (.thmInfo cvT _), some ciF =>
-    match splitAll cvT.type with
-    | (Ds, .app (.app (.app (.const _ [u]) T) _) rhs) =>
-      (splitPi Ds.length ciF.toConstantVal.type).map fun r =>
-        { Ds, ms := r.1.map (·.2), u, T, rhs, R := r.2 }
-    | _ => none
-  | _, _ => none
 
 def eqBasisB (env : KEnv) : Bool :=
   match env.find? eqName with
@@ -422,16 +400,70 @@ def recCtorsRawB (r : CId) : Bool :=
     | _ => false
   | _, _ => false
 
+/-- `RecFields`, decided (terms compared structurally). -/
+def recFieldsB (kr : KKey) : Bool :=
+  match env.find? kr with
+  | some (.recInfo cvr mI rP krules) =>
+    match piBody mI cvr.type with
+    | .forallE dom _ _ =>
+      match dom.getAppFn with
+      | .const _ ls =>
+        krules.all fun krl =>
+          match env.find? krl.ctor with
+          | some (.ctorInfo cvC np nF) =>
+            np == 0 && nF == krl.nfields && bvarsLt 0 cvC.type &&
+              cvC.type.allLevelParamsDefined cvC.levelParams &&
+              match piSplit krl.nfields (cvC.type.instantiateLevelParams cvC.levelParams ls),
+                lamSplit (rP + krl.nfields) krl.rhs with
+              | some (fbs, _), some (bs, _) =>
+                decide ((bs.drop rP).map (·.1) = (liftTele rP 0 fbs).map (·.1))
+              | _, _ => false
+          | _ => false
+      | _ => false
+    | _ => false
+  | _ => false
+
+/-- `RecBodies`, decided. -/
+def recBodiesB (r : CId) : Bool :=
+  match p.decl? r, env.find? (κ r) with
+  | some (.recr _ _ _ np nmot nmin _ _ rules _), some (.recInfo _ _ _ krules) =>
+    rules.all (fun rl =>
+      (match IxCC.Src.peelLams (np + nmot + nmin + rl.fields) rl.rhs with
+        | some t' => (constsOf t').isEmpty
+        | none => false) && relsBelow (lpsOf r).length rl.rhs) &&
+      krules.all fun krl => bvarsLt 0 krl.rhs
+  | _, _ => false
+
+/-- `RecSites`, decided: the direct route over every rule (the reading's table built once per
+recursor), at the profiles where the major premise's binder datum does not hold. -/
+def recSitesB (r : CId) : Bool :=
+  match p.decl? r, env.find? (κ r) with
+  | some (.recr _ _ _ _ _ _ _ _ rules _), some (.recInfo cvr mI _ krules) =>
+    match piBody mI cvr.type with
+    | .forallE _ _ m =>
+      let tab := KTab.of env
+      m.pw.paramsDefined (lpsOf r) &&
+        (rules.zip krules).all fun (rl, krl) =>
+          (termRefused tab (lpsOf r) directFuel (recProfiles (lpsOf r) m.pw) [] rl.rhs krl.rhs
+            []).isEmpty
+    | _ => false
+  | _, _ => false
+
 /-- A recursor has the checked shape (`RecStored`); where it is `Eq.rec` the `Eq.refl` and
 `Eq.rec` bases hold; where it is `flat`, its rules' telescopes (`RecTele`), the program side
-(`RecProg`) and its rules' constructors (`RecCtorsRaw`). -/
+(`RecProg`) and its rules' constructors (`RecCtorsRaw`); where it is of class `noParams` (part E),
+those three and its rules' fields (`RecFields`), its rule bodies (`RecBodies`) and its rule bodies'
+sites typed by the direct route (`RecSites`). -/
 def recShapeB (c : CId) : Bool :=
   match p.decl? c with
   | some (.recr ..) =>
     recStoredB p env κ lpsOf c &&
       (recClassB p env κ c != some .eqRec || (eqReflBasisB env && eqRecBasisB env)) &&
       (recClassB p env κ c != some .flat ||
-        (recTeleB env (κ c) && recProgB p κ Sl c && recCtorsRawB p env κ c))
+        (recTeleB env (κ c) && recProgB p κ Sl c && recCtorsRawB p env κ c)) &&
+      (recClassB p env κ c != some .noParams ||
+        (recTeleB env (κ c) && recProgB p κ Sl c && recCtorsRawB p env κ c &&
+          recFieldsB env (κ c) && recBodiesB p env κ lpsOf c && recSitesB p env κ lpsOf c))
   | _ => true
 
 def primB (c : CId) : Bool :=
@@ -837,6 +869,72 @@ theorem recCtorsRaw_of_check {r : CId} (h : recCtorsRawB p env κ r = true) :
     · cases h
   · cases h
 
+theorem recFields_of_check {kr : KKey} (h : recFieldsB env kr = true) : RecFields env kr := by
+  unfold recFieldsB at h
+  split at h
+  · rename_i cvr mI rP krules hf
+    split at h
+    · rename_i dom body m hpb
+      split at h
+      · rename_i D ls hD
+        refine ⟨cvr, mI, rP, krules, dom, body, m, D, ls, hf, hpb, hD, fun krl hkrl => ?_⟩
+        have h1 := List.all_eq_true.mp h krl hkrl
+        split at h1
+        · rename_i cvC np nF hc
+          simp only [Bool.and_eq_true, beq_iff_eq] at h1
+          obtain ⟨⟨⟨⟨rfl, rfl⟩, hcl⟩, hdef⟩, h2⟩ := h1
+          split at h2
+          · rename_i fbs Cc bs b hps hls
+            obtain ⟨e1, e2⟩ := lamSplit_spec _ _ _ _ hls
+            exact ⟨cvC, fbs, bs, Cc, b, hc, hcl, hdef, piSplit_spec _ _ _ _ hps,
+              piSplit_length _ _ _ _ hps, e1, e2, of_decide_eq_true h2⟩
+          · cases h2
+        · cases h1
+      · cases h
+    · cases h
+  · cases h
+
+theorem recBodies_of_check {r : CId} (h : recBodiesB p env κ lpsOf r = true) :
+    RecBodies p env κ lpsOf r := by
+  unfold recBodiesB at h
+  split at h
+  · rename_i sf kk lvls np nmot nmin ni ind rules ty cvr mI rP krules hd hf
+    simp only [Bool.and_eq_true, List.all_eq_true] at h
+    obtain ⟨hR, hK⟩ := h
+    refine ⟨sf, kk, lvls, np, nmot, nmin, ni, ind, rules, ty, cvr, mI, rP, krules, hd, hf,
+      fun rl hrl => ?_, hK⟩
+    obtain ⟨h1, h2⟩ := hR rl hrl
+    refine ⟨?_, h2⟩
+    split at h1
+    · rename_i t' ht
+      refine ⟨t', ht, fun c => ?_⟩
+      cases hm : t'.mentions c
+      · rfl
+      · have hc := mentions_constsOf hm
+        rw [List.isEmpty_iff] at h1
+        rw [h1] at hc
+        cases hc
+    · cases h1
+  · cases h
+
+theorem recSites_of_check {r : CId} (h : recSitesB p env κ lpsOf r = true) :
+    RecSites p env κ lpsOf r := by
+  unfold recSitesB at h
+  split at h
+  · rename_i sf kk lvls np nmot nmin ni ind rules ty cvr mI rP krules hd hf
+    split at h
+    · rename_i dom body m hpb
+      simp only [Bool.and_eq_true, List.all_eq_true] at h
+      obtain ⟨hpw, hall⟩ := h
+      refine ⟨sf, kk, lvls, np, nmot, nmin, ni, ind, rules, ty, cvr, mI, rP, krules, dom, body, m,
+        hd, hf, hpb, hpw, fun j rl krl hrl hkrl => ?_⟩
+      have hmem : (rl, krl) ∈ rules.zip krules :=
+        List.mem_of_getElem? (List.getElem?_zip_eq_some.mpr ⟨hrl, hkrl⟩)
+      have := hall (rl, krl) hmem
+      simpa [List.isEmpty_iff] using this
+    · cases h
+  · cases h
+
 /-- The `recShape` conjunct gives the checked shape, the `Eq.refl` and `Eq.rec` bases at
 `Eq.rec`, and at a flat recursor its rules' telescopes, the program side and its rules'
 constructors. -/
@@ -851,7 +949,7 @@ theorem recShape_of {c : CId} (h : recShapeB p env κ lpsOf Sl c = true) :
   unfold recShapeB at h
   rw [hd] at h
   simp only [Bool.and_eq_true, Bool.or_eq_true, bne_iff_ne, ne_eq] at h
-  obtain ⟨⟨h1, h2⟩, h4⟩ := h
+  obtain ⟨⟨⟨h1, h2⟩, h4⟩, -⟩ := h
   refine ⟨recStored_of_check h1, fun hk => ?_, fun hk => ?_⟩
   · rcases h2 with h2 | ⟨h2, h3⟩
     · exact absurd hk h2
@@ -859,6 +957,25 @@ theorem recShape_of {c : CId} (h : recShapeB p env κ lpsOf Sl c = true) :
   · rcases h4 with h4 | ⟨⟨h4, h5⟩, h6⟩
     · exact absurd hk h4
     · exact ⟨recTele_of_check h4, recProg_of_check h5, recCtorsRaw_of_check h6⟩
+
+/-- The `recShape` conjunct gives, at a recursor of class `noParams` (G3, part E), its rules'
+telescopes, the program side, its rules' constructors, its rules' fields, its rule bodies and its
+rule bodies' sites typed by the direct route. -/
+theorem recShapeNoParams_of {c : CId} (h : recShapeB p env κ lpsOf Sl c = true) :
+    ∀ sf kk lvls np nmot nmin ni ind rules ty,
+      p.decl? c = some (.recr sf kk lvls np nmot nmin ni ind rules ty) →
+      recClassB p env κ c = some .noParams →
+        RecTele env (κ c) ∧ RecProg p κ (· ∈ Sl) c ∧ RecCtorsRaw p env κ c ∧ RecFields env (κ c) ∧
+          RecBodies p env κ lpsOf c ∧ RecSites p env κ lpsOf c := by
+  intro sf kk lvls np nmot nmin ni ind rules ty hd hk
+  unfold recShapeB at h
+  rw [hd] at h
+  simp only [Bool.and_eq_true, Bool.or_eq_true, bne_iff_ne, ne_eq] at h
+  obtain ⟨-, h7⟩ := h
+  rcases h7 with h7 | ⟨⟨⟨⟨⟨h7, h8⟩, h9⟩, h10⟩, h11⟩, h12⟩
+  · exact absurd hk h7
+  · exact ⟨recTele_of_check h7, recProg_of_check h8, recCtorsRaw_of_check h9,
+      recFields_of_check h10, recBodies_of_check h11, recSites_of_check h12⟩
 
 theorem prim_of {c : CId} (h : primB p env κ c = true) :
     ∀ op, p.table.resolveOf c = some (.prim op) → κ c = primKey op ∧
@@ -1010,6 +1127,11 @@ theorem groundFacts_of_check {ann : IxCC.Src.Relevance.Ann}
           obtain ⟨sf, kk, lvls, np, nmot, nmin, ni, ind, rules, ty, hd⟩ := recClassB_recr hk
           exact (recShape_of (all (f := recShapeB p env κ lpsOf Sl) "recShape"
             (by simp [checkParts, checkPartsWith]) r hr) sf kk lvls np nmot nmin ni ind rules ty hd).2.2
+            hk
+        noParams := fun r hr hk => by
+          obtain ⟨sf, kk, lvls, np, nmot, nmin, ni, ind, rules, ty, hd⟩ := recClassB_recr hk
+          exact recShapeNoParams_of (all (f := recShapeB p env κ lpsOf Sl) "recShape"
+            (by simp [checkParts, checkPartsWith]) r hr) sf kk lvls np nmot nmin ni ind rules ty hd
             hk },
       fun c hc => noQuot_of (all (f := declOkB p env κ admittedClasses) "declOk"
         (by simp [checkParts, checkPartsWith]) c hc),

@@ -1,4 +1,5 @@
 import IxCCGrounding.Syntax
+import IxCCGrounding.Facts
 import IxCCGrounding.Laws
 import IxCCGrounding.Model
 import IxCCGrounding.Lits
