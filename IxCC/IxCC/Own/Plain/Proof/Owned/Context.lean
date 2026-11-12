@@ -305,7 +305,7 @@ theorem count_filter_ne (x : Var) : ∀ (zs : List Var) (y : Var),
       rw [hf, ih, List.count_cons]
       by_cases hy : y = z
       · simp [hy]
-      · have hzy : (z == y) = false := by simpa [eq_comm] using hy
+      · have hzy : (z == y) = false := beq_eq_false_iff_ne.mpr (fun h => hy h.symm)
         simp [hy, hzy]
     · have hf : (z :: zs).filter (fun w => w != x) = z :: zs.filter (fun w => w != x) := by
         simp [List.filter_cons, hz]
@@ -344,7 +344,8 @@ theorem count_nodup {y : Var} : ∀ {xs : List Var}, xs.Nodup → xs.count y = i
     · subst hy
       have h0 : (y == y) = true := beq_self_eq_true y
       rw [h0, if_neg hn.1, if_pos List.mem_cons_self]
-    · have hzy : (z == y) = false := by simpa [eq_comm] using hy
+      simp
+    · have hzy : (z == y) = false := beq_eq_false_iff_ne.mpr (fun h => hy h.symm)
       rw [hzy]
       by_cases hm : y ∈ zs
       · rw [if_pos hm, if_pos (List.mem_cons_of_mem _ hm)]; rfl
