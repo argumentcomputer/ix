@@ -55,6 +55,10 @@ fn portable_key_verifies_distinct_trace_shapes_without_proving_powers() {
     shapes.push(proof.log_degrees.clone());
     let claim = backend.claim("BN254Trace::run", &public, &expected).unwrap();
     let bytes = key.encode_proof(&proof).unwrap();
+    assert_eq!(
+      key.encode_proof(&key.decode_proof(&bytes).unwrap()).unwrap(),
+      bytes
+    );
     key.verify_bytes(&claim, &bytes).unwrap();
     for i in 0..claim.len() {
       let mut wrong = claim.clone();
@@ -63,6 +67,8 @@ fn portable_key_verifies_distinct_trace_shapes_without_proving_powers() {
     }
     let mut trailing = bytes.clone();
     trailing.push(0);
+    assert!(key.decode_proof(&trailing).is_err());
+    assert!(key.decode_proof(&bytes[..bytes.len() - 1]).is_err());
     assert!(key.verify_bytes(&claim, &trailing).is_err());
     assert!(key.verify_bytes(&claim, &bytes[..bytes.len() - 1]).is_err());
   }

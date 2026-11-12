@@ -177,6 +177,12 @@ impl VerifyingKey {
     claim: &[Scalar],
     bytes: &[u8],
   ) -> Result<(), String> {
+    self.verify(claim, &self.decode_proof(bytes)?)
+  }
+
+  /// Decode canonical transport against this authenticated key's dimensions.
+  /// Verification still requires an independently expected public claim.
+  pub fn decode_proof(&self, bytes: &[u8]) -> Result<Proof, String> {
     let encoded: EncodedProof = decode(PROOF_MAGIC, bytes)?;
     check_shape(&self.system, &encoded.active, &encoded.log_degrees)?;
     let codec = crate::kzg::compact::FixedProofCodec::new_active(
@@ -185,10 +191,7 @@ impl VerifyingKey {
       &encoded.log_degrees,
     )
     .map_err(|error| error.to_string())?;
-    self.verify(
-      claim,
-      &codec.decode(&encoded.body).map_err(|error| error.to_string())?,
-    )
+    codec.decode(&encoded.body).map_err(|error| error.to_string())
   }
 
   fn validate(&self) -> Result<(), String> {

@@ -876,3 +876,62 @@ trace allocation or proving. Fq limb and carry range checks account for about
 much of the remaining work. This is an unresolved recursive sizing problem,
 separate from the first-stage host preparation speedup. Full Init recursion,
 terminal PLONK and the target Mathlib benchmark remain unvalidated.
+
+## 17. Matched verifier layout diagnosis
+
+The [matched KZG comparison](measurements/aiur-kzg-layout-comparison.json)
+feeds exactly the same natively verified development proof, key and claims
+to the handwritten verifier and the Aiur verifier. Both return the same
+deferred pairing accumulator. The native lowering uses its production
+three-column computation trace, one-column merged table, and lookup grouping
+under a quotient budget of two. These are exact dimensions, not proof timings.
+
+| Quantity | Handwritten | Original Aiur | Aiur with 16-bit ranges |
+|---|---:|---:|---:|
+| Padded main advice cells | 27,262,976 | 15,140,802 | 11,929,538 |
+| Fixed cells | 134,217,728 | 989,440 | 1,054,976 |
+| Largest main trace height | `2^23` | `2^19` | `2^19` |
+| Active circuits | 2 | 166 | 166 |
+| Main column commitments | 4 | 6,972 | 6,963 |
+| Lookup column commitments | 5 | 1,854 | 1,845 |
+| Quotient commitments | 3 | 236 | 236 |
+
+The original Aiur verifier has 10,444,279 main cells before padding and
+15,140,802 afterward. Even with that padding, it uses fewer main cells than
+the handwritten verifier. The earlier [matched Goldilocks Init comparison](measurements/aiur-compression-goldilocks.json)
+also found fewer padded advice-plus-fixed cells: 869,043,594 for Aiur against
+3,138,654,336 for the handwritten FRI verifier. Neither comparison supports
+a general claim that Aiur inherently needs larger padded traces.
+
+The KZG adapter currently preserves one wide AIR per compiler function or
+group. Each function's intermediate values become columns, even when that
+function executes only a handful of times. The handwritten backend serializes
+arithmetic into rows of a shared narrow computation trace. KZG commits to
+columns individually, so the Aiur layout produces thousands of curve points
+for the next verifier to process. This is a different cost from the total
+number of cells: reducing row padding leaves the commitment count unchanged.
+The range-table change removes about 21% of main cells here but only nine
+main commitments.
+
+The validated first-stage Init proof contains 5,316 variable G1 points:
+3,955 main commitments, 1,203 lookup commitments, 138 quotient commitments,
+and 20 opening witnesses. This inventory is separate from the small matched
+comparison above. Comparing it with a handwritten *final* KZG proof would
+also compare different pipeline positions.
+
+There are source-level differences to measure separately. The handwritten
+verifier specializes the key and proof shape and uses fused Fq relations with
+bounded noncanonical intermediates. The Aiur verifier reads and authenticates
+the key as data and uses canonical Fq primitives. The matched test exposes
+claim payloads publicly on both sides, but does not remove this specialization
+difference. It does establish that the initial Aiur cell count is not the
+cause of the very large subsequent recursive workload.
+
+The `2^24` limit in the recursion preflight was a selected adapter capacity,
+not an inherent KZG limit; the saved handwritten Init recursive stage already
+uses a `2^26` computation trace. Increasing that limit would admit more work
+without reducing it. The next lowering change must address the number of
+committed columns while preserving dynamic intermediate execution shapes,
+authenticated program constraints, calls, memory and depth checks. Its
+acceptance criteria are matched cell counts, commitment counts and actual
+recursive proof cost; a capacity increase alone does not meet them.
