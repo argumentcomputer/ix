@@ -176,9 +176,11 @@ and blobs, byte for byte, with its binding section:
 2. `acceptPrepared`: refuses unless the prepared binding is the envelope's and
    the ordered records, sorted by address, are the envelope's records; runs
    `checkBytesTieredUsing` at IxCC's pure BLAKE3 (`hash`), the artifact's
-   prelude and IxCC's decoder caps as batch limits (`defaultLimits`); and keeps
-   the kernel reader's declarations of the same inputs (the logical ones behind
-   the prelude, and the tier reader's), which the annotator asks about.
+   prelude, IxCC's decoder caps as batch limits (`defaultLimits`) and the
+   artifact's own reducibility hints (`HintTable.of`, below); and keeps the
+   kernel reader's declarations of the same inputs with the same hints (the
+   logical ones behind the prelude, and the tier reader's), which the annotator
+   asks about.
 
 A refusal carries the kernel's reason and classification (rejected or
 declined, `TierError.outcome`). Only role-bound environments are accepted.
@@ -195,6 +197,46 @@ boundary](compile-boundary.md).
 and order; the front end's acceptance differs from it only in the hash
 function's implementation (IxCC's pure BLAKE3, ix's Rust BLAKE3 on a recorded
 assumption that the two agree).
+
+**Reducibility hints.** The envelope's hints section (§3 of the [byte
+contract](byte-contract.md#the-artifact)) is part of the artifact, read by the
+producer and the verifier alike: both run the same `Recheck.ingress` on the
+same bytes. `HintTable.of` keys it as `ix check-lean` does (a block member's
+hint under its projection record's address, a definition's under its own),
+and the entry and the reading take `HintTable.lookup` of it; `AcceptedFrom`
+states that the table is the one computed from the envelope's bytes.
+
+- *What hints are.* Advice about the order in which conversion unfolds
+  definitions (`opaque`, `abbrev`, a regular height): the kernel's lazy-delta
+  step unfolds the side with the greater height first, as Lean's kernel does.
+- *What they affect.* Time, and through the kernel's fuel possibly the
+  verdict: the kernel may decline on fuel under one hint function and accept
+  under another. No theorem depends on their being right: every theorem of
+  the entry (`checkBytesTieredUsing_ok`, `checkConstantsTiered_ok`) holds for
+  every hint function, and the program, the annotation, the certificate and
+  the object do not read them. So a verdict is about the artifact as stored,
+  hints section included, and an acceptance under any hints is the same
+  acceptance.
+- *Why they are passed.* Without them the kernel's reader computes every
+  height from the stored values and has no `abbrev`, which is not Lean's order;
+  on it a one-line `rfl` proof that Lean's kernel checks in a millisecond
+  (`(BitVec.allOnes 16 ^^^ y).toNat = Nat.xor 65535 y.toNat`, and the
+  `complement` word equations) took time exponential in the width, so any
+  closure holding such a proof stalled `ixcc compile`
+  ([kernel notes](../plans/aiur-backend/KERNEL-NOTES.md), section 10, a local
+  working file). With them the same closure is accepted in about half a
+  second.
+- *What a hostile hint can do.* Make the kernel slow, or make it decline on
+  fuel: never a different acceptance. `tests-kernel-front` checks this through
+  the front end on three closures with the hints section removed, every hint
+  regular at height 0, every hint `abbrev`, every hint `opaque` and the
+  heights inverted: each case ends in the honest object and certificate or in
+  a decline, and on the closure where the kernel without good hints is
+  exponential it may run out of a time limit (bounding that is the kernel's,
+  by a work budget). The section is not covered by the artifact's name `(H, ρ)`
+  nor by a compile claim, so two parties may hold the same claim over files
+  that differ in their hints: one may decline where the other accepts, never a
+  different acceptance.
 
 **What acceptance has to deliver, and what this entry delivers.** Since the
 restatement of 2026-11-11 ([certification
@@ -325,9 +367,12 @@ concludes, from `ingress bytes equations roots = .ok inp`:
 - the acceptance: `KernelFront.accept inp.env defaultLimits = .ok inp.kernel.acc`,
   `AcceptedFrom inp.env defaultLimits inp.kernel.acc` (the environment is
   role-bound; the kernel's entry ran on its binding section, on exactly its
-  records and blobs) and `Ix.Kernel.Admission.checkBytesTieredUsing
-  (preludeSource acc.pre) hash acc.binding acc.limits acc.records acc.blobs =
-  .ok (acc.env, acc.tier)` (`accept_spec`), from which the kernel's theorems
+  records and blobs, with the hint table computed from its hints section,
+  `acc.hints = HintTable.of inp.env.hints acc.constants`) and
+  `Ix.Kernel.Admission.checkBytesTieredUsing (preludeSource acc.pre) hash
+  acc.binding acc.limits acc.records acc.blobs acc.hints.lookup = .ok (acc.env,
+  acc.tier)` (`accept_spec`; the hint argument since 2026-11-12, before which
+  the entry ran with none), from which the kernel's theorems
   give, for the logical records, the reading's fidelity, a model in every set
   theory and the strong model, at IxCC's hash, the artifact's prelude and the
   artifact's table;
