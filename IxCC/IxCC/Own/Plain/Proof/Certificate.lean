@@ -1,5 +1,6 @@
 import IxCC.Own.Plain.Certificate
 import IxCC.Own.Plain.Proof.Owned.Program
+import IxCC.Own.Plain.Proof.OwnedAccepts
 
 set_option autoImplicit false
 namespace IxCC.Own.Plain.Certificate
@@ -78,6 +79,22 @@ theorem admitContract_mono {F : Fir.Program} {j : Json} {budget budget' : Nat} {
     admitContract F j budget' = .ok P := by
   obtain ⟨bodies, hd, hw, hc, rfl⟩ := admitContract_ok accepted
   exact admitContract_of hd (Nat.le_trans hw le) hc
+
+/-- **Nothing admitted before heap stage 2 is refused now, within the budget.** Admission used to
+accept a decoded map exactly when `checkPlainMap` did (the canonical placement, recomputed and
+compared); every such map within the captured-work budget is admitted now, as the same program
+(`checkPlainMap_checkOwned`). -/
+theorem admit_of_checkPlainMap {F : Fir.Program} {j : Json} {budget : Nat}
+    {bodies : Src.NatMap Code} (hd : decode F j = .ok bodies) (hw : capturedWork bodies ≤ budget)
+    (hp : checkPlainMap F bodies = true) : admit F j budget = .ok { source := F, bodies } :=
+  admit_of hd hw (checkPlainMap_checkOwned hp)
+
+/-- The same for contract-aware admission (`checkContractPlainMap_checkContractOwned`). -/
+theorem admitContract_of_checkContractPlainMap {F : Fir.Program} {j : Json} {budget : Nat}
+    {bodies : Src.NatMap Code} (hd : decode F j = .ok bodies) (hw : capturedWork bodies ≤ budget)
+    (hp : checkContractPlainMap F bodies = true) :
+    admitContract F j budget = .ok { source := F, bodies } :=
+  admitContract_of hd hw (checkContractPlainMap_checkContractOwned hp)
 
 /-- The only authority of decoded data is the ownership checker. -/
 theorem admit_parts {F : Fir.Program} {j : Json} {P : Program}

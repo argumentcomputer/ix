@@ -1,4 +1,5 @@
-import IxCC.Own.Plain.Proof.State
+import IxCC.Own.Plain.Proof.Bindings
+import IxCC.Own.Plain.Proof.StackScope
 import IxCC.Own.Plain.Proof.Drops
 import IxCC.Cfg.Rc.Proof.State
 import IxCC.Cfg.Rc.Proof.Physical.Placement

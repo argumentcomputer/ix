@@ -1,12 +1,12 @@
 import IxCC.Own.Plain.Proof.Owned.Roots
 import IxCC.Own.Plain.Proof.StackScope
-import IxCC.Own.Plain.Proof.StackIdentity
+import IxCC.Own.Plain.Proof.CaptureIdentity
 import IxCC.Own.Plain.Proof.Results
 import IxCC.Fir.Proof.Env
 
 /-! # The induction invariant over a typing context
 
-`OwnedState` generalises the canonical producer's `State`: the lexical scope `live` stays (the
+`OwnedState` is the invariant of the checked simulation: the lexical scope `live` is kept (the
 source checker's scope and the capture identities need it) and ownership is the context's: its
 tokens' values are what `Balance` counts, every available variable denotes, every immediate is an
 immediate value, every borrowed variable's value can be incremented.
@@ -57,7 +57,7 @@ inductive OwnedStack (Δ : JCtx) : Fir.Env → Own.Env → List Var → Joins �
       (tail : OwnedStack Δ ef.env eo.env lexd older jf jo) :
       OwnedStack Δ ρf ρo live ((ef.id, lexd) :: older) (ef :: jf) (eo :: jo)
 
-/-- **The generalised `State`.** -/
+/-- **The simulation invariant** over a typing context. -/
 structure OwnedState (functions : Signatures) (H : Heap) (external : Nat → Nat)
     (live : List Var) (Γ : Ctx) (ρf : Fir.Env) (ρo : Own.Env) (owned : List RVal)
     (lex : Joins) (Δ : JCtx) (Jf : List Fir.JEntry) (Jo : List JEntry) : Prop where

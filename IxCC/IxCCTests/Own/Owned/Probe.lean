@@ -267,11 +267,40 @@ def survey (tsv : System.FilePath) : IO UInt32 := do
     IO.println s!"MAX {k} {top.2.1} at {top.2.2}"
   return 0
 
+/-- One line per root (H8): Anf nodes of the program the Fir comes from (`programNodesUpTo`, the
+middle end's count), Fir functions, and for the canonical and liveness maps the production
+`Certificate.capturedWork` (the budgeted quantity), the probe's own count of it, and the ratio. -/
+def ratio (tsv : System.FilePath) : IO UInt32 := do
+  let lines := (← IO.FS.readFile tsv).splitOn "\n" |>.filter (· ≠ "")
+  IO.println "label\tanfNodes\tfirFuns\tmap\tcapturedWork\tprobeCount\tratio"
+  for line in lines do
+    match line.splitOn "\t" with
+    | [clo, eqs, root, label] =>
+      try
+        let bytes ← IO.FS.readBinFile clo
+        let json ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile eqs))
+        let inp ← IO.ofExcept ((Recheck.ingress bytes json [root]).mapError (·.render))
+        let cfg := Recheck.Config.forInput {} inp
+        let fr ← IO.ofExcept ((Recheck.RcReplay.produceFir cfg inp).mapError (·.render))
+        let anf := Anf.Pipeline.programNodesUpTo fr.anf.globalList 0
+        let F := fr.fir
+        let canonical := (Program.canonicalForSrc fr.src F).bodies
+        for (mname, m) in [("canonical", canonical), ("liveness", liveMap F)] do
+          let w := Certificate.capturedWork m
+          let c := countMap m
+          let r := if anf == 0 then 0.0 else w.toFloat / anf.toFloat
+          IO.println s!"{label}\t{anf}\t{F.size}\t{mname}\t{w}\t{c.jumpCaptured + c.joinCaptured}\t{r}"
+      catch e =>
+        IO.println s!"{label}\tfront-end error: {e}"
+    | _ => pure ()
+  return 0
+
 end IxCCTests.Own.Owned.Probe
 
 def main (args : List String) : IO UInt32 :=
   match args with
   | ["survey", tsv] => IxCCTests.Own.Owned.Probe.survey tsv
+  | ["ratio", tsv] => IxCCTests.Own.Owned.Probe.ratio tsv
   | ["hostile", name, P, K, G, mode] =>
     IxCCTests.Own.Owned.Probe.hostile name P.toNat! K.toNat! G.toNat! mode
   | _ => do
