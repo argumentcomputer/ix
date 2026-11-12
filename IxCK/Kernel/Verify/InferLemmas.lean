@@ -382,7 +382,7 @@ theorem inferTypeCore_forall_inv {env : Env md} {fuel d : Nat}
         (body.instantiate1 (.fvar d ty)) = .ok bt ∧
       ensureSortCore mode env fuel (d + 1) bt = .ok v ∧
       (mode.verifiedChecks = true → Level.zeronessOf v = m.pw) ∧
-      t = .sort (Level.mkIMax u v) := by
+      t = .sort (.imax u v) := by
   rw [inferTypeCore_succ] at h
   simp only [inferBody, pure, Except.pure, Bind.bind, Except.bind] at h
   simp only [infer_def, whnf_def, ensureSort_def] at h

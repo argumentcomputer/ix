@@ -537,10 +537,10 @@ asks a change of behaviour:
    v`, a level shared as a DAG whose tree doubles per step, which
    `Level.simplify` and `levelHasParam` walked as trees. The fix was made in
    the kernel package on this branch, in parallel with the switch (the
-   owner's decision of 2026-11-11), and has landed: the kernel builds that
-   level with `mk_imax`'s folds and caches the has-parameter bit ([hardening
+   owner's decision of 2026-11-11), and has landed: the kernel caches the
+   has-parameter bit and hash-conses the ∀ rule's levels ([hardening
    design](hardening-design.md#external-dependencies)), which closes those
-   families. Levels the folds cannot merge (two chains at two universe
+   families. Levels that stay large (two chains at two universe
    parameters, each step mentioning the other) are now walked once per node:
    the kernel's level walks are memoised on shared levels (`docs/kernel.md`,
    "Running time"). What stays is the level comparison itself, coNP-hard for
@@ -646,8 +646,9 @@ whose ∀s share one type at each step (`k` nested `let`s, `let a(j+1) : Type
 := aj → aj`, or the same chain in a sharing table): the ∀ rule built a
 universe level whose tree doubles per step, and two level functions walked it
 as a tree ([hardening design](hardening-design.md#external-dependencies)).
-The kernel now builds that level with `mk_imax`'s folds and caches the
-level's has-parameter bit. Measured on a role-bound closure of 206 records
+The kernel now hash-conses that level and caches its has-parameter bit
+(at the time of the measurement below it folded the level with `mk_imax`'s
+folds, since withdrawn; the times are of the same order). Measured on a role-bound closure of 206 records
 with one such constant (the constant 200 to 330 bytes), each acceptance alone
 in its own process, before and after the kernel's fix (the earlier erased
 checker, which opens each `let` as a let-bound local and hash-conses its
@@ -661,7 +662,7 @@ terms, for comparison):
 | 34 | | | 0.028 s |
 
 All accept. (`tests-kernel-front` checks such a closure at `k = 200`.) Levels
-the folds cannot merge (two chains at two universe parameters, each step
+that stay large (two chains at two universe parameters, each step
 mentioning the other) no longer cost their trees: the kernel's level walks
 are memoised on shared levels. What remains exposed is the level comparison
 itself: deciding `l ≤ r` for levels with `imax` is coNP-hard, and the
@@ -893,7 +894,7 @@ front end's acceptance time. A hostile closure is measured under
 | KF-0 | The front end beside the old one, the differential suite, the acceptance and classifier lemmas, the ledger's exception (this change) | `tests-kernel-front` passes; identical annotations, certificates and objects on every role-bound closure the kernel accepts |
 | KF-1 | The walk-level annotation statement; the kernel-side lemmas 1–3 composed into direction 1 | fenced, standard axioms |
 | KF-2 | The switch (steps 2–5). In progress: steps 2 and 3 done (2026-11-11); steps 4 and 5 (the deletion, the ledger) next | all required checks on the refrozen corpus; the deletion list gone |
-| KF-3 | The kernel's bound on hostile levels (kernel-side item 4). Its fix of the blow-up on `let` chains, made in the kernel package on this branch in parallel with KF-2, has landed: the ∀ rule's level built with `mk_imax`'s folds, the level's has-parameter bit cached; and since, the kernel's level walks memoised on shared levels (two interleaved chains at two universe parameters check in milliseconds). Planned: a call budget in the kernel's level comparison, set by the caller and passed by the front end | the hostile `let`-chain closure accepted in time flat in `k` (met: 28 ms at `k = 30` and at `k = 34`); a constant whose level comparison is exponential (the reduction from satisfiability in `docs/kernel.md`) declined within the budget (planned) |
+| KF-3 | The kernel's bound on hostile levels (kernel-side item 4). Its fix of the blow-up on `let` chains, made in the kernel package on this branch in parallel with KF-2, has landed: the ∀ rule's levels hash-consed in the executed core (first folded with `mk_imax`'s folds, since withdrawn), the level's has-parameter bit cached; and since, the kernel's level walks memoised on shared levels (two interleaved chains at two universe parameters check in milliseconds). Planned: a call budget in the kernel's level comparison, set by the caller and passed by the front end | the hostile `let`-chain closure accepted in time flat in `k` (met: 28 ms at `k = 30` and at `k = 34`); a constant whose level comparison is exponential (the reduction from satisfiability in `docs/kernel.md`) declined within the budget (planned) |
 | KF-4 | The closure run (planned, 2026-11-11): the closure of the seeds, the logical entry on it under the default table and committed prelude, the table-restriction check, the run's declarations kept for the typing clause. Done beside it (2026-11-12): IxCC's own reading is of the records its seeds reach (`Src.Ingress.reach`), so a record the target never reaches no longer refuses an artifact by IxCC's limits; the kernel still accepts the whole artifact. What the closure run would add: the kernel's run on the kernel's closure of the seeds (every reference, proofs included, and the recursors, certified-operation ground and literal edges it needs), under the default table and committed prelude, discharging premise (i) natively; the worklist can be shared over an edge function | on every role-bound K1 closure the closure run accepts, and its declarations are a sub-list of the tiered run's up to keys |
 
 ## Decisions
