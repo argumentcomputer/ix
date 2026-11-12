@@ -275,7 +275,8 @@ theorem withContract_shape {c : Ix.SemanticContract.Contract} {source : Ix.Expr}
 theorem withContract_depth {c : Ix.SemanticContract.Contract} {source : Ix.Expr} {target result : CExpr md}
     (lowered : withContract c source target = some result) : kernelAppDepth result = kernelAppDepth target := by
   unfold withContract at lowered
-  split at lowered <;> cases lowered <;> rfl
+  split at lowered <;> cases lowered
+  rfl
 
 theorem withContract_head {c : Ix.SemanticContract.Contract} {source : Ix.Expr} {target result : CExpr md}
     (lowered : withContract c source target = some result) :
@@ -288,7 +289,8 @@ theorem withContract_piTypes {c : Ix.SemanticContract.Contract} {source : Ix.Exp
     (lowered : withContract c source target = some result) (count : Nat) :
     piTypes (count + 1) result = piTypes (count + 1) target := by
   unfold withContract at lowered
-  split at lowered <;> cases lowered <;> rfl
+  split at lowered <;> cases lowered
+  rfl
 
 theorem related_appDepth {names : Ix.Name → CName md → Prop} {levels : Ix.Level → Ix.Kernel.Level → Prop}
     {source : Ix.Expr} {target : CExpr md} (related : Related names levels source target) :
