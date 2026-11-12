@@ -4,7 +4,7 @@ import LSpec
 
 /-!
   The stored equations of the fixed-width word operations that
-  `ix compile --equations` adds (`Ix.Compile.WordEquations`).
+  `ix compile --equations --word-equations` adds (`Ix.Compile.WordEquations`).
 
   Every equation of every width elaborates, as a theorem checked by Lean's
   kernel, in the environment of a file that imports nothing but Lean's
@@ -51,9 +51,10 @@ def suite : IO (List LSpec.TestSeq) := do
       match withAll.find? e.theoremName with
       | some (.thmInfo t) => t.levelParams.isEmpty
       | _ => false
-    let (_, plainClosed, _, _) ← Ix.Compile.Equations.close plain [`PlainFixture.entry]
+    let (_, plainClosed, _, _) ← Ix.Compile.Equations.close plain [`PlainFixture.entry] (words := true)
     let env ← elaborate dir "Word.lean" wordSource
-    let (_, closed, _, failed) ← Ix.Compile.Equations.close env [`WordFixture.entry]
+    let (_, closed, _, failed) ← Ix.Compile.Equations.close env [`WordFixture.entry] (words := true)
+    let (_, closedOff, _, _) ← Ix.Compile.Equations.close env [`WordFixture.entry]
     let added := wordTheorems (closed.map (·.1))
     let names : NameSet := closed.foldl (fun s (n, _) => s.insert n) {}
     let expected : List Name :=
@@ -91,6 +92,8 @@ def suite : IO (List LSpec.TestSeq) := do
         (listed.length == added.length && named.all fun e =>
           listed.contains ("word", e.operation.toString, e.theoremName.toString)),
       test "the output's theorems are sorted by subject" sorted,
+      test "without words (the default, no --word-equations) the word source gets no equation"
+        (wordTheorems (closedOff.map (·.1))).isEmpty,
       test "a closure without words gets no theorem proposal"
         (Ix.Compile.Equations.theorems (plainClosed.map (·.1))).isEmpty]
 

@@ -176,7 +176,8 @@ def rootsFixture (fx : RootsFixture) (ix : String) (work dir : System.FilePath)
   let closure := dir / s!"{fx.stem}.ixe"
   let named := work / s!"{fx.stem}.named.ixe"
   let consts := String.intercalate "," ((fx.roots ++ fx.seeds).map toString)
-  let eqns := fun (out : String) => if fx.equations then #["--equations", "--equations-out", out] else #[]
+  let eqns := fun (out : String) =>
+    if fx.equations then #["--equations", "--word-equations", "--equations-out", out] else #[]
   let _ ← run ix (#["compile", "--no-build", "--consts", consts, "--anon", "--out", closure.toString]
     ++ eqns (work / s!"{fx.stem}.ix-equations.json").toString ++ #[source.toString])
   let _ ← run ix (#["compile", "--no-build", "--consts", consts, "--out", named.toString]
@@ -195,8 +196,8 @@ def rootsFixture (fx : RootsFixture) (ix : String) (work dir : System.FilePath)
     ("producer_version", String.intercalate " " (words (← run ix #["--version"]))),
     ("producer", IxCCTests.Corpus.producerIx),
     ("commands", toJson [
-      s!"ix compile --no-build --consts <roots{if fx.seeds.isEmpty then "" else " and seeds"}>{if fx.equations then " --equations" else ""} --anon --out {fx.stem}.ixe {fx.source}",
-      s!"ix compile --no-build --consts <roots{if fx.seeds.isEmpty then "" else " and seeds"}>{if fx.equations then " --equations" else ""} --out {fx.stem}.named.ixe {fx.source}",
+      s!"ix compile --no-build --consts <roots{if fx.seeds.isEmpty then "" else " and seeds"}>{if fx.equations then " --equations --word-equations" else ""} --anon --out {fx.stem}.ixe {fx.source}",
+      s!"ix compile --no-build --consts <roots{if fx.seeds.isEmpty then "" else " and seeds"}>{if fx.equations then " --equations --word-equations" else ""} --out {fx.stem}.named.ixe {fx.source}",
       s!"ix addr-of --ixe {fx.stem}.named.ixe NAME, for every root{if fx.equations then " and every name of the equations output" else ""}"]),
     ("source_sha256", ← sha256 source),
     ("named_env_sha256", ← sha256 named),

@@ -279,7 +279,7 @@ hosted-CI or cold-store timing is claimed.
   since its reference body computes modulo the `Nat` 2^64 (measured,
   [DR2](data-and-roots-design.md#dr2-fixed-width-integers-and-int)). Stage W1
   makes the word operations primitives; so far SrcEval's rule F6w, its table
-  entry and check, and the stored equations `ix compile --equations` adds and
+  entry and check, and the stored equations `ix compile --equations --word-equations` adds and
   names exist behind a switch that is off (`Table.Config.words`), so nothing
   compiles differently yet. There are no arrays, byte arrays or strings.
 - **Higher-order code**: bounded inlining and specialisation (P3, P4)

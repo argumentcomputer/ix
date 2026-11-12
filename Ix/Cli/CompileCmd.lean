@@ -181,9 +181,13 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
   if (p.flag? "equations-out").isSome && !p.hasFlag "equations" then
     p.printError "error: --equations-out needs --equations"
     return 1
+  if p.hasFlag "word-equations" && !p.hasFlag "equations" then
+    p.printError "error: --word-equations needs --equations"
+    return 1
   let (leanEnv, constList) ← if p.hasFlag "equations" then do
       let (env, closed, found, failed) ←
         Ix.Compile.Equations.close leanEnv (constList.map (·.1))
+          (words := p.hasFlag "word-equations")
       IO.println s!"[compile] equations: {found.size} unfolding theorem(s), {failed.size} failure(s); {closed.length} constants"
       let sidecar := (p.flag? "equations-out").map (·.as! String)
         |>.getD (outPath ++ ".equations.json")
@@ -332,7 +336,8 @@ def compileCmd : Cli.Cmd := `[Cli|
     "allow-partial" ;        "Allow writing the successfully compiled subset despite requested compilation failures. Without this flag, those failures cause a nonzero exit and leave the output path untouched."
     anon           ;         "Strict-anonymous output: clear §4 names, §5 metadata, and §6 commitments (after hint finalization, so §3 anon hints survive). The env root is unchanged — it covers §2 only. Default keeps names: they are harmless to catalog semantics and valuable for fidelity/debugging."
     report         : String; "Write a machine-readable JSON compile report (versions, seed spec, requested/named/unique-anon/ungrounded counts, full ungrounded list, canonical consts merkle root, bytes, elapsed ms) to this path — written on success, fail-closed abort, and partial publish alike."
-    equations      ;         "Realize the unfolding theorem (`f.eq_def`) of every recursive definition the selected closure reaches, library definitions included; add the stored equation of every fixed-width word operation (`UInt8`…`UInt64`) it reaches (`Ix.Compile.WordEquations`); compile each theorem with its dependencies, to a fixed point, and write the definition/theorem associations and the word equations, each named with its operation, to --equations-out."
+    equations      ;         "Realize the unfolding theorem (`f.eq_def`) of every recursive definition the selected closure reaches, library definitions included; compile each theorem with its dependencies, to a fixed point, and write the definition/theorem associations to --equations-out."
+    "word-equations" ;       "With --equations: also add the stored equation of every fixed-width word operation (`UInt8`…`UInt64`) the closure reaches (`Ix.Compile.WordEquations`), as seeds, and name each, with its operation, in the output's `theorems` list. Off by default: a closure reaches word operations through proofs alone, and no consumer uses the equations yet."
     "equations-out" : String; "Path for the --equations output (JSON, format `ix/compile-equations/2`: `equations` [{definition, equation}] sorted by definition, `theorems` [{kind, subject, theorem}] sorted by subject (kind `word`: a word operation and its stored equation), `failures` [{definition, message}]); defaults to <out>.equations.json."
 
   ARGS:

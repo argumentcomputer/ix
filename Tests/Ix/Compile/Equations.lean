@@ -95,9 +95,6 @@ def suite : IO (List LSpec.TestSeq) := do
       | _ => false
     let json := Ix.Compile.Equations.toJson found
       (Ix.Compile.Equations.theorems (closed.map (·.1))) failed
-    -- the closure's proofs (`omega` in `log2`'s termination proof) reach word operations, so
-    -- the word equations join it and the JSON names each
-    let wordCount := (closed.filter fun (n, _) => n.getPrefix == `IxWordEquations).length
     let listed : List (String × String) := match json.getObjValAs? (Array Json) "equations" with
       | .ok rows => rows.toList.filterMap fun row =>
           match row.getObjValAs? String "definition", row.getObjValAs? String "equation" with
@@ -122,8 +119,9 @@ def suite : IO (List LSpec.TestSeq) := do
       test "each associated theorem states `f xs = …` for its definition" selfUnfolding,
       test "the JSON names its format"
         ((json.getObjValAs? String "format").toOption == some "ix/compile-equations/2"),
-      test s!"the JSON names exactly the closure's word equations ({wordCount})"
-        ((json.getObjValAs? (Array Json) "theorems").toOption.map (·.size) == some wordCount),
+      test "without --word-equations no word equation joins the closure (its omega proof reaches word operations)"
+        ((json.getObjValAs? (Array Json) "theorems").toOption.map (·.size) == some 0 &&
+          !closed.any fun (n, _) => n.getPrefix == `IxWordEquations),
       test "the JSON lists every association, sorted by definition"
         (listed.length == found.size && sorted == sorted.mergeSort (· ≤ ·) &&
           recursive.all fun (d, e) => listed.contains (d.toString, e.toString)),

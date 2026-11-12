@@ -253,7 +253,7 @@ streamed and Rust compilers have been retired. See
 every recursive definition the selected closure reaches (Lean derives most of
 them only on demand), compiles each with its dependencies, and writes which
 theorem unfolds which definition to `--equations-out` (JSON,
-`ix/compile-equations/2`; `Ix/Compile/Equations.lean`). It also adds the stored
+`ix/compile-equations/2`; `Ix/Compile/Equations.lean`). With `--word-equations` it also adds the stored
 equation of every fixed-width word operation the closure reaches
 (`Ix/Compile/WordEquations.lean`) and names each, with its operation, in the
 output's `theorems` list (kind `word`). It serves consumers

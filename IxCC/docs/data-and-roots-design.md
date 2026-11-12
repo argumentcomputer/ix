@@ -276,7 +276,7 @@ exists, behind `Table.Config.words`, which is off, so no compile changes:
   ([`Src/Table/Word.lean`](../IxCC/Src/Table/Word.lean)). An earlier draft's bridge, below the
   size only, constrained nothing above it (a key returning `5` there satisfied it);
   `IxCCTests/Src/Words.lean` refutes that key with the reducing bridge;
-- the theorems, which `ix compile --equations` adds for every word operation a closure reaches
+- the theorems, which `ix compile --equations --word-equations` adds for every word operation a closure reaches
   (`Ix/Compile/WordEquations.lean`) and names, with the operation, in its output's `theorems`
   list; the sidecar carries the list with addresses ([corpus](corpus.md), "The sidecar"), and the
   producer proposes a word entry from it only, so a reader that reads only what a program reaches
