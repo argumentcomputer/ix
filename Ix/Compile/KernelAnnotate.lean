@@ -767,6 +767,9 @@ def installInput (env : Ix.Environment) (workers : Nat := 32) : IO (Except Strin
         if closure.contains n then m.insert n (blank ci) else m }
     | none => pure env
   let seedCount := (seeds?.map (·.size)).getD env.consts.size
+  -- (measurement, with `IX_BD_T1STAT`) the seeds, one a line
+  if (← IO.getEnv "IX_BD_T1STAT").isSome then
+    for n in seeds?.getD #[] do IO.eprintln s!"BDSEED {n.pretty}"
   let tc1 ← IO.monoMsNow
   let t0 ← IO.monoMsNow
   let blocks ← IO.lazyPure fun _ => Ix.CondenseM.run (Ix.Compile.FrontEnd.graph envI)
