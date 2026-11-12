@@ -10,7 +10,7 @@ import LSpec
   kernel, in the environment of a file that imports nothing but Lean's
   library; and on a source whose root adds two `UInt64`s and converts the sum
   to a `UInt8`, `close` adds exactly the theorems of the operations the
-  closure reaches (with `UInt64`'s and `UInt8`'s `ofNat` equation and bridge),
+  closure reaches (with `UInt64`'s and `UInt8`'s `ofNat`, whose theorem is the bridge),
   each to the closure, and none of a width or an operation it does not reach.
   A source without words gets none.
 -/
@@ -58,26 +58,19 @@ def suite : IO (List LSpec.TestSeq) := do
     let expected : List Name :=
       [`IxWordEquations.UInt64_add, `IxWordEquations.UInt64_toUInt8,
        `IxWordEquations.UInt64_toNat, `IxWordEquations.UInt64_ofNat,
-       `IxWordEquations.UInt64_bridge, `IxWordEquations.UInt8_toNat,
-       `IxWordEquations.UInt8_ofNat, `IxWordEquations.UInt8_bridge]
-    -- At the fixed point an equation is in the closure exactly when its operation is, or, for
-    -- the `ofNat` equation and the bridge, when an operation of its width is.
-    let reachedWidth := fun (w : Ix.Compile.WordEquations.Width) =>
-      (Ix.Compile.WordEquations.equations w).any (names.contains ·.operation)
-    let exact := Ix.Compile.WordEquations.widths.all fun w =>
-      (Ix.Compile.WordEquations.equations w).all fun e =>
-        let isOfNat := e.operation == s!"{w.name}.ofNat".toName
-        names.contains e.theoremName ==
-          (names.contains e.operation || (isOfNat && reachedWidth w))
+       `IxWordEquations.UInt8_toNat, `IxWordEquations.UInt8_ofNat]
+    -- At the fixed point an equation is in the closure exactly when its operation is.
+    let exact := Ix.Compile.WordEquations.all.all fun e =>
+      names.contains e.theoremName == names.contains e.operation
     return [
-      test "72 equations: per width one per primitive operation (17) and the bridge"
-        (all.length == 72),
+      test "68 equations: per width one per primitive operation (17; `ofNat`'s is the bridge)"
+        (all.length == 68),
       test "every equation elaborates as a level-monomorphic theorem" allTheorems,
       test "a closure without words gets no equation"
         (wordTheorems (plainClosed.map (·.1))).isEmpty,
       test "no unfolding-theorem failure on the word source" failed.isEmpty,
       test s!"the word source's closure holds the theorems of its operations: {added}"
         (expected.all added.contains),
-      test "an equation is in the closure exactly when its operation (or width) is" exact]
+      test "an equation is in the closure exactly when its operation is" exact]
 
 end Tests.Ix.Compile.WordEquations

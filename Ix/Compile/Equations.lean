@@ -63,8 +63,7 @@ closure `ix compile --consts` compiles) and over the unfolding theorems of every
 recursive definition it reaches, until no new theorem appears. The theorems'
 own dependencies join the closure, and the recursive definitions among them
 are processed in turn. Every fixed-width word operation reached adds its
-stored equation (`Ix.Compile.WordEquations`) as a seed, with its width's
-`ofNat` equation and bridge. Returns the environment with the realized
+stored equation (`Ix.Compile.WordEquations`) as a seed. Returns the environment with the realized
 theorems, the closed constant list, the associations and the failures, each
 definition visited once. -/
 partial def close (env : Lean.Environment) (seeds : List Lean.Name) :
