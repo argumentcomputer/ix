@@ -200,9 +200,8 @@ unsafe def metaSide (path : System.FilePath) (wanted : Name → Bool) : IO Seen 
       let ns := (rd.decls.toList.flatMap Benchmarks.Kernel.CheckIxeMeta.declaredKeys).filterMap nameOf
       unless ns.any wanted do
         let base := Ix.KernelDisplay.metaCx display cm'.fe levelNames types
-        let full := Ix.KernelDisplay.renderFailure
-          { base with peek := Ix.KernelDisplay.peekAll,
-                      msgSpell := some (Ix.Kernel.Reader.spellWith display) } e
+        let full := Ix.KernelDisplay.renderFailure { base with peek := Ix.KernelDisplay.peekAll,
+          msgSpell := some (Ix.Kernel.Reader.spellWith display) } e
         IO.println s!"  meta: {ns.take 3} fails at {address}: {full}"
       for k in rd.decls.toList.flatMap Benchmarks.Kernel.CheckIxeMeta.declaredKeys do
         if let some n := nameOf k then
