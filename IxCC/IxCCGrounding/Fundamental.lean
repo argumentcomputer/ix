@@ -13,7 +13,7 @@ SrcEval's eight mutual functions returns values related to what their kernel cou
 | --- | --- | --- |
 | `force` | a forced slot's value relates to the slot's set | `RelSlot.name` and `eval` at `k - 1` |
 | `forceAll` | likewise, pointwise | `force` |
-| `fire` | a saturated head's value relates to the head applied to the arguments | F1 by `Fits` and the pins; F5 by `CaseFires`; F6 by `nat_accel` |
+| `fire` | a saturated head's value relates to the head applied to the arguments | F1 by `Fits` and the pins; F5 by `CaseFires`; F6 by `nat_accel`; at a recursor, its class admitted (`RecFacts`): F4 traps, so returns no value |
 | `headValue` | a head's value relates to the head | `fire` on no arguments, or `RelV.pap` |
 | `apply` | at a graph-regime site, the result relates to the application | `apply_clo` and `eval` at `k - 1`; `apply_pap` and `fire` |
 | `applyAll` | along a graph-regime chain, likewise | `apply` |

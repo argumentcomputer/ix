@@ -55,6 +55,14 @@ And, for the root's checks, on `decide`: the observation `false` (tag `0`) fails
 rejects it, as documented); an enumeration argument that is not its type's listed constructor
 fails `foArgsB`; the pinned `Bool` re-pinned at `Nat` fails `boolListedB` and nothing in
 `groundCheck`.
+
+Recursors (G3): with no recursor class admitted the check is the landed one, true on `fib`. On
+`tak` (`fixtures/ixon-v4/bench-k1/tak`), whose one recursor in `Sl` is `Eq.rec` (run by
+`Eq.ndrec`), of class `eqRec`, not yet admitted: exactly `declOk` false; with every class
+admitted (`checkPartsWith`) every conjunct true; and three controls, each making exactly
+`recShape` false there: `Eq.rec`'s stored rule given the right-hand side `0`, its stored type cut
+by one binder (fewer than the arguments SrcEval takes), `Eq.refl`'s first binder datum made
+`never`.
 -/
 
 namespace IxCCTests.Grounding
