@@ -67,6 +67,24 @@ rule made `λ α a motive refl. a` in the kernel's reading and the program alike
 premise's domain made `@Eq α b a`; and its level-parameter list reversed (refused by `RecStored`,
 since its rule's levels no longer correspond to the program's; `EqRecBasis` does not read the
 list).
+
+On `strictAndOr` (`Bool.rec`, class `flat`, part D) every conjunct is true; on `Sl` cut to the
+recursor and `Bool`'s constructors, a rule's λ-domain changed, its rules swapped and its major
+domain at one more level each make exactly `recShape` false (by `RecTele`, `RecProg`,
+`RecCtorsRaw`). A rule's body made `0` in the reading and the program alike is no longer flat: since
+part E it is of class `noParams` and **admitted** (refused at `declOk` as parts C and D landed it):
+the mutation is consistent between the kernel's reading and the program (ι in the mutated reading
+gives `0`, which SrcEval's evaluation of the literal body gives too), and the theorems are relative
+to the environment as stored. The body made the constant `Bool.true` alike is refused, exactly at
+`recShape`, by `RecBodies` (a rule body may name no constant).
+
+On `tags16` (`T16.rec`, class `noParams`, part E: 16 rules, the last with a field, its body
+`m₁₅ f`) every conjunct is true, and with the classes of part D's first step exactly `declOk` is
+false. On `Sl` cut to the recursor, its constructors and `Bool`'s, four controls each make exactly
+`recShape` false, the part that refuses asserted: the field-carrying constructor's stored field type
+made `Nat → Nat` (`RecFields`), that rule's body made `Bool.true` (`RecBodies`), made `m₁₅ m₁₅`
+(`RecSites`: the direct route refuses the site) and the major premise's binder datum given a level
+parameter the recursor does not have (`RecSites`).
 -/
 
 namespace IxCCTests.Grounding
@@ -390,7 +408,7 @@ def failingWith (adm : List RecClass) (i : Input) : List String :=
     if b then none else some n
 
 /-- Every recursor class. -/
-def allClasses : List RecClass := [.empty, .eqRec, .flat, .ordinary]
+def allClasses : List RecClass := [.empty, .eqRec, .flat, .noParams, .ordinary]
 
 /-- The recursor of `Sl` the kernel stores under `Eq.rec`'s key. -/
 def eqRecOf? (i : Input) : Option CId :=
