@@ -160,13 +160,10 @@ theorem related_occurs {md : Mode} {names : Ix.Name → CName md → Prop}
 theorem ingress_withContract_occurs {c : Ix.SemanticContract.Contract} {e : Ix.Expr}
     {x result : CExpr .source} (lowered : Ix.LeanIngress.withContract c e x = .ok result) (k : Key .source) :
     Frontend.occursConst k result = Frontend.occursConst k x := by
-  obtain ⟨kind, binder, valueContract, letKind⟩ := c
-  cases kind <;> cases e <;> cases x <;>
-    simp only [Ix.LeanIngress.withContract, pure, Except.pure, Except.ok.injEq, throw, throwThe,
-      MonadExceptOf.throw, reduceCtorEq] at lowered
-  all_goals
-    subst lowered
-    rfl
+  unfold Ix.LeanIngress.withContract at lowered
+  split at lowered
+  · cases lowered; rfl
+  · split at lowered <;> cases lowered
 
 /-- **A Lean term's Source conversion mentions exactly the ingress keys of the names the term
 mentions.** -/
