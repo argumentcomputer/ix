@@ -50,7 +50,6 @@ def event (kind v : Nat) : M Unit :=
 def heapEvent (kind : Nat) (v : RVal) : M Unit :=
   match v with
   | .loc l => modify fun c => { c with heapHash := mixH c.heapHash kind l }
-  | .loc _ => pure ()
   | _ => pure ()
 
 def immEvent (kind x : Nat) (v : RVal) : M Unit :=

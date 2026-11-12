@@ -40,14 +40,17 @@ theorem take_sem {H : Heap} {Γ Γ' : Ctx} {ρf : Fir.Env} {ρo : Own.Env} {owne
   obtain ⟨toks, htok, hroots⟩ := h.roots
   cases hi : Γ.isImm x with
   | true =>
-    rcases Ctx.take_ok ht with ⟨_, rfl⟩ | ⟨hi', _⟩
-    · have havail : Γ.avail x = true := by simp [Ctx.avail_eq, hi]
-      obtain ⟨v, w, hv, hw', hd⟩ := h.den x havail
-      obtain ⟨v', hv', himm⟩ := h.immOk x hi
-      have : v' = v := Option.some.inj (hv'.symm.trans hv)
-      subst this
-      exact ⟨v', w, owned, hv, hw', hd, h, (SameRefs.imm_cons himm owned).symm, hw⟩
-    · rw [hi] at hi'; cases hi'
+    have hΓ : Γ' = Γ := by
+      rcases Ctx.take_ok ht with ⟨_, h'⟩ | ⟨hi', _⟩
+      · exact h'
+      · rw [hi] at hi'; cases hi'
+    rw [hΓ]
+    have havail : Γ.avail x = true := by simp [Ctx.avail_eq, hi]
+    obtain ⟨v, w, hv, hw', hd⟩ := h.den x havail
+    obtain ⟨v', hv', himm⟩ := h.immOk x hi
+    have : v' = v := Option.some.inj (hv'.symm.trans hv)
+    subst this
+    exact ⟨v', w, owned, hv, hw', hd, h, (SameRefs.imm_cons himm owned).symm, Ctx.Weaker.refl _⟩
   | false =>
     obtain ⟨hm, hpos, htok'⟩ := htok.take ht hi
     have havail : Γ.avail x = true := by simp [Ctx.avail_eq, hpos]
@@ -99,7 +102,7 @@ theorem takeVars_sem {H : Heap} {ρf : Fir.Env} {ρo : Own.Env} :
         TakeInv H Γ' ρf ρo owned' ∧ SameRefs owned (vs ++ owned') ∧ Ctx.Weaker Γ' Γ
   | Γ, Γ', owned, [], h, ht => by
     cases ht
-    exact ⟨[], owned, rfl, fun _ hx => by cases hx, h, SameRefs.refl _, Ctx.Weaker.refl _⟩
+    exact ⟨[], owned, rfl, fun _ hx => by simp at hx, h, SameRefs.refl _, Ctx.Weaker.refl _⟩
   | Γ, Γ', owned, x :: xs, h, ht => by
     simp only [Ctx.takeVars] at ht
     cases hx : Γ.take x with
@@ -132,7 +135,7 @@ theorem closed_nil {Γ : Ctx} {toks : List Var} {what : String} (ht : Ctx.Tokens
 theorem EnvRoots.nil_inv {ρ : Own.Env} {vs : List RVal} (h : EnvRoots ρ [] vs) : vs = [] := by
   unfold EnvRoots at h
   simp [Own.evalArgs] at h
-  exact h.symm
+  exact h
 
 /-- A variable holding a token is known, so it is in scope. -/
 theorem Tokens.mem_known {Γ : Ctx} {toks : List Var} (ht : Ctx.Tokens Γ toks) {y : Var}
@@ -151,9 +154,8 @@ theorem release_borrowed {Γ : Ctx} (he : ∀ x e, Γ.brw.get? x = some e → e 
   | none => simp [Ctx.borrowed_eq, hb]
   | some e =>
     have := he y e hb
-    simp only [Ctx.borrowed_eq, Ctx.brw_release, Ctx.epoch_release, hb]
-    simp only [beq_iff_eq, Option.some.injEq]
-    simp only [decide_eq_false_iff_not]
+    simp only [Ctx.borrowed_eq, Ctx.brw_release, Ctx.epoch_release, hb, beq_eq_false_iff_ne,
+      ne_eq, Option.some.injEq]
     omega
 
 /-- **The state after a fresh binding**, from what the step establishes for each variable. -/
