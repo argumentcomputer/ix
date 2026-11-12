@@ -366,7 +366,7 @@ def graphOfPar (width : Nat) (blocks : Ix.CondensedBlocks) (groups : Array Group
 /-- **Install the compile's input** in Source mode, phase A only, and mark the
 environment and IxC's core over it persistent. -/
 def install (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (workers : Nat := 32)
-    (parallel : Bool := true) (trace : Bool := false) (fixes : Fixes := {}) :
+    (parallel : Bool := true) (trace : Bool := false) (fixes : Fixes := {}) (persist : Bool := true) :
     IO (Except String Installed) := do
   let mode := fixes.mode
   let t0 ← IO.monoMsNow
@@ -507,10 +507,13 @@ def install (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (workers : Nat 
   -- projection tables for the structures left without one
   let (fe, tablesAdded, tablesProp) := if fixes.proj then addTables env fe else (fe, 0, 0)
   let t5 ← IO.monoMsNow
-  let shared ← (unsafe Runtime.markPersistent fe : BaseIO (FEnv .source))
-  let core ← (unsafe Runtime.markPersistent
-    (Ix.Kernel.Cached.coreKnotI mode shared Ix.Kernel.checkFuel) :
-      BaseIO (Ix.Kernel.Cached.CoreFnsI .source))
+  -- marked persistent: every worker reads them, none writes them, and their reference
+  -- counts are never touched (`IX_BD_NOPERSIST` leaves them ordinary shared objects, for
+  -- measurement)
+  let shared ← if persist then (unsafe Runtime.markPersistent fe : BaseIO (FEnv .source)) else pure fe
+  let core0 := Ix.Kernel.Cached.coreKnotI mode shared Ix.Kernel.checkFuel
+  let core ← if persist then (unsafe Runtime.markPersistent core0 : BaseIO (Ix.Kernel.Cached.CoreFnsI .source))
+    else pure core0
   let t6 ← IO.monoMsNow
   if trace then
     -- the structures some installed term projects from that have no projection table
@@ -551,7 +554,8 @@ def installInput (env : Ix.Environment) (workers : Nat := 32) : IO (Except Strin
   let trace := ((← IO.getEnv "IX_BD_TRACE").map fun s => (s.splitOn ",").toArray).getD #[]
   let fixes := Fixes.parse ((← IO.getEnv "IX_BD_OFF").getD "")
   let tier1 := (← IO.getEnv "IX_BD_TIER1").isSome
-  return (← install env blocks workers parallel (!trace.isEmpty) fixes).map fun k =>
+  let persist := (← IO.getEnv "IX_BD_NOPERSIST").isNone
+  return (← install env blocks workers parallel (!trace.isEmpty) fixes persist).map fun k =>
     { k with stored, memo, trace, tier1, times := #[("condense", t1 - t0)] ++ k.times }
 
 /-! ## The walk -/
