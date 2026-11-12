@@ -16,8 +16,9 @@ their provenance; required CI never runs it.
   (`Ix/PrimAddrs.lean`, or `Ix/Tc/Primitive.lean` in earlier revisions), and
   check that the two tables are equal; tables with different fields are
   refused, naming the fields.
-* `rc-real-source --ix IX [--ix-path DIR]`: regenerate the RC real-source
-  input `fixtures/rc/real-source` (`rcRealSource`).
+* `rc-real-source --ix IX [--ix-path DIR]`, `rc-budget --ix IX [--ix-path DIR]`: regenerate the RC
+  real-source input `fixtures/rc/real-source` and the captured-work budget input
+  `fixtures/rc/budget` (`rcInput`).
 -/
 
 namespace RefreezeIxon
@@ -99,24 +100,37 @@ def tcPrimitives (repo revision : String) : IO Unit := do
   IO.FS.writeFile path text
   IO.println s!"{path}: {changed} of {theirs.length} primitive addresses changed (ix {revision.take 8})"
 
-/-! ## The RC real-source input -/
+/-! ## The RC inputs: the real-source input and the captured-work budget input -/
 
-def rcDir : FilePath := "fixtures/rc/real-source"
+/-- An RC input: the command that regenerates it, its directory, its source file and its roots. -/
+structure RcInput where
+  command : String
+  dir : FilePath
+  source : String
+  roots : List String
 
-def rcRoots : List String :=
-  ["IxCCTests.Own.H0.reverseList", "IxCCTests.Own.H0.reverseRepeated", "IxCCTests.Own.H0.sharedReverse"]
+def rcRealSourceInput : RcInput :=
+  { command := "rc-real-source", dir := "fixtures/rc/real-source", source := "Reverse.lean",
+    roots := ["IxCCTests.Own.H0.reverseList", "IxCCTests.Own.H0.reverseRepeated",
+      "IxCCTests.Own.H0.sharedReverse"] }
 
-/-- `fixtures/rc/real-source`: the closure of its three roots and its sidecar,
-by `corpus rebuild`'s fixture step (the anonymous closure, the named twin, every
-root, definition and equation resolved with `ix addr-of`; the roots have no
-cases), then `provenance.json` and every hash of `manifest.sha256` (whose file
-list is kept). -/
-def rcRealSource (ix : String) (ixPath : List String) (work : FilePath) : IO Unit := do
+/-- The captured-work budget input (heap stage 2): a root within `Anf.maxCapturedWork`, one past. -/
+def rcBudgetInput : RcInput :=
+  { command := "rc-budget", dir := "fixtures/rc/budget", source := "Fan.lean",
+    roots := ["IxCCTests.Own.Budget.fanUnder", "IxCCTests.Own.Budget.fanOver"] }
+
+/-- An RC input's directory: the closure of its roots and its sidecar, by `corpus rebuild`'s
+fixture step (the anonymous closure, the named twin, every root, definition and equation resolved
+with `ix addr-of`; the roots have no cases), then `provenance.json` and every hash of
+`manifest.sha256` (whose file list is kept). -/
+def rcInput (input : RcInput) (ix : String) (ixPath : List String) (work : FilePath) : IO Unit := do
+  let rcDir := input.dir
+  let rcRoots := input.roots
   let ix := (← IO.FS.realPath ix).toString
-  let stage ← IxCCTests.Corpus.freshWorkDir (work / "rc-real-source")
-  let source := (rcDir / "Reverse.lean").toString
+  let stage ← IxCCTests.Corpus.freshWorkDir (work / input.command)
+  let source := (rcDir / input.source).toString
   let m : IxCCTests.Corpus.Family :=
-    { family := "rc-real-source", tier := "manual", phase := 1, directory := stage.toString,
+    { family := input.command, tier := "manual", phase := 1, directory := stage.toString,
       sourceRoot := ".", producer := { ixVersion := ← version ix },
       fixtures := [] }
   let f : IxCCTests.Corpus.Fixture :=
@@ -132,14 +146,14 @@ def rcRealSource (ix : String) (ixPath : List String) (work : FilePath) : IO Uni
   let lean ← run "lean" #["--version"]
   let provenance := Json.mkObj [
     ("source_path", toJson rcDir.toString),
-    ("source_sha256", Json.mkObj [("Reverse.lean", toJson (← sha256 source)),
+    ("source_sha256", Json.mkObj [(input.source, toJson (← sha256 source)),
       ("anonymous.ixe", toJson (← sha256 (rcDir / "anonymous.ixe"))),
       ("consumer.equations.json", toJson (← sha256 (rcDir / "consumer.equations.json")))]),
     ("producer", toJson IxCCTests.Corpus.producerIx),
     ("producer_version", toJson m.producer.ixVersion),
     ("named_env_sha256", toJson f.namedEnvSha256),
     ("lean_version", toJson lean),
-    ("regenerate", toJson "lake exe refreeze-ixon rc-real-source --ix IX --ix-path FAKE (docs/corpus.md, Refreezing)"),
+    ("regenerate", toJson s!"lake exe refreeze-ixon {input.command} --ix IX --ix-path FAKE (docs/corpus.md, Refreezing)"),
     ("commands", toJson [
       s!"ix compile --no-build --consts <roots> --equations --anon --out anonymous.ixe --equations-out anonymous.equations.json {source}",
       s!"ix compile --no-build --consts <roots> --equations --out named.ixe --equations-out named.equations.json {source}",
@@ -158,7 +172,8 @@ def rcRealSource (ix : String) (ixPath : List String) (work : FilePath) : IO Uni
 def usage : String :=
   "usage: refreeze-ixon package --ix-repo DIR --ix-revision REV\n" ++
   "       refreeze-ixon tc-primitives --ix-repo DIR --ix-revision REV\n" ++
-  "       refreeze-ixon rc-real-source --ix IX [--ix-path DIR] [--work DIR]"
+  "       refreeze-ixon rc-real-source --ix IX [--ix-path DIR] [--work DIR]\n" ++
+  "       refreeze-ixon rc-budget --ix IX [--ix-path DIR] [--work DIR]"
 
 def main (args : List String) : IO Unit := do
   let (command, rest) := match args with
@@ -170,7 +185,8 @@ def main (args : List String) : IO Unit := do
   match command with
   | "package" => package (← req "--ix-repo") (← req "--ix-revision")
   | "tc-primitives" => tcPrimitives (← req "--ix-repo") (← req "--ix-revision")
-  | "rc-real-source" => rcRealSource (← req "--ix") ((optional options "--ix-path").toList) work
+  | "rc-real-source" => rcInput rcRealSourceInput (← req "--ix") ((optional options "--ix-path").toList) work
+  | "rc-budget" => rcInput rcBudgetInput (← req "--ix") ((optional options "--ix-path").toList) work
   | _ => throw (IO.userError usage)
 
 end RefreezeIxon
