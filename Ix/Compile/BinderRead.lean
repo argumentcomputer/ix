@@ -121,6 +121,15 @@ def leafSort : Ix.Expr → Option Ix.Level
   | .mdata _ e _ => leafSort e
   | _ => none
 
+/-- The level of `a` when it is `Sort l` under exactly `k` λs. -/
+def lamSort : Nat → Ix.Expr → Option Ix.Level
+  | 0, a => match unmeta a with
+    | .sort l _ => some l
+    | _ => none
+  | k + 1, a => match unmeta a with
+    | .lam _ _ b _ _ => lamSort k b
+    | _ => none
+
 /-- **The zero-ness of the sort of the type `t`, read syntactically.** `σ`
 numbers the level parameters `t` and `ctx` (the types of `t`'s loose variables,
 innermost first) are written over, and `sub` maps levels in that numbering to
@@ -138,10 +147,22 @@ def sortPw (find : Find) (σ : Ix.Name → Nat) (sub : Ix.Kernel.Level → Ix.Ke
         | .const c us _ => do
           let ci ← find c
           let cv := ci.getCnst
-          let .sort l _ := unwrap find 8 (← peelN n cv.type) | none
-          let lc ← (ingressLevel (posIn cv.levelParams) l).toOption
-          let us' ← (us.toList.mapM (ingressLevel σ)).toOption
-          pure (Ix.Kernel.Level.subst (List.range cv.levelParams.size) us' lc)
+          match unwrap find 8 (← peelN n cv.type) with
+          | .sort l _ =>
+            let lc ← (ingressLevel (posIn cv.levelParams) l).toOption
+            let us' ← (us.toList.mapM (ingressLevel σ)).toOption
+            pure (Ix.Kernel.Level.subst (List.range cv.levelParams.size) us' lc)
+          | r =>
+            -- the type there is one of the head's own variables applied to `k`
+            -- arguments (a matcher's `motive x`, `ite`'s `α`): the actual argument
+            -- there, a sort under exactly `k` λs, is the sort (a level names no term
+            -- variable, so the arguments do not matter)
+            let (rh, k) := headArgs r
+            let .bvar j _ := rh | none
+            guard (j < n)
+            let a ← (spineArgs t #[]).reverse[n - 1 - j]?
+            let l ← lamSort k a
+            (ingressLevel σ l).toOption
         | .bvar i _ => do
           let ty ← (ctx[i]?).join
           let .sort l _ := unwrap find 8 (← peelN n ty) | none
