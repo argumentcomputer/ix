@@ -55,6 +55,14 @@ And, for the root's checks, on `decide`: the observation `false` (tag `0`) fails
 rejects it, as documented); an enumeration argument that is not its type's listed constructor
 fails `foArgsB`; the pinned `Bool` re-pinned at `Nat` fails `boolListedB` and nothing in
 `groundCheck`.
+
+Recursors (G3): with no recursor class admitted the check is the landed one, true on `fib`. On
+`tak` (`fixtures/ixon-v4/bench-k1/tak`), whose one recursor in `Sl` is `Eq.rec` (run by
+`Eq.ndrec`), of class `eqRec`, not yet admitted: exactly `declOk` false; with every class
+admitted (`checkPartsWith`) every conjunct true; and three controls, each making exactly
+`recShape` false there: `Eq.rec`'s stored rule given the right-hand side `0`, its stored type cut
+by one binder (fewer than the arguments SrcEval takes), `Eq.refl`'s first binder datum made
+`never`.
 -/
 
 namespace IxCCTests.Grounding
@@ -370,6 +378,46 @@ def renamedCase? (i : Input) : Option (CId × CId) :=
       | _, _ => none
     | _ => none
 
+/-! ## G3: recursors in the checked set -/
+
+/-- The conjuncts of the check that are false with the recursor classes `adm` admitted. -/
+def failingWith (adm : List RecClass) (i : Input) : List String :=
+  (checkPartsWith adm i.src i.env i.κ i.lpsOf i.ann i.Sl).filterMap fun (n, b) =>
+    if b then none else some n
+
+/-- Every recursor class. -/
+def allClasses : List RecClass := [.empty, .eqRec, .ordinary]
+
+/-- The recursor of `Sl` the kernel stores under `Eq.rec`'s key. -/
+def eqRecOf? (i : Input) : Option CId :=
+  i.Sl.find? fun c => i.κ c == Ix.Kernel.eqRecName &&
+    match i.src.decl? c with
+    | some (.recr ..) => true
+    | _ => false
+
+/-- `Eq.rec`'s stored rule given the right-hand side `0`. -/
+def mutateEqRecRule (i : Input) : Input :=
+  { i with env := mapConst i.env Ix.Kernel.eqRecName fun
+      | .recInfo cv mI rP (r0 :: rest) => .recInfo cv mI rP ({ r0 with rhs := litE 0 } :: rest)
+      | ci => ci }
+
+/-- `Eq.rec`'s stored type without its first binder: one `∀` fewer than the arguments SrcEval
+takes. -/
+def mutateEqRecArity (i : Input) : Input :=
+  { i with env := mapConst i.env Ix.Kernel.eqRecName fun
+      | .recInfo cv mI rP rules => .recInfo { cv with type := piBody 1 cv.type } mI rP rules
+      | ci => ci }
+
+/-- `Eq.refl`'s stored type with its first binder datum made `never` (its telescope unchanged, so
+the `ctor` conjunct, which reads its length, is not affected). -/
+def mutateEqRefl (i : Input) : Input :=
+  let redatum : KExpr → KExpr
+    | .forallE d b _ => .forallE d b { pw := .never }
+    | T => T
+  { i with env := mapConst i.env Ix.Kernel.eqReflName fun
+      | .ctorInfo cv np nf => .ctorInfo { cv with type := redatum cv.type } np nf
+      | ci => ci }
+
 /-- `n` nested `Nat.succ`s around `Nat.zero`. -/
 def succs (n : Nat) : KExpr := (List.range n).foldl (fun e _ => .app succK e) zeroK
 
@@ -570,6 +618,29 @@ def run : IO Bool := do
       s!"OS16-plain: c{rc}'s recursor called at its levels reversed: false conjuncts {failing om}"
     IO.println s!"OS16-plain: every conjunct of the check true (c{rc}'s recursor named apart); its \
       levels reversed in casesOn's body: exactly caseShape false"
+    -- G3: recursors. As first landed, `declOk` admitted no class; with none admitted the check
+    -- is the landed one, true on `fib`
+    expect a (failingWith [] i).isEmpty
+      s!"fib: with no recursor class admitted, false conjuncts {failingWith [] i}"
+    -- `tak`: `Eq.rec` (run by `Eq.ndrec`) is its only recursor and its only obstacle; it has the
+    -- checked shape (`recShape`), and only `declOk`'s class gate refuses it until F3 is proved
+    let (ki, _) ← loadClosure "tak" "fixtures/ixon-v4/bench-k1/tak" ["entry"]
+    let some er := eqRecOf? ki | throw (IO.userError "tak: no Eq.rec in Sl")
+    expect a (recClassB ki.src ki.env ki.κ er == some .eqRec && !admittedClasses.contains .eqRec &&
+        failing ki == ["declOk"])
+      s!"tak: Eq.rec c{er} class {repr (recClassB ki.src ki.env ki.κ er)}, false conjuncts {failing ki}, expected [declOk]"
+    expect a (failingWith allClasses ki).isEmpty
+      s!"tak: every class admitted, false conjuncts {failingWith allClasses ki}"
+    -- controls (every class admitted, so that `declOk` is true): each makes exactly `recShape` false
+    let kr := failingWith allClasses (mutateEqRecRule ki)
+    expect a (kr == ["recShape"]) s!"tak: Eq.rec's rule rhs made 0: false conjuncts {kr}, expected [recShape]"
+    let ka := failingWith allClasses (mutateEqRecArity ki)
+    expect a (ka == ["recShape"]) s!"tak: Eq.rec's type cut by one binder: false conjuncts {ka}, expected [recShape]"
+    let kf := failingWith allClasses (mutateEqRefl ki)
+    expect a (kf == ["recShape"]) s!"tak: Eq.refl's first binder datum made never: false conjuncts {kf}, expected [recShape]"
+    IO.println s!"tak: Eq.rec c{er} of class eqRec, with the checked shape; the check refuses it at \
+      declOk alone (class not admitted); with every class admitted it is true, and Eq.rec's rule \
+      rhs mutated, its type cut by one binder, Eq.refl's first binder datum changed: exactly recShape false"
     IO.println s!"tests-grounding: {← a.get} assertions passed"
     return true
   catch error =>
