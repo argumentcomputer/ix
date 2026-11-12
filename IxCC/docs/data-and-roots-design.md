@@ -408,17 +408,19 @@ exists, behind `Table.Config.words`, which is off, so no compile changes:
   ([`Rt.Lower.word`](../IxCC/Rt/Lower.lean)): `div`, `mod`, `land`, `lor`, `xor` are the `Nat`
   codes; below width 64 every other operation computes a word congruent to the tagged result
   modulo `2^(w+1)` and masks it, and never fails; at width 64 it computes the untagged wrapped
-  result and fails with `natOverflow` unless it is below `2^63`. The simulation is proved
-  (`Rt.Proof.prim_word`, the word case of `primitive_sim`, with the arithmetic of
-  `Rt.Proof.WordArith`); the code uses only Lir forms selection already has, so selection,
+  result and fails with `natOverflow` unless it is below `2^63`. The expansion is proved once,
+  against a heap-free core (`Rt.Proof.PrimCore`, `word_core`; the arithmetic in
+  `Rt.Proof.WordArith`), and each route's simulation follows from the core by one lemma (the
+  immortal route's `Rt.Proof.prim_word`, the plain-RC bridge's `Bridge.Scalar.prim_word`); the code uses only Lir forms selection already has, so selection,
   allocation and the validators need no new case. `tests-rt` runs every operation at every
   width on its boundary numbers against `eval` at Lir and at every backend level, with planted
   mutations of the code as controls.
 
 Two limits stay after W1, by design, and are open items: (a) a `UInt64` is native only below
 `2^63`: a word is a tagged immediate, so a width-64 result at or above `2^63` fails with
-`natOverflow`, as a `Nat` does, until stage W2 stores words unboxed (raw 64-bit words in
-registers and frames, boxed in uniform positions); (b) the decisions stay reference bodies, so
+`natOverflow`, as a `Nat` does; stage W2 is planned to lift it by keeping words unboxed (raw
+64-bit words in registers and frames, a cell of one scalar word where a word meets a uniform
+position), so that a width-64 result needs no tag bit; (b) the decisions stay reference bodies, so
 `x < y` at `x = 2^63 − 1` fails with `natOverflow` (`Nat.lt` is `x + 1 ≤ y`, and the `Nat`
 `x + 1` reaches `2^63`). The fix for (b) is primitive decisions: per decision and width a table
 entry justified, like the operations, by a stored theorem, here one fixing what the decision

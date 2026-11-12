@@ -309,8 +309,10 @@ hosted-CI or cold-store timing is claimed.
   switch that is off (`Table.Config.words`; erasure still declines a word entry), so
   nothing compiles differently yet. Two limits stay after W1, by design:
   a `UInt64` is native only below 2^63 (a word is a tagged immediate, so a width-64
-  result at or above 2^63 fails with `natOverflow`, as a `Nat` does) until stage W2
-  stores words unboxed as raw 64-bit words; and the comparisons (`decEq`, `decLt`,
+  result at or above 2^63 fails with `natOverflow`, as a `Nat` does); stage W2 is planned
+  to lift it by keeping words unboxed, raw 64-bit words in registers and frames (a word
+  that meets a uniform position boxed as a cell of one scalar word), so a width-64 result
+  needs no tag bit; and the comparisons (`decEq`, `decLt`,
   `decLe`) stay reference bodies, so `x < y` at `x = 2^63 − 1` fails with
   `natOverflow` (`Nat.lt` is `x + 1 ≤ y`). Making the decisions primitives needs,
   per decision, a stored theorem fixing what it denotes as a `Decidable` value
