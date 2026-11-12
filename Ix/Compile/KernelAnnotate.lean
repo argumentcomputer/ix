@@ -88,6 +88,8 @@ structure Installed where
   ahead : Nat := 0
   /-- phase A's waves -/
   waves : Nat := 0
+  /-- the member names whose records are traced (`IX_BD_TRACE`, for diagnosis) -/
+  trace : Array String := #[]
   /-- whether a root phase A annotated is read off its stored term (`walkStored`)
   rather than walked -/
   stored : Bool := true
@@ -188,6 +190,10 @@ def ahead (ev : Ix.Kernel.Evidences .source) (fe : FEnv .source) (d : CDecl .sou
     else (separable fe d).map (#[·])
   | .thmDecl .. | .opaqueDecl .. => (separable fe d).map (#[·])
   | _ => aheadStep ev fe d
+
+/-- A kernel error on one line, for `IX_BD_TRACE`. -/
+def traceError (e : Ix.Kernel.CheckError .source) : String :=
+  ((Benchmarks.Kernel.CheckIxeStep.checkOutcome e).2.replace "\n" " ").take 400
 
 def readErrorString : ReadError → String
   | .malformed m => s!"malformed: {m}"
@@ -403,8 +409,9 @@ def installInput (env : Ix.Environment) (workers : Nat := 32) : IO (Except Strin
   let t1 ← IO.monoMsNow
   let parallel := (← IO.getEnv "IX_BD_SEQUENTIAL").isNone
   let stored := (← IO.getEnv "IX_BD_WALK_ALL").isNone
+  let trace := ((← IO.getEnv "IX_BD_TRACE").map fun s => (s.splitOn ",").toArray).getD #[]
   return (← install env blocks workers parallel).map fun k =>
-    { k with stored, times := #[("condense", t1 - t0)] ++ k.times }
+    { k with stored, trace, times := #[("condense", t1 - t0)] ++ k.times }
 
 /-! ## The walk -/
 
@@ -424,6 +431,8 @@ structure Cx where
   bounds : Array Nat
   large : Bool := false
   params : Nat := 0
+  /-- print why a datum is undecided (`IX_BD_TRACE`, for diagnosis) -/
+  trace : Bool := false
 
 /-- A source level parameter's index in the record's numbering (the inverse of
 `Ix.LeanIngress.Numbering.pos`). -/
@@ -485,7 +494,11 @@ def datum (cx : Cx) (pi : Bool) (depth : Nat) (leaf : KExpr) : EM (Option PropWh
   let act : CM PropWhen :=
     if pi then Ix.Kernel.Cached.annotPwPiI cx.core cx.fe depth leaf
     else Ix.Kernel.Cached.annotPwLamI cx.core cx.fe depth leaf
-  let res : Option PropWhen ← (tryCatch (some <$> act) (fun _ => pure none) : CM (Option PropWhen))
+  let res : Option PropWhen ← (tryCatch (some <$> act) (fun e =>
+      if cx.trace then
+        dbgTrace s!"binder data trace: the datum of a {if pi then "∀" else "λ"} run at depth {depth} \
+          fails: {traceError e}" fun _ => pure none
+      else pure none) : CM (Option PropWhen))
   pure res
 
 /-- A run of binders of one kind in both trees: each binder's domain in the
@@ -735,8 +748,9 @@ def annotate (k : Installed) (extra : Array (Ix.Name × Ix.ConstantInfo)) (names
   match sourceRoots k.env extra names c with
   | none => Ix.CompileM.undecidedSection c
   | some xs =>
+    let traced := !k.trace.isEmpty && names.any fun n => k.trace.contains n.pretty
     let cx0 : Cx := { fe := k.fe, core := k.core, sharing := c.sharing,
-                      bounds := IxVM.PwHints.bounds c.sharing }
+                      bounds := IxVM.PwHints.bounds c.sharing, trace := traced }
     let stored : Array (Option KExpr) := if !k.stored then #[] else
       ((members c).zip names).foldl (fun acc (m, n) => acc ++ storedItems k.fe n m) #[]
     let tys := IxVM.PwHints.valueTypes c
@@ -771,7 +785,11 @@ def annotate (k : Installed) (extra : Array (Ix.Name × Ix.ConstantInfo)) (names
       match Ix.Compile.BinderData.sectionOf c (roots ++ st.blocks) with
       | .ok s => s
       | .error _ => Ix.CompileM.undecidedSection c
-    | .error _ => Ix.CompileM.undecidedSection c
+    | .error e =>
+      if traced then
+        dbgTrace s!"binder data trace: {names.map (·.pretty)}: the walk fails: {traceError e}"
+          fun _ => Ix.CompileM.undecidedSection c
+      else Ix.CompileM.undecidedSection c
 
 /-- **The annotator of a compile** over its installed input. -/
 def annotator (k : Installed) : Ix.BinderAnnotator :=
