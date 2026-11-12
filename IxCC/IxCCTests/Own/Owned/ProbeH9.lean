@@ -100,10 +100,12 @@ def fanParams (P K G : Nat) : Synth :=
   let own := toOwn (fun _ => scope P) body
   { F := prog (List.replicate G fd), map := some (Src.NatMap.ofList ((List.range G).map (·, own))) }
 
-/-- `trap P G`: `G` copies of `f(p₀…p_P) := trap` (one Anf node each; the canonical map has no
-action: a trap may leak). -/
+/-- `trap P G`: `G` copies of `f(p₀…p_P) := trap` (one Anf node each). The map has no action (a
+trap may leak, so the checker accepts it); the canonical map drops every parameter first, a chain
+of `P + 1` actions that the certificate's JSON depth limit (512) refuses past about 500. -/
 def trapFam (P G : Nat) : Synth :=
-  { F := prog (List.replicate G (fun1 (scope P) .trap (P + 1))), map := none }
+  { F := prog (List.replicate G (fun1 (scope P) .trap (P + 1))),
+    map := some (Src.NatMap.ofList ((List.range G).map (·, .trap))) }
 
 /-- `retLast P K G`: `G` copies of `f(p₀…p_P)`: a `case` tree on `p_P` with `K` leaves, each
 `ret p_P` (every node reads the last parameter); the canonical map drops the other parameters at
@@ -113,13 +115,16 @@ def retLast (P K G : Nat) : Synth :=
   { F := prog (List.replicate G (fun1 (scope P) body (P + 1))), map := none }
 
 /-- `callLast P K G`: functions `0 … G-2` are `f(p₀…p_P)`: `K` bindings `y := call (G-1) []`, then
-`ret p_P`; function `G-1` is `g() := ret 0` (every call looks the last function's arity up). -/
+`trap`; function `G-1` is `g() := ret 0` (every call looks the last function's arity up). The map
+has no action (the trap leaks). -/
 def callLast (P K G : Nat) : Synth :=
   let g := G - 1
-  let body := (List.range K).foldr (fun i k => Fir.Code.bind (P + 1 + i) (.call g []) k) (.ret (.var P))
+  let body := (List.range K).foldr (fun i k => Fir.Code.bind (P + 1 + i) (.call g []) k) .trap
   let fd := fun1 (scope P) body (P + 1 + K)
   let last := fun1 [] (.ret (.lit (.nat 0))) 0
-  { F := prog (List.replicate g fd ++ [last]), map := none }
+  { F := prog (List.replicate g fd ++ [last]),
+    map := some (Src.NatMap.ofList ((List.range G).map fun f =>
+      (f, if f == g then Code.ret (.lit (.nat 0)) else toOwn (fun _ => []) body))) }
 
 def family (name : String) (P K G : Nat) : Option Synth :=
   match name with
@@ -290,8 +295,8 @@ def edits (F : Fir.Program) (fd : Fir.Fun) : List (String × Option Fir.Fun) :=
     ("joinParamDup", body fun
       | .jp j (q :: ps') rec b k => some (.jp j (q :: q :: ps') rec b k)
       | _ => none),
-    ("selfJumpNonRec", body fun | .jp j ps' _ b k => some (.jp j ps' false (.jmp j (zeros ps'.length)) k) | _ => none),
-    ("selfJumpRec", body fun | .jp j ps' _ b k => some (.jp j ps' true (.jmp j (zeros ps'.length)) k) | _ => none) ]
+    ("selfJumpNonRec", body fun | .jp j ps' _ _ k => some (.jp j ps' false (.jmp j (zeros ps'.length)) k) | _ => none),
+    ("selfJumpRec", body fun | .jp j ps' _ _ k => some (.jp j ps' true (.jmp j (zeros ps'.length)) k) | _ => none) ]
 
 /-- Per program: a function `f`'s edit, the program with it in place of `f`. -/
 def withFun (F : Fir.Program) (f : Nat) (fd : Fir.Fun) : Fir.Program :=
