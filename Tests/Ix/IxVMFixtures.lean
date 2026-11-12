@@ -252,4 +252,19 @@ public theorem deepRebase :
       n + 0 = n :=
   fun n _ _ _ _ _ _ _ _ _ _ => Nat.add_zero n
 
+-- A block of three types and an enumeration of three constructors: the block's
+-- model holds a tag enumeration of three constructors, alpha-equivalent to `Tri`.
+mutual
+  public inductive TriA : Type where
+    | base : TriA
+    | next : TriB → TriA
+  public inductive TriB : Type where
+    | next : TriC → TriB
+  public inductive TriC : Type where
+    | next : TriA → TriC
+end
+
+public inductive Tri : Type where
+  | t0 | t1 | t2
+
 end IxVMInd

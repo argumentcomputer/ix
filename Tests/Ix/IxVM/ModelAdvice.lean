@@ -28,6 +28,15 @@ model is witness data. Two properties are tested here:
   domain that mentions a parameter, a reflexive field into a member): ι
   reductions through their recursors are accepted, and false ι and constructor
   equations, installed in Lean unchecked, are refused.
+* **A tag enumeration is the compiled enumeration of its size** (`tagsCoincide`):
+  the model of a block of `n` types holds a tag enumeration of `n` constructors
+  and its recursor, encoded with the compiler's refs order and sharing
+  (`IxVM.Model.sharedRecord`), so they are, by address, the records the compiler
+  makes for a Lean enumeration of `n` constructors: `Bool` for `Even`/`Odd`,
+  `IxVMInd.Tri` for `TriA`/`TriB`/`TriC`. `Tri.rec` names `Tri` and its three
+  constructors, so in the encoder's order of references the generated recursor
+  would equal the compiled one for one order in 24. Checks of `TriA` and of
+  `Tri.rec`, with the generated and the compiled records one, are accepted.
 
 The must-reject cases for advice (wrong member models, wrong iota statements,
 axioms, self-reference, another block's payload, missing payloads, oversized
@@ -125,6 +134,39 @@ def digestUnchanged (env : Ixon.Env) (names : List Lean.Name) : IO Bool := do
     the shard claim over them agree with and without models (shard digest {digest})"
   return ok
 
+/-- The Lean enumerations, each with a member of a block whose tag enumeration
+has its number of constructors. -/
+def tagEnums : List (Lean.Name × Lean.Name) :=
+  [(`Bool, `IxVMInd.Even), (`IxVMInd.Tri, `IxVMInd.TriA)]
+
+/-- The names `tagsCoincide` compiles: the enumerations and the blocks, with
+their recursors. -/
+def tagNames : Array Lean.Name :=
+  #[`Bool, `Bool.rec, `IxVMInd.Even, `IxVMInd.Even.rec, `IxVMInd.Tri, `IxVMInd.Tri.rec,
+    `IxVMInd.TriA, `IxVMInd.TriA.rec]
+
+/-- Each enumeration's compiled block and recursor are model records of `env`
+(the generated tag enumeration and its recursor, by address). -/
+def tagsCoincide (env : Ixon.Env) : IO Bool := do
+  let mut ok := true
+  for (enum, member) in tagEnums do
+    let ty ← lookupAddr env enum
+    let recA ← lookupAddr env (enum.str "rec")
+    let block : Option Address := match (env.getConst? ty).map (·.info) with
+      | some (.iPrj p) => some p.block
+      | _ => none
+    let blockOk := block.any env.modelRecords.contains
+    let recOk := env.modelRecords.contains recA
+    unless blockOk && recOk do
+      IO.eprintln s!"[ixvm-model-advice] the tag enumeration of {member}'s block is not \
+        {enum}: block {if blockOk then "equal" else "different"}, recursor \
+        {if recOk then "equal" else "different"}"
+      ok := false
+  if ok then
+    IO.println s!"[ixvm-model-advice] the tag enumerations of the blocks of \
+      {tagEnums.map (·.2)} are {tagEnums.map (·.1)}, block and recursor"
+  return ok
+
 /-- Every theorem's value under `let _ : Nat := 0`: a different proof of the
 same statement, so a different record. -/
 def tweakProofs : Ix.Kernel.Declaration .anon → Ix.Kernel.Declaration .anon
@@ -133,12 +175,14 @@ def tweakProofs : Ix.Kernel.Declaration .anon → Ix.Kernel.Declaration .anon
 
 def run (lenv : Lean.Environment) : IO UInt32 := do
   let names := modeledNames.map nameOfString
-  let missing := names.filter (!lenv.constants.contains ·)
+  let missing := (names ++ tagNames.toList).filter (!lenv.constants.contains ·)
   unless missing.isEmpty do
     IO.eprintln s!"[ixvm-model-advice] not in the environment: {missing}"
     return 1
   let env ← loadSharedIxonEnv names.toArray lenv
   let digestOk ← digestUnchanged env names
+  let tagEnv ← loadSharedIxonEnv tagNames lenv
+  let tagsOk ← tagsCoincide tagEnv
   -- why a modeled block has no model, if one has none
   let (_, rep0) ← IO.ofExcept (IxVM.Model.generateReport { withoutModels env with modelsAttached := false })
   for (b, r) in rep0.blocks do
@@ -168,7 +212,9 @@ def run (lenv : Lean.Environment) : IO UInt32 := do
       (({} : Std.HashMap _ _).insert axioms.root axioms) (accept := false)
       (rejectsWith := some "model advice: a claim with user axioms")
   let cases := (names.map (mkCase env "modeller's model")) ++
-    (names.map (mkCase tweaked "a different valid model")) ++ [underAxiom]
+    (names.map (mkCase tweaked "a different valid model")) ++ [underAxiom] ++
+    [mkCase tagEnv "its tag enumeration is Tri" `IxVMInd.TriA,
+     mkCase tagEnv "the recursor of TriA's tag enumeration" `IxVMInd.Tri.rec]
   -- the verdicts on `NB4`'s claims, from the entry's host cases (loaded at run time)
   let fenv ← getCompileEnv #[`Tests.Ix.Kernel.EntryCaseDefs]
   let fixEnv ← loadSharedIxonEnv (nestedVerdicts.map (·.1)).toArray fenv
@@ -179,7 +225,7 @@ def run (lenv : Lean.Environment) : IO UInt32 := do
     Case.ofClaim s!"{if accept then "accept" else "refuse"} {n}" fixEnv (.check ctx target none) {} accept
   let cases := cases ++ nestedVerdicts.map fun (n, accept) => verdictCase n accept
   let rc ← runCases "ixvm-model-advice" cases.toArray
-  return if digestOk && differ && rc == 0 then 0 else 1
+  return if digestOk && differ && tagsOk && rc == 0 then 0 else 1
 
 /-- The environment of an `.ixe` file under the default role table, without models. -/
 def loadIxe (path : String) : IO Ixon.Env := do
