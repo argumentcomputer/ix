@@ -358,7 +358,7 @@ theorem fire_step (H : FundHyps M p κ lpsOf S Ok) {k : Nat}
             -- the six arguments, and SrcEval's F3: the minor premise's slot, forced
             have harity : args.length = 6 := by
               rw [hlen]; simp [Program.headArity, hd, IxCC.Src.Decl.recArity]
-            have hAsl : As.length = 6 := by rw [← relSlots_length hargs, harity]
+            have hAsl : As.length = 6 := by rw [relSlots_length hargs, harity]
             obtain ⟨s0, s1, s2, s3, s4, s5, rfl⟩ :
                 ∃ s0 s1 s2 s3 s4 s5, args = [s0, s1, s2, s3, s4, s5] := by
               match args, harity with
