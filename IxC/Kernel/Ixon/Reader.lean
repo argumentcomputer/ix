@@ -553,7 +553,9 @@ def natural (bytes : ByteArray) : Nat :=
 `Nat.toBytesLE`): little-endian with no trailing zero byte, and `[0]` for
 zero. -/
 def canonicalNatural (bytes : ByteArray) : Bool :=
-  bytes.size == 1 || (bytes.size > 1 && bytes.data.back? != some 0)
+  match bytes.data.toList.getLast? with
+  | none => false
+  | some last => last != 0 || bytes.size == 1
 
 def convUniv (param : Nat → LevelParam) : Ixon.Univ → CLevel
   | .zero => .zero

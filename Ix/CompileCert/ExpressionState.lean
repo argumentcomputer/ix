@@ -257,7 +257,17 @@ theorem toBytesLE_go_last (fuel value : Nat) (pos : 0 < value) (bounded : value 
         exact ⟨Nat.toUInt8 (value + 1) :: init, last, by rw [eq]; rfl, ne⟩
       all_goals omega
 
+theorem getLast?_snoc (bytes : List UInt8) (last : UInt8) :
+    (bytes ++ [last]).getLast? = some last := by
+  induction bytes with
+  | nil => rfl
+  | cons byte rest ih =>
+    cases rest with
+    | nil => rfl
+    | cons next rest => exact ih
+
 /-- A natural-number literal's blob is the reader's canonical one. -/
+set_option linter.unusedSimpArgs false in
 theorem canonicalNatural_toBytes (value : Nat) :
     Kernel.Reader.canonicalNatural (ByteArray.mk (Nat.toBytesLE value)) = true := by
   unfold Kernel.Reader.canonicalNatural Nat.toBytesLE
@@ -266,9 +276,7 @@ theorem canonicalNatural_toBytes (value : Nat) :
   · simp only [beq_iff_eq, zero, ↓reduceIte]
     obtain ⟨init, last, eq, ne⟩ := toBytesLE_go_last value value (by omega) (Nat.le_refl _)
     rw [eq]
-    cases init with
-    | nil => rfl
-    | cons byte rest => simp [ne]
+    simp [getLast?_snoc, ne]
 
 /-- A natural-number literal's blob reads back as the literal. -/
 theorem natural_toBytes (value : Nat) :
