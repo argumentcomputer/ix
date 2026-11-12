@@ -178,7 +178,7 @@ def checkOpt (Δ : JCtx) (Γ : Ctx) : Option Code → Except String Unit
   | some c => checkCode Δ Γ c
 end
 
-/-- The candidate erases to the source (`eraseCode c = s`), decided without building `eraseCode`. -/
+-- The candidate erases to the source (`eraseCode c = s`), decided without building `eraseCode`.
 mutual
 def erases : Code → Fir.Code → Bool
   | .act _ k, s => erases k s
