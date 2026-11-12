@@ -377,6 +377,35 @@ def closure (path namesFile outFile : String) : IO UInt32 := do
     closure_names={names.size} names={e.named.size}"
   return 0
 
+/-- The records whose members `namesFile` names (one a line), and their sections'
+binder nodes (every node but a share's), against the artifact's records and nodes. -/
+def residual (path namesFile : String) : IO UInt32 := do
+  let e ← load path
+  let wanted : Std.HashSet String := (← IO.FS.lines namesFile).foldl (·.insert ·) {}
+  let ownerOf (a : Address) : Address := match e.getConst? a with
+    | some c => Ixon.CheckOrder.owner a c
+    | none => a
+  let binders (c : Ixon.Constant) : Nat :=
+    c.binders.foldl (fun acc b => acc + (b.nodes.filter fun
+      | .share _ => false
+      | _ => true).size) 0
+  let mut owners : Std.HashSet Address := {}
+  for (n, entry) in e.named do
+    if wanted.contains n.pretty then owners := owners.insert (ownerOf entry.addr)
+  let mut resBinders := 0
+  for o in owners do
+    if let some c := e.getConst? o then resBinders := resBinders + binders c
+  let mut allRecords := 0
+  let mut allBinders := 0
+  for (a, lc) in e.consts do
+    if let some c := lc.get? then
+      if Ixon.CheckOrder.owner a c == a then
+        allRecords := allRecords + 1
+        allBinders := allBinders + binders c
+  IO.println s!"BDRES {path}: residual_records={owners.size} residual_binder_nodes={resBinders} \
+    records={allRecords} binder_nodes={allBinders}"
+  return 0
+
 end Benchmarks.BinderDataStats
 
 def main (args : List String) : IO UInt32 := do
@@ -384,6 +413,7 @@ def main (args : List String) : IO UInt32 := do
   | ["stats", path] => Benchmarks.BinderDataStats.stats path
   | ["undecided", path] => Benchmarks.BinderDataStats.undecided path
   | ["closure", path, names, out] => Benchmarks.BinderDataStats.closure path names out
+  | ["residual", path, names] => Benchmarks.BinderDataStats.residual path names
   | ["compare", a, b] => Benchmarks.BinderDataStats.compare a b
   | ["diag", a, b] => Benchmarks.BinderDataStats.diag a b
   | ["addrs", a, b] => Benchmarks.BinderDataStats.addrs a b
@@ -392,6 +422,6 @@ def main (args : List String) : IO UInt32 := do
     IO.println s!"BDBIND {a}: records={e.consts.size} binding={(e.roleBinding.map (toString ·.address)).getD "none"}"
     return 0
   | _ =>
-    IO.eprintln "usage: binder-data-stats stats A.ixe | undecided A.ixe | closure A.ixe NAMES OUT | compare A.ixe B.ixe | diag A.ixe B.ixe | \
+    IO.eprintln "usage: binder-data-stats stats A.ixe | undecided A.ixe | closure A.ixe NAMES OUT | residual A.ixe NAMES | compare A.ixe B.ixe | diag A.ixe B.ixe | \
 addrs A.ixe B.ixe | binding A.ixe"
     return 2
