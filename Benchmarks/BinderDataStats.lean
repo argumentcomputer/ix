@@ -77,7 +77,7 @@ def stats (path : String) : IO UInt32 := do
       addedSizes := addedSizes.push (full - without)
       blocks := blocks + c.binders.size
       extraVariants := extraVariants + (c.binders.filter (·.variant > 0)).size
-      let u := c.binders.foldl (fun n b => n + (b.nodes.filter (· == .undecided)).size) (0 : Nat)
+      let u := c.binders.foldl (fun n b => n + (b.nodes.filter (·.isUndecided)).size) (0 : Nat)
       nodes := c.binders.foldl (fun n b => n + b.nodes.size) nodes
       undecidedNodes := undecidedNodes + u
       if u > 0 then undecidedRecords := undecidedRecords + 1
@@ -102,7 +102,7 @@ partial def expand (c : Ixon.Constant) (full : Array Bool)
   | e, nodes, ord, out => do
     if out.size > limit then return (ord, out)
     match e with
-    | .lam _ t b | .all _ _ t b =>
+    | .lam t b | .all t b =>
       let n ← nodes[ord]?
       if let .share _ := n then none
       let (ord, out) ← expand c full blocks limit t nodes (ord + 1) (out.push n)
@@ -110,7 +110,7 @@ partial def expand (c : Ixon.Constant) (full : Array Bool)
     | .app f a =>
       let (ord, out) ← expand c full blocks limit f nodes ord out
       expand c full blocks limit a nodes ord out
-    | .letE _ t v b =>
+    | .letE _ _ t v b =>
       let (ord, out) ← expand c full blocks limit t nodes ord out
       let (ord, out) ← expand c full blocks limit v nodes ord out
       expand c full blocks limit b nodes ord out
@@ -291,7 +291,7 @@ def undecided (path : String) : IO UInt32 := do
   let mut addrs : Array Address := #[]
   for (a, lc) in e.consts do
     if let some c := lc.get? then
-      if !unsafeOrPartial c && c.binders.any (·.nodes.any (· == .undecided)) then
+      if !unsafeOrPartial c && c.binders.any (·.nodes.any (·.isUndecided)) then
         addrs := addrs.push a
   let names := Ix.Compile.BinderData.namesOf e (addrs.foldl (·.insert ·) {})
   IO.println s!"BDUND {path}: safe_undecided={addrs.size}"
@@ -307,10 +307,10 @@ partial def refIdxs (c : Ixon.Constant) (seen : Std.HashSet Nat) (acc : Std.Hash
   | .app f a =>
     let (seen, acc) := refIdxs c seen acc f
     refIdxs c seen acc a
-  | .lam _ t b | .all _ _ t b =>
+  | .lam t b | .all t b =>
     let (seen, acc) := refIdxs c seen acc t
     refIdxs c seen acc b
-  | .letE _ t v b =>
+  | .letE _ _ t v b =>
     let (seen, acc) := refIdxs c seen acc t
     let (seen, acc) := refIdxs c seen acc v
     refIdxs c seen acc b

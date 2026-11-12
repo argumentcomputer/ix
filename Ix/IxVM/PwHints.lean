@@ -199,9 +199,9 @@ def memberCount (c : Ixon.Constant) : Nat :=
 def looseBound (shared : Array Nat) : Ixon.Expr → Nat
   | .var i => i.toNat + 1
   | .app f a => max (looseBound shared f) (looseBound shared a)
-  | .lam _ t b => max (looseBound shared t) (looseBound shared b - 1)
-  | .all _ _ t b => max (looseBound shared t) (looseBound shared b - 1)
-  | .letE _ t v b =>
+  | .lam t b => max (looseBound shared t) (looseBound shared b - 1)
+  | .all t b => max (looseBound shared t) (looseBound shared b - 1)
+  | .letE _ _ t v b =>
     max (max (looseBound shared t) (looseBound shared v)) (looseBound shared b - 1)
   | .prj _ _ v => looseBound shared v
   | .share n => shared[n.toNat]?.getD 0
@@ -215,7 +215,7 @@ def bounds (sharing : Array Ixon.Expr) : Array Nat :=
 def hasBinder (shared : Array Bool) : Ixon.Expr → Bool
   | .lam .. | .all .. => true
   | .app f a => hasBinder shared f || hasBinder shared a
-  | .letE _ t v b => hasBinder shared t || hasBinder shared v || hasBinder shared b
+  | .letE _ _ t v b => hasBinder shared t || hasBinder shared v || hasBinder shared b
   | .prj _ _ v => hasBinder shared v
   | .share n => shared[n.toNat]?.getD false
   | _ => false
@@ -226,10 +226,10 @@ def binderful (sharing : Array Ixon.Expr) : Array Bool :=
 
 /-- The share sites of a tree (its own numbered nodes) whose entry has no binder. -/
 def freeSites (full : Array Bool) : Ixon.Expr → Nat
-  | .lam _ t b => freeSites full t + freeSites full b
-  | .all _ _ t b => freeSites full t + freeSites full b
+  | .lam t b => freeSites full t + freeSites full b
+  | .all t b => freeSites full t + freeSites full b
   | .app f a => freeSites full f + freeSites full a
-  | .letE _ t v b => freeSites full t + freeSites full v + freeSites full b
+  | .letE _ _ t v b => freeSites full t + freeSites full v + freeSites full b
   | .prj _ _ v => freeSites full v
   | .share n => if full[n.toNat]?.getD false then 0 else 1
   | _ => 0
@@ -472,7 +472,7 @@ def walk : Nat → RecCx → List CtxEntry → Nat → Option KExpr → Ixon.Exp
       let (f', bf) ← walk fuel rc ctx depth none f
       let (a', ba) ← walk fuel rc ctx depth none a
       pure (.app f' a', bf || ba)
-    | .lam c t b => do
+    | .lam t b => do
       let ord ← reserve
       let (t', bt) ← walk fuel rc ctx depth none t
       let id ← freshId
@@ -485,9 +485,9 @@ def walk : Nat → RecCx → List CtxEntry → Nat → Option KExpr → Ixon.Exp
       let (pw, decided) ← datum rc false (depth + 1) b' expPw
       let bad := !decided || bt || bb
       setNode ord (if rc.taint && bad then .undecided else Node.ofPw pw)
-      pure (.lam t' (b'.abstract1C depth) ((Ix.Kernel.BinderMeta.ofContracts c .shared).withPw pw),
+      pure (.lam t' (b'.abstract1C depth) ((Ix.Kernel.BinderMeta.ofContracts .many .shared).withPw pw),
         bad)
-    | .all c r t b => do
+    | .all t b => do
       let ord ← reserve
       let (t', bt) ← walk fuel rc ctx depth none t
       let id ← freshId
@@ -495,9 +495,9 @@ def walk : Nat → RecCx → List CtxEntry → Nat → Option KExpr → Ixon.Exp
       let (pw, decided) ← datum rc true (depth + 1) b'
       let bad := !decided || bt || bb
       setNode ord (if rc.taint && bad then .undecided else Node.ofPw pw)
-      pure (.forallE t' (b'.abstract1C depth) ((Ix.Kernel.BinderMeta.ofContracts c r).withPw pw),
+      pure (.forallE t' (b'.abstract1C depth) ((Ix.Kernel.BinderMeta.ofContracts .many .shared).withPw pw),
         bad)
-    | .letE _ t v b => do
+    | .letE _ _ t v b => do
       -- the kernel annotates the type and the value, then the body with the
       -- value transparent (its ζ-reduct)
       let (_, bt) ← walk fuel rc ctx depth none t

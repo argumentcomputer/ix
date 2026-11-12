@@ -72,19 +72,19 @@ def variantsOf (dag : Dag) (index : Array (Option Nat)) (limits : Limits) :
         let fs ← go (node.child 0)
         let as ← go (node.child 1)
         pure (fs.flatMap fun f => as.map (Ixon.Expr.app f))
-      | .lam c => do
+      | .lam => do
         let tys ← go (node.child 0)
         let bs ← go (node.child 1)
-        pure (tys.flatMap fun ty => bs.map (Ixon.Expr.lam c ty))
-      | .all c r => do
+        pure (tys.flatMap fun ty => bs.map (Ixon.Expr.lam ty))
+      | .all => do
         let tys ← go (node.child 0)
         let bs ← go (node.child 1)
-        pure (tys.flatMap fun ty => bs.map (Ixon.Expr.all c r ty))
-      | .letE c => do
+        pure (tys.flatMap fun ty => bs.map (Ixon.Expr.all ty))
+      | .letE nonDep mode => do
         let tys ← go (node.child 0)
         let vs ← go (node.child 1)
         let bs ← go (node.child 2)
-        pure (tys.flatMap fun ty => vs.flatMap fun v => bs.map (Ixon.Expr.letE c ty v))
+        pure (tys.flatMap fun ty => vs.flatMap fun v => bs.map (Ixon.Expr.letE nonDep mode ty v))
       | _ => pure [node.toExpr fun _ => default]
     let sh := match index[t]?.getD none with
       | some i => [Ixon.Expr.share i.toUInt64]

@@ -348,7 +348,7 @@ def term (cx : Cx md) (sc : Scope md) (depth : Nat) : Nat → Expr md → PM (St
       let (sv, _) ← term cx sc depth fuel v
       let (sb, _) ← term cx { sc with vars := ⟨n, t⟩ :: sc.vars } depth fuel b
       -- a non-dependent let is Lean's `have`
-      let kw := if l.contract.nonDep then "have" else "let"
+      let kw := if l.nonDep then "have" else "let"
       return (s!"{kw} {nameStr n} := {sv}; {sb}", 0)
 
 /-- An application spine `f a₁ … aₙ` (`args` the arguments seen so far, the

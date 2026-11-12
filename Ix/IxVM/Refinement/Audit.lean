@@ -1107,7 +1107,7 @@ fun V =>
 /--
 info: def IxVM.Refinement.ConstantExprsClosed : Ixon.Env → Ixon.Constant → Prop :=
 fun ixe c =>
-  (∀ e ∈ c.info.exprs ++ c.sharing.toList, e.leanFragment = true ∧ IxVM.Refinement.ExprRefsClosed ixe c false e) ∧
+  (∀ e ∈ c.info.exprs ++ c.sharing.toList, IxVM.Refinement.ExprRefsClosed ixe c false e) ∧
     ∀ e ∈ c.info.exprs,
       (¬∃ d n, c.info = Ixon.ConstantInfo.defn d ∧ e = d.value ∧ IxVM.Refinement.IsProjFnAt c n d.value) →
         IxVM.Refinement.ExprRefsClosed ixe c true (Ix.Kernel.Reader.unshare c e)

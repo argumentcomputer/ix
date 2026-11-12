@@ -125,8 +125,8 @@ theorem rebuild_ok (n : Node) (inner side : Ixon.Expr) (h : n.head.family ≠ .n
   unfold rebuildSpineNode
   cases hh : n.head with
   | app => exact ⟨_, rfl⟩
-  | lam _ => exact ⟨_, rfl⟩
-  | all _ _ => exact ⟨_, rfl⟩
+  | lam => exact ⟨_, rfl⟩
+  | all => exact ⟨_, rfl⟩
   | _ => rw [hh] at h; exact absurd rfl h
 
 theorem spineFold_ok (buildSide : Node → Except SharingError Ixon.Expr) :
@@ -221,7 +221,7 @@ theorem PrepWF.build_ok {p : Prep} (hp : PrepWF p)
               obtain ⟨v, hv⟩ := ih false ((p.dag.node t).child 0) (by omega) (by omega)
               rw [hv]
               exact ⟨_, rfl⟩
-            | letE lc =>
+            | letE nonDep mode =>
               simp only
               have c0 : (p.dag.node t).child 0 < t :=
                 hp.dag.childAt_lt ht (by simp [hh, Head.arity])
@@ -235,12 +235,12 @@ theorem PrepWF.build_ok {p : Prep} (hp : PrepWF p)
               rw [h0]
               change ∃ e, (p.build ev index width false fuel ((p.dag.node t).child 1) >>= fun v =>
                 p.build ev index width false fuel ((p.dag.node t).child 2) >>= fun b =>
-                  pure (Ixon.Expr.letE lc v0 v b)) = .ok e
+                  pure (Ixon.Expr.letE nonDep mode v0 v b)) = .ok e
               rw [h1, h2]
               exact ⟨_, rfl⟩
             | app => rw [hh] at fam; cases fam
-            | lam _ => rw [hh] at fam; cases fam
-            | all _ _ => rw [hh] at fam; cases fam
+            | lam => rw [hh] at fam; cases fam
+            | all => rw [hh] at fam; cases fam
             | _ => simp only; exact ⟨_, rfl⟩
           · cases h1
         · -- a telescope cut

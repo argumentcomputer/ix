@@ -317,24 +317,28 @@ def successorBomb : ByteArray :=
     (List.range bytes.size).all (fun n =>
       !(Ixon.Bounded.deUniv bytes.size value.nodeCount (bytes.extract 0 n)).isOk)
 
-/-- All sixteen Ixon binder contracts, four value contracts, and the four let
-flag spellings over a binder. -/
-def binderContracts : List Ixon.BinderContract :=
-  (List.range 16).filterMap fun bits => Ixon.BinderContract.ofBits? bits.toUInt8
-def valueContracts : List Ixon.ValueContract :=
-  (List.range 4).filterMap fun bits => Ixon.ValueContract.ofBits? bits.toUInt8
-def letContracts (binder : Ixon.BinderContract) : List Ixon.LetContract :=
-  (List.range 4).filterMap fun flags => Ixon.LetContract.ofFlags? flags.toUInt64 binder
-#guard binderContracts.length == 16 && valueContracts.length == 4 &&
-  (letContracts .many).length == 4
+/-- Every mode of each kind: the codes below 256 that decode, which are
+exactly the legal sets (7 binder, 28 binder-node, 8 let, 2 field, 6
+assertion modes), each read back from its own code. -/
+def allModes : List Ixon.AllMode :=
+  (List.range 256).filterMap fun c => Ixon.AllMode.ofCode? c.toUInt8
+def letModes : List Ixon.LetMode :=
+  (List.range 256).filterMap fun c => Ixon.LetMode.ofCode? c.toUInt8
+def assertModes : List Ixon.DefAsserts :=
+  (List.range 256).filterMap fun c => Ixon.DefAsserts.ofCode? c.toUInt8
+#guard ((List.range 256).filterMap fun c => Ixon.BinderMode.ofCode? c.toUInt8).length == 7
+#guard allModes.length == 28 && letModes.length == 8 && assertModes.length == 6
+#guard ((List.range 256).filterMap fun c => Ixon.FieldMode.ofCode? c.toUInt8).length == 2
+#guard allModes.all fun m => Ixon.AllMode.ofCode? m.toCode == some m
+#guard letModes.all fun m => [false, true].all fun nonDep =>
+  Ixon.LetMode.header nonDep m < 16 && Ixon.LetMode.ofHeader? (Ixon.LetMode.header nonDep m) == some (nonDep, m)
+#guard (List.range 64).all fun h =>
+  (Ixon.LetMode.ofHeader? h.toUInt64).isSome == decide (h < 16)
 
--- Every Ixon binder contract, forall result contract, and let flag spelling.
-#guard binderContracts.all fun binder =>
-  valueContracts.all fun result =>
-    letContracts binder |>.all fun letContract =>
-      exactExpr (.all binder result (.sort 0)
-        (.lam binder (.var 0) (.letE letContract (.var 1) (.var 0) (.var 0))))
-#guard exactExpr (.letE (.lean false) (.sort 0) (.app (.var 0) (.var 1)) (.var 2))
+-- Every let mode and dependency flag in a let header; binders carry no mode.
+#guard letModes.all fun m => [false, true].all fun nonDep =>
+  exactExpr (.all (.sort 0) (.lam (.var 0) (.letE nonDep m (.var 1) (.var 0) (.var 0))))
+#guard exactExpr (.letE false (.value .many) (.sort 0) (.app (.var 0) (.var 1)) (.var 2))
 #guard [1, 7, 8, 31, 32, 128].all fun n =>
   exactExpr ((List.range n).foldl (fun e i => .app e (.var i.toUInt64)) (.ref 0 #[]))
 
@@ -411,21 +415,18 @@ def resourceConstant (value : Ixon.Constant) : Bool :=
 #guard wordBoundaries.all fun n =>
   [Ixon.Expr.var n, .sort n, .str n, .nat n, .share n,
     .ref n #[n], .recur n #[n], .prj n n (.var 0)].all resourceExpr
--- Every Ixon binder contract, forall result contract, and let flag spelling.
-#guard binderContracts.all fun binder =>
-  valueContracts.all fun result =>
-    letContracts binder |>.all fun letContract =>
-      resourceExpr (.all binder result (.sort 0)
-        (.lam binder (.var 0) (.letE letContract (.var 1) (.var 0) (.var 0))))
-#guard resourceExpr (.letE (.lean false) (.sort 0) (.app (.var 0) (.var 1)) (.var 2))
+-- Every let mode and dependency flag.
+#guard letModes.all fun m => [false, true].all fun nonDep =>
+  resourceExpr (.all (.sort 0) (.lam (.var 0) (.letE nonDep m (.var 1) (.var 0) (.var 0))))
+#guard resourceExpr (.letE false (.value .many) (.sort 0) (.app (.var 0) (.var 1)) (.var 2))
 #guard [0, 1, 7, 8, 31, 32, 128, 1024].all fun n =>
   let levels := Array.replicate n 0
   (Ixon.Expr.ref 0 levels).resourceSize == n + 1 &&
     resourceExpr (.ref 0 levels) && resourceExpr (.recur 0 levels)
 #guard [1, 7, 8, 31, 32, 128].all fun n =>
   resourceExpr ((List.range n).foldl (fun e _ => .app e (.var 0)) (.var 0)) &&
-    resourceExpr ((List.range n).foldl (fun e _ => .lam .many (.sort 0) e) (.var 0)) &&
-    resourceExpr ((List.range n).foldl (fun e _ => .all .many .shared (.sort 0) e) (.var 0))
+    resourceExpr ((List.range n).foldl (fun e _ => .lam (.sort 0) e) (.var 0)) &&
+    resourceExpr ((List.range n).foldl (fun e _ => .all (.sort 0) e) (.var 0))
 
 -- Compressed application spines can contain more constructors than bytes;
 -- a one-unit-per-byte claim would be false even on canonical input.
@@ -481,22 +482,23 @@ example (bytes : ByteArray) (value : Ixon.Constant)
 
 end Tests.Ix.Kernel.Codec
 
-/-- Independently specified Ixon v4 expression bytes, every vector of
-`Tests/Fixtures/ixon-v4/expressions.txt`: the binder, result and let contract
-cases (all integers in rung 1, so byte-identical to Ixon v3), and the
+/-- Independently specified Ixon expression bytes, every vector of
+`Tests/Fixtures/ixon-v4/expressions.txt`: binder telescopes (domains only),
+let headers at every let mode (`nonDep + 2 ·` the mode's code), and the
 multi-byte TagN cases (the first and last value of every rung of `f = 4` and
 `f = 0`, a count of 8 and a rung-3 `Share`), checked for the codec's exact
 round trip. -/
 def upstreamV4Expressions : List (String × List UInt8) := [
   ("app", [0x73, 0x13, 0x12, 0x11, 0x10]),
-  ("lam", [0x83, 0x07, 0x00, 0x07, 0x00, 0x07, 0x00, 0x10]),
-  ("lam_local_unique", [0x81, 0x09, 0x00, 0x10]),
-  ("lam_affine_local", [0x81, 0x0e, 0x00, 0x10]),
-  ("all", [0x92, 0x29, 0x00, 0x17, 0x00, 0x10]),
-  ("ordinary_let", [0xa1, 0x00, 0x00, 0x61, 0x10]),
-  ("local_unique_let", [0xa0, 0x0a, 0x00, 0x11, 0x10]),
-  ("borrow", [0xa2, 0x0e, 0x00, 0x41, 0x02, 0x11, 0x10]),
-  ("borrow_nondep", [0xa3, 0x0f, 0x00, 0x11, 0x10]),
+  ("lam", [0x83, 0x00, 0x00, 0x00, 0x10]),
+  ("all", [0x92, 0x00, 0x00, 0x10]),
+  ("ordinary_let", [0xa1, 0x00, 0x61, 0x10]),
+  ("unique_let", [0xa4, 0x00, 0x11, 0x10]),
+  ("unique_borrowed_let_nondep", [0xa7, 0x00, 0x11, 0x10]),
+  ("once_let_nondep", [0xa8, 0x01, 0x00, 0x11, 0x10]),
+  ("erased_let", [0xa8, 0x04, 0x00, 0x11, 0x10]),
+  ("borrow", [0xa8, 0x06, 0x00, 0x41, 0x02, 0x11, 0x10]),
+  ("borrow_nondep", [0xa8, 0x07, 0x00, 0x11, 0x10]),
   ("reference", [0x20, 0x00]),
   ("recursion", [0x32, 0x02, 0x00, 0x01]),
   ("tagn4_rung1_last", [0x17]),
@@ -525,7 +527,7 @@ def upstreamV4Expressions : List (String × List UInt8) := [
   ("ref_univs_8", [0x28, 0x00, 0x00, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07]),
   ("share_rung3", [0xbc, 0x00, 0x00])]
 
-#guard upstreamV4Expressions.length == 36
+#guard upstreamV4Expressions.length == 37
 #guard upstreamV4Expressions.all fun (_, bytes) =>
   match Ixon.deExpr ⟨bytes.toArray⟩ with
   | .ok source => Ixon.serExpr source == ⟨bytes.toArray⟩
@@ -534,7 +536,7 @@ def upstreamV4Expressions : List (String × List UInt8) := [
 /-- The values the fixture's rung vectors encode, from its rung table:
 `tagn4_rungK_{first,last}` is `var` of the first and last value of rung `K`
 of `f = 4`, `tagn0_rungK_{first,last}` a `ref` whose index is that value for
-`f = 0`; and its last three vectors. -/
+`f = 0`; its count, universe and share vectors; and its binder and let vectors. -/
 def rungValue (f : Nat) (first : Bool) (rung : Nat) : UInt64 :=
   let ends := [0, Ixon.tagNEnd1 f, Ixon.tagNEnd2 f, Ixon.tagNEnd3 f, Ixon.tagNEnd4 f,
     Ixon.tagNEnd5 f, 2 ^ 64]
@@ -550,9 +552,18 @@ def upstreamV4Values : List (String × Ixon.Expr) :=
      (s!"tagn0_rung{rung}_last", .ref (rungValue 0 false rung) #[])]) ++
   [("app_telescope_8", (List.range 8).foldl (fun e i => .app e (.var (7 - i).toUInt64)) (.var 8)),
    ("ref_univs_8", .ref 0 #[0, 1, 2, 3, 4, 5, 6, 7]),
-   ("share_rung3", .share 1032)]
+   ("share_rung3", .share 1032),
+   ("lam", .lam (.sort 0) (.lam (.sort 0) (.lam (.sort 0) (.var 0)))),
+   ("all", .all (.sort 0) (.all (.sort 0) (.var 0))),
+   ("ordinary_let", .letE true (.value .many) (.sort 0) (.nat 1) (.var 0)),
+   ("unique_let", .letE false (.value .unique) (.sort 0) (.var 1) (.var 0)),
+   ("unique_borrowed_let_nondep", .letE true (.value .uniqueBorrowed) (.sort 0) (.var 1) (.var 0)),
+   ("once_let_nondep", .letE true (.value .once) (.sort 0) (.var 1) (.var 0)),
+   ("erased_let", .letE false (.value .erased) (.sort 0) (.var 1) (.var 0)),
+   ("borrow", .letE false .borrow (.sort 0) (.prj 2 1 (.var 1)) (.var 0)),
+   ("borrow_nondep", .letE true .borrow (.sort 0) (.var 1) (.var 0))]
 
-#guard upstreamV4Values.length == 25
+#guard upstreamV4Values.length == 34
 #guard upstreamV4Values.all fun (name, value) =>
   match upstreamV4Expressions.lookup name with
   | some bytes => match Ixon.deExpr ⟨bytes.toArray⟩ with
@@ -567,7 +578,7 @@ def upstreamV4Values : List (String × Ixon.Expr) :=
 def singleUseSharing : Ixon.Constant :=
   { identity with
     sharing := #[.var 0]
-    info := .defn ⟨.defn, .safe, 1, idType, .leanLam (.sort 0) (.leanLam (.var 0) (.share 0))⟩ }
+    info := .defn ⟨.defn, .safe, {}, 1, idType, .leanLam (.sort 0) (.leanLam (.var 0) (.share 0))⟩ }
 
 #guard match Ixon.Canonical.deConstant 256 64 (Ixon.serConstant singleUseSharing) with
   | .ok value => value == singleUseSharing

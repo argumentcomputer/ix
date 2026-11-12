@@ -131,11 +131,11 @@ partial def encExpr (nm : Names) (lps : List Nat) (self : Key .anon → Option N
     | some i => pure (.recur i.toUInt64 uis)
     | none => pure (.ref (← refOf (← liftExcept (nm.addr k))) uis)
   | .app f a => return .app (← encExpr nm lps self f) (← encExpr nm lps self a)
-  | .lam t b m => return .lam m.contract (← encExpr nm lps self t) (← encExpr nm lps self b)
-  | .forallE t b m =>
-    return .all m.contract m.result (← encExpr nm lps self t) (← encExpr nm lps self b)
+  | .lam t b _ => return .lam (← encExpr nm lps self t) (← encExpr nm lps self b)
+  | .forallE t b _ =>
+    return .all (← encExpr nm lps self t) (← encExpr nm lps self b)
   | .letE t v b l =>
-    return .letE l.contract (← encExpr nm lps self t) (← encExpr nm lps self v) (← encExpr nm lps self b)
+    return .letE l.nonDep (.value .many) (← encExpr nm lps self t) (← encExpr nm lps self v) (← encExpr nm lps self b)
   | .lit (.natVal n) => return .nat (← blobOf (ByteArray.mk (Nat.toBytesLE n)))
   | .lit (.strVal s) => return .str (← blobOf s.toUTF8)
   | .proj s i e => do
@@ -154,9 +154,9 @@ def remapRefs (f : UInt64 → UInt64) : Ixon.Expr → Ixon.Expr
   | .str i => .str (f i)
   | .nat i => .nat (f i)
   | .app a b => .app (remapRefs f a) (remapRefs f b)
-  | .lam bc t b => .lam bc (remapRefs f t) (remapRefs f b)
-  | .all bc vc t b => .all bc vc (remapRefs f t) (remapRefs f b)
-  | .letE lc t v b => .letE lc (remapRefs f t) (remapRefs f v) (remapRefs f b)
+  | .lam t b => .lam (remapRefs f t) (remapRefs f b)
+  | .all t b => .all (remapRefs f t) (remapRefs f b)
+  | .letE nd lm t v b => .letE nd lm (remapRefs f t) (remapRefs f v) (remapRefs f b)
   | e => e
 
 /-- `e` with every index into the record's univs table moved by `f`: a sort's level
@@ -167,9 +167,9 @@ def remapUnivs (f : UInt64 → UInt64) : Ixon.Expr → Ixon.Expr
   | .recur i us => .recur i (us.map f)
   | .prj t i v => .prj t i (remapUnivs f v)
   | .app a b => .app (remapUnivs f a) (remapUnivs f b)
-  | .lam bc t b => .lam bc (remapUnivs f t) (remapUnivs f b)
-  | .all bc vc t b => .all bc vc (remapUnivs f t) (remapUnivs f b)
-  | .letE lc t v b => .letE lc (remapUnivs f t) (remapUnivs f v) (remapUnivs f b)
+  | .lam t b => .lam (remapUnivs f t) (remapUnivs f b)
+  | .all t b => .all (remapUnivs f t) (remapUnivs f b)
+  | .letE nd lm t v b => .letE nd lm (remapUnivs f t) (remapUnivs f v) (remapUnivs f b)
   | e => e
 
 /-- The compiler's univs table for the levels `univs` (`Ix.CompileM.preseedExprTables`):
@@ -212,9 +212,9 @@ partial def unshareAll (sharing : Array Ixon.Expr) : Ixon.Expr → Ixon.Expr
     | none => .share i
   | .prj t i v => .prj t i (unshareAll sharing v)
   | .app a b => .app (unshareAll sharing a) (unshareAll sharing b)
-  | .lam bc t b => .lam bc (unshareAll sharing t) (unshareAll sharing b)
-  | .all bc vc t b => .all bc vc (unshareAll sharing t) (unshareAll sharing b)
-  | .letE lc t v b => .letE lc (unshareAll sharing t) (unshareAll sharing v) (unshareAll sharing b)
+  | .lam t b => .lam (unshareAll sharing t) (unshareAll sharing b)
+  | .all t b => .all (unshareAll sharing t) (unshareAll sharing b)
+  | .letE nd lm t v b => .letE nd lm (unshareAll sharing t) (unshareAll sharing v) (unshareAll sharing b)
   | e => e
 
 /-- Record `c` with its references renamed by `rename`, in the compiler's form again
@@ -240,9 +240,9 @@ def shapeOf : Ixon.Expr → Ixon.Expr
   | .str _ => .str 0
   | .nat _ => .nat 0
   | .app a b => .app (shapeOf a) (shapeOf b)
-  | .lam bc t b => .lam bc (shapeOf t) (shapeOf b)
-  | .all bc vc t b => .all bc vc (shapeOf t) (shapeOf b)
-  | .letE lc t v b => .letE lc (shapeOf t) (shapeOf v) (shapeOf b)
+  | .lam t b => .lam (shapeOf t) (shapeOf b)
+  | .all t b => .all (shapeOf t) (shapeOf b)
+  | .letE nd lm t v b => .letE nd lm (shapeOf t) (shapeOf v) (shapeOf b)
   | e => e
 
 /-- The shapes of a record's roots and sharing entries. -/
@@ -382,8 +382,8 @@ def basisRoleAllowed (r : Nat) : Bool := [0, 1, 2, 3, 8, 9, 10, 11, 12, 13, 37, 
 partial def usedIdxsExpr : Ixon.Expr → Std.HashSet Nat
   | .ref i _ => ({} : Std.HashSet Nat).insert i.toNat
   | .prj i _ inner => (usedIdxsExpr inner).insert i.toNat
-  | .app a b | .lam _ a b | .all _ _ a b => (usedIdxsExpr a).union (usedIdxsExpr b)
-  | .letE _ t v b => ((usedIdxsExpr t).union (usedIdxsExpr v)).union (usedIdxsExpr b)
+  | .app a b | .lam a b | .all a b => (usedIdxsExpr a).union (usedIdxsExpr b)
+  | .letE _ _ t v b => ((usedIdxsExpr t).union (usedIdxsExpr v)).union (usedIdxsExpr b)
   | _ => {}
 
 def usedIdxs (c : Ixon.Constant) : Std.HashSet Nat := Id.run do

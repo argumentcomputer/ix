@@ -51,8 +51,8 @@ Integers are TagN codes with no flag (`Ixon.putTagN 0`, `N0(n)` in
 `docs/Ixon.md`), constructor tags single bytes. A key is a role's index in
 `Role.all`: the specifications are closed over role keys, and the encoder
 refuses any other key (`specBytes` fails), so the encoding checks the
-closedness it relies on. Level parameters are positions; binder data are the
-`PropWhen` datum and the two contracts' bits, a let's data its contract.
+closedness it relies on. Level parameters are positions; a binder's data is its
+`PropWhen` datum, a let's its `nonDep` flag (kernel terms carry no modes).
 `specBytes` encodes the current schedule only once it is checked
 (`Schedule.ofGroups`).
 
@@ -77,8 +77,8 @@ closedness it relies on. Level parameters are positions; binder data are the
                | 04 expr expr | 05 expr expr binder | 06 expr expr binder
                | 07 expr expr expr let | 08 N0 | 09 str | 0A key N0 expr
     level     := 00 | 01 level | 02 level level | 03 level level | 04 N0
-    binder    := pw contract result
-    let       := bool(nonDep) (00 | 01)(value | borrowShared) contract
+    binder    := pw
+    let       := bool(nonDep)
     pw        := 00 | 01 N0(#ps) N0*                          never | ifAllZero ps
 
 `caps`, `rule`, `hint` and `table` spell their fields in declaration order
@@ -90,8 +90,9 @@ open Ix.Kernel
 
 /-- **The version of this encoding.** Version 1, which had no such field,
 encoded the specifications alone. Version 2 adds this field, each role's
-name, inertness, quotient kind and native rule, and the validation schedule. -/
-def encodingVersion : Nat := 2
+name, inertness, quotient kind and native rule, and the validation schedule.
+Version 3 drops the binder and let contracts: kernel terms carry no modes. -/
+def encodingVersion : Nat := 3
 
 /-! ## What the circuit reads off a role's identity -/
 
@@ -211,10 +212,8 @@ def propWhen (pw : PropWhen) : EncM Unit :=
   | none => byte 0
   | some ps => do byte 1; list ps nat
 
-def binder (m : BinderMeta) : EncM Unit := do
+def binder (m : BinderMeta) : EncM Unit :=
   propWhen m.pw
-  byte m.contract.toBits
-  byte m.result.toBits
 
 def expr : Expr md → EncM Unit
   | .bvar i => do byte 0; nat i
@@ -226,9 +225,7 @@ def expr : Expr md → EncM Unit
   | .forallE t b m => do byte 6; expr t; expr b; binder m
   | .letE t v b l => do
     byte 7; expr t; expr v; expr b
-    bool l.contract.nonDep
-    byte (match l.contract.kind with | .value => 0 | .borrowShared => 1)
-    byte l.contract.binder.toBits
+    bool l.nonDep
   | .lit (.natVal n) => do byte 8; nat n
   | .lit (.strVal s) => do byte 9; str s
   | .proj s i e => do byte 10; key s; nat i; expr e

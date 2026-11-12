@@ -34,7 +34,7 @@ inductive Usage where
   | many
   | once
   | erased
-  deriving BEq, DecidableEq, Repr, Inhabited, Hashable
+  deriving DecidableEq, Repr, Inhabited, Hashable
 
 /-- The mode of a bound variable: a `lam` or `all` binder's input, a value
 `let`'s. Usage `many` with any ownership and locality, usage `once` (shared)
@@ -59,7 +59,7 @@ inductive BinderMode where
   | onceBorrowed
   /-- Absent at run time (code 6). -/
   | erased
-  deriving BEq, DecidableEq, Repr, Inhabited, Hashable
+  deriving DecidableEq, Repr, Inhabited, Hashable
 
 namespace BinderMode
 
@@ -116,7 +116,7 @@ inductive ResultMode where
   | unique
   /-- Unaliased and lent (code 3). -/
   | uniqueBorrowed
-  deriving BEq, DecidableEq, Repr, Inhabited, Hashable
+  deriving DecidableEq, Repr, Inhabited, Hashable
 
 namespace ResultMode
 
@@ -157,7 +157,7 @@ the result's; the codes whose low three bits are 7 are no mode. -/
 structure AllMode where
   input : BinderMode := .many
   result : ResultMode := .shared
-  deriving BEq, DecidableEq, Repr, Inhabited, Hashable
+  deriving DecidableEq, Repr, Inhabited, Hashable
 
 namespace AllMode
 
@@ -190,7 +190,7 @@ mode's, a `borrow`'s is 7. `value .many` is the default. -/
 inductive LetMode where
   | value (mode : BinderMode)
   | borrow
-  deriving BEq, DecidableEq, Repr, Hashable
+  deriving DecidableEq, Repr, Hashable
 
 instance : Inhabited LetMode := ⟨.value .many⟩
 
@@ -238,7 +238,7 @@ the constructor's type, and has no field mode of its own. -/
 inductive FieldMode where
   | inherited
   | shared
-  deriving BEq, DecidableEq, Repr, Inhabited, Hashable
+  deriving DecidableEq, Repr, Inhabited, Hashable
 
 namespace FieldMode
 
@@ -295,6 +295,20 @@ def listed? (modes : Array FieldMode) : Option (FieldModes n) :=
 def ofArray (modes : Array FieldMode) : FieldModes n :=
   (listed? modes).getD .inherited
 
+/-- Listed modes read back from their array. -/
+theorem listed?_toArray (modes : FieldModes n) (h : modes.isInherited = false) :
+    listed? modes.toArray = some modes := by
+  cases modes with
+  | inherited => cases h
+  | listed v hs =>
+    show listed? v.toArray = some (.listed v hs)
+    unfold listed?
+    split
+    · split
+      · rfl
+      · rename_i hs'; exact absurd hs hs'
+    · rename_i h; exact absurd v.size_toArray h
+
 instance : BEq (FieldModes n) where
   beq a b := a.toArray == b.toArray
 
@@ -312,7 +326,7 @@ inductive AllocAssert where
   | unrestricted
   | noRc
   | noAlloc
-  deriving BEq, DecidableEq, Repr, Inhabited, Hashable
+  deriving DecidableEq, Repr, Inhabited, Hashable
 
 namespace AllocAssert
 
@@ -339,7 +353,7 @@ allocation code of 3, is no `DefAsserts`. A theorem asserts nothing. -/
 structure DefAsserts where
   alloc : AllocAssert := .unrestricted
   boundedStack : Bool := false
-  deriving BEq, DecidableEq, Repr, Inhabited, Hashable
+  deriving DecidableEq, Repr, Inhabited, Hashable
 
 namespace DefAsserts
 

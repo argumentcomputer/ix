@@ -146,7 +146,7 @@ open Ix.Kernel.Audit.Display in
 /--
 info: display field Ix.Kernel.BinderMeta.display (Ix.Kernel.BinderMeta, field 3)
 ---
-info: display field Ix.Kernel.LetMeta.display (Ix.Kernel.LetMeta, field 1)
+info: display field Ix.Kernel.LetMeta.display (Ix.Kernel.LetMeta, field 2)
 ---
 info: display field Ix.Kernel.Reader.Read.display (Ix.Kernel.Reader.Read, field 5)
 -/

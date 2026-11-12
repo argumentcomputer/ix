@@ -594,7 +594,7 @@ stage 6: the tail is a pure rebuild — the λ-annotation re-check died
 with the stored annotations). -/
 theorem inferLamsC_tail_sim (ih : SSimC mode env f) (henv : EnvWF env)
     {d fuel : Nat} {b t fv : Expr md} {bodyx tyx : Expr md}
-    {mbpw : PropWhen} {mbc : Ixon.BinderContract} {mbr : Ixon.ValueContract}
+    {mbpw : PropWhen} {mbc : Ixon.BinderMode} {mbr : Ixon.ResultMode}
     {mbd : Squash BinderDisplay} {s₀ : CState md}
     (hs : CSOK mode env s₀)
     (hbody : RelC b bodyx)

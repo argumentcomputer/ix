@@ -49,10 +49,10 @@ open IxVM.PwHints
 `share` in pre-order, a `share` not entered), appended to `out`: `none` at a
 binder, `some n` at a share of entry `n`. -/
 def kinds (out : Array (Option Nat)) : Ixon.Expr → Array (Option Nat)
-  | .lam _ t b => kinds (kinds (out.push none) t) b
-  | .all _ _ t b => kinds (kinds (out.push none) t) b
+  | .lam t b => kinds (kinds (out.push none) t) b
+  | .all t b => kinds (kinds (out.push none) t) b
   | .app f a => kinds (kinds out f) a
-  | .letE _ t v b => kinds (kinds (kinds out t) v) b
+  | .letE _ _ t v b => kinds (kinds (kinds out t) v) b
   | .prj _ _ v => kinds out v
   | .share n => out.push (some n.toNat)
   | _ => out
@@ -63,14 +63,15 @@ def canonicalParams (ps : Array Nat) : Array UInt64 :=
   (sorted.foldl (fun out p => if out.back? == some p then out else out.push p) #[]).map
     (·.toUInt64)
 
-/-- A node in the section's spelling: "always zero" is `.zero`. -/
+/-- A node in the section's spelling: "always zero" is `.zero`. Every binder
+gets the default mode: Lean source has no other. -/
 def nodeOf : Node → Ixon.BinderNode
-  | .binder none => .never
+  | .binder none => .never {}
   | .binder (some ps) =>
     let params := canonicalParams ps
-    if params.isEmpty then .zero else .ifAllZero params
+    if params.isEmpty then .zero {} else .ifAllZero params {}
   | .share v => .share v.toUInt64
-  | .undecided => .undecided
+  | .undecided => .undecided {}
 
 /-- The section of record `c` from the annotator's blocks: the share nodes of
 entries without a binder dropped, the blocks of those entries and the roots
@@ -115,7 +116,7 @@ def undecidedOf (a : Address) (blocks : Array Ixon.BinderBlock) : Array Undecide
   let mut out := #[]
   for b in blocks do
     for (node, i) in b.nodes.zipIdx do
-      if node == .undecided then
+      if node matches .undecided _ then
         out := out.push ⟨a, b.shared, b.index.toNat, b.variant.toNat, i⟩
   return out
 
@@ -305,11 +306,21 @@ def apply (env : Ixon.Env) : Except String (Ixon.Env × Report) := do
     refused := report.refused.map fun (a, why) => (rename a, why) }
   return (env', report)
 
+/-- Whether a record's section gives a binder a mode other than the default. -/
+def hasModes (c : Ixon.Constant) : Bool :=
+  c.binders.any (·.nodes.any fun node => (node.mode?.getD {}) != {})
+
 /-- `env` with every section removed, re-addressed: its records as the compiler
-emits them. An environment with no section is returned as it is. -/
+emits them. An environment with no section is returned as it is. A section
+holds its binders' modes as well as their data, and the modes are authored,
+not recomputable: a record whose section gives a binder a mode other than the
+default is refused rather than stripped of it (the compiler writes only the
+default mode, so no compiled record has one). -/
 def strip (env : Ixon.Env) : Except String Ixon.Env := do
   let records ← recordsOf env
   if records.all (·.2.binders.isEmpty) then return env
+  if let some (a, _) := records.find? (hasModes ·.2) then
+    throw s!"binder data: record {a} gives a binder a mode, which stripping would lose"
   return (← readdress env records {}).1
 
 /-- `apply` after `strip`: an environment some of whose records carry their

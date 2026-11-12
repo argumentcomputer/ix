@@ -41,17 +41,17 @@ theorem checkExpr_complete (e : Expr) (wf : e.wireWF) :
     obtain ⟨arg, readArg⟩ := ihArg wf.2.1
     have fits : fn.apps + 1 < UInt64.size := by simpa [fn.apps_eq] using wf.2.2
     simp [checkExpr, readFn, readArg, fits]
-  | lam uses ty body ihTy ihBody =>
+  | lam ty body ihTy ihBody =>
     obtain ⟨ty, readTy⟩ := ihTy wf.1
     obtain ⟨body, readBody⟩ := ihBody wf.2.1
     have fits : body.lams + 1 < UInt64.size := by simpa [body.lams_eq] using wf.2.2
     simp [checkExpr, readTy, readBody, fits]
-  | all uses owned ty body ihTy ihBody =>
+  | all ty body ihTy ihBody =>
     obtain ⟨ty, readTy⟩ := ihTy wf.1
     obtain ⟨body, readBody⟩ := ihBody wf.2.1
     have fits : body.alls + 1 < UInt64.size := by simpa [body.alls_eq] using wf.2.2
     simp [checkExpr, readTy, readBody, fits]
-  | letE nonDep ty value body ihTy ihValue ihBody =>
+  | letE nonDep mode ty value body ihTy ihValue ihBody =>
     obtain ⟨ty, readTy⟩ := ihTy wf.1
     obtain ⟨value, readValue⟩ := ihValue wf.2.1
     obtain ⟨body, readBody⟩ := ihBody wf.2.2

@@ -513,10 +513,10 @@ private def variantOf (n : Nat) (nodes : Array Node) : RM Nat :=
 binder's domain in both, then both bodies. -/
 def binderRun (pi : Bool) : Ixon.Expr → Ix.Expr → Array (Ixon.Expr × Ix.Expr) →
     Ixon.Expr × Ix.Expr × Array (Ixon.Expr × Ix.Expr)
-  | e@(.lam _ t b), x, acc => match unmeta x with
+  | e@(.lam t b), x, acc => match unmeta x with
     | .lam _ ty body _ _ => if pi then (e, x, acc) else binderRun pi b body (acc.push (t, ty))
     | _ => (e, x, acc)
-  | e@(.all _ _ t b), x, acc => match unmeta x with
+  | e@(.all t b), x, acc => match unmeta x with
     | .forallE _ ty body _ _ => if pi then binderRun pi b body (acc.push (t, ty)) else (e, x, acc)
     | _ => (e, x, acc)
   | e, x, acc => (e, x, acc)
@@ -624,7 +624,7 @@ def read : Nat → Cx → List (Option Ix.Expr) → Expect → Ixon.Expr → Ix.
           | .error why => throw s!"a λ-run as {why ()}"
       let node := cx.nodeOf pw
       for ord in ords do setNode ord node
-    | .letE _ t v b, .letE _ ty val body _ _ => do
+    | .letE _ _ t v b, .letE _ ty val body _ _ => do
       read fuel cx ctx (asType) t ty
       let vex : Expect := match sortPw cx.find cx.σ.pos id sortFuel ctx ty with
         | some p => .ok p

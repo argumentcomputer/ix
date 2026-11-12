@@ -37,18 +37,12 @@ open Ix.Kernel.Reader (Ctx CName CExpr ReadM)
 
 /-! ## The source relation -/
 
-/-- The checker side of a contract frame: the binder's metadata takes the
-contract, exactly as `Ix.LeanIngress.withContract` puts it, on a binder of
-the frame's kind. -/
+/-- The checker side of a contract frame, as `Ix.LeanIngress.withContract`
+treats it: the term itself for a frame the compiler lowers (an ordinary
+contract on a binder of its kind), none otherwise. -/
 def withContract {md : Mode} (c : Ix.SemanticContract.Contract) (source : Ix.Expr)
     (target : CExpr md) : Option (CExpr md) :=
-  match c.kind, source, target with
-  | .lam, .lam .., .lam t b m => some (.lam t b { m with contract := c.binder })
-  | .all, .forallE .., .forallE t b m =>
-    some (.forallE t b { m with contract := c.binder, result := c.result })
-  | .letE, .letE .., .letE t v b l =>
-    some (.letE t v b { contract := { l.contract with binder := c.binder, kind := c.letKind } })
-  | _, _, _ => none
+  if c.admits source then some target else none
 
 /-- A source expression and the checker term the certified reader reads,
 independently of compiler success. Each case is the ingress's
@@ -82,7 +76,7 @@ inductive Related {md : Mode} (names : Ix.Name → CName md → Prop)
       (valueRel : Related names levels value targetValue)
       (bodyRel : Related names levels body targetBody) :
       Related names levels (.letE name type value body nonDep hash)
-        (.letE targetType targetValue targetBody { contract := .lean nonDep })
+        (.letE targetType targetValue targetBody { nonDep := nonDep })
   | nat (value : Nat) (hash : Address) :
       Related names levels (.lit (.natVal value) hash) (.lit (.natVal value))
   | str (value : String) (hash : Address) :

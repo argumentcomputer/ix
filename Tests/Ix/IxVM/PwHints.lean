@@ -626,7 +626,7 @@ def corpus : IO UInt32 := do
     unless c.binders.isEmpty do stored := stored.insert a c.binders
     for b in c.binders do
       nodes := nodes + b.nodes.size
-      undecided := undecided + (b.nodes.filter (· == .undecided)).size
+      undecided := undecided + (b.nodes.filter (·.isUndecided)).size
   IO.println s!"BDCORPUS stored: {stored.size} records with a section, {nodes} nodes, \
     {undecided} undecided, {nonCanonical} not canonical, {projections} projections with data"
   let t0 ← IO.monoMsNow

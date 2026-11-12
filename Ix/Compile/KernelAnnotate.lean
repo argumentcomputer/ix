@@ -861,14 +861,14 @@ def datum (cx : Cx) (pi : Bool) (depth : Nat) (leaf : KExpr) : EM (Option PropWh
   pure res
 
 /-- A run of binders of one kind in both trees: each binder's domain in the
-record and in the source, and its metadata (the record's contracts); then both
-bodies. -/
+record and in the source, and its metadata (the default modes: kernel terms
+carry none); then both bodies. -/
 def binderRun (pi : Bool) : Ixon.Expr → KExpr → Array (Ixon.Expr × KExpr × BinderMeta) →
     Ixon.Expr × KExpr × Array (Ixon.Expr × KExpr × BinderMeta)
-  | e@(.lam c t b), x@(.lam ty body _), acc =>
-    if pi then (e, x, acc) else binderRun pi b body (acc.push (t, ty, BinderMeta.ofContracts c .shared))
-  | e@(.all c r t b), x@(.forallE ty body _), acc =>
-    if pi then binderRun pi b body (acc.push (t, ty, BinderMeta.ofContracts c r)) else (e, x, acc)
+  | e@(.lam t b), x@(.lam ty body _), acc =>
+    if pi then (e, x, acc) else binderRun pi b body (acc.push (t, ty, BinderMeta.ofContracts .many .shared))
+  | e@(.all t b), x@(.forallE ty body _), acc =>
+    if pi then binderRun pi b body (acc.push (t, ty, BinderMeta.ofContracts .many .shared)) else (e, x, acc)
   | e, x, acc => (e, x, acc)
 
 /-- What the walk knows of the type `T` of the term it walks: the zero-ness of
@@ -931,7 +931,7 @@ def walk : Nat → Cx → List CtxEntry → Nat → Expect → Ixon.Expr → KEx
       let out ← (Ix.Kernel.Cached.annotateBindersOutI mk depth (some (pw?.getD .never)) stk (k - 1)
         (leaf'.abstractRangeC depth k) : CM KExpr)
       pure (out, undecided)
-    | .letE _ t v b, .letE ty val body _ => do
+    | .letE _ _ t v b, .letE ty val body _ => do
       -- IxC annotates the type and the value, then the body with the value
       -- transparent (its ζ-reduct)
       let (t', bt) ← walk fuel cx ctx depth {} t ty
@@ -980,7 +980,7 @@ def walkStored : Nat → Cx → List Nat → Ixon.Expr → KExpr → EM Unit
     | .app f a, .app kf ka => do
       walkStored fuel cx ctx f kf
       walkStored fuel cx ctx a ka
-    | .lam _ t b, .lam ty body mb | .all _ _ t b, .forallE ty body mb => do
+    | .lam t b, .lam ty body mb | .all t b, .forallE ty body mb => do
       let ord ← reserve
       setNode ord (cx.nodeOf mb.pw)
       walkStored fuel cx ctx t ty
@@ -1229,7 +1229,7 @@ def undecidedSafe (env : Ixon.Env) (workers : Nat := 32) : Array Address :=
   (Ix.Compile.Parallel.map (max workers 1) (fun (a, lc) =>
     match lc.get? with
     | some c =>
-      if !unsafeOrPartial c && c.binders.any (·.nodes.any (· == .undecided)) then some a else none
+      if !unsafeOrPartial c && c.binders.any (·.nodes.any (·.isUndecided)) then some a else none
     | none => none) records).filterMap id
 
 end Ix.Compile.KernelAnnotate

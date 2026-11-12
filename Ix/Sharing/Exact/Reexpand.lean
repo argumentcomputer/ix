@@ -39,23 +39,9 @@ theorem isEqv_decide_iff {α : Type} [DecidableEq α] (a b : Array α) :
   · rintro ⟨h, h'⟩; exact ⟨h, fun i h1 _ => h' i h1⟩
   · rintro ⟨h, h'⟩; exact ⟨h, fun i h1 => h' i h1 (h ▸ h1)⟩
 
-theorem binderContract_beq_iff (a b : Ixon.BinderContract) :
-    Ixon.instBEqBinderContract.beq a b = true ↔ a = b :=
-  (beq_iff_eq : (a == b) = true ↔ a = b)
-
-theorem valueContract_beq_iff (a b : Ixon.ValueContract) :
-    Ixon.instBEqValueContract.beq a b = true ↔ a = b :=
-  (beq_iff_eq : (a == b) = true ↔ a = b)
-
-theorem letContract_beq_iff (a b : Ixon.LetContract) :
-    Ixon.instBEqLetContract.beq a b = true ↔ a = b := by
-  cases a; cases b
-  simp only [Ixon.instBEqLetContract.beq, Bool.and_eq_true, Ixon.LetContract.mk.injEq, beq_iff_eq]
-
 theorem Head.beq_iff (a b : Head) : (a == b) = true ↔ a = b := by
   cases a <;> cases b <;>
-    simp [BEq.beq, instBEqHead.beq, Head.ctorIdx, isEqv_decide_iff, binderContract_beq_iff,
-      valueContract_beq_iff, letContract_beq_iff]
+    simp [BEq.beq, instBEqHead.beq, Head.ctorIdx, isEqv_decide_iff]
 
 theorem Node.beq_iff (a b : Node) : (a == b) = true ↔ a = b := by
   cases a; cases b
@@ -393,19 +379,19 @@ def reIngestExpr (limits : Limits) (dag : Dag) (ix : ReIndex) (ctx : ShareCtx) (
         (reIngestExpr limits dag ix ctx (depth + 1) f cache visits).bind fun fi cache visits =>
         (reIngestExpr limits dag ix ctx (depth + 1) a cache visits).bind fun ai cache visits =>
           reIntern limits dag ix ⟨.app, #[fi, ai]⟩ cache visits
-      | .lam c ty body =>
+      | .lam ty body =>
         (reIngestExpr limits dag ix ctx (depth + 1) ty cache visits).bind fun ti cache visits =>
         (reIngestExpr limits dag ix ctx (depth + 1) body cache visits).bind fun bi cache visits =>
-          reIntern limits dag ix ⟨.lam c, #[ti, bi]⟩ cache visits
-      | .all c r ty body =>
+          reIntern limits dag ix ⟨.lam, #[ti, bi]⟩ cache visits
+      | .all ty body =>
         (reIngestExpr limits dag ix ctx (depth + 1) ty cache visits).bind fun ti cache visits =>
         (reIngestExpr limits dag ix ctx (depth + 1) body cache visits).bind fun bi cache visits =>
-          reIntern limits dag ix ⟨.all c r, #[ti, bi]⟩ cache visits
-      | .letE c ty v body =>
+          reIntern limits dag ix ⟨.all, #[ti, bi]⟩ cache visits
+      | .letE nonDep mode ty v body =>
         (reIngestExpr limits dag ix ctx (depth + 1) ty cache visits).bind fun ti cache visits =>
         (reIngestExpr limits dag ix ctx (depth + 1) v cache visits).bind fun vi cache visits =>
         (reIngestExpr limits dag ix ctx (depth + 1) body cache visits).bind fun bi cache visits =>
-          reIntern limits dag ix ⟨.letE c, #[ti, vi, bi]⟩ cache visits
+          reIntern limits dag ix ⟨.letE nonDep mode, #[ti, vi, bi]⟩ cache visits
       | .share j =>
         match resolveShare ctx j with
         | .ok id => .ok id cache visits
@@ -611,12 +597,12 @@ theorem reIngestExpr_sim (limits : Limits) (dag : Dag) (ctx : ShareCtx) :
           exact reFinish_bind _ (ihf (depth + 1) cache w) (fun fi c v' =>
             reFinish_bind _ (iha (depth + 1) c v')
               (fun ai c' v'' => reFinish_sim _ (reIntern_sim limits dag _ c' v'')))
-  | lam bc ty body iht ihb =>
+  | lam ty body iht ihb =>
     intro depth cache visits
     rw [reIngestExpr, ingestExpr]
     dsimp only
     simp only [StateT.run_bind, StateT.run_get, pure_bind]
-    cases hc : cache.get? (exprKey (Ixon.Expr.lam bc ty body)) with
+    cases hc : cache.get? (exprKey (Ixon.Expr.lam ty body)) with
     | some id => simp only [ReSim]; rfl
     | none =>
       by_cases hd : depth > limits.maxDepth
@@ -629,12 +615,12 @@ theorem reIngestExpr_sim (limits : Limits) (dag : Dag) (ctx : ShareCtx) :
           exact reFinish_bind _ (iht (depth + 1) cache w) (fun ti c v' =>
             reFinish_bind _ (ihb (depth + 1) c v')
               (fun bi c' v'' => reFinish_sim _ (reIntern_sim limits dag _ c' v'')))
-  | all bc r ty body iht ihb =>
+  | all ty body iht ihb =>
     intro depth cache visits
     rw [reIngestExpr, ingestExpr]
     dsimp only
     simp only [StateT.run_bind, StateT.run_get, pure_bind]
-    cases hc : cache.get? (exprKey (Ixon.Expr.all bc r ty body)) with
+    cases hc : cache.get? (exprKey (Ixon.Expr.all ty body)) with
     | some id => simp only [ReSim]; rfl
     | none =>
       by_cases hd : depth > limits.maxDepth
@@ -647,12 +633,12 @@ theorem reIngestExpr_sim (limits : Limits) (dag : Dag) (ctx : ShareCtx) :
           exact reFinish_bind _ (iht (depth + 1) cache w) (fun ti c v' =>
             reFinish_bind _ (ihb (depth + 1) c v')
               (fun bi c' v'' => reFinish_sim _ (reIntern_sim limits dag _ c' v'')))
-  | letE lc ty v body iht ihv ihb =>
+  | letE nonDep mode ty v body iht ihv ihb =>
     intro depth cache visits
     rw [reIngestExpr, ingestExpr]
     dsimp only
     simp only [StateT.run_bind, StateT.run_get, pure_bind]
-    cases hc : cache.get? (exprKey (Ixon.Expr.letE lc ty v body)) with
+    cases hc : cache.get? (exprKey (Ixon.Expr.letE nonDep mode ty v body)) with
     | some id => simp only [ReSim]; rfl
     | none =>
       by_cases hd : depth > limits.maxDepth

@@ -1818,7 +1818,7 @@ fun x =>
       let __do_lift ← Ix.Cert.Canon.leanExpr σ t
       let __do_lift_1 ← Ix.Cert.Canon.leanExpr σ v
       let __do_lift_2 ← Ix.Cert.Canon.leanExpr σ b
-      pure (Ix.Kernel.Expr.letE __do_lift __do_lift_1 __do_lift_2 { contract := Ixon.LetContract.lean nd })
+      pure (Ix.Kernel.Expr.letE __do_lift __do_lift_1 __do_lift_2 { nonDep := nd })
     | Lean.Expr.lit (Lean.Literal.natVal n) => pure (Ix.Kernel.Expr.lit (Ix.Kernel.Literal.natVal n))
     | Lean.Expr.lit (Lean.Literal.strVal s) => pure (Ix.Kernel.Expr.lit (Ix.Kernel.Literal.strVal s))
     | Lean.Expr.mdata d e => Ix.Cert.Canon.leanMData d e (Ix.Cert.Canon.leanExpr σ e)
@@ -2323,7 +2323,7 @@ Ix.CompileCert.ExpressionState.Related.letE : ∀ {md : Ix.Kernel.Mode}
     Ix.CompileCert.ExpressionState.Related names levels value targetValue →
       Ix.CompileCert.ExpressionState.Related names levels body targetBody →
         Ix.CompileCert.ExpressionState.Related names levels (Ix.Expr.letE name type value body nonDep hash)
-          (Ix.Kernel.Expr.letE targetType targetValue targetBody { contract := Ixon.LetContract.lean nonDep })
+          (Ix.Kernel.Expr.letE targetType targetValue targetBody { nonDep := nonDep })
 Ix.CompileCert.ExpressionState.Related.nat : ∀ {md : Ix.Kernel.Mode}
   {names : Ix.Name → Ix.Kernel.Reader.CName md → Prop} {levels : Ix.Level → Ix.Kernel.Level → Prop} (value : Nat)
   (hash : Address),

@@ -58,7 +58,7 @@ def genSmallPayload : RGen (Array Ixon.Expr) := do
   for _ in [0:2 + (← rand 5)] do
     roots := roots.push <| match ← rand 3 with
       | 0 => .app (.ref 1 #[]) e
-      | 1 => .lam .many e (.var 0)
+      | 1 => .lam e (.var 0)
       | _ => arr e (.sort 0)
   return roots
 
@@ -72,7 +72,7 @@ def genPairs : RGen (Array Ixon.Expr) := do
     | _ => .prj 0 1 c
   let mut roots : Array Ixon.Expr := #[]
   for _ in [0:1 + (← rand 4)] do roots := roots.push (.app (.var 2) p)
-  for _ in [0:1 + (← rand 4)] do roots := roots.push (.lam .many c (.var 0))
+  for _ in [0:1 + (← rand 4)] do roots := roots.push (.lam c (.var 0))
   return roots
 
 /-- A nested App chain `u₁ = f a₁`, `uᵢ₊₁ = uᵢ aᵢ₊₁` whose prefixes are also
@@ -156,16 +156,17 @@ def witnessTests (_ : Unit) : TestSeq :=
   let run (w : Nat) := optimizeSharingUniform w roots
   group "uniform witness T2 → T2 (ids P=0 T1=1 T2=2 R=3)" <|
     withOk "w=1" (run 1) (fun u =>
-      test s!"w=1: T2 certain-stored, stores only T2, model {u.result.modelBytes} = 11"
-        (u.certainStored == #[2] && u.stored == #[2] && u.result.modelBytes == 11 &&
-          u.result.variableBytes == 11)) ++
+      test s!"w=1: T2 has gain 1, certain-stored at threshold 1 (no count bracket within reach), stores only T2, model {u.result.modelBytes} = 8"
+        (u.certainStored == #[2] && u.stored == #[2] && u.result.modelBytes == 8 &&
+          u.result.variableBytes == 8)) ++
     withOk "w=2" (run 2) (fun u =>
-      test s!"w=2: T2 has gain 1, certain-stored at threshold 1 (no count bracket within reach), stores only T2, model {u.result.modelBytes} = 13"
-        (u.certainStored == #[2] && u.stored == #[2] && u.result.modelBytes == 13)) ++
-    withOk "w=3" (run 3) (fun u =>
-      test s!"w=3: T2 uncertain, search stores nothing, model {u.result.modelBytes} = 14 (unshared); T1 certain-excluded"
-        (u.uncertain == #[2] && u.stored.isEmpty && u.result.modelBytes == 14 &&
+      test s!"w=2: T2 uncertain, search stores nothing, model {u.result.modelBytes} = 9 (unshared); T1 certain-excluded"
+        (u.uncertain == #[2] && u.stored.isEmpty && u.result.modelBytes == 9 &&
           u.certainExcluded.contains 1)) ++
+    withOk "w=3" (run 3) (fun u =>
+      test s!"w=3: T1 and T2 certain-excluded, stores nothing, model {u.result.modelBytes} = 9 (unshared)"
+        (u.certainExcluded.contains 1 && u.certainExcluded.contains 2 && u.stored.isEmpty &&
+          u.result.modelBytes == 9)) ++
     test "w=1,2,3 agree with the reference search"
       ([1, 2, 3].all fun w => (checkUniform w roots).toOption.isSome) ++
     test "w=0 is rejected" (isErr (optimizeSharingUniform 0 roots) fun
@@ -256,7 +257,7 @@ def genTelescopes : RGen (Array Ixon.Expr) := do
   for _ in [0:2 + (← rand 10)] do
     let ty := pool[← rand pool.size]!
     body ← match ← rand 3 with
-      | 0 => do pure (.lam (← genBinder) ty body)
+      | 0 => pure (.lam ty body)
       | 1 => pure (arr ty body)
       | _ => pure (.app body ty)
     if (← rand 2) == 0 then roots := roots.push (.app (.var 3) body)

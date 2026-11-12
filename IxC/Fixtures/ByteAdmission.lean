@@ -112,13 +112,10 @@ def decodeFailureOf (records : Records) (position : Nat) (bounds : Limits := lim
 -- The entry admits a sharing table that is not the canonical one (a slot
 -- referenced once): Ixon v4 does not check the table's canonicity on read.
 #guard accepts [(address 1, singleUseSharing)]
--- Conversion compares binder input contracts: a `linear` λ does not check
--- against a `many` type, and does against a `linear` one.
-#guard outcomeOf [(address 1, { identity with info := .defn ⟨.defn, .safe, 1, idType,
-    .lam .linear (.sort 0) (.leanLam (.var 0) (.var 0))⟩ })] = some .declined
-#guard accepts [(address 1, { identity with info := .defn ⟨.defn, .safe, 1,
-    .all .linear .shared (.sort 0) (.leanAll (.var 0) (.var 1)),
-    .lam .linear (.sort 0) (.leanLam (.var 0) (.var 0))⟩ })]
+-- The entry is mode-blind: it reads no binder-data section, so a λ whose
+-- node gives it a mode its type's ∀ does not have is accepted as the plain one.
+#guard accepts [(address 1, { identity with
+    binders := #[⟨false, 1, 0, #[.never { input := .unique }, .never { result := .borrowed }]⟩] })]
 
 -- A duplicate record or blob address is malformed (the byte stage rejects
 -- it); a reference to a later record and a family stored without its

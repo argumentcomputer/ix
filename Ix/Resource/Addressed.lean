@@ -204,10 +204,10 @@ def remap (tables : Tables) : Nat → Ixon.Expr → Except String Ixon.Expr
         throw "resource adapter: projection owner is not an inductive type"
       return .prj typeId field (← remap tables fuel value)
     | .app fn arg => return .app (← remap tables fuel fn) (← remap tables fuel arg)
-    | .lam c type body => return .lam c (← remap tables fuel type) (← remap tables fuel body)
-    | .all c r type body => return .all c r (← remap tables fuel type) (← remap tables fuel body)
-    | .letE c type value body =>
-      return .letE c (← remap tables fuel type) (← remap tables fuel value) (← remap tables fuel body)
+    | .lam type body => return .lam (← remap tables fuel type) (← remap tables fuel body)
+    | .all type body => return .all (← remap tables fuel type) (← remap tables fuel body)
+    | .letE nd m type value body =>
+      return .letE nd m (← remap tables fuel type) (← remap tables fuel value) (← remap tables fuel body)
 
 def closed (program : Program) : Nat → Nat → Ixon.Expr → CheckM Bool
   | 0, _, _ => throw .budget
@@ -218,9 +218,9 @@ def closed (program : Program) : Nat → Nat → Ixon.Expr → CheckM Bool
     | .share i => closed program fuel depth (← expansion program i)
     | .recur .. => return false
     | .app f a => return (← closed program fuel depth f) && (← closed program fuel depth a)
-    | .lam _ t b | .all _ _ t b =>
+    | .lam t b | .all t b =>
       return (← closed program fuel depth t) && (← closed program fuel (depth + 1) b)
-    | .letE _ t v b =>
+    | .letE _ _ t v b =>
       return (← closed program fuel depth t) && (← closed program fuel depth v) &&
         (← closed program fuel (depth + 1) b)
     | .prj _ _ v => closed program fuel depth v
@@ -236,10 +236,10 @@ def fields (program : Program) (limits : Limits) (typeId ctorId : UInt64) (count
   let mut fields := #[]
   for i in [:count] do
     type ← whnf program limits.depth type
-    let .all input _ domain body := type | throw (.unsupported "constructor field telescope")
-    unless input.uses == .many && (← closed program limits.depth 0 domain) do
-      throw (.unsupported "dependent or finite-use projection field")
-    fields := fields.push { typeRef := typeId, index := i.toUInt64, type := domain, contract := input.value }
+    let .all domain body := type | throw (.unsupported "constructor field telescope")
+    unless ← closed program limits.depth 0 domain do
+      throw (.unsupported "dependent projection field")
+    fields := fields.push { typeRef := typeId, index := i.toUInt64, type := domain, contract := .shared }
     type := body
   return fields
 

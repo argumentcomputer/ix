@@ -285,7 +285,6 @@ inductive Head where
 @[expose] def skipLamBinders (recur : GetM Head) : Nat → GetM Bool
   | 0 => pure true
   | count + 1 => do
-    let _ ← getBinderContract
     let _ ← recur
     let _ ← skipLamBinders recur count
     pure false
@@ -294,13 +293,9 @@ inductive Head where
 @[expose] def skipAllBinders (recur : GetM Head) : Nat → GetM Bool
   | 0 => pure true
   | count + 1 => do
-    let bits ← getU8
-    match unpackAllContract? bits with
-    | some _ =>
-      let _ ← recur
-      let _ ← skipAllBinders recur count
-      pure false
-    | none => throw s!"getExpr: invalid forall contract {bits}"
+    let _ ← recur
+    let _ ← skipAllBinders recur count
+    pure false
 
 /-- `Ixon.getExprFromTag`, keeping the head. -/
 @[expose] def skipExprFromTag (recur : GetM Head) (tag : TagN) : GetM Head := do
@@ -335,7 +330,7 @@ inductive Head where
   | 0x8 => do
     if tag.value == 0 then
       throw "getExpr: Lam with zero binders"
-    checkCount tag.value 2
+    checkCount tag.value
     let empty ← skipLamBinders recur tag.value.toNat
     let body ← recur
     match body with
@@ -345,7 +340,7 @@ inductive Head where
   | 0x9 => do
     if tag.value == 0 then
       throw "getExpr: All with zero binders"
-    checkCount tag.value 2
+    checkCount tag.value
     let empty ← skipAllBinders recur tag.value.toNat
     let body ← recur
     match body with
@@ -353,16 +348,12 @@ inductive Head where
     | _ => pure ()
     return if empty then body else .all
   | 0xA => do
-    if tag.value > 3 then
-      throw s!"getExpr: invalid let flags {tag.value}"
-    let binder ← getBinderContract
-    match LetContract.ofFlags? tag.value binder with
-    | some _ =>
-      let _ ← recur
-      let _ ← recur
-      let _ ← recur
-      return .other
-    | none => throw "getExpr: invalid let flags"
+    let some _ := LetMode.ofHeader? tag.value
+      | throw s!"getExpr: invalid let header {tag.value}"
+    let _ ← recur
+    let _ ← recur
+    let _ ← recur
+    return .other
   | 0xB => return .other
   | f => throw s!"getExpr: invalid flag {f}"
 
@@ -416,8 +407,10 @@ inductive Head where
 /-- `Ixon.getDefinition`, keeping nothing. -/
 @[expose] def skipDefinition : GetM Unit := do
   let flags ← getU8
-  if flags >>> 2 > 2 || (flags &&& 3) > 2 then
+  if (flags >>> 2) &&& 3 > 2 || (flags &&& 3) > 2 then
     throw "invalid definition kind/safety"
+  let some _ := DefAsserts.ofCode? (flags >>> 4)
+    | throw s!"invalid definition assertions {flags >>> 4}"
   let _ ← getTagN 0
   skipExpr
   skipExpr
@@ -458,11 +451,13 @@ inductive Head where
 
 /-- `Ixon.getConstructor`, keeping nothing. -/
 @[expose] def skipConstructor : GetM Unit := do
-  let _ ← (Serialize.get : GetM Bool)
+  let flags ← getU8
+  if flags > 3 then throw s!"invalid constructor flags {flags}"
   let _ ← getTagN 0
   let _ ← getTagN 0
   let _ ← getTagN 0
-  let _ ← getTagN 0
+  let fields := (← getTagN 0).value
+  let _ ← getConstructorFieldModes (flags &&& 2 == 2) fields.toNat
   skipExpr
 
 /-- `Ixon.getInductive`, keeping nothing. -/

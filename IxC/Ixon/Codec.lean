@@ -888,12 +888,11 @@ def putDefinition (d : Definition) : PutM Unit := do
 
 def getDefinition : GetM Definition := do
   let flags ← getU8
-  let low := flags &&& 15
-  if low >>> 2 > 2 || (low &&& 3) > 2 then
+  if (flags >>> 2) &&& 3 > 2 || (flags &&& 3) > 2 then
     throw "invalid definition kind/safety"
   let some asserts := DefAsserts.ofCode? (flags >>> 4)
     | throw s!"invalid definition assertions {flags >>> 4}"
-  let (kind, safety) := unpackDefKindSafety low
+  let (kind, safety) := unpackDefKindSafety (flags &&& 15)
   let lvls := (← getTagN 0).value
   let typ ← getExpr
   let value ← getExpr
@@ -1012,6 +1011,10 @@ def getFieldModes (n : Nat) : GetM (FieldModes n) := do
   | some m => return m
   | none => throw "constructor: listed field modes with no shared field"
 
+/-- A constructor's field modes: listed when its flags say so, else inherited. -/
+def getConstructorFieldModes (listed : Bool) (count : Nat) : GetM (FieldModes count) :=
+  if listed then getFieldModes count else pure .inherited
+
 def getConstructor : GetM Constructor := do
   let flags ← getU8
   if flags > 3 then throw s!"invalid constructor flags {flags}"
@@ -1020,7 +1023,7 @@ def getConstructor : GetM Constructor := do
   let cidx := (← getTagN 0).value
   let params := (← getTagN 0).value
   let fields := (← getTagN 0).value
-  let fieldModes ← if flags &&& 2 == 2 then getFieldModes fields.toNat else pure .inherited
+  let fieldModes ← getConstructorFieldModes (flags &&& 2 == 2) fields.toNat
   let typ ← getExpr
   return ⟨isUnsafe, lvls, cidx, params, fields, fieldModes, typ⟩
 
@@ -1196,17 +1199,20 @@ def putBinderNode : BinderNode → PutM Unit
 
 def getBinderNode : GetM BinderNode := do
   let b ← getU8
-  if b == 3 then return .share (← getTagN 0).value
-  let some m := AllMode.ofCode? (b >>> 3) | throw s!"getBinderNode: invalid mode in {b}"
-  match b &&& 7 with
-  | 0 => return .never m
-  | 1 => return .zero m
-  | 2 => do
-    let count := (← getTagN 0).value
-    let params ← getTagN0Values count.toNat
-    return .ifAllZero params.toArray m
-  | 4 => return .undecided m
-  | t => throw s!"getBinderNode: invalid tag {t} in {b}"
+  if b == 3 then
+    let variant := (← getTagN 0).value
+    return .share variant
+  else
+    let some m := AllMode.ofCode? (b >>> 3) | throw s!"getBinderNode: invalid mode in {b}"
+    match b &&& 7 with
+    | 0 => return .never m
+    | 1 => return .zero m
+    | 2 => do
+      let count := (← getTagN 0).value
+      let params ← getTagN0Values count.toNat
+      return .ifAllZero params.toArray m
+    | 4 => return .undecided m
+    | t => throw s!"getBinderNode: invalid tag {t} in {b}"
 
 def putBinderBlock (b : BinderBlock) : PutM Unit := do
   putU8 (if b.shared then 1 else 0)

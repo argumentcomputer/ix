@@ -47,7 +47,7 @@ headers, a pointer-to-hash cache and a leaves-first traversal order. Production
 sharing is the canonical tiered construction (`Ix.Sharing.Exact`); nothing here
 is on the compiler route. -/
 
-/-- Canonical scalar/contract bytes of one node, without its children. -/
+/-- Canonical scalar bytes of one node, without its children. -/
 def putNodeHeader : Expr → Ixon.PutM Unit
   | e@(.sort _) | e@(.var _) | e@(.ref ..) | e@(.recur ..) |
       e@(.str _) | e@(.nat _) | e@(.share _) => Ixon.putExpr e
@@ -55,15 +55,9 @@ def putNodeHeader : Expr → Ixon.PutM Unit
     Ixon.putTagN 4 Ixon.Expr.FLAG_PRJ field
     Ixon.putTagN 0 0 idx
   | .app .. => Ixon.putTagN 4 Ixon.Expr.FLAG_APP 1
-  | .lam contract .. => do
-    Ixon.putTagN 4 Ixon.Expr.FLAG_LAM 1
-    Ixon.putBinderContract contract
-  | .all contract result .. => do
-    Ixon.putTagN 4 Ixon.Expr.FLAG_ALL 1
-    Ixon.putU8 (Ixon.packAllContract contract result)
-  | .letE contract .. => do
-    Ixon.putTagN 4 Ixon.Expr.FLAG_LET contract.flags
-    Ixon.putBinderContract contract.binder
+  | .lam .. => Ixon.putTagN 4 Ixon.Expr.FLAG_LAM 1
+  | .all .. => Ixon.putTagN 4 Ixon.Expr.FLAG_ALL 1
+  | .letE nonDep mode .. => Ixon.putTagN 4 Ixon.Expr.FLAG_LET (Ixon.LetMode.header nonDep mode)
 
 def computeNodeHash (e : Expr) (childHashes : Array Address) : Address :=
   Address.blake3 <| childHashes.foldl (fun bytes h => bytes ++ h.hash)
@@ -107,9 +101,9 @@ partial def hashAndAnalyze (e : Expr) : AnalyzeM Address := do
     | .sort _ | .var _ | .ref _ _ | .recur _ _ | .str _ | .nat _ | .share _ => pure #[]
     | .prj _ _ val => do pure #[← hashAndAnalyze val]
     | .app f a => do pure #[← hashAndAnalyze f, ← hashAndAnalyze a]
-    | .lam _ ty body | .all _ _ ty body => do
+    | .lam ty body | .all ty body => do
       pure #[← hashAndAnalyze ty, ← hashAndAnalyze body]
-    | .letE _ ty val body => do
+    | .letE _ _ ty val body => do
       pure #[← hashAndAnalyze ty, ← hashAndAnalyze val, ← hashAndAnalyze body]
   recordAnalyzedNode e childHashes
 
@@ -133,9 +127,9 @@ partial def rewriteWithSharing (e : Expr) (hashToIdx : Std.HashMap Address Nat)
     match e with
     | .prj t f v => .prj t f (go v)
     | .app f a => .app (go f) (go a)
-    | .lam c t b => .lam c (go t) (go b)
-    | .all c r t b => .all c r (go t) (go b)
-    | .letE c t v b => .letE c (go t) (go v) (go b)
+    | .lam t b => .lam (go t) (go b)
+    | .all t b => .all (go t) (go b)
+    | .letE nonDep mode t v b => .letE nonDep mode (go t) (go v) (go b)
     | _ => e
 
 structure SharingBuildState where
@@ -167,11 +161,11 @@ partial def expandExpr (tbl : Array Expr) (limit : Nat) : Expr → Except String
     else .error s!"Share {i} is not below {limit}"
   | .prj t f v => return .prj t f (← expandExpr tbl limit v)
   | .app f a => return .app (← expandExpr tbl limit f) (← expandExpr tbl limit a)
-  | .lam c t b => return .lam c (← expandExpr tbl limit t) (← expandExpr tbl limit b)
-  | .all c r t b =>
-    return .all c r (← expandExpr tbl limit t) (← expandExpr tbl limit b)
-  | .letE c t v b =>
-    return .letE c (← expandExpr tbl limit t) (← expandExpr tbl limit v)
+  | .lam t b => return .lam (← expandExpr tbl limit t) (← expandExpr tbl limit b)
+  | .all t b =>
+    return .all (← expandExpr tbl limit t) (← expandExpr tbl limit b)
+  | .letE nonDep mode t v b =>
+    return .letE nonDep mode (← expandExpr tbl limit t) (← expandExpr tbl limit v)
       (← expandExpr tbl limit b)
   | e => .ok e
 
@@ -224,8 +218,8 @@ structure DagStats where
 
 /-- Hash-cons the roots and compute `N`, telescope maxima and root unshared
 sizes. Mirrors `putExpr`: an App telescope writes `TagN4(#args)`, its head,
-then its arguments; Lam/All telescopes write `TagN4(#binders)`, then one
-contract byte and the type per binder, then the body. Prj/Let/leaves are the
+then its arguments; Lam/All telescopes write `TagN4(#binders)`, then the type of
+each binder, then the body. Prj/Let/leaves are the
 node header (`SubtermInfo.baseSize`, which is `putNodeHeader`, i.e. the full
 `putExpr` for leaves) plus the children. -/
 def dagStats (res : AnalyzeResult) (roots : Array Expr) :
@@ -246,13 +240,13 @@ def dagStats (res : AnalyzeResult) (roots : Array Expr) :
         let t := child 0
         let b := child 1
         let tele := if b.fam == 2 then b.tele + 1 else 1
-        let payload := 1 + t.sz + (if b.fam == 2 then b.payload else b.sz)
+        let payload := t.sz + (if b.fam == 2 then b.payload else b.sz)
         { sz := tagN4Size tele + payload, fam := 2, tele, payload }
       | .all .. =>
         let t := child 0
         let b := child 1
         let tele := if b.fam == 3 then b.tele + 1 else 1
-        let payload := 1 + t.sz + (if b.fam == 3 then b.payload else b.sz)
+        let payload := t.sz + (if b.fam == 3 then b.payload else b.sz)
         { sz := tagN4Size tele + payload, fam := 3, tele, payload }
       | _ =>
         { sz := info.children.foldl (init := info.baseSize) fun acc c =>
@@ -278,8 +272,8 @@ partial def countShareRefsBy (lo hi : UInt64) (e : Expr) (acc : Nat × Nat × Na
     else (acc.1, acc.2.1, acc.2.2 + 1)
   | .prj _ _ v => countShareRefsBy lo hi v acc
   | .app f a => countShareRefsBy lo hi a (countShareRefsBy lo hi f acc)
-  | .lam _ t b | .all _ _ t b => countShareRefsBy lo hi b (countShareRefsBy lo hi t acc)
-  | .letE _ t v b =>
+  | .lam t b | .all t b => countShareRefsBy lo hi b (countShareRefsBy lo hi t acc)
+  | .letE _ _ t v b =>
     countShareRefsBy lo hi b (countShareRefsBy lo hi v (countShareRefsBy lo hi t acc))
   | _ => acc
 
@@ -433,16 +427,11 @@ partial def eqDag (a b : Expr) : StateM (Std.HashSet (USize × USize)) Bool := d
     | .app f1 x1, .app f2 x2 => do
       if !(← eqDag f1 f2) then return false
       eqDag x1 x2
-    | .lam c1 t1 b1, .lam c2 t2 b2 => do
-      if c1 != c2 then return false
+    | .lam t1 b1, .lam t2 b2 | .all t1 b1, .all t2 b2 => do
       if !(← eqDag t1 t2) then return false
       eqDag b1 b2
-    | .all c1 r1 t1 b1, .all c2 r2 t2 b2 => do
-      if c1 != c2 || r1 != r2 then return false
-      if !(← eqDag t1 t2) then return false
-      eqDag b1 b2
-    | .letE c1 t1 v1 b1, .letE c2 t2 v2 b2 => do
-      if c1 != c2 then return false
+    | .letE n1 m1 t1 v1 b1, .letE n2 m2 t2 v2 b2 => do
+      if n1 != n2 || m1 != m2 then return false
       if !(← eqDag t1 t2) then return false
       if !(← eqDag v1 v2) then return false
       eqDag b1 b2
@@ -594,10 +583,10 @@ structure Witness where
   check : Option String
   expectedMss : String
 
-/-- `P = Sort 0`, `T0 = P`, `T(k+1) = All(P, Tk)`, default contracts. -/
+/-- `P = Sort 0`, `T0 = P`, `T(k+1) = All(P, Tk)`. -/
 def witnessT (n : Nat) : Expr :=
   let p : Expr := .sort 0
-  (List.range n).foldl (fun acc _ => Expr.all .many .shared p acc) p
+  (List.range n).foldl (fun acc _ => Expr.all p acc) p
 
 /-- `Axio(false, 0, root)` with empty refs and the given univs. -/
 def witnessAxiom (root : Expr) (univs : Array Ixon.Univ) : Constant :=
@@ -627,14 +616,14 @@ def witnesses : Array (Except String Witness) :=
   let t2 := witnessT 2
   let t16 := witnessT 16
   let p : Expr := .sort 0
-  let a : Expr := .all .many .shared p p
-  let b : Expr := .all .many .shared p (.sort 1)
-  #[runWitness "`T2 → T2`" "17 (plan: exact minimum `d200009117b0b001921700170000000100`)"
-      (witnessAxiom (.all .many .shared t2 t2) #[.zero]),
-    runWitness "`T16 → T16`" "46 (plan: feasible improvement)"
-      (witnessAxiom (.all .many .shared t16 t16) #[.zero]),
-    runWitness "`A → A → B → B`, `A = Prop → Prop`, `B = Prop → Type`" "25 (plan: minimum, two tied orders)"
-      (witnessAxiom (.all .many .shared a (.all .many .shared a (.all .many .shared b b)))
+  let a : Expr := .all p p
+  let b : Expr := .all p (.sort 1)
+  #[runWitness "`T2 → T2`" "14 (exact minimum `d2000091b0b00192000000000100`)"
+      (witnessAxiom (.all t2 t2) #[.zero]),
+    runWitness "`T16 → T16`" "29 (storing only `T16`)"
+      (witnessAxiom (.all t16 t16) #[.zero]),
+    runWitness "`A → A → B → B`, `A = Prop → Prop`, `B = Prop → Type`" "20 (minimum, three tied tables)"
+      (witnessAxiom (.all a (.all a (.all b b)))
         #[.zero, .succ .zero])]
 
 /-- Negative controls for `mssCheck`: the `T2 → T2` MSS bytes must be rejected
@@ -642,16 +631,16 @@ against roots that differ in one leaf, and against the `T16 → T16` roots. -/
 def negativeControls : Array (String × Bool) :=
   let p : Expr := .sort 0
   let t2 := witnessT 2
-  let t2' : Expr := .all .many .shared p (.all .many .shared p (.sort 1))
-  match mssBytes (witnessAxiom (.all .many .shared t2 t2) #[.zero]) with
+  let t2' : Expr := .all p (.all p (.sort 1))
+  match mssBytes (witnessAxiom (.all t2 t2) #[.zero]) with
   | .error e => #[(s!"MSS build failed: {e}", false)]
   | .ok (mb, roots) =>
     let rejects (rs : Array Expr) : Bool :=
       match mssCheck mb rs with | .ok () => false | .error _ => true
     #[("`T2 → T2` MSS bytes vs roots `T2 → T2'` (one leaf `Sort 0` replaced by `Sort 1`)",
-        rejects #[.all .many .shared t2 t2']),
+        rejects #[.all t2 t2']),
       ("`T2 → T2` MSS bytes vs roots `T16 → T16`",
-        rejects #[.all .many .shared (witnessT 16) (witnessT 16)]),
+        rejects #[.all (witnessT 16) (witnessT 16)]),
       ("`T2 → T2` MSS bytes vs its own roots (must be accepted)", !rejects roots)]
 
 /-! ## Statistics -/

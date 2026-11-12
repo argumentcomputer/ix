@@ -303,7 +303,8 @@ end Spine
 
 /-! ## The model -/
 
-/-- Contract byte plus the cost of the side child of telescope node `y`. -/
+/-- The bytes telescope node `y` writes besides its spine continuation: the
+cost of its side child (`sideExtra` is zero). -/
 def sideCost (p : Prep) (cost : Nat → Nat) (y : Nat) : Nat :=
   (p.dag.node y).sideExtra + cost (p.dag.node y).sideChild
 

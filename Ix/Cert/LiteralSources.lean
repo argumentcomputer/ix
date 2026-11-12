@@ -54,15 +54,15 @@ theorem go_spec : ∀ (e : Ixon.Expr) (acc : Bool × Bool),
     simp only [ixLits, Ix.Kernel.Reader.literalKinds.go]
     rw [go_spec a, go_spec f, go_spec a (Ix.Kernel.Reader.literalKinds.go (false, false) f)]
     simp [Bool.or_assoc]
-  | .lam _ t b, acc => by
+  | .lam t b, acc => by
     simp only [ixLits, Ix.Kernel.Reader.literalKinds.go]
     rw [go_spec b, go_spec t, go_spec b (Ix.Kernel.Reader.literalKinds.go (false, false) t)]
     simp [Bool.or_assoc]
-  | .all _ _ t b, acc => by
+  | .all t b, acc => by
     simp only [ixLits, Ix.Kernel.Reader.literalKinds.go]
     rw [go_spec b, go_spec t, go_spec b (Ix.Kernel.Reader.literalKinds.go (false, false) t)]
     simp [Bool.or_assoc]
-  | .letE _ t v b, acc => by
+  | .letE _ _ t v b, acc => by
     simp only [ixLits, Ix.Kernel.Reader.literalKinds.go]
     rw [go_spec b, go_spec v, go_spec t, go_spec b (Ix.Kernel.Reader.literalKinds.go _ v),
       go_spec v (Ix.Kernel.Reader.literalKinds.go (false, false) t)]
@@ -78,18 +78,18 @@ theorem ixLits_app (f a : Ixon.Expr) :
   show Ix.Kernel.Reader.literalKinds.go (Ix.Kernel.Reader.literalKinds.go (false, false) f) a = _
   rw [go_spec]
 
-theorem ixLits_lam (c : Ixon.BinderContract) (t b : Ixon.Expr) :
-    ixLits (.lam c t b) = ((ixLits t).1 || (ixLits b).1, (ixLits t).2 || (ixLits b).2) := by
+theorem ixLits_lam (t b : Ixon.Expr) :
+    ixLits (.lam t b) = ((ixLits t).1 || (ixLits b).1, (ixLits t).2 || (ixLits b).2) := by
   show Ix.Kernel.Reader.literalKinds.go (Ix.Kernel.Reader.literalKinds.go (false, false) t) b = _
   rw [go_spec]
 
-theorem ixLits_all (c : Ixon.BinderContract) (r : Ixon.ValueContract) (t b : Ixon.Expr) :
-    ixLits (.all c r t b) = ((ixLits t).1 || (ixLits b).1, (ixLits t).2 || (ixLits b).2) := by
+theorem ixLits_all (t b : Ixon.Expr) :
+    ixLits (.all t b) = ((ixLits t).1 || (ixLits b).1, (ixLits t).2 || (ixLits b).2) := by
   show Ix.Kernel.Reader.literalKinds.go (Ix.Kernel.Reader.literalKinds.go (false, false) t) b = _
   rw [go_spec]
 
-theorem ixLits_letE (c : Ixon.LetContract) (t v b : Ixon.Expr) :
-    ixLits (.letE c t v b) = ((ixLits t).1 || (ixLits v).1 || (ixLits b).1,
+theorem ixLits_letE (nd : Bool) (c : Ixon.LetMode) (t v b : Ixon.Expr) :
+    ixLits (.letE nd c t v b) = ((ixLits t).1 || (ixLits v).1 || (ixLits b).1,
       (ixLits t).2 || (ixLits v).2 || (ixLits b).2) := by
   show Ix.Kernel.Reader.literalKinds.go (Ix.Kernel.Reader.literalKinds.go
     (Ix.Kernel.Reader.literalKinds.go (false, false) t) v) b = _
@@ -232,16 +232,13 @@ theorem decompose_lits : ∀ (expr : Ix.Expr) (args : Array Ix.Expr) (whole : Ix
     intro args whole nat str hargs
     exact ⟨⟨nat, str⟩, fun x hx => hargs x (Array.mem_reverse.mp hx)⟩
 
-/-- A semantic contract changes only a binder's annotations. -/
+/-- A lowered semantic contract leaves the compiled binder as it is. -/
 theorem lower_lits {contract : Ix.SemanticContract.Contract} {source : Ix.Expr} {compiled value : Ixon.Expr}
     (h : contract.lower source compiled = .ok value) : ixLits value = ixLits compiled := by
   unfold Ix.SemanticContract.Contract.lower at h
   split at h
-  all_goals first
-    | (simp only [pure, Except.pure, Except.ok.injEq] at h
-       subst h
-       simp only [ixLits_lam, ixLits_all, ixLits_letE])
-    | cases h
+  · cases h; rfl
+  · split at h <;> cases h
 
 /-- **One step returns its source's literals**, given the same of the recursive compile on
 every strict subterm, under the cache invariant. -/
@@ -436,16 +433,16 @@ abbrev has (k : Bool) (e : Ixon.Expr) : Bool := if k then (ixLits e).2 else (ixL
 theorem has_app (k : Bool) (f a : Ixon.Expr) : has k (.app f a) = (has k f || has k a) := by
   cases k <;> simp [has, ixLits_app]
 
-theorem has_lam (k : Bool) (c : Ixon.BinderContract) (t b : Ixon.Expr) :
-    has k (.lam c t b) = (has k t || has k b) := by
+theorem has_lam (k : Bool) (t b : Ixon.Expr) :
+    has k (.lam t b) = (has k t || has k b) := by
   cases k <;> simp [has, ixLits_lam]
 
-theorem has_all (k : Bool) (c : Ixon.BinderContract) (r : Ixon.ValueContract) (t b : Ixon.Expr) :
-    has k (.all c r t b) = (has k t || has k b) := by
+theorem has_all (k : Bool) (t b : Ixon.Expr) :
+    has k (.all t b) = (has k t || has k b) := by
   cases k <;> simp [has, ixLits_all]
 
-theorem has_letE (k : Bool) (c : Ixon.LetContract) (t v b : Ixon.Expr) :
-    has k (.letE c t v b) = (has k t || has k v || has k b) := by
+theorem has_letE (k : Bool) (nd : Bool) (c : Ixon.LetMode) (t v b : Ixon.Expr) :
+    has k (.letE nd c t v b) = (has k t || has k v || has k b) := by
   cases k <;> simp [has, ixLits_letE]
 
 theorem has_prj (k : Bool) (r f : UInt64) (v : Ixon.Expr) : has k (.prj r f v) = has k v := rfl
@@ -461,17 +458,17 @@ theorem has_subst (k : Bool) (σ : Nat → Ixon.Expr) :
     have ha := has_subst k σ a
     simp only [Ix.Sharing.Verify.SharingExact.substShares, has_app, Bool.or_eq_true] at h ⊢
     exact h.imp hf ha
-  | .lam c t b, h => by
+  | .lam t b, h => by
     have ht := has_subst k σ t
     have hb := has_subst k σ b
     simp only [Ix.Sharing.Verify.SharingExact.substShares, has_lam, Bool.or_eq_true] at h ⊢
     exact h.imp ht hb
-  | .all c r t b, h => by
+  | .all t b, h => by
     have ht := has_subst k σ t
     have hb := has_subst k σ b
     simp only [Ix.Sharing.Verify.SharingExact.substShares, has_all, Bool.or_eq_true] at h ⊢
     exact h.imp ht hb
-  | .letE c t v b, h => by
+  | .letE nd c t v b, h => by
     have ht := has_subst k σ t
     have hv := has_subst k σ v
     have hb := has_subst k σ b

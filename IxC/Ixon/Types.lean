@@ -252,6 +252,11 @@ namespace BinderNode
   def mode? : BinderNode → Option AllMode
     | .never m | .zero m | .ifAllZero _ m | .undecided m => some m
     | .share _ => none
+
+  /-- Whether the node is an undecided binder (tag 4). -/
+  def isUndecided : BinderNode → Bool
+    | .undecided _ => true
+    | _ => false
 end BinderNode
 
 /-- The binder data of one expression of a record (one variant of it, for a
