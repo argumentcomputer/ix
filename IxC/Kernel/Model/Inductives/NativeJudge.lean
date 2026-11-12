@@ -108,7 +108,7 @@ theorem envWF_cons_indJ {J : Judgements md} {env : Env md} (hfr : JudgeFrames J 
     {cv : ConstantVal md} (hccv : ConstantValCheckJ J env cv cvA)
     (hcaps : Ix.Kernel.IndCapsWF (.indInfo cvA caps)) :
     Ix.Kernel.EnvWF ⟨.indInfo cvA caps :: env.consts⟩ := by
-  obtain ⟨htf, htp, htr, htb⟩ := hccv.typeWF hfr
+  obtain ⟨htf, htp, htr, htb⟩ := ConstantValCheckJ.typeWF hfr hccv
   exact Ix.Kernel.EnvWF.cons henv (Ix.Kernel.structConstWF htf htp
     (Ix.Kernel.Expr.constsResolve_mono htr) htb
     (fun _ _ _ heq => nomatch heq)

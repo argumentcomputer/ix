@@ -36,7 +36,8 @@ theorem declNativeRunJ_etaClosed {J : Judgements md} {env env₂ : Env md}
   obtain ⟨hnd, isRec, env₁, cvTa, p₁, p, ctorsA, sortss, kinds, cvRa, rhss, -, -, -, hInd, rfl,
     hCtors, -, hcaps, -, -, -, -, -, hRec, -, hTbl⟩ := h
   obtain ⟨hTn, -, hfT, -⟩ := hInd.former
-  obtain ⟨cvTa₀, s, bs, -, -, -, rfl, rfl⟩ := hInd
+  obtain ⟨cvTa₀, s, bs, cvS, -, -, -, hSt, rfl, rfl⟩ := hInd
+  obtain rfl : cvTa = cvS := (show cvS = cvTa from hSt).symm
   try dsimp only at hCtors hRec hTbl hcaps
   rw [← hcaps] at hCtors hRec hTbl
   have hpT : ((p₀.complete (p₀.toInductiveShape.withSort s)).withKinds kinds).cvT = p₀.cvT := by
@@ -205,7 +206,8 @@ theorem declNativeRunJ_envExt {J : Judgements md} {env env₂ : Env md} {p₀ : 
   obtain ⟨hnd, isRec, env₁, cvTa, p₁, p, ctorsA, sortss, kinds, cvRa, rhss, -, -, -, hInd, rfl,
     hCtors, -, -, -, -, -, -, -, hRec, -, hTbl⟩ := h
   obtain ⟨hTn, -, hfT, hTsh⟩ := hInd.former
-  obtain ⟨cvTa₀, s, bs, -, -, -, rfl, rfl⟩ := hInd
+  obtain ⟨cvTa₀, s, bs, cvS, -, -, -, hSt, rfl, rfl⟩ := hInd
+  obtain rfl : cvTa = cvS := (show cvS = cvTa from hSt).symm
   try dsimp only at hCtors hRec hTbl
   have hpT : ((p₀.complete (p₀.toInductiveShape.withSort s)).withKinds kinds).cvT = p₀.cvT := by
     simp [Ix.Kernel.NativeParts.withKinds]

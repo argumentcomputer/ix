@@ -209,7 +209,7 @@ theorem fixTeleBoundJ {J : Judgements md} {m : EnvModel V env} (hJ : JudgeSound 
   obtain ⟨rfl, rfl⟩ := Prod.mk.inj (Option.some.inj (hopP.symm.trans hopC))
   obtain ⟨rfl, hxrest⟩ := Prod.mk.inj (Option.some.inj (hopXX.symm.trans hopX))
   obtain ⟨-, hfields⟩ := hsorts
-  obtain ⟨hcf, -, -, hcb⟩ := hccvW.typeWF hJ.toJudgeFrames
+  obtain ⟨hcf, -, -, hcb⟩ := ConstantValCheckJ.typeWF hJ.toJudgeFrames hccvW
   have hopAll : Ix.Kernel.openPisAtFvars (nP + nF) cvCa.type 0 = some (fvsP ++ xFvs, xrest) :=
     openPisAtFvars_add nP hopP (by rw [Nat.zero_add]; exact hopXX)
   have hO : Opened m ψ (nP + nF) cvCa.type (fvsP ++ xFvs) xrest

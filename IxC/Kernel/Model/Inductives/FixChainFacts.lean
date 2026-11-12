@@ -193,7 +193,7 @@ theorem fixChainFactsJ {J : Judgements md} {m : EnvModel V env} (hJ : JudgeSound
   -- the openings, the opened record
   obtain ⟨crest, hopP, hopX⟩ := hD.opens
   obtain ⟨_, hccvW⟩ := hCtor.check
-  obtain ⟨hcf, -, -, hcb⟩ := hccvW.typeWF hJ.toJudgeFrames
+  obtain ⟨hcf, -, -, hcb⟩ := ConstantValCheckJ.typeWF hJ.toJudgeFrames hccvW
   have hopAll : openPisAtFvars (nP + nF) cvCa.type 0 = some (fvsP ++ xFvs, xrest) :=
     openPisAtFvars_add nP hopP (by rw [Nat.zero_add]; exact hopX)
   have hO : Opened m ψ (nP + nF) cvCa.type (fvsP ++ xFvs) xrest

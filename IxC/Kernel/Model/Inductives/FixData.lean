@@ -313,7 +313,7 @@ theorem fixCtorDataJ {J : Judgements md} {m : EnvModel V env} (hJ : JudgeSound J
   obtain ⟨rfl, rfl⟩ := Prod.mk.inj (Option.some.inj (hopP.symm.trans hopP'))
   obtain ⟨rfl, rfl⟩ := Prod.mk.inj (Option.some.inj (hopX.symm.trans hopX'))
   obtain ⟨_, hccvW⟩ := hCtor.check
-  obtain ⟨hcf, -, -, hcb⟩ := hccvW.typeWF hJ.toJudgeFrames
+  obtain ⟨hcf, -, -, hcb⟩ := ConstantValCheckJ.typeWF hJ.toJudgeFrames hccvW
   obtain ⟨hlenP, hidxP, -⟩ := opening_vars_at hopP
   obtain ⟨hlenX, hidxX, -⟩ := opening_vars_at hopX
   -- the fields' sort rows (task #202: the reflexive telescopes' bits)

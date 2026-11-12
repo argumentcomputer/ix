@@ -56,21 +56,32 @@ the annotated type. -/
 def ConstantValCheckJ (J : Judgements md) (env : Env md) (cv cv' : ConstantVal md) : Prop :=
   ∃ type', ConstantValRunJ J env cv type' ∧ cv' = { cv with type := type' }
 
+/-- **The former the block stores**, against the checked declared former `cvTa₀`
+and the telescope constant `cvTa` the later stages read: the telescope constant
+itself, as the kernel stores it. One definition, so that which constant is stored
+is decided in one place. -/
+def FormerStoredJ (_J : Judgements md) (_env : Env md) (_cvTa₀ cvTa cvS : ConstantVal md) :
+    Prop :=
+  cvS = cvTa
+
 /-- **The former's stage** (`checkSumInd`) over a package. The declared type is
-checked; the stored former is that constant, or (where the declared type is not a
-syntactic telescope ending in a sort) a constant of the same name and level
-parameters checked from scratch at another type. Either way the stored type is a
-syntactic telescope of the parameters and indices ending in the sort `s` the
-completed record carries. -/
+checked (`cvTa₀`); the telescope constant `cvTa` the later stages read is that
+constant, or (where the declared type is not a syntactic telescope ending in a
+sort) a constant of the same name and level parameters checked from scratch at
+another type. Either way its type is a syntactic telescope of the parameters and
+indices ending in the sort `s` the completed record carries. The stored former is
+`FormerStoredJ`'s. -/
 def SumIndRunJ (J : Judgements md) (env : Env md) (p : InductiveShape md)
     (capsOf : InductiveShape md → IndCaps md) (envI : Env md) (cvTa : ConstantVal md)
     (p' : InductiveShape md) : Prop :=
-  ∃ (cvTa₀ : ConstantVal md) (s : Level) (bs : List (Expr md × Ix.Kernel.BinderMeta)),
+  ∃ (cvTa₀ : ConstantVal md) (s : Level) (bs : List (Expr md × Ix.Kernel.BinderMeta))
+    (cvS : ConstantVal md),
     ConstantValCheckJ J env p.cvT cvTa₀ ∧
     (cvTa = cvTa₀ ∨ ∃ ty, ConstantValCheckJ J env { p.cvT with type := ty } cvTa) ∧
     cvTa.type.stripPis (p.nP + p.nIdx) = some (bs, .sort s) ∧
+    FormerStoredJ J env cvTa₀ cvTa cvS ∧
     p' = p.withSort s ∧
-    envI = ⟨.indInfo cvTa (capsOf p') :: env.consts⟩
+    envI = ⟨.indInfo cvS (capsOf p') :: env.consts⟩
 
 /-- **The fields' sorts** (`checkStructFieldSortsI`) over a package, positionally:
 one sort per field, the sort of the field's type at the field's own depth; at a
@@ -134,6 +145,13 @@ def SumCtorsRunJ (J : Judgements md) (env₀ env : Env md) (T : Key md)
     cA.2 = c.2 ∧ ∃ sorts, sortss[j]? = some sorts ∧
       SumCtorRunJ J env₀ env T lps nP nIdx resSort isProp large c.1 c.2 cvTa cA.1 sorts
 
+/-- **The recursor the block stores**, against the checked declared recursor `cvRi`
+and the generated type `recTy`: the recursor at the generated type, as the kernel
+stores it. One definition, so that which type is stored is decided in one place. -/
+def RecStoredJ (_J : Judgements md) (_env : Env md) (p : NativeParts md) (_cvRi : ConstantVal md)
+    (recTy : Expr md) (cvRa : ConstantVal md) : Prop :=
+  cvRa = ⟨p.cvR.name, p.cvR.levelParams, recTy⟩
+
 /-- **The recursor's stage** (`checkNativeRec`) over a package: the record's pins
 (its level parameters are the generated ones; its rule count, rules' constructors
 and field counts and argument sums are the generated ones), the declared recursor
@@ -159,7 +177,7 @@ def NativeRecRunJ (J : Judgements md) (env : Env md) (p : NativeParts md)
       p.cvR.levelParams p.cvT.name p.cvT.levelParams p.elim p.large p.nP p.nIdx cvTa.type
       (Ix.Kernel.nativeCtors4 ctorsA p.kinds) p.cvR.name (p.cvR.levelParams.map .param)
       (Ix.Kernel.nativeCtors4 ctorsA p.kinds).length 0 = .ok rhss ∧
-    cvRa = ⟨p.cvR.name, p.cvR.levelParams, recTy⟩
+    RecStoredJ J env p cvRi recTy cvRa
 
 /-! ## The block -/
 
@@ -273,7 +291,7 @@ theorem SumIndRunJ.former {J : Judgements md} {env envI : Env md} {p p' : Induct
     (h : SumIndRunJ J env p capsOf envI cvTa p') :
     cvTa.name = p.cvT.name ∧ cvTa.levelParams = p.cvT.levelParams ∧
       env.find? p.cvT.name = none ∧ p.cvT.name.isProjFnShape = false := by
-  obtain ⟨cvTa₀, s, bs, h₀, hbr, -⟩ := h
+  obtain ⟨cvTa₀, s, bs, -, h₀, hbr, -⟩ := h
   refine ⟨?_, ?_, h₀.fresh, h₀.shape⟩
   · rcases hbr with rfl | ⟨ty, h₁⟩
     · exact h₀.name_eq
@@ -337,7 +355,7 @@ theorem sumIndRunJ_of_run {env envI : Env md} {p p' : InductiveShape md}
     obtain ⟨rfl, rfl, rfl⟩ := h
     have hstrip : cvTa'.type.stripPis (p.nP + p.nIdx) = some (bs, .sort s) := by
       rw [hq', beq_iff_eq.mp hc]
-    refine ⟨cvTa₀, s, bs, constantValCheckJ_of_run hccv₀, ?_, hstrip, rfl, rfl⟩
+    refine ⟨cvTa₀, s, bs, cvTa', constantValCheckJ_of_run hccv₀, ?_, hstrip, rfl, rfl, rfl⟩
     rcases Ix.Kernel.checkSumTele_shape htele with ⟨rfl, -⟩ | ⟨ty, hccv⟩
     · exact Or.inl rfl
     · exact Or.inr ⟨ty, constantValCheckJ_of_run hccv⟩
