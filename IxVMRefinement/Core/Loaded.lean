@@ -118,6 +118,7 @@ inductive CIRep (κ : _root_.Address → KKey) (h : Heap F) :
   | ctor {nl ty blk ind cidx np nf u : SourceValue F} {cv : Ix.Kernel.ConstantVal .anon}
       {nP nF : Nat}
       (hv : ValRep κ h nl ty cv) (hnp : np = .field (nP : F)) (hnf : nf = .field (nF : F))
+      (hcounts : nP < 72057594037927936 ∧ nF < 72057594037927936)
       (hkey : ∃ (b : Bytes.Address) (i j : F), Bytes.RepAddressRef addrTy h b blk ∧ ind = .field i ∧
         cidx = .field j ∧ cv.name = κ (cprjAddr (ixAddr b) (ZMod.val i) (ZMod.val j))) :
       CIRep κ h (.construct kciEnum "Ctor" [nl, ty, blk, ind, cidx, np, nf, u]) (.ctorInfo cv nP nF)
@@ -126,6 +127,7 @@ inductive CIRep (κ : _root_.Address → KKey) (h : Heap F) :
       {p i m mi : F}
       (hv : ValRep κ h nl ty cv) (hnp : np = .field p) (hni : ni = .field i) (hnm : nm = .field m)
       (hnmi : nmi = .field mi) (hrP : (rP : F) = p + m + mi) (hmI : (mI : F) = p + m + mi + i)
+      (hcounts : rP ≤ mI ∧ mI < 288230376151711744)
       (hrules : RulesRep κ h 0 rules rls)
       (hkey : ∃ (b : Bytes.Address) (i : F), Bytes.RepAddressRef addrTy h b blk ∧ idx = .field i ∧
         (cv.name = κ (ixAddr b) ∨ cv.name = κ (rprjAddr (ixAddr b) (ZMod.val i)))) :
@@ -166,12 +168,12 @@ theorem CIRep.mono {κ : _root_.Address → KKey} {h₁ h₂ : Heap F} {v : Sour
   | induct hv hkey =>
     obtain ⟨b, i, hb, hi, hn⟩ := hkey
     exact .induct (hv.mono ext) ⟨b, i, Bytes.repAddressRef_heapMono₂ addrTy ext hb, hi, hn⟩
-  | ctor hv hnp hnf hkey =>
+  | ctor hv hnp hnf hcounts hkey =>
     obtain ⟨b, i, j, hb, hi, hj, hn⟩ := hkey
-    exact .ctor (hv.mono ext) hnp hnf ⟨b, i, j, Bytes.repAddressRef_heapMono₂ addrTy ext hb, hi, hj, hn⟩
-  | recr hv hnp hni hnm hnmi hrP hmI hrules hkey =>
+    exact .ctor (hv.mono ext) hnp hnf hcounts ⟨b, i, j, Bytes.repAddressRef_heapMono₂ addrTy ext hb, hi, hj, hn⟩
+  | recr hv hnp hni hnm hnmi hrP hmI hcounts hrules hkey =>
     obtain ⟨b, i, hb, hi, hn⟩ := hkey
-    exact .recr (hv.mono ext) hnp hni hnm hnmi hrP hmI (hrules.mono ext)
+    exact .recr (hv.mono ext) hnp hni hnm hnmi hrP hmI hcounts (hrules.mono ext)
       ⟨b, i, Bytes.repAddressRef_heapMono₂ addrTy ext hb, hi, hn⟩
 
 theorem CIPtrRep.mono {κ : _root_.Address → KKey} {h₁ h₂ : Heap F} {p : SourceValue F}

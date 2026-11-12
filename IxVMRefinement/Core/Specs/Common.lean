@@ -24,9 +24,10 @@ function.
    `CIRep c.κ h v ci` (the value), `CIPtrRep c.κ h p ci` (the pointer).
 4. A result term is existential: `∃ E', c.tm d Γ h' E' r ∧ <rule> E E'`, with the kernel's rules
    (`Red`, `DefEq`, `Infer`, `Certs`, `DefEqList`) at `c.env` and depth `d`.
-5. A yes/no answer claims something for its positive value only; nothing is claimed for `0`
-   unless the spec says so explicitly (and then the circuit must decide it completely). A
-   tagged result `(tag, x)` claims for `tag = 1` (or the tags the spec names) only.
+5. A yes/no answer claims something for every answer other than `0` (`r ≠ .field 0`: the circuit
+   tests answers against `0` and multiplies them); nothing is claimed for `0` unless the spec
+   says so explicitly (and then the circuit must decide it completely). A tagged result
+   `(tag, x)` claims for the tags the spec names only.
 6. Counts are field elements; a spec that reads one as a natural says so (`ZMod.val n`), and a
    proof bounds it through the ROM: `Bounded` gives a valid ROM of at most `2^39` addresses
    carrying the calls, and the cells of a list are at pairwise different addresses

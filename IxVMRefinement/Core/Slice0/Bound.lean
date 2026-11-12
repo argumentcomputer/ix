@@ -3,27 +3,15 @@ import IxVMRefinement.Obs.Lists
 import Ix.IxVM.Consistency.Statement
 import Mathlib.Data.List.Forall2
 
-/-! # The size bound: a list IxVM measures as a field element is short
+/-! # Values in a valid ROM, for the slice
 
-`Lists::length` returns a field element, and IxVM computes with it (`red_iota` splits a
-constructor's arguments at `Lists::length(ctor_args) - rfields`), so the soundness
-of such a step needs the list's length to be below the field's characteristic. The circuit bounds
-*distinct calls of each memoized callee* (the consistency statement's `MemoCallsAtMost … (2^39)`), not calls counted with
-repetition. The bridge (`length_lt`): the derivation of `Lists::length` on a list of length
-`n` makes `n + 1` calls to itself, on the list's suffixes; their arguments are lists of
-pairwise different lengths, and two lists of different lengths are never represented by the
-same ROM value **when the ROM is valid** (`spine_length_eq`), so the calls need `n + 1`
-distinct keys (`chain_bound`).
-
-The ROM's validity is an explicit hypothesis here: `MemoCallsAtMost` alone admits an invalid
-ROM, at one address of which two lists of different lengths could both be represented. For
-the compiled circuit's trace ROM it follows from the consistency statement's hypothesis `rom.Valid` on the width
-ROM (`traceROM_valid`). -/
+One value of a valid ROM represents lists of one length only (`spine_length_eq`), and the
+calls of `Lists::length` on a list reach every suffix (`length_chain`). The bound itself is the
+statement's `Bounded` (`IxVMRefinement.Core.RomBound`). -/
 
 namespace IxVM.Refinement.Core.Slice0
 
 open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
-open IxVM.Consistency (MemoCallsAtMost memoCall)
 
 set_option linter.unusedVariables false
 
@@ -179,82 +167,5 @@ theorem length_chain (t : Generic.Ty) (n : Nat) :
           obtain ⟨c, hc, rest⟩ := ih ev' tail hn j (by omega)
           exact ⟨c, List.mem_cons_of_mem _ hc, rest⟩
 
-/-! ## Distinct keys -/
-
-/-- **A chain of calls on lists of every length up to `n` needs `n + 1` keys**, if the
-ROM is valid and the callee is memoized (`memoCall`). -/
-theorem chain_bound {rom : ROM F} (valid : rom.Valid) {calls : List (Call F)} {N : Nat}
-    (bound : MemoCallsAtMost IxVM.source rom calls N) {name en : String}
-    (memoized : memoCall IxVM.source name = true) {n : Nat}
-    (chain : ∀ j ≤ n, ∃ c ∈ calls, c.name = name ∧ ∃ p ys, c.args = [p] ∧
-      Spine en c.heap ys p ∧ ys.length = j) :
-    n + 1 ≤ N := by
-  obtain ⟨keys, hlen, cover⟩ := bound name memoized
-  have pick : ∀ j : Fin (n + 1), ∃ k, k ∈ keys ∧ ∃ (h : Heap F) (p : SourceValue F) (ys : List Unit)
-      (w : Value F), k = [w] ∧ Represents rom h p w ∧ Spine en h ys p ∧ ys.length = j := by
-    intro j
-    obtain ⟨c, hc, hname, p, ys, hargs, hs, hys⟩ := chain j (Nat.lt_succ_iff.mp j.isLt)
-    obtain ⟨k, hk, hfa⟩ := cover c hc hname
-    rw [hargs] at hfa
-    obtain ⟨w, u, hw, hu, hk2⟩ := List.forall₂_cons_left_iff.mp hfa
-    rw [List.forall₂_nil_left_iff] at hu
-    subst hu
-    exact ⟨k, hk, c.heap, p, ys, w, hk2, hw, hs, hys⟩
-  let f : Fin (n + 1) → List (Value F) := fun j => Classical.choose (pick j)
-  have hf : ∀ j, f j ∈ keys ∧ ∃ (h : Heap F) (p : SourceValue F) (ys : List Unit) (w : Value F),
-      f j = [w] ∧ Represents rom h p w ∧ Spine en h ys p ∧ ys.length = j :=
-    fun j => Classical.choose_spec (pick j)
-  have inj : Function.Injective f := by
-    intro j j' heq
-    obtain ⟨_, h₁, p₁, ys₁, w₁, hk₁, r₁, s₁, l₁⟩ := hf j
-    obtain ⟨_, h₂, p₂, ys₂, w₂, hk₂, r₂, s₂, l₂⟩ := hf j'
-    rw [heq, hk₂] at hk₁
-    simp only [List.cons.injEq, and_true] at hk₁
-    subst hk₁
-    have := spine_length_eq valid s₁ s₂ r₁ r₂
-    exact Fin.ext (by omega)
-  have hnd : ((List.finRange (n + 1)).map f).Nodup := (List.nodup_finRange _).map inj
-  have hsub : (List.finRange (n + 1)).map f ⊆ keys := by
-    intro k hk
-    obtain ⟨j, -, rfl⟩ := List.mem_map.mp hk
-    exact (hf j).1
-  have hle := (hnd.subperm hsub).length_le
-  simp only [List.length_map, List.length_finRange] at hle
-  omega
-
-/-! ## For the slice -/
-
-/-- `Lists::length` on IxVM's term lists is memoized. -/
-theorem length_memoized : memoCall IxVM.source lengthName = true := by
-  decide +kernel
-
-/-- **The list `Lists::length` counts is shorter than `2^39`**, in a run whose calls have at
-most `2^39` distinct calls of each memoized callee in a valid ROM. -/
-theorem length_lt {rom : ROM F} (valid : rom.Valid) {calls : List (Call F)}
-    (bound : MemoCallsAtMost IxVM.source rom calls (2 ^ 39))
-    {l : SourceValue F} {m m' : Heap F} {r : SourceValue F} {cs : List (Call F)}
-    (ev : ObsFn W lengthName [l] m r m' cs)
-    (hsub : ∀ x ∈ (⟨lengthName, [l], m⟩ : Call F) :: cs, x ∈ calls)
-    {α : Type} {R : Heap F → α → SourceValue F → Prop} {xs : List α}
-    (hl : RepLinkedList kexprListEnum "Nil" "Cons" R m xs l) : xs.length < 2 ^ 39 := by
-  have hname : (Instance.mk "Lists::length" [kexprTy]).symbol = lengthName :=
-    Obs.Names.«Lists::length<&KernelTypes::KExprNode>».symbol
-  have henum : (Instance.mk "Lists::Node" [kexprTy]).symbol = kexprListEnum :=
-    Obs.Names.«Lists::Node<&KernelTypes::KExprNode>».symbol
-  have ev' : ObsFn W (Instance.mk "Lists::length" [kexprTy]).symbol [l] m r m' cs := by
-    rw [hname]; exact ev
-  have hs : Spine (Instance.mk "Lists::Node" [kexprTy]).symbol m (xs.map fun _ => ()) l := by
-    rw [henum]; exact RepLinkedList.spine hl
-  have chain := length_chain kexprTy _ ev' hs rfl
-  have := chain_bound valid bound (name := lengthName)
-    (en := (Instance.mk "Lists::Node" [kexprTy]).symbol) length_memoized
-    (n := (xs.map fun _ => ()).length) fun j hj => by
-      obtain ⟨c, hc, hcn, rest⟩ := chain j hj
-      refine ⟨c, ?_, hcn.trans hname, rest⟩
-      apply hsub
-      rw [← hname]
-      exact hc
-  simp only [List.length_map] at this
-  exact Nat.lt_of_succ_le this
 
 end IxVM.Refinement.Core.Slice0
