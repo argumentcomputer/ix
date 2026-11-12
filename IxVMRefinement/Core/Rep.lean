@@ -324,6 +324,26 @@ theorem TmC.of_depth_zero {κ : _root_.Address → KKey} {Γ : Nat → KExpr} {h
     {E : KExpr} {p : SourceValue F} (rep : Tm κ 0 Γ h 0 E p) : TmC κ h E p :=
   fun d _ => rep.of_depth_zero d
 
+/-- **The image reads the ghost context below the opening depth only**: changing `Γ` at or above
+`d` changes nothing. -/
+theorem Tm.congr_ghost {κ : _root_.Address → KKey} {d : Nat} {Γ Γ' : Nat → KExpr} {h : Heap F}
+    {k : Nat} {E : KExpr} {p : SourceValue F} (hΓ : ∀ j, j < d → Γ' j = Γ j)
+    (rep : Tm κ d Γ h k E p) : Tm κ d Γ' h k E p := by
+  induction rep with
+  | bvarLocal cell hs hi => exact .bvarLocal cell hs hi
+  | @bvarFree k addr i cell hs hk hd =>
+    rw [← hΓ (fvIdx d k (ZMod.val i)) (by unfold fvIdx; omega)]
+    exact .bvarFree cell hs hk hd
+  | sort cell rl hu => exact .sort cell rl hu
+  | const cell ra rls hus => exact .const cell ra rls hus
+  | app cell _ _ ihf iha => exact .app cell ihf iha
+  | lam cell _ _ rl iht ihb => exact .lam cell iht ihb rl
+  | forallE cell _ _ rl iht ihb => exact .forallE cell iht ihb rl
+  | letE cell _ _ _ iht ihv ihb => exact .letE cell iht ihv ihb
+  | litNat cell rl hc => exact .litNat cell rl hc
+  | litStr cell rb hs => exact .litStr cell rb hs
+  | proj cell ra _ ihe => exact .proj cell ra ihe
+
 /-! ## Inversion at a loaded cell
 
 Each lemma reads a represented pointer's node off a load of that pointer (the form the

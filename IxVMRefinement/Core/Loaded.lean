@@ -123,6 +123,8 @@ inductive CIRep (κ : _root_.Address → KKey) (h : Heap F) :
   | induct {nl ty np ni nc u blk idx : SourceValue F} {cv : Ix.Kernel.ConstantVal .anon}
       {caps : Ix.Kernel.IndCaps .anon}
       (hv : ValRep κ h nl ty cv)
+      (hcounts : ∃ nP nI nC : Nat, np = .field (nP : F) ∧ ni = .field (nI : F) ∧ nc = .field (nC : F) ∧
+        nP < 72057594037927936 ∧ nI < 72057594037927936 ∧ nC < 72057594037927936)
       (hkey : ∃ (b : Bytes.Address) (i : F), Bytes.RepAddressRef addrTy h b blk ∧ idx = .field i ∧
         cv.name = κ (iprjAddr (ixAddr b) (ZMod.val i))) :
       CIRep κ h (.construct kciEnum "Induct" [nl, ty, np, ni, nc, u, blk, idx]) (.indInfo cv caps)
@@ -176,9 +178,9 @@ theorem CIRep.mono {κ : _root_.Address → KKey} {h₁ h₂ : Heap F} {v : Sour
   | defn hv hV => exact .defn (hv.mono ext) (TmC.mono ext hV)
   | thm hv hV => exact .thm (hv.mono ext) (TmC.mono ext hV)
   | quot hv hk => exact .quot (hv.mono ext) hk
-  | induct hv hkey =>
+  | induct hv hcounts hkey =>
     obtain ⟨b, i, hb, hi, hn⟩ := hkey
-    exact .induct (hv.mono ext) ⟨b, i, Bytes.repAddressRef_heapMono₂ addrTy ext hb, hi, hn⟩
+    exact .induct (hv.mono ext) hcounts ⟨b, i, Bytes.repAddressRef_heapMono₂ addrTy ext hb, hi, hn⟩
   | ctor hv hnp hnf hcounts hkey =>
     obtain ⟨b, i, j, hb, hi, hj, hn⟩ := hkey
     exact .ctor (hv.mono ext) hnp hnf hcounts ⟨b, i, j, Bytes.repAddressRef_heapMono₂ addrTy ext hb, hi, hj, hn⟩
