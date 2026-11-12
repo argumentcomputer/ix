@@ -142,6 +142,9 @@ structure Path where
   used : Array String := #[]
   /-- The path is impossible (a literal met a different literal); its goal is closed. -/
   dead : Bool := false
+  /-- Facts kept after the call equation, so that the fields before it keep their positions:
+  field name, fact template, proof term. -/
+  late : Array (String × List Piece × String) := #[]
   deriving Inhabited
 
 /-- A rendered constructor. -/
@@ -178,6 +181,9 @@ structure St where
   segs : Array (List Nat × String × String) := #[]
   /-- Inside a segment: no nested segments. -/
   inSeg : Bool := false
+  /-- The names of the facts kept after the call equation (`Path.late`), numbered on their own so
+  that the other names do not move. -/
+  lateCounter : Nat := 0
 
 abbrev M := StateT St (Except String)
 
@@ -185,6 +191,11 @@ def fresh (base : String) : M String := do
   let s ← get
   set { s with counter := s.counter + 1 }
   return s!"{base}{s.counter}"
+
+def freshLate (base : String) : M String := do
+  let s ← get
+  set { s with lateCounter := s.lateCounter + 1 }
+  return s!"{base}{s.lateCounter}"
 
 def modifyPath (f : Path → Path) : M Unit :=
   modify fun s => { s with path := f s.path }
@@ -417,6 +428,7 @@ def leaf (ind : String) (segs : List Seg) : M (List String) := do
   let base := sanitize ("_".intercalate p.tokens.toList)
   let name := uniqueName (s.ctors.map (·.name)) base
   let fields := p.facts.toList.map fun (n, f, _, _) => s!"({n} : {renderPieces p.subst f})"
+    ++ p.late.toList.map fun (n, f, _) => s!"({n} : {renderPieces p.subst f})"
   let bs := binders.map fun (n, t) => s!"({n} : {t})"
   let text := s!"  | {name}" ++
     (if bs.isEmpty then "" else "\n      " ++ " ".intercalate bs) ++
@@ -427,7 +439,8 @@ def leaf (ind : String) (segs : List Seg) : M (List String) := do
       [s!"try simp only [Value.type, List.map_cons, List.map_nil] at {" ".intercalate hs} ⊢"]
     else []
   let holes := String.join (binders.map fun _ => " _")
-  let proofs := String.join (p.facts.toList.map fun (_, _, pr, _) => " " ++ pr)
+  let proofs := String.join (p.facts.toList.map fun (_, _, pr, _) => " " ++ pr) ++
+    String.join (p.late.toList.map fun (_, _, pr) => " " ++ pr)
   return norm ++ [s!"exact {ind}.{name}{holes}{proofs}"]
 
 /-! ## Inversion -/
@@ -762,8 +775,68 @@ mutual
             .s " : SourceValue F) ≠ .tuple vs"] hne (subject := some V)
           let lem := match p with | .tuple _ => "matchPattern_tuple_none" | _ => "matchPattern_array_none"
           return ([s!"have {hne} := {lem} (by trivial) {nm}"], false)
-        else return ([s!"clear {nm}"], false)
+        else
+          let kind := match p with | .tuple _ => "tuple" | _ => "array"
+          match ← mixedNeg V kind ps nm with
+          | some ls => return (ls, false)
+          | none => return ([s!"clear {nm}"], false)
       | _ => return ([s!"clear {nm}"], false)
+
+  /-- **An unmatched tuple pattern of flat and constant components** (`(1, x)`, `(_, 1)`): its
+  constant components' equations do not all hold. At a tuple of terms the fact is
+  `¬ (u₁ = c₁ ∧ …)` (`u ≠ c` for one constant); at a variable `v`,
+  `∀ a⃗, v ≠ .tuple [c₁, a₁, …]`. The fact is kept after the call equation (`Path.late`),
+  so the fields before it keep their positions. `none` for any other pattern. -/
+  partial def mixedNeg (V : T) (kind : String) (ps : List (Pattern F)) (nm : String) :
+      M (Option (List String)) := do
+    let mut comps : Array (Option (T × String)) := #[]
+    for q in ps do
+      if isFlat q then comps := comps.push none
+      else match ← constPat? q with
+        | some c => comps := comps.push (some c)
+        | none => return none
+    unless comps.any (·.isSome) do return none
+    let lem := s!"matchPattern_{kind}_mixed_none"
+    let name ← freshLate "hnt"
+    match ← resolveT V with
+    | .tuple us =>
+      unless us.length == ps.length do return none
+      let pairs := (us.zip comps.toList).zipIdx
+      let consts := pairs.filterMap fun ((u, c), i) => c.map fun (t, _) => (u, t, i)
+      let stmt : List Piece := match consts with
+        | [(u, t, _)] => [.s "(", .t u, .s " : SourceValue F) ≠ ", .t t]
+        | _ =>
+          let eqs := consts.map fun (u, t, _) => [.s "(", .t u, .s " : SourceValue F) = ", .t t]
+          [.s "¬ ("] ++ (eqs.intersperse [.s " ∧ "]).flatten ++ [.s ")"]
+      let hs := consts.map fun (_, _, i) => s!"h{i}"
+      let pat := match hs with | [h] => h | _ => "⟨" ++ ", ".intercalate hs ++ "⟩"
+      let mml := pairs.foldr (fun ((_, c), i) acc => match c with
+        | none => s!"(.cons (Or.inl trivial) {acc})"
+        | some (_, prf) => s!"(.cons (Or.inr ⟨_, ({prf}), h{i}⟩) {acc})") ".nil"
+      let s ← get
+      modifyPath fun q => { q with late := q.late.push (name, stmt, name) }
+      return some [s!"have {name} : {renderPieces s.path.subst stmt} := fun {pat} => {lem} {nm} {mml}"]
+    | .v n =>
+      let mut binds : Array String := #[]
+      let mut items : Array String := #[]
+      for c in comps do
+        match c with
+        | none =>
+          let a ← freshLate "a"
+          binds := binds.push a
+          items := items.push a
+        | some (t, _) => items := items.push t.render
+      let mml := comps.toList.foldr (fun c acc => match c with
+        | none => s!"(.cons (Or.inl trivial) {acc})"
+        | some (_, prf) => s!"(.cons (Or.inr ⟨_, ({prf}), rfl⟩) {acc})") ".nil"
+      let stmt : List Piece := [.s s!"∀ {" ".intercalate binds.toList} : SourceValue F, (", .t (.v n),
+        .s s!" : SourceValue F) ≠ .tuple [{", ".intercalate items.toList}]"]
+      let hv ← freshLate "hv"
+      let s ← get
+      modifyPath fun q => { q with late := q.late.push (name, stmt, name) }
+      return some [s!"have {name} : {renderPieces s.path.subst stmt} := " ++
+        s!"fun {" ".intercalate binds.toList} {hv} => by rw [{hv}] at {nm}; exact {lem} {nm} {mml}"]
+    | _ => return none
 
   /-- Invert a successful match of `p` against `V`; returns the bindings. -/
   partial def patInv (V : T) (p : Pattern F) (mt : String) (heap : T) :
