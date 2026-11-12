@@ -30,8 +30,8 @@ IxVM side where a law exists there:
 | `defn_value` | `Model.defn_value`, a field, proved | the IxVM side, when it lands on `main` |
 | `iota_rule` | `Model.iota_rule : IotaLaw cval env`, a field, proved | the same |
 | `cval_params` | `Model.cval_params`, a field | the same |
-| `proj_ctor` | scheduled ("the projection of a constructor"); the value form is ours, **restricted** to structures that are not propositions | the IxVM side, scheduled |
-| `nat_accel` | scheduled, over all literals, the fifteen roles | the IxVM side, scheduled |
+| `proj_ctor` | the value form is ours, **restricted** to structures that are not propositions; on `jcb/ixvmc-int` at `d4c079de2` the field `Model.proj_law` (`ProjLaw`), from which `projCtor_of_projLaw` derives it | the IxVM side, by that field |
+| `nat_accel` | over all literals, the fifteen roles; on `jcb/ixvmc-int` at `d4c079de2` the field `Model.lit_ops` (`NatLitLaw`), from which `natAccel_of_litOps` derives it where every stored role is a definition (`LitDefs`) | the IxVM side, by that field and the checked premise |
 | `ctor_canon` | none, and not scheduled by anyone; **restricted** to families that are not propositions | to be decided: the IxVM side, or IxCC from their recursor membership law |
 
 `DenotesList`, `Fits`, `IotaRule` and `IotaLaw` are copied verbatim from theirs
@@ -84,9 +84,10 @@ fact (`NeverProp`: the family's stored sort is never zero).
 
 **Not yet shown**: that `Laws`, in this restricted form, has a model for any environment. Three
 fields are proved on the side that owes them (`defn_value`, `iota_rule`, `cval_params`), two are
-scheduled there (`proj_ctor`, `nat_accel`), and the restricted `ctor_canon` is not scheduled by
-anyone. Until that side's theorem lands, every theorem of this library is conditional on a
-hypothesis whose consistency rests on the arguments written beside each law below.
+derived from fields #678's `Model` states (`proj_ctor` from `proj_law`; `nat_accel` from `lit_ops`
+under the checked premise `LitDefs`), and the restricted `ctor_canon` is not scheduled by anyone.
+Until that side's theorem lands, every theorem of this library is conditional on a hypothesis
+whose consistency rests on the arguments written beside each law below.
 -/
 
 namespace IxCC.Grounding

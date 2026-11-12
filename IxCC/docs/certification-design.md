@@ -546,23 +546,45 @@ model, from the production library or from any program of the shared build.
 
 **The canonicity-free family (since 2026-11-12).** On a program, reading and annotation where the
 check (`groundCheck`) and `noCanonB` hold, agreement of SrcEval with the kernel's model rests on five
-laws, three of them fields #678's public `Model` proves and two awaiting adapters, and on no
-canonicity law: `allP_of_check_noCanon`, `const_of_check_noCanon`, `rootSound_noCanon`,
-`fibRoot_noCanon`, `decideRoot_noCanon` conclude word for word what `allP_of_check`,
-`const_of_check`, `rootSound`, `fibRoot`, `decideRoot` do (pinned by `example`s in the fence), over
-`LawsNoCanon` in place of `Laws` and with the decided fact `NoCanon` (`noCanonB`). `noCanonB` holds on
-32 of the 34 corpus closures the check accepts; the two that do not qualify, `phase1-decline/erase`
-and `OS16-plain`, each have one `case` entry over a family with a level parameter (its recursor's
-rules do not compare parameters; the family is used at one level tuple throughout, so level
-agreement would admit them). The landed family is unchanged in text and meaning.
+laws, all five derived from fields of #678's public `Model`, and on no canonicity law:
+`allP_of_check_noCanon`, `const_of_check_noCanon`, `rootSound_noCanon`, `fibRoot_noCanon`,
+`decideRoot_noCanon` conclude word for word what `allP_of_check`, `const_of_check`, `rootSound`,
+`fibRoot`, `decideRoot` do (pinned by `example`s in the fence), over `LawsNoCanon` in place of `Laws`
+and with the decided fact `NoCanon` (`noCanonB`). `noCanonB` holds on 32 of the 34 corpus closures
+the check accepts; the two that do not qualify, `phase1-decline/erase` and `OS16-plain`, each have
+one `case` entry over a family with a level parameter (its recursor's rules do not compare
+parameters; the family is used at one level tuple throughout, so level agreement would admit
+them). The landed family is unchanged in text and meaning.
+
+**Over #678's fields themselves.** `Laws678` holds verbatim copies of the five fields of #678's
+public `Model` the family uses (`defn_value`, `iota_rule` with its graded conjunct, `proj_law`,
+`lit_ops`, `cval_params`) and of the definitions behind them, from `jcb/ixvmc-int` at `d4c079de2`
+(`IxC/Kernel/Denotes.lean`, the line range of each recorded in `IxCCGrounding/Laws.lean`); they are
+to be compared again at the ingest and then replaced by #678's own. `lawsNoCanon_of_678`
+(`IxCCGrounding/Adapt678.lean`) derives `LawsNoCanon` from them at a reading where every `Nat` role
+the reading stores is stored as a definition (`LitDefs`, decided by `litDefsB`: one lookup per role;
+a role not stored needs nothing, since no term naming it denotes). `allP_of_check_678`,
+`const_of_check_678` (with `litDefsB`), `rootSound_678`, `fibRoot_678` and `decideRoot_678` (with
+`LitDefs`) conclude word for word what the landed theorems do, over `Laws678` (pinned by `example`s in
+the fence). So the family's theorems assume only statements that #678's model is to prove; their
+truth still rests on that proof, which this library does not check. `litDefsB` holds on all 50
+corpus closures that load, so on all 32 that pass the check and `noCanonB` (every role a closure
+stores is a definition without level parameters; all fifteen are stored in one closure only,
+`phase1-boundary/boundary`); in `tests-grounding` it is asserted on the 34 accepted closures by name,
+with two controls (a role stored as an axiom refused; a role not stored accepted). Before proving,
+the adapters' content was tested in the kernel of each accepted closure's reading: the projection of
+a constructor application at every structure with a projection table that a checked set reaches
+(90 instances, 322 checks: each field equal to the projection, a field plus one refused), and each of
+the fifteen roles at 13 pairs of literals (4,160 checks: `eval2`'s result equal, the result plus one
+or the other `Bool` refused; `eval2` equal to the Lean function #678 names at all 2,080 pairs).
 
 | `LawsNoCanon` field | #678's public `Model` (`jcb/ixvmc-int` at `d4c079de2`) |
 | --- | --- |
-| `defn_value` (δ) | its field `defn_value`, the same statement |
-| `iota_rule` (`IotaLawG`) | its field `iota_rule`, less the graded conjunct (copied, to be compared again at the ingest) |
-| `cval_params` | its field `cval_params`, the same statement |
-| `proj_ctor` | **not yet derived**: from its field `proj_law` by an adapter, not written |
-| `nat_accel` | **not yet derived**: its field `lit_ops` gives it where each role's constant is stored as a definition, a premise not yet checked |
+| `defn_value` (δ) | its field `defn_value`, the same statement (`Laws678.defnValue`) |
+| `iota_rule` (`IotaLawG`) | its field `iota_rule`, less the graded conjunct (`IotaLaw678.toG`) |
+| `cval_params` | its field `cval_params`, the same statement (`Laws678.cvalParams`) |
+| `proj_ctor` | its field `proj_law`, at the constructor's own level parameters, its `Prop` guard discharged by our premise that the structure's sort is not zero (`projCtor_of_projLaw`; no other law) |
+| `nat_accel` | its field `lit_ops`, **under the checked premise `LitDefs`** (`natAccel_of_litOps`; `PrimOp.eval2` is the Lean function #678's tables name at each of the fifteen roles) |
 
 `ctor_canon` is read at exactly three places: `caseFires_of_shape` (every `case` entry),
 `ctorImage_canon` and `ctorFields_canon` (a `flat` or `noParams` rule over a constructor with level
@@ -577,11 +599,12 @@ conclusion puts the fields in the rule's field domains at the `case`'s parameter
 takes `LawsCore` (the five laws other than canonicity, ι in the landed form; `lawsCore_of_laws`,
 `LawsNoCanon.core`), and `FundHyps` reads canonicity only through its field `canon` (the law, or no
 constructor with level parameters at a `flat` or `noParams` recursor). `noCanonB` is one pass over
-`Sl` with lookups in the reading's index (`KTab.of`): 11 ms on `tags125`, the largest accepted
-closure (compiled, in `tests-grounding`; 128 ms interpreted before the index).
+`Sl` with lookups in the reading's index (`KTab.of`): 0.27 ms on `tags125`, the largest accepted
+closure (compiled, in `tests-grounding`, the median of nine evaluations; a single one measured 11 ms
+when it landed; 128 ms interpreted before the index), and `litDefsB` 0.52 ms there.
 
 **What is proved, fenced on `propext`, `Classical.choice` and `Quot.sound` or
-fewer (`IxCCGrounding/Fence.lean`, 189 exact assertions):**
+fewer (`IxCCGrounding/Fence.lean`, 209 exact assertions):**
 
 - *Soundness at a root* (`rootSound`, in `IxCCGrounding.Root`). For every
   program, kernel reading `env`, key map, level parameters, certificate
@@ -836,8 +859,8 @@ fewer (`IxCCGrounding/Fence.lean`, 189 exact assertions):**
   `iota_rule` (ι) and `nat_accel` (the primitives); not `ctor_canon`. The last
   two entered with the widening (G2b): before it the direct route used neither,
   so the set of laws its soundness rests on grew. Of the five, `proj_ctor` and
-  `nat_accel` are only scheduled by the side that owes them, not proved there
-  (the table below).
+  `nat_accel` are derived from #678's fields `proj_law` and `lit_ops` (the latter
+  under the checked premise `LitDefs`), which #678 is to prove (the table below).
 - *Typing only where the direct route refuses* (`SitesOkRes`, implied by
   `SitesOk`): `allP_of_check`, `const_of_check` and `rootSound` take it, their
   landed forms over `SitesOk` kept as corollaries (`…_of_sitesOk`); where the
@@ -868,8 +891,8 @@ theorem is from the grounded statement of the [spine](end-to-end.md#the-shared-s
 | `Laws.defn_value` | δ: a stored definition denotes what its value denotes | the IxVM side: the field `Model.defn_value` (`jcb/ixvmc-std-model`, proved) | done there; becomes a field here when their `Denotes.lean` lands on `main` |
 | `Laws.iota_rule` | ι: every stored recursor rule computes, its right-hand side denoting (their `IotaLaw`, copied verbatim) | the IxVM side: `Model.iota_rule`, proved | as δ; consumed by the generic `case` lemma, since G2b by the direct route's ι step, and since G3's part C by F3 at `Eq.rec` (`eqRec_iota`: at a family that is a proposition, at the recursor's own parameters and with the index equal to the parameter, which the kernel's own model proves for `Eq.rec`, `eqRecLaw`), and since G3's part D by F2 at field-less recursors without parameters (`flatIota`: `Bool.rec`, a family never a proposition, at the recursor's own parameters; the kernel's own model proves the rule law for canonical rules, `iotaRulePlain`, `IxCK/Kernel/Model/IotaRulePlain.lean`), and since part E by F2 at the other recursors without parameters whose rule bodies name no constant (`noParamsIota`: `T16.rec`, `T17.rec`, `T125.rec`, families never propositions, at the recursor's own parameters, a rule with a field; tested in the kernel with minor premises that use their fields, and at a rule with four fields of different types) |
 | `Laws.cval_params` | a constant depends on the level assignment only through its own parameters | the IxVM side: `Model.cval_params` | as δ; consumed wherever a stored type or value is read at a use's levels (`den_inst`), and since G3's part D at a flat recursor's constructor without level parameters, whose image is then one set at every assignment (`ctorImage_noLevels`: every measured flat recursor), and since part E at a `noParams` recursor's constructor without level parameters, whose image and fields' fit then move to the recursor's assignment with no other law (`ctorFields_noLevels`: every measured `noParams` recursor) |
-| `Laws.proj_ctor` | the projection of a constructor, in value form (`ProjCtor`), **at a structure that is not a proposition** (its stored sort nonzero at the constructor's assignment). In a proof-irrelevant set model the image is then the field tuple, read at position `i + off` | the IxVM side | scheduled there as a public law (their third note, item 6); the restricted form sent to them 2026-11-11. Supplied at each use by `Faith.projSort` (the `proj` conjunct) |
-| `Laws.nat_accel` | the fifteen `Nat` operations on all literals, `Bool` results included (`NatAccel`) | the IxVM side | scheduled there (item 6; DO-39); consumed by the fundamental lemma's primitives and, since G2b, by the direct route's `Nat` step |
+| `Laws.proj_ctor` | the projection of a constructor, in value form (`ProjCtor`), **at a structure that is not a proposition** (its stored sort nonzero at the constructor's assignment). In a proof-irrelevant set model the image is then the field tuple, read at position `i + off` | the IxVM side: #678's field `proj_law` (`ProjLaw`, `jcb/ixvmc-int` at `d4c079de2`), from which `projCtor_of_projLaw` derives it (since 2026-11-12; no other law) | a field there, to be proved there; copied here (`Laws678`) until the ingest. Supplied at each use by `Faith.projSort` (the `proj` conjunct) |
+| `Laws.nat_accel` | the fifteen `Nat` operations on all literals, `Bool` results included (`NatAccel`) | the IxVM side: #678's field `lit_ops` (`NatLitLaw`, at `d4c079de2`), from which `natAccel_of_litOps` derives it at a reading where every `Nat` role stored is a definition (`LitDefs`, decided by `litDefsB`, true on every closure that loads) (since 2026-11-12) | a field there, to be proved there; copied here (`Laws678`) until the ingest; consumed by the fundamental lemma's primitives and, since G2b, by the direct route's `Nat` step |
 | `Laws.ctor_canon` | constructor canonicity across parameters and levels (`CtorCanon`), **at a family that is not a proposition at either level instantiation**: a constructor image built at other parameters and levels that lies in the family at these is the image at these, its fields fitting there. In a proof-irrelevant set model the image is then a tagged field tuple, which lies in the family at other parameters only if its fields lie in their types there | not scheduled by anyone: the IxVM side (who estimate it at 1–2k lines from the recursor's membership law and ι) or IxCC from that law; asked 2026-11-11 | consumed by the generic `case` lemma for a constructor-valued major; supplied there by `CaseWF.indSort` (the `caseShape` conjunct). Since G3's part D also by F2 at a flat recursor whose rule's constructor has level parameters (`ctorImage_canon`; supplied by the class, whose inductive is never a proposition, and `RecCtorsRaw`), and since part E likewise at a `noParams` recursor (`ctorFields_canon`); no measured closure has either, so on every closure the check accepts F2's model side rests on ι and `cval_params` alone (its SrcEval side at a `noParams` recursor names `Laws` whole, through the direct route's soundness). Measured over the 17 recursors of class `flat` or `ordinary` in the checked sets of the 50 closures that load (per closure; `GR-3f-q1`, `q3`, `q5`): 14 have no parameter and no constructor with level parameters; `List.rec` (in `src-diag/diag` and `phase2-closures/sparse`) and `sparse`'s `Option`-like recursor have both, and F2 there (part D's next step, none of them accepted yet) will need canonicity |
 | `Model.mem` (an assumption inherited from the kernel's model, not a law of ours) | every stored constant is a member of what its stored type denotes, at every level assignment | none here: a field of every `Model`; the kernel's model has it from its invariant's `mem_type` (`Model.ofEnvModelM`, `IxCK/Kernel/Model/Denotes.lean`) | done (a `Model` field); consumed by the `eqn` lemma since G1 and, since G3's part C, by F3 at `Eq.rec` (at `Eq` and `Eq.refl`) |
 | `Model.eq_equality` (an assumption inherited from the kernel's model, not a law of ours) | `@Eq.{u} A a b` denotes `eqv a b`, the truth value of `a = b`, for `a`, `b` in `A` | none here: a field of every `Model`; the kernel installs `Eq` from its own pins and its model proves the field from its invariant's `eq_law` (there) | done (a `Model` field); consumed by the `eqn` lemma since G1 and, since G3's part C, by F3 at `Eq.rec` (`eq_of_inhabited_pt`: a member of an equation's proposition makes its sides equal and is the proof point) |
@@ -903,8 +926,9 @@ is `never`).
 **Not yet shown: that `Laws` has a model.** Nobody has yet shown that `Laws`, in
 its restricted form, has a model for any environment. Three fields are proved on
 the side that owes them (`defn_value`, `iota_rule`, `cval_params`), two are
-scheduled there (`proj_ctor`, `nat_accel`), and the restricted `ctor_canon` is not
-scheduled by anyone. Until that side's theorem lands, every theorem of this
+derived from fields #678's `Model` states (`proj_law`, `lit_ops`, the latter under
+the checked premise `LitDefs`; `IxCCGrounding.Adapt678`), and the restricted
+`ctor_canon` is not scheduled by anyone. Until that side's theorem lands, every theorem of this
 library is conditional on a hypothesis whose consistency rests on the arguments
 written beside each law in `IxCCGrounding/Laws.lean` (and beside each use).
 
