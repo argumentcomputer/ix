@@ -1716,11 +1716,19 @@ theorem readFormer_mapKeys {ctx : Ctx md} {ctx' : Ctx md'} (hctx : CtxAgree f P 
   obtain ⟨h1, h2⟩ := formerTeleF_mapKeys hctx.values inferFuel (t.nP + t.nIdx) t.cv.type ht.1.2
   have e : formerTele ctx'.values ((t.mapKeys f).nP + (t.mapKeys f).nIdx) (t.mapKeys f).cv.type =
       (formerTele ctx.values (t.nP + t.nIdx) t.cv.type).map (Expr.mapKeys f) := h1
+  have e0 : ((t.mapKeys f).cv.type.stripPis (t.mapKeys f).nP).isSome = (t.cv.type.stripPis t.nP).isSome := by
+    show ((t.cv.type.mapKeys f).stripPis t.nP).isSome = _
+    rw [Expr.stripPis_mapKeys]
+    cases t.cv.type.stripPis t.nP <;> rfl
   unfold readFormer
-  rw [e]
-  cases hft : formerTele ctx.values (t.nP + t.nIdx) t.cv.type with
-  | none => exact ExRel.error'
-  | some ty => exact ExRel.ok' ⟨rfl, ⟨ht.1.1, h2 ty hft⟩, ht.2⟩
+  rw [e0, e]
+  by_cases hc : (t.cv.type.stripPis t.nP).isSome = true
+  · rw [if_pos hc, if_pos hc]
+    cases hft : formerTele ctx.values (t.nP + t.nIdx) t.cv.type with
+    | none => exact ExRel.error'
+    | some ty => exact ExRel.ok' ⟨rfl, ⟨ht.1.1, h2 ty hft⟩, ht.2⟩
+  · rw [if_neg hc, if_neg hc]
+    exact ExRel.error'
 
 /-- `readFormers` commutes with the renaming at an agreeing context, and reads a good
 block to a good one. -/

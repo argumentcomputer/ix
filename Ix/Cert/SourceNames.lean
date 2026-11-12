@@ -215,7 +215,9 @@ theorem readFormer_name {ctx : Ix.Kernel.Frontend.InModel.Ctx md} {t t' : IndTyp
     (h : readFormer ctx t = .ok t') : t'.cv.name = t.cv.name := by
   unfold readFormer at h
   split at h
-  · cases h; rfl
+  · split at h
+    · cases h; rfl
+    · exact nomatch h
   · exact nomatch h
 
 theorem mapM_readFormer_names {ctx : Ix.Kernel.Frontend.InModel.Ctx md} :

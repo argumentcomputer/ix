@@ -564,6 +564,10 @@ def check_witness := aiur_fn⟦
           let r1 = KernelRoles::role_of(rc, x);
           assert_eq!(Fields::is_zero(r1), 0, "model advice: a basis reference is not bound to a role");
           assert_eq!(basis_role_allowed(r1 - 1), 1, "model advice: a reference to a role outside the basis");
+          -- the role's record is checked with its closure, as an implicitly used role's is
+          -- (`KernelRoles::role_used_implicitly`): under a custom table a basis role may be bound
+          -- to any record
+          KernelClaim::run_check_transitive(rc, x);
           s } ,
         1 => {
           let (n, s2) = get_count(s);

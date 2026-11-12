@@ -39,11 +39,14 @@ def wants (b : BlockRec md) : Bool :=
 /-- A member's former as the rungs read it: its type at `nP + nIdx` Π binders and
 a sort (`formerTele`, at the definitions' values), which is the declared type
 itself when that is already such a telescope; a member declared at a
-definition (`T : MyType`, `MyType := Type`) gets the unfolding. -/
+definition (`T : MyType`, `MyType := Type`) gets the unfolding. Its parameters are
+syntactic binders, as Lean counts a block's parameters on the declared type. -/
 def readFormer (ctx : Ctx md) (t : IndTypeRec md) : Except String (IndTypeRec md) :=
-  match formerTele ctx.values (t.nP + t.nIdx) t.cv.type with
-  | some ty => .ok { t with cv := { t.cv with type := ty } }
-  | none => .error s!"former {t.cv.name} is not a telescope ending in a sort"
+  if (t.cv.type.stripPis t.nP).isSome then
+    match formerTele ctx.values (t.nP + t.nIdx) t.cv.type with
+    | some ty => .ok { t with cv := { t.cv with type := ty } }
+    | none => .error s!"former {t.cv.name} is not a telescope ending in a sort"
+  else .error s!"former {t.cv.name}: its parameters are not syntactic binders"
 
 /-- The block with every former read at its telescope (`readFormer`). -/
 def readFormers (ctx : Ctx md) (b : BlockRec md) : Except String (BlockRec md) := do
