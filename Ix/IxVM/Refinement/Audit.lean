@@ -55,8 +55,9 @@ run_meta do
       ``IxVM.Refinement.digestValue, ``Aiur.Generic.SourceSemantics.CallsInROM]),
     (``IxVM.Refinement.AxiomScopeIn, [``IxVM.Refinement.UserAxiomLeavesIn]),
     (``IxVM.Refinement.BindingIn, [``IxVM.Refinement.BindingSpecs]),
+    (``IxVM.Refinement.BindingSeeds, [``IxVM.Refinement.compilerTrust]),
     (``IxVM.Refinement.BindingSpecs, [``Ix.Kernel.Declaration.anchorMismatch?,
-      ``Ix.Kernel.eqnsCheck]),
+      ``IxVM.Refinement.AnchorsTyped, ``Ix.Kernel.eqnsCheck]),
     (``IxVM.Refinement.TypingIn, [``IxVM.Refinement.AxiomScopeIn, ``IxVM.Refinement.LeavesInstalled,
       ``IxVM.Refinement.AssumedIn]),
     (``IxVM.Refinement.IxVMClaimSpecIn, [``IxVM.Refinement.packDigest, ``Address.blake3Pure,
@@ -669,6 +670,63 @@ fun t a =>
 -/
 #guard_msgs in
 #print IxVM.Refinement.BindingSeeds
+
+/--
+info: def IxVM.Refinement.AnchorsTyped : List (Ix.Kernel.Declaration Ix.Kernel.Mode.anon) → Prop :=
+fun ds =>
+  ∀ (d : Ix.Kernel.Declaration Ix.Kernel.Mode.anon),
+    d ∈ ds →
+      ∀ (cv : Ix.Kernel.ConstantVal Ix.Kernel.Mode.anon),
+        cv ∈ IxVM.Refinement.declaredVals d →
+          ∀ (pin : Ix.Kernel.ConstantVal Ix.Kernel.Mode.anon),
+            IxVM.Refinement.anchorPin? cv.name = some pin → cv.matchesPin pin = true
+-/
+#guard_msgs in
+#print IxVM.Refinement.AnchorsTyped
+
+/--
+info: def IxVM.Refinement.anchorPin? : Ix.Kernel.Key Ix.Kernel.Mode.anon →
+  Option (Ix.Kernel.ConstantVal Ix.Kernel.Mode.anon) :=
+fun x =>
+  match x with
+  | Ix.Kernel.Key.role r =>
+    match r.spec with
+    | Ix.Kernel.Spec.anchor n ty => some { name := Ix.Kernel.Key.role r, levelParams := List.range n, type := ty }
+    | x => none
+  | x => none
+-/
+#guard_msgs in
+#print IxVM.Refinement.anchorPin?
+
+/--
+info: def IxVM.Refinement.declaredVals : Ix.Kernel.Declaration Ix.Kernel.Mode.anon →
+  List (Ix.Kernel.ConstantVal Ix.Kernel.Mode.anon) :=
+fun x =>
+  match x with
+  | Ix.Kernel.Declaration.axiomDecl cv => [cv]
+  | Ix.Kernel.Declaration.defnDecl cv value hint => [cv]
+  | Ix.Kernel.Declaration.thmDecl cv value => [cv]
+  | Ix.Kernel.Declaration.opaqueDecl cv value => [cv]
+  | Ix.Kernel.Declaration.quotDecl kind cv => [cv]
+  | Ix.Kernel.Declaration.indDecl block numParams => List.map (fun x => x.toConstantVal) block
+  | Ix.Kernel.Declaration.basisDecl kind => []
+-/
+#guard_msgs in
+#print IxVM.Refinement.declaredVals
+
+/--
+info: def IxVM.Refinement.compilerTrust : Ix.Kernel.Role → Bool :=
+fun x =>
+  match x with
+  | Ix.Kernel.Role.trustCompiler => true
+  | Ix.Kernel.Role.reduceBool => true
+  | Ix.Kernel.Role.reduceNat => true
+  | Ix.Kernel.Role.ofReduceBool => true
+  | Ix.Kernel.Role.ofReduceNat => true
+  | x => false
+-/
+#guard_msgs in
+#print IxVM.Refinement.compilerTrust
 
 /--
 info: def IxVM.Refinement.EvalValues : Address →
