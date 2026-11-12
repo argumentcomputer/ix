@@ -635,7 +635,8 @@ theorem declNative (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env 
   -- A: the projection table's guards at a structure-like block)
   have hsortsOf : ∀ (j : Nat) (cA : ConstantVal md × Nat), ctorsA[j]? = some cA →
       ∃ sorts : List Level, sortss[j]? = some sorts ∧ sorts.length = cA.2 ∧
-      (∀ k, k < cA.2 → p.isProp = false → Level.leq (sorts.getD k .zero) p.resSort = some true) ∧
+      (∀ k, k < cA.2 → p.isProp = false → ∀ φ : LevelParam → Nat,
+        Level.eval φ (sorts.getD k .zero) ≤ Level.eval φ p.resSort) ∧
       (∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
         Sat V (((dsF j ψ).take p.nP).map (·.2.2)).reverse ρ →
         (p.isProp = false →

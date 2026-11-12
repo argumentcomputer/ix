@@ -1,6 +1,7 @@
 module
 
 public import IxC.Kernel.Model.Inductives.StructTele
+public import IxC.Kernel.Model.Inductives.NativeJudge
 public section
 
 /-!
@@ -55,15 +56,14 @@ theorem piR_congr_bit {v v' : Nat} (h : v = 0 ↔ v' = 0) (A : V) (B : V → V) 
 pins: at every depth `i ≤ nP` the constructor's context and the
 former's have the same satisfying valuations, and below `nP` the
 `i`-th entries interpret alike under the constructor's context. -/
-theorem paramFrames {m : EnvModel V env} {F : Nat}
-    (hc : ClaimsAt μ m φ F) {nP nF : Nat}
+theorem paramFrames {J : Judgements md} {m : EnvModel V env}
+    (hJ : JudgeSound J m) {nP nF : Nat}
     {tty cty : Expr md} {tfvs cfvs : List (Expr md)} {trest crest : Expr md}
     {Γt Γc : List AnnotTerm} {Rt Rc : AnnotTerm}
     (hT : Opened m φ nP tty tfvs trest Γt Rt)
     (hC : Opened m φ (nP + nF) cty cfvs crest Γc Rc)
     (hpin : ∀ i, i < nP → ∃ a b, cfvs[i]? = some a ∧ tfvs[i]? = some b ∧
-      Ix.Kernel.isDefEqCore μ env F i (Expr.fvarTypeD a) (Expr.fvarTypeD b)
-        = .ok true) :
+      J.defeq env i (Expr.fvarTypeD a) (Expr.fvarTypeD b)) :
     ∀ i, i ≤ nP →
       (∀ ρ : Nat → V, Sat V (Γc.drop (nP + nF - i)) ρ ↔
         Sat V (Γt.drop (nP - i)) ρ) ∧
@@ -97,7 +97,7 @@ theorem paramFrames {m : EnvModel V env} {F : Nat}
       rw [Nat.sub_zero, List.drop_eq_nil_of_le (by have := hC.len; omega)] at hCa hρ
       have hda := hC.doms 0 a ha
       have hdb := hT.doms 0 b hb
-      exact hc.defEqRow hdeq hwa hba hLa hwb hbb hLb hCa hCb hda hdb
+      exact defEqRowJ hJ hdeq hwa hba hLa hwb hbb hLb hCa hCb hda hdb
         (fun ρ hρ => by
           have := hC.okΓ 0 (by omega) ρ
           rw [Nat.sub_zero, List.drop_eq_nil_of_le (by have := hC.len; omega)] at this
@@ -198,7 +198,7 @@ theorem paramFrames {m : EnvModel V env} {F : Nat}
         (fun ρ hρ => (hsat ρ).mp hρ) hent
     have hda := hC.doms (i + 1) a ha
     have hdb := hT.doms (i + 1) b hb
-    exact hc.defEqRow hdeq hwa hba hLa hwb hbb hLb hCa hCb hda hdb
+    exact defEqRowJ hJ hdeq hwa hba hLa hwb hbb hLb hCa hCb hda hdb
       (fun ρ hρ => hC.okΓ (i + 1) (by omega) ρ hρ)
       (fun ρ hρ => hT.okΓ (i + 1) (by omega) ρ ((hsat ρ).mp hρ)) ρ hρ
 

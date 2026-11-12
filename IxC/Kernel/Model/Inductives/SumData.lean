@@ -623,20 +623,20 @@ under the parameters the field chain graded (at the block's level),
 bit-valid, bounded when the family is not `Prop`, and the index
 expressions graded and fitting the former's index telescope at every
 fitting field spine. -/
-theorem ctorFramesGen (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
-    {F : Nat} {T : Key md} {lps : List LevelParam} {nP nF nIdx : Nat} {resSort : Level}
+theorem ctorFramesGenJ {J : Judgements md} {m : EnvModel V env} (hJ : JudgeSound J m)
+    (hS : ∀ ψ, SortClaimJ J m ψ)
+    {T : Key md} {lps : List LevelParam} {nP nF nIdx : Nat} {resSort : Level}
     {isProp large : Bool} {cvC cvTa cvCa : ConstantVal md} {env₀ : Env md} {caps : IndCaps md}
     {sorts : List Level}
-    (hCtor : Ix.Kernel.checkSumCtor (Ix.Kernel.fueledOps μ F) env₀ env T lps nP nIdx resSort
-      isProp large cvC nF cvTa = .ok (cvCa, sorts))
+    (hCtor : SumCtorRunJ J env₀ env T lps nP nIdx resSort isProp large cvC nF cvTa cvCa sorts)
     (hfT : env.find? T = some (.indInfo cvTa caps))
     (hProp : isProp = true → (Level.isEquiv resSort .zero == some true) = true)
     {ppsAll : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
-    (hFD : FormerData mp.base2 cvTa (nP + nIdx) resSort ppsAll)
+    (hFD : FormerData m cvTa (nP + nIdx) resSort ppsAll)
     {idxArgs : List (Expr md)} {ds : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
     {Es : (LevelParam → Nat) → List AnnotTerm} {srcs : List (Option Nat)}
-    (hCD : CtorDataI mp.base2 T lps cvCa nP nF nIdx resSort isProp large idxArgs ds Es srcs)
-    (hleafT : ∀ ψ, ∃ B, mp.base2.acval T ψ = mkLamsC (resSort.eval ψ + 1) (ppsAll ψ) B) :
+    (hCD : CtorDataI m T lps cvCa nP nF nIdx resSort isProp large idxArgs ds Es srcs)
+    (hleafT : ∀ ψ, ∃ B, m.acval T ψ = mkLamsC (resSort.eval ψ + 1) (ppsAll ψ) B) :
     (∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
       Sat V (((ppsAll ψ).take nP).map (·.2.2)).reverse ρ ↔
         Sat V (((ds ψ).take nP).map (·.2.2)).reverse ρ) ∧
@@ -655,25 +655,26 @@ theorem ctorFramesGen (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
     -- and the field's reading along a fitting prefix a member of its
     -- sort's universe
     (sorts.length = nF ∧
-      (∀ j, j < nF → isProp = false → Level.leq (sorts.getD j .zero) resSort = some true) ∧
+      (∀ j, j < nF → isProp = false → ∀ φ : LevelParam → Nat,
+        Level.eval φ (sorts.getD j .zero) ≤ Level.eval φ resSort) ∧
       ∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
         Sat V (((ds ψ).take nP).map (·.2.2)).reverse ρ →
         ∀ j, j < nF → ∀ as : List V,
           SpineFit ρ ((((ds ψ).drop nP).map (·.2.2)).take j) as →
           interp V (consList as ρ) ((((ds ψ).drop nP).map (·.2.2)).getD j default)
             ∈ˢ (univ ((sorts.getD j .zero).eval ψ) : V)) := by
-  obtain ⟨⟨_, hccv⟩, -, fvsP, crest, tfvs, trest, xFvs, idxArgs', hopC, hopT, hdoms, hopX,
-    -, -, -, hsorts⟩ := Ix.Kernel.checkSumCtor_shape hCtor
-  obtain ⟨-, -, -, -, hlbt, hitf, type', -, -, hann', -, -, -, -, rfl⟩ :=
-    Ix.Kernel.checkConstantVal_inv hccv
-  obtain ⟨htf', hbt'⟩ := annotate_syntax hann' hitf hlbt
+  obtain ⟨_, hccv⟩ := hCtor.check
+  obtain ⟨-, -, fvsP, crest, tfvs, trest, xFvs, idxArgs', hopC, hopT, hdoms, hopX,
+    -, -, -, hsorts⟩ := hCtor
+  obtain ⟨type', ⟨-, -, -, -, hlbt, hitf, hann', -, -, -⟩, rfl⟩ := hccv
+  obtain ⟨htf', hbt'⟩ := hJ.annot_syntax hann' hitf hlbt
   simp only at htf' hbt' hopC hsorts
   have hlenP : fvsP.length = nP := openPisAtFvars_length _ hopC
   have hopAll := openPisAtFvars_add nP hopC (by rw [Nat.zero_add]; exact hopX)
-  obtain ⟨hTf, -, -, hTb, -⟩ := mp.base2.wf _ (Ix.Kernel.Semantics.Env.find?_mem hfT)
+  obtain ⟨hTf, -, -, hTb, -⟩ := m.wf _ (Ix.Kernel.Semantics.Env.find?_mem hfT)
   simp only [ConstantInfo.toConstantVal] at hTf hTb
-  obtain ⟨hlenS, hfields⟩ := Ix.Kernel.checkStructFieldSortsI_inv hsorts
-  have hpins := Ix.Kernel.checkStructDomsAt_inv hdoms
+  obtain ⟨hlenS, hfields⟩ := hsorts
+  have hpins := hdoms
   have hlenX : xFvs.length = nF := openPisAtFvars_length _ hopX
   have hframes : ∀ ψ : LevelParam → Nat,
       (∀ ρ : Nat → V, Sat V (((ppsAll ψ).take nP).map (·.2.2)).reverse ρ ↔
@@ -692,7 +693,7 @@ theorem ctorFramesGen (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
           interp V (consList as ρ) ((((ds ψ).drop nP).map (·.2.2)).getD j default)
             ∈ˢ (univ ((sorts.getD j .zero).eval ψ) : V)) := by
     intro ψ
-    have hc := claimsAt_of hμ mp ψ F
+    -- (the claims are the package's)
     -- the former, opened at the parameters
     obtain ⟨Γt, Rt, hteleT, hT⟩ := opened_of hopT hTf hTb (hFD.read ψ) (hFD.okTy ψ)
     obtain ⟨pps', hst', hΓt⟩ := stripPisAV_of_piTeleAV hteleT
@@ -700,11 +701,11 @@ theorem ctorFramesGen (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
       (by rw [hFD.len ψ]; omega)
     obtain ⟨rfl, -⟩ := Prod.mk.injEq _ _ _ _ ▸ Option.some.inj (hst'.symm.trans hst'')
     subst hΓt
-    have hC : Opened mp.base2 ψ (nP + nF) type' (fvsP ++ xFvs)
+    have hC : Opened m ψ (nP + nF) type' (fvsP ++ xFvs)
         (Expr.mkAppN (.const T (lps.map .param)) (fvsP ++ idxArgs'))
-        ((ds ψ).map (·.2.2)).reverse (ctorBodyAVI mp.base2 T nP nF ψ (Es ψ)) :=
+        ((ds ψ).map (·.2.2)).reverse (ctorBodyAVI m T nP nF ψ (Es ψ)) :=
       opened_of_peel hopAll htf' hbt' (hCD.read ψ) (hCD.len ψ) (hCD.okTy ψ)
-    have hpf := paramFrames hc hT hC (fun i hi => by
+    have hpf := paramFrames hJ hT hC (fun i hi => by
       obtain ⟨a, b, ha, hb, hdeq⟩ := hpins i hi
       rw [List.getElem?_map] at hb
       obtain ⟨b', hb', rfl⟩ := Option.map_eq_some_iff.mp hb
@@ -720,7 +721,7 @@ theorem ctorFramesGen (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
         List.drop_zero] at this
       exact this.symm
     have hrow : ∀ j, j < nF → ∃ u, sorts[j]? = some u ∧
-        (isProp = false → Level.leq u resSort = some true) ∧
+        (isProp = false → ∀ φ : LevelParam → Nat, Level.eval φ u ≤ Level.eval φ resSort) ∧
         ∀ ρ : Nat → V,
           Sat V ((((ds ψ).map (·.2.2)).reverse).drop (nP + nF - (nP + j))) ρ →
           interp V ρ ((((ds ψ).map (·.2.2)).reverse).getD
@@ -734,7 +735,7 @@ theorem ctorFramesGen (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
       obtain ⟨-, hws, hb, hL, hleaf⟩ := hC.var (nP + j) fv hfvA
       have hCtx := hC.ctx (i := nP + j) (by omega) hws hleaf
       have hread := hC.doms (nP + j) fv hfvA
-      exact (hc.sortRow hi hens hws hb hL hCtx hread ρ hρ).2
+      exact (sortRowJ (hS ψ) hi hens hws hb hL hCtx hread ρ hρ).2
     have hsortsPart : ∀ ρ : Nat → V, Sat V (((ds ψ).take nP).map (·.2.2)).reverse ρ →
         ∀ j, j < nF → ∀ as : List V,
           SpineFit ρ ((((ds ψ).drop nP).map (·.2.2)).take j) as →
@@ -776,7 +777,7 @@ theorem ctorFramesGen (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
       · exfalso
         have h0 := Level.isEquiv_sound (beq_iff_eq.mp (hProp hnp)) ψ
         exact hw (by simpa [Level.eval] using h0)
-      · have hle := Level.leq_sound (hleq (by simpa using hnp)) ψ
+      · have hle := hleq (by simpa using hnp) ψ
         exact univ_mono hle _ (hmem ρ hρ)
     · rw [← hFsEq]
       exact fieldsValid_of_frame rfl hΓlen hC.okΓ 0 (Nat.zero_le _) ρ hρ'
@@ -785,7 +786,7 @@ theorem ctorFramesGen (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
       refine fieldsBound_of_frame rfl hΓlen ?_ 0 (Nat.zero_le _) ρ hρ'
       intro j hj ρ hρ
       obtain ⟨u, -, hleq, hmem⟩ := hrow j hj
-      have hle := Level.leq_sound (hleq hnp) ψ
+      have hle := hleq hnp ψ
       exact univ_mono hle _ (hmem ρ hρ)
     · -- the index expressions at a fitting field spine
       intro bs hsp
@@ -804,7 +805,7 @@ theorem ctorFramesGen (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
       obtain ⟨B, hB⟩ := hleafT ψ
       have hfit := spineFit_of_wellDenoted_lams (u := resSort.eval ψ + 1) (Nat.succ_ne_zero _)
         (b := B) (args := paramBvars nP nF ++ Es ψ)
-        (ds := ppsAll ψ) (σ := consList bs ρ) (ρ := consList bs ρ) (f := mp.base2.acval T ψ)
+        (ds := ppsAll ψ) (σ := consList bs ρ) (ρ := consList bs ρ) (f := m.acval T ψ)
         (by simp [paramBvars, hCD.lenE ψ, hFD.len ψ]) hokR (by rw [hB])
       rw [List.take_of_length_le (by simp [paramBvars, hCD.lenE ψ, hFD.len ψ]),
         ← List.take_append_drop nP (ppsAll ψ), List.map_append, List.map_append] at hfit
@@ -827,5 +828,50 @@ theorem ctorFramesGen (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
   obtain ⟨-, -, u, -, hu, -, -, hleq, -⟩ := hfields j hj
   rw [List.getD_eq_getElem?_getD, hu]
   exact hleq hnp
+
+
+/-- The constructor's frames from its stage run: `ctorFramesGenJ` at the kernel's runs. -/
+theorem ctorFramesGen (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env) {F : Nat}
+    {T : Key md} {lps : List LevelParam} {nP nF nIdx : Nat} {resSort : Level}
+    {isProp large : Bool} {cvC cvTa cvCa : ConstantVal md} {env₀ : Env md} {caps : IndCaps md}
+    {sorts : List Level}
+    (hCtor : Ix.Kernel.checkSumCtor (Ix.Kernel.fueledOps μ F) env₀ env T lps nP nIdx resSort
+      isProp large cvC nF cvTa = .ok (cvCa, sorts))
+    (hfT : env.find? T = some (.indInfo cvTa caps))
+    (hProp : isProp = true → (Level.isEquiv resSort .zero == some true) = true)
+    {ppsAll : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
+    (hFD : FormerData mp.base2 cvTa (nP + nIdx) resSort ppsAll)
+    {idxArgs : List (Expr md)} {ds : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
+    {Es : (LevelParam → Nat) → List AnnotTerm} {srcs : List (Option Nat)}
+    (hCD : CtorDataI mp.base2 T lps cvCa nP nF nIdx resSort isProp large idxArgs ds Es srcs)
+    (hleafT : ∀ ψ, ∃ B, mp.base2.acval T ψ = mkLamsC (resSort.eval ψ + 1) (ppsAll ψ) B) :
+    (∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
+      Sat V (((ppsAll ψ).take nP).map (·.2.2)).reverse ρ ↔
+        Sat V (((ds ψ).take nP).map (·.2.2)).reverse ρ) ∧
+    (∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
+      Sat V (((ds ψ).take nP).map (·.2.2)).reverse ρ →
+        FieldsOkB (resSort.eval ψ) ρ (((ds ψ).drop nP).map (·.2.2)) ∧
+        FieldsValid ρ (((ds ψ).drop nP).map (·.2.2)) ∧
+        (isProp = false →
+          FieldsBound (resSort.eval ψ) ρ (((ds ψ).drop nP).map (·.2.2))) ∧
+        (∀ bs : List V, SpineFit ρ (((ds ψ).drop nP).map (·.2.2)) bs →
+          (∀ E ∈ Es ψ, WellDenotedV V (consList bs ρ) E) ∧
+          SpineFit ρ (((ppsAll ψ).drop nP).map (·.2.2)) (idxValsAt ρ (Es ψ) bs))) ∧
+    -- the fields' sorts, as the stage read them (task #210 Part A: the
+    -- projection table's guard levels at a structure-like block): one
+    -- per field, each bounded by the result sort at a non-`Prop` family,
+    -- and the field's reading along a fitting prefix a member of its
+    -- sort's universe
+    (sorts.length = nF ∧
+      (∀ j, j < nF → isProp = false → ∀ φ : LevelParam → Nat,
+        Level.eval φ (sorts.getD j .zero) ≤ Level.eval φ resSort) ∧
+      ∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
+        Sat V (((ds ψ).take nP).map (·.2.2)).reverse ρ →
+        ∀ j, j < nF → ∀ as : List V,
+          SpineFit ρ ((((ds ψ).drop nP).map (·.2.2)).take j) as →
+          interp V (consList as ρ) ((((ds ψ).drop nP).map (·.2.2)).getD j default)
+            ∈ˢ (univ ((sorts.getD j .zero).eval ψ) : V)) :=
+  ctorFramesGenJ (judgeSound_runJ hμ mp F) (sortClaim_runJ hμ mp F)
+    (Ix.Kernel.Semantics.sumCtorRunJ_of_run hCtor) hfT hProp hFD hCD hleafT
 
 end Ix.Kernel.Model

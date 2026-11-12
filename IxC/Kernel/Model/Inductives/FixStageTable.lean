@@ -175,7 +175,8 @@ theorem stageFixTable (mp : EnvModelM V μ env)
       = some (mkPisAV (ds ψ) (ctorBodyAVI mp.base2 p.cvT.name p.nP nF ψ (Es ψ))))
     (hCDlen : ∀ ψ, (ds ψ).length = p.nP + nF)
     (hCDbelow : ∀ ψ, DomsBelow 0 (ds ψ))
-    (hleq : ∀ k, k < nF → p.isProp = false → Level.leq (sorts.getD k .zero) p.resSort = some true)
+    (hleq : ∀ k, k < nF → p.isProp = false → ∀ φ : LevelParam → Nat,
+        Level.eval φ (sorts.getD k .zero) ≤ Level.eval φ p.resSort)
     {u : (LevelParam → Nat) → Nat} {rss : List (List Bool)}
     {tlss : (LevelParam → Nat) → List (List (List (Nat × Nat × AnnotTerm)))}
     {eiss : (LevelParam → Nat) → List (List (List AnnotTerm))} {Fss₀ Ess : (LevelParam → Nat) → List (List AnnotTerm)}
@@ -250,7 +251,7 @@ theorem stageFixTable (mp : EnvModelM V μ env)
       ((Ix.Kernel.structProjGuards cvCa.type p.nP nF sorts).getD k .zero).eval ψ = 0 := by
     intro k hk hne ψ h0
     refine hguardOf k hk ψ fun j hj => ?_
-    have := Level.leq_sound (hleq j (by omega) (by rw [hProp]; exact hne)) ψ
+    have := hleq j (by omega) (by rw [hProp]; exact hne) ψ
     omega
   -- the constructor type's scoping
   obtain ⟨hCf, -, -, hCb, -⟩ := mp.base2.wf _ (Ix.Kernel.Semantics.Env.find?_mem hfC)
@@ -584,7 +585,8 @@ theorem declNativeTable {F : Nat} {env env₁ envC env₂ : Env md} {p : NativeP
             SpineFit ρ (((ppsAll ψ).drop p.nP).map (·.2.2)) (idxValsAt ρ (esF j ψ) bs))))
     (hsortsOf : ∀ (j : Nat) (cA : ConstantVal md × Nat), ctorsA[j]? = some cA →
       ∃ sorts : List Level, sortss[j]? = some sorts ∧ sorts.length = cA.2 ∧
-      (∀ k, k < cA.2 → p.isProp = false → Level.leq (sorts.getD k .zero) p.resSort = some true) ∧
+      (∀ k, k < cA.2 → p.isProp = false → ∀ φ : LevelParam → Nat,
+        Level.eval φ (sorts.getD k .zero) ≤ Level.eval φ p.resSort) ∧
       (∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
         Sat V (((dsF j ψ).take p.nP).map (·.2.2)).reverse ρ →
         (p.isProp = false →
