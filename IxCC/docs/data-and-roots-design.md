@@ -295,8 +295,9 @@ case of the fundamental lemma is not proved. Besides what the stored equations s
 `eq_equality` make each hold in every model; `nat_accel` evaluates its right side), that case needs
 the result tower typed in the model: its constructors' stored types mention
 `OfNat.ofNat Nat 64 _`, `2 ^ w` through `HPow` and `LT.lt Nat instLTNat`, which no stored
-equation speaks of. When that case is proved, `noWord` gives way to a check that every word
-entry's facts are stored.
+equation speaks of. The grounding's direct route decides them by its conversion (δ, `proj_ctor`,
+`nat_accel`; measured on the words closure), so no law or further stored theorem is expected.
+When that case is proved, `noWord` gives way to a check that every word entry's facts hold.
 
 SrcEval needs one rule for raw words to be sound: a bounded construction
 whose erased proof is false (for example `UInt64.ofNatLT n h` with
