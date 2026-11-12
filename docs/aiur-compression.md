@@ -1055,8 +1055,13 @@ The [saved fresh Init GL proof](measurements/aiur-compress-bn-host.json) also
 passes the new native-input projection and Aiur BN execution under Ignition.
 Its ungrouped count profile has 615,485,074 main cells, 316,909,930 lookup cells
 and maximum height `2^24`, within the unchanged public height cap. Main, fixed
-and lookup matrices total 29,870,400,128 bytes before prover workspaces. This
-is an execution/profile result, not an Init BN proof or end-to-end timing.
+and lookup matrices total 29,870,400,128 bytes before prover workspaces. The
+actual BN proof succeeds under Ignition, with both its outer proof and carried
+pairing checked. Source execution takes 69.1 seconds, trace preparation 19.5
+seconds and proving 79.1 seconds in this diagnostic run. Its 788,350-byte proof
+is larger than the 388,058-byte GL input, so the stage still needs layout
+improvements to deliver size reduction. This reuses the saved Init input;
+it is not a fresh `ix bench run` or a complete PLONK pipeline measurement.
 
 The [standalone host tool](../crates/proof-compression/examples/compress_bn.md)
 prepares pinned keys and policy, projects an independently verified GL proof,
@@ -1079,3 +1084,9 @@ portable verification succeeds and a changed output is rejected. These are
 development-fixture results with the existing KZG protocol, lookup group size
 one and the unchanged proof capacity. The policy remains opt-in; the larger
 workload is a count profile and an actual Init BN proof is not yet established.
+
+Applying this policy to the full `CompressBN` program on the saved Init input
+raises main cells from 615,485,074 to 779,704,204 and main/fixed/lookup storage
+from 29,870,400,128 to 37,186,124,256 bytes. The original resource budget rejects
+it before witness allocation. The policy is therefore unsuitable for that
+workload; retuning must include the full compression program and Init counts.

@@ -1,7 +1,7 @@
 {
   "format": "ix-aiur-compress-bn-host-v1",
   "date_utc": "2026-11-12",
-  "scope": "Host execution/profile of the saved fresh Init CompressGL proof under Ignition. No Init BN proof or end-to-end timing measured.",
+  "scope": "Actual BN proof of the saved fresh Init CompressGL proof under Ignition, using the ungrouped compiler fixture. Not a fresh ix bench run or complete PLONK pipeline.",
   "artifact_blake3": "8f37c540a414148dbfe9ab59760c80db8222b5b667b9de6aa99d72e448c610df",
   "artifact_entry": "CompressBN::compress_v1 from the checked-in kzg-source fixture",
   "public_capacity": {
@@ -59,8 +59,46 @@
     "development_success_proof": "Passed actual BN proof generation, portable verification, changed-stage rejection and next-stage source export.",
     "admission": "Missing or short SRS prefixes rejected before witness allocation; concrete lookup tuples count against memory limits when streaming is disabled.",
     "clippy": "Library, host tests and example pass with -D warnings.",
-    "production_input": "Pinned GL artifact/key and independently supplied root statement verified natively before source projection; Aiur step execution then succeeded.",
+    "production_input": "Pinned GL artifact/key and independent root statement verified natively before source projection; Aiur execution, outer BN proof verification and native carried pairing all succeed.",
     "native_accumulator_check": "The successful development proof also passes native accumulator verification. Wrong points, mismatched anchors and zero anchors are rejected; identity accumulation is accepted."
   },
-  "deferred_pairing": "The step proof carries the accumulator. Standalone proving verifies it natively after checking the outer proof; CompressFinal enforces it inside the final PLONK relation."
+  "deferred_pairing": "The step proof carries the accumulator. Standalone proving verifies it natively after checking the outer proof; CompressFinal enforces it inside the final PLONK relation.",
+  "actual_init_bn_proof": {
+    "format": "ix-aiur-compress-bn-v1",
+    "native_accumulator_verified": true,
+    "pairing_deferred": true,
+    "proof_bytes": 788350,
+    "proof_verified": true,
+    "proving_seconds": 79.149218972,
+    "setup": "ignition",
+    "setup_seconds": 1.279994874,
+    "trace_seconds": 19.492986665,
+    "verification_seconds": 0.107483054,
+    "execution_seconds": 69.061835682,
+    "input_proof_bytes": 388058,
+    "size_result": "BN proof grows from388058 to788350 bytes; the stage works but does not yet provide useful size reduction.",
+    "key_matches_prepared": true,
+    "files": {
+      "key.bin": {
+        "bytes": 221559,
+        "blake3": "17cde8918b89af704d4eb764cf8a3179df6446635a965c724a5ac5c140b99077"
+      },
+      "source-key.bin": {
+        "bytes": 368713,
+        "blake3": "bf84a42cc749f8dcf14bce1ca2c0fb5d8b1eb490c8646ce719d58b7faa2195c4"
+      },
+      "proof.bin": {
+        "bytes": 788350,
+        "blake3": "9a9f88750d0f97038def787c114974e21e06acd8f7d3f58fa03795235ca0c10a"
+      },
+      "source-proof.bin": {
+        "bytes": 795559,
+        "blake3": "8768ac58dd2efcf0f34f7344435f1cb8d102d2b2adf73e9bd22d0590af1acd6c"
+      },
+      "source-claims.bin": {
+        "bytes": 752,
+        "blake3": "8d142e151f49e88053fe8f604cbb93adb72a9bad895ce2be0d88f4ba05c68765"
+      }
+    }
+  }
 }

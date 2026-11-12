@@ -183,5 +183,17 @@
     "target/fused-arithmetic/verifier/profile NEW_ARTIFACT small NEW_SMALL_PROFILE",
     "target/fused-arithmetic/verifier/profile NEW_ARTIFACT larger NEW_LARGER_PROFILE",
     "target/fused-arithmetic/grouping/aiur_verifier_comparison-914b6bfe8 NEW_ARTIFACT NEW_PROOF_OUTPUT --prove-kzg 20"
-  ]
+  ],
+  "init_guard": {
+    "scope": "The verifier-only two-workload policy regresses on full CompressBN with the saved Init GL proof. Rejected before witness allocation; not adopted.",
+    "ungrouped_main_cells": 615485074,
+    "grouped_main_cells": 779704204,
+    "ungrouped_lookup_cells": 316909930,
+    "grouped_lookup_cells": 381307179,
+    "budget_trace_bytes": 29870400128,
+    "observed_trace_bytes": 37186124256,
+    "maximum_height": 16777216,
+    "proof_generated": false,
+    "next": "Retune on full CompressBN including actual Init function counts; do not raise the resource budget."
+  }
 }
