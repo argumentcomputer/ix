@@ -26,6 +26,13 @@ open Ixon
 constructor of an inductive member. -/
 abbrev Ref := Ix.Kernel.ConstRef Address
 
+instance : Inhabited Ref := ⟨.member ⟨ByteArray.empty⟩ 0⟩
+
+instance : Repr Ref where
+  reprPrec r _ := match r with
+    | .member b i => s!"member {b} {i}"
+    | .ctor b i c => s!"ctor {b} {i} {c}"
+
 /-- **The class of a value**: how a run represents the values of a type.
 * `irr`: a type, a type former or a proof. Never evaluated; `runR` binds `irr`.
 * `imm`: an immediate, with no presence on the heap: a field-less constructor,
@@ -43,6 +50,10 @@ inductive Cls where
   | leaf
   | val
   deriving BEq, DecidableEq, Repr, Inhabited
+
+/-- The union of two lists of indices. -/
+def natUnion (a b : List Nat) : List Nat :=
+  b.foldl (fun acc x => if acc.contains x then acc else x :: acc) a
 
 /-- **The class of `Nat`** (and so of `Nat`'s trivial wrappers, `Fin n`): one
 definition, so a different choice is a change here. `leaf`: a number may be

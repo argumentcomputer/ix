@@ -156,14 +156,11 @@ def live (v : Val) : M Unit := do
     unless o.cap == cap do violate .revokedUse
   | .imm _ => pure ()
 
-def union (a b : List Nat) : List Nat :=
-  b.foldl (fun acc x => if acc.contains x then acc else x :: acc) a
-
 def addTaint (s : Nat) : Val → Val
   | .ref l c t => .ref l c (if t.contains s then t else s :: t)
   | v => v
 
-def taints (vs : List Val) : List Nat := vs.foldl (fun t v => union t v.taint) []
+def taints (vs : List Val) : List Nat := vs.foldl (fun t v => natUnion t v.taint) []
 
 /-- Open a region: the new region and the innermost region open before it (`0`
 for the root). -/
@@ -426,7 +423,7 @@ def formClosure (P : Prog) (fuel : Nat) (env : List Bnd) (p : Param) (res : Resu
     live b.val
     let v ← if captureTransfers b.mode then transfer P fuel b.mode.isBorrowed b.val else pure b.val
     env' := setBnd env' i v
-    taint := union taint v.taint
+    taint := natUnion taint v.taint
   alloc (.clo env' p res rc fvs body) taint
 
 /-- An extern call: its arguments bound at its parameters in a fresh region, its
