@@ -1,5 +1,6 @@
 import IxVMRefinement.Core.Specs.Subst
 import IxVMRefinement.Core.Specs.Levels
+import IxVMRefinement.Core.Specs.LevelOps
 import IxVMRefinement.Core.Specs.Whnf
 import IxVMRefinement.Core.Specs.DefEq
 import IxVMRefinement.Core.Specs.Infer
@@ -52,6 +53,7 @@ open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 inductive Fn where
   | subst (f : Specs.Subst.Fn)
   | levels (f : Specs.Levels.Fn)
+  | levelOps (f : Specs.LevelOps.Fn)
   | whnf (f : Specs.Whnf.Fn)
   | defEq (f : Specs.DefEq.Fn)
   | infer (f : Specs.Infer.Fn)
@@ -63,6 +65,7 @@ inductive Fn where
 def Fn.name : Fn → String
   | .subst f => f.name
   | .levels f => f.name
+  | .levelOps f => f.name
   | .whnf f => f.name
   | .defEq f => f.name
   | .infer f => f.name
@@ -74,6 +77,7 @@ def Fn.name : Fn → String
 def Fn.spec : Fn → SpecFn
   | .subst f => f.spec
   | .levels f => f.spec
+  | .levelOps f => f.spec
   | .whnf f => f.spec
   | .defEq f => f.spec
   | .infer f => f.spec

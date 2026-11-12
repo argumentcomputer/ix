@@ -123,16 +123,16 @@ theorem ExprLvEq.shift {v₁ v₂ : KExpr} (hv : ExprLvEq v₁ v₂) {e₁ e₂ 
       (if i = j then Ix.Kernel.Expr.liftLooseBVars j 0 v₁ else if j < i then .bvar (i - 1) else .bvar i)
       (if i = j then Ix.Kernel.Expr.liftLooseBVars j 0 v₂ else if j < i then .bvar (i - 1) else .bvar i)
     split_ifs <;> first | exact hv.lift j 0 | exact ExprLvEq.refl _
-  | fvar ht _ => intro j; simp only [instShift]; exact .fvar ht
-  | sort hu => intro j; simp only [instShift]; exact .sort hu
-  | const hus => intro j; simp only [instShift]; exact .const hus
-  | app _ _ ihf iha => intro j; simp only [instShift]; exact .app (ihf j) (iha j)
-  | lam _ _ iht ihb => intro j; simp only [instShift]; exact .lam (iht j) (ihb (j + 1))
-  | forallE _ _ iht ihb => intro j; simp only [instShift]; exact .forallE (iht j) (ihb (j + 1))
+  | fvar ht _ => intro j; simp only [instShift, Ix.Kernel.Expr.instantiate1Lift]; exact .fvar ht
+  | sort hu => intro j; simp only [instShift, Ix.Kernel.Expr.instantiate1Lift]; exact .sort hu
+  | const hus => intro j; simp only [instShift, Ix.Kernel.Expr.instantiate1Lift]; exact .const hus
+  | app _ _ ihf iha => intro j; simp only [instShift, Ix.Kernel.Expr.instantiate1Lift]; exact .app (ihf j) (iha j)
+  | lam _ _ iht ihb => intro j; simp only [instShift, Ix.Kernel.Expr.instantiate1Lift]; exact .lam (iht j) (ihb (j + 1))
+  | forallE _ _ iht ihb => intro j; simp only [instShift, Ix.Kernel.Expr.instantiate1Lift]; exact .forallE (iht j) (ihb (j + 1))
   | letE _ _ _ iht ihv ihb =>
-    intro j; simp only [instShift]; exact .letE (iht j) (ihv j) (ihb (j + 1))
+    intro j; simp only [instShift, Ix.Kernel.Expr.instantiate1Lift]; exact .letE (iht j) (ihv j) (ihb (j + 1))
   | lit => exact fun _ => ExprLvEq.refl _
-  | proj _ ih => intro j; simp only [instShift]; exact .proj (ih j)
+  | proj _ ih => intro j; simp only [instShift, Ix.Kernel.Expr.instantiate1Lift]; exact .proj (ih j)
 
 /-! ## Determinism -/
 

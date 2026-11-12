@@ -1,0 +1,193 @@
+import IxVMRefinement.Levels.Smart
+
+/-! # The level layer: the consistency statement's `Levels`, and the level functions' specs
+
+`levels` discharges the consistency statement's level obligation (`IxVM.Consistency.Levels`,
+obligation `L2`): on bounded observed derivations and represented levels, `level_leq = 1`
+gives `≤` and `level_equal = 1` gives `=` at every assignment, and `level_equal(l, Zero) = 0`
+refutes that `l` is zero at every assignment. No hypothesis on the depth of the levels: the
+offsets the normalizer reaches are bounded by the level's height, which the trace's memory
+bounds (`Levels.Bound`, `Levels.Rom`), and the
+comparisons bound what they compare themselves.
+
+The second part states, for each level function the core calls, its spec over observed
+derivations in the form the core's induction consumes (`*Spec`, one per function, with its
+step lemma `*_step`). The level functions call no core function, so the steps need no
+induction hypothesis, and no spec has a hypothesis on the heights of the levels: the
+smart constructors get theirs from the trace's memory too (`Levels.Rom`, `Levels.Smart`). -/
+
+namespace IxVM.Refinement.Levels
+
+open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
+open IxVM (F)
+open IxVM.Refinement.KernelLevels
+open IxVM.Consistency (Bounded)
+
+/-! ## The consistency statement's level obligation -/
+
+/-- **The level layer of `IxVM.consistent`** (`L2`). -/
+theorem levels : IxVM.Consistency.Levels := by
+  refine ⟨?_, ?_, ?_⟩
+  · intro a b heap after cs la lb ev hb repA repB φ
+    obtain ⟨hr, -⟩ := levelLeq_obs ev hb repA repB
+    have ht : levelLeq la lb = true := by
+      by_contra hf
+      simp [hf] at hr
+    exact levelLeq_eq_true_sound ht φ
+  · intro a b heap after cs la lb ev hb repA repB φ
+    obtain ⟨hr, -⟩ := levelEqual_obs ev hb repA repB
+    have ht : levelEqual la lb = true := by
+      by_contra hf
+      simp [hf] at hr
+    exact levelEqual_eq_true_sound ht φ
+  · intro a b heap after cs la ev hb repA repB
+    obtain ⟨hr, -⟩ := levelEqual_obs ev hb repA repB
+    have hf : levelEqual la .zero = false := by
+      cases hbe : levelEqual la .zero
+      · rfl
+      · simp [hbe] at hr
+    exact not_eval_zero_of_levelEqual_false hf
+
+/-- **Obligation `L2` is discharged.** -/
+theorem l2 : IxVM.Consistency.L2 := levels
+
+/-! ## The level functions' specs, in registry form
+
+Each spec is over the function's observed derivation (`args`, heap before `h`, result `r`,
+heap after `h'`, calls `calls`). Levels are represented by `RepKLevel` (a pointer to the
+`KernelTypes::KLevelNode` tree of the kernel level; `RepKLevel.toRepIxVMKUniv` maps it to
+the slice's `RepIxVMKUniv`), level lists by `RepKLevelList`. A comparison's answer is stated
+exactly (the pure function of `Ix.IxVM.Refinement.KernelLevels`), with its meaning for
+`Level.eval` as a lemma there; a constructed level is stated exactly too, with its value. -/
+
+section Specs
+
+variable (args : List (SourceValue F)) (h : Heap F) (r : SourceValue F) (h' : Heap F)
+  (calls : List (Call F))
+
+/-- `level_leq(a, b)` answers `levelLeq`: `1` gives `≤` at every assignment
+(`levelLeq_eq_true_sound`). -/
+def LevelLeqSpec : Prop :=
+  ∀ a b, args = [a, b] → Bounded calls → ∀ la lb, RepKLevel h la a → RepKLevel h lb b →
+    r = .field (if levelLeq la lb then 1 else 0) ∧ Heap.Extends h h'
+
+/-- `level_equal(a, b)` answers `levelEqual`: `1` gives `=` at every assignment
+(`levelEqual_eq_true_sound`); at `b = zero`, `0` gives that `a` is nonzero at some
+assignment (`not_eval_zero_of_levelEqual_false`). -/
+def LevelEqualSpec : Prop :=
+  ∀ a b, args = [a, b] → Bounded calls → ∀ la lb, RepKLevel h la a → RepKLevel h lb b →
+    r = .field (if levelEqual la lb then 1 else 0) ∧ Heap.Extends h h'
+
+/-- `level_is_not_zero(a)` answers the kernel's `Level.isNeverZero` (`1` gives a nonzero
+level at every assignment, `isNeverZero_eval_ne_zero`), reading only. -/
+def LevelIsNotZeroSpec : Prop :=
+  ∀ a, args = [a] → ∀ l, RepKLevel h l a →
+    r = .field (if l.isNeverZero then 1 else 0) ∧ h' = h
+
+/-- `level_struct_eq(a, b)` answers syntactic equality, reading only. -/
+def LevelStructEqSpec : Prop :=
+  ∀ a b, args = [a, b] → ∀ la lb, RepKLevel h la a → RepKLevel h lb b →
+    r = .field (if la == lb then 1 else 0) ∧ h' = h
+
+/-- `level_max(a, b)` returns `levelMax a b`, whose value is `max`'s at every assignment
+(`eval_levelMax`). -/
+def LevelMaxSpec : Prop :=
+  ∀ a b, args = [a, b] → Bounded calls → ∀ la lb, RepKLevel h la a → RepKLevel h lb b →
+    RepKLevel h' (levelMax la lb) r ∧ Heap.Extends h h'
+
+/-- `level_imax(a, b)` returns `levelIMax a b`, whose value is `imax`'s at every assignment
+(`eval_levelIMax`). -/
+def LevelIMaxSpec : Prop :=
+  ∀ a b, args = [a, b] → Bounded calls → ∀ la lb, RepKLevel h la a → RepKLevel h lb b →
+    RepKLevel h' (levelIMax la lb) r ∧ Heap.Extends h h'
+
+/-- `level_reduce(a)` returns `levelReduce l`, whose value is `l`'s at every assignment
+(`eval_levelReduce`). -/
+def LevelReduceSpec : Prop :=
+  ∀ a, args = [a] → Bounded calls → ∀ l, RepKLevel h l a →
+    RepKLevel h' (levelReduce l) r ∧ Heap.Extends h h'
+
+/-- `level_inst_params(a, ps)` returns the substitution of the parameters `0, 1, …` by the
+list's levels (`substLevel`; its value is the kernel's `Level.subst` at every assignment,
+`eval_substLevel_eq_subst`), and every parameter of the level is in the list. -/
+def LevelInstParamsSpec : Prop :=
+  ∀ a ps, args = [a, ps] → Bounded calls → ∀ l params, RepKLevel h l a →
+    RepKLevelList h params ps →
+    ParamsLt params.length l ∧ RepKLevel h' (substLevel l params) r ∧ Heap.Extends h h'
+
+/-- `level_list_inst(ls, ps)`: `level_inst_params` on every level of the list. -/
+def LevelListInstSpec : Prop :=
+  ∀ ls ps, args = [ls, ps] → Bounded calls → ∀ lvls params, RepKLevelList h lvls ls →
+    RepKLevelList h params ps →
+    (∀ l ∈ lvls, ParamsLt params.length l) ∧ RepKLevelList h' (substLevelList lvls params) r ∧
+      Heap.Extends h h'
+
+end Specs
+
+variable {args : List (SourceValue F)} {h : Heap F} {r : SourceValue F} {h' : Heap F}
+  {calls : List (Call F)}
+
+theorem levelLeq_step
+    (ev : ObsFn IxVM.source.world "KernelLevels::level_leq" args h r h' calls) :
+    LevelLeqSpec args h r h' calls := by
+  intro a b hargs hb la lb repA repB
+  subst hargs
+  exact levelLeq_obs ev hb repA repB
+
+theorem levelEqual_step
+    (ev : ObsFn IxVM.source.world "KernelLevels::level_equal" args h r h' calls) :
+    LevelEqualSpec args h r h' calls := by
+  intro a b hargs hb la lb repA repB
+  subst hargs
+  exact levelEqual_obs ev hb repA repB
+
+theorem levelIsNotZero_step
+    (ev : ObsFn IxVM.source.world "KernelLevels::level_is_not_zero" args h r h' calls) :
+    LevelIsNotZeroSpec args h r h' := by
+  intro a hargs l rep
+  subst hargs
+  exact levelIsNotZero_refines rep ev.erase
+
+theorem levelStructEq_step
+    (ev : ObsFn IxVM.source.world "KernelLevels::level_struct_eq" args h r h' calls) :
+    LevelStructEqSpec args h r h' := by
+  intro a b hargs la lb repA repB
+  subst hargs
+  exact levelStructEq_refines repA repB ev.erase
+
+theorem levelMax_step
+    (ev : ObsFn IxVM.source.world "KernelLevels::level_max" args h r h' calls) :
+    LevelMaxSpec args h r h' calls := by
+  intro a b hargs hb la lb repA repB
+  subst hargs
+  exact levelMax_obs ev hb repA repB
+
+theorem levelIMax_step
+    (ev : ObsFn IxVM.source.world "KernelLevels::level_imax" args h r h' calls) :
+    LevelIMaxSpec args h r h' calls := by
+  intro a b hargs hb la lb repA repB
+  subst hargs
+  exact levelIMax_obs ev hb repA repB
+
+theorem levelReduce_step
+    (ev : ObsFn IxVM.source.world "KernelLevels::level_reduce" args h r h' calls) :
+    LevelReduceSpec args h r h' calls := by
+  intro a hargs hb l rep
+  subst hargs
+  exact levelReduce_obs ev hb rep
+
+theorem levelInstParams_step
+    (ev : ObsFn IxVM.source.world "KernelLevels::level_inst_params" args h r h' calls) :
+    LevelInstParamsSpec args h r h' calls := by
+  intro a ps hargs hb l params repL repPs
+  subst hargs
+  exact levelInstParams_obs ev hb repL repPs
+
+theorem levelListInst_step
+    (ev : ObsFn IxVM.source.world "KernelLevels::level_list_inst" args h r h' calls) :
+    LevelListInstSpec args h r h' calls := by
+  intro ls ps hargs hb lvls params repLs repPs
+  subst hargs
+  exact levelListInst_obs ev hb repLs repPs
+
+end IxVM.Refinement.Levels

@@ -101,11 +101,12 @@ def const_num_lvls : SpecFn := fun c args h r h' calls =>
   ∀ (v : SourceValue F) (ci : Ix.Kernel.ConstantInfo .anon), args = [v] → Good c calls →
     c.ci h v ci → r = .field (ci.toConstantVal.levelParams.length : F) ∧ h' = h
 
-/-- `const_type_of(ci)`: **the loaded constant's type**, a closed term (`Infer.const`).
-Allocates nothing. -/
+/-- `const_type_of(ci)`: **the loaded constant's type**, a closed term with the constant's level
+parameters at positions (`posOf`; `Infer.const` instantiates it). Allocates nothing. -/
 def const_type_of : SpecFn := fun c args h r h' calls =>
   ∀ (v : SourceValue F) (ci : Ix.Kernel.ConstantInfo .anon), args = [v] → Good c calls →
-    c.ci h v ci → c.tmc h' ci.toConstantVal.type r ∧ h' = h
+    c.ci h v ci →
+      c.tmc h' (posOf ci.toConstantVal.levelParams ci.toConstantVal.type) r ∧ h' = h
 
 /-- `k_infer(rc, e, types)`: **full-grade inference** (`Infer env .full d E T`). A term with no
 loose bound variable is inferred in the empty context (the spec holds at every depth for it), a

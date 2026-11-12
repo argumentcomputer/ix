@@ -17,8 +17,9 @@ loads it) represents the kernel constant `ci`, for all eight IxVM kinds:
 | `Ctor(nl, ty, block, ind, cidx, np, nf, unsafe)` | `ctorInfo cv nP nF` | level count, type, `np`, `nf` |
 | `Rec(nl, ty, np, ni, nm, nmi, rules, k, unsafe, block, idx)` | `recInfo cv mI rP rules'` | level count, type, the two sums, the rules one for one |
 
-A constant's level parameters are positional (`List.range nl`), as the kernel reader writes
-them. Types, values and rule right-hand sides are closed terms (`TmC`). The kernel's
+A constant's level parameters are related positionally: IxVM's `Param(i)` is the constant's `i`-th
+level parameter (`posOf`). The kernel reader writes `List.range nl`, except for a large
+eliminator, whose parameters are `nl - 1 :: List.range (nl - 1)` (`Reader.recLps`). Types, values and rule right-hand sides are closed terms (`TmC`). The kernel's
 install-computed data (an inductive's capabilities, a rule's constructor key, firing mode,
 parameter count and flags, a definition's hint) are not read off IxVM's value: where the
 core needs them they are environment facts (`Ctx.lean`, `EnvFacts`). -/
@@ -52,34 +53,44 @@ def rprjAddr (b : _root_.Address) (i : Nat) : _root_.Address :=
 def dprjAddr (b : _root_.Address) (i : Nat) : _root_.Address :=
   projAddr (.dPrj ⟨i.toUInt64, b⟩)
 
+/-- The positional levels `param 0, …, param (n-1)` for the parameters `ps`. -/
+def posLevels (ps : List Ix.Kernel.LevelParam) : List KLevel :=
+  (List.range ps.length).map Ix.Kernel.Level.param
+
+/-- **A stored term with its constant's level parameters renamed to positions**: the `i`-th
+parameter of `ps` becomes `param i`, as IxVM numbers universe variables. The identity when
+`ps = List.range n`. -/
+def posOf (ps : List Ix.Kernel.LevelParam) (e : KExpr) : KExpr :=
+  e.instantiateLevelParams ps (posLevels ps)
+
 /-! ## The relation -/
 
-/-- **A constant's level count and type**: `nl` is the number of its (positional) level
-parameters, below `2^32` (the decoders' bound on level counts), and `ty` represents its closed
-type. -/
+/-- **A constant's level count and type**: `nl` is the number of its level parameters, below
+`2^32` (the decoders' bound on level counts), the parameters are distinct, and `ty` represents its
+closed type with the parameters renamed to positions (`posOf`). -/
 def ValRep (κ : _root_.Address → KKey) (h : Heap F) (nl ty : SourceValue F)
     (cv : Ix.Kernel.ConstantVal .anon) : Prop :=
   nl = .field (cv.levelParams.length : F) ∧ cv.levelParams.length < 4294967296 ∧
-    cv.levelParams = List.range cv.levelParams.length ∧ TmC κ h cv.type ty
+    cv.levelParams.Nodup ∧ TmC κ h (posOf cv.levelParams cv.type) ty
 
 /-- **A recursor rule** (`KernelTypes::KRecRule::Mk(cidx, nfields, rhs)`, the `j`-th of its
 list): its constructor index is its position, its field count and closed right-hand side are
 the kernel rule's. The rule's constructor key is an environment fact (`EnvFacts.recRules`). -/
-def RuleRep (κ : _root_.Address → KKey) (h : Heap F) (j : Nat) (v : SourceValue F)
-    (rl : Ix.Kernel.RecRule .anon) : Prop :=
+def RuleRep (κ : _root_.Address → KKey) (h : Heap F) (ps : List Ix.Kernel.LevelParam) (j : Nat)
+    (v : SourceValue F) (rl : Ix.Kernel.RecRule .anon) : Prop :=
   ∃ rhs, v = .construct krrEnum "Mk" [.field (j : F), .field (rl.nfields : F), rhs] ∧
-    TmC κ h rl.rhs rhs
+    rl.nfields < 72057594037927936 ∧ TmC κ h (posOf ps rl.rhs) rhs
 
 /-- **The rule list**, one for one from position `j`. -/
-inductive RulesRep (κ : _root_.Address → KKey) (h : Heap F) :
+inductive RulesRep (κ : _root_.Address → KKey) (h : Heap F) (ps : List Ix.Kernel.LevelParam) :
     Nat → SourceValue F → List (Ix.Kernel.RecRule .anon) → Prop where
   | nil {j addr : Nat} (cell : h[addr]? = some (.construct krrListEnum "Nil" [])) :
-      RulesRep κ h j (.ptr (.enum krrListEnum) addr) []
+      RulesRep κ h ps j (.ptr (.enum krrListEnum) addr) []
   | cons {j addr : Nat} {v rest : SourceValue F} {rl : Ix.Kernel.RecRule .anon}
       {rls : List (Ix.Kernel.RecRule .anon)}
       (cell : h[addr]? = some (.construct krrListEnum "Cons" [v, rest]))
-      (hr : RuleRep κ h j v rl) (rs : RulesRep κ h (j + 1) rest rls) :
-      RulesRep κ h j (.ptr (.enum krrListEnum) addr) (rl :: rls)
+      (hr : RuleRep κ h ps j v rl) (rs : RulesRep κ h ps (j + 1) rest rls) :
+      RulesRep κ h ps j (.ptr (.enum krrListEnum) addr) (rl :: rls)
 
 /-- **A quotient constant's kind** (`Ixon::QuotKind`: `Typ`, `Ctor`, `Lift`, `Ind`) and the
 pinned quotient constant it reads as (`Ix.Kernel.BasisKind.quotK`): the type former, the
@@ -101,10 +112,10 @@ inductive CIRep (κ : _root_.Address → KKey) (h : Heap F) :
       CIRep κ h (.construct kciEnum "Opaque" [nl, ty, val, u]) (.axiomInfo cv)
   | defn {nl ty val sf hint : SourceValue F} {cv : Ix.Kernel.ConstantVal .anon} {V : KExpr}
       {hn : Ix.Kernel.ReducibilityHint}
-      (hv : ValRep κ h nl ty cv) (hV : TmC κ h V val) :
+      (hv : ValRep κ h nl ty cv) (hV : TmC κ h (posOf cv.levelParams V) val) :
       CIRep κ h (.construct kciEnum "Defn" [nl, ty, val, sf, hint]) (.defnInfo cv V hn)
   | thm {nl ty val : SourceValue F} {cv : Ix.Kernel.ConstantVal .anon} {V : KExpr}
-      (hv : ValRep κ h nl ty cv) (hV : TmC κ h V val) :
+      (hv : ValRep κ h nl ty cv) (hV : TmC κ h (posOf cv.levelParams V) val) :
       CIRep κ h (.construct kciEnum "Thm" [nl, ty, val]) (.thmInfo cv V)
   | quot {nl ty kind : SourceValue F} {ci : Ix.Kernel.ConstantInfo .anon}
       (hv : ValRep κ h nl ty ci.toConstantVal) (hk : QuotKindRep kind ci) :
@@ -112,6 +123,8 @@ inductive CIRep (κ : _root_.Address → KKey) (h : Heap F) :
   | induct {nl ty np ni nc u blk idx : SourceValue F} {cv : Ix.Kernel.ConstantVal .anon}
       {caps : Ix.Kernel.IndCaps .anon}
       (hv : ValRep κ h nl ty cv)
+      (hcounts : ∃ nP nI nC : Nat, np = .field (nP : F) ∧ ni = .field (nI : F) ∧ nc = .field (nC : F) ∧
+        nP < 72057594037927936 ∧ nI < 72057594037927936 ∧ nC < 72057594037927936)
       (hkey : ∃ (b : Bytes.Address) (i : F), Bytes.RepAddressRef addrTy h b blk ∧ idx = .field i ∧
         cv.name = κ (iprjAddr (ixAddr b) (ZMod.val i))) :
       CIRep κ h (.construct kciEnum "Induct" [nl, ty, np, ni, nc, u, blk, idx]) (.indInfo cv caps)
@@ -128,7 +141,7 @@ inductive CIRep (κ : _root_.Address → KKey) (h : Heap F) :
       (hv : ValRep κ h nl ty cv) (hnp : np = .field p) (hni : ni = .field i) (hnm : nm = .field m)
       (hnmi : nmi = .field mi) (hrP : (rP : F) = p + m + mi) (hmI : (mI : F) = p + m + mi + i)
       (hcounts : rP ≤ mI ∧ mI < 288230376151711744)
-      (hrules : RulesRep κ h 0 rules rls)
+      (hrules : RulesRep κ h cv.levelParams 0 rules rls)
       (hkey : ∃ (b : Bytes.Address) (i : F), Bytes.RepAddressRef addrTy h b blk ∧ idx = .field i ∧
         (cv.name = κ (ixAddr b) ∨ cv.name = κ (rprjAddr (ixAddr b) (ZMod.val i)))) :
       CIRep κ h (.construct kciEnum "Rec" [nl, ty, np, ni, nm, nmi, rules, k, u, blk, idx])
@@ -147,14 +160,14 @@ theorem ValRep.mono {κ : _root_.Address → KKey} {h₁ h₂ : Heap F} {nl ty :
     ValRep κ h₂ nl ty cv :=
   ⟨r.1, r.2.1, r.2.2.1, TmC.mono ext r.2.2.2⟩
 
-theorem RulesRep.mono {κ : _root_.Address → KKey} {h₁ h₂ : Heap F} {j : Nat} {v : SourceValue F}
-    {rls : List (Ix.Kernel.RecRule .anon)} (ext : Heap.Extends h₁ h₂) (r : RulesRep κ h₁ j v rls) :
-    RulesRep κ h₂ j v rls := by
+theorem RulesRep.mono {κ : _root_.Address → KKey} {h₁ h₂ : Heap F} {ps : List Ix.Kernel.LevelParam}
+    {j : Nat} {v : SourceValue F} {rls : List (Ix.Kernel.RecRule .anon)} (ext : Heap.Extends h₁ h₂)
+    (r : RulesRep κ h₁ ps j v rls) : RulesRep κ h₂ ps j v rls := by
   induction r with
   | nil cell => exact .nil (ext.getElem?_eq cell)
   | cons cell hr _ ih =>
-    obtain ⟨rhs, hv, hrhs⟩ := hr
-    exact .cons (ext.getElem?_eq cell) ⟨rhs, hv, TmC.mono ext hrhs⟩ ih
+    obtain ⟨rhs, hv, hn, hrhs⟩ := hr
+    exact .cons (ext.getElem?_eq cell) ⟨rhs, hv, hn, TmC.mono ext hrhs⟩ ih
 
 theorem CIRep.mono {κ : _root_.Address → KKey} {h₁ h₂ : Heap F} {v : SourceValue F}
     {ci : Ix.Kernel.ConstantInfo .anon} (ext : Heap.Extends h₁ h₂) (r : CIRep κ h₁ v ci) :
@@ -165,9 +178,9 @@ theorem CIRep.mono {κ : _root_.Address → KKey} {h₁ h₂ : Heap F} {v : Sour
   | defn hv hV => exact .defn (hv.mono ext) (TmC.mono ext hV)
   | thm hv hV => exact .thm (hv.mono ext) (TmC.mono ext hV)
   | quot hv hk => exact .quot (hv.mono ext) hk
-  | induct hv hkey =>
+  | induct hv hcounts hkey =>
     obtain ⟨b, i, hb, hi, hn⟩ := hkey
-    exact .induct (hv.mono ext) ⟨b, i, Bytes.repAddressRef_heapMono₂ addrTy ext hb, hi, hn⟩
+    exact .induct (hv.mono ext) hcounts ⟨b, i, Bytes.repAddressRef_heapMono₂ addrTy ext hb, hi, hn⟩
   | ctor hv hnp hnf hcounts hkey =>
     obtain ⟨b, i, j, hb, hi, hj, hn⟩ := hkey
     exact .ctor (hv.mono ext) hnp hnf hcounts ⟨b, i, j, Bytes.repAddressRef_heapMono₂ addrTy ext hb, hi, hj, hn⟩

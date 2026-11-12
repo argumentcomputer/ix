@@ -295,10 +295,10 @@ def pi_residual : SpecFn := fun c args h r h' calls =>
 first rule's) is `cidx`: its field count and closed right-hand side. Tag `0`: no claim. -/
 def find_rule : SpecFn := fun c args h r h' calls =>
   ∀ rules cidx, args = [rules, cidx] → Good c calls →
-    ∀ j rls, RulesRep c.κ h j rules rls →
+    ∀ ps j rls, RulesRep c.κ h ps j rules rls →
       ∀ nf rhs, r = .tuple [.field 1, nf, rhs] →
         ∃ i rl, rls[i]? = some rl ∧ cidx = .field ((j + i : Nat) : F) ∧
-          nf = .field (rl.nfields : F) ∧ c.tmc h' rl.rhs rhs
+          nf = .field (rl.nfields : F) ∧ c.tmc h' (posOf ps rl.rhs) rhs
 
 /-! ## Telescope certificates -/
 
@@ -696,9 +696,10 @@ def se_addr_in : SpecFn := fun c args h r h' calls =>
 
 The scans run on IxVM's heap terms, not on their images: a `Let` node is not a `∀` node (its
 image, ζ-expanded, may be a `∀`), and a `Let`'s value is scanned even where the body does not
-use it. The kernel's own reading is syntactic too (`Ix.Kernel.nativeRawRec`, over the reader's
-types: `stripPis` of exactly `nP + nF` binders, then `mentionsConst` on the field domains), so
-the claims are stated on the heap, positively (they persist as the heap grows). -/
+use it. The claims are stated on the heap, positively (they persist as the heap grows). The
+kernel decides `is_rec` on the classified field kinds of the normalised constructors
+(`nativeIsRec`, `IxC/Kernel/Inductives/NativeInstall.lean:621-647`; its first pass reads the
+declared telescope syntactically, `nativeRawRec`, `:122-128`). -/
 
 /-- **A chain of `∀` nodes in the heap**: the term at `p` is `∀` nodes with the domains `ds`
 (outermost first) over the term at `q`. A `Let` node ends a chain. -/
@@ -751,25 +752,20 @@ def FieldsClean (h : Heap F) (p : Nat) (membs : List Bytes.Address) (ty : Source
   ∃ ds q, ForallChain h ty ds q ∧ NotForallNode h q ∧
     ∀ dp ∈ ds.drop p, HeapClean (· ∈ membs) h dp
 
-/-- **A loaded inductive's constructors are clean**: the inductive the environment stores at
-`κ m` is loaded (`CIRep`) as `Induct(…, np, …, nc, …, block, idx)`, and each of its constructors
-`0, …, nc - 1` (the constant at the key of the projection record `(idx, t, block)`) is loaded
-with a type whose fields mention no address of `membs` (`FieldsClean` after `np` binders). -/
-def CtorsClean (c : Ctx) (h : Heap F) (ci : Ix.Kernel.ConstantInfo .anon)
-    (membs : List Bytes.Address) : Prop :=
-  ∃ (v nl ty np ni nc u blk idx : SourceValue F) (b : Bytes.Address) (i n p : F) (m : Nat),
-    v = .construct kciEnum "Induct" [nl, ty, np, ni, nc, u, blk, idx] ∧ c.ci h v ci ∧
-    RepAddr h b blk ∧ idx = .field i ∧ nc = .field n ∧ np = .field p ∧ (m : F) = n ∧
-    ∀ t < m, ∃ (cicon : Ix.Kernel.ConstantInfo .anon) (w nl' ty' : SourceValue F)
-        (rest : List (SourceValue F)),
-      c.env.find? (c.κ (cprjAddr (ixAddr b) (ZMod.val i) (ZMod.val (t : F)))) = some cicon ∧
-        c.ci h w cicon ∧
-      w = .construct kciEnum "Ctor" (nl' :: ty' :: rest) ∧ FieldsClean h (ZMod.val p) membs ty'
-
-/-- Every inductive among the addresses `ms` has clean constructors (`CtorsClean`). -/
+/-- For every address of `ms` whose record in `c.E` is the inductive projection `p` of a block
+member `ind`, every constructor of `ind` (`0, …, ctors.size - 1`, the constant at the key of its
+projection record) is loaded with a type whose fields, after `ind`'s parameters, mention no
+address of `membs` (`FieldsClean`, on the loaded heap term). -/
 def MembersClean (c : Ctx) (h : Heap F) (ms membs : List Bytes.Address) : Prop :=
-  ∀ m ∈ ms, ∀ ci, c.env.find? (c.κ (ixAddr m)) = some ci →
-    (∃ cv caps, ci = .indInfo cv caps) → CtorsClean c h ci membs
+  ∀ m ∈ ms, ∀ (cm cb : Ixon.Constant) (p : Ixon.InductiveProj) (xs : Array Ixon.MutConst)
+      (ind : Ixon.Inductive),
+    Ix.Cert.recordAt c.E (ixAddr m) = some cm → cm.info = .iPrj p →
+    Ix.Cert.recordAt c.E p.block = some cb → cb.info = .muts xs →
+    xs[p.idx.toNat]? = some (.indc ind) →
+    ∀ t < ind.ctors.size, ∃ (cicon : Ix.Kernel.ConstantInfo .anon) (w nl ty : SourceValue F)
+        (rest : List (SourceValue F)),
+      c.env.find? (c.κ (cprjAddr p.block p.idx.toNat t)) = some cicon ∧ c.ci h w cicon ∧
+      w = .construct kciEnum "Ctor" (nl :: ty :: rest) ∧ FieldsClean h ind.params.toNat membs ty
 
 /-- `se_mentions(e, members)`: an answer other than `1` means the heap term mentions no
 address of `members` (`HeapClean`). Answer `1`: no claim. -/
@@ -813,7 +809,7 @@ def struct_scan_ctors : SpecFn := fun c args h r h' calls =>
   ∀ blk idx nc np xs ci, args = [blk, idx, nc, np, xs, ci] → Good c calls →
     ∀ (b : Bytes.Address) (i n p j : F) ms, RepAddr h b blk → idx = .field i → nc = .field n →
       np = .field p → RepList addrListEnum RepAddr h ms xs → ci = .field j → r ≠ .field 1 →
-      ∃ m : Nat, j + (m : F) = n ∧ ∀ t < m,
+      ∀ t < ZMod.val (n - j),
         ∃ (cicon : Ix.Kernel.ConstantInfo .anon) (w nl' ty' : SourceValue F)
           (rest : List (SourceValue F)),
           c.env.find? (c.κ (cprjAddr (ixAddr b) (ZMod.val i) (ZMod.val (j + (t : F))))) =
@@ -827,19 +823,21 @@ def struct_scan_members : SpecFn := fun c args h r h' calls =>
     ∀ ms membs, RepList addrListEnum RepAddr h ms msp → RepList addrListEnum RepAddr h membs xs →
       r ≠ .field 1 → MembersClean c h' ms membs
 
-/-- `struct_is_rec(parent)`: Lean's block-level `is_rec`. An answer other than `1` means: the
-inductive the environment stores at `κ parent` is loaded with block `b`, and the member list
-IxVM computed for `b` (every inductive member's projection record when the record at `b` is a
-block, `[parent]` otherwise; `block_is_multi` answered `0`) has clean constructors against
-itself (`MembersClean`). Answer `1`: no claim. -/
+/-- `struct_is_rec(parent)`: Lean's block-level `is_rec`. An answer other than `1` means: for the
+block `b` IxVM loaded for the parent (when `block_is_multi` answers `0`), the member list it computed
+(`struct_block_member_addrs`: every inductive member's projection record when the record at
+`b` is a block, `[parent]` otherwise) is clean against itself (`MembersClean`); when the parent's
+record is the inductive projection of a member of a block, `b` is that block. Answer `1`: no
+claim. -/
 def struct_is_rec : SpecFn := fun c args h r h' calls =>
   ∀ par, args = [par] → Good c calls →
     ∀ (p : Bytes.Address), RepAddr h p par → r ≠ .field 1 →
-      ∃ (ci : Ix.Kernel.ConstantInfo .anon) (v nl ty np ni nc u blk idx : SourceValue F)
-        (b : Bytes.Address) (ms : List Bytes.Address),
-        c.env.find? (c.κ (ixAddr p)) = some ci ∧
-        v = .construct kciEnum "Induct" [nl, ty, np, ni, nc, u, blk, idx] ∧ c.ci h' v ci ∧
-        RepAddr h' b blk ∧ MembersClean c h' ms ms ∧
+      ∃ (b : Bytes.Address) (ms : List Bytes.Address), MembersClean c h' ms ms ∧
+        (∀ (cm cb : Ixon.Constant) (pp : Ixon.InductiveProj) (xs : Array Ixon.MutConst)
+            (ind : Ixon.Inductive),
+          Ix.Cert.recordAt c.E (ixAddr p) = some cm → cm.info = .iPrj pp →
+          Ix.Cert.recordAt c.E pp.block = some cb → cb.info = .muts xs →
+          xs[pp.idx.toNat]? = some (.indc ind) → ixAddr b = pp.block) ∧
         ∀ cb, Ix.Cert.recordAt c.E (ixAddr b) = some cb →
           (∀ xs, cb.info = .muts xs → ∀ i ind, xs[i]? = some (.indc ind) →
             ∃ a ∈ ms, ixAddr a = iprjAddr (ixAddr b) i) ∧
