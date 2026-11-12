@@ -1,6 +1,7 @@
 import IxVMRefinement.Core.Registry
 import IxVMRefinement.Core.Open
 import IxVMRefinement.Obs.KernelWhnf
+import IxVMRefinement.Obs.KernelTypes
 import IxVMRefinement.Lib.Lists
 import IxC.Kernel.Verify.InstList
 
@@ -446,5 +447,40 @@ theorem red_beta_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
     have e := ObsFn.heap_extends ev324
     exact ⟨_, Bs, hinst, tml_mono e hBs, hred⟩
 
+
+/-! ## Spines -/
+
+/-- `KernelTypes::collect_spine`: the head and the arguments of an application, under any number
+of local binders. -/
+theorem collect_spine_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+    {r : SourceValue F} {calls : List (Call F)}
+    (ev : ObsFn W "KernelTypes::collect_spine" args h r h' calls) (ih : IH c calls) :
+    Specs.Subst.collect_spine c args h r h' calls := by
+  intro e hargs good d Γ k E hE
+  subst hargs
+  rcases Obs.«KernelTypes::collect_spine».obs ev with
+    ⟨x_f, x_a, m31, cs41, x_head, x_args, v68, m78, cs86, ld12, ev43, he69, ev88, he105, hc106⟩ |
+    ⟨v1, m124, ld12, hne107, he115, hm132, he136, hc137⟩
+  · subst hc106 he69 he105
+    obtain ⟨Ef, Ea, rfl, hf, ha⟩ := hE.app_of_load ld12
+    obtain ⟨hd, sp, H, As, hres, hH, hAs, rfl⟩ := ih.get (.subst .collect_spine) (by lt_calls)
+      ev43 x_f rfl (good.sub fun x hx => by simp [hx]) d Γ k Ef hf
+    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hres
+    obtain ⟨rfl, rfl⟩ := hres
+    have e0 := ObsFn.heap_extends ev43
+    have e1 := ObsFn.heap_extends ev88
+    have hR : HeapMono₂ (fun h E p => Tm c.κ d Γ h k E p) := fun _ _ _ _ ext r => Tm.mono ext r
+    have hsnoc := Lib.Lists.snoc_spec (t := .ptr (.named "KernelTypes::KExprNode" [])) hR
+      (xs := As) (x := Ea)
+      (by rw [Obs.Names.«Lists::snoc<&KernelTypes::KExprNode>».symbol]; exact ev88)
+      (by rw [Obs.Names.«Lists::Node<&KernelTypes::KExprNode>».symbol]; exact hAs)
+      (Tm.mono e0 ha)
+    rw [Obs.Names.«Lists::Node<&KernelTypes::KExprNode>».symbol] at hsnoc
+    refine ⟨_, _, H, As ++ [Ea], rfl, Tm.mono e1 hH, hsnoc, ?_⟩
+    rw [← mkAppN_mkAppN]
+    rfl
+  · subst he115 hm132 he136
+    have ext : Heap.Extends h (h ++ [.construct kexprListEnum "Nil" []]) := Heap.Extends.snoc _ _
+    exact ⟨_, _, E, [], rfl, Tm.mono ext hE, .nil (by simp), rfl⟩
 
 end IxVM.Refinement.Core
