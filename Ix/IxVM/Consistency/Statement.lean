@@ -693,8 +693,9 @@ derivations (the bound replaces a hypothesis `levelDepth < 2^32`: lengths are
 compared as field elements),
 `level_leq = 1` gives `≤` and `level_equal = 1` gives `=` at every assignment,
 and `level_equal(l, Zero) = 0` refutes that `l` is zero at every assignment (the
-zero test `k_infer_proj` relies on). Levels are represented by the
-level slice's `RepKLevel`. -/
+zero test `KernelCheck::compute_k_target` relies on: the K flag it computes must
+equal the one the kernel's reader computes with `Level.isEquiv s .zero`). Levels
+are represented by the level slice's `RepKLevel`. -/
 def Levels : Prop :=
   (∀ (a b : Aiur.SourceValue IxVM.F) (heap after : Aiur.Heap IxVM.F) (cs : List (Call IxVM.F))
       (la lb : Ix.Kernel.Level),
