@@ -674,12 +674,10 @@ fun t a =>
 /--
 info: def IxVM.Refinement.AnchorsTyped : List (Ix.Kernel.Declaration Ix.Kernel.Mode.anon) → Prop :=
 fun ds =>
-  ∀ (d : Ix.Kernel.Declaration Ix.Kernel.Mode.anon),
-    d ∈ ds →
-      ∀ (cv : Ix.Kernel.ConstantVal Ix.Kernel.Mode.anon),
-        cv ∈ IxVM.Refinement.declaredVals d →
-          ∀ (pin : Ix.Kernel.ConstantVal Ix.Kernel.Mode.anon),
-            IxVM.Refinement.anchorPin? cv.name = some pin → cv.matchesPin pin = true
+  ∀ d ∈ ds,
+    ∀ cv ∈ IxVM.Refinement.declaredVals d,
+      ∀ (pin : Ix.Kernel.ConstantVal Ix.Kernel.Mode.anon),
+        IxVM.Refinement.anchorPin? cv.name = some pin → cv.matchesPin pin = true
 -/
 #guard_msgs in
 #print IxVM.Refinement.AnchorsTyped
