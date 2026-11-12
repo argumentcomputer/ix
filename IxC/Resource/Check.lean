@@ -101,7 +101,7 @@ def markSpent (id : Nat) : CM Unit := modify fun s => { s with spent := s.spent.
 
 def newBnd (v : AVal) (once : Bool) : CM Nat := do
   let s ← get
-  set { s with st := s.st.push (if v.own == .uniq then .live else .shared),
+  set { s with st := s.st.push (if v.own == Own.uniq then BSt.live else BSt.shared),
                once := s.once.push once, spent := s.spent.push false }
   pure s.st.size
 
@@ -119,7 +119,7 @@ def innermost : CM Nat := do pure ((← get).regions.headD 1)
 /-- A value is usable while no binding it aliases has been consumed. -/
 def valid (v : AVal) (w : String) : CM Unit := do
   for d in v.deps do
-    if (← stOf d) == .dead then refuseM s!"revokedUse: {w}, after a unique transfer"
+    if (← stOf d) == BSt.dead then refuseM s!"revokedUse: {w}, after a unique transfer"
 
 def readVar (env : List ABnd) (i : Nat) : CM AVal := do
   let some b := env[i]? | refuseM "a variable out of scope"
@@ -132,9 +132,9 @@ def readVar (env : List ABnd) (i : Nat) : CM AVal := do
 leaf or an irrelevant value; otherwise unique, with every binding it aliases live. -/
 def isUniq (v : AVal) : CM Bool := do
   if v.cls != .val then return true
-  if v.own != .uniq then return false
+  if v.own != Own.uniq then return false
   for d in v.deps do
-    unless (← stOf d) == .live do return false
+    unless (← stOf d) == BSt.live do return false
   return true
 
 /-- Where a value goes. -/
@@ -161,17 +161,17 @@ def flowTo (d : Dest) (exp : Skel) (v : AVal) (w : String) : CM Unit := do
     if v.onceOnly then refuseM s!"onceReentry: a once-only closure where it may be called again: {w}"
     if v.cls == .val then
       for x in v.deps do
-        if (← stOf x) == .live then setSt x .shared
+        if (← stOf x) == BSt.live then setSt x BSt.shared
   | .once => do
     if v.cls == .val then
       for x in v.deps do
-        if (← stOf x) == .live then setSt x .shared
+        if (← stOf x) == BSt.live then setSt x BSt.shared
   | .uniq b => do
     if v.onceOnly then refuseM s!"onceReentry: a once-only closure given away: {w}"
     if v.cls == .val then
       unless ← isUniq v do refuseM s!"revokedUse: a value that may be shared, at a unique position: {w}"
       if !b && !v.regs.isEmpty then refuseM s!"borrowEscape: a borrowed value given away: {w}"
-      for x in v.deps do setSt x .dead
+      for x in v.deps do setSt x BSt.dead
 
 /-- A callee's interface. -/
 structure Iface where
@@ -251,12 +251,13 @@ def applyValue (f a : AVal) (c : Cls) (w : String) : CM AVal := do
       if ← isSpent x then refuseM s!"onceReentry: a once binding called a second time: {w}"
       markSpent x
   if f.onceOnly then
-    if let some x := f.src then setSt x .dead
+    if let some x := f.src then setSt x BSt.dead
   let (m, dom, res, cod) := match f.skel with
     | .arrow m d r cd => (m, d, r, cd)
     | _ => (BinderMode.many, Skel.unknown, ResultMode.shared, Skel.unknown)
-  let r ← callResult { params := #[{ mode := m, cls := a.cls, skel := dom }], res, resCls := c,
-    resSkel := cod } #[some a] w
+  let p : Param := { mode := m, cls := a.cls, skel := dom }
+  let ifc : Iface := { params := #[p], res := res, resCls := c, resSkel := cod }
+  let r ← callResult ifc #[some a] w
   pure { r with cls := c }
 
 /-- A call of something the program does not define: arguments retained. -/
@@ -368,21 +369,22 @@ def anProj (P : Prog) (s : Ref) (i : Nat) (v : AVal) (c : Cls) : CM AVal := do
   if f.fmode == .shared || c == .leaf then return { cls := c, skel := .unknown }
   pure { cls := c, deps := v.deps, regs := v.regs, skel := .unknown }
 
-/-- The value of field `i` of constructor `j` of a case's inductive, and
-whether it is erased. -/
+/-- The value of field `i` of a case's constructor, whether it is erased, and
+whether it was read out of a cell (so a leaf or an immediate bound from it is
+not confined by the cell, as `readOut`). -/
 def caseField (P : Prog) (k : CaseInfo) (fields : Array Field) (mv : AVal) (consuming : Bool)
-    (i : Nat) : AVal × Bool :=
-  if some k.ind == P.nat then ({ cls := natClass }, false)
+    (i : Nat) : AVal × Bool × Bool :=
+  if some k.ind == P.nat then ({ cls := natClass }, false, false)
   else match fields[i]? with
-    | none => ({ cls := .irr }, false)
+    | none => ({ cls := .irr }, false, false)
     | some f =>
-      if f.mode == .erased then ({ cls := .irr }, true)
-      else if f.cls == .irr then ({ cls := .irr }, false)
-      else if mv.cls != .val && P.wrapperField? k.ind == some i then ({ mv with src := none }, false)
-      else if f.cls != .val then ({ cls := f.cls }, false)
-      else if f.fmode == .shared then ({ cls := .val }, false)
-      else if consuming then ({ cls := .val, own := .uniq, regs := mv.regs }, false)
-      else ({ cls := .val, deps := mv.deps, regs := mv.regs }, false)
+      if f.mode == .erased then ({ cls := .irr }, true, false)
+      else if f.cls == .irr then ({ cls := .irr }, false, false)
+      else if mv.cls != .val && P.wrapperField? k.ind == some i then ({ mv with src := none }, false, false)
+      else if f.cls != .val then ({ cls := f.cls }, false, false)
+      else if f.fmode == .shared then ({ cls := .val }, false, false)
+      else if consuming then ({ cls := .val, own := .uniq, regs := mv.regs }, false, true)
+      else ({ cls := .val, deps := mv.deps, regs := mv.regs }, false, true)
 
 /-! ## The abstract run -/
 
@@ -487,7 +489,7 @@ def anLam (P : Prog) : Nat → List ABnd → Param → ResultMode → Cls → Ar
         deps := natUnion deps v.deps
       regs := natUnion regs v.regs
     let saved ← get
-    for x in owned do setSt x .live
+    for x in owned do setSt x BSt.live
     let s ← openReg
     let pv := paramVal p s
     let pid ← newBnd pv (p.mode.usage == .once)
@@ -495,7 +497,7 @@ def anLam (P : Prog) : Nat → List ABnd → Param → ResultMode → Cls → Ar
     retCheck r.skel res s { r with cls := rc } "a closure's result"
     let mut consumed := false
     for x in owned do
-      if (← stOf x) == .dead then consumed := true
+      if (← stOf x) == BSt.dead then consumed := true
     let after ← get
     set { saved with steps := after.steps, nextRegion := after.nextRegion }
     pure { cls := .val, deps, regs, onceOnly := consumed, skel := .arrow p.mode p.skel res r.skel }
@@ -530,8 +532,8 @@ def anCase (P : Prog) :
         | none => #[]
       let args := ca.args.toList.map fun fa => match fa with
         | .field i => caseField P k fields mv consuming i
-        | .irr => (({ cls := .irr } : AVal), false)
-        | .unit => (({ cls := .imm } : AVal), false)
+        | .irr => (({ cls := .irr } : AVal), false, false)
+        | .unit => (({ cls := .imm } : AVal), false, false)
       let some alt := alts[j]? | continue
       let r ← anAlt P n env alt args
       results := results.push { r with deps := r.deps.filter (· < pre.st.size) }
@@ -545,15 +547,15 @@ def anCase (P : Prog) :
       for i in [0:pre.st.size] do
         let a := st[i]!
         let b := post.st[i]!
-        st := st.set! i (if a == .dead || b == .dead then .dead
-          else if a == .shared || b == .shared then .shared else .live)
+        st := st.set! i (if a == BSt.dead || b == BSt.dead then BSt.dead
+          else if a == BSt.shared || b == BSt.shared then BSt.shared else BSt.live)
         if post.spent[i]! then spent := spent.set! i true
     set { pre with st, spent, steps, nextRegion }
     let some r0 := results[0]? | return { cls := c }
     let mut r := r0
     for x in results do
       unless x.skel.admits r.skel do refuseM "mode skeletons differ between a case's alternatives"
-      r := { r with own := (if r.own == .uniq && x.own == .uniq then .uniq else .shared),
+      r := { r with own := (if r.own == Own.uniq && x.own == Own.uniq then Own.uniq else Own.shared),
                     deps := natUnion r.deps x.deps, regs := natUnion r.regs x.regs,
                     onceOnly := r.onceOnly || x.onceOnly }
     r := { r with cls := c, src := none }
@@ -564,12 +566,13 @@ def anCase (P : Prog) :
 
 /-- An alternative applied to its fields, as `applyAlt`: a λ telescope binds
 them in place. -/
-def anAlt (P : Prog) : Nat → List ABnd → Term → List (AVal × Bool) → CM AVal
+def anAlt (P : Prog) : Nat → List ABnd → Term → List (AVal × Bool × Bool) → CM AVal
   | 0, _, _, _ => declineM "the checker's depth limit"
   | n + 1, env, t, [] => anTerm P n env t
-  | n + 1, env, t, (a, er) :: rest => do
+  | n + 1, env, t, (a0, er, fromCell) :: rest => do
     match t with
     | .lam p res rc _ body => do
+      let a := if fromCell && p.cls != .val then { a0 with deps := [], regs := [] } else a0
       let s ← openReg
       let (mode, bv) ← if er then pure (BinderMode.erased, ({ cls := .irr } : AVal)) else do
         unless p.skel.admits a.skel do refuseM "mode skeletons differ: a case field's binder"
@@ -581,7 +584,7 @@ def anAlt (P : Prog) : Nat → List ABnd → Term → List (AVal × Bool) → CM
       pure { r with cls := rc }
     | _ => do
       let mut f ← anTerm P n env t
-      for (av, _) in (a, er) :: rest do
+      for (av, _, _) in (a0, er, fromCell) :: rest do
         f ← applyValue f av .val "an alternative"
       pure f
 
