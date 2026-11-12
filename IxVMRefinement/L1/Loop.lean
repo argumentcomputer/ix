@@ -167,103 +167,16 @@ theorem u64v_succ (c : UInt64) {r0 r1 r2 r3 r4 r5 r6 r7 : Nat}
 theorem u64_wrappingSucc {c : UInt64} {r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
     (ev : ObsFn W "UInt64::wrapping_succ" [u64v c] h r h' cs) : r = u64v (c + 1) ∧ h' = h := by
   rcases «UInt64::wrapping_succ».obs ev with
-    ⟨x_b0, x_b1, x_b2, x_b3, x_b4, x_b5, x_b6, x_b7, v53, m54, cs65, v1057, m1067, cs1075, v1078, x1085, m1087, cs1096, hv11, ev67, hne1051, he1065, ev1098, op1092, ev1077, he1156, hc1157⟩ |
-    ⟨x_b0, x_b1, x_b2, x_b3, x_b4, x_b5, x_b6, x_b7, m54, cs65, v80, m81, cs92, v952, m967, cs975, v978, x985, m987, cs996, hv11, ev67, ev94, hne945, he959, ev998, op992, ev977, he1049, hc1050⟩ |
-    ⟨x_b0, x_b1, x_b2, x_b3, x_b4, x_b5, x_b6, x_b7, m54, cs65, m81, cs92, v107, m108, cs119, v848, m868, cs876, v879, x886, m888, cs897, hv11, ev67, ev94, ev121, hne840, he854, ev899, op893, ev878, he943, hc944⟩ |
-    ⟨x_b0, x_b1, x_b2, x_b3, x_b4, x_b5, x_b6, x_b7, m54, cs65, m81, cs92, m108, cs119, v134, m135, cs146, v745, m770, cs778, v781, x788, m790, cs799, hv11, ev67, ev94, ev121, ev148, hne736, he750, ev801, op795, ev780, he838, hc839⟩ |
-    ⟨x_b0, x_b1, x_b2, x_b3, x_b4, x_b5, x_b6, x_b7, m54, cs65, m81, cs92, m108, cs119, m135, cs146, v161, m162, cs173, v643, m673, cs681, v684, x691, m693, cs702, hv11, ev67, ev94, ev121, ev148, ev175, hne633, he647, ev704, op698, ev683, he734, hc735⟩ |
-    ⟨x_b0, x_b1, x_b2, x_b3, x_b4, x_b5, x_b6, x_b7, m54, cs65, m81, cs92, m108, cs119, m135, cs146, m162, cs173, v188, m189, cs200, v542, m577, cs585, v588, x595, m597, cs606, hv11, ev67, ev94, ev121, ev148, ev175, ev202, hne531, he545, ev608, op602, ev587, he631, hc632⟩ |
-    ⟨x_b0, x_b1, x_b2, x_b3, x_b4, x_b5, x_b6, x_b7, m54, cs65, m81, cs92, m108, cs119, m135, cs146, m162, cs173, m189, cs200, v215, m216, cs227, v442, m482, cs490, v493, x500, m502, cs511, hv11, ev67, ev94, ev121, ev148, ev175, ev202, ev229, hne430, he444, ev513, op507, ev492, he529, hc530⟩ |
+    ⟨x_b0, x_b1, x_b2, x_b3, x_b4, x_b5, x_b6, x_b7, m54, cs65, m81, cs92, m108, cs119, m135, cs146, m162, cs173, m189, cs200, m216, cs227, m243, cs254, hv11, ev67, ev94, ev121, ev148, ev175, ev202, ev229, ev256, he279, he328, hc329⟩ |
     ⟨x_b0, x_b1, x_b2, x_b3, x_b4, x_b5, x_b6, x_b7, m54, cs65, m81, cs92, m108, cs119, m135, cs146, m162, cs173, m189, cs200, m216, cs227, v242, m243, cs254, v343, m388, cs396, v399, x406, m408, cs417, hv11, ev67, ev94, ev121, ev148, ev175, ev202, ev229, ev256, hne330, he344, ev419, op413, ev398, he428, hc429⟩ |
-    ⟨x_b0, x_b1, x_b2, x_b3, x_b4, x_b5, x_b6, x_b7, m54, cs65, m81, cs92, m108, cs119, m135, cs146, m162, cs173, m189, cs200, m216, cs227, m243, cs254, hv11, ev67, ev94, ev121, ev148, ev175, ev202, ev229, ev256, he279, he328, hc329⟩
-  · -- other
-    rw [u64v_eq] at hv11
-    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hv11
-    obtain ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩ := hv11
-    obtain ⟨rfl, rfl⟩ := u8_toField ev67
-    obtain ⟨rfl, rfl⟩ := u8_toField ev1098
-    obtain rfl := binop_add op1092
-    obtain ⟨bb, e0, rfl, rfl⟩ := u8_fromField ev1077
-    subst he1065 he1156
-    refine ⟨?_, rfl⟩
-    rw [u64v_succ c (r0 := (u64b c 0).toNat + 1) (r1 := (u64b c 1).toNat) (r2 := (u64b c 2).toNat) (r3 := (u64b c 3).toNat) (r4 := (u64b c 4).toNat) (r5 := (u64b c 5).toNat) (r6 := (u64b c 6).toNat) (r7 := (u64b c 7).toNat) (by simp [Aiur.Library.U64.wrappingSuccBytes, digit_ne255 hne1051]), ← e0]
-    simp [bv]
-  · -- n255_other
-    rw [u64v_eq] at hv11
-    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hv11
-    obtain ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩ := hv11
-    obtain ⟨e0, rfl⟩ := u8_toField ev67
-    obtain ⟨rfl, rfl⟩ := u8_toField ev94
-    obtain ⟨rfl, rfl⟩ := u8_toField ev998
-    obtain rfl := binop_add op992
-    obtain ⟨bb, e1, rfl, rfl⟩ := u8_fromField ev977
-    subst he959 he1049
-    refine ⟨?_, rfl⟩
-    rw [u64v_succ c (r0 := 0) (r1 := (u64b c 1).toNat + 1) (r2 := (u64b c 2).toNat) (r3 := (u64b c 3).toNat) (r4 := (u64b c 4).toNat) (r5 := (u64b c 5).toNat) (r6 := (u64b c 6).toNat) (r7 := (u64b c 7).toNat) (by simp [Aiur.Library.U64.wrappingSuccBytes, digit255 e0, digit_ne255 hne945]), ← e1]
-    simp [bv]
-  · -- n255_n255_other
-    rw [u64v_eq] at hv11
-    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hv11
-    obtain ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩ := hv11
-    obtain ⟨e0, rfl⟩ := u8_toField ev67
-    obtain ⟨e1, rfl⟩ := u8_toField ev94
-    obtain ⟨rfl, rfl⟩ := u8_toField ev121
-    obtain ⟨rfl, rfl⟩ := u8_toField ev899
-    obtain rfl := binop_add op893
-    obtain ⟨bb, e2, rfl, rfl⟩ := u8_fromField ev878
-    subst he854 he943
-    refine ⟨?_, rfl⟩
-    rw [u64v_succ c (r0 := 0) (r1 := 0) (r2 := (u64b c 2).toNat + 1) (r3 := (u64b c 3).toNat) (r4 := (u64b c 4).toNat) (r5 := (u64b c 5).toNat) (r6 := (u64b c 6).toNat) (r7 := (u64b c 7).toNat) (by simp [Aiur.Library.U64.wrappingSuccBytes, digit255 e0, digit255 e1, digit_ne255 hne840]), ← e2]
-    simp [bv]
-  · -- n255_n255_n255_other
-    rw [u64v_eq] at hv11
-    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hv11
-    obtain ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩ := hv11
-    obtain ⟨e0, rfl⟩ := u8_toField ev67
-    obtain ⟨e1, rfl⟩ := u8_toField ev94
-    obtain ⟨e2, rfl⟩ := u8_toField ev121
-    obtain ⟨rfl, rfl⟩ := u8_toField ev148
-    obtain ⟨rfl, rfl⟩ := u8_toField ev801
-    obtain rfl := binop_add op795
-    obtain ⟨bb, e3, rfl, rfl⟩ := u8_fromField ev780
-    subst he750 he838
-    refine ⟨?_, rfl⟩
-    rw [u64v_succ c (r0 := 0) (r1 := 0) (r2 := 0) (r3 := (u64b c 3).toNat + 1) (r4 := (u64b c 4).toNat) (r5 := (u64b c 5).toNat) (r6 := (u64b c 6).toNat) (r7 := (u64b c 7).toNat) (by simp [Aiur.Library.U64.wrappingSuccBytes, digit255 e0, digit255 e1, digit255 e2, digit_ne255 hne736]), ← e3]
-    simp [bv]
-  · -- n255_n255_n255_n255_other
-    rw [u64v_eq] at hv11
-    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hv11
-    obtain ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩ := hv11
-    obtain ⟨e0, rfl⟩ := u8_toField ev67
-    obtain ⟨e1, rfl⟩ := u8_toField ev94
-    obtain ⟨e2, rfl⟩ := u8_toField ev121
-    obtain ⟨e3, rfl⟩ := u8_toField ev148
-    obtain ⟨rfl, rfl⟩ := u8_toField ev175
-    obtain ⟨rfl, rfl⟩ := u8_toField ev704
-    obtain rfl := binop_add op698
-    obtain ⟨bb, e4, rfl, rfl⟩ := u8_fromField ev683
-    subst he647 he734
-    refine ⟨?_, rfl⟩
-    rw [u64v_succ c (r0 := 0) (r1 := 0) (r2 := 0) (r3 := 0) (r4 := (u64b c 4).toNat + 1) (r5 := (u64b c 5).toNat) (r6 := (u64b c 6).toNat) (r7 := (u64b c 7).toNat) (by simp [Aiur.Library.U64.wrappingSuccBytes, digit255 e0, digit255 e1, digit255 e2, digit255 e3, digit_ne255 hne633]), ← e4]
-    simp [bv]
-  · -- n255_n255_n255_n255_n255_other
-    rw [u64v_eq] at hv11
-    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hv11
-    obtain ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩ := hv11
-    obtain ⟨e0, rfl⟩ := u8_toField ev67
-    obtain ⟨e1, rfl⟩ := u8_toField ev94
-    obtain ⟨e2, rfl⟩ := u8_toField ev121
-    obtain ⟨e3, rfl⟩ := u8_toField ev148
-    obtain ⟨e4, rfl⟩ := u8_toField ev175
-    obtain ⟨rfl, rfl⟩ := u8_toField ev202
-    obtain ⟨rfl, rfl⟩ := u8_toField ev608
-    obtain rfl := binop_add op602
-    obtain ⟨bb, e5, rfl, rfl⟩ := u8_fromField ev587
-    subst he545 he631
-    refine ⟨?_, rfl⟩
-    rw [u64v_succ c (r0 := 0) (r1 := 0) (r2 := 0) (r3 := 0) (r4 := 0) (r5 := (u64b c 5).toNat + 1) (r6 := (u64b c 6).toNat) (r7 := (u64b c 7).toNat) (by simp [Aiur.Library.U64.wrappingSuccBytes, digit255 e0, digit255 e1, digit255 e2, digit255 e3, digit255 e4, digit_ne255 hne531]), ← e5]
-    simp [bv]
-  · -- n255_n255_n255_n255_n255_n255_other
+    ⟨x_b0, x_b1, x_b2, x_b3, x_b4, x_b5, x_b6, x_b7, m54, cs65, m81, cs92, m108, cs119, m135, cs146, m162, cs173, m189, cs200, v215, m216, cs227, v442, m482, cs490, v493, x500, m502, cs511, hv11, ev67, ev94, ev121, ev148, ev175, ev202, ev229, hne430, he444, ev513, op507, ev492, he529, hc530⟩ |
+    ⟨x_b0, x_b1, x_b2, x_b3, x_b4, x_b5, x_b6, x_b7, m54, cs65, m81, cs92, m108, cs119, m135, cs146, m162, cs173, v188, m189, cs200, v542, m577, cs585, v588, x595, m597, cs606, hv11, ev67, ev94, ev121, ev148, ev175, ev202, hne531, he545, ev608, op602, ev587, he631, hc632⟩ |
+    ⟨x_b0, x_b1, x_b2, x_b3, x_b4, x_b5, x_b6, x_b7, m54, cs65, m81, cs92, m108, cs119, m135, cs146, v161, m162, cs173, v643, m673, cs681, v684, x691, m693, cs702, hv11, ev67, ev94, ev121, ev148, ev175, hne633, he647, ev704, op698, ev683, he734, hc735⟩ |
+    ⟨x_b0, x_b1, x_b2, x_b3, x_b4, x_b5, x_b6, x_b7, m54, cs65, m81, cs92, m108, cs119, v134, m135, cs146, v745, m770, cs778, v781, x788, m790, cs799, hv11, ev67, ev94, ev121, ev148, hne736, he750, ev801, op795, ev780, he838, hc839⟩ |
+    ⟨x_b0, x_b1, x_b2, x_b3, x_b4, x_b5, x_b6, x_b7, m54, cs65, m81, cs92, v107, m108, cs119, v848, m868, cs876, v879, x886, m888, cs897, hv11, ev67, ev94, ev121, hne840, he854, ev899, op893, ev878, he943, hc944⟩ |
+    ⟨x_b0, x_b1, x_b2, x_b3, x_b4, x_b5, x_b6, x_b7, m54, cs65, v80, m81, cs92, v952, m967, cs975, v978, x985, m987, cs996, hv11, ev67, ev94, hne945, he959, ev998, op992, ev977, he1049, hc1050⟩ |
+    ⟨x_b0, x_b1, x_b2, x_b3, x_b4, x_b5, x_b6, x_b7, v53, m54, cs65, v1057, m1067, cs1075, v1078, x1085, m1087, cs1096, hv11, ev67, hne1051, he1065, ev1098, op1092, ev1077, he1156, hc1157⟩
+  · -- n255_n255_n255_n255_n255_n255_n255_n255
     rw [u64v_eq] at hv11
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hv11
     obtain ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩ := hv11
@@ -273,14 +186,12 @@ theorem u64_wrappingSucc {c : UInt64} {r : SourceValue F} {h h' : Heap F} {cs : 
     obtain ⟨e3, rfl⟩ := u8_toField ev148
     obtain ⟨e4, rfl⟩ := u8_toField ev175
     obtain ⟨e5, rfl⟩ := u8_toField ev202
-    obtain ⟨rfl, rfl⟩ := u8_toField ev229
-    obtain ⟨rfl, rfl⟩ := u8_toField ev513
-    obtain rfl := binop_add op507
-    obtain ⟨bb, e6, rfl, rfl⟩ := u8_fromField ev492
-    subst he444 he529
+    obtain ⟨e6, rfl⟩ := u8_toField ev229
+    obtain ⟨e7, rfl⟩ := u8_toField ev256
+    subst he279 he328
     refine ⟨?_, rfl⟩
-    rw [u64v_succ c (r0 := 0) (r1 := 0) (r2 := 0) (r3 := 0) (r4 := 0) (r5 := 0) (r6 := (u64b c 6).toNat + 1) (r7 := (u64b c 7).toNat) (by simp [Aiur.Library.U64.wrappingSuccBytes, digit255 e0, digit255 e1, digit255 e2, digit255 e3, digit255 e4, digit255 e5, digit_ne255 hne430]), ← e6]
-    simp [bv]
+    rw [u64v_succ c (r0 := 0) (r1 := 0) (r2 := 0) (r3 := 0) (r4 := 0) (r5 := 0) (r6 := 0) (r7 := 0) (by simp [Aiur.Library.U64.wrappingSuccBytes, digit255 e0, digit255 e1, digit255 e2, digit255 e3, digit255 e4, digit255 e5, digit255 e6, digit255 e7])]
+    simp
   · -- n255_n255_n255_n255_n255_n255_n255_other
     rw [u64v_eq] at hv11
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hv11
@@ -300,7 +211,7 @@ theorem u64_wrappingSucc {c : UInt64} {r : SourceValue F} {h h' : Heap F} {cs : 
     refine ⟨?_, rfl⟩
     rw [u64v_succ c (r0 := 0) (r1 := 0) (r2 := 0) (r3 := 0) (r4 := 0) (r5 := 0) (r6 := 0) (r7 := (u64b c 7).toNat + 1) (by simp [Aiur.Library.U64.wrappingSuccBytes, digit255 e0, digit255 e1, digit255 e2, digit255 e3, digit255 e4, digit255 e5, digit255 e6, digit_ne255 hne330]), ← e7]
     simp [bv]
-  · -- n255_n255_n255_n255_n255_n255_n255_n255
+  · -- n255_n255_n255_n255_n255_n255_other
     rw [u64v_eq] at hv11
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hv11
     obtain ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩ := hv11
@@ -310,12 +221,101 @@ theorem u64_wrappingSucc {c : UInt64} {r : SourceValue F} {h h' : Heap F} {cs : 
     obtain ⟨e3, rfl⟩ := u8_toField ev148
     obtain ⟨e4, rfl⟩ := u8_toField ev175
     obtain ⟨e5, rfl⟩ := u8_toField ev202
-    obtain ⟨e6, rfl⟩ := u8_toField ev229
-    obtain ⟨e7, rfl⟩ := u8_toField ev256
-    subst he279 he328
+    obtain ⟨rfl, rfl⟩ := u8_toField ev229
+    obtain ⟨rfl, rfl⟩ := u8_toField ev513
+    obtain rfl := binop_add op507
+    obtain ⟨bb, e6, rfl, rfl⟩ := u8_fromField ev492
+    subst he444 he529
     refine ⟨?_, rfl⟩
-    rw [u64v_succ c (r0 := 0) (r1 := 0) (r2 := 0) (r3 := 0) (r4 := 0) (r5 := 0) (r6 := 0) (r7 := 0) (by simp [Aiur.Library.U64.wrappingSuccBytes, digit255 e0, digit255 e1, digit255 e2, digit255 e3, digit255 e4, digit255 e5, digit255 e6, digit255 e7])]
-    simp
+    rw [u64v_succ c (r0 := 0) (r1 := 0) (r2 := 0) (r3 := 0) (r4 := 0) (r5 := 0) (r6 := (u64b c 6).toNat + 1) (r7 := (u64b c 7).toNat) (by simp [Aiur.Library.U64.wrappingSuccBytes, digit255 e0, digit255 e1, digit255 e2, digit255 e3, digit255 e4, digit255 e5, digit_ne255 hne430]), ← e6]
+    simp [bv]
+  · -- n255_n255_n255_n255_n255_other
+    rw [u64v_eq] at hv11
+    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hv11
+    obtain ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩ := hv11
+    obtain ⟨e0, rfl⟩ := u8_toField ev67
+    obtain ⟨e1, rfl⟩ := u8_toField ev94
+    obtain ⟨e2, rfl⟩ := u8_toField ev121
+    obtain ⟨e3, rfl⟩ := u8_toField ev148
+    obtain ⟨e4, rfl⟩ := u8_toField ev175
+    obtain ⟨rfl, rfl⟩ := u8_toField ev202
+    obtain ⟨rfl, rfl⟩ := u8_toField ev608
+    obtain rfl := binop_add op602
+    obtain ⟨bb, e5, rfl, rfl⟩ := u8_fromField ev587
+    subst he545 he631
+    refine ⟨?_, rfl⟩
+    rw [u64v_succ c (r0 := 0) (r1 := 0) (r2 := 0) (r3 := 0) (r4 := 0) (r5 := (u64b c 5).toNat + 1) (r6 := (u64b c 6).toNat) (r7 := (u64b c 7).toNat) (by simp [Aiur.Library.U64.wrappingSuccBytes, digit255 e0, digit255 e1, digit255 e2, digit255 e3, digit255 e4, digit_ne255 hne531]), ← e5]
+    simp [bv]
+  · -- n255_n255_n255_n255_other
+    rw [u64v_eq] at hv11
+    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hv11
+    obtain ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩ := hv11
+    obtain ⟨e0, rfl⟩ := u8_toField ev67
+    obtain ⟨e1, rfl⟩ := u8_toField ev94
+    obtain ⟨e2, rfl⟩ := u8_toField ev121
+    obtain ⟨e3, rfl⟩ := u8_toField ev148
+    obtain ⟨rfl, rfl⟩ := u8_toField ev175
+    obtain ⟨rfl, rfl⟩ := u8_toField ev704
+    obtain rfl := binop_add op698
+    obtain ⟨bb, e4, rfl, rfl⟩ := u8_fromField ev683
+    subst he647 he734
+    refine ⟨?_, rfl⟩
+    rw [u64v_succ c (r0 := 0) (r1 := 0) (r2 := 0) (r3 := 0) (r4 := (u64b c 4).toNat + 1) (r5 := (u64b c 5).toNat) (r6 := (u64b c 6).toNat) (r7 := (u64b c 7).toNat) (by simp [Aiur.Library.U64.wrappingSuccBytes, digit255 e0, digit255 e1, digit255 e2, digit255 e3, digit_ne255 hne633]), ← e4]
+    simp [bv]
+  · -- n255_n255_n255_other
+    rw [u64v_eq] at hv11
+    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hv11
+    obtain ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩ := hv11
+    obtain ⟨e0, rfl⟩ := u8_toField ev67
+    obtain ⟨e1, rfl⟩ := u8_toField ev94
+    obtain ⟨e2, rfl⟩ := u8_toField ev121
+    obtain ⟨rfl, rfl⟩ := u8_toField ev148
+    obtain ⟨rfl, rfl⟩ := u8_toField ev801
+    obtain rfl := binop_add op795
+    obtain ⟨bb, e3, rfl, rfl⟩ := u8_fromField ev780
+    subst he750 he838
+    refine ⟨?_, rfl⟩
+    rw [u64v_succ c (r0 := 0) (r1 := 0) (r2 := 0) (r3 := (u64b c 3).toNat + 1) (r4 := (u64b c 4).toNat) (r5 := (u64b c 5).toNat) (r6 := (u64b c 6).toNat) (r7 := (u64b c 7).toNat) (by simp [Aiur.Library.U64.wrappingSuccBytes, digit255 e0, digit255 e1, digit255 e2, digit_ne255 hne736]), ← e3]
+    simp [bv]
+  · -- n255_n255_other
+    rw [u64v_eq] at hv11
+    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hv11
+    obtain ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩ := hv11
+    obtain ⟨e0, rfl⟩ := u8_toField ev67
+    obtain ⟨e1, rfl⟩ := u8_toField ev94
+    obtain ⟨rfl, rfl⟩ := u8_toField ev121
+    obtain ⟨rfl, rfl⟩ := u8_toField ev899
+    obtain rfl := binop_add op893
+    obtain ⟨bb, e2, rfl, rfl⟩ := u8_fromField ev878
+    subst he854 he943
+    refine ⟨?_, rfl⟩
+    rw [u64v_succ c (r0 := 0) (r1 := 0) (r2 := (u64b c 2).toNat + 1) (r3 := (u64b c 3).toNat) (r4 := (u64b c 4).toNat) (r5 := (u64b c 5).toNat) (r6 := (u64b c 6).toNat) (r7 := (u64b c 7).toNat) (by simp [Aiur.Library.U64.wrappingSuccBytes, digit255 e0, digit255 e1, digit_ne255 hne840]), ← e2]
+    simp [bv]
+  · -- n255_other
+    rw [u64v_eq] at hv11
+    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hv11
+    obtain ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩ := hv11
+    obtain ⟨e0, rfl⟩ := u8_toField ev67
+    obtain ⟨rfl, rfl⟩ := u8_toField ev94
+    obtain ⟨rfl, rfl⟩ := u8_toField ev998
+    obtain rfl := binop_add op992
+    obtain ⟨bb, e1, rfl, rfl⟩ := u8_fromField ev977
+    subst he959 he1049
+    refine ⟨?_, rfl⟩
+    rw [u64v_succ c (r0 := 0) (r1 := (u64b c 1).toNat + 1) (r2 := (u64b c 2).toNat) (r3 := (u64b c 3).toNat) (r4 := (u64b c 4).toNat) (r5 := (u64b c 5).toNat) (r6 := (u64b c 6).toNat) (r7 := (u64b c 7).toNat) (by simp [Aiur.Library.U64.wrappingSuccBytes, digit255 e0, digit_ne255 hne945]), ← e1]
+    simp [bv]
+  · -- other
+    rw [u64v_eq] at hv11
+    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hv11
+    obtain ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩ := hv11
+    obtain ⟨rfl, rfl⟩ := u8_toField ev67
+    obtain ⟨rfl, rfl⟩ := u8_toField ev1098
+    obtain rfl := binop_add op1092
+    obtain ⟨bb, e0, rfl, rfl⟩ := u8_fromField ev1077
+    subst he1065 he1156
+    refine ⟨?_, rfl⟩
+    rw [u64v_succ c (r0 := (u64b c 0).toNat + 1) (r1 := (u64b c 1).toNat) (r2 := (u64b c 2).toNat) (r3 := (u64b c 3).toNat) (r4 := (u64b c 4).toNat) (r5 := (u64b c 5).toNat) (r6 := (u64b c 6).toNat) (r7 := (u64b c 7).toNat) (by simp [Aiur.Library.U64.wrappingSuccBytes, digit_ne255 hne1051]), ← e0]
+    simp [bv]
 
 /-! ## Expression-level helpers -/
 
@@ -354,7 +354,7 @@ theorem zero_word_expr :
   | (simp [Consts.toExpr]; done)
 
 /-- **`[UInt32::ZERO; 16]`** is sixteen zero words. -/
-theorem zero_block_inv {types : List (String × Aiur.Generic.Ty)} {locals : Environment F Nat}
+theorem zero_block_inv {locals : Environment F Nat}
     {before after : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (h : ObsExpr W [] locals (.repeat (.global "UInt32::ZERO" (some (.array .field 4))) 16)
       before r after calls) :
@@ -794,8 +794,8 @@ theorem compress_chunks_spec : ∀ (bytes acc : List UInt8) {k j : Nat} {c : UIn
       · cases he
       · obtain ⟨rfl, rfl⟩ := List.cons.inj he
         obtain ⟨-, -, hargs⟩ := Value.construct.inj hv
-        obtain ⟨rfl, hargs⟩ := List.cons.inj hargs
-        obtain ⟨rfl, -⟩ := List.cons.inj hargs
+        obtain ⟨rfl, hargs2⟩ := List.cons.inj hargs
+        obtain ⟨rfl, -⟩ := List.cons.inj hargs2
         subst hm104
         obtain rfl := binop_add op237
         obtain rfl := binop_add op252
@@ -1342,8 +1342,8 @@ theorem hb_core (bytes : List UInt8)
     rcases hsr with ⟨-, he⟩ | ⟨hle, tail, he, htail⟩
     · simp at he
     obtain ⟨-, -, hargs⟩ := Value.construct.inj he
-    obtain ⟨rfl, hargs⟩ := List.cons.inj hargs
-    obtain ⟨rfl, -⟩ := List.cons.inj hargs
+    obtain ⟨rfl, hargs2⟩ := List.cons.inj hargs
+    obtain ⟨rfl, -⟩ := List.cons.inj hargs2
     have hempty : bytes.drop 64 = [] := by
       rcases sg184 with ⟨ld158, -, -, -⟩ | ⟨v147, ld158, hne169, he173, -, -⟩
       · rcases stream_inv htail ld158 with ⟨he0, -⟩ | ⟨x, xs, tl, -, hv, -⟩
@@ -1398,8 +1398,8 @@ theorem hb_core (bytes : List UInt8)
     rcases hsr with ⟨-, he⟩ | ⟨hle, tail, he, htail⟩
     · simp at he
     obtain ⟨-, -, hargs⟩ := Value.construct.inj he
-    obtain ⟨rfl, hargs⟩ := List.cons.inj hargs
-    obtain ⟨rfl, -⟩ := List.cons.inj hargs
+    obtain ⟨rfl, hargs2⟩ := List.cons.inj hargs
+    obtain ⟨rfl, -⟩ := List.cons.inj hargs2
     rcases sg184 with ⟨ld158, he166, hm177, -⟩ | ⟨v147, ld158, hne169, he173, hm177, -⟩
     · exact absurd he166 hne1
     subst he173 m177
@@ -1456,15 +1456,16 @@ theorem hb_core (bytes : List UInt8)
     subst m543
     subst hm545 hm572 hm583
     rw [show (0 : F) = ((0 : Nat) : F) by simp] at ev517
-    have IH := ih (bytes.drop 64) (by rw [List.length_drop]; omega)
+    have IH := @ih (bytes.drop 64) (by rw [List.length_drop]; omega)
     unfold HBSpec at IH
     obtain ⟨ext2, hres⟩ := IH (n := 0) (c := c + 1) (cv := Blake3.Pure.iv)
       (layer := layer ++ [Blake3.Pure.compress cv (Blake3.Pure.blockWords (bytes.take 64)) c
         (Nat.toUInt32 64) (Aiur.Library.Blake3.blockFlags false true false)])
       (by omega)
       (by exact htail.mono (extends3 _ _ _ _))
-      (by exact loadValue_extend ((Heap.Extends.snoc _ _).trans (Heap.Extends.snoc _ _))
-        (loadValue_snoc h _))
+      (by
+        exact loadValue_extend ((Heap.Extends.snoc _ _).trans (Heap.Extends.snoc _ _))
+          (loadValue_snoc h _))
       (by exact loadValue_extend (Heap.Extends.snoc _ _) (loadValue_snoc _ _))
       (by
         rw [List.reverse_append, List.reverse_singleton, List.singleton_append]
@@ -1480,8 +1481,8 @@ theorem hb_core (bytes : List UInt8)
     rcases hsr with ⟨-, he⟩ | ⟨hle, tail, he, htail⟩
     · simp at he
     obtain ⟨-, -, hargs⟩ := Value.construct.inj he
-    obtain ⟨rfl, hargs⟩ := List.cons.inj hargs
-    obtain ⟨rfl, -⟩ := List.cons.inj hargs
+    obtain ⟨rfl, hargs2⟩ := List.cons.inj hargs
+    obtain ⟨rfl, -⟩ := List.cons.inj hargs2
     rcases sg184 with ⟨ld158, he166, hm177, -⟩ | ⟨v147, ld158, hne169, he173, hm177, -⟩
     · exact absurd he166 hne1
     subst he173 m177
@@ -1533,7 +1534,7 @@ theorem hb_core (bytes : List UInt8)
     obtain rfl := binop_add op647
     subst hm665
     rw [show (n : F) + 1 = ((n + 1 : Nat) : F) by push_cast; ring] at ev621
-    have IH := ih (bytes.drop 64) (by rw [List.length_drop]; omega)
+    have IH := @ih (bytes.drop 64) (by rw [List.length_drop]; omega)
     unfold HBSpec at IH
     obtain ⟨ext2, hres⟩ := IH (n := n + 1) (c := c)
       (cv := Blake3.Pure.compress cv (Blake3.Pure.blockWords (bytes.take 64)) c (Nat.toUInt32 64)
@@ -1566,8 +1567,6 @@ theorem hash_blocks_spec (bytes : List UInt8) {n : Nat} {c : UInt64} {cv : Blake
     (hl : Stack h layer.reverse lp)
     (ev : ObsFn W "Blake3::hash_blocks" [inp, .field (n : F), ccp, cvp, lp] h r h' cs) :
     Heap.Extends h h' ∧ Stack h' (Aiur.Library.Blake3.hashBlocks bytes n c cv layer).reverse r := by
-  have H := hash_blocks_le bytes.length bytes (Nat.le_refl _)
-  unfold HBSpec at H
-  exact H hn hs hcc hcv hl ev
+  exact hash_blocks_le bytes.length bytes (Nat.le_refl _) hn hs hcc hcv hl ev
 
 end IxVM.Refinement.L1
