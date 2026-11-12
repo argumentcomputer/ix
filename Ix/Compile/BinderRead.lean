@@ -731,13 +731,22 @@ source alone, by the same rules, fails exactly where the reading of its record
 does, and tells, before the compile, which records will be walked (and what the
 walk's environment must hold). -/
 
-/-- The terms read so far, each under a context (its hash; a closed term's is `0`, since its
-reading does not depend on the context) and an expectation, with its loose bound variables
-(one past the largest index): a subterm shared in the source is read once there. -/
+/-- Each term's loose bound variables (one past the largest index), by address: a
+subterm's is the same wherever it stands. -/
+abbrev Ranges := Std.HashMap Address Nat
+
+/-- The terms read so far, each under the entries of its context it can name (the hash of
+the innermost entries, as many as its loose bound variables; a closed term's is that of
+none) and an expectation, with its loose bound variables: a subterm shared in the source
+is read once for the variables it names, as a record's share is. -/
 abbrev Seen := Std.HashMap (UInt64 × Address × Option PropWhen) Nat
 
-/-- The source reading's state. -/
-abbrev SM := StateT Seen (Except Unit)
+/-- The source reading's state, each part updated in place. -/
+abbrev SM := StateT Ranges (StateT Seen (Except Unit))
+
+/-- The hash of the innermost `r` entries of a context (their hashes, innermost first). -/
+def prefixHash (hs : List UInt64) (r : Nat) : UInt64 :=
+  (hs.take r).foldl mixHash 11
 
 /-- Whether the reading of a source term reads its expectation (`readsExpect`'s
 twin). -/
@@ -759,21 +768,24 @@ def srcRun (pi : Bool) : Nat → Ix.Expr → Array Ix.Expr → Array Ix.Expr × 
     | _ => (acc, y)
 
 /-- **The reading of a source term alone** (`read` without the record), under
-`ctx` (its hash `ch`) with the expectation `ex`: fails where a binder's datum is not
+`ctx` (the hashes of its entries' types `hs`, innermost first) with the expectation `ex`: fails where a binder's datum is not
 read, and otherwise gives the term's loose bound variables (one past the largest
 index), computed as it is read. -/
-def readSrc (find : Find) (σ : Ix.Name → Nat) : Nat → List (Option Ix.Expr) → UInt64 →
+def readSrc (find : Find) (σ : Ix.Name → Nat) : Nat → List (Option Ix.Expr) → List UInt64 →
     Expect → Ix.Expr → SM Nat
   | 0, _, _, _, _ => throw ()
-  | fuel + 1, ctx, ch, ex, x => do
+  | fuel + 1, ctx, hs, ex, x => do
     let x := unmeta x
     match x with
     | .bvar i _ => return i + 1
     | .app .. | .lam .. | .forallE .. | .letE .. | .proj .. =>
       let hx := x.getHash
       let e := ex.toOption
-      -- read already: closed (under any context), or under this one
-      match (← modifyGet fun s => ((s[((0 : UInt64), hx, e)]?).orElse fun _ => s[(ch, hx, e)]?, s)) with
+      -- read already under the entries it names (its loose bound variables, once known)
+      let hit ← match (← modifyGetThe Ranges fun m => (m[hx]?, m)) with
+        | some r0 => modifyGetThe Seen fun s => (s[(prefixHash hs r0, hx, e)]?, s)
+        | none => pure none
+      match hit with
       | some r => return r
       | none =>
         let r ← match x with
@@ -783,41 +795,42 @@ def readSrc (find : Find) (σ : Ix.Name → Nat) : Nat → List (Option Ix.Expr)
             -- head gives it
             let h := (headArgs x).1
             let args := (spineArgs x #[]).reverse
-            let mut r ← readSrc find σ fuel ctx ch ex h
+            let mut r ← readSrc find σ fuel ctx hs ex h
             for h' : i in [:args.size] do
               let a := args[i]
               let aex : Expect :=
                 if readsExpectSrc a then argExpect find σ ctx h (args.extract 0 i) i
                 else unknown "an argument that reads no expectation"
-              r := max r (← readSrc find σ fuel ctx ch aex a)
+              r := max r (← readSrc find σ fuel ctx hs aex a)
             pure r
           | .lam .. | .forallE .. => do
             let pi := x matches .forallE ..
             let (tys, leaf) := srcRun pi readFuel x #[]
             let mut inner := ctx
-            let mut ich := ch
+            let mut ihs := hs
             let mut r := 0
             for h' : j in [:tys.size] do
               let ty := tys[j]
-              r := max r ((← readSrc find σ fuel inner ich asType ty) - j)
+              r := max r ((← readSrc find σ fuel inner ihs asType ty) - j)
               inner := some ty :: inner
-              ich := mixHash ich (hash ty.getHash)
-            r := max r ((← readSrc find σ fuel inner ich (if pi then asType else ex) leaf) - tys.size)
+              ihs := hash ty.getHash :: ihs
+            r := max r ((← readSrc find σ fuel inner ihs (if pi then asType else ex) leaf) - tys.size)
             if pi then
               if (sortPw find σ id sortFuel inner leaf).isNone then throw ()
             else if ex.toOption.isNone then throw ()
             pure r
           | .letE _ ty val body _ _ => do
-            let rt ← readSrc find σ fuel ctx ch asType ty
+            let rt ← readSrc find σ fuel ctx hs asType ty
             let vex : Expect := match sortPw find σ id sortFuel ctx ty with
               | some p => .ok p
               | none => unknown "a let's value"
-            let rv ← readSrc find σ fuel ctx ch vex val
-            let rb ← readSrc find σ fuel (some ty :: ctx) (mixHash ch (hash ty.getHash)) ex body
+            let rv ← readSrc find σ fuel ctx hs vex val
+            let rb ← readSrc find σ fuel (some ty :: ctx) (hash ty.getHash :: hs) ex body
             pure (max (max rt rv) (rb - 1))
-          | .proj _ _ xv _ => readSrc find σ fuel ctx ch (unknown "a projection's subject") xv
+          | .proj _ _ xv _ => readSrc find σ fuel ctx hs (unknown "a projection's subject") xv
           | _ => pure 0
-        modify fun s => s.insert (if r == 0 then 0 else ch, hx, e) r
+        modifyThe Ranges (·.insert hx r)
+        modifyThe Seen (·.insert (prefixHash hs r, hx, e) r)
         return r
     | _ => return 0
 
@@ -842,7 +855,7 @@ def sourceReads (find : Find) (ci : Ix.ConstantInfo) : Bool :=
     | .recInfo v => recRoots find v
     | ci => #[⟨own, ci.getCnst.type, asType⟩]
   roots.all fun r =>
-    match ((readSrc find r.σ.pos readFuel [] 0 r.ex r.x).run {}) with
+    match (((readSrc find r.σ.pos readFuel [] [] r.ex r.x).run {}).run {}) with
     | .ok _ => true
     | .error _ => false
 
