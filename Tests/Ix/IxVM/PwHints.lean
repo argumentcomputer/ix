@@ -504,12 +504,16 @@ end Tests.Ix.IxVM.PwHints
 /-! ## The compiler's sections (`Ix.Compile.BinderData`)
 
 `ixvm-binder-data` runs the compile side on the hand-made records above,
-bound to the default table with its support records: each record's section is
-the annotator's data in the section's spelling (binder-free share nodes and
-blocks dropped, "always zero" written `.zero`), canonical, with no undecided
-binder; the environment is re-addressed (each record under the hash of its
-new bytes, the binding rewritten); and a second run on the result changes
-nothing (the data do not depend on addresses, and the run is deterministic).
+bound to the default table with its support records, all without their
+sections, as the compiler emits them before it writes the sections (the
+committed support records carry theirs, so they are stripped first): each
+record's section is the annotator's data in the section's spelling (binder-free
+share nodes and blocks dropped, "always zero" written `.zero`), canonical, with
+no undecided binder; the environment is re-addressed (each record under the hash
+of its new bytes, the binding rewritten), which gives back every committed
+support record and the default table; a second run on the result changes
+nothing (the data do not depend on addresses, and the run is deterministic); and
+stripping the result gives back the environment without sections.
 
 `binder-data-corpus` (manual) checks a compiled `.ixe` (`IX_BD_IXE`): every
 record's section canonical, projections' empty, the undecided binders counted
@@ -539,8 +543,11 @@ private def bytesOf (env : Ixon.Env) : Except String ByteArray := Ixon.serEnv en
 def units : IO Unit := do
   let base := expectedSections.foldl
     (fun (env : Ixon.Env) (c, _) => env.storeConst (Address.blake3 (Ixon.ser c)) c) {}
-  let env ← IO.ofExcept (_root_.IxVM.ClaimHarness.withRoleTable base
+  let supported ← IO.ofExcept (_root_.IxVM.ClaimHarness.withRoleTable base
     (← IO.ofExcept _root_.Ix.Kernel.Reader.defaultTableBytes))
+  -- the compiler's environment: every record without its section (the committed
+  -- support records carry theirs)
+  let env ← IO.ofExcept (_root_.Ix.Compile.BinderData.strip supported)
   let (env', report) ← IO.ofExcept (_root_.Ix.Compile.BinderData.apply env)
   IO.println s!"[ixvm-binder-data] {report.summary}"
   ensure report.undecided.isEmpty "an undecided binder"
@@ -561,6 +568,17 @@ def units : IO Unit := do
   let some t := _root_.Ix.Kernel.RoleTable.ofBytes b.bytes | throw (IO.userError "binding decode")
   for (_, a) in t.bound do
     ensure (env'.consts.contains a) s!"the binding names {a}, not a record"
+  -- the support records come back as committed, and so does the default table
+  let handMade : Std.HashSet Address := expectedSections.foldl
+    (fun s (c, _) => s.insert (Address.blake3 (Ixon.ser c))) {}
+  let mut missing := 0
+  for (a, _) in supported.consts do
+    unless handMade.contains a || env'.consts.contains a do
+      missing := missing + 1
+      if missing ≤ 10 then IO.eprintln s!"[ixvm-binder-data] support record {a} not given back"
+  ensure (missing == 0) s!"{missing} committed support records are not given back"
+  ensure (some b.address == supported.roleBinding.map (·.address))
+    "the binding is not the default table"
   -- a second run changes nothing; a run is deterministic
   let (env'', _) ← IO.ofExcept (_root_.Ix.Compile.BinderData.apply env')
   ensure ((← IO.ofExcept (bytesOf env'')) == (← IO.ofExcept (bytesOf env')))
