@@ -1,4 +1,5 @@
 import IxCCTests.Src.Steps
+import IxCCTests.Support.Bound
 
 /-! F6w, the fixed-width word rule of SrcEval (stage W1), on Lean 4.34.1's own word operations
 (`fixtures/ixon-v4/src-words`, every operation of every width, compiled with
@@ -18,6 +19,13 @@ import IxCCTests.Src.Steps
   reaches a `word` entry (the sidecar's `theorems` list names each stored equation and
   `checkWord` accepts it; `proposals` checks that nothing else makes one); with words off, none.
   Erasure declines a word entry (`erase-word`) until the lowering exists.
+* **A tampered word theorem is refused** (`tampered`), and where: the closure re-encoded with
+  `UInt64.add`'s proposal naming a new record whose proof is ill-typed, whose proof is a
+  non-standard axiom, or whose statement has its two sides swapped, is refused at ingress (the
+  certified kernel's acceptance of the whole closure, stage `kernel`); a theorem with the right
+  statement whose proof reaches a non-standard axiom, put past the kernel at the Src level, is
+  refused by `checkWord` (its `checkAxiomClosure` walks the proof); another operation's theorem is
+  refused by `checkWord`'s statement comparison (`proposals`).
 * **Runs**: every root on every operation and boundary pair returns the same value with words on
   and off, that value is `WordOp.eval`'s (which `Words` compares with Lean's C implementations),
   and the run with words on makes fewer SrcEval steps than the reference bodies. -/
@@ -181,6 +189,125 @@ def proposals (a : Assert) (p : Program) (props : Array Proposal) : IO Unit := d
 where
   add0 : Ixon.Address := Ixon.Address.replicate 7
 
+/-! ### A tampered word theorem -/
+
+/-- A `share` node resolved through the constant's sharing table (one level). -/
+def unshare (c : Ixon.V3.Constant) : Ixon.V3.Expr → Ixon.V3.Expr
+  | .share i => c.sharing[i.toNat]?.getD (.share i)
+  | e => e
+
+/-- The statement with its equation's two sides swapped: under the binders, `Eq T l r` becomes
+`Eq T r l`. -/
+partial def swapEq (c : Ixon.V3.Constant) (e : Ixon.V3.Expr) : Option Ixon.V3.Expr :=
+  match unshare c e with
+  | .all bc vc d b => (swapEq c b).map (.all bc vc d ·)
+  | .app f r =>
+    match unshare c f with
+    | .app g l => some (.app (.app g r) l)
+    | _ => none
+  | _ => none
+
+/-- A replacement of a theorem record: the records to store first, and the new theorem. -/
+abbrev Tamper := Ixon.V3.Constant → Ixon.V3.Env → Option (Ixon.V3.Env × Ixon.V3.Constant)
+
+/-- The record itself (the control: re-stored, the same address). -/
+def same : Tamper := fun c env => some (env, c)
+
+/-- The proof replaced by the statement (a proposition, not a proof of itself). -/
+def illTypedProof : Tamper := fun c env =>
+  match c.info with
+  | .defn d => some (env, { c with info := .defn { d with value := d.typ } })
+  | _ => none
+
+/-- The proof replaced by a non-standard axiom of the same statement. -/
+def axiomProof : Tamper := fun c env =>
+  match c.info with
+  | .defn d =>
+    let (env, ax) := IxCCTests.IxonV3.Builder.store env { c with info := .axio ⟨false, d.lvls, d.typ⟩ }
+    some (env, { c with info := .defn { d with value := .ref c.refs.size.toUInt64 #[] }
+                        refs := c.refs.push ax })
+  | _ => none
+
+/-- The statement's two sides swapped, the proof kept. -/
+def swappedStatement : Tamper := fun c env =>
+  match c.info with
+  | .defn d => (swapEq c d.typ).map fun t => (env, { c with info := .defn { d with typ := t } })
+  | _ => none
+
+/-- The words closure with `subject`'s word theorem replaced by `t`'s record (stored under its
+own address, the original kept), re-encoded by the suites' envelope writer and decoded again, and
+the hints with `subject`'s word proposal naming the new record. -/
+def tamper (env : Ixon.V3.Env) (hints : Hints) (subject : String) (t : Tamper) :
+    IO (Ixon.V3.Env × Hints × Bool) := do
+  let some i := hints.proposals.findIdx? (fun p => p.kind == .word && p.name? == some subject)
+    | throw (IO.userError s!"no word proposal for {subject}")
+  let prop := hints.proposals[i]!
+  let some ta := prop.theorem? | throw (IO.userError s!"{subject}: no theorem")
+  let some raw := env.consts[ta]? | throw (IO.userError s!"{subject}: theorem not stored")
+  let c ← IO.ofExcept ((Ixon.V3.decodeConstant raw).map (·.value))
+  let some (env, c') := t c env | throw (IO.userError s!"{subject}: the tamper does not apply")
+  let (env, a') := IxCCTests.IxonV3.Builder.store env c'
+  let some bytes := IxCCTests.Support.Bound.bytes env
+    | throw (IO.userError "the words closure is not role-bound")
+  let env ← IO.ofExcept (Ixon.V3.decodeAnonymousEnv bytes)
+  return (env, { hints with proposals := hints.proposals.set! i { prop with theorem? := some a' } },
+    a' == ta)
+
+/-- **A tampered word theorem is refused**, at the stage each assertion names. The control
+(the record re-stored) loads with 68 word entries; the three tampered closures are refused by the
+kernel's acceptance at ingress; at the Src level, past the kernel, a theorem with `UInt64.add`'s
+statement whose proof is a non-standard axiom gets no word entry, `checkWord`'s
+`checkAxiomClosure` naming the axiom. -/
+def tampered (a : Assert) : IO Unit := do
+  let bytes ← IO.FS.readBinFile (dir / "words.ixe")
+  let json ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile (dir / "words.equations.json")))
+  let env ← IO.ofExcept (Ixon.V3.decodeAnonymousEnv bytes)
+  let hints ← IO.ofExcept (Hints.ofK1Json json)
+  let cfg : LoadConfig := { table := { words := true } }
+  let load := fun (env : Ixon.V3.Env) (hints : Hints) => loadEnv cfg env hints
+  -- the control: the same record, the same address, 68 word entries
+  let (env0, hints0, sameAddr) ← tamper env hints "UInt64.add" same
+  expect a sameAddr "tamper control: the re-stored record keeps its address"
+  let control := load env0 hints0
+  match control with
+  | .ok l => expectEq a (wordEntries l.program l.program.table).length 68
+      "tamper control: the re-encoded closure has 68 word entries"
+  | .error d => expect a false s!"tamper control: refused ({d.code}: {d.message})"
+  for (label, t) in [("an ill-typed proof", illTypedProof), ("a non-standard axiom as proof", axiomProof),
+      ("the statement's sides swapped", swappedStatement)] do
+    let (env', hints', _) ← tamper env hints "UInt64.add" t
+    match load env' hints' with
+    | .ok _ => expect a false s!"tamper ({label}): accepted"
+    | .error d => expect a (d.code == "kernel") s!"tamper ({label}): refused at {d.code}, not at the kernel: {d.message}"
+  -- past the kernel, at the Src level: `UInt64.add`'s statement, proved by a non-standard axiom
+  match control with
+  | .error _ => pure ()
+  | .ok l =>
+    let p := l.program
+    let some add := hints.proposals.find? (fun q => q.kind == .word && q.name? == some "UInt64.add")
+      | expect a false "the sidecar names UInt64.add"
+    let index := Table.addrIndex p
+    let some thm := add.theorem?.bind fun x => index[x]?
+      | expect a false "UInt64.add's theorem read"
+    match p.decl? thm with
+    | some (.defn .thm .safe 0 ty _) =>
+      let push := fun (p : Program) (d : Decl) =>
+        let c := p.size
+        let ad := IxCCTests.Src.Builder.fakeAddr (c + 1000000)
+        (p.push { ref := .member ad 0, addr := ad, decl := d }, c)
+      let (p1, ax) := push p (.axio false 0 ty)
+      let (p2, bad) := push p1 (.defn .thm .safe 0 ty (.const ax []))
+      let props := hints.proposals.map fun q =>
+        if q.kind == .word && q.name? == some "UInt64.add" then { q with theorem? := some (p2.addr bad) }
+        else q
+      let (t, d, _) := Table.build cfg.table p2 props
+      let addId := (Table.addrIndex p2)[add.subject]?
+      expect a (addId.isSome && (wordEntries p2 t).all (some ·.1 != addId))
+        "checkWord refuses a proof by a non-standard axiom"
+      expect a (d.any (·.message.startsWith "theorem depends on a non-standard axiom"))
+        s!"with checkAxiomClosure's diagnostic: {(d.map (·.message)).toList.take 3}"
+    | _ => expect a false "UInt64.add's theorem is a safe level-monomorphic theorem"
+
 def run (a : Assert) (verbose : Bool := false) : IO (List String) := do
   let mut lines : List String := []
   let t0 ← IO.monoMsNow
@@ -203,6 +330,8 @@ def run (a : Assert) (verbose : Bool := false) : IO (List String) := do
     "erasure accepts the program without word entries"
   proposals a off.program off.hints.proposals
   note "the sidecar's word proposals"
+  tampered a
+  note "tampered word theorems"
   for (root, w) in roots do
     let rootOff ← rootNamed off root
     let rootOn ← rootNamed on root
