@@ -139,6 +139,22 @@ theorem head_tele (H : FundHyps M p κ lpsOf S Ok) {h : IxCC.Src.Head} {ls : Lev
         cases hf'
         exact hle
       | _ => simp [Program.headArity, hres]
+  | @recr r _ _ ci hSr _ hfind =>
+    -- the arity fact of the checked shape (`RecStored`)
+    cases hd : p.decl? r with
+    | none => simp [Program.headArity, hd]
+    | some d =>
+      cases d with
+      | recr sf kk lvls np nmot nmin ni ind rules ty =>
+        obtain ⟨⟨sf', kk', lvls', np', nmot', nmin', ni', ind', rules', ty', cvr, krules, hd', hf',
+          _, har, _⟩⟩ := H.faith.recs.stored r hSr sf kk lvls np nmot nmin ni ind rules ty hd
+        rw [hd] at hd'
+        cases hd'
+        rw [hfind] at hf'
+        cases hf'
+        show p.headArity (.recr r) ≤ kPis cvr.type
+        simpa [Program.headArity, hd, IxCC.Src.Decl.recArity] using har
+      | _ => simp [Program.headArity, hd, IxCC.Src.Decl.recArity]
   | prim _ _ har => exact har
 
 /-- `As` related to literal values are the literals' sets. -/
@@ -297,6 +313,40 @@ theorem fire_step (H : FundHyps M p κ lpsOf S Ok) {k : Nat}
               exact (ih k' (Nat.lt_succ_self k')).applyAll _ _ _ _ _ happ hminR hYs hchain
             | _ => simp [hd] at hrun
         | _ => rw [hres] at hrun; exact absurd hrun (by simp)
+  | @recr r _ _ ci hSr hlv hfind =>
+    -- F2–F4: the recursor's class is admitted (`RecFacts`); at `empty`, F4 traps
+    cases k with
+    | zero => rw [IxCC.Src.fire_recr, later_zero] at hrun; exact absurd hrun (by simp)
+    | succ k' =>
+      rw [IxCC.Src.fire_recr, later_succ] at hrun
+      cases hd : p.decl? r with
+      | none => simp [hd] at hrun
+      | some d =>
+        cases d with
+        | recr sf kk' lvls np nmot nmin ni ind rules ty =>
+          obtain ⟨cl, hcl, hadm⟩ :=
+            H.faith.recs.cls r hSr sf kk' lvls np nmot nmin ni ind rules ty hd
+          simp only [admittedClasses, List.mem_singleton] at hadm
+          subst hadm
+          -- `empty`: the table's kind is `empty`, at every level
+          have hkind : p.table.recKindOf r = some .empty := by
+            unfold recClassB at hcl
+            rw [hd] at hcl
+            cases hk : p.table.recKindOf r with
+            | none => simp [hk] at hcl
+            | some kd =>
+              cases kd with
+              | empty => rfl
+              | ordinary =>
+                rw [hk] at hcl
+                simp only at hcl
+                split at hcl <;> simp_all
+              | subsingleton w fs =>
+                rw [hk] at hcl
+                simp only at hcl
+                split at hcl <;> simp_all
+          simp [hd, hkind, IxCC.Src.RecKind.atLevels, IxCC.Src.recChosen] at hrun
+        | _ => simp [hd] at hrun
   | @prim op _ _ ci hfind hlp _ =>
     -- F6
     rw [IxCC.Src.fire_prim] at hrun
