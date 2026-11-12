@@ -52,14 +52,20 @@ theorem DCtx.findProj?_eq {x : DCtx} {env : KEnv} (hx : x.Reads env) (T : KKey) 
     x.findProj? T i = env.findProj? T i := by
   unfold DCtx.findProj? Env.findProj?
   rw [hx (projTableName T)]
+  cases env.find? (projTableName T) with
+  | none => rfl
+  | some ci => cases ci <;> rfl
 
 theorem DCtx.neverProp_sound {x : DCtx} {env : KEnv} (hx : x.Reads env) {D : KKey}
     (h : x.neverProp D = true) : NeverProp env D := by
-  apply neverProp_of_check
   unfold DCtx.neverProp at h
-  unfold neverPropB
-  rw [← hx D]
-  exact h
+  split at h
+  · rename_i cvD caps hf
+    split at h
+    · rename_i s hs
+      exact ⟨cvD, caps, s, (hx D).symm.trans hf, hs, of_decide_eq_true h⟩
+    · cases h
+  · cases h
 
 /-! ## Part A. Profiles -/
 
