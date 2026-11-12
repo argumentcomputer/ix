@@ -416,6 +416,8 @@ structure Cx where
   σ : Numbering
   sharing : Array Ixon.Expr
   bounds : Array Nat
+  /-- whether each sharing entry has a binder (`IxVM.PwHints.binderful`) -/
+  full : Array Bool := #[]
 
 /-- A source level parameter's index in the record's numbering (the inverse of
 `Numbering.pos`: a large eliminator's source numbers its motive universe last,
@@ -597,6 +599,10 @@ def read : Nat → Cx → List (Option Ix.Expr) → Expect → Ixon.Expr → Ix.
     | .share n, _ => do
       let ord ← reserve
       let n := n.toNat
+      -- an entry without a binder has no data (its share node leaves the section)
+      if !(cx.full[n]?.getD true) then
+        setNode ord (.share 0)
+        return
       let key := (n, (ctx.take (cx.bounds[n]?.getD 0)).map (·.map Ix.Expr.getHash), ex.toOption,
         x.getHash)
       let variant ← match (← getThe RState).memo[key]? with
@@ -699,11 +705,12 @@ def sectionWhy (find : Find) (names : Array Ix.Name) (c : Ixon.Constant) :
   let rs := IxVM.PwHints.roots c
   unless roots.size == rs.size do throw "roots and sources differ"
   let bounds := IxVM.PwHints.bounds c.sharing
+  let full := IxVM.PwHints.binderful c.sharing
   let act : RM (Array Block) := do
     let mut out := #[]
     for h : i in [:rs.size] do
       let some r := roots[i]? | throw "a root without its source"
-      let cx : Cx := { find, σ := r.σ, sharing := c.sharing, bounds }
+      let cx : Cx := { find, σ := r.σ, sharing := c.sharing, bounds, full }
       let ((), nodes) ← (read readFuel cx [] r.ex rs[i] r.x).run #[]
       out := out.push ⟨0, i, 0, nodes⟩
     return out
