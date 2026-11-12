@@ -267,9 +267,9 @@ theorem withContract_mentions {c : Ix.SemanticContract.Contract} {e : Ix.Expr} {
     (h : withContract c e x = .ok y) : ∀ T : Ix.Kernel.Key .source, y.mentionsConst T = x.mentionsConst T := by
   intro T
   unfold withContract at h
-  split at h <;> first
-    | (simp only [pure, Except.pure, Except.ok.injEq] at h; subst h; rfl)
-    | cases h
+  split at h
+  · cases h; rfl
+  · split at h <;> cases h
 
 theorem ingressMData_mentions {d : Array (Ix.Name × Ix.DataValue)} {e : Ix.Expr}
     {x : Except ExprError (Ix.Kernel.Expr .source)} {y : Ix.Kernel.Expr .source}

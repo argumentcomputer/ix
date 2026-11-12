@@ -107,12 +107,10 @@ end Occ
 theorem withContract_occurs {md : Mode} {c : Ix.SemanticContract.Contract} {e : Ix.Expr}
     {target result : CExpr md} (lowered : Ix.CompileCert.ExpressionState.withContract c e target = some result)
     (k : CName md) : Frontend.occursConst k result = Frontend.occursConst k target := by
-  obtain ⟨kind, binder, valueContract, letKind⟩ := c
-  cases kind <;> cases e <;> cases target <;>
-    simp only [Ix.CompileCert.ExpressionState.withContract, Option.some.injEq, reduceCtorEq] at lowered
-  all_goals
-    subst lowered
-    rfl
+  unfold Ix.CompileCert.ExpressionState.withContract at lowered
+  split at lowered
+  · cases lowered; rfl
+  · cases lowered
 
 /-- **A related reader term mentions exactly the keys of the names its Lean term mentions**, for
 a functional relation of names to keys. -/
