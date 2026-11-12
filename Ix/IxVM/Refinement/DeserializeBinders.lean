@@ -212,22 +212,26 @@ theorem getBinderNode_binder {σ σ' : Ixon.GetState} {b : UInt8}
       have := nodeByte_tag0 b.toNat hb ht
       rwa [UInt8.ofNat_toNat] at this
     simp only [Ixon.getBinderNode, bind, EStateM.bind, hu8, hbeq, hm, hand, Bool.false_eq_true,
-      ↓reduceIte] <;> rfl
+      ↓reduceIte]
+    rfl
   · have hand : b &&& 7 = 1 := by
       have := nodeByte_tag1 b.toNat hb ht
       rwa [UInt8.ofNat_toNat] at this
     simp only [Ixon.getBinderNode, bind, EStateM.bind, hu8, hbeq, hm, hand, Bool.false_eq_true,
-      ↓reduceIte] <;> rfl
+      ↓reduceIte]
+    rfl
   · have hand : b &&& 7 = 4 := by
       have := nodeByte_tag4 b.toNat hb ht
       rwa [UInt8.ofNat_toNat] at this
     simp only [Ixon.getBinderNode, bind, EStateM.bind, hu8, hbeq, hm, hand, Bool.false_eq_true,
-      ↓reduceIte] <;> rfl
+      ↓reduceIte]
+    rfl
   · have hand : b &&& 7 = 2 := by
       have := nodeByte_tag2 b.toNat hb ht
       rwa [UInt8.ofNat_toNat] at this
     simp only [Ixon.getBinderNode, bind, EStateM.bind, hu8, hbeq, hm, hand, Bool.false_eq_true,
-      ↓reduceIte, hok2, hok3] <;> rfl
+      ↓reduceIte, hok2, hok3]
+    rfl
 
 /-- **IxC's node reader on the share byte 3**: the share node of the variant
 that follows. -/
@@ -236,7 +240,7 @@ theorem getBinderNode_share {σ σ' σ2 : Ixon.GetState} {t : Ixon.TagN}
     Ixon.getBinderNode σ = .ok (.share t.value) σ2 := by
   have h3 : ((3 : UInt8) == 3) = true := by decide
   simp only [Ixon.getBinderNode, bind, EStateM.bind, hu8, h3, eq_self_iff_true, ↓reduceIte, hok2]
-    <;> rfl
+  rfl
 
 /-! ## Nodes -/
 
