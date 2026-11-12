@@ -1,6 +1,7 @@
 import IxCC.Cfg.Rc.Proof.Language
 import IxCC.Recheck.Rc.Replay
 import IxCC.Recheck.Proof.Middle
+import IxCC.Own.Plain.Proof.Certificate
 
 /-! Compose the actual certificate-consuming front end with the abstract RC
 Cfg machine. This deliberately retains the existing accepted stage-S source
@@ -78,5 +79,14 @@ theorem source_refines_cfg {cfg : Config} {P : Src.Program} {c : Cert} {f : Fron
       (Cfg.Rc.checked_lower_refines hfir hscope))
 
 
+/-- **The checker runs on a budgeted map.** The verifier runs the ownership checker three times on
+the admitted map (`Certificate.admit`, the program gate `checkScopedProgram`, and `Public.lower`);
+every run judges a map whose captured work (`Own.Plain.Certificate.capturedWork`: one per variable
+a jump's target captures, one per captured entry at a declaration) is at most
+`Anf.maxCapturedWork`, because `admit` refused any other before the checker first ran. -/
+theorem runFront_budget {cfg : Config} {P : Src.Program} {c : Cert} {f : Front}
+    (accepted : runFront cfg P c = .ok f) :
+    Own.Plain.Certificate.capturedWork f.own.bodies ≤ Anf.maxCapturedWork :=
+  Own.Plain.Certificate.admit_budget (runFront_spec accepted).2.2.2.2.1
 
 end IxCC.Recheck.RcReplay

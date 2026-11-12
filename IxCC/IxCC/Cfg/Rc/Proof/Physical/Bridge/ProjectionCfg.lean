@@ -1,4 +1,4 @@
-import IxCC.Cfg.Rc.Proof.Physical.Bridge.ProjectionState
+import IxCC.Cfg.Rc.Proof.Physical.Bridge.ProjectionIncrement
 import IxCC.Cfg.Rc.Proof.Ordinary
 
 set_option autoImplicit false

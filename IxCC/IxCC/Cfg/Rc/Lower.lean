@@ -1,6 +1,6 @@
 import IxCC.Cfg.Rc.Prefix
 import IxCC.Cfg.Lower
-import IxCC.Own.Plain.Check
+import IxCC.Own.Plain.Owned
 
 set_option autoImplicit false
 namespace IxCC.Cfg.Rc

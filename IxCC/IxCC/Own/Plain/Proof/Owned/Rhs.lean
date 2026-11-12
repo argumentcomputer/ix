@@ -1,4 +1,5 @@
 import IxCC.Own.Plain.Proof.Owned.Binds
+import IxCC.Own.Plain.Proof.Frames
 import IxCC.Fir.Proof.Unfold
 
 /-! # One binding that calls nothing, against the source's step
@@ -238,6 +239,55 @@ theorem rhs_step {F : Fir.Program} (pins : BoolPinsOk F)
       refine ⟨u, hu, ?_⟩
       exact hargs u (evalArgs_mem hvs hy hu))
     exact ⟨v, H, owned', hev, pre'.bindImm hx hden himm (hs'.balance st.counts), same⟩
+
+/-- An argument binding (a move) changes no heap and keeps the token count: the bound value's
+token is the argument's (or vacuous). -/
+theorem arg_step_refs (st : OwnedState functions H external live Γ ρf ρo owned lex Δ Jf Jo)
+    {x : Var} {a : Arg} (hx : x ∉ live) {Γ' : Ctx} (hc : bindCtx Γ x (.arg a) = .ok Γ')
+    {w : Fir.Val} (hw : a.eval ρf = some w) :
+    ∃ v owned', Own.evalArg ρo a = some v ∧
+      OwnedState functions H external (live ++ [x]) Γ' (ρf.insert x w) (ρo.insert x v) owned'
+        lex Δ Jf Jo ∧ SameRefs owned' owned := by
+  cases a with
+  | var y =>
+    obtain ⟨Γ₁, ht, hΓ⟩ := except_bind_ok hc
+    have hΓ := except_pure_ok hΓ
+    obtain ⟨v, w', owned₁, hv, hw', hd, inv₁, hs, hwk⟩ := take_sem st.takeInv ht
+    have : w' = w := Option.some.inj (hw'.symm.trans hw)
+    subst this
+    cases hi : Γ.isImm y with
+    | true =>
+      refine ⟨v, owned, hv, ?_, SameRefs.refl _⟩
+      rw [hi] at hΓ
+      simp only [↓reduceIte] at hΓ
+      subst hΓ
+      have hΓ₁ : Γ₁ = Γ := by
+        rcases Ctx.take_ok ht with ⟨_, h⟩ | ⟨hi', _⟩
+        · exact h
+        · rw [hi] at hi'; cases hi'
+      subst hΓ₁
+      obtain ⟨u, hu, himm⟩ := st.immOk y hi
+      have : u = v := Option.some.inj (hu.symm.trans hv)
+      subst this
+      exact st.pre.bindImm hx hd himm st.counts
+    | false =>
+      refine ⟨v, v :: owned₁, hv, ?_, hs.symm⟩
+      rw [hi] at hΓ
+      simp only [Bool.false_eq_true, ↓reduceIte] at hΓ
+      subst hΓ
+      exact (st.pre.weaker hwk inv₁.roots).bindOwned hx hd (hs.balance st.counts)
+  | lit l =>
+    cases hc
+    have : w = .lit l := (Option.some.inj hw).symm
+    subst this
+    exact ⟨.lit l, owned, rfl, st.pre.bindImm hx (Proof.den_lit H l) (by intro l h; cases h) st.counts,
+      SameRefs.refl _⟩
+  | erased =>
+    cases hc
+    have : w = .erased := (Option.some.inj hw).symm
+    subst this
+    exact ⟨.erased, owned, rfl,
+      st.pre.bindImm hx (Proof.den_erased H) (by intro l h; cases h) st.counts, SameRefs.refl _⟩
 
 end
 

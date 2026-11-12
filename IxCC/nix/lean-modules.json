@@ -557,7 +557,8 @@
    "imports":
    ["IxCCTests.Recheck.Rc.CodecIO",
     "IxCCTests.Recheck.Rc.ReplayIO",
-    "IxCCTests.Recheck.Rc.FreshIO"]},
+    "IxCCTests.Recheck.Rc.FreshIO",
+    "IxCCTests.Recheck.Rc.OwnedIO"]},
   "IxCCTests.Recheck.Rc.ReplayIO":
   {"path": "IxCCTests/Recheck/Rc/ReplayIO.lean",
    "imports":
@@ -565,6 +566,13 @@
     "IxCCTests.Recheck.Rc.Fixtures",
     "IxCCTests.Rt.Native",
     "IxCCTests.Rt.Rc.ReuseSupport"]},
+  "IxCCTests.Recheck.Rc.OwnedIO":
+  {"path": "IxCCTests/Recheck/Rc/OwnedIO.lean",
+   "imports":
+   ["IxCC.Recheck.Rc.Produce",
+    "IxCCTests.Recheck.Rc.ReplayIO",
+    "IxCCTests.Own.Owned.Live",
+    "IxCCTests.Own.Owned.Mutate"]},
   "IxCCTests.Recheck.Rc.Main":
   {"path": "IxCCTests/Recheck/Rc/Main.lean",
    "imports": ["IxCCTests.Recheck.Rc.Run"]},
@@ -2241,18 +2249,6 @@
   "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Prefix":
   {"path": "IxCCTests/Fences/RcPromotion/IxCC_Cfg_Rc_Proof_Prefix.lean",
    "imports": ["IxCC.Cfg.Rc.Proof.Prefix"]},
-  "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_UnitActions":
-  {"path":
-   "IxCCTests/Fences/RcPromotion/IxCC_Cfg_Rc_Proof_Physical_UnitActions.lean",
-   "imports": ["IxCC.Cfg.Rc.Proof.Physical.UnitActions"]},
-  "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_TransferPrefix":
-  {"path":
-   "IxCCTests/Fences/RcPromotion/IxCC_Cfg_Rc_Proof_Physical_TransferPrefix.lean",
-   "imports": ["IxCC.Cfg.Rc.Proof.Physical.TransferPrefix"]},
-  "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_TokenEnvironments":
-  {"path":
-   "IxCCTests/Fences/RcPromotion/IxCC_Cfg_Rc_Proof_Physical_TokenEnvironments.lean",
-   "imports": ["IxCC.Cfg.Rc.Proof.Physical.TokenEnvironments"]},
   "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_TailResult":
   {"path":
    "IxCCTests/Fences/RcPromotion/IxCC_Cfg_Rc_Proof_Physical_TailResult.lean",
@@ -2261,18 +2257,10 @@
   {"path":
    "IxCCTests/Fences/RcPromotion/IxCC_Cfg_Rc_Proof_Physical_TailCall.lean",
    "imports": ["IxCC.Cfg.Rc.Proof.Physical.TailCall"]},
-  "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_TailActivation":
-  {"path":
-   "IxCCTests/Fences/RcPromotion/IxCC_Cfg_Rc_Proof_Physical_TailActivation.lean",
-   "imports": ["IxCC.Cfg.Rc.Proof.Physical.TailActivation"]},
   "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_SwitchCursor":
   {"path":
    "IxCCTests/Fences/RcPromotion/IxCC_Cfg_Rc_Proof_Physical_SwitchCursor.lean",
    "imports": ["IxCC.Cfg.Rc.Proof.Physical.SwitchCursor"]},
-  "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_StateEnvironments":
-  {"path":
-   "IxCCTests/Fences/RcPromotion/IxCC_Cfg_Rc_Proof_Physical_StateEnvironments.lean",
-   "imports": ["IxCC.Cfg.Rc.Proof.Physical.StateEnvironments"]},
   "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_SlotPromotion":
   {"path":
    "IxCCTests/Fences/RcPromotion/IxCC_Cfg_Rc_Proof_Physical_SlotPromotion.lean",
@@ -2293,10 +2281,6 @@
   {"path":
    "IxCCTests/Fences/RcPromotion/IxCC_Cfg_Rc_Proof_Physical_Return.lean",
    "imports": ["IxCC.Cfg.Rc.Proof.Physical.Return"]},
-  "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_ResumeActivation":
-  {"path":
-   "IxCCTests/Fences/RcPromotion/IxCC_Cfg_Rc_Proof_Physical_ResumeActivation.lean",
-   "imports": ["IxCC.Cfg.Rc.Proof.Physical.ResumeActivation"]},
   "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_ResultEval":
   {"path":
    "IxCCTests/Fences/RcPromotion/IxCC_Cfg_Rc_Proof_Physical_ResultEval.lean",
@@ -2405,10 +2389,6 @@
   {"path":
    "IxCCTests/Fences/RcPromotion/IxCC_Cfg_Rc_Proof_Physical_NativeCalls.lean",
    "imports": ["IxCC.Cfg.Rc.Proof.Physical.NativeCalls"]},
-  "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_JumpTransfer":
-  {"path":
-   "IxCCTests/Fences/RcPromotion/IxCC_Cfg_Rc_Proof_Physical_JumpTransfer.lean",
-   "imports": ["IxCC.Cfg.Rc.Proof.Physical.JumpTransfer"]},
   "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_JumpResult":
   {"path":
    "IxCCTests/Fences/RcPromotion/IxCC_Cfg_Rc_Proof_Physical_JumpResult.lean",
@@ -2417,10 +2397,6 @@
   {"path":
    "IxCCTests/Fences/RcPromotion/IxCC_Cfg_Rc_Proof_Physical_JumpEntry.lean",
    "imports": ["IxCC.Cfg.Rc.Proof.Physical.JumpEntry"]},
-  "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_JumpActivation":
-  {"path":
-   "IxCCTests/Fences/RcPromotion/IxCC_Cfg_Rc_Proof_Physical_JumpActivation.lean",
-   "imports": ["IxCC.Cfg.Rc.Proof.Physical.JumpActivation"]},
   "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_Jump":
   {"path": "IxCCTests/Fences/RcPromotion/IxCC_Cfg_Rc_Proof_Physical_Jump.lean",
    "imports": ["IxCC.Cfg.Rc.Proof.Physical.Jump"]},
@@ -2444,18 +2420,6 @@
   {"path":
    "IxCCTests/Fences/RcPromotion/IxCC_Cfg_Rc_Proof_Physical_FusedLexical.lean",
    "imports": ["IxCC.Cfg.Rc.Proof.Physical.FusedLexical"]},
-  "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_FusedAllocationSource":
-  {"path":
-   "IxCCTests/Fences/RcPromotion/IxCC_Cfg_Rc_Proof_Physical_FusedAllocationSource.lean",
-   "imports": ["IxCC.Cfg.Rc.Proof.Physical.FusedAllocationSource"]},
-  "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_FusedAllocationInstruction":
-  {"path":
-   "IxCCTests/Fences/RcPromotion/IxCC_Cfg_Rc_Proof_Physical_FusedAllocationInstruction.lean",
-   "imports": ["IxCC.Cfg.Rc.Proof.Physical.FusedAllocationInstruction"]},
-  "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_FusedAllocationConsumed":
-  {"path":
-   "IxCCTests/Fences/RcPromotion/IxCC_Cfg_Rc_Proof_Physical_FusedAllocationConsumed.lean",
-   "imports": ["IxCC.Cfg.Rc.Proof.Physical.FusedAllocationConsumed"]},
   "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_FrameTransport":
   {"path":
    "IxCCTests/Fences/RcPromotion/IxCC_Cfg_Rc_Proof_Physical_FrameTransport.lean",
@@ -2475,22 +2439,10 @@
   "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_Edge":
   {"path": "IxCCTests/Fences/RcPromotion/IxCC_Cfg_Rc_Proof_Physical_Edge.lean",
    "imports": ["IxCC.Cfg.Rc.Proof.Physical.Edge"]},
-  "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_DropTokens":
-  {"path":
-   "IxCCTests/Fences/RcPromotion/IxCC_Cfg_Rc_Proof_Physical_DropTokens.lean",
-   "imports": ["IxCC.Cfg.Rc.Proof.Physical.DropTokens"]},
   "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_DropStep":
   {"path":
    "IxCCTests/Fences/RcPromotion/IxCC_Cfg_Rc_Proof_Physical_DropStep.lean",
    "imports": ["IxCC.Cfg.Rc.Proof.Physical.DropStep"]},
-  "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_DropPreservation":
-  {"path":
-   "IxCCTests/Fences/RcPromotion/IxCC_Cfg_Rc_Proof_Physical_DropPreservation.lean",
-   "imports": ["IxCC.Cfg.Rc.Proof.Physical.DropPreservation"]},
-  "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_DropPrefix":
-  {"path":
-   "IxCCTests/Fences/RcPromotion/IxCC_Cfg_Rc_Proof_Physical_DropPrefix.lean",
-   "imports": ["IxCC.Cfg.Rc.Proof.Physical.DropPrefix"]},
   "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_DecWrapper":
   {"path":
    "IxCCTests/Fences/RcPromotion/IxCC_Cfg_Rc_Proof_Physical_DecWrapper.lean",
@@ -2503,14 +2455,6 @@
   {"path":
    "IxCCTests/Fences/RcPromotion/IxCC_Cfg_Rc_Proof_Physical_CopyStep.lean",
    "imports": ["IxCC.Cfg.Rc.Proof.Physical.CopyStep"]},
-  "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_CopyState":
-  {"path":
-   "IxCCTests/Fences/RcPromotion/IxCC_Cfg_Rc_Proof_Physical_CopyState.lean",
-   "imports": ["IxCC.Cfg.Rc.Proof.Physical.CopyState"]},
-  "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_CopyPrefix":
-  {"path":
-   "IxCCTests/Fences/RcPromotion/IxCC_Cfg_Rc_Proof_Physical_CopyPrefix.lean",
-   "imports": ["IxCC.Cfg.Rc.Proof.Physical.CopyPrefix"]},
   "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_ConsumedSwitch":
   {"path":
    "IxCCTests/Fences/RcPromotion/IxCC_Cfg_Rc_Proof_Physical_ConsumedSwitch.lean",
@@ -2539,10 +2483,6 @@
   {"path":
    "IxCCTests/Fences/RcPromotion/IxCC_Cfg_Rc_Proof_Physical_CaseEntry.lean",
    "imports": ["IxCC.Cfg.Rc.Proof.Physical.CaseEntry"]},
-  "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_CaseActivation":
-  {"path":
-   "IxCCTests/Fences/RcPromotion/IxCC_Cfg_Rc_Proof_Physical_CaseActivation.lean",
-   "imports": ["IxCC.Cfg.Rc.Proof.Physical.CaseActivation"]},
   "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_CallResume":
   {"path":
    "IxCCTests/Fences/RcPromotion/IxCC_Cfg_Rc_Proof_Physical_CallResume.lean",
@@ -2551,10 +2491,6 @@
   {"path":
    "IxCCTests/Fences/RcPromotion/IxCC_Cfg_Rc_Proof_Physical_CallResult.lean",
    "imports": ["IxCC.Cfg.Rc.Proof.Physical.CallResult"]},
-  "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_CallActivation":
-  {"path":
-   "IxCCTests/Fences/RcPromotion/IxCC_Cfg_Rc_Proof_Physical_CallActivation.lean",
-   "imports": ["IxCC.Cfg.Rc.Proof.Physical.CallActivation"]},
   "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_BumpWrapper":
   {"path":
    "IxCCTests/Fences/RcPromotion/IxCC_Cfg_Rc_Proof_Physical_BumpWrapper.lean",
@@ -2631,10 +2567,6 @@
   {"path":
    "IxCCTests/Fences/RcPromotion/IxCC_Cfg_Rc_Proof_Physical_Bridge_ScalarAdmission.lean",
    "imports": ["IxCC.Cfg.Rc.Proof.Physical.Bridge.ScalarAdmission"]},
-  "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_Bridge_ScalarActivation":
-  {"path":
-   "IxCCTests/Fences/RcPromotion/IxCC_Cfg_Rc_Proof_Physical_Bridge_ScalarActivation.lean",
-   "imports": ["IxCC.Cfg.Rc.Proof.Physical.Bridge.ScalarActivation"]},
   "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_Bridge_ReadyTokens":
   {"path":
    "IxCCTests/Fences/RcPromotion/IxCC_Cfg_Rc_Proof_Physical_Bridge_ReadyTokens.lean",
@@ -2647,10 +2579,6 @@
   {"path":
    "IxCCTests/Fences/RcPromotion/IxCC_Cfg_Rc_Proof_Physical_Bridge_ProjectionStep.lean",
    "imports": ["IxCC.Cfg.Rc.Proof.Physical.Bridge.ProjectionStep"]},
-  "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_Bridge_ProjectionState":
-  {"path":
-   "IxCCTests/Fences/RcPromotion/IxCC_Cfg_Rc_Proof_Physical_Bridge_ProjectionState.lean",
-   "imports": ["IxCC.Cfg.Rc.Proof.Physical.Bridge.ProjectionState"]},
   "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_Bridge_ProjectionSem":
   {"path":
    "IxCCTests/Fences/RcPromotion/IxCC_Cfg_Rc_Proof_Physical_Bridge_ProjectionSem.lean",
@@ -2747,10 +2675,6 @@
   {"path":
    "IxCCTests/Fences/RcPromotion/IxCC_Cfg_Rc_Proof_Physical_Bridge_FramedWrapper.lean",
    "imports": ["IxCC.Cfg.Rc.Proof.Physical.Bridge.FramedWrapper"]},
-  "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_Bridge_FieldlessActivation":
-  {"path":
-   "IxCCTests/Fences/RcPromotion/IxCC_Cfg_Rc_Proof_Physical_Bridge_FieldlessActivation.lean",
-   "imports": ["IxCC.Cfg.Rc.Proof.Physical.Bridge.FieldlessActivation"]},
   "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_Bridge_FailureTransport":
   {"path":
    "IxCCTests/Fences/RcPromotion/IxCC_Cfg_Rc_Proof_Physical_Bridge_FailureTransport.lean",
@@ -2795,14 +2719,6 @@
   {"path":
    "IxCCTests/Fences/RcPromotion/IxCC_Cfg_Rc_Proof_Physical_Bridge_BorrowedIncrement.lean",
    "imports": ["IxCC.Cfg.Rc.Proof.Physical.Bridge.BorrowedIncrement"]},
-  "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_Bridge_BorrowedCursor":
-  {"path":
-   "IxCCTests/Fences/RcPromotion/IxCC_Cfg_Rc_Proof_Physical_Bridge_BorrowedCursor.lean",
-   "imports": ["IxCC.Cfg.Rc.Proof.Physical.Bridge.BorrowedCursor"]},
-  "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_Bridge_ArgumentActivation":
-  {"path":
-   "IxCCTests/Fences/RcPromotion/IxCC_Cfg_Rc_Proof_Physical_Bridge_ArgumentActivation.lean",
-   "imports": ["IxCC.Cfg.Rc.Proof.Physical.Bridge.ArgumentActivation"]},
   "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_BindLayout":
   {"path":
    "IxCCTests/Fences/RcPromotion/IxCC_Cfg_Rc_Proof_Physical_BindLayout.lean",
@@ -2811,14 +2727,6 @@
   {"path":
    "IxCCTests/Fences/RcPromotion/IxCC_Cfg_Rc_Proof_Physical_AllocationTokens.lean",
    "imports": ["IxCC.Cfg.Rc.Proof.Physical.AllocationTokens"]},
-  "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_AllocationStep":
-  {"path":
-   "IxCCTests/Fences/RcPromotion/IxCC_Cfg_Rc_Proof_Physical_AllocationStep.lean",
-   "imports": ["IxCC.Cfg.Rc.Proof.Physical.AllocationStep"]},
-  "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_AllocationState":
-  {"path":
-   "IxCCTests/Fences/RcPromotion/IxCC_Cfg_Rc_Proof_Physical_AllocationState.lean",
-   "imports": ["IxCC.Cfg.Rc.Proof.Physical.AllocationState"]},
   "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_AllocationSource":
   {"path":
    "IxCCTests/Fences/RcPromotion/IxCC_Cfg_Rc_Proof_Physical_AllocationSource.lean",
@@ -2827,10 +2735,6 @@
   {"path":
    "IxCCTests/Fences/RcPromotion/IxCC_Cfg_Rc_Proof_Physical_AllocationResult.lean",
    "imports": ["IxCC.Cfg.Rc.Proof.Physical.AllocationResult"]},
-  "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_AllocationPrefix":
-  {"path":
-   "IxCCTests/Fences/RcPromotion/IxCC_Cfg_Rc_Proof_Physical_AllocationPrefix.lean",
-   "imports": ["IxCC.Cfg.Rc.Proof.Physical.AllocationPrefix"]},
   "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_AllocationOutcome":
   {"path":
    "IxCCTests/Fences/RcPromotion/IxCC_Cfg_Rc_Proof_Physical_AllocationOutcome.lean",
@@ -2855,10 +2759,6 @@
   {"path":
    "IxCCTests/Fences/RcPromotion/IxCC_Cfg_Rc_Proof_Physical_AllocationCursor.lean",
    "imports": ["IxCC.Cfg.Rc.Proof.Physical.AllocationCursor"]},
-  "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_AllocationCopies":
-  {"path":
-   "IxCCTests/Fences/RcPromotion/IxCC_Cfg_Rc_Proof_Physical_AllocationCopies.lean",
-   "imports": ["IxCC.Cfg.Rc.Proof.Physical.AllocationCopies"]},
   "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_AllocationConsumed":
   {"path":
    "IxCCTests/Fences/RcPromotion/IxCC_Cfg_Rc_Proof_Physical_AllocationConsumed.lean",
@@ -2879,10 +2779,6 @@
   {"path":
    "IxCCTests/Fences/RcPromotion/IxCC_Cfg_Rc_Proof_Physical_AllocationArguments.lean",
    "imports": ["IxCC.Cfg.Rc.Proof.Physical.AllocationArguments"]},
-  "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_AllocationActivation":
-  {"path":
-   "IxCCTests/Fences/RcPromotion/IxCC_Cfg_Rc_Proof_Physical_AllocationActivation.lean",
-   "imports": ["IxCC.Cfg.Rc.Proof.Physical.AllocationActivation"]},
   "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_AllocWrapper":
   {"path":
    "IxCCTests/Fences/RcPromotion/IxCC_Cfg_Rc_Proof_Physical_AllocWrapper.lean",
@@ -2916,14 +2812,6 @@
   {"path":
    "IxCCTests/Fences/RcPromotion/IxCC_Cfg_Rc_Proof_Native_TrapCursor.lean",
    "imports": ["IxCC.Cfg.Rc.Proof.Native.TrapCursor"]},
-  "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Native_TrapActivation":
-  {"path":
-   "IxCCTests/Fences/RcPromotion/IxCC_Cfg_Rc_Proof_Native_TrapActivation.lean",
-   "imports": ["IxCC.Cfg.Rc.Proof.Native.TrapActivation"]},
-  "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Native_TerminalOutcomes":
-  {"path":
-   "IxCCTests/Fences/RcPromotion/IxCC_Cfg_Rc_Proof_Native_TerminalOutcomes.lean",
-   "imports": ["IxCC.Cfg.Rc.Proof.Native.TerminalOutcomes"]},
   "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Native_Split":
   {"path": "IxCCTests/Fences/RcPromotion/IxCC_Cfg_Rc_Proof_Native_Split.lean",
    "imports": ["IxCC.Cfg.Rc.Proof.Native.Split"]},
@@ -3151,8 +3039,6 @@
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Native_SourceFunction",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Native_SourceStages",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Native_Split",
-    "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Native_TerminalOutcomes",
-    "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Native_TrapActivation",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Native_TrapCursor",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Ordered",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Ordinary",
@@ -3162,24 +3048,17 @@
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_AllocCaller",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_AllocSteps",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_AllocWrapper",
-    "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_AllocationActivation",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_AllocationArguments",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_AllocationAvailable",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_AllocationBumpComplete",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_AllocationBumpReady",
-    "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_AllocationCopies",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_AllocationFailure",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_AllocationFreeComplete",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_AllocationFreeReady",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_AllocationOutcome",
-    "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_AllocationPrefix",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_AllocationResult",
-    "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_AllocationState",
-    "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_AllocationStep",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_AllocationTokens",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_BindLayout",
-    "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_Bridge_ArgumentActivation",
-    "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_Bridge_BorrowedCursor",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_Bridge_CtorAdmission",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_Bridge_CtorDispatch",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_Bridge_CtorInvariant",
@@ -3190,7 +3069,6 @@
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_Bridge_DynamicSwitch",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_Bridge_DynamicTag",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_Bridge_FailureTransport",
-    "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_Bridge_FieldlessActivation",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_Bridge_FramedWrapper",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_Bridge_FusedBindings",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_Bridge_FusedCompletion",
@@ -3212,7 +3090,6 @@
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_Bridge_ProjectionOutcomes",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_Bridge_ProjectionSem",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_Bridge_ReadyTokens",
-    "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_Bridge_ScalarActivation",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_Bridge_ScalarAdmission",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_Bridge_ScalarBasic",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_Bridge_ScalarCall",
@@ -3231,10 +3108,8 @@
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_Bridge_ScalarSwitch",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_Bridge_SwitchAdmission",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_Bridge_Tokens",
-    "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_CallActivation",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_CallResult",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_CallResume",
-    "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_CaseActivation",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_CaseEntry",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_CaseLayout",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_CaseResult",
@@ -3242,32 +3117,22 @@
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_CheckedPrefix",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_ConsumedMarkers",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_ConsumedSwitch",
-    "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_CopyPrefix",
-    "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_CopyState",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_CopyStep",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_CtorActions",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_DecWrapper",
-    "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_DropPrefix",
-    "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_DropPreservation",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_DropStep",
-    "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_DropTokens",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_Edge",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_EntryActivation",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_EntryEval",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_EntryResult",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_FrameTransport",
-    "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_FusedAllocationConsumed",
-    "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_FusedAllocationInstruction",
-    "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_FusedAllocationSource",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_FusedLexical",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_HeapAppend",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_HeapPlacement",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_IncWrapper",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_Jump",
-    "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_JumpActivation",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_JumpEntry",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_JumpResult",
-    "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_JumpTransfer",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_NativeCalls",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_NativeMarkers",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_NumericEntry",
@@ -3294,16 +3159,11 @@
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_ReservedHeader",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_ReservedReady",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_ResultEval",
-    "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_ResumeActivation",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_SelfEntry",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_SlotPromotion",
-    "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_StateEnvironments",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_SwitchCursor",
-    "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_TailActivation",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_TailCall",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_TailResult",
-    "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_TokenEnvironments",
-    "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_TransferPrefix",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Prefix",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_ProgramSound",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_PublicApi",
@@ -3464,7 +3324,6 @@
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_Bridge_FusedProjection",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_Bridge_ProjectionCfg",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_Bridge_ProjectionIncrement",
-    "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_Bridge_ProjectionState",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_Bridge_ProjectionStep",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_Bridge_ReadyInstructions",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_BumpWrapper",
@@ -3473,7 +3332,6 @@
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_Return",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_SavedCallers",
     "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_SavedFrames",
-    "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Physical_UnitActions",
     "IxCCTests.Fences.RcPromotion.IxCC_Rt_Rc_Proof_AdvanceInvariant",
     "IxCCTests.Fences.RcPromotion.IxCC_Rt_Rc_Proof_AllocTotal",
     "IxCCTests.Fences.RcPromotion.IxCC_Rt_Rc_Proof_ProcsArithmetic",
@@ -3499,22 +3357,15 @@
     "IxCC.Own.Plain.Proof.Admission",
     "IxCC.Own.Plain.Proof.Bindings",
     "IxCC.Own.Plain.Proof.Bounds",
-    "IxCC.Own.Plain.Proof.Call",
-    "IxCC.Own.Plain.Proof.CallBind",
     "IxCC.Own.Plain.Proof.Candidate",
     "IxCC.Own.Plain.Proof.CaptureIdentity",
     "IxCC.Own.Plain.Proof.CaptureRoots",
     "IxCC.Own.Plain.Proof.Captures",
-    "IxCC.Own.Plain.Proof.Checked",
     "IxCC.Own.Plain.Proof.CheckedShape",
-    "IxCC.Own.Plain.Proof.CtorStep",
     "IxCC.Own.Plain.Proof.Drops",
     "IxCC.Own.Plain.Proof.Environment",
     "IxCC.Own.Plain.Proof.EvalShape",
     "IxCC.Own.Plain.Proof.Frames",
-    "IxCC.Own.Plain.Proof.JoinLookup",
-    "IxCC.Own.Plain.Proof.Jump",
-    "IxCC.Own.Plain.Proof.JumpState",
     "IxCC.Own.Plain.Proof.Mono",
     "IxCC.Own.Plain.Proof.NonCall",
     "IxCC.Own.Plain.Proof.Prefixes",
@@ -3523,25 +3374,23 @@
     "IxCC.Own.Plain.Proof.ResultCompose",
     "IxCC.Own.Plain.Proof.Results",
     "IxCC.Own.Plain.Proof.RhsShape",
-    "IxCC.Own.Plain.Proof.RhsSteps",
     "IxCC.Own.Plain.Proof.Scalars",
     "IxCC.Own.Plain.Proof.Scope",
-    "IxCC.Own.Plain.Proof.Selected",
     "IxCC.Own.Plain.Proof.ShapeOps",
     "IxCC.Own.Plain.Proof.ShapeResult",
-    "IxCC.Own.Plain.Proof.Simulation",
-    "IxCC.Own.Plain.Proof.StackIdentity",
-    "IxCC.Own.Plain.Proof.StackRetain",
     "IxCC.Own.Plain.Proof.StackScope",
-    "IxCC.Own.Plain.Proof.State",
-    "IxCC.Own.Plain.Proof.TailCall",
-    "IxCC.Own.Plain.Proof.Terminals",
-    "IxCC.Own.Plain.Proof.Transfers",
     "IxCC.Own.Plain.Proof.Unfold",
-    "IxCC.Own.Plain.Proof.ValidRoots",
     "IxCC.Own.Plain.Proof.Values",
     "IxCC.Own.Plain.Semantics",
     "IxCC.Own.Plain.Syntax"]},
+  "IxCCTests.Fences.OwnOwnedSwitch":
+  {"path": "IxCCTests/Fences/OwnOwnedSwitch.lean",
+   "imports":
+   ["IxCC.Cfg.Rc.Proof.Native.PhysicalSimulation",
+    "IxCC.Cfg.Rc.Proof.Owned.Admission",
+    "IxCC.Own.Plain.Proof.Certificate",
+    "IxCC.Own.Plain.Proof.Retained",
+    "IxCC.Recheck.Rc.Proof.Replay"]},
   "IxCCTests.Fences.OwnOwned":
   {"path": "IxCCTests/Fences/OwnOwned.lean",
    "imports":
@@ -3764,6 +3613,7 @@
     "IxCCTests.Fences.Own",
     "IxCCTests.Fences.OwnPlain",
     "IxCCTests.Fences.OwnOwned",
+    "IxCCTests.Fences.OwnOwnedSwitch",
     "IxCCTests.Fences.OwnRc",
     "IxCCTests.Fences.Rt",
     "IxCCTests.Fences.RtRc",
@@ -6527,7 +6377,8 @@
    "imports":
    ["IxCC.Cfg.Rc.Proof.Language",
     "IxCC.Recheck.Rc.Replay",
-    "IxCC.Recheck.Proof.Middle"]},
+    "IxCC.Recheck.Proof.Middle",
+    "IxCC.Own.Plain.Proof.Certificate"]},
   "IxCC.Recheck.Rc.Proof.ReleaseCore":
   {"path": "IxCC/Recheck/Rc/Proof/ReleaseCore.lean",
    "imports":
@@ -6792,63 +6643,18 @@
   "IxCC.Own.Plain.Proof.Values":
   {"path": "IxCC/Own/Plain/Proof/Values.lean",
    "imports": ["IxCC.Own.Proof.Heap", "IxCC.Own.Semantics"]},
-  "IxCC.Own.Plain.Proof.ValidRoots":
-  {"path": "IxCC/Own/Plain/Proof/ValidRoots.lean",
-   "imports": ["IxCC.Own.Plain.Proof.State", "IxCC.Own.Plain.Proof.Scope"]},
   "IxCC.Own.Plain.Proof.Unfold":
   {"path": "IxCC/Own/Plain/Proof/Unfold.lean",
    "imports": ["IxCC.Own.Plain.Semantics", "IxCC.Sem.Agrees"]},
-  "IxCC.Own.Plain.Proof.Transfers":
-  {"path": "IxCC/Own/Plain/Proof/Transfers.lean",
-   "imports":
-   ["IxCC.Own.Plain.Proof.Drops",
-    "IxCC.Own.Plain.Proof.CaptureRoots",
-    "IxCC.Own.Plain.Proof.Scope"]},
-  "IxCC.Own.Plain.Proof.Terminals":
-  {"path": "IxCC/Own/Plain/Proof/Terminals.lean",
-   "imports":
-   ["IxCC.Own.Plain.Proof.Results",
-    "IxCC.Own.Plain.Proof.Transfers",
-    "IxCC.Own.Plain.Proof.Scope",
-    "IxCC.Own.Plain.Proof.Unfold",
-    "IxCC.Fir.Proof.Unfold"]},
-  "IxCC.Own.Plain.Proof.TailCall":
-  {"path": "IxCC/Own/Plain/Proof/TailCall.lean",
-   "imports": ["IxCC.Own.Plain.Proof.Terminals"]},
-  "IxCC.Own.Plain.Proof.State":
-  {"path": "IxCC/Own/Plain/Proof/State.lean",
-   "imports":
-   ["IxCC.Own.Plain.Proof.Bindings",
-    "IxCC.Own.Plain.Proof.StackIdentity",
-    "IxCC.Own.Plain.Proof.StackScope"]},
   "IxCC.Own.Plain.Proof.StackScope":
   {"path": "IxCC/Own/Plain/Proof/StackScope.lean",
    "imports": ["IxCC.Own.Plain.Proof.Captures"]},
-  "IxCC.Own.Plain.Proof.StackRetain":
-  {"path": "IxCC/Own/Plain/Proof/StackRetain.lean",
-   "imports":
-   ["IxCC.Own.Plain.Proof.StackIdentity", "IxCC.Own.Plain.Proof.CaptureRoots"]},
-  "IxCC.Own.Plain.Proof.StackIdentity":
-  {"path": "IxCC/Own/Plain/Proof/StackIdentity.lean",
-   "imports": ["IxCC.Own.Plain.Proof.CaptureIdentity"]},
-  "IxCC.Own.Plain.Proof.Simulation":
-  {"path": "IxCC/Own/Plain/Proof/Simulation.lean",
-   "imports":
-   ["IxCC.Own.Plain.Proof.CallBind",
-    "IxCC.Own.Plain.Proof.Jump",
-    "IxCC.Own.Plain.Proof.NonCall",
-    "IxCC.Own.Plain.Proof.Values",
-    "IxCC.Fir.Proof.Mono"]},
   "IxCC.Own.Plain.Proof.ShapeResult":
   {"path": "IxCC/Own/Plain/Proof/ShapeResult.lean",
    "imports": ["IxCC.Own.Plain.Proof.RhsShape", "IxCC.Own.Plain.Proof.Unfold"]},
   "IxCC.Own.Plain.Proof.ShapeOps":
   {"path": "IxCC/Own/Plain/Proof/ShapeOps.lean",
    "imports": ["IxCC.Own.Plain.Proof.Bounds"]},
-  "IxCC.Own.Plain.Proof.Selected":
-  {"path": "IxCC/Own/Plain/Proof/Selected.lean",
-   "imports":
-   ["IxCC.Own.Plain.Proof.State", "IxCC.Own.Plain.Proof.StackRetain"]},
   "IxCC.Own.Plain.Proof.Scope":
   {"path": "IxCC/Own/Plain/Proof/Scope.lean",
    "imports":
@@ -6860,20 +6666,12 @@
     "IxCC.Own.Plain.Check",
     "IxCC.Own.Plain.Proof.Actions",
     "IxCC.Own.Plain.Proof.Unfold"]},
-  "IxCC.Own.Plain.Proof.RhsSteps":
-  {"path": "IxCC/Own/Plain/Proof/RhsSteps.lean",
-   "imports":
-   ["IxCC.Own.Plain.Proof.ValidRoots",
-    "IxCC.Own.Plain.Proof.Frames",
-    "IxCC.Own.Plain.Proof.TailCall",
-    "IxCC.Own.Plain.Proof.Projection",
-    "IxCC.Own.Plain.Proof.Scalars"]},
   "IxCC.Own.Plain.Proof.RhsShape":
   {"path": "IxCC/Own/Plain/Proof/RhsShape.lean",
    "imports": ["IxCC.Own.Plain.Proof.ShapeOps"]},
   "IxCC.Own.Plain.Proof.Retained":
   {"path": "IxCC/Own/Plain/Proof/Retained.lean",
-   "imports": ["IxCC.Fir.Proof.Retained"]},
+   "imports": ["IxCC.Fir.Proof.Retained", "IxCC.Own.Plain.Proof.Language"]},
   "IxCC.Own.Plain.Proof.Results":
   {"path": "IxCC/Own/Plain/Proof/Results.lean",
    "imports": ["IxCC.Own.Rc.Proof.ReleaseValue", "IxCC.Own.Proof.Heap"]},
@@ -6902,8 +6700,8 @@
   {"path": "IxCC/Own/Plain/Proof/OwnedCanonical.lean",
    "imports":
    ["IxCC.Own.Plain.Proof.Owned.Program",
-    "IxCC.Own.Plain.Proof.Candidate",
-    "IxCC.Own.Plain.Proof.CheckedShape"]},
+    "IxCC.Own.Plain.Proof.Program",
+    "IxCC.Own.Plain.Proof.Admission"]},
   "IxCC.Own.Plain.Proof.OwnedAccepts":
   {"path": "IxCC/Own/Plain/Proof/OwnedAccepts.lean",
    "imports": ["IxCC.Own.Plain.Proof.OwnedCanonical"]},
@@ -6923,7 +6721,7 @@
    "imports":
    ["IxCC.Own.Plain.Proof.Owned.Roots",
     "IxCC.Own.Plain.Proof.StackScope",
-    "IxCC.Own.Plain.Proof.StackIdentity",
+    "IxCC.Own.Plain.Proof.CaptureIdentity",
     "IxCC.Own.Plain.Proof.Results",
     "IxCC.Fir.Proof.Env"]},
   "IxCC.Own.Plain.Proof.Owned.Simulation":
@@ -6943,7 +6741,10 @@
     "IxCC.Own.Plain.Proof.Bindings"]},
   "IxCC.Own.Plain.Proof.Owned.Rhs":
   {"path": "IxCC/Own/Plain/Proof/Owned/Rhs.lean",
-   "imports": ["IxCC.Own.Plain.Proof.Owned.Binds", "IxCC.Fir.Proof.Unfold"]},
+   "imports":
+   ["IxCC.Own.Plain.Proof.Owned.Binds",
+    "IxCC.Own.Plain.Proof.Frames",
+    "IxCC.Fir.Proof.Unfold"]},
   "IxCC.Own.Plain.Proof.Owned.Program":
   {"path": "IxCC/Own/Plain/Proof/Owned/Program.lean",
    "imports":
@@ -6968,7 +6769,9 @@
   "IxCC.Own.Plain.Proof.NonCall":
   {"path": "IxCC/Own/Plain/Proof/NonCall.lean",
    "imports":
-   ["IxCC.Own.Plain.Proof.CtorStep", "IxCC.Own.Plain.Proof.ResultCompose"]},
+   ["IxCC.Own.Plain.Proof.Scalars",
+    "IxCC.Fir.Proof.Unfold",
+    "IxCC.Own.Plain.Proof.ResultCompose"]},
   "IxCC.Own.Plain.Proof.Mono":
   {"path": "IxCC/Own/Plain/Proof/Mono.lean",
    "imports": ["IxCC.Own.Plain.Proof.Unfold", "IxCC.Sem.SimUpTo"]},
@@ -6976,34 +6779,20 @@
   {"path": "IxCC/Own/Plain/Proof/Language.lean",
    "imports":
    ["IxCC.Own.Plain.Proof.Candidate",
+    "IxCC.Own.Plain.Proof.OwnedAccepts",
     "IxCC.Own.Plain.Proof.Mono",
     "IxCC.Fir.Proof.Lang",
     "IxCC.Recheck.Run",
     "IxCC.Lam.Erase.Proof.Correct",
     "IxCC.Anf.Proof.Pass.Pipeline",
     "IxCC.Recheck.Proof.Middle"]},
-  "IxCC.Own.Plain.Proof.JumpState":
-  {"path": "IxCC/Own/Plain/Proof/JumpState.lean",
-   "imports":
-   ["IxCC.Own.Plain.Proof.State",
-    "IxCC.Own.Plain.Proof.StackRetain",
-    "IxCC.Own.Plain.Proof.JoinLookup"]},
-  "IxCC.Own.Plain.Proof.Jump":
-  {"path": "IxCC/Own/Plain/Proof/Jump.lean",
-   "imports":
-   ["IxCC.Own.Plain.Proof.Selected",
-    "IxCC.Own.Plain.Proof.JumpState",
-    "IxCC.Own.Plain.Proof.Transfers",
-    "IxCC.Own.Plain.Proof.Scope",
-    "IxCC.Own.Plain.Proof.ResultCompose",
-    "IxCC.Fir.Proof.Unfold"]},
-  "IxCC.Own.Plain.Proof.JoinLookup":
-  {"path": "IxCC/Own/Plain/Proof/JoinLookup.lean",
-   "imports": ["IxCC.Own.Plain.Proof.Captures"]},
   "IxCC.Own.Plain.Proof.Frames":
   {"path": "IxCC/Own/Plain/Proof/Frames.lean",
    "imports":
-   ["IxCC.Own.Plain.Proof.ValidRoots", "IxCC.Own.Plain.Proof.Results"]},
+   ["IxCC.Own.Plain.Proof.Bindings",
+    "IxCC.Own.Plain.Proof.StackScope",
+    "IxCC.Own.Plain.Proof.Scope",
+    "IxCC.Own.Plain.Proof.Results"]},
   "IxCC.Own.Plain.Proof.EvalShape":
   {"path": "IxCC/Own/Plain/Proof/EvalShape.lean",
    "imports":
@@ -7015,21 +6804,18 @@
   {"path": "IxCC/Own/Plain/Proof/Drops.lean",
    "imports":
    ["IxCC.Own.Plain.Proof.Prefixes", "IxCC.Own.Plain.Proof.Environment"]},
-  "IxCC.Own.Plain.Proof.CtorStep":
-  {"path": "IxCC/Own/Plain/Proof/CtorStep.lean",
-   "imports": ["IxCC.Own.Plain.Proof.RhsSteps"]},
   "IxCC.Own.Plain.Proof.CheckedShape":
   {"path": "IxCC/Own/Plain/Proof/CheckedShape.lean",
    "imports":
    ["IxCC.Own.Plain.Proof.Candidate",
     "IxCC.Own.Plain.Proof.EvalShape",
     "IxCC.Own.Rc.Proof.LeakFreedom"]},
-  "IxCC.Own.Plain.Proof.Checked":
-  {"path": "IxCC/Own/Plain/Proof/Checked.lean",
-   "imports": ["IxCC.Own.Plain.Proof.Simulation", "IxCC.Own.Plain.Check"]},
   "IxCC.Own.Plain.Proof.Certificate":
   {"path": "IxCC/Own/Plain/Proof/Certificate.lean",
-   "imports": ["IxCC.Own.Plain.Certificate"]},
+   "imports":
+   ["IxCC.Own.Plain.Certificate",
+    "IxCC.Own.Plain.Proof.Owned.Program",
+    "IxCC.Own.Plain.Proof.OwnedAccepts"]},
   "IxCC.Own.Plain.Proof.Captures":
   {"path": "IxCC/Own/Plain/Proof/Captures.lean",
    "imports": ["IxCC.Own.Plain.Proof.Environment"]},
@@ -7042,20 +6828,7 @@
    "imports": ["IxCC.Own.Plain.Proof.Captures"]},
   "IxCC.Own.Plain.Proof.Candidate":
   {"path": "IxCC/Own/Plain/Proof/Candidate.lean",
-   "imports": ["IxCC.Own.Plain.Proof.Checked", "IxCC.Own.Plain.Check"]},
-  "IxCC.Own.Plain.Proof.CallBind":
-  {"path": "IxCC/Own/Plain/Proof/CallBind.lean",
-   "imports":
-   ["IxCC.Own.Plain.Proof.Call",
-    "IxCC.Own.Plain.Proof.Frames",
-    "IxCC.Own.Plain.Proof.TailCall"]},
-  "IxCC.Own.Plain.Proof.Call":
-  {"path": "IxCC/Own/Plain/Proof/Call.lean",
-   "imports":
-   ["IxCC.Own.Plain.Proof.Admission",
-    "IxCC.Own.Plain.Proof.State",
-    "IxCC.Own.Plain.Proof.ResultCompose",
-    "IxCC.Fir.Proof.Unfold"]},
+   "imports": ["IxCC.Own.Plain.Proof.OwnedAccepts", "IxCC.Own.Plain.Check"]},
   "IxCC.Own.Plain.Proof.Bounds":
   {"path": "IxCC/Own/Plain/Proof/Bounds.lean",
    "imports":
@@ -7082,7 +6855,12 @@
   {"path": "IxCC/Own/Plain/Check.lean", "imports": ["IxCC.Own.Plain.Program"]},
   "IxCC.Own.Plain.Certificate":
   {"path": "IxCC/Own/Plain/Certificate.lean",
-   "imports": ["IxCC.Own.Plain.Check", "IxCC.Recheck.Json", "IxCC.Src.Hints"]},
+   "imports":
+   ["IxCC.Own.Plain.Check",
+    "IxCC.Own.Plain.Owned",
+    "IxCC.Recheck.Json",
+    "IxCC.Src.Hints",
+    "IxCC.Anf.Budget"]},
   "IxCC.Own.Kind": {"path": "IxCC/Own/Kind.lean", "imports": []},
   "IxCC.Own.Immortal":
   {"path": "IxCC/Own/Immortal.lean", "imports": ["IxCC.Own.Syntax"]},
@@ -7550,44 +7328,21 @@
   "IxCC.Cfg.Rc.Proof.Prefix":
   {"path": "IxCC/Cfg/Rc/Proof/Prefix.lean",
    "imports": ["IxCC.Cfg.Rc.Prefix", "IxCC.Cfg.Rc.Proof.Step"]},
-  "IxCC.Cfg.Rc.Proof.Physical.UnitActions":
-  {"path": "IxCC/Cfg/Rc/Proof/Physical/UnitActions.lean",
-   "imports": ["IxCC.Own.Plain.Syntax"]},
-  "IxCC.Cfg.Rc.Proof.Physical.TransferPrefix":
-  {"path": "IxCC/Cfg/Rc/Proof/Physical/TransferPrefix.lean",
-   "imports":
-   ["IxCC.Cfg.Rc.Proof.Physical.DropPreservation",
-    "IxCC.Own.Plain.Proof.Transfers",
-    "IxCC.Own.Plain.Proof.JumpState",
-    "IxCC.Own.Plain.Proof.Scope"]},
-  "IxCC.Cfg.Rc.Proof.Physical.TokenEnvironments":
-  {"path": "IxCC/Cfg/Rc/Proof/Physical/TokenEnvironments.lean",
-   "imports":
-   ["IxCC.Cfg.Rc.Proof.Physical.FusedLexical",
-    "IxCC.Cfg.Rc.Proof.Physical.Bridge.Tokens",
-    "IxCC.Own.Plain.Proof.CaptureRoots"]},
   "IxCC.Cfg.Rc.Proof.Physical.TailResult":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/TailResult.lean",
    "imports":
-   ["IxCC.Cfg.Rc.Proof.Physical.TailActivation",
-    "IxCC.Cfg.Rc.Proof.Native.CodeContract",
+   ["IxCC.Cfg.Rc.Proof.Native.CodeRecursion",
+    "IxCC.Cfg.Rc.Proof.Physical.EntryActivation",
+    "IxCC.Cfg.Rc.Proof.Physical.SelfEntry",
+    "IxCC.Cfg.Rc.Proof.Physical.TailCall",
+    "IxCC.Cfg.Rc.Proof.Native.HeapHistory",
+    "IxCC.Own.Plain.Proof.Owned.Inversion",
+    "IxCC.Own.Plain.Proof.Owned.Takes",
     "IxCC.Fir.Proof.Unfold"]},
   "IxCC.Cfg.Rc.Proof.Physical.TailCall":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/TailCall.lean",
    "imports":
    ["IxCC.Cfg.Rc.Proof.Native.FrameState", "IxCC.Rt.Proof.StepTerm"]},
-  "IxCC.Cfg.Rc.Proof.Physical.TailActivation":
-  {"path": "IxCC/Cfg/Rc/Proof/Physical/TailActivation.lean",
-   "imports":
-   ["IxCC.Cfg.Rc.Proof.Physical.EntryActivation",
-    "IxCC.Cfg.Rc.Proof.Physical.TailCall",
-    "IxCC.Cfg.Rc.Proof.Physical.SelfEntry",
-    "IxCC.Cfg.Rc.Proof.Native.HeapHistory",
-    "IxCC.Cfg.Rc.Proof.Physical.CheckedPrefix",
-    "IxCC.Cfg.Rc.Proof.Physical.TransferPrefix",
-    "IxCC.Cfg.Rc.Proof.Physical.PrefixHeap",
-    "IxCC.Cfg.Rc.Proof.Physical.TokenEnvironments",
-    "IxCC.Own.Plain.Proof.Results"]},
   "IxCC.Cfg.Rc.Proof.Physical.SwitchCursor":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/SwitchCursor.lean",
    "imports":
@@ -7597,11 +7352,6 @@
     "IxCC.Cfg.Rc.Proof.Physical.Bridge.SwitchAdmission",
     "IxCC.Cfg.Rc.Proof.Physical.Bridge.FusedCtorEnv",
     "IxCC.Cfg.Rc.Proof.Physical.Jump"]},
-  "IxCC.Cfg.Rc.Proof.Physical.StateEnvironments":
-  {"path": "IxCC/Cfg/Rc/Proof/Physical/StateEnvironments.lean",
-   "imports":
-   ["IxCC.Cfg.Rc.Proof.Physical.TokenEnvironments",
-    "IxCC.Own.Plain.Proof.State"]},
   "IxCC.Cfg.Rc.Proof.Physical.SlotPromotion":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/SlotPromotion.lean",
    "imports": ["IxCC.Cfg.Rc.Proof.Physical.HeapAppend"]},
@@ -7622,10 +7372,6 @@
   "IxCC.Cfg.Rc.Proof.Physical.Return":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/Return.lean",
    "imports": ["IxCC.Cfg.Rc.Proof.Environment", "IxCC.Cfg.Proof.Sim"]},
-  "IxCC.Cfg.Rc.Proof.Physical.ResumeActivation":
-  {"path": "IxCC/Cfg/Rc/Proof/Physical/ResumeActivation.lean",
-   "imports":
-   ["IxCC.Cfg.Rc.Proof.Native.Outcome", "IxCC.Own.Plain.Proof.Frames"]},
   "IxCC.Cfg.Rc.Proof.Physical.ResultEval":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/ResultEval.lean",
    "imports":
@@ -7760,31 +7506,21 @@
   "IxCC.Cfg.Rc.Proof.Physical.NativeCalls":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/NativeCalls.lean",
    "imports": ["IxCC.Lir.Proof.Steps"]},
-  "IxCC.Cfg.Rc.Proof.Physical.JumpTransfer":
-  {"path": "IxCC/Cfg/Rc/Proof/Physical/JumpTransfer.lean",
-   "imports":
-   ["IxCC.Cfg.Rc.Proof.Physical.TransferPrefix",
-    "IxCC.Own.Plain.Proof.Selected"]},
   "IxCC.Cfg.Rc.Proof.Physical.JumpResult":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/JumpResult.lean",
    "imports":
-   ["IxCC.Cfg.Rc.Proof.Physical.JumpActivation",
-    "IxCC.Cfg.Rc.Proof.Native.CodeRecursion"]},
+   ["IxCC.Cfg.Rc.Proof.Native.CodeRecursion",
+    "IxCC.Cfg.Rc.Proof.Physical.JumpEntry",
+    "IxCC.Cfg.Rc.Proof.Physical.Admission",
+    "IxCC.Cfg.Rc.Proof.Native.HeapHistory",
+    "IxCC.Own.Plain.Proof.Owned.Joins",
+    "IxCC.Fir.Proof.Unfold"]},
   "IxCC.Cfg.Rc.Proof.Physical.JumpEntry":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/JumpEntry.lean",
    "imports":
    ["IxCC.Cfg.Rc.Proof.Physical.Jump",
     "IxCC.Cfg.Rc.Proof.Native.FrameState",
     "IxCC.Cfg.Rc.Proof.JumpStep"]},
-  "IxCC.Cfg.Rc.Proof.Physical.JumpActivation":
-  {"path": "IxCC/Cfg/Rc/Proof/Physical/JumpActivation.lean",
-   "imports":
-   ["IxCC.Cfg.Rc.Proof.Physical.JumpEntry",
-    "IxCC.Cfg.Rc.Proof.Physical.JumpTransfer",
-    "IxCC.Cfg.Rc.Proof.Physical.CheckedPrefix",
-    "IxCC.Cfg.Rc.Proof.Physical.StateEnvironments",
-    "IxCC.Cfg.Rc.Proof.Physical.PrefixHeap",
-    "IxCC.Cfg.Rc.Proof.Native.Activation"]},
   "IxCC.Cfg.Rc.Proof.Physical.Jump":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/Jump.lean",
    "imports": ["IxCC.Cfg.Rc.Proof.Physical.Edge", "IxCC.Rt.Proof.StepTerm"]},
@@ -7808,34 +7544,19 @@
    "imports":
    ["IxCC.Cfg.Rc.Proof.Physical.Bridge.FusedWords",
     "IxCC.Cfg.Rc.Proof.Extend"]},
-  "IxCC.Cfg.Rc.Proof.Physical.FusedAllocationSource":
-  {"path": "IxCC/Cfg/Rc/Proof/Physical/FusedAllocationSource.lean",
-   "imports":
-   ["IxCC.Cfg.Rc.Proof.Physical.AllocationTokens",
-    "IxCC.Cfg.Rc.Proof.Physical.AllocationOutcome",
-    "IxCC.Cfg.Rc.Proof.Physical.Bridge.FusedWords"]},
-  "IxCC.Cfg.Rc.Proof.Physical.FusedAllocationInstruction":
-  {"path": "IxCC/Cfg/Rc/Proof/Physical/FusedAllocationInstruction.lean",
-   "imports":
-   ["IxCC.Cfg.Rc.Proof.Physical.FusedAllocationSource",
-    "IxCC.Cfg.Rc.Proof.Physical.AllocationArguments",
-    "IxCC.Cfg.Rc.Proof.Physical.Bridge.FusedOperands"]},
-  "IxCC.Cfg.Rc.Proof.Physical.FusedAllocationConsumed":
-  {"path": "IxCC/Cfg/Rc/Proof/Physical/FusedAllocationConsumed.lean",
-   "imports":
-   ["IxCC.Cfg.Rc.Proof.Physical.FusedAllocationInstruction",
-    "IxCC.Cfg.Rc.Proof.Native.CtorBinding"]},
   "IxCC.Cfg.Rc.Proof.Physical.FrameTransport":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/FrameTransport.lean",
    "imports":
-   ["IxCC.Cfg.Rc.Proof.Physical.TokenEnvironments",
+   ["IxCC.Cfg.Rc.Proof.Physical.FusedLexical",
+    "IxCC.Cfg.Rc.Proof.Physical.Bridge.Tokens",
     "IxCC.Cfg.Rc.Proof.Physical.Bridge.FusedDomain",
     "IxCC.Own.Plain.Proof.ShapeOps"]},
   "IxCC.Cfg.Rc.Proof.Physical.EntryResult":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/EntryResult.lean",
    "imports":
    ["IxCC.Cfg.Rc.Proof.Physical.EntryActivation",
-    "IxCC.Cfg.Rc.Proof.Native.CodeRecursion"]},
+    "IxCC.Cfg.Rc.Proof.Native.CodeRecursion",
+    "IxCC.Fir.Proof.Unfold"]},
   "IxCC.Cfg.Rc.Proof.Physical.EntryEval":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/EntryEval.lean",
    "imports":
@@ -7846,9 +7567,11 @@
   "IxCC.Cfg.Rc.Proof.Physical.EntryActivation":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/EntryActivation.lean",
    "imports":
-   ["IxCC.Cfg.Rc.Proof.Physical.Admission",
-    "IxCC.Cfg.Rc.Proof.Native.Activation",
-    "IxCC.Own.Plain.Proof.Admission"]},
+   ["IxCC.Cfg.Rc.Proof.Native.Activation",
+    "IxCC.Cfg.Rc.Proof.Owned.Admission",
+    "IxCC.Cfg.Rc.Proof.Physical.Admission",
+    "IxCC.Own.Plain.Proof.Admission",
+    "IxCC.Own.Plain.Proof.Owned.Simulation"]},
   "IxCC.Cfg.Rc.Proof.Physical.Edge":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/Edge.lean",
    "imports":
@@ -7858,20 +7581,9 @@
     "IxCC.Cfg.Rc.Proof.Environment",
     "IxCC.Cfg.Proof.Sim",
     "IxCC.Rt.Proof.StepEdge"]},
-  "IxCC.Cfg.Rc.Proof.Physical.DropTokens":
-  {"path": "IxCC/Cfg/Rc/Proof/Physical/DropTokens.lean",
-   "imports": ["IxCC.Cfg.Rc.Proof.Physical.CopyPrefix"]},
   "IxCC.Cfg.Rc.Proof.Physical.DropStep":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/DropStep.lean",
    "imports": ["IxCC.Cfg.Rc.Proof.Physical.CopyStep"]},
-  "IxCC.Cfg.Rc.Proof.Physical.DropPreservation":
-  {"path": "IxCC/Cfg/Rc/Proof/Physical/DropPreservation.lean",
-   "imports": ["IxCC.Cfg.Rc.Proof.Physical.DropPrefix"]},
-  "IxCC.Cfg.Rc.Proof.Physical.DropPrefix":
-  {"path": "IxCC/Cfg/Rc/Proof/Physical/DropPrefix.lean",
-   "imports":
-   ["IxCC.Cfg.Rc.Proof.Physical.DropStep",
-    "IxCC.Cfg.Rc.Proof.Physical.DropTokens"]},
   "IxCC.Cfg.Rc.Proof.Physical.DecWrapper":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/DecWrapper.lean",
    "imports":
@@ -7887,15 +7599,6 @@
    "imports":
    ["IxCC.Cfg.Rc.Proof.Physical.ConsumedMarkers",
     "IxCC.Cfg.Rc.Proof.Physical.Bridge.FusedFreshInstructions"]},
-  "IxCC.Cfg.Rc.Proof.Physical.CopyState":
-  {"path": "IxCC/Cfg/Rc/Proof/Physical/CopyState.lean",
-   "imports": ["IxCC.Cfg.Rc.Proof.Physical.CopyPrefix"]},
-  "IxCC.Cfg.Rc.Proof.Physical.CopyPrefix":
-  {"path": "IxCC/Cfg/Rc/Proof/Physical/CopyPrefix.lean",
-   "imports":
-   ["IxCC.Cfg.Rc.Proof.Physical.CopyStep",
-    "IxCC.Cfg.Rc.Proof.Prefix",
-    "IxCC.Own.Plain.Proof.Scope"]},
   "IxCC.Cfg.Rc.Proof.Physical.ConsumedSwitch":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/ConsumedSwitch.lean",
    "imports":
@@ -7919,8 +7622,14 @@
   "IxCC.Cfg.Rc.Proof.Physical.CaseResult":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/CaseResult.lean",
    "imports":
-   ["IxCC.Cfg.Rc.Proof.Physical.CaseActivation",
-    "IxCC.Cfg.Rc.Proof.Native.CodeRecursion"]},
+   ["IxCC.Cfg.Rc.Proof.Native.CodeRecursion",
+    "IxCC.Cfg.Rc.Proof.Physical.CaseEntry",
+    "IxCC.Cfg.Rc.Proof.Physical.CaseSelection",
+    "IxCC.Cfg.Rc.Proof.Ordinary",
+    "IxCC.Cfg.Rc.Proof.Physical.Admission",
+    "IxCC.Own.Plain.Proof.Owned.Inversion",
+    "IxCC.Own.Plain.Proof.Values",
+    "IxCC.Fir.Proof.Unfold"]},
   "IxCC.Cfg.Rc.Proof.Physical.CaseLayout":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/CaseLayout.lean",
    "imports":
@@ -7930,14 +7639,6 @@
    "imports":
    ["IxCC.Cfg.Rc.Proof.Physical.CaseLayout",
     "IxCC.Cfg.Rc.Proof.Physical.ConsumedSwitch"]},
-  "IxCC.Cfg.Rc.Proof.Physical.CaseActivation":
-  {"path": "IxCC/Cfg/Rc/Proof/Physical/CaseActivation.lean",
-   "imports":
-   ["IxCC.Cfg.Rc.Proof.Physical.CaseEntry",
-    "IxCC.Cfg.Rc.Proof.Ordinary",
-    "IxCC.Cfg.Rc.Proof.Native.Activation",
-    "IxCC.Cfg.Rc.Proof.Physical.Admission",
-    "IxCC.Own.Plain.Proof.Values"]},
   "IxCC.Cfg.Rc.Proof.Physical.CallResume":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/CallResume.lean",
    "imports":
@@ -7947,22 +7648,20 @@
   "IxCC.Cfg.Rc.Proof.Physical.CallResult":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/CallResult.lean",
    "imports":
-   ["IxCC.Cfg.Rc.Proof.Physical.CallActivation",
-    "IxCC.Cfg.Rc.Proof.Physical.ResumeActivation",
-    "IxCC.Cfg.Rc.Proof.Physical.TailResult",
-    "IxCC.Cfg.Rc.Proof.Native.CodeRecursion"]},
-  "IxCC.Cfg.Rc.Proof.Physical.CallActivation":
-  {"path": "IxCC/Cfg/Rc/Proof/Physical/CallActivation.lean",
-   "imports":
-   ["IxCC.Cfg.Rc.Proof.Physical.EntryActivation",
+   ["IxCC.Cfg.Rc.Proof.Native.CodeRecursion",
+    "IxCC.Cfg.Rc.Proof.Physical.EntryActivation",
     "IxCC.Cfg.Rc.Proof.Physical.CallResume",
+    "IxCC.Cfg.Rc.Proof.Physical.TailResult",
     "IxCC.Cfg.Rc.Proof.Physical.Bridge.FusedContinuation",
-    "IxCC.Cfg.Rc.Proof.Physical.CheckedPrefix",
-    "IxCC.Cfg.Rc.Proof.Physical.CopyState",
-    "IxCC.Cfg.Rc.Proof.Physical.StateEnvironments",
-    "IxCC.Cfg.Rc.Proof.Physical.PrefixHeap",
+    "IxCC.Cfg.Rc.Proof.Physical.Bridge.FusedOperands",
+    "IxCC.Cfg.Rc.Proof.Native.CallEntry",
+    "IxCC.Cfg.Rc.Proof.Native.HeapHistory",
     "IxCC.Cfg.Rc.Proof.CallStep",
-    "IxCC.Own.Plain.Proof.TailCall"]},
+    "IxCC.Own.Plain.Proof.Owned.Binds",
+    "IxCC.Own.Plain.Proof.Owned.Inversion",
+    "IxCC.Own.Plain.Proof.Owned.Rhs",
+    "IxCC.Own.Plain.Proof.Frames",
+    "IxCC.Fir.Proof.Unfold"]},
   "IxCC.Cfg.Rc.Proof.Physical.BumpWrapper":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/BumpWrapper.lean",
    "imports":
@@ -7972,7 +7671,8 @@
   "IxCC.Cfg.Rc.Proof.Physical.Bridge.Tokens":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/Bridge/Tokens.lean",
    "imports":
-   ["IxCC.Own.Plain.Proof.State",
+   ["IxCC.Own.Plain.Proof.Bindings",
+    "IxCC.Own.Plain.Proof.StackScope",
     "IxCC.Own.Plain.Proof.Drops",
     "IxCC.Cfg.Rc.Proof.State",
     "IxCC.Cfg.Rc.Proof.Physical.Placement"]},
@@ -8012,8 +7712,16 @@
   "IxCC.Cfg.Rc.Proof.Physical.Bridge.ScalarOutcomes":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/Bridge/ScalarOutcomes.lean",
    "imports":
-   ["IxCC.Cfg.Rc.Proof.Physical.Bridge.ArgumentActivation",
-    "IxCC.Cfg.Rc.Proof.Native.CodeRecursion",
+   ["IxCC.Cfg.Rc.Proof.Native.CodeRecursion",
+    "IxCC.Cfg.Rc.Proof.Owned.Admission",
+    "IxCC.Cfg.Rc.Proof.Physical.Bridge.ScalarConsumed",
+    "IxCC.Cfg.Rc.Proof.Physical.Bridge.ScalarAdmission",
+    "IxCC.Cfg.Rc.Proof.Physical.Bridge.ScalarRuntime",
+    "IxCC.Cfg.Rc.Proof.CallStep",
+    "IxCC.Cfg.Rc.Proof.Ordinary",
+    "IxCC.Own.Plain.Proof.Owned.Rhs",
+    "IxCC.Own.Plain.Proof.Owned.Inversion",
+    "IxCC.Own.Plain.Proof.Scalars",
     "IxCC.Own.Plain.Proof.NonCall",
     "IxCC.Fir.Proof.Unfold"]},
   "IxCC.Cfg.Rc.Proof.Physical.Bridge.ScalarInstr":
@@ -8062,16 +7770,6 @@
    ["IxCC.Cfg.Rc.Proof.Physical.Bridge.ScalarInstr",
     "IxCC.Cfg.Rc.Proof.Physical.Admission",
     "IxCC.Cfg.Rc.Proof.CallStep"]},
-  "IxCC.Cfg.Rc.Proof.Physical.Bridge.ScalarActivation":
-  {"path": "IxCC/Cfg/Rc/Proof/Physical/Bridge/ScalarActivation.lean",
-   "imports":
-   ["IxCC.Cfg.Rc.Proof.Physical.Bridge.ScalarConsumed",
-    "IxCC.Cfg.Rc.Proof.Physical.Bridge.ScalarAdmission",
-    "IxCC.Cfg.Rc.Proof.Physical.Bridge.ScalarRuntime",
-    "IxCC.Cfg.Rc.Proof.Native.Activation",
-    "IxCC.Cfg.Rc.Proof.Ordinary",
-    "IxCC.Own.Plain.Proof.Scalars",
-    "IxCC.Own.Plain.Proof.Scope"]},
   "IxCC.Cfg.Rc.Proof.Physical.Bridge.ReadyTokens":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/Bridge/ReadyTokens.lean",
    "imports":
@@ -8086,9 +7784,6 @@
   "IxCC.Cfg.Rc.Proof.Physical.Bridge.ProjectionStep":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/Bridge/ProjectionStep.lean",
    "imports": ["IxCC.Cfg.Rc.Proof.Physical.Bridge.Projection"]},
-  "IxCC.Cfg.Rc.Proof.Physical.Bridge.ProjectionState":
-  {"path": "IxCC/Cfg/Rc/Proof/Physical/Bridge/ProjectionState.lean",
-   "imports": ["IxCC.Cfg.Rc.Proof.Physical.Bridge.ProjectionIncrement"]},
   "IxCC.Cfg.Rc.Proof.Physical.Bridge.ProjectionSem":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/Bridge/ProjectionSem.lean",
    "imports":
@@ -8098,9 +7793,18 @@
   "IxCC.Cfg.Rc.Proof.Physical.Bridge.ProjectionOutcomes":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/Bridge/ProjectionOutcomes.lean",
    "imports":
-   ["IxCC.Cfg.Rc.Proof.Physical.Bridge.FieldlessActivation",
+   ["IxCC.Cfg.Rc.Proof.Native.CodeRecursion",
+    "IxCC.Cfg.Rc.Proof.Owned.Admission",
     "IxCC.Cfg.Rc.Proof.Physical.Bridge.ProjectionActivation",
-    "IxCC.Cfg.Rc.Proof.Native.CodeRecursion",
+    "IxCC.Cfg.Rc.Proof.Physical.CallResume",
+    "IxCC.Cfg.Rc.Proof.Physical.Bridge.ScalarConsumed",
+    "IxCC.Cfg.Rc.Proof.Physical.Bridge.ScalarAdmission",
+    "IxCC.Cfg.Rc.Proof.Physical.Bridge.ScalarRuntime",
+    "IxCC.Cfg.Rc.Proof.CallStep",
+    "IxCC.Cfg.Rc.Proof.Ordinary",
+    "IxCC.Own.Plain.Proof.Owned.Binds",
+    "IxCC.Own.Plain.Proof.Owned.Rhs",
+    "IxCC.Own.Plain.Proof.Owned.Inversion",
     "IxCC.Own.Plain.Proof.NonCall",
     "IxCC.Fir.Proof.Unfold"]},
   "IxCC.Cfg.Rc.Proof.Physical.Bridge.ProjectionIncrement":
@@ -8119,17 +7823,13 @@
   "IxCC.Cfg.Rc.Proof.Physical.Bridge.ProjectionCfg":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/Bridge/ProjectionCfg.lean",
    "imports":
-   ["IxCC.Cfg.Rc.Proof.Physical.Bridge.ProjectionState",
+   ["IxCC.Cfg.Rc.Proof.Physical.Bridge.ProjectionIncrement",
     "IxCC.Cfg.Rc.Proof.Ordinary"]},
   "IxCC.Cfg.Rc.Proof.Physical.Bridge.ProjectionActivation":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/Bridge/ProjectionActivation.lean",
    "imports":
    ["IxCC.Cfg.Rc.Proof.Physical.Bridge.ProjectionCursor",
-    "IxCC.Cfg.Rc.Proof.Physical.Bridge.BorrowedCursor",
     "IxCC.Cfg.Rc.Proof.Native.Activation",
-    "IxCC.Cfg.Rc.Proof.Physical.CallResume",
-    "IxCC.Cfg.Rc.Proof.Physical.CheckedPrefix",
-    "IxCC.Cfg.Rc.Proof.Physical.PrefixHeap",
     "IxCC.Cfg.Rc.Proof.Ordinary",
     "IxCC.Own.Plain.Proof.Projection",
     "IxCC.Own.Plain.Proof.Scalars"]},
@@ -8218,9 +7918,6 @@
    ["IxCC.Cfg.Rc.Proof.Physical.Bridge.Decrement",
     "IxCC.Cfg.Rc.Proof.Physical.DecWrapper",
     "IxCC.Rt.Rc.Gen.Proof.FrameReleaseCaller"]},
-  "IxCC.Cfg.Rc.Proof.Physical.Bridge.FieldlessActivation":
-  {"path": "IxCC/Cfg/Rc/Proof/Physical/Bridge/FieldlessActivation.lean",
-   "imports": ["IxCC.Cfg.Rc.Proof.Physical.Bridge.ScalarActivation"]},
   "IxCC.Cfg.Rc.Proof.Physical.Bridge.FailureTransport":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/Bridge/FailureTransport.lean",
    "imports": ["IxCC.Rt.Rc.Proof.TraceTransport"]},
@@ -8270,18 +7967,6 @@
    ["IxCC.Cfg.Rc.Proof.Physical.Bridge.Projection",
     "IxCC.Rt.Rc.Gen.Proof.ReadyOperations",
     "IxCC.Rt.Rc.Gen.Proof.IncrementCases"]},
-  "IxCC.Cfg.Rc.Proof.Physical.Bridge.BorrowedCursor":
-  {"path": "IxCC/Cfg/Rc/Proof/Physical/Bridge/BorrowedCursor.lean",
-   "imports":
-   ["IxCC.Cfg.Rc.Proof.Physical.CopyStep",
-    "IxCC.Cfg.Rc.Proof.Physical.Bridge.FusedContinuation"]},
-  "IxCC.Cfg.Rc.Proof.Physical.Bridge.ArgumentActivation":
-  {"path": "IxCC/Cfg/Rc/Proof/Physical/Bridge/ArgumentActivation.lean",
-   "imports":
-   ["IxCC.Cfg.Rc.Proof.Physical.Bridge.ScalarActivation",
-    "IxCC.Cfg.Rc.Proof.Physical.CheckedPrefix",
-    "IxCC.Cfg.Rc.Proof.Physical.CopyPrefix",
-    "IxCC.Cfg.Rc.Proof.Physical.PrefixHeap"]},
   "IxCC.Cfg.Rc.Proof.Physical.BindLayout":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/BindLayout.lean",
    "imports":
@@ -8293,16 +7978,6 @@
     "IxCC.Own.Plain.Proof.Actions",
     "IxCC.Own.Plain.Proof.Bindings",
     "IxCC.Own.Plain.Proof.Scope"]},
-  "IxCC.Cfg.Rc.Proof.Physical.AllocationStep":
-  {"path": "IxCC/Cfg/Rc/Proof/Physical/AllocationStep.lean",
-   "imports":
-   ["IxCC.Cfg.Rc.Proof.Physical.FusedAllocationConsumed",
-    "IxCC.Cfg.Rc.Proof.Physical.ConsumedMarkers"]},
-  "IxCC.Cfg.Rc.Proof.Physical.AllocationState":
-  {"path": "IxCC/Cfg/Rc/Proof/Physical/AllocationState.lean",
-   "imports":
-   ["IxCC.Cfg.Rc.Proof.Physical.AllocationCopies",
-    "IxCC.Own.Plain.Proof.ValidRoots"]},
   "IxCC.Cfg.Rc.Proof.Physical.AllocationSource":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/AllocationSource.lean",
    "imports":
@@ -8312,16 +7987,19 @@
   "IxCC.Cfg.Rc.Proof.Physical.AllocationResult":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/AllocationResult.lean",
    "imports":
-   ["IxCC.Cfg.Rc.Proof.Physical.AllocationActivation",
-    "IxCC.Cfg.Rc.Proof.Native.CodeRecursion"]},
-  "IxCC.Cfg.Rc.Proof.Physical.AllocationPrefix":
-  {"path": "IxCC/Cfg/Rc/Proof/Physical/AllocationPrefix.lean",
-   "imports":
-   ["IxCC.Cfg.Rc.Proof.Physical.AllocationStep",
-    "IxCC.Cfg.Rc.Proof.Physical.AllocationState",
-    "IxCC.Cfg.Rc.Proof.Physical.CopyPrefix",
+   ["IxCC.Cfg.Rc.Proof.Native.CodeRecursion",
+    "IxCC.Cfg.Rc.Proof.Owned.Admission",
+    "IxCC.Cfg.Rc.Proof.Owned.AllocationStep",
+    "IxCC.Cfg.Rc.Proof.Physical.BindLayout",
     "IxCC.Cfg.Rc.Proof.Physical.FrameTransport",
-    "IxCC.Cfg.Rc.Proof.Physical.Bridge.FusedContinuation"]},
+    "IxCC.Cfg.Rc.Proof.Physical.Bridge.CtorAdmission",
+    "IxCC.Cfg.Rc.Proof.Physical.Bridge.CtorTables",
+    "IxCC.Cfg.Rc.Proof.Physical.Bridge.FusedContinuation",
+    "IxCC.Cfg.Rc.Proof.Native.HeapHistory",
+    "IxCC.Own.Plain.Proof.Owned.Binds",
+    "IxCC.Own.Plain.Proof.Owned.Inversion",
+    "IxCC.Own.Plain.Proof.Owned.Rhs",
+    "IxCC.Fir.Proof.Unfold"]},
   "IxCC.Cfg.Rc.Proof.Physical.AllocationOutcome":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/AllocationOutcome.lean",
    "imports":
@@ -8358,9 +8036,6 @@
   {"path": "IxCC/Cfg/Rc/Proof/Physical/AllocationCursor.lean",
    "imports":
    ["IxCC.Cfg.Rc.Proof.Physical.AllocationConsumed", "IxCC.Rt.Proof.Term"]},
-  "IxCC.Cfg.Rc.Proof.Physical.AllocationCopies":
-  {"path": "IxCC/Cfg/Rc/Proof/Physical/AllocationCopies.lean",
-   "imports": ["IxCC.Cfg.Rc.Proof.Physical.AllocationTokens"]},
   "IxCC.Cfg.Rc.Proof.Physical.AllocationConsumed":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/AllocationConsumed.lean",
    "imports":
@@ -8389,16 +8064,6 @@
   {"path": "IxCC/Cfg/Rc/Proof/Physical/AllocationArguments.lean",
    "imports":
    ["IxCC.Cfg.Rc.Proof.Physical.Placement", "IxCC.Rt.Proof.StepFrame"]},
-  "IxCC.Cfg.Rc.Proof.Physical.AllocationActivation":
-  {"path": "IxCC/Cfg/Rc/Proof/Physical/AllocationActivation.lean",
-   "imports":
-   ["IxCC.Cfg.Rc.Proof.Physical.AllocationPrefix",
-    "IxCC.Cfg.Rc.Proof.Physical.CheckedPrefix",
-    "IxCC.Cfg.Rc.Proof.Physical.BindLayout",
-    "IxCC.Cfg.Rc.Proof.Physical.PrefixHeap",
-    "IxCC.Cfg.Rc.Proof.Native.Activation",
-    "IxCC.Cfg.Rc.Proof.Physical.Bridge.CtorAdmission",
-    "IxCC.Cfg.Rc.Proof.Physical.Bridge.CtorTables"]},
   "IxCC.Cfg.Rc.Proof.Physical.AllocWrapper":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/AllocWrapper.lean",
    "imports":
@@ -8424,6 +8089,38 @@
   "IxCC.Cfg.Rc.Proof.Physical.ActionPrefixCursor":
   {"path": "IxCC/Cfg/Rc/Proof/Physical/ActionPrefixCursor.lean",
    "imports": ["IxCC.Cfg.Rc.Proof.State"]},
+  "IxCC.Cfg.Rc.Proof.Owned.AllocationStep":
+  {"path": "IxCC/Cfg/Rc/Proof/Owned/AllocationStep.lean",
+   "imports":
+   ["IxCC.Cfg.Rc.Proof.Native.CtorBinding",
+    "IxCC.Cfg.Rc.Proof.Physical.ConsumedMarkers",
+    "IxCC.Cfg.Rc.Proof.Physical.AllocationArguments",
+    "IxCC.Cfg.Rc.Proof.Physical.AllocationOutcome",
+    "IxCC.Cfg.Rc.Proof.Physical.Bridge.FusedOperands",
+    "IxCC.Cfg.Rc.Proof.Physical.Bridge.FusedWords",
+    "IxCC.Own.Plain.Proof.Actions"]},
+  "IxCC.Cfg.Rc.Proof.Owned.Admission":
+  {"path": "IxCC/Cfg/Rc/Proof/Owned/Admission.lean",
+   "imports":
+   ["IxCC.Cfg.Rc.Proof.Check",
+    "IxCC.Cfg.Rc.Proof.Scoped",
+    "IxCC.Own.Plain.Proof.Owned.Program",
+    "IxCC.Own.Plain.Proof.OwnedAccepts"]},
+  "IxCC.Cfg.Rc.Proof.Owned.Actions":
+  {"path": "IxCC/Cfg/Rc/Proof/Owned/Actions.lean",
+   "imports":
+   ["IxCC.Cfg.Rc.Proof.Native.CodeRecursion",
+    "IxCC.Own.Plain.Proof.Owned.Actions",
+    "IxCC.Own.Plain.Proof.Owned.Inversion",
+    "IxCC.Cfg.Rc.Proof.Physical.CheckedPrefix",
+    "IxCC.Cfg.Rc.Proof.Physical.CopyStep",
+    "IxCC.Cfg.Rc.Proof.Physical.DropStep",
+    "IxCC.Cfg.Rc.Proof.Physical.Bridge.FusedContinuation",
+    "IxCC.Cfg.Rc.Proof.Physical.FrameTransport",
+    "IxCC.Cfg.Rc.Proof.Physical.PrefixHeap",
+    "IxCC.Cfg.Rc.Proof.Physical.CtorActions",
+    "IxCC.Cfg.Rc.Proof.Native.Outcome",
+    "IxCC.Cfg.Rc.Proof.Native.HeapHistory"]},
   "IxCC.Cfg.Rc.Proof.Outcomes":
   {"path": "IxCC/Cfg/Rc/Proof/Outcomes.lean",
    "imports": ["IxCC.Cfg.Rc.Proof.Step", "IxCC.Cfg.Proof.Sim"]},
@@ -8436,14 +8133,6 @@
   "IxCC.Cfg.Rc.Proof.Native.TrapCursor":
   {"path": "IxCC/Cfg/Rc/Proof/Native/TrapCursor.lean",
    "imports": ["IxCC.Cfg.Rc.Proof.Native.ReturnCursor"]},
-  "IxCC.Cfg.Rc.Proof.Native.TrapActivation":
-  {"path": "IxCC/Cfg/Rc/Proof/Native/TrapActivation.lean",
-   "imports":
-   ["IxCC.Cfg.Rc.Proof.Native.ReturnActivation",
-    "IxCC.Cfg.Rc.Proof.Native.TrapCursor"]},
-  "IxCC.Cfg.Rc.Proof.Native.TerminalOutcomes":
-  {"path": "IxCC/Cfg/Rc/Proof/Native/TerminalOutcomes.lean",
-   "imports": ["IxCC.Cfg.Rc.Proof.Native.Outcome", "IxCC.Fir.Proof.Unfold"]},
   "IxCC.Cfg.Rc.Proof.Native.Split":
   {"path": "IxCC/Cfg/Rc/Proof/Native/Split.lean",
    "imports": ["IxCC.Cfg.Rc.Proof.Native.Public", "IxCC.Lir.Proof.Split"]},
@@ -8456,7 +8145,11 @@
    ["IxCC.Cfg.Rc.Proof.Native.Consume", "IxCC.Cfg.Rc.Proof.Native.Split"]},
   "IxCC.Cfg.Rc.Proof.Native.SimpleOutcomes":
   {"path": "IxCC/Cfg/Rc/Proof/Native/SimpleOutcomes.lean",
-   "imports": ["IxCC.Cfg.Rc.Proof.Native.CodeRecursion"]},
+   "imports":
+   ["IxCC.Cfg.Rc.Proof.Native.CodeRecursion",
+    "IxCC.Cfg.Rc.Proof.Native.ReturnActivation",
+    "IxCC.Cfg.Rc.Proof.Native.TrapCursor",
+    "IxCC.Fir.Proof.Unfold"]},
   "IxCC.Cfg.Rc.Proof.Native.ReturnedObservation":
   {"path": "IxCC/Cfg/Rc/Proof/Native/ReturnedObservation.lean",
    "imports":
@@ -8473,10 +8166,10 @@
    ["IxCC.Cfg.Rc.Proof.Native.Activation",
     "IxCC.Cfg.Rc.Proof.Native.HeapHistory",
     "IxCC.Cfg.Rc.Proof.Physical.CheckedPrefix",
-    "IxCC.Cfg.Rc.Proof.Physical.TransferPrefix",
     "IxCC.Cfg.Rc.Proof.Physical.PrefixHeap",
-    "IxCC.Cfg.Rc.Proof.Physical.TokenEnvironments",
-    "IxCC.Own.Plain.Proof.Results"]},
+    "IxCC.Cfg.Rc.Proof.Physical.Admission",
+    "IxCC.Own.Plain.Proof.Results",
+    "IxCC.Own.Plain.Proof.Owned.Takes"]},
   "IxCC.Cfg.Rc.Proof.Native.RawSource":
   {"path": "IxCC/Cfg/Rc/Proof/Native/RawSource.lean",
    "imports": ["IxCC.Cfg.Rc.Proof.Native.SourceFunction"]},
@@ -8493,16 +8186,22 @@
   {"path": "IxCC/Cfg/Rc/Proof/Native/PhysicalSimulation.lean",
    "imports":
    ["IxCC.Cfg.Rc.Proof.Native.SimpleOutcomes",
+    "IxCC.Cfg.Rc.Proof.Owned.Actions",
     "IxCC.Cfg.Rc.Proof.Physical.AllocationResult",
     "IxCC.Cfg.Rc.Proof.Physical.CaseResult",
     "IxCC.Cfg.Rc.Proof.Physical.JumpResult",
     "IxCC.Cfg.Rc.Proof.Physical.Bridge.ScalarOutcomes",
     "IxCC.Cfg.Rc.Proof.Physical.Bridge.ProjectionOutcomes",
     "IxCC.Cfg.Rc.Proof.Physical.CallResult",
+    "IxCC.Cfg.Rc.Proof.Physical.TailResult",
     "IxCC.Fir.Proof.Mono"]},
   "IxCC.Cfg.Rc.Proof.Native.Outcome":
   {"path": "IxCC/Cfg/Rc/Proof/Native/Outcome.lean",
-   "imports": ["IxCC.Cfg.Rc.Proof.Native.TrapActivation", "IxCC.Sem.Forward"]},
+   "imports":
+   ["IxCC.Cfg.Rc.Proof.Native.Activation",
+    "IxCC.Cfg.Rc.Proof.Native.HeapHistory",
+    "IxCC.Own.Plain.Proof.Results",
+    "IxCC.Sem.Forward"]},
   "IxCC.Cfg.Rc.Proof.Native.InitialStages":
   {"path": "IxCC/Cfg/Rc/Proof/Native/InitialStages.lean",
    "imports": ["IxCC.Cfg.Rc.Proof.Native.SourceStages"]},
@@ -8559,7 +8258,8 @@
   "IxCC.Cfg.Rc.Proof.Native.CodeContract":
   {"path": "IxCC/Cfg/Rc/Proof/Native/CodeContract.lean",
    "imports":
-   ["IxCC.Cfg.Rc.Proof.Native.TerminalOutcomes",
+   ["IxCC.Cfg.Rc.Proof.Native.Activation",
+    "IxCC.Cfg.Rc.Proof.Native.Outcome",
     "IxCC.Cfg.Rc.Proof.Native.InitialStages"]},
   "IxCC.Cfg.Rc.Proof.Native.CallEntry":
   {"path": "IxCC/Cfg/Rc/Proof/Native/CallEntry.lean",
@@ -8574,7 +8274,8 @@
    "imports":
    ["IxCC.Cfg.Rc.Proof.Native.FrameState",
     "IxCC.Cfg.Rc.Proof.JoinStep",
-    "IxCC.Own.Plain.Proof.State"]},
+    "IxCC.Own.Plain.Proof.Owned.Joins",
+    "IxCC.Own.Plain.Proof.Owned.Inversion"]},
   "IxCC.Cfg.Rc.Proof.Names":
   {"path": "IxCC/Cfg/Rc/Proof/Names.lean",
    "imports":
@@ -8668,7 +8369,7 @@
    "imports": ["IxCC.Cfg.Syntax", "IxCC.Own.Plain.Syntax"]},
   "IxCC.Cfg.Rc.Lower":
   {"path": "IxCC/Cfg/Rc/Lower.lean",
-   "imports": ["IxCC.Cfg.Rc.Prefix", "IxCC.Cfg.Lower", "IxCC.Own.Plain.Check"]},
+   "imports": ["IxCC.Cfg.Rc.Prefix", "IxCC.Cfg.Lower", "IxCC.Own.Plain.Owned"]},
   "IxCC.Cfg.Rc.Check":
   {"path": "IxCC/Cfg/Rc/Check.lean",
    "imports": ["IxCC.Cfg.Rc.Bounds", "IxCC.Cfg.Rc.Syntax"]},

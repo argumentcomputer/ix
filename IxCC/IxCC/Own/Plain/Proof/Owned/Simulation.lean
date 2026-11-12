@@ -28,14 +28,13 @@ theorem own_jump_measure {j : Fir.JoinId} {J : List JEntry} {e : JEntry} {rest :
   simp only [Code.size]
   omega
 
-/-- Function entry: parameters own one token each. -/
-theorem ownedState_entry (functions : Signatures) (H : Heap) (external : Nat → Nat)
+/-- Function entry: parameters own one token each, and the tokens are the arguments' values. -/
+theorem ownedState_entry_exact (functions : Signatures) (H : Heap) (external : Nat → Nat)
     (params : List Fir.Var) (vs : List RVal) (ws : List Fir.Val)
     (hd : Sem.Forall2 (Proof.Den H) vs ws) (hl : vs.length = params.length)
     (hf : fresh [] params = true) (hb : Balance H external vs) :
-    ∃ owned, OwnedState functions H external params (Ctx.entry params)
-      (Fir.bindAll .leaf params ws) (Own.bindAll .leaf params vs) owned [] .leaf [] [] ∧
-      Balance H external owned := by
+    OwnedState functions H external params (Ctx.entry params)
+      (Fir.bindAll .leaf params ws) (Own.bindAll .leaf params vs) vs [] .leaf [] [] := by
   have hn : params.Nodup := by simpa using fresh_nodup_append List.nodup_nil hf
   have htok := Ctx.Tokens.entry params hn
   have hroots : EnvRoots (Own.bindAll .leaf params vs) params vs := by
@@ -45,9 +44,9 @@ theorem ownedState_entry (functions : Signatures) (H : Heap) (external : Nat →
     simpa using hden0.bindAll params hd hl
   have himm : ∀ y, (Ctx.entry params).isImm y = false := fun _ => rfl
   have hbrw : ∀ y, (Ctx.entry params).brw.get? y = none := fun _ => rfl
-  refine ⟨vs, ⟨fun y hy => ?_, ⟨params, htok, hroots⟩, hb, fun y hy => ?_, hn,
+  refine ⟨fun y hy => ?_, ⟨params, htok, hroots⟩, hb, fun y hy => ?_, hn,
     fun y hy => absurd hy (by simp [himm y]), fun y hy => ?_, fun y e hy => ?_, .nil _ _ _,
-    .nil _⟩, hb⟩
+    .nil _⟩
   · simp only [Ctx.avail_eq, himm, Ctx.borrowed_eq, hbrw, Bool.false_or, Bool.or_eq_true,
       decide_eq_true_eq] at hy
     rcases hy with hp | hb'
@@ -57,6 +56,16 @@ theorem ownedState_entry (functions : Signatures) (H : Heap) (external : Nat →
     exact Ctx.ownHas_ofList hn hy
   · simp [Ctx.borrowed_eq, hbrw] at hy
   · simp [hbrw] at hy
+
+/-- Function entry: parameters own one token each. -/
+theorem ownedState_entry (functions : Signatures) (H : Heap) (external : Nat → Nat)
+    (params : List Fir.Var) (vs : List RVal) (ws : List Fir.Val)
+    (hd : Sem.Forall2 (Proof.Den H) vs ws) (hl : vs.length = params.length)
+    (hf : fresh [] params = true) (hb : Balance H external vs) :
+    ∃ owned, OwnedState functions H external params (Ctx.entry params)
+      (Fir.bindAll .leaf params ws) (Own.bindAll .leaf params vs) owned [] .leaf [] [] ∧
+      Balance H external owned :=
+  ⟨vs, ownedState_entry_exact functions H external params vs ws hd hl hf hb, hb⟩
 
 /-- The accepted bodies, for the call step. -/
 def BodiesChecked (F : Fir.Program) (candidate : Src.NatMap Code) : Prop :=

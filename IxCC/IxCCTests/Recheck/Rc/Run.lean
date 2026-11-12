@@ -1,6 +1,7 @@
 import IxCCTests.Recheck.Rc.CodecIO
 import IxCCTests.Recheck.Rc.ReplayIO
 import IxCCTests.Recheck.Rc.FreshIO
+import IxCCTests.Recheck.Rc.OwnedIO
 
 namespace IxCCTests.Recheck.Rc
 open IxCC Lean System
@@ -77,10 +78,13 @@ def run (args : List String) : IO Unit := do
   match args with
   | [] | ["--native"] =>
     verifyContractsAndPolicy
-    IO.FS.withTempDir fun logs => FreshIO.run logs
+    IO.FS.withTempDir fun logs => do
+      FreshIO.run logs
+      OwnedIO.run (logs / "owned")
   | ["fresh", logs] =>
     verifyContractsAndPolicy
     FreshIO.run logs
+    OwnedIO.run (logs / "owned")
   | [mode, phase, bundle, logs] =>
     IO.FS.createDirAll bundle
     IO.FS.createDirAll logs

@@ -35,9 +35,9 @@ that closures (P8), arrays and bignums need.
   [`Cfg/Rc/Native.lean:62`, `:81`](../IxCC/Cfg/Rc/Native.lean)); 71
   size classes with free lists, one-cell bump refill, allocation by layout
   and the general iterative release
-  ([`Rt/Rc/Gen/Procs.lean`](../IxCC/Rt/Rc/Gen/Procs.lean), below); a
-  checker that requires the proposed ownership map to equal the canonical
-  producer's (`checkPlainMap`, [`Own/Plain/Check.lean:225`](../IxCC/Own/Plain/Check.lean));
+  ([`Rt/Rc/Gen/Procs.lean`](../IxCC/Rt/Rc/Gen/Procs.lean), below); the
+  ownership checker, which admits any placement of `inc` and `dec` it can
+  type (heap stage 2, below; the producer writes the canonical one);
   `Plain.checked_program_refines`
   ([`Own/Plain/Proof/Candidate.lean:12`](../IxCC/Own/Plain/Proof/Candidate.lean))
   and the object theorem `Recheck.RcReplay.sound`
@@ -71,7 +71,7 @@ that closures (P8), arrays and bignums need.
   increment `Procs.inc` is still the one the pipeline calls. The general
   release costs a little more than the bounded one on cells of fewer than
   three scanned fields ([below](#the-general-releases-cost)).
-- *Implemented, library only (heap stage 2, first landing).* An ownership
+- *Implemented (heap stage 2, two landings of three).* An ownership
   checker that judges any placement of `inc` and `dec`, not only the
   canonical one: `Own.Plain.checkOwned` and `checkContractOwned`
   ([`Own/Plain/Owned.lean`](../IxCC/Own/Plain/Owned.lean)), with
@@ -83,8 +83,10 @@ that closures (P8), arrays and bignums need.
   accepts; [`Own/Plain/Proof/OwnedAccepts.lean`](../IxCC/Own/Plain/Proof/OwnedAccepts.lean)),
   from which `checked_program_refines`, `checked_contract_program_refines`
   and `checked_program_reclaims` are re-derived with their statements
-  unchanged. Nothing in production calls it, and where reference counts are
-  placed is unchanged ([below](#the-ownership-checker)).
+  unchanged. The plain-RC verifier admits ownership certificates with it,
+  behind a work budget (`Anf.maxCapturedWork`), and `Recheck.RcReplay.sound`
+  keeps its statement; the producer still writes the canonical placement, so
+  every compiled object is unchanged ([below](#the-ownership-checker)).
 - *Not implemented.* Scalar fields in compiled programs (the runtime above
   has them; the constructor table has none, and `Cfg.Rc.Native` and
   `Rt.Lower` refuse a constructor with scalar fields until DR2 produces
@@ -248,8 +250,8 @@ reuse.
 
 #### The ownership checker
 
-(ii) for today's syntax, as a library (heap stage 2, first landing). The
-judgement types `Own.Plain.Code` as it is, against its Fir body, with no
+(ii) for today's syntax (heap stage 2: the checker in its first landing, the
+verifier switched to it in the second). The judgement types `Own.Plain.Code` as it is, against its Fir body, with no
 syntax or certificate change: on one path each variable in scope is an
 *immediate* (a literal, `□` or a field-less constructor, on which every
 action is free), *owned* with `n` tokens, or *borrowed* (a projection's
@@ -281,16 +283,88 @@ mutation campaign whose accepted mutants must run clean
 Known properties: a path that ends in `trap` may keep tokens it holds (a
 trap ends the whole run, and `ResultRel.trap` has no heap clause; an
 embedding with recoverable traps would need `trap` to require none, as
-`checkContractOwned_refines`'s docstring says); and a jump costs its target's
-captured list, so the worst case is quadratic in the body (a join capturing
-3,000 variables jumped to from 3,000 branches, a 103 KB certificate, checks in
-5.2 s on the build box; `checkPlainMap` is cubic on that family). Only unit
-increments are admitted. Not yet done: nothing in production calls the
-checker (`Own.Plain.Certificate.admit` and `Cfg.Rc.checkProgram` still call
-`checkPlainMap`), and the producer is still the canonical one. Putting the
-checker in the verifier needs the Cfg activation layer restated over the
-typing context, and its quadratic case measured against the middle end's
-limits first; a liveness placement is the landing after that.
+`checkContractOwned_refines`'s docstring says); and only unit increments are
+admitted.
+
+**In the verifier.** Plain-RC certificate admission
+(`Own.Plain.Certificate.admit`; `admitContract` for the contract-aware
+domain) and the program gate (`Cfg.Rc.checkProgram`) run the checker where
+they compared the proposed map with the canonical one (`checkPlainMap`). The
+verifier therefore accepts what it refused before: any placement the checker
+types, for example one that drops a variable right after its last use, moves
+a value into its last consuming use, lets a join capture only what its body
+uses, increments a projected (borrowed) variable later than at once, acts on an
+immediate, or lists a join's captured variables in another order
+(`tests-rc-certificate` runs each through the verifier and natively; a
+reordered captured list is validated even with the canonical certificate's
+backend decisions, and its object is the canonical one's byte for byte: the
+captured order does not reach the lowered code). A refusal names the checker's first reason (`own.cert.check:
+ownership proposal refused: <reason>`). What makes it sound is
+`Recheck.RcReplay.sound`, with its statement unchanged: the Cfg activation
+layer it rests on (`Activation`, `PhysicalAtClock`, `eval_physical`,
+`checked_physical`, [`Cfg/Rc/Proof/Native/`](../IxCC/Cfg/Rc/Proof/Native/PhysicalSimulation.lean))
+is restated over the checker's typing context instead of the canonical
+producer's state, with one step per `inc` and per `dec` and a captured-token
+step at jumps, and the canonical simulation's proofs are deleted. Nothing
+admitted before is refused within the budget: `admit_of_checkPlainMap` and
+`checkScopedProgram_owned` ([`Cfg/Rc/Proof/Owned/Admission.lean`](../IxCC/Cfg/Rc/Proof/Owned/Admission.lean)),
+from canonical acceptance. The producer still writes the canonical placement,
+so every compiled object and certificate is unchanged; a liveness placement
+in the producer is the next landing. The contract side (`checkContractOwned`,
+Fir's contract list, `zeroRcBinder`'s linear and affine cases) is expected to
+be reworked when pull request #678 brings the owner's new annotation design
+(modes stored in records and read by position, the `linear` and `affine`
+cases retired, Fir's contract list retyped).
+
+**The work budget.** A jump takes one token of every variable its target
+join captures, and a join may capture its whole lexical scope and be jumped
+to from every branch, so the checker's work is quadratic in the body. Before
+the checker runs, admission sums that work over the decoded map
+(`capturedWork`: at each jump the target's captured list, at each join
+declaration its own; a linear walk) and refuses past `Anf.maxCapturedWork` =
+2²⁰ = 1,048,576 with `own.cert.budget`, naming the measured work and the
+limit. Acceptance is monotone in the limit (`admit_mono`): a refusal is
+policy, not soundness. The worst cases under the limits that already hold
+before the check (the middle end's node budgets, 64 MiB of certificate text,
+JSON depth 512), measured on the build box, one function unless stated:
+
+| Map | Captured tokens | Before: `checkPlainMap` | `checkOwned` | Now |
+| --- | ---: | ---: | ---: | --- |
+| a join capturing 2,049 parameters, 8,191 jumps (16,383 Anf nodes) | 16.8 M | 24.0 s | 8.0 s | refused by the budget |
+| the same, scope from an outer join's parameters, 7,166 jumps | 14.7 M | 21.6 s | 6.1 s | refused by the budget |
+| 4,096 joins each capturing 2,049 parameters (37.6 MB certificate) | 8.4 M | 0.54 s | 8.6 s | refused by the budget |
+| 256 functions, each a join capturing 2,049, 127 jumps | 66.6 M | 98.7 s | 34.9 s | refused by the budget |
+| 4,096 such functions (2²⁰ program nodes) | 1.07 G | over 900 s | 603 s | refused by the budget |
+
+Unit costs of `checkOwned`: 0.48 to 0.57 µs per captured token at a jump,
+about 1.0 µs per captured entry at a declaration, about 0.1 µs per action;
+so a map within the budget checks in about a second at most, and its actions
+(at most 64 MiB of text) in about 0.6 s. The registered corpus needs at most
+1,925 (`Machines.fibMain`, canonical placement; 145 with a liveness
+placement), 545 times below the limit. Measured against the program's Anf nodes, the
+captured work is at most 0.75 times them on the corpus (`Machines.echo`, 1,316 tokens for 1,754
+nodes; `Machines.fibMain` 0.52), 0.16 on the largest programs (`Natural.fibMain`, 8,459 nodes;
+`Closures.stateLoop`, 11,536 nodes, captures nothing), 0.04 on the benchmark closures and 0.04
+with a liveness placement; since the limit equals `Anf.maxProgramNodes`, a program reaches it only
+with more than one captured token per node.
+A legitimate program can exceed the budget: `fixtures/rc/budget`'s `fanOver`
+(forty-one functions, each a join capturing 200 values jumped to from 127
+leaves: 1,049,600 canonical captured tokens). Under `--rc on` it is refused
+(`cert: own.plain: own.cert.budget: …`, the work and the limit) and no object
+is written; under `--rc auto` it compiles under the immortal policy, and the
+line `rc policy: immortal (plain RC refused: cert: own.plain: own.cert.budget:
+…)` names the work and the limit. A liveness placement lowers the quantity,
+since a join then captures only what its body uses: 1,039,104 for the same
+program, within the limit. The limit is not settable at invocation yet (a
+mechanism to raise the verifier's limits as `IXCC_<LIMIT>` is being built).
+The verifier's other costs on hostile input (the source-domain check
+`programDomain`, quadratic, and the check run three times per certificate)
+are listed in the [roadmap](roadmap.md#hardening).
+The verifier is not slower for the change: over every root of the 12 registered manifests under
+`--rc on` (202 certificates, the CLI's `run` time, eight at once on the shared build box), 4.15 s in
+all and 1.33 s for the slowest (`Closures.stateLoop`), against 4.31 s and 1.50 s with the canonical
+comparison (an earlier pair of runs: 4.06 s and 1.32 s against 4.96 s and 1.99 s; the difference is
+within the box's noise).
 
 **Statics.** Closed constructor trees (and, after P8, field-less closure
 constructors) become immortal cells in the object's read-only data instead
