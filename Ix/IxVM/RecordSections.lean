@@ -51,16 +51,17 @@ model records among them, which the kernel view indexes after the environment's.
 record gets the all-undecided section. With `taint`, a
 binder whose datum IxC's datum function cannot compute is the undecided node, as
 the compiler writes it; without, it is `never` (deliberately ill-typed test
-records, whose rejection should not move to the sentinel). -/
-def sectionsOf (records support : Array (Address × Ixon.Constant))
+records, whose rejection should not move to the sentinel). With the pass's
+statistics (`IxVM.PwHints.Stats`). -/
+def sectionsOfWithStats (records support : Array (Address × Ixon.Constant))
     (blobs : Std.HashMap Address ByteArray)
     (hints : Std.HashMap Address Lean.ReducibilityHints)
     (chosen : Ix.Kernel.RoleTable × Ix.Kernel.Reader.Prelude .anon) (taint : Bool := true)
     (models : Std.HashSet Address := {}) :
-    Except String (Std.HashMap Address (Array Ixon.BinderBlock)) := do
+    Except String (Std.HashMap Address (Array Ixon.BinderBlock) × Stats) := do
   let view : View := { records, support, blobs, hints, table := some chosen.1.toBytes, models }
   let k ← KernelEnv.ofView view (prelude? := some chosen)
-  let (tables, _) := annotateKernel k (taint := taint)
+  let (tables, stats) := annotateKernel k (taint := taint)
   let store : Std.HashMap Address Ixon.Constant :=
     records.foldl (fun m (a, c) => m.insert a c) {}
   let mut out : Std.HashMap Address (Array Ixon.BinderBlock) := {}
@@ -68,7 +69,16 @@ def sectionsOf (records support : Array (Address × Ixon.Constant))
     let some c := store[a]? | continue
     if unsafeOrPartial c then out := out.insert a (Ix.CompileM.undecidedSection c)
     else out := out.insert a (← Ix.Compile.BinderData.sectionOf c blocks)
-  return out
+  return (out, stats)
+
+/-- `sectionsOfWithStats` without the statistics. -/
+def sectionsOf (records support : Array (Address × Ixon.Constant))
+    (blobs : Std.HashMap Address ByteArray)
+    (hints : Std.HashMap Address Lean.ReducibilityHints)
+    (chosen : Ix.Kernel.RoleTable × Ix.Kernel.Reader.Prelude .anon) (taint : Bool := true)
+    (models : Std.HashSet Address := {}) :
+    Except String (Std.HashMap Address (Array Ixon.BinderBlock)) :=
+  (·.1) <$> sectionsOfWithStats records support blobs hints chosen taint models
 
 /-- The role table and prelude of `env`: its binding, the prelude read from its
 own records when it holds them, and otherwise the committed prelude. -/

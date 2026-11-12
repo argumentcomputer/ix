@@ -16,7 +16,11 @@ record's section recomputed by IxC's pass, the record re-encoded with it, must b
 byte-identical to the stored record. A record that differs is counted as a data
 difference (the data of its binders, read in pre-order through its shares, differ)
 or an encoding difference (the data agree, the section's spelling does not: variant
-numbering, block order), and the first few are named.
+numbering, block order), and the first few are named. The pass's statistics are
+printed (among them the constants of records the kernel did not install that are left
+out, a root of theirs undecided). With `IX_BD_DUMP`, the address each record with
+expressions has under the recomputed section is written there, one line per record
+in address order, so that two runs' sections can be compared.
 -/
 
 namespace Tests.Ix.IxVM.BinderAnnotators
@@ -80,9 +84,16 @@ def run : IO UInt32 := do
   let records ← IO.ofExcept (Ix.Compile.BinderData.recordsOf env)
   let t0 ← IO.monoMsNow
   let chosen ← IO.ofExcept (IxVM.RecordSections.chosenOf env)
-  let sections ← IO.ofExcept
-    (IxVM.RecordSections.sectionsOf records #[] env.blobs env.anonHints chosen)
+  let (sections, stats) ← IO.ofExcept
+    (IxVM.RecordSections.sectionsOfWithStats records #[] env.blobs env.anonHints chosen)
   IO.println s!"BDANN {records.size} records; IxC's pass in {(← IO.monoMsNow) - t0} ms"
+  IO.println s!"BDANN pass: {stats.render}"
+  if let some dump ← IO.getEnv "IX_BD_DUMP" then
+    let lines := (records.filter fun (_, c) => !(roots c).isEmpty).qsort
+        (fun x y => x.1.cmpBytes y.1 == .lt)
+      |>.map fun (a, c) =>
+        s!"{a} {Address.blake3 (Ixon.serConstant { c with binders := sections.getD a #[] })}\n"
+    IO.FS.writeFile dump (String.join lines.toList)
   let mut compared := 0
   let mut dataDiffer : Array Address := #[]
   let mut bytesDiffer : Array Address := #[]

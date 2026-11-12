@@ -128,6 +128,9 @@ structure Stats where
   /-- declarations the kernel installed, and records it refused -/
   installed : Nat := 0
   refused : Nat := 0
+  /-- constants of records the kernel did not install that are left out of the
+  environment, a root of theirs undecided (`lenientInfos`) -/
+  lenientLeftOut : Nat := 0
   /-- the stream values written -/
   values : Nat := 0
   deriving Repr, Inhabited
@@ -139,12 +142,13 @@ def Stats.add (a b : Stats) : Stats :=
     freeShares := a.freeShares + b.freeShares,
     fallbacks := a.fallbacks + b.fallbacks, inherited := a.inherited + b.inherited,
     installed := a.installed + b.installed,
-    refused := a.refused + b.refused, values := a.values + b.values }
+    refused := a.refused + b.refused, lenientLeftOut := a.lenientLeftOut + b.lenientLeftOut,
+    values := a.values + b.values }
 
 def Stats.render (s : Stats) : String :=
   s!"records={s.records} blocks={s.blocks} binders={s.binders} params={s.params} \
     shares={s.shares} free-shares={s.freeShares} variants>0={s.extraVariants} fallbacks={s.fallbacks} inherited={s.inherited} \
-    installed={s.installed} refused={s.refused} values={s.values}"
+    installed={s.installed} refused={s.refused} lenient-left-out={s.lenientLeftOut} values={s.values}"
 
 /-! ## Records and their entries -/
 
@@ -314,6 +318,8 @@ structure KernelEnv where
   refused : Nat
   /-- why each refused record was refused (the first reason) -/
   failures : Array (Address × String) := #[]
+  /-- constants of refused records left out, a root of theirs undecided (`lenientInfos`) -/
+  lenientLeftOut : Nat := 0
 
 /-- The index of `env`, as `Ix.Kernel.mkFEnv` builds it (the newest
 constant of a key wins; counters from the oldest), by a loop rather than
@@ -729,7 +735,8 @@ def annotateKernel (k : KernelEnv) (taint : Bool := false) :
     Array (Address × Array Block) × Stats := Id.run do
   let core := Ix.Kernel.Cached.coreKnotI .verified k.fe Ix.Kernel.checkFuel
   let mut out := #[]
-  let mut stats : Stats := { installed := k.installed, refused := k.refused }
+  let mut stats : Stats := { installed := k.installed, refused := k.refused,
+                             lenientLeftOut := k.lenientLeftOut }
   for a in k.owners do
     let some c := k.setup.store[a]? | continue
     let (blocks, fb, inh) := annotateRecord k core a c taint
