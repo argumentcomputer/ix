@@ -2731,12 +2731,6 @@ mod tests {
           u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap()
         })
         .collect();
-      if fields[0] == "resource" {
-        // The retired resource claim: refused, not read.
-        let err = Claim::from_bytes(&bytes).unwrap_err();
-        assert!(err.contains("is retired"), "{err}");
-        continue;
-      }
       let claim = Claim::from_bytes(&bytes).unwrap();
       let (address, encoded) = claim.commit();
       assert_eq!(encoded, bytes, "{}", fields[0]);
