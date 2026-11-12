@@ -32,9 +32,6 @@ set_option linter.unusedSimpArgs false
 set_option linter.unusedTactic false
 set_option linter.unreachableTactic false
 
-/-- The type of `Bytes::Address`: 32 field elements. -/
-abbrev addrTy : Aiur.Ty := .tuple (List.replicate 32 .field)
-
 /-! ## Looking a name up in a list of bindings -/
 
 theorem find_cons_eq {α : Type} {p : α → Bool} {a : α} {l : List α} (hp : p a = true) :
@@ -128,7 +125,7 @@ theorem computes_sub {e1 e2 : Generic.Expr F} {a b : F}
 /-- `UInt8::to_field` of a variable bound to a field element. -/
 theorem computes_toField {n : String} {u : F}
     (hn : locals.find? (·.1 == n) = some (n, .field u)) :
-    ComputesAt h locals (.call "UInt8::to_field" (some []) [.var n]) u := by
+    ComputesAt h locals (.call "UInt8::to_field" (some []) [Generic.Expr.var n]) u := by
   intro r h' cs d
   obtain ⟨vs, m, c1, c2, a, ev, -⟩ := d.call_inv
   rw [instanceName_plain_some] at ev
@@ -160,7 +157,7 @@ theorem computes_match0 {s b0 b1 : Generic.Expr F} {c w0 w1 : F} {dec : Decidabl
     (hs : ComputesAt h locals s c)
     (h0 : c = 0 → ComputesAt h locals b0 w0)
     (h1 : c ≠ 0 → ComputesAt h locals b1 w1) :
-    ComputesAt h locals (.matchValue s [(.literal 0, b0), (.wildcard, b1)])
+    ComputesAt h locals (.matchValue s [(Generic.Pattern.literal 0, b0), (Generic.Pattern.wildcard, b1)])
       (@ite F (c = 0) dec w0 w1) := by
   intro r h' cs d
   obtain ⟨input, m, bs, body, c1, c2, ds, sel, db, -⟩ := d.matchValue_inv
@@ -200,10 +197,10 @@ inductive BindsOnto (base : List (String × SourceValue F)) :
   | nil : BindsOnto base [] [] base
   | wild {ps : List (Generic.Pattern F)} {v : SourceValue F} {vs : List (SourceValue F)}
       {env : List (String × SourceValue F)} :
-      BindsOnto base ps vs env → BindsOnto base (.wildcard :: ps) (v :: vs) env
+      BindsOnto base ps vs env → BindsOnto base (Generic.Pattern.wildcard :: ps) (v :: vs) env
   | bind {n : String} {ps : List (Generic.Pattern F)} {v : SourceValue F}
       {vs : List (SourceValue F)} {env : List (String × SourceValue F)} :
-      BindsOnto base ps vs env → BindsOnto base (.bind n :: ps) (v :: vs) ((n, v) :: env)
+      BindsOnto base ps vs env → BindsOnto base (Generic.Pattern.bind n :: ps) (v :: vs) ((n, v) :: env)
 
 theorem BindsOnto.sound {base : List (String × SourceValue F)} {heap : Heap F}
     {ps : List (Generic.Pattern F)} {vs : List (SourceValue F)}
@@ -266,14 +263,14 @@ def addrCell (K : Type) [Field K] (a : Bytes.Address) : List (SourceValue K) :=
    .field (a[24].toNat : K), .field (a[25].toNat : K), .field (a[26].toNat : K), .field (a[27].toNat : K),
    .field (a[28].toNat : K), .field (a[29].toNat : K), .field (a[30].toNat : K), .field (a[31].toNat : K)]
 
-/-- An address's bytes, listed. -/
 set_option maxHeartbeats 1000000 in
+/-- An address's bytes, listed. -/
 theorem vec32_toList (a : Bytes.Address) :
     a.toList =
       [a[0], a[1], a[2], a[3], a[4], a[5], a[6], a[7], a[8], a[9], a[10], a[11], a[12], a[13], a[14], a[15],
       a[16], a[17], a[18], a[19], a[20], a[21], a[22], a[23], a[24], a[25], a[26], a[27], a[28], a[29], a[30], a[31]] := by
-  apply List.ext_getElem
-  · simp
+  refine List.ext_getElem ?_ ?_
+  · first | simp | exact Vector.length_toList.trans rfl
   · intro i h1 h2
     have hi : i < 32 := by simpa using h1
     interval_cases i <;> first | rfl | simp
@@ -286,14 +283,15 @@ theorem load_ptr_inv {h : Heap F} {t : Aiur.Ty} {addr : Nat} {v0 v : SourceValue
     exact hl.symm
   · simp [loadValue, cell, typed] at hl
 
+set_option maxHeartbeats 1000000 in
 /-- **A represented address loads as its 32 bytes.** -/
 theorem load_addr {h : Heap F} {a : Bytes.Address} {x : SourceValue F}
-    (ha : Bytes.RepAddressRef addrTy h a x) :
+    (ha : Bytes.RepAddressRef (.tuple (List.replicate 32 .field)) h a x) :
     ∀ v, loadValue h x = .ok v → v = .tuple (addrCell F a) := by
   obtain ⟨addr, v0, hx, cell, hv⟩ := ha
   intro v hl
   subst hx
-  have hv2 : v0 = .tuple (a.toList.map fun c => .field (c.toNat : F)) := hv
+  have hv2 : v0 = .tuple (a.toList.map fun c => Value.field (c.toNat : F)) := hv
   have hv0 : v0 = .tuple (addrCell F a) :=
     hv2.trans (by rw [vec32_toList a] <;> rfl)
   exact (load_ptr_inv cell hl).trans hv0
@@ -384,7 +382,7 @@ theorem tail_eval {x y r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
 theorem address_eq_model {x y r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
     {a b : Bytes.Address}
     (ev : ObsFn W "Bytes::address_eq" [x, y] h r h' cs)
-    (ha : Bytes.RepAddressRef addrTy h a x) (hb : Bytes.RepAddressRef addrTy h b y) :
+    (ha : Bytes.RepAddressRef (.tuple (List.replicate 32 .field)) h a x) (hb : Bytes.RepAddressRef (.tuple (List.replicate 32 .field)) h b y) :
     r = .field (Bytes.addressEq F a b) ∧ h' = h := by
   have hxl := load_addr ha
   have hyl := load_addr hb
@@ -435,7 +433,7 @@ otherwise; no allocation. -/
 theorem address_eq_spec {x y r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
     {a b : Bytes.Address}
     (ev : ObsFn W "Bytes::address_eq" [x, y] h r h' cs)
-    (ha : Bytes.RepAddressRef addrTy h a x) (hb : Bytes.RepAddressRef addrTy h b y) :
+    (ha : Bytes.RepAddressRef (.tuple (List.replicate 32 .field)) h a x) (hb : Bytes.RepAddressRef (.tuple (List.replicate 32 .field)) h b y) :
     r = .field (if a = b then 1 else 0) ∧ h' = h := by
   have key := address_eq_model ev ha hb
   have large : Aiur.Library.U64.Compatible F := Aiur.Library.U64.Goldilocks.compatible

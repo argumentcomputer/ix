@@ -27,7 +27,7 @@ set_option linter.unusedVariables false
 
 /-! ## Helpers -/
 
-theorem loadValue_enum_cell {enumName : String} {heap : Heap F} {addr : Nat}
+theorem load_enum_cell {enumName : String} {heap : Heap F} {addr : Nat}
     {c : String} {xs : List (SourceValue F)}
     (cell : heap[addr]? = some (.construct enumName c xs)) :
     loadValue heap (.ptr (.enum enumName) addr) = .ok (.construct enumName c xs) := by
@@ -43,7 +43,7 @@ theorem rep_nil_of_load {h : Heap F} {xs : List α} {p : SourceValue F}
   cases rep with
   | nil _ => rfl
   | cons cell _ _ =>
-    rw [loadValue_enum_cell cell] at hl
+    rw [load_enum_cell cell] at hl
     injection hl with hv; injection hv with _ hc _
     exact absurd hc (by decide)
 
@@ -53,11 +53,11 @@ theorem rep_cons_of_load {h : Heap F} {xs : List α} {p x y : SourceValue F}
     ∃ z zs, xs = z :: zs ∧ R h z x ∧ RepList en R h zs y := by
   cases rep with
   | nil cell =>
-    rw [loadValue_enum_cell cell] at hl
+    rw [load_enum_cell cell] at hl
     injection hl with hv; injection hv with _ hc _
     exact absurd hc (by decide)
   | cons cell rh rt =>
-    rw [loadValue_enum_cell cell] at hl
+    rw [load_enum_cell cell] at hl
     injection hl with hv; injection hv with _ _ hargs
     injection hargs with hx hrest; injection hrest with hy _
     subst hx hy
