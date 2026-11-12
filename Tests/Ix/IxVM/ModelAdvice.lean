@@ -423,8 +423,8 @@ def coverage (_ : Lean.Environment) : IO UInt32 := do
 /-- The `refs` indices a record projects at (`.prj`). -/
 private partial def prjIdxsExpr : Ixon.Expr → Std.HashSet Nat
   | .prj i _ inner => (prjIdxsExpr inner).insert i.toNat
-  | .app a b | .lam _ a b | .all _ _ a b => (prjIdxsExpr a).union (prjIdxsExpr b)
-  | .letE _ t v b => ((prjIdxsExpr t).union (prjIdxsExpr v)).union (prjIdxsExpr b)
+  | .app a b | .lam a b | .all a b => (prjIdxsExpr a).union (prjIdxsExpr b)
+  | .letE _ _ t v b => ((prjIdxsExpr t).union (prjIdxsExpr v)).union (prjIdxsExpr b)
   | _ => {}
 
 private def prjIdxs (c : Ixon.Constant) : Std.HashSet Nat := Id.run do

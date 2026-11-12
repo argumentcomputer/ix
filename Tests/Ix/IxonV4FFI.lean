@@ -18,18 +18,19 @@ def runFFI (cases : List ExprCase) : IO Nat := do
     unless equalExprBytes expr (runPut (putExpr expr)) do
       throw <| IO.userError s!"{name}: Lean/Rust bytes differ"
     checks := checks + 2
-  let typ := Expr.all ⟨.linear, .localUnique⟩ .localShared (.sort 0) (.sort 0)
+  let typ := Expr.all (.sort 0) (.letE true .borrow (.sort 0) (.var 0) (.sort 0))
   let value := lambdaTelescope
-  let ctor : Constructor := ⟨true, 5, 1, 2, 3, typ⟩
+  let ctor : Constructor := ⟨true, 5, 1, 2, 3, FieldModes.ofArray #[.shared, .inherited, .shared], typ⟩
   let ind : Inductive := ⟨false, 5, 2, 3, typ, #[ctor]⟩
   let recr : Recursor := ⟨true, false, 5, 1, 2, 3, 4, typ, #[⟨3, value⟩]⟩
-  let defn : Definition := ⟨.opaq, .part, {}, 5, typ, value⟩
+  let defn : Definition := ⟨.opaq, .part, { alloc := .noRc, boundedStack := true }, 5, typ, value⟩
   let infos : Array (String × ConstantInfo) := #[
     ("definition", .defn defn), ("recursor", .recr recr),
     ("axiom", .axio ⟨true, 5, typ⟩), ("quotient", .quot ⟨.lift, 5, typ⟩),
     ("mutual", .muts #[.defn defn, .indc ind, .recr recr])]
   for (name, info) in infos do
-    let c : Constant := ⟨info, #[value], #[], #[.zero], #[]⟩
+    let c : Constant := ⟨info, #[value], #[], #[.zero],
+      #[⟨false, 0, 0, #[.never ⟨.uniqueBorrowed, .borrowed⟩, .ifAllZero #[0] ⟨.erased, .shared⟩]⟩]⟩
     unless roundtripConstant c == c do
       throw <| IO.userError s!"{name}: declaration FFI roundtrip differs"
     unless equalConstantBytes c (serConstant c) do

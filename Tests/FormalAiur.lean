@@ -142,18 +142,17 @@ private def claimRevealDefnExpr (ixonEnv : Ixon.Env) : IO (String × ClaimWitnes
   pure ("Claim Reveal Defn (typ Expr addr)", witness)
 
 private def claimRevealBinderModes : IO (String × ClaimWitness) := do
-  let typ : Ixon.Expr :=
-    .all .linear .unique (.sort 0)
-      (.lam .affine (.sort 0)
-        (.all .erased .shared (.sort 0) (.var 0)))
+  let typ : Ixon.Expr := .all (.sort 0) (.lam (.sort 0) (.all (.sort 0) (.var 0)))
+  -- the binders' modes, in the record's section
+  let modes : Array Ixon.AllMode := #[⟨.unique, .unique⟩, ⟨.once, .shared⟩, ⟨.erased, .borrowed⟩]
   let c : Ixon.Constant :=
-    ⟨.axio ⟨false, 0, typ⟩, #[], #[], #[.zero], #[]⟩
+    ⟨.axio ⟨false, 0, typ⟩, #[], #[], #[.zero], #[⟨false, 0, 0, modes.map Ixon.BinderNode.never⟩]⟩
   let addr := Address.blake3 (Ixon.ser c)
   let ixonEnv := ({} : Ixon.Env).storeConst addr c
   let typAddr := Address.blake3 (Ixon.runPut (Ixon.putExpr typ))
   let witness ← IO.ofExcept <| buildClaimWitness ixonEnv
     (Ix.Claim.reveal addr (.axio none none (some typAddr))) {}
-  pure ("Claim Reveal Expr (v3 binder modes)", witness)
+  pure ("Claim Reveal Expr (binder modes in the section)", witness)
 
 private def claimRevealCPrj (ixonEnv : Ixon.Env) : IO (String × ClaimWitness) := do
   let (comm, info) ← findConstWithOrThrow ixonEnv "CPrj"

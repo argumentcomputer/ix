@@ -40,16 +40,16 @@ entry's data at the variant its node names; `next` takes the next node of the
 expression's block. -/
 partial def expand (c : Ixon.Constant) (full : Array Bool) (blocks : Std.HashMap Key (Array Ixon.BinderNode)) :
     Ixon.Expr → StateT (List Ixon.BinderNode) (Except String) (Array Ixon.BinderNode)
-  | .lam _ t b => do
+  | .lam t b => do
     let n ← next
     if let .share _ := n then throw "a share node at a binder"
     return #[n] ++ (← expand c full blocks t) ++ (← expand c full blocks b)
-  | .all _ _ t b => do
+  | .all t b => do
     let n ← next
     if let .share _ := n then throw "a share node at a binder"
     return #[n] ++ (← expand c full blocks t) ++ (← expand c full blocks b)
   | .app f a => return (← expand c full blocks f) ++ (← expand c full blocks a)
-  | .letE _ t v b =>
+  | .letE _ _ t v b =>
     return (← expand c full blocks t) ++ (← expand c full blocks v) ++ (← expand c full blocks b)
   | .prj _ _ v => expand c full blocks v
   | .share n => do

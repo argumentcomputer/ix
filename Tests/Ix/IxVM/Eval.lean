@@ -173,14 +173,14 @@ def tests (r : Tests.Ix.IxVM.Runner) : IO Unit := do
   r.build <| execute "input without a body"
     (← witness axiomEnv axiomInput idOutput) (some "")
   for (label, kind) in [("theorem body", Ix.DefKind.thm), ("opaque body", .opaq)] do
-    let c : Ixon.Constant := ⟨.defn ⟨kind, .safe, 0, idType, beta⟩, #[], #[], #[.zero], #[]⟩
+    let c : Ixon.Constant := ⟨.defn ⟨kind, .safe, {}, 0, idType, beta⟩, #[], #[], #[.zero], #[]⟩
     let (fixture, a) := storeConstant {} c
     let fixture := { fixture with anonHints := fixture.anonHints.insert a .opaque }
     r.build <| execute label (← witness fixture a idOutput)
     r.build <| execute s!"output must be an ordinary definition (input with a {label})"
       (← witness env input c) (some "output must be a definition")
   for safety in [Ix.DefinitionSafety.unsaf, .part] do
-    let c : Ixon.Constant := ⟨.defn ⟨.defn, safety, 0, idType, idValue⟩, #[], #[], #[.zero], #[]⟩
+    let c : Ixon.Constant := ⟨.defn ⟨.defn, safety, {}, 0, idType, idValue⟩, #[], #[], #[.zero], #[]⟩
     -- decided data on the subject (a prover's choice), so that the case reaches the safety check
     let (fixture, a) := storeConstant {} (← IO.ofExcept (Tests.Ix.IxVM.withSafeTwinSection {} c))
     r.build <| execute s!"{repr safety} subject" (← witness fixture a idOutput)
@@ -274,7 +274,7 @@ def tests (r : Tests.Ix.IxVM.Runner) : IO Unit := do
   r.build <| execute "captured variable with the same type"
     (← witness captureEnv captureInput (definition captureTy captured)) (some "result does not match")
   for (label, kind) in [("theorem reference", Ix.DefKind.thm), ("opaque reference", .opaq)] do
-    let c : Ixon.Constant := ⟨.defn ⟨kind, .safe, 0, idType, idValue⟩, #[], #[], #[.zero], #[]⟩
+    let c : Ixon.Constant := ⟨.defn ⟨kind, .safe, {}, 0, idType, idValue⟩, #[], #[], #[.zero], #[]⟩
     let (fixture, a) := storeConstant {} c
     let (fixture, b) := storeConstant fixture (withValue c beta)
     let fixture := { fixture with anonHints := fixture.anonHints.insert a .opaque |>.insert b .opaque }

@@ -171,7 +171,7 @@ def idPoly : Ixon.Constant where
 
 /-- The honest section: both roots, both binders `ifAllZero [u]`. -/
 def idPolySection : Array Ixon.BinderBlock :=
-  let u : Ixon.BinderNode := .ifAllZero #[0]
+  let u : Ixon.BinderNode := .ifAllZero #[0] {}
   #[⟨false, 0, 0, #[u, u]⟩, ⟨false, 1, 0, #[u, u]⟩]
 
 /-- The check case of `idPoly` with `binders`. -/
@@ -192,27 +192,27 @@ def circuitCases : Except String (Array Tests.Ix.IxVM.Builder) := do
   let s := idPolySection
   return #[
     idPolyCase ctx "the compiler's data" s (accept := true),
-    idPolyCase ctx "type's outer binder never" (setNode s 0 0 .never),
-    idPolyCase ctx "value's inner binder always zero" (setNode s 1 1 .zero),
+    idPolyCase ctx "type's outer binder never" (setNode s 0 0 (.never {})),
+    idPolyCase ctx "value's inner binder always zero" (setNode s 1 1 (.zero {})),
     idPolyCase ctx "the value's block missing" (s.extract 0 1)
       (rejectsWith := some "binder data: no block for an expression with a binder"),
-    idPolyCase ctx "the undecided sentinel at the type's inner binder" (setNode s 0 1 .undecided)
+    idPolyCase ctx "the undecided sentinel at the type's inner binder" (setNode s 0 1 (.undecided {}))
       (rejectsWith := some "binder data: an undecided binder"),
     idPolyCase ctx "a share node at the value's outer binder" (setNode s 1 0 (.share 0))
       (rejectsWith := some "binder data: a share node at a binder"),
     idPolyCase ctx "a node left over in the type's block"
-      (s.modify 0 fun b => { b with nodes := b.nodes.push .never }),
+      (s.modify 0 fun b => { b with nodes := b.nodes.push (.never {}) }),
     idPolyCase ctx "the blocks out of order" #[s[1]!, s[0]!]
       (rejectsWith := some "binder data: blocks are not strictly ascending"),
     idPolyCase ctx "a root block at variant 1" (s.modify 1 fun b => { b with variant := 1 })
       (rejectsWith := some "binder data: a root block at a variant other than 0"),
     idPolyCase ctx "an empty block" (s.push ⟨true, 0, 0, #[]⟩)
       (rejectsWith := some "binder data: an empty block"),
-    idPolyCase ctx "an empty parameter list" (setNode s 0 0 (.ifAllZero #[]))
+    idPolyCase ctx "an empty parameter list" (setNode s 0 0 (.ifAllZero #[] {}))
       (rejectsWith := some "binder data: an empty parameter list"),
-    idPolyCase ctx "a parameter at the level count" (setNode s 0 0 (.ifAllZero #[1]))
+    idPolyCase ctx "a parameter at the level count" (setNode s 0 0 (.ifAllZero #[1] {}))
       (rejectsWith := some "binder data: a parameter is not below the level count"),
-    idPolyCase ctx "a repeated parameter" (setNode s 0 0 (.ifAllZero #[0, 0]))
+    idPolyCase ctx "a repeated parameter" (setNode s 0 0 (.ifAllZero #[0, 0] {}))
       (rejectsWith := some "binder data: parameters are not strictly ascending")]
 
 def circuit : IO UInt32 :=
@@ -531,11 +531,11 @@ private def ensure (ok : Bool) (msg : String) : IO Unit :=
 /-- The expected sections of the hand-made records. -/
 def expectedSections : List (Ixon.Constant × Array Ixon.BinderBlock) := [
   (Tests.Ix.IxVM.PwHints.twoSorts,
-    #[⟨false, 0, 0, #[.never, .never, .share 0, .never, .never, .share 1]⟩,
-      ⟨true, 0, 0, #[.zero]⟩, ⟨true, 0, 1, #[.never]⟩]),
+    #[⟨false, 0, 0, #[.never {}, .never {}, .share 0, .never {}, .never {}, .share 1]⟩,
+      ⟨true, 0, 0, #[.zero {}]⟩, ⟨true, 0, 1, #[.never {}]⟩]),
   (Tests.Ix.IxVM.PwHints.letBody,
-    #[⟨false, 0, 0, #[.never]⟩, ⟨false, 1, 0, #[.never, .zero, .zero]⟩]),
-  (Tests.Ix.IxVM.PwHints.polyId, #[⟨false, 0, 0, #[.ifAllZero #[0], .ifAllZero #[0]]⟩])]
+    #[⟨false, 0, 0, #[.never {}]⟩, ⟨false, 1, 0, #[.never {}, .zero {}, .zero {}]⟩]),
+  (Tests.Ix.IxVM.PwHints.polyId, #[⟨false, 0, 0, #[.ifAllZero #[0] {}, .ifAllZero #[0] {}]⟩])]
 
 /-- The serialized environment, for comparisons. -/
 private def bytesOf (env : Ixon.Env) : Except String ByteArray := Ixon.serEnv env

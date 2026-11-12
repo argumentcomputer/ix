@@ -34,7 +34,7 @@ def record (members : Array Ixon.MutConst) : Ixon.Constant :=
 -- motive per member. `motive j` is a recursor of a block with `motives`
 -- motives (no parameters, minors or indices) whose type ends in motive `j`.
 def motive (j : Nat) (motives : UInt64 := 2) : Ixon.MutConst :=
-  let binder (body : Ixon.Expr) : Ixon.Expr := .all .many .shared (.sort 0) body
+  let binder (body : Ixon.Expr) : Ixon.Expr := .all (.sort 0) body
   let depth := motives.toNat + 1
   .recr ⟨false, false, 0, 0, 0, motives, 0,
     (List.range depth).foldl (fun body _ => binder body) (.var (UInt64.ofNat (depth - 1 - j))), #[]⟩

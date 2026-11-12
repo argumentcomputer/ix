@@ -111,13 +111,14 @@ def exprUnits : TestSeq :=
     .share 0,
     .app (.var 0) (.var 1),
     .app (.app (.var 0) (.var 1)) (.var 2),  -- Nested apps (telescope)
-    .lam .erased (.sort 0) (.var 0),
-    .lam .affine (.sort 0) (.lam .linear (.sort 1) (.var 0)),  -- Nested lams (telescope)
-    .all .many .shared (.sort 0) (.var 0),
-    .all .linear .unique (.sort 0)
-      (.all .erased .shared (.sort 1) (.var 0)),  -- Nested alls (telescope)
-    .letE (.lean true) (.sort 0) (.var 0) (.var 1),
-    .letE (.lean false) (.sort 0) (.var 0) (.var 1),
+    .lam (.sort 0) (.var 0),
+    .lam (.sort 0) (.lam (.sort 1) (.var 0)),  -- Nested lams (telescope)
+    .all (.sort 0) (.var 0),
+    .all (.sort 0) (.all (.sort 1) (.var 0)),  -- Nested alls (telescope)
+    .leanLet true (.sort 0) (.var 0) (.var 1),
+    .leanLet false (.sort 0) (.var 0) (.var 1),
+    .letE false (.value .once) (.sort 0) (.var 0) (.var 1),
+    .letE true .borrow (.sort 0) (.var 0) (.var 1),
     .prj 0 1 (.var 0),
   ]
   cases.foldl (init := .done) fun acc e =>
@@ -340,7 +341,7 @@ def exprMetaArenaUnits : TestSeq :=
     (arenaVector { nodes := #[.leaf, .app 0 0] } #[0x02, 0x00, 0x0A, 0x00])
 
 def constantUnits : TestSeq :=
-  let defn := Definition.mk .defn .safe 0 (.sort 0) (.var 0)
+  let defn := Definition.mk .defn .safe {} 0 (.sort 0) (.var 0)
   let c := Constant.mk
     (.defn defn)
     #[.var 0, .sort 1]  -- sharing
@@ -718,16 +719,16 @@ occurrence, the second the sentinel. The Rust crate's `binder_fixture` checks
 the same section bytes. -/
 
 def binderFixture : Constant :=
-  { info := .defn (Definition.mk .defn .safe 3
-      (.all .many .shared (.sort 0) (.share 0)) (.lam .many (.sort 0) (.share 0)))
-    sharing := #[.lam .many (.sort 0) (.var 0)]
+  { info := .defn (Definition.mk .defn .safe {} 3
+      (.all (.sort 0) (.share 0)) (.lam (.sort 0) (.share 0)))
+    sharing := #[.lam (.sort 0) (.var 0)]
     refs := #[]
     univs := #[.var 0]
     binders := #[
-      ⟨false, 0, 0, #[.ifAllZero #[0, 2], .share 0]⟩,
-      ⟨false, 1, 0, #[.never, .share 1]⟩,
-      ⟨true, 0, 0, #[.zero]⟩,
-      ⟨true, 0, 1, #[.undecided]⟩] }
+      ⟨false, 0, 0, #[.ifAllZero #[0, 2] {}, .share 0]⟩,
+      ⟨false, 1, 0, #[.never {}, .share 1]⟩,
+      ⟨true, 0, 0, #[.zero {}]⟩,
+      ⟨true, 0, 1, #[.undecided {}]⟩] }
 
 def binderFixtureSection : Array UInt8 :=
   #[4,
@@ -747,27 +748,27 @@ def noncanonicalSections : List (String × Array BinderBlock) :=
   [("blocks out of order", #[b[1]!, b[0]!, b[2]!, b[3]!]),
    ("a repeated key", b.push b[3]!),
    ("a root block at variant 1", b.set! 1 { b[1]! with variant := 1 }),
-   ("an empty parameter list", b.set! 0 { b[0]! with nodes := #[.ifAllZero #[], .share 0] }),
-   ("descending parameters", b.set! 0 { b[0]! with nodes := #[.ifAllZero #[2, 0], .share 0] }),
-   ("a repeated parameter", b.set! 0 { b[0]! with nodes := #[.ifAllZero #[1, 1], .share 0] }),
-   ("a parameter past the level count", b.set! 0 { b[0]! with nodes := #[.ifAllZero #[3], .share 0] }),
+   ("an empty parameter list", b.set! 0 { b[0]! with nodes := #[.ifAllZero #[] {}, .share 0] }),
+   ("descending parameters", b.set! 0 { b[0]! with nodes := #[.ifAllZero #[2, 0] {}, .share 0] }),
+   ("a repeated parameter", b.set! 0 { b[0]! with nodes := #[.ifAllZero #[1, 1] {}, .share 0] }),
+   ("a parameter past the level count", b.set! 0 { b[0]! with nodes := #[.ifAllZero #[3] {}, .share 0] }),
    ("an empty block", b.push ⟨true, 0, 2, #[]⟩)]
 
 /-- Each form is canonical (local) and round-trips; only the complete form
 rejects it. -/
 def incompleteSections : List (String × Array BinderBlock) :=
   let b := binderFixture.binders
-  [("a variant no share node names", b.push ⟨true, 0, 2, #[.never]⟩),
+  [("a variant no share node names", b.push ⟨true, 0, 2, #[.never {}]⟩),
    ("a missing root block", #[b[0]!, b[2]!, b[3]!]),
    ("a missing variant", #[b[0]!, b[1]!, b[2]!]),
    ("variants out of first-occurrence order",
-     (b.set! 0 { b[0]! with nodes := #[.ifAllZero #[0, 2], .share 1] }).set! 1
-       { b[1]! with nodes := #[.never, .share 0] }),
-   ("two equal variants", b.set! 3 { b[3]! with nodes := #[.zero] }),
+     (b.set! 0 { b[0]! with nodes := #[.ifAllZero #[0, 2] {}, .share 1] }).set! 1
+       { b[1]! with nodes := #[.never {}, .share 0] }),
+   ("two equal variants", b.set! 3 { b[3]! with nodes := #[.zero {}] }),
    ("a share node at a binder", b.set! 2 { b[2]! with nodes := #[.share 0] }),
-   ("a binder node at a share", b.set! 0 { b[0]! with nodes := #[.ifAllZero #[0, 2], .never] }),
-   ("a node too many", b.set! 2 { b[2]! with nodes := #[.zero, .zero] }),
-   ("a block for an entry that is not shared", b.push ⟨true, 1, 0, #[.never]⟩),
+   ("a binder node at a share", b.set! 0 { b[0]! with nodes := #[.ifAllZero #[0, 2] {}, .never {}] }),
+   ("a node too many", b.set! 2 { b[2]! with nodes := #[.zero {}, .zero {}] }),
+   ("a block for an entry that is not shared", b.push ⟨true, 1, 0, #[.never {}]⟩),
    ("no section for a record with binders", #[])]
 
 /-- A projection record carries no binder data. -/
@@ -791,7 +792,7 @@ def binderSectionUnits : TestSeq :=
   ++ test "the canonical decoder accepts it" (canonicalRead binderFixture)
   ++ test "a record without binders and no section is canonical and complete"
       (let c := { binderFixture with
-        info := .defn (Definition.mk .defn .safe 0 (.sort 0) (.sort 0)), sharing := #[], binders := #[] }
+        info := .defn (Definition.mk .defn .safe {} 0 (.sort 0) (.sort 0)), sharing := #[], binders := #[] }
        canonicalRead c && c.bindersComplete)
   ++ noncanonicalSections.foldl (init := .done) (fun acc (label, blocks) =>
       let c := { binderFixture with binders := blocks }
@@ -803,12 +804,12 @@ def binderSectionUnits : TestSeq :=
         ++ test s!"{label}: canonical but not complete"
           (c.bindersCanonical && canonicalRead c && !c.bindersComplete))
   ++ test "a projection with a parameter is not canonical"
-      (!canonicalRead (projectionWithSection (.ifAllZero #[0])))
+      (!canonicalRead (projectionWithSection (.ifAllZero #[0] {})))
   ++ test "a projection with any section is not canonical"
-      (!canonicalRead (projectionWithSection .never))
+      (!canonicalRead (projectionWithSection (.never {})))
   ++ test "a level count below 2^32 is canonical; 2^32 round-trips and is not"
       (let withLvls (n : Nat) : Constant :=
-        { info := .defn (Definition.mk .defn .safe n.toUInt64 (.sort 0) (.sort 0)),
+        { info := .defn (Definition.mk .defn .safe {} n.toUInt64 (.sort 0) (.sort 0)),
           sharing := #[], refs := #[], univs := #[.zero], binders := #[] }
        canonicalRead (withLvls (maxLevelCount - 1)) && constantSerde (withLvls maxLevelCount) &&
          !(withLvls maxLevelCount).bindersCanonical && !canonicalRead (withLvls maxLevelCount))

@@ -68,7 +68,7 @@ def const (info : Ixon.ConstantInfo) (refs : List Address) (univs : List Ixon.Un
 
 def defn (kind : Ix.DefKind) (typ value : E) (refs : List Address) (univs : List Ixon.Univ := [])
     (lvls : Nat := 0) (safety : Ix.DefinitionSafety := .safe) : Ixon.Constant :=
-  const (.defn ⟨kind, safety, lvls.toUInt64, typ, value⟩) refs univs
+  const (.defn ⟨kind, safety, {}, lvls.toUInt64, typ, value⟩) refs univs
 
 def iPrj (block : Address) (i : Nat := 0) : Ixon.Constant := const (.iPrj ⟨i.toUInt64, block⟩) [] []
 def cPrj (block : Address) (c : Nat) (i : Nat := 0) : Ixon.Constant :=
@@ -241,7 +241,7 @@ follows the members it names by `recur`. Here the block stores
 def dPrj (block : Address) (i : Nat) : Ixon.Constant := const (.dPrj ⟨i.toUInt64, block⟩) [] []
 
 def member (typ value : E) (safety : Ix.DefinitionSafety := .safe) : Ixon.MutConst :=
-  .defn ⟨.defn, safety, 0, typ, value⟩
+  .defn ⟨.defn, safety, {}, 0, typ, value⟩
 
 def natToNat : E := all (ref 0) (ref 0)
 
@@ -308,7 +308,7 @@ prelude's `Bool` under its content address.) -/
 
 def twoBlock : Ixon.Constant :=
   const (.muts #[.indc ⟨false, 0, 0, 0, sort 0,
-    #[⟨false, 0, 0, 0, 0, recur 0⟩, ⟨false, 0, 1, 0, 0, recur 0⟩]⟩]) [] [.succ one]
+    #[⟨false, 0, 0, 0, 0, .inherited, recur 0⟩, ⟨false, 0, 1, 0, 0, .inherited, recur 0⟩]⟩]) [] [.succ one]
 
 def twoMotive : E := all (ref 0) (sort 0)
 def twoRec : Ixon.Constant :=
@@ -357,7 +357,7 @@ reduction. -/
 
 def pBlock : Ixon.Constant :=
   const (.muts #[.indc ⟨false, 0, 0, 0, sort 0,
-    #[⟨false, 0, 0, 0, 2, all (ref 0) (all (ref 0) (recur 0))⟩]⟩]) [nat] [one]
+    #[⟨false, 0, 0, 0, 2, .inherited, all (ref 0) (all (ref 0) (recur 0))⟩]⟩]) [nat] [one]
 
 def pMotive : E := all (ref 0) (sort 0)
 def pMinor : E := all (ref 1) (all (ref 1) (.app (var 2) (apps (ref 2) [var 1, var 0])))
@@ -423,8 +423,8 @@ place of the committed table's Init entries. Then `"ab"` is its
 
 def listBlock : Ixon.Constant :=
   const (.muts #[.indc ⟨false, 1, 1, 0, all (sort 0) (sort 0),
-    #[⟨false, 1, 0, 1, 0, all (sort 0) (.app (recur 0 [1]) (var 0))⟩,
-      ⟨false, 1, 1, 1, 2, all (sort 0) (all (var 0) (all (.app (recur 0 [1]) (var 1))
+    #[⟨false, 1, 0, 1, 0, .inherited, all (sort 0) (.app (recur 0 [1]) (var 0))⟩,
+      ⟨false, 1, 1, 1, 2, .inherited, all (sort 0) (all (var 0) (all (.app (recur 0 [1]) (var 1))
         (.app (recur 0 [1]) (var 2))))⟩]⟩]) [] [.succ (.var 0), .var 0]
 
 /-- `List.rec.{u_1, u}`: universe table `[Type u, u_1, u]`, refs `[List, nil, cons]`. -/
@@ -442,7 +442,7 @@ def listRec : Ixon.Constant :=
     [address 51, address 52, address 53] [.succ (.var 1), .var 0, .var 1]
 
 def unitBlock : Ixon.Constant :=
-  const (.muts #[.indc ⟨false, 0, 0, 0, sort 0, #[⟨false, 0, 0, 0, 0, recur 0⟩]⟩]) [] [one]
+  const (.muts #[.indc ⟨false, 0, 0, 0, sort 0, #[⟨false, 0, 0, 0, 0, .inherited, recur 0⟩]⟩]) [] [one]
 
 /-- The recursor of a one-constructor, no-field type at `refs = [T, mk]`. -/
 def unitRec (t mk : Address) : Ixon.Constant :=
@@ -457,7 +457,7 @@ def charOfNat : Ixon.Constant :=
 /-- `String : Type`, `String.mk : List.{0} Char → String`. -/
 def stringBlock : Ixon.Constant :=
   const (.muts #[.indc ⟨false, 0, 0, 0, sort 0,
-    #[⟨false, 0, 0, 0, 1, all (.app (ref 0 [1]) (ref 1)) (recur 0)⟩]⟩])
+    #[⟨false, 0, 0, 0, 1, .inherited, all (.app (ref 0 [1]) (ref 1)) (recur 0)⟩]⟩])
     [address 51, address 61] [one, .zero]
 
 def stringRec : Ixon.Constant :=

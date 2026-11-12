@@ -18,7 +18,7 @@ private def identityValue : Ixon.Expr :=
   .leanLam (.sort 0) (.leanLam (.var 0) (.var 0))
 
 private def definition (kind : Ix.DefKind) (ty value : Ixon.Expr) : Ixon.Definition :=
-  ⟨kind, .safe, 0, ty, value⟩
+  ⟨kind, .safe, {}, 0, ty, value⟩
 
 private def block (definitions : Array Ixon.Definition)
     (sharing : Array Ixon.Expr := #[]) (safeTwinSection : Bool := false) : Ixon.Env × Address := Id.run do

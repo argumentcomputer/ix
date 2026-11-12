@@ -160,7 +160,7 @@ def accepts (input : List (Address × Ixon.Constant)) (limit : Nat := 16) : Bool
 
 def wrongConstructorIndex : Ixon.Constant :=
   ⟨.muts #[.indc ⟨false, 0, 0, 0, .sort 0,
-    #[⟨false, 0, 1, 0, 0, .recur 0 #[]⟩]⟩], #[], #[], #[.zero], #[]⟩
+    #[⟨false, 0, 1, 0, 0, .inherited, .recur 0 #[]⟩]⟩], #[], #[], #[.zero], #[]⟩
 
 -- The reconstructed constructor projection does not match the block's
 -- metadata: the reader finds it malformed, which rejects.
