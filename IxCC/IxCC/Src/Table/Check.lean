@@ -56,10 +56,14 @@ def collectTermsConsts : List Term → Nat → List CId → Option (Nat × List 
     let (b1, acc1) ← t.constsBudget b acc
     collectTermsConsts ts b1 acc1
 
+/-- A constant the axiom-closure walk may pass: in range, and a standard axiom
+if an axiom. A theorem ingress read by its statement (`Program.byStatement`)
+is refused: its proof is not in the program, so its closure cannot be
+walked. -/
 def declAxiomOk (p : Program) (c : CId) (d : Decl) : Bool :=
   decide (c < p.size) && match d with
     | .axio .. => isStandardAxiom p c
-    | _ => true
+    | _ => !p.byStatement.contains c
 
 def checkAxiomWalk (p : Program) : Nat → List CId → List CId → Bool
   | 0, _ :: _, _ => false
@@ -82,9 +86,20 @@ def checkAxiomWalk (p : Program) : Nat → List CId → List CId → Bool
 /-- Verify that the transitive constant closure of `thm` in `p` contains no
 `Decl.axio` outside the standard Lean axioms (`propext`, `Quot.sound`,
 `Classical.choice`). The closure is the one `AxiomReach` defines;
-`checkAxiomClosure_sound` proves the property for it. -/
+`checkAxiomClosure_sound` proves the property for it.
+
+A theorem ingress read by its statement (`Program.byStatement`) is refused on
+both branches: its proof is not in `p`, so `p`'s closure of it says nothing
+about the axioms its proof uses. The walk refuses it at its first step
+(`declAxiomOk`); the shortcut (every axiom of `p` standard, so no walk) applies
+only to a theorem not so read. The shortcut does not look at the theorems
+`thm` reaches: that each of them was read with its proof is an invariant of
+`Ingress.reach` (everything a proof seed reaches is read with proofs; `checkEqn`
+and `checkCsimp` take only a theorem read with its proof), tested and not
+proved; the walk checks it on every constant it passes. -/
 def checkAxiomClosure (p : Program) (thm : CId) : Except String Unit :=
-  let allStandard := decide (thm < p.size) && (List.range p.size).all fun c =>
+  let allStandard := decide (thm < p.size) && !p.byStatement.contains thm &&
+    (List.range p.size).all fun c =>
     match p.decl? c with
     | some (.axio ..) => isStandardAxiom p c
     | _ => true
@@ -431,7 +446,7 @@ A `CId` at or above `p.size` names no constant of `p` (`Program`: `consts`
 holds exactly the keys below `size`, which ingress guarantees and the type does
 not), so the conclusion is stated for the reachable `c < p.size`. Both
 branches of the check are covered: the shortcut when every axiom of `p` is
-standard, and the walk, which fails closed on an unknown constant, a body over
+standard (and `thm` was not read by its statement), and the walk, which fails closed on an unknown constant, a body over
 `maxBodyNodes` and exhausted fuel. -/
 theorem checkAxiomClosure_sound {p : Program} {thm : CId}
     (h : checkAxiomClosure p thm = .ok ()) :
@@ -441,7 +456,8 @@ theorem checkAxiomClosure_sound {p : Program} {thm : CId}
   split at h
   · next hcond =>
     rcases Bool.or_eq_true_iff.1 hcond with hall | hwalk
-    · obtain ⟨hlt, hrng⟩ := Bool.and_eq_true_iff.1 hall
+    · obtain ⟨hlt', hrng⟩ := Bool.and_eq_true_iff.1 hall
+      obtain ⟨hlt, -⟩ := Bool.and_eq_true_iff.1 hlt'
       refine ⟨of_decide_eq_true hlt, fun c _ hc => ⟨hc, ?_⟩⟩
       have hstd := List.all_eq_true.1 hrng c (List.mem_range.2 hc)
       cases hd : p.decl? c with
@@ -456,7 +472,9 @@ theorem checkAxiomClosure_sound {p : Program} {thm : CId}
       exact (hS3 c (axiomReach_mem_of_closed hS3 hthm hr)).1
   · cases h
 
-/-- `checkAxiomClosure` on every root (not called on the recheck path). -/
+/-- `checkAxiomClosure` on every root (not called on the recheck path); a root
+that is a theorem read by its statement is refused, as `checkAxiomClosure`
+refuses one. -/
 def checkAxiomClosureRoots (p : Program) : Bool :=
   p.roots.all fun (_, c) => (checkAxiomClosure p c).isOk
 
@@ -517,6 +535,8 @@ def checkEqn (p : Program) (f thm : CId) : Except String Resolve := do
     | throw "eqn: the subject is not a safe definition"
   let some (.defn .thm .safe n' tθ _vθ) := p.decl? thm
     | throw "eqn: the equation is not a safe theorem"
+  if p.byStatement.contains thm then
+    throw "eqn: the equation was read by its statement; its proof is not in the program"
   unless tf.nodesLe maxTermNodes && vf.nodesLe maxBodyNodes &&
       tθ.nodesLe maxTermNodes do
     throw "eqn: term exceeds node budget"
@@ -548,6 +568,8 @@ def checkCsimp (p : Program) (f g thm : CId) : Except String Resolve := do
     | throw "csimp: the subject is not a safe definition"
   let some (.defn .thm .safe n' tθ _vθ) := p.decl? thm
     | throw "csimp: the theorem is not a safe theorem"
+  if p.byStatement.contains thm then
+    throw "csimp: the theorem was read by its statement; its proof is not in the program"
   unless tf.nodesLe maxTermNodes && tθ.nodesLe maxTermNodes do
     throw "csimp: term exceeds node budget"
   checkAxiomClosure p thm

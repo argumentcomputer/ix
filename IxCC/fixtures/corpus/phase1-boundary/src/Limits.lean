@@ -1,167 +1,25 @@
 /-!
-The layout limits of Phase 1 cells (phase 1 plan, MT.3; 04 §3) as Lean
-sources reach them. A header holds a scanned-field count of at most 254 and
-a constructor tag of at most `0x7EFF`; `Rt.lower` declines anything larger
-(`rt.layout`). From a Lean source, the Ixon decoder's budgets (expression
-depth 256, a `share` node a leaf) come first, on every constant of the
-closure ix selects, which holds a structure's or inductive's whole logical
-unit (its recursor, `casesOn`, `noConfusion`, `mk.inj`, `mk.injEq`, `sizeOf`
-lemmas):
+The constructor-count limits of Phase 1 cells (phase 1 plan, MT.3; 04 §3) as
+Lean sources reach them; the field-count limit is in `Fields254.lean` and
+`Fields255.lean`. A header holds a constructor tag of at most `0x7EFF`;
+`Rt.lower` declines anything larger (`rt.layout`). From a Lean source, IxCC's
+expression-depth budget (256, a `share` node a leaf), on the records a root
+reaches, comes first:
 
-* a structure of 49 `Nat` fields decodes, is allocated and read back; one of
-  50 fields is declined at ingress (`decode`: its `mk.injEq`, of depth
-  5n + 7, and nothing else of its unit, is deeper than 256), so neither a
-  cell of 254 fields nor `rt.layout` is reached from source (`tests-rt`
-  refuses 255 fields on a synthetic program);
 * an inductive of 125 constructors (124 field-less, the last with a field)
-  decodes; one of 126 is declined at ingress (its `casesOn` and `recOn`, of
-  depth 2n + 5, are deeper than 256), so tags above 124 are not
-  reached (nor the header's full `u16` tag, nor `0x7EFF`);
+  is read; one of 126 is declined at ingress (`decode`: its `casesOn`, which
+  the root's `match` reaches, is 2n + 5 = 257 deep), so tags above 124 are
+  not reached (nor the header's full `u16` tag, nor `0x7EFF`);
 * before that, the four-arm `match` with a wildcard of `tags…` keeps its
   alternatives as closures (`fir: fir.closures`) on an inductive of 17 or
   more constructors; 16 compile.
 
 Each fixture is the closure of one root, so a decline of one does not hide
 the others. The values go through `keep…`, a recursion on a runtime count,
-so the cells survive the middle end; the constructor arguments are the
-variable in the first four positions and literals after them, which keeps
-`mk…` within the depth budget.
+so the cells survive the middle end.
 -/
 
 namespace Limits
-
-structure Big49 where
-  f0 : Nat
-  f1 : Nat
-  f2 : Nat
-  f3 : Nat
-  f4 : Nat
-  f5 : Nat
-  f6 : Nat
-  f7 : Nat
-  f8 : Nat
-  f9 : Nat
-  f10 : Nat
-  f11 : Nat
-  f12 : Nat
-  f13 : Nat
-  f14 : Nat
-  f15 : Nat
-  f16 : Nat
-  f17 : Nat
-  f18 : Nat
-  f19 : Nat
-  f20 : Nat
-  f21 : Nat
-  f22 : Nat
-  f23 : Nat
-  f24 : Nat
-  f25 : Nat
-  f26 : Nat
-  f27 : Nat
-  f28 : Nat
-  f29 : Nat
-  f30 : Nat
-  f31 : Nat
-  f32 : Nat
-  f33 : Nat
-  f34 : Nat
-  f35 : Nat
-  f36 : Nat
-  f37 : Nat
-  f38 : Nat
-  f39 : Nat
-  f40 : Nat
-  f41 : Nat
-  f42 : Nat
-  f43 : Nat
-  f44 : Nat
-  f45 : Nat
-  f46 : Nat
-  f47 : Nat
-  f48 : Nat
-
-def mk49 (n : Nat) : Big49 :=
-  ⟨n, n, n, n, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
-   16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31,
-   32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47,
-   48⟩
-
-def keep49 : Nat → Big49 → Big49
-  | 0, b => b
-  | k + 1, b => keep49 k b
-
-/-- `n + 48`: the first field plus the last. -/
-def fields49 (n k : Nat) : Nat :=
-  let b := keep49 k (mk49 n)
-  b.f0 + b.f48
-
-structure Big50 where
-  f0 : Nat
-  f1 : Nat
-  f2 : Nat
-  f3 : Nat
-  f4 : Nat
-  f5 : Nat
-  f6 : Nat
-  f7 : Nat
-  f8 : Nat
-  f9 : Nat
-  f10 : Nat
-  f11 : Nat
-  f12 : Nat
-  f13 : Nat
-  f14 : Nat
-  f15 : Nat
-  f16 : Nat
-  f17 : Nat
-  f18 : Nat
-  f19 : Nat
-  f20 : Nat
-  f21 : Nat
-  f22 : Nat
-  f23 : Nat
-  f24 : Nat
-  f25 : Nat
-  f26 : Nat
-  f27 : Nat
-  f28 : Nat
-  f29 : Nat
-  f30 : Nat
-  f31 : Nat
-  f32 : Nat
-  f33 : Nat
-  f34 : Nat
-  f35 : Nat
-  f36 : Nat
-  f37 : Nat
-  f38 : Nat
-  f39 : Nat
-  f40 : Nat
-  f41 : Nat
-  f42 : Nat
-  f43 : Nat
-  f44 : Nat
-  f45 : Nat
-  f46 : Nat
-  f47 : Nat
-  f48 : Nat
-  f49 : Nat
-
-def mk50 (n : Nat) : Big50 :=
-  ⟨n, n, n, n, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
-   16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31,
-   32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47,
-   48, 49⟩
-
-def keep50 : Nat → Big50 → Big50
-  | 0, b => b
-  | k + 1, b => keep50 k b
-
-/-- `n + 49`: the first field plus the last. -/
-def fields50 (n k : Nat) : Nat :=
-  let b := keep50 k (mk50 n)
-  b.f0 + b.f49
 
 inductive T16 where
   | c0
@@ -526,8 +384,6 @@ def main : IO Unit := do
     | root :: args =>
       let a := args.map String.toNat!
       IO.println <| match root, a with
-        | "Limits.fields49", [x, y] => toString (Limits.fields49 x y)
-        | "Limits.fields50", [x, y] => toString (Limits.fields50 x y)
         | "Limits.tags16", [x, y] => toString (Limits.tags16 x y)
         | "Limits.tags17", [x, y] => toString (Limits.tags17 x y)
         | "Limits.tags125", [x, y] => toString (Limits.tags125 x y)

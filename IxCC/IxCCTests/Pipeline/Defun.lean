@@ -351,10 +351,17 @@ def expectEntry (a : Assert) (label : String) (m n : Nat) (res : Except Err Made
     expect a (made.roots.head?.any (·.params == n)) s!"{label}: the export does not take {n} parameters"
     return some made
 
-/-- An input whose table proposals include `ps` (what a certificate's table
-may choose). -/
-def withProposals (inp : Input) (ps : List Src.Proposal) : Input :=
-  { inp with hints := { inp.hints with proposals := inp.hints.proposals ++ ps.toArray } }
+/-- Whether the table the producer builds for `inp` gives `subject` an entry of
+the kind `kind` from the input's proposals (so that a test of that entry cannot
+pass on the kernel body). -/
+def entryAccepted (inp : Input) (kind : Src.ProposalKind) (subject : Ixon.Address) : Bool :=
+  let (_, _, s) := Src.Table.build {} inp.program inp.hints.proposals
+  match inp.program.lookup subject with
+  | some c => match kind with
+    | .eqn => s.eqnAccepted.contains c
+    | .csimp => s.csimpAccepted.contains c
+    | _ => false
+  | none => false
 
 /-- A sidecar root's address by name. -/
 def sidecarAddr (h : Src.Hints) (n : String) : IO Ixon.Address :=
@@ -411,16 +418,19 @@ def arity (a : Assert) (native : Option IxCCTests.Rt.Native.Tools) : IO (Array S
           out := out.push (← one a native label inp midDefault cases 10 (closures := false))
   out := out.push s!"phase2-arity: given an entry (Anf/declared): {", ".intercalate entered}"
   let h ← IO.ofExcept (Src.Hints.ofK1Json (← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile eqs))))
-  let main4 ← ingressFile ixe eqs ["Arity.main4"]
+  -- each proposal is made before ingress's walk, so that its theorem is read
+  -- with its proof as a sidecar proposal's is (`ingressFileWith`)
   let eta : Src.Proposal := { kind := .eqn, subject := ← sidecarAddr h "Arity.main4"
                               theorem? := some (← sidecarAddr h "Arity.main4_eta"), name? := some "Arity.main4" }
-  out := out.push (← one a native "main4_eta-phase1" (withProposals main4 [eta]) midDefault
+  let main4 ← ingressFileWith ixe eqs #[eta] ["Arity.main4"]
+  expect a (entryAccepted main4 .eqn eta.subject) "main4_eta-phase1: the η-long equation is not accepted"
+  out := out.push (← one a native "main4_eta-phase1" main4 midDefault
     [([3, 4], 34), ([12, 5], 125)] 10 (closures := false))
-  let sd ← ingressFile ixe eqs ["Arity.slowDouble"]
   let cs : Src.Proposal := { kind := .csimp, subject := ← sidecarAddr h "Arity.slowDouble"
                              target? := some (← sidecarAddr h "Arity.fastDouble")
                              theorem? := some (← sidecarAddr h "Arity.slowDouble_eq"), name? := some "Arity.slowDouble" }
-  let sdc := withProposals sd [cs]
+  let sdc ← ingressFileWith ixe eqs #[cs] ["Arity.slowDouble"]
+  expect a (entryAccepted sdc .csimp cs.subject) "slowDouble_csimp-phase1: the csimp entry is not accepted"
   let _ ← expectEntry a "slowDouble_csimp-phase1" 0 1 (← IO.lazyPure fun _ => compile {} sdc midDefault)
   out := out.push (← one a native "slowDouble_csimp-phase1" sdc midDefault [([5], 10), ([0], 0)] 10
     (closures := false))

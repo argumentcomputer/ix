@@ -261,15 +261,40 @@ hosted-CI or cold-store timing is claimed.
   with pinned identities from their role tables ([byte
   contract](byte-contract.md)); every committed closure a compile path reads is
   role-bound, written by this repository's `ix` ([corpus](corpus.md)).
-- **Known defect: an unreached over-budget record refuses the closure.**
-  The decoder refuses a whole closure if any record exceeds its expression
-  depth budget (256, a `share` node a leaf), and `ix compile` selects a
-  structure's whole logical unit, so a program that only *uses* a structure
-  of 50 or more fields is refused at `ingress: decode` because of its
-  `mk.injEq` (depth `5n + 7`; 257 at 50 fields, 1,277 at 254), a lemma it
-  never reaches. Before the role-bound refreeze, a structure of 254 fields
-  compiled. Remedy: ingress refuses an over-budget record only when the
-  target reaches it (`phase1-boundary`'s README has the measurement).
+- **What ingress reads** (since 2026-11-12). Only the records its seeds
+  reach (`Src.Ingress.reach`: every root the sidecar names, not only the chosen
+  ones; the pinned identities; the resource context's addresses; the equation
+  theorems of the sidecar's proposals on reached subjects and the resource
+  equations, with their proofs), a theorem's proof only where an equation
+  theorem's closure reaches it; IxCC's consumer budget (depth 256 with a
+  `share` node a leaf, 4,096 entries per list) applies to those, so a record
+  nothing reaches (a structure's `mk.injEq`, a large proof a string function's
+  termination argument cites) no longer refuses the closure: a structure of
+  254 fields compiles again, and so do programs whose closures carry an
+  over-budget proof. Every record is still accepted by the certified kernel
+  and bounded in depth as stored (2,560, shares expanded; not the terms the
+  kernel builds) ([compile boundary](compile-boundary.md)). Before, from the
+  role-bound refreeze (2026-11-11), the decoder refused a whole closure for any
+  record over the budget. A claim is verified with the sidecar it was made with.
+- **`csimp` proposals** (a known gap, since 2026-11-12). A table entry may name
+  only a theorem ingress read with its proof, which is a theorem a sidecar
+  proposal names; the `ixcc/k1-equations/1` sidecar carries `eqn` proposals
+  only, so no `csimp` entry verifies from a sidecar (none did in practice: the
+  producer proposes only what the sidecar gives). The remedy: the sidecar
+  carries `csimp` proposals (`ix compile` exporting a `@[csimp]` theorem with
+  its two constants), which `Seeds.of` already takes as proof seeds.
+- **Long literal lists** (measured 2026-11-12, the same before and after the
+  change above). Lean refuses a list or array literal of 3,000 elements at its
+  default `maxRecDepth`; raised, it splits the literal with `let`s (51 deep),
+  and IxCC declines it, at 3,000 elements in the middle end (`anf.produce`: a
+  Lam global exceeds the node budget) and at 5,000 at `ingress: decode` (a list
+  over IxCC's 4,096-entry budget). An explicit chain `a :: b :: … :: []` of
+  3,000 or 5,000 elements is as deep as it is long (3,005 and 5,005 with
+  shares expanded) and is declined at `ingress: decode`: past IxCC's depth
+  budget (256, a `share` a leaf) and past the depth one record may have before
+  the kernel (2,560). Compiling such programs needs the kernel to walk deep
+  terms without overflowing its stack (the kernel package's work, "Hardening")
+  and IxCC's budgets to grow with it.
 
 - **Values.** `Nat`, exact above Lir and at run time a tagged word below
   2^63 (a larger value is the resource failure `natOverflow`); constructors
@@ -641,6 +666,20 @@ comparison is coNP-hard for levels with `imax`); with the switch IxCC's
 verifier runs IxCK itself, so the kernel's planned call budget in that
 comparison is that verifier's guard.
 
+A known crash on hostile input remains (2026-11-12; HD-3's class). The
+envelope decodes every record with the kernel package's canonical decoder
+(`Ixon.Canonical.deConstant`) before any depth bound runs, and that decoder
+recurses natively on an expression's nesting: a record of unshared nesting
+within the 1 MiB record budget aborts `ixcc compile` and `ixcc check-cert`
+with a stack overflow, at about 30,000 levels on a 2 MiB stack and 100,000 on
+8 MiB (measured with `LEAN_STACK_SIZE_KB`; on this branch and on the tip
+before it alike), whether or not any root reaches the record. The kernel's
+own byte entry decodes the same way. The fix belongs to the kernel package
+(a depth limit inside its decoder) or to the envelope (a scan of the bytes
+for nesting depth before decoding); neither is made yet. The envelope's depth
+bound (`V3.withinKernelDepth`) limits the records as stored, after that
+decoder, and not the terms the kernel builds while typing them.
+
 ### Resource soundness
 
 Usage (`0 1 &`), ownership (`!`) and locality (`~`, `let borrow`)
@@ -676,8 +715,10 @@ resource context in the equations sidecar (the profile and the checked
 equation pairs of the annotated recursive definitions), the table selecting
 each annotated equation only against its checked pair, and the producer
 choosing plain RC or zero RC accordingly. No committed input takes that path:
-this repository's `ix compile` no longer has the option that wrote the
-resource profile (`--profile`) and writes no checked pairs in its sidecar, so
+this repository's `ix compile` has never written a resource context or checked
+equation pairs (the producer that did is on the unmerged branch
+`jcb/usage-ownership`, preserved as
+`origin/jcb/compilatrix-resource-wip-2026-10-11`), so
 neither an annotated recursive fixture nor the dated one it replaced (an
 earlier producer's, unbound, which the kernel front end refuses) can be
 produced; `ix` refuses OS-04's annotated `len` at its resource admission. What
@@ -694,8 +735,8 @@ checked-pair loop of `Src.Resource.selected` (a program with a resource
 context), and the reading of a present resource profile and checked pairs in
 `Src.Hints.resourceOfJson`; the producer's zero-RC choice on a heap program
 whose written contracts allow it is exercised only on programs built in
-memory. What would restore the test: `ix compile` writing a resource context
-again (a profile option and the checked pairs in its sidecar), then a
+memory. What would make the test possible: `ix compile` writing a resource
+context (a profile option and the checked pairs in its sidecar), then a
 role-bound annotated recursive fixture in the ownership family.
 
 ### Standalone executables
@@ -757,7 +798,8 @@ update and artifact comparison.
   closure changes again). The closures grew: the selection adds recursors,
   whole logical units and checker support (DO-20); equation counts grew; no
   source, root, case, value or decline changed, except the boundary family's
-  field limit, restated at 49/50 fields (the known defect above). The typing
+  field limit, restated at 49/50 fields (a defect since removed: "What
+  ingress reads" above; the family is back at 254/255 fields). The typing
   bundles went with the erased checker, and IxCC's catalog support is retired
   (DO-16). The unbound flag, with no user left, is removed: `ix compile` writes
   the role-bound envelope only, as on `main`.

@@ -4,12 +4,12 @@ import IxCCTests.Exe.Support
 /-! # Constructors of more than 31 scanned fields under plain RC
 
 The counted heap allocates constructors of up to 254 scanned fields (heap stage 1: the general cell
-layouts, `Rt.Rc.Gen`). The two registered roots with wider constructors, `Limits.fields49` (49
-fields, `phase1-boundary`) and bigctor's `entry` (70 fields, `phase1-scalar`), compile under
-`--rc auto` to plain RC (before the switch, the bounded route declined them and `--rc auto` fell back
-to the immortal policy); natively, each case gives the value its manifest records (Lean's, the
-`lean-run` oracle), and the one value at or above 2⁶³ fails `natOverflow` (status 3), as every
-policy does. -/
+layouts, `Rt.Rc.Gen`). Two registered roots with wider constructors, `Limits.fields254` (254
+fields, the most a header counts, `phase1-boundary`) and bigctor's `entry` (70 fields,
+`phase1-scalar`), compile under `--rc auto` to plain RC (before the switch, the bounded route
+declined them and `--rc auto` fell back to the immortal policy); natively, each case gives the value
+its manifest records (Lean's, the `lean-run` oracle), and the one value at or above 2⁶³ fails
+`natOverflow` (status 3), as every policy does. -/
 
 set_option autoImplicit false
 namespace IxCCTests.Pipeline.Rc.Wide
@@ -24,9 +24,9 @@ structure Fixture where
 
 /-- The cases of the corpus manifests (`fixtures/corpus/*/corpus.json`). -/
 def fixtures : List Fixture :=
-  [{ dir := "fixtures/corpus/phase1-boundary", name := "fields49", root := "Limits.fields49"
-     cases := [([5, 3], some 53), ([0, 0], some 48), ([1000, 10], some 1048),
-       ([9223372036854775759, 1], some 9223372036854775807), ([9223372036854775807, 1], none)] },
+  [{ dir := "fixtures/corpus/phase1-boundary", name := "fields254", root := "Limits.fields254"
+     cases := [([5, 3], some 258), ([0, 0], some 253), ([1000, 10], some 1253),
+       ([9223372036854775554, 1], some 9223372036854775807), ([9223372036854775807, 1], none)] },
    { dir := "fixtures/corpus/phase1-scalar", name := "bigctor", root := "entry"
      cases := [([10], some 10), ([9223372036854775807], some 9223372036854775807)] }]
 

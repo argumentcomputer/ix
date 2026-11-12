@@ -843,7 +843,8 @@ theorem verifyProgram_plainRc_sound {cfg : Recheck.Config} {P : Src.Program}
 /-- End-to-end byte-level soundness of `CompileClaim.verifyBytes` under `.immortal` policy,
 exposing `Recheck.ingress`, `Ixon.V3.decodeAnonymousEnv`, the certified kernel's acceptance of the whole
 environment (`Src.KernelFront.accept`, `accept_spec`),
-`Src.Resource.validate`, `Src.Ingress.readConsts` with the pins of the kernel's admitted table, the
+`Src.Resource.validate`, `Src.Ingress.readConsts` of the records the seeds reach
+(`Src.Ingress.reach`) with the pins of the kernel's admitted table, the
 program read against the kernel's reading (`Recheck.ingress_parts`), canonical relevance over the kernel
 (`Recheck.checkCanonicalRelevance_iff`), `Recheck.front` (`Src.Relevance.Proof.WellAnnotated`),
 and `verifyProgram_immortal_sound`. -/
@@ -864,11 +865,13 @@ theorem verifyBytes_immortal_sound {cfg : Recheck.Config} {envBytes : ByteArray}
       Src.Resource.validate inp.program = .ok () ∧
       Src.KernelFront.Reading.build inp.kernel.acc inp.program = .ok inp.kernel.rd ∧
       inp.kernel.fe = Ix.Kernel.mkFEnv inp.kernel.acc.env ∧
-      (∃ rawHints chosen rawProg,
+      (∃ rawHints chosen records rawProg,
         Src.Hints.ofK1Json equations = .ok rawHints ∧
         Recheck.selectRoots rawHints.roots (selectTargetRoots cfg equations c.target) = .ok chosen ∧
         chosen.isEmpty = false ∧
-        Src.Ingress.readConsts inp.env (chosen.map (·.1)) = .ok rawProg ∧
+        Src.Ingress.reach inp.env (Src.Ingress.Seeds.of rawHints
+          (Src.KernelFront.pinsOfTable inp.kernel.acc.table)) = .ok records ∧
+        Src.Ingress.readConsts inp.env records (chosen.map (·.1)) = .ok rawProg ∧
         inp.program = { rawProg with
           known := Src.Pinned.known
             { rawProg with known := { pins := Src.KernelFront.pinsOfTable inp.kernel.acc.table } },
@@ -932,7 +935,8 @@ theorem verifyBytes_immortal_sound {cfg : Recheck.Config} {envBytes : ByteArray}
 /-- End-to-end byte-level soundness of `CompileClaim.verifyBytes` under `.zeroRc` policy,
 exposing `Recheck.ingress`, `Ixon.V3.decodeAnonymousEnv`, the certified kernel's acceptance of the whole
 environment (`Src.KernelFront.accept`, `accept_spec`),
-`Src.Resource.validate`, `Src.Ingress.readConsts` with the pins of the kernel's admitted table, the
+`Src.Resource.validate`, `Src.Ingress.readConsts` of the records the seeds reach
+(`Src.Ingress.reach`) with the pins of the kernel's admitted table, the
 program read against the kernel's reading (`Recheck.ingress_parts`), canonical relevance over the kernel
 (`Recheck.checkCanonicalRelevance_iff`), `Recheck.front` (`Src.Relevance.Proof.WellAnnotated`),
 and `verifyProgram_zeroRc_sound`. -/
@@ -953,11 +957,13 @@ theorem verifyBytes_zeroRc_sound {cfg : Recheck.Config} {envBytes : ByteArray}
       Src.Resource.validate inp.program = .ok () ∧
       Src.KernelFront.Reading.build inp.kernel.acc inp.program = .ok inp.kernel.rd ∧
       inp.kernel.fe = Ix.Kernel.mkFEnv inp.kernel.acc.env ∧
-      (∃ rawHints chosen rawProg,
+      (∃ rawHints chosen records rawProg,
         Src.Hints.ofK1Json equations = .ok rawHints ∧
         Recheck.selectRoots rawHints.roots (selectTargetRoots cfg equations c.target) = .ok chosen ∧
         chosen.isEmpty = false ∧
-        Src.Ingress.readConsts inp.env (chosen.map (·.1)) = .ok rawProg ∧
+        Src.Ingress.reach inp.env (Src.Ingress.Seeds.of rawHints
+          (Src.KernelFront.pinsOfTable inp.kernel.acc.table)) = .ok records ∧
+        Src.Ingress.readConsts inp.env records (chosen.map (·.1)) = .ok rawProg ∧
         inp.program = { rawProg with
           known := Src.Pinned.known
             { rawProg with known := { pins := Src.KernelFront.pinsOfTable inp.kernel.acc.table } },
@@ -1026,7 +1032,8 @@ theorem verifyBytes_zeroRc_sound {cfg : Recheck.Config} {envBytes : ByteArray}
 /-- End-to-end byte-level soundness of `CompileClaim.verifyBytes` under `.plainRc` policy,
 exposing `Recheck.ingress`, `Ixon.V3.decodeAnonymousEnv`, the certified kernel's acceptance of the whole
 environment (`Src.KernelFront.accept`, `accept_spec`),
-`Src.Resource.validate`, `Src.Ingress.readConsts` with the pins of the kernel's admitted table, the
+`Src.Resource.validate`, `Src.Ingress.readConsts` of the records the seeds reach
+(`Src.Ingress.reach`) with the pins of the kernel's admitted table, the
 program read against the kernel's reading (`Recheck.ingress_parts`), canonical relevance over the kernel
 (`Recheck.checkCanonicalRelevance_iff`), `Recheck.front` (`Src.Relevance.Proof.WellAnnotated`),
 and `verifyProgram_plainRc_sound`. -/
@@ -1047,11 +1054,13 @@ theorem verifyBytes_plainRc_sound {cfg : Recheck.Config} {envBytes : ByteArray}
       Src.Resource.validate inp.program = .ok () ∧
       Src.KernelFront.Reading.build inp.kernel.acc inp.program = .ok inp.kernel.rd ∧
       inp.kernel.fe = Ix.Kernel.mkFEnv inp.kernel.acc.env ∧
-      (∃ rawHints chosen rawProg,
+      (∃ rawHints chosen records rawProg,
         Src.Hints.ofK1Json equations = .ok rawHints ∧
         Recheck.selectRoots rawHints.roots (selectTargetRoots cfg equations c.target) = .ok chosen ∧
         chosen.isEmpty = false ∧
-        Src.Ingress.readConsts inp.env (chosen.map (·.1)) = .ok rawProg ∧
+        Src.Ingress.reach inp.env (Src.Ingress.Seeds.of rawHints
+          (Src.KernelFront.pinsOfTable inp.kernel.acc.table)) = .ok records ∧
+        Src.Ingress.readConsts inp.env records (chosen.map (·.1)) = .ok rawProg ∧
         inp.program = { rawProg with
           known := Src.Pinned.known
             { rawProg with known := { pins := Src.KernelFront.pinsOfTable inp.kernel.acc.table } },

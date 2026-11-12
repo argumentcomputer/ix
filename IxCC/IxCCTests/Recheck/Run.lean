@@ -6,6 +6,7 @@ import IxCC.Lir.SplitEdges
 import IxCC.Recheck.Rc.Replay
 import IxCCTests.Recheck.Hostile
 import IxCCTests.Recheck.Deep
+import IxCCTests.Recheck.Reach
 import IxCCTests.Recheck.Perf
 import IxCCTests.Recheck.Producer
 import IxCCTests.Recheck.RootShape
@@ -217,6 +218,9 @@ def main (args : List String) : IO UInt32 := do
   if let ["--probe-back", kind, n, k] := args then return ← Deep.probeBack kind n.toNat! k.toNat!
   if let ["--probe-lam", kind, n, stg] := args then return ← Deep.probeLam kind n.toNat! stg
   if let ["--probe-walkk", kind, n, c, op] := args then return ← Deep.probeWalkKind kind n.toNat! c.toNat! op
+  if let ["--write-hostile", dir, shp, n] := args then return ← Deep.writeHostile dir shp n.toNat!
+  if let ["--layers", ixe, json] := args then return ← Deep.layers ixe json
+  if let ["--hostile-depth", dir] := args then return ← Deep.depthChild dir
   if args == ["--stack-8mib"] then return ← Deep.stack8
   if args == ["--stack-2mib"] then return ← Deep.stack2
   if args == ["--producer-reference"] then return ← Producer.referenceWork
@@ -289,6 +293,10 @@ def main (args : List String) : IO UInt32 := do
     part a "role-bound closures: the byte-level verifiers accept their claims; the unbound envelopes are refused at ingress" do
       Bound.run a
     part a "every verifier on an 8 MiB stack (FA follow-up, item 1)" (Deep.stackPart a)
+    part a "records past the kernel's depth bound, reached or not, refused by the envelope on 8 and 2 MiB stacks"
+      (Deep.depthPart a)
+    part a "ingress reads what the seeds reach: unread proofs, planted uses refused, whole and reached readings alike, tampered sidecars, the walk"
+      (Reach.run a)
     part a "Select.select against Select.run on generated Lir" (selection a count)
     part a "recheck artifacts equal a fresh ingress, produce and run" (artifacts a)
     IO.println s!"tests-recheck: {← a.get} assertions passed"

@@ -32,9 +32,9 @@ boundaries are:
 
 | Boundary | Current computation | Role |
 | --- | --- | --- |
-| `V3.decodeAnonymousEnv` | `Address.blake3Pure`, including the canonical constant-root Merkle fold and the role binding's section | Authenticating Ixon objects, blobs, the closure root and, in a role-bound envelope, the role table ([byte contract](byte-contract.md)) |
+| `V3.decodeAnonymousEnv` | `Address.blake3Pure`, including the canonical constant-root Merkle fold and the role binding's section | Authenticating Ixon objects, blobs, the closure root and, in a role-bound envelope, the role table ([byte contract](byte-contract.md)); every record decoded by the kernel's canonical decoder and, as stored, bounded in depth (`V3.withinKernelDepth`: its expressions, shares expanded, at most 2,560; not the terms the kernel builds while typing), not by IxCC's consumer budget |
 | `Src.KernelFront.accept` (in `Recheck.ingress`) | the certified kernel's tiered entry (`Ix.Kernel.Admission.checkBytesTieredUsing`) at IxCC's pure BLAKE3 (`KernelFront.hash`), with the artifact's own reducibility hints (advice about unfolding order; no guarantee depends on them) | The certified kernel's acceptance of the whole role-bound environment, every record reached or not: byte admission and authentication of every record and blob, the role table's admission, canonical decoding, the kernel's reader and verified fold over the logical records, the typing tier over the `partial` and `unsafe` definitions. Not optional; an unbound envelope is refused. Its accept gives, through the kernel's theorems, the reading's fidelity, a model and the strong model of the logical environment (`accept_spec`, `checkConstantsTiered_ok`) |
-| `Src.Ingress.readConsts` with `KernelFront.pinsOfTable`; `KernelFront.Reading.build` | `Address.blake3` (pure; the block-member keys `V3.*ProjAddr`, `Ixon/V3/Keys.lean`) | Keying block members and constructors by their projection addresses (a projection record must be the alias of a member it keys); the pinned identities from the kernel's admitted role table; the program read against the kernel's reading (keys, addresses, declaration headers; refused with code `faithful`) |
+| `Src.Ingress.reach` and `Src.Ingress.readConsts` with `KernelFront.pinsOfTable`; `KernelFront.Reading.build` | `Address.blake3` (pure; the block-member keys `V3.*ProjAddr`, `Ixon/V3/Keys.lean`) | Reading only the records its seeds reach (every root the sidecar names, not only the chosen ones; the role table's pinned identities; the resource context's addresses; the equation theorems of the sidecar's proposals on reached subjects, read with their proofs; a theorem reached only as a constant read by its statement, `Src.Program.byStatement`), each within IxCC's consumer budget in what is read of it (refused with code `decode`, the record named); keying block members and constructors by their projection addresses (a projection record must be the alias of a member it keys); the pinned identities from the kernel's admitted role table; the program read against the kernel's reading (keys, addresses, declaration headers; refused with code `faithful`) |
 | `Recheck.produceWith` relevance annotation; `Recheck.checkCanonicalRelevance` | the certified kernel's executed core over the accepted environment (`KernelFront.Kernel.annotateChecked`: inference, conversion, weak head normalisation and the annotation pass, each asked of the kernel's own term at the position IxCC's term occupies, with IxCC's term checked to correspond) | In `produce`, a proposal the relevance checks then decide. On the byte-level verifiers (`CompileClaim.verifyBytes`, `Ring0Sip.verifyBytes`, `ixcc check-cert`) `checkCanonicalRelevance` re-runs the kernel annotator on `(inp.kernel, cert.table)` and requires the certificate's annotation to equal its output (Stage A). Each class it gives is the kernel core's answer at that position and conversely (`KernelFront.Ctx.classify*_proof`, `_of_runs`); the composition of those runs into typing derivations at the evaluated positions is planned ([kernel front end](kernel-front-end-design.md)) |
 | `Src.Resource.validateContext` | `Address.blake3Pure` plus the codec's pure framing operations | Binding raw effective profile bytes and checked equation selections to actual Src declarations; no resource-safety claim |
 | Separate `V3.validate` / resource-claim API | Resource profile, object and claim commitments (pure); no typing (on every compile path the kernel's acceptance runs before resource admission) | Diagnostic addressed admission; not called by `Recheck.compile` or assumed by `Recheck.sound` |
@@ -69,7 +69,84 @@ wrong, *declined* otherwise. In particular:
   (`KernelFront.PolicyDecline`, told apart by the kernel's `notImplemented`
   failure and its message's leading prose part).
 
-After the kernel, IxCC's own admission still refuses per root, with the
+Before the kernel, the envelope refuses a record it cannot authenticate or
+the kernel's canonical decoder cannot decode, and a record nesting deeper than
+the bound IxCC keeps ahead of the kernel: `ixcc: ingress: decode: ixon-v4: record ADDRESS nests
+deeper than the kernel reads (2560, shares expanded)` (`V3.withinKernelDepth`:
+every expression with its shares expanded; the kernel's acceptance recurses
+natively on them and was measured to overflow a 2 MiB stack between 3,000 and
+4,096 levels of one record and an 8 MiB one between 10,000 and 30,000). The
+deepest records of real artifacts are far below it: 775 in IxCC's committed
+closures, 325 in an Init+Std artifact, 1,221 in Mathlib (2026-11-12, shares
+expanded). Universe depth is not bounded, as before. The bound keeps one
+stored record within what the kernel survives; it does not make the kernel
+safe. The kernel's canonical decoder runs before it and recurses on a record's
+unshared nesting: a record nested about 30,000 deep without shares overflows a
+2 MiB stack (about 100,000 on 8 MiB), as before ingress read only what its
+seeds reach. And the kernel's conversion builds deeper terms than any stored
+record: unfolding across records (about 4 records of 2,560 levels for 10,000 on
+2 MiB) and shared chains can take it past its stack. Both are the kernel
+package's to fix (the roadmap's "Hardening").
+
+After the kernel, ingress reads the records its seeds reach
+(`Src.Ingress.reach`, across every reference of what it reads), and refuses one
+over IxCC's consumer budget (depth 256 with a `share` a leaf, 4,096 entries per
+list) in what it reads: `ixcc: ingress: decode: ixon-v4: constant exceeds the
+consumer budget (record ADDRESS, reached from …)`. The seeds (`Seeds.of`) are
+exactly:
+
+- every root the sidecar names, not only the roots a compile chooses with
+  `--root` (so the program's numbering does not depend on the choice);
+- the constants the kernel's admitted role table binds to the identities IxCC
+  pins (`Nat` and its constructors and recursor, `Bool`, `Eq`, the `Decidable`
+  constructors, the `Nat` primitives, the three standard axioms);
+- every address the resource context names;
+- read with their proofs: the resource context's equation theorems, and the
+  equation theorem of every sidecar proposal whose subject is reached; what
+  their proofs reach is read with proofs too.
+
+Any other theorem reached is read by its statement (its type; its proof is not
+read and what only the proof names is not reached). A record none of the seeds
+reaches is not read, so it cannot refuse the artifact by IxCC's limits (only by
+the kernel's). The seeds are wider than the target: a record over the budget
+that another root of the sidecar reaches, or that a proposed equation's proof
+uses, refuses every compile of the artifact with that sidecar, whichever roots
+are chosen (`tests-recheck`, `Reach.seeds`).
+
+Consequences, each a difference from the reader before 2026-11-12, which read
+every record:
+
+- **Table entries name only theorems read with their proofs.** `Table.checkEqn`
+  and `checkCsimp` refuse a theorem read by its statement, so an `eqn` or `csimp`
+  entry, the producer's or a certificate's, is accepted only for a theorem that
+  a proposal of the sidecar names (or a resource equation). The
+  `ixcc/k1-equations/1` sidecar carries `eqn` proposals only, so no certificate
+  with a `csimp` entry verifies from a sidecar today (the roadmap's "csimp
+  proposals"). A proposal whose subject is not read (not reached, or not in the
+  artifact) gives the hint diagnostic `… is not in the program read` and no entry.
+- **A root, a resource address or a proposal named by a projection address
+  whose record the artifact does not store is not read**: ingress follows only
+  records the artifact stores, and reaches a block member through its
+  projection record. Such a root is refused: `ixcc: ingress: ingress: src
+  ingress: root ADDRESS is not a record the artifact stores (…)`; such a
+  resource address is "absent from the closure", such a proposal dropped. The
+  reader before laid out every block and keyed its members whether or not their
+  projection records were stored. `ix compile` stores one for every member and
+  constructor (measured 2026-11-12 on IxCC's committed closures, the probes'
+  artifacts, Init+Std and Mathlib: every block, every projection record), so
+  this is a requirement on artifacts ([byte contract](byte-contract.md)), not a
+  loss on any artifact `ix compile` writes.
+- **A claim is verified with the sidecar it was produced with.** The program's
+  constants and their numbering (`CId`s, which the certificate's table and
+  relevance annotation name) depend on the records read, so on the whole
+  sidecar: its roots and its proposals. A verifier given the same artifact and
+  claim with a sidecar that names other roots or other proposals reads another
+  program and refuses the claim with a certificate failure that does not say
+  why (`tests-recheck`, `Reach.tamperedSidecar`, `Reach.verifierSidecar`). The
+  claim does not bind the sidecar (it carries no hash of it); binding it is
+  not done.
+
+IxCC's own admission then refuses per root, with the
 reference path from the root (`Src.Admit`, stage `admit`): a relevant
 theorem, a relevant standard axiom (`Classical.choice` through
 `Classical.propDecidable`, `propext`), a reached `partial` or `unsafe`

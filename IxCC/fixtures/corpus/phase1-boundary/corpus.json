@@ -5193,52 +5193,52 @@
       ]
     },
     {
-      "name": "fields49",
+      "name": "fields254",
       "source": {
-        "path": "Limits.lean",
-        "sha256": "07373ac0b46a1f83388783520f42dea1a377b76c8b094affe97dfa57f2ad2264",
+        "path": "Fields254.lean",
+        "sha256": "fa4516ba974d52cfa895d0a1d77b5c61f8ec8e73b49f384179b9238cdfa375bd",
         "license": "Apache-2.0 OR MIT",
         "variant": "original",
         "origins": []
       },
       "consts": [
-        "Limits.fields49"
+        "Limits.fields254"
       ],
       "protocol": "stdin",
       "closure": {
-        "path": "fields49.ixe",
-        "sha256": "00bdac6ca3210b855bb96d7df1efdbcd58c01de4bf542d29562d3b371277639f",
-        "bytes": 89439
+        "path": "fields254.ixe",
+        "sha256": "fe2c7b76dc2932af085d6b147d832b0fa73efe59b7f27145f56164f1bf87e1a6",
+        "bytes": 131718
       },
       "equations": {
-        "path": "fields49.equations.json",
-        "sha256": "9f67446705054db3d38bd09e8d1915b50943c9e661bd692171f7ce0099f640ec",
+        "path": "fields254.equations.json",
+        "sha256": "64537b1a355285a61d6826cc5b3d52a4ed189e5f3b7427958d679e0110e57a03",
         "equations": 3,
         "failures": 0
       },
-      "named_env_sha256": "c86635f69896433a7f6f1698b08713ced77851488b7d6337419f6be7b65338b5",
+      "named_env_sha256": "5424cadaa435bcc0f0a205566bd3cc2bf43c738c84d14f54971c3e52a7a9e3bc",
       "census": {
-        "path": "fields49.census.json",
-        "sha256": "4af1109490266882222af50ec6763828276be22ec4529f185fa8801473d33dfe"
+        "path": "fields254.census.json",
+        "sha256": "847b7d616d3f909c7974e1864f99f9c07f8525766e2bd64e6a3221d9f6ccf83d"
       },
       "roots": [
         {
-          "name": "Limits.fields49",
-          "address": "b58701b7ef61262492a309a436e87604a8f1e0d5fa324a98fa7479a9e5d786a2",
+          "name": "Limits.fields254",
+          "address": "6004dbed90179302ab7a87c7367f57831d89320ec6cf036e3e439d17109a30bc",
           "params": 2,
           "result": "nat",
           "oracles": [
             "lean-run"
           ],
           "decline": null,
-          "note": "49 fields, the widest structure whose logical unit decodes (its `mk.injEq`, of depth 5n + 7, is 252 deep): allocated, kept through a recursion and read",
+          "note": "254 fields, the most a header counts: allocated, kept through a recursion and read. The structure's logical unit holds records over the decoder's depth budget (`mk.injEq`, `mk.inj`, `noConfusion`, `rec`, `casesOn`), which the root does not reach; the block and `mk254`, which it does, are within it",
           "cases": [
             {
               "args": [
                 5,
                 3
               ],
-              "value": "53",
+              "value": "258",
               "machine": true
             },
             {
@@ -5246,7 +5246,7 @@
                 0,
                 0
               ],
-              "value": "48",
+              "value": "253",
               "machine": true
             },
             {
@@ -5254,12 +5254,12 @@
                 1000,
                 10
               ],
-              "value": "1048",
+              "value": "1253",
               "machine": true
             },
             {
               "args": [
-                9223372036854775759,
+                9223372036854775554,
                 1
               ],
               "value": "9223372036854775807",
@@ -5270,7 +5270,7 @@
                 9223372036854775807,
                 1
               ],
-              "value": "9223372036854775855",
+              "value": "9223372036854776060",
               "machine": true
             }
           ]
@@ -5278,38 +5278,38 @@
       ]
     },
     {
-      "name": "fields50",
+      "name": "fields255",
       "source": {
-        "path": "Limits.lean",
-        "sha256": "07373ac0b46a1f83388783520f42dea1a377b76c8b094affe97dfa57f2ad2264",
+        "path": "Fields255.lean",
+        "sha256": "9062135599ac611979842bed9184b6f11bf5481c1e0816a46fa87749bd2a8597",
         "license": "Apache-2.0 OR MIT",
         "variant": "original",
         "origins": []
       },
       "consts": [
-        "Limits.fields50"
+        "Limits.fields255"
       ],
       "protocol": "stdin",
       "closure": {
-        "path": "fields50.ixe",
-        "sha256": "6ed0b51d47e101b1c66914ffed9d9749b8d09d264fbc9d0fac2cda81b1371ca6",
-        "bytes": 89998
+        "path": "fields255.ixe",
+        "sha256": "e60441050c48ca6f81e06621b170dfb53eda7745ba62609fa57f8d45b2250acb",
+        "bytes": 131979
       },
       "equations": {
-        "path": "fields50.equations.json",
-        "sha256": "27f12c6686f3c29b73bf85a5fc829cafbd5dd2a1043f3794165211d48d55b720",
+        "path": "fields255.equations.json",
+        "sha256": "f3674a3c164e3e44a40028e34fd6c6d27b4df7f56f63f9d6be70dabcacfd5b78",
         "equations": 3,
         "failures": 0
       },
-      "named_env_sha256": "eb705b39e698f4a17b75ff12868d3df5130d957caebed69533ea6f853c98710d",
+      "named_env_sha256": "d11aea635788f9cf9c2465ae6abc366b20c476e41e14fa084f2424620bd266b8",
       "census": {
-        "path": "fields50.census.json",
-        "sha256": "5f2444fe1980c14cb4eba9f056436864412c9fecd2240d067c2d7fb22b1820f8"
+        "path": "fields255.census.json",
+        "sha256": "3f715aff5d7336353e913c889d364659c518b324e75672d121e2d89180ecd69f"
       },
       "roots": [
         {
-          "name": "Limits.fields50",
-          "address": "822090ccee6c11711c9dfc6d49e8dc1ded74bfcc918d98fe73968d39259b43ca",
+          "name": "Limits.fields255",
+          "address": "162fa3d5a1de9abeef35258d662e31f92f1e67629c5efc9d7076fd22fe0a8631",
           "params": 2,
           "result": "nat",
           "oracles": [
@@ -5319,14 +5319,14 @@
             "stage": "ingress",
             "code": "decode"
           },
-          "note": "50 fields: the structure's `mk.injEq` (depth 5n + 7 = 257) is deeper than the decoder budget of 256, so ingress declines the closure",
+          "note": "255 fields: `mk255`, which the root reaches, is 257 deep, over the decoder's depth budget of 256, so ingress refuses the root (`ingress: decode`) before `Rt.lower`'s `rt.layout` could",
           "cases": [
             {
               "args": [
                 5,
                 3
               ],
-              "value": "54"
+              "value": "259"
             }
           ]
         }
@@ -5336,7 +5336,7 @@
       "name": "tags16",
       "source": {
         "path": "Limits.lean",
-        "sha256": "07373ac0b46a1f83388783520f42dea1a377b76c8b094affe97dfa57f2ad2264",
+        "sha256": "0a1c3b7d8bb725b69962f6a767f32aef2e5c8c545b5e0f3498701f00337f8823",
         "license": "Apache-2.0 OR MIT",
         "variant": "original",
         "origins": []
@@ -5421,7 +5421,7 @@
       "name": "tags17",
       "source": {
         "path": "Limits.lean",
-        "sha256": "07373ac0b46a1f83388783520f42dea1a377b76c8b094affe97dfa57f2ad2264",
+        "sha256": "0a1c3b7d8bb725b69962f6a767f32aef2e5c8c545b5e0f3498701f00337f8823",
         "license": "Apache-2.0 OR MIT",
         "variant": "original",
         "origins": []
@@ -5474,7 +5474,7 @@
       "name": "tags125",
       "source": {
         "path": "Limits.lean",
-        "sha256": "07373ac0b46a1f83388783520f42dea1a377b76c8b094affe97dfa57f2ad2264",
+        "sha256": "0a1c3b7d8bb725b69962f6a767f32aef2e5c8c545b5e0f3498701f00337f8823",
         "license": "Apache-2.0 OR MIT",
         "variant": "original",
         "origins": []
@@ -5527,7 +5527,7 @@
       "name": "tags126",
       "source": {
         "path": "Limits.lean",
-        "sha256": "07373ac0b46a1f83388783520f42dea1a377b76c8b094affe97dfa57f2ad2264",
+        "sha256": "0a1c3b7d8bb725b69962f6a767f32aef2e5c8c545b5e0f3498701f00337f8823",
         "license": "Apache-2.0 OR MIT",
         "variant": "original",
         "origins": []
@@ -5550,7 +5550,7 @@
       "named_env_sha256": "9f15b5e6ad0b928ab23b2872e0c8d50b91d87fed5ac9d71727c47b0f48ed4a70",
       "census": {
         "path": "tags126.census.json",
-        "sha256": "5f2444fe1980c14cb4eba9f056436864412c9fecd2240d067c2d7fb22b1820f8"
+        "sha256": "0a48554af4754163c1c567b7cd1f747c667f59d3e75bd635e9303cff81f13092"
       },
       "roots": [
         {

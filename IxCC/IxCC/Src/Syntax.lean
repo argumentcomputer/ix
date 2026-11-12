@@ -101,6 +101,14 @@ inductive Term where
   | strLit (s : String)
   deriving BEq, Repr, Inhabited, Hashable
 
+/-- The value ingress stores for a theorem it reads by its statement
+(`Program.byStatement`): `Sort 0`, which is no proof of an equation (its type
+is `Sort 1`). It stands for a proof that is not in the program; the theorem is
+recorded in `Program.byStatement`, and every consumer that could take a
+theorem's value either never takes one (SrcEval, erasure, the annotator: a
+theorem is never a runtime term) or refuses a theorem recorded there. -/
+def Term.unreadProof : Term := .sort .zero
+
 /-- One recursor rule: `rhs = λ ps motives minors fields. …`, selected by
 `ctor` (constructor index `rules[j]` of the major inductive). -/
 structure Rule where
@@ -364,6 +372,15 @@ structure Program where
   /-- Untrusted address/header bindings; revalidated with the unfolding table.
   This is not a resource-safety or profile-execution certificate. -/
   resource : Option Resource.Context := none
+  /-- The theorems ingress read by their statement (`Src.Ingress.reach`):
+  theorems the program reaches only as constants, not as ones whose proof the
+  unfolding table may examine. Each one's type is read; its proof is not, and
+  its stored value is `Term.unreadProof`. The unfolding table's checks refuse
+  such a theorem (`Table.checkEqn`, `checkCsimp`, and `checkAxiomClosure` on
+  both its branches: the walk at its first step, and its all-standard shortcut
+  does not apply to such a theorem), and the recheck path refuses an
+  annotation that names its value (`Recheck.checkRelevanceKeys`). -/
+  byStatement : NatSet := .leaf
   deriving Inhabited
 
 namespace Program

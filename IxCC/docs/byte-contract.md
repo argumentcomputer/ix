@@ -125,8 +125,8 @@ for each record kind it meets:
 
 | Kind | What IxCC does |
 | --- | --- |
-| `defn`, `recr`, `axio`, `quot` | a Src constant (`Src.Ingress.readConsts`) |
-| `muts` (a block) | one Src constant per member and per constructor, keyed by its projection address |
+| `defn`, `recr`, `axio`, `quot` | a Src constant (`Src.Ingress.readConsts`), when the seeds reach it (`Src.Ingress.reach`); a theorem reached only as a constant is read by its statement (its proof is not read) |
+| `muts` (a block) | one Src constant per member and per constructor, keyed by its projection address, when the seeds reach the block; a member named from outside the block (a sidecar root, a resource address, a proposal's subject or theorem) is reached through its projection record, which the file must store (`ix compile` stores one for every member and constructor); otherwise it is not read, and a root so named is refused (`src ingress: root … is not a record the artifact stores`). The reader before 2026-11-12 keyed every block's members whether or not their projection records were stored |
 | `dPrj`, `iPrj`, `rPrj`, `cPrj` (projection records) | an alias of the member it names; a projection record that names no member of a block in the closure is refused (`src ingress: projection record … names no member of a block in the closure`) |
 | §1 blobs | authenticated; read through the constants that reference them (`nat` and `str` literals) |
 | assumptions | read; a reference to a constant the file does not hold is refused at ingress, so IxCC compiles only closed closures |
@@ -134,11 +134,26 @@ for each record kind it meets:
 | §4–§6 metadata | not part of the closure: kept as opaque bytes, never interpreted |
 | the binding | authenticated, decoded, kept with the environment (`V3.Env.binding`) and read for the pins |
 
-Which records the compiled program *reaches* is decided by the target, as
-before; the rest are read and ignored. Every record, reached or not, is
-checked by the certified kernel at ingress (an artifact with a record it does not
-accept is refused whole); support and certificate records cost ingestion and
-that acceptance, not compilation.
+Which records IxCC reads is decided by the file and its sidecar: ingress reads
+the records its seeds reach (every root the sidecar names, not only the roots a
+compile chooses; the role table's pinned identities; every address the resource
+context names; and, with their proofs, the resource equations and the equation
+theorem of every sidecar proposal whose subject is reached; `Src.Ingress.reach`,
+listed in the [compile boundary](compile-boundary.md)), and applies its own
+limits (`V3.Constant.withinBudget`) to those only; the rest are authenticated
+and not read. Every record, reached or not, is decoded by the kernel's
+canonical decoder, bounded in depth as stored (`V3.withinKernelDepth`: its
+expressions, shares expanded, at most 2,560; this bounds the records, not the
+terms the kernel builds while checking them, and runs after the decoder), and
+checked by the certified kernel at ingress (an artifact with a record it does
+not accept is refused whole); support and certificate records cost ingestion
+and that acceptance, not compilation.
+
+Since what is read depends on the sidecar's roots and proposals, so do the
+program's constants and their numbering, which a compile claim's certificate
+names: a claim is verified with the artifact and the sidecar it was produced
+with. Under a sidecar naming other roots or proposals the verifier reads another
+program and refuses the claim. The claim does not carry the sidecar's hash.
 
 ## The role binding
 

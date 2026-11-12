@@ -10,7 +10,8 @@ import IxCC.Src.Readback
 
 The front-end pipeline: Ixon v4 decoding → the certified kernel's acceptance
 of the whole role-bound environment (`KernelFront.accept`; no resource
-admission) → ingress → pinned identities from the kernel's admitted role
+admission) → the records the seeds reach (`Ingress.reach`) → ingress of
+them → pinned identities from the kernel's admitted role
 table → the program read against the kernel's reading → unfolding table →
 the table's revalidation → relevance annotation (an oracle, by default the
 annotator over the kernel) → installation → the relevance check → `Lazify`
@@ -73,13 +74,16 @@ private def stage (code : String) : Except String α → Except Diag α
   | .ok a => .ok a
   | .error e => .error (Diag.of code e)
 
-/-- The kernel's acceptance, ingress, the pinned identities of the kernel's
-admitted role table, the program read against the kernel's reading, and the
-unfolding table. -/
+/-- The kernel's acceptance, the records the seeds reach (`Ingress.reach`,
+as `Recheck.ingress` computes them), ingress of them, the pinned identities of
+the kernel's admitted role table, the program read against the kernel's
+reading, and the unfolding table. -/
 def prepare (cfg : LoadConfig) (env : V3.Env) (hints : Hints) :
     Except Diag (Program × KernelFront.Kernel × Array Diag × Table.Stats) := do
   let acc ← (KernelFront.accept env).mapError fun r => Diag.of "kernel" r.report
-  let p ← stage "ingress" (Ingress.readConsts env (hints.roots.map (·.1)))
+  let records ← stage "decode" (Ingress.reach env
+    (Ingress.Seeds.of hints (KernelFront.pinsOfTable acc.table)))
+  let p ← stage "ingress" (Ingress.readConsts env records (hints.roots.map (·.1)))
   let p := { p with known := { pins := KernelFront.pinsOfTable acc.table } }
   let p := { p with known := Pinned.known p, resource := hints.resource }
   let rd ← stage "faithful" (KernelFront.Reading.build acc p)

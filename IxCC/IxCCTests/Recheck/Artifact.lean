@@ -287,7 +287,8 @@ noncomputable def program : Program :=
   \{ consts := {natMapK (fun c (_ : ConstEntry) => s!"c{c}") p.consts 0 1}
     size := {p.size}
     roots := {listOf (fun ((x, c) : IxCC.Ixon.Address × CId) => s!"({addrName x}, {c})") p.roots}
-    known := {known p.known} }
+    known := {known p.known}
+    byStatement := {Src.Artifact.natMap (fun (_ : Unit) => "()") p.byStatement} }
 
 /-- The configuration (the roots' names). -/
 def cfg : Recheck.Config := {configText a.cfg}

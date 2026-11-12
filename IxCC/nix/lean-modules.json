@@ -510,6 +510,7 @@
     "IxCC.Recheck.Rc.Replay",
     "IxCCTests.Recheck.Hostile",
     "IxCCTests.Recheck.Deep",
+    "IxCCTests.Recheck.Reach",
     "IxCCTests.Recheck.Perf",
     "IxCCTests.Recheck.Producer",
     "IxCCTests.Recheck.RootShape",
@@ -528,6 +529,9 @@
    "imports": ["IxCCTests.Recheck.Readback"]},
   "IxCCTests.Recheck.Readback":
   {"path": "IxCCTests/Recheck/Readback.lean", "imports": ["IxCC.Recheck.Run"]},
+  "IxCCTests.Recheck.Reach":
+  {"path": "IxCCTests/Recheck/Reach.lean",
+   "imports": ["IxCCTests.Recheck.Deep", "IxCC.Lam.Erase.Proof.Correct"]},
   "IxCCTests.Recheck.Rc.Run":
   {"path": "IxCCTests/Recheck/Rc/Run.lean",
    "imports":
@@ -5172,9 +5176,12 @@
    "imports":
    ["IxCC.Src.Syntax",
     "IxCC.Src.Pinned",
+    "IxCC.Src.Hints",
+    "IxCC.Src.Resource.Profile",
     "IxCC.Ixon.V3.Keys",
     "IxCC.Ixon.V3.Support",
-    "Std.Data.HashMap"]},
+    "Std.Data.HashMap",
+    "Std.Data.HashSet"]},
   "IxCC.Src.Hints":
   {"path": "IxCC/Src/Hints.lean",
    "imports":
@@ -7203,7 +7210,11 @@
    "imports": ["IxCK.Ixon.Codec", "IxCC.Ixon.V3.Const"]},
   "IxCC.Ixon.V3.Wire":
   {"path": "IxCC/Ixon/V3/Wire.lean",
-   "imports": ["IxCK.Ixon.Canonical", "IxCC.Ixon.V4.Convert"]},
+   "imports":
+   ["IxCK.Ixon.Canonical",
+    "IxCC.Ixon.V4.Convert",
+    "Std.Data.HashMap",
+    "Std.Data.HashSet"]},
   "IxCC.Ixon.V3.Validate":
   {"path": "IxCC/Ixon/V3/Validate.lean",
    "imports": ["IxCC.Ixon.V3.Source", "IxCC.Ixon.V3.PrimAddrs"]},

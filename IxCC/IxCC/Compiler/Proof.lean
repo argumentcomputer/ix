@@ -701,14 +701,20 @@ namespace IxCC.Recheck
 `inp.env`; the certified kernel's tiered entry accepted the whole environment
 (`Src.KernelFront.accept`, at the front end's batch limits: it ran on exactly
 the envelope's binding section, records and blobs, `accept_spec`); the
-program is IxCC's reading of the chosen roots with the pinned identities of the
-kernel's admitted role table, its resource binding validated, and it is read
-against the kernel's reading (`Reading.build`), whose index the annotator
-asks. The acceptance gives, through the kernel's theorems, the reading's
-fidelity, a model and the strong model of the logical environment, at IxCC's
-hash, under the artifact's own table and behind its own prelude; it is not the
-end-to-end statements' first premise, which is about the closure of the seeds
-under the default table and the committed prelude. -/
+program is IxCC's reading of the records the seeds reach
+(`Src.Ingress.reach` from the seeds of the whole sidecar and the kernel's
+admitted role table, each reached record within IxCC's consumer budget in what
+is read of it; a theorem's proof read only where a proof seed reaches it,
+`Src.Program.byStatement`), for the chosen roots, with the pinned identities of
+the kernel's admitted role table, its resource binding validated, and it is
+read against the kernel's reading (`Reading.build`), whose index the annotator
+asks. The decode no longer implies that every record of the artifact is within
+IxCC's consumer budget: only the reached ones are, by `reach`. The acceptance
+gives, through the kernel's theorems, the reading's fidelity, a model and the
+strong model of the logical environment, at IxCC's hash, under the artifact's
+own table and behind its own prelude; it is not the end-to-end statements'
+first premise, which is about the closure of the seeds under the default table
+and the committed prelude. -/
 theorem ingress_parts {bytes : ByteArray} {equations : Lean.Json}
     {roots : List String} {inp : Input}
     (h : ingress bytes equations roots = .ok inp) :
@@ -721,11 +727,13 @@ theorem ingress_parts {bytes : ByteArray} {equations : Lean.Json}
     Src.Resource.validate inp.program = .ok () ∧
     Src.KernelFront.Reading.build inp.kernel.acc inp.program = .ok inp.kernel.rd ∧
     inp.kernel.fe = Ix.Kernel.mkFEnv inp.kernel.acc.env ∧
-    ∃ rawHints chosen rawProg,
+    ∃ rawHints chosen records rawProg,
       Src.Hints.ofK1Json equations = .ok rawHints ∧
       selectRoots rawHints.roots roots = .ok chosen ∧
       chosen.isEmpty = false ∧
-      Src.Ingress.readConsts inp.env (chosen.map (·.1)) = .ok rawProg ∧
+      Src.Ingress.reach inp.env (Src.Ingress.Seeds.of rawHints
+        (Src.KernelFront.pinsOfTable inp.kernel.acc.table)) = .ok records ∧
+      Src.Ingress.readConsts inp.env records (chosen.map (·.1)) = .ok rawProg ∧
       inp.program = { rawProg with
         known := Src.Pinned.known
           { rawProg with known := { pins := Src.KernelFront.pinsOfTable inp.kernel.acc.table } },
@@ -756,32 +764,38 @@ theorem ingress_parts {bytes : ByteArray} {equations : Lean.Json}
           | ok acc =>
             rw [hacc] at h
             simp only at h
-            cases hprog : Src.Ingress.readConsts env (chosen.map (·.1)) with
-            | error e => rw [hprog] at h; cases h
-            | ok rawProg =>
-              rw [hprog] at h
+            cases hreach : Src.Ingress.reach env (Src.Ingress.Seeds.of rawHints
+                (Src.KernelFront.pinsOfTable acc.table)) with
+            | error e => rw [hreach] at h; cases h
+            | ok records =>
+              rw [hreach] at h
               simp only at h
-              -- the resource binding (its `mapError` unfolded to a `match`)
-              split at h
-              · cases h
-              · rename_i u hv
-                split at hv
-                · cases hv
-                · rename_i v hval
-                  -- the reading against the kernel's
-                  split at h
-                  · cases h
-                  · rename_i rd0 hb
-                    split at hb
-                    · cases hb
-                    · rename_i rd hrd
-                      injection hb with hb
-                      subst hb
-                      injection h with h
-                      subst h
-                      have hspec := Src.KernelFront.accept_spec hacc
-                      exact ⟨rfl, hacc, hspec.1, hspec.2, hval, hrd, rfl,
-                        rawHints, chosen, rawProg, rfl, hchosen, hempty, hprog, rfl⟩
+              cases hprog : Src.Ingress.readConsts env records (chosen.map (·.1)) with
+              | error e => rw [hprog] at h; cases h
+              | ok rawProg =>
+                rw [hprog] at h
+                simp only at h
+                -- the resource binding (its `mapError` unfolded to a `match`)
+                split at h
+                · cases h
+                · rename_i u hv
+                  split at hv
+                  · cases hv
+                  · rename_i v hval
+                    -- the reading against the kernel's
+                    split at h
+                    · cases h
+                    · rename_i rd0 hb
+                      split at hb
+                      · cases hb
+                      · rename_i rd hrd
+                        injection hb with hb
+                        subst hb
+                        injection h with h
+                        subst h
+                        have hspec := Src.KernelFront.accept_spec hacc
+                        exact ⟨rfl, hacc, hspec.1, hspec.2, hval, hrd, rfl,
+                          rawHints, chosen, records, rawProg, rfl, hchosen, hempty, hreach, hprog, rfl⟩
 
 /-- Projection from `Recheck.run` to the front-end recheck step `Recheck.front`
 (`Src.Table.ofCert`, then `Src.Recheck.annotation`, which runs `Lazify.run`). -/

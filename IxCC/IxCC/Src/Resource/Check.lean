@@ -17,7 +17,9 @@ def headers (type : Term) : List Header :=
 private def resolve (p : Program) (a : IxCC.Ixon.Address) : Except String CId :=
   match p.lookup a with
   | some c => pure c
-  | none => throw s!"resource binding: address {a} is absent from the closure"
+  | none => throw s!"resource binding: address {a} is absent from the closure (ingress reads every \
+    address the context names that is a record the artifact stores; a block member named by its \
+    projection address needs that projection record stored)"
 
 def validateContext (p : Program) (ctx : Context) : Except String Profile := do
   unless IxCC.Ixon.Address.blake3Pure ctx.bytes == ctx.address do throw "resource binding: profile hash mismatch"
