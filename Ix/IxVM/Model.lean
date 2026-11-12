@@ -140,14 +140,34 @@ def addressOf (c : Ixon.Constant) : Address := Address.blake3 (Ixon.ser c)
 
 def projRecord (info : Ixon.ConstantInfo) : Ixon.Constant := ⟨info, #[], #[], #[], #[]⟩
 
-/-- A generated record with the compiler's canonical sharing
-(`Ix.CompileM.buildConstantWithSharing`): a generated record that is
-alpha-equivalent to a compiled one (a two-constructor tag enumeration and `Bool`)
-is then the same record. Its binder data come later, per block
-(`BlockAdvice.withSections`). -/
+/-- `e` with every index into the record's refs table moved by `f`: a reference, a
+projection's structure, a literal's blob. -/
+def remapRefs (f : UInt64 → UInt64) : Ixon.Expr → Ixon.Expr
+  | .ref i us => .ref (f i) us
+  | .prj t i v => .prj (f t) i (remapRefs f v)
+  | .str i => .str (f i)
+  | .nat i => .nat (f i)
+  | .app a b => .app (remapRefs f a) (remapRefs f b)
+  | .lam bc t b => .lam bc (remapRefs f t) (remapRefs f b)
+  | .all bc vc t b => .all bc vc (remapRefs f t) (remapRefs f b)
+  | .letE lc t v b => .letE lc (remapRefs f t) (remapRefs f v) (remapRefs f b)
+  | e => e
+
+/-- A generated record with the compiler's refs table and canonical sharing: the
+refs sorted by address bytes, as the compiler preseeds them, every index into the
+table moved with it, then `Ix.CompileM.buildConstantWithSharing`. A generated record
+that is alpha-equivalent to a compiled one (a tag enumeration, `Bool`) is then the
+same record whatever order the encoder met its references in. Its binder data come
+later, per block (`BlockAdvice.withSections`). -/
 def sharedRecord (info : Ixon.ConstantInfo) (refs : Array Address) (univs : Array Ixon.Univ) :
-    Except String Ixon.Constant :=
-  (Ix.CompileM.buildConstantWithSharing Ix.CompileM.compilerSharingLimits info refs univs).mapError
+    Except String Ixon.Constant := do
+  let sorted := refs.qsort fun a b => a.cmpBytes b == .lt
+  let pos : Std.HashMap Address UInt64 :=
+    sorted.zipIdx.foldl (fun m (a, i) => m.insert a i.toUInt64) {}
+  let move (i : UInt64) : UInt64 := ((refs[i.toNat]?).bind (pos[·]?)).getD i
+  let roots := (Ix.CompileM.constantInfoRootExprs info).map (remapRefs move)
+  let info ← (Ix.CompileM.withRootExprs info roots).mapError (s!"model record refs: {·}")
+  (Ix.CompileM.buildConstantWithSharing Ix.CompileM.compilerSharingLimits info sorted univs).mapError
     (s!"model record sharing: {·}")
 
 def hintOf : Ix.Kernel.ReducibilityHint → Lean.ReducibilityHints
