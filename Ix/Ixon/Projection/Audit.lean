@@ -156,9 +156,10 @@ from 5962, by the entry's change (38 in: the check, the state's keys and the der
 -- Modes in records (the section nodes' modes, let headers, definition assertions and
 -- constructor field modes, `Constant.modesCanonical`) take the closure from 7009 compiled
 -- functions and 113 inherited externs to 7028 and 114, as for `Admission.checkBytes`.
+-- The reader's canonical natural-literal check (`ECx.natAt`) adds 7.
 /-- info: runtime closure of [Ixon.Projection.address,
  Ixon.Projection.reconstruct,
- Ixon.Projection.checkBytes]: 7028 compiled functions; inherited externs 114, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 28 -/
+ Ixon.Projection.checkBytes]: 7035 compiled functions; inherited externs 114, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 28 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.Projection.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
 
