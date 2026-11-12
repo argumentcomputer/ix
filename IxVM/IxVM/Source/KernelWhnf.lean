@@ -451,6 +451,7 @@ def red_rec := aiur_fn⟦
       let k_pre = match k_flag {
         1 => {
           match se_parent_addr(rec_ty, ((nparams + nmotives) + nminors) + nindices) {
+            (0, _) => {  (0, head) } ,
             (_, rec_parent) => {
               try_k_synth_iota(rc, rec_ty, lvls, spine, nparams, nmotives,
                                   nminors, nindices, rules,
