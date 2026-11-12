@@ -481,9 +481,9 @@ eliminator the table binds at `addr` (`Quot.lift` with six arguments and two lev
 `is_lift = 1`, `Quot.ind` with five and one when `0`) and `Quot.mk`, bound at `mk_addr`, with
 three arguments (the caller has checked the roles, in force, and the counts; where a level
 is never zero a walk is skipped without reading the stored type, so the claim needs them): a
-nonzero answer gives `Red.iota`'s two licensed walks (`CertsR … true`, read as `Certs` by `CertsR.toCerts`),
-the eliminator's stored type at `lvls` over its arguments and `Quot.mk`'s stored type at
-`mk_lvls` over its arguments, and, unless
+nonzero answer gives `Red.iota`'s two licensed walks (`CertsR … true`, read as `Certs` by
+`CertsR.toCerts`), the eliminator's stored type at `lvls` over its arguments and `Quot.mk`'s
+stored type at `mk_lvls` over its arguments, and, unless
 the eliminator is `Quot.lift` at a never-zero motive level (where every datum of the rule's
 right-hand side is `never`), the premise of the right-hand side's last `β`: the io-grade type
 of `Quot.mk`'s third argument is definitionally equal to the eliminator's first. Answer `0`: no
