@@ -503,7 +503,10 @@ def convert_recursor := aiur_fn⟦
                             univs: Lists::List<&Ixon::Univ>, base: Field) -> KernelTypes::KConstantInfo {
       match r {
         Ixon::Recursor::Mk(k, is_unsafe, lvls, params, indices, motives, minors, typ, rules) => {
-          let ktyp = convert_root(typ, sharing, refs, recur_addrs, univs, block_addr, base);
+          -- The type is read with no recursive reference in scope: a recursor's type never
+          -- mentions its own family (the kernel checks it before the family is installed); only
+          -- its rules call the family's recursors.
+          let ktyp = convert_root(typ, sharing, refs, (&(Lists::Node::Nil)), univs, block_addr, base);
           let krules = convert_rec_rules(rules, sharing, refs, recur_addrs, univs, 0, block_addr, base + 1);
           KernelTypes::KConstantInfo::Rec(
             UInt64::to_field(lvls), ktyp,
