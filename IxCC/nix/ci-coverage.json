@@ -1805,6 +1805,7 @@
   "IxCCGrounding.Lits",
   "IxCCGrounding.Model",
   "IxCCGrounding.Ok",
+  "IxCCGrounding.RecFlat",
   "IxCCGrounding.Relation",
   "IxCCGrounding.Root",
   "IxCCGrounding.RootCheck",
@@ -1814,10 +1815,10 @@
   "IxCCGrounding.Syntax",
   "IxCCGrounding.Tele"],
  "grounding_axiom_sha256":
- "1491b49b801096fd4908aefe24a1fdb595c4a309ba7740b34ff297da879f69eb",
- "grounding_axiom_count": 125,
+ "b5456c729984fc0b2a87a4011cfb011f916eebe9a30d7e4157299c64cf5e3006",
+ "grounding_axiom_count": 139,
  "baseline":
- "G3 part C (Eq.rec admitted): grounding fence 125 exact assertions",
+ "G3 part D first step: the class flat (field-less recursors without parameters) admitted; F2 there proved (IxCCGrounding.RecFlat); grounding fence 139",
  "axiom_sha256":
  "4f83a07e18aea8ed3b718a877b55c6f7c28e1dc861b53b5474f593e508aeee3d",
  "axiom_count": 6491}
