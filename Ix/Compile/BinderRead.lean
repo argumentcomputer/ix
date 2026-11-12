@@ -77,6 +77,43 @@ def domainAt : Nat → Ix.Expr → List (Option Ix.Expr) → Option (Ix.Expr × 
 def posIn (names : Array Ix.Name) (n : Ix.Name) : Nat :=
   (names.findIdx? (Ix.Name.beqRaw · n)).getD names.size
 
+/-- A definition whose value returns one of its own arguments (`outParam`,
+`optParam`, `autoParam`, `semiOutParam`, `id`): its arity and which argument. -/
+def wrapperOf : Ix.ConstantInfo → Option (Nat × Nat)
+  | .defnInfo d =>
+    let rec go : Nat → Ix.Expr → Option (Nat × Nat)
+      | m, .lam _ _ b _ _ => go (m + 1) b
+      | m, .mdata _ e _ => go m e
+      | m, .bvar j _ => if j < m then some (m, m - 1 - j) else none
+      | _, _ => none
+    go 0 d.value
+  | _ => none
+
+/-- The arguments of a spine, outermost first. -/
+def spineArgs : Ix.Expr → Array Ix.Expr → Array Ix.Expr
+  | .app f a _, acc => spineArgs f (acc.push a)
+  | .mdata _ e _, acc => spineArgs e acc
+  | _, acc => acc
+
+/-- `t` with argument-returning definitions at its head unfolded (δβ, exact):
+`outParam T ↦ T`. -/
+def unwrap (find : Find) : Nat → Ix.Expr → Ix.Expr
+  | 0, t => t
+  | fuel + 1, t =>
+    let t := unmeta t
+    match headArgs t with
+    | (.const c _ _, n) =>
+      match (find c).bind wrapperOf with
+      | some (m, i) =>
+        if m ≤ n then
+          let args := (spineArgs t #[]).reverse
+          match args[i]? with
+          | some a => unwrap find fuel (args.extract m args.size |>.foldl (fun f x => Ix.Expr.mkApp f x) a)
+          | none => t
+        else t
+      | none => t
+    | _ => t
+
 /-- The final sort of a ∀-telescope `t`, if it is syntactically a sort. -/
 def leafSort : Ix.Expr → Option Ix.Level
   | .sort l _ => some l
@@ -92,7 +129,7 @@ def sortPw (find : Find) (σ : Ix.Name → Nat) (sub : Ix.Kernel.Level → Ix.Ke
     Nat → List (Option Ix.Expr) → Ix.Expr → Option PropWhen
   | 0, _, _ => none
   | fuel + 1, ctx, t =>
-    match unmeta t with
+    match unwrap find 8 t with
     | .sort _ _ => some .never
     | .forallE _ d b _ _ => sortPw find σ sub fuel (some d :: ctx) b
     | t =>
@@ -101,13 +138,13 @@ def sortPw (find : Find) (σ : Ix.Name → Nat) (sub : Ix.Kernel.Level → Ix.Ke
         | .const c us _ => do
           let ci ← find c
           let cv := ci.getCnst
-          let .sort l _ ← peelN n cv.type | none
+          let .sort l _ := unwrap find 8 (← peelN n cv.type) | none
           let lc ← (ingressLevel (posIn cv.levelParams) l).toOption
           let us' ← (us.toList.mapM (ingressLevel σ)).toOption
           pure (Ix.Kernel.Level.subst (List.range cv.levelParams.size) us' lc)
         | .bvar i _ => do
           let ty ← (ctx[i]?).join
-          let .sort l _ ← peelN n ty | none
+          let .sort l _ := unwrap find 8 (← peelN n ty) | none
           (ingressLevel σ l).toOption
         | _ => none
       lvl?.map fun l => Ix.Kernel.Level.zeronessOf (sub l)

@@ -135,6 +135,9 @@ structure Installed where
   /-- whether every record is walked, the source reading off (`IX_BD_NOREAD`, for the
   cross-check of the reading against IxC's pass) -/
   noread : Bool := false
+  /-- whether a record the source reading does not decide gets the undecided section
+  instead of the walk (`IX_BD_READONLY`, for measurement) -/
+  readonly : Bool := false
   /-- projection tables added for structures the install left without one, and
   those skipped because the structure is a proposition -/
   tablesAdded : Nat := 0
@@ -548,23 +551,94 @@ def install (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (workers : Nat 
                  ("A:step", nsStep / 1000000), ("tier+retry", t5 - t4), ("persist", t6 - t5),
                  ("tables added (count)", tablesAdded), ("tables of propositions (count)", tablesProp)] }
 
+/-! ## A restricted install (measurement, `IX_BD_RESTRICT`) -/
+
+/-- The constants a source term names, through its shared subterms once. -/
+partial def exprRefs (e : Ix.Expr) (st : Std.HashSet Address × Std.HashSet Ix.Name) :
+    Std.HashSet Address × Std.HashSet Ix.Name :=
+  if st.1.contains e.getHash then st else
+  let st := (st.1.insert e.getHash, st.2)
+  match e with
+  | .const n _ _ => (st.1, st.2.insert n)
+  | .app f a _ => exprRefs a (exprRefs f st)
+  | .lam _ t b _ _ | .forallE _ t b _ _ => exprRefs b (exprRefs t st)
+  | .letE _ t v b _ _ => exprRefs b (exprRefs v (exprRefs t st))
+  | .mdata _ x _ => exprRefs x st
+  | .proj n _ x _ => exprRefs x (st.1, st.2.insert n)
+  | _ => st
+
+/-- **The install closure of the walked records `seeds`**: every constant their
+whole terms name, then what installing each constant reached needs: a theorem's
+type (nothing reduces its value), a definition's or an opaque's type and value,
+any other constant's type and terms, and an inductive group whole (its types,
+constructors and recursors). -/
+def restrictClosure (env : Ix.Environment) (seeds : Array Ix.Name) : Std.HashSet Ix.Name := Id.run do
+  let mut recsOf : Std.HashMap Ix.Name (Array Ix.Name) := {}
+  for (n, ci) in env.consts do
+    if let .recInfo r := ci then
+      if let some first := r.all[0]? then recsOf := recsOf.insert first ((recsOf.getD first #[]).push n)
+  let groupNames (first : Ix.Name) : Array Ix.Name :=
+    match env.consts.get? first with
+    | some (.inductInfo v) =>
+      v.all ++ v.all.flatMap (fun t => match env.consts.get? t with
+        | some (.inductInfo w) => w.ctors
+        | _ => #[]) ++ recsOf.getD first #[]
+    | _ => #[]
+  let firstOf (ci : Ix.ConstantInfo) : Option Ix.Name := match ci with
+    | .inductInfo v => v.all[0]?
+    | .ctorInfo c => match env.consts.get? c.induct with
+      | some (.inductInfo v) => v.all[0]?
+      | _ => none
+    | .recInfo r => r.all[0]?
+    | _ => none
+  let needs (whole : Bool) (ci : Ix.ConstantInfo) : Std.HashSet Ix.Name :=
+    let terms : Array Ix.Expr := match ci with
+      | .defnInfo d => #[d.cnst.type, d.value]
+      | .opaqueInfo o => #[o.cnst.type, o.value]
+      | .thmInfo t => if whole then #[t.cnst.type, t.value] else #[t.cnst.type]
+      | .recInfo r => #[r.cnst.type] ++ r.rules.map (·.rhs)
+      | ci => #[ci.getCnst.type]
+    let refs := (terms.foldl (fun st t => exprRefs t st) ({}, {})).2
+    match firstOf ci with
+    | some first => (groupNames first).foldl (·.insert ·) refs
+    | none => refs
+  let mut seen : Std.HashSet Ix.Name := {}
+  let mut work : Array Ix.Name := #[]
+  for s in seeds do
+    if let some ci := env.consts.get? s then
+      seen := seen.insert s
+      for r in needs true ci do work := work.push r
+  while h : work.size > 0 do
+    let n := work[work.size - 1]
+    work := work.pop
+    if seen.contains n then continue
+    seen := seen.insert n
+    if let some ci := env.consts.get? n then
+      for r in needs false ci do
+        unless seen.contains r do work := work.push r
+  return seen
+
 /-- **Install a compile's input**: its condensation (`Ix.CondenseM`, as the
 compile's front end builds it), then `install`. For measurement (the data are
 the same): with `IX_BD_SEQUENTIAL` set phase A takes every step in turn, with
 `IX_BD_WALK_ALL` every root is walked. -/
 def installInput (env : Ix.Environment) (workers : Nat := 32) : IO (Except String Installed) := do
-  -- `IX_BD_RESTRICT` (measurement): install only the constants a file names, one
-  -- per line, theorems with a placeholder value (nothing reads a theorem's value);
-  -- the sources stay the input's
+  -- `IX_BD_RESTRICT` (measurement): install only the install closure
+  -- (`restrictClosure`) of the records a file names, one per line, theorems with a
+  -- placeholder value (nothing reads a theorem's value); the sources stay the input's
+  let tc0 ← IO.monoMsNow
   let envI ← match (← IO.getEnv "IX_BD_RESTRICT") with
     | some path => do
       let keep : Std.HashSet String := (← IO.FS.lines path).foldl (·.insert ·) {}
+      let seeds := env.consts.fold (init := #[]) fun acc n _ => if keep.contains n.pretty then acc.push n else acc
+      let closure ← IO.lazyPure fun _ => restrictClosure env seeds
       let blank : Ix.ConstantInfo → Ix.ConstantInfo
         | .thmInfo t => .thmInfo { t with value := Ix.Expr.mkSort Ix.Level.mkZero }
         | ci => ci
       pure { env with consts := env.consts.fold (init := {}) fun m n ci =>
-        if keep.contains n.pretty then m.insert n (blank ci) else m }
+        if closure.contains n then m.insert n (blank ci) else m }
     | none => pure env
+  let tc1 ← IO.monoMsNow
   let t0 ← IO.monoMsNow
   let blocks ← IO.lazyPure fun _ => Ix.CondenseM.run (Ix.Compile.FrontEnd.graph envI)
   let t1 ← IO.monoMsNow
@@ -576,10 +650,12 @@ def installInput (env : Ix.Environment) (workers : Nat := 32) : IO (Except Strin
   let tier1 := (← IO.getEnv "IX_BD_TIER1").isSome
   let t1stat := (← IO.getEnv "IX_BD_T1STAT").isSome
   let noread := (← IO.getEnv "IX_BD_NOREAD").isSome
+  let readonly := (← IO.getEnv "IX_BD_READONLY").isSome
   let persist := (← IO.getEnv "IX_BD_NOPERSIST").isNone
   return (← install envI blocks workers parallel (!trace.isEmpty) fixes persist).map fun k =>
-    { k with env, stored, memo, trace, tier1, t1stat, noread,
-             times := #[("installed constants (count)", envI.consts.size), ("condense", t1 - t0)] ++ k.times }
+    { k with env, stored, memo, trace, tier1, t1stat, noread, readonly,
+             times := #[("installed constants (count)", envI.consts.size), ("restriction", tc1 - tc0),
+               ("condense", t1 - t0)] ++ k.times }
 
 /-! ## The walk -/
 
@@ -1244,7 +1320,7 @@ def annotate (k : Installed) (extra : Array (Ix.Name × Ix.ConstantInfo)) (names
     else s
   match (if k.noread then none else Ix.Compile.BinderRead.section? find names c) with
   | some s => stat "read" s
-  | none => stat "walk" (annotateWalk k extra names c)
+  | none => stat "walk" (if k.readonly then Ix.CompileM.undecidedSection c else annotateWalk k extra names c)
 
 /-- **The annotator of a compile** over its installed input. -/
 def annotator (k : Installed) : Ix.BinderAnnotator :=
