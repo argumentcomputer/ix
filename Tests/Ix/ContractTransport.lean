@@ -32,11 +32,39 @@ def compileMany (sources : Array Lean.Expr) :
   let (output, _) ← Ix.CompileM.CompileM.run default block {} action
   return output
 
+/-- The annotated-source refusal. -/
+def annotatedRefusal : String :=
+  "annotated source is refused: the compiler writes only default binder modes"
+
+/-- The misplaced-frame refusal. -/
+def misplacedRefusal : String :=
+  "semantic contract is not attached to its original binder"
+
+/-- `sources` compiled one at a time: an ordinary frame lowers to `expected`,
+an annotated one is refused. -/
+def expectLowering (label : String) (source : Lean.Expr) (ordinary : Bool)
+    (expected : Ixon.Expr) : IO Unit := do
+  match compileMany #[source], ordinary with
+  | .ok output, true =>
+    unless output == #[expected] do
+      throw <| IO.userError s!"{label}: ordinary frame lowered to {repr output}, expected {repr expected}"
+  | .ok output, false =>
+    throw <| IO.userError s!"{label}: annotated source compiled to {repr output}"
+  | .error error, true => throw <| IO.userError s!"{label}: ordinary frame refused: {error}"
+  | .error error, false =>
+    unless error == .unsupportedExpr annotatedRefusal do
+      throw <| IO.userError s!"{label}: unexpected refusal {error}"
+
+/-- `source` is refused with `message`. -/
+def expectRefusal (label : String) (source : Lean.Expr) (message : String) : IO Unit :=
+  match compileMany #[source] with
+  | .ok output => throw <| IO.userError s!"{label}: compiled to {repr output}"
+  | .error error =>
+    unless error == .unsupportedExpr message do
+      throw <| IO.userError s!"{label}: unexpected refusal {error}"
+
 def run : IO Unit := do
   let mut sources := #[]
-  let mut expected := #[]
-  let mut allSources := #[]
-  let mut allExpected := #[]
   for inputBits in [:16] do
     let some binder := Ixon.BinderContract.ofBits? inputBits.toUInt8
       | throw <| IO.userError "invalid test binder"
@@ -47,16 +75,14 @@ def run : IO Unit := do
         binder := .position 0, uses := binder.uses, value := binder.value, result := some result }])
       let resolved ← get "resolution" (original.resolve source)
       let decorated ← get "decoration" resolved.decorate
-      allSources := allSources.push decorated.type
-      allExpected := allExpected.push (.all binder result (.sort 0) (.sort 0))
+      let ordinary := binder == .many && result == .shared
+      -- Only the ordinary frame compiles, to the plain binder.
+      expectLowering s!"arrow {inputBits}/{resultBits}" decorated.type ordinary
+        (.all (.sort 0) (.sort 0))
       if resultBits == 0 then
         let some body := sourceBody? decorated | throw <| IO.userError "missing decorated body"
         sources := sources.push body
-        expected := expected.push (.lam binder (.sort 0) (.var 0))
-  let output ← get "cached lambdas" (compileMany sources)
-  unless output == expected do throw <| IO.userError s!"lambda contracts collided during compilation:\n{repr output}\nexpected {repr expected}"
-  let output ← get "cached foralls" (compileMany allSources)
-  unless output == allExpected do throw <| IO.userError "arrow contracts collided during compilation"
+        expectLowering s!"lambda {inputBits}" body (binder == .many) (.lam (.sort 0) (.var 0))
   -- All occurrences share their unannotated inner binder. The complete
   -- metadata wrapper must distinguish them in both hash and equality paths.
   for i in [:sources.size] do
@@ -64,17 +90,16 @@ def run : IO Unit := do
       let equal := Id.run ((Ix.CanonM.exprEqCached sources[i]! sources[j]!).run' {})
       unless equal == (i == j) do throw <| IO.userError "semantic equality ignored a contract"
   let rawLet := Lean.Expr.letE `view (.sort .zero) (.bvar 0) (.bvar 0) false
+  let plainLet := Ixon.Expr.leanLet false (.sort 0) (.var 0) (.var 0)
+  let ordinaryLet : Ix.SemanticContract.Contract := { kind := .letE, binder := .many }
+  let output ← get "ordinary let lowering" (compileMany #[rawLet, ordinaryLet.attach rawLet, rawLet])
+  unless output == #[plainLet, plainLet, plainLet] do
+    throw <| IO.userError "an ordinary let frame did not lower to the plain let"
   let borrow : Ix.SemanticContract.Contract := {
     kind := .letE, binder := ⟨.affine, .localShared⟩, letKind := .borrowShared }
-  let annotated := borrow.attach rawLet
-  let output ← get "borrow lowering" (compileMany #[rawLet, annotated, rawLet])
-  let expectedBorrow := Ixon.Expr.letE ⟨false, .borrowShared, ⟨.affine, .localShared⟩⟩ (.sort 0) (.var 0) (.var 0)
-  unless output == #[.leanLet false (.sort 0) (.var 0) (.var 0), expectedBorrow,
-    .leanLet false (.sort 0) (.var 0) (.var 0)] do
-    throw <| IO.userError "borrow contract contaminated a shared ordinary cache entry"
-  let wrong := borrow.attach (.sort .zero)
-  unless (compileMany #[wrong]).toOption.isNone do
-    throw <| IO.userError "semantic metadata on a non-binder was discarded"
+  expectRefusal "borrow" (borrow.attach rawLet) annotatedRefusal
+  expectRefusal "misplaced borrow" (borrow.attach (.sort .zero)) misplacedRefusal
+  expectRefusal "misplaced ordinary frame" (ordinaryLet.attach (.sort .zero)) misplacedRefusal
   let malformed := Lean.Expr.mdata (({} : Lean.MData).setNat `ix.contract 3) (.sort .zero)
   unless (compileMany #[malformed]).toOption.isNone do
     throw <| IO.userError "malformed semantic metadata was discarded"
@@ -90,11 +115,9 @@ def run : IO Unit := do
   let nested ← get "nested resolution" (nestedContract.resolve nestedSource)
   let nested ← get "nested decoration" nested.decorate
   let some body := sourceBody? nested | throw <| IO.userError "missing nested body"
-  let output ← get "nested lowering" (compileMany #[body])
-  unless output == #[.app (.lam ⟨.linear, .shared⟩ (.sort 0) (.var 0))
-      (.lam ⟨.affine, .localUnique⟩ (.sort 0) (.var 0))] do
-    throw <| IO.userError "occurrence contracts merged before canonicalization"
-  IO.println "Contract transport: every binder/arrow mode, cache ordering, nested occurrences, and borrow lowering passed"
+  expectRefusal "nested occurrences" body annotatedRefusal
+  IO.println "Contract transport: ordinary frames lower to plain binders; every annotated binder, \
+    arrow, let and borrow mode, nested occurrence and misplaced frame is refused"
 
 end Tests.ContractTransport
 

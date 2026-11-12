@@ -111,7 +111,6 @@ def genClaim : Gen Claim :=
     (10, Claim.contains <$> genAddress <*> genAddress),
     (10, Claim.binding  <$> genAddress <*> genAddress),
     (10, Claim.catalog  <$> genAddress),
-    (10, Claim.resource <$> genAddress <*> genAddress),
   ]
 
 /-! ## Shrinkable instances -/

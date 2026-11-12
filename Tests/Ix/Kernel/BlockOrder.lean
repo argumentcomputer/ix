@@ -21,7 +21,7 @@ local instance [BEq α] : BEq (Except Error α) where
 def owner : Address := address 42
 
 def defn (value : Ixon.Expr) (typ : Ixon.Expr := .sort 0) : Ixon.MutConst :=
-  .defn ⟨.defn, .safe, 0, typ, value⟩
+  .defn ⟨.defn, .safe, {}, 0, typ, value⟩
 
 def indc (params : UInt64) (ctors : Array Ixon.Constructor := #[]) : Ixon.MutConst :=
   .indc ⟨false, 0, params, 0, .sort 0, ctors⟩
@@ -64,6 +64,6 @@ def motiveSwapped : Ixon.Constant := record #[motive 1, motive 0]
 #guard recordCheck (record #[motive 0, indc 0]) == .ok ()
 #guard recordCheck (record #[indc 0, motive 0]) == .ok ()
 -- a record that is not a block is unconstrained
-#guard recordCheck ⟨.defn ⟨.defn, .safe, 0, .sort 0, .sort 0⟩, #[], #[], #[], #[]⟩ == .ok ()
+#guard recordCheck ⟨.defn ⟨.defn, .safe, {}, 0, .sort 0, .sort 0⟩, #[], #[], #[], #[]⟩ == .ok ()
 
 end Tests.Ix.Kernel.BlockOrder

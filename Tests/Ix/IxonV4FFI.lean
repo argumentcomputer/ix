@@ -23,7 +23,7 @@ def runFFI (cases : List ExprCase) : IO Nat := do
   let ctor : Constructor := ⟨true, 5, 1, 2, 3, typ⟩
   let ind : Inductive := ⟨false, 5, 2, 3, typ, #[ctor]⟩
   let recr : Recursor := ⟨true, false, 5, 1, 2, 3, 4, typ, #[⟨3, value⟩]⟩
-  let defn : Definition := ⟨.opaq, .part, 5, typ, value⟩
+  let defn : Definition := ⟨.opaq, .part, {}, 5, typ, value⟩
   let infos : Array (String × ConstantInfo) := #[
     ("definition", .defn defn), ("recursor", .recr recr),
     ("axiom", .axio ⟨true, 5, typ⟩), ("quotient", .quot ⟨.lift, 5, typ⟩),

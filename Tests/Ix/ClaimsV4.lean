@@ -1,14 +1,14 @@
 module
 
 public import Ix.ClaimContext
-public import Ix.Resource.Claim
-public import Tests.Ix.ResourceAddressed
 public import Tests.Ix.Claim
 
 public section
 
 namespace Tests.ClaimsV4
 
+/-- The claims, with the retired resource claim's bytes (`Claim.ser` still
+writes them): every reader refuses that row. -/
 def fixtures : Array (String × Ix.Claim) :=
   let a := Address.blake3 "a".toUTF8
   let b := Address.blake3 "b".toUTF8
@@ -38,6 +38,21 @@ def fixtureText : String := Id.run do
     text := text ++ s!"{name}\t{Ix.Claim.commit claim}\t{hexOfBytes (Ix.Claim.ser claim)}\n"
   return text
 
+/-- The retired resource claim's bytes, and its proof's, fail to decode with
+the retired message. -/
+def checkRetired (claim : Ix.Claim) (bytes : ByteArray) : IO Unit := do
+  match Ix.Claim.de bytes with
+  | .ok _ => throw <| IO.userError "the retired resource claim decoded"
+  | .error e =>
+    unless e.startsWith "claim: variant 9 (the resource claim) is retired" do
+      throw <| IO.userError s!"resource claim: unexpected error {e}"
+  let proof : Ixon.Proof := { claim, proof := ⟨#[1, 2, 3]⟩ }
+  match Ixon.Proof.de (Ixon.Proof.ser proof) with
+  | .ok _ => throw <| IO.userError "the retired resource proof decoded"
+  | .error e =>
+    unless e.startsWith "proof: variant 6 (the resource proof) is retired" do
+      throw <| IO.userError s!"resource proof: unexpected error {e}"
+
 def run : IO Unit := do
   let expected ← IO.FS.readFile "Tests/Fixtures/ixon-v4/claims.tsv"
   unless expected == fixtureText do
@@ -45,6 +60,9 @@ def run : IO Unit := do
       `lake exe ixon-v4-tests --export-fixtures`"
   for (_, claim) in fixtures do
     let bytes := Ix.Claim.ser claim
+    if let .resource .. := claim then
+      checkRetired claim bytes
+      continue
     unless (Ix.Claim.de bytes).toOption == some claim do throw <| IO.userError "claim roundtrip"
     for n in [:bytes.size] do
       unless (Ix.Claim.de (bytes.extract 0 n)).toOption.isNone do
@@ -89,22 +107,9 @@ def run : IO Unit := do
     unless proofBytes[1]! == Ixon.Env.OBJECT_FORMAT do throw <| IO.userError "proof scope offset"
     unless (Ixon.Proof.de (proofBytes.set! 1 3)).toOption.isNone do
       throw <| IO.userError "proof with version 3 object format accepted"
-  let (base, unit) := Tests.ResourceAddressed.unitEnv
-  let (env, _) := Tests.ResourceAddressed.store base (Tests.ResourceAddressed.identity unit)
-  let profile : Ix.Resource.Profile := {}
-  let claim ← IO.ofExcept (Ix.Resource.makeClaim env profile)
-  let _ ← IO.ofExcept (Ix.Resource.checkClaim env profile claim)
-  Tests.ResourceAddressed.check "resource claim rejects erased validator"
-    (Ix.Resource.checkClaim env profile
-      (.checkEnv (Ix.ClaimContext.ofDefaultTable.toOption.getD default) env.merkleRoot.get! none))
-    false
-  Tests.ResourceAddressed.check "resource claim binds the entire subject"
-    (Ix.Resource.checkClaim base profile claim) false
-  Tests.ResourceAddressed.check "resource claim binds limits"
-    (Ix.Resource.checkClaim env { profile with limits := { steps := 100001 } } claim) false
   let result ← LSpec.lspecIO (.ofList [("claims", Tests.Claim.suite)]) []
   unless result == 0 do throw <| IO.userError "existing claim tests failed"
-  IO.println s!"Ixon v{Ixon.Env.VERSION} claims: fixtures, strict envelopes, proof wrappers, subjects, and profiles passed"
+  IO.println s!"Ixon v{Ixon.Env.VERSION} claims: fixtures, strict envelopes, proof wrappers, and the retired resource claim passed"
 
 end Tests.ClaimsV4
 

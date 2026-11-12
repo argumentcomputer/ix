@@ -24,9 +24,11 @@ def identitySource : Lean.ConstantInfo := .defnInfo {
   value := .lam `x (.const typeName []) (.bvar 0) .default
   hints := .abbrev, safety := .safe, all := [identityName] }
 
-def input (result : Ixon.ValueContract := .localShared) : Except SourceContractError CompileInput := do
+/-- The identity under a telescope contract on its binder. -/
+def input (uses : Ixon.Uses) (value result : Ixon.ValueContract) :
+    Except SourceContractError CompileInput := do
   let contract ← SourceContract.ofTelescope identitySource #[{
-    binder := .position 0, uses := .linear, value := .localShared, result := some result }]
+    binder := .position 0, uses, value, result := some result }]
   return { constants := [(typeName, typeSource), (identityName, identitySource)], contracts := #[contract] }
 
 def get (label : String) (r : Except String α) : IO α :=
@@ -38,7 +40,8 @@ def compileInput (input : CompileInput) : IO (Except String Ix.CompileM.Certifie
   | .ok (prepared, annotated) => Ix.CompileM.compileCertifiedPrepared prepared annotated 1
 
 def run : IO Unit := do
-  let valid ← get "input" ((input).mapError toString)
+  -- The ordinary contract: the Lean and certified compilers agree.
+  let valid ← get "input" ((input .many .shared .shared).mapError toString)
   let lean ← compileInput valid >>= get "Lean compiler"
   let prepared ← get "preparation" valid.prepare
   let (certEnv, _) ← get "certified compiler" (Ix.Cert.compileReport (Ix.CompileM.canonInput prepared.toArray 1))
@@ -50,10 +53,15 @@ def run : IO Unit := do
   let malformedRejected := (Ix.Resource.Profile.ofBytes (profile.bytes.push 0)).toOption.isNone
   unless malformedRejected do
     throw <| IO.userError "contract pipeline: malformed profile bytes accepted"
-  let invalid ← get "invalid input" ((input .shared).mapError toString)
-  if (← compileInput invalid).toOption.isSome then
-    throw <| IO.userError "contract pipeline: pure compiler emitted an escaping local value"
-  IO.println "Contract pipeline: certified compiler preserves addresses and rejects local escape before emission"
+  -- An annotated contract is refused before emission.
+  let annotated ← get "annotated input" ((input .linear .localShared .localShared).mapError toString)
+  match ← compileInput annotated with
+  | .ok _ => throw <| IO.userError "contract pipeline: annotated source compiled"
+  | .error e =>
+    unless (e.splitOn "annotated source is refused").length > 1 do
+      throw <| IO.userError s!"contract pipeline: annotated source: unexpected error {e}"
+  IO.println "Contract pipeline: an ordinary contract compiles to the same addresses through both \
+    compilers; annotated source is refused before emission"
 
 end Tests.ContractPipeline
 

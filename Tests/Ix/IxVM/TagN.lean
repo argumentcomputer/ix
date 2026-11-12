@@ -310,7 +310,7 @@ def levelCountParityCases (_ : Unit) : Array Builder := Id.run do
     let records : List (String × Ixon.Constant) := [
       ("a record", ⟨.axio ⟨true, lvls.toUInt64, .sort 0⟩, #[], #[], #[.zero], #[]⟩),
       ("a block member",
-        ⟨.muts #[.defn ⟨.defn, .safe, lvls.toUInt64, .sort 0, .sort 0⟩], #[], #[], #[.zero], #[]⟩)]
+        ⟨.muts #[.defn ⟨.defn, .safe, {}, lvls.toUInt64, .sort 0, .sort 0⟩], #[], #[], #[.zero], #[]⟩)]
     for (what, c) in records do
       out := out.push fun _ => do
         let bytes := Ixon.ser c

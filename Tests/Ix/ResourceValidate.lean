@@ -22,7 +22,7 @@ constructor records and an unsafe recursor of `unitRec`'s shape. -/
 def unsafeBlockEnv (ctorType : Expr := .recur 0 #[]) (fields : UInt64 := 0)
     (univs : Array Univ := #[.zero]) : Ixon.Env × Address := Id.run do
   let block : Constant := { unitBlock with
-    info := .muts #[.indc ⟨true, 0, 0, 0, .sort 0, #[⟨true, 0, 0, 0, fields, ctorType⟩]⟩], univs }
+    info := .muts #[.indc ⟨true, 0, 0, 0, .sort 0, #[⟨true, 0, 0, 0, fields, .inherited, ctorType⟩]⟩], univs }
   let (env, block) := store {} block
   let (env, type) := store env (Addressed.wrapper (.iPrj ⟨0, block⟩))
   let (env, ctor) := store env (Addressed.constructorWrapper block 0 0)
@@ -58,7 +58,7 @@ every actual typing result is checked explicitly. -/
 def runTier : IO Unit := do
   let (base, unit) := unitEnv
   let ctor := Addressed.commit (Addressed.constructorWrapper (Addressed.commit unitBlock) 0 0)
-  let plain := identity unit {} {}
+  let plain := identity unit
   let mut cases : Array (String × Ixon.Env × Bool) := #[]
   cases := cases.push ("safe definition", (store base plain).1, true)
   cases := cases.push ("partial definition typed by the tier", (store base (withSafety plain .part)).1, true)
@@ -67,20 +67,20 @@ def runTier : IO Unit := do
   -- `good : alias := U.mk` types only by unfolding `alias`; `bad : alias :=
   -- fun x : U => x` is ill-typed even after unfolding
   let aliasC : Constant := {
-    info := .defn ⟨.defn, .unsaf, 0, .sort 0, .ref 0 #[]⟩
+    info := .defn ⟨.defn, .unsaf, {}, 0, .sort 0, .ref 0 #[]⟩
     sharing := #[], refs := #[unit], univs := #[.zero] }
   let (aliasEnv, alias) := store base aliasC
   let good : Constant := {
-    info := .defn ⟨.defn, .unsaf, 0, .ref 0 #[], .ref 1 #[]⟩
+    info := .defn ⟨.defn, .unsaf, {}, 0, .ref 0 #[], .ref 1 #[]⟩
     sharing := #[], refs := #[alias, ctor], univs := #[] }
   cases := cases.push ("unsafe definition typed by unfolding another (δ)", (store aliasEnv good).1, true)
   let bad : Constant := {
-    info := .defn ⟨.defn, .unsaf, 0, .ref 0 #[], .leanLam (.ref 1 #[]) (.var 0)⟩
+    info := .defn ⟨.defn, .unsaf, {}, 0, .ref 0 #[], .leanLam (.ref 1 #[]) (.var 0)⟩
     sharing := #[], refs := #[alias, unit], univs := #[] }
   cases := cases.push ("unsafe definition ill-typed even after unfolding (δ)", (store aliasEnv bad).1, false)
   -- `Sort 0 : unit`, ill-typed
   let illTyped : Constant := {
-    info := .defn ⟨.defn, .safe, 0, .ref 0 #[], .sort 0⟩
+    info := .defn ⟨.defn, .safe, {}, 0, .ref 0 #[], .sort 0⟩
     sharing := #[], refs := #[unit], univs := #[.zero] }
   cases := cases.push ("ill-typed definition (logical check)", (store base illTyped).1, false)
   cases := cases.push ("ill-typed partial definition (tier)", (store base (withSafety illTyped .part)).1, false)
@@ -88,7 +88,7 @@ def runTier : IO Unit := do
   cases := cases.push ("unsafe inductive", unsafeUnitEnv.1, true)
   let (unsafeEnv, unsafeType) := unsafeUnitEnv
   let useUnsafe : Constant := {
-    info := .defn ⟨.defn, .unsaf, 0, .leanAll (.ref 0 #[]) (.ref 0 #[]), .leanLam (.ref 0 #[]) (.var 0)⟩
+    info := .defn ⟨.defn, .unsaf, {}, 0, .leanAll (.ref 0 #[]) (.ref 0 #[]), .leanLam (.ref 0 #[]) (.var 0)⟩
     sharing := #[], refs := #[unsafeType], univs := #[] }
   cases := cases.push ("unsafe definition over an unsafe inductive", (store unsafeEnv useUnsafe).1, true)
   cases := cases.push ("safe definition over an unsafe inductive",
@@ -108,14 +108,14 @@ def runTier : IO Unit := do
   let (axEnv, ax) := store base (axiomOf (.leanAll (.ref 0 #[]) (.ref 0 #[])) #[unit])
   cases := cases.push ("assumption axiom", axEnv, true)
   let useAx : Constant := {
-    info := .defn ⟨.defn, .safe, 0, .leanAll (.ref 0 #[]) (.ref 0 #[]), .ref 1 #[]⟩
+    info := .defn ⟨.defn, .safe, {}, 0, .leanAll (.ref 0 #[]) (.ref 0 #[]), .ref 1 #[]⟩
     sharing := #[], refs := #[unit, ax], univs := #[] }
   cases := cases.push ("definition over an assumption axiom", (store axEnv useAx).1, true)
   cases := cases.push ("assumption axiom whose header is not a type",
     (store base (axiomOf (.ref 0 #[]) #[ctor])).1, false)
   let (fEnv, f) := store base (axiomOf (.leanAll (.ref 0 #[]) (.ref 0 #[])) #[unit])
   let misuse : Constant := {
-    info := .defn ⟨.defn, .safe, 0, .ref 0 #[], .ref 1 #[]⟩
+    info := .defn ⟨.defn, .safe, {}, 0, .ref 0 #[], .ref 1 #[]⟩
     sharing := #[], refs := #[unit, f], univs := #[] }
   cases := cases.push ("definition that misuses an assumption axiom", (store fEnv misuse).1, false)
   unless cases.size == 16 do throw (IO.userError "resource typing corpus lost a case")
@@ -182,11 +182,9 @@ def run : IO Unit := do
   let (env, id) := store base (identity unit)
   check "combined identity" (validate env {}) true
   expectTyping "combined identity" env true
-  -- the handoff's and the VM tests' escaping identity: typed, resource-invalid
-  expectTyping "escaping identity" (store base (identity unit linearLocal .shared)).1 true
   check "literal type pin" (validate env { natType := some unit }) false
   let bad : Constant := {
-    info := .defn ⟨.defn, .safe, 0, .sort 0, .var 0⟩
+    info := .defn ⟨.defn, .safe, {}, 0, .sort 0, .var 0⟩
     sharing := #[], refs := #[], univs := #[.zero] }
   let (malformed, address) := store env bad
   check "ordinary component skips resource analysis" (Addressed.checkResources malformed {}) true

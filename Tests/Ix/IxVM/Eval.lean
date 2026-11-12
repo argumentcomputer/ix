@@ -23,7 +23,7 @@ private def idValue : Ixon.Expr :=
 
 private def definition (ty value : Ixon.Expr) (refs : Array Address := #[])
     (lvls : UInt64 := 0) (univs : Array Ixon.Univ := #[.zero]) : Ixon.Constant :=
-  ⟨.defn ⟨.defn, .safe, lvls, ty, value⟩, #[], refs, univs, #[]⟩
+  ⟨.defn ⟨.defn, .safe, {}, lvls, ty, value⟩, #[], refs, univs, #[]⟩
 
 private def withValue (c : Ixon.Constant) (value : Ixon.Expr) : Ixon.Constant :=
   match c.info with
@@ -188,7 +188,7 @@ def tests (r : Tests.Ix.IxVM.Runner) : IO Unit := do
     r.build <| execute s!"{repr safety} output" (← witness env input c)
       (some "unsafe or partial output")
   let block : Ixon.Constant :=
-    ⟨.muts #[.defn ⟨.defn, .safe, 0, idType, beta⟩], #[], #[], #[.zero], #[]⟩
+    ⟨.muts #[.defn ⟨.defn, .safe, {}, 0, idType, beta⟩], #[], #[], #[.zero], #[]⟩
   let (fixture, ba) := storeConstant {} block
   let projection : Ixon.Constant := ⟨.dPrj ⟨0, ba⟩, #[], #[], #[], #[]⟩
   let (fixture, pa) := storeConstant fixture projection

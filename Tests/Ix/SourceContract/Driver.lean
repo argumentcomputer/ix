@@ -32,9 +32,10 @@ private def constants (source : ConstantInfo) := [(source.name, source)]
 private def ioTest (description : String) (check : IO Bool) : TestSeq :=
   .individualIO description none (do return (← check, 0, 0, none)) .done
 
-private def unsupported (result : Except String α) : Bool :=
+/-- The compile refused annotated source. -/
+private def refusedAnnotated (result : Except String α) : Bool :=
   match result with
-  | .error message => (message.splitOn "external resource interface is absent").length > 1
+  | .error message => (message.splitOn "annotated source is refused").length > 1
   | .ok _ => false
 
 private def compileConsts (consts : List (Lean.Name × ConstantInfo)) :
@@ -117,18 +118,18 @@ def suite : List TestSeq := [
           (name, source)
       if (checkOrdinaryConstants marked (fun _ => false)).toOption != some false then return false
     return true,
-  ioTest "Lean constant-list driver rejects an unadmitted annotated axiom" do
-    return unsupported (← compileConsts (constants markedSource)),
+  ioTest "Lean constant-list driver refuses an annotated axiom" do
+    return refusedAnnotated (← compileConsts (constants markedSource)),
   ioTest "explicit Lean input rejects a missing annotation registry" do
     match ← compileInput (.plain (constants markedSource)) with
     | .error message => return (message.splitOn "missingContract").length > 1
     | .ok _ => return false,
-  ioTest "explicit Lean input requires an assumption for an annotated axiom" do
+  ioTest "explicit Lean input refuses an annotated axiom" do
     let .ok contract := SourceContract.ofTelescope plainSource #[
       { binder := .position 0, uses := .linear }]
       | return false
     let input : CompileInput := { constants := constants plainSource, contracts := #[contract] }
-    return unsupported (← compileInput input),
+    return refusedAnnotated (← compileInput input),
   ioTest "measure-only input preserves ordinary production bytes" do
     let input := CompileInput.plain (constants plainSource)
     let .ok plain ← compileInput input | return false

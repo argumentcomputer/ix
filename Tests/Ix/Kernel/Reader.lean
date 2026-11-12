@@ -258,7 +258,7 @@ def abFixture (block : Ixon.Constant := abBlock) : List (Address × Ixon.Constan
   [(address 100, block), (address 101, dPrj (address 100) 0), (address 102, dPrj (address 100) 1),
    (address 103, bEq)]
 
-#guard (recurDeps abBlock ⟨.defn, .safe, 0, ref 0, .app (recur 1) (ref 1)⟩).toList == [1]
+#guard (recurDeps abBlock ⟨.defn, .safe, {}, 0, ref 0, .app (recur 1) (ref 1)⟩).toList == [1]
 #guard defOrder #[Std.HashSet.ofList [1], {}] == some #[1, 0]
 #guard defOrder #[Std.HashSet.ofList [0], {}] == some #[0, 1]
 #guard defOrder #[Std.HashSet.ofList [1], Std.HashSet.ofList [0]] == none
