@@ -1,4 +1,5 @@
 import IxCC.Own.Plain.Proof.Owned.Binds
+import IxCC.Own.Plain.Proof.Frames
 import IxCC.Fir.Proof.Unfold
 
 /-! # One binding that calls nothing, against the source's step
