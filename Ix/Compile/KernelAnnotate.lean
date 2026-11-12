@@ -147,8 +147,8 @@ Phase A runs this ahead, on a wave of declarations at once, against the
 environment before the wave, and pushes each result in order unless the
 environment has meanwhile gained its name (the step's duplicate check). An
 environment that holds more constants answers every lookup the annotation made
-the same way, and a datum is unique, so the push is the step's. Anything else
-takes the ordinary step. -/
+the same way, and a datum is unique, so the push is the step's. Any other
+declaration is run ahead by `aheadStep`. -/
 def separable (fe : FEnv .source) (d : CDecl .source) : Option (Ix.Kernel.ConstantInfo .source) :=
   let run {α : Type} (act : CM α) : Option α := match act.run {} with
     | .ok (a, _) => some a
@@ -163,6 +163,31 @@ def separable (fe : FEnv .source) (d : CDecl .source) : Option (Ix.Kernel.Consta
   | .opaqueDecl cv v =>
     (run (Ix.Kernel.Cached.annotValueC .verified fe cv v)).map fun r => .axiomInfo r.1
   | _ => none
+
+/-- What the ordinary step pushes for `d` against `fe`, in push order, for a
+declaration that is not separable (a block, an axiom, a pinned `Nat`
+operation...); `none` where the step fails. Run ahead on a wave like
+`separable`, and pushed in order under the same duplicate check: the step
+pushes the same constants against an environment that holds more. (The
+step's first push copies `fe`'s index, which every task shares.) -/
+def aheadStep (ev : Ix.Kernel.Evidences .source) (fe : FEnv .source) (d : CDecl .source) :
+    Option (Array (Ix.Kernel.ConstantInfo .source)) :=
+  match Ix.Kernel.Cached.annotDeclStepWithUserAxioms .verified ev (0, fe, #[]) d {} with
+  | .ok ((_, fe', _), _) =>
+    some (fe'.env.consts.take (fe'.visibleBelow - fe.visibleBelow)).reverse.toArray
+  | .error _ => none
+
+/-- A declaration's pushes computed ahead against `fe`: `separable`'s, else
+`aheadStep`'s. -/
+def ahead (ev : Ix.Kernel.Evidences .source) (fe : FEnv .source) (d : CDecl .source) :
+    Option (Array (Ix.Kernel.ConstantInfo .source)) :=
+  match d with
+  | .defnDecl cv .. =>
+    if Ix.Kernel.natOpNames.contains cv.name || Ix.Kernel.natDivModNames.contains cv.name then
+      aheadStep ev fe d
+    else (separable fe d).map (#[·])
+  | .thmDecl .. | .opaqueDecl .. => (separable fe d).map (#[·])
+  | _ => aheadStep ev fe d
 
 def readErrorString : ReadError → String
   | .malformed m => s!"malformed: {m}"
@@ -302,17 +327,18 @@ def install (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (workers : Nat 
     -- it stands before the wave (`separable`)
     let base := fe
     let n0 ← IO.monoNanosNow
-    let pushes : Array (Option (Ix.Kernel.ConstantInfo .source)) ← IO.lazyPure fun _ =>
+    let pushes : Array (Option (Array (Ix.Kernel.ConstantInfo .source))) ← IO.lazyPure fun _ =>
       if !parallel || wave.size < 8 then wave.map fun _ => none
-      else Ix.Compile.Parallel.map (4 * max workers 1) (fun i => separable base prepared[i]!) wave
+      else Ix.Compile.Parallel.map (4 * max workers 1) (fun i => ahead ev base prepared[i]!) wave
     let n1 ← IO.monoNanosNow
     nsAhead := nsAhead + (n1 - n0)
     for (i, r) in wave.zip pushes do
-      if let some ci := r then
-        if (fe.find? ci.name).isNone then
+      if let some cis := r then
+        if cis.all fun ci => (fe.find? ci.name).isNone then
           let m0 ← IO.monoNanosNow
-          let ci ← (unsafe Runtime.markPersistent ci : BaseIO (Ix.Kernel.ConstantInfo .source))
-          fe := fe.push ci
+          for ci in cis do
+            let ci ← (unsafe Runtime.markPersistent ci : BaseIO (Ix.Kernel.ConstantInfo .source))
+            fe := fe.push ci
           nsPush := nsPush + ((← IO.monoNanosNow) - m0)
           pos := pos + 1
           ok := ok + 1
