@@ -198,7 +198,11 @@ unsafe def metaSide (path : System.FilePath) (wanted : Name → Bool) : IO Seen 
     cm := cm'
     if let some e := e then
       let ns := (rd.decls.toList.flatMap Benchmarks.Kernel.CheckIxeMeta.declaredKeys).filterMap nameOf
-      unless ns.any wanted do IO.println s!"  meta: {ns.take 3} fails: {e}"
+      unless ns.any wanted do
+        let base := Ix.KernelDisplay.metaCx display cm'.fe levelNames types
+        let full := Ix.KernelDisplay.renderFailure { base with peek := Ix.KernelDisplay.peekAll,
+          msgSpell := some (Ix.Kernel.Reader.spellWith display) } e
+        IO.println s!"  meta: {ns.take 3} fails at {address}: {full}"
       for k in rd.decls.toList.flatMap Benchmarks.Kernel.CheckIxeMeta.declaredKeys do
         if let some n := nameOf k then
           let base := Ix.KernelDisplay.metaCx display cm'.fe levelNames types
@@ -299,6 +303,17 @@ unsafe def main (_args : List String) : IO UInt32 := do
   let path := dir / "meta-names.ixe"
   let (ixe0, failures) ← IO.ofExcept (Ix.Cert.compileReport (Ix.CompileM.canonInput consts 32))
   IO.FS.writeBinFile path (← IO.ofExcept (Ixon.serEnv ixe0))
+  -- diagnostics: the default table's bound addresses against the compiled closure
+  let dtable ← IO.ofExcept Ix.Kernel.Reader.defaultTable
+  let dpre : Prelude .anon ← IO.ofExcept (Ix.Kernel.Reader.preludeFor dtable)
+  IO.println s!"diag: compiled roleBinding {ixe0.roleBinding.isSome}; {ixe0.consts.size} records; \
+    prelude {dpre.records.size} records"
+  for (role, a) in dtable.bound do
+    if ixe0.consts.contains a then IO.println s!"diag: bound {repr role} {a} is a compiled record"
+  for (a, _) in dpre.records do
+    if ixe0.consts.contains a then IO.println s!"diag: prelude record {a} is a compiled record"
+  for n in [`PUnit, `PUnit.unit, `PUnit.rec, `Nat.mul.match_1, `Nat.mul, `Bool, `Eq, `Nat] do
+    IO.println s!"diag: compiled {n} at {(ixe0.named.get? (Ix.Name.fromLeanName n)).map (·.addr)}"
   unless failures.isEmpty do
     IO.println s!"kernel-meta-names: {failures.toMap.size} constants not compiled: \
       {failures.toMap.toList.take 5}"
