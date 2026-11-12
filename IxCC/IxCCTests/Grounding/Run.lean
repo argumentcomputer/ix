@@ -390,7 +390,7 @@ def failingWith (adm : List RecClass) (i : Input) : List String :=
     if b then none else some n
 
 /-- Every recursor class. -/
-def allClasses : List RecClass := [.empty, .eqRec, .ordinary]
+def allClasses : List RecClass := [.empty, .eqRec, .flat, .ordinary]
 
 /-- The recursor of `Sl` the kernel stores under `Eq.rec`'s key. -/
 def eqRecOf? (i : Input) : Option CId :=

@@ -133,12 +133,12 @@ theorem flatIota (M : Model V env) (hL : Laws M) {kr : KKey} {cvr : ConstantVal 
     simp only [pushAll, List.getD_eq_getElem?_getD]
     rw [List.getElem?_eq_getElem (by rw [List.length_reverse, hxl]; omega)]
     rfl
-  · have e2 : (As.take mI).take mI ++ ([] : List V).drop 0 = As.take mI := by simp
+  · have e2 : (As.take mI).take mI ++ ([] : List V).drop 0 = As.take mI := by
+      rw [List.take_take, Nat.min_self, List.drop_zero, List.append_nil]
     rw [e2] at heq
     have e1 : As.foldl app (M.cval kr φ) =
         (As.take mI ++ [([] : List V).foldl app K]).foldl app (M.cval kr φ) := by
-      conv_lhs => rw [hsplit]
-      rfl
+      rw [List.foldl_nil, ← hsplit]
     rw [e1, heq, hYe]
 
 /-- **A constructor without level parameters, used at none, denotes its image at any assignment**
