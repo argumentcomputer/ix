@@ -9,9 +9,13 @@ scans state their meaning on the heap terms. A yes/no answer claims at every ans
 `0` (the scans, whose useful answer is "none found", at every answer other than `1`, on
 represented terms); nothing is claimed for tag `0` / answer `0` unless the docstring says so.
 
-The telescope walks conclude the rules' `Certs`; where `certs_all` head-normalizes a telescope
-that is not syntactically a `∀`, that is `Certs`'s reduction step. Specs marked "after the
-pending batch" are stated for the circuit with the checks that batch adds. -/
+**Telescope certificates.** `certs_all` head-normalizes a telescope that is not syntactically a
+`∀` and goes on. The rules' `Certs` has no such step, so the walks are stated with `CertsR`
+(below): `Certs` with a `Red` step on the telescope. Where a rule needs `Certs` (`Red.iota`,
+`Red.rescueK`, `Red.rescueEta`) the step lemma reads it through `CertsR.toCerts`
+(`Core/Certs.lean`): a stored telescope has a binder for every argument (an environment fact),
+and a `∀` reduces only to itself. Specs marked "after the pending batch" are stated for the
+circuit with the checks that batch adds. -/
 
 namespace IxVM.Refinement.Core.Specs.Whnf
 
@@ -96,6 +100,20 @@ def natOpOf : Nat → Option Ix.Kernel.Role
   | 15 => some .natBeq
   | 16 => some .natBle
   | _ => none
+
+/-- **Telescope certificates up to reduction of the telescope**: `Certs`, with a step
+`Red env d T T'` allowed before any slot (where `certs_all` head-normalizes). -/
+inductive CertsR (env : Ix.Kernel.Env .anon) (d : Nat) (lic : Bool) :
+    KExpr → List KExpr → Prop where
+  | nil {T : KExpr} : CertsR env d lic T []
+  | skip {ty body arg : KExpr} {mb : Ix.Kernel.BinderMeta} {rest : List KExpr} :
+      lic = true → mb.pw.isNever = true → CertsR env d lic (body.instantiate1 arg) rest →
+      CertsR env d lic (.forallE ty body mb) (arg :: rest)
+  | cert {ty body arg ta : KExpr} {mb : Ix.Kernel.BinderMeta} {rest : List KExpr} :
+      Infer env .io d arg ta → DefEq env d ta ty → CertsR env d lic (body.instantiate1 arg) rest →
+      CertsR env d lic (.forallE ty body mb) (arg :: rest)
+  | red {T T' : KExpr} {zs : List KExpr} :
+      Red env d T T' → CertsR env d lic T' zs → CertsR env d lic T zs
 
 /-- **A recursor's loaded data**: the environment stores the recursor `ci` at `k`, and a loaded
 `Rec` value with these fields represents it (`CIRep.recr`: level count, closed type, the
@@ -287,17 +305,18 @@ def find_rule : SpecFn := fun c args h r h' calls =>
 
 /-- `certs_all(rc, t, args, subs_rev, types)`: a nonzero answer is the unlicensed telescope
 certificate of `args` against the telescope (its bound variables instantiated by `subs_rev`
-first; `Certs … false`). Answer `0`: no claim. -/
+first; `CertsR … false`: up to reduction of the telescope). Answer `0`: no claim. -/
 def certs_all : SpecFn := fun c args h r h' calls =>
   ∀ rc t zs subs types, args = [rc, t, zs, subs, types] → Good c calls → c.rc h rc →
     ∀ d Γ, c.types Γ h d types →
       ∀ T Cs As, c.tmk d Γ Cs.length h T t → c.tml d Γ h Cs subs → c.tml d Γ h As zs →
-        r ≠ .field 0 → Certs c.env d false (T.instantiateList Cs 0) As
+        r ≠ .field 0 → CertsR c.env d false (T.instantiateList Cs 0) As
 
 /-- `iota_certs(rc, rec_ty_i, rec_args, n_rec, cty, clvls, margs, n_ctor, types)`: a nonzero
-answer gives `Red.iota`'s two licensed telescope walks (`Certs … true`): the recursor's
-(level-instantiated) type over its arguments, and the constructor's type at the levels `clvls`
-over the major's arguments. `n_rec`, `n_ctor` are the walks' lengths. Answer `0`: no claim. -/
+answer gives `Red.iota`'s two licensed telescope walks (`CertsR … true`, read as `Certs` by
+`CertsR.toCerts`): the recursor's (level-instantiated) type over its arguments, and the
+constructor's type at the levels `clvls` over the major's arguments. `n_rec`, `n_ctor` are the
+walks' lengths. Answer `0`: no claim. -/
 def iota_certs : SpecFn := fun c args h r h' calls =>
   ∀ rc rt ra nr cty clvls ma nc types,
     args = [rc, rt, ra, nr, cty, clvls, ma, nc, types] → Good c calls → c.rc h rc →
@@ -305,8 +324,8 @@ def iota_certs : SpecFn := fun c args h r h' calls =>
       ∀ RT RA CT cus MA, c.tmc h RT rt → c.tml d Γ h RA ra → nr = .field (RA.length : F) →
         c.tmc h CT cty → LvListRep h cus clvls → c.tml d Γ h MA ma →
         nc = .field (MA.length : F) → r ≠ .field 0 →
-          Certs c.env d true RT RA ∧
-            Certs c.env d true (CT.instantiateLevelParams (List.range cus.length) cus) MA
+          CertsR c.env d true RT RA ∧
+            CertsR c.env d true (CT.instantiateLevelParams (List.range cus.length) cus) MA
 
 /-- `iota_cmp(rc, rec_ty_i, pre, major_idx, cty, clvls, cnp, margs, nindices, types)`:
 a nonzero answer gives `Red.iota`'s comparisons, read off the major's domain `MD` in the
@@ -462,8 +481,9 @@ eliminator the table binds at `addr` (`Quot.lift` with six arguments and two lev
 `is_lift = 1`, `Quot.ind` with five and one when `0`) and `Quot.mk`, bound at `mk_addr`, with
 three arguments (the caller has checked the roles and the counts; where a level is never zero
 a walk is skipped without reading the stored type, so the claim needs them): a nonzero answer
-gives `Red.iota`'s two licensed walks (`Certs … true`), the eliminator's stored type at `lvls`
-over its arguments and `Quot.mk`'s stored type at `mk_lvls` over its arguments, and, unless
+gives `Red.iota`'s two licensed walks (`CertsR … true`, read as `Certs` by `CertsR.toCerts`),
+the eliminator's stored type at `lvls` over its arguments and `Quot.mk`'s stored type at
+`mk_lvls` over its arguments, and, unless
 the eliminator is `Quot.lift` at a never-zero motive level (where every datum of the rule's
 right-hand side is `never`), the premise of the right-hand side's last `β`: the io-grade type
 of `Quot.mk`'s third argument is definitionally equal to the eliminator's first. Answer `0`: no
@@ -481,10 +501,10 @@ def quot_certs : SpecFn := fun c args h r h' calls =>
         c.t.addressOf? .quotMk = some (ixAddr b) → MA.length = 3 →
         r ≠ .field 0 →
           (∀ ci, c.env.find? (c.κ (ixAddr a)) = some ci →
-            Certs c.env d true
+            CertsR c.env d true
               (ci.toConstantVal.type.instantiateLevelParams ci.toConstantVal.levelParams us) RA) ∧
           (∀ ci, c.env.find? (c.κ (ixAddr b)) = some ci →
-            Certs c.env d true
+            CertsR c.env d true
               (ci.toConstantVal.type.instantiateLevelParams ci.toConstantVal.levelParams mus) MA) ∧
           ((il = .field 1 ∧ ∃ v, us[1]? = some v ∧ v.isNeverZero = true) ∨
             ∃ ta, Infer c.env .io d (MA.getD 2 (.bvar 0)) ta ∧

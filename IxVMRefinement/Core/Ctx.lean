@@ -37,6 +37,7 @@ The core's functions run under a role context `rc` (`KernelRoles::RoleCtx`) and 
 | `eqStored`, `evidence` | `Red.eqProof`: `Eq` is stored; each evidence theorem the table names is stored at its key, its type definitionally equal to the role equation's statement | L5 (evidence theorems checked like any theorem), L6 (the table's evidence matches its roles) |
 | `recRules` | `Red.iota`'s rule lookup: distinct keys, firing rules at stored constructors with their parameter counts, the `j`-th rule for the `j`-th constructor of the member the major's `iPrj` record names | L5 (recursor install), L7 (keys from `ReadIn`) |
 | `recPlain` | a plain rule's comparands are the major premise's domain | L5 (recursor install) |
+| `recArity`, `ctorArity` | a stored recursor's or constructor's type has a binder for every argument its walks read (`CertsR.toCerts`) | L5 (lemmas over installed constants) |
 
 The loads (`Ingress::get_ci` and the projection loaders) are related to `env` by `LoadFacts`
 (`Good.lean`): the L1 ↔ L7 interface. -/
@@ -251,6 +252,14 @@ structure EnvFacts (c : Ctx) : Prop where
     ∃ D T, piDomAt mI cv.type = some D ∧
       D.getAppFn = .const T (cvj.levelParams.map .param) ∧
       D.getAppArgs.take nP = (List.range nP).map fun i => .bvar (mI - 1 - i)
+  /-- (L5) **A stored recursor's type has a binder for each argument up to the major premise**
+  (the walk `Red.iota` reads, `CertsR.toCerts`). -/
+  recArity : ∀ k cv mI rP rls, c.env.find? k = some (.recInfo cv mI rP rls) →
+    (cv.type.stripPis (mI + 1)).isSome = true
+  /-- (L5) **A stored constructor's type has a binder for each parameter and field** (the walks
+  of `Red.iota`, `Red.rescueK`, `Red.rescueEta` over a constructor's arguments). -/
+  ctorArity : ∀ k cv nP nF, c.env.find? k = some (.ctorInfo cv nP nF) →
+    (cv.type.stripPis (nP + nF)).isSome = true
 
 /-! ## Heap monotonicity -/
 
