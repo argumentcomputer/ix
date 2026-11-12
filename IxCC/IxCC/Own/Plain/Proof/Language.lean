@@ -1,4 +1,5 @@
 import IxCC.Own.Plain.Proof.Candidate
+import IxCC.Own.Plain.Proof.OwnedAccepts
 import IxCC.Own.Plain.Proof.Mono
 import IxCC.Fir.Proof.Lang
 import IxCC.Recheck.Run
@@ -77,23 +78,25 @@ theorem ResultRel.refines {before : Heap} {external : Nat → Nat}
   | resource r => exact .resource r
   | stuck => exact .stuck
 
-theorem checked_call_sim {F : Fir.Program} {candidate : Src.NatMap Code}
-    (checked : checkPlainMap F candidate = true) {f : Fir.FunId} (hf : f < F.size)
+/-- An accepted map simulates the source on a numbered function called with natural-number
+arguments (the ownership checker's refinement, `checkOwned_refines`). -/
+theorem owned_call_sim {F : Fir.Program} {candidate : Src.NatMap Code}
+    (checked : checkOwned F candidate = true) {f : Fir.FunId} (hf : f < F.size)
     (ns : List Nat) :
     Sim (fun w p => Proof.Den p.2 p.1 w) id
       (fun k => Fir.run F k f (Fir.litArgs ns))
       (fun k => run { source := F, bodies := candidate } k f (litArgs ns) {}) where
-  forward k _ := ⟨k, (checked_program_refines checked k hf (dens_lits {} ns)
+  forward k _ := ⟨k, (checkOwned_refines checked k hf (dens_lits {} ns)
     (balance_lits_empty ns)).refines⟩
   timeout k h := by
-    have related := (checked_program_refines checked k hf (dens_lits {} ns)
+    have related := (checkOwned_refines checked k hf (dens_lits {} ns)
       (balance_lits_empty ns)).refines
     change Fir.evalCall F k f (Fir.litArgs ns) = .timeout at h
     rw [h] at related
     exact Result.Refines.timeout_iff.mp related
 
-theorem checked_refines_lang {F : Fir.Program} {candidate : Src.NatMap Code}
-    (checked : checkPlainMap F candidate = true)
+theorem owned_refines_lang {F : Fir.Program} {candidate : Src.NatMap Code}
+    (checked : checkOwned F candidate = true)
     (exports : ∀ f, f ∈ F.exports → f < F.size) :
     Sem.Refines F ({ source := F, bodies := candidate } : Program) := by
   refine Sem.Refines.of_sim (R := Lang.ObsEq) (fun _ _ h => h) fun i => ⟨id, ?_⟩
@@ -113,7 +116,7 @@ theorem checked_refines_lang {F : Fir.Program} {candidate : Src.NatMap Code}
       simp only
       by_cases he : ns.length = fd.params.length
       · simp only [Sem.entryRun, he, ↓reduceIte]
-        exact (checked_call_sim checked hf ns).mono fun w p hd => by
+        exact (owned_call_sim checked hf ns).mono fun w p hd => by
           show Fir.obsV w = obsV p
           rw [obsV_den hd]
       · by_cases hlt : ns.length < fd.params.length
@@ -126,11 +129,25 @@ theorem checked_refines_lang {F : Fir.Program} {candidate : Src.NatMap Code}
             exact Sim.laterConst (R := Lang.ObsEq (S := Fir.Program) (T := Program))
               (show Fir.obsV .erased = obsV (.erased, {}) by rw [obsV_erased]; rfl) (fun k h => h)
         · simp only [Sem.entryRun, he, hlt, ↓reduceIte]
-          exact Sim.bindStuck (checked_call_sim checked hf (ns.take fd.params.length))
+          exact Sim.bindStuck (owned_call_sim checked hf (ns.take fd.params.length))
             fun _ _ _ => rfl
 
 
 
+
+theorem checked_call_sim {F : Fir.Program} {candidate : Src.NatMap Code}
+    (checked : checkPlainMap F candidate = true) {f : Fir.FunId} (hf : f < F.size)
+    (ns : List Nat) :
+    Sim (fun w p => Proof.Den p.2 p.1 w) id
+      (fun k => Fir.run F k f (Fir.litArgs ns))
+      (fun k => run { source := F, bodies := candidate } k f (litArgs ns) {}) :=
+  owned_call_sim (checkPlainMap_checkOwned checked) hf ns
+
+theorem checked_refines_lang {F : Fir.Program} {candidate : Src.NatMap Code}
+    (checked : checkPlainMap F candidate = true)
+    (exports : ∀ f, f ∈ F.exports → f < F.size) :
+    Sem.Refines F ({ source := F, bodies := candidate } : Program) :=
+  owned_refines_lang (checkPlainMap_checkOwned checked) exports
 
 /-- The caller need not assume export well-formedness for an admitted Fir
 program: the actual lowering checks it and preserves the admitted roots. -/
@@ -147,6 +164,14 @@ theorem checked_lower_refines {A : Anf.Program} {F : Fir.Program}
     Sem.Refines A ({ source := F, bodies := candidate } : Program) :=
   (Fir.Proof.lower_refines lowered).trans
     (checked_refines_lang checked (exports_of_lower lowered))
+
+/-- The same stage for any map the ownership checker accepts. -/
+theorem owned_lower_refines {A : Anf.Program} {F : Fir.Program}
+    {candidate : Src.NatMap Code} (lowered : Fir.lower A = .ok F)
+    (checked : checkOwned F candidate = true) :
+    Sem.Refines A ({ source := F, bodies := candidate } : Program) :=
+  (Fir.Proof.lower_refines lowered).trans
+    (owned_refines_lang checked (exports_of_lower lowered))
 
 /-- Executable certificate-taking stage. Unsupported or malformed ownership
 proposals are rejected; its certificate is the actual map evaluated by run. -/

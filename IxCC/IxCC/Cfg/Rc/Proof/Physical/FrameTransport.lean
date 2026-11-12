@@ -1,4 +1,5 @@
-import IxCC.Cfg.Rc.Proof.Physical.TokenEnvironments
+import IxCC.Cfg.Rc.Proof.Physical.FusedLexical
+import IxCC.Cfg.Rc.Proof.Physical.Bridge.Tokens
 import IxCC.Cfg.Rc.Proof.Physical.Bridge.FusedDomain
 import IxCC.Own.Plain.Proof.ShapeOps
 

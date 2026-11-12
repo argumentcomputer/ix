@@ -21,7 +21,7 @@ theorem checked_retained {A : Anf.Program} {F : Fir.Program}
     (checked : Cfg.Rc.checkScopedProgram F bodies P = true) (i : Nat × List Nat) :
     Sim (HeapWitness A) (fun k => Fir.tickBound A * (k+1))
       (Anf.anfRun A i) (Cfg.Rc.cfgRun P i) := by
-  have heap := Own.Plain.checked_retained
+  have heap := Own.Plain.owned_retained
     (Cfg.Rc.checkProgram_parts (Cfg.Rc.checkScopedProgram_parts checked).1).1
     (Own.Plain.exports_of_lower lowered) i
   have tail := Sem.Sim.comp (Lang.mono P i) heap (Cfg.Rc.checked_retained checked i)

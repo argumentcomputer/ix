@@ -49,7 +49,10 @@ backend, `--rc on` under plain RC (which may refuse the program). `--rc auto`
 follows `RcReplay.produceAuto`: zero RC when `Own.Plain.selectRcPolicyForSrc`
 selects it; plain RC when it selects that and the plain-RC certificate is
 produced and replayed; otherwise the immortal policy. It prints
-`rc policy: …` naming the policy it compiled under.
+`rc policy: …` naming the policy it compiled under, and for the immortal fallback the reason plain
+RC was refused (stage, code and message: for example `cert: own.plain: own.cert.budget: …` with
+the measured captured work and the limit when the ownership certificate is past
+`Anf.maxCapturedWork`).
 
 `--signatures FILE` writes, per root, its symbol, parameter count and the text
 forms of its result type and signature (`type`, `sig`; JSON; `null` when bounded ground
@@ -337,7 +340,7 @@ def execute (o : Options) : ExceptT Err IO Unit := do
             | .error reason =>
               let p ← lift fun _ => RcReplay.finishZeroRcCert cfg front
               pure (.zeroRc p.cert, some p.alloc,
-                some s!"immortal (plain RC refused: {reason.stage.name}: {reason.code})")
+                some s!"immortal (plain RC refused: {reason.stage.name}: {reason.code}: {reason.message})")
     let (a, tRun) ← timed do
       match cliCert with
       | .zeroRc cert => lift fun _ => run cfg inp.program cert

@@ -233,6 +233,18 @@ reaches: `tests-corpus`'s budget survey). See
 `docs/compiler-design.md`, "Middle-end budgets", for the back end's time at
 it. -/
 def maxBackWork : Nat := 1 <<< 28
+
+/-- Captured tokens one plain-RC ownership certificate may make the ownership checker take
+(`Own.Plain.Certificate.capturedWork`: over the body map, the sum over jumps of the target join's
+captured list and over join declarations of their own). A join may capture its whole lexical
+scope and be jumped to from every branch, so within the node budgets above the checker's work is
+quadratic (603 s measured for 4,096 globals of 255 nodes, each a join capturing 2,049 parameters
+jumped to 127 times); `Own.Plain.Certificate.admit` refuses past this before the checker runs,
+which bounds one run to about a second. The largest registered program needs 1,925 (canonical
+placement, `Machines.fibMain`; 145 with a liveness placement): 545× headroom. Acceptance is
+monotone in the limit (`Own.Plain.Certificate.admit_mono`); see `docs/data-and-roots-design.md`,
+"The ownership checker". -/
+def maxCapturedWork : Nat := 1 <<< 20
 /-- `xs.mapM f`, refusing with `msg` as soon as `used` plus the sizes of the
 results so far passes `budget` in either of two measures (nodes made and work
 done, say), so a pass stops before it does or allocates much past its budget. -/

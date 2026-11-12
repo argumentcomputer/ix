@@ -124,7 +124,7 @@ before for those programs ([closures design](closures-design.md#proof-obligation
 | Component | Scope |
 | --- | --- |
 | Scalar & top-level compiler | Src-to-ELF recheck path (`Recheck.sound`), top-level `Compiler.compile` (`--rc auto\|on\|off`, `Compiler.compile_sound`), `CompileClaim` (`verifyProgram_*_sound`, `verifyBytes_*_sound`, `*_rootShape`), `Ring0` (`verifyRing0Sip_sound`), certificate/artifact checks and native pipeline suites |
-| Bounded plain RC | `Recheck.RcReplay` API (`RcReplay.run`, `RcReplay.sound`, `recycled_session`); exact ownership/certificate replay (`checkPlainMap` / `checkContractPlainMap`), ordinary Lir recycling runtime, SrcEval-relative object theorem, complete per-stage/native values, executed RC event counts and heap-failure/corruption controls; final producer integration remains open |
+| Bounded plain RC | `Recheck.RcReplay` API (`RcReplay.run`, `RcReplay.sound`, `recycled_session`); ownership certificates admitted by the proved checker (`checkOwned` / `checkContractOwned`, within `Anf.maxCapturedWork`) and replayed exactly, ordinary Lir recycling runtime, SrcEval-relative object theorem, complete per-stage/native values, executed RC event counts and heap-failure/corruption controls; final producer integration remains open |
 | [Ixon v4 ingress](ixon-v4.md) | ix's v4 codec with canonicity evidence and pure-BLAKE3 authentication, resource admission, claim binding; both envelopes, the role-bound one with its role table authenticated and its pinned identities read from it ([byte contract](byte-contract.md)) |
 | [x86 target model](x86-encoded-instructions.md) | Typed x86 AST and machine, E1 per-form encoder/decoder and execution laws, E2 [streams and ELF objects](x86-stream-objects.md), [stream checking](stream-checking.md), the [reference-model record](x86-reference-model.md) |
 | [Legacy Aiur model](aiur-backend.md) | A verifier-side model of an earlier Aiur bytecode: vocabulary, wire format, semantics, static checks, counter analysis, memory and rank AIRs. Neither Aiur route uses it ([repository and landing](#repository-and-landing)) |
@@ -578,12 +578,27 @@ data:
   is proved to keep the heap invariant (`inPlace_ready`,
   [DR1](data-and-roots-design.md#in-place-reuse)), but no pass emits a
   reuse yet (stage 4, after stage 2's placement). Stage 2 (the proved Own
-  checker), first landing: the checker `Own.Plain.checkOwned` over today's
-  syntax with refinement, reclamation and canonical acceptance proved, as a
-  library that nothing in production calls
+  checker), two landings of three: the checker `Own.Plain.checkOwned` over
+  today's syntax with refinement, reclamation and canonical acceptance
+  proved; and the verifier switched to it: plain-RC certificate admission and
+  the program gate run the checker behind a captured-work budget
+  (`Anf.maxCapturedWork`), the Cfg activation layer is restated over its
+  typing context, and `Recheck.RcReplay.sound` keeps its statement, so the
+  verifier admits any placement the checker accepts
   ([DR1, "The ownership checker"](data-and-roots-design.md#the-ownership-checker));
-  next, the Cfg activation layer restated over its typing context and the
-  recheck switched to it, then a liveness placement. **Open for stage 3**
+  the producer still writes the canonical placement, and every registered
+  object and certificate is unchanged. Next: a liveness placement in the
+  producer. **Clean-up, one separate change:** proof modules reached only by
+  their fences, beside the bounded route's release proofs (`Rt/Rc/Proof/`,
+  a library nothing emits): the allocation-cursor chain of `Cfg/Rc/Proof/Physical`
+  (`AllocationCursor`, `AllocationConsumed`, `AllocationInstruction`,
+  `AllocationSource`, `AllocationTokens`; 10 fence assertions), `BumpWrapper`
+  (1), `FusedSavedFrames` (3), `ReserveStorage` (1), `Return` (2),
+  `SavedCallers` with `SavedFrames` (5), and in `Physical/Bridge`
+  `BorrowedIncrement` (1), `FusedInstructions` (2), `FusedProjection` (1),
+  `ProjectionCfg` with `ProjectionIncrement`, `ProjectionStep` and
+  `ReadyInstructions` (6): 18 modules, 32 assertions, to retire together.
+  **Open for stage 3**
   (inline fast paths): the general release executes up to 3 Lir steps (4
   x86 instructions) more per freed cell than the bounded route's for
   cells of fewer than three scanned fields, fewer for four or more (lists
@@ -688,6 +703,25 @@ own byte entry decodes the same way. The fix belongs to the kernel package
 for nesting depth before decoding); neither is made yet. The envelope's depth
 bound (`V3.withinKernelDepth`) limits the records as stored, after that
 decoder, and not the terms the kernel builds while typing them.
+
+Known costs on hostile input in the plain-RC verifier (2026-11-12), beyond the
+ownership checker's own, which the captured-work budget bounds
+([DR1, "The ownership checker"](data-and-roots-design.md#the-ownership-checker)):
+- `Own.Plain.programDomain`, the source-domain check both ownership checks
+  run before the checker, is quadratic: its freshness and scope checks keep
+  the scopes and the function signatures as lists, so each variable is
+  looked up linearly. On a program at the middle end's limits (4,096
+  functions of 255 nodes, each with 2,048 parameters) it takes 88.2 s on the
+  build box. Planned fix: set-based twins of `programDomain` and
+  `contractProgramDomain` (membership through `Src.NatSet`, arities through
+  `Fir.Program.fun?`), proved equal to the list versions, which then become
+  definitions through the twins (about 150 to 250 lines), measured before and
+  after.
+- `RcReplay.runFront` runs the ownership check three times on the same map:
+  at admission (`Own.Plain.Certificate.admit`), in the program gate
+  (`checkScopedProgram`'s `checkProgram`) and in the lowering
+  (`Native.lower`'s `checkProgram`); the budget bounds each run, and the
+  proofs use each, but two of the runs could be read from the first.
 
 ### Resource soundness
 

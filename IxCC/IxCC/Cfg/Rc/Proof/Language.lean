@@ -94,7 +94,7 @@ theorem checked_lower_refines {A : Anf.Program} {F : Fir.Program}
     {bodies : Src.NatMap Own.Plain.Code} {P : Program}
     (lowered : Fir.lower A = .ok F) (checked : checkScopedProgram F bodies P = true) :
     Sem.Refines A P :=
-  (Own.Plain.checked_lower_refines lowered
+  (Own.Plain.owned_lower_refines lowered
     (checkProgram_parts (checkScopedProgram_parts checked).1).1).trans
     (checked_refines_lang checked)
 

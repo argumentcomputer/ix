@@ -1,4 +1,6 @@
-import IxCC.Cfg.Rc.Proof.Native.TrapActivation
+import IxCC.Cfg.Rc.Proof.Native.Activation
+import IxCC.Cfg.Rc.Proof.Native.HeapHistory
+import IxCC.Own.Plain.Proof.Results
 import IxCC.Sem.Forward
 
 /-! The result relation for the physical whole-code induction. Successful

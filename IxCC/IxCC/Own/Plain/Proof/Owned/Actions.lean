@@ -44,11 +44,15 @@ variable {functions : Signatures} {H : Heap} {external : Nat → Nat} {live : Li
   {Γ : Ctx} {ρf : Fir.Env} {ρo : Own.Env} {owned : List RVal} {lex : Joins} {Δ : JCtx}
   {Jf : List Fir.JEntry} {Jo : List JEntry}
 
-theorem inc_step (st : OwnedState functions H external live Γ ρf ρo owned lex Δ Jf Jo)
+/-- `inc_step` with the facts the native step needs: the value incremented, that it may be
+duplicated, and the new token list as reference counts (the value added, or nothing for an
+immediate). -/
+theorem inc_step_refs (st : OwnedState functions H external live Γ ρf ρo owned lex Δ Jf Jo)
     {Γ' : Ctx} {x : Var} {n : Nat} (hc : Γ.inc x n = .ok Γ') :
-    ∃ H' owned', evalAction ρo H (.inc x n) = .ok H' ∧
+    ∃ v H' owned', n = 1 ∧ ρo.get? x = some v ∧ CanDup H v ∧
+      evalAction ρo H (.inc x n) = .ok H' ∧
       OwnedState functions H' external live Γ' ρf ρo owned' lex Δ Jf Jo ∧
-      ExternalPreserved H H' external := by
+      ExternalPreserved H H' external ∧ SameRefs owned' (v :: owned) := by
   obtain ⟨rfl, hcase⟩ := Ctx.inc_ok hc
   obtain ⟨toks, htok, hroots⟩ := st.roots
   have havail : Γ.avail x = true := by
@@ -79,12 +83,12 @@ theorem inc_step (st : OwnedState functions H external live Γ ρf ρo owned lex
     (fun u hu => canDup_inc hu hinc)
   rcases hcase with ⟨hi, rfl⟩ | ⟨hi, hp, rfl⟩ | ⟨hi, h0, hb, rfl⟩
   · -- An immediate: a no-op; its vacuous token is not kept.
-    refine ⟨H', owned, hact, ?_, hpres⟩
     obtain ⟨v', hv', himm⟩ := st.immOk x hi
     have : v' = v := Option.some.inj (hv'.symm.trans hv)
     subst this
-    exact pre.toState ((SameRefs.imm_cons himm owned).balance hb')
-  · refine ⟨H', v :: owned, hact, ?_, hpres⟩
+    exact ⟨v', H', owned, rfl, hv, hcan, hact, pre.toState ((SameRefs.imm_cons himm owned).balance hb'),
+      hpres, (SameRefs.imm_cons himm owned).symm⟩
+  · refine ⟨v, H', v :: owned, rfl, hv, hcan, hact, ?_, hpres, SameRefs.refl _⟩
     have hroots' : EnvRoots ρo (x :: toks) (v :: owned) := EnvRoots.cons hv hroots
     refine ⟨fun y hy => pre.den y ?_, ⟨x :: toks, htok.addOwn x, hroots'⟩, hb',
       fun y hy => pre.known y ?_, pre.distinct, fun y hy => pre.immOk y hy,
@@ -100,7 +104,7 @@ theorem inc_step (st : OwnedState functions H external live Γ ρf ρo owned lex
           decide_false, Bool.false_or] at hy ⊢
         exact hy
   · -- A borrowed variable becomes owned with one token.
-    refine ⟨H', v :: owned, hact, ?_, hpres⟩
+    refine ⟨v, H', v :: owned, rfl, hv, hcan, hact, ?_, hpres, SameRefs.refl _⟩
     have htok' : Ctx.Tokens ({ Γ with brw := Γ.brw.erase x } : Ctx) toks := htok.same rfl rfl
     have hroots' : EnvRoots ρo (x :: toks) (v :: owned) := EnvRoots.cons hv hroots
     refine ⟨fun y hy => pre.den y ?_, ⟨x :: toks, htok'.addOwn x, hroots'⟩, hb',
@@ -127,9 +131,12 @@ theorem inc_step (st : OwnedState functions H external live Γ ρf ρo owned lex
       · cases hy
       · exact hy
 
-theorem dec_step (st : OwnedState functions H external live Γ ρf ρo owned lex Δ Jf Jo)
+/-- `dec_step` with the facts the native step needs: the value released and the remaining
+tokens, as reference counts. -/
+theorem dec_step_refs (st : OwnedState functions H external live Γ ρf ρo owned lex Δ Jf Jo)
     {Γ' : Ctx} {x : Var} (hc : Γ.dec x = .ok Γ') :
-    ∃ H' owned', evalAction ρo H (.dec x) = .ok H' ∧
+    ∃ v H' owned', ρo.get? x = some v ∧ SameRefs owned (v :: owned') ∧
+      evalAction ρo H (.dec x) = .ok H' ∧
       OwnedState functions H' external live Γ' ρf ρo owned' lex Δ Jf Jo ∧
       ExternalPreserved H H' external := by
   obtain ⟨Γ₁, ht, rfl⟩ := Ctx.dec_ok hc
@@ -139,7 +146,23 @@ theorem dec_step (st : OwnedState functions H external live Γ ρf ρo owned lex
   have pre₁ := st.pre.weaker hw inv₁.roots
   have hnb := release_borrowed pre₁.epochs
   have pre' := pre₁.release.call hnb (preserved_hold hheld hext)
-  exact ⟨H', owned₁, hact, pre'.toState hb', ExternalPreserved.of_values hext⟩
+  exact ⟨v, H', owned₁, hv, hs, hact, pre'.toState hb', ExternalPreserved.of_values hext⟩
+
+theorem inc_step (st : OwnedState functions H external live Γ ρf ρo owned lex Δ Jf Jo)
+    {Γ' : Ctx} {x : Var} {n : Nat} (hc : Γ.inc x n = .ok Γ') :
+    ∃ H' owned', evalAction ρo H (.inc x n) = .ok H' ∧
+      OwnedState functions H' external live Γ' ρf ρo owned' lex Δ Jf Jo ∧
+      ExternalPreserved H H' external := by
+  obtain ⟨_, H', owned', _, _, _, hact, st', hp, _⟩ := inc_step_refs st hc
+  exact ⟨H', owned', hact, st', hp⟩
+
+theorem dec_step (st : OwnedState functions H external live Γ ρf ρo owned lex Δ Jf Jo)
+    {Γ' : Ctx} {x : Var} (hc : Γ.dec x = .ok Γ') :
+    ∃ H' owned', evalAction ρo H (.dec x) = .ok H' ∧
+      OwnedState functions H' external live Γ' ρf ρo owned' lex Δ Jf Jo ∧
+      ExternalPreserved H H' external := by
+  obtain ⟨_, H', owned', _, _, hact, st', hp⟩ := dec_step_refs st hc
+  exact ⟨H', owned', hact, st', hp⟩
 
 end
 

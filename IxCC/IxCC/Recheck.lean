@@ -63,50 +63,6 @@ theorem Program.check_or_checkWithContracts_iff (F : Fir.Program) (candidate : S
   · intro h
     exact Bool.or_eq_true_iff.mpr (.inr h)
 
-/-- Decode and admit a plain-RC certificate under the contract-aware `Own.Plain`
-domain check (which subsumes `Program.check` by `Program.check_implies_checkWithContracts`). -/
-def Certificate.admitWithContracts (F : Fir.Program) (j : Lean.Json) : Except String Program := do
-  let bodies ← Certificate.decode F j
-  if Program.checkWithContracts F bodies then
-    return { source := F, bodies }
-  else
-    throw "own.cert.check: ownership proposal or source domain refused"
-
-theorem Certificate.admitWithContracts_parts {F : Fir.Program} {j : Lean.Json} {P : Program}
-    (accepted : Certificate.admitWithContracts F j = .ok P) :
-    P.source = F ∧ checkContractPlainMap F P.bodies = true := by
-  unfold Certificate.admitWithContracts at accepted
-  cases hd : Certificate.decode F j with
-  | error e =>
-    simp only [hd, bind, Except.bind] at accepted
-    cases accepted
-  | ok bodies =>
-    simp only [hd, bind, Except.bind] at accepted
-    split at accepted
-    · next checked =>
-      cases accepted
-      exact ⟨rfl, checked⟩
-    · cases accepted
-
-theorem Certificate.admit_implies_admitWithContracts {F : Fir.Program} {j : Lean.Json} {P : Program}
-    (accepted : Certificate.admit F j = .ok P) :
-    Certificate.admitWithContracts F j = .ok P := by
-  unfold Certificate.admit at accepted
-  unfold Certificate.admitWithContracts
-  cases hd : Certificate.decode F j with
-  | error e =>
-    simp only [hd, bind, Except.bind] at accepted
-    cases accepted
-  | ok bodies =>
-    simp only [hd, bind, Except.bind] at accepted ⊢
-    split at accepted
-    · next checked =>
-      cases accepted
-      have hc : Program.checkWithContracts F bodies = true :=
-        Program.check_implies_checkWithContracts checked
-      simp [hc, pure, Except.pure]
-    · cases accepted
-
 end IxCC.Own.Plain
 
 namespace IxCC.Recheck

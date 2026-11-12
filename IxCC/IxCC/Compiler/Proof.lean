@@ -8,8 +8,7 @@ import IxCC.Own.Plain.Proof.Certificate
 /-! # End-to-End Compiler & Contract-Aware `Own.Plain` Soundness Bridge
 
 Connects contract-aware `Own.Plain` verification (`checkContractPlainMap`,
-`Program.checkWithContracts`, `Certificate.admitWithContracts`, and
-`checked_contract_program_refines`) to:
+`Program.checkWithContracts` and `checked_contract_program_refines`) to:
 1. Language-level simulation and refinement (`checked_contract_call_sim`,
    `checked_contract_refines_lang`, `checked_contract_lower_refines`,
    `checkedContractPass`, and `Recheck.Rc.contract_source_refines`);
@@ -95,20 +94,6 @@ theorem checked_contract_lower_refines {A : Anf.Program} {F : Fir.Program}
     Sem.Refines A ({ source := F, bodies := candidate } : Program) :=
   (Fir.Proof.lower_refines lowered).trans
     (checked_contract_refines_lang checked (exports_of_lower lowered))
-
-theorem Certificate.admitWithContracts_lower_refines {A : Anf.Program} {F : Fir.Program}
-    {j : Lean.Json} {P : Program}
-    (lowered : Fir.lower A = .ok F)
-    (accepted : Certificate.admitWithContracts F j = .ok P) :
-    Sem.Refines A P := by
-  obtain ⟨hsrc, hcheck⟩ := Certificate.admitWithContracts_parts accepted
-  have hp : ({ source := F, bodies := P.bodies } : Program) = P := by
-    cases P
-    simp only at hsrc
-    subst hsrc
-    rfl
-  rw [← hp]
-  exact checked_contract_lower_refines lowered hcheck
 
 def checkedContractPass : Sem.Transform Fir.Program Program where
   name := "Own.Plain.checkWithContracts"

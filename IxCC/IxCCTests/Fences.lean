@@ -19,6 +19,7 @@ import IxCCTests.Fences.Fir
 import IxCCTests.Fences.Own
 import IxCCTests.Fences.OwnPlain
 import IxCCTests.Fences.OwnOwned
+import IxCCTests.Fences.OwnOwnedSwitch
 import IxCCTests.Fences.OwnRc
 import IxCCTests.Fences.Rt
 import IxCCTests.Fences.RtRc

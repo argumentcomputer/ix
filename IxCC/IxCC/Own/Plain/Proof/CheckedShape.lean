@@ -41,4 +41,6 @@ theorem checked_program_reclaims {F : Fir.Program} {candidate : Src.NatMap Code}
   obtain ⟨released, dropped, dead⟩ := dropAll_reclaims shape balance
   exact ⟨v, after, released, success, den, dropped, dead⟩
 
+example : @checked_program_reclaims' = @checked_program_reclaims := rfl
+
 end IxCC.Own.Plain

@@ -183,10 +183,10 @@ theorem OwnedState.declare (st : OwnedState functions H external live Γ ρf ρo
       (e := { id := j, charged := false, env := ρf, params := ps, body := eraseCode body, isRec := rec })
       (List.Sublist.refl _) ⟨hf, hb⟩ st.scope }
 
-/-- **A checked jump**: the target found on both stacks, the arguments, and the state its body
+/-- `jump_body` with the token transfer as reference counts: the body's tokens count what the jumping path held (the heap is unchanged by a jump). The checked jump: the target found on both stacks, the arguments, and the state its body
 starts from — the arguments' tokens and those of the captured variables that are not immediates
 of the declaration, exactly the context the body was checked from. -/
-theorem jump_body (st : OwnedState functions H external live Γ ρf ρo owned lex Δ Jf Jo)
+theorem jump_body_refs (st : OwnedState functions H external live Γ ρf ρo owned lex Δ Jf Jo)
     {j : Fir.JoinId} {args : List Arg} {captured : List Var} {Γ₁ Γ₂ : Ctx} {what : String}
     (hΔ : Δ.get? j = some captured) (h1 : Γ.takeArgs args = .ok Γ₁)
     (h2 : Γ₁.takeVars captured = .ok Γ₂) (h3 : Γ₂.closed what = .ok ())
@@ -201,7 +201,8 @@ theorem jump_body (st : OwnedState functions H external live Γ ρf ρo owned le
             (Fir.bindAll ef.env ef.params ws) (Own.bindAll eo.env eo.params vs) owned' lexb Δb
             (ef.after restf) (eo.after resto) ∧
           checkCode Δb Γb eo.body = .ok () ∧ eraseCode eo.body = ef.body ∧
-          scopeOk functions (lexd ++ ef.params) (stackArities (ef.after restf)) ef.body = true) := by
+          scopeOk functions (lexd ++ ef.params) (stackArities (ef.after restf)) ef.body = true ∧
+          SameRefs owned owned') := by
   obtain ⟨lexd, captured', older, Δd, Γd, eo, resto, hlo, entry, oview, fview, tail, escope,
     tscope⟩ := st.stack.lookup st.scope hl
   have hid := Fir.lookupJ_id hl
@@ -234,10 +235,11 @@ theorem jump_body (st : OwnedState functions H external live Γ ρf ρo owned le
   have hroots : EnvRoots (Own.bindAll eo.env eo.params vs) (Γd.entered captured ef.params)
       (cvsF ++ vs) := by
     rw [entry.params]; exact hcF'.bindAll ef.params vs hvlen hfreshF
-  have hbal : Balance H external (cvsF ++ vs) := by
+  have hrefs : SameRefs owned (cvsF ++ vs) := by
     have h0 : SameRefs owned (vs ++ cvsF) :=
       hs₁.trans (SameRefs.append (SameRefs.refl vs) (hs₂.trans (by simpa using hsF)))
-    exact (h0.trans (SameRefs.comm vs cvsF)).balance st.counts
+    exact h0.trans (SameRefs.comm vs cvsF)
+  have hbal : Balance H external (cvsF ++ vs) := hrefs.balance st.counts
   -- Denotations of what the body may read.
   have hdenF : EnvDen H (captured.filter p) ef.env eo.env := by
     intro c hc
@@ -258,7 +260,7 @@ theorem jump_body (st : OwnedState functions H external live Γ ρf ρo owned le
   refine ⟨_, _, lexd, _, cvsF ++ vs, ⟨fun y hy => ?_, ⟨_, htokB, hroots⟩, hbal, fun y hy => ?_,
     fresh_nodup_append hnlex escope.1, fun y hy => ?_, fun y hy => ?_, fun y e hy => ?_,
     entry.after_stack tail hnlex escope.1 vs ws, StackScope.after escope tscope⟩,
-    entry.typed, entry.erases, by rw [stackArities_after]; exact escope.2⟩
+    entry.typed, entry.erases, by rw [stackArities_after]; exact escope.2, hrefs⟩
   · -- avail in the body: an immediate of the declaration, or a token.
     simp only [Ctx.avail_eq, Ctx.borrowed_eq, hbrwB, Bool.or_eq_true, decide_eq_true_eq] at hy
     rcases hy with (hi | hp) | hb
@@ -278,6 +280,30 @@ theorem jump_body (st : OwnedState functions H external live Γ ρf ρo owned le
     exact ⟨v, by rw [(hbody y (entry.immIn y hy)).1]; exact hv, himm⟩
   · simp [Ctx.borrowed_eq, hbrwB] at hy
   · simp [hbrwB] at hy
+
+/-- **A checked jump**: the target found on both stacks, the arguments, and the state its body
+starts from — the arguments' tokens and those of the captured variables that are not immediates
+of the declaration, exactly the context the body was checked from. -/
+theorem jump_body (st : OwnedState functions H external live Γ ρf ρo owned lex Δ Jf Jo)
+    {j : Fir.JoinId} {args : List Arg} {captured : List Var} {Γ₁ Γ₂ : Ctx} {what : String}
+    (hΔ : Δ.get? j = some captured) (h1 : Γ.takeArgs args = .ok Γ₁)
+    (h2 : Γ₁.takeVars captured = .ok Γ₂) (h3 : Γ₂.closed what = .ok ())
+    {ef : Fir.JEntry} {restf : List Fir.JEntry} (hl : Fir.lookupJ j Jf = some (ef, restf)) :
+    ∃ (vs : List RVal) (ws : List Fir.Val) (eo : JEntry) (resto : List JEntry),
+      Own.evalArgs ρo args = some vs ∧ Fir.evalArgs ρf args = some ws ∧
+      vs.length = ws.length ∧ lookupJ j Jo = some (eo, resto) ∧ eo.params = ef.params ∧
+      eo.charged = ef.charged ∧
+      (ws.length = ef.params.length →
+        ∃ (Δb : JCtx) (Γb : Ctx) (lexd : List Var) (lexb : Joins) (owned' : List RVal),
+          OwnedState functions H external (lexd ++ ef.params) Γb
+            (Fir.bindAll ef.env ef.params ws) (Own.bindAll eo.env eo.params vs) owned' lexb Δb
+            (ef.after restf) (eo.after resto) ∧
+          checkCode Δb Γb eo.body = .ok () ∧ eraseCode eo.body = ef.body ∧
+          scopeOk functions (lexd ++ ef.params) (stackArities (ef.after restf)) ef.body = true) := by
+  obtain ⟨vs, ws, eo, resto, h₁, h₂, h₃, h₄, h₅, h₆, h₇⟩ := jump_body_refs st hΔ h1 h2 h3 hl
+  refine ⟨vs, ws, eo, resto, h₁, h₂, h₃, h₄, h₅, h₆, fun hlen => ?_⟩
+  obtain ⟨Δb, Γb, lexd, lexb, owned', s, t, e, sc, _⟩ := h₇ hlen
+  exact ⟨Δb, Γb, lexd, lexb, owned', s, t, e, sc⟩
 
 end
 

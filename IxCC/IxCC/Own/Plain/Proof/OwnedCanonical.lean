@@ -1,6 +1,6 @@
 import IxCC.Own.Plain.Proof.Owned.Program
-import IxCC.Own.Plain.Proof.Candidate
-import IxCC.Own.Plain.Proof.CheckedShape
+import IxCC.Own.Plain.Proof.Program
+import IxCC.Own.Plain.Proof.Admission
 
 /-! # Counting tokens against the canonical producer's map
 

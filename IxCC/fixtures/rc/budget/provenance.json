@@ -1,0 +1,21 @@
+{"source_sha256":
+ {"consumer.equations.json":
+  "f43d4d475e8fa6977231519edf4b38ad060384fe2f49b0e7dd138d5c7a63f97d",
+  "anonymous.ixe":
+  "6da4c83d4e9b515e6e4f619681f73693edc42f0fe5fea3c8f25697aa9e8ddfcd",
+  "Fan.lean":
+  "89aad7ddc79c41d70662ed523358d656d3fd8a68017d404ae30b0e6012af9c62"},
+ "source_path": "fixtures/rc/budget",
+ "regenerate":
+ "lake exe refreeze-ixon rc-budget --ix IX --ix-path FAKE (docs/corpus.md, Refreezing)",
+ "producer_version": "4.34.1|0.0.1",
+ "producer":
+ "the ix of this repository: lake build ix at the repository root, in its dev shell (not a Nix build)",
+ "named_env_sha256":
+ "582574b886452a109011715de69cee5f6af0d5c309a9152b7cb0b5762655830a",
+ "lean_version":
+ "Lean (version 4.34.1, x86_64-unknown-linux-gnu, commit 5045d0056413266e57c625dcd7c365b10e377c52, Release)\n",
+ "commands":
+ ["ix compile --no-build --consts <roots> --equations --anon --out anonymous.ixe --equations-out anonymous.equations.json fixtures/rc/budget/Fan.lean",
+  "ix compile --no-build --consts <roots> --equations --out named.ixe --equations-out named.equations.json fixtures/rc/budget/Fan.lean",
+  "ix addr-of --ixe named.ixe NAME, for every root, definition and equation"]}

@@ -89,6 +89,6 @@ def read (bundle logs : FilePath) : IO Unit := do
     IO.FS.writeFile (logs / s!"{root}.artifacts.sha256") hashes.stdout
     IO.println s!"PASS fresh-process {root}: exact complete map, nine refusals, scoped gate, three full native values by two decoders"
   IO.println s!"PASS codec read{← IxCCTests.Rt.Native.agreement}"
-  IO.FS.writeFile (logs / "result.txt") "Three fresh source/certificate rechecks,27 actual-source corruptions plus13 synthetic decoder controls refused,9 full native values. This codec gate uses the existing backend producer; the separate complete replay gate validates serialized RC backend decisions.\n"
+  IO.FS.writeFile (logs / "result.txt") "Three fresh source/certificate rechecks,27 actual-source corruptions plus12 synthetic decoder controls refused, a reordered captured list accepted,9 full native values. This codec gate uses the existing backend producer; the separate complete replay gate validates serialized RC backend decisions.\n"
 
 end IxCCTests.Recheck.Rc.CodecIO
