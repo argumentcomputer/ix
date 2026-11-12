@@ -203,7 +203,7 @@ users' processes, sampled each second.
 | `check-steps` (`x86-steps`) | 41 s | – | 0.1 GB |
 | `tests-own --native` (`--cc` until X1) | 15 s (local run of the program, outside the sandbox; not yet measured as a derivation) | 19 s (2026-10-01, a flake check of that date) | 0.11 GB |
 | `tests-shrink` | 1.4 s (local run of the program, outside the sandbox; not yet measured as a derivation) | 2 s (2026-10-01, a flake check of that date) | 0.07 GB |
-| `tests-own-owned` (`COUNT` 100, the default) | 257 s (2026-11-12, a run of the program on the shared build box outside the sandbox, 162 roots; most of it the front end, one ingress per root; not yet measured as a derivation) | – | 0.32 GB |
+| `tests-own-owned` (`COUNT` 100, the default) | 257 s (2026-11-12, a run of the program on the shared build box outside the sandbox, 162 roots; most of it the front end, one ingress per root; not yet measured as a derivation) | 314 s (2026-11-12, `int-check` on the build box at `e1de796de`; `tests-corpus`, 1,012 s there, stays the longest) | 0.32 GB |
 
 Run one after another the suites take about 21 minutes; the rest of the
 surface took 12 min 44 s when last measured on its own (cold derivations, warm store), so
