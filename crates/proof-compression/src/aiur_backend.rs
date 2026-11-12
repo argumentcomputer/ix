@@ -10,6 +10,7 @@ use ark_bn254::Fr;
 use ark_ff::{Field, PrimeField};
 
 pub mod fq;
+pub mod g1;
 pub mod kzg;
 
 #[derive(Clone, Copy, Debug, Default)]
