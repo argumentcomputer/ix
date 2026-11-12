@@ -122,16 +122,17 @@ decision](roadmap.md#open-decisions).
   a `let`-free chain of sharing-table entries (`T (j+1) = T j → T j`) did the
   same. *The fix* was made in the kernel package on this branch, in parallel
   with the switch of IxCC's front end to the kernel, which proceeds (the
-  owner's decision of 2026-11-11), and has landed: the ∀ rule builds its
-  level with the official kernel's `mk_imax`/`mk_max` folds (`Level.mkIMax`,
-  which is always one of its arguments or their plain `imax`), in the
-  specification, the executed core and the declarative rule with its
-  soundness proof, and `Level` caches its has-parameter bit. Every such chain
-  then checks in milliseconds at a thousand steps, through the kernel's entry
+  owner's decision of 2026-11-11), and has landed, in the executed tier only:
+  `Level` caches its has-parameter bit, the level walks are memoised on
+  shared levels, and the cached core hash-conses the ∀ rule's levels
+  (`Cached.internLM`); the rule's level is upstream's `imax u v` (an earlier
+  fold of it, `Level.mkIMax`, was withdrawn so that the rules tier is
+  upstream's, `docs/kernel.md`, "Running time"). Every such chain
+  then checks in under a second at a thousand steps (quadratic in the steps), through the kernel's entry
   and through IxCC's front end over it (28 ms at 30 `let`s where it took 50 s,
   [kernel front end](kernel-front-end-design.md#resource-bounds), which keeps
   the measurements from before the fix; `tests-kernel-front` checks such a
-  closure at 200). Levels the folds cannot merge (two chains at two universe
+  closure at 200). Levels that stay large (two chains at two universe
   parameters each mentioning the other at every step, or levels unfolding
   builds by instantiating at `max u u`) stay shared as DAGs, and the kernel's
   level walks are now memoised on them (`docs/kernel.md`, "Running time"), so

@@ -729,6 +729,19 @@ for nesting depth before decoding); neither is made yet. The envelope's depth
 bound (`V3.withinKernelDepth`) limits the records as stored, after that
 decoder, and not the terms the kernel builds while typing them.
 
+Known costs in the kernel on small hostile inputs (2026-11-12), open, not fixed by the change
+that keeps the ∀ rule's level upstream's and hash-conses it in the executed core (both are on
+upstream's main too; reproducers in the kernel-robustness notes, `plans/kernel-robustness/NOTES.md`):
+- a `let` chain over one shared type (`let a(j+1) : Type := aj → aj`) is superquadratic in time
+  and quadratic in memory in every build: 20 to 30 s and up to 3 GB at 8,000 `let`s (a 56 KB
+  constant), because the binder loop re-peels each value's whole telescope although the tail's
+  type is memoised; a fix would stop the peel at a closed tail and take its sort from the memo,
+  an obligation in the binder-loop simulation proofs;
+- the kernel's acceptance of a program that applies `T k → E → E` to `fun x : T(k-1) => x`, the
+  chain in a sharing table or as `let`s, grows 6 to 9 times per doubling between 1,000 and 2,000
+  (8 to 10 s at 2,000) with or without the fold; cause unknown; IxCC then refuses the program by
+  its own budgets within 70 ms.
+
 Known costs on hostile input in the plain-RC verifier (2026-11-12), beyond the
 ownership checker's own, which the captured-work budget bounds
 ([DR1, "The ownership checker"](data-and-roots-design.md#the-ownership-checker)):

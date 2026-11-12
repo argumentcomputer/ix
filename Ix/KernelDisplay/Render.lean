@@ -34,6 +34,11 @@ coercions, full names (IxCK has no open namespaces); proofs are printed.
   is `Type`, `Sort (u+1)` is `Type u`.
 * **Projections** are `e.1` (one-based, Lean's raw `Expr.proj`), literals
   Lean's, and a print stops at `maxSteps` nodes with `⋯`.
+* **Levels** print as Lean prints them, and one level shows at most
+  `maxLevelNodes` `max`/`imax` nodes; past them a sublevel prints as `⋯`
+  (`⋯ + n` under `n` successors). A level the kernel builds can be shared as
+  a DAG whose tree is exponentially larger (the ∀ rule's `imax L L` over a
+  shared type), and the printer walks the tree.
 
 Everything here is safe code and reads nothing by itself: the display reads
 are a parameter (`Peek`), which `Ix.KernelDisplay.Peek` supplies with the one
@@ -70,6 +75,8 @@ structure Cx (md : Mode) where
   messages spell `name@hex8`, its terms the name alone) -/
   msgSpell : Option (Key md → String) := none
   maxSteps : Nat := 5000
+  /-- the most `max`/`imax` nodes one printed level shows -/
+  maxLevelNodes : Nat := 64
 
 /-! ## Names -/
 
@@ -98,22 +105,34 @@ def binderName (n : Ix.Kernel.Name) : Lean.Name :=
 
 /-- Lean's level printing (`Level.PP`): numerals, `u + n`, `max u v`,
 `imax u v`; `paren` parenthesizes a compound level (an argument), `k` the
-successors above. -/
-def levelAux (cx : Cx md) (paren : Bool) (k : Nat) : Level → String
-  | .zero => toString k
+successors above. The state counts the `max`/`imax` nodes printed: from
+`cx.maxLevelNodes` on, such a node prints as `⋯`, so the work and the output
+are bounded by the budget, not by the level's tree. -/
+def levelAux (cx : Cx md) (paren : Bool) (k : Nat) : Level → StateM Nat String
+  | .zero => pure (toString k)
   | .succ u => levelAux cx paren (k + 1) u
-  | .param i => offset (cx.levelName i) k
-  | .max u v => wrapOffset s!"max {levelAux cx true 0 u} {levelAux cx true 0 v}" k
-  | .imax u v => wrapOffset s!"imax {levelAux cx true 0 u} {levelAux cx true 0 v}" k
+  | .param i => pure (offset (cx.levelName i) k)
+  | .max u v => do
+    if ← spent then return offset "⋯" k
+    let a ← levelAux cx true 0 u
+    let b ← levelAux cx true 0 v
+    return wrapOffset s!"max {a} {b}" k
+  | .imax u v => do
+    if ← spent then return offset "⋯" k
+    let a ← levelAux cx true 0 u
+    let b ← levelAux cx true 0 v
+    return wrapOffset s!"imax {a} {b}" k
 where
+  spent : StateM Nat Bool := modifyGet fun n => (cx.maxLevelNodes ≤ n, n + 1)
   offset (s : String) (k : Nat) : String :=
     if k == 0 then s else if paren then s!"({s} + {k})" else s!"{s} + {k}"
   wrapOffset (s : String) (k : Nat) : String :=
     let s := if k == 0 then s else s!"{s} + {k}"
     if paren then s!"({s})" else s
 
-/-- A level, printed. -/
-def levelStr (cx : Cx md) (paren : Bool) (u : Level) : String := levelAux cx paren 0 u
+/-- A level, printed (at most `cx.maxLevelNodes` `max`/`imax` nodes). -/
+def levelStr (cx : Cx md) (paren : Bool) (u : Level) : String :=
+  Id.run ((levelAux cx paren 0 u).run' 0)
 
 /-- `Sort u` as Lean prints it: `Prop`, `Type`, `Type u`, `Sort u`. -/
 def sortStr (cx : Cx md) (u : Level) : String × Bool :=
