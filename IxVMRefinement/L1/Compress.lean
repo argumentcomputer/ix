@@ -67,8 +67,10 @@ theorem proj_stateV_lo (s m : Blake3.Pure.Block) (i : Nat) (hi : i < 16) :
     simpa using hi
   rw [stateV_eq, proj_getElem _ _ hl]
   simp only [stateL]
-  rw [List.getElem_append_left hl']
-  simp
+  rw [List.getElem_append_left hl', List.getElem_ofFn]
+  first
+  | rfl
+  | (simp [Fin.getElem_fin]; done)
 
 theorem proj_stateV_hi (s m : Blake3.Pure.Block) (j : Nat) (hj : j < 16) :
     projectValue (stateV s m : SourceValue F) (16 + j) = .ok (wv m[j]) := by
@@ -77,8 +79,10 @@ theorem proj_stateV_hi (s m : Blake3.Pure.Block) (j : Nat) (hj : j < 16) :
     simp
   rw [stateV_eq, proj_getElem _ _ hl]
   simp only [stateL]
-  rw [List.getElem_append_right hl']
-  simp
+  rw [List.getElem_append_right hl', List.getElem_ofFn]
+  first
+  | (simp [Fin.getElem_fin]; done)
+  | (simp; done)
 
 /-! ## Updates of a tuple -/
 
@@ -103,6 +107,11 @@ theorem mapM_zipIdx_set {α : Type} (vs : List α) (i : Nat) (x : α) :
   rw [mapM_some_eq _ (fun p => if (p.2 == i) = true then x else p.1)
     (fun p => by by_cases h : (p.2 == i) = true <;> simp [h]), zipIdx_map_set]
 
+theorem mapM_zipIdx_set' {α : Type} (vs : List α) (i : Nat) (x : α) :
+    (vs.zipIdx.mapM fun p => if p.2 = i then (some x : Option α) else some p.1) =
+      some (vs.set i x) := by
+  simpa using mapM_zipIdx_set vs i x
+
 /-- **An update of one component of a tuple** replaces it. -/
 theorem update_index (types : List (String × Aiur.Generic.Ty)) (vs : List (SourceValue F))
     (i n : Nat) (x : SourceValue F) (hn : vs.length = n) :
@@ -111,9 +120,11 @@ theorem update_index (types : List (String × Aiur.Generic.Ty)) (vs : List (Sour
   simp only [Update.value, Update.apply, Update.replace, Update.unpack, Update.pack,
     UpdateStep.owner, UpdateStep.width, UpdateStep.position]
   first
-  | (simp [mapM_zipIdx_set]; done)
-  | (simp; rw [mapM_zipIdx_set]; rfl)
-  | (simp only [ite_true, Option.bind_eq_bind, Option.some_bind, mapM_zipIdx_set]; rfl)
+  | (simp only [Option.bind_some, mapM_zipIdx_set]; rfl)
+  | (simp only [Option.bind_some, mapM_zipIdx_set]; done)
+  | (simp only [ite_true, Option.bind_some, mapM_zipIdx_set]; rfl)
+  | (simp [mapM_zipIdx_set, mapM_zipIdx_set']; done)
+  | (simp [mapM_zipIdx_set']; rfl)
 
 theorem update_inv {types : List (String × Aiur.Generic.Ty)} {vs : List (SourceValue F)}
     {i n : Nat} {x v : SourceValue F} (hn : vs.length = n)
