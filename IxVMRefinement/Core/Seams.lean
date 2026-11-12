@@ -84,14 +84,19 @@ def Walked (calls : List (Call F)) (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env)
       ((∃ ms, c.info = .muts ms) ∨ CheckedAt calls t a)
 
 /-- (L7 → L5) **The derivation checked every constant a declaration installs, first
-definition**: for records `E` and a table `t` whose environment facts and loads hold of `env`
-and whose calls hashed no collision with `E`, every constant the declaration `d` installs is
-stored as declared (`StoredAs`) by the image of a constant the derivation checked
-(`KernelCheck::check_const` on a loaded constant representing it), at that constant's key. -/
+definition**: for records `E` and a well-formed table `t` (the run's) whose loads read `env`
+(`LoadFacts`) and whose calls are good, every constant the declaration `d` installs is stored as
+declared (`StoredAs`) by the image of a constant the derivation checked
+(`KernelCheck::check_const` on a loaded constant representing it), at that constant's key.
+
+It carries what the assembly knows (the records, the table, the loads, the checks). The rest of
+the environment invariant the core reads (`EnvFacts`: stored theorems typed, the role and
+recursor facts) holds of the prefix by the declarations already checked, so it is the
+declaration layer's to carry in its invariant (`Decls`) and to supply to `Core` at each step. -/
 def Checked (calls : List (Call F)) (env : Ix.Kernel.Env .anon)
     (d : Ix.Kernel.Declaration .anon) : Prop :=
   ∃ (E : Ixon.Env) (t : Ix.Kernel.RoleTable),
-    EnvFacts ⟨E, env, t⟩ ∧ LoadFacts ⟨E, env, t⟩ ∧ Good ⟨E, env, t⟩ calls ∧
+    t.wf = true ∧ LoadFacts ⟨E, env, t⟩ ∧ Good ⟨E, env, t⟩ calls ∧
     ∀ ci₀ ∈ IxVM.Consistency.installs d,
       ∃ cl ∈ calls, cl.name = "KernelCheck::check_const" ∧
         ∃ rc v ap a ci, cl.args = [rc, v, ap] ∧ RCRep t cl.heap rc ∧ addr cl.heap ap a ∧
