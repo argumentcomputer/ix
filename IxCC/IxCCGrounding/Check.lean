@@ -559,9 +559,9 @@ theorem groundCheckWith_mono {adm adm' : List RecClass} (hsub : ∀ k ∈ adm, k
   unfold groundCheckWith checkPartsWith at h ⊢
   simp only [List.all_cons, List.all_nil, Bool.and_true, Bool.and_eq_true] at h ⊢
   obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, h12, h13, h14, h15, h16, h17, h18, h19,
-    h20, h21, h22, h23, h24⟩ := h
-  exact ⟨h1, h2, h3, h4, List.all_eq_true.mpr fun c hc => hd c (List.all_eq_true.mp h5 c hc), h6,
-    h7, h8, h9, h10, h11, h12, h13, h14, h15, h16, h17, h18, h19, h20, h21, h22, h23, h24⟩
+    h20, h21, h22, h23, h24, h25⟩ := h
+  exact ⟨h1, h2, h3, h4, h5, List.all_eq_true.mpr fun c hc => hd c (List.all_eq_true.mp h6 c hc),
+    h7, h8, h9, h10, h11, h12, h13, h14, h15, h16, h17, h18, h19, h20, h21, h22, h23, h24, h25⟩
 
 /-! ## Soundness -/
 
