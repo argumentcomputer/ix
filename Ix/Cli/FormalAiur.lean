@@ -388,6 +388,12 @@ def one (p : Cli.Parsed) (artifactPath binary : String) (options : HostOptions)
           IO.ofExcept (Json.parse (← IO.FS.readFile reportPath)) else pure Json.null
       if code == 0 && (report.getObjVal? "execution_statistics").toOption.isNone then
         throw (IO.userError "successful execution returned no circuit statistics")
+      -- A failing host writes its error only to the report (a resident prover has no
+      -- terminal of its own), so the report's error is printed here; 75 (the plan
+      -- does not fit) is the callers' to report.
+      if code != 0 && code != 75 then
+        let why := (report.getObjValAs? String "error").toOption.getD "the host reported no error"
+        IO.eprintln s!"{label}: the prover exited with status {code}: {why}"
       let report ← IO.ofExcept (Aiur.enrichExecutionReport report)
       if let some flag := p.flag? "stats-out" then
         IO.FS.writeFile (flag.as! String) report.pretty
@@ -578,6 +584,7 @@ private def runManifest (p : Cli.Parsed) (artifactPath binary : String) (options
          ("throughput", Ix.Benchmark.Results.jsonRound 2 throughput),
          ("peak-rss", toJson (← TracingTexray.peakTreeRssBytes))])
       if failures != 0 then return Ix.Benchmark.Results.exitRejected
+    if failures != 0 then IO.eprintln s!"[aiur] {failures} shard part(s) failed"
     return if failures == 0 then 0 else 1
   if mode == "prove" then withController p #[(artifactPath, "ixvm")] options jobs drive
   else drive options
