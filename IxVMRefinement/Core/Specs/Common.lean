@@ -66,10 +66,11 @@ abbrev Ctx.tmc (c : Ctx) (h : Heap F) (E : KExpr) (p : SourceValue F) : Prop :=
 /-- The role context reads the table. -/
 abbrev Ctx.rc (c : Ctx) (h : Heap F) (rc : SourceValue F) : Prop := RCRep c.t h rc
 
-/-- The context list is a segment of `Γ` ending at `d`. -/
+/-- The context list is a segment of `Γ` ending at `d`, and `Γ` is scoped below `d`
+(`GhostScoped`). -/
 abbrev Ctx.types (c : Ctx) (Γ : Nat → KExpr) (h : Heap F) (d : Nat) (types : SourceValue F) :
     Prop :=
-  TypesRep c.κ Γ h d types
+  TypesRep c.κ Γ h d types ∧ GhostScoped Γ d
 
 /-- A loaded constant value. -/
 abbrev Ctx.ci (c : Ctx) (h : Heap F) (v : SourceValue F) (ci : Ix.Kernel.ConstantInfo .anon) :

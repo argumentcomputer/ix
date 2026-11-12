@@ -45,7 +45,7 @@ hold. -/
 def ctx (E : Ixon.Env) (env : Ix.Kernel.Env .anon) (g : Ghost) (d : Nat) (h : Heap F)
     (rc types : SourceValue F) : Prop :=
   ∃ t : Ix.Kernel.RoleTable, g.κ = keyOf t ∧ RCRep t h rc ∧ TypesRep g.κ g.Γ h d types ∧
-    EnvFacts ⟨E, env, t⟩ ∧ LoadFacts ⟨E, env, t⟩
+    GhostScoped g.Γ d ∧ EnvFacts ⟨E, env, t⟩ ∧ LoadFacts ⟨E, env, t⟩
 
 /-- (L1, L6) **The address seam**: `v` is a `Bytes::AddressRef` holding `a`. -/
 def addr (h : Heap F) (v : SourceValue F) (a : _root_.Address) : Prop :=
@@ -112,8 +112,8 @@ theorem term_mono {E : Ixon.Env} {env : Ix.Kernel.Env .anon} {g : Ghost} {d k : 
 theorem ctx_mono {E : Ixon.Env} {env : Ix.Kernel.Env .anon} {g : Ghost} {d : Nat}
     {h₁ h₂ : Heap F} {rc types : SourceValue F} (ext : Heap.Extends h₁ h₂)
     (r : ctx E env g d h₁ rc types) : ctx E env g d h₂ rc types := by
-  obtain ⟨t, hκ, hrc, hty, hf, hl⟩ := r
-  exact ⟨t, hκ, hrc.mono ext, hty.mono ext, hf, hl⟩
+  obtain ⟨t, hκ, hrc, hty, hs, hf, hl⟩ := r
+  exact ⟨t, hκ, hrc.mono ext, hty.mono ext, hs, hf, hl⟩
 
 theorem addr_mono {h₁ h₂ : Heap F} {v : SourceValue F} {a : _root_.Address}
     (ext : Heap.Extends h₁ h₂) (r : addr h₁ v a) : addr h₂ v a := by

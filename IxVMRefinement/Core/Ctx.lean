@@ -1,5 +1,6 @@
 import IxVMRefinement.Core.Loaded
 import IxC.Kernel.Rules.Rel
+import IxC.Kernel.Rules.TransportKit
 import IxC.Kernel.Ixon.RoleTable
 import IxC.Kernel.Roles
 import IxC.Kernel.RoleEquations
@@ -28,6 +29,7 @@ The core's functions run under a role context `rc` (`KernelRoles::RoleCtx`) and 
 | Field | What the core reads it for | Established by |
 |---|---|---|
 | `tableWf` | role keys are a function of addresses (no address bound twice) | L6 (the run admitted `t`), L7 (`t` is `ReadIn`'s) |
+| `storeClosed` | moving a derivation between depths (`Rules.Transport`), for the context-lowering rebases | L5 (every installed term is closed), L7 |
 | `thmTyped` | `Red.deltaThm`'s premises: a stored theorem's value, closed and typed at its own levels | L5 (each theorem's own check, carried along the fold by `Transport.weaken`) |
 | `natLit`, `strLit`, `natOps`, `natAdd` | the native rules' stored-shape guards (`natLitSupported`, `strLitSupported`, `natOpStored`, `natAddTyOk`) | L5 (role constants installed as their specifications), L6 (the table binds them) |
 | `eqStored`, `evidence` | `Red.eqProof`: `Eq` is stored; each evidence theorem the table names is stored at its key, its type definitionally equal to the role equation's statement | L5 (evidence theorems checked like any theorem), L6 (the table's evidence matches its roles) |
@@ -151,6 +153,12 @@ inductive TypesRep (κ : _root_.Address → KKey) (Γ : Nat → KExpr) (h : Heap
       (rt : Tm κ d Γ h 0 (Γ d) tp) (rr : TypesRep κ Γ h d rest) :
       TypesRep κ Γ h (d + 1) (.ptr (.enum kexprListEnum) addr)
 
+/-- **The ghost context is scoped**: the type of the opened variable `j` mentions only the
+variables opened before it (`Expr.wscopedB j`). Opening a binder with a represented domain keeps
+it. With it, a term represented at depth `d` is scoped at `d`, which moving a derivation to
+another depth (`Rules.Transport`: `DefEq.lift`, `Infer.lift`, `Red.lift`) requires. -/
+def GhostScoped (Γ : Nat → KExpr) (d : Nat) : Prop := ∀ j, j < d → (Γ j).wscopedB j = true
+
 /-! ## The environment the core reads -/
 
 /-- The domain of the `n`-th binder of a `∀`-telescope (its loose bound variables are the
@@ -176,6 +184,10 @@ establishes each field). -/
 structure EnvFacts (c : Ctx) : Prop where
   /-- (L6, L7) The table is well formed: no address bound to two roles (`RoleTable.check`). -/
   tableWf : c.t.wf = true
+  /-- (L5, L7) Every stored term the rules read is closed (`Ix.Kernel.StoreClosed`: stored types,
+  definition values, rule right-hand sides, projection bodies have no opened variable), as moving
+  a derivation to another depth requires. -/
+  storeClosed : Ix.Kernel.StoreClosed c.env
   /-- (L5) `Red.deltaThm`: every stored theorem's value is closed, typed at the theorem's own
   levels in the empty context, against its type, which is a proposition at every assignment. -/
   thmTyped : ∀ n cv value, c.env.find? n = some (.thmInfo cv value) →
