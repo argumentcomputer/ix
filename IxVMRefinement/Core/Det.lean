@@ -169,7 +169,7 @@ theorem Tm.det {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr} {h 
       have := cell_eq cell cell'; simp only [Value.construct.injEq, List.cons.injEq,
         Value.field.injEq, and_true, true_and] at this; subst this; omega
     | sort cell' _ _ | const cell' _ _ _ | app cell' _ _ | lam cell' _ _ _ | forallE cell' _ _ _
-    | letE cell' _ _ _ | litNat cell' _ | litStr cell' _ _ | proj cell' _ _ =>
+    | letE cell' _ _ _ | litNat cell' _ _ | litStr cell' _ _ | proj cell' _ _ =>
       have := cell_eq cell cell'; simp at this
   | bvarFree cell _ hk hd =>
     cases r₂ with
@@ -180,7 +180,7 @@ theorem Tm.det {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr} {h 
       have := cell_eq cell cell'; simp only [Value.construct.injEq, List.cons.injEq,
         Value.field.injEq, and_true, true_and] at this; subst this; exact ExprLvEq.refl _
     | sort cell' _ _ | const cell' _ _ _ | app cell' _ _ | lam cell' _ _ _ | forallE cell' _ _ _
-    | letE cell' _ _ _ | litNat cell' _ | litStr cell' _ _ | proj cell' _ _ =>
+    | letE cell' _ _ _ | litNat cell' _ _ | litStr cell' _ _ | proj cell' _ _ =>
       have := cell_eq cell cell'; simp at this
   | sort cell rl hu =>
     cases r₂ with
@@ -189,7 +189,7 @@ theorem Tm.det {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr} {h 
         true_and] at this; subst this
       have := rl.det rl'; subst this; exact .sort (hu.trans hu'.symm)
     | bvarLocal cell' _ _ | bvarFree cell' _ _ _ | const cell' _ _ _ | app cell' _ _
-    | lam cell' _ _ _ | forallE cell' _ _ _ | letE cell' _ _ _ | litNat cell' _
+    | lam cell' _ _ _ | forallE cell' _ _ _ | letE cell' _ _ _ | litNat cell' _ _
     | litStr cell' _ _ | proj cell' _ _ =>
       have := cell_eq cell cell'; simp at this
   | const cell ra rls hus =>
@@ -201,7 +201,7 @@ theorem Tm.det {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr} {h 
       have := rls.det rls'; subst this
       exact .const (hus.trans hus'.symm)
     | bvarLocal cell' _ _ | bvarFree cell' _ _ _ | sort cell' _ _ | app cell' _ _
-    | lam cell' _ _ _ | forallE cell' _ _ _ | letE cell' _ _ _ | litNat cell' _
+    | lam cell' _ _ _ | forallE cell' _ _ _ | letE cell' _ _ _ | litNat cell' _ _
     | litStr cell' _ _ | proj cell' _ _ =>
       have := cell_eq cell cell'; simp at this
   | app cell _ _ ihf iha =>
@@ -211,7 +211,7 @@ theorem Tm.det {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr} {h 
         true_and] at this; obtain ⟨rfl, rfl⟩ := this
       exact .app (ihf rf') (iha ra')
     | bvarLocal cell' _ _ | bvarFree cell' _ _ _ | sort cell' _ _ | const cell' _ _ _
-    | lam cell' _ _ _ | forallE cell' _ _ _ | letE cell' _ _ _ | litNat cell' _
+    | lam cell' _ _ _ | forallE cell' _ _ _ | letE cell' _ _ _ | litNat cell' _ _
     | litStr cell' _ _ | proj cell' _ _ =>
       have := cell_eq cell cell'; simp at this
   | lam cell _ _ rl iht ihb =>
@@ -222,7 +222,7 @@ theorem Tm.det {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr} {h 
       have := rl.det rl'; subst this
       exact .lam (iht rt') (ihb rb')
     | bvarLocal cell' _ _ | bvarFree cell' _ _ _ | sort cell' _ _ | const cell' _ _ _ | app cell' _ _
-    | forallE cell' _ _ _ | letE cell' _ _ _ | litNat cell' _ | litStr cell' _ _ | proj cell' _ _ =>
+    | forallE cell' _ _ _ | letE cell' _ _ _ | litNat cell' _ _ | litStr cell' _ _ | proj cell' _ _ =>
       have := cell_eq cell cell'; simp at this
   | forallE cell _ _ rl iht ihb =>
     cases r₂ with
@@ -232,7 +232,7 @@ theorem Tm.det {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr} {h 
       have := rl.det rl'; subst this
       exact .forallE (iht rt') (ihb rb')
     | bvarLocal cell' _ _ | bvarFree cell' _ _ _ | sort cell' _ _ | const cell' _ _ _ | app cell' _ _
-    | lam cell' _ _ _ | letE cell' _ _ _ | litNat cell' _ | litStr cell' _ _ | proj cell' _ _ =>
+    | lam cell' _ _ _ | letE cell' _ _ _ | litNat cell' _ _ | litStr cell' _ _ | proj cell' _ _ =>
       have := cell_eq cell cell'; simp at this
   | letE cell _ _ _ iht ihv ihb =>
     cases r₂ with
@@ -241,11 +241,11 @@ theorem Tm.det {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr} {h 
         true_and] at this; obtain ⟨rfl, rfl, rfl⟩ := this
       exact (ihv rv').shift (ihb rb') 0
     | bvarLocal cell' _ _ | bvarFree cell' _ _ _ | sort cell' _ _ | const cell' _ _ _ | app cell' _ _
-    | lam cell' _ _ _ | forallE cell' _ _ _ | litNat cell' _ | litStr cell' _ _ | proj cell' _ _ =>
+    | lam cell' _ _ _ | forallE cell' _ _ _ | litNat cell' _ _ | litStr cell' _ _ | proj cell' _ _ =>
       have := cell_eq cell cell'; simp at this
-  | litNat cell rl =>
+  | litNat cell rl _ =>
     cases r₂ with
-    | litNat cell' rl' =>
+    | litNat cell' rl' _ =>
       have := cell_eq cell cell'; simp only [Value.construct.injEq, List.cons.injEq, and_true,
         true_and] at this; subst this
       have := limbsVal_det rl rl'; subst this; exact .lit
@@ -261,7 +261,7 @@ theorem Tm.det {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr} {h 
         true_and] at this; subst this
       have := bytes_det rb rb'; subst this
       rw [StrBytes] at hs hs'; rw [hs] at hs'; injection hs' with hs'; subst hs'; exact .lit
-    | litNat cell' _ =>
+    | litNat cell' _ _ =>
       have := cell_eq cell cell'; simp at this
     | bvarLocal cell' _ _ | bvarFree cell' _ _ _ | sort cell' _ _ | const cell' _ _ _ | app cell' _ _
     | lam cell' _ _ _ | forallE cell' _ _ _ | letE cell' _ _ _ | proj cell' _ _ =>
@@ -274,7 +274,7 @@ theorem Tm.det {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr} {h 
       have := addr_det ra ra'; subst this
       exact .proj (ihe re')
     | bvarLocal cell' _ _ | bvarFree cell' _ _ _ | sort cell' _ _ | const cell' _ _ _ | app cell' _ _
-    | lam cell' _ _ _ | forallE cell' _ _ _ | letE cell' _ _ _ | litNat cell' _ | litStr cell' _ _ =>
+    | lam cell' _ _ _ | forallE cell' _ _ _ | letE cell' _ _ _ | litNat cell' _ _ | litStr cell' _ _ =>
       have := cell_eq cell cell'; simp at this
 
 end IxVM.Refinement.Core
