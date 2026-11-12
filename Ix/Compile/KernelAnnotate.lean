@@ -910,16 +910,16 @@ private def setNode (ord : Nat) (n : Node) : EM Unit :=
   modify fun nodes => nodes.set! ord n
 
 /-- The variant of entry `n` for the node list `nodes`. -/
-private def variantOf (n : Nat) (nodes : Array Node) : WM Nat := do
-  let st ← get
-  let table := st.variants.getD n {}
-  match table[nodes]? with
-  | some v => pure v
-  | none =>
-    let v := table.size
-    set { st with variants := st.variants.insert n (table.insert nodes v)
-                  blocks := st.blocks.push ⟨1, n, v, nodes⟩ }
-    pure v
+private def variantOf (n : Nat) (nodes : Array Node) : WM Nat :=
+  -- one update of the state, so that its tables change in place
+  modifyGet fun st =>
+    let table := st.variants.getD n {}
+    match table[nodes]? with
+    | some v => (v, st)
+    | none =>
+      let v := table.size
+      (v, { st with variants := st.variants.insert n (table.insert nodes v)
+                    blocks := st.blocks.push ⟨1, n, v, nodes⟩ })
 
 /-! ### Diagnosis (`IX_BD_TRACE`) -/
 
@@ -1204,8 +1204,7 @@ def walk : Nat → Cx → List CtxEntry → Nat → Expect → Ixon.Expr → KEx
       let shareEx : Expect := { pw := ex.pw,
                                 syn := if cx.tier1 then ex.syn else none }
       let key := (n, cx.large, (ctx.take (cx.bounds[n]?.getD 0)).map (·.id), shareEx.pw, x)
-      let st0 ← getThe WState
-      let hit? := if cx.memo then st0.memo[key]? else none
+      let hit? ← if cx.memo then modifyGetThe WState fun st => (st.memo[key]?, st) else pure none
       let (e', variant, bad) ← match hit? with
         | some (e', variant, bad, src) => do
           if cx.trace then
@@ -1251,7 +1250,8 @@ def walkStored : Nat → Cx → List Nat → Ixon.Expr → KExpr → EM Unit
       let ord ← reserve
       let n := n.toNat
       let key := (n, cx.large, ctx.take (cx.bounds[n]?.getD 0))
-      let variant ← match (← getThe WState).memoS[key]? with
+      let hitS ← modifyGetThe WState fun st => (st.memoS[key]?, st)
+      let variant ← match hitS with
         | some v => pure v
         | none => do
           let some entry := cx.sharing[n]? | mismatch "a share"

@@ -462,16 +462,16 @@ private def reserve : NM Nat :=
 private def setNode (ord : Nat) (n : Node) : NM Unit :=
   modify fun nodes => nodes.set! ord n
 
-private def variantOf (n : Nat) (nodes : Array Node) : RM Nat := do
-  let st ← get
-  let table := st.variants.getD n {}
-  match table[nodes]? with
-  | some v => pure v
-  | none =>
-    let v := table.size
-    set { st with variants := st.variants.insert n (table.insert nodes v)
-                  blocks := st.blocks.push ⟨1, n, v, nodes⟩ }
-    pure v
+private def variantOf (n : Nat) (nodes : Array Node) : RM Nat :=
+  -- one update of the state, so that its tables change in place
+  modifyGet fun st =>
+    let table := st.variants.getD n {}
+    match table[nodes]? with
+    | some v => (v, st)
+    | none =>
+      let v := table.size
+      (v, { st with variants := st.variants.insert n (table.insert nodes v)
+                    blocks := st.blocks.push ⟨1, n, v, nodes⟩ })
 
 /-- A run of binders of one kind in the record's tree and its source: each
 binder's domain in both, then both bodies. -/
@@ -605,7 +605,8 @@ def read : Nat → Cx → List (Option Ix.Expr) → Expect → Ixon.Expr → Ix.
         return
       let key := (n, (ctx.take (cx.bounds[n]?.getD 0)).map (·.map Ix.Expr.getHash), ex.toOption,
         x.getHash)
-      let variant ← match (← getThe RState).memo[key]? with
+      let hit ← modifyGetThe RState fun st => (st.memo[key]?, st)
+      let variant ← match hit with
         | some v => pure v
         | none => do
           let some entry := cx.sharing[n]? | throw "a share without its entry"
@@ -764,8 +765,9 @@ def readSrc (find : Find) (σ : Ix.Name → Nat) : Nat → List (Option Ix.Expr)
     match x with
     | .app .. | .lam .. | .forallE .. | .letE .. | .proj .. =>
       let key := (ch, x.getHash, ex.toOption)
-      if (← get).contains key then return
-      modify (·.insert key)
+      -- one update of the memo, so that it grows in place
+      let seen ← modifyGet fun s => if s.contains key then (true, s) else (false, s.insert key)
+      if seen then return
     | _ => pure ()
     match x with
     | .app xf xa _ =>
