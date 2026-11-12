@@ -617,7 +617,7 @@ fewer (`IxCCGrounding/Fence.lean`, 160 exact assertions):**
   landed statements (`rootSound_noRecr`, `fibRoot_noRecr`, `decideRoot_noRecr`,
   and `rootSound`, `fibRoot`, `decideRoot`, `allP_of_check`, `const_of_check`
   as parts A to D stated them; their texts are unchanged, as are `groundCheck`'s
-  signature and its 24 conjuncts). `RecFacts`, `Faith` and `GroundFacts` are
+  signature and its conjuncts: 25 at the tip part E lands on, `noWord` added by the fixed-width words, part E adding none). `RecFacts`, `Faith` and `GroundFacts` are
   in `IxCCGrounding.Facts`, after the decided direct route, so that a recursor
   fact may read it (part E moved them there from `IxCCGrounding.Syntax`, with
   `eqnData?` the other way, in a commit of its own that changed no statement). The
