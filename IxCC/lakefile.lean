@@ -202,6 +202,10 @@ accepted mutants must pass the oracle. -/
 lean_exe «tests-own-owned» where
   root := `IxCCTests.Own.Owned.Main
 
+/- Probe (heap stage 2, milestone 2; removed before the landing). -/
+lean_exe «probe-own-h6» where
+  root := `IxCCTests.Own.Owned.Probe
+
 /- Shrinking and first-divergence reports for the generators: recorded
 choice sequences replay to the seeded cases, and a planted bug per generator
 (LamGen, FoGen, the Lir generator, the allocation mutants) is found, named at
