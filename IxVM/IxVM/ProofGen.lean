@@ -91,8 +91,8 @@ def footer : String := "end IxVM\n"
 /-- **The lookup facts**: for every function with no type parameters (named by
 its plain name), a theorem that the program resolves its name to its closure,
 proved by `Program.sourceFunction?_of_mem` from the function's index and one
-certificate that the names' keys are distinct (`decide +kernel` on natural
-numbers, no string comparison). Generic functions get no fact here. -/
+certificate that the names' keys are distinct (sort with `cbv`, then check
+adjacent natural numbers with `decide +kernel`). Generic functions get no fact here. -/
 def lookup (prog : Program F) (fnNames : List String) : String := Id.run do
   let mut facts : List String := []
   let mut index := 0
@@ -112,7 +112,9 @@ def lookup (prog : Program F) (fnNames : List String) : String := Id.run do
     s!"def functionKeys : List Nat := {listLines (fnNames.map fun n => toString (nameKey n))}\n\n" ++
     "/-- The keys are the names' keys: each name's key computed once. -/\n" ++
     "theorem functionKeys_eq : functions.map (fun f => nameKey f.name) = functionKeys := by decide +kernel\n\n" ++
-    "theorem functionKeys_nodup : functionKeys.Nodup := by decide +kernel\n\n" ++
+    "set_option cbv.maxSteps 1000000 in\n" ++
+    "theorem functionKeys_nodup : functionKeys.Nodup :=\n" ++
+    "  nodup_of_sortedKeys (by cbv; decide +kernel)\n\n" ++
     "/-- **The function names are distinct**, certified on their keys. -/\n" ++
     "theorem functionNames_nodup : (functions.map (·.name)).Nodup :=\n" ++
     "  nodup_of_nameKeys (by simpa only [List.map_map, Function.comp_def, functionKeys_eq] using functionKeys_nodup)\n\n" ++

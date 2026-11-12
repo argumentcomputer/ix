@@ -939,7 +939,9 @@ def functionKeys : List Nat := [
 /-- The keys are the names' keys: each name's key computed once. -/
 theorem functionKeys_eq : functions.map (fun f => nameKey f.name) = functionKeys := by decide +kernel
 
-theorem functionKeys_nodup : functionKeys.Nodup := by decide +kernel
+set_option cbv.maxSteps 1000000 in
+theorem functionKeys_nodup : functionKeys.Nodup :=
+  nodup_of_sortedKeys (by cbv; decide +kernel)
 
 /-- **The function names are distinct**, certified on their keys. -/
 theorem functionNames_nodup : (functions.map (·.name)).Nodup :=
