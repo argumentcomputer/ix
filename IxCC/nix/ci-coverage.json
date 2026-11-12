@@ -1621,10 +1621,10 @@
   "IxCCGrounding.Syntax",
   "IxCCGrounding.Tele"],
  "grounding_axiom_sha256":
- "5fe3fc2c5e5b691e840f7c6a33b4ba99864c00ee018dbdafdea149db5ce42550",
- "grounding_axiom_count": 97,
+ "3c62ae17895c482bbe14cec611f4c21f25a1eb87c1c9b52c3c26f726fea65281",
+ "grounding_axiom_count": 102,
  "baseline":
- "the grounding library: G2b, the direct route widened (iota, Nat primitives, string literals, imax a a, two fuel levels per nested argument) and the renaming-tolerant case shape, merged with the kernel switch steps 4 and 5",
+ "the grounding library: G3, its first step, the direct route s cost fixed (a hash table of the reading, a telescope s width costing no fuel)",
  "axiom_sha256":
  "9b76c26ed62a0ec4ff6b6972939d916aac2fbeef77968bb0ec4cd8402f28407c",
  "axiom_count": 6255}
