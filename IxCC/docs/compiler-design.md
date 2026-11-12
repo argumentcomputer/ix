@@ -866,8 +866,8 @@ soundness](resource-soundness-design.md)).
   ([`Rt.Rc.Classes`](../IxCC/Rt/Rc/Classes.lean)): classes 1–32 hold that many
   words, 33–56 four per doubling from 40 to 2,048 words, 57–71 one per
   doubling up to 2²⁶ words; a header scans at most 254 fields. Compiled
-  programs use fully scanned layouts of 1–31 fields only; the general
-  layouts' runtime is proved but not yet emitted (below).
+  programs use fully scanned layouts of 1–254 fields (classes 2–44); the
+  constructor table has no scalar fields yet (below).
 - `UInt64` is raw in registers and scalar fields once a checked
   representation annotation exists (planned,
   [DR2](data-and-roots-design.md#dr2-fixed-width-integers-and-int)); until then
@@ -887,19 +887,21 @@ soundness](resource-soundness-design.md)).
 The runtime is ordinary Lir code under the same proofs. It links no C runtime
 and does not depend on GMP.
 
-The implemented bounded route uses
-[`Rt.Rc.Procs`](../IxCC/Rt/Rc/Procs.lean),
+The implemented plain-RC route uses the general runtime
+[`Rt.Rc.Gen`](../IxCC/Rt/Rc/Gen/Procs.lean) (allocation and release) with the
+increment of [`Rt.Rc.Procs`](../IxCC/Rt/Rc/Procs.lean),
 [`Cfg.Rc.Native`](../IxCC/Cfg/Rc/Native.lean) and
 [`Cfg.Rc.Public`](../IxCC/Cfg/Rc/Public.lean). It admits table-bound,
-fully scanned shared constructors with at most 31 fields and the existing tag
-bound; fieldless constructors use immediates. Unsupported layouts, contracts
+fully scanned shared constructors with at most 254 fields whose layout has a
+size class (`CellLayout.ok`) and the existing tag bound; fieldless
+constructors use immediates. Unsupported layouts, contracts
 and malformed ownership/control maps are explicit declines. Allocation and
 iterative release preserve the size-class free lists and bounded arena.
-General scalar-field layouts, reset/reuse optimizations and stronger written
-ownership contracts are outside this first route.
+Scalar-field layouts (which the runtime has but the constructor table does not
+produce yet), reset/reuse optimizations and stronger written ownership
+contracts are outside this route.
 
-**General cell layouts** (heap stage 1; library only, the pipeline does not
-emit them yet). [`Rt.Rc.Gen`](../IxCC/Rt/Rc/Gen/Procs.lean) has allocation
+**General cell layouts** (heap stage 1). [`Rt.Rc.Gen`](../IxCC/Rt/Rc/Gen/Procs.lean) has allocation
 by layout (`alloc`: on the bounded route's layouts it is `Procs.alloc`
 itself, `alloc_ofFields`), a release `dec` for every layout, and the
 uniqueness test `isUnique` (1 exactly for a dynamic cell whose count word is
@@ -910,8 +912,11 @@ count reached zero, and the scan count in the header, so the next field is
 words only) is recycled at once, its first word never read as a child; a
 finished cell goes on its own class's free list. Its proofs, over a general
 heap invariant, are `Rt/Rc/Gen/Proof/`
-([DR1](data-and-roots-design.md#dr1-heap-completion)). When the pipeline
-switches, `Gen.dec` becomes the one release. On the bounded route's layouts
+([DR1](data-and-roots-design.md#dr1-heap-completion)). The pipeline emits
+`Gen.dec` as its one release and `Gen.alloc` for every constructor with
+fields (on fewer than 32 fields `Procs.alloc` itself), so a plain-RC object
+differs from the bounded route's in `rt_rc_dec` only; `Procs.dec` and its
+proofs stay as an unreached library. On the bounded route's layouts
 it executes `3 − n` more Lir steps (`4 − n` more x86 instructions) per
 freed cell of `n` scanned fields than `Procs.dec`: up to 3 (4) more for
 cells of fewer than three scanned fields, fewer for four or more; the extra

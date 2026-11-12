@@ -2,6 +2,7 @@ import IxCC.Cfg.Rc.Proof.Physical.CopyStep
 
 set_option autoImplicit false
 namespace IxCC.Cfg.Rc.Native
+open IxCC.Rt.Rc
 open Spec IxCC.Cfg.Rc.Proof.Physical.Bridge
 open IxCC.Own IxCC.Own.Rc
 open IxCC.Rt.Rc.Procs
@@ -10,7 +11,7 @@ theorem source_stage_decrement_runtime (P : Program) (functions : Nat → Lir.Fu
     (Public.Spec.sourceStage P functions main).funcs[P.base.size+1]? =
       some (decrementWrapper (layoutOf P).decProc) ∧
     (Public.Spec.sourceStage P functions main).funcs[(layoutOf P).decProc]? =
-      some Rt.Rc.Procs.dec := by
+      some Rt.Rc.Gen.dec := by
   have length : ((List.range P.base.size).map functions).length = (layoutOf P).sourceCount := by
     simp [layoutOf]
   exact ⟨raw_public_runtime (raw_dec_wrapper length main),
@@ -31,7 +32,7 @@ theorem drop_marker_step
     (before : Tokens H external held (x :: live) ρf ρo roots)
     {addresses : AddressMap} {mem : X86.Memory} {context base bump limit : Lir.Word}
     {slots : List Slot} {lists : Nat → List Lir.Word}
-    (ready : AllocatorReady H addresses mem (holdRoots external (roots ++ held))
+    (ready : Gen.AllocatorReady maxClass H addresses mem (holdRoots external (roots ++ held))
       context base bump limit slots lists)
     {bound : Nat}
     (registers : FusedWords addresses (Rt.Proof.Fused (tablesOf P pairs) function) bound ρo target.env)
@@ -40,7 +41,7 @@ theorem drop_marker_step
       ρo.get? x = some value ∧ roots = value :: remaining ∧
       Own.Plain.evalAction ρo H (.dec x) = .ok H' ∧
       Tokens H' external held live ρf ρo remaining ∧
-      AllocatorReady H' addresses mem' (holdRoots external (remaining ++ held))
+      Gen.AllocatorReady maxClass H' addresses mem' (holdRoots external (remaining ++ held))
         context base bump limit slots' lists' ∧
       Sem.Star (Lir.semStep (Public.Spec.sourceStage P functions main))
         {mem, ctx := context, stack := target :: callers} (2+charges)

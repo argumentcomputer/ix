@@ -8,6 +8,7 @@ scope), original RC Cfg position, full native frame, and fused comparison
 receipt. No field assumes simulation, target execution, or a final result. -/
 set_option autoImplicit false
 namespace IxCC.Cfg.Rc.Native.Spec
+open IxCC.Rt.Rc
 open IxCC.Cfg.Rc.Proof.Physical.Bridge IxCC.Rt.Rc.Procs
 
 structure Activation (F : Fir.Program) (P : Program) (pairs : List (Nat × Cfg.Fun))
@@ -33,7 +34,7 @@ structure HeapState (P : Program) (pairs : List (Nat × Cfg.Fun))
     (external : Nat → Nat) (roots : List Own.RVal)
     (context base bump limit : Lir.Word) (regionBytes : Nat)
     (slots : List Slot) (lists : Nat → List Lir.Word) : Prop where
-  ready : AllocatorReady H addresses mem (Own.Rc.holdRoots external roots)
+  ready : Gen.AllocatorReady maxClass H addresses mem (Own.Rc.holdRoots external roots)
     context base bump limit slots lists
   ordered : Own.Rc.HeapOk H
   compatible : HeapCtorOk (tablesOf P pairs) H

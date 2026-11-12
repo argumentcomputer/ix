@@ -10,6 +10,7 @@ import IxCC.Own.Plain.Proof.Scalars
 
 set_option autoImplicit false
 namespace IxCC.Cfg.Rc.Proof.Physical.Bridge.Scalar
+open IxCC.Rt.Rc
 open IxCC IxCC.Cfg.Rc IxCC.Cfg.Rc.Native
 open IxCC.Cfg.Rc.Native.Spec IxCC.Rt.Rc.Procs
 
@@ -146,7 +147,7 @@ theorem projection_activation {F : Fir.Program} {bodies : Src.NatMap Own.Plain.C
         simpa [encodePrefix] using prefixHead
       have original : Tokens H external [] live sourceEnv ownedEnv roots := Tokens.ofState before.canonical
       have borrowedTokens := (Tokens.extend original sub).borrow x value fresh
-      have ready : AllocatorReady H addresses mem (Own.Rc.holdRoots external (roots ++ []))
+      have ready : Gen.AllocatorReady maxClass H addresses mem (Own.Rc.holdRoots external (roots ++ []))
           context base bump limit slots lists := by simpa using heap.ready
       rcases borrowed_marker_step functions main projectFrame.cursor markerHead projectFrame.lookup borrowedTokens
           (Src.NatMap.get?_insert_self ..) permission ready projectFrame.words

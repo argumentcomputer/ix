@@ -15,7 +15,7 @@ theorem consume_allocation {P : Program} {l : Layout} {x : Nat}
       Fir.CtorInfo.ofKey P.base.ctors c.key = some c ∧
       c.tag ≤ Rt.maxTag ∧
       P.base.known.natZero ≠ some c.key ∧ P.base.known.natSucc ≠ some c.key ∧
-      args.contains (.var x) = false ∧ c.arity ≤ 31 ∧
+      args.contains (.var x) = false ∧ c.arity ≤ Rt.maxFields ∧
       ∃ index, ctorIndex l c.key = some index ∧
         result = .bind x (.fir (.call (l.allocWrapper index) args)) := by
   simp only [consume, reserved, Bool.false_eq_true, ↓reduceIte] at accepted
@@ -37,7 +37,7 @@ theorem consume_allocation {P : Program} {l : Layout} {x : Nat}
           simp [throw, throwThe, MonadExceptOf.throw, bind, Except.bind] at accepted
         · rw [Bool.eq_false_iff.mpr hx] at accepted
           simp only [Bool.false_eq_true, ↓reduceIte, pure, Except.pure, bind, Except.bind] at accepted
-          by_cases ha : c.arity > 31
+          by_cases ha : c.arity > Rt.maxFields
           · simp [ha, throw, throwThe, MonadExceptOf.throw, bind, Except.bind] at accepted
           · simp only [ha, ↓reduceIte, pure, Except.pure, bind, Except.bind] at accepted
             cases hi : ctorIndex l c.key with

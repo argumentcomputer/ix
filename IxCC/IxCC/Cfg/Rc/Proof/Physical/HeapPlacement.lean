@@ -2,10 +2,11 @@ import IxCC.Cfg.Rc.Proof.Physical.Placement
 
 set_option autoImplicit false
 namespace IxCC.Cfg.Rc.Native
+open IxCC.Rt.Rc
 open IxCC.Rt.Rc.Procs
 
 theorem heapLive_fieldBounded {heap : Own.Heap} {addresses : AddressMap} {mem : X86.Memory}
-    (live : HeapLive heap addresses mem) {location refs : Nat} {body : Own.Body}
+    (live : Gen.HeapLive heap addresses mem) {location refs : Nat} {body : Own.Body}
     (cell : heap.cell? location = some (.live refs .dyn body)) :
     Own.Plain.ValuesBounded heap.size body.fields := by
   intro value member
@@ -20,8 +21,8 @@ existing live representation, even if the chosen physical address is retained
 by dead-location mappings. Its separation from live storage is checked when
 the newly allocated cell is added, not by global address-map injectivity. -/
 theorem heapLive_placeFresh {heap : Own.Heap} {addresses : AddressMap} {mem : X86.Memory}
-    (live : HeapLive heap addresses mem) (address : Lir.Word) :
-    HeapLive heap (placeFresh addresses heap.size address) mem := by
+    (live : Gen.HeapLive heap addresses mem) (address : Lir.Word) :
+    Gen.HeapLive heap (placeFresh addresses heap.size address) mem := by
   refine {cell := ?_, fields_live := live.fields_live, disjoint := ?_}
   · intro location refs mode body cell
     obtain ⟨dynamic, actual, mapped, represented⟩ := live.cell location refs mode body cell
@@ -33,6 +34,7 @@ theorem heapLive_placeFresh {heap : Own.Heap} {addresses : AddressMap} {mem : X8
       intro j value lookup
       obtain ⟨word, encoded, bytes⟩ := represented.fields j value lookup
       refine ⟨word, ?_, bytes⟩
+      unfold Gen.fieldWord at encoded ⊢
       rw [placeFresh_old (heapLive_fieldBounded live cell value (List.mem_of_getElem? lookup))]
       exact encoded
   · intro l₁ l₂ r₁ r₂ b₁ b₂ a₁ a₂ cell₁ cell₂ map₁ map₂ different

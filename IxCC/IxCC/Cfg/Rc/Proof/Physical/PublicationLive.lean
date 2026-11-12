@@ -1,9 +1,11 @@
 import IxCC.Cfg.Rc.Proof.Physical.PublicationFrames
 import IxCC.Cfg.Rc.Proof.Physical.PublicationTokens
 import IxCC.Cfg.Rc.Proof.Physical.Reserved
+import IxCC.Rt.Rc.Gen.Proof.Scanned
 
 set_option autoImplicit false
 namespace IxCC.Cfg.Rc.Native
+open IxCC.Rt.Rc.Gen (fieldsClass)
 open IxCC.Lir
 open IxCC.Own IxCC.Own.Rc
 open IxCC.Rt IxCC.Rt.Rc IxCC.Rt.Rc.Procs
@@ -24,14 +26,14 @@ old live cell. The chosen reserved slot may be recycled physical storage. -/
 theorem publication_heapLive {heap : Heap} {addresses : AddressMap} {mem : X86.Memory}
     {external : Nat → Nat} {body : Own.Body} {context base bump limit : Word}
     {slots : List Slot} {lists : Nat → List Word}
-    (idle : ReleaseInvariant heap addresses mem
+    (idle : Gen.ReleaseInvariant maxClass heap addresses mem
       (fun location => external location + refsIn location body.fields) none []
       context base bump limit slots lists)
     {chosen : Slot} (member : chosen ∈ slots) (reserved : chosen.kind = .reserved)
-    (sizeClass : chosen.cls = smallClass body.fields.length)
+    (sizeClass : chosen.cls = fieldsClass body.fields.length)
     (storage : ReservedCell mem chosen.address body) (words : Nat → Word)
     (values : ∀ j value, body.fields[j]? = some value → valueWord addresses value = some (words j)) :
-    HeapLive (heap.alloc .rc body).2 (placeFresh addresses heap.size chosen.address)
+    Gen.HeapLive (heap.alloc .rc body).2 (placeFresh addresses heap.size chosen.address)
       (publishFields mem chosen.address words (List.range body.fields.length)) := by
   have fields := idle_field_tokens idle
   have bounded := publication_fields_bounded fields
@@ -59,7 +61,11 @@ theorem publication_heapLive {heap : Heap} {addresses : AddressMap} {mem : X86.M
     rw [reserved] at kind
     cases kind
   have disjoint := partition_intervals idle.partition member slotMember different
-  simpa only [sizeClass, slotClass, smallClass_bytes] using disjoint
+  have hclass : chosen.cls = Gen.classOf body.ctor := by
+    rw [sizeClass, Gen.classOf_fields storage.nscalar (by rw [storage.nobj]; exact storage.fields_small),
+      storage.nobj]
+  rw [hclass, slotClass] at disjoint
+  simpa only [Gen.cellBytesOf] using disjoint
 
 
 end IxCC.Cfg.Rc.Native

@@ -3,6 +3,7 @@ import IxCC.Cfg.Rc.Proof.Physical.Bridge.FusedContinuation
 
 set_option autoImplicit false
 namespace IxCC.Cfg.Rc.Proof.Physical.Bridge
+open IxCC.Rt.Rc
 open IxCC IxCC.Cfg.Rc IxCC.Cfg.Rc.Native IxCC.Cfg.Rc.Native.Spec
 open IxCC.Own IxCC.Own.Rc
 open IxCC.Rt.Rc.Procs
@@ -23,7 +24,7 @@ theorem borrowed_marker_step
     {value : RVal} (lookup : ρo.get? x = some value) (permission : CanDup H value)
     {addresses : AddressMap} {mem : X86.Memory} {context base bump limit : Lir.Word}
     {slots : List Slot} {lists : Nat → List Lir.Word}
-    (ready : AllocatorReady H addresses mem (holdRoots external (roots ++ held))
+    (ready : Gen.AllocatorReady maxClass H addresses mem (holdRoots external (roots ++ held))
       context base bump limit slots lists)
     {bound : Nat}
     (registers : FusedWords addresses (Rt.Proof.Fused (tablesOf P pairs) function) bound ρo target.env)
@@ -31,7 +32,7 @@ theorem borrowed_marker_step
     (∃ H' mem',
       Own.Plain.evalAction ρo H (.inc x 1) = .ok H' ∧
       Tokens H' external (value :: held) live ρf ρo roots ∧
-      AllocatorReady H' addresses mem' (holdRoots external (roots ++ value :: held))
+      Gen.AllocatorReady maxClass H' addresses mem' (holdRoots external (roots ++ value :: held))
         context base bump limit slots lists ∧
       Sem.Star (Lir.semStep (Public.Spec.sourceStage P functions main))
         {mem, ctx := context, stack := target :: callers} 2

@@ -20,6 +20,18 @@ def HeapCtorOk (tables : Rt.Lower.Tables) (heap : Heap) : Prop :=
   ∀ location refs mode body, heap.cell? location = some (.live refs mode body) →
     BodyCtorOk tables body
 
+/-- A constructor of the table has no scalar field: the table has none until scalar fields are
+produced (DR2), so every cell the counted heap holds is fully scanned. -/
+theorem _root_.IxCC.Rt.Proof.CtorOk.scanned {T : Rt.Lower.Tables} {c : Fir.CtorInfo}
+    (h : CtorOk T c) : c.nscalar = 0 := by
+  have ht := h.table
+  unfold Fir.CtorInfo.ofKey at ht
+  cases hf : T.ctors.find? (·.key == c.key) with
+  | none => simp [hf] at ht
+  | some r =>
+    simp only [hf, Option.map_some, Option.some.injEq] at ht
+    rw [← ht]
+
 def EnvCtorOk (tables : Rt.Lower.Tables) (env : Own.Env) : Prop :=
   ∀ x value, env.get? x = some value → ValueCtorOk tables value
 

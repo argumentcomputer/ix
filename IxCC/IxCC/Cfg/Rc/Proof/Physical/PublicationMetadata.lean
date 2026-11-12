@@ -1,25 +1,28 @@
 import IxCC.Cfg.Rc.Proof.Physical.PublicationFrames
-import IxCC.Rt.Rc.Proof.ProtectedMetadata
+import IxCC.Rt.Rc.Gen.Proof.ProtectedMetadata
+import IxCC.Rt.Rc.Gen.Proof.Scanned
 
 set_option autoImplicit false
 namespace IxCC.Cfg.Rc.Native
+open IxCC.Rt.Rc.Gen (fieldsClass)
 open IxCC.Lir
 open IxCC.Rt IxCC.Rt.Rc IxCC.Rt.Proof IxCC.Rt.Rc.Procs
 
 theorem publication_protected {heap : Own.Heap} {addresses : AddressMap}
     {original : X86.Memory} {external : Nat → Nat} {context base bump limit : Word}
     {slots : List Slot} {lists : Nat → List Word}
-    (idle : ReleaseInvariant heap addresses original external none [] context base bump limit slots lists)
+    (idle : Gen.ReleaseInvariant maxClass heap addresses original external none [] context base bump limit slots lists)
     {chosen : Slot} (member : chosen ∈ slots) {fields : Nat}
-    (sizeClass : chosen.cls = smallClass fields) (words : Nat → Word)
+    (sizeClass : chosen.cls = fieldsClass fields) (words : Nat → Word)
     (indices : List Nat) (bounded : ∀ i ∈ indices, i < fields) (mem : X86.Memory) :
-    ProtectedFrame mem (publishFields mem chosen.address words indices) context base bump := by
+    Gen.ProtectedFrame mem (publishFields mem chosen.address words indices) context base bump := by
   induction indices generalizing mem with
-  | nil => exact ProtectedFrame.refl _ _ _ _
+  | nil => exact Gen.ProtectedFrame.refl _ _ _ _
   | cons i indices ih =>
     have first := idle.object_store_frame member mem (8 * (i + 1)) .w64 (words i) (by
       have hi := bounded i (by simp)
-      simp only [sizeClass, smallClass, X86.Width.bytes]
+      have fit8 := Gen.fieldsClass_slot sizeClass (idle.partition.valid chosen member).1
+      simp only [X86.Width.bytes]
       omega)
     exact first.trans (ih (fun j hj => bounded j (by simp [hj])) _)
 
@@ -29,16 +32,16 @@ their negative context offsets justified without modular wraparound. -/
 theorem publication_control_word {heap : Own.Heap} {addresses : AddressMap}
     {mem : X86.Memory} {external : Nat → Nat} {context base bump limit : Word}
     {slots : List Slot} {lists : Nat → List Word}
-    (idle : ReleaseInvariant heap addresses mem external none [] context base bump limit slots lists)
+    (idle : Gen.ReleaseInvariant maxClass heap addresses mem external none [] context base bump limit slots lists)
     {chosen : Slot} (member : chosen ∈ slots) {fields : Nat}
-    (sizeClass : chosen.cls = smallClass fields) (words : Nat → Word)
+    (sizeClass : chosen.cls = fieldsClass fields) (words : Nat → Word)
     {address value : Word} (represented : WordAt mem address value)
     (before : address.toNat + 8 ≤ base.toNat) :
     WordAt (publishFields mem chosen.address words (List.range fields)) address value := by
   have bounds := idle.partition.bounds
   have chosenBounds := idle.partition.valid chosen member
+  have fit8 := Gen.fieldsClass_slot sizeClass chosenBounds.1
   have fit : chosen.address.toNat + 8 * (fields + 1) < 2^63 := by
-    simp only [sizeClass, smallClass] at chosenBounds
     omega
   have frame := publishFields_objectFrame (List.range fields) chosen.address words
     (by omega : address.toNat + 8 ≤ 2^64)
@@ -52,9 +55,9 @@ theorem publication_control_word {heap : Own.Heap} {addresses : AddressMap}
 theorem publication_context_word {heap : Own.Heap} {addresses : AddressMap}
     {mem : X86.Memory} {external : Nat → Nat} {context base bump limit : Word}
     {slots : List Slot} {lists : Nat → List Word}
-    (idle : ReleaseInvariant heap addresses mem external none [] context base bump limit slots lists)
+    (idle : Gen.ReleaseInvariant maxClass heap addresses mem external none [] context base bump limit slots lists)
     {chosen : Slot} (member : chosen ∈ slots) {fields : Nat}
-    (sizeClass : chosen.cls = smallClass fields) (words : Nat → Word)
+    (sizeClass : chosen.cls = fieldsClass fields) (words : Nat → Word)
     (offset : Nat) {value : Word}
     (represented : WordAt mem (context - UInt64.ofNat offset) value)
     (lower : 8 ≤ offset) (upper : offset ≤ context.toNat)

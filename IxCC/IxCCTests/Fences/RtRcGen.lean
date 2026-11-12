@@ -88,6 +88,7 @@ import IxCCTests.Fences.RtRcGen.IxCC_Rt_Rc_Gen_Proof_ReserveLists
 import IxCCTests.Fences.RtRcGen.IxCC_Rt_Rc_Gen_Proof_ReservePartition
 import IxCCTests.Fences.RtRcGen.IxCC_Rt_Rc_Gen_Proof_Resume
 import IxCCTests.Fences.RtRcGen.IxCC_Rt_Rc_Gen_Proof_ResumeStep
+import IxCCTests.Fences.RtRcGen.IxCC_Rt_Rc_Gen_Proof_Scanned
 import IxCCTests.Fences.RtRcGen.IxCC_Rt_Rc_Gen_Proof_SharedInvariant
 import IxCCTests.Fences.RtRcGen.IxCC_Rt_Rc_Gen_Proof_SharedStep
 import IxCCTests.Fences.RtRcGen.IxCC_Rt_Rc_Gen_Proof_UniqueDispatch

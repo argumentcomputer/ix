@@ -1,7 +1,9 @@
-import IxCC.Rt.Rc.Proof.LiveHeader
+import IxCC.Rt.Rc.Gen.Proof.LiveHeader
+import IxCC.Rt.Rc.Gen.Proof.Scanned
 
 set_option autoImplicit false
 namespace IxCC.Cfg.Rc.Proof.Physical.Bridge
+open IxCC.Rt.Rc.Gen (fieldsClass)
 open IxCC IxCC.Rt IxCC.Rt.Proof IxCC.Rt.Rc IxCC.Rt.Rc.Procs
 open IxCC.Lir (Word)
 
@@ -32,7 +34,7 @@ theorem read16_of_read32 (mem : X86.Memory) (address : Word) :
 
 theorem live_tag_read {addresses : AddressMap} {mem : X86.Memory}
     {address : Word} {refs : Nat} {body : Own.Body}
-    (cell : LiveCell addresses mem address refs body) :
+    (cell : Gen.LiveCell addresses mem address refs body) :
     mem.read? .w16 (address + 2) = .ok (UInt64.ofNat body.ctor.tag) := by
   have permission : ∀ i < X86.Width.w16.bytes,
       mem.readable (address + 2 + UInt64.ofNat i) = true := by
@@ -42,18 +44,20 @@ theorem live_tag_read {addresses : AddressMap} {mem : X86.Memory}
       rw [UInt64.ofNat_add, ← UInt64.add_assoc]
       rfl
     rw [offset]
-    exact cell.readable (2+i) (by simp [cellBytes]; omega)
+    exact cell.readable (2+i) (by have := (Gen.layoutOf_class cell.layout).2.2; omega)
   rw [read?_ok permission, read16_of_read32, cell.header]
   congr 1
   apply UInt64.toNat_inj.mp
-  have fields := cell.fields_small
-  have tag := cell.tag
+  obtain ⟨_, hcls, _⟩ := Gen.layoutOf_class cell.layout
+  obtain ⟨_, hnobj, tag⟩ := Gen.layoutOf_bounds cell.layout
+  unfold maxClass at hcls
+  unfold maxFields at hnobj
   unfold maxTag at tag
   simp only [UInt64.toNat_shiftRight, UInt64.toNat_ofNat',
-    Nat.shiftRight_eq_div_pow, headerLow, smallClass]
-  change (body.fields.length + 256 * (body.fields.length+1) + 65536 * body.ctor.tag) %
+    Nat.shiftRight_eq_div_pow, headerLow]
+  change (body.ctor.nobj + 256 * Gen.classOf body.ctor + 65536 * body.ctor.tag) %
     2^64 / 65536 = body.ctor.tag % 2^64
-  have headerBound : body.fields.length + 256 * (body.fields.length+1) +
+  have headerBound : body.ctor.nobj + 256 * Gen.classOf body.ctor +
       65536 * body.ctor.tag < 2^64 := by omega
   have tagBound : body.ctor.tag < 2^64 := by omega
   rw [Nat.mod_eq_of_lt headerBound, Nat.mod_eq_of_lt tagBound]
@@ -61,7 +65,7 @@ theorem live_tag_read {addresses : AddressMap} {mem : X86.Memory}
 
 theorem live_pointer_even {addresses : AddressMap} {mem : X86.Memory}
     {address : Word} {refs : Nat} {body : Own.Body}
-    (cell : LiveCell addresses mem address refs body) : address &&& 1 = 0 := by
+    (cell : Gen.LiveCell addresses mem address refs body) : address &&& 1 = 0 := by
   apply UInt64.toNat_inj.mp
   have even : address.toNat % 2 = 0 := by have := cell.aligned; omega
   simpa [UInt64.toNat_and, Nat.and_one_is_mod] using even

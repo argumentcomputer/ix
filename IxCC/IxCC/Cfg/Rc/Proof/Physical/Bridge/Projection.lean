@@ -1,10 +1,11 @@
 import IxCC.Cfg.Rc.Proof.Physical.Bridge.Tokens
-import IxCC.Rt.Rc.Proof.ReleaseInvariant
+import IxCC.Rt.Rc.Gen.Proof.ReleaseInvariant
 import IxCC.Cfg.Rc.Proof.Physical.PublicationRegisters
 import IxCC.Rt.Lower
 
 set_option autoImplicit false
 namespace IxCC.Cfg.Rc.Proof.Physical.Bridge
+open IxCC.Rt.Rc
 open IxCC IxCC.Own IxCC.Own.Rc
 open IxCC.Rt.Rc.Procs IxCC.Cfg.Rc.Native
 
@@ -15,9 +16,9 @@ theorem projection_parent
     {live : List Fir.Var} {ρf : Fir.Env} {ρo : Own.Env} {y location : Nat}
     (before : Tokens H external held live ρf ρo roots)
     (member : y ∈ live) (lookup : ρo.get? y = some (.loc location))
-    {addresses : AddressMap} {mem : X86.Memory} (physical : HeapLive H addresses mem) :
+    {addresses : AddressMap} {mem : X86.Memory} (physical : Gen.HeapLive H addresses mem) :
     ∃ refs body address, H.cell? location = some (.live refs .dyn body) ∧
-      addresses location = some address ∧ LiveCell addresses mem address refs body := by
+      addresses location = some address ∧ Gen.LiveCell addresses mem address refs body := by
   obtain ⟨refs, body, cell, _⟩ := balance_pending_live before.balance
     (before.exactRoots.member member lookup)
   obtain ⟨_, address, placed, represented⟩ := physical.cell location refs .dyn body cell
@@ -53,7 +54,7 @@ theorem projection_field
     (lookup : ρo.get? y = some (.loc location))
     (cell : H.cell? location = some (.live refs .dyn body))
     {addresses : AddressMap} {mem : X86.Memory} {address : Lir.Word}
-    (physical : LiveCell addresses mem address refs body)
+    (physical : Gen.LiveCell addresses mem address refs body) (scanned : body.ctor.nscalar = 0)
     {ρl : Lir.Env} {bound : Nat}
     (registers : EnvWordsBelow addresses bound ρo ρl)
     (parentRegister : ρl[y]? = some address)
@@ -66,7 +67,11 @@ theorem projection_field
       Tokens H external held live ρf (ρo.insert x value) roots ∧
       EnvWordsBelow addresses bound (ρo.insert x value) (ρl.insert x word) ∧
       CanDup H value := by
-  obtain ⟨word, represented, bytes⟩ := physical.fields i value field
+  have scannedField : i < body.ctor.nobj := by
+    have := physical.arity
+    have := (List.getElem?_eq_some_iff.mp field).1
+    omega
+  obtain ⟨word, represented, bytes⟩ := physical.scanned field scannedField
   refine ⟨word, represented, ?_, ?_, before.borrow x value fresh,
     registers.bind represented, ?_⟩
   · simp [Own.evalRhs, lookup, RVal.asCtor, cell, field, Sem.Result.ofOption, Sem.Result.map]

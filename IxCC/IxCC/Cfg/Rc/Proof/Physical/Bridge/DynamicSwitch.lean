@@ -5,6 +5,7 @@ import IxCC.Rt.Proof.SwitchSim
 
 set_option autoImplicit false
 namespace IxCC.Cfg.Rc.Proof.Physical.Bridge
+open IxCC.Rt.Rc
 open IxCC IxCC.Rt IxCC.Rt.Proof IxCC.Rt.Lower
 open IxCC.Rt.Rc.Procs
 open IxCC.Lir (Word)
@@ -19,7 +20,7 @@ theorem dynamic_switch {T : Tables} {f : Fir.FunId} {lp : Lir.Program} {fn : Nat
     (hg : Grows st' stF) (hC : Ext C stF)
     {addresses : AddressMap} {H : Own.Heap} {ctx : Word} {mem : X86.Memory} {rest : List Lir.Frame}
     {D : Nat → Prop} {sup : Nat} {ρ : Own.Env} {ρl : Lir.Env}
-    (hheap : HeapLive H addresses mem) (hρ : FusedWords addresses D sup ρ ρl) (hsup : sup ≤ st.fresh) (hxD : ¬ D x)
+    (hheap : Gen.HeapLive H addresses mem) (hρ : FusedWords addresses D sup ρ ρl) (hsup : sup ≤ st.fresh) (hxD : ¬ D x)
     {ℓ : Nat} (hv : ρ.get? x = some (.loc ℓ)) {c : Key.CtorKey} {fs : List Own.RVal}
     (hac : (Own.RVal.loc ℓ).asCtor T.known H = some (c, fs)) {e : Cfg.Edge} (hsel : Cfg.selectEdge c alts d = some e)
     (hdis : Dispatches T H (.loc ℓ) alts) :
@@ -165,7 +166,7 @@ theorem dynamic_switch_checked {T : Tables} {f : Fir.FunId} {lp : Lir.Program} {
     (hg : Grows st' stF) (hC : Ext C stF)
     {addresses : AddressMap} {H : Own.Heap} {ctx : Word} {mem : X86.Memory} {rest : List Lir.Frame}
     {D : Nat → Prop} {sup : Nat} {ρ : Own.Env} {ρl : Lir.Env}
-    (hheap : HeapLive H addresses mem) (hρ : FusedWords addresses D sup ρ ρl) (hsup : sup ≤ st.fresh) (hxD : ¬ D x)
+    (hheap : Gen.HeapLive H addresses mem) (hρ : FusedWords addresses D sup ρ ρl) (hsup : sup ≤ st.fresh) (hxD : ¬ D x)
     {ℓ : Nat} (hv : ρ.get? x = some (.loc ℓ)) {c : Key.CtorKey} {fs : List Own.RVal}
     (hac : (Own.RVal.loc ℓ).asCtor T.known H = some (c, fs)) {e : Cfg.Edge} (hsel : Cfg.selectEdge c alts d = some e)
     (compatible : HeapCtorOk T H)

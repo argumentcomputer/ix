@@ -281,9 +281,9 @@ hosted-CI or cold-store timing is claimed.
   closure into a constructor cell and every unknown call into a call of a
   dispatcher, so no program is declined for its closures (`fir.closures` is
   unreachable).
-- **Memory.** Immortal cells, or the bounded plain-RC route: shared
-  constructors with 1 to 31 scanned fields, size-class free lists, iterative
-  release (`--rc auto|on|off`).
+- **Memory.** Immortal cells, or the plain-RC route: shared constructors
+  with 1 to 254 scanned fields (no scalar fields yet), 71 size classes with
+  free lists, iterative release (`--rc auto|on|off`).
 - **Roots.** Level-monomorphic, at most five `Nat` parameters; results that
   are `Nat` or enumerations (immortal and zero-RC policies) or first-order
   constructor trees (plain RC). A compile claim covers root index 0.
@@ -539,13 +539,14 @@ data:
   objects, reset/reuse with a uniqueness test, static reuse from `unique`
   contracts, borrowed parameters, inline RC fast paths, and the proved Own
   checker with the canonical plain producer as its fallback. Stage 1
-  (general cell layouts and the uniqueness test) in progress: its runtime
-  and proofs are a library (`Rt.Rc.Gen`); the pipeline's switch to it, with
-  `Gen.dec` as the one release, is next, gated on whole-program
-  executed-instruction counts. Stage 2 (the proved Own checker), first
-  landing: the checker `Own.Plain.checkOwned` over today's syntax with
-  refinement, reclamation and canonical acceptance proved, as a library that
-  nothing in production calls
+  (general cell layouts and the uniqueness test) in progress: the pipeline
+  emits the general runtime (`Rt.Rc.Gen`: allocation by layout, `Gen.dec`
+  as the one release) for constructors of 1 to 254 scanned fields, within
+  +1.6 % of the bounded route's executed instructions on every measured
+  program; the in-place reuse lemmas are next. Stage 2 (the proved Own
+  checker), first landing: the checker `Own.Plain.checkOwned` over today's
+  syntax with refinement, reclamation and canonical acceptance proved, as a
+  library that nothing in production calls
   ([DR1, "The ownership checker"](data-and-roots-design.md#the-ownership-checker));
   next, the Cfg activation layer restated over its typing context and the
   recheck switched to it, then a liveness placement. **Open for stage 3** (inline fast paths): the

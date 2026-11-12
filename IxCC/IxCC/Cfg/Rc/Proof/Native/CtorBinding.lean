@@ -83,7 +83,7 @@ theorem consume_allocation_runtime {P : Program} {x main : Nat}
       (rawProgram (layoutOf P) funcs main).funcs[(layoutOf P).allocWrapper index]? =
         some (allocationWrapper ((layoutOf P).allocProc index) c.arity) ∧
       (rawProgram (layoutOf P) funcs main).funcs[(layoutOf P).allocProc index]? =
-        some (Rt.Rc.Procs.alloc c.arity c.tag) := by
+        some (Rt.Rc.Gen.alloc (Rt.Rc.CellLayout.ofFields c.arity c.tag)) := by
   obtain ⟨_, _, _, _, _, table, _, _, _, _, _, index, hi, resultEq⟩ :=
     consume_allocation positive accepted
   obtain ⟨row, hrow, htag, harity, _⟩ := ctorIndex_binding table positive hi

@@ -1,11 +1,12 @@
 import IxCC.Cfg.Rc.Proof.Physical.Bridge.Tokens
-import IxCC.Rt.Rc.Proof.IncrementCases
+import IxCC.Rt.Rc.Gen.Proof.IncrementCases
 
 /-! Copying a live variable adds a carried argument token, not another
 lexical binding. The live variable list stays distinct. Physical count room
 is decided from the represented header bound, not assumed at the interface. -/
 set_option autoImplicit false
 namespace IxCC.Cfg.Rc.Proof.Physical.Bridge
+open IxCC.Rt.Rc
 open IxCC IxCC.Own IxCC.Own.Rc
 open IxCC.Rt.Rc.Procs
 
@@ -32,13 +33,13 @@ theorem increment_entry_tokens
     (member : x ∈ live) (lookup : ρo.get? x = some value)
     {addresses : AddressMap} {mem : X86.Memory} {context base bump limit : Lir.Word}
     {slots : List Slot} {lists : Nat → List Lir.Word}
-    (idle : ReleaseInvariant H addresses mem (holdRoots external (roots ++ carry ++ held)) none []
+    (idle : Gen.ReleaseInvariant maxClass H addresses mem (holdRoots external (roots ++ carry ++ held)) none []
       context base bump limit slots lists)
     {word : Lir.Word} (represented : valueWord addresses value = some word) :
     ∃ H', Own.Plain.evalAction ρo H (.inc x 1) = .ok H' ∧
       Tokens H' external ((value :: carry) ++ held) live ρf ρo roots ∧
       (∀ root, H.value? root = H'.value? root) ∧
-      ((∃ mem', ReleaseInvariant H' addresses mem'
+      ((∃ mem', Gen.ReleaseInvariant maxClass H' addresses mem'
           (holdRoots external (roots ++ (value :: carry) ++ held)) none []
           context base bump limit slots lists ∧
           Lir.eval incProgram 0 [word] mem context = .ok ([], mem')) ∨
@@ -57,7 +58,7 @@ theorem increment_entry_tokens
     have placement : addresses location = some word := represented
     obtain ⟨_, address, mapped, physical⟩ := idle.live.cell location refs .dyn body cell
     by_cases room : refs < Rt.Rc.maxCount
-    · obtain ⟨incremented, restored, result⟩ := increment_entry_complete idle cell placement room
+    · obtain ⟨incremented, restored, result⟩ := Gen.increment_entry_complete idle cell placement room
       have actionPhysical : Own.Plain.evalAction ρo H (.inc x 1) =
           .ok (setCell H location (.live (refs+1) .dyn body)) := by
         simp [Own.Plain.evalAction, lookup, incremented, Sem.Result.ofOption]
@@ -66,10 +67,10 @@ theorem increment_entry_tokens
       exact .inl ⟨_, restored, result⟩
     · have maxed : refs = Rt.Rc.maxCount := by have bounded := physical.bounded; omega
       subst refs
-      exact .inr (increment_max_failure idle cell placement)
+      exact .inr (Gen.increment_max_failure idle cell placement)
   · have immediate : ∀ location, value ≠ .loc location := fun location equal =>
       isLocation ⟨location, equal⟩
-    obtain ⟨incremented, restored, result⟩ := increment_immediate_entry idle immediate word represented
+    obtain ⟨incremented, restored, result⟩ := Gen.increment_immediate_entry idle immediate word represented
     have actionPhysical : Own.Plain.evalAction ρo H (.inc x 1) = .ok H := by
       simp [Own.Plain.evalAction, lookup, incremented, Sem.Result.ofOption]
     have equal := Sem.Result.ok.inj (actionPhysical.symm.trans action)

@@ -2,6 +2,7 @@ import IxCC.Cfg.Rc.Proof.Physical.Bridge.Projection
 
 set_option autoImplicit false
 namespace IxCC.Cfg.Rc.Proof.Physical.Bridge
+open IxCC.Rt.Rc
 open IxCC IxCC.Own IxCC.Own.Rc
 open IxCC.Rt.Rc.Procs IxCC.Cfg.Rc.Native
 
@@ -15,7 +16,7 @@ theorem projection_step
     (lookup : ρo.get? y = some (.loc location))
     (cell : H.cell? location = some (.live refs .dyn body))
     {addresses : AddressMap} {mem : X86.Memory} {address : Lir.Word}
-    (physical : LiveCell addresses mem address refs body)
+    (physical : Gen.LiveCell addresses mem address refs body) (scanned : body.ctor.nscalar = 0)
     {P : Lir.Program} {caller : Lir.Frame} {callers : List Lir.Frame}
     {function : Lir.Func} {block : Lir.Block} {bound : Nat}
     (registers : EnvWordsBelow addresses bound ρo caller.env)
@@ -37,7 +38,7 @@ theorem projection_step
       EnvWordsBelow addresses bound (ρo.insert x value) (caller.env.insert x word) ∧
       CanDup H value := by
   obtain ⟨word, represented, source, load, tokens, words, permission⟩ :=
-    projection_field before lookup cell physical registers parentRegister x i value fresh field tables context
+    projection_field before lookup cell physical scanned registers parentRegister x i value fresh field tables context
   refine ⟨word, represented, source, ?_, tokens, words, permission⟩
   apply Lir.step_stmt functionLookup blockLookup position statement (by rfl)
   simp only [Lir.Stmt.exec, load, Option.bind_eq_bind, Option.bind_some]
