@@ -101,6 +101,7 @@ def tableKind : Mut := fun c => do
       | .eqn _ => .case
       | .case => .prim .add
       | .prim _ => .eqn f
+      | .word .. => .eqn f
       | .csimp _ thm => .eqn thm
     return some (f, e')
   return r.map fun rs => tableCol c { c.table with resolve := rs }

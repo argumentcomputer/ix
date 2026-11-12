@@ -91,7 +91,9 @@ annotated twin measured against the plain one.
 
 ## DR2. Fixed-width integers and `Int`
 
-**Status: planned** (Phase 3).
+**Status: in progress** (Phase 3, stage W1: the word operations as primitives, tagged at run
+time). Implemented so far: the operations' exact meaning, SrcEval's rule, the pins, the stored
+equations and their table check, behind a switch that is off (below, "Stage W1").
 
 **Motivation.** BLAKE3 and `qsort` (K4); the bignum library's limbs; IxCK,
 whose executable closure uses `UInt64`, `UInt8`, `USize` and `Int`
@@ -100,11 +102,16 @@ throughout (occurrences in the 79 modules of the import closure of
 `UInt64` 219, `UInt8` 137, `Int` 70, `USize` 7); IxOS, where addresses and page-table
 entries are 64-bit words.
 
-**Current state.** There are no fixed-width primitives. Erasure unboxes
+**Current state.** No compiled program uses a fixed-width primitive yet. Erasure unboxes
 single-field structures ([Relevance and
 erasure](compiler-design.md#relevance-and-erasure)), so `UInt64` (a structure
-over `BitVec 64`, over `Fin (2^64)`) arrives at Lir as a tagged `Nat`; a value
-at or above 2^63 then fails with `natOverflow` ([`Rt/Layout.lean:35`](../IxCC/Rt/Layout.lean)).
+over `BitVec 64`, over `Fin (2^64)`) arrives at Lir as a tagged `Nat`, and its operations compile
+from their reference bodies. **Every** `UInt64` operation then fails natively with `natOverflow`
+([`Rt/Layout.lean:35`](../IxCC/Rt/Layout.lean)), on every input, `3 + 4` included: each body
+computes `x % 2^64` with `2^64` a `Nat` (`BitVec.ofNat`, `Fin.Internal.ofNat`), which has no tagged
+word. (An earlier version of this paragraph said only values at or above `2^63` fail.) `UInt8`,
+`UInt16` and `UInt32` work, their sizes fitting; compiled, the middle end inlines their bodies and
+folds the constants.
 Fir has a `word` representation that nothing selects
 ([`Fir/Syntax.lean:70-77`](../IxCC/Fir/Syntax.lean)). `USize`'s width comes
 from `System.Platform.getNumBits`, an `@[extern]` opaque in Lean's

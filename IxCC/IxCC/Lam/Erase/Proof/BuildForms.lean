@@ -358,6 +358,7 @@ theorem sound_saturated (cx : Cx) (h : Head) (q : Profile) (args : List Src.Term
   unfold saturated
   cases h with
   | prim op => exact sound_primForm hrec cx op q args
+  | word w op => exact Sound.decline
   | ctor c => exact sound_ctorForm hrec cx c q args
   | quotMk c => exact sound_quotMkForm hrec cx c q args
   | quotLift c => exact sound_quotLiftForm hrec cx c q args
