@@ -95,10 +95,27 @@ def needArgs (Γ : Ctx) : List Arg → Except String Unit
   | .var x :: as => do Γ.need x "read by a primitive"; Γ.needArgs as
   | _ :: as => Γ.needArgs as
 
-def immArgs : Ctx → List Arg → Ctx
-  | Γ, [] => Γ
-  | Γ, .var x :: as => immArgs (Γ.setImm x) as
-  | Γ, _ :: as => immArgs Γ as
+/-- Argument positions marked immediate by `imms` (a primitive's signature) become immediates. -/
+def immArgs : Ctx → List Bool → List Arg → Ctx
+  | Γ, true :: ms, .var x :: as => immArgs (Γ.setImm x) ms as
+  | Γ, _ :: ms, _ :: as => immArgs Γ ms as
+  | Γ, _, _ => Γ
+
+end Ctx
+
+/-- **A primitive's signature: which arguments are immediates by construction once it has
+returned.** Every primitive today (`Lam.Prim`, all on `Nat`) takes only tagged immediates: Own's
+`primResult` is stuck unless `natArgs` reads every argument as `.lit (.nat n)` (and Fir's
+evaluation likewise), so after a successful primitive each argument's value is `ImmVal` — the
+lemma the proof uses (from `natArgs`, not from a typing fact). A primitive that takes a boxed
+word or any heap value (the fixed-width words to come) must mark that position `false`: there it
+is only a read, its tokens stay, and it must still be released. -/
+def primImmArgs (op : Lam.Prim) (arity : Nat) : List Bool :=
+  match op with
+  | .natAdd | .natSub | .natMul | .natDiv | .natMod | .natPow | .natGcd | .natBeq | .natBle
+  | .natLand | .natLor | .natXor | .natShl | .natShr | .natPred | .natBlt => List.replicate arity true
+
+namespace Ctx
 
 /-- `inc x n`: only unit increments (the native fragment's); a borrowed variable becomes owned. -/
 def inc (Γ : Ctx) (x : Var) (n : Nat) : Except String Ctx :=
@@ -144,9 +161,9 @@ def bindCtx (Γ : Ctx) (x : Var) : Rhs → Except String Ctx
   | .proj y _ _ => do
     Γ.need y "projected"
     return if Γ.isImm y then Γ.setImm x else Γ.setBorrow x
-  | .prim _ args => do
+  | .prim op args => do
     Γ.needArgs args
-    return (Ctx.immArgs Γ args).setImm x
+    return (Ctx.immArgs Γ (primImmArgs op args.length) args).setImm x
 
 /-- Join-capture context: join id to the variables whose tokens a jump hands to the body. -/
 abbrev JCtx := Src.NatMap (List Var)

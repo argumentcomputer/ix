@@ -3,6 +3,7 @@ import IxCCTests.Own.Stage2.Live
 import IxCCTests.Own.Stage2.Interp
 import IxCCTests.Own.Stage2.Mutate
 import IxCCTests.Own.Stage2.Hostile
+import IxCCTests.Own.Stage2.Oracle
 import IxCC.Own.Plain.Certificate
 import IxCC.Recheck.Rc.Produce
 import IxCC.Cfg.Rc.Run
@@ -203,6 +204,96 @@ def hostile (big : Bool) : IO UInt32 := do
   IO.println s!"  refusal: {errOf (checkMapE F bad)}"
   return 0
 
+def inputsFor (F : Fir.Program) (f : Nat) (ns : List Nat) : List (List Own.RVal) :=
+  let arity := ((F.fun? f).map (·.params.length)).getD 0
+  ns.map fun n => List.replicate arity (.lit (.nat n))
+
+/-- References: each input's result on the unmutated map; inputs where it fails are skipped. -/
+def references (P : Program) (f : Nat) (inputs : List (List Own.RVal)) : List (List Own.RVal × String) :=
+  inputs.filterMap fun args =>
+    let (r, _) := runI P 200000000 f args
+    match r with
+    | .ok _ => some (args, readOf r)
+    | .error _ => none
+
+/-- Run the oracle on every input; `(runs, reached, failures)`. -/
+def judge (P : Program) (f watch : Nat) (refs : List (List Own.RVal × String)) :
+    Nat × Bool × List String :=
+  refs.foldl (fun (runs, reached, fails) (args, ref) =>
+    let (v, hits) := oracle P f args ref watch
+    (runs + 1, reached || hits > 0, match v with | some e => fails ++ [e] | none => fails)) (0, false, [])
+
+def borrowed (closure eqs root label : String) (ns : List Nat) : IO UInt32 := do
+  let fr ← front closure eqs root
+  let F := fr.fir
+  let some f := F.exports.head? | throw (IO.userError "no export")
+  let inputs := inputsFor F f ns
+  for (name, m) in [("canonical", fr.canonical), ("liveness", liveMap F)] do
+    let refs := references { source := F, bodies := m } f inputs
+    let mut tried := 0; let mut accepted := 0; let mut clean := 0
+    for g in List.range F.size do
+      let some fd := F.fun? g | continue
+      let some body := m.get? g | continue
+      for t in List.range 200 do
+        let some body' := mutant .borrowedConsumed t (fd.params.map (·.1)) body | break
+        tried := tried + 1
+        if (checkBodyE fd body').isOk then
+          accepted := accepted + 1
+          let (runs, reached, fails) := judge { source := F, bodies := m.insert g body' } f g refs
+          if fails.isEmpty then clean := clean + 1
+          IO.println s!"{label}\t{name}\tf{g} site {t}\taccepted\truns {runs}\treached {reached}\t{if fails.isEmpty then "clean" else s!"FAIL {fails.head!}"}"
+    IO.println s!"{label}\t{name}\tsites {tried}\taccepted {accepted}\tclean {clean}\tinputs with a reference {refs.length}/{inputs.length}"
+    (← IO.getStdout).flush
+  return 0
+
+def campaign (closure eqs root label : String) (count seed : Nat) (ns : List Nat) : IO UInt32 := do
+  let fr ← front closure eqs root
+  let F := fr.fir
+  let some f := F.exports.head? | throw (IO.userError "no export")
+  let inputs := inputsFor F f ns
+  let funs := (List.range F.size).filter fun g => (F.fun? g).isSome
+  for (name, m) in [("canonical", fr.canonical), ("liveness", liveMap F)] do
+    let refs := references { source := F, bodies := m } f inputs
+    let mut r : Rng := ⟨UInt64.ofNat (seed + name.length)⟩
+    let mut stats : List (String × Nat × Nat × Nat × Nat × Nat) := Op.all.map fun op => (op.name, 0, 0, 0, 0, 0)
+    let mut failures : List String := []
+    for _ in List.range count do
+      let (g, r1) := r.pick funs
+      let (op, r2) := r1.pick Op.all
+      r := r2
+      let some fd := F.fun? g | continue
+      let some body := m.get? g | continue
+      let params := fd.params.map (·.1)
+      let (res, r3) := applyOp op params body r
+      r := r3
+      let some (body1, what1) := res | continue
+      -- a second edit, a third of the time
+      let (coin, r4) := r.next 3
+      let (op2, r5) := r4.pick Op.all
+      let (res2, r6) := applyOp op2 params body1 r5
+      r := r6
+      let (body', what) := if coin == 0 then
+          (match res2 with
+            | some (b2, w2) => (b2, what1 ++ "; " ++ w2)
+            | none => (body1, what1))
+        else (body1, what1)
+      let ok := (checkBodyE fd body').isOk
+      let (runs, reached, fails) := if ok then judge { source := F, bodies := m.insert g body' } f g refs
+        else (0, false, [])
+      stats := stats.map fun (n, gen, acc, run, rea, bad) =>
+        if n == op.name then (n, gen + 1, acc + (if ok then 1 else 0), run + runs,
+          rea + (if reached then 1 else 0), bad + (if fails.isEmpty then 0 else 1))
+        else (n, gen, acc, run, rea, bad)
+      unless fails.isEmpty do
+        failures := failures ++ [s!"f{g}: {what}: {fails.head!}"]
+    IO.println s!"{label}\t{name}\tinputs with a reference {refs.length}/{inputs.length}"
+    IO.println "op\tgenerated\taccepted\toracle runs\taccepted and reached\taccepted and misbehaving"
+    for (n, gen, acc, run, rea, bad) in stats do
+      IO.println s!"{label}\t{name}\t{n}\t{gen}\t{acc}\t{run}\t{rea}\t{bad}"
+    for e in failures.take 20 do IO.println s!"COUNTEREXAMPLE {label} {name}: {e}"
+    (← IO.getStdout).flush
+  return 0
+
 end IxCCTests.Own.Stage2.Main
 
 def main (args : List String) : IO UInt32 := do
@@ -210,6 +301,10 @@ def main (args : List String) : IO UInt32 := do
   | ["corpus", list] => IxCCTests.Own.Stage2.Main.corpus list
   | "bench" :: closure :: eqs :: root :: label :: prodMax :: ns =>
     IxCCTests.Own.Stage2.Main.bench closure eqs root label (ns.map String.toNat!) prodMax.toNat!
+  | "borrowed" :: closure :: eqs :: root :: label :: ns =>
+    IxCCTests.Own.Stage2.Main.borrowed closure eqs root label (ns.map String.toNat!)
+  | "campaign" :: closure :: eqs :: root :: label :: count :: seed :: ns =>
+    IxCCTests.Own.Stage2.Main.campaign closure eqs root label count.toNat! seed.toNat! (ns.map String.toNat!)
   | ["hostile"] => IxCCTests.Own.Stage2.Main.hostile false
   | ["hostile", "big"] => IxCCTests.Own.Stage2.Main.hostile true
   | _ =>

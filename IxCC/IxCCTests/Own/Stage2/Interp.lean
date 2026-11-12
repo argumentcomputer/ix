@@ -27,6 +27,9 @@ structure Counts where
   live : Nat := 0
   peak : Nat := 0
   calls : Nat := 0
+  /-- A function to watch, and how often it was entered. -/
+  watch : Nat := 0
+  hits : Nat := 0
   deriving Repr, Inhabited
 
 abbrev M := ExceptT String (StateM Counts)
@@ -113,14 +116,14 @@ partial def evalI (P : Program) (budget : Nat) (ρ : Env) (J : List JEntry) (H :
 
 partial def callI (P : Program) (budget : Nat) (f : FunId) (vs : List RVal) (H : Heap) :
     M (RVal × Heap) := do
-  modify fun c => { c with calls := c.calls + 1 }
+  modify fun c => { c with calls := c.calls + 1, hits := c.hits + (if f == c.watch then 1 else 0) }
   match P.source.fun? f, P.bodies.get? f with
   | some fd, some body => evalI P budget (Own.bindAll .leaf (fd.params.map (·.1)) vs) [] H body
   | _, _ => throw s!"call of f{f}"
 end
 
-def runI (P : Program) (budget : Nat) (f : FunId) (args : List RVal) :
+def runI (P : Program) (budget : Nat) (f : FunId) (args : List RVal) (watch : Nat := 0) :
     Except String (RVal × Heap) × Counts :=
-  (callI P budget f args {}).run.run {}
+  (callI P budget f args {}).run.run { watch }
 
 end IxCCTests.Own.Stage2
