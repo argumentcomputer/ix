@@ -700,8 +700,9 @@ def get_constant_info := aiur_fn⟦
   -- It is read in canonical form: `ekind` 0 (a root) or 1 (a sharing entry); a root block at
   -- variant 0; no empty block; blocks strictly ascending by `(ekind, eidx, variant)`; node tags
   -- 0 to 4; an `ifAllZero` parameter list (tag 2) nonempty, strictly ascending and below the
-  -- record's level count (`max_lvls`, the largest of its members'); a projection's section
-  -- empty. The undecided node (tag 4) is read; a conversion that reaches it rejects. Indices,
+  -- record's level count (`max_lvls`, the largest of its members'); the section of a record with
+  -- no root (a projection, an empty mutual block) empty. The undecided node (tag 4) is read; a
+  -- conversion that reaches it rejects. Indices,
   -- variants, parameters and level counts are compared as fields by `UInt32::less_than_fields`,
   -- which refuses a value of 2^32 or more where it compares one.
 
@@ -915,6 +916,13 @@ def assert_prj_empty_tables := aiur_fn⟦
           let Lists::Node::Nil = (*(univs));
           let Lists::Node::Nil = (*(binders));
           () } ,
+        Ixon::ConstantInfo::Muts(members) => {
+          match (*(members)) {
+            Lists::Node::Nil => {
+              let Lists::Node::Nil = (*(binders));
+              () } ,
+            Lists::Node::Cons(_, _) => {  () } ,
+          } } ,
         _ => {  () } ,
       }
     }
