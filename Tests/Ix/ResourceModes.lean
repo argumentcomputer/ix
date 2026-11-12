@@ -2,6 +2,10 @@ module
 
 public import IxC.Resource
 public import LSpec
+public import Ix.CompileCertified
+public import Ix.Typing
+public import Ix.EnvScope
+public import Ix.Meta
 
 /-! # The resource-mode model and checker on small run programs (`resource-modes`)
 
@@ -14,7 +18,15 @@ inputs. The cases follow the mode rules: erased binders and fields; unique
 transfer, consuming match, deep uniqueness, `@shared` fields, leaves; borrows of
 parameters, of `let`s and of leaves, leaves read out of a borrowed container;
 once binders; capture and partial-application transfers; mode skeletons;
-statics; limits; the fast path. -/
+statics; limits; the fast path.
+
+The must-reject cases are records whose interface erases a position that a run
+behaviour supplied other than by a checked body reads: a case definition's
+alternative, a primitive's argument, a recursor's minor premise, a quotient's
+element, a parameter past a run body's λs, and an erased field passed to an
+alternative that is not a λ for it. The record cases compile a small fixture
+(`Tests/Ix/ResourceModesFixture.lean`), write the mode into one record as a
+producer of records could, and read, run and check the result. -/
 
 namespace Tests.ResourceModes
 
@@ -397,8 +409,194 @@ def fastPathCase : LSpec.TestSeq :=
     return (ok, 0, 0, if ok then none else
       some s!"{verdictName v1}; {verdictName v2}; {verdictName v3}")) .done
 
+/-! ### Must-reject cases: an erased field at an alternative -/
+
+/-- A case on `Key`: `key g n => alt g n`. -/
+def caseK : CaseInfo :=
+  { ind := K, arity := 2, major := 0, alts := #[{ alt := 1, args := #[.field 0, .field 1] }] }
+
+def firstOf := mem 160
+def altConst := mem 161
+def secondOf := mem 162
+def altLam := mem 163
+
+def alternativeCases : List LSpec.TestSeq := [
+  -- `firstOf (a : List) (b : Nat) : List := a`; `altConst (k : Key) := Key.casesOn k firstOf`
+  runCase "must-reject: an erased field passed to an alternative that is not a λ" [
+    (firstOf, body [par, par .many .leaf] (v 1)),
+    (altConst, body [par] (.case caseK (v 0) #[.const firstOf .val] #[] .val))]
+    altConst oneKey (some .erasedRead) false,
+  -- `secondOf (b : Nat) : Nat := b`; `altLam (k : Key) := Key.casesOn k (fun (@erased g) => secondOf)`
+  runCase "erased: a λ alternative binds the erased field, the rest passed on" [
+    (secondOf, body [par .many .leaf] (v 0 .leaf) .shared .leaf),
+    (altLam, body [par] (.case caseK (v 0) #[lam (par .erased) (.const secondOf .val) .shared .leaf] #[]
+      .leaf) .shared .leaf)]
+    altLam oneKey none true
+]
+
+/-! ### Must-reject cases from records -/
+
+/-- The fixture compiled: its records and the prelude's, its literal blobs, the
+kernel environment its typing installs, its role table, its names' addresses. -/
+structure Built where
+  env : Ix.Kernel.Env .anon
+  table : Ix.Kernel.RoleTable
+  store : Ix.Kernel.Reader.Store
+  blob : Address → Option ByteArray
+  named : Lean.Name → Option Address
+
+def fixtureSeeds : List Lean.Name :=
+  [`ModeFixture.main, `ModeFixture.mainRec, `ModeFixture.callF, `ModeFixture.callAdd, `ModeFixture.mkQ]
+
+def buildFixture : IO (Except String Built) := do
+  let lenv ← getFileEnv "Tests/Ix/ResourceModesFixture.lean"
+  let consts := Ix.EnvScope.collectSelectedDeps lenv fixtureSeeds
+  let (prepared, annotated) ← match Ix.Compile.prepareSourceConstants consts >>= fun p =>
+      (Ix.CompileM.checkPreparedSource p).map (p, ·) with
+    | .ok p => pure p
+    | .error e => return .error s!"preparing: {e}"
+  let out ← match ← Ix.CompileM.compileCertifiedPrepared prepared annotated 1 with
+    | .ok o => pure o
+    | .error e => return .error s!"compiling: {e}"
+  unless out.failures.isEmpty do return .error "compiling: some constants failed"
+  let input ← match Ix.Typing.typingInput out.env with
+    | .ok i => pure i
+    | .error e => return .error s!"typing input: {e}"
+  let env ← match Ix.Typing.checkCertified input (Ix.Typing.splitOf input) with
+    | .ok env => pure env
+    | .error (e, _) => return .error s!"typing: {e}"
+  let records : Std.HashMap Address Ixon.Constant :=
+    input.ordered.foldl (fun m (a, c, _) => m.insert a c) {}
+  let prelude : Std.HashMap Address Ixon.Constant :=
+    (input.pre.records ++ input.pre.evidence).foldl (fun m (a, c) => m.insert a c) {}
+  let blobs : Std.HashMap Address ByteArray :=
+    (input.blobs ++ input.pre.blobs).foldl (fun m (a, b) => m.insert a b) {}
+  let named := out.env.named
+  return .ok { env, table := input.table, store := fun a => records[a]? <|> prelude[a]?,
+    blob := fun a => blobs[a]?, named := fun n => (named.get? (Ix.Name.fromLeanName n)).map (·.addr) }
+
+/-- Set the contract of the `i`-th leading binder of `e` (λs with `lam`, else ∀s). -/
+def setBinder (lam : Bool) (bc : Ixon.BinderContract) : Nat → Ixon.Expr → Option Ixon.Expr
+  | 0, .lam _ t b => if lam then some (.lam bc t b) else none
+  | 0, .all _ r t b => if lam then none else some (.all bc r t b)
+  | i + 1, .lam c t b => if lam then (setBinder lam bc i b).map (.lam c t ·) else none
+  | i + 1, .all c r t b => if lam then none else (setBinder lam bc i b).map (.all c r t ·)
+  | _, _ => none
+
+def erasedBC : Ixon.BinderContract := { uses := .erased }
+
+/-- Erase parameter `i` of the constant `r` in its record `c`: its type's ∀, and
+its value's λ with `inValue`. -/
+def eraseParam (c : Ixon.Constant) (r : Ref) (i : Nat) (inValue : Bool) : Option Ixon.Constant :=
+  let onDef (d : Ixon.Definition) : Option Ixon.Definition := do
+    let typ ← setBinder false erasedBC i d.typ
+    let value ← if inValue then setBinder true erasedBC i d.value else pure d.value
+    pure { d with typ, value }
+  match r, c.info with
+  | .member _ 0, .defn d => do pure { c with info := .defn (← onDef d) }
+  | .member _ 0, .recr rr => do
+    pure { c with info := .recr { rr with typ := ← setBinder false erasedBC i rr.typ } }
+  | .member _ 0, .quot q => do
+    pure { c with info := .quot { q with typ := ← setBinder false erasedBC i q.typ } }
+  | .member _ j, .muts ms => do
+    let m' ← match ← ms[j]? with
+      | .defn d => do pure (Ixon.MutConst.defn (← onDef d))
+      | .recr rr => do pure (Ixon.MutConst.recr { rr with typ := ← setBinder false erasedBC i rr.typ })
+      | .indc _ => none
+    pure { c with info := .muts (ms.set! j m') }
+  | _, _ => none
+
+/-- A record case: an entry, the parameter erased in one constant's record (in
+its type, and in its value with the flag), the constant the role `natAdd` is
+bound to; what the reading, the run and the checker must do. -/
+structure RecCase where
+  label : String
+  entry : Lean.Name
+  erase : Option (Lean.Name × Nat × Bool) := none
+  prim : Option Lean.Name := none
+  reads : Bool
+  accept : Bool
+  /-- the constructor the run must return, when it reads -/
+  value : Option Lean.Name := none
+
+def recordCases : List RecCase := [
+  { label := "the fixture as compiled", entry := `ModeFixture.main, reads := true, accept := true,
+    value := some `ModeFixture.E.c₂ },
+  { label := "must-reject: a case definition's alternative erased, the alternative its case rule selects",
+    entry := `ModeFixture.main, erase := some (`ModeFixture.cases', 3, true), reads := false, accept := false },
+  { label := "case definition: its motive erased, which its case rule does not read",
+    entry := `ModeFixture.main, erase := some (`ModeFixture.cases', 0, true), reads := true, accept := true,
+    value := some `ModeFixture.E.c₂ },
+  { label := "primitive: a role-bound operation with default modes",
+    entry := `ModeFixture.callAdd, prim := some `ModeFixture.myAdd, reads := true, accept := true },
+  { label := "must-reject: a role-bound operation with an erased parameter",
+    entry := `ModeFixture.callAdd, erase := some (`ModeFixture.myAdd, 0, true), prim := some `ModeFixture.myAdd,
+    reads := false, accept := false },
+  { label := "must-reject: a recursor's minor premise erased",
+    entry := `ModeFixture.mainRec, erase := some (`ModeFixture.E.rec, 2, false), reads := false, accept := false },
+  { label := "must-reject: a quotient's element erased",
+    entry := `ModeFixture.mkQ, erase := some (`Quot.mk, 2, false), reads := false, accept := false },
+  { label := "η-short: an erased parameter past a run body's λs",
+    entry := `ModeFixture.callF, erase := some (`ModeFixture.f, 0, false), reads := false, accept := false }
+]
+
+/-- Change the fixture's records as the case says, then read, run and check. -/
+def runRecCase (b : Built) (c : RecCase) : Except String (Bool × String) := do
+  let refOf (n : Lean.Name) : Except String (Address × Ref) := do
+    let some a := b.named n | throw s!"{n} has no address"
+    let some r := Ix.Kernel.Reader.resolve b.store a | throw s!"{n} does not resolve"
+    pure (a, r)
+  let (entryA, entryR) ← refOf c.entry
+  let mut store := b.store
+  let mut table := b.table
+  if let some (n, i, inValue) := c.erase then
+    let (_, r) ← refOf n
+    let some rc := b.store r.block | throw s!"{n}: no record"
+    let some rc' := eraseParam rc r i inValue | throw s!"{n}: the record is not of the expected shape"
+    let prev := store
+    store := fun x => if x == r.block then some rc' else prev x
+  if let some n := c.prim then
+    let (a, _) ← refOf n
+    table := { table with bound := table.bound.map fun (role, x) =>
+      if role == .natAdd then (role, a) else (role, x) }
+  let s : Subject := { table, store, blob := b.blob, seeds := [entryA] }
+  let cl := oracleClassifier b.env (ctorShapes (Reading.make s)) {}
+  let expected ← match c.value with
+    | some n => do pure (some (← refOf n).2)
+    | none => pure none
+  let (readOk, readStr, runStr, valueOk) := match readProg s cl with
+    | .error e => (false, s!"the reading fails ({e})", "not run", true)
+    | .ok P =>
+      let o := runR P noExtern 100000 entryR ({} : HB).heap []
+      let valueOk := match expected, o with
+        | none, _ => true
+        | some r, .value (.imm (.con r')) _ => r == r'
+        | some _, _ => false
+      (true, "reads", outcomeName o, valueOk)
+  let v := check {} b.env s
+  let ok := readOk == c.reads && v.isAccept == c.accept && valueOk
+  pure (ok, s!"{c.label}: {readStr}; run: {runStr}; checker: {verdictName v}")
+
+def recordCasesTest : LSpec.TestSeq :=
+  .individualIO "must-reject cases from records: case definitions, primitives, recursors, quotients, \
+    η-short interfaces" none (do
+    match ← buildFixture with
+    | .error e => return (false, 0, 0, some s!"the fixture: {e}")
+    | .ok b =>
+      let mut allOk := true
+      let mut failed : Array String := #[]
+      for c in recordCases do
+        let (ok, line) := match runRecCase b c with
+          | .ok r => r
+          | .error e => (false, s!"{c.label}: {e}")
+        IO.println s!"    {if ok then "ok" else "FAIL"} {line}"
+        unless ok do
+          allOk := false
+          failed := failed.push line
+      return (allOk, 0, 0, if allOk then none else some ("; ".intercalate failed.toList))) .done
+
 public def suite : List LSpec.TestSeq :=
   erasedCases ++ uniqueCases ++ borrowCases ++ onceCases ++ captureCases ++ skeletonCases ++
-    [limitCase, fastPathCase]
+    alternativeCases ++ [limitCase, fastPathCase, recordCasesTest]
 
 end Tests.ResourceModes
