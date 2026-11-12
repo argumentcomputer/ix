@@ -10,7 +10,8 @@ The existing PinGen theorem-record writer, shared for artifact-specific
 binding emission. Its reference lookup must come from the actual published
 records. This writer is untrusted: the resulting exact bytes and their proofs
 still need canonical decoding, authentication, reading and certified checking.
-The extraction keeps the existing sharing and binder-contract encoding.
+The extraction keeps the existing sharing. A theorem carries no modes: its
+binders and lets take the defaults.
 -/
 
 @[expose] public section
@@ -51,15 +52,9 @@ def univOf {md : Ix.Kernel.Mode} (l : CLevel) : EgressM md UInt64 := do
   modify fun s => { s with univs := s.univs.push u, univIdx := s.univIdx.insert u i }
   return i.toUInt64
 
-/-- A natural number's blob: little-endian bytes, no trailing zero (the
-reader's `natural`). -/
-def natBytes (n : Nat) : ByteArray := Id.run do
-  let mut out : ByteArray := .empty
-  let mut k := n
-  while k > 0 do
-    out := out.push (k % 256).toUInt8
-    k := k / 256
-  return out
+/-- A natural number's blob in the compiler's form (`Nat.toBytesLE`):
+little-endian bytes, no trailing zero, and `[0]` for zero. -/
+def natBytes (n : Nat) : ByteArray := ByteArray.mk (Nat.toBytesLE n)
 
 def blobOf {md : Ix.Kernel.Mode} (bytes : ByteArray) : EgressM md UInt64 := do
   let a := Address.admissionHash bytes

@@ -47,8 +47,8 @@ theorem binderMeta_named (m : Ix.Kernel.BinderMeta) (d : Squash Ix.Kernel.Binder
 /-- A let's metadata with a Lean name: the same let. -/
 theorem letMeta_named (l : Ix.Kernel.LetMeta) (d : Squash Ix.Kernel.Name) :
     { l with display := d } = l := by
-  obtain ⟨c, d0⟩ := l
-  show Ix.Kernel.LetMeta.mk c d = Ix.Kernel.LetMeta.mk c d0
+  obtain ⟨n, c, d0⟩ := l
+  show Ix.Kernel.LetMeta.mk n c d = Ix.Kernel.LetMeta.mk n c d0
   rw [Subsingleton.elim d d0]
 
 /-- A memo entry: the conversion a node was annotated at, and the result. -/

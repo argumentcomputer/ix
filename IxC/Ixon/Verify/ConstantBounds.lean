@@ -68,7 +68,7 @@ theorem getFieldModes_bound (count : Nat) : ReaderBound (getFieldModes count) (f
   have checkSpan := checkCount_bound _ _ _ _ _ valid checkRead
   obtain ⟨modes, middle, modesRead, read⟩ := bind_ok.mp read
   have modesSpan := getArray_bound _ _ getFieldMode_bound _ _ _ _ checkSpan.valid modesRead
-  cases listed : FieldModes.listed? modes with
+  cases listed : (FieldModes.listed? modes : Option (FieldModes count)) with
   | none => simp only [listed] at read; cases read
   | some m =>
     simp only [listed] at read
@@ -288,6 +288,7 @@ theorem getBinderNode_bound : ReaderBound getBinderNode BinderNode.resourceSize 
     | none => simp only [decoded] at read; cases read
     | some mode =>
       simp only [decoded] at read
+      generalize tag &&& 7 = t at read
       split at read
       · change EStateM.Result.ok _ _ = .ok value finish at read
         cases read
