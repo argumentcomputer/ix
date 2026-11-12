@@ -240,7 +240,8 @@ theorem runs_peel {M : Model V env} {κ : CId → KKey} {Ok : CId → Levels →
   | [], Γ, t, t', b, h, hp => by
     simp only [List.length_nil, IxCC.Src.peelLams, Option.some.injEq] at hp
     subst hp
-    simpa using h
+    simp only [List.map_nil, List.reverse_nil, List.nil_append]
+    exact h
   | (A, m) :: bs, Γ, t, t', b, h, hp => by
     have h' : Runs M κ Ok lps ls φ Γ t (.lam A (lamTele bs b) m) := h
     cases h' with
@@ -334,7 +335,7 @@ theorem noParamsIota (M : Model V env) (hι : IotaLaw M.cval env) {kr : KKey}
     | cons hA hx _ => exact ⟨_, hA, hx⟩
   -- the fields' fit, its result the constructor's codomain (no index)
   obtain ⟨-, hRC, -⟩ := fits_piTele fbs Cc hFs (by omega)
-  rw [show Fs.length = fbs.length by omega, List.drop_self] at hRC
+  rw [show Fs.length = fbs.length by omega, List.drop_eq_nil_of_le (Nat.le_refl _)] at hRC
   have hRCe : RC = Cc := hRC
   -- ι at rule `krl`, at the recursor's own level parameters
   have hRden : Denotes M.cval env φ ρ (.const kr (cvr.levelParams.map .param)) (M.cval kr φ) := by
@@ -356,7 +357,7 @@ theorem noParamsIota (M : Model V env) (hι : IotaLaw M.cval env) {kr : KKey}
     rw [← hty]; exact hf1
   obtain ⟨e1, -, h3⟩ := fits_piTele tbs C hfitT (by omega)
   subst e1
-  have hdropT : tbs.drop (As.take mI).length = [] := by rw [hxl, ← htbs, List.drop_self]
+  have hdropT : tbs.drop (As.take mI).length = [] := List.drop_eq_nil_of_le (by omega)
   have hcorr : TeleCorr M.cval env φ (pushAll (As.take mI) ρ) ρ (liftTele mI 0 fbs) fbs := by
     intro ys AL AP hL hP Y hY
     rw [liftTele_get, Nat.zero_add] at hL
