@@ -170,6 +170,57 @@ def splitPi : Nat → KExpr → Option (List (KExpr × BinderMeta) × KExpr)
   | n + 1, .forallE d b m => (splitPi n b).map fun r => ((d, m) :: r.1, r.2)
   | _ + 1, _ => none
 
+/-- Exactly `n` leading binders of a `λ`-telescope, and its body. -/
+def lamSplit : Nat → KExpr → Option (List (KExpr × BinderMeta) × KExpr)
+  | 0, e => some ([], e)
+  | n + 1, .lam d b m => (lamSplit n b).map fun r => ((d, m) :: r.1, r.2)
+  | _ + 1, _ => none
+
+theorem lamSplit_spec (n : Nat) : ∀ (e : KExpr) (bs : List (KExpr × BinderMeta)) (b : KExpr),
+    lamSplit n e = some (bs, b) → e = lamTele bs b ∧ bs.length = n := by
+  induction n with
+  | zero =>
+    intro e bs b h
+    simp only [lamSplit, Option.some.injEq, Prod.mk.injEq] at h
+    obtain ⟨rfl, rfl⟩ := h
+    exact ⟨rfl, rfl⟩
+  | succ n ih =>
+    intro e bs b h
+    cases e with
+    | lam d e' m =>
+      simp only [lamSplit] at h
+      cases h' : lamSplit n e' with
+      | none => rw [h'] at h; cases h
+      | some r =>
+        rw [h'] at h
+        simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at h
+        obtain ⟨rfl, rfl⟩ := h
+        obtain ⟨e1, e2⟩ := ih e' r.1 r.2 (by rw [h'])
+        exact ⟨by rw [e1]; rfl, by simp [e2]⟩
+    | _ => simp [lamSplit] at h
+
+theorem piSplit_length (n : Nat) : ∀ (T : KExpr) (bs : List (KExpr × BinderMeta)) (R : KExpr),
+    piSplit n T = some (bs, R) → bs.length = n := by
+  induction n with
+  | zero =>
+    intro T bs R h
+    simp only [piSplit, Option.some.injEq, Prod.mk.injEq] at h
+    obtain ⟨rfl, rfl⟩ := h
+    rfl
+  | succ n ih =>
+    intro T bs R h
+    cases T with
+    | forallE d b m =>
+      simp only [piSplit] at h
+      cases h' : piSplit n b with
+      | none => rw [h'] at h; cases h
+      | some r =>
+        rw [h'] at h
+        simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at h
+        obtain ⟨rfl, rfl⟩ := h
+        simp [ih b r.1 r.2 (by rw [h'])]
+    | _ => simp [piSplit] at h
+
 /-- An `eqn` entry's data, read off the stored theorem and function (the check then verifies
 the shape against it, so this reading needs no proof). -/
 def eqnData? (env : KEnv) (kc kt : KKey) : Option EqnData :=
@@ -312,13 +363,48 @@ def eqRecBasisB : Bool :=
       decide (krl.rhs = eqRecRhs)
   | _ => false
 
-/-- A recursor has the checked shape (`RecStored`), and where it is `Eq.rec` the `Eq.refl` and
-`Eq.rec` bases hold. -/
+/-- `RecTele`, decided (domains compared structurally). -/
+def recTeleB (kr : KKey) : Bool :=
+  match env.find? kr with
+  | some (.recInfo cvr _ rP krules) =>
+    match piSplit rP cvr.type with
+    | some (tbs, _) =>
+      krules.all fun krl =>
+        match lamSplit (rP + krl.nfields) krl.rhs with
+        | some (bs, _) => decide ((bs.take rP).map (·.1) = tbs.map (·.1))
+        | none => false
+    | none => false
+  | _ => false
+
+/-- `RecProg`, decided (as `caseProgB`). -/
+def recProgB (r : CId) : Bool :=
+  match p.decl? r with
+  | some (.recr _ _ _ np _ _ _ ind rules _) =>
+    Sl.all (fun c =>
+      match p.decl? c with
+      | some (.ctor _ _ ind' cidx np' nf' _) =>
+        if ind' == ind then
+          np' == np &&
+            match rules[cidx]? with
+            | some rl => decide (κ rl.ctor = κ c) && rl.fields == nf'
+            | none => false
+        else true
+      | _ => true) &&
+    (if some ind == p.known.nat then
+      np == 0 && decide (rules.map (fun rl => (κ rl.ctor, rl.fields)) =
+        [((natZeroName : KKey), 0), ((natSuccName : KKey), 1)])
+    else true)
+  | _ => false
+
+/-- A recursor has the checked shape (`RecStored`); where it is `Eq.rec` the `Eq.refl` and
+`Eq.rec` bases hold; where it is `flat`, its rules' telescopes (`RecTele`) and the program side
+(`RecProg`). -/
 def recShapeB (c : CId) : Bool :=
   match p.decl? c with
   | some (.recr ..) =>
     recStoredB p env κ lpsOf c &&
-      (recClassB p env κ c != some .eqRec || (eqReflBasisB env && eqRecBasisB env))
+      (recClassB p env κ c != some .eqRec || (eqReflBasisB env && eqRecBasisB env)) &&
+      (recClassB p env κ c != some .flat || (recTeleB env (κ c) && recProgB p κ Sl c))
   | _ => true
 
 def primB (c : CId) : Bool :=
@@ -479,7 +565,7 @@ def checkPartsWith (adm : List RecClass) (p : Program) (env : KEnv) (κ : CId �
    ("nodup", Sl.all (nodupB lpsOf)),
    ("noCsimp", Sl.all (noCsimpB p)),
    ("declOk", Sl.all (declOkB p env κ adm)),
-   ("recShape", Sl.all (recShapeB p env κ lpsOf)),
+   ("recShape", Sl.all (recShapeB p env κ lpsOf Sl)),
    ("notOpaque", Sl.all fun c => p.table.isOpaqueByValue c == false),
    ("prim", Sl.all (primB p env κ)),
    ("ctor", Sl.all (ctorB p env κ)),
@@ -655,21 +741,65 @@ theorem eqRecBasisB_of (h : EqRecBasis env) : eqRecBasisB env = true := by
   obtain ⟨cvr, krl, hf, hty, hc, hrhs⟩ := h
   simp [eqRecBasisB, hf, hty, hc, hrhs]
 
-/-- The `recShape` conjunct gives the checked shape, and the `Eq.refl` and `Eq.rec` bases at
-`Eq.rec`. -/
-theorem recShape_of {c : CId} (h : recShapeB p env κ lpsOf c = true) :
+theorem recTele_of_check {kr : KKey} (h : recTeleB env kr = true) : RecTele env kr := by
+  unfold recTeleB at h
+  split at h
+  · rename_i cvr mI rP krules hf
+    split at h
+    · rename_i tbs C hs
+      refine ⟨cvr, mI, rP, krules, tbs, C, hf, piSplit_spec rP _ _ _ hs,
+        piSplit_length rP _ _ _ hs, fun krl hkrl => ?_⟩
+      have h1 := List.all_eq_true.mp h krl hkrl
+      split at h1
+      · rename_i bs b hl
+        obtain ⟨e1, e2⟩ := lamSplit_spec _ _ _ _ hl
+        exact ⟨bs, b, e1, e2, of_decide_eq_true h1⟩
+      · cases h1
+    · cases h
+  · cases h
+
+theorem recProg_of_check {r : CId} (h : recProgB p κ Sl r = true) : RecProg p κ (· ∈ Sl) r := by
+  unfold recProgB at h
+  split at h
+  · rename_i sf kk lvls np nmot nmin ni ind rules ty hd
+    simp only [Bool.and_eq_true] at h
+    obtain ⟨hS, hN⟩ := h
+    refine ⟨sf, kk, lvls, np, nmot, nmin, ni, ind, rules, ty, hd,
+      fun c hc sf' lv' cidx np' nf ty' hdc => ?_, fun hn => ?_⟩
+    · have := List.all_eq_true.mp hS c hc
+      simp only [hdc, beq_self_eq_true, ↓reduceIte, Bool.and_eq_true, beq_iff_eq] at this
+      obtain ⟨hnp, hcs⟩ := this
+      refine ⟨hnp, ?_⟩
+      split at hcs
+      · rename_i rl hrl
+        simp only [Bool.and_eq_true, decide_eq_true_eq, beq_iff_eq] at hcs
+        exact ⟨rl, hrl, hcs.1, hcs.2⟩
+      · cases hcs
+    · simp only [hn, beq_self_eq_true, ↓reduceIte, Bool.and_eq_true, beq_iff_eq,
+        decide_eq_true_eq] at hN
+      exact hN
+  · cases h
+
+/-- The `recShape` conjunct gives the checked shape, the `Eq.refl` and `Eq.rec` bases at
+`Eq.rec`, and the rules' telescopes and the program side at a flat recursor. -/
+theorem recShape_of {c : CId} (h : recShapeB p env κ lpsOf Sl c = true) :
     ∀ sf kk lvls np nmot nmin ni ind rules ty,
       p.decl? c = some (.recr sf kk lvls np nmot nmin ni ind rules ty) →
       RecStored p env κ lpsOf c ∧
-        (recClassB p env κ c = some .eqRec → EqReflBasis env ∧ EqRecBasis env) := by
+        (recClassB p env κ c = some .eqRec → EqReflBasis env ∧ EqRecBasis env) ∧
+        (recClassB p env κ c = some .flat → RecTele env (κ c) ∧ RecProg p κ (· ∈ Sl) c) := by
   intro sf kk lvls np nmot nmin ni ind rules ty hd
   unfold recShapeB at h
   rw [hd] at h
   simp only [Bool.and_eq_true, Bool.or_eq_true, bne_iff_ne, ne_eq] at h
-  refine ⟨recStored_of_check h.1, fun hk => ?_⟩
-  rcases h.2 with h2 | ⟨h2, h3⟩
-  · exact absurd hk h2
-  · exact ⟨eqReflBasis_of_check h2, eqRecBasis_of_check h3⟩
+  obtain ⟨⟨h1, h2⟩, h4⟩ := h
+  refine ⟨recStored_of_check h1, fun hk => ?_, fun hk => ?_⟩
+  · rcases h2 with h2 | ⟨h2, h3⟩
+    · exact absurd hk h2
+    · exact ⟨eqReflBasis_of_check h2, eqRecBasis_of_check h3⟩
+  · rcases h4 with h4 | ⟨h4, h5⟩
+    · exact absurd hk h4
+    · exact ⟨recTele_of_check h4, recProg_of_check h5⟩
 
 theorem prim_of {c : CId} (h : primB p env κ c = true) :
     ∀ op, p.table.resolveOf c = some (.prim op) → κ c = primKey op ∧
@@ -804,18 +934,23 @@ theorem groundFacts_of_check {ann : IxCC.Src.Relevance.Ann}
           recClass_of (all (f := declOkB p env κ admittedClasses) "declOk"
             (by simp [checkParts, checkPartsWith]) r hr) sf kk lvls np nmot nmin ni ind rules ty hd
         stored := fun r hr sf kk lvls np nmot nmin ni ind rules ty hd =>
-          (recShape_of (all (f := recShapeB p env κ lpsOf) "recShape"
+          (recShape_of (all (f := recShapeB p env κ lpsOf Sl) "recShape"
             (by simp [checkParts, checkPartsWith]) r hr) sf kk lvls np nmot nmin ni ind rules ty hd).1
         eqRefl := fun r hr hk => by
           obtain ⟨sf, kk, lvls, np, nmot, nmin, ni, ind, rules, ty, hd⟩ := recClassB_recr hk
-          exact ((recShape_of (all (f := recShapeB p env κ lpsOf) "recShape"
-            (by simp [checkParts, checkPartsWith]) r hr) sf kk lvls np nmot nmin ni ind rules ty hd).2
+          exact ((recShape_of (all (f := recShapeB p env κ lpsOf Sl) "recShape"
+            (by simp [checkParts, checkPartsWith]) r hr) sf kk lvls np nmot nmin ni ind rules ty hd).2.1
             hk).1
         eqRec := fun r hr hk => by
           obtain ⟨sf, kk, lvls, np, nmot, nmin, ni, ind, rules, ty, hd⟩ := recClassB_recr hk
-          exact ⟨hE, ((recShape_of (all (f := recShapeB p env κ lpsOf) "recShape"
-            (by simp [checkParts, checkPartsWith]) r hr) sf kk lvls np nmot nmin ni ind rules ty hd).2
-            hk).2⟩ },
+          exact ⟨hE, ((recShape_of (all (f := recShapeB p env κ lpsOf Sl) "recShape"
+            (by simp [checkParts, checkPartsWith]) r hr) sf kk lvls np nmot nmin ni ind rules ty hd).2.1
+            hk).2⟩
+        flat := fun r hr hk => by
+          obtain ⟨sf, kk, lvls, np, nmot, nmin, ni, ind, rules, ty, hd⟩ := recClassB_recr hk
+          exact (recShape_of (all (f := recShapeB p env κ lpsOf Sl) "recShape"
+            (by simp [checkParts, checkPartsWith]) r hr) sf kk lvls np nmot nmin ni ind rules ty hd).2.2
+            hk },
       fun c hc => noQuot_of (all (f := declOkB p env κ admittedClasses) "declOk"
         (by simp [checkParts, checkPartsWith]) c hc),
       fun c hc => by
