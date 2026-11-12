@@ -272,7 +272,12 @@ runs, in this order:
 
 1. the tables, first, because the census and ingress read them: ix's fixture
    package (`refreeze-ixon package`: the root package's
-   `Tests/Fixtures/ixon-v4/`), the primitive table (`V3.PrimAddrs`,
+   `Tests/Fixtures/ixon-v4/`, copied unchanged; its two handoff closures,
+   `handoff/accepted.ixe` and `handoff/rejected-local-escape.ixe`, are the
+   only unbound fixtures: ix's own generator writes them,
+   `lake exe ixon-v4-tests --export-handoff` (`Tests/IxonV4Handoff.lean`, an
+   environment without a role binding), and `ixon-v4-tests` checks the
+   committed ones against it), the primitive table (`V3.PrimAddrs`,
    `IxCC/Ixon/V3/PrimAddrs.lean`; `refreeze-ixon tc-primitives`, from
    `Ix/PrimAddrs.lean`), the Src tables
    (`pin-src-tables`), then `Src.Pinned` and the fixed pins (`pin-src-tables

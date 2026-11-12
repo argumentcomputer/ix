@@ -264,6 +264,29 @@ theorem reduces_beta {Γ : List KExpr} {D b a1 : KExpr} {m : BinderMeta} (rest :
   rw [hz]
   exact (den_mkAppN rest).mpr ⟨Z, Ys, (den_inst1Lift0 hX1 b Z).mpr hZ, hYs, rfl⟩
 
+/-- **β through a λ-telescope** (`betaStar`), each argument in its λ's domain. -/
+theorem betaStar_reduces {Γ : List KExpr} {c : KExpr → KExpr → Bool}
+    (hc : ∀ a A, c a A = true → ChecksAt M φ Γ a A) :
+    ∀ (args : List KExpr) (h : KExpr), Reduces M φ Γ (Expr.mkAppN h args) (betaStar c h args).2
+  | [], h => by
+    have e : betaStar c h [] = (0, Expr.mkAppN h []) := by cases h <;> rfl
+    rw [e]
+    exact reduces_refl
+  | a :: rest, h => by
+    cases h with
+    | lam D b m =>
+      by_cases hca : c a D = true
+      · have e : (betaStar c (.lam D b m) (a :: rest)).2 =
+            (betaStar c (b.instantiate1Lift a 0) rest).2 := by
+          simp only [betaStar, hca, ↓reduceIte]
+        rw [e]
+        exact reduces_trans (reduces_beta rest (hc a D hca)) (betaStar_reduces hc rest _)
+      · have e : (betaStar c (.lam D b m) (a :: rest)).2 = Expr.mkAppN (.lam D b m) (a :: rest) := by
+          simp only [betaStar, hca, Bool.false_eq_true, ↓reduceIte]
+        rw [e]
+        exact reduces_refl
+    | _ => exact reduces_refl
+
 /-- **δ** (`Laws.defn_value`, through `den_inst` for the levels). -/
 theorem reduces_delta (hL : Laws M) {Γ : List KExpr} {k : KKey} {us : List Level}
     {cv : ConstantVal .anon} {val : KExpr} {hint : ReducibilityHint}
@@ -376,10 +399,22 @@ theorem fitsAt_cons {Γ : List KExpr} {A B a : KExpr} {m : BinderMeta} {as : Lis
     rw [pushAll_nil] at hf''
     exact ⟨σ', R', .cons hAd hx hf''⟩
 
+/-- **Fitting a telescope, each argument checked by `c`** (`fitsWith`). -/
+theorem fitsWith_sound {Γ : List KExpr} {c : KExpr → KExpr → Bool}
+    (hc : ∀ a A, c a A = true → ChecksAt M φ Γ a A) :
+    ∀ (as : List KExpr) (T : KExpr), fitsWith c T as = true → FitsAt M φ Γ T as
+  | [], _, _ => fitsAt_nil
+  | a :: as, T, h => by
+    cases T with
+    | forallE A B m =>
+      simp only [fitsWith, Bool.and_eq_true, decide_eq_true_eq] at h
+      exact fitsAt_cons h.1.1 (hc a A h.1.2) (fitsWith_sound hc as _ h.2)
+    | _ => simp [fitsWith] at h
 
-theorem ctorApp?_spec {env' : KEnv} {e : KExpr} {ck : KKey} {cus : List Level} {np nf : Nat}
-    {cargs : List KExpr} (h : ctorApp? env' e = some (ck, cus, np, nf, cargs)) :
-    e.getAppFn = .const ck cus ∧ (∃ cv, env'.find? ck = some (.ctorInfo cv np nf)) ∧
+theorem ctorApp?_spec {look : KKey → Option (ConstantInfo .anon)} {e : KExpr} {ck : KKey}
+    {cus : List Level} {np nf : Nat}
+    {cargs : List KExpr} (h : ctorApp? look e = some (ck, cus, np, nf, cargs)) :
+    e.getAppFn = .const ck cus ∧ (∃ cv, look ck = some (.ctorInfo cv np nf)) ∧
       e.getAppArgs = cargs := by
   unfold ctorApp? at h
   split at h
@@ -536,15 +571,17 @@ theorem primStep_sound (hL : Laws M) {Γ : List KExpr} {w : KExpr → Option KEx
 arguments up to the major fit its type, ending in a `∀` over the inductive at the recursor's own
 parameters; the major is the constructor at those levels on arguments that fit its type, the
 same parameters, and a codomain without indices). -/
-theorem iotaStep_sound (hL : Laws M) {Γ : List KExpr} {w : KExpr → Option KExpr}
+theorem iotaStep_sound (hL : Laws M) {look : KKey → Option (ConstantInfo .anon)}
+    (hlook : ∀ k, look k = env.find? k) {Γ : List KExpr} {w : KExpr → Option KExpr}
     {fits : KExpr → List KExpr → Bool} {conv : List KExpr → List KExpr → Bool}
     (hw : ∀ a a', w a = some a' → Reduces M φ Γ a a')
     (hfits : ∀ T as, fits T as = true → FitsAt M φ Γ T as)
     (hconv : ∀ ps qs, conv ps qs = true → ∀ ρ, CtxSat M φ Γ ρ → ∀ Ys Ys',
       DenotesList M.cval env φ ρ ps Ys → DenotesList M.cval env φ ρ qs Ys' → Ys = Ys')
     {k : KKey} {us : List Level} {args : List KExpr} {e' : KExpr}
-    (h : iotaStep env w fits conv k us args = some e') :
+    (h : iotaStep look w fits conv k us args = some e') :
     Reduces M φ Γ (Expr.mkAppN (.const k us) args) e' := by
+  rw [show look = env.find? from funext hlook] at h
   unfold iotaStep at h
   split at h
   · rename_i cv mI rP rules hk

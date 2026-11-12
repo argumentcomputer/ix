@@ -461,7 +461,8 @@ check (G1a), the generic `case` lemma and the root theorem, with `fib` and
 `decide (fib 10 = 55)` as its instances (G1b), and the direct route (G2a), which
 discharges the typing hypothesis on both instances: `fibRoot` and `decideRoot`
 have no typing hypothesis; then the direct route widened and the `case` shape
-made tolerant of a recursor's level-parameter names (G2b).** The library `IxCCGrounding`
+made tolerant of a recursor's level-parameter names (G2b), and the direct route's
+cost fixed (G3, its first step).** The library `IxCCGrounding`
 (`IxCC/IxCCGrounding/`, a Lake library of IxCC's package beside the production
 library, built and run by the required check `ixcc-grounding`) is the real
 development the adequacy spike (SP-A) recommended. It is the one library that
@@ -470,7 +471,7 @@ imports the kernel's model (`IxCK.Kernel.Denotes`, the statement half, in
 model, from the production library or from any program of the shared build.
 
 **What is proved, fenced on `propext`, `Classical.choice` and `Quot.sound` or
-fewer (`IxCCGrounding/Fence.lean`, 97 exact assertions):**
+fewer (`IxCCGrounding/Fence.lean`, 102 exact assertions):**
 
 - *Soundness at a root* (`rootSound`, in `IxCCGrounding.Root`). For every
   program, kernel reading `env`, key map, level parameters, certificate
@@ -520,14 +521,16 @@ fewer (`IxCCGrounding/Fence.lean`, 97 exact assertions):**
   and comparing them by a small conversion: equality up to what the denotation
   does not read (levels by `Level.simplify`, the collapse of `imax a a` to `a`
   and max-plus forms, binder data at the profiles, a literal against its
-  constructor form), β with the argument checked, δ, the projection of a
-  constructor at a structure stored as never a proposition, ι at a recursor of
-  an inductive without indices whose major premise reduces to a constructor or
-  a literal (the recursor's arguments up to the major fit its type, the
-  constructor's arguments fit its own, the major's parameters are the
+  constructor form), β through a λ-telescope with each argument checked, δ, the
+  projection of a constructor at a structure stored as never a proposition, ι
+  at a recursor of an inductive without indices whose major premise reduces to
+  a constructor or a literal (the recursor's arguments up to the major fit its
+  type, the constructor's arguments fit its own, the major's parameters are the
   recursor's), and a `Nat` primitive on arguments that reduce to literals; a
   string literal is typed through its constructor form (`Denotes`' `strLit`
-  rule). Its soundness (`direct_sound`, `spine_sound`, `termRefused_sound`,
+  rule). It looks constants up in a hash table of the kernel's reading built
+  once per closure (`KTab`; a lookup in it is `Env.find?`, `KTab.get_of`).
+  Its soundness (`direct_sound`, `spine_sound`, `termRefused_sound`,
   `directFacts_of_check`) uses five laws and rules of `Denotes`: `defn_value`
   (δ), `cval_params` (through `den_inst` and `den_inst_exact`, wherever a stored
   type or value is read at the levels of a use), `proj_ctor` in its restricted
@@ -554,8 +557,8 @@ fewer (`IxCCGrounding/Fence.lean`, 97 exact assertions):**
   which the kernel's binder datum is a proposition, the check refuses the site.
   It does the same on three closures of the corpus that exercise the widening:
   `tags16` (ι, `Nat` arithmetic on literals, `imax u u`: all 200 sites accepted,
-  the kernel agreeing at all 214 instances), `panic` (25 string literals: 761
-  of 762 sites accepted, the kernel agreeing at all 958 instances) and
+  the kernel agreeing at all 214 instances), `panic` (25 string literals: all
+  762 sites accepted, the kernel agreeing at all 959 instances) and
   `OS16-plain` (every conjunct of `groundCheck` true, a `List.casesOn` whose
   recursor names its level parameters apart).
 
@@ -575,8 +578,8 @@ theorem is from the grounded statement of the [spine](end-to-end.md#the-shared-s
 | `FoArgs` | the arguments are literals, or an enumeration's listed constructor | IxCC: `foArgsB` | done on both closures, with a control |
 | `ResultTag` | the observed tag names one constructor: every member of `Sl` reading back with that tag whose kernel entry is a field-less constructor has the named constructor's key | IxCC: `resultTagB`, run after the run on the observed result | done on both closures; rejects programs, see below |
 | `BoolListed` (`decideRoot` only) | the pinned `Bool`'s listed constructor `1` is the pinned `Bool.true` | IxCC: `boolListedB` | done on `decide`, with a control |
-| `sitesDirectB … = true` (`DirectFacts`; `fibRoot`, `decideRoot`) | the direct route refuses no application site SrcEval may evaluate in a run term of `Sl` | IxCC: the check, run on the closure's bytes beside `groundCheck` | done: true on both closures (`tests-grounding`), with two controls that make it false and leave `groundCheck` true, and the kernel as an oracle at every site it accepts; on `tags16` true (with a control that gives `Bool.rec`'s `true` rule the `false` rule's right-hand side and makes it false), on `panic` one site refused (a control on `String.ofList`'s type refuses the string literals) |
-| `SitesOkRes` (`allP_of_check`, `const_of_check`, `rootSound`) | typing, in the one form it is consumed (an application site in the graph regime with its argument in the domain), at the sites the direct route refuses only | IxCC | empty on both subjects and on every measured closure the check accepts. Elsewhere on the corpus (below) the direct route, since G2b, refuses 22 sites in four closures (`tags125` aside): 11 conversions that need reduction inside an argument applied to variables, and 11 projections out of a bound variable in recursion compiled through `brecOn`, which need a typing derivation or a model fact the laws do not state ("What the direct route cannot do", below); the kernel types every one |
+| `sitesDirectB … = true` (`DirectFacts`; `fibRoot`, `decideRoot`) | the direct route refuses no application site SrcEval may evaluate in a run term of `Sl` | IxCC: the check, run on the closure's bytes beside `groundCheck` | done: true on both closures (`tests-grounding`), with two controls that make it false and leave `groundCheck` true, and the kernel as an oracle at every site it accepts; on `tags16` true (with a control that gives `Bool.rec`'s `true` rule the `false` rule's right-hand side and makes it false), on `panic` true since G3's cost fix (a control on `String.ofList`'s type refuses the string literals) |
+| `SitesOkRes` (`allP_of_check`, `const_of_check`, `rootSound`) | typing, in the one form it is consumed (an application site in the graph regime with its argument in the domain), at the sites the direct route refuses only | IxCC | empty on both subjects and on every measured closure the check accepts. Elsewhere on the corpus (below) the direct route refuses 21 sites in three closures (since G3's cost fix; 22 in four, `tags125` aside, after G2b): 10 conversions that need reduction inside an argument applied to variables, and 11 projections out of a bound variable in recursion compiled through `brecOn`, which need a typing derivation or a model fact the laws do not state ("What the direct route cannot do", below); the kernel types every one |
 
 **Two laws as first landed were false, and the instance theorems said nothing.**
 As first landed, `ctor_canon` was stated for every constructor and `proj_ctor`
@@ -694,14 +697,20 @@ evaluated, so it refuses every site of a constant with more than 8 level
 parameters (256 profiles). Measured on the corpus (below), the most level
 parameters of a constant in a checked set `Sl` is 4 (the `for`-loop closures,
 `scalar`, `resource`) and of any constant of a closure's reading 7, so the bound
-refuses nothing there. It walks each maximal application spine once, so a
-spine's width costs no fuel; the fuel (64) bounds the nesting depth of a check,
-each nested argument costing two levels (its check and its type's inference;
-three before G2b, when a list literal of `src-diag/diag` nested deeper than
-that was refused): 31 nested `Nat.succ`s are typed, 32 are not
-(`tests-grounding`). It compares levels by syntactic equality, or, for levels of
-at most 32 nodes, by syntactic equality after `Level.simplify` and the collapse
-of every `imax a a` to `a` (equal at every assignment), or by their max-plus
+refuses nothing there. It walks each maximal application spine once. The fuel
+(64) bounds depth only: the nesting of checks, each nested argument costing two
+levels (its check and its type's inference; three before G2b, when a list
+literal of `src-diag/diag` nested deeper than that was refused), so 31 nested
+`Nat.succ`s are typed and 32 are not (`tests-grounding`), and the number of
+head-reduction steps taken one after another (a δ, ι, primitive or projection
+step, or β through a whole λ-telescope: one level each). Width is free: a
+spine's arguments and a telescope's (the arguments fitted against a
+`∀`-telescope, as ι and the projection of a constructor ask, and β through a
+λ-telescope) are each checked at the same fuel. So the fuel does not bound the
+total work, which grows with the width of what is checked and with the paths a
+failing conversion tries. It compares levels by syntactic equality, or, for
+levels of at most 32 nodes, by syntactic equality after `Level.simplify` and the
+collapse of every `imax a a` to `a` (equal at every assignment), or by their max-plus
 forms (a constant and parameter offsets, each at most the other), never by the
 kernel's `Level.isEquiv`, which is exponential on a known family; the max-plus
 comparison is there because syntactic equality after `Level.simplify` alone
@@ -716,66 +725,80 @@ and of `max`, over 16 parameters, 31 nodes, each compared with a copy with two
 parameters swapped) the comparison answers in 85 µs and 107 µs, an `imax a a`
 whose sides are 15-node chains collapses in 179 µs, and over 24 parameters (47
 nodes) it declines in 7 µs (interpreted, not compiled; `GR-2b-fU`). There is no
-memo of repeated δ-unfolding, so beyond these bounds the check's cost on a
-hostile closure is not otherwise bounded. Interpreted, on the corpus,
-`sitesDirectB` takes up to 14.5 s where it is true (`scalar`; before the
-widening, at most 1.2 s where it was true) and up to 28.8 s where it is false
-(`strings`; the Boolean stops at its first refused site), except on `tags125`;
-compiled, it is not measured apart from the suite.
+memo of repeated reduction or conversion, so beyond these bounds the check's
+cost on a hostile closure is not otherwise bounded; a conversion that fails is
+the expensive case, since it tries every path before refusing. Interpreted, on
+the corpus, `sitesDirectB` takes at most 1.24 s (`strings`, where it is false;
+`scalar` 0.84 s, where it is true), except on `tags125`, the matcher of a
+125-constructor inductive: 48.7 s, the measured worst case. There (counted by an
+instrumented copy of the checker) the work is dominated by the reductions of
+`T125.ctorIdx c` that its wildcard alternatives' proofs need, each a β-telescope
+over `T125.casesOn`'s 127 binders, a fit of 127 arguments at ι on `T125.rec` and
+a β-telescope through the rule: 252 ι steps (31,020 fitted arguments, 123 on
+average), 159,441 β-steps, 213,388 checks, the same small checks repeated (one
+head reduction's input recurs 181,536 times) since nothing is memoized.
+Compiled, `sitesDirectB` is not measured apart from the suite (1.26 to 1.39 s,
+which loads `tags16` and `panic` but not `tags125`).
 
-**A known defect: the widened direct route's cost.** Since the widening (G2b) the
-check is much slower on some closures: `sitesDirectB` on `tags125` takes 624 s
-(3.9 s before), on `tags16` 5.5 s (0.38 s before), both interpreted; and
-`tests-grounding`, compiled, takes 5.1 to 5.4 s (0.26 s before; it now also
-loads three corpus closures and asks the kernel about their sites, so the two
-figures do not measure the same work). Not profiled. The likely cause: the ι
-step checks the recursor's argument prefix against its type (`dFits`) every time
-head reduction meets a recursor application, and the conversion tries head
-reduction twice per comparison (without and with δ); a matcher over a
-125-constructor enumeration has 125 minor premises in that prefix. It is a
-question of cost, not of soundness: what the check accepts is what its proof
-covers, at any cost. Profiling and fixing it is the first item of the next
-stage.
+**The direct route's cost, profiled and fixed (G3).** The widening (G2b) made the
+check much slower on some closures: `sitesDirectB` on `tags125` took 624 s (3.9 s
+before it), on `tags16` 5.5 s (0.38 s), both interpreted, and `tests-grounding`
+5.1 to 5.4 s compiled (0.26 s before it loaded three corpus closures). A profile
+(a copy of the checker that counts its calls, its verdicts checked equal to the
+library's) found two causes, and the ι step's argument prefix was neither: on
+`tags125` that prefix is checked 2,462 times in all (9,848 arguments, mostly
+`Bool.rec`'s four), against a million checks. (1) Every constant lookup walked
+the kernel's reading as a list (`Env.find?`): 1.12 million lookups on
+`tags125`'s reading of 1,054 constants, about 265 µs each interpreted, half of
+the time on both closures. (2) Fitting arguments against a `∀`-telescope, and β
+through a λ-telescope, cost one fuel level per argument, so the arguments of
+`tags125`'s 125-constructor recursor (127 of them) could not be fitted within
+the fuel: `T125.ctorIdx c` did not reduce, and the 247 sites that need it (each
+wildcard alternative of the matcher gets a proof that a bit of a mask indexed by
+the constructor is clear) were refused, each only after the conversion had tried
+every other path (about 8,500 checks per site). Now constants are looked up in a
+hash table of the reading built once per closure, and a telescope's width costs
+no fuel. Measured (interpreted, the build box): `sitesDirectB` on `tags125`
+48.7 s, refusing none of its 418 sites, the kernel agreeing at all 432
+instances; on `tags16` 0.56 s; `tests-grounding` 1.36 to 1.39 s compiled
+(100 to 105 MB; the time is not broken down). The suite also no longer computes
+the refused sites for an assertion's failure message when the assertion holds.
 
-**The direct route on the corpus.** Measured on the 48 committed closures that
+**The direct route on the corpus.** Measured on the 49 committed closures that
 load (the families `bench-k1`, `grounding`, `phase1-scalar`, `phase1-boundary`,
 `phase1-resource`, `phase1-decline`, `phase1-abi`, `phase2-closures`,
 `phase1-machines` and `phase2-arity`, the fourteen `ownership` closures and
 `src-diag/diag`; five do not load: `typeFormerPolymorphism` and `src-sortpoly`,
 whose annotation is refused, `fields50` and `tags126`, past the decoder's depth
 budget, and `src-diag/sorry`, which the kernel declines), each with `Sl` built as
-`tests-grounding` builds it, the direct route as landed (G2a) and as widened
-(G2b) side by side (`GR-2b-fA` to `fE`). On the 47 closures other than
-`tags125`, of 13,681 application sites (19,026 site-profile instances) the
-landed route discharges 13,419 (18,710) and the widened one 13,659 (18,984):
-240 sites gained, none lost. The kernel's typing core types every instance
-the widened route accepts in the graph regime (the 274 gained ones among
-them), and each of the 1,952 pairs of an accepted site and a profile where the
-kernel's binder datum is a proposition is refused at that profile; at each of
-the 22 sites it still refuses the kernel types the site too, so each refusal is
-an incompleteness of the direct route, none a site the kernel rejects. It
-refuses no site on 43 of the 47 (28 before), among them all 24 that
-`groundCheck` accepts, so on every measured closure the check accepts the root
-theorems need no typing hypothesis. What the widening cleared, by the step that
-clears each site (the classes measured before G2b): recursor ι in a type (120:
-`Bool.rec` into `Prop` in 19 closures, for instance `Bool.noConfusionType` at
-two different constructors, and other recursors in `strings` and `diag`); `Nat`
-arithmetic on literals in a proof's type (78 of 79: the matchers on numerals of
-`tags16` and `tags17`, and `strings`, `panic`, `diag`); the level `imax u u` (8)
-and the fuel (6), above; and 28 string literals (`panic`, `strings`). The 22
-left, all in closures `groundCheck` refuses: 11 conversions that need reduction
-inside an argument applied to variables (`x + 1` against `Nat.succ x` in
-`OS02-plain`, a list's length against a literal in `strings` and `diag`, a
-`Char` validity proof in `panic`), and 11 projections out of a bound variable
-(`diag`). `tags125` (the matcher of a 125-constructor enumeration, a spine of 127
-sites; `GR-2b-fE`): of its 418 sites the landed route discharges 164 and the widened one 171,
-the kernel agreeing at all 185 accepted instances; the 247 it refuses were not classified (they
-include sites that look like `tags16`'s literal-arithmetic sites, which it accepts there; not
-diagnosed). On it `sitesDirectB` takes 624 s interpreted, against 3.9 s for the landed route: the
-widened conversion is much slower on this closure (not profiled; the ι step re-checks the
-recursor's arguments, 125 minor premises here, at each head reduction it tries).
+`tests-grounding` builds it. Of 14,990 application sites (20,363 site-profile
+instances) the direct route discharges 14,969 (20,322) and refuses 21. Against
+the route as widened (G2b), position by position: 248 sites gained (247 in
+`tags125`, one in `panic`), none lost. The kernel's typing core types every
+instance the route accepts in the graph regime, and each of the 2,289 pairs of
+an accepted site and a profile where the kernel's binder datum is a proposition
+is refused at that profile; at each of the 21 sites it still refuses the kernel
+types the site too, so each refusal is an incompleteness of the direct route,
+none a site the kernel rejects. It refuses no site on 46 of the 49, among them
+all 24 that `groundCheck` accepts, so on every measured closure the check
+accepts the root theorems need no typing hypothesis. What the widening (G2b)
+cleared, by the step that clears each site (the classes measured before it):
+recursor ι in a type (120: `Bool.rec` into `Prop` in 19 closures, for instance
+`Bool.noConfusionType` at two different constructors, and other recursors in
+`strings` and `diag`); `Nat` arithmetic on literals in a proof's type (78 of 79:
+the matchers on numerals of `tags16` and `tags17`, and `strings`, `panic`,
+`diag`); the level `imax u u` (8) and the fuel (6), above; and 28 string
+literals (`panic`, `strings`). Since a telescope's width costs no fuel (G3), it also clears the
+247 sites of `tags125` (the matcher of a 125-constructor inductive, a spine of
+127 sites, and its wildcard alternatives' proofs, which need ι at the
+inductive's recursor) and the `Char` validity proof of `panic`. The 21 left, all
+in closures `groundCheck` refuses: 10 conversions that need reduction inside an
+argument applied to variables (`x + 1` against `Nat.succ x` in `OS02-plain`, a
+list's length against a literal in `strings` and `diag`), and 11 projections
+out of a bound variable (`diag`) (`GR-3c-cA` to `cE`; as widened, `GR-2b-fA` to
+`fE`).
 
-**What the direct route cannot do.** On the corpus, every site the widened route
+**What the direct route cannot do.** On the corpus, every site the direct route
 refuses is cleared by δ and ι inside an argument (laws `Laws` already has;
 inferred from where the kernel's own conversion goes, not yet run through a
 checker that makes it), **except eleven sites in one closure**
@@ -787,21 +810,26 @@ member is its constructor's image, from which that follows). This shape is how
 Lean compiles structural recursion, so it is not a corner of one closure: it
 will meet the widening as soon as recursors enter the checked set.
 
-**What the fragment does not yet cover.** `groundCheck` is false on 24 of the 48
-closures (26 before the renaming-tolerant `case` shape: `erase` and `OS16-plain`
-now pass); the gaps, ordered by how many closures each blocks (a closure can
-have several):
+**What the fragment does not yet cover.** `groundCheck` is false on 25 of the 49
+closures (26 of 48 before the renaming-tolerant `case` shape: `erase` and
+`OS16-plain` now pass; `phase1-machines/natural`, registered since, fails
+`declOk` and `valueCorr`); the gaps, ordered by how many closures each blocks
+(a closure can have several):
 
-1. *A recursor in `Sl`* (`declOk`), 22 closures, the first failing conjunct on
+1. *A recursor in `Sl`* (`declOk`), 23 closures, the first failing conjunct on
    each and the only one on ten: `Eq.rec`, run by `Eq.ndrec` (the
-   non-dependent elimination of equality, used by rewriting), on 21, the only
+   non-dependent elimination of equality, used by rewriting), on 22, the only
    recursor on 12 of them and the only obstacle at all on five (`tak`,
-   `even-odd`, `sfib`, `phase1-abi`, `OS02-plain`); `Bool.rec` on 6, run by
+   `even-odd`, `sfib`, `phase1-abi`, `OS02-plain`); `Bool.rec` on 7, run by
    `Bool.and`, `Bool.or` and `Bool.not`; an enumeration's recursor applied
    directly by its matcher on 4 (`tags16`, `tags17`, `tags125`, `diag`);
    `False.rec`, run by `False.elim`, on 3; `Nat.rec` on 2 and `List.rec` on 1,
    in `diag` from structural recursion compiled through `brecOn` (`Nat.below`,
    `Nat.brecOn.go`, `List.below` run them).
+   A concrete case: `phase1-machines/natural` (natural-style machines) fails
+   `declOk` on exactly two recursors, `Eq.rec` and `Bool.rec`, and otherwise
+   only `valueCorr`: admitting `Eq.rec` (G3, part C) and then `Bool.rec` (part
+   D, without parameters) removes its first obstacle.
 2. *A `let` in a run term* (`valueCorr`, `eqnCorr`, `eqnShape`), 13 closures:
    the body of every `for` loop (`Std.Legacy.Range.forIn'.loop`, 6), and
    values such as `Scalar.powMod`'s; the only obstacle on `fields49`.
@@ -831,7 +859,7 @@ gives.
 
 - typing at the sites the direct route refuses (`SitesOkRes`; empty on the two
   subjects and on every measured closure the check accepts; on the corpus it
-  still refuses 22 sites in four closures, `tags125` aside; G3) and the laws,
+  still refuses 21 sites in three closures) and the laws,
   not yet shown to have a model;
 - `ResultTag`'s rejections above;
 - the fragment: `let`, recursors fired directly, `Quot`, `csimp`, strings, and

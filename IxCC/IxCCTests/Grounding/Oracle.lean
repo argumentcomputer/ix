@@ -99,19 +99,19 @@ def spineVerdicts (x : DCtx) (n : Nat) (Γ : List KExpr) (h : KExpr) (args : Lis
 
 /-- Every site position of a run term with the walk's verdict, visited as `termRefused` visits
 them. -/
-def termVerdicts (env : KEnv) (lps : List Nat) (n : Nat) :
+def termVerdicts (tab : KTab) (lps : List Nat) (n : Nat) :
     List IxCC.Src.Profile → List KExpr → Term → KExpr → List KExpr → List Verdict
   | P, Γ, .app f a _ r, .app f' a', acc =>
     let P' := P.filter fun prof => !r.irrP prof
-    (if P'.isEmpty then [] else termVerdicts env lps n P' Γ a a' []) ++
-      termVerdicts env lps n P Γ f f' (a' :: acc)
+    (if P'.isEmpty then [] else termVerdicts tab lps n P' Γ a a' []) ++
+      termVerdicts tab lps n P Γ f f' (a' :: acc)
   | P, Γ, .lam _ _ body, .lam d' body' m, acc =>
-    spineVerdicts { env, lps, profs := P } n Γ (.lam d' body' m) acc ++
-      termVerdicts env lps n P (d' :: Γ) body body' []
+    spineVerdicts { tab, lps, profs := P } n Γ (.lam d' body' m) acc ++
+      termVerdicts tab lps n P (d' :: Γ) body body' []
   | P, Γ, .proj _ _ t, .proj s i e, acc =>
-    spineVerdicts { env, lps, profs := P } n Γ (.proj s i e) acc ++
-      termVerdicts env lps n P Γ t e []
-  | P, Γ, _, e, acc => spineVerdicts { env, lps, profs := P } n Γ e acc
+    spineVerdicts { tab, lps, profs := P } n Γ (.proj s i e) acc ++
+      termVerdicts tab lps n P Γ t e []
+  | P, Γ, _, e, acc => spineVerdicts { tab, lps, profs := P } n Γ e acc
 
 /-- What the comparison counts. -/
 structure Tally where
@@ -139,6 +139,7 @@ structure Tally where
 /-- **The comparison on a closure** (see the module note). -/
 def tally (core : Core) (p : Program) (env : KEnv) (κ : CId → KKey) (lpsOf : CId → List Nat)
     (ann : IxCC.Src.Relevance.Ann) (Sl : List CId) : Tally := Id.run do
+  let tab := KTab.of env
   let mut t : Tally := {}
   for c in Sl do
     let lps := lpsOf c
@@ -148,7 +149,7 @@ def tally (core : Core) (p : Program) (env : KEnv) (κ : CId → KKey) (lpsOf : 
     let P := okProfiles p ann c
     if P.isEmpty then continue
     for (tm, e) in runPairsB p env κ c do
-      let vs := termVerdicts env lps directFuel P [] tm e []
+      let vs := termVerdicts tab lps directFuel P [] tm e []
       let nref := (vs.filter fun v => !v.2.2.1).length
       if nref != (runRefused p env lpsOf ann c tm e).length then
         t := { t with selfCheckBad := t.selfCheckBad + 1 }
@@ -165,7 +166,7 @@ def tally (core : Core) (p : Program) (env : KEnv) (κ : CId → KKey) (lpsOf : 
           for prof' in profiles (lvlsOf p c) do
             if pwAt lps prof' pw == some true then
               t := { t with datumHolds := t.datumHolds + 1 }
-              let x' : DCtx := { env, lps, profs := [prof'] }
+              let x' : DCtx := { tab, lps, profs := [prof'] }
               if spineAccepted x' directFuel Γ h (args.take (j + 1)) ≤ j then
                 t := { t with refusedThere := t.refusedThere + 1 }
         | .error _ => t := { t with errors := t.errors + P'.length }

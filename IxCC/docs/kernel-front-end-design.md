@@ -705,8 +705,8 @@ compiled 66 kernel modules (74 s of module time in all, the longest
 build (the kernel's proof tree and IxCC): 2 min 49 s, 4.8 GB.
 
 **The differential.** Every committed corpus family and benchmark fixture
-was rebuilt role-bound into scratch by `corpus rebuild` with the tree's `ix`
-(the producer commands without `--unbound`), and each closure was run through
+was rebuilt role-bound into scratch by `corpus rebuild` with the tree's `ix`,
+and each closure was run through
 both front ends by `tests-kernel-front`: acceptance; the program; for each
 root, the annotation, the certificate and `Recheck.run`'s object; and Stage A
 of the kernel front end on its own certificate. On every closure both front
