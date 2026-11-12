@@ -551,32 +551,38 @@ def get_field_mode_list := aiur_fn⟦
     }
 ⟧
 
+  -- A constructor's field modes (IxC's `getConstructorFieldModes`): none when the flag bit is
+  -- clear (every field inherited), otherwise `fields` mode bytes, at least one of them shared
+  -- (IxC's `FieldModes.listed`).
+
+def get_constructor_modes := aiur_fn⟦
+  fn get_constructor_modes(listed: Field, fields: UInt64::U64, s: Bytes::Stream)
+      -> (Lists::List<Field>, Bytes::Stream) {
+      match listed {
+        0 => {  ((&(Lists::Node::Nil)), s) } ,
+        1 => {
+          let (modes, shared, s2) = get_field_mode_list(s, fields);
+          assert_eq!(shared, 1, "constructor: listed field modes with no shared field");
+          (modes, s2) } ,
+      }
+    }
+⟧
+
   -- A constructor's first byte: bit 0 `isUnsafe`, bit 1 set when its field modes are listed
-  -- (then `fields` mode bytes follow its `fields` count, at least one of them shared: IxC's
-  -- `FieldModes.listed`), every other bit clear. The list is empty when every field is
-  -- inherited.
+  -- (they follow its `fields` count), every other bit clear.
 
 def get_constructor := aiur_fn⟦
   fn get_constructor(stream: Bytes::Stream) -> (Ixon::Constructor, Bytes::Stream) {
       let (flags, s) = read_byte(stream);
+      assert_eq!(UInt8::less_than(flags, UInt8::BYTE_4), 1, "invalid constructor flags");
+      let bits = UInt8::bit_decomposition(flags);
       let (lvls, s2) = get_tagn0(s);
       let (cidx, s3) = get_tagn0(s2);
       let (params, s4) = get_tagn0(s3);
       let (fields, s5) = get_tagn0(s4);
-      let (is_unsafe, modes, s6) = match UInt8::to_field(flags) {
-        0 => {  (0, (&(Lists::Node::Nil)), s5) } ,
-        1 => {  (1, (&(Lists::Node::Nil)), s5) } ,
-        2 => {
-          let (listed, shared, s7) = get_field_mode_list(s5, fields);
-          assert_eq!(shared, 1, "constructor: listed field modes with no shared field");
-          (0, listed, s7) } ,
-        3 => {
-          let (listed, shared, s7) = get_field_mode_list(s5, fields);
-          assert_eq!(shared, 1, "constructor: listed field modes with no shared field");
-          (1, listed, s7) } ,
-      };
-      let (typ, s8) = get_expr(s6);
-      (Ixon::Constructor::Mk(is_unsafe, lvls, cidx, params, fields, modes, typ), s8)
+      let (modes, s6) = get_constructor_modes(bits[1], fields, s5);
+      let (typ, s7) = get_expr(s6);
+      (Ixon::Constructor::Mk(bits[0], lvls, cidx, params, fields, modes, typ), s7)
     }
 ⟧
 

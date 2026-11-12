@@ -36,7 +36,7 @@ def functionGroups : List (String × List String) := [
   ("ixvm_group_26", ["IxonDeserialize::get_lam_telescope", "KernelInfer::const_type_of", "KernelSubst::ctx_seek_cut", "${\"name\":\"RBTreeMap::rbtree_map_balance\",\"types\":[\"field\"]}"]),
   ("ixvm_group_27", ["IxonDeserialize::get_moded_binder_node", "KernelSubst::expr_has_bvar_at"]),
   ("ixvm_group_28", ["IxonDeserialize::unpack_def_asserts", "KernelNatPrim::system_platform_num_bits_addr", "KernelNatPrim::cleanup_nat_offset_major", "KernelDefEq::nat_offset_of", "KernelCheck::check_param_agreement_go", "KernelCheck::walk_fields_classify"]),
-  ("ixvm_group_29", ["IxonDeserialize::get_field_mode_list", "KernelNatPrim::is_bitvec_prim_addr", "KernelWhnf::try_reduce_projection_definition", "KernelDefEq::try_unit_like"]),
+  ("ixvm_group_29", ["IxonDeserialize::get_field_mode_list", "IxonDeserialize::get_constructor_modes", "KernelNatPrim::is_bitvec_prim_addr", "KernelWhnf::try_reduce_projection_definition", "KernelDefEq::try_unit_like"]),
   ("ixvm_group_30", ["IxonDeserialize::get_all_telescope", "KernelClaim::addr_set_build", "${\"name\":\"RBTreeMap::rbtree_map_insert\",\"types\":[\"field\"]}"]),
   ("ixvm_group_31", ["Convert::convert_expr"]),
   ("ixvm_group_32", ["IxonDeserialize::get_expr_let", "IxonDeserialize::get_constant_info_by_variant", "IxonDeserialize::get_recursor_proj", "IxonDeserialize::get_univ", "KernelLevels::level_normalize"]),
