@@ -29,9 +29,9 @@ tracing-subscriber = { workspace = true }
 tracing-texray = { workspace = true }
 
 # Iroh dependencies
-tokio = { version = "1.44.1", optional = true }
-iroh = { version = "0.97", optional = true }
-n0-error = { version = "0.1", optional = true }
+tokio = { version = "1.44.1", optional = true, features = ["rt-multi-thread", "time"] }
+iroh = { version = "1.4", optional = true }
+n0-error = { version = "1", optional = true }
 getrandom = { version = "0.3", optional = true }
 bincode = { version = "2.0.1", optional = true }
 serde = { version = "1.0.219", features = ["derive"] }
