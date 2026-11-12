@@ -11,6 +11,6 @@
   "words.equations.json":
   "9d96a5903bc44cf31064dbf3953c3fc3e25b7a6b246a482048fe1bab685f82fe"},
  "commands":
- ["ix compile --no-build --consts <roots> --equations --anon --out words.ixe Words.lean",
-  "ix compile --no-build --consts <roots> --equations --out words.named.ixe Words.lean",
+ ["ix compile --no-build --consts <roots> --equations --word-equations --anon --out words.ixe Words.lean",
+  "ix compile --no-build --consts <roots> --equations --word-equations --out words.named.ixe Words.lean",
   "ix addr-of --ixe words.named.ixe NAME, for every root and every name of the equations output"]}
