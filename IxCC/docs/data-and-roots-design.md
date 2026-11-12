@@ -202,8 +202,10 @@ the ownership code over a typing context (`OwnedState`, `owned_refines`,
 [`Own/Plain/Proof/Owned/`](../IxCC/Own/Plain/Proof/Owned/Simulation.lean));
 reclamation follows from refinement and the producer-independent
 `call_heap_shape`, as for the canonical map; 25 exact fences
-([`IxCCTests/Fences/OwnOwned.lean`](../IxCCTests/Fences/OwnOwned.lean)), the
-standard three axioms. `tests-own-owned` runs it on every registered corpus
+([`IxCCTests/Fences/OwnOwned.lean`](../IxCCTests/Fences/OwnOwned.lean)): the
+refinement, reclamation and canonical-acceptance theorems on `propext`,
+`Classical.choice` and `Quot.sound`, as the landed `checked_program_refines`.
+`tests-own-owned` runs it on every registered corpus
 root: the canonical and a liveness placement accepted and run under a
 refinement oracle, the negative controls refused, and a site-directed
 mutation campaign whose accepted mutants must run clean
