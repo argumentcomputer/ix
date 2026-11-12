@@ -178,8 +178,8 @@ def recordCases : List Ixon.Constant := variants.map Prod.snd ++
 
 #guard (Work.record 0 0 ⟨#[]⟩).2 == 3
 #guard (Work.record 0 0 ⟨#[0]⟩).2 == 1
-#guard (Work.record 256 0 (Ixon.serConstant ⟨.muts #[], #[], #[], #[], #[]⟩)).2 == 13
-#guard [(0, 14), (16, 54), (31, 86), (32, 93)].all fun (budget, work) =>
+#guard (Work.record 256 0 (Ixon.serConstant ⟨.muts #[], #[], #[], #[], #[]⟩)).2 == 15
+#guard [(0, 14), (16, 54), (31, 86), (32, 95)].all fun (budget, work) =>
   (Work.record 256 budget (Ixon.serConstant Codec.sharedUniverseBudget)).2 == work
 #guard recordCases.all fun value =>
   let input := Ixon.serConstant value

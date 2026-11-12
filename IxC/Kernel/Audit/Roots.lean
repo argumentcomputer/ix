@@ -762,7 +762,7 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.kernelOperations Ix.Ker
 -- block add 21 compiled functions. Externs, implemented_by, unsafe, csimp and all ruling
 -- counts are unchanged.
 /-- info: runtime closure of [Ix.Kernel.Reader.readRecords,
- Ix.Kernel.Admission.readStream]: 2373 compiled functions; inherited externs 89, implemented_by 0, unsafe 26, csimp 1; ruled computed_field 21, csimp 8 -/
+ Ix.Kernel.Admission.readStream]: 2382 compiled functions; inherited externs 89, implemented_by 0, unsafe 26, csimp 1; ruled computed_field 21, csimp 8 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.readerOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
@@ -783,6 +783,9 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.readerOperations Ix.Ker
 -- leave. Exact extern/unsafe/replacement/partial entry sets are unchanged.
 -- Specification version 5 (the compiler-trust roles) adds 49 compiled functions, from
 -- Roles, Key and RoleData. Execution-trust entries are unchanged.
+-- The Ixon v5 binder-data section (its parser and the local canonical check the reader runs on
+-- every record) adds 38 compiled functions, 9 of them to the stream reader. Execution-trust
+-- entries are unchanged.
 -- Lifting the parameters of a nested occurrence's index arguments in the in-model generator
 -- (`genNested`'s `fieldIdxAt` and `ctorIdxAt`) adds 2 compiled functions. Externs,
 -- implemented_by, unsafe, csimp and all ruling counts are unchanged.
@@ -793,7 +796,7 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.readerOperations Ix.Ker
 /-- info: runtime closure of [Ix.Kernel.Admission.checkBytes,
  Ix.Kernel.Admission.checkBytesWith,
  Ix.Kernel.Admission.checkConstantsWith,
- Ix.Kernel.Admission.checkConstants]: 6949 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 28 -/
+ Ix.Kernel.Admission.checkConstants]: 6987 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 28 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.publicOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
@@ -852,7 +855,7 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.publicOperations Ix.Ker
 -- block add 21 compiled functions. Externs, implemented_by, unsafe, csimp and all ruling
 -- counts are unchanged.
 /-- info: runtime closure of [Ix.Kernel.Admission.checkBytesTiered,
- Ix.Kernel.Admission.checkConstantsTiered]: 7059 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 28 -/
+ Ix.Kernel.Admission.checkConstantsTiered]: 7097 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 28 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.tierOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
@@ -869,6 +872,7 @@ run_cmd Ix.Kernel.Audit.checkImportsWith #[`IxC.Kernel.Admission.Tier] Ix.Kernel
 -- prelude (each takes its prelude or table as an argument); inherited externs 112, and the
 -- same rulings admit it with the same unsafe, csimp and ruled counts.
 -- Specification version 5 (the compiler-trust roles) moved it from 6683 by 49.
+-- The Ixon v5 binder-data section (its parser and local canonical check) moved it by 38.
 -- Lifting the parameters of a nested occurrence's index arguments in the in-model generator
 -- (`genNested`'s `fieldIdxAt` and `ctorIdxAt`) adds 2 compiled functions. Externs,
 -- implemented_by, unsafe, csimp and all ruling counts are unchanged.
@@ -885,7 +889,7 @@ run_cmd Ix.Kernel.Audit.checkImportsWith #[`IxC.Kernel.Admission.Tier] Ix.Kernel
  Ix.Kernel.Admission.checkBytesTieredUsingUnder,
  Ix.Kernel.Admission.checkConstantsTieredUnder,
  Ix.Kernel.Cached.checkDeclsWithUserAxioms,
- Ix.Kernel.Cached.annotDeclStepWithUserAxioms]: 6772 compiled functions; inherited externs 112, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 28 -/
+ Ix.Kernel.Cached.annotDeclStepWithUserAxioms]: 6810 compiled functions; inherited externs 112, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 28 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.userAxiomOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 

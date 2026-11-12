@@ -121,8 +121,8 @@ the walk reaches them (`csimp 2`) and where it reaches their targets (`ruled
 csimp 2`). -/
 /-- info: runtime closure of [Ixon.serUniv, Ixon.deUniv, Ixon.serExpr, Ixon.deExpr,
 Ixon.serConstant, Ixon.deConstant, Ixon.deConstantExact, Ixon.Bounded.deUniv,
-Ixon.Bounded.deConstant, Ixon.Canonical.deConstant]: 359 compiled functions;
-inherited externs 53, implemented_by 0, unsafe 2, csimp 2; ruled csimp 2 -/
+Ixon.Bounded.deConstant, Ixon.Canonical.deConstant]: 398 compiled functions;
+inherited externs 55, implemented_by 0, unsafe 2, csimp 2; ruled csimp 2 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.Audit.operations #[`Init, `Std] Ixon.Audit.rulings
 
