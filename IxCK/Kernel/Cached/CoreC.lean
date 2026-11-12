@@ -948,7 +948,8 @@ normalization stays a knot call (genuine nesting, bounded by the
 term's depth); every *reduction* step is iteration, so a chain no
 longer charges the shared recursion-depth budget one unit per step
 (task #106 — that is what made the `Nat.brecOn` grind of
-`Std.Time…toDays._proof_1` exhaust `checkFuel`). -/
+`Std.Time…toDays._proof_1` exhaust `checkFuel`).  The loop's executed
+form (`whnfCoreLoopFast`, below) also takes no native stack per step. -/
 def whnfCoreStepI (r : CoreFnsI md) (fe : FEnv md) (depth : Nat)
     (k : Expr md → (CheckCM md) (Expr md)) (e : Expr md) : (CheckCM md) (Expr md) := do
     match e with
@@ -1005,6 +1006,342 @@ def whnfCoreLoopI (r : CoreFnsI md) (fe : FEnv md) (depth : Nat) :
   | 0, _ => throw (.internal "fuel exhausted: whnfCore loop")
   | n + 1, e =>
     whnfCoreStepI mode r fe depth (whnfCoreLoopI r fe depth n) e
+
+/-! ### The reduction loops' executed forms (native stack)
+
+`whnfCoreLoopI`, `whnfLoopI` and `defeqLoopI` hand the loop to the step
+as a continuation `k`, and the step calls `k` from inside its body.  The
+call goes through a closure (`lean_apply` and a boxed wrapper), which the
+C compiler does not turn into a jump, so every reduction step kept two to
+three native frames: a chain of 52,000 unfoldings of one-line definitions
+overflowed an 8 MiB stack, 13,000 a 2 MiB one, although the steps are
+iteration (task #106) and charge no recursion-depth budget.
+
+Each loop's executed form (`…LoopFast`) runs a twin of the step
+(`…StepR`) that *returns* what the step would hand to `k` at a tail call
+(`LoopStep.next`, `DefeqStep.next`) or the step's own answer (`.done`),
+and continues by a self tail call, which the compiler emits as a loop.
+The twin is the step's text with each tail call `k x` replaced by
+`pure (.next x)` and each answer `y` by `pure (.done y)`.  `…Step_factor`
+proves `step k = stepR >>= run k` for every `k`, so the executed form is
+the loop by induction on the fuel (`…LoopI_eq_…LoopFast`, swapped in by
+`@[csimp]`; each depends on the standard axioms only).  The
+specifications and every statement about them are unchanged; the fuels
+stay, as step bounds.
+
+`whnfCoreStepI` also calls `k` where it is not the step's last action:
+`whnfAppI` after an ι reduction with arguments left over, and `betaPeelI`
+when the peeled body is not a λ while arguments remain.  There the
+normalised head is needed before the spine continues, so the call is
+nesting, not iteration: the twin keeps it (`whnfAppR`, `betaPeelR` take
+`k` and call it), and it is bounded by the loop's fuel, as before.  An
+ι reduction with no argument left over is a tail call
+(`k e >>= pure = k e`) and iterates. -/
+
+/-- What one step of `whnfCoreLoopI` or `whnfLoopI` decides: continue the
+loop on `e` (the step's tail call of its continuation), or stop with `x`. -/
+inductive LoopStep (α : Type) where
+  | next (e : α)
+  | done (x : α)
+
+/-- Resume the loop's continuation from a step's decision. -/
+@[inline] def LoopStep.run {md : Mode} (k : Expr md → (CheckCM md) (Expr md)) :
+    LoopStep (Expr md) → (CheckCM md) (Expr md)
+  | .next e => k e
+  | .done x => pure x
+
+/-- What one step of `defeqLoopI` decides: continue on the pair `a`, `b`
+(with the proof-irrelevance flag `pi`), or stop with `x`. -/
+inductive DefeqStep (md : Mode) where
+  | next (pi : Bool) (a b : Expr md)
+  | done (x : Bool)
+
+/-- Resume the conversion loop's continuation from a step's decision. -/
+@[inline] def DefeqStep.run {md : Mode} (k : Bool → Expr md → Expr md → (CheckCM md) Bool) :
+    DefeqStep md → (CheckCM md) Bool
+  | .next pi a b => k pi a b
+  | .done x => pure x
+
+namespace LoopStep
+
+/-! Monad facts the factorisations use (any lawful monad). -/
+
+theorem bind_congr {m : Type → Type} [Monad m] {α β : Type} (x : m α) {f g : α → m β}
+    (h : ∀ a, f a = g a) : x >>= f = x >>= g := by
+  rw [funext h]
+
+theorem bind_factor {m : Type → Type} [Monad m] [LawfulMonad m] {α β γ : Type} {x : m α}
+    {g : α → m γ} {g' : α → m β} {f : β → m γ} (h : ∀ a, g a = g' a >>= f) :
+    x >>= g = (x >>= g') >>= f := by
+  rw [bind_assoc, funext h]
+
+theorem ite_factor {m : Type → Type} [Monad m] {α β : Type} {c : Prop} [Decidable c]
+    {A B : m β} {A' B' : m α} {f : α → m β}
+    (h₁ : c → A = A' >>= f) (h₂ : ¬c → B = B' >>= f) :
+    (if c then A else B) = (if c then A' else B') >>= f := by
+  by_cases h : c
+  · simp only [h, ↓reduceIte]; exact h₁ h
+  · simp only [h, ↓reduceIte]; exact h₂ h
+
+theorem ite_bind {m : Type → Type} [Monad m] {α β : Type} {c : Prop} [Decidable c]
+    (x y : m α) (f : α → m β) :
+    (if c then x else y) >>= f = if c then x >>= f else y >>= f := by
+  split <;> rfl
+
+theorem bind_pure_eta {m : Type → Type} [Monad m] [LawfulMonad m] {α : Type} (x : m α) :
+    (x >>= fun a => pure a) = x := bind_pure x
+
+theorem throw_bind {md : Mode} {α β : Type} (e : CheckError md) (f : α → (CheckCM md) β) :
+    (throw e : (CheckCM md) α) >>= f = throw e := rfl
+
+end LoopStep
+
+/-- Close a leaf of a factorisation (`orig = stepR >>= run k`). -/
+local macro "loop_factor_close" : tactic => `(tactic| first
+  | rfl
+  | (simp only [pure_bind, bind_assoc, bind_pure, LoopStep.bind_pure_eta, LoopStep.throw_bind,
+      LoopStep.run, DefeqStep.run]; done))
+
+/-- One step of a factorisation: close the goal, or match one conditional
+or bind the two sides share. -/
+local macro "loop_factor_step" : tactic => `(tactic| first
+  | loop_factor_close
+  | (refine LoopStep.ite_factor (fun _ => ?_) (fun _ => ?_))
+  | (refine ite_congr rfl (fun _ => ?_) (fun _ => ?_))
+  | (refine LoopStep.bind_congr _ (fun _ => ?_))
+  | (refine LoopStep.bind_factor (fun _ => ?_)))
+
+mutual
+
+/-- `whnfAppI`'s twin for the executed loop: its tail calls of `k` are
+returned as `.next` (an ι reduct with no argument left over included), its
+answers as `.done`; the nested calls (an ι reduct or a peeled body with
+arguments left over) still call `k`. -/
+def whnfAppR (r : CoreFnsI md) (fe : FEnv md) (depth : Nat)
+    (k : Expr md → (CheckCM md) (Expr md)) :
+    (Expr md) → List (Expr md) → (CheckCM md) (LoopStep (Expr md))
+  | v, [] => pure (.done v)
+  | v, a :: rest => do
+    match v with
+    | .lam ty body mb => do
+        if mode.betaSkip mb.pw then
+          betaPeelR r fe depth k body [a] rest
+        else do
+          let ta ← r.inferIO depth a
+          if ← r.defeq depth ta ty then
+            betaPeelR r fe depth k body [a] rest
+          else do
+            let fa ← pure (Expr.app v a)
+            let x ← mkAppNM fa rest
+            pure (.done x)
+    | _ => do
+      let fa ← pure (Expr.app v a)
+      match ← (if iotaArityOk fe fa then iotaRecI mode r fe depth fa
+               else pure none) with
+      | some e'' =>
+        if rest.isEmpty then pure (.next e'')
+        else do
+          let v' ← k e''
+          whnfAppR r fe depth k v' rest
+      | none => whnfAppR r fe depth k fa rest
+termination_by _ args => (args.length, 0)
+decreasing_by
+  all_goals first
+    | (apply Prod.Lex.left; simp; done)
+    | (apply Prod.Lex.right' <;> simp)
+
+/-- `betaPeelI`'s twin for the executed loop (see `whnfAppR`). -/
+def betaPeelR (r : CoreFnsI md) (fe : FEnv md) (depth : Nat)
+    (k : Expr md → (CheckCM md) (Expr md)) :
+    (Expr md) → List (Expr md) → List (Expr md) → (CheckCM md) (LoopStep (Expr md))
+  | t, acc, [] => do
+    let e' ← instListM t acc
+    pure (.next e')
+  | t, acc, a :: rest => do
+    match t with
+    | .lam ty body mb => do
+        if mode.betaSkip mb.pw then
+          betaPeelR r fe depth k body (a :: acc) rest
+        else do
+          let ty' ← instListM ty acc
+          let ta ← r.inferIO depth a
+          if ← r.defeq depth ta ty' then
+            betaPeelR r fe depth k body (a :: acc) rest
+          else do
+            let f' ← instListM t acc
+            let fa ← pure (Expr.app f' a)
+            let x ← mkAppNM fa rest
+            pure (.done x)
+    | _ => do
+      let e' ← instListM t acc
+      let v ← k e'
+      whnfAppR r fe depth k v (a :: rest)
+termination_by _ _acc args => (args.length, 1)
+decreasing_by
+  all_goals first
+    | (apply Prod.Lex.left; simp; done)
+    | (apply Prod.Lex.right' <;> simp)
+
+end
+
+mutual
+
+/-- `whnfAppI` factors through its twin, for every continuation. -/
+theorem whnfAppI_factor (r : CoreFnsI md) (fe : FEnv md) (depth : Nat)
+    (k : Expr md → (CheckCM md) (Expr md)) :
+    ∀ (v : Expr md) (args : List (Expr md)),
+      whnfAppI mode r fe depth k v args = whnfAppR mode r fe depth k v args >>= LoopStep.run k
+  | v, [] => by simp [whnfAppI, whnfAppR, LoopStep.run]
+  | v, a :: rest => by
+    cases v
+    case lam ty body mb =>
+      rw [whnfAppI, whnfAppR]
+      simp only [LoopStep.ite_bind, bind_assoc]
+      refine ite_congr rfl (fun _ => ?_) (fun _ => ?_)
+      · exact betaPeelI_factor r fe depth k body [a] rest
+      · refine congrArg _ (funext fun ta => ?_)
+        refine congrArg _ (funext fun c => ?_)
+        refine ite_congr rfl (fun _ => ?_) (fun _ => ?_)
+        · exact betaPeelI_factor r fe depth k body [a] rest
+        · simp [mkAppNM, LoopStep.run]
+    all_goals
+      rw [whnfAppI, whnfAppR] <;> try (intro _ _ _ h; cases h)
+      simp only [pure_bind, bind_assoc]
+      refine congrArg _ (funext fun o => ?_)
+      cases o with
+      | some e'' =>
+        simp only [LoopStep.ite_bind, bind_assoc]
+        by_cases h : rest.isEmpty = true
+        · rw [List.isEmpty_iff] at h
+          subst h
+          simp [whnfAppI, LoopStep.run]
+        · simp only [h, Bool.false_eq_true, ↓reduceIte]
+          exact congrArg _ (funext fun v' => whnfAppI_factor r fe depth k v' rest)
+      | none => exact whnfAppI_factor r fe depth k _ rest
+termination_by _ args => (args.length, 0)
+decreasing_by
+  all_goals first
+    | (apply Prod.Lex.left; simp; done)
+    | (apply Prod.Lex.right' <;> simp)
+
+/-- `betaPeelI` factors through its twin, for every continuation. -/
+theorem betaPeelI_factor (r : CoreFnsI md) (fe : FEnv md) (depth : Nat)
+    (k : Expr md → (CheckCM md) (Expr md)) :
+    ∀ (t : Expr md) (acc args : List (Expr md)),
+      betaPeelI mode r fe depth k t acc args =
+        betaPeelR mode r fe depth k t acc args >>= LoopStep.run k
+  | t, acc, [] => by simp [betaPeelI, betaPeelR, LoopStep.run]
+  | t, acc, a :: rest => by
+    cases t
+    case lam ty body mb =>
+      rw [betaPeelI, betaPeelR]
+      simp only [LoopStep.ite_bind, bind_assoc]
+      refine ite_congr rfl (fun _ => ?_) (fun _ => ?_)
+      · exact betaPeelI_factor r fe depth k body (a :: acc) rest
+      · refine congrArg _ (funext fun ty' => ?_)
+        refine congrArg _ (funext fun ta => ?_)
+        refine congrArg _ (funext fun c => ?_)
+        refine ite_congr rfl (fun _ => ?_) (fun _ => ?_)
+        · exact betaPeelI_factor r fe depth k body (a :: acc) rest
+        · simp [mkAppNM, LoopStep.run]
+    all_goals
+      rw [betaPeelI, betaPeelR] <;> try (intro _ _ _ h; cases h)
+      simp only [bind_assoc]
+      refine congrArg _ (funext fun e' => ?_)
+      exact congrArg _ (funext fun v => whnfAppI_factor r fe depth k v (a :: rest))
+termination_by _ _ args => (args.length, 1)
+decreasing_by
+  all_goals first
+    | (apply Prod.Lex.left; simp; done)
+    | (apply Prod.Lex.right' <;> simp)
+
+end
+
+/-- `whnfCoreStepI`'s twin for the executed loop: the projection's tail
+call returns `.next`, the application case is `whnfAppR`'s. -/
+def whnfCoreStepR (r : CoreFnsI md) (fe : FEnv md) (depth : Nat)
+    (k : Expr md → (CheckCM md) (Expr md)) (e : Expr md) :
+    (CheckCM md) (LoopStep (Expr md)) := do
+    match e with
+    | .sort _ | .fvar .. | .forallE ..
+    | .lam .. | .const .. | .lit _ => pure (.done e)
+    | .app _ _ => do
+      let h ← pure (Expr.getAppFn e)
+      let args ← pure (Expr.getAppArgsC e)
+      let v ← r.whnfCore depth h
+      whnfAppR mode r fe depth k v args
+    | .proj sn i pe => do
+      let e' ← r.whnf depth pe
+      let e' ← projLitToCtorI r fe depth e'
+      let snn ← pure sn
+      match fe.findProj? snn i with
+      | some entry =>
+        match Expr.getAppFn e' with
+        | .const c us => do
+          let args ← pure (Expr.getAppArgsC e')
+          if (← pure (c == entry.ctor)) ∧ i < entry.numFields ∧
+              args.length = entry.numParams + entry.numFields ∧
+              us.length = entry.levelParams.length ∧
+              entry.fireOk us = true then do
+            let bvar0 ← pure (Expr.mkBvar 0)
+            let arg := args.getD (entry.numParams + i) bvar0
+            if ← projCertAtI r fe depth mode.verifiedChecks mode.betaGate c us args then
+              pure (.next arg)
+            else pure (.done e)
+          else pure (.done e)
+        | _ => pure (.done e)
+      | none => pure (.done e)
+    | .letE _ _ _ _ =>
+      throw (.internal "whnfCore: `let` in an annotated expression")
+    | .bvar _ =>
+      throw (.notImplemented "whnf beyond the supported fragment")
+
+/-- `whnfCoreStepI` factors through its twin, for every continuation. -/
+theorem whnfCoreStepI_factor (r : CoreFnsI md) (fe : FEnv md) (depth : Nat)
+    (k : Expr md → (CheckCM md) (Expr md)) (e : Expr md) :
+    whnfCoreStepI mode r fe depth k e =
+      whnfCoreStepR mode r fe depth k e >>= LoopStep.run k := by
+  cases e
+  case app f a =>
+    simp only [whnfCoreStepI, whnfCoreStepR, pure_bind, bind_assoc]
+    exact congrArg _ (funext fun v => whnfAppI_factor mode r fe depth k v _)
+  case proj sn i pe =>
+    simp only [whnfCoreStepI, whnfCoreStepR, pure_bind, bind_assoc]
+    refine LoopStep.bind_congr _ (fun e₁ => ?_)
+    refine LoopStep.bind_congr _ (fun e₂ => ?_)
+    generalize fe.findProj? sn i = o
+    cases o with
+    | none => loop_factor_close
+    | some entry =>
+      dsimp only
+      generalize e₂.getAppFn = h
+      cases h
+      case const c us =>
+        dsimp only
+        repeat loop_factor_step
+      all_goals loop_factor_close
+  all_goals simp only [whnfCoreStepI, whnfCoreStepR]
+  all_goals loop_factor_close
+
+/-- `whnfCoreLoopI`'s executed form: the step's twin, then a self tail
+call (a loop in the emitted C). -/
+def whnfCoreLoopFast (r : CoreFnsI md) (fe : FEnv md) (depth : Nat) :
+    Nat → Expr md → (CheckCM md) (Expr md)
+  | 0, _ => throw (.internal "fuel exhausted: whnfCore loop")
+  | n + 1, e => do
+    match ← whnfCoreStepR mode r fe depth (whnfCoreLoopFast r fe depth n) e with
+    | .next e' => whnfCoreLoopFast r fe depth n e'
+    | .done x => pure x
+
+@[csimp] theorem whnfCoreLoopI_eq_whnfCoreLoopFast : @whnfCoreLoopI = @whnfCoreLoopFast := by
+  funext md mode r fe depth n
+  induction n with
+  | zero => funext e; rfl
+  | succ n ih =>
+    funext e
+    rw [whnfCoreLoopI, whnfCoreLoopFast, whnfCoreStepI_factor, ih]
+    refine congrArg _ (funext fun s => ?_)
+    cases s <;> rfl
 
 /-- Twin of `whnfCoreBody`: the head-normalization loop at its own step
 budget. -/
@@ -1115,6 +1452,51 @@ def whnfLoopI (r : CoreFnsI md) (fe : FEnv md) (depth : Nat) :
     Nat → Expr md → (CheckCM md) (Expr md)
   | 0, _ => throw (.internal "fuel exhausted: whnf loop")
   | n + 1, e => whnfStepI r fe depth (whnfLoopI r fe depth n) e
+
+/-- `whnfStepI`'s twin for the executed loop (both calls of `k` are tail
+calls). -/
+def whnfStepR (r : CoreFnsI md) (fe : FEnv md) (depth : Nat) (e : Expr md) :
+    (CheckCM md) (LoopStep (Expr md)) := do
+  let e₁ ← r.whnfCore depth e
+  match ← reduceNatI r fe depth e₁ with
+  | some e₂ => pure (.next e₂)
+  | none =>
+    match ← unfoldDefinitionI fe e₁ with
+    | some e₂ => pure (.next e₂)
+    | none => pure (.done e₁)
+
+/-- `whnfStepI` factors through its twin, for every continuation. -/
+theorem whnfStepI_factor (r : CoreFnsI md) (fe : FEnv md) (depth : Nat)
+    (k : Expr md → (CheckCM md) (Expr md)) (e : Expr md) :
+    whnfStepI r fe depth k e = whnfStepR r fe depth e >>= LoopStep.run k := by
+  simp only [whnfStepI, whnfStepR, bind_assoc]
+  refine congrArg _ (funext fun e₁ => ?_)
+  refine congrArg _ (funext fun o => ?_)
+  cases o with
+  | some e₂ => simp [LoopStep.run]
+  | none =>
+    simp only [bind_assoc]
+    refine congrArg _ (funext fun o' => ?_)
+    cases o' <;> simp [LoopStep.run]
+
+/-- `whnfLoopI`'s executed form: the step's twin, then a self tail call. -/
+def whnfLoopFast (r : CoreFnsI md) (fe : FEnv md) (depth : Nat) :
+    Nat → Expr md → (CheckCM md) (Expr md)
+  | 0, _ => throw (.internal "fuel exhausted: whnf loop")
+  | n + 1, e => do
+    match ← whnfStepR r fe depth e with
+    | .next e' => whnfLoopFast r fe depth n e'
+    | .done x => pure x
+
+@[csimp] theorem whnfLoopI_eq_whnfLoopFast : @whnfLoopI = @whnfLoopFast := by
+  funext md r fe depth n
+  induction n with
+  | zero => funext e; rfl
+  | succ n ih =>
+    funext e
+    rw [whnfLoopI, whnfLoopFast, whnfStepI_factor, ih]
+    refine congrArg _ (funext fun s => ?_)
+    cases s <;> rfl
 
 /-- Twin of `whnfBody`. -/
 def whnfBodyI (r : CoreFnsI md) (fe : FEnv md) : Nat → Expr md → (CheckCM md) (Expr md) :=
@@ -1634,6 +2016,241 @@ def defeqLoopI (r : CoreFnsI md) (fe : FEnv md) (depth : Nat) :
   | 0, _, _, _ => throw (.internal "fuel exhausted: defeq loop")
   | fl + 1, pi, a, b =>
     defeqStepI mode r fe depth (defeqLoopI r fe depth fl) pi a b
+
+/-- `defeqStepI`'s twin for the executed loop: every call of `k` is a tail
+call and returns `.next`; every answer returns `.done`.  The structural
+clauses (both sides in weak-head normal form, no unfolding) are
+`defeqStepI`'s text, verbatim, under `.done`. -/
+def defeqStepR (r : CoreFnsI md) (fe : FEnv md) (depth : Nat) (pi : Bool) (a b : Expr md) :
+    (CheckCM md) (DefeqStep md) := do
+    if a == b then pure (.done true) else
+    let bt ← pure (Expr.isBoolTrue b)
+    let af ← pure (Expr.hasFvar a)
+    if ← (if pi && bt && !af then boolTrueShortcutI r depth a
+        else pure false) then pure (.done true) else
+    let a' ← r.whnfCore depth a
+    let b' ← r.whnfCore depth b
+    if a' == b' then pure (.done true) else
+    let qp ← pure (Expr.quickPair a' b')
+    if ← (if pi && !qp then propIrrelI r fe depth a' b' else pure false) then
+      pure (.done true) else
+    let fold ← pure (!Expr.hasFvar a' && !Expr.hasFvar b')
+    match ← (if fold then reduceNatI r fe depth a' else pure none) with
+    | some a₂ => pure (.next true a₂ b')
+    | none =>
+    match ← (if fold then reduceNatI r fe depth b' else pure none) with
+    | some b₂ => pure (.next true a' b₂)
+    | none =>
+    match ← pure (unfoldableHeadC fe a'),
+        ← pure (unfoldableHeadC fe b') with
+    | true, false =>
+      match ← unfoldDefinitionI fe a' with
+      | some a₂ => pure (.next false a₂ b')
+      | none => pure (.done false)
+    | false, true =>
+      match ← unfoldDefinitionI fe b' with
+      | some b₂ => pure (.next false a' b₂)
+      | none => pure (.done false)
+    | true, true => do
+      let ha ← pure (headHintC fe a')
+      let hb ← pure (headHintC fe b')
+      if ReducibilityHint.lt hb ha then
+        match ← unfoldDefinitionI fe a' with
+        | some a₂ => pure (.next false a₂ b')
+        | none => pure (.done false)
+      else if ReducibilityHint.lt ha hb then
+        match ← unfoldDefinitionI fe b' with
+        | some b₂ => pure (.next false a' b₂)
+        | none => pure (.done false)
+      else if ReducibilityHint.sameRegular ha hb &&
+          (← pure (sameConstHeadsC a' b')) then do
+        if ← defeqSpineI r fe depth a' b' then pure (.done true)
+        else
+          match ← unfoldDefinitionI fe a', ← unfoldDefinitionI fe b' with
+          | some a₂, some b₂ => pure (.next false a₂ b₂)
+          | _, _ => pure (.done false)
+      else
+        match ← unfoldDefinitionI fe a', ← unfoldDefinitionI fe b' with
+        | some a₂, some b₂ => pure (.next false a₂ b₂)
+        | _, _ => pure (.done false)
+    | false, false => do
+    let x ← (do
+      match a', b' with
+      | .sort u, .sort v => do
+        liftFueled "level comparison" (← isEquivLM u v)
+      | .lit l₁, .lit l₂ => pure (l₁ == l₂)
+      | .lit (.natVal n), .const c us =>
+        if (← pure (c == natZeroName)) ∧ us = [] then pure (n == 0)
+        else stuckIrrelI mode r fe depth a' b'
+      | .const c us, .lit (.natVal n) =>
+        if (← pure (c == natZeroName)) ∧ us = [] then pure (n == 0)
+        else stuckIrrelI mode r fe depth a' b'
+      | .lit (.natVal nn), .app f x => do
+        match nn, f with
+        | k + 1, .const c [] =>
+          if ← pure (c == natSuccName) then do
+            let kl ← pure (Expr.lit (.natVal k))
+            r.defeq depth kl x
+          else stuckIrrelI mode r fe depth a' b'
+        | _, _ => stuckIrrelI mode r fe depth a' b'
+      | .app f x, .lit (.natVal nn) => do
+        match nn, f with
+        | k + 1, .const c [] =>
+          if ← pure (c == natSuccName) then do
+            let kl ← pure (Expr.lit (.natVal k))
+            r.defeq depth x kl
+          else stuckIrrelI mode r fe depth a' b'
+        | _, _ => stuckIrrelI mode r fe depth a' b'
+      | .lit (.strVal s), .app fO _x => do
+        match fO with
+        | .const cO usO =>
+          if (← pure (cO == stringOfListName)) ∧ usO = [] ∧ strLitSupportedF fe then do
+            let sc ← pure (strLitToConstructor s)
+            r.defeq depth sc b'
+          else stuckIrrelI mode r fe depth a' b'
+        | _ => stuckIrrelI mode r fe depth a' b'
+      | .app fO _x, .lit (.strVal s) => do
+        match fO with
+        | .const cO usO =>
+          if (← pure (cO == stringOfListName)) ∧ usO = [] ∧ strLitSupportedF fe then do
+            let sc ← pure (strLitToConstructor s)
+            r.defeq depth a' sc
+          else stuckIrrelI mode r fe depth a' b'
+        | _ => stuckIrrelI mode r fe depth a' b'
+      | .fvar i _, .fvar j _ =>
+        if i == j then pure true
+        else stuckIrrelI mode r fe depth a' b'
+      | .const n us, .const n' us' =>
+        if n = n' then do
+          if ← liftFueled "level comparison" (← isEquivListLM us us') then
+            pure true
+          else stuckIrrelI mode r fe depth a' b'
+        else stuckIrrelI mode r fe depth a' b'
+      | .forallE ty₁ body₁ m₁, .forallE ty₂ body₂ m₂ => do
+        -- input contracts compared, results not, and prop-ness agreement
+        -- checked LAST (task #161); see `defeqBody`
+        unless ← r.defeq depth ty₁ ty₂ do return false
+        let fv ← pure (Expr.fvar depth ty₂)
+        let b₁ ← inst1M body₁ fv
+        let b₂ ← inst1M body₂ fv
+        unless ← r.defeq (depth + 1) b₁ b₂ do return false
+        unless m₁.contract == m₂.contract do return false
+        if mode.verifiedChecks && !(m₁.pw == m₂.pw) then
+          throw (.notImplemented "sort-annotation mismatch (defeq-forall)")
+        pure true
+      | .lam ty₁ body₁ m₁, .lam ty₂ body₂ m₂ => do
+        unless ← r.defeq depth ty₁ ty₂ do return false
+        let fv ← pure (Expr.fvar depth ty₂)
+        let b₁ ← inst1M body₁ fv
+        let b₂ ← inst1M body₂ fv
+        unless ← r.defeq (depth + 1) b₁ b₂ do return false
+        unless m₁.contract == m₂.contract do return false
+        if mode.verifiedChecks && !(m₁.pw == m₂.pw) then
+          throw (.notImplemented "sort-annotation mismatch (defeq-lam)")
+        pure true
+      | .app _f₁ _a₁, .app _f₂ _a₂ => do
+        -- spine-wise congruence, as in the spec body `defeqBody`
+        -- (official `is_def_eq_app`)
+        let as₁ ← pure (Expr.getAppArgsC a')
+        let as₂ ← pure (Expr.getAppArgsC b')
+        if as₁.length = as₂.length then do
+          let h₁ ← pure (Expr.getAppFn a')
+          let h₂ ← pure (Expr.getAppFn b')
+          if ← r.defeq depth h₁ h₂ then do
+            if ← defEqListI r fe depth as₁ as₂ then pure true
+            else stuckIrrelI mode r fe depth a' b'
+          else stuckIrrelI mode r fe depth a' b'
+        else stuckIrrelI mode r fe depth a' b'
+      | .proj s₁ i₁ e₁, .proj s₂ i₂ e₂ => do
+        if s₁ == s₂ && i₁ == i₂ then do
+          if ← r.defeq depth e₁ e₂ then pure true
+          else stuckIrrelI mode r fe depth a' b'
+        else stuckIrrelI mode r fe depth a' b'
+      | .lam ty₁ body₁ m₁, _ => do
+        if ← etaCertI mode r fe depth ty₁ body₁ m₁ b' then pure true
+        else stuckIrrelI mode r fe depth a' b'
+      | _, .lam ty₂ body₂ m₂ => do
+        if ← etaCertI mode r fe depth ty₂ body₂ m₂ a' then pure true
+        else stuckIrrelI mode r fe depth a' b'
+      | _, _ => stuckIrrelI mode r fe depth a' b'
+      )
+    pure (.done x)
+
+/-- `defeqStepI` factors through its twin, for every continuation. -/
+theorem defeqStepI_factor (r : CoreFnsI md) (fe : FEnv md) (depth : Nat)
+    (k : Bool → Expr md → Expr md → (CheckCM md) Bool) (pi : Bool) (a b : Expr md) :
+    defeqStepI mode r fe depth k pi a b =
+      defeqStepR mode r fe depth pi a b >>= DefeqStep.run k := by
+  simp only [defeqStepI, defeqStepR, pure_bind]
+  refine LoopStep.ite_factor (fun _ => ?_) (fun _ => ?_)
+  · loop_factor_close
+  refine LoopStep.bind_factor (fun l₁ => ?_)
+  refine LoopStep.ite_factor (fun _ => ?_) (fun _ => ?_)
+  · loop_factor_close
+  refine LoopStep.bind_factor (fun a' => ?_)
+  refine LoopStep.bind_factor (fun b' => ?_)
+  refine LoopStep.ite_factor (fun _ => ?_) (fun _ => ?_)
+  · loop_factor_close
+  refine LoopStep.bind_factor (fun l₂ => ?_)
+  refine LoopStep.ite_factor (fun _ => ?_) (fun _ => ?_)
+  · loop_factor_close
+  refine LoopStep.bind_factor (fun o₁ => ?_)
+  cases o₁ with
+  | some a₂ => loop_factor_close
+  | none =>
+    dsimp only
+    refine LoopStep.bind_factor (fun o₂ => ?_)
+    cases o₂ with
+    | some b₂ => loop_factor_close
+    | none =>
+      dsimp only
+      generalize unfoldableHeadC fe a' = u₁
+      generalize unfoldableHeadC fe b' = u₂
+      cases u₁ <;> cases u₂
+      -- the structural clauses: the same text under `.done` (the same
+      -- matchers, so `simp` closes it by syntactic equality)
+      case false.false =>
+        simp only [pure_bind, bind_assoc, LoopStep.bind_pure_eta, DefeqStep.run]
+      case true.true =>
+        dsimp only
+        refine LoopStep.ite_factor (fun _ => ?_) (fun _ => ?_)
+        · refine LoopStep.bind_factor (fun o => ?_); cases o <;> loop_factor_close
+        refine LoopStep.ite_factor (fun _ => ?_) (fun _ => ?_)
+        · refine LoopStep.bind_factor (fun o => ?_); cases o <;> loop_factor_close
+        refine LoopStep.ite_factor (fun _ => ?_) (fun _ => ?_)
+        · refine LoopStep.bind_factor (fun s => ?_)
+          refine LoopStep.ite_factor (fun _ => ?_) (fun _ => ?_)
+          · loop_factor_close
+          refine LoopStep.bind_factor (fun o => ?_)
+          refine LoopStep.bind_factor (fun o' => ?_)
+          cases o <;> cases o' <;> loop_factor_close
+        · refine LoopStep.bind_factor (fun o => ?_)
+          refine LoopStep.bind_factor (fun o' => ?_)
+          cases o <;> cases o' <;> loop_factor_close
+      all_goals
+        dsimp only
+        refine LoopStep.bind_factor (fun o => ?_)
+        cases o <;> loop_factor_close
+
+/-- `defeqLoopI`'s executed form: the step's twin, then a self tail call. -/
+def defeqLoopFast (r : CoreFnsI md) (fe : FEnv md) (depth : Nat) :
+    Nat → Bool → Expr md → Expr md → (CheckCM md) Bool
+  | 0, _, _, _ => throw (.internal "fuel exhausted: defeq loop")
+  | fl + 1, pi, a, b => do
+    match ← defeqStepR mode r fe depth pi a b with
+    | .next pi' a' b' => defeqLoopFast r fe depth fl pi' a' b'
+    | .done x => pure x
+
+@[csimp] theorem defeqLoopI_eq_defeqLoopFast : @defeqLoopI = @defeqLoopFast := by
+  funext md mode r fe depth n
+  induction n with
+  | zero => funext pi a b; rfl
+  | succ n ih =>
+    funext pi a b
+    rw [defeqLoopI, defeqLoopFast, defeqStepI_factor, ih]
+    refine congrArg _ (funext fun s => ?_)
+    cases s <;> rfl
+
 
 /-- Twin of `defeqBody`. -/
 def defeqBodyI (r : CoreFnsI md) (fe : FEnv md) : Nat → Expr md → Expr md → (CheckCM md) Bool :=

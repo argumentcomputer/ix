@@ -145,9 +145,12 @@ from 5962, by the entry's change (38 in: the check, the state's keys and the der
 -- the inherited extern `Int.decEq` to each closure here (`IxCK/Kernel/Audit/Roots.lean`).
 -- Level equality memoised on the pairs it proves equal (`Level.decMemo`) adds 4 compiled
 -- functions to each closure here (`IxCK/Kernel/Audit/Roots.lean`).
+-- The kernel's reduction loops, index build and units check as loops add 3 compiled functions
+-- net and five ruled csimps to each closure below (`IxCK/Kernel/Audit/Roots.lean`); every other
+-- count is unchanged.
 /-- info: runtime closure of [Ixon.Projection.address,
  Ixon.Projection.reconstruct,
- Ixon.Projection.checkBytes]: 6925 compiled functions; inherited externs 114, implemented_by 0, unsafe 27, csimp 7; ruled computed_field 22, csimp 33 -/
+ Ixon.Projection.checkBytes]: 6928 compiled functions; inherited externs 114, implemented_by 0, unsafe 27, csimp 7; ruled computed_field 22, csimp 38 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.Projection.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
 
