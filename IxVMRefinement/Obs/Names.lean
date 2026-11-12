@@ -654,25 +654,11 @@ theorem n17406749417574904446 : constructorName [] (.named "KernelClaim::RevealC
 
 theorem n7126347638910987197 : instanceName [] "WordLists::length_u64" (some [(.array .field 8)]) = Names.«WordLists::length_u64<[Field; 8]>» := by decide +kernel
 
-theorem n18223928145028035135 : constructorName [] (.named "Ixon::LetContract" []) = "Ixon::LetContract" := by decide +kernel
-
-theorem n2120212008394516089 : constructorName [] (.named "Ixon::LetKind" []) = "Ixon::LetKind" := by decide +kernel
-
 theorem c4079408566772579892 : W.constant "UInt8::BYTE_8" (Generic.Ty.subst [] .field) = .ok (.literal (8 : F)) := eq_of_isLiteral (by decide +kernel)
 
 theorem c6664954207033374015 : W.constant "UInt8::BYTE_32" (Generic.Ty.subst [] .field) = .ok (.literal (32 : F)) := eq_of_isLiteral (by decide +kernel)
 
 theorem c9413797303886659126 : W.constant "UInt8::BYTE_128" (Generic.Ty.subst [] .field) = .ok (.literal (128 : F)) := eq_of_isLiteral (by decide +kernel)
-
-theorem n17663156470776902804 : constructorName [] (.named "Ixon::ValueContract" []) = "Ixon::ValueContract" := by decide +kernel
-
-theorem n11098506777697735770 : constructorName [] (.named "Ixon::Owned" []) = "Ixon::Owned" := by decide +kernel
-
-theorem n7978764714000244914 : constructorName [] (.named "Ixon::Locality" []) = "Ixon::Locality" := by decide +kernel
-
-theorem n16545167816984483315 : constructorName [] (.named "Ixon::BinderContract" []) = "Ixon::BinderContract" := by decide +kernel
-
-theorem n12220848999569718909 : constructorName [] (.named "Ixon::Uses" []) = "Ixon::Uses" := by decide +kernel
 
 theorem n16508235008200755398 : constructorName [] (.named "Ixon::Univ" []) = "Ixon::Univ" := by decide +kernel
 
@@ -694,8 +680,6 @@ theorem n14911588889091628089 : instanceName [] "WordLists::length_u64" (some [(
 
 theorem n7516136566660357059 : constructorName [] (.named "Ixon::BinderNode" []) = "Ixon::BinderNode" := by decide +kernel
 
-theorem c11500736482030662876 : W.constant "UInt8::BYTE_4" (Generic.Ty.subst [] .field) = .ok (.literal (4 : F)) := eq_of_isLiteral (by decide +kernel)
-
 theorem n5527369450665788998 : constructorName [] (.named "Lists::Node" [(.named "Ixon::BinderNode" [])]) = Names.«Lists::Node<Ixon::BinderNode>» := by decide +kernel
 
 theorem n7340272268790896387 : constructorName [] (.named "Ixon::BinderBlock" []) = "Ixon::BinderBlock" := by decide +kernel
@@ -708,11 +692,15 @@ theorem n10260442118937760086 : instanceName [] "WordLists::length_u64" (some [(
 
 theorem n3472392075165680861 : instanceName [] "WordLists::length_u64" (some [(.named "Ixon::MutConst" [])]) = Names.«WordLists::length_u64<Ixon::MutConst>» := by decide +kernel
 
+theorem c11500736482030662876 : W.constant "UInt8::BYTE_4" (Generic.Ty.subst [] .field) = .ok (.literal (4 : F)) := eq_of_isLiteral (by decide +kernel)
+
 theorem c9858639577359652784 : W.constant "UInt8::BYTE_6" (Generic.Ty.subst [] .field) = .ok (.literal (6 : F)) := eq_of_isLiteral (by decide +kernel)
 
 theorem c16146895348398941544 : W.constant "UInt8::BYTE_7" (Generic.Ty.subst [] .field) = .ok (.literal (7 : F)) := eq_of_isLiteral (by decide +kernel)
 
 theorem n8510078739894799097 : instanceName [] "Lists::Node" (some [(.array .field 8)]) = Names.«Lists::Node<[Field; 8]>» := by decide +kernel
+
+theorem c4657287510956961054 : W.constant "UInt8::BYTE_16" (Generic.Ty.subst [] .field) = .ok (.literal (16 : F)) := eq_of_isLiteral (by decide +kernel)
 
 theorem n14714430324747779335 : instanceName [] "Lists::Node" (some [(.ptr (.named "Ixon::Expr" []))]) = Names.«Lists::Node<&Ixon::Expr>» := by decide +kernel
 

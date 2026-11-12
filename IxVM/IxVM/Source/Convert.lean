@@ -61,6 +61,47 @@ def skip_bytes := aiur_fn⟦
     }
 ⟧
 
+  -- Nat literal blobs. A blob is canonical when it is Lean's `Nat.toBytesLE n`: `[0]` for 0,
+  -- otherwise no trailing zero byte. IxC's reader accepts exactly these (`canonicalNatural`: one
+  -- byte, or more than one whose last is not 0) and refuses any other (`ECx.natAt`). A Nat
+  -- literal's blob is read in one place, the `Nat` arm of `convert_expr`
+  -- (`Ingress::load_verified_blob` has no other caller but the `Str` arm), which refuses the same
+  -- blobs (`assert_nat_blob_canonical`) before `bytes_to_limbs` reads the value's minimal
+  -- little-endian limbs, so each number has one record spelling.
+
+def assert_nat_blob_canonical := aiur_fn⟦
+  fn assert_nat_blob_canonical(bytes: Bytes::Stream) -> () {
+      match (*(bytes)) {
+        Lists::Node::Nil => {
+          assert_eq!(0, 1, "Nat literal: an empty blob");
+          () } ,
+        Lists::Node::Cons(_, rest) => {
+          match (*(rest)) {
+            Lists::Node::Nil => {  () } ,
+            _ => {  assert_nat_blob_last_nonzero(rest) } ,
+          } } ,
+      }
+    }
+⟧
+
+  -- A blob of one or more bytes whose last byte is not 0.
+
+def assert_nat_blob_last_nonzero := aiur_fn⟦
+  fn assert_nat_blob_last_nonzero(bytes: Bytes::Stream) -> () {
+      let Lists::Node::Cons(byte, rest) = (*(bytes));
+      match (*(rest)) {
+        Lists::Node::Nil => {
+          match UInt8::to_field(byte) {
+            0 => {
+              assert_eq!(0, 1, "Nat literal: a blob with a trailing zero byte");
+              () } ,
+            _ => {  () } ,
+          } } ,
+        _ => {  assert_nat_blob_last_nonzero(rest) } ,
+      }
+    }
+⟧
+
 def bytes_to_limbs := aiur_fn⟦
   fn bytes_to_limbs(bytes: Bytes::Stream) -> KernelTypes::KLimbs {
       let limb = bytes_to_u64_limb(bytes, [UInt8::BYTE_0; 8], 0);
@@ -176,6 +217,7 @@ def convert_expr := aiur_fn⟦
         Ixon::Expr::Nat(blob_ref_idx) => {
           let blob_addr = Lists::lookup(refs, UInt64::to_field(blob_ref_idx));
           let bs = Ingress::load_verified_blob(blob_addr);
+          assert_nat_blob_canonical(bs);
           let limbs = bytes_to_limbs(bs);
           ((&(KernelTypes::KExprNode::Lit(KernelTypes::KLiteral::Nat(limbs)))), 0) } ,
 
@@ -187,10 +229,10 @@ def convert_expr := aiur_fn⟦
             _ => {  (kf, 1) } ,
           } } ,
 
-        Ixon::Expr::Lam(_, _, _) => {
+        Ixon::Expr::Lam(_, _) => {
           ((&(KernelTypes::KExprNode::BVar(0))), 1) } ,
 
-        Ixon::Expr::All(_, _, _, _) => {
+        Ixon::Expr::All(_, _) => {
           ((&(KernelTypes::KExprNode::BVar(0))), 1) } ,
 
         Ixon::Expr::Let(_, ty, val, body) => {
@@ -314,11 +356,11 @@ def binder_nodes := aiur_fn⟦
 def binder_level := aiur_fn⟦
   fn binder_level(node: Ixon::BinderNode) -> KernelTypes::KLevel {
       match node {
-        Ixon::BinderNode::Never => {
+        Ixon::BinderNode::Never(_) => {
           (&(KernelTypes::KLevelNode::Succ((&(KernelTypes::KLevelNode::Zero))))) } ,
-        Ixon::BinderNode::Zero => {  (&(KernelTypes::KLevelNode::Zero)) } ,
-        Ixon::BinderNode::IfAllZero(params) => {  params_level(params) } ,
-        Ixon::BinderNode::Undecided => {
+        Ixon::BinderNode::Zero(_) => {  (&(KernelTypes::KLevelNode::Zero)) } ,
+        Ixon::BinderNode::IfAllZero(params, _) => {  params_level(params) } ,
+        Ixon::BinderNode::Undecided(_) => {
           assert_eq!(0, 1, "binder data: an undecided binder");
           (&(KernelTypes::KLevelNode::Zero)) } ,
         Ixon::BinderNode::Share(_) => {
@@ -368,7 +410,7 @@ def convert_annotated := aiur_fn⟦
           };
           ((&(KernelTypes::KExprNode::App(kf2, ka2))), n2) } ,
 
-        Ixon::Expr::Lam(_, ty, body) => {
+        Ixon::Expr::Lam(ty, body) => {
           let Lists::Node::Cons(node, n0) = (*(nodes));
           let l = binder_level(node);
           let (kt, bt) = convert_expr(ty, sharing, bound, refs, recur_addrs, univs);
@@ -383,7 +425,7 @@ def convert_annotated := aiur_fn⟦
           };
           ((&(KernelTypes::KExprNode::Lam(kt2, kb2, l))), n2) } ,
 
-        Ixon::Expr::All(_, _, ty, body) => {
+        Ixon::Expr::All(ty, body) => {
           let Lists::Node::Cons(node, n0) = (*(nodes));
           let l = binder_level(node);
           let (kt, bt) = convert_expr(ty, sharing, bound, refs, recur_addrs, univs);
@@ -514,7 +556,7 @@ def convert_definition := aiur_fn⟦
                               univs: Lists::List<&Ixon::Univ>, hint: Field,
                               tbl: Convert::BinderTree, base: Field) -> KernelTypes::KConstantInfo {
       match d {
-        Ixon::Definition::Mk(kind, safety, lvls, typ, value) => {
+        Ixon::Definition::Mk(kind, safety, _, lvls, typ, value) => {
           let ktyp = convert_root(typ, sharing, refs, recur_addrs, univs, tbl, base);
           let kval = convert_root(value, sharing, refs, recur_addrs, univs, tbl, base + 1);
           let nlvls = UInt64::to_field(lvls);
@@ -599,7 +641,7 @@ def convert_constructor := aiur_fn⟦
                                recur_addrs: Lists::List<Bytes::AddressRef>,
                                univs: Lists::List<&Ixon::Univ>, tbl: Convert::BinderTree, base: Field) -> KernelTypes::KConstantInfo {
       match c {
-        Ixon::Constructor::Mk(is_unsafe, lvls, cidx, params, fields, typ) => {
+        Ixon::Constructor::Mk(is_unsafe, lvls, cidx, params, fields, _, typ) => {
           let ktyp = convert_root(typ, sharing, refs, recur_addrs, univs, tbl, base);
           KernelTypes::KConstantInfo::Ctor(
             UInt64::to_field(lvls), ktyp,
