@@ -445,10 +445,10 @@ theorem core_wordShr {w : Width} {la lb : Lir.Arg}
   intro ρl mem p q wa wb ha hb hwa hwb _ _ hra _
   refine ⟨_, _, by
       simp (disch := omega) only [lir_eval, ha, hb, arg_eval_temp hra (t := st.fresh) hsup,
-        arg_eval_temp hra (t := st.fresh + 1) (by omega), ↓reduceIte, if_neg]; try rfl,
+        arg_eval_temp hra (t := st.fresh + 1) (by omega), ↓reduceIte, ite_eq_right]; try rfl,
     wordShr_word w hwa hwb, by simp, fun y hy hyx => by regs_ne⟩
 
-include hF hH hC ho hsup in
+include hF hH hC ho in
 theorem core_wordToNat {w : Width} {la : Lir.Arg}
     (hrun : (primitive f T x (.word w .toNat) [la]).run st = .ok ((), st')) :
     PrimCore lp ctx sup fn (off + st.cur) st.acc.length (off + st'.cur) st'.acc.length x
@@ -459,7 +459,7 @@ theorem core_wordToNat {w : Width} {la : Lir.Arg}
   intro ρl mem p wa ha hwa _ _
   exact ⟨_, _, by simp only [lir_eval, ha]; try rfl, toNat_word hwa, by simp, fun y hy hyx => by regs_ne⟩
 
-include hF hH hC ho hsup in
+include hF hH hC ho in
 theorem core_wordConvert {w w' : Width} {la : Lir.Arg}
     (hrun : (primitive f T x (.word w (.convert w')) [la]).run st = .ok ((), st')) :
     PrimCore lp ctx sup fn (off + st.cur) st.acc.length (off + st'.cur) st'.acc.length x
@@ -493,7 +493,7 @@ theorem core_wordAddN {w : Width} (hw : w ≠ .w64) {la lb : Lir.Arg}
       .assign x (.bin .and .w64 (.v (st.fresh + 1)) (.imm (tagMask w)))])
     hF hH hC ho (by simp [Lir.Stmt.isCall]) ?_
   intro ρl mem p q wa wb ha hb hwa hwb hp hq _ _
-  exact ⟨_, _, by simp (disch := omega) only [lir_eval, ha, hb, ↓reduceIte, if_neg]; try rfl,
+  exact ⟨_, _, by simp (disch := omega) only [lir_eval, ha, hb, ↓reduceIte, ite_eq_right]; try rfl,
     narrowAdd_word hw hwa hwb hp hq, by simp, fun y hy hyx => by regs_ne⟩
 
 include hF hH hC ho hsup in
@@ -508,7 +508,7 @@ theorem core_wordSubN {w : Width} (hw : w ≠ .w64) {la lb : Lir.Arg}
       .assign x (.bin .and .w64 (.v (st.fresh + 1)) (.imm (tagMask w)))])
     hF hH hC ho (by simp [Lir.Stmt.isCall]) ?_
   intro ρl mem p q wa wb ha hb hwa hwb hp hq _ _
-  exact ⟨_, _, by simp (disch := omega) only [lir_eval, ha, hb, ↓reduceIte, if_neg]; try rfl,
+  exact ⟨_, _, by simp (disch := omega) only [lir_eval, ha, hb, ↓reduceIte, ite_eq_right]; try rfl,
     narrowSub_word hw hwa hwb hp hq, by simp, fun y hy hyx => by regs_ne⟩
 
 include hF hH hC ho hsup in
@@ -527,7 +527,7 @@ theorem core_wordMulN {w : Width} (hw : w ≠ .w64) {la lb : Lir.Arg}
   intro ρl mem p q wa wb ha hb hwa hwb hp hq _ hrb
   exact ⟨_, _, by
       simp (disch := omega) only [lir_eval, ha, hb, arg_eval_temp hrb (t := st.fresh) hsup, ↓reduceIte,
-        if_neg]; try rfl,
+        ite_eq_right]; try rfl,
     narrowMul_word hw hwa hwb hp hq, by simp, fun y hy hyx => by regs_ne⟩
 
 include hF hH hC ho hsup in
@@ -547,7 +547,7 @@ theorem core_wordShlN {w : Width} (hw : w ≠ .w64) {la lb : Lir.Arg}
   intro ρl mem p q wa wb ha hb hwa hwb hp hq hra _
   exact ⟨_, _, by
       simp (disch := omega) only [lir_eval, ha, hb, arg_eval_temp hra (t := st.fresh) hsup,
-        arg_eval_temp hra (t := st.fresh + 1) (by omega), ↓reduceIte, if_neg]; try rfl,
+        arg_eval_temp hra (t := st.fresh + 1) (by omega), ↓reduceIte, ite_eq_right]; try rfl,
     narrowShl_word hw hwa hwb hp hq, by simp, fun y hy hyx => by regs_ne⟩
 
 include hF hH hC ho hsup in
@@ -562,7 +562,7 @@ theorem core_wordComplementN {w : Width} (hw : w ≠ .w64) {la : Lir.Arg}
     hF hH hC ho (by simp [Lir.Stmt.isCall]) ?_
   intro ρl mem p wa ha hwa hp _
   have hp' : p < w.size := hp.resolve_left (by simp)
-  exact ⟨_, _, by simp (disch := omega) only [lir_eval, ha, ↓reduceIte, if_neg]; try rfl,
+  exact ⟨_, _, by simp (disch := omega) only [lir_eval, ha, ↓reduceIte, ite_eq_right]; try rfl,
     narrowComplement_word hw hwa hp', by simp, fun y hy hyx => by regs_ne⟩
 
 include hF hH hC ho hsup in
@@ -577,10 +577,10 @@ theorem core_wordNegN {w : Width} (hw : w ≠ .w64) {la : Lir.Arg}
     hF hH hC ho (by simp [Lir.Stmt.isCall]) ?_
   intro ρl mem p wa ha hwa hp _
   have hp' : p < w.size := hp.resolve_left (by simp)
-  exact ⟨_, _, by simp (disch := omega) only [lir_eval, ha, ↓reduceIte, if_neg]; try rfl,
+  exact ⟨_, _, by simp (disch := omega) only [lir_eval, ha, ↓reduceIte, ite_eq_right]; try rfl,
     narrowNeg_word hw hwa hp', by simp, fun y hy hyx => by regs_ne⟩
 
-include hF hH hC ho hsup in
+include hF hH hC ho in
 theorem core_wordOfNatN {w : Width} (hw : w ≠ .w64) {la : Lir.Arg}
     (hrun : (primitive f T x (.word w .ofNat) [la]).run st = .ok ((), st')) :
     PrimCore lp ctx sup fn (off + st.cur) st.acc.length (off + st'.cur) st'.acc.length x
@@ -595,7 +595,7 @@ theorem core_wordOfNatN {w : Width} (hw : w ≠ .w64) {la : Lir.Arg}
 
 /-! ### Width 64 -/
 
-include hF hH hC ho hsup in
+include hF hH hC ho in
 theorem core_wordOfNat64 {la : Lir.Arg}
     (hrun : (primitive f T x (.word .w64 .ofNat) [la]).run st = .ok ((), st')) :
     PrimCore lp ctx sup fn (off + st.cur) st.acc.length (off + st'.cur) st'.acc.length x
@@ -621,7 +621,7 @@ theorem core_wordAdd64 (hl : Labels st) {la lb : Lir.Arg}
   intro ρl mem p q wa wb ha hb hwa hwb _ hrb
   exact ⟨_, _, by
       simp (disch := omega) only [lir_eval, ha, hb, arg_eval_temp hrb (t := st.fresh) hsup, ↓reduceIte,
-        if_neg]; try rfl,
+        ite_eq_right]; try rfl,
     by simp, wideAdd_toNat hwa hwb, fun y hy => by regs_ne⟩
 
 include hF hH hC ho hsup in
@@ -638,7 +638,7 @@ theorem core_wordSub64 (hl : Labels st) {la lb : Lir.Arg}
   intro ρl mem p q wa wb ha hb hwa hwb _ hrb
   exact ⟨_, _, by
       simp (disch := omega) only [lir_eval, ha, hb, arg_eval_temp hrb (t := st.fresh) hsup, ↓reduceIte,
-        if_neg]; try rfl,
+        ite_eq_right]; try rfl,
     by simp, wideSub_toNat hwa hwb, fun y hy => by regs_ne⟩
 
 include hF hH hC ho hsup in
@@ -655,7 +655,7 @@ theorem core_wordMul64 (hl : Labels st) {la lb : Lir.Arg}
   intro ρl mem p q wa wb ha hb hwa hwb _ hrb
   exact ⟨_, _, by
       simp (disch := omega) only [lir_eval, ha, hb, arg_eval_temp hrb (t := st.fresh) hsup, ↓reduceIte,
-        if_neg]; try rfl,
+        ite_eq_right]; try rfl,
     by simp, wideMul_toNat hwa hwb, fun y hy => by regs_ne⟩
 
 include hF hH hC ho hsup in
@@ -673,7 +673,7 @@ theorem core_wordShl64 (hl : Labels st) {la lb : Lir.Arg}
   intro ρl mem p q wa wb ha hb hwa hwb hra _
   exact ⟨_, _, by
       simp (disch := omega) only [lir_eval, ha, hb, arg_eval_temp hra (t := st.fresh) hsup,
-        arg_eval_temp hra (t := st.fresh + 1) (by omega), ↓reduceIte, if_neg]; try rfl,
+        arg_eval_temp hra (t := st.fresh + 1) (by omega), ↓reduceIte, ite_eq_right]; try rfl,
     by simp, wideShl_toNat hwa hwb, fun y hy => by regs_ne⟩
 
 include hF hH hC ho hsup in
@@ -687,7 +687,7 @@ theorem core_wordComplement64 (hl : Labels st) {la : Lir.Arg}
       .assign (st.fresh + 1) (.bin .xor .w64 (.v st.fresh) (.imm 0xFFFFFFFFFFFFFFFF))])
     (r := st.fresh + 1) hF hH hC hl ho (by simp [Lir.Stmt.isCall]) ?_
   intro ρl mem p wa ha hwa _
-  exact ⟨_, _, by simp (disch := omega) only [lir_eval, ha, ↓reduceIte, if_neg]; try rfl,
+  exact ⟨_, _, by simp (disch := omega) only [lir_eval, ha, ↓reduceIte, ite_eq_right]; try rfl,
     by simp, wideComplement_toNat hwa, fun y hy => by regs_ne⟩
 
 include hF hH hC ho hsup in
@@ -701,7 +701,7 @@ theorem core_wordNeg64 (hl : Labels st) {la : Lir.Arg}
       .assign (st.fresh + 1) (.bin .sub .w64 (.imm 0) (.v st.fresh))])
     (r := st.fresh + 1) hF hH hC hl ho (by simp [Lir.Stmt.isCall]) ?_
   intro ρl mem p wa ha hwa _
-  exact ⟨_, _, by simp (disch := omega) only [lir_eval, ha, ↓reduceIte, if_neg]; try rfl,
+  exact ⟨_, _, by simp (disch := omega) only [lir_eval, ha, ↓reduceIte, ite_eq_right]; try rfl,
     by simp, wideNeg_toNat hwa, fun y hy => by regs_ne⟩
 
 end ops
@@ -738,10 +738,10 @@ theorem word_core {T : Tables} {f : Fir.FunId} {lp : Lir.Program} {ctx : Word} {
       · exact core_wordNegN hF hH hC ho hsup hw hrun
     case ofNat =>
       by_cases hw : w = .w64
-      · subst hw; exact core_wordOfNat64 hF hH hC ho hsup hrun
-      · exact core_wordOfNatN hF hH hC ho hsup hw hrun
-    case toNat => exact core_wordToNat hF hH hC ho hsup hrun
-    case convert w' => exact core_wordConvert hF hH hC ho hsup hrun
+      · subst hw; exact core_wordOfNat64 hF hH hC ho hrun
+      · exact core_wordOfNatN hF hH hC ho hw hrun
+    case toNat => exact core_wordToNat hF hH hC ho hrun
+    case convert w' => exact core_wordConvert hF hH hC ho hrun
     all_goals exfalso; word_bad
   · cases o
     case add =>

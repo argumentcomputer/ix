@@ -254,7 +254,7 @@ theorem wide_word {n : Nat} {r : Word} (hr : r.toNat = n) :
     simp only [gt_iff_lt, UInt64.lt_iff_toNat_lt] at hgt
     rw [show (UInt64.toNat 0x7fffffffffffffff) = 2 ^ 63 - 1 from rfl] at hgt
     unfold natWord natLimit
-    rw [if_neg (by omega)]
+    rw [ite_eq_right (by omega)]
 
 section wide
 
