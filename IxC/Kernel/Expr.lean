@@ -188,8 +188,8 @@ instance : Inhabited BinderMeta := ⟨{ pw := .never }⟩
 
 A `BinderMeta` is an object of its own, so building one per binder — in the
 reader, in the annotation pass, at each level instantiation — allocates one
-per binder. Nearly every binder of a Lean-compiled term has the Lean
-fragment's contracts and a parameter-free datum, so the builders below return
+per binder. Nearly every binder of a Lean-compiled term has the default
+modes and a parameter-free datum, so the builders below return
 one of two shared closed objects, or the metadata they were given, where the
 value is the same. Each is proved equal to the plain structure update it
 replaces. -/
@@ -203,7 +203,7 @@ codomain sort is zero at every valuation): one shared object. -/
 def BinderMeta.leanAlways : BinderMeta := { pw := .ifAllZero [] }
 
 /-- An input binder's metadata, `{ pw := .never, contract := c, result := r }`:
-the shared `leanNever` for the Lean fragment's contracts
+the shared `leanNever` for the default modes
 (`BinderMeta.ofContracts_eq`). -/
 @[inline] def BinderMeta.ofContracts (c : Ixon.BinderMode) (r : Ixon.ResultMode) :
     BinderMeta :=
@@ -292,9 +292,9 @@ theorem BinderMeta.withPw_eq (mb : BinderMeta) (pw : PropWhen) :
     · rfl
 
 /-- A binder's share of its node's hash: the hash of `pw`, mixed with the
-contracts' hashes unless they are the Lean fragment's. So the hash is a
-function of all of the binder's identity data, and a Lean-fragment binder
-hashes by `pw` alone. -/
+modes' hashes unless they are the defaults. So the hash is a function of
+all of the binder's identity data, and a binder at the default modes hashes
+by `pw` alone. -/
 @[inline] def BinderMeta.hashData (m : BinderMeta) : UInt64 :=
   if m.contract == .many && m.result == .shared then Hashable.hash m.pw
   else mixHash (Hashable.hash m.pw) (mixHash (hash m.contract) (hash m.result))
@@ -639,7 +639,7 @@ namespace Expr
 
 /-- The node's 32-bit hash (`O(1)`).  The recurrence reads exactly
 what `is_equal` in the official kernel reads (`expr_eq_fn.cpp`) plus
-the validated `pw` datum and the binder contracts
+the validated `pw` datum and the binder modes
 (`BinderMeta.hashData`); there is no display data in a node (task #205),
 so hashing and `DecidableEq` are α-equivalence outright. -/
 @[inline] def hash (e : Expr md) : UInt64 := hashOfData e.data

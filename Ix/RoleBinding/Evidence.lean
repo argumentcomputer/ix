@@ -1,6 +1,7 @@
 module
 
 public import Ix.Ixon
+public import Ix.IxonUniv
 public import Ix.Address.Admission
 public import IxC.Kernel.Ixon.Reader
 
@@ -112,8 +113,56 @@ where
       pure (.prj (← refOf a) i.toUInt64 (← egress uses addrOf x))
     | .fvar .. => throw "a free variable in a proof"
 
+/-- Byte-lexicographic order, a shorter prefix first. -/
+def bytesLt (x y : ByteArray) : Bool := Id.run do
+  for i in [0:min x.size y.size] do
+    if x[i]! < y[i]! then return true
+    if x[i]! > y[i]! then return false
+  return x.size < y.size
+
+/-- `e` with its reference indices (constants and literal blobs) taken
+through `refMap` and its universe indices through `univMap`. -/
+def renumber (refMap univMap : Array UInt64) : Ixon.Expr → Ixon.Expr
+  | .sort u => .sort univMap[u.toNat]!
+  | .ref i us => .ref refMap[i.toNat]! (us.map (univMap[·.toNat]!))
+  | .recur i us => .recur i (us.map (univMap[·.toNat]!))
+  | .prj i f v => .prj refMap[i.toNat]! f (renumber refMap univMap v)
+  | .str i => .str refMap[i.toNat]!
+  | .nat i => .nat refMap[i.toNat]!
+  | .app f a => .app (renumber refMap univMap f) (renumber refMap univMap a)
+  | .lam t b => .lam (renumber refMap univMap t) (renumber refMap univMap b)
+  | .all t b => .all (renumber refMap univMap t) (renumber refMap univMap b)
+  | .letE nd m t v b =>
+    .letE nd m (renumber refMap univMap t) (renumber refMap univMap v) (renumber refMap univMap b)
+  | e => e
+
+/-- The record's tables in the compiler's order (`Ix.preseedExprTables`):
+references ascending by their address bytes, universes in canonical form
+(`Ixon.canonUniv`) ascending by their serialized bytes, each once; the
+expressions renumbered to them. -/
+def canonicalTables (c : Ixon.Constant) : Ixon.Constant := Id.run do
+  let refs := (c.refs.qsort fun a b => a.cmpBytes b == .lt).toList.eraseDups.toArray
+  let refMap := c.refs.map fun a => (refs.idxOf a).toUInt64
+  let keyed := c.univs.map fun u =>
+    let canon := Ixon.canonUniv u
+    (Ixon.runPut (Ixon.putUniv canon), canon)
+  let sorted := keyed.qsort fun (ka, _) (kb, _) => bytesLt ka kb
+  let mut univs : Array Ixon.Univ := #[]
+  let mut keys : Array ByteArray := #[]
+  for (k, u) in sorted do
+    if keys.back? != some k then
+      keys := keys.push k
+      univs := univs.push u
+  let univMap := keyed.map fun (k, _) => (keys.idxOf k).toUInt64
+  let go := renumber refMap univMap
+  let info := match c.info with
+    | .defn d => .defn { d with typ := go d.typ, value := go d.value }
+    | info => info
+  return { c with info, sharing := c.sharing.map go, refs, univs }
+
 /-- **A theorem record** with statement `type` and proof `value`: level
-monomorphic, safe, its constants named through `addrOf`. -/
+monomorphic, safe, its constants named through `addrOf`, its tables in the
+compiler's order (`canonicalTables`). -/
 def theoremRecord {md : Ix.Kernel.Mode} (addrOf : CName md → Option Address) (type value : CExpr md) :
     Except String (Ixon.Constant × Array (Address × ByteArray)) := do
   let uses := ((countUses type *> countUses value).run {}).2
@@ -124,6 +173,6 @@ def theoremRecord {md : Ix.Kernel.Mode} (addrOf : CName md → Option Address) (
   let c : Ixon.Constant :=
     { info := .defn { kind := .thm, safety := .safe, lvls := 0, typ, value := val },
       sharing := eg.sharing, refs := eg.refs, univs := eg.univs }
-  pure (c, eg.blobs)
+  pure (canonicalTables c, eg.blobs)
 
 end Ix.RoleBinding.Evidence
