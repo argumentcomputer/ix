@@ -228,8 +228,9 @@ theorem Canon.enter (h : Canon Γ Δ live joins imm arities) (j : Fir.JoinId) (p
       fun j' C hC => ?_, fun j' m hm => ?_, hn⟩
   · rw [htok, himm]
     by_cases hx : x ∈ Γ.entered live ps
-    · simp only [hx, (hmem x).mp hx, ↓reduceIte]
-    · simp only [hx, (fun h' => hx ((hmem x).mpr h') : ¬(x ∈ live ++ ps ∧ Γ.isImm x = false)), ↓reduceIte]
+    · rw [ite_cond_eq_true _ _ (eq_true hx), ite_cond_eq_true _ _ (eq_true ((hmem x).mp hx))]
+    · rw [ite_cond_eq_false _ _ (eq_false hx),
+        ite_cond_eq_false _ _ (eq_false (fun h' => hx ((hmem x).mpr h')))]
   · have hx' : (Γ.enter live ps).isImm x = true := hx
     simp [hx']
   · by_cases hx' : x ∈ Γ.entered live ps
