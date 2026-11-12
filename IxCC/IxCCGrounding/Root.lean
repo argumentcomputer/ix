@@ -431,4 +431,52 @@ theorem decideRoot_noCanon (hL : LawsNoCanon M) {p : Program} {κ : CId → KKey
     (.enum hd h1) φ ρ X hX
   simpa [hkt] using h
 
+/-! ## The canonicity-free family over #678's fields: `Laws678` for `LawsNoCanon`, with `LitDefs` -/
+
+/-- **Soundness at a root, over #678's fields**: `rootSound_noCanon` with `Laws678` (verbatim copies
+of the five fields of #678's public `Model` the family uses) for `LawsNoCanon`, at a reading whose
+stored `Nat` roles are definitions (`LitDefs`). -/
+theorem rootSound_678 (hL : Laws678 M) {p : Program} {κ : CId → KKey}
+    {lpsOf : CId → List Nat} {ann : IxCC.Src.Relevance.Ann} {Sl : List CId} {root : CId}
+    {args : List FoTy} {res : FoTy}
+    (hG : GroundFacts p env κ lpsOf ann (· ∈ Sl)) (hC : CaseFacts p env κ (· ∈ Sl))
+    (hNC : NoCanon p env κ (· ∈ Sl)) (hLD : LitDefs env)
+    (hR : RootFacts p env κ ann (· ∈ Sl) root args res)
+    (hT : SitesOkRes M p κ lpsOf ann (· ∈ Sl))
+    {k : Nat} {xs : List Value} {es : List KExpr} {v : Value} {o : IxCC.Sem.Obs} {eo : KExpr}
+    (hA : FoArgs p κ args xs es) (hrun : IxCC.Src.run p k root xs = .ok v)
+    (hrb : IxCC.Src.readbackAll p v = some o) (hRT : ResultTag p env κ (· ∈ Sl) res o)
+    (hO : FoObs p κ res o eo) (φ : LevelParam → Nat) (ρ : BVarIdx → V) (X : V)
+    (hX : Denotes M.cval env φ ρ (Expr.mkAppN (.const (κ root) []) es) X) :
+    Denotes M.cval env φ ρ eo X :=
+  rootSound_noCanon (lawsNoCanon_of_678 hL hLD) hG hC hNC hR hT hA hrun hrb hRT hO φ ρ X hX
+
+/-- **`fib`, over #678's fields, with no typing hypothesis.** -/
+theorem fibRoot_678 (hL : Laws678 M) {p : Program} {κ : CId → KKey}
+    {lpsOf : CId → List Nat} {ann : IxCC.Src.Relevance.Ann} {Sl : List CId} {root : CId}
+    (hG : GroundFacts p env κ lpsOf ann (· ∈ Sl)) (hC : CaseFacts p env κ (· ∈ Sl))
+    (hNC : NoCanon p env κ (· ∈ Sl)) (hLD : LitDefs env)
+    (hR : RootFacts p env κ ann (· ∈ Sl) root [.nat] .nat)
+    (hD : DirectFacts p env κ lpsOf ann (· ∈ Sl))
+    {k n : Nat} {v : Value} {w : Nat} (hrun : IxCC.Src.run p k root [.lit n] = .ok v)
+    (hrb : IxCC.Src.readbackAll p v = some (.nat w)) (φ : LevelParam → Nat) (ρ : BVarIdx → V)
+    (X : V) (hX : Denotes M.cval env φ ρ (.app (.const (κ root) []) (litE n)) X) :
+    Denotes M.cval env φ ρ (litE w) X :=
+  fibRoot_noCanon (lawsNoCanon_of_678 hL hLD) hG hC hNC hR hD hrun hrb φ ρ X hX
+
+/-- **`decide (fib 10 = 55)`, over #678's fields, with no typing hypothesis.** -/
+theorem decideRoot_678 (hL : Laws678 M) {p : Program} {κ : CId → KKey}
+    {lpsOf : CId → List Nat} {ann : IxCC.Src.Relevance.Ann} {Sl : List CId} {root boolD : CId}
+    (hb : p.known.bool = some boolD) (hBL : BoolListed p boolD)
+    (hG : GroundFacts p env κ lpsOf ann (· ∈ Sl)) (hC : CaseFacts p env κ (· ∈ Sl))
+    (hNC : NoCanon p env κ (· ∈ Sl)) (hLD : LitDefs env)
+    (hR : RootFacts p env κ ann (· ∈ Sl) root [] (.enum boolD))
+    (hD : DirectFacts p env κ lpsOf ann (· ∈ Sl))
+    (hRT : ResultTag p env κ (· ∈ Sl) (.enum boolD) (.ctor 1 []))
+    {k : Nat} {v : Value} (hrun : IxCC.Src.run p k root [] = .ok v)
+    (hrb : IxCC.Src.readbackAll p v = some (.ctor 1 [])) (φ : LevelParam → Nat)
+    (ρ : BVarIdx → V) (X : V) (hX : Denotes M.cval env φ ρ (.const (κ root) []) X) :
+    Denotes M.cval env φ ρ (.const boolTrueName []) X :=
+  decideRoot_noCanon (lawsNoCanon_of_678 hL hLD) hb hBL hG hC hNC hR hD hRT hrun hrb φ ρ X hX
+
 end IxCC.Grounding

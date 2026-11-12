@@ -1744,6 +1744,7 @@
   "IxCCTests.Sem.Toy.Tick"],
  "grounding_modules":
  ["IxCCGrounding",
+  "IxCCGrounding.Adapt678",
   "IxCCGrounding.Apply",
   "IxCCGrounding.Case",
   "IxCCGrounding.CaseBlind",
@@ -1779,10 +1780,10 @@
   "IxCCGrounding.Syntax",
   "IxCCGrounding.Tele"],
  "grounding_axiom_sha256":
- "38cfa81590de80f92178daa16500d44b8c805dbef8e51871635a0e09c1036361",
- "grounding_axiom_count": 189,
+ "dcfe005edf93d0cc7428fec97d65fcc6499e28e067f4dc8438c4947445dee77b",
+ "grounding_axiom_count": 209,
  "baseline":
- "jcb/ixcc-heap-own: programDomain and contractProgramDomain over sets (Own/Plain/ScopeSet.lean), proved equal to the list forms",
+ "GR13: the canonicity-free family over copies of #678 fields (IxCCGrounding.Adapt678, Laws678, LitDefs); grounding fence 209; merged with 042485f6f",
  "axiom_sha256":
  "c71d9773a6e0279af4b9fbb8a2e98260ab9ac38114ef2b2345be62ea88e5c78e",
  "axiom_count": 6619}

@@ -30,8 +30,8 @@ IxVM side where a law exists there:
 | `defn_value` | `Model.defn_value`, a field, proved | the IxVM side, when it lands on `main` |
 | `iota_rule` | `Model.iota_rule : IotaLaw cval env`, a field, proved | the same |
 | `cval_params` | `Model.cval_params`, a field | the same |
-| `proj_ctor` | scheduled ("the projection of a constructor"); the value form is ours, **restricted** to structures that are not propositions | the IxVM side, scheduled |
-| `nat_accel` | scheduled, over all literals, the fifteen roles | the IxVM side, scheduled |
+| `proj_ctor` | the value form is ours, **restricted** to structures that are not propositions; on `jcb/ixvmc-int` at `d4c079de2` the field `Model.proj_law` (`ProjLaw`), from which `projCtor_of_projLaw` derives it | the IxVM side, by that field |
+| `nat_accel` | over all literals, the fifteen roles; on `jcb/ixvmc-int` at `d4c079de2` the field `Model.lit_ops` (`NatLitLaw`), from which `natAccel_of_litOps` derives it where every stored role is a definition (`LitDefs`) | the IxVM side, by that field and the checked premise |
 | `ctor_canon` | none, and not scheduled by anyone; **restricted** to families that are not propositions | to be decided: the IxVM side, or IxCC from their recursor membership law |
 
 `DenotesList`, `Fits`, `IotaRule` and `IotaLaw` are copied verbatim from theirs
@@ -44,6 +44,22 @@ the conclusion, its graded conjunct dropped), copied from `jcb/ixvmc-int` at `d4
 implies `IotaLaw` (`IotaLawG.toIotaLaw`), so `Laws.iota_rule` is dischargeable from #678's field;
 the theorems that read the guards or `SpineOk` (the `case` lemma without canonicity,
 `IxCCGrounding.CaseBlind`) take it, with `DefnValue` and `CvalParams`, as separate hypotheses.
+
+**#678's fields themselves, copied** (`Laws678`): verbatim copies of the five fields of #678's
+public `Model` the canonicity-free family uses (`defn_value`, `iota_rule` with its graded conjunct,
+`proj_law`, `lit_ops`, `cval_params`) and of the definitions behind them (`GradedBy`, `IotaRule678`,
+`IotaLaw678`, `ProjLaw`, `natArithOps`, `natCmpOps`, `NatLitLaw`), from `jcb/ixvmc-int` at
+`d4c079de2eca6ac8ba38a0aa9f131484e4191f87`, `IxC/Kernel/Denotes.lean`, each with its line range.
+`IxCCGrounding.Adapt678` derives `LawsNoCanon` from them (`lawsNoCanon_of_678`, `NatAccel` under the
+decided premise `LitDefs`), and the canonicity-free root theorems are restated over `Laws678`
+(`rootSound_678` and its corollaries). **At the ingest the copies must be compared again with
+#678's text** and then deleted in favour of theirs, `Laws678 M` being inhabited by any model `M` of
+#678's `Model` from its own fields. If a field's text has moved, what must be re-proved is exactly
+the adapter that reads it: `IotaRule678.toG` (ι), `projCtor_of_projLaw` (`proj_law`),
+`natAccel_of_litOps` and the premise `LitDefs` with its checker (`lit_ops`), `Laws678.defnValue` and
+`Laws678.cvalParams` (δ, level-parameter irrelevance); the root theorems reach the copies only
+through `lawsNoCanon_of_678`. A moved definition that the copies read (`Denotes`, `Fits`,
+`DenotesList`, `SpineOk`, `ProjEntry`, `Expr.stripPis`, the role keys) is compared the same way.
 
 ## What was wrong, and what is assumed now
 
@@ -68,9 +84,10 @@ fact (`NeverProp`: the family's stored sort is never zero).
 
 **Not yet shown**: that `Laws`, in this restricted form, has a model for any environment. Three
 fields are proved on the side that owes them (`defn_value`, `iota_rule`, `cval_params`), two are
-scheduled there (`proj_ctor`, `nat_accel`), and the restricted `ctor_canon` is not scheduled by
-anyone. Until that side's theorem lands, every theorem of this library is conditional on a
-hypothesis whose consistency rests on the arguments written beside each law below.
+derived from fields #678's `Model` states (`proj_ctor` from `proj_law`; `nat_accel` from `lit_ops`
+under the checked premise `LitDefs`), and the restricted `ctor_canon` is not scheduled by anyone.
+Until that side's theorem lands, every theorem of this library is conditional on a hypothesis
+whose consistency rests on the arguments written beside each law below.
 -/
 
 namespace IxCC.Grounding
@@ -324,9 +341,10 @@ theorem lawsCore_of_laws {env : Env md} {M : Model V env} (hL : Laws M) : LawsCo
 | `defn_value` | its field `defn_value`, the same statement |
 | `iota_rule` | its field `iota_rule`, less the graded conjunct (`IotaLawG`) |
 | `cval_params` | its field `cval_params`, the same statement |
-| `proj_ctor` | **not yet derived**: a theorem from its field `proj_law` by an adapter, not written |
-| `nat_accel` | **not yet derived**: its field `lit_ops` gives it where each role's constant is stored as a definition, a premise not yet checked |
--/
+| `proj_ctor` | from its field `proj_law` (`projCtor_of_projLaw`, `IxCCGrounding.Adapt678`) |
+| `nat_accel` | from its field `lit_ops`, under the decided premise `LitDefs` (every `Nat` role key stored is stored as a definition; `natAccel_of_litOps`) |
+
+All five are derived from verbatim copies of #678's fields (`Laws678`, below; `lawsNoCanon_of_678`). -/
 structure LawsNoCanon {env : Env md} (M : Model V env) : Prop where
   defn_value : DefnValue M
   iota_rule : IotaLawG M.cval env
@@ -337,6 +355,170 @@ structure LawsNoCanon {env : Env md} (M : Model V env) : Prop where
 /-- The canonicity-free laws give the core (ι in the landed form, `IotaLawG.toIotaLaw`). -/
 theorem LawsNoCanon.core {env : Env md} {M : Model V env} (hL : LawsNoCanon M) : LawsCore M :=
   ⟨hL.defn_value, hL.iota_rule.toIotaLaw, hL.cval_params, hL.proj_ctor, hL.nat_accel⟩
+
+/-! ### #678's fields, copied (`Laws678`)
+
+Verbatim copies of the definitions behind the five fields of #678's public `Model` that the
+canonicity-free family uses, from `jcb/ixvmc-int` at `d4c079de2eca6ac8ba38a0aa9f131484e4191f87`,
+`IxC/Kernel/Denotes.lean`; each docstring names its line range there. Two names differ from
+theirs: `IotaRule678` and `IotaLaw678` (#678's `IotaRule` and `IotaLaw`), because `IotaRule` and
+`IotaLaw` here name the earlier, unguarded form that `Laws` still takes. Everything the copies read
+(`ProjEntry`, `Env.findProj?`, `Expr.stripPis`, `Expr.mkAppN`, the role keys, `Denotes`, `Fits`,
+`DenotesList`, `SpineOk`) was compared at the same commit and is ours byte for byte modulo the
+`IxC`/`IxCK` rename. -/
+
+/-- **A graded reading** (#678, verbatim: `d4c079de2`, `IxC/Kernel/Denotes.lean:270-279`): every
+application in the term applies a function that denotes a member of a dependent product to an
+argument that denotes a member of the product's domain, through every binder at every member of its
+domain. -/
+def GradedBy (D : (BVarIdx → V) → Expr md → V → Prop) : (BVarIdx → V) → Expr md → Prop
+  | ρ, .app f a => GradedBy D ρ f ∧ GradedBy D ρ a ∧
+      ∃ (r : Nat) (A F X : V) (B : V → V), D ρ f F ∧ D ρ a X ∧ F ∈ˢ piR r A B ∧ X ∈ˢ A ∧
+        (r = 0 → ∀ x, x ∈ˢ A → B x ∈ˢ univ 0)
+  | ρ, .lam ty b _ =>
+    GradedBy D ρ ty ∧ ∀ A, D ρ ty A → ∀ x, x ∈ˢ A → GradedBy D (push x ρ) b
+  | ρ, .forallE ty b _ =>
+    GradedBy D ρ ty ∧ ∀ A, D ρ ty A → ∀ x, x ∈ˢ A → GradedBy D (push x ρ) b
+  | ρ, .proj _ _ e => GradedBy D ρ e
+  | _, _ => True
+
+/-- **ι at one stored rule** (#678's `IotaRule`, verbatim but for the name: `d4c079de2`,
+`IxC/Kernel/Denotes.lean:330-350`). Our `IotaRuleG` is this less the `GradedBy` conjunct
+(`IotaRule678.toG`). -/
+def IotaRule678 (cval : Key md → (LevelParam → Nat) → V) (env : Env md) (r : Key md)
+    (cv : ConstantVal md) (mI rP : Nat) (rl : RecRule md) : Prop :=
+  ∀ (cvC : ConstantVal md) (nP nF : Nat),
+    env.find? rl.ctor = some (.ctorInfo cvC nP nF) →
+    ∀ (us : List Level) (φ : LevelParam → Nat) (ρ σ σC : BVarIdx → V) (xs ys : List V)
+      (dom body RC : Expr md) (m : BinderMeta) (D : Key md) (ls : List Level) (R K X : V),
+      us.length = cv.levelParams.length → xs.length = mI → ys.length = nP + nF →
+      Denotes cval env φ ρ (.const r us) R →
+      Fits cval env φ ρ (cv.type.instantiateLevelParams cv.levelParams us) xs σ
+        (.forallE dom body m) →
+      dom.getAppFn = .const D ls → Denotes cval env φ σ dom X →
+      Denotes cval env φ ρ (.const rl.ctor ls) K →
+      Fits cval env φ ρ (cvC.type.instantiateLevelParams cvC.levelParams ls) ys σC RC →
+      ys.foldl app K ∈ˢ X →
+      (rl.compareParams = true →
+        DenotesList cval env φ σ (dom.getAppArgs.take nP) (ys.take nP)) →
+      (mI ≠ rP → DenotesList cval env φ σC (RC.getAppArgs.drop nP) (xs.drop rP)) →
+      ∃ H, Denotes cval env φ ρ (rl.rhs.instantiateLevelParams cv.levelParams us) H ∧
+        GradedBy (Denotes cval env φ) ρ (rl.rhs.instantiateLevelParams cv.levelParams us) ∧
+        SpineOk H (xs.take rP ++ ys.drop nP) ∧
+        (xs ++ [ys.foldl app K]).foldl app R = (xs.take rP ++ ys.drop nP).foldl app H
+
+/-- **ι at every stored rule** (#678's `IotaLaw`, verbatim but for the two names: `d4c079de2`,
+`IxC/Kernel/Denotes.lean:377-380`). -/
+def IotaLaw678 (cval : Key md → (LevelParam → Nat) → V) (env : Env md) : Prop :=
+  ∀ (r : Key md) (cv : ConstantVal md) (mI rP : Nat) (rules : List (RecRule md))
+    (rl : RecRule md),
+    env.find? r = some (.recInfo cv mI rP rules) → rl ∈ rules → IotaRule678 cval env r cv mI rP rl
+
+/-- **The projection table of a stored structure, and its two laws** (#678, verbatim:
+`d4c079de2`, `IxC/Kernel/Denotes.lean:422-448`): the table is `T`'s; at universe arguments and
+arguments that fit the constructor's type, field `i` of the constructor application is the field,
+under the table's `Prop` guard; structure η. -/
+def ProjLaw (cval : Key md → (LevelParam → Nat) → V) (env : Env md) : Prop :=
+  ∀ (T : Key md) (i : Nat) (entry : ProjEntry md) (cvT : ConstantVal md) (capsT : IndCaps md),
+    env.findProj? T i = some entry → env.find? T = some (.indInfo cvT capsT) →
+    cvT.levelParams = entry.levelParams ∧
+    (∃ bs, cvT.type.stripPis entry.numParams = some (bs, .sort entry.structSort)) ∧
+    ∃ cvC : ConstantVal md,
+      env.find? entry.ctor = some (.ctorInfo cvC entry.numParams entry.numFields) ∧
+      cvC.levelParams = entry.levelParams ∧
+      (∃ bs, cvC.type.stripPis (entry.numParams + entry.numFields) = some (bs,
+        Expr.mkAppN (.const T (entry.levelParams.map .param))
+          ((List.range entry.numParams).map fun k =>
+            .bvar (entry.numFields + entry.numParams - 1 - k)))) ∧
+      ∀ (us : List Level) (φ : LevelParam → Nat) (ρ : BVarIdx → V) (F K : V),
+        us.length = entry.levelParams.length →
+        Denotes cval env φ ρ (.const T us) F → Denotes cval env φ ρ (.const entry.ctor us) K →
+        ((Level.eval (Level.substFn φ entry.levelParams us) entry.structSort = 0 →
+            Level.eval (Level.substFn φ entry.levelParams us) entry.fieldSort = 0) →
+          ∀ (σ : BVarIdx → V) (R : Expr md) (ys : List V),
+            ys.length = entry.numParams + entry.numFields →
+            Fits cval env φ ρ (cvC.type.instantiateLevelParams cvC.levelParams us) ys σ R →
+            field (i + entry.off) (ys.foldl app K) = ys.getD (entry.numParams + i) empty) ∧
+        ∀ (σ : BVarIdx → V) (R : Expr md) (ts : List V) (x : V),
+          ts.length = entry.numParams →
+          Fits cval env φ ρ (cvT.type.instantiateLevelParams cvT.levelParams us) ts σ R →
+          x ∈ˢ ts.foldl app F →
+          x = (ts ++ (List.range entry.numFields).map fun j => field (j + entry.off) x).foldl
+            app K
+
+/-- The binary `Nat` operations with a `Nat` value the kernel computes on literals, at their role
+keys, each with Lean's function (#678, verbatim: `d4c079de2`, `IxC/Kernel/Denotes.lean:453-457`). -/
+def natArithOps : List (Key md × (Nat → Nat → Nat)) :=
+  [(natAddName, Nat.add), (natSubName, Nat.sub), (natMulName, Nat.mul), (natPowName, Nat.pow),
+   (natDivName, Nat.div), (natModName, Nat.mod), (natGcdName, Nat.gcd),
+   (natLandName, Nat.land), (natLorName, Nat.lor), (natXorName, Nat.xor),
+   (natShiftLeftName, Nat.shiftLeft), (natShiftRightName, Nat.shiftRight)]
+
+/-- The two `Nat` comparisons the kernel computes on literals (#678, verbatim: `d4c079de2`,
+`IxC/Kernel/Denotes.lean:461-462`). -/
+def natCmpOps : List (Key md × (Nat → Nat → Bool)) :=
+  [(natBeqName, Nat.beq), (natBleName, Nat.ble)]
+
+/-- **The `Nat` operations on literals compute as Lean's do, at every role a stored definition
+binds** (#678, verbatim: `d4c079de2`, `IxC/Kernel/Denotes.lean:470-487`). -/
+def NatLitLaw (cval : Key md → (LevelParam → Nat) → V) (env : Env md) : Prop :=
+  (∀ (cv : ConstantVal md) (v : Expr md) (hint : ReducibilityHint),
+    env.find? natPredName = some (.defnInfo cv v hint) →
+    ∀ (φ : LevelParam → Nat) (ρ : BVarIdx → V) (a : Nat) (X : V),
+      Denotes cval env φ ρ (.app (.const natPredName []) (.lit (.natVal a))) X →
+      Denotes cval env φ ρ (.lit (.natVal (a - 1))) X) ∧
+  (∀ (c : Key md) (f : Nat → Nat → Nat), (c, f) ∈ natArithOps →
+    ∀ (cv : ConstantVal md) (v : Expr md) (hint : ReducibilityHint),
+    env.find? c = some (.defnInfo cv v hint) →
+    ∀ (φ : LevelParam → Nat) (ρ : BVarIdx → V) (a b : Nat) (X : V),
+      Denotes cval env φ ρ (.app (.app (.const c []) (.lit (.natVal a))) (.lit (.natVal b))) X →
+      Denotes cval env φ ρ (.lit (.natVal (f a b))) X) ∧
+  ∀ (c : Key md) (f : Nat → Nat → Bool), (c, f) ∈ natCmpOps →
+    ∀ (cv : ConstantVal md) (v : Expr md) (hint : ReducibilityHint),
+    env.find? c = some (.defnInfo cv v hint) →
+    ∀ (φ : LevelParam → Nat) (ρ : BVarIdx → V) (a b : Nat) (X : V),
+      Denotes cval env φ ρ (.app (.app (.const c []) (.lit (.natVal a))) (.lit (.natVal b))) X →
+      Denotes cval env φ ρ (.const (if f a b then boolTrueName else boolFalseName) []) X
+
+/-- **The fields of #678's public `Model` the canonicity-free family uses**, verbatim and in #678's
+order (`structure Model`, `d4c079de2`, `IxC/Kernel/Denotes.lean:640`; `cval` written `M.cval`):
+`defn_value` `:673-676`, `iota_rule` `:682`, `proj_law` `:687`, `lit_ops` `:694`, `cval_params`
+`:702-704`. At the ingest, `⟨M.defn_value, M.iota_rule, M.proj_law, M.lit_ops, M.cval_params⟩`
+inhabits it for every model `M` of #678's `Model`. -/
+structure Laws678 {env : Env md} (M : Model V env) : Prop where
+  defn_value : ∀ (cv : ConstantVal md) (value : Expr md) (hint : ReducibilityHint),
+    ConstantInfo.defnInfo cv value hint ∈ env.consts →
+    ∀ (φ : LevelParam → Nat) (ρ : BVarIdx → V),
+      Denotes M.cval env φ ρ value (M.cval cv.name φ)
+  iota_rule : IotaLaw678 M.cval env
+  proj_law : ProjLaw M.cval env
+  lit_ops : NatLitLaw M.cval env
+  cval_params : ∀ (n : Key md) (ci : ConstantInfo md), env.find? n = some ci →
+    ∀ φ₁ φ₂ : LevelParam → Nat, (∀ p ∈ ci.toConstantVal.levelParams, φ₁ p = φ₂ p) →
+      M.cval n φ₁ = M.cval n φ₂
+
+/-- **#678's ι at one rule gives ours** (`IotaRuleG`): drop the `GradedBy` conjunct. -/
+theorem IotaRule678.toG {cval : Key md → (LevelParam → Nat) → V} {env : Env md}
+    {r : Key md} {cv : ConstantVal md} {mI rP : Nat} {rl : RecRule md}
+    (h : IotaRule678 cval env r cv mI rP rl) : IotaRuleG cval env r cv mI rP rl := by
+  intro cvC nP nF hC us φ ρ σ σC xs ys dom body RC m D ls R K X h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 h11
+    h12
+  obtain ⟨H, hH, -, hS, heq⟩ := h cvC nP nF hC us φ ρ σ σC xs ys dom body RC m D ls R K X h1 h2 h3
+    h4 h5 h6 h7 h8 h9 h10 h11 h12
+  exact ⟨H, hH, hS, heq⟩
+
+/-- **#678's ι law gives ours** (`IotaLawG`). -/
+theorem IotaLaw678.toG {cval : Key md → (LevelParam → Nat) → V} {env : Env md}
+    (h : IotaLaw678 cval env) : IotaLawG cval env :=
+  fun r cv mI rP rules rl hf hm => (h r cv mI rP rules rl hf hm).toG
+
+/-- #678's `defn_value` is our `DefnValue` (the same statement). -/
+theorem Laws678.defnValue {env : Env md} {M : Model V env} (hL : Laws678 M) : DefnValue M :=
+  hL.defn_value
+
+/-- #678's `cval_params` is our `CvalParams` (the same statement). -/
+theorem Laws678.cvalParams {env : Env md} {M : Model V env} (hL : Laws678 M) : CvalParams M :=
+  hL.cval_params
 
 end Laws
 

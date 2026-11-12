@@ -2,6 +2,7 @@ import IxCCGrounding.Ground
 import IxCCGrounding.Root
 import IxCCGrounding.Direct.Sites
 import IxCCGrounding.CaseBlind
+import IxCCGrounding.Adapt678
 
 /-! # The grounding library's axiom fence: every theorem presented as proved uses at most
 the three standard axioms. Building the library checks it (`#guard_msgs`). -/
@@ -589,6 +590,68 @@ recursor clause and its implication from the landed one. -/
 /-- info: 'IxCC.Grounding.decideRoot_noCanon' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Grounding.decideRoot_noCanon
 
+/-! #678's fields copied (`Laws678`) and the adapters to the canonicity-free laws (`Adapt678`). -/
+
+/-- info: 'IxCC.Grounding.IotaRule678.toG' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.IotaRule678.toG
+
+/-- info: 'IxCC.Grounding.IotaLaw678.toG' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.IotaLaw678.toG
+
+/-- info: 'IxCC.Grounding.Laws678.defnValue' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.Laws678.defnValue
+
+/-- info: 'IxCC.Grounding.Laws678.cvalParams' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.Laws678.cvalParams
+
+/-- info: 'IxCC.Grounding.litDefs_of_check' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.litDefs_of_check
+
+/-- info: 'IxCC.Grounding.finalSort_of_stripPis' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Grounding.finalSort_of_stripPis
+
+/-- info: 'IxCC.Grounding.projCtor_of_projLaw' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.projCtor_of_projLaw
+
+/-- info: 'IxCC.Grounding.eval2_div' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.eval2_div
+
+/-- info: 'IxCC.Grounding.eval2_mod' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.eval2_mod
+
+/-- info: 'IxCC.Grounding.eval2_shiftLeft' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Grounding.eval2_shiftLeft
+
+/-- info: 'IxCC.Grounding.eval2_shiftRight' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.eval2_shiftRight
+
+/-- info: 'IxCC.Grounding.eval2_beq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.eval2_beq
+
+/-- info: 'IxCC.Grounding.eval2_ble' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Grounding.eval2_ble
+
+/-- info: 'IxCC.Grounding.natAccel_of_litOps' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.natAccel_of_litOps
+
+/-- info: 'IxCC.Grounding.lawsNoCanon_of_678' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.lawsNoCanon_of_678
+
+/-- info: 'IxCC.Grounding.allP_of_check_678' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.allP_of_check_678
+
+/-- info: 'IxCC.Grounding.const_of_check_678' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.const_of_check_678
+
+/-- info: 'IxCC.Grounding.rootSound_678' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.rootSound_678
+
+/-- info: 'IxCC.Grounding.fibRoot_678' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.fibRoot_678
+
+/-- info: 'IxCC.Grounding.decideRoot_678' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.decideRoot_678
+
 /-! **The canonicity-free root theorems conclude exactly what the landed ones do**: each `example`
 states the landed theorem's hypotheses with `LawsNoCanon` for `Laws` and the `NoCanon` fact (or its
 checker) added, and its conclusion copied word for word from the landed theorem, and is proved by
@@ -659,3 +722,76 @@ example (hL : LawsNoCanon M) {p : Program} {κ : CId → KKey} {lpsOf : CId → 
   decideRoot_noCanon hL hb hBL hG hC hNC hR hD hRT hrun hrb φ ρ X hX
 
 end NoCanonConclusions
+
+/-! **The root theorems over #678's fields conclude exactly what the landed ones do**: each `example`
+states the landed canonicity-free theorem's hypotheses with `Laws678` (verbatim copies of #678's
+fields) for `LawsNoCanon` and the decided premise `LitDefs` (or its checker) added, and its conclusion
+copied word for word from the landed theorem, and is proved by the new theorem. -/
+
+section Conclusions678
+
+open IxCC.Grounding Ix.Kernel Ix.Kernel.SetTheory
+open IxCC.Src (Value CId Program Levels)
+
+variable {V : Type} [Ix.Kernel.SetTheory V] {env : KEnv} {M : Model V env}
+
+example (hL : Laws678 M) {p : Program} {κ : CId → KKey} {lpsOf : CId → List Nat}
+    {ann : IxCC.Src.Relevance.Ann} {Sl : List CId}
+    (hchk : groundCheck p env κ lpsOf ann Sl = true) (hnc : noCanonB p env κ Sl = true)
+    (hld : litDefsB env = true)
+    (hT : SitesOkRes M p κ lpsOf ann (· ∈ Sl)) :
+    ∀ k, AllP M p κ lpsOf (· ∈ Sl) (Ok p ann) k :=
+  allP_of_check_678 hL hchk hnc hld hT
+
+example (hL : Laws678 M) {p : Program} {κ : CId → KKey} {lpsOf : CId → List Nat}
+    {ann : IxCC.Src.Relevance.Ann} {Sl : List CId}
+    (hchk : groundCheck p env κ lpsOf ann Sl = true) (hnc : noCanonB p env κ Sl = true)
+    (hld : litDefsB env = true)
+    (hT : SitesOkRes M p κ lpsOf ann (· ∈ Sl))
+    {k : Nat} {ls : Levels} {c : CId} {v : Value} {φ : LevelParam → Nat}
+    (hrun : IxCC.Src.evalConst p k ls c = .ok v) (hc : c ∈ Sl) (hOk : Ok p ann c ls)
+    (hlv : LvAt φ (lpsOf c) ls) :
+    RelV M κ lpsOf (· ∈ Sl) (Ok p ann) v (M.cval (κ c) φ) :=
+  const_of_check_678 hL hchk hnc hld hT hrun hc hOk hlv
+
+example (hL : Laws678 M) {p : Program} {κ : CId → KKey} {lpsOf : CId → List Nat}
+    {ann : IxCC.Src.Relevance.Ann} {Sl : List CId} {root : CId} {args : List FoTy} {res : FoTy}
+    (hG : GroundFacts p env κ lpsOf ann (· ∈ Sl)) (hC : CaseFacts p env κ (· ∈ Sl))
+    (hNC : NoCanon p env κ (· ∈ Sl)) (hLD : LitDefs env)
+    (hR : RootFacts p env κ ann (· ∈ Sl) root args res)
+    (hT : SitesOkRes M p κ lpsOf ann (· ∈ Sl))
+    {k : Nat} {xs : List Value} {es : List KExpr} {v : Value} {o : IxCC.Sem.Obs} {eo : KExpr}
+    (hA : FoArgs p κ args xs es) (hrun : IxCC.Src.run p k root xs = .ok v)
+    (hrb : IxCC.Src.readbackAll p v = some o) (hRT : ResultTag p env κ (· ∈ Sl) res o)
+    (hO : FoObs p κ res o eo) (φ : LevelParam → Nat) (ρ : BVarIdx → V) (X : V)
+    (hX : Denotes M.cval env φ ρ (Expr.mkAppN (.const (κ root) []) es) X) :
+    Denotes M.cval env φ ρ eo X :=
+  rootSound_678 hL hG hC hNC hLD hR hT hA hrun hrb hRT hO φ ρ X hX
+
+example (hL : Laws678 M) {p : Program} {κ : CId → KKey} {lpsOf : CId → List Nat}
+    {ann : IxCC.Src.Relevance.Ann} {Sl : List CId} {root : CId}
+    (hG : GroundFacts p env κ lpsOf ann (· ∈ Sl)) (hC : CaseFacts p env κ (· ∈ Sl))
+    (hNC : NoCanon p env κ (· ∈ Sl)) (hLD : LitDefs env)
+    (hR : RootFacts p env κ ann (· ∈ Sl) root [.nat] .nat)
+    (hD : DirectFacts p env κ lpsOf ann (· ∈ Sl))
+    {k n : Nat} {v : Value} {w : Nat} (hrun : IxCC.Src.run p k root [.lit n] = .ok v)
+    (hrb : IxCC.Src.readbackAll p v = some (.nat w)) (φ : LevelParam → Nat) (ρ : BVarIdx → V)
+    (X : V) (hX : Denotes M.cval env φ ρ (.app (.const (κ root) []) (litE n)) X) :
+    Denotes M.cval env φ ρ (litE w) X :=
+  fibRoot_678 hL hG hC hNC hLD hR hD hrun hrb φ ρ X hX
+
+example (hL : Laws678 M) {p : Program} {κ : CId → KKey} {lpsOf : CId → List Nat}
+    {ann : IxCC.Src.Relevance.Ann} {Sl : List CId} {root boolD : CId}
+    (hb : p.known.bool = some boolD) (hBL : BoolListed p boolD)
+    (hG : GroundFacts p env κ lpsOf ann (· ∈ Sl)) (hC : CaseFacts p env κ (· ∈ Sl))
+    (hNC : NoCanon p env κ (· ∈ Sl)) (hLD : LitDefs env)
+    (hR : RootFacts p env κ ann (· ∈ Sl) root [] (.enum boolD))
+    (hD : DirectFacts p env κ lpsOf ann (· ∈ Sl))
+    (hRT : ResultTag p env κ (· ∈ Sl) (.enum boolD) (.ctor 1 []))
+    {k : Nat} {v : Value} (hrun : IxCC.Src.run p k root [] = .ok v)
+    (hrb : IxCC.Src.readbackAll p v = some (.ctor 1 [])) (φ : LevelParam → Nat)
+    (ρ : BVarIdx → V) (X : V) (hX : Denotes M.cval env φ ρ (.const (κ root) []) X) :
+    Denotes M.cval env φ ρ (.const boolTrueName []) X :=
+  decideRoot_678 hL hb hBL hG hC hNC hLD hR hD hRT hrun hrb φ ρ X hX
+
+end Conclusions678
