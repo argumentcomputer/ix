@@ -248,9 +248,7 @@ def tagsCoincide (env : Ixon.Env) : IO Bool := do
   for (enum, member) in tagEnums do
     let ty ← lookupAddr env enum
     let recA ← lookupAddr env (enum.str "rec")
-    let block : Option Address := match (env.getConst? ty).map (·.info) with
-      | some (.iPrj p) => some p.block
-      | _ => none
+    let block : Option Address := (env.getConst? ty).bind IxVM.Model.projectionBlock?
     let blockOk := block.any env.modelRecords.contains
     let recOk := env.modelRecords.contains recA
     unless blockOk && recOk do
