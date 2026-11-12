@@ -108,7 +108,12 @@ application sites SrcEval evaluates), is assumed only at the sites a checked
 direct route (types read off stored types, a small conversion on the laws)
 refuses (`SitesOkRes`). It refuses none on the two instances, so `fibRoot` and
 `decideRoot` have no typing hypothesis; on the measured corpus it refuses no
-site of any closure the check accepts. One checked hypothesis, `ResultTag`,
+site of any closure the check accepts. Since its widening (G2b: ι and `Nat`
+arithmetic on literals in the conversion, which adds two laws to the ones it
+rests on, string literals, `imax a a`, the fuel per nested argument) it refuses
+22 sites in four closures of the corpus (262 in twenty before), and a `case`
+shape tolerant of a recursor's level-parameter names lets the check accept 24
+of the 48 closures that load (22 before). One checked hypothesis, `ResultTag`,
 still rejects some roots (a `Bool` root returning `false` on the committed
 closures). What remains: a model of the laws (below), widening the fragment
 and the direct route's conversion, `ResultTag`, and progress; the
