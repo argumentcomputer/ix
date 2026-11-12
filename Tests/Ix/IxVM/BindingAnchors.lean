@@ -41,9 +41,9 @@ def fixture (base : Ixon.Env) (table : RoleTable) (illTyped : Bool) : Except Str
   let int ← address table .int
   let original ← address table .intNegSucc
   let discarded ← address table (if illTyped then .trueIntro else .natZero)
-  let typ : Ixon.Expr := .all default default (.ref 0 #[]) (.ref 1 #[])
-  let value : Ixon.Expr := .lam default (.ref 0 #[])
-    (.app (.lam default (.ref 0 #[]) (.app (.ref 2 #[]) (.var 1))) (.ref 3 #[]))
+  let typ : Ixon.Expr := .all (.ref 0 #[]) (.ref 1 #[])
+  let value : Ixon.Expr := .lam (.ref 0 #[])
+    (.app (.lam (.ref 0 #[]) (.app (.ref 2 #[]) (.var 1))) (.ref 3 #[]))
   let (env, helper) := putConstant base (definition typ value #[nat, int, original, discarded])
   let (env, anchor) := putConstant env (definition typ (.ref 2 #[]) #[nat, int, helper])
   let replaced : RoleTable := { table with bound := table.bound.map fun (role, key) =>

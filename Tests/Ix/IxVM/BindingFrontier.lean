@@ -31,10 +31,10 @@ def anchorFixture (base : Ixon.Env) (table : RoleTable)
     (illTyped : Bool) : Except String AnchorFixture := do
   let refs ← #[Role.nat, .char, .charOfNat,
     if illTyped then .trueIntro else .natZero].mapM (address table)
-  let typ : Ixon.Expr := .all default default (.ref 0 #[]) (.ref 1 #[])
+  let typ : Ixon.Expr := .all (.ref 0 #[]) (.ref 1 #[])
   let original : Ixon.Expr := .app (.ref 2 #[]) (.var 1)
-  let erased : Ixon.Expr := .app (.lam default (.ref 0 #[]) original) (.ref 3 #[])
-  let value := .lam default (.ref 0 #[]) erased
+  let erased : Ixon.Expr := .app (.lam (.ref 0 #[]) original) (.ref 3 #[])
+  let value := .lam (.ref 0 #[]) erased
   let (env, helper) := putConstant base (definition typ value refs)
   let (env, anchor) := putConstant env (definition typ (.ref 2 #[]) #[refs[0]!, refs[1]!, helper])
   let replaced : RoleTable := { table with bound := table.bound.map fun (r, key) =>
