@@ -145,17 +145,36 @@ theorem loadValue_enum_cell {enumName : String} {heap : Heap F} {addr : Nat}
     loadValue heap (.ptr (.enum enumName) addr) = .ok (.construct enumName c xs) := by
   simp [loadValue, cell, Value.type, bind, Except.bind, pure, Except.pure]
 
-theorem natCast_lt_inj {a b : Nat} (ha : a < 4294967296) (hb : b < 4294967296)
-    (heq : (a : F) = (b : F)) : a = b := by
+/-- The bound on the offsets the level normalizer stores (`2^40`). Offsets are field
+elements: below this bound, far below the field's characteristic and with room for the
+`+ 1`s the normalizer adds, they are exact natural numbers. The bound is not a 32-bit
+bound: every comparison (`UInt32::less_than_fields`) bounds the values it compares by
+`2^32` itself (`u32LessThanFields_bounded`). -/
+abbrev OB : Nat := 1099511627776
+
+/-- The field's characteristic, the bound on the heights of the levels the smart
+constructors (`level_max`, `level_imax`, `level_reduce`, `level_inst_params`) are proved on:
+their successor counts (`level_offset_of`, `level_explicit_val`) are field elements counted
+one successor at a time, exact below it, and only ever compared (which bounds them by `2^32`
+itself). -/
+abbrev fieldSize : Nat := Aiur.Library.U32.Goldilocks.modulus
+
+/-- Two naturals below the field's characteristic with equal casts are equal. The
+bounds `B₁`, `B₂` are any below the characteristic (`2^32` for parameter indices,
+`OB` for offsets). -/
+theorem natCast_lt_inj {a b B₁ B₂ : Nat} (ha : a < B₁) (hb : b < B₂)
+    (heq : (a : F) = (b : F))
+    (hB₁ : B₁ ≤ Aiur.Library.U32.Goldilocks.modulus := by decide)
+    (hB₂ : B₂ ≤ Aiur.Library.U32.Goldilocks.modulus := by decide) : a = b := by
   rw [ZMod.natCast_eq_natCast_iff'] at heq
-  have hm : (4294967296 : Nat) ≤ Aiur.Library.U32.Goldilocks.modulus := by
-    simp only [Aiur.Library.U32.Goldilocks.modulus]; omega
   rwa [Nat.mod_eq_of_lt (by omega), Nat.mod_eq_of_lt (by omega)] at heq
 
-theorem natCast_sub_eq_zero_iff {a b : Nat} (ha : a < 4294967296) (hb : b < 4294967296) :
+theorem natCast_sub_eq_zero_iff {a b B₁ B₂ : Nat} (ha : a < B₁) (hb : b < B₂)
+    (hB₁ : B₁ ≤ Aiur.Library.U32.Goldilocks.modulus := by decide)
+    (hB₂ : B₂ ≤ Aiur.Library.U32.Goldilocks.modulus := by decide) :
     ((a : F) - (b : F) = 0) ↔ a = b := by
   rw [sub_eq_zero]
-  exact ⟨natCast_lt_inj ha hb, fun h => h ▸ rfl⟩
+  exact ⟨fun h => natCast_lt_inj ha hb h hB₁ hB₂, fun h => h ▸ rfl⟩
 
 /-! ## `RepKLevel`: Heap Representation of `Ix.Kernel.Level` -/
 
@@ -421,11 +440,12 @@ theorem RepGuardList.allocCons {h : Heap F} {g : Nat} {gs : List Nat}
   have ext := Heap.Extends.snoc h (.construct guardListEnum "Cons" [.field (g : F), gsPtr])
   exact ⟨.cons (by simp) ⟨hg, rfl⟩ (repGs.mono ext), ext⟩
 
-/-- Heap representation of `KernelLevels::NLVar` (`&NLVar`). -/
+/-- Heap representation of `KernelLevels::NLVar` (`&NLVar`): a 32-bit parameter index and an
+offset below `OB`. -/
 inductive RepNLVar (h : Heap F) : NLVar → SourceValue F → Prop where
   | mk {addr : Nat} {v : NLVar}
       (hparam : v.param < 4294967296)
-      (hoff : v.offset < 4294967296)
+      (hoff : v.offset < OB)
       (cell : h[addr]? = some (.construct nlVarEnum "Mk" [.field (v.param : F), .field (v.offset : F)])) :
       RepNLVar h v (.ptr (.enum nlVarEnum) addr)
 
@@ -454,7 +474,7 @@ theorem RepNLVar.det {h : Heap F} {a b : NLVar} {ptr : SourceValue F}
       simp only [NLVar.mk.injEq] at *
       exact ⟨natCast_lt_inj hpa hpb hp', natCast_lt_inj hoa hob ho'⟩
 
-theorem RepNLVar.alloc {p o : Nat} (hp : p < 4294967296) (ho : o < 4294967296) (h : Heap F) :
+theorem RepNLVar.alloc {p o : Nat} (hp : p < 4294967296) (ho : o < OB) (h : Heap F) :
     let node : SourceValue F := .construct nlVarEnum "Mk" [.field (p : F), .field (o : F)]
     let ptr : SourceValue F := .ptr (.enum nlVarEnum) h.length
     let h' : Heap F := h ++ [node]
@@ -489,10 +509,10 @@ theorem RepNLVarList.allocCons {h : Heap F} {v : NLVar} {vs : List NLVar}
   have ext := Heap.Extends.snoc h (.construct nlVarListEnum "Cons" [vPtr, vsPtr])
   exact ⟨.cons (by simp) (repV.mono ext) (repVs.mono ext), ext⟩
 
-/-- Heap representation of `KernelLevels::NLEntry` (`&NLEntry`). -/
+/-- Heap representation of `KernelLevels::NLEntry` (`&NLEntry`): a constant part below `OB`. -/
 inductive RepNLEntry (h : Heap F) : NLEntry → SourceValue F → Prop where
   | mk {addr : Nat} {e : NLEntry} {gPtr vPtr : SourceValue F}
-      (hconst : e.constPart < 4294967296)
+      (hconst : e.constPart < OB)
       (cell : h[addr]? = some (.construct nlEntryEnum "Mk" [gPtr, .field (e.constPart : F), vPtr]))
       (repG : RepGuardList h e.guards gPtr)
       (repV : RepNLVarList h e.vars vPtr) :
@@ -529,7 +549,7 @@ theorem RepNLEntry.det {h : Heap F} {a b : NLEntry} {ptr : SourceValue F}
       exact ⟨hguards, hconst, hvars⟩
 
 theorem RepNLEntry.alloc {h : Heap F} {e : NLEntry} {gPtr vPtr : SourceValue F}
-    (hc : e.constPart < 4294967296) (repG : RepGuardList h e.guards gPtr)
+    (hc : e.constPart < OB) (repG : RepGuardList h e.guards gPtr)
     (repV : RepNLVarList h e.vars vPtr) :
     let node : SourceValue F := .construct nlEntryEnum "Mk" [gPtr, .field (e.constPart : F), vPtr]
     let ptr : SourceValue F := .ptr (.enum nlEntryEnum) h.length
@@ -3248,10 +3268,12 @@ We now establish direct `EvalFn W` refinement theorems connecting the compiled
 heap representation predicates (`RepKLevel`, `RepKLevelList`, `RepGuardList`,
 `RepNLVarList`, `RepNLEntry`, `RepNLEntries`). -/
 
-/-- `EvalFn W` refinement for `Fields::is_zero` on `a - b` for 32-bit `Nat`s. -/
+/-- `EvalFn W` refinement for `Fields::is_zero` on `a - b` for `Nat`s below the characteristic. -/
 theorem fieldsIsZero_sub_refines {h h' : Heap F} {r : SourceValue F}
-    {a b : Nat} (ha : a < 4294967296) (hb : b < 4294967296)
-    (ev : EvalFn W "Fields::is_zero" [.field ((a : F) - (b : F))] h r h') :
+    {a b B₁ B₂ : Nat} (ha : a < B₁) (hb : b < B₂)
+    (ev : EvalFn W "Fields::is_zero" [.field ((a : F) - (b : F))] h r h')
+    (hB₁ : B₁ ≤ Aiur.Library.U32.Goldilocks.modulus := by decide)
+    (hB₂ : B₂ ≤ Aiur.Library.U32.Goldilocks.modulus := by decide) :
     r = .field (if a == b then 1 else 0) ∧ h' = h := by
   have ev := ev.function_inv (IxVM.Fields.is_zero.lookup)
     (by simp [IxVM.Fields.is_zero, ControlLower.hasControl])
@@ -3261,22 +3283,24 @@ theorem fieldsIsZero_sub_refines {h h' : Heap F} {r : SourceValue F}
   rcases selectArm_literal_inv hsel with ⟨heq0, rfl, rfl⟩ | ⟨hne0, hsel⟩
   · rcases ev.literal_inv with ⟨rfl, rfl⟩
     injection heq0 with hsub
-    have hab : a = b := (natCast_sub_eq_zero_iff ha hb).mp hsub
+    have hab : a = b := (natCast_sub_eq_zero_iff ha hb hB₁ hB₂).mp hsub
     subst hab
     simp
   · rcases selectArm_wildcard_inv hsel with ⟨rfl, rfl⟩
     rcases ev.literal_inv with ⟨rfl, rfl⟩
-    have hab : a ≠ b := fun h => hne0 (congrArg Value.field ((natCast_sub_eq_zero_iff ha hb).mpr h))
+    have hab : a ≠ b := fun h =>
+      hne0 (congrArg Value.field ((natCast_sub_eq_zero_iff ha hb hB₁ hB₂).mpr h))
     simp [hab]
 
-/-- `EvalFn W` refinement for `Fields::is_zero` on `(a : F)` for a 32-bit `Nat`. -/
+/-- `EvalFn W` refinement for `Fields::is_zero` on `(a : F)` for a `Nat` below the characteristic. -/
 theorem fieldsIsZero_nat_refines {h h' : Heap F} {r : SourceValue F}
-    {a : Nat} (ha : a < 4294967296)
-    (ev : EvalFn W "Fields::is_zero" [.field (a : F)] h r h') :
+    {a B : Nat} (ha : a < B)
+    (ev : EvalFn W "Fields::is_zero" [.field (a : F)] h r h')
+    (hB : B ≤ Aiur.Library.U32.Goldilocks.modulus := by decide) :
     r = .field (if a == 0 then 1 else 0) ∧ h' = h := by
   have hsub : (a : F) = (a : F) - ((0 : Nat) : F) := by simp
   rw [hsub] at ev
-  exact fieldsIsZero_sub_refines ha (by decide) ev
+  exact fieldsIsZero_sub_refines (B₂ := 1) ha (by decide) ev hB (by decide)
 
 @[simp] theorem guardList_ctor :
     constructorName [] (.named "Lists::Node" [.field]) = guardListEnum :=
@@ -3594,35 +3618,59 @@ theorem u32LessThanFields_complete : Mirrors.«UInt32::less_than_fields».Comple
   have hb_lt' : Aiur.Library.U32.pack b0 b1 b2 b3 < 4294967296 := hb_lt
   simp [ha_lt', hb_lt', hcmp]
 
-/-- `EvalFn W` refinement for `UInt32::less_than_fields` on bounded `Nat` values `≤ 4294967296`. -/
-theorem u32LessThanFields_le_refines {h h' : Heap F} {r : SourceValue F} {a b : Nat}
-    (ha : a ≤ 4294967296) (hb : b ≤ 4294967296)
+/-- **`UInt32::less_than_fields` bounds its own inputs.** A derivation on `(a : F)` and
+`(b : F)`, for naturals below the field's characteristic, exists only when both are below
+`2^32` (the circuit constrains each to the compaction of four bytes), and it answers
+`a < b`. So a comparison needs no 32-bit bound on its inputs beforehand: its success
+supplies it. -/
+theorem u32LessThanFields_bounded {h h' : Heap F} {r : SourceValue F} {a b : Nat}
+    (ha : a < Aiur.Library.U32.Goldilocks.modulus) (hb : b < Aiur.Library.U32.Goldilocks.modulus)
     (ev : EvalFn W "UInt32::less_than_fields" [.field (a : F), .field (b : F)] h r h') :
-    r = .field (if a < b then 1 else 0) ∧ h' = h := by
+    a < 4294967296 ∧ b < 4294967296 ∧ r = .field (if a < b then 1 else 0) ∧ h' = h := by
   obtain ⟨k0, hk0⟩ := u32LessThanFields_complete ev
   have run := hk0 (k0 + 1) (by omega)
-  simp only [Mirrors.«UInt32::less_than_fields», zmod_val_natCast_of_le ha,
-    zmod_val_natCast_of_le hb] at run
+  have hva : ((a : F)).val = a := ZMod.val_natCast_of_lt ha
+  have hvb : ((b : F)).val = b := ZMod.val_natCast_of_lt hb
+  simp only [Mirrors.«UInt32::less_than_fields», hva, hvb] at run
   by_cases hlt : a < 4294967296 ∧ b < 4294967296
   · simp only [hlt.1, hlt.2, and_self, ↓reduceIte, Option.some.injEq, Prod.mk.injEq] at run
-    exact ⟨run.1.symm, run.2.symm⟩
+    exact ⟨hlt.1, hlt.2, run.1.symm, run.2.symm⟩
   · simp [hlt] at run
 
-/-- `EvalFn W` refinement for `UInt32::less_than_fields` on 32-bit `Nat` values `< 4294967296`. -/
-theorem u32LessThanFields_refines {h h' : Heap F} {r : SourceValue F} {a b : Nat}
-    (ha : a < 4294967296) (hb : b < 4294967296)
-    (ev : EvalFn W "UInt32::less_than_fields" [.field (a : F), .field (b : F)] h r h') :
+/-- `EvalFn W` refinement for `UInt32::less_than_fields` on `Nat` values `≤ B₁`, `≤ B₂`, the
+bounds below the field's characteristic. -/
+theorem u32LessThanFields_le_refines {h h' : Heap F} {r : SourceValue F} {a b B₁ B₂ : Nat}
+    (ha : a ≤ B₁) (hb : b ≤ B₂)
+    (ev : EvalFn W "UInt32::less_than_fields" [.field (a : F), .field (b : F)] h r h')
+    (hB₁ : B₁ < Aiur.Library.U32.Goldilocks.modulus := by decide)
+    (hB₂ : B₂ < Aiur.Library.U32.Goldilocks.modulus := by decide) :
     r = .field (if a < b then 1 else 0) ∧ h' = h :=
-  u32LessThanFields_le_refines (Nat.le_of_lt ha) (Nat.le_of_lt hb) ev
+  let ⟨_, _, hr, hh⟩ := u32LessThanFields_bounded (by omega) (by omega) ev
+  ⟨hr, hh⟩
 
-/-- `EvalFn W` refinement for `UInt32::less_than_fields` on `(a : F) + 1` and `(b : F)` when `a, b < 4294967296`. -/
-theorem u32LessThanFields_add_one_left_refines {h h' : Heap F} {r : SourceValue F} {a b : Nat}
-    (ha : a < 4294967296) (hb : b < 4294967296)
-    (ev : EvalFn W "UInt32::less_than_fields" [.field ((a : F) + 1), .field (b : F)] h r h') :
+/-- `EvalFn W` refinement for `UInt32::less_than_fields` on `Nat` values `< B₁`, `< B₂` (32-bit
+parameter indices, `OB`-bounded offsets, any bound up to the characteristic). -/
+theorem u32LessThanFields_refines {h h' : Heap F} {r : SourceValue F} {a b B₁ B₂ : Nat}
+    (ha : a < B₁) (hb : b < B₂)
+    (ev : EvalFn W "UInt32::less_than_fields" [.field (a : F), .field (b : F)] h r h')
+    (hB₁ : B₁ ≤ Aiur.Library.U32.Goldilocks.modulus := by decide)
+    (hB₂ : B₂ ≤ Aiur.Library.U32.Goldilocks.modulus := by decide) :
+    r = .field (if a < b then 1 else 0) ∧ h' = h :=
+  let ⟨_, _, hr, hh⟩ := u32LessThanFields_bounded (by omega) (by omega) ev
+  ⟨hr, hh⟩
+
+/-- `EvalFn W` refinement for `UInt32::less_than_fields` on `(a : F) + 1` and `(b : F)` when
+`a < B₁`, `b < B₂`, with `B₁ + 1` and `B₂` up to the characteristic. -/
+theorem u32LessThanFields_add_one_left_refines {h h' : Heap F} {r : SourceValue F}
+    {a b B₁ B₂ : Nat} (ha : a < B₁) (hb : b < B₂)
+    (ev : EvalFn W "UInt32::less_than_fields" [.field ((a : F) + 1), .field (b : F)] h r h')
+    (hB₁ : B₁ < Aiur.Library.U32.Goldilocks.modulus := by decide)
+    (hB₂ : B₂ ≤ Aiur.Library.U32.Goldilocks.modulus := by decide) :
     r = .field (if a + 1 < b then 1 else 0) ∧ h' = h := by
   have hcast : ((a : F) + 1) = (((a + 1 : Nat) : F)) := by push_cast; rfl
   rw [hcast] at ev
-  exact u32LessThanFields_le_refines (by omega) (Nat.le_of_lt hb) ev
+  obtain ⟨_, _, hr, hh⟩ := u32LessThanFields_bounded (by omega) (by omega) ev
+  exact ⟨hr, hh⟩
 
 theorem selectArm_ite_one_wildcard {types : Types} {h : Heap F} {P : Prop} [Decidable P]
     {e1 e0 : Generic.Expr F} {bs : Environment F Nat} {body : Generic.Expr F}
@@ -3718,53 +3766,60 @@ theorem selectArm_bool_zero_one {types : Types} {h : Heap F} {b : Bool}
   · exact .inl ⟨Bool.eq_false_iff.mpr hnb, h1, h2⟩
   · exact .inr ⟨hb, h1, h2⟩
 
-theorem selectArm_sub_zero_wildcard {types : Types} {h : Heap F} {a b : Nat}
-    (ha : a < 4294967296) (hb : b < 4294967296)
+theorem selectArm_sub_zero_wildcard {types : Types} {h : Heap F} {a b B₁ B₂ : Nat}
+    (ha : a < B₁) (hb : b < B₂)
     {e0 e1 : Generic.Expr F} {bs : Environment F Nat} {body : Generic.Expr F}
     (sel : SourceSemantics.selectArm W types h (.field ((a : F) - (b : F)))
-      [(.literal 0, e0), (.wildcard, e1)] = .ok (some (bs, body))) :
+      [(.literal 0, e0), (.wildcard, e1)] = .ok (some (bs, body)))
+    (hB₁ : B₁ ≤ Aiur.Library.U32.Goldilocks.modulus := by decide)
+    (hB₂ : B₂ ≤ Aiur.Library.U32.Goldilocks.modulus := by decide) :
     (a = b ∧ bs = [] ∧ body = e0) ∨ (a ≠ b ∧ bs = [] ∧ body = e1) := by
   rcases selectArm_literal_inv sel with ⟨heq, rfl, rfl⟩ | ⟨hne, sel⟩
   · injection heq with hsub
-    exact .inl ⟨(natCast_sub_eq_zero_iff ha hb).mp hsub, rfl, rfl⟩
+    exact .inl ⟨(natCast_sub_eq_zero_iff ha hb hB₁ hB₂).mp hsub, rfl, rfl⟩
   · obtain ⟨rfl, rfl⟩ := selectArm_wildcard_inv sel
-    refine .inr ⟨fun h => hne (congrArg Value.field ((natCast_sub_eq_zero_iff ha hb).mpr h)), rfl, rfl⟩
+    refine .inr ⟨fun h => hne (congrArg Value.field
+      ((natCast_sub_eq_zero_iff ha hb hB₁ hB₂).mpr h)), rfl, rfl⟩
 
-theorem selectArm_nat_zero_wildcard {types : Types} {h : Heap F} {n : Nat}
-    (hn : n ≤ 4294967296)
+theorem selectArm_nat_zero_wildcard {types : Types} {h : Heap F} {n B : Nat}
+    (hn : n ≤ B)
     {e0 e1 : Generic.Expr F} {bs : Environment F Nat} {body : Generic.Expr F}
     (sel : SourceSemantics.selectArm W types h (.field (n : F))
-      [(.literal 0, e0), (.wildcard, e1)] = .ok (some (bs, body))) :
+      [(.literal 0, e0), (.wildcard, e1)] = .ok (some (bs, body)))
+    (hB : B < Aiur.Library.U32.Goldilocks.modulus := by decide) :
     (n = 0 ∧ bs = [] ∧ body = e0) ∨ (n ≠ 0 ∧ bs = [] ∧ body = e1) := by
+  have hval : ((n : F)).val = n := ZMod.val_natCast_of_lt (by omega)
   rcases selectArm_literal_inv sel with ⟨heq, rfl, rfl⟩ | ⟨hne, sel⟩
   · injection heq with h0
     have hn0 : n = 0 := by
       have hv := congrArg ZMod.val h0
-      simpa [zmod_val_natCast_of_le hn] using hv
+      simpa [hval] using hv
     exact .inl ⟨hn0, rfl, rfl⟩
   · obtain ⟨rfl, rfl⟩ := selectArm_wildcard_inv sel
     refine .inr ⟨fun h => by subst h; exact hne (by simp), rfl, rfl⟩
 
-theorem selectArm_nat_zero_one_wildcard {types : Types} {h : Heap F} {n : Nat}
-    (hn : n < 4294967296)
+theorem selectArm_nat_zero_one_wildcard {types : Types} {h : Heap F} {n B : Nat}
+    (hn : n < B)
     {e0 e1 e2 : Generic.Expr F} {bs : Environment F Nat} {body : Generic.Expr F}
     (sel : SourceSemantics.selectArm W types h (.field (n : F))
-      [(.literal 0, e0), (.literal 1, e1), (.wildcard, e2)] = .ok (some (bs, body))) :
+      [(.literal 0, e0), (.literal 1, e1), (.wildcard, e2)] = .ok (some (bs, body)))
+    (hB : B ≤ Aiur.Library.U32.Goldilocks.modulus := by decide) :
     (n = 0 ∧ bs = [] ∧ body = e0) ∨
     (n = 1 ∧ bs = [] ∧ body = e1) ∨
     (n ≠ 0 ∧ n ≠ 1 ∧ bs = [] ∧ body = e2) := by
+  have hval : ((n : F)).val = n := ZMod.val_natCast_of_lt (by omega)
   rcases selectArm_literal_inv sel with ⟨heq0, rfl, rfl⟩ | ⟨hne0, sel⟩
   · injection heq0 with h0
     have hn0 : n = 0 := by
       have hv := congrArg ZMod.val h0
-      simpa [zmod_val_natCast_of_le (Nat.le_of_lt hn)] using hv
+      simpa [hval] using hv
     exact .inl ⟨hn0, rfl, rfl⟩
   · rcases selectArm_literal_inv sel with ⟨heq1, rfl, rfl⟩ | ⟨hne1, sel⟩
     · injection heq1 with h1
       have hn1 : n = 1 := by
         have hv := congrArg ZMod.val h1
         have h1_val : ((1 : F)).val = 1 := zmod_val_natCast_of_le (n := 1) (by decide)
-        rw [zmod_val_natCast_of_le (Nat.le_of_lt hn), h1_val] at hv
+        rw [hval, h1_val] at hv
         exact hv
       exact .inr (.inl ⟨hn1, rfl, rfl⟩)
     · obtain ⟨rfl, rfl⟩ := selectArm_wildcard_inv sel
@@ -3791,7 +3846,7 @@ theorem selectArm_glistCmp {types : Types} {h : Heap F} (a b : List Nat)
     (glistCmp a b = 1 ∧ bs = [] ∧ body = e1) ∨
     (glistCmp a b = 2 ∧ bs = [] ∧ body = e2) := by
   have hlt := glistCmp_lt_three a b
-  rcases selectArm_nat_zero_one_wildcard (by omega) sel with h0 | h1 | ⟨hne0, hne1, hbs, hbody⟩
+  rcases selectArm_nat_zero_one_wildcard hlt sel with h0 | h1 | ⟨hne0, hne1, hbs, hbody⟩
   · exact .inl h0
   · exact .inr (.inl h1)
   · exact .inr (.inr ⟨by omega, hbs, hbody⟩)
@@ -3803,7 +3858,7 @@ theorem selectArm_glistCmp_zero_wildcard {types : Types} {h : Heap F} (a b : Lis
     (glistCmp a b = 0 ∧ bs = [] ∧ body = e0) ∨
     (glistCmp a b ≠ 0 ∧ bs = [] ∧ body = e1) := by
   have hlt := glistCmp_lt_three a b
-  exact selectArm_nat_zero_wildcard (by omega) sel
+  exact selectArm_nat_zero_wildcard (Nat.le_of_lt hlt) sel
 
 
 theorem evalExpr_match_load_var_enum {types : Types} {locals : Environment F Nat}
@@ -4597,7 +4652,7 @@ theorem levelExplicitVal_refines {h h' : Heap F} {l : Ix.Kernel.Level}
 theorem levelMaxOffsets_refines {h h' : Heap F} {a b : Ix.Kernel.Level}
     {ptrA ptrB r : SourceValue F}
     (repA : RepKLevel h a ptrA) (repB : RepKLevel h b ptrB)
-    (ha : levelDepth a < 4294967296) (hb : levelDepth b < 4294967296)
+    (ha : levelDepth a < fieldSize) (hb : levelDepth b < fieldSize)
     (ev : EvalFn W "KernelLevels::level_max_offsets" [ptrA, ptrB] h r h') :
     RepKLevel h' (levelMaxOffsets a b) r ∧ Heap.Extends h h' := by
   have ev := ev.function_inv (IxVM.KernelLevels.level_max_offsets.lookup)
@@ -4634,9 +4689,9 @@ theorem levelMaxOffsets_refines {h h' : Heap F} {a b : Ix.Kernel.Level}
     obtain ⟨⟨⟩, rfl⟩ := dVarOffA.var_inv'
     obtain ⟨⟨⟩, rfl⟩ := dVarOffB.var_inv'
     simp only [instanceName] at dFn4
-    have hoffA : (levelOffsetOf a).2 < 4294967296 :=
+    have hoffA : (levelOffsetOf a).2 < fieldSize :=
       Nat.lt_of_le_of_lt (levelOffsetOf_le_depth a) ha
-    have hoffB : (levelOffsetOf b).2 < 4294967296 :=
+    have hoffB : (levelOffsetOf b).2 < fieldSize :=
       Nat.lt_of_le_of_lt (levelOffsetOf_le_depth b) hb
     obtain ⟨rfl, rfl⟩ := u32LessThanFields_refines hoffA hoffB dFn4
     rcases selectArm_ite_one_zero sel4 with ⟨hlt, rfl, rfl⟩ | ⟨hnlt, rfl, rfl⟩
@@ -4698,7 +4753,7 @@ theorem levelMaxSubsumes_refines {h h' : Heap F} {m x : Ix.Kernel.Level}
 theorem levelMaxGo_refines {h h' : Heap F} {a b : Ix.Kernel.Level}
     {ptrA ptrB r : SourceValue F}
     (repA : RepKLevel h a ptrA) (repB : RepKLevel h b ptrB)
-    (ha : levelDepth a < 4294967296) (hb : levelDepth b < 4294967296)
+    (ha : levelDepth a < fieldSize) (hb : levelDepth b < fieldSize)
     (ev : EvalFn W "KernelLevels::level_max_go" [ptrA, ptrB] h r h') :
     RepKLevel h' (levelMaxGo a b) r ∧ Heap.Extends h h' := by
   have ev := ev.function_inv (IxVM.KernelLevels.level_max_go.lookup)
@@ -4777,7 +4832,7 @@ theorem levelMaxGo_refines {h h' : Heap F} {a b : Ix.Kernel.Level}
 theorem levelMax_refines {h h' : Heap F} {a b : Ix.Kernel.Level}
     {ptrA ptrB r : SourceValue F}
     (repA : RepKLevel h a ptrA) (repB : RepKLevel h b ptrB)
-    (ha : levelDepth a < 4294967296) (hb : levelDepth b < 4294967296)
+    (ha : levelDepth a < fieldSize) (hb : levelDepth b < fieldSize)
     (ev : EvalFn W "KernelLevels::level_max" [ptrA, ptrB] h r h') :
     RepKLevel h' (levelMax a b) r ∧ Heap.Extends h h' := by
   have ev := ev.function_inv (IxVM.KernelLevels.level_max.lookup)
@@ -4800,8 +4855,8 @@ theorem levelMax_refines {h h' : Heap F} {a b : Ix.Kernel.Level}
       obtain ⟨⟨⟩, rfl⟩ := dVarNA.var_inv'
       obtain ⟨⟨⟩, rfl⟩ := dVarNB.var_inv'
       simp only [instanceName] at dFn3
-      have hna_lt : na < 4294967296 := (levelExplicitVal_le_depth hna).symm ▸ ha
-      have hnb_lt : nb < 4294967296 := (levelExplicitVal_le_depth hnb).symm ▸ hb
+      have hna_lt : na < fieldSize := (levelExplicitVal_le_depth hna).symm ▸ ha
+      have hnb_lt : nb < fieldSize := (levelExplicitVal_le_depth hnb).symm ▸ hb
       obtain ⟨rfl, rfl⟩ := u32LessThanFields_refines hna_lt hnb_lt dFn3
       rcases selectArm_ite_one_zero sel3 with ⟨hlt, rfl, rfl⟩ | ⟨hnlt, rfl, rfl⟩
       · obtain ⟨⟨⟩, rfl⟩ := dArm3.var_inv'
@@ -4827,7 +4882,7 @@ theorem levelMax_refines {h h' : Heap F} {a b : Ix.Kernel.Level}
 theorem levelIMax_refines {h h' : Heap F} {a b : Ix.Kernel.Level}
     {ptrA ptrB r : SourceValue F}
     (repA : RepKLevel h a ptrA) (repB : RepKLevel h b ptrB)
-    (ha : levelDepth a < 4294967296) (hb : levelDepth b < 4294967296)
+    (ha : levelDepth a < fieldSize) (hb : levelDepth b < fieldSize)
     (ev : EvalFn W "KernelLevels::level_imax" [ptrA, ptrB] h r h') :
     RepKLevel h' (levelIMax a b) r ∧ Heap.Extends h h' := by
   have ev := ev.function_inv (IxVM.KernelLevels.level_imax.lookup)
@@ -5021,7 +5076,7 @@ theorem listsLookup_refines {h h' : Heap F} {ls : List Ix.Kernel.Level}
 theorem levelInstParams_refines {h h' : Heap F} {l : Ix.Kernel.Level}
     {params : List Ix.Kernel.Level} {ptrL ptrParams r : SourceValue F}
     (repL : RepKLevel h l ptrL) (repParams : RepKLevelList h params ptrParams)
-    (hd : levelDepth l + maxLevelDepth params < 4294967296)
+    (hd : levelDepth l + maxLevelDepth params < fieldSize)
     (ev : EvalFn W "KernelLevels::level_inst_params" [ptrL, ptrParams] h r h') :
     ParamsLt params.length l ∧ RepKLevel h' (substLevel l params) r ∧ Heap.Extends h h' := by
   induction l generalizing h h' ptrL ptrParams r with
@@ -5053,7 +5108,7 @@ theorem levelInstParams_refines {h h' : Heap F} {l : Ix.Kernel.Level}
       obtain ⟨⟨⟩, rfl⟩ := dVarU.var_inv'
       obtain ⟨⟨⟩, rfl⟩ := dVarP.var_inv'
       simp only [instanceName] at dFn
-      have hdU : levelDepth u + maxLevelDepth params < 4294967296 := by
+      have hdU : levelDepth u + maxLevelDepth params < fieldSize := by
         simp only [levelDepth] at hd; omega
       obtain ⟨hplt, repU', ext1⟩ := ih repU repParams hdU dFn
       obtain ⟨repSucc, ext2⟩ := RepKLevel.allocSucc repU'
@@ -5074,9 +5129,9 @@ theorem levelInstParams_refines {h h' : Heap F} {l : Ix.Kernel.Level}
       obtain ⟨⟨⟩, rfl⟩ := dVarA.var_inv'
       obtain ⟨⟨⟩, rfl⟩ := dVarP1.var_inv'
       simp only [instanceName] at dFnA
-      have hdA : levelDepth a + maxLevelDepth params < 4294967296 := by
+      have hdA : levelDepth a + maxLevelDepth params < fieldSize := by
         simp only [levelDepth] at hd; omega
-      have hdB : levelDepth b + maxLevelDepth params < 4294967296 := by
+      have hdB : levelDepth b + maxLevelDepth params < fieldSize := by
         simp only [levelDepth] at hd; omega
       obtain ⟨hpltA, repA', ext1⟩ := iha repA repParams hdA dFnA
       obtain ⟨_, _, _, _, dVarB, dVarP2, dFnB⟩ := evalExpr_call2_inv dCallB
@@ -5085,9 +5140,9 @@ theorem levelInstParams_refines {h h' : Heap F} {l : Ix.Kernel.Level}
       simp only [instanceName] at dFnB
       obtain ⟨hpltB, repB', ext2⟩ := ihb (repB.mono' ext1) (repParams.mono' ext1) hdB dFnB
       simp only [instanceName] at dFnMax
-      have hdA' : levelDepth (substLevel a params) < 4294967296 :=
+      have hdA' : levelDepth (substLevel a params) < fieldSize :=
         Nat.lt_of_le_of_lt (levelDepth_substLevel_le a params) hdA
-      have hdB' : levelDepth (substLevel b params) < 4294967296 :=
+      have hdB' : levelDepth (substLevel b params) < fieldSize :=
         Nat.lt_of_le_of_lt (levelDepth_substLevel_le b params) hdB
       obtain ⟨repMax, ext3⟩ := levelMax_refines (repA'.mono' ext2) repB' hdA' hdB' dFnMax
       exact ⟨⟨hpltA, hpltB⟩, repMax, (ext1.trans ext2).trans ext3⟩
@@ -5106,9 +5161,9 @@ theorem levelInstParams_refines {h h' : Heap F} {l : Ix.Kernel.Level}
       obtain ⟨⟨⟩, rfl⟩ := dVarA.var_inv'
       obtain ⟨⟨⟩, rfl⟩ := dVarP1.var_inv'
       simp only [instanceName] at dFnA
-      have hdA : levelDepth a + maxLevelDepth params < 4294967296 := by
+      have hdA : levelDepth a + maxLevelDepth params < fieldSize := by
         simp only [levelDepth] at hd; omega
-      have hdB : levelDepth b + maxLevelDepth params < 4294967296 := by
+      have hdB : levelDepth b + maxLevelDepth params < fieldSize := by
         simp only [levelDepth] at hd; omega
       obtain ⟨hpltA, repA', ext1⟩ := iha repA repParams hdA dFnA
       obtain ⟨_, _, _, _, dVarB, dVarP2, dFnB⟩ := evalExpr_call2_inv dCallB
@@ -5117,9 +5172,9 @@ theorem levelInstParams_refines {h h' : Heap F} {l : Ix.Kernel.Level}
       simp only [instanceName] at dFnB
       obtain ⟨hpltB, repB', ext2⟩ := ihb (repB.mono' ext1) (repParams.mono' ext1) hdB dFnB
       simp only [instanceName] at dFnIMax
-      have hdA' : levelDepth (substLevel a params) < 4294967296 :=
+      have hdA' : levelDepth (substLevel a params) < fieldSize :=
         Nat.lt_of_le_of_lt (levelDepth_substLevel_le a params) hdA
-      have hdB' : levelDepth (substLevel b params) < 4294967296 :=
+      have hdB' : levelDepth (substLevel b params) < fieldSize :=
         Nat.lt_of_le_of_lt (levelDepth_substLevel_le b params) hdB
       obtain ⟨repIMax, ext3⟩ := levelIMax_refines (repA'.mono' ext2) repB' hdA' hdB' dFnIMax
       exact ⟨⟨hpltA, hpltB⟩, repIMax, (ext1.trans ext2).trans ext3⟩
@@ -5148,7 +5203,7 @@ theorem levelInstParams_refines {h h' : Heap F} {l : Ix.Kernel.Level}
 theorem levelListInst_refines {h h' : Heap F} {lvls params : List Ix.Kernel.Level}
     {ptrLvls ptrParams r : SourceValue F}
     (repLvls : RepKLevelList h lvls ptrLvls) (repParams : RepKLevelList h params ptrParams)
-    (hd : ∀ l ∈ lvls, levelDepth l + maxLevelDepth params < 4294967296)
+    (hd : ∀ l ∈ lvls, levelDepth l + maxLevelDepth params < fieldSize)
     (ev : EvalFn W "KernelLevels::level_list_inst" [ptrLvls, ptrParams] h r h') :
     (∀ l ∈ lvls, ParamsLt params.length l) ∧
     RepKLevelList h' (substLevelList lvls params) r ∧
@@ -5203,7 +5258,7 @@ theorem levelListInst_refines {h h' : Heap F} {lvls params : List Ix.Kernel.Leve
 theorem levelReduce_refines {h h' : Heap F} {l : Ix.Kernel.Level}
     {ptr r : SourceValue F}
     (rep : RepKLevel h l ptr)
-    (hd : levelDepth l < 4294967296)
+    (hd : levelDepth l < fieldSize)
     (ev : EvalFn W "KernelLevels::level_reduce" [ptr] h r h') :
     RepKLevel h' (levelReduce l) r ∧ Heap.Extends h h' := by
   induction l generalizing h h' ptr r with
@@ -5248,7 +5303,7 @@ theorem levelReduce_refines {h h' : Heap F} {l : Ix.Kernel.Level}
       obtain ⟨_, _, dVarU, dFn⟩ := evalExpr_call1_inv dCall
       obtain ⟨⟨⟩, rfl⟩ := dVarU.var_inv'
       simp only [instanceName] at dFn
-      have hdU : levelDepth u < 4294967296 := by simp only [levelDepth] at hd; omega
+      have hdU : levelDepth u < fieldSize := by simp only [levelDepth] at hd; omega
       obtain ⟨repU', ext1⟩ := ih repU hdU dFn
       obtain ⟨repSucc, ext2⟩ := RepKLevel.allocSucc repU'
       simp only [levelReduce, klevel_inst]
@@ -5267,17 +5322,17 @@ theorem levelReduce_refines {h h' : Heap F} {l : Ix.Kernel.Level}
       obtain ⟨_, _, dVarA, dFnA⟩ := evalExpr_call1_inv dCallA
       obtain ⟨⟨⟩, rfl⟩ := dVarA.var_inv'
       simp only [instanceName] at dFnA
-      have hdA : levelDepth a < 4294967296 := by simp only [levelDepth] at hd; omega
-      have hdB : levelDepth b < 4294967296 := by simp only [levelDepth] at hd; omega
+      have hdA : levelDepth a < fieldSize := by simp only [levelDepth] at hd; omega
+      have hdB : levelDepth b < fieldSize := by simp only [levelDepth] at hd; omega
       obtain ⟨repA', ext1⟩ := iha repA hdA dFnA
       obtain ⟨_, _, dVarB, dFnB⟩ := evalExpr_call1_inv dCallB
       obtain ⟨⟨⟩, rfl⟩ := dVarB.var_inv'
       simp only [instanceName] at dFnB
       obtain ⟨repB', ext2⟩ := ihb (repB.mono' ext1) hdB dFnB
       simp only [instanceName] at dFnMax
-      have hdA' : levelDepth (levelReduce a) < 4294967296 :=
+      have hdA' : levelDepth (levelReduce a) < fieldSize :=
         Nat.lt_of_le_of_lt (levelDepth_levelReduce_le a) hdA
-      have hdB' : levelDepth (levelReduce b) < 4294967296 :=
+      have hdB' : levelDepth (levelReduce b) < fieldSize :=
         Nat.lt_of_le_of_lt (levelDepth_levelReduce_le b) hdB
       obtain ⟨repMax, ext3⟩ := levelMax_refines (repA'.mono' ext2) repB' hdA' hdB' dFnMax
       exact ⟨repMax, (ext1.trans ext2).trans ext3⟩
@@ -5295,17 +5350,17 @@ theorem levelReduce_refines {h h' : Heap F} {l : Ix.Kernel.Level}
       obtain ⟨_, _, dVarA, dFnA⟩ := evalExpr_call1_inv dCallA
       obtain ⟨⟨⟩, rfl⟩ := dVarA.var_inv'
       simp only [instanceName] at dFnA
-      have hdA : levelDepth a < 4294967296 := by simp only [levelDepth] at hd; omega
-      have hdB : levelDepth b < 4294967296 := by simp only [levelDepth] at hd; omega
+      have hdA : levelDepth a < fieldSize := by simp only [levelDepth] at hd; omega
+      have hdB : levelDepth b < fieldSize := by simp only [levelDepth] at hd; omega
       obtain ⟨repA', ext1⟩ := iha repA hdA dFnA
       obtain ⟨_, _, dVarB, dFnB⟩ := evalExpr_call1_inv dCallB
       obtain ⟨⟨⟩, rfl⟩ := dVarB.var_inv'
       simp only [instanceName] at dFnB
       obtain ⟨repB', ext2⟩ := ihb (repB.mono' ext1) hdB dFnB
       simp only [instanceName] at dFnIMax
-      have hdA' : levelDepth (levelReduce a) < 4294967296 :=
+      have hdA' : levelDepth (levelReduce a) < fieldSize :=
         Nat.lt_of_le_of_lt (levelDepth_levelReduce_le a) hdA
-      have hdB' : levelDepth (levelReduce b) < 4294967296 :=
+      have hdB' : levelDepth (levelReduce b) < fieldSize :=
         Nat.lt_of_le_of_lt (levelDepth_levelReduce_le b) hdB
       obtain ⟨repIMax, ext3⟩ := levelIMax_refines (repA'.mono' ext2) repB' hdA' hdB' dFnIMax
       exact ⟨repIMax, (ext1.trans ext2).trans ext3⟩
@@ -5678,7 +5733,7 @@ theorem glistOrderedInsert_refines {h h' : Heap F} {x : Nat} {l : List Nat}
 theorem nlvarsAdd_refines {h h' : Heap F} {vars : List NLVar} {idx k : Nat}
     {ptrVars r : SourceValue F}
     (repVars : RepNLVarList h vars ptrVars)
-    (hidx : idx < 4294967296) (hk : k < 4294967296)
+    (hidx : idx < 4294967296) (hk : k < OB)
     (ev : EvalFn W "KernelLevels::nlvars_add" [ptrVars, .field (idx : F), .field (k : F)] h r h') :
     RepNLVarList h' (nlvarsAdd vars idx k) r ∧ Heap.Extends h h' := by
   induction repVars generalizing h' r with
@@ -5854,7 +5909,7 @@ theorem nlvarsEq_refines {h h' : Heap F} {a b : List NLVar}
             simp [nlvarsEq, hneI]
 
 theorem nlvarsMaxOffset_lt {h : Heap F} {vars : List NLVar} {ptr : SourceValue F}
-    (rep : RepNLVarList h vars ptr) : nlvarsMaxOffset vars < 4294967296 := by
+    (rep : RepNLVarList h vars ptr) : nlvarsMaxOffset vars < OB := by
   induction rep with
   | nil _ => decide
   | cons _ repV _ ih =>
@@ -6175,7 +6230,7 @@ theorem nlvarsSubsume_refines {h h' : Heap F} {xs ys : List NLVar}
 theorem nlAddConstGo_refines {h h' : Heap F} {acc : List NLEntry}
     {path : List Nat} {k : Nat} {ptrAcc ptrPath r : SourceValue F}
     (repAcc : RepNLEntries h acc ptrAcc) (repPath : RepGuardList h path ptrPath)
-    (hk : k < 4294967296)
+    (hk : k < OB)
     (ev : EvalFn W "KernelLevels::nl_add_const_go" [ptrAcc, ptrPath, .field (k : F)] h r h') :
     RepNLEntries h' (nlAddConstGo acc path k) r ∧ Heap.Extends h h' := by
   induction repAcc generalizing h' r with
@@ -6279,7 +6334,7 @@ theorem nlAddConstGo_refines {h h' : Heap F} {acc : List NLEntry}
 theorem nlAddConst_refines {h h' : Heap F} {acc : List NLEntry}
     {path : List Nat} {k : Nat} {ptrAcc ptrPath r : SourceValue F}
     (repAcc : RepNLEntries h acc ptrAcc) (repPath : RepGuardList h path ptrPath)
-    (hk : k < 4294967296)
+    (hk : k < OB)
     (ev : EvalFn W "KernelLevels::nl_add_const" [ptrAcc, ptrPath, .field (k : F)] h r h') :
     RepNLEntries h' (nlAddConst acc path k) r ∧ Heap.Extends h h' := by
   have ev := ev.function_inv (IxVM.KernelLevels.nl_add_const.lookup)
@@ -6331,7 +6386,7 @@ theorem nlAddConst_refines {h h' : Heap F} {acc : List NLEntry}
 theorem nlAddVar_refines {h h' : Heap F} {acc : List NLEntry}
     {path : List Nat} {idx k : Nat} {ptrAcc ptrPath r : SourceValue F}
     (repAcc : RepNLEntries h acc ptrAcc) (repPath : RepGuardList h path ptrPath)
-    (hidx : idx < 4294967296) (hk : k < 4294967296)
+    (hidx : idx < 4294967296) (hk : k < OB)
     (ev : EvalFn W "KernelLevels::nl_add_var"
       [ptrAcc, ptrPath, .field (idx : F), .field (k : F)] h r h') :
     RepNLEntries h' (nlAddVar acc path idx k) r ∧ Heap.Extends h h' := by
@@ -6464,18 +6519,42 @@ theorem selectArm_orderedInsert_tuple {types : Types} {h : Heap F} (b : Bool) (p
     simp
   }
 
-/-- Maximum structural depth of a `normalizeStep` argument. -/
-def normArgDepth : Sum Ix.Kernel.Level (Ix.Kernel.Level × Ix.Kernel.Level) → Nat
-  | .inl l => levelDepth l
-  | .inr (a, b) => Max.max (levelDepth a) (levelDepth b)
+/-- **The largest offset `normalizeStep` reaches** above its starting offset, at the same fuel:
+the most successors on a path the normalizer walks. The left side of an `imax` whose right
+side has no successor or parameter is dropped, not walked, so this is not the height of the
+level. It is what the stored offsets are bounded by; the memo bound bounds it, because the
+`normalize_aux` calls along a path carry the offsets `k, k + 1, …` as distinct arguments. -/
+def normArgSucc : Nat → Sum Ix.Kernel.Level (Ix.Kernel.Level × Ix.Kernel.Level) → Nat
+  | 0, _ => 0
+  | fuel + 1, .inl l =>
+    match l with
+    | .zero => 0
+    | .succ inner => normArgSucc fuel (.inl inner) + 1
+    | .max a b => Max.max (normArgSucc fuel (.inl a)) (normArgSucc fuel (.inl b))
+    | .imax u b => normArgSucc fuel (.inr (u, b))
+    | .param _ => 0
+  | fuel + 1, .inr (a, b) =>
+    match b with
+    | .zero => 0
+    | .succ v => Max.max (normArgSucc fuel (.inl a)) (normArgSucc fuel (.inl v) + 1)
+    | .max v w => Max.max (normArgSucc fuel (.inr (a, v))) (normArgSucc fuel (.inr (a, w)))
+    | .imax v w => Max.max (normArgSucc fuel (.inr (v, w))) (normArgSucc fuel (.inr (a, w)))
+    | .param _ => normArgSucc fuel (.inl a)
 
-/-- **`EvalFn W` refinement for `normalizeStep` (`normalize_aux` and `normalize_imax_dispatch`).** -/
+/-- The largest offset `normalize_aux` reaches on `l` from offset `0`. -/
+def levelSucc (l : Ix.Kernel.Level) : Nat := normArgSucc (normFuel (.inl l)) (.inl l)
+
+/-- The largest offset `normalize_imax_dispatch` reaches on `(a, b)` from offset `0`. -/
+def dispatchSucc (a b : Ix.Kernel.Level) : Nat := normArgSucc (normFuel (.inr (a, b))) (.inr (a, b))
+
+/-- **`EvalFn W` refinement for `normalizeStep` (`normalize_aux` and `normalize_imax_dispatch`).**
+The offsets the normalizer reaches stay below `OB`; no other bound on the level. -/
 theorem normalizeStep_refines (fuel : Nat) :
     ∀ {h h' : Heap F} (arg : Sum Ix.Kernel.Level (Ix.Kernel.Level × Ix.Kernel.Level))
       {path : List Nat} {k : Nat} {acc : List NLEntry}
       {ptrPath ptrAcc r : SourceValue F},
       normFuel arg ≤ fuel →
-      normArgDepth arg + k < 4294967296 →
+      normArgSucc fuel arg + k < OB →
       RepGuardList h path ptrPath →
       RepNLEntries h acc ptrAcc →
       (match arg with
@@ -6496,7 +6575,7 @@ theorem normalizeStep_refines (fuel : Nat) :
     | inr ab => simp [normFuel] at hfuel
   | succ fuel ih =>
     intro h h' arg path k acc ptrPath ptrAcc r hfuel hdepth repPath repAcc
-    have hk : k < 4294967296 := by omega
+    have hk : k < OB := by omega
     cases arg with
     | inl l =>
       intro ptrL repL ev
@@ -6532,8 +6611,8 @@ theorem normalizeStep_refines (fuel : Nat) :
         have hcast : ((k : F) + 1) = (((k + 1 : Nat) : F)) := by push_cast; rfl
         rw [hcast] at dFn
         have hf : normFuel (.inl inner) ≤ fuel := by have := normFuel_succ inner; omega
-        have hd : normArgDepth (.inl inner) + (k + 1) < 4294967296 := by
-          simp only [normArgDepth, levelDepth] at hdepth ⊢; omega
+        have hd : normArgSucc fuel (.inl inner) + (k + 1) < OB := by
+          simp only [normArgSucc] at hdepth; omega
         exact ih (.inl inner) hf hd repPath repAcc repInner dFn
       | @max _ a b _ _ cellL repA repB =>
         obtain ⟨bs, body, sel, dArm⟩ := evalExpr_match_load_var_enum rfl cellL ev
@@ -6554,10 +6633,10 @@ theorem normalizeStep_refines (fuel : Nat) :
         simp only [instanceName] at dFnA dFnB
         have hfA : normFuel (.inl a) ≤ fuel := by have := normFuel_max_left a b; omega
         have hfB : normFuel (.inl b) ≤ fuel := by have := normFuel_max_right a b; omega
-        have hdA : normArgDepth (.inl a) + k < 4294967296 := by
-          simp only [normArgDepth, levelDepth] at hdepth ⊢; omega
-        have hdB : normArgDepth (.inl b) + k < 4294967296 := by
-          simp only [normArgDepth, levelDepth] at hdepth ⊢; omega
+        have hdA : normArgSucc fuel (.inl a) + k < OB := by
+          simp only [normArgSucc] at hdepth; omega
+        have hdB : normArgSucc fuel (.inl b) + k < OB := by
+          simp only [normArgSucc] at hdepth; omega
         obtain ⟨repAcc1, ext1⟩ := ih (.inl a) hfA hdA repPath repAcc repA dFnA
         obtain ⟨repAcc2, ext2⟩ :=
           ih (.inl b) hfB hdB (repPath.mono' ext1) repAcc1 (repB.mono' ext1) dFnB
@@ -6576,8 +6655,8 @@ theorem normalizeStep_refines (fuel : Nat) :
         obtain ⟨⟨⟩, rfl⟩ := dVarAcc.var_inv'
         simp only [instanceName] at dFn
         have hf : normFuel (.inr (u, b)) ≤ fuel := by have := normFuel_imax u b; omega
-        have hd : normArgDepth (.inr (u, b)) + k < 4294967296 := by
-          simp only [normArgDepth, levelDepth] at hdepth ⊢; omega
+        have hd : normArgSucc fuel (.inr (u, b)) + k < OB := by
+          simp only [normArgSucc] at hdepth; omega
         exact ih (.inr (u, b)) hf hd repPath repAcc repU repB dFn
       | @param _ idx hidx cellL =>
         obtain ⟨bs, body, sel, dArm⟩ := evalExpr_match_load_var_enum rfl cellL ev
@@ -6681,10 +6760,10 @@ theorem normalizeStep_refines (fuel : Nat) :
         simp only [instanceName] at dFnA dFnV
         have hfA : normFuel (.inl a) ≤ fuel := by have := normFuel_inr_succ_a a v; omega
         have hfV : normFuel (.inl v) ≤ fuel := by have := normFuel_inr_succ_v a v; omega
-        have hdA : normArgDepth (.inl a) + k < 4294967296 := by
-          simp only [normArgDepth, levelDepth] at hdepth ⊢; omega
-        have hdV : normArgDepth (.inl v) + (k + 1) < 4294967296 := by
-          simp only [normArgDepth, levelDepth] at hdepth ⊢; omega
+        have hdA : normArgSucc fuel (.inl a) + k < OB := by
+          simp only [normArgSucc] at hdepth; omega
+        have hdV : normArgSucc fuel (.inl v) + (k + 1) < OB := by
+          simp only [normArgSucc] at hdepth; omega
         obtain ⟨repAcc1, ext1⟩ := ih (.inl a) hfA hdA repPath repAcc repA dFnA
         have hcast : ((k : F) + 1) = (((k + 1 : Nat) : F)) := by push_cast; rfl
         rw [hcast] at dFnV
@@ -6712,10 +6791,10 @@ theorem normalizeStep_refines (fuel : Nat) :
         simp only [instanceName] at dFnV dFnW
         have hfV : normFuel (.inr (a, v)) ≤ fuel := by have := normFuel_inr_max_left a v w; omega
         have hfW : normFuel (.inr (a, w)) ≤ fuel := by have := normFuel_inr_max_right a v w; omega
-        have hdV : normArgDepth (.inr (a, v)) + k < 4294967296 := by
-          simp only [normArgDepth, levelDepth] at hdepth ⊢; omega
-        have hdW : normArgDepth (.inr (a, w)) + k < 4294967296 := by
-          simp only [normArgDepth, levelDepth] at hdepth ⊢; omega
+        have hdV : normArgSucc fuel (.inr (a, v)) + k < OB := by
+          simp only [normArgSucc] at hdepth; omega
+        have hdW : normArgSucc fuel (.inr (a, w)) + k < OB := by
+          simp only [normArgSucc] at hdepth; omega
         obtain ⟨repAcc1, ext1⟩ := ih (.inr (a, v)) hfV hdV repPath repAcc repA repV dFnV
         obtain ⟨repAcc2, ext2⟩ :=
           ih (.inr (a, w)) hfW hdW (repPath.mono' ext1) repAcc1 (repA.mono' ext1) (repW.mono' ext1) dFnW
@@ -6741,10 +6820,10 @@ theorem normalizeStep_refines (fuel : Nat) :
         simp only [instanceName] at dFnAW dFnVW
         have hfAW : normFuel (.inr (a, w)) ≤ fuel := by have := normFuel_inr_imax_right a v w; omega
         have hfVW : normFuel (.inr (v, w)) ≤ fuel := by have := normFuel_inr_imax_vw a v w; omega
-        have hdAW : normArgDepth (.inr (a, w)) + k < 4294967296 := by
-          simp only [normArgDepth, levelDepth] at hdepth ⊢; omega
-        have hdVW : normArgDepth (.inr (v, w)) + k < 4294967296 := by
-          simp only [normArgDepth, levelDepth] at hdepth ⊢; omega
+        have hdAW : normArgSucc fuel (.inr (a, w)) + k < OB := by
+          simp only [normArgSucc] at hdepth; omega
+        have hdVW : normArgSucc fuel (.inr (v, w)) + k < OB := by
+          simp only [normArgSucc] at hdepth; omega
         obtain ⟨repAcc1, ext1⟩ := ih (.inr (a, w)) hfAW hdAW repPath repAcc repA repW dFnAW
         obtain ⟨repAcc2, ext2⟩ :=
           ih (.inr (v, w)) hfVW hdVW (repPath.mono' ext1) repAcc1 (repV.mono' ext1) (repW.mono' ext1) dFnVW
@@ -6761,8 +6840,8 @@ theorem normalizeStep_refines (fuel : Nat) :
         simp only [instanceName] at dFnIns
         obtain ⟨ptrNewPath, rfl, repNewPath, ext1⟩ := glistOrderedInsert_refines hidx repPath dFnIns
         have hfA : normFuel (.inl a) ≤ fuel := by have := normFuel_inr_param a idx; omega
-        have hdA : normArgDepth (.inl a) + k < 4294967296 := by
-          simp only [normArgDepth, levelDepth] at hdepth ⊢; omega
+        have hdA : normArgSucc fuel (.inl a) + k < OB := by
+          simp only [normArgSucc] at hdepth; omega
         rcases selectArm_orderedInsert_tuple _ _ sel2 with
           ⟨hins, rfl, rfl⟩ | ⟨hins, rfl, rfl⟩
         · cases hpair : glistOrderedInsert idx path with
@@ -6850,7 +6929,7 @@ theorem normalizeAux_refines {h h' : Heap F} {l : Ix.Kernel.Level}
     {ptrL ptrPath ptrAcc r : SourceValue F}
     (repL : RepKLevel h l ptrL) (repPath : RepGuardList h path ptrPath)
     (repAcc : RepNLEntries h acc ptrAcc)
-    (hdepth : levelDepth l + k < 4294967296)
+    (hdepth : levelSucc l + k < OB)
     (ev : EvalFn W "KernelLevels::normalize_aux" [ptrL, ptrPath, .field (k : F), ptrAcc] h r h') :
     RepNLEntries h' (normalizeAux l path k acc) r ∧ Heap.Extends h h' :=
   normalizeStep_refines (normFuel (.inl l)) (.inl l) (Nat.le_refl _) hdepth repPath repAcc repL ev
@@ -6861,7 +6940,7 @@ theorem normalizeIMaxDispatch_refines {h h' : Heap F} {a b : Ix.Kernel.Level}
     {ptrA ptrB ptrPath ptrAcc r : SourceValue F}
     (repA : RepKLevel h a ptrA) (repB : RepKLevel h b ptrB)
     (repPath : RepGuardList h path ptrPath) (repAcc : RepNLEntries h acc ptrAcc)
-    (hdepth : Max.max (levelDepth a) (levelDepth b) + k < 4294967296)
+    (hdepth : dispatchSucc a b + k < OB)
     (ev : EvalFn W "KernelLevels::normalize_imax_dispatch"
       [ptrA, ptrB, ptrPath, .field (k : F), ptrAcc] h r h') :
     RepNLEntries h' (normalizeIMaxDispatch a b path k acc) r ∧ Heap.Extends h h' :=
@@ -7074,9 +7153,9 @@ theorem nlSubsumeEntry_refines {h h' : Heap F} {e : NLEntry} {snap : List NLEntr
             obtain ⟨⟨⟩, rfl⟩ := dVarV1n.var_inv'
             obtain ⟨⟨⟩, rfl⟩ := dVarSrest.var_inv'
             simp only [instanceName, nlEntry_inst] at dFnRec
-            have hc1n_lt : nlSubsumeC1n p1 p2 c1 c2 v1 v2 < 4294967296 := by
+            have hc1n_lt : nlSubsumeC1n p1 p2 c1 c2 v1 v2 < OB := by
               dsimp only [nlSubsumeC1n]
-              split_ifs <;> omega
+              split_ifs <;> first | exact hc1 | decide
             obtain ⟨repE', ext2⟩ :=
               RepNLEntry.alloc (e := ⟨p1, nlSubsumeC1n p1 p2 c1 c2 v1 v2, nlSubsumeV1n p1 p2 v1 v2⟩)
                 hc1n_lt (repP1.mono' ext1) repV1n
@@ -7133,7 +7212,7 @@ theorem nlSubsumptionWalk_refines {h h' : Heap F} {rem snapshot : List NLEntry}
 theorem levelNormalize_refines {h h' : Heap F} {l : Ix.Kernel.Level}
     {ptrL r : SourceValue F}
     (repL : RepKLevel h l ptrL)
-    (hd : levelDepth l < 4294967296)
+    (hd : levelSucc l < OB)
     (ev : EvalFn W "KernelLevels::level_normalize" [ptrL] h r h') :
     RepNLEntries h' (levelNormalize l) r ∧ Heap.Extends h h' := by
   have ev := ev.function_inv (IxVM.KernelLevels.level_normalize.lookup)
@@ -7173,7 +7252,7 @@ theorem levelNormalize_refines {h h' : Heap F} {l : Ix.Kernel.Level}
   simp only [instanceName] at dFnAux
   rw [h0_cast] at dFnAux
   obtain ⟨repNilPath, ext6⟩ := RepGuardList.allocNil _
-  have hd0 : levelDepth l + 0 < 4294967296 := by omega
+  have hd0 : levelSucc l + 0 < OB := by omega
   obtain ⟨repRaw, ext7⟩ :=
     normalizeAux_refines (k := 0) (repL.mono' (extSeed.trans ext6)) repNilPath (repSeed.mono' ext6) hd0 dFnAux
   simp only [matchPattern_bind, Option.some.injEq, Except.ok.injEq] at hpatRaw
@@ -7413,7 +7492,7 @@ theorem nlEq_refines {h h' : Heap F} {a0 b0 : List NLEntry}
 /-- **`EvalFn W` refinement for `KernelLevels::nlvars_any_offset_geq`.** -/
 theorem nlvarsAnyOffsetGeq_refines {h h' : Heap F} {vars : List NLVar} {c : Nat}
     {ptrVars r : SourceValue F}
-    (repVars : RepNLVarList h vars ptrVars) (hc : c < 4294967296)
+    (repVars : RepNLVarList h vars ptrVars) (hc : c < OB)
     (ev : EvalFn W "KernelLevels::nlvars_any_offset_geq" [ptrVars, .field (c : F)] h r h') :
     r = .field (if nlvarsAnyOffsetGeq vars c then 1 else 0) ∧ h' = h := by
   induction repVars generalizing r h' with
@@ -7471,7 +7550,7 @@ theorem nlCoversConst_cons (p2 : List Nat) (c2 : Nat) (v2 : List NLVar)
 theorem nlCoversConst_refines {h h' : Heap F} {l2 : List NLEntry}
     {p1 : List Nat} {c : Nat} {ptrL2 ptrP1 r : SourceValue F}
     (repL2 : RepNLEntries h l2 ptrL2) (repP1 : RepGuardList h p1 ptrP1)
-    (hc : c < 4294967296)
+    (hc : c < OB)
     (ev : EvalFn W "KernelLevels::nl_covers_const" [ptrL2, ptrP1, .field (c : F)] h r h') :
     r = .field (if nlCoversConst l2 p1 c then 1 else 0) ∧ h' = h := by
   induction repL2 generalizing r h' with
@@ -7550,7 +7629,7 @@ theorem nlCoversConst_refines {h h' : Heap F} {l2 : List NLEntry}
 theorem nlvarsDominates_refines {h h' : Heap F} {vars : List NLVar} {w off : Nat}
     {ptrVars r : SourceValue F}
     (repVars : RepNLVarList h vars ptrVars)
-    (hw : w < 4294967296) (hoff : off < 4294967296)
+    (hw : w < 4294967296) (hoff : off < OB)
     (ev : EvalFn W "KernelLevels::nlvars_dominates"
       [ptrVars, .field (w : F), .field (off : F)] h r h') :
     r = .field (if nlvarsDominates vars w off then 1 else 0) ∧ h' = h := by
@@ -7612,7 +7691,7 @@ theorem nlvarsDominates_refines {h h' : Heap F} {vars : List NLVar} {w off : Nat
 theorem nlCoversVar_refines {h h' : Heap F} {l2 : List NLEntry}
     {p1 : List Nat} {w off : Nat} {ptrL2 ptrP1 r : SourceValue F}
     (repL2 : RepNLEntries h l2 ptrL2) (repP1 : RepGuardList h p1 ptrP1)
-    (hw : w < 4294967296) (hoff : off < 4294967296)
+    (hw : w < 4294967296) (hoff : off < OB)
     (ev : EvalFn W "KernelLevels::nl_covers_var"
       [ptrL2, ptrP1, .field (w : F), .field (off : F)] h r h') :
     r = .field (if nlCoversVar l2 p1 w off then 1 else 0) ∧ h' = h := by
@@ -7805,7 +7884,7 @@ theorem nlLe_refines {h h' : Heap F} {l1 l2 : List NLEntry}
 theorem levelLeq_refines {h h' : Heap F} {a b : Ix.Kernel.Level}
     {ptrA ptrB r : SourceValue F}
     (repA : RepKLevel h a ptrA) (repB : RepKLevel h b ptrB)
-    (hda : levelDepth a < 4294967296) (hdb : levelDepth b < 4294967296)
+    (hda : levelSucc a < OB) (hdb : levelSucc b < OB)
     (ev : EvalFn W "KernelLevels::level_leq" [ptrA, ptrB] h r h') :
     r = .field (if levelLeq a b then 1 else 0) ∧ Heap.Extends h h' := by
   have ev := ev.function_inv (IxVM.KernelLevels.level_leq.lookup)
@@ -7891,7 +7970,7 @@ theorem levelLeq_refines {h h' : Heap F} {a b : Ix.Kernel.Level}
 theorem levelEqual_refines {h h' : Heap F} {a b : Ix.Kernel.Level}
     {ptrA ptrB r : SourceValue F}
     (repA : RepKLevel h a ptrA) (repB : RepKLevel h b ptrB)
-    (hda : levelDepth a < 4294967296) (hdb : levelDepth b < 4294967296)
+    (hda : levelSucc a < OB) (hdb : levelSucc b < OB)
     (ev : EvalFn W "KernelLevels::level_equal" [ptrA, ptrB] h r h') :
     r = .field (if levelEqual a b then 1 else 0) ∧ Heap.Extends h h' := by
   have ev := ev.function_inv (IxVM.KernelLevels.level_equal.lookup)
@@ -7929,7 +8008,7 @@ every parameter assignment `φ` is identical to `l`. -/
 theorem levelReduce_eval_sound {h h' : Heap F} {l : Ix.Kernel.Level}
     {ptrL r : SourceValue F}
     (repL : RepKLevel h l ptrL)
-    (hd : levelDepth l < 4294967296)
+    (hd : levelDepth l < fieldSize)
     (ev : EvalFn W "KernelLevels::level_reduce" [ptrL] h r h') :
     ∃ l', RepKLevel h' l' r ∧ Heap.Extends h h' ∧
       ∀ φ, Ix.Kernel.Level.eval φ l' = Ix.Kernel.Level.eval φ l := by
@@ -7945,7 +8024,7 @@ theorem levelInstParams_eval_sound {h h' : Heap F} {l : Ix.Kernel.Level}
     {params : List Ix.Kernel.Level} {ptrL ptrParams r : SourceValue F}
     (repL : RepKLevel h l ptrL) (repParams : RepKLevelList h params ptrParams)
     (_hlt : ParamsLt params.length l)
-    (hd : levelDepth l + maxLevelDepth params < 4294967296)
+    (hd : levelDepth l + maxLevelDepth params < fieldSize)
     (ev : EvalFn W "KernelLevels::level_inst_params" [ptrL, ptrParams] h r h') :
     ∃ l', RepKLevel h' l' r ∧ Heap.Extends h h' ∧
       ∀ φ, Ix.Kernel.Level.eval φ l' =
@@ -7959,7 +8038,7 @@ universe parameter valuation `φ`, `Ix.Kernel.Level.eval φ a ≤ Ix.Kernel.Leve
 theorem levelLeq_sound {h h' : Heap F} {a b : Ix.Kernel.Level}
     {ptrA ptrB : SourceValue F}
     (repA : RepKLevel h a ptrA) (repB : RepKLevel h b ptrB)
-    (hda : levelDepth a < 4294967296) (hdb : levelDepth b < 4294967296)
+    (hda : levelSucc a < OB) (hdb : levelSucc b < OB)
     (ev : EvalFn W "KernelLevels::level_leq" [ptrA, ptrB] h (.field 1) h')
     (φ : Ix.Kernel.LevelParam → Nat) :
     Ix.Kernel.Level.eval φ a ≤ Ix.Kernel.Level.eval φ b := by
@@ -7976,7 +8055,7 @@ universe parameter valuation `φ`, `Ix.Kernel.Level.eval φ a = Ix.Kernel.Level.
 theorem levelEqual_sound {h h' : Heap F} {a b : Ix.Kernel.Level}
     {ptrA ptrB : SourceValue F}
     (repA : RepKLevel h a ptrA) (repB : RepKLevel h b ptrB)
-    (hda : levelDepth a < 4294967296) (hdb : levelDepth b < 4294967296)
+    (hda : levelSucc a < OB) (hdb : levelSucc b < OB)
     (ev : EvalFn W "KernelLevels::level_equal" [ptrA, ptrB] h (.field 1) h')
     (φ : Ix.Kernel.LevelParam → Nat) :
     Ix.Kernel.Level.eval φ a = Ix.Kernel.Level.eval φ b := by
