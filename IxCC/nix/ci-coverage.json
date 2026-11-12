@@ -1739,6 +1739,7 @@
  ["IxCCGrounding",
   "IxCCGrounding.Apply",
   "IxCCGrounding.Case",
+  "IxCCGrounding.CaseBlind",
   "IxCCGrounding.CaseCheck",
   "IxCCGrounding.CaseFire",
   "IxCCGrounding.Check",
@@ -1771,10 +1772,10 @@
   "IxCCGrounding.Syntax",
   "IxCCGrounding.Tele"],
  "grounding_axiom_sha256":
- "74f7cb9d0657e80e780d5c545287a2af197a92b5ab4ad2ae8bc7ba3974916be0",
- "grounding_axiom_count": 161,
+ "38cfa81590de80f92178daa16500d44b8c805dbef8e51871635a0e09c1036361",
+ "grounding_axiom_count": 189,
  "baseline":
- "heap stage 2, second landing: the verifier over the ownership checker (admission and the program gate run checkOwned behind the captured-work budget; the Cfg activation layer restated over the typing context; the canonical Own and Cfg prefix proofs deleted); merged with 17fd6d402",
+ "GR12: the canonicity-free family (IxCCGrounding.CaseBlind, noCanonB; LawsCore); grounding fence 189; merged with 52205307d",
  "axiom_sha256":
  "ea964b557ed54d567b913f9f8ba3d2c78f498d9b3fc4c59cd75eae17dd8aab72",
  "axiom_count": 6525}
