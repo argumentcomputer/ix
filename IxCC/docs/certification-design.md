@@ -719,11 +719,23 @@ nodes) it declines in 7 µs (interpreted, not compiled; `GR-2b-fU`). There is no
 memo of repeated δ-unfolding, so beyond these bounds the check's cost on a
 hostile closure is not otherwise bounded. Interpreted, on the corpus,
 `sitesDirectB` takes up to 14.5 s where it is true (`scalar`; before the
-widening, at most 1.2 s where it was true) and up to 28.8 s where it is false (`strings`; the Boolean stops at
-its first refused site), except on `tags125`, where it takes 624 s (3.9 s before;
-below); compiled, it is
-not measured apart from the suite, which runs it with the kernel oracle on the
-two subjects and the three widening closures in 5.1 to 5.3 s.
+widening, at most 1.2 s where it was true) and up to 28.8 s where it is false
+(`strings`; the Boolean stops at its first refused site), except on `tags125`;
+compiled, it is not measured apart from the suite.
+
+**A known defect: the widened direct route's cost.** Since the widening (G2b) the
+check is much slower on some closures: `sitesDirectB` on `tags125` takes 624 s
+(3.9 s before), on `tags16` 5.5 s (0.38 s before), both interpreted; and
+`tests-grounding`, compiled, takes 5.1 to 5.4 s (0.26 s before; it now also
+loads three corpus closures and asks the kernel about their sites, so the two
+figures do not measure the same work). Not profiled. The likely cause: the ι
+step checks the recursor's argument prefix against its type (`dFits`) every time
+head reduction meets a recursor application, and the conversion tries head
+reduction twice per comparison (without and with δ); a matcher over a
+125-constructor enumeration has 125 minor premises in that prefix. It is a
+question of cost, not of soundness: what the check accepts is what its proof
+covers, at any cost. Profiling and fixing it is the first item of the next
+stage.
 
 **The direct route on the corpus.** Measured on the 48 committed closures that
 load (the families `bench-k1`, `grounding`, `phase1-scalar`, `phase1-boundary`,
