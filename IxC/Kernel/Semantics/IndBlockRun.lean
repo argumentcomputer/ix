@@ -672,7 +672,8 @@ theorem iotaRulesFactsRun {J : Judgements md}
       · -- the constructor's record: its counts, and the shape of the mode
         have hr'cp : RecRule.ctorParams r' = cnPK := by rw [hr'eq]; rfl
         have hr'nf : RecRule.nfields r' = cnFK := by rw [hr'eq]; exact hnfK
-        refine ⟨cvjK, by rw [hr'cp, hr'nf]; exact hfcS, fun hp => ?_, fun lvls pins hfireN => ?_, ?_⟩
+        refine ⟨cvjK, by rw [hr'cp, hr'nf]; exact hfcS, fun hp => ?_, fun lvls pins hfireN => ?_,
+          ?_, ?_⟩
         · rw [hr'cp]
           rw [hr'fire] at hp
           rcases hbranch with ⟨hplain, -, -⟩ | ⟨-, hrest⟩
@@ -692,6 +693,15 @@ theorem iotaRulesFactsRun {J : Judgements md}
           rcases hbranch with ⟨-, hfireP, -⟩ | ⟨-, lvls₀, pins₀, hfireN₀, -⟩
           · rw [hfireP]; exact fun h => nomatch h
           · rw [hfireN₀]; exact fun h => nomatch h
+        · -- the constructor's telescope, which the rule's `iota` theorem opened
+          rw [hr'cp, hr'nf]
+          rcases hbranch with ⟨-, -, hthm⟩ | ⟨-, lvls₀, pins₀, -, hthmN⟩
+          · obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, hsC, -⟩ := hthm
+            exact hsC
+          · obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, -, ⟨cb, cb0, hsC, hmatch⟩, -⟩ := hthmN
+            split at hmatch
+            · next c us hh => exact Expr.ctorTeleOk_of hsC hh
+            · exact nomatch hmatch
       · -- a fired rule: the parameter bound and the rhs's reading
         intro hfire
         refine ⟨?_, fun φ => ?_⟩

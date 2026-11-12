@@ -253,7 +253,7 @@ theorem checkIotaThmS_sim (hμ : mode.verifiedChecks = true) {env' : Env md} (he
         (fvs.take cnP ++ fvs.drop rP)) = true
   case neg => simp only [if_neg h7]; exact SimC.throw_bind
   simp only [if_pos h7]
-  by_cases h8 : (cvj.type.stripPis (cnP + cnF)).isSome = true
+  by_cases h8 : Expr.ctorTeleOk cvj.type (cnP + cnF) = true
   case neg => simp only [if_neg h8]; exact SimC.throw_bind
   simp only [if_pos h8]
   refine SimC.bind (SimC.unwrapOr' hs₂) (fun s₃ q2 q2' hs₃ hQ2 => ?_)

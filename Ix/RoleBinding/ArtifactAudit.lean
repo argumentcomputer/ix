@@ -59,9 +59,9 @@ replace only their entry/preparation wrappers. No runtime ruling changes. -/
 -- counts are unchanged.
 -- Formers declared at a definition in the in-model generator (`readFormer`, `formerTele`,
 -- `deltaHead`, `restoreModelTypes`) and the reader's definition values (`State.defValues`,
--- `valuesOff`) add 19 compiled functions. Externs, implemented_by, unsafe, csimp and all
+-- `valuesOff`) add 21 compiled functions. Externs, implemented_by, unsafe, csimp and all
 -- ruling counts are unchanged.
-/-- info: runtime closure of [Ix.RoleBinding.Artifact.check]: 6892 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
+/-- info: runtime closure of [Ix.RoleBinding.Artifact.check]: 6894 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.check] #[`Init, `Std] rulings
 
@@ -71,9 +71,9 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.check] #[`I
 -- counts are unchanged.
 -- Formers declared at a definition in the in-model generator (`readFormer`, `formerTele`,
 -- `deltaHead`, `restoreModelTypes`) and the reader's definition values (`State.defValues`,
--- `valuesOff`) add 19 compiled functions. Externs, implemented_by, unsafe, csimp and all
+-- `valuesOff`) add 21 compiled functions. Externs, implemented_by, unsafe, csimp and all
 -- ruling counts are unchanged.
-/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkTiered]: 7026 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
+/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkTiered]: 7028 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.checkTiered] #[`Init, `Std] rulings
 
@@ -83,9 +83,9 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.checkTiered
 -- counts are unchanged.
 -- Formers declared at a definition in the in-model generator (`readFormer`, `formerTele`,
 -- `deltaHead`, `restoreModelTypes`) and the reader's definition values (`State.defValues`,
--- `valuesOff`) add 19 compiled functions. Externs, implemented_by, unsafe, csimp and all
+-- `valuesOff`) add 21 compiled functions. Externs, implemented_by, unsafe, csimp and all
 -- ruling counts are unchanged.
-/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkAt]: 6892 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
+/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkAt]: 6894 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.checkAt] #[`Init, `Std] rulings
 
@@ -95,9 +95,9 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.checkAt] #[
 -- counts are unchanged.
 -- Formers declared at a definition in the in-model generator (`readFormer`, `formerTele`,
 -- `deltaHead`, `restoreModelTypes`) and the reader's definition values (`State.defValues`,
--- `valuesOff`) add 19 compiled functions. Externs, implemented_by, unsafe, csimp and all
+-- `valuesOff`) add 21 compiled functions. Externs, implemented_by, unsafe, csimp and all
 -- ruling counts are unchanged.
-/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkTieredAt]: 7026 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
+/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkTieredAt]: 7028 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.checkTieredAt] #[`Init, `Std] rulings
 
@@ -123,7 +123,7 @@ ruling are those of `check` and `checkTiered`. Their kernel entries (`Admission.
 -- `valuesOff`) add 19 compiled functions. Externs, implemented_by, unsafe, csimp and all
 -- ruling counts are unchanged.
 /-- info: runtime closure of [Ix.RoleBinding.Artifact.checkConditional,
- Ix.RoleBinding.Artifact.checkTieredConditional]: 7087 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
+ Ix.RoleBinding.Artifact.checkTieredConditional]: 7089 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
 #guard_msgs (whitespace := lax) in
 run_cmd do
   Ix.Kernel.Audit.checkRuntimeWith

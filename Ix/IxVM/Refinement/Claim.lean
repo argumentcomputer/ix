@@ -255,35 +255,101 @@ theorem AcceptsIn.acceptsRef {V : View} {b : Binding} {S : Address → Prop}
   obtain ⟨ev, ds, envA, accepted, thms, -, q⟩ := h.acceptsRefUnder
   exact ⟨ev, ds, envA, Ix.Kernel.Cached.acceptsRefUnder_strict.mp accepted, thms, q⟩
 
-/-- **The seeds of a role table**: the constants it binds and the theorems
-its evidence names. -/
+/-- **Lean's compiler-trust roles**: the inert axioms `Lean.trustCompiler`,
+`Lean.ofReduceBool` and `Lean.ofReduceNat`, and the opaques `Lean.reduceBool` and
+`Lean.reduceNat` whose values use `Lean.trustCompiler`. The checker accepts no
+declaration of the axioms and no constant using one, so a role table's check leaves
+them out: none of them can enter an environment a claim certifies. -/
+def compilerTrust : Ix.Kernel.Role → Bool
+  | .trustCompiler | .reduceBool | .reduceNat | .ofReduceBool | .ofReduceNat => true
+  | _ => false
+
+/-- **The seeds of a role table**: the constants it binds, but for the
+compiler-trust roles (`compilerTrust`), and the theorems its evidence names. -/
 def BindingSeeds (t : Ix.Kernel.RoleTable) (a : Address) : Prop :=
-  (∃ r, t.addressOf? r = some a) ∨
+  (∃ r, compilerTrust r = false ∧ t.addressOf? r = some a) ∨
     ∃ e ∈ t.evidence.toList, Ix.Kernel.Evidence.proof a ∈ e.2.toList
 
+/-- **An anchor role's specification as a pin** (`Ix.Kernel.Role.spec`'s `anchor`):
+its key, its level count (positional) and its type. -/
+def anchorPin? : Ix.Kernel.Key .anon → Option (Ix.Kernel.ConstantVal .anon)
+  | .role r =>
+    match (Ix.Kernel.Role.spec (md := .anon)) r with
+    | .anchor n ty => some { name := .role r, levelParams := List.range n, type := ty }
+    | _ => none
+  | _ => none
+
+/-- The constants a declaration declares, with their types. -/
+def declaredVals : Ix.Kernel.Declaration .anon → List (Ix.Kernel.ConstantVal .anon)
+  | .axiomDecl cv | .defnDecl cv _ _ | .thmDecl cv _ | .opaqueDecl cv _ | .quotDecl _ cv => [cv]
+  | .indDecl block _ => block.map (·.toConstantVal)
+  | .basisDecl _ => []
+
+/-- **Every declared constant at an anchor role has its specification's type**, up
+to binder data (`ConstantVal.matchesPin`). The checker's rules read the literals'
+support (`String`, `String.ofList`, `List` and its constructors, `Char`,
+`Char.ofNat`) and the other anchors at these shapes. -/
+def AnchorsTyped (ds : List (Ix.Kernel.Declaration .anon)) : Prop :=
+  ∀ d ∈ ds, ∀ cv ∈ declaredVals d, ∀ pin, anchorPin? cv.name = some pin →
+    cv.matchesPin pin = true
+
 /-- **The role specifications the pure declaration fold does not check on its
-own** (`IxC/Kernel/Roles.lean`, `IxC/Kernel/RoleEquations.lean`): no
-declaration mismatches an install-checked anchor
-(`Ix.Kernel.Declaration.anchorMismatch?`), and every role specified by
-definition equations (`SpecKind.eqns`) passes `Ix.Kernel.eqnsCheck` at some
-fuel in the installed environment. -/
-def BindingSpecs (_ : Binding) (envA : Ix.Kernel.Env .anon)
+own**, under the role table `t` (`IxC/Kernel/Roles.lean`,
+`IxC/Kernel/RoleEquations.lean`): no declaration mismatches an install-checked
+anchor (`Ix.Kernel.Declaration.anchorMismatch?`), every declared anchor has its
+specification's type (`AnchorsTyped`), and every role `t` binds that is specified
+by definition equations (`SpecKind.eqns`) passes `Ix.Kernel.eqnsCheck` at some
+fuel in the installed environment. A role `t` leaves unbound has no constant at
+its key, so there are no equations of it to check. -/
+def BindingSpecs (t : Ix.Kernel.RoleTable) (_ : Binding) (envA : Ix.Kernel.Env .anon)
     (ds : List (Ix.Kernel.Declaration .anon)) : Prop :=
-  (∀ d ∈ ds, d.anchorMismatch? = none) ∧
-    ∃ ev, ∀ r ∈ Ix.Kernel.Role.all, (r.spec (md := .anon)).kind = .eqns →
+  (∀ d ∈ ds, d.anchorMismatch? = none) ∧ AnchorsTyped ds ∧
+    ∃ ev, ∀ r, t.addressOf? r ≠ none → (r.spec (md := .anon)).kind = .eqns →
       ∃ F, Ix.Kernel.eqnsCheck (Ix.Kernel.fueledOps .verified F) envA r ev = .ok ()
 
 /-- **The `binding` claim in a view** (`binding spec b`, validator 3): `spec`
 is IxC's specification digest; the view's role table with hash `b` is
 admitted by IxC, binds every role, and IxC's strict fold accepts the closure
-of its bound constants and evidence theorems under it with `BindingSpecs`,
+of its bound constants (but for the compiler-trust roles) and evidence theorems
+under it with `BindingSpecs`,
 which checks each bound constant against its role's specification. -/
 def BindingIn (V : View) (spec b : Address) : Prop :=
   Ix.SpecDigest.specDigest = .ok spec ∧
     ∃ bnd t, V.binding? b = some bnd ∧
       Ix.Kernel.Admission.admitBinding Address.admissionHash bnd = .ok t ∧
       (∀ r ∈ Ix.Kernel.Role.all, (t.addressOf? r).isSome = true) ∧
-      AcceptsIn V (Scope.strict bnd) (BindingSeeds t) BindingSpecs
+      AcceptsIn V (Scope.strict bnd) (BindingSeeds t) (BindingSpecs t)
+
+/-- **The string-literal support roles** (`Ix.Kernel.Reader.strLitSupportNames`): the `Nat`
+literal support, `String`, `String.ofList`, `List` with its constructors, `Char` and
+`Char.ofNat`. -/
+def strLitSupportRoles : List Ix.Kernel.Role :=
+  [.nat, .natZero, .natSucc, .string, .stringOfList, .list, .listNil, .listCons, .char, .charOfNat]
+
+/-- **A table that binds `String` binds all of its literal support.** IxVM types a string
+literal at the bound `String`, validating `String`'s group only, while the kernel
+supports a string literal only with every support role stored, at its specified type
+(`Ix.Kernel.strLitSupported`). `RoleTable.check` does not ask for this: `String` has no
+dependencies, so a table could bind `String` to an empty type and leave `String.ofList`
+unbound. The other literal and operation roles need no such rule: a `Nat` literal's
+support is `Nat`'s block, which `RoleTable.check` binds together, and each `Nat`
+operation's certificate ground (`Ix.Kernel.natOpDeps`) is among its dependencies
+(`Ix.Kernel.Role.deps`), which it binds. -/
+def LiteralSupportBound (t : Ix.Kernel.RoleTable) : Prop :=
+  (t.addressOf? .string).isSome = true → ∀ r ∈ strLitSupportRoles, (t.addressOf? r).isSome = true
+
+/-- **A role table the kernel admits, its bound constants checked**: the role
+table `b` is admitted (`Ix.Kernel.Admission.admitBinding`: its hash, its canonical
+decoding, `RoleTable.check`), and the strict fold accepts, under it and behind the
+committed prelude (`preludeFor`, inside `AcceptsIn`), the closure of the constants it
+binds and of its evidence theorems in the view's records (`BindingSeeds`), with the
+role specifications the fold does not check on its own (`BindingSpecs`). This is
+`BindingIn` without its claim's two extra conditions (the specification digest, and
+every role bound), with one more: a table that binds `String` binds all of its literal
+support (`LiteralSupportBound`; `BindingIn`'s "every role bound" implies it). -/
+def TableAdmitted (V : View) (b : Binding) : Prop :=
+  ∃ t, Ix.Kernel.Admission.admitBinding Address.admissionHash b = .ok t ∧ LiteralSupportBound t ∧
+    AcceptsIn V (Scope.strict b) (BindingSeeds t) (BindingSpecs t)
 
 /-- **Every leaf of a claim's axioms tree is a user axiom record**, used or
 not, as IxVM validates it (`KernelRoles::validate_user_axioms`): the view
@@ -550,11 +616,11 @@ and direct structure projections (`ConstantExprsClosed`), every reference of a
 stored record resolves to a stored record or blob, a projection's block is
 stored, and the role table the view holds is a valid role table admitted by IxC
 (`RoleTable.check`, `preludeFor`, which pins the prelude roles) whose bound
-constants and evidence theorems are stored and whose `.anchor` roles are
-accepted by IxC with their pinned specification types (`AnchorPinned`) in the
-view. Because `SafeConstant` restricts to the safe fragment, whole-environment
-`checkEnv` claims whose leaves include `unsafe` or `partial` constants are
-outside `Covers`. -/
+constants and evidence theorems are stored and whose `.anchor` roles, but for the
+compiler-trust ones (`compilerTrust`, which IxC declines), are accepted by IxC with their
+pinned specification types (`AnchorPinned`) in the view. Because `SafeConstant` restricts
+to the safe fragment, whole-environment `checkEnv` claims whose leaves include `unsafe` or
+`partial` constants are outside `Covers`. -/
 def View.Closed (V : View) : Prop :=
   (∀ a c, Ix.Cert.recordAt V.env a = some c →
     SafeConstant c ∧ ConstantExprsClosed V.env c ∧
@@ -564,9 +630,10 @@ def View.Closed (V : View) : Prop :=
     ∃ t, Ix.Kernel.RoleTable.ofBytes rb.bytes = some t ∧ t.check = .ok () ∧
       (∃ pre : Ix.Kernel.Reader.Prelude .anon, Ix.Kernel.Reader.preludeFor t = .ok pre) ∧
       (∀ a, BindingSeeds t a → V.env.consts.contains a = true) ∧
-      ∀ r, (r.spec (md := .anon)).kind = .anchor → ∀ a, t.addressOf? r = some a →
-        AcceptsIn V (Scope.strict ⟨rb.address, rb.bytes⟩) (· = a) fun _ envA _ =>
-          AnchorPinned envA r)
+      ∀ r, (r.spec (md := .anon)).kind = .anchor → compilerTrust r = false →
+        ∀ a, t.addressOf? r = some a →
+          AcceptsIn V (Scope.strict ⟨rb.address, rb.bytes⟩) (· = a) fun _ envA _ =>
+            AnchorPinned envA r)
 
 /-- What a view must hold for a typing claim: it is closed, it holds the
 claim's role table, the assumption tree, if any, and the axioms tree, if any,

@@ -270,7 +270,8 @@ theorem iotaRulePlain {μ : CheckMode} {J : Judgements md} {env₂ envSelf : Env
     (recRulePlain_le_mIT hpl) (recRulePlain_leT hpl) hrhsAw hrhsAb
     hrhsKey hSw hSb hthm hopen hheadEq hargs3
     (eq_of_beq hlhead0) hlarity0 (eq_of_beq hlpre0) (eq_of_beq hmaj0)
-    hCstrips hcinst hclen hrinst hopenP hcinstP hopenXP hinstLam
+    (Ix.Kernel.Expr.ctorTeleOk_isSome hCstrips) hcinst hclen hrinst hopenP hcinstP hopenXP
+    hinstLam
     hdeIdx hdePre hdeFld hdeParsRun hdeLam hdeRhs hsideL hsideR
     φ us huslen
   refine ⟨Ra, by rw [hr'rhs]; exact hRaden, hokRa, ?_, ?_⟩

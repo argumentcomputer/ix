@@ -1,5 +1,6 @@
 import Ix.IxVM.Consistency.Statement
 import IxC.Kernel.Model.Restrict
+import IxC.Kernel.Model.Open.Tables
 import IxC.Kernel.Semantics.EnvFacts
 import IxC.Kernel.Verify.Rename.Installs
 
@@ -18,8 +19,18 @@ projection tables too (`claimedEnv_findProj?`). What L7 discharges: distinct
 names (from `InstallStep`), and that every claimed constant's type and every
 claimed definition's value mention only kept keys (`RefsIn (KeptKey env)`; reader
 output references input and role keys, a projection table's type is a closed
-sort). The model's laws are then the claimed constants' own: none of them reads
-a model-family constant.
+sort), and that a kept structure's projection table names a kept constructor (the
+kernel builds a table from one block: the structure's own constructor) whose field types
+mention only kept keys (the table's field types are the constructor's, which is claimed). The
+model's laws are then the claimed constants' own: none of them reads a model-family constant.
+
+The kernel's rules are sound over a model of an environment whose stored terms are
+closed (`Ix.Kernel.Open.StoredClosed`), whose stored telescopes have the binders the
+laws read (`Ix.Kernel.Open.StoredArities`), whose projection tables are their structures'
+(`Ix.Kernel.Open.StoredTables`), and whose η rules' constructors carry their families' level
+parameters (`Ix.Kernel.Open.StoredEtaRules`). The fold's invariant gives all four for the
+installed environment, and the claimed sub-environment keeps them:
+`storedClosed_of_envModelOk`, `storedArities_of_envModelOk`, `storedEnv_of_envModelOk`.
 -/
 
 namespace IxVM.Consistency
@@ -175,14 +186,19 @@ theorem Installs.claimed {ds : List (Declaration .anon)} {env : Env .anon} (h : 
 /-- **The claimed sub-environment's model** (for L7): a model of the installed
 environment, with distinct names, whose claimed constants' types, claimed
 definitions' values and claimed recursor rules' right-hand sides mention only kept
-keys, restricts to `claimedEnv env`. -/
+keys, and whose kept structures' projection tables name kept constructors and store field
+types that mention only kept keys, restricts to `claimedEnv env`. -/
 def claimedModel {V : Type u} [SetTheory V] {env : Env .anon} (M : Model V env)
     (hnd : (env.consts.map (·.name)).Nodup)
     (htype : ∀ c ∈ (claimedEnv env).consts, c.toConstantVal.type.RefsIn (KeptKey env))
     (hvalue : ∀ cv value hint, ConstantInfo.defnInfo cv value hint ∈ (claimedEnv env).consts →
       value.RefsIn (KeptKey env))
     (hrhs : ∀ cv mI rP rules, ConstantInfo.recInfo cv mI rP rules ∈ (claimedEnv env).consts →
-      ∀ rl ∈ rules, rl.rhs.RefsIn (KeptKey env)) :
+      ∀ rl ∈ rules, rl.rhs.RefsIn (KeptKey env))
+    (hctor : ∀ T i entry, (claimedEnv env).findProj? T i = some entry → KeptKey env T →
+      KeptKey env entry.ctor)
+    (hbody : ∀ T i entry, (claimedEnv env).findProj? T i = some entry → KeptKey env T →
+      entry.body.RefsIn (KeptKey env)) :
     Model V (claimedEnv env) :=
   M.restrict (K := KeptKey env) (fun _ hK => claimedEnv_find? hK) (claimedEnv_findProj? hnd)
     ⟨keptKey_of_not_aux (fun _ _ h => nomatch h), keptKey_of_not_aux (fun _ _ h => nomatch h),
@@ -191,6 +207,56 @@ def claimedModel {V : Type u} [SetTheory V] {env : Env .anon} (M : Model V env)
       keptKey_of_not_aux (fun _ _ h => nomatch h)⟩
     (fun _ hc => (List.mem_filter.mp hc).1) (fun _ hc => keptKey_of_claimed hnd hc) htype hvalue
     hrhs (keptKey_of_not_aux (fun _ _ h => nomatch h)) (keptKey_of_not_aux (fun _ _ h => nomatch h))
+    ⟨keptKey_of_not_aux (fun _ _ h => nomatch h), keptKey_of_not_aux (fun _ _ h => nomatch h)⟩
+    hctor hbody
+
+/-- **The claimed sub-environment's stored terms are closed** when the installed
+environment's are: its constants are among the environment's. -/
+theorem storedClosed_claimedEnv {env : Env .anon} (h : Ix.Kernel.Open.StoredClosed env) :
+    Ix.Kernel.Open.StoredClosed (claimedEnv env) :=
+  h.of_sub fun _ hc => (List.mem_filter.mp hc).1
+
+/-- **The fold's invariant closes the claimed sub-environment's stored terms**: the
+invariant holds the environment's well-formedness (`EnvWF`), which includes closure. -/
+theorem storedClosed_of_envModelOk {V : Type u} [SetTheory V] {μ : CheckMode}
+    {env : Env .anon} (h : Ix.Kernel.Model.EnvModelOk V μ env) :
+    Ix.Kernel.Open.StoredClosed (claimedEnv env) := by
+  obtain ⟨⟨m⟩, -⟩ := h
+  exact storedClosed_claimedEnv (Ix.Kernel.Open.EnvWF.storedClosed m.base2.wf)
+
+/-- With distinct names, a constant the claimed sub-environment finds is the
+environment's at that key. -/
+theorem claimedEnv_find?_some {env : Env .anon} (hnd : (env.consts.map (·.name)).Nodup)
+    {n : Key .anon} {ci : ConstantInfo .anon} (h : (claimedEnv env).find? n = some ci) :
+    env.find? n = some ci := by
+  have hK : KeptKey env n := by
+    have hk := keptKey_of_claimed hnd (List.mem_of_find?_eq_some h)
+    rwa [Ix.Kernel.Semantics.Env.find?_name h] at hk
+  rw [← claimedEnv_find? hK]
+  exact h
+
+/-- **The fold's invariant gives the claimed sub-environment's stored telescopes their
+binders** (`Ix.Kernel.Open.StoredArities`): the invariant holds them of the installed
+environment, and with distinct names the sub-environment's lookups are its. -/
+theorem storedArities_of_envModelOk {V : Type u} [SetTheory V] {μ : CheckMode}
+    {env : Env .anon} (h : Ix.Kernel.Model.EnvModelOk V μ env)
+    (hnd : (env.consts.map (·.name)).Nodup) :
+    Ix.Kernel.Open.StoredArities (claimedEnv env) := by
+  obtain ⟨⟨m⟩, -⟩ := h
+  exact (Ix.Kernel.Open.EnvModel.storedArities m.base2).of_find
+    fun _ _ hf => claimedEnv_find?_some hnd hf
+
+/-- **The fold's invariant gives the claimed sub-environment every stored-environment fact
+the rules read** (`Ix.Kernel.Open.StoredEnv`): the invariant holds them of the installed
+environment, and with distinct names the sub-environment's constants, lookups and
+projection tables are its. -/
+theorem storedEnv_of_envModelOk {V : Type u} [SetTheory V] {μ : CheckMode}
+    {env : Env .anon} (h : Ix.Kernel.Model.EnvModelOk V μ env)
+    (hnd : (env.consts.map (·.name)).Nodup) :
+    Ix.Kernel.Open.StoredEnv (claimedEnv env) := by
+  obtain ⟨⟨m⟩, -⟩ := h
+  exact (Ix.Kernel.Open.EnvModelM.storedEnv m).of_find (fun _ hc => (List.mem_filter.mp hc).1)
+    (fun _ _ hf => claimedEnv_find?_some hnd hf) (claimedEnv_findProj? hnd)
 
 /-- The model conjunct's form. -/
 theorem nonempty_claimedModel {env : Env .anon}
@@ -200,8 +266,12 @@ theorem nonempty_claimedModel {env : Env .anon}
     (hvalue : ∀ cv value hint, ConstantInfo.defnInfo cv value hint ∈ (claimedEnv env).consts →
       value.RefsIn (KeptKey env))
     (hrhs : ∀ cv mI rP rules, ConstantInfo.recInfo cv mI rP rules ∈ (claimedEnv env).consts →
-      ∀ rl ∈ rules, rl.rhs.RefsIn (KeptKey env)) :
+      ∀ rl ∈ rules, rl.rhs.RefsIn (KeptKey env))
+    (hctor : ∀ T i entry, (claimedEnv env).findProj? T i = some entry → KeptKey env T →
+      KeptKey env entry.ctor)
+    (hbody : ∀ T i entry, (claimedEnv env).findProj? T i = some entry → KeptKey env T →
+      entry.body.RefsIn (KeptKey env)) :
     ∀ (V : Type u) [SetTheory V], Nonempty (Model V (claimedEnv env)) :=
-  fun V _ => let ⟨M⟩ := hM V; ⟨claimedModel M hnd htype hvalue hrhs⟩
+  fun V _ => let ⟨M⟩ := hM V; ⟨claimedModel M hnd htype hvalue hrhs hctor hbody⟩
 
 end IxVM.Consistency

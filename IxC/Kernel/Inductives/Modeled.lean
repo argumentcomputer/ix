@@ -105,8 +105,11 @@ def checkIotaThm (ops : (CheckerOps md) m) (env' envSelf : Env md)
         (fvs.take cnP ++ xFvs) do
       throw (.notImplemented msg!"iota statement major mismatch for {cvName}")
     -- the constructor's telescope (renamed), instantiated at the
-    -- major's arguments: field domains and the canonical index tuple
-    unless (cvj.type.stripPis (cnP + cnF)).isSome do
+    -- major's arguments: field domains and the canonical index tuple.
+    -- The residual head must be a constant (the family former), as at a
+    -- nested rule: the soundness layer reads the residual's arguments
+    -- through the substitution, which a variable head would shift.
+    unless Expr.ctorTeleOk cvj.type (cnP + cnF) do
       throw (.notImplemented msg!"iota constructor telescope for {cvName}")
     let (cdoms, cres) ← unwrapOr
         (Expr.instPisAt (fvs.take cnP ++ xFvs) (cvj.type.renameConsts f))

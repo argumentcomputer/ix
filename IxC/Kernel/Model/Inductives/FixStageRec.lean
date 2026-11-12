@@ -1101,9 +1101,11 @@ theorem stageFixRec {p : NativeParts md} (hE : Ix.Kernel.EtaFamiliesClosedExcept
         injection heq with h1 h2 h3 hrules
         subst h1 h2 h3 hrules
         obtain ⟨j, cA, rhs, hj, -, rfl⟩ := Ix.Kernel.sumRules_getElem? hr
-        obtain ⟨hf, -, -⟩ := hcf j cA hj
+        obtain ⟨hf, -, hD⟩ := hcf j cA hj
         have hpl := List.all_eq_true.mp hplAll cA (List.mem_of_getElem? hj)
-        exact ⟨Ix.Kernel.RuleCtorOk.of_plain hf (by simp [Ix.Kernel.recRuleBits, hpl]) hpl,
+        obtain ⟨cbs, es, hres, -⟩ := hD.resid
+        exact ⟨Ix.Kernel.RuleCtorOk.of_plain hf (by simp [Ix.Kernel.recRuleBits, hpl]) hpl
+            (Ix.Kernel.Expr.ctorTeleOk_of hres (by rw [Ix.Kernel.Expr.getAppFn_mkAppN]; rfl)),
           fun hb => hb, fun hb => hb⟩))
     (fun ψ k => AnnotTerm.liftN_eq_self _ (Term.bvarsBelow.mono (Nat.zero_le k) (hAcl ψ)) 1)
     hAparams (fun ψ ρ => (hleafF ψ ρ).1.1) (fun ψ ρ => (hleafF ψ ρ).1.2) (fun ψ => ⟨_, hreadR ψ⟩)

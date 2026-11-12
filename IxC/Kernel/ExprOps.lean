@@ -1652,6 +1652,45 @@ def recRulePlain (recTy : Expr md) (mI rP cnP : Nat) (cjLps : List LevelParam) :
       (List.range cnP).map (fun k => Expr.bvar (mI - 1 - k))
   | _ => false
 
+/-- **A constructor's telescope, as a rule fires it**: the constructor's type has `k`
+syntactic binders (its parameters and fields), and the residual is headed by a constant
+(the family former), so substituting the major premise's arguments for the binders leaves
+the residual's arguments where they were. -/
+def ctorTeleOk (ty : Expr md) (k : Nat) : Bool :=
+  match ty.stripPis k with
+  | some (_, body) =>
+    match body.getAppFn with
+    | .const _ _ => true
+    | _ => false
+  | none => false
+
+theorem ctorTeleOk_isSome {ty : Expr md} {k : Nat} (h : ctorTeleOk ty k = true) :
+    (ty.stripPis k).isSome = true := by
+  unfold ctorTeleOk at h
+  split at h
+  · rename_i hs
+    rw [hs]
+    rfl
+  · exact nomatch h
+
+theorem ctorTeleOk_head {ty : Expr md} {k : Nat} (h : ctorTeleOk ty k = true) :
+    ∃ bs body c us, ty.stripPis k = some (bs, body) ∧ body.getAppFn = .const c us := by
+  unfold ctorTeleOk at h
+  split at h
+  · rename_i bs body hs
+    split at h
+    · rename_i c us hb
+      exact ⟨bs, body, c, us, hs, hb⟩
+    · exact nomatch h
+  · exact nomatch h
+
+theorem ctorTeleOk_of {ty body : Expr md} {k : Nat} {bs : List (Expr md × BinderMeta)}
+    {c : Key md} {us : List Level} (hs : ty.stripPis k = some (bs, body))
+    (hb : body.getAppFn = .const c us) : ctorTeleOk ty k = true := by
+  unfold ctorTeleOk
+  rw [hs]
+  simp only [hb]
+
 /-- Convert the first `k` `∀`-binders into `λ`-binders over a body.
 
 The copied binder metadata keeps only the display info: a ∀'s `pw`
