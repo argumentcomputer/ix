@@ -426,3 +426,6 @@ recursor clause and its implication from the landed one. -/
 
 /-- info: 'IxCC.Grounding.relSlots_reverse' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Grounding.relSlots_reverse
+
+/-- info: 'IxCC.Grounding.flatIota_noLevels' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.flatIota_noLevels

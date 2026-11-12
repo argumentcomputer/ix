@@ -505,29 +505,33 @@ theorem fire_step (H : FundHyps M p κ lpsOf S Ok) {k : Nat}
                     have e00 : piBody (0 + 0) cv.type = cv.type := by simp [piBody]
                     rw [e00] at hhead hargs0
                     have hcod : cv.type.getAppArgs = [] := List.eq_nil_of_length_eq_zero (by omega)
-                    -- the major's set is the constructor's image at the major domain's levels
-                    have hKimg : ∀ τ X, Denotes M.cval env φ τ dom X → M.cval (κ c) ψ ∈ˢ X →
-                        Denotes M.cval env φ ρ (.const krl.ctor ls) (M.cval (κ c) ψ) := by
-                      intro τ X hX hm
-                      rw [hkc']
+                    -- ι and β; the major's set is the constructor's image at the major domain's
+                    -- levels: without canonicity where the constructor has no level parameter
+                    -- (`flatIota_noLevels`: ι and level-parameter irrelevance alone), by
+                    -- canonicity at the inductive, never a proposition, where it has some
+                    have hcC : env.find? krl.ctor = some (.ctorInfo cv 0 0) := by
+                      rw [hkc']; exact hfcv
+                    have hmaj' : As[nmot + nmin]? = some (M.cval krl.ctor ψ) := by
+                      rw [hkc']; simpa using hTm
+                    obtain ⟨X, hX, heq⟩ : ∃ X, (As.take (nmot + nmin)).reverse[i]? = some X ∧
+                        As.foldl app (M.cval (κ r) φ) = X := by
                       by_cases hlp : cv.levelParams = []
-                      · -- no level parameter: level-parameter irrelevance, no canonicity
-                        have hls0 : ls = [] :=
-                          List.eq_nil_of_length_eq_zero (by rw [← hlsC, hlp]; rfl)
-                        subst hls0
-                        exact ctorImage_noLevels M H.laws hfcv hlp φ ψ ρ
-                      · -- level parameters: canonicity at the inductive, never a proposition
-                        have hnd : cv.levelParams.Nodup := by
+                      · exact flatIota_noLevels M H.laws.iota_rule H.laws.cval_params hfS hty htbs
+                          (List.mem_of_getElem? hkrl) hcC hlp hcod hrhs hbsd hi hfit
+                          (by rw [hAsl]) hpb hdomE hlsC hmaj'
+                      · have hnd : cv.levelParams.Nodup := by
                           obtain ⟨ci, hci, hlps⟩ := H.faith.stored c hSc'
                           rw [hfcv] at hci
                           cases hci
                           have := H.faith.nodup c hSc'
                           rwa [← hlps] at this
-                        exact ctorImage_canon M H.laws hfcv hnd hhead (neverProp_of_check hnp) hlsC
-                          hdomE hX hm
-                    obtain ⟨X, hX, heq⟩ := flatIota M H.laws hfS hty htbs (List.mem_of_getElem? hkrl)
-                      (by rw [hkc']; exact hfcv) hcod hrhs hbsd hi hfit (by rw [hAsl]) hpb hdomE
-                      hKimg (by simpa using hTm)
+                        exact flatIota M H.laws.iota_rule hfS hty htbs (List.mem_of_getElem? hkrl)
+                          hcC hcod hrhs hbsd hi hfit (by rw [hAsl]) hpb hdomE
+                          (fun _ _ hX hm => by
+                            rw [hkc'] at hm ⊢
+                            exact ctorImage_canon M H.laws hfcv hnd hhead
+                              (neverProp_of_check hnp) hlsC hdomE hX hm)
+                          hmaj'
                     -- SrcEval: the body, `.var i`, in the slots of the first arguments reversed
                     have hslots : args.take (0 + nmot + nmin) ++ ([] : List Value).map Slot.val =
                         args.take (nmot + nmin) := by simp

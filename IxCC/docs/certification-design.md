@@ -478,7 +478,7 @@ imports the kernel's model (`IxCK.Kernel.Denotes`, the statement half, in
 model, from the production library or from any program of the shared build.
 
 **What is proved, fenced on `propext`, `Classical.choice` and `Quot.sound` or
-fewer (`IxCCGrounding/Fence.lean`, 138 exact assertions):**
+fewer (`IxCCGrounding/Fence.lean`, 139 exact assertions):**
 
 - *Soundness at a root* (`rootSound`, in `IxCCGrounding.Root`). For every
   program, kernel reading `env`, key map, level parameters, certificate
@@ -602,7 +602,9 @@ fewer (`IxCCGrounding/Fence.lean`, 138 exact assertions):**
   constructor's image at the assignment the constructor value was built at; where
   the constructor has no level parameters (every measured case: `Bool.true`,
   `Bool.false`) that image is one set at every assignment (`ctorImage_noLevels`,
-  by `Laws.cval_params`), so no canonicity is used; where it has some, the image
+  by `Laws.cval_params`), so no canonicity is used (`flatIota_noLevels` states
+  this case over the two laws it uses, `IotaLaw` and `CvalParams`, not `Laws`,
+  and the fundamental lemma takes it there); where it has some, the image
   is moved to the major domain's levels by the restricted `Laws.ctor_canon` at
   the inductive, never a proposition by the class (`ctorImage_canon`; no
   measured flat recursor needs it). SrcEval side (`fire_step`): F2 forces the

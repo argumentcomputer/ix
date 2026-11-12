@@ -89,8 +89,10 @@ theorem lamTele_app_doms {cval : KKey → (LevelParam → Nat) → V} {φ : Leve
       exact ⟨Y, by rwa [pushAll_cons], by rw [List.foldl_cons, e1, e]⟩
 
 /-- **F2 at a flat recursor, model side** (ι, then β through the rule's right-hand side), given
-the major premise's set as the rule constructor's image at the levels the major domain names. -/
-theorem flatIota (M : Model V env) (hL : Laws M) {kr : KKey} {cvr : ConstantVal .anon} {mI : Nat}
+the major premise's set as the rule constructor's image at the levels the major domain names.
+Of the laws it takes ι alone (`Laws.iota_rule`). -/
+theorem flatIota (M : Model V env) (hι : IotaLaw M.cval env) {kr : KKey}
+    {cvr : ConstantVal .anon} {mI : Nat}
     {krules : List (RecRule .anon)} (hf : env.find? kr = some (.recInfo cvr mI mI krules))
     {tbs : List (KExpr × BinderMeta)} {C : KExpr} (hty : cvr.type = piTele tbs C)
     (htbs : tbs.length = mI) {krl : RecRule .anon} (hkrl : krl ∈ krules)
@@ -135,7 +137,7 @@ theorem flatIota (M : Model V env) (hL : Laws M) {kr : KKey} {cvr : ConstantVal 
       ((As.take mI).drop mI) := by
     rw [getAppArgs_inst, hcod, List.drop_eq_nil_of_le (as := As.take mI) (by omega)]
     exact .nil
-  obtain ⟨H, hH, heq⟩ := hL.iota_rule kr cvr mI mI krules krl hf hkrl cvC 0 0 hcC
+  obtain ⟨H, hH, heq⟩ := hι kr cvr mI mI krules krl hf hkrl cvC 0 0 hcC
     (cvr.levelParams.map .param) φ ρ σ1 ρ (As.take mI) [] dom body
     (cvC.type.instantiateLevelParams cvC.levelParams ls) m D ls (M.cval kr φ) K X (by simp) hxl
     rfl hRden (by rw [inst_self]; exact hf1) hdom hX (hK σ1 X hX hKX) .nil (by simpa using hKX)
@@ -162,15 +164,40 @@ theorem flatIota (M : Model V env) (hL : Laws M) {kr : KKey} {cvr : ConstantVal 
 /-- **A constructor without level parameters, used at none, denotes its image at any assignment**
 (`Laws.cval_params`; no canonicity): so the major's set, built at the constructor value's own
 assignment, is the image ι names. -/
-theorem ctorImage_noLevels (M : Model V env) (hL : Laws M) {c : KKey} {cvC : ConstantVal .anon}
+theorem ctorImage_noLevels (M : Model V env) (hcv : CvalParams M) {c : KKey}
+    {cvC : ConstantVal .anon}
     {nP nF : Nat} (hcC : env.find? c = some (.ctorInfo cvC nP nF)) (hlp : cvC.levelParams = [])
     (φ ψ : LevelParam → Nat) (ρ : BVarIdx → V) :
     Denotes M.cval env φ ρ (.const c []) (M.cval c ψ) := by
   have h1 : Denotes M.cval env φ ρ (.const c [])
       (M.cval c (Level.substFn φ cvC.levelParams [])) :=
     Denotes.const (ci := .ctorInfo cvC nP nF) hcC (by simp [ConstantInfo.toConstantVal, hlp])
-  rwa [hL.cval_params c _ hcC (Level.substFn φ cvC.levelParams []) ψ
+  rwa [hcv c _ hcC (Level.substFn φ cvC.levelParams []) ψ
     (fun q hq => by simp [ConstantInfo.toConstantVal, hlp] at hq)] at h1
+
+/-- **F2 at a flat recursor whose rule's constructor has no level parameters, from ι and
+level-parameter irrelevance alone** (no canonicity: its hypotheses name the two laws it uses,
+`Laws.iota_rule` and `Laws.cval_params`, both proved on the side that owes them). Every flat
+recursor of the measured closures is of this kind (`Bool.rec`). -/
+theorem flatIota_noLevels (M : Model V env) (hι : IotaLaw M.cval env) (hcv : CvalParams M)
+    {kr : KKey} {cvr : ConstantVal .anon} {mI : Nat} {krules : List (RecRule .anon)}
+    (hf : env.find? kr = some (.recInfo cvr mI mI krules))
+    {tbs : List (KExpr × BinderMeta)} {C : KExpr} (hty : cvr.type = piTele tbs C)
+    (htbs : tbs.length = mI) {krl : RecRule .anon} (hkrl : krl ∈ krules)
+    {cvC : ConstantVal .anon} (hcC : env.find? krl.ctor = some (.ctorInfo cvC 0 0))
+    (hlp : cvC.levelParams = []) (hcod : cvC.type.getAppArgs = []) {i : Nat}
+    {bs : List (KExpr × BinderMeta)} (hrhs : krl.rhs = lamTele bs (.bvar i))
+    (hbs : bs.map (·.1) = tbs.map (·.1)) (hi : i < mI)
+    {φ ψ : LevelParam → Nat} {ρ σ : BVarIdx → V} {R : KExpr} {As : List V}
+    (hfit : Fits M.cval env φ ρ cvr.type As σ R) (hlen : As.length = mI + 1)
+    {dom body : KExpr} {m : BinderMeta} {D : KKey} {ls : List Level}
+    (hpb : piBody mI cvr.type = .forallE dom body m) (hdom : dom.getAppFn = .const D ls)
+    (hls : cvC.levelParams.length = ls.length) (hmaj : As[mI]? = some (M.cval krl.ctor ψ)) :
+    ∃ X, (As.take mI).reverse[i]? = some X ∧ As.foldl app (M.cval kr φ) = X := by
+  have hls0 : ls = [] := List.eq_nil_of_length_eq_zero (by rw [← hls, hlp]; rfl)
+  subst hls0
+  exact flatIota M hι hf hty htbs hkrl hcC hcod hrhs hbs hi hfit hlen hpb hdom
+    (fun _ _ _ _ => ctorImage_noLevels M hcv hcC hlp φ ψ ρ) hmaj
 
 /-- **A field-less constructor without parameters, built at any assignment, is its image at the
 levels a member's family names, by canonicity** (`Laws.ctor_canon`, at a family never a
