@@ -263,6 +263,42 @@ def tagsCoincide (env : Ixon.Env) : IO Bool := do
       {tagEnums.map (·.2)} are {tagEnums.map (·.1)}, block and recursor"
   return ok
 
+/-- **Every advice record is the compiler's record for its declaration.** Each model
+record of `env` holds the compiler's table invariant (`IxVM.Model.tablesCanonical`),
+is unchanged by being put in the compiler's form again (`IxVM.Model.renormalize`), and
+carries the section IxC's pass computes for it as it stands. At least one cites
+another advice record that re-addressing moved (one with a section), so its refs table
+is sorted by addresses it was given after encoding. -/
+def adviceCanonical (env : Ixon.Env) (label : String) : IO Bool := do
+  let advice := env.modelRecords.toArray
+  let aset : Std.HashSet Address := advice.foldl (fun s (a, _) => s.insert a) {}
+  let moved : Std.HashSet Address :=
+    advice.foldl (fun s (a, c) => if c.binders.isEmpty then s else s.insert a) {}
+  let mut bad : Array String := #[]
+  let mut citers := 0
+  for (a, c) in advice do
+    unless IxVM.Model.tablesCanonical c do bad := bad.push s!"{a}: tables out of the compiler's order"
+    match IxVM.Model.renormalize id c with
+    | .ok c' => unless { c' with binders := c.binders } == c do
+        bad := bad.push s!"{a}: not in the compiler's form"
+    | .error e => bad := bad.push s!"{a}: {e}"
+    if c.refs.any moved.contains then citers := citers + 1
+  let support : Array (Address × Ixon.Constant) := env.consts.fold (init := #[]) fun out a lc =>
+    if aset.contains a then out else match lc.get? with
+      | some c => out.push (a, c)
+      | none => out
+  let blobs := env.modelBlobs.fold (init := env.blobs) fun m a b => m.insert a b
+  let hints := env.modelHints.fold (init := env.anonHints) fun m a h => m.insert a h
+  let chosen ← IO.ofExcept (IxVM.RecordSections.chosenOf env)
+  let sections ← IO.ofExcept
+    (IxVM.RecordSections.sectionsOf advice support blobs hints chosen (models := aset))
+  for (a, c) in advice do
+    unless sections.getD a #[] == c.binders do bad := bad.push s!"{a}: another section than IxC's"
+  for b in bad.toList.take 10 do IO.eprintln s!"[ixvm-model-advice] {label}: advice record {b}"
+  IO.println s!"[ixvm-model-advice] {label}: {advice.size} advice records, {bad.size} not the \
+    compiler's; {citers} cite an advice record re-addressing moved"
+  return bad.isEmpty && citers > 0
+
 /-- Every theorem's value under `let _ : Nat := 0`: a different proof of the
 same statement, so a different record. -/
 def tweakProofs : Ix.Kernel.Declaration .anon → Ix.Kernel.Declaration .anon
@@ -280,6 +316,7 @@ def run (lenv : Lean.Environment) : IO UInt32 := do
   let tagEnv ← loadSharedIxonEnv (tagNames ++ univNames) lenv
   let tagsOk ← tagsCoincide tagEnv
   let univsOk ← univTables tagEnv
+  let adviceOk := (← adviceCanonical env "modeled blocks") && (← adviceCanonical tagEnv "tag blocks")
   -- why a modeled block has no model, if one has none
   let (_, rep0) ← IO.ofExcept (IxVM.Model.generateReport { withoutModels env with modelsAttached := false })
   for (b, r) in rep0.blocks do
@@ -322,7 +359,7 @@ def run (lenv : Lean.Environment) : IO UInt32 := do
     Case.ofClaim s!"{if accept then "accept" else "refuse"} {n}" fixEnv (.check ctx target none) {} accept
   let cases := cases ++ nestedVerdicts.map fun (n, accept) => verdictCase n accept
   let rc ← runCases "ixvm-model-advice" cases.toArray
-  return if digestOk && differ && tagsOk && univsOk && rc == 0 then 0 else 1
+  return if digestOk && differ && tagsOk && univsOk && adviceOk && rc == 0 then 0 else 1
 
 /-- The environment of an `.ixe` file under the default role table, without models. -/
 def loadIxe (path : String) : IO Ixon.Env := do

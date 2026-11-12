@@ -198,6 +198,68 @@ def sharedRecord (info : Ixon.ConstantInfo) (refs : Array Address) (univs : Arra
   (Ix.CompileM.buildConstantWithSharing Ix.CompileM.compilerSharingLimits info sorted table).mapError
     (s!"model record sharing: {·}")
 
+/-- `e` with every `share` node replaced by its entry of `sharing`, recursively (a
+canonical table is acyclic). -/
+partial def unshareAll (sharing : Array Ixon.Expr) : Ixon.Expr → Ixon.Expr
+  | .share i => match sharing[i.toNat]? with
+    | some e => unshareAll sharing e
+    | none => .share i
+  | .prj t i v => .prj t i (unshareAll sharing v)
+  | .app a b => .app (unshareAll sharing a) (unshareAll sharing b)
+  | .lam bc t b => .lam bc (unshareAll sharing t) (unshareAll sharing b)
+  | .all bc vc t b => .all bc vc (unshareAll sharing t) (unshareAll sharing b)
+  | .letE lc t v b => .letE lc (unshareAll sharing t) (unshareAll sharing v) (unshareAll sharing b)
+  | e => e
+
+/-- Record `c` with its references renamed by `rename`, in the compiler's form again
+(`sharedRecord` over its expressions with the sharing expanded: refs sorted, levels
+canonical and sorted, sharing rebuilt), without a section. A projection, whose tables
+are empty, has its block renamed. -/
+def renormalize (rename : Address → Address) (c : Ixon.Constant) : Except String Ixon.Constant := do
+  match c.info with
+  | .iPrj _ | .cPrj _ | .rPrj _ | .dPrj _ => return Ix.Compile.BinderData.rewriteRecord rename c #[]
+  | _ =>
+    let roots := (Ix.CompileM.constantInfoRootExprs c.info).map (unshareAll c.sharing)
+    let info ← (Ix.CompileM.withRootExprs c.info roots).mapError (s!"model record refs: {·}")
+    sharedRecord info (c.refs.map rename) c.univs
+
+/-- An expression with its table indices erased: the places of its binders and share
+nodes, which are all a record's section depends on, and not which reference, level
+or blob a leaf names. -/
+def shapeOf : Ixon.Expr → Ixon.Expr
+  | .sort _ => .sort 0
+  | .ref _ _ => .ref 0 #[]
+  | .recur i _ => .recur i #[]
+  | .prj _ i v => .prj 0 i (shapeOf v)
+  | .str _ => .str 0
+  | .nat _ => .nat 0
+  | .app a b => .app (shapeOf a) (shapeOf b)
+  | .lam bc t b => .lam bc (shapeOf t) (shapeOf b)
+  | .all bc vc t b => .all bc vc (shapeOf t) (shapeOf b)
+  | .letE lc t v b => .letE lc (shapeOf t) (shapeOf v) (shapeOf b)
+  | e => e
+
+/-- The shapes of a record's roots and sharing entries. -/
+def recordShape (c : Ixon.Constant) : Array Ixon.Expr × Array Ixon.Expr :=
+  ((Ix.CompileM.constantInfoRootExprs c.info).map shapeOf, c.sharing.map shapeOf)
+
+/-- Each element of `xs` before the next by `lt`. -/
+def ascendingBy {α : Type} (xs : Array α) (lt : α → α → Bool) : Bool :=
+  (xs.zip (xs.extract 1 xs.size)).all fun (a, b) => lt a b
+
+/-- **The compiler's table invariant** (`Ix.CompileM.preseedExprTables`): the refs
+strictly ascending by address bytes; the levels each in canonical form
+(`Ixon.canonUniv`) and strictly ascending by encoding. No decoder checks it: Lean's
+`Ixon.Canonical.deConstant`, the reader's wire check, Rust's codec and IxVM's parser
+read the tables in any order. Like the complete binder-data form, it is a property of
+how records are built, which makes a constant's address unique; every model record
+holds it (`ixvm-model-advice`). Finalize's evidence theorems keep their references in
+first-use order. -/
+def tablesCanonical (c : Ixon.Constant) : Bool :=
+  ascendingBy c.refs (fun a b => a.cmpBytes b == .lt) &&
+    c.univs.all (fun u => Ixon.canonUniv u == u) &&
+    ascendingBy (c.univs.map Ix.CompileM.univSortKey) (fun a b => Ix.CompileM.byteArrayCmp a b == .lt)
+
 def hintOf : Ix.Kernel.ReducibilityHint → Lean.ReducibilityHints
   | .opaque => .opaque
   | .abbrev => .abbrev
@@ -586,8 +648,13 @@ address covers the data IxVM reads from it. The records are encoded first (each
 naming the ones before it by address), then annotated as a whole by IxC's pass,
 typed against the environment's records (`IxVM.RecordSections.sectionsOf`; the
 data do not depend on addresses), and then re-addressed bottom-up: each record's
-references to the advice follow their new addresses, its section is set, and it
-is hashed. The payload, hints and dependencies name the new addresses. -/
+references to the advice follow their new addresses, the record is put in the
+compiler's form again (`renormalize`: its refs sorted by the new addresses, its
+sharing rebuilt), its section is set, and it is hashed. The section computed before
+fits the rebuilt record when the two have the same shape (`recordShape`); otherwise
+it is computed again for the record as it stands. So every advice record is the
+record the compiler would write for its declaration. The payload, hints and
+dependencies name the new addresses. -/
 
 /-- `adv` with every record's binder-data section, re-addressed. `support` are the
 environment's records, `chosen` its role table and prelude. -/
@@ -608,7 +675,17 @@ def BlockAdvice.withSections (adv : BlockAdvice) (support : Array (Address × Ix
   for a in order do
     let some c := store[a]? | continue
     let rename (x : Address) : Address := renamed.getD x x
-    let c' := Ix.Compile.BinderData.rewriteRecord rename c (sections.getD a #[])
+    let c1 ← renormalize rename c
+    let c' ← if recordShape c1 == recordShape c then
+        pure { c1 with binders := sections.getD a #[] }
+      else do
+        -- the rebuilt sharing moved a binder or a share: the section of the record as it stands,
+        -- typed against the environment and the advice re-addressed so far
+        let a1 := addressOf c1
+        let done := rewritten.toArray
+        let fresh ← IxVM.RecordSections.sectionsOf #[(a1, c1)] (support ++ done) blobs hints chosen
+          (models := done.foldl (fun s (x, _) => s.insert x) ({} : Std.HashSet Address))
+        pure { c1 with binders := fresh.getD a1 #[] }
     let a' := addressOf c'
     renamed := renamed.insert a a'
     rewritten := rewritten.insert a' c'
