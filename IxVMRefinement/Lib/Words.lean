@@ -255,6 +255,21 @@ theorem u64_wrapping_succ_spec {x r : SourceValue F} {h h' : Heap F} {cs : List 
     Prod.mk.injEq] at run
   exact ⟨run.1.symm, run.2.symm⟩
 
+/-- **`UInt64::add(x, y)`** on two words: the sum modulo `2^64` and the carry out (a field
+element, `0` or `1`); no allocation. -/
+theorem u64_add_spec {x y r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
+    {v w : UInt64} (hx : RepU64 h v x) (hy : RepU64 h w y)
+    (ev : ObsFn W "UInt64::add" [x, y] h r h' cs) :
+    r = .tuple [TagN.u64Value ((v.toNat + w.toNat) % 18446744073709551616),
+      .field (((v.toNat + w.toNat) / 18446744073709551616 : Nat) : F)] ∧ h' = h := by
+  obtain rfl := repU64_eq hx
+  obtain rfl := repU64_eq hy
+  obtain ⟨k0, hk0⟩ := Mirrors.«UInt64::add».of_eval ev.erase
+  have run := hk0 (k0 + 2) (by omega)
+  rw [TagN.u64Add_value (u64_toNat_lt v) (u64_toNat_lt w) k0 h, Option.some.injEq,
+    Prod.mk.injEq] at run
+  exact ⟨run.1.symm, run.2.symm⟩
+
 /-! ## `WordLists::lookup_u64` -/
 
 section
