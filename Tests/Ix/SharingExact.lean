@@ -43,8 +43,8 @@ def hexOf (b : ByteArray) : String :=
 
 def P : Ixon.Expr := .sort 0
 
-/-- Ordinary non-dependent arrow `a → b` with default contracts. -/
-def arr (a b : Ixon.Expr) : Ixon.Expr := .all .many .shared a b
+/-- Ordinary non-dependent arrow `a → b`. -/
+def arr (a b : Ixon.Expr) : Ixon.Expr := .all a b
 
 /-- `Tn = Prop → … → Prop` with `n` binders. -/
 def chain : Nat → Ixon.Expr
@@ -107,21 +107,16 @@ def rand (n : Nat) : RGen Nat := do
 
 def runGen {α} (seed : Nat) (g : RGen α) : α := (g.run ⟨seed.toUInt64⟩).1
 
-def genBinder : RGen BinderContract := do
-  if (← rand 3) != 0 then return .many
-  let uses := #[Uses.erased, .linear, .affine, .many][← rand 4]!
-  let owned := #[Owned.unique, .shared][← rand 2]!
-  let loc := #[Locality.unrestricted, .local][← rand 2]!
-  return ⟨uses, ⟨owned, loc⟩⟩
+/-- Every `let` mode, the default first. -/
+def letModes : Array LetMode :=
+  #[.value .many, .value .borrowed, .value .unique, .value .uniqueBorrowed, .value .once,
+    .value .onceBorrowed, .value .erased, .borrow]
 
-def genValue : RGen ValueContract := do
-  if (← rand 3) != 0 then return .shared
-  return ⟨#[Owned.unique, .shared][← rand 2]!, #[Locality.unrestricted, .local][← rand 2]!⟩
-
-def genLet : RGen LetContract := do
+/-- A `let`'s `nonDep` and mode: the default mode two times in three. -/
+def genLet : RGen (Bool × LetMode) := do
   let nonDep := (← rand 2) == 0
-  let kind := if (← rand 3) == 0 then LetKind.borrowShared else .value
-  return ⟨nonDep, kind, ← genBinder⟩
+  if (← rand 3) != 0 then return (nonDep, .value .many)
+  return (nonDep, letModes[← rand letModes.size]!)
 
 def genLeaf : RGen Ixon.Expr := do
   match ← rand 12 with
@@ -149,11 +144,13 @@ def genNode (pool : Array Ixon.Expr) (noMerge : Bool := false) : RGen Ixon.Expr 
   | 0 | 1 =>
     if noMerge && isApp c then return .prj 0 0 c else return .app c d
   | 2 =>
-    if noMerge && isLam d then return .prj 1 2 d else return .lam (← genBinder) c d
+    if noMerge && isLam d then return .prj 1 2 d else return .lam c d
   | 3 | 4 =>
-    if noMerge && isAll d then return .prj 0 1 d else return .all (← genBinder) (← genValue) c d
+    if noMerge && isAll d then return .prj 0 1 d else return .all c d
   | 5 => return .prj (← rand 2).toUInt64 (← rand 3).toUInt64 c
-  | _ => return .letE (← genLet) c d e
+  | _ =>
+    let (nonDep, mode) ← genLet
+    return .letE nonDep mode c d e
 
 /-- Roots built from a pool, so subterms repeat. -/
 def genRoots (leaves nodes roots : Nat) (noMerge : Bool := false) : RGen (Array Ixon.Expr) := do
@@ -191,9 +188,9 @@ def wrapRoots (roots : Array Ixon.Expr) (sel : Nat) : Constant :=
 def exprChildren : Ixon.Expr → List Ixon.Expr
   | .prj _ _ v => [v]
   | .app f a => [f, a]
-  | .lam _ t b => [t, b]
-  | .all _ _ t b => [t, b]
-  | .letE _ t v b => [t, v, b]
+  | .lam t b => [t, b]
+  | .all t b => [t, b]
+  | .letE _ _ t v b => [t, v, b]
   | _ => []
 
 partial def exprHeight (e : Ixon.Expr) : Nat :=
@@ -213,10 +210,8 @@ def exprScalars : Ixon.Expr → List Nat
   | .sort i | .var i | .str i | .nat i => [i.toNat]
   | .ref r us | .recur r us => [r.toNat, us.size] ++ us.toList.map (·.toNat)
   | .prj t f _ => [t.toNat, f.toNat]
-  | .app .. => []
-  | .lam c .. => [c.toBits.toNat]
-  | .all c r .. => [(packAllContract c r).toNat]
-  | .letE c .. => [c.flags.toNat, c.binder.toBits.toNat]
+  | .app .. | .lam .. | .all .. => []
+  | .letE nonDep mode .. => [(LetMode.header nonDep mode).toNat]
   | .share i => [i.toNat]
 
 def cmpNats : List Nat → List Nat → Ordering
@@ -253,9 +248,10 @@ partial def naiveExpand (table : Array Ixon.Expr) : Ixon.Expr → Ixon.Expr
   | .share j => naiveExpand (table.extract 0 j.toNat) table[j.toNat]!
   | .prj t f v => .prj t f (naiveExpand table v)
   | .app f a => .app (naiveExpand table f) (naiveExpand table a)
-  | .lam c t b => .lam c (naiveExpand table t) (naiveExpand table b)
-  | .all c r t b => .all c r (naiveExpand table t) (naiveExpand table b)
-  | .letE c t v b => .letE c (naiveExpand table t) (naiveExpand table v) (naiveExpand table b)
+  | .lam t b => .lam (naiveExpand table t) (naiveExpand table b)
+  | .all t b => .all (naiveExpand table t) (naiveExpand table b)
+  | .letE nonDep mode t v b =>
+    .letE nonDep mode (naiveExpand table t) (naiveExpand table v) (naiveExpand table b)
   | e => e
 
 /-! ## Integer widths and exact lengths -/
@@ -302,15 +298,16 @@ def widthTests (_ : Unit) : TestSeq :=
         tag0StepBound (tagNEnd5 0) == 4)
 
 /-- App spine with `n` arguments, Lam/All telescopes with `n` binders, and
-mixed nestings. -/
+mixed nestings; `let`s with one- and two-byte headers. -/
 def telescopeExprs : List Ixon.Expr := Id.run do
   let mut out : List Ixon.Expr := []
   for n in [1, 2, 7, 8, 9, 255, 256, 257] do
     let app := (List.range n).foldl (fun f i => .app f (.var (i % 3).toUInt64)) (.ref 0 #[])
-    let lam := (List.range n).foldl (fun b i => .lam (if i % 2 == 0 then .many else .linear) (.sort 0) b) (.var 0)
+    let lam := (List.range n).foldl (fun b _ => .lam (.sort 0) b) (.var 0)
     let all := (List.range n).foldl (fun b _ => arr (.var 1) b) (.sort 1)
-    out := out ++ [app, lam, all, .app lam app, .lam .many all lam, arr app (.share 300),
-      .app (.share 8) app, .letE (.lean true) app lam all, .prj 3 9 app, arr (.share 7) all]
+    out := out ++ [app, lam, all, .app lam app, .lam all lam, arr app (.share 300),
+      .app (.share 8) app, .letE true (.value .many) app lam all,
+      .letE false .borrow app lam all, .prj 3 9 app, arr (.share 7) all]
   return out
 
 def genExprForSize : RGen Ixon.Expr := do
@@ -321,7 +318,7 @@ def genExprForSize : RGen Ixon.Expr := do
   match ← rand 4 with
   | 0 => return .app e (.share idx.toUInt64)
   | 1 => return arr (.share idx.toUInt64) e
-  | 2 => return .lam .many e (.share idx.toUInt64)
+  | 2 => return .lam e (.share idx.toUInt64)
   | _ => return e
 
 def exprSizeTests (_ : Unit) : TestSeq :=
@@ -371,7 +368,7 @@ def decompositionTests (_ : Unit) : TestSeq :=
 
 def fixtureA : Ixon.Expr := arr P P
 def fixtureB : Ixon.Expr := arr P (.sort 1)
-def twoMinimaRoot : Ixon.Expr := arr fixtureA (arr fixtureA (arr fixtureB fixtureB))
+def tiedMinimaRoot : Ixon.Expr := arr fixtureA (arr fixtureA (arr fixtureB fixtureB))
 
 def structuralIdTests (_ : Unit) : TestSeq :=
   let naiveAgree := runGen 11 do
@@ -386,18 +383,19 @@ def structuralIdTests (_ : Unit) : TestSeq :=
       | .error _ => ok := false
     return ok
   group "structural IDs" <|
-    withOk "two-minima fixture" (expandRoots #[twoMinimaRoot]) (fun ex =>
+    withOk "tied-minima fixture" (expandRoots #[tiedMinimaRoot]) (fun ex =>
       test "ids: Sort0=0 Sort1=1 A=2 B=3 (B→B)=4 (A→B→B)=5 root=6"
         (ex.dag.toExprs == #[P, .sort 1, fixtureA, fixtureB, arr fixtureB fixtureB,
-          arr fixtureA (arr fixtureB fixtureB), twoMinimaRoot] && ex.roots == #[6])) ++
+          arr fixtureA (arr fixtureB fixtureB), tiedMinimaRoot] && ex.roots == #[6])) ++
     withOk "witness" (expandRoots #[arr (chain 2) (chain 2)]) (fun ex =>
       test "ids: P=0 T1=1 T2=2 R=3" (ex.dag.toExprs == #[P, chain 1, chain 2,
         arr (chain 2) (chain 2)])) ++
     test "canonical IDs equal an independent naive assignment on 300 generated inputs"
       naiveAgree ++
-    test "contracts are part of structural identity"
-      (distinctCount #[.lam .many P P, .lam .linear P P, .all .many .shared P P,
-        .all .many .unique P P, .letE (.lean true) P P P, .letE (.lean false) P P P] == 7) ++
+    test "let modes are part of structural identity"
+      (distinctCount #[.lam P P, .all P P, .letE true (.value .many) P P P,
+        .letE false (.value .many) P P P, .letE false .borrow P P P,
+        .letE false (.value .erased) P P P] == 7) ++
     test "lexCompare: proper prefix first, then numeric"
       (lexCompare [1] [1, 0] == .lt && lexCompare [] [0] == .lt &&
         lexCompare [2] [10] == .lt && lexCompare [1, 0] [1] == .gt) ++
@@ -452,8 +450,9 @@ def cacheTests (_ : Unit) : TestSeq :=
       (collision.get? key == none && collision.get? ⟨0, .var 4⟩ == some 29) ++
     test "equal expression structure can use the same candidate bucket"
       ((empty.insert ⟨0, .app (.var 3) (.var 4)⟩ 17).get? ⟨0, source⟩ == some 17) ++
-    test "binder contracts are checked before accepting a hit"
-      ((empty.insert ⟨0, .lam .many P P⟩ 17).get? ⟨0, .lam .linear P P⟩ == none) ++
+    test "let modes are checked before accepting a hit"
+      ((empty.insert ⟨0, .letE false (.value .many) P P P⟩ 17).get?
+        ⟨0, .letE false .borrow P P P⟩ == none) ++
     test "poisoning a pointer bucket cannot bypass actual ingestion"
       (ordinary.toOption.map (fun (id, state) => (id, state.interner.nodes, state.visits)) ==
         repaired.toOption.map (fun (id, state) => (id, state.interner.nodes, state.visits)) && repaired.isOk) ++
@@ -627,8 +626,8 @@ def walkCosts (dag : Dag) (width : Array (Option Nat)) : Array Nat := Id.run do
     cost := cost.set! t (match width[t]! with | some w => min inl w | none => inl)
   return cost
 
-/-- Long spines over a small pool: App spines, Lam and All telescopes with
-mixed contracts, nested in each other. -/
+/-- Long spines over a small pool: App spines and Lam and All telescopes,
+nested in each other. -/
 def genSpines : RGen (Array Ixon.Expr) := do
   let pool ← (List.range 4).toArray.mapM fun _ => genLeaf
   let mut roots : Array Ixon.Expr := #[]
@@ -639,8 +638,8 @@ def genSpines : RGen (Array Ixon.Expr) := do
       let a := pool[← rand pool.size]!
       e ← match ← rand 5 with
         | 0 | 1 => pure (.app e a)
-        | 2 => do pure (.lam (← genBinder) a e)
-        | 3 => do pure (.all (← genBinder) (← genValue) a e)
+        | 2 => pure (.lam a e)
+        | 3 => pure (.all a e)
         | _ => pure (arr a e)
     roots := roots.push e
     roots := roots.push (.app e e)
@@ -677,7 +676,7 @@ def deepTests (_ : Unit) : TestSeq :=
   let nested : Ixon.Expr :=
     (List.range d).foldl (fun acc i => .app (.var (i % 2).toUInt64) acc) (.sort 0)
   let telescope : Ixon.Expr :=
-    (List.range d).foldl (fun acc i => .lam .many (.var (i % 3).toUInt64) acc) (.sort 0)
+    (List.range d).foldl (fun acc i => .lam (.var (i % 3).toUInt64) acc) (.sort 0)
   group "deep inputs" <|
     withOk "deep" (optimizeSharing #[nested, telescope]) fun r =>
       test s!"{d}-deep argument nesting and a {d}-binder telescope optimize under default limits ({r.variableBytes} bytes = unshared {r.unsharedBytes})"
@@ -687,9 +686,9 @@ def deepTests (_ : Unit) : TestSeq :=
 
 def dictionaryTests (_ : Unit) : TestSeq :=
   let fixtures : List (String × Array Ixon.Expr) :=
-    [("T2→T2", #[arr (chain 2) (chain 2)]), ("A→A→B→B", #[twoMinimaRoot]),
-     ("mixed spines", #[.app (.app (.lam .many P (arr P P)) (arr P P)) (.app (.var 0) (arr P P))]),
-     ("let/prj", #[.letE (.lean false) (arr P P) (.prj 0 1 (.app (.var 0) P)) (.app (.var 0) P)])]
+    [("T2→T2", #[arr (chain 2) (chain 2)]), ("A→A→B→B", #[tiedMinimaRoot]),
+     ("mixed spines", #[.app (.app (.lam P (arr P P)) (arr P P)) (.app (.var 0) (arr P P))]),
+     ("let/prj", #[.letE false (.value .many) (arr P P) (.prj 0 1 (.app (.var 0) P)) (.app (.var 0) P)])]
   let fixtureSeq := fixtures.foldl (init := .done) fun acc (name, roots) =>
     acc ++ withOk name (expandRoots roots) fun ex =>
       -- Up to 2000 of the ordered dictionaries (every 7th when there are
@@ -759,7 +758,7 @@ def oracleTests (_ : Unit) : TestSeq :=
   let (n1, s1, t1, e1) := oracleAgreement 23 150 6 false
   let (n2, s2, t2, e2) := oracleAgreement 29 40 4 true
   group "optimizer vs exhaustive oracle (full key)" <|
-    test s!"per-part oracle: {n1} generated constants (N ≤ 6, all kinds/contracts, {t1} tables) agree on bytes and table IDs ({s1} skipped: oracle budget)" (e1.isNone && n1 == 150) ++
+    test s!"per-part oracle: {n1} generated constants (N ≤ 6, all kinds and let modes, {t1} tables) agree on bytes and table IDs ({s1} skipped: oracle budget)" (e1.isNone && n1 == 150) ++
     (match e1 with | some m => test m false | none => .done) ++
     test s!"full-product oracle: {n2} generated constants (N ≤ 4, {t2} tables) agree ({s2} skipped: oracle budget)" (e2.isNone && n2 == 40) ++
     (match e2 with | some m => test m false | none => .done)
@@ -773,9 +772,9 @@ def unitWidthLength (roots : Array Ixon.Expr) : Option Nat := Id.run do
   let stub (e : Ixon.Expr) : Ixon.Expr := match e with
     | .prj t f _ => .prj t f (.var 0)
     | .app .. => .app (.var 0) (.var 0)
-    | .lam c .. => .lam c (.var 0) (.var 0)
-    | .all c r .. => .all c r (.var 0) (.var 0)
-    | .letE c .. => .letE c (.var 0) (.var 0) (.var 0)
+    | .lam .. => .lam (.var 0) (.var 0)
+    | .all .. => .all (.var 0) (.var 0)
+    | .letE nonDep mode .. => .letE nonDep mode (.var 0) (.var 0) (.var 0)
     | e => e
   let w (e : Ixon.Expr) : Nat := (serExpr (stub e)).size - 1
   let indeg (t : Ixon.Expr) : Nat :=
@@ -853,31 +852,31 @@ def atomsTests (_ : Unit) : TestSeq :=
 def witness2 : Constant := axiomOf (arr (chain 2) (chain 2))
 
 def witnessTests (_ : Unit) : TestSeq :=
-  -- A valid 19-byte encoding of T2 → T2, two bytes above the minimum.
-  let altBytes := ByteArray.mk #[0xd2, 0x00, 0x00, 0x91, 0x17, 0xb1, 0xb1, 0x02, 0x91, 0x17,
-    0x00, 0x00, 0x91, 0x17, 0x00, 0xb0, 0x00, 0x01, 0x00]
+  -- A valid 16-byte encoding of T2 → T2, two bytes above the minimum.
+  let altBytes := ByteArray.mk #[0xd2, 0x00, 0x00, 0x91, 0xb1, 0xb1, 0x02, 0x91,
+    0x00, 0x00, 0x91, 0x00, 0xb0, 0x00, 0x01, 0x00]
   let alt := (deConstant altBytes).toOption.getD witness2
-  group "fixture T2 → T2 (19 → 17)" <|
-    test "the 19-byte encoding decodes to T2 → T2"
-      (hexOf (serConstant alt) == "d200009117b1b10291170000911700b0000100" &&
+  group "fixture T2 → T2 (16 → 14)" <|
+    test "the 16-byte encoding decodes to T2 → T2"
+      (hexOf (serConstant alt) == "d2000091b1b1029100009100b0000100" &&
         (expandConstantSharing alt).toOption.map (constantInfoRoots ·.info) ==
           some (constantInfoRoots witness2.info)) ++
-    test "unshared is 20 bytes" (cbytes witness2 == 20) ++
+    test "unshared is 15 bytes" (cbytes witness2 == 15) ++
     withOk "exact" (optimizeSharingTable #[] (constantInfoRoots witness2.info)) (fun r =>
       test "exact table term IDs = [T2] = [2]" (r.tableTerms == #[2])) ++
     withOk "exact" (normalizeConstantSharing witness2) (fun n =>
-      test "exact bytes d200009117b0b001921700170000000100 (17)"
-        (hexOf (serConstant n) == "d200009117b0b001921700170000000100")) ++
-    withOk "exact from the 19-byte encoding" (normalizeConstantSharing alt) (fun n =>
-      test "normalizing the 19-byte encoding gives the same 17 bytes"
-        (hexOf (serConstant n) == "d200009117b0b001921700170000000100")) ++
+      test "exact bytes d2000091b0b00192000000000100 (14)"
+        (hexOf (serConstant n) == "d2000091b0b00192000000000100")) ++
+    withOk "exact from the 16-byte encoding" (normalizeConstantSharing alt) (fun n =>
+      test "normalizing the 16-byte encoding gives the same 14 bytes"
+        (hexOf (serConstant n) == "d2000091b0b00192000000000100")) ++
     withOk "oracle" (oracleConstant witness2) (fun (oc, o) =>
-      test s!"per-part oracle: 17-byte unique minimum over {o.work.tables} ordered tables"
-        (hexOf (serConstant oc) == "d200009117b0b001921700170000000100" &&
+      test s!"per-part oracle: 14-byte unique minimum over {o.work.tables} ordered tables"
+        (hexOf (serConstant oc) == "d2000091b0b00192000000000100" &&
           o.work.tables == 65 && o.minima.size == 1)) ++
     withOk "product oracle" (oracleConstant witness2 {} true) (fun (oc, o) =>
-      test s!"full-product oracle: {o.work.candidates} complete candidates, 17-byte unique minimum"
-        (hexOf (serConstant oc) == "d200009117b0b001921700170000000100" &&
+      test s!"full-product oracle: {o.work.candidates} complete candidates, 14-byte unique minimum"
+        (hexOf (serConstant oc) == "d2000091b0b00192000000000100" &&
           o.work.candidates == 3061082 && o.minima.size == 1))
 
 def witness16 : Constant := axiomOf (arr (chain 16) (chain 16))
@@ -886,12 +885,12 @@ def t16Tests (_ : Unit) : TestSeq :=
   let only16 : Constant := { witness16 with
     info := .axio ⟨false, 0, arr (.share 0) (.share 0)⟩, sharing := #[chain 16] }
   group "fixture T16 → T16" <|
-    test "unshared is 78 bytes" (cbytes witness16 == 78) ++
-    test "storing only T16 is 46 bytes" (cbytes only16 == 46) ++
+    test "unshared is 45 bytes" (cbytes witness16 == 45) ++
+    test "storing only T16 is 29 bytes" (cbytes only16 == 29) ++
     withOk "exact" (optimizeSharingTable #[] (constantInfoRoots witness16.info)) (fun r =>
       withOk "exact" (normalizeConstantSharing witness16) fun n =>
-        test s!"exact certified minimum = {cbytes n} bytes ≤ 46 (candidates {r.stats.candidates}, states reached {r.stats.statesReached}, expanded {r.stats.statesExpanded}, pruned {r.stats.statesPruned}, transitions {r.stats.transitions})"
-          (cbytes n ≤ 46 && cbytes n == r.variableBytes + 6))
+        test s!"exact certified minimum = {cbytes n} bytes ≤ 29 (candidates {r.stats.candidates}, states reached {r.stats.statesReached}, expanded {r.stats.statesExpanded}, pruned {r.stats.statesPruned}, transitions {r.stats.transitions})"
+          (cbytes n ≤ 29 && cbytes n == r.variableBytes + 6))
 
 /-- The nine-Ref fixture, built as in the production probe: atoms sorted by
 the blake3 hash of their encoding, each twice, then 98 more uses of the last (hot) atom; one
@@ -935,20 +934,23 @@ def nineRefTests (_ : Unit) : TestSeq :=
           (cbytes n == 578 && r.tableTerms == #[0, 1, 2, 3, 4, 5, 6, 7, 8] &&
             ((n.sharing.findIdx? (· == hot)).map fun i => decide (i < 8)) == some true))
 
-def twoMinimaTests (_ : Unit) : TestSeq :=
-  let c := axiomOf twoMinimaRoot #[.zero, .succ .zero]
-  let first := "d200009317b017b017b1b102911700009117000100020001" ++ "00"
-  let second := "d200009317b117b117b0b002911700019117000000020001" ++ "00"
-  group "fixture two 25-byte minima" <|
+def tiedMinimaTests (_ : Unit) : TestSeq :=
+  let c := axiomOf tiedMinimaRoot #[.zero, .succ .zero]
+  -- Table [A]: the root is one telescope with binders `Share 0`, `Share 0`, `B`, `P`
+  -- over `Type`; tables [A,B] and [B,A]: the root is cut at `B`, all `Share`s.
+  let onlyA := "d2000094b0b0910001000101910000" ++ "0002000100"
+  let first := "d2000093b0b0b1b10291000091000100020001" ++ "00"
+  let second := "d2000093b1b1b0b00291000191000000020001" ++ "00"
+  group "fixture three 20-byte minima" <|
     withOk "oracle" (oracleConstant c) (fun (oc, o) =>
-      test s!"oracle: minimum 25 over {o.work.tables} ordered tables; both [A,B] and [B,A] attain it; tie picks [A,B]"
-        (cbytes oc == 25 && o.work.tables == 13700 &&
+      test s!"oracle: minimum 20 over {o.work.tables} ordered tables; [A], [A,B] and [B,A] attain it; the least table [A] wins"
+        (cbytes oc == 20 && o.work.tables == 13700 && o.minima.size == 3 &&
           o.minima.any (hexOf · == first) && o.minima.any (hexOf · == second) &&
-          hexOf (serConstant oc) == first && o.table == #[2, 3])) ++
+          hexOf (serConstant oc) == onlyA && o.table == #[2])) ++
     withOk "exact" (optimizeSharingTable #[] (constantInfoRoots c.info)) (fun r =>
       withOk "exact" (normalizeConstantSharing c) fun n =>
-        test "exact picks the [A,B] minimum (table IDs [2,3])"
-          (hexOf (serConstant n) == first && r.tableTerms == #[2, 3]))
+        test "exact picks the [A] minimum (table IDs [2])"
+          (hexOf (serConstant n) == onlyA && r.tableTerms == #[2]))
 
 /-- A parent stored before its separately stored descendant (which the
 parent's entry therefore inlines): seven hot atoms take slots 0–6, the
@@ -1075,12 +1077,12 @@ def pruningTests (_ : Unit) : TestSeq :=
 def profileTests (_ : Unit) : TestSeq :=
   group "sharing profile" <|
     withOk "T2 → T2" (sharingProfile witness2) (fun p =>
-      test "T2→T2: N=4, 3 repeated, 2 candidates (T1,T2), height 3, unshared 14 variable bytes"
+      test "T2→T2: N=4, 3 repeated, 2 candidates (T1,T2), height 3, unshared 9 variable bytes"
         (p.distinctSubterms == 4 && p.repeated == 3 && p.candidates == 2 && p.height == 3 &&
-          p.unsharedBytes == 14 && p.inputBytes == 14)) ++
+          p.unsharedBytes == 9 && p.inputBytes == 9)) ++
     withOk "T16 → T16" (sharingProfile witness16) (fun p =>
-      test "T16→T16: N=18, 16 candidates, unshared 72 variable bytes"
-        (p.distinctSubterms == 18 && p.candidates == 16 && p.unsharedBytes == 72))
+      test "T16→T16: N=18, 16 candidates, unshared 39 variable bytes"
+        (p.distinctSubterms == 18 && p.candidates == 16 && p.unsharedBytes == 39))
 
 /-! ## Safety, limits, empty input -/
 
@@ -1242,7 +1244,7 @@ public def suite : List TestSeq := [
   deferred "fixture T2 → T2" witnessTests,
   deferred "fixture T16 → T16" t16Tests,
   deferred "fixture nine Refs" nineRefTests,
-  deferred "fixture two 25-byte minima" twoMinimaTests,
+  deferred "fixture three 20-byte minima" tiedMinimaTests,
   deferred "ordering: parent before descendant" orderingTests,
   deferred "properties on generated inputs" propertyTests,
   deferred "pruning never changes the result" pruningTests,

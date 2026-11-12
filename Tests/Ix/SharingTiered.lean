@@ -64,12 +64,12 @@ def fixtureTests (_ : Unit) : TestSeq :=
   let l := ShareLayout.tagN
   group "fixtures, TagN layout" (
     withOk "T2" (normalizeConstantSharingTiered l w2) (fun n =>
-      test s!"T2 → T2: {cbytes n} bytes = 17, d200009117b0b001921700170000000100"
-        (cbytes n == 17 && hexOf (serConstant n) == "d200009117b0b001921700170000000100" &&
+      test s!"T2 → T2: {cbytes n} bytes = 14, d2000091b0b00192000000000100"
+        (cbytes n == 14 && hexOf (serConstant n) == "d2000091b0b00192000000000100" &&
           sameAsCandidates l w2)) ++
     withOk "T16" (normalizeConstantSharingTiered l w16) (fun n =>
-      test s!"T16 → T16: {cbytes n} bytes = 46, the candidates run alone agree"
-        (cbytes n == 46 && sameAsCandidates l w16)) ++
+      test s!"T16 → T16: {cbytes n} bytes = 29, the candidates run alone agree"
+        (cbytes n == 29 && sameAsCandidates l w16)) ++
     withOk "nine" (canonicalSharingTieredTable l #[] (constantInfoRoots nine.info)) (fun r =>
       withOk "nine" (normalizeConstantSharingTiered l nine) fun n =>
         test s!"nine Refs: {cbytes n} bytes = 578, the candidates run alone agree; w={r.stats.w} (candidates {r.stats.candidateLengths}); first tier {r.stats.firstTier} holds the hot atom; phase-1 layout {r.stats.phase1LayoutBytes}, final {r.stats.phase3LayoutBytes}"
@@ -316,7 +316,7 @@ def scaleRoots (fillers chains : Nat) : Array Ixon.Expr := Id.run do
     for _ in [0:2] do roots := roots.push (.app (.var 1) x)
   for j in [0:chains] do
     let a : Ixon.Expr := .ref (fillers + 2 * j).toUInt64 #[0, 0, 0, 0, 0]
-    let b : Ixon.Expr := .lam .many a (.app (.var 0) (.ref (fillers + 2 * j + 1).toUInt64 #[0]))
+    let b : Ixon.Expr := .lam a (.app (.var 0) (.ref (fillers + 2 * j + 1).toUInt64 #[0]))
     for _ in [0:3] do roots := roots.push a
     for _ in [0:40] do roots := roots.push b
   return roots
@@ -347,7 +347,7 @@ def scaleTests (_ : Unit) : TestSeq :=
   let nested : Ixon.Expr :=
     (List.range d).foldl (fun acc i => .app (.var (i % 2).toUInt64) acc) shared
   let telescope : Ixon.Expr :=
-    (List.range d).foldl (fun acc i => .lam .many (.var (i % 3).toUInt64) acc) shared
+    (List.range d).foldl (fun acc i => .lam (.var (i % 3).toUInt64) acc) shared
   let deep := wrapRoots #[nested, telescope, shared] 0
   group "the production construction at scale" <|
     withOk "1040 fillers" (canonicalSharingTieredTable .tagN #[] (constantInfoRoots big.info))
