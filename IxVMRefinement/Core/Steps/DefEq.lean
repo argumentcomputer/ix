@@ -138,7 +138,7 @@ theorem try_def_eq_app_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap
       rfl
     subst hHH
     have ext := e0.trans e1
-    have hl := ih.get (.defEq .de_args) (by lt_calls) ev155 rc x_aa x_bb types rfl g3
+    have hl := ih.get (.defEq .de_args) (by lt_calls) ev155 rc _ _ types rfl g3
       (RCRep.mono ext hrc) d Γ (types_mono ext htypes) As Bs (tml_mono e1 hAs) hBs hr
     exact defEq_mkAppN_congr hl .refl
   case Const_Const_n0_other_n0 m2 cs13 x_ah x_aa m41 cs52 x_bh x_bb x_a_addr x_al x_b_addr x_bl
@@ -179,14 +179,44 @@ theorem try_def_eq_app_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap
       rw [ite_eq_right hne, hy1] at hy
       exact one_ne_zero hy
     subst ha
-    have hlv := ih.get (.defEq .level_list_eq) (by lt_calls) ev306 x_al x_bl rfl g3 us us'
+    have hlv := ih.get (.defEq .level_list_eq) (by lt_calls) ev306 _ _ rfl g3 us us'
       (LvListRep.mono e2 hus) (LvListRep.mono e2 hus') hne330
     have ext : Heap.Extends h m335 := e0.trans (e1.trans (e2.trans (e3.trans (e4.trans e5))))
     have ext' : Heap.Extends m41 m335 := e2.trans (e3.trans (e4.trans e5))
-    have hl := ih.get (.defEq .de_args) (by lt_calls) ev388 rc x_aa x_bb types rfl g4
+    have hl := ih.get (.defEq .de_args) (by lt_calls) ev388 rc _ _ types rfl g4
       (RCRep.mono ext hrc) d Γ (types_mono ext htypes) As Bs (tml_mono (e1.trans ext') hAs)
       (tml_mono ext' hBs) hr
     exact defEq_mkAppN_congr hl (.const hlv)
   all_goals (subst_vars; exact absurd rfl hr)
+
+/-! ## The entry -/
+
+/-- `KernelDefEq::k_is_def_eq`: closed sides are compared under the empty context list (a
+segment of the same ghost context); otherwise under the rebased context (`k_def_eq_rebase`). -/
+theorem k_is_def_eq_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+    {r : SourceValue F} {calls : List (Call F)}
+    (ev : ObsFn W "KernelDefEq::k_is_def_eq" args h r h' calls) (ih : IH c calls) :
+    Specs.DefEq.k_is_def_eq c args h r h' calls := by
+  intro rc a b types hargs good hrc d Γ htypes A B hA hB hr
+  subst hargs
+  rcases Obs.«KernelDefEq::k_is_def_eq».obs ev with
+    ⟨m2, cs12, v15, v16, m18, cs26, m38, cs46, cs74, m103, ev28, ev48, ev14, hm111, ev76, hc115⟩ |
+    ⟨v1, m2, cs12, v15, v16, m18, cs26, m38, cs46, cs123, ev28, ev48, ev14, hne116, ev125, hc166⟩
+  · subst hc115 hm111
+    have ext : Heap.Extends h m2 := (ObsFn.heap_extends ev28).trans
+      ((ObsFn.heap_extends ev48).trans (ObsFn.heap_extends ev14))
+    have ext' : Heap.Extends h (m2 ++ [.construct kexprListEnum "Nil" []]) :=
+      ext.trans (Heap.Extends.snoc _ _)
+    have hnil : c.types Γ (m2 ++ [.construct kexprListEnum "Nil" []]) d
+        (.ptr (.enum kexprListEnum) m2.length) := ⟨.nil (by simp), htypes.2⟩
+    exact ih.get (.defEq .k_is_def_eq_core) (by lt_calls) ev76 rc a b _ rfl
+      (good.sub fun x hx => by simp [hx]) (RCRep.mono ext' hrc) d Γ hnil A B (Tm.mono ext' hA)
+      (Tm.mono ext' hB) hr
+  · subst hc166
+    have ext : Heap.Extends h m2 := (ObsFn.heap_extends ev28).trans
+      ((ObsFn.heap_extends ev48).trans (ObsFn.heap_extends ev14))
+    exact ih.get (.defEq .k_def_eq_rebase) (by lt_calls) ev125 rc a b types v1 rfl
+      (good.sub fun x hx => by simp [hx]) (RCRep.mono ext hrc) d Γ (types_mono ext htypes) A B
+      (Tm.mono ext hA) (Tm.mono ext hB) hr
 
 end IxVM.Refinement.Core
