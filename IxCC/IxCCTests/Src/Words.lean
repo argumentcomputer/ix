@@ -167,15 +167,17 @@ abbrev tower64 (n : Nat) (h : Nat.le (Nat.succ n) 18446744073709551616) : UInt64
 /-- `bogus` satisfies the plan's bridge (below the size it is `UInt64.ofNat`)… -/
 example (x : Nat) (h : x < 2 ^ 64) : bogus x = tower64 x h := by
   unfold bogus; rw [if_pos h]
-  exact UInt64.toNat_inj.mp (by rw [UInt64.toNat_ofNat, Nat.mod_eq_of_lt h]; rfl)
+  apply UInt64.toNat_inj.mp
+  show Nat.mod x 18446744073709551616 = x
+  exact Nat.mod_eq_of_lt h
 
 /-- …and the plan's `WordAccel` fails for it at `2^64`: not the tower of `2^64 % 2^64 = 0`. -/
-example : bogus (2 ^ 64) ≠ tower64 0 (by decide) := by decide
+example : bogus (2 ^ 64) ≠ tower64 0 (Nat.le_of_ble_eq_true rfl) := by decide
 
 /-- The reducing bridge refutes `bogus` as an `ofNat` key: it fails at `2^64`. -/
 example : ¬ ∀ x (h : Nat.le (Nat.succ (Nat.mod x 18446744073709551616)) 18446744073709551616),
     bogus x = tower64 (Nat.mod x 18446744073709551616) h :=
-  fun hb => absurd (hb (2 ^ 64) (by decide)) (by decide)
+  fun hb => absurd (hb (2 ^ 64) (Nat.le_of_ble_eq_true rfl)) (by decide)
 
 /-- Lean's `UInt64.ofNat` satisfies the reducing bridge, definitionally (as the stored theorem
 `IxWordEquations.UInt64_ofNat` is proved), and so do the other widths' (here `UInt8`). -/
@@ -186,9 +188,9 @@ example (x : Nat) (h : Nat.le (Nat.succ (Nat.mod x 256)) 256) :
 
 /-- The corrected `WordAccel`'s `ofNat` clause at literals at and above the size, where the plan's
 failed: `ofNat a` is the tower of `a % size`. -/
-example : (UInt64.ofNat (2 ^ 64)) = tower64 0 (by decide) := by decide
-example : (UInt64.ofNat (2 ^ 64 + 5)) = tower64 5 (by decide) := by decide
-example : (UInt64.ofNat (2 ^ 65 + 3)) = tower64 3 (by decide) := by decide
+example : (UInt64.ofNat (2 ^ 64)) = tower64 0 (Nat.le_of_ble_eq_true rfl) := by decide
+example : (UInt64.ofNat (2 ^ 64 + 5)) = tower64 5 (Nat.le_of_ble_eq_true rfl) := by decide
+example : (UInt64.ofNat (2 ^ 65 + 3)) = tower64 3 (Nat.le_of_ble_eq_true rfl) := by decide
 example : (UInt8.ofNat 300) = UInt8.ofBitVec (@BitVec.ofFin 8 (@Fin.mk 256 44 (by decide))) := by
   decide
 
