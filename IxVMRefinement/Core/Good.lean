@@ -5,8 +5,8 @@ import Ix.IxVM.Consistency.Statement
 
 `Good c calls`: the calls hashed no collision with the records `c.E` (the escape of the
 statement's `Core`, `View.HashedCollision { env := c.E } [] calls`), and they are **bounded**:
-at most `2^39` distinct calls of each memoized callee in a valid ROM (the statement's `Bounded`,
-which L0 provides). Every registry spec is conditional on `Good` of its own calls, and `Good`
+some valid ROM of at most `2^39` addresses carries them (the statement's `Bounded`, which L0
+provides), so every list their arguments hold is shorter than `2^39`. Every registry spec is conditional on `Good` of its own calls, and `Good`
 passes to sub-derivations (`Good.sub`): a callee's calls are among its caller's.
 
 `LoadFacts c`: the record loads the core makes read the environment: a load at an address the
@@ -46,10 +46,8 @@ theorem collision_mono {V : View} {calls₁ calls₂ : List (Call F)}
 
 theorem bounded_sub {calls₁ calls₂ : List (Call F)} (hsub : ∀ x ∈ calls₁, x ∈ calls₂)
     (b : IxVM.Consistency.Bounded calls₂) : IxVM.Consistency.Bounded calls₁ := by
-  obtain ⟨rom, hv, bound⟩ := b
-  refine ⟨rom, hv, fun name hm => ?_⟩
-  obtain ⟨keys, hk, cover⟩ := bound name hm
-  exact ⟨keys, hk, fun cl hcl => cover cl (hsub cl hcl)⟩
+  obtain ⟨rom, hv, hb, hc⟩ := b
+  exact ⟨rom, hv, hb, fun cl hcl => hc cl (hsub cl hcl)⟩
 
 /-- **Good passes to sub-derivations.** -/
 theorem Good.sub {c : Ctx} {calls₁ calls₂ : List (Call F)} (g : Good c calls₂)

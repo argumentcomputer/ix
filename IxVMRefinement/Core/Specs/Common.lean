@@ -27,8 +27,10 @@ function.
 5. A yes/no answer claims something for its positive value only; nothing is claimed for `0`
    unless the spec says so explicitly (and then the circuit must decide it completely). A
    tagged result `(tag, x)` claims for `tag = 1` (or the tags the spec names) only.
-6. Counts are field elements; a spec that reads one as a natural says so (`n.val`), and a
-   proof bounds it with the counted-chain bound (`Lib/Count.lean`) when it must.
+6. Counts are field elements; a spec that reads one as a natural says so (`ZMod.val n`), and a
+   proof bounds it through the ROM: `Bounded` gives a valid ROM of at most `2^39` addresses
+   carrying the calls, and the cells of a list are at pairwise different addresses
+   (`Core/RomBound.lean`).
 7. Specs never mention a function's own calls beyond `Good c calls`.
 
 A step lemma for `f` (in the package that owns `f`) has the form
