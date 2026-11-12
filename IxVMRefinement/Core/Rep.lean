@@ -187,22 +187,12 @@ def limbsVal : List UInt64 → Nat
 reader decodes a string literal's blob (`String.fromUTF8?`, `Reader.convExpr`). -/
 def StrBytes (s : String) (bytes : List UInt8) : Prop := String.fromUTF8? ⟨bytes.toArray⟩ = some s
 
-/-- **Capture-avoiding instantiation**: the loose bound variable `j` of `e` replaced by `v`,
-lifted over the `j` binders passed (`liftLooseBVars j 0 v`), the loose bound variables above
-`j` lowered by one. The kernel's `Expr.instantiate1` does not lift `v`; the two agree when `v`
-has no loose bound variable. The image of a `Let` is `instShift v 0 b`. -/
-def instShift (v : KExpr) : Nat → KExpr → KExpr
-  | j, .bvar i => if i = j then Ix.Kernel.Expr.liftLooseBVars j 0 v
-      else if j < i then .bvar (i - 1) else .bvar i
-  | _, .fvar i ty => .fvar i ty
-  | _, .sort u => .sort u
-  | _, .const n us => .const n us
-  | j, .app f a => .app (instShift v j f) (instShift v j a)
-  | j, .lam ty b m => .lam (instShift v j ty) (instShift v (j + 1) b) m
-  | j, .forallE ty b m => .forallE (instShift v j ty) (instShift v (j + 1) b) m
-  | j, .letE ty val b m => .letE (instShift v j ty) (instShift v j val) (instShift v (j + 1) b) m
-  | _, .lit l => .lit l
-  | j, .proj s i e => .proj s i (instShift v j e)
+/-- **Capture-avoiding instantiation** (`Ix.Kernel.Expr.instantiate1Lift`): the loose bound
+variable `j` of `e` replaced by `v`, lifted over the `j` binders passed, the loose bound
+variables above `j` lowered by one. The kernel's `Expr.instantiate1` does not lift `v`; the two
+agree when `v` has no loose bound variable. The image of a `Let` is `instShift v 0 b`, the
+ζ-reduct the statement's `Annotates.letE` reads once it substitutes without capture. -/
+abbrev instShift (v : KExpr) (j : Nat) (e : KExpr) : KExpr := Ix.Kernel.Expr.instantiate1Lift e v j
 
 /-- The opened variable a free `BVar i` at local depth `k` and opening depth `d` stands for. -/
 abbrev fvIdx (d k i : Nat) : Nat := d - 1 - (i - k)
