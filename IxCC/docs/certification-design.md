@@ -172,9 +172,9 @@ examined by neither through IxCC: its validity is the kernel's acceptance of the
 whole artifact, and premise (i)'s where its theorem is in the closure of `S`.
 
 The table's checks rest on one property of that reading: **everything a proof
-seed reaches is read with proofs** (an `eqn` or `csimp` theorem's proof closure
-holds no theorem read by its statement). `Table.checkEqn` and `checkCsimp`
-refuse a theorem read by its statement, and the axiom-closure walk refuses one
+seed reaches is read with proofs** (an `eqn`, `csimp` or `word` theorem's proof
+closure holds no theorem read by its statement). `Table.checkEqn`, `checkCsimp`
+and `checkWord` refuse a theorem read by its statement, and the axiom-closure walk refuses one
 at every step, so the walk's guarantee (`checkAxiomClosure_sound`) is about
 proofs that were read. But `checkAxiomClosure`'s shortcut (every axiom of `P`
 standard, so no walk) looks only at the theorem it is asked about, not at what

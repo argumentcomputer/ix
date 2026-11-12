@@ -123,11 +123,12 @@ are chosen (`tests-recheck`, `Reach.seeds`).
 Consequences, each a difference from the reader before 2026-11-12, which read
 every record:
 
-- **Table entries name only theorems read with their proofs.** `Table.checkEqn`
-  and `checkCsimp` refuse a theorem read by its statement, so an `eqn` or `csimp`
-  entry, the producer's or a certificate's, is accepted only for a theorem that
-  a proposal of the sidecar names (or a resource equation). The
-  `ixcc/k1-equations/1` sidecar carries `eqn` proposals only, so no certificate
+- **Table entries name only theorems read with their proofs.** `Table.checkEqn`,
+  `checkCsimp` and `checkWord` refuse a theorem read by its statement, so an
+  `eqn`, `csimp` or `word` entry, the producer's or a certificate's, is accepted
+  only for a theorem that a proposal of the sidecar names (or a resource
+  equation). The `ixcc/k1-equations/1` sidecar carries `eqn` proposals and, in
+  its optional `theorems` list, `word` proposals only, so no certificate
   with a `csimp` entry verifies from a sidecar today (the roadmap's "csimp
   proposals"). A proposal whose subject is not read (not reached, or not in the
   artifact) gives the hint diagnostic `… is not in the program read` and no entry.

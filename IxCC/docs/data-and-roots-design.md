@@ -342,8 +342,11 @@ exists, behind `Table.Config.words`, which is off, so no compile changes:
 - the theorems, which `ix compile --equations --word-equations` adds for every word operation a closure reaches
   (`Ix/Compile/WordEquations.lean`) and names, with the operation, in its output's `theorems`
   list; the sidecar carries the list with addresses ([corpus](corpus.md), "The sidecar"), and the
-  producer proposes a word entry from it only, so a reader that reads only what a program reaches
-  still finds each theorem;
+  producer proposes a word entry from it only, so ingress, which reads only what a program
+  reaches, finds each theorem and reads it with its proof once its operation is reached (a
+  proposal's theorem is a proof seed); `checkWord` refuses a theorem read by its statement, as
+  `checkEqn` does, and its axiom-closure walk sees the proof; a tampered theorem is refused by
+  the kernel's acceptance at ingress (`tests-src`, `WordRules.tampered`);
 - the harness (`tests-src`): on every boundary case of every primitive operation at every width,
   F6w's result equals SrcEval's own run of the operation's Lean 4.34.1 reference body (21,996
   cases), and on a tower at or above the size F6w is stuck (1,216 cases);
@@ -360,7 +363,13 @@ the result tower typed in the model: its constructors' stored types mention
 `OfNat.ofNat Nat 64 _`, `2 ^ w` through `HPow` and `LT.lt Nat instLTNat`, which no stored
 equation speaks of. The grounding's direct route decides them by its conversion (δ, `proj_ctor`,
 `nat_accel`; measured on the words closure), so no law or further stored theorem is expected.
-When that case is proved, `noWord` gives way to a check that every word entry's facts hold.
+The input towers' range needs no fact: F6w reads only towers below the size. When that case is
+proved, `noWord` gives way to a check that every word entry's facts hold. Open for turning the
+switch on: `ix compile --word-equations` is opt-in (a closure reaches word operations through
+proofs alone, an `omega` termination proof for one, so adding the equations by default would
+change closures that never run a word operation); whether `ix` should add them by itself for the
+word operations a closure reaches in positions that run is not decided, and until it is, the
+families that need word entries pass the flag.
 
 SrcEval needs one rule for raw words to be sound: a bounded construction
 whose erased proof is false (for example `UInt64.ofNatLT n h` with
