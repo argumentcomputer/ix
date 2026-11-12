@@ -30,7 +30,7 @@ namespace IxCC.Src
 /-- A fixed width. -/
 inductive Width where
   | w8 | w16 | w32 | w64
-  deriving BEq, DecidableEq, Repr, Inhabited, Hashable
+  deriving DecidableEq, Repr, Inhabited, Hashable
 
 namespace Width
 
@@ -64,7 +64,7 @@ inductive WordOp where
   | decEq | decLt | decLe
   | ofNat | toNat
   | convert (to : Width)
-  deriving BEq, DecidableEq, Repr, Inhabited, Hashable
+  deriving DecidableEq, Repr, Inhabited, Hashable
 
 namespace WordOp
 
