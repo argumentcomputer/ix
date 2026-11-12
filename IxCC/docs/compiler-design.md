@@ -716,6 +716,7 @@ checked against the admitted closure.
 | `inline f` | Unfold matchers and `@[inline]`/`@[macro_inline]` definitions. |
 | `lazy f` | Pass arguments by name (`ite`, `dite`, `cond`, `Bool.or`, …). |
 | `prim f op` | Compute `f` with a primitive. The checker pins `f` by address and type; that the primitive's meaning equals the pinned kernel body is tested, not yet proved (a lemma of the spine's SP-0, [certification design](certification-design.md#sp-0-same-bytes-and-the-conditional-statement)). |
+| `word f w op thm` | Compute `f`, the operation `op` of a fixed-width word type (`UInt8` to `UInt64`, width `w`), with SrcEval's rule F6w on the constructor towers (stage W1 of [DR2](data-and-roots-design.md#dr2-fixed-width-integers-and-int)). The checker pins `f` by address and requires `thm` to be a stored theorem whose statement is the operation's equation over `Nat`'s operations (`Src/Table/Word.lean`), which `ix compile --equations` adds; the table builds such entries only when `words` is on (off until the native lowering exists), and erasure declines them until then. |
 
 In the model, an accepted equation theorem forces its two sides to denote the
 same value, so every table entry preserves meaning. When an equation is
