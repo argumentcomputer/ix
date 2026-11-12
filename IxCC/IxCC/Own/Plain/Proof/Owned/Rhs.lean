@@ -110,9 +110,9 @@ theorem rhs_step {F : Fir.Program} (pins : BoolPinsOk F)
       subst this
       have hev : evalRhs { ctors := F.ctors, known := F.known } ρo H (.arg (.var y)) = .ok (v, H) := by
         simp [evalRhs, Own.evalRhs, Own.evalArg, hv]
-      refine ⟨v, H, _, hev, ?_, same⟩
       cases hi : Γ.isImm y with
       | true =>
+        refine ⟨v, H, owned, hev, ?_, same⟩
         rw [hi] at hΓ
         simp only [↓reduceIte] at hΓ
         subst hΓ
@@ -126,6 +126,7 @@ theorem rhs_step {F : Fir.Program} (pins : BoolPinsOk F)
         subst this
         exact st.pre.bindImm hx hd himm st.counts
       | false =>
+        refine ⟨v, H, v :: owned₁, hev, ?_, same⟩
         rw [hi] at hΓ
         simp only [Bool.false_eq_true, ↓reduceIte] at hΓ
         subst hΓ

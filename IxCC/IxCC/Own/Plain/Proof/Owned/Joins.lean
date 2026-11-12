@@ -107,7 +107,7 @@ theorem Ctx.ownHas_ofList {xs : List Var} {y : Var} (hn : xs.Nodup)
 
 /-- After a jump, the body continues on its declaration's stack (and, for a recursive join, on
 itself, charged). -/
-theorem OwnedStack.after {Δ Δd : JCtx} {Γd : Ctx} {lexd captured : List Var}
+theorem OwnedEntry.after_stack {Δ Δd : JCtx} {Γd : Ctx} {lexd captured : List Var}
     {older : Joins} {restf : List Fir.JEntry} {resto : List JEntry} {ef : Fir.JEntry}
     {eo : JEntry} (entry : OwnedEntry Δ Δd Γd lexd captured restf ef eo)
     (tail : OwnedStack Δ ef.env eo.env lexd older restf resto) (hn : lexd.Nodup)
@@ -180,6 +180,102 @@ theorem OwnedState.declare (st : OwnedState functions H external live Γ ρf ρo
     stack := .cons entry (CaptureView.declare ρo live st.distinct) (fun _ _ => rfl)
       (st.stack.transfer (fun e he => Src.NatMap.get?_insert_ne _ _ (hfresh e he)))
     scope := .cons (List.Sublist.refl _) ⟨hf, hb⟩ st.scope }
+
+/-- **A checked jump**: the target found on both stacks, the arguments, and the state its body
+starts from — the arguments' tokens and those of the captured variables that are not immediates
+of the declaration, exactly the context the body was checked from. -/
+theorem jump_body (st : OwnedState functions H external live Γ ρf ρo owned lex Δ Jf Jo)
+    {j : Fir.JoinId} {args : List Arg} {captured : List Var} {Γ₁ Γ₂ : Ctx} {what : String}
+    (hΔ : Δ.get? j = some captured) (h1 : Γ.takeArgs args = .ok Γ₁)
+    (h2 : Γ₁.takeVars captured = .ok Γ₂) (h3 : Γ₂.closed what = .ok ())
+    {ef : Fir.JEntry} {restf : List Fir.JEntry} (hl : Fir.lookupJ j Jf = some (ef, restf)) :
+    ∃ (vs : List RVal) (ws : List Fir.Val) (eo : JEntry) (resto : List JEntry),
+      Own.evalArgs ρo args = some vs ∧ Fir.evalArgs ρf args = some ws ∧
+      vs.length = ws.length ∧ lookupJ j Jo = some (eo, resto) ∧ eo.params = ef.params ∧
+      eo.charged = ef.charged ∧
+      (ws.length = ef.params.length →
+        ∃ (Δb : JCtx) (Γb : Ctx) (lexd : List Var) (lexb : Joins) (owned' : List RVal),
+          OwnedState functions H external (lexd ++ ef.params) Γb
+            (Fir.bindAll ef.env ef.params ws) (Own.bindAll eo.env eo.params vs) owned' lexb Δb
+            (ef.after restf) (eo.after resto) ∧
+          checkCode Δb Γb eo.body = .ok () ∧ eraseCode eo.body = ef.body ∧
+          scopeOk functions (lexd ++ ef.params) (stackArities (ef.after restf)) ef.body = true) := by
+  obtain ⟨lexd, captured', older, Δd, Γd, eo, resto, hlo, entry, oview, fview, tail, escope,
+    tscope⟩ := st.stack.lookup st.scope hl
+  have hid := Fir.lookupJ_id hl
+  have hc : captured' = captured := by
+    have := entry.here; rw [hid, hΔ] at this; exact (Option.some.inj this).symm
+  subst hc
+  obtain ⟨vs, ws, owned₁, hvs, hws, hds, inv₁, hs₁, hw₁⟩ := takeArgs_sem st.takeInv h1
+  obtain ⟨cvs, owned₂, hcvs, havail, inv₂, hs₂, _⟩ := takeVars_sem inv₁ h2
+  obtain ⟨toks₂, htok₂, hr₂⟩ := inv₂.roots
+  have hnil := closed_nil htok₂ h3
+  subst hnil
+  have ho₂ := EnvRoots.nil_inv hr₂
+  subst ho₂
+  refine ⟨vs, ws, eo, resto, hvs, hws, hds.length, hlo, entry.params, entry.charged, fun hlen => ?_⟩
+  -- The captured variables the body holds tokens for, and their values.
+  let p : Var → Bool := fun c => !Γd.isImm c
+  have hsubC : ∀ c, c ∈ captured → c ∈ lexd := entry.sub
+  have hsav : ∀ c, c ∈ lexd → eo.env.get? c = ρo.get? c := oview.agree
+  obtain ⟨cvsF, hcF, hsF⟩ := EnvRoots.filter p hcvs (fun c hc hpc => by
+    have hi : Γd.isImm c = true := by simpa [p] using hpc
+    obtain ⟨v, _, hv, _, himm, _⟩ := entry.imm c hi
+    exact ⟨v, by rw [← hsav c (hsubC c hc)]; exact hv, himm⟩)
+  have hfilt : ∀ c, c ∈ captured.filter p → c ∈ lexd := fun c hc => hsubC c (List.mem_of_mem_filter hc)
+  have hnlex : lexd.Nodup := oview.captured_nodup
+  have hfreshF : fresh (captured.filter p) ef.params = true := fresh_mono escope.1 hfilt
+  have hnodupE : (Γd.entered captured ef.params).Nodup :=
+    fresh_nodup_append (entry.nodup.filter p) hfreshF
+  have hcF' : EnvRoots eo.env (captured.filter p) cvsF := hcF.congr (fun c hc => hsav c (hfilt c hc))
+  have hvlen : vs.length = ef.params.length := hds.length.trans hlen
+  have hroots : EnvRoots (Own.bindAll eo.env eo.params vs) (Γd.entered captured ef.params)
+      (cvsF ++ vs) := by
+    rw [entry.params]; exact hcF'.bindAll ef.params vs hvlen hfreshF
+  have hbal : Balance H external (cvsF ++ vs) := by
+    have h0 : SameRefs owned (vs ++ cvsF) :=
+      hs₁.trans (SameRefs.append (SameRefs.refl vs) (hs₂.trans (by simpa using hsF)))
+    exact (h0.trans (SameRefs.comm vs cvsF)).balance st.counts
+  -- Denotations of what the body may read.
+  have hdenF : EnvDen H (captured.filter p) ef.env eo.env := by
+    intro c hc
+    have hcC : c ∈ captured := List.mem_of_mem_filter hc
+    obtain ⟨v, w, hv, hw, hd⟩ := inv₁.den c (havail c hcC)
+    exact ⟨v, w, by rw [hsav c (hsubC c hcC)]; exact hv, by rw [fview c (hsubC c hcC)]; exact hw, hd⟩
+  have hdenB := hdenF.bindAll ef.params hds hvlen
+  have hbody : ∀ x, x ∈ lexd → (Own.bindAll eo.env eo.params vs).get? x = eo.env.get? x ∧
+      (Fir.bindAll ef.env ef.params ws).get? x = ef.env.get? x := by
+    intro x hx
+    have hnp : x ∉ ef.params := fresh_avoids escope.1 hx
+    refine ⟨?_, Fir.Proof.bindAll_get_notin hnp⟩
+    rw [entry.params]; exact get_bindAll_untouched eo.env ef.params vs x hnp
+  have htokB := Ctx.Tokens.enter Γd captured ef.params hnodupE
+  have hown : ∀ y, (Γd.enter captured ef.params).own.contains y = true →
+      y ∈ Γd.entered captured ef.params := fun y hy => Ctx.ownHas_ofList hnodupE hy
+  have hbrwB : ∀ y, (Γd.enter captured ef.params).brw.get? y = none := fun _ => rfl
+  refine ⟨_, _, lexd, _, cvsF ++ vs, ⟨fun y hy => ?_, ⟨_, htokB, hroots⟩, hbal, fun y hy => ?_,
+    fresh_nodup_append hnlex escope.1, fun y hy => ?_, fun y hy => ?_, fun y e hy => ?_,
+    entry.after_stack tail hnlex escope.1 vs ws, StackScope.after escope tscope⟩,
+    entry.typed, entry.erases, by rw [stackArities_after]; exact escope.2⟩
+  · -- avail in the body: an immediate of the declaration, or a token.
+    simp only [Ctx.avail_eq, Ctx.borrowed_eq, hbrwB, Bool.or_eq_true, decide_eq_true_eq] at hy
+    rcases hy with (hi | hp) | hb
+    · obtain ⟨v, w, hv, hw, himm, hall⟩ := entry.imm y hi
+      obtain ⟨h1', h2'⟩ := hbody y (entry.immIn y hi)
+      exact ⟨v, w, by rw [h1']; exact hv, by rw [h2']; exact hw, hall H⟩
+    · have hm : y ∈ Γd.entered captured ef.params := htokB.mem hp
+      exact hdenB y hm
+    · simp at hb
+  · simp only [Ctx.known_eq, hbrwB, Option.isSome_none, Bool.or_false, Bool.or_eq_true] at hy
+    rcases hy with hi | ho
+    · exact List.mem_append_left _ (entry.immIn y hi)
+    · rcases List.mem_append.mp (hown y ho) with hm | hm
+      · exact List.mem_append_left _ (hfilt y hm)
+      · exact List.mem_append_right _ hm
+  · obtain ⟨v, _, hv, _, himm, _⟩ := entry.imm y hy
+    exact ⟨v, by rw [(hbody y (entry.immIn y hy)).1]; exact hv, himm⟩
+  · simp [Ctx.borrowed_eq, hbrwB] at hy
+  · simp [hbrwB] at hy
 
 end
 
