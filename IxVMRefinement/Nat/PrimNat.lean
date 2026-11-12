@@ -69,20 +69,14 @@ theorem tag_eq_zero {t : F} {x y : SourceValue F}
   exact field_inj e2
 
 theorem tag_snd {a b : F} {x y : SourceValue F}
-    (e : (Value.tuple [.field a, x] : SourceValue F) = .tuple [.field b, y]) : x = y := by
-  injection e with e1
-  injection e1 with _ e2
-  injection e2 with e3 _
-  exact e3
+    (e : (Value.tuple [.field a, x] : SourceValue F) = .tuple [.field b, y]) : x = y :=
+  (List.cons.inj (List.cons.inj (Value.tuple.inj e)).2).1
 
 theorem tag3_snd {a b : F} {x y z w : SourceValue F}
     (e : (Value.tuple [.field a, x, y] : SourceValue F) = .tuple [.field b, z, w]) :
-    x = z ∧ y = w := by
-  injection e with e1
-  injection e1 with _ e2
-  injection e2 with e3 e4
-  injection e4 with e5 _
-  exact ⟨e3, e5⟩
+    x = z ∧ y = w :=
+  have e1 := (List.cons.inj (Value.tuple.inj e)).2
+  ⟨(List.cons.inj e1).1, (List.cons.inj (List.cons.inj e1).2).1⟩
 
 /-- **The role of a `Nat` operation code**, `natPrimOp`'s inverse. -/
 def natPrimRole : Nat → Option Ix.Kernel.Role
@@ -106,7 +100,7 @@ def natPrimRole : Nat → Option Ix.Kernel.Role
 
 theorem natPrimOp_inv {r : Ix.Kernel.Role} {o : Nat} (h : Specs.Nat.natPrimOp r = some o) :
     natPrimRole o = some r := by
-  cases r <;> simp_all [Specs.Nat.natPrimOp, natPrimRole]
+  cases r <;> simp [Specs.Nat.natPrimOp] at h <;> subst h <;> rfl
 
 /-- **A code determines its role.** -/
 theorem natPrimOp_role {r r' : Ix.Kernel.Role} {o : Nat} (h : Specs.Nat.natPrimOp r = some o)
@@ -221,7 +215,8 @@ theorem tm_const_nil {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExp
           [ap, .ptr (.enum Obs.Names.«Lists::Node<&KernelTypes::KLevelNode>») h.length]]) 0
       (.const (κ (ixAddr a)) [])
       (.ptr (.enum "KernelTypes::KExprNode")
-        (h ++ [.construct Obs.Names.«Lists::Node<&KernelTypes::KLevelNode>» "Nil" []]).length) := by
+        (h ++ [(.construct Obs.Names.«Lists::Node<&KernelTypes::KLevelNode>» "Nil" [] :
+          SourceValue F)]).length) := by
   have e : Obs.Names.«Lists::Node<&KernelTypes::KLevelNode>» =
       IxVM.Refinement.KernelLevels.klevelListEnum := klevelListEnum_eq
   have ext2 := ext_snoc (Heap.Extends.snoc h
@@ -723,7 +718,7 @@ theorem try_nat_binop_addr_strong (c : Ctx) {args : List (SourceValue F)} {h h' 
     refine ⟨by omega, fun role hrole => ?_⟩
     rw [hvo] at hrole
     obtain rfl := natPrimOp_role (r' := .natPow) hrole (by decide)
-    exact ⟨_, by simp [Ix.Kernel.natOpResult, Specs.Nat.natLit] <;> omega, hl⟩
+    exact ⟨_, by simp [Ix.Kernel.natOpResult, Specs.Nat.natLit]; omega, hl⟩
   · exact absurd (hr.symm.trans hr') tag_one_ne_zero
   · -- `Nat.land`
     subst hcalls
@@ -889,10 +884,11 @@ theorem try_match_nat_add_strong (c : Ctx) (hc : CoreFacts c) {args : List (Sour
         have := sub_eq_zero.mp (field_inj (sub_ok op)).symm
         exact_mod_cast this
       have h39 : (2 : ℕ) ^ 39 = 549755813888 := by norm_num
-      exact (natCast_inj (by omega) (by decide)).mp h1
+      exact (NatAux.natCast_inj (by omega) (by decide)).mp h1
     obtain ⟨⟨A0, hA0, rA0⟩, hm3⟩ := kl_lookup ev165 hAs1
     subst m153
     obtain ⟨⟨A1, hA1, rA1⟩, hm4⟩ := kl_lookup ev194 hAs1
+    subst h'
     subst m182
     obtain ⟨Ps, rfl⟩ := spine_two hA0 hA1
     obtain rfl : Ps = [] := by simpa using hlen
@@ -902,7 +898,6 @@ theorem try_match_nat_add_strong (c : Ctx) (hc : CoreFacts c) {args : List (Sour
       subst hx''
       rw [hr'] at hr
       obtain ⟨rfl, rfl⟩ := tag3_snd hr
-      subst h'
       exact ⟨hforce, us, A0, limbsVal limbs, by rw [hk], rfl, rA0, ⟨limbs, hl, rfl, hcn⟩⟩
     · injection hx with _ hc'
       simp at hc'
