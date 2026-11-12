@@ -690,6 +690,15 @@ def checkBodies (lim : Limits) (P : Prog) (rs : List Ref) : Verdict := Id.run do
     | .error (.decline w) => return .decline s!"{refName r}: {w}"
   return .accept n false
 
+/-- **The fast path's test**: every record of the subject's closure carries only
+default modes, and there is no run table (an error: a record's modes are
+malformed). -/
+def allDefault (s : Subject) : Except String Bool := do
+  for a in closureOf s.store (s.seeds ++ s.runTable.toList ++ s.externs) do
+    let some c := s.store a | continue
+    unless ← recordDefault c do return false
+  return s.runTable.isNone
+
 /-- **The mode checker** (uncertified): the subject's closure, its records' modes,
 the kernel environment `env` its typing installed (for the class oracle). -/
 def check (lim : Limits) (env : Ix.Kernel.Env .anon) (s : Subject) : Verdict := Id.run do

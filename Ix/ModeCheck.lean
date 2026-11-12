@@ -36,13 +36,16 @@ def checkArtifact (ixe : Ixon.Env) : Except String String := do
     input.ordered.foldl (fun m (a, c, _) => m.insert a c) {}
   let prelude : Std.HashMap Address Ixon.Constant :=
     (input.pre.records ++ input.pre.evidence).foldl (fun m (a, c) => m.insert a c) {}
-  let blobs : Std.HashMap Address ByteArray := input.blobs.foldl (fun m (a, b) => m.insert a b) {}
+  let blobs : Std.HashMap Address ByteArray :=
+    (input.blobs ++ input.pre.blobs).foldl (fun m (a, b) => m.insert a b) {}
   let s : IxC.Resource.Subject :=
     { table := input.table, store := fun a => records[a]? <|> prelude[a]?, blob := fun a => blobs[a]?,
       seeds := input.ordered.toList.map (·.1) }
   -- the fast path needs no typing
-  let fast := IxC.Resource.check {} Ix.Kernel.Env.empty s
-  if let .accept _ true := fast then return describe fast
+  match IxC.Resource.allDefault s with
+  | .error e => throw s!"mode checking (uncertified) refuses: malformed modes: {e}"
+  | .ok true => return describe (.accept 0 true)
+  | .ok false => pure ()
   let env ← match Ix.Typing.checkCertified input (Ix.Typing.splitOf input) with
     | .ok env => pure env
     | .error (e, _) => throw s!"mode checking (uncertified): the typing it reads with failed: {e}"
