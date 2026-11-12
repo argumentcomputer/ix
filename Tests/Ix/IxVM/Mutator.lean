@@ -95,7 +95,10 @@ def mutateMember (ms : Array Ixon.MutConst) (idx : Nat) (m : Mut) (r : UInt64) :
   | .ctorFields, .indc ind => do
     guard (!ind.ctors.isEmpty)
     let ci := (r.toNat % ind.ctors.size)
-    let ctors := ind.ctors.modify ci fun k => { k with fields := k.fields + 1 }
+    -- listed field modes stay listed, the new field inherited
+    let ctors := ind.ctors.modify ci fun k => { k with
+      fields := k.fields + 1
+      fieldModes := Ixon.FieldModes.ofArray (k.fieldModes.toArray.push .inherited) }
     some (ms.set! idx (.indc { ind with ctors }), fun b => .cPrj ⟨idx.toUInt64, ci.toUInt64, b⟩)
   | .ctorIndex, .indc ind => do
     guard (ind.ctors.size ≥ 2)

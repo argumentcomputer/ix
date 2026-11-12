@@ -32,15 +32,19 @@ def compileMany (sources : Array Lean.Expr) :
   let (output, _) ← Ix.CompileM.CompileM.run default block {} action
   return output
 
-/-- The annotated-source refusal. -/
-def annotatedRefusal : String :=
-  "annotated source is refused: the compiler writes only default binder modes"
+/-- The annotated-source refusal's stable prefix. -/
+def annotatedRefusal : String := "annotated source is refused"
 
 /-- The misplaced-frame refusal. -/
 def misplacedRefusal : String :=
   "semantic contract is not attached to its original binder"
 
-/-- `sources` compiled one at a time: an ordinary frame lowers to `expected`,
+/-- A compile refusal whose message starts with `pre`. -/
+def refusedWith (pre : String) : Ix.CompileM.CompileError → Bool
+  | .unsupportedExpr desc => desc.startsWith pre
+  | _ => false
+
+/-- `source` compiled alone: an ordinary frame lowers to `expected`,
 an annotated one is refused. -/
 def expectLowering (label : String) (source : Lean.Expr) (ordinary : Bool)
     (expected : Ixon.Expr) : IO Unit := do
@@ -52,15 +56,15 @@ def expectLowering (label : String) (source : Lean.Expr) (ordinary : Bool)
     throw <| IO.userError s!"{label}: annotated source compiled to {repr output}"
   | .error error, true => throw <| IO.userError s!"{label}: ordinary frame refused: {error}"
   | .error error, false =>
-    unless error == .unsupportedExpr annotatedRefusal do
+    unless refusedWith annotatedRefusal error do
       throw <| IO.userError s!"{label}: unexpected refusal {error}"
 
-/-- `source` is refused with `message`. -/
+/-- `source` is refused with a message that starts with `message`. -/
 def expectRefusal (label : String) (source : Lean.Expr) (message : String) : IO Unit :=
   match compileMany #[source] with
   | .ok output => throw <| IO.userError s!"{label}: compiled to {repr output}"
   | .error error =>
-    unless error == .unsupportedExpr message do
+    unless refusedWith message error do
       throw <| IO.userError s!"{label}: unexpected refusal {error}"
 
 def run : IO Unit := do

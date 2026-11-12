@@ -49,8 +49,7 @@ import Tests.Ix.Cert.ExecutedChecks
   result contracts on arrows, λs and lets: their source contracts resolved
   (`Ix.Compile.prepareRegisteredConstants`, as the IO pipeline does) and
   canonicalized, Source mode refuses them and `Ix.Cert.compile` lists each
-  as failed, both with the annotated-source refusal (the compiler writes only
-  default binder modes).
+  as failed, both with the annotated-source refusal.
 
 The statements' freeze, `Ix.Cert.Audit`, is not imported here: the certified
 kernel gate (`lake run check-kernel`) and `lake lint` build it, so the test
@@ -1000,9 +999,9 @@ def contractSeeds : Array Lean.Name := #[`linear, `unique, `erased, `dependent, 
   `localResult, `localUniqueResult, `curriedResult, `dependentArrow, `anonymousArrow,
   `quantified, `nestedLambda, `lambdaDefinition, `localLet, `sharedLoan].map (syntaxModule ++ ·)
 
-/-- The refusal of annotated source, by the compiler and by Source mode. -/
-def annotatedRefusal : String :=
-  "annotated source is refused: the compiler writes only default binder modes"
+/-- The stable prefix of the refusal of annotated source, by the compiler and by
+Source mode. -/
+def annotatedRefusal : String := "annotated source is refused"
 
 def mentionsRefusal (message : String) : Bool :=
   (message.splitOn annotatedRefusal).length > 1

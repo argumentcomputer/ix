@@ -197,9 +197,9 @@ def sameTree : Except ExprError (List KExpr) → Except ExprError KExpr → Bool
   | .ok [a], .ok b => decide (a = b)
   | _, _ => false
 
-/-- The contract refusal with `message`. -/
+/-- A contract refusal whose message starts with `message`. -/
 def refusedWith (message : String) : Except ExprError (List KExpr) → Bool
-  | .error (.contract m) => m == message
+  | .error (.contract m) => m.startsWith message
   | _ => false
 
 /-- Contract frames: kernel terms carry no modes, so every binder carries the
@@ -221,7 +221,7 @@ def contractFrames : TestSeq :=
   let allC : Ix.SemanticContract.Contract :=
     { kind := .all, binder := .erased, result := .localUnique }
   let letC : Ix.SemanticContract.Contract := { kind := .letE, binder := .affine }
-  let annotated := "annotated source is refused: the compiler writes only default binder modes"
+  let annotated := "annotated source is refused"
   let misplaced := "semantic contract is not attached to its original binder"
   let key := Ix.Name.mkStr (nm "ix") "contract"
   let dag := Ix.Expr.mkApp (framed allO pi) (plain (framed lamO lam))

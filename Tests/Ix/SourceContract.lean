@@ -295,7 +295,7 @@ def arityProducerTests : TestSeq := Id.run do
   let readable := fun e => (_root_.Ix.LeanIngress.ingressExpr (fun _ => 0) e).isOk
   -- An annotated frame is refused by the ingress as by the compiler.
   let refused := fun e => match _root_.Ix.LeanIngress.ingressExpr (fun _ => 0) e with
-    | .error (.contract "annotated source is refused: the compiler writes only default binder modes") => true
+    | .error (.contract m) => m.startsWith "annotated source is refused"
     | _ => false
   let linear := resolveTelescope identity #[{ binder := .position 0, uses := .linear, result := some .unique }]
   let pair := linear.toOption.bind (fun c => c.decorate.toOption)
