@@ -687,9 +687,13 @@ termination_by structural e
 whole terms name, then what installing each constant reached needs: a theorem's
 type (nothing reduces its value), a definition's or an opaque's type and value,
 any other constant's type and terms, and an inductive group whole (its types,
-constructors and recursors). -/
+constructors and recursors). The role constants' closure (`Ix.Kernel.Key.ofName`:
+the anchors and the pinned operations) is kept whole, theorems' proofs included:
+installing a pinned operation reads the reference closure of its value and its
+dependencies' roles, which its certificate ground must lie in
+(`Ix.Kernel.evidenceLocal`). The closure, and that whole part of it. -/
 def restrictClosure (env : Ix.Environment) (seeds : Array Ix.Name) (workers : Nat := 32) :
-    Std.HashSet Ix.Name := Id.run do
+    Std.HashSet Ix.Name × Std.HashSet Ix.Name := Id.run do
   let mut recsOf : Std.HashMap Ix.Name (Array Ix.Name) := {}
   for (n, ci) in env.consts do
     if let .recInfo r := ci then
@@ -719,15 +723,31 @@ def restrictClosure (env : Ix.Environment) (seeds : Array Ix.Name) (workers : Na
     match firstOf ci with
     | some first => (groupNames first).foldl (·.insert ·) refs
     | none => refs
-  -- breadth first, each level's needs on `workers` tasks: the same closure
+  -- breadth first, each level's needs on `workers` tasks
   let needsOf (whole : Bool) (n : Ix.Name) : Std.HashSet Ix.Name :=
     match env.consts.get? n with
     | some ci => needs whole ci
     | none => {}
-  let mut seen : Std.HashSet Ix.Name := {}
-  let roots := seeds.filter (env.consts.contains ·)
+  -- the role constants' closure, whole
+  let roles := env.consts.fold (init := #[]) fun acc n _ => match ingressKey n with
+    | .role _ => acc.push n
+    | _ => acc
+  let mut whole : Std.HashSet Ix.Name := {}
+  for s in roles do whole := whole.insert s
+  let mut level : Array (Std.HashSet Ix.Name) := Ix.Compile.Parallel.map workers (needsOf true) roles
+  while !level.isEmpty do
+    let mut next : Array Ix.Name := #[]
+    for refs in level do
+      for r in refs do
+        unless whole.contains r do
+          whole := whole.insert r
+          next := next.push r
+    level := Ix.Compile.Parallel.map workers (needsOf true) next
+  -- the walked records' closure beside it
+  let mut seen : Std.HashSet Ix.Name := whole
+  let roots := seeds.filter fun s => env.consts.contains s && !whole.contains s
   for s in roots do seen := seen.insert s
-  let mut level : Array (Std.HashSet Ix.Name) := Ix.Compile.Parallel.map workers (needsOf true) roots
+  level := Ix.Compile.Parallel.map workers (needsOf true) roots
   while !level.isEmpty do
     let mut next : Array Ix.Name := #[]
     for refs in level do
@@ -736,7 +756,7 @@ def restrictClosure (env : Ix.Environment) (seeds : Array Ix.Name) (workers : Na
           seen := seen.insert r
           next := next.push r
     level := Ix.Compile.Parallel.map workers (needsOf false) next
-  return seen
+  return (seen, whole)
 
 /-- **Install a compile's input**: its condensation (`Ix.CondenseM`, as the
 compile's front end builds it), then `install`. For measurement (the data are
@@ -767,12 +787,14 @@ def installInput (env : Ix.Environment) (workers : Nat := 32) : IO (Except Strin
   let tcP ← IO.monoMsNow
   let envI ← match seeds? with
     | some seeds => do
-      let closure ← IO.lazyPure fun _ => restrictClosure env seeds width
-      let blank : Ix.ConstantInfo → Ix.ConstantInfo
-        | .thmInfo t => .thmInfo { t with value := Ix.Expr.mkSort Ix.Level.mkZero }
+      let (closure, whole) ← IO.lazyPure fun _ => restrictClosure env seeds width
+      -- a theorem outside the whole part, with a placeholder value
+      let blank (n : Ix.Name) : Ix.ConstantInfo → Ix.ConstantInfo
+        | .thmInfo t =>
+          if whole.contains n then .thmInfo t else .thmInfo { t with value := Ix.Expr.mkSort Ix.Level.mkZero }
         | ci => ci
       pure { env with consts := env.consts.fold (init := {}) fun m n ci =>
-        if closure.contains n then m.insert n (blank ci) else m }
+        if closure.contains n then m.insert n (blank n ci) else m }
     | none => pure env
   let seedCount := (seeds?.map (·.size)).getD env.consts.size
   -- (measurement, with `IX_BD_T1STAT`) the seeds, one a line
