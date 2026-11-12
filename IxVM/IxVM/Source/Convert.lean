@@ -61,29 +61,46 @@ def skip_bytes := aiur_fn⟦
     }
 ⟧
 
-  -- Nat literal blobs. A blob is canonical when it is Lean's `Nat.toBytesLE n` (`[0]` for 0,
-  -- otherwise no trailing zero byte); this conversion does not check it, and a non-canonical
-  -- blob gives the same kernel term as the canonical one:
-  -- * a Nat literal's blob is read in one place, the `Nat` arm of `convert_expr`
-  --   (Convert.lean:200-204; `Ingress::load_verified_blob`, Ingress.lean:46-54, has no other
-  --   caller but the `Str` arm, Convert.lean:193-198), and is converted there at once by
-  --   `bytes_to_limbs` (Convert.lean:88-105):
-  --   each limb is read from up to eight bytes with zero padding (`bytes_to_u64_limb`,
-  --   Convert.lean:27-49), and a zero limb with no limb above it is dropped, so the limbs are the
-  --   value's minimal little-endian list whatever the trailing zero bytes ([], [0] and [0, 0] all
-  --   give the empty list, zero);
-  -- * the kernel's literal holds only the limbs (`KLiteral::Nat`, KernelTypes.lean:27-30): no
-  --   kernel term keeps the blob or its address;
-  -- * every comparison and native operation reads normalized limbs: literal equality is
-  --   `KernelLevels::klimbs_eq` (KernelLevels.lean:943-962, 986-990), zero tests normalize first
-  --   (`KernelKlimbs::klimbs_is_zero`, KernelKlimbs.lean:235-242; KernelDefEq.lean:147,
-  --   KernelWhnf.lean:542-548), literals enter native arithmetic as their limbs
-  --   (KernelNatPrim.lean:245-251) and its results are normalized
-  --   (`KernelKlimbs::klimbs_normalize`, KernelKlimbs.lean:122-138; KernelNatPrim.lean:310-327);
-  -- * the blob's address is only an entry of the record's refs table: the claim walk collects the
-  --   indices of `Ref` and `Prj` nodes alone (KernelClaim.lean:65-83), so a blob is never loaded or
-  --   compared as a constant.
-  -- Only the record's bytes and address tell two spellings of one literal apart.
+  -- Nat literal blobs. A blob is canonical when it is Lean's `Nat.toBytesLE n`: `[0]` for 0,
+  -- otherwise no trailing zero byte. IxC's reader accepts exactly these (`canonicalNatural`: one
+  -- byte, or more than one whose last is not 0) and refuses any other (`ECx.natAt`). A Nat
+  -- literal's blob is read in one place, the `Nat` arm of `convert_expr`
+  -- (`Ingress::load_verified_blob` has no other caller but the `Str` arm), which refuses the same
+  -- blobs (`assert_nat_blob_canonical`) before `bytes_to_limbs` reads the value's minimal
+  -- little-endian limbs, so each number has one record spelling.
+
+def assert_nat_blob_canonical := aiur_fn⟦
+  fn assert_nat_blob_canonical(bytes: Bytes::Stream) -> () {
+      match (*(bytes)) {
+        Lists::Node::Nil => {
+          assert_eq!(0, 1, "Nat literal: an empty blob");
+          () } ,
+        Lists::Node::Cons(_, rest) => {
+          match (*(rest)) {
+            Lists::Node::Nil => {  () } ,
+            _ => {  assert_nat_blob_last_nonzero(rest) } ,
+          } } ,
+      }
+    }
+⟧
+
+  -- A blob of one or more bytes whose last byte is not 0.
+
+def assert_nat_blob_last_nonzero := aiur_fn⟦
+  fn assert_nat_blob_last_nonzero(bytes: Bytes::Stream) -> () {
+      let Lists::Node::Cons(byte, rest) = (*(bytes));
+      match (*(rest)) {
+        Lists::Node::Nil => {
+          match UInt8::to_field(byte) {
+            0 => {
+              assert_eq!(0, 1, "Nat literal: a blob with a trailing zero byte");
+              () } ,
+            _ => {  () } ,
+          } } ,
+        _ => {  assert_nat_blob_last_nonzero(rest) } ,
+      }
+    }
+⟧
 
 def bytes_to_limbs := aiur_fn⟦
   fn bytes_to_limbs(bytes: Bytes::Stream) -> KernelTypes::KLimbs {
@@ -200,6 +217,7 @@ def convert_expr := aiur_fn⟦
         Ixon::Expr::Nat(blob_ref_idx) => {
           let blob_addr = Lists::lookup(refs, UInt64::to_field(blob_ref_idx));
           let bs = Ingress::load_verified_blob(blob_addr);
+          assert_nat_blob_canonical(bs);
           let limbs = bytes_to_limbs(bs);
           ((&(KernelTypes::KExprNode::Lit(KernelTypes::KLiteral::Nat(limbs)))), 0) } ,
 
