@@ -2,6 +2,7 @@ module
 
 import IxC.Kernel.Model.Inductives.FixAssemblyKit
 import IxC.Kernel.Model.Inductives.FixStageTable
+import IxC.Kernel.Model.Inductives.RecStored
 public import IxC.Kernel.Model.Inductives.FixZeroField
 public import IxC.Kernel.Semantics.Inductives.DeclNative
 public import IxC.Kernel.Model.Inductives.NativeJudge
@@ -118,7 +119,7 @@ theorem declNativeCoreJ {J : Judgements md}
           (∀ φ : LevelParam → Nat, Level.eval φ p.resSort ≠ 0) ∨ p.ctors.length < 2) ∧
         Ix.Kernel.nativeRulesOk p.cvR.name (p.cvR.levelParams.map .param) .never p.nP
           p.ctors.length ctorsA p.kinds p.rhss p.cvR.type = true ∧
-        NativeRecRunJ J (Ix.Kernel.consSumCtors p.nP ctorsA env₁) p cvTa ctorsA cvRa rhss ∧
+        NativeRecJ J (Ix.Kernel.consSumCtors p.nP ctorsA env₁) p cvTa ctorsA cvRa rhss ∧
         ctorsA.all (fun c => Expr.recRulePlain cvRa.type p.majorIdx p.rulePrefix p.nP
           c.1.levelParams) = true ∧
         Ix.Kernel.checkNativeTable (m := Ix.Kernel.CheckM md) p ctorsA sortss
@@ -1114,18 +1115,48 @@ theorem declNativeCoreJ {J : Judgements md}
     -- since task #220 (the recogniser no longer refuses a block over its
     -- recursor record; the stage REJECTS it, as official's replay does)
     obtain ⟨helimR, hRlps⟩ := hRec.pins
-    have hfreshFam : (Ix.Kernel.nativeCaps p).unitlike = false →
-        (Ix.Kernel.nativeCaps p).eta = true →
-        (⟨.recInfo cvRa p.majorIdx p.rulePrefix
+    -- the stage's generated recursor and rules (`hRecG`), and the stored ones (`hst`)
+    obtain ⟨cvRg, rhsG, hRecG, hst⟩ := id hRec
+    have hplG : ctorsA.all (fun c => Expr.recRulePlain cvRg.type p.majorIdx p.rulePrefix p.nP
+        c.1.levelParams) = true := by
+      rcases hst with ⟨rfl, -⟩ | ⟨-, -, -, -, -, -, -, h⟩
+      · exact hplAll
+      · exact h
+    have hnG : (ConstantInfo.recInfo cvRg p.majorIdx p.rulePrefix
+          (Ix.Kernel.sumRules (Ix.Kernel.consSumCtors p.nP ctorsA
+            ⟨.indInfo cvTa (Ix.Kernel.nativeCaps p) :: env.consts⟩).find? cvRg.name p.nP
+              p.majorIdx p.rulePrefix cvRg.type ctorsA rhsG)).name
+        = (ConstantInfo.recInfo cvRa p.majorIdx p.rulePrefix
           (Ix.Kernel.sumRules (Ix.Kernel.consSumCtors p.nP ctorsA
             ⟨.indInfo cvTa (Ix.Kernel.nativeCaps p) :: env.consts⟩).find? cvRa.name p.nP
-              p.majorIdx p.rulePrefix cvRa.type ctorsA rhss)
+              p.majorIdx p.rulePrefix cvRa.type ctorsA rhss)).name := by
+      show cvRg.name = cvRa.name
+      rw [hRecG.recursor.1, hRec.recursor.1]
+    have hfreshFam : (Ix.Kernel.nativeCaps p).unitlike = false →
+        (Ix.Kernel.nativeCaps p).eta = true →
+        (⟨.recInfo cvRg p.majorIdx p.rulePrefix
+          (Ix.Kernel.sumRules (Ix.Kernel.consSumCtors p.nP ctorsA
+            ⟨.indInfo cvTa (Ix.Kernel.nativeCaps p) :: env.consts⟩).find? cvRg.name p.nP
+              p.majorIdx p.rulePrefix cvRg.type ctorsA rhsG)
           :: (Ix.Kernel.consSumCtors p.nP ctorsA
             ⟨.indInfo cvTa (Ix.Kernel.nativeCaps p) :: env.consts⟩).consts⟩ : Env md).find?
-          (projFnName p.cvT.name 0) = none :=
-      fun hU => fixTableFamFree hTbl hlenA hlenS hnFc1 hU
-    obtain ⟨sAV, mp₃, hac₃⟩ := stageFixRecJ (fssZ := Fss₀) hE_C mpC (hJ mpC) (hS mpC) hmI hrP rfl
-      rfl hRec hplAll
+          (projFnName p.cvT.name 0) = none := by
+      intro hU he
+      have h := fixTableFamFree hTbl hlenA hlenS hnFc1 hU he
+      cases hg : (⟨.recInfo cvRg p.majorIdx p.rulePrefix
+          (Ix.Kernel.sumRules (Ix.Kernel.consSumCtors p.nP ctorsA
+            ⟨.indInfo cvTa (Ix.Kernel.nativeCaps p) :: env.consts⟩).find? cvRg.name p.nP
+              p.majorIdx p.rulePrefix cvRg.type ctorsA rhsG)
+          :: (Ix.Kernel.consSumCtors p.nP ctorsA
+            ⟨.indInfo cvTa (Ix.Kernel.nativeCaps p) :: env.consts⟩).consts⟩ : Env md).find?
+          (projFnName p.cvT.name 0) with
+      | none => rfl
+      | some ci =>
+        have h' := Ix.Kernel.find?_isSome_cons_same hnG _ (by rw [hg]; rfl)
+        rw [h] at h'
+        simp at h'
+    obtain ⟨sAV, mp₃g, hac₃g⟩ := stageFixRecJ (fssZ := Fss₀) hE_C mpC (hJ mpC) (hS mpC) hmI hrP
+      rfl rfl hRecG hplG
       hstripT hfT_C
       (fun m₂ _ hFD' hleaf' hagC => hcapsLaws m₂ hfreshFam hFD'
         (fun ψ => by rw [hleaf' ψ]; exact hleafT_C ψ)
@@ -1135,6 +1166,27 @@ theorem declNativeCoreJ {J : Judgements md}
       hlpsT hopT helimR hRlps hFD_C hlenK' hks hcf_C hidxRes_C hUparams hleafT_C' hleafC_C
       (fun j cA hj => (hframes j cA hj).1) hframesR
       (fun hl => (hwl hl).imp_right fun h => by rw [hlenA]; exact h)
+    -- the model storing the block's recursor: the generated one, or the declared one
+    have hctorC : ∀ (j : Nat) (cA : ConstantVal md × Nat), ctorsA[j]? = some cA →
+        (Ix.Kernel.consSumCtors p.nP ctorsA
+          ⟨.indInfo cvTa (Ix.Kernel.nativeCaps p) :: env.consts⟩).find? cA.1.name
+          = some (.ctorInfo cA.1 p.nP cA.2) ∧
+        Expr.ctorTeleOk cA.1.type (p.nP + cA.2) = true := by
+      intro j cA hj
+      obtain ⟨hf, -, hD⟩ := hcf_C j cA hj
+      obtain ⟨cbs, es, hres, -⟩ := hD.resid
+      exact ⟨hf, Ix.Kernel.Expr.ctorTeleOk_of hres (by rw [Ix.Kernel.Expr.getAppFn_mkAppN]; rfl)⟩
+    obtain ⟨mp₃, hac₃⟩ : ∃ mp₃ : EnvModelM V μ ⟨.recInfo cvRa p.majorIdx p.rulePrefix
+          (Ix.Kernel.sumRules (Ix.Kernel.consSumCtors p.nP ctorsA
+            ⟨.indInfo cvTa (Ix.Kernel.nativeCaps p) :: env.consts⟩).find? cvRa.name p.nP
+              p.majorIdx p.rulePrefix cvRa.type ctorsA rhss)
+          :: (Ix.Kernel.consSumCtors p.nP ctorsA
+            ⟨.indInfo cvTa (Ix.Kernel.nativeCaps p) :: env.consts⟩).consts⟩,
+        mp₃.base2.acval = acvalWith mpC.base2.acval cvRa.name
+          (fixLeafAV mpC.base2 p ppsAll dsF esF ksF eissF tssF ctorsA sAV) := by
+      rcases hst with ⟨rfl, rfl⟩ | hdecl
+      · exact ⟨mp₃g, hac₃g⟩
+      · exact recStoredStep mpC (hfr _) (hJ mpC) hRecG hdecl hplAll hctorC mp₃g hac₃g
     -- the projection table at a structure-like block (task #210 Parts A, B)
     obtain ⟨mp₂, hext₂⟩ := declNativeTableJ hI rfl rfl hTbl mpC mp₃ hac₃ hProp hClps hresT
       (by rw [← hTname₀]; exact hpshapeT)

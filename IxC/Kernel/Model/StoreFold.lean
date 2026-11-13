@@ -1088,7 +1088,7 @@ theorem storeInv_declNativeRunJ {J : Judgements md} (hfr : ∀ e : Env md, Judge
       (sumRules (Ix.Kernel.consSumCtors p.nP ctorsA env₁).find? cvRa.name p.nP p.majorIdx
         p.rulePrefix cvRa.type ctorsA rhss) ::
       (Ix.Kernel.consSumCtors p.nP ctorsA env₁).consts⟩ := by
-    refine ⟨hRec.recWF hF.store.wf,
+    refine ⟨hRec.recWF hF.store.wf (hfr _).annot_syntax,
       Ix.Kernel.RecCtorsStored.cons hF.store.rec_ctors hfreshR ?_,
       Ix.Kernel.Verify.ProjOkT.cons hF.store.proj_ok hfreshR (fun _ heq => nomatch heq)⟩
     intro cvR' mI' rP' rules heq r hr
