@@ -10,6 +10,12 @@ kernel environment satisfying the λ's context, the λ running there; `irr t` to
 denotes; a by-name slot to what its suspended term denotes, the term running there. It is
 inductive on the value and mentions no clock.
 
+**Environments are related through a substitution** (`RelEnv φ ρ σ ρk`, since step C): the Src
+variable `i` stands for the kernel term `σ[i]` (a λ-bound one for its kernel variable, a `let`-bound
+one for its value's copy in the stored ζ-reduct: no `Denotes` rule reads a `let`), and its slot is
+related to that term's denotation in `ρk`; a dead `let`'s variable stands for nothing, and its slot
+is related to nothing.
+
 **Typing is consumed in one form only** (`SiteOk`): at an application site SrcEval evaluates, the
 function denotes a member of a graph-regime product whose domain holds the argument. `Runs`
 records it at every such site of a term SrcEval runs, at the levels it runs it; the per-constant

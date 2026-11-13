@@ -30,8 +30,8 @@ mutation targeting one makes exactly that one false.
 | `natBasis` | `Nat`, `Nat.zero` and `Nat.succ` stored as the literal reading needs |
 | `eqBasis` | `Eq` stored with its type |
 | `eqnShape` | each `eqn` entry's theorem has the checked shape (`EqnShape`) |
-| `eqnCorr`, `eqnClosed` | each `eqn` body corresponds to the equation body, which is closed |
-| `valueCorr`, `valueClosed` | each δ value corresponds to the stored value, which is closed |
+| `eqnCorr`, `eqnClosed` | each `eqn` body corresponds to the equation body (its `let`s through the substitution of their copies, `corrSB []`), which is closed |
+| `valueCorr`, `valueClosed` | each δ value corresponds to the stored value, the ζ-reduct (`corrSB []`), which is closed |
 | `okClosed` | `Ok`'s closure (`okClosedB`) |
 | `caseShape` | each `case` entry's stored `casesOn`, recursor and constructors have the checked shape (`CaseStored`, read by `caseShape?`), its inductive never a proposition |
 | `caseProg` | each `case` entry's recursor and constructors in the program agree with the shape (`CaseProg`) |

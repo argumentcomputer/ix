@@ -7,7 +7,9 @@ import IxCC.Src.Relevance.Check
 
 /-! # `tests-grounding`: the canonicity-free family's decided fact on the corpus
 
-`noCanonB` (`IxCCGrounding.Facts`) on the 34 corpus closures the check accepts: true on 32, false
+`noCanonB` (`IxCCGrounding.Facts`) on the 37 corpus closures the check accepts (every conjunct of the
+check asserted true on each; `fields254`, `machines`, `natural` since step C, with the constants
+`corrSB []` accepts there through a `let`, `IxCCTests.Grounding.Zeta`): true on 35, false
 on `phase1-decline/erase` and `OS16-plain`, each for one `case` entry over a family with a level
 parameter (its recursor's rules do not compare parameters). Controls on `decide`: the
 `Decidable.casesOn` entry's recursor made to compare parameters (its rules marked not blind) makes
@@ -18,7 +20,7 @@ and `stored` against the program's levels), which is why no mutation of that kin
 true.
 
 `litDefsB` (`IxCCGrounding.Facts`, the premise under which #678's `lit_ops` gives `NatAccel`: every
-`Nat` role the reading stores is stored as a definition) on the same 34: true on all, by name. Of
+`Nat` role the reading stores is stored as a definition) on the same 37: true on all, by name. Of
 the fifteen roles a closure stores those its program reaches, each a definition without level
 parameters, and nothing else (measured on all 50 loaded closures). Controls on `decide`: `Nat.add`
 stored as an axiom makes it false; `Nat.beq` not stored at all leaves it true (a role that is not
@@ -26,13 +28,16 @@ stored needs nothing: no term naming it denotes).
 
 Step A (`IxCCGrounding.CaseLevels`, `rootSound_678A`): `noCanonAB` (`noCanonB` less the level
 condition at `case` entries) and `instCheckB` on the instance set `instWalk` returns from every
-root are true on the same 34, so the family over the instance set holds on all 34 (`erase` and
+root are true on the same 37, so the family over the instance set holds on all 37 (`erase` and
 `OS16-plain` included). Controls on `OS16-plain`: a constructor of its `List`-shaped family raised
 one level in one value, in the reading and the program alike, leaves the check and `noCanonAB`
 true and makes `instCheckB` false (the family used at two level instantiations); the same
-constructor at level 1 bound by a `let` in that value is not walked (`instCheckB` stays true), and
-the check refuses the program at `valueCorr`, which is what keeps the walk's stopping at a
-`let` out of every theorem. -/
+constructor at level 1 as the value of a dead `let` around that value is accepted by every conjunct
+of the check (a dead `let`'s slot is related to nothing) and refused by `instCheckB`, which reads a
+relevant `let`'s value, dead or not (step C).
+
+Item 1a: `headRegimeResB` on the same 37, true on 36 and false on `natural` (sites under its `let`s
+whose heads' types are a `∀` only after δ: item 1b). -/
 
 namespace IxCCTests.Grounding.NoCanon
 
