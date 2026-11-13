@@ -47,10 +47,10 @@ The chain from the bytes to the object's result, link by link:
 | The certified kernel's acceptance at ingress | `KernelFront.accept` in `Recheck.ingress` ([`Src/KernelFront/Accept.lean`](../IxCC/Src/KernelFront/Accept.lean)), on every byte-level path (there is no unchecked mode) | **Stated in every byte-level theorem** (`Recheck.ingress_parts`, `verifyBytes_*_sound`, `verifyBytesRing0Sip_sound`): the kernel's tiered entry accepted exactly the envelope's binding section, records and blobs, with the envelope's own reducibility hints (`accept_spec`; the hints are advice about unfolding order, read from the artifact by producer and verifier alike: every theorem of the entry holds for every hint function, so no guarantee depends on their being right, but the kernel may decline on fuel under one set of hints and accept under another, so a verdict is about the artifact as stored, hints included; the hints are not covered by the artifact's name or a compile claim, so two holders of one claim may see one decline where the other accepts, never a different acceptance; [kernel front end](kernel-front-end-design.md#acceptance)), so IxCK's theorems give the reading's fidelity, a model and the strong model of the whole logical environment under the artifact's table and prelude. Not premise (i) as restated (the closure of the seeds under the default table and committed prelude) | Premise (i) by the closure run (KF-4); IxCC's erased type checker, which it replaced, is off every path and is deleted |
 | Ingress | environment to Src program (`Src.Ingress.readConsts`, the pins of the kernel's admitted table), read against the kernel's reading (`KernelFront.Reading.build`: keys, addresses, headers) | Proved that it ran; the terms the annotator walks are checked to correspond to IxCK's (`Reading.corr`) when it runs; no proved correspondence lemma | Premise (ii) |
 | Unfolding table | each entry valid in the kernel's model | Syntactic checks and the axiom closure proved (`checkAxiomClosure_sound`, [`Src/Table/Check.lean`](../IxCC/Src/Table/Check.lean)); **no semantic lemma** | SP-0's lemmas; the statements in premise (ii) |
-| Relevance annotation | positions tagged irrelevant are types or proofs, and conversely | Structural soundness (`check_sound`, [`Src/Relevance/Proof/Sound.lean`](../IxCC/Src/Relevance/Proof/Sound.lean)); since 2026-11-13 the checks' other facts as propositions (L1, [`Src/Relevance/Proof/Canonical.lean`](../IxCC/Src/Relevance/Proof/Canonical.lean)): tier C at every reached instance (`check_soundC`: C0-C5 and C7, C3 with the dispatch pairing, `elimShape_recr_minors`, and an eliminator over a constructor field written erased only at a saturated spine) and what `checkCanonical` decides (`checkCanonical_sound`: canonical records, header agreement, the special heads' reads, the forwarding clause, no `csimp` redirect to an eliminator over a field written erased, canonical tags, and since a later landing of 2026-11-13 the structure the kernel ensures: density, rule `j` for constructor `j`, universe-argument counts, constructor records, F3's field count, `Fin.mk`'s proof field, and since the twelfth route's landing a record for the rule-0 constructor of a reached subsingleton eliminator), with a parameter or field written erased irrelevant or dropped at every instance (`param_erased_irr`, `field_erased_dropped`, `arg_erased_irr`) and a special head's parameter written erased below its arity (`erased_lt_arity`, since the eleventh route's landing); **not proved**: that an accepted program's evaluation never yields the irrelevance marker at a position that is read (P1, [below](#erased-positions-the-routes-found-and-what-closes-each)); the annotator is the kernel's (Stage A), each class proved to be the kernel core's answer at its position (`KernelFront.Ctx.classify*_proof`, `_of_runs`), not yet composed into the kernel's typing judgements. A λ's condition is asked once per run of λs, of the run's innermost body (since 2026-11-13), on the Π rule (the sort of `Π x : A, B` is `imax` of the two sorts, zero exactly when `B`'s is), which is not proved in IxCC; tested equal to the former per-λ definition on every committed closure and adversarial runs, not proved equal ([kernel front end](kernel-front-end-design.md#the-annotation)). Not proved either: that the output is independent of the order of the annotator's kernel calls (their memo carries answers between calls, and the kernel's fuel can decide an answer) | Premise (ii), against the kernel's typing, both directions; the Π-rule fact on the model's side (the later progress proof) |
+| Relevance annotation | positions tagged irrelevant are types or proofs, and conversely | Structural soundness (`check_sound`, [`Src/Relevance/Proof/Sound.lean`](../IxCC/Src/Relevance/Proof/Sound.lean)); since 2026-11-13 the checks' other facts as propositions (L1, [`Src/Relevance/Proof/Canonical.lean`](../IxCC/Src/Relevance/Proof/Canonical.lean)): tier C at every reached instance (`check_soundC`: C0-C5 and C7, C3 with the dispatch pairing, `elimShape_recr_minors`, and an eliminator over a constructor field written erased only at a saturated spine) and what `checkCanonical` decides (`checkCanonical_sound`: canonical records, header agreement, the special heads' reads, the forwarding clause, no `csimp` redirect to an eliminator over a field written erased, canonical tags, and since a later landing of 2026-11-13 the structure the kernel ensures: density, rule `j` for constructor `j`, universe-argument counts, constructor records, F3's field count, `Fin.mk`'s proof field, and since the twelfth route's landing a record for the rule-0 constructor of a reached subsingleton eliminator), with a parameter or field written erased irrelevant or dropped at every instance (`param_erased_irr`, `field_erased_dropped`, `arg_erased_irr`) and a special head's parameter written erased below its arity (`erased_lt_arity`, since the eleventh route's landing); since a later landing of 2026-11-13 also that an accepted program's evaluation never yields the irrelevance marker at a position that is read (P1, [`Src/Relevance/Proof/P1/Main.lean`](../IxCC/Src/Relevance/Proof/P1/Main.lean), [below](#erased-positions-the-routes-found-and-what-closes-each)), **with the run's sort events agreeing (`SortAgree`) as a hypothesis that nothing proves**; the annotator is the kernel's (Stage A), each class proved to be the kernel core's answer at its position (`KernelFront.Ctx.classify*_proof`, `_of_runs`), not yet composed into the kernel's typing judgements. A λ's condition is asked once per run of λs, of the run's innermost body (since 2026-11-13), on the Π rule (the sort of `Π x : A, B` is `imax` of the two sorts, zero exactly when `B`'s is), which is not proved in IxCC; tested equal to the former per-λ definition on every committed closure and adversarial runs, not proved equal ([kernel front end](kernel-front-end-design.md#the-annotation)). Not proved either: that the output is independent of the order of the annotator's kernel calls (their memo carries answers between calls, and the kernel's fuel can decide an answer) | Premise (ii), against the kernel's typing, both directions; the Π-rule fact on the model's side (the later progress proof) |
 | Lazification | by-name modes only (`Lazify.run_modeEq`, [`Src/Proof/Lazify.lean`](../IxCC/Src/Proof/Lazify.lean)) | Syntactic; meaning preservation not proved | Premise (ii); by-name slots are handled inside SP-1's relation |
 | SrcEval and the kernel's model | adequacy | **Absent.** [`Models/KernelBridge`](../../Models/KernelBridge/README.md) is conditional, covers one real root and cannot reach recursion | SP-A, SP-1 |
-| `GoesWrong` | the escape clause | Unbounded; a dishonest certificate can choose it; the view case is narrowed at claim roots | SP-1's progress |
+| `GoesWrong` | the escape clause | Unbounded; a dishonest certificate can choose it; the view case is narrowed at claim roots. Where the run's sort events agree (`Front.RunSortAgree`, not proved), narrowed to being stuck, trapping, or a value with no marker at a read position that the view rejects (`sound_live_closed`, since 2026-11-13) | SP-1's progress |
 | Src to typed x86 | erasure, the middle end, Fir, Own, Cfg, Lir, selection, allocation, layout | **Proved**, standard axioms | Done |
 | Encoder, streams, ELF | E1 per form; E2 and `ELF.check_sound` | **Proved** | Done |
 | Machine, loader | the byte machine is the processor; the loader maps what `ELFRead` parses | **Assumed** ([trust ledger](trusted-extern-ledger.md)) | XB-2 for the machine; the loader stays assumed |
@@ -119,9 +119,15 @@ record), and is right only if the run behaviour that receives the position never
 invariant in [compiler design](compiler-design.md#relevance-and-erasure)). Twelve routes have been
 found by which a hand-made artifact compiled to an object returning a wrong value while SrcEval
 returned the irrelevance marker (the tenth writes no position erased: a type at a data position,
-below; the twelfth needs a recursor only the kernel refuses). Each is now refused by a check that `Recheck.run` runs, **none by a theorem**. Since 2026-11-13 what each check decides is a proposition proved from its acceptance
-(L1, `Relevance.Proof.check_soundC` and `checkCanonical_sound`, last column), but no theorem yet
-derives from those facts that an accepted program never reads a dropped value (P1, below).
+below; the twelfth needs a recursor only the kernel refuses). Each was closed by a check that
+`Recheck.run` runs. Since 2026-11-13 what each check decides is a proposition proved from its
+acceptance (L1, `Relevance.Proof.check_soundC` and `checkCanonical_sound`, last column), and
+relevance preservation (P1, below) derives from those facts that an accepted program's evaluation
+never yields the marker at a position that is read, under one hypothesis that nothing proves: the
+run's sort events agree (`SortAgree`). Under that hypothesis each of the twelve is now also covered
+by the theorem, as is any other route by which an accepted program's evaluation yields the marker
+where a value is read; the theorem rests on the checks' facts, so it covers the routes with their
+checks, not in place of them.
 
 | # | Route | Reproduced | Refused by | The check's fact (L1) |
 | --- | --- | --- | --- | --- |
@@ -262,18 +268,20 @@ One structural fact stays a hypothesis of P1: one constructor per inductive and 
 `Erase.Proof.erase_progWF` (`ProgWF.ctorIn`) discharges under `Recheck.run`'s acceptance, since
 `Recheck.run` erases the program SrcEval runs.
 
-The table records routes found by testing, one at a time; that there is no other is
-not established. What would establish it is a theorem that an accepted program's evaluation never
-yields the marker at a position that is read (relevance preservation, P1); it is not proved. Its
-premises are now propositions (L1, above); the proof is the next step ([roadmap](roadmap.md#resource-soundness)),
-and two things it must handle are known: inside a recursor rule's body a dropped field's slot
-holds the marker under a λ whose class is relevant, so the invariant on environments is per
-recursor activation, not per binder class; and IxCC checks of a stored rule only that it is for
-its constructor (`rules`), not that its body has the kernel's generated shape, so the proof may
-use only that and what the forwarding clause decides of the rule as stored.
+The table records routes found by testing, one at a time. That there is no other is now a theorem
+under one hypothesis: relevance preservation (P1, below) says that an accepted program's evaluation
+never yields the marker at a position that is read, provided the run's sort events agree
+(`SortAgree`), which typing should give and which is tested on every registered run
+(`tests-p1-twin`), not proved. A route through a run whose sort events disagree is not excluded by
+any theorem. Its premises are propositions (L1, above), and two things its proof had to handle
+were known before it: inside a recursor rule's body a dropped field's slot holds the marker under a
+λ whose class is relevant, so the invariant on environments is per recursor activation, not per
+binder class; and IxCC checks of a stored rule only that it is for its constructor (`rules`), not
+that its body has the kernel's generated shape, so the proof could use only that and what the
+forwarding clause decides of the rule as stored.
 
-**P1's definitions are in the library; P1 is not proved (2026-11-13).** The definitions its proof
-is written against, as approved, are
+**P1's definitions are in the library (2026-11-13).** The definitions its proof is written
+against, as approved, are
 [`Src/Relevance/Proof/P1/Defs.lean`](../IxCC/Src/Relevance/Proof/P1/Defs.lean) and, for the
 narrowing of `Recheck.sound`'s escape,
 [`Recheck/Proof/LiveDefs.lean`](../IxCC/Recheck/Proof/LiveDefs.lean). Hypotheses: L1's facts on
@@ -283,10 +291,14 @@ marker from a position irrelevant by sort, never one written erased, meets a rec
 it. Invariants by provenance (`Live`, `LiveSlot`, `EnvOk` with a slot shielded where a rule passes
 a dropped field to the minor that ignores it, `Whole`, `MinorsIgnore`), each call's precondition
 and result (`Pre`, `Post`) and what it reads (`Reads`); `Front.GoesWrongLive` is `Recheck.sound`'s
-escape with a `Live` result. These are the definitions of a theorem not yet proved: no theorem
-rests on them but `live_not_irr` (a marker is never `Live`) and the parts below, and P1's
-statements (`preserve`, `pre_step`, `reads_live`, `run_live`) join the library only as they are
-proved; the narrowing (`Front.goesWrong_live`, `sound_live`) is in it with `run_live` as a hypothesis.
+escape with a `Live` result. P1's statements (`preserve`, `pre_step`, `reads_live`, `run_live`)
+are proved on them (below), as is `live_not_irr` (a marker is never `Live`). One definition changed
+with the proof (the lead's approval): `Reads` at a recursor and at a `case` key asks that the
+selected major be `Live` only where the recursor's kind at the call's levels is ordinary
+(`(p.table.recKindOf r).map (·.atLevels ls) = some .ordinary`, the premise of the steps
+`Step.recMajor` and `Step.caseMajor`). A subsingleton or empty kind forces no major, and as first
+stated the clause asked of a forcing the run never makes, which `SortAgree` does not constrain, so
+`reads_live` was not provable there. The twin's executable `Reads` changed to match.
 
 Reading the statements against SrcEval case by case before the proof (engineer PA) found them false
 in five places, all where a call whose precondition holds starts from values no run makes: P1
@@ -314,8 +326,8 @@ through β at a λ head, by C0). [`Recheck/Proof/FrontAccepted.lean`](../IxCC/Re
 proves what `Recheck.run`'s acceptance gives the narrowing of its escape: `front_accepted` (both
 relevance checks accepted the installed program, and SrcEval runs that program's Lazify image) and
 `shapeOk_of_run` (one constructor per inductive and index, from erasure's success on the program
-SrcEval runs). Not proved: P1's core (`preserve`, `pre_step`, `reads_live`, `run_live`), on which the
-narrowing below rests (`Front.goesWrong_live`, `sound_live`, proved with `run_live` as a hypothesis).
+SrcEval runs). E7's proof (below) uses the two prefix lemmas, and the narrowing below the two facts
+of acceptance.
 
 **L1's facts hold on the program SrcEval runs (2026-11-13).** The relevance checks run on the
 installed program `p₀`, while SrcEval runs its Lazify image `p`, which differs from `p₀` only in the
@@ -348,24 +360,44 @@ RunLiveStmt`, the root's statement as a proposition, in
 wrong (`Front.GoesWrong`) only by being stuck, by trapping, or by returning a `Live` value that the
 view rejects (`Front.GoesWrongLive`); it never goes wrong because of a marker. `sound_live` is
 `Recheck.sound` with that narrower escape. The proofs use L1's facts on the Lazify image
-(`facts_modeEq`), `front_accepted`, `shapeOk_of_run` and `run_live` itself, through `hrl`. They
-need no change but dropping the hypothesis once `run_live` is proved. `run_live` is not proved: three
-of P1's 25 cases (E7, F3, F5; below) are open. So neither theorem narrows `Recheck.sound`'s escape
-unconditionally yet.
+(`facts_modeEq`), `front_accepted`, `shapeOk_of_run` and `run_live` itself, through `hrl`.
+`run_live` is now proved (below), and
+[`Recheck/Proof/LiveClosed.lean`](../IxCC/Recheck/Proof/LiveClosed.lean) gives it to both:
+`Front.goesWrong_live_closed` and `sound_live_closed` are the same statements without `hrl`. What
+they assume is `Recheck.run`'s acceptance and `Front.RunSortAgree`, which nothing proves. So where
+the run's sort events agree, `Recheck.sound`'s escape is narrowed: the source goes wrong only by
+being stuck, by trapping, or by returning a value with no marker at a read position (`Live`) that
+the view rejects. Where they do not, no theorem narrows it: the escape is `Front.GoesWrong`, as in
+`Recheck.sound`.
 
-**P1's core as one induction over 25 cases; the cases are not all proved (2026-11-13).**
+**P1's core as one induction over 25 cases, all proved (2026-11-13).**
 [`Src/Relevance/Proof/P1/Cases.lean`](../IxCC/Src/Relevance/Proof/P1/Cases.lean) proves `preserve`
 and `pre_step`, as approved, from a hypothesis `Cases`: one statement per evaluator case (E1–E8,
 δ, `headValue`, A1–A3, `applyAll`, F1–F8 with F6w, `force`, `forceAll`), each a named proposition
 with one signature (L1's facts, the structure, the call's precondition and sort events, and the
 statement at every call its evaluation makes). The induction is well founded on SrcEval's own
 termination measure, which every `Step` decreases
-([`Measure.lean`](../IxCC/Src/Relevance/Proof/P1/Measure.lean)). Twenty-two of the 25 are
-proved. In `Cases.lean`: E2 at a sort and at a Π, where C7 leaves no precondition; E3 at both
+([`Measure.lean`](../IxCC/Src/Relevance/Proof/P1/Measure.lean)). All 25 are proved. In
+`Cases.lean`: E2 at a sort and at a Π, where C7 leaves no precondition; E3 at both
 literals; F4. F2, an ordinary recursor fired
 ([`Recr.lean`](../IxCC/Src/Relevance/Proof/P1/Recr.lean): a field its constructor writes erased
 holds the marker under a rule λ whose class may be relevant, and is shielded there, passed only to
-the minor the rule dispatches, which ignores it). The constructor
+the minor the rule dispatches, which ignores it), and in the same module F3, a subsingleton
+recursor fired, the same with rule 0 and no major forced (the field slots are the recursor's index
+arguments or the marker, rule 0's constructor record from `Canonical.subRecords`, the slot count
+from `Canonical.subsingletonFields`). F5, a `case` key fired
+([`CaseKey.lean`](../IxCC/Src/Relevance/Proof/P1/CaseKey.lean)): the minor is read at the key's
+instance (`Canonical.minorsRead`), so it forces to a `Live`, `Whole` value, and the fields fit it
+one by one (`allFit_chain`): a field that is no marker is `Live`, a marker not written erased meets
+a value that ignores it by `SortCoherent`, and a marker written erased meets an irrelevant binder of
+the minor, by the constructor's record (the major's at an ordinary kind, `Canonical.subRecords` at
+a subsingleton one). E7, an application
+([`App.lean`](../IxCC/Src/Relevance/Proof/P1/App.lean)): the function's value is `Live`; a marker
+argument meets a value that ignores it (`eval_erased_prefix` at a position written erased,
+`SortCoherent` otherwise), a shielded argument a chain of closures that ignores it
+(`eval_shielded_prefix`), and at an eliminator's partial application the new position is covered by
+C3 at the saturated spine (`unroll`: the value of a spine's prefix that is not `Whole` is the
+eliminator's partial application holding one slot per argument). The constructor
 values ([`Ctor.lean`](../IxCC/Src/Relevance/Proof/P1/Ctor.lean)): E6, a projection's field `Live`
 where it is read (a marker there would be at a field written erased, which C3 refuses at the
 projection); F1, a constructor's fields, each `Live` unless a marker at a position the constructor
@@ -378,17 +410,34 @@ handled; δ itself, stuck out of the program, at a reached instance a run body w
 word operation, whose result's one marker is the proof field the pinned `Fin.mk` drops. The cases
 that move values without reading them
 ([`Plumbing.lean`](../IxCC/Src/Relevance/Proof/P1/Plumbing.lean)): E1, E4, E5, A1–A3, `applyAll`,
-`force`, `forceAll`. The other three, E7 (application), F3 (subsingleton ι) and F5 (`case`), are
-stated, not proved, so P1 is still not a theorem: `preserve_of_cases` and `pre_step_of_cases` take
-`Cases` as a hypothesis. [`Basic.lean`](../IxCC/Src/Relevance/Proof/P1/Basic.lean) holds the
-lemmas the cases share; those the three later modules mark for it are still in their modules. F3
+`force`, `forceAll`. [`Basic.lean`](../IxCC/Src/Relevance/Proof/P1/Basic.lean) holds the
+lemmas the cases share; those the later modules mark for it are still in their modules. F3
 as stated was false where a reached subsingleton recursor's rule-0 constructor has no constructor
 record, reproduced by a run (a `Prop` inductive with large elimination over a non-proof field,
 built below the kernel, which only the kernel refuses), and by reading F5 likewise at a `case` key
 over such a recursor; it was also a wrong-value route on the recheck path, the twelfth
 ([above](#erased-positions-the-routes-found-and-what-closes-each)). `checkCanonical` now refuses it
 (`Canonical.subRecords`: such a constructor has a record), so F3's and F5's statements are
-unchanged and their proofs read the record; neither is proved yet.
+unchanged and their proofs read the record.
+
+**P1 is proved (2026-11-13).**
+[`Src/Relevance/Proof/P1/Main.lean`](../IxCC/Src/Relevance/Proof/P1/Main.lean) collects the 25 cases
+(`cases_all : Cases p ann ch`) and proves P1's approved statements with no `Cases` hypothesis:
+`preserve` (every call a run makes whose precondition holds has its `Post`), `pre_step` (the
+precondition propagates along every step but the evaluation of a variable its spine shields),
+`reads_live` (what such a call reads is `Live`: an applied function, a projection's structure and
+field, a selected major at an ordinary kind, a lifted quotient) and `run_live : RunLiveStmt` (`Src.run` on a root and literal inputs returns a `Live` value). Their
+hypotheses, as the statements have them: `Facts` (L1's facts on the program SrcEval runs, which
+`facts_modeEq` gives under both relevance checks' acceptance), `ShapeOk` (one constructor per
+inductive and index, which `shapeOk_of_run` gives under `Recheck.run`'s acceptance) and `SortAgree`
+(`RunSortAgree` at the root): at every call the run makes, a marker from a position irrelevant by
+sort meets a receiver that ignores it. Typing should give `SortAgree`; nothing proves it, and
+`tests-p1-twin` tests it on every registered run (below). Each public theorem of the proof's
+modules is fenced exactly (`IxCCTests/Fences/Erase.lean`, `IxCCTests/Fences/P1.lean`) and depends
+on no axiom beyond `propext`, `Classical.choice` and `Quot.sound` (so no `sorry` and no
+`native_decide`). With `run_live` the narrowing above holds without `hrl` (`sound_live_closed`).
+Not established: `SortAgree`; SrcEval's adequacy to the kernel's model and the mode theorems,
+which are other work.
 
 **P1 tested by running it (`tests-p1-twin`, 2026-11-13; engineers RN, RO, PD).** The definitions above are
 made executable clause by clause (`IxCCTests/Recheck/P1Twin/Exec.lean`: exact where decidable, `Live`
