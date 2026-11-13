@@ -1,6 +1,7 @@
 import IxCC.Src.Proof.Lazify
 import IxCC.Src.Proof.TermBEq
 import IxCC.Src.Relevance.Check
+import IxCC.Src.Relevance.Proof.Canonical
 
 /-! # The relevance checks do not read application modes
 
