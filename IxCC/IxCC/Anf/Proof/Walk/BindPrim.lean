@@ -95,7 +95,7 @@ private theorem succBle_sound {facts : Src.NatMap Fact} {ρ' : List Val}
           cases l'
           case nat b =>
             have hsem : Lam.Prim.sem .natBlt [n, b] = Lam.Prim.sem .natBle [n + 1, b] := by
-              simp [Lam.Prim.sem, Lam.Prim.srcOp, Src.PrimOp.eval2, Nat.lt_iff_add_one_le]
+              simp [Lam.Prim.sem, Lam.Prim.sem.srcOp, Src.PrimOp.eval2, Nat.lt_iff_add_one_le]
             simp only [primResult, natArgs, Option.map_some]
             rw [hsem]
           all_goals simp [primResult, natArgs]
