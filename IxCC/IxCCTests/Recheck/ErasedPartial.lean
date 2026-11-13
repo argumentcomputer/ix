@@ -8,7 +8,8 @@ arguments (bound by a `let`, passed to a β-redex, the value of a definition, no
 receives its minors later at a variable head, and a `csimp` redirect to a `case` key (a target the
 table admits) passes its callers' minors to the eliminator without a walked term: in both, an
 η-short minor over a field written erased met no check, the rule (F2) or the `case` entry (F5)
-applied it to `irr`, and the object returned a wrong constructor (the eighth route; the lead's
+applied it to `irr`, and the object returned a wrong constructor (the eighth route, an
+unsaturated or bare eliminator, and the ninth, a `csimp` redirect to a `case` key; the lead's
 `plans/resource-cert/P1.md`). C3 now refuses such an eliminator wherever its minors would escape
 it (`Check.erasedMinors`; `Check.partialElim` at a shorter spine and on a bare occurrence,
 `Check.Canonical.redirectsErased?` on a `csimp` redirect).

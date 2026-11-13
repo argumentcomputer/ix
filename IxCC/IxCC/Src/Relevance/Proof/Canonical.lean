@@ -13,15 +13,19 @@ rest of what the verifier's relevance checks decide, as propositions (PLAN-2 §4
   the constructor whose fields it receives, paired as `Check.elimShape?` pairs them: at a recursor
   each rule with the minor it dispatches, `elimShape_recr_minors`; an eliminator with a rule for a
   constructor that writes a field erased occurs only at a saturated spine; a projection reads no field
-  dropped at every instance), C4 (an irrelevant major only at a subsingleton or empty eliminator)
-  and C5 (a constant at a relevant position has a relevant result). `WellAnnotatedC` adds them at
-  every reached instance to `WellAnnotated`.
+  dropped at every instance), C4 (an irrelevant major only at a subsingleton or empty eliminator),
+  C5 (a constant at a relevant position has a relevant result) and C7 (no sort or Π at a relevant
+  position: `TermC` has no case for one). `WellAnnotatedC` adds them at every reached instance to
+  `WellAnnotated`.
 * **(b) `checkCanonical_sound`**: from `checkCanonical p ann ch = []`, the canonical constant and
   constructor records, the header agreement of every run body and `csimp` redirect, the special
   heads' reads, the forwarding clause on recursor rules, no `csimp` redirect to an eliminator
   over a field written erased, and canonical tags on every reached
-  runtime term; then the three facts about positions written erased that relevance preservation
-  consumes (`param_erased_irr`, `field_erased_dropped`, `arg_erased_irr`).
+  runtime term; the structure the kernel ensures (no constant at or above the program's size,
+  rule `j` of a reached eliminator's recursor for constructor `j`, universe-argument counts, a
+  record for every reached constructor, F3's field count, `Fin.mk`'s proof field dropped where a
+  word entry is reached); then the three facts about positions written erased that relevance
+  preservation consumes (`param_erased_irr`, `field_erased_dropped`, `arg_erased_irr`).
 
 Not here, and not yet a theorem: that the evaluator never yields the irrelevance marker at a
 position that is read (relevance preservation, P1). These are the checks' facts only.
@@ -129,9 +133,7 @@ inductive TermC (p : Program) (ann : Ann) (prof : Profile) : List Rel → Term �
       HeadC p ann prof (Term.app f a m r).spineL.1 (Term.app f a m r).spineL.2 →
       SpineC p ann prof bs f → (r.irrP prof = false → TermC p ann prof bs a) →
       TermC p ann prof bs (.app f a m r)
-  | sort {bs : List Rel} {u : Ixon.Univ} : TermC p ann prof bs (.sort u)
-  | pi {bs : List Rel} {b : Binder} {res : Ixon.V3.ValueContract} {d c : Term} :
-      TermC p ann prof bs (.pi b res d c)
+  -- No case for a sort or a Π (C7).
   | natLit {bs : List Rel} {n : Nat} : TermC p ann prof bs (.natLit n)
   | strLit {bs : List Rel} {s : String} : TermC p ann prof bs (.strLit s)
 
@@ -513,8 +515,8 @@ private theorem term_nilC' : ∀ (bs : List Rel) (errs : List RelError) (t : Ter
       have h₅ := (term_nil ctx bs _ a e).1
       obtain ⟨h₁, h₂⟩ := hrest _ h₅ rfl
       exact .app h₁ h₂ fun _ => ha
-  | bs, errs, .sort u, _ => .sort
-  | bs, errs, .pi b res d c, _ => .pi
+  | bs, errs, .sort u, e => by unfold term sortRule at e; cases e
+  | bs, errs, .pi b res d c, e => by unfold term sortRule at e; cases e
   | bs, errs, .natLit n, _ => .natLit
   | bs, errs, .strLit s, _ => .strLit
 
@@ -569,8 +571,8 @@ private theorem rest_nilC' : ∀ (bs : List Rel) (errs : List RelError) (t : Ter
     unfold rest at e
     have h₁ := (term_nil ctx bs _ e' e).1
     exact .head (fun _ _ _ _ h => by cases h) (fun _ _ h => by cases h) (.proj (projRule_nilC ctx errs s i h₁) (term_nilC' bs _ e' e))
-  | bs, errs, .sort u, _ => .head (fun _ _ _ _ h => by cases h) (fun _ _ h => by cases h) .sort
-  | bs, errs, .pi b res d c, _ => .head (fun _ _ _ _ h => by cases h) (fun _ _ h => by cases h) .pi
+  | bs, errs, .sort u, e => by unfold rest sortRule at e; cases e
+  | bs, errs, .pi b res d c, e => by unfold rest sortRule at e; cases e
   | bs, errs, .natLit n, _ => .head (fun _ _ _ _ h => by cases h) (fun _ _ h => by cases h) .natLit
   | bs, errs, .strLit s, _ => .head (fun _ _ _ _ h => by cases h) (fun _ _ h => by cases h) .strLit
 
@@ -719,6 +721,14 @@ def CtorCanon (p : Program) (ann : Ann) (c : CId) (kr : CtorRel) : Prop :=
       (if writtenErased b then actual.alwaysDropped = true
        else actual = (match exp with | some e => FieldClass.ofRel e | none => .keep))
 
+/-- `rulesShape? p r = none`: rule `j` of the recursor `r` is for constructor `j` of its inductive
+and binds as many fields as that constructor has. -/
+def RulesOk (p : Program) (r : CId) : Prop :=
+  ∀ sf k lv np nmot nmin ni ind rules ty,
+    p.decl? r = some (.recr sf k lv np nmot nmin ni ind rules ty) →
+    ∀ (j : Nat) (rule : Rule), rules[j]? = some rule →
+      ∃ sf' lv' np' ty', p.decl? rule.ctor = some (.ctor sf' lv' ind j np' rule.fields ty')
+
 /-- What `checkCanonical p ann ch = []` establishes. -/
 structure Canonical (p : Program) (ann : Ann) (ch : Checked) : Prop where
   consts : ∀ c cr, ann.constRel? c = some cr → ConstCanon p c cr
@@ -742,6 +752,31 @@ structure Canonical (p : Program) (ann : Ann) (ch : Checked) : Prop where
     ∀ sf k lv np nmot nmin ni ind rules ty,
       p.decl? c = some (.recr sf k lv np nmot nmin ni ind rules ty) →
       ∀ rule ∈ rules, checkTermBinders p ann [] rule.rhs [] = true
+  /-- No constant and no table entry at or above the program's size (the closure loop skips an
+  instance there, `Handled`). -/
+  dense : ∀ c, p.size ≤ c → p.entry? c = none ∧ p.table.resolveOf c = none
+  /-- Rule `j` of a reached eliminator's recursor (a raw recursor's own, a `case` key's
+  recursor's) is for constructor `j` of its inductive (`rulesShape?`; erasure's `ruleAlt`). -/
+  rules : ∀ c ∈ ch.reached, ∀ shape, elimShape? p c = some shape → RulesOk p shape.recr
+  /-- Universe-argument counts (`univsOk`) on a reached constant's runtime terms and on its
+  `csimp` redirect's target (erasure's `erase-univs`). -/
+  univs : ∀ c ∈ ch.reached,
+    (∀ key ∈ p.runtimeKeys c, ∀ t, p.termOf key = some t → univsOk p t = true) ∧
+    ∀ g us thm, p.table.resolveOf c = some (.csimp g us thm) → univsOk p (.const g us) = true
+  /-- A reached constructor has a constructor record (unannotated, every field reads as kept). -/
+  ctorRecords : ∀ c ∈ ch.reached, ∀ sf lv ind j np nf ty,
+    p.decl? c = some (.ctor sf lv ind j np nf ty) → (ann.ctorRel? c).isSome = true
+  /-- A reached subsingleton eliminator's field sources (F3) are as many as the fields of its
+  rule 0's constructor (`subsingletonSrcs?`). -/
+  subsingletonFields : ∀ c ∈ ch.reached, ∀ shape, elimShape? p c = some shape →
+    ∀ sf k lv np nmot nmin ni ind rules ty w srcs rule,
+      p.decl? shape.recr = some (.recr sf k lv np nmot nmin ni ind rules ty) →
+      p.table.recKindOf shape.recr = some (.subsingleton w srcs) → rules[0]? = some rule →
+      srcs.length = ctorFields p rule
+  /-- Where a word entry is reached, the pinned `Fin.mk` drops its proof field at the empty
+  profile (F6w builds a word's tower with `irr` there, `Program.mkWord?`). -/
+  finProof : ∀ c ∈ ch.reached, ∀ w op thm, p.table.resolveOf c = some (.word w op thm) →
+    ∀ fin, p.known.finMk = some fin → ch.keepsP fin [] 1 = false
 
 
 /-! ### Helpers for `checkCanonical_sound` -/
@@ -860,7 +895,8 @@ theorem checkCanonical_sound {p : Program} {ann : Ann} {ch : Checked}
   unfold checkCanonical at h
   dsimp only at h
   simp only [List.append_eq_nil_iff] at h
-  obtain ⟨⟨⟨⟨hread, hfwd⟩, hred⟩, hhdr⟩, hokE⟩ := h
+  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hread, hfwd⟩, hred⟩, hhdr⟩, hdenseE⟩, hruleE⟩, hunivE⟩, hrecE⟩, hsrcsE⟩, hfinE⟩,
+    hokE⟩ := h
   split at hokE
   · rename_i hall
     simp only [Bool.and_eq_true, List.all_eq_true] at hall
@@ -869,7 +905,12 @@ theorem checkCanonical_sound {p : Program} {ann : Ann} {ch : Checked}
     have hread' := List.filterMap_eq_nil_iff.1 hread
     have hfwd' := List.filterMap_eq_nil_iff.1 hfwd
     have hred' := List.filterMap_eq_nil_iff.1 hred
-    refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    have hruleE' := List.filterMap_eq_nil_iff.1 hruleE
+    have hunivE' := List.flatMap_eq_nil_iff.1 hunivE
+    have hrecE' := List.filterMap_eq_nil_iff.1 hrecE
+    have hsrcsE' := List.filterMap_eq_nil_iff.1 hsrcsE
+    have hfinE' := List.filterMap_eq_nil_iff.1 hfinE
+    refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
     -- the constant records
     · intro c cr hcr
       have hx := hconsts (c, cr) (NatMap.mem_toList hcr)
@@ -1030,6 +1071,103 @@ theorem checkCanonical_sound {p : Program} {ann : Ann} {ch : Checked}
           fun sf k lv np nmot nmin ni ind rules ty hd rule hrule => ?_⟩
         rw [hd] at hr
         exact hr rule.rhs (List.mem_map.2 ⟨rule, hrule, rfl⟩)
+    -- no constant or table entry at or above the size
+    · intro c hc
+      split at hdenseE
+      · next hd =>
+        simp only [Bool.and_eq_true, List.all_eq_true, decide_eq_true_eq] at hd
+        refine ⟨?_, ?_⟩
+        · cases he : p.entry? c with
+          | none => rfl
+          | some e => exact absurd (hd.1 (c, e) (NatMap.mem_toList (m := p.consts) he)) (Nat.not_lt.2 hc)
+        · cases hr : p.table.resolveOf c with
+          | none => rfl
+          | some e =>
+            exact absurd (hd.2 (c, e) (NatMap.mem_toList (m := p.table.resolve) hr)) (Nat.not_lt.2 hc)
+      · cases hdenseE
+    -- rule `j` of a reached eliminator's recursor is for constructor `j`
+    · intro c hc shape hs
+      unfold RulesOk
+      intro sf k lv np nmot nmin ni ind rules ty hd j rule hrule
+      have h1 := hruleE' c hc
+      rw [hs] at h1
+      dsimp only at h1
+      have hn := Option.map_eq_none_iff.1 h1
+      unfold rulesShape? at hn
+      rw [hd] at hn
+      simp only [Option.bind_eq_bind, Option.bind_some] at hn
+      have hg := List.findSome?_eq_none_iff.1 hn (rule, j)
+        ((mem_zipIdx_iff rules 0 j rule).2 ⟨Nat.zero_le _, by simpa using hrule⟩)
+      dsimp only at hg
+      cases hD : p.decl? rule.ctor with
+      | none => rw [hD] at hg; simp at hg
+      | some d =>
+        rw [hD] at hg
+        cases d with
+        | ctor sf' lv' ind' cidx np' nf ty' =>
+          dsimp only at hg
+          split at hg
+          · next hok =>
+            simp only [Bool.and_eq_true, beq_iff_eq] at hok
+            obtain ⟨⟨h₁, h₂⟩, h₃⟩ := hok
+            exact ⟨sf', lv', np', ty', by rw [h₁, h₂, h₃]⟩
+          · cases hg
+        | _ => simp at hg
+    -- universe-argument counts
+    · intro c hc
+      have h1 := hunivE' c hc
+      unfold univsErrs at h1
+      dsimp only at h1
+      rw [List.append_eq_nil_iff] at h1
+      refine ⟨fun key hk t ht => ?_, fun g us thm hres => ?_⟩
+      · have h2 := List.filterMap_eq_nil_iff.1 h1.1 key hk
+        rw [ht] at h2
+        dsimp only at h2
+        split at h2
+        · next hok => exact hok
+        · cases h2
+      · have h2 := h1.2
+        rw [hres] at h2
+        dsimp only at h2
+        split at h2
+        · next hok => exact hok
+        · cases h2
+    -- a reached constructor has a record
+    · intro c hc sf lv ind j np nf ty hd
+      have h1 := hrecE' c hc
+      rw [hd] at h1
+      cases hk : ann.ctorRel? c with
+      | none => rw [hk] at h1; simp at h1
+      | some _ => rfl
+    -- F3's field sources
+    · intro c hc shape hs sf k lv np nmot nmin ni ind rules ty w srcs rule hd hk hr0
+      have h1 := hsrcsE' c hc
+      rw [hs] at h1
+      dsimp only at h1
+      have hn := Option.map_eq_none_iff.1 h1
+      unfold subsingletonSrcs? at hn
+      rw [hd, hk] at hn
+      dsimp only at hn
+      rw [hr0] at hn
+      dsimp only at hn
+      unfold ctorFields
+      -- the field count `subsingletonSrcs?` reads: one case per declaration of the rule's
+      -- constructor, each running the same script
+      generalize p.decl? rule.ctor = D at hn ⊢
+      rcases D with _ | (_ | _ | _ | _ | _ | _)
+      all_goals
+        dsimp only at hn ⊢
+        split at hn
+        · next heq => exact beq_iff_eq.1 heq
+        · cases hn
+    -- `Fin.mk`'s proof field where a word entry is reached
+    · intro c hc w op thm hres fin hfin
+      have h1 := hfinE' c hc
+      rw [hres, hfin] at h1
+      dsimp only at h1
+      cases hk : ch.keepsP fin [] 1 with
+      | false => rfl
+      | true => rw [hk] at h1; simp at h1
   · cases hokE
 
 /-! ## The erased facts P1 consumes, from the canonical records -/
