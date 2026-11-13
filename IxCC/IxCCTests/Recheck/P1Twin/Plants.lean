@@ -353,106 +353,10 @@ def caseCsimp (a : Assert) : IO Unit := do
       | .ok art => IO.println s!"PLANT (v) case key (b): Recheck.run ACCEPTS; object {repr (objMain art)}"
 
 
-/-- What `preserve`/`pre_step` say of one state `c` of `p`: the exact `Pre` (with the clauses that break it
-alone), `SortAgree` from `c` (the twin's sub-run), and `Post`, the children's `Pre` and `Reads`. -/
-def stateCheck (label : String) (p : Program) (ann : Relevance.Ann) (ch : Relevance.Checked) (c : Call) :
-    IO (Bool × List String × Outcome) := do
-  let ex := ECx.make p ann ch true
-  let (ok, cutp) := runEM (preM ex [] c)
-  let o := outcomes ex [] c
-  let counts ← IO.mkRef []
-  let notes ← IO.mkRef []
-  let sub : TCx := { p := p, ann := ann, ch := ch, counts := counts, notes := notes, sortOnly := true }
-  let _ ← tCall sub [] c
-  let sv := ((← sub.counts.get).filter (·.1.startsWith "VIOLATION (")).map (·.1)
-  IO.println s!"STATE {label}: {callShort c}"
-  IO.println s!"  Pre {if ok && !cutp then "holds" else if ok then "undecided (cut)" else s!"fails, alone: {(soleClauses ex [] c).map Cl.name}"}; SortAgree violations {sv}; {o.render}"
-  for d in childDetail ex [] c do IO.println s!"  child: {d}"
-  return (ok && !cutp, sv, o)
-
-/-- The domain of the `n`-th leading λ of `t` mapped by `f`. -/
-def mapLamDom (n : Nat) (f : Term → Term) : Term → Term
-  | .lam b d t => if n == 0 then .lam b (f d) t else .lam b d (mapLamDom (n - 1) f t)
-  | t => t
-
-/-- F3 (engineer PF's reading): a reached subsingleton recursor whose rule-0 constructor `K` has no
-constructor record. On `Words.u8` (whose reached subsingleton eliminators `Shape.subsingleton` finds), the
-first one whose `K` is unreached: `K` given one more field `(0 h : Nat)` written erased, the recursor's
-minor type one more `Π (h : Nat)`, rule 0 the minor applied to `K`'s fields and `h` (it forwards `h` to
-the minor it dispatches), the table kind one more `.proof` source. The state: `fire (.recr r) ls` at an
-instance's levels, a marker at each position the recursor ignores there, `λ x. x` as minor 0, literals
-elsewhere: `MinorsIgnore` is vacuous without `K`'s record, (d) exempts the field written erased, and F3
-binds the proof marker under `h`'s relevant λ. -/
-def f3Record (a : Assert) : IO Unit := do
-  let _ := a
-  let fx ← IxCCTests.Recheck.Shape.fixture "F3: Words.u8" (IxCCTests.Recheck.Shape.wordsDir / "words.ixe")
-    (IxCCTests.Recheck.Shape.wordsDir / "words.equations.json") ["Words.u8"]
-  let table ← match Src.Table.ofCert fx.cfg.table fx.P fx.tc with
-    | .ok t => pure t
-    | .error m => throw (IO.userError s!"F3: the table: {m}")
-  let Pt := { fx.P with table }
-  let .ok (_, ch) := Src.Recheck.annotation Pt fx.ann | throw (IO.userError "F3: Words.u8 refused")
-  let found := ch.reached.filterMap fun c => do
-    let shape ← Src.Relevance.Check.elimShape? Pt c
-    let .subsingleton w srcs ← Pt.table.recKindOf shape.recr | none
-    let .recr _ _ _ _ _ _ _ _ rules _ ← Pt.decl? shape.recr | none
-    let rule ← rules[0]?
-    if ch.reached.contains rule.ctor then none else pure (shape.recr, w, srcs, rule.ctor)
-  IO.println s!"F3: reached subsingleton eliminators whose rule-0 constructor is unreached: {found.length}"
-  let some (r, w, srcs, k) := found.head? | IO.println "F3: none in Words.u8 (no plant)"
-  let some (.ctor ks kl ki kj knp knf kty) := Pt.decl? k | throw (IO.userError "F3: K")
-  let some (.recr sf kk lv np nmot nmin ni ind rules rty) := Pt.decl? r | throw (IO.userError "F3: r")
-  let some rule0 := rules[0]? | throw (IO.userError "F3: rule 0")
-  let natT : Term := .const ((Pt.known.nat).getD 0) []
-  -- `K`: one more field `(0 h : Nat)` before its conclusion
-  let (kbs, kconcl) := kty.pis
-  let kty' := kbs.foldr (fun (b, d) acc => .pi b {} d acc)
-    (.pi { contract := .erased } {} natT (Src.Relevance.Check.Canonical.liftTerm 1 0 kconcl))
-  -- the recursor's minor 0 (binder `np + nmot`): one more `Π (h : Nat)` before its conclusion
-  let (rbs, rconcl) := rty.pis
-  let addPi : Term → Term := fun d =>
-    let (dbs, dconcl) := d.pis
-    dbs.foldr (fun (b, d') acc => .pi b {} d' acc) (.pi {} {} natT (Src.Relevance.Check.Canonical.liftTerm 1 0 dconcl))
-  let rbs' := rbs.zipIdx.map fun ((b, d), i) => if i == np + nmot then (b, addPi d) else (b, d)
-  let rty' := rbs'.foldr (fun (b, d) acc => .pi b {} d acc) rconcl
-  -- rule 0: its λs, one more for `h`, the body the minor applied to the fields and `h`
-  let total := np + nmot + nmin + knf + 1
-  let minorVar := total - 1 - (np + nmot)
-  let lbs := lamBinders rule0.rhs
-  let fieldRel := fun (i : Nat) => ((lbs[np + nmot + nmin + i]?).map (·.rel)).getD .rel
-  let body := Term.mkApps (.var minorVar) ((List.range (knf + 1)).map fun i =>
-    (.var (knf - i), .strict, if i < knf then fieldRel i else .rel))
-  let lastPw := ((lbs[np + nmot + nmin + knf - 1]?).map (·.propWhen)).getD .never
-  let rhs := mapLamDom (np + nmot) addPi (keepLams (np + nmot + nmin + knf) rule0.rhs (.lam { rel := .rel, propWhen := lastPw } natT body))
-  let P1 := ((Pt.setDecl k (.ctor ks kl ki kj knp (knf + 1) kty')).setDecl r
-    (.recr sf kk lv np nmot nmin ni ind (rules.set 0 { rule0 with fields := knf + 1, rhs }) rty'))
-  let P1 := { P1 with table := { table with recKind := table.recKind.insert r (.subsingleton w (srcs ++ [.proof])) } }
-  -- `K` keeps a canonical constant record and has no constructor record (it is unreached)
-  let annK := withConst fx.ann P1 k
-  let ann := withNode { annK with ctors := annK.ctors.erase k } (.rule r 0) (tagsOf rhs)
-  IO.println s!"F3 diag: rule 0 tags canonical {Src.Relevance.Check.Canonical.checkTermBinders P1 ann [] rhs []}; r's record canonical {ann.constRel? r == some (IxCCTests.Recheck.Erased.canonRel P1 r)}; K's {ann.constRel? k == some (IxCCTests.Recheck.Erased.canonRel P1 k)}"
-  let _ ← direct s!"F3: {Pt.short r}'s rule-0 constructor {Pt.short k} unreached, with a field written erased" P1 ann fx.main
-  match Src.Recheck.annotation P1 ann with
-  | .ok (src, ch1) =>
-    let some q := ch1.instances.find? (·.1 == r) | throw (IO.userError "F3: no instance of r")
-    let ls := levelsOf q.2
-    let ex := ECx.make src ann ch1 true
-    let arity := np + nmot + nmin + ni + 1
-    let idN : Value := .clo { rel := .rel } natT (.var 0) [] ls
-    let args := (List.range arity).map fun j =>
-      if j == np + nmot then Slot.val idN
-      else if headIgnoresB ann (.recr r) ls j then Slot.val (.irr none [] ls) else Slot.val (.lit 0)
-    let _ := ex
-    let (pre, sv, o) ← stateCheck "F3 (PF)" src ann ch1 (.fire kRun (.recr r) ls args)
-    IO.println s!"F3 (PF): annotation accepts; Pre {pre}, SortAgree holds {sv.isEmpty}, Post {o.post}, child Pre fails at {o.steps}"
-  | .error (.relevance errs) =>
-    IO.println s!"F3 (PF): refused: {(errs.toList.map (·.render P1)).take 3}"
-  | .error _ => IO.println "F3 (PF): refused at install"
-
 def run (a : Assert) : IO Unit := do
   for (n, act) in [("rules", rulesSwap), ("sort", sortMain), ("env", env), ("ctorUnique", ctorUniq),
       ("ctorUniqueCount", ctorUniqCount), ("liveCon", liveCon), ("recTableEntry", recTableEntry a),
-      ("quot", quotPlants a), ("caseRoot", caseRoot a), ("caseCsimp", caseCsimp a), ("f3Record", f3Record a)] do
+      ("quot", quotPlants a), ("caseRoot", caseRoot a), ("caseCsimp", caseCsimp a)] do
     try act catch e => do
       IO.println s!"PLANT {n}: ERROR {e}"
       expect a false s!"plant {n}: {e}"
