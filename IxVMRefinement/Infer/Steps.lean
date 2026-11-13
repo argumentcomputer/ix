@@ -6,13 +6,11 @@ import IxVMRefinement.Infer.Core
 
 /-! # The `Infer` family's steps
 
-`infer_step c hc htl hkp hio`: the registry's `Steps` restricted to the `Infer` family
+`infer_step c hc hkp hio`: the registry's `Steps` restricted to the `Infer` family
 (`Core/Specs/Infer.lean`): every function of `KernelInfer` and `KernelInferOnly` meets its
 registered spec, from the induction hypothesis at its derivation's calls. The step lemmas are in
-`Infer/{Leaves,Spine,Rebase,Proj,Core}.lean`. Three facts are hypotheses:
+`Infer/{Leaves,Spine,Rebase,Proj,Core}.lean`. Two steps are hypotheses:
 
-* `htl`: every stored type mentions only its constant's level parameters (`TypeLevels`), which
-  `Infer.const` needs at the `Const` arms of `k_infer_core` and `k_infer_only_core`;
 * `hkp`: the step of `k_infer_proj` (`Infer.proj` reads a projection table entry of the stored
   structure);
 * `hio`: the projection arm of `k_infer_only_core`'s step. -/
@@ -21,9 +19,8 @@ namespace IxVM.Refinement.Core
 
 open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 
-/-- **One step per function of the `Infer` family**, given the stored types' level parameters and
-the two projection steps. -/
-theorem infer_step (c : Ctx) (hc : CoreFacts c) (htl : TypeLevels c)
+/-- **One step per function of the `Infer` family**, given the two projection steps. -/
+theorem infer_step (c : Ctx) (hc : CoreFacts c)
     (hkp : ∀ (args : List (SourceValue F)) (h : Heap F) (r : SourceValue F) (h' : Heap F)
       (cs : List (Call F)), ObsFn W "KernelInfer::k_infer_proj" args h r h' cs → IH c cs →
         Specs.Infer.k_infer_proj c args h r h' cs)
@@ -40,7 +37,7 @@ theorem infer_step (c : Ctx) (hc : CoreFacts c) (htl : TypeLevels c)
   | .const_type_of, _, _, _, _, _, ev, ih => const_type_of_step c ev ih
   | .k_infer, _, _, _, _, _, ev, ih => k_infer_step c ev ih
   | .k_infer_rebase, _, _, _, _, _, ev, ih => k_infer_rebase_step c hc ev ih
-  | .k_infer_core, _, _, _, _, _, ev, ih => k_infer_core_step c hc htl ev ih
+  | .k_infer_core, _, _, _, _, _, ev, ih => k_infer_core_step c hc ev ih
   | .k_infer_let_start, _, _, _, _, _, ev, ih => k_infer_let_start_step c ev ih
   | .inst_subs, _, _, _, _, _, ev, ih => inst_subs_step c ev ih
   | .k_infer_app_spine_loop, _, _, _, _, _, ev, ih => k_infer_app_spine_loop_step c ev ih
@@ -62,7 +59,7 @@ theorem infer_step (c : Ctx) (hc : CoreFacts c) (htl : TypeLevels c)
   | .io_const_type_of, _, _, _, _, _, ev, ih => io_const_type_of_step c ev ih
   | .k_infer_only, _, _, _, _, _, ev, ih => k_infer_only_step c ev ih
   | .k_infer_only_core, _, _, _, _, _, ev, ih =>
-    k_infer_only_core_step_of_proj c hc htl ev ih (hio _ _ _ _ _ ev ih)
+    k_infer_only_core_step_of_proj c hc ev ih (hio _ _ _ _ _ ev ih)
   | .io_app_cod, _, _, _, _, _, ev, ih => io_app_cod_step c ev ih
   | .forall_datum_ok, _, _, _, _, _, ev, ih => forall_datum_ok_step c ev ih
   | .lam_datum_ok, _, _, _, _, _, ev, ih => lam_datum_ok_step c ev ih

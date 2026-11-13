@@ -38,7 +38,7 @@ theorem CIRep.head {κ : _root_.Address → KKey} {h : Heap F} {v : SourceValue 
   | quot hv _ => exact ⟨_, _, _, _, rfl, hv⟩
   | induct hv _ _ => exact ⟨_, _, _, _, rfl, hv⟩
   | ctor hv _ _ _ _ => exact ⟨_, _, _, _, rfl, hv⟩
-  | recr hv _ _ _ _ _ _ _ _ _ => exact ⟨_, _, _, _, rfl, hv⟩
+  | recr hv _ _ _ _ _ _ _ _ _ _ => exact ⟨_, _, _, _, rfl, hv⟩
 
 /-- The first field of a loaded constant is its level count. -/
 theorem CIRep.nl_of_eq {κ : _root_.Address → KKey} {h : Heap F} {v : SourceValue F}

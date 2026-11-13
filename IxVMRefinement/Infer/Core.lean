@@ -18,9 +18,8 @@ dispatch on the head node of the term:
   full grade `k_infer_proj`.
 
 **`Infer.const` reads the stored type at the constant's own level parameters.** IxVM loads it with
-those renamed to positions (`posOf`) and instantiates the positions; the two agree when the type
-mentions only the constant's parameters (`TypeLevels`, `ConstWF`'s second conjunct, kept by the
-store invariant `EnvWF`). It is a hypothesis of the two step lemmas here.
+those renamed to positions (`posOf`) and instantiates the positions; the parameters are a
+permutation of the positions (`ValRep`), so the two agree (`posOf_instantiateLevelParams_perm`).
 
 The io grade's projection arm is a hypothesis of its step lemma (`hproj`). -/
 
@@ -32,12 +31,6 @@ open IxVM.Refinement.KernelLevels (RepKLevel RepKLevelList)
 open Ix.Kernel.Rules (Red DefEq Infer)
 
 set_option linter.unusedVariables false
-
-/-- **Every stored type mentions only its constant's level parameters** (`ConstWF`'s second
-conjunct, from `EnvWF`). -/
-def TypeLevels (c : Ctx) : Prop :=
-  ∀ k ci, c.env.find? k = some ci →
-    ci.toConstantVal.type.allLevelParamsDefined ci.toConstantVal.levelParams = true
 
 /-- A loaded constant is never a projection table. -/
 theorem CIRep.isTowerEntry {κ : _root_.Address → KKey} {h : Heap F} {v : SourceValue F}
@@ -139,7 +132,7 @@ end InferBase
 open InferBase
 
 /-- `KernelInfer::k_infer_core`: one step of full-grade inference by the head node. -/
-theorem k_infer_core_step (c : Ctx) (hc : CoreFacts c) (htl : TypeLevels c)
+theorem k_infer_core_step (c : Ctx) (hc : CoreFacts c)
     {args : List (SourceValue F)} {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelInfer::k_infer_core" args h r h' calls) (ih : IH c calls) :
     Specs.Infer.k_infer_core c args h r h' calls := by
@@ -197,7 +190,7 @@ theorem k_infer_core_step (c : Ctx) (hc : CoreFacts c) (htl : TypeLevels c)
     rw [hm219] at ev245 hty
     have hinst := ih.get (.subst .expr_inst_levels) (by lt_calls) ev245 v218 x_lvls rfl
       (good.sub fun x hx => by simp [hx]) Γ 0 _ us (hty 0 Γ) ⟨ls, hls.mono e1, hus⟩
-    rw [InferAux.posOf_instantiateLevelParams hval.2.2.1 hus' (htl _ _ hfind)] at hinst
+    rw [InferAux.posOf_instantiateLevelParams_perm hval.2.2.1 hus'] at hinst
     exact ⟨_, Tm.of_depth_zero hinst d, .const hfind hci.isTowerEntry hus'⟩
   case App w270 w271 m283 cs294 x_head x_args v321 m322 cs332 cs362 m392 ld12 ev296 ev334 hm400
       ev364 hc411 =>
@@ -292,7 +285,7 @@ theorem k_infer_core_step (c : Ctx) (hc : CoreFacts c) (htl : TypeLevels c)
 
 /-- `KernelInferOnly::k_infer_only_core`: one step of io-grade inference by the head node, given
 the projection arm (`hproj`: at a term whose node is a projection, the spec holds). -/
-theorem k_infer_only_core_step_of_proj (c : Ctx) (hc : CoreFacts c) (htl : TypeLevels c)
+theorem k_infer_only_core_step_of_proj (c : Ctx) (hc : CoreFacts c)
     {args : List (SourceValue F)} {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelInferOnly::k_infer_only_core" args h r h' calls) (ih : IH c calls)
     (hproj : ∀ rc e types sa fi e1, args = [rc, e, types] →
@@ -353,7 +346,7 @@ theorem k_infer_only_core_step_of_proj (c : Ctx) (hc : CoreFacts c) (htl : TypeL
     rw [hm210] at ev236 hty
     have hinst := ih.get (.subst .expr_inst_levels) (by lt_calls) ev236 v209 x_lvls rfl
       (good.sub fun x hx => by simp [hx]) Γ 0 _ us (hty 0 Γ) ⟨ls, hls.mono e1, hus⟩
-    rw [InferAux.posOf_instantiateLevelParams hval.2.2.1 hus' (htl _ _ hfind)] at hinst
+    rw [InferAux.posOf_instantiateLevelParams_perm hval.2.2.1 hus'] at hinst
     exact ⟨_, Tm.of_depth_zero hinst d, .const hfind hci.isTowerEntry hus'⟩
   case App_Forall x_f x_a v271 m272 cs282 x_dom x_cod x_bl cs346 ld12 ev284 ld320 ev348 hc397 =>
     subst hc397
