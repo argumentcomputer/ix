@@ -142,6 +142,9 @@ structure Path where
   used : Array String := #[]
   /-- The path is impossible (a literal met a different literal); its goal is closed. -/
   dead : Bool := false
+  /-- Facts kept after the call equation, so that the fields before it keep their positions:
+  field name, fact template, proof term. -/
+  late : Array (String × List Piece × String) := #[]
   deriving Inhabited
 
 /-- A rendered constructor. -/
@@ -178,6 +181,16 @@ structure St where
   segs : Array (List Nat × String × String) := #[]
   /-- Inside a segment: no nested segments. -/
   inSeg : Bool := false
+  /-- The names of the facts kept after the call equation (`Path.late`), numbered on their own so
+  that the other names do not move. -/
+  lateCounter : Nat := 0
+  /-- The extended pass (`«f».PathX`, `«f».obsx`): the facts kept after the call equation are
+  generated. Off, the paths are the unchanged `«f».Path`. -/
+  late : Bool := false
+  /-- A fact was kept after the call equation. -/
+  lateUsed : Bool := false
+  /-- The suffix of the extended pass's names (`X`). -/
+  suffix : String := ""
 
 abbrev M := StateT St (Except String)
 
@@ -185,6 +198,11 @@ def fresh (base : String) : M String := do
   let s ← get
   set { s with counter := s.counter + 1 }
   return s!"{base}{s.counter}"
+
+def freshLate (base : String) : M String := do
+  let s ← get
+  set { s with lateCounter := s.lateCounter + 1 }
+  return s!"{base}{s.lateCounter}"
 
 def modifyPath (f : Path → Path) : M Unit :=
   modify fun s => { s with path := f s.path }
@@ -416,7 +434,8 @@ def leaf (ind : String) (segs : List Seg) : M (List String) := do
   -- the constructor's name: the arm tokens, made unique
   let base := sanitize ("_".intercalate p.tokens.toList)
   let name := uniqueName (s.ctors.map (·.name)) base
-  let fields := p.facts.toList.map fun (n, f, _, _) => s!"({n} : {renderPieces p.subst f})"
+  let fields := (p.facts.toList.map fun (n, f, _, _) => s!"({n} : {renderPieces p.subst f})")
+    ++ (p.late.toList.map fun (n, f, _) => s!"({n} : {renderPieces p.subst f})")
   let bs := binders.map fun (n, t) => s!"({n} : {t})"
   let text := s!"  | {name}" ++
     (if bs.isEmpty then "" else "\n      " ++ " ".intercalate bs) ++
@@ -427,7 +446,8 @@ def leaf (ind : String) (segs : List Seg) : M (List String) := do
       [s!"try simp only [Value.type, List.map_cons, List.map_nil] at {" ".intercalate hs} ⊢"]
     else []
   let holes := String.join (binders.map fun _ => " _")
-  let proofs := String.join (p.facts.toList.map fun (_, _, pr, _) => " " ++ pr)
+  let proofs := String.join (p.facts.toList.map fun (_, _, pr, _) => " " ++ pr) ++
+    String.join (p.late.toList.map fun (_, _, pr) => " " ++ pr)
   return norm ++ [s!"exact {ind}.{name}{holes}{proofs}"]
 
 /-! ## Inversion -/
@@ -668,7 +688,7 @@ mutual
   /-- The segment at `pos`: its inductive and theorem, over the local environment `names`. -/
   partial def genSegment (pos : List Nat) (names : List String) (x : Expr F) : M String := do
     let saved ← get
-    let segName := s!"Seg{saved.segs.size + 1}"
+    let segName := s!"Seg{saved.suffix}{saved.segs.size + 1}"
     let es := names.zipIdx.map fun (n, i) => s!"e{i}_{sanitize n}"
     set { saved with path := {}, ctors := #[], params := es ++ ["h", "r", "h'", "calls"], inSeg := true }
     let script ← inv x "d0" (names.zip (es.map T.v)) (.v "h") (.v "r") (.v "h'")
@@ -691,7 +711,7 @@ mutual
       s!"  simp only [Expr.sub, Expr.childAt, Expr.children, {lean}, List.map_cons, List.map_nil] at d0\n" ++
       "\n".intercalate (script.map ("  " ++ ·)) ++ "\n"
     let segs := saved.segs.push (pos, segName, ind ++ "\n" ++ thm)
-    set { saved with counter := st.counter, names := st.names, abbrevs := st.abbrevs, work := st.work, lookups := st.lookups, segs := segs }
+    set { saved with counter := st.counter, names := st.names, abbrevs := st.abbrevs, work := st.work, lookups := st.lookups, segs := segs, lateUsed := st.lateUsed }
     return segName
 
   partial def invArgs (es : List (Expr F)) (a : String) (env : Env) (hin : T)
@@ -762,8 +782,70 @@ mutual
             .s " : SourceValue F) ≠ .tuple vs"] hne (subject := some V)
           let lem := match p with | .tuple _ => "matchPattern_tuple_none" | _ => "matchPattern_array_none"
           return ([s!"have {hne} := {lem} (by trivial) {nm}"], false)
-        else return ([s!"clear {nm}"], false)
+        else
+          let kind := match p with | .tuple _ => "tuple" | _ => "array"
+          match ← (if (← get).late then mixedNeg V kind ps nm else pure none) with
+          | some ls => return (ls, false)
+          | none => return ([s!"clear {nm}"], false)
       | _ => return ([s!"clear {nm}"], false)
+
+  /-- **An unmatched tuple pattern of flat and constant components** (`(1, x)`, `(_, 1)`): its
+  constant components' equations do not all hold. At a tuple of terms the fact is
+  `¬ (u₁ = c₁ ∧ …)` (`u ≠ c` for one constant); at a variable `v`,
+  `∀ a⃗, v ≠ .tuple [c₁, a₁, …]`. The fact is kept after the call equation (`Path.late`),
+  so the fields before it keep their positions. `none` for any other pattern. -/
+  partial def mixedNeg (V : T) (kind : String) (ps : List (Pattern F)) (nm : String) :
+      M (Option (List String)) := do
+    let mut comps : Array (Option (T × String)) := #[]
+    for q in ps do
+      if isFlat q then comps := comps.push none
+      else match ← constPat? q with
+        | some c => comps := comps.push (some c)
+        | none => return none
+    unless comps.any (·.isSome) do return none
+    let lem := s!"matchPattern_{kind}_mixed_none"
+    let name ← freshLate "hnt"
+    match ← resolveT V with
+    | .tuple us =>
+      unless us.length == ps.length do return none
+      let pairs := (us.zip comps.toList).zipIdx
+      let consts := pairs.filterMap fun ((u, c), i) => c.map fun (t, _) => (u, t, i)
+      let stmt : List Piece := match consts with
+        | [(u, t, _)] => [.s "(", .t u, .s " : SourceValue F) ≠ ", .t t]
+        | _ =>
+          let eqs := consts.map fun (u, t, _) => [.s "(", .t u, .s " : SourceValue F) = ", .t t]
+          [.s "¬ ("] ++ (eqs.intersperse [.s " ∧ "]).flatten ++ [.s ")"]
+      let hs := consts.map fun (_, _, i) => s!"h{i}"
+      let pat := match hs with | [h] => h | _ => "⟨" ++ ", ".intercalate hs ++ "⟩"
+      let mml := pairs.foldr (fun ((_, c), i) acc => match c with
+        | none => s!"(.cons (Or.inl trivial) {acc})"
+        | some (_, prf) => s!"(.cons (Or.inr ⟨_, ({prf}), h{i}⟩) {acc})") ".nil"
+      let s ← get
+      modifyPath fun q => { q with late := q.late.push (name, stmt, name) }
+      modify fun s => { s with lateUsed := true }
+      return some [s!"have {name} : {renderPieces s.path.subst stmt} := fun {pat} => {lem} {nm} {mml}"]
+    | .v n =>
+      let mut binds : Array String := #[]
+      let mut items : Array String := #[]
+      for c in comps do
+        match c with
+        | none =>
+          let a ← freshLate "a"
+          binds := binds.push a
+          items := items.push a
+        | some (t, _) => items := items.push t.render
+      let mml := comps.toList.foldr (fun c acc => match c with
+        | none => s!"(.cons (Or.inl trivial) {acc})"
+        | some (_, prf) => s!"(.cons (Or.inr ⟨_, ({prf}), rfl⟩) {acc})") ".nil"
+      let stmt : List Piece := [.s s!"∀ {" ".intercalate binds.toList} : SourceValue F, (", .t (.v n),
+        .s s!" : SourceValue F) ≠ .tuple [{", ".intercalate items.toList}]"]
+      let hv ← freshLate "hv"
+      let s ← get
+      modifyPath fun q => { q with late := q.late.push (name, stmt, name) }
+      modify fun s => { s with lateUsed := true }
+      return some [s!"have {name} : {renderPieces s.path.subst stmt} := " ++
+        s!"fun {" ".intercalate binds.toList} {hv} => by rw [{hv}] at {nm}; exact {lem} {nm} {mml}"]
+    | _ => return none
 
   /-- Invert a successful match of `p` against `V`; returns the bindings. -/
   partial def patInv (V : T) (p : Pattern F) (mt : String) (heap : T) :
@@ -849,22 +931,25 @@ end
 larger caps, at a larger module cost. -/
 def generous : List String := ["KernelWhnf::whnf_nd_const_head"]
 
-/-- The path inductive and the inversion theorem of one function. -/
-def function (src : Aiur.Generic.Source F) (f : Function F) (index : Nat)
+/-- The path inductive and the inversion theorem of one function, in one pass: the unchanged
+`«f».Path` and `«f».obs`, or (`x`) the extended `«f».PathX` and `«f».obsx`, whose constructors
+also carry the facts kept after the call equation. The last component says whether any was. -/
+def functionPass (src : Aiur.Generic.Source F) (f : Function F) (index : Nat) (x : Bool)
     (maxChars : Nat := if generous.contains f.name then 2000000 else 200000) :
-    Except String (String × Array (String × String × String) × Array (String × String × String) × Nat) := do
+    Except String (String × Array (String × String × String) × Array (String × String × String) × Nat × Bool) := do
   if f.typeParams.length > 1 then throw "several type parameters"
   if f.name.startsWith "$" then throw "internal function"
   if ControlLower.hasControl f.body then throw "control"
+  let sfx := if x then "X" else ""
   let tp := f.typeParams.head?
   let ps := f.params.map fun (n, _) => "x_" ++ n
   let params := ps ++ ["h", "r", "h'", "calls"]
   let env : Env := (f.params.map (·.1)).zip (ps.map .v)
   let leanName := s!"IxVM.{functionName f.name}"
   let body : M (List String) :=
-    inv f.body "d0" env (.v "h") (.v "r") (.v "h'") (leaf s!"«{f.name}».Path")
+    inv f.body "d0" env (.v "h") (.v "r") (.v "h'") (leaf s!"«{f.name}».Path{sfx}")
   let maxLookups := if generous.contains f.name then 40000 else 3000
-  let init : St := { counter := 1, params, src := some src, typeParam := tp, maxLookups, fname := f.name, leanName, body := some f.body, segment := !unsegmented.contains f.name }
+  let init : St := { counter := 1, params, src := some src, typeParam := tp, maxLookups, fname := f.name, leanName, body := some f.body, segment := !unsegmented.contains f.name, late := x, suffix := sfx }
   let (script, st) ← body.run init
   -- a generic function is stated at its instance `t_<param>`
   let (tbind, targ, tibind, symbol, lookupThm, lookupDecl) := match tp with
@@ -872,6 +957,7 @@ def function (src : Aiur.Generic.Source F) (f : Function F) (index : Nat)
     | some tp =>
       (s!"(t_{tp} : Generic.Ty) ", s!" t_{tp}", s!"\{t_{tp} : Generic.Ty} ",
        s!"(Instance.mk {q f.name} [t_{tp}]).symbol", s!"(«{f.name}».lookup t_{tp})",
+       if x then "" else
        s!"/-- The program resolves `{f.name}` at each instance to its closure. -/\n" ++
        s!"theorem «{f.name}».lookup (t_{tp} : Generic.Ty) :\n" ++
        s!"    IxVM.source.program.sourceFunction? (Instance.mk {q f.name} [t_{tp}]).symbol =\n" ++
@@ -883,14 +969,15 @@ def function (src : Aiur.Generic.Source F) (f : Function F) (index : Nat)
   let pbind := if ps.isEmpty then "" else s!"({" ".intercalate ps} : SourceValue F) "
   let pargs := if ps.isEmpty then "" else " " ++ " ".intercalate ps
   let ibind := if ps.isEmpty then "" else s!"\{{" ".intercalate ps} : SourceValue F} "
-  let ind := s!"/-- The evaluation paths of `{f.name}`: one constructor per combination of selected arms. -/\n" ++
-    s!"inductive «{f.name}».Path {tbind}{pbind}(h : Heap F) (r : SourceValue F) (h' : Heap F)\n" ++
+  let ind := s!"/-- The evaluation paths of `{f.name}`: one constructor per combination of selected arms" ++
+    (if x then ", with the facts of the arms not taken." else ".") ++ " -/\n" ++
+    s!"inductive «{f.name}».Path{sfx} {tbind}{pbind}(h : Heap F) (r : SourceValue F) (h' : Heap F)\n" ++
     "    (calls : List (Call F)) : Prop where\n" ++
     "\n".intercalate (st.ctors.toList.map (·.text)) ++ "\n"
   let thm := s!"/-- **Every observed derivation of `{f.name}` takes one of its paths.** -/\n" ++
-    s!"theorem «{f.name}».obs {tibind}{ibind}\{h h' : Heap F} \{r : SourceValue F}\n" ++
+    s!"theorem «{f.name}».obs{sfx.toLower} {tibind}{ibind}\{h h' : Heap F} \{r : SourceValue F}\n" ++
     s!"    \{calls : List (Call F)} (ev : ObsFn W {symbol} {list ps} h r h' calls) :\n" ++
-    s!"    «{f.name}».Path{targ}{pargs} h r h' calls := by\n" ++
+    s!"    «{f.name}».Path{sfx}{targ}{pargs} h r h' calls := by\n" ++
     s!"  have d0 := ObsFn.function_inv (s := IxVM.source) {lookupThm}\n" ++
     s!"    (by simp [{leanName}, ControlLower.hasControl]) ev\n" ++
     s!"  simp only [{leanName}] at d0\n" ++
@@ -898,7 +985,17 @@ def function (src : Aiur.Generic.Source F) (f : Function F) (index : Nat)
   let segTexts := String.join (st.segs.toList.map fun (_, _, t) => t ++ "\n")
   let text := lookupDecl ++ segTexts ++ ind ++ "\n" ++ thm
   if text.length > maxChars then throw s!"too large: {text.length / 1000} KB"
-  return (text, st.names, st.abbrevs, st.ctors.size)
+  return (text, st.names, st.abbrevs, st.ctors.size, st.lateUsed)
+
+/-- The path inductive and the inversion theorem of one function (`functionPass`), followed by
+the extended ones when the function keeps a fact after a call equation. -/
+def function (src : Aiur.Generic.Source F) (f : Function F) (index : Nat) :
+    Except String (String × Array (String × String × String) × Array (String × String × String) × Nat) := do
+  let (text, names, abbrevs, n, _) ← functionPass src f index false
+  match functionPass src f index true with
+  | .ok (textX, namesX, abbrevsX, _, true) =>
+    return (text ++ "\n" ++ textX, names ++ namesX, abbrevs ++ abbrevsX, n)
+  | _ => return (text, names, abbrevs, n)
 
 /-! ## Files -/
 

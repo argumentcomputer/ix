@@ -550,6 +550,87 @@ def check_positivity := aiur_fn⟦
     }
 ⟧
 
+  -- A family whose declared type is not syntactically its telescope (`∀` parameters and
+  -- indices, then a sort), a former declared at a definition: the telescope is read by head-
+  -- normalizing it (`get_result_sort_level`), so the declared type is convertible with it. Such
+  -- a family has an index, and every binder of each constructor's type, and of each of its
+  -- domains that ends in the family, carries the datum of the family's result sort
+  -- (`ctorZeroOk`).
+
+def former_decl_ok := aiur_fn⟦
+  fn former_decl_ok(ty: KernelTypes::KExpr, n_params: Field, n_indices: Field, num_ctors: Field,
+                    block_addr: Bytes::AddressRef, ind_idx: Field, ind_level: KernelTypes::KLevel) -> () {
+      match former_is_tele(ty, n_params + n_indices) {
+        1 => {  () } ,
+        _ => {
+          assert_eq!(Fields::is_zero(n_indices), 0,
+            "a family whose type is declared at a definition has no index");
+          ctor_zero_all(block_addr, ind_idx, num_ctors, 0,
+            KernelDefEq::compute_iprj_addr(block_addr, ind_idx), ind_level) } ,
+      }
+    }
+⟧
+
+def former_is_tele := aiur_fn⟦
+  fn former_is_tele(ty: KernelTypes::KExpr, k: Field) -> Field {
+      match k {
+        0 => {  match (*(ty)) { KernelTypes::KExprNode::Srt(_) => {  1 } , _ => {  0 } , } } ,
+        _ => {
+          match (*(ty)) {
+            KernelTypes::KExprNode::Forall(_, b, _) => {  former_is_tele(b, k - 1) } ,
+            _ => {  0 } ,
+          } } ,
+      }
+    }
+⟧
+
+def ctor_zero_all := aiur_fn⟦
+  fn ctor_zero_all(block_addr: Bytes::AddressRef, ind_idx: Field, n: Field, j: Field, t: Bytes::AddressRef,
+                   res: KernelTypes::KLevel) -> () {
+      match n - j {
+        0 => {  () } ,
+        _ => {
+          let KernelTypes::KConstantInfo::Ctor(_, cty, _, _, _, _, _, _) = (*(Ingress::get_ci_cprj(block_addr, ind_idx, j)));
+          ctor_zero_ok(cty, t, res);
+          ctor_zero_all(block_addr, ind_idx, n, j + 1, t, res) } ,
+      }
+    }
+⟧
+
+def ctor_zero_ok := aiur_fn⟦
+  fn ctor_zero_ok(e: KernelTypes::KExpr, t: Bytes::AddressRef, res: KernelTypes::KLevel) -> () {
+      match (*(e)) {
+        KernelTypes::KExprNode::Forall(d, b, m) => {
+          assert_eq!(KernelLevels::pw_eq(m, res), 1,
+            "a constructor binder's datum is not its family's result sort's");
+          let (_, last) = nat_pi_binders(d);
+          let (h, _) = KernelTypes::collect_spine(last);
+          match (*(h)) {
+            KernelTypes::KExprNode::Const(c, _) => {
+              match Bytes::address_eq(c, t) {
+                1 => {  dom_zero_ok(d, res) } ,
+                _ => {  () } ,
+              } } ,
+            _ => {  () } ,
+          };
+          ctor_zero_ok(b, t, res) } ,
+        _ => {  () } ,
+      }
+    }
+⟧
+
+def dom_zero_ok := aiur_fn⟦
+  fn dom_zero_ok(e: KernelTypes::KExpr, res: KernelTypes::KLevel) -> () {
+      match (*(e)) {
+        KernelTypes::KExprNode::Forall(_, b, m) => {
+          assert_eq!(KernelLevels::pw_eq(m, res), 1,
+            "a binder of a constructor's domain that ends in its family is not at the family's result sort");
+          dom_zero_ok(b, res) } ,
+        _ => {  () } ,
+      }
+    }
+⟧
+
 def check_inductive_shape := aiur_fn⟦
   fn check_inductive_shape(rc: KernelRoles::RoleCtx, ty: KernelTypes::KExpr, n_params: Field, n_indices: Field,
                                   num_ctors: Field, num_lvls: Field,
@@ -557,6 +638,7 @@ def check_inductive_shape := aiur_fn⟦
                                   is_unsafe: Field) -> () {
       let ind_level = get_result_sort_level(rc, ty, n_params + n_indices,
                                                  (&(Lists::Node::Nil)));
+      former_decl_ok(ty, n_params, n_indices, num_ctors, block_addr, ind_idx, ind_level);
       check_inductive_shape_ctors(rc, ty, n_params, n_indices, num_ctors,
                                        num_lvls, block_addr, ind_idx,
                                        ind_level, is_unsafe, 0)
@@ -1783,6 +1865,646 @@ def build_rec_type_from := aiur_fn⟦
     }
 ⟧
 
+  -- ## The native recursor, as the reference kernel generates it
+  --
+  -- On the native route the recursor's type and rules are generated as the reference kernel
+  -- generates them (`structRecTyR`, `structRecRhsR`): from the type former's telescope (head-
+  -- normalized before a binder that is not syntactically a ∀) and the constructors with their
+  -- field domains normalized as the kernel stores them (`normPosDom`), the fields classified
+  -- syntactically (`recFieldKind`). The stored type and each stored rule must be the generated
+  -- ones up to type-annotation wrappers consumed at binder domains (`WrapRel`): a structural
+  -- comparison, binder data included.
+
+  -- `structPsAt o n`: the variables `o + n - 1`, …, `o`.
+
+def nat_ps_at := aiur_fn⟦
+  fn nat_ps_at(o: Field, n: Field) -> Lists::List<KernelTypes::KExpr> {
+      match n {
+        0 => {  (&(Lists::Node::Nil)) } ,
+        _ => {  (&(Lists::Node::Cons((&(KernelTypes::KExprNode::BVar(o + n - 1))), nat_ps_at(o, n - 1)))) } ,
+      }
+    }
+⟧
+
+def nat_app_n := aiur_fn⟦
+  fn nat_app_n(f: KernelTypes::KExpr, args: Lists::List<KernelTypes::KExpr>) -> KernelTypes::KExpr {
+      match (*(args)) {
+        Lists::Node::Nil => {  f } ,
+        Lists::Node::Cons(a, rest) => {  nat_app_n((&(KernelTypes::KExprNode::App(f, a))), rest) } ,
+      }
+    }
+⟧
+
+  -- Whether `e` mentions the constant `t` (the kernel's `mentionsConst`).
+
+def nat_mentions := aiur_fn⟦
+  fn nat_mentions(e: KernelTypes::KExpr, t: Bytes::AddressRef) -> Field {
+      match (*(e)) {
+        KernelTypes::KExprNode::Const(c, _) => {  Bytes::address_eq(c, t) } ,
+        KernelTypes::KExprNode::App(f, a) => {
+          match nat_mentions(f, t) { 1 => {  1 } , _ => {  nat_mentions(a, t) } , } } ,
+        KernelTypes::KExprNode::Lam(d, b, _) => {
+          match nat_mentions(d, t) { 1 => {  1 } , _ => {  nat_mentions(b, t) } , } } ,
+        KernelTypes::KExprNode::Forall(d, b, _) => {
+          match nat_mentions(d, t) { 1 => {  1 } , _ => {  nat_mentions(b, t) } , } } ,
+        KernelTypes::KExprNode::Let(d, v, b) => {
+          match nat_mentions(d, t) {
+            1 => {  1 } ,
+            _ => {  match nat_mentions(v, t) { 1 => {  1 } , _ => {  nat_mentions(b, t) } , } } ,
+          } } ,
+        KernelTypes::KExprNode::Proj(_, _, x) => {  nat_mentions(x, t) } ,
+        _ => {  0 } ,
+      }
+    }
+⟧
+
+def nat_none_mention := aiur_fn⟦
+  fn nat_none_mention(es: Lists::List<KernelTypes::KExpr>, t: Bytes::AddressRef) -> Field {
+      match (*(es)) {
+        Lists::Node::Nil => {  1 } ,
+        Lists::Node::Cons(e, rest) => {
+          match nat_mentions(e, t) { 0 => {  nat_none_mention(rest, t) } , _ => {  0 } , } } ,
+      }
+    }
+⟧
+
+def nat_list_struct_eq := aiur_fn⟦
+  fn nat_list_struct_eq(a: Lists::List<KernelTypes::KExpr>, b: Lists::List<KernelTypes::KExpr>) -> Field {
+      match (*(a)) {
+        Lists::Node::Nil => {  match (*(b)) { Lists::Node::Nil => {  1 } , _ => {  0 } , } } ,
+        Lists::Node::Cons(x, xs) => {
+          match (*(b)) {
+            Lists::Node::Cons(y, ys) => {
+              match kexpr_struct_eq(x, y) { 1 => {  nat_list_struct_eq(xs, ys) } , _ => {  0 } , } } ,
+            _ => {  0 } ,
+          } } ,
+      }
+    }
+⟧
+
+  -- `replacePisPw` (`lam` 0) and `pisToLamsPw` (`lam` 1): the first `k` binders of `tele`,
+  -- each carrying the datum `pw`, over `b`.
+
+def nat_replace_pis := aiur_fn⟦
+  fn nat_replace_pis(pw: KernelTypes::KLevel, k: Field, tele: KernelTypes::KExpr, b: KernelTypes::KExpr,
+                     lam: Field) -> KernelTypes::KExpr {
+      match k {
+        0 => {  b } ,
+        _ => {
+          let KernelTypes::KExprNode::Forall(ty, rest, _) = (*(tele));
+          let inner = nat_replace_pis(pw, k - 1, rest, b, lam);
+          match lam {
+            0 => {  (&(KernelTypes::KExprNode::Forall(ty, inner, pw))) } ,
+            _ => {  (&(KernelTypes::KExprNode::Lam(ty, inner, pw))) } ,
+          } } ,
+      }
+    }
+⟧
+
+  -- `Expr.piBinders`: every leading ∀ binder (domain, datum) and the body.
+
+def nat_pi_binders := aiur_fn⟦
+  fn nat_pi_binders(e: KernelTypes::KExpr) -> (Lists::List<(KernelTypes::KExpr, KernelTypes::KLevel)>, KernelTypes::KExpr) {
+      match (*(e)) {
+        KernelTypes::KExprNode::Forall(d, b, m) => {
+          let (bs, r) = nat_pi_binders(b);
+          ((&(Lists::Node::Cons((d, m), bs))), r) } ,
+        _ => {  ((&(Lists::Node::Nil)), e) } ,
+      }
+    }
+⟧
+
+def nat_mk_binders := aiur_fn⟦
+  fn nat_mk_binders(bs: Lists::List<(KernelTypes::KExpr, KernelTypes::KLevel)>, body: KernelTypes::KExpr,
+                    lam: Field) -> KernelTypes::KExpr {
+      match (*(bs)) {
+        Lists::Node::Nil => {  body } ,
+        Lists::Node::Cons(b, rest) => {
+          match b {
+            (ty, m) => {
+              let inner = nat_mk_binders(rest, body, lam);
+              match lam {
+                0 => {  (&(KernelTypes::KExprNode::Forall(ty, inner, m))) } ,
+                _ => {  (&(KernelTypes::KExprNode::Lam(ty, inner, m))) } ,
+              } } ,
+          } } ,
+      }
+    }
+⟧
+
+  -- Field `i`'s domain at its own frame (the parameters and the earlier fields).
+
+def nat_field_dom := aiur_fn⟦
+  fn nat_field_dom(cty: KernelTypes::KExpr, np: Field, i: Field) -> KernelTypes::KExpr {
+      let KernelTypes::KExprNode::Forall(d, _, _) = (*(peel_n_foralls(cty, np + i)));
+      d
+    }
+⟧
+
+  -- `structIdxAt nF o i l m e`.
+
+def nat_idx_at := aiur_fn⟦
+  fn nat_idx_at(nf: Field, o: Field, i: Field, l: Field, m: Field, e: KernelTypes::KExpr) -> KernelTypes::KExpr {
+      KernelSubst::expr_lift(KernelSubst::expr_lift(e, (nf - i) + l, m), o, (nf + l) + m)
+    }
+⟧
+
+def nat_map_idx_at := aiur_fn⟦
+  fn nat_map_idx_at(nf: Field, o: Field, i: Field, l: Field, m: Field,
+                    es: Lists::List<KernelTypes::KExpr>) -> Lists::List<KernelTypes::KExpr> {
+      match (*(es)) {
+        Lists::Node::Nil => {  (&(Lists::Node::Nil)) } ,
+        Lists::Node::Cons(e, rest) => {
+          (&(Lists::Node::Cons(nat_idx_at(nf, o, i, l, m, e), nat_map_idx_at(nf, o, i, l, m, rest)))) } ,
+      }
+    }
+⟧
+
+def nat_map_lift := aiur_fn⟦
+  fn nat_map_lift(es: Lists::List<KernelTypes::KExpr>, n: Field, k: Field) -> Lists::List<KernelTypes::KExpr> {
+      match (*(es)) {
+        Lists::Node::Nil => {  (&(Lists::Node::Nil)) } ,
+        Lists::Node::Cons(e, rest) => {
+          (&(Lists::Node::Cons(KernelSubst::expr_lift(e, n, k), nat_map_lift(rest, n, k)))) } ,
+      }
+    }
+⟧
+
+  -- `structTeleAt nF o i l pw tele`: the field's own telescope moved, every datum `pw`.
+
+def nat_tele_at := aiur_fn⟦
+  fn nat_tele_at(nf: Field, o: Field, i: Field, l: Field, pw: KernelTypes::KLevel,
+                 tele: Lists::List<(KernelTypes::KExpr, KernelTypes::KLevel)>, k: Field)
+                 -> Lists::List<(KernelTypes::KExpr, KernelTypes::KLevel)> {
+      match (*(tele)) {
+        Lists::Node::Nil => {  (&(Lists::Node::Nil)) } ,
+        Lists::Node::Cons(b, rest) => {
+          match b {
+            (ty, _) => {
+              (&(Lists::Node::Cons((nat_idx_at(nf, o, i, l, k, ty), pw),
+                nat_tele_at(nf, o, i, l, pw, rest, k + 1)))) } ,
+          } } ,
+      }
+    }
+⟧
+
+  -- A recursive field's own telescope and index expressions (`structFieldTeleOf`,
+  -- `structFieldIdxOf`).
+
+def nat_field_tele := aiur_fn⟦
+  fn nat_field_tele(cty: KernelTypes::KExpr, np: Field, i: Field)
+                    -> (Lists::List<(KernelTypes::KExpr, KernelTypes::KLevel)>, Lists::List<KernelTypes::KExpr>) {
+      let (tele, fb) = nat_pi_binders(nat_field_dom(cty, np, i));
+      let (_, fargs) = KernelTypes::collect_spine(fb);
+      (tele, Lists::drop(fargs, np))
+    }
+⟧
+
+  -- `structIhPis`: the inductive hypotheses' binders of a minor premise.
+
+def nat_ih_pis := aiur_fn⟦
+  fn nat_ih_pis(nf: Field, o: Field, pw: KernelTypes::KLevel, cty: KernelTypes::KExpr, np: Field,
+                rec_idx: Lists::List<Field>, l: Field, body: KernelTypes::KExpr) -> KernelTypes::KExpr {
+      match (*(rec_idx)) {
+        Lists::Node::Nil => {  body } ,
+        Lists::Node::Cons(i, is) => {
+          let (tele, idx) = nat_field_tele(cty, np, i);
+          let m = Lists::length(tele);
+          let fld = nat_app_n((&(KernelTypes::KExprNode::BVar(((nf - 1) - i + l) + m))), nat_ps_at(0, m));
+          let concl = nat_app_n((&(KernelTypes::KExprNode::BVar(((nf + o) - 1 + l) + m))),
+            Lists::snoc(nat_map_idx_at(nf, o, i, l, m, idx), fld));
+          let dom = nat_mk_binders(nat_tele_at(nf, o, i, l, pw, tele, 0), concl, 0);
+          (&(KernelTypes::KExprNode::Forall(dom, nat_ih_pis(nf, o, pw, cty, np, is, l + 1, body), pw))) } ,
+      }
+    }
+⟧
+
+  -- `structMinorTyR`: constructor `cprj`'s minor premise, `o` binders below the parameters.
+
+def nat_minor_ty := aiur_fn⟦
+  fn nat_minor_ty(cprj: Bytes::AddressRef, lps: Lists::List<KernelTypes::KLevel>, np: Field, nf: Field, o: Field,
+                  pw: KernelTypes::KLevel, cty: KernelTypes::KExpr, rec_idx: Lists::List<Field>) -> KernelTypes::KExpr {
+      let q2 = peel_n_foralls(cty, np);
+      let (_, rargs) = KernelTypes::collect_spine(peel_n_foralls(q2, nf));
+      let cspine = nat_app_n((&(KernelTypes::KExprNode::Const(cprj, lps))),
+        Lists::concat(nat_ps_at(o + nf, np), nat_ps_at(0, nf)));
+      let concl = KernelSubst::expr_lift(
+        nat_app_n((&(KernelTypes::KExprNode::BVar((nf + o) - 1))),
+          Lists::snoc(nat_map_lift(Lists::drop(rargs, np), o, nf), cspine)),
+        Lists::length(rec_idx), 0);
+      nat_replace_pis(pw, nf, KernelSubst::expr_lift(q2, o, 0),
+        nat_ih_pis(nf, o, pw, cty, np, rec_idx, 0, concl), 0)
+    }
+⟧
+
+  -- `normPosDom`: a field domain that mentions the family, head-normalized, and walked under
+  -- its ∀ binders while the family occurs (a domain of such a binder that mentions the family
+  -- is a non-positive occurrence).
+
+def nat_norm_pos_dom := aiur_fn⟦
+  fn nat_norm_pos_dom(rc: KernelRoles::RoleCtx, e: KernelTypes::KExpr, t: Bytes::AddressRef,
+                      types: Lists::List<KernelTypes::KExpr>) -> KernelTypes::KExpr {
+      match nat_mentions(e, t) {
+        0 => {  e } ,
+        _ => {
+          let w = KernelWhnf::whnf(rc, e, types);
+          match nat_mentions(w, t) {
+            0 => {  w } ,
+            _ => {
+              match (*(w)) {
+                KernelTypes::KExprNode::Forall(d, b, m) => {
+                  assert_eq!(nat_mentions(d, t), 0, "native constructor: a non-positive occurrence of its family");
+                  (&(KernelTypes::KExprNode::Forall(d,
+                    nat_norm_pos_dom(rc, b, t, (&(Lists::Node::Cons(d, types)))), m))) } ,
+                _ => {  w } ,
+              } } ,
+          } } ,
+      }
+    }
+⟧
+
+  -- The constructor type the kernel stores (`normCtorVal`): the parameters as declared, every
+  -- field domain through `normPosDom`, the residual as declared.
+
+def nat_norm_ctor := aiur_fn⟦
+  fn nat_norm_ctor(rc: KernelRoles::RoleCtx, e: KernelTypes::KExpr, np: Field, nf: Field, t: Bytes::AddressRef,
+                   types: Lists::List<KernelTypes::KExpr>) -> KernelTypes::KExpr {
+      match np {
+        0 => {
+          match nf {
+            0 => {  e } ,
+            _ => {
+              let KernelTypes::KExprNode::Forall(d, b, m) = (*(e));
+              (&(KernelTypes::KExprNode::Forall(nat_norm_pos_dom(rc, d, t, types),
+                nat_norm_ctor(rc, b, 0, nf - 1, t, (&(Lists::Node::Cons(d, types)))), m))) } ,
+          } } ,
+        _ => {
+          let KernelTypes::KExprNode::Forall(d, b, m) = (*(e));
+          (&(KernelTypes::KExprNode::Forall(d,
+            nat_norm_ctor(rc, b, np - 1, nf, t, (&(Lists::Node::Cons(d, types)))), m))) } ,
+      }
+    }
+⟧
+
+  -- `recPositivity` on a field domain that mentions the family, `k` binders of the field's
+  -- own telescope peeled, the parameters `o + k` binders up: 1 recursive, 2 reflexive, 3 not a
+  -- native occurrence (negative, or nested).
+
+def nat_positivity := aiur_fn⟦
+  fn nat_positivity(e: KernelTypes::KExpr, t: Bytes::AddressRef, lps: Lists::List<KernelTypes::KLevel>,
+                    np: Field, ni: Field, o: Field, k: Field) -> Field {
+      match (*(e)) {
+        KernelTypes::KExprNode::Forall(d, b, _) => {
+          match nat_mentions(d, t) {
+            1 => {  3 } ,
+            _ => {  nat_positivity(b, t, lps, np, ni, o, k + 1) } ,
+          } } ,
+        _ => {
+          let (h, args) = KernelTypes::collect_spine(e);
+          match (*(h)) {
+            KernelTypes::KExprNode::Const(c, us) => {
+              let fam = (Bytes::address_eq(c, t) * level_list_struct_eq(us, lps))
+                * Fields::is_zero(Lists::length(args) - (np + ni));
+              match fam {
+                1 => {
+                  match nat_list_struct_eq(Lists::take(args, np), nat_ps_at(o + k, np))
+                        * nat_none_mention(Lists::drop(args, np), t) {
+                    1 => {  match k { 0 => {  1 } , _ => {  2 } , } } ,
+                    _ => {  3 } ,
+                  } } ,
+                _ => {  3 } ,
+              } } ,
+            _ => {  3 } ,
+          } } ,
+      }
+    }
+⟧
+
+  -- `recCtorKinds`: the recursive and reflexive fields of a constructor, in order. Every field
+  -- must be ordinary, recursive or reflexive, and no later binder may mention a recursive one.
+
+def nat_rec_idx := aiur_fn⟦
+  fn nat_rec_idx(cty: KernelTypes::KExpr, t: Bytes::AddressRef, lps: Lists::List<KernelTypes::KLevel>,
+                 np: Field, ni: Field, nf: Field, i: Field) -> Lists::List<Field> {
+      match nf - i {
+        0 => {  (&(Lists::Node::Nil)) } ,
+        _ => {
+          let dom = nat_field_dom(cty, np, i);
+          let kind = match nat_mentions(dom, t) {
+            0 => {  0 } ,
+            _ => {  nat_positivity(dom, t, lps, np, ni, i, 0) } ,
+          };
+          assert_eq!(Fields::is_zero(kind - 3), 0,
+            "native recursor: a constructor field is not an occurrence the native route reads");
+          let rest = nat_rec_idx(cty, t, lps, np, ni, nf, i + 1);
+          match kind {
+            0 => {  rest } ,
+            _ => {
+              assert_eq!(KernelSubst::expr_has_bvar_at(peel_n_foralls(cty, (np + i) + 1), 0), 0,
+                "native recursor: a later binder mentions a recursive field");
+              (&(Lists::Node::Cons(i, rest))) } ,
+          } } ,
+      }
+    }
+⟧
+
+  -- Constructor `j` as the generator reads it: its stored type at the recursor's levels with
+  -- its field domains normalized, its field count and its recursive fields.
+
+def nat_ctor := aiur_fn⟦
+  fn nat_ctor(rc: KernelRoles::RoleCtx, block: Bytes::AddressRef, idx: Field, j: Field, t: Bytes::AddressRef,
+              lps: Lists::List<KernelTypes::KLevel>, np: Field, ni: Field, univ_offset: Field)
+              -> (KernelTypes::KExpr, Field, Lists::List<Field>) {
+      let KernelTypes::KConstantInfo::Ctor(_, cty0, _, _, _, _, nf, _) = (*(Ingress::get_ci_cprj(block, idx, j)));
+      let cty1 = match univ_offset {
+        0 => {  cty0 } ,
+        _ => {  KernelLevels::expr_inst_levels(cty0, lps) } ,
+      };
+      let cty = nat_norm_ctor(rc, cty1, np, nf, t, (&(Lists::Node::Nil)));
+      let (_, rargs) = KernelTypes::collect_spine(peel_n_foralls(cty, np + nf));
+      assert_eq!(nat_none_mention(Lists::drop(rargs, np), t), 1,
+        "native recursor: a constructor's index expression mentions its family");
+      (cty, nf, nat_rec_idx(cty, t, lps, np, ni, nf, 0))
+    }
+⟧
+
+  -- The minor premises (`structMinorsPisR`, `lam` 0; `structMinorsLamsR`, `lam` 1) of
+  -- constructors `j`… over `body`.
+
+def nat_minors := aiur_fn⟦
+  fn nat_minors(rc: KernelRoles::RoleCtx, block: Bytes::AddressRef, idx: Field, t: Bytes::AddressRef,
+                lps: Lists::List<KernelTypes::KLevel>, np: Field, ni: Field, pw: KernelTypes::KLevel,
+                n: Field, univ_offset: Field, j: Field, body: KernelTypes::KExpr, lam: Field) -> KernelTypes::KExpr {
+      match n - j {
+        0 => {  body } ,
+        _ => {
+          let (cty, nf, rec_idx) = nat_ctor(rc, block, idx, j, t, lps, np, ni, univ_offset);
+          let mty = nat_minor_ty(projection_addr_ctor(idx, j, block), lps, np, nf, j + 1, pw, cty, rec_idx);
+          let rest = nat_minors(rc, block, idx, t, lps, np, ni, pw, n, univ_offset, j + 1, body, lam);
+          match lam {
+            0 => {  (&(KernelTypes::KExprNode::Forall(mty, rest, pw))) } ,
+            _ => {  (&(KernelTypes::KExprNode::Lam(mty, rest, pw))) } ,
+          } } ,
+      }
+    }
+⟧
+
+  -- The type former's telescope as the kernel reads it: syntactic ∀s, head-normalized before a
+  -- binder that is not one.
+
+def nat_former_tele := aiur_fn⟦
+  fn nat_former_tele(rc: KernelRoles::RoleCtx, ty: KernelTypes::KExpr, k: Field,
+                     types: Lists::List<KernelTypes::KExpr>) -> KernelTypes::KExpr {
+      match k {
+        0 => {  ty } ,
+        _ => {
+          match (*(ty)) {
+            KernelTypes::KExprNode::Forall(d, b, m) => {
+              (&(KernelTypes::KExprNode::Forall(d,
+                nat_former_tele(rc, b, k - 1, (&(Lists::Node::Cons(d, types)))), m))) } ,
+            _ => {
+              let KernelTypes::KExprNode::Forall(d, b, m) = (*(KernelWhnf::whnf(rc, ty, types)));
+              (&(KernelTypes::KExprNode::Forall(d,
+                nat_former_tele(rc, b, k - 1, (&(Lists::Node::Cons(d, types)))), m))) } ,
+          } } ,
+      }
+    }
+⟧
+
+  -- `structIhApp`: the inductive hypothesis' value for recursive field `i` in rule `j`'s body.
+
+def nat_ih_apps := aiur_fn⟦
+  fn nat_ih_apps(rec: Bytes::AddressRef, rlvls: Lists::List<KernelTypes::KLevel>, pw: KernelTypes::KLevel,
+                 np: Field, n: Field, nf: Field, rec_idx: Lists::List<Field>, cty: KernelTypes::KExpr)
+                 -> Lists::List<KernelTypes::KExpr> {
+      match (*(rec_idx)) {
+        Lists::Node::Nil => {  (&(Lists::Node::Nil)) } ,
+        Lists::Node::Cons(i, is) => {
+          let (tele, idx) = nat_field_tele(cty, np, i);
+          let m = Lists::length(tele);
+          let pfx = Lists::concat(
+            Lists::snoc(nat_ps_at(((m + nf) + n) + 1, np), (&(KernelTypes::KExprNode::BVar((m + nf) + n)))),
+            nat_ps_at(m + nf, n));
+          let fld = nat_app_n((&(KernelTypes::KExprNode::BVar(((nf - 1) - i) + m))), nat_ps_at(0, m));
+          let args = Lists::snoc(Lists::concat(pfx, nat_map_idx_at(nf, n + 1, i, 0, m, idx)), fld);
+          let ih = nat_mk_binders(nat_tele_at(nf, n + 1, i, 0, pw, tele, 0),
+            nat_app_n((&(KernelTypes::KExprNode::Const(rec, rlvls))), args), 1);
+          (&(Lists::Node::Cons(ih, nat_ih_apps(rec, rlvls, pw, np, n, nf, is, cty)))) } ,
+      }
+    }
+⟧
+
+  -- The generated rule for constructor `j` (`structRecRhsR`).
+
+def nat_rule_rhs := aiur_fn⟦
+  fn nat_rule_rhs(rc: KernelRoles::RoleCtx, block: Bytes::AddressRef, idx: Field, t: Bytes::AddressRef,
+                  lps: Lists::List<KernelTypes::KLevel>, np: Field, ni: Field, pw: KernelTypes::KLevel, n: Field,
+                  univ_offset: Field, tty: KernelTypes::KExpr, motive_ty: KernelTypes::KExpr,
+                  rec: Bytes::AddressRef, rlvls: Lists::List<KernelTypes::KLevel>, j: Field) -> KernelTypes::KExpr {
+      let (cty, nf, rec_idx) = nat_ctor(rc, block, idx, j, t, lps, np, ni, univ_offset);
+      let body = nat_app_n((&(KernelTypes::KExprNode::BVar(((nf + n) - 1) - j))),
+        Lists::concat(nat_ps_at(0, nf), nat_ih_apps(rec, rlvls, pw, np, n, nf, rec_idx, cty)));
+      let inner = nat_replace_pis(pw, nf, KernelSubst::expr_lift(peel_n_foralls(cty, np), n + 1, 0), body, 1);
+      let minors = nat_minors(rc, block, idx, t, lps, np, ni, pw, n, univ_offset, 0, inner, 1);
+      nat_replace_pis(pw, np, tty, (&(KernelTypes::KExprNode::Lam(motive_ty, minors, pw))), 1)
+    }
+⟧
+
+def nat_check_rules := aiur_fn⟦
+  fn nat_check_rules(rc: KernelRoles::RoleCtx, rules: Lists::List<KernelTypes::KRecRule>, block: Bytes::AddressRef,
+                     idx: Field, t: Bytes::AddressRef, lps: Lists::List<KernelTypes::KLevel>, np: Field, ni: Field,
+                     pw: KernelTypes::KLevel, n: Field, univ_offset: Field, tty: KernelTypes::KExpr,
+                     motive_ty: KernelTypes::KExpr, rec: Bytes::AddressRef, rlvls: Lists::List<KernelTypes::KLevel>,
+                     j: Field) -> () {
+      match (*(rules)) {
+        Lists::Node::Nil => {  () } ,
+        Lists::Node::Cons(r, rest) => {
+          let KernelTypes::KRecRule::Mk(cidx, rnf, rhs) = r;
+          assert_eq!(cidx, j, "recursor rule is out of ctor order");
+          let KernelTypes::KConstantInfo::Ctor(_, _, _, _, _, _, c_nf, _) = (*(Ingress::get_ci_cprj(block, idx, j)));
+          assert_eq!(rnf, c_nf, "recursor rule field count differs from the ctor's");
+          assert_eq!(wrap_rel(nat_rule_rhs(rc, block, idx, t, lps, np, ni, pw, n, univ_offset, tty, motive_ty,
+                                           rec, rlvls, j), rhs), 1,
+            "native recursor: a stored rule is not the generated one up to consumed wrappers");
+          nat_check_rules(rc, rest, block, idx, t, lps, np, ni, pw, n, univ_offset, tty, motive_ty, rec, rlvls, j + 1) } ,
+      }
+    }
+⟧
+
+  -- The native route's recursor against the generated one: its level link and counts, its type
+  -- and every rule related to the generated ones (`WrapRel`).
+
+def nat_rec_check := aiur_fn⟦
+  fn nat_rec_check(rc: KernelRoles::RoleCtx, rec_ci: KernelTypes::KConstantInfo, addr: Bytes::AddressRef,
+                   parent_ci: KernelTypes::KConstantInfo, parent_addr: Bytes::AddressRef, univ_offset: Field) -> () {
+      let KernelTypes::KConstantInfo::Rec(nlvls, ty, n_p, n_i, n_mot, n_min, rules, _, _, rec_block_addr, _) = rec_ci;
+      let KernelTypes::KConstantInfo::Induct(pnlvls, pty, _, _, num_ctors, _, block, idx) = parent_ci;
+      assert_eq!(nlvls, pnlvls + univ_offset,
+        "recursor universe-parameter count is not its block's plus the elimination parameter");
+      assert_eq!(n_mot, 1, "recursor motive count disagrees with the canonical reconstruction");
+      assert_eq!(n_min, num_ctors, "recursor minor count disagrees with the canonical reconstruction");
+      let lps = build_param_lvls_range(univ_offset, pnlvls, 0);
+      let pw = match univ_offset {
+        1 => {  (&(KernelTypes::KLevelNode::Param(0))) } ,
+        _ => {  (&(KernelTypes::KLevelNode::Zero)) } ,
+      };
+      let never = (&(KernelTypes::KLevelNode::Succ((&(KernelTypes::KLevelNode::Zero)))));
+      let pty1 = match univ_offset {
+        0 => {  pty } ,
+        _ => {  KernelLevels::expr_inst_levels(pty, lps) } ,
+      };
+      let tty = nat_former_tele(rc, pty1, n_p + n_i, (&(Lists::Node::Nil)));
+      let q2 = peel_n_foralls(tty, n_p);
+      let tc = (&(KernelTypes::KExprNode::Const(parent_addr, lps)));
+      let fam0 = nat_app_n(tc, Lists::concat(nat_ps_at(n_i, n_p), nat_ps_at(0, n_i)));
+      let motive_ty = nat_replace_pis(never, n_i, q2,
+        (&(KernelTypes::KExprNode::Forall(fam0, (&(KernelTypes::KExprNode::Srt(pw))), never))), 0);
+      let fam1 = nat_app_n(tc, Lists::concat(nat_ps_at((num_ctors + 1) + n_i, n_p), nat_ps_at(0, n_i)));
+      let concl = nat_app_n((&(KernelTypes::KExprNode::BVar((n_i + num_ctors) + 1))),
+        Lists::snoc(nat_ps_at(1, n_i), (&(KernelTypes::KExprNode::BVar(0)))));
+      let major = nat_replace_pis(pw, n_i, KernelSubst::expr_lift(q2, num_ctors + 1, 0),
+        (&(KernelTypes::KExprNode::Forall(fam1, concl, pw))), 0);
+      let minors = nat_minors(rc, block, idx, parent_addr, lps, n_p, n_i, pw, num_ctors, univ_offset, 0, major, 0);
+      let gen_ty = nat_replace_pis(pw, n_p, tty, (&(KernelTypes::KExprNode::Forall(motive_ty, minors, pw))), 0);
+      assert_eq!(wrap_rel(gen_ty, ty), 1,
+        "native recursor: the stored type is not the generated one up to consumed wrappers");
+      let rec_c = find_peer_recursor_with_spec(rec_block_addr, parent_addr, (&(Lists::Node::Nil)), 0, addr);
+      nat_check_rules(rc, rules, block, idx, parent_addr, lps, n_p, n_i, pw, num_ctors, univ_offset, tty,
+        motive_ty, rec_c, build_rec_lvls_list(nlvls, 0), 0)
+    }
+⟧
+
+  -- ## `WrapRel`: the generated term with type-annotation wrappers consumed at binder domains
+  --
+  -- Structural equality, binder data included, except that at a binder's domain the generated
+  -- side may lose wrappers at its head (`wrap_dom`), and a `let` on either side is expanded,
+  -- as `Annot` expands it.
+  -- A wrapper is a constant stored as a definition whose value is `λ x₁ … xₖ, x₁`, every λ
+  -- carrying the datum `never`, applied to exactly `k` arguments; consuming it leaves its first
+  -- argument.
+
+def wrap_rel := aiur_fn⟦
+  fn wrap_rel(g: KernelTypes::KExpr, d: KernelTypes::KExpr) -> Field {
+      match (*(g)) {
+        KernelTypes::KExprNode::Let(_, v, b) => {  wrap_rel(KernelSubst::expr_inst1(b, v, 0), d) } ,
+        _ => {
+          match (*(d)) {
+            KernelTypes::KExprNode::Let(_, v2, b2) => {  wrap_rel(g, KernelSubst::expr_inst1(b2, v2, 0)) } ,
+            _ => {
+              match (*(g)) {
+                KernelTypes::KExprNode::App(f, a) => {
+                  match (*(d)) {
+                    KernelTypes::KExprNode::App(f2, a2) => {
+                      match wrap_rel(f, f2) { 1 => {  wrap_rel(a, a2) } , _ => {  0 } , } } ,
+                    _ => {  0 } ,
+                  } } ,
+                KernelTypes::KExprNode::Lam(t, b, m) => {
+                  match (*(d)) {
+                    KernelTypes::KExprNode::Lam(t2, b2, m2) => {  wrap_binder(t, b, m, t2, b2, m2) } ,
+                    _ => {  0 } ,
+                  } } ,
+                KernelTypes::KExprNode::Forall(t, b, m) => {
+                  match (*(d)) {
+                    KernelTypes::KExprNode::Forall(t2, b2, m2) => {  wrap_binder(t, b, m, t2, b2, m2) } ,
+                    _ => {  0 } ,
+                  } } ,
+                KernelTypes::KExprNode::Proj(s, i, e) => {
+                  match (*(d)) {
+                    KernelTypes::KExprNode::Proj(s2, i2, e2) => {
+                      match Bytes::address_eq(s, s2) * Fields::is_zero(i - i2) {
+                        1 => {  wrap_rel(e, e2) } ,
+                        _ => {  0 } ,
+                      } } ,
+                    _ => {  0 } ,
+                  } } ,
+                _ => {  kexpr_struct_eq(g, d) } ,
+              } } ,
+          } } ,
+      }
+    }
+⟧
+
+def wrap_binder := aiur_fn⟦
+  fn wrap_binder(t: KernelTypes::KExpr, b: KernelTypes::KExpr, m: KernelTypes::KLevel,
+                 t2: KernelTypes::KExpr, b2: KernelTypes::KExpr, m2: KernelTypes::KLevel) -> Field {
+      match KernelLevels::pw_eq(m, m2) {
+        1 => {
+          match wrap_dom(t, t2) {
+            1 => {  wrap_rel(b, b2) } ,
+            _ => {  0 } ,
+          } } ,
+        _ => {  0 } ,
+      }
+    }
+⟧
+
+def wrap_dom := aiur_fn⟦
+  fn wrap_dom(t: KernelTypes::KExpr, t2: KernelTypes::KExpr) -> Field {
+      match (*(t)) {
+        KernelTypes::KExprNode::Let(_, v, b) => {  wrap_dom(KernelSubst::expr_inst1(b, v, 0), t2) } ,
+        _ => {
+          match wrap_rel(t, t2) {
+            1 => {  1 } ,
+            _ => {
+              match consume_wrapper(t) {
+                (1, a) => {  wrap_dom(a, t2) } ,
+                _ => {  0 } ,
+              } } ,
+          } } ,
+      }
+    }
+⟧
+
+def consume_wrapper := aiur_fn⟦
+  fn consume_wrapper(t: KernelTypes::KExpr) -> (Field, KernelTypes::KExpr) {
+      let (h, args) = KernelTypes::collect_spine(t);
+      match (*(h)) {
+        KernelTypes::KExprNode::Const(w, _) => {
+          match (*(args)) {
+            Lists::Node::Cons(a, rest) => {
+              match (*(Ingress::get_ci(w))) {
+                KernelTypes::KConstantInfo::Defn(_, _, v, _, _) => {
+                  match lam_first_arity(v, 0) {
+                    (1, k) => {
+                      match k - (Lists::length(rest) + 1) {
+                        0 => {  (1, a) } ,
+                        _ => {  (0, t) } ,
+                      } } ,
+                    _ => {  (0, t) } ,
+                  } } ,
+                _ => {  (0, t) } ,
+              } } ,
+            _ => {  (0, t) } ,
+          } } ,
+        _ => {  (0, t) } ,
+      }
+    }
+⟧
+
+  -- The arity of a value `λ x₁ … xₖ, x₁` (`k ≥ 1`) whose λs all carry the datum `never`.
+
+def lam_first_arity := aiur_fn⟦
+  fn lam_first_arity(v: KernelTypes::KExpr, n: Field) -> (Field, Field) {
+      match (*(v)) {
+        KernelTypes::KExprNode::Lam(_, b, m) => {
+          match (*(m)) {
+            KernelTypes::KLevelNode::Succ(z) => {
+              match (*(z)) {
+                KernelTypes::KLevelNode::Zero => {  lam_first_arity(b, n + 1) } ,
+                _ => {  (0, 0) } ,
+              } } ,
+            _ => {  (0, 0) } ,
+          } } ,
+        KernelTypes::KExprNode::BVar(i) => {
+          match n {
+            0 => {  (0, 0) } ,
+            _ => {  match i - (n - 1) { 0 => {  (1, n) } , _ => {  (0, 0) } , } } ,
+          } } ,
+        _ => {  (0, 0) } ,
+      }
+    }
+⟧
+
 def check_recursor_canonical_full := aiur_fn⟦
   fn check_recursor_canonical_full(rc: KernelRoles::RoleCtx, rec_ci: KernelTypes::KConstantInfo, addr: Bytes::AddressRef,
                                             parent_ci: KernelTypes::KConstantInfo,
@@ -1817,8 +2539,9 @@ def check_recursor_canonical_full := aiur_fn⟦
               -- `recRulePlain`), so every rule fires `.plain`
               check_rec_major_plain(ty, ((n_p + n_mot) + n_min) + n_i, n_p, n_i,
                 parent_addr, pnlvls, univ_offset);
-              check_recursor_canonical_at(rc, rec_ci, addr, parent_ci, parent_addr,
-                univ_offset, pnlvls) } ,
+              -- the type and the rules: the reference kernel's generated ones, up to
+              -- consumed wrappers (the modeled route keeps `check_recursor_canonical_at`)
+              nat_rec_check(rc, rec_ci, addr, parent_ci, parent_addr, univ_offset) } ,
             _ => {  () } ,
           } } ,
       }

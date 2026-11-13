@@ -363,6 +363,65 @@ theorem matchPattern_tuple_none {ps : List (Pattern F)} {v : SourceValue F} {hea
   rw [hbs'] at h
   cases h
 
+/-- **A component of a tuple pattern that matches the value `u`**: a flat pattern, or a
+constant pattern whose constant is `u`. -/
+def MixedMatch (world : World F) (types : Types) (p : Pattern F) (u : SourceValue F) : Prop :=
+  IsFlatPattern p ∨ ∃ c, MatchesConst world types p c ∧ u = c
+
+/-- **Every component of a tuple pattern matches**, componentwise (`MixedMatch`). -/
+inductive MixedMatchList (world : World F) (types : Types) :
+    List (Pattern F) → List (SourceValue F) → Prop where
+  | nil : MixedMatchList world types [] []
+  | cons {p : Pattern F} {u : SourceValue F} {ps : List (Pattern F)} {us : List (SourceValue F)} :
+      MixedMatch world types p u → MixedMatchList world types ps us →
+      MixedMatchList world types (p :: ps) (u :: us)
+
+omit [Field F] in
+theorem MixedMatchList.length {ps : List (Pattern F)} {us : List (SourceValue F)}
+    (hm : MixedMatchList world types ps us) : ps.length = us.length := by
+  induction hm with
+  | nil => rfl
+  | cons _ _ ih => simp [ih]
+
+omit [Field F] in
+theorem MixedMatchList.matchListWith {ps : List (Pattern F)} {us : List (SourceValue F)}
+    (hm : MixedMatchList world types ps us) (heap : Heap F) :
+    ∃ bs, SourceSemantics.matchListWith (world.matchPattern types heap) ps us = .ok (some bs) := by
+  induction hm with
+  | nil => exact ⟨[], rfl⟩
+  | @cons p u _ _ hp _ ih =>
+    obtain ⟨bs1, h1⟩ : ∃ bs, world.matchPattern types heap p u = .ok (some bs) := by
+      rcases hp with hflat | ⟨c, hc, huc⟩
+      · exact hflat.matchPattern (world := world) (types := types) u heap
+      · exact ⟨[], by rw [huc, hc heap c]; simp⟩
+    obtain ⟨bs2, h2⟩ := ih
+    refine ⟨bs1 ++ bs2, ?_⟩
+    simp [SourceSemantics.matchListWith, h1, h2, bind, Except.bind, pure, Except.pure]
+
+omit [Field F] in
+/-- A tuple pattern of flat and constant components that did not match a tuple whose every
+component it matches: impossible. The non-match of such an arm is the negation of its
+constant components' equations. -/
+theorem matchPattern_tuple_mixed_none {ps : List (Pattern F)} {us : List (SourceValue F)}
+    {heap : Heap F} (h : world.matchPattern types heap (.tuple ps) (.tuple us) = .ok none)
+    (hm : MixedMatchList world types ps us) : False := by
+  rw [matchPattern_tuple] at h
+  simp only [hm.length, bne_self_eq_false] at h
+  obtain ⟨bs, hbs⟩ := hm.matchListWith heap
+  rw [hbs] at h
+  cases h
+
+omit [Field F] in
+/-- The same for an array pattern. -/
+theorem matchPattern_array_mixed_none {ps : List (Pattern F)} {us : List (SourceValue F)}
+    {heap : Heap F} (h : world.matchPattern types heap (.array ps) (.tuple us) = .ok none)
+    (hm : MixedMatchList world types ps us) : False := by
+  rw [matchPattern_array] at h
+  simp only [hm.length, bne_self_eq_false] at h
+  obtain ⟨bs, hbs⟩ := hm.matchListWith heap
+  rw [hbs] at h
+  cases h
+
 omit [Field F] [DecidableEq F] in
 theorem matchListWith_nil_inv {A : Type}
     {f : A → SourceValue F → Except EvalError (Option (Environment F Nat))}

@@ -550,6 +550,20 @@ def muts_root_offset := aiur_fn⟦
     }
 ⟧
 
+  -- A constant's level-parameter count, below 2^32: its four high bytes are zero.
+
+def lvls_to_field := aiur_fn⟦
+  fn lvls_to_field(lvls: UInt64::U64) -> Field {
+      let [b0, b1, b2, b3, b4, b5, b6, b7] = lvls;
+      assert_eq!(UInt8::to_field(b4), 0, "a level-parameter count is 2^32 or more");
+      assert_eq!(UInt8::to_field(b5), 0, "a level-parameter count is 2^32 or more");
+      assert_eq!(UInt8::to_field(b6), 0, "a level-parameter count is 2^32 or more");
+      assert_eq!(UInt8::to_field(b7), 0, "a level-parameter count is 2^32 or more");
+      UInt8::to_field(b0) + 256 * UInt8::to_field(b1) + 65536 * UInt8::to_field(b2)
+        + 16777216 * UInt8::to_field(b3)
+    }
+⟧
+
 def convert_definition := aiur_fn⟦
   fn convert_definition(d: Ixon::Definition, sharing: Lists::List<&Ixon::Expr>,
                               refs: Lists::List<Bytes::AddressRef>, recur_addrs: Lists::List<Bytes::AddressRef>,
@@ -559,7 +573,7 @@ def convert_definition := aiur_fn⟦
         Ixon::Definition::Mk(kind, safety, _, lvls, typ, value) => {
           let ktyp = convert_root(typ, sharing, refs, recur_addrs, univs, tbl, base);
           let kval = convert_root(value, sharing, refs, recur_addrs, univs, tbl, base + 1);
-          let nlvls = UInt64::to_field(lvls);
+          let nlvls = lvls_to_field(lvls);
           match kind {
             Ixon::DefKind::Definition => {
               KernelTypes::KConstantInfo::Defn(nlvls, ktyp, kval, safety, hint) } ,
@@ -580,7 +594,7 @@ def convert_axiom := aiur_fn⟦
       match a {
         Ixon::Axiom::Mk(is_unsafe, lvls, typ) => {
           let ktyp = convert_root(typ, sharing, refs, recur_addrs, univs, tbl, 0);
-          KernelTypes::KConstantInfo::Axiom(UInt64::to_field(lvls), ktyp, is_unsafe) } ,
+          KernelTypes::KConstantInfo::Axiom(lvls_to_field(lvls), ktyp, is_unsafe) } ,
       }
     }
 ⟧
@@ -592,7 +606,7 @@ def convert_quotient := aiur_fn⟦
       match q {
         Ixon::Quotient::Mk(kind, lvls, typ) => {
           let ktyp = convert_root(typ, sharing, refs, recur_addrs, univs, tbl, 0);
-          KernelTypes::KConstantInfo::Quot(UInt64::to_field(lvls), ktyp, kind) } ,
+          KernelTypes::KConstantInfo::Quot(lvls_to_field(lvls), ktyp, kind) } ,
       }
     }
 ⟧
@@ -627,7 +641,7 @@ def convert_inductive := aiur_fn⟦
         Ixon::Inductive::Mk(is_unsafe, lvls, params, indices, typ, ctors) => {
           let ktyp = convert_root(typ, sharing, refs, recur_addrs, univs, tbl, base);
           KernelTypes::KConstantInfo::Induct(
-            UInt64::to_field(lvls), ktyp,
+            lvls_to_field(lvls), ktyp,
             UInt64::to_field(params), UInt64::to_field(indices),
             count_ctors(ctors), is_unsafe,
             block_addr, ind_idx) } ,
@@ -644,7 +658,7 @@ def convert_constructor := aiur_fn⟦
         Ixon::Constructor::Mk(is_unsafe, lvls, cidx, params, fields, _, typ) => {
           let ktyp = convert_root(typ, sharing, refs, recur_addrs, univs, tbl, base);
           KernelTypes::KConstantInfo::Ctor(
-            UInt64::to_field(lvls), ktyp,
+            lvls_to_field(lvls), ktyp,
             block_addr, ind_idx, UInt64::to_field(cidx),
             UInt64::to_field(params), UInt64::to_field(fields), is_unsafe) } ,
       }
@@ -684,7 +698,7 @@ def convert_recursor := aiur_fn⟦
           let ktyp = convert_root(typ, sharing, refs, (&(Lists::Node::Nil)), univs, tbl, base);
           let krules = convert_rec_rules(rules, sharing, refs, recur_addrs, univs, 0, tbl, base + 1);
           KernelTypes::KConstantInfo::Rec(
-            UInt64::to_field(lvls), ktyp,
+            lvls_to_field(lvls), ktyp,
             UInt64::to_field(params), UInt64::to_field(indices),
             UInt64::to_field(motives), UInt64::to_field(minors),
             krules, k, is_unsafe,

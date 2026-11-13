@@ -783,8 +783,14 @@ def iota_cmp := aiur_fn⟦
                             _ => {
                               match pi_residual(KernelLevels::expr_inst_levels(cty, clvls), margs, (&(Lists::Node::Nil))) {
                                 (1, res) => {
+                                  -- only a residual headed by a constant shows its arguments
                                   match KernelTypes::collect_spine(res) {
-                                    (_, ra) => {  KernelDefEq::de_args(rc, Lists::drop(ra, cnp), Lists::drop(mda, cnp), types) } ,
+                                    (rh, ra) => {
+                                      match (*(rh)) {
+                                        KernelTypes::KExprNode::Const(_, _) => {
+                                          KernelDefEq::de_args(rc, Lists::drop(ra, cnp), Lists::drop(mda, cnp), types) } ,
+                                        _ => {  0 } ,
+                                      } } ,
                                   } } ,
                                 _ => {  0 } ,
                               } } ,
