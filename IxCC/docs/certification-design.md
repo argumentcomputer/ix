@@ -260,7 +260,7 @@ it. Invariants by provenance (`Live`, `LiveSlot`, `EnvOk` with a slot shielded w
 a dropped field to the minor that ignores it, `Whole`, `MinorsIgnore`), each call's precondition
 and result (`Pre`, `Post`) and what it reads (`Reads`); `Front.GoesWrongLive` is `Recheck.sound`'s
 escape with a `Live` result. These are the definitions of a theorem not yet proved: no theorem
-rests on them but `live_not_irr` (a marker is never `Live`) and the two parts below, and P1's
+rests on them but `live_not_irr` (a marker is never `Live`) and the parts below, and P1's
 statements (`preserve`, `pre_step`, `reads_live`, `run_live`, and the narrowing
 `Front.goesWrong_live`, `sound_live`) join the library only as they are proved.
 
@@ -290,8 +290,30 @@ through β at a λ head, by C0). [`Recheck/Proof/FrontAccepted.lean`](../IxCC/Re
 proves what `Recheck.run`'s acceptance gives the narrowing of its escape: `front_accepted` (both
 relevance checks accepted the installed program, and SrcEval runs that program's Lazify image) and
 `shapeOk_of_run` (one constructor per inductive and index, from erasure's success on the program
-SrcEval runs). Not proved: P1's core (`preserve`, `pre_step`, `reads_live`, `run_live`), L1's facts
-on the Lazify image (`facts_modeEq`) and the narrowing (`Front.goesWrong_live`, `sound_live`).
+SrcEval runs). Not proved: P1's core (`preserve`, `pre_step`, `reads_live`, `run_live`) and the
+narrowing (`Front.goesWrong_live`, `sound_live`).
+
+**L1's facts hold on the program SrcEval runs (2026-11-13).** The relevance checks run on the
+installed program `p₀`, while SrcEval runs its Lazify image `p`, which differs from `p₀` only in the
+modes of application nodes (`Program.ModeEq p₀ p`). [`Src/Relevance/Proof/P1/Facts.lean`](../IxCC/Src/Relevance/Proof/P1/Facts.lean)
+proves `facts_modeEq`: from `check p₀ ann = .ok ch` and `checkCanonical p₀ ann ch = []`, P1's
+hypothesis `Facts p ann ch` holds. It rests on
+[`Src/Relevance/Proof/ModeEq.lean`](../IxCC/Src/Relevance/Proof/ModeEq.lean): `check_modeEq`
+(`check p₀ ann = check p ann`, with no other hypothesis) and `canonical_modeEq` (`Canonical p₀ ann
+ch → Canonical p ann ch`, proved field by field). `checkCanonical` itself is not shown equal on the
+two programs, and that equality is false for some such pairs. Its `dense` clause iterates the maps
+(`NatMap.toList`), and an iteration also lists a value stored at a zero-child's root. No lookup reads
+such a value, and `Program.ModeEq` does not constrain it. No program built by ingress has one. Each
+function the checks apply to the program gives the same answer on the two programs, or a term equal
+up to modes, when its arguments are equal up to modes. For the rules C0–C7 and S1–S2 this is
+`term_me`; for the tags it is `checkTermBinders_me`; for the classifier it is `whnfType_me`,
+`applyPis_me` and `classifyTelescope_me`. Only one comparison in the checks reads modes: `applyPis`'s
+loop test `whnfType p 4 ty == ty`. The two programs disagree on it only when a four-step reduction
+returns its input up to modes, which happens when a definition's unfolding cycles. In that case
+neither side ever reaches a sort or a Π, and both return `none`. `tests-relevance` plants such a
+cycle (`IxCCTests.Src.Relevance.ModeFlip`: `H := λ y. H y`, with `H`'s value, the root's, or both
+flipped). On each flip the loop test disagrees, and `applyPis`, the classifier, `checkTermBinders`,
+`check` and `checkCanonical` agree.
 
 **P1's core as one induction over 25 cases; the cases are not all proved (2026-11-13).**
 [`Src/Relevance/Proof/P1/Cases.lean`](../IxCC/Src/Relevance/Proof/P1/Cases.lean) proves `preserve`
@@ -300,17 +322,33 @@ and `pre_step`, as approved, from a hypothesis `Cases`: one statement per evalua
 with one signature (L1's facts, the structure, the call's precondition and sort events, and the
 statement at every call its evaluation makes). The induction is well founded on SrcEval's own
 termination measure, which every `Step` decreases
-([`Measure.lean`](../IxCC/Src/Relevance/Proof/P1/Measure.lean)). Six of the 25 are proved: E2 at a
-sort and at a Π, where C7 leaves no precondition; E3 at both literals; F4; and F2, an ordinary
-recursor fired ([`Recr.lean`](../IxCC/Src/Relevance/Proof/P1/Recr.lean): a field its constructor
-writes erased holds the marker under a rule λ whose class may be relevant, and is shielded there,
-passed only to the minor the rule dispatches, which ignores it). The other nineteen are stated,
-not proved, so P1 is still not a theorem: `preserve_of_cases` and `pre_step_of_cases` take `Cases`
-as a hypothesis. [`Basic.lean`](../IxCC/Src/Relevance/Proof/P1/Basic.lean) holds the lemmas the
-cases share. Reading F3 (subsingleton ι) against the statements found it false where a reached
-subsingleton recursor's rule-0 constructor has no constructor record, which the relevance checks
-allow when nothing reaches the constructor: then C3 checks no minor against it and S4 none of its
-sources; a check closing it is approved, not yet written.
+([`Measure.lean`](../IxCC/Src/Relevance/Proof/P1/Measure.lean)). Twenty-two of the 25 are
+proved. In `Cases.lean`: E2 at a sort and at a Π, where C7 leaves no precondition; E3 at both
+literals; F4. F2, an ordinary recursor fired
+([`Recr.lean`](../IxCC/Src/Relevance/Proof/P1/Recr.lean): a field its constructor writes erased
+holds the marker under a rule λ whose class may be relevant, and is shielded there, passed only to
+the minor the rule dispatches, which ignores it). The constructor
+values ([`Ctor.lean`](../IxCC/Src/Relevance/Proof/P1/Ctor.lean)): E6, a projection's field `Live`
+where it is read (a marker there would be at a field written erased, which C3 refuses at the
+projection); F1, a constructor's fields, each `Live` unless a marker at a position the constructor
+ignores, where the field is dropped at the value's levels; F7, `Quot.mk`'s element; F8,
+`Quot.lift`'s function, which `checkCanonical` decides is read, and its element. δ and what it
+makes ([`Delta.lean`](../IxCC/Src/Relevance/Proof/P1/Delta.lean)): E8, a constant's instance
+handled; δ itself, stuck out of the program, at a reached instance a run body with tier C, a
+`csimp` target that is no eliminator over a field written erased, every special head the one
+`specialHead?` gives the constant; `headValue`; F6, a primitive, which ignores no argument; F6w, a
+word operation, whose result's one marker is the proof field the pinned `Fin.mk` drops. The cases
+that move values without reading them
+([`Plumbing.lean`](../IxCC/Src/Relevance/Proof/P1/Plumbing.lean)): E1, E4, E5, A1–A3, `applyAll`,
+`force`, `forceAll`. The other three, E7 (application), F3 (subsingleton ι) and F5 (`case`), are
+stated, not proved, so P1 is still not a theorem: `preserve_of_cases` and `pre_step_of_cases` take
+`Cases` as a hypothesis. [`Basic.lean`](../IxCC/Src/Relevance/Proof/P1/Basic.lean) holds the
+lemmas the cases share; those the three later modules mark for it are still in their modules. F3
+as stated is false where a reached subsingleton recursor's rule-0 constructor has no constructor
+record, reproduced by a run (a `Prop` inductive with large elimination over a non-proof field,
+built below the kernel, which only the kernel refuses); it is also a wrong-value route on the
+recheck path. The check that closes it (`checkCanonical`: such a constructor has a record) is
+approved and lands next, before `case_F3`.
 
 ## Target statements
 
