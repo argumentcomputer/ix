@@ -79,7 +79,9 @@ def environHas (pid : Nat) (entry : String) : IO Bool := do
 /-- A run held on a FIFO given as the closure, started in a session of its own
 (`SpawnArgs.setsid`: the child's pid is the first `ixcc` process, the leader of a process group
 of its own; the `setsid` command, used at first, forked here, so the pid read was not `ixcc`'s),
-after its tree has settled. -/
+after its tree has settled. It is started through `env --default-signal=INT` (which execs
+`ixcc` in place): a job started in the background by a non-interactive shell inherits SIGINT
+ignored, and the interrupt case then hung the suite (KK-gates1). -/
 def held (dir : FilePath) (env : Array (String × Option String)) :
     IO (IO.Process.Child { stdin := .null, stdout := .piped, stderr := .piped } × FilePath) := do
   let fifo := dir / s!"hold-{← IO.monoNanosNow}"
@@ -87,11 +89,22 @@ def held (dir : FilePath) (env : Array (String × Option String)) :
   check (made.exitCode == 0) "mkfifo"
   let app := (← IO.FS.realPath ixccPath).toString
   let child ← IO.Process.spawn {
-    cmd := app, stdin := .null, stdout := .piped, stderr := .piped, env, setsid := true
-    args := #["compile", fifo.toString, "--equations", (fx / "fib.equations.json").toString,
+    cmd := "env", stdin := .null, stdout := .piped, stderr := .piped, env, setsid := true
+    args := #["--default-signal=INT", app, "compile", fifo.toString, "--equations",
+      (fx / "fib.equations.json").toString,
       "-o", (dir / "held.o").toString] }
   IO.sleep 1500
   return (child, fifo)
+
+/-- Wait for a held run at most `secs` seconds; past that, kill its process group and fail, so
+that a run which outlives a signal fails the suite instead of hanging it. -/
+def waitAtMost (child : IO.Process.Child { stdin := .null, stdout := .piped, stderr := .piped })
+    (secs : Nat) : IO UInt32 := do
+  for _ in [0:secs * 10] do
+    if let some code ← child.tryWait then return code
+    IO.sleep 100
+  let _ ← sh s!"kill -KILL -{child.pid}"
+  throw (IO.userError s!"a held run still running after {secs} s (its group killed)")
 
 /-- Feed the FIFO (so a held run can finish), ignoring a reader that is gone. -/
 def feed (fifo : FilePath) : IO Unit := do
@@ -168,7 +181,7 @@ def suite (dir : FilePath) : IO Nat := do
     if let some k := kids.head? then
       check (← environHas k "IXCC_REEXECED=1") "the second process lacks IXCC_REEXECED=1"
     feed fifo
-    let code ← child.wait
+    let code ← waitAtMost child 30
     check (code == 0) s!"held run: exit {code}"
     n := n + 1
   -- signals
@@ -176,14 +189,14 @@ def suite (dir : FilePath) : IO Nat := do
   let top := child.pid.toNat
   let some kid := (← children top).head? | throw (IO.userError "no second process")
   let _ ← sh s!"kill -KILL {kid}"
-  let code ← child.wait
+  let code ← waitAtMost child 30
   check (code == 137) s!"the parent exited {code} when its child was killed, expected 137"
   n := n + 1
   let (child, _) ← held dir plain
   let top := child.pid.toNat
   let some kid := (← children top).head? | throw (IO.userError "no second process")
   let _ ← sh s!"kill -TERM {top}"
-  let _ ← child.wait
+  let _ ← waitAtMost child 30
   IO.sleep 2500
   check (!(← alive kid)) "the second process outlived its parent by 2.5 s"
   n := n + 1
@@ -191,7 +204,7 @@ def suite (dir : FilePath) : IO Nat := do
   let top := child.pid.toNat
   let some kid := (← children top).head? | throw (IO.userError "no second process")
   let _ ← sh s!"kill -INT -{top}"
-  let code ← child.wait
+  let code ← waitAtMost child 30
   IO.sleep 1500
   check (code == 130 && !(← alive kid)) s!"an interrupt to the group: the parent exited {code}, the child alive {← alive kid}"
   n := n + 1
