@@ -1795,7 +1795,8 @@
  "grounding_axiom_sha256":
  "06aeb842207c1f9d7f830573c8e59a912edd572745425080f8bcb9661a217439",
  "grounding_axiom_count": 312,
- "baseline": "C7 and the structural facts",
+ "baseline":
+ "the shrink walk bounds literal folding (Anf.Walk.foldable): WalkProof.fold_some; tests-anf part IxCCTests.Anf.FoldGuard; tests-exe part IxCCTests.Exe.FoldGuard over fixtures/fold",
  "axiom_sha256":
- "7cff447c82267d8be0d504db548c686edb4877ca1f33e7aed0d30172cfcb64b5",
- "axiom_count": 6722}
+ "86185bd46aced0a325e7eaa299d46959bb23f4d6bf6a75d1a396c206a3c7f49b",
+ "axiom_count": 6723}
