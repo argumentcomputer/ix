@@ -226,6 +226,15 @@ structure LoadFacts (c : Ctx) : Prop where
     ixAddr sa = iprjAddr (ixAddr b) (ZMod.val i) →
     caps.eta = true ∧ caps.etaCtor = some (c.κ (ixAddr ac)) ∧ caps.etaFields = cnF ∧
       caps.etaParams = cnP ∧ cvc.levelParams = cvT.levelParams
+  /-- (L1) **A stored record decodes as the record whose bytes it holds**: a record of `c.E`
+  whose raw bytes are the serialization of a constant with empty tables (any kind) reads as
+  that constant's payload. `Good` gives only the raw bytes (a held record at an address the run
+  hashed has the hashed bytes, `load_escape`); `LazyConstant.get?` reads the cache and its byte
+  window, which the loader layer builds by decoding those bytes: the claim's canonical store
+  (`Ix.Cert.Stream.StoredCanonical`) and `serConstant`'s injectivity on wire-valid constants. -/
+  canonical : ∀ (x : _root_.Address) (lc : Ixon.LazyConstant) (info : Ixon.ConstantInfo),
+    c.E.consts.get? x = some lc → lc.rawBytes = Ixon.serConstant ⟨info, #[], #[], #[]⟩ →
+      ∀ cm, lc.get? = some cm → cm.info = info
 
 /-! ## Specs -/
 
