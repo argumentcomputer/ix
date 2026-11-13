@@ -2379,6 +2379,247 @@ def gapBCases : List Case := [
   { label := "V5 Gap B, control: both alternatives (gbLok)", P := pGapB, seed := gbLok, inp := oneList,
     toCheck := [gbLok], verdict := .accept, run := [(0, .value)] }]
 
+/-! ## Part 3, continued: note 12's reading items (engineer MX)
+
+Hand-made v5 records beside the prelude's (the default role table, the prelude's and evidence
+records and blobs). Each subject is read with `noClasses` (`readProg`) and checked over the empty
+environment (`check`, whose class oracle then answers `val` or `irr`): an accepted subject reads
+and is accepted; a refused one fails to read with the witness fragment, and `check` refuses with
+it. -/
+
+/-- The prelude's and evidence records, the default role table, the evidence blobs. -/
+structure Pre where
+  tbl : Ix.Kernel.RoleTable
+  base : Ix.Kernel.Reader.Store
+  blob : Address → Option ByteArray
+
+def loadPre : IO Pre := do
+  let tbl ← must "defaultTable" Ix.Kernel.Reader.defaultTable
+  let recs ← must "preludeRecords" Ix.Kernel.Reader.preludeRecords
+  let evid ← must "evidenceRecords" Ix.Kernel.Reader.evidenceRecords
+  let blobs ← must "evidenceBlobs" Ix.Kernel.Reader.evidenceBlobs
+  let m : Std.HashMap Address Ixon.Constant := (recs ++ evid).foldl (fun m (a, c) => m.insert a c) {}
+  pure { tbl, base := fun a => m[a]?, blob := fun a => blobs.lookup a }
+
+def Pre.role (p : Pre) (r : Ix.Kernel.Role) : IO Address :=
+  match p.tbl.addressOf? r with
+  | some a => pure a
+  | none => throw (IO.userError s!"no {repr r} role")
+
+/-- A subject of hand-made records over the prelude, seeded at `seed`. -/
+def Pre.subj (p : Pre) (extra : List (Address × Ixon.Constant)) (seed : Address) : Subject :=
+  { table := p.tbl, store := fun a => (extra.lookup a) <|> p.base a, blob := p.blob, seeds := [seed] }
+
+/-- `frag` empty: the subject reads and is accepted; else neither: the reading fails and `check`
+refuses, each with `frag` in its witness. Without `viaCheck` only the reading is asserted (and
+`check`'s verdict shown). -/
+def readCheck (t : IO.Ref Tally) (label : String) (s : Subject) (frag : String) (viaCheck := true) :
+    IO Unit := do
+  let rp := readProg s noClasses
+  let v := check {} Ix.Kernel.Env.empty s
+  let has (w : String) := (w.splitOn frag).length > 1
+  let ok := if frag.isEmpty then (match rp with | .ok _ => true | .error _ => false) && (v.isAccept || !viaCheck)
+    else (match rp with | .error e => has e | .ok _ => false) &&
+      (!viaCheck || match v with | .refuse _ w => has w | _ => false)
+  check1 t label ok s!"readProg: {readName rp}; check: {verdictLong v}"
+
+def xApp (f : Ixon.Expr) (as : List Ixon.Expr) : Ixon.Expr := as.foldl .app f
+def xRef (i : Nat) (us : Array UInt64 := #[]) : Ixon.Expr := .ref i.toUInt64 us
+def xVar (i : Nat) : Ixon.Expr := .var i.toUInt64
+def projI (b : Address) (i : Nat) : Ixon.Constant :=
+  { info := .iPrj { idx := i.toUInt64, block := b }, sharing := #[], refs := #[], univs := #[] }
+def projC (b : Address) (i ci : Nat) : Ixon.Constant :=
+  { info := .cPrj { idx := i.toUInt64, cidx := ci.toUInt64, block := b }, sharing := #[], refs := #[], univs := #[] }
+def ctorOf (ci fields : Nat) (typ : Ixon.Expr) : Ixon.Constructor :=
+  { isUnsafe := false, lvls := 0, cidx := ci.toUInt64, params := 0, fields := fields.toUInt64, typ }
+def indOf (ctors : Array Ixon.Constructor) : Ixon.Inductive :=
+  { isUnsafe := false, lvls := 0, params := 0, indices := 0, typ := .sort 0, ctors }
+def safeDef (typ value : Ixon.Expr) : Ixon.Definition :=
+  { kind := Ix.DefKind.defn, safety := Ix.DefinitionSafety.safe, lvls := 0, typ, value }
+/-- The mode `m` at node `o` of root block `root`, the default elsewhere. -/
+def modeAt (marks : List (Nat × Nat × AllMode)) : Bool → Nat → Nat → AllMode := fun sh idx o =>
+  if sh then {} else ((marks.find? fun (r, n, _) => r == idx && n == o).map (·.2.2)).getD {}
+def erasedM : AllMode := { input := .erased }
+
+/-! ### V1 (note 12 §2.1): a raw recursor's rules against its inductive's constructors
+
+`K | mk (a : Nat) (@erased b : Nat) (c : Nat)` (block 270, projections 271, 272), its recursor
+`K.rec.{u} (motive : K → Sort u) (minor : (a b c : Nat) → motive (K.mk a b c)) (t : K)` (273),
+whose rule's body is `minor a b c` (or the variables `rhs` names), and
+`useK (k : K) : Nat := K.rec.{1} (fun _ => Nat) (fun a b c => a) k` (274), a raw call. With
+`prop`, `K : Prop` and its recursor a subsingleton's (`k := true`). `erases`: the minor premise's
+binder of `b` is erased in the recursor's type (node 4 of root 0), and the corresponding λ of
+`useK`'s minor premise (node 3 of root 1). As landed nothing compared them: a raw recursor was
+read by `stuckAt`, which reads only its type's leading ∀s. `runR` is stuck at a recursor, so no
+run violates: the reading failed open, toward a native run of the rule. -/
+
+def kRecords (natA : Address) (prop erases : Bool) (rhs : List Nat := [2, 1, 0]) :
+    List (Address × Ixon.Constant) :=
+  let nat := xRef 0
+  let kBlock : Ixon.Constant := withSection
+    { info := .muts #[.indc (indOf #[ctorOf 0 3 (.all nat (.all nat (.all nat (.recur 0 #[]))))])],
+      sharing := #[], refs := #[natA], univs := #[if prop then .zero else .succ .zero] }
+    (modeAt [(1, 1, erasedM)])
+  -- K.rec: refs natA, K, K.mk; univs u
+  let motiveDom := Ixon.Expr.all (xRef 1) (.sort 0)
+  let minorDom := Ixon.Expr.all nat (.all nat (.all nat (.app (xVar 3) (xApp (xRef 2) [xVar 2, xVar 1, xVar 0]))))
+  let typ := Ixon.Expr.all motiveDom (.all minorDom (.all (xRef 1) (.app (xVar 2) (xVar 0))))
+  let body := xApp (xVar 3) (rhs.map xVar)
+  let rr : Ixon.Recursor :=
+    { k := prop, isUnsafe := false, lvls := 1, params := 0, indices := 0,
+      motives := 1, minors := 1, typ, rules := #[{ fields := 3, rhs := .lam motiveDom (.lam minorDom
+        (.lam nat (.lam nat (.lam nat body)))) }] }
+  let kRec : Ixon.Constant := withSection
+    { info := .recr rr, sharing := #[], refs := #[natA, addr 271, addr 272], univs := #[.var 0] }
+    (modeAt (if erases then [(0, 4, erasedM)] else []))
+  -- useK: refs K, natA, K.rec; univs 1
+  let useK : Ixon.Constant := withSection
+    { info := .defn (safeDef (.all (xRef 0) (xRef 1))
+        (.lam (xRef 0) (xApp (xRef 2 #[0]) [.lam (xRef 0) (xRef 1),
+          .lam (xRef 1) (.lam (xRef 1) (.lam (xRef 1) (xVar 2))), xVar 0]))),
+      sharing := #[], refs := #[addr 271, natA, addr 273], univs := #[.succ .zero] }
+    (modeAt (if erases then [(1, 3, erasedM)] else []))
+  [(addr 270, kBlock), (addr 271, projI (addr 270) 0), (addr 272, projC (addr 270) 0 0),
+   (addr 273, kRec), (addr 274, useK)]
+
+/-- A mutual block `A | a (x : Nat)`, `B | b0 (@erased x : Nat)` (280; projections 281 to 284) and
+`B.rec.{u} (motA) (motB) (mA : (x : Nat) → motA (A.a x)) (mB : (x : Nat) → motB (B.b0 x)) (t : B)`
+(285): two motives, minor premises for both inductives' constructors, one rule (`b0`, body
+`mB x`: it dispatches minor premise 1). `useB (n : Nat) (t : B) : Nat :=
+B.rec.{1} (fun _ => Nat) (fun _ => Nat) (fun x => n) (fun x => n) t` (286). `byDispatch`: `mB`'s
+`x` erased (node 7), and `useB`'s λ for it (node 5); else `mA`'s (node 5, node 4), which pairing
+the rule with minor premise 0 by index would let through. -/
+def abRecords (natA : Address) (byDispatch : Bool) : List (Address × Ixon.Constant) :=
+  let nat := xRef 0
+  let block : Ixon.Constant := withSection
+    { info := .muts #[.indc (indOf #[ctorOf 0 1 (.all nat (.recur 0 #[]))]),
+                      .indc (indOf #[ctorOf 0 1 (.all nat (.recur 1 #[]))])],
+      sharing := #[], refs := #[natA], univs := #[.succ .zero] }
+    (modeAt [(3, 0, erasedM)])
+  -- B.rec: refs natA, A, B, A.a, B.b0; univs u
+  let motA := Ixon.Expr.all (xRef 1) (.sort 0)
+  let motB := Ixon.Expr.all (xRef 2) (.sort 0)
+  let mA := Ixon.Expr.all nat (.app (xVar 2) (.app (xRef 3) (xVar 0)))
+  let mB := Ixon.Expr.all nat (.app (xVar 2) (.app (xRef 4) (xVar 0)))
+  let typ := Ixon.Expr.all motA (.all motB (.all mA (.all mB (.all (xRef 2) (.app (xVar 3) (xVar 0))))))
+  let rr : Ixon.Recursor :=
+    { k := false, isUnsafe := false, lvls := 1, params := 0, indices := 0,
+      motives := 2, minors := 2, typ,
+      rules := #[{ fields := 1, rhs := .lam motA (.lam motB (.lam mA (.lam mB (.lam nat (.app (xVar 1) (xVar 0)))))) }] }
+  let bRec : Ixon.Constant := withSection
+    { info := .recr rr, sharing := #[], refs := #[natA, addr 281, addr 282, addr 283, addr 284], univs := #[.var 0] }
+    (modeAt [(0, if byDispatch then 7 else 5, erasedM)])
+  -- useB: refs natA, A, B, B.rec; univs 1
+  let useB : Ixon.Constant := withSection
+    { info := .defn (safeDef (.all nat (.all (xRef 2) nat))
+        (.lam nat (.lam (xRef 2) (xApp (xRef 3 #[0]) [.lam (xRef 1) nat, .lam (xRef 2) nat,
+          .lam nat (xVar 2), .lam nat (xVar 2), xVar 0])))),
+      sharing := #[], refs := #[natA, addr 281, addr 282, addr 285], univs := #[.succ .zero] }
+    (modeAt [(1, if byDispatch then 5 else 4, erasedM)])
+  [(addr 280, block), (addr 281, projI (addr 280) 0), (addr 282, projI (addr 280) 1),
+   (addr 283, projC (addr 280) 0 0), (addr 284, projC (addr 280) 1 0), (addr 285, bRec), (addr 286, useB)]
+
+/-- `R | leaf | node (r : R)` (290; projections 291 to 293), `R.rec.{u} (motive) (mLeaf : motive
+R.leaf) (mNode : (r : R) → (ih : motive r) → motive (R.node r)) (t : R)` (294), whose `node` rule
+is `mNode r (R.rec motive mLeaf mNode r)`, and `useR (t : R) (n : Nat) : Nat :=
+R.rec.{1} (fun _ => Nat) n (fun r ih => ih) t` (295; not a case shape, since its minor premise
+reads its induction hypothesis). `ihMode`: the mode of `ih`'s binder in the recursor's type
+(node 5) and in `useR`'s minor premise (node 4). `R` is recursive, and the class oracle declines
+on its values (it follows `node`'s field of type `R` to its depth limit), so `check` declines
+here: these cases assert the reading only. -/
+def rRecords (natA : Address) (ihMode : AllMode) : List (Address × Ixon.Constant) :=
+  let block : Ixon.Constant := withSection
+    { info := .muts #[.indc (indOf #[ctorOf 0 0 (.recur 0 #[]), ctorOf 1 1 (.all (.recur 0 #[]) (.recur 0 #[]))])],
+      sharing := #[], refs := #[], univs := #[.succ .zero] }
+  -- R.rec: refs R, R.leaf, R.node; univs u
+  let motive := Ixon.Expr.all (xRef 0) (.sort 0)
+  let mLeaf := Ixon.Expr.app (xVar 0) (xRef 1)
+  let mNode := Ixon.Expr.all (xRef 0) (.all (.app (xVar 2) (xVar 0)) (.app (xVar 3) (.app (xRef 2) (xVar 1))))
+  let typ := Ixon.Expr.all motive (.all mLeaf (.all mNode (.all (xRef 0) (.app (xVar 3) (xVar 0)))))
+  let rr : Ixon.Recursor :=
+    { k := false, isUnsafe := false, lvls := 1, params := 0, indices := 0,
+      motives := 1, minors := 2, typ,
+      rules := #[{ fields := 0, rhs := .lam motive (.lam mLeaf (.lam mNode (xVar 1))) },
+        { fields := 1, rhs := .lam motive (.lam mLeaf (.lam mNode (.lam (xRef 0)
+            (xApp (xVar 1) [xVar 0, xApp (.recur 0 #[0]) [xVar 3, xVar 2, xVar 1, xVar 0]])))) }] }
+  let rRec : Ixon.Constant := withSection
+    { info := .recr rr, sharing := #[], refs := #[addr 291, addr 292, addr 293], univs := #[.var 0] }
+    (modeAt [(0, 5, ihMode)])
+  -- useR: refs R, natA, R.rec; univs 1
+  let useR : Ixon.Constant := withSection
+    { info := .defn (safeDef (.all (xRef 0) (.all (xRef 1) (xRef 1)))
+        (.lam (xRef 0) (.lam (xRef 1) (xApp (xRef 2 #[0]) [.lam (xRef 0) (xRef 1), xVar 0,
+          .lam (xRef 0) (.lam (xRef 1) (xVar 0)), xVar 1])))),
+      sharing := #[], refs := #[addr 291, natA, addr 294], univs := #[.succ .zero] }
+    (modeAt [(1, 4, ihMode)])
+  [(addr 290, block), (addr 291, projI (addr 290) 0), (addr 292, projC (addr 290) 0 0),
+   (addr 293, projC (addr 290) 0 1), (addr 294, rRec), (addr 295, useR)]
+
+/-- Raw calls of the prelude's own recursors, all modes default: `Nat.rec` (two minor premises,
+an induction hypothesis), `And.rec` (two fields), `Eq.rec` (a subsingleton's, `k`, an index). -/
+def preludeRecUses (p : Pre) : IO (List (Address × Ixon.Constant)) := do
+  let natA ← p.role .nat
+  let natRecA ← p.role .natRec
+  let andA ← p.role .and
+  let andRecA ← p.role .andRec
+  let eqA ← p.role .eq
+  let eqRecA ← p.role .eqRec
+  -- `fun n => Nat.rec.{1} (fun _ => Nat) n (fun k ih => ih) n`; refs natA, Nat.rec
+  let useNat : Ixon.Constant := withSection
+    { info := .defn (safeDef (.all (xRef 0) (xRef 0))
+        (.lam (xRef 0) (xApp (xRef 1 #[0]) [.lam (xRef 0) (xRef 0), xVar 0,
+          .lam (xRef 0) (.lam (xRef 0) (xVar 0)), xVar 0]))),
+      sharing := #[], refs := #[natA, natRecA], univs := #[.succ .zero] }
+  -- `fun (a b : Prop) (h : And a b) (n : Nat) => And.rec.{1} a b (fun _ => Nat) (fun l r => n) h`;
+  -- refs And, And.rec, natA
+  let andAB (i j : Nat) := xApp (xRef 0) [xVar i, xVar j]
+  let useAnd : Ixon.Constant := withSection
+    { info := .defn (safeDef (.all (.sort 0) (.all (.sort 0) (.all (andAB 1 0) (.all (xRef 2) (xRef 2)))))
+        (.lam (.sort 0) (.lam (.sort 0) (.lam (andAB 1 0) (.lam (xRef 2)
+          (xApp (xRef 1 #[1]) [xVar 3, xVar 2, .lam (andAB 3 2) (xRef 2),
+            .lam (xVar 3) (.lam (xVar 3) (xVar 2)), xVar 1])))))),
+      sharing := #[], refs := #[andA, andRecA, natA], univs := #[.zero, .succ .zero] }
+  -- `fun (x y : Nat) (h : x = y) (n : Nat) => Eq.rec.{1,1} Nat x (fun b _ => Nat) n y h`;
+  -- refs Eq, Eq.rec, natA
+  let eqN (i j : Nat) := xApp (xRef 0 #[0]) [xRef 2, xVar i, xVar j]
+  let useEq : Ixon.Constant := withSection
+    { info := .defn (safeDef (.all (xRef 2) (.all (xRef 2) (.all (eqN 1 0) (.all (xRef 2) (xRef 2)))))
+        (.lam (xRef 2) (.lam (xRef 2) (.lam (eqN 1 0) (.lam (xRef 2)
+          (xApp (xRef 1 #[0, 0]) [xRef 2, xVar 3, .lam (xRef 2) (.lam (eqN 4 0) (xRef 2)), xVar 0,
+            xVar 2, xVar 1])))))),
+      sharing := #[], refs := #[eqA, eqRecA, natA], univs := #[.succ .zero] }
+  pure [(addr 296, useNat), (addr 297, useAnd), (addr 298, useEq)]
+
+def v1Recursors (t : IO.Ref Tally) : IO Unit := do
+  let p ← loadPre
+  let natA ← p.role .nat
+  let honest ← preludeRecUses p
+  readCheck t "V1 prelude: a raw call of Nat.rec (its minor premises, an induction hypothesis)" (p.subj honest (addr 296)) ""
+  readCheck t "V1 prelude: a raw call of And.rec (two fields)" (p.subj honest (addr 297)) ""
+  readCheck t "V1 prelude: a raw call of Eq.rec (a subsingleton's, k)" (p.subj honest (addr 298)) ""
+  readCheck t "V1 K: field b erased in its constructor and in the minor premise: accept"
+    (p.subj (kRecords natA false true) (addr 274)) ""
+  -- REPAIR V1: the four refusals below were accepted before (a raw recursor read by `stuckAt`)
+  readCheck t "V1 K: field b erased in its constructor, not in the minor premise: refused"
+    (p.subj (kRecords natA false false) (addr 274)) "is erased in its constructor and not in minor premise 0"
+  readCheck t "V1 K: the rule passes b also as c: refused"
+    (p.subj (kRecords natA false true [2, 1, 1]) (addr 274)) "mentioned other than at its own position"
+  readCheck t "V1 K: the rule passes c as b and b as c: refused"
+    (p.subj (kRecords natA false true [2, 0, 1]) (addr 274)) "is not passed to minor premise 0 at its own position"
+  readCheck t "V1 K in Prop (a subsingleton's recursor, k): b erased in the minor premise: accept"
+    (p.subj (kRecords natA true true) (addr 274)) ""
+  readCheck t "V1 K in Prop (a subsingleton's recursor, k): b not erased in the minor premise: refused"
+    (p.subj (kRecords natA true false) (addr 274)) "is erased in its constructor and not in minor premise 0"
+  readCheck t "V1 mutual B.rec: x erased in mB, the minor premise its rule dispatches: accept"
+    (p.subj (abRecords natA true) (addr 286)) ""
+  readCheck t "V1 mutual B.rec: x erased in mA (minor premise 0, by index), not in mB: refused"
+    (p.subj (abRecords natA false) (addr 286)) "is erased in its constructor and not in minor premise 1"
+  readCheck t "V1 R.rec: the induction hypothesis's binder default: reads"
+    (p.subj (rRecords natA {}) (addr 295)) "" (viaCheck := false)
+  readCheck t "V1 R.rec: the induction hypothesis's binder unique: does not read"
+    (p.subj (rRecords natA { input := .unique }) (addr 295)) "an induction hypothesis's binder in minor premise 1 has a mode"
+    (viaCheck := false)
+
 def run : IO UInt32 := do
   let t ← IO.mkRef ({} : Tally)
   IO.println "== Part 1: the suite's cases without a record fixture"
@@ -2398,6 +2639,8 @@ def run : IO UInt32 := do
   for c in gapACases do runCase t c
   v5closure t
   for c in gapBCases do runCase t c
+  IO.println "== Part 3, continued: note 12's reading items"
+  try v1Recursors t catch e => check1 t "V1" false s!"error: {e}"
   let s ← t.get
   IO.println s!"== {s.pass} passed, {s.fail} failed"
   for l in s.failed do IO.println s!"   failed: {l}"

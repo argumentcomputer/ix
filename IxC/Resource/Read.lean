@@ -34,6 +34,9 @@ the kernel's own judgements; the checker reads with a fueled one.
 * **Externs** are the constants of the extern set, **primitives** the role
   table's `Nat` operations, and every other constant without a run body is
   `stuck` with its interface.
+* **Raw recursors.** A recursor a run term calls (not through a case shape)
+  has rules that pass each field its constructor erases only to a binder of the
+  dispatched minor premise that erases it (`Reading.recRules`).
 
 **No supplied behaviour reads what an interface erases.** A case rule, a
 primitive, a constructor and an extern run in place of a body, so their modes
@@ -1023,6 +1026,161 @@ def Reading.runTable (rd : Reading) (cl : Classifier) : Except String (Array (Re
     unless (entries.filter (·.1 == f)).size == 1 do throw "a definition bound twice by the run table"
   pure entries
 
+/-! ## Raw recursors (note 12 §2.1)
+
+A raw recursor is `stuck` in `runR`, but our evaluator and compiled code fire it by its stored
+rules, and the rules hand a constructor's fields to the minor premise they dispatch. So a raw
+recursor a run term calls must pass a field its constructor writes erased only to a binder that
+erases it, and must read it nowhere else. -/
+
+/-- The head and arguments of an application, stepping through sharing references at every node
+of the spine. -/
+def ixSpineU (c : Ixon.Constant) : Nat → Ixon.Expr → Except String (Ixon.Expr × Array Ixon.Expr)
+  | 0, _ => throw "expression too large"
+  | n + 1, e =>
+    match Ix.Kernel.Reader.unshare c e with
+    | .app f a => do
+      let (h, as) ← ixSpineU c n f
+      pure (h, as.push a)
+    | e' => pure (e', #[])
+
+/-- Whether the variable `v` (a de Bruijn index at `e`'s top) occurs in `e`, through sharing
+references. -/
+def mentions (c : Ixon.Constant) : Nat → Nat → Ixon.Expr → Except String Bool
+  | 0, _, _ => throw "expression too large"
+  | n + 1, v, e =>
+    match Ix.Kernel.Reader.unshare c e with
+    | .var i => pure (i.toNat == v)
+    | .app f a => do pure ((← mentions c n v f) || (← mentions c n v a))
+    | .lam t b | .all t b => do pure ((← mentions c n v t) || (← mentions c n (v + 1) b))
+    | .letE _ _ t x b => do
+      pure ((← mentions c n v t) || (← mentions c n v x) || (← mentions c n (v + 1) b))
+    | .prj _ _ x => mentions c n v x
+    | .share _ => throw "sharing reference out of range"
+    | _ => pure false
+
+/-- The modes of a skeleton's arrows, outermost first: a type's leading ∀s, as `readSkel` reads
+them (through sharing references). -/
+def arrowModes : Skel → List (BinderMode × ResultMode)
+  | .arrow i _ r c => (i, r) :: arrowModes c
+  | _ => []
+
+/-- The modes of constructor `ci`'s field binders (its type's ∀s past its inductive's
+parameters), read as `readCtorFields` reads them. -/
+def Reading.ctorFieldModes (rd : Reading) (cl : Classifier) (ind : Ref) (ci : Nat) :
+    Except String (List AllMode) := do
+  let .member _ i := ind | throw "a constructor of no inductive"
+  let some indV := inductiveAt? rd.s ind | throw "a recursor's major premise is of no inductive"
+  let some ctor := indV.ctors[ci]? | throw "constructor index out of range"
+  let x ← rd.rcx cl ind
+  let ((alls, _), _) ← (inBlock x.rm (rootKey (rootBase x.c i + 1 + ci)) (do
+      let r ← readForalls x readFuel ctor.typ
+      let _ ← readSkel x readFuel r.2
+      pure r)).run {}
+  pure ((alls.drop indV.params.toNat).map (·.1))
+
+/-- **A raw recursor's rules against its inductive's constructors** (note 12 §2.1). The
+recursor's type's ∀s are its parameters, motives, minor premises, indices and major premise,
+all of the default mode; its inductive is the head of its major premise's type, and its rules
+are exactly that inductive's constructors (a mutual recursor takes the minor premises of every
+constructor of its block, and has rules only for its own inductive's). For rule `j`, of
+constructor `j`: its field count is the constructor's; its right-hand side, past
+`params + motives + minors + fields` λs (through sharing references), applies a minor premise
+`m` (the rule dispatches the minor its body applies, not the one at index `j`), and `m`'s
+telescope has at least the constructor's fields; each field the constructor's record writes
+erased is bound erased in `m`'s telescope, is passed as `m`'s argument at its own position, and
+is mentioned in no other argument of the body (the λs' domains are types, not read); the
+binders of `m`'s telescope past the fields (its induction hypotheses) are of the default mode.
+The pairing is decided from the records alone; nothing is assumed of the kernel's rules. -/
+def Reading.recRules (rd : Reading) (cl : Classifier) (r : Ref) : Except String Unit := do
+  let some (c, rr) := recursorAt? rd.s r | throw "no recursor at this reference"
+  let x ← rd.rcx cl r
+  let base := match r with
+    | .member _ i => rootBase c i
+    | _ => 0
+  let nP := rr.params.toNat
+  let nMot := rr.motives.toNat
+  let nMin := rr.minors.toNat
+  let ((alls, _), _) ← (inBlock x.rm (rootKey base) (do
+      let r ← readForalls x readFuel rr.typ
+      let _ ← readSkel x readFuel r.2
+      pure r)).run {}
+  unless alls.all (·.1.isDefault) do throw "a recursor's binder with a mode"
+  let some (_, _, majorTy) := alls[nP + nMot + nMin + rr.indices.toNat]? |
+    throw "a recursor's type has fewer binders than its counts"
+  let some ind := Ix.Kernel.Reader.headRef rd.s.store x.owner c majorTy |
+    throw "a recursor's major premise is of no inductive"
+  let some indV := inductiveAt? rd.s ind | throw "a recursor's major premise is of no inductive"
+  unless rr.rules.size == indV.ctors.size do throw "a recursor's rules are not its inductive's constructors"
+  for (rule, j) in rr.rules.zipIdx do
+    let some ctor := indV.ctors[j]? | throw "a recursor's rules are not its inductive's constructors"
+    let nf := rule.fields.toNat
+    unless nf == ctor.fields.toNat do throw s!"rule {j}: its field count is not its constructor's"
+    let fms ← rd.ctorFieldModes cl ind j
+    unless fms.length == nf do throw s!"rule {j}: its constructor's type has not its field count of binders"
+    let some body := stripLamsU c (nP + nMot + nMin + nf) rule.rhs |
+      throw s!"rule {j}: its right-hand side has fewer λs than its counts"
+    let (h, args) ← ixSpineU c readFuel body
+    let some w := varOf? c h | throw s!"rule {j}: its right-hand side applies no minor premise"
+    unless nf ≤ w && w < nf + nMin do throw s!"rule {j}: its right-hand side applies no minor premise"
+    let m := nMin - 1 - (w - nf)
+    let some (_, minorSkel, _) := alls[nP + nMot + m]? | throw s!"rule {j}: no minor premise {m}"
+    let tele := arrowModes minorSkel
+    unless nf ≤ tele.length do
+      throw s!"rule {j}: minor premise {m} has fewer binders than its constructor has fields"
+    for (fm, q) in fms.zipIdx do
+      unless fm.input == .erased do continue
+      unless (tele[q]?.map (·.1)) == some .erased do
+        throw s!"rule {j}: field {q} is erased in its constructor and not in minor premise {m}, which the rule dispatches"
+      let fv := nf - 1 - q
+      unless (args[q]?.bind (varOf? c)) == some fv do
+        throw s!"rule {j}: its erased field {q} is not passed to minor premise {m} at its own position"
+      for (a, p) in args.zipIdx do
+        if p != q then
+          if (← mentions c readFuel fv a) then
+            throw s!"rule {j}: its erased field {q} is mentioned other than at its own position"
+    for (i, res) in tele.drop nf do
+      unless i == .many && res == .shared do
+        throw s!"rule {j}: an induction hypothesis's binder in minor premise {m} has a mode"
+
+/-- The constant heads of a run term's spines, each with its number of arguments: a spine's head
+constant, and a constant standing alone (with none). A `Term.case` is a case shape fully
+applied, not a call of its constant. -/
+def constHeads : Nat → Term → Except String (List (Ref × Nat))
+  | 0, _ => throw "term too large"
+  | n + 1, t =>
+    match t with
+    | .app .. => do
+      let (h, args) := termSpine t
+      let mut out : List (Ref × Nat) ← match h with
+        | .const r _ => pure [(r, args.size)]
+        | _ => constHeads n h
+      for a in args do out := out ++ (← constHeads n a)
+      pure out
+    | .const r _ => pure [(r, 0)]
+    | .lam _ _ _ _ b => constHeads n b
+    | .letE _ _ v b => do pure ((← constHeads n v) ++ (← constHeads n b))
+    | .proj _ _ e _ => constHeads n e
+    | .case _ mj alts ex _ => do
+      let mut out ← constHeads n mj
+      for a in alts do out := out ++ (← constHeads n a)
+      for a in ex do out := out ++ (← constHeads n a)
+      pure out
+    | .irr | .var .. | .natLit _ | .strLit _ => pure []
+
+/-- **The raw recursors the run bodies call** meet `Reading.recRules`. -/
+def Reading.rawRecursors (rd : Reading) (cl : Classifier) (defs : Array (Ref × RunDef)) :
+    Except String Unit := do
+  let mut seen : Array Ref := #[]
+  for (_, d) in defs do
+    let .body _ _ _ _ t := d | continue
+    for (r, _) in ← constHeads readFuel t do
+      if (recursorAt? rd.s r).isSome && !seen.contains r then
+        seen := seen.push r
+        match rd.recRules cl r with
+        | .ok () => pure ()
+        | .error e => throw s!"a raw recursor a run body calls ({(repr r).pretty}): {e}"
+
 /-! ## The run program -/
 
 /-- The references of a record: its members, and its inductives' constructors. -/
@@ -1038,7 +1196,8 @@ def refsOf (a : Address) (c : Ixon.Constant) : Array Ref :=
     return out
   | _ => #[]
 
-/-- **The run program of a subject**, read with the class oracle `cl`. -/
+/-- **The run program of a subject**, read with the class oracle `cl`; every raw recursor its run
+bodies call meets `Reading.recRules` (V1). -/
 def readProg (s : Subject) (cl : Classifier) : Except String Prog := do
   let rd := Reading.make s
   rd.complete
@@ -1048,6 +1207,7 @@ def readProg (s : Subject) (cl : Classifier) : Except String Prog := do
     let some c := s.store a | continue
     for r in refsOf a c do
       defs := defs.push (r, ← rd.readDef cl rt true r)
+  rd.rawRecursors cl defs
   pure { defs, nat := roleRef? s .nat }
 
 
