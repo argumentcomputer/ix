@@ -131,10 +131,10 @@ private def claimRevealDefnFields (ixonEnv : Ixon.Env) : IO (String × ClaimWitn
   let .defn d := info
     | throw <| IO.userError "findConstWith returned non-Defn"
   let revealInfo : Ix.RevealConstantInfo :=
-    .defn (some d.kind) (some d.safety) none none none
+    .defn (some d.kind) (some d.safety) none none none (some d.asserts)
   let witness ← IO.ofExcept <| buildClaimWitness ixonEnv
-    (Ix.Claim.reveal comm revealInfo) {}
-  pure ("Claim Reveal Defn (kind+safety)", witness)
+    (Ix.Claim.reveal comm revealInfo none) {}
+  pure ("Claim Reveal Defn (kind+safety+asserts)", witness)
 
 private def claimRevealDefnExpr (ixonEnv : Ixon.Env) : IO (String × ClaimWitness) := do
   let (comm, info) ← findConstWithOrThrow ixonEnv "Defn"
@@ -143,23 +143,79 @@ private def claimRevealDefnExpr (ixonEnv : Ixon.Env) : IO (String × ClaimWitnes
     | throw <| IO.userError "findConstWith returned non-Defn"
   let typAddr := Address.blake3 (Ixon.runPut (Ixon.putExpr d.typ))
   let revealInfo : Ix.RevealConstantInfo :=
-    .defn none none none (some typAddr) none
+    .defn none none none (some typAddr) none none
   let witness ← IO.ofExcept <| buildClaimWitness ixonEnv
-    (Ix.Claim.reveal comm revealInfo) {}
+    (Ix.Claim.reveal comm revealInfo none) {}
   pure ("Claim Reveal Defn (typ Expr addr)", witness)
 
 private def claimRevealBinderModes : IO (String × ClaimWitness) := do
   let typ : Ixon.Expr := .all (.sort 0) (.lam (.sort 0) (.all (.sort 0) (.var 0)))
   -- the binders' modes, in the record's section
   let modes : Array Ixon.AllMode := #[⟨.unique, .unique⟩, ⟨.once, .shared⟩, ⟨.erased, .borrowed⟩]
-  let c : Ixon.Constant :=
-    ⟨.axio ⟨false, 0, typ⟩, #[], #[], #[.zero], #[⟨false, 0, 0, modes.map Ixon.BinderNode.never⟩]⟩
+  let binders : Array Ixon.BinderBlock := #[⟨false, 0, 0, modes.map Ixon.BinderNode.never⟩]
+  let c : Ixon.Constant := ⟨.axio ⟨false, 0, typ⟩, #[], #[], #[.zero], binders⟩
   let addr := Address.blake3 (Ixon.ser c)
   let ixonEnv := ({} : Ixon.Env).storeConst addr c
   let typAddr := Address.blake3 (Ixon.runPut (Ixon.putExpr typ))
+  let secAddr := Address.blake3 (Ixon.runPut (Ixon.putBinders binders))
   let witness ← IO.ofExcept <| buildClaimWitness ixonEnv
-    (Ix.Claim.reveal addr (.axio none none (some typAddr))) {}
-  pure ("Claim Reveal Expr (binder modes in the section)", witness)
+    (Ix.Claim.reveal addr (.axio none none (some typAddr)) (some secAddr)) {}
+  pure ("Claim Reveal Expr + binder sectionAddr", witness)
+
+private def revealModeCommitmentCases : Except String (Array Ix.AiurInvocation.Case) := do
+  let binders : Array Ixon.BinderBlock := #[
+    ⟨false, 0, 0, #[.zero ⟨.unique, .unique⟩]⟩,
+    ⟨false, 1, 0, #[.zero ⟨.once, .shared⟩]⟩]
+  let defConst : Ixon.Constant :=
+    ⟨.defn ⟨.defn, .safe, ⟨.noAlloc, true⟩, 0, .all (.sort 0) (.var 0), .lam (.sort 0) (.var 0)⟩,
+     #[], #[], #[.zero], binders⟩
+  let defAddr := Address.blake3 (Ixon.ser defConst)
+  let secAddr := Address.blake3 (Ixon.runPut (Ixon.putBinders binders))
+  let wrongSecAddr := Address.blake3 "wrong-binders".toUTF8
+
+  let ctor0 : Ixon.Constructor :=
+    { isUnsafe := false, lvls := 0, cidx := 0, params := 0, fields := 2
+      fieldModes := .inherited, typ := .sort 0 }
+  let ctor1 : Ixon.Constructor :=
+    { isUnsafe := false, lvls := 0, cidx := 1, params := 0, fields := 2
+      fieldModes := Ixon.FieldModes.ofArray #[.inherited, .shared], typ := .sort 0 }
+  let indInfo : Ixon.Inductive :=
+    { isUnsafe := false, lvls := 0, params := 0, indices := 0
+      typ := .sort 0, ctors := #[ctor0, ctor1] }
+  let mutConst : Ixon.Constant :=
+    ⟨.muts #[.indc indInfo, .defn ⟨.defn, .safe, ⟨.noRc, true⟩, 0, .sort 0, .sort 0⟩],
+     #[], #[], #[.zero], #[]⟩
+  let mutAddr := Address.blake3 (Ixon.ser mutConst)
+  let env := ({} : Ixon.Env).storeConst defAddr defConst |>.storeConst mutAddr mutConst
+
+  let okDef ← buildClaimWitness env
+    (.reveal defAddr (.defn none none none none none (some ⟨.noAlloc, true⟩)) (some secAddr))
+  let okDefNoBinders ← buildClaimWitness env
+    (.reveal defAddr (.defn none none none none none (some ⟨.noAlloc, true⟩)) none)
+  let badDefAsserts ← buildClaimWitness env
+    (.reveal defAddr (.defn none none none none none (some ⟨.noRc, true⟩)) none)
+  let badBinders ← buildClaimWitness env
+    (.reveal defAddr (.defn none none none none none none) (some wrongSecAddr))
+  let okMutModes ← buildClaimWitness env (.reveal mutAddr
+    (.muts #[(0, .indc none none none none none
+      (some #[(0, { fieldModes := some #[] }),
+              (1, { fieldModes := some #[.inherited, .shared] })])),
+      (1, .defn none none none none none (some ⟨.noRc, true⟩))])
+    (some (Address.blake3 (Ixon.runPut (Ixon.putBinders #[])))))
+  let badCtorInherited ← buildClaimWitness env (.reveal mutAddr
+    (.muts #[(0, .indc none none none none none
+      (some #[(0, { fieldModes := some #[.inherited, .inherited] })]))]) none)
+  let badCtorListed ← buildClaimWitness env (.reveal mutAddr
+    (.muts #[(0, .indc none none none none none
+      (some #[(1, { fieldModes := some #[.shared, .inherited] })]))]) none)
+  return #[
+    claimCase "Reveal Defn asserts + binders=some" okDef,
+    claimCase "Reveal Defn asserts + binders=none" okDefNoBinders,
+    claimCase "Reveal rejects mismatched DefAsserts" badDefAsserts false,
+    claimCase "Reveal rejects mismatched binder sectionAddr" badBinders false,
+    claimCase "Reveal Muts constructor fieldModes + MutDefn asserts + empty binders" okMutModes,
+    claimCase "Reveal rejects non-empty array for all-inherited constructor fieldModes" badCtorInherited false,
+    claimCase "Reveal rejects mismatched constructor fieldModes" badCtorListed false]
 
 private def claimRevealCPrj (ixonEnv : Ixon.Env) : IO (String × ClaimWitness) := do
   let (comm, info) ← findConstWithOrThrow ixonEnv "CPrj"
@@ -169,7 +225,7 @@ private def claimRevealCPrj (ixonEnv : Ixon.Env) : IO (String × ClaimWitness) :
   let revealInfo : Ix.RevealConstantInfo :=
     .cPrj (some p.idx) (some p.cidx) (some p.block)
   let witness ← IO.ofExcept <| buildClaimWitness ixonEnv
-    (Ix.Claim.reveal comm revealInfo) {}
+    (Ix.Claim.reveal comm revealInfo none) {}
   pure ("Claim Reveal CPrj (all fields)", witness)
 
 private def claimContains : IO (String × ClaimWitness) := do
@@ -196,6 +252,7 @@ def main (args : List String) : IO Unit := do
   IO.FS.writeBinFile (path ++ ".ixe") (← IO.ofExcept (Ixon.serEnv fixture))
   IO.FS.writeBinFile (path ++ ".controller.ixe") (← IO.ofExcept (Ixon.serEnv (← IO.ofExcept controllerEnv)))
   let mut cases := (← IO.ofExcept evalCases) ++ (← IO.ofExcept assumptionCases)
+    ++ (← IO.ofExcept revealModeCommitmentCases)
   for build in [claimCheckWithAsm,
       claimCheckEnvFull, claimCheckEnvFrontier,
       claimRevealDefnFields, claimRevealDefnExpr,

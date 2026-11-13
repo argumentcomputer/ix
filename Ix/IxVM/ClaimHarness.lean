@@ -447,7 +447,7 @@ def buildClaimWitness (env : Ixon.Env) (claim : Ix.Claim)
     ioBuffer ← seedTreeAt root trees ioBuffer
     ioBuffer ← seedAxioms ctx ioBuffer
     ioBuffer ← seedAsm asm ioBuffer
-  | .reveal comm _info =>
+  | .reveal comm _info _binders =>
     ioBuffer := addEntries env (closureFrom env comm).contains ioBuffer
   | .contains tree _target =>
     ioBuffer ← seedTreeAt tree trees ioBuffer

@@ -151,7 +151,7 @@ def run : IO UInt32 := do
       (!mentions o "refused:") o
     -- each kind that states no typing
     let kinds : List (String × Ix.Claim) := [
-      ("reveal", .reveal (addr "commitment") (.axio none none none)),
+      ("reveal", .reveal (addr "commitment") (.axio none none none) none),
       ("contains", .contains (addr "tree") (addr "constant")),
       ("binding", .binding spec ctx.binding)]
     for (kind, claim) in kinds do

@@ -201,8 +201,9 @@ def statement (claim : Ix.Claim) (bindingDischarged : Bool := false)
     | .checkEnv ctx r asm =>
       ("every constant of an environment is well-typed",
         s!"the constants of the canonical tree with root {r}", typing ctx asm)
-    | .reveal comm info =>
-      ("fields of a committed constant", s!"the constant committed as {comm}: {repr info}",
+    | .reveal comm info binders =>
+      ("fields of a committed constant",
+        s!"the constant committed as {comm}: {repr info}, binders {binders}",
         ["none; the claim states no typing"])
     | .contains tree c =>
       ("membership in a merkle tree", s!"the leaf {c} of the tree with root {tree}",

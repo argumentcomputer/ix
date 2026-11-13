@@ -408,7 +408,10 @@ fun V x =>
     V.HoldsTree root ∧
       ∀ (leaves : List Address),
         V.LeavesAt root leaves → leaves ≠ [] ∧ IxVM.Refinement.TypingIn V ctx (fun x => x ∈ leaves) asm
-  | Ix.Claim.reveal comm info => ∃ c, Ix.Cert.recordAt V.env comm = some c ∧ IxVM.Refinement.RevealLE info c.info
+  | Ix.Claim.reveal comm info binders =>
+    ∃ c,
+      Ix.Cert.recordAt V.env comm = some c ∧
+        IxVM.Refinement.RevealLE info c.info ∧ IxVM.Refinement.OptEq binders (IxVM.Refinement.sectionAddr c.binders)
   | Ix.Claim.contains tree a => V.HoldsTree tree ∧ ∀ (leaves : List Address), V.LeavesAt tree leaves → a ∈ leaves
   | Ix.Claim.catalog members => False
   | Ix.Claim.binding spec b => IxVM.Refinement.BindingIn V spec b
@@ -431,7 +434,7 @@ fun V x =>
   | Ix.Claim.checkEnv ctx root asm =>
     V.TypingCovers ctx asm ∧
       V.HoldsTree root ∧ ∀ (leaves : List Address), V.LeavesAt root leaves → ∀ a ∈ leaves, V.Stores a
-  | Ix.Claim.reveal comm info => V.Stores comm
+  | Ix.Claim.reveal comm info binders => V.Stores comm
   | Ix.Claim.contains tree const => V.HoldsTree tree
   | Ix.Claim.binding spec b => V.Closed ∧ (V.binding? b).isSome = true
   | Ix.Claim.catalog members => True
@@ -783,7 +786,7 @@ fun V output =>
 info: def IxVM.Refinement.RevealLE : Ix.RevealConstantInfo → Ixon.ConstantInfo → Prop :=
 fun x x_1 =>
   match x, x_1 with
-  | Ix.RevealConstantInfo.defn k s l t v, Ixon.ConstantInfo.defn d => IxVM.Refinement.RevealDefnLE k s l t v d
+  | Ix.RevealConstantInfo.defn k s l t v a, Ixon.ConstantInfo.defn d => IxVM.Refinement.RevealDefnLE k s l t v a d
   | Ix.RevealConstantInfo.recr k u l p ix mo mi t rs, Ixon.ConstantInfo.recr r =>
     IxVM.Refinement.RevealRecrLE k u l p ix mo mi t rs r
   | Ix.RevealConstantInfo.axio u l t, Ixon.ConstantInfo.axio a =>
@@ -811,7 +814,7 @@ fun x x_1 =>
 info: def IxVM.Refinement.RevealMutLE : Ix.RevealMutConstInfo → Ixon.MutConst → Prop :=
 fun x x_1 =>
   match x, x_1 with
-  | Ix.RevealMutConstInfo.defn k s l t v, Ixon.MutConst.defn d => IxVM.Refinement.RevealDefnLE k s l t v d
+  | Ix.RevealMutConstInfo.defn k s l t v a, Ixon.MutConst.defn d => IxVM.Refinement.RevealDefnLE k s l t v a d
   | Ix.RevealMutConstInfo.indc u l p ix t cs, Ixon.MutConst.indc i => IxVM.Refinement.RevealIndcLE u l p ix t cs i
   | Ix.RevealMutConstInfo.recr k u l p ix mo mi t rs, Ixon.MutConst.recr r =>
     IxVM.Refinement.RevealRecrLE k u l p ix mo mi t rs r
@@ -822,13 +825,14 @@ fun x x_1 =>
 
 /--
 info: def IxVM.Refinement.RevealDefnLE : Option Ix.DefKind →
-  Option Ix.DefinitionSafety → Option UInt64 → Option Address → Option Address → Ixon.Definition → Prop :=
-fun kind safety lvls typ value d =>
+  Option Ix.DefinitionSafety →
+    Option UInt64 → Option Address → Option Address → Option Ixon.DefAsserts → Ixon.Definition → Prop :=
+fun kind safety lvls typ value asserts d =>
   IxVM.Refinement.OptEq kind d.kind ∧
     IxVM.Refinement.OptEq safety d.safety ∧
       IxVM.Refinement.OptEq lvls d.lvls ∧
         IxVM.Refinement.OptEq typ (IxVM.Refinement.exprAddr d.typ) ∧
-          IxVM.Refinement.OptEq value (IxVM.Refinement.exprAddr d.value)
+          IxVM.Refinement.OptEq value (IxVM.Refinement.exprAddr d.value) ∧ IxVM.Refinement.OptEq asserts d.asserts
 -/
 #guard_msgs in
 #print IxVM.Refinement.RevealDefnLE
@@ -880,7 +884,9 @@ fun info c =>
     IxVM.Refinement.OptEq info.lvls c.lvls ∧
       IxVM.Refinement.OptEq info.cidx c.cidx ∧
         IxVM.Refinement.OptEq info.params c.params ∧
-          IxVM.Refinement.OptEq info.fields c.fields ∧ IxVM.Refinement.OptEq info.typ (IxVM.Refinement.exprAddr c.typ)
+          IxVM.Refinement.OptEq info.fields c.fields ∧
+            IxVM.Refinement.OptEq info.typ (IxVM.Refinement.exprAddr c.typ) ∧
+              IxVM.Refinement.OptEq info.fieldModes c.fieldModes.toArray
 -/
 #guard_msgs in
 #print IxVM.Refinement.RevealConstructorLE
@@ -903,6 +909,13 @@ fun e => Address.blake3Pure (Ixon.runPut (Ixon.putExpr e))
 -/
 #guard_msgs in
 #print IxVM.Refinement.exprAddr
+
+/--
+info: def IxVM.Refinement.sectionAddr : Array Ixon.BinderBlock → Address :=
+fun bs => Address.blake3Pure (Ixon.runPut (Ixon.putBinders bs))
+-/
+#guard_msgs in
+#print IxVM.Refinement.sectionAddr
 
 /--
 info: def IxVM.Refinement.OptEq : {α : Type} → Option α → α → Prop :=

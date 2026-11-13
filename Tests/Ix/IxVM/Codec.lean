@@ -1,3 +1,4 @@
+import Ix.Commit
 import Tests.Ix.IxonV4
 import Tests.Ix.ResourceAddressed
 import Tests.Ix.IxVM.TagN
@@ -109,7 +110,7 @@ def claimCases (r : Runner) : IO Unit := do
   for (name, original) in [
       ("check", Ix.Claim.check ctx validTarget none),
       ("check-env", .checkEnv ctx tree.root none),
-      ("reveal", .reveal validTarget (.defn none none none (some revealedType) none)),
+      ("reveal", .reveal validTarget (.defn none none none (some revealedType) none none) none),
       ("contains", .contains tree.root validTarget)] do
     let (cenv, claim, ctrees) ← IO.ofExcept (withRecordSections env original trees)
     let witness ← IO.ofExcept (IxVM.ClaimHarness.buildClaimWitness cenv claim ctrees)
@@ -156,6 +157,134 @@ def claimCases (r : Runner) : IO Unit := do
       add "resource-retired" (replaceClaimBytes witness
         (ByteArray.mk #[0xE8, 0x01, Ixon.Env.OBJECT_FORMAT, 2] ++ tree.root.hash ++ tree.root.hash)) false
 
+/-- Reveal mode-commitment cases: definition `asserts`, constructor
+`fieldModes` (both all-inherited `#[]` and listed), `binders` section address
+(`none` and `some`), and malformed wire bytes. -/
+def revealModeCases (r : Runner) : IO Unit := do
+  let add (label : String) (witness : IxVM.ClaimHarness.ClaimWitness) (accept : Bool)
+      (rejectsWith : Option String := none) : IO Unit :=
+    r.add { label := s!"reveal mode {label}", accept, rejectsWith, witness }
+
+  -- 1. Standalone definition with non-default `asserts` and moded `binders`.
+  let defBinders : Array Ixon.BinderBlock := #[
+    ⟨false, 0, 0, #[.zero ⟨.unique, .unique⟩]⟩,
+    ⟨false, 1, 0, #[.zero ⟨.once, .shared⟩]⟩]
+  let defConst : Ixon.Constant :=
+    ⟨.defn ⟨.defn, .safe, ⟨.noAlloc, true⟩, 0, .all (.sort 0) (.var 0), .lam (.sort 0) (.var 0)⟩,
+     #[], #[], #[.zero], defBinders⟩
+  let (envDef, defAddr) := Exploits.storeAt {} defConst
+  let envDef ← IO.ofExcept (bare envDef)
+  let defSecAddr := Ix.Commit.sectionAddr defBinders
+  let wrongAddr := Address.blake3 "wrong-section".toUTF8
+
+  for (label, claim, accept, reason) in [
+      ("defn-asserts-binders-none",
+       Ix.Claim.reveal defAddr (.defn none none none none none (some ⟨.noAlloc, true⟩)) none,
+       true, none),
+      ("defn-asserts-binders-some",
+       .reveal defAddr (.defn none none none none none (some ⟨.noAlloc, true⟩)) (some defSecAddr),
+       true, none),
+      ("defn-wrong-alloc",
+       .reveal defAddr (.defn none none none none none (some ⟨.noRc, true⟩)) none,
+       false, some "claimed definition asserts != real"),
+      ("defn-wrong-bounded-stack",
+       .reveal defAddr (.defn none none none none none (some ⟨.noAlloc, false⟩)) none,
+       false, some "claimed definition asserts != real"),
+      ("defn-wrong-binders-addr",
+       .reveal defAddr (.defn none none none none none none) (some wrongAddr),
+       false, some "claimed binder section hash != hash of the real section")] do
+    let w ← IO.ofExcept (IxVM.ClaimHarness.buildClaimWitness envDef claim)
+    add label w accept reason
+
+  -- 2. Empty binder-data section (`#[]`) committed via `sectionAddr #[]`.
+  let axConst : Ixon.Constant := ⟨.axio ⟨false, 0, .sort 0⟩, #[], #[], #[.zero], #[]⟩
+  let (envAx, axAddr) := Exploits.storeAt {} axConst
+  let envAx ← IO.ofExcept (bare envAx)
+  let emptySecAddr := Ix.Commit.sectionAddr #[]
+  add "empty-binders-some"
+    (← IO.ofExcept (IxVM.ClaimHarness.buildClaimWitness envAx
+      (.reveal axAddr (.axio none none none) (some emptySecAddr)))) true
+  add "empty-binders-mismatch"
+    (← IO.ofExcept (IxVM.ClaimHarness.buildClaimWitness envAx
+      (.reveal axAddr (.axio none none none) (some defSecAddr)))) false
+    (some "claimed binder section hash != hash of the real section")
+
+  -- 3. Mutual block with inductive constructors (ctor 0 inherited `#[]`,
+  --    ctor 1 listed `#[.inherited, .shared]`) and a mutual definition with `asserts`.
+  let ctor0 : Ixon.Constructor :=
+    { isUnsafe := false, lvls := 0, cidx := 0, params := 0, fields := 2
+      fieldModes := .inherited, typ := .sort 0 }
+  let ctor1 : Ixon.Constructor :=
+    { isUnsafe := false, lvls := 0, cidx := 1, params := 0, fields := 2
+      fieldModes := Ixon.FieldModes.ofArray #[.inherited, .shared], typ := .sort 0 }
+  let indInfo : Ixon.Inductive :=
+    { isUnsafe := false, lvls := 0, params := 0, indices := 0
+      typ := .sort 0, ctors := #[ctor0, ctor1] }
+  let mutDef : Ixon.Definition := ⟨.defn, .safe, ⟨.noRc, true⟩, 0, .sort 0, .sort 0⟩
+  let mutConst : Ixon.Constant :=
+    ⟨.muts #[.indc indInfo, .defn mutDef], #[], #[], #[.zero], #[]⟩
+  let (envMut, mutAddr) := Exploits.storeAt {} mutConst
+  let envMut ← IO.ofExcept (bare envMut)
+  let ctorReveal (cidx : UInt64) (modes : Array Ixon.FieldMode) : Ix.RevealConstantInfo :=
+    .muts #[(0, .indc none none none none none (some #[(cidx, { fieldModes := some modes })]))]
+
+  for (label, info, accept, reason) in [
+      ("ctor-inherited-empty", ctorReveal 0 #[], true, none),
+      ("ctor-inherited-rejects-explicit-inherited", ctorReveal 0 #[.inherited, .inherited],
+       false, some "KernelClaim::check_field_modes"),
+      ("ctor-inherited-rejects-shared", ctorReveal 0 #[.inherited, .shared],
+       false, some "KernelClaim::check_field_modes"),
+      ("ctor-listed-exact", ctorReveal 1 #[.inherited, .shared], true, none),
+      ("ctor-listed-rejects-empty", ctorReveal 1 #[],
+       false, some "KernelClaim::check_field_modes"),
+      ("ctor-listed-rejects-swapped", ctorReveal 1 #[.shared, .inherited],
+       false, some "claimed constructor field mode != real"),
+      ("ctor-listed-rejects-short", ctorReveal 1 #[.inherited],
+       false, some "KernelClaim::check_field_modes"),
+      ("ctor-listed-rejects-long", ctorReveal 1 #[.inherited, .shared, .inherited],
+       false, some "KernelClaim::check_field_modes"),
+      ("mut-defn-asserts-exact",
+       .muts #[(1, .defn none none none none none (some ⟨.noRc, true⟩))], true, none),
+      ("mut-defn-asserts-wrong",
+       .muts #[(1, .defn none none none none none (some ⟨.unrestricted, true⟩))],
+       false, some "claimed definition asserts != real")] do
+    let w ← IO.ofExcept (IxVM.ClaimHarness.buildClaimWitness envMut (.reveal mutAddr info none))
+    add label w accept reason
+
+  -- 4. Raw malformed reveal claim wire bytes must be rejected by the circuit.
+  let baseDefWitness ← IO.ofExcept (IxVM.ClaimHarness.buildClaimWitness envDef
+    (.reveal defAddr (.defn none none none none none none) none))
+  let baseMutWitness ← IO.ofExcept (IxVM.ClaimHarness.buildClaimWitness envMut
+    (.reveal mutAddr (.muts #[]) none))
+  let defHeader : ByteArray := ByteArray.mk #[0xE6, Ixon.Env.OBJECT_FORMAT, 0x00] ++ defAddr.hash
+  let mutHeader : ByteArray := ByteArray.mk #[0xE6, Ixon.Env.OBJECT_FORMAT, 0x00] ++ mutAddr.hash
+  for (label, baseW, rawBytes, reason) in [
+      ("wire-defn-mask-64", baseDefWitness,
+       defHeader ++ ByteArray.mk #[0x00, 0x40, 0x00],
+       "claim: reveal defn mask out of range"),
+      ("wire-defn-asserts-3", baseDefWitness,
+       defHeader ++ ByteArray.mk #[0x00, 0x20, 0x03, 0x00],
+       "KernelClaim::get_opt_def_asserts_masked"),
+      ("wire-defn-asserts-7", baseDefWitness,
+       defHeader ++ ByteArray.mk #[0x00, 0x20, 0x07, 0x00],
+       "KernelClaim::get_opt_def_asserts_masked"),
+      ("wire-defn-asserts-8", baseDefWitness,
+       defHeader ++ ByteArray.mk #[0x00, 0x20, 0x08, 0x00],
+       "KernelClaim::get_opt_def_asserts_masked"),
+      ("wire-binders-opt-tag-2", baseDefWitness,
+       defHeader ++ ByteArray.mk #[0x00, 0x00, 0x02],
+       "KernelClaim::get_opt_addr"),
+      ("wire-mut-defn-mask-64", baseMutWitness,
+       mutHeader ++ ByteArray.mk #[0x08, 0x01, 0x01, 0x01, 0x00, 0x40, 0x00],
+       "claim: reveal mut defn mask out of range"),
+      ("wire-ctor-mask-128", baseMutWitness,
+       mutHeader ++ ByteArray.mk #[0x08, 0x01, 0x01, 0x00, 0x01, 0x20, 0x01, 0x00, 0x80, 0x00, 0x00],
+       "claim: reveal constructor mask out of range"),
+      ("wire-ctor-field-mode-2", baseMutWitness,
+       mutHeader ++ ByteArray.mk #[0x08, 0x01, 0x01, 0x00, 0x01, 0x20, 0x01, 0x01, 0x40, 0x02, 0x00, 0x02, 0x00],
+       "IxonDeserialize::get_field_mode_list")] do
+    add label (replaceClaimBytes baseW rawBytes) false (some reason)
+
 def run : IO UInt32 := do
   let golden ← Tests.IxonV4.readExprCases
   withRunner "ixvm-codec" fun r => do
@@ -169,5 +298,6 @@ def run : IO UInt32 := do
         | throw <| IO.userError s!"invalid declaration fixture hex: {name}"
       for build in encodingCases s!"declaration {name}" bytes differential do r.build (build ())
     claimCases r
+    revealModeCases r
 
 end Tests.Ix.IxVM.Codec
