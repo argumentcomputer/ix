@@ -15,7 +15,7 @@ private def ensure (ok : Bool) (message : String) : IO Unit :=
   unless ok do throw (IO.userError message)
 
 private def verify (source : Env) (root : Address) : IO Unit := do
-  let limits := _root_.Ix.Resource.typingLimits
+  let limits := _root_.Ix.Typing.typingLimits
   let before ← IO.ofExcept ((prepareRecords source limits).mapError toString)
   let original := _root_.Ix.Kernel.Admission.streamContext Address.admissionHash
     before.prepared.table before.prepared.pre before.constants before.prepared.blobs before.prepared.hints.lookup
@@ -59,7 +59,7 @@ private def checks : IO Nat := do
   verify source root
   -- A missing binding stays a legacy transport possibility, never a bound
   -- certificate. No defaults are supplied to the actual consumer.
-  ensure (!(check { source with roleBinding := none } _root_.Ix.Resource.typingLimits).isOk)
+  ensure (!(check { source with roleBinding := none } _root_.Ix.Typing.typingLimits).isOk)
     "missing binding acquired a certified artifact result"
   -- A canonical wire table with a different specification version is still
   -- transportable. Packing success must not stand in for semantic admission.
@@ -71,7 +71,7 @@ private def checks : IO Nat := do
   for bytes in packages do
     let packed ← IO.ofExcept (deEnv bytes)
     ensure (packed.roleBinding == wrong.roleBinding) "packing normalized a wrong-version binding"
-    ensure (match check packed _root_.Ix.Resource.typingLimits with
+    ensure (match check packed _root_.Ix.Typing.typingLimits with
       | .error (.binding _) => true | _ => false) "wire-valid binding bypassed semantic admission"
   let some (proof, _) := generated.evidence[0]? | throw (IO.userError "fixture has no proof")
   ensure (source.consts.contains proof) "missing-proof control is vacuous"

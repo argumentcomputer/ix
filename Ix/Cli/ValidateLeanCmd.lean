@@ -3,6 +3,7 @@ public import Cli
 public import Ix.Common
 public import Ix.CanonM
 public import Ix.CompileM
+public import Ix.ModeCheck
 public import Ix.CompileDriver
 public import Ix.CompileCertified
 public import Ix.DecompileM
@@ -200,7 +201,7 @@ def runValidateLeanCmd (p : Cli.Parsed) : IO UInt32 := do
     let compileWorkers := ((p.flag? "workers").map (·.as! Nat)).getD 32
     let t0 ← IO.monoMsNow
     match ← Ix.CompileM.compileAndFinalize leanEnv constList compileWorkers
-        (allowPartial := true) with
+        (allowPartial := true) (modeCheck := Ix.ModeCheck.checkArtifact) with
     | .error e =>
       phases ← pushPhase phases ("1. Compile (pure-Lean pipeline)",
         .failed s!"pure-Lean pipeline: {e}")

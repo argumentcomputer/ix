@@ -1,6 +1,7 @@
 module
 
 public import Ix.CompileCertified
+public import Ix.ModeCheck
 
 /-!
   Contract pipeline test suite (`Tests.ContractPipeline`).
@@ -37,7 +38,8 @@ def get (label : String) (r : Except String α) : IO α :=
 def compileInput (input : CompileInput) : IO (Except String Ix.CompileM.CertifiedOut) := do
   match input.prepare >>= fun p => (Ix.CompileM.checkPreparedSource p).map (p, ·) with
   | .error e => return .error e
-  | .ok (prepared, annotated) => Ix.CompileM.compileCertifiedPrepared prepared annotated 1
+  | .ok (prepared, annotated) =>
+    Ix.CompileM.compileCertifiedPrepared prepared annotated 1 (modeCheck := Ix.ModeCheck.checkArtifact)
 
 def run : IO Unit := do
   -- The ordinary contract: the Lean and certified compilers agree.
@@ -48,11 +50,7 @@ def run : IO Unit := do
   unless (lean.env.consts.toList.map Prod.fst).mergeSort (fun a b => Address.cmpBytes a b != .gt) ==
       (certEnv.consts.toList.map Prod.fst).mergeSort (fun a b => Address.cmpBytes a b != .gt) do
     throw <| IO.userError "contract pipeline: Lean/certified address sets differ"
-  let profile : Ix.Resource.Profile := {}
-  let _ ← get "explicit profile" (Ix.Resource.validate lean.env profile)
-  let malformedRejected := (Ix.Resource.Profile.ofBytes (profile.bytes.push 0)).toOption.isNone
-  unless malformedRejected do
-    throw <| IO.userError "contract pipeline: malformed profile bytes accepted"
+  let _ ← get "mode checking" (Ix.ModeCheck.checkArtifact lean.env)
   -- An annotated contract is refused before emission.
   let annotated ← get "annotated input" ((input .linear .localShared .localShared).mapError toString)
   match ← compileInput annotated with
@@ -61,7 +59,7 @@ def run : IO Unit := do
     -- the IO driver records the refused constant as a failure and then refuses
     -- the incomplete closure
     unless (e.splitOn "annotated source is refused").length > 1 ||
-        e == "resource compilation requires the complete requested closure" do
+        e == "mode checking requires the complete requested closure" do
       throw <| IO.userError s!"contract pipeline: annotated source: unexpected error {e}"
   IO.println "Contract pipeline: an ordinary contract compiles to the same addresses through both \
     compilers; annotated source is refused before emission"

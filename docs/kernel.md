@@ -147,8 +147,7 @@ record's is BLAKE3 of its complete serialization (`Ixon.serConstant`, the
 bytes an `.ixe` stores for it after its length prefix), a projection
 record's likewise, and a blob's is BLAKE3 of its payload. The compiler
 addresses them so (`Address::hash` over `Constant::put`), the `.ixe` loaders
-verify them so, and the resource adapter commits them so
-(`Ix.Resource.Addressed.commit`).
+verify them so.
 
 Each entry has one runnable module, which holds definitions only, and its
 theorems and audit beside it: `IxC/Kernel/Admission.lean` (the entry, its
@@ -1097,8 +1096,7 @@ interleaved:
    or the specification digest; `lake exe ix codegen --check` must pass. The
    other IxVM modules (`IxVM/IxVM/Source/*.lean`) are source, written by hand.
 4. **Fixtures.** `lake exe ixon-v4-tests --export-fixtures`
-   writes `claims.tsv` and `addressed.tsv`
-   to `$IX_IXON_V4_DIR`; copy them into `Tests/Fixtures/ixon-v4/` after
+   writes `claims.tsv` to `$IX_IXON_V4_DIR`; copy it into `Tests/Fixtures/ixon-v4/` after
    `lake exe ixon-v4-tests` validates them. If they moved, so did the
    catalog claim digest (`Tests/Ix/Claim.lean`, `crates/ixon/src/proof.rs`);
    re-pin it from the serializers' output. The independent expression vectors

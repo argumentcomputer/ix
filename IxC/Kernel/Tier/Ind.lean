@@ -9,8 +9,8 @@ public import IxC.Kernel.Inductives.StructParts
 # The typing tier: an inductive block, typing only (M7 Q1)
 
 An unsafe inductive block has no model, and the front ends decline it.
-Resource typing still types such a block as Lean's kernel would, outside any
-theorem (`Ix.Resource.Typing`, its uncertified part). `indC` checks such a
+The artifact typing still types such a block as Lean's kernel would, outside
+any theorem (`Ix.Typing`, its uncertified part). `indC` checks such a
 block **typing only**, at the index `fe` of the environment it is installed
 over:
 

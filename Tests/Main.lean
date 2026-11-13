@@ -67,6 +67,7 @@ import Tests.Ix.Cert.Statement
 import Tests.Ix.InitStd
 import Tests.RoleTableWire
 import Tests.Ix.ResourceHints
+import Tests.Ix.ResourceModes
 import Tests.Ix.Kernel.RecordCheck
 import Tests.Ix.Kernel.CheckLeanTargets
 import Tests.Ix.Kernel.CheckLeanCli
@@ -163,6 +164,8 @@ def registry : List Entry := [
   .suite "kernel-tier-ind" .primary Tests.Ix.Kernel.TierInd.suite,
   -- the resource validator's typing half on the compiled fixtures
   .suite "resource-hints" .primary Tests.ResourceHints.suite,
+  -- the resource-mode model (`runR`) and the uncertified mode checker on small run programs
+  .suite "resource-modes" .primary Tests.ResourceModes.suite,
   -- Source mode's evidence from the committed bundle (`Ix.RoleEvidence.bundleEvidence`), on
   -- the well-founded operations' Init closure without the certificate theorems
   .suite "kernel-bundle-evidence" .primary Tests.Ix.Kernel.BundleEvidence.suite,
@@ -350,6 +353,7 @@ def required : List (String × String) := [
   ("kernel-reader-roundtrip", "primary"),
   ("kernel-bundle-evidence", "primary"),
   ("resource-hints", "primary"),
+  ("resource-modes", "primary"),
   ("aiur-statistics", "primary"),
   ("compiler-reports", "primary"),
   ("ground-unit", "primary"),

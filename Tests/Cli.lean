@@ -109,7 +109,7 @@ private def Tests.Cli.testCompileContracts : IO Unit := do
           throw <| IO.userError s!"CLI emitted an artifact for annotated source: {name} {flags}"
         let said := result.stderr ++ result.stdout
         unless (said.splitOn "annotated source is refused").length > 1 ||
-            (said.splitOn "resource compilation requires the complete requested closure").length > 1 do
+            (said.splitOn "mode checking requires the complete requested closure").length > 1 do
           throw <| IO.userError s!"CLI refused {name} {flags} for another reason:\n{result.stderr}\n{result.stdout}"
     IO.println "CLI: annotated source, local and imported, refused in every output mode"
   finally

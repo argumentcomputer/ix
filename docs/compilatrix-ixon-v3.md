@@ -39,19 +39,18 @@ See the [schema](Ixon-v4.md), [wire format](Ixon.md),
 
 ## Validation contract
 
-`Ix.Resource.validate` and Rust `ix_kernel::resource::validate` check canonical
-addressed bytes, reference closure, resource rules, and erased Lean typing.
-`makeClaim` and `checkClaim` additionally bind the complete constant-set root
-and the canonical profile address. Profile identity includes assumptions,
-shareable representations, selection behavior, literal pins, and checker limits.
-Optional metadata and cached materializations grant no semantic facts.
+The resource-v1 validator and its claims are retired: `ix compile` runs the
+uncertified mode checker (`Ix.ModeCheck.checkArtifact`, see
+[resource checking](resource-checking.md)) on annotated source, and no claim
+carries its verdict. Optional metadata and cached materializations grant no
+semantic facts.
 
 | Interface | Status |
 | --- | --- |
 | Lean/Rust codecs, equality, hashing, sharing, FFI, text | V4 (TagN, canonical sharing); text grammar version 3 |
-| Lean/Rust source compilation | Resource-checked annotated definitions and admitted interfaces |
+| Lean source compilation | Mode-checked annotated definitions (uncertified checker) |
 | Decompilation | Reconstructs committed contracts; unsupported metadata rewrites reject |
-| Native resource admission and Resource claims | Implemented with explicit profiles |
+| Resource claims | Retired (resource-v1) |
 | IxVM codecs and structural revelation | Read and write v4 (TagN); preserve every contract field |
 | IxVM Check/CheckEnv | Erased-lean-v1; contracts do not strengthen that statement |
 | IxVM Resource proofs | Explicitly unsupported |
@@ -60,7 +59,7 @@ Optional metadata and cached materializations grant no semantic facts.
 Annotated inductive/constructor/recursor generation and nonidentity compiler
 surgery reject before emission. The native projection fragment requires closed,
 transparent fields with many usage. See [resource checking](resource-checking.md)
-for higher-order capture, recursion, loan, and normalization limits.
+for the mode model and the checker.
 
 ## Fixture package
 
@@ -70,32 +69,25 @@ The [fixture directory](../Tests/Fixtures/ixon-v4/) contains:
 | --- | --- |
 | `expressions.txt` | Independently authored canonical expression bytes and addresses |
 | `text.tsv` | All binder/arrow modes and both let kinds |
-| `addressed.tsv` | Addressed declarations and a canonical profile |
 | `claims.tsv` | Claim bytes and BLAKE3 digests for every variant |
 | `primitives.tsv` | Regenerated v4 primitive identities |
 | `reject-parity.txt` | Byte strings every Lean and Rust reader of their kind refuses, with accepted controls |
 | `role-table.tsv` | Role-table wire vectors |
 
-Changing any committed contract, subject, or profile must invalidate the
-associated identity.
+Changing any committed contract or subject must invalidate the associated identity.
 
 Run `lake exe ixon-v4-tests` from the repository root for codec, FFI, source,
-resource, decompiler, catalog, and VM checks. The generated files
-(`claims.tsv` and `addressed.tsv`) must equal their
-producers' output byte for byte. Scratch files live in `$IX_IXON_V4_DIR`
+decompiler, catalog, and VM checks. The generated file `claims.tsv` must equal
+its producer's output byte for byte. Scratch files live in `$IX_IXON_V4_DIR`
 (default `/tmp`; set it when two checkouts run these executables at the same
 time). `lake exe ixon-v4-primitives` writes the primitive closure there
 (`ixon-v4-primitives.ixe`) and fails if `primitives.tsv` differs from the live
 addresses; `ixon-v4-tests --primitives` then validates that closure.
-`--export-fixtures` writes `claims.tsv` and `addressed.tsv` to
-`ixon-v4-fixtures/` in the scratch directory; copy them into the
-fixture directory only after validation.
+`--export-fixtures` writes `claims.tsv` to `ixon-v4-fixtures/` in the scratch
+directory; copy it into the fixture directory only after validation.
 
-The formal gates are `lake build Ix.Resource.Audit` (the resource-state
-invariants), `lake -d IxC build --wfail` (the Ixon codec contracts
+The formal gates are `lake -d IxC build --wfail` (the Ixon codec contracts
 under `IxC/Ixon/Verify`, including the TagN laws, with their audit
 `IxC/Ixon/Audit.lean`) and `lake build --wfail IxSharingVerify` (the
-canonical sharing construction, `IxSharingVerify`, with its audit).
-Resource theorems cover the executed quantitative and state-transition
-invariants. They do not constitute a verified allocation backend or a proof of
-the entire resource checker against a machine operational semantics.
+canonical sharing construction, `IxSharingVerify`, with its audit). The mode
+checker is uncertified.

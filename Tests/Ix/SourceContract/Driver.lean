@@ -2,6 +2,7 @@ module
 
 public import LSpec
 public import Ix.CompileCertified
+public import Ix.ModeCheck
 public import Ix.Meta
 
 /-!
@@ -20,7 +21,7 @@ private def plainSource : ConstantInfo := .axiomInfo {
   isUnsafe := false }
 
 private def annotation : BinderAnnotation := {
-  origin := 0, binder := `x, uses := .affine, value := .localUnique }
+  origin := 0, binder := `x, uses := .many, value := .unique }
 
 private def markedSource : ConstantInfo := .axiomInfo {
   name := plainSource.name, levelParams := []
@@ -43,20 +44,22 @@ private def refusalTest (description : String) (result : IO (Except String Ix.Co
       -- the IO driver records the refused constant as a failure and then refuses
       -- the incomplete closure
       let ok := (message.splitOn "annotated source is refused").length > 1 ||
-        message == "resource compilation requires the complete requested closure"
+        message == "mode checking requires the complete requested closure"
       return (ok, 0, 0, if ok then none else some message)) .done
 
 private def compileConsts (consts : List (Lean.Name × ConstantInfo)) :
     IO (Except String Ix.CompileM.CertifiedOut) := do
   match prepareSourceConstants consts >>= fun p => (checkPreparedSource p).map (p, ·) with
   | .error e => return .error e
-  | .ok (prepared, annotated) => compileCertifiedPrepared prepared annotated 1
+  | .ok (prepared, annotated) =>
+    compileCertifiedPrepared prepared annotated 1 (modeCheck := Ix.ModeCheck.checkArtifact)
 
 private def compileInput (input : CompileInput) :
     IO (Except String Ix.CompileM.CertifiedOut) := do
   match input.prepare >>= fun p => (checkPreparedSource p).map (p, ·) with
   | .error e => return .error e
-  | .ok (prepared, annotated) => compileCertifiedPrepared prepared annotated 1
+  | .ok (prepared, annotated) =>
+    compileCertifiedPrepared prepared annotated 1 (modeCheck := Ix.ModeCheck.checkArtifact)
 
 private def placement : IO Bool := do
   let env ← getFileEnv "Tests/Ix/SourceContract/PlacementFixture.lean"

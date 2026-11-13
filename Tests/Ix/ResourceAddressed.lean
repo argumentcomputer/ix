@@ -1,17 +1,32 @@
 module
 
-public import Ix.Resource.Addressed
+public import Ix.Ixon
 
 public section
 
+/-! # Small addressed Ixon environments
+
+Fixtures for the claim and codec tests: a unit type's block with its
+projection, constructor and recursor records, and an identity on it. -/
+
 namespace Tests.ResourceAddressed
 
-open Ixon Ix.Resource
+open Ixon
 
 abbrev E := Ixon.Expr
 
+/-- A record's address: BLAKE3 of its bytes. -/
+def commit (constant : Constant) : Address := Address.blake3 (serConstant constant)
+
+/-- A projection record. -/
+def wrapper (info : Ixon.ConstantInfo) : Constant := ⟨info, #[], #[], #[], #[]⟩
+
+/-- A constructor's projection record. -/
+def constructorWrapper (block : Address) (index ctor : UInt64) : Constant :=
+  wrapper (.cPrj ⟨index, ctor, block⟩)
+
 def store (env : Ixon.Env) (c : Constant) : Ixon.Env × Address :=
-  let address := Addressed.commit c
+  let address := commit c
   (env.storeConst address c, address)
 
 def unitBlock : Constant := {
@@ -37,8 +52,8 @@ recursor (a separate record: the block's and the projections' addresses do
 not depend on it). -/
 def unitEnv : Ixon.Env × Address := Id.run do
   let (env, block) := store {} unitBlock
-  let (env, type) := store env (Addressed.wrapper (.iPrj ⟨0, block⟩))
-  let (env, ctor) := store env (Addressed.constructorWrapper block 0 0)
+  let (env, type) := store env (wrapper (.iPrj ⟨0, block⟩))
+  let (env, ctor) := store env (constructorWrapper block 0 0)
   let (env, _) := store env (unitRec type ctor)
   return (env, type)
 
@@ -47,130 +62,6 @@ def identity (unit : Address) : Constant := {
     .all (.ref 0 #[]) (.ref 0 #[]),
     .lam (.ref 0 #[]) (.share 0)⟩
   sharing := #[.var 0], refs := #[unit], univs := #[] }
-
-def fixtures : Array (String × Constant) := Id.run do
-  let (_, unit) := unitEnv
-  return #[("unit", unitBlock), ("identity", identity unit)]
-
-def check (label : String) (result : Except String α) (accept : Bool) : IO Unit := do
-  unless result.toOption.isSome == accept do
-    let diagnostic := match result with | .error e => e | .ok _ => "accepted"
-    throw <| IO.userError s!"addressed resource {label}: expected {accept}, got {diagnostic}"
-
-def get (label : String) (result : Except String α) : IO α :=
-  match result with
-  | .ok value => pure value
-  | .error e => throw <| IO.userError s!"addressed resource {label}: {e}"
-
-/-- The profile the shared fixture pins. -/
-def fixtureProfile : Profile :=
-  let (_, unit) := unitEnv
-  { natType := some unit, shareableTypes := #[unit] }
-
-/-- One `addressed.tsv` row: a constant's address and canonical bytes. -/
-def fixtureLine (label : String) (constant : Constant) : String :=
-  s!"{label}\t{Addressed.commit constant}\t{hexOfBytes (serConstant constant)}"
-
-/-- The shared `addressed.tsv` fixture, also read by the Rust resource
-validator. `lake exe ixon-v4-tests --export-fixtures` writes it. -/
-def fixtureText : Except String String := do
-  let profileAddress ← fixtureProfile.address
-  let rows := fixtures.map fun (label, constant) => fixtureLine label constant
-  let rows := rows.push s!"profile\t{profileAddress}\t{hexOfBytes fixtureProfile.bytes}"
-  return rows.foldl (fun text row => text ++ row ++ "\n") "# name\taddress\tcanonical bytes\n"
-
-def run : IO Unit := do
-  let (base, unit) := unitEnv
-  let profile := fixtureProfile
-  let fixture ← IO.FS.readFile "Tests/Fixtures/ixon-v4/addressed.tsv"
-  let lines := fixture.splitOn "\n"
-  for (label, constant) in fixtures do
-    unless lines.contains (fixtureLine label constant) do
-      throw <| IO.userError s!"addressed fixture differs: {label}"
-  let profileAddress ← get "profile address" profile.address
-  unless lines.contains s!"profile\t{profileAddress}\t{hexOfBytes profile.bytes}" do
-    throw <| IO.userError "addressed profile fixture differs"
-  unless fixture == (← get "fixture text" fixtureText) do
-    throw <| IO.userError "addressed fixture differs from its producer; regenerate it with \
-      `lake exe ixon-v4-tests --export-fixtures`"
-  let decoded ← get "profile roundtrip" (Profile.ofBytes profile.bytes)
-  unless decoded.bytes == profile.bytes do throw <| IO.userError "profile roundtrip differs"
-  for length in [:profile.bytes.size] do
-    check "truncated profile" (Profile.ofBytes (profile.bytes.extract 0 length)) false
-  check "profile trailing bytes" (Profile.ofBytes (profile.bytes.push 0)) false
-  check "wrong validator" (Profile.ofBytes (profile.bytes.set! 0 0)) false
-  let (env, id) := store base (identity unit)
-  let prepared ← get "valid identity" (Addressed.checkResources env profile)
-  -- the unit type, its constructor, its recursor and the identity
-  unless prepared.program.declarations.size == 4 && prepared.program.groups.size == 1 do
-    throw <| IO.userError "addressed resource: nominal block flattening"
-  check "profile bytes canonical" ({ profile with shareableTypes := #[unit, unit] }.address) false
-  check "selection assumption required" ({ profile with choices := #[id] }.address) false
-  check "literal nominal kind" (Addressed.prepare env { profile with natType := some id }) false
-  check "missing typed dependency" (Addressed.prepare (store {} (identity unit)).1 profile) false
-  let bogus := Address.blake3 ⟨#[9]⟩
-  check "raw hash mismatch" (Addressed.prepare (env.storeConst bogus (identity unit)) profile) false
-  let raw := (serConstant (identity unit)).push 0
-  let trailing : Ixon.Env := { base with
-    consts := base.consts.insert (Address.blake3 raw) (LazyConstant.ofSlice raw 0 raw.size) }
-  check "whole-object trailing bytes" (Addressed.prepare trailing profile) false
-  let honest := LazyConstant.ofConstant (identity unit)
-  let forged := { honest with cache := some unitBlock }
-  let resolved ← get "ignore forged materialized cache"
-    (Addressed.prepare { env with consts := env.consts.insert id forged } profile)
-  unless resolved.addresses == prepared.addresses do
-    throw <| IO.userError "addressed adapter trusted a materialized cache"
-  let orphan := Addressed.wrapper (.iPrj ⟨99, Addressed.commit unitBlock⟩)
-  check "out-of-range projection" (Addressed.prepare (store env orphan).1 profile) false
-  let cprj := Addressed.commit (Addressed.constructorWrapper (Addressed.commit unitBlock) 0 0)
-  check "missing constructor wrapper"
-    (Addressed.prepare { env with consts := env.consts.erase cprj } profile) false
-  let wrongWrapper := { Addressed.wrapper (.iPrj ⟨0, Addressed.commit unitBlock⟩) with univs := #[.zero] }
-  check "nonempty projection tables" (Addressed.prepare (store env wrongWrapper).1 profile) false
-  let mut blobEnv := base
-  let mut literalDecls := #[]
-  for byte in #[0, 1] do
-    let (next, blob) := blobEnv.storeBlob ⟨#[byte]⟩
-    let c : Constant := {
-      info := .defn ⟨.defn, .safe, {}, 0, .ref 0 #[], .nat 1⟩
-      sharing := #[], refs := #[unit, blob], univs := #[] }
-    let (next, address) := store next c
-    blobEnv := next
-    literalDecls := literalDecls.push address
-  let resolved ← get "literal identities" (Addressed.prepare blobEnv profile)
-  let literalBodies := resolved.program.declarations.filterMap (·.body)
-  unless literalBodies.size == 2 && literalBodies[0]! != literalBodies[1]! do
-    throw <| IO.userError "literal identities collided across local reference tables"
-  let badBlob := { blobEnv with blobs := blobEnv.blobs.insert bogus ⟨#[0]⟩ }
-  check "blob integrity" (Addressed.prepare badBlob profile) false
-  let recursiveType := Ixon.Expr.all (.ref 0 #[]) (.ref 0 #[])
-  let recursive : Constant := {
-    info := .muts #[
-      .defn ⟨.defn, .safe, {}, 0, recursiveType,
-        .lam (.ref 0 #[]) (.app (.recur 1 #[]) (.var 0))⟩,
-      .defn ⟨.defn, .safe, {}, 0, recursiveType,
-        .lam (.ref 0 #[]) (.app (.recur 0 #[]) (.var 0))⟩]
-    sharing := #[], refs := #[unit], univs := #[] }
-  let (recEnv, block) := store base recursive
-  let (recEnv, _) := store recEnv (Addressed.wrapper (.dPrj ⟨0, block⟩))
-  let (recEnv, _) := store recEnv (Addressed.wrapper (.dPrj ⟨1, block⟩))
-  check "mutual recursive interface checking" (Addressed.checkResources recEnv profile) true
-  -- An adapter test; the literal type profile is not a claim of ordinary
-  -- kernel typing.
-  let fieldType := Ixon.Expr.all (.ref 0 #[]) (.recur 0 #[])
-  let aggregate : Constant := {
-    info := .muts #[.indc ⟨false, 0, 0, 0, .sort 0,
-      #[⟨false, 0, 0, 0, 1, .inherited, fieldType⟩]⟩]
-    sharing := #[], refs := #[unit], univs := #[.zero] }
-  let (fieldEnv, block) := store base aggregate
-  let (fieldEnv, nominal) := store fieldEnv (Addressed.wrapper (.iPrj ⟨0, block⟩))
-  let (fieldEnv, _) := store fieldEnv (Addressed.constructorWrapper block 0 0)
-  let resolved ← get "derived fields" (Addressed.checkResources fieldEnv profile)
-  unless resolved.program.fields.size == 1 &&
-      resolved.addresses[resolved.program.fields[0]!.typeRef.toNat]? == some nominal &&
-      resolved.program.fields[0]!.contract == .shared do
-    throw <| IO.userError "field rule did not come from the addressed constructor"
-  IO.println "Addressed resources: integrity, profile codecs, fixtures, fields, and dependency checks passed"
 
 end Tests.ResourceAddressed
 

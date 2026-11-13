@@ -3,6 +3,7 @@ public import Cli
 public import Ix.Common
 public import Ix.Meta
 public import Ix.CompileM
+public import Ix.ModeCheck
 public import Ix.CompileDriver
 public import Ix.CompileCertified
 public import Ix.RoleBinding.Compile
@@ -56,7 +57,8 @@ private def compileFinalized (fe : FileEnv) (constList : List (Lean.Name × Lean
     IO (Except UInt32 Compiled) := do
   let log (s : String) : IO Unit := IO.println s!"  [compile-lean] {s}"
   match ← Ix.CompileM.compileAndFinalize fe.env constList workers allowPartial log
-      (prefetch := wholeEnv) (strictBinderData := strictBinderData) with
+      (prefetch := wholeEnv) (strictBinderData := strictBinderData)
+      (modeCheck := Ix.ModeCheck.checkArtifact) with
   | .error e =>
     IO.println s!"[compile-lean] FAILED: {e}"
     return .error 1

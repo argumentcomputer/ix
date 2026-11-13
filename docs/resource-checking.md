@@ -1,190 +1,76 @@
-# Ixon resource checking (resource-v1)
+# Resource modes: the model and the mode checker
 
-The resource validator consumes a canonical addressed environment and an
-explicit profile. The certified compiler runs this validation, together with
-erased typechecking, on an input that carries semantic contracts, before and
-after finalizing its artifact (`Ix/CompileCertified.lean`). Resource claims bind
-the complete constant set and profile address. A Rust validator implemented the
-same transitions until PR #677 retired it ([retired Rust](retired-rust.md)).
+Ixon records carry **modes**: every `lam` and `all` binder an `AllMode` (the
+bound variable's mode, `many`, `borrowed`, `unique`, `uniqueBorrowed`, `once`,
+`onceBorrowed` or `erased`, and the result mode of the binder's own arrow,
+`shared`, `borrowed`, `unique` or `uniqueBorrowed`), every `let` a `LetMode`,
+every constructor field a `FieldMode` (`inherited` or `shared`). They are data of
+the record, hashed into its address. Kernel terms carry none: typing never sees
+modes, and typing claims cover annotated constants without saying anything
+about their modes.
 
-The executable modules are [Basic](../Ix/Resource/Basic.lean),
-[Check](../Ix/Resource/Check.lean), and [Admit](../Ix/Resource/Admit.lean).
-The production boundary is [Validate](../Ix/Resource/Validate.lean).
+Two things are in this repository:
 
-Lean's [typing half](../Ix/Resource/Typing.lean) uses IxC's certified tiered
-admission entry for the part it admits. Unsafe inductives, safe assumption
-axioms not bound by a role, and their dependents are typed separately by IxC
-outside that theorem. Their tier checks use the typing tier's answer view;
-the certified entry never reads that view. If opaque batch-tier checking
-refuses a tier record, all tier records move to the separate typing path
-and certified admission is retried on the logical part alone. The combined
-`resource-v1` claim remains uncertified as a resource claim; the transition
-proofs below do not extend the certified admission theorem to this separate
-typing path.
+* **The model and its statement** (`IxC/Resource/`, a library of the `IxC`
+  package that no kernel module imports): run programs read from records
+  (`Read.lean`), the reference evaluator `runR` with its four monitors
+  (`Eval.lean`), and `ModeSafe` (`Statement.lean`), the statement a modes claim
+  would carry. It is a definition: nothing in this repository proves it of any
+  checker.
+* **The mode checker**, `IxC.Resource.check` (`Check.lean`): an abstract run of
+  `runR`, **uncertified**. `ix compile` runs it on every artifact compiled from
+  annotated source (`Ix.ModeCheck.checkArtifact`, which the compile commands
+  pass to `Ix.CompileM.compileAndFinalize`) and says so; a compile with no
+  checker passed refuses annotated source. `ix verify` does not run it, its
+  import closure does not contain it (`kernel-layering`'s mode fence), and no
+  claim carries its verdict.
 
-## Preconditions and admission
+## The model
 
-Resource checking supplements ordinary typechecking. The
-[address adapter](../Ix/Resource/Addressed.lean) verifies raw bytes, hashes,
-canonical decoding, projection wrappers, reference closure, and blob identity.
-It ignores optional metadata and materialized caches. It constructs a program
-whose declaration kinds, references, sharing expansions, and field rules come
-from verified addressed constants. Its internal global indices are analysis
-data; they are not a new expression encoding. A successful call on a manually
-constructed `Program` is conditional on those prerequisites.
+A **run program** (`IxC.Resource.Prog`) has one definition per constant of a
+closure: a run body (a definition's value under its leading λs, or the right
+side of an equation of the run table), a constructor, an inductive type, a case
+shape, a `Nat` primitive, an extern, or a stuck constant (an axiom or opaque
+outside the extern set, an unsafe or `partial` constant, a recursor outside a
+case shape). Modes are read from the records by position; types and proofs are
+erased; every relevant node carries its **class**, from the kernel's typing:
+`irr` (a type, a type former, a proof), `imm` (an immediate: enumerations,
+`BitVec w` at a literal width of at most 64, trivial wrappers of these such as
+`UInt8`…`UInt64` and `Char`), `leaf` (a counted, immutable heap value: `Nat`, and
+trivial wrappers of it such as `Fin n`), or `val`.
 
-Admission computes which declarations have resource obligations. A contract
-on a declaration, a referenced interface, or another member of the same
-addressed mutual block makes the declaration subject to resource checking.
-This prevents an ordinary-looking alias from erasing an imported contract.
-Wholly ordinary components retain their ordinary typechecking path.
+**`runR`** is call by value with fuel. A unique transfer gives every cell of a
+value's ownership closure (`inherited` fields, captures; not `@shared` fields,
+leaves or immediates) a fresh capability, so every other reference dies. A
+borrowed binder confines its value to the binder's region. A once binder wraps
+its value in a once view. Its four violations:
 
-Resource-bearing definitions are checked against their interfaces. Constructors
-must retain local, finite-use, and unique captures in every partial application
-and in the final result. External resource interfaces, special selection
-behavior, and shareable representations require explicit profile entries.
-The canonical profile binds those entries to addresses.
-They cannot be inferred from names or optional source metadata.
+| Violation | When |
+|---|---|
+| `erasedRead` | an erased binding is read, or an erased field projected |
+| `revokedUse` | a reference revoked by a unique transfer is used |
+| `borrowEscape` | a value confined to a closing region is returned or let-bound past it; a confined value is given away |
+| `onceReentry` | a once view is called a second time |
 
-## Uses and availability
+Runs that end `stuck` (a shape failure, a stuck constant) or out of fuel are not
+violations, and nothing is claimed about them.
 
-Demands use the four-element domain `0`, `1`, `&`, and many. Sequential
-demands add, calls scale argument demand by the input contract, and alternative
-paths join. Erased computation and type formation contribute zero demand.
-A binder is checked when its scope finishes; exactly one rejects an optional
-or absent consumption.
+**`ModeSafe env s`**: the subject's records read as a run program, and for every
+seed with a run body, every input meeting its declared modes (`InputsOk`) and
+every extern behaving as declared (`ExternOk`), no run ends in a violation.
+`env` is the environment the consistency statement's reading installs, so a
+claim can carry both conclusions from one reading.
 
-Zero demand still checks the full resource structure of argument types. An
-erased owner or view cannot be made usable by borrowing or reborrowing it.
+## The checker
 
-The checker separately records whether each owner is live, still unique, and
-subject to active loans. A unique transfer requires all three conditions:
-live, unique, and no loans. Permanent sharing clears uniqueness. Ending a
-loan removes that loan and preserves both the liveness and sharing state.
-A branch join preserves availability only when every incoming path does.
+`check` takes a fast path when every record of the closure has only default
+modes (`DefaultOk`, to prove, justifies it). Otherwise it reads the constants
+that have or call non-default modes, with the kernel as class oracle (positive
+answers only; a lack of fuel declines), and checks each run body: binding
+states (live and unique, shared, consumed), regions, aliases, once bindings,
+mode skeletons at every flow. Its verdict is accept, refuse with a witness, or
+decline at a limit. `CheckSound` (accept implies `ModeSafe`) is the theorem
+left to prove.
 
-Constructing a closure transfers captured unique owners. That transfer counts
-even when the closure's body only borrows the captured owner. A reusable shared
-closure cannot hide a finite-use or uniquely consumed capture. A unique
-closure can carry these captures and is consumed when invoked. Borrowing does
-not turn such a closure into a reusable shared callback.
-
-## Scopes and calls
-
-Scopes form an internal parent tree. Values retain all local origins that can
-be reached through them. Checking a local conversion requires each retained
-origin to be an ancestor of the destination scope. Unrestricted conversion
-requires no retained local origin.
-
-The destination of a local call result is inferred from its surrounding use.
-For example, a function can forward a local input through a local identity
-helper and return it to its caller. An inner local let or loan still cannot
-escape: its origin is a younger scope than that return destination.
-
-A call with an unrestricted result checks its local inputs in the current
-scope. This permits a reader to inspect a temporary view and return a fresh,
-unrestricted value. Narrowing that fresh value to an outer local scope does
-not make the inspected view escape.
-
-Ordinary lets use transfer or permanent aliasing. A borrow let resolves its
-initializer to a variable or a supported projection chain, opens a shared
-loan, and adds that scope to the view's origins. Reborrows retain their parent
-origins and root owner. Projected loans suspend the whole owner.
-Capturing a shared view to reborrow it captures that view; it does not transfer
-the root owner whose availability is already suspended by the outer loan.
-
-Closures and aggregates retain origins. Projection rules preserve the field's
-ownership restrictions: a shared aggregate cannot expose a stored unique
-closure as a reusable shared function. Every returned place is materialized
-before the lexical scope ends, so inference cannot defer a prohibited move
-until after a loan has been removed.
-
-## Explicit bounds of the initial checker
-
-The checker requires visible arrow interfaces after bounded beta, let, sharing,
-and definition reduction. Higher-order types must agree in every contract.
-It does not guess a resource interface when normalization is unsupported.
-Abstract unique function values are not assumed safe to borrow as reusable
-callbacks. A representation needs a checked or explicitly admitted rule before
-the checker grants that permission.
-
-Field rules must be derived from transparent constructor interfaces. The
-initial projection fragment requires closed field types and field usage
-`many`; other projection transformations are rejected before artifact emission.
-It does not split availability between fields of the same owner.
-
-Special alternative-path analysis requires a profile-bound selection primitive
-with the specified evaluation behavior. Such a primitive must be fully applied
-and cannot escape through an ordinary callback value. An arbitrary ordinary
-function does not acquire branch semantics because its name resembles a
-conditional.
-
-Recursion uses the declared interfaces of the mutually checked definitions.
-Calls conservatively retain all origins permitted by those interfaces, rather
-than assuming that an unknown recursive body has no captures. Ordinary
-typechecking remains responsible for the language's recursion admissibility.
-
-The default analysis bounds are depth 256 and 100,000 steps per declaration.
-Exhaustion is a rejection. Open sharing is analyzed in each binding context;
-its resource result is never cached by expression identity alone.
-
-## Profiles, claims, and consumers
-
-A canonical profile begins with the UTF-8 bytes
-`ixon-v4/resource-v1/profile` and a zero byte, followed by:
-
-1. Assumptions, shareable type addresses, and selection primitive addresses:
-   each list has a TagN (`f = 0`) count and strictly increasing 32-byte addresses.
-2. Optional Nat and String type addresses: a byte `0`, or `1` and an address.
-3. Nonzero depth and step limits, each a TagN (`f = 0`) unsigned integer.
-
-Selection primitives must also be assumptions. Literal types, when selected,
-must match the kernel's pinned primitive identities. The profile address is
-BLAKE3 of these exact bytes. Changing limits or assumptions changes the claim.
-The default profile admits no external resource interfaces and only grants
-shareability to present canonical Nat, Bool, and String types.
-
-`makeClaim` validates before producing a `Resource` claim. `checkClaim` checks
-the complete subject root and profile address, then reruns combined validation.
-The claim has format byte `4` and validator byte `2` (`resource-v1`).
-Assumptions describe admitted behavior; they do not remove constants from the
-required closure. Merely parsing a claim or proof wrapper validates no program.
-
-| Consumer | Advertised validation |
-| --- | --- |
-| Resource admission (`Ix.Resource.validate`) | Resources plus erased typing, with a committed profile |
-| IxC certified admission | Authenticated logical admission and the entry's stated partial/unsafe typing tier |
-| IxVM `Check` and `CheckEnv` | Erased Lean typing, validator byte `1` |
-| IxVM `Reveal` and `Contains` | Structural validation, validator byte `0` |
-| IxVM `Resource` | Explicitly unsupported; native success is not a circuit proof |
-
-IxVM preserves every contract field in serialization and revelation. Its typing
-conversion erases contracts and interprets a borrow let as an ordinary let.
-The committed validator identity prevents these typing proofs from claiming
-resource validity. Backends relying on ownership or locality must require
-resource admission separately. The [consumer handoff](compilatrix-ixon-v3.md)
-records the supported interfaces and migration fixtures.
-
-## Verification and regression coverage
-
-Lean proofs connect the executed checks to these facts:
-
-- accepted demands cover the admitted natural-number consumptions;
-- the bounded ancestor walk establishes lexical containment;
-- allocating a scope preserves the backwards-pointing parent tree;
-- a fresh scope cannot escape to an older scope;
-- moving requires a live unique owner without loans;
-- sharing permanently clears unique availability;
-- ending a loan preserves liveness and uniqueness;
-- joins only preserve availability present on both paths.
-
-These are executable-check and transition invariants. They do not replace the
-ordinary typechecking prerequisite or claim a proof of a machine backend's
-allocation behavior.
-
-The resource suites of `lake exe ixon-v4-tests` (`Tests/Ix/ResourceAdmit.lean`,
-`Tests/Ix/ResourceAddressed.lean` with its fixture
-[`addressed.tsv`](../Tests/Fixtures/ixon-v4/addressed.tsv), and
-`Tests/Ix/ResourceValidate.lean`) exercise accepted and rejected terms,
-imported-interface aliases, mutual groups, and bounded rejection of cyclic
-sharing. Tests explicitly distinguish wire validity from resource admission.
+Tests: `lake exe IxTests resource-modes` (small run programs, each run under
+`runR` and checked).

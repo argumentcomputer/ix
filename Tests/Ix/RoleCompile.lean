@@ -15,18 +15,18 @@ private def require (ok : Bool) (message : String) : IO Unit :=
   unless ok do throw (IO.userError message)
 
 private def checkArtifact (artifact : Ixon.Env) (roots : Array Address) : IO Unit := do
-  IO.ofExcept (Ix.Resource.typeCheck artifact)
-  let input ← IO.ofExcept ((Ix.RoleBinding.Artifact.prepareRecords artifact Ix.Resource.typingLimits).mapError toString)
+  IO.ofExcept (Ix.Typing.typeCheck artifact)
+  let input ← IO.ofExcept ((Ix.RoleBinding.Artifact.prepareRecords artifact Ix.Typing.typingLimits).mapError toString)
   let (logical, count) ← if input.hasTier then do
       -- Selected source closures retain their original _unsafe_rec companions.
       -- Keep the logical-only refusal and check every record through the tier.
-      require (!(Ix.RoleBinding.Artifact.check artifact Ix.Resource.typingLimits).isOk)
+      require (!(Ix.RoleBinding.Artifact.check artifact Ix.Typing.typingLimits).isOk)
         "logical-only entry accepted a partial record"
-      let receipt ← IO.ofExcept ((Ix.RoleBinding.Artifact.checkTiered artifact Ix.Resource.typingLimits).mapError toString)
+      let receipt ← IO.ofExcept ((Ix.RoleBinding.Artifact.checkTiered artifact Ix.Typing.typingLimits).mapError toString)
       require (!receipt.tier.isEmpty) "tiered input lost its typed declarations"
       pure (receipt.logical, receipt.prepared.records.length)
     else do
-      let receipt ← IO.ofExcept ((Ix.RoleBinding.Artifact.check artifact Ix.Resource.typingLimits).mapError toString)
+      let receipt ← IO.ofExcept ((Ix.RoleBinding.Artifact.check artifact Ix.Typing.typingLimits).mapError toString)
       pure (receipt.target, receipt.prepared.records.length)
   require (count == artifact.consts.size && !logical.consts.isEmpty)
     "actual artifact checking did not cover every emitted record"
@@ -96,7 +96,7 @@ private def check : IO Bool := IO.FS.withTempDir fun dir => do
     "missing actual prelude source was silently replaced"
   let refused ← try
     let _ ← Ix.RoleBinding.Compile.finalize (fun _ _ => pure {}) empty (pure empty)
-      (Ix.Compile.CompileInput.plain []) {} Ix.Resource.typingLimits
+      (Ix.Compile.CompileInput.plain []) {} Ix.Typing.typingLimits
     pure false
   catch _ => pure true
   require refused "missing source unexpectedly finalized"
@@ -105,9 +105,9 @@ private def check : IO Bool := IO.FS.withTempDir fun dir => do
   let a := Address.blake3 (ByteArray.mk #[1])
   let hinted (h : Lean.ReducibilityHints) : Ixon.Env := { anonHints := ({} : Std.HashMap _ _).insert a h }
   let original := hinted (.regular 1)
-  require (!(Ix.RoleBinding.Compile.mergeSupport Ix.Resource.typingLimits original (hinted .opaque)).isOk)
+  require (!(Ix.RoleBinding.Compile.mergeSupport Ix.Typing.typingLimits original (hinted .opaque)).isOk)
     "a support hint that changes the original's hint was merged"
-  match Ix.RoleBinding.Compile.mergeSupport Ix.Resource.typingLimits original (hinted (.regular 5)) with
+  match Ix.RoleBinding.Compile.mergeSupport Ix.Typing.typingLimits original (hinted (.regular 5)) with
   | .ok merged =>
     require (merged.anonHints[a]? == some (.regular 1)) "the original's hint was not kept"
   | .error e => throw (IO.userError s!"a support hint that keeps the original's was refused: {e}")
