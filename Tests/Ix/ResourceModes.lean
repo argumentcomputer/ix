@@ -26,7 +26,13 @@ alternative, a primitive's argument, a recursor's minor premise, a quotient's
 element, a parameter past a run body's λs, and an erased field passed to an
 alternative that is not a λ for it. The record cases compile a small fixture
 (`Tests/Ix/ResourceModesFixture.lean`), write the mode into one record as a
-producer of records could, and read, run and check the result. -/
+producer of records could, and read, run and check the result.
+
+The recursive-type cases compile a second fixture
+(`Tests/Ix/ResourceModesRecFixture.lean`: a list-like type, Lean's `List`, a
+mutual pair, a nested and an indexed type, each matched by an honest program)
+and read, run and check it unchanged: the class oracle must answer on values of
+such types (the mode-repair branch, V7). -/
 
 namespace Tests.ResourceModes
 
@@ -900,9 +906,10 @@ structure Built where
 def fixtureSeeds : List Lean.Name :=
   [`ModeFixture.main, `ModeFixture.mainRec, `ModeFixture.callF, `ModeFixture.callAdd, `ModeFixture.mkQ]
 
-def buildFixture : IO (Except String Built) := do
-  let lenv ← getFileEnv "Tests/Ix/ResourceModesFixture.lean"
-  let consts := Ix.EnvScope.collectSelectedDeps lenv fixtureSeeds
+/-- Compile the fixture at `path` from `seeds`. -/
+def buildFixtureAt (path : System.FilePath) (seeds : List Lean.Name) : IO (Except String Built) := do
+  let lenv ← getFileEnv path
+  let consts := Ix.EnvScope.collectSelectedDeps lenv seeds
   let (prepared, annotated) ← match Ix.Compile.prepareSourceConstants consts >>= fun p =>
       (Ix.CompileM.checkPreparedSource p).map (p, ·) with
     | .ok p => pure p
@@ -929,6 +936,9 @@ def buildFixture : IO (Except String Built) := do
   let addrOf : Lean.Name → Option Address := fun n => (named.get? (Ix.Name.fromLeanName n)).map (·.addr)
   let built : Built := { env := env, table := input.table, store := store, blob := blob, named := addrOf }
   return .ok built
+
+def buildFixture : IO (Except String Built) :=
+  buildFixtureAt "Tests/Ix/ResourceModesFixture.lean" fixtureSeeds
 
 /-- Erase the `i`-th leading binder of root `root` of `c` (whose expression is `e`; its
 λs with `lam`, else its ∀s): its input mode, in the record's binder-data section, becomes
@@ -978,6 +988,10 @@ structure RecCase where
   accept : Bool
   /-- the constructor the run must return, when it reads -/
   value : Option Lean.Name := none
+  /-- the run must be stuck, when it reads -/
+  stuck : Bool := false
+  /-- constants whose reading the case line reports (a case definition or not), when it reads -/
+  report : List Lean.Name := []
 
 def recordCases : List RecCase := [
   { label := "the fixture as compiled", entry := `ModeFixture.main, reads := true, accept := true,
@@ -1035,6 +1049,8 @@ def runRecCase (b : Built) (c : RecCase) : Except String (Bool × String) := do
   let expected ← match c.value with
     | some n => do pure (some (← refOf n).2)
     | none => pure none
+  let reported : List (Lean.Name × Option Ref) :=
+    c.report.map fun n => (n, (b.named n).bind (Ix.Kernel.Reader.resolve b.store ·))
   let (readOk, readStr, runStr, valueOk) := match readProg s cl with
     | .error e => (false, s!"the reading fails ({e})", "not run", true)
     | .ok P =>
@@ -1043,9 +1059,15 @@ def runRecCase (b : Built) (c : RecCase) : Except String (Bool × String) := do
         | none, _ => true
         | some r, .value (.imm (.con r')) _ => r == r'
         | some _, _ => false
+      let stuckOk := !c.stuck || match o with | .stuck => true | _ => false
       let erasureOk := respectsErasure s P
-      (true, s!"reads (supplied behaviours respect erasure: {erasureOk})", outcomeName o,
-        valueOk && erasureOk)
+      let kinds := reported.map fun ((n, r) : Lean.Name × Option Ref) => match Option.bind r P.find? with
+        | some (.caseDef _) => s!"{n} a case definition"
+        | some (.body ..) => s!"{n} a body"
+        | some _ => s!"{n} other"
+        | none => s!"{n} not in the program"
+      (true, s!"reads (supplied behaviours respect erasure: {erasureOk}){if kinds.isEmpty then "" else s!"; {", ".intercalate kinds}"}",
+        outcomeName o, valueOk && stuckOk && erasureOk)
   let v := check {} b.env s
   let ok := readOk == c.reads && v.isAccept == c.accept && valueOk
   pure (ok, s!"{c.label}: {readStr}; run: {runStr}; checker: {verdictName v}")
@@ -1068,8 +1090,62 @@ def recordCasesTest : LSpec.TestSeq :=
           failed := failed.push line
       return (allOk, 0, 0, if allOk then none else some ("; ".intercalate failed.toList))) .done
 
+/-! ### Recursive, mutual, nested and indexed types from records (the mode-repair branch, V7)
+
+The class oracle classes a value of an inductive type by its constructors, and a
+recursive field's type is the type itself. Before V7 it followed such a field to
+its depth limit, where it declines (repair L), so `check` declined on each of
+these honest programs. The run enters a match only through a case shape, a
+definition over a recursor with one motive (`caseShape`, `motives == 1`) whose
+alternatives forward their fields; each case reports how its matcher and its
+`casesOn` read. Lean's matchers here are bodies, and the run reaches a value
+through `L.casesOn` and `List.casesOn`. `A.casesOn` and `T.casesOn` are not case
+shapes, their recursors having two motives (a mutual block's, a nested type's).
+`V.casesOn` is not one either: as compiled, its minor premise forwards `cons h
+n t` with the prefix `cons h n` behind a sharing reference, and `caseShape`'s
+spine (`ixSpine`) does not read through a sharing reference in function
+position. So `runR` is stuck on those three, limits of the run older than the
+oracle's. -/
+
+def recFixtureSeeds : List Lean.Name :=
+  [`ModeRecFixture.mainL, `ModeRecFixture.mainList, `ModeRecFixture.mainA, `ModeRecFixture.mainT,
+    `ModeRecFixture.mainV]
+
+def recTypeCases : List RecCase := [
+  { label := "a list-like inductive (mainL)", entry := `ModeRecFixture.mainL, reads := true, accept := true,
+    value := some `ModeRecFixture.E.c₁, report := [`ModeRecFixture.headOr.match_1, `ModeRecFixture.L.casesOn] },
+  { label := "Lean's List (mainList)", entry := `ModeRecFixture.mainList, reads := true, accept := true,
+    value := some `ModeRecFixture.E.c₁, report := [`ModeRecFixture.headOrList.match_1, `List.casesOn] },
+  { label := "a mutual pair (mainA); stuck: A.casesOn is not a case shape, A.rec having two motives",
+    entry := `ModeRecFixture.mainA, reads := true, accept := true, stuck := true,
+    report := [`ModeRecFixture.isA0.match_1, `ModeRecFixture.A.casesOn] },
+  { label := "a nested inductive (mainT); stuck: T.casesOn is not a case shape, T.rec having two motives",
+    entry := `ModeRecFixture.mainT, reads := true, accept := true, stuck := true,
+    report := [`ModeRecFixture.isLeaf.match_1, `ModeRecFixture.T.casesOn] },
+  { label := "an indexed family (mainV); stuck: V.casesOn is not read as a case shape (a spine through a sharing reference)",
+    entry := `ModeRecFixture.mainV, reads := true, accept := true, stuck := true,
+    report := [`ModeRecFixture.isNil.match_1, `ModeRecFixture.V.casesOn] }
+]
+
+def recTypeCasesTest : LSpec.TestSeq :=
+  .individualIO "recursive, mutual, nested and indexed types from records: the class oracle answers" none (do
+    match ← buildFixtureAt "Tests/Ix/ResourceModesRecFixture.lean" recFixtureSeeds with
+    | .error e => return (false, 0, 0, some s!"the fixture: {e}")
+    | .ok b =>
+      let mut allOk := true
+      let mut failed : Array String := #[]
+      for c in recTypeCases do
+        let (ok, line) := match runRecCase b c with
+          | .ok r => r
+          | .error e => (false, s!"{c.label}: {e}")
+        IO.println s!"    {if ok then "ok" else "FAIL"} {line}"
+        unless ok do
+          allOk := false
+          failed := failed.push line
+      return (allOk, 0, 0, if allOk then none else some ("; ".intercalate failed.toList))) .done
+
 public def suite : List LSpec.TestSeq :=
   erasedCases ++ uniqueCases ++ borrowCases ++ onceCases ++ captureCases ++ skeletonCases ++
-    alternativeCases ++ findingCases ++ [limitCase, fastPathCase, recordCasesTest]
+    alternativeCases ++ findingCases ++ [limitCase, fastPathCase, recordCasesTest, recTypeCasesTest]
 
 end Tests.ResourceModes

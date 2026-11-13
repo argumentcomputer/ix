@@ -99,6 +99,21 @@ The driver's cases (Part 3, `v7RecursiveTypes`) are hand-made records over the e
 call of its recursor (stuck: `runR` is stuck at a recursor), the wrapper cycle in both orders, and
 the non-uniform type at the depth limit.
 
+Their suite has the same programs compiled by Lean on a real environment
+(`Tests/Ix/ResourceModesRecFixture.lean`, the record cases `recTypeCases`): all five are accepted.
+
+**The run's limit (not the oracle's).** `runR` enters a match only through a case shape, a
+definition over a recursor with one motive (`caseShape`: `motives == 1`) whose minor premises
+forward their fields. In that fixture Lean's matchers read as bodies, and the run reaches a value
+through `L.casesOn` and `List.casesOn`. `A.casesOn` (a mutual block) and `T.casesOn` (a nested
+type) are not case shapes, their recursors having a motive per type. `V.casesOn` (an indexed
+family) is not read as one either: as compiled, its minor premise forwards `cons h n t` with the
+prefix `cons h n` behind a sharing reference, and `caseShape`'s spine (`ixSpine`, also in
+`forwarded`) does not read through a sharing reference in function position (job MY-probeV
+printed the record). So the runs of the mutual, nested and indexed programs are stuck: no claim is
+made of them, and nothing is unsound, but those programs are not run. Widening either is not part
+of V7.
+
 ## Results of record
 
 All runs use seeds 1 to 8 × 100,000 programs (800,000). Case `i` of seed `s` is drawn from
