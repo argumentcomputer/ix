@@ -313,6 +313,12 @@ fn authenticated_chain_proves_and_resumes_a_small_fri_root() {
       .verify_bytes(expected, &envelope.to_bytes().unwrap())
       .unwrap_err();
     assert!(error.contains("deferred pairing equation failed"), "{error}");
+    let preparation_error =
+      prover.verifier().prepare_terminal(expected, &envelope).err().unwrap();
+    assert!(
+      preparation_error.contains("deferred pairing equation failed"),
+      "{preparation_error}"
+    );
     let mut stage_two_config = configuration.clone();
     stage_two_config.bn_stages = NonZeroU32::new(2).unwrap();
     let stage_two = Verifier::from_bytes(stage_two_config, assets()).unwrap();
@@ -372,6 +378,19 @@ fn authenticated_chain_proves_and_resumes_a_small_fri_root() {
     Verifier::from_bytes(configuration.clone(), assets()).unwrap();
   let bytes = proven.envelope.to_bytes().unwrap();
   independent.verify_bytes(expected, &bytes).unwrap();
+  let terminal =
+    independent.prepare_terminal(expected, &proven.envelope).unwrap();
+  assert_eq!(terminal.stage, 2);
+  assert_eq!(
+    terminal.statement,
+    *compress_bn::StatementDigest::from_root(expected).as_bytes()
+  );
+  terminal.advice().unwrap();
+  let terminal_configuration: serde_json::Value =
+    serde_json::from_slice(&terminal.configuration.to_json().unwrap()).unwrap();
+  assert_eq!(terminal_configuration["min_stage"], 2);
+  assert_eq!(terminal_configuration["max_stage"], 2);
+  assert!(independent.prepare_terminal(&changed, &proven.envelope).is_err());
   assert!(independent.verify(&changed, &proven.envelope).is_err());
   assert!(independent.verify(&changed_claims, &proven.envelope).is_err());
   let mut wrong_stage = proven.envelope.clone();

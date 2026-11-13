@@ -8,6 +8,7 @@ use super::{
   Bn254, compress_bn as bn, compress_gl as gl,
   kzg::{Compiler, MAX_TOTAL_ROWS, VerifyingKey},
   kzg_advice as wire,
+  pairing::final_program,
 };
 use crate::{
   kzg::{KzgConfig, Scalar, TranscriptKind, VerifierParams},
@@ -107,6 +108,29 @@ pub struct Envelope {
   pub stage: u32,
   pub accumulator: [Scalar; 4],
   pub proof: Vec<u8>,
+}
+
+/// Canonical advice for the next terminal verification step. Its configuration
+/// pins the policy and pairing anchors of the independently verified chain.
+pub struct TerminalInput {
+  pub configuration: final_program::Configuration,
+  pub key: Vec<u8>,
+  pub claims: Vec<u8>,
+  pub proof: Vec<u8>,
+  pub policy: Vec<u8>,
+  pub statement: [u8; 32],
+  pub stage: u32,
+}
+
+impl TerminalInput {
+  pub fn advice(&self) -> Result<wire::Inputs, String> {
+    wire::Inputs::new(
+      self.key.clone(),
+      self.claims.clone(),
+      self.proof.clone(),
+      self.policy.clone(),
+    )
+  }
 }
 
 impl Envelope {
@@ -276,6 +300,44 @@ impl Verifier {
     bytes: &[u8],
   ) -> Result<(), String> {
     self.verify(expected, &Envelope::from_bytes(bytes)?)
+  }
+
+  /// Verify the complete native chain before exporting advice for one further
+  /// BN verification step. The expected root remains independent caller data.
+  pub fn prepare_terminal(
+    &self,
+    expected: &Statement,
+    envelope: &Envelope,
+  ) -> Result<TerminalInput, String> {
+    self.verify(expected, envelope)?;
+    let stage = bn::Stage::new(envelope.stage)?.next()?.get();
+    let accumulator = bn::Accumulator::from_words(&envelope.accumulator)?;
+    let claim = self
+      .bn
+      .claim(self.public_inputs(expected, envelope.stage)?, &accumulator)?;
+    let proof = self.bn_key.decode_proof(&envelope.proof)?;
+    let prepared = TerminalInput {
+      configuration: final_program::Configuration::new(
+        &self.policy,
+        self.parameters(),
+        stage,
+        false,
+      )?,
+      key: self.bn_source_key.clone(),
+      claims: wire::claims_bytes(&[claim])?,
+      proof: wire::proof_bytes(&proof)?,
+      policy: self.policy.to_bytes(),
+      statement: *bn::StatementDigest::from_root(expected).as_bytes(),
+      stage,
+    };
+    bn::Input::from_source(
+      self.public_inputs(expected, stage)?,
+      prepared.key.clone(),
+      prepared.claims.clone(),
+      prepared.proof.clone(),
+      prepared.policy.clone(),
+    )?;
+    Ok(prepared)
   }
 }
 

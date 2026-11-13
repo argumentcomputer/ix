@@ -1,0 +1,77 @@
+{
+  "format": "ix-aiur-terminal-input-preparation-validation-v1",
+  "owned_files": [
+    "crates/proof-compression/src/aiur_backend/chain.rs",
+    "crates/proof-compression/examples/aiur_terminal_input.rs",
+    "crates/proof-compression/tests/aiur_chain.rs"
+  ],
+  "actual_input": "Fresh Init GL-to-BN chain, Ignition, independently authenticated CLI manifest f7dc9f322b04ca2e30b2f2976515d34dd515442215625a86a9e774ffe11e797e.",
+  "conversion": {
+    "trusted_manifest": "/tmp/ix.aiur-compression-stages/target/aiur-bn-bench/prepared/manifest.json",
+    "trusted_manifest_blake3": "f7dc9f322b04ca2e30b2f2976515d34dd515442215625a86a9e774ffe11e797e",
+    "core_configuration": "/tmp/ix.aiur-compression-stages/target/terminal-input-preparation/core-configuration.json",
+    "core_configuration_blake3": "8cd92172b400f4b92358754b9b9983fa387bf282e2dfb90950d9a5d670116f6e",
+    "assets": [
+      "/tmp/ix.aiur-compression-stages/target/aiur-bn-bench/prepared/gl-program.ixa",
+      "/tmp/ix.aiur-compression-stages/target/aiur-bn-bench/prepared/gl-key.bin",
+      "/tmp/ix.aiur-compression-stages/target/aiur-bn-bench/prepared/bn-program.ixa",
+      "/tmp/ix.aiur-compression-stages/target/aiur-bn-bench/prepared/bn-key.bin"
+    ]
+  },
+  "receipt": {
+    "chain_envelope_blake3": "122fd513a3f67f3213996c80618071eb8bb80bc15c42d967f8485687f2824206",
+    "configuration_blake3": "eb3aeff589794b5842058701dac9e1dd38b172f65d712f5e9c656327296bd221",
+    "core_configuration_blake3": "8cd92172b400f4b92358754b9b9983fa387bf282e2dfb90950d9a5d670116f6e",
+    "format": "ix-aiur-terminal-preparation-v1",
+    "input_manifest_blake3": "82ff53d4ec0fc4a3ba70a783d112c50f903330199f8c683758fcd694e773a1ad",
+    "native_chain_verified": true,
+    "policy_blake3": "a2d0bfda8d650bb64611f5938ab0c3a224637cf1d3f4f1353d474f0e58b0cf69",
+    "predecessor_stage": 1,
+    "root_claims_blake3": "c67d7ce5ac847836c4962eef2eadc71de89c08577e63d25f1982a145c09a6908",
+    "root_key_blake3": "55f0b8b04acdc211e249b538adcdab95fec15de6c9504ba875ffb52b1f1f8e86",
+    "setup": "ignition",
+    "terminal_stage": 2
+  },
+  "negative_checks": [
+    {
+      "case": "config-pin",
+      "rejected": true,
+      "output_not_created": true,
+      "stderr": "Error: \"core chain configuration differs from the independent pin\"\n"
+    },
+    {
+      "case": "root-key",
+      "rejected": true,
+      "output_not_created": true,
+      "stderr": "Error: \"Aiur KZG verification failed: InvalidOpeningArgument(PairingCheckFailed)\"\n"
+    },
+    {
+      "case": "root-claims",
+      "rejected": true,
+      "output_not_created": true,
+      "stderr": "Error: \"Aiur KZG verification failed: InvalidOpeningArgument(PairingCheckFailed)\"\n"
+    },
+    {
+      "case": "valid outer proof with invalid carried pairing",
+      "rejected": true,
+      "output_not_created": true,
+      "stderr": "Error: \"CompressBN deferred pairing equation failed\"\n"
+    }
+  ],
+  "validation": {
+    "native_chain_verified": true,
+    "without_srs": "IX_KZG_SRS deliberately points to a missing file.",
+    "source_next_stage_envelope": "Revalidated by compress_bn::Input::from_source before returning prepared data.",
+    "terminal_stage_interval": [
+      2,
+      2
+    ],
+    "relative_paths": true,
+    "new_directory_only": true,
+    "manifest_written_last": true,
+    "clippy": "Example and aiur_chain test target pass -D warnings.",
+    "format_and_diff_check": "Pass."
+  },
+  "acceptance_path": "No Lean or CLI acceptance roots changed; no live pin changes.",
+  "handoff": "Prefix agent received input/configuration pins and is exporting/counting the terminal program."
+}
