@@ -59,26 +59,25 @@ private theorem ixAddr_inj {a b : Bytes.Address} (h : ixAddr a = ixAddr b) : a =
   subst h2
   rfl
 
-private theorem certs_lic_true {env : KEnv} {d : Nat} {T : KExpr} {As : List KExpr}
-    (h : Certs env d false T As) : Certs env d true T As := by
-  induction h with
-  | nil => exact .nil
-  | skip hlic => cases hlic
-  | cert hinf hdef _ ih => exact .cert hinf hdef ih
+private theorem certs_lic_true {env : Ix.Kernel.Env .anon} {d : Nat} :
+    ∀ {T : KExpr} {As : List KExpr}, Certs env d false T As → Certs env d true T As
+  | _, [], .nil => .nil
+  | _, _ :: _, .skip hlic _ _ => nomatch hlic
+  | _, _ :: _, .cert hinf hdef hr => .cert hinf hdef (certs_lic_true hr)
 
-private theorem defEqList_refl {env : KEnv} {d : Nat} :
+private theorem defEqList_refl {env : Ix.Kernel.Env .anon} {d : Nat} :
     ∀ (xs : List KExpr), DefEqList env d xs xs
   | [] => .nil
   | _ :: xs => .cons .refl (defEqList_refl xs)
 
-private theorem infer_io_of_certs {env : KEnv} {d : Nat} {lic : Bool} :
+private theorem infer_io_of_certs {env : Ix.Kernel.Env .anon} {d : Nat} {lic : Bool} :
     ∀ {f T : KExpr} {As : List KExpr},
       Infer env .io d f T → Certs env d lic T As →
       ∃ R, Infer env .io d (Ix.Kernel.Expr.mkAppN f As) R
   | _, T, [], hf, .nil => ⟨T, hf⟩
-  | f, _, a :: rest, hf, .skip _ hnev hrest =>
+  | f, _, _ :: _, hf, .skip _ hnev hrest =>
     infer_io_of_certs (.appSkip hf .refl hnev) hrest
-  | f, _, a :: rest, hf, .cert ha hdef hrest =>
+  | f, _, _ :: _, hf, .cert ha hdef hrest =>
     infer_io_of_certs (.app hf .refl ha hdef) hrest
 
 private theorem isProjFnShape_keyOf (t : Ix.Kernel.RoleTable) (a : _root_.Address) :
@@ -163,7 +162,7 @@ private theorem apply_n_projs_head :
         have hcell : ((h ++ [.construct kexprEnum "Proj" [par, idx, maj]]) ++
             [.construct kexprEnum "App" [hd, .ptr (.enum kexprEnum) h.length]])[
               (h ++ [.construct kexprEnum "Proj" [par, idx, maj]]).length]? =
-            some (.construct kexprEnum "App" [hd, .ptr (.enum kexprEnum) h.length]) := by simp
+            some (Value.construct kexprEnum "App" [hd, .ptr (.enum kexprEnum) h.length]) := by simp
         have hs' := SpineHead.app (loadValue_enum_cell hcell) (hs.mono (ext1.trans ext2))
         exact apply_n_projs_head n' (by simp at hle; omega) ev76 hs'
 
@@ -295,7 +294,7 @@ theorem eta_iota_fab_step (c : Ctx) (hc : CoreFacts c) (hex : IotaExtraFacts c)
     rw [hfindI] at hT'
     obtain ⟨rfl, rfl⟩ := Ix.Kernel.ConstantInfo.indInfo.inj (Option.some.inj hT')
     subst hinl
-    obtain ⟨hctor, hetaP, hetaF, hnP_eq, hunit0⟩ := hex.etaCaps h _ ity nix nc u blk nPT i b
+    obtain ⟨hctor, hetaP, hetaF, hnP_eq, hunit0⟩ := hex.etaCaps h _ ity _ _ u blk nPT i b
       (c.κ (ixAddr p)) rl.ctor cvT cvj caps cnP cnF hfindI heta hetaCtor hcj hciI' hb
     -- heap extensions
     have e36 := ObsFn.heap_extends ev36
@@ -365,9 +364,9 @@ theorem eta_iota_fab_step (c : Ctx) (hc : CoreFacts c) (hex : IotaExtraFacts c)
     have hy154 := WhnfAux.ite01 (right_ne_zero_of_mul hmul12)
     subst hx153
     have hTAlen : TA.length = nPT :=
-      NatAux.natCast_inj (by omega) (by omega) (sub_eq_zero.mp hy154)
+      (NatAux.natCast_inj (by omega) (by omega)).mp (sub_eq_zero.mp hy154)
     have hlslen : ls.length = cvT.levelParams.length :=
-      NatAux.natCast_inj (by omega) (by omega) (sub_eq_zero.mp hy146)
+      (NatAux.natCast_inj (by omega) (by omega)).mp (sub_eq_zero.mp hy146)
     have hustlen : ust.length = cvT.levelParams.length :=
       (WhnfAux.evalEqList_length ust ls (hlsEq (fun _ => 0))).trans hlslen
     -- never-zero sort test
@@ -396,9 +395,9 @@ theorem eta_iota_fab_step (c : Ctx) (hc : CoreFacts c) (hex : IotaExtraFacts c)
     rw [Ix.Kernel.Expr.instantiateList_nil] at hcertTR
     have harityT := (hc.env.familyArity (c.κ (ixAddr p)) cvT caps hfindI).2 heta
     have hcertT0 : Certs c.env d false (cvT.type.instantiateLevelParams cvT.levelParams ust) TA :=
-      Specs.Whnf.CertsR.toCerts
+      Specs.Whnf.CertsR.toCerts hcertTR
         (Specs.Whnf.stripPis_isSome_instantiateLevelParams _ _ _ _
-          (by rw [← hetaP, hnP_eq, ← hTAlen] at harityT; exact harityT)) hcertTR
+          (by rw [← hetaP, hnP_eq, ← hTAlen] at harityT; exact harityT))
     have hcertT : Certs c.env d true (cvT.type.instantiateLevelParams cvT.levelParams ust) TA :=
       certs_lic_true hcertT0
     -- constructor load & projection address
@@ -455,13 +454,15 @@ theorem eta_iota_fab_step (c : Ctx) (hc : CoreFacts c) (hex : IotaExtraFacts c)
       simpa [Ix.Kernel.Expr.getAppArgs] using h1.symm
     have hlenFAs_lt : FAs.length < 2 ^ 39 := RomBound.bounded_length_lt good.2
       (c := ⟨"KernelWhnf::certs_all",
-        [rc, v679, x_fargs, .ptr (.enum kexprListEnum) m691.length, types], m726⟩)
-      (by simp [kexprListEnum]) (by simp) (tml_mono Y726 hFAs)
+        [rc, v679, x_fargs,
+          .ptr (.enum Obs.Names.«Lists::Node<&KernelTypes::KExprNode>») m691.length, types],
+        m726⟩)
+      (by simp) (by simp) (tml_mono Y726 hFAs)
     have hm_lt : m < 2 ^ 39 := by
       have hlen_sum : FAs.length = TA.length + m := by simp [hFAs_eq]
       omega
     rw [zero_add] at hm_eq
-    have hm_cnF : m = cnF := NatAux.natCast_inj (by omega) (by omega) hm_eq
+    have hm_cnF : m = cnF := (NatAux.natCast_inj (by omega) (by omega)).mp hm_eq
     subst hm_cnF
     have hprojs_eq : ((List.range m).map fun t =>
         (Ix.Kernel.Expr.proj (c.κ (ixAddr p)) (ZMod.val ((0 : F) + (t : F))) M : KExpr)) =
@@ -490,9 +491,9 @@ theorem eta_iota_fab_step (c : Ctx) (hc : CoreFacts c) (hex : IotaExtraFacts c)
     obtain ⟨-, -, harityC⟩ := hc.env.ruleCtorArity k cv mI rP [rl] hfind rl hrl cvj cnP m hcj
     have hFAslen : FAs.length = cnP + m := by simp [hFAs_eq, hTAlen, hnP_eq]
     have hcertFAB : Certs c.env d false (cvj.type.instantiateLevelParams cvj.levelParams ust) FAs :=
-      Specs.Whnf.CertsR.toCerts
+      Specs.Whnf.CertsR.toCerts hcertCR
         (Specs.Whnf.stripPis_isSome_instantiateLevelParams _ _ _ _
-          (by rw [← hFAslen] at harityC; exact harityC)) hcertCR
+          (by rw [← hFAslen] at harityC; exact harityC))
     -- tower slots, etaFabArgsE, and inferred type of FAB
     have htower : Ix.Kernel.towerSlotsAll c.env (c.κ (ixAddr p)) caps.etaFields = true :=
       hc.env.etaTowers (c.κ (ixAddr p)) cvT caps hfindI heta
@@ -662,7 +663,7 @@ theorem try_struct_eta_iota_step (c : Ctx) (hc : CoreFacts c)
       (.field (nCT : F)) w310 x_block (.field i) ev295 (good.sub fun z hz => by simp [hz]) hp ld289
     injection hidx0 with hi0
     subst hi0
-    obtain rfl := Bytes.repAddressRef_det hb0 hb
+    obtain rfl := addr_det hb0 hb
     obtain ⟨-, hfire, hkeys⟩ := hc.env.recRules k cv mI rP [rl] hfind
     have hrl : rl ∈ [rl] := List.mem_singleton_self rl
     obtain ⟨-, cvj, cnF, hcj⟩ := hfire rl hrl
@@ -817,7 +818,7 @@ theorem red_rec_step (c : Ctx)
     rw [hnl] at op17
     have hsub := NatAux.field_inj (NatAux.sub_ok op17)
     have hlslen : ls.length = cv.levelParams.length :=
-      NatAux.natCast_inj (by omega) (by omega) (sub_eq_zero.mp hsub.symm)
+      (NatAux.natCast_inj (by omega) (by omega)).mp (sub_eq_zero.mp hsub.symm)
     exact (WhnfAux.evalEqList_length us ls (hlsEq (fun _ => 0))).trans hlslen
   -- Helper: derive MajorHead from rec_to_parent_addr
   have hmh_of_rec : ∀ {m286 m449 : Heap F} {v370 : SourceValue F} {cs457 : List (Call F)},
@@ -829,24 +830,22 @@ theorem red_rec_step (c : Ctx)
     intro m286 m449 v370 cs457 ext286 ev459 hlt457 hgood457
     obtain ⟨p, dom, us_p, hp, hdom, hfn⟩ := ih.get (.callees .rec_to_parent_addr) hlt457 ev459
       rt p' m' mi' i' (by rw [hnp, hnm, hnmi, hni]) hgood457 _
-      (fun Γ' => Tm.mono ext286 (hrt 0 Γ'))
+      (fun d' Γ' => Tm.mono ext286 (hrt d' Γ'))
     rw [← hmI, NatAux.val_natCast (by omega)] at hdom
     exact ⟨p, hp, WhnfAux.majorHead_of_pos hdom hfn⟩
   match Obs.«KernelWhnf::red_rec».obsx ev with
   | .n0_other_other (he767 := he0) .. =>
     obtain ⟨ht0, -⟩ := tuple2_inj (hr.symm.trans he0)
-    injection ht0 with ht0
     rcases ht with rfl | rfl | rfl
     · exact (NatAux.field_one_ne_zero ht0).elim
-    · exact (field_two_ne_zero ht0).elim
-    · exact (field_three_ne_zero ht0).elim
+    · exact (field_two_ne_zero (Value.field.inj ht0)).elim
+    · exact (field_three_ne_zero (Value.field.inj ht0)).elim
   | .other (he791 := he0) .. =>
     obtain ⟨ht0, -⟩ := tuple2_inj (hr.symm.trans he0)
-    injection ht0 with ht0
     rcases ht with rfl | rfl | rfl
     · exact (NatAux.field_one_ne_zero ht0).elim
-    · exact (field_two_ne_zero ht0).elim
-    · exact (field_three_ne_zero ht0).elim
+    · exact (field_two_ne_zero (Value.field.inj ht0)).elim
+    · exact (field_three_ne_zero (Value.field.inj ht0)).elim
   | .n0_n1_bind x10 m12 cs21 m286 cs288 x_k_reduct ev23 op17 sg293 he326 he340 hc341 =>
     have hlen := hlen_of ev23 op17 (by rw [hc341]; simp)
     subst he340 hc341

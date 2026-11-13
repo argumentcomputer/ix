@@ -745,7 +745,7 @@ theorem forallChain_of_extends {P : Bytes.Address → Prop} {κ : _root_.Address
         ih hq (fun dp hdp => hcl dp (List.mem_cons_of_mem _ hdp)) hcod
       refine ⟨.cons (loadValue_enum_cell cell) fc', hq', fun dp hdp => ?_⟩
       rcases List.mem_cons.mp hdp with rfl | hdp
-      · exact heapClean_of_extends ext hdom (hcl dom (.head _))
+      · exact heapClean_of_extends ext hdom (hcl _ (.head _))
       · exact hcl' dp hdp
     | bvarLocal cell _ _ | bvarFree cell _ _ _ | sort cell _ _ | const cell _ _ _
     | app cell _ _ | lam cell _ _ _ | letE cell _ _ _ | litNat cell _ _

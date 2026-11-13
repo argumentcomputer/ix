@@ -138,25 +138,17 @@ theorem iota_cmp_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
   intro rc rt pre mi cty clvls cnp ma ni types hargs good hrc d Γ htypes
     RT PRE m CT cus np MA nix hRT hPRE hmi hCT hcus hcnp hMA hni hr0
   subst hargs hmi hcnp hni
-  rcases Obs.«KernelWhnf::iota_cmp».obs ev with
-    ⟨m2, cs13, m35, x_md, m73, cs84, x_mdh, x_mda, w130, x_mlvls, m142, cs153, m177, cs188, v192,
-      v193, m203, cs211, m231, cs239, hm43, ev15, ev86, ld122, ev155, ev213, ev241, ev190, hv282,
-      he283, he284, hc285⟩ |
-    ⟨m2, cs13, m35, x_md, m73, cs84, x_mdh, x_mda, w130, x_mlvls, m142, cs153, m177, cs188, v192,
-      v193, m203, cs211, m231, cs239, m291, cs302, v305, m309, cs317, m344, x_res, m375, cs386,
-      x_rh, x_ra, w432, w433, cs447, v451, v452, m462, cs470, m490, cs498, hm43, ev15, ev86, ld122,
-      ev155, ev213, ev241, ev190, hne286, ev319, hm352, ev304, ev388, ld424, ev472, ev500, ev449,
-      hc524⟩ |
-    ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _,
-      _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, he0, _, _⟩ |
-    ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _,
-      _, _, _, _, _, _, _, _, he0, _, _⟩ |
-    ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, he0,
-      _, _⟩ |
-    ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, he0, _, _⟩ |
-    ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, he0, _, _⟩ |
-    ⟨_, _, _, _, _, _, he0, _, _⟩
-  · subst hm43 hc285
+  match Obs.«KernelWhnf::iota_cmp».obs ev with
+  | .n1_bind_Const_n1_n1_other_n1_bind_other (he529 := he0) .. => exact absurd he0 hr0
+  | .n1_bind_Const_n1_n1_other_other (he536 := he0) .. => exact absurd he0 hr0
+  | .n1_bind_Const_n1_other (he543 := he0) .. => exact absurd he0 hr0
+  | .n1_bind_Const_other (he550 := he0) .. => exact absurd he0 hr0
+  | .n1_bind_other (he557 := he0) .. => exact absurd he0 hr0
+  | .other (he564 := he0) .. => exact absurd he0 hr0
+  | .n1_bind_Const_n1_n1_n0 m2 cs13 m35 x_md m73 cs84 x_mdh x_mda w130 x_mlvls m142 cs153 m177
+      cs188 v192 v193 m203 cs211 m231 cs239 hm43 ev15 ev86 ld122 ev155 ev213 ev241 ev190 hv282
+      he283 he284 hc285 =>
+    subst hm43 hc285
     have hn0 : nix = 0 := Value.field.inj hv282
     have e0 : Heap.Extends h (h ++ [.construct kexprListEnum "Nil" []]) := Heap.Extends.snoc _ _
     have e15 := ObsFn.heap_extends ev15
@@ -196,7 +188,11 @@ theorem iota_cmp_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
       fun hne => (hne hn0).elim⟩
     rw [getAppArgs_mkAppN]
     exact hdeP
-  · subst hm43 hm352 hc524
+  | .n1_bind_Const_n1_n1_other_n1_bind_Const m2 cs13 m35 x_md m73 cs84 x_mdh x_mda w130 x_mlvls
+      m142 cs153 m177 cs188 v192 v193 m203 cs211 m231 cs239 m291 cs302 v305 m309 cs317 m344 x_res
+      m375 cs386 x_rh x_ra w432 w433 cs447 v451 v452 m462 cs470 m490 cs498 hm43 ev15 ev86 ld122
+      ev155 ev213 ev241 ev190 hne286 ev319 hm352 ev304 ev388 ld424 ev472 ev500 ev449 hc524 =>
+    subst hm43 hm352 hc524
     have e0 : Heap.Extends h (h ++ [.construct kexprListEnum "Nil" []]) := Heap.Extends.snoc _ _
     have e15 := ObsFn.heap_extends ev15
     have e86 := ObsFn.heap_extends ev86
@@ -266,11 +262,11 @@ theorem iota_cmp_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
     rw [Obs.Names.«Lists::Node<&KernelTypes::KExprNode>».symbol] at hdropMDA
     have hdeI := ih.get (.defEq .de_args) (by lt_calls) ev449 rc v451 v452 types rfl
       (good.sub fun z hz => by simp [hz]) (RCRep.mono H490 hrc) d Γ (types_mono H490 htypes)
-      (RA.drop (ZMod.val np)) (MDA.drop (ZMod.val np)) (tml_mono e500 hdropRA) hdropMDA hr0
+      (RA.drop (ZMod.val np)) (MDA.drop (ZMod.val np)) (tml_mono (e472.trans e500) hdropRA)
+      hdropMDA hr0
     refine ⟨_, c.κ (ixAddr ma0), mus, hpi, by rw [getAppFn_mkAppN]; rfl, hlveq, ?_,
       fun _ => ⟨_, hres, ?_⟩⟩
     · rw [getAppArgs_mkAppN]; exact hdeP
     · rw [getAppArgs_mkAppN, getAppArgs_mkAppN]; exact hdeI
-  all_goals exact absurd he0 hr0
 
 end IxVM.Refinement.Core
