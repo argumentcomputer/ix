@@ -31,7 +31,7 @@ open IxCCTests.Recheck.Hostile (defn sidecar ofErr)
 open IxCCTests.IxonV3.Builder (store arrow lambda)
 open IxCCTests.Support.Bound (loadBase addEnum)
 open IxCCTests.Recheck.Erased (E X Honest objMain srcMain lookup ingest ctorRoots installed withNode
-  withConst quotAddrs eraseParam mapArg casesEnv refused accepted)
+  withConst quotAddrs eraseParam casesEnv refused accepted)
 open IxCCTests.Recheck.Shape (refusedOnly recProg fixture wordsDir Fixture)
 
 /-- Put a Π `(x :⁰ dom)` after the first `n` Π binders of a telescope, above its conclusion
@@ -266,7 +266,10 @@ def caseKey (a : Assert) : IO (Array String) := do
     (Q, withNode (withConst h.cert.relevance Q coId) (.value main) v.tagOrder)
   let (P0, ann0) := withTy (eraseParam 0 ty) mval
   accepted a "casesOn with its motive written erased" h.cfg P0 h.cert.table ann0 main (.ctor 2 [])
-  let v1 := mapArg coId 1 (fun (x, m, _) => (x, m, Src.Rel.prf)) mval
+  -- `main := E.casesOn (λ _. E)`: a saturated call would pass an irrelevant major, which C4 refuses
+  -- first; partially applied (no constructor of `E` has a field) the key is still reached
+  let (hd, args) := mval.spine
+  let v1 := Src.Term.mkApps hd (args.take 1)
   let (P1, ann1) := withTy (eraseParam 1 ty) v1
   let major ← refused a "casesOn with its major written erased" h.cfg P1 h.cert.table ann1
     [s!"({P.short coId})", "parameter 1 is written erased", "its case entry"]
