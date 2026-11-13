@@ -1179,7 +1179,9 @@ The other 36 hold no `let` and keep their verdicts: 34 accepted (every family; `
 Totals over the 50: `groundCheck` 37 (34 before step C), "678" 35, "678A" 37, "678G" 36 (`natural`
 out), "678AG" 37 (1b; `GR-3n-p1`, at the merge of step C, which reproduces the other four totals),
 "678AGp" 42 (step Ap, below: every check read on `selEnv`; `GR-3n-p3`), 43 since step E0 (below:
-`resource`; `GR19-p6`, every other verdict unchanged). `okClosedB` and `instCheckB` with the walk reading `let`s: true on all 50; the
+`resource`; `GR19-p6`, every other verdict unchanged); since step C's closure-capture case (below)
+`arity` in every family: `groundCheck` 38, "678" 36, "678A" 38, "678G" 37, "678AG" 38, "678AGp" 44
+(`GR19-p7`, every other verdict unchanged). `okClosedB` and `instCheckB` with the walk reading `let`s: true on all 50; the
 instance sets grow where `let`s are (`sum-loop` 3 → 62, `machines` 47 → 72, `natural` 62 → 72,
 `diag` 128 → 289). The five `for`-loop closures are then refused at `eqnShape` alone (step Ap).
 
@@ -1247,6 +1249,46 @@ hypothesis of `rootSound_678AGp_of_check` holds (with the root as `instCheckB`'s
 traps on `0` and `7`; three controls on the entry are refused (its recursor's kind made `ordinary`:
 `caseShape`; made `subsingleton`: `caseRec`, `caseShape`; the stored `casesOn` given the type
 `Sort 0`: `caseRec`).
+
+**The closure-capture shape of a deep `let` (step C's `letClo`, since 2026-11-13).** A `let` whose
+body is a λ and whose copy (in the `let`'s context, as `zcopy` lowers it) occurs, lifted past the
+λ, in the λ's body with no binder between: `λa. let k := a * a; λb. k + b` (`arity`'s `main11`,
+`closures`' `storedApply`). SrcEval evaluates the value at the `let` (it is strict) and returns a
+closure; the copy need not denote in the `let`'s context, since the λ's domain may be empty, so
+the value cannot be related there. **The closure relation is weakened where nothing can be said**:
+`RelV.clo` relates a closure's environment only at the members of its λ's domain (its premise
+`RelEnv φ ρ σ ρk` became `∀ XA x, Denotes … ρk A XA → x ∈ˢ XA → RelEnv φ ρ σ ρk`); its one reader,
+`apply_clo`, applies the closure to a member, and every other producer has the environment
+unconditionally. At the `let`, for each member `x`, the value runs at `push x ρk` against the lifted
+copy (the fundamental lemma's own hypothesis on the value's `Runs`, `relEnv_liftAll`), and `den_lift`
+brings its denotation back to `ρk`. `Runs` and `TermCorrS` gain a constructor each (`letClo`: the
+value corresponds, and runs where the `let` is relevant, in the λ's context against the lifted copy;
+the λ with the variable standing for the copy); `corrSB` tries the shape only after the live case
+fails (`cloShapeB`); `evalSites` and the walks that mirror it (`evalSitesP`, `allSites`, 1b's
+`evalSitesPs` and `spinesPs`) list the value's sites in the λ's context at the lifted copy
+(`cloSite?`). No root theorem's text or axiom set changes; two lemmas are new (`cloShapeB_lam`,
+`cloSite?_spec`; fence 314). **What `SitesOkRes` now asks on a program of this shape**: typing at
+the value's sites inside the λ, where the kernel typed them (the direct route refuses every site under
+a `let`, so they join the refused ones); on every program the check accepted before, the new branch
+of `evalSites` never fires (it needs a copy not at depth 0, which `corrSB` refused), so `SitesOk` and
+`SitesOkRes` are unchanged there. Measured: 1a's and 1b's readings decide every new site of the
+corpus (`arity` c597: 8 sites, 2 spines; `closures` c272: 20 sites, 6 spines; none refused, the kernel
+typing each in the graph regime; `GR19-c1`), so `arity` joins every family (`groundCheck` 38, "678"
+36, "678A" 38, "678G" 37, "678AG" 38, "678AGp" 44; every other closure's verdicts unchanged, and
+`closures`' root `storedApply` passes every decided hypothesis of `rootSound_678AGp_of_check`;
+`GR19-p7`); `closures` stays out (`caseRec`, `caseShape` at `PUnit.casesOn`; `eqnCorr` at c19, the
+minor-premise shape; 1b's η-short sites). In `tests-grounding` (`IxCCTests/Grounding/LetClo.lean`):
+on `arity` exactly `main11` is accepted by the closure case and refused by the live case alone,
+every conjunct and 1a's and 1b's decisions hold, every decided hypothesis of
+`rootSound_678AGp_of_check` holds at the root and SrcEval reads back `13` on `(3, 4)`; on `closures`
+exactly one constant is accepted by the closure case, one run pair is still refused (c19), the false
+conjuncts are `caseRec`, `eqnCorr`, `caseShape`, and at `storedApply` every decided hypothesis holds
+and SrcEval reads back the manifest's four values. One recorded expectation flipped
+(`IxCCTests/Grounding/Zeta.lean`): the plant `let x := v; λ _. x` against the stored `λ _. v` on
+`fib`'s root, recorded as refused at `valueCorr` alone (deep), is this shape and is now accepted,
+every conjunct true, the live case alone (`corrSBLive`) still refusing it; three plants stay refused
+at `valueCorr` alone: the copy under a second binder, a body that is not a λ, a copy that is not
+the value.
 
 **What is proved, fenced on `propext`, `Classical.choice` and `Quot.sound` or
 fewer (`IxCCGrounding/Fence.lean`, 312 exact assertions):**
@@ -1941,7 +1983,8 @@ ordered by how many closures each blocks (a closure can have several):
    bodies, values such as `Scalar.powMod`'s); since, a *deep* `let` or a *string
    literal* is (`valueCorr`, `eqnCorr`), 4 closures: the deep `let`s of `arity`
    (its only false conjunct) and `closures`, the string literals of `strings` and
-   `panic`.
+   `panic`; since step C's closure-capture case, 3 closures: the minor-premise
+   `let` of `closures` (c19), the string literals (`arity` admitted).
 2. *A `case` entry outside the shape* (`caseShape`), 4 closures (12 before the
    renaming-tolerant shape): `Empty.casesOn` (no minor premise) and families
    that can be propositions or are indexed; no longer the `casesOn` of a
@@ -2000,7 +2043,8 @@ gives.
   not yet shown to have a model;
 - `ResultTag`'s rejections above;
 - the fragment: deep `let`s (a `let` whose variable meets its copy only under a binder; step C
-  admits the others), recursors fired directly outside the admitted classes
+  admits the others, and since its closure-capture case a `let` whose body is a λ holding the copy
+  directly), recursors fired directly outside the admitted classes
   (today all but `False.rec`'s, `Eq.rec`'s, the field-less ones without
   parameters, `Bool.rec`'s, and the other ones without parameters whose rule
   bodies name no constant, `T16.rec`'s: so no recursion, no parameters), `Quot`, `csimp`, strings, and `case` constants
