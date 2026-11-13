@@ -710,4 +710,89 @@ theorem se_peel_tol_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
   rintro ty n rfl good m hn ⟨d, Γ, k, T, hT⟩
   exact se_peel_tol_aux c (calls.length + 1) (Nat.lt_succ_self _) ev m hn d Γ k T hT
 
+/-! ## `se_scan_fields` -/
+
+/-- A clean `∀`-chain of a represented term at an extended heap is one at the heap of the
+representation. -/
+theorem forallChain_of_extends {P : Bytes.Address → Prop} {κ : _root_.Address → KKey} {d : Nat}
+    {Γ : Nat → KExpr} {h m : Heap F} {ds : List (SourceValue F)} {p q : SourceValue F}
+    (ext : Heap.Extends h m) (fc : ForallChain m p ds q) (hq : ChainEnd m q)
+    (hcl : ∀ dp ∈ ds, HeapClean P m dp) :
+    ∀ {k : Nat} {E : KExpr}, Tm κ d Γ h k E p →
+      ForallChain h p ds q ∧ ChainEnd h q ∧ ∀ dp ∈ ds, HeapClean P h dp := by
+  induction fc with
+  | @nil q' =>
+    intro k E hE
+    obtain ⟨ctor, xs, hl, hne1, hne2⟩ := hq
+    refine ⟨.nil, ?_, fun dp hdp => (List.not_mem_nil hdp).elim⟩
+    cases hE with
+    | bvarLocal cell _ _ | bvarFree cell _ _ _ | sort cell _ _ | const cell _ _ _
+    | app cell _ _ | lam cell _ _ _ | forallE cell _ _ _ | letE cell _ _ _
+    | litNat cell _ _ | litStr cell _ _ | proj cell _ _ =>
+      obtain ⟨e1, -⟩ := load_cell (ext.getElem?_eq cell) hl
+      subst e1
+      exact ⟨_, _, loadValue_enum_cell cell, hne1, hne2⟩
+  | @cons p' dom cod lvl q' ds' hl _ ih =>
+    intro k E hE
+    cases hE with
+    | forallE cell hdom hcod _ =>
+      obtain ⟨-, hxs⟩ := load_cell (ext.getElem?_eq cell) hl
+      injection hxs with e1 hrest
+      injection hrest with e2 hrest'
+      injection hrest' with e3
+      subst e1 e2 e3
+      obtain ⟨fc', hq', hcl'⟩ :=
+        ih hq (fun dp hdp => hcl dp (List.mem_cons_of_mem _ hdp)) hcod
+      refine ⟨.cons (loadValue_enum_cell cell) fc', hq', fun dp hdp => ?_⟩
+      rcases List.mem_cons.mp hdp with rfl | hdp
+      · exact heapClean_of_extends ext hdom (hcl dom (.head _))
+      · exact hcl' dp hdp
+    | bvarLocal cell _ _ | bvarFree cell _ _ _ | sort cell _ _ | const cell _ _ _
+    | app cell _ _ | lam cell _ _ _ | letE cell _ _ _ | litNat cell _ _
+    | litStr cell _ _ | proj cell _ _ =>
+      exact (load_cell_ne (ext.getElem?_eq cell) hl (by decide)).elim
+
+/-- `KernelWhnf::se_scan_fields` walks every remaining `∀` node of the represented type, scanning
+each domain with `se_mentions`, and rejects `let` nodes (`1`); on any other return (`r ≠ 1`),
+the chain of `∀` domains is clean and ends at a node that is neither `∀` nor `let`. -/
+theorem se_scan_fields_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
+    {r : SourceValue F} {calls : List (Call F)}
+    (ev : ObsFn W "KernelWhnf::se_scan_fields" args h r h' calls) (ih : IH c calls) :
+    Specs.Whnf.se_scan_fields c args h r h' calls := by
+  rintro ty xs rfl good ms hms ⟨d, Γ, k, T, hT⟩ hr
+  rcases Obs.«KernelWhnf::se_scan_fields».obs ev with
+    ⟨x_dom, x_body, w20, m37, cs48, ld12, ev50, he71, he72, hc73⟩ |
+    ⟨x_dom, x_body, w20, v36, m37, cs48, cs81, ld12, ev50, hne74, ev83, hc100⟩ |
+    ⟨w108, w109, w110, ld12, he126, he127, hc128⟩ |
+    ⟨v1, ld12, hne101, hne129, he133, he134, hc135⟩
+  · exact absurd he71 hr
+  · subst hc100
+    obtain ⟨T0, B, ℓ, rfl, hT0, hB, -⟩ := hT.forallE_of_load ld12
+    have hdom := ih.get (.whnf .se_mentions) (by lt_calls) ev50 x_dom xs rfl
+      (good.sub fun z hz => by simp [hz]) ms hms ⟨d, Γ, k, T0, hT0⟩ hne74
+    have e1 := ObsFn.heap_extends ev50
+    obtain ⟨ds, q, hch37, hq37, hcl37⟩ := ih.get (.whnf .se_scan_fields) (by lt_calls) ev83
+      x_body xs rfl (good.sub fun z hz => by simp [hz]) ms (se_addrs_mono e1 hms)
+      ⟨d, Γ, k + 1, B, Tm.mono e1 hB⟩ hr
+    obtain ⟨hch, hq, hcl⟩ := forallChain_of_extends e1 hch37 hq37 hcl37 hB
+    refine ⟨x_dom :: ds, q, .cons ld12 hch, hq, fun dp hdp => ?_⟩
+    rcases List.mem_cons.mp hdp with rfl | hdp
+    · exact hdom
+    · exact hcl dp hdp
+  · exact absurd he126 hr
+  · refine ⟨[], ty, .nil, ?_, fun dp hdp => (List.not_mem_nil hdp).elim⟩
+    cases hT with
+    | forallE cell _ _ _ =>
+      rw [loadValue_enum_cell cell] at ld12
+      injection ld12 with hv
+      exact (hne101 _ (by rfl) hv.symm).elim
+    | letE cell _ _ _ =>
+      rw [loadValue_enum_cell cell] at ld12
+      injection ld12 with hv
+      exact (hne129 _ (by rfl) hv.symm).elim
+    | bvarLocal cell _ _ | bvarFree cell _ _ _ | sort cell _ _ | const cell _ _ _
+    | app cell _ _ | lam cell _ _ _ | litNat cell _ _ | litStr cell _ _
+    | proj cell _ _ =>
+      exact ⟨_, _, loadValue_enum_cell cell, by decide, by decide⟩
+
 end IxVM.Refinement.Core
