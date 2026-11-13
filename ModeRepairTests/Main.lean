@@ -904,6 +904,34 @@ def useRetBody (r : Ref) : Term := .letE (.value .many) .val (app (.const r .val
 def twiceOnce := mem 379
 def twiceOnceP := mem 389
 def twiceOnceBody : Term := add (app (.const callOnce .val) [v 0] .leaf) (app (.const callOnce .val) [v 0] .leaf)
+-- Finding 17 (repair O): a unique mode on a leaf. `u17a (@borrowed n : Nat) : Nat := let (@unique m) := n; m`
+-- (control `u17ap`, `n` plain); `idU (w : WrapN) : @unique WrapN := w`, `u17b (@borrowed w : WrapN) : WrapN := idU w`;
+-- `idUP {α} (@unique x : α) : @unique α := x`, `u17c (@borrowed n : Nat) : Nat := idUP n` (control `u17cp`, `n` plain);
+-- `u17d (@borrowed w : WrapN) : Nat := match w with | ⟨@unique m⟩ => m` (control `u17dp`, `w` plain)
+def WNi := mem 420
+def wnR := ctr 420 0
+def caseWN : CaseInfo := { ind := WNi, arity := 2, major := 0, alts := #[{ alt := 1, args := #[.field 0] }] }
+def u17a := mem 410
+def u17ap := mem 411
+def idU := mem 412
+def u17b := mem 413
+def idUP := mem 414
+def u17c := mem 415
+def u17cp := mem 416
+def u17d := mem 417
+def u17dp := mem 418
+def matchWNU : Term := .case caseWN (v 0 .leaf) #[lam (par .unique .leaf) (v 0 .leaf) .shared .leaf] #[] .leaf
+def oDefs : List (Ref × RunDef) := [
+  (WNi, .ind #[wnR]), (wnR, .ctor WNi 0 0 #[fld .leaf]),
+  (u17a, body [par .borrowed .leaf] (.letE (.value .unique) .leaf (v 0 .leaf) (v 0 .leaf)) .shared .leaf),
+  (u17ap, body [par .many .leaf] (.letE (.value .unique) .leaf (v 0 .leaf) (v 0 .leaf)) .shared .leaf),
+  (idU, body [par .many .leaf] (v 0 .leaf) .unique .leaf),
+  (u17b, body [par .borrowed .leaf] (app (.const idU .val) [v 0 .leaf] .leaf) .shared .leaf),
+  (idUP, body [par .many .irr, par .unique .val .unknown] (v 0) .unique .val .unknown),
+  (u17c, body [par .borrowed .leaf] (app (.const idUP .val) [.irr, v 0 .leaf] .leaf) .shared .leaf),
+  (u17cp, body [par .many .leaf] (app (.const idUP .val) [.irr, v 0 .leaf] .leaf) .shared .leaf),
+  (u17d, body [par .borrowed .leaf] matchWNU .shared .leaf),
+  (u17dp, body [par .many .leaf] matchWNU .shared .leaf)]
 def useBoxDef : Ref × RunDef :=
   (useBox, body [par] (add (app (.proj B 0 (v 0) .val) [.natLit 0] .leaf) (app (.proj B 0 (v 0) .val) [.natLit 1] .leaf))
     .shared .leaf)
@@ -1035,7 +1063,17 @@ def findingCases : List Case := [
     twiceOnce oneFun (some .onceReentry) false [twiceOnce, callOnce],
   runCase "the same, the parameter plain"
     (onceDefs ++ [(twiceOnceP, body [par .many .val arrowSk] twiceOnceBody .shared .leaf)])
-    twiceOnceP oneFun none true [twiceOnceP, callOnce]
+    twiceOnceP oneFun none true [twiceOnceP, callOnce],
+  runCase "finding 17: a borrowed number bound at a unique let, returned" oDefs u17a oneNat (some .borrowEscape) false,
+  runCase "finding 17, control: the number not borrowed" oDefs u17ap oneNat none true,
+  runCase "finding 17: a borrowed number through a unique result of class leaf" oDefs u17b oneNat
+    (some .borrowEscape) false [u17b, idU],
+  runCase "finding 17: a borrowed number through a polymorphic unique result" oDefs u17c oneNat
+    (some .borrowEscape) false [u17c, idUP],
+  runCase "finding 17, control: the number not borrowed" oDefs u17cp oneNat none true [u17cp, idUP],
+  runCase "finding 17: a borrowed wrapper of a number matched, its field bound unique and returned" oDefs u17d oneNat
+    (some .borrowEscape) false,
+  runCase "finding 17, control: the wrapper not borrowed" oDefs u17dp oneNat none true
 ]
 
 -- END COPY
@@ -1886,9 +1924,44 @@ def nCases : List Case := [
     verdict := .refuse "borrowEscape: a borrowed value stored in a @shared field",
     run := [(0, .vioOrOof .borrowEscape), (100000, .vio .borrowEscape)], lim := { depth := 8 } }]
 
+/-! ### Finding 17 (repair O): a unique mode on a leaf (MT's encodings (a), (b); (c), (d) MR's)
+
+The programs are the suite's (`SuiteFindings.oDefs`), with MT's two refusal controls added: the
+plain `let` (`u17ac`) and `idS` with a `shared` result (`u17bc`). -/
+
+def u17ac := mem 421
+def idS := mem 422
+def u17bc := mem 423
+
+def pO : Prog := prog (SuiteFindings.oDefs ++ [
+  (u17ac, body [par .borrowed .leaf] (.letE (.value .many) .leaf (v 0 .leaf) (v 0 .leaf)) .shared .leaf),
+  (idS, body [par .many .leaf] (v 0 .leaf) .shared .leaf),
+  (u17bc, body [par .borrowed .leaf] (app (.const idS .val) [v 0 .leaf] .leaf) .shared .leaf)])
+
+def oCase (label : String) (seed : Ref) (toCheck : List Ref) (violates : Bool) : Case :=
+  if violates then
+    { label, P := pO, seed, inp := oneNat, toCheck, verdict := .refuse "borrowEscape",
+      run := [(0, .vioOrOof .borrowEscape), (100000, .vio .borrowEscape)] }
+  else
+    { label, P := pO, seed, inp := oneNat, toCheck, verdict := .accept, run := [(0, .valOrOof), (100000, .value)] }
+
+def oCases : List Case := [
+  -- REPAIR O: (a) to (d) accepted before
+  oCase "F17a let (@unique m) := n, n borrowed" SuiteFindings.u17a [SuiteFindings.u17a] true,
+  oCase "F17a control: a plain let" u17ac [u17ac] true,
+  oCase "F17a control: n not borrowed" SuiteFindings.u17ap [SuiteFindings.u17ap] false,
+  oCase "F17b idU n, a unique result of class leaf" SuiteFindings.u17b [SuiteFindings.u17b, SuiteFindings.idU] true,
+  oCase "F17b control: idS, a shared result" u17bc [u17bc, idS] true,
+  oCase "F17c idUP n, a polymorphic unique result (class val)" SuiteFindings.u17c
+    [SuiteFindings.u17c, SuiteFindings.idUP] true,
+  oCase "F17c control: n not borrowed" SuiteFindings.u17cp [SuiteFindings.u17cp, SuiteFindings.idUP] false,
+  oCase "F17d match w with | ⟨@unique m⟩ => m, w a borrowed wrapper" SuiteFindings.u17d [SuiteFindings.u17d] true,
+  oCase "F17d control: w not borrowed" SuiteFindings.u17dp [SuiteFindings.u17dp] false]
+
 def findingCases : List Case :=
   f1Cases ++ f2Cases ++ f3Cases ++ f4Cases ++ f5Cases ++ f7Cases ++ f8Cases ++ f9Cases ++ dCases ++ f10Cases ++
-    f11Cases ++ routeCases ++ routeGCases ++ r7Cases ++ f12Cases ++ f13Cases ++ f14Cases ++ f15Cases ++ f16Cases ++ nCases
+    f11Cases ++ routeCases ++ routeGCases ++ r7Cases ++ f12Cases ++ f13Cases ++ f14Cases ++ f15Cases ++ f16Cases ++ nCases ++
+    oCases
 
 def run : IO UInt32 := do
   let t ← IO.mkRef ({} : Tally)

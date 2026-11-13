@@ -622,6 +622,34 @@ def useRetBody (r : Ref) : Term := .letE (.value .many) .val (app (.const r .val
 def twiceOnce := mem 379
 def twiceOnceP := mem 389
 def twiceOnceBody : Term := add (app (.const callOnce .val) [v 0] .leaf) (app (.const callOnce .val) [v 0] .leaf)
+-- Finding 17 (repair O): a unique mode on a leaf. `u17a (@borrowed n : Nat) : Nat := let (@unique m) := n; m`
+-- (control `u17ap`, `n` plain); `idU (w : WrapN) : @unique WrapN := w`, `u17b (@borrowed w : WrapN) : WrapN := idU w`;
+-- `idUP {α} (@unique x : α) : @unique α := x`, `u17c (@borrowed n : Nat) : Nat := idUP n` (control `u17cp`, `n` plain);
+-- `u17d (@borrowed w : WrapN) : Nat := match w with | ⟨@unique m⟩ => m` (control `u17dp`, `w` plain)
+def WNi := mem 420
+def wnR := ctr 420 0
+def caseWN : CaseInfo := { ind := WNi, arity := 2, major := 0, alts := #[{ alt := 1, args := #[.field 0] }] }
+def u17a := mem 410
+def u17ap := mem 411
+def idU := mem 412
+def u17b := mem 413
+def idUP := mem 414
+def u17c := mem 415
+def u17cp := mem 416
+def u17d := mem 417
+def u17dp := mem 418
+def matchWNU : Term := .case caseWN (v 0 .leaf) #[lam (par .unique .leaf) (v 0 .leaf) .shared .leaf] #[] .leaf
+def oDefs : List (Ref × RunDef) := [
+  (WNi, .ind #[wnR]), (wnR, .ctor WNi 0 0 #[fld .leaf]),
+  (u17a, body [par .borrowed .leaf] (.letE (.value .unique) .leaf (v 0 .leaf) (v 0 .leaf)) .shared .leaf),
+  (u17ap, body [par .many .leaf] (.letE (.value .unique) .leaf (v 0 .leaf) (v 0 .leaf)) .shared .leaf),
+  (idU, body [par .many .leaf] (v 0 .leaf) .unique .leaf),
+  (u17b, body [par .borrowed .leaf] (app (.const idU .val) [v 0 .leaf] .leaf) .shared .leaf),
+  (idUP, body [par .many .irr, par .unique .val .unknown] (v 0) .unique .val .unknown),
+  (u17c, body [par .borrowed .leaf] (app (.const idUP .val) [.irr, v 0 .leaf] .leaf) .shared .leaf),
+  (u17cp, body [par .many .leaf] (app (.const idUP .val) [.irr, v 0 .leaf] .leaf) .shared .leaf),
+  (u17d, body [par .borrowed .leaf] matchWNU .shared .leaf),
+  (u17dp, body [par .many .leaf] matchWNU .shared .leaf)]
 def useBoxDef : Ref × RunDef :=
   (useBox, body [par] (add (app (.proj B 0 (v 0) .val) [.natLit 0] .leaf) (app (.proj B 0 (v 0) .val) [.natLit 1] .leaf))
     .shared .leaf)
@@ -767,7 +795,17 @@ def findingCases : List LSpec.TestSeq := [
     twiceOnce oneFun (some .onceReentry) false [twiceOnce, callOnce],
   runCase "the same, the parameter plain"
     (onceDefs ++ [(twiceOnceP, body [par .many .val arrowSk] twiceOnceBody .shared .leaf)])
-    twiceOnceP oneFun none true [twiceOnceP, callOnce]
+    twiceOnceP oneFun none true [twiceOnceP, callOnce],
+  runCase "finding 17: a borrowed number bound at a unique let, returned" oDefs u17a oneNat (some .borrowEscape) false,
+  runCase "finding 17, control: the number not borrowed" oDefs u17ap oneNat none true,
+  runCase "finding 17: a borrowed number through a unique result of class leaf" oDefs u17b oneNat
+    (some .borrowEscape) false [u17b, idU],
+  runCase "finding 17: a borrowed number through a polymorphic unique result" oDefs u17c oneNat
+    (some .borrowEscape) false [u17c, idUP],
+  runCase "finding 17, control: the number not borrowed" oDefs u17cp oneNat none true [u17cp, idUP],
+  runCase "finding 17: a borrowed wrapper of a number matched, its field bound unique and returned" oDefs u17d oneNat
+    (some .borrowEscape) false,
+  runCase "finding 17, control: the wrapper not borrowed" oDefs u17dp oneNat none true
 ]
 
 /-! ### Must-reject cases from records -/
