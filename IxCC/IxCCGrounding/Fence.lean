@@ -9,6 +9,7 @@ import IxCCGrounding.Graded
 import IxCCGrounding.GradedHead
 import IxCCGrounding.SelRetype
 import IxCCGrounding.WordRoot
+import IxCCGrounding.PcRoot
 
 /-! # The grounding library's axiom fence: every theorem presented as proved uses at most
 the three standard axioms. Building the library checks it (`#guard_msgs`). -/
@@ -1628,3 +1629,200 @@ example {p : Program} {env : KEnv} {κ : CId → KKey} {lpsOf : CId → List Nat
   sans_of_checkW h
 
 end ConclusionsAGpW
+
+/-! ## Step Pc: `PUnit.casesOn` at its ordinary instances. The generic versions beside the landed
+statements (the sort clause, the `case` kinds and the fundamental lemma's per-instance kind as
+parameters; the landed statements keep their text and the sets above), the Pc family's check
+`groundCheckWP`, the instance condition `pcInstB`, and the root theorem
+`rootSound_678AGpWP_of_check` -/
+
+/-- info: 'IxCC.Grounding.caseWFWith_of_check' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.caseWFWith_of_check
+
+/-- info: 'IxCC.Grounding.caseStoredWith_of_check' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.caseStoredWith_of_check
+
+/-- info: 'IxCC.Grounding.sansK_of_sans' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.sansK_of_sans
+
+/-- info: 'IxCC.Grounding.caseRecK_of_sans' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.caseRecK_of_sans
+
+/-- info: 'IxCC.Grounding.groundFactsWK_of_sansK' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.groundFactsWK_of_sansK
+
+/-- info: 'IxCC.Grounding.runPair_mem_of_sansK' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.runPair_mem_of_sansK
+
+/-- info: 'IxCC.Grounding.headRegimeS_of_sansK' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.headRegimeS_of_sansK
+
+/-- info: 'IxCC.Grounding.FundHyps.toK' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.FundHyps.toK
+
+/-- info: 'IxCC.Grounding.head_teleK' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.head_teleK
+
+/-- info: 'IxCC.Grounding.fire_noParamsK' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.fire_noParamsK
+
+/-- info: 'IxCC.Grounding.fire_stepK' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.fire_stepK
+
+/-- info: 'IxCC.Grounding.apply_stepK' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.apply_stepK
+
+/-- info: 'IxCC.Grounding.evalConst_stepK' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.evalConst_stepK
+
+/-- info: 'IxCC.Grounding.eval_stepK' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.eval_stepK
+
+/-- info: 'IxCC.Grounding.allPK' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.allPK
+
+/-- info: 'IxCC.Grounding.fundamental_constK' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.fundamental_constK
+
+/-- info: 'IxCC.Grounding.fundamental_termK' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.fundamental_termK
+
+/-- info: 'IxCC.Grounding.caseIotaGWith' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.caseIotaGWith
+
+/-- info: 'IxCC.Grounding.caseFires_of_agreeWK' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.caseFires_of_agreeWK
+
+/-- info: 'IxCC.Grounding.runs_of_sitesInWK' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.runs_of_sitesInWK
+
+/-- info: 'IxCC.Grounding.enum_argWK' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.enum_argWK
+
+/-- info: 'IxCC.Grounding.rootSound_coreWK' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.rootSound_coreWK
+
+/-- info: 'IxCC.Grounding.FaithWithK.mono' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.FaithWithK.mono
+
+/-- info: 'IxCC.Grounding.FaithWithK.monoW' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.FaithWithK.monoW
+
+/-- info: 'IxCC.Grounding.FaithWithK.monoK' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.FaithWithK.monoK
+
+/-- info: 'IxCC.Grounding.CaseStoredWith.mono' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.CaseStoredWith.mono
+
+/-- info: 'IxCC.Grounding.mem_checkPartsWP' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.mem_checkPartsWP
+
+/-- info: 'IxCC.Grounding.sansK_of_checkWP' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.sansK_of_checkWP
+
+/-- info: 'IxCC.Grounding.word_of_checkWP' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.word_of_checkWP
+
+/-- info: 'IxCC.Grounding.caseRecP_of_checkWP' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.caseRecP_of_checkWP
+
+/-- info: 'IxCC.Grounding.caseShapeP_of_checkWP' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.caseShapeP_of_checkWP
+
+/-- info: 'IxCC.Grounding.srcs_nil_of_punit' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.srcs_nil_of_punit
+
+/-- info: 'IxCC.Grounding.caseRecK_of_checkWP' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.caseRecK_of_checkWP
+
+/-- info: 'IxCC.Grounding.caseFactsReadP_of_checkWP' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.caseFactsReadP_of_checkWP
+
+/-- info: 'IxCC.Grounding.groundFactsWP_of_check' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.groundFactsWP_of_check
+
+/-- info: 'IxCC.Grounding.pcInst_of_check' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.pcInst_of_check
+
+/-- info: 'IxCC.Grounding.caseFires_of_instWP' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.caseFires_of_instWP
+
+/-- info: 'IxCC.Grounding.fundHypsK_of_instWP' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.fundHypsK_of_instWP
+
+/-- info: 'IxCC.Grounding.rootSound_678ASWP' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.rootSound_678ASWP
+
+/-- info: 'IxCC.Grounding.rootSound_678AGWP' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.rootSound_678AGWP
+
+/-- info: 'IxCC.Grounding.rootSound_678AGWP_of_check' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.rootSound_678AGWP_of_check
+
+/-- info: 'IxCC.Grounding.rootSound_678AGpWP_of_check' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.rootSound_678AGpWP_of_check
+
+/-! **`rootSound_678AGpWP_of_check` has `rootSound_678AGpW_of_check`'s statement with `groundCheckWP`
+for `groundCheckW` and one more hypothesis, `pcInstB p Inst = true`**: the same laws, the same other
+hypotheses, the conclusion word for word. And the landed names read as the generic definitions at
+the landed clauses. -/
+
+section ConclusionsAGpWP
+
+open IxCC.Grounding Ix.Kernel Ix.Kernel.SetTheory
+open IxCC.Src (Value CId Program Levels)
+
+variable {V : Type} [Ix.Kernel.SetTheory V] {env : KEnv} {M : Model V env}
+
+example (hL : Laws678 M) (hgr : GradedLaw M.cval env) {p : Program} {κ : CId → KKey}
+    {lpsOf : CId → List Nat} {ann : IxCC.Src.Relevance.Ann} {Sl : List CId} {root : CId}
+    {args : List FoTy} {res : FoTy} {Inst : List (CId × Levels)}
+    (hchk : groundCheckWP p (selEnv p env κ Sl) κ lpsOf ann Sl = true)
+    (hnc : noCanonAB p (selEnv p env κ Sl) κ Sl = true)
+    (hld : litDefsB (selEnv p env κ Sl) = true)
+    (hinst : instCheckB p (selEnv p env κ Sl) κ lpsOf [root] Inst = true)
+    (hpc : pcInstB p Inst = true)
+    (hhr : headRegimeSB p (selEnv p env κ Sl) κ lpsOf ann Sl = true)
+    (hR : RootFacts p (selEnv p env κ Sl) κ ann (· ∈ Sl) root args res)
+    {k : Nat} {xs : List Value} {es : List KExpr} {v : Value} {o : IxCC.Sem.Obs} {eo : KExpr}
+    (hA : FoArgs p κ args xs es) (hrun : IxCC.Src.run p k root xs = .ok v)
+    (hrb : IxCC.Src.readbackAll p v = some o)
+    (hRT : ResultTag p (selEnv p env κ Sl) κ (· ∈ Sl) res o)
+    (hO : FoObs p κ res o eo) (φ : LevelParam → Nat) (ρ : BVarIdx → V) (X : V)
+    (hX : Denotes M.cval env φ ρ (Expr.mkAppN (.const (κ root) []) es) X) :
+    Denotes M.cval env φ ρ eo X :=
+  rootSound_678AGpWP_of_check hL hgr hchk hnc hld hinst hpc hhr hR hA hrun hrb hRT hO φ ρ X hX
+
+/-- `CaseStored` and `CaseWF` are the generic structures at the sort clause `NeverProp`. -/
+example {env : KEnv} {kc kr : KKey} {sh : CaseShape} :
+    CaseStored env kc kr sh = CaseStoredWith (fun env D => NeverProp env D) env kc kr sh := rfl
+
+example {env : KEnv} {sh : CaseShape} :
+    CaseWF env sh = CaseWFWith (fun env D => NeverProp env D) env sh := rfl
+
+/-- `FaithWith` and `GroundFactsWith` are the generic structures at the kinds `ordinary` or
+`empty`. -/
+example {R W : Prop} {p : Program} {env : KEnv} {κ : CId → KKey} {lpsOf : CId → List Nat}
+    {S : CId → Prop} :
+    FaithWith R W p env κ lpsOf S = FaithWithK R W
+      (fun r => p.table.recKindOf r = some .ordinary ∨ p.table.recKindOf r = some .empty)
+      p env κ lpsOf S := rfl
+
+example {R W : Prop} {p : Program} {env : KEnv} {κ : CId → KKey} {lpsOf : CId → List Nat}
+    {ann : IxCC.Src.Relevance.Ann} {S : CId → Prop} :
+    GroundFactsWith R W p env κ lpsOf ann S = GroundFactsWithK R W
+      (fun r => p.table.recKindOf r = some .ordinary ∨ p.table.recKindOf r = some .empty)
+      p env κ lpsOf ann S := rfl
+
+/-- `caseStoredB` is the generic decider at `neverPropB`. -/
+example {env : KEnv} {kc kr : KKey} {sh : CaseShape} :
+    caseStoredB env kc kr sh = caseStoredWithB (fun env D => neverPropB env D) env kc kr sh := rfl
+
+/-- The Pc family's check gives every conjunct of the check but `noWord`, `caseRec` and
+`caseShape` (`sansK_of_checkWP`): the conjuncts the landed families read, read unchanged. -/
+example {p : Program} {env : KEnv} {κ : CId → KKey} {lpsOf : CId → List Nat}
+    {ann : IxCC.Src.Relevance.Ann} {Sl : List CId} (h : groundCheckWP p env κ lpsOf ann Sl = true) :
+    CheckSansK p env κ lpsOf ann Sl :=
+  sansK_of_checkWP h
+
+end ConclusionsAGpWP

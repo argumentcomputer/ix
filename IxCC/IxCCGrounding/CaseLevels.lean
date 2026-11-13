@@ -121,11 +121,13 @@ def CaseLevelAgree (p : Program) (lpsOf : CId → List Nat) (Ok : CId → Levels
 agreement (its `ψ` gives the constructor's level parameters what `indLevels` gives them at the
 `case`'s `φ`: `RelV.con`'s `LvAt` and its `Ok`, the `case` head's `Ok`, `CaseLevelAgree`) and then
 `caseIotaG` at the constructor's own parameters. Laws: `DefnValue`, `IotaLawG`, `CvalParams` (and
-`Model.mem`); not `ctor_canon`. -/
-theorem caseFires_of_agreeW (hδ : DefnValue M) (hι : IotaLawG M.cval env) (hcv : CvalParams M)
-    {p : Program} {c r : CId} {sh : CaseShape} {Wd : Prop}
-    (hF : FaithW Wd p env κ lpsOf S) (hN : NatBasis env) (_hSc : S c)
-    (hres : p.table.resolveOf c = some (.case r)) (hst : CaseStored env (κ c) (κ r) sh)
+`Model.mem`); not `ctor_canon`. Over any recursor and word clauses, any `case` kinds and any sort clause (steps W, Pc: it
+reads none of them). -/
+theorem caseFires_of_agreeWK (hδ : DefnValue M) (hι : IotaLawG M.cval env) (hcv : CvalParams M)
+    {p : Program} {c r : CId} {sh : CaseShape} {R Wd : Prop} {Kd : CId → Prop}
+    {Srt : KEnv → KKey → Prop}
+    (hF : FaithWithK R Wd Kd p env κ lpsOf S) (hN : NatBasis env) (_hSc : S c)
+    (hres : p.table.resolveOf c = some (.case r)) (hst : CaseStoredWith Srt env (κ c) (κ r) sh)
     (hpr : CaseProg p κ S r sh) (hB : CaseRulesBlind env (κ r))
     (hag : ∀ (sf kk : Bool) (lvls np nmot nmin ni : Nat) (ind : CId) (rules : List IxCC.Src.Rule)
       (ty : Term), p.decl? r = some (.recr sf kk lvls np nmot nmin ni ind rules ty) →
@@ -183,7 +185,7 @@ theorem caseFires_of_agreeW (hδ : DefnValue M) (hι : IotaLawG M.cval env) (hcv
           rw [hnP0, List.take_zero]; exact .nil
         have hmaj : As[sh.nP + 1]? = some ((As.take sh.nP ++ []).foldl app (M.cval natZeroName φ)) := by
           rw [hTm', hTe, hnP0, List.take_zero]; rfl
-        obtain ⟨Mn, hMn, heq, hch⟩ := caseIotaG M hδ hι hcv hst hB cvc _ hint hfc φ ρ σ R As hfit' hlen
+        obtain ⟨Mn, hMn, heq, hch⟩ := caseIotaGWith M hδ hι hcv hst hB cvc _ hint hfc φ ρ σ R As hfit' hlen
           hlast 0 cs0 cvZ _ (As.take sh.nP) [] ρ _ hcs0 hcC hK hFC (by simp; omega)
           (by rw [hn0]; rfl) hmaj
         exact ⟨Mn, [], hMn, .nil, heq, hch⟩
@@ -206,7 +208,7 @@ theorem caseFires_of_agreeW (hδ : DefnValue M) (hι : IotaLawG M.cval env) (hcv
         have hmaj : As[sh.nP + 1]? =
             some ((As.take sh.nP ++ [litSet M φ n]).foldl app (M.cval natSuccName φ)) := by
           rw [hTm', hTe, hnP0, List.take_zero]; rfl
-        obtain ⟨Mn, hMn, heq, hch⟩ := caseIotaG M hδ hι hcv hst hB cvc _ hint hfc φ ρ σ R As hfit' hlen
+        obtain ⟨Mn, hMn, heq, hch⟩ := caseIotaGWith M hδ hι hcv hst hB cvc _ hint hfc φ ρ σ R As hfit' hlen
           hlast 1 cs1 cvS _ (As.take sh.nP) [litSet M φ n] _ _ hcs1 hcC hK hFC (by simp; omega)
           (by rw [hn1]; rfl) hmaj
         exact ⟨Mn, [litSet M φ n], hMn, .cons (.val (relV_lit_intro hN φ n)) .nil, heq, hch⟩
@@ -273,12 +275,25 @@ theorem caseFires_of_agreeW (hδ : DefnValue M) (hι : IotaLawG M.cval env) (hcv
           have hFC := fits_inst_cv M hcv (ks := cv.levelParams) (us := sh.indLevels) (φ := φ)
             (ψ := ψ) hψ hfit2 hdef
           -- the guarded ι law at the constructor's own parameters `Ps` (`caseIotaG`)
-          obtain ⟨Mn, hMn, heq, hch⟩ := caseIotaG M hδ hι hcv hst hB cvc _ hint hfc φ ρ σ R As
+          obtain ⟨Mn, hMn, heq, hch⟩ := caseIotaGWith M hδ hι hcv hst hB cvc _ hint hfc φ ρ σ R As
             hfit' hlen hlast cidx cs cv _ Ps Fs σ2 _ hcs hfCk hK hFC hPl hFl hTm'
           exact ⟨Mn, Fs, hMn, relSlots_of_relVs hfs', heq, hch⟩
         · simp at hsel
       | _ => simp [hd'] at hsel
   | _ => simp at hsel
+
+/-- **The canonicity-free `case` lemma with level parameters** over any word clause (step W):
+`caseFires_of_agreeWK` at the landed recursor clause, kinds and sort clause. -/
+theorem caseFires_of_agreeW (hδ : DefnValue M) (hι : IotaLawG M.cval env) (hcv : CvalParams M)
+    {p : Program} {c r : CId} {sh : CaseShape} {Wd : Prop}
+    (hF : FaithW Wd p env κ lpsOf S) (hN : NatBasis env) (_hSc : S c)
+    (hres : p.table.resolveOf c = some (.case r)) (hst : CaseStored env (κ c) (κ r) sh)
+    (hpr : CaseProg p κ S r sh) (hB : CaseRulesBlind env (κ r))
+    (hag : ∀ (sf kk : Bool) (lvls np nmot nmin ni : Nat) (ind : CId) (rules : List IxCC.Src.Rule)
+      (ty : Term), p.decl? r = some (.recr sf kk lvls np nmot nmin ni ind rules ty) →
+      CaseLevelAgree p lpsOf Ok c sh ind) :
+    CaseFires M p κ lpsOf S Ok c :=
+  caseFires_of_agreeWK hδ hι hcv hF hN _hSc hres hst hpr hB hag
 
 /-! ## The verified instance set -/
 

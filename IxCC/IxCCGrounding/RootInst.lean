@@ -27,12 +27,12 @@ universe w
 
 variable {V : Type w} [Ix.Kernel.SetTheory V] {env : KEnv} {M : Model V env}
 
-/-- **The run terms run at `OkIn`**: `runs_of_sites`, each constant a run term evaluates `Ok` by
-`okClosed` and in `Inst` by `InstClosed`; over any word clause (step W; `runs_of_sitesIn` at the
-landed one). -/
-theorem runs_of_sitesInW (hL : LawsCore M) {p : Program} {κ : CId → KKey} {lpsOf : CId → List Nat}
-    {ann : IxCC.Src.Relevance.Ann} {S : CId → Prop} {Inst : List (CId × Levels)} {Wd : Prop}
-    (hG : GroundFactsW Wd p env κ lpsOf ann S) (hT : SitesOk M p κ lpsOf ann S) (hI : InstClosed p Inst)
+/-- **The run terms run at `OkIn`**, over any recursor and word clauses and any `case` kinds (steps
+W, Pc). -/
+theorem runs_of_sitesInWK (hL : LawsCore M) {p : Program} {κ : CId → KKey} {lpsOf : CId → List Nat}
+    {ann : IxCC.Src.Relevance.Ann} {S : CId → Prop} {Inst : List (CId × Levels)} {R Wd : Prop}
+    {Kd : CId → Prop} (hG : GroundFactsWithK R Wd Kd p env κ lpsOf ann S)
+    (hT : SitesOk M p κ lpsOf ann S) (hI : InstClosed p Inst)
     {c : CId} {ls : Levels} {t : Term} {e : KExpr} (hS : S c) (hOk : OkIn p ann Inst c ls)
     (hrp : RunPair p env κ c t e) {φ : LevelParam → Nat} (hlv : LvAt φ (lpsOf c) ls) :
     Runs M κ (OkIn p ann Inst) (lpsOf c) ls φ [] [] t e := by
@@ -52,6 +52,17 @@ theorem runs_of_sitesInW (hL : LawsCore M) {p : Program} {κ : CId → KKey} {lp
   exact runs_of_corr hcorr hden (hT c ls t e hS hOk.1 hrp φ hlv)
     (fun d us h => ⟨hG.okClosed c ls hS hOk.1 t hterm d us h,
       hI c ls hOk.2 t (List.mem_append_left _ hterm) d us h⟩) (hG.wits c t e hS hrp)
+
+/-- **The run terms run at `OkIn`**: `runs_of_sites`, each constant a run term evaluates `Ok` by
+`okClosed` and in `Inst` by `InstClosed`; over any word clause (step W; `runs_of_sitesIn` at the
+landed one). -/
+theorem runs_of_sitesInW (hL : LawsCore M) {p : Program} {κ : CId → KKey} {lpsOf : CId → List Nat}
+    {ann : IxCC.Src.Relevance.Ann} {S : CId → Prop} {Inst : List (CId × Levels)} {Wd : Prop}
+    (hG : GroundFactsW Wd p env κ lpsOf ann S) (hT : SitesOk M p κ lpsOf ann S) (hI : InstClosed p Inst)
+    {c : CId} {ls : Levels} {t : Term} {e : KExpr} (hS : S c) (hOk : OkIn p ann Inst c ls)
+    (hrp : RunPair p env κ c t e) {φ : LevelParam → Nat} (hlv : LvAt φ (lpsOf c) ls) :
+    Runs M κ (OkIn p ann Inst) (lpsOf c) ls φ [] [] t e :=
+  runs_of_sitesInWK hL hG hT hI hS hOk hrp hlv
 
 /-- **The run terms run at `OkIn`**: `runs_of_sites`, each constant a run term evaluates `Ok` by
 `okClosed` and in `Inst` by `InstClosed`. -/

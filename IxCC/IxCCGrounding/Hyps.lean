@@ -109,6 +109,60 @@ structure FundHyps (M : Model V env) (p : Program) (κ : CId → KKey) (lpsOf : 
     env.find? (κ c) = some (.defnInfo cv val hint) →
     ∀ φ, LvAt φ (lpsOf c) ls → Runs M κ Ok (lpsOf c) ls φ [] [] v val
 
+/-- **Everything the fundamental lemma assumes, with the `case` kinds read per instance** (step
+Pc): `FundHyps` with the faithfulness clauses at any kinds (`True`: the lemma reads only their
+arity), the kind read instead at each `Ok` instance (`kindAt`: `ordinary` at its levels, or
+`empty`), and F5's meaning asked at every `case` constant with an `Ok` instance at which the kind
+is `ordinary`. `FundHyps.toK` gives it from `FundHyps`; the Pc family gives it at `OkIn` from the
+decided instance condition `pcInstB`, so that a `case` entry of kind `subsingleton` whose
+condition fails at every instance is fired by F5 as SrcEval fires it there. -/
+structure FundHypsK (M : Model V env) (p : Program) (κ : CId → KKey) (lpsOf : CId → List Nat)
+    (S : CId → Prop) (Ok : CId → Levels → Prop) : Prop where
+  laws : LawsCore M
+  canon : CtorCanon M ∨ ∀ r, S r →
+    (recClassB p env κ r = some .flat ∨ recClassB p env κ r = some .noParams) →
+      RecNoLevels env (κ r)
+  natBasis : NatBasis env
+  faith : FaithWithK (RecFacts p env κ lpsOf S) True (fun _ => True) p env κ lpsOf S
+  words : WordFires M p κ lpsOf S Ok
+  /-- at every `Ok` instance of a `case` entry, its recursor's kind at the instance's levels is
+  `ordinary` (SrcEval forces the major and fires F5), or its kind is `empty` (SrcEval traps) -/
+  kindAt : ∀ c r ls, S c → p.table.resolveOf c = some (.case r) → Ok c ls →
+    (p.table.recKindOf r).map (·.atLevels ls) = some .ordinary ∨
+      p.table.recKindOf r = some .empty
+  cases : ∀ c r, S c → p.table.resolveOf c = some (.case r) →
+    (∃ ls, Ok c ls ∧ (p.table.recKindOf r).map (·.atLevels ls) = some .ordinary) →
+    CaseFires M p κ lpsOf S Ok c
+  eqn : ∀ c thm body, S c → p.table.resolveOf c = some (.eqn thm body) → ∃ e : KExpr,
+    (∀ φ ρ X, Denotes M.cval env φ ρ e X → M.cval (κ c) φ = X) ∧
+    ∀ ls φ, Ok c ls → LvAt φ (lpsOf c) ls → Runs M κ Ok (lpsOf c) ls φ [] [] body e
+  value : ∀ c ls lvls ty v cv val hint, S c → Ok c ls → p.table.resolveOf c = none →
+    p.decl? c = some (.defn .defn .safe lvls ty v) →
+    env.find? (κ c) = some (.defnInfo cv val hint) →
+    ∀ φ, LvAt φ (lpsOf c) ls → Runs M κ Ok (lpsOf c) ls φ [] [] v val
+
+/-- `FundHyps` gives `FundHypsK`: the static kind (`ordinary` or `empty`) is the kind at every
+level. -/
+theorem FundHyps.toK {M : Model V env} {p : Program} {κ : CId → KKey} {lpsOf : CId → List Nat}
+    {S : CId → Prop} {Ok : CId → Levels → Prop} (H : FundHyps M p κ lpsOf S Ok) :
+    FundHypsK M p κ lpsOf S Ok where
+  laws := H.laws
+  canon := H.canon
+  natBasis := H.natBasis
+  faith := FaithWithK.monoK (fun _ _ => trivial) H.faith
+  words := H.words
+  kindAt := fun c r _ hS hr _ => by
+    rcases (H.faith.caseRec c r hS hr).1 with hk | hk
+    · exact .inl (by rw [hk]; rfl)
+    · exact .inr hk
+  cases := fun c r hS hr ⟨ls, _, hk⟩ => by
+    rcases (H.faith.caseRec c r hS hr).1 with hk' | hk'
+    · exact H.cases c r hS hr hk'
+    · rw [hk'] at hk
+      simp [IxCC.Src.RecKind.atLevels] at hk
+  eqn := H.eqn
+  value := H.value
+
 end Sem
 
 end IxCC.Grounding

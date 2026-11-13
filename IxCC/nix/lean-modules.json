@@ -1223,6 +1223,9 @@
     "IxCCGrounding.Direct.Check",
     "IxCCTests.Grounding.Oracle",
     "IxCCTests.Src.Support"]},
+  "IxCCTests.Grounding.Pc":
+  {"path": "IxCCTests/Grounding/Pc.lean",
+   "imports": ["IxCCTests.Grounding.LetWit", "IxCCGrounding.PcRoot"]},
   "IxCCTests.Grounding.Oracle":
   {"path": "IxCCTests/Grounding/Oracle.lean",
    "imports": ["IxCC.Src.KernelFront.Annotate", "IxCCGrounding.Direct.Check"]},
@@ -1245,7 +1248,8 @@
     "IxCCTests.Grounding.CaseEmpty",
     "IxCCTests.Grounding.LetClo",
     "IxCCTests.Grounding.LetWit",
-    "IxCCTests.Grounding.Words"]},
+    "IxCCTests.Grounding.Words",
+    "IxCCTests.Grounding.Pc"]},
   "IxCCTests.Grounding.LetWit":
   {"path": "IxCCTests/Grounding/LetWit.lean",
    "imports": ["IxCCTests.Grounding.LetClo"]},
@@ -4319,6 +4323,8 @@
    "imports": ["IxCCGrounding.RecFlat", "IxCCGrounding.Direct.Sites"]},
   "IxCCGrounding.RecFlat":
   {"path": "IxCCGrounding/RecFlat.lean", "imports": ["IxCCGrounding.CaseFire"]},
+  "IxCCGrounding.PcRoot":
+  {"path": "IxCCGrounding/PcRoot.lean", "imports": ["IxCCGrounding.WordRoot"]},
   "IxCCGrounding.Ok":
   {"path": "IxCCGrounding/Ok.lean", "imports": ["IxCCGrounding.Syntax"]},
   "IxCCGrounding.Model":
@@ -4372,7 +4378,8 @@
     "IxCCGrounding.Graded",
     "IxCCGrounding.GradedHead",
     "IxCCGrounding.SelRetype",
-    "IxCCGrounding.WordRoot"]},
+    "IxCCGrounding.WordRoot",
+    "IxCCGrounding.PcRoot"]},
   "IxCCGrounding.Facts":
   {"path": "IxCCGrounding/Facts.lean",
    "imports": ["IxCCGrounding.Direct.Check"]},
@@ -4484,6 +4491,7 @@
     "IxCCGrounding.WordFire",
     "IxCCGrounding.WordCheck",
     "IxCCGrounding.WordRoot",
+    "IxCCGrounding.PcRoot",
     "IxCCGrounding.Fence"]},
   "IxCC.Xv.XlSemantics":
   {"path": "IxCC/Xv/XlSemantics.lean",

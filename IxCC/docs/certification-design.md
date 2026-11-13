@@ -1131,6 +1131,7 @@ for them, and `Direct/Check.lean` hosts the helpers 1a and 1b read (`KTab`, `pwA
 | `rootSound_678AG`, `rootSound_678AG_of_check` | six: `Laws678` and `graded`; no typing hypothesis; no direct route at run-term sites (`RecSites` still decided by it inside the check) |
 | `rootSound_678AGp_of_check` | six: `Laws678` and `graded`, every check read on `selEnv` (step Ap, below); `autoParam`/`optParam` binders in an `eqn` function's type admitted, which needs `graded`, so the five-field families and 1a's keep refusing those `eqn` entries |
 | `rootSound_678ASW`, `rootSound_678AGW`, `rootSound_678AGW_of_check`, `rootSound_678AGpW_of_check` | six: `Laws678` and `graded`, as `rootSound_678AGp_of_check`; the word family (step W, below): the check `groundCheckW` has the decided word conjunct `word` for `noWord`, so fixed-width word entries are admitted (`graded` and `proj_law` also type the word towers) |
+| `rootSound_678ASWP`, `rootSound_678AGWP`, `rootSound_678AGWP_of_check`, `rootSound_678AGpWP_of_check` | six: `Laws678` and `graded`, as the word family; the Pc family (step Pc, below): the check `groundCheckWP` has `caseRecP` and `caseShapeP` for `caseRec` and `caseShape` (a `case` entry of kind `subsingleton` in the PUnit shape admitted), and the decided instance condition `pcInstB` (no instance at which such an entry is a proposition) is one more hypothesis |
 
 **A `let` in a run term (step C, since 2026-11-13).** The kernel stores a run term's ζ-reduct: its
 annotation pass substitutes every `let` away, and **neither `Denotes` reads a `let`** (ours,
@@ -1444,8 +1445,81 @@ sides swapped, the head with no binder, the entry relabelled `neg` (the wrong ar
 decision). **Not established**: the decisions (`decEq`, `decLt`, `decLe`) are not primitives in stage
 W1 and have no model fact; `USize` is not a width; the landed families still refuse every word entry.
 
+**`PUnit.casesOn` at its ordinary instances (step Pc, since 2026-11-13; `IxCCGrounding/PcRoot.lean`).**
+A `case` entry whose recursor is of kind `subsingleton w srcs` (`PUnit.rec`: `w = allZero [1]`, a
+proposition exactly when the family's level is 0) is refused by every family landed before: the
+conjunct `caseRec` admits the kinds `ordinary` and `empty` only, and the shape check asks the family to
+be never a proposition (`CaseWF.indSort`, `NeverProp`). SrcEval fires such an entry by its kind at the
+instance's levels: where `w` fails, as an `ordinary` entry (F5: the major forced, the rule selected by
+its constructor); where `w` holds, by the subsingleton branch (the minor selected without forcing the
+major). **The Pc family** is one family on top of the word family: its check `groundCheckWP` is
+`checkPartsW` with `caseRec` replaced by `caseRecP` (`caseRecPB`: the landed conjunct at `ordinary` and
+`empty` entries; at a `subsingleton`-kind entry the PUnit shape, `punitShapeB`) and `caseShape` by
+`caseShapeP` (`caseShapePB`: the landed shape check, without the sort clause at a `subsingleton`-kind
+entry); the landed `caseProg` stays (it already reads the shape at every entry not of kind `empty`).
+Beside the check, a decided **instance condition** `pcInstB p Inst`: at every instance `(c, ls)` of
+the verified instance set whose `case` recursor is of kind `subsingleton w _`, `w.holds ls = false`.
+So the proposition instance is refused by the check and never proved; at every instance the theorem
+speaks of, the kind is `ordinary`, and F5's meaning there is the canonicity-free route's
+(`caseFires_of_agreeWK`: ι at the constructor's own parameters, level agreement from `InstUniform`),
+which reads no sort clause. No new law, no new axiom. **The PUnit shape is a restriction, not a
+premise of the proof.** `punitShapeB` asks: no field source; no parameter (declaration and shape); no
+index; one constructor without fields; `w` exactly the zero condition of the family's stored final sort
+substituted at the shape's `indLevels` (compared through `pwNamed`, which reads a Src condition over
+positions as the kernel's canonical set of parameter names, `none` when a position is out of range, so
+`==` with `Level.zeronessOf` is agreement at every assignment); and each constructor of the family in
+the closure annotated `proof` exactly at its stored sort's zero condition. The proof reads none of these
+clauses (only that the kind is `ordinary`, `empty`, or `subsingleton` with no field source,
+`KindsP`): soundness comes from `pcInstB` and the canonicity-free route, and the clauses keep the
+admitted fragment to the shape measured and understood (`PUnit.casesOn`), narrower than what the proof
+covers. A family whose zero condition is constantly true (a `True`-like family, kind `allZero []`)
+would pass the shape clauses; every instance of it is refused by `pcInstB` (`w` holds at every level),
+which is sound, since F5 is asked only at instances. **The plumbing** (as step W's, every landed
+statement keeping its text): `CaseWFWith`/`CaseStoredWith` take the sort clause as a parameter
+(`CaseWF`, `CaseStored` are abbreviations at `NeverProp`; `caseStoredB` is `caseStoredWithB` at
+`neverPropB`); `FaithWithK`/`GroundFactsWithK` take the kinds a `case` entry's recursor may have
+(`FaithWith`, `GroundFactsWith` are abbreviations at `ordinary` or `empty`); `FundHypsK` beside
+`FundHyps` reads the kind per `Ok` instance (`kindAt`) and asks F5's meaning where an instance is
+`ordinary`, with `FundHyps.toK`; the fundamental lemma is proved over `FundHypsK` (`allPK` and its
+eight companions) and the landed nine are wrappers through `toK`; the consumers of the chain have
+generic versions (`caseIotaGWith`, `caseFires_of_agreeWK`, `runs_of_sitesInWK`, `enum_argWK`,
+`rootSound_coreWK`) and versions over every conjunct but `noWord`, `caseRec` and `caseShape`
+(`CheckSansK`: `groundFactsWK_of_sansK`, `runPair_mem_of_sansK`, `headRegimeS_of_sansK`).
+**`rootSound_678AGpWP_of_check`**: `rootSound_678AGpW_of_check`'s statement with `groundCheckWP` for
+`groundCheckW` and one more hypothesis, `pcInstB p Inst = true`; the conclusion word for word (pinned
+in the fence). `groundCheck`, `groundCheckW`, the six-field family and the word family are unchanged.
+**Measured** (`GR22-s3`, `tests-grounding`, `IxCCTests/Grounding/Pc.lean`): on the 52 closures (the 51
+and `src-words`) the word family holds on 46 (45 of the 51) and the Pc family on 47: the same and
+`phase2-closures/closures`, whose one `subsingleton`-kind entry (c214, `PUnit.casesOn`, recursor c71
+of kind `subsingleton (allZero [1]) []`) is refused by the landed `caseRec` and `caseShape` and passes
+`caseRecP` (every PUnit clause) and `caseShapeP`; per root of `closures`, the word family at `knot`,
+`composeClosure`, `polyRec`, `storedApply` (c268, c116, c46, c207) as before, the Pc family at those and
+at `stateLoop` and `stateLoopSE` (c39, c140, whose only instance of c214 is at `[1, 1]`, where the kind
+is `ordinary`). **Controls on `closures`**, each with the unplanted input accepted by the same decision
+and the plant shown to change the datum it reads: the instance at level 0 (root c46's instance set with
+`(c214, [0, 0])` added and walked closed: `pcInstB` alone false, every other decided hypothesis true;
+at c39, c140, c207 the same plant also fails `instCheckB`, by uniformity against `PUnit.unit`'s
+instance at `[1]`, recorded); a field (the kind's field sources `[proof]`: `caseRecP` alone, clause
+`srcs`); an index (the recursor's declaration with one index: `caseRecP`, clause `ni` and the arity, and
+the landed `caseProg`, which already requires `ni = 0` at every `case` entry, so an index cannot be
+isolated to one conjunct); the constructor's class made `rel` (`caseRecP` alone, clause `class`); `w`
+made `allZero [0]` (`caseRecP` alone, clause `w`); `w` made always (`caseRecP` and `pcInstB`). The
+corpus's one other `subsingleton`-kind entry, `strings` c823, is `Eq`-like (two parameters, one index,
+a family in `Prop`, one constructor without fields and without a class): refused by the PUnit clauses
+`np`, `ni`, `class`; `strings` stays out, false at `[caseRecP, proj, valueCorr, caseShapeP, caseProg]`
+(the word family: `[caseRec, proj, valueCorr, caseShape, caseProg]`). **Not done.** (i) *The
+proposition instance* (an instance at which `w` holds, SrcEval's subsingleton branch) is refused by the
+check (`pcInstB`). It is provable with no new assumption: there the major and the constructor's value
+are both the proof point (`mem_univ_zero`, `IxCK/Kernel/SetTheory/Basic.lean`, with `Model.mem`), and
+ι (`IotaLaw`, `IotaLawG`, `IotaRule678`) has no sort premise; about three days, in both F5 routes.
+(ii) *SrcEval's branch for a subsingleton recursor at a proposition instance has no counterpart among
+the kernel's reduction rules for `PUnit.{0}`*: the K rescue (`Red.rescueK`) needs a family whose type
+ends in a sort that is syntactically zero, and the η rescue needs `capsNeverZero`; so that branch is
+justified by the model only. (iii) Every other `subsingleton`-kind entry stays refused: fields,
+indices (`Eq`-like), and `Acc`-like families.
+
 **What is proved, fenced on `propext`, `Classical.choice` and `Quot.sound` or
-fewer (`IxCCGrounding/Fence.lean`, 408 exact assertions):**
+fewer (`IxCCGrounding/Fence.lean`, 450 exact assertions):**
 
 - *Soundness at a root* (`rootSound`, in `IxCCGrounding.Root`). For every
   program, kernel reading `env`, key map, level parameters, certificate

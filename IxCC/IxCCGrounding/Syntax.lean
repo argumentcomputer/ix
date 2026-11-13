@@ -853,8 +853,12 @@ the check):
   class at which canonicity (`Laws.ctor_canon`) is assumed. A `case` over a family in `Prop`
   (`And.casesOn` into `Type`) is outside the fragment: there SrcEval's major is an erased proof,
   on which F5 selects no rule, and a constructor value of it would need canonicity where it is
-  false (a proposition's constructor image is the proof point). -/
-structure CaseWF (env : KEnv) (sh : CaseShape) : Prop where
+  false (a proposition's constructor image is the proof point).
+
+`CaseWFWith Srt` takes the sort clause as a parameter (step Pc): `CaseWF` is it at `NeverProp`;
+the canonicity-free route (`caseIotaGWith`, `caseFires_of_agreeWK`) reads no sort clause, so the
+Pc family takes it at `fun _ _ => True` at a `case` entry of `subsingleton` kind. -/
+structure CaseWFWith (Srt : KEnv → KKey → Prop) (env : KEnv) (sh : CaseShape) : Prop where
   recFields : ∀ (j : Nat) (cs : CtorShape), sh.ctors[j]? = some cs → ∀ rf ∈ cs.recFields,
     rf < cs.nF ∧ (cs.fields[rf]?).map (·.1) = some (sh.recFieldDom j rf)
   ihs : ∀ (j : Nat) (cs : CtorShape), sh.ctors[j]? = some cs → ∀ r rf, cs.recFields[r]? = some rf →
@@ -867,7 +871,11 @@ structure CaseWF (env : KEnv) (sh : CaseShape) : Prop where
     cvC.levelParams.length = sh.indLevels.length ∧ bvarsLt 0 cvC.type = true ∧
     cvC.type.allLevelParamsDefined cvC.levelParams = true ∧
     (piBody (sh.nP + cs.nF) cvC.type).getAppFn = .const sh.ind (cvC.levelParams.map .param)
-  indSort : NeverProp env sh.ind
+  indSort : Srt env sh.ind
+
+/-- **`CaseWF`**: `CaseWFWith` at the sort clause `NeverProp` (as landed before step Pc, where it was
+this structure itself). -/
+abbrev CaseWF (env : KEnv) (sh : CaseShape) : Prop := CaseWFWith (fun env D => NeverProp env D) env sh
 
 /-- **The recursor of a `case` shape, compared at the levels `casesOn`'s body calls it at**
 (`sh.recLevels`): its stored type and its rules' right-hand sides, instantiated there, are the
@@ -896,8 +904,10 @@ def CaseRecNamed (env : KEnv) (kr : KKey) (sh : CaseShape) : Prop :=
       rl.ctor = cs.key ∧ rl.rhs = sh.ruleRhs kr j cs
 
 /-- **The checked shape of a `case` constant `kc` over its recursor `kr`**, against the kernel's
-reading. Decided by the check. -/
-structure CaseStored (env : KEnv) (kc kr : KKey) (sh : CaseShape) : Prop where
+reading, over a sort clause `Srt` (`CaseWFWith`; `CaseStored` is it at `NeverProp`). Decided by the
+check. -/
+structure CaseStoredWith (Srt : KEnv → KKey → Prop) (env : KEnv) (kc kr : KKey) (sh : CaseShape) :
+    Prop where
   arity : sh.binders.length = sh.nP + 2 + sh.nM ∧ 0 < sh.nM
   casesOnStored : ∃ (cvc : ConstantVal .anon) (hint : ReducibilityHint),
     env.find? kc = some (.defnInfo cvc (lamTele sh.binders (sh.body kr)) hint) ∧
@@ -922,7 +932,12 @@ structure CaseStored (env : KEnv) (kc kr : KKey) (sh : CaseShape) : Prop where
     pbs.map (·.1) = (sh.binders.take sh.nP).map (·.1) ∧
     (liftTele (j + 1) 0 fbs).map (·.1) = cs.fields.map (·.1)
   /-- what the generic `case` lemma needs beyond the builders -/
-  wf : CaseWF env sh
+  wf : CaseWFWith Srt env sh
+
+/-- **`CaseStored`**: `CaseStoredWith` at the sort clause `NeverProp` (as landed before step Pc,
+where it was this structure itself, its `wf` a `CaseWF`). -/
+abbrev CaseStored (env : KEnv) (kc kr : KKey) (sh : CaseShape) : Prop :=
+  CaseStoredWith (fun env D => NeverProp env D) env kc kr sh
 
 /-- **`CaseStored` as first landed** (G1b, before the renaming-tolerant recursor clause): the same
 clauses, the recursor's `CaseRecNamed`. It implies `CaseStored` (`caseStored_of_named`), so every
@@ -1337,9 +1352,11 @@ def NoWord (p : Program) (S : CId → Prop) : Prop :=
 
 /-- **The faithfulness clauses** (the spike's `Faith`, with `lvls` added), over a recursor clause
 `Recs` and a word clause `Words`: `Faith` takes `RecFacts` and `NoWord`; as first landed it took
-`NoRecr` (`FaithWith.mono`); the word family takes its checked word facts (step W). -/
-structure FaithWith (Recs : Prop) (Words : Prop) (p : Program) (env : KEnv) (κ : CId → KKey)
-    (lpsOf : CId → List Nat) (S : CId → Prop) : Prop where
+`NoRecr` (`FaithWith.mono`); the word family takes its checked word facts (step W).
+`FaithWithK` also takes the kinds a `case` entry's recursor may have as a parameter `Kinds` (step
+Pc); `FaithWith` is it at `ordinary` or `empty`. -/
+structure FaithWithK (Recs : Prop) (Words : Prop) (Kinds : CId → Prop) (p : Program) (env : KEnv)
+    (κ : CId → KKey) (lpsOf : CId → List Nat) (S : CId → Prop) : Prop where
   stored : ∀ c, S c → ∃ ci, env.find? (κ c) = some ci ∧ ci.toConstantVal.levelParams = lpsOf c
   lvls : ∀ c, S c → lvlsOf p c = (lpsOf c).length
   nodup : ∀ c, S c → (lpsOf c).Nodup
@@ -1358,10 +1375,10 @@ structure FaithWith (Recs : Prop) (Words : Prop) (p : Program) (env : KEnv) (κ 
   ctor : ∀ c, S c → ∀ sf lvls ind cidx np nf ty,
     p.decl? c = some (.ctor sf lvls ind cidx np nf ty) →
     ∃ cv, env.find? (κ c) = some (.ctorInfo cv np nf) ∧ np + nf ≤ kPis cv.type
-  /-- a `case` entry's recursor is of kind `ordinary` (SrcEval forces the major and fires F5) or
-  `empty` (SrcEval traps: step E0), and the stored constant has a binder for every argument -/
-  caseRec : ∀ c r, S c → p.table.resolveOf c = some (.case r) →
-    (p.table.recKindOf r = some .ordinary ∨ p.table.recKindOf r = some .empty) ∧
+  /-- a `case` entry's recursor is of a kind in `Kinds` (in `FaithWith`: `ordinary`, where SrcEval
+  forces the major and fires F5, or `empty`, where SrcEval traps: step E0), and the stored constant
+  has a binder for every argument -/
+  caseRec : ∀ c r, S c → p.table.resolveOf c = some (.case r) → Kinds r ∧
     ∃ ci, env.find? (κ c) = some ci ∧ p.headArity (.cases c) ≤ kPis ci.toConstantVal.type
   defn : ∀ c, S c → p.table.resolveOf c = none → ∀ lvls ty v,
     p.decl? c = some (.defn .defn .safe lvls ty v) →
@@ -1381,6 +1398,14 @@ structure FaithWith (Recs : Prop) (Words : Prop) (p : Program) (env : KEnv) (κ 
   bool : ∀ (b : Bool) c, (if b then p.known.boolTrue else p.known.boolFalse) = some c →
     S c ∧ κ c = (if b then boolTrueName else boolFalseName) ∧
     ∃ cv, env.find? (κ c) = some (.ctorInfo cv 0 0) ∧ cv.levelParams = []
+
+/-- **The faithfulness clauses over `Recs` and `Words`**: `FaithWithK` at the kinds `ordinary` or
+`empty` (as landed before step Pc, where it was this structure itself). -/
+abbrev FaithWith (Recs : Prop) (Words : Prop) (p : Program) (env : KEnv) (κ : CId → KKey)
+    (lpsOf : CId → List Nat) (S : CId → Prop) : Prop :=
+  FaithWithK Recs Words
+    (fun r => p.table.recKindOf r = some .ordinary ∨ p.table.recKindOf r = some .empty)
+    p env κ lpsOf S
 
 /-- **`Faith` as first landed** (before G3): no constant of `S` is a recursor. -/
 abbrev FaithNoRecr (p : Program) (env : KEnv) (κ : CId → KKey) (lpsOf : CId → List Nat)
@@ -1418,10 +1443,12 @@ def CaseFacts (p : Program) (env : KEnv) (κ : CId → KKey) (S : CId → Prop) 
 /-- **Every decidable fact the root theorem consumes** about the program, the kernel's reading
 and the certificate's annotation, on a set `S` of constants, over a recursor clause `Recs`
 and a word clause `Words` (`GroundFacts` takes `RecFacts` and `NoWord`, decided by the check; as
-first landed, `NoRecr`). -/
-structure GroundFactsWith (Recs : Prop) (Words : Prop) (p : Program) (env : KEnv) (κ : CId → KKey)
-    (lpsOf : CId → List Nat) (ann : IxCC.Src.Relevance.Ann) (S : CId → Prop) : Prop where
-  faith : FaithWith Recs Words p env κ lpsOf S
+first landed, `NoRecr`), and the kinds `Kinds` a `case` entry's recursor may have (step Pc:
+`GroundFactsWith` is it at `ordinary` or `empty`). -/
+structure GroundFactsWithK (Recs : Prop) (Words : Prop) (Kinds : CId → Prop) (p : Program)
+    (env : KEnv) (κ : CId → KKey) (lpsOf : CId → List Nat) (ann : IxCC.Src.Relevance.Ann)
+    (S : CId → Prop) : Prop where
+  faith : FaithWithK Recs Words Kinds p env κ lpsOf S
   natBasis : NatBasis env
   eqns : ∀ c thm body, S c → p.table.resolveOf c = some (.eqn thm body) →
     (∃ d, EqnShape env κ c thm d) ∧
@@ -1436,6 +1463,32 @@ structure GroundFactsWith (Recs : Prop) (Words : Prop) (p : Program) (env : KEnv
   wits : ∀ c t e, S c → RunPair p env κ c t e → ∀ A ∈ witDoms t e,
     ∃ ci ∈ env.consts, ci.toConstantVal.type = A
   okClosed : OkClosed p ann S
+
+/-- **Every decidable fact the root theorem consumes, over `Recs` and `Words`**: `GroundFactsWithK`
+at the kinds `ordinary` or `empty` (as landed before step Pc, where it was this structure itself). -/
+abbrev GroundFactsWith (Recs : Prop) (Words : Prop) (p : Program) (env : KEnv) (κ : CId → KKey)
+    (lpsOf : CId → List Nat) (ann : IxCC.Src.Relevance.Ann) (S : CId → Prop) : Prop :=
+  GroundFactsWithK Recs Words
+    (fun r => p.table.recKindOf r = some .ordinary ∨ p.table.recKindOf r = some .empty)
+    p env κ lpsOf ann S
+
+/-- The recursor clause weakened, at any kinds (step Pc). -/
+theorem FaithWithK.mono {A B W : Prop} {K : CId → Prop} {p : Program} {env : KEnv}
+    {κ : CId → KKey} {lpsOf : CId → List Nat} {S : CId → Prop} (h : A → B)
+    (hF : FaithWithK A W K p env κ lpsOf S) : FaithWithK B W K p env κ lpsOf S :=
+  { hF with recs := h hF.recs }
+
+/-- The word clause weakened, at any kinds (step Pc). -/
+theorem FaithWithK.monoW {R A B : Prop} {K : CId → Prop} {p : Program} {env : KEnv}
+    {κ : CId → KKey} {lpsOf : CId → List Nat} {S : CId → Prop} (h : A → B)
+    (hF : FaithWithK R A K p env κ lpsOf S) : FaithWithK R B K p env κ lpsOf S :=
+  { hF with words := h hF.words }
+
+/-- The kinds clause weakened (step Pc). -/
+theorem FaithWithK.monoK {R W : Prop} {K K' : CId → Prop} {p : Program} {env : KEnv}
+    {κ : CId → KKey} {lpsOf : CId → List Nat} {S : CId → Prop} (h : ∀ r, K r → K' r)
+    (hF : FaithWithK R W K p env κ lpsOf S) : FaithWithK R W K' p env κ lpsOf S :=
+  { hF with caseRec := fun c r hc hr => ⟨h r (hF.caseRec c r hc hr).1, (hF.caseRec c r hc hr).2⟩ }
 
 /-- **`GroundFacts` as first landed** (before G3): no constant of `S` is a recursor. -/
 abbrev GroundFactsNoRecr (p : Program) (env : KEnv) (κ : CId → KKey) (lpsOf : CId → List Nat)

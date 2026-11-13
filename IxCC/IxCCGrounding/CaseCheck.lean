@@ -111,8 +111,8 @@ def ctorRawB (env : KEnv) (sh : CaseShape) (cs : CtorShape) : Bool :=
         .const sh.ind (cvC.levelParams.map .param))
   | _ => false
 
-/-- `CaseWF`. -/
-def caseWFB (env : KEnv) (sh : CaseShape) : Bool :=
+/-- `CaseWFWith`, over a decided sort clause `srt` (step Pc). -/
+def caseWFWithB (srt : KEnv → KKey → Bool) (env : KEnv) (sh : CaseShape) : Bool :=
   allCtors sh (fun j cs => cs.recFields.all fun rf =>
     decide (rf < cs.nF) && decide ((cs.fields[rf]?).map (·.1) = some (sh.recFieldDom j rf))) &&
   allCtors sh (fun j cs => (List.range cs.recFields.length).all fun r =>
@@ -124,10 +124,14 @@ def caseWFB (env : KEnv) (sh : CaseShape) : Bool :=
     | some (_, m) => allCtors sh fun _ cs => cs.fields.all fun b => decide (b.2.pw = m.pw)
     | none => false) &&
   allCtors sh (fun _ cs => ctorRawB env sh cs) &&
-  neverPropB env sh.ind
+  srt env sh.ind
 
-/-- `CaseStored`. -/
-def caseStoredB (env : KEnv) (kc kr : KKey) (sh : CaseShape) : Bool :=
+/-- `CaseWF`: `caseWFWithB` at `neverPropB`. -/
+def caseWFB (env : KEnv) (sh : CaseShape) : Bool := caseWFWithB (fun env D => neverPropB env D) env sh
+
+/-- `CaseStoredWith`, over a decided sort clause `srt` (step Pc). -/
+def caseStoredWithB (srt : KEnv → KKey → Bool) (env : KEnv) (kc kr : KKey) (sh : CaseShape) :
+    Bool :=
   (sh.binders.length == sh.nP + 2 + sh.nM && decide (0 < sh.nM)) &&
   (match env.find? kc with
     | some (.defnInfo cvc val _) =>
@@ -153,7 +157,11 @@ def caseStoredB (env : KEnv) (kc kr : KKey) (sh : CaseShape) : Bool :=
           | none => true)
     | _ => false) &&
   allCtors sh (ctorTypeB env sh) &&
-  caseWFB env sh
+  caseWFWithB srt env sh
+
+/-- `CaseStored`: `caseStoredWithB` at `neverPropB`. -/
+def caseStoredB (env : KEnv) (kc kr : KKey) (sh : CaseShape) : Bool :=
+  caseStoredWithB (fun env D => neverPropB env D) env kc kr sh
 
 /-- `CaseProg`. -/
 def caseProgB (p : Program) (κ : CId → KKey) (Sl : List CId) (r : CId) (sh : CaseShape) : Bool :=
@@ -247,13 +255,15 @@ theorem ctorRaw_of_check {env : KEnv} {sh : CaseShape} {cs : CtorShape}
     exact ⟨cvC, hf, h1, h2, h3, h4⟩
   · cases h
 
-theorem caseWF_of_check {env : KEnv} {sh : CaseShape} (h : caseWFB env sh = true) :
-    CaseWF env sh := by
-  unfold caseWFB at h
+/-- **`caseWFWithB` is sound**, given its sort clause's soundness (step Pc). -/
+theorem caseWFWith_of_check {srt : KEnv → KKey → Bool} {Srt : KEnv → KKey → Prop} {env : KEnv}
+    {sh : CaseShape} (hs : srt env sh.ind = true → Srt env sh.ind) (h : caseWFWithB srt env sh = true) :
+    CaseWFWith Srt env sh := by
+  unfold caseWFWithB at h
   simp only [Bool.and_eq_true] at h
   obtain ⟨⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h5⟩, h6⟩ := h
   refine ⟨fun j cs hj rf hrf => ?_, fun j cs hj r rf hr => ?_, fun j cs hj => allCtors_spec h3 j cs hj,
-    ?_, fun j cs hj => ctorRaw_of_check (allCtors_spec h5 j cs hj), neverProp_of_check h6⟩
+    ?_, fun j cs hj => ctorRaw_of_check (allCtors_spec h5 j cs hj), hs h6⟩
   · have := List.all_eq_true.mp (allCtors_spec h1 j cs hj) rf hrf
     simp only [Bool.and_eq_true, decide_eq_true_eq] at this
     exact this
@@ -267,14 +277,19 @@ theorem caseWF_of_check {env : KEnv} {sh : CaseShape} (h : caseWFB env sh = true
       simpa using this
     · cases h4
 
-/-- **The check of a `case` shape is sound.** -/
-theorem caseStored_of_check {env : KEnv} {kc kr : KKey} {sh : CaseShape}
-    (h : caseStoredB env kc kr sh = true) : CaseStored env kc kr sh := by
-  unfold caseStoredB at h
+theorem caseWF_of_check {env : KEnv} {sh : CaseShape} (h : caseWFB env sh = true) :
+    CaseWF env sh :=
+  caseWFWith_of_check neverProp_of_check h
+
+/-- **`caseStoredWithB` is sound**, given its sort clause's soundness (step Pc). -/
+theorem caseStoredWith_of_check {srt : KEnv → KKey → Bool} {Srt : KEnv → KKey → Prop}
+    {env : KEnv} {kc kr : KKey} {sh : CaseShape} (hs : srt env sh.ind = true → Srt env sh.ind)
+    (h : caseStoredWithB srt env kc kr sh = true) : CaseStoredWith Srt env kc kr sh := by
+  unfold caseStoredWithB at h
   simp only [Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at h
   obtain ⟨⟨⟨⟨⟨⟨⟨hl, hnm⟩, hco⟩, hmin⟩, hmaj⟩, hrec⟩, hct⟩, hwf⟩ := h
   refine ⟨⟨hl, hnm⟩, ?_, fun j cs hj => ?_, ?_, ?_,
-    fun j cs hj => ctorType_of_check (allCtors_spec hct j cs hj), caseWF_of_check hwf⟩
+    fun j cs hj => ctorType_of_check (allCtors_spec hct j cs hj), caseWFWith_of_check hs hwf⟩
   · split at hco
     · rename_i cvc val hint hf
       simp only [Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at hco
@@ -299,6 +314,11 @@ theorem caseStored_of_check {env : KEnv} {kc kr : KKey} {sh : CaseShape}
       simp only [hr, Bool.and_eq_true, decide_eq_true_eq] at this
       exact this
     · cases hrec
+
+/-- **The check of a `case` shape is sound.** -/
+theorem caseStored_of_check {env : KEnv} {kc kr : KKey} {sh : CaseShape}
+    (h : caseStoredB env kc kr sh = true) : CaseStored env kc kr sh :=
+  caseStoredWith_of_check neverProp_of_check h
 
 /-- **The check of a `case` entry's program side is sound.** -/
 theorem caseProg_of_check {p : Program} {κ : CId → KKey} {Sl : List CId} {r : CId}

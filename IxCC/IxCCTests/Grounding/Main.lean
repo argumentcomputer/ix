@@ -6,6 +6,7 @@ import IxCCTests.Grounding.CaseEmpty
 import IxCCTests.Grounding.LetClo
 import IxCCTests.Grounding.LetWit
 import IxCCTests.Grounding.Words
+import IxCCTests.Grounding.Pc
 
 /-- `tests-grounding` runs the grounding check on the committed closures, with its negative
 controls (`IxCCTests.Grounding.Run`), the canonicity-free family's decided fact on the
@@ -17,7 +18,8 @@ its controls (`IxCCTests.Grounding.CaseEmpty`), and step C's closure-capture `le
 `closures` (`IxCCTests.Grounding.LetClo`), and the witness shape of a deep `let` (the minor-premise
 shape) on the corpus, `closures` and `src-words`, with its controls
 (`IxCCTests.Grounding.LetWit`), and the word family (step W) on `grounding/words` and `src-words`,
-with its controls (`IxCCTests.Grounding.Words`). -/
+with its controls (`IxCCTests.Grounding.Words`), and the Pc family (step Pc: `PUnit.casesOn` at its
+ordinary instances) on the corpus and `closures`, with its controls (`IxCCTests.Grounding.Pc`). -/
 def main : IO UInt32 := do
   let ok1 ← IxCCTests.Grounding.run
   let ok2 ← IxCCTests.Grounding.NoCanon.run
@@ -27,4 +29,5 @@ def main : IO UInt32 := do
   let ok6 ← IxCCTests.Grounding.LetClo.run
   let ok7 ← IxCCTests.Grounding.LetWit.run
   let ok8 ← IxCCTests.Grounding.Words.run
-  return if ok1 && ok2 && ok3 && ok4 && ok5 && ok6 && ok7 && ok8 then 0 else 1
+  let ok9 ← IxCCTests.Grounding.Pc.run
+  return if ok1 && ok2 && ok3 && ok4 && ok5 && ok6 && ok7 && ok8 && ok9 then 0 else 1
