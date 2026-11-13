@@ -1,13 +1,16 @@
 import IxCC.Src.Relevance.Proof.P1.Prefix
 import IxCC.Recheck.Proof.FrontAccepted
 import IxCC.Src.Relevance.Proof.P1.Facts
+import IxCC.Recheck.Proof.Live
 
 /-! Required axiom fences for P1's proved parts (relevance preservation is not proved; its
 definitions are `Src.Relevance.Proof.P1.Defs`, whose `live_not_irr` is fenced in `Fences/Erase.lean`):
 the prefix of a spine whose next argument is not read (`P1.Prefix`: `eval_shielded_prefix`,
 `eval_erased_prefix` and the lemmas they rest on), and what the front end's acceptance gives
 (`Recheck.Proof.FrontAccepted`: `front_accepted`, `shapeOk_of_run`), and L1's facts on the program SrcEval
-runs (`P1.Facts`: `facts_modeEq`, from `Relevance.Proof.ModeEq`'s `check_modeEq` and `canonical_modeEq`).
+runs (`P1.Facts`: `facts_modeEq`, from `Relevance.Proof.ModeEq`'s `check_modeEq` and `canonical_modeEq`),
+and the narrowing of `Recheck.sound`'s escape under P1's root as a hypothesis (`Recheck.Proof.Live`:
+`Front.goesWrong_live`, `sound_live`).
 Expected messages are preserved verbatim. -/
 
 /-! The prefix lemmas (`P1.Prefix`). -/
@@ -103,3 +106,12 @@ the relevance checks do not read application modes, which is all Lazify changes.
 
 /-- info: 'IxCC.Src.Relevance.Proof.P1.facts_modeEq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.facts_modeEq
+
+/-! The narrowing of `Recheck.sound`'s escape (`Recheck.Proof.Live`), with P1's root as the
+hypothesis `RunLiveStmt`. -/
+
+/-- info: 'IxCC.Recheck.Front.goesWrong_live' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Recheck.Front.goesWrong_live
+
+/-- info: 'IxCC.Recheck.sound_live' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Recheck.sound_live

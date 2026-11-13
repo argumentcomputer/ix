@@ -285,8 +285,8 @@ a dropped field to the minor that ignores it, `Whole`, `MinorsIgnore`), each cal
 and result (`Pre`, `Post`) and what it reads (`Reads`); `Front.GoesWrongLive` is `Recheck.sound`'s
 escape with a `Live` result. These are the definitions of a theorem not yet proved: no theorem
 rests on them but `live_not_irr` (a marker is never `Live`) and the parts below, and P1's
-statements (`preserve`, `pre_step`, `reads_live`, `run_live`, and the narrowing
-`Front.goesWrong_live`, `sound_live`) join the library only as they are proved.
+statements (`preserve`, `pre_step`, `reads_live`, `run_live`) join the library only as they are
+proved; the narrowing (`Front.goesWrong_live`, `sound_live`) is in it with `run_live` as a hypothesis.
 
 Reading the statements against SrcEval case by case before the proof (engineer PA) found them false
 in five places, all where a call whose precondition holds starts from values no run makes: P1
@@ -314,8 +314,8 @@ through β at a λ head, by C0). [`Recheck/Proof/FrontAccepted.lean`](../IxCC/Re
 proves what `Recheck.run`'s acceptance gives the narrowing of its escape: `front_accepted` (both
 relevance checks accepted the installed program, and SrcEval runs that program's Lazify image) and
 `shapeOk_of_run` (one constructor per inductive and index, from erasure's success on the program
-SrcEval runs). Not proved: P1's core (`preserve`, `pre_step`, `reads_live`, `run_live`) and the
-narrowing (`Front.goesWrong_live`, `sound_live`).
+SrcEval runs). Not proved: P1's core (`preserve`, `pre_step`, `reads_live`, `run_live`), on which the
+narrowing below rests (`Front.goesWrong_live`, `sound_live`, proved with `run_live` as a hypothesis).
 
 **L1's facts hold on the program SrcEval runs (2026-11-13).** The relevance checks run on the
 installed program `p₀`, while SrcEval runs its Lazify image `p`, which differs from `p₀` only in the
@@ -338,6 +338,20 @@ neither side ever reaches a sort or a Π, and both return `none`. `tests-relevan
 cycle (`IxCCTests.Src.Relevance.ModeFlip`: `H := λ y. H y`, with `H`'s value, the root's, or both
 flipped). On each flip the loop test disagrees, and `applyPis`, the classifier, `checkTermBinders`,
 `check` and `checkCanonical` agree.
+
+**The narrowing of `Recheck.sound`'s escape is proved under P1's root (2026-11-13).**
+[`Recheck/Proof/Live.lean`](../IxCC/Recheck/Proof/Live.lean) proves `Front.goesWrong_live` and
+`sound_live`, engineer PB's proofs. They take P1's root, `run_live`, as a hypothesis: `hrl :
+RunLiveStmt`, the root's statement as a proposition, in
+[`Src/Relevance/Proof/P1/RunLive.lean`](../IxCC/Src/Relevance/Proof/P1/RunLive.lean). Suppose
+`Recheck.run` accepts and the run's sort events agree (`Front.RunSortAgree`). Then the source goes
+wrong (`Front.GoesWrong`) only by being stuck, by trapping, or by returning a `Live` value that the
+view rejects (`Front.GoesWrongLive`); it never goes wrong because of a marker. `sound_live` is
+`Recheck.sound` with that narrower escape. The proofs use L1's facts on the Lazify image
+(`facts_modeEq`), `front_accepted`, `shapeOk_of_run` and `run_live` itself, through `hrl`. They
+need no change but dropping the hypothesis once `run_live` is proved. `run_live` is not proved: three
+of P1's 25 cases (E7, F3, F5; below) are open. So neither theorem narrows `Recheck.sound`'s escape
+unconditionally yet.
 
 **P1's core as one induction over 25 cases; the cases are not all proved (2026-11-13).**
 [`Src/Relevance/Proof/P1/Cases.lean`](../IxCC/Src/Relevance/Proof/P1/Cases.lean) proves `preserve`

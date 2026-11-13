@@ -608,6 +608,7 @@
   "IxCC.Recheck.Proof.Compile",
   "IxCC.Recheck.Proof.Front",
   "IxCC.Recheck.Proof.FrontAccepted",
+  "IxCC.Recheck.Proof.Live",
   "IxCC.Recheck.Proof.LiveDefs",
   "IxCC.Recheck.Proof.Middle",
   "IxCC.Recheck.Proof.Object",
@@ -976,6 +977,7 @@
   "IxCC.Src.Relevance.Proof.P1.Plumbing",
   "IxCC.Src.Relevance.Proof.P1.Prefix",
   "IxCC.Src.Relevance.Proof.P1.Recr",
+  "IxCC.Src.Relevance.Proof.P1.RunLive",
   "IxCC.Src.Relevance.Proof.Sound",
   "IxCC.Src.Relevance.Proof.Terms",
   "IxCC.Src.Relevance.Syntax",
@@ -1810,7 +1812,8 @@
  "grounding_axiom_sha256":
  "06aeb842207c1f9d7f830573c8e59a912edd572745425080f8bcb9661a217439",
  "grounding_axiom_count": 312,
- "baseline": "route 12: Canonical.subRecords",
+ "baseline":
+ "P1 consumption under run_live as a hypothesis (goesWrong_live, sound_live)",
  "axiom_sha256":
- "0f6a7ab8b2df5b726f85b40746a1e875375726ec2d7edeffb119750bde65e069",
- "axiom_count": 6836}
+ "40832782e71ad9744d88d8c487662b0d00b6936290e56eaf8311bd3d53c340f8",
+ "axiom_count": 6838}
