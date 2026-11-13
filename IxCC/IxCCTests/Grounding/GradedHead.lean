@@ -62,6 +62,16 @@ def accepted : List String := NoCanon.acceptedFamily ++ NoCanon.acceptedExtra
 /-- The two closures the per-spine decision refuses. -/
 def refused : List String := ["phase2-closures/closures", "diag"]
 
+/-- The sites 1a's reading as written refuses on the accepted closures, at some `Ok` profile (322 on
+the 34 accepted before step C; since C also the sites under a `let`). -/
+def gapExpected : Nat := 0
+
+/-- The closures with a site whose head type unfolds a definition (three δ plants each). -/
+def deltaClosuresExpected : Nat := 0
+
+/-- The closures with a bound-variable head of a `∀` context type (one plant each). -/
+def bvExpected : Nat := 0
+
 /-- The three corpus fixtures refused before the check (the annotation of
 `typeFormerPolymorphism`; the decoder's consumer budget at `fields255` and `tags126`): not
 loaded, so not counted among the 50. -/
@@ -174,6 +184,8 @@ def run : IO Bool := do
     let mut tS := 0
     let mut tG := 0
     let mut lines : List String := []
+    let mut natRes : Option Bool := none
+    let mut natS : Option Bool := none
     for (label, stem, roots) in js do
       let (i, _) ← loadClosure label stem roots
       let t0 ← IO.monoNanosNow
@@ -224,20 +236,29 @@ def run : IO Bool := do
         nBv := nBv + 1
       | none => pure ()
       -- `OS02-plain`: the one site the direct route refuses, decided here
+      if label == "phase1-machines/natural" then
+        natRes := some (headRegimeResB i.src i.env i.κ i.lpsOf i.ann i.Sl)
+        natS := some s
       if label == "OS02-plain" then
         expect a ((refusedSites i).length == 1 && s)
           s!"graded1b: OS02-plain: {(refusedSites i).length} sites the direct route refuses, headRegimeSB {s}"
-    expect a (nAcc == 34) s!"graded1b: headRegimeSB true on {nAcc} of 34 accepted closures"
+    IO.println s!"graded1b: headRegimeSB true on {nAcc} of the {accepted.length} accepted closures, \
+      false on {sFalse}; per-spine and per-site verdicts equal on all 50 and on every plant; 1a's \
+      reading as written refuses {gap} sites of the accepted closures, all decided; natural (whose \
+      sites under `let`s 1a refuses): headRegimeResB {natRes}, headRegimeSB {natS}; OS02-plain's \
+      direct-refused site decided; {nDelta} δ plants ({nDeltaClosures} closures) and {nBv} \
+      bound-variable plants refused; all 50: {tS / 1000000} ms per spine, {tG / 1000000} ms per \
+      site; {lines}"
+    expect a (nAcc == accepted.length && accepted.length == 37)
+      s!"graded1b: headRegimeSB true on {nAcc} of {accepted.length} accepted closures, expected 37 of 37"
     expect a (sFalse == refused) s!"graded1b: headRegimeSB false on {sFalse}, expected {refused}"
-    expect a (gap == 322) s!"graded1b: 1a's reading as written refuses {gap} sites on the 34, expected 322"
-    expect a (nDelta == 75 && nDeltaClosures == 25)
-      s!"graded1b: {nDelta} δ plants on {nDeltaClosures} closures, expected 75 on 25"
-    expect a (nBv == 32) s!"graded1b: {nBv} bound-variable plants, expected 32"
-    IO.println s!"graded1b: headRegimeSB true on the 34 accepted closures, false on {sFalse}; \
-      per-spine and per-site verdicts equal on all 50 and on every plant; 1a's reading as written \
-      refuses {gap} sites of the 34, all decided; OS02-plain's direct-refused site decided; \
-      {nDelta} δ plants ({nDeltaClosures} closures) and {nBv} bound-variable plants refused; \
-      all 50: {tS / 1000000} ms per spine, {tG / 1000000} ms per site; {lines}"
+    expect a (natRes == some false && natS == some true)
+      s!"graded1b: natural: headRegimeResB {natRes}, headRegimeSB {natS}"
+    expect a (gap == gapExpected)
+      s!"graded1b: 1a's reading as written refuses {gap} sites on the accepted closures, expected {gapExpected}"
+    expect a (nDelta == 3 * deltaClosuresExpected && nDeltaClosures == deltaClosuresExpected)
+      s!"graded1b: {nDelta} δ plants on {nDeltaClosures} closures, expected 3 on each of {deltaClosuresExpected}"
+    expect a (nBv == bvExpected) s!"graded1b: {nBv} bound-variable plants, expected {bvExpected}"
     IO.println s!"tests-grounding (graded1b): {← a.get} assertions passed"
     return true
   catch error =>

@@ -212,17 +212,23 @@ def evalSitesPs : List IxCC.Src.Profile → List KExpr → Term → KExpr →
       | none => []) ++ evalSitesPs P Γ b e
   | _, _, _, _ => []
 
+/-- `headRegimeGB` at one constant, its level parameters `lps` computed once (an `lpsOf` that
+searches the reading costs the reading's length per call). -/
+def headRegimeGB1 (tab : KTab) (lps : List Nat) (p : Program) (env : KEnv) (κ : CId → KKey)
+    (ann : IxCC.Src.Relevance.Ann) (c : CId) : Bool :=
+  decide (lvlsOf p c ≤ maxDirectParams) && (runPairsB p env κ c).all fun x =>
+    (evalSitesPs (okProfiles p ann c) [] x.1 x.2).all fun sP =>
+      match spineReadB tab headFuel sP.1.1 sP.1.2.1.getAppFn sP.1.2.1.getAppArgs with
+      | some ds => sP.2.all fun prof => ds.all fun pw => pwAt lps prof pw == some false
+      | none => false
+
 /-- **`HeadRegime`, decided per site** (the reference reading, quadratic in a spine's length): every
 site of every run pair of `Sl`, its data read once, each datum false at every `Ok` profile the site
 is evaluated at; a constant with more than `maxDirectParams` level parameters refused. -/
 def headRegimeGB (p : Program) (env : KEnv) (κ : CId → KKey) (lpsOf : CId → List Nat)
     (ann : IxCC.Src.Relevance.Ann) (Sl : List CId) : Bool :=
   let tab := KTab.of env
-  Sl.all fun c => decide (lvlsOf p c ≤ maxDirectParams) && (runPairsB p env κ c).all fun x =>
-    (evalSitesPs (okProfiles p ann c) [] x.1 x.2).all fun sP =>
-      match spineReadB tab headFuel sP.1.1 sP.1.2.1.getAppFn sP.1.2.1.getAppArgs with
-      | some ds => sP.2.all fun prof => ds.all fun pw => pwAt (lpsOf c) prof pw == some false
-      | none => false
+  Sl.all fun c => headRegimeGB1 tab (lpsOf c) p env κ ann c
 
 /-- A maximal application spine of a run term: its context, its kernel head, its arguments (each
 site of the spine is the head applied to a proper prefix of them), and the profiles at which
@@ -259,6 +265,16 @@ def spinesPs : List IxCC.Src.Profile → List KExpr → Term → KExpr → List 
       | none => []) ++ spinesPs P Γ b e acc
   | P, Γ, _, e, acc => spineHere P Γ e acc
 
+/-- `headRegimeSB` at one constant, its level parameters `lps` computed once (an `lpsOf` that
+searches the reading costs the reading's length per call). -/
+def headRegimeSB1 (tab : KTab) (lps : List Nat) (p : Program) (env : KEnv) (κ : CId → KKey)
+    (ann : IxCC.Src.Relevance.Ann) (c : CId) : Bool :=
+  decide (lvlsOf p c ≤ maxDirectParams) && (runPairsB p env κ c).all fun x =>
+    (spinesPs (okProfiles p ann c) [] x.1 x.2 []).all fun sp =>
+      match spineReadB tab headFuel sp.ctx sp.head sp.args.dropLast with
+      | some ds => sp.profs.all fun prof => ds.all fun pw => pwAt lps prof pw == some false
+      | none => false
+
 /-- **`HeadRegime`, decided per maximal spine** (the decision the root theorem reads): each spine
 of each run pair of `Sl` read once, against its arguments less the last (the longest site's
 function), each datum false at every `Ok` profile the spine is evaluated at; a constant with more
@@ -266,11 +282,7 @@ than `maxDirectParams` level parameters refused. Linear in the run terms times t
 def headRegimeSB (p : Program) (env : KEnv) (κ : CId → KKey) (lpsOf : CId → List Nat)
     (ann : IxCC.Src.Relevance.Ann) (Sl : List CId) : Bool :=
   let tab := KTab.of env
-  Sl.all fun c => decide (lvlsOf p c ≤ maxDirectParams) && (runPairsB p env κ c).all fun x =>
-    (spinesPs (okProfiles p ann c) [] x.1 x.2 []).all fun sp =>
-      match spineReadB tab headFuel sp.ctx sp.head sp.args.dropLast with
-      | some ds => sp.profs.all fun prof => ds.all fun pw => pwAt (lpsOf c) prof pw == some false
-      | none => false
+  Sl.all fun c => headRegimeSB1 tab (lpsOf c) p env κ ann c
 
 /-! ## The decision's soundness -/
 
@@ -487,7 +499,7 @@ theorem headRegime_of_check {p : Program} {env : KEnv} {κ : CId → KKey}
   have hG := groundFacts_of_check hchk
   have hlen : ls.length = (lpsOf c).length := hOk.1.trans (hG.faith.lvls c hS)
   obtain ⟨Ps, hsP, hprof⟩ := mem_evalSitesPs t _ [] e s (profileOf_mem_okProfiles hOk) hs
-  simp only [headRegimeGB, List.all_eq_true, Bool.and_eq_true] at h
+  simp only [headRegimeGB, headRegimeGB1, List.all_eq_true, Bool.and_eq_true] at h
   have h1 := (h c hS).2 (t, e) hpair (s, Ps) hsP
   split at h1
   · rename_i ds hds
@@ -654,7 +666,7 @@ theorem headRegimeS_of_check {p : Program} {env : KEnv} {κ : CId → KKey}
   have hlen : ls.length = (lpsOf c).length := hOk.1.trans (hG.faith.lvls c hS)
   obtain ⟨sp, hsp, hP, hctx, j, hj, hfe⟩ :=
     spinesPs_cover t (okProfiles p ann c) [] e [] (profileOf_mem_okProfiles hOk) s hs
-  simp only [headRegimeSB, List.all_eq_true, Bool.and_eq_true] at h
+  simp only [headRegimeSB, headRegimeSB1, List.all_eq_true, Bool.and_eq_true] at h
   have h1 := (h c hS).2 (t, e) hpair sp hsp
   split at h1
   · rename_i ds hds
