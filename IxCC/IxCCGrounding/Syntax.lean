@@ -264,6 +264,32 @@ theorem subAt0_of_check {v : KExpr} : ∀ {e : KExpr}, subAt0B v e = true → Su
     simp only [subAt0B, decide_eq_true_eq] at h
     subst h; exact .refl
 
+theorem cloShapeB_lam {b : Term} {A b' v' : KExpr} {m : BinderMeta}
+    (h : cloShapeB b (.lam A b' m) v' = true) : subAt0B (v'.liftLooseBVars 1 0) b' = true := by
+  cases b <;> simp_all [cloShapeB]
+
+/-- **What `cloSite?` returns**: the kernel term is a λ over the returned domain, and the returned
+copy occurs in its body with no binder between. -/
+theorem cloSite?_spec {b : Term} {e A cp : KExpr} (h : cloSite? b e = some (A, cp)) :
+    ∃ b' m, e = .lam A b' m ∧ SubAt0 cp b' := by
+  unfold cloSite? at h
+  cases hz : zcopy b e with
+  | none => simp [hz] at h
+  | some v' =>
+    rw [hz] at h
+    cases e with
+    | lam A' b' m =>
+      simp only at h
+      split at h
+      · rename_i hc
+        simp only [Option.some.injEq, Prod.mk.injEq] at h
+        obtain ⟨rfl, rfl⟩ := h
+        simp only [Bool.and_eq_true] at hc
+        exact ⟨b', m, rfl, subAt0_of_check (cloShapeB_lam hc.2)⟩
+      · cases h
+    | _ => simp at h
+
+
 /-- **The correspondence under a substitution** (what `valueCorr` and `eqnCorr` check, at `σ = []`):
 as `TermCorr`, with `var i` meeting `σ[i]`'s term, binders lifting `σ`, and two `let` cases: a live
 `let` (its variable's copy `v'` occurs in the body's kernel term with no binder between, and the value

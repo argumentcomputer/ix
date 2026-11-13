@@ -254,7 +254,27 @@ theorem graded_sites (M : Model V env) {φ : LevelParam → Nat} {ls : Levels} :
           split at hs
           · simp at hs
           · exact ihv Γ v' (fun ρ hρ => gradedBy_of_subAt0 (subAt0_of_check hsub) (hg ρ hρ)) s hs
-    · exact ihb Γ e hg s hs
+    · rcases hs with hs | hs
+      · -- the closure-capture shape (step C): the value's sites in the λ's context, graded there
+        -- at every member of the domain (`GradedBy`'s λ clause) through the copy
+        cases hc : cloSite? b e with
+        | none => simp [hc] at hs
+        | some p =>
+          obtain ⟨A, cp⟩ := p
+          simp only [hc] at hs
+          split at hs
+          · simp at hs
+          · obtain ⟨b', m, rfl, hsub⟩ := cloSite?_spec hc
+            exact ihv (A :: Γ) cp (fun ρ hρ => by
+              cases hρ with
+              | cons hΓ hX hmem =>
+                have h1 := hg _ hΓ
+                simp only [GradedBy] at h1
+                have h2 := h1.2 _ hX _ hmem
+                have hpush : push (ρ 0) (fun i => ρ (i + 1)) = ρ := by funext i; cases i <;> rfl
+                rw [hpush] at h2
+                exact gradedBy_of_subAt0 hsub h2) s hs
+      · exact ihb Γ e hg s hs
   | _ => intro Γ e _ s hs; cases e <;> simp [evalSites] at hs
 
 /-- `GradedBy` of a `∀`-telescope gives `GradedBy` of the `λ`-telescope over the same domains (the
