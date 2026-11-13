@@ -157,12 +157,12 @@ externs, `implemented_by`, `unsafe`, csimp and their rulings are unchanged. -/
 -- The 64-bit term hash (`Expr.hashW`) takes 1 compiled function, `Cached.defeqStepR._closed_2`
 -- (`IxCK/Kernel/Audit/Roots.lean`).
 -- The input limits (the depth limit, the per-record limits as declines, phase B's task bound) add
--- 61 compiled functions, the entry's (`IxCK/Kernel/Audit/Roots.lean`, listed by name there).
+-- 63 compiled functions, the entry's (`IxCK/Kernel/Audit/Roots.lean`, listed by name there).
 /-- info: runtime closure of [Ix.Kernel.Admission.preflight,
  Ix.Kernel.Admission.uniqueKeys,
  Ix.Kernel.Admission.authenticate,
  Ix.Kernel.Admission.decodeRecords,
- Ix.Kernel.Admission.checkBytes]: 6970 compiled functions; inherited externs 114, implemented_by 0, unsafe 27, csimp 7; ruled computed_field 22, csimp 38 -/
+ Ix.Kernel.Admission.checkBytes]: 6972 compiled functions; inherited externs 114, implemented_by 0, unsafe 27, csimp 7; ruled computed_field 22, csimp 38 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Admission.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
 

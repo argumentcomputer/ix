@@ -110,8 +110,9 @@ the order of the chunks cannot change the answer (`scanDepthsParallel_eq`). -/
 theorem scanDepthsParallel_eq (tasks : Nat) (limits : Limits) (records : Records) :
     scanDepthsParallel tasks limits records = scanDepths limits records := by
   rw [scanDepths_eq_all]
-  simp [scanDepthsParallel, Ix.Compile.Parallel.map_eq, Array.toList_map, List.all_map,
-    Function.comp_def]
+  unfold scanDepthsParallel
+  rw [Ix.Compile.Parallel.map_eq, Array.toList_map, List.all_map]
+  rfl
 
 /-- The depth limit's expanded check over bounded parallel chunks
 (`expandedDepthsParallel_eq`). -/
@@ -125,7 +126,8 @@ theorem expandedDepthsParallel_eq (tasks : Nat) (limits : Limits)
     (constants : Ix.Kernel.Ingress.Constants) :
     expandedDepthsParallel tasks limits constants = expandedDepths limits constants := by
   rw [expandedDepths_eq_all]
-  simp [expandedDepthsParallel, Ix.Compile.Parallel.map_eq, Array.toList_map, List.all_map,
-    Function.comp_def]
+  unfold expandedDepthsParallel
+  rw [Ix.Compile.Parallel.map_eq, Array.toList_map, List.all_map]
+  rfl
 
 end Ix.RoleBinding.RecordDecoding
