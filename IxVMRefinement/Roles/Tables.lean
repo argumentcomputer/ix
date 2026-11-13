@@ -91,13 +91,13 @@ theorem selectArm_litTable {arms : List (Generic.Pattern F × Generic.Expr F)} {
         rcases selectArm_cons_inv hsel with ⟨mt, rfl⟩ | ⟨nm, hsel'⟩
         · obtain ⟨hvx, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal c) mt
           have hxc : x = c := Value.field.inj hvx
-          rw [if_pos hxc] at ht
-          injection ht with hg
-          exact ⟨rfl, congrArg Expr.literal hg.symm⟩
+          simp only [hxc, ↓reduceIte, Option.some.injEq] at ht
+          subst ht
+          exact ⟨rfl, rfl⟩
         · have hne : (Value.field x : SourceValue F) ≠ .field c :=
             MatchesConst.none_inv (MatchesConst.literal c) nm
           have hxc : x ≠ c := fun e => hne (congrArg Value.field e)
-          rw [if_neg hxc] at ht
+          simp only [hxc, ↓reduceIte] at ht
           exact ih ht hsel'
       | _ => simp [evalLitTable] at ht
     | wildcard =>
@@ -140,15 +140,13 @@ theorem selectArm_litPairTable {arms : List (Generic.Pattern F × Generic.Expr F
                   rcases selectArm_cons_inv hsel with ⟨mt, rfl⟩ | ⟨nm, hsel'⟩
                   · obtain ⟨hvx, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal c) mt
                     have hxc : x = c := Value.field.inj hvx
-                    rw [if_pos hxc] at ht
-                    injection ht with hp
-                    injection hp with ha hb
-                    subst ha hb
+                    simp only [hxc, ↓reduceIte, Option.some.injEq, Prod.mk.injEq] at ht
+                    obtain ⟨rfl, rfl⟩ := ht
                     exact ⟨rfl, rfl⟩
                   · have hne : (Value.field x : SourceValue F) ≠ .field c :=
                       MatchesConst.none_inv (MatchesConst.literal c) nm
                     have hxc : x ≠ c := fun e => hne (congrArg Value.field e)
-                    rw [if_neg hxc] at ht
+                    simp only [hxc, ↓reduceIte] at ht
                     exact ih ht hsel'
                 | cons _ _ => simp [evalLitPairTable] at ht
               | _ => simp [evalLitPairTable] at ht
