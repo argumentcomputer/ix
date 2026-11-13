@@ -1,6 +1,6 @@
 module
 
-public import IxC.Resource.Statement
+public import IxC.Resource.Read
 public import IxC.Kernel.TypeChecker
 
 /-!
