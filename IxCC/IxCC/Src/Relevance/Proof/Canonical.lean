@@ -31,8 +31,10 @@ rest of what the verifier's relevance checks decide, as propositions (PLAN-2 §4
   `arg_erased_irr`, and `erased_lt_arity`: a special head's parameter written erased lies below its
   arity, so the argument reaches the head, never the value it fires to).
 
-Not here, and not yet a theorem: that the evaluator never yields the irrelevance marker at a
-position that is read (relevance preservation, P1). These are the checks' facts only.
+Not here: that the evaluator never yields the irrelevance marker at a position that is read
+(relevance preservation, P1, proved in `IxCC.Src.Relevance.Proof.P1.Main` from these facts, one
+constructor per inductive and index, and the run's sort events as hypotheses). These are the
+checks' facts only.
 
 Every statement names whether a position is *written erased* only through `writtenErased` (a
 binder), `letWrittenErased` (a `let`), `Check.Canonical.erasedParams` (a telescope) and

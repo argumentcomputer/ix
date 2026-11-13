@@ -12,7 +12,7 @@ makes its binder relevant; a suspension's value is its `eval`'s, a grandchild's 
 λ is no proof where β fires; a partial application accumulates or fires with `FireOk`; anything
 else is stuck), `applyAll`, `force` and `forceAll` (a slot's own facts, or a suspension's
 evaluation). At a term that is neither an application nor a constant, the frame's three tier-C
-disjuncts are `TermC` (`frame_termOk`). P1 itself is not proved. -/
+disjuncts are `TermC` (`frame_termOk`). P1 itself is `IxCC.Src.Relevance.Proof.P1.Main`. -/
 
 set_option autoImplicit false
 

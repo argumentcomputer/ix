@@ -3,8 +3,9 @@ import IxCCTests.Recheck.P1Twin.Plants
 
 /-! # `tests-p1-twin`: P1's invariant tested by running it
 
-Relevance preservation (P1, `IxCC.Src.Relevance.Proof.P1.Defs`) is not proved. This suite runs SrcEval's
-twin (`Twin.lean`, SrcEval's control flow in `IO` checking the sort events (a), (c)-(f) of
+Relevance preservation (P1, `IxCC.Src.Relevance.Proof.P1.Defs`) is proved
+(`IxCC.Src.Relevance.Proof.P1.Main`) with the run's sort events (`SortAgree`) as a hypothesis, which
+is not proved. This suite runs SrcEval's twin (`Twin.lean`, SrcEval's control flow in `IO` checking the sort events (a), (c)-(f) of
 `SortCoherent`) with the executable forms of `Pre`, `Post`, `Reads` and the invariants (`Exec.lean`,
 clause by clause from `P1.Defs`, exact where decidable, `Live` cut at a stated depth) and a mutant pass
 (`Pass.lean`) at sampled calls, on

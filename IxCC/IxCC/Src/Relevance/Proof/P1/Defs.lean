@@ -5,11 +5,12 @@ import IxCC.Src.Semantics
 /-! # P1, relevance preservation: the definitions
 
 SrcEval binds the marker `irr` where an argument is erased or irrelevant by its sort, and
-`Recheck.sound`'s escape "the source goes wrong" includes a marker returned. P1 is to say that on a
+`Recheck.sound`'s escape "the source goes wrong" includes a marker returned. P1 says that on a
 program the relevance checks accept (`Relevance.check`, `checkCanonical`), SrcEval never yields the
-marker at a position that is read. **P1 is not proved.** This module holds its definitions only, as
-approved for the proof; the theorems join the library as they are proved
-(`docs/certification-design.md`, the relevance row). The one theorem here is `live_not_irr`.
+marker at a position that is read. **P1 is proved** in `IxCC.Src.Relevance.Proof.P1.Main`
+(`preserve`, `pre_step`, `reads_live`, `run_live`), under the hypotheses below. This module holds
+its definitions, as approved for the proof (`Reads` at a recursor and at a `case` key repaired
+since: the major is read only at an ordinary kind); the one theorem here is `live_not_irr`.
 
 * Hypotheses: `Facts` (L1's propositions, `WellAnnotatedC` and `Canonical`, on the program SrcEval
   runs), `ShapeOk` (one constructor per inductive and index, the structural fact no check of the
@@ -19,10 +20,10 @@ approved for the proof; the theorems join the library as they are proved
 * Invariants: `Live`, `LiveSlot`, `EnvOk` (by provenance, strictly positive), `Whole`,
   `MinorsIgnore`, `IgnoresSlot`, `ShieldedIn`; each call's precondition `Pre` and result `Post`;
   what a call reads, `Reads`.
-* The statements to prove: every reachable call whose `Pre` holds has its `Post` (`preserve`);
-  `Pre` propagates along every `Step` but the evaluation of a shielded variable (`pre_step`); what a
-  call reads is `Live` (`reads_live`); the root on literal inputs returns a `Live` value
-  (`run_live`). The narrowing of `Recheck.sound`'s escape that they give is stated over
+* The statements (proved in `IxCC.Src.Relevance.Proof.P1.Main`): every reachable call whose `Pre`
+  holds has its `Post` (`preserve`); `Pre` propagates along every `Step` but the evaluation of a
+  shielded variable (`pre_step`); what a call reads is `Live` (`reads_live`); the root on literal
+  inputs returns a `Live` value (`run_live`). The narrowing of `Recheck.sound`'s escape that they give is stated over
   `Recheck.Front.GoesWrongLive` (`IxCC.Recheck.Proof.LiveDefs`).
 
 `preserve` and `pre_step` hold for any call a run may start from, with arbitrary values in its

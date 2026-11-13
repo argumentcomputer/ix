@@ -14,16 +14,17 @@ statement at every call the evaluation makes (`Below`, the induction hypothesis,
 `Post` of a grandchild). `Cases` collects them, and `preserve_of_cases` and `pre_step_of_cases`
 give P1's approved statements from it.
 
-**P1 is not proved.** `Cases` is a hypothesis: of its 25 fields, 22 are proved, five here (E2 at
-a sort and at a Π, E3 at both literals, F4), one in `IxCC.Src.Relevance.Proof.P1.Recr` (F2), four
-in `IxCC.Src.Relevance.Proof.P1.Ctor` (E6, F1, F7, F8), five in `IxCC.Src.Relevance.Proof.P1.Delta`
-(E8, δ, `headValue`, F6, F6w) and seven in `IxCC.Src.Relevance.Proof.P1.Plumbing` (E1, E4, E5,
-A1–A3, `applyAll`, `force`, `forceAll`). The other three, E7, F3 and F5, are stated, not proved.
-F3 as stated was false where a reached subsingleton recursor's rule-0 constructor has no
-constructor record, reproduced by a run (a `Prop` inductive with large elimination over a non-proof
-field, built below the kernel, which only the kernel refuses), and by reading F5 likewise at a
-`case` key over such a recursor; it was also the twelfth wrong-value route on the recheck path.
-`checkCanonical` now refuses it (`Canonical.subRecords`: such a constructor has a record), which
+All 25 of `Cases`' fields are proved: five here (E2 at a sort and at a Π, E3 at both literals,
+F4), two in `IxCC.Src.Relevance.Proof.P1.Recr` (F2, F3), four in `IxCC.Src.Relevance.Proof.P1.Ctor`
+(E6, F1, F7, F8), five in `IxCC.Src.Relevance.Proof.P1.Delta` (E8, δ, `headValue`, F6, F6w), seven
+in `IxCC.Src.Relevance.Proof.P1.Plumbing` (E1, E4, E5, A1–A3, `applyAll`, `force`, `forceAll`), one
+in `IxCC.Src.Relevance.Proof.P1.CaseKey` (F5) and one in `IxCC.Src.Relevance.Proof.P1.App` (E7).
+`IxCC.Src.Relevance.Proof.P1.Main` collects them (`cases_all`) and proves `preserve` and `pre_step`
+with no `Cases` hypothesis. F3 as stated was false where a reached subsingleton recursor's rule-0
+constructor has no constructor record, reproduced by a run (a `Prop` inductive with large
+elimination over a non-proof field, built below the kernel, which only the kernel refuses), and by
+reading F5 likewise at a `case` key over such a recursor; it was also the twelfth wrong-value route
+on the recheck path. `checkCanonical` now refuses it (`Canonical.subRecords`: such a constructor has a record), which
 F3's and F5's proofs read; the statements are unchanged. -/
 
 set_option autoImplicit false

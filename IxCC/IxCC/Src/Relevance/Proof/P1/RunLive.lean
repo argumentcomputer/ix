@@ -4,9 +4,10 @@ import IxCC.Src.Relevance.Proof.P1.Defs
 
 `RunLiveStmt` is the statement of P1's root theorem `run_live` as a proposition: under L1's facts
 (`Facts`) and one constructor per inductive and index (`ShapeOk`), `Src.run` on a root and literal
-inputs whose run's sort events agree (`RunSortAgree`) returns a `Live` value. `run_live` is not
-proved. The consumption (`Recheck.Front.goesWrong_live`, `Recheck.sound_live`) takes it as a
-hypothesis, so that it is proved now and needs no change but the argument when `run_live` is. -/
+inputs whose run's sort events agree (`RunSortAgree`) returns a `Live` value. `run_live`
+(`IxCC.Src.Relevance.Proof.P1.Main`) proves it. The consumption (`Recheck.Front.goesWrong_live`,
+`Recheck.sound_live`) takes it as a hypothesis, and `IxCC.Recheck.Proof.LiveClosed` gives it
+`run_live` (`Recheck.Front.goesWrong_live_closed`, `Recheck.sound_live_closed`). -/
 
 set_option autoImplicit false
 

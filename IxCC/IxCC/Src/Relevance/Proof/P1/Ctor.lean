@@ -14,7 +14,7 @@ constructor's field count (`MarkersPlaced.count`). F7 (`case_quotMk`): the eleme
 (`Canonical.reads`, hence `MarkersPlaced.quotElem`). F8 (`case_quotLift`): `Quot.lift`'s function
 is read (`Canonical.minorsRead`), so it forces to a `Live`, `Whole` value; the element fits it
 (`Live.con` of the quotient, or a marker it ignores by `SortCoherent` (e), the element not being
-written erased by `MarkersPlaced.quotElem`). P1 is not proved. -/
+written erased by `MarkersPlaced.quotElem`). P1 itself is `IxCC.Src.Relevance.Proof.P1.Main`. -/
 
 set_option autoImplicit false
 

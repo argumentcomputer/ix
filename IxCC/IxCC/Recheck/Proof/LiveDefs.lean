@@ -6,7 +6,8 @@ import IxCC.Recheck.Proof.Sound
 `Recheck.sound`'s escape `Front.GoesWrong` narrowed to a `Live` result (`Front.GoesWrongLive`), and
 P1's `RunSortAgree` for a front end's run of an input (`Front.RunSortAgree`). Definitions only: the
 narrowing itself (`Front.goesWrong_live`, `sound_live`) is `Recheck.Proof.Live`, proved with P1's
-root (`run_live`, not proved) as a hypothesis (`P1.RunLiveStmt`). Kept apart from P1's definitions
+root as a hypothesis (`P1.RunLiveStmt`), and `Recheck.Proof.LiveClosed` with it given (`run_live`:
+`Front.goesWrong_live_closed`, `sound_live_closed`). Kept apart from P1's definitions
 so that the proofs over SrcEval do not import the compiler's back half. -/
 
 set_option autoImplicit false
