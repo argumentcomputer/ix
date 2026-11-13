@@ -245,8 +245,10 @@ theorem scanDepths_eq_all (limits : Limits) : ∀ records : Records,
       if records.all (fun p => !scanFails limits p.2) then .ok () else .error (.limit .depth)
   | [] => rfl
   | (_, b) :: rest => by
-    rw [scanDepths, scanDepths_eq_all limits rest]
-    cases h : scanFails limits b <;> simp [h]
+    rw [scanDepths, scanDepths_eq_all limits rest, List.all_cons]
+    show (if scanFails limits b = true then _ else _) =
+      (if (!scanFails limits b && rest.all fun p => !scanFails limits p.2) = true then _ else _)
+    cases scanFails limits b <;> rfl
 
 /-- The expanded check as one test over the records (`expandedFails`). -/
 theorem expandedDepths_eq_all (limits : Limits) : ∀ constants : Ingress.Constants,
@@ -254,8 +256,10 @@ theorem expandedDepths_eq_all (limits : Limits) : ∀ constants : Ingress.Consta
       if constants.all (fun p => !expandedFails limits p.2) then .ok () else .error (.limit .depth)
   | [] => rfl
   | (_, c) :: rest => by
-    rw [expandedDepths, expandedDepths_eq_all limits rest]
-    cases h : expandedFails limits c <;> simp [h]
+    rw [expandedDepths, expandedDepths_eq_all limits rest, List.all_cons]
+    show (if expandedFails limits c = true then _ else _) =
+      (if (!expandedFails limits c && rest.all fun p => !expandedFails limits p.2) = true then _ else _)
+    cases expandedFails limits c <;> rfl
 
 /-- **Decoding within the depth limit**: the stored-nesting scan, canonical
 decoding (`decodeRecords`, its per-record limits reported as such: `ByteError.asLimit`), the
