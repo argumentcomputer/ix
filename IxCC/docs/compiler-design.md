@@ -785,6 +785,27 @@ constant is marked relevant, proof or type.
   dropped constructor field is built from an irrelevant argument. The
   other checks give early, precise rejection.
 
+**What the annotator computes.** The annotation is the kernel annotator's
+(`Src.KernelFront.annotate`, [kernel front end](kernel-front-end-design.md#the-annotation)):
+each binder, argument and let classified from the kernel core's inference at
+its position, and each λ given the zero condition of the sort of its body's
+type. Since 2026-11-13 that condition is asked once per maximal run of λs, of
+the run's innermost body, and given to every λ of the run; until then it was
+asked at every λ, at the cost of the rest of the run each time. The change
+rests on the Π rule (the sort of `Π x : A, B` is `imax` of the two sorts, zero
+exactly when `B`'s is): it was tested equal to the former definition on every
+committed closure, the erased-parameter programs and adversarial runs
+(`IxCCTests/KernelFront/LamRuns.lean`), not proved equal. It alters only the λ
+tags' conditions (`Binder.propWhen`, read by `Relevance.check`'s S1 and C6,
+`checkCanonical`'s skip of a proof λ's body, `Src.Runtime`, `Src.Semantics` and
+`Src.Admit`); every other class is computed as before. Unproved about the
+annotator in general: that its classes are the kernel's typing judgements
+(each class is proved to be the kernel core's answer at its position,
+`KernelFront.Ctx.classify*_proof`, not composed into the judgements); that its
+output does not depend on the order in which it asks (the kernel's memo carries
+answers between calls, and where the kernel's fuel decides an answer the order
+could); and the Π-rule fact above.
+
 **Why a wrong annotation is safe.** Marking a position irrelevant only makes
 evaluation lazier, and the structural checks prevent erased code from
 needing a value that was never computed. A wrong but consistent annotation
