@@ -47,7 +47,7 @@ The chain from the bytes to the object's result, link by link:
 | The certified kernel's acceptance at ingress | `KernelFront.accept` in `Recheck.ingress` ([`Src/KernelFront/Accept.lean`](../IxCC/Src/KernelFront/Accept.lean)), on every byte-level path (there is no unchecked mode) | **Stated in every byte-level theorem** (`Recheck.ingress_parts`, `verifyBytes_*_sound`, `verifyBytesRing0Sip_sound`): the kernel's tiered entry accepted exactly the envelope's binding section, records and blobs, with the envelope's own reducibility hints (`accept_spec`; the hints are advice about unfolding order, read from the artifact by producer and verifier alike: every theorem of the entry holds for every hint function, so no guarantee depends on their being right, but the kernel may decline on fuel under one set of hints and accept under another, so a verdict is about the artifact as stored, hints included; the hints are not covered by the artifact's name or a compile claim, so two holders of one claim may see one decline where the other accepts, never a different acceptance; [kernel front end](kernel-front-end-design.md#acceptance)), so IxCK's theorems give the reading's fidelity, a model and the strong model of the whole logical environment under the artifact's table and prelude. Not premise (i) as restated (the closure of the seeds under the default table and committed prelude) | Premise (i) by the closure run (KF-4); IxCC's erased type checker, which it replaced, is off every path and is deleted |
 | Ingress | environment to Src program (`Src.Ingress.readConsts`, the pins of the kernel's admitted table), read against the kernel's reading (`KernelFront.Reading.build`: keys, addresses, headers) | Proved that it ran; the terms the annotator walks are checked to correspond to IxCK's (`Reading.corr`) when it runs; no proved correspondence lemma | Premise (ii) |
 | Unfolding table | each entry valid in the kernel's model | Syntactic checks and the axiom closure proved (`checkAxiomClosure_sound`, [`Src/Table/Check.lean`](../IxCC/Src/Table/Check.lean)); **no semantic lemma** | SP-0's lemmas; the statements in premise (ii) |
-| Relevance annotation | positions tagged irrelevant are types or proofs, and conversely | Structural soundness (`check_sound`, [`Src/Relevance/Proof/Sound.lean`](../IxCC/Src/Relevance/Proof/Sound.lean)); since 2026-11-13 the checks' other facts as propositions (L1, [`Src/Relevance/Proof/Canonical.lean`](../IxCC/Src/Relevance/Proof/Canonical.lean)): tier C at every reached instance (`check_soundC`: C0-C5, C3 with the dispatch pairing, `elimShape_recr_minors`, and an eliminator over a constructor field written erased only at a saturated spine) and what `checkCanonical` decides (`checkCanonical_sound`: canonical records, header agreement, the special heads' reads, the forwarding clause, no `csimp` redirect to an eliminator over a field written erased, canonical tags), with a parameter or field written erased irrelevant or dropped at every instance (`param_erased_irr`, `field_erased_dropped`, `arg_erased_irr`); **not proved**: that an accepted program's evaluation never yields the irrelevance marker at a position that is read (P1, [below](#erased-positions-the-routes-found-and-what-closes-each)); the annotator is the kernel's (Stage A), each class proved to be the kernel core's answer at its position (`KernelFront.Ctx.classify*_proof`, `_of_runs`), not yet composed into the kernel's typing judgements. A λ's condition is asked once per run of λs, of the run's innermost body (since 2026-11-13), on the Π rule (the sort of `Π x : A, B` is `imax` of the two sorts, zero exactly when `B`'s is), which is not proved in IxCC; tested equal to the former per-λ definition on every committed closure and adversarial runs, not proved equal ([kernel front end](kernel-front-end-design.md#the-annotation)). Not proved either: that the output is independent of the order of the annotator's kernel calls (their memo carries answers between calls, and the kernel's fuel can decide an answer) | Premise (ii), against the kernel's typing, both directions; the Π-rule fact on the model's side (the later progress proof) |
+| Relevance annotation | positions tagged irrelevant are types or proofs, and conversely | Structural soundness (`check_sound`, [`Src/Relevance/Proof/Sound.lean`](../IxCC/Src/Relevance/Proof/Sound.lean)); since 2026-11-13 the checks' other facts as propositions (L1, [`Src/Relevance/Proof/Canonical.lean`](../IxCC/Src/Relevance/Proof/Canonical.lean)): tier C at every reached instance (`check_soundC`: C0-C5 and C7, C3 with the dispatch pairing, `elimShape_recr_minors`, and an eliminator over a constructor field written erased only at a saturated spine) and what `checkCanonical` decides (`checkCanonical_sound`: canonical records, header agreement, the special heads' reads, the forwarding clause, no `csimp` redirect to an eliminator over a field written erased, canonical tags, and since a later landing of 2026-11-13 the structure the kernel ensures: density, rule `j` for constructor `j`, universe-argument counts, constructor records, F3's field count, `Fin.mk`'s proof field), with a parameter or field written erased irrelevant or dropped at every instance (`param_erased_irr`, `field_erased_dropped`, `arg_erased_irr`); **not proved**: that an accepted program's evaluation never yields the irrelevance marker at a position that is read (P1, [below](#erased-positions-the-routes-found-and-what-closes-each)); the annotator is the kernel's (Stage A), each class proved to be the kernel core's answer at its position (`KernelFront.Ctx.classify*_proof`, `_of_runs`), not yet composed into the kernel's typing judgements. A λ's condition is asked once per run of λs, of the run's innermost body (since 2026-11-13), on the Π rule (the sort of `Π x : A, B` is `imax` of the two sorts, zero exactly when `B`'s is), which is not proved in IxCC; tested equal to the former per-λ definition on every committed closure and adversarial runs, not proved equal ([kernel front end](kernel-front-end-design.md#the-annotation)). Not proved either: that the output is independent of the order of the annotator's kernel calls (their memo carries answers between calls, and the kernel's fuel can decide an answer) | Premise (ii), against the kernel's typing, both directions; the Π-rule fact on the model's side (the later progress proof) |
 | Lazification | by-name modes only (`Lazify.run_modeEq`, [`Src/Proof/Lazify.lean`](../IxCC/Src/Proof/Lazify.lean)) | Syntactic; meaning preservation not proved | Premise (ii); by-name slots are handled inside SP-1's relation |
 | SrcEval and the kernel's model | adequacy | **Absent.** [`Models/KernelBridge`](../../Models/KernelBridge/README.md) is conditional, covers one real root and cannot reach recursion | SP-A, SP-1 |
 | `GoesWrong` | the escape clause | Unbounded; a dishonest certificate can choose it; the view case is narrowed at claim roots | SP-1's progress |
@@ -179,15 +179,55 @@ program with a constructor field written erased can be produced today (an open c
 the [roadmap](roadmap.md)). Making the annotator canonical there before this check would have
 opened route 8 on the byte path.
 
+**A type at a data position: another class, refused by C7 (2026-11-13).** No position is written
+erased in `def main : E := Sort 0`: the marker comes from a type evaluated where a value is read
+(SrcEval's rule E2 gives the marker for a sort or a Π, and erasure turns a relevant one into □
+without declining). The program is ill typed and the kernel refuses it, but `Recheck.sound` does
+not assume the kernel's acceptance (its premises are the checks `Recheck.run` runs), so the
+program is within its scope. Below the kernel it passed every relevance check and `Recheck.run`,
+and its object returned constructor 0 while SrcEval returned the marker; the theorem held through
+its escape (the source goes wrong), which is what P1 is to exclude (found by engineer RN in writing
+P1's statement). C7 (`Check.sortRule`, in the term walk and at a spine's head) now refuses a sort
+or a Π at a relevant position of a reached runtime term, and its fact is that `TermC` has no case
+for one. No committed closure holds one: at every reached instance of the 59 closures that load,
+over the 300,359 positions the walk visits, none ([ci](ci.md)). `tests-recheck`'s `Shape` plants
+`Sort 0`, `E → E` and a spine headed by `Sort 0`, each refused by C7 alone.
+
+**Structure the kernel ensures, now decided by `checkCanonical` (2026-11-13).** Relevance
+preservation reads six facts about the program's structure that no relevance check decided. Each
+is now a `checkCanonical` clause with its own message and a field of `Canonical`, so P1 rests on
+the relevance checks and its sort hypothesis, not on erasure's success:
+
+| Fact (`Canonical` field) | What it decides | Ensured until now by |
+| --- | --- | --- |
+| `rules` (`rulesShape?`) | rule `j` of a reached eliminator's recursor (a raw recursor's, a `case` key's) is for constructor `j` of its inductive and binds as many fields as it has | erasure only (`ruleAlt`), and only where it erased an ordinary eliminator (`r⋆`, a `case` entry's dispatch): not a subsingleton recursor's rule |
+| `univs` (`univsOk`) | no constant SrcEval may evaluate has more universe arguments than its declaration has universe parameters (so `Agree.inst` relates SrcEval's levels to the checked profile) | erasure only (`erase-univs`), at the spines it erased |
+| `dense` | no constant and no table entry at or above the program's size (the closure walk skips one; SrcEval would run it unchecked) | ingress (the program is dense by construction) and, for table entries, the table certificate's identifier check |
+| `ctorRecords` | every reached constructor has a constructor record (without one every field reads as kept) | the annotator, S1 at a constructor spine's head, and erasure (`erase-record`) where it built one |
+| `subsingletonFields` (`subsingletonSrcs?`) | F3's field sources are as many as the fields of the rule's constructor | the table's derivation (`deriveRecKind`, `recKindOfCert`); not plantable through `Recheck.run` |
+| `finProof` | where a word entry is reached, the pinned `Fin.mk` drops its proof field at the empty profile (F6w builds a word's tower with the marker there) | erasure only (`wordUnboxAtB`), where it erased a word operation |
+
+`univs` is deliberately decided at the positions relevant at some profile, not at every position:
+an argument or a `let` irrelevant at every profile (a type, a proof), a λ's domain, a Π and a
+`let`'s type are never evaluated, so a count there matters neither to SrcEval nor to erasure, and
+the walk does not look into the proofs and types only the kernel checks. No committed closure is
+refused by any of the six (the verdicts are unchanged, [ci](ci.md)); `tests-recheck`'s `Shape`
+plants a violation of each, refused by that check alone (`finProof` with `Fin.mk`'s proof field
+given a non-proposition type and the canonical record for it; `subsingletonFields` at
+`Src.Recheck.annotation`, since the table certificate's derivation rules it out on `Recheck.run`).
+One structural fact stays a hypothesis of P1: one constructor per inductive and index, which
+`Erase.Proof.erase_progWF` (`ProgWF.ctorIn`) discharges under `Recheck.run`'s acceptance, since
+`Recheck.run` erases the program SrcEval runs.
+
 The table records routes found by testing, one at a time; that there is no other is
 not established. What would establish it is a theorem that an accepted program's evaluation never
 yields the marker at a position that is read (relevance preservation, P1); it is not proved. Its
 premises are now propositions (L1, above); the proof is the next step ([roadmap](roadmap.md#resource-soundness)),
 and two things it must handle are known: inside a recursor rule's body a dropped field's slot
 holds the marker under a λ whose class is relevant, so the invariant on environments is per
-recursor activation, not per binder class; and IxCC does not check that a stored rule has the
-kernel's generated shape, so the proof may use only what the forwarding clause decides of the
-rule as stored.
+recursor activation, not per binder class; and IxCC checks of a stored rule only that it is for
+its constructor (`rules`), not that its body has the kernel's generated shape, so the proof may
+use only that and what the forwarding clause decides of the rule as stored.
 
 ## Target statements
 

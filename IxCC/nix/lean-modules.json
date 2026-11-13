@@ -540,6 +540,9 @@
   "IxCCTests.Recheck.Stages":
   {"path": "IxCCTests/Recheck/Stages.lean",
    "imports": ["IxCC.Recheck.Run", "IxCCTests.Rt.Kernel"]},
+  "IxCCTests.Recheck.Shape":
+  {"path": "IxCCTests/Recheck/Shape.lean",
+   "imports": ["IxCCTests.Recheck.ErasedBlocks"]},
   "IxCCTests.Recheck.Run":
   {"path": "IxCCTests/Recheck/Run.lean",
    "imports":
@@ -558,7 +561,8 @@
     "IxCCTests.Recheck.Bound",
     "IxCCTests.Recheck.Erased",
     "IxCCTests.Recheck.ErasedBlocks",
-    "IxCCTests.Recheck.ErasedPartial"]},
+    "IxCCTests.Recheck.ErasedPartial",
+    "IxCCTests.Recheck.Shape"]},
   "IxCCTests.Recheck.RootShape":
   {"path": "IxCCTests/Recheck/RootShape.lean",
    "imports":

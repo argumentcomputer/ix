@@ -153,7 +153,7 @@ is defined.
 | P0 … P9 | Lam and Anf passes | [Pass identifiers](#pass-identifiers) |
 | stage S, stage K, stage L | Statements relative to SrcEval (what is proved today); against the certified kernel's models; per program, about the Lean function | [Correctness statement](#correctness-statement), [certification design](certification-design.md) |
 | E1–E9, A1–A3, F1–F8 | SrcEval's rules | the module header of [`Src/Semantics.lean`](../IxCC/Src/Semantics.lean) |
-| tier S (S1–S4), tier C (C0–C6) | The relevance checker's soundness facts and consistency rules | the module header of [`Src/Relevance/Check.lean`](../IxCC/Src/Relevance/Check.lean) |
+| tier S (S1–S4), tier C (C0–C7) | The relevance checker's soundness facts and consistency rules | the module header of [`Src/Relevance/Check.lean`](../IxCC/Src/Relevance/Check.lean) |
 | E1, E2 | The x86 encoding layers: per-form encoder and decoder; complete streams and ELF objects | [x86 instructions](x86-encoded-instructions.md), [x86 streams and objects](x86-stream-objects.md) |
 | K0 … K6 | Benchmark rungs | [roadmap](roadmap.md#benchmark-rungs) |
 | Phase 0 … 5 | Delivery phases | [roadmap](roadmap.md#phases) |

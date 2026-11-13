@@ -1184,6 +1184,24 @@ in L1's module (`ElimC`'s shorter-spine clause, `TermC.const`,
 has the nine routes; P1's statements, checked against the evaluator on the
 erased-misuse programs and every registered root, come next.
 
+**A type at a data position, and the structure P1 reads (2026-11-13).** Writing
+P1's statements found a program of another class: `def main : E := Sort 0`
+(ill typed, below the kernel) passed every relevance check and `Recheck.run`,
+its object returned constructor 0 and SrcEval the marker (SrcEval evaluates a
+sort or Π to the marker, erasure to □). `Recheck.sound` does not assume the
+kernel's acceptance, so C7 now refuses a sort or a Π at a relevant position
+(`TermC` has no case for one); no committed closure holds one. The same
+statements needed six structural facts no relevance check decided, ensured
+until now by the kernel, ingress, the table's derivation or erasure (rule `j`
+for constructor `j`, the universe-argument counts and `Fin.mk`'s proof field by
+erasure alone, where it erased): `checkCanonical` now decides each
+(`Canonical.rules`, `univs`, `dense`, `ctorRecords`, `subsingletonFields`,
+`finProof`), so P1 rests on the relevance checks and its sort hypothesis; one
+constructor per inductive and index stays a hypothesis, discharged by
+`erase_progWF` under `Recheck.run`'s acceptance.
+[Certification design](certification-design.md#erased-positions-the-routes-found-and-what-closes-each)
+has the class and the six facts. P1's statements on these checks come next.
+
 **Open capability item: no program with a constructor field written erased can
 be produced (since at least 2026-11-13).** The kernel annotator's constructor
 record keeps a field its type writes erased (`CtorRel` `keep`) while its

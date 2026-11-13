@@ -452,8 +452,8 @@ theorem term_nil : ∀ (bs : List Rel) (errs : List RelError) (t : Term),
       obtain ⟨h₅, h₆⟩ := term_nil bs _ a e
       obtain ⟨h₁, h₂, h₃, h₄⟩ := hrest _ h₅ rfl
       exact ⟨h₁, .app h₂ h₃ h₄ fun _ => h₆⟩
-  | bs, errs, .sort u, e => by unfold term at e; exact ⟨e, .sort⟩
-  | bs, errs, .pi b res d c, e => by unfold term at e; exact ⟨e, .pi⟩
+  | bs, errs, .sort u, e => by unfold term sortRule at e; cases e
+  | bs, errs, .pi b res d c, e => by unfold term sortRule at e; cases e
   | bs, errs, .natLit n, e => by unfold term at e; exact ⟨e, .natLit⟩
   | bs, errs, .strLit s, e => by unfold term at e; exact ⟨e, .strLit⟩
 
@@ -516,9 +516,9 @@ theorem rest_nil : ∀ (bs : List Rel) (errs : List RelError) (t : Term),
     obtain ⟨h₃, h₄⟩ := projRule_nil ctx errs s i h₁
     exact ⟨h₃, .head (fun _ _ _ _ h => by cases h) (.proj h₄ h₂)⟩
   | bs, errs, .sort u, e => by
-    unfold rest at e; exact ⟨e, .head (fun _ _ _ _ h => by cases h) .sort⟩
+    unfold rest sortRule at e; cases e
   | bs, errs, .pi b res d c, e => by
-    unfold rest at e; exact ⟨e, .head (fun _ _ _ _ h => by cases h) .pi⟩
+    unfold rest sortRule at e; cases e
   | bs, errs, .natLit n, e => by
     unfold rest at e; exact ⟨e, .head (fun _ _ _ _ h => by cases h) .natLit⟩
   | bs, errs, .strLit s, e => by
