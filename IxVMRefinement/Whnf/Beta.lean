@@ -114,7 +114,9 @@ theorem peel_beta_cert_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap
     · have hlist : ((A :: As').take (m + 1)).reverse ++ Cs = (As'.take m).reverse ++ A :: Cs := by
         simp [List.take_succ_cons, List.reverse_cons, List.append_assoc]
       rw [hlist, List.take_succ_cons]
-      exact .trans (red_mkAppN _ hstep) hred
+      show Red c.env d (Ix.Kernel.Expr.mkAppN
+        (.app ((Ix.Kernel.Expr.lam T B (bmeta ℓ)).instantiateList Cs 0) A) (As'.take m)) _
+      exact .trans (red_mkAppN (As'.take m) hstep) hred
   · subst he297 he319 hc320
     have e0 := WhnfAux.cert_seg_ext sg204
     exact WhnfAux.cert_stop (Tm.mono e0 hL) (tml_mono e0 hCs) (tml_mono e0 hAs)
