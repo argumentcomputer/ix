@@ -28,10 +28,11 @@ universe w
 variable {V : Type w} [Ix.Kernel.SetTheory V] {env : KEnv} {M : Model V env}
 
 /-- **The run terms run at `OkIn`**: `runs_of_sites`, each constant a run term evaluates `Ok` by
-`okClosed` and in `Inst` by `InstClosed`. -/
-theorem runs_of_sitesIn (hL : LawsCore M) {p : Program} {κ : CId → KKey} {lpsOf : CId → List Nat}
-    {ann : IxCC.Src.Relevance.Ann} {S : CId → Prop} {Inst : List (CId × Levels)}
-    (hG : GroundFacts p env κ lpsOf ann S) (hT : SitesOk M p κ lpsOf ann S) (hI : InstClosed p Inst)
+`okClosed` and in `Inst` by `InstClosed`; over any word clause (step W; `runs_of_sitesIn` at the
+landed one). -/
+theorem runs_of_sitesInW (hL : LawsCore M) {p : Program} {κ : CId → KKey} {lpsOf : CId → List Nat}
+    {ann : IxCC.Src.Relevance.Ann} {S : CId → Prop} {Inst : List (CId × Levels)} {Wd : Prop}
+    (hG : GroundFactsW Wd p env κ lpsOf ann S) (hT : SitesOk M p κ lpsOf ann S) (hI : InstClosed p Inst)
     {c : CId} {ls : Levels} {t : Term} {e : KExpr} (hS : S c) (hOk : OkIn p ann Inst c ls)
     (hrp : RunPair p env κ c t e) {φ : LevelParam → Nat} (hlv : LvAt φ (lpsOf c) ls) :
     Runs M κ (OkIn p ann Inst) (lpsOf c) ls φ [] [] t e := by
@@ -52,6 +53,43 @@ theorem runs_of_sitesIn (hL : LawsCore M) {p : Program} {κ : CId → KKey} {lps
     (fun d us h => ⟨hG.okClosed c ls hS hOk.1 t hterm d us h,
       hI c ls hOk.2 t (List.mem_append_left _ hterm) d us h⟩) (hG.wits c t e hS hrp)
 
+/-- **The run terms run at `OkIn`**: `runs_of_sites`, each constant a run term evaluates `Ok` by
+`okClosed` and in `Inst` by `InstClosed`. -/
+theorem runs_of_sitesIn (hL : LawsCore M) {p : Program} {κ : CId → KKey} {lpsOf : CId → List Nat}
+    {ann : IxCC.Src.Relevance.Ann} {S : CId → Prop} {Inst : List (CId × Levels)}
+    (hG : GroundFacts p env κ lpsOf ann S) (hT : SitesOk M p κ lpsOf ann S) (hI : InstClosed p Inst)
+    {c : CId} {ls : Levels} {t : Term} {e : KExpr} (hS : S c) (hOk : OkIn p ann Inst c ls)
+    (hrp : RunPair p env κ c t e) {φ : LevelParam → Nat} (hlv : LvAt φ (lpsOf c) ls) :
+    Runs M κ (OkIn p ann Inst) (lpsOf c) ls φ [] [] t e :=
+  runs_of_sitesInW hL hG hT hI hS hOk hrp hlv
+
+/-- **The fundamental lemma's hypotheses at `OkIn`, over a word clause** (step W): F6w's meaning
+`WordFires` given. -/
+theorem fundHyps_of_instW (hL : LawsCore M) {p : Program} {κ : CId → KKey}
+    {lpsOf : CId → List Nat} {ann : IxCC.Src.Relevance.Ann} {S : CId → Prop}
+    {Inst : List (CId × Levels)} {Wd : Prop}
+    (hcanon : CtorCanon M ∨ ∀ r, S r →
+      (recClassB p env κ r = some .flat ∨ recClassB p env κ r = some .noParams) →
+        RecNoLevels env (κ r))
+    (hG : GroundFactsW Wd p env κ lpsOf ann S) (hT : SitesOk M p κ lpsOf ann S)
+    (hI : InstClosed p Inst)
+    (hcases : ∀ c r, S c → p.table.resolveOf c = some (.case r) →
+      p.table.recKindOf r = some .ordinary → CaseFires M p κ lpsOf S (OkIn p ann Inst) c)
+    (hW : WordFires M p κ lpsOf S (OkIn p ann Inst)) :
+    FundHyps M p κ lpsOf S (OkIn p ann Inst) where
+  laws := hL
+  canon := hcanon
+  natBasis := hG.natBasis
+  faith := hG.faith.monoW fun _ => trivial
+  words := hW
+  cases := hcases
+  eqn := fun c thm body hS hr => by
+    obtain ⟨⟨d, hsh⟩, _⟩ := hG.eqns c thm body hS hr
+    exact ⟨d.body, fun φ ρ X hX => Denotes_functional (eqn_den M hsh φ ρ) hX,
+      fun ls φ hOk hlv => runs_of_sitesInW hL hG hT hI hS hOk (.eqn hr hsh) hlv⟩
+  value := fun c ls _ _ _ _ _ _ hS hOk hr hd hf φ hlv =>
+    runs_of_sitesInW hL hG hT hI hS hOk (.value hr hd hf) hlv
+
 /-- **The fundamental lemma's hypotheses at `OkIn`** (as `fundHyps_of_core`). -/
 theorem fundHyps_of_inst (hL : LawsCore M) {p : Program} {κ : CId → KKey}
     {lpsOf : CId → List Nat} {ann : IxCC.Src.Relevance.Ann} {S : CId → Prop}
@@ -62,18 +100,8 @@ theorem fundHyps_of_inst (hL : LawsCore M) {p : Program} {κ : CId → KKey}
     (hG : GroundFacts p env κ lpsOf ann S) (hT : SitesOk M p κ lpsOf ann S) (hI : InstClosed p Inst)
     (hcases : ∀ c r, S c → p.table.resolveOf c = some (.case r) →
       p.table.recKindOf r = some .ordinary → CaseFires M p κ lpsOf S (OkIn p ann Inst) c) :
-    FundHyps M p κ lpsOf S (OkIn p ann Inst) where
-  laws := hL
-  canon := hcanon
-  natBasis := hG.natBasis
-  faith := hG.faith
-  cases := hcases
-  eqn := fun c thm body hS hr => by
-    obtain ⟨⟨d, hsh⟩, _⟩ := hG.eqns c thm body hS hr
-    exact ⟨d.body, fun φ ρ X hX => Denotes_functional (eqn_den M hsh φ ρ) hX,
-      fun ls φ hOk hlv => runs_of_sitesIn hL hG hT hI hS hOk (.eqn hr hsh) hlv⟩
-  value := fun c ls _ _ _ _ _ _ hS hOk hr hd hf φ hlv =>
-    runs_of_sitesIn hL hG hT hI hS hOk (.value hr hd hf) hlv
+    FundHyps M p κ lpsOf S (OkIn p ann Inst) :=
+  fundHyps_of_instW hL hcanon hG hT hI hcases (wordFires_of_noWord hG.faith.words)
 
 /-- **The root theorem over #678's fields, at `case` entries over level-polymorphic families**:
 `rootSound_678` with `NoCanonA` for `NoCanon`, the `case` shapes the check reads

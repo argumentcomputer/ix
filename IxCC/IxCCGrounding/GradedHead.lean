@@ -734,15 +734,15 @@ theorem take_dropLast {α : Type _} {l : List α} {j : Nat} (h : j < l.length) :
   congr 1
   omega
 
-/-- **`headRegimeSB` is sound**: the per-spine decision gives the per-site `HeadRegime` (with the
-check, which puts each run pair among those the decision enumerates and gives the level count). -/
-theorem headRegimeS_of_check {p : Program} {env : KEnv} {κ : CId → KKey}
+/-- **`headRegimeSB` is sound** with every conjunct of the check but `noWord` (`CheckSans`; step W
+reads it through `groundCheckW`). -/
+theorem headRegimeS_of_sans {p : Program} {env : KEnv} {κ : CId → KKey}
     {lpsOf : CId → List Nat} {ann : IxCC.Src.Relevance.Ann} {Sl : List CId}
-    (hchk : groundCheck p env κ lpsOf ann Sl = true)
+    (hchk : CheckSans p env κ lpsOf ann Sl)
     (h : headRegimeSB p env κ lpsOf ann Sl = true) : HeadRegime p env κ lpsOf ann (· ∈ Sl) := by
   intro c ls t e hS hOk hrp φ hlv s hs
-  have hpair := runPair_mem_of_check hchk hS hrp
-  have hG := groundFacts_of_check hchk
+  have hpair := runPair_mem_of_sans hchk hS hrp
+  have hG := groundFactsW_of_sans hchk (Wd := True) trivial
   have hlen : ls.length = (lpsOf c).length := hOk.1.trans (hG.faith.lvls c hS)
   obtain ⟨sp, hsp, hP, hctx, j, hj, hfe⟩ :=
     spinesPs_cover t (okProfiles p ann c) [] e [] (profileOf_mem_okProfiles hOk) s hs
@@ -761,6 +761,14 @@ theorem headRegimeS_of_check {p : Program} {env : KEnv} {κ : CId → KKey}
       have h3 := List.all_eq_true.mp h2 pw (hpre.subset hpw)
       exact holds_of_pwAt (profAt_of_lvAt hlv hlen) (beq_iff_eq.mp h3)
   · cases h1
+
+/-- **`headRegimeSB` is sound**: the per-spine decision gives the per-site `HeadRegime` (with the
+check, which puts each run pair among those the decision enumerates and gives the level count). -/
+theorem headRegimeS_of_check {p : Program} {env : KEnv} {κ : CId → KKey}
+    {lpsOf : CId → List Nat} {ann : IxCC.Src.Relevance.Ann} {Sl : List CId}
+    (hchk : groundCheck p env κ lpsOf ann Sl = true)
+    (h : headRegimeSB p env κ lpsOf ann Sl = true) : HeadRegime p env κ lpsOf ann (· ∈ Sl) :=
+  headRegimeS_of_sans (sans_of_check hchk) h
 
 /-! ## The semantics -/
 
