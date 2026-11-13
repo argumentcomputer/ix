@@ -200,8 +200,7 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
   let strip (artifact : Ixon.Env) : Ixon.Env := if strictAnon then { artifact with
     named := {}, names := {}, comms := {}, addrToName := {} } else artifact
   let (out, finalization) ← match ← Ix.CompileM.compileAndFinalize leanEnv constList workers
-      allowPartial log (strip := strip) (prefetch := wholeEnv)
-      (strictBinderData := p.hasFlag "strict-binder-data") with
+      allowPartial log (strip := strip) (prefetch := wholeEnv) with
     | .ok r => pure r
     | .error e => throw (IO.userError s!"compile refused: {e}")
   let status := statusOf out.env out.failures.toMap
@@ -311,7 +310,6 @@ def compileCmd : Cli.Cmd := `[Cli|
     "json-name"    : String; "Row key for the --json row (default: the input file's stem, e.g. `CompileInitStd`)"
     "allow-partial" ;        "Allow writing the successfully compiled subset despite requested compilation failures. Without this flag, those failures cause a nonzero exit and leave the output path untouched."
     anon           ;         "Strict-anonymous output: clear §4 names, §5 metadata, and §6 commitments (after hint finalization, so §3 anon hints survive). The env root is unchanged — it covers §2 only. Default keeps names: they are harmless to catalog semantics and valuable for fidelity/debugging."
-    "strict-binder-data" ;   "Fail the compile, naming the record and binder, where the annotator cannot decide a binder's datum. Without it such a binder carries the undecided node (Ixon section tag 4), which IxVM rejects when it reads it, and is reported."
     report         : String; "Write a machine-readable JSON compile report (versions, seed spec, requested/named/unique-anon/ungrounded counts, full ungrounded list, canonical consts merkle root, bytes, elapsed ms) to this path — written on success, fail-closed abort, and partial publish alike."
 
   ARGS:

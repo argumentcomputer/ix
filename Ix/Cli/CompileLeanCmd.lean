@@ -51,12 +51,11 @@ serialize the grounded subset)"
 the whole import environment (not `--local`) publishes every role, so it
 prefetches every role's certificates beside the source compile. -/
 private def compileFinalized (fe : FileEnv) (constList : List (Lean.Name × Lean.ConstantInfo))
-    (workers : Nat) (allowPartial : Bool) (outPath : String) (wholeEnv : Bool)
-    (strictBinderData : Bool) :
+    (workers : Nat) (allowPartial : Bool) (outPath : String) (wholeEnv : Bool) :
     IO (Except UInt32 Compiled) := do
   let log (s : String) : IO Unit := IO.println s!"  [compile-lean] {s}"
   match ← Ix.CompileM.compileAndFinalize fe.env constList workers allowPartial log
-      (prefetch := wholeEnv) (strictBinderData := strictBinderData) with
+      (prefetch := wholeEnv) with
   | .error e =>
     IO.println s!"[compile-lean] FAILED: {e}"
     return .error 1
@@ -95,7 +94,6 @@ def runCompileLeanCmd (p : Cli.Parsed) : IO UInt32 := do
 
   let t0 ← IO.monoMsNow
   let compiled ← compileFinalized fe constList workers allowPartial outPath (!p.hasFlag "local")
-    (p.hasFlag "strict-binder-data")
   let out ← match compiled with
     | .ok out => pure out
     | .error code => return code
@@ -122,7 +120,6 @@ def compileLeanCmd : Cli.Cmd := `[Cli|
     "no-build" ;           "Skip the Lake build/cache step and reuse existing import artifacts. The input file is still elaborated. The caller must ensure all imports are built and up to date."
     "local" ;              "Compile only the constants the input file itself declares, with their transitive dependencies (the selected closure: recursors, whole logical units, checker support), instead of the whole import env."
     "allow-partial" ;      "Allow writing the successfully compiled subset despite requested compilation failures. Without this flag, those failures cause a nonzero exit and leave the output path untouched."
-    "strict-binder-data" ; "Fail the compile, naming the record and binder, where the annotator cannot decide a binder's datum. Without it such a binder carries the undecided node (Ixon section tag 4), which IxVM rejects when it reads it, and is reported."
 
   ARGS:
     ...path : String; "Path to the Lean source file to compile."

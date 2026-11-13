@@ -1609,12 +1609,39 @@ or more, whose level count no reader admits (`Ixon.Constant.bindersCanonical`). 
   else
     .error (.binderData "2^32 universe parameters or more, which no reader admits")
 
+/-- Whether a member of `c` is unsafe or partial: such a record keeps an
+undecided binder, which only the typing tier reads. -/
+@[expose] def unsafeOrPartial (c : Ixon.Constant) : Bool :=
+  let defn (d : Ixon.Definition) : Bool := match d.safety with
+    | .safe => false
+    | _ => true
+  match c.info with
+  | .defn d => defn d
+  | .recr r => r.isUnsafe
+  | .axio a => a.isUnsafe
+  | .muts ms => ms.any fun
+    | .defn d => defn d
+    | .indc i => i.isUnsafe || i.ctors.any (·.isUnsafe)
+    | .recr r => r.isUnsafe
+  | _ => false
+
+/-- Whether a section has an undecided binder. -/
+@[expose] def hasUndecided (s : Array Ixon.BinderBlock) : Bool :=
+  s.any (·.nodes.any (·.isUndecided))
+
 /-- The section the compiler gives a block record `c`: the annotator's when it
 is admissible, otherwise the undecided section (`undecidedSection`). A record
-for which neither is admissible does not compile. The annotator runs once. -/
+for which neither is admissible does not compile; with an annotator, neither
+does a safe record whose section has an undecided binder: a safe record always
+carries its binder data. The annotator runs once. -/
 @[expose] def sectionFor (annotator? : Option BinderAnnotator) (names : Array Name)
     (c : Ixon.Constant) : Except CompileError (Array Ixon.BinderBlock) :=
-  sectionChoose c (annotatorSection annotator? names c)
+  match sectionChoose c (annotatorSection annotator? names c) with
+  | .ok s =>
+    if annotator?.isSome && !unsafeOrPartial c && hasUndecided s then
+      .error (.binderData "a safe record with an undecided binder")
+    else .ok s
+  | .error e => .error e
 
 /-- `c` with the section the compiler gives it (`sectionFor`). Every other
 field is `c`'s, definitionally. -/
@@ -1624,11 +1651,10 @@ field is `c`'s, definitionally. -/
   | .ok binders => .ok { c with binders }
   | .error e => .error e
 
-/-- The section the compiler keeps is admissible. -/
-theorem sectionFor_ok {annotator? : Option BinderAnnotator} {names : Array Name}
-    {c : Ixon.Constant} {binders : Array Ixon.BinderBlock}
-    (h : sectionFor annotator? names c = .ok binders) : sectionAdmissible c binders = true := by
-  unfold sectionFor sectionChoose at h
+/-- The section `sectionChoose` keeps is admissible. -/
+theorem sectionChoose_ok {c : Ixon.Constant} {s binders : Array Ixon.BinderBlock}
+    (h : sectionChoose c s = .ok binders) : sectionAdmissible c binders = true := by
+  unfold sectionChoose at h
   split at h
   · rename_i ha
     cases h
@@ -1638,6 +1664,47 @@ theorem sectionFor_ok {annotator? : Option BinderAnnotator} {names : Array Name}
       cases h
       exact hu
     · split at h <;> cases h
+
+/-- `sectionChoose` fails only with a binder-data error. -/
+theorem sectionChoose_error {c : Ixon.Constant} {s : Array Ixon.BinderBlock} {err : CompileError}
+    (h : sectionChoose c s = .error err) : ∃ reason, err = .binderData reason := by
+  unfold sectionChoose at h
+  split at h
+  · cases h
+  · split at h
+    · cases h
+    · split at h
+      · cases h
+        exact ⟨_, rfl⟩
+      · cases h
+        exact ⟨_, rfl⟩
+
+/-- The section the compiler keeps is admissible. -/
+theorem sectionFor_ok {annotator? : Option BinderAnnotator} {names : Array Name}
+    {c : Ixon.Constant} {binders : Array Ixon.BinderBlock}
+    (h : sectionFor annotator? names c = .ok binders) : sectionAdmissible c binders = true := by
+  unfold sectionFor at h
+  split at h
+  · rename_i s hs
+    split at h
+    · cases h
+    · cases h
+      exact sectionChoose_ok hs
+  · cases h
+
+/-- `sectionFor` fails only with a binder-data error. -/
+theorem sectionFor_error {annotator? : Option BinderAnnotator} {names : Array Name}
+    {c : Ixon.Constant} {err : CompileError}
+    (h : sectionFor annotator? names c = .error err) : ∃ reason, err = .binderData reason := by
+  unfold sectionFor at h
+  split at h
+  · split at h
+    · cases h
+      exact ⟨_, rfl⟩
+    · cases h
+  · rename_i e hs
+    cases h
+    exact sectionChoose_error hs
 
 /-- **The compiler's section is admissible**: a record built with a section
 is `c` with an admissible one. -/
@@ -1660,16 +1727,7 @@ theorem withBinderSection_error {annotator? : Option BinderAnnotator} {names : A
   · cases h
   · rename_i e hs
     cases h
-    unfold sectionFor sectionChoose at hs
-    split at hs
-    · cases hs
-    · split at hs
-      · cases hs
-      · split at hs
-        · cases hs
-          exact ⟨_, rfl⟩
-        · cases hs
-          exact ⟨_, rfl⟩
+    exact sectionFor_error hs
 
 /-- An admissible section is in the wire domain. -/
 theorem sectionAdmissible_wire {c : Ixon.Constant} {binders : Array Ixon.BinderBlock}
