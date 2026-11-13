@@ -18,6 +18,7 @@ import IxC.Kernel.Verify.Subst
 import IxC.Kernel.Model.CtxOkKit
 import IxC.Kernel.Model.Tiers
 import IxC.Kernel.Model.Inductives.DeclNative
+public import IxC.Kernel.Model.Inductives.DeclRecTwin
 import IxC.Kernel.Semantics.Inductives.DeclNativeExtJ
 /- `PropWhen` seals its representation; the bit lemmas below compute the pinned
 `Eq`'s instantiated type by `rfl`, which needs the view (as `Model/AxiomBits.lean`). -/
@@ -587,17 +588,28 @@ theorem nativeNoRecStep_rulesJ {env env₂ : Env md} {block : List (ConstantInfo
     judgeInv_rulesJ (fun m φ => sortClaim_rulesJ_of m φ) mp hE hdp h
   exact ⟨mp₂, hext hT⟩
 
+/-- **A twin recursor block, over derivations**: the twin recursor record at `rulesJ`
+gives the two facts `foldRules` asks of the inductive kind. -/
+theorem twinStep_rulesJ {env env₂ : Env md} {block : List (ConstantInfo md)}
+    (mp : EnvModelM V μ env) (hE : EtaFamiliesClosed env)
+    (h : DeclRecTwinRunJ rulesJ env block env₂) :
+    EtaFamiliesClosed env₂ ∧ ∃ mp₂ : EnvModelM V μ env₂, ModelExt mp mp₂ :=
+  ⟨declRecTwinRunJ_etaClosed hE h,
+    declRecTwinJ judgeFrames_rulesJ (fun m => judgeSound_rulesJ_of m) mp h⟩
+
 /-- **The fold at the derivation package over the inductive routes** (`IndRoutesJ`):
 every inductive block takes the native route at the parts the recogniser reads off
-it (`nativeStep_rulesJ`), the modeled route (`modeledStep_rulesJ`), or the native
-route without a recursor record (`nativeNoRecStep_rulesJ`). -/
+it (`nativeStep_rulesJ`), the modeled route (`modeledStep_rulesJ`), the native
+route without a recursor record (`nativeNoRecStep_rulesJ`), or the twin recursor
+route (`twinStep_rulesJ`). -/
 theorem foldRulesRoutes {env env' : Env md} {ds : List (Declaration md)} :
     DeclsRunJ rulesJ (IndRoutesJ rulesJ) env ds env' →
     EnvModelT V μ env → EnvModelT V μ env' :=
   foldRules fun {_} mp hT hE {_ _ _} h => by
-    rcases h with ⟨p₀, hdp, hN⟩ | hM | ⟨p₀, hdp, hN⟩
+    rcases h with ⟨p₀, hdp, hN⟩ | hM | ⟨p₀, hdp, hN⟩ | hT'
     · exact nativeStep_rulesJ mp hT hE hdp hN
     · exact modeledStep_rulesJ mp hE hM
     · exact nativeNoRecStep_rulesJ mp hT hE hdp hN
+    · exact twinStep_rulesJ mp hE hT'
 
 end Ix.Kernel.Model

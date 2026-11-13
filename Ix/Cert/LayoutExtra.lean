@@ -140,6 +140,7 @@ theorem buildIndex_muts (store : Store) (records : Array (Address × Ixon.Consta
       all_goals simp only [yield_value]
       all_goals first
         | (with_reducible exact hs)
+        | (exact fun b h => hs b h)
         | (with_reducible refine filed_add hs (mutsAt_of (by assumption) (by assumption)) _ _ (fun b' h => .inl h))
         | (with_reducible refine filed_add hs (mutsAt_of (by assumption) (by assumption)) _ _ (fun b' h => ?_)
            dsimp only at h

@@ -99,28 +99,8 @@ def recursorStep (cx : Ctx md) (blockLps : List LevelParam) (ref : ConstRef Addr
     (recs : Array (CVal md × RecCounts × List (Ix.Kernel.RecRule md))) :
     ReadM (ForInStep (Array (CVal md × RecCounts × List (Ix.Kernel.RecRule md)))) := do
   let some entry := cx.index.recs[ref]? | malformed "unindexed recursor"
-  let .member rOwner j := ref | malformed "recursor reference is a constructor"
-  let some rc := cx.store rOwner | malformed "recursor record is missing"
-  let some (_, r) := (recursorMembers rc).find? (·.1 == j) | malformed "recursor member is missing"
-  if r.isUnsafe then declined "unsafe inductive declaration"
-  let key ← cx.memberKey ref
-  let rself : Nat → Option (ReadM (CName md)) := fun i => match rc.info with
-    | .muts rms => if i < rms.size then some (cx.memberKey (.member rOwner i)) else none
-    | _ => if i == 0 then some (pure key) else none
-  let lps := recLps entry.large blockLps
-  let mr := MemberReader.mk' cx rc (recParam lps) rself
-  let cv : CVal md := ⟨key, lps, ← mr.read r.typ⟩
-  let some major := inductiveAt cx.store entry.major
-    | declined s!"recursor {key}: its major premise is not an inductive"
-  unless major.ctors.size == r.rules.size do
-    malformed s!"recursor {key} has {r.rules.size} rules for {major.ctors.size} constructors"
-  let .member mb mi := entry.major | malformed "recursor major is a constructor"
-  let mut rules : List (Ix.Kernel.RecRule md) := []
-  for (rule, k) in r.rules.zipIdx do
-    rules := rules ++ [Ix.Kernel.RecRule.mk (← cx.memberKey (.ctor mb mi k)) rule.fields.toNat 0 .inert
-      (← mr.read rule.rhs) false false false]
-  pure (.yield (recs.push (cv, ⟨r.params.toNat, r.motives.toNat, r.minors.toNat, r.indices.toNat, r.k,
-    some entry.motive⟩, rules)))
+  let recVal ← readRecursor cx blockLps ref entry
+  pure (.yield (recs.push recVal))
 
 /-- **The block's recursors, as the reader reads them** from their own
 records, in the block shape's motive order. -/

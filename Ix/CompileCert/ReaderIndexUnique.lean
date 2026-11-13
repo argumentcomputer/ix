@@ -202,6 +202,9 @@ theorem candidate_extends (store : Store) (owner : Address) (constant : Ixon.Con
     show RecsExtend before.1 before.1
     intro _ _ h
     exact h
+  | twin =>
+    intro _ _ h
+    exact h
   | add motive carriers major block firstIndex blockRecord members slot first fresh =>
     have growth := recs_insert_extends before.1 (.member owner member.1)
       ⟨block, motive, major, member.2.lvls.toNat == first.lvls.toNat + 1⟩ fresh

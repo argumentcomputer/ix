@@ -793,22 +793,16 @@ theorem recrs_inert (cx : Ctx .anon) (st : State .anon) (owner : Address) (c : I
     readRecord cx st owner c = .ok {} := by
   unfold readRecord
   rw [info]
+  dsimp only
+  have hall : (List.range (rs.map Ixon.MutConst.recr).toArray.size).all
+      (fun j => cx.index.recs.contains (.member owner j)) = true := by
+    rw [List.all_eq_true]
+    intro j hj
+    rw [List.mem_range, List.size_toArray, List.length_map] at hj
+    exact hindexed j hj
+  rw [hall]
   simp
-  rw [(LowerTransfer.forIn_unit_ok_iff _ (fun j => ConstRef.member owner j ∈ cx.index.recs) ?step ?yields _).mpr ?all]
-  · rfl
-  · intro j
-    by_cases h : ConstRef.member owner j ∈ cx.index.recs
-    · simp [h]
-      rfl
-    · simp [h, declined, throw, throwThe, MonadExceptOf.throw, Functor.map, Except.map]
-  · intro j r hr
-    by_cases h : ConstRef.member owner j ∈ cx.index.recs
-    · simp [h] at hr
-      exact (Except.ok.inj hr).symm
-    · simp [h, declined, throw, throwThe, MonadExceptOf.throw, Functor.map, Except.map] at hr
-  · intro j hj
-    simp only [List.mem_range'_1, Nat.zero_add] at hj
-    exact Std.HashMap.mem_iff_contains.mpr (hindexed j hj.2)
+  rfl
 
 theorem inert_empty : StreamRename.Inert ({} : Read .anon) := ⟨⟨rfl, rfl, rfl⟩, rfl⟩
 

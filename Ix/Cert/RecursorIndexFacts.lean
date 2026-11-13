@@ -215,6 +215,7 @@ theorem candidate_inv (store : Store) (records : Array (Address × Ixon.Constant
   rw [ran]
   cases step with
   | keep => exact valid
+  | twin => exact valid
   | add motive carriers major block firstIndex blockRecord members slot first fresh analysed carrier stored
       kind firstFound guarded unused =>
     refine ⟨?_, ?_⟩

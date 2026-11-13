@@ -162,6 +162,26 @@ theorem modeled_newSat {J : Judgements md} {env env₂ : Env md} {block : List (
   · exact hM
   · exact hM.trans (indRecsFoldRunJ_newSat hQr hfold)
 
+/-- **The twin recursor route stores copied model definitions and twin recursors.** -/
+theorem twin_newSat {J : Judgements md} {env env₂ : Env md} {block : List (ConstantInfo md)}
+    {Q : ConstantInfo md → Prop}
+    (hQd : ∀ cv v hint, Q (.defnInfo cv v hint))
+    (hQr : ∀ cv a b rs, Q (.recInfo cv a b rs))
+    (hrun : DeclRecTwinRunJ J env block env₂) : NewSat env env₂ Q := by
+  obtain ⟨ws, f, -, -, rfl, -⟩ := hrun
+  intro n x hf
+  have hf' : (⟨(twinRecs ws ++ twinModels ws) ++ env.consts⟩ : Env md).find? n = some x := by
+    simpa [List.append_assoc] using hf
+  rcases find?_append_inv hf' with hold | ⟨hmem, -⟩
+  · exact .inl hold
+  · rcases List.mem_append.mp hmem with hrec | hmod
+    · obtain ⟨w, -, rfl⟩ := List.mem_map.mp hrec
+      exact .inr (hQr _ _ _ _)
+    · obtain ⟨w, -, hw⟩ := List.mem_filterMap.mp hmod
+      unfold TwinRecPart.modelInfo? at hw
+      obtain ⟨⟨cvm, mval, hint⟩, -, rfl⟩ := Option.map_eq_some_iff.mp hw
+      exact .inr (hQd _ _ _)
+
 /-! ## A basis step extends the store -/
 
 /-- A role's key. -/
@@ -290,13 +310,14 @@ theorem basis_newSat_noThm {env env₂ : Env md} {kind : BasisKind}
 theorem indRoutes_newSat_noThm {J : Judgements md} {env env₂ : Env md}
     {block : List (ConstantInfo md)} {nP : Nat} (hI : IndRoutesJ J env block nP env₂) :
     NewSat env env₂ NotThm := by
-  rcases hI with ⟨_, -, hN⟩ | hM | ⟨_, -, hN⟩
+  rcases hI with ⟨_, -, hN⟩ | hM | ⟨_, -, hN⟩ | hT
   · exact native_newSat (fun _ _ _ _ h => nomatch h) (fun _ _ _ _ _ h => nomatch h)
       (fun _ _ _ _ _ _ h => nomatch h) (fun _ _ _ h => nomatch h) hN
   · exact modeled_newSat (fun _ _ _ h => nomatch h) (fun _ _ _ _ _ h => nomatch h)
       (fun _ _ _ _ _ _ h => nomatch h) hM
   · exact nativeNoRec_newSat (fun _ _ _ _ h => nomatch h) (fun _ _ _ _ _ h => nomatch h)
       (fun _ _ _ h => nomatch h) hN
+  · exact twin_newSat (fun _ _ _ _ _ h => nomatch h) (fun _ _ _ _ _ _ h => nomatch h) hT
 
 /-- **One declaration step keeps the stored theorems typed**, over the derivation package. -/
 theorem thmTyped_declRunJ {env env₂ : Env md} {d : Declaration md} (h : ThmTyped env)
@@ -728,6 +749,41 @@ theorem basis_recK_new {env env₂ : Env md} {kind : BasisKind}
       exact recRuleKOf_ext hpre hc (fun T us heq => .inl (hT T us heq))
     · exact eq_singleton_of_length_le_one (Nat.le_of_eq ((hr' r hr).2.2 hk)) hr
 
+/-- **The twin recursor route stores recursors keeping the K facts.** -/
+theorem twin_recK_new {J : Judgements md} {env env₂ : Env md} {block : List (ConstantInfo md)}
+    (h : StoreInv env) (hK : RecK env)
+    (hrun : DeclRecTwinRunJ J env block env₂) :
+    ∀ n cv mI rP rules, env₂.find? n = some (.recInfo cv mI rP rules) → env.find? n = none →
+      (∀ r ∈ rules, r.k = Ix.Kernel.recRuleKOf env₂.find? r.ctor) ∧
+      (¬ HasModel env₂ n → ∀ r ∈ rules, r.k = true → rules = [r]) := by
+  have hext : ∀ {k : Key md} {x : ConstantInfo md}, env.find? k = some x → env₂.find? k = some x :=
+    (declRecTwinRunJ_envExt hrun).find
+  intro n cv mI rP rules hf hn0
+  obtain ⟨ws, f, w, -, rfl, rfl, rfl, rfl, rfl, -, hfkC, -, hmodSome, hmodNone, hlenW, hrules⟩ :=
+    declRecTwinRunJ_newRec hrun hf hn0
+  refine ⟨fun r hr => ?_, fun hm r hr hk => ?_⟩
+  · obtain ⟨rW, rC, hrC, hrule⟩ := forall₂_zip_mem_snd hlenW hrules r hr
+    obtain ⟨-, -, -, -, -, -, -, -, hctor, -, -, -, hkEq, -⟩ := hrule
+    rw [hkEq, hK.kExact w.kC w.cvC w.mI w.rP w.rulesC hfkC rC hrC, hctor]
+    exact recRuleKOf_stable h hext hfkC hrC
+  · cases hmw : w.model? with
+    | some triple =>
+      rcases triple with ⟨cvm, mval, hint⟩
+      exact absurd ⟨_, mval, hint, hmodSome cvm mval hint hmw⟩ hm
+    | none =>
+      have hmC : ¬ HasModel env w.kC := by
+        rintro ⟨cvm, mval, hint, hfm⟩
+        exact (hmodNone hmw).1 cvm mval hint hfm
+      obtain ⟨rW, rC, hrC, hrule⟩ := forall₂_zip_mem_snd hlenW hrules r hr
+      obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, hkEq, -⟩ := hrule
+      have hwC : w.rulesC = [rC] :=
+        hK.kSingle w.kC w.cvC w.mI w.rP w.rulesC hfkC hmC rC hrC (hkEq.symm.trans hk)
+      have hlenEq : (w.rulesW.zip w.rulesW').length = w.rulesC.length := forall₂_length hrules
+      have hlen1 : w.rulesW'.length = 1 := by
+        rw [List.length_zip, hlenW, Nat.min_self, hwC, List.length_singleton] at hlenEq
+        exact hlenEq
+      exact eq_singleton_of_length_le_one (Nat.le_of_eq hlen1) hr
+
 /-- **One declaration step keeps the K facts**, over the derivation package. -/
 theorem recK_declRunJ {env env₂ : Env md} {d : Declaration md} (h : StoreInv env) (hK : RecK env)
     (hrun : DeclRunJ rulesJ (IndRoutesJ rulesJ env) env d env₂) : RecK env₂ := by
@@ -753,7 +809,7 @@ theorem recK_declRunJ {env env₂ : Env md} {d : Declaration md} (h : StoreInv e
     simp only [DeclRunJ] at hrun
     split at hrun
     · exact recK_step h hK hext.find (basis_recK_new hrun)
-    · rcases hrun with ⟨p₀, hdp, hN⟩ | hM | ⟨p₀, hdp, hN⟩
+    · rcases hrun with ⟨p₀, hdp, hN⟩ | hM | ⟨p₀, hdp, hN⟩ | hT
       · refine recK_step h hK hext.find (fun n cv mI rP rules hf hn => ?_)
         obtain ⟨h1, h2⟩ := native_recK_new hfr (nativeRecog_of hdp) h hN n cv mI rP rules hf hn
         exact ⟨h1, fun _ => h2⟩
@@ -761,6 +817,7 @@ theorem recK_declRunJ {env env₂ : Env md} {d : Declaration md} (h : StoreInv e
       · exact recK_step_noRec h hK hext.find
           (nativeNoRec_newSat (fun _ _ _ _ _ _ heq => nomatch heq)
             (fun _ _ _ _ _ _ _ heq => nomatch heq) (fun _ _ _ _ _ heq => nomatch heq) hN)
+      · exact recK_step h hK hext.find (twin_recK_new h hK hT)
   | quotDecl k cv =>
     simp only [DeclRunJ] at hrun
     split at hrun
@@ -982,7 +1039,7 @@ theorem etaTowers_declRunJ {env env₂ : Env md} {d : Declaration md} (h : EtaTo
     simp only [DeclRunJ] at hrun
     split at hrun
     · exact etaTowers_step_noEta hext h (basis_newSat_noEta hrun)
-    · rcases hrun with ⟨p₀, hdp, hN⟩ | hM | ⟨p₀, hdp, hN⟩
+    · rcases hrun with ⟨p₀, hdp, hN⟩ | hM | ⟨p₀, hdp, hN⟩ | hT
       · refine etaTowers_step hext h ?_
         obtain ⟨-, isRec, env₁, cvTa, p₁, p, ctorsA, sortss, kinds, cvRa, rhss, -, -, -, hInd, hp,
           hCtors, -, -, -, -, -, -, -, -, hTbl, -⟩ := hN
@@ -999,6 +1056,9 @@ theorem etaTowers_declRunJ {env env₂ : Env md} {d : Declaration md} (h : EtaTo
           -, -, -, -, hTbl, -⟩ := hN
         exact nativeFormer_towers hInd hp hCtors
           (consSumCtors_newSat (fun _ _ _ _ _ heq => nomatch heq)) hTbl
+      · exact etaTowers_step_noEta hext h
+          (twin_newSat (fun _ _ _ _ _ heq => nomatch heq)
+            (fun _ _ _ _ _ _ heq => nomatch heq) hT)
   | quotDecl k cv =>
     simp only [DeclRunJ] at hrun
     split at hrun
@@ -1141,7 +1201,7 @@ theorem tableBodies_declRunJ {env env₂ : Env md} {d : Declaration md} (hS : St
     simp only [DeclRunJ] at hrun
     split at hrun
     · exact tableBodies_step_noProj hext.find h (basis_newSat_noProj hrun)
-    · rcases hrun with ⟨p₀, hdp, hN⟩ | hM | ⟨p₀, hdp, hN⟩
+    · rcases hrun with ⟨p₀, hdp, hN⟩ | hM | ⟨p₀, hdp, hN⟩ | hT
       · refine tableBodies_step hext.find h ?_
         obtain ⟨hnd, isRec, env₁, cvTa, p₁, p, ctorsA, sortss, kinds, cvRa, rhss, -, -, -, hInd,
           hp, hCtors, -, -, -, -, -, -, -, hRec, hTbl, -⟩ := hN
@@ -1173,6 +1233,9 @@ theorem tableBodies_declRunJ {env env₂ : Env md} {d : Declaration md} (hS : St
           exact (NewSat.cons (fun _ heq => nomatch heq)).trans
             (consSumCtors_newSat (fun _ _ _ _ heq => nomatch heq))
         exact nativeTable_bodies hCtors (fun j cA hj => (hF.ctor j cA hj).1) hXno hTbl
+      · exact tableBodies_step_noProj hext.find h
+          (twin_newSat (fun _ _ _ _ heq => nomatch heq)
+            (fun _ _ _ _ _ heq => nomatch heq) hT)
   | quotDecl k cv =>
     simp only [DeclRunJ] at hrun
     split at hrun

@@ -1164,14 +1164,207 @@ theorem storeInv_declNativeNoRecRunJ {J : Judgements md} (hfr : ∀ e : Env md, 
   rw [hres, hes0, List.append_nil]
   rfl
 
+/-- **Companion model copies of a twin recursor block keep the store invariant.** -/
+theorem storeInv_twinModels {env : Env md} (h : StoreInv env) :
+    ∀ (ws : List (TwinRecPart md)),
+      ((twinModels ws).map (·.name)).Nodup →
+      (∀ ci ∈ twinModels ws, env.find? ci.name = none) →
+      (∀ w ∈ ws, ∀ cvm mval hint, w.model? = some (cvm, mval, hint) →
+        env.find? (Ix.Kernel.auxKey w.kC .model) = some (.defnInfo cvm mval hint)) →
+      StoreInv ⟨twinModels ws ++ env.consts⟩ ∧
+      (∀ k ci, env.find? k = some ci →
+        (⟨twinModels ws ++ env.consts⟩ : Env md).find? k = some ci)
+  | [], _, _, _ => ⟨h, fun _ _ hk => hk⟩
+  | w :: ws, hnd, hfr, hmod => by
+    cases hm : w.model? with
+    | none =>
+      simp only [twinModels, List.filterMap_cons, TwinRecPart.modelInfo?, hm, Option.map_none]
+        at hnd hfr ⊢
+      exact storeInv_twinModels h ws hnd hfr
+        (fun w' hw' => hmod w' (List.mem_cons_of_mem w hw'))
+    | some triple =>
+      rcases triple with ⟨cvm, mval, hint⟩
+      simp only [twinModels, List.filterMap_cons, TwinRecPart.modelInfo?, hm, Option.map_some,
+        List.map_cons, List.nodup_cons] at hnd ⊢
+      obtain ⟨hS₀, hfind₀⟩ := storeInv_twinModels h ws hnd.2
+        (fun ci hci => by
+          refine hfr ci ?_
+          simp only [twinModels, List.filterMap_cons, TwinRecPart.modelInfo?, hm, Option.map_some]
+          exact List.mem_cons_of_mem _ hci)
+        (fun w' hw' => hmod w' (List.mem_cons_of_mem w hw'))
+      let c : ConstantInfo md :=
+        .defnInfo ⟨Ix.Kernel.auxKey w.cvW.name .model, cvm.levelParams, cvm.type⟩ mval hint
+      have hcMem : c ∈ twinModels (w :: ws) := by
+        simp [c, twinModels, TwinRecPart.modelInfo?, hm]
+      have hfresh₀ : (⟨twinModels ws ++ env.consts⟩ : Env md).find? c.name = none :=
+        find?_append_none_of_not_mem hnd.1 (hfr c hcMem)
+      have hfkM := hmod w List.mem_cons_self cvm mval hint hm
+      obtain ⟨hfvT, hlpT, hresT, hbvT, hdefWF, -, -, -⟩ :=
+        h.wf _ (Ix.Kernel.Semantics.Env.find?_mem hfkM)
+      obtain ⟨hfvV, hlpV, hresV, hbvV⟩ := hdefWF cvm mval hint rfl
+      have hsome₀ : ∀ n, (env.find? n).isSome = true →
+          ((⟨twinModels ws ++ env.consts⟩ : Env md).find? n).isSome = true := by
+        intro n hn
+        obtain ⟨ci, hci⟩ := Option.isSome_iff_exists.mp hn
+        rw [hfind₀ n ci hci]; rfl
+      refine ⟨storeInv_consTyped hS₀ hfresh₀
+        ⟨hfvT, hlpT, Ix.Kernel.Expr.constsResolve_le hsome₀ hresT, hbvT⟩ ?_
+        (fun _ _ _ _ heq => nomatch heq) (fun _ heq => nomatch heq)
+        (fun _ _ heq => nomatch heq),
+        fun k ci hk => Ix.Kernel.Env.find?_cons_of_fresh hfresh₀ (hfind₀ k ci hk)⟩
+      intro cv' v hint' heq
+      injection heq with e1 e2 _
+      have hlpsEq : cv'.levelParams = cvm.levelParams := by rw [← e1]
+      subst e2
+      exact ⟨hfvV, by rw [hlpsEq]; exact hlpV,
+        Ix.Kernel.Expr.constsResolve_le hsome₀ hresV, hbvV⟩
+
+/-- **Provisioning rule-less twin recursors keeps the store invariant.** -/
+theorem storeInv_twinProv {J : Judgements md} {env envM : Env md}
+    (hfr : JudgeFrames J env) (hM : StoreInv envM)
+    (hfindM : ∀ k ci, env.find? k = some ci → envM.find? k = some ci) :
+    ∀ (ws : List (TwinRecPart md)),
+      ((twinProv ws).map (·.name)).Nodup →
+      (∀ ci ∈ twinProv ws, envM.find? ci.name = none) →
+      (∀ w ∈ ws, ConstantValCheckJ J env w.cvW w.cvW') →
+      StoreInv ⟨twinProv ws ++ envM.consts⟩ ∧
+      (∀ k ci, env.find? k = some ci →
+        (⟨twinProv ws ++ envM.consts⟩ : Env md).find? k = some ci)
+  | [], _, _, _ => ⟨hM, hfindM⟩
+  | w :: ws, hnd, hfrM, hall => by
+    simp only [twinProv, List.map_cons, List.nodup_cons] at hnd ⊢
+    obtain ⟨hS₀, hfind₀⟩ := storeInv_twinProv hfr hM hfindM ws hnd.2
+      (fun ci hci => hfrM ci (List.mem_cons_of_mem _ hci))
+      (fun w' hw' => hall w' (List.mem_cons_of_mem w hw'))
+    let c₀ : ConstantInfo md := .recInfo w.cvW' w.mI w.rP []
+    have hfresh₀ : (⟨twinProv ws ++ envM.consts⟩ : Env md).find? w.cvW'.name = none :=
+      find?_append_none_of_not_mem hnd.1 (hfrM c₀ List.mem_cons_self)
+    obtain ⟨h1, h2, h3, h4⟩ := ConstantValCheckJ.typeWF hfr (hall w List.mem_cons_self)
+    have hsome₀ : ∀ n, (env.find? n).isSome = true →
+        ((⟨twinProv ws ++ envM.consts⟩ : Env md).find? n).isSome = true := by
+      intro n hn
+      obtain ⟨ci, hci⟩ := Option.isSome_iff_exists.mp hn
+      rw [hfind₀ n ci hci]; rfl
+    exact ⟨storeInv_consRecNil hS₀ hfresh₀
+      ⟨h1, h2, Ix.Kernel.Expr.constsResolve_le hsome₀ h3, h4⟩,
+      fun k ci hk => Ix.Kernel.Env.find?_cons_of_fresh hfresh₀ (hfind₀ k ci hk)⟩
+
+/-- `RuleFactsS` at `envSelf` for one checked twin rule. -/
+theorem twinRuleFactsS {J : Judgements md} {env envSelf : Env md}
+    (hfrSelf : JudgeFrames J envSelf)
+    (hEnv : StoreInv env)
+    (hfindSelf : ∀ k ci, env.find? k = some ci → envSelf.find? k = some ci)
+    {f : Key md → Key md} {w : TwinRecPart md}
+    (hcvName : w.cvW'.name = w.cvW.name)
+    (hlps' : w.cvW'.levelParams = w.cvC.levelParams)
+    (hfkC : env.find? w.kC = some (.recInfo w.cvC w.mI w.rP w.rulesC))
+    {rW rW' rC : RecRule md}
+    (hrC : rC ∈ w.rulesC)
+    (hrule : TwinRuleJ J env envSelf f w.cvW.name w.cvC.levelParams w.cvW' w.mI w.rP rW rW' rC) :
+    RuleFactsS envSelf w.cvW' w.mI w.rP rW' := by
+  obtain ⟨-, -, hrbv, hrfv, hann, hrlp, hrres, -, hctor, hnf, hcp, hfireEq, hkEq, -, hetaEq,
+    hplainShape, hnestShape, -⟩ := hrule
+  obtain ⟨hrfv', hrbv'⟩ := hfrSelf.annot_syntax hann hrfv hrbv
+  have hkeep : ∀ (m : Key md) (ci : ConstantInfo md),
+      (∀ cv mI rP rules, ci ≠ .recInfo cv mI rP rules) →
+      env.find? m = some ci → envSelf.find? m = some ci :=
+    fun m ci _ hf => hfindSelf m ci hf
+  have hsomeLe : ∀ n, (env.find? n).isSome = true → (envSelf.find? n).isSome = true := by
+    intro n hn
+    obtain ⟨ci, hci⟩ := Option.isSome_iff_exists.mp hn
+    rw [hfindSelf n ci hci]; rfl
+  obtain ⟨⟨cvj, hfcEnv, -, hnestLenC, hnInertC, hteleC⟩, hkC, -⟩ :=
+    hEnv.rec_ctors w.kC w.cvC w.mI w.rP w.rulesC hfkC rC hrC
+  refine ⟨hrfv', by rw [hlps']; exact hrlp, hrres, hrbv', ?_, ?_, ?_, ?_⟩
+  · intro lvls pins hfr
+    have hmemRecC := Ix.Kernel.Semantics.Env.find?_mem hfkC
+    obtain ⟨-, -, -, -, -, hrecWF, -, -⟩ := hEnv.wf _ hmemRecC
+    obtain ⟨-, -, -, -, hnestWF⟩ := hrecWF w.cvC w.mI w.rP w.rulesC rfl rC hrC
+    obtain ⟨hle, hlvls, hpins, -⟩ := hnestWF lvls pins (hfireEq.symm.trans hfr)
+    refine ⟨hle, fun l hl => by rw [hlps']; exact hlvls l hl, fun pin hpin => ?_,
+      hnestShape lvls pins hfr⟩
+    obtain ⟨p1, p2, p3, p4⟩ := hpins pin hpin
+    exact ⟨p1, by rw [hlps']; exact p2, Ix.Kernel.Expr.constsResolve_le hsomeLe p3, p4⟩
+  · refine ⟨cvj, ?_, fun hp => ?_, fun lvls pins hfn => ?_,
+      fun hin => hnInertC (hfireEq.symm.trans hin), ?_⟩
+    · rw [hctor, hcp, hnf]; exact hfindSelf _ _ hfcEnv
+    · exact hplainShape hp cvj rC.ctorParams rC.nfields (by rw [hctor]; exact hfcEnv)
+    · rw [hcp]; exact hnestLenC lvls pins (hfireEq.symm.trans hfn)
+    · rw [hcp, hnf]; exact hteleC
+  · intro hk
+    rw [hctor]
+    exact Ix.Kernel.recRuleKOf_mono hkeep (hkC (hkEq.symm.trans hk))
+  · intro heta
+    rw [hetaEq] at heta
+    rw [hcvName, hctor]
+    exact Ix.Kernel.recRuleEtaOf_mono hkeep heta
+
+/-- **The twin recursor route keeps the store invariant.** -/
+theorem storeInv_declRecTwinRunJ {J : Judgements md} (hfr : ∀ e : Env md, JudgeFrames J e)
+    {env env₂ : Env md} {block : List (ConstantInfo md)} (h : StoreInv env)
+    (hrun : DeclRecTwinRunJ J env block env₂) : StoreInv env₂ := by
+  obtain ⟨ws, f, -, -, rfl, hnd, hfrAll, -, hall⟩ := hrun
+  have hnamesEq : (twinProv ws).map (·.name) = (twinRecs ws).map (·.name) := by
+    simp only [twinProv, twinRecs, List.map_map]; rfl
+  rw [List.map_append] at hnd
+  obtain ⟨hndR, hndM, hdisj⟩ := List.nodup_append.mp hnd
+  obtain ⟨hSM, hfindM⟩ := storeInv_twinModels h ws hndM
+    (fun ci hci => hfrAll ci (List.mem_append_right _ hci))
+    (fun w hw cvm mval hint hm => by
+      have hmod := (hall w hw).2.2.2.2.1
+      rw [hm] at hmod
+      exact hmod)
+  have hndP : ((twinProv ws).map (·.name)).Nodup := by rwa [hnamesEq]
+  have hfrProvM : ∀ ci ∈ twinProv ws,
+      (⟨twinModels ws ++ env.consts⟩ : Env md).find? ci.name = none := by
+    intro ci hci
+    have hmemN : ci.name ∈ (twinRecs ws).map (·.name) := by
+      rw [← hnamesEq]; exact List.mem_map.mpr ⟨ci, hci, rfl⟩
+    obtain ⟨cR, hcR, hnR⟩ := List.mem_map.mp hmemN
+    have hnotM : ci.name ∉ (twinModels ws).map (·.name) := fun hm => hdisj ci.name hmemN ci.name hm rfl
+    refine find?_append_none_of_not_mem hnotM ?_
+    rw [← hnR]
+    exact hfrAll cR (List.mem_append_left _ hcR)
+  obtain ⟨hSSelf, hfindSelf⟩ := storeInv_twinProv (hfr env) hSM hfindM ws hndP hfrProvM
+    (fun w hw => (hall w hw).1)
+  let envM : Env md := ⟨twinModels ws ++ env.consts⟩
+  let envSelf : Env md := ⟨twinProv ws ++ envM.consts⟩
+  let env₃ : Env md := ⟨twinRecs ws ++ envM.consts⟩
+  have hfacts : ∀ w ∈ ws, ∀ rl ∈ w.rulesW', RuleFactsS envSelf w.cvW' w.mI w.rP rl := by
+    intro w hw rl hrl
+    obtain ⟨hcv, -, hfkC, hlps, -, -, hlenW, hrules⟩ := hall w hw
+    obtain ⟨rW, rC, hrC, hrule⟩ := forall₂_zip_mem_snd hlenW hrules rl hrl
+    exact twinRuleFactsS (hfr envSelf) h hfindSelf hcv.name_eq
+      (hcv.levelParams_eq.trans hlps) hfkC hrC hrule
+  refine swapStoreInv hSSelf (twinSwapShList envM.consts ws) ?_ ?_
+  · intro c hc
+    rcases List.mem_append.mp hc with hrec | hrest
+    · obtain ⟨w, hw, rfl⟩ := List.mem_map.mp hrec
+      exact Or.inr ⟨w.cvW', w.mI, w.rP, w.rulesW', rfl, hfacts w hw⟩
+    · exact Or.inl (List.mem_append_right _ hrest)
+  · intro n cv mI rP rules hf₃
+    by_cases hm : n ∈ (twinRecs ws).map (·.name)
+    · obtain ⟨cR, hcR, hnR⟩ := List.mem_map.mp hm
+      have hfR := find?_mem_of_nodup (rest := envM.consts) hndR hcR
+      rw [hnR, hf₃] at hfR
+      obtain rfl := Option.some.inj hfR
+      obtain ⟨w, hw, heq⟩ := List.mem_map.mp hcR
+      obtain ⟨rfl, rfl, rfl, rfl⟩ := ConstantInfo.recInfo.inj heq
+      exact Or.inr (hfacts w hw)
+    · have hmP : n ∉ (twinProv ws).map (·.name) := by rwa [hnamesEq]
+      rw [find?_append_of_not_mem (env := envM) hm] at hf₃
+      rw [find?_append_of_not_mem (env := envM) hmP]
+      exact Or.inl hf₃
+
 /-- **Every inductive route keeps the store invariant.** -/
 theorem storeInv_indRoutesJ {J : Judgements md} (hfr : ∀ e : Env md, JudgeFrames J e)
     {env env₂ : Env md} {block : List (ConstantInfo md)} {nP : Nat} (h : StoreInv env)
     (hr : IndRoutesJ J env block nP env₂) : StoreInv env₂ := by
-  rcases hr with ⟨p₀, hdp, hN⟩ | hM | ⟨p₀, hdp, hN⟩
+  rcases hr with ⟨p₀, hdp, hN⟩ | hM | ⟨p₀, hdp, hN⟩ | hT
   · exact storeInv_declNativeRunJ hfr (nativeRecog_of hdp) h hN
   · exact storeInv_declIndRunJ hfr h hM
   · exact storeInv_declNativeNoRecRunJ hfr (nativeRecog_noRec hdp) h hN
+  · exact storeInv_declRecTwinRunJ hfr h hT
 
 /-! ## The fold -/
 

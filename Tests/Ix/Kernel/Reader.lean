@@ -380,6 +380,32 @@ def twoFixture : List (Address × Ixon.Constant) :=
   | .error (.kernel _ _) => true
   | _ => false
 
+/-- A second recursor record for `Two`, byte-distinct from `twoRec` (an unused
+entry in its universe table gives it its own content address): `buildIndex`
+files it in `RecIndex.twins`, and `readRecord` emits `indDecl [twin] 0`. -/
+def twoRecTwin : Ixon.Constant := { twoRec with univs := #[.var 0, .zero] }
+
+def twoRecTwinBadK : Ixon.Constant :=
+  match twoRecTwin.info with
+  | .recr r => { twoRecTwin with info := .recr { r with k := true } }
+  | _ => twoRecTwin
+
+#guard
+  let r := rekeyed (twoFixture.take 5 ++ [(address 26, twoRecTwin)])
+  match readStream hash (renameTable r builtinTable) builtinPre r.records r.blobs with
+  | .ok (_, decls) =>
+    let twinKey : Ix.Kernel.Key .anon := .id (r.rename (address 26))
+    decls.any fun
+      | .indDecl [.recInfo cv 3 3 [_, _]] 0 => cv.name == twinKey
+      | _ => false
+  | .error _ => false
+#guard match run (twoFixture.take 5 ++ [(address 26, twoRecTwin)]) with
+  | .error (.kernel _ _) => true
+  | _ => false
+#guard match run (twoFixture.take 5 ++ [(address 26, twoRecTwinBadK)]) with
+  | .error (.read _ (.malformed _)) => true
+  | _ => false
+
 /-! ## A structure with a projection function
 
 `structure P where x : Nat; y : Nat`, `P.x := fun self => self.1` (an Ixon

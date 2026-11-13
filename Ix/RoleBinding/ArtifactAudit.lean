@@ -64,7 +64,10 @@ replace only their entry/preparation wrappers. No runtime ruling changes. -/
 -- Modes in records (`Constant.modesCanonical` and the mode readers) and the reader's canonical
 -- natural-literal check (`ECx.natAt`) add 24 compiled functions to each closure and one inherited
 -- extern, as for `Admission.checkBytes`.
-/-- info: runtime closure of [Ix.RoleBinding.Artifact.check]: 6970 compiled functions; inherited externs 116, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
+-- Indexing and lowering twin recursor records (`RecIndex.twins`, `readRecursor`, `lowerTwin`)
+-- add 24 compiled functions to each closure (`IxC/Kernel/Audit/Roots.lean`). Externs,
+-- implemented_by, unsafe, csimp and all ruling counts are unchanged.
+/-- info: runtime closure of [Ix.RoleBinding.Artifact.check]: 6994 compiled functions; inherited externs 116, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.check] #[`Init, `Std] rulings
 
@@ -75,7 +78,10 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.check] #[`I
 -- Modes in records (`Constant.modesCanonical` and the mode readers) and the reader's canonical
 -- natural-literal check (`ECx.natAt`) add 24 compiled functions to each closure and one inherited
 -- extern, as for `Admission.checkBytes`.
-/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkTiered]: 7104 compiled functions; inherited externs 116, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
+-- Indexing and lowering twin recursor records (`RecIndex.twins`, `readRecursor`, `lowerTwin`)
+-- add 24 compiled functions to each closure (`IxC/Kernel/Audit/Roots.lean`). Externs,
+-- implemented_by, unsafe, csimp and all ruling counts are unchanged.
+/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkTiered]: 7128 compiled functions; inherited externs 116, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.checkTiered] #[`Init, `Std] rulings
 
@@ -86,7 +92,10 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.checkTiered
 -- Modes in records (`Constant.modesCanonical` and the mode readers) and the reader's canonical
 -- natural-literal check (`ECx.natAt`) add 24 compiled functions to each closure and one inherited
 -- extern, as for `Admission.checkBytes`.
-/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkAt]: 6970 compiled functions; inherited externs 116, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
+-- Indexing and lowering twin recursor records (`RecIndex.twins`, `readRecursor`, `lowerTwin`)
+-- add 24 compiled functions to each closure (`IxC/Kernel/Audit/Roots.lean`). Externs,
+-- implemented_by, unsafe, csimp and all ruling counts are unchanged.
+/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkAt]: 6994 compiled functions; inherited externs 116, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.checkAt] #[`Init, `Std] rulings
 
@@ -97,7 +106,10 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.checkAt] #[
 -- Modes in records (`Constant.modesCanonical` and the mode readers) and the reader's canonical
 -- natural-literal check (`ECx.natAt`) add 24 compiled functions to each closure and one inherited
 -- extern, as for `Admission.checkBytes`.
-/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkTieredAt]: 7104 compiled functions; inherited externs 116, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
+-- Indexing and lowering twin recursor records (`RecIndex.twins`, `readRecursor`, `lowerTwin`)
+-- add 24 compiled functions to each closure (`IxC/Kernel/Audit/Roots.lean`). Externs,
+-- implemented_by, unsafe, csimp and all ruling counts are unchanged.
+/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkTieredAt]: 7128 compiled functions; inherited externs 116, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.checkTieredAt] #[`Init, `Std] rulings
 
@@ -118,8 +130,11 @@ ruling are those of `check` and `checkTiered`. Their kernel entries (`Admission.
 -- (`fieldKind`, `fieldNorm`, `substMembers`, `ihBinder`) and the reader's K check on a nested
 -- block add 21 compiled functions. Externs, implemented_by, unsafe, csimp and all ruling
 -- counts are unchanged.
+-- Indexing and lowering twin recursor records (`RecIndex.twins`, `readRecursor`, `lowerTwin`)
+-- add 24 compiled functions (`IxC/Kernel/Audit/Roots.lean`). Externs, implemented_by, unsafe,
+-- csimp and all ruling counts are unchanged.
 /-- info: runtime closure of [Ix.RoleBinding.Artifact.checkConditional,
- Ix.RoleBinding.Artifact.checkTieredConditional]: 7165 compiled functions; inherited externs 116, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
+ Ix.RoleBinding.Artifact.checkTieredConditional]: 7189 compiled functions; inherited externs 116, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
 #guard_msgs (whitespace := lax) in
 run_cmd do
   Ix.Kernel.Audit.checkRuntimeWith
