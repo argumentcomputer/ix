@@ -49,22 +49,25 @@ def hostLimitOf : Ix.HostAdmission.Error → Option Resource
   | .tiered e => artifactTierLimitOf e
   | _ => none
 
-/-- **Size the kernel's threads, before any task starts**: every thread started
-afterwards (the run's own, the pool's workers) gets `Limits.stackFor` bytes of
-stack; then the address-space check (`Ix.Kernel.Host.spaceCheck`): `some` is a
-refusal the host prints as a usage error (exit 2), given only when the run
-certainly cannot fit; a run that may not fit gets a warning line on standard
-error and proceeds. -/
+/-- **Size the kernel's threads, before any task starts**: first the
+address-space check (`Ix.Kernel.Host.spaceCheck`), before the resize, since the
+check itself starts threads (`poolSize` runs `nproc`), which a resized stack
+over the limit would abort: `some` is a refusal the host prints as a usage
+error (exit 2), given only when the run certainly cannot fit; a run that may
+not fit gets a warning line on standard error and proceeds. Then every thread
+started afterwards (the run's own, the pool's workers) gets `Limits.stackFor`
+bytes of stack. -/
 def prepareThreads (r : Resolved) : IO (Option String) := do
   let stack := r.limits.stackFor
-  Ix.Runtime.setLeanThreadStackSize (USize.ofNat stack)
   let certain := s!"--workers or {Setting.workers.var}, or --max-depth or {Setting.maxDepth.var} \
 (the stack is 16 KiB per level, at least 256 MiB)"
   let reduce := s!"--workers or {Setting.workers.var}, or --max-depth or {Setting.maxDepth.var}"
   match ← spaceCheck stack r.limits.workers (← poolSize) certain reduce with
   | .refuse why => return some why
-  | .warn line => IO.eprintln line; return none
-  | .fits => return none
+  | .warn line => IO.eprintln line
+  | .fits => pure ()
+  Ix.Runtime.setLeanThreadStackSize (USize.ofNat stack)
+  return none
 
 /-- Run `act` on a dedicated thread (sized by `prepareThreads`). -/
 def onKernelThread {α : Type} (act : IO α) : IO α := do
