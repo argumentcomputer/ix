@@ -64,6 +64,7 @@ theorem envFacts₀ : EnvFacts c₀ where
   etaTowers := Ix.Kernel.Model.EtaTowers.empty
   etaType := by intro T kc cvT cvc caps nP nF h; simp [c₀, env₀_find] at h
   recEta := by intro k cv mI rP rl h; simp [c₀, env₀_find] at h
+  etaSort := by intro T cvT caps h; simp [c₀, env₀_find] at h
 
 /-- The table cell: an empty binding section and three empty maps. -/
 def tableCell : SourceValue F :=
