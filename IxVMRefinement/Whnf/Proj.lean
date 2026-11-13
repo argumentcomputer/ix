@@ -1,4 +1,5 @@
 import IxVMRefinement.Whnf.Delta
+import IxVMRefinement.Lib.Bytes
 
 /-! # Step lemma of `KernelWhnf::red_proj`: the structural projection
 
