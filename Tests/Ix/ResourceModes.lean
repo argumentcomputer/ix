@@ -573,6 +573,9 @@ def onceDefs : List (Ref × RunDef) := [
     .shared .leaf),
   (callOnce, body [par .once .val arrowSk] (app (v 0) [.natLit 0] .leaf) .shared .leaf)]
 def consumeClo : Term := lam (par .many .leaf) (app (.const consumeR .val) [v 1] .leaf) .shared .leaf
+-- Finding 12: `addB (@borrowed n : Nat) : Nat → Nat := Nat.add n`; the control `addP` with `n` plain
+def addB := mem 325
+def addP := mem 362
 
 /-- Run `entry` at every fuel of `fuels` (ascending): no run violates, the runs
 are out of fuel up to some fuel and a value from there on (the evaluator spends
@@ -675,7 +678,13 @@ def findingCases : List LSpec.TestSeq := [
     h11 oneFun (some .onceReentry) false [h11, callTwice],
   runCase "finding 11, control: a once parameter passed to a once parameter"
     (onceDefs ++ [(ok11, body [par .once .val arrowSk] (app (.const callOnce .val) [v 0] .leaf) .shared .leaf)])
-    ok11 oneFun none true [ok11, callOnce]
+    ok11 oneFun none true [ok11, callOnce],
+  runCase "finding 12: a primitive's partial application holding a borrowed number, returned"
+    [(addB, body [par .borrowed .leaf] (app (.const addR .val) [v 0 .leaf] .val) .shared .val arrowSk)]
+    addB oneNat (some .borrowEscape) false,
+  runCase "finding 12, control: the number not borrowed"
+    [(addP, body [par .many .leaf] (app (.const addR .val) [v 0 .leaf] .val) .shared .val arrowSk)]
+    addP oneNat none true
 ]
 
 /-! ### Must-reject cases from records -/

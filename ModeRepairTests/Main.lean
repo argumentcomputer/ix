@@ -855,6 +855,9 @@ def onceDefs : List (Ref × RunDef) := [
     .shared .leaf),
   (callOnce, body [par .once .val arrowSk] (app (v 0) [.natLit 0] .leaf) .shared .leaf)]
 def consumeClo : Term := lam (par .many .leaf) (app (.const consumeR .val) [v 1] .leaf) .shared .leaf
+-- Finding 12: `addB (@borrowed n : Nat) : Nat → Nat := Nat.add n`; the control `addP` with `n` plain
+def addB := mem 325
+def addP := mem 362
 
 -- (the suite's `fuelCase` definition stands here; the driver's is above)
 
@@ -943,7 +946,13 @@ def findingCases : List Case := [
     h11 oneFun (some .onceReentry) false [h11, callTwice],
   runCase "finding 11, control: a once parameter passed to a once parameter"
     (onceDefs ++ [(ok11, body [par .once .val arrowSk] (app (.const callOnce .val) [v 0] .leaf) .shared .leaf)])
-    ok11 oneFun none true [ok11, callOnce]
+    ok11 oneFun none true [ok11, callOnce],
+  runCase "finding 12: a primitive's partial application holding a borrowed number, returned"
+    [(addB, body [par .borrowed .leaf] (app (.const addR .val) [v 0 .leaf] .val) .shared .val arrowSk)]
+    addB oneNat (some .borrowEscape) false,
+  runCase "finding 12, control: the number not borrowed"
+    [(addP, body [par .many .leaf] (app (.const addR .val) [v 0 .leaf] .val) .shared .val arrowSk)]
+    addP oneNat none true
 ]
 
 -- END COPY
@@ -1436,16 +1445,31 @@ def f11Cases : List Case := [
 
 def addB := mem 325
 def addBc := mem 326
+def addP := mem 362
+def addBb := mem 363
 
 def p12 : Prog := prog [
   (addB, body [par .borrowed .leaf] (app (.const addR .val) [v 0 .leaf] .val) .shared .val arrowSk),
-  (addBc, body [par .borrowed .leaf] (app (.const consR .val) [.irr, v 0 .leaf] .val) .shared .val arrowSk)]
+  (addBc, body [par .borrowed .leaf] (app (.const consR .val) [.irr, v 0 .leaf] .val) .shared .val arrowSk),
+  -- `addP (n : Nat) : Nat → Nat := Nat.add n`
+  (addP, body [par .many .leaf] (app (.const addR .val) [v 0 .leaf] .val) .shared .val arrowSk),
+  -- `addBb (@borrowed n : Nat) : Nat := let g := Nat.add n; g 1`
+  (addBb, body [par .borrowed .leaf] (.letE (.value .many) .val (app (.const addR .val) [v 0 .leaf] .val)
+    (app (v 0) [.natLit 1] .leaf)) .shared .leaf)]
 
 def f12Cases : List Case := [
+  -- REPAIR F: accepted as landed
   { label := "F12 addB n := Nat.add n", P := p12, seed := addB, inp := oneNat, toCheck := [addB],
-    verdict := .accept, run := [(0, .vio .borrowEscape)], open_ := true },
+    verdict := .refuse "borrowEscape", run := [(0, .vio .borrowEscape)] },
   { label := "F12 control: a constructor's partial application", P := p12, seed := addBc, inp := oneNat,
-    toCheck := [addBc], verdict := .refuse "borrowEscape", run := [(0, .vio .borrowEscape)] }]
+    toCheck := [addBc], verdict := .refuse "borrowEscape", run := [(0, .vio .borrowEscape)] },
+  { label := "F12 control: n not borrowed", P := p12, seed := addP, inp := oneNat, toCheck := [addP],
+    verdict := .accept, run := [(0, .valOrOof), (100000, .value)] },
+  -- REPAIR F: accepted before F; refused now, the run clean (the sum is a fresh number): the
+  -- partial application carries `n`'s regions, and applying it gives a leaf carrying the function
+  -- value's regions (repair D), as a `shared` leaf result carries its arguments' (repair A)
+  { label := "F12 cost: let g := Nat.add n; g 1, n borrowed", P := p12, seed := addBb,
+    inp := oneNat, toCheck := [addBb], verdict := .refuse "borrowEscape", run := [(0, .valOrOof), (100000, .value)] }]
 
 /-! ### Finding 13: a two-argument function value -/
 
