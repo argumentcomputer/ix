@@ -721,18 +721,84 @@ the fundamental lemma reads the body at the argument, which `Denotes.lam` gives 
 the λ's own domain, and a regime-0 product (`{pt}`-valued) carries no domain to supply it; the gap
 is closed on the head. Measured on the 34 accepted closures: `headRegimeResB` holds on all 34 (the
 only refused site is `OS02-plain`'s, where the kernel types the site in the graph regime). The
-syntactic reading is narrower than the direct route at 70 accepted sites (the head's type a `∀`
-only after δ, e.g. `DecidableEq Nat`; GR.md lists them by closure), which is why it is used at the
-refused sites only and the direct route keeps the rest. Not covered: recursor rule bodies'
+syntactic reading is narrower than the direct route at 322 accepted sites (as landed: constant
+heads only, the stored type as written, so a bound-variable head, a λ head, and a head whose type
+is a `∀` only after δ, e.g. `DecidableEq Nat`, are not read; the "70 sites" first reported were
+counted by a probe that also read a bound-variable head's context type as written), which is why
+it is used at the refused sites only and the direct route keeps the rest; 1b (below) reads all of
+them. Not covered: recursor rule bodies'
 sites (`RecSites`), which `graded` does not speak of (a rule is neither a stored type nor a value)
 and which stay with the check. In `tests-grounding`: `headRegimeResB` on the 34 by name;
 `OS02-plain`'s refused site accepted, refused once its head's binder datum is made a proposition,
 and refused once it reads a level parameter the constant does not have.
 
+**Every run-term site typed from `graded` (step 1b, since 2026-11-13).** `rootSound_678AG` and
+`rootSound_678AG_of_check` (`IxCCGrounding/GradedHead.lean`) conclude word for word what
+`rootSound_678A` does (pinned in the fence), over the same six fields as `rootSound_678G`, with the
+decided fact `HeadRegime` (`headRegimeSB`) for `HeadRegimeRes`, and **without the direct route at
+run-term sites**: `SitesOk` at every site SrcEval may evaluate in a run term comes from `graded` and
+`defn_value` (`sitesOk_of_headRegime`), not from `sitesOk_of_res`; they compose through
+`rootSound_678AS` (`rootSound_678A` with `SitesOk` for `SitesOkRes`). What types a site now: its
+function is a spine whose head is read (`SpineRead`) as a constant (its stored type at its levels),
+a bound variable (its context type; binder data are level-only, so no lifting), or a λ (its own
+datum, then, applied, its body's spine, the outer arguments lifted past it); a type is read
+(`TyRead`) one `∀` per argument and one more for the site. Where it is not a `∀`, an application of a
+stored definition **unfolds by δ** (`defn_value`) **and β** (its λs consumed; each argument lies in
+its λ's domain by `graded` at the type's own application nodes, a graph-regime λ having the domain of
+any product it lies in, `piR_dom_unique`: `beta_peel`), and an application of a type variable that
+stands for one of the site's arguments reads that argument the same way, at the site's assignment
+(the shape `(λ b. K motive m₁ m₂ b) x y`, with `K`'s type ending in `motive t`, eight sites of the
+corpus). Every datum read, each `∀`'s and each consumed λ's, is read through the chain of level
+instantiations down to the enclosing constant's parameters (`pwChain`) and must not hold, **at the
+constant's `Ok` profiles**: read at every profile, 2,124 of the 16,404 run-term sites of the 50
+loaded closures (765 of the accepted ones) would be refused, universe-polymorphic code read at
+`u = 0`, where the annotation classifies the constant as a proof or a type and SrcEval never runs it.
+**The decision is per maximal spine** (`headRegimeSB`): a site's data are a prefix of the longest
+site's on its spine (the reading is monotone, `spineRead_prefix`), every evaluated site lies on a
+listed spine at the same profiles (`spinesPs_cover`), and `headRegimeS_of_check` gives the per-site
+`HeadRegime`, so the decision is linear in the run terms times the `Ok` profiles. The per-site
+reading (`headRegimeGB`, with its own soundness `headRegime_of_check`) re-reads each site's head from
+the start, quadratic in a spine's length; it is kept as the reference the suite compares with
+(compiled, `tests-grounding`, one run: `fields254` 0.8 ms per spine against 11.3 ms per site,
+`tags125` 9.7 against 13.2). Both decisions read the enclosing constant's level parameters once per
+constant (`headRegimeSB1`, `headRegimeGB1`): read once per datum checked, as first written, an `lpsOf`
+that searches the reading (the suite's does, `Env.find?` over 3,545 to 4,645 constants on the
+`for`-loop, `strings` and `diag` closures) dominated the check, which is what made it 2 to 6.5 times
+the direct route's cost on the closures with `let`s (not the `let`s: `sum-loop` 82 ms, 74.5 of them in
+831 datum checks; 21.7 ms once hoisted, of which 14.6 the one `lpsOf` per constant and most of the rest
+`runPairsB`; the spines, readings and checks themselves about 1 ms). Measured before proving (GR16's
+probes, with the kernel as oracle): the reading decides 16,392 of the 16,404 sites, every site of
+the 34 then accepted; at each of the 447 sites it decides and 1a or the direct route does not, the
+kernel's typing core infers the function's type, reduces it to a `∀` whose domain is the argument's
+type, and the datum does not hold there. **At the sites under a `let`** (after step C; `GR-3n-p1`):
+of the site-profile instances at the `Ok` profiles that 1a's reading as written refuses there
+(`natural` 74, `scalar` 12, `phase2-closures/closures` 6, `prime-count` 2, `panic` 2, `strings` 2,
+`diag` 30), 1b refuses none but 4 of `diag`'s (projection heads), and the kernel types the site in the
+graph regime at all 124 others. So the family without a typing hypothesis holds on all 37 closures
+the check accepts (`natural` included, where `headRegimeResB` is false). In `tests-grounding`:
+`headRegimeSB` true on the 37 by name and false on exactly `phase2-closures/closures` and `diag` (both
+refused by the check), equal to `headRegimeGB` on all 50 and on every planted control; on `natural`,
+`headRegimeResB` false and `headRegimeSB` true; the 436 sites of the 37 (322 of the 34 accepted
+before step C) that 1a's reading as written refuses at some `Ok` profile, all decided; `OS02-plain`'s
+direct-refused site decided; 107 planted controls refused (the one definition unfolded at sites, `#7e081ef3d58e`, with its
+first `∀` datum made a proposition, its unfolding made endless, its first λ datum made a proposition:
+75, on the 25 closures with a δ site; a constant with a bound-variable head, its λ domains' `∀` data
+made propositions: 32). *Completeness limits* (each refused, fail closed): a type headed by a bound
+variable that stands for no argument of the site; a definition applied to more arguments than its
+value has λs (the 10 sites of `phase2-closures/closures`, which the kernel types); projection heads
+(2 in `diag`); a β-redex inside a type; more than `headFuel` (16) δ, bound-variable and λ steps on a
+spine; a constant with more than `maxDirectParams` (8) level parameters. *Not covered*: recursor
+rule bodies' sites (`RecSites`, inside the check's `recShape` conjunct, which every root theorem
+consumes) stay with the direct route, as do the five-field families; `Direct/*` stays in the tree
+for them, and `Direct/Check.lean` hosts the helpers 1a and 1b read (`KTab`, `pwAt`, `okProfiles`,
+`runPairsB`, `maxDirectParams`).
+
 | Theorems | #678's fields they assume |
 | --- | --- |
 | `rootSound_678`, `fibRoot_678`, `decideRoot_678`, `allP_of_check_678`, `const_of_check_678`, `rootSound_678A`, `rootSound_678A_of_check` | five (`Laws678`: `defn_value`, `iota_rule`, `proj_law`, `lit_ops`, `cval_params`), and `SitesOkRes` as a hypothesis (discharged by the direct route where it refuses nothing) |
-| `rootSound_678G`, `rootSound_678G_of_check` | six: `Laws678` and `graded` (`GradedLaw`, `d4c079de2`, `IxC/Kernel/Denotes.lean:504-511`); no typing hypothesis |
+| `rootSound_678AS` | five (`Laws678`), and `SitesOk` (every run-term site) as a hypothesis |
+| `rootSound_678G`, `rootSound_678G_of_check` | six: `Laws678` and `graded` (`GradedLaw`, `d4c079de2`, `IxC/Kernel/Denotes.lean:504-511`); no typing hypothesis; the direct route at the run-term sites it accepts |
+| `rootSound_678AG`, `rootSound_678AG_of_check` | six: `Laws678` and `graded`; no typing hypothesis; no direct route at run-term sites (`RecSites` still decided by it inside the check) |
 
 **A `let` in a run term (step C, since 2026-11-13).** The kernel stores a run term's ζ-reduct: its
 annotation pass substitutes every `let` away, and **neither `Denotes` reads a `let`** (ours,
@@ -771,14 +837,14 @@ which one of its 25 roots reaches; `closures` is also refused for other reasons.
 is not extended through a `let`**: it refuses every site `evalSites` lists under one
 (`termRefused`'s `let` case, `evalSitesP`; 405 of the 1,103 sites of `panic`'s `withPanic`), so for a program with
 `let`s those sites are in `SitesOkRes`, a hypothesis of the families that take it, or must be
-accepted by `headRegimeResB` in the family without a typing hypothesis. That family has a gap until
-item 1b lands: at the sites under a `let` in the family closures `headRegimeResB` refuses 96 of
+accepted by `headRegimeResB` in 1a's family without a typing hypothesis (`rootSound_678G`). That
+family has a gap, which 1b's (`rootSound_678AG`, above) closes: at the sites under a `let` in the family closures `headRegimeResB` refuses 96 of
 5,437 site-profile instances (`natural` 74, `scalar` 12, `closures` 6, `prime-count` 2, `panic` 2;
 measured before step C, `GR-3k-oA`), each one with a constant head whose stored type is a `∀` only
 after unfolding a definition (the `DecidableEq Bool` instance among them); 1b (a head's type read
-through δ and β) closes it. So with step C alone `fields254` and `machines` pass every family;
+through δ and β) decides all 96 after the merge, the kernel typing each in the graph regime. So with step C alone `fields254` and `machines` pass every family;
 `natural` passes `groundCheck` and the families that take `SitesOkRes` as a hypothesis, and not
-`rootSound_678G_of_check` until 1b lands. `groundCheck` accepts 37 of the 50 closures (`fields254`,
+`rootSound_678G_of_check`; with 1b it passes `rootSound_678AG_of_check`. `groundCheck` accepts 37 of the 50 closures (`fields254`,
 `machines`, `natural` added); per closure, see **The corpus after step C** below. In
 `tests-grounding`: the 61 constants by closure, and the 6 refused by name with the reason; the
 false conjuncts of the eleven closures still refused that hold them; the three newly accepted
@@ -793,15 +859,16 @@ every conjunct of the check and refused by `instCheckB`.
 check, `instWalk`/`instCheckB`, `noCanonB`, `noCanonAB`, `litDefsB`, `headRegimeResB` and
 `sitesDirectB` on each of the 50 closures that load, all non-declined roots at once). The 14 that
 hold a `let` in a run term of their checked set; "678" is `groundCheck ∧ noCanonB ∧ litDefsB`,
-"678A" adds the instance set, "678G" adds `headRegimeResB` (no typing hypothesis); "sites" are those
+"678A" adds the instance set, "678G" adds `headRegimeResB` (no typing hypothesis), "678AG" adds 1b's
+`headRegimeSB` instead (no typing hypothesis, every run-term site typed from `graded`); "sites" are those
 the direct route refuses (all of them under a `let` but `strings`' 4 and `diag`'s 16), which are
 `SitesOkRes` for the Laws, 678 and 678A families:
 
 | Closure | `corrSB []` (of the constants the let-free check refused) | False conjuncts | Families | `headRegimeResB` refused instances (sites) |
 | --- | --- | --- | --- | --- |
-| phase1-boundary/fields254 | 1 of 1 | — | Laws, 678, 678A, 678G | 0 (13) |
-| phase1-machines/machines | 3 of 3 | — | Laws, 678, 678A, 678G | 0 (724) |
-| phase1-machines/natural | 4 of 4 | — | Laws, 678, 678A | 74 (1,191) |
+| phase1-boundary/fields254 | 1 of 1 | — | Laws, 678, 678A, 678G, 678AG | 0 (13) |
+| phase1-machines/machines | 3 of 3 | — | Laws, 678, 678A, 678G, 678AG | 0 (724) |
+| phase1-machines/natural | 4 of 4 | — | Laws, 678, 678A, 678AG | 74 (1,191) |
 | bench-k1/sum-loop | 3 of 3 | `eqnShape` | — | 0 (95) |
 | bench-k1/collatz | 3 of 3 | `eqnShape` | — | 0 (96) |
 | bench-k1/prime-count | 3 of 3 | `eqnShape` | — | 2 (129) |
@@ -817,12 +884,12 @@ the direct route refuses (all of them under a `let` but `strings`' 4 and `diag`'
 The other 36 hold no `let` and keep their verdicts: 34 accepted (every family; `erase` and
 `OS16-plain` not "678", which needs `noCanonB`), `admit` (`stored`) and `sparse` (`declOk`) refused.
 Totals over the 50: `groundCheck` 37 (34 before step C), "678" 35, "678A" 37, "678G" 36 (`natural`
-out until 1b). `okClosedB` and `instCheckB` with the walk reading `let`s: true on all 50; the
+out), "678AG" 37 (1b; `GR-3n-p1`, at the merge of step C, which reproduces the other four totals). `okClosedB` and `instCheckB` with the walk reading `let`s: true on all 50; the
 instance sets grow where `let`s are (`sum-loop` 3 → 62, `machines` 47 → 72, `natural` 62 → 72,
 `diag` 128 → 289). The five `for`-loop closures are then refused at `eqnShape` alone (step Ap).
 
 **What is proved, fenced on `propext`, `Classical.choice` and `Quot.sound` or
-fewer (`IxCCGrounding/Fence.lean`, 255 exact assertions):**
+fewer (`IxCCGrounding/Fence.lean`, 285 exact assertions):**
 
 - *Soundness at a root* (`rootSound`, in `IxCCGrounding.Root`). For every
   program, kernel reading `env`, key map, level parameters, certificate

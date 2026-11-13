@@ -6,6 +6,7 @@ import IxCCGrounding.Adapt678
 import IxCCGrounding.CaseLevels
 import IxCCGrounding.RootInst
 import IxCCGrounding.Graded
+import IxCCGrounding.GradedHead
 
 /-! # The grounding library's axiom fence: every theorem presented as proved uses at most
 the three standard axioms. Building the library checks it (`#guard_msgs`). -/
@@ -1033,3 +1034,140 @@ the environment relation under it, the walks' `let` cases) -/
 
 /-- info: 'IxCC.Grounding.gradedBy_of_subAt0' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Grounding.gradedBy_of_subAt0
+
+/-! **Every run-term site typed from `graded`: the head's type read through δ and β** (`IxCCGrounding.GradedHead`, step 1b). -/
+
+/-- info: 'IxCC.Grounding.holds_pwChain' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.holds_pwChain
+
+/-- info: 'IxCC.Grounding.tyRead_of_check' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.tyRead_of_check
+
+/-- info: 'IxCC.Grounding.spineRead_of_check' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.spineRead_of_check
+
+/-- info: 'IxCC.Grounding.SpineRead.head_getApp' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.SpineRead.head_getApp
+
+/-- info: 'IxCC.Grounding.tyRead_prefix' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.tyRead_prefix
+
+/-- info: 'IxCC.Grounding.spineRead_prefix' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.spineRead_prefix
+
+/-- info: 'IxCC.Grounding.mem_evalSitesPs' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.mem_evalSitesPs
+
+/-- info: 'IxCC.Grounding.mem_filter_irr' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.mem_filter_irr
+
+/-- info: 'IxCC.Grounding.profileOf_mem_okProfiles' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.profileOf_mem_okProfiles
+
+/-- info: 'IxCC.Grounding.headRegime_of_check' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.headRegime_of_check
+
+/-- info: 'IxCC.Grounding.mem_spineHere' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Grounding.mem_spineHere
+
+/-- info: 'IxCC.Grounding.spinesPs_tail' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.spinesPs_tail
+
+/-- info: 'IxCC.Grounding.spinesPs_cover' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.spinesPs_cover
+
+/-- info: 'IxCC.Grounding.take_dropLast' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.take_dropLast
+
+/-- info: 'IxCC.Grounding.headRegimeS_of_check' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.headRegimeS_of_check
+
+/-- info: 'IxCC.Grounding.gradedBy_mkAppN' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.gradedBy_mkAppN
+
+/-- info: 'IxCC.Grounding.spineMem_of_graded' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.spineMem_of_graded
+
+/-- info: 'IxCC.Grounding.beta_peel' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.beta_peel
+
+/-- info: 'IxCC.Grounding.gradedBy_lift' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.gradedBy_lift
+
+/-- info: 'IxCC.Grounding.gradedBy_lift1' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.gradedBy_lift1
+
+/-- info: 'IxCC.Grounding.denotesList_lift1' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.denotesList_lift1
+
+/-- info: 'IxCC.Grounding.tyRead_pos' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.tyRead_pos
+
+/-- info: 'IxCC.Grounding.gradedCtx_get' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.gradedCtx_get
+
+/-- info: 'IxCC.Grounding.graded_sites_ctx' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.graded_sites_ctx
+
+/-- info: 'IxCC.Grounding.spineRead_pos' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.spineRead_pos
+
+/-- info: 'IxCC.Grounding.head_posG' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.head_posG
+
+/-- info: 'IxCC.Grounding.sitesOk_of_headRegime' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.sitesOk_of_headRegime
+
+/-- info: 'IxCC.Grounding.rootSound_678AS' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.rootSound_678AS
+
+/-- info: 'IxCC.Grounding.rootSound_678AG' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.rootSound_678AG
+
+/-- info: 'IxCC.Grounding.rootSound_678AG_of_check' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.rootSound_678AG_of_check
+
+/-! **`rootSound_678AG` concludes exactly what `rootSound_678A` does, with no typing hypothesis and
+no direct route at run-term sites**: the `example`s state `rootSound_678A`'s hypotheses (and its
+Boolean form's) with `SitesOkRes` replaced by `GradedLaw` and `HeadRegime` (`headRegimeSB`, the
+per-spine decision), the conclusion copied word for word. -/
+
+section ConclusionsAG
+
+open IxCC.Grounding Ix.Kernel Ix.Kernel.SetTheory
+open IxCC.Src (Value CId Program Levels)
+
+variable {V : Type} [Ix.Kernel.SetTheory V] {env : KEnv} {M : Model V env}
+
+example (hL : Laws678 M) (hgr : GradedLaw M.cval env) {p : Program} {κ : CId → KKey}
+    {lpsOf : CId → List Nat} {ann : IxCC.Src.Relevance.Ann} {Sl : List CId} {root : CId}
+    {args : List FoTy} {res : FoTy} {Inst : List (CId × Levels)}
+    (hG : GroundFacts p env κ lpsOf ann (· ∈ Sl)) (hC : CaseFactsRead p env κ (· ∈ Sl))
+    (hNC : NoCanonA p env κ (· ∈ Sl)) (hLD : LitDefs env)
+    (hI : InstClosed p Inst) (hU : InstUniform p env κ lpsOf Inst) (hroot : (root, []) ∈ Inst)
+    (hH : HeadRegime p env κ lpsOf ann (· ∈ Sl))
+    (hR : RootFacts p env κ ann (· ∈ Sl) root args res)
+    {k : Nat} {xs : List Value} {es : List KExpr} {v : Value} {o : IxCC.Sem.Obs} {eo : KExpr}
+    (hA : FoArgs p κ args xs es) (hrun : IxCC.Src.run p k root xs = .ok v)
+    (hrb : IxCC.Src.readbackAll p v = some o) (hRT : ResultTag p env κ (· ∈ Sl) res o)
+    (hO : FoObs p κ res o eo) (φ : LevelParam → Nat) (ρ : BVarIdx → V) (X : V)
+    (hX : Denotes M.cval env φ ρ (Expr.mkAppN (.const (κ root) []) es) X) :
+    Denotes M.cval env φ ρ eo X :=
+  rootSound_678AG hL hgr hG hC hNC hLD hI hU hroot hH hR hA hrun hrb hRT hO φ ρ X hX
+
+example (hL : Laws678 M) (hgr : GradedLaw M.cval env) {p : Program} {κ : CId → KKey}
+    {lpsOf : CId → List Nat} {ann : IxCC.Src.Relevance.Ann} {Sl : List CId} {root : CId}
+    {args : List FoTy} {res : FoTy} {Inst : List (CId × Levels)}
+    (hchk : groundCheck p env κ lpsOf ann Sl = true) (hnc : noCanonAB p env κ Sl = true)
+    (hld : litDefsB env = true) (hinst : instCheckB p env κ lpsOf [root] Inst = true)
+    (hhr : headRegimeSB p env κ lpsOf ann Sl = true)
+    (hR : RootFacts p env κ ann (· ∈ Sl) root args res)
+    {k : Nat} {xs : List Value} {es : List KExpr} {v : Value} {o : IxCC.Sem.Obs} {eo : KExpr}
+    (hA : FoArgs p κ args xs es) (hrun : IxCC.Src.run p k root xs = .ok v)
+    (hrb : IxCC.Src.readbackAll p v = some o) (hRT : ResultTag p env κ (· ∈ Sl) res o)
+    (hO : FoObs p κ res o eo) (φ : LevelParam → Nat) (ρ : BVarIdx → V) (X : V)
+    (hX : Denotes M.cval env φ ρ (Expr.mkAppN (.const (κ root) []) es) X) :
+    Denotes M.cval env φ ρ eo X :=
+  rootSound_678AG_of_check hL hgr hchk hnc hld hinst hhr hR hA hrun hrb hRT hO φ ρ X hX
+
+end ConclusionsAG
