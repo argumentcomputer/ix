@@ -548,7 +548,7 @@ inductive «KernelEval::eval_output».Path (x_output x_nlvls x_input_type : Sour
       (ev14 : ObsFn W "Ingress::load_verified_constant" [x_output] h (.construct "Ixon::Constant" "Mk" [(.construct "Ixon::ConstantInfo" "Defn" [(.construct "Ixon::Definition" "Mk" [x_kind, x_safety, w80, x_lvls, x_ty, x_value])]), x_sharing, x_refs, x_univs, x_binders]) m2 cs12)
       (heq140 : (x_kind : SourceValue F) = (.construct "Ixon::DefKind" "Definition" []))
       (heq170 : (x_safety : SourceValue F) = (.construct "Ixon::DefinitionSafety" "Safe" []))
-      (ev195 : ObsFn W "UInt64::to_field" [x_lvls] m2 v182 m185 cs193)
+      (ev195 : ObsFn W "Convert::lvls_to_field" [x_lvls] m2 v182 m185 cs193)
       (heq211 : (v182 : SourceValue F) = x_nlvls)
       (hm223 : m213 = (m185 ++ [(.construct Names.«Lists::Node<&[Field; 32]>» "Nil" [])]))
       (ev240 : ObsFn W "Convert::binder_table" [x_binders] m213 v227 m228 cs238)
@@ -556,7 +556,7 @@ inductive «KernelEval::eval_output».Path (x_output x_nlvls x_input_type : Sour
       (ev342 : ObsFn W "KernelCheck::kexpr_struct_eq" [v249, x_input_type] m250 v329 m332 cs340)
       (heq365 : (v329 : SourceValue F) = (.field 1))
       (ev371 : ObsFn W "Convert::convert_root" [x_value, x_sharing, x_refs, (.ptr (.enum Names.«Lists::Node<&[Field; 32]>») (m185).length), x_univs, v227, (.field 1)] m332 r h' cs369)
-      (hc427 : calls = ((⟨"Ingress::load_verified_constant", [x_output], h⟩ : Call F) :: (cs12 ++ ((⟨"UInt64::to_field", [x_lvls], m2⟩ : Call F) :: (cs193 ++ ((⟨"Convert::binder_table", [x_binders], m213⟩ : Call F) :: (cs238 ++ ((⟨"Convert::convert_root", [x_ty, x_sharing, x_refs, (.ptr (.enum Names.«Lists::Node<&[Field; 32]>») (m185).length), x_univs, v227, (.field 0)], m228⟩ : Call F) :: (cs260 ++ ((⟨"KernelCheck::kexpr_struct_eq", [v249, x_input_type], m250⟩ : Call F) :: (cs340 ++ ((⟨"Convert::convert_root", [x_value, x_sharing, x_refs, (.ptr (.enum Names.«Lists::Node<&[Field; 32]>») (m185).length), x_univs, v227, (.field 1)], m332⟩ : Call F) :: cs369))))))))))))
+      (hc427 : calls = ((⟨"Ingress::load_verified_constant", [x_output], h⟩ : Call F) :: (cs12 ++ ((⟨"Convert::lvls_to_field", [x_lvls], m2⟩ : Call F) :: (cs193 ++ ((⟨"Convert::binder_table", [x_binders], m213⟩ : Call F) :: (cs238 ++ ((⟨"Convert::convert_root", [x_ty, x_sharing, x_refs, (.ptr (.enum Names.«Lists::Node<&[Field; 32]>») (m185).length), x_univs, v227, (.field 0)], m228⟩ : Call F) :: (cs260 ++ ((⟨"KernelCheck::kexpr_struct_eq", [v249, x_input_type], m250⟩ : Call F) :: (cs340 ++ ((⟨"Convert::convert_root", [x_value, x_sharing, x_refs, (.ptr (.enum Names.«Lists::Node<&[Field; 32]>») (m185).length), x_univs, v227, (.field 1)], m332⟩ : Call F) :: cs369))))))))))))
 
 /-- **Every observed derivation of `KernelEval::eval_output` takes one of its paths.** -/
 theorem «KernelEval::eval_output».obs {x_output x_nlvls x_input_type : SourceValue F} {h h' : Heap F} {r : SourceValue F}

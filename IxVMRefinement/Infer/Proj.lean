@@ -9,20 +9,18 @@ The helpers `k_infer_proj` and the io lane's projection arm call, against their 
 
 * **Telescopes.** `peel_params_subst` (and `io_peel_params_subst`) instantiates the first `n`
   binders of a constructor type by the parameters (`instPis`), one `expr_inst1` per binder.
-  `peel_field_loop` (and `io_peel_field_loop`) walks the field telescope from field `current` to
-  field `target`, instantiating each field passed by its projection: the `Proj` node the circuit
-  stores is the image `.proj (κ s) current val` (`fieldTypeAt`). The counters are field elements;
-  below the target `current + 1` does not wrap, and at `target - current = 0` they are equal.
+  `peel_field_loop` walks the field telescope from field `current` to field `target`, instantiating
+  each field passed by its projection: the `Proj` node the circuit stores is the image
+  `.proj (κ s) current val` (`fieldTypeAt`). The counters are field elements; below the target
+  `current + 1` does not wrap, and at `target - current = 0` they are equal.
 * **Head reduction through binders.** `peel_n_alls_whnf` head-normalizes and opens a `∀` at the
   next depth, under the ghost context extended by its domain; the freshly stored context cell is
   the context list one longer (`PeelRed`).
-* **`Prop` structures.** `is_inductive_prop` reads the sort the inductive's type reduces to; its
-  answer `1` comes from `level_equal(u, Zero) = 1` at a freshly stored `Zero`, its answer `0` from
-  the positive certificate `level_may_be_nonzero(u) = 1` (a `succ` or a parameter is nonzero at
-  some assignment, a `max` when either side is, an `imax` when its right side is). The guards
-  (`check_prop_field_if_prop`, `check_no_dep_data_field_if_prop`, `io_prop_field_guard`) read
-  `level_equal(u, Zero) = 1` the same way, and `expr_lbr(body) = 0` as a body without loose bound
-  variables.
+* **`Prop` structures.** `is_inductive_prop` reads the sort the inductive's declared type reduces
+  to from depth `0`; its answer `1` comes from `level_equal(u, Zero) = 1` at a freshly stored
+  `Zero`, its answer `0` from the positive certificate `level_may_be_nonzero(u) = 1` (a `succ` or
+  a parameter is nonzero at some assignment, a `max` when either side is, an `imax` when its right
+  side is).
 * **Arity.** `proj_shape_ok` reads two `Lists::length` answers; a level list represented up to
   semantic equality has the length of the list the heap holds. -/
 
@@ -418,181 +416,57 @@ theorem peel_n_alls_whnf_step (c : Ctx) {args : List (SourceValue F)} {h h' : He
 
 /-! ## `is_inductive_prop` -/
 
-/-- `KernelInfer::is_inductive_prop` decides whether the inductive's sort is zero, both ways. -/
+/-- `KernelInfer::is_inductive_prop` decides whether the inductive's declared sort is zero, both
+ways. -/
 theorem is_inductive_prop_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelInfer::is_inductive_prop" args h r h' calls) (ih : IH c calls) :
     Specs.Infer.is_inductive_prop c args h r h' calls := by
-  intro rc ity lvls ns types hargs good hrc n hn d Γ htypes I us hI hus
+  intro rc ity ns hargs good hrc n hn I hI
   subst hargs hn
+  have ext := Heap.Extends.snoc h (.construct kexprListEnum "Nil" [])
+  have hnil : c.types (fun _ => .sort .zero) (h ++ [.construct kexprListEnum "Nil" []]) 0
+      (.ptr (.enum kexprListEnum) h.length) :=
+    ⟨.nil List.getElem?_concat_length, fun _ hj => absurd hj (Nat.not_lt_zero _)⟩
   rcases Obs.«KernelInfer::is_inductive_prop».obs ev with
-    ⟨v1, m2, cs12, v31, m32, cs42, x_l, m102, cs113, m126, ev14, ev44, ld88, hm134, ev115, he142,
-      he143, hc144⟩ |
-    ⟨v1, m2, cs12, v31, m32, cs42, x_l, v101, m102, cs113, m126, v160, m163, cs171, ev14, ev44,
-      ld88, hm134, ev115, hne145, ev173, heq188, he189, he190, hc191⟩
+    ⟨v1, m2, cs12, m41, x_l, m78, cs89, m102, hm49, ev14, ld64, hm110, ev91, he118, he119,
+      hc120⟩ |
+    ⟨v1, m2, cs12, m41, x_l, v77, m78, cs89, m102, v136, m139, cs147, hm49, ev14, ld64, hm110,
+      ev91, hne121, ev149, heq164, he165, he166, hc167⟩
   · -- `level_equal(u, Zero) = 1`: answer `1`
-    subst hc144 hm134 he142
-    have hinst := ih.get (.subst .expr_inst_levels) (by lt_calls) ev14 _ _ rfl
-      (good.sub fun x hx => by simp [hx]) Γ 0 I us (hI 0 Γ) hus
-    have e0 := ObsFn.heap_extends ev14
-    obtain ⟨k, Γ', R, hk, hag, hR, hpeel⟩ := ih.get (.infer .peel_n_alls_whnf) (by lt_calls) ev44
-      _ _ _ _ rfl (good.sub fun x hx => by simp [hx]) (RCRep.mono e0 hrc) _ rfl d Γ
-      (types_mono e0 htypes) _ (Tm.of_depth_zero hinst d)
-    obtain ⟨u, rfl, hu⟩ := hR.sort_of_load ld88
-    have g113 : Good c cs113 := good.sub fun x hx => by simp [hx]
-    exact ⟨k, Γ', u, hk, hag, hpeel, .inl rfl,
-      fun _ => ProjAux.zero_of_level_equal ih hu ev115 (by lt_calls) g113.2,
+    subst hc120 hm49 hm110 he118
+    obtain ⟨k, Γ', R, hk, -, hR, hpeel⟩ := ih.get (.infer .peel_n_alls_whnf) (by lt_calls) ev14
+      _ _ _ _ rfl (good.sub fun x hx => by simp [hx]) (RCRep.mono ext hrc) _ rfl 0
+      (fun _ => .sort .zero) hnil I (Tm.mono ext (hI 0 (fun _ => .sort .zero)))
+    obtain ⟨u, rfl, hu⟩ := hR.sort_of_load ld64
+    have g89 : Good c cs89 := good.sub fun x hx => by simp [hx]
+    exact ⟨k, Γ', u, hk, hpeel, .inl rfl,
+      fun _ => ProjAux.zero_of_level_equal ih hu ev91 (by lt_calls) g89.2,
       fun h0 => absurd h0 field_one_ne_zero⟩
   · -- `level_may_be_nonzero(u) = 1`: answer `0`
-    subst hc191 hm134 he189 heq188
-    have hinst := ih.get (.subst .expr_inst_levels) (by lt_calls) ev14 _ _ rfl
-      (good.sub fun x hx => by simp [hx]) Γ 0 I us (hI 0 Γ) hus
-    have e0 := ObsFn.heap_extends ev14
-    obtain ⟨k, Γ', R, hk, hag, hR, hpeel⟩ := ih.get (.infer .peel_n_alls_whnf) (by lt_calls) ev44
-      _ _ _ _ rfl (good.sub fun x hx => by simp [hx]) (RCRep.mono e0 hrc) _ rfl d Γ
-      (types_mono e0 htypes) _ (Tm.of_depth_zero hinst d)
-    obtain ⟨u, rfl, hu⟩ := hR.sort_of_load ld88
-    have e2 : Heap.Extends m32 m102 :=
-      (Heap.Extends.snoc _ _).trans (ObsFn.heap_extends ev115)
-    obtain ⟨-, hnz⟩ := ih.get (.infer .level_may_be_nonzero) (by lt_calls) ev173 _ u rfl
+    subst hc167 hm49 hm110 he165 heq164
+    obtain ⟨k, Γ', R, hk, -, hR, hpeel⟩ := ih.get (.infer .peel_n_alls_whnf) (by lt_calls) ev14
+      _ _ _ _ rfl (good.sub fun x hx => by simp [hx]) (RCRep.mono ext hrc) _ rfl 0
+      (fun _ => .sort .zero) hnil I (Tm.mono ext (hI 0 (fun _ => .sort .zero)))
+    obtain ⟨u, rfl, hu⟩ := hR.sort_of_load ld64
+    have e2 : Heap.Extends m2 m78 :=
+      (Heap.Extends.snoc _ _).trans (ObsFn.heap_extends ev91)
+    obtain ⟨-, hnz⟩ := ih.get (.infer .level_may_be_nonzero) (by lt_calls) ev149 _ u rfl
       (good.sub fun x hx => by simp [hx]) (LvRep.mono e2 hu)
-    exact ⟨k, Γ', u, hk, hag, hpeel, .inr rfl, fun h1 => absurd h1.symm field_one_ne_zero,
+    exact ⟨k, Γ', u, hk, hpeel, .inr rfl, fun h1 => absurd h1.symm field_one_ne_zero,
       fun _ => hnz rfl⟩
-
-/-! ## The `Prop`-structure guards -/
-
-/-- `KernelInfer::check_prop_field_if_prop`: at a `Prop` structure the field's sort is zero. -/
-theorem check_prop_field_if_prop_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
-    {r : SourceValue F} {calls : List (Call F)}
-    (ev : ObsFn W "KernelInfer::check_prop_field_if_prop" args h r h' calls) (ih : IH c calls) :
-    Specs.Infer.check_prop_field_if_prop c args h r h' calls := by
-  intro rc ip dom types hargs good hrc hip d Γ htypes D hD
-  subst hargs
-  rcases Obs.«KernelInfer::check_prop_field_if_prop».obs ev with
-    ⟨hv14, he17, he18, hc19⟩ |
-    ⟨v24, m25, cs35, v73, m76, cs84, m97, hne20, ev37, hm105, ev86, heq115, he118, he119, hc120⟩
-  · exact absurd hv14 hip
-  · subst hc120 hm105 heq115
-    obtain ⟨T, u, hinf, hred, hu⟩ := ih.get (.infer .k_ensure_sort) (by lt_calls) ev37 _ _ _ rfl
-      (good.sub fun x hx => by simp [hx]) hrc d Γ htypes D hD
-    have g84 : Good c cs84 := good.sub fun x hx => by simp [hx]
-    exact ⟨T, u, hinf, hred, ProjAux.zero_of_level_equal ih hu ev86 (by lt_calls) g84.2⟩
-
-/-- `KernelInfer::check_no_dep_data_field_if_prop`: at a `Prop` structure a field passed is a
-proposition or the rest of the telescope has no loose bound variable. -/
-theorem check_no_dep_data_field_if_prop_step (c : Ctx) {args : List (SourceValue F)}
-    {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
-    (ev : ObsFn W "KernelInfer::check_no_dep_data_field_if_prop" args h r h' calls)
-    (ih : IH c calls) :
-    Specs.Infer.check_no_dep_data_field_if_prop c args h r h' calls := by
-  intro rc ip dom body types hargs good hrc hip d Γ htypes D B hD hB
-  subst hargs
-  rcases Obs.«KernelInfer::check_no_dep_data_field_if_prop».obs ev with
-    ⟨hv14, he17, he18, hc19⟩ |
-    ⟨v24, m25, cs35, m63, cs74, m87, hne20, ev37, hm95, ev76, he105, he106, hc107⟩ |
-    ⟨v24, m25, cs35, v62, m63, cs74, m87, v123, m126, cs134, hne20, ev37, hm95, ev76, hne108,
-      ev136, heq151, he154, he155, hc156⟩
-  · exact absurd hv14 hip
-  · -- the field is a proposition
-    subst hc107 hm95
-    obtain ⟨T, u, hinf, hred, hu⟩ := ih.get (.infer .k_ensure_sort) (by lt_calls) ev37 _ _ _ rfl
-      (good.sub fun x hx => by simp [hx]) hrc d Γ htypes D hD
-    have g74 : Good c cs74 := good.sub fun x hx => by simp [hx]
-    exact .inl ⟨T, u, hinf, hred, ProjAux.zero_of_level_equal ih hu ev76 (by lt_calls) g74.2⟩
-  · -- the rest of the telescope has no loose bound variable
-    subst hc156 hm95 heq151
-    have ext : Heap.Extends h m63 :=
-      (ObsFn.heap_extends ev37).trans ((Heap.Extends.snoc _ _).trans (ObsFn.heap_extends ev76))
-    obtain ⟨-, hlbr⟩ := ih.get (.subst .expr_lbr) (by lt_calls) ev136 _ rfl
-      (good.sub fun x hx => by simp [hx])
-    obtain ⟨b, hb, hbi, -, -, -, hle⟩ := hlbr d Γ 1 B (Tm.mono ext hB)
-    have hb0 : b = 0 := by
-      have e := NatAux.field_inj hb
-      have hbi' : b ≤ 9223372036854775808 := hbi
-      exact (NatAux.natCast_eq_zero_iff (by omega)).mp e.symm
-    subst hb0
-    exact .inr (hle (Nat.zero_le 1)).1
-
-/-- `KernelInferOnly::io_prop_field_guard`: at a `Prop` structure the field's io-grade sort is
-zero. -/
-theorem io_prop_field_guard_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
-    {r : SourceValue F} {calls : List (Call F)}
-    (ev : ObsFn W "KernelInferOnly::io_prop_field_guard" args h r h' calls) (ih : IH c calls) :
-    Specs.Infer.io_prop_field_guard c args h r h' calls := by
-  intro rc ip ft types hargs good hrc hip d Γ htypes FT hFT
-  subst hargs
-  rcases Obs.«KernelInferOnly::io_prop_field_guard».obs ev with
-    ⟨hv14, he17, he18, hc19⟩ |
-    ⟨v35, m38, cs46, v49, m52, cs60, m88, hne20, ev62, hm96, ev48, heq106, he109, he110, hc111⟩
-  · exact absurd hv14 hip
-  · subst hc111 hm96 heq106
-    obtain ⟨T, u, hinf, hred, hu⟩ := ih.get (.infer .ensure_sort_only) (by lt_calls) ev62 _ _ _
-      rfl (good.sub fun x hx => by simp [hx]) hrc d Γ htypes FT hFT
-    have g46 : Good c cs46 := good.sub fun x hx => by simp [hx]
-    exact ⟨T, u, hinf, hred, ProjAux.zero_of_level_equal ih hu ev48 (by lt_calls) g46.2⟩
 
 /-! ## The field telescope -/
 
 /-- `KernelInfer::peel_field_loop`: the projected field's type, the fields passed instantiated by
-their projections, with the `Prop`-structure guards. -/
+their projections. -/
 theorem peel_field_loop_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelInfer::peel_field_loop" args h r h' calls) (ih : IH c calls) :
     Specs.Infer.peel_field_loop c args h r h' calls := by
-  intro rc ty tg cu sa val ip types hargs good hrc t0 c0 htg hcu hle d Γ htypes T a PE hT ha hPE
-  subst hargs htg hcu
-  rcases Obs.«KernelInfer::peel_field_loop».obs ev with
-    ⟨x_dom, x_body, w20, v59, m60, cs70, ld12, op52, ev72, he106, he107, hc108⟩ |
-    ⟨x_dom, x_body, w20, v36, v113, m114, cs124, m168, v206, m207, cs217, cs246, v252, ld12, op52,
-      hne109, ev126, hm178, ev219, op291, ev248, hc321⟩
-  · -- the target field: its domain, with the field's guard
-    subst hc108 he106 he107
-    obtain ⟨D, B, ℓ, rfl, hD, hB, -⟩ := hT.forallE_of_load ld12
-    have htc : t0 = c0 := ProjAux.counter_eq op52
-    subst htc
-    refine ⟨0, D, by omega, Tm.mono (ObsFn.heap_extends ev72) hD, rfl, fun hip => ?_⟩
-    exact ih.get (.infer .check_prop_field_if_prop) (by lt_calls) ev72 _ _ _ _ rfl
-      (good.sub fun x hx => by simp [hx]) hrc hip d Γ htypes D hD
-  · -- a field passed: guard it, instantiate it by its projection, go on
-    subst hc321 hm178
-    obtain ⟨D, B, ℓ, rfl, hD, hB, -⟩ := hT.forallE_of_load ld12
-    have hv36 : v36 = .field (t0 - c0) := NatAux.sub_ok op52
-    subst hv36
-    have hv252 : v252 = .field (c0 + 1) := NatAux.add_ok op291
-    subst hv252
-    obtain ⟨hc1, hle1⟩ := ProjAux.counter_step hle hne109
-    have e1 := ObsFn.heap_extends ev126
-    have e2 : Heap.Extends m114
-        (m114 ++ [.construct "KernelTypes::KExprNode" "Proj" [sa, .field c0, val]]) :=
-      Heap.Extends.snoc _ _
-    have e12 := e1.trans e2
-    have ext := e12.trans (ObsFn.heap_extends ev219)
-    have hP : Tm c.κ d Γ (m114 ++ [.construct "KernelTypes::KExprNode" "Proj" [sa, .field c0, val]])
-        0 (.proj (c.κ (ixAddr a)) (ZMod.val c0) PE) (.ptr (.enum kexprEnum) m114.length) :=
-      Tm.proj (by simp) (Bytes.repAddressRef_heapMono₂ addrTy e12 ha) (Tm.mono e12 hPE)
-    have hinst := ih.get (.subst .expr_inst1) (by lt_calls) ev219 _ _ 0 rfl
-      (good.sub fun x hx => by simp [hx]) d Γ B _ (by simpa using Tm.mono e12 hB) hP
-    simp only [ZMod.val_zero] at hinst
-    obtain ⟨n, FT, hn, hFT, hfield, hguards⟩ := ih.get (.infer .peel_field_loop) (by lt_calls)
-      ev248 _ _ _ _ _ _ _ _ rfl (good.sub fun x hx => by simp [hx]) (RCRep.mono ext hrc) t0
-      (c0 + 1) rfl rfl (by omega) d Γ (types_mono ext htypes) _ a PE hinst
-      (Bytes.repAddressRef_heapMono₂ addrTy ext ha) (Tm.mono ext hPE)
-    rw [hc1] at hfield hguards
-    refine ⟨n + 1, FT, by omega, hFT, ?_, fun hip => ?_⟩
-    · exact hfield
-    · have hg : Specs.Infer.SortZero c.env .full d D ∨ B.looseBVarsBounded 0 = true :=
-        ih.get (.infer .check_no_dep_data_field_if_prop) (by lt_calls) ev126 _ _ _ _ _ rfl
-          (good.sub fun x hx => by simp [hx]) hrc hip d Γ htypes D B hD (by simpa using hB)
-      exact And.intro hg (hguards hip)
-
-/-- `KernelInferOnly::io_peel_field_loop`: the projected field's type, without guards. -/
-theorem io_peel_field_loop_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F}
-    {r : SourceValue F} {calls : List (Call F)}
-    (ev : ObsFn W "KernelInferOnly::io_peel_field_loop" args h r h' calls) (ih : IH c calls) :
-    Specs.Infer.io_peel_field_loop c args h r h' calls := by
   intro ty tg cu sa val hargs good t0 c0 htg hcu hle d Γ T a PE hT ha hPE
   subst hargs htg hcu
-  rcases Obs.«KernelInferOnly::io_peel_field_loop».obs ev with
+  rcases Obs.«KernelInfer::peel_field_loop».obs ev with
     ⟨x_dom, x_body, w20, ld12, op52, he60, he61, hc62⟩ |
     ⟨x_dom, x_body, w20, v36, m68, v106, m107, cs117, cs146, v151, ld12, op52, hne63, hm78, ev119,
       op181, ev148, hc197⟩
@@ -620,7 +494,7 @@ theorem io_peel_field_loop_step (c : Ctx) {args : List (SourceValue F)} {h h' : 
     have hinst := ih.get (.subst .expr_inst1) (by lt_calls) ev119 _ _ 0 rfl
       (good.sub fun x hx => by simp [hx]) d Γ B _ (by simpa using Tm.mono e1 hB) hP
     simp only [ZMod.val_zero] at hinst
-    obtain ⟨n, FT, hn, hFT, hfield⟩ := ih.get (.infer .io_peel_field_loop) (by lt_calls) ev148
+    obtain ⟨n, FT, hn, hFT, hfield⟩ := ih.get (.infer .peel_field_loop) (by lt_calls) ev148
       _ _ _ _ _ rfl (good.sub fun x hx => by simp [hx]) t0 (c0 + 1) rfl rfl (by omega) d Γ _ a
       PE hinst (Bytes.repAddressRef_heapMono₂ addrTy ext ha) (Tm.mono ext hPE)
     rw [hc1] at hfield

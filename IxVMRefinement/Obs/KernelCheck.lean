@@ -8,5 +8,8 @@ import IxVMRefinement.Obs.KernelCheck6
 import IxVMRefinement.Obs.KernelCheck7
 import IxVMRefinement.Obs.KernelCheck8
 import IxVMRefinement.Obs.KernelCheck9
+import IxVMRefinement.Obs.KernelCheck10
+import IxVMRefinement.Obs.KernelCheck11
+import IxVMRefinement.Obs.KernelCheck12
 
 /-! Generated path lemmas: the `KernelCheck` functions (index of the parts). -/

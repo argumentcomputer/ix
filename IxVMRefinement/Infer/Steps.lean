@@ -47,9 +47,6 @@ theorem infer_step (c : Ctx) (hc : CoreFacts c)
   | .level_may_be_nonzero, _, _, _, _, _, ev, ih => level_may_be_nonzero_step c ev ih
   | .proj_shape_ok, _, _, _, _, _, ev, ih => proj_shape_ok_step c ev ih
   | .peel_n_alls_whnf, _, _, _, _, _, ev, ih => peel_n_alls_whnf_step c ev ih
-  | .check_prop_field_if_prop, _, _, _, _, _, ev, ih => check_prop_field_if_prop_step c ev ih
-  | .check_no_dep_data_field_if_prop, _, _, _, _, _, ev, ih =>
-    check_no_dep_data_field_if_prop_step c ev ih
   | .peel_field_loop, _, _, _, _, _, ev, ih => peel_field_loop_step c ev ih
   | .k_infer_proj, _, _, _, _, _, ev, ih => hkp _ _ _ _ _ ev ih
   | .k_ensure_sort, _, _, _, _, _, ev, ih => k_ensure_sort_step c ev ih
@@ -64,8 +61,6 @@ theorem infer_step (c : Ctx) (hc : CoreFacts c)
   | .forall_datum_ok, _, _, _, _, _, ev, ih => forall_datum_ok_step c ev ih
   | .lam_datum_ok, _, _, _, _, _, ev, ih => lam_datum_ok_step c ev ih
   | .ensure_sort_only, _, _, _, _, _, ev, ih => ensure_sort_only_step c ev ih
-  | .io_prop_field_guard, _, _, _, _, _, ev, ih => io_prop_field_guard_step c ev ih
   | .io_peel_params_subst, _, _, _, _, _, ev, ih => io_peel_params_subst_step c ev ih
-  | .io_peel_field_loop, _, _, _, _, _, ev, ih => io_peel_field_loop_step c ev ih
 
 end IxVM.Refinement.Core

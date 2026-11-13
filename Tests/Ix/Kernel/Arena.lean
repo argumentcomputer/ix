@@ -73,6 +73,15 @@ rejects the declaration; the arena's outcome for its nearest test is `either`. -
 def modeledDeclines : Array Lean.Name :=
   #[`nestedSpecLocalF, `nestedSpecLocalF.mk, `nestedSpecLocalF.rec]
 
+/-- Fixtures the native route declines because a constructor field domain
+mentions the block in a non-syntactic occurrence (`id (reduceCtorParam A)`
+and its reflexive variants), which would require rewriting the stored
+constructor's field domains to classify positivity. -/
+def nativeDeclines : Array Lean.Name := #[
+  `reduceCtorParam, `reduceCtorParam.mk, `reduceCtorParam.rec,
+  `reduceCtorParamRefl, `reduceCtorParamRefl.mk, `reduceCtorParamRefl.rec,
+  `reduceCtorParamRefl2, `reduceCtorParamRefl2.mk, `reduceCtorParamRefl2.rec]
+
 private def collectChecks (env : Lean.Environment) : Array ArenaCheck := Id.run do
   let skipSet : Std.HashSet Lean.Name :=
     knownIncompatible.foldl (init := {}) (fun s (n, _) => s.insert n)
@@ -88,7 +97,8 @@ private def collectChecks (env : Lean.Environment) : Array ArenaCheck := Id.run 
       seen := seen.insert n
       if !env.constants.contains n && !rawNames.contains n then continue
       if skipSet.contains n then continue
-      let expectPass := pass && !nativeEvaluationFixtures.contains n && !modeledDeclines.contains n
+      let expectPass := pass && !nativeEvaluationFixtures.contains n &&
+        !modeledDeclines.contains n && !nativeDeclines.contains n
       out := out.push { name := n, expectPass := expectPass }
   return out
 

@@ -13,8 +13,7 @@ the level the rule writes (`Infer.sort`'s `.succ u`, `Infer.forallE`'s `.imax u 
 which is semantic (`zeronessOf_congr`).
 
 The helpers below are stated on their own terms; the kernel-side shapes they compute are the
-definitions of this file (`instPis`, `fieldTypeAt`, `PropGuards`, `PeelRed`, `SortZero`,
-`SortPw`, `LitRep`). -/
+definitions of this file (`instPis`, `fieldTypeAt`, `PeelRed`, `SortPw`, `LitRep`). -/
 
 namespace IxVM.Refinement.Core.Specs.Infer
 
@@ -35,12 +34,6 @@ def LitRep (h : Heap F) (v : SourceValue F) (l : Ix.Kernel.Literal) : Prop :=
   (∃ (bp : SourceValue F) (bytes : List UInt8) (s : String), v = .construct klitEnum "Str" [bp] ∧
       RepBytes h bytes bp ∧ StrBytes s bytes ∧ l = .strVal s)
 
-/-- **`T` is a type whose sort is zero at every assignment**, at the grade `g`: its type
-head-reduces to a sort `u` with `Level.eval φ u = 0` for every `φ`. -/
-def SortZero (env : Ix.Kernel.Env .anon) (g : Grade) (d : Nat) (T : KExpr) : Prop :=
-  ∃ (s : KExpr) (u : KLevel), Infer env g d T s ∧ Red env d s (.sort u) ∧
-    ∀ φ, Ix.Kernel.Level.eval φ u = 0
-
 /-- **`T`'s sort has the zero-ness `pw`**, at the io grade: its io-grade type head-reduces to a
 sort `v` with `zeronessOf v = pw` (`Infer.lam`'s innermost-binder premises). -/
 def SortPw (env : Ix.Kernel.Env .anon) (d : Nat) (T : KExpr) (pw : Ix.Kernel.PropWhen) : Prop :=
@@ -60,18 +53,6 @@ def fieldTypeAt (S : KKey) (pe : KExpr) : Nat → Nat → KExpr → Option KExpr
   | 0, _, .forallE dom _ _ => some dom
   | n + 1, cur, .forallE _ body _ => fieldTypeAt S pe n (cur + 1) (body.instantiate1 (.proj S cur pe))
   | _, _, _ => none
-
-/-- **The guards of a projection out of a `Prop` structure** along the telescope
-`fieldTypeAt` walks (official `infer_proj`): the projected field is a proposition, and each
-field passed is a proposition or no later field's type mentions it (the rest of the telescope
-has no loose bound variable). -/
-def PropGuards (env : Ix.Kernel.Env .anon) (d : Nat) (S : KKey) (pe : KExpr) :
-    Nat → Nat → KExpr → Prop
-  | 0, _, .forallE dom _ _ => SortZero env .full d dom
-  | n + 1, cur, .forallE dom body _ =>
-    (SortZero env .full d dom ∨ body.looseBVarsBounded 0 = true) ∧
-      PropGuards env d S pe n (cur + 1) (body.instantiate1 (.proj S cur pe))
-  | _, _, _ => False
 
 /-- **`T` head-reduces through `n` `∀`-binders to `R`**, each binder opened at the next depth
 as the variable whose type is the ghost context's entry there (`peel_n_alls_whnf`, which
@@ -183,25 +164,19 @@ def peel_params_subst : SpecFn := fun c args h r h' calls =>
     ∀ d Γ T As, c.tm d Γ h T ty → c.tml d Γ h As sp →
       ∃ T', c.tm d Γ h' T' r ∧ instPis (ZMod.val n) T As = some T'
 
-/-- `is_inductive_prop(rc, ind_ty, lvls, n_skip, types)`: **whether a structure lives in
-`Prop`**, decided both ways: the inductive's type at the levels head-reduces through at most
+/-- `is_inductive_prop(rc, ind_ty, n_skip)`: **whether a structure's declared sort is `Prop`**,
+decided both ways: the inductive's declared type head-reduces from depth `0` through at most
 `n_skip` binders (`peel_n_alls_whnf`) to a sort `u`; answer `1` means `u` is zero at every
 assignment (`level_equal(u, 0) = 1`), answer `0` that it is not (`level_may_be_nonzero(u) = 1`,
-the positive certificate the circuit asserts). The two answers are the only results.
-
-Provisional: stated for the circuit with the io lane's full-grade field check and the stored
-guard form (pending decision); its path lemmas change if adopted.
-With the stored guard form the circuit asks it of the structure's declared sort (at its
-own levels) rather than at the use's levels; the statement is the same. -/
+the positive certificate the circuit asserts). The two answers are the only results. -/
 def is_inductive_prop : SpecFn := fun c args h r h' calls =>
-  ∀ rc ity lvls ns types, args = [rc, ity, lvls, ns, types] → Good c calls → c.rc h rc →
-    ∀ n : F, ns = .field n → ∀ d Γ, c.types Γ h d types →
-      ∀ (I : KExpr) (us : List KLevel), c.tmc h I ity → LvListRep h us lvls →
-        ∃ (k : Nat) (Γ' : Nat → KExpr) (u : KLevel), k ≤ ZMod.val n ∧ (∀ j, j < d → Γ' j = Γ j) ∧
-          PeelRed c.env Γ' d (I.instantiateLevelParams (List.range us.length) us) k (.sort u) ∧
-          (r = .field 1 ∨ r = .field 0) ∧
-          (r = .field 1 → ∀ φ, Ix.Kernel.Level.eval φ u = 0) ∧
-          (r = .field 0 → ¬ ∀ φ, Ix.Kernel.Level.eval φ u = 0)
+  ∀ rc ity ns, args = [rc, ity, ns] → Good c calls → c.rc h rc →
+    ∀ n : F, ns = .field n → ∀ (I : KExpr), c.tmc h I ity →
+      ∃ (k : Nat) (Γ' : Nat → KExpr) (u : KLevel), k ≤ ZMod.val n ∧
+        PeelRed c.env Γ' 0 I k (.sort u) ∧
+        (r = .field 1 ∨ r = .field 0) ∧
+        (r = .field 1 → ∀ φ, Ix.Kernel.Level.eval φ u = 0) ∧
+        (r = .field 0 → ¬ ∀ φ, Ix.Kernel.Level.eval φ u = 0)
 
 /-- `level_may_be_nonzero(l)`: **a positive certificate of non-zero-ness**: answer `1` means the
 level is not zero at every assignment (it replaces a negative reading of
@@ -212,11 +187,7 @@ def level_may_be_nonzero : SpecFn := fun c args h r h' calls =>
 
 /-- `proj_shape_ok(n_indices, args, n_params, lvls, n_lvls)` (unit; its run is the check):
 **`Infer.proj`'s arity premises**: no indices, the scrutinee type's argument count is the
-parameter count, its level count is the structure's.
-
-Provisional: stated for the circuit with the io lane's full-grade field check and the stored
-guard form (pending decision); its path lemmas change if adopted.
--/
+parameter count, its level count is the structure's. -/
 def proj_shape_ok : SpecFn := fun c args h r h' calls =>
   ∀ ni sp np lvls nl, args = [ni, sp, np, lvls, nl] → Good c calls →
     ∀ d Γ (As : List KExpr) (us : List KLevel), c.tml d Γ h As sp → LvListRep h us lvls →
@@ -231,59 +202,22 @@ def peel_n_alls_whnf : SpecFn := fun c args h r h' calls =>
       ∃ (k : Nat) (Γ' : Nat → KExpr) (R : KExpr), k ≤ ZMod.val n ∧ (∀ j, j < d → Γ' j = Γ j) ∧
         c.tm (d + k) Γ' h' R r ∧ PeelRed c.env Γ' d E k R
 
-/-- `check_prop_field_if_prop(rc, is_prop, dom, types)` (unit): **at a `Prop` structure the
-projected field is a proposition** (full grade). Nothing is claimed when `is_prop` is `0`.
-
-Provisional: stated for the circuit with the io lane's full-grade field check and the stored
-guard form (pending decision); its path lemmas change if adopted.
--/
-def check_prop_field_if_prop : SpecFn := fun c args h r h' calls =>
-  ∀ rc ip dom types, args = [rc, ip, dom, types] → Good c calls → c.rc h rc → ip ≠ .field 0 →
-    ∀ d Γ, c.types Γ h d types → ∀ D, c.tm d Γ h D dom → SortZero c.env .full d D
-
-/-- `check_no_dep_data_field_if_prop(rc, is_prop, dom, body, types)` (unit): **at a `Prop`
-structure a field passed is a proposition, or the rest of the telescope does not mention it**
-(the circuit asks for no loose bound variable at all in the rest). Nothing is claimed when
-`is_prop` is `0`.
-
-Provisional: stated for the circuit with the io lane's full-grade field check and the stored
-guard form (pending decision); its path lemmas change if adopted.
--/
-def check_no_dep_data_field_if_prop : SpecFn := fun c args h r h' calls =>
-  ∀ rc ip dom body types, args = [rc, ip, dom, body, types] → Good c calls → c.rc h rc →
-    ip ≠ .field 0 → ∀ d Γ, c.types Γ h d types → ∀ D B, c.tm d Γ h D dom →
-      c.tmk d Γ 1 h B body → SortZero c.env .full d D ∨ B.looseBVarsBounded 0 = true
-
-/-- `peel_field_loop(rc, ty, target, current, struct_addr, val, is_prop, types)`: **a projected
-field's type** (`fieldTypeAt`): `target - current` binders into the field telescope `ty`, the
-fields passed instantiated by their projections of `val`; with the `Prop`-structure guards
-(`PropGuards`) when `is_prop` is not `0`. The counters are compared as field elements, so the
+/-- `peel_field_loop(ty, target, current, struct_addr, val)`: **a projected field's type**
+(`fieldTypeAt`): `target - current` binders into the field telescope `ty`, the fields passed
+instantiated by their projections of `val`. The counters are compared as field elements, so the
 claim is for `current ≤ target` (the callers start at `0`; past the target the loop would only
-stop after wrapping around the field).
-
-Provisional: stated for the circuit with the io lane's full-grade field check and the stored
-guard form (pending decision); its path lemmas change if adopted.
-With the io lane's full-grade field check, the io arm of `k_infer_only` calls this loop
-too. -/
+stop after wrapping around the field). -/
 def peel_field_loop : SpecFn := fun c args h r h' calls =>
-  ∀ rc ty tg cu sa val ip types, args = [rc, ty, tg, cu, sa, val, ip, types] → Good c calls →
-    c.rc h rc → ∀ t0 c0 : F, tg = .field t0 → cu = .field c0 →
+  ∀ ty tg cu sa val, args = [ty, tg, cu, sa, val] → Good c calls →
+    ∀ t0 c0 : F, tg = .field t0 → cu = .field c0 →
       ZMod.val c0 ≤ ZMod.val t0 →
-      ∀ d Γ, c.types Γ h d types → ∀ (T : KExpr) (a : Bytes.Address) (PE : KExpr),
+      ∀ d Γ (T : KExpr) (a : Bytes.Address) (PE : KExpr),
         c.tm d Γ h T ty → RepAddr h a sa → c.tm d Γ h PE val →
           ∃ (n : Nat) (FT : KExpr), ZMod.val c0 + n = ZMod.val t0 ∧ c.tm d Γ h' FT r ∧
-            fieldTypeAt (c.κ (ixAddr a)) PE n (ZMod.val c0) T = some FT ∧
-            (ip ≠ .field 0 → PropGuards c.env d (c.κ (ixAddr a)) PE n (ZMod.val c0) T)
+            fieldTypeAt (c.κ (ixAddr a)) PE n (ZMod.val c0) T = some FT
 
 /-- `k_infer_proj(rc, struct_addr, fidx, e1, types)`: **a projection's type**
-(`Infer.proj` at the full grade): the image of `Proj(s, i, e1)` is `.proj (κ s) i PE`.
-
-Provisional: stated for the circuit with the io lane's full-grade field check and the stored
-guard form (pending decision); its path lemmas change if adopted.
-Its proof reads `Infer.proj`'s table premises (the entry, its parameter and level
-counts, its body as `fieldTypeAt` of the stored constructor type) from the projection-table
-environment fact (to be added to `EnvFacts`), and `FireSem` from the stored guard form the
-circuit would compute; those helper functions do not exist yet, so no spec is stated for them. -/
+(`Infer.proj` at the full grade): the image of `Proj(s, i, e1)` is `.proj (κ s) i PE`. -/
 def k_infer_proj : SpecFn := fun c args h r h' calls =>
   ∀ rc sa fi e1 types, args = [rc, sa, fi, e1, types] → Good c calls → c.rc h rc →
     ∀ i : F, fi = .field i → ∀ d Γ, c.types Γ h d types →
@@ -317,23 +251,13 @@ def io_const_type_of : SpecFn := const_type_of
 
 /-- `k_infer_only(rc, e, types)`: **io-grade inference** (`Infer env .io d E T`): the infer-only
 lane, which checks no domain sort at a `λ` and no argument certificate at a binder whose datum
-is `never` (`Infer.appSkip`).
-
-The `Proj` case. Provisional: stated for the circuit with the io lane's full-grade field check
-and the stored guard form (pending decision); its path lemmas change if adopted.
-With the io lane's full-grade field check the arm runs
-`peel_field_loop` with `is_prop` (the full grade's guards, read at the io grade through
-`Infer.toIO`). -/
+is `never` (`Infer.appSkip`). -/
 def k_infer_only : SpecFn := fun c args h r h' calls =>
   ∀ rc e types, args = [rc, e, types] → Good c calls → c.rc h rc →
     ∀ d Γ, c.types Γ h d types → ∀ E, c.tm d Γ h E e →
       ∃ T, c.tm d Γ h' T r ∧ Infer c.env .io d E T
 
-/-- `k_infer_only_core(rc, e, types)`: **one step of io-grade inference by the head node**.
-
-The `Proj` case. Provisional: stated for the circuit with the io lane's full-grade field check
-and the stored guard form (pending decision); its path lemmas change if adopted.
--/
+/-- `k_infer_only_core(rc, e, types)`: **one step of io-grade inference by the head node**. -/
 def k_infer_only_core : SpecFn := fun c args h r h' calls =>
   ∀ rc e types, args = [rc, e, types] → Good c calls → c.rc h rc →
     ∀ d Γ, c.types Γ h d types → ∀ E, c.tm d Γ h E e →
@@ -375,36 +299,8 @@ def ensure_sort_only : SpecFn := fun c args h r h' calls =>
     ∀ d Γ, c.types Γ h d types → ∀ E, c.tm d Γ h E e →
       ∃ (T : KExpr) (u : KLevel), Infer c.env .io d E T ∧ Red c.env d T (.sort u) ∧ LvRep h' u r
 
-/-- `io_prop_field_guard(rc, is_prop, field_ty, types)` (unit): **at a `Prop` structure the
-projected field is a proposition**, at the io grade. Nothing is claimed when `is_prop` is `0`.
-(Unlike the full grade, the fields passed are not checked.)
-
-Provisional: stated for the circuit with the io lane's full-grade field check and the stored
-guard form (pending decision); its path lemmas change if adopted.
-With the io lane's full-grade field check this function is no longer called by
-`k_infer_only`. -/
-def io_prop_field_guard : SpecFn := fun c args h r h' calls =>
-  ∀ rc ip ft types, args = [rc, ip, ft, types] → Good c calls → c.rc h rc → ip ≠ .field 0 →
-    ∀ d Γ, c.types Γ h d types → ∀ FT, c.tm d Γ h FT ft → SortZero c.env .io d FT
-
 /-- `io_peel_params_subst(ty, args, n_params)`: as `peel_params_subst`. -/
 def io_peel_params_subst : SpecFn := peel_params_subst
-
-/-- `io_peel_field_loop(ty, target, current, struct_addr, val)`: **a projected field's type**
-(`fieldTypeAt`), without guards; for `current ≤ target`, as `peel_field_loop`.
-
-Provisional: stated for the circuit with the io lane's full-grade field check and the stored
-guard form (pending decision); its path lemmas change if adopted.
-With the io lane's full-grade field check this function is no longer called by
-`k_infer_only`. -/
-def io_peel_field_loop : SpecFn := fun c args h r h' calls =>
-  ∀ ty tg cu sa val, args = [ty, tg, cu, sa, val] → Good c calls →
-    ∀ t0 c0 : F, tg = .field t0 → cu = .field c0 →
-      ZMod.val c0 ≤ ZMod.val t0 →
-      ∀ d Γ (T : KExpr) (a : Bytes.Address) (PE : KExpr),
-        c.tm d Γ h T ty → RepAddr h a sa → c.tm d Γ h PE val →
-          ∃ (n : Nat) (FT : KExpr), ZMod.val c0 + n = ZMod.val t0 ∧ c.tm d Γ h' FT r ∧
-            fieldTypeAt (c.κ (ixAddr a)) PE n (ZMod.val c0) T = some FT
 
 /-! ## The family -/
 
@@ -413,11 +309,9 @@ inductive Fn where
   | types_lookup | const_num_lvls | const_type_of | k_infer | k_infer_rebase | k_infer_core
   | k_infer_let_start | inst_subs | k_infer_app_spine_loop | k_infer_lit | peel_params_subst
   | is_inductive_prop | level_may_be_nonzero | proj_shape_ok | peel_n_alls_whnf
-  | check_prop_field_if_prop | check_no_dep_data_field_if_prop | peel_field_loop | k_infer_proj
-  | k_ensure_sort | k_check
+  | peel_field_loop | k_infer_proj | k_ensure_sort | k_check
   | io_types_lookup | io_const_num_lvls | io_const_type_of | k_infer_only | k_infer_only_core
-  | io_app_cod | forall_datum_ok | lam_datum_ok | ensure_sort_only | io_prop_field_guard
-  | io_peel_params_subst | io_peel_field_loop
+  | io_app_cod | forall_datum_ok | lam_datum_ok | ensure_sort_only | io_peel_params_subst
   deriving DecidableEq, Repr
 
 /-- The function's symbol. -/
@@ -437,8 +331,6 @@ def Fn.name : Fn → String
   | .level_may_be_nonzero => "KernelInfer::level_may_be_nonzero"
   | .proj_shape_ok => "KernelInfer::proj_shape_ok"
   | .peel_n_alls_whnf => "KernelInfer::peel_n_alls_whnf"
-  | .check_prop_field_if_prop => "KernelInfer::check_prop_field_if_prop"
-  | .check_no_dep_data_field_if_prop => "KernelInfer::check_no_dep_data_field_if_prop"
   | .peel_field_loop => "KernelInfer::peel_field_loop"
   | .k_infer_proj => "KernelInfer::k_infer_proj"
   | .k_ensure_sort => "KernelInfer::k_ensure_sort"
@@ -452,9 +344,7 @@ def Fn.name : Fn → String
   | .forall_datum_ok => "KernelInferOnly::forall_datum_ok"
   | .lam_datum_ok => "KernelInferOnly::lam_datum_ok"
   | .ensure_sort_only => "KernelInferOnly::ensure_sort_only"
-  | .io_prop_field_guard => "KernelInferOnly::io_prop_field_guard"
   | .io_peel_params_subst => "KernelInferOnly::io_peel_params_subst"
-  | .io_peel_field_loop => "KernelInferOnly::io_peel_field_loop"
 
 /-- The function's spec. -/
 def Fn.spec : Fn → SpecFn
@@ -473,8 +363,6 @@ def Fn.spec : Fn → SpecFn
   | .level_may_be_nonzero => Specs.Infer.level_may_be_nonzero
   | .proj_shape_ok => Specs.Infer.proj_shape_ok
   | .peel_n_alls_whnf => Specs.Infer.peel_n_alls_whnf
-  | .check_prop_field_if_prop => Specs.Infer.check_prop_field_if_prop
-  | .check_no_dep_data_field_if_prop => Specs.Infer.check_no_dep_data_field_if_prop
   | .peel_field_loop => Specs.Infer.peel_field_loop
   | .k_infer_proj => Specs.Infer.k_infer_proj
   | .k_ensure_sort => Specs.Infer.k_ensure_sort
@@ -488,8 +376,6 @@ def Fn.spec : Fn → SpecFn
   | .forall_datum_ok => Specs.Infer.forall_datum_ok
   | .lam_datum_ok => Specs.Infer.lam_datum_ok
   | .ensure_sort_only => Specs.Infer.ensure_sort_only
-  | .io_prop_field_guard => Specs.Infer.io_prop_field_guard
   | .io_peel_params_subst => Specs.Infer.io_peel_params_subst
-  | .io_peel_field_loop => Specs.Infer.io_peel_field_loop
 
 end IxVM.Refinement.Core.Specs.Infer

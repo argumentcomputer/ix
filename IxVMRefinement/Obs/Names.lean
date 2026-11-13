@@ -144,6 +144,11 @@ abbrev «Lists::length<&KernelTypes::KLevelNode>» : String := "${\"name\":\"Lis
 
 theorem «Lists::length<&KernelTypes::KLevelNode>».symbol : (Instance.mk "Lists::length" [(.ptr (.named "KernelTypes::KLevelNode" []))]).symbol = «Lists::length<&KernelTypes::KLevelNode>» := by decide +kernel
 
+/-- The instance `Lists::snoc<&KernelTypes::KLevelNode>`. -/
+abbrev «Lists::snoc<&KernelTypes::KLevelNode>» : String := "${\"name\":\"Lists::snoc\",\"types\":[{\"ptr\":{\"target\":{\"named\":{\"args\":[],\"name\":\"KernelTypes::KLevelNode\"}}}}]}"
+
+theorem «Lists::snoc<&KernelTypes::KLevelNode>».symbol : (Instance.mk "Lists::snoc" [(.ptr (.named "KernelTypes::KLevelNode" []))]).symbol = «Lists::snoc<&KernelTypes::KLevelNode>» := by decide +kernel
+
 /-- The instance `Lists::concat<Field>`. -/
 abbrev «Lists::concat<Field>» : String := "${\"name\":\"Lists::concat\",\"types\":[\"field\"]}"
 
@@ -198,6 +203,11 @@ theorem «Options::Option<Ixon::DefinitionSafety>».symbol : (Instance.mk "Optio
 abbrev «Options::Option<Ixon::QuotKind>» : String := "${\"name\":\"Options::Option\",\"types\":[{\"named\":{\"args\":[],\"name\":\"Ixon::QuotKind\"}}]}"
 
 theorem «Options::Option<Ixon::QuotKind>».symbol : (Instance.mk "Options::Option" [(.named "Ixon::QuotKind" [])]).symbol = «Options::Option<Ixon::QuotKind>» := by decide +kernel
+
+/-- The instance `Options::Option<&Lists::Node<Field>>`. -/
+abbrev «Options::Option<&Lists::Node<Field>>» : String := "${\"name\":\"Options::Option\",\"types\":[{\"ptr\":{\"target\":{\"named\":{\"args\":[\"field\"],\"name\":\"Lists::Node\"}}}}]}"
+
+theorem «Options::Option<&Lists::Node<Field>>».symbol : (Instance.mk "Options::Option" [(.ptr (.named "Lists::Node" [.field]))]).symbol = «Options::Option<&Lists::Node<Field>>» := by decide +kernel
 
 /-- The instance `Lists::Node<KernelClaim::RevealRecursorRule>`. -/
 abbrev «Lists::Node<KernelClaim::RevealRecursorRule>» : String := "${\"name\":\"Lists::Node\",\"types\":[{\"named\":{\"args\":[],\"name\":\"KernelClaim::RevealRecursorRule\"}}]}"
@@ -354,6 +364,21 @@ abbrev «Lists::length<(&[Field; 32], Field, &Lists::Node<&KernelTypes::KExprNod
 
 theorem «Lists::length<(&[Field; 32], Field, &Lists::Node<&KernelTypes::KExprNode>, &Lists::Node<&KernelTypes::KLevelNode>)>».symbol : (Instance.mk "Lists::length" [(.tuple [(.ptr (.array .field 32)), .field, (.ptr (.named "Lists::Node" [(.ptr (.named "KernelTypes::KExprNode" []))])), (.ptr (.named "Lists::Node" [(.ptr (.named "KernelTypes::KLevelNode" []))]))])]).symbol = «Lists::length<(&[Field; 32], Field, &Lists::Node<&KernelTypes::KExprNode>, &Lists::Node<&KernelTypes::KLevelNode>)>» := by decide +kernel
 
+/-- The instance `Lists::Node<(&KernelTypes::KExprNode, &KernelTypes::KLevelNode)>`. -/
+abbrev «Lists::Node<(&KernelTypes::KExprNode, &KernelTypes::KLevelNode)>» : String := "${\"name\":\"Lists::Node\",\"types\":[{\"tuple\":{\"items\":[{\"ptr\":{\"target\":{\"named\":{\"args\":[],\"name\":\"KernelTypes::KExprNode\"}}}},{\"ptr\":{\"target\":{\"named\":{\"args\":[],\"name\":\"KernelTypes::KLevelNode\"}}}}]}}]}"
+
+theorem «Lists::Node<(&KernelTypes::KExprNode, &KernelTypes::KLevelNode)>».symbol : (Instance.mk "Lists::Node" [(.tuple [(.ptr (.named "KernelTypes::KExprNode" [])), (.ptr (.named "KernelTypes::KLevelNode" []))])]).symbol = «Lists::Node<(&KernelTypes::KExprNode, &KernelTypes::KLevelNode)>» := by decide +kernel
+
+/-- The instance `Lists::length<(&KernelTypes::KExprNode, &KernelTypes::KLevelNode)>`. -/
+abbrev «Lists::length<(&KernelTypes::KExprNode, &KernelTypes::KLevelNode)>» : String := "${\"name\":\"Lists::length\",\"types\":[{\"tuple\":{\"items\":[{\"ptr\":{\"target\":{\"named\":{\"args\":[],\"name\":\"KernelTypes::KExprNode\"}}}},{\"ptr\":{\"target\":{\"named\":{\"args\":[],\"name\":\"KernelTypes::KLevelNode\"}}}}]}}]}"
+
+theorem «Lists::length<(&KernelTypes::KExprNode, &KernelTypes::KLevelNode)>».symbol : (Instance.mk "Lists::length" [(.tuple [(.ptr (.named "KernelTypes::KExprNode" [])), (.ptr (.named "KernelTypes::KLevelNode" []))])]).symbol = «Lists::length<(&KernelTypes::KExprNode, &KernelTypes::KLevelNode)>» := by decide +kernel
+
+/-- The instance `Lists::length<Field>`. -/
+abbrev «Lists::length<Field>» : String := "${\"name\":\"Lists::length\",\"types\":[\"field\"]}"
+
+theorem «Lists::length<Field>».symbol : (Instance.mk "Lists::length" [.field]).symbol = «Lists::length<Field>» := by decide +kernel
+
 /-- The instance `Lists::lookup_or_default<Field>`. -/
 abbrev «Lists::lookup_or_default<Field>» : String := "${\"name\":\"Lists::lookup_or_default\",\"types\":[\"field\"]}"
 
@@ -363,11 +388,6 @@ theorem «Lists::lookup_or_default<Field>».symbol : (Instance.mk "Lists::lookup
 abbrev «Lists::lookup_or_default<&[Field; 32]>» : String := "${\"name\":\"Lists::lookup_or_default\",\"types\":[{\"ptr\":{\"target\":{\"array\":{\"element\":\"field\",\"length\":32}}}}]}"
 
 theorem «Lists::lookup_or_default<&[Field; 32]>».symbol : (Instance.mk "Lists::lookup_or_default" [(.ptr (.array .field 32))]).symbol = «Lists::lookup_or_default<&[Field; 32]>» := by decide +kernel
-
-/-- The instance `Lists::length<Field>`. -/
-abbrev «Lists::length<Field>» : String := "${\"name\":\"Lists::length\",\"types\":[\"field\"]}"
-
-theorem «Lists::length<Field>».symbol : (Instance.mk "Lists::length" [.field]).symbol = «Lists::length<Field>» := by decide +kernel
 
 /-- The instance `Lists::reverse<Field>`. -/
 abbrev «Lists::reverse<Field>» : String := "${\"name\":\"Lists::reverse\",\"types\":[\"field\"]}"
@@ -555,6 +575,8 @@ theorem n5459665738436230359 : instanceName [] "Lists::length" (some [(.ptr (.na
 
 theorem n9644275015669645019 : constructorName [] (.named "Lists::Node" [(.ptr (.named "KernelTypes::KExprNode" []))]) = Names.«Lists::Node<&KernelTypes::KExprNode>» := by decide +kernel
 
+theorem n17264845653887200752 : instanceName [] "Lists::snoc" (some [(.ptr (.named "KernelTypes::KLevelNode" []))]) = Names.«Lists::snoc<&KernelTypes::KLevelNode>» := by decide +kernel
+
 theorem n11871363439673646749 : constructorName [] (.named "Ixon::Expr" []) = "Ixon::Expr" := by decide +kernel
 
 theorem n3632407994155229761 : instanceName [] "Lists::concat" (some [.field]) = Names.«Lists::concat<Field>» := by decide +kernel
@@ -613,6 +635,8 @@ theorem n10297936193859812741 : instanceName [] "Options::Option" (some [(.named
 
 theorem n2369345818844057051 : instanceName [] "Options::Option" (some [(.named "Ixon::QuotKind" [])]) = Names.«Options::Option<Ixon::QuotKind>» := by decide +kernel
 
+theorem n7938554409273463052 : instanceName [] "Options::Option" (some [(.ptr (.named "Lists::Node" [.field]))]) = Names.«Options::Option<&Lists::Node<Field>>» := by decide +kernel
+
 theorem n10744318541727169799 : instanceName [] "Lists::Node" (some [(.named "KernelClaim::RevealRecursorRule" [])]) = Names.«Lists::Node<KernelClaim::RevealRecursorRule>» := by decide +kernel
 
 theorem n16884980263847291852 : instanceName [] "Options::Option" (some [(.ptr (.named "Lists::Node" [(.named "KernelClaim::RevealRecursorRule" [])]))]) = Names.«Options::Option<&Lists::Node<KernelClaim::RevealRecursorRule>>» := by decide +kernel
@@ -634,6 +658,8 @@ theorem n1611743419117410594 : constructorName [] (.named "Options::Option" [(.n
 theorem n3160786238576284485 : constructorName [] (.named "Options::Option" [.field]) = Names.«Options::Option<Field>» := by decide +kernel
 
 theorem n12868242455681225614 : constructorName [] (.named "Options::Option" [(.array .field 8)]) = Names.«Options::Option<[Field; 8]>» := by decide +kernel
+
+theorem n16388660333875015789 : constructorName [] (.named "Options::Option" [(.ptr (.named "Lists::Node" [.field]))]) = Names.«Options::Option<&Lists::Node<Field>>» := by decide +kernel
 
 theorem n15628357052111443530 : constructorName [] (.named "Lists::Node" [(.named "KernelClaim::RevealRecursorRule" [])]) = Names.«Lists::Node<KernelClaim::RevealRecursorRule>» := by decide +kernel
 
@@ -817,11 +843,17 @@ theorem n3593869098302610371 : instanceName [] "Lists::reverse" (some [(.ptr (.n
 
 theorem n14888783904625504901 : instanceName [] "Lists::length" (some [(.tuple [(.ptr (.array .field 32)), .field, (.ptr (.named "Lists::Node" [(.ptr (.named "KernelTypes::KExprNode" []))])), (.ptr (.named "Lists::Node" [(.ptr (.named "KernelTypes::KLevelNode" []))]))])]) = Names.«Lists::length<(&[Field; 32], Field, &Lists::Node<&KernelTypes::KExprNode>, &Lists::Node<&KernelTypes::KLevelNode>)>» := by decide +kernel
 
+theorem n9803969864442770359 : instanceName [] "Lists::Node" (some [(.tuple [(.ptr (.named "KernelTypes::KExprNode" [])), (.ptr (.named "KernelTypes::KLevelNode" []))])]) = Names.«Lists::Node<(&KernelTypes::KExprNode, &KernelTypes::KLevelNode)>» := by decide +kernel
+
+theorem n1145645916569272953 : constructorName [] (.named "Lists::Node" [(.tuple [(.ptr (.named "KernelTypes::KExprNode" [])), (.ptr (.named "KernelTypes::KLevelNode" []))])]) = Names.«Lists::Node<(&KernelTypes::KExprNode, &KernelTypes::KLevelNode)>» := by decide +kernel
+
+theorem n8414381136645564962 : instanceName [] "Lists::length" (some [(.tuple [(.ptr (.named "KernelTypes::KExprNode" [])), (.ptr (.named "KernelTypes::KLevelNode" []))])]) = Names.«Lists::length<(&KernelTypes::KExprNode, &KernelTypes::KLevelNode)>» := by decide +kernel
+
+theorem n7176593224600121632 : instanceName [] "Lists::length" (some [.field]) = Names.«Lists::length<Field>» := by decide +kernel
+
 theorem n8000355698200817902 : instanceName [] "Lists::lookup_or_default" (some [.field]) = Names.«Lists::lookup_or_default<Field>» := by decide +kernel
 
 theorem n2275445698610172113 : instanceName [] "Lists::lookup_or_default" (some [(.ptr (.array .field 32))]) = Names.«Lists::lookup_or_default<&[Field; 32]>» := by decide +kernel
-
-theorem n7176593224600121632 : instanceName [] "Lists::length" (some [.field]) = Names.«Lists::length<Field>» := by decide +kernel
 
 theorem n12681146880461418622 : instanceName [] "Lists::reverse" (some [.field]) = Names.«Lists::reverse<Field>» := by decide +kernel
 

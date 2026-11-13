@@ -480,45 +480,37 @@ def check_valid_ind_app := aiur_fn⟦
 ⟧
 
 def check_positivity_aug := aiur_fn⟦
-  fn check_positivity_aug(rc: KernelRoles::RoleCtx, dom: KernelTypes::KExpr, block_addrs: Lists::List<Bytes::AddressRef>,
-                                 types: Lists::List<KernelTypes::KExpr>, check_params: Field) -> () {
+  fn check_positivity_aug(dom: KernelTypes::KExpr, block_addrs: Lists::List<Bytes::AddressRef>,
+                                 depth: Field) -> () {
       match expr_mentions_block(dom, block_addrs) {
         0 => {  () } ,
         _ => {
-          let dom_w = KernelWhnf::whnf(rc, dom, types);
-          -- Lean tests positivity after whnf: a field whose occurrences whnf
-          -- erases (`Tagged T`, `Tagged _ := Nat`) is an ordinary field
-          match expr_mentions_block(dom_w, block_addrs) {
-            0 => {  () } ,
+          match (*(dom)) {
+            KernelTypes::KExprNode::Forall(idom, ibody, _) => {
+              assert_eq!(expr_mentions_block(idom, block_addrs), 0,
+                "strict positivity: block occurs left of an arrow");
+              check_positivity_aug(ibody, block_addrs, depth + 1) } ,
             _ => {
-              match (*(dom_w)) {
-                KernelTypes::KExprNode::Forall(idom, ibody, _) => {
-                  assert_eq!(expr_mentions_block(idom, block_addrs), 0,
-                    "strict positivity: block occurs left of an arrow");
-                  let t2 = (&(Lists::Node::Cons(idom, types)));
-                  check_positivity_aug(rc, ibody, block_addrs, t2, check_params) } ,
-                _ => {
-                  match KernelTypes::collect_spine(dom_w) {
-                    (head, args) => {
-                      match (*(head)) {
-                        KernelTypes::KExprNode::Const(caddr, us) => {
-                          match caddr_is_peer(caddr, block_addrs) {
-                            1 => {
-                              match check_params {
-                                1 => {
-                                  check_valid_ind_app(caddr, us, args,
-                                    block_addrs, Lists::length(types)) } ,
-                                _ => {  () } ,
-                              } } ,
-                            _ => {
-                              -- A nested occurrence is the modeled route's
-                              -- (`KernelModeled::block_is_modeled`); one that only
-                              -- whnf exposes is refused here, as Lean refuses it.
-                              assert_eq!(0, 1,
-                                "strict positivity: nested occurrence on the native route");
-                              () } ,
-                          } } ,
+              match KernelTypes::collect_spine(dom) {
+                (head, args) => {
+                  match (*(head)) {
+                    KernelTypes::KExprNode::Const(caddr, us) => {
+                      match caddr_is_peer(caddr, block_addrs) {
+                        1 => {
+                          check_valid_ind_app(caddr, us, args, block_addrs, depth) } ,
+                        _ => {
+                          -- Nested occurrences belong to the modeled route
+                          -- (`KernelModeled::block_is_modeled`); non-syntactic
+                          -- occurrences of the block in a native constructor
+                          -- field are refused on the native route.
+                          assert_eq!(0, 1,
+                            "strict positivity: non-syntactic or nested occurrence on the native route");
+                          () } ,
                       } } ,
+                    _ => {
+                      assert_eq!(0, 1,
+                        "strict positivity: non-syntactic occurrence on the native route");
+                      () } ,
                   } } ,
               } } ,
           } } ,
@@ -527,26 +519,23 @@ def check_positivity_aug := aiur_fn⟦
 ⟧
 
 def check_positivity_fields := aiur_fn⟦
-  fn check_positivity_fields(rc: KernelRoles::RoleCtx, ty: KernelTypes::KExpr, block_addrs: Lists::List<Bytes::AddressRef>,
-                                    types: Lists::List<KernelTypes::KExpr>, check_params: Field) -> () {
+  fn check_positivity_fields(ty: KernelTypes::KExpr, block_addrs: Lists::List<Bytes::AddressRef>,
+                                    depth: Field) -> () {
       match (*(ty)) {
         KernelTypes::KExprNode::Forall(dom, body, _) => {
-          check_positivity_aug(rc, dom, block_addrs, types, check_params);
-          let t2 = (&(Lists::Node::Cons(dom, types)));
-          check_positivity_fields(rc, body, block_addrs, t2, check_params) } ,
+          check_positivity_aug(dom, block_addrs, depth);
+          check_positivity_fields(body, block_addrs, depth + 1) } ,
         _ => {  () } ,
       }
     }
 ⟧
 
 def check_positivity := aiur_fn⟦
-  fn check_positivity(rc: KernelRoles::RoleCtx, ctor_ty: KernelTypes::KExpr, n_params: Field,
-                            block_addr: Bytes::AddressRef, types: Lists::List<KernelTypes::KExpr>) -> () {
+  fn check_positivity(ctor_ty: KernelTypes::KExpr, n_params: Field,
+                            block_addr: Bytes::AddressRef) -> () {
       let block_addrs = (&(Lists::Node::Cons(block_addr, (&(Lists::Node::Nil)))));
-      match peel_n_foralls_with_types(ctor_ty, n_params, types) {
-        (body, types_after) => {
-          check_positivity_fields(rc, body, block_addrs, types_after, 1) } ,
-      }
+      let body = peel_n_foralls(ctor_ty, n_params);
+      check_positivity_fields(body, block_addrs, n_params)
     }
 ⟧
 
@@ -680,8 +669,7 @@ def check_inductive_shape_ctors := aiur_fn⟦
               check_field_universes(rc, cty, c_np, ind_level);
 
               match is_unsafe {
-                0 => {  check_positivity(rc, cty, c_np, block_addr,
-                                           (&(Lists::Node::Nil))) } ,
+                0 => {  check_positivity(cty, c_np, block_addr) } ,
                 _ => {  () } ,
               };
               check_inductive_shape_ctors(rc, ind_ty, n_params, n_indices,
@@ -2097,55 +2085,6 @@ def nat_minor_ty := aiur_fn⟦
     }
 ⟧
 
-  -- `normPosDom`: a field domain that mentions the family, head-normalized, and walked under
-  -- its ∀ binders while the family occurs (a domain of such a binder that mentions the family
-  -- is a non-positive occurrence).
-
-def nat_norm_pos_dom := aiur_fn⟦
-  fn nat_norm_pos_dom(rc: KernelRoles::RoleCtx, e: KernelTypes::KExpr, t: Bytes::AddressRef,
-                      types: Lists::List<KernelTypes::KExpr>) -> KernelTypes::KExpr {
-      match nat_mentions(e, t) {
-        0 => {  e } ,
-        _ => {
-          let w = KernelWhnf::whnf(rc, e, types);
-          match nat_mentions(w, t) {
-            0 => {  w } ,
-            _ => {
-              match (*(w)) {
-                KernelTypes::KExprNode::Forall(d, b, m) => {
-                  assert_eq!(nat_mentions(d, t), 0, "native constructor: a non-positive occurrence of its family");
-                  (&(KernelTypes::KExprNode::Forall(d,
-                    nat_norm_pos_dom(rc, b, t, (&(Lists::Node::Cons(d, types)))), m))) } ,
-                _ => {  w } ,
-              } } ,
-          } } ,
-      }
-    }
-⟧
-
-  -- The constructor type the kernel stores (`normCtorVal`): the parameters as declared, every
-  -- field domain through `normPosDom`, the residual as declared.
-
-def nat_norm_ctor := aiur_fn⟦
-  fn nat_norm_ctor(rc: KernelRoles::RoleCtx, e: KernelTypes::KExpr, np: Field, nf: Field, t: Bytes::AddressRef,
-                   types: Lists::List<KernelTypes::KExpr>) -> KernelTypes::KExpr {
-      match np {
-        0 => {
-          match nf {
-            0 => {  e } ,
-            _ => {
-              let KernelTypes::KExprNode::Forall(d, b, m) = (*(e));
-              (&(KernelTypes::KExprNode::Forall(nat_norm_pos_dom(rc, d, t, types),
-                nat_norm_ctor(rc, b, 0, nf - 1, t, (&(Lists::Node::Cons(d, types)))), m))) } ,
-          } } ,
-        _ => {
-          let KernelTypes::KExprNode::Forall(d, b, m) = (*(e));
-          (&(KernelTypes::KExprNode::Forall(d,
-            nat_norm_ctor(rc, b, np - 1, nf, t, (&(Lists::Node::Cons(d, types)))), m))) } ,
-      }
-    }
-⟧
-
   -- `recPositivity` on a field domain that mentions the family, `k` binders of the field's
   -- own telescope peeled, the parameters `o + k` binders up: 1 recursive, 2 reflexive, 3 not a
   -- native occurrence (negative, or nested).
@@ -2208,19 +2147,18 @@ def nat_rec_idx := aiur_fn⟦
     }
 ⟧
 
-  -- Constructor `j` as the generator reads it: its stored type at the recursor's levels with
-  -- its field domains normalized, its field count and its recursive fields.
+  -- Constructor `j` as the generator reads it: its stored type at the recursor's levels,
+  -- its field count and its recursive fields.
 
 def nat_ctor := aiur_fn⟦
-  fn nat_ctor(rc: KernelRoles::RoleCtx, block: Bytes::AddressRef, idx: Field, j: Field, t: Bytes::AddressRef,
+  fn nat_ctor(block: Bytes::AddressRef, idx: Field, j: Field, t: Bytes::AddressRef,
               lps: Lists::List<KernelTypes::KLevel>, np: Field, ni: Field, univ_offset: Field)
               -> (KernelTypes::KExpr, Field, Lists::List<Field>) {
       let KernelTypes::KConstantInfo::Ctor(_, cty0, _, _, _, _, nf, _) = (*(Ingress::get_ci_cprj(block, idx, j)));
-      let cty1 = match univ_offset {
+      let cty = match univ_offset {
         0 => {  cty0 } ,
         _ => {  KernelLevels::expr_inst_levels(cty0, lps) } ,
       };
-      let cty = nat_norm_ctor(rc, cty1, np, nf, t, (&(Lists::Node::Nil)));
       let (_, rargs) = KernelTypes::collect_spine(peel_n_foralls(cty, np + nf));
       assert_eq!(nat_none_mention(Lists::drop(rargs, np), t), 1,
         "native recursor: a constructor's index expression mentions its family");
@@ -2232,15 +2170,15 @@ def nat_ctor := aiur_fn⟦
   -- constructors `j`… over `body`.
 
 def nat_minors := aiur_fn⟦
-  fn nat_minors(rc: KernelRoles::RoleCtx, block: Bytes::AddressRef, idx: Field, t: Bytes::AddressRef,
+  fn nat_minors(block: Bytes::AddressRef, idx: Field, t: Bytes::AddressRef,
                 lps: Lists::List<KernelTypes::KLevel>, np: Field, ni: Field, pw: KernelTypes::KLevel,
                 n: Field, univ_offset: Field, j: Field, body: KernelTypes::KExpr, lam: Field) -> KernelTypes::KExpr {
       match n - j {
         0 => {  body } ,
         _ => {
-          let (cty, nf, rec_idx) = nat_ctor(rc, block, idx, j, t, lps, np, ni, univ_offset);
+          let (cty, nf, rec_idx) = nat_ctor(block, idx, j, t, lps, np, ni, univ_offset);
           let mty = nat_minor_ty(projection_addr_ctor(idx, j, block), lps, np, nf, j + 1, pw, cty, rec_idx);
-          let rest = nat_minors(rc, block, idx, t, lps, np, ni, pw, n, univ_offset, j + 1, body, lam);
+          let rest = nat_minors(block, idx, t, lps, np, ni, pw, n, univ_offset, j + 1, body, lam);
           match lam {
             0 => {  (&(KernelTypes::KExprNode::Forall(mty, rest, pw))) } ,
             _ => {  (&(KernelTypes::KExprNode::Lam(mty, rest, pw))) } ,
@@ -2297,21 +2235,21 @@ def nat_ih_apps := aiur_fn⟦
   -- The generated rule for constructor `j` (`structRecRhsR`).
 
 def nat_rule_rhs := aiur_fn⟦
-  fn nat_rule_rhs(rc: KernelRoles::RoleCtx, block: Bytes::AddressRef, idx: Field, t: Bytes::AddressRef,
+  fn nat_rule_rhs(block: Bytes::AddressRef, idx: Field, t: Bytes::AddressRef,
                   lps: Lists::List<KernelTypes::KLevel>, np: Field, ni: Field, pw: KernelTypes::KLevel, n: Field,
                   univ_offset: Field, tty: KernelTypes::KExpr, motive_ty: KernelTypes::KExpr,
                   rec: Bytes::AddressRef, rlvls: Lists::List<KernelTypes::KLevel>, j: Field) -> KernelTypes::KExpr {
-      let (cty, nf, rec_idx) = nat_ctor(rc, block, idx, j, t, lps, np, ni, univ_offset);
+      let (cty, nf, rec_idx) = nat_ctor(block, idx, j, t, lps, np, ni, univ_offset);
       let body = nat_app_n((&(KernelTypes::KExprNode::BVar(((nf + n) - 1) - j))),
         Lists::concat(nat_ps_at(0, nf), nat_ih_apps(rec, rlvls, pw, np, n, nf, rec_idx, cty)));
       let inner = nat_replace_pis(pw, nf, KernelSubst::expr_lift(peel_n_foralls(cty, np), n + 1, 0), body, 1);
-      let minors = nat_minors(rc, block, idx, t, lps, np, ni, pw, n, univ_offset, 0, inner, 1);
+      let minors = nat_minors(block, idx, t, lps, np, ni, pw, n, univ_offset, 0, inner, 1);
       nat_replace_pis(pw, np, tty, (&(KernelTypes::KExprNode::Lam(motive_ty, minors, pw))), 1)
     }
 ⟧
 
 def nat_check_rules := aiur_fn⟦
-  fn nat_check_rules(rc: KernelRoles::RoleCtx, rules: Lists::List<KernelTypes::KRecRule>, block: Bytes::AddressRef,
+  fn nat_check_rules(rules: Lists::List<KernelTypes::KRecRule>, block: Bytes::AddressRef,
                      idx: Field, t: Bytes::AddressRef, lps: Lists::List<KernelTypes::KLevel>, np: Field, ni: Field,
                      pw: KernelTypes::KLevel, n: Field, univ_offset: Field, tty: KernelTypes::KExpr,
                      motive_ty: KernelTypes::KExpr, rec: Bytes::AddressRef, rlvls: Lists::List<KernelTypes::KLevel>,
@@ -2323,10 +2261,10 @@ def nat_check_rules := aiur_fn⟦
           assert_eq!(cidx, j, "recursor rule is out of ctor order");
           let KernelTypes::KConstantInfo::Ctor(_, _, _, _, _, _, c_nf, _) = (*(Ingress::get_ci_cprj(block, idx, j)));
           assert_eq!(rnf, c_nf, "recursor rule field count differs from the ctor's");
-          assert_eq!(wrap_rel(nat_rule_rhs(rc, block, idx, t, lps, np, ni, pw, n, univ_offset, tty, motive_ty,
+          assert_eq!(wrap_rel(nat_rule_rhs(block, idx, t, lps, np, ni, pw, n, univ_offset, tty, motive_ty,
                                            rec, rlvls, j), rhs), 1,
             "native recursor: a stored rule is not the generated one up to consumed wrappers");
-          nat_check_rules(rc, rest, block, idx, t, lps, np, ni, pw, n, univ_offset, tty, motive_ty, rec, rlvls, j + 1) } ,
+          nat_check_rules(rest, block, idx, t, lps, np, ni, pw, n, univ_offset, tty, motive_ty, rec, rlvls, j + 1) } ,
       }
     }
 ⟧
@@ -2364,12 +2302,12 @@ def nat_rec_check := aiur_fn⟦
         Lists::snoc(nat_ps_at(1, n_i), (&(KernelTypes::KExprNode::BVar(0)))));
       let major = nat_replace_pis(pw, n_i, KernelSubst::expr_lift(q2, num_ctors + 1, 0),
         (&(KernelTypes::KExprNode::Forall(fam1, concl, pw))), 0);
-      let minors = nat_minors(rc, block, idx, parent_addr, lps, n_p, n_i, pw, num_ctors, univ_offset, 0, major, 0);
+      let minors = nat_minors(block, idx, parent_addr, lps, n_p, n_i, pw, num_ctors, univ_offset, 0, major, 0);
       let gen_ty = nat_replace_pis(pw, n_p, tty, (&(KernelTypes::KExprNode::Forall(motive_ty, minors, pw))), 0);
       assert_eq!(wrap_rel(gen_ty, ty), 1,
         "native recursor: the stored type is not the generated one up to consumed wrappers");
       let rec_c = find_peer_recursor_with_spec(rec_block_addr, parent_addr, (&(Lists::Node::Nil)), 0, addr);
-      nat_check_rules(rc, rules, block, idx, parent_addr, lps, n_p, n_i, pw, num_ctors, univ_offset, tty,
+      nat_check_rules(rules, block, idx, parent_addr, lps, n_p, n_i, pw, num_ctors, univ_offset, tty,
         motive_ty, rec_c, build_rec_lvls_list(nlvls, 0), 0)
     }
 ⟧
@@ -3822,8 +3760,7 @@ def check_const := aiur_fn⟦
                   check_field_universes(rc, ty, num_params, ind_level);
 
                   match ind_is_unsafe {
-                    0 => {  check_positivity(rc, ty, num_params, block_addr,
-                                               (&(Lists::Node::Nil))) } ,
+                    0 => {  check_positivity(ty, num_params, block_addr) } ,
                     _ => {  () } ,
                   } } ,
                 _ => {

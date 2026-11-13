@@ -788,10 +788,11 @@ def indNeedsRecNorm (block : List (ConstantInfo .anon)) (nP : Nat) : Bool :=
       | _ => false
   | _ => false
 
-/-- Replace the recursor of any generated `.indDecl` that `indNeedsRecNorm` flags with
-the recursor IxC's native install computes over the normalized constructors (`cvRa` and
-`sumRules`), installing `d` first if `k.fe` does not already hold it, so the advice
-record matches `KernelCheck`'s `nat_rec_check` under `wrap_rel`. -/
+/-- Replace the constructors and recursor of any generated `.indDecl` that
+`indNeedsRecNorm` flags with those IxC's native install computes over the
+normalized constructor domains (`ctorsA`, `cvRa`, and `sumRules`), installing
+`d` first if `k.fe` does not already hold it, so the advice records pass
+`KernelCheck`'s syntactic positivity and native recursor checks. -/
 def normGeneratedRecs (gen : List (Declaration .anon)) (k : IxVM.PwHints.KernelEnv) :
     List (Declaration .anon) := Id.run do
   let mut fe := k.fe
@@ -801,11 +802,15 @@ def normGeneratedRecs (gen : List (Declaration .anon)) (k : IxVM.PwHints.KernelE
     match d with
     | .indDecl block nP =>
       if indNeedsRecNorm block nP then
-        if block.any (fun | .recInfo cvR _ _ _ => (fe.find? cvR.name).isNone | _ => false) then
+        if block.any (fun ci => (fe.find? ci.name).isNone) then
           let (fe', pos', _) := IxVM.PwHints.installDecl k.setup.evidence fe pos d
           fe := fe'
           pos := pos'
         let block' := block.map fun ci => match ci with
+          | .ctorInfo cvC _ _ =>
+            match fe.find? cvC.name with
+            | some ci'@(.ctorInfo ..) => ci'
+            | _ => ci
           | .recInfo cvR _ _ _ =>
             match fe.find? cvR.name with
             | some (.recInfo cvRa mI rP rules) => .recInfo cvRa mI rP rules
