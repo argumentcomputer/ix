@@ -194,7 +194,7 @@ theorem cell_of_load {h : Heap F} {p v : SourceValue F} (hl : loadValue h p = .o
       by_cases typed : v0.type = t
       · simp [loadValue, hc, typed, pure, Except.pure, bind, Except.bind] at hl
         subst hl
-        exact ⟨t, addr, rfl, rfl, typed⟩
+        exact ⟨t, addr, rfl, hc, typed⟩
       · simp [loadValue, hc, typed] at hl
   all_goals simp [loadValue] at hl
 
@@ -253,9 +253,10 @@ theorem pdi_strong (c : Ctx) (N : Nat) :
           [x_body, .field (((K + 1 : Nat) : F))], h⟩) (by simp) (by simp) hdesc
       have h39 : (2 : ℕ) ^ 39 = 549755813888 := by norm_num
       obtain ⟨t, loc, rfl, hcell, htyped⟩ := cell_of_load ld12
-      subst htyped
+      obtain rfl : t = .enum kexprEnum := htyped.symm.trans (by simp [Value.type])
       refine ⟨n, f, j, i, s, m + 1, X, bp, hxa, hxf, hxj, hs, hh, ?_, hi, hn32, hj,
-        .down hcell rfl (by simp [RomBound.cellArgs]) hdesc, by omega, hstrip, ?_, hbp⟩
+        .down hcell (by simp [Value.type]) (by simp [RomBound.cellArgs]) hdesc, by omega, hstrip,
+        ?_, hbp⟩
       · rw [hn, show K + 1 + m = K + (m + 1) by omega]
       · rw [show K + (m + 1) = K + 1 + m by omega]; exact hX
     · -- a projection of a bound variable below the arity
@@ -270,9 +271,10 @@ theorem pdi_strong (c : Ctx) (N : Nat) :
         by_contra hn
         exact field_one_ne_zero (by rw [hr1, ite_eq_right hn])
       obtain ⟨t, loc, rfl, hcell, htyped⟩ := cell_of_load ld12
-      subst htyped
+      obtain rfl : t = .enum kexprEnum := htyped.symm.trans (by simp [Value.type])
       refine ⟨((K : Nat) : F), i0, ((K : Nat) : F) - 1 - a0, a0, s, 0, Es, x_projected, rfl, rfl,
-        rfl, hs, rfl, by simp, hlt', hb32, rfl, .here hcell rfl, by omega, rfl, hEs, ld101⟩
+        rfl, hs, rfl, by simp, hlt', hb32, rfl, .here hcell (by simp [Value.type]), by omega, rfl,
+        hEs, ld101⟩
     · exact (field_one_ne_zero (tuple5_inj (hr.symm.trans he221)).1).elim
     · exact (field_one_ne_zero (tuple5_inj (hr.symm.trans he271)).1).elim
     · exact (field_one_ne_zero (tuple5_inj (hr.symm.trans he321)).1).elim
@@ -389,7 +391,7 @@ theorem beta_strip {env : Ix.Kernel.Env .anon} {d : Nat} :
       have hs' : Specs.Whnf.stripLams As.length B = some D := hs
       have hn' : m.pw.isNever = true ∧ LamsNv As.length B := hn
       obtain ⟨hs'', hn''⟩ := strip_instantiate1 As.length B D A 0 hs' hn'.2
-      have hrec := beta_strip As (B.instantiate1 A 0) _ rest hs'' hn''
+      have hrec := beta_strip (env := env) (d := d) As (B.instantiate1 A 0) _ rest hs'' hn''
       have hstep : Red env d (Ix.Kernel.Expr.mkAppN (.app (.lam T B m) A) (As ++ rest))
           (Ix.Kernel.Expr.mkAppN (B.instantiate1 A 0) (As ++ rest)) :=
         red_mkAppN (As ++ rest) (.betaGate hn'.1)
