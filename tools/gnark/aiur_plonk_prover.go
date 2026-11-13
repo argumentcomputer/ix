@@ -10,8 +10,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/consensys/gnark-crypto/ecc"
 	"github.com/consensys/gnark/backend"
@@ -22,7 +24,8 @@ import (
 )
 
 const aiurMaxPublic = 1 << 15
-const aiurMaxWitnessBytes = 12 + 32*(aiurMaxDomain+aiurMaxPublic)
+const aiurMaxSecret = aiurMaxDomain
+const aiurMaxWitnessBytes = 12 + 32*(aiurMaxSecret+aiurMaxPublic)
 const aiurManifestFormat = "ix-aiur-plonk-artifacts-v1"
 
 type aiurPreparation struct {
@@ -46,7 +49,7 @@ func aiurDimensions(s *aiurSchema) (int, error) {
 	if s.PublicInputs > aiurMaxPublic {
 		return 0, fmt.Errorf("too many Aiur public fields")
 	}
-	secret := 0
+	secret := s.PrivateOutputs
 	for _, c := range s.Circuits {
 		secret += c.Rows * c.MainWidth
 	}
@@ -111,6 +114,7 @@ func prepareAiur(request *aiurPreparation) (*aiurManifest, error) {
 	if err := validateAiurInfo(request.Info); err != nil {
 		return nil, err
 	}
+	phase := time.Now()
 	ccs := plonk.NewCS(curveID)
 	if err := readVerified(request.Circuit, request.CircuitHash, ccs); err != nil {
 		return nil, err
@@ -118,18 +122,26 @@ func prepareAiur(request *aiurPreparation) (*aiurManifest, error) {
 	if ccs.GetNbConstraints() != request.Info.Constraints || ccs.GetNbPublicVariables() != schema.PublicInputs || schema.PublicInputs != request.Info.PublicInputs || ccs.GetNbSecretVariables() != secret || len(ccs.GetCommitments().CommitmentIndexes()) != 1 {
 		return nil, fmt.Errorf("compiled Aiur circuit differs from its trusted metadata")
 	}
+	log.Printf("aiur-plonk prepare phase=circuit-load seconds=%.6f domain=%d", time.Since(phase).Seconds(), request.Info.Domain)
+	phase = time.Now()
 	srs, err := readSRS(request.SRS, request.SRSBLAKE3, request.Info.Domain)
 	if err != nil {
 		return nil, err
 	}
+	log.Printf("aiur-plonk prepare phase=srs-load seconds=%.6f domain=%d", time.Since(phase).Seconds(), request.Info.Domain)
+	phase = time.Now()
 	lagrange, err := loadLagrange(srs, request.Info.Domain, request.Lagrange, request.LagrangeSHA256)
 	if err != nil {
 		return nil, err
 	}
+	log.Printf("aiur-plonk prepare phase=lagrange seconds=%.6f domain=%d", time.Since(phase).Seconds(), request.Info.Domain)
+	phase = time.Now()
 	pk, vk, err := plonk.Setup(ccs, srs, lagrange)
 	if err != nil {
 		return nil, err
 	}
+	log.Printf("aiur-plonk prepare phase=key-setup seconds=%.6f domain=%d", time.Since(phase).Seconds(), request.Info.Domain)
+	phase = time.Now()
 	if err := atomicFile(filepath.Join(request.Output, "schema.json"), func(w io.Writer) error { _, err := w.Write(request.Schema); return err }); err != nil {
 		return nil, err
 	}
@@ -153,13 +165,14 @@ func prepareAiur(request *aiurPreparation) (*aiurManifest, error) {
 		}
 		m.Files[name] = item
 	}
+	log.Printf("aiur-plonk prepare phase=artifact-write seconds=%.6f domain=%d", time.Since(phase).Seconds(), request.Info.Domain)
 	return m, m.validate()
 }
 
 // The authenticated schema fixes both counts. Validate them and the exact byte
 // length before gnark allocates its vector; gnark then checks every field word.
 func decodeAiurWitness(data []byte, public, secret int) (witness.Witness, error) {
-	if public < 0 || public > aiurMaxPublic || secret < 0 || secret > aiurMaxDomain || len(data) != 12+32*(public+secret) {
+	if public < 0 || public > aiurMaxPublic || secret < 0 || secret > aiurMaxSecret || len(data) != 12+32*(public+secret) {
 		return nil, fmt.Errorf("Aiur binary witness length differs")
 	}
 	if binary.BigEndian.Uint32(data[:4]) != uint32(public) || binary.BigEndian.Uint32(data[4:8]) != uint32(secret) || binary.BigEndian.Uint32(data[8:12]) != uint32(public+secret) {

@@ -11,7 +11,9 @@ private def naturals (rows : List (List String)) : IO (List (List Nat)) :=
 
 def main (args : List String) : IO Unit := do
   unless args.length ≥ 2 do
-    throw (IO.userError "usage: compress_final_export CONFIGURATION_JSON ARTIFACT [--check] [--no-trace]")
+    throw (IO.userError "usage: compress_final_export CONFIGURATION_JSON ARTIFACT [--check] [--no-trace] [--accumulator]")
+  unless (args.drop 2).all (fun flag => flag == "--check" || flag == "--no-trace" || flag == "--accumulator") do
+    throw (IO.userError "unsupported final export option")
   let json ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile args[0]!))
   let format ← IO.ofExcept (json.getObjValAs? String "format")
   unless format == "ix-aiur-final-configuration-v1" do
@@ -24,8 +26,10 @@ def main (args : List String) : IO Unit := do
     maxStage := ← IO.ofExcept (json.getObjValAs? Nat "max_stage") }
   let lines ← naturals (← IO.ofExcept (json.getObjValAs? (List (List String)) "lines"))
   let bytes ← Final.compilePackage configuration lines (!(args.contains "--no-trace"))
+    (args.contains "--accumulator")
   if args.contains "--check" then
     unless bytes.data == (← IO.FS.readBinFile args[1]!).data do
       throw (IO.userError "final fixture differs from its Lean export")
   else Artifact.write args[1]! bytes
-  IO.println s!"Aiur final compression package: {bytes.size} bytes"
+  let kind := if args.contains "--accumulator" then "deferred accumulator" else "compression"
+  IO.println s!"Aiur final {kind} package: {bytes.size} bytes"

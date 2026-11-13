@@ -33,11 +33,14 @@ zero-weight messages. These changes rearrange the same rational identity.
 
 Schema validation checks canonical scalars, expression indices, matrix widths,
 power-of-two capacities and conservative row/cell limits. Compilation checks
-the actual sparse-constraint domain against the currently admitted `2^25`
-maximum and checks that exactly one auxiliary commitment is present. It rejects
+the actual sparse-constraint domain against the ceremony's `2^26` maximum
+and checks that exactly one auxiliary commitment is present. It rejects
 an oversized circuit before parameter loading or setup. Each capacity determines
 the full next-row cycle, including zero-padded rows; authenticated fixed tables
-retain their exact height.
+retain their exact height. Parameter preparation separately requires an
+independently authenticated prefix containing all `N+3` powers: a file with
+exactly `2^26` powers cannot serve a `2^26` PLONK domain. The larger domain fits
+the ceremony's 100,800,000 powers only with the additional three points present.
 
 The exporter uses minimal hexadecimal scalar strings. Removing leading zero
 padding keeps byte-table-heavy schemas within the bridge's 16 MiB input bound
@@ -72,7 +75,7 @@ trusted verifier-key SHA-256 and independently selected setup anchors.
 u32 counts (public, secret, total), then canonical 32-byte big-endian field words.
 Public fields precede the row-major main matrices in schema order. The decoder
 checks all counts and the exact length against the authenticated schema before
-allocating. It supports up to `2^25` private cells and `2^15` public fields,
+allocating. It supports up to `2^26` private cells and `2^15` public fields,
 without constructing diagnostic JSON strings for large execution traces.
 
 The cross-language fixture compares Rust's binary output with gnark's native
@@ -118,6 +121,64 @@ The dedicated tests accept valid duplicate receivers weighted -1 and 2, or
 calls. They also exercise each unsafe dependency class, the 64-bit fallback,
 and nonboolean requests. The original compiler fixture's depth and ROM mutation
 tests run through this optimized path.
+
+## Terminal pairing outputs
+
+The generic `ix-aiur-plonk-v1` format requires zero private outputs and no
+pairing configuration. The terminal `ix-aiur-plonk-terminal-v1` format requires
+exactly two public statement fields, eighteen private output fields, and:
+
+```json
+"pairing": {
+  "curve": "bn254",
+  "encoding": "affine-u80-v1",
+  "g2": [["x.c0", "x.c1", "y.c0", "y.c1"], ["x.c0", "x.c1", "y.c0", "y.c1"]]
+}
+```
+
+Each coordinate entry is its canonical decimal Fq value. The two fixed anchors
+must be nonzero, on the BN254 twist, and in its prime-order subgroup before
+`NewG2AffineFixed` computes their lines. These are trusted schema constants;
+the Rust terminal exporter also checks them against the Aiur program's fixed
+policy and anchor configuration.
+
+Each private G1 output has nine fields: four little-endian radix-`2^80` limbs
+for x, four for y, then an infinity flag. Native bit constraints bound the
+low limbs to 80 bits and each top limb to 14 bits. Repacking those same bits
+into gnark's emulated Fq and checking its canonical range prevents modular
+aliases. The infinity flag is boolean and equals the zero-coordinate case;
+non-infinite points must satisfy the curve equation. The existing constrained
+gnark `PairingCheck` receives these exact coordinates and the two fixed anchors.
+Its supported `(0, 0)` infinity representation is retained.
+
+Private outputs follow all Main fields in the binary secret vector. They are
+appended to the root LogUp message after the public statement and included in
+the shared commitment before lookup challenges. Thus a valid pairing on other
+private values cannot replace the outputs produced by the Aiur trace. Emulated
+arithmetic is initialized before registering the Aiur multicommit callback so
+its deferred range checks join that same commitment. The public interface
+remains two fields; compilation still requires one auxiliary commitment.
+
+The focused terminal tests cover valid and invalid coordinate encodings, both
+infinities, either single infinity, and replacing the private outputs by another
+valid pairing pair while leaving Main unchanged. The small binding fixture
+compiled to 1,826,105 constraints, a `2^21` domain, two public fields and one
+commitment. This is the gadget regression, not the complete terminal verifier.
+
+After explicitly exporting a full terminal fixture, the opt-in cross-language
+test checks the honest witness, a source execution with a forged KZG opening,
+and detached identity outputs. `IX_AIUR_TERMINAL_CIRCUIT` can reuse its trusted
+compiled circuit to avoid another full compilation:
+
+```sh
+IX_AIUR_TERMINAL_FIXTURE=/path/to/fixture \
+IX_AIUR_TERMINAL_CIRCUIT=/path/to/circuit.bin \
+go test -mod=readonly -run '^TestAiurTerminalRustFixture$' -v .
+```
+
+`IX_AIUR_TERMINAL_PROVE=1` enables the separate small development-proof test.
+That test uses known-trapdoor parameters solely for protocol regression.
+
 
 ## Focused regression
 

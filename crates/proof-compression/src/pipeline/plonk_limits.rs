@@ -1,6 +1,7 @@
 //! PLONK domain and SRS requirements without compiling a circuit or loading powers.
 
-/// The domain bound accepted by the gnark interchange and CUDA backend.
+/// The domain bound accepted by gnark interchange. Accelerators may impose a
+/// smaller operational limit independently of the ceremony's power count.
 pub const MAX_DOMAIN: usize = 1 << 26;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

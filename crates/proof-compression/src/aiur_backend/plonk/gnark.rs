@@ -47,7 +47,8 @@ impl Drop for Response {
 }
 
 /// Compile the trusted schema and persist its constraint system. The exact
-/// PLONK domain is checked against the retained Ignition limit before writing.
+/// PLONK domain is checked against the Ignition ceremony limit before writing.
+/// Preparation separately checks the loaded SRS has all `domain + 3` powers.
 pub fn compile(schema: &Schema, output: &Path) -> Result<CircuitInfo> {
   let schema = serde_json::to_vec(schema)?;
   if schema.len() > 16 << 20 {

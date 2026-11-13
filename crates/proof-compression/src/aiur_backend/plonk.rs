@@ -1,7 +1,8 @@
 //! Fixed-capacity PLONK export of the compiler's native BN254 circuits.
 //!
-//! The schema contains trusted constraints and fixed tables; witnesses contain
-//! only main trace cells and the public call. Capacities are part of the key.
+//! The schema contains trusted constraints and fixed tables. Root-call outputs
+//! are public in the generic format; the terminal contract binds private affine
+//! outputs to a constrained pairing assertion. Capacities are part of the key.
 
 use super::{Bn254, kzg::Compiler};
 use crate::kzg::Scalar;
@@ -19,8 +20,10 @@ use std::collections::HashMap;
 pub mod gnark;
 
 pub const FORMAT: &str = "ix-aiur-plonk-v1";
-/// The retained Ignition prefix currently admits at most this PLONK domain.
-pub const MAX_DOMAIN: usize = 1 << 25;
+pub const TERMINAL_FORMAT: &str = "ix-aiur-plonk-terminal-v1";
+/// Largest power-of-two PLONK domain within the Ignition ceremony. Setup also
+/// requires an authenticated file containing the actual `domain + 3` powers.
+pub const MAX_DOMAIN: usize = crate::pipeline::plonk_limits::MAX_DOMAIN;
 pub const MAX_PUBLIC_INPUTS: usize = 1 << 15;
 
 /// Canonical big-endian field words, in typed public-call order.
@@ -76,10 +79,25 @@ pub struct Circuit {
 }
 
 #[derive(Clone, Debug, Serialize)]
+pub struct Pairing {
+  pub curve: &'static str,
+  pub encoding: &'static str,
+  pub g2: [[String; 4]; 2],
+}
+
+fn no_private_outputs(count: &usize) -> bool {
+  *count == 0
+}
+
+#[derive(Clone, Debug, Serialize)]
 pub struct Schema {
   pub format: &'static str,
   pub callable: usize,
   pub public_inputs: usize,
+  #[serde(skip_serializing_if = "no_private_outputs")]
+  pub private_outputs: usize,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub pairing: Option<Pairing>,
   /// Aiur call and ROM requests have boolean enables. Weighted schemas must
   /// leave this false so their integer multiplicities retain their meaning.
   pub boolean_requests: bool,
@@ -90,6 +108,8 @@ pub struct Schema {
 pub struct Witness {
   pub public: Vec<String>,
   pub main: Vec<Vec<String>>,
+  #[serde(skip_serializing_if = "Vec::is_empty")]
+  pub private_outputs: Vec<String>,
 }
 
 fn scalar(value: Scalar) -> String {
@@ -159,7 +179,7 @@ fn circuit(
     return Err("lookup direction count mismatch".into());
   }
   if rows == 0 || !rows.is_power_of_two() || rows > MAX_DOMAIN {
-    return Err("PLONK row capacity must be a power of two in 1..=2^25".into());
+    return Err("PLONK row capacity must be a power of two in 1..=2^26".into());
   }
   if !input.ext_constraints.is_empty() {
     return Err("compiler input contains extension constraints".into());
@@ -251,12 +271,12 @@ impl<'p, 'a> Exporter<'p, 'a> {
         rows = rows
           .checked_add(capacity)
           .filter(|&rows| rows <= MAX_DOMAIN)
-          .ok_or("PLONK capacity exceeds 2^25 total rows")?;
+          .ok_or("PLONK capacity exceeds 2^26 total rows")?;
         cells = capacity
           .checked_mul(input.main_width)
           .and_then(|size| cells.checked_add(size))
           .filter(|&cells| cells <= MAX_DOMAIN)
-          .ok_or("PLONK trace cells exceed 2^25")?;
+          .ok_or("PLONK trace cells exceed 2^26")?;
         lookup_slots = u64::try_from(capacity)
           .ok()
           .and_then(|height| {
@@ -278,10 +298,60 @@ impl<'p, 'a> Exporter<'p, 'a> {
       format: FORMAT,
       callable,
       public_inputs: claim.len() - 2,
+      private_outputs: 0,
+      pairing: None,
       boolean_requests: true,
       circuits,
     };
     Ok(Self { plan, compiler, entry: entry.into(), schema })
+  }
+
+  /// Bind the deferred source relation to the terminal backend's pairing
+  /// assertion. Its affine outputs are private, but remain part of the root
+  /// call and challenge commitment. The fixed policy and anchors must match
+  /// the independently trusted configuration used for compilation.
+  pub fn terminal(
+    plan: &'p TracePlan<'a, Bn254>,
+    capacities: &[usize],
+    public_args: &[Scalar],
+    output: &[Scalar],
+    configuration: &super::pairing::final_program::Configuration,
+  ) -> Result<Self, String> {
+    use super::pairing::final_program::{ACCUMULATOR_ENTRY, ACCUMULATOR_WORDS};
+    if output.len() != ACCUMULATOR_WORDS {
+      return Err("terminal pairing requires 18 private affine words".into());
+    }
+    let _ = super::g1::decode(&output[..9])?;
+    let _ = super::g1::decode(&output[9..])?;
+    let coordinates = configuration.terminal_coordinates(plan)?;
+    let mut exporter =
+      Self::new(plan, capacities, ACCUMULATOR_ENTRY, public_args, output)?;
+    if exporter.schema.public_inputs != 2 + ACCUMULATOR_WORDS {
+      return Err(
+        "terminal pairing requires two public statement limbs".into(),
+      );
+    }
+    let cells = exporter.schema.circuits.iter().try_fold(
+      ACCUMULATOR_WORDS,
+      |sum, circuit| {
+        circuit
+          .rows
+          .checked_mul(circuit.main_width)
+          .and_then(|n| sum.checked_add(n))
+          .filter(|&n| n <= MAX_DOMAIN)
+          .ok_or("terminal private cells exceed PLONK capacity")
+      },
+    )?;
+    let _ = cells;
+    exporter.schema.format = TERMINAL_FORMAT;
+    exporter.schema.public_inputs = 2;
+    exporter.schema.private_outputs = ACCUMULATOR_WORDS;
+    exporter.schema.pairing = Some(Pairing {
+      curve: "bn254",
+      encoding: "affine-u80-v1",
+      g2: coordinates,
+    });
+    Ok(exporter)
   }
 
   pub fn schema(&self) -> &Schema {
@@ -293,13 +363,15 @@ impl<'p, 'a> Exporter<'p, 'a> {
     record: &Execution<Bn254>,
     args: &[Scalar],
   ) -> Result<Witness, String> {
-    let (public, traces) = self.populated(record, args)?;
+    let (mut public, traces) = self.populated(record, args)?;
+    let private_outputs = public.split_off(self.schema.public_inputs);
     Ok(Witness {
       public: public.into_iter().map(scalar).collect(),
       main: traces
         .into_iter()
         .map(|trace| trace.values.into_iter().map(scalar).collect())
         .collect(),
+      private_outputs: private_outputs.into_iter().map(scalar).collect(),
     })
   }
 
@@ -313,8 +385,14 @@ impl<'p, 'a> Exporter<'p, 'a> {
     if self.schema.public_inputs > MAX_PUBLIC_INPUTS {
       return Err("too many Aiur PLONK public fields".into());
     }
-    let (public, traces) = self.populated(record, args)?;
-    let secret: usize = traces.iter().map(|trace| trace.values.len()).sum();
+    let (mut public, traces) = self.populated(record, args)?;
+    let private_outputs = public.split_off(self.schema.public_inputs);
+    let secret: usize = traces
+      .iter()
+      .map(|trace| trace.values.len())
+      .sum::<usize>()
+      .checked_add(private_outputs.len())
+      .ok_or("PLONK witness size overflow")?;
     let total =
       public.len().checked_add(secret).ok_or("PLONK witness size overflow")?;
     let mut out = Vec::with_capacity(12 + 32 * total);
@@ -326,6 +404,7 @@ impl<'p, 'a> Exporter<'p, 'a> {
     for value in public
       .into_iter()
       .chain(traces.into_iter().flat_map(|trace| trace.values))
+      .chain(private_outputs)
     {
       put_scalar(&mut out, value);
     }
@@ -340,7 +419,9 @@ impl<'p, 'a> Exporter<'p, 'a> {
     let public_args = self.plan.public_args(record, &self.entry, args)?;
     let claim =
       self.plan.public_claim(&self.entry, &public_args, &record.output)?;
-    if claim.len() != self.schema.public_inputs + 2 {
+    if claim.len()
+      != self.schema.public_inputs + self.schema.private_outputs + 2
+    {
       return Err("public claim width changed".into());
     }
     let traces = self.compiler.generate(record, &self.entry, args)?;

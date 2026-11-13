@@ -1204,3 +1204,30 @@ relative filenames, producing identical bundles across output directories.
 Fresh runs clear only their known stage files. A dedicated regression verifies
 that a valid outer BN proof carrying an invalid pairing is rejected; stage
 and canonical-point changes also reach and fail proof binding.
+
+## 27. Constrained gnark pairing boundary
+
+The [terminal-gadget checkpoint](measurements/aiur-terminal-pairing-gadget.json)
+separates the Aiur accumulator-producing entry from complete PLONK acceptance.
+The terminal schema binds eighteen private affine-coordinate words into the
+root lookup and witness commitment, then passes those same values to gnark's
+existing `PairingCheck`. Its fixed anchors must match the artifact's complete
+configuration row. Only the two statement limbs are public. Generic schemas
+retain their previous public-output behavior and cannot silently request this
+terminal contract.
+
+The complete small regression compiles to 20,257,381 constraints and a `2^25`
+domain, down from 62,413,327 with the full Aiur pairing library. Its actual
+binary witness passes; an invalid opening that passes deferred Aiur execution
+is rejected by the pairing gadget, and substituting another valid pair fails
+root-output binding. A smaller `2^21` conformance circuit also produces and
+verifies a real development PLONK proof: 584 native bytes, 864 Solidity bytes,
+two public fields and one auxiliary commitment. It rejects changed statements
+and proofs. These development results do not establish the Init endpoint.
+
+The terminal program was separately executed on the verified fresh Init BN
+proof. It needs 734,887,425 main cells before PLONK lowering, with maximum
+height `2^24`; the returned pairing is correct, but the execution is far above
+the exporter and performance budgets. No proving traces or full PLONK circuit
+were allocated for that input. Reducing intermediate proof width and its
+verification work remains necessary before the complete pipeline can run.

@@ -29,7 +29,7 @@ func compileAiurCircuit(schema *aiurSchema) (constraint.ConstraintSystem, circui
 		Commitments: len(ccs.GetCommitments().CommitmentIndexes()),
 	}
 	if info.Domain > aiurMaxDomain {
-		return nil, info, fmt.Errorf("Aiur PLONK domain exceeds retained Ignition capacity (2^25)")
+		return nil, info, fmt.Errorf("Aiur PLONK domain exceeds Ignition ceremony capacity (2^26)")
 	}
 	if info.Commitments != 1 || info.PublicInputs != schema.PublicInputs {
 		return nil, info, fmt.Errorf("unexpected Aiur PLONK commitment or public-input count")

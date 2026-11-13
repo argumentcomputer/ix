@@ -5,6 +5,22 @@ use ix_proof_compression::aiur_backend::{
 use p3_matrix::Matrix;
 use std::sync::Arc;
 
+#[test]
+fn aiur_domain_limit_requires_the_exact_ignition_opening_prefix() {
+  use ix_proof_compression::{
+    aiur_backend::plonk::MAX_DOMAIN, pipeline::plonk_limits::ParameterSize,
+  };
+  let ceremony_powers = 100_800_000;
+  assert_eq!(MAX_DOMAIN, 1 << 26);
+  let size = ParameterSize::for_domain(MAX_DOMAIN).unwrap();
+  assert_eq!(size.opening_powers(), MAX_DOMAIN + 3);
+  assert!(size.check_capacity(MAX_DOMAIN, ceremony_powers - 1).is_err());
+  assert!(size.check_capacity(MAX_DOMAIN + 2, ceremony_powers - 1).is_err());
+  assert!(size.check_capacity(MAX_DOMAIN + 3, ceremony_powers - 1).is_ok());
+  assert!(ParameterSize::for_domain(MAX_DOMAIN * 2).is_err());
+  assert!(MAX_DOMAIN * 2 + 3 > ceremony_powers);
+}
+
 fn plan() -> TracePlan<'static, Bn254> {
   let package = WidePackage::decode(include_bytes!(
     "../../aiur/tests/fixtures/bn254-trace.ixa"

@@ -57,6 +57,9 @@ else
 fi
 lake env MultiStark/.lake/build/bin/compress_final_export \
   "$fixtures/compress-final.json" "$fixtures/compress-final.ixa" "${check_args[@]}"
+lake env MultiStark/.lake/build/bin/compress_final_export \
+  "$fixtures/compress-final.json" "$fixtures/compress-final-accumulator.ixa" \
+  --accumulator "${check_args[@]}"
 for kind in generator ignition; do
   prefix=bn254-pairing
   if [[ $kind == ignition ]]; then prefix=bn254-pairing-ignition; fi

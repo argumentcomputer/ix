@@ -71,8 +71,14 @@ pub(crate) fn estimate(
     .checked_add(schema.public_inputs as u64)
     .and_then(u64::checked_next_power_of_two)
     .ok_or("domain estimate overflow")?;
+  let requirements = usize::try_from(domain).ok().and_then(|domain| {
+    ix_proof_compression::pipeline::plonk_limits::ParameterSize::for_domain(
+      domain,
+    )
+    .ok()
+  });
   Ok(
-    serde_json::json!({"format":"ix-aiur-plonk-extrapolated-cost-v1","constraints_extrapolated":constraints,"domain_extrapolated":domain,"fits_retained_ignition":domain<=1<<25,"baseline_constraints":base.constraints,"baseline_dynamic_rows":4,"public_inputs":schema.public_inputs,"increments":measured}),
+    serde_json::json!({"format":"ix-aiur-plonk-extrapolated-cost-v1","constraints_extrapolated":constraints,"domain_extrapolated":domain,"fits_ignition_ceremony":requirements.is_some(),"required_srs_powers":requirements.map(|size|size.opening_powers()),"loaded_srs_capacity_checked":false,"baseline_constraints":base.constraints,"baseline_dynamic_rows":4,"public_inputs":schema.public_inputs,"increments":measured}),
   )
 }
 

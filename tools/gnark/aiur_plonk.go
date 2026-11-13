@@ -9,7 +9,10 @@ import (
 )
 
 const aiurPlonkFormat = "ix-aiur-plonk-v1"
-const aiurMaxDomain = 1 << 25
+
+// The next power-of-two domain would exceed Ignition's 100,800,000 powers.
+// Parameter loading independently requires the exact domain+3 opening powers.
+const aiurMaxDomain = 1 << 26
 
 type aiurNode struct {
 	Op     string `json:"op"`
@@ -38,29 +41,36 @@ type aiurChip struct {
 }
 
 type aiurSchema struct {
-	Format          string     `json:"format"`
-	Callable        int        `json:"callable"`
-	PublicInputs    int        `json:"public_inputs"`
-	BooleanRequests bool       `json:"boolean_requests,omitempty"`
-	Circuits        []aiurChip `json:"circuits"`
+	Format          string       `json:"format"`
+	Callable        int          `json:"callable"`
+	PublicInputs    int          `json:"public_inputs"`
+	PrivateOutputs  int          `json:"private_outputs,omitempty"`
+	Pairing         *aiurPairing `json:"pairing,omitempty"`
+	BooleanRequests bool         `json:"boolean_requests,omitempty"`
+	Circuits        []aiurChip   `json:"circuits"`
 }
 
 type aiurWitness struct {
-	Public []string   `json:"public"`
-	Main   [][]string `json:"main"`
+	Public         []string   `json:"public"`
+	Main           [][]string `json:"main"`
+	PrivateOutputs []string   `json:"private_outputs,omitempty"`
 }
 
 type aiurCircuit struct {
-	Public []frontend.Variable `gnark:",public"`
-	Main   [][]frontend.Variable
-	Schema *aiurSchema `gnark:"-"`
+	Public         []frontend.Variable `gnark:",public"`
+	Main           [][]frontend.Variable
+	PrivateOutputs []frontend.Variable
+	Schema         *aiurSchema `gnark:"-"`
 }
 
 func (s *aiurSchema) validate() error {
-	if s.Format != aiurPlonkFormat || s.Callable < 0 || s.PublicInputs < 0 || s.PublicInputs > aiurMaxDomain || len(s.Circuits) == 0 {
+	if err := s.validateOutputContract(); err != nil {
+		return err
+	}
+	if s.Callable < 0 || s.PublicInputs < 0 || s.PublicInputs > aiurMaxDomain || len(s.Circuits) == 0 {
 		return fmt.Errorf("invalid Aiur PLONK header")
 	}
-	rows, cells := 0, 0
+	rows, cells := 0, s.PrivateOutputs
 	var slots uint64 = 1
 	for _, c := range s.Circuits {
 		if c.Rows <= 0 || c.Rows > aiurMaxDomain || c.Rows&(c.Rows-1) != 0 || c.MainWidth <= 0 || c.MainWidth > aiurMaxDomain || c.FixedWidth < 0 || c.FixedWidth > aiurMaxDomain {
@@ -68,11 +78,11 @@ func (s *aiurSchema) validate() error {
 		}
 		rows += c.Rows
 		if rows > aiurMaxDomain || c.MainWidth > aiurMaxDomain/c.Rows {
-			return fmt.Errorf("Aiur capacity exceeds retained Ignition bound")
+			return fmt.Errorf("Aiur capacity exceeds the Ignition ceremony bound")
 		}
 		cells += c.Rows * c.MainWidth
 		if cells > aiurMaxDomain {
-			return fmt.Errorf("Aiur trace cells exceed PLONK capacity")
+			return fmt.Errorf("Aiur trace and private-output cells exceed PLONK capacity")
 		}
 		if c.FixedWidth > aiurMaxDomain/c.Rows || len(c.Fixed) != c.Rows*c.FixedWidth {
 			return fmt.Errorf("invalid authenticated fixed matrix")
@@ -140,7 +150,7 @@ func newAiurCircuit(schema *aiurSchema) (*aiurCircuit, error) {
 	if err := schema.validate(); err != nil {
 		return nil, err
 	}
-	c := &aiurCircuit{Schema: schema, Public: make([]frontend.Variable, schema.PublicInputs), Main: make([][]frontend.Variable, len(schema.Circuits))}
+	c := &aiurCircuit{Schema: schema, Public: make([]frontend.Variable, schema.PublicInputs), Main: make([][]frontend.Variable, len(schema.Circuits)), PrivateOutputs: make([]frontend.Variable, schema.PrivateOutputs)}
 	for i, chip := range schema.Circuits {
 		c.Main[i] = make([]frontend.Variable, chip.Rows*chip.MainWidth)
 	}
@@ -152,7 +162,7 @@ func assignAiur(schema *aiurSchema, w *aiurWitness) (*aiurCircuit, error) {
 	if err != nil {
 		return nil, err
 	}
-	if len(w.Public) != len(c.Public) || len(w.Main) != len(c.Main) {
+	if len(w.Public) != len(c.Public) || len(w.Main) != len(c.Main) || len(w.PrivateOutputs) != len(c.PrivateOutputs) {
 		return nil, fmt.Errorf("Aiur witness shape differs")
 	}
 	convert := func(dst []frontend.Variable, src []string) error {
@@ -176,6 +186,9 @@ func assignAiur(schema *aiurSchema, w *aiurWitness) (*aiurCircuit, error) {
 			return nil, err
 		}
 	}
+	if err := convert(c.PrivateOutputs, w.PrivateOutputs); err != nil {
+		return nil, err
+	}
 	return c, nil
 }
 
@@ -189,13 +202,15 @@ func (c *aiurCircuit) Define(api frontend.API) error {
 	if err := c.Schema.validate(); err != nil {
 		return err
 	}
-	if len(c.Public) != c.Schema.PublicInputs || len(c.Main) != len(c.Schema.Circuits) {
+	if len(c.Public) != c.Schema.PublicInputs || len(c.Main) != len(c.Schema.Circuits) || len(c.PrivateOutputs) != c.Schema.PrivateOutputs {
 		return fmt.Errorf("Aiur circuit shape differs")
 	}
 	elideCounts := c.Schema.countElisionSafe()
 	var committed []frontend.Variable
 	committed = append(committed, c.Public...)
-	messages := []aiurMessageGroup{{count: 1, args: [][]frontend.Variable{append([]frontend.Variable{1, c.Schema.Callable}, c.Public...)}}}
+	root := append([]frontend.Variable{1, c.Schema.Callable}, c.Public...)
+	root = append(root, c.PrivateOutputs...)
+	messages := []aiurMessageGroup{{count: 1, args: [][]frontend.Variable{root}}}
 	for i, chip := range c.Schema.Circuits {
 		if len(c.Main[i]) != chip.Rows*chip.MainWidth {
 			return fmt.Errorf("Aiur main capacity differs")
@@ -274,6 +289,14 @@ func (c *aiurCircuit) Define(api frontend.API) error {
 					messages = append(messages, aiurMessageGroup{count: count, negative: lookup.Negative, args: [][]frontend.Variable{args}})
 				}
 			}
+		}
+	}
+	committed = append(committed, c.PrivateOutputs...)
+	// Emulated arithmetic registers deferred range checks before the shared
+	// multicommit callback closes its collection of committed variables.
+	if c.Schema.Pairing != nil {
+		if err := c.Schema.Pairing.constrain(api, c.PrivateOutputs); err != nil {
+			return err
 		}
 	}
 	multicommit.WithCommitment(api, func(api frontend.API, gamma frontend.Variable) error {
