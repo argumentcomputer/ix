@@ -18,8 +18,10 @@ functions                    per function: the stack check (if any), then one bl
 The program starts at `main`'s wrapper, which must exist. Besides the
 program, `run` returns its layout shape (a group per function, wrapper and
 the exit group, with the blocks to place last) and the exported symbols.
-Kernel-evaluable style: lists, folds, and a persistent map from function
-to entry block.
+Kernel-evaluable style: lists, folds, reads of the function array at an
+index, and a persistent map from function to entry block. Every pass is
+linear in the functions and their call sites (`Proof/Linear.lean`: the
+first forms, which read a list and appended, are kept as specifications).
 
 **Clobber sets**. The allocation validator trusts `Xl.Env.clobbers`:
 after a call it keeps the caller's values in every register outside the
