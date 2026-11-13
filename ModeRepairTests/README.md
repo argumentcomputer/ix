@@ -26,7 +26,7 @@ On the box (`~/runs/ixcc`), jobs go through `run.sh NAME on.sh fix-n . …`, und
 ## Where this branch differs from note 12
 
 The IxVM side's twelfth note (`IXCC-NOTE-12.md`, 2026-11-13, §2) agreed to our rulings and named
-some repairs in its own terms. Four places where this branch does something else, with the reason:
+some repairs in its own terms. The places where this branch does something else, with the reason:
 
 - **`.clo` is not admitted beside `.pap` in `ClosureAt`** (note 12 §2 item 7, A.8). An input at an
   arrow skeleton is still a partial application of a program constant, whose body the checker has
@@ -53,6 +53,17 @@ some repairs in its own terms. Four places where this branch does something else
   (W4 to W6). `Param.noLeaf` stays, unread. The cost: a borrow annotation on a number is not
   enforced on its own binder. `Statement.lean` does not change, since `ArgOk` and `ExternVal`
   already require a leaf's taint to be empty.
+- **V1, the raw recursor check, is made at the recursors run bodies call** (note 12 §2 item 1
+  locates it at `stuckAt`, that is, at every recursor of the closure). `readProg` checks each
+  recursor a read run body names (at a spine's head or standing alone, an argument too), and,
+  transitively, every recursor the rules of a checked recursor call (`Reading.rawRecursors`).
+  Their rule's "mentioned nowhere else" refuses a recursor whose induction hypothesis passes an
+  erased index; checked closure-wide that would refuse every subject that only matches on such a
+  type, since `casesOn` brings the recursor into the closure without firing it raw.
+- **`ModeSource.lean`** (in `IxC/Resource/`, which note 12 §1 freezes for this branch whole) was
+  touched once, by V2 (note 12 §2 item 2 names it): `leadingBinders`' docstring only. The reading
+  no longer uses `leadingBinders` (since V2 `ifaceErased` reads with `readForalls`); their suite's
+  `eraseBinder` still does, to find a binder's node in a root block.
 
 ## Results of record
 

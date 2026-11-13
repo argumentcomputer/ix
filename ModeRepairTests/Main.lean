@@ -2700,6 +2700,86 @@ def v2Telescopes (t : IO.Ref Tally) : IO Unit := do
       | .error e => e)
   readCheck t "V2 that definition: accept" (p.subj [(d, dRecord natA)] d) ""
 
+/-! ### V1, follow-up (the lead's ruling): every occurrence, and the recursors a rule calls
+
+`K.rec`'s type as `kRecords` writes it (refs `natA`, `K`, `K.mk`), and
+`useKA (g : K.rec's type → Nat) : Nat := g K.rec.{1}` (345, refs `natA`, `K`, `K.mk`, `K.rec`):
+the recursor passed as an argument, unapplied. `erases`: `b`'s binder in `g`'s domain (node 6 of
+both roots) is erased, as in the recursor's type. -/
+def kRecTyp : Ixon.Expr :=
+  let nat := xRef 0
+  .all (.all (xRef 1) (.sort 0))
+    (.all (.all nat (.all nat (.all nat (.app (xVar 3) (xApp (xRef 2) [xVar 2, xVar 1, xVar 0])))))
+      (.all (xRef 1) (.app (xVar 2) (xVar 0))))
+
+def useKARecord (natA : Address) (erases : Bool) : Address × Ixon.Constant :=
+  let gDom := Ixon.Expr.all kRecTyp (xRef 0)
+  (addr 345, withSection
+    { info := .defn (safeDef (.all gDom (xRef 0)) (.lam gDom (.app (xVar 0) (xRef 3 #[0])))),
+      sharing := #[], refs := #[natA, addr 271, addr 272, addr 273], univs := #[.succ .zero] }
+    (modeAt (if erases then [(0, 6, erasedM), (1, 6, erasedM)] else [])))
+
+/-- A mutual block (350; projections 351 to 354) `A | a (@erased x : Nat)`, `B | b (y : A)`, with
+`A.rec` (355) and `B.rec` (356), each over both motives and both minor premises
+`mA : (x : Nat) → motA (A.a x)`, `mB : (y : A) → (ih : motA y) → motB (B.b y)`. `B.rec`'s rule
+for `b` is `mB y (A.rec motA motB mA mB y)`: it dispatches `mB`, whose binders are default, so
+`B.rec` meets the check by itself; `A.rec`'s rule dispatches `mA`. `good`: `mA`'s `x` erased
+(node 5 of both recursors' types, and node 4 of `useB2`'s value); else `A.rec` passes the erased
+field to a default binder, and only its call in `B.rec`'s rule reaches it.
+`useB2 (n : Nat) (t : B) : Nat := B.rec.{1} (fun _ => Nat) (fun _ => Nat) (fun x => n) (fun y ih => ih) t`
+(357) calls `B.rec` alone. -/
+def abcRecords (natA : Address) (good : Bool) : List (Address × Ixon.Constant) :=
+  let nat := xRef 0
+  let block : Ixon.Constant := withSection
+    { info := .muts #[.indc (indOf #[ctorOf 0 1 (.all nat (.recur 0 #[]))]),
+                      .indc (indOf #[ctorOf 0 1 (.all (.recur 0 #[]) (.recur 1 #[]))])],
+      sharing := #[], refs := #[natA], univs := #[.succ .zero] }
+    (modeAt [(1, 0, erasedM)])
+  -- both recursors: refs natA, A, B, A.a, B.b, A.rec, B.rec; univs u
+  let motA := Ixon.Expr.all (xRef 1) (.sort 0)
+  let motB := Ixon.Expr.all (xRef 2) (.sort 0)
+  let mA := Ixon.Expr.all nat (.app (xVar 2) (.app (xRef 3) (xVar 0)))
+  let mB := Ixon.Expr.all (xRef 1) (.all (.app (xVar 3) (xVar 0)) (.app (xVar 3) (.app (xRef 4) (xVar 1))))
+  let head (major : Ixon.Expr) (mot : Nat) : Ixon.Expr :=
+    .all motA (.all motB (.all mA (.all mB (.all major (.app (xVar mot) (xVar 0))))))
+  let lams (body : Ixon.Expr) (fieldDom : Ixon.Expr) : Ixon.Expr :=
+    .lam motA (.lam motB (.lam mA (.lam mB (.lam fieldDom body))))
+  let recRecord (typ rhs : Ixon.Expr) : Ixon.Constant :=
+    let rr : Ixon.Recursor :=
+      { k := false, isUnsafe := false, lvls := 1, params := 0, indices := 0, motives := 2,
+        minors := 2, typ, rules := #[{ fields := 1, rhs }] }
+    withSection
+      { info := .recr rr,
+        sharing := #[], refs := #[natA, addr 351, addr 352, addr 353, addr 354, addr 355, addr 356],
+        univs := #[.var 0] }
+      (modeAt (if good then [(0, 5, erasedM)] else []))
+  -- A.rec's rule (a): `mA x`; B.rec's rule (b): `mB y (A.rec motA motB mA mB y)`
+  let aRec := recRecord (head (xRef 1) 4) (lams (.app (xVar 2) (xVar 0)) nat)
+  let bRec := recRecord (head (xRef 2) 3)
+    (lams (xApp (xVar 1) [xVar 0, xApp (xRef 5 #[0]) [xVar 4, xVar 3, xVar 2, xVar 1, xVar 0]]) (xRef 1))
+  -- useB2: refs natA, A, B, B.rec; univs 1
+  let useB2 : Ixon.Constant := withSection
+    { info := .defn (safeDef (.all nat (.all (xRef 2) nat))
+        (.lam nat (.lam (xRef 2) (xApp (xRef 3 #[0]) [.lam (xRef 1) nat, .lam (xRef 2) nat,
+          .lam nat (xVar 2), .lam (xRef 1) (.lam nat (xVar 0)), xVar 0])))),
+      sharing := #[], refs := #[natA, addr 351, addr 352, addr 356], univs := #[.succ .zero] }
+    (modeAt (if good then [(1, 4, erasedM)] else []))
+  [(addr 350, block), (addr 351, projI (addr 350) 0), (addr 352, projI (addr 350) 1),
+   (addr 353, projC (addr 350) 0 0), (addr 354, projC (addr 350) 1 0), (addr 355, aRec), (addr 356, bRec),
+   (addr 357, useB2)]
+
+def v1FollowUp (t : IO.Ref Tally) : IO Unit := do
+  let p ← loadPre
+  let natA ← p.role .nat
+  readCheck t "V1 follow-up: K.rec passed unapplied as an argument, its rule not erasing b: refused (found standing alone)"
+    (p.subj (useKARecord natA false :: kRecords natA false false) (addr 345))
+    "is erased in its constructor and not in minor premise 0"
+  readCheck t "V1 follow-up: B.rec called, A.rec reached through its rule, both erasing mA's x: accept"
+    (p.subj (abcRecords natA true) (addr 357)) ""
+  -- REPAIR V1 (follow-up): accepted before (only the called recursor's rules were compared)
+  readCheck t "V1 follow-up: B.rec called, A.rec (reached only through B.rec's rule) not erasing x: refused"
+    (p.subj (abcRecords natA false) (addr 357)) "the rules of a raw recursor"
+
 def run : IO UInt32 := do
   let t ← IO.mkRef ({} : Tally)
   IO.println "== Part 1: the suite's cases without a record fixture"
@@ -2722,6 +2802,7 @@ def run : IO UInt32 := do
   IO.println "== Part 3, continued: note 12's reading items"
   try v1Recursors t catch e => check1 t "V1" false s!"error: {e}"
   try v2Telescopes t catch e => check1 t "V2" false s!"error: {e}"
+  try v1FollowUp t catch e => check1 t "V1 follow-up" false s!"error: {e}"
   let s ← t.get
   IO.println s!"== {s.pass} passed, {s.fail} failed"
   for l in s.failed do IO.println s!"   failed: {l}"

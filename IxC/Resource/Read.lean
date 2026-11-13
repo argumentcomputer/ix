@@ -36,7 +36,8 @@ the kernel's own judgements; the checker reads with a fueled one.
   `stuck` with its interface.
 * **Raw recursors.** A recursor a run term calls (not through a case shape)
   has rules that pass each field its constructor erases only to a binder of the
-  dispatched minor premise that erases it (`Reading.recRules`).
+  dispatched minor premise that erases it (`Reading.recRules`), as do the recursors
+  its rules call.
 
 **No supplied behaviour reads what an interface erases.** A case rule, a
 primitive, a constructor and an extern run in place of a body, so their modes
@@ -1087,6 +1088,37 @@ def mentions (c : Ixon.Constant) : Nat → Nat → Ixon.Expr → Except String B
     | .share _ => throw "sharing reference out of range"
     | _ => pure false
 
+/-- The recursors an expression of record `c` (owned by `owner`) names where it runs, each with
+the number of arguments of the spine it heads (0 standing alone): through sharing references,
+under λs (not in their domains, which are types), in a `let`'s value and body, in a projection;
+not in a ∀ (a type). The recursors a recursor's rule calls, natively, when it fires. -/
+def recOccs (s : Subject) (owner : Address) (c : Ixon.Constant) :
+    Nat → Ixon.Expr → Except String (List (Ref × Nat))
+  | 0, _ => throw "expression too large"
+  | n + 1, e => do
+    let isRec (r : Ref) : Bool := (recursorAt? s r).isSome
+    match Ix.Kernel.Reader.unshare c e with
+    | .app f a => do
+      let (h, args) ← ixSpineU c n (.app f a)
+      let mut out ← match headRefOf s owner c h with
+        | some r => pure (if isRec r then [(r, args.size)] else [])
+        | none => recOccs s owner c n h
+      for x in args do out := out ++ (← recOccs s owner c n x)
+      pure out
+    | .ref i us =>
+      pure (match headRefOf s owner c (.ref i us) with
+        | some r => if isRec r then [(r, 0)] else []
+        | none => [])
+    | .recur i us =>
+      pure (match headRefOf s owner c (.recur i us) with
+        | some r => if isRec r then [(r, 0)] else []
+        | none => [])
+    | .lam _ b => recOccs s owner c n b
+    | .letE _ _ _ v b => do pure ((← recOccs s owner c n v) ++ (← recOccs s owner c n b))
+    | .prj _ _ x => recOccs s owner c n x
+    | .share _ => throw "sharing reference out of range"
+    | _ => pure []
+
 /-- The modes of a skeleton's arrows, outermost first: a type's leading ∀s, as `readSkel` reads
 them (through sharing references). -/
 def arrowModes : Skel → List (BinderMode × ResultMode)
@@ -1117,8 +1149,12 @@ telescope has at least the constructor's fields; each field the constructor's re
 erased is bound erased in `m`'s telescope, is passed as `m`'s argument at its own position, and
 is mentioned in no other argument of the body (the λs' domains are types, not read); the
 binders of `m`'s telescope past the fields (its induction hypotheses) are of the default mode.
-The pairing is decided from the records alone; nothing is assumed of the kernel's rules. -/
-def Reading.recRules (rd : Reading) (cl : Classifier) (r : Ref) : Except String Unit := do
+The pairing is decided from the records alone; nothing is assumed of the kernel's rules.
+Answers whether some constructor of the inductive has an erased field, and the recursors the
+rules' bodies call (`recOccs`: a rule's induction hypotheses call this recursor, another of a
+mutual block, or a nested inductive's auxiliary one), each with its argument count. -/
+def Reading.recRules (rd : Reading) (cl : Classifier) (r : Ref) :
+    Except String (Bool × List (Ref × Nat)) := do
   let some (c, rr) := recursorAt? rd.s r | throw "no recursor at this reference"
   let x ← rd.rcx cl r
   let base := match r with
@@ -1135,6 +1171,8 @@ def Reading.recRules (rd : Reading) (cl : Classifier) (r : Ref) : Except String 
     throw "a recursor's major premise is of no inductive"
   let some indV := inductiveAt? rd.s ind | throw "a recursor's major premise is of no inductive"
   unless rr.rules.size == indV.ctors.size do throw "a recursor's rules are not its inductive's constructors"
+  let mut erasedField := false
+  let mut calls : List (Ref × Nat) := []
   for (rule, j) in rr.rules.zipIdx do
     let some ctor := indV.ctors[j]? | throw "a recursor's rules are not its inductive's constructors"
     let nf := rule.fields.toNat
@@ -1153,6 +1191,7 @@ def Reading.recRules (rd : Reading) (cl : Classifier) (r : Ref) : Except String 
       throw s!"rule {j}: minor premise {m} has fewer binders than its constructor has fields"
     for (fm, q) in fms.zipIdx do
       unless fm.input == .erased do continue
+      erasedField := true
       unless (tele[q]?.map (·.1)) == some .erased do
         throw s!"rule {j}: field {q} is erased in its constructor and not in minor premise {m}, which the rule dispatches"
       let fv := nf - 1 - q
@@ -1165,6 +1204,8 @@ def Reading.recRules (rd : Reading) (cl : Classifier) (r : Ref) : Except String 
     for (i, res) in tele.drop nf do
       unless i == .many && res == .shared do
         throw s!"rule {j}: an induction hypothesis's binder in minor premise {m} has a mode"
+    calls := calls ++ (← recOccs rd.s x.owner c readFuel body)
+  pure (erasedField, calls)
 
 /-- The constant heads of a run term's spines, each with its number of arguments: a spine's head
 constant, and a constant standing alone (with none). A `Term.case` is a case shape fully
@@ -1191,18 +1232,35 @@ def constHeads : Nat → Term → Except String (List (Ref × Nat))
       pure out
     | .irr | .var .. | .natLit _ | .strLit _ => pure []
 
-/-- **The raw recursors the run bodies call** meet `Reading.recRules`. -/
+/-- **The raw recursors the run bodies call** meet `Reading.recRules` (V1). Every occurrence of
+a recursor in a run body is one (`constHeads`: at a spine's head or standing alone, as an
+argument too), and so is every recursor a checked recursor's rules call (`recOccs`),
+transitively: a rule fired natively fires those. `runR` is stuck at a recursor. -/
 def Reading.rawRecursors (rd : Reading) (cl : Classifier) (defs : Array (Ref × RunDef)) :
     Except String Unit := do
-  let mut seen : Array Ref := #[]
+  -- the work list: each occurrence, with the recursor whose rules it is in (`none`: a run body)
+  let mut todo : Array (Ref × Nat × Option Ref) := #[]
   for (_, d) in defs do
     let .body _ _ _ _ t := d | continue
-    for (r, _) in ← constHeads readFuel t do
-      if (recursorAt? rd.s r).isSome && !seen.contains r then
-        seen := seen.push r
-        match rd.recRules cl r with
-        | .ok () => pure ()
-        | .error e => throw s!"a raw recursor a run body calls ({(repr r).pretty}): {e}"
+    for (r, nargs) in ← constHeads readFuel t do
+      if (recursorAt? rd.s r).isSome then todo := todo.push (r, nargs, none)
+  let mut seen : Array (Ref × Bool) := #[]
+  let mut i := 0
+  for _ in [0:readFuel] do
+    let some (r, nargs, via) := todo[i]? | break
+    i := i + 1
+    let some _ := recursorAt? rd.s r | continue
+    let at_ := match via with
+      | none => s!"a raw recursor a run body calls ({(repr r).pretty})"
+      | some v => s!"a recursor ({(repr r).pretty}) the rules of a raw recursor ({(repr v).pretty}) call"
+    let _ := nargs
+    if (seen.find? (·.1 == r)).isNone then
+      match rd.recRules cl r with
+      | .ok (e, calls) =>
+        seen := seen.push (r, e)
+        for (r', n') in calls do todo := todo.push (r', n', some r)
+      | .error e => throw s!"{at_}: {e}"
+  if i < todo.size then throw "too many raw recursor calls"
 
 /-! ## The run program -/
 
@@ -1220,7 +1278,7 @@ def refsOf (a : Address) (c : Ixon.Constant) : Array Ref :=
   | _ => #[]
 
 /-- **The run program of a subject**, read with the class oracle `cl`; every raw recursor its run
-bodies call meets `Reading.recRules` (V1). -/
+bodies call meets `Reading.recRules` (V1), and so do the recursors their rules call. -/
 def readProg (s : Subject) (cl : Classifier) : Except String Prog := do
   let rd := Reading.make s
   rd.complete
