@@ -92,8 +92,9 @@ theorem recStoredStep {μ : CheckMode} {J : Judgements md} {E : Env md} (mpC : E
       (∀ r ∈ rhss, letFree r = true) ∧
       Forall₂ (J.annot ⟨.recInfo cvRa p.majorIdx p.rulePrefix [] :: E.consts⟩ 0) p.rhss
         rhss ∧
-      ctorsA.all (fun c => Expr.recRulePlain cvRg.type p.majorIdx p.rulePrefix p.nP
-        c.1.levelParams) = true)
+      letFree cvRi.type = true)
+    (hplG : ctorsA.all (fun c => Expr.recRulePlain cvRg.type p.majorIdx p.rulePrefix p.nP
+      c.1.levelParams) = true)
     (hplAll : ctorsA.all (fun c => Expr.recRulePlain cvRa.type p.majorIdx p.rulePrefix p.nP
       c.1.levelParams) = true)
     (hctor : ∀ (j : Nat) (cA : ConstantVal md × Nat), ctorsA[j]? = some cA →
@@ -109,7 +110,7 @@ theorem recStoredStep {μ : CheckMode} {J : Judgements md} {E : Env md} (mpC : E
         :: E.consts⟩,
       mpd.base2.acval = acvalWith mpC.base2.acval cvRa.name A := by
   have hstored : NativeRecJ J E p cvTa ctorsA cvRa rhss := ⟨cvRg, rhsG, hRecG, Or.inr hdecl⟩
-  obtain ⟨cvRi, hccv, hcvRa, hW, hWr, hlf, -, hplG⟩ := hdecl
+  obtain ⟨cvRi, hccv, hcvRa, hW, hWr, hlf, -, -⟩ := hdecl
   obtain ⟨-, -, cvRi₀, recTy, sty, u, hccv₀, hgenR, -, -, -, hfvR, -, -, -, -, hcvRg⟩ := id hRecG
   have hcvRg : cvRg = ⟨p.cvR.name, p.cvR.levelParams, recTy⟩ := hcvRg
   obtain ⟨hnG, hlG, hfreshP, -⟩ := hRecG.recursor

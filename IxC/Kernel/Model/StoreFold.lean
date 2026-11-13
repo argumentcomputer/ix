@@ -1031,6 +1031,19 @@ theorem nativeFront {J : Judgements md} (hfr : ∀ e : Env md, JudgeFrames J e)
     obtain ⟨-, -, hlp, hres, hstrip⟩ := hcf j cA hj
     exact ⟨consSumCtors_find?_ctor hndA cA (List.mem_of_getElem? hj), hlp, hres, hstrip⟩
 
+/-- **Every rule the block stores fires** (`NativeRecJ.plain`, at the front's lookups). -/
+theorem NativeFront.plain {p : NativeParts md} {cvTa : ConstantVal md}
+    {ctorsA : List (ConstantVal md × Nat)} {envC : Env md} (hF : NativeFront p cvTa ctorsA envC)
+    {J : Judgements md} {cvRa : ConstantVal md} {rhss : List (Expr md)}
+    (hRec : NativeRecJ J envC p cvTa ctorsA cvRa rhss) (hk : ctorsA.length = p.kinds.length)
+    (hlenA : ctorsA.length = p.ctors.length) :
+    ctorsA.all (fun c => Expr.recRulePlain cvRa.type p.majorIdx p.rulePrefix p.nP
+      c.1.levelParams) = true :=
+  let ⟨caps, hfT⟩ := hF.former
+  hRec.plain ⟨cvTa, caps, hfT⟩ hk hlenA fun c hc =>
+    let ⟨j, hj⟩ := List.mem_iff_getElem?.mp hc
+    (hF.ctor j c hj).2.1
+
 /-- **The projection table's stage keeps the store invariant**: at a structure-like block the
 table is consed with its head data, which the former's and the constructor's lookups give;
 otherwise nothing is installed. -/
@@ -1078,8 +1091,9 @@ theorem storeInv_declNativeRunJ {J : Judgements md} (hfr : ∀ e : Env md, Judge
     {env env₂ : Env md} {p₀ : NativeParts md} (hrc : NativeRecog p₀) (h : StoreInv env)
     (hrun : DeclNativeRunJ J env p₀ env₂) : StoreInv env₂ := by
   obtain ⟨hnd, isRec, env₁, cvTa, p₁, p, ctorsA, sortss, kinds, cvRa, rhss, -, -, -, hInd, hp,
-    hCtors, -, -, -, -, -, -, -, hRec, hplAll, hTbl⟩ := hrun
+    hCtors, -, -, -, -, -, hFOk, -, hRec, hTbl⟩ := hrun
   have hF := nativeFront hfr h hrc hnd hInd hp hCtors
+  have hplAll := hF.plain hRec (nativeFieldsOk_length hFOk) hCtors.1
   -- the recursor
   obtain ⟨hnR, -, hfR, -⟩ := hRec.recursor
   have hfreshR : (Ix.Kernel.consSumCtors p.nP ctorsA env₁).find? cvRa.name = none := by

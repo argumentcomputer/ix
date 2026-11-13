@@ -317,7 +317,7 @@ theorem declNativeRunJ_newRulesAvoid {J : Judgements md} (hfr : ∀ e : Env md, 
     {T : Key md} (hT : (env.find? T).isSome = true) (hrun : DeclNativeRunJ J env p₀ env₂) :
     NewRulesAvoid env env₂ T := by
   obtain ⟨hnd, isRec, env₁, cvTa, p₁, p, ctorsA, sortss, kinds, cvRa, rhss, -, -, -, hInd, hp,
-    hCtors, -, -, -, -, -, -, -, hRec, -, hTbl⟩ := hrun
+    hCtors, -, -, -, -, -, -, -, hRec, hTbl⟩ := hrun
   have hF := nativeFront hfr h hrc hnd hInd hp hCtors
   have hfreshT' : env.find? p.cvT.name = none := by
     rw [native_cvT hInd hp]

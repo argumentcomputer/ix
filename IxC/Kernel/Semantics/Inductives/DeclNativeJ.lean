@@ -185,12 +185,14 @@ def NativeRecRunJ (J : Judgements md) (env : Env md) (p : NativeParts md)
 rules `rhsG`: the generated one, as the kernel stores it, or the declared one. The
 declared recursor is checked (`cvRi`); its type and each of its rules are the
 generated ones with type-annotation wrappers consumed at binder domains (`WrapRel`,
-at the lookup of the environment the recursor is checked at), the rules carry no
-`let`, they annotate the declared rules at the environment holding the recursor,
-and the generated type fires every rule (`Expr.recRulePlain`). One definition, so
-that which recursor is stored is decided in one place. -/
+at the lookup of the environment the recursor is checked at), the type and the rules
+carry no `let`, and the rules annotate the declared rules at the environment holding
+the recursor. One definition, so that which recursor is stored is decided in one
+place. The generated type fires every rule (`recRulePlain_structRecTyR`), and so does
+the declared one, whose major premise is the generated one's
+(`WrapRel.major_structFamI`). -/
 def RecStoredJ (J : Judgements md) (env : Env md) (p : NativeParts md)
-    (ctorsA : List (ConstantVal md × Nat)) (cvRg : ConstantVal md) (rhsG : List (Expr md))
+    (cvRg : ConstantVal md) (rhsG : List (Expr md))
     (cvRa : ConstantVal md) (rhss : List (Expr md)) : Prop :=
   (cvRa = cvRg ∧ rhss = rhsG) ∨
   ∃ cvRi : ConstantVal md,
@@ -201,8 +203,7 @@ def RecStoredJ (J : Judgements md) (env : Env md) (p : NativeParts md)
     (∀ r ∈ rhss, letFree r = true) ∧
     Forall₂ (J.annot ⟨.recInfo cvRa p.majorIdx p.rulePrefix [] :: env.consts⟩ 0) p.rhss
       rhss ∧
-    ctorsA.all (fun c => Expr.recRulePlain cvRg.type p.majorIdx p.rulePrefix p.nP
-      c.1.levelParams) = true
+    letFree cvRi.type = true
 
 /-- **The recursor's stage and the recursor stored**: the stage's generated recursor and
 rules, and the recursor and rules the block stores. -/
@@ -210,7 +211,7 @@ def NativeRecJ (J : Judgements md) (env : Env md) (p : NativeParts md)
     (cvTa : ConstantVal md) (ctorsA : List (ConstantVal md × Nat)) (cvRa : ConstantVal md)
     (rhss : List (Expr md)) : Prop :=
   ∃ (cvRg : ConstantVal md) (rhsG : List (Expr md)),
-    NativeRecRunJ J env p cvTa ctorsA cvRg rhsG ∧ RecStoredJ J env p ctorsA cvRg rhsG cvRa rhss
+    NativeRecRunJ J env p cvTa ctorsA cvRg rhsG ∧ RecStoredJ J env p cvRg rhsG cvRa rhss
 
 /-! ## The block -/
 
@@ -248,9 +249,9 @@ def DeclNativeRunJ (J : Judgements md) (env : Env md) (p₀ : NativeParts md)
     -- the declared rules are the generated ones
     nativeRulesOk p.cvR.name (p.cvR.levelParams.map .param) .never p.nP p.ctors.length
       ctorsA p.kinds p.rhss p.cvR.type = true ∧
+    -- the recursor; every stored rule fires (`NativeRecJ.plain`: the kernel's test of the
+    -- stored type's major premise holds of every recursor this relation stores)
     NativeRecJ J (consSumCtors p.nP ctorsA env₁) p cvTa ctorsA cvRa rhss ∧
-    ctorsA.all (fun c => Expr.recRulePlain cvRa.type p.majorIdx p.rulePrefix p.nP
-      c.1.levelParams) = true ∧
     -- the projection table at a structure-like block
     checkNativeTable (m := Ix.Kernel.CheckM md) p ctorsA sortss
       ⟨.recInfo cvRa p.majorIdx p.rulePrefix
@@ -626,6 +627,51 @@ theorem NativeRecJ.recWF {J : Judgements md} {env : Env md} (henv : Ix.Kernel.En
   intro lvls pins hf
   exact absurd hf (hfire lvls pins)
 
+/-- **The stored recursor's major premise**: past the parameters, the motive, the minor
+premises and the indices, the domain is the family at its level parameters applied to the
+parameter and index variables, at the generated type (`structRecTyR_major`) and at a declared
+one, which carries the generated domain verbatim (`WrapRel.major_structFamI`: the declared type
+has no `let`, and the family is stored as an inductive type where the recursor is checked). -/
+theorem NativeRecJ.major {J : Judgements md} {env : Env md} {p : NativeParts md}
+    {cvTa cvRa : ConstantVal md} {ctorsA : List (ConstantVal md × Nat)} {rhss : List (Expr md)}
+    (h : NativeRecJ J env p cvTa ctorsA cvRa rhss)
+    (hT : ∃ cv caps, env.find? p.cvT.name = some (.indInfo cv caps))
+    (hlen : (Ix.Kernel.nativeCtors4 ctorsA p.kinds).length = p.ctors.length) :
+    ∃ bs B m, cvRa.type.stripPis p.majorIdx = some (bs,
+      .forallE (Ix.Kernel.structFamI p.cvT.name p.cvT.levelParams p.nP p.nIdx
+        (p.ctors.length + 1) 0) B m) := by
+  obtain ⟨cvRg, rhsG, hR, hst⟩ := h
+  obtain ⟨-, -, cvRi, recTy, sty, u, -, hty, -, -, -, -, -, -, -, -, rfl⟩ := hR
+  obtain ⟨bs, B, m, hg⟩ := structRecTyR_major hty
+  rw [hlen] at hg
+  rcases hst with ⟨rfl, -⟩ | ⟨cvRi', -, rfl, hW, -, -, -, hlf⟩
+  · exact ⟨bs, B, m, hg⟩
+  · exact WrapRel.major_structFamI hW hlf hT hg
+
+/-- The kinds the block re-checks are one list per constructor. -/
+theorem nativeFieldsOk_length {env₀ : Env md} {T : Key md} {lps : List LevelParam}
+    {nP nIdx : Nat} {ctorsA : List (ConstantVal md × Nat)} {kinds : List (List RecFieldKind)}
+    (h : Ix.Kernel.nativeFieldsOk env₀ T lps nP nIdx ctorsA kinds = true) :
+    ctorsA.length = kinds.length := by
+  simp only [Ix.Kernel.nativeFieldsOk, Bool.and_eq_true, beq_iff_eq] at h
+  exact h.1
+
+/-- **Every stored rule fires**: the stored type's major premise is the family at the
+constructors' level parameters, applied first to the parameters (`Expr.recRulePlain`, the
+kernel's test after the recursor's stage). -/
+theorem NativeRecJ.plain {J : Judgements md} {env : Env md} {p : NativeParts md}
+    {cvTa cvRa : ConstantVal md} {ctorsA : List (ConstantVal md × Nat)} {rhss : List (Expr md)}
+    (h : NativeRecJ J env p cvTa ctorsA cvRa rhss)
+    (hT : ∃ cv caps, env.find? p.cvT.name = some (.indInfo cv caps))
+    (hk : ctorsA.length = p.kinds.length) (hlenA : ctorsA.length = p.ctors.length)
+    (hlps : ∀ c ∈ ctorsA, c.1.levelParams = p.cvT.levelParams) :
+    ctorsA.all (fun c => Expr.recRulePlain cvRa.type p.majorIdx p.rulePrefix p.nP
+      c.1.levelParams) = true := by
+  obtain ⟨bs, B, m, hs⟩ := h.major hT (by rw [Ix.Kernel.nativeCtors4_length hk, hlenA])
+  refine List.all_eq_true.mpr fun c hc => ?_
+  rw [hlps c hc]
+  exact recRulePlain_of_major (nP := p.nP) (n := p.ctors.length) (nIdx := p.nIdx) hs
+
 /-! ## The kernel's records are the run instance -/
 
 section RunInstance
@@ -802,13 +848,12 @@ theorem nativeRecRunJ_of_run {env : Env md} {p : NativeParts md} {cvTa cvRa : Co
 theorem declNativeRun_runJ {env env₂ : Env md} {p₀ : NativeParts md}
     (h : DeclNativeRun μ F env p₀ env₂) : DeclNativeRunJ (runJ μ F) env p₀ env₂ := by
   obtain ⟨hnd, isRec, env₁, cvTa, p₁, p, ctorsA, sortss, kinds, cvRa, rhss, tfvs, trest,
-    isorts, hInd, hp, hCtors, hK, hcaps, hwl, hopT, hsorts, hFOk, hROk, hRec, hpl, hTbl⟩ := h
+    isorts, hInd, hp, hCtors, hK, hcaps, hwl, hopT, hsorts, hFOk, hROk, hRec, -, hTbl⟩ := h
   exact ⟨hnd, isRec, env₁, cvTa, p₁, p, ctorsA, sortss, kinds, cvRa, rhss, tfvs, trest, isorts,
     sumIndRunJ_of_run hInd, hp, sumCtorsRunJ_of_run hCtors, hK, hcaps,
     fun hl => (hwl hl).imp_left fun hnz φ => Ix.Kernel.Level.isNeverZero_sound φ _ hnz,
     hopT, fieldSortsJ_of_run hsorts, hFOk, hROk,
-    ⟨cvRa, rhss, nativeRecRunJ_of_run hRec, Or.inl ⟨rfl, rfl⟩⟩,
-    hpl, hTbl⟩
+    ⟨cvRa, rhss, nativeRecRunJ_of_run hRec, Or.inl ⟨rfl, rfl⟩⟩, hTbl⟩
 
 end RunInstance
 

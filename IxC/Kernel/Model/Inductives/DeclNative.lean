@@ -120,8 +120,6 @@ theorem declNativeCoreJ {J : Judgements md}
         Ix.Kernel.nativeRulesOk p.cvR.name (p.cvR.levelParams.map .param) .never p.nP
           p.ctors.length ctorsA p.kinds p.rhss p.cvR.type = true ∧
         NativeRecJ J (Ix.Kernel.consSumCtors p.nP ctorsA env₁) p cvTa ctorsA cvRa rhss ∧
-        ctorsA.all (fun c => Expr.recRulePlain cvRa.type p.majorIdx p.rulePrefix p.nP
-          c.1.levelParams) = true ∧
         Ix.Kernel.checkNativeTable (m := Ix.Kernel.CheckM md) p ctorsA sortss
           ⟨.recInfo cvRa p.majorIdx p.rulePrefix
             (Ix.Kernel.sumRules (Ix.Kernel.consSumCtors p.nP ctorsA env₁).find? cvRa.name p.nP
@@ -306,7 +304,7 @@ theorem declNativeCoreJ {J : Judgements md}
         ⟨.indInfo cvTa (Ix.Kernel.nativeCaps p) :: env.consts⟩ : Env md).find?
         (projFnName p.cvT.name 0) = none := by
     intro hU he
-    rcases htail with ⟨cvRa, rhss, -, -, -, -, hTbl⟩ | hTbl
+    rcases htail with ⟨cvRa, rhss, -, -, -, hTbl⟩ | hTbl
     · exact find?_none_of_cons (fixTableFamFree hTbl hlenA hlenS hnFc1 hU he)
     · exact fixTableFamFree hTbl hlenA hlenS hnFc1 hU he
   have hfreshFam₁ : (Ix.Kernel.nativeCaps p).unitlike = false →
@@ -1109,7 +1107,7 @@ theorem declNativeCoreJ {J : Judgements md}
       rw [hFssD ψ j cA hjA] at hsp
       have hf := (hframes j cA hjA).2 ψ ρp (((hframes j cA hjA).1 ψ ρp).mp hρp)
       exact ((hf.2.2 bs hsp).1 E hE).2
-  rcases htail with ⟨cvRa, rhss, hwl, -, hRec, hplAll, hTbl⟩ | hTbl
+  rcases htail with ⟨cvRa, rhss, hwl, -, hRec, hTbl⟩ | hTbl
   · -- the recursor's stage
     -- the recursor's LEVEL PARAMETERS are the RECURSOR STAGE's pins
     -- since task #220 (the recogniser no longer refuses a block over its
@@ -1117,11 +1115,14 @@ theorem declNativeCoreJ {J : Judgements md}
     obtain ⟨helimR, hRlps⟩ := hRec.pins
     -- the stage's generated recursor and rules (`hRecG`), and the stored ones (`hst`)
     obtain ⟨cvRg, rhsG, hRecG, hst⟩ := id hRec
+    -- every rule fires, at the generated type and at the stored one
     have hplG : ctorsA.all (fun c => Expr.recRulePlain cvRg.type p.majorIdx p.rulePrefix p.nP
-        c.1.levelParams) = true := by
-      rcases hst with ⟨rfl, -⟩ | ⟨-, -, -, -, -, -, -, h⟩
-      · exact hplAll
-      · exact h
+        c.1.levelParams) = true :=
+      NativeRecJ.plain ⟨cvRg, rhsG, hRecG, Or.inl ⟨rfl, rfl⟩⟩ ⟨cvTa, _, hfT_C⟩ hlenK'.symm
+        hlenA hlpsA
+    have hplAll : ctorsA.all (fun c => Expr.recRulePlain cvRa.type p.majorIdx p.rulePrefix p.nP
+        c.1.levelParams) = true :=
+      hRec.plain ⟨cvTa, _, hfT_C⟩ hlenK'.symm hlenA hlpsA
     have hnG : (ConstantInfo.recInfo cvRg p.majorIdx p.rulePrefix
           (Ix.Kernel.sumRules (Ix.Kernel.consSumCtors p.nP ctorsA
             ⟨.indInfo cvTa (Ix.Kernel.nativeCaps p) :: env.consts⟩).find? cvRg.name p.nP
@@ -1186,7 +1187,7 @@ theorem declNativeCoreJ {J : Judgements md}
           (fixLeafAV mpC.base2 p ppsAll dsF esF ksF eissF tssF ctorsA sAV) := by
       rcases hst with ⟨rfl, rfl⟩ | hdecl
       · exact ⟨mp₃g, hac₃g⟩
-      · exact recStoredStep mpC (hfr _) (hJ mpC) hRecG hdecl hplAll hctorC mp₃g hac₃g
+      · exact recStoredStep mpC (hfr _) (hJ mpC) hRecG hdecl hplG hplAll hctorC mp₃g hac₃g
     -- the projection table at a structure-like block (task #210 Parts A, B)
     obtain ⟨mp₂, hext₂⟩ := declNativeTableJ hI rfl rfl hTbl mpC mp₃ hac₃ hProp hClps hresT
       (by rw [← hTname₀]; exact hpshapeT)
@@ -1231,9 +1232,9 @@ theorem declNativeJ {J : Judgements md}
     (hdp : Ix.Kernel.nativeParts? nPd block = some p₀) (h : DeclNativeRunJ J env p₀ env₂) :
     ∃ mp₂ : EnvModelM V μ env₂, ThmValOk mp → ModelExt mp mp₂ := by
   obtain ⟨hnd₀, isRec, env₁, cvTa, p₁, p, ctorsA, sortss, kinds, cvRa, rhss, tfvs, trest, isorts,
-    hInd, hp, hCtors, hK, hcaps, hwl, hopT2, hsorts, hFOk, hROk, hRec, hplAll, hTbl⟩ := h
+    hInd, hp, hCtors, hK, hcaps, hwl, hopT2, hsorts, hFOk, hROk, hRec, hTbl⟩ := h
   exact declNativeCoreJ hfr hJ hI hS mp hE hdp hnd₀ hInd hp hCtors hK hcaps hopT2 hsorts hFOk
-    (Or.inl ⟨cvRa, rhss, hwl, hROk, hRec, hplAll, hTbl⟩)
+    (Or.inl ⟨cvRa, rhss, hwl, hROk, hRec, hTbl⟩)
 
 /-- **The P carrier survives a direct install without a recursor record**, over a
 judgement package (`declNativeCoreJ` with the table over the constructors). The

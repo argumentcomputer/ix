@@ -40,7 +40,7 @@ theorem declNativeRunJ_etaClosed {J : Judgements md} {env env₂ : Env md}
     {p₀ : NativeParts md} (hE : EtaFamiliesClosed env)
     (h : DeclNativeRunJ J env p₀ env₂) : EtaFamiliesClosed env₂ := by
   obtain ⟨hnd, isRec, env₁, cvTa, p₁, p, ctorsA, sortss, kinds, cvRa, rhss, -, -, -, hInd, rfl,
-    hCtors, -, hcaps, -, -, -, -, -, hRec, -, hTbl⟩ := h
+    hCtors, -, hcaps, -, -, -, -, -, hRec, hTbl⟩ := h
   obtain ⟨hTn, -, hfT, -⟩ := hInd.former
   obtain ⟨cvTa₀, s, bs, cvS, -, -, -, hSt, rfl, rfl⟩ := hInd
   obtain rfl : cvTa = cvS := (show cvS = cvTa from hSt).symm
@@ -300,7 +300,7 @@ the table, at a structure-like block, is the new structure's own. -/
 theorem declNativeRunJ_envExt {J : Judgements md} {env env₂ : Env md} {p₀ : NativeParts md}
     (h : DeclNativeRunJ J env p₀ env₂) : EnvExt env env₂ := by
   obtain ⟨hnd, isRec, env₁, cvTa, p₁, p, ctorsA, sortss, kinds, cvRa, rhss, -, -, -, hInd, rfl,
-    hCtors, -, -, -, -, -, -, -, hRec, -, hTbl⟩ := h
+    hCtors, -, -, -, -, -, -, -, hRec, hTbl⟩ := h
   obtain ⟨hTn, -, hfT, hTsh⟩ := hInd.former
   obtain ⟨cvTa₀, s, bs, cvS, -, -, -, hSt, rfl, rfl⟩ := hInd
   obtain rfl : cvTa = cvS := (show cvS = cvTa from hSt).symm
