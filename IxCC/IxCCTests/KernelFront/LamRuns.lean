@@ -252,7 +252,7 @@ def Tally.render (t : Tally) : String :=
 def run (a : Assert) (closures : Array (System.FilePath × System.FilePath)) : IO (Array String) := do
   let c ← onClosures closures
   for d in c.differences do IO.eprintln s!"  {d}"
-  expect a (c.differences.isEmpty && c.programs ≥ closures.size)
+  expect a (c.differences.isEmpty && c.ingressRefused == 0 && c.programs ≥ closures.size)
     s!"λ-runs: the committed closures: {c.differences.size} differences"
   let v ← adversarial
   for d in v.differences do IO.eprintln s!"  {d}"

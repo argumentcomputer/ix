@@ -292,7 +292,11 @@ def run : IO Bool := do
     for path in ← committedClosures do
       let label := path.toString
       unless kernelDeclined.any (label.endsWith ·) || reachRefused.any (label.endsWith ·) do
-        if let some sidecar ← sidecarOf path then pairs := pairs.push (path, sidecar)
+        -- the k1 family's sidecar is `equations.json` beside its closure
+        let plain := path.withFileName "equations.json"
+        match ← sidecarOf path with
+        | some sidecar => pairs := pairs.push (path, sidecar)
+        | none => if ← plain.pathExists then pairs := pairs.push (path, plain)
     for line in ← LamRuns.run a pairs do IO.println line
     IO.println s!"tests-kernel-front: {← a.get} assertions passed"
     return true
