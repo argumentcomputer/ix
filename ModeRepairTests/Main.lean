@@ -891,6 +891,14 @@ def funAndE0 : Heap × List Val :=
   let (b, f) := ({} : HB).alloc (.pap incR #[])
   (b.heap, [f, .imm (.con e0R)])
 def retAltBody : Term := app (.const callTwice .val) [.case caseE (v 0 .imm) #[v 1, v 1] #[] .val] .leaf
+-- Repair S: `retF (@once f : Nat → Nat) : Nat → Nat := f`; `useRet (@once f) : Nat := let h := retF f; h 0 + h 1`;
+-- the control `useRetP` calls `retP`, the same with `f` plain
+def retF := mem 367
+def retP := mem 368
+def useRet := mem 378
+def useRetP := mem 388
+def useRetBody (r : Ref) : Term := .letE (.value .many) .val (app (.const r .val) [v 0] .val)
+  (add (app (v 0) [.natLit 0] .leaf) (app (v 0) [.natLit 1] .leaf))
 def useBoxDef : Ref × RunDef :=
   (useBox, body [par] (add (app (.proj B 0 (v 0) .val) [.natLit 0] .leaf) (app (.proj B 0 (v 0) .val) [.natLit 1] .leaf))
     .shared .leaf)
@@ -1008,7 +1016,15 @@ def findingCases : List Case := [
     retAlt funAndE0 (some .onceReentry) false,
   runCase "the same, the parameter plain"
     (onceDefs ++ p16Defs ++ [(retAltP, body [par .many .val arrowSk, par .many .imm] retAltBody .shared .leaf)])
-    retAltP funAndE0 none true
+    retAltP funAndE0 none true,
+  runCase "a once parameter returned, the result called twice by the caller"
+    [(retF, body [par .once .val arrowSk] (v 0) .shared .val arrowSk),
+     (useRet, body [par .once .val arrowSk] (useRetBody retF) .shared .leaf)]
+    useRet oneFun (some .onceReentry) false [useRet, retF],
+  runCase "the same, the parameter plain"
+    [(retP, body [par .many .val arrowSk] (v 0) .shared .val arrowSk),
+     (useRetP, body [par .many .val arrowSk] (useRetBody retP) .shared .leaf)]
+    useRetP oneFun none true [useRetP, retP]
 ]
 
 -- END COPY
@@ -1765,7 +1781,7 @@ def routeExpect : Nat → Option String × OExp
   | 5 => (some "onceReentry", .vio .onceReentry)          -- E (bindInner)
   | 6 => (some "onceReentry", .vio .onceReentry)          -- E and G (applyValue's callResult)
   | 7 => (some "a case alternative's result", .vio .onceReentry)  -- repair R (accepted before)
-  | 8 => (none, .vio .onceReentry)                         -- OPEN: retCheck looks at onceOnly only
+  | 8 => (some "a once binding where it may be called again: the result", .vio .onceReentry)  -- repair S
   | 9 => (some "onceReentry", .stuck)                      -- E (callResult); no extern oracle
   | _ => (none, .vio .onceReentry)                         -- OPEN: `.once` does not test `spent`
 
