@@ -791,7 +791,7 @@ def run : IO Bool := do
     -- telescope's width costs no fuel), the kernel agreeing
     let (pa, pcore) ← loadClosure "panic" "fixtures/corpus/phase1-decline/panic" ["Decline.withPanic"]
     let pt ← oracleOn a "panic" pcore pa
-    expect a ((pt.sites, pt.accepted) == (762, 762))
+    expect a (pt.accepted == 762 && pt.sites == 762 + 0)
       s!"panic: {pt.accepted} of {pt.sites} sites accepted, expected 762 of 762"
     let pm := mutateStringOfList pa
     let npm := (refusedSites pm).length
