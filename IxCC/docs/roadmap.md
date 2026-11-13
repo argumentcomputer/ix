@@ -764,6 +764,9 @@ notes, `plans/kernel-robustness/NOTES.md` and `NEXT.md`):
 - fixed (2026-11-13): the kernel's phase B spawned one task per 64 records, so the threads a run
   could start grew with the input and a run under an address-space limit aborted creating one; the
   tasks are bounded by a setting (`Limits.workers`), which no verdict depends on;
+- open: the depth stages skip a record whose bytes cannot reach the limit by two bounds that are
+  argued and tested (`kernel-depth` `bounds`), not proved; prove them, or remove the skip by
+  proving depth ≤ size where `Ix.Cert.Stream.closure_decodes` needs it;
 - open: bucket flooding of the kernel's memo maps, independent of the hash's width: R crafted terms
   in one bucket cost Θ(R²) comparisons (16,384 literals in one bucket: 0.6 s against 1 ms; about
   25 s at 10^5, extrapolated); remedies (a keyed hash, or a cap on bucket scans that declines) in
