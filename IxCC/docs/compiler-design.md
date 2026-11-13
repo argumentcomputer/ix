@@ -397,7 +397,32 @@ certificate.
 
 P2's rules on a primitive binding (`Anf.Walk`, the `prim` case; proved in
 `Anf/Proof/Walk/BindPrim.lean`):
-- Literal folding, to a literal or a `Bool` constructor.
+- Literal folding, to a literal or a `Bool` constructor, within a size bound
+  (`Walk.foldable`, `Walk.foldBits` = 1024; 2026-11-13). The walk folds only
+  when every literal operand is below `2^1024`, `a ^ b` only when `b = 0` or
+  `b ≤ 1024` and `a < 2^(1024 / b)`, and `a <<< b` only when `b ≤ 1024` and
+  `a < 2^(1024 − b)`; the decision reads the primitive and the operands,
+  never the result. So a fold costs one operation on numbers below `2^1024`,
+  and every folded literal is below `2^2048` (`natMul`'s bound). Unbounded,
+  `Lam.Prim.sem` computed `a ^ b` and `a * 2 ^ b` whatever their size: the
+  runtime's `Nat.pow` aborts the process past an exponent of `2^32 − 1`
+  (`ixcc compile`, and `check-cert`'s replay, exited with `INTERNAL PANIC:
+  Nat.pow exponent is too big`), built a 512 MiB literal below it, and folded
+  squarings doubled their literal at each binding (thirty-two of them in a
+  1.6 KB source ran the compiler to a 24 GiB memory cap). A primitive the
+  bound refuses stays in the program and runs natively, which is always
+  sound (`walkBind_prim`'s kept branch): a result of `2^63` or more fails
+  with `natOverflow` there, as a folded literal that size fails where it is
+  read (the compile is not declined: `2 ^ 100 + x` compiles to an object that
+  ends with `natOverflow`). The cost: a wide intermediate that a later fold
+  would reduce, such as `2 ^ 2000 % 7` or a closure literal of `2^1024` or
+  more under `% 7`, now runs natively and fails with `natOverflow`, where
+  `2 ^ 512 % 7` and `2 ^ 100 % 7` still fold to Lean's value.
+  Arbitrary-precision naturals (Phase 4) are what make such programs run;
+  the bound does not try to keep them folding. No registered program folds a
+  value of `2^63` or more (measured over the 12 manifests and
+  `fixtures/rc/budget`), so the bound changed none; `fixtures/fold` holds the
+  reproducers.
 - A primitive an outer binding already holds, reused (`knownPrim`; a kept
   `natAdd [y, 1]` records the fact `x = y + 1`).
 - A dead pure primitive dropped.
@@ -436,6 +461,7 @@ soon as it passes one of these fixed budgets
 | `Anf.maxBackWork` | the back end's work (`Anf.backWork`: each global's nodes squared, plus its nodes and its `case`s' squared alternative counts times the constructor table's length), at the same points | 268,435,456 | 154,195,240 | 1.7× |
 | `Walk.maxCopy` | the nodes one walk walks again: inlined callees, inlined join points, case-of-case alternatives (but the first selection of each alternative of a pending join point, a move) and a local function's second and later β-expansions (its first is a move, `Walk.betaFires`) | 8,192 | 6,955 (inline), 1,375 (shrink) | 1.2×, 6.0× |
 | `Walk.maxWalkDepth` | the walk steps on the native stack at once (`Here.lvl`, which a continuation inherits from the point that calls it) | 3,072 | 1,571 | 1.9× |
+| `Walk.foldBits` | the bits of a literal a fold reads, and of a `natPow` or `natShl` result it writes (`Walk.foldable`); past it the primitive is kept and runs natively, not refused; every folded literal is below `2^(2 · foldBits)` | 1,024 | under 64: no fold of the 12 manifests or `fixtures/rc/budget` reads or writes a value of `2^63` or more (2026-11-13) | 16× or more |
 | `Walk.maxFires` | rule firings in one walk | 8,192 | 801 | 10× |
 | `Walk.maxWalkWork` | the work one walk does (`Fires.work`, charged before every step of the walk) | 10,000,000 | 3,692,411 | 2.7× |
 | `Anf.maxStepWork` | the walk work of one inline or shrink step, over all its walks | 45,000,000 | 28,693,905 | 1.5× |

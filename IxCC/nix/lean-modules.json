@@ -3591,6 +3591,9 @@
     "IxCC.Src.Relevance.Proof.Sound",
     "IxCC.Src.Relevance.Proof.Canonical",
     "IxCC.Src.Relevance.Proof.P1.Defs",
+    "IxCC.Src.Relevance.Proof.P1.Basic",
+    "IxCC.Src.Relevance.Proof.P1.Cases",
+    "IxCC.Src.Relevance.Proof.P1.Recr",
     "IxCC.Lam.Erase.Proof.ModesOk",
     "IxCC.Lam.Erase.Proof.WFProg"]},
   "IxCCTests.Fences.Defun":
@@ -3782,7 +3785,8 @@
   {"path": "IxCCTests/Exe/Run.lean",
    "imports": ["IxCCTests.Corpus.Run", "IxCCTests.Exe.Session", "IxCC.Cli"]},
   "IxCCTests.Exe.Main":
-  {"path": "IxCCTests/Exe/Main.lean", "imports": ["IxCCTests.Exe.Machine"]},
+  {"path": "IxCCTests/Exe/Main.lean",
+   "imports": ["IxCCTests.Exe.Machine", "IxCCTests.Exe.FoldGuard"]},
   "IxCCTests.Exe.MachineSessions":
   {"path": "IxCCTests/Exe/MachineSessions.lean", "imports": []},
   "IxCCTests.Exe.MachineProcess":
@@ -3794,6 +3798,9 @@
    ["IxCCTests.Exe.Run",
     "IxCCTests.Exe.MachineSessions",
     "IxCCTests.Exe.MachineProcess"]},
+  "IxCCTests.Exe.FoldGuard":
+  {"path": "IxCCTests/Exe/FoldGuard.lean",
+   "imports": ["IxCCTests.Exe.Run", "IxCCTests.Anf.FoldGuard"]},
   "IxCCTests.Corpus.ToolMain":
   {"path": "IxCCTests/Corpus/ToolMain.lean",
    "imports": ["IxCCTests.Corpus.Build", "IxCCTests.Corpus.KernelGen"]},
@@ -3991,7 +3998,8 @@
     "IxCCTests.Anf.KernelEval",
     "IxCCTests.Anf.LeanRender",
     "IxCCTests.Anf.Defun",
-    "IxCCTests.Anf.SuccBle"]},
+    "IxCCTests.Anf.SuccBle",
+    "IxCCTests.Anf.FoldGuard"]},
   "IxCCTests.Anf.Main":
   {"path": "IxCCTests/Anf/Main.lean", "imports": ["IxCCTests.Anf.Run"]},
   "IxCCTests.Anf.LeanRender":
@@ -4002,6 +4010,9 @@
   {"path": "IxCCTests/Anf/Generated.lean",
    "imports":
    ["IxCCTests.Anf.Support", "IxCCTests.Support.LamGen", "IxCC.Anf.Pipeline"]},
+  "IxCCTests.Anf.FoldGuard":
+  {"path": "IxCCTests/Anf/FoldGuard.lean",
+   "imports": ["IxCC.Anf.Pipeline", "IxCC.Anf.Print", "IxCCTests.Src.Support"]},
   "IxCCTests.Anf.Eval":
   {"path": "IxCCTests/Anf/Eval.lean",
    "imports": ["IxCCTests.Anf.Support", "IxCCTests.Src.Rules"]},
@@ -5182,18 +5193,31 @@
   "IxCC.Src.Relevance.Proof.Sound":
   {"path": "IxCC/Src/Relevance/Proof/Sound.lean",
    "imports": ["IxCC.Src.Relevance.Proof.Terms", "IxCC.Src.Proof.NatMap"]},
+  "IxCC.Src.Relevance.Proof.P1.Recr":
+  {"path": "IxCC/Src/Relevance/Proof/P1/Recr.lean",
+   "imports":
+   ["IxCC.Src.Relevance.Proof.P1.Cases", "IxCC.Src.Relevance.Proof.P1.Basic"]},
   "IxCC.Src.Relevance.Proof.P1.Prefix":
   {"path": "IxCC/Src/Relevance/Proof/P1/Prefix.lean",
    "imports":
    ["IxCC.Src.Relevance.Proof.P1.Defs",
     "IxCC.Src.Proof.Spine",
     "IxCC.Src.Proof.Lazify"]},
+  "IxCC.Src.Relevance.Proof.P1.Measure":
+  {"path": "IxCC/Src/Relevance/Proof/P1/Measure.lean",
+   "imports": ["IxCC.Src.Relevance.Proof.P1.Defs"]},
   "IxCC.Src.Relevance.Proof.P1.Defs":
   {"path": "IxCC/Src/Relevance/Proof/P1/Defs.lean",
    "imports":
    ["IxCC.Src.Relevance.Proof.Canonical",
     "IxCC.Lam.Erase.Proof.Rel",
     "IxCC.Src.Semantics"]},
+  "IxCC.Src.Relevance.Proof.P1.Cases":
+  {"path": "IxCC/Src/Relevance/Proof/P1/Cases.lean",
+   "imports": ["IxCC.Src.Relevance.Proof.P1.Measure"]},
+  "IxCC.Src.Relevance.Proof.P1.Basic":
+  {"path": "IxCC/Src/Relevance/Proof/P1/Basic.lean",
+   "imports": ["IxCC.Src.Relevance.Proof.P1.Defs"]},
   "IxCC.Src.Relevance.Proof.Canonical":
   {"path": "IxCC/Src/Relevance/Proof/Canonical.lean",
    "imports": ["IxCC.Src.Relevance.Proof.Sound", "IxCC.Src.Semantics"]},

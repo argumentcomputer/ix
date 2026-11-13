@@ -964,8 +964,12 @@
   "IxCC.Src.Recheck",
   "IxCC.Src.Relevance.Check",
   "IxCC.Src.Relevance.Proof.Canonical",
+  "IxCC.Src.Relevance.Proof.P1.Basic",
+  "IxCC.Src.Relevance.Proof.P1.Cases",
   "IxCC.Src.Relevance.Proof.P1.Defs",
+  "IxCC.Src.Relevance.Proof.P1.Measure",
   "IxCC.Src.Relevance.Proof.P1.Prefix",
+  "IxCC.Src.Relevance.Proof.P1.Recr",
   "IxCC.Src.Relevance.Proof.Sound",
   "IxCC.Src.Relevance.Proof.Terms",
   "IxCC.Src.Relevance.Syntax",
@@ -1800,7 +1804,8 @@
  "grounding_axiom_sha256":
  "06aeb842207c1f9d7f830573c8e59a912edd572745425080f8bcb9661a217439",
  "grounding_axiom_count": 312,
- "baseline": "P1 prefix lemmas and front facts as modules",
+ "baseline":
+ "the shrink walk bounds literal folding (Anf.Walk.foldable): WalkProof.fold_some; tests-anf part IxCCTests.Anf.FoldGuard; tests-exe part IxCCTests.Exe.FoldGuard over fixtures/fold",
  "axiom_sha256":
- "16512b727c0b663af4e900d8f85cb5c4813a4e4985ccdb0db658947b1c0482b7",
- "axiom_count": 6743}
+ "7a85dc2617d77ba1c809194fb459a428fdce26b8a728a3adadaff2301b649a69",
+ "axiom_count": 6782}

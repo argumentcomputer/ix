@@ -82,7 +82,10 @@ a word operation from a reached `word` entry (where one is reached, `Canonical.f
 `Fin.mk` drop the proof field F6w builds with the marker, and have the two fields F6w builds).
 Without the first conjunct a recursor with a table entry could fire as `.recr r`, which no run
 does, with rules no check reads (`runtimeKeys` omits them; `ReadsOk` and `RulesOk` speak of the
-head δ makes). -/
+head δ makes); a `Quot.mk` with a table entry could fire as `.quotMk c` with its element written
+erased; and any reached special-head constant could fire under another head's kind (`Quot.lift`'s
+own constant fired as `.quotMk` builds a constructor value whose field is read through a
+constructor record it does not have). -/
 def HeadSeen (p : Program) (ch : Checked) (ls : Levels) (h : Head) : Prop :=
   (∀ c, headConst? h = some c → specialHead? p c = some h ∧ ∃ q, Agree ls q ∧ (c, q) ∈ ch.instances) ∧
   (∀ w op, h = .word w op → ∃ c ∈ ch.reached, ∃ thm, p.table.resolveOf c = some (.word w op thm))

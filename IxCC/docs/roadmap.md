@@ -734,6 +734,35 @@ for nesting depth before decoding); neither is made yet. The envelope's depth
 bound (`V3.withinKernelDepth`) limits the records as stored, after that
 decoder, and not the terms the kernel builds while typing them.
 
+Constant folding on hostile literals, closed (2026-11-13). The shrink walk
+folded a primitive on literals with `Lam.Prim.sem`, which computes `a ^ b` and
+`a * 2 ^ b` whatever their size, in the producer and in the verifier's replay
+alike. Through `ix compile` and `ixcc compile` (`fixtures/fold`, the commit
+before): an exponent past `2^32 − 1` (`1 ^ 2^32 + x`, `1 <<< 2^32 + x`, any
+base) aborted `ixcc compile` with `INTERNAL PANIC: Nat.pow exponent is too
+big` (exit 1, 0.24 s), and `ixcc check-cert` the same on a certificate for
+such a root; `1 <<< (2^32 − 1)` took 3.0 s and 2.2 GB; thirty-two folded
+squarings of `2^62` in `let`s, a 1.6 KB source, ran 526 s to a 24 GiB memory
+cap and were killed (twenty-four: 16.7 s, 851 MB). The certified kernel
+accepts these closures at ingress. Now the walk folds only within
+`Walk.foldable`'s bound (every operand below `2^1024`, a power or shift
+result too; [compiler design](compiler-design.md), P2's rules): every root of
+`fixtures/fold` compiles and rechecks in well under a second, and what the
+bound leaves runs natively (`natOverflow` past a native word). What the survey
+leaves open: the reference evaluators (SrcEval, and Lam, Anf, Fir and Own's
+`eval`) compute `Prim.sem` unbounded and abort the same way, off the compile
+and verifier paths; the test tools that run them on arguments the caller
+chooses (`src-steps CLOSURE --root NAME ARG…`, `tests-pipeline --level`)
+abort on such arguments and are left so ([CI](ci.md)); the certified kernel's
+own literal fast path (`natOpResult`, `shiftLeft` unbounded) is the kernel
+package's. Two observations outside IxCC: Lean 4.34.1's own code generator
+folds `Nat.shiftLeft` on literals without a bound, so `ix compile` aborts
+(`Nat.shiftl exponent is too big`) on a computable definition of that shape
+(the source is the user's own, not a verifier path; `fixtures/fold` marks its
+roots `noncomputable`); and `ix compile` cannot run under `ulimit -v`, which
+refuses its worker threads ("failed to create thread"), so a memory cap on it
+needs a cgroup (the kernel's limits work touches this).
+
 Known costs in the kernel on small hostile inputs (2026-11-12; reproducers in the kernel-robustness
 notes, `plans/kernel-robustness/NOTES.md` and `NEXT.md`):
 - fixed (2026-11-12): a `let` chain over one shared type (`let a(j+1) : Type := aj → aj`) was
