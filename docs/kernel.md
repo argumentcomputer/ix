@@ -653,11 +653,31 @@ committed closures' 775) is checked twice in the byte stage
 (`Admission.decodeWithin`, which every byte entry and the hosts' own record
 decoders run in place of `decodeRecords`): before decoding, `scanDepths` reads
 each record's bytes in the codec's grammar without building anything, with a
-stack of its own, and declines (`.limit .depth`) at the first expression or
+stack of its own (words in an array: no native stack and no allocation per
+level; integer headers of one and two bytes read in place, proved equal to the
+codec's reader, `Depth.tagAt_eq` and `Depth.u8At_eq`, wider ones by the reader
+itself), and declines (`.limit .depth`) at the first expression or
 universe nested past the limit, shares counted as leaves; after decoding,
 `expandedDepths` measures each record's expressions with their shares
-expanded, as the reader builds them (memoised per sharing entry; a share that
-reaches itself is past every limit). A record that cannot reach the limit is not
+expanded, as the reader builds them: the sharing entries in order, each against
+the depths of the entries before it (the only references the reader admits),
+then the payload. That walk recurses on the native stack, one frame per stored
+level and never past one level beyond the limit, so its depth is bounded by the
+stored nesting the scan has just admitted under the same limit, at every value
+of the limit. Its frame is about 80 bytes; the codec's is 110 (λ telescopes) to
+206 bytes (argument nests, `let`s) per level, measured on 8 MiB
+(`kernel-depth-case frame-walk-*`, `frame-decode-*`); a spine is the one shape
+the codec reads without nesting and the walk nests on, so a stack sized for the
+limit must cover the larger of the two per level, which `Limits.stackFor`'s
+16 KiB per level does. A table in which an entry refers to itself or to a later
+entry (which the reader refuses) is measured instead by an explicit post-order
+(`Depth.expandedPost`: each entry memoised, a share that reaches itself past
+every limit), linear in the record: the same spine of 65,536 levels behind a
+forward reference takes 4 ms, a cyclic table 2 ms (`kernel-depth` `post-spine`,
+`post-cycle`; the post-order as first written copied its value array at every
+node, 2.4 s at 65,536 levels). `kernel-depth` `differential` checks the scan
+against its first form and the walk against the post-order on generated
+records, mutated bytes included. A record that cannot reach the limit is not
 walked: an expression's levels grow by at most one per byte that writes it and a
 universe's by at most the decoder's node budget (`storedDepthBound`), and a record
 within the byte limit has at most two decoded nodes per byte, which an acyclic expansion meets

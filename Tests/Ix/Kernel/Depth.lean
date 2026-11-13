@@ -114,10 +114,14 @@ scan and by its first form (`Tests.Ix.Kernel.DepthRef`) at ten limits and with b
 measured by the expanded check and by the general post-order: no difference. `walk-spine`,
 `post-spine`, `post-cycle`: the expanded check alone on a spine of `n` arguments under the limit
 `n + 1`, by the walk; the same spine behind a forward reference, by the post-order; a cyclic table
-holding it. At 16,384 and at 65,536 levels each takes a few milliseconds (the post-order copied its
-value array at every node before KI's change: about a second at 16,384 and quadratic beyond); the
-bounds are far above that and far below the quadratic times. The walk recurses once per level, so
-it runs on the stack `Limits.stackFor` gives the limit. -/
+holding it. At 16,384 and at 65,536 levels each takes at most 4 ms (measured; before KI's change the
+post-order copied its value array at every node: 143 and 203 ms at 16,384, 2,467 and 2,410 ms at
+65,536, `kernel-depth-case old-walk-spine`, `old-post-spine`); the bounds are far above the linear
+times and below the quadratic ones at 65,536. The walk recurses once per level (about 80 bytes of
+native stack each), so it runs on the stack `Limits.stackFor` gives the limit. `differential` at
+3,000 records takes about 2 s: 30,000 scans and expanded checks (about 500 records by the
+post-order) and 216,000 scans of mutated bytes; the corpus-scale run (Init+Std and the committed
+closures, 1.7 million scans) is a probe, not a test. -/
 def stageCases : List (String × Nat × String × Nat × Nat) :=
   let kb (d : Nat) := ({ defaultLimits with maxDepth := d }).stackFor / 1024
   [("differential", 3000, "no differences", 0, stackKb),
