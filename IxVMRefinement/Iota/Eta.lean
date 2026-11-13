@@ -444,10 +444,11 @@ theorem eta_iota_fab_step (c : Ctx) (hc : CoreFacts c) (hex : IotaExtraFacts c)
         .ok (.construct kexprEnum "Const" [v481, x_tus]) :=
       Y624.loadValue_eq (loadValue_enum_cell hcell535)
     obtain ⟨cpa', ust', rfl, -, -⟩ := hHF.const_of_load hld624
+    dsimp only [Specs.Whnf.mkAppN] at hFAB0 hFAB_eq
     have hFAs_eq : FAs = TA ++ (List.range m).map (fun t =>
         (Ix.Kernel.Expr.proj (c.κ (ixAddr p)) (ZMod.val ((0 : F) + (t : F))) M : KExpr)) := by
       have h1 := congrArg Ix.Kernel.Expr.getAppArgs hFAB_eq
-      rw [← mkAppN_mkAppN, getAppArgs_mkAppN, getAppArgs_mkAppN] at h1
+      rw [mkAppN_mkAppN, getAppArgs_mkAppN, getAppArgs_mkAppN] at h1
       simpa [Ix.Kernel.Expr.getAppArgs] using h1.symm
     have hlenFAs_lt : FAs.length < 2 ^ 39 := RomBound.bounded_length_lt good.2
       (c := ⟨"KernelWhnf::certs_all",
@@ -464,12 +465,13 @@ theorem eta_iota_fab_step (c : Ctx) (hc : CoreFacts c) (hex : IotaExtraFacts c)
     have hprojs_eq : ((List.range m).map fun t =>
         (Ix.Kernel.Expr.proj (c.κ (ixAddr p)) (ZMod.val ((0 : F) + (t : F))) M : KExpr)) =
         (List.range m).map fun t => Ix.Kernel.Expr.proj (c.κ (ixAddr p)) t M := by
+      simp only [bind_pure_comp, List.map_eq_map, List.map_map, Function.comp_def, zero_add]
       apply List.map_congr_left
       intro t ht
       rw [List.mem_range] at ht
-      rw [zero_add, NatAux.val_natCast (by omega)]
+      rw [NatAux.val_natCast (by omega)]
     rw [hprojs_eq] at hFAB0 hFAs_eq
-    rw [← mkAppN_mkAppN, ← hFAs_eq] at hFAB0
+    rw [mkAppN_mkAppN, ← hFAs_eq] at hFAB0
     -- constructor telescope certificate
     obtain ⟨-, halpdC, -⟩ := hc.env.store.wf _ (List.mem_of_find?_eq_some hcj)
     have halpdC' : cvj.type.allLevelParamsDefined cvj.levelParams = true := halpdC
