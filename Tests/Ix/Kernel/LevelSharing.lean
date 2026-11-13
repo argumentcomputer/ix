@@ -29,6 +29,13 @@ are for reading, except the two bounded ones.
   constant) each accepted within `longBoundMs`. Quadratic, as here, they take
   about 1 s and 1.4 s on the build box under load; without the hash-consing
   they are cubic and take 9 s and 13 s, and the case fails;
+* **chains whose tail is checked already, bounded**: `plain` and `dag` at
+  16,000 steps and `dagequal` (a function between two copies of the chain
+  `T 8,000` in one sharing table, so the declared type and the value's type are
+  equal terms annotated apart) each accepted within `stopBoundMs`; without the
+  binder loops' stop at a residual the memo holds they are quadratic and
+  fail; and the λ chain `lamlet` at 2,000, timed but not bounded (still
+  quadratic, in `Level.zeronessOf`);
 * **the level**: the executed core (`Ix.Kernel.Cached.coreKnotI .verified`)
   infers the chain `T 200` at both grades; its sort's level is the ∀ rule's
   `imax` chain, a tree of more than 1,000 nodes, and is decided equivalent to
@@ -363,6 +370,54 @@ def mixedLevelsApart : Nat → Level × Level
   | 0 => (.param 0, .param 1)
   | n + 1 => let (a, b) := mixedLevelsApart n; (.imax a b, .imax b a)
 
+/-! ## Chains whose tail is checked already: bounds
+
+The binder-telescope loops stop at a closed residual the memo already
+holds (`Ix.Kernel.Cached.peelFuelToM`), and a level is simplified through
+the declaration's memo (`Ix.Kernel.Cached.simplifyMemoC`). Without the
+first, every step of a chain re-peeled the whole telescope below it, and
+annotation rebuilt it as fresh nodes: quadratic time and memory, and two
+annotations of one chain shared nothing, so comparing them visited about
+`k²/2` pairs. -/
+
+/-- `U 0 = Prop → Prop`, `U (j+1) = Prop → U j`; entry `j` is `U j`. -/
+def lamTable (k : Nat) : Array IE :=
+  (Array.range (k + 1)).map fun j =>
+    if j == 0 then _root_.Ixon.Expr.leanAll (.sort 0) (.sort 0)
+    else _root_.Ixon.Expr.leanAll (.sort 0) (.share (j - 1).toUInt64)
+
+/-- `lamlet k`: `def L : Type := let a0 : U 0 := fun x : Prop => x;
+let a(j+1) : U (j+1) := fun _ : Prop => aj; …; Prop`, a chain of λ
+telescopes, each step a `fun` over the previous value. -/
+def lamLet (k : Nat) : _root_.Ixon.Constant := Id.run do
+  let mut body : IE := .sort 0
+  for i in [0:k] do
+    let j := k - i
+    body := _root_.Ixon.Expr.leanLet false (.share j.toUInt64)
+      (_root_.Ixon.Expr.leanLam (.sort 0) (.var 1)) body
+  return defn 0 (.sort 1)
+    (_root_.Ixon.Expr.leanLet false (.share 0) (_root_.Ixon.Expr.leanLam (.sort 0) (.var 0)) body)
+    (lamTable k) univs
+
+/-- `dagequal k`: `def E : T k → T k := fun x : T' k => x`, `T'` a second copy
+of the chain in the same sharing table: the value's inferred type and the
+declared type are equal terms annotated apart. -/
+def dagEqual (k : Nat) : _root_.Ixon.Constant :=
+  let copy : Array IE := (Array.range k).map fun j =>
+    if j == 0 then _root_.Ixon.Expr.leanAll (.sort 0) (.sort 0)
+    else _root_.Ixon.Expr.leanAll (.share (k + j - 1).toUInt64) (.share (k + j - 1).toUInt64)
+  let top : IE := .share (k - 1).toUInt64
+  let top' : IE := .share (2 * k - 1).toUInt64
+  defn 0 (_root_.Ixon.Expr.leanAll top top) (_root_.Ixon.Expr.leanLam top' (.var 0))
+    (dagTable k ++ copy) univs
+
+/-- The bound on `plain` and `dag` at 16,000 steps and `dagequal` at 8,000.
+Measured on the build box under load: 916, 283 and 159 ms with the stop;
+without it 4,112, 2,637 and 3,510 ms already at 4,000 steps, about four to
+five times more per doubling. The bound is at least five times the time
+measured with the stop. -/
+def stopBoundMs : Nat := 5000
+
 /-! ## The long chains and the rendered failure: bounds -/
 
 /-- The bound on `plain` and `param` at 2,000 `let`s through the certified
@@ -424,6 +479,22 @@ def run : IO UInt32 := do
     let ok := (match r with | .ok _ => true | .error _ => false) && ms ≤ longBoundMs
     IO.println s!"  {name} k={kl}: {match r with | .ok n => s!"accepted ({n} constants)" | .error e => s!"REFUSED: {e}"}, {(_root_.Ixon.serConstant c).size} bytes, {ms} ms (bound {longBoundMs} ms){if ok then "" else "  FAILED"}"
     unless ok do failed := failed + 1
+  -- chains whose tail is checked already: linear with the telescope stop,
+  -- quadratic without it
+  let stops : List (String × _root_.Ixon.Constant) :=
+    (family 16000).filter (fun p => p.1 == "plain" || p.1 == "dag") ++
+      [("dagequal", dagEqual 8000)]
+  for (name, c) in stops do
+    let (r, ms) ← check c
+    let ok := (match r with | .ok _ => true | .error _ => false) && ms ≤ stopBoundMs
+    IO.println s!"  {name} (telescope stop): {match r with | .ok n => s!"accepted ({n} constants)" | .error e => s!"REFUSED: {e}"}, {(_root_.Ixon.serConstant c).size} bytes, {ms} ms (bound {stopBoundMs} ms){if ok then "" else "  FAILED"}"
+    unless ok do failed := failed + 1
+  -- the λ chain: accepted, its time printed, not bounded (still quadratic:
+  -- `Level.zeronessOf` walks the ∀ rule's level of each step's type)
+  let (r, ms) ← check (lamLet 2000)
+  let okL := match r with | .ok _ => true | .error _ => false
+  IO.println s!"  lamlet k=2000: {match r with | .ok n => s!"accepted ({n} constants)" | .error e => s!"REFUSED: {e}"}, {ms} ms (not bounded){if okL then "" else "  FAILED"}"
+  unless okL do failed := failed + 1
   -- the failure about such a level, rendered in each mode (only the printing
   -- is timed)
   let kr := 500

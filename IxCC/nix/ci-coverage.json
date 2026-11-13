@@ -1786,7 +1786,7 @@
  "grounding_axiom_sha256":
  "c55b83d154a6e52d48115044c8a0596e0a6cbbdcc9c7a5046cb6bad84d734e93",
  "grounding_axiom_count": 225,
- "baseline": "step A: case entries over level-polymorphic families (GR14)",
+ "baseline": "relevance: C3 dispatch pairing and the forwarding clause (RL)",
  "axiom_sha256":
  "7d1f3a1406cbce9da1ba8b713c42c89758d476e89952c5a4a1a4675931de61c9",
  "axiom_count": 6647}

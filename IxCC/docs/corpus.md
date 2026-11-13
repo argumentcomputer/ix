@@ -305,7 +305,9 @@ runs, in this order:
    `fixtures/rc/budget`) and the certificate-depth input (`refreeze-ixon
    rc-deep`, `fixtures/rc/deep`), and the roots-only fixtures (`pin-src-tables
    --diagnostics fixtures/ixon-v4/src-diag`, `--sortpoly
-   fixtures/ixon-v4/src-sortpoly`);
+   fixtures/ixon-v4/src-sortpoly`, `--words fixtures/ixon-v4/src-words`,
+   `--kernel-hints fixtures/ixon-v4/kernel-hints`, `--erased-blocks
+   fixtures/ixon-v4/erased-blocks`);
 3. the generated modules: `gen-src-artifacts` (with the K1 kernel tests'
    constants named by meaning, `Ids`), `gen-recheck-artifacts`, `corpus
    kernel-artifacts`, `tests-fir --render-artifacts`.

@@ -288,8 +288,8 @@ theorem knownHead_nil (errs : List RelError) (c : CId) (us : List Ixon.Univ)
                   (fun k => RecKind.atProfile (ctx.prof.inst us) k)).getD .ordinary).allowsIrrMajor
             then err ctx "C4" "an ordinary eliminator with an irrelevant major" (some shape.recr) :: E
             else E
-          | none => E) fun errs (pos, j) =>
-          match args[pos]?, ruleCtorFields ctx.p ctx.ann shape.recr j with
+          | none => E) fun errs (pos, j, rule) =>
+          match args[pos]?, ruleCtorFields ctx.p ctx.ann shape.recr rule with
           | some (minor, _, a), some (k, fields) =>
             if a.irrP ctx.prof then errs
             else minorBinders ctx k j (ctorProfile ctx.p shape.recr (ctx.prof.inst us)) 0
@@ -300,11 +300,11 @@ theorem knownHead_nil (errs : List RelError) (c : CId) (us : List Ixon.Univ)
     · exact hE
     · split at hE
       · exact hE
-      · have hf := (Adds.foldl (g := fun errs (x : Nat × Nat) =>
-          match args[x.1]?, ruleCtorFields ctx.p ctx.ann _ x.2 with
+      · have hf := (Adds.foldl (g := fun errs (x : Nat × Nat × Nat) =>
+          match args[x.1]?, ruleCtorFields ctx.p ctx.ann _ x.2.2 with
           | some (minor, _, a), some (k, fields) =>
             if a.irrP ctx.prof then errs
-            else minorBinders ctx k x.2 (ctorProfile ctx.p _ (ctx.prof.inst us)) 0
+            else minorBinders ctx k x.2.1 (ctorProfile ctx.p _ (ctx.prof.inst us)) 0
               (lamRels minor) fields errs
           | _, _ => errs) (fun x => by
             intro errs

@@ -759,7 +759,11 @@ run_cmd Ix.Kernel.Audit.checkImportsWith #[`IxCK.Kernel.Admission.UserAxioms.Mod
 -- `toOffset` (7); in, the hash map's `get?`, `insert` and `expand` specialised at
 -- `inferPisOutI` (8) and two closed terms of `simplifyIMax` that `maxFold` shared before (2).
 -- Externs, implemented_by, unsafe, csimp and every ruling count are unchanged.
-/-- info: runtime closure of [Ix.Kernel.Cached.checkDecls]: 3733 compiled functions; inherited externs 68, implemented_by 0, unsafe 22, csimp 5; ruled computed_field 18, csimp 35 -/
+-- Stopping the telescope loops at a checked tail (`Cached.peelFuelTo`) and simplifying levels
+-- through the declaration's memo (`Cached.simplifyMemoC`, which reaches `Level.simplifyGo`)
+-- add 4 compiled functions to every closure below but the reader's; externs, implemented_by,
+-- unsafe, csimp and every ruling count are unchanged.
+/-- info: runtime closure of [Ix.Kernel.Cached.checkDecls]: 3737 compiled functions; inherited externs 68, implemented_by 0, unsafe 22, csimp 5; ruled computed_field 18, csimp 35 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.kernelOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
@@ -805,7 +809,7 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.readerOperations Ix.Ker
 /-- info: runtime closure of [Ix.Kernel.Admission.checkBytes,
  Ix.Kernel.Admission.checkBytesWith,
  Ix.Kernel.Admission.checkConstantsWith,
- Ix.Kernel.Admission.checkConstants]: 6909 compiled functions; inherited externs 114, implemented_by 0, unsafe 27, csimp 7; ruled computed_field 22, csimp 38 -/
+ Ix.Kernel.Admission.checkConstants]: 6913 compiled functions; inherited externs 114, implemented_by 0, unsafe 27, csimp 7; ruled computed_field 22, csimp 38 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.publicOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
@@ -858,7 +862,7 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.publicOperations Ix.Ker
 -- The reduction loops, the index build and the units check as loops add the fold's 3 compiled
 -- functions net and five ruled csimps (see the fold's record); every other count is unchanged.
 /-- info: runtime closure of [Ix.Kernel.Admission.checkBytesTiered,
- Ix.Kernel.Admission.checkConstantsTiered]: 7019 compiled functions; inherited externs 114, implemented_by 0, unsafe 27, csimp 7; ruled computed_field 22, csimp 38 -/
+ Ix.Kernel.Admission.checkConstantsTiered]: 7023 compiled functions; inherited externs 114, implemented_by 0, unsafe 27, csimp 7; ruled computed_field 22, csimp 38 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.tierOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
@@ -885,7 +889,7 @@ run_cmd Ix.Kernel.Audit.checkImportsWith #[`IxCK.Kernel.Admission.Tier] Ix.Kerne
  Ix.Kernel.Admission.checkBytesTieredUsingUnder,
  Ix.Kernel.Admission.checkConstantsTieredUnder,
  Ix.Kernel.Cached.checkDeclsWithUserAxioms,
- Ix.Kernel.Cached.annotDeclStepWithUserAxioms]: 6732 compiled functions; inherited externs 113, implemented_by 0, unsafe 27, csimp 7; ruled computed_field 22, csimp 38 -/
+ Ix.Kernel.Cached.annotDeclStepWithUserAxioms]: 6736 compiled functions; inherited externs 113, implemented_by 0, unsafe 27, csimp 7; ruled computed_field 22, csimp 38 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.userAxiomOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 

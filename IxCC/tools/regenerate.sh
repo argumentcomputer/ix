@@ -111,6 +111,7 @@ step env PATH="$FAKE:$PATH" "$BIN/pin-src-tables" --ix "$IX" --diagnostics fixtu
 step env PATH="$FAKE:$PATH" "$BIN/pin-src-tables" --ix "$IX" --sortpoly fixtures/ixon-v4/src-sortpoly --work "$WORK/sortpoly" > "$LOG/sortpoly.log" 2>&1 || die "src-sortpoly"
 step env PATH="$FAKE:$PATH" "$BIN/pin-src-tables" --ix "$IX" --words fixtures/ixon-v4/src-words --work "$WORK/words" > "$LOG/words.log" 2>&1 || die "src-words"
 step env PATH="$FAKE:$PATH" "$BIN/pin-src-tables" --ix "$IX" --kernel-hints fixtures/ixon-v4/kernel-hints --work "$WORK/kernel-hints" > "$LOG/kernel-hints.log" 2>&1 || die "kernel-hints"
+step env PATH="$FAKE:$PATH" "$BIN/pin-src-tables" --ix "$IX" --erased-blocks fixtures/ixon-v4/erased-blocks --work "$WORK/erased-blocks" > "$LOG/erased-blocks.log" 2>&1 || die "erased-blocks"
 
 # 3. the generated modules (written into the tree; the generators read its fixtures)
 step "$BIN/gen-src-artifacts" > "$LOG/gen-src.log" 2>&1 || die "gen-src-artifacts"

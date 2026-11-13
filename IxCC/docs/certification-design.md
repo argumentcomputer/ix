@@ -111,6 +111,48 @@ Three facts follow, each a reason for the plan's order.
   value equation for opaques
   ([`IxCK/Kernel/Ixon/Values.lean`](../../IxCK/Kernel/Ixon/Values.lean)).
 
+### Erased positions: the routes found, and what closes each
+
+A program may write a parameter or a constructor field erased (`0`). IxCC then drops the argument
+(the annotator's `KernelFront.erasedAt`, C2) or the field (`checkCanonical` on the constructor's
+record), and is right only if the run behaviour that receives the position never reads it (the
+invariant in [compiler design](compiler-design.md#relevance-and-erasure)). Seven routes have been
+found by which a hand-made artifact compiled to an object returning a wrong value while SrcEval
+returned the irrelevance marker. Each is now refused by a check that `Recheck.run` runs; **none by
+a theorem**: the relevance proof (`Relevance.Proof.check_sound`) says nothing about this invariant,
+and `checkCanonical`, with the checks in it, has no theorem.
+
+| # | Route | Reproduced | Refused by |
+| --- | --- | --- | --- |
+| 1 | a definition's own value with fewer λs than its erased parameters | 2026-11-12, below the kernel | `headerAgreement` |
+| 2 | a `csimp` redirect to a target that reads the parameter | 2026-11-12, below the kernel | the `csimp` refusal (`headerAgreement`) |
+| 3 | a `case` entry whose type writes a minor erased | 2026-11-12, **through the certified kernel** | `readsErased?` |
+| 4 | a recursor whose type writes a minor erased | 2026-11-12, below the kernel | `readsErased?` |
+| 5 | an η-short minor over a constructor field written erased | 2026-11-12, below the kernel | C3 (`Check.minorBinders`) |
+| 6 | `Quot.mk` with its element erased | 2026-11-12, below the kernel | `readsErased?` |
+| 7 | the minor for a constructor of a mutual block's second inductive, at that inductive's recursor: C3 paired minor `j` with rule `j`, and such a recursor takes the minors of every constructor of the block, so C3 checked the wrong minors there and its own not at all | 2026-11-13, below the kernel | C3 with each rule paired with the minor it dispatches (`Check.ruleDispatch`) |
+
+Also refused, where the source was stuck or a later stage refused: `Quot.lift`'s function, the
+pinned `Nat.succ`'s field and a primitive's parameter (`readsErased?`, `okPrim`); and a recursive
+field written erased, which a recursor's rule passes as the major of an induction hypothesis
+(SrcEval is stuck there). Under a single inductive that was refused before 2026-11-13 by C3's
+η-short clause at the hypothesis call (whose minors are the rule's own variables) and now also by
+name by the forwarding clause (`Check.Canonical.forwardsErased?`: a rule uses a field written
+erased only as that field's argument to the minor it dispatches). Where the hypothesis is another
+member's recursor (`mutual A2 | a1 (0 b : B2); B2 | …`) only the forwarding clause refuses it:
+before it no check did, and only erasure's decline of a rule that calls a sibling recursor (a
+capability gap) kept that program from an object. A nested block (stored as a mutual block with
+auxiliary types) is refused on the same checks; its honest programs do not compile today
+([roadmap](roadmap.md)).
+
+"Below the kernel": an honest program is ingested and the mark written in its Src program, as a
+kernel that sees no mode accepts it. Today's certified kernel refuses those artifacts because its
+conversion compares binder contracts (and its modeller of mutual blocks refuses a field written
+erased at the constructor), which ends with the Ixon format change that moves modes out of the
+term bytes. The table records routes found by testing, one at a time; that there is no other is
+not established. What would establish it is a theorem that an accepted program's evaluation never
+yields the marker at a position that is read; it is not proved.
+
 ## Target statements
 
 Notation: `kenv` is IxCK's environment read from the claim's bytes under the
