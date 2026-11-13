@@ -404,11 +404,9 @@ theorem is_nat_zero_step (c : Ctx) (hc : CoreFacts c) {args : List (SourceValue 
     · injection hx with _ _ hx'
       injection hx' with hx''
       subst hx''
-      have hrep : RepLimbs h (limbsVal limbs) _ := by
-        unfold RepLimbs
-        exact ⟨limbs, hrl, rfl⟩
       have hz := ih.get (.nat .klimbs_is_zero) (by lt_calls) ev51 _ rfl
-        (good.sub fun x hx => by simp [hx]) (limbsVal limbs) hrep
+        (good.sub fun x hx => by simp [hx]) (limbsVal limbs)
+        (by unfold RepLimbs; exact ⟨limbs, hrl, rfl⟩)
       have h0 : limbsVal limbs = 0 := of_ite_field_ne_zero hz hr
       rw [h0]
       exact .inl rfl
@@ -469,11 +467,7 @@ theorem try_def_eq_nat_step (c : Ctx) (hc : CoreFacts c) {args : List (SourceVal
     exact absurd hy tuple_zero_ne
   · -- equal offsets, definitionally equal bases
     subst hc371 he319
-    have hyv : v318 = y := by
-      injection hy with hl
-      injection hl with _ hl'
-      injection hl' with hv _
-      exact hv
+    have hyv : v318 = y := by simpa using hy
     subst hyv
     obtain ⟨hma, hmb⟩ := mul_field_ne_zero op227 hne253
     have e1 := ObsFn.heap_extends ev14

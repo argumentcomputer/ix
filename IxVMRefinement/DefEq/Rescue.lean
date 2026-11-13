@@ -174,13 +174,14 @@ private theorem stripPis_of_hasPis :
     | _ => exact (hT : False).elim
 
 /-- An unlicensed certificate is a licensed one. -/
-private theorem certs_true {env : Ix.Kernel.Env .anon} {d : Nat} {lic : Bool} {T : KExpr}
-    {As : List KExpr} (h : Ix.Kernel.Rules.Certs env d lic T As) :
-    Ix.Kernel.Rules.Certs env d true T As := by
-  induction h with
-  | nil => exact .nil
-  | skip _ hn _ ih => exact .skip rfl hn ih
-  | cert hi hd _ ih => exact .cert hi hd ih
+private theorem certs_true {env : Ix.Kernel.Env .anon} {d : Nat} {lic : Bool} :
+    ∀ {T : KExpr} {As : List KExpr}, Ix.Kernel.Rules.Certs env d lic T As →
+      Ix.Kernel.Rules.Certs env d true T As
+  | _, [], _ => .nil
+  | _, _ :: _, h => by
+    cases h with
+    | skip _ hn hrest => exact .skip rfl hn (certs_true hrest)
+    | cert hi hd hrest => exact .cert hi hd (certs_true hrest)
 
 /-- Pairwise definitional equality from the pointwise one. -/
 private theorem defEqList_of_get {env : Ix.Kernel.Env .anon} {d : Nat} :
@@ -250,7 +251,10 @@ private theorem hashed_of_bytes_to_addr {calls cs : List (Call F)} {bp r : Sourc
   obtain ⟨v1, m2, cs12, v23, m24, cs31, ev14, he27, hm26, ev33, hc42⟩ :=
     Obs.«Blake3::bytes_to_addr».obs ev
   subst hc42
+  unfold Hashed
   refine ⟨⟨"Blake3::hash", [bp], h⟩, hsub _ (by simp), rfl, bp, rfl, ?_⟩
+  have e : (byteStreamEnum : String) = byteListEnum := rfl
+  rw [e]
   simpa using hb
 
 end IxVM.Refinement.Core.DefEqAux
@@ -683,16 +687,17 @@ theorem compute_iprj_addr_step (c : Ctx) (rf : RescueFacts c) {args : List (Sour
     rfl
   · -- the run hashed the record's bytes
     intro cm hcm
-    unfold Ix.Cert.recordAt at hcm
-    cases hlc : c.E.consts.get? (ixAddr a) with
-    | none => simp [hlc] at hcm
-    | some lc =>
-      rw [hlc] at hcm
-      change lc.get? = some cm at hcm
-      have hraw := load_escape hlc good.1 _
-        (hashed_of_bytes_to_addr ev162 (fun x hx => by simp [hx]) hbytes) haddr.symm
-      rw [bytes_mk_toList] at hraw
-      exact rf.canonical _ lc _ hlc hraw.symm cm hcm
+    have key : ∀ o : Option Ixon.LazyConstant, o.bind (·.get?) = some cm →
+        ∃ lc, o = some lc ∧ lc.get? = some cm := by
+      intro o ho
+      cases o with
+      | none => simp at ho
+      | some lc => exact ⟨lc, rfl, ho⟩
+    obtain ⟨lc, hlc, hget⟩ := key (c.E.consts.get? (ixAddr a)) hcm
+    have hraw := load_escape hlc good.1 _
+      (hashed_of_bytes_to_addr ev162 (fun x hx => by simp [hx]) hbytes) haddr.symm
+    rw [bytes_mk_toList] at hraw
+    exact rf.canonical _ lc _ hlc hraw.symm cm hget
 
 /-! ## A family's parameters -/
 
@@ -870,7 +875,7 @@ theorem is_unit_like_type_step (c : Ctx) (rf : RescueFacts c) {args : List (Sour
     subst hvC
     obtain ⟨cvC, nPc, nF, rfl, -, -, hnf, -, hnF, -⟩ := ciRep_ctor_inv hrepC
     have hnF0 : nF = 0 := natCast_inj_small (by omega) (by omega)
-      (by injection hnf with e; rw [Nat.cast_zero]; exact e.symm)
+      (by rw [Nat.cast_zero]; exact (Value.field.inj hnf).symm)
     subst hnF0
     simp only [ZMod.val_zero] at hfindC
     -- the parameters
@@ -1052,7 +1057,7 @@ theorem try_eta_struct_step (c : Ctx) (rf : RescueFacts c) {args : List (SourceV
     have hv366 := of_ite_field_ne_zero h309 hy309
     subst hv344 hv366
     have hnI' : nI = 0 := natCast_inj_small (b := 0) (by omega) (by omega)
-      (by injection hnI0 with e; rw [Nat.cast_zero]; exact e)
+      (by rw [Nat.cast_zero]; exact Value.field.inj hnI0)
     have hnC1 : ((nC : ℕ) : F) = 1 := sub_field_zero op358
     have hnC' : nC = 1 :=
       natCast_inj_small (b := 1) (by omega) (by omega) (by rw [Nat.cast_one]; exact hnC1)
