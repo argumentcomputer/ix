@@ -1,3 +1,4 @@
+import IxCCTests.Recheck.ErasedPartial
 import IxCCTests.Recheck.P1Twin.Plants
 
 /-! # `tests-p1-twin`: P1's invariant tested by running it
