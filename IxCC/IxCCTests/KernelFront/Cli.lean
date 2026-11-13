@@ -163,6 +163,7 @@ def heldPart (dir : FilePath) : IO (Nat × Nat) := do
   unless ← childrenListed do
     IO.println "SKIP: ixcc at the command line: held runs (no /proc children lists here)"
     return (0, 1)
+  let t0 ← IO.monoMsNow
   let spawned ← IO.mkRef (#[] : Array HeldChild)
   let n ← IO.mkRef 0
   try
@@ -204,7 +205,11 @@ def heldPart (dir : FilePath) : IO (Nat × Nat) := do
     n.modify (· + 1)
   finally
     for c in ← spawned.get do reap c
-  return (← n.get, 0)
+  -- the part's own duration, asserted under its worst case
+  let ms := (← IO.monoMsNow) - t0
+  IO.println s!"ixcc at the command line: held runs in {ms} ms (bound 90000)"
+  check (ms < 90000) s!"the held runs took {ms} ms, over their 90 s bound"
+  return (← n.get + 1, 0)
 
 def suite (dir : FilePath) : IO (Nat × Nat) := do
   check (← ixccPath.pathExists) s!"{ixccPath} is not built"
