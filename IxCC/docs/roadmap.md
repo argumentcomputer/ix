@@ -728,9 +728,11 @@ within the 1 MiB record budget aborts `ixcc compile` and `ixcc check-cert`
 with a stack overflow, at about 30,000 levels on a 2 MiB stack and 100,000 on
 8 MiB (measured with `LEAN_STACK_SIZE_KB`; on this branch and on the tip
 before it alike), whether or not any root reaches the record. The kernel's
-own byte entry decodes the same way. The fix belongs to the kernel package
-(a depth limit inside its decoder) or to the envelope (a scan of the bytes
-for nesting depth before decoding); neither is made yet. The envelope's depth
+own byte entry decoded the same way; since 2026-11-13 it scans each record's
+bytes for nesting before decoding and declines past its depth limit
+(`Ix.Kernel.Admission.decodeWithin`, `Limits.maxDepth`, 16,384), as do the
+root hosts' own record decoders. The envelope does not run that scan yet
+(open: with `ixcc`'s limits and its sized stack). The envelope's depth
 bound (`V3.withinKernelDepth`) limits the records as stored, after that
 decoder, and not the terms the kernel builds while typing them.
 
@@ -757,7 +759,11 @@ notes, `plans/kernel-robustness/NOTES.md` and `NEXT.md`):
   to 49 ms (`kernel-depth` bounds them). A 48-bit hash in the packed word was rejected: its narrower
   range fields cost seconds on our 254- and 255-field fixtures;
 - open: a bought collision between two different terms (about 2^32 hash evaluations) makes lookups
-  descend one into the other, quadratic in their depth, bounded only once the depth limit lands;
+  descend one into the other, quadratic in their depth: the depth limit (16,384) bounds the input's
+  terms, the typing core's fixed fuel (`checkFuel`) the terms it builds;
+- fixed (2026-11-13): the kernel's phase B spawned one task per 64 records, so the threads a run
+  could start grew with the input and a run under an address-space limit aborted creating one; the
+  tasks are bounded by a setting (`Limits.workers`), which no verdict depends on;
 - open: bucket flooding of the kernel's memo maps, independent of the hash's width: R crafted terms
   in one bucket cost Θ(R²) comparisons (16,384 literals in one bucket: 0.6 s against 1 ms; about
   25 s at 10^5, extrapolated); remedies (a keyed hash, or a cap on bucket scans that declines) in
