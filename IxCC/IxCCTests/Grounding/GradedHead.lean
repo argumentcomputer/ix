@@ -62,6 +62,12 @@ def accepted : List String := NoCanon.acceptedFamily ++ NoCanon.acceptedExtra
 /-- The two closures the per-spine decision refuses. -/
 def refused : List String := ["phase2-closures/closures", "diag"]
 
+/-- The three corpus fixtures refused before the check (the annotation of
+`typeFormerPolymorphism`; the decoder's consumer budget at `fields255` and `tags126`): not
+loaded, so not counted among the 50. -/
+def notLoaded : List String :=
+  ["phase1-scalar/typeFormerPolymorphism", "phase1-boundary/fields255", "phase1-boundary/tags126"]
+
 def sB (i : Input) : Bool := headRegimeSB i.src i.env i.κ i.lpsOf i.ann i.Sl
 def gB (i : Input) : Bool := headRegimeGB i.src i.env i.κ i.lpsOf i.ann i.Sl
 
@@ -150,7 +156,14 @@ def bvarHeadConst (i : Input) : Option CId :=
 def run : IO Bool := do
   let a : Assert ← IO.mkRef 0
   try
-    let js ← allJobs
+    let js0 ← allJobs
+    for (label, stem, roots) in js0.filter (notLoaded.contains ·.1) do
+      let r ← try
+          let _ ← loadClosure label stem roots
+          pure true
+        catch _ => pure false
+      expect a (!r) s!"graded1b: {label} loads; it was refused before the check"
+    let js := js0.filter (!notLoaded.contains ·.1)
     expect a (js.length == 50) s!"graded1b: {js.length} closures found, expected 50"
     let mut nAcc := 0
     let mut sFalse : List String := []
