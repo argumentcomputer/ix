@@ -214,7 +214,12 @@ def evalSitesPs : List IxCC.Src.Profile → List KExpr → Term → KExpr →
       | some (A, cp) =>
         let P' := P.filter fun prof => !r.irrP prof
         if P'.isEmpty then [] else evalSitesPs P' (A :: Γ) v cp
-      | none => []) ++ evalSitesPs P Γ b e)
+      | none => []) ++
+    ((match witSite? b e with
+      | some (Δ, cp) =>
+        let P' := P.filter fun prof => !r.irrP prof
+        if P'.isEmpty then [] else evalSitesPs P' (Δ.reverse ++ Γ) v cp
+      | none => []) ++ evalSitesPs P Γ b e))
   | _, _, _, _ => []
 
 /-- `headRegimeGB` at one constant, its level parameters `lps` computed once (an `lpsOf` that
@@ -272,7 +277,12 @@ def spinesPs : List IxCC.Src.Profile → List KExpr → Term → KExpr → List 
       | some (A, cp) =>
         let P' := P.filter fun prof => !r.irrP prof
         if P'.isEmpty then [] else spinesPs P' (A :: Γ) v cp []
-      | none => []) ++ spinesPs P Γ b e acc)
+      | none => []) ++
+    ((match witSite? b e with
+      | some (Δ, cp) =>
+        let P' := P.filter fun prof => !r.irrP prof
+        if P'.isEmpty then [] else spinesPs P' (Δ.reverse ++ Γ) v cp []
+      | none => []) ++ spinesPs P Γ b e acc))
   | P, Γ, _, e, acc => spineHere P Γ e acc
 
 /-- `headRegimeSB` at one constant, its level parameters `lps` computed once (an `lpsOf` that
