@@ -189,6 +189,12 @@ uses at a recursor, `checkCanonical`'s facts and the three facts about positions
 /-- info: 'IxCC.Src.Relevance.Proof.arg_erased_irr' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Src.Relevance.Proof.arg_erased_irr
 
+/-- info: 'IxCC.Src.Relevance.Proof.headArityOf_eq' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.headArityOf_eq
+
+/-- info: 'IxCC.Src.Relevance.Proof.erased_lt_arity' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.erased_lt_arity
+
 namespace IxCC.Src.Relevance.Proof.L1Repair
 
 open IxCC.Src IxCC.Src.Relevance IxCC.Src.Relevance.Check IxCC.Src.Relevance.Check.Canonical
