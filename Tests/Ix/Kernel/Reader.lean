@@ -151,6 +151,36 @@ def quotLift := bound .quotLift
 -- committed under its BLAKE3 hash
 #guard builtinTable.bound.size == 108 && builtinTable.check.isOk
 #guard (Ix.Kernel.RoleTable.ofBytes builtinTable.toBytes).isSome
+
+/-- **The committed prelude holds one recursor per block and motive** (as `buildIndex`
+files them: the block of the first motive's carrier, and the motive the recursor
+eliminates), and every recursor a role of the default table binds is one of them, at
+the bound address (its record's, or its projection's). -/
+def preludeRecursorsUnique : Except String Unit := do
+  let recs ← preludeRecords
+  let t ← defaultTable
+  let store : Store := fun a => (recs.find? (·.1 == a)).map (·.2)
+  let mut filed : Array (Address × Nat × Address) := #[]
+  for (owner, c) in recs do
+    for (j, r) in recursorMembers c do
+      let some (m, carriers, _) := analyseRecursor store owner c r | continue
+      let some (ConstRef.member b _) := carriers[0]? | continue
+      if filed.any (fun (b', m', _) => b' == b && m' == m) then
+        throw s!"two prelude recursors for block {b} at motive {m}"
+      let prj : Ixon.Constant := ⟨.rPrj ⟨j.toUInt64, owner⟩, #[], #[], #[]⟩
+      let at_ := match c.info with
+        | .recr _ => owner
+        | _ => Address.blake3 (Ixon.ser prj)
+      filed := filed.push (b, m, at_)
+  for (r, a) in t.bound do
+    match store a with
+    | some { info := .recr _, .. } | some { info := .rPrj _, .. } =>
+      unless filed.any (·.2.2 == a) do
+        throw s!"the recursor role {repr r} is bound to {a}, which is no filed prelude recursor"
+    | _ => pure ()
+  pure ()
+
+#guard preludeRecursorsUnique.isOk
 #guard match defaultBinding with
   | .ok b => hash b.bytes == b.address && b.bytes == builtinTable.toBytes
   | .error _ => false

@@ -2129,7 +2129,10 @@ def build_rule_rhs := aiur_fn⟦
 
       match walk_fields_classify(rc, after_params, flat, (&(Lists::Node::Nil)),
               (&(Lists::Node::Nil)), (&(Lists::Node::Nil)), (&(Lists::Node::Nil)), 0, 0, ptypes) {
-        (_field_doms, rec_indices, rec_member_idxs, _ret_ty, norm_doms) => {
+        (field_doms, rec_indices, rec_member_idxs, _ret_ty, norm_doms) => {
+          -- every recursive field index is below the field count the rule is built at
+          assert_eq!(Lists::length(field_doms), n_fields,
+            "recursor rule: the constructor's fields differ from its telescope's binders");
           let minor_var = (body_depth - 1) - ((n_params + n_motives) +
                                                 ctor_minor_index);
           let base = (&(KernelTypes::KExprNode::BVar(minor_var)));

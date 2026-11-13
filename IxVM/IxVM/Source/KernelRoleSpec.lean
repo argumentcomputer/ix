@@ -182,6 +182,12 @@ def role_choice := aiur_fn⟦
     }
 ⟧
 
+def role_sorry_ax := aiur_fn⟦
+  inline fn role_sorry_ax() -> Field {
+      58
+    }
+⟧
+
 def role_decidable_is_true := aiur_fn⟦
   inline fn role_decidable_is_true() -> Field {
       60

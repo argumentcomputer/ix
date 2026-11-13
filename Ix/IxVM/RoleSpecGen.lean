@@ -497,7 +497,7 @@ index is the one the specification bytes give the role's Lean name. -/
 def namedRoles : List Role :=
   [.nat, .natZero, .natSucc, .bool, .boolFalse, .boolTrue, .eq, .eqRefl,
    .listNil, .listCons, .quot, .quotMk, .quotLift, .quotInd, .quotSound,
-   .string, .stringOfList, .char, .charOfNat, .natAdd, .propext, .choice,
+   .string, .stringOfList, .char, .charOfNat, .natAdd, .propext, .choice, .sorryAx,
    .decidableIsTrue, .decidableIsFalse, .ofDecideEqTrue, .ofDecideEqFalse,
    .natLe, .natDecLe, .int, .intOfNat, .intNegSucc, .bitVecOfNat, .byteArrayEmpty,
    .intLe, .intDecLe]

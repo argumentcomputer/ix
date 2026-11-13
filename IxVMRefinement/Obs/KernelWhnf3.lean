@@ -2433,13 +2433,20 @@ inductive «KernelWhnf::se_scan_fields».Path (x_ty x_members : SourceValue F) (
       (hne74 : (v36 : SourceValue F) ≠ (.field 1))
       (ev83 : ObsFn W "KernelWhnf::se_scan_fields" [x_body, x_members] m37 r h' cs81)
       (hc100 : calls = ((⟨"KernelWhnf::se_mentions", [x_dom, x_members], h⟩ : Call F) :: (cs48 ++ ((⟨"KernelWhnf::se_scan_fields", [x_body, x_members], m37⟩ : Call F) :: cs81))))
+  | Let
+      (w108 : SourceValue F) (w109 : SourceValue F) (w110 : SourceValue F)
+      (ld12 : loadValue h x_ty = .ok (.construct "KernelTypes::KExprNode" "Let" [w108, w109, w110]))
+      (he126 : r = (.field 1))
+      (he127 : h' = h)
+      (hc128 : calls = [])
   | other
       (v1 : SourceValue F)
       (ld12 : loadValue h x_ty = .ok v1)
       (hne101 : ∀ vs : List (SourceValue F), vs.length = 3 → (v1 : SourceValue F) ≠ .construct "KernelTypes::KExprNode" "Forall" vs)
-      (he105 : r = (.field 0))
-      (he106 : h' = h)
-      (hc107 : calls = [])
+      (hne129 : ∀ vs : List (SourceValue F), vs.length = 3 → (v1 : SourceValue F) ≠ .construct "KernelTypes::KExprNode" "Let" vs)
+      (he133 : r = (.field 0))
+      (he134 : h' = h)
+      (hc135 : calls = [])
 
 /-- **Every observed derivation of `KernelWhnf::se_scan_fields` takes one of its paths.** -/
 theorem «KernelWhnf::se_scan_fields».obs {x_ty x_members : SourceValue F} {h h' : Heap F} {r : SourceValue F}
@@ -2500,10 +2507,25 @@ theorem «KernelWhnf::se_scan_fields».obs {x_ty x_members : SourceValue F} {h h
   · have hne101 := matchPattern_construct_none (by trivial) nm15
     simp only [Names.n14861064886094815840] at hne101
     rcases selectArm_cons_inv sel16 with ⟨mt102, rfl⟩ | ⟨nm103, sel104⟩
-    · obtain rfl := matchPattern_wildcard_inv mt102
+    · obtain ⟨vs105, hv106, -, ml107⟩ := matchPattern_construct_inv mt102
+      rw [Names.n14861064886094815840] at hv106
+      subst hv106
+      obtain ⟨w108, vs111, b112, b113, rfl, mt114, ml115, rfl⟩ := matchListWith_cons_inv ml107
+      obtain rfl := matchPattern_wildcard_inv mt114
+      obtain ⟨w109, vs116, b117, b118, rfl, mt119, ml120, rfl⟩ := matchListWith_cons_inv ml115
+      obtain rfl := matchPattern_wildcard_inv mt119
+      obtain ⟨w110, vs121, b122, b123, rfl, mt124, ml125, rfl⟩ := matchListWith_cons_inv ml120
+      obtain rfl := matchPattern_wildcard_inv mt124
+      obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml125
       obtain ⟨rfl, rfl, rfl⟩ := d9.literal_inv
-      exact «KernelWhnf::se_scan_fields».Path.other _ ld12 hne101 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
-    · exact (matchPattern_wildcard_none nm103).elim
+      exact «KernelWhnf::se_scan_fields».Path.Let _ _ _ ld12 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+    · have hne129 := matchPattern_construct_none (by trivial) nm103
+      simp only [Names.n14861064886094815840] at hne129
+      rcases selectArm_cons_inv sel104 with ⟨mt130, rfl⟩ | ⟨nm131, sel132⟩
+      · obtain rfl := matchPattern_wildcard_inv mt130
+        obtain ⟨rfl, rfl, rfl⟩ := d9.literal_inv
+        exact «KernelWhnf::se_scan_fields».Path.other _ ld12 hne101 hne129 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+      · exact (matchPattern_wildcard_none nm131).elim
 
 /-- The evaluation paths of `KernelWhnf::se_mentions`: one constructor per combination of selected arms. -/
 inductive «KernelWhnf::se_mentions».Path (x_e x_members : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)

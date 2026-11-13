@@ -41,13 +41,21 @@ def publishedRolesFrom (existing : Std.HashMap Ix.Kernel.Name Address) : List Ro
 def closeRoles (roles : List Role) : List Role :=
   Role.all.filter (roles ++ roles.flatMap Role.block ++ roles.flatMap Role.deps).contains
 
+/-- **The roles every binding binds**, whatever the artifact publishes: the
+prelude's, and the axiom roles (`sorryAx`, `propext`, `Classical.choice`), which
+a check admitting user axioms needs bound (`Ix.Kernel.Admission.admitAxiomPolicy`).
+Their records join an artifact whose closure lacks them, so a claim on any
+compiled artifact may carry user axioms under its binding. -/
+def alwaysBound : List Role :=
+  Ix.Kernel.preludeShape.flatten ++ Ix.Kernel.Admission.userAxiomRoles
+
 /-- Explicitly check mandatory sources before the selected-closure collector,
 which intentionally ignores unavailable seed names in other callers. -/
 def supportInput (source : Lean.Environment) (artifact : Ixon.Env)
     (published? : Option (List Role) := none) :
     Except String (List Role × Ix.Compile.CompileInput) := do
   let published := published?.getD (publishedRoles artifact)
-  let mut required := closeRoles (Ix.Kernel.preludeShape.flatten ++ published)
+  let mut required := closeRoles (alwaysBound ++ published)
   for _ in [:Role.all.length + 1] do
     let roots := required.map roleName
     for name in roots do
@@ -885,7 +893,7 @@ def finalize (backend : Backend) (source : Lean.Environment)
     | some m => pure m
     | none => IO.ofExcept (sourceAddresses artifact)
   let initialRoles := publishedRolesFrom existing
-  let initRoles := closeRoles (Ix.Kernel.preludeShape.flatten ++ initialRoles)
+  let initRoles := closeRoles (alwaysBound ++ initialRoles)
   -- The roles to support, and how: `initRoles`, sliced from the artifact when
   -- it can be; otherwise `supportInput`'s closure, from its selected input.
   let sliced? := if initialRoles == initRoles then

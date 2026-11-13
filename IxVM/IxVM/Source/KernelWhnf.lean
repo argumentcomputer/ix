@@ -362,11 +362,18 @@ def quot_certs := aiur_fn⟦
         1 => {  KernelLevels::level_is_not_zero(Lists::lookup(lvls, 1)) } ,
         _ => {  0 } ,
       };
+      -- Where the eliminator's arguments are certified, so is the last β of its rule
+      -- `λ α r β f h a, f a`: `Quot.mk`'s argument `a` has the eliminator's `α` as its type.
       let c1 = match rec_never {
         1 => {  1 } ,
         _ => {
-          certs_all(rc, KernelLevels::expr_inst_levels(KernelInfer::const_type_of((*(Ingress::get_ci(addr)))), lvls),
-                    rec_args, (&(Lists::Node::Nil)), types) } ,
+          match certs_all(rc, KernelLevels::expr_inst_levels(KernelInfer::const_type_of((*(Ingress::get_ci(addr)))), lvls),
+                          rec_args, (&(Lists::Node::Nil)), types) {
+            1 => {
+              KernelDefEq::k_is_def_eq(rc, KernelInferOnly::k_infer_only(rc, Lists::lookup(mk_args, 2), types),
+                                       Lists::lookup(rec_args, 0), types) } ,
+            _ => {  0 } ,
+          } } ,
       };
       match c1 {
         1 => {
@@ -444,6 +451,7 @@ def red_rec := aiur_fn⟦
       let k_pre = match k_flag {
         1 => {
           match se_parent_addr(rec_ty, ((nparams + nmotives) + nminors) + nindices) {
+            (0, _) => {  (0, head) } ,
             (_, rec_parent) => {
               try_k_synth_iota(rc, rec_ty, lvls, spine, nparams, nmotives,
                                   nminors, nindices, rules,
@@ -1158,6 +1166,8 @@ def se_scan_fields := aiur_fn⟦
             1 => {  1 } ,
             _ => {  se_scan_fields(body, members) } ,
           } } ,
+        -- a field behind a `let` is not read here: the block counts as recursive
+        KernelTypes::KExprNode::Let(_, _, _) => {  1 } ,
         _ => {  0 } ,
       }
     }

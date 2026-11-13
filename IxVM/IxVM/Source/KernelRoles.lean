@@ -147,8 +147,9 @@ def validate_user_axioms := aiur_fn⟦
           assert_eq!(RBTreeMap::rbtree_map_lookup_or_default(a, role_addr_index(tbl), 0), 0,
             "claim: user axiom is bound in the role table");
           match (*(Ingress::get_ci(a))) {
-            KernelTypes::KConstantInfo::Axiom(_, _, u) => {
+            KernelTypes::KConstantInfo::Axiom(nl, ty, u) => {
               assert_eq!(u, 0, "claim: user axiom is unsafe");
+              assert_not_axiom_spec(tbl, nl, ty);
               validate_user_axioms(tbl, rest, RBTreeMap::rbtree_map_insert(a, 1, acc)) } ,
             _ => {
               assert_eq!(0, 1, "claim: axioms tree entry is not an axiom");
@@ -158,12 +159,84 @@ def validate_user_axioms := aiur_fn⟦
     }
 ⟧
 
+  -- A user axiom may not restate the specification of an axiom role (`propext`,
+  -- `Classical.choice`, `sorryAx`, and `Quot.sound` where the table binds it): the same level
+  -- count and the same type once every binder datum is erased (the kernel's `axiomRoleSpecHit?`,
+  -- `ConstantVal.matchesPin`). Such an axiom is the role's own under another address.
+
+def assert_not_axiom_spec := aiur_fn⟦
+  fn assert_not_axiom_spec(tbl: RoleTable, nl: Field, ty: KernelTypes::KExpr) -> () {
+      assert_eq!(restates_role(tbl, nl, ty, KernelRoleSpec::role_propext()), 0,
+        "claim: a user axiom restates an axiom role's specification");
+      assert_eq!(restates_role(tbl, nl, ty, KernelRoleSpec::role_choice()), 0,
+        "claim: a user axiom restates an axiom role's specification");
+      assert_eq!(restates_role(tbl, nl, ty, KernelRoleSpec::role_sorry_ax()), 0,
+        "claim: a user axiom restates an axiom role's specification");
+      match role_is_bound(tbl, KernelRoleSpec::role_quot_sound()) {
+        1 => {
+          assert_eq!(restates_role(tbl, nl, ty, KernelRoleSpec::role_quot_sound()), 0,
+            "claim: a user axiom restates an axiom role's specification");
+          () } ,
+        _ => {  () } ,
+      }
+    }
+⟧
+
+def restates_role := aiur_fn⟦
+  fn restates_role(tbl: RoleTable, nl: Field, ty: KernelTypes::KExpr, r: Field) -> Field {
+      match nl - KernelRoleSpec::role_levels(r) {
+        0 => {
+          KernelCheck::kexpr_struct_eq(erase_data(ty), erase_data(KernelRoleSpec::role_type(tbl, r))) } ,
+        _ => {  0 } ,
+      }
+    }
+⟧
+
+  -- Every binder datum set to never zero (the kernel's `Expr.erasePw`).
+
+def erase_data := aiur_fn⟦
+  fn erase_data(e: KernelTypes::KExpr) -> KernelTypes::KExpr {
+      match (*(e)) {
+        KernelTypes::KExprNode::App(f, a) => {
+          (&(KernelTypes::KExprNode::App(erase_data(f), erase_data(a)))) } ,
+        KernelTypes::KExprNode::Lam(t, b, _) => {
+          (&(KernelTypes::KExprNode::Lam(erase_data(t), erase_data(b),
+            (&(KernelTypes::KLevelNode::Succ((&(KernelTypes::KLevelNode::Zero)))))))) } ,
+        KernelTypes::KExprNode::Forall(t, b, _) => {
+          (&(KernelTypes::KExprNode::Forall(erase_data(t), erase_data(b),
+            (&(KernelTypes::KLevelNode::Succ((&(KernelTypes::KLevelNode::Zero)))))))) } ,
+        KernelTypes::KExprNode::Let(t, v, b) => {
+          (&(KernelTypes::KExprNode::Let(erase_data(t), erase_data(v), erase_data(b)))) } ,
+        KernelTypes::KExprNode::Proj(s, i, x) => {
+          (&(KernelTypes::KExprNode::Proj(s, i, erase_data(x)))) } ,
+        _ => {  e } ,
+      }
+    }
+⟧
+
+  -- A claim with user axioms needs the table to bind `propext`, `Classical.choice` and
+  -- `sorryAx`: an unbound one's own axiom is an unbound safe axiom, which the claim could
+  -- otherwise list as a user axiom (the kernel's admission of a table under user axioms).
+
+def assert_axiom_roles_bound := aiur_fn⟦
+  fn assert_axiom_roles_bound(tbl: RoleTable) -> () {
+      assert_eq!(role_is_bound(tbl, KernelRoleSpec::role_propext()), 1,
+        "claim: user axioms need propext, Classical.choice and sorryAx bound");
+      assert_eq!(role_is_bound(tbl, KernelRoleSpec::role_choice()), 1,
+        "claim: user axioms need propext, Classical.choice and sorryAx bound");
+      assert_eq!(role_is_bound(tbl, KernelRoleSpec::role_sorry_ax()), 1,
+        "claim: user axioms need propext, Classical.choice and sorryAx bound");
+      ()
+    }
+⟧
+
 def load_role_ctx := aiur_fn⟦
   fn load_role_ctx(binding: Bytes::AddressRef, validator: Field, axioms_opt: Options::Option<Bytes::AddressRef>) -> RoleCtx {
       let tbl = load_role_table(binding);
       let axioms = match axioms_opt {
         Options::Option::None => {  RBTreeMap::RBTreeMap::Nil } ,
         Options::Option::Some(ax_root) => {
+          assert_axiom_roles_bound(tbl);
           validate_user_axioms(tbl, KernelClaim::load_assumption_tree(ax_root), RBTreeMap::RBTreeMap::Nil) } ,
       };
       match validator {

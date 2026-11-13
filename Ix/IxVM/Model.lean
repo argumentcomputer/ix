@@ -629,6 +629,32 @@ def blockAdvice (table : Ix.Kernel.RoleTable) (look : Address → Option Ixon.Co
         | _ => none
       if icBlock.any irefBlocks.contains then continue
       extra := extra.push r
+  -- likewise the block's own recursor family: its used references that the circuit cannot
+  -- place by the block (`KernelModeled::family_refs_ok`: a used reference of the block, a
+  -- type, constructor or recursor of the block, or a type or constructor of a block that one
+  -- of the block's used references is a type, constructor or recursor of)
+  if let some fam := look fk.recBlock then
+    let bused := usedIdxs bc
+    let typeCtorRecBlock (c : Ixon.Constant) : Option Address := match c.info with
+      | .iPrj p => some p.block
+      | .cPrj p => some p.block
+      | .rPrj p => some p.block
+      | _ => none
+    let brefBlocks : Array Address := bc.refs.zipIdx.filterMap fun (q, j) =>
+      if bused.contains j then (look q).bind typeCtorRecBlock else none
+    let used := usedIdxs fam
+    for (r, j) in fam.refs.zipIdx do
+      unless used.contains j do continue
+      if bc.refs.zipIdx.any (fun (q, i) => q == r && bused.contains i) then continue
+      if outside.contains r || extra.contains r then continue
+      let rc? := look r
+      if (rc?.bind typeCtorRecBlock) == some b then continue
+      let icBlock : Option Address := rc?.bind fun c => match c.info with
+        | .iPrj p => some p.block
+        | .cPrj p => some p.block
+        | _ => none
+      if icBlock.any brefBlocks.contains then continue
+      extra := extra.push r
   for x in extra do
     let w ← classify x
     witnesses := witnesses.push w
