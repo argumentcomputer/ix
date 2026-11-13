@@ -1058,6 +1058,9 @@ the environment relation under it, the walks' `let` cases) -/
 /-- info: 'IxCC.Grounding.mem_evalSitesPs' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Grounding.mem_evalSitesPs
 
+/-- info: 'IxCC.Grounding.mem_filter_irr' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Grounding.mem_filter_irr
+
 /-- info: 'IxCC.Grounding.profileOf_mem_okProfiles' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Grounding.profileOf_mem_okProfiles
 
@@ -1087,9 +1090,6 @@ the environment relation under it, the walks' `let` cases) -/
 
 /-- info: 'IxCC.Grounding.beta_peel' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Grounding.beta_peel
-
-/-- info: 'IxCC.Grounding.skipEnv_push_one' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in #print axioms IxCC.Grounding.skipEnv_push_one
 
 /-- info: 'IxCC.Grounding.gradedBy_lift' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Grounding.gradedBy_lift

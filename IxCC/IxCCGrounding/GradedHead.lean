@@ -787,11 +787,6 @@ theorem beta_peel (M : Model V env) {ψ : LevelParam → Nat} :
       exact this
     all_goals simp [lamPeel] at hp
 
-omit [Ix.Kernel.SetTheory V] in
-theorem skipEnv_push_one (X : V) (ρ : BVarIdx → V) : skipEnv (push X ρ) 1 0 = ρ := by
-  funext i
-  simp [skipEnv, push]
-
 /-- `GradedBy` under a lift: the lifted term read in `ρ` is the term read with the inserted indices
 skipped (from `den_lift`). -/
 theorem gradedBy_lift (M : Model V env) {φ : LevelParam → Nat} (k : Nat) :
