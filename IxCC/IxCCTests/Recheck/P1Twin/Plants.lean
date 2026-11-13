@@ -418,7 +418,9 @@ def f3Record (a : Assert) : IO Unit := do
   let P1 := ((Pt.setDecl k (.ctor ks kl ki kj knp (knf + 1) kty')).setDecl r
     (.recr sf kk lv np nmot nmin ni ind (rules.set 0 { rule0 with fields := knf + 1, rhs }) rty'))
   let P1 := { P1 with table := { table with recKind := table.recKind.insert r (.subsingleton w (srcs ++ [.proof])) } }
-  let ann := withNode fx.ann (.rule r 0) (tagsOf rhs)
+  -- `K` keeps a canonical constant record and has no constructor record (it is unreached)
+  let annK := withConst fx.ann P1 k
+  let ann := withNode { annK with ctors := annK.ctors.erase k } (.rule r 0) (tagsOf rhs)
   let _ ← direct s!"F3: {Pt.short r}'s rule-0 constructor {Pt.short k} unreached, with a field written erased" P1 ann fx.main
   match Src.Recheck.annotation P1 ann with
   | .ok (src, ch1) =>
