@@ -505,7 +505,25 @@ def quot (a : Assert) : IO (Array String) := do
   let (P2, ann2) := build false true
   let mk ← refused a "Quot.mk with its element written erased" h.cfg P2 h.cert.table ann2
     [s!"({P.short mkId})", "parameter 2 is written erased, but Quot.mk reads it"]
-  return #["Quot.lift idc h (Quot.mk r c₁): accepted, c₁ (object and SrcEval)", lift, mk]
+  -- `Quot.lift` made a root: its instance at the empty profile, where `β : Sort 0` and its
+  -- function is a proof, arrives without C5 at it; `checkCanonical`'s `appliedAt` alone refuses it
+  -- (F8 would force the function and apply it, a marker there)
+  let P3 := { P0 with roots := P0.roots ++ [(qliftA, liftId)] }
+  let table3 ← match Src.Table.ofCert h.cfg.table P3 h.cert.table with
+    | .ok t => pure t
+    | .error m => throw (IO.userError s!"Quot.lift as a root: the table refused it: {m}")
+  let P3t := { P3 with table := table3 }
+  let root ← match Src.Recheck.annotation P3t ann0 with
+    | .error (.relevance errs) => do
+      let ms := errs.toList.map (·.render P3t)
+      expect a (!ms.isEmpty && ms.all fun m =>
+          m.contains s!"({P.short liftId})" && m.contains "argument 3 is forced and applied")
+        s!"Quot.lift as a root: refused, but not by appliedAt alone: {ms}"
+      pure s!"Quot.lift as a root at the empty profile: {ms.headD ""}"
+    | _ => do
+      expect a false "Quot.lift as a root at the empty profile: not refused at relevance"
+      pure ""
+  return #["Quot.lift idc h (Quot.mk r c₁): accepted, c₁ (object and SrcEval)", lift, mk, root]
 
 /-- `main : Nat := Nat.succ 4` and `main : Nat := Nat.add 2 3` (`5`) on an ingested program
 (the pinned constants are read with it), with the field or the first parameter written erased. -/

@@ -1,6 +1,7 @@
 import IxCC.Rt.Proof.Publish
 import IxCC.Rt.Proof.Lang
 import IxCC.Recheck.Proof.Sound
+import IxCC.Recheck.Proof.LiveDefs
 
 /-! Required axiom fences for the front half composed: `Recheck.front_refines`
 (the checked source, viewed at the roots' readback types, is refined by the

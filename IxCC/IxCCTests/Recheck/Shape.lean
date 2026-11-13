@@ -249,6 +249,12 @@ def setDom : Nat → Src.Term → Src.Term → Src.Term
   | n + 1, d', .pi b r d body => .pi b r d (setDom n d' body)
   | _, _, t => t
 
+/-- One more field of type `d` (closed) at the end of a telescope, before its conclusion. -/
+def addLastField (d : Src.Term) : Src.Term → Src.Term
+  | .pi b r dom body@(.pi ..) => .pi b r dom (addLastField d body)
+  | .pi b r dom concl => .pi b r dom (.pi {} {} d (Src.Relevance.Check.Canonical.liftTerm 1 0 concl))
+  | t => t
+
 def wordsDir : System.FilePath := "fixtures/ixon-v4/src-words"
 
 /-- `Words.u8` (a word entry reached, so the towers' constructors are): `Fin.mk`'s proof field
@@ -278,7 +284,48 @@ def finProof (a : Assert) (fx : Fixture) : IO (Array String) := do
       pure s!"finProof, Fin.mk's record removed: refused first by S1 at a projection out of Fin \
         ({ms.length} errors)"
     | _ => do expect a false "finProof, Fin.mk's record removed: not refused at relevance"; pure ""
-  return #[kept, both, "finProof: Words.u8 0 3 4 = 7 (object and SrcEval)"]
+  -- `Fin.mk` declared with a third field (of type `Nat`, kept): F6w still builds its value with
+  -- two fields, so F2 over it would bind the rule's field λs short (P1's `MarkersPlaced.count`)
+  let Pc := fx.P.setDecl fin (.ctor x1 x2 x3 x4 np (nf + 1) (addLastField (.const natId []) ty))
+  let count ← refusedOnly a "finProof, Fin.mk declared with three fields" fx.cfg fx.cert Pc fx.tc
+    (withCtor fx.ann Pc fin) [s!"({fx.P.short fin})", "not a constructor of two fields"]
+  return #[kept, both, count, "finProof: Words.u8 0 3 4 = 7 (object and SrcEval)"]
+
+/-- `Key.casesOn` (a `case` key) at the empty profile, where its motive lands in `Sort 0` and its
+minors are proofs (F5 would force a minor that is a marker there). Made a root, tier S refuses it
+first: the key reaches `Key.rec` at its own levels, whose rules' minor λs are proofs there (C6).
+Its instance alone, given to `checkCanonical` beside the honest program's check output, is refused
+by `appliedAt` alone. -/
+def caseRoot (a : Assert) : IO (Array String) := do
+  let (h, cId, _, _, _, _) ← IxCCTests.Recheck.Erased.keyProg "appliedAt, a case key" true
+  let P := h.inp.program
+  let table ← match Src.Table.ofCert h.cfg.table P h.cert.table with
+    | .ok t => pure t
+    | .error m => throw (IO.userError s!"appliedAt: the table refused it: {m}")
+  let Pt := { P with table }
+  let Pr := { Pt with roots := Pt.roots ++ [(P.addr cId, cId)] }
+  let first ← match Src.Recheck.annotation Pr h.cert.relevance with
+    | .error (.relevance errs) => do
+      let ms := errs.toList.map (·.render Pr)
+      expect a (ms.any (·.contains "[relevance C6]")) s!"appliedAt, Key.casesOn as a root: not refused by C6: {ms}"
+      pure s!"appliedAt, Key.casesOn as a root at the empty profile: refused first by C6 at Key.rec's rules \
+        ({ms.length} errors)"
+    | _ => do
+      expect a false "appliedAt, Key.casesOn as a root: not refused at relevance"
+      pure ""
+  let Pi ← match Src.Relevance.install Pt h.cert.relevance with
+    | .ok Pi => pure Pi
+    | .error m => throw (IO.userError s!"appliedAt: install: {m}")
+  let .ok ch := Src.Relevance.check Pi h.cert.relevance
+    | throw (IO.userError "appliedAt: the honest program is refused")
+  let honest := Src.Relevance.checkCanonical Pi h.cert.relevance ch
+  let ms := (Src.Relevance.checkCanonical Pi h.cert.relevance
+    { ch with instances := ch.instances ++ [(cId, [])] }).map (·.render Pi)
+  expect a (honest.isEmpty && !ms.isEmpty && ms.all fun m =>
+      m.contains s!"({P.short cId})" && m.contains "is forced and applied")
+    s!"appliedAt, Key.casesOn's instance at the empty profile: not refused by appliedAt alone: {ms}"
+  return #[first, s!"appliedAt, Key.casesOn's instance at the empty profile, given to checkCanonical: \
+    {ms.headD ""}"]
 
 /-- A reached eliminator of a subsingleton kind in the committed closure `clo` at root `chosen`:
 its sources given one more (a proof). Through `Recheck.run` the table certificate's `recKind`
@@ -314,6 +361,7 @@ def subsingleton (a : Assert) (label : String) (fx : Fixture) (xs : List Nat) :
 def run (a : Assert) : IO (Array String) := do
   let words ← fixture "Words.u8" (wordsDir / "words.ixe") (wordsDir / "words.equations.json") ["Words.u8"]
   return (← sorts a) ++ (← rules a) ++ (← univsDenseRecords a) ++
-    (← subsingleton a "subsingletonFields, Words.u8" words [0, 3, 4]) ++ (← finProof a words)
+    (← subsingleton a "subsingletonFields, Words.u8" words [0, 3, 4]) ++ (← finProof a words) ++
+    (← caseRoot a)
 
 end IxCCTests.Recheck.Shape

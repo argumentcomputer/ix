@@ -607,6 +607,7 @@
   "IxCC.Recheck.Proof.Back",
   "IxCC.Recheck.Proof.Compile",
   "IxCC.Recheck.Proof.Front",
+  "IxCC.Recheck.Proof.LiveDefs",
   "IxCC.Recheck.Proof.Middle",
   "IxCC.Recheck.Proof.Object",
   "IxCC.Recheck.Proof.Parts",
@@ -962,6 +963,7 @@
   "IxCC.Src.Recheck",
   "IxCC.Src.Relevance.Check",
   "IxCC.Src.Relevance.Proof.Canonical",
+  "IxCC.Src.Relevance.Proof.P1.Defs",
   "IxCC.Src.Relevance.Proof.Sound",
   "IxCC.Src.Relevance.Proof.Terms",
   "IxCC.Src.Relevance.Syntax",
@@ -1795,8 +1797,7 @@
  "grounding_axiom_sha256":
  "06aeb842207c1f9d7f830573c8e59a912edd572745425080f8bcb9661a217439",
  "grounding_axiom_count": 312,
- "baseline":
- "f0562a754: the eleventh route (a position at or past a special head arity is read)",
+ "baseline": "P1 definitions repaired; finProof count, appliedAt",
  "axiom_sha256":
- "f227d33c44ebfe9536a8d55a304a403e4332c3615e38c7b01cd95ff260788ca6",
- "axiom_count": 6724}
+ "0e978268e7d9fcfda0054296b83b784f846cd9df2c407b967a1a2a60053804f7",
+ "axiom_count": 6725}
