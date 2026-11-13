@@ -398,7 +398,7 @@ def fastPathCase : LSpec.TestSeq :=
       { info := .axio ⟨false, 0, .all (.sort 0) (.sort 0)⟩,
         sharing := #[], refs := #[], univs := #[.zero],
         binders := #[{ shared := false, index := 0, variant := 0,
-          nodes := #[.never { input := .unique }] }] }
+                       nodes := #[.never { input := .unique }] }] }
     let table : Ix.Kernel.RoleTable := { version := 0, bound := #[], evidence := #[] }
     let mk (c : Ixon.Constant) (externs : List Address := []) : Subject :=
       { table, store := fun a => if a == addr 200 then some c else none, seeds := [addr 200], externs }
