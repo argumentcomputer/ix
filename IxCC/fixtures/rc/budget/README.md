@@ -12,12 +12,16 @@ twenty-one parts of at most two calls) with every `xᵢ` their `n`, and return t
 pair (so that the automatic policy selects plain RC): canonically 41 · 199 · 128 = 1,044,352
 captured tokens, within `Anf.maxCapturedWork` (2²⁰ = 1,048,576), and 41 · 200 · 128 = 1,049,600,
 past it. A liveness placement captures only the parameters: 1,033,856 and 1,039,104, both within
-it.
+it. Confirmed on 2026-11-13, after the shrink walk's `succBle` rule turned each `Nat.blt s m` into
+`natBlt` and changed both roots' objects and certificates: `tests-rc-certificate fresh` (in the
+`rc-native` check) reports `fanUnder`'s canonical captured work as 1,044,352 (admitted at that
+budget, refused at 1,044,351) and `fanOver`'s as 1,049,600 (refused).
 
 The parts keep the certificate's text within the verifier's limits. The canonical placement gives
 `n` one `inc` per extra copy passed, and each nests the ownership code one level, so a part of two
 calls nests about 400 deep (`fanUnder`'s plain-RC certificate: nesting 410 of the 512 that
-`Src.Hints.maxJsonDepth` allows, 54,727,677 bytes of the 64 MiB that `maxJsonTextBytes` allows).
+`Src.Hints.maxJsonDepth` allows, 51,379,451 bytes of the 64 MiB that `maxJsonTextBytes` allows;
+54,727,677 bytes before the `succBle` rule).
 Until 2026-11-12 the roots called them in four parts of ten or eleven, which nested 2,208 deep:
 `ixcc compile --rc on` wrote that certificate and `ixcc check-cert` refused it.
 

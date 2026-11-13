@@ -65,6 +65,11 @@ so the closure walked here is the one SrcEval can reach.
   at the callee's profile.
 * C6 a λ in a relevant position is not a proof at the instance (so SrcEval's
   β guard, rule A1, never fires on it).
+* C7 no type (a sort or Π) in a relevant position, a spine's head included:
+  SrcEval evaluates one to the irrelevance marker (E2) and erasure to □, so
+  a type there would be read as a value. Only the kernel's typing refused
+  one before (`def main : E := Sort 0` is ill typed and passes every other
+  check); the relevance checks do not assume the kernel's acceptance.
 
 **Style (D17).** The closure loop, the term walk and the per-instance rules
 recurse structurally (the loop on a fuel; the term walk is a mutual
@@ -76,7 +81,7 @@ their `NatMap`s and lists: no array or hash map on the path. -/
 namespace IxCC.Src.Relevance
 
 structure RelError where
-  /-- `S1`–`S4` or `C0`–`C6`. -/
+  /-- `S1`–`S4` or `C0`–`C7`. -/
   rule : String
   key : Option TermKey := none
   const : Option CId := none
@@ -436,6 +441,11 @@ def lamRule (ctx : Ctx) (errs : List RelError) (b : Binder) : List RelError × B
     (err ctx "C6" "a λ in a relevant position is a proof at this instance" :: errs, false)
   else (errs, true)
 
+/-- C7 at a sort or Π in a relevant position: it has no value at run time. -/
+def sortRule (ctx : Ctx) (errs : List RelError) : List RelError :=
+  err ctx "C7" "a type (a sort or Π) in a relevant position: SrcEval yields the irrelevance \
+    marker for it and erasure □" :: errs
+
 /-- S1 and C0 at a let. -/
 def letRule (ctx : Ctx) (errs : List RelError) (c : Ixon.V3.LetContract) (r : Rel) :
     List RelError :=
@@ -495,6 +505,7 @@ def term (ctx : Ctx) (binders : List Rel) (errs : List RelError) : Term → List
     let errs := appRule ctx errs (.app f a m r) r
     let errs := rest ctx binders errs f
     if r.irrP ctx.prof then errs else term ctx binders errs a
+  | .sort _ | .pi .. => sortRule ctx errs
   | _ => errs
 termination_by structural t => t
 
@@ -516,6 +527,7 @@ def rest (ctx : Ctx) (binders : List Rel) (errs : List RelError) : Term → List
     let errs := if r.irrP ctx.prof then errs else term ctx binders errs v
     term ctx (r :: binders) errs b
   | .proj s i e => term ctx binders (projRule ctx errs s i) e
+  | .sort _ | .pi .. => sortRule ctx errs
   | _ => errs
 termination_by structural t => t
 
@@ -1164,6 +1176,78 @@ def redirectsErased? (p : Program) (c : CId) : Option String :=
     | none => none
   | _ => none
 
+/-! ### Structure the kernel ensures, checked here
+
+Facts about the program's shape that relevance preservation reads and that erasure enforced only
+where it erased (`ruleAlt`, `erase-univs`) or ingress ensured. Each is decided here so that the
+relevance checks' facts do not rest on erasure's success or on ingress. -/
+
+/-- Rule `j` of the recursor `r` is for constructor `j` of `r`'s inductive and binds as many
+fields as that constructor has (erasure's `ruleAlt` test). SrcEval's F2 runs rule `cidx` on a
+major built by constructor `cidx`, F5 applies minor `cidx` to its fields, and C3 and the
+forwarding clause compare minor and rule with the rule's named constructor, so the two must be
+one. `none` when every rule is; otherwise the first that is not. -/
+def rulesShape? (p : Program) (r : CId) : Option String := do
+  let .recr _ _ _ _ _ _ _ ind rules _ ← p.decl? r | none
+  rules.zipIdx.findSome? fun (rule, j) =>
+    match p.decl? rule.ctor with
+    | some (.ctor _ _ ind' cidx _ nf _) =>
+      if ind' == ind && cidx == j && nf == rule.fields then none
+      else some s!"rule {j} of the recursor is not for constructor {j} of its inductive with \
+        its fields ({p.short rule.ctor}: index {cidx}, {nf} fields; the rule binds {rule.fields})"
+    | _ => some s!"rule {j} of the recursor is not for constructor {j} of its inductive: \
+        {p.short rule.ctor} is no constructor"
+
+/-- The universe-argument counts of a runtime term (erasure's `erase-univs` test): every
+constant in a position relevant at some profile has at most as many universe arguments as its
+declaration has universe parameters, so the levels SrcEval instantiates at a reference agree with
+the profile the checks decide the callee at (`Erase.Proof.Agree.inst`). Deliberately not every
+position: an argument or a `let` irrelevant at every profile (a type, a proof), a λ's domain, a Π
+and a `let`'s type are never evaluated, so a count there matters neither to SrcEval nor to
+erasure, and the walk does not look into the proofs and types only the kernel checks. -/
+def univsOk (p : Program) : Term → Bool
+  | .const c us => decide (us.length ≤ ((p.decl? c).map Decl.lvls).getD 0)
+  | .app f a _ r => univsOk p f && (r.alwaysIrr || univsOk p a)
+  | .lam _ _ t => univsOk p t
+  | .letE _ r _ v b => (r.alwaysIrr || univsOk p v) && univsOk p b
+  | .proj _ _ e => univsOk p e
+  | _ => true
+
+/-- `univsOk` on the runtime terms of `c` and on its `csimp` redirect's target. -/
+def univsErrs (p : Program) (c : CId) : List RelError :=
+  let terms := (p.runtimeKeys c).filterMap fun key =>
+    match p.termOf key with
+    | some t =>
+      if univsOk p t then none
+      else some (RelError.of "S1" "a constant has more universe arguments than its declaration \
+        has universe parameters" (some c) (some key))
+    | none => none
+  let redirect := match p.table.resolveOf c with
+    | some (.csimp g us _) =>
+      if univsOk p (.const g us) then []
+      else [RelError.of "S1" s!"the csimp redirect gives {p.short g} more universe arguments than \
+        its declaration has universe parameters" (some c)]
+    | _ => []
+  terms ++ redirect
+
+/-- A subsingleton recursor (F3) passes its rule one field slot per source of its kind
+(`RecKind.subsingleton`), which must be as many as the fields of the constructor of its rule 0
+(the forwarding clause and C3 speak of that many). `Table.deriveRecKind` builds the sources that
+way; this decides it of the table the program carries. `none` when it holds. -/
+def subsingletonSrcs? (p : Program) (r : CId) : Option String :=
+  match p.decl? r, p.table.recKindOf r with
+  | some (.recr _ _ _ _ _ _ _ _ rules _), some (.subsingleton _ srcs) =>
+    match rules[0]? with
+    | some rule =>
+      let nf := match p.decl? rule.ctor with
+        | some (.ctor _ _ _ _ _ nf _) => nf
+        | _ => rule.fields
+      if srcs.length == nf then none
+      else some s!"the subsingleton recursor takes {srcs.length} field sources, and the \
+        constructor of its rule has {nf} fields"
+    | none => none
+  | _, _ => none
+
 end Check.Canonical
 
 open Check Check.Canonical in
@@ -1179,7 +1263,14 @@ they dispatch (`forwardsErased?`). Minor premises are held to the same rule by
 C3 (`Check.minorBinders`), which sees them only at a saturated spine; a `csimp`
 redirect to an eliminator with a rule for a constructor writing a field erased
 is refused (`redirectsErased?`), as C3 refuses such an eliminator's partial and
-bare occurrences in the walked terms (`Check.partialElim`). -/
+bare occurrences in the walked terms (`Check.partialElim`). And the structure
+the kernel ensures that relevance preservation reads, which erasure enforced
+only where it erased or ingress ensured: no constant or table entry at or above
+the program's size; rule `j` of a reached eliminator's recursor is for
+constructor `j` (`rulesShape?`); universe-argument counts (`univsOk`); a record
+for every reached constructor; F3's field sources as many as the rule's
+constructor's fields (`subsingletonSrcs?`); and, at a reached word entry, the
+pinned `Fin.mk` drops its proof field. -/
 def checkCanonical (p : Program) (ann : Ann) (ch : Checked) : List RelError :=
   let okConsts := ann.consts.toList.all fun (c, cr) =>
     match p.decl? c with
@@ -1247,7 +1338,43 @@ def checkCanonical (p : Program) (ann : Ann) (ch : Checked) : List RelError :=
         | _ => []
       ((runBodies p c).all fun (_, t) => checkTermBinders p ann [] t []) &&
       (ruleTerms.all fun t => checkTermBinders p ann [] t [])
-  readErrs ++ forwardErrs ++ redirectErrs ++ headerErrs ++
+  -- No constant and no table entry at or above `size`: the closure loop skips an
+  -- instance there (`Handled`), so SrcEval must find none.
+  let denseErrs : List RelError :=
+    if p.consts.toList.all (·.1 < p.size) && p.table.resolve.toList.all (·.1 < p.size) then []
+    else [RelError.of "S1" "a constant or table entry at or above the program's size: the \
+      closure walk skips it, and SrcEval would run it unchecked"]
+  -- Rule `j` of a reached eliminator's recursor is for constructor `j` (erasure's `ruleAlt`).
+  let ruleErrs : List RelError := ch.reached.filterMap fun c =>
+    match elimShape? p c with
+    | some shape => (rulesShape? p shape.recr).map fun msg => RelError.of "S1" msg (some shape.recr)
+    | none => none
+  -- Universe-argument counts at the constants SrcEval may evaluate (erasure's `erase-univs`).
+  let univErrs : List RelError := ch.reached.flatMap (univsErrs p)
+  -- A reached constructor has a record (unannotated, every field would read as kept).
+  let recordErrs : List RelError := ch.reached.filterMap fun c =>
+    match p.decl? c, ann.ctorRel? c with
+    | some (.ctor ..), none =>
+      some (RelError.of "S1" "a reached constructor without a constructor record" (some c))
+    | _, _ => none
+  -- F3's field sources are as many as the fields of the rule's constructor.
+  let srcsErrs : List RelError := ch.reached.filterMap fun c =>
+    match elimShape? p c with
+    | some shape =>
+      (subsingletonSrcs? p shape.recr).map fun msg => RelError.of "S1" msg (some shape.recr)
+    | none => none
+  -- F6w builds a word's tower with `irr` as `Fin.mk`'s proof field: the pinned `Fin.mk`
+  -- drops it at the empty profile wherever a word entry is reached.
+  let finErrs : List RelError := ch.reached.filterMap fun c =>
+    match p.table.resolveOf c, p.known.finMk with
+    | some (.word ..), some fin =>
+      if ch.keepsP fin [] 1 then
+        some (RelError.of "S1" "a word operation builds its tower with `irr` as Fin.mk's proof \
+          field, which the pinned Fin.mk's record keeps at the empty profile" (some fin))
+      else none
+    | _, _ => none
+  readErrs ++ forwardErrs ++ redirectErrs ++ headerErrs ++ denseErrs ++ ruleErrs ++ univErrs ++
+    recordErrs ++ srcsErrs ++ finErrs ++
     if okConsts && okCtors && okReached then []
     else [RelError.of "S1" "non-canonical relevance annotation"]
 
