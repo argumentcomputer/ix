@@ -113,7 +113,8 @@ theorem form_den (M : Model V env) (hacc : NatAccel M) (hN : NatBasis env)
       (den_const0 hf hl).mpr rfl
     have hprim : Denotes M.cval env φ ρ (primApp o (a.val vx vy) (b.val vx vy))
         (app (app (M.cval (primKey o) φ) (litSet M φ (a.val vx vy))) (litSet M φ (b.val vx vy))) := by
-      rw [primApp, if_neg (by rw [arity_arith ho]; decide)]
+      have h21 : ¬ o.arity = 1 := by rw [arity_arith ho]; decide
+      simp only [primApp, h21, ↓reduceIte]
       exact .app (.app hK ((lit_den M hF ρ _ _).mpr rfl)) ((lit_den M hF ρ _ _).mpr rfl)
     have hres := hacc o (a.val vx vy) (b.val vx vy) φ ρ _ (fun h => absurd (h.symm.trans (arity_arith ho)) (by decide))
       hprim

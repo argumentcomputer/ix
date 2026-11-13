@@ -26,7 +26,9 @@ variable {V : Type w} [Ix.Kernel.SetTheory V] {env : KEnv}
 /-- `SpineMem` peels its first argument. -/
 theorem spineMem_cons {H x : V} {xs : List V} (h : SpineMem H (x :: xs)) :
     (∃ (r : Nat) (A : V) (B : V → V), H ∈ˢ piR r A B ∧ x ∈ˢ A) ∧ SpineMem (app H x) xs := by
-  refine ⟨by simpa using h 0 (by simp), fun j hj => ?_⟩
+  refine ⟨?_, fun j hj => ?_⟩
+  · obtain ⟨r, A, B, h1, h2⟩ := h 0 (by simp)
+    exact ⟨r, A, B, by simpa using h1, by simpa using h2⟩
   obtain ⟨r, A, B, h1, h2⟩ := h (j + 1) (by simpa using hj)
   exact ⟨r, A, B, by simpa using h1, by simpa using h2⟩
 
