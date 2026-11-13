@@ -290,6 +290,15 @@ def back (clo eqs : System.FilePath) (root : String) (certPath : System.FilePath
   let _ ← best "Validate.program (production)" reps errTag fun _ => Validate.program env xv outs
   let _ ← best "Validate.program, the list form (checkBlockList)" reps errTag fun _ =>
     IxCCTests.Xv.ValidateTracked.programList env xv outs
+  let _ ← best "nodup of every function's parameters" reps (fun b => s!"{b}") fun _ =>
+    xv.funcs.toList.all fun f => nodup f.params
+  let _ ← best "sizeOk of every function" reps (fun b => s!"{b}") fun _ =>
+    (xv.funcs.toList.zip outs).all fun (f, o) => sizeOk f o
+  let _ ← best "entry check of every function" reps (fun b => s!"{b}") fun _ =>
+    (xv.funcs.toList.zip outs).all fun (f, o) => match o.blocks with
+      | [] => true
+      | o0 :: _ => (AState.ofList o0.cert).le (entryState f.params)
+  IO.println s!"  (sum of squared parameter counts {xv.funcs.toList.foldl (fun n f => n + f.params.length ^ 2) 0})"
   let (cnt, tc) ← timeMs fun _ => countProgram env xv outs
   IO.println s!"  counts ({fmt tc} ms): {repr cnt}"
   -- stacking and layout
