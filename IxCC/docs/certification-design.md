@@ -756,12 +756,12 @@ old correspondence accepted is still accepted. **Refused**: a *deep* `let`, whos
 its copy only under a binder (there the copy denotes only for members of the binder's domain, which
 may be empty), and string literals (step S). What that costs on the corpus: of the 67 constants the
 let-free correspondence refused, `corrSB []` accepts 61; 3 are string literals (`strings` c262,
-`panic` c359, c318) and 3 hold a deep `let` (`arity` c597, `closures` c272 and c19), of two shapes:
+`panic` c363, c322; numbered at today's loads) and 3 hold a deep `let` (`arity` c597, `closures` c272 and c19), of two shapes:
 the closure a function returns (`λx. let y := …x…; λz. …y…z`: c597, c272) and the minor premises of
 a `match` (`let r := f n; match … with | … => …r…`: c19). `arity` is refused at `valueCorr` by c597,
 which one of its 25 roots reaches; `closures` is also refused for other reasons. **The direct route
 is not extended through a `let`**: it refuses every site `evalSites` lists under one
-(`termRefused`'s `let` case, `evalSitesP`; 405 of the 1,167 sites of `panic`'s `withPanic`), so for a program with
+(`termRefused`'s `let` case, `evalSitesP`; 405 of the 1,103 sites of `panic`'s `withPanic`), so for a program with
 `let`s those sites are in `SitesOkRes`, a hypothesis of the families that take it, or must be
 accepted by `headRegimeResB` in the family without a typing hypothesis. That family has a gap until
 item 1b lands: at the sites under a `let` in the family closures `headRegimeResB` refuses 96 of
@@ -1452,7 +1452,9 @@ member is its constructor's image, from which that follows). This shape is how
 Lean compiles structural recursion, so it is not a corner of one closure: it
 will meet the widening as soon as recursors enter the checked set.
 
-**What the fragment does not yet cover.** `groundCheck` is false on 16 of the 50
+**What the fragment does not yet cover.** `groundCheck` is false on 13 of the 50
+closures that load since step C (2026-11-13, `GR-3m-cA2`, `cB2`: `fields254`, `machines` and
+`natural` added); before it, on 16 of the 50
 closures that load (measured after ingress was changed to read only the records
 its seeds reach, 2026-11-12, `GR-3g-cA2`, `cB2`; the same 16 on the reading
 before that change, `GR-3g-cA`, `cB`, where `fields49` stood for `fields254`;
@@ -1464,12 +1466,15 @@ before part D admitted the field-less ones, which made `strictAndOr` and
 renaming-tolerant `case` shape: `erase` and `OS16-plain` passed then); the gaps,
 ordered by how many closures each blocks (a closure can have several):
 
-1. *A `let` in a run term, or a string literal* (`valueCorr`, `eqnCorr`,
-   `eqnShape`), 14 closures: the body of every `for` loop
-   (`Std.Legacy.Range.forIn'.loop`), values such as `Scalar.powMod`'s, and the
-   string literals of `strings` and `panic`; these are the only false conjuncts
-   on nine (`sum-loop`, `collatz`, `prime-count`, `scalar`, `loops`,
-   `fields254`, `machines`, `natural`, `arity`).
+1. *An `eqn` entry whose function has an `autoParam` binder its equation theorem
+   does not* (`eqnShape`, step Ap), 6 closures: every `for` loop
+   (`Std.Legacy.Range.forIn'.loop`); the only false conjunct on five (`sum-loop`,
+   `collatz`, `prime-count`, `scalar`, `loops`). Before step C a `let` in a run
+   term (`valueCorr`, `eqnCorr`) was refused too, in 14 closures (the `for` loops'
+   bodies, values such as `Scalar.powMod`'s); since, a *deep* `let` or a *string
+   literal* is (`valueCorr`, `eqnCorr`), 4 closures: the deep `let`s of `arity`
+   (its only false conjunct) and `closures`, the string literals of `strings` and
+   `panic`.
 2. *A `case` entry outside the shape* (`caseShape`), 4 closures (12 before the
    renaming-tolerant shape): `Empty.casesOn` (no minor premise) and families
    that can be propositions or are indexed; no longer the `casesOn` of a

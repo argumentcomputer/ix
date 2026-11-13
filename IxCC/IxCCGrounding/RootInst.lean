@@ -78,8 +78,8 @@ theorem fundHyps_of_inst (hL : LawsCore M) {p : Program} {κ : CId → KKey}
 /-- **The root theorem over #678's fields, at `case` entries over level-polymorphic families**:
 `rootSound_678` with `NoCanonA` for `NoCanon`, the `case` shapes the check reads
 (`CaseFactsRead`, which gives `CaseFacts`), and a verified instance set (closed, uniform, the root in
-it at no level). Its conclusion is `rootSound_678`'s word for word. A program whose run terms hold a
-`let` fails `GroundFacts` (`TermCorr` has no `let`), so the walk's stopping there is never used. -/
+it at no level). Its conclusion is `rootSound_678`'s word for word. The instance walk reads a relevant
+`let`'s value, dead or not (`evalConsts`), a superset of what `Runs.const` asks. -/
 theorem rootSound_678A (hL : Laws678 M) {p : Program} {κ : CId → KKey}
     {lpsOf : CId → List Nat} {ann : IxCC.Src.Relevance.Ann} {Sl : List CId} {root : CId}
     {args : List FoTy} {res : FoTy} {Inst : List (CId × Levels)}

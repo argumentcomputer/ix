@@ -13,7 +13,8 @@ between; a dead `let`'s for nothing; a `let` whose variable meets its copy only 
 * **The corpus.** Of the 67 constants of the corpus closures whose run term the let-free
   correspondence (`termCorrB`) refuses, `corrSB []` accepts 61, by closure (`expectCorr`, the
   table `zetaTable`); it refuses 3 for a string literal (`phase1-decline/strings` c262,
-  `phase1-decline/panic` c359 and c318: step S) and 3 for a deep `let` (`phase2-arity/arity` c597,
+  `phase1-decline/panic` c363 and c322, numbered c359 and c318 before the closures were refrozen with
+  their word equations: step S) and 3 for a deep `let` (`phase2-arity/arity` c597,
   `phase2-closures/closures` c272 and c19), each asserted by name with its reason. The three
   closures it unlocks (`fields254`, `machines`, `natural`) are checked with the accepted closures
   (`IxCCTests.Grounding.NoCanon`); here, the other eleven closures' false conjuncts, by name.
@@ -74,7 +75,7 @@ def zetaTable : List (String × Nat × List (CId × String)) :=
    ("phase1-scalar/scalar", 12, []), ("phase1-boundary/fields254", 1, []),
    ("phase1-resource/resource", 4, []), ("phase1-decline/loops", 4, []),
    ("phase1-decline/strings", 7, [(262, "string")]),
-   ("phase1-decline/panic", 2, [(359, "string"), (318, "string")]),
+   ("phase1-decline/panic", 2, [(363, "string"), (322, "string")]),
    ("phase2-closures/closures", 4, [(272, "deep"), (19, "deep")]),
    ("phase1-machines/machines", 3, []), ("phase1-machines/natural", 4, []),
    ("phase2-arity/arity", 0, [(597, "deep")]),
@@ -94,8 +95,8 @@ def refusedTable : List (String × List String) :=
    ("bench-k1/prime-count", ["eqnShape"]), ("phase1-scalar/scalar", ["eqnShape"]),
    ("phase1-resource/resource", ["caseRec", "eqnShape", "caseShape"]),
    ("phase1-decline/loops", ["eqnShape"]),
-   ("phase1-decline/strings", ["caseRec", "proj", "valueCorr", "caseShape", "caseProg"]),
-   ("phase1-decline/panic", ["proj", "valueCorr"]),
+   ("phase1-decline/strings", ["noWord", "caseRec", "proj", "valueCorr", "caseShape", "caseProg"]),
+   ("phase1-decline/panic", ["noWord", "proj", "valueCorr"]),
    ("phase2-closures/closures", ["caseRec", "eqnCorr", "valueCorr", "caseShape"]),
    ("phase2-arity/arity", ["valueCorr"]),
    ("fixtures/ixon-v4/src-diag/diag",
@@ -152,7 +153,7 @@ def run : IO Bool := do
       s!"zeta: corrSB accepts {total} constants of the eleven refused closures, expected 53"
     IO.println s!"zeta: corrSB [] accepts {total} of the constants the let-free check refuses in \
       the eleven closures still refused (the other 8 of 61 in fields254, machines, natural); \
-      refused: strings c262, panic c359 c318 (string literals), closures c272 c19, arity c597 \
+      refused: strings c262, panic c363 c322 (string literals), closures c272 c19, arity c597 \
       (deep lets); the eleven closures' false conjuncts as expected"
     -- planted, on `fib`'s root
     let some fs := subjects.head? | throw (IO.userError "no subject")

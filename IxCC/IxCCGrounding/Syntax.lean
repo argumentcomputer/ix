@@ -136,8 +136,9 @@ inductive UnivCorr (lps : List Nat) : IxCC.Ixon.Univ → Level → Prop
 def LvAt (φ : LevelParam → Nat) (lps : List Nat) (ls : Levels) : Prop :=
   ∀ i p, lps[i]? = some p → φ p = ls.getD i 0
 
-/-- A Src term corresponds to a kernel term node for node (no `let`, no string literal: the
-first fragment). Decided by a Boolean check on the bytes. -/
+/-- A Src term corresponds to a kernel term node for node (no `let`, no string literal). The
+recursor rules and `case` checks read it (their terms are kernel-generated); run terms are read
+through `TermCorrS`, which admits `let`. Decided by a Boolean check on the bytes. -/
 inductive TermCorr (κ : CId → KKey) (lps : List Nat) : Term → KExpr → Prop
   | var {i : Nat} : TermCorr κ lps (.var i) (.bvar i)
   | sort {u : IxCC.Ixon.Univ} {l : Level} : UnivCorr lps u l → TermCorr κ lps (.sort u) (.sort l)
