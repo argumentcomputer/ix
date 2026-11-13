@@ -99,13 +99,15 @@ def all : List Equation := widths.flatMap equations
 def operations : Lean.NameSet := all.foldl (fun s e => s.insert e.operation) {}
 
 /-- **The word operations reached outside theorems**: a dependency walk from `roots` over the
-declarations' types, values, constructors, recursor rules and mutual blocks that enters no theorem
-(a theorem's statement and proof never run, and Lean puts the proofs nested in a definition, an
-`omega` termination proof among them, in auxiliary theorems) and no word operation (a consumer
-that takes the operation as a primitive does not run its body). It is a dependency walk, not a
-consumer's relevance analysis: it can hold an operation that occurs only in a type or an
-irrelevant argument (an equation too many, harmless), and it misses one that runs only through a
-theorem (the target of a `csimp` redirect), for which IxCC's hint names the operation. -/
+values of definitions and opaques and the rules of recursors, the terms that can run, that enters
+no theorem (a theorem's statement and proof never run, and Lean puts the proofs nested in a
+definition, an `omega` termination proof among them, in auxiliary theorems), no declaration's type
+(a type never runs; through `autoParam`'s, every `for` loop would reach `String` and `Char`) and no
+word operation (a consumer that takes the operation as a primitive does not run its body). It is a
+dependency walk, not a consumer's relevance analysis: it can hold an operation that occurs only in
+a binder's type or an irrelevant argument of a value (an equation too many, harmless), and it misses
+one that runs only through a theorem (the target of a `csimp` redirect), for which IxCC's hint
+names the operation. -/
 partial def reachedOutsideTheorems (env : Lean.Environment) (roots : List Lean.Name) :
     Lean.NameSet :=
   go roots {} {}
@@ -117,14 +119,10 @@ where
       else if operations.contains n then go rest (seen.insert n) (found.insert n)
       else
         let refs : Array Lean.Name := match env.find? n with
-          | some (.thmInfo _) | none => #[]
-          | some (.defnInfo v) => v.type.getUsedConstants ++ v.value.getUsedConstants ++ v.all.toArray
-          | some (.opaqueInfo v) => v.type.getUsedConstants ++ v.value.getUsedConstants ++ v.all.toArray
-          | some (.inductInfo v) => v.type.getUsedConstants ++ v.ctors.toArray ++ v.all.toArray
-          | some (.ctorInfo v) => v.type.getUsedConstants.push v.induct
-          | some (.recInfo v) =>
-            v.rules.foldl (fun acc r => acc ++ r.rhs.getUsedConstants) v.type.getUsedConstants
-          | some ci => ci.type.getUsedConstants
+          | some (.defnInfo v) => v.value.getUsedConstants
+          | some (.opaqueInfo v) => v.value.getUsedConstants
+          | some (.recInfo v) => v.rules.foldl (fun acc r => acc ++ r.rhs.getUsedConstants) #[]
+          | _ => #[]
         go (refs.toList ++ rest) (seen.insert n) found
 
 /-- The equations to add for the word operations `ops` (`reachedOutsideTheorems`): each
