@@ -508,7 +508,13 @@ def anCall (P : Prog) : Nat → List ABnd → Ref → Array Term → Cls → CM 
     | some (.prim p) => do
       for a in avs do
         if let some a := a then valid a "a primitive's argument"
-      if avs.size < p.arity then pure { cls := .val, skel := .unknown } else pure { cls := c }
+      -- a partial application holds its arguments as they were (`makePap`), so it carries
+      -- their regions and aliases (finding 12: as landed it had none)
+      if avs.size < p.arity then
+        let regs := avs.foldl (fun r a => match a with | some a => natUnion r a.regs | none => r) []
+        let deps := avs.foldl (fun r a => match a with | some a => natUnion r a.deps | none => r) []
+        pure { cls := .val, skel := .unknown, regs, deps }
+      else pure { cls := c }
     | some d =>
       match ifaceOf? d with
       | some ifc =>
