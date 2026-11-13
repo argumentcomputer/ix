@@ -92,7 +92,7 @@ theorem put_sharing_nil_spec {x_list x_rest r : SourceValue F} {h h' : Heap F}
     (hl : RepList Specs.Callees.ixExprListEnum (fun _ (_ : Unit) _ => True) h [] x_list)
     (ev : ObsFn W "IxonSerialize::put_sharing" [x_list, x_rest] h r h' calls)
     (hrest : RepBytes h rest x_rest) :
-    RepBytes h' ((Ixon.Verify.Codec.tag0Bytes 0).data.toList ++ rest) r := by
+    RepBytes h' ((tag0Bytes 0).data.toList ++ rest) r := by
   rcases Obs.«IxonSerialize::put_sharing».obs ev with ⟨v1, m2, _, _, v30, m39, _, ev14, ev49, ev28, -⟩
   rw [← Obs.Names.«WordLists::length_u64<&Ixon::Expr>».symbol] at ev14
   have hl' : RepList (Instance.mk "Lists::Node" [.ptr (.named "Ixon::Expr" [])]).symbol
@@ -111,7 +111,7 @@ theorem put_refs_nil_spec {x_list x_rest r : SourceValue F} {h h' : Heap F}
     (hl : RepList addrListEnum (fun _ (_ : Unit) _ => True) h [] x_list)
     (ev : ObsFn W "IxonSerialize::put_refs" [x_list, x_rest] h r h' calls)
     (hrest : RepBytes h rest x_rest) :
-    RepBytes h' ((Ixon.Verify.Codec.tag0Bytes 0).data.toList ++ rest) r := by
+    RepBytes h' ((tag0Bytes 0).data.toList ++ rest) r := by
   rcases Obs.«IxonSerialize::put_refs».obs ev with ⟨v1, m2, _, _, v30, m39, _, ev14, ev49, ev28, -⟩
   rw [← Obs.Names.«WordLists::length_u64<&[Field; 32]>».symbol] at ev14
   have hl' : RepList (Instance.mk "Lists::Node" [.ptr (.array .field 32)]).symbol
@@ -130,7 +130,7 @@ theorem put_univs_nil_spec {x_list x_rest r : SourceValue F} {h h' : Heap F}
     (hl : RepList Specs.Callees.ixUnivListEnum (fun _ (_ : Unit) _ => True) h [] x_list)
     (ev : ObsFn W "IxonSerialize::put_univs" [x_list, x_rest] h r h' calls)
     (hrest : RepBytes h rest x_rest) :
-    RepBytes h' ((Ixon.Verify.Codec.tag0Bytes 0).data.toList ++ rest) r := by
+    RepBytes h' ((tag0Bytes 0).data.toList ++ rest) r := by
   rcases Obs.«IxonSerialize::put_univs».obs ev with ⟨v1, m2, _, _, v30, m39, _, ev14, ev49, ev28, -⟩
   rw [← Obs.Names.«WordLists::length_u64<&Ixon::Univ>».symbol] at ev14
   have hl' : RepList (Instance.mk "Lists::Node" [.ptr (.named "Ixon::Univ" [])]).symbol
@@ -149,7 +149,7 @@ theorem put_binders_nil_spec {x_list x_rest r : SourceValue F} {h h' : Heap F}
     (hl : RepList Specs.Callees.ixBinderListEnum (fun _ (_ : Unit) _ => True) h [] x_list)
     (ev : ObsFn W "IxonSerialize::put_binders" [x_list, x_rest] h r h' calls)
     (hrest : RepBytes h rest x_rest) :
-    RepBytes h' ((Ixon.Verify.Codec.tag0Bytes 0).data.toList ++ rest) r := by
+    RepBytes h' ((tag0Bytes 0).data.toList ++ rest) r := by
   rcases Obs.«IxonSerialize::put_binders».obs ev with
     ⟨v1, m2, _, _, v30, m39, _, ev14, ev49, ev28, -⟩
   rw [← Obs.Names.«WordLists::length_u64<Ixon::BinderBlock>».symbol] at ev14
@@ -164,6 +164,18 @@ theorem put_binders_nil_spec {x_list x_rest r : SourceValue F} {h h' : Heap F}
     obtain ⟨_, _, he, -, -⟩ := Lib.rep_cons_of_load hl ld12
     cases he
 
+def constructorProjBytes (p : Ixon.ConstructorProj) : ByteArray :=
+  tag0Bytes p.idx ++ tag0Bytes p.cidx ++ p.block.hash
+
+def recursorProjBytes (p : Ixon.RecursorProj) : ByteArray :=
+  tag0Bytes p.idx ++ p.block.hash
+
+def inductiveProjBytes (p : Ixon.InductiveProj) : ByteArray :=
+  tag0Bytes p.idx ++ p.block.hash
+
+def definitionProjBytes (p : Ixon.DefinitionProj) : ByteArray :=
+  tag0Bytes p.idx ++ p.block.hash
+
 theorem put_cprj_info_spec {p : Ixon.ConstructorProj} {vi vj bp x_rest r : SourceValue F}
     {b : Bytes.Address} {h h' : Heap F} {calls : List (Call F)} {rest : List UInt8}
     (hvi : RepU64 h p.idx vi) (hvj : RepU64 h p.cidx vj)
@@ -173,7 +185,7 @@ theorem put_cprj_info_spec {p : Ixon.ConstructorProj} {vi vj bp x_rest r : Sourc
         [.construct "Ixon::ConstructorProj" "Mk" [vi, vj, bp]], x_rest] h r h' calls)
     (hrest : RepBytes h rest x_rest) :
     RepBytes h'
-      ((Ixon.Verify.Codec.NonrecursiveConstant.constructorProjBytes p).data.toList ++ rest) r := by
+      ((constructorProjBytes p).data.toList ++ rest) r := by
   cases Obs.«IxonSerialize::put_constant_info».obs ev with
   | Defn _ _ hv _ _ => injection hv with _ hc _; exact absurd hc (by decide)
   | Recr _ _ _ hv _ _ => injection hv with _ hc _; exact absurd hc (by decide)
@@ -199,7 +211,7 @@ theorem put_cprj_info_spec {p : Ixon.ConstructorProj} {vi vj bp x_rest r : Sourc
       U64.repU64_heapMono₂ (ev79.heap_extends.trans ev58.heap_extends) hvi
     have s3 := put_tagn0_spec hvi' ev37 s2
     subst hblk
-    simpa [Ixon.Verify.Codec.NonrecursiveConstant.constructorProjBytes, List.append_assoc]
+    simpa [constructorProjBytes, List.append_assoc]
       using s3
 
 theorem put_rprj_info_spec {p : Ixon.RecursorProj} {vi bp x_rest r : SourceValue F}
@@ -210,7 +222,7 @@ theorem put_rprj_info_spec {p : Ixon.RecursorProj} {vi bp x_rest r : SourceValue
         [.construct "Ixon::RecursorProj" "Mk" [vi, bp]], x_rest] h r h' calls)
     (hrest : RepBytes h rest x_rest) :
     RepBytes h'
-      ((Ixon.Verify.Codec.NonrecursiveConstant.recursorProjBytes p).data.toList ++ rest) r := by
+      ((recursorProjBytes p).data.toList ++ rest) r := by
   cases Obs.«IxonSerialize::put_constant_info».obs ev with
   | Defn _ _ hv _ _ => injection hv with _ hc _; exact absurd hc (by decide)
   | Recr _ _ _ hv _ _ => injection hv with _ hc _; exact absurd hc (by decide)
@@ -232,7 +244,7 @@ theorem put_rprj_info_spec {p : Ixon.RecursorProj} {vi bp x_rest r : SourceValue
     have hvi' : RepU64 m43 p.idx vi := U64.repU64_heapMono₂ ev53.heap_extends hvi
     have s2 := put_tagn0_spec hvi' ev32 s1
     subst hblk
-    simpa [Ixon.Verify.Codec.NonrecursiveConstant.recursorProjBytes, List.append_assoc]
+    simpa [recursorProjBytes, List.append_assoc]
       using s2
 
 theorem put_iprj_info_spec {p : Ixon.InductiveProj} {vi bp x_rest r : SourceValue F}
@@ -243,7 +255,7 @@ theorem put_iprj_info_spec {p : Ixon.InductiveProj} {vi bp x_rest r : SourceValu
         [.construct "Ixon::InductiveProj" "Mk" [vi, bp]], x_rest] h r h' calls)
     (hrest : RepBytes h rest x_rest) :
     RepBytes h'
-      ((Ixon.Verify.Codec.NonrecursiveConstant.inductiveProjBytes p).data.toList ++ rest) r := by
+      ((inductiveProjBytes p).data.toList ++ rest) r := by
   cases Obs.«IxonSerialize::put_constant_info».obs ev with
   | Defn _ _ hv _ _ => injection hv with _ hc _; exact absurd hc (by decide)
   | Recr _ _ _ hv _ _ => injection hv with _ hc _; exact absurd hc (by decide)
@@ -265,7 +277,7 @@ theorem put_iprj_info_spec {p : Ixon.InductiveProj} {vi bp x_rest r : SourceValu
     have hvi' : RepU64 m43 p.idx vi := U64.repU64_heapMono₂ ev53.heap_extends hvi
     have s2 := put_tagn0_spec hvi' ev32 s1
     subst hblk
-    simpa [Ixon.Verify.Codec.NonrecursiveConstant.inductiveProjBytes, List.append_assoc]
+    simpa [inductiveProjBytes, List.append_assoc]
       using s2
 
 theorem put_dprj_info_spec {p : Ixon.DefinitionProj} {vi bp x_rest r : SourceValue F}
@@ -276,7 +288,7 @@ theorem put_dprj_info_spec {p : Ixon.DefinitionProj} {vi bp x_rest r : SourceVal
         [.construct "Ixon::DefinitionProj" "Mk" [vi, bp]], x_rest] h r h' calls)
     (hrest : RepBytes h rest x_rest) :
     RepBytes h'
-      ((Ixon.Verify.Codec.NonrecursiveConstant.definitionProjBytes p).data.toList ++ rest) r := by
+      ((definitionProjBytes p).data.toList ++ rest) r := by
   cases Obs.«IxonSerialize::put_constant_info».obs ev with
   | Defn _ _ hv _ _ => injection hv with _ hc _; exact absurd hc (by decide)
   | Recr _ _ _ hv _ _ => injection hv with _ hc _; exact absurd hc (by decide)
@@ -298,41 +310,89 @@ theorem put_dprj_info_spec {p : Ixon.DefinitionProj} {vi bp x_rest r : SourceVal
     have hvi' : RepU64 m43 p.idx vi := U64.repU64_heapMono₂ ev53.heap_extends hvi
     have s2 := put_tagn0_spec hvi' ev32 s1
     subst hblk
-    simpa [Ixon.Verify.Codec.NonrecursiveConstant.definitionProjBytes, List.append_assoc]
+    simpa [definitionProjBytes, List.append_assoc]
       using s2
 
-theorem empty_tables_wf (info : Ixon.ConstantInfo)
-    (hinfo : Ixon.Verify.Codec.NonrecursiveConstant.NonrecursiveInfoWireWF info) :
-    Ixon.Verify.Codec.NonrecursiveConstant.NonrecursiveConstantWireWF
-      ⟨info, #[], #[], #[], #[]⟩ where
-  info := hinfo
-  sharingCount := by change 0 < UInt64.size; decide
-  sharingEntries := by simp
-  refsCount := by change 0 < UInt64.size; decide
-  refsEntries := by simp
-  univsCount := by change 0 < UInt64.size; decide
-  univsEntries := by simp
-  binders := Ixon.bindersWireWF_empty
+theorem putAddress_writes (a : Address) :
+    Writes (Ixon.Serialize.put a) a.hash :=
+  putBytes_writes a.hash
 
-theorem addressWireWF_ixAddr (b : Bytes.Address) :
-    Ixon.Verify.Codec.ConstantTables.AddressWireWF (ixAddr b) := by
-  show (ixAddr b).hash.size = 32
-  simp [ixAddr]
+theorem arrayPut_empty_writes {α : Type} (putm : α → Ixon.PutM Unit) :
+    Writes (do for value in (#[] : Array α) do putm value) ByteArray.empty := by
+  have heq : (do for value in (#[] : Array α) do putm value) = (pure () : Ixon.PutM Unit) := by
+    rw [← Array.forIn_toList]
+    simp
+  rw [heq]
+  exact Writes.pure
 
-theorem serConstant_empty_tables_eq (info : Ixon.ConstantInfo)
-    (hinfo : Ixon.Verify.Codec.NonrecursiveConstant.NonrecursiveInfoWireWF info) :
+theorem putBinders_empty_writes :
+    Writes (Ixon.putBinders #[]) (tag0Bytes 0) := by
+  simpa [Ixon.putBinders, tag0Bytes] using
+    (putTagN_writes 0 0 0).bind (arrayPut_empty_writes Ixon.putBinderBlock)
+
+theorem serConstant_empty_tables_eq {info : Ixon.ConstantInfo} {binfo : ByteArray}
+    (hinfo : Writes (Ixon.putConstantInfo info) binfo) :
     (Ixon.serConstant ⟨info, #[], #[], #[], #[]⟩).data.toList =
-      (Ixon.Verify.Codec.NonrecursiveConstant.nonrecursiveInfoBytes info).data.toList ++
-        (Ixon.Verify.Codec.tag0Bytes 0).data.toList ++
-        (Ixon.Verify.Codec.tag0Bytes 0).data.toList ++
-        (Ixon.Verify.Codec.tag0Bytes 0).data.toList ++
-        (Ixon.Verify.Codec.tag0Bytes 0).data.toList := by
+      binfo.data.toList ++
+        (tag0Bytes 0).data.toList ++
+        (tag0Bytes 0).data.toList ++
+        (tag0Bytes 0).data.toList ++
+        (tag0Bytes 0).data.toList := by
+  have hwrite : Writes (Ixon.putConstant ⟨info, #[], #[], #[], #[]⟩)
+      (binfo ++ tag0Bytes 0 ++ tag0Bytes 0 ++ tag0Bytes 0 ++ tag0Bytes 0) := by
+    simpa [Ixon.putConstant, tag0Bytes, ByteArray.append_assoc] using
+      hinfo.bind
+        ((putTagN_writes 0 0 0).bind
+          ((arrayPut_empty_writes Ixon.putExpr).bind
+            ((putTagN_writes 0 0 0).bind
+              ((arrayPut_empty_writes Ixon.Serialize.put).bind
+                ((putTagN_writes 0 0 0).bind
+                  ((arrayPut_empty_writes Ixon.putUniv).bind
+                    putBinders_empty_writes))))))
   unfold Ixon.serConstant
-  rw [(Ixon.Verify.Codec.NonrecursiveConstant.putConstant_writes_nonrecursive
-    ⟨info, #[], #[], #[], #[]⟩ (empty_tables_wf info hinfo)).runPut]
-  simp [Ixon.Verify.Codec.NonrecursiveConstant.nonrecursiveConstantBytes,
-    Ixon.Verify.Codec.ConstantTables.bindersBytes,
-    Ixon.Verify.Codec.ConstantTables.listBytes, List.append_assoc]
+  rw [hwrite.runPut]
+  simp [List.append_assoc]
+
+theorem putConstantInfo_cPrj_writes (p : Ixon.ConstructorProj) :
+    Writes (Ixon.putConstantInfo (.cPrj p))
+      (tag4Bytes Ixon.Constant.FLAG Ixon.ConstantInfo.CONST_CPRJ ++
+        constructorProjBytes p) := by
+  have hp : Writes (Ixon.putConstructorProj p) (constructorProjBytes p) := by
+    simpa [Ixon.putConstructorProj, constructorProjBytes, tag0Bytes, ByteArray.append_assoc]
+      using (putTagN_writes 0 0 p.idx).bind
+        ((putTagN_writes 0 0 p.cidx).bind (putAddress_writes p.block))
+  simpa [Ixon.putConstantInfo, tag4Bytes, seqRight_eq_bind] using
+    (putTagN_writes 4 Ixon.Constant.FLAG Ixon.ConstantInfo.CONST_CPRJ).bind hp
+
+theorem putConstantInfo_rPrj_writes (p : Ixon.RecursorProj) :
+    Writes (Ixon.putConstantInfo (.rPrj p))
+      (tag4Bytes Ixon.Constant.FLAG Ixon.ConstantInfo.CONST_RPRJ ++
+        recursorProjBytes p) := by
+  have hp : Writes (Ixon.putRecursorProj p) (recursorProjBytes p) := by
+    simpa [Ixon.putRecursorProj, recursorProjBytes, tag0Bytes]
+      using (putTagN_writes 0 0 p.idx).bind (putAddress_writes p.block)
+  simpa [Ixon.putConstantInfo, tag4Bytes, seqRight_eq_bind] using
+    (putTagN_writes 4 Ixon.Constant.FLAG Ixon.ConstantInfo.CONST_RPRJ).bind hp
+
+theorem putConstantInfo_iPrj_writes (p : Ixon.InductiveProj) :
+    Writes (Ixon.putConstantInfo (.iPrj p))
+      (tag4Bytes Ixon.Constant.FLAG Ixon.ConstantInfo.CONST_IPRJ ++
+        inductiveProjBytes p) := by
+  have hp : Writes (Ixon.putInductiveProj p) (inductiveProjBytes p) := by
+    simpa [Ixon.putInductiveProj, inductiveProjBytes, tag0Bytes]
+      using (putTagN_writes 0 0 p.idx).bind (putAddress_writes p.block)
+  simpa [Ixon.putConstantInfo, tag4Bytes, seqRight_eq_bind] using
+    (putTagN_writes 4 Ixon.Constant.FLAG Ixon.ConstantInfo.CONST_IPRJ).bind hp
+
+theorem putConstantInfo_dPrj_writes (p : Ixon.DefinitionProj) :
+    Writes (Ixon.putConstantInfo (.dPrj p))
+      (tag4Bytes Ixon.Constant.FLAG Ixon.ConstantInfo.CONST_DPRJ ++
+        definitionProjBytes p) := by
+  have hp : Writes (Ixon.putDefinitionProj p) (definitionProjBytes p) := by
+    simpa [Ixon.putDefinitionProj, definitionProjBytes, tag0Bytes]
+      using (putTagN_writes 0 0 p.idx).bind (putAddress_writes p.block)
+  simpa [Ixon.putConstantInfo, tag4Bytes, seqRight_eq_bind] using
+    (putTagN_writes 4 Ixon.Constant.FLAG Ixon.ConstantInfo.CONST_DPRJ).bind hp
 
 theorem put_empty_tables_spec
     {x_sh x_rf x_un x_bd x_rest v99 v78 v57 v42 : SourceValue F}
@@ -348,10 +408,10 @@ theorem put_empty_tables_spec
     (hrest : RepBytes h rest x_rest) :
     Heap.Extends h m43 ∧
       RepBytes m43
-        ((Ixon.Verify.Codec.tag0Bytes 0).data.toList ++
-          (Ixon.Verify.Codec.tag0Bytes 0).data.toList ++
-          (Ixon.Verify.Codec.tag0Bytes 0).data.toList ++
-          (Ixon.Verify.Codec.tag0Bytes 0).data.toList ++ rest) v42 := by
+        ((tag0Bytes 0).data.toList ++
+          (tag0Bytes 0).data.toList ++
+          (tag0Bytes 0).data.toList ++
+          (tag0Bytes 0).data.toList ++ rest) v42 := by
   have e1 := ev_bd.heap_extends
   have e2 := ev_un.heap_extends
   have e3 := ev_rf.heap_extends
@@ -407,11 +467,8 @@ theorem put_constant_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F
         (U64.repU64_heapMono₂ etab hvi) (U64.repU64_heapMono₂ etab hvj)
         (Bytes.repAddressRef_heapMono₂ addrTy etab hb) hblk ev760 stab
       have stag := ProjAddrAux.put_tagn4_const_small (k := 4) (by omega) ev675 sinfo
-      have hwf : Ixon.Verify.Codec.NonrecursiveConstant.NonrecursiveInfoWireWF (.cPrj p) :=
-        .cPrj (hblk ▸ ProjAddrAux.addressWireWF_ixAddr b)
-      rw [ProjAddrAux.serConstant_empty_tables_eq (.cPrj p) hwf]
-      simpa [Ixon.Verify.Codec.NonrecursiveConstant.nonrecursiveInfoBytes,
-        Ixon.ConstantInfo.CONST_CPRJ, List.append_assoc] using stag
+      rw [ProjAddrAux.serConstant_empty_tables_eq (ProjAddrAux.putConstantInfo_cPrj_writes p)]
+      simpa [Ixon.ConstantInfo.CONST_CPRJ, List.append_assoc] using stag
     | rPrj _ | iPrj _ | dPrj _ =>
       rcases hinfo with ⟨_, _, _, he, -⟩; injection he with _ hc _; exact absurd hc (by decide)
     | defn _ | recr _ | axio _ | quot _ | muts _ => exact hinfo.elim
@@ -431,11 +488,8 @@ theorem put_constant_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F
         (U64.repU64_heapMono₂ etab hvi)
         (Bytes.repAddressRef_heapMono₂ addrTy etab hb) hblk ev881 stab
       have stag := ProjAddrAux.put_tagn4_const_small (k := 5) (by omega) ev796 sinfo
-      have hwf : Ixon.Verify.Codec.NonrecursiveConstant.NonrecursiveInfoWireWF (.rPrj p) :=
-        .rPrj (hblk ▸ ProjAddrAux.addressWireWF_ixAddr b)
-      rw [ProjAddrAux.serConstant_empty_tables_eq (.rPrj p) hwf]
-      simpa [Ixon.Verify.Codec.NonrecursiveConstant.nonrecursiveInfoBytes,
-        Ixon.ConstantInfo.CONST_RPRJ, List.append_assoc] using stag
+      rw [ProjAddrAux.serConstant_empty_tables_eq (ProjAddrAux.putConstantInfo_rPrj_writes p)]
+      simpa [Ixon.ConstantInfo.CONST_RPRJ, List.append_assoc] using stag
     | cPrj _ =>
       rcases hinfo with ⟨_, _, _, _, he, -⟩; injection he with _ hc _; exact absurd hc (by decide)
     | iPrj _ | dPrj _ =>
@@ -457,11 +511,8 @@ theorem put_constant_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F
         (U64.repU64_heapMono₂ etab hvi)
         (Bytes.repAddressRef_heapMono₂ addrTy etab hb) hblk ev1002 stab
       have stag := ProjAddrAux.put_tagn4_const_small (k := 6) (by omega) ev917 sinfo
-      have hwf : Ixon.Verify.Codec.NonrecursiveConstant.NonrecursiveInfoWireWF (.iPrj p) :=
-        .iPrj (hblk ▸ ProjAddrAux.addressWireWF_ixAddr b)
-      rw [ProjAddrAux.serConstant_empty_tables_eq (.iPrj p) hwf]
-      simpa [Ixon.Verify.Codec.NonrecursiveConstant.nonrecursiveInfoBytes,
-        Ixon.ConstantInfo.CONST_IPRJ, List.append_assoc] using stag
+      rw [ProjAddrAux.serConstant_empty_tables_eq (ProjAddrAux.putConstantInfo_iPrj_writes p)]
+      simpa [Ixon.ConstantInfo.CONST_IPRJ, List.append_assoc] using stag
     | cPrj _ =>
       rcases hinfo with ⟨_, _, _, _, he, -⟩; injection he with _ hc _; exact absurd hc (by decide)
     | rPrj _ | dPrj _ =>
@@ -483,11 +534,8 @@ theorem put_constant_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap F
         (U64.repU64_heapMono₂ etab hvi)
         (Bytes.repAddressRef_heapMono₂ addrTy etab hb) hblk ev1123 stab
       have stag := ProjAddrAux.put_tagn4_const_small (k := 7) (by omega) ev1038 sinfo
-      have hwf : Ixon.Verify.Codec.NonrecursiveConstant.NonrecursiveInfoWireWF (.dPrj p) :=
-        .dPrj (hblk ▸ ProjAddrAux.addressWireWF_ixAddr b)
-      rw [ProjAddrAux.serConstant_empty_tables_eq (.dPrj p) hwf]
-      simpa [Ixon.Verify.Codec.NonrecursiveConstant.nonrecursiveInfoBytes,
-        Ixon.ConstantInfo.CONST_DPRJ, List.append_assoc] using stag
+      rw [ProjAddrAux.serConstant_empty_tables_eq (ProjAddrAux.putConstantInfo_dPrj_writes p)]
+      simpa [Ixon.ConstantInfo.CONST_DPRJ, List.append_assoc] using stag
     | cPrj _ =>
       rcases hinfo with ⟨_, _, _, _, he, -⟩; injection he with _ hc _; exact absurd hc (by decide)
     | rPrj _ | iPrj _ =>

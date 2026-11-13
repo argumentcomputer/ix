@@ -2,7 +2,6 @@ import IxVMRefinement.Core.Registry
 import IxVMRefinement.Lib.WordHints
 import IxVMRefinement.Lib.Bytes
 import IxVMRefinement.Obs.IxonSerialize0
-import IxC.Ixon.Verify.NonrecursiveConstant
 
 /-! # TagN and little-endian `UInt64` writers (`IxonSerialize0`)
 
@@ -159,6 +158,114 @@ theorem u64Value_shift8 {d : Nat} (hd : d < 18446744073709551616) :
   have f7 : d / 256 / 72057594037927936 % 256 = 0 := by omega
   simp only [TagN.u64Value, f1, f2, f3, f4, f5, f6, f7, Nat.cast_zero]
 
+/-! ## Pure byte-slice models of `Ixon.putU64TrimmedLEAux` and `Ixon.putTagN` -/
+
+def Writes (putm : Ixon.PutM Unit) (bytes : ByteArray) : Prop :=
+  ∀ before, putm.run before = ((), before ++ bytes)
+
+theorem Writes.pure : Writes (pure () : Ixon.PutM Unit) ByteArray.empty := by
+  intro before
+  change (StateT.pure () : Ixon.PutM Unit) before = _
+  simp only [ByteArray.append_empty]
+  rfl
+
+theorem Writes.bind {leftM rightM : Ixon.PutM Unit} {left right : ByteArray}
+    (hleft : Writes leftM left) (hright : Writes rightM right) :
+    Writes (leftM >>= fun _ => rightM) (left ++ right) := by
+  intro before
+  change StateT.bind leftM (fun _ => rightM) before = _
+  have hl := hleft before
+  change leftM before = ((), before ++ left) at hl
+  have hr := hright (before ++ left)
+  change rightM (before ++ left) = ((), (before ++ left) ++ right) at hr
+  rw [StateT.bind, hl]
+  change rightM (before ++ left) = _
+  rw [hr]
+  simp [ByteArray.append_assoc]
+
+theorem Writes.runPut {putm : Ixon.PutM Unit} {bytes : ByteArray}
+    (h : Writes putm bytes) : Ixon.runPut putm = bytes := by
+  rw [Ixon.runPut, h ByteArray.empty]
+  simp
+
+theorem putU8_writes (byte : UInt8) :
+    Writes (Ixon.putU8 byte) [byte].toByteArray := by
+  intro before
+  simp only [Ixon.putU8, StateT.run]
+  change StateT.modifyGet _ before = _
+  simp [StateT.modifyGet]
+  change ((), before.push byte) = _
+  rfl
+
+theorem putBytes_writes (bytes : ByteArray) :
+    Writes (Ixon.putBytes bytes) bytes := by
+  intro before
+  simp only [Ixon.putBytes, StateT.run]
+  change StateT.modifyGet _ before = _
+  simp [StateT.modifyGet]
+  rfl
+
+def trimmedBytes : UInt64 → Nat → ByteArray
+  | _, 0 => ByteArray.empty
+  | x, len + 1 => [x.toUInt8].toByteArray ++ trimmedBytes (x >>> 8) len
+
+theorem putU64TrimmedLEAux_writes (x : UInt64) (len : Nat) :
+    Writes (Ixon.putU64TrimmedLEAux x len) (trimmedBytes x len) := by
+  induction len generalizing x with
+  | zero =>
+    simpa [Ixon.putU64TrimmedLEAux, trimmedBytes] using Writes.pure
+  | succ len ih =>
+    simpa [Ixon.putU64TrimmedLEAux, trimmedBytes] using
+      (putU8_writes x.toUInt8).bind (ih (x >>> 8))
+
+def tagNBytes (f : Nat) (flag : UInt8) (value : UInt64) : ByteArray :=
+  let v := value.toNat
+  let lead := 2 ^ (8 - f - 1)
+  let mbit := 2 ^ (8 - f - 2)
+  if v < Ixon.tagNEnd1 f then
+    [Ixon.tagNHeader f flag v].toByteArray
+  else if v < Ixon.tagNEnd2 f then
+    [Ixon.tagNHeader f flag (lead + (v - Ixon.tagNEnd1 f) / 256)].toByteArray ++
+      [((v - Ixon.tagNEnd1 f) % 256).toUInt8].toByteArray
+  else if v < Ixon.tagNEnd3 f then
+    [Ixon.tagNHeader f flag (lead + mbit)].toByteArray ++
+      trimmedBytes (v - Ixon.tagNEnd2 f).toUInt64 2
+  else if v < Ixon.tagNEnd4 f then
+    [Ixon.tagNHeader f flag (lead + mbit + 1)].toByteArray ++
+      trimmedBytes (v - Ixon.tagNEnd3 f).toUInt64 3
+  else if v < Ixon.tagNEnd5 f then
+    [Ixon.tagNHeader f flag (lead + mbit + 2)].toByteArray ++
+      trimmedBytes (v - Ixon.tagNEnd4 f).toUInt64 4
+  else
+    [Ixon.tagNHeader f flag (lead + mbit + 3)].toByteArray ++
+      trimmedBytes (v - Ixon.tagNEnd5 f).toUInt64 8
+
+def tag0Bytes (value : UInt64) : ByteArray := tagNBytes 0 0 value
+
+def tag4Bytes (flag : UInt8) (value : UInt64) : ByteArray := tagNBytes 4 flag value
+
+theorem putTagN_writes (f : Nat) (flag : UInt8) (value : UInt64) :
+    Writes (Ixon.putTagN f flag value) (tagNBytes f flag value) := by
+  unfold Ixon.putTagN tagNBytes
+  simp only
+  by_cases h1 : value.toNat < Ixon.tagNEnd1 f
+  · simp only [h1, ↓reduceIte]
+    exact putU8_writes _
+  by_cases h2 : value.toNat < Ixon.tagNEnd2 f
+  · simp only [h1, h2, ↓reduceIte]
+    exact (putU8_writes _).bind (putU8_writes _)
+  by_cases h3 : value.toNat < Ixon.tagNEnd3 f
+  · simp only [h1, h2, h3, ↓reduceIte]
+    exact (putU8_writes _).bind (putU64TrimmedLEAux_writes _ _)
+  by_cases h4 : value.toNat < Ixon.tagNEnd4 f
+  · simp only [h1, h2, h3, h4, ↓reduceIte]
+    exact (putU8_writes _).bind (putU64TrimmedLEAux_writes _ _)
+  by_cases h5 : value.toNat < Ixon.tagNEnd5 f
+  · simp only [h1, h2, h3, h4, h5, ↓reduceIte]
+    exact (putU8_writes _).bind (putU64TrimmedLEAux_writes _ _)
+  · simp only [h1, h2, h3, h4, h5, ↓reduceIte]
+    exact (putU8_writes _).bind (putU64TrimmedLEAux_writes _ _)
+
 theorem put_u64_le_spec :
     ∀ (k : Nat) {d : Nat} {x_rest r : SourceValue F} {h h' : Heap F}
       {calls : List (Call F)} {rest : List UInt8},
@@ -166,7 +273,7 @@ theorem put_u64_le_spec :
       ObsFn W "IxonSerialize::put_u64_le" [TagN.u64Value d, .field (k : F), x_rest]
         h r h' calls →
       RepBytes h rest x_rest →
-      RepBytes h' ((Ixon.Verify.Codec.trimmedBytes d.toUInt64 k).data.toList ++ rest) r := by
+      RepBytes h' ((trimmedBytes d.toUInt64 k).data.toList ++ rest) r := by
   intro k
   induction k with
   | zero =>
@@ -174,7 +281,7 @@ theorem put_u64_le_spec :
     cases Obs.«IxonSerialize::put_u64_le».obs ev with
     | n0 _ hr hh _ =>
       subst hr hh
-      simpa [Ixon.Verify.Codec.trimmedBytes] using hrest
+      simpa [trimmedBytes] using hrest
     | other _ _ _ _ _ _ _ _ _ _ _ _ hne _ _ _ _ _ _ =>
       exact absurd (by simp) hne
   | succ k ih =>
@@ -198,7 +305,7 @@ theorem put_u64_le_spec :
           .field (d.toUInt64.toUInt8.toNat : F) := by
         rw [toUInt64_lowByte hd]
       have hcons := repBytes_cons hb1 hrec hm151 he152
-      simpa [Ixon.Verify.Codec.trimmedBytes, toUInt64_shift8 hd] using hcons
+      simpa [trimmedBytes, toUInt64_shift8 hd] using hcons
 
 theorem put_tagn_wide_c3 {d : Nat} {x_rest r : SourceValue F} {h h' : Heap F}
     {calls : List (Call F)} {rest : List UInt8}
@@ -207,7 +314,7 @@ theorem put_tagn_wide_c3 {d : Nat} {x_rest r : SourceValue F} {h h' : Heap F}
       [.field 192, .field 3, TagN.u64Value d, x_rest] h r h' calls)
     (hrest : RepBytes h rest x_rest) :
     RepBytes h'
-      (((195 : UInt8) :: (Ixon.Verify.Codec.trimmedBytes d.toUInt64 8).data.toList) ++ rest) r := by
+      (((195 : UInt8) :: (trimmedBytes d.toUInt64 8).data.toList) ++ rest) r := by
   cases Obs.«IxonSerialize::put_tagn_wide».obs ev with
   | n0_n0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ =>
     exact absurd (Value.field.inj hv) (by decide)
@@ -240,10 +347,10 @@ theorem put_tagn_wide_c2 {d : Nat} {x_rest r : SourceValue F} {h h' : Heap F}
     (hrest : RepBytes h rest x_rest) :
     RepBytes h'
       ((if d < 4294967296 then
-          (194 : UInt8) :: (Ixon.Verify.Codec.trimmedBytes d.toUInt64 4).data.toList
+          (194 : UInt8) :: (trimmedBytes d.toUInt64 4).data.toList
         else
           (195 : UInt8) ::
-            (Ixon.Verify.Codec.trimmedBytes (d - 4294967296).toUInt64 8).data.toList) ++ rest) r := by
+            (trimmedBytes (d - 4294967296).toUInt64 8).data.toList) ++ rest) r := by
   cases Obs.«IxonSerialize::put_tagn_wide».obs ev with
   | n0_n0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ =>
     exact absurd (Value.field.inj hv) (by decide)
@@ -340,13 +447,13 @@ theorem put_tagn_wide_c1 {d : Nat} {x_rest r : SourceValue F} {h h' : Heap F}
     (hrest : RepBytes h rest x_rest) :
     RepBytes h'
       ((if d < 16777216 then
-          (193 : UInt8) :: (Ixon.Verify.Codec.trimmedBytes d.toUInt64 3).data.toList
+          (193 : UInt8) :: (trimmedBytes d.toUInt64 3).data.toList
         else if d - 16777216 < 4294967296 then
           (194 : UInt8) ::
-            (Ixon.Verify.Codec.trimmedBytes (d - 16777216).toUInt64 4).data.toList
+            (trimmedBytes (d - 16777216).toUInt64 4).data.toList
         else
           (195 : UInt8) ::
-            (Ixon.Verify.Codec.trimmedBytes (d - 16777216 - 4294967296).toUInt64 8).data.toList) ++
+            (trimmedBytes (d - 16777216 - 4294967296).toUInt64 8).data.toList) ++
         rest) r := by
   cases Obs.«IxonSerialize::put_tagn_wide».obs ev with
   | n0_n0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ =>
@@ -444,16 +551,16 @@ theorem put_tagn_wide_c0 {d : Nat} {x_rest r : SourceValue F} {h h' : Heap F}
     (hrest : RepBytes h rest x_rest) :
     RepBytes h'
       ((if d < 65536 then
-          (192 : UInt8) :: (Ixon.Verify.Codec.trimmedBytes d.toUInt64 2).data.toList
+          (192 : UInt8) :: (trimmedBytes d.toUInt64 2).data.toList
         else if d - 65536 < 16777216 then
           (193 : UInt8) ::
-            (Ixon.Verify.Codec.trimmedBytes (d - 65536).toUInt64 3).data.toList
+            (trimmedBytes (d - 65536).toUInt64 3).data.toList
         else if d - 65536 - 16777216 < 4294967296 then
           (194 : UInt8) ::
-            (Ixon.Verify.Codec.trimmedBytes (d - 65536 - 16777216).toUInt64 4).data.toList
+            (trimmedBytes (d - 65536 - 16777216).toUInt64 4).data.toList
         else
           (195 : UInt8) ::
-            (Ixon.Verify.Codec.trimmedBytes
+            (trimmedBytes
               (d - 65536 - 16777216 - 4294967296).toUInt64 8).data.toList) ++ rest) r := by
   cases Obs.«IxonSerialize::put_tagn_wide».obs ev with
   | n1_n0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hne _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ =>
@@ -552,7 +659,7 @@ theorem put_tagn_tail_zero_spec {w : UInt64} {x_rest r : SourceValue F} {h h' : 
     (ev : ObsFn W "IxonSerialize::put_tagn_tail"
       [.field 0, .field 64, TagN.u64Value w.toNat, x_rest] h r h' calls)
     (hrest : RepBytes h rest x_rest) :
-    RepBytes h' ((Ixon.Verify.Codec.tag0Bytes w).data.toList ++ rest) r := by
+    RepBytes h' ((tag0Bytes w).data.toList ++ rest) r := by
   have hw_lt := Lib.u64_toNat_lt w
   let subVal : Nat := Lib.leBytes8 128 191 255 255 255 255 255 255
   have hsub_val : subVal = 18446744073709535104 := by decide
@@ -642,7 +749,7 @@ theorem put_tagn_tail_zero_spec {w : UInt64} {x_rest r : SourceValue F} {h h' : 
     have hstep2 := repBytes_cons hhi_b hstep1 hm313 he314
     have he1 : Ixon.tagNEnd1 0 = 128 := rfl
     have he2 : Ixon.tagNEnd2 0 = 16512 := rfl
-    simpa [Ixon.Verify.Codec.tag0Bytes, Ixon.Verify.Codec.tagNBytes, he1, he2, hw128, hw_r2]
+    simpa [tag0Bytes, tagNBytes, he1, he2, hw128, hw_r2]
       using hstep2
   | n1 m2 _ v32 v33 m41 _ v52 y60 m77 _ v88 x_d x_at_least_r2 m154 _ _ v407 y418 op74 op66 ev51
       op102 ev87 ev14 ev167 op433 op424 ev406 _ =>
@@ -690,24 +797,24 @@ theorem put_tagn_tail_zero_spec {w : UInt64} {x_rest r : SourceValue F} {h h' : 
     have hh3 : Ixon.tagNHeader 0 0 (2 ^ (8 - 0 - 1) + 2 ^ (8 - 0 - 2) + 3) = (195 : UInt8) := rfl
     by_cases h3 : w.toNat < 82048
     · have hd3 : w.toNat - 16512 < 65536 := by omega
-      simpa [Ixon.Verify.Codec.tag0Bytes, Ixon.Verify.Codec.tagNBytes,
+      simpa [tag0Bytes, tagNBytes,
         he1, he2, he3, hw128, hw_ge2, h3, hd3, hh0] using hwide
     · have hd3 : ¬ w.toNat - 16512 < 65536 := by omega
       have hs3 : w.toNat - 16512 - 65536 = w.toNat - 82048 := by omega
       by_cases h4 : w.toNat < 16859264
       · have hd4 : w.toNat - 82048 < 16777216 := by omega
-        simpa [Ixon.Verify.Codec.tag0Bytes, Ixon.Verify.Codec.tagNBytes,
+        simpa [tag0Bytes, tagNBytes,
           he1, he2, he3, he4, hw128, hw_ge2, h3, hd3, hs3, h4, hd4, hh1] using hwide
       · have hd4 : ¬ w.toNat - 82048 < 16777216 := by omega
         have hs4 : w.toNat - 82048 - 16777216 = w.toNat - 16859264 := by omega
         by_cases h5 : w.toNat < 4311826560
         · have hd5 : w.toNat - 16859264 < 4294967296 := by omega
-          simpa [Ixon.Verify.Codec.tag0Bytes, Ixon.Verify.Codec.tagNBytes,
+          simpa [tag0Bytes, tagNBytes,
             he1, he2, he3, he4, he5, hw128, hw_ge2, h3, hd3, hs3, h4, hd4, hs4, h5, hd5, hh2]
             using hwide
         · have hd5 : ¬ w.toNat - 16859264 < 4294967296 := by omega
           have hs5 : w.toNat - 16859264 - 4294967296 = w.toNat - 4311826560 := by omega
-          simpa [Ixon.Verify.Codec.tag0Bytes, Ixon.Verify.Codec.tagNBytes,
+          simpa [tag0Bytes, tagNBytes,
             he1, he2, he3, he4, he5, hw128, hw_ge2, h3, hd3, hs3, h4, hd4, hs4, h5, hd5, hs5, hh3]
             using hwide
 
@@ -716,7 +823,7 @@ theorem put_tagn0_spec {w : UInt64} {x_v x_rest r : SourceValue F} {h h' : Heap 
     (hw : RepU64 h w x_v)
     (ev : ObsFn W "IxonSerialize::put_tagn0" [x_v, x_rest] h r h' calls)
     (hrest : RepBytes h rest x_rest) :
-    RepBytes h' ((Ixon.Verify.Codec.tag0Bytes w).data.toList ++ rest) r := by
+    RepBytes h' ((tag0Bytes w).data.toList ++ rest) r := by
   obtain rfl := Lib.repU64_eq hw
   have hw_lt := Lib.u64_toNat_lt w
   cases Obs.«IxonSerialize::put_tagn0».obs ev with
@@ -769,7 +876,7 @@ theorem put_tagn0_spec {w : UInt64} {x_v x_rest r : SourceValue F} {h h' : Heap 
       rw [hw_toUInt8]
       simp [Ixon.tagNHeader, Nat.toUInt8, UInt8.toNat_ofNat', Nat.mod_eq_of_lt hw256]
     have hcons := repBytes_cons hv0_rep hrest hm249 he250
-    simpa [Ixon.Verify.Codec.tag0Bytes, Ixon.Verify.Codec.tagNBytes, he1, hw128, hhdr] using hcons
+    simpa [tag0Bytes, tagNBytes, he1, hw128, hhdr] using hcons
   | n0_n0 x_v0 x_v1 x_v2 x_v3 x_v4 x_v5 x_v6 x_v7 m54 x62 y63 m64 x70 y71 m72 x78 y79 m80 x86 y87
       m88 x94 y95 m96 x102 y103 m104 _ _ _ _ _ _ _ m213 _ _ hv11 ev115 ev129 op109 ev143 op101
       ev157 op93 ev171 op85 ev185 op77 ev199 op69 ev226 ev281 _ =>
@@ -854,7 +961,7 @@ theorem put_tagn4_const_small {k : Nat} {x_rest r : SourceValue F} {h h' : Heap 
        x_rest] h r h' calls)
     (hrest : RepBytes h rest x_rest) :
     RepBytes h'
-      ((Ixon.Verify.Codec.tag4Bytes Ixon.Constant.FLAG k.toUInt64).data.toList ++ rest) r := by
+      ((tag4Bytes Ixon.Constant.FLAG k.toUInt64).data.toList ++ rest) r := by
   have hk_rep : ∀ m : Heap F, RepU8 m k.toUInt8 (.field (k : F)) := by
     intro m
     show (.field (k : F) : SourceValue F) = .field (k.toUInt8.toNat : F)
@@ -927,6 +1034,6 @@ theorem put_tagn4_const_small {k : Nat} {x_rest r : SourceValue F} {h h' : Heap 
       push_cast
       ring
     have hcons := repBytes_cons hhdr hrest hm249 he250
-    simpa [Ixon.Verify.Codec.tag4Bytes, Ixon.Verify.Codec.tagNBytes, hk_u64, he1, hk] using hcons
+    simpa [tag4Bytes, tagNBytes, hk_u64, he1, hk] using hcons
 
 end IxVM.Refinement.Core.ProjAddrAux
