@@ -709,7 +709,12 @@ checks compare levels with the limit and read the same input whatever its value
 (`Cached.checkDecls_cfg`, `checkConstantsWith_cfg`, `checkConstantsAt_cfg` and
 their tiered and policy twins, all from `checkPendingTasks_eq`). A verifier run
 under smaller limits than the producer's may decline what the producer
-accepted; the decline names the limit.
+accepted; the decline names the limit. Statements whose text the depth limit changed:
+`Admission.checkBytesWith_eq` (its right side decodes with `decodeWithin`),
+`Ixon.Projection.checkBytes_run_iff` and `checkBytes_ok_iff` (a `DepthsWithin`
+conjunct), `Ixon.Projection.checkBytes_of_expansion` and `Ix.Cert.Stream.prepareWith_ok` (a
+`DepthsWithin` hypothesis), `Ix.Cert.Stream.closure_decodes` (a `DepthsWithin` conjunct, under a
+limit no record of the closure reaches); the public theorems about `checkBytes` are unchanged.
 
 Five bounds are fixed: no setting raises them, because the cached core must
 return what the reference core returns and these are constants of the
