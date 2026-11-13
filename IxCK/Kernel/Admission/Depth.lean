@@ -312,6 +312,12 @@ inductive Visit where
   /-- the last measured is sharing entry `i`'s depth -/
   | share (i : Nat)
 
+/-- The largest of the last `k` values of `vals` (and `m`), and `vals` without them; in place
+when `vals` is not shared. -/
+def popMax (vals : Array Nat) : Nat → Nat → Nat × Array Nat
+  | 0, m => (m, vals)
+  | k + 1, m => popMax vals.pop k (max m (vals.back?.getD 0))
+
 /-- The post-order over `stack`, at most `fuel` steps: the depths measured
 (`vals`) and the sharing entries' memo, or `none` when a depth passes `limit`,
 a share reaches itself, or the fuel runs out. Every call of itself is a tail
@@ -346,9 +352,10 @@ def expandLoop (sharing : Array Ixon.Expr) (limit : Nat) :
             (cs.foldl (fun st c => st.push (.enter c)) (stack.push (.leave cs.length))) vals memo
             active
       | .leave k =>
-        let h := (vals.extract (vals.size - k) vals.size).foldl max 0 + 1
+        let (deepest, vals) := popMax vals k 0
+        let h := deepest + 1
         if limit < h then none
-        else expandLoop sharing limit fuel stack ((vals.extract 0 (vals.size - k)).push h) memo active
+        else expandLoop sharing limit fuel stack (vals.push h) memo active
       | .share i =>
         expandLoop sharing limit fuel stack vals (memo.set! i (some (vals.back?.getD 0)))
           (active.set! i false)
