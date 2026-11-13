@@ -583,7 +583,7 @@ def borrowCases : List Case := [
   suiteCase "borrow: a let's loan read" [(letOk, body [par] (.letE .borrow .val (v 0) (lenOf (v 0)))
     .shared .leaf)] letOk oneList none false,
   suiteCase "borrow: a borrowed leaf returned" [(escN, body [par .borrowed .leaf] (v 0 .leaf) .shared .leaf)]
-    escN oneNat (some .borrowEscape) false,
+    escN oneNat none false,  -- L1 W1: borrowEscape before
   suiteCase "borrow: arithmetic on a borrowed leaf" [(addN, body [par .borrowed .leaf]
     (add (v 0 .leaf) (.natLit 1)) .shared .leaf)] addN oneNat none true,
   -- `headN (@borrowed xs : List Nat) : Nat := match xs with | [] => 0 | h :: _ => h`
@@ -997,21 +997,21 @@ def useBoxDef : Ref × RunDef :=
 def findingCases : List Case := [
   runCase "finding 1: a borrowed number through a call of `Nat → Nat` (its parameter read as no-leaf)"
     [idNDef true, (g4, body [par .borrowed .leaf] (app (.const idN .val) [v 0 .leaf] .leaf) .shared .leaf)]
-    g4 oneNat (some .borrowEscape) false,
+    g4 oneNat none false,  -- L1 W1: borrowEscape before
   runCase "finding 1, control: the parameter not read as no-leaf"
     [idNDef false, (g4, body [par .borrowed .leaf] (app (.const idN .val) [v 0 .leaf] .leaf) .shared .leaf)]
-    g4 oneNat (some .borrowEscape) false,
+    g4 oneNat none false,  -- L1 W1: borrowEscape before
   runCase "finding 1, control: the result returned borrowed"
     [idNDef true, (g4b, body [par .borrowed .leaf] (app (.const idN .val) [v 0 .leaf] .leaf) .borrowed .leaf)]
     g4b oneNat none true,
   runCase "finding 2: a borrowed number captured by a closure passed at a function type"
     [app1Def true, (g3, body [par .borrowed .leaf]
       (app (.const app1 .val) [lam (par .many .leaf) (v 1 .leaf) .shared .leaf] .leaf) .shared .leaf)]
-    g3 oneNat (some .borrowEscape) false [g3, app1],
+    g3 oneNat none false [g3, app1],  -- L1 W1: borrowEscape before
   runCase "finding 2, control: the parameter not read as no-leaf"
     [app1Def false, (g3, body [par .borrowed .leaf]
       (app (.const app1 .val) [lam (par .many .leaf) (v 1 .leaf) .shared .leaf] .leaf) .shared .leaf)]
-    g3 oneNat (some .borrowEscape) false [g3, app1],
+    g3 oneNat none false [g3, app1],  -- L1 W1: borrowEscape before
   runCase "finding 2, control: the captured number not borrowed"
     [app1Def true, (g3p, body [par .many .leaf]
       (app (.const app1 .val) [lam (par .many .leaf) (v 1 .leaf) .shared .leaf] .leaf) .shared .leaf)]
@@ -1019,7 +1019,7 @@ def findingCases : List Case := [
   runCase "finding 3: a borrowed number cast to a list under an absurd hypothesis"
     (eqDefs ++ [(g2, body [par .many .irr, par .many .irr, par .borrowed .leaf]
       (app (.const bad3 .val) [.irr, .case caseEq .irr #[v 0 .leaf] #[] .val] .leaf) .shared .leaf)])
-    g2 in3 (some .borrowEscape) false [g2, bad3],
+    g2 in3 none false [g2, bad3],  -- L1 W1: borrowEscape before
   fuelCase "finding 7: a call of six arguments, the third erased, at every fuel from 0 to 12"
     p7Defs gV in7 fuels0to12 true [gV, fV],
   fuelCase "finding 7, control: the erased parameter first" p7xDefs gXV in7x fuels0to12 true [gXV, fXV],
@@ -1082,7 +1082,7 @@ def findingCases : List Case := [
     ok11 oneFun none true [ok11, callOnce],
   runCase "finding 12: a primitive's partial application holding a borrowed number, returned"
     [(addB, body [par .borrowed .leaf] (app (.const addR .val) [v 0 .leaf] .val) .shared .val arrowSk)]
-    addB oneNat (some .borrowEscape) false,
+    addB oneNat none false,  -- L1 W1: borrowEscape before
   runCase "finding 12, control: the number not borrowed"
     [(addP, body [par .many .leaf] (app (.const addR .val) [v 0 .leaf] .val) .shared .val arrowSk)]
     addP oneNat none true,
@@ -1120,15 +1120,15 @@ def findingCases : List Case := [
   runCase "the same, the parameter plain"
     (onceDefs ++ [(twiceOnceP, body [par .many .val arrowSk] twiceOnceBody .shared .leaf)])
     twiceOnceP oneFun none true [twiceOnceP, callOnce],
-  runCase "finding 17: a borrowed number bound at a unique let, returned" oDefs u17a oneNat (some .borrowEscape) false,
+  runCase "finding 17: a borrowed number bound at a unique let, returned" oDefs u17a oneNat none false,  -- L1 W1: borrowEscape before
   runCase "finding 17, control: the number not borrowed" oDefs u17ap oneNat none true,
   runCase "finding 17: a borrowed number through a unique result of class leaf" oDefs u17b oneNat
-    (some .borrowEscape) false [u17b, idU],
+    none false [u17b, idU],  -- L1 W1: borrowEscape before
   runCase "finding 17: a borrowed number through a polymorphic unique result" oDefs u17c oneNat
-    (some .borrowEscape) false [u17c, idUP],
+    none false [u17c, idUP],  -- L1 W1: borrowEscape before
   runCase "finding 17, control: the number not borrowed" oDefs u17cp oneNat none true [u17cp, idUP],
   runCase "finding 17: a borrowed wrapper of a number matched, its field bound unique and returned" oDefs u17d oneNat
-    (some .borrowEscape) false,
+    none false,  -- L1 W1: borrowEscape before
   runCase "finding 17, control: the wrapper not borrowed" oDefs u17dp oneNat none true,
   runCase "finding 18: a borrowed list stored in a @shared field by a callee, projected"
     [mkSBDef, (leak18, body [par .borrowed] projSB)] leak18 oneList (some .borrowEscape) false [leak18, mkSB],
@@ -1168,9 +1168,9 @@ def p1 (noLeafIdN : Bool) : Prog := prog [
 def f1Cases : List Case := [
   -- REPAIR A: accepted as landed
   { label := "F1 g4, idN's parameter noLeaf := true", P := p1 true, seed := g4, inp := oneNat, toCheck := [g4],
-    verdict := .refuse "borrowEscape", run := [(0, .vio .borrowEscape)] },
+    verdict := .refuse "borrowEscape", run := [(0, .value)] },  -- L1 W1: borrowEscape before
   { label := "F1 control: noLeaf := false", P := p1 false, seed := g4, inp := oneNat, toCheck := [g4],
-    verdict := .refuse "borrowEscape", run := [(0, .vio .borrowEscape)] },
+    verdict := .refuse "borrowEscape", run := [(0, .value)] },  -- L1 W1: borrowEscape before
   { label := "F1 control: the result returned borrowed", P := p1 true, seed := g4b, inp := oneNat, toCheck := [g4b],
     verdict := .accept, run := [(0, .value)] }]
 
@@ -1240,9 +1240,9 @@ def p2 (noLeafApp1 : Bool) : Prog := prog [
 def f2Cases : List Case := [
   -- REPAIR A: accepted as landed
   { label := "F2 g3, app1's parameter noLeaf := true", P := p2 true, seed := g3, inp := oneNat,
-    toCheck := [g3, app1], verdict := .refuse "borrowEscape", run := [(0, .vio .borrowEscape)] },
+    toCheck := [g3, app1], verdict := .refuse "borrowEscape", run := [(0, .value)] },  -- L1 W1: borrowEscape before
   { label := "F2 control: noLeaf := false", P := p2 false, seed := g3, inp := oneNat, toCheck := [g3, app1],
-    verdict := .refuse "borrowEscape", run := [(0, .vio .borrowEscape)] },
+    verdict := .refuse "borrowEscape", run := [(0, .value)] },  -- L1 W1: borrowEscape before
   { label := "F2 control: the captured number not borrowed", P := p2 true, seed := g3p, inp := oneNat,
     toCheck := [g3p, app1], verdict := .accept, run := [(0, .value)] }]
 
@@ -1267,7 +1267,7 @@ def in3 : Heap × List Val := let (b, n) := ({} : HB).alloc (.num 7); (b.heap, [
 def f3Cases : List Case := [
   -- REPAIR A: accepted as landed
   { label := "F3 g2 (a cast under an absurd hypothesis)", P := p3, seed := g2, inp := in3, toCheck := [g2, bad3],
-    verdict := .refuse "borrowEscape", run := [(0, .oof), (20, .vio .borrowEscape)] },
+    verdict := .refuse "borrowEscape", run := [(0, .oof), (20, .value)] },  -- L1 W1: borrowEscape before
   { label := "F3 control: bad on a real list", P := p3, seed := bad3, inp := irrAndList, toCheck := [bad3],
     verdict := .accept, run := [(0, .stuck)] }]
 
@@ -1295,7 +1295,7 @@ def f4Cases : List Case := [
   { label := "F4 Po (the oracle's program at depth 1)", P := po4, seed := leak4, inp := in4, toCheck := [leak4],
     verdict := .accept, run := [(0, .value)] },
   { label := "F4 Pc (the canonical program)", P := pc4, seed := leak4, inp := in4, toCheck := [leak4],
-    verdict := .refuse "borrowEscape", run := [(0, .vio .borrowEscape)] }]
+    verdict := .refuse "borrowEscape", run := [(0, .value)] }]  -- L1 W1: borrowEscape before
 
 def former (k : Nat) : Ix.Kernel.Expr .anon :=
   (List.range k).foldl (fun acc _ => .forallE (.sort (.succ .zero)) acc default) (.sort (.succ .zero))
@@ -1660,9 +1660,9 @@ def p12 : Prog := prog [
 def f12Cases : List Case := [
   -- REPAIR F: accepted as landed
   { label := "F12 addB n := Nat.add n", P := p12, seed := addB, inp := oneNat, toCheck := [addB],
-    verdict := .refuse "borrowEscape", run := [(0, .vio .borrowEscape)] },
+    verdict := .refuse "borrowEscape", run := [(0, .value)] },  -- L1 W1: borrowEscape before
   { label := "F12 control: a constructor's partial application", P := p12, seed := addBc, inp := oneNat,
-    toCheck := [addBc], verdict := .refuse "borrowEscape", run := [(0, .vio .borrowEscape)] },
+    toCheck := [addBc], verdict := .refuse "borrowEscape", run := [(0, .value)] },  -- L1 W1: borrowEscape before
   { label := "F12 control: n not borrowed", P := p12, seed := addP, inp := oneNat, toCheck := [addP],
     verdict := .accept, run := [(0, .valOrOof), (100000, .value)] },
   -- REPAIR F: accepted before F; refused now, the run clean (the sum is a fresh number): the
@@ -2045,12 +2045,13 @@ def pO : Prog := prog (SuiteFindings.oDefs ++ [
   (idS, body [par .many .leaf] (v 0 .leaf) .shared .leaf),
   (u17bc, body [par .borrowed .leaf] (app (.const idS .val) [v 0 .leaf] .leaf) .shared .leaf)])
 
-def oCase (label : String) (seed : Ref) (toCheck : List Ref) (violates : Bool) : Case :=
-  if violates then
-    { label, P := pO, seed, inp := oneNat, toCheck, verdict := .refuse "borrowEscape",
-      run := [(0, .vioOrOof .borrowEscape), (100000, .vio .borrowEscape)] }
-  else
-    { label, P := pO, seed, inp := oneNat, toCheck, verdict := .accept, run := [(0, .valOrOof), (100000, .value)] }
+/-- `refused`: the checker refuses (borrowEscape). L1 W1: since `runR` confines no number, the
+refused cases run a value (they ended in borrowEscape before); `violates` keeps the old table. -/
+def oCase (label : String) (seed : Ref) (toCheck : List Ref) (refused : Bool) (violates : Bool := false) : Case :=
+  { label, P := pO, seed, inp := oneNat, toCheck,
+    verdict := if refused then .refuse "borrowEscape" else .accept,
+    run := if violates then [(0, .vioOrOof .borrowEscape), (100000, .vio .borrowEscape)]
+           else [(0, .valOrOof), (100000, .value)] }
 
 def oCases : List Case := [
   -- REPAIR O: (a) to (d) accepted before
@@ -2146,9 +2147,9 @@ def p19 : Prog := prog [
 def f19Cases : List Case := [
   { label := "F19 c19 := mkL n, n borrowed, mkL's result unique", P := p19, seed := c19, inp := oneNat,
     toCheck := [c19, mkL], verdict := .refuse "borrowEscape",
-    run := [(0, .vioOrOof .borrowEscape), (100000, .vio .borrowEscape)] },
+    run := [(0, .valOrOof), (100000, .value)] },  -- L1 W1: borrowEscape before
   { label := "F19 control: mkL's result shared", P := p19, seed := c19s, inp := oneNat, toCheck := [c19s, mkLs],
-    verdict := .refuse "borrowEscape", run := [(0, .vioOrOof .borrowEscape), (100000, .vio .borrowEscape)] },
+    verdict := .refuse "borrowEscape", run := [(0, .valOrOof), (100000, .value)] },  -- L1 W1: borrowEscape before
   { label := "F19 control: n not borrowed", P := p19, seed := c19p, inp := oneNat, toCheck := [c19p, mkL],
     verdict := .accept, run := [(0, .valOrOof), (100000, .value)] }]
 

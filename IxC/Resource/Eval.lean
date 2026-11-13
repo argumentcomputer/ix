@@ -311,12 +311,18 @@ def transfer (P : Prog) (fuel : Nat) (toBorrowed : Bool) (v : Val) : M Val := do
   if !toBorrowed && (← confinedOpen v) then violate .borrowEscape
   renew P fuel v
 
-/-- **Binding a value at a binder** of mode `m` and class `c`, in region `s`. -/
+/-- **Binding a value at a binder** of mode `m` and class `c`, in region `s`. A
+borrowed binder confines what it binds to `s`, except a leaf: a number is never
+confined (the owner's provisional ruling L1, 2026-11-13). `readOut` already
+unconfines a leaf read out of a container, and every other confinement is the
+union of a cell's parts' (a closure's captures, a partial application's
+arguments, a constructor's fields), so after this no leaf carries a region. The
+cost: a borrow annotation on a number is not enforced on its own binder. -/
 def bindAt (P : Prog) (fuel s : Nat) (m : BinderMode) (c : Cls) (v : Val) : M Bnd := do
   if m == .erased then return ⟨.imm .irr, .erased⟩
   let v ← conform c v
   let v ← if m.isUnique then transfer P fuel m.isBorrowed v else pure v
-  let v := if m.isBorrowed then addTaint s v else v
+  let v ← if m.isBorrowed && !(← isLeaf v) then pure (addTaint s v) else pure v
   let v ← if m.usage == .once then alloc (.once v false) v.taint else pure v
   return ⟨v, m⟩
 
