@@ -1,6 +1,7 @@
 import Ix.Ixon.Authenticated
 import Ix.KernelCheck.Run
 import Ix.Runtime.Thread
+import Tests.Ix.Kernel.DepthRef
 
 /-! # The cases of `kernel-depth`, run one per process (`kernel-depth-case NAME N`)
 
@@ -306,8 +307,152 @@ def boundsCase : IO String := do
           checked := checked + 1
   return s!"bounds hold on {checked} records"
 
+/-! ## The depth stages against their first form and on hostile tables -/
+
+/-- A deterministic generator (a linear congruential state). -/
+abbrev G := StateM UInt64
+
+def next : G Nat := modifyGet fun s =>
+  let s := s * 6364136223846793005 + 1442695040888963407
+  ((s >>> 33).toNat, s)
+
+def below (n : Nat) : G Nat := do
+  let x ← next
+  return if n == 0 then 0 else x % n
+
+/-- An integer whose header takes one, two, three or more bytes. -/
+def genInt : G UInt64 := do
+  match ← below 8 with
+  | 0 => return (← below 1100).toUInt64
+  | 1 => return (← below 70000).toUInt64
+  | 2 => return (2 ^ 40 + (← below 7)).toUInt64
+  | _ => return (← below 8).toUInt64
+
+def genUniv : Nat → G IU
+  | 0 => return .zero
+  | d + 1 => do
+    match ← below 6 with
+    | 0 => return .succ (← genUniv d)
+    | 1 => return .max (← genUniv d) (← genUniv d)
+    | 2 => return .imax (← genUniv d) (← genUniv d)
+    | 3 => return .var (← genInt)
+    | _ => return .zero
+
+/-- An expression at most `d` constructors deep whose shares are below `bound` (none if `0`). -/
+def genExpr (bound : Nat) : Nat → G IE
+  | 0 => return .var (← genInt)
+  | d + 1 => do
+    match ← below 14 with
+    | 0 => return .sort (← genInt)
+    | 1 => if bound == 0 then return .var 0 else return .share (← below bound).toUInt64
+    | 2 | 3 => do
+      let args ← (List.range (1 + (← below 12))).mapM fun _ => genExpr bound d
+      return args.foldl .app (← genExpr bound d)
+    | 4 => return .lam .many (← genExpr bound d) (← genExpr bound d)
+    | 5 => return .all .many .shared (← genExpr bound d) (← genExpr bound d)
+    | 6 => return .letE (.lean true) (← genExpr bound d) (← genExpr bound d) (← genExpr bound d)
+    | 7 => return .prj (← genInt) (← genInt) (← genExpr bound d)
+    | 8 => return .ref (← genInt) #[← genInt, ← genInt]
+    | 9 => return .recur (← genInt) #[]
+    | 10 => return .str (← genInt)
+    | 11 => return .nat (← genInt)
+    | _ => return .var (← genInt)
+
+/-- A definition with a sharing table whose entries refer only to earlier entries (half the
+records) or to any entry or past the table (forward, self, cyclic, dangling), references and
+universes. -/
+def genConst : G _root_.Ixon.Constant := do
+  let size ← below 7
+  let ordered := (← below 2) == 0
+  let mut sharing : Array IE := #[]
+  for i in [0:size] do
+    sharing := sharing.push (← genExpr (if ordered then i else size + 2) (1 + (← below 6)))
+  let ty ← genExpr (size + (← below 2)) (← below 7)
+  let val ← genExpr (size + (← below 2)) (← below 7)
+  let refs := (List.range (← below 3)).toArray.map addrOf
+  let us ← (List.range (← below 4)).mapM fun _ => do genUniv (← below 6)
+  return defnS 0 ty val sharing refs us.toArray
+
+def sameScan : Except _root_.Ix.Kernel.Admission.Depth.Stop Nat →
+    Except _root_.Ix.Kernel.Admission.Depth.Stop Nat → Bool
+  | .ok a, .ok b => a == b
+  | .error a, .error b => a == b
+  | _, _ => false
+
+/-- `differential n`: `n` generated records, each scanned by the kernel's scan and by its
+first form (`Tests.Ix.Kernel.DepthRef`) at ten limits and, at two, with six bytes of it
+mutated six ways (bits of each header field flipped, `0xFF`, plus one, cut short there); and
+measured by the expanded check and by the general post-order (`expandedPost`) at the ten
+limits. Any difference is a failure. -/
+def differential (n : Nat) : String := Id.run do
+  let (cs, _) := ((List.range n).mapM fun _ => genConst).run 0x6b692d6b
+  let lims := [16384, 300, 64, 16, 8, 4, 3, 2, 1, 0]
+  let mut scans := 0
+  let mut exps := 0
+  let mut muts := 0
+  let mut post := 0
+  let mut diffs : List String := []
+  for c in cs do
+    let b := _root_.Ixon.serConstant c
+    for lim in lims do
+      scans := scans + 1
+      unless sameScan (_root_.Ix.Kernel.Admission.Depth.record lim b)
+          (Tests.Ix.Kernel.DepthRef.record lim b) do
+        diffs := s!"scan at {lim}: {b.size} bytes" :: diffs
+      exps := exps + 1
+      unless _root_.Ix.Kernel.Admission.Depth.expandedWithin lim (2 ^ 40) c ==
+          _root_.Ix.Kernel.Admission.Depth.expandedPost lim (2 ^ 40) c do
+        diffs := s!"expanded at {lim}: {b.size} bytes" :: diffs
+    if (_root_.Ix.Kernel.Admission.Depth.expandedInOrder 16384 c).isNone then post := post + 1
+    for q in [0:6] do
+      let p := b.size * q / 6
+      let x := b.get! p
+      for v in [b.set! p (x ^^^ 0x08), b.set! p (x ^^^ 0x80), b.set! p (x ^^^ 0x20), b.set! p 0xFF,
+          b.set! p (x + 1), b.extract 0 p] do
+        for lim in [16384, 4] do
+          muts := muts + 1
+          unless sameScan (_root_.Ix.Kernel.Admission.Depth.record lim v)
+              (Tests.Ix.Kernel.DepthRef.record lim v) do
+            diffs := s!"mutated scan at {lim}: {v.size} bytes" :: diffs
+  if diffs.isEmpty then
+    return s!"no differences: {scans} scans, {exps} expanded checks ({post} records by the \
+      post-order), {muts} scans of mutated bytes"
+  return s!"differences ({diffs.length}): {diffs.take 5}"
+
+/-- A spine of `n` arguments (`n + 1` deep). -/
+def spineN (n : Nat) : IE := Id.run do
+  let mut e : IE := .var 0
+  for _ in [0:n] do e := .app e (.var 0)
+  return e
+
+/-- The expanded check alone on `c` under `limit` (the decoded record built directly, so
+nothing else recurses): its answer, the path it took, its time. -/
+def expandedTimed (c : _root_.Ixon.Constant) (limit : Nat) : IO String := do
+  let t0 ← IO.monoNanosNow
+  let ok ← IO.lazyPure fun _ => _root_.Ix.Kernel.Admission.Depth.expandedWithin limit (2 ^ 40) c
+  let t1 ← IO.monoNanosNow
+  let path := if (_root_.Ix.Kernel.Admission.Depth.expandedInOrder limit c).isSome then "in order"
+    else "post-order"
+  return s!"{if ok then "within" else "past"} ({path}) in {(t1 - t0) / 1000000} ms"
+
+/-- The stage-time cases: `walk-spine n`, a spine of `n` arguments under the limit `n + 1`
+(the walk, recursing once per level); `post-spine n`, the same spine behind a forward
+reference (sharing entry 0 is `share 1`), measured by the post-order; `post-cycle n`, a
+table whose two entries refer to each other, the spine inside one of them. -/
+def stageCase (name : String) (n : Nat) : Option (IO String) :=
+  match name with
+  | "walk-spine" => some (expandedTimed (defnS 0 (.sort 0) (spineN n) #[] #[] univs01) (n + 1))
+  | "post-spine" =>
+    some (expandedTimed (defnS 0 (.sort 0) (.share 0) #[.share 1, spineN n] #[] univs01) (n + 1))
+  | "post-cycle" =>
+    some (expandedTimed
+      (defnS 0 (.sort 0) (.share 0) #[.app (spineN n) (.share 1), .share 0] #[] univs01) (n + 2))
+  | _ => none
+
 /-- Run one case; the line it prints starts with the verdict. -/
 def runOne (name : String) (n : Nat) : IO String := do
+  if let some act := stageCase name n then return ← act
+  if name == "differential" then return differential n
   let binding ← IO.ofExcept _root_.Ix.Kernel.Admission.defaultBinding
   match name with
   | "control" => return s!"returned {deep n}"

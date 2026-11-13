@@ -107,6 +107,26 @@ def limitCases : List (String × Nat × Nat) :=
        (s!"limit-{s}-{e}", defaultLimits.maxDepth, big),
        (s!"limit-{s}-{e}", defaultLimits.maxDepth + 1, big)]
 
+/-- **The depth stages themselves** (`Admission.Depth`): `(name, n, what the verdict must start
+with, its bound in ms, the stack in KiB)`. `differential`: `n` generated records (half of them with
+sharing tables that refer forward, to themselves or past their end), each scanned by the kernel's
+scan and by its first form (`Tests.Ix.Kernel.DepthRef`) at ten limits and with bytes mutated, and
+measured by the expanded check and by the general post-order: no difference. `walk-spine`,
+`post-spine`, `post-cycle`: the expanded check alone on a spine of `n` arguments under the limit
+`n + 1`, by the walk; the same spine behind a forward reference, by the post-order; a cyclic table
+holding it. At 16,384 and at 65,536 levels each takes a few milliseconds (the post-order copied its
+value array at every node before KI's change: about a second at 16,384 and quadratic beyond); the
+bounds are far above that and far below the quadratic times. The walk recurses once per level, so
+it runs on the stack `Limits.stackFor` gives the limit. -/
+def stageCases : List (String × Nat × String × Nat × Nat) :=
+  let kb (d : Nat) := ({ defaultLimits with maxDepth := d }).stackFor / 1024
+  [("differential", 3000, "no differences", 0, stackKb),
+   ("walk-spine", 16384, "within (in order)", 500, kb 16385),
+   ("walk-spine", 65536, "within (in order)", 1000, kb 65537),
+   ("post-spine", 16384, "within (post-order)", 500, kb 16385),
+   ("post-spine", 65536, "within (post-order)", 1000, kb 65537),
+   ("post-cycle", 65536, "past (post-order)", 1000, kb 65538)]
+
 /-- One `limitCases` case: its line and whether it passed. -/
 def limitCaseOk (name : String) (d : Nat) (verdict : String) (exitCode : UInt32) : Bool :=
   let maxDepth := if name.startsWith "limit64" then 64 else defaultLimits.maxDepth
@@ -120,7 +140,8 @@ def run : IO UInt32 := do
   let exe ← IO.FS.realPath caseExe
   let mut failed := 0
   let all := cases.map (fun (c, n, w) => (c, n, w, stackKb, 0)) ++
-    chainCases.map (fun (c, n, w, b) => (c, n, w, chainStackKb, b))
+    chainCases.map (fun (c, n, w, b) => (c, n, w, chainStackKb, b)) ++
+    stageCases.map (fun (c, n, w, b, kb) => (c, n, w, kb, b))
   for (name, n, want, kb, bound) in all do
     -- no core file for the control's abort
     let out ← IO.Process.output {
