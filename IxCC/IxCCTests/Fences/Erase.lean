@@ -4,6 +4,7 @@ import IxCC.Src.Word
 import IxCC.Lam.Proof.Mono
 import IxCC.Lam.Erase.Proof.Correct
 import IxCC.Src.Relevance.Proof.Sound
+import IxCC.Src.Relevance.Proof.Canonical
 import IxCC.Lam.Erase.Proof.ModesOk
 import IxCC.Lam.Erase.Proof.WFProg
 
@@ -134,6 +135,98 @@ Expected messages are preserved verbatim. -/
 
 /-- info: 'IxCC.Src.Relevance.Proof.subsingletonFields_nil' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Src.Relevance.Proof.subsingletonFields_nil
+
+/-! The closure loop over any fact the term walk gives (`visit_spec` and `loop_spec` are its
+tier-S instances, `check_soundC` its tier-C one). -/
+
+/-- info: 'IxCC.Src.Relevance.Proof.visit_specQ' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.visit_specQ
+
+/-- info: 'IxCC.Src.Relevance.Proof.LoopInvQ.transfer' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.LoopInvQ.transfer
+
+/-- info: 'IxCC.Src.Relevance.Proof.loop_visitQ' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.loop_visitQ
+
+/-- info: 'IxCC.Src.Relevance.Proof.loop_specQ' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.loop_specQ
+
+/-- info: 'IxCC.Src.Relevance.Proof.instsQ_of_loop' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.instsQ_of_loop
+
+/-- info: 'IxCC.Src.Relevance.Proof.check_instsQ' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.check_instsQ
+
+/-! The relevance checks' facts as propositions (L1): tier C (`check_soundC`), the pairing C3
+uses at a recursor, `checkCanonical`'s facts and the three facts about positions written erased. -/
+
+/-- info: 'IxCC.Src.Relevance.Proof.term_nilC' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.term_nilC
+
+/-- info: 'IxCC.Src.Relevance.Proof.check_soundC' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.check_soundC
+
+/-- info: 'IxCC.Src.Relevance.Proof.elimShape_recr_minors' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.elimShape_recr_minors
+
+/-- info: 'IxCC.Src.Relevance.Proof.checkCanonical_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.checkCanonical_sound
+
+/-- info: 'IxCC.Src.Relevance.Proof.param_erased_irr' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.param_erased_irr
+
+/-- info: 'IxCC.Src.Relevance.Proof.field_erased_dropped' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.field_erased_dropped
+
+/-- info: 'IxCC.Src.Relevance.Proof.arg_erased_irr' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.arg_erased_irr
+
+namespace IxCC.Src.Relevance.Proof.L1Repair
+
+open IxCC.Src IxCC.Src.Relevance IxCC.Src.Relevance.Check IxCC.Src.Relevance.Check.Canonical
+open IxCC.Src.Relevance.Proof
+
+/-! L1's statements as first approved stated `CtorCanon` without the length of the classified
+telescope past the parameters (`checkCanonical`'s `flds.length == nf`), and under that predicate
+`field_erased_dropped` is false: a constructor declared with no fields whose type has one Π
+binder, written erased, satisfies it. The repaired `CtorCanon` excludes that constructor. -/
+
+/-- `CtorCanon` as first approved. -/
+private def CtorCanonFirst (p : Program) (ann : Ann) (c : CId) (kr : CtorRel) : Prop :=
+  ∃ sf lv ind cidx np nf ty, p.decl? c = some (.ctor sf lv ind cidx np nf ty) ∧
+    kr.fields.length = nf ∧
+    (∀ cr, ann.constRel? c = some cr → (cr.params.drop np).map FieldClass.ofRel = kr.fields) ∧
+    ∀ (i : Nat) (actual : FieldClass) (b : Binder) (exp : Option Rel), kr.fields[i]? = some actual →
+      ((classifyTelescope p [] (ty.piCount + 1) ty).1.drop np)[i]? = some (b, exp) →
+      actual ≠ .proof .never ∧
+      (if writtenErased b then actual.alwaysDropped = true
+       else actual = (match exp with | some e => FieldClass.ofRel e | none => .keep))
+
+/-- One Π binder, written erased. -/
+private def cexTy : Term := .pi { contract := { uses := .erased } } {} (.sort .zero) (.sort .zero)
+
+/-- No parameters, declared with no fields, the type `cexTy`. -/
+private def cexP : Program :=
+  Program.ofConsts [{ ref := default, addr := default, decl := .ctor true 0 0 0 0 0 cexTy }]
+
+example : ¬ (∀ {p : Program} {ann : Ann} {k : CId} {kr : CtorRel}, CtorCanonFirst p ann k kr →
+    ∀ {i : Nat}, fieldWrittenErased p k i = true →
+      ∃ cls, kr.fields[i]? = some cls ∧ cls.alwaysDropped = true) := fun h => by
+  have hc : CtorCanonFirst cexP {} 0 ⟨[]⟩ :=
+    ⟨true, 0, 0, 0, 0, 0, cexTy, rfl, rfl, fun _ h => by simp [Ann.constRel?, NatMap.get?] at h,
+      fun i _ _ _ h => by simp at h⟩
+  obtain ⟨cls, hcls, _⟩ := h hc (i := 0) (by decide)
+  simp at hcls
+
+example : ¬ CtorCanon cexP {} 0 ⟨[]⟩ := by
+  rintro ⟨sf, lv, ind, cidx, np, nf, ty, hd, hl, hf, -⟩
+  have hd' : cexP.decl? 0 = some (.ctor true 0 0 0 0 0 cexTy) := rfl
+  rw [hd'] at hd
+  cases hd
+  revert hf
+  decide
+
+end IxCC.Src.Relevance.Proof.L1Repair
 
 /-! Erasure decides the declarations' well-formedness (`progWF`), so
 `erase_correct` and `erase_refines` need no premise about them. -/

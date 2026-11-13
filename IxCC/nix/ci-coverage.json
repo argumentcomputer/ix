@@ -961,6 +961,7 @@
   "IxCC.Src.Readback",
   "IxCC.Src.Recheck",
   "IxCC.Src.Relevance.Check",
+  "IxCC.Src.Relevance.Proof.Canonical",
   "IxCC.Src.Relevance.Proof.Sound",
   "IxCC.Src.Relevance.Proof.Terms",
   "IxCC.Src.Relevance.Syntax",
@@ -1789,7 +1790,7 @@
  "grounding_axiom_sha256":
  "fb3e3c7322651965747b6aa155da305925366883ea7afc6347c4918d3c2347fd",
  "grounding_axiom_count": 238,
- "baseline": "6784c147c: RC policy selection, a key index built once (H11)",
+ "baseline": "L1: the relevance checks facts as propositions",
  "axiom_sha256":
- "4fd9712637d996a4345728f64dc44405aac962d432d2f0780eda564c419bbe24",
- "axiom_count": 6654}
+ "d5ee8982fda0480605322cb8a3bd2d7fdb0b5af6d8e83d922a23580055f049a7",
+ "axiom_count": 6667}

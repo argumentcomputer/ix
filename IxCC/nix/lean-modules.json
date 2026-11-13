@@ -3539,6 +3539,7 @@
     "IxCC.Lam.Proof.Mono",
     "IxCC.Lam.Erase.Proof.Correct",
     "IxCC.Src.Relevance.Proof.Sound",
+    "IxCC.Src.Relevance.Proof.Canonical",
     "IxCC.Lam.Erase.Proof.ModesOk",
     "IxCC.Lam.Erase.Proof.WFProg"]},
   "IxCCTests.Fences.Defun":
@@ -5103,6 +5104,9 @@
   "IxCC.Src.Relevance.Proof.Sound":
   {"path": "IxCC/Src/Relevance/Proof/Sound.lean",
    "imports": ["IxCC.Src.Relevance.Proof.Terms", "IxCC.Src.Proof.NatMap"]},
+  "IxCC.Src.Relevance.Proof.Canonical":
+  {"path": "IxCC/Src/Relevance/Proof/Canonical.lean",
+   "imports": ["IxCC.Src.Relevance.Proof.Sound"]},
   "IxCC.Src.Relevance.Check":
   {"path": "IxCC/Src/Relevance/Check.lean",
    "imports":
