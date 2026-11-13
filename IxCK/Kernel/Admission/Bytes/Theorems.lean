@@ -447,9 +447,7 @@ private theorem getU8_at (state : GetState) : getU8 state =
   split <;> rfl
 
 private theorem bind_at {α β : Type} (x : GetM α) (g : α → GetM β) (s : GetState) :
-    (x >>= g) s = match x s with
-      | .ok a s' => g a s'
-      | .error e s' => .error e s' := rfl
+    (x >>= g) s = EStateM.bind x g s := rfl
 
 /-- `u8At` is `getU8` run at the same byte. -/
 theorem u8At_eq (bytes : ByteArray) (i : Nat) : u8At bytes i = readAt getU8 bytes i := by
@@ -470,22 +468,25 @@ theorem tagAt_eq (f : Nat) (bytes : ByteArray) (i : Nat) :
     by_cases h1 : bytes[i].toNat % 2 ^ (8 - f) < 2 ^ (8 - f - 1)
     · rw [if_pos h1]
       unfold readAt getTagN
-      rw [EStateM.run, bind_at, getU8_at]
+      rw [EStateM.run, bind_at]
+      simp only [EStateM.bind, getU8_at]
       simp [h, getElem!_pos, h1, pure, EStateM.pure]
     · rw [if_neg h1]
       by_cases h2 : bytes[i].toNat % 2 ^ (8 - f) - 2 ^ (8 - f - 1) < 2 ^ (8 - f - 2)
       · rw [if_pos h2]
         unfold readAt getTagN
-        rw [EStateM.run, bind_at, getU8_at]
+        rw [EStateM.run, bind_at]
+        simp only [EStateM.bind, getU8_at]
         by_cases h3 : i + 1 < bytes.size
         · rw [dif_pos h3]
-          simp [h, h3, getElem!_pos, h1, h2, pure, EStateM.pure, bind_at, getU8_at, tagNEnd1]
+          simp [h, h3, getElem!_pos, h1, h2, pure, EStateM.pure, bind_at, EStateM.bind, getU8_at, tagNEnd1]
         · rw [dif_neg h3]
-          simp [h, h3, getElem!_pos, h1, h2, pure, EStateM.pure, bind_at, getU8_at]
+          simp [h, h3, getElem!_pos, h1, h2, pure, bind_at, EStateM.bind, getU8_at]
       · rw [if_neg h2]
   · rw [dif_neg h]
     unfold readAt getTagN
-    rw [EStateM.run, bind_at, getU8_at]
+    rw [EStateM.run, bind_at]
+    simp only [EStateM.bind, getU8_at]
     simp [h]
 
 end Depth

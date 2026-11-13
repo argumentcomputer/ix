@@ -205,7 +205,7 @@ abbrev ScanM := EStateM Stop GetState
 @[inline] def lift {α : Type} (r : GetM α) : ScanM α := fun s =>
   match EStateM.run r s with
   | .ok a s => .ok a s
-  | .error e s => .error .unreadable s
+  | .error _ s => .error .unreadable s
 
 /-- The loop from the pending read `start` at the cursor, holding a table of `count`: the
 deepest level of what it read. -/
