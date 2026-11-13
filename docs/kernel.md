@@ -677,7 +677,15 @@ forward reference takes 4 ms, a cyclic table 2 ms (`kernel-depth` `post-spine`,
 `post-cycle`; the post-order as first written copied its value array at every
 node, 2.4 s at 65,536 levels). `kernel-depth` `differential` checks the scan
 against its first form and the walk against the post-order on generated
-records, mutated bytes included. A record that cannot reach the limit is not
+records, mutated bytes included. A known cost of the byte entries themselves: they run the
+two stages one record after another, about 1.5 s on Init+Std's 115 MB while the fold's phase B
+runs on every core, so Init+Std through `checkBytesWithUserAxioms` takes 18.5 → 20.3 s best of
+three (+9.6 %) against the entry without the depth limit, while the committed closures take +1.7 %
+through the tiered entry and +1.2 % through IxCC's front end, and the hosts, which run the stages in
+parallel (`RoleBinding.RecordDecoding.scanDepthsParallel`, `expandedDepthsParallel`, proved equal
+to the sequential stages), stay within about 1 % on Init+Std. The remedy, not taken: the same
+parallel stages inside the entry, bounded by `Limits.workers`, with the entry proofs rewritten
+through their equality (about 60-100 lines). A record that cannot reach the limit is not
 walked: an expression's levels grow by at most one per byte that writes it and a
 universe's by at most the decoder's node budget (`storedDepthBound`), and a record
 within the byte limit has at most two decoded nodes per byte, which an acyclic expansion meets
