@@ -50,10 +50,17 @@ def plain : Array (String × Option String) :=
 def direct : Array (String × Option String) :=
   #[("IXCC_REEXEC", some "0"), ("IXCC_REEXECED", none), ("LEAN_STACK_SIZE_KB", some "262144")]
 
+/-- The children of a process: `/proc` lists a child under the thread that started it, which
+for `ixcc` is not the main thread, so every thread's list is read. -/
 def children (pid : Nat) : IO (List Nat) := do
-  let text ← match ← (IO.FS.readFile s!"/proc/{pid}/task/{pid}/children").toBaseIO with
-    | .ok t => pure t | .error _ => return []
-  return (text.splitOn " ").filterMap (·.trimAscii.toString.toNat?)
+  let threads ← match ← (System.FilePath.readDir s!"/proc/{pid}/task").toBaseIO with
+    | .ok es => pure es | .error _ => return []
+  let mut kids := []
+  for t in threads do
+    let text ← match ← (IO.FS.readFile (t.path / "children")).toBaseIO with
+      | .ok t => pure t | .error _ => pure ""
+    kids := kids ++ (text.splitOn " ").filterMap (·.trimAscii.toString.toNat?)
+  return kids
 
 /-- A process exists and has not ended (a zombie, not yet reaped by its new parent, counts as
 ended). -/
