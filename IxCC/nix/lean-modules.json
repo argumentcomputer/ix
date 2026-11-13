@@ -34,6 +34,8 @@
   {"roots": ["IxCCTests.X86.DriverSession.Main"], "kind": "lean_exe"},
   "tests-corpus": {"roots": ["IxCCTests.Corpus.Main"], "kind": "lean_exe"},
   "tests-cfg-rc": {"roots": ["IxCCTests.Cfg.Rc.Main"], "kind": "lean_exe"},
+  "tests-cert-text":
+  {"roots": ["IxCCTests.Recheck.CertTextMain"], "kind": "lean_exe"},
   "tests-anf": {"roots": ["IxCCTests.Anf.Main"], "kind": "lean_exe"},
   "tests-aiur": {"roots": ["IxCCTests.Aiur.Main"], "kind": "lean_exe"},
   "src-steps": {"roots": ["IxCCTests.Src.StepsMain"], "kind": "lean_exe"},
@@ -694,6 +696,12 @@
   "IxCCTests.Recheck.Deep":
   {"path": "IxCCTests/Recheck/Deep.lean",
    "imports": ["IxCCTests.Recheck.Hostile"]},
+  "IxCCTests.Recheck.CertTextMain":
+  {"path": "IxCCTests/Recheck/CertTextMain.lean",
+   "imports": ["IxCCTests.Recheck.CertText"]},
+  "IxCCTests.Recheck.CertText":
+  {"path": "IxCCTests/Recheck/CertText.lean",
+   "imports": ["IxCC.Cli", "IxCCTests.Corpus.Manifest"]},
   "IxCCTests.Recheck.Bound":
   {"path": "IxCCTests/Recheck/Bound.lean",
    "imports":
@@ -6584,6 +6592,7 @@
   {"path": "IxCC/Recheck/Produce.lean",
    "imports":
    ["IxCC.Recheck.Run",
+    "IxCC.Recheck.Json",
     "IxCC.Ixon.V3.Env",
     "IxCC.Src.Ingress",
     "IxCC.Src.Pinned",

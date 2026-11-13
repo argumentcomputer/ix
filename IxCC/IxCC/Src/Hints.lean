@@ -145,36 +145,59 @@ def maxJsonTextBytes : Nat := 67108864
 /-- Maximum JSON container nesting depth. -/
 def maxJsonDepth : Nat := 512
 
-/-- Linear scan outside string literals, rejecting exponents, fractions, number
-tokens over 32 digits, and nesting depth over `maxJsonDepth`. `Lean.Json.parse`
-materialises an exponent as a `Nat` and panics, uncatchably, on `1e100000000000`. -/
-def checkJsonChars : Bool → Bool → Nat → Nat → List Char → Except String Unit
-  | _, _, _, _, [] => .ok ()
-  | true, true, _, depth, _ :: cs => checkJsonChars true false 0 depth cs
-  | true, false, _, depth, '\\' :: cs => checkJsonChars true true 0 depth cs
-  | true, false, _, depth, '"' :: cs => checkJsonChars false false 0 depth cs
-  | true, false, _, depth, _ :: cs => checkJsonChars true false 0 depth cs
-  | false, _, _, depth, '"' :: cs => checkJsonChars true false 0 depth cs
-  | false, _, digits, depth, c :: cs =>
-    if c.isDigit then
-      if digits ≥ 32 then .error "number token too long"
-      else checkJsonChars false false (digits + 1) depth cs
-    else if digits > 0 && (c == 'e' || c == 'E' || c == '.') then
-      .error "scientific or fractional number"
-    else if c == '[' || c == '{' then
-      if depth + 1 > maxJsonDepth then .error "JSON nesting depth exceeds maximum"
-      else checkJsonChars false false 0 (depth + 1) cs
-    else if c == ']' || c == '}' then
-      checkJsonChars false false 0 (depth - 1) cs
-    else
-      checkJsonChars false false 0 depth cs
+/-- Maximum digits in a JSON number token. -/
+def maxJsonDigits : Nat := 32
 
-/-- Run before parsing any untrusted JSON (certificates and the equations sidecar). -/
+/-- What one pass over a JSON text measures outside its string literals (`scanJson`): the
+deepest nesting of `[` and `{`, the longest number token, and whether a number has an exponent
+or a fraction. -/
+structure JsonScan where
+  inString : Bool := false
+  escaped : Bool := false
+  depth : Nat := 0
+  maxDepth : Nat := 0
+  digits : Nat := 0
+  maxDigits : Nat := 0
+  expOrFrac : Bool := false
+
+/-- One character of the scan. -/
+def JsonScan.step (s : JsonScan) (c : Char) : JsonScan :=
+  if s.inString then
+    if s.escaped then { s with escaped := false }
+    else if c == '\\' then { s with escaped := true }
+    else if c == '"' then { s with inString := false }
+    else s
+  else if c == '"' then { s with inString := true, digits := 0 }
+  else if c.isDigit then
+    let d := s.digits + 1
+    { s with digits := d, maxDigits := max s.maxDigits d }
+  else if s.digits > 0 && (c == 'e' || c == 'E' || c == '.') then
+    { s with expOrFrac := true, digits := 0 }
+  else if c == '[' || c == '{' then
+    let d := s.depth + 1
+    { s with depth := d, maxDepth := max s.maxDepth d, digits := 0 }
+  else if c == ']' || c == '}' then { s with depth := s.depth - 1, digits := 0 }
+  else { s with digits := 0 }
+
+/-- A linear scan of `text` (a loop over its characters, no list). -/
+def scanJson (text : String) : JsonScan := text.foldl JsonScan.step {}
+
+/-- Run before parsing any untrusted JSON (certificates and the equations sidecar): refuses a text
+over `maxJsonTextBytes`, nested deeper than `maxJsonDepth`, with a number token longer than
+`maxJsonDigits`, or with an exponent or a fraction (`Lean.Json.parse` materialises an exponent as a
+`Nat` and panics, uncatchably, on `1e100000000000`). Each refusal names its limit and the value
+measured on the whole text. -/
 def checkJsonText (text : String) : Except String Unit :=
   if text.utf8ByteSize > maxJsonTextBytes then
     .error s!"JSON text size {text.utf8ByteSize} exceeds maximum {maxJsonTextBytes}"
   else
-    checkJsonChars false false 0 0 text.toList
+    let s := scanJson text
+    if s.maxDepth > maxJsonDepth then
+      .error s!"JSON nesting depth {s.maxDepth} exceeds maximum {maxJsonDepth}"
+    else if s.maxDigits > maxJsonDigits then
+      .error s!"JSON number token of {s.maxDigits} digits exceeds maximum {maxJsonDigits}"
+    else if s.expOrFrac then .error "scientific or fractional number"
+    else .ok ()
 
 def ofK1String (text : String) : Except String Hints := do
   checkJsonText text

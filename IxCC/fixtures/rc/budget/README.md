@@ -7,11 +7,19 @@ a balanced tree of `Bool.casesOn (Nat.blt s m)` with 127 leaves, and returns its
 of the `xᵢ`. The code after the tree is a join that captures the `C` parameters and that every leaf
 jumps to; the canonical placement captures two more variables in scope, so a canonical
 certificate makes the checker take `C + 2` captured tokens at each jump and at the declaration.
-The roots `IxCCTests.Own.Budget.fanUnder` and `fanOver` each call forty-one of them (in four
-parts, for the node budget) with every `xᵢ` their `n`, and return the sum and `s` as a pair (so
-that the automatic policy selects plain RC): canonically 41 · 199 · 128 = 1,044,352 captured
-tokens, within `Anf.maxCapturedWork` (2²⁰ = 1,048,576), and 41 · 200 · 128 = 1,049,600, past it.
-A liveness placement captures only the parameters: 1,033,856 and 1,039,104, both within it.
+The roots `IxCCTests.Own.Budget.fanUnder` and `fanOver` each call forty-one of them (in
+twenty-one parts of at most two calls) with every `xᵢ` their `n`, and return the sum and `s` as a
+pair (so that the automatic policy selects plain RC): canonically 41 · 199 · 128 = 1,044,352
+captured tokens, within `Anf.maxCapturedWork` (2²⁰ = 1,048,576), and 41 · 200 · 128 = 1,049,600,
+past it. A liveness placement captures only the parameters: 1,033,856 and 1,039,104, both within
+it.
+
+The parts keep the certificate's text within the verifier's limits. The canonical placement gives
+`n` one `inc` per extra copy passed, and each nests the ownership code one level, so a part of two
+calls nests about 400 deep (`fanUnder`'s plain-RC certificate: nesting 410 of the 512 that
+`Src.Hints.maxJsonDepth` allows, 54,727,677 bytes of the 64 MiB that `maxJsonTextBytes` allows).
+Until 2026-11-12 the roots called them in four parts of ten or eleven, which nested 2,208 deep:
+`ixcc compile --rc on` wrote that certificate and `ixcc check-cert` refused it.
 
 The shape is forced by the limits that come first. The consumer reads expressions at most 256
 deep, and parameters and `let`s nest, so one function captures at most about 230 values; the

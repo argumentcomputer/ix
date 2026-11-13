@@ -84,7 +84,7 @@ Inspect how `IxCC` separates certificate generation from verified checking:
 - **Plain-RC Replay Checker & Automatic Policy Selector**:
   - [`IxCC/Recheck/Rc/Replay.lean`](../IxCC/Recheck/Rc/Replay.lean) (`RcReplay.run`), [`IxCC/Own/Plain/Check.lean`](../IxCC/Own/Plain/Check.lean) (`selectRcPolicy`), and [`IxCC/Recheck/Rc/Produce.lean`](../IxCC/Recheck/Rc/Produce.lean) (`RcReplay.produce`, `selectRcPolicyForSrc`).
 - **CLI Entry Point**:
-  - [`IxCC/Cli.lean`](../IxCC/Cli.lean) and [`IxCC/Cli/Main.lean`](../IxCC/Cli/Main.lean) (`compile` with `--rc auto|on|off`, and `check-cert`, which takes the policy from the certificate and refuses `--rc`).
+  - [`IxCC/Cli.lean`](../IxCC/Cli.lean) and [`IxCC/Cli/Main.lean`](../IxCC/Cli/Main.lean) (`compile` with `--rc auto|on|off`, and `check-cert`, which takes the policy from the certificate and refuses `--rc`). `check-cert`'s verifier is `Cli.checkText` (the reader with every text and decode limit, Stage A, the replay); `compile` runs it on the certificate text it writes, which every producer has read back through the same reader (`Cert.readBack` in `Recheck/Json.lean`, `RcReplay.Cert.readBack` in `Recheck/Rc/Replay.lean`; `compileInput_text`, `producePlain_text`, `produceImmortal_text`).
 
 ---
 

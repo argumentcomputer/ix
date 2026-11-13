@@ -37,6 +37,15 @@ default-argument proofs of its root module, which the trust ledger admits as
 /-- info: 'IxCC.Recheck.compile_bytes' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Recheck.compile_bytes
 
+/-- info: 'IxCC.Recheck.compileInput_text' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Recheck.compileInput_text
+
+/-- info: 'IxCC.Compiler.produceImmortal_text' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Compiler.produceImmortal_text
+
+/-- info: 'IxCC.Compiler.producePlain_text' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms IxCC.Compiler.producePlain_text
+
 /-- info: 'IxCC.Recheck.sound_of_eval' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Recheck.sound_of_eval
 

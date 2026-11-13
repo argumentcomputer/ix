@@ -105,6 +105,7 @@ grep -q FAILED "$WORK/rebuild.out" && die "a family did not rebuild"
 step "$BIN/tests-own" verdicts --ix "$IX" --ix-path "$FAKE" --work "$WORK/verdicts" > "$LOG/verdicts.log" 2>&1 || die "verdicts ($LOG/verdicts.log)"
 step "$BIN/refreeze-ixon" rc-real-source --ix "$IX" --ix-path "$FAKE" --work "$WORK" > "$LOG/rc.log" 2>&1 || die "rc-real-source"
 step "$BIN/refreeze-ixon" rc-budget --ix "$IX" --ix-path "$FAKE" --work "$WORK" > "$LOG/rc-budget.log" 2>&1 || die "rc-budget"
+step "$BIN/refreeze-ixon" rc-deep --ix "$IX" --ix-path "$FAKE" --work "$WORK" > "$LOG/rc-deep.log" 2>&1 || die "rc-deep"
 unset LEAN_PATH
 step env PATH="$FAKE:$PATH" "$BIN/pin-src-tables" --ix "$IX" --diagnostics fixtures/ixon-v4/src-diag --work "$WORK/diag" > "$LOG/diag.log" 2>&1 || die "src-diag"
 step env PATH="$FAKE:$PATH" "$BIN/pin-src-tables" --ix "$IX" --sortpoly fixtures/ixon-v4/src-sortpoly --work "$WORK/sortpoly" > "$LOG/sortpoly.log" 2>&1 || die "src-sortpoly"
