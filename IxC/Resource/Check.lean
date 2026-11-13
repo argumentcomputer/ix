@@ -148,11 +148,29 @@ inductive Dest where
   /-- bound at a once binder -/
   | once
 
+/-- Not a value read from a once binding (`Rules.repaired`'s `NotOnceSrc`). -/
+def notOnceSrc (v : AVal) (w : String) : CM Unit := do
+  if let some x := v.src then
+    if ← isOnceBnd x then refuseM s!"onceReentry: a once binding where it may be called again: {w}"
+
+/-- A once-only value read from a binding moves out of it: the binding is
+consumed (`Rules.repaired`'s `killSrc`). -/
+def killSrc (v : AVal) : CM Unit := do
+  if v.onceOnly then
+    if let some x := v.src then setSt x BSt.dead
+
 /-- **A flow** of `v` to a position of skeleton `exp`. A once binding passed on
-counts as called. -/
+counts as called. A once-only value, or a value read from a once binding, goes
+only to a `once` position: lent or retained, it may be called again (findings
+10 and 11); a once-only value read from a binding is moved out of it. -/
 def flowTo (d : Dest) (exp : Skel) (v : AVal) (w : String) : CM Unit := do
   valid v w
   unless exp.admits v.skel do refuseM s!"mode skeletons differ: {w}"
+  match d with
+  | .once => pure ()
+  | _ => do
+    if v.onceOnly then refuseM s!"onceReentry: a once-only closure where it may be called again: {w}"
+    notOnceSrc v w
   for x in v.deps do
     if ← isOnceBnd x then markSpent x
   match d with
@@ -172,6 +190,7 @@ def flowTo (d : Dest) (exp : Skel) (v : AVal) (w : String) : CM Unit := do
       unless ← isUniq v do refuseM s!"revokedUse: a value that may be shared, at a unique position: {w}"
       if !b && !v.regs.isEmpty then refuseM s!"borrowEscape: a borrowed value given away: {w}"
       for x in v.deps do setSt x BSt.dead
+  killSrc v
 
 /-- A callee's interface. -/
 structure Iface where
@@ -288,8 +307,9 @@ def unknownCall (avs : Array (Option AVal)) (c : Cls) : CM AVal := do
          regs := (if c == .irr || c == .imm then [] else regs), skel := .unknown }
 
 /-- Binding a value at an inner binder (a `let`, a case field's binder) in
-region `s`, as `bindAt` does. A plain binder aliases. -/
-def bindInner (m : BinderMode) (cls : Cls) (v : AVal) (s : Nat) (w : String) : CM AVal := do
+region `s`, as `bindAt` does, before the once rules of `bindInner`. A plain
+binder aliases. -/
+def bindInnerBase (m : BinderMode) (cls : Cls) (v : AVal) (s : Nat) (w : String) : CM AVal := do
   match m with
   | .erased => pure { cls := .irr }
   | .unique | .uniqueBorrowed => do
@@ -302,6 +322,17 @@ def bindInner (m : BinderMode) (cls : Cls) (v : AVal) (s : Nat) (w : String) : C
     flowTo .once v.skel v w
     pure { v with cls, regs := natUnion v.regs [s], src := none }
   | .many => do valid v w; pure { v with cls, src := none }
+
+/-- Binding a value at an inner binder (`bindInnerBase`), with the once rules: a
+value read from a once binding is bound only at a `once` binder (finding 11),
+and a once-only value read from a binding moves out of it (finding 10: as
+landed, `let h := g` left both `g` and `h` callable). `Rules.repaired`'s
+`repairedBind`. -/
+def bindInner (m : BinderMode) (cls : Cls) (v : AVal) (s : Nat) (w : String) : CM AVal := do
+  if m.usage != .once then notOnceSrc v w
+  let r ← bindInnerBase m cls v s w
+  killSrc v
+  pure r
 
 /-- A parameter as its body sees it, in the call's region `s` (region 1 stands
 for the caller's regions, which a lent argument may also be confined to). -/

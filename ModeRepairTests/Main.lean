@@ -840,6 +840,21 @@ def s6Defs : List (Ref × RunDef) := [(S6, .ind #[s6mk]),
     [.natLit 1, .natLit 2, .natLit 3, .natLit 4, .natLit 5, v 0]) .val)),
   (g6p, body [par] (.proj S6 5 (app (.const s6mk .val)
     [.natLit 1, .natLit 2, .natLit 3, .natLit 4, .natLit 5, v 0]) .val))]
+-- Findings 10 and 11: `callTwice (f : Nat → Nat) : Nat := f 0 + f 1`; `callOnce (@once f : Nat → Nat) : Nat := f 0`;
+-- `bad10 (@unique xs) := callTwice (fun _ => consume xs)`; `alias10 (@unique xs) := let g := fun _ => consume xs;
+-- let h := g; h 0 + g 0`; `h11 (@once f) := callTwice f`; the controls `ok10`, `ok11` call `callOnce` instead
+def callTwice := mem 319
+def bad10 := mem 320
+def alias10 := mem 321
+def h11 := mem 323
+def callOnce := mem 357
+def ok10 := mem 358
+def ok11 := mem 359
+def onceDefs : List (Ref × RunDef) := [
+  (callTwice, body [par .many .val arrowSk] (add (app (v 0) [.natLit 0] .leaf) (app (v 0) [.natLit 1] .leaf))
+    .shared .leaf),
+  (callOnce, body [par .once .val arrowSk] (app (v 0) [.natLit 0] .leaf) .shared .leaf)]
+def consumeClo : Term := lam (par .many .leaf) (app (.const consumeR .val) [v 1] .leaf) .shared .leaf
 
 -- (the suite's `fuelCase` definition stands here; the driver's is above)
 
@@ -912,7 +927,23 @@ def findingCases : List Case := [
   runCase "a spine longer than the checker's depth left at it: a borrowed list stored in a @shared field"
     s6Defs g6 oneList (some .borrowEscape) false [g6] { depth := 6 },
   runCase "the same at the default depth" s6Defs g6 oneList (some .borrowEscape) false,
-  runCase "the same, the list not borrowed, at depth 6" s6Defs g6p oneList none true [g6p] { depth := 6 }
+  runCase "the same, the list not borrowed, at depth 6" s6Defs g6p oneList none true [g6p] { depth := 6 },
+  runCase "finding 10: a closure consuming its capture, lent to a body that calls it twice"
+    (onceDefs ++ [(bad10, body [par .unique] (app (.const callTwice .val) [consumeClo] .leaf) .shared .leaf)])
+    bad10 oneList (some .revokedUse) false [bad10, callTwice],
+  runCase "finding 10: a closure consuming its capture, aliased by a let, both called"
+    [(alias10, body [par .unique] (.letE (.value .many) .val consumeClo
+      (.letE (.value .many) .val (v 0) (add (app (v 0) [.natLit 0] .leaf) (app (v 1) [.natLit 0] .leaf))))
+      .shared .leaf)] alias10 oneList (some .revokedUse) false,
+  runCase "finding 10, control: the closure passed to a once parameter"
+    (onceDefs ++ [(ok10, body [par .unique] (app (.const callOnce .val) [consumeClo] .leaf) .shared .leaf)])
+    ok10 oneList none true [ok10, callOnce],
+  runCase "finding 11: a once parameter passed to a body that calls it twice"
+    (onceDefs ++ [(h11, body [par .once .val arrowSk] (app (.const callTwice .val) [v 0] .leaf) .shared .leaf)])
+    h11 oneFun (some .onceReentry) false [h11, callTwice],
+  runCase "finding 11, control: a once parameter passed to a once parameter"
+    (onceDefs ++ [(ok11, body [par .once .val arrowSk] (app (.const callOnce .val) [v 0] .leaf) .shared .leaf)])
+    ok11 oneFun none true [ok11, callOnce]
 ]
 
 -- END COPY
@@ -1343,6 +1374,11 @@ def alias10 := mem 321
 def capOnce10 := mem 322
 def h11 := mem 323
 def twiceCall11 := mem 324
+def callOnce := mem 357
+def ok10 := mem 358
+def ok11 := mem 359
+def useBox := mem 360
+def bad11b := mem 361
 
 def p10 : Prog := prog [
   (callTwice, body [par .many .val arrowSk true] (add (app (v 0) [.natLit 0] .leaf) (app (v 0) [.natLit 1] .leaf))
@@ -1357,21 +1393,44 @@ def p10 : Prog := prog [
       (add (app (v 0) [.natLit 0] .leaf) (app (v 0) [.natLit 1] .leaf))) .shared .leaf),
   (h11, body [par .once .val arrowSk] (app (.const callTwice .val) [v 0] .leaf) .shared .leaf),
   (twiceCall11, body [par .once .val arrowSk]
-    (add (app (v 0) [.natLit 1] .leaf) (app (v 0) [.natLit 2] .leaf)) .shared .leaf)]
+    (add (app (v 0) [.natLit 1] .leaf) (app (v 0) [.natLit 2] .leaf)) .shared .leaf),
+  -- `callOnce (@once f : Nat → Nat) : Nat := f 0`
+  (callOnce, body [par .once .val arrowSk] (app (v 0) [.natLit 0] .leaf) .shared .leaf),
+  -- `ok10 (@unique xs) : Nat := callOnce (fun _ => consume xs)`; `ok11 (@once f) : Nat := callOnce f`
+  (ok10, body [par .unique] (app (.const callOnce .val)
+    [lam (par .many .leaf) (app (.const consumeR .val) [v 1] .leaf) .shared .leaf] .leaf) .shared .leaf),
+  (ok11, body [par .once .val arrowSk] (app (.const callOnce .val) [v 0] .leaf) .shared .leaf),
+  -- `useBox (b : Box (Nat → Nat)) : Nat := b.1 0 + b.1 1`; `bad11b (@once f) : Nat := useBox ⟨f⟩`
+  (useBox, body [par] (add (app (.proj B 0 (v 0) .val) [.natLit 0] .leaf) (app (.proj B 0 (v 0) .val) [.natLit 1] .leaf))
+    .shared .leaf),
+  (bad11b, body [par .once .val arrowSk] (app (.const useBox .val) [app (.const boxR .val) [v 0]] .leaf) .shared .leaf)]
 
 def f10Cases : List Case := [
+  -- REPAIR E: accepted as landed
   { label := "F10a bad10: a once-only closure lent to callTwice", P := p10, seed := bad10, inp := oneList,
-    toCheck := [bad10, callTwice], verdict := .accept, run := [(0, .oof), (20, .vio .revokedUse)], open_ := true },
+    toCheck := [bad10, callTwice], verdict := .refuse "onceReentry",
+    run := [(0, .oof), (20, .vio .revokedUse)] },
+  -- REPAIR E: accepted as landed
   { label := "F10b alias10: a once-only closure aliased by a let", P := p10, seed := alias10, inp := oneList,
-    toCheck := [alias10], verdict := .accept, run := [(0, .oof), (20, .vio .revokedUse)], open_ := true },
+    toCheck := [alias10], verdict := .refuse "revokedUse", run := [(0, .oof), (20, .vio .revokedUse)] },
   { label := "F10 control: their `capOnce`", P := p10, seed := capOnce10, inp := oneList, toCheck := [capOnce10],
-    verdict := .refuse "revokedUse", run := [(0, .oof), (20, .vio .revokedUse)] }]
+    verdict := .refuse "revokedUse", run := [(0, .oof), (20, .vio .revokedUse)] },
+  { label := "F10 control: the once-only closure passed to a once parameter", P := p10, seed := ok10, inp := oneList,
+    toCheck := [ok10, callOnce], verdict := .accept, run := [(0, .valOrOof), (100000, .value)] }]
 
 def f11Cases : List Case := [
+  -- REPAIR E: accepted as landed
   { label := "F11 h11: a once binding passed to callTwice", P := p10, seed := h11, inp := oneFun,
-    toCheck := [h11, callTwice], verdict := .accept, run := [(0, .oof), (20, .vio .onceReentry)], open_ := true },
+    toCheck := [h11, callTwice], verdict := .refuse "onceReentry", run := [(0, .oof), (20, .vio .onceReentry)] },
   { label := "F11 control: their `once: called twice`", P := p10, seed := twiceCall11, inp := oneFun,
-    toCheck := [twiceCall11], verdict := .refuse "onceReentry", run := [(0, .oof), (20, .vio .onceReentry)] }]
+    toCheck := [twiceCall11], verdict := .refuse "onceReentry", run := [(0, .oof), (20, .vio .onceReentry)] },
+  { label := "F11 control: the once binding passed to a once parameter", P := p10, seed := ok11, inp := oneFun,
+    toCheck := [ok11, callOnce], verdict := .accept, run := [(0, .valOrOof), (100000, .value)] },
+  -- a probe beyond r4 (which looks at the value's own binding only): the once binding stored in a
+  -- cell, the cell lent to a body that calls the field twice
+  { label := "F11 probe: a once binding stored in a cell, the cell lent to useBox", P := p10, seed := bad11b,
+    inp := oneFun, toCheck := [bad11b, useBox], verdict := .accept,
+    run := [(0, .vioOrOof .onceReentry), (100000, .vio .onceReentry)], open_ := true }]
 
 /-! ### Finding 12: a primitive's partial application -/
 

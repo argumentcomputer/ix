@@ -558,6 +558,21 @@ def s6Defs : List (Ref × RunDef) := [(S6, .ind #[s6mk]),
     [.natLit 1, .natLit 2, .natLit 3, .natLit 4, .natLit 5, v 0]) .val)),
   (g6p, body [par] (.proj S6 5 (app (.const s6mk .val)
     [.natLit 1, .natLit 2, .natLit 3, .natLit 4, .natLit 5, v 0]) .val))]
+-- Findings 10 and 11: `callTwice (f : Nat → Nat) : Nat := f 0 + f 1`; `callOnce (@once f : Nat → Nat) : Nat := f 0`;
+-- `bad10 (@unique xs) := callTwice (fun _ => consume xs)`; `alias10 (@unique xs) := let g := fun _ => consume xs;
+-- let h := g; h 0 + g 0`; `h11 (@once f) := callTwice f`; the controls `ok10`, `ok11` call `callOnce` instead
+def callTwice := mem 319
+def bad10 := mem 320
+def alias10 := mem 321
+def h11 := mem 323
+def callOnce := mem 357
+def ok10 := mem 358
+def ok11 := mem 359
+def onceDefs : List (Ref × RunDef) := [
+  (callTwice, body [par .many .val arrowSk] (add (app (v 0) [.natLit 0] .leaf) (app (v 0) [.natLit 1] .leaf))
+    .shared .leaf),
+  (callOnce, body [par .once .val arrowSk] (app (v 0) [.natLit 0] .leaf) .shared .leaf)]
+def consumeClo : Term := lam (par .many .leaf) (app (.const consumeR .val) [v 1] .leaf) .shared .leaf
 
 /-- Run `entry` at every fuel of `fuels` (ascending): no run violates, the runs
 are out of fuel up to some fuel and a value from there on (the evaluator spends
@@ -644,7 +659,23 @@ def findingCases : List LSpec.TestSeq := [
   runCase "a spine longer than the checker's depth left at it: a borrowed list stored in a @shared field"
     s6Defs g6 oneList (some .borrowEscape) false [g6] { depth := 6 },
   runCase "the same at the default depth" s6Defs g6 oneList (some .borrowEscape) false,
-  runCase "the same, the list not borrowed, at depth 6" s6Defs g6p oneList none true [g6p] { depth := 6 }
+  runCase "the same, the list not borrowed, at depth 6" s6Defs g6p oneList none true [g6p] { depth := 6 },
+  runCase "finding 10: a closure consuming its capture, lent to a body that calls it twice"
+    (onceDefs ++ [(bad10, body [par .unique] (app (.const callTwice .val) [consumeClo] .leaf) .shared .leaf)])
+    bad10 oneList (some .revokedUse) false [bad10, callTwice],
+  runCase "finding 10: a closure consuming its capture, aliased by a let, both called"
+    [(alias10, body [par .unique] (.letE (.value .many) .val consumeClo
+      (.letE (.value .many) .val (v 0) (add (app (v 0) [.natLit 0] .leaf) (app (v 1) [.natLit 0] .leaf))))
+      .shared .leaf)] alias10 oneList (some .revokedUse) false,
+  runCase "finding 10, control: the closure passed to a once parameter"
+    (onceDefs ++ [(ok10, body [par .unique] (app (.const callOnce .val) [consumeClo] .leaf) .shared .leaf)])
+    ok10 oneList none true [ok10, callOnce],
+  runCase "finding 11: a once parameter passed to a body that calls it twice"
+    (onceDefs ++ [(h11, body [par .once .val arrowSk] (app (.const callTwice .val) [v 0] .leaf) .shared .leaf)])
+    h11 oneFun (some .onceReentry) false [h11, callTwice],
+  runCase "finding 11, control: a once parameter passed to a once parameter"
+    (onceDefs ++ [(ok11, body [par .once .val arrowSk] (app (.const callOnce .val) [v 0] .leaf) .shared .leaf)])
+    ok11 oneFun none true [ok11, callOnce]
 ]
 
 /-! ### Must-reject cases from records -/
