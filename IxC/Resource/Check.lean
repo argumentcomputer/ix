@@ -349,6 +349,8 @@ def retCheck (exp : Skel) (res : ResultMode) (s : Nat) (r : AVal) (w : String) :
   valid r w
   unless exp.admits r.skel do refuseM s!"mode skeletons differ: {w}"
   if r.onceOnly then refuseM s!"onceReentry: a once-only closure returned: {w}"
+  -- a once binding returned may be called again by whoever receives it (repair S)
+  notOnceSrc r w
   if r.cls == .val || r.cls == .leaf then
     match res with
     | .shared => if r.regs.contains s then refuseM s!"borrowEscape: a borrowed value returned: {w}"
