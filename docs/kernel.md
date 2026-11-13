@@ -642,23 +642,40 @@ settled. Init+Std still needs more than 2 MiB (it aborts on 2 MiB, 1 MiB and
 512 KiB, in the typing core's nesting through `iotaRecI`, `prepareMajorI` and
 `whnf`); see the next paragraph.
 
-What still takes native stack is nesting, and nothing in the kernel bounds
-it yet: the canonical decoder on a record nested without shares (about 30,000
-levels overflow a 2 MiB stack, 100,000 an 8 MiB one), the reader and the
-install walks on the nesting of the terms they read, the typing core on the
-nesting of the terms it infers and compares (its recursion is bounded only by
-`checkFuel`, 100,000 nested calls), and the level functions on a level's
-depth. The core's nesting is not only the input's: the conversion that
-unfolding across records builds nests as deep as the records together
-(10,000 levels from five records overflow 2 MiB, 40,000 from twenty 8 MiB),
-and so does a long string literal met as a constructor, one level per
-character. Init+Std itself needs more than 2 MiB for this (it checks on
-8 MiB). `ix check-lean` and `ix verify-host` run the entry on a 256 MiB
-thread. IxCC's envelope bounds the depth of each stored record, shares
-expanded, at 2,560 (`IxCC.Ixon.V3.withinKernelDepth`): that bounds the
-records as stored, after the decoder, and not the terms the kernel builds
-while typing them. A depth limit in the kernel, the entry's thread sized from
-it, and a decline past it are planned.
+What still takes native stack is nesting: the canonical decoder on a record
+nested without shares (about 30,000 levels overflow a 2 MiB stack, 100,000 an
+8 MiB one), the reader and the install walks on the nesting of the terms they
+read, the typing core on the nesting of the terms it infers and compares, and
+the level functions on a level's depth. **The depth limit** bounds the input's
+part of it. `Limits.maxDepth` (default 16,384: 13 times the deepest record
+found in Mathlib, 1,221 with shares expanded; Init+Std's deepest is 325, IxCC's
+committed closures' 775) is checked twice in the byte stage
+(`Admission.decodeWithin`, which every byte entry and the hosts' own record
+decoders run in place of `decodeRecords`): before decoding, `scanDepths` reads
+each record's bytes in the codec's grammar without building anything, with a
+stack of its own, and declines (`.limit .depth`) at the first expression or
+universe nested past the limit, shares counted as leaves; after decoding,
+`expandedDepths` measures each record's expressions with their shares
+expanded, as the reader builds them (memoised per sharing entry; a share that
+reaches itself is past every limit). Levels count as the kernel's terms nest:
+an application of `n` arguments has its head `n` levels down, a telescope of `n`
+binders its body `n` levels down, `succ^k u` has `u` `k` levels down. The
+checks are coverage bounds: nothing is proved about what they compute, and
+`decodeWithin_error` shows they add no failure but the decline; what an
+accepted input decodes to is `decodeRecords`'s (`decodeWithin_ok_iff`). A host
+runs the entry on a thread of `Limits.stackFor` bytes (16 KiB per level of
+`maxDepth`, at least 256 MiB: 256 MiB at the default).
+
+The core's nesting is not only the input's: the conversion that unfolding
+across records builds nests as deep as the records together (10,000 levels from
+five records overflow 2 MiB, 40,000 from twenty 8 MiB), and so does a long
+string literal met as a constructor, one level per character. That nesting is
+bounded by the typing core's recursion fuel (`checkFuel`, 100,000 nested
+calls, under 1 KiB of stack each as measured, which the 256 MiB thread holds),
+not by the depth limit. Init+Std itself needs more than 2 MiB for this (it
+checks on 8 MiB). IxCC's envelope also bounds the depth of each stored record,
+shares expanded, at 2,560 (`IxCC.Ixon.V3.withinKernelDepth`), after its own
+decoder.
 
 ## The typing tier
 
