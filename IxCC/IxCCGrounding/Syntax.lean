@@ -12,7 +12,8 @@ and the suite that runs them on closure bytes (`tests-grounding`) import neither
 model (`IxCK.Kernel.Denotes`) nor any proof about it.
 
 * the kernel terms of the fragment's constants (`primKey`, `litE`, `primApp`), telescopes and lifts;
-* the node-for-node correspondence of a Src term and a kernel term (`TermCorr`);
+* the node-for-node correspondence of a Src term and a kernel term (`TermCorr`), and of a run
+  term and its stored ζ-reduct through a substitution (`TermCorrS`, the `let` cases);
 * `Ok`, the certificate's datum of which constant instances SrcEval may unfold, and its closure
   (`OkClosed`, decided by `okClosedB`);
 * the shapes the checks decide: an `eqn` entry's (`EqnShape`), a `case` entry's (`CaseStored`,
@@ -135,8 +136,9 @@ inductive UnivCorr (lps : List Nat) : IxCC.Ixon.Univ → Level → Prop
 def LvAt (φ : LevelParam → Nat) (lps : List Nat) (ls : Levels) : Prop :=
   ∀ i p, lps[i]? = some p → φ p = ls.getD i 0
 
-/-- A Src term corresponds to a kernel term node for node (no `let`, no string literal: the
-first fragment). Decided by a Boolean check on the bytes. -/
+/-- A Src term corresponds to a kernel term node for node (no `let`, no string literal). The
+recursor rules and `case` checks read it (their terms are kernel-generated); run terms are read
+through `TermCorrS`, which admits `let`. Decided by a Boolean check on the bytes. -/
 inductive TermCorr (κ : CId → KKey) (lps : List Nat) : Term → KExpr → Prop
   | var {i : Nat} : TermCorr κ lps (.var i) (.bvar i)
   | sort {u : IxCC.Ixon.Univ} {l : Level} : UnivCorr lps u l → TermCorr κ lps (.sort u) (.sort l)
@@ -156,6 +158,129 @@ inductive TermCorr (κ : CId → KKey) (lps : List Nat) : Term → KExpr → Pro
   | proj {s : CId} {i : Nat} {e : Term} {e' : KExpr} :
       TermCorr κ lps e e' → TermCorr κ lps (.proj s i e) (.proj (κ s) i e')
   | natLit {n : Nat} : TermCorr κ lps (.natLit n) (.lit (.natVal n))
+
+/-! ### The correspondence under a substitution (step C: `let` in run terms)
+
+The kernel stores the ζ-reduct of a run term (its annotation pass substitutes every `let` away),
+and neither our `Denotes` nor #678's reads a `let` (#678 at `d4c079de2`,
+`IxC/Kernel/Denotes.lean:635`). So a Src `let x := v; b` corresponds to the stored term `e` of its
+body with `x` replaced by the kernel copy `v'` of `v`: Src variables stand for kernel *terms*, through
+a substitution `σ : Sig`. A `let` whose variable meets no kernel term (a dead `let`) gets `none`: its
+slot is related to nothing, and nothing about its value is asked. -/
+
+/-- A substitution from Src variables to kernel terms over the current kernel context: `some e`, or
+`none` for a dead `let`'s variable. -/
+abbrev Sig := List (Option KExpr)
+
+/-- Under a binder: the new variable is `#0`, every other term lifted past it. -/
+def liftσ (σ : Sig) : Sig := some (.bvar 0) :: σ.map (·.map (Expr.liftLooseBVars 1 0))
+
+/-- The identity substitution of `n` bound variables: `[some #0, …, some #(n-1)]`. -/
+def idσ (n : Nat) : Sig := (List.range n).map fun i => some (.bvar i)
+
+theorem idσ_zero : idσ 0 = [] := rfl
+
+theorem liftσ_idσ (n : Nat) : liftσ (idσ n) = idσ (n + 1) := by
+  simp only [liftσ, idσ, List.range_succ_eq_map, List.map_cons, List.map_map]
+  refine congrArg _ (List.map_congr_left fun i _ => ?_)
+  simp [Expr.liftLooseBVars]
+
+theorem idσ_get {n i : Nat} (h : i < n) : (idσ n)[i]? = some (some (.bvar i)) := by
+  simp [idσ, h]
+
+/-- `e` with its loose variables at or above `c + d` lowered by `d`; `none` when one in `[c, c + d)`
+occurs. -/
+def lowerK (d : Nat) : Nat → KExpr → Option KExpr
+  | c, .bvar i => if i < c then some (.bvar i) else if i < c + d then none else some (.bvar (i - d))
+  | c, .app f a => do pure (.app (← lowerK d c f) (← lowerK d c a))
+  | c, .lam t b m => do pure (.lam (← lowerK d c t) (← lowerK d (c + 1) b) m)
+  | c, .forallE t b m => do pure (.forallE (← lowerK d c t) (← lowerK d (c + 1) b) m)
+  | c, .letE t v b m => do pure (.letE (← lowerK d c t) (← lowerK d c v) (← lowerK d (c + 1) b) m)
+  | c, .proj s i e => do pure (.proj s i (← lowerK d c e))
+  | _, e => some e
+
+/-- **The copy** (a producer: `TermCorrS` checks every occurrence against what it returns): the
+kernel term Src variable `k` first meets when `t` is walked against `e`, `d` kernel binders below
+the variable's scope, lowered to that scope (inner `let`s: their value against their own copy).
+Structural on `t`. -/
+def zcopyAt (k d : Nat) : Term → KExpr → Option KExpr
+  | .var i, e => if i == k then lowerK d 0 e else none
+  | .app f a _ _, .app f' a' => (zcopyAt k d f f').orElse fun _ => zcopyAt k d a a'
+  | .lam _ dm b, .lam dm' b' _ => (zcopyAt k d dm dm').orElse fun _ => zcopyAt (k + 1) (d + 1) b b'
+  | .pi _ _ dm c, .forallE dm' c' _ =>
+    (zcopyAt k d dm dm').orElse fun _ => zcopyAt (k + 1) (d + 1) c c'
+  | .proj _ _ x, .proj _ _ x' => zcopyAt k d x x'
+  | .letE _ _ _ v b, e =>
+    ((zcopyAt 0 0 b e).bind fun v2 => zcopyAt k d v v2).orElse fun _ => zcopyAt (k + 1) d b e
+  | _, _ => none
+
+/-- The copy of a `let`'s variable in its body's kernel term. -/
+def zcopy (b : Term) (e : KExpr) : Option KExpr := zcopyAt 0 0 b e
+
+/-- `v` occurs in `e` with no binder between (through applications and projections). -/
+inductive SubAt0 (v : KExpr) : KExpr → Prop
+  | refl : SubAt0 v v
+  | appL {f a : KExpr} : SubAt0 v f → SubAt0 v (.app f a)
+  | appR {f a : KExpr} : SubAt0 v a → SubAt0 v (.app f a)
+  | proj {s : KKey} {i : Nat} {x : KExpr} : SubAt0 v x → SubAt0 v (.proj s i x)
+
+/-- `SubAt0`, decided. -/
+def subAt0B (v : KExpr) : KExpr → Bool
+  | .app f a => decide (v = .app f a) || subAt0B v f || subAt0B v a
+  | .proj s i x => decide (v = .proj s i x) || subAt0B v x
+  | e => decide (v = e)
+
+theorem subAt0_of_check {v : KExpr} : ∀ {e : KExpr}, subAt0B v e = true → SubAt0 v e := by
+  intro e h
+  induction e with
+  | app f a ihf iha =>
+    simp only [subAt0B, Bool.or_eq_true, decide_eq_true_eq] at h
+    rcases h with (rfl | h) | h
+    · exact .refl
+    · exact .appL (ihf h)
+    · exact .appR (iha h)
+  | proj s i x ih =>
+    simp only [subAt0B, Bool.or_eq_true, decide_eq_true_eq] at h
+    rcases h with rfl | h
+    · exact .refl
+    · exact .proj (ih h)
+  | _ =>
+    simp only [subAt0B, decide_eq_true_eq] at h
+    subst h; exact .refl
+
+/-- **The correspondence under a substitution** (what `valueCorr` and `eqnCorr` check, at `σ = []`):
+as `TermCorr`, with `var i` meeting `σ[i]`'s term, binders lifting `σ`, and two `let` cases: a live
+`let` (its variable's copy `v'` occurs in the body's kernel term with no binder between, and the value
+corresponds to it) and a dead one (its variable meets no kernel term). The `let`'s type is not
+compared: SrcEval never evaluates it, and the kernel stores no `let`. -/
+inductive TermCorrS (κ : CId → KKey) (lps : List Nat) : Sig → Term → KExpr → Prop
+  | var {σ : Sig} {i : Nat} {e : KExpr} : σ[i]? = some (some e) → TermCorrS κ lps σ (.var i) e
+  | sort {σ : Sig} {u : IxCC.Ixon.Univ} {l : Level} : UnivCorr lps u l →
+      TermCorrS κ lps σ (.sort u) (.sort l)
+  | const {σ : Sig} {c : CId} {us : List IxCC.Ixon.Univ} {ls : List Level} :
+      us.length = ls.length →
+      (∀ (i : Nat) (u : IxCC.Ixon.Univ) (l : Level), us[i]? = some u → ls[i]? = some l →
+        UnivCorr lps u l) →
+      TermCorrS κ lps σ (.const c us) (.const (κ c) ls)
+  | app {σ : Sig} {f a : Term} {m : IxCC.Src.Mode} {r : IxCC.Src.Rel} {f' a' : KExpr} :
+      TermCorrS κ lps σ f f' → TermCorrS κ lps σ a a' → TermCorrS κ lps σ (.app f a m r) (.app f' a')
+  | lam {σ : Sig} {b : IxCC.Src.Binder} {d body : Term} {d' body' : KExpr} {mb : BinderMeta} :
+      TermCorrS κ lps σ d d' → TermCorrS κ lps (liftσ σ) body body' →
+      TermCorrS κ lps σ (.lam b d body) (.lam d' body' mb)
+  | pi {σ : Sig} {b : IxCC.Src.Binder} {r : IxCC.Ixon.V3.ValueContract} {d c : Term}
+      {d' c' : KExpr} {mb : BinderMeta} :
+      TermCorrS κ lps σ d d' → TermCorrS κ lps (liftσ σ) c c' →
+      TermCorrS κ lps σ (.pi b r d c) (.forallE d' c' mb)
+  | proj {σ : Sig} {s : CId} {i : Nat} {e : Term} {e' : KExpr} :
+      TermCorrS κ lps σ e e' → TermCorrS κ lps σ (.proj s i e) (.proj (κ s) i e')
+  | natLit {σ : Sig} {n : Nat} : TermCorrS κ lps σ (.natLit n) (.lit (.natVal n))
+  | letLive {σ : Sig} {c : IxCC.Ixon.V3.LetContract} {r : IxCC.Src.Rel} {ty v b : Term}
+      {e v' : KExpr} :
+      zcopy b e = some v' → subAt0B v' e = true → TermCorrS κ lps σ v v' →
+      TermCorrS κ lps (some v' :: σ) b e → TermCorrS κ lps σ (.letE c r ty v b) e
+  | letDead {σ : Sig} {c : IxCC.Ixon.V3.LetContract} {r : IxCC.Src.Rel} {ty v b : Term}
+      {e : KExpr} :
+      zcopy b e = none → TermCorrS κ lps (none :: σ) b e → TermCorrS κ lps σ (.letE c r ty v b) e
 
 /-- Every bound variable of a kernel term is below `n` (under its binders): the term is closed
 in a context of `n` binders. -/
@@ -231,12 +356,14 @@ def runTerms (p : Program) (c : CId) : List Term :=
   | _ => []
 
 /-- The constant nodes at positions SrcEval may evaluate at `ls`: not under an argument
-irrelevant at `ls`, not inside a type; under λ bodies and projections. -/
+irrelevant at `ls`, not inside a type; under λ bodies and projections; a `let`'s value where the
+`let` is relevant at `ls` (dead or not: SrcEval evaluates it), and its body. -/
 def evalConsts (ls : Levels) : Term → List (CId × List IxCC.Ixon.Univ)
   | .const c us => [(c, us)]
   | .app f a _ r => evalConsts ls f ++ (if r.irrAt ls then [] else evalConsts ls a)
   | .lam _ _ body => evalConsts ls body
   | .proj _ _ e => evalConsts ls e
+  | .letE _ r _ v b => (if r.irrAt ls then [] else evalConsts ls v) ++ evalConsts ls b
   | _ => []
 
 /-- The same at a profile (which parameters are zero). -/
@@ -245,6 +372,7 @@ def evalConstsP (prof : IxCC.Src.Profile) : Term → List (CId × List IxCC.Ixon
   | .app f a _ r => evalConstsP prof f ++ (if r.irrP prof then [] else evalConstsP prof a)
   | .lam _ _ body => evalConstsP prof body
   | .proj _ _ e => evalConstsP prof e
+  | .letE _ r _ v b => (if r.irrP prof then [] else evalConstsP prof v) ++ evalConstsP prof b
   | _ => []
 
 /-- **`Ok` is closed** on `S`. -/
@@ -356,12 +484,19 @@ inductive RunPair (p : Program) (env : KEnv) (κ : CId → KKey) (c : CId) : Ter
       RunPair p env κ c body d.body
 
 /-- The application sites SrcEval may evaluate at `ls`, each with its context: every
-application reached through functions, arguments relevant at `ls`, λ bodies and projections. -/
+application reached through functions, arguments relevant at `ls`, λ bodies and projections; at a
+`let`, its value's sites at the value's copy where the `let` is relevant and the copy occurs with no
+binder between (none where it is dead), and its body's. Every site is an application node of the
+kernel term with its binder domains (a `let` adds no kernel binder). -/
 def evalSites (ls : Levels) : List KExpr → Term → KExpr → List (List KExpr × KExpr × KExpr)
   | Γ, .app f a _ r, .app f' a' =>
     (Γ, f', a') :: (evalSites ls Γ f f' ++ (if r.irrAt ls then [] else evalSites ls Γ a a'))
   | Γ, .lam _ _ body, .lam d' body' _ => evalSites ls (d' :: Γ) body body'
   | Γ, .proj _ _ e, .proj _ _ e' => evalSites ls Γ e e'
+  | Γ, .letE _ r _ v b, e =>
+    (match zcopy b e with
+      | some v' => if r.irrAt ls || !subAt0B v' e then [] else evalSites ls Γ v v'
+      | none => []) ++ evalSites ls Γ b e
   | _, _, _ => []
 
 /-! ## The checked shape of a `case` entry
@@ -1035,10 +1170,11 @@ structure GroundFactsWith (Recs : Prop) (p : Program) (env : KEnv) (κ : CId →
   faith : FaithWith Recs p env κ lpsOf S
   natBasis : NatBasis env
   eqns : ∀ c thm body, S c → p.table.resolveOf c = some (.eqn thm body) →
-    (∃ d, EqnShape env κ c thm d) ∧ ∀ d, EqnShape env κ c thm d → TermCorr κ (lpsOf c) body d.body
+    (∃ d, EqnShape env κ c thm d) ∧
+      ∀ d, EqnShape env κ c thm d → TermCorrS κ (lpsOf c) [] body d.body
   values : ∀ c lvls ty v cv val hint, S c → p.table.resolveOf c = none →
     p.decl? c = some (.defn .defn .safe lvls ty v) →
-    env.find? (κ c) = some (.defnInfo cv val hint) → TermCorr κ (lpsOf c) v val
+    env.find? (κ c) = some (.defnInfo cv val hint) → TermCorrS κ (lpsOf c) [] v val
   /-- every run term is closed -/
   closed : ∀ c t e, S c → RunPair p env κ c t e → bvarsLt 0 e = true
   okClosed : OkClosed p ann S

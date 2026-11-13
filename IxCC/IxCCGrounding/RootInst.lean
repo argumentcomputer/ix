@@ -10,11 +10,10 @@ their rules blind) and asks instead a verified instance set (`InstClosed`, `Inst
 in it): the fundamental lemma runs at `Ok := OkIn p ann Inst`, and F5 at such an entry is
 `caseFires_of_agree` (`IxCCGrounding.CaseLevels`). Its conclusion is `rootSound_678`'s word for word.
 
-**Where a `let` goes.** The instance walk, and `InstClosed`, read `evalConsts`, which reads no `let`.
-That is complete for what the theorem uses: `Runs.const` asks `Ok` exactly at `evalConsts`, and the
-check's `valueCorr`/`eqnCorr` (and `RecStored` at recursor rules) ask `TermCorr`, which has no
-`let`, of every term SrcEval runs; so a program whose run terms hold a `let` fails `groundCheck`, a
-hypothesis here, whatever `instCheckB` says.
+**Where a `let` goes.** The instance walk, and `InstClosed`, read `evalConsts`, which reads a `let`'s
+value wherever the `let` is relevant (dead or not) and its body. That covers what the theorem uses:
+`Runs.const` asks `Ok` at a subset of `evalConsts` (nothing of a dead `let`'s value), so the walk and
+`instCheckB` read every position SrcEval evaluates, and stay fail-closed.
 -/
 
 namespace IxCC.Grounding
@@ -35,8 +34,8 @@ theorem runs_of_sitesIn (hL : LawsCore M) {p : Program} {κ : CId → KKey} {lps
     (hG : GroundFacts p env κ lpsOf ann S) (hT : SitesOk M p κ lpsOf ann S) (hI : InstClosed p Inst)
     {c : CId} {ls : Levels} {t : Term} {e : KExpr} (hS : S c) (hOk : OkIn p ann Inst c ls)
     (hrp : RunPair p env κ c t e) {φ : LevelParam → Nat} (hlv : LvAt φ (lpsOf c) ls) :
-    Runs M κ (OkIn p ann Inst) (lpsOf c) ls φ [] t e := by
-  have hcorr : TermCorr κ (lpsOf c) t e := by
+    Runs M κ (OkIn p ann Inst) (lpsOf c) ls φ [] [] t e := by
+  have hcorr : TermCorrS κ (lpsOf c) [] t e := by
     cases hrp with
     | value hr hd hf => exact hG.values c _ _ _ _ _ _ hS hr hd hf
     | eqn hr hsh => exact (hG.eqns c _ _ hS hr).2 _ hsh
@@ -49,7 +48,7 @@ theorem runs_of_sitesIn (hL : LawsCore M) {p : Program} {κ : CId → KKey} {lps
     cases hrp with
     | value hr hd _ => simp [runTerms, hr, hd]
     | eqn hr _ => simp [runTerms, hr]
-  exact runs_of_corr hcorr (hG.closed c t e hS hrp) hden (hT c ls t e hS hOk.1 hrp φ hlv)
+  exact runs_of_corr hcorr hden (hT c ls t e hS hOk.1 hrp φ hlv)
     (fun d us h => ⟨hG.okClosed c ls hS hOk.1 t hterm d us h,
       hI c ls hOk.2 t (List.mem_append_left _ hterm) d us h⟩)
 
@@ -79,8 +78,8 @@ theorem fundHyps_of_inst (hL : LawsCore M) {p : Program} {κ : CId → KKey}
 /-- **The root theorem over #678's fields, at `case` entries over level-polymorphic families**:
 `rootSound_678` with `NoCanonA` for `NoCanon`, the `case` shapes the check reads
 (`CaseFactsRead`, which gives `CaseFacts`), and a verified instance set (closed, uniform, the root in
-it at no level). Its conclusion is `rootSound_678`'s word for word. A program whose run terms hold a
-`let` fails `GroundFacts` (`TermCorr` has no `let`), so the walk's stopping there is never used. -/
+it at no level). Its conclusion is `rootSound_678`'s word for word. The instance walk reads a relevant
+`let`'s value, dead or not (`evalConsts`), a superset of what `Runs.const` asks. -/
 theorem rootSound_678A (hL : Laws678 M) {p : Program} {κ : CId → KKey}
     {lpsOf : CId → List Nat} {ann : IxCC.Src.Relevance.Ann} {Sl : List CId} {root : CId}
     {args : List FoTy} {res : FoTy} {Inst : List (CId × Levels)}

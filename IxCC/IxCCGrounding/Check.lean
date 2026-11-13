@@ -30,8 +30,8 @@ mutation targeting one makes exactly that one false.
 | `natBasis` | `Nat`, `Nat.zero` and `Nat.succ` stored as the literal reading needs |
 | `eqBasis` | `Eq` stored with its type |
 | `eqnShape` | each `eqn` entry's theorem has the checked shape (`EqnShape`) |
-| `eqnCorr`, `eqnClosed` | each `eqn` body corresponds to the equation body, which is closed |
-| `valueCorr`, `valueClosed` | each δ value corresponds to the stored value, which is closed |
+| `eqnCorr`, `eqnClosed` | each `eqn` body corresponds to the equation body (its `let`s through the substitution of their copies, `corrSB []`), which is closed |
+| `valueCorr`, `valueClosed` | each δ value corresponds to the stored value, the ζ-reduct (`corrSB []`), which is closed |
 | `okClosed` | `Ok`'s closure (`okClosedB`) |
 | `caseShape` | each `case` entry's stored `casesOn`, recursor and constructors have the checked shape (`CaseStored`, read by `caseShape?`), its inductive never a proposition |
 | `caseProg` | each `case` entry's recursor and constructors in the program agree with the shape (`CaseProg`) |
@@ -157,6 +157,144 @@ theorem termCorr_of_check {κ : CId → KKey} {lps : List Nat} :
     | lit l => cases l <;> simp [termCorrB] at h; subst h; exact .natLit
     | _ => simp [termCorrB] at h
   | strLit => intro e h; cases e <;> simp [termCorrB] at h
+
+/-! ## The correspondence under a substitution, decided (`valueCorr`, `eqnCorr`) -/
+
+/-- **`TermCorrS`, decided** (`valueCorr` and `eqnCorr` at `σ = []`): structural on the Src term, the
+copy of each `let`'s variable produced by `zcopy` and checked at every occurrence. -/
+def corrSB (κ : CId → KKey) (lps : List Nat) : Sig → Term → KExpr → Bool
+  | σ, .var i, e => match σ[i]? with | some (some e') => decide (e' = e) | _ => false
+  | _, .sort u, .sort l => univCorrB lps u l
+  | _, .const c us, .const k ls =>
+    decide (k = κ c) && us.length == ls.length && (us.zip ls).all fun (u, l) => univCorrB lps u l
+  | σ, .app f a _ _, .app f' a' => corrSB κ lps σ f f' && corrSB κ lps σ a a'
+  | σ, .lam _ d b, .lam d' b' _ => corrSB κ lps σ d d' && corrSB κ lps (liftσ σ) b b'
+  | σ, .pi _ _ d c, .forallE d' c' _ => corrSB κ lps σ d d' && corrSB κ lps (liftσ σ) c c'
+  | σ, .proj s i x, .proj k j x' => decide (k = κ s) && i == j && corrSB κ lps σ x x'
+  | _, .natLit n, .lit (.natVal m) => n == m
+  | σ, .letE _ _ _ v b, e =>
+    match zcopy b e with
+    | some v' => subAt0B v' e && corrSB κ lps σ v v' && corrSB κ lps (some v' :: σ) b e
+    | none => corrSB κ lps (none :: σ) b e
+  | _, _, _ => false
+
+theorem termCorrS_of_check {κ : CId → KKey} {lps : List Nat} :
+    ∀ (σ : Sig) (t : Term) (e : KExpr), corrSB κ lps σ t e = true → TermCorrS κ lps σ t e := by
+  intro σ t
+  induction t generalizing σ with
+  | var i =>
+    intro e h
+    simp only [corrSB] at h
+    split at h
+    · rename_i e' he
+      simp only [decide_eq_true_eq] at h
+      subst h
+      exact .var he
+    · cases h
+  | sort u =>
+    intro e h; cases e <;> simp [corrSB] at h; exact .sort (univCorr_of_check _ _ h)
+  | const c us =>
+    intro e h
+    cases e <;> simp only [corrSB, Bool.and_eq_true, decide_eq_true_eq, beq_iff_eq,
+      List.all_eq_true, Bool.false_eq_true] at h
+    obtain ⟨⟨rfl, hlen⟩, hall⟩ := h
+    refine .const hlen fun i u l hu hl => univCorr_of_check _ _ ?_
+    exact hall (u, l) (List.mem_of_getElem? (List.getElem?_zip_eq_some.mpr ⟨hu, hl⟩))
+  | app f a m r ihf iha =>
+    intro e h; cases e <;> simp [corrSB] at h; exact .app (ihf _ _ h.1) (iha _ _ h.2)
+  | lam b d body ihd ihb =>
+    intro e h; cases e <;> simp [corrSB] at h; exact .lam (ihd _ _ h.1) (ihb _ _ h.2)
+  | pi b r d c ihd ihc =>
+    intro e h; cases e <;> simp [corrSB] at h; exact .pi (ihd _ _ h.1) (ihc _ _ h.2)
+  | letE c r ty v b _ ihv ihb =>
+    intro e h
+    simp only [corrSB] at h
+    split at h
+    · rename_i v' hz
+      simp only [Bool.and_eq_true] at h
+      exact .letLive hz h.1.1 (ihv _ _ h.1.2) (ihb _ _ h.2)
+    · rename_i hz
+      exact .letDead hz (ihb _ _ h)
+  | proj s i e ih =>
+    intro e' h
+    cases e' <;> simp only [corrSB, Bool.and_eq_true, decide_eq_true_eq, beq_iff_eq,
+      Bool.false_eq_true] at h
+    obtain ⟨⟨rfl, rfl⟩, h⟩ := h
+    exact .proj (ih _ _ h)
+  | natLit n =>
+    intro e h
+    cases e with
+    | lit l => cases l <;> simp [corrSB] at h; subst h; exact .natLit
+    | _ => simp [corrSB] at h
+  | strLit => intro e h; cases e <;> simp [corrSB] at h
+
+/-- **On a let-free run term the substitution check is the landed one**: what `termCorrB` accepts
+on a closed kernel term, `corrSB []` accepts (so no verdict of a let-free program moves). -/
+theorem corrSB_idσ_of_termCorrB {κ : CId → KKey} {lps : List Nat} :
+    ∀ (t : Term) (n : Nat) (e : KExpr), termCorrB κ lps t e = true → bvarsLt n e = true →
+      corrSB κ lps (idσ n) t e = true := by
+  intro t
+  induction t with
+  | var i =>
+    intro n e h hc
+    cases e <;> simp only [termCorrB, beq_iff_eq, Bool.false_eq_true] at h
+    subst h
+    simp only [bvarsLt, decide_eq_true_eq] at hc
+    simp [corrSB, idσ_get hc]
+  | sort u => intro n e h _; cases e <;> simp_all [termCorrB, corrSB]
+  | const c us => intro n e h _; cases e <;> simp_all [termCorrB, corrSB]
+  | app f a m r ihf iha =>
+    intro n e h hc
+    cases e <;> simp only [termCorrB, Bool.and_eq_true, Bool.false_eq_true] at h
+    simp only [bvarsLt, Bool.and_eq_true] at hc
+    simp [corrSB, ihf _ _ h.1 hc.1, iha _ _ h.2 hc.2]
+  | lam b d body ihd ihb =>
+    intro n e h hc
+    cases e <;> simp only [termCorrB, Bool.and_eq_true, Bool.false_eq_true] at h
+    simp only [bvarsLt, Bool.and_eq_true] at hc
+    simp [corrSB, liftσ_idσ, ihd _ _ h.1 hc.1, ihb _ _ h.2 hc.2]
+  | pi b r d c ihd ihc =>
+    intro n e h hc
+    cases e <;> simp only [termCorrB, Bool.and_eq_true, Bool.false_eq_true] at h
+    simp only [bvarsLt, Bool.and_eq_true] at hc
+    simp [corrSB, liftσ_idσ, ihd _ _ h.1 hc.1, ihc _ _ h.2 hc.2]
+  | letE => intro n e h _; cases e <;> simp [termCorrB] at h
+  | proj s i x ih =>
+    intro n e h hc
+    cases e <;> simp only [termCorrB, Bool.and_eq_true, Bool.false_eq_true] at h
+    simp only [bvarsLt] at hc
+    simp only [corrSB, Bool.and_eq_true]
+    exact ⟨h.1, ih _ _ h.2 hc⟩
+  | natLit n' =>
+    intro n e h _
+    cases e with
+    | lit l => cases l <;> simp_all [termCorrB, corrSB]
+    | _ => simp [termCorrB] at h
+  | strLit => intro n e h _; cases e <;> simp [termCorrB] at h
+
+/-- `corrSB_idσ_of_termCorrB` at a closed term (`σ = []`). -/
+theorem corrSB_of_termCorrB {κ : CId → KKey} {lps : List Nat} {t : Term} {e : KExpr}
+    (h : termCorrB κ lps t e = true) (hc : bvarsLt 0 e = true) : corrSB κ lps [] t e = true :=
+  corrSB_idσ_of_termCorrB t 0 e h hc
+
+/-- **A node-for-node correspondence is one under the identity substitution**, on a kernel term
+closed in its context (the recursor rules, which the kernel generates, are read with `TermCorr`). -/
+theorem termCorrS_of_termCorr {κ : CId → KKey} {lps : List Nat} {t : Term} {e : KExpr}
+    (h : TermCorr κ lps t e) : ∀ {n : Nat}, bvarsLt n e = true → TermCorrS κ lps (idσ n) t e := by
+  induction h with
+  | @var i => intro n hc; simp only [bvarsLt, decide_eq_true_eq] at hc; exact .var (idσ_get hc)
+  | sort hu => intro _ _; exact .sort hu
+  | const hlen hu => intro _ _; exact .const hlen hu
+  | app _ _ ihf iha =>
+    intro n hc; simp only [bvarsLt, Bool.and_eq_true] at hc; exact .app (ihf hc.1) (iha hc.2)
+  | lam _ _ ihd ihb =>
+    intro n hc; simp only [bvarsLt, Bool.and_eq_true] at hc
+    exact .lam (ihd hc.1) (by rw [liftσ_idσ]; exact ihb hc.2)
+  | pi _ _ ihd ihc =>
+    intro n hc; simp only [bvarsLt, Bool.and_eq_true] at hc
+    exact .pi (ihd hc.1) (by rw [liftσ_idσ]; exact ihc hc.2)
+  | proj _ ih => intro n hc; simp only [bvarsLt] at hc; exact .proj (ih hc)
+  | natLit => intro _ _; exact .natLit
 
 /-! ## The shape of an `eqn` entry -/
 
@@ -573,7 +711,7 @@ def eqnCorrB (c : CId) : Bool :=
   match p.table.resolveOf c with
   | some (.eqn thm body) =>
     match eqnData? env (κ c) (κ thm) with
-    | some d => termCorrB κ (lpsOf c) body d.body
+    | some d => corrSB κ (lpsOf c) [] body d.body
     | none => false
   | _ => true
 
@@ -587,7 +725,7 @@ def eqnClosedB (c : CId) : Bool :=
 
 def valueCorrB (c : CId) : Bool :=
   match p.table.resolveOf c, p.decl? c, env.find? (κ c) with
-  | none, some (.defn .defn .safe _ _ v), some (.defnInfo _ val _) => termCorrB κ (lpsOf c) v val
+  | none, some (.defn .defn .safe _ _ v), some (.defnInfo _ val _) => corrSB κ (lpsOf c) [] v val
   | _, _, _ => true
 
 def valueClosedB (c : CId) : Bool :=
@@ -1155,7 +1293,7 @@ theorem groundFacts_of_check {ann : IxCC.Src.Relevance.Ann}
   -- the `eqn` entries
   have heqn : ∀ c thm body, c ∈ Sl → p.table.resolveOf c = some (.eqn thm body) →
       ∃ d, eqnData? env (κ c) (κ thm) = some d ∧ EqnShape env κ c thm d ∧
-        TermCorr κ (lpsOf c) body d.body ∧ bvarsLt 0 d.body = true := by
+        TermCorrS κ (lpsOf c) [] body d.body ∧ bvarsLt 0 d.body = true := by
     intro c thm body hc hr
     have h1 := all (f := eqnShapeOkB p env κ) "eqnShape" (by simp [checkParts, checkPartsWith]) c hc
     have h2 := all (f := eqnCorrB p env κ lpsOf) "eqnCorr" (by simp [checkParts, checkPartsWith]) c hc
@@ -1164,7 +1302,7 @@ theorem groundFacts_of_check {ann : IxCC.Src.Relevance.Ann}
     split at h1
     · rename_i d hd
       rw [hd] at h2 h3
-      exact ⟨d, hd, eqnShape_of_check hE h1, termCorr_of_check _ _ h2, h3⟩
+      exact ⟨d, hd, eqnShape_of_check hE h1, termCorrS_of_check _ _ _ h2, h3⟩
     · exact absurd h1 (by simp)
   refine ⟨hfaith, natBasis_of (P "natBasis" (natBasisB env) (by simp [checkParts, checkPartsWith])), ?_, ?_, ?_,
     okClosed_of_check (P "okClosed" (okClosedB p ann Sl) (by simp [checkParts, checkPartsWith]))⟩
@@ -1174,7 +1312,7 @@ theorem groundFacts_of_check {ann : IxCC.Src.Relevance.Ann}
   · intro c lvls ty v cv val hint hc hr hd hf
     have h1 := all (f := valueCorrB p env κ lpsOf) "valueCorr" (by simp [checkParts, checkPartsWith]) c hc
     simp only [valueCorrB, hr, hd, hf] at h1
-    exact termCorr_of_check _ _ h1
+    exact termCorrS_of_check _ _ _ h1
   · intro c t e hc hrp
     cases hrp with
     | value hr hd hf =>

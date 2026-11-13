@@ -72,13 +72,13 @@ structure FundHyps (M : Model V env) (p : Program) (κ : CId → KKey) (lpsOf : 
   lemma), and its body runs (typing) -/
   eqn : ∀ c thm body, S c → p.table.resolveOf c = some (.eqn thm body) → ∃ e : KExpr,
     (∀ φ ρ X, Denotes M.cval env φ ρ e X → M.cval (κ c) φ = X) ∧
-    ∀ ls φ, Ok c ls → LvAt φ (lpsOf c) ls → Runs M κ Ok (lpsOf c) ls φ [] body e
+    ∀ ls φ, Ok c ls → LvAt φ (lpsOf c) ls → Runs M κ Ok (lpsOf c) ls φ [] [] body e
   /-- **typing**: the stored value of a definition SrcEval unfolds by δ runs, at every instance
   `Ok` admits -/
   value : ∀ c ls lvls ty v cv val hint, S c → Ok c ls → p.table.resolveOf c = none →
     p.decl? c = some (.defn .defn .safe lvls ty v) →
     env.find? (κ c) = some (.defnInfo cv val hint) →
-    ∀ φ, LvAt φ (lpsOf c) ls → Runs M κ Ok (lpsOf c) ls φ [] v val
+    ∀ φ, LvAt φ (lpsOf c) ls → Runs M κ Ok (lpsOf c) ls φ [] [] v val
 
 end Sem
 

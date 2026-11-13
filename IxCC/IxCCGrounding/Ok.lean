@@ -45,7 +45,9 @@ theorem evalConsts_profile (ls : Levels) :
       evalConsts_profile ls a]
   | .lam _ _ body => by simp only [evalConsts, evalConstsP, evalConsts_profile ls body]
   | .pi .. => rfl
-  | .letE .. => rfl
+  | .letE _ r _ v b => by
+    simp only [evalConsts, evalConstsP, irrAt_profile, evalConsts_profile ls v,
+      evalConsts_profile ls b]
   | .proj _ _ e => by simp only [evalConsts, evalConstsP, evalConsts_profile ls e]
   | .natLit _ => rfl
   | .strLit _ => rfl

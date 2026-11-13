@@ -31,11 +31,12 @@ fundamental lemma takes it through its abstract `Ok`, at `OkIn p ann Inst` (`Ok`
 both instances (`caseLevelAgree_of_inst`).
 
 **Why the instance set is complete where it is used.** `InstClosed` is stated over `evalConsts`,
-which is exactly what `Runs.const` asks `Ok` of; `evalConsts` reads no `let` and no string literal,
-and neither does `TermCorr`, which the check asks of every run term (`valueCorr`, `eqnCorr`) and
-every recursor rule it reads (`RecStored`). So a program whose walked terms hold a `let` is refused
-by the check's `valueCorr`/`eqnCorr` (a hypothesis of every root theorem), not by `instCheckB`;
-the walk's stopping at a `let` never reaches a theorem.
+which contains everything `Runs.const` asks `Ok` of: `evalConsts` reads a `let`'s value wherever the
+`let` is relevant (a dead `let`'s value too, which `Runs` asks nothing of, since SrcEval evaluates it)
+and its body, so the walk, `InstClosed` and `instCheckB` read `let`s together. A dead value at a
+non-uniform instance makes `instCheckB` refuse a program whose result cannot depend on it: the
+restriction stays fail-closed. String literals are read by neither `evalConsts` nor the check's
+correspondence (`valueCorr`, `eqnCorr`), which refuses them.
 -/
 
 namespace IxCC.Grounding
@@ -374,8 +375,7 @@ def instCheckB (p : Program) (env : KEnv) (κ : CId → KKey) (lpsOf : CId → L
 /-- **The instance walk** (a producer, not trusted: `instCheckB` verifies what it returns): from
 the seeds at no level, every constant `evalConsts` reaches in a run term or a rule body of a
 reached instance, at the levels it computes there; at most `fuel` steps (`none` beyond). Like
-`evalConsts` it reads no `let`: on a program whose run terms hold one the set it returns is
-incomplete, which no theorem uses (the check's `valueCorr`/`eqnCorr` refuse such a program). -/
+`evalConsts` it reads a `let`'s value where the `let` is relevant (dead or not) and its body. -/
 def instWalk (p : Program) (seeds : List CId) (fuel : Nat) : Option (List (CId × Levels)) :=
   go fuel (seeds.map fun c => (c, [])) []
 where

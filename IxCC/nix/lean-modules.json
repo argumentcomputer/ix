@@ -1138,6 +1138,12 @@
     "IxCC.Src.Table.Check",
     "IxCC.Recheck.Produce",
     "IxCCTests.Support.Envelope"]},
+  "IxCCTests.Grounding.Zeta":
+  {"path": "IxCCTests/Grounding/Zeta.lean",
+   "imports":
+   ["IxCCTests.Grounding.Run",
+    "IxCCTests.Corpus.Manifest",
+    "IxCC.Src.Relevance.Check"]},
   "IxCCTests.Grounding.Run":
   {"path": "IxCCTests/Grounding/Run.lean",
    "imports":
@@ -1155,13 +1161,17 @@
   {"path": "IxCCTests/Grounding/NoCanon.lean",
    "imports":
    ["IxCCTests.Grounding.Run",
+    "IxCCTests.Grounding.Zeta",
     "IxCCTests.Corpus.Manifest",
     "IxCCGrounding.CaseLevels",
     "IxCCGrounding.Graded",
     "IxCC.Src.Relevance.Check"]},
   "IxCCTests.Grounding.Main":
   {"path": "IxCCTests/Grounding/Main.lean",
-   "imports": ["IxCCTests.Grounding.Run", "IxCCTests.Grounding.NoCanon"]},
+   "imports":
+   ["IxCCTests.Grounding.Run",
+    "IxCCTests.Grounding.NoCanon",
+    "IxCCTests.Grounding.Zeta"]},
   "IxCCTests.Fixtures.SortPoly":
   {"path": "IxCCTests/Fixtures/SortPoly.lean", "imports": []},
   "IxCCTests.Fixtures.K1":
@@ -4125,7 +4135,8 @@
     "IxCC.Src.Proof.Unfold",
     "IxCC.Sem.Bind"]},
   "IxCCGrounding.Subst":
-  {"path": "IxCCGrounding/Subst.lean", "imports": ["IxCCGrounding.Eqn"]},
+  {"path": "IxCCGrounding/Subst.lean",
+   "imports": ["IxCCGrounding.Eqn", "IxCCGrounding.Lift"]},
   "IxCCGrounding.Runs":
   {"path": "IxCCGrounding/Runs.lean",
    "imports": ["IxCCGrounding.Eqn", "IxCCGrounding.Hyps", "IxCCGrounding.Ok"]},
@@ -4150,6 +4161,8 @@
   {"path": "IxCCGrounding/Model.lean", "imports": ["IxCCGrounding.Laws"]},
   "IxCCGrounding.Lits":
   {"path": "IxCCGrounding/Lits.lean", "imports": ["IxCCGrounding.Model"]},
+  "IxCCGrounding.Lift":
+  {"path": "IxCCGrounding/Lift.lean", "imports": ["IxCCGrounding.Model"]},
   "IxCCGrounding.Laws":
   {"path": "IxCCGrounding/Laws.lean",
    "imports": ["IxCK.Kernel.Denotes", "IxCCGrounding.Syntax"]},
@@ -4245,7 +4258,8 @@
   {"path": "IxCCGrounding/Case.lean",
    "imports": ["IxCCGrounding.Tele", "IxCCGrounding.Heads"]},
   "IxCCGrounding.Apply":
-  {"path": "IxCCGrounding/Apply.lean", "imports": ["IxCCGrounding.Relation"]},
+  {"path": "IxCCGrounding/Apply.lean",
+   "imports": ["IxCCGrounding.Relation", "IxCCGrounding.Lift"]},
   "IxCCGrounding.Adapt678":
   {"path": "IxCCGrounding/Adapt678.lean",
    "imports": ["IxCCGrounding.Subst", "IxCCGrounding.Facts"]},
@@ -4267,6 +4281,7 @@
     "IxCCGrounding.Fundamental",
     "IxCCGrounding.Ok",
     "IxCCGrounding.Eqn",
+    "IxCCGrounding.Lift",
     "IxCCGrounding.Subst",
     "IxCCGrounding.Tele",
     "IxCCGrounding.Case",

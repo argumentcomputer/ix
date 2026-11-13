@@ -111,6 +111,10 @@ def termVerdicts (tab : KTab) (lps : List Nat) (n : Nat) :
   | P, Γ, .proj _ _ t, .proj s i e, acc =>
     spineVerdicts { tab, lps, profs := P } n Γ (.proj s i e) acc ++
       termVerdicts tab lps n P Γ t e []
+  -- under a `let` every site `evalSitesP` lists is refused (the route is not extended there)
+  | P, Γ, .letE c r ty v b, e, acc =>
+    spineVerdicts { tab, lps, profs := P } n Γ e acc ++
+      (evalSitesP P Γ (.letE c r ty v b) e).map fun s => (P, s, false, s.2.1, [s.2.2], 0)
   | P, Γ, _, e, acc => spineVerdicts { tab, lps, profs := P } n Γ e acc
 
 /-- What the comparison counts. -/

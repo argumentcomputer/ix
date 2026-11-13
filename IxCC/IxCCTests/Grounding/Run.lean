@@ -793,11 +793,13 @@ def run : IO Bool := do
     -- `UInt8.ofNat` are word entries, so their reference bodies are no run terms (7 sites each)
     -- and the constants reached only through them leave `Sl` (`BitVec.ofNat` 20 sites,
     -- `BitVec.toNat` 19, `Fin.Internal.ofNat` 11, nine with none): 64 sites fewer, all accepted
-    -- before, and every remaining site still accepted
+    -- before, and every remaining site still accepted. Since step C the walk also visits the
+    -- 405 sites under the `let`s of its run terms and refuses them all (the direct route is
+    -- not extended through a `let`)
     let (pa, pcore) ← loadClosure "panic" "fixtures/corpus/phase1-decline/panic" ["Decline.withPanic"]
     let pt ← oracleOn a "panic" pcore pa
-    expect a ((pt.sites, pt.accepted) == (698, 698))
-      s!"panic: {pt.accepted} of {pt.sites} sites accepted, expected 698 of 698"
+    expect a ((pt.sites, pt.accepted) == (698 + 405, 698))
+      s!"panic: {pt.accepted} of {pt.sites} sites accepted, expected 698 of {698 + 405}"
     let pm := mutateStringOfList pa
     let npm := (refusedSites pm).length
     expect a (npm > (refusedSites pa).length)

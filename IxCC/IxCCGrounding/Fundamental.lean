@@ -92,10 +92,10 @@ def EvalConstP (k : Nat) : Prop :=
 
 /-- `eval` at clock `k`, on a term that runs. -/
 def EvalP (k : Nat) : Prop :=
-  ∀ (lps : List Nat) (ls : Levels) (φ : LevelParam → Nat) (Γ : List KExpr) (t : Term)
-    (e : KExpr), Runs M κ Ok lps ls φ Γ t e →
+  ∀ (lps : List Nat) (ls : Levels) (φ : LevelParam → Nat) (σ : Sig) (Γ : List KExpr) (t : Term)
+    (e : KExpr), Runs M κ Ok lps ls φ σ Γ t e →
     ∀ (ρ : IxCC.Src.Env) (ρk : BVarIdx → V) (v : Value),
-    ConstsIn S t → LvAt φ lps ls → RelEnv M κ lpsOf S Ok ρ ρk → CtxSat M φ Γ ρk →
+    ConstsIn S t → LvAt φ lps ls → RelEnv M κ lpsOf S Ok φ ρ σ ρk → CtxSat M φ Γ ρk →
     IxCC.Src.eval p k ls ρ t = .ok v →
     ∃ X, Denotes M.cval env φ ρk e X ∧ RelV M κ lpsOf S Ok v X
 
@@ -187,7 +187,7 @@ theorem force_step {k : Nat} (ih : ∀ k' < k, AllP M p κ lpsOf S Ok k') :
     | succ k' =>
       rw [later_succ] at hrun
       obtain ⟨X', hX', hv⟩ :=
-        (ih k' (Nat.lt_succ_self k')).eval _ _ _ _ _ _ hruns _ _ _ hcs hlv henv hctx hrun
+        (ih k' (Nat.lt_succ_self k')).eval _ _ _ _ _ _ _ hruns _ _ _ hcs hlv henv hctx hrun
       rw [Denotes_functional hden hX']
       exact hv
 
@@ -386,8 +386,8 @@ theorem fire_noParams (H : FundHyps M p κ lpsOf S Ok) {k' : Nat}
     obtain ⟨⟨t', ht', hnoc⟩, hrels⟩ := hbodies rl hrm
     have hden : DenotesIn M φ [] krl.rhs := fun ρ' _ => ⟨Hs, den_closed (hclosed krl hkm) hH⟩
     have hsites := ruleSites_ok H.laws hN hlv hrels hpwd hreg hden (hrefs j rl krl hrl hkrl)
-    have hruns : Runs M κ Ok (lpsOf r) ls φ [] rl.rhs krl.rhs :=
-      runs_of_corr hcorr (by simpa using hclosed krl hkm) hden hsites fun d us hdu => by
+    have hruns : Runs M κ Ok (lpsOf r) ls φ (idσ 0) [] rl.rhs krl.rhs :=
+      runs_of_corr (termCorrS_of_termCorr hcorr (hclosed krl hkm)) hden hsites fun d us hdu => by
         rw [evalConsts_peel ls _ rl.rhs t' ht'] at hdu
         have hm := evalConsts_mentions ls t' hdu
         rw [hnoc d] at hm
@@ -400,13 +400,12 @@ theorem fire_noParams (H : FundHyps M p κ lpsOf S Ok) {k' : Nat}
     have hslen : (args.take (nmot + nmin) ++ fields).length = bs.length := by
       rw [List.length_append, ← relSlots_length hrelF, hFl]; simp; omega
     have hev' := hev t' (by rw [hslen]; exact hpeel)
-    have henv : RelEnv M κ lpsOf S Ok (args.take (nmot + nmin) ++ fields).reverse
-        (pushAll (As.take (nmot + nmin) ++ Fs) ρ) := by
-      have := relEnv_pushAll (E := []) (ρ := ρ)
-        (relSlots_append (relSlots_take (nmot + nmin) hargs) hrelF) .nil
-      simpa using this
+    have henv : RelEnv M κ lpsOf S Ok φ (args.take (nmot + nmin) ++ fields).reverse
+        (idσ (0 + bs.length)) (pushAll (As.take (nmot + nmin) ++ Fs) ρ) := by
+      rw [Nat.zero_add, ← hslen]
+      exact relEnv_pushAll (relSlots_append (relSlots_take (nmot + nmin) hargs) hrelF)
     have hcs : ConstsIn S t' := fun c hc => by rw [hnoc c] at hc; cases hc
-    obtain ⟨X', hX', hrelX⟩ := ih.eval (lpsOf r) ls φ _ t' b hrunsB _ _ v hcs hlv henv
+    obtain ⟨X', hX', hrelX⟩ := ih.eval (lpsOf r) ls φ _ _ t' b hrunsB _ _ v hcs hlv henv
       (by simpa using hctx) hev'
     rw [heqY]
     rwa [Denotes_functional hX' hY] at hrelX
@@ -1009,10 +1008,10 @@ theorem apply_step (H : FundHyps M p κ lpsOf S Ok) {k : Nat}
       | zero => exact absurd hrun (by simp)
       | succ k' =>
         rw [later_succ] at hrun
-        obtain ⟨φ, lps, Γ, ρk, Ak, Bk, Z, hlv, henv, hctx, hruns, hcs, hZ, hXY⟩ :=
+        obtain ⟨φ, lps, Γ, σ, ρk, Ak, Bk, Z, hlv, henv, hctx, hruns, hcs, hZ, hXY⟩ :=
           apply_clo hf hs hv hX hY
         obtain ⟨Z', hZ', hrel⟩ :=
-          (ih k' (Nat.lt_succ_self k')).eval _ _ _ _ _ _ hruns _ _ _ hcs hlv henv hctx hrun
+          (ih k' (Nat.lt_succ_self k')).eval _ _ _ _ _ _ _ hruns _ _ _ hcs hlv henv hctx hrun
         rw [hXY, Denotes_functional hZ hZ']
         exact hrel
     · exact absurd hrun (by simp)
@@ -1086,7 +1085,7 @@ theorem evalConst_step (H : FundHyps M p κ lpsOf S Ok) {k : Nat}
       | zero => exact absurd hrun (by simp)
       | succ k' =>
         simp only [later_succ] at hrun
-        obtain ⟨X, hX, hrel⟩ := (ih k' (Nat.lt_succ_self k')).eval _ _ _ _ _ _
+        obtain ⟨X, hX, hrel⟩ := (ih k' (Nat.lt_succ_self k')).eval _ _ _ _ _ _ _
           (hrunsE ls φ hOk hlv) [] (fun _ => empty) v (H.faith.eqnClosed c thm body hSc hres) hlv
           .nil .nil hrun
         rw [hcomp φ _ X hX]
@@ -1114,7 +1113,7 @@ theorem evalConst_step (H : FundHyps M p κ lpsOf S Ok) {k : Nat}
             | succ k' =>
               simp only [later_succ] at hrun
               have hruns := H.value c ls lvls ty v' cv val hint hSc hOk hres hd hfv φ hlv
-              obtain ⟨X, hX, hrel⟩ := (ih k' (Nat.lt_succ_self k')).eval _ _ _ _ _ _ hruns []
+              obtain ⟨X, hX, hrel⟩ := (ih k' (Nat.lt_succ_self k')).eval _ _ _ _ _ _ _ hruns []
                 (fun _ => empty) v hcs hlv .nil .nil hrun
               have hδ := H.laws.defn_value cv val hint (find_mem hfv) φ (fun _ => empty)
               have hn : cv.name = κ c := find_name hfv
@@ -1133,22 +1132,42 @@ theorem evalConst_step (H : FundHyps M p κ lpsOf S Ok) {k : Nat}
 theorem eval_step (H : FundHyps M p κ lpsOf S Ok) {k : Nat}
     (hforce : ForceP M p κ lpsOf S Ok k) (happly : ApplyP M p κ lpsOf S Ok k)
     (hec : EvalConstP M p κ lpsOf S Ok k) : EvalP M p κ lpsOf S Ok k := by
-  intro lps ls φ Γ t e hruns
+  intro lps ls φ σ Γ t e hruns
   induction hruns with
-  | @var Γ i _ =>
+  | @var σ Γ i e hσ =>
     intro ρ ρk v _ _ henv _ hrun
     rw [IxCC.Src.eval_var] at hrun
-    cases hs : ρ[i]? with
-    | none => rw [hs] at hrun; exact absurd hrun (by simp)
-    | some s =>
-      rw [hs] at hrun
-      exact ⟨_, .bvar, hforce s v _ hrun (relEnv_get henv hs)⟩
-  | @sort Γ u l hu =>
+    obtain ⟨s, X, hs, hX, hrel⟩ := relEnv_get henv hσ
+    rw [hs] at hrun
+    exact ⟨X, hX, hforce s v X hrun hrel⟩
+  | @letRel σ Γ c r ty v b e v' hr _ _ _ ihv ihb =>
+    intro ρ ρk w hcs hlv henv hctx hrun
+    rw [IxCC.Src.eval_letE] at hrun
+    simp only [hr, Bool.false_eq_true, ↓reduceIte] at hrun
+    obtain ⟨x, hx, hb⟩ := Result.bind_eq_ok_iff.mp hrun
+    obtain ⟨Y, hY, hrelY⟩ := ihv ρ ρk x (mentions_let_val hcs) hlv henv hctx hx
+    exact ihb (.val x :: ρ) ρk w (mentions_let_body hcs) hlv (.some (.val hrelY) hY henv) hctx hb
+  | @letIrr σ Γ c r ty v b e v' hr _ htc hdv _ ihb =>
+    intro ρ ρk w hcs hlv henv hctx hrun
+    rw [IxCC.Src.eval_letE] at hrun
+    simp only [hr, ↓reduceIte] at hrun
+    obtain ⟨Y, hY⟩ := hdv ρk hctx
+    exact ihb _ ρk w (mentions_let_body hcs) hlv (.some (.val (.irr hlv henv htc hY)) hY henv)
+      hctx hrun
+  | @letDead σ Γ c r ty v b e _ _ ihb =>
+    -- the value's evaluation, if any, is discarded: the slot is related to nothing
+    intro ρ ρk w hcs hlv henv hctx hrun
+    rw [IxCC.Src.eval_letE] at hrun
+    split at hrun
+    · exact ihb _ ρk w (mentions_let_body hcs) hlv (.none henv) hctx hrun
+    · obtain ⟨x, _, hb⟩ := Result.bind_eq_ok_iff.mp hrun
+      exact ihb _ ρk w (mentions_let_body hcs) hlv (.none henv) hctx hb
+  | @sort σ Γ u l hu =>
     intro ρ ρk v _ hlv henv _ hrun
     rw [IxCC.Src.eval_sort] at hrun
     rw [← ok_inj hrun]
     exact ⟨_, .sort, .irr hlv henv (.sort hu) .sort⟩
-  | @const Γ c us ls' htc hok hden =>
+  | @const σ Γ c us ls' htc hok hden =>
     intro ρ ρk v hcs hlv _ hctx hrun
     rw [IxCC.Src.eval_const] at hrun
     have hSc := mentions_const hcs
@@ -1165,13 +1184,13 @@ theorem eval_step (H : FundHyps M p κ lpsOf S Ok) {k : Nat}
         refine ⟨_, .const hfind hlen, ?_⟩
         rw [hlps]
         exact hec _ c v _ hrun hSc hok hlv'
-  | @natLit Γ n hden =>
+  | @natLit σ Γ n hden =>
     intro ρ ρk v _ _ _ hctx hrun
     rw [IxCC.Src.eval_natLit] at hrun
     rw [← ok_inj hrun]
     obtain ⟨X, hX⟩ := hden ρk hctx
     exact ⟨X, hX, .lit hX⟩
-  | @app Γ f a m r f' a' _ ha hirr hsite ihf iha =>
+  | @app σ Γ f a m r f' a' _ ha hirr hsite ihf iha =>
     intro ρ ρk v hcs hlv henv hctx hrun
     rw [IxCC.Src.eval_app] at hrun
     obtain ⟨fv, hfv, hrest⟩ := Result.bind_eq_ok_iff.mp hrun
@@ -1194,19 +1213,19 @@ theorem eval_step (H : FundHyps M p κ lpsOf S Ok) {k : Nat}
       | byName =>
         exact happly fv _ v F Xa vv A B hrest hrelF
           (.name hlv henv hctx (ha hi') (mentions_app_right hcs) hXa) hvv hFm hXaA
-  | @lam Γ b d body d' body' mb htc hbody hden _ =>
+  | @lam σ Γ b d body d' body' mb htc hbody hden _ =>
     intro ρ ρk v hcs hlv henv hctx hrun
     rw [IxCC.Src.eval_lam] at hrun
     rw [← ok_inj hrun]
     obtain ⟨X, hX⟩ := hden ρk hctx
     exact ⟨X, hX, .clo hlv henv hctx (.lam htc hbody hden) hcs hX⟩
-  | @pi Γ b r d c d' c' mb htc hden =>
+  | @pi σ Γ b r d c d' c' mb htc hden =>
     intro ρ ρk v _ hlv henv hctx hrun
     rw [IxCC.Src.eval_pi] at hrun
     rw [← ok_inj hrun]
     obtain ⟨X, hX⟩ := hden ρk hctx
     exact ⟨X, hX, .irr hlv henv htc hX⟩
-  | @proj Γ s i e e' _ _ ihe =>
+  | @proj σ Γ s i e e' _ _ ihe =>
     intro ρ ρk v hcs hlv henv hctx hrun
     rw [IxCC.Src.eval_proj] at hrun
     obtain ⟨v', hv', hpf⟩ := Result.bind_eq_ok_iff.mp hrun
@@ -1269,12 +1288,12 @@ theorem fundamental_const (H : FundHyps M p κ lpsOf S Ok) {k : Nat} {ls : Level
 
 /-- The fundamental lemma's clause for terms. -/
 theorem fundamental_term (H : FundHyps M p κ lpsOf S Ok) {k : Nat} {lps : List Nat} {ls : Levels}
-    {φ : LevelParam → Nat} {Γ : List KExpr} {t : Term} {e : KExpr} {ρ : IxCC.Src.Env}
-    {ρk : BVarIdx → V} {v : Value} (hruns : Runs M κ Ok lps ls φ Γ t e) (hcs : ConstsIn S t)
-    (hlv : LvAt φ lps ls) (henv : RelEnv M κ lpsOf S Ok ρ ρk) (hctx : CtxSat M φ Γ ρk)
+    {φ : LevelParam → Nat} {σ : Sig} {Γ : List KExpr} {t : Term} {e : KExpr} {ρ : IxCC.Src.Env}
+    {ρk : BVarIdx → V} {v : Value} (hruns : Runs M κ Ok lps ls φ σ Γ t e) (hcs : ConstsIn S t)
+    (hlv : LvAt φ lps ls) (henv : RelEnv M κ lpsOf S Ok φ ρ σ ρk) (hctx : CtxSat M φ Γ ρk)
     (hrun : IxCC.Src.eval p k ls ρ t = .ok v) :
     ∃ X, Denotes M.cval env φ ρk e X ∧ RelV M κ lpsOf S Ok v X :=
-  (allP H k).eval _ _ _ _ _ _ hruns ρ ρk v hcs hlv henv hctx hrun
+  (allP H k).eval _ _ _ _ _ _ _ hruns ρ ρk v hcs hlv henv hctx hrun
 
 end Fund
 

@@ -550,10 +550,30 @@ def spineRefused (x : DCtx) (n : Nat) (Γ : List KExpr) (h : KExpr) (args : List
     List Site :=
   (spineSites Γ h args).drop (spineAccepted x n Γ h args)
 
+/-- **The sites `evalSites` lists at some profile of `P`** (`evalSites` with relevance read at the
+profiles, a `let`'s value entered at the profiles where the `let` is relevant): what the direct route
+refuses under a `let`, which it does not walk. -/
+def evalSitesP : List IxCC.Src.Profile → List KExpr → Term → KExpr → List Site
+  | P, Γ, .app f a _ r, .app f' a' =>
+    let P' := P.filter fun prof => !r.irrP prof
+    (Γ, f', a') :: (evalSitesP P Γ f f' ++ (if P'.isEmpty then [] else evalSitesP P' Γ a a'))
+  | P, Γ, .lam _ _ body, .lam d' body' _ => evalSitesP P (d' :: Γ) body body'
+  | P, Γ, .proj _ _ t, .proj _ _ e => evalSitesP P Γ t e
+  | P, Γ, .letE _ r _ v b, e =>
+    (match zcopy b e with
+      | some v' =>
+        let P' := P.filter fun prof => !r.irrP prof
+        if P'.isEmpty || !subAt0B v' e then [] else evalSitesP P' Γ v v'
+      | none => []) ++ evalSitesP P Γ b e
+  | _, _, _, _ => []
+
 /-- **The sites of a run term the direct route refuses**, at the profiles `P` at which it is
 evaluated (`acc`: the arguments of the enclosing applications, innermost first). Mirrors
 `evalSites`: each maximal evaluated spine is walked once, at its head; each argument is entered
-with the profiles at which it is relevant (none: not entered). -/
+with the profiles at which it is relevant (none: not entered). **At a `let` it refuses every site
+`evalSites` may list under it** (its value's at the copy and its body's, `evalSitesP`): the route
+is not extended through a `let`; the enclosing spine, whose head is the `let`'s kernel term, is
+walked as at any other head. -/
 def termRefused (tab : KTab) (lps : List Nat) (n : Nat) :
     List IxCC.Src.Profile → List KExpr → Term → KExpr → List KExpr → List Site
   | P, Γ, .app f a _ r, .app f' a', acc =>
@@ -566,13 +586,18 @@ def termRefused (tab : KTab) (lps : List Nat) (n : Nat) :
   | P, Γ, .proj _ _ t, .proj s i e, acc =>
     spineRefused { tab, lps, profs := P } n Γ (.proj s i e) acc ++
       termRefused tab lps n P Γ t e []
+  | P, Γ, .letE c r ty v b, e, acc =>
+    spineRefused { tab, lps, profs := P } n Γ e acc ++ evalSitesP P Γ (.letE c r ty v b) e
   | P, Γ, _, e, acc => spineRefused { tab, lps, profs := P } n Γ e acc
 
-/-- Every application site of a run term, at any level (relevant or not). -/
+/-- Every application site of a run term, at any level (relevant or not); under a `let`, its
+value's at the copy (wherever the copy is) and its body's. -/
 def allSites : List KExpr → Term → KExpr → List Site
   | Γ, .app f a _ _, .app f' a' => (Γ, f', a') :: (allSites Γ f f' ++ allSites Γ a a')
   | Γ, .lam _ _ body, .lam d' body' _ => allSites (d' :: Γ) body body'
   | Γ, .proj _ _ e, .proj _ _ e' => allSites Γ e e'
+  | Γ, .letE _ _ _ v b, e =>
+    (match zcopy b e with | some v' => allSites Γ v v' | none => []) ++ allSites Γ b e
   | _, _, _ => []
 
 /-- The run pairs of `c`, computed: its value against its stored value, or its `eqn` body

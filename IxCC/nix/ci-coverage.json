@@ -1773,6 +1773,7 @@
   "IxCCGrounding.Heads",
   "IxCCGrounding.Hyps",
   "IxCCGrounding.Laws",
+  "IxCCGrounding.Lift",
   "IxCCGrounding.Lits",
   "IxCCGrounding.Model",
   "IxCCGrounding.Ok",
@@ -1788,9 +1789,9 @@
   "IxCCGrounding.Syntax",
   "IxCCGrounding.Tele"],
  "grounding_axiom_sha256":
- "fb3e3c7322651965747b6aa155da305925366883ea7afc6347c4918d3c2347fd",
- "grounding_axiom_count": 238,
- "baseline": "L1: the relevance checks facts as propositions",
+ "fc9708474d37d0603708571bc45857aa0b620a17d6dd7efed0663745eec6a012",
+ "grounding_axiom_count": 255,
+ "baseline": "step C: a let in a run term (GR17)",
  "axiom_sha256":
  "d5ee8982fda0480605322cb8a3bd2d7fdb0b5af6d8e83d922a23580055f049a7",
  "axiom_count": 6667}

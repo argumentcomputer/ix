@@ -1,4 +1,5 @@
 import IxCCTests.Grounding.Run
+import IxCCTests.Grounding.Zeta
 import IxCCTests.Corpus.Manifest
 import IxCCGrounding.CaseLevels
 import IxCCGrounding.Graded
@@ -6,7 +7,9 @@ import IxCC.Src.Relevance.Check
 
 /-! # `tests-grounding`: the canonicity-free family's decided fact on the corpus
 
-`noCanonB` (`IxCCGrounding.Facts`) on the 34 corpus closures the check accepts: true on 32, false
+`noCanonB` (`IxCCGrounding.Facts`) on the 37 corpus closures the check accepts (every conjunct of the
+check asserted true on each; `fields254`, `machines`, `natural` since step C, with the constants
+`corrSB []` accepts there through a `let`, `IxCCTests.Grounding.Zeta`): true on 35, false
 on `phase1-decline/erase` and `OS16-plain`, each for one `case` entry over a family with a level
 parameter (its recursor's rules do not compare parameters). Controls on `decide`: the
 `Decidable.casesOn` entry's recursor made to compare parameters (its rules marked not blind) makes
@@ -17,7 +20,7 @@ and `stored` against the program's levels), which is why no mutation of that kin
 true.
 
 `litDefsB` (`IxCCGrounding.Facts`, the premise under which #678's `lit_ops` gives `NatAccel`: every
-`Nat` role the reading stores is stored as a definition) on the same 34: true on all, by name. Of
+`Nat` role the reading stores is stored as a definition) on the same 37: true on all, by name. Of
 the fifteen roles a closure stores those its program reaches, each a definition without level
 parameters, and nothing else (measured on all 50 loaded closures). Controls on `decide`: `Nat.add`
 stored as an axiom makes it false; `Nat.beq` not stored at all leaves it true (a role that is not
@@ -25,13 +28,16 @@ stored needs nothing: no term naming it denotes).
 
 Step A (`IxCCGrounding.CaseLevels`, `rootSound_678A`): `noCanonAB` (`noCanonB` less the level
 condition at `case` entries) and `instCheckB` on the instance set `instWalk` returns from every
-root are true on the same 34, so the family over the instance set holds on all 34 (`erase` and
+root are true on the same 37, so the family over the instance set holds on all 37 (`erase` and
 `OS16-plain` included). Controls on `OS16-plain`: a constructor of its `List`-shaped family raised
 one level in one value, in the reading and the program alike, leaves the check and `noCanonAB`
 true and makes `instCheckB` false (the family used at two level instantiations); the same
-constructor at level 1 bound by a `let` in that value is not walked (`instCheckB` stays true), and
-the check refuses the program at `valueCorr`, which is what keeps the walk's stopping at a
-`let` out of every theorem. -/
+constructor at level 1 as the value of a dead `let` around that value is accepted by every conjunct
+of the check (a dead `let`'s slot is related to nothing) and refused by `instCheckB`, which reads a
+relevant `let`'s value, dead or not (step C).
+
+Item 1a: `headRegimeResB` on the same 37, true on 36 and false on `natural` (sites under its `let`s
+whose heads' types are a `∀` only after δ: item 1b). -/
 
 namespace IxCCTests.Grounding.NoCanon
 
@@ -47,7 +53,8 @@ def acceptedFamily : List String :=
    "phase1-scalar/bigctor", "phase1-scalar/natShiftr", "phase1-boundary/boundary",
    "phase1-boundary/tags16", "phase1-boundary/tags17", "phase1-boundary/tags125",
    "phase1-decline/closures", "phase1-decline/params", "phase1-decline/erase",
-   "phase1-decline/symbols", "phase1-abi/abi"]
+   "phase1-decline/symbols", "phase1-abi/abi", "phase1-boundary/fields254",
+   "phase1-machines/machines", "phase1-machines/natural"]
 
 def acceptedExtra : List String :=
   ["OS01-annotated", "OS01-plain", "OS02-plain", "OS03-annotated", "OS03-plain",
@@ -60,7 +67,8 @@ def notQualifying : List String := ["phase1-decline/erase", "OS16-plain"]
 def familyFiles : List String :=
   ["fixtures/ixon-v4/bench-k1/corpus.json", "fixtures/corpus/grounding/corpus.json",
    "fixtures/corpus/phase1-scalar/corpus.json", "fixtures/corpus/phase1-boundary/corpus.json",
-   "fixtures/corpus/phase1-decline/corpus.json", "fixtures/corpus/phase1-abi/corpus.json"]
+   "fixtures/corpus/phase1-decline/corpus.json", "fixtures/corpus/phase1-abi/corpus.json",
+   "fixtures/corpus/phase1-machines/corpus.json"]
 
 def jobs : IO (List (String × String × List String)) := do
   let mut out := []
@@ -142,7 +150,7 @@ def run : IO Bool := do
   let a : Assert ← IO.mkRef 0
   try
     let js ← jobs
-    expect a (js.length == 34) s!"noCanon: {js.length} accepted closures found, expected 34"
+    expect a (js.length == 37) s!"noCanon: {js.length} accepted closures found, expected 37"
     let mut yes : Nat := 0
     let mut no : List String := []
     let mut tagsUs : Nat := 0
@@ -151,6 +159,7 @@ def run : IO Bool := do
     let mut instUs : Nat := 0
     let mut instN : Nat := 0
     let mut hrN : Nat := 0
+    let mut zetaN : Nat := 0
     for (label, stem, roots) in js do
       let (i, _) ← loadClosure label stem roots
       let b := noCanonB i.src i.env i.κ i.Sl
@@ -159,7 +168,11 @@ def run : IO Bool := do
       let iA := instOk i
       -- item 1a: the head's regime at every site the direct route refuses
       let hrB := headRegimeResB i.src i.env i.κ i.lpsOf i.ann i.Sl
-      expect a hrB s!"graded: {label}: headRegimeResB false"
+      -- `natural`'s sites under its `let`s need 1b (a head's type read through δ): refused until then
+      expect a (hrB == (label != "phase1-machines/natural")) s!"graded: {label}: headRegimeResB {hrB}"
+      -- step C: the check accepts every one of the 37; the constants it accepts through `let`
+      expect a (failing i).isEmpty s!"check: {label}: false conjuncts {failing i}"
+      zetaN := zetaN + (← Zeta.expectCorr a label i)
       if hrB then hrN := hrN + 1
       expect a (bA && iA) s!"levels: {label}: noCanonAB {bA}, instCheckB {iA}"
       if bA && iA && litDefsB i.env then famA := famA + 1
@@ -180,8 +193,8 @@ def run : IO Bool := do
       if b then yes := yes + 1 else no := no ++ [label]
       -- the `NatAccel` adapter's premise: every `Nat` role stored is stored as a definition
       expect a (litDefsB i.env) s!"litDefs: {label}: litDefsB false"
-    expect a (yes == 32 && no == notQualifying)
-      s!"noCanon: noCanonB true on {yes}, false on {no}"
+    expect a (yes == 35 && no == notQualifying && zetaN == 8)
+      s!"noCanon: noCanonB true on {yes}, false on {no}; corrSB through let on {zetaN} constants"
     -- controls, on `decide`: its `case` entry over `Decidable` (rules not comparing parameters,
     -- constructors without level parameters)
     let (di, _) ← loadClosure "decide" "fixtures/corpus/grounding/decide" ["Grounding.decideFib10"]
@@ -205,7 +218,7 @@ def run : IO Bool := do
       | ci => ci }
     expect a (!noCanonB mL.src mL.env mL.κ mL.Sl && (failing mL).contains "caseShape")
       s!"decide: a constructor of c{r} given a level parameter: check {failing mL}, noCanonB {noCanonB mL.src mL.env mL.κ mL.Sl}"
-    IO.println s!"noCanon: noCanonB true on {yes} of the 34 accepted closures, false on {no} \
+    IO.println s!"noCanon: noCanonB true on {yes} of the 37 accepted closures, false on {no} \
       (a case entry over a family with a level parameter); tags125 {tagsUs} µs (median of 9); \
       decide (case c{c}): its recursor's rules comparing parameters: noCanonB false, every \
       conjunct true; a constructor given a level parameter: noCanonB false, the check's {failing mL} false too"
@@ -224,14 +237,16 @@ def run : IO Bool := do
     let envNo : KEnv := { di.env with consts := di.env.consts.filter fun ci => ci.name != beqK }
     expect a ((envNo.find? beqK).isNone && litDefsB envNo)
       "decide: Nat.beq not stored: litDefsB false"
-    IO.println s!"litDefs: litDefsB true on the 34 accepted closures; tags125 {ldUs} µs (median of \
+    IO.println s!"litDefs: litDefsB true on the 37 accepted closures; tags125 {ldUs} µs (median of \
       9); decide: Nat.add stored as an axiom: litDefsB false; Nat.beq not stored: litDefsB true"
-    -- step A: the family over the verified instance set accepts all 34 (`erase` and `OS16-plain`
+    -- step A: the family over the verified instance set accepts all 37 (`erase` and `OS16-plain`
     -- among them); on `OS16-plain`, a constructor of its `List`-shaped family raised one level in
     -- one value, in the reading and the program alike, leaves the check and `noCanonAB` true and
-    -- makes `instCheckB` false; the same constructor hidden under a `let` in that value is not walked
-    -- (`instCheckB` true) and the check refuses the program at `valueCorr` (`TermCorr` has no `let`)
-    expect a (famA == 34) s!"levels: the family over the instance set holds on {famA} of 34"
+    -- makes `instCheckB` false. Step C: the same constructor at level 1 as the value of a dead `let`
+    -- around that value (its variable unused) is accepted by the correspondence (every conjunct of
+    -- the check true: a dead `let`'s slot is related to nothing) and refused by `instCheckB`, which
+    -- reads a relevant `let`'s value, dead or not (`evalConsts`): the restriction stays fail-closed
+    expect a (famA == 37) s!"levels: the family over the instance set holds on {famA} of 37"
     let (oi, _) ← loadClosure "OS16-plain" "fixtures/ownership/OS16-plain" []
     let some (c, d) := plantSite oi | throw (IO.userError "OS16-plain: no plant site")
     let some (.defn k s lv ty v) := oi.src.decl? c | throw (IO.userError "OS16-plain: no value")
@@ -245,17 +260,17 @@ def run : IO Bool := do
     let hidden := { oi with src := oi.src.setDecl c (.defn k s lv ty
       (.letE default default (.sort .zero) (.const d [.succ .zero])
         (IxCC.Src.Relevance.Check.Canonical.liftTerm 1 0 v))) }
-    expect a (instOk hidden && (failing hidden).contains "valueCorr")
-      s!"levels: OS16-plain, c{d} at level 1 under a let in c{c}: check {failing hidden}, instCheckB {instOk hidden}"
-    IO.println s!"levels: noCanonAB and instCheckB true on the 34 accepted closures, the family on {famA}; \
+    expect a ((failing hidden).isEmpty && !instOk hidden)
+      s!"levels: OS16-plain, c{d} at level 1 in a dead let in c{c}: check {failing hidden}, instCheckB {instOk hidden}"
+    IO.println s!"levels: noCanonAB and instCheckB true on the 37 accepted closures, the family on {famA}; \
       tags125 {instN} instances, instCheckB {instUs} µs (median of 9); OS16-plain: c{d} raised one level \
-      in c{c}: instCheckB false, the check true; under a let: instCheckB true, the check refuses at \
-      {failing hidden}"
+      in c{c}: instCheckB false, the check true; at level 1 in a dead let: the check true, instCheckB \
+      false"
     -- item 1a: `headRegimeResB` true on all 34; on `OS02-plain`, the one site the direct route
     -- refuses has a constant head whose stored type's binder data hold nowhere; that binder's datum
     -- made a proposition at every assignment is refused, and so is a datum over a level parameter
     -- the enclosing constant does not have (the check cannot read it at the profile: fail closed)
-    expect a (hrN == 34) s!"graded: headRegimeResB true on {hrN} of 34"
+    expect a (hrN == 36) s!"graded: headRegimeResB true on {hrN} of 37 (not natural)"
     let (gi, _) ← loadClosure "OS02-plain" "fixtures/ownership/OS02-plain" []
     let gref := refusedSites gi
     let some (_, (_, gf, _)) := gref.head? | throw (IO.userError "OS02-plain: no refused site")
@@ -277,7 +292,7 @@ def run : IO Bool := do
     let gFree := setDatum (.ifAllZero [99])
     expect a (gref.length == 1 && hr gi && !hr gProp && !hr gFree)
       s!"graded: OS02-plain: {gref.length} refused sites; headRegimeResB {hr gi}, datum made a proposition {hr gProp}, datum over an unknown parameter {hr gFree}"
-    IO.println s!"graded: headRegimeResB true on the 34 accepted closures; OS02-plain's refused site (head {gk}, argument {gn}): accepted, its head's datum made a proposition: refused, made to read a parameter the constant does not have: refused"
+    IO.println s!"graded: headRegimeResB true on the 37 accepted closures; OS02-plain's refused site (head {gk}, argument {gn}): accepted, its head's datum made a proposition: refused, made to read a parameter the constant does not have: refused"
     IO.println s!"tests-grounding (noCanon): {← a.get} assertions passed"
     return true
   catch error =>
