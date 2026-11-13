@@ -110,7 +110,7 @@ theorem k_infer_rebase_step (c : Ctx) (hc : CoreFacts c) {args : List (SourceVal
     rw [hv16, segEntries_length] at ev14
     have hb : n < 549755813888 := by
       have := RomBound.bounded_length_lt good.2
-        (c := ⟨Obs.Names.«Lists::length<&KernelTypes::KExprNode>», [types], m18⟩)
+        (c := ⟨Obs.Names.«Lists::length<&KernelTypes::KExprNode>», [types], m18⟩) (p := types)
         (by simp) (by simp) (by rw [hm18]; exact hl)
       simpa [segEntries] using this
     obtain ⟨hm2, -, -, hmin⟩ := ih.get (.subst .lbr_min) (by lt_calls) ev14 (g0 : F) (n : F) rfl

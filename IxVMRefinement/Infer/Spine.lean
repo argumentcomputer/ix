@@ -77,12 +77,12 @@ theorem k_infer_app_spine_loop_step (c : Ctx) {args : List (SourceValue F)} {h h
       (Tm.mono e2 hA) hD
     have e3 := e2.trans (ObsFn.heap_extends ev360)
     have x1 := Heap.Extends.snoc m348 (.construct kexprListEnum "Nil" [])
-    have x2 := Heap.Extends.snoc (m348 ++ [.construct kexprListEnum "Nil" []])
+    have x2 := Heap.Extends.snoc (m348 ++ [(.construct kexprListEnum "Nil" [] : SourceValue F)])
       (.construct kexprListEnum "Cons" [x_a, .ptr (.enum kexprListEnum) m348.length])
     have e4 := e3.trans (x1.trans x2)
-    have hSs' : c.tml d Γ ((m348 ++ [.construct kexprListEnum "Nil" []]) ++
+    have hSs' : c.tml d Γ ((m348 ++ [(.construct kexprListEnum "Nil" [] : SourceValue F)]) ++
         [.construct kexprListEnum "Cons" [x_a, .ptr (.enum kexprListEnum) m348.length]]) [A]
-        (.ptr (.enum kexprListEnum) (m348 ++ [.construct kexprListEnum "Nil" []]).length) :=
+        (.ptr (.enum kexprListEnum) (m348 ++ [(.construct kexprListEnum "Nil" [] : SourceValue F)]).length) :=
       TmL.store_cons (Tm.mono (e3.trans x1) hA) (TmL.store_nil m348)
     have hfe : Infer c.env .full d (.app Fe A) (C.instantiateList [A] 0) := by
       rw [Ix.Kernel.Expr.instantiateList_cons, Ix.Kernel.Expr.instantiateList_nil]
