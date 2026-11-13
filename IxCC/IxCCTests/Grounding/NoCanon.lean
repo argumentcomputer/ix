@@ -229,10 +229,10 @@ def run : IO Bool := do
     let (oi, _) ← loadClosure "OS16-plain" "fixtures/ownership/OS16-plain" []
     let some (c, d) := plantSite oi | throw (IO.userError "OS16-plain: no plant site")
     let some (.defn k s lv ty v) := oi.src.decl? c | throw (IO.userError "OS16-plain: no value")
-    let raised := { oi with src := oi.src.setDecl c (.defn k s lv ty (raiseS d v)),
-      env := mapConst oi.env (oi.κ c) fun
-        | .defnInfo cv val h => .defnInfo cv (raiseK (oi.κ d) val) h
-        | ci => ci }
+    let envR := mapConst oi.env (oi.κ c) fun
+      | .defnInfo cv val h => .defnInfo cv (raiseK (oi.κ d) val) h
+      | ci => ci
+    let raised := { oi with src := oi.src.setDecl c (.defn k s lv ty (raiseS d v)), env := envR }
     expect a (instOk oi && (failing raised).isEmpty && noCanonAB raised.src raised.env raised.κ raised.Sl &&
         !instOk raised)
       s!"levels: OS16-plain, c{d} raised in c{c}: check {failing raised}, instCheckB {instOk raised}"
