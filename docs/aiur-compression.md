@@ -1092,3 +1092,26 @@ raises main cells from 615,485,074 to 779,704,204 and main/fixed/lookup storage
 from 29,870,400,128 to 37,186,124,256 bytes. The original resource budget rejects
 it before witness allocation. The policy is therefore unsuitable for that
 workload; retuning must include the full compression program and Init counts.
+
+## 23. Canonical prefix checks and bounded addition carries
+
+The [canonical-prefix comparison](measurements/aiur-canonical-prefix.json)
+checks a base-field value's most significant limb first and descends to lower
+limbs only on equality with the modulus prefix. Every lower limb remains
+range-constrained. Addition and subtraction also use a complete three-value
+carry table, since their signed carries are always minus one, zero or one.
+These are Aiur arithmetic changes under the existing protocols.
+
+On identical terminal-fixture input, distinct 80-bit range queries fall from
+437,606 to 243,250, crossing the padding boundary from `2^19` to `2^18` rows.
+Main cells fall from 10,915,562 to 9,096,974, and the completed 204-sample PLONK
+estimate falls from 74,684,546 to 62,413,327 constraints. Its estimated domain
+is `2^26`. This is still a small-fixture estimate rather than a full-size
+PLONK compile, proof or Init compression result.
+
+All dependent compiler fixtures are regenerated. Thirty-two focused tests,
+the source-verifier KZG proof and the terminal KZG proof pass; formal-key and
+verifier-path pins remain unchanged. The installed Ignition prefix contains
+exactly `2^26` G1 powers, three fewer than gnark needs for a PLONK domain of
+that size. Extending it from the same authenticated ceremony is separate
+parameter preparation, and does not require changing the ceremony bound.

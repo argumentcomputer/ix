@@ -5,7 +5,10 @@ import Mathlib.Tactic.LinearCombination
 
 /-! Canonical BN254 base-field elements in four radix-2^80 limbs over Fr.
 Advice supplies candidate bytes, remainders, quotients and signed carries.
-Fixed 8- and 16-bit lookups, boolean borrows and integer limb equations constrain them.
+Fixed range lookups and integer limb equations constrain them.
+Canonicalization compares high limbs before lower ones. Its separate high-limb
+function lets equal high limbs share one memo row. Bounded differences encode
+the comparisons without scalar-field wraparound.
 The bounds below justify interpreting every limb equation over the integers;
 they do not constitute a source-level correctness proof of the library. -/
 namespace Aiur.Library.Field.BN254.Fq
@@ -18,6 +21,35 @@ theorem coefficient_bound : 32 * radix^2 + 32 * radix < BN254.modulus := by deci
 theorem byte_pack_bound : 2^88 < BN254.modulus := by decide
 theorem canonical_bound : 4 * radix < BN254.modulus := by decide
 
+theorem modulus_limbs :
+    956523353070932659600711 + 611571273687723030964337 * radix +
+    370463741415268654532022 * radix^2 + 12388 * radix^3 = modulus := by decide
+
+/-- Bounded radix limbs admit the ordinary lexicographic modulus comparison. -/
+theorem canonical_prefix_iff (a b c d : Nat)
+    (ha : a < radix) (hb : b < radix) (hc : c < radix) :
+    a + b * radix + c * radix^2 + d * radix^3 < modulus ↔
+    d < 12388 ∨ (d = 12388 ∧
+      (c < 370463741415268654532022 ∨ (c = 370463741415268654532022 ∧
+        (b < 611571273687723030964337 ∨ (b = 611571273687723030964337 ∧
+          a < 956523353070932659600711))))) := by
+  norm_num [radix, modulus] at *
+  omega
+
+theorem add_sub_coefficient_bound (a b c d : Int)
+    (ha : 0 ≤ a ∧ a < radix) (hb : 0 ≤ b ∧ b < radix)
+    (hc : 0 ≤ c ∧ c < radix) (hd : 0 ≤ d ∧ d < radix) :
+    -2 * (radix : Int) + 2 ≤ a + b - c - d ∧
+      a + b - c - d ≤ 2 * (radix : Int) - 2 := by omega
+
+/-- Exact radix division preserves the three signed addition/subtraction carries. -/
+theorem add_sub_carry_bound (coefficient incoming outgoing : Int)
+    (hc : -2 * (radix : Int) + 2 ≤ coefficient ∧ coefficient ≤ 2 * (radix : Int) - 2)
+    (hi : -1 ≤ incoming ∧ incoming ≤ 1)
+    (h : coefficient + incoming = (radix : Int) * outgoing) :
+    outgoing = -1 ∨ outgoing = 0 ∨ outgoing = 1 := by
+  norm_num [radix] at hc h
+  omega
 
 theorem paired_coefficient_bound :
     64 * radix^3 + 64 * radix^2 + 64 * radix < BN254.modulus := by decide
@@ -41,6 +73,9 @@ module BN254Fq {
   table limb16_inputs: (Field,) {}
   table limb16_units: () {}
   map limb16(value: Field) -> () = limb16_inputs => limb16_units;
+  table add_sub_carry_inputs: (Field,) {}
+  table add_sub_carry_units: () {}
+  map add_sub_carry(value: Field) -> () = add_sub_carry_inputs => add_sub_carry_units;
   opaque type Fq = [Field; 4];
   const RADIX: Field = 1208925819614629174706176;
   const BIAS: Field = 9671406556917033397649408;
@@ -88,19 +123,33 @@ module BN254Fq {
     range80(raw[0]); range80(raw[1]); range80(raw[2]); range80(raw[3]); ()
   }
 
+  fn canonical_high(value: Field) -> Field {
+    limb16(value);
+    limb16(12388 - value);
+    Fields::is_zero(12388 - value)
+  }
+
+  fn canonical_low(raw: [Field; 3]) -> () {
+    range80(raw[0]); range80(raw[1]); range80(raw[2]);
+    range80(370463741415268654532022 - raw[2]);
+    match raw[2] {
+      370463741415268654532022 => {
+        range80(611571273687723030964337 - raw[1]);
+        match raw[1] {
+          611571273687723030964337 => range80(956523353070932659600710 - raw[0]),
+          _ => (),
+        }
+      },
+      _ => (),
+    }
+  }
+
   fn from_limbs(raw: [Field; 4]) -> Fq {
-    bound(raw);
-    let (difference, borrow) = hint::<([Field; 4], [Field; 4])>("bn254.fq.canonical", raw);
-    bound(difference);
-    assert_eq!(borrow[0] * (borrow[0] - 1), 0, "Fq canonical borrow");
-    assert_eq!(956523353070932659600710 - raw[0] - 0 + RADIX * borrow[0], difference[0], "Fq canonical subtraction");
-    assert_eq!(borrow[1] * (borrow[1] - 1), 0, "Fq canonical borrow");
-    assert_eq!(611571273687723030964337 - raw[1] - borrow[0] + RADIX * borrow[1], difference[1], "Fq canonical subtraction");
-    assert_eq!(borrow[2] * (borrow[2] - 1), 0, "Fq canonical borrow");
-    assert_eq!(370463741415268654532022 - raw[2] - borrow[1] + RADIX * borrow[2], difference[2], "Fq canonical subtraction");
-    assert_eq!(borrow[3] * (borrow[3] - 1), 0, "Fq canonical borrow");
-    assert_eq!(12388 - raw[3] - borrow[2] + RADIX * borrow[3], difference[3], "Fq canonical subtraction");
-    assert_eq!(borrow[3], 0, "noncanonical Fq");
+    range80(raw[0]); range80(raw[1]); range80(raw[2]);
+    match canonical_high(raw[3]) {
+      1 => canonical_low([raw[0], raw[1], raw[2]]),
+      0 => (),
+    };
     raw
   }
 
@@ -113,9 +162,9 @@ module BN254Fq {
     let (raw, quotient, carry) = hint::<([Field; 4], Field, [Field; 3])>("bn254.fq.add", (to_limbs(a), to_limbs(b)));
     let result = from_limbs(raw);
     assert_eq!(quotient * (quotient - 1), 0, "Fq add/sub quotient");
-    range84(carry[0]);
-    range84(carry[1]);
-    range84(carry[2]);
+    add_sub_carry(carry[0]);
+    add_sub_carry(carry[1]);
+    add_sub_carry(carry[2]);
     assert_eq!(a[0] + b[0] - raw[0] - quotient * 956523353070932659600711 + BIAS + CORRECTION, RADIX * carry[0], "Fq add limb 0");
     assert_eq!(a[1] + b[1] - raw[1] - quotient * 611571273687723030964337 + carry[0] + CORRECTION, RADIX * carry[1], "Fq add limb 1");
     assert_eq!(a[2] + b[2] - raw[2] - quotient * 370463741415268654532022 + carry[1] + CORRECTION, RADIX * carry[2], "Fq add limb 2");
@@ -127,9 +176,9 @@ module BN254Fq {
     let (raw, quotient, carry) = hint::<([Field; 4], Field, [Field; 3])>("bn254.fq.sub", (to_limbs(a), to_limbs(b)));
     let result = from_limbs(raw);
     assert_eq!(quotient * (quotient - 1), 0, "Fq add/sub quotient");
-    range84(carry[0]);
-    range84(carry[1]);
-    range84(carry[2]);
+    add_sub_carry(carry[0]);
+    add_sub_carry(carry[1]);
+    add_sub_carry(carry[2]);
     assert_eq!(a[0] + quotient * 956523353070932659600711 - b[0] - raw[0] + BIAS + CORRECTION, RADIX * carry[0], "Fq sub limb 0");
     assert_eq!(a[1] + quotient * 611571273687723030964337 - b[1] - raw[1] + carry[0] + CORRECTION, RADIX * carry[1], "Fq sub limb 1");
     assert_eq!(a[2] + quotient * 370463741415268654532022 - b[2] - raw[2] + carry[1] + CORRECTION, RADIX * carry[2], "Fq sub limb 2");
@@ -173,7 +222,9 @@ def declarations : Modules.Program Nat :=
             ⟨"byte_inputs", .tuple [.field], (List.range 256).map fun n => .tuple [.literal n]⟩,
             ⟨"byte_units", .tuple [], (List.range 256).map fun _ => .tuple []⟩,
             ⟨"limb16_inputs", .tuple [.field], (List.range 65536).map fun n => .tuple [.literal n]⟩,
-            ⟨"limb16_units", .tuple [], (List.range 65536).map fun _ => .tuple []⟩]}
+            ⟨"limb16_units", .tuple [], (List.range 65536).map fun _ => .tuple []⟩,
+            ⟨"add_sub_carry_inputs", .tuple [.field], (List.range 3).map fun n => .tuple [.literal (8 * radix - 1 + n)]⟩,
+            ⟨"add_sub_carry_units", .tuple [], (List.range 3).map fun _ => .tuple []⟩]}
         | body => body} }
 
 def program : Modules.Program BN254.F :=

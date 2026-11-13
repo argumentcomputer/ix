@@ -1,0 +1,220 @@
+{
+  "format": "ix-aiur-canonical-prefix-measurement-v1",
+  "date_utc": "2026-11-12",
+  "protocol_changed": false,
+  "scope": "Small development terminal fixture on identical serialized input. Exact execution counts and extrapolated PLONK constraints; no full-size PLONK compile, no PLONK proof, no Init or Mathlib timing claim.",
+  "source_sha256": {
+    "Aiur/Aiur/Library/Field/BN254/Fq.lean": "961702939a0b5c26dcd51a79b225211b94469d0d6a647f3d7467d64ae89ff5b5",
+    "Aiur/Examples/BN254Fq.lean": "314e613b6ea95f04af323509b8af667336d27c93f256af878fac26d28d0fe54b",
+    "crates/proof-compression/tests/aiur_fq.rs": "8e2a1fd9e3fb273adfd159defaa7e83d9f90a07c2d598550498311298c9bef21"
+  },
+  "input_blake3": {
+    "claims.bin": "363af4b93ad12de7e73fbe6ac425adca82007328be137966dd4fdb66c4b26525",
+    "configuration.json": "5665033f6c9cc56f0e7753810322e844d38fb301cc39764c7af207006dc899b6",
+    "forged-opening.bin": "5c36d22b6c7f3f701da779bdd021aae07bbc20827a1774f856d9335dded19d9c",
+    "key.bin": "939daeabfc9a0746ce3a60ce00c80cfb6a3fd463f82ef57c8bfaae24887464d0",
+    "policy.bin": "2e47a0ad4317b8b0d78bcbff716d565abe3bf92a3076c54bef82c7b6757bdea6",
+    "proof.bin": "e4842f0df43e32e7ce78d2fccf265aaee43af309d5dcca600cef3c03e9e965d7",
+    "statement.bin": "e8674d353dc285390f87f1a2ee3d0e43e6f8f012bdf30c95cf6246346fb61b5f"
+  },
+  "changes": [
+    "Fq addition/subtraction carries use a complete three-value fixed map instead of generic 84-bit range checks.",
+    "Canonical Fq constructor checks high limbs before descending on equality; all low limbs remain bounded below 2^80."
+  ],
+  "baseline": {
+    "artifact_blake3": "ae37d27f06f72ed519bf6ed3ec3dd34f31871eeb3b809bf4fad06a56d46abdfd",
+    "format": "ix-aiur-final-fixture-cost-v1",
+    "main_cells": 10915562,
+    "max_height": 524288,
+    "public_fields": 2,
+    "schema_bytes": 8742813,
+    "scope": "development regression, not Init compression"
+  },
+  "candidate": {
+    "artifact_blake3": "60661cb7d738d4911cd4459b54633706c5ab9b733917b5f0667be72108cba00e",
+    "format": "ix-aiur-final-fixture-cost-v1",
+    "main_cells": 9096974,
+    "max_height": 262144,
+    "public_fields": 2,
+    "schema_bytes": 8746096,
+    "scope": "development regression, not Init compression"
+  },
+  "plonk": {
+    "before_constraints_estimated": 74684546,
+    "after_constraints_estimated": 62413327,
+    "reduction_percent": 16.430733876322957,
+    "before_domain_estimated": 134217728,
+    "after_domain_estimated": 67108864,
+    "sample_count": 204,
+    "baseline_dynamic_rows": 4,
+    "candidate_baseline_sample_constraints": 4950048,
+    "public_inputs": 2,
+    "proving_powers_at_estimated_domain": 67108867,
+    "srs_scope": "The estimated 2^26 domain is below the 100,800,000-power Ignition ceremony bound. The installed WriteRawTo file contains exactly 2^26 powers and is short of the required N+3 prefix by three powers. No SRS update or new provenance validation was performed."
+  },
+  "before_functions": {
+    "BN254Fq::from_limbs": {
+      "unique_queries": 61796,
+      "height": 65536,
+      "lookup_group_size": 1,
+      "lookups": 9,
+      "main_cells": 589824,
+      "main_width": 9
+    },
+    "BN254Fq::range80": {
+      "unique_queries": 437606,
+      "height": 524288,
+      "lookup_group_size": 1,
+      "lookups": 6,
+      "main_cells": 3670016,
+      "main_width": 7
+    },
+    "BN254Fq::range84": {
+      "unique_queries": 2083,
+      "height": 4096,
+      "lookup_group_size": 1,
+      "lookups": 8,
+      "main_cells": 32768,
+      "main_width": 8
+    }
+  },
+  "after_functions": {
+    "BN254Fq::from_limbs": {
+      "unique_queries": 61796,
+      "height": 65536,
+      "lookup_group_size": 1,
+      "lookups": 6,
+      "main_cells": 524288,
+      "main_width": 8
+    },
+    "BN254Fq::range80": {
+      "unique_queries": 243250,
+      "height": 262144,
+      "lookup_group_size": 1,
+      "lookups": 6,
+      "main_cells": 1835008,
+      "main_width": 7
+    },
+    "BN254Fq::range84": {
+      "unique_queries": 2081,
+      "height": 4096,
+      "lookup_group_size": 1,
+      "lookups": 8,
+      "main_cells": 32768,
+      "main_width": 8
+    },
+    "BN254Fq::canonical_high": {
+      "unique_queries": 12312,
+      "height": 16384,
+      "lookup_group_size": 1,
+      "lookups": 3,
+      "main_cells": 81920,
+      "main_width": 5
+    },
+    "BN254Fq::canonical_low": {
+      "unique_queries": 3,
+      "height": 4,
+      "lookup_group_size": 1,
+      "lookups": 7,
+      "main_cells": 32,
+      "main_width": 8
+    }
+  },
+  "reason_for_improvement": "range80 unique queries decrease from 437,606 to243,250, crossing the262,144 padding threshold. from_limbs count remains 61,796; canonical_high has 12,312 unique queries and canonical_low has 3.",
+  "validation": {
+    "lean": "Targeted Fq and terminal exporter builds pass, including canonical_prefix_iff and add_sub carry integer lemmas.",
+    "fq_tests": 7,
+    "fq_negative_cases": "Every lexicographic modulus threshold, arbitrary fallback range advice for oversized/negative limbs, altered quotient/carry columns, direct carry-map forgery, and a forged KZG canonical-constructor witness for integer p. Fr\u22121, Fr and Fr+1 are accepted as valid Fq values.",
+    "clippy": "Targeted aiur_fq Clippy passes with -D warnings.",
+    "terminal_kzg_proof": true,
+    "changed_terminal_statement_rejected": true,
+    "terminal_kzg_artifact_blake3": "60661cb7d738d4911cd4459b54633706c5ab9b733917b5f0667be72108cba00e",
+    "tracked_fixtures_modified": true,
+    "full_source_correctness_proof": false,
+    "default_fq_tests": 7,
+    "fixture_regeneration": "Completed successfully with tools/check-aiur-compression-fixtures.sh --update.",
+    "arithmetic_curve_encoding_product_tests": 16,
+    "source_verifier_and_final_tests": 5,
+    "total_focused_tests": 32,
+    "explicit_source_verifier_kzg_proof": "Passed against regenerated kzg-source.ixa; source_verifier_execution_is_proven_by_kzg.",
+    "formal_key_gate": "passed; existing tools/formal-aiur.keys unchanged",
+    "verify_path_gate": "passed; fingerprint 74ab95cb51df2e493cb3a037132260fafdc0550807314053c629c68b0f890736 unchanged",
+    "pairing_specific_test_target": "Four tests passed against regenerated fixtures: tower arithmetic, generator/prepared lines, Ignition anchor binding, and cancellation/infinity.",
+    "pairing_tests": 4
+  },
+  "limits": [
+    "Counts depend on this terminal workload; branch frequencies and memoization thresholds can differ elsewhere.",
+    "The ordinary low-prefix branch is rare in this fixture (3 distinct tuples), so adversarially concentrated high-prefix inputs need their own capacity check.",
+    "The Nat lexicographic theorem and integer carry lemmas do not constitute a complete source-field/lookup soundness proof."
+  ],
+  "recommendation": "The measured reduction supports integration of the arithmetic change. Regenerated artifacts and validation evidence are preserved; no full-pipeline fit claim follows from this small fixture.",
+  "reproduce": [
+    "target/canonical-prefix-current/aiur_final_profile target/canonical-prefix-current/compress-final.ixa NEW_ESTIMATE --estimate-plonk",
+    "target/canonical-prefix-current/aiur_final_profile target/canonical-prefix-current/compress-final.ixa NEW_KZG_PROOF --prove-kzg",
+    "target/canonical-prefix-current/counts ARTIFACT target/canonical-prefix-current/input NEW_COUNTS_JSON"
+  ],
+  "installed_srs_count": {
+    "path": "/tmp/ix.aiur-compression-stages/target/compress-wrap/params/bn254-ignition-main-197/srs.bin",
+    "resolved_path": "/home/sam/repos/ix.ci-merge-tests/target/aiur-compression-stages-run/params/bn254-ignition-main-197/srs.bin",
+    "g1_powers_in_header": 67108864,
+    "file_bytes": 4295001412,
+    "write_raw_to_length_matches": true,
+    "estimated_plonk_domain": 67108864,
+    "required_g1_powers": 67108867,
+    "shortfall": 3,
+    "scope": "Read-only framing/count check of the installed file; no new ceremony or provenance validation."
+  },
+  "review": {
+    "high_prefix": "The value and 12388\u2212value must both pass u16 membership, forcing the canonical high-limb interval without Fr wrap.",
+    "low_prefix": "All raw lower limbs pass range80. Equality-only descent and bounded differences enforce the lexicographic modulus comparison, with p0\u22121 at the final limb.",
+    "carry_map": "Restricting biased carries to BIAS\u22121/BIAS/BIAS+1 strengthens the previous range84 condition. Integer coefficient/carry lemmas establish completeness for canonical add/sub operands."
+  },
+  "status": "Arithmetic selected for integration; dependent fixtures regenerated and focused checks complete.",
+  "regenerated_artifacts": [
+    {
+      "path": "crates/aiur/tests/fixtures/bn254-fq.ixa",
+      "bytes": 638071,
+      "blake3": "22895812e049f76d99009317e84888c53ac2892f464306362acbc0bdd28d7f3a"
+    },
+    {
+      "path": "crates/aiur/tests/fixtures/bn254-fq-relation.ixa",
+      "bytes": 691996,
+      "blake3": "5443310655bf3956689db6d3e01d1abe1b6174b255075ecd5f135d35db3600eb"
+    },
+    {
+      "path": "crates/aiur/tests/fixtures/bn254-g1.ixa",
+      "bytes": 749729,
+      "blake3": "2d8edc4bcc965f6072d6d5b40f80e16c329d6df7534c6fe62871d7a9cec9e3e8"
+    },
+    {
+      "path": "crates/aiur/tests/fixtures/bn254-g1-encoding.ixa",
+      "bytes": 672844,
+      "blake3": "4103f605c0284876ba89ef6b36276a3a91a800064499f7276cf84012b913c2e3"
+    },
+    {
+      "path": "crates/aiur/tests/fixtures/bn254-fq-products.ixa",
+      "bytes": 633406,
+      "blake3": "ad5eea883aecdba661bbd89df8c6b7eb1860b7bc05da904c984d8cb42a4081e2"
+    },
+    {
+      "path": "crates/aiur/tests/fixtures/kzg-source.ixa",
+      "bytes": 3713132,
+      "blake3": "6d86654be8d2ac92a6d1c77d9680ab4ee84f7cbfd4827680f70f10bfdf4c6d93"
+    },
+    {
+      "path": "crates/aiur/tests/fixtures/compress-final.ixa",
+      "bytes": 3891643,
+      "blake3": "60661cb7d738d4911cd4459b54633706c5ab9b733917b5f0667be72108cba00e"
+    },
+    {
+      "path": "crates/aiur/tests/fixtures/bn254-pairing.ixa",
+      "bytes": 906200,
+      "blake3": "c5345caead81f36337b92a2ddf9f9fce258a789a4a2b4a9fe40ab4ea82f1b954"
+    },
+    {
+      "path": "crates/aiur/tests/fixtures/bn254-pairing-ignition.ixa",
+      "bytes": 906204,
+      "blake3": "f9adef85a551405a97bbc6e83cc1aea806fd6fd9216c93bbf375355f050652b6"
+    }
+  ]
+}

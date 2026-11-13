@@ -9,7 +9,7 @@ namespace BN254FqFixture
 open Aiur
 
 def entries : List String := ["FqTest::canonical", "FqTest::add", "FqTest::sub",
-  "FqTest::mul", "FqTest::inverse", "FqTest::range80", "FqTest::range84"]
+  "FqTest::mul", "FqTest::inverse", "FqTest::range80", "FqTest::range84", "FqTest::add_sub_carry"]
 
 def source : Modules.Program Nat := aiur_library% (Library.Field.BN254.Fq.dependencies.append
     Library.Field.BN254.Fq.declarations) ⟦
@@ -29,6 +29,7 @@ module FqTest {
   }
   fn range80(a: Field) -> () { BN254Fq::range80(a) }
   fn range84(a: Field) -> () { BN254Fq::range84(a) }
+  fn add_sub_carry(a: Field) -> () { BN254Fq::add_sub_carry(a) }
 }
 ⟧
 

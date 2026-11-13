@@ -19,10 +19,12 @@ use multi_stark::system::SystemWitness;
 use num_bigint::BigUint;
 
 fn plan() -> TracePlan<'static, Bn254> {
-  let package = WidePackage::decode(include_bytes!(
-    "../../aiur/tests/fixtures/bn254-fq.ixa"
-  ))
-  .unwrap();
+  let override_bytes = std::env::var_os("AIUR_FQ_FIXTURE")
+    .map(|path| std::fs::read(path).unwrap());
+  let bytes = override_bytes
+    .as_deref()
+    .unwrap_or(include_bytes!("../../aiur/tests/fixtures/bn254-fq.ixa"));
+  let package = WidePackage::decode(bytes).unwrap();
   let trace = package.trace.unwrap();
   let mut checked = package.program.check_with(Bn254).unwrap();
   checked.track_depth(&trace).unwrap();
@@ -72,14 +74,8 @@ fn poisoned(
           key_type.clone(),
           r#type.clone(),
           move |input, output| {
-            let mut candidate = if name == "bn254.fq.inverse"
-              && name == target
-              && input.iter().all(|&value| value == Bn254.zero())
-            {
-              vec![Bn254.zero(); 4]
-            } else {
-              fq::advice(&name, input)?
-            };
+            let mut candidate = fq::advice(&name, input)
+              .unwrap_or_else(|_| vec![Bn254.zero(); output.len()]);
             if name == target {
               change(input, &mut candidate);
             }
@@ -209,6 +205,224 @@ fn compiled_arithmetic_matches_base_field_at_boundaries() {
 }
 
 #[test]
+fn canonical_prefix_checks_every_boundary_with_untrusted_range_advice() {
+  let plan = plan();
+  let channels = poisoned(&plan, "bn254.fq.u16_80", |_, _| {});
+  let executor = plan.program().prepare_hint_channels(&[], &channels).unwrap();
+  let prime = modulus();
+  let mut values =
+    vec![BigUint::from(0u8), &prime - 1u8, prime.clone(), &prime + 1u8];
+  let scalar_prime =
+    BigUint::from_bytes_le(&ark_bn254::Fr::MODULUS.to_bytes_le());
+  values.extend([
+    &scalar_prime - 1u8,
+    scalar_prime.clone(),
+    &scalar_prime + 1u8,
+  ]);
+  for limb in 0..4 {
+    let bits = fq::LIMB_BITS * limb;
+    let prefix = (&prime >> bits) << bits;
+    let step = BigUint::from(1u8) << bits;
+    values.extend([
+      &prefix - 1u8,
+      prefix.clone(),
+      &prefix + 1u8,
+      &prefix + &step - 1u8,
+      &prefix + &step,
+    ]);
+  }
+  for value in values {
+    let input = raw(&value);
+    let result = executor.execute("FqTest::canonical", input.clone());
+    if value < prime {
+      assert_eq!(result.unwrap().output, input);
+    } else {
+      assert!(result.is_err(), "accepted noncanonical integer {value}");
+    }
+  }
+  let radix = BigUint::from(1u8) << fq::LIMB_BITS;
+  for base in [BigUint::from(0u8), &prime - 1u8] {
+    for limb in 0..4 {
+      for invalid in [scalar(&radix), -Bn254.one()] {
+        let mut input = raw(&base);
+        input[limb] = invalid;
+        assert!(executor.execute("FqTest::canonical", input).is_err());
+      }
+    }
+  }
+}
+
+#[test]
+fn add_sub_carries_cover_signed_boundaries_and_reject_outside_the_map() {
+  let plan = plan();
+  let channels = channels();
+  let executor = plan.program().prepare_hint_channels(&[], &channels).unwrap();
+  let radix = BigUint::from(1u8) << fq::LIMB_BITS;
+  let bias = 8u8 * &radix;
+  let allowed = [scalar(&(&bias - 1u8)), scalar(&bias), scalar(&(&bias + 1u8))];
+  let mut seen = [false; 3];
+  let values = [
+    BigUint::from(0u8),
+    BigUint::from(1u8),
+    &radix - 1u8,
+    radix.clone(),
+    radix.pow(2) - 1u8,
+    radix.pow(2),
+    modulus() - 2u8,
+    modulus() - 1u8,
+  ];
+  for a in &values {
+    for b in &values {
+      let args: Vec<_> = raw(a).into_iter().chain(raw(b)).collect();
+      let a = Fq::from_le_bytes_mod_order(&a.to_bytes_le());
+      let b = Fq::from_le_bytes_mod_order(&b.to_bytes_le());
+      for (channel, entry, expected) in [
+        ("bn254.fq.add", "FqTest::add", a + b),
+        ("bn254.fq.sub", "FqTest::sub", a - b),
+      ] {
+        let advice = fq::advice(channel, &args).unwrap();
+        for carry in &advice[5..] {
+          let index = allowed.iter().position(|value| value == carry).unwrap();
+          seen[index] = true;
+        }
+        let record = executor.execute(entry, args.clone()).unwrap();
+        assert_eq!(record.output, fq::encode(expected));
+      }
+    }
+  }
+  assert_eq!(seen, [true; 3]);
+  for carry in allowed {
+    executor.execute("FqTest::add_sub_carry", vec![carry]).unwrap();
+  }
+  for carry in
+    [scalar(&(&bias - 2u8)), scalar(&(&bias + 2u8)), Bn254.zero(), -Bn254.one()]
+  {
+    assert!(executor.execute("FqTest::add_sub_carry", vec![carry]).is_err());
+  }
+  for (channel, entry) in
+    [("bn254.fq.add", "FqTest::add"), ("bn254.fq.sub", "FqTest::sub")]
+  {
+    for index in 5..8 {
+      let channels = poisoned(&plan, channel, move |_, output| {
+        output[index] = allowed[1] + Bn254.from_u64(2);
+      });
+      assert!(
+        plan
+          .program()
+          .prepare_hint_channels(&[], &channels)
+          .unwrap()
+          .execute(entry, vec![Bn254.zero(); 8])
+          .is_err()
+      );
+    }
+  }
+}
+
+#[test]
+fn kzg_add_sub_carries_and_fixed_lookup_are_constrained() {
+  let plan = plan();
+  let channels = channels();
+  let executor = plan.program().prepare_hint_channels(&[], &channels).unwrap();
+  let capacity = plan
+    .program()
+    .program()
+    .tables
+    .iter()
+    .map(|table| table.rows.len())
+    .max()
+    .unwrap()
+    .next_power_of_two();
+  let backend = Backend::new(
+    &plan,
+    KzgConfig::new(
+      Arc::new(Srs::unsafe_dev_setup(capacity, b"aiur-fq-add-carry-test")),
+      8,
+    ),
+  )
+  .unwrap();
+  let radix = BigUint::from(1u8) << fq::LIMB_BITS;
+  let boundary = Fq::from_le_bytes_mod_order(&radix.pow(2).to_bytes_le());
+  for (entry, function_name, channel, a, expected) in [
+    (
+      "FqTest::add",
+      "BN254Fq::add",
+      "bn254.fq.add",
+      boundary - Fq::from(1),
+      boundary,
+    ),
+    (
+      "FqTest::sub",
+      "BN254Fq::sub",
+      "bn254.fq.sub",
+      boundary,
+      boundary - Fq::from(1),
+    ),
+  ] {
+    let args: Vec<_> =
+      fq::encode(a).into_iter().chain(fq::encode(Fq::from(1))).collect();
+    let record = executor.execute(entry, args.clone()).unwrap();
+    assert_eq!(record.output, fq::encode(expected));
+    let witness = backend.generate(&record, entry, &args).unwrap();
+    let proof =
+      backend.prove(entry, &args, &record.output, witness.clone()).unwrap();
+    backend.verify(entry, &args, &record.output, &proof).unwrap();
+    let (function, fill) = plan
+      .artifact()
+      .functions
+      .iter()
+      .enumerate()
+      .find(|(_, fill)| fill.name == function_name)
+      .unwrap();
+    let dest = fill
+      .steps
+      .iter()
+      .find_map(|step| match &step.action {
+        Action::Hint { channel: name, dest, .. } if name == channel => {
+          Some(dest)
+        },
+        _ => None,
+      })
+      .unwrap();
+    let chip = plan.function_chips()[function];
+    let layout = plan.layout().unwrap();
+    let placement = &layout.placements[chip];
+    assert!(!placement.grouped);
+    for &destination in &dest[5..8] {
+      let column = fill
+        .writes
+        .iter()
+        .find(|write| write.source == destination)
+        .unwrap()
+        .column;
+      let mut traces = witness.traces.clone();
+      traces[placement.circuit].values[placement.columns[column]] +=
+        Bn254.from_u64(3);
+      let forged = SystemWitness::from_stage_1(traces, backend.system());
+      let proof = backend.prove(entry, &args, &record.output, forged).unwrap();
+      assert!(backend.verify(entry, &args, &record.output, &proof).is_err());
+    }
+  }
+  let entry = "FqTest::add_sub_carry";
+  let args = [scalar(&(8u8 * &radix))];
+  let record = executor.execute(entry, args.to_vec()).unwrap();
+  let witness = backend.generate(&record, entry, &args).unwrap();
+  let proof = backend.prove(entry, &args, &[], witness.clone()).unwrap();
+  backend.verify(entry, &args, &[], &proof).unwrap();
+  let chip =
+    plan.function_chips()[plan.program().entry(entry).unwrap().function];
+  let layout = plan.layout().unwrap();
+  let placement = &layout.placements[chip];
+  assert!(!placement.grouped);
+  let column = placement.columns[plan.artifact().chips[chip].inputs[0]];
+  let mut traces = witness.traces;
+  traces[placement.circuit].values[column] += Bn254.from_u64(2);
+  let forged = SystemWitness::from_stage_1(traces, backend.system());
+  let outside = [args[0] + Bn254.from_u64(2)];
+  let proof = backend.prove(entry, &outside, &[], forged).unwrap();
+  assert!(backend.verify(entry, &outside, &[], &proof).is_err());
+}
+
+#[test]
 fn source_constraints_reject_forged_quotients_carries_ranges_and_zero_inverse()
 {
   let plan = plan();
@@ -225,7 +439,6 @@ fn source_constraints_reject_forged_quotients_carries_ranges_and_zero_inverse()
     ("bn254.fq.mul_pairs", "FqTest::mul", 10),
     ("bn254.fq.add", "FqTest::add", 4),
     ("bn254.fq.sub", "FqTest::sub", 4),
-    ("bn254.fq.canonical", "FqTest::mul", 7),
     ("bn254.fq.u16_80", "FqTest::mul", 4),
     ("bn254.fq.u16_84", "FqTest::mul", 5),
   ] {
@@ -318,6 +531,7 @@ fn compiled_fq_kzg_proofs_reject_altered_quotient_and_carry_columns() {
       positive_a * positive_b,
     ),
     ("FqTest::inverse", fq::encode(b).to_vec(), b.inverse().unwrap()),
+    ("FqTest::canonical", fq::encode(-Fq::from(1)).to_vec(), -Fq::from(1)),
   ] {
     let record = executor.execute(entry, args.clone()).unwrap();
     assert_eq!(record.output, fq::encode(expected));
@@ -330,6 +544,23 @@ fn compiled_fq_kzg_proofs_reject_altered_quotient_and_carry_columns() {
         .verify(entry, &args, &fq::encode(expected + Fq::from(1)), &proof)
         .is_err()
     );
+    if entry == "FqTest::canonical" {
+      let mut traces = witness.traces.clone();
+      for trace in &mut traces {
+        for value in &mut trace.values {
+          if *value == args[0] {
+            *value += Bn254.one();
+          }
+        }
+      }
+      let noncanonical = raw(&modulus());
+      let forged = SystemWitness::from_stage_1(traces, backend.system());
+      let proof =
+        backend.prove(entry, &noncanonical, &noncanonical, forged).unwrap();
+      assert!(
+        backend.verify(entry, &noncanonical, &noncanonical, &proof).is_err()
+      );
+    }
     if entry == "FqTest::mul" {
       let (function, fill) = plan
         .artifact()
