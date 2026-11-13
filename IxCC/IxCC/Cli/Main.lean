@@ -23,7 +23,9 @@ cannot start the second process.
 Signals: a terminal's interrupt reaches both processes (they share the process
 group); a signal sent to the first process alone does not reach the second,
 which checks every half second that its parent is still the process that
-started it and stops (exit 1) when it is not. -/
+started it and stops (exit 1) when it is not. That check is a task that never
+ends, and Lean's runtime waits for every task before a process ends, so the
+second process ends by `IO.Process.exit` with `main`'s status. -/
 
 namespace IxCC.Cli.Process
 
@@ -61,11 +63,17 @@ def poolSize : IO Nat := do
 /-- `ixcc`: for `compile` and `check-cert`, run again on the stack the kernel's limits
 need (the module's comment), else `IxCC.Cli.main` here. -/
 def run (args : List String) : IO UInt32 := do
-  let reexeced := (← IO.getEnv "IXCC_REEXECED").isSome
-  if reexeced then watchParent
+  if (← IO.getEnv "IXCC_REEXECED").isSome then
+    watchParent
+    -- The watcher never ends, and Lean's runtime waits for every task before the process
+    -- ends, so the second process leaves by `IO.Process.exit` once `main` is done (with an
+    -- uncaught error reported as the runtime reports it, exit 1); returning would hang.
+    let code ← try IxCC.Cli.main args catch e => do
+      IO.eprintln s!"uncaught exception: {e}"; pure 1
+    IO.Process.exit code.toUInt8
   let some o := (IxCC.Cli.parse args).toOption | IxCC.Cli.main args
   unless o.command == "compile" || o.command == "check-cert" do return ← IxCC.Cli.main args
-  if reexeced || (← IO.getEnv "IXCC_REEXEC") == some "0" then return ← IxCC.Cli.main args
+  if (← IO.getEnv "IXCC_REEXEC") == some "0" then return ← IxCC.Cli.main args
   -- a malformed setting is reported by `main`, in this process
   let .ok settings ← IxCC.Cli.settingsOf o | IxCC.Cli.main args
   let kb := Ix.Kernel.Host.stackKiB settings.limits
