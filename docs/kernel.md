@@ -179,7 +179,7 @@ The entry runs, in order:
 | key uniqueness: no two records and no two blobs under one address | `Admission.uniqueKeys` | `.duplicate table position address` |
 | authentication: every record and every blob under `hash` of its bytes, as supplied (a record's payload is hashed before it is decoded, never re-encoded) | `Admission.authenticate` | `.mismatch table position address` |
 | the depth limit, as stored: every record's expressions (shares as leaves) and universes nest at most `limits.maxDepth` levels, read from the bytes before decoding | `Admission.scanDepths` | `.limit .depth` |
-| canonical per-record decoding within byte and universe-node limits | `Admission.decodeRecords` | `.decode position address reason` |
+| canonical per-record decoding within byte and universe-node limits | `Admission.decodeRecords` | `.decode position address reason`; a record over `maxRecordBytes`, or a universe table past `maxRecordUnivNodes`: `.limit .recordBytes`, `.limit .recordUnivNodes` (`ByteError.asLimit`) |
 | the depth limit, shares expanded: every decoded record's expressions nest at most `limits.maxDepth` levels as the reader builds them | `Admission.expandedDepths` | `.limit .depth` |
 | the Ixon reader: records to `Array Ix.Kernel.Declaration`, bound addresses named by their role keys | `Reader.readRecords` | `.read position (.malformed _ / .declined _)` |
 | the table's evidence, each proof entry resolved to its theorem's key and value | `Reader.evidenceOf` | (an unresolved proof leaves its operation without evidence) |
@@ -676,6 +676,47 @@ not by the depth limit. Init+Std itself needs more than 2 MiB for this (it
 checks on 8 MiB). IxCC's envelope also bounds the depth of each stored record,
 shares expanded, at 2,560 (`IxCC.Ixon.V3.withinKernelDepth`), after its own
 decoder.
+
+**Limits.** Every bound the entry applies to its input is a field of
+`Admission.Limits`, which each entry takes and every host sets:
+
+| field | bounds | past it | default at the command line |
+| --- | --- | --- | --- |
+| `maxRecords`, `maxBlobs` | the batch's record and blob counts | `.limit .records`, `.limit .blobs` | 2^22 each |
+| `maxTotalBytes` | the payload bytes of records and blobs together | `.limit .totalBytes` | 2^34 |
+| `maxRecordBytes` | one record's payload | `.limit .recordBytes` | 2^28 |
+| `maxRecordUnivNodes` | one record's universe table, expanded | `.limit .recordUnivNodes` | 2^26 |
+| `maxDepth` | how deep a record's expressions and universes nest, as stored and with shares expanded | `.limit .depth` | 16,384 (the field's default) |
+| `workers` | the tasks phase B of the fold runs on | nothing: no verdict changes | `none`, one task per 64 records (the field's default) |
+
+A limit only turns an answer into a decline: `.limit` is a decline
+(`Error.outcome`), and an input accepted under some limits is accepted under
+any larger ones. For the batch limits this is their definition (`preflight`
+compares counts and sums with them, `preflight_ok_iff`); for `maxRecordBytes`
+and `maxRecordUnivNodes`, the decoder's byte check and node budget succeed
+under a larger value on what they accept under a smaller one, with the same
+result (its budget is only charged, never read otherwise); the decoder reports
+both as decode errors with fixed messages, which `decodeWithin` reads as the
+limits they are (`ByteError.asLimit`), and `decodeWithin_error` states that it
+adds no failure but these declines and `.limit .depth`; for `maxDepth`, both
+checks compare levels with the limit and read the same input whatever its value
+(argued, not proved); `workers` changes how phase B runs, not what it returns
+(`Cached.checkDecls_cfg`, `checkConstantsWith_cfg`, `checkConstantsAt_cfg` and
+their tiered and policy twins, all from `checkPendingTasks_eq`). A verifier run
+under smaller limits than the producer's may decline what the producer
+accepted; the decline names the limit.
+
+Five bounds are fixed: no setting raises them, because the cached core must
+return what the reference core returns and these are constants of the
+reference core or of the fold's use of it. Each exhausts as a decline
+(`.internal "fuel exhausted: …"`): the head-normalisation loop's 1,000,000
+steps (`whnfCoreLoopFuel`), the `whnf` and conversion loops' 100,000 each
+(`whnfLoopFuel`, `defeqLoopFuel`), the level comparison's depth fuel of 10,000
+(`Level.defaultFuel`, which `Level.isEquiv` uses: the two universe shapes of
+`kernel-depth` at depth 16,384 are declined by it), and the typing core's
+recursion fuel of 100,000 nested calls (`checkFuel`, the knot's fuel in the
+fold and in the typing tier). Raising `maxDepth` therefore has effect only up to
+where `checkFuel` declines first: KNOT-BITE-MEASUREMENT.
 
 ## The typing tier
 
