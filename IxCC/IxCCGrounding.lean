@@ -13,6 +13,7 @@ import IxCCGrounding.Hyps
 import IxCCGrounding.Fundamental
 import IxCCGrounding.Ok
 import IxCCGrounding.Eqn
+import IxCCGrounding.Lift
 import IxCCGrounding.Subst
 import IxCCGrounding.Tele
 import IxCCGrounding.Case
