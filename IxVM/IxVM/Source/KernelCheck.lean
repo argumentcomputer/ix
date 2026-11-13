@@ -550,6 +550,87 @@ def check_positivity := aiur_fn⟦
     }
 ⟧
 
+  -- A family whose declared type is not syntactically its telescope (`∀` parameters and
+  -- indices, then a sort), a former declared at a definition: the telescope is read by head-
+  -- normalizing it (`get_result_sort_level`), so the declared type is convertible with it. Such
+  -- a family has an index, and every binder of each constructor's type, and of each of its
+  -- domains that ends in the family, carries the datum of the family's result sort
+  -- (`ctorZeroOk`).
+
+def former_decl_ok := aiur_fn⟦
+  fn former_decl_ok(ty: KernelTypes::KExpr, n_params: Field, n_indices: Field, num_ctors: Field,
+                    block_addr: Bytes::AddressRef, ind_idx: Field, ind_level: KernelTypes::KLevel) -> () {
+      match former_is_tele(ty, n_params + n_indices) {
+        1 => {  () } ,
+        _ => {
+          assert_eq!(Fields::is_zero(n_indices), 0,
+            "a family whose type is declared at a definition has no index");
+          ctor_zero_all(block_addr, ind_idx, num_ctors, 0,
+            KernelDefEq::compute_iprj_addr(block_addr, ind_idx), ind_level) } ,
+      }
+    }
+⟧
+
+def former_is_tele := aiur_fn⟦
+  fn former_is_tele(ty: KernelTypes::KExpr, k: Field) -> Field {
+      match k {
+        0 => {  match (*(ty)) { KernelTypes::KExprNode::Srt(_) => {  1 } , _ => {  0 } , } } ,
+        _ => {
+          match (*(ty)) {
+            KernelTypes::KExprNode::Forall(_, b, _) => {  former_is_tele(b, k - 1) } ,
+            _ => {  0 } ,
+          } } ,
+      }
+    }
+⟧
+
+def ctor_zero_all := aiur_fn⟦
+  fn ctor_zero_all(block_addr: Bytes::AddressRef, ind_idx: Field, n: Field, j: Field, t: Bytes::AddressRef,
+                   res: KernelTypes::KLevel) -> () {
+      match n - j {
+        0 => {  () } ,
+        _ => {
+          let KernelTypes::KConstantInfo::Ctor(_, cty, _, _, _, _, _, _) = (*(Ingress::get_ci_cprj(block_addr, ind_idx, j)));
+          ctor_zero_ok(cty, t, res);
+          ctor_zero_all(block_addr, ind_idx, n, j + 1, t, res) } ,
+      }
+    }
+⟧
+
+def ctor_zero_ok := aiur_fn⟦
+  fn ctor_zero_ok(e: KernelTypes::KExpr, t: Bytes::AddressRef, res: KernelTypes::KLevel) -> () {
+      match (*(e)) {
+        KernelTypes::KExprNode::Forall(d, b, m) => {
+          assert_eq!(KernelLevels::pw_eq(m, res), 1,
+            "a constructor binder's datum is not its family's result sort's");
+          let (_, last) = nat_pi_binders(d);
+          let (h, _) = KernelTypes::collect_spine(last);
+          match (*(h)) {
+            KernelTypes::KExprNode::Const(c, _) => {
+              match Bytes::address_eq(c, t) {
+                1 => {  dom_zero_ok(d, res) } ,
+                _ => {  () } ,
+              } } ,
+            _ => {  () } ,
+          };
+          ctor_zero_ok(b, t, res) } ,
+        _ => {  () } ,
+      }
+    }
+⟧
+
+def dom_zero_ok := aiur_fn⟦
+  fn dom_zero_ok(e: KernelTypes::KExpr, res: KernelTypes::KLevel) -> () {
+      match (*(e)) {
+        KernelTypes::KExprNode::Forall(_, b, m) => {
+          assert_eq!(KernelLevels::pw_eq(m, res), 1,
+            "a binder of a constructor's domain that ends in its family is not at the family's result sort");
+          dom_zero_ok(b, res) } ,
+        _ => {  () } ,
+      }
+    }
+⟧
+
 def check_inductive_shape := aiur_fn⟦
   fn check_inductive_shape(rc: KernelRoles::RoleCtx, ty: KernelTypes::KExpr, n_params: Field, n_indices: Field,
                                   num_ctors: Field, num_lvls: Field,
@@ -557,6 +638,7 @@ def check_inductive_shape := aiur_fn⟦
                                   is_unsafe: Field) -> () {
       let ind_level = get_result_sort_level(rc, ty, n_params + n_indices,
                                                  (&(Lists::Node::Nil)));
+      former_decl_ok(ty, n_params, n_indices, num_ctors, block_addr, ind_idx, ind_level);
       check_inductive_shape_ctors(rc, ty, n_params, n_indices, num_ctors,
                                        num_lvls, block_addr, ind_idx,
                                        ind_level, is_unsafe, 0)
