@@ -1119,6 +1119,7 @@
     "IxCCTests.KernelFront.Bound",
     "IxCCTests.KernelFront.Hints",
     "IxCCTests.KernelFront.LamRuns",
+    "IxCCTests.KernelFront.Cli",
     "IxCCTests.Src.Support",
     "IxCCTests.Support.Envelope"]},
   "IxCCTests.KernelFront.Report":
@@ -1144,6 +1145,9 @@
     "IxCCTests.Support.Envelope",
     "IxCC.Recheck.Produce",
     "IxCC.Recheck.Json"]},
+  "IxCCTests.KernelFront.Cli":
+  {"path": "IxCCTests/KernelFront/Cli.lean",
+   "imports": ["IxCCTests.Support.Envelope", "IxCK.Ixon.Codec"]},
   "IxCCTests.KernelFront.Bound":
   {"path": "IxCCTests/KernelFront/Bound.lean",
    "imports":
@@ -1233,13 +1237,20 @@
     "IxCCTests.Grounding.Zeta",
     "IxCCTests.Grounding.GradedHead",
     "IxCCTests.Grounding.CaseEmpty",
-    "IxCCTests.Grounding.LetClo"]},
+    "IxCCTests.Grounding.LetClo",
+    "IxCCTests.Grounding.LetWit"]},
+  "IxCCTests.Grounding.LetWit":
+  {"path": "IxCCTests/Grounding/LetWit.lean",
+   "imports": ["IxCCTests.Grounding.LetClo"]},
   "IxCCTests.Grounding.LetClo":
   {"path": "IxCCTests/Grounding/LetClo.lean",
    "imports": ["IxCCTests.Grounding.CaseEmpty", "IxCCTests.Grounding.Zeta"]},
   "IxCCTests.Grounding.GradedHead":
   {"path": "IxCCTests/Grounding/GradedHead.lean",
-   "imports": ["IxCCTests.Grounding.NoCanon", "IxCCGrounding.SelRetype"]},
+   "imports":
+   ["IxCCTests.Grounding.NoCanon",
+    "IxCCTests.Grounding.Zeta",
+    "IxCCGrounding.SelRetype"]},
   "IxCCTests.Grounding.CaseEmpty":
   {"path": "IxCCTests/Grounding/CaseEmpty.lean",
    "imports": ["IxCCTests.Grounding.GradedHead"]},
@@ -7626,7 +7637,8 @@
     "IxCC.Cfg.Print",
     "IxCC.Lir.Print",
     "IxCC.Xv.Print",
-    "IxCC.Exe"]},
+    "IxCC.Exe",
+    "IxCK.Host.Limits"]},
   "IxCC.Cfg.WellFormed":
   {"path": "IxCC/Cfg/WellFormed.lean", "imports": ["IxCC.Cfg.Syntax"]},
   "IxCC.Cfg.Syntax":

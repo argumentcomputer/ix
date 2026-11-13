@@ -6,6 +6,7 @@ import IxCC.Cfg.Print
 import IxCC.Lir.Print
 import IxCC.Xv.Print
 import IxCC.Exe
+import IxCK.Host.Limits
 
 /-! # The `ixcc` command line
 
@@ -86,7 +87,16 @@ kernel's stage and classification (an ill-typed record and any axiom but the
 three standard ones, `sorryAx` among them, are declined).
 
 A decline or rejection prints `ixcc: stage: code: message` on
-standard error and exits 1; a usage error exits 2. -/
+standard error and exits 1; a usage error exits 2. The kernel's acceptance runs under the
+kernel's limits, IxCC's decoder caps (`Src.KernelFront.defaultLimits`) unless a flag
+(`--max-records`, `--max-blobs`, `--max-total-bytes`, `--max-record-bytes`,
+`--max-record-univ-nodes`, `--max-depth`, `--workers`) or its variable (`IX_KERNEL_MAX_DEPTH`
+and so on; the flag wins) sets one (`Ix.Kernel.Host.resolve`): a malformed value is a usage
+error, the settings not at their defaults are printed first, and a decline by one exits 6,
+naming it, its value and source and how to raise it. A limit only turns an acceptance into a
+decline: an object and certificate made under raised limits are the ones the defaults would
+give, and a verifier under lower ones declines (exit 6), it does not reject. IxCC's own limits
+(its decoder's caps, its consumer budget) are not settings yet. -/
 
 namespace IxCC.Cli
 
@@ -129,6 +139,8 @@ structure Options where
   layoutGiven : Bool := false
   /-- `--machine`: the executable runs a numeric state machine (`Exe.buildMachine`). -/
   machine : Bool := false
+  /-- The kernel-limit flags as given, in order (`settingsOf`). -/
+  kernel : List (Ix.Kernel.Host.Setting × String) := []
   deriving Inhabited
 
 def usage : String :=
@@ -139,7 +151,11 @@ def usage : String :=
     "      [--exe FILE [--machine] [--stack BYTES] [--region BYTES]]",
     "  ixcc check-cert CLOSURE.ixe --equations EQ.json [--root NAME]... --cert FILE",
     "      [-o OUT.o] [--signatures FILE] [--stats]",
-    "dump levels: lam anf fir cfg lir xv xl all"]
+    "dump levels: lam anf fir cfg lir xv xl all",
+    "kernel limits (compile, check-cert): --max-records N --max-blobs N --max-total-bytes N",
+    "      --max-record-bytes N --max-record-univ-nodes N --max-depth N --workers N",
+    "      (else IX_KERNEL_MAX_RECORDS, ..., IX_KERNEL_WORKERS); a decline by one exits 6",
+    "IXCC_REEXEC=0: do not re-run on a larger stack (the caller sets LEAN_STACK_SIZE_KB)"]
 
 def dumpLevels : List String := ["lam", "anf", "fir", "cfg", "lir", "xv", "xl"]
 
@@ -160,6 +176,14 @@ def parseRest (o : Options) : List String → Except String Options
     else if dumpLevels.contains l then parseRest { o with dumps := o.dumps ++ [l] } rest
     else throw s!"unknown IR level {l}"
   | "--stats" :: rest => parseRest { o with stats := true } rest
+  | "--max-records" :: v :: rest => parseRest { o with kernel := o.kernel ++ [(.maxRecords, v)] } rest
+  | "--max-blobs" :: v :: rest => parseRest { o with kernel := o.kernel ++ [(.maxBlobs, v)] } rest
+  | "--max-total-bytes" :: v :: rest => parseRest { o with kernel := o.kernel ++ [(.maxTotalBytes, v)] } rest
+  | "--max-record-bytes" :: v :: rest => parseRest { o with kernel := o.kernel ++ [(.maxRecordBytes, v)] } rest
+  | "--max-record-univ-nodes" :: v :: rest =>
+    parseRest { o with kernel := o.kernel ++ [(.maxRecordUnivNodes, v)] } rest
+  | "--max-depth" :: v :: rest => parseRest { o with kernel := o.kernel ++ [(.maxDepth, v)] } rest
+  | "--workers" :: v :: rest => parseRest { o with kernel := o.kernel ++ [(.workers, v)] } rest
   | "--exe" :: f :: rest => parseRest { o with exe := some f } rest
   | "--machine" :: rest => parseRest { o with machine := true } rest
   | "--stack" :: n :: rest =>
@@ -361,10 +385,11 @@ def timed {α : Type} (action : ExceptT Err IO α) : ExceptT Err IO (α × Nat) 
 /-- A pure stage, evaluated when the action runs (so `timed` measures it). -/
 def lift {α : Type} (x : Unit → Except Err α) : ExceptT Err IO α := ExceptT.mk (IO.lazyPure x)
 
-/-- `compile` and `check-cert`. -/
-def execute (o : Options) : ExceptT Err IO Unit := do
+/-- `compile` and `check-cert`, the kernel under `limits`. -/
+def execute (o : Options) (limits : Ix.Kernel.Admission.Limits := Src.KernelFront.defaultLimits) :
+    ExceptT Err IO Unit := do
   let ((bytes, json), tRead) ← timed (readInputs o)
-  let (inp, tIngress) ← timed (lift fun _ => ingress bytes json o.roots)
+  let (inp, tIngress) ← timed (lift fun _ => ingress bytes json o.roots limits)
   let cfg := Config.forInput {} inp
   -- a root whose caller would pass a closure has no meaningful caller: refused
   -- before anything is produced (every producer refuses it too, `produceClosures`)
@@ -437,7 +462,20 @@ def execute (o : Options) : ExceptT Err IO Unit := do
     for l in statsLines a outcomes do IO.println l
     for d in hints do IO.println s!"hint: {d.message}"
 
-/-- The command line; the exit code. -/
+/-- The kernel's limits: the flags (the last of each), else the `IX_KERNEL_*` variables, else
+IxCC's decoder caps (`Src.KernelFront.defaultLimits`, depth 16,384). -/
+def settingsOf (o : Options) : IO (Except String Ix.Kernel.Host.Resolved) :=
+  Ix.Kernel.Host.resolveIO Src.KernelFront.defaultLimits fun s => (o.kernel.reverse.find? (·.1 == s)).map (·.2)
+
+/-- The limit an error is a decline by (`Recheck.kernelLimitCode`). -/
+def limitOfCode (code : String) : Option Ix.Kernel.Admission.Resource :=
+  [Ix.Kernel.Admission.Resource.records, Ix.Kernel.Admission.Resource.blobs,
+    Ix.Kernel.Admission.Resource.totalBytes, Ix.Kernel.Admission.Resource.recordBytes,
+    Ix.Kernel.Admission.Resource.recordUnivNodes, Ix.Kernel.Admission.Resource.depth].find?
+    (kernelLimitCode · == code)
+
+/-- The command line; the exit code: 0, 1 a decline or rejection, 2 a usage error, 6 a decline
+by a kernel limit (with one more line naming the setting). -/
 def main (args : List String) : IO UInt32 := do
   if args == ["--help"] || args == ["-h"] || args.isEmpty then
     IO.println usage
@@ -447,10 +485,18 @@ def main (args : List String) : IO UInt32 := do
     IO.eprintln s!"ixcc: {e}\n{usage}"
     return 2
   | .ok o =>
-    match ← (execute o).run with
+    let settings ← match ← settingsOf o with
+      | .ok s => pure s
+      | .error e => IO.eprintln s!"ixcc: {e}\n{usage}"; return 2
+    if let some h := Ix.Kernel.Host.header settings then IO.eprintln s!"ixcc: {h}"
+    match ← (execute o settings.limits).run with
     | .ok () => return 0
     | .error e =>
       IO.eprintln s!"ixcc: {e.render}"
-      return 1
+      match limitOfCode e.code with
+      | some r =>
+        IO.eprintln s!"ixcc: {Ix.Kernel.Host.declineMessage settings r}"
+        return Ix.Kernel.Host.exitDeclined
+      | none => return 1
 
 end IxCC.Cli
