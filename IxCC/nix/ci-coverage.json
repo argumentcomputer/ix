@@ -1797,7 +1797,8 @@
  "grounding_axiom_sha256":
  "06aeb842207c1f9d7f830573c8e59a912edd572745425080f8bcb9661a217439",
  "grounding_axiom_count": 312,
- "baseline": "P1 definitions repaired; finProof count, appliedAt",
+ "baseline":
+ "the shrink walk bounds literal folding (Anf.Walk.foldable): WalkProof.fold_some; tests-anf part IxCCTests.Anf.FoldGuard; tests-exe part IxCCTests.Exe.FoldGuard over fixtures/fold",
  "axiom_sha256":
- "0e978268e7d9fcfda0054296b83b784f846cd9df2c407b967a1a2a60053804f7",
- "axiom_count": 6725}
+ "dcf926f40c5856604b85350ef7af94e1a292d3bd9984a94408b73e6358fdeaa9",
+ "axiom_count": 6726}
