@@ -23,6 +23,37 @@ I and K) was a per-tree shim written by `dt.sh sync`. Here it is fixed to this t
 On the box (`~/runs/ixcc`), jobs go through `run.sh NAME on.sh fix-n . …`, under the shared
 `heavy.lock`, capped at 8 GB per process.
 
+## Where this branch differs from note 12
+
+The IxVM side's twelfth note (`IXCC-NOTE-12.md`, 2026-11-13, §2) agreed to our rulings and named
+some repairs in its own terms. Four places where this branch does something else, with the reason:
+
+- **`.clo` is not admitted beside `.pap` in `ClosureAt`** (note 12 §2 item 7, A.8). An input at an
+  arrow skeleton is still a partial application of a program constant, whose body the checker has
+  analysed (`checkBodies` reads the whole closure since repair M). An input closure (`.clo`)
+  carries a body and an environment that no check covers: `ModeSafe` would then quantify over run
+  terms the checker never saw, and its conclusion would need a typing and mode invariant for them
+  that nothing states. Admitting more inputs is a widening of the statement, for later (with the
+  fresh-extern extension in `REPAIRS.md`, "Statement widenings, not built").
+- **Wrapper taint is done by repair P, not by their `r7`** (note 12 §2 item 2). P keeps the
+  container's regions at every `@shared` field, in a projection (`anProj`) and in a match
+  (`caseField`), so nothing is assumed about what a `@shared` field holds, whether the "cell" is a
+  real cell or a trivial wrapper that is the field itself. With repair J (an ill-typed field is a
+  stuck run) and repair L (the oracle declines at its depth limit instead of answering `val`),
+  that covers finding 4 and finding 15 without `r7`'s wrapper condition.
+- **A.7(b) is unnecessary because of P** (note 12 §2 item 6: the `@shared` fields of a fresh cell
+  an extern returns have empty taint). Since P the checker never takes a `@shared` field to be
+  unconfined, and a call's result carries every argument's regions, so `ExternOk` needs no clause
+  about `@shared` slots. Finding 5 (the extern `mkS`) has been refused since P.
+- **L1, the owner's provisional ruling of 2026-11-13: a number is never confined** (commits W1 to
+  W6). It changes `Eval.bindAt`: a borrowed binder no longer adds its region to a number. And it
+  brings back, in a stronger form, the no-leaf refinement that note 12 §2 item 1 agreed to drop
+  (`leafRegs := regs`): under L1 a call's result of class `leaf` carries no region at all (W3),
+  and a class-`leaf` binding carries none (W2). Repair O, repair F and the leaf half of repair U go
+  (W4 to W6). `Param.noLeaf` stays, unread. The cost: a borrow annotation on a number is not
+  enforced on its own binder. `Statement.lean` does not change, since `ArgOk` and `ExternVal`
+  already require a leaf's taint to be empty.
+
 ## Results of record
 
 All runs use seeds 1 to 8 × 100,000 programs (800,000). Case `i` of seed `s` is drawn from
