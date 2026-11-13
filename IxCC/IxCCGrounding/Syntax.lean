@@ -181,6 +181,8 @@ theorem idσ_zero : idσ 0 = [] := rfl
 
 theorem liftσ_idσ (n : Nat) : liftσ (idσ n) = idσ (n + 1) := by
   simp only [liftσ, idσ, List.range_succ_eq_map, List.map_cons, List.map_map]
+  refine congrArg _ (List.map_congr_left fun i _ => ?_)
+  simp [Expr.liftLooseBVars]
 
 theorem idσ_get {n i : Nat} (h : i < n) : (idσ n)[i]? = some (some (.bvar i)) := by
   simp [idσ, h]
