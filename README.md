@@ -257,9 +257,10 @@ definition to `--equations-out` (JSON, `ix/compile-equations/2`;
 `Ix/Compile/Equations.lean`); `--no-equations` turns this off. A
 whole-environment compile does it only with `--equations`, because its cost on a
 whole environment is not measured yet. With the equations it also adds the
-stored equation of every fixed-width word operation the compile's roots reach
-outside theorems (a dependency walk that enters no theorem;
-`Ix/Compile/WordEquations.lean`; `--no-word-equations` turns this off) and names
+stored equation of every fixed-width word operation the compile's roots reach (a
+dependency walk over the values of definitions and opaques and the rules of recursors that enters
+no declaration type, no theorem and no word operation; `Ix/Compile/WordEquations.lean`;
+`--no-word-equations` turns this off) and names
 each, with its operation, in the output's `theorems` list (kind `word`). It
 serves consumers
 such as IxCC's corpus fixtures ([IxCC/docs/corpus.md](IxCC/docs/corpus.md)),

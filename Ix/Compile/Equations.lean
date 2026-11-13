@@ -11,7 +11,7 @@
   definitions its statement mentions) join the selected closure.
 
   It also adds (unless `--no-word-equations`), as seeds, the stored equations of the fixed-width
-  word operations the closure reaches outside theorems (`Ix.Compile.WordEquations`), which a consumer
+  word operations the roots reach outside types and theorems (`Ix.Compile.WordEquations`), which a consumer
   that evaluates them as primitives takes their meaning from, and names each in
   the output's `theorems` list with its operation (`theorems`, `toJson`): nothing
   in a program refers to such a theorem, so a consumer that reads only what a
@@ -67,8 +67,10 @@ recursive definition it reaches, until no new theorem appears. The theorems'
 own dependencies join the closure, and the recursive definitions among them
 are processed in turn. With `words` (`ix compile`'s default with equations), every
 fixed-width word operation reached from `roots` outside theorems
-(`WordEquations.reachedOutsideTheorems`: a dependency walk that enters no theorem, so an
-operation reached only through a proof, as an `omega` termination proof reaches some, adds none)
+(`WordEquations.reachedOutsideTheorems`: a dependency walk over the values of definitions and
+opaques and the rules of recursors that enters no declaration type, no theorem and no word
+operation, so an operation reached only through a proof, as an `omega` termination proof reaches
+some, or only through a type, adds none)
 adds its stored equation and the bridges it mentions (`WordEquations.neededFor`) as seeds.
 `roots` are what the compile selected (`seeds` by default).
 Returns the environment with the realized theorems, the closed constant list,

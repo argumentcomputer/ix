@@ -601,17 +601,30 @@ The input towers' range needs no fact: F6w reads only towers below the size. Whe
 proved, `noWord` gives way to a check that every word entry's facts hold.
 
 **Which word operations get equations.** `ix compile` adds the equation of every word operation
-the compile's roots reach *outside theorems*, with the bridges its statement mentions
-(`Ix.Compile.WordEquations.reachedOutsideTheorems`, `neededFor`): a dependency walk from what the
-compile selected that enters no theorem and no word operation. A closure reaches word operations
-through proofs alone (an `omega` termination proof reaches some, through `Lean`'s auxiliary proof
-theorems), and those get none, so such a closure is unchanged. The walk is not IxCC's relevance
-analysis: it is a superset of what IxCC runs in most cases (an operation in a type or an
-irrelevant argument gets an equation too many, harmless), and it can miss an operation IxCC runs
-(one reached only through a theorem, as a `csimp` redirect's target is), in which case the hint
-names it. Measured on the registered families: recompiled with these defaults, no closure moves
-(`regenerate.sh --check`). Open: the cost of the equations on a whole environment (Init+Std) is not
-measured; measure it and decide whether the default should cover a whole-environment compile.
+the compile's roots reach by a dependency walk that follows the values of definitions and opaques
+and the rules of recursors, and enters no declaration type, no theorem and no word operation, with
+the bridges each statement mentions (`Ix.Compile.WordEquations.reachedOutsideTheorems`,
+`neededFor`). Types are excluded because a type never runs and following them reaches far: through
+`autoParam`'s type, which mentions `Lean.Syntax`, every `for` loop would reach `String` and `Char`
+and with them `UInt32` and `UInt8` operations. Theorems are excluded because a proof never runs: a
+closure reaches word operations through proofs alone (an `omega` termination proof reaches some,
+through Lean's auxiliary proof theorems), and those get none. The walk is not IxCC's relevance
+analysis: it is a superset of what IxCC runs in most cases (an operation in a binder's type or an
+irrelevant argument of a value gets an equation too many, harmless), and it can miss an operation
+IxCC runs (one reached only through a theorem, as a `csimp` redirect's target is), in which case
+the hint names it.
+
+Measured on the registered families (`regenerate.sh` with these defaults): two closures moved, and
+were refrozen, `phase1-decline`'s `panic` and `strings`. Their string code runs, so they gain the
+word equations of the `Char` and UTF-8 operations it reaches (`panic`: `UInt32.ofNat`,
+`UInt32.toNat`, `UInt8.ofNat`; `strings`: `UInt32.lor`, `UInt32.ofNat`, `UInt32.shiftLeft`,
+`UInt8.land`, `UInt8.ofNat`, `UInt8.toUInt32`). IxCC's verdict and full error output on both roots
+are unchanged under `--rc off`, `on` and `auto`: both are refused at admission for a string literal
+in a relevant position. The roots-only fixtures (`kernel-hints`, `src-diag`, `src-sortpoly`) compile
+with `--no-equations`, which their provenance records; their closures are unchanged. Open: when
+string literals are admitted, these two closures run word primitives and become the first
+registered roots that do; and the cost of the equations on a whole environment (Init+Std) is not
+measured: measure it and decide whether the default should cover a whole-environment compile.
 
 SrcEval needs one rule for raw words to be sound: a bounded construction
 whose erased proof is false (for example `UInt64.ofNatLT n h` with

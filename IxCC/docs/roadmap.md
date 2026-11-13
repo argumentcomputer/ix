@@ -306,9 +306,11 @@ hosted-CI or cold-store timing is claimed.
   the word equations (`--no-equations`, `--no-word-equations`, a whole environment
   without `--equations`) they run their reference bodies, as before W1 (`UInt8` to `UInt32` work,
   every `UInt64` operation fails natively with `natOverflow`, since its body computes
-  modulo the `Nat` 2^64), and `ixcc compile` prints a `hint:` line saying so (open:
+  modulo the `Nat` 2^64), and `ixcc compile` prints a `hint:` line saying so. Open:
   measure the equations' cost on Init+Std and decide whether the default should cover a
-  whole-environment compile). A
+  whole-environment compile; and when string literals are admitted, `phase1-decline`'s
+  `panic` and `strings` (whose closures carry word equations for their `Char` and UTF-8
+  operations) become the first registered roots that run word primitives. A
   program with a word entry is outside the grounded fragment (`noWord`) until the
   grounding's word case is proved. Two limits stay after W1, by design:
   a `UInt64` is native only below 2^63 (a word is a tagged immediate, so a width-64
