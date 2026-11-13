@@ -95,7 +95,7 @@ theorem enum_arg {Ok' : CId → Levels → Prop} (hF : Faith p env κ lpsOf (· 
     (hE : EnumStored p env κ (· ∈ Sl) D) {safe : Bool} {cs : List CId} {ty : Term}
     (hd : p.decl? D = some (.induct safe 0 0 0 ty cs)) (hc : cs[i]? = some c)
     (φ : LevelParam → Nat) :
-    RelV M κ lpsOf (· ∈ Sl) Ok' (.con c [] [] []) (M.cval (κ c) φ) ∧
+    RelV M p κ lpsOf (· ∈ Sl) Ok' (.con c [] [] []) (M.cval (κ c) φ) ∧
       (∀ ρ X, Denotes M.cval env φ ρ (.const (κ c) []) X ↔ X = M.cval (κ c) φ) ∧
       (∀ ρ X, Denotes M.cval env φ ρ (.const (κ D) []) X → M.cval (κ c) φ ∈ˢ X) := by
   obtain ⟨safe', ty', cs', hd', ⟨ciD, hfD, hlD⟩, hcs, _⟩ := hE
@@ -110,7 +110,7 @@ theorem enum_arg {Ok' : CId → Levels → Prop} (hF : Faith p env κ lpsOf (· 
   have hlv : LvAt φ (lpsOf c) [] := by
     rw [← hlps]; simp only [ConstantInfo.toConstantVal, hlc]; intro i q h; simp at h
   refine ⟨?_, fun ρ X => den_const0 hfc hlc, fun ρ X hX => ?_⟩
-  · have := RelV.con (M := M) (κ := κ) (lpsOf := lpsOf) (S := (· ∈ Sl)) (Ok := Ok')
+  · have := RelV.con (M := M) (p := p) (κ := κ) (lpsOf := lpsOf) (S := (· ∈ Sl)) (Ok := Ok')
       (c := c) (ls := []) (ps := []) (fs := []) (φ := φ) (Ps := []) (Fs := []) (ρ := fun _ => empty)
       hS hlv hfc rfl rfl .nil .nil .nil
       (.inl (by rw [← hlps]; simpa [ConstantInfo.toConstantVal] using hlc))
@@ -163,7 +163,7 @@ theorem rootSound_core (hL : LawsCore M) {p : Program} {κ : CId → KKey}
   have hargs : ∀ {ts : List FoTy} {xs : List Value} {es : List KExpr} {Es : List V},
       (∀ D, FoTy.enum D ∈ ts → FoTy.enum D ∈ args) → FoArgs p κ ts xs es →
       DenotesList M.cval env φ ρ es Es →
-      RelSlots M κ lpsOf (· ∈ Sl) Ok' (xs.map .val) Es ∧
+      RelSlots M p κ lpsOf (· ∈ Sl) Ok' (xs.map .val) Es ∧
         ∀ (E : BVarIdx → V), Fits M.cval env φ E
           (piTele (ts.map fun t => (t.kexpr κ, { pw := PropWhen.never })) (res.kexpr κ)) Es
           (pushAll Es E) (res.kexpr κ) := by
@@ -174,7 +174,7 @@ theorem rootSound_core (hL : LawsCore M) {p : Program} {κ : CId → KKey}
       cases hEs with
       | @cons _ _ Y Ys hY hYs =>
       obtain ⟨ih1, ih2⟩ := ih (fun D h => hsub D (List.mem_cons_of_mem _ h)) hYs
-      have hYrel : RelV M κ lpsOf (· ∈ Sl) Ok' x Y ∧
+      have hYrel : RelV M p κ lpsOf (· ∈ Sl) Ok' x Y ∧
           ∀ ρ' Z, Denotes M.cval env φ ρ' (t.kexpr κ) Z → Y ∈ˢ Z := by
         cases hv with
         | nat n =>

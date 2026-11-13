@@ -683,7 +683,7 @@ example (hL : LawsNoCanon M) {p : Program} {κ : CId → KKey} {lpsOf : CId → 
     {k : Nat} {ls : Levels} {c : CId} {v : Value} {φ : LevelParam → Nat}
     (hrun : IxCC.Src.evalConst p k ls c = .ok v) (hc : c ∈ Sl) (hOk : Ok p ann c ls)
     (hlv : LvAt φ (lpsOf c) ls) :
-    RelV M κ lpsOf (· ∈ Sl) (Ok p ann) v (M.cval (κ c) φ) :=
+    RelV M p κ lpsOf (· ∈ Sl) (Ok p ann) v (M.cval (κ c) φ) :=
   const_of_check_noCanon hL hchk hnc hT hrun hc hOk hlv
 
 example (hL : LawsNoCanon M) {p : Program} {κ : CId → KKey} {lpsOf : CId → List Nat}
@@ -756,7 +756,7 @@ example (hL : Laws678 M) {p : Program} {κ : CId → KKey} {lpsOf : CId → List
     {k : Nat} {ls : Levels} {c : CId} {v : Value} {φ : LevelParam → Nat}
     (hrun : IxCC.Src.evalConst p k ls c = .ok v) (hc : c ∈ Sl) (hOk : Ok p ann c ls)
     (hlv : LvAt φ (lpsOf c) ls) :
-    RelV M κ lpsOf (· ∈ Sl) (Ok p ann) v (M.cval (κ c) φ) :=
+    RelV M p κ lpsOf (· ∈ Sl) (Ok p ann) v (M.cval (κ c) φ) :=
   const_of_check_678 hL hchk hnc hld hT hrun hc hOk hlv
 
 example (hL : Laws678 M) {p : Program} {κ : CId → KKey} {lpsOf : CId → List Nat}
