@@ -260,9 +260,9 @@ it. Invariants by provenance (`Live`, `LiveSlot`, `EnvOk` with a slot shielded w
 a dropped field to the minor that ignores it, `Whole`, `MinorsIgnore`), each call's precondition
 and result (`Pre`, `Post`) and what it reads (`Reads`); `Front.GoesWrongLive` is `Recheck.sound`'s
 escape with a `Live` result. These are the definitions of a theorem not yet proved: no theorem
-rests on them but `live_not_irr` (a marker is never `Live`), and P1's statements (`preserve`,
-`pre_step`, `reads_live`, `run_live`, and the narrowing `Front.goesWrong_live`, `sound_live`)
-join the library only as they are proved.
+rests on them but `live_not_irr` (a marker is never `Live`) and the two parts below, and P1's
+statements (`preserve`, `pre_step`, `reads_live`, `run_live`, and the narrowing
+`Front.goesWrong_live`, `sound_live`) join the library only as they are proved.
 
 Reading the statements against SrcEval case by case before the proof (engineer PA) found them false
 in five places, all where a call whose precondition holds starts from values no run makes: P1
@@ -277,6 +277,21 @@ reached instance of a `case` key its minors, and of `Quot.lift` its function, ar
 (`Check.Canonical.appliedAt`, `Canonical.minorsRead`: F5 and F8 force those and apply them, and a
 marker there, irrelevant by its sort, was returned or applied). No committed closure is refused by
 either check ([ci](ci.md)).
+
+**Two parts of P1's proof are in the library (2026-11-13).** On P1's definitions,
+[`Src/Relevance/Proof/P1/Prefix.lean`](../IxCC/Src/Relevance/Proof/P1/Prefix.lean) proves the two cases
+in which E7 passes the marker to the value of a spine's prefix and P1's core must know that value
+ignores it: `eval_shielded_prefix` (a spine headed by a variable whose slot ignores the next
+argument, the field written erased a rule body passes to the minor it dispatches, evaluates to a
+value that ignores it and is no partial application) and `eval_erased_prefix` (under `Facts` and
+`Frame`, at a position written erased: through δ at a constant head, by the run body's header, a
+special head's partial application below its arity, or a constructor value applying is stuck on;
+through β at a λ head, by C0). [`Recheck/Proof/FrontAccepted.lean`](../IxCC/Recheck/Proof/FrontAccepted.lean)
+proves what `Recheck.run`'s acceptance gives the narrowing of its escape: `front_accepted` (both
+relevance checks accepted the installed program, and SrcEval runs that program's Lazify image) and
+`shapeOk_of_run` (one constructor per inductive and index, from erasure's success on the program
+SrcEval runs). Not proved: P1's core (`preserve`, `pre_step`, `reads_live`, `run_live`), L1's facts
+on the Lazify image (`facts_modeEq`) and the narrowing (`Front.goesWrong_live`, `sound_live`).
 
 ## Target statements
 

@@ -1214,6 +1214,13 @@ position at or past a special head's arity, and L1 gains `erased_lt_arity`
 (engineer PB; the other special heads, harmless or refused before, are asserted
 in `tests-recheck`'s `ErasedArity`).
 
+**P1's prefix lemmas and the front end's facts are proved (2026-11-13).**
+`eval_shielded_prefix` and `eval_erased_prefix` (`Src/Relevance/Proof/P1/Prefix.lean`: the value of a
+spine's prefix ignores an argument that is shielded or at a position written erased) and
+`front_accepted`, `shapeOk_of_run` (`Recheck/Proof/FrontAccepted.lean`), engineer PB's proofs on
+P1's definitions. P1's core, L1's facts on the Lazify image (`facts_modeEq`) and the narrowing of
+`Recheck.sound`'s escape are next.
+
 **Open capability item: no program with a constructor field written erased can
 be produced (since at least 2026-11-13).** The kernel annotator's constructor
 record keeps a field its type writes erased (`CtorRel` `keep`) while its

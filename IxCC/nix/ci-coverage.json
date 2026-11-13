@@ -607,6 +607,7 @@
   "IxCC.Recheck.Proof.Back",
   "IxCC.Recheck.Proof.Compile",
   "IxCC.Recheck.Proof.Front",
+  "IxCC.Recheck.Proof.FrontAccepted",
   "IxCC.Recheck.Proof.LiveDefs",
   "IxCC.Recheck.Proof.Middle",
   "IxCC.Recheck.Proof.Object",
@@ -964,6 +965,7 @@
   "IxCC.Src.Relevance.Check",
   "IxCC.Src.Relevance.Proof.Canonical",
   "IxCC.Src.Relevance.Proof.P1.Defs",
+  "IxCC.Src.Relevance.Proof.P1.Prefix",
   "IxCC.Src.Relevance.Proof.Sound",
   "IxCC.Src.Relevance.Proof.Terms",
   "IxCC.Src.Relevance.Syntax",
@@ -1272,6 +1274,7 @@
   "IxCCTests.Fences.OwnPlain",
   "IxCCTests.Fences.OwnProof",
   "IxCCTests.Fences.OwnRc",
+  "IxCCTests.Fences.P1",
   "IxCCTests.Fences.RcPolicy",
   "IxCCTests.Fences.RcPromotion",
   "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Bounds",
@@ -1797,7 +1800,7 @@
  "grounding_axiom_sha256":
  "06aeb842207c1f9d7f830573c8e59a912edd572745425080f8bcb9661a217439",
  "grounding_axiom_count": 312,
- "baseline": "P1 definitions repaired; finProof count, appliedAt",
+ "baseline": "P1 prefix lemmas and front facts as modules",
  "axiom_sha256":
- "0e978268e7d9fcfda0054296b83b784f846cd9df2c407b967a1a2a60053804f7",
- "axiom_count": 6725}
+ "16512b727c0b663af4e900d8f85cb5c4813a4e4985ccdb0db658947b1c0482b7",
+ "axiom_count": 6743}

@@ -3444,6 +3444,10 @@
   "IxCCTests.Fences.RcPolicy":
   {"path": "IxCCTests/Fences/RcPolicy.lean",
    "imports": ["IxCC.Recheck.Rc.Proof.KeyIndex"]},
+  "IxCCTests.Fences.P1":
+  {"path": "IxCCTests/Fences/P1.lean",
+   "imports":
+   ["IxCC.Src.Relevance.Proof.P1.Prefix", "IxCC.Recheck.Proof.FrontAccepted"]},
   "IxCCTests.Fences.OwnRc":
   {"path": "IxCCTests/Fences/OwnRc.lean",
    "imports":
@@ -3756,6 +3760,7 @@
     "IxCCTests.Fences.OwnProof",
     "IxCCTests.Fences.CfgLower",
     "IxCCTests.Fences.Front",
+    "IxCCTests.Fences.P1",
     "IxCCTests.Fences.LayoutProof",
     "IxCCTests.Fences.SelectProof",
     "IxCCTests.Fences.BackendProof",
@@ -5177,6 +5182,12 @@
   "IxCC.Src.Relevance.Proof.Sound":
   {"path": "IxCC/Src/Relevance/Proof/Sound.lean",
    "imports": ["IxCC.Src.Relevance.Proof.Terms", "IxCC.Src.Proof.NatMap"]},
+  "IxCC.Src.Relevance.Proof.P1.Prefix":
+  {"path": "IxCC/Src/Relevance/Proof/P1/Prefix.lean",
+   "imports":
+   ["IxCC.Src.Relevance.Proof.P1.Defs",
+    "IxCC.Src.Proof.Spine",
+    "IxCC.Src.Proof.Lazify"]},
   "IxCC.Src.Relevance.Proof.P1.Defs":
   {"path": "IxCC/Src/Relevance/Proof/P1/Defs.lean",
    "imports":
@@ -6702,6 +6713,13 @@
   "IxCC.Recheck.Proof.LiveDefs":
   {"path": "IxCC/Recheck/Proof/LiveDefs.lean",
    "imports": ["IxCC.Src.Relevance.Proof.P1.Defs", "IxCC.Recheck.Proof.Sound"]},
+  "IxCC.Recheck.Proof.FrontAccepted":
+  {"path": "IxCC/Recheck/Proof/FrontAccepted.lean",
+   "imports":
+   ["IxCC.Src.Relevance.Proof.P1.Defs",
+    "IxCC.Recheck.Proof.Parts",
+    "IxCC.Recheck.Proof.Front",
+    "IxCC.Lam.Erase.Proof.ProgWF"]},
   "IxCC.Recheck.Proof.Front":
   {"path": "IxCC/Recheck/Proof/Front.lean",
    "imports":
