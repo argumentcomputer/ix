@@ -98,11 +98,18 @@ theorem evalSites_congr {n : Nat} {ls ls' : Levels} (hag : ∀ i < n, ls.getD i 
     cases e with
     | proj s' i' e' => simp only [evalSites, evalSites_congr hag t Γ e' h]
     | _ => first | rfl | simp [evalSites]
+  | .letE _ r _ v b, Γ, e, h => by
+    simp only [relsBelow, Bool.and_eq_true, List.all_eq_true, decide_eq_true_eq] at h
+    obtain ⟨⟨⟨hr, _⟩, hv⟩, hb⟩ := h
+    have hirr : r.irrAt ls = r.irrAt ls' := holds_below hag hr
+    simp only [evalSites, hirr, evalSites_congr hag b Γ e hb]
+    cases zcopy b e with
+    | none => rfl
+    | some v' => simp only [evalSites_congr hag v Γ v' hv]
   | .var _, _, _, _ => rfl
   | .sort _, _, _, _ => rfl
   | .const _ _, _, _, _ => rfl
   | .pi .., _, _, _ => rfl
-  | .letE .., _, _, _ => rfl
   | .natLit _, _, _, _ => rfl
   | .strLit _, _, _, _ => rfl
 
@@ -127,10 +134,17 @@ theorem evalConsts_mentions (ls : Levels) :
   | .proj _ _ e, d, us, h => by
     simp only [evalConsts] at h
     simp [Term.mentions, evalConsts_mentions ls e h]
+  | .letE _ r _ v b, d, us, h => by
+    simp only [evalConsts, List.mem_append] at h
+    simp only [Term.mentions, Bool.or_eq_true]
+    rcases h with h | h
+    · split at h
+      · simp at h
+      · exact Or.inl (Or.inr (evalConsts_mentions ls v h))
+    · exact Or.inr (evalConsts_mentions ls b h)
   | .var _, _, _, h => by simp [evalConsts] at h
   | .sort _, _, _, h => by simp [evalConsts] at h
   | .pi .., _, _, h => by simp [evalConsts] at h
-  | .letE .., _, _, h => by simp [evalConsts] at h
   | .natLit _, _, _, h => by simp [evalConsts] at h
   | .strLit _, _, _, h => by simp [evalConsts] at h
 
@@ -218,42 +232,58 @@ theorem ruleSites_ok {M : Model V env} (hL : LawsCore M) (hN : NatBasis env) {lp
   exact termRefused_sound hL hN (KTab.get_of env) hφ t (recProfiles lps pw) [] e [] hP hD s
     (Or.inl hs) (by rw [href]; exact List.not_mem_nil)
 
-/-- **`Runs` through a λ-telescope**: the body runs in the context of the λs' domains. -/
+/-- **`Runs` through a λ-telescope**: the body runs in the context of the λs' domains, each
+λ-bound variable standing for its kernel variable (`idσ`). -/
 theorem runs_peel {M : Model V env} {κ : CId → KKey} {Ok : CId → Levels → Prop} {lps : List Nat}
     {ls : Levels} {φ : LevelParam → Nat} :
-    ∀ (bs : List (KExpr × BinderMeta)) {Γ : List KExpr} {t t' : Term} {b : KExpr},
-      Runs M κ Ok lps ls φ Γ t (lamTele bs b) → IxCC.Src.peelLams bs.length t = some t' →
-      Runs M κ Ok lps ls φ ((bs.map (·.1)).reverse ++ Γ) t' b
-  | [], Γ, t, t', b, h, hp => by
+    ∀ (bs : List (KExpr × BinderMeta)) {n : Nat} {Γ : List KExpr} {t t' : Term} {b : KExpr},
+      Runs M κ Ok lps ls φ (idσ n) Γ t (lamTele bs b) → IxCC.Src.peelLams bs.length t = some t' →
+      Runs M κ Ok lps ls φ (idσ (n + bs.length)) ((bs.map (·.1)).reverse ++ Γ) t' b
+  | [], n, Γ, t, t', b, h, hp => by
     simp only [List.length_nil, IxCC.Src.peelLams, Option.some.injEq] at hp
     subst hp
     simp only [List.map_nil, List.reverse_nil, List.nil_append]
     exact h
-  | (A, m) :: bs, Γ, t, t', b, h, hp => by
-    have h' : Runs M κ Ok lps ls φ Γ t (.lam A (lamTele bs b) m) := h
+  | (A, m) :: bs, n, Γ, t, t', b, h, hp => by
+    have h' : Runs M κ Ok lps ls φ (idσ n) Γ t (.lam A (lamTele bs b) m) := h
     cases h' with
     | lam _ hbody _ =>
+      rw [liftσ_idσ] at hbody
       have := runs_peel bs hbody (by simpa [IxCC.Src.peelLams] using hp)
+      rw [show n + ((A, m) :: bs).length = n + 1 + bs.length by simp; omega]
       simpa [List.map_cons, List.reverse_cons, List.append_assoc] using this
+    | _ => simp [IxCC.Src.peelLams] at hp
 
 /-! ## The environment and the context the body runs in -/
 
-/-- Slots related to sets give a related environment, the last slot innermost. -/
-theorem relEnv_pushAll {M : Model V env} {κ : CId → KKey} {lpsOf : CId → List Nat}
-    {S : CId → Prop} {Ok : CId → Levels → Prop} :
-    ∀ {ss : List Slot} {Xs : List V} {E : IxCC.Src.Env} {ρ : BVarIdx → V},
-      RelSlots M κ lpsOf S Ok ss Xs → RelEnv M κ lpsOf S Ok E ρ →
-        RelEnv M κ lpsOf S Ok (ss.reverse ++ E) (pushAll Xs ρ)
-  | [], _, _, _, h, hE => by
+/-- Slots related to sets, pushed onto an environment related under the identity substitution,
+give one related under the longer identity substitution, the last slot innermost. -/
+theorem relEnv_pushAll_gen {M : Model V env} {κ : CId → KKey} {lpsOf : CId → List Nat}
+    {S : CId → Prop} {Ok : CId → Levels → Prop} {φ : LevelParam → Nat} :
+    ∀ {ss : List Slot} {Xs : List V} {E : IxCC.Src.Env} {k : Nat} {ρ : BVarIdx → V},
+      RelSlots M κ lpsOf S Ok ss Xs → RelEnv M κ lpsOf S Ok φ E (idσ k) ρ →
+        RelEnv M κ lpsOf S Ok φ (ss.reverse ++ E) (idσ (k + ss.length)) (pushAll Xs ρ)
+  | [], _, _, _, _, h, hE => by
     cases h
     simpa [pushAll_nil] using hE
-  | s :: ss, _, E, ρ, h, hE => by
+  | s :: ss, _, E, k, ρ, h, hE => by
     cases h with
     | @cons _ _ X Xs hs h' =>
-      have hE' : RelEnv M κ lpsOf S Ok (s :: E) (push X ρ) :=
-        .cons hs (by rw [push_tail]; exact hE)
-      have := relEnv_pushAll (E := s :: E) (ρ := push X ρ) h' hE'
+      have hE' : RelEnv M κ lpsOf S Ok φ (s :: E) (idσ (k + 1)) (push X ρ) := by
+        rw [← liftσ_idσ]; exact relEnv_lift hs hE
+      have := relEnv_pushAll_gen (E := s :: E) (k := k + 1) (ρ := push X ρ) h' hE'
+      rw [show k + (s :: ss).length = k + 1 + ss.length by simp; omega]
       simpa [List.reverse_cons, List.append_assoc, pushAll_cons] using this
+
+/-- **Slots related to sets give a related environment** under the identity substitution, the last
+slot innermost (a rule body's environment, F2's ι). -/
+theorem relEnv_pushAll {M : Model V env} {κ : CId → KKey} {lpsOf : CId → List Nat}
+    {S : CId → Prop} {Ok : CId → Levels → Prop} {φ : LevelParam → Nat} {ss : List Slot}
+    {Xs : List V} {ρ : BVarIdx → V} (h : RelSlots M κ lpsOf S Ok ss Xs) :
+    RelEnv M κ lpsOf S Ok φ ss.reverse (idσ ss.length) (pushAll Xs ρ) := by
+  have := relEnv_pushAll_gen (φ := φ) (E := []) (k := 0) (ρ := ρ) h
+    (by rw [idσ_zero]; exact .nil)
+  simpa using this
 
 /-- Sets that fit a `∀`-telescope satisfy its domains as a context, the last innermost. -/
 theorem ctxSat_of_fits {M : Model V env} {φ : LevelParam → Nat} :

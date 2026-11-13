@@ -19,6 +19,79 @@ open IxCC.Src (Value Slot Term CId Program Levels)
 
 universe w
 
+/-- **A site `evalSites` lists at `ls` is among those `evalSitesP` lists at any `P` holding `ls`'s
+profile** (what the direct route refuses under a `let` covers every site evaluated there). -/
+theorem evalSites_mem_P (ls : Levels) :
+    ∀ (t : Term) (P : List IxCC.Src.Profile) (Γ : List KExpr) (e : KExpr),
+      IxCC.Src.profileOf ls ∈ P → ∀ s ∈ evalSites ls Γ t e, s ∈ evalSitesP P Γ t e := by
+  intro t
+  induction t with
+  | app f a mo r ihf iha =>
+    intro P Γ e hP s hs
+    cases e with
+    | app f' a' =>
+      simp only [evalSites, List.mem_cons, List.mem_append] at hs
+      simp only [evalSitesP, List.mem_cons, List.mem_append]
+      rcases hs with rfl | hs | hs
+      · exact Or.inl rfl
+      · exact Or.inr (Or.inl (ihf P Γ f' hP s hs))
+      · split at hs
+        · simp at hs
+        · rename_i hr
+          have hP' : IxCC.Src.profileOf ls ∈ P.filter (fun prof => !r.irrP prof) := by
+            rw [irrAt_profile] at hr
+            simp [hP, hr]
+          have hne : (P.filter (fun prof => !r.irrP prof)).isEmpty = false := by
+            cases hq : P.filter (fun prof => !r.irrP prof) with
+            | nil => rw [hq] at hP'; simp at hP'
+            | cons _ _ => rfl
+          simp only [hne, Bool.false_eq_true, ↓reduceIte]
+          exact Or.inr (Or.inr (iha _ Γ a' hP' s hs))
+    | _ => simp [evalSites] at hs
+  | lam bi d body _ ihb =>
+    intro P Γ e hP s hs
+    cases e with
+    | lam d' body' m =>
+      simp only [evalSites] at hs
+      simp only [evalSitesP]
+      exact ihb P (d' :: Γ) body' hP s hs
+    | _ => simp [evalSites] at hs
+  | proj sc i t iht =>
+    intro P Γ e hP s hs
+    cases e with
+    | proj sk j e' =>
+      simp only [evalSites] at hs
+      simp only [evalSitesP]
+      exact iht P Γ e' hP s hs
+    | _ => simp [evalSites] at hs
+  | letE c r ty v b _ ihv ihb =>
+    intro P Γ e hP s hs
+    simp only [evalSites, List.mem_append] at hs
+    simp only [evalSitesP, List.mem_append]
+    rcases hs with hs | hs
+    · left
+      cases hz : zcopy b e with
+      | none => simp [hz] at hs
+      | some v' =>
+        simp only [hz] at hs ⊢
+        cases hr : r.irrAt ls
+        · cases hsub : subAt0B v' e
+          · simp [hr, hsub] at hs
+          · simp only [hr, hsub, Bool.false_or, Bool.not_true, Bool.false_eq_true, ↓reduceIte]
+              at hs
+            have hP' : IxCC.Src.profileOf ls ∈ P.filter (fun prof => !r.irrP prof) := by
+              rw [irrAt_profile] at hr
+              simp [hP, hr]
+            have hne : (P.filter (fun prof => !r.irrP prof)).isEmpty = false := by
+              cases hq : P.filter (fun prof => !r.irrP prof) with
+              | nil => rw [hq] at hP'; simp at hP'
+              | cons _ _ => rfl
+            simp only [hne, Bool.false_or, Bool.not_true, Bool.false_eq_true, ↓reduceIte]
+            exact ihv _ Γ v' hP' s hs
+        · simp [hr] at hs
+    · exact Or.inr (ihb P Γ e hP s hs)
+  | _ => intro P Γ e _ s hs; cases e <;> simp [evalSites] at hs
+
 section Sem
 
 variable {V : Type w} [Ix.Kernel.SetTheory V] {env : KEnv} {M : Model V env}
@@ -169,6 +242,12 @@ theorem termRefused_sound (hL : LawsCore M) (hN : NatBasis env) {tab : KTab}
       rcases hs with hs | hs
       · simp [evalSites] at hs
       · exact spine P Γ _ acc hP hD s hs hn
+  | letE c r ty v b _ _ _ =>
+    intro P Γ e acc hP hD s hs hn
+    simp only [termRefused, List.mem_append, not_or] at hn
+    rcases hs with hs | hs
+    · exact absurd (evalSites_mem_P ls (.letE c r ty v b) P Γ e hP s hs) hn.2
+    · exact spine P Γ _ acc hP hD s hs hn.1
   | _ =>
     intro P Γ e acc hP hD s hs hn
     simp only [termRefused] at hn
@@ -203,6 +282,20 @@ theorem evalSites_sub_allSites (ls : Levels) :
     cases e with
     | proj _ _ e' => simp only [evalSites, allSites] at hs ⊢; exact iht _ _ s hs
     | _ => simp [evalSites] at hs
+  | letE c r ty v b _ ihv ihb =>
+    intro Γ e s hs
+    simp only [evalSites, List.mem_append] at hs
+    simp only [allSites, List.mem_append]
+    rcases hs with hs | hs
+    · left
+      cases hz : zcopy b e with
+      | none => simp [hz] at hs
+      | some v' =>
+        simp only [hz] at hs ⊢
+        split at hs
+        · simp at hs
+        · exact ihv Γ v' s hs
+    · exact Or.inr (ihb Γ e s hs)
   | _ => intro Γ e s hs; simp [evalSites] at hs
 
 /-- **A run pair is one the check enumerates**, on a closure the check passes. -/
