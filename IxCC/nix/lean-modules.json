@@ -3933,6 +3933,9 @@
     "IxCC.Anf.Readback",
     "IxCC.Anf.WellFormed",
     "IxCC.Anf.Print"]},
+  "IxCCTests.Anf.SuccBle":
+  {"path": "IxCCTests/Anf/SuccBle.lean",
+   "imports": ["IxCC.Anf.Walk", "IxCCTests.Src.Support"]},
   "IxCCTests.Anf.Shapes":
   {"path": "IxCCTests/Anf/Shapes.lean",
    "imports":
@@ -3949,7 +3952,8 @@
     "IxCCTests.Anf.Generated",
     "IxCCTests.Anf.KernelEval",
     "IxCCTests.Anf.LeanRender",
-    "IxCCTests.Anf.Defun"]},
+    "IxCCTests.Anf.Defun",
+    "IxCCTests.Anf.SuccBle"]},
   "IxCCTests.Anf.Main":
   {"path": "IxCCTests/Anf/Main.lean", "imports": ["IxCCTests.Anf.Run"]},
   "IxCCTests.Anf.LeanRender":
