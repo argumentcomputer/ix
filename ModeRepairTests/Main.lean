@@ -370,6 +370,8 @@ structure Case where
   inputs : Option Bool := some true
   open_ : Bool := false
   lim : Limits := {}
+  /-- the extern oracle meets `ExternOk` (since repair I a fresh reference must carry its cell's capability) -/
+  extOk : Bool := true
 
 structure Tally where
   pass : Nat := 0
@@ -407,7 +409,7 @@ def runCase (t : IO.Ref Tally) (c : Case) : IO Unit := do
     | [] => true
     | o :: more => more.all fun o' => outcomeName o' == outcomeName o
   -- what soundness gives on these inputs
-  let unsound := verdict.isAccept && inOk && violates
+  let unsound := verdict.isAccept && inOk && violates && c.extOk
   let sOk := !unsound || c.open_
   let ok := vOk && iOk && rOk && sOk && mono
   IO.println s!"{if ok then "ok  " else "FAIL"} [{c.label}] checker: {verdictName verdict}{if vOk then "" else s!"   EXPECTED {c.verdict.name}"}; InputsOk {inOk}{if iOk then "" else "   NOT AS EXPECTED"}{if unsound then (if c.open_ then "; accepted and violates (open finding)" else "; ACCEPTED AND VIOLATES") else ""}{if mono then "" else "; NOT FUEL-MONOTONE"}"
@@ -1679,9 +1681,32 @@ def ext14 (off : Nat) : ExternOracle := fun r args h =>
 
 def f14Cases : List Case := [
   { label := "F14 an all-default program, an extern returning a dead reference", P := p14, ext := ext14 7,
-    seed := s14, inp := oneNat, toCheck := [s14], verdict := .accept, run := [(0, .vio .revokedUse)], open_ := true },
+    seed := s14, inp := oneNat, toCheck := [s14], verdict := .accept, run := [(0, .vio .revokedUse)],
+    extOk := false },  -- REPAIR I: an admissible oracle as landed, outside ExternOk now (finding14ext)
   { label := "F14 control: the extern returns its cell's capability", P := p14, ext := ext14 0, seed := s14,
     inp := oneNat, toCheck := [s14], verdict := .accept, run := [(0, .oof), (20, .value)] }]
+
+/-- Repair I's clause of `ExternOk`, decided on one call: a fresh reference the extern returns or
+stores carries its cell's capability in the new heap, and every new cell's capability is below the
+new counter. -/
+def freshCapsOk (h h' : Heap) (v : Val) : Bool :=
+  let fresh (w : Val) : Bool := match w with
+    | .ref loc cap _ => decide (loc < h.objs.size) || (h'.objs[loc]?.map (·.cap)) == some cap
+    | .imm _ => true
+  fresh v && (List.range h'.objs.size).all fun l =>
+    decide (l < h.objs.size) || match h'.objs[l]? with
+      | some o => decide (o.cap < h'.nextCap) && o.cell.vals.all fresh
+      | none => true
+
+def finding14ext (t : IO.Ref Tally) : IO Unit := do
+  let (h, args) := oneNat
+  for (off, want) in [(7, false), (0, true)] do
+    match ext14 off mk14 args h with
+    | some (h', v) =>
+      let ok := freshCapsOk h h' v
+      check1 t s!"F14 the oracle returning capability nextCap+{off} meets repair I's clause: {want}" (ok == want)
+        s!"{ok}"
+    | none => check1 t s!"F14 oracle {off}" false "no answer"
 
 /-! ### Finding 15: an input cell's field outside its class (MT's encoding) -/
 
@@ -2098,6 +2123,7 @@ def run : IO UInt32 := do
   for c in findingCases do runCase t c
   try finding1b t false catch e => check1 t "F1b" false s!"error: {e}"
   try finding6 t true catch e => check1 t "F6" false s!"error: {e}"
+  finding14ext t
   finding4oracle
   let s ← t.get
   IO.println s!"== {s.pass} passed, {s.fail} failed"
