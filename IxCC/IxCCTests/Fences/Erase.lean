@@ -5,6 +5,7 @@ import IxCC.Lam.Proof.Mono
 import IxCC.Lam.Erase.Proof.Correct
 import IxCC.Src.Relevance.Proof.Sound
 import IxCC.Src.Relevance.Proof.Canonical
+import IxCC.Src.Relevance.Proof.P1.Defs
 import IxCC.Lam.Erase.Proof.ModesOk
 import IxCC.Lam.Erase.Proof.WFProg
 
@@ -188,6 +189,12 @@ uses at a recursor, `checkCanonical`'s facts and the three facts about positions
 
 /-- info: 'IxCC.Src.Relevance.Proof.arg_erased_irr' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms IxCC.Src.Relevance.Proof.arg_erased_irr
+
+/-! P1's definitions (`Relevance.Proof.P1.Defs`; P1 itself is not proved): a marker is never
+`Live`. -/
+
+/-- info: 'IxCC.Src.Relevance.Proof.P1.live_not_irr' depends on axioms: [propext] -/
+#guard_msgs in #print axioms IxCC.Src.Relevance.Proof.P1.live_not_irr
 
 namespace IxCC.Src.Relevance.Proof.L1Repair
 
