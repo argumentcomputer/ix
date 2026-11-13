@@ -88,8 +88,10 @@ set LEAN_STACK_SIZE_KB={kb} (and IXCC_REEXEC=0) and run again"
     | some w => if threadsUnset then #[("LEAN_NUM_THREADS", some (toString w))] else #[]
     | none => #[]
   let env := #[("LEAN_STACK_SIZE_KB", some (toString kb)), ("IXCC_REEXECED", some "1")] ++ threadsVar
-  match ← (IO.Process.spawn { cmd := app.toString, args := args.toArray, env := env,
-      stdin := .inherit, stdout := .inherit, stderr := .inherit }).toBaseIO with
+  let spawn : IO.Process.SpawnArgs := {
+    cmd := app.toString, args := args.toArray, env
+    stdin := .inherit, stdout := .inherit, stderr := .inherit }
+  match ← (IO.Process.spawn spawn).toBaseIO with
   | .error e => fail (toString e)
   | .ok child => child.wait
 
