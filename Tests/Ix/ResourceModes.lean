@@ -395,8 +395,10 @@ def fastPathCase : LSpec.TestSeq :=
     let plain : Ixon.Constant :=
       { info := .axio ⟨false, 0, .sort 0⟩, sharing := #[], refs := #[], univs := #[.zero] }
     let moded : Ixon.Constant :=
-      { info := .axio ⟨false, 0, .all ⟨.many, .unique⟩ .shared (.sort 0) (.sort 0)⟩,
-        sharing := #[], refs := #[], univs := #[.zero] }
+      { info := .axio ⟨false, 0, .all (.sort 0) (.sort 0)⟩,
+        sharing := #[], refs := #[], univs := #[.zero],
+        binders := #[{ shared := false, index := 0, variant := 0,
+          nodes := #[.never { input := .unique }] }] }
     let table : Ix.Kernel.RoleTable := { version := 0, bound := #[], evidence := #[] }
     let mk (c : Ixon.Constant) (externs : List Address := []) : Subject :=
       { table, store := fun a => if a == addr 200 then some c else none, seeds := [addr 200], externs }
@@ -478,35 +480,40 @@ def buildFixture : IO (Except String Built) := do
   let built : Built := { env := env, table := input.table, store := store, blob := blob, named := addrOf }
   return .ok built
 
-/-- Set the contract of the `i`-th leading binder of `e` (λs with `lam`, else ∀s). -/
-def setBinder (lam : Bool) (bc : Ixon.BinderContract) : Nat → Ixon.Expr → Option Ixon.Expr
-  | 0, .lam _ t b => if lam then some (Ixon.Expr.lam bc t b) else none
-  | 0, .all _ r t b => if lam then none else some (Ixon.Expr.all bc r t b)
-  | i + 1, .lam c t b => if lam then (setBinder lam bc i b).map (Ixon.Expr.lam c t ·) else none
-  | i + 1, .all c r t b => if lam then none else (setBinder lam bc i b).map (Ixon.Expr.all c r t ·)
-  | _, _ => none
-
-def erasedBC : Ixon.BinderContract := { uses := .erased }
+/-- Erase the `i`-th leading binder of root `root` of `c` (whose expression is `e`; its
+λs with `lam`, else its ∀s): its input mode, in the record's binder-data section, becomes
+`erased`. -/
+def eraseBinder (c : Ixon.Constant) (root : Nat) (e : Ixon.Expr) (lam : Bool) (i : Nat) :
+    Option Ixon.Constant := do
+  let full := IxC.Resource.binderfulEntries c.sharing
+  let pos ← (IxC.Resource.leadingBinders full (!lam) (i + 1) e 0).toOption
+  let p ← pos[i]?
+  let bi ← c.binders.findIdx? fun b => !b.shared && b.index == root.toUInt64 && b.variant == 0
+  let b ← c.binders[bi]?
+  let node ← b.nodes[p]?
+  let node' : Ixon.BinderNode ← match node with
+    | .never m => some (.never { m with input := .erased })
+    | .zero m => some (.zero { m with input := .erased })
+    | .ifAllZero ps m => some (.ifAllZero ps { m with input := .erased })
+    | .undecided m => some (.undecided { m with input := .erased })
+    | .share _ => none
+  pure { c with binders := c.binders.set! bi { b with nodes := b.nodes.set! p node' } }
 
 /-- Erase parameter `i` of the constant `r` in its record `c`: its type's ∀, and
 its value's λ with `inValue`. -/
 def eraseParam (c : Ixon.Constant) (r : Ref) (i : Nat) (inValue : Bool) : Option Ixon.Constant :=
-  let onDef (d : Ixon.Definition) : Option Ixon.Definition := do
-    let typ ← setBinder false erasedBC i d.typ
-    let value ← if inValue then setBinder true erasedBC i d.value else pure d.value
-    pure { d with typ := typ, value := value }
+  let onDef (base : Nat) (d : Ixon.Definition) : Option Ixon.Constant := do
+    let c' ← eraseBinder c base d.typ false i
+    if inValue then eraseBinder c' (base + 1) d.value true i else pure c'
   match r, c.info with
-  | .member _ 0, .defn d => do pure { c with info := .defn (← onDef d) }
-  | .member _ 0, .recr rr => do
-    pure { c with info := .recr { rr with typ := ← setBinder false erasedBC i rr.typ } }
-  | .member _ 0, .quot q => do
-    pure { c with info := .quot { q with typ := ← setBinder false erasedBC i q.typ } }
+  | .member _ 0, .defn d => onDef 0 d
+  | .member _ 0, .recr rr => eraseBinder c 0 rr.typ false i
+  | .member _ 0, .quot q => eraseBinder c 0 q.typ false i
   | .member _ j, .muts ms => do
-    let m' ← match ← ms[j]? with
-      | .defn d => do pure (Ixon.MutConst.defn (← onDef d))
-      | .recr rr => do pure (Ixon.MutConst.recr { rr with typ := ← setBinder false erasedBC i rr.typ })
-      | .indc _ => none
-    pure { c with info := .muts (ms.set! j m') }
+    match ← ms[j]? with
+    | .defn d => onDef (IxC.Resource.rootBase c j) d
+    | .recr rr => eraseBinder c (IxC.Resource.rootBase c j) rr.typ false i
+    | .indc _ => none
   | _, _ => none
 
 /-- A record case: an entry, the parameter erased in one constant's record (in

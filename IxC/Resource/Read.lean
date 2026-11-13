@@ -2,6 +2,7 @@ module
 
 public import IxC.Resource.Syntax
 public import IxC.Resource.ModeSource
+public import IxC.Ixon.WireCheck
 public import IxC.Kernel.Ixon.Reader
 public import IxC.Kernel.ExprOps
 
@@ -719,6 +720,15 @@ def Reading.make (s : Subject) : Reading :=
   let records := closure.filterMap fun a => (s.store a).map (a, ·)
   { s, cx := Ix.Kernel.Reader.contextWith (md := .anon) s.store s.blob s.table records, closure }
 
+/-- Every record of the reading's closure has a complete binder-data section
+(`Ixon.Constant.bindersComplete`: a block for each root and each variant of a
+sharing entry with a binder, each node of a binder's kind). A closure with an
+incomplete section is not read. -/
+def Reading.complete (rd : Reading) : Except String Unit := do
+  for a in rd.closure do
+    let some c := rd.s.store a | continue
+    unless c.bindersComplete do throw s!"record {a}: its binder-data section is incomplete"
+
 /-- The reading context of member `r`'s record. -/
 def Reading.rcx (rd : Reading) (cl : Classifier) (r : Ref) : Except String RCx := do
   let owner := r.block
@@ -1026,6 +1036,7 @@ def refsOf (a : Address) (c : Ixon.Constant) : Array Ref :=
 /-- **The run program of a subject**, read with the class oracle `cl`. -/
 def readProg (s : Subject) (cl : Classifier) : Except String Prog := do
   let rd := Reading.make s
+  rd.complete
   let rt ← rd.runTable cl
   let mut defs : Array (Ref × RunDef) := #[]
   for a in rd.closure do

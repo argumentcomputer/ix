@@ -683,6 +683,7 @@ def allDefault (s : Subject) : Except String Bool := do
 the kernel environment `env` its typing installed (for the class oracle). -/
 def check (lim : Limits) (env : Ix.Kernel.Env .anon) (s : Subject) : Verdict := Id.run do
   let rd := Reading.make s
+  if let .error e := rd.complete then return .refuse "the closure" e
   -- the fast path: every record's modes default, and no run table
   let mut nonDefault : Array Address := #[]
   for a in rd.closure do
