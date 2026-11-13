@@ -763,12 +763,120 @@ def leading_foralls := aiur_fn⟦
 
 def try_proof_irrel := aiur_fn⟦
   fn try_proof_irrel(rc: KernelRoles::RoleCtx, a: KernelTypes::KExpr, b: KernelTypes::KExpr, types: Lists::List<KernelTypes::KExpr>) -> Field {
+      -- read off the heads first: a side known not to be a proof decides nothing
+      match proof_class(a, types) {
+        0 => {  0 } ,
+        _ => {
+          match proof_class(b, types) {
+            0 => {  0 } ,
+            _ => {  try_proof_irrel_slow(rc, a, b, types) } ,
+          } } ,
+      }
+    }
+⟧
+
+def try_proof_irrel_slow := aiur_fn⟦
+  fn try_proof_irrel_slow(rc: KernelRoles::RoleCtx, a: KernelTypes::KExpr, b: KernelTypes::KExpr, types: Lists::List<KernelTypes::KExpr>) -> Field {
       let a_ty = KernelInferOnly::k_infer_only(rc, a, types);
       match is_prop_type(rc, a_ty, types) {
         0 => {  0 } ,
         _ => {
           let b_ty = KernelInferOnly::k_infer_only(rc, b, types);
           k_is_def_eq(rc, a_ty, b_ty, types) } ,
+      }
+    }
+⟧
+
+  -- The sort of `a`'s type read off `a`'s head and the stored binder data (the kernel's
+  -- `proofPW`): 1 zero at every valuation (a proof), 0 known and not, 2 unknown.
+
+def proof_class := aiur_fn⟦
+  fn proof_class(a: KernelTypes::KExpr, types: Lists::List<KernelTypes::KExpr>) -> Field {
+      match (*(a)) {
+        KernelTypes::KExprNode::Lam(_, _, bl) => {
+          KernelLevels::level_equal(bl, (&(KernelTypes::KLevelNode::Zero))) } ,
+        _ => {
+          let (head, _) = KernelTypes::collect_spine(a);
+          match (*(head)) {
+            KernelTypes::KExprNode::Const(c, us) => {
+              let ci = (*(Ingress::get_ci(c)));
+              match Lists::length(us) - KernelInfer::const_num_lvls(ci) {
+                0 => {
+                  type_sort_class(KernelLevels::expr_inst_levels(KernelInfer::const_type_of(ci), us),
+                                  types) } ,
+                _ => {  2 } ,
+              } } ,
+            KernelTypes::KExprNode::BVar(i) => {
+              type_sort_class(KernelInfer::types_lookup(types, i), types) } ,
+            KernelTypes::KExprNode::Srt(_) => {  0 } ,
+            KernelTypes::KExprNode::Forall(_, _, _) => {  0 } ,
+            KernelTypes::KExprNode::Lit(_) => {  0 } ,
+            _ => {  2 } ,
+          } } ,
+      }
+    }
+⟧
+
+  -- The sort of the type `t`, read off its head (the kernel's `typeSortPW`).
+
+def type_sort_class := aiur_fn⟦
+  fn type_sort_class(t: KernelTypes::KExpr, types: Lists::List<KernelTypes::KExpr>) -> Field {
+      match (*(t)) {
+        KernelTypes::KExprNode::Forall(_, _, bl) => {
+          KernelLevels::level_equal(bl, (&(KernelTypes::KLevelNode::Zero))) } ,
+        KernelTypes::KExprNode::Srt(_) => {  0 } ,
+        _ => {
+          let (head, args) = KernelTypes::collect_spine(t);
+          match (*(head)) {
+            KernelTypes::KExprNode::Const(c, us) => {
+              let ci = (*(Ingress::get_ci(c)));
+              match Lists::length(us) - KernelInfer::const_num_lvls(ci) {
+                0 => {
+                  let (ok, r) = peel_never_pis(
+                    KernelLevels::expr_inst_levels(KernelInfer::const_type_of(ci), us),
+                    Lists::length(args));
+                  residual_class(ok, r) } ,
+                _ => {  2 } ,
+              } } ,
+            KernelTypes::KExprNode::BVar(i) => {
+              let (ok, r) = peel_never_pis(KernelInfer::types_lookup(types, i), Lists::length(args));
+              residual_class(ok, r) } ,
+            _ => {  2 } ,
+          } } ,
+      }
+    }
+⟧
+
+def residual_class := aiur_fn⟦
+  fn residual_class(ok: Field, e: KernelTypes::KExpr) -> Field {
+      match ok {
+        1 => {
+          match (*(e)) {
+            KernelTypes::KExprNode::Srt(u) => {
+              KernelLevels::level_equal(u, (&(KernelTypes::KLevelNode::Zero))) } ,
+            _ => {  2 } ,
+          } } ,
+        _ => {  2 } ,
+      }
+    }
+⟧
+
+  -- The residual after `k` syntactic binders whose data are all never zero (the kernel's
+  -- `peelNeverPis`); `(0, _)` when there is no such telescope.
+
+def peel_never_pis := aiur_fn⟦
+  fn peel_never_pis(e: KernelTypes::KExpr, k: Field) -> (Field, KernelTypes::KExpr) {
+      match k {
+        0 => {  (1, e) } ,
+        _ => {
+          match (*(e)) {
+            KernelTypes::KExprNode::Forall(_, b, bl) => {
+              match KernelLevels::level_is_not_zero(bl) {
+                1 => {  peel_never_pis(b, k - 1) } ,
+                _ => {  (0, e) } ,
+              } } ,
+            _ => {  (0, e) } ,
+          } } ,
       }
     }
 ⟧
