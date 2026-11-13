@@ -48,10 +48,11 @@ def checkLiteralProfile (env : Ixon.Env) (profile : Profile) : Except String Uni
     if let some selected := selected then
       unless some selected == actual do throw "resource validator: literal type differs from the kernel primitive identity"
 
-def validate (env : Ixon.Env) (profile : Profile) : Except String AddressedProgram := do
+def validate (env : Ixon.Env) (profile : Profile)
+    (limits : Ix.Kernel.Admission.Limits := typingLimits) : Except String AddressedProgram := do
   checkLiteralProfile env profile
   let resolved ← Addressed.checkResources env profile
-  typeCheck env
+  typeCheck env limits
   return resolved
 
 end Ix.Resource

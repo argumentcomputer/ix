@@ -7,7 +7,8 @@ import Benchmarks.Kernel.CheckIxe
 [--load stream|eager] [--jobs <n>] <input.ixe> <output.jsonl> [limit]`: when
 one constant's check exceeds the driver's watchdog limits
 (`CHECK_IXE_WATCH_MS`, `CHECK_IXE_WATCH_MB`), the environment check exits
-with code 3 and records the constant's address in `<output>.runaway`; this
+with code 7 (`Ix.Kernel.Host.exitWatchdog`; 3 in builds before it, which `--binary` may
+name, so 3 counts too when the run recorded a new runaway) and records the constant's address in `<output>.runaway`; this
 reruns it, in a fresh process, with every recorded address skipped
 (`CHECK_IXE_SKIP`), until it exits with another code, which is the exit
 code. The arguments after `--memory-max` and `--binary` are the environment
@@ -51,8 +52,9 @@ def run (args : List String) : IO UInt32 := do
       | none => do
         let child ← IO.Process.spawn { cmd := binary, args := o.rest, env }
         child.wait
-    if code != 3 then return code
     let skipped ← if ← runaway.pathExists then IO.FS.lines runaway else pure #[]
+    let watchdog := code == Ix.Kernel.Host.exitWatchdog || (code == 3 && skipped.size > recorded.size)
+    if !watchdog then return code
     IO.eprintln s!"check-ixe-guarded: restarting with {skipped.size} skipped"
   return 0
 

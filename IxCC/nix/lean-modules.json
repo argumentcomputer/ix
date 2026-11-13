@@ -1119,6 +1119,7 @@
     "IxCCTests.KernelFront.Bound",
     "IxCCTests.KernelFront.Hints",
     "IxCCTests.KernelFront.LamRuns",
+    "IxCCTests.KernelFront.Cli",
     "IxCCTests.Src.Support",
     "IxCCTests.Support.Envelope"]},
   "IxCCTests.KernelFront.Report":
@@ -1144,6 +1145,9 @@
     "IxCCTests.Support.Envelope",
     "IxCC.Recheck.Produce",
     "IxCC.Recheck.Json"]},
+  "IxCCTests.KernelFront.Cli":
+  {"path": "IxCCTests/KernelFront/Cli.lean",
+   "imports": ["IxCCTests.Support.Envelope", "IxCK.Ixon.Codec"]},
   "IxCCTests.KernelFront.Bound":
   {"path": "IxCCTests/KernelFront/Bound.lean",
    "imports":
@@ -7687,7 +7691,8 @@
     "IxCC.Cfg.Print",
     "IxCC.Lir.Print",
     "IxCC.Xv.Print",
-    "IxCC.Exe"]},
+    "IxCC.Exe",
+    "IxCK.Host.Limits"]},
   "IxCC.Cfg.WellFormed":
   {"path": "IxCC/Cfg/WellFormed.lean", "imports": ["IxCC.Cfg.Syntax"]},
   "IxCC.Cfg.Syntax":

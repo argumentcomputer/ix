@@ -75,9 +75,20 @@ def selectRoots (roots : Array (Ixon.Address × Option String)) (names : List St
       throw { stage := .cli, code := "cli.root", message := s!"no root named {n} in the sidecar (it names {known})" }
   return out
 
+/-- The error code of a kernel refusal that is a decline by a limit: `kernel.limit.<field>`, the
+field of `Admission.Limits` that bounds it (`ixcc` exits 6 on it and names the setting). -/
+def kernelLimitCode : Ix.Kernel.Admission.Resource → String
+  | .records => "kernel.limit.maxRecords"
+  | .blobs => "kernel.limit.maxBlobs"
+  | .totalBytes => "kernel.limit.maxTotalBytes"
+  | .recordBytes => "kernel.limit.maxRecordBytes"
+  | .recordUnivNodes => "kernel.limit.maxRecordUnivNodes"
+  | .depth => "kernel.limit.maxDepth"
+
 /-- **Ingress**: decode the envelope, choose the roots, the certified kernel's
 acceptance of the whole environment (refused with the kernel's reason and
-classification, code `kernel`; only role-bound environments are accepted), the
+classification, code `kernel`, or `kernelLimitCode` for a decline by a limit; only role-bound environments
+are accepted; the kernel runs under `limits`, IxCC's decoder caps by default), the
 records the seeds reach (`Src.Ingress.reach` from the seeds of the whole
 sidecar and the kernel's admitted role table, `Seeds.of`; a reached record
 over IxCC's consumer budget is refused with code `decode`), IxCC's reading of
@@ -85,7 +96,8 @@ them into the table-free `Src.Program` for the chosen roots with the pinned
 identities of the kernel's admitted role table (`pinsOfTable`), the resource
 binding, and the program read against the kernel's reading (`Reading.build`,
 code `faithful`). -/
-def ingress (bytes : ByteArray) (equations : Lean.Json) (roots : List String := []) :
+def ingress (bytes : ByteArray) (equations : Lean.Json) (roots : List String := [])
+    (limits : Ix.Kernel.Admission.Limits := Src.KernelFront.defaultLimits) :
     Except Err Input := do
   let env ← (V3.decodeAnonymousEnv bytes).mapError fun m => { stage := .ingress, code := "decode", message := m }
   let sidecar ← (Src.Hints.ofK1Json equations).mapError fun m => { stage := .ingress, code := "hints", message := m }
@@ -93,8 +105,8 @@ def ingress (bytes : ByteArray) (equations : Lean.Json) (roots : List String := 
   if chosen.isEmpty then
     throw { stage := .ingress, code := "roots", message := "the sidecar names no root" }
   let hints := { sidecar with roots := chosen }
-  let acc ← (Src.KernelFront.accept env).mapError fun r =>
-    { stage := .ingress, code := "kernel", message := r.report }
+  let acc ← (Src.KernelFront.accept env limits).mapError fun r =>
+    { stage := .ingress, code := (r.limit.map kernelLimitCode).getD "kernel", message := r.report }
   let records ← (Src.Ingress.reach env (Src.Ingress.Seeds.of sidecar
       (Src.KernelFront.pinsOfTable acc.table))).mapError fun m =>
     { stage := .ingress, code := "decode", message := m }

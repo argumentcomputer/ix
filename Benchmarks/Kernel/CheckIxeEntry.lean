@@ -1,5 +1,6 @@
 import Benchmarks.Kernel.CheckIxeFold
 import Ix.Ixon.Authenticated
+import IxCK.Host.Limits
 
 /-! # The certified entry over an environment check's accepted records (untrusted harness)
 
@@ -50,17 +51,19 @@ def verdict : Except Ix.Kernel.Admission.Error (Ix.Kernel.Env .anon) → String
   | .ok env => s!"accepted, {env.consts.length} constants installed"
   | .error e => s!"{repr e.outcome}: {e}"
 
-/-- `limits` with phase B's task bound from `IX_KERNEL_WORKERS`, if set (a measurement knob of
-this harness; the hosts' setting mechanism is `docs/kernel.md`'s). -/
+/-- `limits` under the `IX_KERNEL_*` variables (`Ix.Kernel.Host.resolve`; `IX_KERNEL_WORKERS` bounds
+phase B's tasks); a malformed one is an error. -/
 def limitsFromEnv : IO Ix.Kernel.Admission.Limits := do
-  return { limits with workers := (← IO.getEnv "IX_KERNEL_WORKERS").bind (·.trimAscii.toString.toNat?) }
+  match ← Ix.Kernel.Host.resolveIO limits (fun _ => none) with
+  | .ok s => return s.limits
+  | .error e => throw (IO.userError e)
 
 def run (args : List String) : IO UInt32 := do
   let [mode, input] := args
     | IO.eprintln "usage: kernel-check-ixe --entry authenticated|unauthenticated|user|hash|depth <input.ixe>"; return 2
   let limits ← limitsFromEnv
   let started ← IO.monoMsNow
-  let env ← IO.ofExcept (Ixon.deEnv (← IO.FS.readBinFile input))
+  let env ← IO.ofExcept (Ixon.deEnv (← IO.FS.readBinFile input) limits.maxDepth)
   let mut store : RecordStore := {}
   for (address, lazy) in env.consts.toList do
     store := store.insert address (← IO.ofExcept lazy.get)

@@ -144,7 +144,7 @@ name against that table (`Ix.Cert.PublishedRolesBound` at the artifact's own
 binding). -/
 def compileCertifiedPrepared (prepared : List (Lean.Name × Lean.ConstantInfo))
     (annotated : Bool) (workers : Nat := 32) (log : String → IO Unit := fun _ => pure ())
-    (defaultRoles : Bool := true) :
+    (defaultRoles : Bool := true) (limits : Ix.Kernel.Admission.Limits := Ix.Resource.typingLimits) :
     IO (Except String CertifiedOut) := do
   let t0 ← IO.monoMsNow
   let env ← IO.lazyPure fun _ => canonInput prepared.toArray workers
@@ -172,7 +172,7 @@ def compileCertifiedPrepared (prepared : List (Lean.Name × Lean.ConstantInfo))
   if annotated then
     unless failures.isEmpty do
       return .error "resource compilation requires the complete requested closure"
-    if let .error e := Ix.Resource.validate ixe (Ix.Resource.standardProfile ixe) then
+    if let .error e := Ix.Resource.validate ixe (Ix.Resource.standardProfile ixe) limits then
       return .error e
   return .ok { prepared, annotated, inputs, env := ixe, failures, existing? := some existing }
 
@@ -180,7 +180,7 @@ def compileCertifiedPrepared (prepared : List (Lean.Name × Lean.ConstantInfo))
 `prepareCertified`, then `compileCertifiedPrepared` (with `defaultRoles`). -/
 def compileCertified (source : Lean.Environment) (constants : List (Lean.Name × Lean.ConstantInfo))
     (workers : Nat := 32) (log : String → IO Unit := fun _ => pure ())
-    (defaultRoles : Bool := true) :
+    (defaultRoles : Bool := true) (limits : Ix.Kernel.Admission.Limits := Ix.Resource.typingLimits) :
     IO (Except String CertifiedOut) := do
   let t0 ← IO.monoMsNow
   let (prepared, annotated) ← match prepareCertified source constants with
@@ -188,14 +188,15 @@ def compileCertified (source : Lean.Environment) (constants : List (Lean.Name ×
     | .error e => return .error e
   log s!"source contracts ({if annotated then "semantic contracts" else "none"}): \
 {(← IO.monoMsNow) - t0}ms"
-  compileCertifiedPrepared prepared annotated workers log defaultRoles
+  compileCertifiedPrepared prepared annotated workers log defaultRoles limits
 
 /-- An input with semantic contracts is emitted only if its finalized artifact
 validates too: `compileCertifiedPrepared` validates the compiled artifact, this
 the finalized one. -/
-def validateFinalized (annotated : Bool) (artifact : Ixon.Env) : Except String Unit := do
+def validateFinalized (annotated : Bool) (artifact : Ixon.Env)
+    (limits : Ix.Kernel.Admission.Limits := Ix.Resource.typingLimits) : Except String Unit := do
   if annotated then
-    let _ ← Ix.Resource.validate artifact (Ix.Resource.standardProfile artifact)
+    let _ ← Ix.Resource.validate artifact (Ix.Resource.standardProfile artifact) limits
 
 /-- Up to three recorded failures, root causes first (`Ix.Cli.rootCausesFirst`). -/
 def recordedFailures (failures : Std.HashMap Ix.Name String) : String :=
@@ -266,14 +267,14 @@ def compileAndFinalize (source : Lean.Environment)
     (log : String → IO Unit := fun _ => pure ())
     (certSource : IO Lean.Environment := Ix.RoleBinding.Compile.nativeCertSource)
     (strip : Ixon.Env → Ixon.Env := id) (defaultRoles : Bool := true)
-    (prefetch : Bool := false) :
+    (prefetch : Bool := false) (limits : Ix.Kernel.Admission.Limits := Ix.Resource.typingLimits) :
     IO (Except String (CertifiedOut × Finalization)) := do
   let backend := Ix.RoleBinding.Compile.certifiedBackend workers defaultRoles
   let certificates? ← if prefetch then
       some <$> Ix.RoleBinding.Compile.prefetchCertificates backend certSource
     else pure none
   let run : IO (Except String (CertifiedOut × Finalization)) := do
-    let out ← match ← compileCertified source constants workers log defaultRoles with
+    let out ← match ← compileCertified source constants workers log defaultRoles limits with
       | .ok out => pure out
       | .error e => return .error e
     log s!"rss after the compile: {← Ix.Cli.residentSetSize}"
@@ -281,9 +282,9 @@ def compileAndFinalize (source : Lean.Environment)
     try
       let t0 ← IO.monoMsNow
       let artifact ← Ix.RoleBinding.Compile.finalize backend source certSource
-        (.plain constants) out.env Ix.Resource.typingLimits (existing? := out.existing?)
+        (.plain constants) out.env limits (existing? := out.existing?)
         (prefetched? := certificates?)
-      IO.ofExcept (validateFinalized out.annotated artifact)
+      IO.ofExcept (validateFinalized out.annotated artifact limits)
       let t1 ← IO.monoMsNow
       log s!"finalize: {t1 - t0}ms, rss {← Ix.Cli.residentSetSize}"
       let artifact := strip artifact

@@ -10,6 +10,7 @@ public import Ix.Benchmark.Results
 public import Ix.Cli.ConstsFile
 public import Ix.Cli.ValidateCmd
 public import Ix.Compile.Equations
+public import Ix.Cli.KernelLimits
 import Std.Internal.UV.System
 
 /-! `ix compile`: compile a Lean source file to an Ixon `.ixe` artifact using
@@ -38,14 +39,21 @@ def Ix.Cli.publishedEnvelopeVersion (published : Bool) (path : FilePath) : IO (O
   | some 0xE5 => return some 5
   | _ => throw <| IO.userError s!"compile report: invalid published envelope header in {path}"
 
-def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
+/-- The compile, on the thread `runCompileCmd` sized for it. `--workers` is the compiler's
+worker count (default 32) and, given, also the bound on the tasks of the typing entry's phase
+B, whose limits are `settings`. -/
+def compileWith (p : Cli.Parsed) (settings : Ix.Kernel.Host.Resolved) : IO UInt32 := do
   -- Keep the environment-variable interface for scripts, while giving the
   -- CLI an ordinary discoverable switch.
   if p.hasFlag "verbose" then
     Std.Internal.UV.System.osSetenv "IX_VERBOSE" "1"
-  let workers := match p.flag? "workers" with
-    | some f => max 1 (f.as! Nat)
-    | none => 32
+  let workers := match settings.source .workers, settings.limits.workers with
+    | .flag, some n => n
+    | _, _ => 32
+  let decline (e : String) : IO (Option UInt32) := do
+    let some r := Ix.Kernel.Host.limitOfText e | return none
+    IO.eprintln s!"[compile] {Ix.Kernel.Host.declineMessage settings r}"
+    return some Ix.Kernel.Host.exitDeclined
 
   let some path := p.positionalArg? "path"
     | p.printError "error: must specify <path> to a Lean source file"
@@ -237,13 +245,19 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
   let strip (artifact : Ixon.Env) : Ixon.Env := if strictAnon then { artifact with
     named := {}, names := {}, comms := {}, addrToName := {} } else artifact
   let (out, finalization) ← match ← Ix.CompileM.compileAndFinalize leanEnv constList workers
-      allowPartial log (strip := strip) (prefetch := wholeEnv) with
+      allowPartial log (strip := strip) (prefetch := wholeEnv) (limits := settings.limits) with
     | .ok r => pure r
-    | .error e => throw (IO.userError s!"compile refused: {e}")
+    | .error e =>
+      match ← decline e with
+      | some code => return code
+      | none => throw (IO.userError s!"compile refused: {e}")
   let status := statusOf out.env out.failures.toMap
   let status ← match finalization with
     | .refused => pure status
-    | .failed e => throw (IO.userError e)
+    | .failed e =>
+      match ← decline e with
+      | some code => return code
+      | none => throw (IO.userError e)
     | .done artifact bytes =>
       Ix.RoleBinding.Compile.writeAtomic (FilePath.mk outPath) bytes
       pure { status with
@@ -328,6 +342,19 @@ serialized the grounded subset ({status.named} named, \
       , ("peak-rss", Lean.toJson peakRss) ]
   return 0
 
+/-- `ix compile`: the kernel's limits resolved over `Ix.Resource.typingLimits` (a malformed one
+is a usage error, exit 2) and printed when not at their defaults; the threads sized from them
+before any task (`KernelLimits.prepareThreads`; a run that cannot fit the address-space limit
+exits 2); then the whole compile, its typing included, on a thread of that size. A decline of
+the typing by a limit exits 6. -/
+def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
+  let settings ← match ← Ix.Cli.KernelLimits.resolveCli Ix.Resource.typingLimits p with
+    | .ok s => pure s
+    | .error e => IO.eprintln s!"[compile] {e}"; return 2
+  if let some h := Ix.Kernel.Host.header settings then IO.eprintln s!"[compile] {h}"
+  if let some why ← Ix.Cli.KernelLimits.prepareThreads settings then
+    IO.eprintln s!"[compile] {why}"; return 2
+  Ix.Cli.KernelLimits.onKernelThread (compileWith p settings)
 
 def compileCmd : Cli.Cmd := `[Cli|
   compile VIA runCompileCmd;
@@ -335,7 +362,13 @@ def compileCmd : Cli.Cmd := `[Cli|
 
   FLAGS:
     v, verbose;               "Print compiler phase timings, scheduler progress, and serialization progress. Equivalent to IX_VERBOSE=1."
-    workers        : Nat;    "Worker count for the certified compiler's parallel phases (default 32)."
+    workers        : String; "Worker count for the certified compiler's parallel phases (default 32); given, also the bound on the tasks of the typing entry's phase B (else IX_KERNEL_WORKERS, else unbounded). A positive whole number."
+    "max-records" : String; "Typing kernel limit: records (else IX_KERNEL_MAX_RECORDS; default 4194304)"
+    "max-blobs" : String; "Typing kernel limit: blobs (else IX_KERNEL_MAX_BLOBS; default 4194304)"
+    "max-total-bytes" : String; "Typing kernel limit: payload bytes of records and blobs (else IX_KERNEL_MAX_TOTAL_BYTES; default 17179869184)"
+    "max-record-bytes" : String; "Typing kernel limit: one record's payload bytes (else IX_KERNEL_MAX_RECORD_BYTES; default 268435456)"
+    "max-record-univ-nodes" : String; "Typing kernel limit: one record's universe nodes, expanded (else IX_KERNEL_MAX_RECORD_UNIV_NODES; default 67108864)"
+    "max-depth" : String; "Typing kernel limit: how deep a record nests (else IX_KERNEL_MAX_DEPTH; default 16384); the threads get 16 KiB of stack per level, at least 256 MiB. A decline by any of these exits 6"
     "no-build";               "Skip the Lake build/cache step and reuse existing import artifacts. The input file is still elaborated. The caller must ensure all imports are built and up to date."
     out            : String; "Output path for serialized Ixon.Env bytes; defaults to the lowercased input file stem with `.ixe` (e.g. CompileMathlib.lean -> compilemathlib.ixe)"
     consts         : String; "Comma-separated EXACT constant names to compile (transitive deps pulled in automatically) instead of the whole import env — e.g. `Nat.add_comm`. Same flag/shape as `ix check --consts`. Mutually exclusive with --module; --exclude does not apply."

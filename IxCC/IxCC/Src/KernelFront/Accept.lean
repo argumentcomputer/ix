@@ -133,6 +133,9 @@ structure Refusal where
   record : Option KAddr := none
   /-- The kernel's policy decline, if the refusal is one (`policyOf`). -/
   policy : Option PolicyDecline := none
+  /-- The limit the refusal is a decline by, if it is one (`Admission.Error.limit`): a setting
+  raises it (`ixcc`'s `--max-*` and `IX_KERNEL_*`, exit 6). -/
+  limit : Option Ix.Kernel.Admission.Resource := none
   deriving Inhabited
 
 def Refusal.render (r : Refusal) : String :=
@@ -178,7 +181,10 @@ def Refusal.ofError (e : Ix.Kernel.Admission.Error) : Refusal :=
   let policy : Option PolicyDecline := match e with
     | .kernel ce _ => policyOf ce
     | _ => none
-  { stage, outcome := some e.outcome, message := toString e, record, policy }
+  let limit : Option Ix.Kernel.Admission.Resource := match e with
+    | .limit r => some r
+    | _ => none
+  { stage, outcome := some e.outcome, message := toString e, record, policy, limit }
 
 /-- A tiered entry's failure as a refusal, a record position read back to the
 record's address. -/
@@ -310,7 +316,9 @@ def prepare (env : Ixon.V3.Env) (limits : Ix.Kernel.Admission.Limits) : Except R
   let blobs := blobsOf env
   let table ← (Ix.Kernel.Admission.admitBinding hash binding).mapError fun e =>
     Refusal.ofError (.binding e)
-  let decoded ← (Ix.Kernel.Admission.decodeRecords limits sorted.toList).mapError fun e =>
+  -- the depth scan, the decode and the expanded check (`decodeWithin`): every record's nesting
+  -- within `limits.maxDepth` before the kernel's decoder recurses on it
+  let decoded ← (Ix.Kernel.Admission.decodeWithin limits sorted.toList).mapError fun e =>
     Refusal.ofError (Ix.Kernel.Admission.Error.ofBytes e)
   let store : RecordStore := decoded.foldl (fun m (a, c) => m.insert a c) {}
   (Order.checkBindings table store).mapError fun m => { stage := .coverage, message := m }

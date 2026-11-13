@@ -732,10 +732,24 @@ before it alike), whether or not any root reaches the record. The kernel's
 own byte entry decoded the same way; since 2026-11-13 it scans each record's
 bytes for nesting before decoding and declines past its depth limit
 (`Ix.Kernel.Admission.decodeWithin`, `Limits.maxDepth`, 16,384), as do the
-root hosts' own record decoders. The envelope does not run that scan yet
-(open: with `ixcc`'s limits and its sized stack). The envelope's depth
-bound (`V3.withinKernelDepth`) limits the records as stored, after that
-decoder, and not the terms the kernel builds while typing them.
+root hosts' own record decoders. Since L3b `ixcc` runs itself again on a
+stack sized from the kernel's limits (`Limits.stackFor`: 256 MiB at the
+defaults; `IxCC/IxCC/Cli/Main.lean`), which holds a record of the 1 MiB budget
+at any nesting its bytes allow: such a record, added to `fib`'s closure, is
+refused by the envelope's depth bound (exit 1) with the re-execution and
+overflows the stack (a death by signal) with it turned off (`IXCC_REEXEC=0`)
+on 8 MiB (`tests-kernel-front`, `IxCCTests/KernelFront/Cli.lean`). **Open**:
+the proper fix, the kernel's byte scan (`Depth.within`) before the envelope's
+decoder, as the root's loaders run it; not in L3b because it changes IxCC's
+envelope reader and its refusals, which IxCC's own review and ledger cover,
+while the re-execution bounds the crash without changing what is read. The
+envelope's depth bound (`V3.withinKernelDepth`, 2,560) limits the records as
+stored, after that decoder, and not the terms the kernel builds while typing
+them; it comes before the kernel, so a record nested past it is IxCC's refusal
+(exit 1), not the kernel's decline by its depth limit (exit 6), which `ixcc`
+meets only under a lowered setting. **Open**: `ixcc`'s own limits (its
+decoder's caps, its consumer budget) are not settings yet; the kernel's are
+(`--max-*`, `IX_KERNEL_*`, `docs/kernel.md` of ix).
 
 Constant folding on hostile literals, closed (2026-11-13). The shrink walk
 folded a primitive on literals with `Lam.Prim.sem`, which computes `a ^ b` and

@@ -2,6 +2,7 @@ import IxCCTests.KernelFront.Report
 import IxCCTests.KernelFront.Bound
 import IxCCTests.KernelFront.Hints
 import IxCCTests.KernelFront.LamRuns
+import IxCCTests.KernelFront.Cli
 import IxCCTests.Src.Support
 import IxCCTests.Support.Envelope
 
@@ -298,6 +299,13 @@ def run : IO Bool := do
         | some sidecar => pairs := pairs.push (path, sidecar)
         | none => if ← plain.pathExists then pairs := pairs.push (path, plain)
     for line in ← LamRuns.run a pairs do IO.println line
+    -- `ixcc` at the command line (`Cli.suite`): limits, re-execution, signals, a deep record
+    let dir ← IO.FS.createTempDir
+    try
+      let (k, s) ← Cli.suite dir
+      a.modify (· + k)
+      IO.println s!"ixcc at the command line: {k} assertions, {s} skipped"
+    finally IO.FS.removeDirAll dir
     IO.println s!"tests-kernel-front: {← a.get} assertions passed"
     return true
   catch error =>

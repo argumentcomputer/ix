@@ -4,6 +4,7 @@ import Benchmarks.Kernel.CheckIxePool
 import Benchmarks.Kernel.CheckIxeMeta
 import Ix.KernelCheck.Binding
 import Ix.RoleBinding.UserAxioms
+import IxCK.Host.Limits
 
 /-! # Environment check of a compiled Ixon environment (untrusted)
 
@@ -56,7 +57,7 @@ Usage: `kernel-check-ixe [--load stream|eager] [--jobs <n>] [--allow-user-axioms
 
 The watchdog (`CHECK_IXE_WATCH_MS`, default 60000; `CHECK_IXE_WATCH_MB`,
 default 20000) appends a runaway record's address to `<output>.runaway` and
-exits with code 3; `CHECK_IXE_SKIP` (comma-separated addresses) declines
+exits with code 7 (`Ix.Kernel.Host.exitWatchdog`); `CHECK_IXE_SKIP` (comma-separated addresses) declines
 those records unchecked, as `kernel-check-ixe --guarded` does to rerun past
 runaways. `CHECK_IXE_ROOTS` (comma-separated Lean names, resolved through the
 environment's metadata) restricts the run to the prelude and the dependency
@@ -142,7 +143,8 @@ def orderOf (s : Setup) (named : Std.HashMap Ix.Name Ixon.Named) (pre : Prelude 
 /-- The watchdog, every half second until `running` is false: when the
 longest-running check in the slots has run longer than `watchMs`, or the
 process's resident memory exceeds `watchKb` while a check runs, it appends
-that check's record to `runaway` and exits with code 3. -/
+that check's record to `runaway` and exits with code 7 (`Ix.Kernel.Host.exitWatchdog`, a
+code of its own: 3 is a host's rejection). -/
 def watchdog (slots : Array CheckIxePool.Slot) (running : IO.Ref Bool) (watchMs watchKb : Nat)
     (runaway : String) (onExit : IO Unit := pure ()) : IO Unit := do
   while ← running.get do
@@ -160,7 +162,7 @@ def watchdog (slots : Array CheckIxePool.Slot) (running : IO.Ref Bool) (watchMs 
         let file ← IO.FS.Handle.mk runaway .append
         file.putStrLn (toString address)
         file.flush
-        IO.Process.exit 3
+        IO.Process.exit Ix.Kernel.Host.exitWatchdog.toUInt8
 
 /-- The setup line of a live run. -/
 def setupLine (s : Setup) (blobs roles hints : Nat) (pre : Prelude .anon) : String :=
@@ -185,8 +187,8 @@ def markInputs (s : Setup) (names : Std.HashMap Address (Array String)) : IO Uni
 /-- Counts of a run: outcomes and first causes. -/
 abbrev Counts := Std.HashMap String Nat × Std.HashMap String Nat
 
-/-- The check, with the watchdog's `running` flag owned by `run`. -/
-def runWith (running : IO.Ref Bool) (args : List String) : IO UInt32 := do
+def runWith (settings : Ix.Kernel.Host.Resolved) (running : IO.Ref Bool) (args : List String) :
+    IO UInt32 := do
   let some options := parseArgs args
     | IO.eprintln usage; return 2
   let started ← IO.monoMsNow
@@ -319,8 +321,8 @@ def runWith (running : IO.Ref Bool) (args : List String) : IO UInt32 := do
     | none => do
       match options.load with
       | .eager => do
-        let env ← IO.ofExcept (Ixon.deEnv bytes)
-        let (table, pre) ← IO.ofExcept (Ix.KernelCheck.Binding.context env)
+        let env ← IO.ofExcept (Ixon.deEnv bytes settings.limits.maxDepth)
+        let (table, pre) ← IO.ofExcept (Ix.KernelCheck.Binding.context env settings.limits)
         let mut store : RecordStore := Std.HashMap.emptyWithCapacity env.consts.size
         for (address, lazy) in env.consts do
           store := store.insert address (← IO.ofExcept lazy.get)
@@ -334,10 +336,11 @@ def runWith (running : IO.Ref Bool) (args : List String) : IO UInt32 := do
           (Thunk.mk fun () => CheckIxeMeta.displayTable env s.cx))
       | .stream => do
         let contextEnv ← IO.ofExcept (Ixon.deEnvAnon bytes)
-        let (table, pre) ← IO.ofExcept (Ix.KernelCheck.Binding.context contextEnv)
+        let (table, pre) ← IO.ofExcept (Ix.KernelCheck.Binding.context contextEnv settings.limits)
         -- the setup is marked persistent by the load itself, before its
         -- pre-read workers share it, when the loop runs on its own thread
         let l ← CheckIxeStream.loadEnv contextEnv table pre (persistent := thread)
+          (maxDepth := settings.limits.maxDepth)
         let s := l.setup
         let names := reportNames l.env s.store
         log s!"streaming load: {setupLine s l.env.blobs.size s.cx.roles.names.size l.env.anonHints.size pre}"
@@ -366,14 +369,37 @@ def runWith (running : IO.Ref Bool) (args : List String) : IO UInt32 := do
       IO.eprintln s!"  {address} {" | ".intercalate names.toList}"
   return 0
 
-/-- `kernel-check-ixe`'s environment check (`runWith`). The watchdog, a dedicated task, runs
-until `running` is false; `run` clears it on every way out, an exception's included: a task
-still running when `main` returns keeps the process from exiting (the runtime waits for its
-tasks before it reports an uncaught error), so a check that raised after the watchdog started
-hung silently, with no CPU and nothing printed. -/
+/-- `kernel-check-ixe`: the kernel's limits from the `IX_KERNEL_*` variables over
+`Ix.KernelCheck.Binding.limits` (a malformed one exits 2), printed when set; a decline by one
+(the loaders' depth scan, `Ixon.depthLimitError`, or the artifact's admission) exits 6 with
+the message every host prints. The threads keep the caller's stack (`LEAN_STACK_SIZE_KB`, else
+the runtime's 1 GiB), against which the address-space check runs (`Ix.Kernel.Host.spaceCheck`:
+exit 2 only when the run certainly cannot fit, else a warning line when it may not). -/
 def run (args : List String) : IO UInt32 := do
+  let settings ← match ← Ix.Kernel.Host.resolveIO Ix.KernelCheck.Binding.limits (fun _ => none) with
+    | .ok s => pure s
+    | .error e => IO.eprintln s!"check-ixe: {e}"; return 2
+  if let some h := Ix.Kernel.Host.header settings then IO.eprintln s!"check-ixe: {h}"
+  -- the address-space check with the stack the threads will have (the caller's: not resized)
+  match ← Ix.Kernel.Host.spaceCheck (← Ix.Kernel.Host.callerStack) settings.limits.workers
+      (← Ix.Kernel.Host.poolSize)
+      "LEAN_STACK_SIZE_KB, or IX_KERNEL_WORKERS" "IX_KERNEL_WORKERS, or LEAN_STACK_SIZE_KB" with
+  | .refuse why => IO.eprintln s!"check-ixe: {why}"; return 2
+  | .warn line => IO.eprintln s!"check-ixe: {line}"
+  | .fits => pure ()
+  -- the watchdog runs until `running` is false: set on every way out, an exception's too (a
+  -- dedicated task still running when `main` returns keeps the process from exiting)
   let running ← IO.mkRef true
-  try runWith running args
+  try runWith settings running args
+  catch e =>
+    let text := toString e
+    let limit : Option Ix.Kernel.Admission.Resource :=
+      if Ixon.isDepthLimitError text then some .depth else Ix.Kernel.Host.limitOfText text
+    match limit with
+    | some r =>
+      IO.eprintln s!"check-ixe: {Ix.Kernel.Host.declineMessage settings r}"
+      return Ix.Kernel.Host.exitDeclined
+    | none => throw e
   finally running.set false
 
 end Benchmarks.Kernel.CheckIxe

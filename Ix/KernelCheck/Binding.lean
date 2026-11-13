@@ -17,7 +17,7 @@ def limits : Ix.Kernel.Admission.Limits :=
 artifact is admitted by `check-lean`'s preparation (`prepareRecords`), run
 with its decoding in parallel (`prepareRecordsPar`, equal to it by
 `prepareRecordsPar_eq`). -/
-def context (env : Ixon.Env) :
+def context (env : Ixon.Env) (limits : Ix.Kernel.Admission.Limits := limits) :
     Except String (Ix.Kernel.RoleTable × Ix.Kernel.Reader.Prelude .anon) := do
   if env.roleBinding.isSome then
     let input ← (Ix.RoleBinding.Artifact.prepareRecordsPar env limits).mapError toString

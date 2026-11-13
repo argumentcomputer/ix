@@ -10,6 +10,7 @@ public import Ix.RoleBinding.Compile
 public import Ix.RoleBinding.UserAxioms
 public import Ix.Store
 public import Ix.Runtime.Thread
+public import Ix.Cli.KernelLimits
 public import Ix.Benchmark.Results
 
 public section
@@ -43,11 +44,14 @@ inductive DriverError where
   | refused (label message : String)
   /-- Aggregate refusal: there is no declaration selector for a fail file. -/
   | artifact (message : String)
+  /-- Declined by a limit a setting raises (`Ix.Kernel.Host.declineMessage`): exit 6. -/
+  | declined (message : String)
 
 def DriverError.message : DriverError → String
-  | .usage s | .infrastructure s | .artifact s => s | .refused n s => s!"{n}: {s}"
+  | .usage s | .infrastructure s | .artifact s | .declined s => s | .refused n s => s!"{n}: {s}"
 def DriverError.exitCode : DriverError → UInt32
   | .usage _ => 2 | .infrastructure _ => 1 | .refused .. | .artifact _ => 3
+  | .declined _ => Ix.Kernel.Host.exitDeclined
 
 def targetError : CheckLeanTargets.Error → DriverError
   | .selector s => .usage s
@@ -84,12 +88,26 @@ structure PreparedInput where
   (`UserAxioms.requireAxiomRoles`). -/
   allowUserAxioms : Bool := false
   prepareMs : Nat := 0
+  /-- The limits the run is under, with their sources (`Ix.Kernel.Host.resolve`). -/
+  settings : Ix.Kernel.Host.Resolved
 
 /-- Explicit coverage limits for the complete artifact entry, shared by both
-display modes. These are the host's whole-library byte/expansion bounds. -/
+display modes: the host's whole-library byte/expansion bounds, and the kernel's
+default depth limit; the defaults of the settings (`Ix.Kernel.Host.resolve`),
+which `--max-*` and `IX_KERNEL_*` override. -/
 def artifactLimits : Admission.Limits :=
   { maxRecords := 1 <<< 22, maxBlobs := 1 <<< 22, maxTotalBytes := 1 <<< 34,
     maxRecordBytes := 1 <<< 28, maxRecordUnivNodes := 1 <<< 26 }
+
+/-- The settings at their defaults. -/
+def defaultSettings : Ix.Kernel.Host.Resolved := { limits := artifactLimits }
+
+/-- A host error as a `DriverError`: a decline by the limit it names (exit 6), else `other`. -/
+def limitOr (s : Ix.Kernel.Host.Resolved) (limit : Option Admission.Resource) (other : DriverError) :
+    DriverError :=
+  match limit with
+  | some r => .declined (Ix.Kernel.Host.declineMessage s r)
+  | none => other
 
 /-- Authenticate first; retain raw windows and reader skeletons. No metadata
 field is rebuilt through an incomplete Env literal. A bound artifact's binding
@@ -101,14 +119,17 @@ must pass the kernel's role-table check for user axioms
 `sorryAx`, `propext` and `Classical.choice` bound) before any declaration is
 checked, since the record-by-record checks never reach admission; an artifact
 with no binding is refused. -/
-def prepareInput (bytes : ByteArray) (anon : Bool := false) (allowUserAxioms : Bool := false) :
+def prepareInput (bytes : ByteArray) (anon : Bool := false) (allowUserAxioms : Bool := false)
+    (settings : Ix.Kernel.Host.Resolved := defaultSettings) :
     IO (Except DriverError PreparedInput) := do
   let start ← IO.monoMsNow
   let result : Except DriverError PreparedInput ← IO.lazyPure fun _ => do
-    let parts ← (Ixon.deEnvVerifiedLazy bytes).mapError DriverError.infrastructure
+    -- the loader scans every record before decoding it (`Ixon.depthLimitError`)
+    let parts ← (Ixon.deEnvVerifiedLazy bytes settings.limits.maxDepth).mapError fun e =>
+      limitOr settings (Ix.Cli.KernelLimits.loaderLimitOf e) (.infrastructure e)
     let boundInput ← if parts.env.roleBinding.isSome then
-        (Ix.RoleBinding.Artifact.prepareRecords parts.env artifactLimits).map some
-          |>.mapError (DriverError.artifact ∘ toString)
+        (Ix.RoleBinding.Artifact.prepareRecords parts.env settings.limits).map some
+          |>.mapError fun e => limitOr settings (Ix.Cli.KernelLimits.artifactLimitOf e) (.artifact (toString e))
       else pure none
     if allowUserAxioms then
       (Ix.RoleBinding.UserAxioms.requireAxiomRoles parts.env.roleBinding).mapError
@@ -147,7 +168,7 @@ def prepareInput (bytes : ByteArray) (anon : Bool := false) (allowUserAxioms : B
     let inventory ← if anon then (anonymousCandidates store).mapError targetError else
       pure (namedCandidates store (parts.namedRows.map fun (r : Ixon.NamedRow) => (toString r.name, r.addr)))
     pure { parts, setup, pre, hints, inventory, anon, bound := boundInput.isSome
-           hasTier := (boundInput.map (·.hasTier)).getD false, allowUserAxioms : PreparedInput }
+           hasTier := (boundInput.map (·.hasTier)).getD false, allowUserAxioms, settings : PreparedInput }
   let elapsed := (← IO.monoMsNow) - start
   return result.map fun p => { p with prepareMs := elapsed }
 
@@ -209,9 +230,10 @@ def ArtifactAdmission.ofRun {artifact : Ixon.Env} {limits : Admission.Limits} :
 
 /-- A certified run's verdict and its host statement, derived from the run as
 `HostAdmission.certify` derives it (`HostAdmission.statementOf`). -/
-def certifiedVerdict (artifact : Ixon.Env) (run : Ix.HostAdmission.Run artifact artifactLimits) :
+def certifiedVerdict (artifact : Ixon.Env) {limits : Admission.Limits}
+    (run : Ix.HostAdmission.Run artifact limits) :
     Except DriverError (Option (ArtifactAdmission × Option Ix.HostAdmission.Statement)) := do
-  let statement ← (Ix.HostAdmission.statementOf artifact artifactLimits run).mapError
+  let statement ← (Ix.HostAdmission.statementOf artifact limits run).mapError
     (DriverError.artifact ∘ toString)
   return some (ArtifactAdmission.ofRun run, some statement)
 
@@ -230,21 +252,22 @@ def checkWhole (p : PreparedInput) (selection : Selection) (maxGroups : Option N
     Except DriverError (Option (ArtifactAdmission × Option Ix.HostAdmission.Statement)) := do
   unless (← wholeEntry p selection maxGroups) do return none
   let artifact := p.parts.env
+  let limits := p.settings.limits
   unless p.allowUserAxioms do
-    let ⟨statement, checked⟩ ← (Ix.HostAdmission.certify artifact artifactLimits).mapError
-      (DriverError.artifact ∘ toString)
+    let ⟨statement, checked⟩ ← (Ix.HostAdmission.certify artifact limits).mapError fun e =>
+      limitOr p.settings (Ix.Cli.KernelLimits.hostLimitOf e) (.artifact (toString e))
     return some (ArtifactAdmission.ofRun checked.run, some statement)
   if p.hasTier then
-    let receipt ← (Ix.RoleBinding.Artifact.checkTieredConditional artifact artifactLimits).mapError
-      (DriverError.artifact ∘ toString)
+    let receipt ← (Ix.RoleBinding.Artifact.checkTieredConditional artifact limits).mapError fun e =>
+      limitOr p.settings (Ix.Cli.KernelLimits.artifactTierLimitOf e) (.artifact (toString e))
     match noAxioms : receipt.axioms with
     | [] => certifiedVerdict artifact (.tiered (receipt.toTierReceipt noAxioms))
     | _ :: _ =>
       return some (.conditional receipt.prepared.records.length (some receipt.tier.length)
         (Ix.RoleBinding.UserAxioms.addresses receipt.axioms), none)
   else
-    let receipt ← (Ix.RoleBinding.Artifact.checkConditional artifact artifactLimits).mapError
-      (DriverError.artifact ∘ toString)
+    let receipt ← (Ix.RoleBinding.Artifact.checkConditional artifact limits).mapError fun e =>
+      limitOr p.settings (Ix.Cli.KernelLimits.artifactLimitOf e) (.artifact (toString e))
     match noAxioms : receipt.axioms with
     | [] => certifiedVerdict artifact (.logical (receipt.toReceipt noAxioms))
     | _ :: _ =>
@@ -509,14 +532,16 @@ def defaultWorkers : IO Nat := do
   | .ok out => if out.exitCode != 0 then return 8 else return (out.stdout.trimAscii.toString.toNat?).map (max 1) |>.getD 8
   | .error _ => return 8
 
-def checkConfig (p : Cli.Parsed) : IO (Except DriverError CheckCfg) := do
-  let workers ← match (p.flag? "workers").map (·.as! Nat) with | some n => pure n | none => defaultWorkers
-  if workers == 0 then return .error (.usage "--workers must be greater than zero")
+/-- The run's configuration. `--workers` (or `IX_KERNEL_WORKERS`, through `settings`) is both the
+requested worker count and, when given, the bound on the tasks of the entry's phase B; unset,
+the request is `LEAN_NUM_THREADS` or the processor count and phase B is unbounded. -/
+def checkConfig (p : Cli.Parsed) (settings : Ix.Kernel.Host.Resolved) : IO (Except DriverError CheckCfg) := do
+  let workers ← match settings.limits.workers with | some n => pure n | none => defaultWorkers
   let progress ← envNat ["IX_KERNEL_CHECK_PROGRESS_MS", "IX_PROGRESS_MS"] 2000
   let slow ← envNat ["IX_KERNEL_CHECK_SLOW_MS"] 7000
   return do pure {
     workers, verbose := p.hasFlag "verbose", allowDeclined := p.hasFlag "allow-declined"
-    progressMs := ← progress, slowMs := ← slow }
+    progressMs := ← progress, slowMs := ← slow, stackBytes := settings.limits.stackFor }
 
 private def csvField (s : String) : String :=
   if s.any (fun c => c == ',' || c == '"')
@@ -592,6 +617,8 @@ structure Options where
   failOut? : Option String
   hostOut? : Option String
   hostStore : Bool
+  /-- The kernel's limits (`--max-*`, `--workers`, `IX_KERNEL_*`). -/
+  settings : Ix.Kernel.Host.Resolved
 
 def Options.selection (o : Options) : Selection := if o.hasConsts then .only o.only else .all
 def Options.wholeRequested (o : Options) : Bool := o.selection.isWhole && o.cap.isNone
@@ -601,14 +628,17 @@ into this results file. -/
 def Options.perName? (o : Options) : Option String := if o.hasConsts then o.json? else none
 
 def parseOptions (p : Cli.Parsed) (path : String) : IO (Except DriverError Options) := do
-  let cfg ← match ← checkConfig p with | .ok c => pure c | .error e => return .error e
+  let settings ← match ← Ix.Cli.KernelLimits.resolveCli artifactLimits p with
+    | .ok s => pure s | .error e => return .error (.usage s!"[check-lean] {e}")
+  let cfg ← match ← checkConfig p settings with | .ok c => pure c | .error e => return .error e
   let string (flag : String) := (p.flag? flag).map (·.as! String)
   let o : Options := {
     path, cfg, anon := p.hasFlag "anon", allowUserAxioms := p.hasFlag "allow-user-axioms"
     hasConsts := (p.flag? "consts").isSome || (p.flag? "consts-file").isSome
     only := (← ConstsFile.gather p), cap := (p.flag? "max").map (·.as! Nat)
     json? := string "json", jsonName? := string "json-name", perConst? := string "per-const"
-    failOut? := string "fail-out", hostOut? := string "host-out", hostStore := p.hasFlag "host-store" }
+    failOut? := string "fail-out", hostOut? := string "host-out", hostStore := p.hasFlag "host-store"
+    settings }
   if o.hostRequested && (o.hasConsts || o.cap.isSome || o.cfg.allowDeclined) then
     return .error (.usage "[check-lean] host statement output requires a complete bound artifact check")
   if o.perName?.isSome && o.failOut?.isSome then
@@ -735,11 +765,9 @@ admission: this run is CONDITIONAL on {axioms.size} user axioms and issues no ho
   if let some json := o.json? then
     writeJsonReportRow json (o.jsonName?.getD "env") report o.wholeRequested o.cfg.allowDeclined
 
-def runCheckLeanCmd (p : Cli.Parsed) : IO UInt32 := do
-  let some path := p.positionalArg? "path" | p.printError "error: must specify <path>"; return 2
+/-- A run with its options resolved, on the thread `runCheckLeanCmd` sized for it. -/
+def runOptions (o : Options) : IO UInt32 := do
   try
-    let o ← match ← parseOptions p (path.as! String) with
-      | .ok o => pure o | .error e => IO.eprintln e.message; return e.exitCode
     let out ← o.failOut?.mapM fun f => do
       let h ← IO.FS.Handle.mk f .write
       h.putStrLn s!"# ix check-lean failures\n# env: {o.path}"
@@ -748,7 +776,7 @@ def runCheckLeanCmd (p : Cli.Parsed) : IO UInt32 := do
     IO.println s!"Running IxCK record check ({if o.anon then "anon" else "meta"} mode\
 {if o.allowUserAxioms then "; user axioms allowed" else ""}\
 {if o.cfg.allowDeclined then "; declined allowed" else ""})"
-    let prepared ← match ← prepareInput bytes o.anon o.allowUserAxioms with
+    let prepared ← match ← prepareInput bytes o.anon o.allowUserAxioms o.settings with
       | .ok prep => pure prep
       | .error e => return (← refuse out e)
     if let some json := o.perName? then
@@ -773,15 +801,37 @@ def runCheckLeanCmd (p : Cli.Parsed) : IO UInt32 := do
       return runExit report o.wholeRequested o.hostRequested o.cfg.allowDeclined
   catch e => IO.eprintln s!"[check-lean] {e}"; return 1
 
+/-- `ix check-lean`: the settings resolved (a malformed one is a usage error, exit 2) and
+printed when not at their defaults; the threads sized from them before any task
+(`KernelLimits.prepareThreads`: a run that cannot fit the address-space limit is refused,
+exit 2); then the whole run, from reading the input on, on a thread of that size. -/
+def runCheckLeanCmd (p : Cli.Parsed) : IO UInt32 := do
+  let some path := p.positionalArg? "path" | p.printError "error: must specify <path>"; return 2
+  try
+    let o ← match ← parseOptions p (path.as! String) with
+      | .ok o => pure o | .error e => IO.eprintln e.message; return e.exitCode
+    if let some h := Ix.Kernel.Host.header o.settings then IO.eprintln s!"[check-lean] {h}"
+    if let some why ← Ix.Cli.KernelLimits.prepareThreads o.settings then
+      IO.eprintln s!"[check-lean] {why}"
+      return Ix.Benchmark.Results.exitUsage
+    Ix.Cli.KernelLimits.onKernelThread (runOptions o)
+  catch e => IO.eprintln s!"[check-lean] {e}"; return 1
+
 end Ix.Cli.CheckLeanCmd
 
 open Ix.Cli.CheckLeanCmd in
 def checkLeanCmd : Cli.Cmd := `[Cli|
   "check-lean" VIA runCheckLeanCmd;
-  "Check authenticated .ixe declarations with IxCK (bound whole inputs use actual artifact admission; meta display by default). Strict: a safe axiom other than propext, Classical.choice and Quot.sound declines unless --allow-user-axioms. Exit 0: everything asked for passed; 3: a declaration failed or the artifact was refused; 4: every declaration passed but the whole artifact, asked for, carries no role binding, so its admission did not run; 5: CONDITIONAL, everything passed only with the listed user axioms admitted (--allow-user-axioms); 2: usage, including a selector naming no declaration and a host statement the run could not issue; 1: infrastructure"
+  "Check authenticated .ixe declarations with IxCK (bound whole inputs use actual artifact admission; meta display by default). Strict: a safe axiom other than propext, Classical.choice and Quot.sound declines unless --allow-user-axioms. Exit 0: everything asked for passed; 3: a declaration failed or the artifact was refused; 4: every declaration passed but the whole artifact, asked for, carries no role binding, so its admission did not run; 5: CONDITIONAL, everything passed only with the listed user axioms admitted (--allow-user-axioms); 6: declined by a kernel limit, which the message names with the flag and variable that raise it; 2: usage, including a selector naming no declaration, a host statement the run could not issue, a malformed limit and a run whose threads cannot fit the address-space limit; 1: infrastructure"
   FLAGS:
     anon; "Anonymous keys and #hex display labels"
-    workers : Nat; "Requested workers (>0); the tier-capable path reports effective 1"
+    workers : String; "Requested workers (>0; else IX_KERNEL_WORKERS, else LEAN_NUM_THREADS or the processor count); the tier-capable path reports effective 1. Given, it also bounds the tasks of the whole-artifact entry's phase B"
+    "max-records" : String; "Kernel limit: records in the artifact (else IX_KERNEL_MAX_RECORDS; default 4194304)"
+    "max-blobs" : String; "Kernel limit: blobs in the artifact (else IX_KERNEL_MAX_BLOBS; default 4194304)"
+    "max-total-bytes" : String; "Kernel limit: payload bytes of records and blobs (else IX_KERNEL_MAX_TOTAL_BYTES; default 17179869184)"
+    "max-record-bytes" : String; "Kernel limit: one record's payload bytes (else IX_KERNEL_MAX_RECORD_BYTES; default 268435456)"
+    "max-record-univ-nodes" : String; "Kernel limit: one record's universe nodes, expanded (else IX_KERNEL_MAX_RECORD_UNIV_NODES; default 67108864)"
+    "max-depth" : String; "Kernel limit: how deep a record nests, as stored and with shares expanded (else IX_KERNEL_MAX_DEPTH; default 16384); the threads get 16 KiB of stack per level, at least 256 MiB"
     "allow-user-axioms"; "Admit safe axioms beyond the standard three; the role binding must bind sorryAx, propext and Classical.choice. A whole run whose declarations hold any runs the uncertified conditional entry, lists the axioms, issues no host statement and exits 5; so does a selected run that reads one"
     "allow-declined"; "Record-check mode: tolerate declarations outside IxCK's fragment (decline) and their dependents (blocked), failing with exit 3 only on a kernel or reader reject; skips whole-artifact admission and issues no host statement"
     "fail-out" : String; "Write failing selected labels in consts-file format"
