@@ -357,6 +357,9 @@ def anCtor (nP : Nat) (fields : Array Field) (avs : Array (Option AVal)) (c : Cl
         flowTo .share v.skel v "a shared field"
       else if v.cls == .val then
         unless ← isUniq v do own := .shared
+        -- two inherited fields aliasing one binding: the cell holds a value twice, so it is no
+        -- tree and its transfer reaches that value twice (finding 8)
+        if v.deps.any deps.contains then own := .shared
         deps := natUnion deps v.deps
     | _, _ => pure ()
   pure { cls := c, own, deps, regs, skel := .unknown }

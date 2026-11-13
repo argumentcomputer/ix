@@ -776,6 +776,15 @@ def in7 : Heap × List Val :=
 def in7x : Heap × List Val :=
   let (b, ns) := fiveNats; (b.heap, .imm .irr :: ns)
 def fuels0to12 : List Nat := List.range 13 ++ [100000]
+-- Finding 8: `dup (@unique x : List Nat) : Nat := consume (x :: x)`; `dup2 … := consume [x, x]`;
+-- the control `pairOk (@unique x y : List Nat) : Nat := consume (x :: y)`
+def dup := mem 315
+def dup2 := mem 345
+def pairOk := mem 346
+def twoLists : Heap × List Val :=
+  let (b, xs) := ({} : HB).list [1, 2]
+  let (b, ys) := b.list [3]
+  (b.heap, [xs, ys])
 
 -- (the suite's `fuelCase` definition stands here; the driver's is above)
 
@@ -807,7 +816,18 @@ def findingCases : List Case := [
     g2 in3 (some .borrowEscape) false [g2, bad3],
   fuelCase "finding 7: a call of six arguments, the third erased, at every fuel from 0 to 12"
     p7Defs gV in7 fuels0to12 true [gV, fV],
-  fuelCase "finding 7, control: the erased parameter first" p7xDefs gXV in7x fuels0to12 true [gXV, fXV]
+  fuelCase "finding 7, control: the erased parameter first" p7xDefs gXV in7x fuels0to12 true [gXV, fXV],
+  runCase "finding 8: a unique list stored twice in one cell, the cell given away"
+    [(dup, body [par .unique] (app (.const consumeR .val) [app (.const consR .val) [.irr, v 0, v 0]] .leaf)
+      .shared .leaf)] dup oneList (some .revokedUse) false,
+  runCase "finding 8: a unique list stored in a cell and in a cell inside it, the cell given away"
+    [(dup2, body [par .unique] (app (.const consumeR .val) [app (.const consR .val)
+      [.irr, v 0, app (.const consR .val) [.irr, v 0, app (.const nilR .val) [.irr] .imm]]] .leaf) .shared .leaf)]
+    dup2 oneList (some .revokedUse) false,
+  runCase "finding 8, control: two unique lists in one cell, the cell given away"
+    [(pairOk, body [par .unique, par .unique]
+      (app (.const consumeR .val) [app (.const consR .val) [.irr, v 1, v 0]] .leaf) .shared .leaf)]
+    pairOk twoLists none true
 ]
 
 -- END COPY
@@ -1122,18 +1142,37 @@ def f7Cases : List Case := [
 
 def dup := mem 315
 def deep8 := mem 316
+def dup2 := mem 345
+def pairOk := mem 346
 
 def p8 : Prog := prog [
   (dup, body [par .unique] (app (.const consumeR .val) [app (.const consR .val) [.irr, v 0, v 0]] .leaf) .shared .leaf),
   (deep8, body [par .unique] (onList (v 0) (.natLit 0)
       (add (app (.const consumeR .val) [app (.const consR .val) [.irr, v 1, v 0]] .leaf) (lenOf (v 0))) .val .leaf)
+    .shared .leaf),
+  -- `dup2 (@unique x : List Nat) : Nat := consume [x, x]`, the second through a cell of its own
+  (dup2, body [par .unique] (app (.const consumeR .val) [app (.const consR .val)
+    [.irr, v 0, app (.const consR .val) [.irr, v 0, app (.const nilR .val) [.irr] .imm]]] .leaf) .shared .leaf),
+  -- `pairOk (@unique x y : List Nat) : Nat := consume (x :: y)`
+  (pairOk, body [par .unique, par .unique] (app (.const consumeR .val) [app (.const consR .val) [.irr, v 1, v 0]] .leaf)
     .shared .leaf)]
 
+def twoLists : Heap × List Val :=
+  let (b, xs) := ({} : HB).list [1, 2]
+  let (b, ys) := b.list [3]
+  (b.heap, [xs, ys])
+
 def f8Cases : List Case := [
+  -- REPAIR C: accepted as landed
   { label := "F8 dup: consume (x :: x)", P := p8, seed := dup, inp := oneList, toCheck := [dup],
-    verdict := .accept, run := [(0, .vio .revokedUse)], open_ := true },
+    verdict := .refuse "revokedUse: a value that may be shared, at a unique position", run := [(0, .vio .revokedUse)] },
+  -- REPAIR C: accepted as landed
+  { label := "F8 dup2: consume [x, x]", P := p8, seed := dup2, inp := oneList, toCheck := [dup2],
+    verdict := .refuse "revokedUse: a value that may be shared, at a unique position", run := [(0, .vio .revokedUse)] },
   { label := "F8 control: their `deep`", P := p8, seed := deep8, inp := oneList, toCheck := [deep8],
-    verdict := .refuse "revokedUse", run := [(0, .oof), (20, .vio .revokedUse)] }]
+    verdict := .refuse "revokedUse", run := [(0, .oof), (20, .vio .revokedUse)] },
+  { label := "F8 control: consume (x :: y), two unique lists", P := p8, seed := pairOk, inp := twoLists,
+    toCheck := [pairOk], verdict := .accept, run := [(0, .valOrOof), (20, .value)] }]
 
 /-! ### Finding 9: `applyValue` drops the function's regions -/
 

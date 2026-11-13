@@ -499,6 +499,15 @@ def in7 : Heap × List Val :=
 def in7x : Heap × List Val :=
   let (b, ns) := fiveNats; (b.heap, .imm .irr :: ns)
 def fuels0to12 : List Nat := List.range 13 ++ [100000]
+-- Finding 8: `dup (@unique x : List Nat) : Nat := consume (x :: x)`; `dup2 … := consume [x, x]`;
+-- the control `pairOk (@unique x y : List Nat) : Nat := consume (x :: y)`
+def dup := mem 315
+def dup2 := mem 345
+def pairOk := mem 346
+def twoLists : Heap × List Val :=
+  let (b, xs) := ({} : HB).list [1, 2]
+  let (b, ys) := b.list [3]
+  (b.heap, [xs, ys])
 
 /-- Run `entry` at every fuel of `fuels` (ascending): no run violates, the runs
 are out of fuel up to some fuel and a value from there on (the evaluator spends
@@ -544,7 +553,18 @@ def findingCases : List LSpec.TestSeq := [
     g2 in3 (some .borrowEscape) false [g2, bad3],
   fuelCase "finding 7: a call of six arguments, the third erased, at every fuel from 0 to 12"
     p7Defs gV in7 fuels0to12 true [gV, fV],
-  fuelCase "finding 7, control: the erased parameter first" p7xDefs gXV in7x fuels0to12 true [gXV, fXV]
+  fuelCase "finding 7, control: the erased parameter first" p7xDefs gXV in7x fuels0to12 true [gXV, fXV],
+  runCase "finding 8: a unique list stored twice in one cell, the cell given away"
+    [(dup, body [par .unique] (app (.const consumeR .val) [app (.const consR .val) [.irr, v 0, v 0]] .leaf)
+      .shared .leaf)] dup oneList (some .revokedUse) false,
+  runCase "finding 8: a unique list stored in a cell and in a cell inside it, the cell given away"
+    [(dup2, body [par .unique] (app (.const consumeR .val) [app (.const consR .val)
+      [.irr, v 0, app (.const consR .val) [.irr, v 0, app (.const nilR .val) [.irr] .imm]]] .leaf) .shared .leaf)]
+    dup2 oneList (some .revokedUse) false,
+  runCase "finding 8, control: two unique lists in one cell, the cell given away"
+    [(pairOk, body [par .unique, par .unique]
+      (app (.const consumeR .val) [app (.const consR .val) [.irr, v 1, v 0]] .leaf) .shared .leaf)]
+    pairOk twoLists none true
 ]
 
 /-! ### Must-reject cases from records -/
