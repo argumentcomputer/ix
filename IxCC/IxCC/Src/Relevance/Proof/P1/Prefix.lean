@@ -1,5 +1,6 @@
 import IxCC.Src.Relevance.Proof.P1.Defs
 import IxCC.Src.Proof.Spine
+import IxCC.Src.Proof.Lazify
 
 /-! # P1: the prefix of a spine whose next argument is not read
 
