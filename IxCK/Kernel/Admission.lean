@@ -250,7 +250,11 @@ theorem checkConstantsWith_cfg (hash : ByteArray → Address) (t : Ix.Kernel.Rol
     (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint) (cfg : Ix.Kernel.Cached.FoldConfig) :
     checkConstantsWith hash t pre constants blobs hint cfg = checkConstantsWith hash t pre constants blobs hint := by
   unfold checkConstantsWith
-  simp only [Ix.Kernel.Cached.checkDecls_cfg (cfg := cfg)]
+  cases readStream hash t pre constants blobs hint with
+  | error e => rfl
+  | ok p =>
+    simp only [bind, Except.bind]
+    rw [Ix.Kernel.Cached.checkDecls_cfg _ _ _ cfg]
 
 /-- `checkConstantsWith` under a role table, behind the prelude `prelude t`. -/
 def checkConstantsUsing (prelude : Ix.Kernel.RoleTable → Except String (Prelude .anon))
@@ -289,7 +293,14 @@ theorem checkConstantsAt_cfg (hash : ByteArray → Address) (binding : Binding)
     (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint) (cfg : Ix.Kernel.Cached.FoldConfig) :
     checkConstantsAt hash binding constants blobs hint cfg = checkConstantsAt hash binding constants blobs hint := by
   unfold checkConstantsAt checkConstants checkConstantsUsing
-  simp only [checkConstantsWith_cfg (cfg := cfg)]
+  cases admitBinding hash binding with
+  | error e => rfl
+  | ok t =>
+    cases preludeFor t with
+    | error e => rfl
+    | ok pre =>
+      simp only [bind, Except.bind]
+      rw [checkConstantsWith_cfg _ _ _ _ _ _ cfg]
 
 /-- The default role table's section, under the address the generator
 committed it at (`RoleData.tableAddress`, BLAKE3 of its bytes). For tests and
@@ -401,7 +412,14 @@ theorem checkConstantsUnder_cfg (policy : Ix.Kernel.Cached.AxiomPolicy) (hash : 
     checkConstantsUnder policy hash t pre constants blobs hint cfg =
       checkConstantsUnder policy hash t pre constants blobs hint := by
   unfold checkConstantsUnder
-  simp only [Ix.Kernel.Cached.checkDeclsUnder_cfg (cfg := cfg)]
+  cases admitAxiomPolicy policy t with
+  | error e => rfl
+  | ok u =>
+    cases readStream hash t pre constants blobs hint with
+    | error e => rfl
+    | ok p =>
+      simp only [bind, Except.bind]
+      rw [Ix.Kernel.Cached.checkDeclsUnder_cfg _ _ _ _ cfg]
 
 /-- **The bytes entry under an axiom policy**: `checkBytesWith`'s byte
 admission (`checkBytesWith_eq`: the batch limits, key uniqueness,

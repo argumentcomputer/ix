@@ -221,7 +221,9 @@ theorem checkConstantsTiered_cfg (hash : ByteArray → Address) (t : Ix.Kernel.R
     checkConstantsTiered hash t pre constants blobs hint cfg =
       checkConstantsTiered hash t pre constants blobs hint := by
   unfold checkConstantsTiered
-  simp only [checkConstantsWith_cfg (cfg := cfg)]
+  first
+  | rw [checkConstantsWith_cfg _ _ _ _ _ _ cfg]
+  | simp only [checkConstantsWith_cfg _ _ _ _ _ _ cfg]
 
 /-- **The tiered Ixon entry**: the byte stage over every record (batch
 limits, key uniqueness, authentication), the role table's admission, the
@@ -280,7 +282,9 @@ theorem checkConstantsTieredUnder_cfg (policy : Ix.Kernel.Cached.AxiomPolicy)
     checkConstantsTieredUnder policy hash t pre constants blobs hint cfg =
       checkConstantsTieredUnder policy hash t pre constants blobs hint := by
   unfold checkConstantsTieredUnder
-  simp only [checkConstantsUnder_cfg (cfg := cfg)]
+  first
+  | rw [checkConstantsUnder_cfg _ _ _ _ _ _ _ cfg]
+  | simp only [checkConstantsUnder_cfg _ _ _ _ _ _ _ cfg]
 
 /-- **The tiered Ixon entry under an axiom policy**: `checkBytesTieredUsing`'s
 byte stage, the role table's admission, the prelude and canonical decoding,

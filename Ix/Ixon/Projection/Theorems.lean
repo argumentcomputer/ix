@@ -324,28 +324,28 @@ theorem checkBytes_run_iff (hash : ByteArray → Address) (binding : Admission.B
         reconstruct hash maxProjections input = .ok output ∧
         Admission.checkConstantsAt hash binding output blobs hint = .ok env := by
   cases flight : Admission.preflight limits records blobs with
-  | error reason => simp [checkBytes, Admission.checkConstantsAt_cfg (cfg := limits.fold), flight, Except.mapError, bind, Except.bind]
+  | error reason => simp [checkBytes, Admission.checkConstantsAt_cfg _ _ _ _ _ limits.fold, flight, Except.mapError, bind, Except.bind]
   | ok value =>
     cases value
     cases unique : Admission.uniqueKeys records blobs with
-    | error reason => simp [checkBytes, Admission.checkConstantsAt_cfg (cfg := limits.fold), flight, unique, Except.mapError, bind, Except.bind]
+    | error reason => simp [checkBytes, Admission.checkConstantsAt_cfg _ _ _ _ _ limits.fold, flight, unique, Except.mapError, bind, Except.bind]
     | ok value =>
       cases value
       cases authentic : Admission.authenticate hash records blobs with
-      | error reason => simp [checkBytes, Admission.checkConstantsAt_cfg (cfg := limits.fold), flight, unique, authentic, Except.mapError, bind, Except.bind]
+      | error reason => simp [checkBytes, Admission.checkConstantsAt_cfg _ _ _ _ _ limits.fold, flight, unique, authentic, Except.mapError, bind, Except.bind]
       | ok value =>
         cases value
         cases decoded : Admission.decodeWithin limits records with
         | error reason =>
-          simp [checkBytes, Admission.checkConstantsAt_cfg (cfg := limits.fold), flight, unique, authentic, decoded, Except.mapError, bind, Except.bind]
+          simp [checkBytes, Admission.checkConstantsAt_cfg _ _ _ _ _ limits.fold, flight, unique, authentic, decoded, Except.mapError, bind, Except.bind]
         | ok input =>
           cases expanded : reconstruct hash maxProjections input with
           | error reason =>
-            simp [checkBytes, Admission.checkConstantsAt_cfg (cfg := limits.fold), flight, unique, authentic, decoded, expanded, Except.mapError, bind,
+            simp [checkBytes, Admission.checkConstantsAt_cfg _ _ _ _ _ limits.fold, flight, unique, authentic, decoded, expanded, Except.mapError, bind,
               Except.bind]
           | ok output =>
             cases checked : Admission.checkConstantsAt hash binding output blobs hint <;>
-              simp [checkBytes, Admission.checkConstantsAt_cfg (cfg := limits.fold), flight, unique, authentic, decoded, expanded, checked, Except.mapError,
+              simp [checkBytes, Admission.checkConstantsAt_cfg _ _ _ _ _ limits.fold, flight, unique, authentic, decoded, expanded, checked, Except.mapError,
                 bind, Except.bind]
 
 /-- Exact byte reading, authentication, bounded projection extension, and
@@ -382,7 +382,7 @@ theorem checkBytes_of_expansion {hash : ByteArray → Address} {binding : Admiss
   have hashed := (Admission.authenticate_ok_iff _ _ _).mpr authentic
   have decoded := (Admission.decodeWithin_ok_iff _ _ _).mpr ⟨reading, depth⟩
   have reconstructed := (reconstruct_ok_iff _ _ _ _).mpr expanded
-  simp [checkBytes, Admission.checkConstantsAt_cfg (cfg := limits.fold), flight, unique, hashed, decoded, reconstructed, Except.mapError, bind, Except.bind]
+  simp [checkBytes, Admission.checkConstantsAt_cfg _ _ _ _ _ limits.fold, flight, unique, hashed, decoded, reconstructed, Except.mapError, bind, Except.bind]
 
 /-- **Fidelity**: the supplied records and blobs use each address once and
 are stored under `hash` of their bytes, the records read exactly, their
