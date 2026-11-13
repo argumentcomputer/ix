@@ -1744,6 +1744,46 @@ theorem resolve_back (hme : Program.ModeEq p₀ p) {c : CId} {r : Resolve} (h : 
   | refl => rfl
   | eqn thm hb => exact absurd rfl (hr thm _)
 
+theorem recr_back (hme : Program.ModeEq p₀ p) {r : CId} {sf k : Bool} {lv np nmot nmin ni : Nat} {ind : CId}
+    {rules : List Rule} {ty : Term} (h : p.decl? r = some (.recr sf k lv np nmot nmin ni ind rules ty)) :
+    ∃ rules₀, p₀.decl? r = some (.recr sf k lv np nmot nmin ni ind rules₀ ty) ∧ RulesME rules₀ rules := by
+  have hd := decl?_me hme r
+  rw [h] at hd
+  generalize p₀.decl? r = o at hd ⊢
+  cases hd with
+  | same d => exact ⟨rules, rfl, RulesME.refl _⟩
+  | recr _ _ _ _ _ _ _ _ _ hr => exact ⟨_, rfl, hr⟩
+
+theorem RulesME.mem_back {rs rs' : List Rule} (h : RulesME rs rs') {r' : Rule} (hm : r' ∈ rs') :
+    ∃ r ∈ rs, ME r.rhs r'.rhs := by
+  induction h with
+  | nil => cases hm
+  | cons hc hf hmm _ ih =>
+    rcases List.mem_cons.1 hm with rfl | hm
+    · exact ⟨_, List.mem_cons.2 (Or.inl rfl), hmm⟩
+    · obtain ⟨r, hr, h⟩ := ih hm
+      exact ⟨r, List.mem_cons.2 (Or.inr hr), h⟩
+
+theorem BodiesME.mem_back {xs ys : List (TermKey × Term)} (h : BodiesME xs ys) {key : TermKey} {t : Term}
+    (hm : (key, t) ∈ ys) : ∃ t₀, (key, t₀) ∈ xs ∧ ME t₀ t := by
+  induction h with
+  | nil => cases hm
+  | cons hab _ ih =>
+    rcases List.mem_cons.1 hm with he | hm
+    · cases he
+      exact ⟨_, List.mem_cons.2 (Or.inl rfl), hab⟩
+    · obtain ⟨t₀, h₀, h⟩ := ih hm
+      exact ⟨t₀, List.mem_cons.2 (Or.inr h₀), h⟩
+
+theorem ctorFields_me (hme : Program.ModeEq p₀ p) {rule rule' : Rule} (hc : rule.ctor = rule'.ctor)
+    (hf : rule.fields = rule'.fields) : ctorFields p₀ rule = ctorFields p rule' := by
+  unfold ctorFields
+  rw [hc, hf]
+  decl_me p₀ p hme rule'.ctor <;> rfl
+
+theorem me_var {v : Nat} {b : Term} (h : ME (.var v) b) : b = .var v := by
+  cases h; rfl
+
 /-- **`Canonical` transports along `Program.ModeEq`.** (`checkCanonical` itself does not: its `dense`
 clause reads the maps' `toList`, which `Program.ModeEq` does not constrain.) -/
 theorem canonical_modeEq (hme : Program.ModeEq p₀ p) {ann : Ann} {ch : Checked}
@@ -1792,7 +1832,112 @@ theorem canonical_modeEq (hme : Program.ModeEq p₀ p) {ann : Ann} {ch : Checked
     obtain ⟨d₀, hd₀, hty, -⟩ := decl?_back hme hd
     rw [← readsAt_eq hme]
     exact h.reads c hc hh d₀ (by rw [specialHead?_eq hme]; exact hsh) hd₀ i (by rw [hty]; exact hi)
-  all_goals sorry
+  case consts =>
+    intro c cr hcr
+    obtain ⟨d, hd, h1, h2, h3, h4, h5⟩ := h.consts c cr hcr
+    obtain ⟨d', hd', hty, -⟩ := decl?_back hme' hd
+    have hct : ∀ n, classifyTelescope p [] n d.type = classifyTelescope p₀ [] n d.type := fun n =>
+      (classifyTelescope_me hme n .nil (Term.ModeEq.refl _)).symm
+    refine ⟨d', hd', ?_⟩
+    rw [hty, hct]
+    exact ⟨h1, h2, h3, fun op hop => h4 op (resolve_back hme hop fun _ _ he => by cases he),
+      fun w op thm hw => h5 w op thm (resolve_back hme hw fun _ _ he => by cases he)⟩
+  case ctors =>
+    intro c kr hkr
+    obtain ⟨sf, lv, ind, cidx, np, nf, ty, hd, h1, h2, h3, h4⟩ := h.ctors c kr hkr
+    have hct : ∀ n, classifyTelescope p [] n ty = classifyTelescope p₀ [] n ty := fun n =>
+      (classifyTelescope_me hme n .nil (Term.ModeEq.refl _)).symm
+    refine ⟨sf, lv, ind, cidx, np, nf, ty, ctor_back hme' hd, h1, ?_, h3, ?_⟩
+    · rw [hct]; exact h2
+    · intro i actual b exp ha hb
+      rw [hct] at hb
+      exact h4 i actual b exp ha hb
+  case bodies =>
+    intro c hc cr d hcr hd key t hmem
+    obtain ⟨d₀, hd₀, hty, -⟩ := decl?_back hme hd
+    obtain ⟨t₀, hm₀, ht⟩ := (runBodies_me hme c).mem_back hmem
+    have hh := h.bodies c hc cr d₀ hcr hd₀ key t₀ hm₀
+    rw [hty] at hh
+    unfold HeaderOk at hh ⊢
+    rw [← lamRels_me ht]
+    exact hh
+  case tags =>
+    intro c hc
+    obtain ⟨h1, h2⟩ := h.tags c hc
+    refine ⟨fun key t hm => ?_, fun sf k lv np nmot nmin ni ind rules ty hd rule hr => ?_⟩
+    · obtain ⟨t₀, hm₀, ht⟩ := (runBodies_me hme c).mem_back hm
+      rw [← checkTermBinders_me hme ann ht .nil .nil]
+      exact h1 key t₀ hm₀
+    · obtain ⟨rules₀, hd₀, hrs⟩ := recr_back hme hd
+      obtain ⟨rule₀, hr₀, hm⟩ := hrs.mem_back hr
+      rw [← checkTermBinders_me hme ann hm .nil .nil]
+      exact h2 sf k lv np nmot nmin ni ind rules₀ ty hd₀ rule₀ hr₀
+  case rules =>
+    intro c hc shape hs sf k lv np nmot nmin ni ind rules ty hd j rule hrule
+    have hR := h.rules c hc shape ((elimShape?_eq hme c).trans hs)
+    obtain ⟨rules₀, hd₀, hrs⟩ := recr_back hme hd
+    rcases hrs.getElem? j with ⟨h1, h2⟩ | ⟨rule₀, rule', h1, h2, hc', hf', -⟩
+    · rw [h2] at hrule; cases hrule
+    · have hrr : rule' = rule := Option.some.inj (h2.symm.trans hrule)
+      rw [hrr] at hc' hf'
+      obtain ⟨sf', lv', np', ty', hk⟩ := hR sf k lv np nmot nmin ni ind rules₀ ty hd₀ j rule₀ h1
+      rw [hc', hf'] at hk
+      exact ⟨sf', lv', np', ty', ctor_back hme' hk⟩
+  case univs =>
+    intro c hc
+    obtain ⟨h1, h2⟩ := h.univs c hc
+    refine ⟨fun key hk t ht => ?_, fun g us thm hres => ?_⟩
+    · rw [← runtimeKeys_eq hme] at hk
+      obtain ⟨t₀, ht₀, hm⟩ := hme'.termOf ht
+      rw [← univsOk_me hme (ME.symm hm)]
+      exact h1 key hk t₀ ht₀
+    · rw [← univsOk_eq hme]
+      exact h2 g us thm (resolve_back hme hres fun _ _ he => by cases he)
+  case subsingletonFields =>
+    intro c hc shape hs sf k lv np nmot nmin ni ind rules ty w srcs rule hd hk hr
+    obtain ⟨rules₀, hd₀, hrs⟩ := recr_back hme hd
+    rcases hrs.getElem? 0 with ⟨h1, h2⟩ | ⟨rule₀, rule', h1, h2, hc', hf', -⟩
+    · rw [h2] at hr; cases hr
+    · have hrr : rule' = rule := Option.some.inj (h2.symm.trans hr)
+      rw [hrr] at hc' hf'
+      rw [← ctorFields_me hme hc' hf']
+      exact h.subsingletonFields c hc shape ((elimShape?_eq hme c).trans hs) sf k lv np nmot nmin ni ind
+        rules₀ ty w srcs rule₀ hd₀ ((recKindOf_eq hme _).trans hk) h1
+  case forwards =>
+    intro c hc sf k lv np nmot nmin ni ind rules ty hd kidx rule hrule i hi hw
+    obtain ⟨rules₀, hd₀, hrs⟩ := recr_back hme hd
+    rcases hrs.getElem? kidx with ⟨h1, h2⟩ | ⟨rule₀, rule', h1, h2, hc', hf', hm⟩
+    · rw [h2] at hrule; cases hrule
+    · have hrr : rule' = rule := Option.some.inj (h2.symm.trans hrule)
+      rw [hrr] at hc' hf' hm
+      have hcf := ctorFields_me hme hc' hf'
+      have hwe : fieldWrittenErased p₀ rule₀.ctor i = true := by
+        rw [fieldWrittenErased_eq hme, hc']; exact hw
+      obtain ⟨hfe, body₀, j, hpeel, hdisp, hmv, hargs⟩ :=
+        h.forwards c hc sf k lv np nmot nmin ni ind rules₀ ty hd₀ kidx rule₀ h1 i (by rw [hcf]; exact hi) hwe
+      rw [hf'] at hpeel hmv hargs
+      have hpl := peelLamsN_me (np + nmot + nmin + rule.fields) hm
+      rw [hpeel] at hpl
+      cases hq : peelLamsN (np + nmot + nmin + rule.fields) rule.rhs with
+      | none => rw [hq] at hpl; exact hpl.elim
+      | some body =>
+        rw [hq] at hpl
+        have hb : ME body₀ body := hpl
+        obtain ⟨hsh, hsa⟩ := spine_me hb
+        refine ⟨by rw [← hf', ← hcf]; exact hfe, body, j, rfl, (ruleDispatch_me hme c hf' hm).symm.trans hdisp,
+          (mentionsVar_me hsh _).symm.trans hmv, fun n a ha => ?_⟩
+        rcases hsa.getElem? n with ⟨e₀, e₁⟩ | ⟨a₀, b, m, m', r, e₀, e₁, hab⟩
+        · have : body.spine.2[n]? = some a := ha
+          rw [e₁] at this; cases this
+        · have : body.spine.2[n]? = some a := ha
+          rw [e₁] at this
+          obtain rfl := Option.some.inj this
+          rcases hargs n (a₀, m, r) e₀ with ⟨hn, hv⟩ | hv
+          · left
+            have hv' : a₀ = .var (rule.fields - 1 - i) := hv
+            exact ⟨hn, by rw [hv'] at hab; exact me_var hab⟩
+          · right
+            exact (mentionsVar_me hab _).symm.trans hv
 
 
 end IxCC.Src.Relevance.Proof.ModeEq
