@@ -11,6 +11,6 @@
   "hints.equations.json":
   "a6cd89118338b9cde6235fe113da231181db67e970ba1fe091edde1aee4f035d"},
  "commands":
- ["ix compile --no-build --consts <roots and seeds> --anon --out hints.ixe KernelHints.lean",
-  "ix compile --no-build --consts <roots and seeds> --out hints.named.ixe KernelHints.lean",
+ ["ix compile --no-build --consts <roots and seeds> --no-equations --anon --out hints.ixe KernelHints.lean",
+  "ix compile --no-build --consts <roots and seeds> --no-equations --out hints.named.ixe KernelHints.lean",
   "ix addr-of --ixe hints.named.ixe NAME, for every root"]}

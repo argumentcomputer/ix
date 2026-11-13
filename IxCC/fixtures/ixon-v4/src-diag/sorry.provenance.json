@@ -11,6 +11,6 @@
   "sorry.equations.json":
   "82722fad1a02827e111e8cc4338e98da5a44d28ced1c8cb6ef3155db4ad0125c"},
  "commands":
- ["ix compile --no-build --consts <roots> --anon --out sorry.ixe Diag.lean",
-  "ix compile --no-build --consts <roots> --out sorry.named.ixe Diag.lean",
+ ["ix compile --no-build --consts <roots> --no-equations --anon --out sorry.ixe Diag.lean",
+  "ix compile --no-build --consts <roots> --no-equations --out sorry.named.ixe Diag.lean",
   "ix addr-of --ixe sorry.named.ixe NAME, for every root"]}
