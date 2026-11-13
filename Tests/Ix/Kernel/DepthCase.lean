@@ -312,9 +312,9 @@ def boundsCase : IO String := do
 /-- A deterministic generator (a linear congruential state). -/
 abbrev G := StateM UInt64
 
-def next : G Nat := modifyGet fun s =>
-  let s := s * 6364136223846793005 + 1442695040888963407
-  ((s >>> 33).toNat, s)
+def next : G Nat := modifyGet fun (s : UInt64) =>
+  let s' : UInt64 := s * 6364136223846793005 + 1442695040888963407
+  ((s' >>> 33).toNat, s')
 
 def below (n : Nat) : G Nat := do
   let x ← next
@@ -440,14 +440,35 @@ def expandedTimed (c : _root_.Ixon.Constant) (limit : Nat) : IO String := do
 reference (sharing entry 0 is `share 1`), measured by the post-order; `post-cycle n`, a
 table whose two entries refer to each other, the spine inside one of them. -/
 def stageCase (name : String) (n : Nat) : Option (IO String) :=
+  let walk := (defnS 0 (.sort 0) (spineN n) #[] #[] univs01, n + 1)
+  let post := (defnS 0 (.sort 0) (.share 0) #[.share 1, spineN n] #[] univs01, n + 1)
+  let cycle := (defnS 0 (.sort 0) (.share 0) #[.app (spineN n) (.share 1), .share 0] #[] univs01, n + 2)
+  -- `old-*`: the same records through the expanded check as it was before KI's change
+  let old (c : _root_.Ixon.Constant × Nat) : IO String := do
+    let t0 ← IO.monoNanosNow
+    let ok ← IO.lazyPure fun _ => Tests.Ix.Kernel.DepthRef.expandedWithinRef c.2 (2 ^ 40) c.1
+    let t1 ← IO.monoNanosNow
+    return s!"{if ok then "within" else "past"} (first form) in {(t1 - t0) / 1000000} ms"
   match name with
-  | "walk-spine" => some (expandedTimed (defnS 0 (.sort 0) (spineN n) #[] #[] univs01) (n + 1))
-  | "post-spine" =>
-    some (expandedTimed (defnS 0 (.sort 0) (.share 0) #[.share 1, spineN n] #[] univs01) (n + 1))
-  | "post-cycle" =>
-    some (expandedTimed
-      (defnS 0 (.sort 0) (.share 0) #[.app (spineN n) (.share 1), .share 0] #[] univs01) (n + 2))
-  | _ => none
+  | "walk-spine" => some (expandedTimed walk.1 walk.2)
+  | "post-spine" => some (expandedTimed post.1 post.2)
+  | "post-cycle" => some (expandedTimed cycle.1 cycle.2)
+  | "old-walk-spine" => some (old walk)
+  | "old-post-spine" => some (old post)
+  | "old-post-cycle" => some (old cycle)
+  | _ =>
+    -- `frame-walk-SHAPE n`, `frame-decode-SHAPE n`: the walk alone, the codec alone, on the shape
+    -- written out (to find the native stack each takes per level)
+    match name.splitOn "-" with
+    | ["frame", "walk", sh] => (shape sh false n).map fun cs => do
+      let ok ← IO.lazyPure fun _ =>
+        _root_.Ix.Kernel.Admission.Depth.expandedWithin (n + 10) (2 ^ 40) cs.getLast!
+      return if ok then "within" else "past"
+    | ["frame", "decode", sh] => (shape sh false n).map fun cs => do
+      let b := _root_.Ixon.serConstant cs.getLast!
+      let r ← IO.lazyPure fun _ => _root_.Ixon.Canonical.deConstant (1 <<< 28) (1 <<< 26) b
+      return if r.isOk then "decoded" else "not decoded"
+    | _ => none
 
 /-- Run one case; the line it prints starts with the verdict. -/
 def runOne (name : String) (n : Nat) : IO String := do

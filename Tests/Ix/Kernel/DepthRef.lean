@@ -230,4 +230,80 @@ def withinRef (limit : Nat) (bytes : ByteArray) : Bool :=
   match record limit bytes with
   | .error .deep => false
   | _ => true
+
+/-! ## The expanded check before KI's rewrite (the measurement's "before": `kernel-depth-case old-*`) -/
+
+inductive Visit where
+  /-- measure an expression -/
+  | enter (e : Ixon.Expr)
+  /-- the last `k` measured are a node's children: replace them by one more than their deepest -/
+  | leave (k : Nat)
+  /-- the last measured is sharing entry `i`'s depth -/
+  | share (i : Nat)
+
+/-- The largest of the last `k` values of `vals` (and `m`), and `vals` without them; in place
+when `vals` is not shared. -/
+def popMax (vals : Array Nat) : Nat → Nat → Nat × Array Nat
+  | 0, m => (m, vals)
+  | k + 1, m => popMax vals.pop k (max m (vals.back?.getD 0))
+
+/-- The post-order over `stack`, at most `fuel` steps: the depths measured
+(`vals`) and the sharing entries' memo, or `none` when a depth passes `limit`,
+a share reaches itself, or the fuel runs out. Every call of itself is a tail
+call. -/
+def expandLoop (sharing : Array Ixon.Expr) (limit : Nat) :
+    Nat → Array Visit → Array Nat → Array (Option Nat) → Array Bool →
+      Option (Array Nat × Array (Option Nat) × Array Bool)
+  | 0, _, _, _, _ => none
+  | fuel + 1, stack, vals, memo, active =>
+    match stack.back? with
+    | none => some (vals, memo, active)
+    | some visit =>
+      let stack := stack.pop
+      match visit with
+      | .enter (.share i) =>
+        let i := i.toNat
+        match sharing[i]? with
+        | none => expandLoop sharing limit fuel stack (vals.push 1) memo active
+        | some s =>
+          match memo[i]? with
+          | some (some h) => expandLoop sharing limit fuel stack (vals.push h) memo active
+          | _ =>
+            if active[i]?.getD false then none
+            else
+              expandLoop sharing limit fuel ((stack.push (.share i)).push (.enter s)) vals memo
+                (active.set! i true)
+      | .enter e =>
+        let cs := Ix.Kernel.Admission.Depth.children e
+        if cs.isEmpty then expandLoop sharing limit fuel stack (vals.push 1) memo active
+        else
+          expandLoop sharing limit fuel
+            (cs.foldl (fun st c => st.push (.enter c)) (stack.push (.leave cs.length))) vals memo
+            active
+      | .leave k =>
+        let (deepest, vals) := popMax vals k 0
+        let h := deepest + 1
+        if limit < h then none
+        else expandLoop sharing limit fuel stack (vals.push h) memo active
+      | .share i =>
+        expandLoop sharing limit fuel stack vals (memo.set! i (some (vals.back?.getD 0)))
+          (active.set! i false)
+
+/-- **A decoded record's expressions with shares expanded are within
+`limit`**: its payload and its sharing table, each sharing entry measured
+once; false past the limit or on a share that reaches itself. `fuel` bounds the
+post-order's steps (each stored node is entered and left once, each share
+entered and recorded once: eight per byte of the record suffice, a spine
+or telescope of n decoded nodes having n + 1 tags; the caller passes a bound
+from the record byte limit). -/
+def expandedWithinRef (limit fuel : Nat) (c : Ixon.Constant) : Bool :=
+  let stack := (Ix.Kernel.Admission.Depth.payload c).foldl (fun st e => st.push (Visit.enter e)) #[]
+  let stack := (List.range c.sharing.size).foldl
+    (fun st i => st.push (Visit.enter (.share i.toUInt64))) stack
+  match expandLoop c.sharing limit fuel stack #[] (Array.replicate c.sharing.size none)
+      (Array.replicate c.sharing.size false) with
+  | some (vals, _, _) => vals.all (· ≤ limit)
+  | none => false
+
+
 end Tests.Ix.Kernel.DepthRef
