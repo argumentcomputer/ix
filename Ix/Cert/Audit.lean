@@ -3369,11 +3369,11 @@ fun constructors =>
 #guard_msgs (whitespace := lax) in
 #print axioms Ix.CompileCert.InductiveReading.inductive_reads_indexed
 
-/-- info: 'Ix.CompileCert.InductiveReading.inductive_declines_unindexed' depends on axioms: [propext,
+/-- info: 'Ix.CompileCert.InductiveReading.inductive_unindexed_shape' depends on axioms: [propext,
  Classical.choice,
  Quot.sound] -/
 #guard_msgs (whitespace := lax) in
-#print axioms Ix.CompileCert.InductiveReading.inductive_declines_unindexed
+#print axioms Ix.CompileCert.InductiveReading.inductive_unindexed_shape
 
 /-! ## Component theorems: what Source mode admits of an inductive block
 

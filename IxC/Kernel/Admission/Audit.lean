@@ -157,11 +157,14 @@ externs, `implemented_by`, `unsafe`, csimp and their rulings are unchanged. -/
 -- Deriving a nested block's auxiliary members in the in-model generator (`nestedAuxOk`)
 -- adds 21 compiled functions (`IxC/Kernel/Audit/Roots.lean`). Externs, implemented_by, unsafe,
 -- csimp and all ruling counts are unchanged.
+-- The reader's default shape for a block of one inductive that no recursor of the input
+-- eliminates (`unindexedShape`, `blockShapeOf`) adds 5 compiled functions. Externs,
+-- implemented_by, unsafe, csimp and all ruling counts are unchanged.
 /-- info: runtime closure of [Ix.Kernel.Admission.preflight,
  Ix.Kernel.Admission.uniqueKeys,
  Ix.Kernel.Admission.authenticate,
  Ix.Kernel.Admission.decodeRecords,
- Ix.Kernel.Admission.checkBytes]: 6982 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 28 -/
+ Ix.Kernel.Admission.checkBytes]: 6987 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 28 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Admission.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
 
