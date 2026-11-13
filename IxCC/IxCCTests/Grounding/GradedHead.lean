@@ -18,7 +18,9 @@ ten corpus families, 36 closures, and the fifteen extra ones: 51):
   η-short step (GR21) also on `phase2-closures/closures` (a bound-variable head whose context type is
   a definition applied to more arguments than its value has λs), now true there
   (`IxCCTests.Grounding.EtaShort`: against the landed reader, frozen, on every spine of the 51,
-  the planted controls on `closures`, the synthetic readings), its family unchanged (the check
+  the planted controls on `closures`, each attributed in its assertion: the ten spines and the
+  closure accepted unplanted, each spine read otherwise planted; the synthetic readings), its
+  family unchanged (the check
   still refuses it);
 * equal to the per-site reading `headRegimeGB` on every closure (and on every planted control);
 * on the accepted closures, the sites 1a's reading as written (`headRegimeB`: constant heads only,
@@ -30,7 +32,10 @@ ten corpus families, 36 closures, and the fifteen extra ones: 51):
 Planted controls, each refused on every closure where it applies: the one definition unfolded at
 sites (`#7e081ef3d58e`, `DecidableEq`-like) with its first `∀` datum made a proposition everywhere
 (`ifAllZero []`), its unfolding made endless (`λ x. D x`: fuel, fail closed), its first λ datum made
-a proposition everywhere (3 plants on each of the 25 closures with a δ site: 75); and a constant
+a proposition everywhere (3 plants on each of the 25 closures with a δ site: 75, each changing the
+definition's stored value; attributed (GA) on 24, 72 plants, where the unplanted reading is true per
+spine and per site; on `diag`, refused unplanted for its projection heads, the 3 are reported as not
+attributable: until GA they were counted as passes); and a constant
 with a bound-variable head whose context type is a `∀`, its λ domains' `∀` data made propositions
 everywhere (32 closures; for an `eqn` entry in its equation theorem's type, where `runPairsB` reads
 its run term). The bound-variable plant is attributed (GR21): on each closure the run term the
@@ -116,6 +121,11 @@ def gapExpected : Nat := 436
 
 /-- The closures with a site whose head type unfolds a definition (three δ plants each). -/
 def deltaClosuresExpected : Nat := 25
+
+/-- Of those, the closures whose unplanted reading is false (per spine or per site), where the δ
+plants' refusals are not attributable to them, so not counted as passes (GA: until GA these three
+plants on `diag`, refused unplanted for its projection heads, were counted among the 75). -/
+def deltaUnattributedExpected : List String := ["diag"]
 
 /-- The closures with a bound-variable head of a `∀` context type (one plant each). -/
 def bvExpected : Nat := 32
@@ -271,7 +281,9 @@ def run : IO Bool := do
     let mut gap := 0
     let mut gap34 := 0
     let mut nDelta := 0
+    let mut nDeltaPlants := 0
     let mut nDeltaClosures := 0
+    let mut deltaUnattr : List String := []
     let mut nBv := 0
     let mut bvUnattr : List String := []
     let mut tS := 0
@@ -297,6 +309,15 @@ def run : IO Bool := do
     let mut tEta := 0
     for (label, stem, roots) in js do
       let (i, _) ← loadClosure label stem roots
+      -- the closure's unplanted verdicts, per spine and per site (read by every plant's attribution
+      -- below)
+      let t0 ← IO.monoNanosNow
+      let s ← IO.lazyPure fun _ => sB i
+      let t1 ← IO.monoNanosNow
+      let g ← IO.lazyPure fun _ => gB i
+      let t2 ← IO.monoNanosNow
+      tS := tS + (t1 - t0)
+      tG := tG + (t2 - t1)
       -- the η-short step (GR21): every spine against the landed reader, frozen
       let te0 ← IO.monoNanosNow
       let cmp ← IO.lazyPure fun _ => EtaShort.compare i
@@ -316,11 +337,21 @@ def run : IO Bool := do
             (rec_.map fun r => (lamPeel 1 r.2).isNone && (lamPeel 0 r.2).isSome) == some true)
           s!"eta: {label}: η-short definitions met {hs}, the first's stored level parameters \
             {rec_.map (·.1)}, expected one, with none and a value with no λ"
+        -- each plant attributed in its assertion (GA): unplanted, the ten spines read and accepted
+        -- and the closure accepted per spine and per site; planted, each of the ten spines read
+        -- otherwise than unplanted, refused, and the closure refused
+        let readAll (e : KEnv) : List (Option (List PropWhen)) :=
+          let tab := KTab.of e
+          cmp.more.map fun (_, sp) => spineReadB tab headFuel sp.ctx sp.head sp.args.dropLast
+        let read0 := readAll i.env
         for (nm, e) in EtaShort.plants i.env D do
           let j := { i with env := e }
           let (r10, bs, bg) := (EtaShort.allRefused i e cmp.more, sB j, gB j)
-          expect a (r10 && !bs && !bg)
-            s!"eta: {label}: plant ({nm}): the ten spines all refused {r10}, per-spine {bs}, per-site {bg}"
+          let nRead := ((read0.zip (readAll e)).filter fun (x, y) => x != y).length
+          expect a (s && g && cmp.moreAccepted == etaSpines && nRead == etaSpines && r10 && !bs && !bg)
+            s!"eta: {label}: plant ({nm}): unplanted the ten spines accepted {cmp.moreAccepted}, \
+              per-spine {s}, per-site {g}; planted {nRead} spines read otherwise (expected \
+              {etaSpines}), the ten spines all refused {r10}, per-spine {bs}, per-site {bg}"
           etaPlants := etaPlants + 1
         -- the synthetic readings, over `D` and another definition with no level parameter
         let E? := i.env.consts.findSome? fun ci => match ci with
@@ -330,13 +361,6 @@ def run : IO Bool := do
         for (nm, ok, what) in EtaShort.synthetic i.env D E do
           expect a ok s!"eta: synthetic: {nm}: {what}"
           etaSynth := etaSynth + 1
-      let t0 ← IO.monoNanosNow
-      let s ← IO.lazyPure fun _ => sB i
-      let t1 ← IO.monoNanosNow
-      let g ← IO.lazyPure fun _ => gB i
-      let t2 ← IO.monoNanosNow
-      tS := tS + (t1 - t0)
-      tG := tG + (t2 - t1)
       expect a (s == g) s!"graded1b: {label}: per-spine {s}, per-site {g}"
       if accepted.contains label then
         expect a s s!"graded1b: {label}: accepted by the check, headRegimeSB false"
@@ -365,8 +389,19 @@ def run : IO Bool := do
             ("first λ datum a proposition", e3)] do
           let j := { i with env := e }
           let (bs, bg) := (sB j, gB j)
-          expect a (!bs && !bg) s!"graded1b: {label}: δ plant ({nm}): per-spine {bs}, per-site {bg}"
-          nDelta := nDelta + 1
+          -- attribution (GA): the plant changed `D`'s stored value (no plant is a no-op), and the
+          -- refusal counts as a pass only where the unplanted reading is true per spine and per site
+          let changed := (EtaShort.defnOf e D).map (·.2) != (EtaShort.defnOf i.env D).map (·.2)
+          expect a (changed && !bs && !bg)
+            s!"graded1b: {label}: δ plant ({nm}) at {D}: its stored value changed {changed}; \
+              planted per-spine {bs}, per-site {bg}; unplanted per-spine {s}, per-site {g}"
+          nDeltaPlants := nDeltaPlants + 1
+          if s && g then nDelta := nDelta + 1
+          else
+            -- refused unplanted as well: not attributable to the plant (not a pass)
+            if !deltaUnattr.contains label then deltaUnattr := deltaUnattr ++ [label]
+            IO.println s!"graded1b: {label}: the δ plant ({nm}) at {D} is not attributable: the \
+              unplanted reading is already false (per-spine {s}, per-site {g}); not counted"
       -- the bound-variable plant
       match bvarHeadConst i with
       | some c =>
@@ -488,7 +523,9 @@ def run : IO Bool := do
       false on {sFalse}; per-spine and per-site verdicts equal on all 51 and on every plant; 1a's \
       reading as written refuses {gap} sites of the accepted closures, all decided; natural (whose \
       sites under `let`s 1a refuses): headRegimeResB {natRes}, headRegimeSB {natS}; OS02-plain's \
-      direct-refused site decided; {nDelta} δ plants ({nDeltaClosures} closures) refused, and {nBv} \
+      direct-refused site decided; {nDeltaPlants} δ plants ({nDeltaClosures} closures) refused, \
+      {nDelta} of them attributed (the unplanted reading true, the definition's value changed; not \
+      attributable, the unplanted reading false: {deltaUnattr}), and {nBv} \
       bound-variable plants refused and attributed (the unplanted reading true, the run term changed; \
       not attributable, the unplanted reading false: {bvUnattr}); all 51: {tS / 1000000} ms per spine, {tG / 1000000} ms per \
       site; {lines}"
@@ -507,7 +544,8 @@ def run : IO Bool := do
       (frozen at 27006d16b) and read identically, none read otherwise; read beyond it: {etaMore} \
       ({etaAcc} accepted), through the η-short definition {etaHeads} (no level parameter, no λ, \
       one argument); headRegimeSB now true on {etaLabel}, false on {sFalse}; {etaPlants} plants \
-      on {etaLabel} each refusing the ten spines and the closure; {etaSynth} synthetic readings \
+      on {etaLabel} each changing the reading of the ten spines and refusing them and the closure \
+      (accepted unplanted); {etaSynth} synthetic readings \
       (j = 1 splicing, a datum made a proposition, a level parameter refused as the completeness \
       limit (not an error), more λs than arguments as landed); {tEta / 1000000} ms for both readers"
     expect a (natRes == some false && natS == some true)
@@ -516,8 +554,13 @@ def run : IO Bool := do
       s!"graded1b: 1a's reading as written refuses {gap34} sites on the 34 accepted before step C, expected 322"
     expect a (gap == gapExpected)
       s!"graded1b: 1a's reading as written refuses {gap} sites on the accepted closures, expected {gapExpected}"
-    expect a (nDelta == 3 * deltaClosuresExpected && nDeltaClosures == deltaClosuresExpected)
-      s!"graded1b: {nDelta} δ plants on {nDeltaClosures} closures, expected 3 on each of {deltaClosuresExpected}"
+    expect a (nDeltaPlants == 3 * deltaClosuresExpected && nDeltaClosures == deltaClosuresExpected &&
+        deltaUnattr == deltaUnattributedExpected &&
+        nDelta == 3 * (deltaClosuresExpected - deltaUnattributedExpected.length))
+      s!"graded1b: {nDeltaPlants} δ plants on {nDeltaClosures} closures, expected 3 on each of \
+        {deltaClosuresExpected}; {nDelta} attributed and {deltaUnattr} not attributable (the \
+        unplanted reading false), expected {3 * (deltaClosuresExpected - deltaUnattributedExpected.length)} \
+        and {deltaUnattributedExpected}"
     expect a (nBv + bvUnattr.length == bvExpected && bvUnattr == bvUnattributedExpected)
       s!"graded1b: {nBv} bound-variable plants attributed (the unplanted reading true, the run term \
         changed, the planted refused) and {bvUnattr} not attributable (the unplanted reading false), \

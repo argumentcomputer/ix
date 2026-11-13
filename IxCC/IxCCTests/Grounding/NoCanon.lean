@@ -37,7 +37,13 @@ of the check (a dead `let`'s slot is related to nothing) and refused by `instChe
 relevant `let`'s value, dead or not (step C).
 
 Item 1a: `headRegimeResB` on the same 37, true on 36 and false on `natural` (sites under its `let`s
-whose heads' types are a `∀` only after δ: item 1b). -/
+whose heads' types are a `∀` only after δ: item 1b).
+
+Each control is attributed in its own assertion (GA): the closure unplanted accepted by the same
+decision, the plant shown to change what the decision reads (the recursor's rules no longer blind,
+the constructor's level parameters `[] → [99]`, `Nat.add`'s record a definition then an axiom, the
+instance set gaining exactly the constructor at level 1), and where it refuses exactly: `noCanonB` at
+the `case` entry alone, the check at `[stored, caseShape]`, `litDefsB` at the role `add` alone. -/
 
 namespace IxCCTests.Grounding.NoCanon
 
@@ -205,19 +211,34 @@ def run : IO Bool := do
           | some sh => if sh.nP == 1 && sh.indLevels.isEmpty then some (c, r) else none
           | none => none
         | _ => none) | throw (IO.userError "decide: no Decidable case entry")
+    -- each control attributed in its assertion: `decide` unplanted accepted by `noCanonB`, the
+    -- planted record changed, and `noCanonB` refused at exactly the `case` entry (it is `Sl.all` of a
+    -- condition per constant), the check's false conjuncts exact
+    let nc (j : Input) : Bool := noCanonB j.src j.env j.κ j.Sl
+    let ncAt (j : Input) : List CId := j.Sl.filter fun x => !noCanonB j.src j.env j.κ [x]
     -- the recursor's rules marked not blind: they compare parameters
     let mB := { di with env := mapConst di.env (di.κ r) fun
       | .recInfo cv mI rP rules => .recInfo cv mI rP (rules.map fun (rl : Ix.Kernel.RecRule .anon) => { rl with paramsBlind := false })
       | ci => ci }
-    expect a ((failing mB).isEmpty && !noCanonB mB.src mB.env mB.κ mB.Sl)
-      s!"decide: c{r}'s rules comparing parameters: check {failing mB}, noCanonB {noCanonB mB.src mB.env mB.κ mB.Sl}"
+    let blind (e : KEnv) : List Bool := match e.find? (di.κ r) with
+      | some (.recInfo _ _ _ rules) => rules.map fun (rl : Ix.Kernel.RecRule .anon) => rl.paramsBlind
+      | _ => []
+    expect a (nc di && blind di.env == [true, true] && blind mB.env == [false, false] &&
+        (failing mB).isEmpty && !nc mB && ncAt mB == [c])
+      s!"decide: c{r}'s rules comparing parameters: unplanted noCanonB {nc di}, rules blind \
+        {blind di.env} -> {blind mB.env}; check {failing mB}, noCanonB {nc mB} refused at {ncAt mB} \
+        (expected [{c}])"
     -- a constructor of the recursor given a level parameter
     let some (.recInfo _ _ _ (rl0 :: _)) := di.env.find? (di.κ r) | throw (IO.userError "decide: no rule")
     let mL := { di with env := mapConst di.env rl0.ctor fun
       | .ctorInfo cv nP nF => .ctorInfo { cv with levelParams := [99] } nP nF
       | ci => ci }
-    expect a (!noCanonB mL.src mL.env mL.κ mL.Sl && (failing mL).contains "caseShape")
-      s!"decide: a constructor of c{r} given a level parameter: check {failing mL}, noCanonB {noCanonB mL.src mL.env mL.κ mL.Sl}"
+    let ctorLps (e : KEnv) := (e.find? rl0.ctor).map (·.toConstantVal.levelParams)
+    expect a (nc di && ctorLps di.env == some [] && ctorLps mL.env == some [99] && !nc mL &&
+        ncAt mL == [c] && failing mL == ["stored", "caseShape"])
+      s!"decide: a constructor of c{r} given a level parameter: unplanted noCanonB {nc di}, its level \
+        parameters {ctorLps di.env} -> {ctorLps mL.env}; check {failing mL} (expected [stored, \
+        caseShape]), noCanonB {nc mL} refused at {ncAt mL} (expected [{c}])"
     IO.println s!"noCanon: noCanonB true on {yes} of the 37 accepted closures, false on {no} \
       (a case entry over a family with a level parameter); tags125 {tagsUs} µs (median of 9); \
       decide (case c{c}): its recursor's rules comparing parameters: noCanonB false, every \
@@ -227,13 +248,25 @@ def run : IO Bool := do
     -- all is accepted (no term naming it denotes, so the law is not needed there)
     let addK : KKey := primKey .add
     let beqK : KKey := primKey .beq
-    expect a ((match di.env.find? addK with | some (.defnInfo ..) => true | _ => false) &&
-        (match di.env.find? beqK with | some (.defnInfo ..) => true | _ => false))
+    let isDefn (e : KEnv) (k : KKey) : Bool := match e.find? k with | some (.defnInfo ..) => true | _ => false
+    let isAx (e : KEnv) (k : KKey) : Bool := match e.find? k with | some (.axiomInfo ..) => true | _ => false
+    expect a (isDefn di.env addK && isDefn di.env beqK)
       "decide: Nat.add and Nat.beq are not both stored as definitions"
     let envAx := mapConst di.env addK fun
       | .defnInfo cv _ _ => .axiomInfo cv
       | ci => ci
-    expect a (!litDefsB envAx) "decide: Nat.add stored as an axiom: litDefsB true"
+    -- attributed: `decide` unplanted accepted, `Nat.add`'s record changed from a definition to an
+    -- axiom, and the roles stored otherwise than as a definition exactly `[add]` (`litDefsB`'s
+    -- condition per role)
+    let notDefRoles (e : KEnv) : List String := (IxCC.Src.PrimOp.all.filter fun op =>
+      match e.find? (primKey op) with
+      | none | some (.defnInfo ..) => false
+      | some _ => true).map (·.name)
+    expect a (litDefsB di.env && notDefRoles di.env == [] && isAx envAx addK && !litDefsB envAx &&
+        notDefRoles envAx == ["add"])
+      s!"decide: Nat.add stored as an axiom: unplanted litDefsB {litDefsB di.env}, stored as an axiom \
+        {isAx envAx addK}; planted litDefsB {litDefsB envAx}, roles not definitions {notDefRoles envAx} \
+        (expected [add])"
     let envNo : KEnv := { di.env with consts := di.env.consts.filter fun ci => ci.name != beqK }
     expect a ((envNo.find? beqK).isNone && litDefsB envNo)
       "decide: Nat.beq not stored: litDefsB false"
@@ -260,8 +293,15 @@ def run : IO Bool := do
     let hidden := { oi with src := oi.src.setDecl c (.defn k s lv ty
       (.letE default default (.sort .zero) (.const d [.succ .zero])
         (IxCC.Src.Relevance.Check.Canonical.liftTerm 1 0 v))) }
-    expect a ((failing hidden).isEmpty && !instOk hidden)
-      s!"levels: OS16-plain, c{d} at level 1 in a dead let in c{c}: check {failing hidden}, instCheckB {instOk hidden}"
+    -- attributed: `OS16-plain` unplanted accepted by `instCheckB`, and the plant adds exactly the
+    -- instance `(d, [1])` to the instance set it reads (none removed)
+    let inst (j : Input) : List (CId × IxCC.Src.Levels) := (instWalk j.src (rootsOf j) 1000000).getD []
+    let added := (inst hidden).filter (!(inst oi).contains ·)
+    expect a (instOk oi && (failing oi).isEmpty && (inst oi).all (inst hidden).contains &&
+        added == [(d, [.succ .zero])] && (failing hidden).isEmpty && !instOk hidden)
+      s!"levels: OS16-plain, c{d} at level 1 in a dead let in c{c}: unplanted instCheckB {instOk oi}, \
+        check {failing oi}; instances added {repr added} (expected c{d} at [1]); check \
+        {failing hidden}, instCheckB {instOk hidden}"
     IO.println s!"levels: noCanonAB and instCheckB true on the 37 accepted closures, the family on {famA}; \
       tags125 {instN} instances, instCheckB {instUs} µs (median of 9); OS16-plain: c{d} raised one level \
       in c{c}: instCheckB false, the check true; at level 1 in a dead let: the check true, instCheckB \
