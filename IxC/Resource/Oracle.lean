@@ -61,10 +61,14 @@ def keptFields (env : Env .anon) (lim : OracleLimits) (irr : Nat → KExpr → E
       | some out => if e || (← irr d A) then pure (some out) else pure (some ((d, A) :: out))
     | _ => pure none
 
-/-- **The class of the terms of type `T`**, by positive answers only. -/
+/-- **The class of the terms of type `T`**, by positive answers only. At its
+depth limit the oracle declines: as landed it answered `val`, which is not
+conservative, since the checker reads a positive class of a part against a
+`val` whole (`caseField`: a major of class `val` is a cell) and a k-ary type
+former needs depth k + 1 to be found `irr` (finding 4). -/
 def oTypeClass (env : Env .anon) (sh : Key .anon → Option (List CtorShape)) (lim : OracleLimits) :
     Nat → Nat → KExpr → Except String Cls
-  | 0, _, _ => pure .val
+  | 0, _, _ => throw "decline: the class oracle's depth limit"
   | n + 1, d, T => do
     let some W ← oWhnf env lim d T | return .val
     -- a type, a type former
