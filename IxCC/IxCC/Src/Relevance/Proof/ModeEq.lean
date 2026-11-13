@@ -499,29 +499,6 @@ theorem applyPis_me (hme : Program.ModeEq p₀ p) :
         | cons hab hr' => exact applyPis_me hme k (substTerm_me hab hbody 0) hr'
       | _ => exact absurd ⟨fun _ he => (by cases he), fun _ _ _ _ he => (by cases he)⟩ hp
 
-/-! ### The rest of the classifier -/
-
-theorem projFieldSort?_eq (hme : Program.ModeEq p₀ p) (s i n : Nat) :
-    projFieldSort? p₀ s i n = projFieldSort? p s i n := sorry
-
-theorem inferTypeSort_me (hme : Program.ModeEq p₀ p) :
-    ∀ (n : Nat) {ctx₀ ctx : List (Term × Option Univ)}, CtxME ctx₀ ctx → ∀ {t u : Term}, ME t u →
-      inferTypeSort p₀ ctx₀ n t = inferTypeSort p ctx n u := sorry
-
-theorem classifyDomain_me (hme : Program.ModeEq p₀ p) {ctx₀ ctx : List (Term × Option Univ)}
-    (hc : CtxME ctx₀ ctx) (b : Binder) {t u : Term} (h : ME t u) :
-    classifyDomain p₀ ctx₀ b t = classifyDomain p ctx b u := sorry
-
-theorem classifyTelescope_me (hme : Program.ModeEq p₀ p) :
-    ∀ (n : Nat) {ctx₀ ctx : List (Term × Option Univ)}, CtxME ctx₀ ctx → ∀ {t u : Term}, ME t u →
-      classifyTelescope p₀ ctx₀ n t = classifyTelescope p ctx n u := sorry
-
-theorem checkTermBinders_me (hme : Program.ModeEq p₀ p) (ann : Ann) :
-    ∀ {t u : Term} {ctx₀ ctx : List (Term × Option Univ)} {xs ys : List Term.Arg}, ME t u →
-      CtxME ctx₀ ctx → ArgsME xs ys → checkTermBinders p₀ ann ctx₀ t xs = checkTermBinders p ann ctx u ys :=
-  sorry
-
-/-! ## The program's other readers -/
 
 theorem resolveOf_cases (hme : Program.ModeEq p₀ p) (c : CId) :
     p₀.table.resolveOf c = p.table.resolveOf c ∨
@@ -1035,6 +1012,181 @@ theorem redirectsErased?_eq (hme : Program.ModeEq p₀ p) (c : CId) :
 
 theorem forwardsErased?_eq (hme : Program.ModeEq p₀ p) (r : CId) :
     forwardsErased? p₀ r = forwardsErased? p r := sorry
+
+/-! ### The rest of the classifier -/
+
+theorem projFieldSort?_eq (hme : Program.ModeEq p₀ p) (s i n : Nat) :
+    projFieldSort? p₀ s i n = projFieldSort? p s i n := by
+  unfold projFieldSort?
+  rw [onlyCtor?_eq hme]
+  cases onlyCtor? p s with
+  | none => rfl
+  | some k =>
+    simp only [Option.bind_eq_bind, Option.bind_some]
+    decl_me p₀ p hme k <;> rfl
+
+/-- `inferTypeSort`'s step at a constant's declaration, over the argument count `len` and the
+recursive call `R` on the unfolded value. -/
+def inferDeclG (d : Decl) (us : List Univ) (len : Nat) (R : Term → Option Univ) : Option Univ :=
+  let (pis, concl) := d.type.pis
+  match concl with
+  | .sort u =>
+    if len == pis.length then some (instUniv us u)
+    else
+      match d with
+      | .defn .defn .safe _ _ val => R val
+      | _ => none
+  | _ =>
+    match d with
+    | .defn .defn .safe _ _ val => R val
+    | _ => none
+
+/-- `inferTypeSort`'s step at a term that is not a sort, a Π or a `let`. -/
+def inferBody (q : Program) (ctx : List (Term × Option Univ)) (fuel : Nat) (t : Term) : Option Univ :=
+  let (head, args) := t.spine
+  match head with
+  | .var idx =>
+    match ctx[idx]? with
+    | some (varTy, u?) =>
+      if args.isEmpty then u?
+      else applyPis q 16 (liftTerm (idx + 1) 0 varTy) args
+    | _ => none
+  | .const c us =>
+    match q.decl? c with
+    | some d =>
+      inferDeclG d us args.length fun val => inferTypeSort q ctx fuel (betaApps (instUnivsTerm us val) args)
+    | none => none
+  | .proj s i _ => projFieldSort? q s i args.length
+  | _ => none
+
+theorem inferTypeSort_succ (q : Program) (ctx : List (Term × Option Univ)) (fuel : Nat) {t : Term}
+    (h₁ : ¬ ∃ s, t = .sort s) (h₂ : ¬ ∃ b r d body, t = .pi b r d body)
+    (h₃ : ¬ ∃ c r ty v b, t = .letE c r ty v b) :
+    inferTypeSort q ctx (fuel + 1) t = inferBody q ctx fuel t := by
+  cases t with
+  | sort s => exact absurd ⟨s, rfl⟩ h₁
+  | pi b r d body => exact absurd ⟨b, r, d, body, rfl⟩ h₂
+  | letE c r ty v b => exact absurd ⟨c, r, ty, v, b, rfl⟩ h₃
+  | _ => rfl
+
+theorem inferDeclG_me {d d' : Decl} (hd : DeclME (some d) (some d')) (us : List Univ) (len : Nat)
+    {R R' : Term → Option Univ} (hR : ∀ {v v' : Term}, ME v v' → R v = R' v') :
+    inferDeclG d us len R = inferDeclG d' us len R' := by
+  cases hd with
+  | same d =>
+    have : R = R' := funext fun v => hR (Term.ModeEq.refl v)
+    rw [this]
+  | defn k s l ty hv =>
+    unfold inferDeclG
+    cases k <;> cases s <;> first | rfl | (simp only [hR hv, Decl.type] <;> rfl)
+  | recr => rfl
+
+theorem inferBody_me (hme : Program.ModeEq p₀ p) {n : Nat}
+    (IH : ∀ {ctx₀ ctx : List (Term × Option Univ)}, CtxME ctx₀ ctx → ∀ {t u : Term}, ME t u →
+      inferTypeSort p₀ ctx₀ n t = inferTypeSort p ctx n u)
+    {ctx₀ ctx : List (Term × Option Univ)} (hc : CtxME ctx₀ ctx) {t u : Term} (h : ME t u) :
+    inferBody p₀ ctx₀ n t = inferBody p ctx n u := by
+  unfold inferBody
+  obtain ⟨hh, ha⟩ := spine_me h
+  generalize t.spine = s₀ at hh ha ⊢
+  generalize u.spine = s₁ at hh ha ⊢
+  obtain ⟨h₀, a₀⟩ := s₀
+  obtain ⟨h₁, a₁⟩ := s₁
+  dsimp only at hh ha ⊢
+  cases hh with
+  | var i =>
+    dsimp only
+    rcases hc.getElem? i with ⟨e₀, e₁⟩ | ⟨a, b, s, e₀, e₁, hab⟩
+    · rw [e₀, e₁]
+    · rw [e₀, e₁]
+      dsimp only
+      rw [ha.isEmpty_eq]
+      cases a₁.isEmpty
+      · exact applyPis_me hme 16 (liftTerm_me hab _ _) ha
+      · rfl
+  | const c us =>
+    dsimp only
+    rw [ha.length_eq]
+    have hd := decl?_me hme c
+    generalize p₀.decl? c = d₀ at hd ⊢
+    generalize p.decl? c = d₁ at hd ⊢
+    cases hd with
+    | none => rfl
+    | same d =>
+      exact inferDeclG_me (.same d) us _ fun hv => IH hc (betaApps_me ha (instUnivsTerm_me us hv))
+    | defn k s l ty hv =>
+      exact inferDeclG_me (.defn k s l ty hv) us _ fun hv => IH hc (betaApps_me ha (instUnivsTerm_me us hv))
+    | recr sf kk l np nmot nmin ni ind ty hr =>
+      exact inferDeclG_me (.recr sf kk l np nmot nmin ni ind ty hr) us _
+        fun hv => IH hc (betaApps_me ha (instUnivsTerm_me us hv))
+  | proj s i he => dsimp only; rw [projFieldSort?_eq hme, ha.length_eq]
+  | _ => rfl
+
+theorem inferTypeSort_me (hme : Program.ModeEq p₀ p) :
+    ∀ (n : Nat) {ctx₀ ctx : List (Term × Option Univ)}, CtxME ctx₀ ctx → ∀ {t u : Term}, ME t u →
+      inferTypeSort p₀ ctx₀ n t = inferTypeSort p ctx n u
+  | 0, _, _, _, _, _, _ => rfl
+  | n + 1, ctx₀, ctx, hc, t, u, h => by
+    by_cases hs : ∃ s, t = .sort s
+    · obtain ⟨s, rfl⟩ := hs
+      cases h
+      rfl
+    by_cases hp : ∃ b r d body, t = .pi b r d body
+    · obtain ⟨b, r, d, body, rfl⟩ := hp
+      obtain ⟨d', body', rfl, hd, hb⟩ : ∃ d' body', u = .pi b r d' body' ∧ ME d d' ∧ ME body body' := by
+        cases h with
+        | pi _ _ hd hb => exact ⟨_, _, rfl, hd, hb⟩
+      simp only [inferTypeSort]
+      rw [inferTypeSort_me hme n hc hd]
+      have hS := pis_snd_me (whnfType_me hme 8 hd)
+      generalize (whnfType p₀ 8 d).pis.2 = S₀ at hS ⊢
+      generalize (whnfType p 8 d').pis.2 = S₁ at hS ⊢
+      cases hS <;> dsimp only <;> rw [inferTypeSort_me hme n (.cons hd hc) hb]
+    by_cases hl : ∃ c r ty v b, t = .letE c r ty v b
+    · obtain ⟨c, r, ty, v, b, rfl⟩ := hl
+      cases h with
+      | letE _ _ _ hv hb => exact inferTypeSort_me hme n hc (substTerm_me hv hb 0)
+    have hs' : ¬ ∃ s, u = .sort s := fun ⟨s, he⟩ => hs ⟨s, (me_sort_iff h s).2 he⟩
+    have hp' : ¬ ∃ b r d body, u = .pi b r d body := fun he => hp ((me_pi_iff h).2 he)
+    have hl' : ¬ ∃ c r ty v b, u = .letE c r ty v b := fun he => hl ((me_letE_iff h).2 he)
+    rw [inferTypeSort_succ _ _ _ hs hp hl, inferTypeSort_succ _ _ _ hs' hp' hl']
+    exact inferBody_me hme (inferTypeSort_me hme n) hc h
+
+theorem classifyDomain_me (hme : Program.ModeEq p₀ p) {ctx₀ ctx : List (Term × Option Univ)}
+    (hc : CtxME ctx₀ ctx) (b : Binder) {t u : Term} (h : ME t u) :
+    classifyDomain p₀ ctx₀ b t = classifyDomain p ctx b u := by
+  simp only [classifyDomain, inferTypeSort_me hme 16 hc h, isTypeFormerP_me hme 16 ctx₀ ctx h]
+
+theorem classifyTelescope_nonpi (q : Program) (ctx : List (Term × Option Univ)) (n : Nat) {t : Term}
+    (ht : ¬ ∃ b r d body, t = .pi b r d body) :
+    classifyTelescope q ctx (n + 1) t = ([], classifyDomain q ctx {} t) := by
+  cases t with
+  | pi b r d body => exact absurd ⟨b, r, d, body, rfl⟩ ht
+  | _ => rfl
+
+theorem classifyTelescope_me (hme : Program.ModeEq p₀ p) :
+    ∀ (n : Nat) {ctx₀ ctx : List (Term × Option Univ)}, CtxME ctx₀ ctx → ∀ {t u : Term}, ME t u →
+      classifyTelescope p₀ ctx₀ n t = classifyTelescope p ctx n u
+  | 0, _, _, _, _, _, _ => rfl
+  | n + 1, ctx₀, ctx, hc, t, u, h => by
+    by_cases hp : ∃ b r d body, t = .pi b r d body
+    · obtain ⟨b, r, d, body, rfl⟩ := hp
+      obtain ⟨d', body', rfl, hd, hb⟩ : ∃ d' body', u = .pi b r d' body' ∧ ME d d' ∧ ME body body' := by
+        cases h with
+        | pi _ _ hd hb => exact ⟨_, _, rfl, hd, hb⟩
+      simp only [classifyTelescope]
+      rw [classifyDomain_me hme hc b hd]
+      have hS := pis_snd_me (whnfType_me hme 8 hd)
+      generalize (whnfType p₀ 8 d).pis.2 = S₀ at hS ⊢
+      generalize (whnfType p 8 d').pis.2 = S₁ at hS ⊢
+      cases hS <;> dsimp only <;> rw [classifyTelescope_me hme n (.cons hd hc) hb]
+    · have hp' : ¬ ∃ b r d body, u = .pi b r d body := fun he => hp ((me_pi_iff h).2 he)
+      rw [classifyTelescope_nonpi _ _ _ hp, classifyTelescope_nonpi _ _ _ hp', classifyDomain_me hme hc {} h]
+
+theorem checkTermBinders_me (hme : Program.ModeEq p₀ p) (ann : Ann) :
+    ∀ {t u : Term} {ctx₀ ctx : List (Term × Option Univ)} {xs ys : List Term.Arg}, ME t u →
+      CtxME ctx₀ ctx → ArgsME xs ys → checkTermBinders p₀ ann ctx₀ t xs = checkTermBinders p ann ctx u ys :=
+  sorry
 
 /-! ## `check` -/
 
