@@ -142,7 +142,8 @@ structure LoadFacts (c : Ctx) : Prop where
   derivation of `KernelModeled::proj_ctor(block, idx)` (which asserts that IxVM does not model the
   block and loads member `idx`'s constructor) means the inductive at the member's key `S` is
   stored with its table. For every stored constructor of the member (at any index `j`; there is
-  one), the table names that constructor at its counts and level parameters; every entry below
+  one), the table names that constructor at its counts and level parameters, its parameter count
+  being the member's in the block record (which `indRecord` makes the loaded inductive's); every entry below
   the field count is found and has its head data (`TowerHead`: the constructor and the structure
   stored at the entry's counts and level parameters, the structure's type after its parameters
   the sort `structSort`); the bodies are `structProjBodies`' at the constructor's type (so
@@ -151,7 +152,8 @@ structure LoadFacts (c : Ctx) : Prop where
   arguments' `Certs` are `never` skips where the sort is never zero).
 
   Owed: the table's existence where IxVM's route is native, and the constructor's binder data,
-  by the declaration layer (it installs natively exactly where IxVM checked the block natively;
+  by the declaration layer (it installs natively exactly where IxVM checked the block natively,
+  and its shape check ties the constructor's parameter count to the inductive's;
   `block_is_modeled` is a function of the record); the head data by the store invariant
   (`EnvFacts.store`, `ProjOkT.towerHead`); the bodies and guards by
   `Ix.Kernel.Model.TableBodies` (`IxC/Kernel/Model/StoreCompanions.lean`,
@@ -169,6 +171,8 @@ structure LoadFacts (c : Ctx) : Prop where
         tbl.structName = c.κ (iprjAddr (ixAddr b) (ZMod.val i)) ∧
         tbl.ctor = c.κ (cprjAddr (ixAddr b) (ZMod.val i) j) ∧ tbl.numParams = nP ∧
         tbl.numFields = nF ∧ tbl.levelParams = cvC.levelParams ∧
+        (∀ cb xs ind, Ix.Cert.recordAt c.E (ixAddr b) = some cb → cb.info = .muts xs →
+          xs[ZMod.val i]? = some (.indc ind) → nP = ind.params.toNat) ∧
         (∀ f, f < nF → c.env.findProj? tbl.structName f = some (tbl.entry f) ∧
           Ix.Kernel.TowerHead c.env (tbl.entry f)) ∧
         Ix.Kernel.structProjBodies tbl.structName nP nF cvC.type = some tbl.bodies ∧
