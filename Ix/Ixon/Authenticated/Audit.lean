@@ -122,9 +122,11 @@ end Ixon.Authenticated.Audit
 -- enters; which edit moved the compiler's choice is not established. Every other count is unchanged.
 -- The input limits (the depth limit, the per-record limits as declines, phase B's task bound) add
 -- 63 compiled functions to each closure here (`IxCK/Kernel/Audit/Roots.lean`, listed by name there).
+-- The cheaper depth stages add 7 compiled functions, the entry's (`IxCK/Kernel/Audit/Roots.lean`,
+-- listed by name there).
 /-- info: runtime closure of [Ixon.Authenticated.checkBytes,
  Ixon.Authenticated.checkBytesProjection,
- Address.admissionHash]: 7013 compiled functions; inherited externs 117, implemented_by 1, unsafe 27, csimp 7; ruled assumed 4, computed_field 22, csimp 38 -/
+ Address.admissionHash]: 7020 compiled functions; inherited externs 117, implemented_by 1, unsafe 27, csimp 7; ruled assumed 4, computed_field 22, csimp 38 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.Authenticated.Audit.operations #[`Init, `Std] Ixon.Authenticated.Audit.rulings
 
@@ -276,7 +278,9 @@ and the prelude-copy check (`State.keepsPrelude` in `readStream`) from 6060, lik
 -- measured with the fallback-record guard. Execution allowances are unchanged.
 -- The 64-bit term hash takes the same 1 compiled function (`Cached.defeqStepR._closed_2`), as above.
 -- The input limits add the same 63, as above.
-/-- info: runtime closure of [Ixon.Authenticated.checkBytesTiered]: 7095 compiled functions; inherited externs 117, implemented_by 0, unsafe 27, csimp 7; ruled assumed 4, computed_field 22, csimp 38 -/
+-- The cheaper depth stages add 7 compiled functions, the entry's (`IxCK/Kernel/Audit/Roots.lean`,
+-- listed by name there).
+/-- info: runtime closure of [Ixon.Authenticated.checkBytesTiered]: 7102 compiled functions; inherited externs 117, implemented_by 0, unsafe 27, csimp 7; ruled assumed 4, computed_field 22, csimp 38 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ixon.Authenticated.checkBytesTiered] #[`Init, `Std] Ixon.Authenticated.Audit.rulings
 
