@@ -99,6 +99,14 @@
     "IxCC.Xv.Semantics",
     "IxCC.Xv.Print",
     "IxCCTests.Lir.Region"]},
+  "IxCCTests.Xv.StackingLinear":
+  {"path": "IxCCTests/Xv/StackingLinear.lean",
+   "imports":
+   ["IxCC.Backend",
+    "IxCC.Rt.Backend",
+    "IxCC.Cfg.Rc.Public",
+    "IxCC.Recheck.Rc.Replay",
+    "IxCCTests.Backend.Programs"]},
   "IxCCTests.Xv.Run":
   {"path": "IxCCTests/Xv/Run.lean",
    "imports":
@@ -944,6 +952,7 @@
     "IxCCTests.Own.Owned.Sites",
     "IxCCTests.Own.Owned.ScopeSet",
     "IxCCTests.Own.Owned.KeyIndex",
+    "IxCCTests.Xv.StackingLinear",
     "IxCCTests.Corpus.Manifest",
     "IxCC.Own.Plain.Certificate",
     "IxCC.Recheck.Rc.Produce",
@@ -1171,7 +1180,11 @@
    "imports":
    ["IxCCTests.Grounding.Run",
     "IxCCTests.Grounding.NoCanon",
-    "IxCCTests.Grounding.Zeta"]},
+    "IxCCTests.Grounding.Zeta",
+    "IxCCTests.Grounding.GradedHead"]},
+  "IxCCTests.Grounding.GradedHead":
+  {"path": "IxCCTests/Grounding/GradedHead.lean",
+   "imports": ["IxCCTests.Grounding.NoCanon", "IxCCGrounding.GradedHead"]},
   "IxCCTests.Fixtures.SortPoly":
   {"path": "IxCCTests/Fixtures/SortPoly.lean", "imports": []},
   "IxCCTests.Fixtures.K1":
@@ -4182,6 +4195,9 @@
     "IxCCGrounding.Direct.Sites",
     "IxCCGrounding.CaseBlind",
     "IxCCGrounding.Adapt678"]},
+  "IxCCGrounding.GradedHead":
+  {"path": "IxCCGrounding/GradedHead.lean",
+   "imports": ["IxCCGrounding.Graded"]},
   "IxCCGrounding.Graded":
   {"path": "IxCCGrounding/Graded.lean", "imports": ["IxCCGrounding.RootInst"]},
   "IxCCGrounding.Fundamental":
@@ -4202,7 +4218,8 @@
     "IxCCGrounding.Adapt678",
     "IxCCGrounding.CaseLevels",
     "IxCCGrounding.RootInst",
-    "IxCCGrounding.Graded"]},
+    "IxCCGrounding.Graded",
+    "IxCCGrounding.GradedHead"]},
   "IxCCGrounding.Facts":
   {"path": "IxCCGrounding/Facts.lean",
    "imports": ["IxCCGrounding.Direct.Check"]},
@@ -4303,6 +4320,7 @@
     "IxCCGrounding.CaseLevels",
     "IxCCGrounding.RootInst",
     "IxCCGrounding.Graded",
+    "IxCCGrounding.GradedHead",
     "IxCCGrounding.Fence"]},
   "IxCC.Xv.XlSemantics":
   {"path": "IxCC/Xv/XlSemantics.lean",
@@ -4461,7 +4479,7 @@
    "imports": ["IxCC.Xv.Stacking.Proof.WrapperExit", "IxCC.Sem.Smallstep"]},
   "IxCC.Xv.Stacking.Proof.Shape":
   {"path": "IxCC/Xv/Stacking/Proof/Shape.lean",
-   "imports": ["IxCC.Xv.Stacking.Run"]},
+   "imports": ["IxCC.Xv.Stacking.Proof.Linear"]},
   "IxCC.Xv.Stacking.Proof.RowXl":
   {"path": "IxCC/Xv/Stacking/Proof/RowXl.lean",
    "imports":
@@ -4496,6 +4514,9 @@
   "IxCC.Xv.Stacking.Proof.Machine":
   {"path": "IxCC/Xv/Stacking/Proof/Machine.lean",
    "imports": ["IxCC.Xv.Stacking.Proof.Body"]},
+  "IxCC.Xv.Stacking.Proof.Linear":
+  {"path": "IxCC/Xv/Stacking/Proof/Linear.lean",
+   "imports": ["IxCC.Xv.Stacking.Run"]},
   "IxCC.Xv.Stacking.Proof.InstXl":
   {"path": "IxCC/Xv/Stacking/Proof/InstXl.lean",
    "imports": ["IxCC.Xv.Stacking.Proof.RowXl", "IxCC.X86.Constructors"]},
