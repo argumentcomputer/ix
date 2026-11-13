@@ -1,5 +1,6 @@
 import IxCC.Src.Relevance.Proof.Canonical
 import IxCC.Lam.Erase.Proof.Rel
+import IxCC.Src.Semantics
 
 /-! # P1, relevance preservation: the definitions
 
