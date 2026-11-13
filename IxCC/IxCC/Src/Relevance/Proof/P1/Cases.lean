@@ -19,11 +19,12 @@ a sort and at a Π, E3 at both literals, F4), one in `IxCC.Src.Relevance.Proof.P
 in `IxCC.Src.Relevance.Proof.P1.Ctor` (E6, F1, F7, F8), five in `IxCC.Src.Relevance.Proof.P1.Delta`
 (E8, δ, `headValue`, F6, F6w) and seven in `IxCC.Src.Relevance.Proof.P1.Plumbing` (E1, E4, E5,
 A1–A3, `applyAll`, `force`, `forceAll`). The other three, E7, F3 and F5, are stated, not proved.
-F3 as stated is false where a reached subsingleton recursor's rule-0 constructor has no constructor
-record, reproduced by a run (a `Prop` inductive with large elimination over a non-proof field, built
-below the kernel, which only the kernel refuses); it is also a wrong-value route on the recheck
-path. The check that closes it (`checkCanonical`: such a constructor has a record) is approved and
-lands next, before `case_F3`. -/
+F3 as stated was false where a reached subsingleton recursor's rule-0 constructor has no
+constructor record, reproduced by a run (a `Prop` inductive with large elimination over a non-proof
+field, built below the kernel, which only the kernel refuses), and by reading F5 likewise at a
+`case` key over such a recursor; it was also the twelfth wrong-value route on the recheck path.
+`checkCanonical` now refuses it (`Canonical.subRecords`: such a constructor has a record), which
+F3's and F5's proofs read; the statements are unchanged. -/
 
 set_option autoImplicit false
 
