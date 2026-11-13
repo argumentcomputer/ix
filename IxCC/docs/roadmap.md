@@ -860,14 +860,23 @@ ownership checker's own, which the captured-work budget bounds
   2,398 and 4,793 functions (whatever their parameters), 16.7 s and 29.8 s on the plain-RC
   route with 529,000 `dec` statements in both. Not located; the function count is bounded by the
   node budget and, from an artifact, by ingress's object table.
-- Open: the RC policy selection (`Own.Plain.selectRcPolicyForSrc`, through
-  `enrichFirContracts`: `progKeyContracts` and `progKeyResult` rebuild `funList` and search it
-  once per function) is quadratic in the function count: 0.12 s at 1,024 functions, 2.5 s at
-  4,096, 48.8 s at 16,384 and over 600 s at 65,536 on synthetic programs (the parameters do not
-  matter: 4,096 functions of 256 parameters, 2.5 s), 2.7 s to 12 s on the generated inputs'
-  2,398 and 4,793. It runs in `--rc auto`'s producer and in the zero-RC claim verifiers
-  (`CompileClaim.verifyProgram`, Ring0) after `runWithContracts`. A lookup structure in place of
-  the rebuilt list is the planned fix.
+- The RC policy selection (`Own.Plain.selectRcPolicyForSrc`, through `enrichFirContracts`:
+  `progKeyContracts` and `progKeyResult` rebuilt `funList` and searched it once per function)
+  was quadratic in the function count: 0.12 s at 1,024 functions, 2.5 s at 4,096, 48.8 s at
+  16,384 and over 600 s at 65,536 on synthetic programs, 2.7 s to 12 s on the generated inputs'
+  2,398 and 4,793; its contract merges (`getD` index by index) were quadratic in a function's
+  parameters where its contracts are written. It runs in `--rc auto`'s producer and in the
+  zero-RC claim verifiers (`CompileClaim.verifyProgram`, Ring0) after `runWithContracts`, and the
+  contract-aware canonical map (`Program.canonicalForSrc`) runs the same enrichment. Fixed
+  (2026-11-13): the key index (`keyIndex`, each key to its first function in id order, built
+  once) and one-pass merges (`mergeContracts`, `keepContracts`), proved equal to the former
+  definition (`enrichFirContracts_eq_list`, `Recheck/Rc/Proof/KeyIndex.lean`) and tested against
+  it on every corpus root and synthetic programs (`tests-own-owned`). On the build box, the former
+  definition against the new one: 49.1 s → 18 ms at 16,384 functions, over 900 s → 98 ms at 65,536,
+  0.76 s at 262,144; 4,096 functions of 256 parameters with their contracts written 3.47 s → 74 ms,
+  512 of 2,048 parameters 5.17 s → 105 ms. Left as it is, bounded by the closure: the source's
+  resource pairs are searched once per function (`srcConstContracts`, `find?`), but ingress
+  validates them, one per definition of the closure.
 - The certificate text's limits (`Src.Hints.checkJsonText`: 64 MiB of text,
   nesting 512, number tokens of 32 digits; the decoders' 4,096 frame slots,
   ids up to 1,000,000 and 64 middle-end steps) applied only to certificates

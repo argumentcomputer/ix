@@ -620,6 +620,7 @@
   "IxCC.Recheck.Rc.Proof.Exports",
   "IxCC.Recheck.Rc.Proof.FrontLanguage",
   "IxCC.Recheck.Rc.Proof.FrontParts",
+  "IxCC.Recheck.Rc.Proof.KeyIndex",
   "IxCC.Recheck.Rc.Proof.LoadedCalls",
   "IxCC.Recheck.Rc.Proof.LoadedRun",
   "IxCC.Recheck.Rc.Proof.ObjectSound",
@@ -1266,6 +1267,7 @@
   "IxCCTests.Fences.OwnPlain",
   "IxCCTests.Fences.OwnProof",
   "IxCCTests.Fences.OwnRc",
+  "IxCCTests.Fences.RcPolicy",
   "IxCCTests.Fences.RcPromotion",
   "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_Bounds",
   "IxCCTests.Fences.RcPromotion.IxCC_Cfg_Rc_Proof_CallReach",
@@ -1787,7 +1789,7 @@
  "grounding_axiom_sha256":
  "fb3e3c7322651965747b6aa155da305925366883ea7afc6347c4918d3c2347fd",
  "grounding_axiom_count": 238,
- "baseline": "item 1a: no typing hypothesis from the graded field (GR14)",
+ "baseline": "6784c147c: RC policy selection, a key index built once (H11)",
  "axiom_sha256":
- "7d1f3a1406cbce9da1ba8b713c42c89758d476e89952c5a4a1a4675931de61c9",
- "axiom_count": 6647}
+ "4fd9712637d996a4345728f64dc44405aac962d432d2f0780eda564c419bbe24",
+ "axiom_count": 6654}

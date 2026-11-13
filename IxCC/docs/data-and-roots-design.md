@@ -405,12 +405,13 @@ which costs Anf nodes; [roadmap, "Hardening"](roadmap.md#hardening)); under
 compiled under the immortal policy with the reason printed. The limit bounds
 the domain check, the checker's entries and the plain-RC lowering's work per
 parameter; it does not bound the relevance check against the canonical
-annotator (Stage A), which runs on the source first, the plain-RC back end's
-per-function term (`Xv.Validate`, about the sum of the squares of the
-functions' sizes, which the canonical map's `dec` per parameter makes grow with
-the parameters), the layout's function-count term (`Backend.lay`), or the RC
-policy selection (quadratic in the function count); all four are measured and
-listed in the [roadmap](roadmap.md#hardening), with the check run three times
+annotator (Stage A), which runs on the source first (linear in the source's
+parameters since 2026-11-13), the plain-RC back end's per-function term
+(`Xv.Validate`, about the sum of the squares of the functions' sizes, which the
+canonical map's `dec` per parameter makes grow with the parameters), the
+layout's function-count term (`Backend.lay`), or the RC policy selection (linear
+in the function count since 2026-11-13); all four are measured in the
+[roadmap](roadmap.md#hardening), the middle two open, with the check run three times
 per certificate and the certificate text's JSON depth (512, which a function's
 canonical ownership code passes at about 510 levels of nesting).
 

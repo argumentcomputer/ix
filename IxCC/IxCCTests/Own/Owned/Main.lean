@@ -1,6 +1,7 @@
 import IxCCTests.Own.Owned.Live
 import IxCCTests.Own.Owned.Sites
 import IxCCTests.Own.Owned.ScopeSet
+import IxCCTests.Own.Owned.KeyIndex
 import IxCCTests.Corpus.Manifest
 import IxCC.Own.Plain.Certificate
 import IxCC.Recheck.Rc.Produce
@@ -33,7 +34,11 @@ a second placement of every root made by the liveness producer (`Live`, untruste
   accepted (a trap ends the run); an increment by two is refused;
 * **the source scope check** (`ScopeSet`): on every root, then on synthetic programs and a call of
   an entry past `size`, `programDomain`'s set forms against its former list forms, and one
-  ill-scoped edit per kind per function refused by both.
+  ill-scoped edit per kind per function refused by both;
+* **policy selection** (`KeyIndex`): on every root with its source, then on synthetic programs,
+  `enrichFirContracts` (a key index built once, merges in one pass) against its former list form
+  and the production list form: the same enriched program, the same policy, and the index's
+  function for every key looked up.
 
 Arguments: `[COUNT [CAP]]` (defaults 100 and 12). Run from the `IxCC` directory (the manifests'
 paths are relative to it). -/
@@ -59,18 +64,20 @@ structure Totals where
   oracleRuns : Nat := 0
   heapChanging : Nat := 0
   scope : ScopeSet.Tally := {}
+  policy : KeyIndex.Tally := {}
   failures : Array String := #[]
 
 def Totals.fail (t : Totals) (msg : String) : Totals :=
   { t with failures := t.failures.push msg }
 
-def front (closure eqs : System.FilePath) (root : String) : IO (Fir.Program × Src.NatMap Code) := do
+def front (closure eqs : System.FilePath) (root : String) :
+    IO (Fir.Program × Src.NatMap Code × Src.Program) := do
   let bytes ← IO.FS.readBinFile closure
   let json ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile eqs))
   let inp ← IO.ofExcept ((Recheck.ingress bytes json [root]).mapError (·.render))
   let cfg := Recheck.Config.forInput {} inp
   let fr ← IO.ofExcept ((Recheck.RcReplay.produceFir cfg inp).mapError (·.render))
-  return (fr.fir, (Program.canonicalForSrc fr.src fr.fir).bodies)
+  return (fr.fir, (Program.canonicalForSrc fr.src fr.fir).bodies, fr.src)
 
 /-- A reference run of an accepted map on one input. -/
 structure Ref where
@@ -236,7 +243,8 @@ def run (count cap : Nat) : IO UInt32 := do
         if r.decline.isSome then continue
         let label := s!"{fam.family}/{fx.name}/{r.name}"
         try
-          let (F, canonical) ← front (dir / fx.closure.path) (dir / fx.equations.path) r.name
+          let (F, canonical, src) ← front (dir / fx.closure.path) (dir / fx.equations.path) r.name
+          t := { t with policy := KeyIndex.checkProgram t.policy label src F }
           t ← IO.lazyPure fun _ => root t label F canonical count cap
         catch e =>
           errors := errors + 1
@@ -253,6 +261,9 @@ def run (count cap : Nat) : IO UInt32 := do
   let (scopeLines, scope) := ScopeSet.report (ScopeSet.synthetic t.scope)
   for l in scopeLines do IO.println l
   t := { t with failures := t.failures ++ scope.failures }
+  let (policyLines, policy) := KeyIndex.report (KeyIndex.synthetic t.policy)
+  for l in policyLines do IO.println l
+  t := { t with failures := t.failures ++ policy.failures }
   for e in t.failures.toList.take 50 do IO.println s!"FAIL {e}"
   IO.println s!"{t.failures.size} failure(s), front-end errors {errors}"
   return if t.failures.isEmpty then 0 else 1

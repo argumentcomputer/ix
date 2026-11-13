@@ -169,9 +169,12 @@ def enrichFunContracts (src : Src.Program) (f : Fir.Fun) : Fir.Fun :=
   let result := if f.result != .shared then f.result else srcKeyResult src f.key
   { f with contracts, result }
 
-/-- Enrich all functions in `P` with source-level and parent-propagated binder
-and result contracts from `src` and `P`. -/
-def enrichFirContracts (src : Src.Program) (P : Fir.Program) : Fir.Program :=
+/-- **The list form** (the specification of `enrichFirContracts`, which runs the linear
+form below and is proved equal to this, `enrichFirContracts_eq_list`): enrich all functions
+in `P` with source-level and parent-propagated binder and result contracts from `src` and
+`P`. Each function's key is looked up by `progKeyContracts`/`progKeyResult`, which rebuild
+and search `P.funList`, and its contracts are merged index by index (`getD`). -/
+def enrichFirContractsList (src : Src.Program) (P : Fir.Program) : Fir.Program :=
   { P with
     funs := P.funs.map fun f =>
       let fromProg := progKeyContracts src P f.key
@@ -179,6 +182,127 @@ def enrichFirContracts (src : Src.Program) (P : Fir.Program) : Fir.Program :=
       let contracts := (List.range n).map fun i =>
         mergeBinderContract (f.contracts.getD i {}) (fromProg.getD i {})
       let result := if f.result != .shared then f.result else progKeyResult src P f.key
+      { f with contracts, result } }
+
+/-! ### The linear form
+
+`enrichFirContractsList` looks each function's key up in `P.funList` (a list rebuilt and
+searched per call, so quadratic in the function count), and merges contract lists index by
+index (`getD`, so quadratic in a function's parameters). The forms below build the key
+lookup once (`keyIndex`: each key to the first function, in id order, that has it) and merge
+in one pass along both lists (`mergeContracts`, `keepContracts`). `enrichFirContracts`,
+which policy selection and the canonical map run, is defined through them, with no `csimp`
+(the definition is what runs); `Recheck/Rc/Proof/KeyIndex.lean` proves it equal to the list
+form. -/
+
+/-- `n` contracts, the `i`-th `mergeBinderContract (xs.getD i {}) (ys.getD i {})`, in one
+pass along `xs` and `ys` (`mergeContracts_eq`). -/
+def mergeContracts : Nat → List V3.BinderContract → List V3.BinderContract →
+    List V3.BinderContract
+  | 0, _, _ => []
+  | n + 1, xs, ys => mergeBinderContract (xs.headD {}) (ys.headD {}) :: mergeContracts n xs.tail ys.tail
+
+/-- `base`'s contracts at the positions `keep` marks (`{}` past `base`), in one pass along
+both (`keepContracts_eq`). -/
+def keepContracts : List Bool → List V3.BinderContract → List V3.BinderContract
+  | [], _ => []
+  | k :: ks, base =>
+    if k then base.headD {} :: keepContracts ks base.tail else keepContracts ks base.tail
+
+/-- A hash of a source head, for `keyHash` (its constant, or its kind alone). -/
+def headHash : Src.Head → UInt64
+  | .ctor c => mixHash 1 (hash c)
+  | .quotMk c => mixHash 2 (hash c)
+  | .quotLift c => mixHash 3 (hash c)
+  | .recr r => mixHash 4 (hash r)
+  | .cases c => mixHash 5 (hash c)
+  | .prim _ => 6
+  | .word .. => 7
+
+mutual
+/-- A structural hash of a constructor key, for `keyIndex` only. -/
+def ctorKeyHash : Key.CtorKey → UInt64
+  | .src c => mixHash 11 (hash c)
+  | .clo f n => mixHash 12 (mixHash (keyHash f) (hash n))
+  termination_by structural k => k
+
+/-- A structural hash of a global key, for `keyIndex` only. Keys compare by `DecidableEq`;
+every theorem about the index is stated over that equality, and any function of the key is a
+lawful hash for it. -/
+def keyHash : Key.GKey → UInt64
+  | .const c p => mixHash 21 (mixHash (hash c) (hash p))
+  | .byName c p => mixHash 22 (mixHash (hash c) (hash p))
+  | .recStar c p => mixHash 23 (mixHash (hash c) (hash p))
+  | .wrapper h p => mixHash 24 (mixHash (headHash h) (hash p))
+  | .spec g args => mixHash 25 (mixHash (keyHash g) (argKeysHash args))
+  | .worker g keep => mixHash 26 (mixHash (keyHash g) (hash keep))
+  | .lam g path => mixHash 27 (mixHash (keyHash g) (hash path))
+  | .dispatch n => mixHash 28 (hash n)
+  | .entry g n => mixHash 29 (mixHash (keyHash g) (hash n))
+  termination_by structural k => k
+
+/-- A structural hash of a specialisation argument, for `keyIndex` only. -/
+def argKeyHash : Key.ArgKey → UInt64
+  | .glob g => mixHash 31 (keyHash g)
+  | .con c ks => mixHash 32 (mixHash (ctorKeyHash c) (argKeysHash ks))
+  | .lit n => mixHash 33 (hash n)
+  | .hole i => mixHash 34 (hash i)
+  termination_by structural k => k
+
+def argKeysHash : List Key.ArgKey → UInt64
+  | [] => 41
+  | k :: ks => mixHash (argKeyHash k) (argKeysHash ks)
+  termination_by structural ks => ks
+end
+
+instance : Hashable Key.GKey := ⟨keyHash⟩
+
+/-- **The key index**: each key of `P`'s functions to the first function, in id order, that
+has it (`keyIndex_getElem?`: `P.funList.find?`'s answer). -/
+def keyIndex (P : Fir.Program) : Std.HashMap Key.GKey Fir.Fun :=
+  P.funList.foldr (fun (_, fd) m => m.insert fd.key fd) ∅
+
+/-- `progKeyContracts` with the function of a key read from `look` (`P.funList.find?` there;
+`keyIndex P` on the run path) and the merge in one pass (`progKeyContractsBy_eq`). -/
+def progKeyContractsBy (src : Src.Program) (look : Key.GKey → Option Fir.Fun) :
+    Key.GKey → List V3.BinderContract
+  | .spec g args =>
+    let base := progKeyContractsBy src look g
+    let holeContracts : List (Nat × V3.BinderContract) :=
+      (args.zipIdx).foldl (fun acc (arg, i) =>
+        acc ++ argKeyHoles (base.getD i {}) arg) []
+    let numHoles := holeContracts.foldl (fun m (h, _) => max m (h + 1)) 0
+    (List.range numHoles).map fun h => (holeContracts.lookup h).getD {}
+  | .worker g keep => keepContracts keep (progKeyContractsBy src look g)
+  | k =>
+    let fromSrc := srcKeyContracts src k
+    match look k with
+    | none => fromSrc
+    | some fd => mergeContracts (max fd.contracts.length fromSrc.length) fd.contracts fromSrc
+
+/-- `progKeyResult` with the function of a key read from `look` (`progKeyResultBy_eq`). -/
+def progKeyResultBy (src : Src.Program) (look : Key.GKey → Option Fir.Fun) :
+    Key.GKey → V3.ValueContract
+  | .spec g _ | .worker g _ | .lam g _ => progKeyResultBy src look g
+  | k =>
+    let fromSrc := srcKeyResult src k
+    if fromSrc != .shared then fromSrc
+    else
+      match look k with
+      | some fd => fd.result
+      | none => .shared
+
+/-- Enrich all functions in `P` with source-level and parent-propagated binder
+and result contracts from `src` and `P`: the linear form, a key's function read from
+`keyIndex P` (built once) and contracts merged in one pass. Equal to the list form
+`enrichFirContractsList` (`enrichFirContracts_eq_list`). -/
+def enrichFirContracts (src : Src.Program) (P : Fir.Program) : Fir.Program :=
+  let ix := keyIndex P
+  { P with
+    funs := P.funs.map fun f =>
+      let fromProg := progKeyContractsBy src (ix[·]?) f.key
+      let contracts := mergeContracts f.params.length f.contracts fromProg
+      let result := if f.result != .shared then f.result else progKeyResultBy src (ix[·]?) f.key
       { f with contracts, result } }
 
 /-- Contract-aware canonical `Own.Plain.Program`: enriches `P` with the

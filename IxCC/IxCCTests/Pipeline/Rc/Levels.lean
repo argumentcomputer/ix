@@ -1,5 +1,6 @@
 import IxCCTests.Pipeline.Rc.Support
 import IxCCTests.Rt.Native
+import IxCC.Recheck.Rc.Proof.KeyIndex
 
 set_option autoImplicit false
 namespace IxCCTests.Pipeline.Rc.Levels
@@ -249,14 +250,22 @@ example : Own.Plain.selectRcPolicy (mkAliasChainProg 64 true) = .plainRc := by d
 private def enrichedSynthProg : Fir.Program :=
   Own.Plain.enrichFirContracts default synthZeroRcProg
 
+/- Policy selection runs a hash map (`keyIndex`), which the kernel does not reduce: these
+statements rewrite by `enrichFirContracts_eq_list` and decide the list form. -/
 example : (enrichedSynthProg.fun? 4).map (·.contracts) =
-    some [.many, .linear] := by decide +kernel
+    some [.many, .linear] := by
+  rw [enrichedSynthProg, Own.Plain.enrichFirContracts_eq_list]; decide +kernel
 example : (enrichedSynthProg.fun? 5).map (·.contracts) =
-    some [{ value := .localShared }, .many] := by decide +kernel
-example : Own.Plain.selectRcPolicyForSrc default synthZeroRcProg = .zeroRc := by decide +kernel
-example : Own.Plain.selectRcPolicyForSrc rootedTestSrc synthZeroRcProg = .zeroRc := by decide +kernel
-example : Own.Plain.selectRcPolicyForSrc rootedTestSrc synthDupPlainRcProg = .plainRc := by decide +kernel
-example : Own.Plain.selectRcPolicyForSrc rootedTestSrc partialConstDupPlainRcProg = .plainRc := by decide +kernel
+    some [{ value := .localShared }, .many] := by
+  rw [enrichedSynthProg, Own.Plain.enrichFirContracts_eq_list]; decide +kernel
+example : Own.Plain.selectRcPolicyForSrc default synthZeroRcProg = .zeroRc := by
+  rw [Own.Plain.selectRcPolicyForSrc_eq_list]; decide +kernel
+example : Own.Plain.selectRcPolicyForSrc rootedTestSrc synthZeroRcProg = .zeroRc := by
+  rw [Own.Plain.selectRcPolicyForSrc_eq_list]; decide +kernel
+example : Own.Plain.selectRcPolicyForSrc rootedTestSrc synthDupPlainRcProg = .plainRc := by
+  rw [Own.Plain.selectRcPolicyForSrc_eq_list]; decide +kernel
+example : Own.Plain.selectRcPolicyForSrc rootedTestSrc partialConstDupPlainRcProg = .plainRc := by
+  rw [Own.Plain.selectRcPolicyForSrc_eq_list]; decide +kernel
 
 private def setPiContracts : List Ixon.V3.BinderContract → Src.Term → Src.Term
   | c :: cs, .pi b r d body => .pi { b with contract := c } r d (setPiContracts cs body)

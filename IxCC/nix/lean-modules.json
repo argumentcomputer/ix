@@ -843,7 +843,10 @@
    "imports": ["IxCCTests.Pipeline.Rc.Run"]},
   "IxCCTests.Pipeline.Rc.Levels":
   {"path": "IxCCTests/Pipeline/Rc/Levels.lean",
-   "imports": ["IxCCTests.Pipeline.Rc.Support", "IxCCTests.Rt.Native"]},
+   "imports":
+   ["IxCCTests.Pipeline.Rc.Support",
+    "IxCCTests.Rt.Native",
+    "IxCC.Recheck.Rc.Proof.KeyIndex"]},
   "IxCCTests.Pipeline.Rc.Counters":
   {"path": "IxCCTests/Pipeline/Rc/Counters.lean",
    "imports": ["IxCCTests.Pipeline.Rc.Support"]},
@@ -940,6 +943,7 @@
    ["IxCCTests.Own.Owned.Live",
     "IxCCTests.Own.Owned.Sites",
     "IxCCTests.Own.Owned.ScopeSet",
+    "IxCCTests.Own.Owned.KeyIndex",
     "IxCCTests.Corpus.Manifest",
     "IxCC.Own.Plain.Certificate",
     "IxCC.Recheck.Rc.Produce",
@@ -947,6 +951,9 @@
   "IxCCTests.Own.Owned.Live":
   {"path": "IxCCTests/Own/Owned/Live.lean",
    "imports": ["IxCC.Own.Plain.Program"]},
+  "IxCCTests.Own.Owned.KeyIndex":
+  {"path": "IxCCTests/Own/Owned/KeyIndex.lean",
+   "imports": ["IxCC.Recheck.Rc.Produce"]},
   "IxCCTests.Own.Owned.Interp":
   {"path": "IxCCTests/Own/Owned/Interp.lean",
    "imports": ["IxCC.Own.Plain.Semantics"]},
@@ -3391,6 +3398,9 @@
     "IxCCTests.Fences.RcPromotion.IxCC_Rt_Rc_Proof_AllocTotal",
     "IxCCTests.Fences.RcPromotion.IxCC_Rt_Rc_Proof_ProcsArithmetic",
     "IxCCTests.Fences.RcPromotion.IxCC_Rt_Rc_Proof_RecycleInvariant"]},
+  "IxCCTests.Fences.RcPolicy":
+  {"path": "IxCCTests/Fences/RcPolicy.lean",
+   "imports": ["IxCC.Recheck.Rc.Proof.KeyIndex"]},
   "IxCCTests.Fences.OwnRc":
   {"path": "IxCCTests/Fences/OwnRc.lean",
    "imports":
@@ -3678,6 +3688,7 @@
     "IxCCTests.Fences.OwnOwned",
     "IxCCTests.Fences.OwnOwnedSwitch",
     "IxCCTests.Fences.OwnParams",
+    "IxCCTests.Fences.RcPolicy",
     "IxCCTests.Fences.OwnRc",
     "IxCCTests.Fences.Rt",
     "IxCCTests.Fences.RtRc",
@@ -6537,6 +6548,9 @@
     "IxCC.Cfg.Rc.Proof.Physical.PublicEntry",
     "IxCC.Cfg.Rc.Proof.Physical.NumericEntry",
     "IxCC.Recheck.Rc.Proof.FrontParts"]},
+  "IxCC.Recheck.Rc.Proof.KeyIndex":
+  {"path": "IxCC/Recheck/Rc/Proof/KeyIndex.lean",
+   "imports": ["IxCC.Recheck.Rc.Produce"]},
   "IxCC.Recheck.Rc.Proof.FrontParts":
   {"path": "IxCC/Recheck/Rc/Proof/FrontParts.lean",
    "imports": ["IxCC.Recheck.Rc.Replay"]},

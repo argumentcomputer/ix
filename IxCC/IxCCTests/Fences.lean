@@ -21,6 +21,7 @@ import IxCCTests.Fences.OwnPlain
 import IxCCTests.Fences.OwnOwned
 import IxCCTests.Fences.OwnOwnedSwitch
 import IxCCTests.Fences.OwnParams
+import IxCCTests.Fences.RcPolicy
 import IxCCTests.Fences.OwnRc
 import IxCCTests.Fences.Rt
 import IxCCTests.Fences.RtRc
