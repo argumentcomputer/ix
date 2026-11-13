@@ -1116,6 +1116,12 @@ exactly `2^26` G1 powers, three fewer than gnark needs for a PLONK domain of
 that size. Extending it from the same authenticated ceremony is separate
 parameter preparation, and does not require changing the ceremony bound.
 
+A [local prefix extension](measurements/aiur-ignition-prefix-extension.json)
+now contains those three powers. The complete existing file was authenticated
+against its released SHA-256; each extra point was checked against its
+predecessor and the trusted pairing anchors. Every old point and verifier-key
+byte is unchanged. The original file and release pin remain unchanged.
+
 ## 24. Reusable GL-to-BN host chain
 
 The host `chain` API composes bounded GL execution with a configured positive

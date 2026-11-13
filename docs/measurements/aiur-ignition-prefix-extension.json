@@ -1,0 +1,41 @@
+{
+  "format": "ix-ignition-prefix-extension-v1",
+  "date_utc": "2026-11-13",
+  "source": "/home/sam/repos/ix.ci-merge-tests/target/aiur-compression-stages-run/params/bn254-ignition-main-197/srs.bin",
+  "source_sha256": "06db33d8aa83291237aec6b8fa74752d3d4a516db0bb1221f4a554e8f8510a93",
+  "source_powers": 67108864,
+  "output": "/tmp/ix.aiur-compression-stages/target/ignition-n-plus-three/srs.bin",
+  "output_sha256": "da78a0fe8c322a010c94cfdf92da5021ebf1a3b74853da5857c4d84c57781c87",
+  "output_blake3": "10bdacae18db01909bd6a61c0648e6b37a8806e15d23c3da2bc3d5126fb44229",
+  "output_powers": 67108867,
+  "output_bytes": 4295001604,
+  "old_points_and_verifier_suffix_identical": true,
+  "new_points": 3,
+  "new_points_sha256": "8a6539ad901184ab517a5c35deb97c242e1060fa22ee38bea456078a05f24c2a",
+  "validation": "Full source SHA-256 matched the release pin. Each canonical nonzero additional G1 point separately satisfies e(next,G2)=e(previous,tauG2) under the authenticated old anchors. Independent byte comparison confirms every old point and full verifier suffix unchanged.",
+  "ceremony_changed": false,
+  "release_pin_changed": false,
+  "download": {
+    "url": "https://argument-kzg-params-063002298335-us-east-1-an.s3.us-east-1.amazonaws.com/bn254/ignition/main-197/197_0xa57ec000b7fb9ea9b0119efdee0b8f15f895c2f3/transcript13.dat",
+    "header_range": "bytes 0-27/322560092",
+    "point_range": "bytes 101687260-101687515/322560092",
+    "header_fields": [
+      13,
+      20,
+      100800000,
+      1,
+      5040000,
+      0,
+      65520000
+    ],
+    "first_point_index": 67108863,
+    "downloaded_points": 4,
+    "additional_points": 3,
+    "predecessor_matches_installed_prefix": true,
+    "additional_g1_sha256": "8a6539ad901184ab517a5c35deb97c242e1060fa22ee38bea456078a05f24c2a",
+    "status": "The downloaded candidates subsequently passed every pairing-link check recorded in validation."
+  },
+  "scope": "Local parameter preparation from an authenticated existing prefix. No new ceremony, release publication, compiler-domain claim or PLONK proof.",
+  "additional_g1_gnark_raw_hex": "01554a1cfca2d113ccc96867705d0496abaa267bc3bb110d8c19f914fc4586f905a26ca0b648ee03d7eaa3c5a4b8e693632f547e77f14b0cdf848a661fb1bb64112590e2b62c13189f197840d5745a30f113e42fac11f146c04632924e92d1190c400703bf36c97208594178e16b4710b25c7b2585067cef1c95ecb28713461b299c6ed3f80e0903a332e0596663e0562c718fa4d5a94711bafa1d6c30de241705cb3a2429dd615e023e85868e29aa8b19bea210ebac18e88e6948ebf984f681",
+  "reproduce": "Reconstruct additional-g1.bin from additional_g1_gnark_raw_hex, then run tools/gnark/cmd/ignition with --extend-from, --source-sha256, --additional-g1, --out and --powers 67108867. The source digest must be independently trusted."
+}

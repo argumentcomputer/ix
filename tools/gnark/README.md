@@ -38,6 +38,35 @@ The proof envelope is written last, after verification succeeds. Rerunning the
 command with the same output directory reuses every stage whose proof still
 verifies.
 
+### Extending an authenticated Ignition prefix
+
+An existing prefix can be extended with candidate points from the same ceremony
+without downloading both complete contributions again. Supply an independently
+trusted SHA-256 for the complete existing file and canonical gnark uncompressed
+G1 encodings for the following powers:
+
+```sh
+go run ./cmd/ignition \
+  -extend-from /path/to/approved-srs.bin \
+  -source-sha256 TRUSTED_SOURCE_SHA256 \
+  -additional-g1 /path/to/additional-g1.bin \
+  -powers 67108867 \
+  -out /path/to/new-srs.bin
+```
+
+The command hashes every copied source byte, checks each additional point's
+canonical encoding and subgroup, and individually checks
+`e(next, G2) = e(previous, tau*G2)` against the authenticated anchors. It preserves
+all old points and the complete verifier-key suffix. Candidate points need no
+independent trust because each is uniquely determined by that equation. Output
+publication is atomic and refuses overwriting; the original file is unchanged.
+
+The [domain-26 preparation receipt](../../docs/measurements/aiur-ignition-prefix-extension.json)
+records the release source pin, exact transcript ranges, three additional
+points, and resulting file hashes. The resulting prefix has `2^26 + 3` powers,
+as required by gnark PLONK. This preparation does not change the ceremony or
+the repository's released SRS pin.
+
 ## CUDA
 
 Enabling both `plonk` and `cuda` Cargo features enables GPU MSMs, FFTs and numerator

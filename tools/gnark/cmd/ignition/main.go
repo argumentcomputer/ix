@@ -29,7 +29,16 @@ func main() {
 	cache := flag.String("cache", "data", "directory for downloaded ceremony transcripts")
 	output := flag.String("out", "srs.bin", "new gnark SRS file")
 	powers := flag.Int("powers", (1<<26)+3, "number of G1 powers to retain")
+	extendFrom := flag.String("extend-from", "", "authenticated existing gnark SRS prefix to extend")
+	sourceDigest := flag.String("source-sha256", "", "independently trusted SHA-256 of -extend-from")
+	additional := flag.String("additional-g1", "", "candidate additional G1 points in canonical gnark uncompressed encoding")
 	flag.Parse()
+	if *extendFrom != "" || *sourceDigest != "" || *additional != "" {
+		if err := extendSRS(*extendFrom, *sourceDigest, *additional, *output, *powers); err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
 	if err := run(*baseURL, *ceremony, *cache, *output, *powers); err != nil {
 		log.Fatal(err)
 	}
