@@ -247,12 +247,14 @@ def isFreshNum (h : Heap) : Val → Bool
 def argOk (P : Prog) (h : Heap) (p : Param) (a : Val) : Bool :=
   valOk h a &&
   (p.mode != .erased || isIrr a) &&
-  (p.cls != .irr || isIrr a) &&
-  (p.cls != .imm || isImm a) &&
-  (p.cls != .leaf || isFreshNum h a) &&
-  (match p.skel with
-    | .arrow .. => closureAt P h p.skel a
-    | _ => defaultPaps P h a)
+  -- repair K: the class and skeleton clauses only at a parameter that is not erased
+  (p.mode == .erased ||
+    ((p.cls != .irr || isIrr a) &&
+     (p.cls != .imm || isImm a) &&
+     (p.cls != .leaf || isFreshNum h a) &&
+     (match p.skel with
+       | .arrow .. => closureAt P h p.skel a
+       | _ => defaultPaps P h a)))
 
 def ownTree (P : Prog) (h : Heap) (v : Val) : Bool := Id.run do
   let mut seen : List (Nat × Nat × Nat) := []
@@ -1447,11 +1449,11 @@ def f7Cases : List Case := [
   { label := "F7v control: the erased parameter first", P := p7xv, seed := gXV, inp := in7x, toCheck := [gXV, fXV],
     verdict := .accept, fuels := fuels0to12, run := [(0, .oof), (6, .value)] },
   -- the first encoding: no input meets `InputsOk` (an erased parameter of class leaf)
-  { label := "F7 x : Nat erased at position 2 (no admissible input)", P := p7, seed := gR, inp := in7,
+  { label := "F7 x : Nat erased at position 2 (its input admissible since K)", P := p7, seed := gR, inp := in7,
     toCheck := [gR, fR], verdict := .accept, fuels := fuels0to12,
-    run := [(0, .oof), (6, .value)], inputs := some false },
+    run := [(0, .oof), (6, .value)] },  -- REPAIR K: no admissible input before
   { label := "F7 control: the erased parameter first", P := p7x, seed := gX, inp := in7x, toCheck := [gX, fX],
-    verdict := .accept, fuels := fuels0to12, run := [(0, .oof), (6, .value)], inputs := some false }]
+    verdict := .accept, fuels := fuels0to12, run := [(0, .oof), (6, .value)] }]  -- REPAIR K: as above
 
 /-! ### Finding 8: a unique value stored twice in one cell -/
 
