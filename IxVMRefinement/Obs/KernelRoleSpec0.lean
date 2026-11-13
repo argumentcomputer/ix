@@ -588,6 +588,24 @@ theorem «KernelRoleSpec::role_choice».obs {h h' : Heap F} {r : SourceValue F}
   obtain ⟨rfl, rfl, rfl⟩ := d0.literal_inv
   exact «KernelRoleSpec::role_choice».Path.run rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
 
+/-- The evaluation paths of `KernelRoleSpec::role_sorry_ax`: one constructor per combination of selected arms. -/
+inductive «KernelRoleSpec::role_sorry_ax».Path (h : Heap F) (r : SourceValue F) (h' : Heap F)
+    (calls : List (Call F)) : Prop where
+  | run
+      (he1 : r = (.field 58))
+      (he2 : h' = h)
+      (hc3 : calls = [])
+
+/-- **Every observed derivation of `KernelRoleSpec::role_sorry_ax` takes one of its paths.** -/
+theorem «KernelRoleSpec::role_sorry_ax».obs {h h' : Heap F} {r : SourceValue F}
+    {calls : List (Call F)} (ev : ObsFn W "KernelRoleSpec::role_sorry_ax" [] h r h' calls) :
+    «KernelRoleSpec::role_sorry_ax».Path h r h' calls := by
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelRoleSpec.role_sorry_ax.lookup
+    (by simp [IxVM.KernelRoleSpec.role_sorry_ax, ControlLower.hasControl]) ev
+  simp only [IxVM.KernelRoleSpec.role_sorry_ax] at d0
+  obtain ⟨rfl, rfl, rfl⟩ := d0.literal_inv
+  exact «KernelRoleSpec::role_sorry_ax».Path.run rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+
 /-- The evaluation paths of `KernelRoleSpec::role_decidable_is_true`: one constructor per combination of selected arms. -/
 inductive «KernelRoleSpec::role_decidable_is_true».Path (h : Heap F) (r : SourceValue F) (h' : Heap F)
     (calls : List (Call F)) : Prop where

@@ -369,6 +369,11 @@ abbrev «Lists::length<&[Field; 32]>» : String := "${\"name\":\"Lists::length\"
 
 theorem «Lists::length<&[Field; 32]>».symbol : (Instance.mk "Lists::length" [(.ptr (.array .field 32))]).symbol = «Lists::length<&[Field; 32]>» := by decide +kernel
 
+/-- The instance `Lists::lookup<(&[Field; 32], Field, &Lists::Node<&KernelTypes::KExprNode>, &Lists::Node<&KernelTypes::KLevelNode>)>`. -/
+abbrev «Lists::lookup<(&[Field; 32], Field, &Lists::Node<&KernelTypes::KExprNode>, &Lists::Node<&KernelTypes::KLevelNode>)>» : String := "${\"name\":\"Lists::lookup\",\"types\":[{\"tuple\":{\"items\":[{\"ptr\":{\"target\":{\"array\":{\"element\":\"field\",\"length\":32}}}},\"field\",{\"ptr\":{\"target\":{\"named\":{\"args\":[{\"ptr\":{\"target\":{\"named\":{\"args\":[],\"name\":\"KernelTypes::KExprNode\"}}}}],\"name\":\"Lists::Node\"}}}},{\"ptr\":{\"target\":{\"named\":{\"args\":[{\"ptr\":{\"target\":{\"named\":{\"args\":[],\"name\":\"KernelTypes::KLevelNode\"}}}}],\"name\":\"Lists::Node\"}}}}]}}]}"
+
+theorem «Lists::lookup<(&[Field; 32], Field, &Lists::Node<&KernelTypes::KExprNode>, &Lists::Node<&KernelTypes::KLevelNode>)>».symbol : (Instance.mk "Lists::lookup" [(.tuple [(.ptr (.array .field 32)), .field, (.ptr (.named "Lists::Node" [(.ptr (.named "KernelTypes::KExprNode" []))])), (.ptr (.named "Lists::Node" [(.ptr (.named "KernelTypes::KLevelNode" []))]))])]).symbol = «Lists::lookup<(&[Field; 32], Field, &Lists::Node<&KernelTypes::KExprNode>, &Lists::Node<&KernelTypes::KLevelNode>)>» := by decide +kernel
+
 theorem c9173999864893739538 : W.constant "UInt8::BYTE_0" (Generic.Ty.subst [] .field) = .ok (.literal (0 : F)) := eq_of_isLiteral (by decide +kernel)
 
 theorem c1739634508792189921 : W.constant "UInt8::BYTE_255" (Generic.Ty.subst [] .field) = .ok (.literal (255 : F)) := eq_of_isLiteral (by decide +kernel)
@@ -792,6 +797,8 @@ theorem n15441703192237548089 : instanceName [] "Lists::length" (some [(.named "
 theorem n14149180230363482143 : instanceName [] "Lists::length" (some [(.named "Ixon::MutConst" [])]) = Names.«Lists::length<Ixon::MutConst>» := by decide +kernel
 
 theorem n2303571640435370391 : instanceName [] "Lists::length" (some [(.ptr (.array .field 32))]) = Names.«Lists::length<&[Field; 32]>» := by decide +kernel
+
+theorem n9239332686479287625 : instanceName [] "Lists::lookup" (some [(.tuple [(.ptr (.array .field 32)), .field, (.ptr (.named "Lists::Node" [(.ptr (.named "KernelTypes::KExprNode" []))])), (.ptr (.named "Lists::Node" [(.ptr (.named "KernelTypes::KLevelNode" []))]))])]) = Names.«Lists::lookup<(&[Field; 32], Field, &Lists::Node<&KernelTypes::KExprNode>, &Lists::Node<&KernelTypes::KLevelNode>)>» := by decide +kernel
 
 theorem c13298375860476077160 : W.constant "UInt8::BYTE_118" (Generic.Ty.subst [] .field) = .ok (.literal (118 : F)) := eq_of_isLiteral (by decide +kernel)
 
