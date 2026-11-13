@@ -12,6 +12,9 @@ import IxCC.Src.Relevance.Proof.P1.Recr
 import IxCC.Src.Relevance.Proof.P1.Ctor
 import IxCC.Src.Relevance.Proof.P1.Delta
 import IxCC.Src.Relevance.Proof.P1.Plumbing
+import IxCC.Src.Relevance.Proof.P1.CaseKey
+import IxCC.Src.Relevance.Proof.P1.App
+import IxCC.Src.Relevance.Proof.P1.Main
 import IxCC.Lam.Erase.Proof.ModesOk
 import IxCC.Lam.Erase.Proof.WFProg
 

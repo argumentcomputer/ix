@@ -2,6 +2,7 @@ import IxCC.Src.Relevance.Proof.P1.Prefix
 import IxCC.Recheck.Proof.FrontAccepted
 import IxCC.Src.Relevance.Proof.P1.Facts
 import IxCC.Recheck.Proof.Live
+import IxCC.Recheck.Proof.LiveClosed
 
 /-! Required axiom fences for P1's proved parts (relevance preservation is not proved; its
 definitions are `Src.Relevance.Proof.P1.Defs`, whose `live_not_irr` is fenced in `Fences/Erase.lean`):

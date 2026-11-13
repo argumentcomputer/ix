@@ -552,19 +552,23 @@ def Post (p : Program) (ann : Ann) (ch : Checked) : Call → Prop
   | .forceAll k ss => ∀ vs, forceAll p k ss = .ok vs → ∀ v ∈ vs, (v.isIrr = false → Live p ann ch v) ∧ Whole p v
 
 /-- What a call reads: the function an application returns from, the structure a projection
-reads and the field it yields, the major F2 or F5 selects a rule by, and the quotient F8 lifts. -/
+reads and the field it yields, the major F2 or F5 selects a rule by, and the quotient F8 lifts.
+The major is read only at an ordinary kind at the levels (`Step.recMajor`, `Step.caseMajor`): a
+subsingleton or empty kind forces no major, so its clause has the steps' own premise. -/
 def Reads (p : Program) (ann : Ann) (ch : Checked) : Call → Prop
   | .apply k f s => (∃ v, apply p k f s = .ok v) → Live p ann ch f
   | .eval k ls ρ (.proj s i e) => ∀ v w, eval p k ls ρ e = .ok v → p.projectField s i v = .ok w →
       Live p ann ch v ∧ Live p ann ch w
-  | .fire (k + 1) (.recr r) _ args =>
+  | .fire (k + 1) (.recr r) ls args =>
       ∀ sf kk lv np nmot nmin ni ind rules ty major jf,
         p.decl? r = some (.recr sf kk lv np nmot nmin ni ind rules ty) →
+        (p.table.recKindOf r).map (·.atLevels ls) = some .ordinary →
         force p k (args.getD (np + nmot + nmin + ni) default) = .ok major →
         p.selectRule ind np major = some jf → Live p ann ch major
-  | .fire (k + 1) (.cases c) _ args =>
+  | .fire (k + 1) (.cases c) ls args =>
       ∀ r sf kk lv np nmot nmin ni ind rules ty major jf,
         p.table.resolveOf c = some (.case r) → p.decl? r = some (.recr sf kk lv np nmot nmin ni ind rules ty) →
+        (p.table.recKindOf r).map (·.atLevels ls) = some .ordinary →
         force p k (args.getD (np + 1 + ni) default) = .ok major →
         p.selectRule ind np major = some jf → Live p ann ch major
   | .fire (k + 1) (.quotLift _) _ [_, _, _, _, _, q] =>
