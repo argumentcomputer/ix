@@ -183,6 +183,21 @@ theorem adds_minorBinders (k : CId) (j : Nat) (qc : Profile) :
   | _, [], [] => fun errs => ⟨[], by simp [minorBinders]⟩
   | _, _ :: _, [] => fun errs => ⟨[], by simp [minorBinders]⟩
 
+theorem adds_partialElim (shape : ElimShape) : Adds fun errs => partialElim ctx shape errs := by
+  intro errs
+  unfold partialElim
+  split
+  · exact ⟨[_], rfl⟩
+  · exact ⟨[], rfl⟩
+
+theorem bareHead_constHead (c : CId) (us : List Ixon.Univ) (errs : List RelError)
+    (e : bareHead ctx c us errs = []) : constHead ctx c us errs = [] := by
+  unfold bareHead at e
+  dsimp only at e
+  split at e
+  · exact (adds_partialElim ctx _).nil e
+  · exact e
+
 theorem varRule_nil (bs : List Rel) (errs : List RelError) (i : Nat)
     (e : varRule ctx bs errs i = []) : errs = [] ∧ i < bs.length := by
   unfold varRule at e
@@ -280,7 +295,7 @@ theorem knownHead_nil (errs : List RelError) (c : CId) (us : List Ixon.Univ)
   have htail : ∀ E : List RelError, (match elimShape? ctx.p c with
       | none => E
       | some shape =>
-        if args.length < shape.arity then E else
+        if args.length < shape.arity then partialElim ctx shape E else
         (shape.minors.foldl (init := match args[shape.major]? with
           | some (_, _, a) =>
             if a.irrP ctx.prof &&
@@ -299,7 +314,7 @@ theorem knownHead_nil (errs : List RelError) (c : CId) (us : List Ixon.Univ)
     split at hE
     · exact hE
     · split at hE
-      · exact hE
+      · exact (adds_partialElim ctx _).nil hE
       · have hf := (Adds.foldl (g := fun errs (x : Nat × Nat × Nat) =>
           match args[x.1]?, ruleCtorFields ctx.p ctx.ann _ x.2.2 with
           | some (minor, _, a), some (k, fields) =>
@@ -382,7 +397,7 @@ theorem term_nil : ∀ (bs : List Rel) (errs : List RelError) (t : Term),
     exact ⟨h₁, .var h₂⟩
   | bs, errs, .const c us, e => by
     unfold term at e
-    obtain ⟨h₁, h₂⟩ := constHead_nil ctx c us errs e
+    obtain ⟨h₁, h₂⟩ := constHead_nil ctx c us errs (bareHead_constHead ctx c us errs e)
     exact ⟨h₁, .const h₂⟩
   | bs, errs, .lam b d t, e => by
     unfold term at e
