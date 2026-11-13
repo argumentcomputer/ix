@@ -717,8 +717,7 @@ reference core or of the fold's use of it. Each exhausts as a decline
 (`.internal "fuel exhausted: …"`): the head-normalisation loop's 1,000,000
 steps (`whnfCoreLoopFuel`), the `whnf` and conversion loops' 100,000 each
 (`whnfLoopFuel`, `defeqLoopFuel`), the level comparison's depth fuel of 10,000
-(`Level.defaultFuel`, which `Level.isEquiv` uses: the two universe shapes of
-`kernel-depth` at depth 16,384 are declined by it), and the typing core's
+(`Level.defaultFuel`, which `Level.isEquiv` uses), and the typing core's
 recursion fuel of 100,000 nested calls (`checkFuel`, the knot's fuel in the
 fold and in the typing tier). Raising `maxDepth` therefore has effect only up to
 where `checkFuel` declines first: KNOT-BITE-MEASUREMENT.
