@@ -199,6 +199,23 @@ def KeyedBy (cx : Ctx md) (R : ConstRef Address → Prop) {β : Type} (name : β
 theorem throw_ok {α : Type} {e : ReadError} {r : α} (h : (throw e : ReadM α) = .ok r) : False := by
   simp [throw, throwThe, MonadExceptOf.throw] at h
 
+/-- A recursor of the shape a block reads at (`blockShapeOf`) is one the index
+files for the block: the default shape of a block no recursor eliminates has
+none. -/
+theorem blockShapeOf_recs {index : RecIndex} {owner : Address} {ms : Array Ixon.MutConst}
+    {shape : BlockShape} (h : blockShapeOf index owner ms = some shape) {ref : ConstRef Address}
+    (hr : ref ∈ shape.recs) : ∃ s, index.blocks[owner]? = some s ∧ ref ∈ s.recs := by
+  unfold blockShapeOf at h
+  split at h
+  · next s hs =>
+    obtain rfl := Option.some.inj h
+    exact ⟨_, hs, hr⟩
+  · unfold unindexedShape at h
+    split at h
+    · obtain rfl := Option.some.inj h
+      simp at hr
+    · exact nomatch h
+
 /-- **An inductive block's lowering, per record**: the modeller's records (as
 many as `generated` says), then one declaration every name of which is a
 member key of the block: a type's (`.member owner i`) or a constructor's
@@ -294,7 +311,7 @@ theorem readInductive_lowering {cx : Ctx md} {st : State md} {owner : Address} {
             · obtain ⟨ref, hb, hk⟩ := ck e (Array.mem_def.mpr he)
               exact ⟨ref, .inl hb, hk⟩
             · obtain ⟨ref, hb, hk⟩ := rk e (Array.mem_def.mpr he)
-              exact ⟨ref, .inr ⟨shape, hshape, hb⟩, hk⟩
+              exact ⟨ref, .inr (blockShapeOf_recs hshape hb), hk⟩
           · exact (fail_bind h).elim
       · exact (throw_ok h).elim
     · exact (fail_bind h).elim

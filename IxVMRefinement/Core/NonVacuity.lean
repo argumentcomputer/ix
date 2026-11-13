@@ -57,6 +57,13 @@ theorem envFacts₀ : EnvFacts c₀ where
   ruleCtorArity := by intro k cv mI rP rls h; simp [c₀, env₀_find] at h
   tableCtorArity := by intro sn i entry h; simp [c₀, env₀_findProj] at h
   familyArity := by intro T cvT caps h; simp [c₀, env₀_find] at h
+  store := Ix.Kernel.Open.StoreInv.empty
+  recMajorRecord := by intro k cv mI rP rls p us h; simp [c₀, env₀_find] at h
+  ruleCtorHead := by intro k cv mI rP rls rl cvj nP nF T us h; simp [c₀, env₀_find] at h
+  quotBasis := fun h => absurd h (not_inForce _)
+  etaTowers := Ix.Kernel.Model.EtaTowers.empty
+  etaType := by intro T kc cvT cvc caps nP nF h; simp [c₀, env₀_find] at h
+  recEta := by intro k cv mI rP rl h; simp [c₀, env₀_find] at h
 
 /-- The table cell: an empty binding section and three empty maps. -/
 def tableCell : SourceValue F :=
@@ -91,5 +98,12 @@ empty context list, the scoped ghost context and the environment invariant are a
 theorem ctx₀ (Γ : Nat → KExpr) (hl : LoadFacts c₀) :
     S0.ctx c₀.E c₀.env ⟨keyOf t₀, Γ⟩ 0 h₀ rc₀ types₀ :=
   ⟨t₀, none, rfl, rcRep₀, typesRep₀ _ Γ, ghostScoped₀ Γ, envFacts₀, hl⟩
+
+/-- The empty context's records satisfy `LoadFacts.canonical`: there is no record. -/
+theorem canonical₀ : ∀ (x : _root_.Address) (lc : Ixon.LazyConstant) (info : Ixon.ConstantInfo),
+    c₀.E.consts.get? x = some lc → lc.rawBytes = Ixon.serConstant ⟨info, #[], #[], #[]⟩ →
+      ∀ cm, lc.get? = some cm → cm.info = info := by
+  intro x lc info h
+  simp [c₀] at h
 
 end IxVM.Refinement.Core.NonVacuity
