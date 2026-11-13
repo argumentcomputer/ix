@@ -156,9 +156,12 @@ from 5962, by the entry's change (38 in: the check, the state's keys and the der
 -- Deriving a nested block's auxiliary members in the in-model generator (`nestedAuxOk`)
 -- adds 21 compiled functions. Externs, implemented_by, unsafe, csimp and all ruling counts are
 -- unchanged.
+-- The reader's default shape for a block of one inductive that no recursor of the input
+-- eliminates (`unindexedShape`, `blockShapeOf`) adds 5 compiled functions. Externs,
+-- implemented_by, unsafe, csimp and all ruling counts are unchanged.
 /-- info: runtime closure of [Ixon.Projection.address,
  Ixon.Projection.reconstruct,
- Ixon.Projection.checkBytes]: 7007 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 28 -/
+ Ixon.Projection.checkBytes]: 7012 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 28 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.Projection.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
 
