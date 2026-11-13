@@ -274,11 +274,15 @@
    ["IxCCTests.Src.Relevance.Checker",
     "IxCCTests.Src.Relevance.Census",
     "IxCCTests.Src.Relevance.Mutation",
-    "IxCCTests.Src.Relevance.Stuck"]},
+    "IxCCTests.Src.Relevance.Stuck",
+    "IxCCTests.Src.Relevance.ModeFlip"]},
   "IxCCTests.Src.Relevance.Mutation":
   {"path": "IxCCTests/Src/Relevance/Mutation.lean",
    "imports":
    ["IxCCTests.Src.Support", "IxCCTests.Src.Rules", "IxCCTests.Src.StuckEval"]},
+  "IxCCTests.Src.Relevance.ModeFlip":
+  {"path": "IxCCTests/Src/Relevance/ModeFlip.lean",
+   "imports": ["IxCCTests.Src.Support", "IxCC.Src.Relevance.Check"]},
   "IxCCTests.Src.Relevance.Main":
   {"path": "IxCCTests/Src/Relevance/Main.lean",
    "imports": ["IxCCTests.Src.Relevance.Run"]},
@@ -3447,7 +3451,9 @@
   "IxCCTests.Fences.P1":
   {"path": "IxCCTests/Fences/P1.lean",
    "imports":
-   ["IxCC.Src.Relevance.Proof.P1.Prefix", "IxCC.Recheck.Proof.FrontAccepted"]},
+   ["IxCC.Src.Relevance.Proof.P1.Prefix",
+    "IxCC.Recheck.Proof.FrontAccepted",
+    "IxCC.Src.Relevance.Proof.P1.Facts"]},
   "IxCCTests.Fences.OwnRc":
   {"path": "IxCCTests/Fences/OwnRc.lean",
    "imports":
@@ -5206,6 +5212,10 @@
   "IxCC.Src.Relevance.Proof.P1.Measure":
   {"path": "IxCC/Src/Relevance/Proof/P1/Measure.lean",
    "imports": ["IxCC.Src.Relevance.Proof.P1.Defs"]},
+  "IxCC.Src.Relevance.Proof.P1.Facts":
+  {"path": "IxCC/Src/Relevance/Proof/P1/Facts.lean",
+   "imports":
+   ["IxCC.Src.Relevance.Proof.P1.Defs", "IxCC.Src.Relevance.Proof.ModeEq"]},
   "IxCC.Src.Relevance.Proof.P1.Defs":
   {"path": "IxCC/Src/Relevance/Proof/P1/Defs.lean",
    "imports":
@@ -5218,6 +5228,13 @@
   "IxCC.Src.Relevance.Proof.P1.Basic":
   {"path": "IxCC/Src/Relevance/Proof/P1/Basic.lean",
    "imports": ["IxCC.Src.Relevance.Proof.P1.Defs"]},
+  "IxCC.Src.Relevance.Proof.ModeEq":
+  {"path": "IxCC/Src/Relevance/Proof/ModeEq.lean",
+   "imports":
+   ["IxCC.Src.Proof.Lazify",
+    "IxCC.Src.Proof.TermBEq",
+    "IxCC.Src.Relevance.Check",
+    "IxCC.Src.Relevance.Proof.Canonical"]},
   "IxCC.Src.Relevance.Proof.Canonical":
   {"path": "IxCC/Src/Relevance/Proof/Canonical.lean",
    "imports": ["IxCC.Src.Relevance.Proof.Sound", "IxCC.Src.Semantics"]},
@@ -5235,6 +5252,8 @@
   "IxCC.Src.Proof.Unfold":
   {"path": "IxCC/Src/Proof/Unfold.lean",
    "imports": ["IxCC.Src.Semantics", "IxCC.Sem.Agrees"]},
+  "IxCC.Src.Proof.TermBEq":
+  {"path": "IxCC/Src/Proof/TermBEq.lean", "imports": ["IxCC.Src.Syntax"]},
   "IxCC.Src.Proof.Spine":
   {"path": "IxCC/Src/Proof/Spine.lean", "imports": ["IxCC.Src.Proof.Unfold"]},
   "IxCC.Src.Proof.NatMap":

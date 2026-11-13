@@ -1247,8 +1247,17 @@ in `tests-recheck`'s `ErasedArity`).
 `eval_shielded_prefix` and `eval_erased_prefix` (`Src/Relevance/Proof/P1/Prefix.lean`: the value of a
 spine's prefix ignores an argument that is shielded or at a position written erased) and
 `front_accepted`, `shapeOk_of_run` (`Recheck/Proof/FrontAccepted.lean`), engineer PB's proofs on
-P1's definitions. P1's core, L1's facts on the Lazify image (`facts_modeEq`) and the narrowing of
-`Recheck.sound`'s escape are next.
+P1's definitions. P1's core and the narrowing of `Recheck.sound`'s escape are next.
+
+**L1's facts hold on the program SrcEval runs (2026-11-13).** `facts_modeEq`
+(`Src/Relevance/Proof/P1/Facts.lean`): when both relevance checks accept the
+installed program, P1's hypothesis `Facts` holds of its Lazify image, the
+program SrcEval runs. The relevance checks do not read application modes
+(`check_modeEq`), and `Canonical` carries over field by field
+(`canonical_modeEq`), both in `Src/Relevance/Proof/ModeEq.lean`. The only
+comparison of modes, `applyPis`'s loop test, can disagree only at a definition
+whose unfolding cycles; `tests-relevance` plants one. Engineers PE and PG did
+this work.
 
 **Open capability item: no program with a constructor field written erased can
 be produced (since at least 2026-11-13).** The kernel annotator's constructor

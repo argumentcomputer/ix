@@ -1945,8 +1945,8 @@
       "lean-toolchain": "d5edba4e4b8faad9c1baeadb265716d20d03be4d1a2647dc5e35b0c0325bea7b",
       "nix/build.nix": "46388020f117a06b447ce84229d08a077c3a57ceccf90eb3c91ad2eb0751c2f9",
       "nix/checks.nix": "e057166c3f31b05c0ef44fd88e9c680c91d6f6fe36cdc121a83810bbba22b56b",
-      "nix/ci-coverage.json": "8be460735c7a16b323ac8ecbfad7c6e82e18e2b43b280671102b25ea8817100e",
-      "nix/lean-modules.json": "ed465d0546aab404145051ab65566f4229686ed2f397c249de0a7c8882215d34",
+      "nix/ci-coverage.json": "019f03b20b9a041b00c5cca345f74f813456f10d357b8e13155b3130abe2cf40",
+      "nix/lean-modules.json": "e1b0efceb3164e882ca5180635918cd28f9b41657e41c5695136b9f32034431a",
       "nix/sources.nix": "68ac9be48afc58308053746c2c556bfcab92a5c28a68d663890b1ee84e0fe553",
       "IxCCTests/Scripts/CheckAiur.lean": "f5f1c7cdf6921d9d6fdbafd93163d823c4ce2c9f6bd52751c3357c383585729a",
       "IxCCTests/Scripts/CheckBuildGraph.lean": "012ce5230a7976558b2e087b6077861101fed19887a24fbba15a86f38c086196",
@@ -2661,7 +2661,7 @@
       "IxCCTests/Src/Relevance/Checker.lean": "6a813111d0b48f52e7213d97110625c8a6a084b3b9411b034d106aebc2737ef1",
       "IxCCTests/Src/Relevance/Main.lean": "04251fff61d67ae90583988f68efac01840abb2dca6639735bc2982e096f5649",
       "IxCCTests/Src/Relevance/Mutation.lean": "7d63a74b6bda8d0a920d6648b32453809ce5d828dfbe8316f0bf11de55ef3b95",
-      "IxCCTests/Src/Relevance/Run.lean": "b8d364cb6bf0c89b5bde1f95859bf328f3bea499595e4cbac3b2cc121caff8bc",
+      "IxCCTests/Src/Relevance/Run.lean": "0d9ce0e70fb9c4e871b77c60ef1f3f33cba94e113fbf2bdea27935dcfeed2b9a",
       "IxCCTests/Src/Relevance/Stuck.lean": "893b244bc69ba2abab22ce99d7f81ca4ac712fcd230d0b05b4308cc41e65544d",
       "IxCCTests/Src/Resource.lean": "be8ddac3589596c786da1c58e11cd1e7d8871d8ba941030f3f7d85483fbf3e4b",
       "IxCCTests/Src/Rules.lean": "42587fa91e509e3e739e599076894687ce0bf01d373258849bd6ba385edc9aed",
@@ -3210,7 +3210,7 @@
       "IxCCTests/Recheck/ErasedArity.lean": "cea080d50f97965206ce2bc81312e152931f6dc39a65cda6d2536b686e3be5e3",
       "IxCC/Src/Relevance/Proof/P1/Defs.lean": "e1f94dd77ddcc4fa6b97165ffd9f5a9244d4dd55afa60725c3b3e2fd2c6cb2fe",
       "IxCC/Recheck/Proof/LiveDefs.lean": "d992b08bcce2c0eae6212314cae9e4c173320137ffe20f118d06ecb1b64495cc",
-      "IxCCTests/Fences/P1.lean": "d60d75e26b657a27b2fbdf373b5fb1ba784e4705d5364ec93a8645adfd37d363",
+      "IxCCTests/Fences/P1.lean": "9743592b3788a88e08c2a8b41a5204368445b92f33d1b28211689aee72e084b3",
       "IxCC/Src/Relevance/Proof/P1/Prefix.lean": "2dd5b1b4ef220882117285b1433f4ba1a1a7d5e8cb14039a43af6b29aaea2920",
       "IxCC/Recheck/Proof/FrontAccepted.lean": "ff222c40e15b712bb40b7120df299e1debae9a2cbb5e876b38a3dac0c0630bc0",
       "IxCC/Src/Relevance/Proof/P1/Recr.lean": "84ba74b88917dbd2c891a66aeadec760620c0be790ec2def2d49e57631446186",
@@ -3224,7 +3224,11 @@
       "fixtures/fold/README.md": "f2a2e8e2eb83deb72d8970fd903b3070778655972c2f17cb56eff3c6d375b329",
       "fixtures/fold/Fold.lean": "c91c773e48f6ba59d2be948374081c619d139694f65f0ac4c9ec4b84d37834aa",
       "IxCCTests/Exe/FoldGuard.lean": "e812aaa93cd8983777deef9305dae43004498cba6302dd060b8e0ba22be58663",
-      "IxCCTests/Anf/FoldGuard.lean": "da933a3f06cf47f2253c1a051c9652165f2435455866173c36d9578eaac41a77"
+      "IxCCTests/Anf/FoldGuard.lean": "da933a3f06cf47f2253c1a051c9652165f2435455866173c36d9578eaac41a77",
+      "IxCCTests/Src/Relevance/ModeFlip.lean": "dd355c00b7eccdaea1d5945837f9f215e3efd7529feca69b73697d70c6cf930e",
+      "IxCC/Src/Relevance/Proof/P1/Facts.lean": "8dbd26b928f767bbc652487eabab1c808f4707912c39419f957442a453e8a0ce",
+      "IxCC/Src/Relevance/Proof/ModeEq.lean": "2ddb3d6adbda95de5b67668d5a25fad1d38d55973cbd6e4804aa00049216b08c",
+      "IxCC/Src/Proof/TermBEq.lean": "ec1634cf52318eda7427ada8fb332521a34bc13e1c7940ff78d64295433e2cc1"
     },
     "repository_files": {
       ".github/workflows/ixcc.yml": "457a376b2e4b245f54245af44a29dc91bd08f4b4cf33937aaf51c09a903aaa80"
