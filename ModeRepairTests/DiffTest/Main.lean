@@ -96,14 +96,9 @@ def readerIface (st : STStore) (d : UDef) : Except String (List (BinderMode × S
   let rd := Reading.make s
   let x ← rd.rcx noClasses (.member a 0)
   let .defn dd := rec.info | throw "not a definition"
-  let ((alls, codSkel), _) ← (inBlock x.rm (rootKey 0) (do
-      let (alls, cod) ← readForalls x readFuel dd.typ
-      let cs ← readSkel x readFuel cod
-      pure (alls, cs))).run {}
-  let (lams, _) ← (inBlock x.rm (rootKey 1) (do
-      let (lams, body) ← readLamNodes x readFuel dd.value
-      skip x.rm readFuel body
-      pure lams)).run {}
+  let ((alls, _, codSkel), _) ← (inBlock x.rm (rootKey 0) (readForalls x readFuel dd.typ (readSkel x readFuel))).run {}
+  let ((lams, _, _), _) ← (inBlock x.rm (rootKey 1)
+      (readLamNodes x readFuel dd.value fun _ body => skip x.rm readFuel body)).run {}
   teleAgree alls lams
   let k := lams.length
   let res := (lams.getLast?.map (·.1.result)).getD .shared

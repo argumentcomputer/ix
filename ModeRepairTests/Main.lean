@@ -2620,6 +2620,86 @@ def v1Recursors (t : IO.Ref Tally) : IO Unit := do
     (p.subj (rRecords natA { input := .unique }) (addr 295)) "an induction hypothesis's binder in minor premise 1 has a mode"
     (viaCheck := false)
 
+/-! ### V2 (note 12 §2.2): telescopes through sharing references
+
+As landed `readForalls`, `readLamNodes`, `dropAlls` and `ifaceErased` stopped at the first
+sharing reference, so a binder inside a sharing entry was read as part of the codomain or the
+body: `stuckAt` did not see its mode, `readCtorFields` did not read the field, `ifaceErased` did
+not list it. Every record here is canonical in the sense of `bindersComplete` (`withSection`
+gives each sharing entry with a binder its block). -/
+
+/-- A quotient record outside the role table (300): `∀ (a₁ … a₆ : Nat), e₀` with the sharing
+entry `e₀ = ∀ (a₇ : Nat), Nat`, `a₇` (node 0 of the entry's block) of mode `m₇`: a seventh ∀,
+as on `Quot.lift`, beyond the six of the root. -/
+def quotRecord (natA : Address) (m₇ : AllMode) : Ixon.Constant :=
+  let nat := xRef 0
+  let typ := Ixon.Expr.all nat (.all nat (.all nat (.all nat (.all nat (.all nat (.share 0))))))
+  withSection
+    { info := .quot { kind := .lift, lvls := 0, typ }, sharing := #[.all nat nat], refs := #[natA],
+      univs := #[] }
+    (fun sh idx o => if sh && idx == 0 && o == 0 then m₇ else {})
+
+/-- An inductive (310) with one constructor `mk : ∀ (a : Nat), e₀`, `e₀ = ∀ (@erased b : Nat), KS`
+a sharing entry, declared with `fields` fields (2 is its type's count). -/
+def ksRecord (natA : Address) (fields : Nat) : Ixon.Constant :=
+  withSection
+    { info := .muts #[.indc (indOf #[ctorOf 0 fields (.all (xRef 0) (.share 0))])],
+      sharing := #[.all (xRef 0) (.recur 0 #[])], refs := #[natA], univs := #[.succ .zero] }
+    (fun sh idx o => if sh && idx == 0 && o == 0 then erasedM else {})
+
+/-- A definition (320) `d : ∀ (a : Nat), e₀ := fun (a : Nat) => e₁`, with the sharing entries
+`e₀ = ∀ (@erased b : Nat), Nat` and `e₁ = fun (@erased b : Nat) => a`: its telescopes (two
+binders each) continue in sharing entries. -/
+def dRecord (natA : Address) : Ixon.Constant :=
+  withSection
+    { info := .defn (safeDef (.all (xRef 0) (.share 0)) (.lam (xRef 0) (.share 1))),
+      sharing := #[.all (xRef 0) (xRef 0), .lam (xRef 0) (xVar 1)], refs := #[natA], univs := #[] }
+    (fun sh _ o => if sh && o == 0 then erasedM else {})
+
+def v2Telescopes (t : IO.Ref Tally) : IO Unit := do
+  let p ← loadPre
+  let natA ← p.role .nat
+  let q := addr 300
+  readCheck t "V2 a quotient outside the role table, a seventh ∀ (default) in a sharing entry: accept"
+    (p.subj [(q, quotRecord natA {})] q) ""
+  -- REPAIR V2: accepted before (`stuckAt` read six ∀s and the entry as the codomain)
+  readCheck t "V2 the same, the seventh ∀ erased: refused (interface all default)"
+    (p.subj [(q, quotRecord natA erasedM)] q) "its modes are promises nothing checks"
+  let es := ifaceErased (p.subj [(q, quotRecord natA erasedM)] q) (.member q 0)
+  check1 t "V2 ifaceErased of that quotient: [6] (as landed [], the walk stopping at the entry)"
+    (match es with | .ok l => l == [6] | .error _ => false)
+    (match es with | .ok l => s!"{l}" | .error e => e)
+  let ks := addr 310
+  let rk := readProg (p.subj [(ks, ksRecord natA 2)] ks) noClasses
+  check1 t "V2 a constructor's second field in a sharing entry: read, erased (as landed, not read)"
+    (match rk with
+      | .ok P => match P.find? (.ctor ks 0 0) with
+        | some (.ctor _ _ 0 fs) => fs.size == 2 && (fs[1]?.map (·.mode)) == some .erased
+        | _ => false
+      | .error _ => false)
+    (match rk with
+      | .ok P => match P.find? (.ctor ks 0 0) with
+        | some (.ctor _ _ np fs) => s!"{np} parameters, field modes {repr (fs.map (·.mode))}"
+        | _ => "no constructor"
+      | .error e => e)
+  -- REPAIR V2: accepted before (nothing compared a constructor's binders with its field count)
+  readCheck t "V2 the same constructor declared with three fields: refused"
+    (p.subj [(ks, ksRecord natA 3)] ks) "a constructor's type's binders are not its parameters and fields"
+  let d := addr 320
+  let rd := readProg (p.subj [(d, dRecord natA)] d) noClasses
+  check1 t "V2 a definition whose λs and ∀s continue in sharing entries: two parameters, the second erased, result Nat (as landed one, and a closure)"
+    (match rd with
+      | .ok P => match P.find? (.member d 0) with
+        | some (.body ps _ _ rs _) => ps.size == 2 && (ps[1]?.map (·.mode)) == some .erased && rs == .data
+        | _ => false
+      | .error _ => false)
+    (match rd with
+      | .ok P => match P.find? (.member d 0) with
+        | some (.body ps _ _ rs _) => s!"parameter modes {repr (ps.map (·.mode))}, result skeleton {repr rs}"
+        | _ => "not a body"
+      | .error e => e)
+  readCheck t "V2 that definition: accept" (p.subj [(d, dRecord natA)] d) ""
+
 def run : IO UInt32 := do
   let t ← IO.mkRef ({} : Tally)
   IO.println "== Part 1: the suite's cases without a record fixture"
@@ -2641,6 +2721,7 @@ def run : IO UInt32 := do
   for c in gapBCases do runCase t c
   IO.println "== Part 3, continued: note 12's reading items"
   try v1Recursors t catch e => check1 t "V1" false s!"error: {e}"
+  try v2Telescopes t catch e => check1 t "V2" false s!"error: {e}"
   let s ← t.get
   IO.println s!"== {s.pass} passed, {s.fail} failed"
   for l in s.failed do IO.println s!"   failed: {l}"

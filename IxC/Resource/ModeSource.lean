@@ -129,8 +129,12 @@ def RecordModes.block? (rm : RecordModes) (k : BlockKey) : Option (Array ModeNod
 def RecordModes.binderfulAt (rm : RecordModes) (n : Nat) : Bool :=
   rm.binderful[n]?.getD false
 
-/-- The positions, among `e`'s numbered nodes, of its leading `lam`s (or `all`s,
-with `alls`), up to its first sharing reference. -/
+/-- The positions, among `e`'s numbered nodes in its own block, of its leading
+`lam`s (or `all`s, with `alls`), up to its first sharing reference (a binder past
+it has its node in the entry's block). The reading does not use it: since V2 a
+telescope, `ifaceErased`'s included, is read through sharing references by
+`readTele`. It locates a leading binder's node in a root block (their suite's
+`eraseBinder`). -/
 def leadingBinders (full : Array Bool) (alls : Bool) : Nat → Ixon.Expr → Nat → Except String (List Nat)
   | 0, _, _ => pure []
   | n + 1, e, pos =>
