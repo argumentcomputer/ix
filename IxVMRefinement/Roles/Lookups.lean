@@ -104,7 +104,7 @@ theorem roleMapSearch_det {en : String} {h : Heap F} {k : F} {tree : SourceValue
       injection hvs with _ hvs1
       injection hvs1 with _ hvs2
       injection hvs2 with hv _
-      exact hv
+      exact congrArg some hv
     | left hlt =>
       injection ht with _ _ hvs
       injection hvs with _ hvs1
@@ -351,10 +351,11 @@ theorem repAddr_zeroAddr_snoc (h : Heap F) :
   refine ⟨h.length, .tuple (List.replicate 32 (.field 0)), rfl, by simp, ?_⟩
   unfold Bytes.RepAddress Specs.Roles.zeroAddr
   apply congrArg Value.tuple
-  apply List.ext_getElem (by simp)
+  apply List.ext_getElem (by simp only [List.length_replicate, List.length_map, Vector.length_toList])
   intro i h1 h2
-  have hi : i < 32 := by simpa using h1
-  simp [List.getElem_replicate, Vector.getElem_toList, hi]
+  have hi : i < 32 := by rw [List.length_replicate] at h1; exact h1
+  rw [List.getElem_replicate]
+  simp [Vector.getElem_toList, hi]
 
 /-! ## `RBTreeMap::canon_addr_cmp` and `rbtree_map_lookup_or_default` -/
 
@@ -857,8 +858,7 @@ theorem role_bound_addr_or_zero_step (c : Ctx) {args h r h' calls}
   cases res with
   | some v =>
     simp only [Option.getD_some] at hr
-    subst hr
-    exact ⟨some v, hs, .inl rfl⟩
+    exact ⟨some v, hs, .inl (congrArg some hr.symm)⟩
   | none =>
     simp only [Option.getD_none] at hr
     subst hr
@@ -876,7 +876,8 @@ theorem role_is_bound_step (c : Ctx) {args h r h' calls}
     obtain ⟨res, hs, hres⟩ :=
       ih.get (.roles .role_bound_addr_or_zero) (by rw [hc105]; roles_lt_calls) ev14
         tbl (roleNum ro) rfl byRole hby
-    obtain ⟨bp, byRole', byAddr, evMap, hload, hbyRoleAll, _, _⟩ := htbl
+    have htbl' := htbl
+    obtain ⟨bp, byRole', byAddr, evMap, hload, hbyRoleAll, _, _⟩ := htbl'
     obtain ⟨bp', byAddr', evMap', hload'⟩ := hby
     have hbr_eq : byRole = byRole' := by
       rw [hload] at hload'
@@ -919,7 +920,8 @@ theorem role_bound_addr_step (c : Ctx) {args h r h' calls}
   subst hargs
   obtain ⟨v12, m15, cs23, cs52, ev25, heq48, ev54, hc71⟩ :=
     Obs.«KernelRoles::role_bound_addr».obs ev
-  obtain ⟨bp, byRole, byAddr, evMap, hload, _, _, _⟩ := htbl
+  have htbl' := htbl
+  obtain ⟨bp, byRole, byAddr, evMap, hload, _, _, _⟩ := htbl'
   have hby : Specs.Roles.ByRole h tbl byRole := ⟨bp, byAddr, evMap, hload⟩
   have good1 : Good c cs23 := good.sub (by rw [hc71]; intro x hx; simp [hx])
   have hv12_ne : v12 ≠ .field 0 := by
