@@ -50,11 +50,8 @@ def piDomInst : KExpr → List KExpr → Nat → Option KExpr
   | .forallE _ b _, a :: zs, n + 1 => piDomInst (b.instantiate1 a) zs n
   | _, _, _ => none
 
-/-- The sort a `∀`-telescope ends in after exactly `n` binders. -/
-def piSortAt : Nat → KExpr → Option KLevel
-  | 0, .sort l => some l
-  | n + 1, .forallE _ b _ => piSortAt n b
-  | _, _ => none
+/-- The sort a `∀`-telescope ends in after exactly `n` binders (`Core.piSortAt`). -/
+abbrev piSortAt : Nat → KExpr → Option KLevel := IxVM.Refinement.Core.piSortAt
 
 /-- The body under exactly `n` leading `λ`s. -/
 def stripLams : Nat → KExpr → Option KExpr

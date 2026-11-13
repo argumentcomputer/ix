@@ -61,6 +61,9 @@ theorem envFacts₀ : EnvFacts c₀ where
   recMajorRecord := by intro k cv mI rP rls p us h; simp [c₀, env₀_find] at h
   ruleCtorHead := by intro k cv mI rP rls rl cvj nP nF T us h; simp [c₀, env₀_find] at h
   quotBasis := fun h => absurd h (not_inForce _)
+  etaTowers := Ix.Kernel.Model.EtaTowers.empty
+  etaType := by intro T kc cvT cvc caps nP nF h; simp [c₀, env₀_find] at h
+  recEta := by intro k cv mI rP rl h; simp [c₀, env₀_find] at h
 
 /-- The table cell: an empty binding section and three empty maps. -/
 def tableCell : SourceValue F :=
