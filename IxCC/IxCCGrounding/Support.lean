@@ -140,14 +140,14 @@ theorem lastSiteOk_snoc {H : V} {As : List V} {y : V} {v : Nat} {A : V} {B : V �
 
 /-! ## Related lists -/
 
-variable {M : Model V env} {κ : CId → KKey} {lpsOf : CId → List Nat} {S : CId → Prop}
+variable {M : Model V env} {p : Program} {κ : CId → KKey} {lpsOf : CId → List Nat} {S : CId → Prop}
   {Ok : CId → Levels → Prop}
 
 /-- **A variable that stands for a kernel term** is a slot related to that term's denotation. -/
 theorem relEnv_get {φ : LevelParam → Nat} :
     ∀ {ρ : IxCC.Src.Env} {σ : Sig} {ρk : BVarIdx → V} {i : Nat} {e : KExpr},
-      RelEnv M κ lpsOf S Ok φ ρ σ ρk → σ[i]? = some (some e) →
-      ∃ s X, ρ[i]? = some s ∧ Denotes M.cval env φ ρk e X ∧ RelSlot M κ lpsOf S Ok s X
+      RelEnv M p κ lpsOf S Ok φ ρ σ ρk → σ[i]? = some (some e) →
+      ∃ s X, ρ[i]? = some s ∧ Denotes M.cval env φ ρk e X ∧ RelSlot M p κ lpsOf S Ok s X
   | [], _, _, _, _, he, h => by cases he; simp at h
   | _ :: _, _, _, 0, _, he, h => by
     cases he with
@@ -166,7 +166,7 @@ theorem relEnv_get {φ : LevelParam → Nat} :
       exact relEnv_get hrest h
 
 theorem relSlots_get : ∀ {ss : List Slot} {Xs : List V} {i : Nat} {s : Slot},
-    RelSlots M κ lpsOf S Ok ss Xs → ss[i]? = some s → ∃ X, Xs[i]? = some X ∧ RelSlot M κ lpsOf S Ok s X
+    RelSlots M p κ lpsOf S Ok ss Xs → ss[i]? = some s → ∃ X, Xs[i]? = some X ∧ RelSlot M p κ lpsOf S Ok s X
   | [], _, _, _, _, h => by simp at h
   | _ :: _, _, 0, _, hr, h => by
     cases hr with
@@ -180,7 +180,7 @@ theorem relSlots_get : ∀ {ss : List Slot} {Xs : List V} {i : Nat} {s : Slot},
       exact relSlots_get hrest h
 
 theorem relSlots_get' : ∀ {ss : List Slot} {Xs : List V} {i : Nat} {X : V},
-    RelSlots M κ lpsOf S Ok ss Xs → Xs[i]? = some X → ∃ s, ss[i]? = some s ∧ RelSlot M κ lpsOf S Ok s X
+    RelSlots M p κ lpsOf S Ok ss Xs → Xs[i]? = some X → ∃ s, ss[i]? = some s ∧ RelSlot M p κ lpsOf S Ok s X
   | _, [], _, _, _, h => by simp at h
   | _, _ :: _, 0, _, hr, h => by
     cases hr with
@@ -194,7 +194,7 @@ theorem relSlots_get' : ∀ {ss : List Slot} {Xs : List V} {i : Nat} {X : V},
       exact relSlots_get' hrest h
 
 theorem relVs_get : ∀ {vs : List Value} {Xs : List V} {i : Nat} {v : Value},
-    RelVs M κ lpsOf S Ok vs Xs → vs[i]? = some v → ∃ X, Xs[i]? = some X ∧ RelV M κ lpsOf S Ok v X
+    RelVs M p κ lpsOf S Ok vs Xs → vs[i]? = some v → ∃ X, Xs[i]? = some X ∧ RelV M p κ lpsOf S Ok v X
   | [], _, _, _, _, h => by simp at h
   | _ :: _, _, 0, _, hr, h => by
     cases hr with
@@ -207,7 +207,7 @@ theorem relVs_get : ∀ {vs : List Value} {Xs : List V} {i : Nat} {v : Value},
       simp only [List.getElem?_cons_succ] at h ⊢
       exact relVs_get hrest h
 
-theorem relVs_length : ∀ {vs : List Value} {Xs : List V}, RelVs M κ lpsOf S Ok vs Xs →
+theorem relVs_length : ∀ {vs : List Value} {Xs : List V}, RelVs M p κ lpsOf S Ok vs Xs →
     Xs.length = vs.length
   | [], _, h => by cases h; rfl
   | _ :: _, _, h => by
@@ -215,7 +215,7 @@ theorem relVs_length : ∀ {vs : List Value} {Xs : List V}, RelVs M κ lpsOf S O
     | cons _ h' => simp [relVs_length h']
 
 theorem relSlots_take : ∀ (n : Nat) {ss : List Slot} {Xs : List V},
-    RelSlots M κ lpsOf S Ok ss Xs → RelSlots M κ lpsOf S Ok (ss.take n) (Xs.take n)
+    RelSlots M p κ lpsOf S Ok ss Xs → RelSlots M p κ lpsOf S Ok (ss.take n) (Xs.take n)
   | 0, _, _, _ => .nil
   | _ + 1, [], _, h => by cases h; exact .nil
   | n + 1, _ :: _, _, h => by
@@ -223,18 +223,18 @@ theorem relSlots_take : ∀ (n : Nat) {ss : List Slot} {Xs : List V},
     | cons hs h' => exact .cons hs (relSlots_take n h')
 
 theorem relSlots_drop : ∀ (n : Nat) {ss : List Slot} {Xs : List V},
-    RelSlots M κ lpsOf S Ok ss Xs → RelSlots M κ lpsOf S Ok (ss.drop n) (Xs.drop n)
+    RelSlots M p κ lpsOf S Ok ss Xs → RelSlots M p κ lpsOf S Ok (ss.drop n) (Xs.drop n)
   | 0, _, _, h => h
   | _ + 1, [], _, h => by cases h; exact .nil
   | n + 1, _ :: _, _, h => by
     cases h with
     | cons _ h' => exact relSlots_drop n h'
 
-theorem relVs_nil_right {vs : List Value} (h : RelVs M κ lpsOf S Ok vs ([] : List V)) : vs = [] := by
+theorem relVs_nil_right {vs : List Value} (h : RelVs M p κ lpsOf S Ok vs ([] : List V)) : vs = [] := by
   cases h; rfl
 
-theorem relVs_single_right {vs : List Value} {X : V} (h : RelVs M κ lpsOf S Ok vs [X]) :
-    ∃ v, vs = [v] ∧ RelV M κ lpsOf S Ok v X := by
+theorem relVs_single_right {vs : List Value} {X : V} (h : RelVs M p κ lpsOf S Ok vs [X]) :
+    ∃ v, vs = [v] ∧ RelV M p κ lpsOf S Ok v X := by
   cases h with
   | cons hv h' => cases h'; exact ⟨_, rfl, hv⟩
 
@@ -243,7 +243,7 @@ theorem relVs_single_right {vs : List Value} {X : V} (h : RelVs M κ lpsOf S Ok 
 /-- A literal value relates to the literal's set, at any assignment (level-parameter irrelevance
 only). -/
 theorem relV_lit_eq_cv (hcv : CvalParams M) (hS : NatBasis env) (φ : LevelParam → Nat)
-    {n : Nat} {X : V} (h : RelV M κ lpsOf S Ok (.lit n) X) : X = litSet M φ n := by
+    {n : Nat} {X : V} (h : RelV M p κ lpsOf S Ok (.lit n) X) : X = litSet M φ n := by
   cases h with
   | @lit _ _ φ' ρ' hd =>
     rw [(lit_den M (natFacts M hS φ') ρ' n X).mp hd]
@@ -251,11 +251,11 @@ theorem relV_lit_eq_cv (hcv : CvalParams M) (hS : NatBasis env) (φ : LevelParam
 
 /-- A literal value relates to the literal's set, at any assignment. -/
 theorem relV_lit_eq (hL : LawsCore M) (hS : NatBasis env) (φ : LevelParam → Nat)
-    {n : Nat} {X : V} (h : RelV M κ lpsOf S Ok (.lit n) X) : X = litSet M φ n :=
+    {n : Nat} {X : V} (h : RelV M p κ lpsOf S Ok (.lit n) X) : X = litSet M φ n :=
   relV_lit_eq_cv hL.cval_params hS φ h
 
 theorem relV_lit_intro (hS : NatBasis env) (φ : LevelParam → Nat) (n : Nat) :
-    RelV M κ lpsOf S Ok (.lit n) (litSet M φ n) :=
+    RelV M p κ lpsOf S Ok (.lit n) (litSet M φ n) :=
   .lit (φ := φ) (ρ := fun _ => empty) ((lit_den M (natFacts M hS φ) _ n _).mpr rfl)
 
 end Sem
