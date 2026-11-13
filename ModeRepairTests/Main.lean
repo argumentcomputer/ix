@@ -297,6 +297,8 @@ inductive OExp where
   | noVio
   /-- a value or out of fuel -/
   | valOrOof
+  /-- the violation or out of fuel -/
+  | vioOrOof (k : Violation)
   deriving Inhabited
 
 def OExp.ok : OExp → Outcome → Bool
@@ -308,6 +310,8 @@ def OExp.ok : OExp → Outcome → Bool
   | .noVio, _ => true
   | .valOrOof, .value .. => true
   | .valOrOof, .outOfFuel => true
+  | .vioOrOof k, .violation k' => k == k'
+  | .vioOrOof _, .outOfFuel => true
   | _, _ => false
 
 def OExp.name : OExp → String
@@ -317,6 +321,7 @@ def OExp.name : OExp → String
   | .oof => "out of fuel"
   | .noVio => "no violation"
   | .valOrOof => "a value or out of fuel"
+  | .vioOrOof k => s!"violation {repr k} or out of fuel"
 
 /-- Expected outcomes by fuel: entry `(n, e)` holds from fuel `n` until the next entry. -/
 abbrev Table := List (Nat × OExp)
@@ -785,6 +790,41 @@ def twoLists : Heap × List Val :=
   let (b, xs) := ({} : HB).list [1, 2]
   let (b, ys) := b.list [3]
   (b.heap, [xs, ys])
+-- Finding 9: `g5 (@borrowed xs : List Nat) : List Nat := let f := fun _ => xs; f 0`; the control `g5p`
+-- with `xs` plain
+def g5 := mem 317
+def g5p := mem 353
+-- Found with repair D: a partial application of a function value holding a value moved into it is
+-- once-only. `kc17 (@unique a : List Nat) (n : Nat) : Nat := n`; `kc3 (@unique a) (b c : Nat) : Nat := b`;
+-- `d1 (k : (@unique a : List Nat) → Nat → Nat) (@unique x) : Nat := let h := k x; h 1 + h 2`, `d1h … := k x 1`;
+-- `d2 (@unique x) : Nat := let h := kc3 x; let h2 := h 1; h2 2 + h2 3`, `d2h … := let h := kc3 x; h 1 2`
+def kc17 := mem 347
+def d1 := mem 348
+def d1h := mem 349
+def kc3 := mem 350
+def d2 := mem 351
+def d2h := mem 352
+def skU : Skel := .arrow .unique .data .shared (.arrow .many .data .shared .data)
+def kcDefs : List (Ref × RunDef) := [(kc17, body [par .unique, par .many .leaf] (v 0 .leaf) .shared .leaf),
+  (kc3, body [par .unique, par .many .leaf, par .many .leaf] (v 1 .leaf) .shared .leaf)]
+def inD1 : Heap × List Val :=
+  let (b, xs) := ({} : HB).list [1, 2]
+  let (b, k) := b.alloc (.pap kc17 #[])
+  (b.heap, [k, xs])
+-- Finding 13: `use13 (k : (@borrowed a : List Nat) → Nat → Nat) (@unique y : List Nat) : Nat :=
+-- k y (consume y)`, with `kk (@borrowed a : List Nat) (n : Nat) : Nat := match a with | [] => 0 | _ => 1`
+-- given as `k`
+def sk13 : Skel := .arrow .borrowed .data .shared (.arrow .many .data .shared .data)
+def kk := mem 327
+def use13 := mem 328
+def p13Defs : List (Ref × RunDef) := [
+  (kk, body [par .borrowed, par .many .leaf] (onList (v 1) (.natLit 0) (.natLit 1) .val .leaf) .shared .leaf),
+  (use13, body [par .many .val sk13, par .unique]
+    (app (v 1) [v 0, app (.const consumeR .val) [v 0] .leaf] .leaf) .shared .leaf)]
+def in13 : Heap × List Val :=
+  let (b, xs) := ({} : HB).list [1, 2]
+  let (b, f) := b.alloc (.pap kk #[])
+  (b.heap, [f, xs])
 
 -- (the suite's `fuelCase` definition stands here; the driver's is above)
 
@@ -827,7 +867,33 @@ def findingCases : List Case := [
   runCase "finding 8, control: two unique lists in one cell, the cell given away"
     [(pairOk, body [par .unique, par .unique]
       (app (.const consumeR .val) [app (.const consR .val) [.irr, v 1, v 0]] .leaf) .shared .leaf)]
-    pairOk twoLists none true
+    pairOk twoLists none true,
+  runCase "finding 9: a closure capturing a borrowed list, applied, its result returned"
+    [(g5, body [par .borrowed] (.letE (.value .many) .val (lam (par .many .leaf) (v 1) .shared .val)
+      (app (v 0) [.natLit 0])))] g5 oneList (some .borrowEscape) false,
+  runCase "finding 9, control: the list not borrowed"
+    [(g5p, body [par] (.letE (.value .many) .val (lam (par .many .leaf) (v 1) .shared .val)
+      (app (v 0) [.natLit 0])))] g5p oneList none true,
+  runCase "finding 13: a function value applied to a borrowed list, then to its consumption"
+    p13Defs use13 in13 (some .revokedUse) false [use13, kk],
+  runCase "a partial application of a function value at a unique binder, called twice"
+    (kcDefs ++ [(d1, body [par .many .val skU, par .unique] (.letE (.value .many) .val (app (v 1) [v 0] .val)
+      (add (app (v 0) [.natLit 1] .leaf) (app (v 0) [.natLit 2] .leaf))) .shared .leaf)])
+    d1 inD1 (some .revokedUse) false,
+  runCase "a partial application of a once-only partial application, called twice"
+    (kcDefs ++ [(d2, body [par .unique] (.letE (.value .many) .val (app (.const kc3 .val) [v 0] .val)
+      (.letE (.value .many) .val (app (v 0) [.natLit 1] .val)
+        (add (app (v 0) [.natLit 2] .leaf) (app (v 0) [.natLit 3] .leaf)))) .shared .leaf)])
+    d2 oneList (some .revokedUse) false,
+  -- refused since repair D though the runs are clean: the result's aliases include the moved
+  -- argument (d1h) or the consumed once-only binding (d2h)
+  runCase "a function value at a unique binder applied to all its arguments (refused, runs clean)"
+    (kcDefs ++ [(d1h, body [par .many .val skU, par .unique] (app (v 1) [v 0, .natLit 1] .leaf) .shared .leaf)])
+    d1h inD1 none false,
+  runCase "a once-only partial application applied to all its remaining arguments (refused, runs clean)"
+    (kcDefs ++ [(d2h, body [par .unique] (.letE (.value .many) .val (app (.const kc3 .val) [v 0] .val)
+      (app (v 0) [.natLit 1, .natLit 2] .leaf)) .shared .leaf)])
+    d2h oneList none false
 ]
 
 -- END COPY
@@ -1178,16 +1244,77 @@ def f8Cases : List Case := [
 
 def g5 := mem 317
 def g5c := mem 318
+def g5p := mem 353
 
 def p9 : Prog := prog [
   (g5, body [par .borrowed] (.letE (.value .many) .val (lam (par .many .leaf) (v 1) .shared .val) (app (v 0) [.natLit 0]))),
-  (g5c, body [par .borrowed] (lam (par .many .leaf) (v 1) .shared .val) .shared .val arrowSk)]
+  (g5c, body [par .borrowed] (lam (par .many .leaf) (v 1) .shared .val) .shared .val arrowSk),
+  -- `g5p (xs : List Nat) : List Nat := let f := fun _ => xs; f 0`
+  (g5p, body [par] (.letE (.value .many) .val (lam (par .many .leaf) (v 1) .shared .val) (app (v 0) [.natLit 0])))]
 
 def f9Cases : List Case := [
+  -- REPAIR D: accepted as landed
   { label := "F9 g5: let f := fun _ => xs; f 0", P := p9, seed := g5, inp := oneList, toCheck := [g5],
-    verdict := .accept, run := [(0, .vio .borrowEscape)], open_ := true },
+    verdict := .refuse "borrowEscape", run := [(0, .vio .borrowEscape)] },
   { label := "F9 control: the closure returned", P := p9, seed := g5c, inp := oneList, toCheck := [g5c],
-    verdict := .refuse "borrowEscape", run := [(0, .vio .borrowEscape)] }]
+    verdict := .refuse "borrowEscape", run := [(0, .vio .borrowEscape)] },
+  { label := "F9 control: xs not borrowed", P := p9, seed := g5p, inp := oneList, toCheck := [g5p],
+    verdict := .accept, run := [(0, .valOrOof), (20, .value)] }]
+
+/-! ### Two more, found while writing repair D (by reading; run): a partial application of a
+function value holding a value moved into it is once-only, and the checker reused it
+
+`kc17 (@unique a : List Nat) (n : Nat) : Nat := n`; `kc3 (@unique a : List Nat) (b c : Nat) : Nat := b`.
+* D1 `d1 (k : (@unique a : List Nat) → Nat → Nat) (@unique x : List Nat) : Nat := let h := k x; h 1 + h 2`:
+  `k x` is a partial application holding `x` (transferred into it); its first call transfers `x`
+  again, so its second call is `revokedUse`.
+* D2 `d2 (@unique x : List Nat) : Nat := let h := kc3 x; let h2 := h 1; h2 2 + h2 3`: `h` is
+  once-only (`papVal`), but `h2 := h 1` is a partial application holding the same moved value and
+  was not once-only.
+Repair D (r2) refuses both, because the result's aliases include the moved argument (D1) or the
+consumed once-only binding (D2), which are dead. The same dead alias refuses the honest single
+uses D1' `k x 1` and D2' `let h := kc3 x; h 1 2`, which run to a value: a cost of r2 as written. -/
+
+def kc17 := mem 347
+def d1 := mem 348
+def d1h := mem 349
+def kc3 := mem 350
+def d2 := mem 351
+def d2h := mem 352
+
+def skU : Skel := .arrow .unique .data .shared (.arrow .many .data .shared .data)
+
+def pD : Prog := prog [
+  (kc17, body [par .unique, par .many .leaf] (v 0 .leaf) .shared .leaf),
+  (kc3, body [par .unique, par .many .leaf, par .many .leaf] (v 1 .leaf) .shared .leaf),
+  (d1, body [par .many .val skU, par .unique] (.letE (.value .many) .val (app (v 1) [v 0] .val)
+    (add (app (v 0) [.natLit 1] .leaf) (app (v 0) [.natLit 2] .leaf))) .shared .leaf),
+  (d1h, body [par .many .val skU, par .unique] (app (v 1) [v 0, .natLit 1] .leaf) .shared .leaf),
+  (d2, body [par .unique] (.letE (.value .many) .val (app (.const kc3 .val) [v 0] .val)
+    (.letE (.value .many) .val (app (v 0) [.natLit 1] .val)
+      (add (app (v 0) [.natLit 2] .leaf) (app (v 0) [.natLit 3] .leaf)))) .shared .leaf),
+  (d2h, body [par .unique] (.letE (.value .many) .val (app (.const kc3 .val) [v 0] .val)
+    (app (v 0) [.natLit 1, .natLit 2] .leaf)) .shared .leaf)]
+
+def inD1 : Heap × List Val :=
+  let (b, xs) := ({} : HB).list [1, 2]
+  let (b, k) := b.alloc (.pap kc17 #[])
+  (b.heap, [k, xs])
+
+def dCases : List Case := [
+  -- REPAIR D: accepted as landed
+  { label := "D1 let h := k x; h 1 + h 2 (k's binder unique)", P := pD, seed := d1, inp := inD1, toCheck := [d1],
+    verdict := .refuse "revokedUse", run := [(0, .vioOrOof .revokedUse), (100000, .vio .revokedUse)] },
+  -- REPAIR D: accepted as landed; refused now, its run a value (cost of r2)
+  { label := "D1' k x 1 (cost: refused, runs clean)", P := pD, seed := d1h, inp := inD1, toCheck := [d1h],
+    verdict := .refuse "revokedUse", run := [(0, .valOrOof), (100000, .value)] },
+  -- REPAIR D: accepted as landed
+  { label := "D2 let h := kc3 x; let h2 := h 1; h2 2 + h2 3", P := pD, seed := d2, inp := oneList,
+    toCheck := [d2], verdict := .refuse "revokedUse",
+    run := [(0, .vioOrOof .revokedUse), (100000, .vio .revokedUse)] },
+  -- REPAIR D: accepted as landed; refused now, its run a value (cost of r2)
+  { label := "D2' let h := kc3 x; h 1 2 (cost: refused, runs clean)", P := pD, seed := d2h, inp := oneList,
+    toCheck := [d2h], verdict := .refuse "revokedUse", run := [(0, .valOrOof), (100000, .value)] }]
 
 /-! ### Findings 10 and 11: once -/
 
@@ -1266,12 +1393,16 @@ def in13 (k : Ref) : Heap × List Val :=
   (b.heap, [f, xs])
 
 def f13Cases : List Case := [
+  -- REPAIR D: accepted as landed; refused since D (the first application's result aliases `y`,
+  -- consumed before the second application); repair G is the finding's own repair
   { label := "F13 use13: k y (consume y)", P := p13, seed := use13, inp := in13 kk, toCheck := [use13, kk],
-    verdict := .accept, run := [(0, .vio .revokedUse)], open_ := true },
+    verdict := .refuse "revokedUse", run := [(0, .vio .revokedUse)] },
   { label := "F13 control: the saturated call kk y (consume y)", P := p13, seed := use13c, inp := oneList,
     toCheck := [use13c, kk], verdict := .refuse "revokedUse", run := [(0, .vio .revokedUse)] },
+  -- REPAIR D: accepted as landed; refused now (the checker judges `use13` by `k`'s skeleton,
+  -- which lets `k` read its first argument); the run is a value, `k` never reading it
   { label := "F13 localiser: a k that never reads its first argument", P := p13, seed := use13, inp := in13 kk0,
-    toCheck := [use13], verdict := .accept, run := [(0, .valOrOof), (20, .value)] }]
+    toCheck := [use13], verdict := .refuse "revokedUse", run := [(0, .valOrOof), (20, .value)] }]
 
 /-! ### Finding 14: `DefaultOk` -/
 
@@ -1370,7 +1501,7 @@ def f16Cases : List Case := [
     verdict := .refuse "revokedUse", run := [(0, .vio .revokedUse)] }]
 
 def findingCases : List Case :=
-  f1Cases ++ f2Cases ++ f3Cases ++ f4Cases ++ f5Cases ++ f7Cases ++ f8Cases ++ f9Cases ++ f10Cases ++
+  f1Cases ++ f2Cases ++ f3Cases ++ f4Cases ++ f5Cases ++ f7Cases ++ f8Cases ++ f9Cases ++ dCases ++ f10Cases ++
     f11Cases ++ f12Cases ++ f13Cases ++ f14Cases ++ f15Cases ++ f16Cases
 
 def run : IO UInt32 := do

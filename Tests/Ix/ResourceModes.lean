@@ -508,6 +508,41 @@ def twoLists : Heap × List Val :=
   let (b, xs) := ({} : HB).list [1, 2]
   let (b, ys) := b.list [3]
   (b.heap, [xs, ys])
+-- Finding 9: `g5 (@borrowed xs : List Nat) : List Nat := let f := fun _ => xs; f 0`; the control `g5p`
+-- with `xs` plain
+def g5 := mem 317
+def g5p := mem 353
+-- Found with repair D: a partial application of a function value holding a value moved into it is
+-- once-only. `kc17 (@unique a : List Nat) (n : Nat) : Nat := n`; `kc3 (@unique a) (b c : Nat) : Nat := b`;
+-- `d1 (k : (@unique a : List Nat) → Nat → Nat) (@unique x) : Nat := let h := k x; h 1 + h 2`, `d1h … := k x 1`;
+-- `d2 (@unique x) : Nat := let h := kc3 x; let h2 := h 1; h2 2 + h2 3`, `d2h … := let h := kc3 x; h 1 2`
+def kc17 := mem 347
+def d1 := mem 348
+def d1h := mem 349
+def kc3 := mem 350
+def d2 := mem 351
+def d2h := mem 352
+def skU : Skel := .arrow .unique .data .shared (.arrow .many .data .shared .data)
+def kcDefs : List (Ref × RunDef) := [(kc17, body [par .unique, par .many .leaf] (v 0 .leaf) .shared .leaf),
+  (kc3, body [par .unique, par .many .leaf, par .many .leaf] (v 1 .leaf) .shared .leaf)]
+def inD1 : Heap × List Val :=
+  let (b, xs) := ({} : HB).list [1, 2]
+  let (b, k) := b.alloc (.pap kc17 #[])
+  (b.heap, [k, xs])
+-- Finding 13: `use13 (k : (@borrowed a : List Nat) → Nat → Nat) (@unique y : List Nat) : Nat :=
+-- k y (consume y)`, with `kk (@borrowed a : List Nat) (n : Nat) : Nat := match a with | [] => 0 | _ => 1`
+-- given as `k`
+def sk13 : Skel := .arrow .borrowed .data .shared (.arrow .many .data .shared .data)
+def kk := mem 327
+def use13 := mem 328
+def p13Defs : List (Ref × RunDef) := [
+  (kk, body [par .borrowed, par .many .leaf] (onList (v 1) (.natLit 0) (.natLit 1) .val .leaf) .shared .leaf),
+  (use13, body [par .many .val sk13, par .unique]
+    (app (v 1) [v 0, app (.const consumeR .val) [v 0] .leaf] .leaf) .shared .leaf)]
+def in13 : Heap × List Val :=
+  let (b, xs) := ({} : HB).list [1, 2]
+  let (b, f) := b.alloc (.pap kk #[])
+  (b.heap, [f, xs])
 
 /-- Run `entry` at every fuel of `fuels` (ascending): no run violates, the runs
 are out of fuel up to some fuel and a value from there on (the evaluator spends
@@ -564,7 +599,33 @@ def findingCases : List LSpec.TestSeq := [
   runCase "finding 8, control: two unique lists in one cell, the cell given away"
     [(pairOk, body [par .unique, par .unique]
       (app (.const consumeR .val) [app (.const consR .val) [.irr, v 1, v 0]] .leaf) .shared .leaf)]
-    pairOk twoLists none true
+    pairOk twoLists none true,
+  runCase "finding 9: a closure capturing a borrowed list, applied, its result returned"
+    [(g5, body [par .borrowed] (.letE (.value .many) .val (lam (par .many .leaf) (v 1) .shared .val)
+      (app (v 0) [.natLit 0])))] g5 oneList (some .borrowEscape) false,
+  runCase "finding 9, control: the list not borrowed"
+    [(g5p, body [par] (.letE (.value .many) .val (lam (par .many .leaf) (v 1) .shared .val)
+      (app (v 0) [.natLit 0])))] g5p oneList none true,
+  runCase "finding 13: a function value applied to a borrowed list, then to its consumption"
+    p13Defs use13 in13 (some .revokedUse) false [use13, kk],
+  runCase "a partial application of a function value at a unique binder, called twice"
+    (kcDefs ++ [(d1, body [par .many .val skU, par .unique] (.letE (.value .many) .val (app (v 1) [v 0] .val)
+      (add (app (v 0) [.natLit 1] .leaf) (app (v 0) [.natLit 2] .leaf))) .shared .leaf)])
+    d1 inD1 (some .revokedUse) false,
+  runCase "a partial application of a once-only partial application, called twice"
+    (kcDefs ++ [(d2, body [par .unique] (.letE (.value .many) .val (app (.const kc3 .val) [v 0] .val)
+      (.letE (.value .many) .val (app (v 0) [.natLit 1] .val)
+        (add (app (v 0) [.natLit 2] .leaf) (app (v 0) [.natLit 3] .leaf)))) .shared .leaf)])
+    d2 oneList (some .revokedUse) false,
+  -- refused since repair D though the runs are clean: the result's aliases include the moved
+  -- argument (d1h) or the consumed once-only binding (d2h)
+  runCase "a function value at a unique binder applied to all its arguments (refused, runs clean)"
+    (kcDefs ++ [(d1h, body [par .many .val skU, par .unique] (app (v 1) [v 0, .natLit 1] .leaf) .shared .leaf)])
+    d1h inD1 none false,
+  runCase "a once-only partial application applied to all its remaining arguments (refused, runs clean)"
+    (kcDefs ++ [(d2h, body [par .unique] (.letE (.value .many) .val (app (.const kc3 .val) [v 0] .val)
+      (app (v 0) [.natLit 1, .natLit 2] .leaf)) .shared .leaf)])
+    d2h oneList none false
 ]
 
 /-! ### Must-reject cases from records -/
