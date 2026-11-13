@@ -64,7 +64,8 @@ them.
   class for every binder, argument, let, constructor field and constant; the
   annotation travels in the certificate beside the bytes, and the recheck
   path decides it with `Relevance.check` (proved in
-  `Relevance.Proof.check_sound`) and `Relevance.checkCanonical`
+  `Relevance.Proof.check_sound`, tier C in `check_soundC`) and
+  `Relevance.checkCanonical` (its facts: `checkCanonical_sound`)
   ([Relevance and erasure](#relevance-and-erasure)).
 - **D10. Own runtime.** Allocation, reference counting, the `Nat`
   procedures and the entry wrappers are Lir code, lowered and proved with
@@ -852,10 +853,13 @@ minor's (SrcEval applies the minor to every field slot of the constructor
 value; erasure passes every field, □ where the constructor's record drops
 it: `minorApp` for a case, the rule body for a recursor), so the minor
 receives the value and does not use it (C1); `tests-recheck` runs both such
-minors to the right value. These are checks with tests: the relevance proof
+minors to the right value. These are checks with tests. The relevance proof
 (`Relevance.Proof.check_sound`) gives the tier-S facts erasure needs relative
-to SrcEval and says nothing about this invariant, and `checkCanonical` has no
-theorem. A violation makes SrcEval return an irrelevant value or get stuck,
+to SrcEval; since 2026-11-13 what the other checks decide is a proposition too
+(`Relevance.Proof.check_soundC` for tier C, `checkCanonical_sound` for
+`checkCanonical`, in `Src/Relevance/Proof/Canonical.lean`), but no theorem yet
+derives the invariant from them (relevance preservation, P1 in the
+[roadmap](roadmap.md#resource-soundness)). A violation makes SrcEval return an irrelevant value or get stuck,
 which the correctness statement counts as the source going wrong
 (`Front.GoesWrong`) and so does not bound. The certified kernel refused most
 of these programs only because its conversion compares binder contracts
