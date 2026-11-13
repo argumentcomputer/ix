@@ -100,9 +100,10 @@ def admits : Skel → Skel → Bool
 end Skel
 
 /-- A parameter or binder: its mode, the class of its values, the skeleton of
-its type, and whether its type is one no leaf inhabits (a function type, a
-sort, an inductive type with other than one constructor: read from the record,
-not from the class oracle). -/
+its type. `noLeaf` is not read by the checker or by `runR`, and the reading
+sets it `false` (`RCx.noLeafType`): the refinement it served, a `shared` leaf
+result carrying no region of an argument at a type no leaf inhabits, was
+unsound (findings 1 to 3) and is dropped. -/
 structure Param where
   mode : BinderMode := .many
   cls : Cls := .val

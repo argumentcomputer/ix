@@ -195,14 +195,17 @@ def destOf (p : Param) (lendPlain : Bool) : Dest :=
   else if p.mode.isBorrowed then .lend
   else if lendPlain then .lend else .share
 
-/-- **A call's result**, the arguments bound at the parameters in order. -/
+/-- **A call's result**, the arguments bound at the parameters in order. A
+`shared` result of class `leaf` may be any argument's leaf, or a leaf a closure
+or a cell among the arguments holds with the confinement it was stored with, so
+it carries every argument's regions. (As landed, an argument at a parameter
+whose type no leaf inhabits, `Param.noLeaf`, gave it none: unsound for `Nat`
+itself, for function types and under an absurd hypothesis, findings 1 to 3.) -/
 def callResult (ifc : Iface) (avs : Array (Option AVal)) (w : String) : CM AVal := do
   let lendPlain := ifc.resCls != .val
   let mut deps : List Nat := []
   let mut sdeps : List Nat := []
   let mut regs : List Nat := []
-  -- the regions a leaf result may carry: an argument's, where a leaf may pass
-  let mut leafRegs : List Nat := []
   for (p, i) in ifc.params.zipIdx do
     match avs[i]? with
     | some (some a) =>
@@ -210,7 +213,6 @@ def callResult (ifc : Iface) (avs : Array (Option AVal)) (w : String) : CM AVal 
       flowTo d p.skel a w
       if a.cls == .val then deps := natUnion deps a.deps
       regs := natUnion regs a.regs
-      if !p.noLeaf then leafRegs := natUnion leafRegs a.regs
       match d with
       | .share => sdeps := natUnion sdeps a.deps
       | _ => pure ()
@@ -223,7 +225,7 @@ def callResult (ifc : Iface) (avs : Array (Option AVal)) (w : String) : CM AVal 
   | .uniqueBorrowed => pure { base with own := .uniq, deps, regs := natUnion regs [inner] }
   | .borrowed => pure { base with deps, regs := natUnion regs [inner] }
   | .shared =>
-    if ifc.resCls == .leaf then pure { base with regs := leafRegs }
+    if ifc.resCls == .leaf then pure { base with regs }
     else pure { base with deps := sdeps, regs }
 
 /-- A partial application: its arguments at unique parameters transferred now
