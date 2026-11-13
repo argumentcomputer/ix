@@ -1066,6 +1066,37 @@ The tests are in `tests-recheck` (`ErasedBlocks`, on the new fixture
   recursor's, and an auxiliary recursor's major, a value of the container
   type, has the container's parameter).
 
+**The relevance checks' facts as propositions (L1, 2026-11-13); relevance
+preservation (P1) next.** What the relevance checks decide is now proved from
+their acceptance, in `Src/Relevance/Proof/Canonical.lean`: tier C at every
+reached instance (`check_soundC`: C0 at λs and `let`s written erased, C1 at
+variables, C2 at constant heads and β-redexes, C3 at minors with each recursor
+rule paired with the minor it dispatches, `elimShape_recr_minors`, and at
+projections, C4, C5), and what `checkCanonical` decides (`checkCanonical_sound`:
+the canonical constant and constructor records, header agreement of run bodies
+and `csimp` redirects, the special heads' reads, the forwarding clause on the
+stored rule terms, canonical tags), with the three facts about positions
+written erased (`param_erased_irr`, `field_erased_dropped`, `arg_erased_irr`).
+The closure loop's proof is now generic in the fact the term walk gives
+(`visit_specQ`, `loop_specQ`; `visit_spec` and `loop_spec` are its tier-S
+instances, statements unchanged). As first approved, one statement was false:
+`field_erased_dropped`, because the constructor record's predicate omitted the
+check's length of the classified telescope; a constructor declared with no
+fields whose type has one Π binder written erased refuted it (kept as an
+`example` in `IxCCTests/Fences/Erase.lean`), and the predicate now states that
+length. Not proved: that an accepted program's evaluation never yields the
+irrelevance marker at a position that is read. That is P1 (PLAN-2 §4.3, by
+induction on SrcEval's clocked definition, from L1 and tier S), the next step.
+Two findings of the probes constrain its statement: under a recursor rule
+(F2) a dropped field's slot holds the marker while the rule's field λ has the
+class of the field's type (relevant), so the invariant on environments must be
+per recursor activation (field slots follow the constructor's kept fields; the
+minor slots are the activation's, checked at the user's call and forwarded
+unchanged by hypothesis calls), not "every slot at a relevant binder is live";
+and IxCC never checks that a stored rule has the kernel's generated shape, so
+P1 may use only what the forwarding clause decides of the rule as stored
+(`ForwardOk`), or a shape check of our own.
+
 **No end-to-end test of contract-annotated recursive programs (since
 2026-11-11).** IxCC's path for them is: contracts written in the source, a
 resource context in the equations sidecar (the profile and the checked
@@ -1290,7 +1321,7 @@ owner settles the last two groups.
 | Source | Ixon (v4 since 2026-10-03) is the only input. Written contracts are lower bounds. The compiler honours them exactly, and may infer stronger guarantees (unique, local, borrowed, erased, one-shot) only when a proved checker certifies them; inferred facts never change Ixon bytes or addresses. |
 | Semantic anchor | Stated against the source evaluator today; the goal is every model with the kernel's laws of IxCK's reading of the closure of the target and the table's theorems, with that model's existence and the image's faithfulness and typing as premises discharged by proofs, and an accepted equation theorem holding in the model so that the replacements it justifies are sound ([certification design](certification-design.md)). |
 | Recursion and replacements | Compiled through kernel-checked equation theorems (`f.eq_def`, `@[csimp]`) collected in an unfolding table, not by recovering structure from `brecOn` or `WellFounded.fix`. `partial` and `unsafe` definitions are rejected; `implemented_by` compiles the reference body. |
-| Erasure | An untrusted relevance annotation. `Recheck.front` decides it with the structural checker (`Relevance.check`, proved in `Relevance.Proof.check_sound`) and with `Relevance.checkCanonical`, which re-derives each position's class from the declaration types and refuses an irrelevant tag it cannot justify. The byte-level verifiers (`CompileClaim.verifyBytes`, `Ring0Sip.verifyBytes`, `ixcc check-cert`) also re-run the kernel annotator (`inp.kernel.annotateChecked`) on the ingested program with `cert.table` and require the certificate's annotation to equal its output (`Recheck.checkCanonicalRelevance`); the program-level verifiers and `Recheck.run` do not. Neither `annotate` nor `checkCanonical` has a theorem; under the premise architecture the relevance clause is checked against the kernel's typing judgement by whoever holds the types, and these checks stay as IxCC's early refusals. |
+| Erasure | An untrusted relevance annotation. `Recheck.front` decides it with the structural checker (`Relevance.check`, proved in `Relevance.Proof.check_sound`, tier C in `check_soundC`) and with `Relevance.checkCanonical` (its facts: `checkCanonical_sound`), which re-derives each position's class from the declaration types and refuses an irrelevant tag it cannot justify. The byte-level verifiers (`CompileClaim.verifyBytes`, `Ring0Sip.verifyBytes`, `ixcc check-cert`) also re-run the kernel annotator (`inp.kernel.annotateChecked`) on the ingested program with `cert.table` and require the certificate's annotation to equal its output (`Recheck.checkCanonicalRelevance`); the program-level verifiers and `Recheck.run` do not. Neither `annotate` nor `checkCanonical` has a theorem; under the premise architecture the relevance clause is checked against the kernel's typing judgement by whoever holds the types, and these checks stay as IxCC's early refusals. |
 | Middle end | Clocked big-step semantics for functional IRs, with a fuel-indexed logical relation and heuristic-parametric passes. Forward simulations below. |
 | Ownership | Untrusted RC, borrow and reuse passes; one proved ownership checker; fallback to plain RC. Ixon resource admission is a diagnostic gate, not a proof premise. |
 | Backend | Rule-based selection with one lemma per rule; an untrusted linear-scan allocator with a proved validator; a private internal calling convention with SysV at exports; fall-through layout; the existing E1/E2/ELF. |
