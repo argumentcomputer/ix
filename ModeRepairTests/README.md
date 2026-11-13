@@ -43,11 +43,22 @@ the ones before the rebase onto f2b985847.
 | + P U (6a5880069) | 3,388 (all F14) | MU-dt-r4 |
 | + I J K L M M2 (800f47e4b; a61f89834 identical; accepts 188,860) | 0 (and 0 ill-typed-stream hits) | MU-dt-r6, MU-dt-r5 |
 | the same, rebased onto f2b985847 (Ixon v5; tester at 52da1811d, kernel tree of 1804e2662) | 0 (and 0 ill-typed-stream hits) | MV-dt-head |
+| + L1, the owner's provisional ruling (W1 to W6, driver 03530c2c8; accepts 212,909) | 0 (and 0 ill-typed-stream hits) | MV-dt-L1 |
 
 At the rebased head (MV-dt-head): accept 188,860, refuse 611,140, decline 0; admitted by K
 163,205; stuck at the top fuel 6,859, all at an absurd cast; self-test 0 disagreements; 9.8 min
 wall for the eight seeds in parallel, 5.8 s per thousand programs. Each of these totals equals
 MU-dt-r6's.
+
+**L1** (the owner's provisional ruling of 2026-11-13: a number is never confined; commits W1 to
+W6, each revertible). `runR` puts no region on a number at a borrowed binder (W1). The checker
+gives a value of class `leaf` no region at a binding (W2) and as a call's result (W3, which
+restores repair A's intent), and drops repair O (W4), repair F (W5) and U's leaf half (W6).
+The cost: a borrow annotation on a number is not enforced on its own binder. A2 is moot. At
+03530c2c8 (MV-dt-L1): accept 212,909 (+24,049 against MV-dt-head), refuse 587,091, 0
+counterexamples, 0 ill-typed-stream hits, self-test 0 disagreements. Case by case against
+MV-dt-head, joining the verdict files: 188,860 accepted at both, 24,049 refused before and
+accepted now, 587,091 refused at both, none accepted before and refused now.
 
 From I on, the tester's statement has I and K, so F14's stale-capability extern is outside
 `ExternOk`. No tree accepts a program its predecessor refused (`MU-dt-cmp2-*`, `MU-dt-cmp-O-R4`,
