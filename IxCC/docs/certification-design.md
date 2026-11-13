@@ -761,7 +761,8 @@ reading (`headRegimeGB`, with its own soundness `headRegime_of_check`) re-reads 
 the start, quadratic in a spine's length; it is kept as the reference the suite compares with
 (compiled, `tests-grounding`, one run: `fields254` 0.8 ms per spine against 11.3 ms per site,
 `tags125` 9.7 against 13.2). Both decisions read the enclosing constant's level parameters once per
-constant (`headRegimeSB1`, `headRegimeGB1`): read once per datum checked, as first written, an `lpsOf`
+constant (`headRegimeSB1`, `headRegimeGB1`; since step Ap 1a's `headRegimeResB` too, `headRegimeResB1`,
+where it made no measurable difference, its cost being the direct route's walk): read once per datum checked, as first written, an `lpsOf`
 that searches the reading (the suite's does, `Env.find?` over 3,545 to 4,645 constants on the
 `for`-loop, `strings` and `diag` closures) dominated the check, which is what made it 2 to 6.5 times
 the direct route's cost on the closures with `let`s (not the `let`s: `sum-loop` 82 ms, 74.5 of them in
@@ -885,7 +886,8 @@ the direct route refuses (all of them under a `let` but `strings`' 4 and `diag`'
 The other 36 hold no `let` and keep their verdicts: 34 accepted (every family; `erase` and
 `OS16-plain` not "678", which needs `noCanonB`), `admit` (`stored`) and `sparse` (`declOk`) refused.
 Totals over the 50: `groundCheck` 37 (34 before step C), "678" 35, "678A" 37, "678G" 36 (`natural`
-out), "678AG" 37 (1b; `GR-3n-p1`, at the merge of step C, which reproduces the other four totals). `okClosedB` and `instCheckB` with the walk reading `let`s: true on all 50; the
+out), "678AG" 37 (1b; `GR-3n-p1`, at the merge of step C, which reproduces the other four totals),
+"678AGp" 42 (step Ap, below: every check read on `selEnv`; `GR-3n-p3`). `okClosedB` and `instCheckB` with the walk reading `let`s: true on all 50; the
 instance sets grow where `let`s are (`sum-loop` 3 → 62, `machines` 47 → 72, `natural` 62 → 72,
 `diag` 128 → 289). The five `for`-loop closures are then refused at `eqnShape` alone (step Ap).
 
@@ -923,7 +925,7 @@ domains definitionally equal at all six. In `tests-grounding`: `selEnv` retypes 
 `for`-loop functions and moves only their `eqnShape` (false to true), nothing on the other 44
 closures; on each of the six, three planted controls are refused (the selector's value made
 `λ α s. α → α`, its first λ's datum made a proposition, the selected argument made `Nat`); the family
-over six fields on `selEnv` holds on APFAM closures: the 37 the check accepts and `sum-loop`,
+over six fields on `selEnv` holds on 42 closures: the 37 the check accepts and `sum-loop`,
 `collatz`, `prime-count`, `scalar`, `loops` (`resource` still refused at `caseRec`, `caseShape`).
 
 **What is proved, fenced on `propext`, `Classical.choice` and `Quot.sound` or

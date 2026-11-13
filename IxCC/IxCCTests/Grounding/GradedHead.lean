@@ -1,7 +1,7 @@
 import IxCCTests.Grounding.NoCanon
 import IxCCGrounding.SelRetype
 
-/-! # `tests-grounding`: step 1b, every run-term site typed from `graded`
+/-! # `tests-grounding`: step 1b, every run-term site typed from `graded`, and step Ap
 
 `headRegimeSB` (`IxCCGrounding.GradedHead`, the per-spine decision the root theorem
 `rootSound_678AG_of_check` reads) on every committed closure the grounding measurements load (the
@@ -26,7 +26,15 @@ sites (`#7e081ef3d58e`, `DecidableEq`-like) with its first `∀` datum made a pr
 (`ifAllZero []`), its unfolding made endless (`λ x. D x`: fuel, fail closed), its first λ datum made
 a proposition everywhere (3 plants on each of the 25 closures with a δ site: 75); and a constant
 with a bound-variable head whose context type is a `∀`, its λ domains' `∀` data made propositions
-everywhere (32 closures). -/
+everywhere (32 closures).
+
+Step Ap (`IxCCGrounding.SelRetype`), in the same pass over the 50: `selEnv` retypes exactly the
+`for`-loop function of the six `for`-loop closures and moves only their `eqnShape` conjunct (false
+to true), nothing on the other 44; on each of the six, three planted controls are refused by
+`eqnShape` on `selEnv` (the selector's value made `λ α s. α → α`, its first λ's datum made a
+proposition, the selected argument made `Nat`); the family over six fields read on `selEnv`
+(`groundCheck`, `noCanonAB`, `litDefsB`, `instCheckB`, `headRegimeSB`) holds on 42: the 37 the check
+accepts and five of the six (`resource` is still refused at `caseRec` and `caseShape`). -/
 
 namespace IxCCTests.Grounding.GradedHead
 
