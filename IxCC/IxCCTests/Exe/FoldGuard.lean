@@ -99,13 +99,14 @@ def part (a : Assert) (o : IxCCTests.Exe.Suite.Options) (work : FilePath) : IO (
     peak := max peak (num "peakKb")
     if o.run then
       let r ← IxCCTests.Exe.run exe ["5"]
-      match want with
-      | some v => expect a (r.code == 0 && r.obs == toString v)
-          s!"{root} 5: {r.outcome} {r.obs}, expected {v}"
-      | none =>
-        expect a (r.code == 67 && (r.stderr.splitOn "natOverflow").length > 1)
-          s!"{root} 5: {r.outcome} {r.stderr.trimAscii.toString}, expected natOverflow"
-        overflows := overflows + 1
+      let ok := match want with
+        | some v => r.code == 0 && r.obs == toString v
+        | none => r.code == 67 && (r.stderr.splitOn "natOverflow").length > 1
+      let wanted := match want with
+        | some v => toString v
+        | none => "natOverflow"
+      expect a ok s!"{root} 5: {r.outcome} {r.obs} {r.stderr.trimAscii.toString}, expected {wanted}"
+      if want.isNone then overflows := overflows + 1
       ran := ran + 1
   let runs := if o.run then s!"; natively on 5: {ran} run, {ran - overflows} print Lean's value, \
     {overflows} end with natOverflow" else "; natively: skipped (no --run)"
