@@ -1540,6 +1540,89 @@ paths (`ConLeche/Kernel/X` and `ConLeche/X` to `IxCK/Kernel/X`) and names
 imports is added the same way. A changed closure moves the frozen counts;
 re-record each with its explanation, and re-record changed statements.
 
+## Limits at the command line, and exit codes
+
+Every host that runs the kernel on input it did not make reads each field of
+`Admission.Limits` ("Limits" above) as a setting (`IxCK/Host/Limits.lean`,
+namespace `Ix.Kernel.Host`, outside the certified closure): its flag if given,
+else its environment variable, else the host's default (`resolve`). A value must
+be a positive whole number in decimal; anything else, `0` included, is a usage
+error that names the flag or the variable (exit 2). The settings given by a flag
+or a variable are printed, with their sources, before the kernel runs
+(`kernel limits: max-depth 20000 (--max-depth), …`); nothing is printed when all
+are at their defaults.
+
+| field | flag | variable | `ix check-lean`, `ix verify-host`, `ix compile`, `kernel-check-ixe` default | `ixcc` default |
+| --- | --- | --- | --- | --- |
+| `maxRecords` | `--max-records` | `IX_KERNEL_MAX_RECORDS` | 2^22 | 16,384 |
+| `maxBlobs` | `--max-blobs` | `IX_KERNEL_MAX_BLOBS` | 2^22 | 16,384 |
+| `maxTotalBytes` | `--max-total-bytes` | `IX_KERNEL_MAX_TOTAL_BYTES` | 2^34 | 16 MiB |
+| `maxRecordBytes` | `--max-record-bytes` | `IX_KERNEL_MAX_RECORD_BYTES` | 2^28 | 1 MiB |
+| `maxRecordUnivNodes` | `--max-record-univ-nodes` | `IX_KERNEL_MAX_RECORD_UNIV_NODES` | 2^26 | IxCC's decoder's node budget |
+| `maxDepth` | `--max-depth` | `IX_KERNEL_MAX_DEPTH` | 16,384 | 16,384 |
+| `workers` | `--workers` | `IX_KERNEL_WORKERS` | unbounded (one phase-B task per 64 records) | unbounded |
+
+`kernel-check-ixe` reads the variables only (it is a measurement harness; its
+flags are its own). `--workers` keeps the meaning it had on `ix check-lean`
+(the requested worker count) and on `ix compile` (the compiler's worker count,
+default 32), and, given, also bounds the tasks of the kernel's phase B;
+`IX_KERNEL_WORKERS` applies to the kernel when the flag is absent. A host passes
+a bound to phase B only when the flag or the variable is given: by default the
+entry runs as it did, one task per 64 records over the runtime's pool.
+
+**A decline by a limit** is reported in one form by every host, and exits 6:
+
+```text
+declined by the depth limit (16384, default); raise it with --max-depth N or IX_KERNEL_MAX_DEPTH=N
+```
+
+naming the limit, its value, its source (`default`, the flag or the variable)
+and how to raise it. A limit only turns an answer into a decline: an input
+accepted under some limits is accepted under any larger ones with the same
+result, so an artifact, object or certificate made under raised limits is the
+one the defaults give, and a verifier run under lower limits than its producer
+declines (exit 6); it does not reject. A host statement (`docs/host-admission.md`)
+does not record the limits it was issued under. The fixed bounds ("Five bounds
+are fixed" above: the reference core's loop fuels, `Level.defaultFuel`,
+`checkFuel`) are not settings; their exhaustion is a fixed decline, exit 3.
+
+**Exit codes** of the hosts that run the kernel:
+
+| exit | meaning |
+| --- | --- |
+| 0 | accepted: everything asked for passed |
+| 1 | an infrastructure failure (`ixcc`: also a decline or rejection of its own, as before) |
+| 2 | a usage error: a bad flag, a malformed setting, a run whose threads cannot fit the address-space limit, `ixcc` unable to re-run itself (and `ix check-lean`'s own cases below) |
+| 3 | rejected or failed, and the fixed declines (`ix check-lean`, `ix verify-host`) |
+| 4, 5 | `ix check-lean`'s partial and conditional runs |
+| 6 | declined by a limit a setting raises (every host, `ixcc` included) |
+| 7 | `kernel-check-ixe`'s watchdog (`CHECK_IXE_WATCH_MS`, `CHECK_IXE_WATCH_MB`); `--guarded` reruns on it |
+
+**Threads.** `ix check-lean`, `ix verify-host` and `ix compile` set the stack of
+every thread started afterwards to `Limits.stackFor` (16 KiB per level of
+`maxDepth`, at least 256 MiB) before they start any task
+(`Ix.Cli.KernelLimits.prepareThreads`), and run everything after option
+parsing, the loading of the artifact included, on one dedicated thread of that
+size. They first check that the threads the run may start fit the process's
+address-space limit (the soft `Max address space` of `/proc/self/limits`; no
+limit, or no such file, fits): `workers` (or the pool's size,
+`LEAN_NUM_THREADS` or the processor count) plus four, each with its stack and a
+64 MiB malloc arena, plus 1 GiB for the process; a run that does not fit is
+refused before it starts (exit 2), naming `--workers` and `--max-depth` and
+their variables. `kernel-check-ixe` keeps its caller's stack
+(`LEAN_STACK_SIZE_KB`), which `initstd-stack` relies on. `ixcc` links no
+native code and so re-runs itself once on a stack of that size (`IxCC/IxCC/Cli/Main.lean`:
+`LEAN_STACK_SIZE_KB`, `IXCC_REEXECED`, the off switch `IXCC_REEXEC=0`).
+
+**The loaders scan before they decode.** The root's artifact loaders
+(`Ixon.deEnvVerifiedLazy`, used by `ix check-lean` and `ix verify-host`;
+`Ixon.deEnv`; the streaming load of `Ix/KernelCheck/Stream.lean`) decode each
+record with the codec, which recurses once per level, before any entry runs.
+Each record's bytes are now scanned first with the entry's own scan
+(`Depth.within`, at the run's `maxDepth`), and a record nested past it is
+refused as a decline by the depth limit (`Ixon.depthLimitError`, exit 6)
+without being decoded.
+
 ## Environment check
 
 The environment check measures coverage on a compiled environment (an
@@ -1589,7 +1672,7 @@ rows print a failure with its terms and Lean's names
 (`Ix.KernelDisplay.renderFailure`). Environment:
 
 - `CHECK_IXE_WATCH_MS` (default 60000) and `CHECK_IXE_WATCH_MB` (default 20000):
-  a watchdog ends the run with exit code 3 when one constant's check exceeds
+  a watchdog ends the run with exit code 7 when one constant's check exceeds
   the time or the process's resident memory exceeds the size, and appends
   the constant's address to `<output>.runaway` (with `--jobs`, every
   worker's check is watched). A run whose check raises an error (an artifact the
@@ -1654,10 +1737,11 @@ axiom prints the same list under `selected checking:`.
 | --- | --- |
 | 0 | everything asked for passed; for a whole bound run, through the certified entry |
 | 1 | an infrastructure failure |
-| 2 | a usage error: a bad flag or selector, a selected name that resolves to no declaration, or a host statement the run cannot issue (a selected, capped, unbound, `--allow-declined` or conditional run) |
+| 2 | a usage error: a bad flag or selector, a malformed limit setting, a run whose threads cannot fit the address-space limit, a selected name that resolves to no declaration, or a host statement the run cannot issue (a selected, capped, unbound, `--allow-declined` or conditional run) |
 | 3 | a declaration failed (or, under `--allow-declined`, a declaration or dependency record was rejected), or the artifact was refused |
 | 4 | partial: every declaration passed, but the whole artifact asked for carries no role binding, so its admission did not run |
 | 5 | conditional: everything passed, but only with the listed user axioms admitted |
+| 6 | declined by a kernel limit: the message names it, its value and source, and the flag and variable that raise it ("Limits at the command line, and exit codes") |
 
 `--allow-declined` runs the record-by-record check (as the `ooc` whole-env
 benchmark uses it on upstream libraries that contain `Lean.trustCompiler` or

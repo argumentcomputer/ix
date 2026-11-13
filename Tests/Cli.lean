@@ -411,15 +411,132 @@ private def Tests.Cli.testCheckIxeExits : IO Unit := do
     let truncated := dir / "truncated.ixe"
     let bytes ← IO.FS.readBinFile deep
     IO.FS.writeBinFile truncated (bytes.extract 0 (bytes.size / 2))
-    for (label, input, needle) in [("deep", deep, "Resource.depth"), ("truncated", truncated, "")] do
+    -- the depth decline exits 6 (`Ix.Kernel.Host.exitDeclined`) naming the setting; the loader's refusal 1
+    for (label, input, code, needle) in [("deep", deep, 6, "declined by the depth limit (16384, default)"),
+        ("truncated", truncated, 1, "")] do
       let out ← IO.Process.output {
         cmd := "timeout", env := Tests.Cli.spawnEnv
         args := #["--kill-after=5", "60", kci.toString, input.toString, (dir / s!"{label}.jsonl").toString] }
       if out.exitCode == 124 || out.exitCode == 137 then
         throw <| IO.userError s!"kernel-check-ixe on the {label} artifact ran past 60 s"
-      unless out.exitCode == 1 && (needle.isEmpty || (out.stderr.splitOn needle).length > 1) do
+      unless out.exitCode == code && (needle.isEmpty || (out.stderr.splitOn needle).length > 1) do
         throw <| IO.userError s!"kernel-check-ixe on the {label} artifact: exit {out.exitCode}, \
-expected 1 with '{needle}'\n{out.stdout}\n{out.stderr}"
+expected {code} with '{needle}'\n{out.stdout}\n{out.stderr}"
+/-! ## The kernel's limits as settings (`IxCK/Host/Limits.lean`, `docs/kernel.md`, "Limits at
+the command line, and exit codes"): each limit lowered and raised by its flag and by its
+variable, the flag over the variable, malformed values, the address-space refusal, on
+`ix check-lean`, `ix verify-host`, `ix compile` and `kernel-check-ixe`. -/
+
+/-- Run `cmd args` with `env` added; exit code, stdout, stderr. -/
+private def Tests.Cli.runEnv (cmd : String) (args : Array String)
+    (env : Array (String × Option String) := #[]) : IO IO.Process.Output :=
+  IO.Process.output { cmd, args, env := Tests.Cli.spawnEnv ++ env }
+
+private def Tests.Cli.expect (what : String) (out : IO.Process.Output) (code : UInt32)
+    (needles : List String := []) : IO Unit := do
+  unless out.exitCode == code do
+    throw <| IO.userError s!"{what}: exit {out.exitCode}, expected {code}\n{out.stdout}\n{out.stderr}"
+  for n in needles do
+    unless (out.stderr.splitOn n).length > 1 || (out.stdout.splitOn n).length > 1 do
+      throw <| IO.userError s!"{what}: no '{n}' in its output\n{out.stdout}\n{out.stderr}"
+
+private def Tests.Cli.testKernelLimits : IO Unit := do
+  let ix ← IO.FS.realPath ".lake/build/bin/ix"
+  let kci ← IO.FS.realPath ".lake/build/bin/kernel-check-ixe"
+  let dir ← IO.FS.createTempDir
+  let source := dir / "Limits.lean"
+  let art := dir / "limits.ixe"
+  try
+    IO.FS.writeFile source
+      "def kjText : String := \"kernel limits\"\ndef kjNum : Nat := 123456789\n\
+       theorem kjProof : kjNum = 123456789 := rfl\n"
+    let built ← Tests.Cli.runEnv ix.toString #["compile", source.toString, "--no-build",
+      "--consts", "kjText,kjProof", "--out", art.toString]
+    Tests.Cli.expect "compile the limits artifact" built 0
+    let env ← IO.ofExcept (Ixon.runGetExact Ixon.Env.getEnv (← IO.FS.readBinFile art))
+    let sizes := env.consts.toList.map fun (_, c) => c.len
+    let total := sizes.foldl (· + ·) 0 + env.blobs.fold (fun n _ b => n + b.size) 0
+    let largest := sizes.foldl max 0
+    let checkLean := fun (flags : Array String) (vars : Array (String × Option String)) =>
+      Tests.Cli.runEnv ix.toString (#["check-lean", art.toString] ++ flags) vars
+    Tests.Cli.expect "check-lean at the defaults" (← checkLean #[] #[]) 0
+    -- each limit below what the artifact needs: a decline, exit 6, naming its source
+    let mut lowered : List (String × String × String × Nat) := [
+      ("max-records", "IX_KERNEL_MAX_RECORDS", "record count", env.consts.size - 1),
+      ("max-total-bytes", "IX_KERNEL_MAX_TOTAL_BYTES", "total bytes", total - 1),
+      ("max-record-bytes", "IX_KERNEL_MAX_RECORD_BYTES", "record bytes", largest - 1),
+      ("max-record-univ-nodes", "IX_KERNEL_MAX_RECORD_UNIV_NODES", "universe nodes per record", 1),
+      ("max-depth", "IX_KERNEL_MAX_DEPTH", "depth", 2)]
+    if env.blobs.size > 1 then
+      lowered := ("max-blobs", "IX_KERNEL_MAX_BLOBS", "blob count", env.blobs.size - 1) :: lowered
+    for (flag, var, word, n) in lowered do
+      Tests.Cli.expect s!"--{flag} {n}" (← checkLean #[s!"--{flag}", toString n] #[]) 6
+        [s!"declined by the {word} limit ({n}, --{flag}); raise it with --{flag} N or {var}=N"]
+      Tests.Cli.expect s!"{var}={n}" (← checkLean #[] #[(var, some (toString n))]) 6
+        [s!"declined by the {word} limit ({n}, {var})"]
+      -- raised past the default, by the flag and by the variable: accepted, the source printed
+      Tests.Cli.expect s!"--{flag} raised" (← checkLean #[s!"--{flag}", "1099511627776"] #[]) 0
+        [s!"{flag} 1099511627776 (--{flag})"]
+      Tests.Cli.expect s!"{var} raised" (← checkLean #[] #[(var, some "1099511627776")]) 0
+        [s!"{flag} 1099511627776 ({var})"]
+    -- the flag wins over the variable
+    Tests.Cli.expect "flag over variable" (← checkLean #["--max-depth", "2"]
+      #[("IX_KERNEL_MAX_DEPTH", some "100000")]) 6 ["(2, --max-depth)"]
+    for w in ["1", "3"] do
+      Tests.Cli.expect s!"--workers {w}" (← checkLean #["--workers", w] #[]) 0 [s!"workers {w} (--workers)"]
+      Tests.Cli.expect s!"IX_KERNEL_WORKERS={w}" (← checkLean #[] #[("IX_KERNEL_WORKERS", some w)]) 0
+        [s!"workers {w} (IX_KERNEL_WORKERS)"]
+    -- malformed values: usage errors naming the flag or the variable
+    for (flags, vars, needle) in [(#["--max-depth", "abc"], #[], "--max-depth takes a positive whole number"),
+        (#["--max-depth", "0"], #[], "--max-depth takes a positive whole number"),
+        (#["--workers", "0"], #[], "--workers takes a positive whole number"),
+        (#[], #[("IX_KERNEL_MAX_DEPTH", some "-1")], "IX_KERNEL_MAX_DEPTH takes a positive whole number"),
+        (#[], #[("IX_KERNEL_WORKERS", some "x")], "IX_KERNEL_WORKERS takes a positive whole number")] do
+      Tests.Cli.expect s!"malformed {flags} {vars.map (·.1)}" (← checkLean flags vars) 2 [needle]
+    -- the address-space refusal: 64 workers on 256 MiB stacks do not fit 4 GiB
+    let capped := fun (workers : String) => Tests.Cli.runEnv "bash" #["-c",
+      s!"ulimit -v 4194304; exec {ix} check-lean {art} --workers {workers}"]
+    Tests.Cli.expect "address space, 64 workers" (← capped "64") 2 ["--workers", "IX_KERNEL_MAX_DEPTH"]
+    -- verify-host: a statement issued at the defaults, replayed under each setting
+    let stmt := dir / "limits.stmt"
+    let issued ← checkLean #["--host-out", stmt.toString] #[]
+    Tests.Cli.expect "issue a host statement" issued 0
+    let some line := issued.stdout.splitOn "\n" |>.find? (·.startsWith "[check-lean] host admission statement: ")
+      | throw <| IO.userError s!"no host statement line\n{issued.stdout}"
+    let address := (line.drop "[check-lean] host admission statement: ".length).toString.trimAscii.toString
+    let verify := fun (flags : Array String) (vars : Array (String × Option String)) =>
+      Tests.Cli.runEnv ix.toString (#["verify-host", address, art.toString, "--statement-file",
+        stmt.toString] ++ flags) vars
+    Tests.Cli.expect "verify-host at the defaults" (← verify #[] #[]) 0
+    Tests.Cli.expect "verify-host lowered" (← verify #["--max-depth", "2"] #[]) 6
+      ["declined by the depth limit (2, --max-depth)"]
+    Tests.Cli.expect "verify-host variable" (← verify #[] #[("IX_KERNEL_MAX_DEPTH", some "2")]) 6
+      ["declined by the depth limit (2, IX_KERNEL_MAX_DEPTH)"]
+    Tests.Cli.expect "verify-host raised" (← verify #["--max-depth", "100000"] #[]) 0
+    Tests.Cli.expect "verify-host malformed" (← verify #["--max-depth", "x"] #[]) 2
+      ["--max-depth takes a positive whole number"]
+    -- kernel-check-ixe: the variables; a decline exits 6
+    let rows := dir / "rows.jsonl"
+    Tests.Cli.expect "kernel-check-ixe lowered" (← Tests.Cli.runEnv kci.toString
+      #[art.toString, rows.toString] #[("IX_KERNEL_MAX_DEPTH", some "2")]) 6
+      ["declined by the depth limit (2, IX_KERNEL_MAX_DEPTH)"]
+    Tests.Cli.expect "kernel-check-ixe malformed" (← Tests.Cli.runEnv kci.toString
+      #[art.toString, rows.toString] #[("IX_KERNEL_MAX_DEPTH", some "0")]) 2
+    -- ix compile: the typing of an input with semantic contracts declines by a lowered limit
+    let contracts := dir / "Contracts.lean"
+    IO.FS.writeFile contracts
+      "import Ix.Compile.SourceContract.Elab\nimport Tests.Ix.SourceContract.Imported\n\
+       def cliLocal (~1 x : Nat) : ~ Nat := x\n"
+    let compile := fun (flags : Array String) (vars : Array (String × Option String)) =>
+      Tests.Cli.runEnv ix.toString (#["compile", contracts.toString, "--no-build", "--consts",
+        "cliLocal", "--out", (dir / "contracts.ixe").toString] ++ flags) vars
+    Tests.Cli.expect "compile, contracts, defaults" (← compile #[] #[]) 0
+    Tests.Cli.expect "compile, contracts, lowered" (← compile #["--max-depth", "2"] #[]) 6
+      ["declined by the depth limit (2, --max-depth)"]
+    Tests.Cli.expect "compile, contracts, variable" (← compile #[] #[("IX_KERNEL_MAX_DEPTH", some "2")]) 6
+      ["declined by the depth limit (2, IX_KERNEL_MAX_DEPTH)"]
+    Tests.Cli.expect "compile, --workers 0" (← compile #["--workers", "0"] #[]) 2
+      ["--workers takes a positive whole number"]
   finally
     IO.FS.removeDirAll dir
 
@@ -434,6 +551,7 @@ public def Tests.Cli.suite : IO UInt32 := do
   Tests.Cli.testCompileExportForeignRoles
   Tests.Cli.testCompileEquations
   Tests.Cli.testCheckIxeExits
+  Tests.Cli.testKernelLimits
   --Tests.Cli.run "ix" (#["store", "ix_test/IxTest.lean"]) none
   --Tests.Cli.run "ix" (#["prove", "ix_test/IxTest.lean", "one"]) none
   return 0

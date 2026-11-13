@@ -134,9 +134,10 @@ bytes (`lazy.rawBytes`: Lean's public `LazyConstant` record permits a
 conflicting materialized cache, which neither validator may trust in place of
 the committed bytes) by the entry's own canonical decoder; the entry decodes
 the same bytes again itself. -/
-def typingInput (env : Ixon.Env) : Except String TypingInput := do
+def typingInput (env : Ixon.Env) (limits : Ix.Kernel.Admission.Limits := typingLimits) :
+    Except String TypingInput := do
   if env.roleBinding.isSome then
-    let input ← (Ix.RoleBinding.Artifact.prepareRecords env typingLimits).mapError toString
+    let input ← (Ix.RoleBinding.Artifact.prepareRecords env limits).mapError toString
     let p := input.prepared
     let bytes : Std.HashMap Address ByteArray := p.records.foldl (fun m (a, b) => m.insert a b) {}
     let ordered ← input.constants.toArray.mapM fun (a, c) => do
@@ -153,7 +154,7 @@ def typingInput (env : Ixon.Env) : Except String TypingInput := do
   let pre : Prelude .anon ← preludeFor table
   let committed : Array (Address × ByteArray) :=
     (env.consts.toArray.map fun (a, lazy) => (a, lazy.rawBytes)).qsort fun x y => x.1.cmpBytes y.1 == .lt
-  let constants ← (Ix.Kernel.Admission.decodeRecords typingLimits committed.toList).mapError
+  let constants ← (Ix.Kernel.Admission.decodeWithin limits committed.toList).mapError
     (toString ∘ Ix.Kernel.Admission.Error.ofBytes)
   let bytes : Std.HashMap Address ByteArray := committed.foldl (fun m (a, b) => m.insert a b) {}
   let decoded : Std.HashMap Address Ixon.Constant := constants.foldl (fun m (a, c) => m.insert a c) {}
@@ -484,7 +485,8 @@ actual binding and prelude, over every record outside `unc`, exactly as the
 entry and its theorem (`Ix.Kernel.Admission.checkBytesTieredUsing_ok`) take it. Its result is
 the installed logical environment; nothing here reads the answer view. A
 failure says whether it is the batch tier's (`TierError.tier`). -/
-def checkCertified (input : TypingInput) (unc : Std.HashSet Address) :
+def checkCertified (input : TypingInput) (unc : Std.HashSet Address)
+    (limits : Ix.Kernel.Admission.Limits := typingLimits) :
     Except (String × Bool) (Ix.Kernel.Env .anon) := do
   let records : Ix.Kernel.Admission.Records := input.ordered.toList.filterMap fun (a, c, b) =>
     if unc.contains (Ixon.CheckOrder.owner a c) then none else some (a, b)
@@ -498,7 +500,7 @@ def checkCertified (input : TypingInput) (unc : Std.HashSet Address) :
     (Ix.RoleBinding.Artifact.checkEvidence input.table evidence
       (Ix.Kernel.Frontend.preparePrelude input.pre.ix declarations)).mapError
         fun e => (s!"resource validator: {e}", false)
-  match Ix.Kernel.Admission.checkBytesTieredUsing input.preludeFor Address.admissionHash input.binding typingLimits records
+  match Ix.Kernel.Admission.checkBytesTieredUsing input.preludeFor Address.admissionHash input.binding limits records
       input.blobs input.hint with
   | .ok (env, _) => pure env
   | .error e =>
@@ -536,15 +538,16 @@ certified part is the logical records alone, and every tier record joins the
 uncertified part, typed transparently. A failure is `resource validator:
 erased typing failed`, with IxCK's error and, where it has one, the failing
 record; an uncertified part's failure says so. -/
-def typeCheck (env : Ixon.Env) : Except String Unit := do
-  let input ← (typingInput env).mapError (s!"resource validator: erased typing failed: {·}")
+def typeCheck (env : Ixon.Env) (limits : Ix.Kernel.Admission.Limits := typingLimits) :
+    Except String Unit := do
+  let input ← (typingInput env limits).mapError (s!"resource validator: erased typing failed: {·}")
   let unc := splitOf input
-  match checkCertified input unc with
+  match checkCertified input unc limits with
   | .ok env₀ => unless unc.isEmpty do typeUncertified input unc env₀
   | .error (e, isTier) =>
     unless isTier do throw e
     let unc := (tierOwnersOf input).fold (·.insert ·) unc
-    let env₀ ← (checkCertified input unc).mapError (·.1)
+    let env₀ ← (checkCertified input unc limits).mapError (·.1)
     typeUncertified input unc env₀
 
 end Ix.Resource

@@ -725,8 +725,10 @@ namespace IxCC.Recheck
 
 /-- **What ingress established** (`Recheck.ingress`): the envelope decoded to
 `inp.env`; the certified kernel's tiered entry accepted the whole environment
-(`Src.KernelFront.accept`, at the front end's batch limits: it ran on exactly
-the envelope's binding section, records and blobs, `accept_spec`); the
+(`Src.KernelFront.accept`, at the limits ingress ran with, the front end's batch limits
+`defaultLimits` unless a caller raised or lowered them: it ran on exactly the envelope's
+binding section, records and blobs, `accept_spec`; a limit only turns an acceptance into a
+decline); the
 program is IxCC's reading of the records the seeds reach
 (`Src.Ingress.reach` from the seeds of the whole sidecar and the kernel's
 admitted role table, each reached record within IxCC's consumer budget in what
@@ -742,11 +744,11 @@ own table and behind its own prelude; it is not the end-to-end statements'
 first premise, which is about the closure of the seeds under the default table
 and the committed prelude. -/
 theorem ingress_parts {bytes : ByteArray} {equations : Lean.Json}
-    {roots : List String} {inp : Input}
-    (h : ingress bytes equations roots = .ok inp) :
+    {roots : List String} {limits : Ix.Kernel.Admission.Limits} {inp : Input}
+    (h : ingress bytes equations roots limits = .ok inp) :
     Ixon.V3.decodeAnonymousEnv bytes = .ok inp.env ∧
-    Src.KernelFront.accept inp.env Src.KernelFront.defaultLimits = .ok inp.kernel.acc ∧
-    Src.KernelFront.AcceptedFrom inp.env Src.KernelFront.defaultLimits inp.kernel.acc ∧
+    Src.KernelFront.accept inp.env limits = .ok inp.kernel.acc ∧
+    Src.KernelFront.AcceptedFrom inp.env limits inp.kernel.acc ∧
     Ix.Kernel.Admission.checkBytesTieredUsing (Src.KernelFront.preludeSource inp.kernel.acc.pre)
       Src.KernelFront.hash inp.kernel.acc.binding inp.kernel.acc.limits inp.kernel.acc.records
       inp.kernel.acc.blobs inp.kernel.acc.hints.lookup = .ok (inp.kernel.acc.env, inp.kernel.acc.tier) ∧
@@ -785,7 +787,7 @@ theorem ingress_parts {bytes : ByteArray} {equations : Lean.Json}
         | false =>
           rw [hempty] at h
           simp only [Bool.false_eq_true, ↓reduceIte, pure, Except.pure] at h
-          cases hacc : Src.KernelFront.accept env with
+          cases hacc : Src.KernelFront.accept env limits with
           | error e => rw [hacc] at h; cases h
           | ok acc =>
             rw [hacc] at h
