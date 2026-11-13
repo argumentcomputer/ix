@@ -1796,7 +1796,7 @@
  "06aeb842207c1f9d7f830573c8e59a912edd572745425080f8bcb9661a217439",
  "grounding_axiom_count": 312,
  "baseline":
- "f0562a754: the eleventh route (a position at or past a special head arity is read)",
+ "the shrink walk bounds literal folding (Anf.Walk.foldable): WalkProof.fold_some; tests-anf part IxCCTests.Anf.FoldGuard; tests-exe part IxCCTests.Exe.FoldGuard over fixtures/fold",
  "axiom_sha256":
- "f227d33c44ebfe9536a8d55a304a403e4332c3615e38c7b01cd95ff260788ca6",
- "axiom_count": 6724}
+ "c1cf327c45597b705ee5d4afbaf5057b566345d46648b17abec73574f54a77f8",
+ "axiom_count": 6725}
