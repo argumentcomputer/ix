@@ -495,11 +495,15 @@ def select (P : Prog) (k : CaseInfo) (mv : Val) : M (Nat × Array (Val × Bool))
     | .num _ => wrapperCase
     | _ => stuckM
 
-/-- The head and arguments of an application spine. -/
-def collect : Nat → Term → List Term → Term × List Term
-  | 0, t, acc => (t, acc)
-  | n + 1, .app f a _, acc => collect n f (a :: acc)
-  | _, t, acc => (t, acc)
+/-- The head and arguments of an application spine, whole: by structural
+recursion, not cut by the fuel (finding 7: a spine cut by the fuel ran a call
+as a partial application followed by applications, which evaluates an argument
+at an erased position or transfers before later arguments are read, so a run
+of an honest program violated at some fuels). Fuel is spent per evaluation
+step, as before. -/
+def collect : Term → List Term → Term × List Term
+  | .app f a _, acc => collect f (a :: acc)
+  | t, acc => (t, acc)
 
 /-! ## The evaluator -/
 
@@ -520,7 +524,7 @@ def eval (P : Prog) (ext : ExternOracle) : Nat → List Bnd → Term → M Val
     | .strLit s => strValue s
     | .const r c => spine P ext n env (.const r c) [] c
     | .app f a c => do
-      let (h, as) := collect n (.app f a c) []
+      let (h, as) := collect (.app f a c) []
       spine P ext n env h as c
     | .lam p res rc fvs body => formClosure P n env p res rc fvs body
     | .letE m d v b => do

@@ -386,18 +386,25 @@ def runCase (t : IO.Ref Tally) (c : Case) : IO Unit := do
   let mut lines : Array String := #[]
   let mut rOk := true
   let mut violates := false
+  let mut os : List Outcome := []
   for f in c.fuels do
     let o := runR c.P c.ext f c.seed c.inp.1 c.inp.2
+    os := os ++ [o]
     let e := Table.at c.run f
     let ok := e.ok o
     if !ok then rOk := false
     if let .violation _ := o then violates := true
     lines := lines.push s!"    fuel {f}: {outcomeLong o}{if ok then "" else s!"   EXPECTED {e.name}"}"
+  -- fuel monotonicity (since repair B): over increasing fuel, out of fuel and then one outcome
+  let rest := os.dropWhile fun o => match o with | .outOfFuel => true | _ => false
+  let mono := match rest with
+    | [] => true
+    | o :: more => more.all fun o' => outcomeName o' == outcomeName o
   -- what soundness gives on these inputs
   let unsound := verdict.isAccept && inOk && violates
   let sOk := !unsound || c.open_
-  let ok := vOk && iOk && rOk && sOk
-  IO.println s!"{if ok then "ok  " else "FAIL"} [{c.label}] checker: {verdictName verdict}{if vOk then "" else s!"   EXPECTED {c.verdict.name}"}; InputsOk {inOk}{if iOk then "" else "   NOT AS EXPECTED"}{if unsound then (if c.open_ then "; accepted and violates (open finding)" else "; ACCEPTED AND VIOLATES") else ""}"
+  let ok := vOk && iOk && rOk && sOk && mono
+  IO.println s!"{if ok then "ok  " else "FAIL"} [{c.label}] checker: {verdictName verdict}{if vOk then "" else s!"   EXPECTED {c.verdict.name}"}; InputsOk {inOk}{if iOk then "" else "   NOT AS EXPECTED"}{if unsound then (if c.open_ then "; accepted and violates (open finding)" else "; ACCEPTED AND VIOLATES") else ""}{if mono then "" else "; NOT FUEL-MONOTONE"}"
   for l in lines do IO.println l
   note t c.label ok
 
@@ -706,6 +713,14 @@ def runCase (label : String) (defs : List (Ref × RunDef)) (entry : Ref) (input 
     (run : Option Violation) (accept : Bool) (toCheck : List Ref := [entry]) : Case :=
   suiteCase label defs entry input run accept toCheck
 
+/-- The suite's `fuelCase` (not copied: it is harness): out of fuel, then a value, at the given
+ascending fuels (with `runCase`'s fuel monotonicity, as the suite's version asserts). -/
+def fuelCase (label : String) (defs : List (Ref × RunDef)) (entry : Ref) (input : Heap × List Val)
+    (fuels : List Nat) (accept : Bool) (toCheck : List Ref := [entry]) : Case :=
+  { label := s!"suite: {label}", P := prog defs, seed := entry, inp := input, toCheck,
+    verdict := if accept then .accept else .refuse, fuels,
+    run := [(0, .valOrOof), (fuels.getLastD 0, .value)], inputs := none }
+
 -- BEGIN COPY of Tests/Ix/ResourceModes.lean, "Findings of the mode study"
 
 -- Finding 1: `idN (n : Nat) : Nat := n`; `g4 (@borrowed n : Nat) : Nat := idN n`
@@ -732,6 +747,37 @@ def eqDefs : List (Ref × RunDef) := [(EqI, .ind #[reflR]), (reflR, .ctor EqI 0 
   (idR, body [par .many .irr, par] (v 0)),
   (bad3, body [par .many .irr, parL] (.case caseEq .irr #[app (.const idR .val) [.irr, v 0]] #[] .leaf) .shared .leaf)]
 def in3 : Heap × List Val := let (b, n) := ({} : HB).alloc (.num 7); (b.heap, [.imm .irr, .imm .irr, n])
+-- Finding 7: `f (a b : Nat) (@erased x : List Nat) (c d e : Nat) : Nat := a`, `g` the same
+-- parameters, `g a b x c d e := f a b x c d e`; the control has the erased parameter first
+def fV := mem 335
+def gV := mem 336
+def fXV := mem 343
+def gXV := mem 344
+def sixV : List Param :=
+  [par .many .leaf, par .many .leaf, par .erased .val (.dataApp .data .data) true, par .many .leaf, par .many .leaf,
+   par .many .leaf]
+def sixXV : List Param :=
+  [par .erased .val (.dataApp .data .data) true, par .many .leaf, par .many .leaf, par .many .leaf, par .many .leaf,
+   par .many .leaf]
+def p7Defs : List (Ref × RunDef) := [(fV, body sixV (v 5 .leaf) .shared .leaf),
+  (gV, body sixV (app (.const fV .val) [v 5 .leaf, v 4 .leaf, v 3, v 2 .leaf, v 1 .leaf, v 0 .leaf] .leaf) .shared .leaf)]
+def p7xDefs : List (Ref × RunDef) := [(fXV, body sixXV (v 4 .leaf) .shared .leaf),
+  (gXV, body sixXV (app (.const fXV .val) [v 5, v 4 .leaf, v 3 .leaf, v 2 .leaf, v 1 .leaf, v 0 .leaf] .leaf)
+    .shared .leaf)]
+def fiveNats : HB × List Val :=
+  let (b, n1) := ({} : HB).alloc (.num 1)
+  let (b, n2) := b.alloc (.num 2)
+  let (b, n3) := b.alloc (.num 3)
+  let (b, n4) := b.alloc (.num 4)
+  let (b, n5) := b.alloc (.num 5)
+  (b, [n1, n2, n3, n4, n5])
+def in7 : Heap × List Val :=
+  let (b, ns) := fiveNats; (b.heap, ns.take 2 ++ [.imm .irr] ++ ns.drop 2)
+def in7x : Heap × List Val :=
+  let (b, ns) := fiveNats; (b.heap, .imm .irr :: ns)
+def fuels0to12 : List Nat := List.range 13 ++ [100000]
+
+-- (the suite's `fuelCase` definition stands here; the driver's is above)
 
 def findingCases : List Case := [
   runCase "finding 1: a borrowed number through a call of `Nat → Nat` (its parameter read as no-leaf)"
@@ -758,7 +804,10 @@ def findingCases : List Case := [
   runCase "finding 3: a borrowed number cast to a list under an absurd hypothesis"
     (eqDefs ++ [(g2, body [par .many .irr, par .many .irr, par .borrowed .leaf]
       (app (.const bad3 .val) [.irr, .case caseEq .irr #[v 0 .leaf] #[] .val] .leaf) .shared .leaf)])
-    g2 in3 (some .borrowEscape) false [g2, bad3]
+    g2 in3 (some .borrowEscape) false [g2, bad3],
+  fuelCase "finding 7: a call of six arguments, the third erased, at every fuel from 0 to 12"
+    p7Defs gV in7 fuels0to12 true [gV, fV],
+  fuelCase "finding 7, control: the erased parameter first" p7xDefs gXV in7x fuels0to12 true [gXV, fXV]
 ]
 
 -- END COPY
@@ -1042,15 +1091,32 @@ def p7v : Prog := prog [
   (fV, body sixV (v 5 .leaf) .shared .leaf),
   (gV, body sixV (app (.const fV .val) [v 5 .leaf, v 4 .leaf, v 3, v 2 .leaf, v 1 .leaf, v 0 .leaf] .leaf) .shared .leaf)]
 
+def fXV := mem 343
+def gXV := mem 344
+
+/-- The control of the corrected program: the erased `List Nat` parameter first. -/
+def sixXV : List Param :=
+  [par .erased .val (.dataApp .data .data) true, par .many .leaf, par .many .leaf, par .many .leaf, par .many .leaf,
+   par .many .leaf]
+
+def p7xv : Prog := prog [
+  (fXV, body sixXV (v 4 .leaf) .shared .leaf),
+  (gXV, body sixXV (app (.const fXV .val) [v 5, v 4 .leaf, v 3 .leaf, v 2 .leaf, v 1 .leaf, v 0 .leaf] .leaf)
+    .shared .leaf)]
+
+-- REPAIR B: as landed, every program below was out of fuel at 0 to 5 and the first two ended
+-- in `erasedRead` at fuels 6 and 7 (a value from 8; the controls out of fuel to 7, a value from 8)
 def f7Cases : List Case := [
   { label := "F7v x : List Nat erased at position 2", P := p7v, seed := gV, inp := in7, toCheck := [gV, fV],
-    verdict := .accept, fuels := fuels0to12, run := [(0, .oof), (6, .vio .erasedRead), (8, .value)], open_ := true },
+    verdict := .accept, fuels := fuels0to12, run := [(0, .oof), (6, .value)] },
+  { label := "F7v control: the erased parameter first", P := p7xv, seed := gXV, inp := in7x, toCheck := [gXV, fXV],
+    verdict := .accept, fuels := fuels0to12, run := [(0, .oof), (6, .value)] },
   -- the first encoding: no input meets `InputsOk` (an erased parameter of class leaf)
   { label := "F7 x : Nat erased at position 2 (no admissible input)", P := p7, seed := gR, inp := in7,
     toCheck := [gR, fR], verdict := .accept, fuels := fuels0to12,
-    run := [(0, .oof), (6, .vio .erasedRead), (8, .value)], inputs := some false },
+    run := [(0, .oof), (6, .value)], inputs := some false },
   { label := "F7 control: the erased parameter first", P := p7x, seed := gX, inp := in7x, toCheck := [gX, fX],
-    verdict := .accept, fuels := fuels0to12, run := [(0, .oof), (8, .value)], inputs := some false }]
+    verdict := .accept, fuels := fuels0to12, run := [(0, .oof), (6, .value)], inputs := some false }]
 
 /-! ### Finding 8: a unique value stored twice in one cell -/
 

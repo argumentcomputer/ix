@@ -470,6 +470,51 @@ def eqDefs : List (Ref × RunDef) := [(EqI, .ind #[reflR]), (reflR, .ctor EqI 0 
   (idR, body [par .many .irr, par] (v 0)),
   (bad3, body [par .many .irr, parL] (.case caseEq .irr #[app (.const idR .val) [.irr, v 0]] #[] .leaf) .shared .leaf)]
 def in3 : Heap × List Val := let (b, n) := ({} : HB).alloc (.num 7); (b.heap, [.imm .irr, .imm .irr, n])
+-- Finding 7: `f (a b : Nat) (@erased x : List Nat) (c d e : Nat) : Nat := a`, `g` the same
+-- parameters, `g a b x c d e := f a b x c d e`; the control has the erased parameter first
+def fV := mem 335
+def gV := mem 336
+def fXV := mem 343
+def gXV := mem 344
+def sixV : List Param :=
+  [par .many .leaf, par .many .leaf, par .erased .val (.dataApp .data .data) true, par .many .leaf, par .many .leaf,
+   par .many .leaf]
+def sixXV : List Param :=
+  [par .erased .val (.dataApp .data .data) true, par .many .leaf, par .many .leaf, par .many .leaf, par .many .leaf,
+   par .many .leaf]
+def p7Defs : List (Ref × RunDef) := [(fV, body sixV (v 5 .leaf) .shared .leaf),
+  (gV, body sixV (app (.const fV .val) [v 5 .leaf, v 4 .leaf, v 3, v 2 .leaf, v 1 .leaf, v 0 .leaf] .leaf) .shared .leaf)]
+def p7xDefs : List (Ref × RunDef) := [(fXV, body sixXV (v 4 .leaf) .shared .leaf),
+  (gXV, body sixXV (app (.const fXV .val) [v 5, v 4 .leaf, v 3 .leaf, v 2 .leaf, v 1 .leaf, v 0 .leaf] .leaf)
+    .shared .leaf)]
+def fiveNats : HB × List Val :=
+  let (b, n1) := ({} : HB).alloc (.num 1)
+  let (b, n2) := b.alloc (.num 2)
+  let (b, n3) := b.alloc (.num 3)
+  let (b, n4) := b.alloc (.num 4)
+  let (b, n5) := b.alloc (.num 5)
+  (b, [n1, n2, n3, n4, n5])
+def in7 : Heap × List Val :=
+  let (b, ns) := fiveNats; (b.heap, ns.take 2 ++ [.imm .irr] ++ ns.drop 2)
+def in7x : Heap × List Val :=
+  let (b, ns) := fiveNats; (b.heap, .imm .irr :: ns)
+def fuels0to12 : List Nat := List.range 13 ++ [100000]
+
+/-- Run `entry` at every fuel of `fuels` (ascending): no run violates, the runs
+are out of fuel up to some fuel and a value from there on (the evaluator spends
+fuel per step and does not change what it runs with it), and the checker
+accepts exactly when `accept`. -/
+def fuelCase (label : String) (defs : List (Ref × RunDef)) (entry : Ref) (input : Heap × List Val)
+    (fuels : List Nat) (accept : Bool) (toCheck : List Ref := [entry]) : LSpec.TestSeq :=
+  .individualIO label none (do
+    let P := prog defs
+    let os := fuels.map fun f => runR P noExtern f entry input.1 input.2
+    let rest := os.dropWhile fun o => match o with | .outOfFuel => true | _ => false
+    let runOk := !rest.isEmpty && rest.all fun o => match o with | .value .. => true | _ => false
+    let verdict := checkBodies {} P toCheck
+    let checkOk := verdict.isAccept == accept
+    let msg := s!"runs: {", ".intercalate (os.map outcomeName)}; checker: {verdictName verdict}"
+    return (runOk && checkOk, 0, 0, if runOk && checkOk then none else some msg)) .done
 
 def findingCases : List LSpec.TestSeq := [
   runCase "finding 1: a borrowed number through a call of `Nat → Nat` (its parameter read as no-leaf)"
@@ -496,7 +541,10 @@ def findingCases : List LSpec.TestSeq := [
   runCase "finding 3: a borrowed number cast to a list under an absurd hypothesis"
     (eqDefs ++ [(g2, body [par .many .irr, par .many .irr, par .borrowed .leaf]
       (app (.const bad3 .val) [.irr, .case caseEq .irr #[v 0 .leaf] #[] .val] .leaf) .shared .leaf)])
-    g2 in3 (some .borrowEscape) false [g2, bad3]
+    g2 in3 (some .borrowEscape) false [g2, bad3],
+  fuelCase "finding 7: a call of six arguments, the third erased, at every fuel from 0 to 12"
+    p7Defs gV in7 fuels0to12 true [gV, fV],
+  fuelCase "finding 7, control: the erased parameter first" p7xDefs gXV in7x fuels0to12 true [gXV, fXV]
 ]
 
 /-! ### Must-reject cases from records -/
