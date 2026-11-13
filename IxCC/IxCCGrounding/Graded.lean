@@ -194,8 +194,8 @@ theorem graded_sites (M : Model V env) {φ : LevelParam → Nat} {ls : Levels} :
           simp only [GradedBy] at h1
           exact h1.1) s hs
       · by_cases hirr : r.irrAt ls = true
-        · rw [if_pos hirr] at hs; simp at hs
-        · rw [if_neg hirr] at hs
+        · simp [hirr] at hs
+        · simp [hirr] at hs
           exact iha Γ a' (fun ρ hρ => by
             have h1 := hg ρ hρ
             simp only [GradedBy] at h1
@@ -256,7 +256,7 @@ theorem runPair_graded (M : Model V env) (hgr : GradedLaw M.cval env) {p : Progr
     simp only [ConstantInfo.toConstantVal] at h1
     rw [hty] at h1
     exact graded_lam_of_pi (fun ρ' h => by
-      simp only [Expr.mkAppN, List.foldl, GradedBy] at h
+      simp only [Expr.mkAppN, GradedBy] at h
       exact h.2.1) d.Ds d.ms ρ hlen h1
 
 theorem exists_snoc {α : Type _} : ∀ (l : List α), l ≠ [] → ∃ xs x, l = xs ++ [x]
