@@ -5,8 +5,10 @@ import IxCCGrounding.Model
 
 **The relation is by provenance** (`RelV`): a literal relates to what the literal denotes; a
 constructor value and a partial application to their head's denotation applied to related
-arguments that fit the head's stored type (`Fits`); a closure to what its λ denotes in a related
-kernel environment satisfying the λ's context, the λ running there; `irr t` to what its kept term
+arguments that fit the head's stored type (`Fits`); a closure to what its λ denotes in a kernel
+environment satisfying the λ's context, the λ running there, the environments related whenever the
+λ's domain has a member (since step C's closure-capture shape: the only reader of a closure's
+environment is its application, at a member of the domain); `irr t` to what its kept term
 denotes; a by-name slot to what its suspended term denotes, the term running there. It is
 inductive on the value and mentions no clock.
 
@@ -106,6 +108,21 @@ inductive Runs (M : Model V env) (κ : CId → KKey) (Ok : CId → Levels → Pr
       {ty v b : Term} {e : KExpr} :
       zcopy b e = none → Runs M κ Ok lps ls φ (none :: σ) Γ b e →
       Runs M κ Ok lps ls φ σ Γ (.letE c r ty v b) e
+  /-- a `let` whose body is a λ and whose copy `v'` (in the `let`'s context) occurs, lifted, in the
+  λ's body with no binder between (the closure-capture shape, step C): where relevant at `ls`, its
+  value runs in the λ's context against the lifted copy (the copy need not denote in the `let`'s
+  context: the λ's domain may be empty); where irrelevant, it corresponds there to the lifted copy;
+  the λ runs with the variable standing for the copy -/
+  | letClo {σ : Sig} {Γ : List KExpr} {c : IxCC.Ixon.V3.LetContract} {r : IxCC.Src.Rel}
+      {ty v : Term} {bz : IxCC.Src.Binder} {d body : Term} {A b' v' : KExpr} {mb : BinderMeta} :
+      SubAt0 (v'.liftLooseBVars 1 0) b' →
+      (r.irrAt ls = false →
+        Runs M κ Ok lps ls φ (σ.map (·.map (Expr.liftLooseBVars 1 0))) (A :: Γ) v
+          (v'.liftLooseBVars 1 0)) →
+      (r.irrAt ls = true →
+        TermCorrS κ lps (σ.map (·.map (Expr.liftLooseBVars 1 0))) v (v'.liftLooseBVars 1 0)) →
+      Runs M κ Ok lps ls φ (some v' :: σ) Γ (.lam bz d body) (.lam A b' mb) →
+      Runs M κ Ok lps ls φ σ Γ (.letE c r ty v (.lam bz d body)) (.lam A b' mb)
 
 /-- A special head's denotation (the spike's, with recursor heads since G3; no quotient head in
 the first fragment): the key's set at the assignment, its stored type the telescope a partial
@@ -147,7 +164,9 @@ inductive RelV (M : Model V env) (κ : CId → KKey) (lpsOf : CId → List Nat) 
   | clo {b : IxCC.Src.Binder} {dom body : Term} {ρ : IxCC.Src.Env} {ls : Levels}
       {φ : LevelParam → Nat} {lps : List Nat} {Γ : List KExpr} {σ : Sig} {ρk : BVarIdx → V}
       {A B : KExpr} {m : BinderMeta} {X : V} :
-      LvAt φ lps ls → RelEnv M κ lpsOf S Ok φ ρ σ ρk → CtxSat M φ Γ ρk →
+      LvAt φ lps ls →
+      (∀ (XA x : V), Denotes M.cval env φ ρk A XA → x ∈ˢ XA → RelEnv M κ lpsOf S Ok φ ρ σ ρk) →
+      CtxSat M φ Γ ρk →
       Runs M κ Ok lps ls φ σ Γ (.lam b dom body) (.lam A B m) → ConstsIn S (.lam b dom body) →
       Denotes M.cval env φ ρk (.lam A B m) X → RelV M κ lpsOf S Ok (.clo b dom body ρ ls) X
   | pap {h : IxCC.Src.Head} {ls : Levels} {args : List Slot} {φ : LevelParam → Nat} {k : KKey}

@@ -564,7 +564,12 @@ def evalSitesP : List IxCC.Src.Profile → List KExpr → Term → KExpr → Lis
       | some v' =>
         let P' := P.filter fun prof => !r.irrP prof
         if P'.isEmpty || !subAt0B v' e then [] else evalSitesP P' Γ v v'
-      | none => []) ++ evalSitesP P Γ b e
+      | none => []) ++
+    ((match cloSite? b e with
+      | some (A, cp) =>
+        let P' := P.filter fun prof => !r.irrP prof
+        if P'.isEmpty then [] else evalSitesP P' (A :: Γ) v cp
+      | none => []) ++ evalSitesP P Γ b e)
   | _, _, _, _ => []
 
 /-- **The sites of a run term the direct route refuses**, at the profiles `P` at which it is
@@ -597,7 +602,9 @@ def allSites : List KExpr → Term → KExpr → List Site
   | Γ, .lam _ _ body, .lam d' body' _ => allSites (d' :: Γ) body body'
   | Γ, .proj _ _ e, .proj _ _ e' => allSites Γ e e'
   | Γ, .letE _ _ _ v b, e =>
-    (match zcopy b e with | some v' => allSites Γ v v' | none => []) ++ allSites Γ b e
+    (match zcopy b e with | some v' => allSites Γ v v' | none => []) ++
+    ((match cloSite? b e with | some (A, cp) => allSites (A :: Γ) v cp | none => []) ++
+      allSites Γ b e)
   | _, _, _ => []
 
 /-- The run pairs of `c`, computed: its value against its stored value, or its `eqn` body

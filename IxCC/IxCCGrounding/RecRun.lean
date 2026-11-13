@@ -103,9 +103,16 @@ theorem evalSites_congr {n : Nat} {ls ls' : Levels} (hag : ∀ i < n, ls.getD i 
     obtain ⟨⟨⟨hr, _⟩, hv⟩, hb⟩ := h
     have hirr : r.irrAt ls = r.irrAt ls' := holds_below hag hr
     simp only [evalSites, hirr, evalSites_congr hag b Γ e hb]
-    cases zcopy b e with
-    | none => rfl
-    | some v' => simp only [evalSites_congr hag v Γ v' hv]
+    congr 1
+    · cases zcopy b e with
+      | none => rfl
+      | some v' => simp only [evalSites_congr hag v Γ v' hv]
+    · congr 1
+      cases cloSite? b e with
+      | none => rfl
+      | some p =>
+        obtain ⟨A, cp⟩ := p
+        simp only [evalSites_congr hag v (A :: Γ) cp hv]
   | .var _, _, _, _ => rfl
   | .sort _, _, _, _ => rfl
   | .const _ _, _, _, _ => rfl

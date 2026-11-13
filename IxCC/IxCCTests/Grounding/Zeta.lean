@@ -8,21 +8,30 @@ The kernel stores a run term's ζ-reduct, and the check's correspondence (`value
 `corrSB []`, `TermCorrS` decided) relates the Src term with its `let`s to it through a
 substitution: a live `let`'s variable stands for its value's copy, which must occur with no binder
 between; a dead `let`'s for nothing; a `let` whose variable meets its copy only under a binder (a
-"deep" `let`) is refused.
+"deep" `let`) is refused, but for the closure-capture shape (since step C's `letClo`: the `let`'s
+body is a λ and the copy, lifted past it, occurs in the λ's body with no binder between).
 
 * **The corpus.** Of the 67 constants of the corpus closures whose run term the let-free
   correspondence (`termCorrB`) refuses, `corrSB []` accepts 61, by closure (`expectCorr`, the
   table `zetaTable`); it refuses 3 for a string literal (`phase1-decline/strings` c262,
   `phase1-decline/panic` c363 and c322, numbered c359 and c318 before the closures were refrozen with
   their word equations: step S) and 3 for a deep `let` (`phase2-arity/arity` c597,
-  `phase2-closures/closures` c272 and c19), each asserted by name with its reason. The three
-  closures it unlocks (`fields254`, `machines`, `natural`) are checked with the accepted closures
-  (`IxCCTests.Grounding.NoCanon`); here, the other eleven closures' false conjuncts, by name.
+  `phase2-closures/closures` c272 and c19), each asserted by name with its reason; since the
+  closure-capture case it accepts 63 and refuses one deep `let`, `closures` c19 (the minor-premise
+  shape: the copy in a `match`'s minor premise), so `arity` passes the check. The three closures
+  step C unlocked (`fields254`, `machines`, `natural`) are checked with the accepted closures
+  (`IxCCTests.Grounding.NoCanon`); here, the other eleven closures' false conjuncts, by name
+  (`arity`: none).
 * **Planted, on `fib`'s root** (its stored value and run term unchanged otherwise): a live `let`
   around the value (`let x := v; x`) and a dead one (`let x := 99; v`) are accepted, every conjunct
   true, and SrcEval still reads back `55`; the live `let`'s value replaced by a term that does not
-  correspond to its copy is refused at `valueCorr` alone; a `let` whose variable occurs only under
-  a λ (`let x := v; λ _. x` against the stored `λ _. v`) is refused at `valueCorr` alone, as deep.
+  correspond to its copy is refused at `valueCorr` alone. A `let` whose variable occurs only under
+  a λ (`let x := v; λ _. x` against the stored `λ _. v`) was refused at `valueCorr` alone, as deep;
+  it is the closure-capture shape, so since that case it is accepted, every conjunct true, while
+  the live case alone (`corrSBLive`, the decider as it was before) still refuses it. Three plants
+  stay refused at `valueCorr` alone: the copy under a second binder (`let x := v; λ _ _. x`), a body
+  that is not a λ (`let x := v; (λ _. x) 0`), and a copy that is not the value
+  (`let x := v; λ _. x` against the stored `λ _. 7`).
 -/
 
 namespace IxCCTests.Grounding.Zeta
@@ -68,6 +77,25 @@ def corrOf (i : Input) : Nat × List (CId × String) := Id.run do
         bad := bad ++ [(c, why)]
   return (ok, bad)
 
+/-- **The decider before the closure-capture case** (test-only, `corrSB` as landed with step C):
+a copy not at depth 0 refused. -/
+def corrSBLive (κ : CId → KKey) (lps : List Nat) : Sig → Term → KExpr → Bool
+  | σ, .var i, e => match σ[i]? with | some (some e') => decide (e' = e) | _ => false
+  | _, .sort u, .sort l => univCorrB lps u l
+  | _, .const c us, .const k ls =>
+    decide (k = κ c) && us.length == ls.length && (us.zip ls).all fun (u, l) => univCorrB lps u l
+  | σ, .app f a _ _, .app f' a' => corrSBLive κ lps σ f f' && corrSBLive κ lps σ a a'
+  | σ, .lam _ d b, .lam d' b' _ => corrSBLive κ lps σ d d' && corrSBLive κ lps (liftσ σ) b b'
+  | σ, .pi _ _ d c, .forallE d' c' _ =>
+    corrSBLive κ lps σ d d' && corrSBLive κ lps (liftσ σ) c c'
+  | σ, .proj s i x, .proj k j x' => decide (k = κ s) && i == j && corrSBLive κ lps σ x x'
+  | _, .natLit n, .lit (.natVal m) => n == m
+  | σ, .letE _ _ _ v b, e =>
+    match zcopy b e with
+    | some v' => subAt0B v' e && corrSBLive κ lps σ v v' && corrSBLive κ lps (some v' :: σ) b e
+    | none => corrSBLive κ lps (none :: σ) b e
+  | _, _, _ => false
+
 /-- The closures holding the 67 constants: label, the number `corrSB []` accepts, the refused
 ones with their reasons. -/
 def zetaTable : List (String × Nat × List (CId × String)) :=
@@ -76,9 +104,9 @@ def zetaTable : List (String × Nat × List (CId × String)) :=
    ("phase1-resource/resource", 4, []), ("phase1-decline/loops", 4, []),
    ("phase1-decline/strings", 7, [(262, "string")]),
    ("phase1-decline/panic", 2, [(363, "string"), (322, "string")]),
-   ("phase2-closures/closures", 4, [(272, "deep"), (19, "deep")]),
+   ("phase2-closures/closures", 5, [(19, "deep")]),
    ("phase1-machines/machines", 3, []), ("phase1-machines/natural", 4, []),
-   ("phase2-arity/arity", 0, [(597, "deep")]),
+   ("phase2-arity/arity", 1, []),
    ("fixtures/ixon-v4/src-diag/diag", 11, [])]
 
 /-- Assert a closure's line of `zetaTable`; the number accepted. -/
@@ -89,7 +117,8 @@ def expectCorr (a : Assert) (label : String) (i : Input) : IO Nat := do
     s!"zeta: {label}: corrSB accepts {ok} (expected {n}), refuses {bad'} (expected {bad})"
   return ok
 
-/-- The false conjuncts of the eleven closures of `zetaTable` the check still refuses. -/
+/-- The false conjuncts of the eleven closures of `zetaTable` the check refused when step C landed
+(`arity`: none since the closure-capture case). -/
 def refusedTable : List (String × List String) :=
   [("bench-k1/sum-loop", ["eqnShape"]), ("bench-k1/collatz", ["eqnShape"]),
    ("bench-k1/prime-count", ["eqnShape"]), ("phase1-scalar/scalar", ["eqnShape"]),
@@ -97,8 +126,8 @@ def refusedTable : List (String × List String) :=
    ("phase1-decline/loops", ["eqnShape"]),
    ("phase1-decline/strings", ["noWord", "caseRec", "proj", "valueCorr", "caseShape", "caseProg"]),
    ("phase1-decline/panic", ["noWord", "proj", "valueCorr"]),
-   ("phase2-closures/closures", ["caseRec", "eqnCorr", "valueCorr", "caseShape"]),
-   ("phase2-arity/arity", ["valueCorr"]),
+   ("phase2-closures/closures", ["caseRec", "eqnCorr", "caseShape"]),
+   ("phase2-arity/arity", []),
    ("fixtures/ixon-v4/src-diag/diag",
      ["declOk", "recShape", "notOpaque", "proj", "caseShape", "caseProg"])]
 
@@ -149,12 +178,12 @@ def run : IO Bool := do
       let f := failing i
       let some (_, exp) := refusedTable.find? (·.1 == label) | throw (IO.userError label)
       expect a (f == exp) s!"zeta: {label}: false conjuncts {f}, expected {exp}"
-    expect a (total == 53)
-      s!"zeta: corrSB accepts {total} constants of the eleven refused closures, expected 53"
+    expect a (total == 55)
+      s!"zeta: corrSB accepts {total} constants of the eleven closures, expected 55"
     IO.println s!"zeta: corrSB [] accepts {total} of the constants the let-free check refuses in \
-      the eleven closures still refused (the other 8 of 61 in fields254, machines, natural); \
-      refused: strings c262, panic c363 c322 (string literals), closures c272 c19, arity c597 \
-      (deep lets); the eleven closures' false conjuncts as expected"
+      the eleven closures (the other 8 of 63 in fields254, machines, natural); refused: strings \
+      c262, panic c363 c322 (string literals), closures c19 (a deep let, the minor-premise shape); \
+      the eleven closures' false conjuncts as expected (arity: none)"
     -- planted, on `fib`'s root
     let some fs := subjects.head? | throw (IO.userError "no subject")
     let (fi, _) ← load fs
@@ -175,11 +204,32 @@ def run : IO Bool := do
     expect a (failing wrong == ["valueCorr"])
       s!"zeta: fib, a live let whose value is not its copy: false conjuncts {failing wrong}"
     let deepRun := (runPairsB deep.src deep.env deep.κ deep.rootId).all fun (t, e) => deepLet t e
-    expect a (failing deep == ["valueCorr"] && deepRun)
-      s!"zeta: fib, a let used only under a λ: false conjuncts {failing deep}, deep {deepRun}"
+    -- the recorded expectation flipped with step C's closure-capture case: this plant is that
+    -- shape (was: `failing deep == ["valueCorr"]`); the live case alone still refuses it
+    let deepLive := (runPairsB deep.src deep.env deep.κ deep.rootId).all fun (t, e) =>
+      !corrSBLive deep.κ (deep.lpsOf deep.rootId) [] t e
+    expect a ((failing deep).isEmpty && deepRun && deepLive)
+      s!"zeta: fib, a let used only under a λ (the closure-capture shape): false conjuncts \
+        {failing deep}, deep {deepRun}, the live case alone refuses it {deepLive}"
+    let some deep2 := setRoot fi (lt v (.lam default (.sort .zero) (.lam default (.sort .zero) (.var 2))))
+        (some (.lam (.sort .zero) (.lam (.sort .zero) val bmN) bmN)) | throw (IO.userError "fib: deep2")
+    expect a (failing deep2 == ["valueCorr"])
+      s!"zeta: fib, a let whose copy is under a second binder: false conjuncts {failing deep2}"
+    let some notLam := setRoot fi
+        (lt v (.app (.lam default (.sort .zero) (.var 1)) (.natLit 0) default default))
+        (some (.app (.lam (.sort .zero) val bmN) (litE 0))) | throw (IO.userError "fib: notLam")
+    expect a (failing notLam == ["valueCorr"])
+      s!"zeta: fib, a let whose body is not a λ: false conjuncts {failing notLam}"
+    let some notCopy := setRoot fi (lt v (.lam default (.sort .zero) (.var 1)))
+        (some (.lam (.sort .zero) (litE 7) bmN)) | throw (IO.userError "fib: notCopy")
+    expect a (failing notCopy == ["valueCorr"])
+      s!"zeta: fib, a closure-capture let whose copy is not the value: false conjuncts \
+        {failing notCopy}"
     IO.println "zeta: fib: a live let around the root's value and a dead one before it: every \
       conjunct true, SrcEval reads back 55; the live let's value not its copy: valueCorr alone \
-      false; a let used only under a λ: valueCorr alone false (deep)"
+      false; a let used only under a λ (the closure-capture shape): every conjunct true, the live \
+      case alone refusing it; refused at valueCorr alone: the copy under a second binder, a body \
+      that is not a λ, a copy that is not the value"
     IO.println s!"tests-grounding (zeta): {← a.get} assertions passed"
     return true
   catch error =>

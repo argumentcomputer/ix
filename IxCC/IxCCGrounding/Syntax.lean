@@ -230,6 +230,22 @@ def subAt0B (v : KExpr) : KExpr → Bool
   | .proj s i x => decide (v = .proj s i x) || subAt0B v x
   | e => decide (v = e)
 
+/-- **The closure-capture shape** (step C): a `let`'s body `b` is a λ, its kernel term `e` a λ, and
+the copy `v'` (in the `let`'s context), lifted past the λ, occurs in the λ's body with no binder
+between. -/
+def cloShapeB (b : Term) (e v' : KExpr) : Bool :=
+  match b, e with
+  | .lam _ _ _, .lam _ b' _ => subAt0B (v'.liftLooseBVars 1 0) b'
+  | _, _ => false
+
+/-- **Where a closure-capture `let`'s value runs** (step C): the λ's domain and the copy lifted past
+it, when the copy is not at depth 0 and the shape is the closure-capture one. -/
+def cloSite? (b : Term) (e : KExpr) : Option (KExpr × KExpr) :=
+  match zcopy b e, e with
+  | some v', .lam A _ _ =>
+    if !subAt0B v' e && cloShapeB b e v' then some (A, v'.liftLooseBVars 1 0) else none
+  | _, _ => none
+
 theorem subAt0_of_check {v : KExpr} : ∀ {e : KExpr}, subAt0B v e = true → SubAt0 v e := by
   intro e h
   induction e with
@@ -248,11 +264,38 @@ theorem subAt0_of_check {v : KExpr} : ∀ {e : KExpr}, subAt0B v e = true → Su
     simp only [subAt0B, decide_eq_true_eq] at h
     subst h; exact .refl
 
+theorem cloShapeB_lam {b : Term} {A b' v' : KExpr} {m : BinderMeta}
+    (h : cloShapeB b (.lam A b' m) v' = true) : subAt0B (v'.liftLooseBVars 1 0) b' = true := by
+  cases b <;> simp_all [cloShapeB]
+
+/-- **What `cloSite?` returns**: the kernel term is a λ over the returned domain, and the returned
+copy occurs in its body with no binder between. -/
+theorem cloSite?_spec {b : Term} {e A cp : KExpr} (h : cloSite? b e = some (A, cp)) :
+    ∃ b' m, e = .lam A b' m ∧ SubAt0 cp b' := by
+  unfold cloSite? at h
+  cases hz : zcopy b e with
+  | none => simp [hz] at h
+  | some v' =>
+    rw [hz] at h
+    cases e with
+    | lam A' b' m =>
+      simp only at h
+      split at h
+      · rename_i hc
+        simp only [Option.some.injEq, Prod.mk.injEq] at h
+        obtain ⟨rfl, rfl⟩ := h
+        simp only [Bool.and_eq_true] at hc
+        exact ⟨b', m, rfl, subAt0_of_check (cloShapeB_lam hc.2)⟩
+      · cases h
+    | _ => simp at h
+
+
 /-- **The correspondence under a substitution** (what `valueCorr` and `eqnCorr` check, at `σ = []`):
 as `TermCorr`, with `var i` meeting `σ[i]`'s term, binders lifting `σ`, and two `let` cases: a live
 `let` (its variable's copy `v'` occurs in the body's kernel term with no binder between, and the value
-corresponds to it) and a dead one (its variable meets no kernel term). The `let`'s type is not
-compared: SrcEval never evaluates it, and the kernel stores no `let`. -/
+corresponds to it) and a dead one (its variable meets no kernel term); since step C a third, the
+closure-capture shape (`letClo`). The `let`'s type is not compared: SrcEval never evaluates it, and
+the kernel stores no `let`. -/
 inductive TermCorrS (κ : CId → KKey) (lps : List Nat) : Sig → Term → KExpr → Prop
   | var {σ : Sig} {i : Nat} {e : KExpr} : σ[i]? = some (some e) → TermCorrS κ lps σ (.var i) e
   | sort {σ : Sig} {u : IxCC.Ixon.Univ} {l : Level} : UnivCorr lps u l →
@@ -281,6 +324,16 @@ inductive TermCorrS (κ : CId → KKey) (lps : List Nat) : Sig → Term → KExp
   | letDead {σ : Sig} {c : IxCC.Ixon.V3.LetContract} {r : IxCC.Src.Rel} {ty v b : Term}
       {e : KExpr} :
       zcopy b e = none → TermCorrS κ lps (none :: σ) b e → TermCorrS κ lps σ (.letE c r ty v b) e
+  /-- the closure-capture shape (step C): the `let`'s body and its kernel term are λs, the copy is
+  not at depth 0 but, lifted past the λ, occurs in the λ's body with no binder between; the value
+  corresponds in the λ's context to the lifted copy -/
+  | letClo {σ : Sig} {c : IxCC.Ixon.V3.LetContract} {r : IxCC.Src.Rel} {ty v : Term}
+      {bz : IxCC.Src.Binder} {d body : Term} {A b' v' : KExpr} {mb : BinderMeta} :
+      zcopy (.lam bz d body) (.lam A b' mb) = some v' → subAt0B v' (.lam A b' mb) = false →
+      subAt0B (v'.liftLooseBVars 1 0) b' = true →
+      TermCorrS κ lps (σ.map (·.map (Expr.liftLooseBVars 1 0))) v (v'.liftLooseBVars 1 0) →
+      TermCorrS κ lps (some v' :: σ) (.lam bz d body) (.lam A b' mb) →
+      TermCorrS κ lps σ (.letE c r ty v (.lam bz d body)) (.lam A b' mb)
 
 /-- Every bound variable of a kernel term is below `n` (under its binders): the term is closed
 in a context of `n` binders. -/
@@ -486,8 +539,10 @@ inductive RunPair (p : Program) (env : KEnv) (κ : CId → KKey) (c : CId) : Ter
 /-- The application sites SrcEval may evaluate at `ls`, each with its context: every
 application reached through functions, arguments relevant at `ls`, λ bodies and projections; at a
 `let`, its value's sites at the value's copy where the `let` is relevant and the copy occurs with no
-binder between (none where it is dead), and its body's. Every site is an application node of the
-kernel term with its binder domains (a `let` adds no kernel binder). -/
+binder between (none where it is dead); at a closure-capture `let` (step C, `cloSite?`) where it
+is relevant, its value's sites in the λ's context at the lifted copy; and its body's. Every site
+is an application node of the kernel term with its binder domains (a `let` adds no kernel
+binder). -/
 def evalSites (ls : Levels) : List KExpr → Term → KExpr → List (List KExpr × KExpr × KExpr)
   | Γ, .app f a _ r, .app f' a' =>
     (Γ, f', a') :: (evalSites ls Γ f f' ++ (if r.irrAt ls then [] else evalSites ls Γ a a'))
@@ -496,7 +551,10 @@ def evalSites (ls : Levels) : List KExpr → Term → KExpr → List (List KExpr
   | Γ, .letE _ r _ v b, e =>
     (match zcopy b e with
       | some v' => if r.irrAt ls || !subAt0B v' e then [] else evalSites ls Γ v v'
-      | none => []) ++ evalSites ls Γ b e
+      | none => []) ++
+    ((match cloSite? b e with
+      | some (A, cp) => if r.irrAt ls then [] else evalSites ls (A :: Γ) v cp
+      | none => []) ++ evalSites ls Γ b e)
   | _, _, _ => []
 
 /-! ## The checked shape of a `case` entry

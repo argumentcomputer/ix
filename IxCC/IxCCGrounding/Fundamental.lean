@@ -1168,6 +1168,41 @@ theorem eval_step (H : FundHyps M p κ lpsOf S Ok) {k : Nat}
     · exact ihb _ ρk w (mentions_let_body hcs) hlv (.none henv) hctx hrun
     · obtain ⟨x, _, hb⟩ := Result.bind_eq_ok_iff.mp hrun
       exact ihb _ ρk w (mentions_let_body hcs) hlv (.none henv) hctx hb
+  | @letClo σ Γ c r ty v bz d body A b' v' mb hsub _ hiv hlam ihv _ =>
+    -- step C, the closure-capture shape: SrcEval evaluates the value, then returns the closure;
+    -- its environment is related at every member of the λ's domain, where the value's run is
+    -- related against the lifted copy (in the λ's context) and the copy denotes
+    intro ρ ρk w hcs hlv henv hctx hrun
+    rw [IxCC.Src.eval_letE] at hrun
+    have hden : DenotesIn M φ Γ (.lam A b' mb) := by
+      cases hlam with
+      | lam _ _ hd => exact hd
+    obtain ⟨X, hX⟩ := hden ρk hctx
+    have hctx' : ∀ (XA x : V), Denotes M.cval env φ ρk A XA → x ∈ˢ XA →
+        CtxSat M φ (A :: Γ) (push x ρk) := fun XA x hA hx =>
+      .cons (by rw [push_tail]; exact hctx) (by rw [push_tail]; exact hA) hx
+    have hdown : ∀ (x Y : V), Denotes M.cval env φ (push x ρk) (v'.liftLooseBVars 1 0) Y →
+        Denotes M.cval env φ ρk v' Y := fun x Y h => by
+      rw [den_lift 1 v' 0 (push x ρk) Y, skipEnv_push_one] at h
+      exact h
+    have hcs' : ConstsIn S (.lam bz d body) := mentions_let_body hcs
+    cases hr : r.irrAt ls with
+    | false =>
+      simp only [hr, Bool.false_eq_true, ↓reduceIte] at hrun
+      obtain ⟨y, hy, hb⟩ := Result.bind_eq_ok_iff.mp hrun
+      rw [IxCC.Src.eval_lam] at hb
+      rw [← ok_inj hb]
+      refine ⟨X, hX, .clo hlv (fun XA x hA hx => ?_) hctx hlam hcs' hX⟩
+      obtain ⟨Y, hY, hrelY⟩ := ihv hr ρ (push x ρk) y (mentions_let_val hcs) hlv
+        (relEnv_liftAll x henv) (hctx' XA x hA hx) hy
+      exact .some (.val hrelY) (hdown x Y hY) henv
+    | true =>
+      simp only [hr, ↓reduceIte] at hrun
+      rw [IxCC.Src.eval_lam] at hrun
+      rw [← ok_inj hrun]
+      refine ⟨X, hX, .clo hlv (fun XA x hA hx => ?_) hctx hlam hcs' hX⟩
+      obtain ⟨Y, hY⟩ := denotesIn_of_subAt0 hsub (denotesIn_lam_body hden) _ (hctx' XA x hA hx)
+      exact .some (.val (.irr hlv (relEnv_liftAll x henv) (hiv hr) hY)) (hdown x Y hY) henv
   | @sort σ Γ u l hu =>
     intro ρ ρk v _ hlv henv _ hrun
     rw [IxCC.Src.eval_sort] at hrun
@@ -1224,7 +1259,7 @@ theorem eval_step (H : FundHyps M p κ lpsOf S Ok) {k : Nat}
     rw [IxCC.Src.eval_lam] at hrun
     rw [← ok_inj hrun]
     obtain ⟨X, hX⟩ := hden ρk hctx
-    exact ⟨X, hX, .clo hlv henv hctx (.lam htc hbody hden) hcs hX⟩
+    exact ⟨X, hX, .clo hlv (fun _ _ _ _ => henv) hctx (.lam htc hbody hden) hcs hX⟩
   | @pi σ Γ b r d c d' c' mb htc hden =>
     intro ρ ρk v _ hlv henv hctx hrun
     rw [IxCC.Src.eval_pi] at hrun
