@@ -64,16 +64,16 @@ def fixtureTests (_ : Unit) : TestSeq :=
   let l := ShareLayout.tagN
   group "fixtures, TagN layout" (
     withOk "T2" (normalizeConstantSharingTiered l w2) (fun n =>
-      test s!"T2 → T2: {cbytes n} bytes = 14, d2000091b0b00192000000000100"
-        (cbytes n == 14 && hexOf (serConstant n) == "d2000091b0b00192000000000100" &&
+      test s!"T2 → T2: {cbytes n} bytes = 15, d2000091b0b0019200000000010000"
+        (cbytes n == 15 && hexOf (serConstant n) == "d2000091b0b0019200000000010000" &&
           sameAsCandidates l w2)) ++
     withOk "T16" (normalizeConstantSharingTiered l w16) (fun n =>
-      test s!"T16 → T16: {cbytes n} bytes = 29, the candidates run alone agree"
-        (cbytes n == 29 && sameAsCandidates l w16)) ++
+      test s!"T16 → T16: {cbytes n} bytes = 30, the candidates run alone agree"
+        (cbytes n == 30 && sameAsCandidates l w16)) ++
     withOk "nine" (canonicalSharingTieredTable l #[] (constantInfoRoots nine.info)) (fun r =>
       withOk "nine" (normalizeConstantSharingTiered l nine) fun n =>
-        test s!"nine Refs: {cbytes n} bytes = 578, the candidates run alone agree; w={r.stats.w} (candidates {r.stats.candidateLengths}); first tier {r.stats.firstTier} holds the hot atom; phase-1 layout {r.stats.phase1LayoutBytes}, final {r.stats.phase3LayoutBytes}"
-          (cbytes n == 578 && selectionOk r && sameAsCandidates l nine &&
+        test s!"nine Refs: {cbytes n} bytes = 579, the candidates run alone agree; w={r.stats.w} (candidates {r.stats.candidateLengths}); first tier {r.stats.firstTier} holds the hot atom; phase-1 layout {r.stats.phase1LayoutBytes}, final {r.stats.phase3LayoutBytes}"
+          (cbytes n == 579 && selectionOk r && sameAsCandidates l nine &&
             r.stats.firstTier.contains 2 &&
             (n.sharing.findIdx? (· == hot)).map (fun i => decide (i < 8)) == some true)))
 

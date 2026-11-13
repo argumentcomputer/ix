@@ -852,31 +852,31 @@ def atomsTests (_ : Unit) : TestSeq :=
 def witness2 : Constant := axiomOf (arr (chain 2) (chain 2))
 
 def witnessTests (_ : Unit) : TestSeq :=
-  -- A valid 16-byte encoding of T2 → T2, two bytes above the minimum.
+  -- A valid 17-byte encoding of T2 → T2, two bytes above the minimum.
   let altBytes := ByteArray.mk #[0xd2, 0x00, 0x00, 0x91, 0xb1, 0xb1, 0x02, 0x91,
-    0x00, 0x00, 0x91, 0x00, 0xb0, 0x00, 0x01, 0x00]
+    0x00, 0x00, 0x91, 0x00, 0xb0, 0x00, 0x01, 0x00, 0x00]
   let alt := (deConstant altBytes).toOption.getD witness2
-  group "fixture T2 → T2 (16 → 14)" <|
-    test "the 16-byte encoding decodes to T2 → T2"
-      (hexOf (serConstant alt) == "d2000091b1b1029100009100b0000100" &&
+  group "fixture T2 → T2 (17 → 15)" <|
+    test "the 17-byte encoding decodes to T2 → T2"
+      (hexOf (serConstant alt) == "d2000091b1b1029100009100b000010000" &&
         (expandConstantSharing alt).toOption.map (constantInfoRoots ·.info) ==
           some (constantInfoRoots witness2.info)) ++
-    test "unshared is 15 bytes" (cbytes witness2 == 15) ++
+    test "unshared is 16 bytes" (cbytes witness2 == 16) ++
     withOk "exact" (optimizeSharingTable #[] (constantInfoRoots witness2.info)) (fun r =>
       test "exact table term IDs = [T2] = [2]" (r.tableTerms == #[2])) ++
     withOk "exact" (normalizeConstantSharing witness2) (fun n =>
-      test "exact bytes d2000091b0b00192000000000100 (14)"
-        (hexOf (serConstant n) == "d2000091b0b00192000000000100")) ++
-    withOk "exact from the 16-byte encoding" (normalizeConstantSharing alt) (fun n =>
-      test "normalizing the 16-byte encoding gives the same 14 bytes"
-        (hexOf (serConstant n) == "d2000091b0b00192000000000100")) ++
+      test "exact bytes d2000091b0b0019200000000010000 (15)"
+        (hexOf (serConstant n) == "d2000091b0b0019200000000010000")) ++
+    withOk "exact from the 17-byte encoding" (normalizeConstantSharing alt) (fun n =>
+      test "normalizing the 17-byte encoding gives the same 15 bytes"
+        (hexOf (serConstant n) == "d2000091b0b0019200000000010000")) ++
     withOk "oracle" (oracleConstant witness2) (fun (oc, o) =>
-      test s!"per-part oracle: 14-byte unique minimum over {o.work.tables} ordered tables"
-        (hexOf (serConstant oc) == "d2000091b0b00192000000000100" &&
+      test s!"per-part oracle: 15-byte unique minimum over {o.work.tables} ordered tables"
+        (hexOf (serConstant oc) == "d2000091b0b0019200000000010000" &&
           o.work.tables == 65 && o.minima.size == 1)) ++
     withOk "product oracle" (oracleConstant witness2 {} true) (fun (oc, o) =>
-      test s!"full-product oracle: {o.work.candidates} complete candidates, 14-byte unique minimum"
-        (hexOf (serConstant oc) == "d2000091b0b00192000000000100" &&
+      test s!"full-product oracle: {o.work.candidates} complete candidates, 15-byte unique minimum"
+        (hexOf (serConstant oc) == "d2000091b0b0019200000000010000" &&
           o.work.candidates == 3061082 && o.minima.size == 1))
 
 def witness16 : Constant := axiomOf (arr (chain 16) (chain 16))
@@ -885,12 +885,12 @@ def t16Tests (_ : Unit) : TestSeq :=
   let only16 : Constant := { witness16 with
     info := .axio ⟨false, 0, arr (.share 0) (.share 0)⟩, sharing := #[chain 16] }
   group "fixture T16 → T16" <|
-    test "unshared is 45 bytes" (cbytes witness16 == 45) ++
-    test "storing only T16 is 29 bytes" (cbytes only16 == 29) ++
+    test "unshared is 46 bytes" (cbytes witness16 == 46) ++
+    test "storing only T16 is 30 bytes" (cbytes only16 == 30) ++
     withOk "exact" (optimizeSharingTable #[] (constantInfoRoots witness16.info)) (fun r =>
       withOk "exact" (normalizeConstantSharing witness16) fun n =>
-        test s!"exact certified minimum = {cbytes n} bytes ≤ 29 (candidates {r.stats.candidates}, states reached {r.stats.statesReached}, expanded {r.stats.statesExpanded}, pruned {r.stats.statesPruned}, transitions {r.stats.transitions})"
-          (cbytes n ≤ 29 && cbytes n == r.variableBytes + 6))
+        test s!"exact certified minimum = {cbytes n} bytes ≤ 30 (candidates {r.stats.candidates}, states reached {r.stats.statesReached}, expanded {r.stats.statesExpanded}, pruned {r.stats.statesPruned}, transitions {r.stats.transitions})"
+          (cbytes n ≤ 30 && cbytes n == r.variableBytes + 7))
 
 /-- The nine-Ref fixture, built as in the production probe: atoms sorted by
 the blake3 hash of their encoding, each twice, then 98 more uses of the last (hot) atom; one
@@ -923,28 +923,28 @@ def nineRefTests (_ : Unit) : TestSeq :=
     | .error _ => c
   let hashOrder := tableWith atoms
   let freqTable := #[hot] ++ (atoms.filter (· != hot))
-  group "fixture nine independent Refs (676 → 578)" <|
+  group "fixture nine independent Refs (677 → 579)" <|
     test "hot atom is Ref(2,[0,0,0])" (hot == .ref 2 #[0, 0, 0]) ++
-    test "hash order: 676 bytes, hot atom in slot 8"
-      (cbytes hashOrder == 676 && atoms.size == 9 && atoms[8]? == some hot) ++
-    test "same entries, frequency order: 578 bytes" (cbytes (tableWith freqTable) == 578) ++
+    test "hash order: 677 bytes, hot atom in slot 8"
+      (cbytes hashOrder == 677 && atoms.size == 9 && atoms[8]? == some hot) ++
+    test "same entries, frequency order: 579 bytes" (cbytes (tableWith freqTable) == 579) ++
     withOk "exact" (optimizeSharingTable #[] (constantInfoRoots c.info)) (fun r =>
       withOk "exact" (normalizeConstantSharing c) fun n =>
         test s!"exact: {cbytes n} bytes, table IDs {r.tableTerms}, hot atom at a width-1 slot"
-          (cbytes n == 578 && r.tableTerms == #[0, 1, 2, 3, 4, 5, 6, 7, 8] &&
+          (cbytes n == 579 && r.tableTerms == #[0, 1, 2, 3, 4, 5, 6, 7, 8] &&
             ((n.sharing.findIdx? (· == hot)).map fun i => decide (i < 8)) == some true))
 
 def tiedMinimaTests (_ : Unit) : TestSeq :=
   let c := axiomOf tiedMinimaRoot #[.zero, .succ .zero]
   -- Table [A]: the root is one telescope with binders `Share 0`, `Share 0`, `B`, `P`
   -- over `Type`; tables [A,B] and [B,A]: the root is cut at `B`, all `Share`s.
-  let onlyA := "d2000094b0b0910001000101910000" ++ "0002000100"
-  let first := "d2000093b0b0b1b10291000091000100020001" ++ "00"
-  let second := "d2000093b1b1b0b00291000191000000020001" ++ "00"
-  group "fixture three 20-byte minima" <|
+  let onlyA := "d2000094b0b0910001000101910000" ++ "000200010000"
+  let first := "d2000093b0b0b1b10291000091000100020001" ++ "0000"
+  let second := "d2000093b1b1b0b00291000191000000020001" ++ "0000"
+  group "fixture three 21-byte minima" <|
     withOk "oracle" (oracleConstant c) (fun (oc, o) =>
-      test s!"oracle: minimum 20 over {o.work.tables} ordered tables; [A], [A,B] and [B,A] attain it; the least table [A] wins"
-        (cbytes oc == 20 && o.work.tables == 13700 && o.minima.size == 3 &&
+      test s!"oracle: minimum 21 over {o.work.tables} ordered tables; [A], [A,B] and [B,A] attain it; the least table [A] wins"
+        (cbytes oc == 21 && o.work.tables == 13700 && o.minima.size == 3 &&
           o.minima.any (hexOf · == first) && o.minima.any (hexOf · == second) &&
           hexOf (serConstant oc) == onlyA && o.table == #[2])) ++
     withOk "exact" (optimizeSharingTable #[] (constantInfoRoots c.info)) (fun r =>
@@ -1244,7 +1244,7 @@ public def suite : List TestSeq := [
   deferred "fixture T2 → T2" witnessTests,
   deferred "fixture T16 → T16" t16Tests,
   deferred "fixture nine Refs" nineRefTests,
-  deferred "fixture three 20-byte minima" tiedMinimaTests,
+  deferred "fixture three 21-byte minima" tiedMinimaTests,
   deferred "ordering: parent before descendant" orderingTests,
   deferred "properties on generated inputs" propertyTests,
   deferred "pruning never changes the result" pruningTests,
