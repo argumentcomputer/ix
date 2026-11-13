@@ -262,6 +262,46 @@ def limitCase (binding : _root_.Ix.Kernel.Admission.Binding) (name : String) (d 
     IO.lazyPure fun _ =>
       s!"depth {measured}, {entryVerdict (_root_.Ixon.Authenticated.checkBytes binding lim rs [] hint)}"
 
+/-- How deep a record nests as stored (shares as leaves), computed independently of the scan. -/
+partial def storedExprDepth : IE → Nat
+  | .app f a => 1 + max (storedExprDepth f) (storedExprDepth a)
+  | .lam _ t b | .all _ _ t b => 1 + max (storedExprDepth t) (storedExprDepth b)
+  | .letE _ t v b => 1 + max (storedExprDepth t) (max (storedExprDepth v) (storedExprDepth b))
+  | .prj _ _ v => 1 + storedExprDepth v
+  | _ => 1
+
+def storedConstDepth (c : _root_.Ixon.Constant) : Nat :=
+  let payload := match c.info with
+    | .defn d => max (storedExprDepth d.typ) (storedExprDepth d.value)
+    | _ => 0
+  max payload (max (c.sharing.foldl (fun m e => max m (storedExprDepth e)) 0)
+    (c.univs.foldl (fun m u => max m (univDepth u)) 0))
+
+/-- `bounds`: the two bounds the depth stages skip by (`Admission.storedDepthBound`: a record of
+`s` bytes and `u` universe nodes nests at most `s + u + 1` deep as stored;
+`Admission.expandedDepthBound`: at most `2 s + 2` with its shares expanded), checked against the
+shapes that nest most per byte (each shape, written out and shared, at sizes up to 5,000, and a
+spine of one-byte arguments). -/
+def boundsCase : IO String := do
+  let dense (shared : Bool) (n : Nat) : List _root_.Ixon.Constant :=
+    let (val, t) := nest shared n (.ref 0 #[]) (fun b => .app b (.sort 0)) #[]
+    [defnS 0 (.sort 0) val t #[] univs01]
+  let mut checked := 0
+  for sh in ["lam", "pi", "appArg", "spine", "let", "usucc", "umax", "dense"] do
+    for shared in [false, true] do
+      for n in [1, 2, 10, 100, 1000, 5000] do
+        let cs := if sh == "dense" then dense shared n else (shape sh shared n).getD []
+        for c in cs do
+          let s := (_root_.Ixon.serConstant c).size
+          let u := c.univs.foldl (fun acc v => acc + v.nodeCount) 0
+          let stored := storedConstDepth c
+          let expanded := constDepth c
+          unless stored ≤ s + u + 1 && expanded ≤ 2 * s + 2 do
+            return s!"bound broken: {sh} shared {shared} n {n}: stored {stored}, expanded {expanded}, \
+              {s} bytes, {u} universe nodes"
+          checked := checked + 1
+  return s!"bounds hold on {checked} records"
+
 /-- Run one case; the line it prints starts with the verdict. -/
 def runOne (name : String) (n : Nat) : IO String := do
   let binding ← IO.ofExcept _root_.Ix.Kernel.Admission.defaultBinding
@@ -283,6 +323,7 @@ def runOne (name : String) (n : Nat) : IO String := do
   | "wide" => timed do
     let rs := wide n
     IO.lazyPure fun _ => entryVerdict (_root_.Ixon.Authenticated.checkBytes binding limits rs [] hint)
+  | "bounds" => boundsCase
   | "wide-w0" | "wide-w1" | "wide-w4" => timed do
     -- phase B on at most 0 (the calling thread), 1 or 4 tasks: the verdict of `wide`
     let w := ((toString (name.drop 6)).toNat?).getD 0

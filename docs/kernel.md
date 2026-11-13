@@ -662,7 +662,15 @@ walked: an expression's levels grow by at most one per byte that writes it and a
 universe's by at most the decoder's node budget (`storedDepthBound`), and a record
 within the byte limit has at most two decoded nodes per byte, which an acyclic expansion meets
 once each (`expandedDepthBound`); the statements about a compiled closure choose a limit above both
-(`Ix.Cert.Stream.closure_decodes`). Levels count as the kernel's terms nest:
+(`Ix.Cert.Stream.closure_decodes`). Both bounds are unproved assumptions of the skip: if
+one were wrong, a record deeper than the limit could pass the stage meant to stop it. The
+argument: a stored expression's levels grow by one per child, and every child is written with
+at least one tag byte of its own (a spine or telescope of `n` steps is written with `n` more
+expressions); a universe's levels are its nodes, which the decoder's budget counts before it
+builds them; a decoded record has at most two nodes per byte (the spine and telescope nodes
+add one per written expression), and an acyclic path meets each once. `kernel-depth`'s `bounds`
+case checks both on the shapes that nest most per byte. Open: prove the two bounds, or remove
+the skip by proving depth ≤ size where `closure_decodes` needs it. Levels count as the kernel's terms nest:
 an application of `n` arguments has its head `n` levels down, a telescope of `n`
 binders its body `n` levels down, `succ^k u` has `u` `k` levels down. The
 checks are coverage bounds: nothing is proved about what they compute, and
@@ -725,7 +733,13 @@ steps (`whnfCoreLoopFuel`), the `whnf` and conversion loops' 100,000 each
 (`Level.defaultFuel`, which `Level.isEquiv` uses), and the typing core's
 recursion fuel of 100,000 nested calls (`checkFuel`, the knot's fuel in the
 fold and in the typing tier). Raising `maxDepth` therefore has effect only up to
-where `checkFuel` declines first: KNOT-BITE-MEASUREMENT.
+where `checkFuel` declines first. Measured with `maxDepth` raised to 1,000,000 on a stack of
+16 KiB per level (`kernel-depth-case limit1000000-…`): an argument nest, a spine and a `let`
+nest are accepted at 98,304 levels and declined at 114,688 with "fuel exhausted: annotate"; λ
+and ∀ telescopes are accepted at 196,608 (their loops do not nest the knot). So a `maxDepth`
+above about 100,000 admits nothing more of those shapes, and their decline names the fuel, which
+no setting raises (a request to make it a parameter of the reference core is with the upstream
+workstream).
 
 ## The typing tier
 
