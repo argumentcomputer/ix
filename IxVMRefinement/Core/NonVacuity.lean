@@ -102,7 +102,7 @@ theorem ctx₀ (Γ : Nat → KExpr) (hl : LoadFacts c₀) :
 
 /-- The empty context's records satisfy `LoadFacts.canonical`: there is no record. -/
 theorem canonical₀ : ∀ (x : _root_.Address) (lc : Ixon.LazyConstant) (info : Ixon.ConstantInfo),
-    c₀.E.consts.get? x = some lc → lc.rawBytes = Ixon.serConstant ⟨info, #[], #[], #[]⟩ →
+    c₀.E.consts.get? x = some lc → lc.rawBytes = Ixon.serConstant ⟨info, #[], #[], #[], #[]⟩ →
       ∀ cm, lc.get? = some cm → cm.info = info := by
   intro x lc info h
   simp [c₀] at h

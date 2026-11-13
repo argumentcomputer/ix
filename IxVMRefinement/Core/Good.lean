@@ -300,7 +300,7 @@ structure LoadFacts (c : Ctx) : Prop where
   window, which the loader layer builds by decoding those bytes: the claim's canonical store
   (`Ix.Cert.Stream.StoredCanonical`) and `serConstant`'s injectivity on wire-valid constants. -/
   canonical : ∀ (x : _root_.Address) (lc : Ixon.LazyConstant) (info : Ixon.ConstantInfo),
-    c.E.consts.get? x = some lc → lc.rawBytes = Ixon.serConstant ⟨info, #[], #[], #[]⟩ →
+    c.E.consts.get? x = some lc → lc.rawBytes = Ixon.serConstant ⟨info, #[], #[], #[], #[]⟩ →
       ∀ cm, lc.get? = some cm → cm.info = info
 
 /-! ## Specs -/

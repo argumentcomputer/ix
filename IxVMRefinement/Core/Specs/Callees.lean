@@ -201,7 +201,7 @@ def projection_addr_ctor : SpecFn := fun c args h r h' calls =>
 def put_constant : SpecFn := fun c args h r h' calls =>
   ∀ cv tl (info : Ixon.ConstantInfo) (rest : List UInt8), args = [cv, tl] →
     ProjConstRep h info cv → RepBytes h rest tl →
-      RepBytes h' ((Ixon.serConstant ⟨info, #[], #[], #[]⟩).data.toList ++ rest) r
+      RepBytes h' ((Ixon.serConstant ⟨info, #[], #[], #[], #[]⟩).data.toList ++ rest) r
 
 /-- `Blake3::bytes_to_addr(bytes)`: the BLAKE3 address of the bytes (`Address.blake3Pure`). -/
 def bytes_to_addr : SpecFn := fun c args h r h' calls =>

@@ -167,7 +167,7 @@ def preludeRecursorsUnique : Except String Unit := do
       let some (ConstRef.member b _) := carriers[0]? | continue
       if filed.any (fun (b', m', _) => b' == b && m' == m) then
         throw s!"two prelude recursors for block {b} at motive {m}"
-      let prj : Ixon.Constant := ⟨.rPrj ⟨j.toUInt64, owner⟩, #[], #[], #[]⟩
+      let prj : Ixon.Constant := ⟨.rPrj ⟨j.toUInt64, owner⟩, #[], #[], #[], #[]⟩
       let at_ := match c.info with
         | .recr _ => owner
         | _ => Address.blake3 (Ixon.ser prj)

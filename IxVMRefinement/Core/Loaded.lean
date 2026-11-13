@@ -35,7 +35,7 @@ open Aiur.Library Aiur.Library.List
 these (`Ingress::projection_addr`, `KernelDefEq::compute_iprj_addr`,
 `KernelCheck::projection_addr_ctor`) by serializing and hashing the record. -/
 def projAddr (info : Ixon.ConstantInfo) : _root_.Address :=
-  Address.blake3Pure (Ixon.serConstant ⟨info, #[], #[], #[]⟩)
+  Address.blake3Pure (Ixon.serConstant ⟨info, #[], #[], #[], #[]⟩)
 
 /-- The inductive-projection record of member `i` of the block `b`. -/
 def iprjAddr (b : _root_.Address) (i : Nat) : _root_.Address :=
