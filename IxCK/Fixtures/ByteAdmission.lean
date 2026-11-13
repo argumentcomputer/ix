@@ -139,8 +139,9 @@ def malformed : Records := [(address 1, ⟨#[]⟩)]
     (bounds := { limits with maxTotalBytes := 0 }) = some (.limit .totalBytes)
 #guard failure (encode falseStore) (bounds := { limits with maxRecords := 2 }) =
   some (.limit .records)
-#guard (preflight { maxRecords := 0, maxBlobs := 0, maxTotalBytes := 0, maxRecordBytes := 0,
-    maxRecordUnivNodes := 0 } [] []).isOk
+#guard (preflight
+    { maxRecords := 0, maxBlobs := 0, maxTotalBytes := 0, maxRecordBytes := 0,
+      maxRecordUnivNodes := 0 } [] []).isOk
 #guard failure [] [(address 9, ⟨#[]⟩), (address 10, ⟨#[]⟩)]
     (bounds := { limits with maxBlobs := 1 }) = some (.limit .blobs)
 #guard entryAgrees malformed (bounds := { limits with maxRecords := 0 })
