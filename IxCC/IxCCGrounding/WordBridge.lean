@@ -32,6 +32,7 @@ structure TowKeys where
   b : KKey
   f : KKey
   le : KKey
+  deriving DecidableEq
 
 /-- `x % S` over the role key of `Nat.mod`. -/
 def modK (e : KExpr) (S : Nat) : KExpr := .app (.app (.const (primKey .mod) []) e) (litE S)
@@ -142,6 +143,7 @@ structure TowAux where
   fin : KKey
   toFin : KKey
   lt : KKey
+  deriving DecidableEq
 
 /-- `Fin.mk`'s proof domain, `@LT.lt.{ls} a1 a2 #0 #1`. -/
 def ltSpine (ta : TowAux) (ls : List Level) (a1 a2 : KExpr) : KExpr :=

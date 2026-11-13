@@ -359,23 +359,29 @@ theorem evalSites_sub_allSites (ls : Levels) :
   | _ => intro Γ e s hs; simp [evalSites] at hs
 
 /-- **A run pair is one the check enumerates**, on a closure the check passes. -/
-theorem runPair_mem_of_check {p : Program} {κ : CId → KKey} {lpsOf : CId → List Nat}
-    {ann : IxCC.Src.Relevance.Ann} {Sl : List CId} (hchk : groundCheck p env κ lpsOf ann Sl = true)
+theorem runPair_mem_of_sans {p : Program} {κ : CId → KKey} {lpsOf : CId → List Nat}
+    {ann : IxCC.Src.Relevance.Ann} {Sl : List CId} (hchk : CheckSans p env κ lpsOf ann Sl)
     {c : CId} {t : Term} {e : KExpr} (hc : c ∈ Sl) (hrp : RunPair p env κ c t e) :
     (t, e) ∈ runPairsB p env κ c := by
   cases hrp with
   | value hr hd hf => simp [runPairsB, hr, hd, hf]
   | @eqn thm body d hr hsh =>
-    have hE := eqBasis_of_check (part_of (name := "eqBasis") (b := eqBasisB env) hchk
-      (by simp [checkParts, checkPartsWith]))
-    have h1 := List.all_eq_true.mp (part_of (name := "eqnShape") (b := Sl.all (eqnShapeOkB p env κ))
-      hchk (by simp [checkParts, checkPartsWith])) c hc
+    have hE := eqBasis_of_check (hchk "eqBasis" (eqBasisB env)
+      (by simp [checkParts, checkPartsWith]) (by decide))
+    have h1 := List.all_eq_true.mp (hchk "eqnShape" (Sl.all (eqnShapeOkB p env κ))
+      (by simp [checkParts, checkPartsWith]) (by decide)) c hc
     simp only [eqnShapeOkB, hr] at h1
     split at h1
     · rename_i d' hd'
       have hb := eqnShape_body hsh (eqnShape_of_check hE h1)
       simp [runPairsB, hr, hd', hb]
     · cases h1
+
+theorem runPair_mem_of_check {p : Program} {κ : CId → KKey} {lpsOf : CId → List Nat}
+    {ann : IxCC.Src.Relevance.Ann} {Sl : List CId} (hchk : groundCheck p env κ lpsOf ann Sl = true)
+    {c : CId} {t : Term} {e : KExpr} (hc : c ∈ Sl) (hrp : RunPair p env κ c t e) :
+    (t, e) ∈ runPairsB p env κ c :=
+  runPair_mem_of_sans (sans_of_check hchk) hc hrp
 
 /-- **The residue hypothesis**: `SitesOk` at the sites the check refuses. -/
 def SitesOkRes (M : Model V env) (p : Program) (κ : CId → KKey) (lpsOf : CId → List Nat)
