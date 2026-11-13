@@ -360,7 +360,7 @@ theorem try_eta_expand_step (c : Ctx) {args : List (SourceValue F)} {h h' : Heap
     have hbody := ih.get (.defEq .k_is_def_eq) (by lt_calls) ev330 rc ba _ _ rfl
       (good.sub fun x hx => by simp [hx]) (RCRep.mono E295 hrc) (d + 1) (Ghost.extend Γ d TA)
       hinner _ _ (tmk_open (Tm.mono E295 hBA)) (Tm.mono e8 happ) hr
-    exact .eta hinf hred (.symm hdom) hbody (by unfold bmeta; exact hz) rfl
+    exact .eta hinf hred (.symm hdom) hbody (by unfold bmeta; exact hz)
   · exact absurd he368 hr
   · exact absurd he375 hr
 
